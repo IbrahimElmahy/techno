@@ -2,11 +2,11 @@ import React, { useEffect, useRef, useState } from 'react';
 import { PAGE_SIZE } from '../utils/pagination';
 import { searchFilter, searchRank } from '../utils/arabicSort';
 import {
-  Button, Card, Col, Form, Input, Modal, Row, Select, Space, Table, Tag, Tooltip, message
+  Button, Col, Form, Input, Modal, Row, Select, Space, Table, Tag, Tooltip, message
 } from 'antd';
 import {
   PlusOutlined, EditOutlined, StopOutlined, SearchOutlined, ReloadOutlined, TeamOutlined,
-  DeleteOutlined, ExclamationCircleOutlined, EyeOutlined,
+  DeleteOutlined, ExclamationCircleOutlined, EyeOutlined, HomeOutlined, ClearOutlined,
 } from '@ant-design/icons';
 import { api } from '../api/client';
 import { useTableKeyboard } from '../components/keyboard';
@@ -15,6 +15,8 @@ import { useAuth } from '../components/AuthProvider';
 import { showDeactivationConfirm } from '../components/ConfirmationDialog';
 import { TabModal } from '../components/TabModal';
 import { useTableColumns } from '../components/ColumnSettings';
+import ListPage from '../components/ListPage';
+import { numeralsLocale } from '../utils/money';
 
 /** المخازن — their `/stores`, its own screen at last.
  *
@@ -454,42 +456,48 @@ export default function Warehouses() {
   });
 
   return (
-    <div>
-      <Card
+    <>
+      <ListPage
+        icon={<HomeOutlined />}
         title="المخازن"
-        extra={
-          <Space>
-            {tableCols.control}
-            <Button icon={<ReloadOutlined />} onClick={fetchAll}>اعادة تحميل</Button>
-            {canWrite && (
-              <Button data-shortcut="F2" type="primary" icon={<PlusOutlined />} onClick={() => setCreateOpen(true)}>
-                مخزن جديد
-              </Button>
-            )}
-          </Space>
-        }
+        subtitle="مخازن الفروع والسيارات، ومناديب كل مخزن وعملاؤهم"
+        actions={(<>
+          {canWrite && (
+            <Button data-shortcut="F2" type="primary" icon={<PlusOutlined />} className="sl-create"
+              onClick={() => setCreateOpen(true)}>
+              مخزن جديد
+            </Button>
+          )}
+          <Button icon={<ReloadOutlined />} onClick={fetchAll}>اعادة تحميل</Button>
+          {tableCols.control}
+        </>)}
+        filters={(<>
+          <Input className="sl-f-search" allowClear value={search}
+            placeholder="بحث بالاسم أو الفرع أو الوصف"
+            ref={searchRef}
+            prefix={<SearchOutlined />} onChange={(e) => setSearch(e.target.value)} />
+          <Button className="sl-f-clear" icon={<ClearOutlined />} onClick={() => setSearch('')}>مسح</Button>
+        </>)}
       >
-        <Row style={{ marginBottom: 12 }}>
-          <Col xs={24} md={8}>
-            <Input allowClear value={search} placeholder="بحث بالاسم أو الفرع أو الوصف"
-              ref={searchRef}
-              prefix={<SearchOutlined />} onChange={(e) => setSearch(e.target.value)} />
-          </Col>
-        </Row>
-
         <Table
           {...kb.tableProps}
+          className="sl-table"
           dataSource={filtered}
           columns={tableCols.columns}
           rowKey="id"
           loading={loading}
-          size="middle"
+          size="small"
           tableLayout="fixed"
           expandable={{ expandedRowRender: expandedRow }}
           pagination={{ defaultPageSize: PAGE_SIZE, showSizeChanger: true,
-            showTotal: (t) => `عدد: ${t}` }}
+            locale: { items_per_page: '' },
+            showTotal: (t) => (
+              <span className="sl-foot">
+                <span>إجمالي المخازن: <b>{t.toLocaleString(numeralsLocale())}</b></span>
+              </span>
+            ) }}
         />
-      </Card>
+      </ListPage>
 
       <TabModal footer={null} centered title="مخزن جديد" width={640} destroyOnHidden
         open={createOpen} onCancel={() => setCreateOpen(false)}>
@@ -603,6 +611,6 @@ export default function Warehouses() {
           </>
         )}
       </TabModal>
-    </div>
+    </>
   );
 }

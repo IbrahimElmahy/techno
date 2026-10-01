@@ -6,20 +6,21 @@
  * بيديله الفترة وبس.
  */
 import React, { useCallback, useEffect, useState } from 'react';
-import {
-  Alert, Button, Card, Col, Select, Space, Tag,
-} from 'antd';
+import { createPortal } from 'react-dom';
+import { Alert, Button, Space, Tag } from 'antd';
 // فلتر على كل عمود — شوف `FilterTable`.
 import { FilterTable as Table } from '../../components/FilterTable';
-import { Statistic } from '../../components/Statistic';
-import { ReloadOutlined, LinkOutlined } from '@ant-design/icons';
-import { useNavigate } from 'react-router-dom';
+import { ReloadOutlined } from '@ant-design/icons';
 import { api } from '../../api/client';
-import { useQueryTab } from '../../components/useQueryTab';
 import { money, CashFlow, CashFlowLine, CashFlowSection } from './types';
 
-import StatsRow from '../../components/StatsRow';
-export default function CashFlowTab({ params }: { params: () => Record<string, string> }) {
+import { useCanSeeStats } from '../../components/StatsRow';
+import type { TabSlots } from './PartnerLedgerTab';
+
+export default function CashFlowTab({ params, slots }: {
+  params: () => Record<string, string>;
+  slots?: TabSlots;
+}) {
   const [cash, setCash] = useState<CashFlow | null>(null);
   const [cashLoading, setCashLoading] = useState(false);
 
@@ -36,50 +37,44 @@ export default function CashFlowTab({ params }: { params: () => Record<string, s
 
   useEffect(() => { loadCash(); }, [loadCash]);
 
+  // كروت الإجماليات بقت سطر — ولسه للي عنده `stats.view` بس.
+  const canSeeStats = useCanSeeStats();
+
   return (
-    <Card
-      title="التدفق النقدي"
-      extra={
+    <div>
+      {slots?.actions && createPortal(
         <Button icon={<ReloadOutlined />} onClick={loadCash}
-                loading={cashLoading}>تحديث</Button>
-      }
-    >
+                loading={cashLoading}>تحديث</Button>,
+        slots.actions,
+      )}
       {cash && (
         <>
           {!cash.consistent && (
             <Alert
-              type="warning" showIcon style={{ marginBottom: 12 }}
+              type="warning" showIcon style={{ margin: '6px 0 8px' }}
               message="فيه قيد فيه حركة خزينة ومش متوازن — الفرق طالع في «غير موزّع»."
             />
           )}
-          <StatsRow gutter={16} style={{ marginBottom: 16 }}>
-            <Col span={8}>
-              <Card size="small">
-                <Statistic title="نقدية أول المدة" value={Number(cash.opening)} precision={2} />
-              </Card>
-            </Col>
-            <Col span={8}>
-              <Card size="small">
-                <Statistic
-                  title="صافي التغيّر" value={Number(cash.net_change)} precision={2}
-                  valueStyle={{ color: Number(cash.net_change) >= 0 ? '#2e9e6b' : '#d64545' }}
-                />
-              </Card>
-            </Col>
-            <Col span={8}>
-              <Card size="small">
-                <Statistic title="نقدية آخر المدة" value={Number(cash.closing)} precision={2}
-                           valueStyle={{ color: '#0e4c6d' }} />
-              </Card>
-            </Col>
-          </StatsRow>
+          {canSeeStats && (
+            <div style={{ padding: '8px 4px 10px' }}>
+              <span className="sl-foot">
+                <span>نقدية أول المدة: <b>{money(cash.opening)}</b></span>
+                <span>
+                  صافي التغيّر:{' '}
+                  <b className={Number(cash.net_change) >= 0 ? 'is-pos' : 'is-neg'}>{money(cash.net_change)}</b>
+                </span>
+                <span>نقدية آخر المدة: <b>{money(cash.closing)}</b></span>
+              </span>
+            </div>
+          )}
           {cash.sections.map((sec) => (
             <Table<CashFlowLine>
               key={sec.key}
+              className="sl-table"
               rowKey={(r) => `${sec.key}:${r.account_id ?? 'x'}`}
               size="small"
               pagination={false}
-              style={{ marginBottom: 16 }}
+              style={{ marginBottom: 12 }}
               loading={cashLoading}
               dataSource={sec.lines}
               title={() => (
@@ -112,6 +107,6 @@ export default function CashFlowTab({ params }: { params: () => Record<string, s
           ))}
         </>
       )}
-    </Card>
+    </div>
   );
 }

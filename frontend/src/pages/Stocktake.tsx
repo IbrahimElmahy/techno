@@ -1,30 +1,29 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { searchFilter, searchRank, sortByName } from '../utils/arabicSort';
 import { PAGE_SIZE } from '../utils/pagination';
-import {
-  Alert, Button, Card, Col, DatePicker, Row, Select, Space, Tag, message,
-} from 'antd';
+import { Button, Input, Select, Tag, message } from 'antd';
 // كل جدول هنا بفلتر على كل عمود — شوف `FilterTable`.
 import { FilterTable as Table } from '../components/FilterTable';
-import { Statistic } from '../components/Statistic';
 import { InputNumber } from '../components/NumberInput';
-import { DownloadOutlined, PrinterOutlined, ReloadOutlined } from '@ant-design/icons';
+import {
+  CalendarOutlined, ClearOutlined, DownloadOutlined, PrinterOutlined, ReloadOutlined, SearchOutlined,
+} from '@ant-design/icons';
+import ListPage from '../components/ListPage';
 import dayjs, { Dayjs } from 'dayjs';
 import { api } from '../api/client';
-import ListToolbar, { useListFilter } from '../components/ListToolbar';
+import { useListFilter } from '../components/ListToolbar';
 import DateRangeFilter from '../components/DateRangeFilter';
 import { choiceColumn, numberColumn, textColumn } from '../components/gridColumns';
 import MovementHistoryLog from '../components/MovementHistoryLog';
-import { useTableKeyboard } from '../components/keyboard';
+import { useScreenShortcuts, useTableKeyboard } from '../components/keyboard';
 import type { ColumnsType } from 'antd/es/table';
 import { useTableColumns } from '../components/ColumnSettings';
 import { exportCsv as writeCsv, type CsvColumn } from '../utils/exportCsv';
 import { printReport, type PrintColumn } from '../print/reportSheet';
-import StatsRow from '../components/StatsRow';
 import {
   LOG_LIMIT, exportItemsWithLogs, fetchLog, printItemsWithLogs,
 } from '../print/itemLogSheet';
-import { money, qty } from '../utils/money';
+import { money, numeralsLocale, qty } from '../utils/money';
 
 /**
  * جرد حق تاريخ — the stock as it stood on a chosen day, valued at cost.
@@ -281,83 +280,69 @@ export default function Stocktake() {
     export: { name: 'جرد حق تاريخ', rows: filter.filtered },
   });
 
+  // F3 للبحث — كانت جاية من `ListToolbar`.
+  const searchRef = useRef<any>(null);
+  useScreenShortcuts({ onSearch: () => { searchRef.current?.focus?.(); } });
+
+  // سطر الإجماليات تحت الجدول — مكان كروت الأرقام اللي كانت فوق.
+  const footer = (
+    <span className="sl-foot">
+      <span>عدد السطور: <b>{Number(totals?.lines ?? 0).toLocaleString(numeralsLocale())}</b></span>
+      <span>المعروض: <b>{filter.filtered.length.toLocaleString(numeralsLocale())}</b>
+        {' '}من {rows.length.toLocaleString(numeralsLocale())}</span>
+      {picked.length > 0 && <span>المحدد: <b>{picked.length.toLocaleString(numeralsLocale())}</b></span>}
+      <span>إجمالي الكمية: <b>{qty(totals?.quantity)}</b></span>
+      <span>قيمة المخزون: <b style={{ color: '#0B5CA8' }}>{money(totals?.value)}</b></span>
+    </span>
+  );
+
   return (
-    <Card
-      title="جرد حق تاريخ"
-      extra={(
-        <>
-          {tableCols.control}
+    <ListPage
+      icon={<CalendarOutlined />}
+      title="جرد حتى تاريخ"
+      // كان تنبيه فوق الجدول — بقى سطر تحت العنوان.
+      subtitle={<>
+        {`الأرصدة زي ما كانت يوم ${asOf.format('YYYY-MM-DD')} — كل حركة لحد اليوم ده وبس.`}
+        {method && ` التقييم بطريقة «${METHOD_LABELS[method] || method}» (تتغيّر من إعدادات المخزون).`}
+      </>}
+      actions={(<>
           {/* العدد على الزرار عشان اللي حدّد صفوف يعرف إنه هيطلّع المحدّد مش الكل. */}
-          <Button icon={<DownloadOutlined />} onClick={exportCsv} disabled={!rows.length}
-            style={{ marginInlineEnd: 8 }}>
-            {picked.length ? `تصدير (${picked.length})` : 'تصدير CSV'}
-          </Button>
-          <Button icon={<PrinterOutlined />} onClick={printIt}
-            style={{ marginInlineEnd: 8 }}>
+          <Button icon={<PrinterOutlined />} onClick={printIt}>
             {picked.length ? `طباعة (${picked.length})` : 'طباعة'}
           </Button>
-
+          <Button icon={<DownloadOutlined />} onClick={exportCsv} disabled={!rows.length}>
+            {picked.length ? `تصدير (${picked.length})` : 'تصدير CSV'}
+          </Button>
+          {tableCols.control}
           <Button icon={<ReloadOutlined />} onClick={load}>تحديث</Button>
-        </>
-      )}
+      </>)}
+      filters={(<>
+        <Input
+          className="sl-f-search" allowClear ref={searchRef}
+          prefix={<SearchOutlined />} placeholder="بحث بالصنف أو الكود أو الموقع"
+          value={filter.query} onChange={(e) => filter.setQuery(e.target.value)}
+        />
+        {/* «إلى» is the day the balance is read at; «من» opens the movement log on the period.
+            Two dates because a difference is a question about a stretch of time, not a day. */}
+        <DateRangeFilter
+          className="sl-f-dates"
+          allowClear={false}
+          value={[dateFrom, asOf] as any}
+          placeholder={['من تاريخ', 'الرصيد حتى']}
+          onChange={(v: any) => {
+            if (!v || !v[0] || !v[1]) return;
+            setDateFrom(v[0]);
+            setAsOf(v[1]);
+          }}
+        />
+        <Select showSearch
+          allowClear placeholder="كل المخازن"
+          value={warehouseId} onChange={setWarehouseId}
+          options={sortByName(warehouses, (w) => w.name).map((w) => ({ value: w.id, label: w.name }))} filterOption={searchFilter} filterSort={searchRank} />
+        <Button className="sl-f-clear" icon={<ClearOutlined />} onClick={filter.reset}>مسح</Button>
+      </>)}
     >
       {/* التنبيه اللي كان هنا اتشال بطلب صاحب النظام — نفس اللي اتشال من كشف الجرد. */}
-
-      <Alert
-        type="info" showIcon style={{ marginBottom: 12 }}
-        message={`الأرصدة زي ما كانت يوم ${asOf.format('YYYY-MM-DD')} — كل حركة لحد اليوم ده وبس.`}
-        description={method
-          ? `التقييم بطريقة «${METHOD_LABELS[method] || method}» (تتغيّر من إعدادات المخزون).`
-          : undefined}
-      />
-
-      <StatsRow gutter={[8, 8]} style={{ marginBottom: 12 }}>
-        <Col xs={8}>
-          <Card size="small"><Statistic title="عدد السطور" value={totals?.lines ?? 0} /></Card>
-        </Col>
-        <Col xs={8}>
-          <Card size="small">
-            <Statistic title="إجمالي الكمية" value={qty(totals?.quantity)} />
-          </Card>
-        </Col>
-        <Col xs={8}>
-          <Card size="small">
-            <Statistic title="قيمة المخزون" value={money(totals?.value)}
-              valueStyle={{ color: '#0B5CA8' }} />
-          </Card>
-        </Col>
-      </StatsRow>
-
-      <ListToolbar
-        searchPlaceholder="بحث بالصنف أو الكود أو الموقع"
-        query={filter.query} onQueryChange={filter.setQuery} onReset={filter.reset}
-        total={rows.length} shown={filter.filtered.length} searchSpan={8}
-        // الفترة والمخزن جنب البحث — دول اللي بيحدّدوا الورقة اللي بتتقرا، وكانوا في
-        // صف لوحدهم فوق بعيد عن باقي الفلاتر اللي شغّالة معاهم.
-        extra={(
-          <Space size={6} wrap style={{ flex: '0 0 auto' }}>
-            {/* «إلى» is the day the balance is read at; «من» opens the movement log on the period.
-                Two dates because a difference is a question about a stretch of time, not a day. */}
-            <div style={{ width: 280 }}>
-              <DateRangeFilter
-                allowClear={false}
-                value={[dateFrom, asOf] as any}
-                placeholder={['من تاريخ', 'الرصيد حتى']}
-                onChange={(v: any) => {
-                  if (!v || !v[0] || !v[1]) return;
-                  setDateFrom(v[0]);
-                  setAsOf(v[1]);
-                }}
-              />
-            </div>
-            <Select showSearch
-              allowClear style={{ width: '100%' }} placeholder="كل المخازن"
-              value={warehouseId} onChange={setWarehouseId}
-              options={sortByName(warehouses, (w) => w.name).map((w) => ({ value: w.id, label: w.name }))} filterOption={searchFilter} filterSort={searchRank} />
-          </Space>
-        )}
-      />
-
       <Table<Row>
         {...kb.tableProps}
         rowSelection={{
@@ -365,6 +350,7 @@ export default function Stocktake() {
           onChange: (keys) => setPicked(keys),
           preserveSelectedRowKeys: true,
         }}
+        className="sl-table"
         rowKey={rowKeyOf} size="small" loading={loading}
         // السجل بيتفتح تحت السطر بتاعه، وأكتر من سطر بيفضلوا مفتوحين مع بعض.
         expandable={{
@@ -385,7 +371,11 @@ export default function Stocktake() {
         }}
         dataSource={filter.filtered}
         locale={{ emptyText: 'لا توجد أرصدة في هذا التاريخ' }}
-        pagination={{ defaultPageSize: PAGE_SIZE, showSizeChanger: true }}
+        pagination={{
+          defaultPageSize: PAGE_SIZE, showSizeChanger: true,
+          locale: { items_per_page: '' },
+          showTotal: () => footer,
+        }}
         scroll={{ x: 'max-content' }}
         // Every column filters and sorts on its own, and the narrowings combine — «خامات مخزن
         // الفرع اللي قيمتها فوق الألف» is three columns at once, and a single search box above the
@@ -409,6 +399,6 @@ export default function Stocktake() {
           );
         }}
       />
-    </Card>
+    </ListPage>
   );
 }

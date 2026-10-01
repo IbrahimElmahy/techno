@@ -1,14 +1,19 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { PAGE_SIZE } from '../utils/pagination';
 import {
-  Card, Table, Button, Space, Input, Form, Tag, Switch, message,
+  Table, Button, Space, Input, Form, Select, Switch, message,
 } from 'antd';
 import { InputNumber } from '../components/NumberInput';
 import { Popconfirm } from '../components/noConfirm';
-import { PlusOutlined, EditOutlined, StopOutlined, ReloadOutlined } from '@ant-design/icons';
+import {
+  PlusOutlined, EditOutlined, StopOutlined, ReloadOutlined, AppstoreOutlined, SearchOutlined,
+  ClearOutlined,
+} from '@ant-design/icons';
 import { api } from '../api/client';
-import { useTableKeyboard } from '../components/keyboard';
-import ListToolbar, { useListFilter } from '../components/ListToolbar';
+import { useTableKeyboard, useScreenShortcuts } from '../components/keyboard';
+import { useListFilter } from '../components/ListToolbar';
+import ListPage from '../components/ListPage';
+import { numeralsLocale } from '../utils/money';
 import { TabModal } from '../components/TabModal';
 import type { ColumnsType } from 'antd/es/table';
 import { useTableColumns } from '../components/ColumnSettings';
@@ -186,52 +191,81 @@ const InspectionItems: React.FC = () => {
     export: { name: 'أصناف المعاينة', rows: filter.filtered },
   });
 
+  // F3 للبحث — كانت جاية من `ListToolbar`، والخانة دلوقتي في سطر الفلاتر.
+  const searchRef = useRef<any>(null);
+  useScreenShortcuts({ onSearch: () => { searchRef.current?.focus?.(); } });
+
+  const loc = numeralsLocale();
+  const activeCount = rows.filter((r) => r.active).length;
+
   return (
-    <div>
-      <Card
-        title="أصناف المعاينة وقيمة النقاط"
-        extra={
-          <Space>
-            {tableCols.control}
-            <Space size={4}>
-              <Switch checked={showInactive} onChange={setShowInactive} size="small" />
-              <span>عرض الموقوفة</span>
-            </Space>
-            <Button icon={<ReloadOutlined />} onClick={load}>
-              تحديث
-            </Button>
-            <Button data-shortcut="F2" type="primary" icon={<PlusOutlined />} onClick={openNew}>
-              إضافة صنف
-            </Button>
-          </Space>
-        }
+    <>
+      {/* «عرض الموقوفة» كان سويتش — بقى شريحتين، ونفس الحالة `showInactive`. */}
+      <ListPage<'active' | 'all'>
+        icon={<AppstoreOutlined />}
+        title="أصناف المعاينة" muted="(قيمة النقاط)"
+        subtitle="الأصناف اللي بتظهر في تطبيق المعاينات — التعديل بيوصل للمناديب مع «تحديث الأصناف والقوائم»"
+        tabs={[
+          { key: 'active', label: 'النشطة', count: activeCount },
+          { key: 'all', label: 'الكل مع الموقوفة', count: rows.length },
+        ]}
+        activeTab={showInactive ? 'all' : 'active'}
+        onTabChange={(k) => setShowInactive(k === 'all')}
+        actions={(<>
+          <Button data-shortcut="F2" type="primary" className="sl-create" icon={<PlusOutlined />}
+            onClick={openNew}>
+            إضافة صنف
+          </Button>
+          {tableCols.control}
+          <Button icon={<ReloadOutlined />} onClick={load}>
+            تحديث
+          </Button>
+        </>)}
+        filters={(<>
+          <Input
+            className="sl-f-search"
+            ref={searchRef}
+            allowClear
+            prefix={<SearchOutlined />}
+            placeholder="بحث باسم الصنف"
+            value={filter.query}
+            onChange={(e) => filter.setQuery(e.target.value)}
+          />
+          {/* أكتر من قيمة = «أي واحدة منهم» — نفس سلوك قوايم `ListToolbar`. */}
+          <Select
+            mode="multiple" allowClear maxTagCount="responsive" placeholder="الحالة"
+            value={filter.values.active}
+            onChange={(v) => filter.setValue('active', v)}
+            options={[{ value: 'active', label: 'نشط' }, { value: 'inactive', label: 'موقوف' }]}
+          />
+          <Select
+            mode="multiple" allowClear maxTagCount="responsive" placeholder="قيمة النقاط"
+            value={filter.values.has_points}
+            onChange={(v) => filter.setValue('has_points', v)}
+            options={[{ value: 'yes', label: 'له نقاط' }, { value: 'no', label: 'بدون نقاط' }]}
+          />
+          <Button className="sl-f-clear" icon={<ClearOutlined />} onClick={filter.reset}>مسح</Button>
+        </>)}
       >
-        <p style={{ color: '#8a9aa6', marginTop: -8 }}>
-          دي الأصناف اللي بتظهر في تطبيق المعاينات — أي تعديل هنا بيوصل للمناديب مع أول
-          «تحديث الأصناف والقوائم» من التطبيق.
-        </p>
-        <ListToolbar
-          searchPlaceholder="بحث باسم الصنف"
-          query={filter.query} onQueryChange={filter.setQuery}
-          values={filter.values} onValueChange={filter.setValue}
-          onReset={filter.reset}
-          total={visible.length} shown={filter.filtered.length}
-          filters={[
-            { key: 'active', placeholder: 'الحالة',
-              options: [{ value: 'active', label: 'نشط' }, { value: 'inactive', label: 'موقوف' }] },
-            { key: 'has_points', placeholder: 'قيمة النقاط',
-              options: [{ value: 'yes', label: 'له نقاط' }, { value: 'no', label: 'بدون نقاط' }] },
-          ]}
-        />
         <Table<ItemType>
           {...kb.tableProps}
+          className="sl-table"
+          size="small"
           rowKey="id"
           loading={loading}
           dataSource={filter.filtered}
-          pagination={{ defaultPageSize: PAGE_SIZE, showTotal: (t) => `إجمالي ${t}` }}
+          pagination={{
+            defaultPageSize: PAGE_SIZE,
+            showTotal: (t) => (
+              <span className="sl-foot">
+                <span>إجمالي الأصناف: <b>{visible.length.toLocaleString(loc)}</b></span>
+                {t !== visible.length && <span>المعروض: <b>{t.toLocaleString(loc)}</b></span>}
+              </span>
+            ),
+          }}
           columns={tableCols.columns}
         />
-      </Card>
+      </ListPage>
 
       <TabModal
         title={editing ? 'تعديل صنف المعاينة' : 'إضافة صنف معاينة'}
@@ -260,7 +294,7 @@ const InspectionItems: React.FC = () => {
           </Form.Item>
         </Form>
       </TabModal>
-    </div>
+    </>
   );
 };
 

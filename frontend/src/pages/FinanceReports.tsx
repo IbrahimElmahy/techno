@@ -1,25 +1,26 @@
-import React, { useCallback, useEffect, useState, useMemo } from 'react';
+import React, { useCallback, useEffect, useRef, useState, useMemo } from 'react';
 import { PAGE_SIZE } from '../utils/pagination';
-import {
-  Card, Tabs, DatePicker, Select, Space, Button, Col, Tag, Descriptions, Alert,
-} from 'antd';
+import { Select, Button, Tag, Alert, Input } from 'antd';
 // فلتر على كل عمود — شوف `FilterTable`.
 import { FilterTable as Table } from '../components/FilterTable';
-import { Statistic } from '../components/Statistic';
-import { ReloadOutlined, PrinterOutlined, LinkOutlined } from '@ant-design/icons';
+import {
+  AccountBookOutlined, ClearOutlined, LinkOutlined, PrinterOutlined, ReloadOutlined, SearchOutlined,
+} from '@ant-design/icons';
 import { useTableColumns } from '../components/ColumnSettings';
 import dayjs, { Dayjs } from 'dayjs';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../api/client';
 import { useQueryTab } from '../components/useQueryTab';
 import { printDocument } from '../print/brand';
-import ListToolbar, { useListFilter } from '../components/ListToolbar';
+import { useListFilter } from '../components/ListToolbar';
+import ListPage from '../components/ListPage';
 import DateRangeFilter from '../components/DateRangeFilter';
-import { useTableKeyboard } from '../components/keyboard';
+import { useScreenShortcuts, useTableKeyboard } from '../components/keyboard';
 import { textColumn, numberColumn, choiceColumn } from '../components/gridColumns';
 import PartnerLedgerTab from './financeReports/PartnerLedgerTab';
 import CashFlowTab from './financeReports/CashFlowTab';
-import StatsRow from '../components/StatsRow';
+import { useCanSeeStats } from '../components/StatsRow';
+import { numeralsLocale } from '../utils/money';
 import ReportOptionsBar, {
   DEFAULT_REPORT_OPTIONS, DeltaCell, ReportOptions as RptOptions, reportParams,
 } from '../components/ReportOptionsBar';
@@ -27,6 +28,9 @@ import {
   AgingRow, BalanceSheet, CommissionRow, IncomeStatement, ReportLine, VatReturn,
   BUCKETS, money,
 } from './financeReports/types';
+
+/** سطر الإجماليات تحت الجداول اللي من غير ترقيم. */
+const FOOT_LINE: React.CSSProperties = { padding: '10px 4px', borderTop: '1px solid #f1f5f9' };
 
 const FinanceReports: React.FC = () => {
   const navigate = useNavigate();
@@ -213,301 +217,317 @@ const FinanceReports: React.FC = () => {
     export: { name: 'أعمار الديون', rows: agingFilter.filtered },
   });
 
-  return (
-    <div>
-      <Space wrap style={{ marginBottom: 16 }}>
-        <div style={{ width: 280 }}>
-          <DateRangeFilter value={range as any} onChange={(v) => setRange(v as any)} />
-        </div>
-        <Button icon={<ReloadOutlined />} onClick={loadAll} loading={loading}>
-          تحديث
-        </Button>
-        {/* الخيارات على الشريط العلوي مش جوّه كل تبويب: هي على التقرير المعروض
-            أياً كان، وده اللي بيخلّي اللي اتعلّمها في واحد يلاقيها في التاني. */}
-        <ReportOptionsBar value={opts} onChange={setOpts} />
-      </Space>
+  const canSeeStats = useCanSeeStats();
 
-      <Tabs
-        activeKey={tab} onChange={setTab}
-        items={[
-          {
-            key: 'income',
-            label: 'قائمة الدخل',
-            children: (
-              <Card
-                title="قائمة الدخل"
-                extra={
-                  income && (
-                    <Button
-                      icon={<PrinterOutlined />}
-                      onClick={() =>
-                        printBlock(
-                          'قائمة الدخل',
-                          `<h3>الإيرادات</h3>${linesTable(income.income)}
-                           <h3>المصروفات</h3>${linesTable(income.expenses)}
-                           <table><tfoot>
-                            <tr><td>إجمالي الإيرادات</td><td class="num">${money(income.total_income)}</td></tr>
-                            <tr><td>إجمالي المصروفات</td><td class="num">${money(income.total_expenses)}</td></tr>
-                            <tr><td>صافي الربح</td><td class="num">${money(income.net_profit)}</td></tr>
-                           </tfoot></table>`
-                        )
-                      }
-                    >
-                      طباعة
-                    </Button>
-                  )
-                }
-              >
-                {income && (
-                  <>
-                    <StatsRow gutter={16} style={{ marginBottom: 16 }}>
-                      <Col span={8}>
-                        <Card size="small">
-                          <Statistic title="الإيرادات" value={Number(income.total_income)} precision={2} valueStyle={{ color: '#2e9e6b' }} />
-                        </Card>
-                      </Col>
-                      <Col span={8}>
-                        <Card size="small">
-                          <Statistic title="المصروفات" value={Number(income.total_expenses)} precision={2} valueStyle={{ color: '#d64545' }} />
-                        </Card>
-                      </Col>
-                      <Col span={8}>
-                        <Card size="small">
-                          <Statistic
-                            title="صافي الربح"
-                            value={Number(income.net_profit)}
-                            precision={2}
-                            valueStyle={{ color: Number(income.net_profit) >= 0 ? '#0e4c6d' : '#d64545' }}
-                          />
-                        </Card>
-                      </Col>
-                    </StatsRow>
-                    <Table {...acctKb.tableProps} rowKey="account_id" size="small" pagination={false} title={() => 'الإيرادات'} dataSource={income.income} columns={[nameCol, amountCol, ...compareCols(income.comparison?.income, true)]} />
-                    <Table
-                      {...acctKb.tableProps}
-                      rowKey="account_id"
-                      size="small"
-                      pagination={false}
-                      style={{ marginTop: 16 }}
-                      title={() => 'المصروفات'}
-                      dataSource={income.expenses}
-                      columns={[nameCol, amountCol, ...compareCols(income.comparison?.expenses, false)]}
-                    />
-                  </>
-                )}
-              </Card>
+  // F3 للبحث — كانت جاية من `ListToolbar`.
+  const searchRef = useRef<any>(null);
+  useScreenShortcuts({ onSearch: () => { searchRef.current?.focus?.(); } },
+    tab === 'aging' || tab === 'commissions');
+
+  // دفتر الشريك والتدفق النقدي بيجيبوا داتاهم بنفسهم — اللي اتفتح منهم مرة بيفضل متركّب
+  // (زي `Tabs` قبل كده)، فاختياراته مابتضيعش لما ترجعله.
+  const [visited, setVisited] = useState<Set<string>>(() => new Set([tab]));
+  useEffect(() => {
+    setVisited((v) => (v.has(tab) ? v : new Set(v).add(tab)));
+  }, [tab]);
+  // فلاتر وأزرار التابين دول بتترسم في سطر الفلاتر والترويسة — بـportal، والحالة جوّه التاب.
+  const [filtersSlot, setFiltersSlot] = useState<HTMLElement | null>(null);
+  const [actionsSlot, setActionsSlot] = useState<HTMLElement | null>(null);
+  const slotsFor = (key: string) => (tab === key
+    ? { filters: filtersSlot, actions: actionsSlot } : undefined);
+  const ownLoader = tab === 'partner' || tab === 'cashflow';
+
+  const TABS: { key: string; label: string; title: string; subtitle: string }[] = [
+    { key: 'income', label: 'قائمة الدخل', title: 'قائمة الدخل',
+      subtitle: 'الإيرادات والمصروفات وصافي الربح في الفترة' },
+    { key: 'sheet', label: 'الميزانية', title: 'المركز المالي (الميزانية)',
+      subtitle: 'الأصول والالتزامات وحقوق الملكية في آخر يوم من الفترة' },
+    { key: 'aging', label: 'أعمار الديون', title: 'أعمار الديون',
+      subtitle: 'المديونيات المفتوحة موزّعة على شرايح الأيام' },
+    { key: 'partner', label: 'دفتر الشريك', title: 'دفتر الشريك',
+      subtitle: 'حركة كل طرف في الفترة — أول المدة والمدين والدائن وآخر المدة' },
+    { key: 'cashflow', label: 'التدفق النقدي', title: 'التدفق النقدي',
+      subtitle: 'النقدية الداخلة والخارجة في الفترة حسب الحساب المقابل' },
+    { key: 'vat', label: 'الإقرار الضريبي', title: 'الإقرار الضريبي',
+      subtitle: 'ضريبة القيمة المضافة — المبيعات والمشتريات والمستحق للمصلحة' },
+    { key: 'commissions', label: 'عمولات المناديب', title: 'عمولات المناديب',
+      subtitle: 'عمولة كل مندوب على التحصيل أو المبيعات في الفترة' },
+  ];
+  const cur = TABS.find((t) => t.key === tab);
+
+  const shownOf = (shown: number, total: number) => (
+    <span>
+      المعروض: <b>{shown.toLocaleString(numeralsLocale())}</b>
+      {' '}من {total.toLocaleString(numeralsLocale())}
+    </span>
+  );
+
+  return (
+    <ListPage
+      icon={<AccountBookOutlined />}
+      title={cur?.title ?? 'التقارير المالية'}
+      subtitle={cur?.subtitle}
+      tabs={TABS.map((t) => ({ key: t.key, label: t.label }))}
+      activeTab={tab}
+      onTabChange={setTab}
+      actions={(<>
+        {tab === 'income' && income && (
+          <Button
+            icon={<PrinterOutlined />}
+            onClick={() =>
+              printBlock(
+                'قائمة الدخل',
+                `<h3>الإيرادات</h3>${linesTable(income.income)}
+                 <h3>المصروفات</h3>${linesTable(income.expenses)}
+                 <table><tfoot>
+                  <tr><td>إجمالي الإيرادات</td><td class="num">${money(income.total_income)}</td></tr>
+                  <tr><td>إجمالي المصروفات</td><td class="num">${money(income.total_expenses)}</td></tr>
+                  <tr><td>صافي الربح</td><td class="num">${money(income.net_profit)}</td></tr>
+                 </tfoot></table>`
+              )
+            }
+          >
+            طباعة
+          </Button>
+        )}
+        {tab === 'aging' && agingCols.control}
+        <span ref={setActionsSlot} className="sl-slot" />
+        {/* دفتر الشريك والتدفق النقدي ليهم «تحديث» بتاعهم — جاي في الـslot فوق. */}
+        {!ownLoader && (
+          <Button icon={<ReloadOutlined />} onClick={loadAll} loading={loading}>
+            تحديث
+          </Button>
+        )}
+      </>)}
+      filters={(<>
+        <DateRangeFilter className="sl-f-dates" value={range as any} onChange={(v) => setRange(v as any)} />
+        {/* الخيارات في سطر الفلاتر مش جوّه كل تبويب: هي على التقرير المعروض أياً كان، وده
+            اللي بيخلّي اللي اتعلّمها في واحد يلاقيها في التاني. */}
+        <div style={{ flex: '0 0 auto' }}>
+          <ReportOptionsBar value={opts} onChange={setOpts} />
+        </div>
+        {tab === 'aging' && (<>
+          <Select
+            value={agingParty}
+            style={{ flex: '0 0 140px' }}
+            onChange={(v) => setAgingParty(v)}
+            options={[
+              { value: 'customers', label: 'العملاء' },
+              { value: 'suppliers', label: 'الموردين' },
+            ]}
+          />
+          <Input
+            ref={searchRef}
+            className="sl-f-search"
+            allowClear
+            prefix={<SearchOutlined />}
+            placeholder={agingParty === 'customers' ? 'بحث باسم العميل' : 'بحث باسم المورد'}
+            value={agingFilter.query}
+            onChange={(e) => agingFilter.setQuery(e.target.value)}
+          />
+          <Button className="sl-f-clear" icon={<ClearOutlined />} onClick={agingFilter.reset}>مسح</Button>
+        </>)}
+        {tab === 'commissions' && (<>
+          <Input
+            ref={searchRef}
+            className="sl-f-search"
+            allowClear
+            prefix={<SearchOutlined />}
+            placeholder="بحث باسم المندوب"
+            value={commissionFilter.query}
+            onChange={(e) => commissionFilter.setQuery(e.target.value)}
+          />
+          <Button className="sl-f-clear" icon={<ClearOutlined />} onClick={commissionFilter.reset}>مسح</Button>
+        </>)}
+        <span ref={setFiltersSlot} style={{ display: 'contents' }} />
+      </>)}
+    >
+      {tab === 'income' && income && (
+        <>
+          <Table {...acctKb.tableProps} className="sl-table" rowKey="account_id" size="small" pagination={false} title={() => 'الإيرادات'} dataSource={income.income} columns={[nameCol, amountCol, ...compareCols(income.comparison?.income, true)]} />
+          <Table
+            {...acctKb.tableProps}
+            className="sl-table"
+            rowKey="account_id"
+            size="small"
+            pagination={false}
+            style={{ marginTop: 12 }}
+            title={() => 'المصروفات'}
+            dataSource={income.expenses}
+            columns={[nameCol, amountCol, ...compareCols(income.comparison?.expenses, false)]}
+          />
+          {/* كروت الإجماليات بقت سطر — ولسه للي عنده `stats.view` بس. */}
+          {canSeeStats && (
+            <div style={FOOT_LINE}>
+              <span className="sl-foot">
+                <span>الإيرادات: <b className="is-pos">{money(income.total_income)}</b></span>
+                <span>المصروفات: <b className="is-neg">{money(income.total_expenses)}</b></span>
+                <span>
+                  صافي الربح:{' '}
+                  <b className={Number(income.net_profit) >= 0 ? undefined : 'is-neg'}>
+                    {money(income.net_profit)}
+                  </b>
+                </span>
+              </span>
+            </div>
+          )}
+        </>
+      )}
+
+      {tab === 'sheet' && sheet && (
+        <>
+          {!sheet.balanced && (
+            <Alert
+              type="warning"
+              showIcon
+              style={{ margin: '6px 0 8px' }}
+              message="الميزانية غير متوازنة — راجع القيود اليدوية."
+            />
+          )}
+          <Table {...acctKb.tableProps} className="sl-table" rowKey="account_id" size="small" pagination={false} title={() => 'الأصول'} dataSource={sheet.assets} columns={[nameCol, amountCol, ...compareCols(sheet.comparison?.assets, true)]} />
+          <Table {...acctKb.tableProps} className="sl-table" rowKey="account_id" size="small" pagination={false} style={{ marginTop: 12 }} title={() => 'الالتزامات'} dataSource={sheet.liabilities} columns={[nameCol, amountCol, ...compareCols(sheet.comparison?.liabilities, false)]} />
+          <Table {...acctKb.tableProps} className="sl-table" rowKey="account_id" size="small" pagination={false} style={{ marginTop: 12 }} title={() => 'حقوق الملكية'} dataSource={sheet.equity} columns={[nameCol, amountCol, ...compareCols(sheet.comparison?.equity, true)]} />
+          <div style={FOOT_LINE}>
+            <span className="sl-foot">
+              <span>الأصول: <b>{money(sheet.total_assets)}</b></span>
+              <span>الالتزامات: <b>{money(sheet.total_liabilities)}</b></span>
+              <span>حقوق الملكية: <b>{money(sheet.total_equity)}</b></span>
+              <span>أرباح الفترة: <b>{money(sheet.net_profit)}</b></span>
+            </span>
+          </div>
+        </>
+      )}
+
+      {tab === 'aging' && (
+        <Table<AgingRow>
+          {...agingKb.tableProps}
+          className="sl-table"
+          rowKey="party_id"
+          size="small"
+          loading={loading}
+          dataSource={agingFilter.filtered}
+          pagination={{
+            defaultPageSize: PAGE_SIZE,
+            locale: { items_per_page: '' },
+            showTotal: () => (
+              <span className="sl-foot">{shownOf(agingFilter.filtered.length, aging.length)}</span>
             ),
-          },
-          {
-            key: 'sheet',
-            label: 'الميزانية',
-            children: (
-              <Card title="المركز المالي (الميزانية)">
-                {sheet && (
-                  <>
-                    {!sheet.balanced && (
-                      <Alert
-                        type="warning"
-                        showIcon
-                        style={{ marginBottom: 12 }}
-                        message="الميزانية غير متوازنة — راجع القيود اليدوية."
-                      />
-                    )}
-                    <Descriptions bordered size="small" column={4} style={{ marginBottom: 12 }}>
-                      <Descriptions.Item label="الأصول">{money(sheet.total_assets)}</Descriptions.Item>
-                      <Descriptions.Item label="الالتزامات">{money(sheet.total_liabilities)}</Descriptions.Item>
-                      <Descriptions.Item label="حقوق الملكية">{money(sheet.total_equity)}</Descriptions.Item>
-                      <Descriptions.Item label="أرباح الفترة">{money(sheet.net_profit)}</Descriptions.Item>
-                    </Descriptions>
-                    <Table {...acctKb.tableProps} rowKey="account_id" size="small" pagination={false} title={() => 'الأصول'} dataSource={sheet.assets} columns={[nameCol, amountCol, ...compareCols(sheet.comparison?.assets, true)]} />
-                    <Table {...acctKb.tableProps} rowKey="account_id" size="small" pagination={false} style={{ marginTop: 16 }} title={() => 'الالتزامات'} dataSource={sheet.liabilities} columns={[nameCol, amountCol, ...compareCols(sheet.comparison?.liabilities, false)]} />
-                    <Table {...acctKb.tableProps} rowKey="account_id" size="small" pagination={false} style={{ marginTop: 16 }} title={() => 'حقوق الملكية'} dataSource={sheet.equity} columns={[nameCol, amountCol, ...compareCols(sheet.comparison?.equity, true)]} />
-                  </>
-                )}
-              </Card>
-            ),
-          },
-          {
-            key: 'aging',
-            label: 'أعمار الديون',
-            children: (
-              <Card
-                title="أعمار الديون"
-                extra={
-                  <Space>
-                  {agingCols.control}
-                  <Select
-                    value={agingParty}
-                    style={{ width: 140 }}
-                    onChange={(v) => setAgingParty(v)}
-                    options={[
-                      { value: 'customers', label: 'العملاء' },
-                      { value: 'suppliers', label: 'الموردين' },
-                    ]}
-                  />
-                  </Space>
-                }
-              >
-                <ListToolbar
-                  searchPlaceholder={agingParty === 'customers' ? 'بحث باسم العميل' : 'بحث باسم المورد'}
-                  query={agingFilter.query} onQueryChange={agingFilter.setQuery}
-                  onReset={agingFilter.reset}
-                  total={aging.length} shown={agingFilter.filtered.length}
-                  searchSpan={10}
-                />
-                <Table<AgingRow>
-                  {...agingKb.tableProps}
-                  rowKey="party_id"
-                  size="small"
-                  loading={loading}
-                  dataSource={agingFilter.filtered}
-                  pagination={{ defaultPageSize: PAGE_SIZE, showTotal: (t) => `إجمالي ${t}` }}
-                  columns={agingCols.columns}
-                  summary={() => {
-                    const sum = agingFilter.filtered.reduce((s, r) => s + Number(r.total), 0);
-                    return (
-                      <Table.Summary.Row>
-                        <Table.Summary.Cell index={0} colSpan={5}>
-                          <b>الإجمالي العام</b>
-                        </Table.Summary.Cell>
-                        <Table.Summary.Cell index={5}>
-                          <b>{money(sum)}</b>
-                        </Table.Summary.Cell>
-                      </Table.Summary.Row>
-                    );
-                  }}
-                />
-              </Card>
-            ),
-          },
-          {
-            key: 'partner',
-            label: 'دفتر الشريك',
-            children: <PartnerLedgerTab params={params} />,
-          },
-          {
-            key: 'cashflow',
-            label: 'التدفق النقدي',
-            children: <CashFlowTab params={params} />,
-          },
-          {
-            key: 'vat',
-            label: 'الإقرار الضريبي',
-            children: (
-              <Card title="ضريبة القيمة المضافة">
-                {vat && Number(vat.rate_pct) === 0 && (
-                  <Alert
-                    type="info"
-                    showIcon
-                    style={{ marginBottom: 12 }}
-                    message="الضريبة غير مفعّلة"
-                    description="النسبة الحالية صفر — فعّلها من إعدادات المبيعات لتُحتسب على الفواتير الجديدة."
-                  />
-                )}
-                {vat && (
-                  <StatsRow gutter={16}>
-                    <Col span={6}>
-                      <Card size="small">
-                        <Statistic title="النسبة" value={Number(vat.rate_pct)} suffix="%" />
-                      </Card>
-                    </Col>
-                    <Col span={6}>
-                      <Card size="small">
-                        <Statistic title="ضريبة المبيعات" value={Number(vat.output_tax)} precision={2} />
-                      </Card>
-                    </Col>
-                    <Col span={6}>
-                      <Card size="small">
-                        <Statistic title="ضريبة المشتريات" value={Number(vat.input_tax)} precision={2} />
-                      </Card>
-                    </Col>
-                    <Col span={6}>
-                      <Card size="small">
-                        <Statistic
-                          title="المستحق للمصلحة"
-                          value={Number(vat.net_payable)}
-                          precision={2}
-                          valueStyle={{ color: '#0e4c6d' }}
-                        />
-                      </Card>
-                    </Col>
-                  </StatsRow>
-                )}
-              </Card>
-            ),
-          },
-          {
-            key: 'commissions',
-            label: 'عمولات المناديب',
-            children: (
-              <Card title="عمولات المناديب">
-                <ListToolbar
-                  searchPlaceholder="بحث باسم المندوب"
-                  query={commissionFilter.query} onQueryChange={commissionFilter.setQuery}
-                  onReset={commissionFilter.reset}
-                  total={commissions.length} shown={commissionFilter.filtered.length}
-                  searchSpan={10}
-                />
-                <Table<CommissionRow>
-                  rowKey="rep_user_id"
-                  size="small"
-                  loading={loading}
-                  dataSource={commissionFilter.filtered}
-                  pagination={false}
-                  columns={[
-                    { title: 'المندوب', dataIndex: 'rep_name',
-                      ...textColumn(commissions, (r: CommissionRow) => r.rep_name) },
-                    {
-                      title: 'الأساس',
-                      dataIndex: 'basis',
-                      width: 130,
-                      ...choiceColumn<CommissionRow>(
-                        [{ text: 'على التحصيل', value: 'collection' },
-                         { text: 'على المبيعات', value: 'sales' }],
-                        (r, v) => r.basis === v),
-                      render: (v: string) => (
-                        <Tag color={v === 'collection' ? 'green' : 'blue'}>
-                          {v === 'collection' ? 'على التحصيل' : 'على المبيعات'}
-                        </Tag>
-                      ),
-                    },
-                    { title: 'النسبة', dataIndex: 'rate_pct', width: 90,
-                      ...numberColumn<CommissionRow>((r) => r.rate_pct),
-                      render: (v: string) => `${Number(v)}%` },
-                    {
-                      title: 'الأساس المحتسب',
-                      dataIndex: 'base_amount',
-                      width: 160,
-                      align: 'left' as const,
-                      ...numberColumn<CommissionRow>((r) => r.base_amount),
-                      render: (v: string) => money(v),
-                    },
-                    {
-                      title: 'العمولة',
-                      dataIndex: 'commission',
-                      width: 150,
-                      align: 'left' as const,
-                      ...numberColumn<CommissionRow>((r) => r.commission),
-                      render: (v: string) => <b>{money(v)}</b>,
-                    },
-                  ]}
-                  summary={() => (
-                    <Table.Summary.Row>
-                      <Table.Summary.Cell index={0} colSpan={4}>
-                        <b>الإجمالي</b>
-                      </Table.Summary.Cell>
-                      <Table.Summary.Cell index={4}>
-                        <b>{money(commissionFilter.filtered.reduce((s, r) => s + Number(r.commission), 0))}</b>
-                      </Table.Summary.Cell>
-                    </Table.Summary.Row>
-                  )}
-                />
-              </Card>
-            ),
-          },
-        ]}
-      />
-    </div>
+          }}
+          columns={agingCols.columns}
+          summary={() => {
+            const sum = agingFilter.filtered.reduce((s, r) => s + Number(r.total), 0);
+            return (
+              <Table.Summary.Row>
+                <Table.Summary.Cell index={0} colSpan={5}>
+                  <b>الإجمالي العام</b>
+                </Table.Summary.Cell>
+                <Table.Summary.Cell index={5}>
+                  <b>{money(sum)}</b>
+                </Table.Summary.Cell>
+              </Table.Summary.Row>
+            );
+          }}
+        />
+      )}
+
+      {visited.has('partner') && (
+        <div style={{ display: tab === 'partner' ? undefined : 'none' }}>
+          <PartnerLedgerTab params={params} slots={slotsFor('partner')} />
+        </div>
+      )}
+      {visited.has('cashflow') && (
+        <div style={{ display: tab === 'cashflow' ? undefined : 'none' }}>
+          <CashFlowTab params={params} slots={slotsFor('cashflow')} />
+        </div>
+      )}
+
+      {tab === 'vat' && (
+        <>
+          {vat && Number(vat.rate_pct) === 0 && (
+            <Alert
+              type="info"
+              showIcon
+              style={{ margin: '6px 0 8px' }}
+              message="الضريبة غير مفعّلة"
+              description="النسبة الحالية صفر — فعّلها من إعدادات المبيعات لتُحتسب على الفواتير الجديدة."
+            />
+          )}
+          {vat && canSeeStats && (
+            <div style={{ padding: '12px 4px' }}>
+              <span className="sl-foot">
+                <span>النسبة: <b>{Number(vat.rate_pct)}%</b></span>
+                <span>ضريبة المبيعات: <b>{money(vat.output_tax)}</b></span>
+                <span>ضريبة المشتريات: <b>{money(vat.input_tax)}</b></span>
+                <span>المستحق للمصلحة: <b>{money(vat.net_payable)}</b></span>
+              </span>
+            </div>
+          )}
+        </>
+      )}
+
+      {tab === 'commissions' && (
+        <>
+          <Table<CommissionRow>
+            className="sl-table"
+            rowKey="rep_user_id"
+            size="small"
+            loading={loading}
+            dataSource={commissionFilter.filtered}
+            pagination={false}
+            columns={[
+              { title: 'المندوب', dataIndex: 'rep_name',
+                ...textColumn(commissions, (r: CommissionRow) => r.rep_name) },
+              {
+                title: 'الأساس',
+                dataIndex: 'basis',
+                width: 130,
+                ...choiceColumn<CommissionRow>(
+                  [{ text: 'على التحصيل', value: 'collection' },
+                   { text: 'على المبيعات', value: 'sales' }],
+                  (r, v) => r.basis === v),
+                render: (v: string) => (
+                  <Tag color={v === 'collection' ? 'green' : 'blue'}>
+                    {v === 'collection' ? 'على التحصيل' : 'على المبيعات'}
+                  </Tag>
+                ),
+              },
+              { title: 'النسبة', dataIndex: 'rate_pct', width: 90,
+                ...numberColumn<CommissionRow>((r) => r.rate_pct),
+                render: (v: string) => `${Number(v)}%` },
+              {
+                title: 'الأساس المحتسب',
+                dataIndex: 'base_amount',
+                width: 160,
+                align: 'left' as const,
+                ...numberColumn<CommissionRow>((r) => r.base_amount),
+                render: (v: string) => money(v),
+              },
+              {
+                title: 'العمولة',
+                dataIndex: 'commission',
+                width: 150,
+                align: 'left' as const,
+                ...numberColumn<CommissionRow>((r) => r.commission),
+                render: (v: string) => <b>{money(v)}</b>,
+              },
+            ]}
+            summary={() => (
+              <Table.Summary.Row>
+                <Table.Summary.Cell index={0} colSpan={4}>
+                  <b>الإجمالي</b>
+                </Table.Summary.Cell>
+                <Table.Summary.Cell index={4}>
+                  <b>{money(commissionFilter.filtered.reduce((s, r) => s + Number(r.commission), 0))}</b>
+                </Table.Summary.Cell>
+              </Table.Summary.Row>
+            )}
+          />
+          <div style={FOOT_LINE}>
+            <span className="sl-foot">{shownOf(commissionFilter.filtered.length, commissions.length)}</span>
+          </div>
+        </>
+      )}
+    </ListPage>
   );
 };
 

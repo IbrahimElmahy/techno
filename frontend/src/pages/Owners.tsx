@@ -3,7 +3,6 @@ import { searchFilter, searchRank, sortByName } from '../utils/arabicSort';
 import { PAGE_SIZE } from '../utils/pagination';
 import {
   Table,
-  Card,
   Input,
   Select,
   Tag,
@@ -23,6 +22,8 @@ import {
 } from '@ant-design/icons';
 import { api } from '../api/client';
 import { useTableColumns } from '../components/ColumnSettings';
+import ListPage from '../components/ListPage';
+import { numeralsLocale } from '../utils/money';
 
 const { Text, Title } = Typography;
 
@@ -252,28 +253,21 @@ export default function Owners() {
   });
 
   return (
-    <div style={{ padding: 16 }}>
-      <Card
-        title={
-          <Space>
-            <HomeOutlined style={{ color: '#1677ff' }} />
-            <span>الملّاك (أصحاب البيوت — خدمات ما بعد البيع)</span>
-            <Tag color="geekblue">{owners.length} مالك</Tag>
-          </Space>
-        }
-        extra={
-          <Space>
-            {tableCols.control}
-            <Button icon={<ReloadOutlined />} onClick={fetchOwners} loading={loading}>
-              تحديث
-            </Button>
-          </Space>
-        }
-      >
-        <div style={{ marginBottom: 16, display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+    <>
+      <ListPage
+        icon={<HomeOutlined />}
+        title="الملّاك" muted="(أصحاب البيوت)"
+        subtitle="أصحاب البيوت في خدمات ما بعد البيع — كارت كل مالك وسجل المعاينات عنده"
+        actions={(<>
+          {tableCols.control}
+          <Button icon={<ReloadOutlined />} onClick={fetchOwners} loading={loading}>
+            تحديث
+          </Button>
+        </>)}
+        filters={(<>
           <Input.Search
+            className="sl-f-search"
             placeholder="بحث بالاسم أو التليفون أو الكود أو العنوان..."
-            style={{ width: 300 }}
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             onSearch={fetchOwners}
@@ -281,21 +275,18 @@ export default function Owners() {
           />
           <Select showSearch
             placeholder="المنطقة"
-            style={{ width: 160 }}
             allowClear
             value={territoryId}
             onChange={setTerritoryId}
             options={sortByName(territories, (t) => t.name).map((t) => ({ label: t.name, value: t.id }))} filterOption={searchFilter} filterSort={searchRank} />
           <Select showSearch
             placeholder="مندوب الخدمة"
-            style={{ width: 160 }}
             allowClear
             value={serviceRepId}
             onChange={setServiceRepId}
             options={sortByName(users, (u) => u.full_name).map((u) => ({ label: u.full_name || `#${u.id}`, value: u.id }))} filterOption={searchFilter} filterSort={searchRank} />
           <Select
             placeholder="المعاينات"
-            style={{ width: 150 }}
             allowClear
             value={hasInspections}
             onChange={setHasInspections}
@@ -304,17 +295,25 @@ export default function Owners() {
               { label: 'بدون معاينات', value: false },
             ]}
           />
-        </div>
-
+        </>)}
+      >
         <Table<OwnerListItem>
+          className="sl-table"
           rowKey="id"
           columns={tableCols.columns}
           dataSource={owners}
           loading={loading}
           size="small"
-          pagination={{ pageSize: PAGE_SIZE, showSizeChanger: true, showTotal: (t) => `الإجمالي: ${t} مالك` }}
+          pagination={{
+            pageSize: PAGE_SIZE, showSizeChanger: true, locale: { items_per_page: '' },
+            showTotal: (t) => (
+              <span className="sl-foot">
+                <span>إجمالي الملّاك: <b>{t.toLocaleString(numeralsLocale())}</b></span>
+              </span>
+            ),
+          }}
         />
-      </Card>
+      </ListPage>
 
       <Modal
         title={
@@ -400,6 +399,6 @@ export default function Owners() {
           </div>
         )}
       </Modal>
-    </div>
+    </>
   );
 }

@@ -7,8 +7,9 @@ import { InputNumber } from '../components/NumberInput';
 import { Popconfirm } from '../components/noConfirm';
 import {
   DeleteOutlined, EditOutlined, PlusOutlined, ReloadOutlined, SettingOutlined,
-  ThunderboltOutlined, SearchOutlined, SwapOutlined,
+  KeyOutlined, SearchOutlined, SwapOutlined, ClearOutlined,
 } from '@ant-design/icons';
+import ListPage from '../components/ListPage';
 import { api } from '../api/client';
 import { TabModal } from '../components/TabModal';
 import VoucherKeyRunner, {
@@ -283,37 +284,38 @@ export default function VoucherKeys() {
   }, [accounts]);
 
   return (
-    <Card
-      title={<Space><ThunderboltOutlined /> المفاتيح الخاصة</Space>}
-      extra={(
-        <Space>
-          <Button icon={<ReloadOutlined />} onClick={load} loading={loading}>تحديث</Button>
-          <Button icon={<SettingOutlined />} type={manage ? 'primary' : 'default'}
-            onClick={() => setManage(!manage)}>
-            {manage ? 'خلصت إعداد' : 'إعداد المفاتيح'}
+    <>
+    <ListPage
+      icon={<KeyOutlined />}
+      title="مفاتيح خاصة"
+      muted={manage ? '(وضع الإعداد)' : undefined}
+      subtitle="سندات جاهزة بضغطة — الحسابين محفوظين في المفتاح"
+      actions={(<>
+        {manage && (
+          <Button data-shortcut="F2" type="primary" className="sl-create" icon={<PlusOutlined />}
+            onClick={() => openEditor()}>
+            مفتاح جديد
           </Button>
-          {manage && (
-            <Button data-shortcut="F2" type="primary" icon={<PlusOutlined />}
-              onClick={() => openEditor()}>
-              مفتاح جديد
-            </Button>
-          )}
-        </Space>
-      )}
+        )}
+        <Button icon={<SettingOutlined />} type={manage ? 'primary' : 'default'}
+          onClick={() => setManage(!manage)}>
+          {manage ? 'خلصت إعداد' : 'إعداد المفاتيح'}
+        </Button>
+        <Button icon={<ReloadOutlined />} onClick={load} loading={loading}>تحديث</Button>
+      </>)}
+      filters={(<>
+        <Input className="sl-f-search" allowClear value={query} prefix={<SearchOutlined />}
+          placeholder="بحث بالاسم أو الحساب"
+          onChange={(e) => setQuery(e.target.value)} />
+        <Button className="sl-f-clear" icon={<ClearOutlined />} onClick={() => setQuery('')}>مسح</Button>
+      </>)}
     >
+      <div style={{ padding: '8px 0 12px' }}>
       <Alert
         type="info" showIcon style={{ marginBottom: 12 }}
         message="كل مفتاح ربط بين حسابين رئيسيين — اضغط عليه واكتب المبلغ فقط."
         description="اتجاه الربط هو ما يحدد نوع السند: مدين الخزينة ودائن العملاء يعني سند قبض، والعكس نوع آخر. ويُرحَّل السند كأي سند يُكتب يدوياً."
       />
-
-      <Row style={{ marginBottom: 12 }}>
-        <Col xs={24} md={8}>
-          <Input allowClear value={query} prefix={<SearchOutlined />}
-            placeholder="بحث بالاسم أو الحساب"
-            onChange={(e) => setQuery(e.target.value)} />
-        </Col>
-      </Row>
 
       {!loading && !shown.length && (
         <Empty description={keys.length
@@ -360,6 +362,8 @@ export default function VoucherKeys() {
           </Col>
         ))}
       </Row>
+      </div>
+    </ListPage>
 
       <VoucherKeyRunner keyDef={running} world={world}
         onClose={() => setRunning(null)} onPosted={load} />
@@ -438,6 +442,6 @@ export default function VoucherKeys() {
           </Space>
         </Form>
       </TabModal>
-    </Card>
+    </>
   );
 }

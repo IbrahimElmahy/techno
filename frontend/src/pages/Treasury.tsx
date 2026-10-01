@@ -1,18 +1,21 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { searchFilter, searchRank } from '../utils/arabicSort';
 import { PAGE_SIZE, PAGE_SIZE_OPTIONS } from '../utils/pagination';
 import {
-  Button, Card, Col, Divider, Form, Input, Row, Select, Space, Tag, message,
+  Button, Col, Divider, Form, Input, Row, Select, Space, Tag, message,
 } from 'antd';
 // فلتر على كل عمود — شوف `FilterTable`.
 import { FilterTable as Table } from '../components/FilterTable';
 import { InputNumber } from '../components/NumberInput';
-import { PlusOutlined, RollbackOutlined, WalletOutlined } from '@ant-design/icons';
+import {
+  ClearOutlined, PlusOutlined, RollbackOutlined, SearchOutlined, SwapOutlined,
+} from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../api/client';
 import { showReversalConfirm } from '../components/ConfirmationDialog';
-import ListToolbar, { useListFilter } from '../components/ListToolbar';
-import { useTableKeyboard } from '../components/keyboard';
+import { useListFilter } from '../components/ListToolbar';
+import { useScreenShortcuts, useTableKeyboard } from '../components/keyboard';
+import ListPage from '../components/ListPage';
 import { textColumn, numberColumn, choiceColumn } from '../components/gridColumns';
 import { entryTypeLabel } from '../components/labels';
 import { TabModal } from '../components/TabModal';
@@ -324,72 +327,76 @@ export default function Treasury() {
       if (a) navigate(`/account-statement?account=${a}`); },
   });
 
-  return (
-    <div>
-      <Row gutter={24} style={{ marginBottom: 24 }}>
-        <Col span={12}>
-          <Card style={{ background: '#f6ffed', border: '1px solid #b7eb8f' }}>
-            <div style={{ display: 'flex', alignItems: 'center' }}>
-              <div
-                style={{
-                  width: 48,
-                  height: 48,
-                  borderRadius: '50%',
-                  backgroundColor: '#6AB42D',
-                  display: 'flex',
-                  justifyContent: 'center',
-                  alignItems: 'center',
-                  color: '#fff',
-                  fontSize: 20,
-                  marginLeft: 16,
-                }}
-              >
-                <WalletOutlined />
-              </div>
-              <div>
-                <span style={{ color: '#888', fontSize: 13 }}>رصيد الخزينة الموحد (السيولة المتوفرة)</span>
-                <h2 style={{ margin: 0, color: '#6AB42D' }}>{balance}</h2>
-              </div>
-            </div>
-          </Card>
-        </Col>
-      </Row>
+  // F3 — خانة البحث (كانت جوّه `ListToolbar`).
+  const searchRef = useRef<any>(null);
+  useScreenShortcuts({ onSearch: () => searchRef.current?.focus?.() });
 
-      <Card
-        title="الحسابات المالية (دفتر أستاذ القيود المزدوجة)"
-        extra={
-          <Space>
-            {tableCols.control}
-            <Button data-shortcut="F2" type="primary" icon={<PlusOutlined />} onClick={() => setDrawerVisible(true)}>
-              تسوية يدوية (قيد يومية جديد)
-            </Button>
-          </Space>
-        }
-      >
-        <ListToolbar
-          searchPlaceholder="بحث برقم القيد أو النوع أو البيان"
-          query={filter.query} onQueryChange={filter.setQuery}
-          values={filter.values} onValueChange={filter.setValue}
-          onReset={filter.reset}
-          total={entries.length} shown={filter.filtered.length}
-          filters={[
-            { key: 'entry_type', placeholder: 'نوع القيد', options: entryTypeOptions },
-            { key: 'branch_id', placeholder: 'الفرع',
-              options: [{ value: 0, label: 'عام (إداري)' },
-                ...branches.map((b) => ({ value: b.id, label: b.name }))] },
-            { key: 'reversal', placeholder: 'العكس',
-              options: [{ value: 'reversal', label: 'قيود عكسية' }, { value: 'normal', label: 'قيود أصلية' }] },
-          ]}
+  // قوايم الفلاتر بتقبل أكتر من قيمة — زي ما كانت في `ListToolbar`.
+  const multi = (key: string) => ({
+    mode: 'multiple' as const,
+    maxTagCount: 'responsive' as const,
+    allowClear: true,
+    showSearch: true,
+    value: filter.values[key] === undefined || filter.values[key] === null
+      ? undefined : ([] as any[]).concat(filter.values[key]),
+    onChange: (v: any[]) => filter.setValue(key, v?.length ? v : undefined),
+    filterOption: searchFilter,
+    filterSort: searchRank,
+  });
+
+  return (
+    <>
+    <ListPage
+      icon={<SwapOutlined />}
+      title="حركة خزينه" muted="(دفتر أستاذ القيود المزدوجة)"
+      subtitle="القيود المرحّلة على الحسابات المالية، والتسوية اليدوية والعكس"
+      actions={(<>
+        <Button data-shortcut="F2" type="primary" className="sl-create" icon={<PlusOutlined />}
+          onClick={() => setDrawerVisible(true)}>
+          تسوية يدوية (قيد يومية جديد)
+        </Button>
+        {tableCols.control}
+      </>)}
+      filters={(<>
+        <Input
+          className="sl-f-search"
+          allowClear
+          ref={searchRef}
+          value={filter.query}
+          placeholder="بحث برقم القيد أو النوع أو البيان"
+          prefix={<SearchOutlined />}
+          onChange={(e) => filter.setQuery(e.target.value)}
         />
-        <Table
-          {...kb.tableProps}
-          dataSource={filter.filtered}
-          columns={tableCols.columns}
-          rowKey="id"
-          loading={loading}
-          pagination={{ defaultPageSize: PAGE_SIZE, showSizeChanger: true, pageSizeOptions: PAGE_SIZE_OPTIONS }}
-        />
-      </Card>
+        <Select placeholder="نوع القيد" options={entryTypeOptions} {...multi('entry_type')} />
+        <Select placeholder="الفرع" {...multi('branch_id')}
+          options={[{ value: 0, label: 'عام (إداري)' },
+            ...branches.map((b) => ({ value: b.id, label: b.name }))]} />
+        <Select placeholder="العكس" {...multi('reversal')}
+          options={[{ value: 'reversal', label: 'قيود عكسية' }, { value: 'normal', label: 'قيود أصلية' }]} />
+        <Button className="sl-f-clear" icon={<ClearOutlined />} onClick={filter.reset}>مسح</Button>
+      </>)}
+    >
+      <Table
+        {...kb.tableProps}
+        className="sl-table"
+        size="small"
+        dataSource={filter.filtered}
+        columns={tableCols.columns}
+        rowKey="id"
+        loading={loading}
+        pagination={{
+          defaultPageSize: PAGE_SIZE, showSizeChanger: true, pageSizeOptions: PAGE_SIZE_OPTIONS,
+          locale: { items_per_page: '' },
+          // رصيد الخزينة الموحد — كان كارت كبير فوق، دلوقت في سطر الترقيم.
+          showTotal: () => (
+            <span className="sl-foot">
+              <span>رصيد الخزينة الموحد (السيولة المتوفرة): <b className="is-pos">{balance}</b></span>
+              <span>المعروض: <b>{filter.filtered.length}</b> من {entries.length}</span>
+            </span>
+          ),
+        }}
+      />
+    </ListPage>
 
       <TabModal footer={null} centered
         title="تسجيل قيد تسوية يدوية"
@@ -505,6 +512,6 @@ export default function Treasury() {
           </Form.Item>
         </Form>
       </TabModal>
-    </div>
+    </>
   );
 }

@@ -2,12 +2,13 @@ import React, { useEffect, useRef, useState } from 'react';
 import { PAGE_SIZE } from '../utils/pagination';
 import { searchFilter, searchRank } from '../utils/arabicSort';
 import {
-  Button, Card, Col, Form, Input, Row, Select, Space, Table, Tag, Tooltip, message,
+  Button, Col, Form, Input, Row, Select, Space, Table, Tag, Tooltip, message,
 } from 'antd';
 import { Popconfirm } from '../components/noConfirm';
 import {
-  PlusOutlined, EditOutlined, DeleteOutlined, SearchOutlined, ReloadOutlined,
+  PlusOutlined, EditOutlined, DeleteOutlined, SearchOutlined, ReloadOutlined, ApartmentOutlined,
 } from '@ant-design/icons';
+import ListPage from '../components/ListPage';
 import { api } from '../api/client';
 import { useTableKeyboard } from '../components/keyboard';
 import { useScreenShortcuts } from '../components/keyboard';
@@ -246,41 +247,41 @@ export default function MainAccounts() {
   });
 
   return (
-    <div>
-      <Card
+    <>
+      <ListPage
+        icon={<ApartmentOutlined />}
         title="الحسابات الرئيسيه"
-        extra={
-          <Space>
-            {tableCols.control}
-            <Button icon={<ReloadOutlined />} onClick={load}>اعادة تحميل</Button>
-            {canWrite && (
-              <Button data-shortcut="F2" type="primary" icon={<PlusOutlined />} onClick={() => setCreateOpen(true)}>
-                حساب رئيسي جديد
-              </Button>
-            )}
-          </Space>
-        }
+        subtitle="الحسابات المجمِّعة في الدليل — اللي بيتفرّع منها الحسابات الفرعية"
+        actions={(<>
+          {canWrite && (
+            <Button data-shortcut="F2" type="primary" className="sl-create" icon={<PlusOutlined />}
+              onClick={() => setCreateOpen(true)}>
+              حساب رئيسي جديد
+            </Button>
+          )}
+          <Button icon={<ReloadOutlined />} onClick={load}>اعادة تحميل</Button>
+          {tableCols.control}
+        </>)}
+        filters={(
+          <Input className="sl-f-search" allowClear value={search}
+            placeholder="بحث بالاسم أو الكود أو المستوى"
+            ref={searchRef}
+            prefix={<SearchOutlined />} onChange={(e) => setSearch(e.target.value)} />
+        )}
       >
-        <Row style={{ marginBottom: 12 }}>
-          <Col xs={24} md={8}>
-            <Input allowClear value={search} placeholder="بحث بالاسم أو الكود أو المستوى"
-              ref={searchRef}
-              prefix={<SearchOutlined />} onChange={(e) => setSearch(e.target.value)} />
-          </Col>
-        </Row>
-
         <Table
           {...kb.tableProps}
+          className="sl-table"
           dataSource={filtered}
           columns={tableCols.columns}
           rowKey="id"
           loading={loading}
-          size="middle"
+          size="small"
           tableLayout="fixed"
           pagination={{ defaultPageSize: PAGE_SIZE, showSizeChanger: true,
-            showTotal: (t) => `عدد: ${t}` }}
+            showTotal: (t) => <span className="sl-foot"><span>عدد الحسابات: <b>{t}</b></span></span> }}
         />
-      </Card>
+      </ListPage>
 
       <TabModal footer={null} centered title="حساب رئيسي جديد" width={720} destroyOnHidden
         open={createOpen} onCancel={() => setCreateOpen(false)}>
@@ -303,6 +304,6 @@ export default function MainAccounts() {
           </Space>
         </Form>
       </TabModal>
-    </div>
+    </>
   );
 }

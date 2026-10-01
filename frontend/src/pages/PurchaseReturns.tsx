@@ -13,6 +13,7 @@ import {
   ArrowLeftOutlined, ArrowRightOutlined, BankOutlined, CheckOutlined, DeleteOutlined, EditOutlined,
   EyeOutlined, FileAddOutlined, PhoneOutlined, PlusOutlined, PrinterOutlined, ReloadOutlined,
   SaveOutlined, SearchOutlined, UndoOutlined, ExclamationCircleOutlined,
+  RollbackOutlined, ClearOutlined, DownOutlined, UpOutlined,
 } from '@ant-design/icons';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { api } from '../api/client';
@@ -23,7 +24,9 @@ import ColumnSettings, { useHiddenColumns } from '../components/ColumnSettings';
 import ExportExcelButton from '../components/ExportExcelButton';
 import { useEntryGrid, type EntryColumn } from '../components/EntryGrid';
 import { guardQuantity } from '../components/quantityGuard';
-import ListToolbar, { useListFilter } from '../components/ListToolbar';
+import { useListFilter } from '../components/ListToolbar';
+import ListPage from '../components/ListPage';
+import DateRangeFilter from '../components/DateRangeFilter';
 import { matchesStatement, statementMeta, statementText } from '../utils/statements';
 import { useLookup, labelMap } from '../hooks/useLookup';
 import InvoiceDocument, { InvoiceDoc, invoiceFooter, printInvoice }
@@ -36,13 +39,13 @@ import DocumentToolbar, { ToolbarAction } from '../components/DocumentToolbar';
 import SummaryTile from '../components/saleDoc/SummaryTile';
 import DocumentAttachments from '../components/DocumentAttachments';
 import ProductPickerModal from '../components/ProductPickerModal';
-import { useTableKeyboard } from '../components/keyboard';
+import { useScreenShortcuts, useTableKeyboard } from '../components/keyboard';
 import { useAuth } from '../components/AuthProvider';
 import PrintOptionsMenu from '../components/PrintOptionsMenu';
 import { PrintOptions, loadPrintOptions } from '../print/printOptions';
 import dayjs, { Dayjs } from 'dayjs';
 import { TabModal } from '../components/TabModal';
-import { money } from '../utils/money';
+import { money, numeralsLocale } from '../utils/money';
 import { applyPct, combinePct, splitLineDiscount } from '../utils/discounts';
 import { QTY_DATA_ATTR, flashExistingItem } from '../utils/duplicateItem';
 import { useLiveRefresh } from '../utils/live';
@@ -1024,6 +1027,11 @@ export default function PurchaseReturns() {
     rows: filter.filtered, rowKey: (r) => r.id, onOpen: openReturn,
   });
 
+  // خانة بحث الكشف — F3 كانت جاية من `ListToolbar`، والخانة بقت في سطر فلاتر `ListPage`.
+  const listSearchRef = useRef<any>(null);
+  const [showMoreFilters, setShowMoreFilters] = useState(false);
+  useScreenShortcuts({ onSearch: () => { listSearchRef.current?.focus?.(); } }, !creating);
+
   /**
    * صفحة المستند — واحدة، سواء بتكتب مردود أو بتقرا واحد اتّرحّل.
    *
@@ -1043,53 +1051,90 @@ export default function PurchaseReturns() {
   const prevReturn = neighbourReturn(-1);
   const nextReturn = neighbourReturn(1);
 
+  // الفلاتر النصية تحت «فلاتر أكثر» — والطيّة بتفتح لوحدها لو فيها قيمة شغّالة.
+  const moreActive = ['document_number', 'purchase_document_number', 'notes', 'statement']
+    .some((k) => !!filter.values[k]);
+  const moreOpen = showMoreFilters || moreActive;
+  const textFilter = (key: string, placeholder: string) => (
+    <Input key={key} allowClear placeholder={placeholder}
+      value={filter.values[key] ?? undefined}
+      onChange={(e) => filter.setValue(key, e.target.value || undefined)} />
+  );
+  const shownTotal = filter.filtered.reduce((n, r) => n + Number(r.value || 0), 0);
+  const listFooter = (
+    <span className="sl-foot">
+      <span>
+        إجمالي السجلات: <b>{filter.filtered.length.toLocaleString(numeralsLocale())}</b>
+        {filter.filtered.length < rows.length
+          && <> من {rows.length.toLocaleString(numeralsLocale())}</>} مردود
+      </span>
+      <span>قيمة المردودات المعروضة: <b>{money(shownTotal)}</b></span>
+    </span>
+  );
+
   return (
     // المستند المفتوح بياخد خلفية فاتورة البيع الرمادي (`sale-doc`) — والكشف زي ما هو.
     <div className={docOpen ? 'sale-doc' : undefined}>
       {!docOpen && (
-      <Card
-        title="مردودات الشراء"
-        extra={
-          <Space>
-            <ColumnSettings
-              choices={columns.map((c: any) => ({
-                key: String(c.key), title: typeof c.title === 'string' ? c.title : '',
-                locked: c.key === 'document_number',
-              }))}
-              hidden={cols.hidden} onChange={cols.setHidden}
-              order={cols.order} onMove={(k, d) => cols.move(k, d, columns.map((c) => String(c.key ?? (c as any).dataIndex ?? '')))}
-            />
-            <ExportExcelButton
-              name="مردودات الشراء"
-              rows={filter.filtered}
-              tableColumns={visibleColumns}
-              style={{ marginInlineStart: 0 }}
-            />
-            <Button icon={<ReloadOutlined />} onClick={load}>تحديث</Button>
-            <Button data-shortcut="F2" type="primary" danger icon={<PlusOutlined />} onClick={openCreate}>
-              تسجيل مردود شراء
-            </Button>
-          </Space>
-        }
+      <ListPage
+        icon={<RollbackOutlined />}
+        title="مردودات الشراء" muted="(سجل المردودات للموردين)"
+        subtitle="البضاعة الراجعة للموردين — بتقلّل المستحق عليهم بقيمتها"
+        actions={(<>
+          {/* الاسم ده بالظبط — «اختصارات الإنشاء» بتدوّر على الزرار بنصّه. */}
+          <Button data-shortcut="F2" type="primary" icon={<PlusOutlined />} className="sl-create"
+            onClick={openCreate}>
+            تسجيل مردود شراء
+          </Button>
+          <Button icon={<ReloadOutlined />} onClick={load}>تحديث</Button>
+          <ExportExcelButton
+            name="مردودات الشراء"
+            rows={filter.filtered}
+            tableColumns={visibleColumns}
+            style={{ marginInlineStart: 0 }}
+          />
+          <ColumnSettings
+            choices={columns.map((c: any) => ({
+              key: String(c.key), title: typeof c.title === 'string' ? c.title : '',
+              locked: c.key === 'document_number',
+            }))}
+            hidden={cols.hidden} onChange={cols.setHidden}
+            order={cols.order} onMove={(k, d) => cols.move(k, d, columns.map((c) => String(c.key ?? (c as any).dataIndex ?? '')))}
+          />
+        </>)}
+        filters={(<>
+          <Input
+            className="sl-f-search"
+            allowClear
+            ref={listSearchRef}
+            value={filter.query}
+            placeholder="بحث برقم السند أو الفاتورة أو المورد أو البيان"
+            prefix={<SearchOutlined />}
+            onChange={(e) => filter.setQuery(e.target.value)}
+          />
+          <Select className="sl-f-customer" allowClear showSearch mode="multiple"
+            maxTagCount="responsive" placeholder="جميع الموردين"
+            value={filter.values.supplier_id ?? undefined}
+            onChange={(v: any[]) => filter.setValue('supplier_id', v?.length ? v : undefined)}
+            filterOption={searchFilter} filterSort={searchRank}
+            options={suppliers} />
+          <DateRangeFilter className="sl-f-dates"
+            value={filter.range ?? null}
+            onChange={(v) => filter.setRange(v)} />
+          {moreOpen && (<>
+            {textFilter('document_number', 'رقم السند')}
+            {textFilter('purchase_document_number', 'الفاتورة رقم')}
+            {textFilter('notes', 'ملاحظات')}
+            {textFilter('statement', 'البيان')}
+          </>)}
+          <Button className="sl-f-clear" type="link"
+            icon={moreOpen ? <UpOutlined /> : <DownOutlined />}
+            onClick={() => setShowMoreFilters((v) => !v)}>
+            فلاتر أكثر
+          </Button>
+          <Button className="sl-f-clear" icon={<ClearOutlined />} onClick={filter.reset}>مسح</Button>
+        </>)}
       >
-        <ListToolbar
-          searchPlaceholder="بحث برقم السند أو الفاتورة أو المورد أو البيان"
-          query={filter.query} onQueryChange={filter.setQuery}
-          values={filter.values} onValueChange={filter.setValue}
-          showDateRange range={filter.range} onRangeChange={filter.setRange}
-          onReset={filter.reset} total={rows.length} shown={filter.filtered.length}
-          searchSpan={6}
-          filters={[
-            { key: 'supplier_id', placeholder: 'المورد', span: 5, options: suppliers },
-            { key: 'document_number', placeholder: 'رقم السند', kind: 'text',
-              advanced: true, span: 5 },
-            { key: 'purchase_document_number', placeholder: 'الفاتورة رقم', kind: 'text',
-              advanced: true, span: 5 },
-            { key: 'notes', placeholder: 'ملاحظات', kind: 'text', advanced: true, span: 6 },
-            { key: 'statement', placeholder: 'البيان', kind: 'text', advanced: true, span: 6 },
-          ]}
-        />
-
         <Table
           {...kb.tableProps}
           // المسودّات فوق، وبرّه `filter.filtered` عن قصد: الإجمالي بيتبني منه والمسودّة مش مردود.
@@ -1116,7 +1161,7 @@ export default function PurchaseReturns() {
           // مع `tableLayout: fixed` وكل عمود له عرض، المتصفح بيوزّع الفرق على الأعمدة كلها
           // بالنسبة: زادت تتفرد شوية، قلّت تتضغط شوية. اللي كان بيكسّر الشكل هو عمود من غير
           // عرض — الفاضي كله كان بينزل عليه لوحده فيطلع شريط أبيض في نص الجدول.
-          size="small" tableLayout="fixed"
+          className="sl-table" size="small" tableLayout="fixed"
           rowClassName={(r: any) => [
             r.__isDraft ? 'row-draft' : '',
             r.id === highlight ? 'row-arrived' : '', kb.rowClassName(r),
@@ -1153,12 +1198,14 @@ export default function PurchaseReturns() {
               </Table.Summary>
             );
           }}
+          // الترقيم شمال، والإجماليات يمين في نفس السطر — زي سجل المبيعات.
           pagination={{
-            defaultPageSize: PAGE_SIZE, showSizeChanger: true,
-            showTotal: (t) => `الإجمالي: ${t}`, pageSizeOptions: PAGE_SIZE_OPTIONS,
+            defaultPageSize: PAGE_SIZE, showSizeChanger: true, pageSizeOptions: PAGE_SIZE_OPTIONS,
+            locale: { items_per_page: '' },
+            showTotal: () => listFooter,
           }}
         />
-      </Card>
+      </ListPage>
       )}
 
       <TabModal

@@ -1,9 +1,11 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  Alert, Button, Card, Col, DatePicker, Form, Input, Modal, Row, Select, Space, Table, Tabs, Tag,
+  Alert, Button, Col, DatePicker, Form, Input, Modal, Row, Select, Table, Tag,
   Typography, message,
 } from 'antd';
-import { DeleteOutlined, ExportOutlined, ImportOutlined, ReloadOutlined } from '@ant-design/icons';
+import {
+  DeleteOutlined, ExportOutlined, ImportOutlined, ReloadOutlined, InboxOutlined,
+} from '@ant-design/icons';
 import dayjs, { Dayjs } from 'dayjs';
 import { api } from '../api/client';
 import { searchFilter, searchRank, sortByName } from '../utils/arabicSort';
@@ -12,6 +14,8 @@ import { useLookup } from '../hooks/useLookup';
 import DateRangeFilter from '../components/DateRangeFilter';
 import { Popconfirm } from '../components/noConfirm';
 import { PAGE_SIZE_OPTIONS } from '../utils/pagination';
+import ListPage from '../components/ListPage';
+import { numeralsLocale } from '../utils/money';
 
 /**
  * عهدة الكوبونات — دفاتر مرقّمة في إيد المندوب، زي عهدة البضاعة.
@@ -88,6 +92,8 @@ export default function CouponCustody() {
   const [loading, setLoading] = useState(false);
   const [balance, setBalance] = useState<BalanceRow[]>([]);
   const [balanceLoading, setBalanceLoading] = useState(false);
+  // الشريحة المفتوحة — كانت `Tabs` من غير حالة، والمستندات هي الافتراضية.
+  const [tab, setTab] = useState<'docs' | 'balance'>('docs');
 
   // مودال الصرف/الاسترجاع — نفس الفورم للاتنين، الفرق في الاتجاه.
   const [modal, setModal] = useState<'out' | 'in' | null>(null);
@@ -242,80 +248,76 @@ export default function CouponCustody() {
     { title: 'إجمالي المصروف', dataIndex: 'issued', width: 110 },
   ];
 
-  const filters = (
-    <Row gutter={[8, 8]} style={{ marginBottom: 12 }}>
-      <Col xs={24} md={6}>
-        <Select allowClear showSearch style={{ width: '100%' }} placeholder="كل المناديب"
-          value={repId} onChange={setRepId} options={repOptions}
-          filterOption={searchFilter} filterSort={searchRank} />
-      </Col>
-      <Col xs={12} md={4}>
-        <Select allowClear showSearch style={{ width: '100%' }} placeholder="كل الفئات"
-          value={kind} onChange={setKind} options={kindOptions}
-          filterOption={searchFilter} filterSort={searchRank} />
-      </Col>
-      <Col xs={12} md={4}>
-        <Select allowClear style={{ width: '100%' }} placeholder="صرف واسترجاع"
-          value={direction} onChange={setDirection}
-          options={[{ value: 'out', label: 'صرف للمندوب' }, { value: 'in', label: 'استرجاع' }]} />
-      </Col>
-      <Col xs={24} md={7}>
-        <DateRangeFilter value={range} onChange={setRange} style={{ width: '100%' }} />
-      </Col>
-      <Col xs={24} md={3}>
-        <Button icon={<ReloadOutlined />} block
-          onClick={() => { loadDocs(); loadBalance(); }}>تحديث</Button>
-      </Col>
-    </Row>
-  );
+  // الفلاتر في سطر واحد تحت الترويسة — نفس المعنى، الرصيد بيتفلتر بالمندوب والفئة بس.
+  const filters = (<>
+    <Select className="sl-f-customer" allowClear showSearch placeholder="كل المناديب"
+      value={repId} onChange={setRepId} options={repOptions}
+      filterOption={searchFilter} filterSort={searchRank} />
+    <Select allowClear showSearch placeholder="كل الفئات"
+      value={kind} onChange={setKind} options={kindOptions}
+      filterOption={searchFilter} filterSort={searchRank} />
+    <Select allowClear placeholder="صرف واسترجاع"
+      value={direction} onChange={setDirection}
+      options={[{ value: 'out', label: 'صرف للمندوب' }, { value: 'in', label: 'استرجاع' }]} />
+    <DateRangeFilter className="sl-f-dates" value={range} onChange={setRange} />
+  </>);
+
+  const shownBalance = kind ? balance.filter((b) => b.coupon_kind === kind) : balance;
 
   return (
-    <Card
+    <>
+    <ListPage<'docs' | 'balance'>
+      icon={<InboxOutlined />}
       title="عهدة الكوبونات"
-      extra={(
-        <Space wrap>
-          <Button type="primary" icon={<ExportOutlined />} onClick={() => openModal('out')}>
-            صرف عهدة لمندوب
-          </Button>
-          <Button icon={<ImportOutlined />} onClick={() => openModal('in')}>
-            استرجاع من مندوب
-          </Button>
-        </Space>
-      )}
+      subtitle="دفاتر الكوبونات المرقّمة في إيد المناديب — الصرف والاسترجاع والمتاح مع كل مندوب"
+      tabs={[
+        { key: 'docs', label: 'المستندات', count: total },
+        { key: 'balance', label: 'الرصيد' },
+      ]}
+      activeTab={tab}
+      onTabChange={setTab}
+      actions={(<>
+        <Button type="primary" className="sl-create" icon={<ExportOutlined />}
+          onClick={() => openModal('out')}>
+          صرف عهدة لمندوب
+        </Button>
+        <Button icon={<ImportOutlined />} onClick={() => openModal('in')}>
+          استرجاع من مندوب
+        </Button>
+        <Button icon={<ReloadOutlined />}
+          onClick={() => { loadDocs(); loadBalance(); }}>تحديث</Button>
+      </>)}
+      filters={filters}
     >
-      {filters}
-      <Tabs items={[
-        {
-          key: 'docs',
-          label: `المستندات (${total})`,
-          children: (
-            <Table<CustodyDoc>
-              rowKey="id" size="small" loading={loading} dataSource={docs}
-              columns={docColumns} scroll={{ x: 900 }}
-              locale={{ emptyText: 'مافيش مستندات عهدة' }}
-              pagination={{
-                current: page, pageSize, total, showSizeChanger: true,
-                pageSizeOptions: PAGE_SIZE_OPTIONS,
-                onChange: (p, ps) => { setPage(p); setPageSize(ps); loadDocs(p, ps); },
-                showTotal: (t) => `إجمالي ${t} مستند`,
-              }}
-            />
-          ),
-        },
-        {
-          key: 'balance',
-          label: 'الرصيد',
-          children: (
-            <Table<BalanceRow>
-              rowKey={(r) => `${r.rep_user_id}-${r.coupon_kind}`} size="small"
-              loading={balanceLoading}
-              dataSource={kind ? balance.filter((b) => b.coupon_kind === kind) : balance}
-              columns={balanceColumns} pagination={false} scroll={{ x: 800 }}
-              locale={{ emptyText: 'مافيش عهدة كوبونات على أي مندوب' }}
-            />
-          ),
-        },
-      ]} />
+      {tab === 'docs' ? (
+        <Table<CustodyDoc>
+          className="sl-table"
+          rowKey="id" size="small" loading={loading} dataSource={docs}
+          columns={docColumns} scroll={{ x: 900 }}
+          locale={{ emptyText: 'مافيش مستندات عهدة' }}
+          pagination={{
+            current: page, pageSize, total, showSizeChanger: true,
+            pageSizeOptions: PAGE_SIZE_OPTIONS,
+            locale: { items_per_page: '' },
+            onChange: (p, ps) => { setPage(p); setPageSize(ps); loadDocs(p, ps); },
+            showTotal: (t) => (
+              <span className="sl-foot">
+                <span>إجمالي المستندات: <b>{t.toLocaleString(numeralsLocale())}</b></span>
+              </span>
+            ),
+          }}
+        />
+      ) : (
+        <Table<BalanceRow>
+          className="sl-table"
+          rowKey={(r) => `${r.rep_user_id}-${r.coupon_kind}`} size="small"
+          loading={balanceLoading}
+          dataSource={shownBalance}
+          columns={balanceColumns} pagination={false} scroll={{ x: 800 }}
+          locale={{ emptyText: 'مافيش عهدة كوبونات على أي مندوب' }}
+        />
+      )}
+    </ListPage>
 
       <Modal
         open={modal !== null}
@@ -391,6 +393,6 @@ export default function CouponCustody() {
           )}
         </Form>
       </Modal>
-    </Card>
+    </>
   );
 }

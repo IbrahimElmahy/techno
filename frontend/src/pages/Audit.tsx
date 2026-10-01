@@ -1,10 +1,13 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { PAGE_SIZE, PAGE_SIZE_OPTIONS } from '../utils/pagination';
-import { Table, Card, Tag, Button, Descriptions, Space } from 'antd';
-import { ReloadOutlined } from '@ant-design/icons';
+import { Table, Tag, Button, Descriptions, Input, Select } from 'antd';
+import { ReloadOutlined, HistoryOutlined, SearchOutlined, ClearOutlined } from '@ant-design/icons';
+import ListPage from '../components/ListPage';
+import DateRangeFilter from '../components/DateRangeFilter';
+import { searchFilter, searchRank } from '../utils/arabicSort';
 import { api } from '../api/client';
-import ListToolbar, { useListFilter } from '../components/ListToolbar';
-import { useTableKeyboard } from '../components/keyboard';
+import { useListFilter } from '../components/ListToolbar';
+import { useScreenShortcuts, useTableKeyboard } from '../components/keyboard';
 import { textColumn, numberColumn, dateColumn } from '../components/gridColumns';
 import DocumentAuditModal from '../components/DocumentAuditModal';
 import { useTableColumns } from '../components/ColumnSettings';
@@ -132,6 +135,10 @@ export default function Audit() {
     return user ? `${user.full_name} (${user.username})` : `مستخدم #${userId}`;
   };
 
+  // F3 كانت جاية من `ListToolbar` — الخانة بقت هنا فبتتسجّل هنا.
+  const searchRef = useRef<any>(null);
+  useScreenShortcuts({ onSearch: () => { searchRef.current?.focus?.(); } });
+
   const filter = useListFilter(logs, {
     search: (l) => [l.action, l.entity_type, actionLabel(l.action),
       l.entity_type ? entityLabel(l.entity_type) : '', l.entity_id, getActorName(l.actor_user_id)],
@@ -223,43 +230,55 @@ export default function Audit() {
       setTrail({ type: r.entity_type, id: r.entity_id }); },
   });
 
-  return (
-    <div>
-      <Card
-        title="سجل المراجعة والعمليات (Audit Logs)"
-        extra={
-          <Space>
-            {tableCols.control}
-            <Button type="dashed" icon={<ReloadOutlined />} onClick={fetchLogs}>
-              تحديث السجل
-            </Button>
-          </Space>
-        }
-      >
-        <ListToolbar
-          searchPlaceholder="بحث بالعملية أو الكيان أو المنفذ"
-          query={filter.query} onQueryChange={filter.setQuery}
-          values={filter.values} onValueChange={filter.setValue}
-          showDateRange range={filter.range} onRangeChange={filter.setRange}
-          onReset={filter.reset}
-          total={logs.length} shown={filter.filtered.length}
-          searchSpan={5}
-          filters={[
-            { key: 'action', placeholder: 'العملية', options: actionOptions, span: 4 },
-            { key: 'entity_type', placeholder: 'نوع الكيان', options: entityOptions, span: 4 },
-            { key: 'actor_user_id', placeholder: 'المنفذ', span: 4,
-              options: [{ value: 0, label: 'النظام' },
-                ...users.map((u) => ({ value: u.id, label: `${u.full_name} (${u.username})` }))] },
-          ]}
-        />
+  // قوايم الفلاتر — نفس اللي كانت في `ListToolbar` (أكتر من قيمة، والمعنى «أي واحدة منهم»).
+  const multiSelect = (key: string, placeholder: string, options: { value: any; label: string }[]) => (
+    <Select allowClear showSearch mode="multiple" maxTagCount="responsive" placeholder={placeholder}
+      value={filter.values[key]}
+      onChange={(v) => filter.setValue(key, Array.isArray(v) && !v.length ? undefined : v)}
+      options={options} filterOption={searchFilter} filterSort={searchRank} />
+  );
 
+  return (
+    <>
+      <ListPage
+        icon={<HistoryOutlined />}
+        title="سجل العمليات"
+        muted="(Audit Logs)"
+        subtitle="كل عملية اتعملت في النظام: مين عملها وإمتى، والبيانات قبل وبعد"
+        actions={(<>
+          <Button icon={<ReloadOutlined />} onClick={fetchLogs}>
+            تحديث السجل
+          </Button>
+          {tableCols.control}
+        </>)}
+        filters={(<>
+          <Input className="sl-f-search" allowClear ref={searchRef} value={filter.query}
+            placeholder="بحث بالعملية أو الكيان أو المنفذ" prefix={<SearchOutlined />}
+            onChange={(e) => filter.setQuery(e.target.value)} />
+          {multiSelect('action', 'العملية', actionOptions)}
+          {multiSelect('entity_type', 'نوع الكيان', entityOptions)}
+          {multiSelect('actor_user_id', 'المنفذ', [{ value: 0, label: 'النظام' },
+            ...users.map((u) => ({ value: u.id, label: `${u.full_name} (${u.username})` }))])}
+          <DateRangeFilter className="sl-f-dates" value={filter.range ?? null}
+            onChange={(v) => filter.setRange(v)} />
+          <Button className="sl-f-clear" icon={<ClearOutlined />} onClick={filter.reset}>مسح</Button>
+        </>)}
+      >
         <Table
           {...kb.tableProps}
+          className="sl-table"
+          size="small"
           dataSource={filter.filtered}
           columns={tableCols.columns}
           rowKey="id"
           loading={loading}
-          pagination={{ defaultPageSize: PAGE_SIZE, showSizeChanger: true, pageSizeOptions: PAGE_SIZE_OPTIONS }}
+          pagination={{ defaultPageSize: PAGE_SIZE, showSizeChanger: true, pageSizeOptions: PAGE_SIZE_OPTIONS,
+            showTotal: () => (
+              <span className="sl-foot">
+                <span>المعروض: <b>{filter.filtered.length.toLocaleString(numeralsLocale())}</b>
+                  {' '}من {logs.length.toLocaleString(numeralsLocale())} عملية</span>
+              </span>
+            ) }}
           expandable={{
             expandedRowRender: (record: AuditLog) => (
               <div style={{ padding: 16, backgroundColor: '#fafafa', borderRadius: 6 }}>
@@ -279,7 +298,7 @@ export default function Audit() {
             ),
           }}
         />
-      </Card>
+      </ListPage>
 
       <DocumentAuditModal
         entityType={trail?.type || ''} entityId={trail?.id ?? null}
@@ -287,6 +306,6 @@ export default function Audit() {
         userNames={Object.fromEntries(users.map((u: any) => [u.id, u.full_name || u.username]))}
         onClose={() => setTrail(null)}
       />
-    </div>
+    </>
   );
 }

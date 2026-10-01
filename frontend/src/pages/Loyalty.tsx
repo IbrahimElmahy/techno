@@ -1,12 +1,13 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
-  Button, Card, Col, Divider, Form, Input, Modal, Row, Select, Space, Table, Tabs, Tag, message,
+  Button, Col, Divider, Form, Input, Modal, Row, Select, Space, Table, Tag, message,
 } from 'antd';
 import { InputNumber } from '../components/NumberInput';
 import {
   PlusOutlined, SettingOutlined, SwapOutlined, GiftOutlined,
-  CheckCircleOutlined, RollbackOutlined, EditOutlined, StopOutlined, DeleteOutlined
+  CheckCircleOutlined, RollbackOutlined, EditOutlined, StopOutlined, DeleteOutlined, TagsOutlined,
 } from '@ant-design/icons';
+import ListPage from '../components/ListPage';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { api } from '../api/client';
 import { useTableColumns } from '../components/ColumnSettings';
@@ -15,8 +16,7 @@ import ListToolbar, { useListFilter } from '../components/ListToolbar';
 import { useTableKeyboard } from '../components/keyboard';
 import { textColumn, numberColumn, choiceColumn } from '../components/gridColumns';
 import { TabModal } from '../components/TabModal';
-import { money } from '../utils/money';
-import CouponStatsOverview from '../components/CouponStatsOverview';
+import { money, numeralsLocale } from '../utils/money';
 
 interface CouponType {
   id: number;
@@ -530,27 +530,15 @@ export default function Loyalty() {
   const items = [
     {
       key: 'kinds',
-      label: `فئات الكوبونات — الورق (${couponKinds.length})`,
+      label: 'فئات الكوبونات — الورق',
+      count: couponKinds.length,
       children: (
         <div>
-          <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
-            <span style={{ color: '#595959' }}>
-              فئة الورقة اللي بتتسلّم للعميل على الفاتورة (عادي / فضي / ذهبي / ماسي). الفئة مع رقم الكوبون هما هويته: «٥ ذهبي» غير «٥ فضي».
-            </span>
-            <Button
-              type="primary"
-              icon={<PlusOutlined />}
-              onClick={() => {
-                setEditingKind(null);
-                kindForm.resetFields();
-                kindForm.setFieldsValue({ active: true });
-                setKindModalVisible(true);
-              }}
-            >
-              إضافة فئة كوبون جديدة
-            </Button>
+          <div style={{ color: '#8c8c8c', fontSize: 12, padding: '6px 4px 8px' }}>
+            الفئة مع رقم الكوبون هما هويته: «٥ ذهبي» غير «٥ فضي».
           </div>
           <Table
+            className="sl-table"
             size="small"
             dataSource={couponKinds}
             rowKey="id"
@@ -623,20 +611,48 @@ export default function Loyalty() {
     ];
   }, [couponKinds, coupons]);
 
+  // التبويب اللي في الرابط (أو الافتراضي القديم «settings») ممكن يكون اتشال —
+  // ساعتها أول تبويب موجود بدل شاشة من غير محتوى.
+  const shownTab = items.some((t) => t.key === activeTab) ? activeTab : items[0]?.key;
+
   return (
-    <div>
-      <Card title="الكوبونات والنقاط">
-        <CouponStatsOverview
-          totalCount={totalCouponsCount}
-          totalValue={totalCouponsValue}
-          kinds={kindStats}
-          kindsTitle="أنواع الكوبونات وتوزيع الأعداد"
-        />
-        {/* التبويب اللي في الرابط (أو الافتراضي القديم «settings») ممكن يكون اتشال —
-            ساعتها أول تبويب موجود بدل شاشة من غير محتوى. */}
-        <Tabs activeKey={items.some((t) => t.key === activeTab) ? activeTab : items[0]?.key}
-          onChange={setActiveTab} items={items} />
-      </Card>
+    <>
+      <ListPage
+        icon={<TagsOutlined />}
+        title="أنواع الكوبونات"
+        muted="(الكوبونات والنقاط)"
+        subtitle="فئة الورقة اللي بتتسلّم للعميل على الفاتورة (عادي / فضي / ذهبي / ماسي)"
+        tabs={items.map((t) => ({ key: t.key, label: t.label, count: t.count }))}
+        activeTab={shownTab}
+        onTabChange={setActiveTab}
+        actions={(
+          <Button
+            type="primary"
+            className="sl-create"
+            icon={<PlusOutlined />}
+            onClick={() => {
+              setEditingKind(null);
+              kindForm.resetFields();
+              kindForm.setFieldsValue({ active: true });
+              setKindModalVisible(true);
+            }}
+          >
+            إضافة فئة كوبون جديدة
+          </Button>
+        )}
+      >
+        {items.find((t) => t.key === shownTab)?.children}
+        {/* إجماليات الكوبونات المصروفة — كانت كروت إحصائية فوق، بقت سطر تحت الجدول. */}
+        <div style={{ padding: '10px 4px', borderTop: '1px solid #f1f5f9' }}>
+          <span className="sl-foot">
+            <span>عدد الكوبونات: <b>{totalCouponsCount.toLocaleString(numeralsLocale())}</b></span>
+            <span>إجمالي القيمة: <b className="is-pos">{money(totalCouponsValue)}</b></span>
+            {kindStats.map((k) => (
+              <span key={k.key}>{k.label}: <b>{k.count.toLocaleString(numeralsLocale())}</b></span>
+            ))}
+          </span>
+        </div>
+      </ListPage>
 
       {/* Create Coupon Type Settings Drawer */}
       <TabModal footer={null} centered
@@ -906,6 +922,6 @@ export default function Loyalty() {
           </Form.Item>
         </Form>
       </TabModal>
-    </div>
+    </>
   );
 }

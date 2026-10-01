@@ -2,12 +2,14 @@ import React, { useEffect, useRef, useState } from 'react';
 import { PAGE_SIZE } from '../utils/pagination';
 import { searchFilter, searchRank } from '../utils/arabicSort';
 import {
-  Button, Card, Checkbox, Col, Form, Input, Row, Segmented, Select, Space, Switch, Table, Tag,
+  Button, Checkbox, Col, Form, Input, Row, Select, Space, Switch, Table, Tag,
   Tooltip, message
 } from 'antd';
 import {
   PlusOutlined, EditOutlined, StopOutlined, SearchOutlined, ReloadOutlined, CheckOutlined,
+  BankOutlined, ClearOutlined,
 } from '@ant-design/icons';
+import ListPage from '../components/ListPage';
 import { api } from '../api/client';
 import { useTableKeyboard } from '../components/keyboard';
 import { useScreenShortcuts } from '../components/keyboard';
@@ -64,6 +66,8 @@ export default function Treasuries() {
   const [safes, setSafes] = useState<RepSafe[]>([]);
   const [safesLoading, setSafesLoading] = useState(false);
   const [familyFilter, setFamilyFilter] = useState<string>('الكل');
+  // الجدولين (الخزائن · صناديق المناديب) بقوا شريحتين في الترويسة.
+  const [view, setView] = useState<'treasuries' | 'safes'>('treasuries');
   const [createOpen, setCreateOpen] = useState(false);
   const [editing, setEditing] = useState<TreasuryRecord | null>(null);
   const [form] = Form.useForm();
@@ -432,76 +436,95 @@ export default function Treasuries() {
   });
 
   return (
-    <div>
-      <Card
-        title="الخزينه و البنوك"
-        extra={
-          <Space>
-            {tableCols.control}
-            <Button icon={<ReloadOutlined />} onClick={load}>اعادة تحميل</Button>
-            {canWrite && (
-              <Button data-shortcut="F2" type="primary" icon={<PlusOutlined />} onClick={() => setCreateOpen(true)}>
-                خزينة جديدة
-              </Button>
-            )}
-          </Space>
-        }
-      >
-        <Row style={{ marginBottom: 12 }}>
-          <Col xs={24} md={8}>
-            <Input allowClear value={search} placeholder="بحث بالاسم أو الفرع أو البنك"
-              ref={searchRef}
-              prefix={<SearchOutlined />} onChange={(e) => setSearch(e.target.value)} />
-          </Col>
-        </Row>
-
+    <>
+    <ListPage<'treasuries' | 'safes'>
+      icon={<BankOutlined />}
+      title="الخزينه و البنوك"
+      subtitle="الخزائن والحسابات البنكية بأرصدتها، وصناديق عهد المناديب"
+      tabs={[
+        { key: 'treasuries', label: 'الخزائن والبنوك', count: rows.length },
+        { key: 'safes', label: 'صناديق المناديب', count: safes.length },
+      ]}
+      activeTab={view} onTabChange={setView}
+      actions={view === 'treasuries' ? (<>
+        {canWrite && (
+          <Button data-shortcut="F2" type="primary" className="sl-create" icon={<PlusOutlined />}
+            onClick={() => setCreateOpen(true)}>
+            خزينة جديدة
+          </Button>
+        )}
+        {tableCols.control}
+        <Button icon={<ReloadOutlined />} onClick={load}>اعادة تحميل</Button>
+      </>) : (
+        <Button icon={<ReloadOutlined />} onClick={loadSafes}>اعادة تحميل</Button>
+      )}
+      filters={(<>
+        <Input className="sl-f-search" allowClear value={search}
+          placeholder={view === 'treasuries' ? 'بحث بالاسم أو الفرع أو البنك'
+            : 'بحث بالصندوق أو الكود أو المندوب'}
+          ref={searchRef}
+          prefix={<SearchOutlined />} onChange={(e) => setSearch(e.target.value)} />
+        {view === 'safes' && (
+          <Select
+            value={familyFilter}
+            onChange={(v) => setFamilyFilter(String(v))}
+            options={FAMILY_FILTER.map((f) => ({ value: f, label: f === 'الكل' ? 'كل الخطوط' : f }))}
+          />
+        )}
+        <Button className="sl-f-clear" icon={<ClearOutlined />}
+          onClick={() => { setSearch(''); setFamilyFilter('الكل'); }}>مسح</Button>
+      </>)}
+    >
+      {view === 'treasuries' ? (
         <Table
           {...kb.tableProps}
+          className="sl-table"
           dataSource={filtered}
           columns={tableCols.columns}
           rowKey="id"
           loading={loading}
-          size="middle"
+          size="small"
           tableLayout="fixed"
           expandable={{ expandedRowRender: expandedRow }}
           pagination={{ defaultPageSize: PAGE_SIZE, showSizeChanger: true,
-            showTotal: (t) => `عدد: ${t}` }}
+            locale: { items_per_page: '' },
+            showTotal: (t) => (
+              <span className="sl-foot">
+                <span>عدد: <b>{t}</b></span>
+                <span>إجمالي الأرصدة: <b>{egp(filtered
+                  .reduce((s, r) => s + Number(r.balance || 0), 0))}</b></span>
+              </span>
+            ) }}
         />
-      </Card>
-
-      {/*
-        * صناديق المناديب — الجدول التاني عن قصد، مش أعمدة زيادة على الأول.
-        *
-        * الاتنين مش نفس الحاجة: فوق سجلات `Treasury` اللي بتتعمل من الشاشة وليها تعديل
-        * وإخفاء، وتحت عهد المناديب اللي بتتعمل مع المندوب وبتتقفل معاه. جدول واحد كان
-        * هيبقى نصّه أزرار مالهاش معنى في نص الصفوف.
-        */}
-      <Card
-        title="صناديق المناديب"
-        style={{ marginTop: 16 }}
-        extra={(
-          <Space>
-            <Segmented
-              value={familyFilter}
-              onChange={(v) => setFamilyFilter(String(v))}
-              options={FAMILY_FILTER.map((f) => ({ value: f, label: f }))}
-            />
-            <Button icon={<ReloadOutlined />} onClick={loadSafes}>اعادة تحميل</Button>
-          </Space>
-        )}
-      >
+      ) : (
+        /*
+         * صناديق المناديب — جدول تاني عن قصد، مش أعمدة زيادة على الأول.
+         *
+         * الاتنين مش نفس الحاجة: الخزائن سجلات `Treasury` اللي بتتعمل من الشاشة وليها تعديل
+         * وإخفاء، والصناديق عهد المناديب اللي بتتعمل مع المندوب وبتتقفل معاه. جدول واحد كان
+         * هيبقى نصّه أزرار مالهاش معنى في نص الصفوف.
+         */
         <Table
+          className="sl-table"
           dataSource={filteredSafes}
           columns={safeColumns}
           rowKey="custody_id"
           loading={safesLoading}
-          size="middle"
+          size="small"
           tableLayout="fixed"
           locale={{ emptyText: 'مافيش صناديق للمناديب' }}
           pagination={{ defaultPageSize: PAGE_SIZE, showSizeChanger: true,
-            showTotal: (t) => `عدد: ${t}` }}
+            locale: { items_per_page: '' },
+            showTotal: (t) => (
+              <span className="sl-foot">
+                <span>عدد: <b>{t}</b></span>
+                <span>إجمالي الأرصدة: <b>{egp(filteredSafes
+                  .reduce((s, r) => s + Number(r.balance || 0), 0))}</b></span>
+              </span>
+            ) }}
         />
-      </Card>
+      )}
+    </ListPage>
 
       <TabModal footer={null} centered title="خزينة جديدة" width={720} destroyOnHidden
         open={createOpen} onCancel={() => setCreateOpen(false)}>
@@ -528,6 +551,6 @@ export default function Treasuries() {
           </Space>
         </Form>
       </TabModal>
-    </div>
+    </>
   );
 }

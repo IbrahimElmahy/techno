@@ -1,11 +1,10 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { PAGE_SIZE } from '../utils/pagination';
 import { searchFilter, searchRank, sortByName } from '../utils/arabicSort';
+import { Alert, Button, DatePicker, Select, Table, Tag, message } from 'antd';
 import {
-  Alert, Button, Card, Col, DatePicker, Row, Segmented, Select, Table, Tag, message,
-} from 'antd';
-import { Statistic } from '../components/Statistic';
-import { DownloadOutlined, PrinterOutlined, ReloadOutlined } from '@ant-design/icons';
+  DownloadOutlined, IdcardOutlined, PrinterOutlined, ReloadOutlined,
+} from '@ant-design/icons';
 import dayjs, { Dayjs } from 'dayjs';
 import { api } from '../api/client';
 import { useTableColumns } from '../components/ColumnSettings';
@@ -16,8 +15,9 @@ import { textColumn, numberColumn, dateColumn } from '../components/gridColumns'
 import { columnsFromTable, exportCsv as writeCsv } from '../utils/exportCsv';
 import { printReport, type PrintColumn, type PrintTotal } from '../print/reportSheet';
 
-import StatsRow from '../components/StatsRow';
-import { money, qty as num } from '../utils/money';
+import ListPage from '../components/ListPage';
+import { useCanSeeStats } from '../components/StatsRow';
+import { money, numeralsLocale, qty as num } from '../utils/money';
 /**
  * تقارير الموارد البشرية — تسعتاشر اسم من محرك واحد.
  *
@@ -461,164 +461,135 @@ export default function HrReports() {
     export: { name: view?.label ?? SUBJECT_LABELS[subject], rows },
   });
 
+  // كروت الإجماليات بقت سطر تحت الجدول — ولسه للي عنده `stats.view` بس، زي `StatsRow`.
+  const canSeeStats = useCanSeeStats();
+  const footer = totals && canSeeStats ? (
+    <span className="sl-foot">
+      <span>عدد السطور: <b>{totals.rows.toLocaleString(numeralsLocale())}</b></span>
+      <span>
+        {subject === 'attendance' ? 'عدد الأيام'
+          : subject === 'leave' || isBalances ? 'عدد الأيام' : 'العدد'}:{' '}
+        <b>{num(totals.quantity)}</b>
+      </span>
+      <span>إجمالي المبلغ: <b>{money(totals.amount)}</b></span>
+    </span>
+  ) : null;
+
   return (
-    <Card
-      title={(
-        <span>
-          {view ? view.label : 'تقارير الموارد البشرية'}
-          {offPreset ? (
-            <Tag color="orange" style={{ marginInlineStart: 8, fontWeight: 400 }}>معدّل</Tag>
-          ) : null}
-        </span>
-      )}
-      extra={(
-        <>
-          {tableCols.control}
-          <Button icon={<DownloadOutlined />} onClick={exportCsv}
-            style={{ marginInlineStart: 8 }}>تصدير CSV</Button>
-          <Button icon={<PrinterOutlined />} onClick={printIt}
-            style={{ marginInlineStart: 8, marginInlineEnd: 8 }}>طباعة</Button>
-          <Button icon={<ReloadOutlined />} onClick={load}>تحديث</Button>
-        </>
-      )}
-    >
-      <Row gutter={[8, 8]} style={{ marginBottom: 12 }}>
-        <Col xs={24} lg={14}>
-          <Segmented
-            block value={subject} onChange={(v) => setSubject(v as Subject)}
-            options={(Object.keys(SUBJECT_LABELS) as Subject[])
-              .map((k) => ({ value: k, label: SUBJECT_LABELS[k] }))}
+    <ListPage<Subject>
+      icon={<IdcardOutlined />}
+      title={view ? view.label : 'تقارير الموارد البشرية'}
+      muted={offPreset ? <Tag color="orange" style={{ fontWeight: 400 }}>معدّل</Tag> : undefined}
+      subtitle="الموظفين والحضور والأجازات والمرتبات والسلف — تفصيلي أو مجمّع"
+      tabs={(Object.keys(SUBJECT_LABELS) as Subject[])
+        .map((k) => ({ key: k, label: SUBJECT_LABELS[k] }))}
+      activeTab={subject}
+      onTabChange={setSubject}
+      actions={(<>
+        <Button icon={<PrinterOutlined />} onClick={printIt}>طباعة</Button>
+        <Button icon={<DownloadOutlined />} onClick={exportCsv}>تصدير CSV</Button>
+        {tableCols.control}
+        <Button icon={<ReloadOutlined />} onClick={load}>تحديث</Button>
+      </>)}
+      filters={(<>
+        <Select
+          value={groupBy} disabled={isBalances}
+          onChange={(v) => {
+            setGroupBy(v);
+            // «ملخّص» من غير تجميع الباك إند بيرفضه — فالشاشة بتمنع الحالة دي أصلاً.
+            if (v === 'none') setLevel('detail');
+            else setLevel('summary');
+          }}
+          options={[
+            { value: 'none', label: 'تفصيلي' },
+            { value: 'employee', label: 'مجمّع بالموظف' },
+            { value: 'department', label: 'مجمّع بالقسم' },
+            { value: 'branch', label: 'مجمّع بالفرع' },
+            { value: 'job_title', label: 'مجمّع بالوظيفة' },
+            { value: 'month', label: 'مجمّع بالشهر' },
+            { value: 'status', label: 'مجمّع بالحالة' },
+            { value: 'component', label: 'مجمّع بالبند', disabled: subject !== 'cost' },
+          ]}
+        />
+        {byPeriod ? (
+          <DatePicker
+            picker="month" value={period} style={{ height: 38, borderRadius: 8 }}
+            onChange={setPeriod} placeholder="الشهر" allowClear={false}
           />
-        </Col>
-        <Col xs={24} lg={10}>
+        ) : isBalances ? (
+          <DatePicker
+            picker="year" value={period} style={{ height: 38, borderRadius: 8 }}
+            onChange={setPeriod} placeholder="السنة" allowClear={false}
+          />
+        ) : (
+          <DateRangeFilter
+            className="sl-f-dates"
+            value={range as any}
+            onChange={(v) => setRange(v as any)}
+          />
+        )}
+        <Select
+          className="sl-f-customer"
+          allowClear showSearch
+          placeholder="كل الموظفين" value={employeeId} onChange={setEmployeeId}
+          options={employeeOptions} filterOption={searchFilter} filterSort={searchRank}/>
+        <Select
+          allowClear showSearch
+          placeholder="كل الأقسام" value={departmentId}
+          onChange={(v) => { setDepartmentId(v); dropEmployeeUnlessFits(v, branchId); }}
+          disabled={isBalances}
+          options={sortByName(departments, (d: any) => d.name).map((d) => ({ value: d.id, label: d.name }))} filterOption={searchFilter} filterSort={searchRank}/>
+        <Select
+          allowClear placeholder="كل الفروع"
+          value={branchId} disabled={isBalances}
+          onChange={(v) => { setBranchId(v); dropEmployeeUnlessFits(departmentId, v); }}
+          options={branches.map((b) => ({ value: b.id, label: b.name }))}
+        />
+        {(subject === 'payroll' || subject === 'cost') && (
           <Select
-            style={{ width: '100%' }} value={groupBy} disabled={isBalances}
-            onChange={(v) => {
-              setGroupBy(v);
-              // «ملخّص» من غير تجميع الباك إند بيرفضه — فالشاشة بتمنع الحالة دي أصلاً.
-              if (v === 'none') setLevel('detail');
-              else setLevel('summary');
-            }}
+            value={includeDrafts ? 'all' : 'posted'}
+            onChange={(v) => setIncludeDrafts(v === 'all')}
             options={[
-              { value: 'none', label: 'تفصيلي' },
-              { value: 'employee', label: 'مجمّع بالموظف' },
-              { value: 'department', label: 'مجمّع بالقسم' },
-              { value: 'branch', label: 'مجمّع بالفرع' },
-              { value: 'job_title', label: 'مجمّع بالوظيفة' },
-              { value: 'month', label: 'مجمّع بالشهر' },
-              { value: 'status', label: 'مجمّع بالحالة' },
-              { value: 'component', label: 'مجمّع بالبند', disabled: subject !== 'cost' },
+              { value: 'posted', label: 'المرحّل' },
+              { value: 'all', label: 'مع المسودات' },
             ]}
           />
-        </Col>
-      </Row>
-
-      <Row gutter={[8, 8]} style={{ marginBottom: 12 }}>
-        <Col xs={24} md={7}>
-          {byPeriod ? (
-            <DatePicker
-              picker="month" style={{ width: '100%' }} value={period}
-              onChange={setPeriod} placeholder="الشهر" allowClear={false}
-            />
-          ) : isBalances ? (
-            <DatePicker
-              picker="year" style={{ width: '100%' }} value={period}
-              onChange={setPeriod} placeholder="السنة" allowClear={false}
-            />
-          ) : (
-            <DateRangeFilter
-              value={range as any}
-              onChange={(v) => setRange(v as any)}
-            />
-          )}
-        </Col>
-        <Col xs={24} md={6}>
-          <Select
-            allowClear showSearch style={{ width: '100%' }}
-            placeholder="كل الموظفين" value={employeeId} onChange={setEmployeeId}
-            options={employeeOptions} filterOption={searchFilter} filterSort={searchRank}/>
-        </Col>
-        <Col xs={24} md={5}>
-          <Select
-            allowClear showSearch style={{ width: '100%' }}
-            placeholder="كل الأقسام" value={departmentId}
-            onChange={(v) => { setDepartmentId(v); dropEmployeeUnlessFits(v, branchId); }}
-            disabled={isBalances}
-            options={sortByName(departments, (d: any) => d.name).map((d) => ({ value: d.id, label: d.name }))} filterOption={searchFilter} filterSort={searchRank}/>
-        </Col>
-        <Col xs={24} md={4}>
-          <Select
-            allowClear style={{ width: '100%' }} placeholder="كل الفروع"
-            value={branchId} disabled={isBalances}
-            onChange={(v) => { setBranchId(v); dropEmployeeUnlessFits(departmentId, v); }}
-            options={branches.map((b) => ({ value: b.id, label: b.name }))}
-          />
-        </Col>
-        {(subject === 'payroll' || subject === 'cost') && (
-          <Col xs={24} md={2}>
-            <Select
-              style={{ width: '100%' }} value={includeDrafts ? 'all' : 'posted'}
-              onChange={(v) => setIncludeDrafts(v === 'all')}
-              options={[
-                { value: 'posted', label: 'المرحّل' },
-                { value: 'all', label: 'مع المسودات' },
-              ]}
-            />
-          </Col>
         )}
-      </Row>
-
+      </>)}
+    >
       {/* ٤٠٣ هنا إجابة، مش عطل. */}
       {denied && (
         <Alert
-          type="warning" showIcon style={{ marginBottom: 12 }}
+          type="warning" showIcon style={{ margin: '6px 0 8px' }}
           message="التقرير ده فيه مبالغ باسم موظف"
           description="صلاحية «عرض المرتبات» غير متاحة لحسابك. اختر موضوعاً آخر، أو اطلب الصلاحية من مدير النظام."
         />
       )}
 
-      {totals && (
-        <StatsRow gutter={[8, 8]} style={{ marginBottom: 12 }}>
-          <Col xs={8}>
-            <Card size="small"><Statistic title="عدد السطور" value={totals.rows} /></Card>
-          </Col>
-          <Col xs={8}>
-            <Card size="small">
-              <Statistic
-                title={subject === 'attendance' ? 'عدد الأيام'
-                  : subject === 'leave' || isBalances ? 'عدد الأيام' : 'العدد'}
-                value={num(totals.quantity)}
-              />
-            </Card>
-          </Col>
-          <Col xs={8}>
-            <Card size="small">
-              <Statistic title="إجمالي المبلغ" value={money(totals.amount)}
-                valueStyle={{ color: '#0B5CA8' }} />
-            </Card>
-          </Col>
-        </StatsRow>
-      )}
-
-      {/* الإجماليات فوق محسوبة على كل الصفوف؛ الجدول بيعرض صفحة. من غير السطر ده حد ممكن يجمع
-          العمود بإيده ويلاقيه مش مطابق الكارت ويفتكر إن فيه غلط. */}
+      {/* الإجماليات تحت الجدول محسوبة على كل الصفوف؛ الجدول بيعرض صفحة. من غير السطر ده حد ممكن
+          يجمع العمود بإيده ويلاقيه مش مطابق ويفتكر إن فيه غلط. */}
       {page?.truncated && (
         <Alert
-          type="info" showIcon style={{ marginBottom: 12 }}
+          type="info" showIcon style={{ margin: '6px 0 8px' }}
           message={`معروض ${rows.length} سطر من ${page.total_rows}`}
-          description="الإجماليات أعلاه محسوبة على كل السطور في المدى المحدد، لا على المعروض منها. ضيّق الفترة أو الفلاتر لعرض الباقي."
+          description="الإجماليات تحت الجدول محسوبة على كل السطور في المدى المحدد، لا على المعروض منها. ضيّق الفترة أو الفلاتر لعرض الباقي."
         />
       )}
 
       <Table
         {...kb.tableProps}
+        className="sl-table"
         rowKey={rowKeyOf}
         size="small" loading={loading} dataSource={rows} columns={tableCols.columns}
         locale={{ emptyText: denied ? 'مالكش صلاحية على التقرير ده' : 'لا توجد بيانات في هذه الفترة' }}
-        pagination={{ defaultPageSize: PAGE_SIZE, showSizeChanger: true }}
+        pagination={{
+          defaultPageSize: PAGE_SIZE, showSizeChanger: true,
+          locale: { items_per_page: '' },
+          showTotal: () => footer,
+        }}
         scroll={{ x: 'max-content' }}
       />
-    </Card>
+    </ListPage>
   );
 }
 

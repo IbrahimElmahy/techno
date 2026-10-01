@@ -1,12 +1,11 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { PAGE_SIZE } from '../utils/pagination';
-import {
-  Alert, Button, Card, Col, DatePicker, Row, Segmented, Switch, Tabs, Tag, message,
-} from 'antd';
+import { Alert, Button, Switch, Tabs, Tag, message } from 'antd';
 // فلتر على كل عمود — شوف `FilterTable`.
 import { FilterTable as Table } from '../components/FilterTable';
-import { Statistic } from '../components/Statistic';
-import { DownloadOutlined, PrinterOutlined, ReloadOutlined } from '@ant-design/icons';
+import {
+  DownloadOutlined, FundOutlined, PrinterOutlined, ReloadOutlined,
+} from '@ant-design/icons';
 import dayjs, { Dayjs } from 'dayjs';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../api/client';
@@ -19,7 +18,8 @@ import { textColumn, numberColumn } from '../components/gridColumns';
 import { columnsFromTable, exportCsv as writeCsv } from '../utils/exportCsv';
 import { printReport, type PrintColumn, type PrintTotal } from '../print/reportSheet';
 
-import StatsRow from '../components/StatsRow';
+import ListPage from '../components/ListPage';
+import { useCanSeeStats } from '../components/StatsRow';
 import { money } from '../utils/money';
 type Dimension = 'cost_center' | 'branch';
 
@@ -179,84 +179,73 @@ export default function Profitability() {
     export: { name: view?.label ?? 'تحليل الربحية', rows },
   });
 
+  // كروت الإجماليات بقت سطر تحت الجدول — ولسه للي عنده `stats.view` بس، زي `StatsRow`.
+  const canSeeStats = useCanSeeStats();
+
   return (
-    <Card
+    <ListPage<Dimension>
+      icon={<FundOutlined />}
       title={view?.label ?? 'تحليل الربحية'}
-      extra={(
-        <>
-          {tableCols.control}
-          <Button icon={<DownloadOutlined />} onClick={exportCsv}
-            style={{ marginInlineStart: 8 }}>تصدير CSV</Button>
-          <Button icon={<PrinterOutlined />} onClick={printIt}
-            style={{ marginInlineStart: 8, marginInlineEnd: 8 }}>طباعة</Button>
-          <Button icon={<ReloadOutlined />} onClick={load}>تحديث</Button>
-        </>
-      )}
-    >
-      <Row gutter={[8, 8]} style={{ marginBottom: 12 }}>
-        <Col xs={24} md={10}>
-          <Segmented
-            block value={dimension} onChange={(v) => setDimension(v as Dimension)}
-            options={[
-              { value: 'cost_center', label: 'بمركز التكلفة' },
-              { value: 'branch', label: 'بالفرع' },
-            ]}
-          />
-        </Col>
-        <Col xs={24} md={8}>
-          <DateRangeFilter
-            value={range as any}
-            onChange={(v) => setRange(v as any)}
-          />
-        </Col>
-        <Col xs={24} md={6}>
+      subtitle="الإيرادات والمصروفات والربح موزّعة على مراكز التكلفة أو الفروع"
+      tabs={[
+        { key: 'cost_center', label: 'بمركز التكلفة' },
+        { key: 'branch', label: 'بالفرع' },
+      ]}
+      activeTab={dimension}
+      onTabChange={setDimension}
+      actions={(<>
+        <Button icon={<PrinterOutlined />} onClick={printIt}>طباعة</Button>
+        <Button icon={<DownloadOutlined />} onClick={exportCsv}>تصدير CSV</Button>
+        {tableCols.control}
+        <Button icon={<ReloadOutlined />} onClick={load}>تحديث</Button>
+      </>)}
+      filters={(<>
+        <DateRangeFilter
+          className="sl-f-dates"
+          value={range as any}
+          onChange={(v) => setRange(v as any)}
+        />
+        <span style={{ flex: '0 0 auto', display: 'inline-flex', alignItems: 'center', gap: 8 }}>
           <Switch checked={includeUnassigned} onChange={setIncludeUnassigned} />
-          <span style={{ marginInlineStart: 8 }}>أظهر غير الموزّع</span>
-        </Col>
-      </Row>
-
-      {totals && (
-        <StatsRow gutter={[8, 8]} style={{ marginBottom: 12 }}>
-          <Col xs={8}>
-            <Card size="small"><Statistic title="الإيرادات" value={money(totals.income)} /></Card>
-          </Col>
-          <Col xs={8}>
-            <Card size="small"><Statistic title="المصروفات" value={money(totals.expenses)} /></Card>
-          </Col>
-          <Col xs={8}>
-            <Card size="small">
-              <Statistic
-                title={`صافي الربح${totals.margin_pct !== null ? ` (${money(totals.margin_pct)}%)` : ''}`}
-                value={money(totals.profit)}
-                valueStyle={{ color: Number(totals.profit) < 0 ? '#cf1322' : '#6AB42D' }}
-              />
-            </Card>
-          </Col>
-        </StatsRow>
-      )}
-
+          <span>أظهر غير الموزّع</span>
+        </span>
+      </>)}
+    >
       {!!totals?.unassigned_lines && includeUnassigned && (
         <Alert
-          type="info" showIcon style={{ marginBottom: 12 }}
+          type="info" showIcon style={{ margin: '6px 0 8px' }}
           message={`${totals.unassigned_lines} سطر مترحّل من غير ${dimension === 'cost_center' ? 'مركز تكلفة' : 'فرع'}`}
           description="تظهر في سطر «غير موزّع» ليساوي مجموع الأسطر قائمة الدخل. وإخفاؤها يجعل الأجزاء لا تُكوِّن الكل دون ما يوضّح السبب."
         />
       )}
       {!includeUnassigned && (
         <Alert
-          type="warning" showIcon style={{ marginBottom: 12 }}
+          type="warning" showIcon style={{ margin: '6px 0 8px' }}
           message="غير الموزّع مخفي — الإجماليات دي أقل من قائمة الدخل"
         />
       )}
 
       <Table
         {...kb.tableProps}
+        className="sl-table"
         rowKey={rowKeyOf}
         size="small" loading={loading} dataSource={rows} columns={tableCols.columns}
         locale={{ emptyText: 'لا توجد حركة في هذه الفترة' }}
         pagination={false}
         scroll={{ x: 'max-content' }}
       />
+      {totals && canSeeStats && (
+        <div style={{ padding: '10px 4px', borderTop: '1px solid #f1f5f9' }}>
+          <span className="sl-foot">
+            <span>الإيرادات: <b>{money(totals.income)}</b></span>
+            <span>المصروفات: <b>{money(totals.expenses)}</b></span>
+            <span>
+              صافي الربح{totals.margin_pct !== null ? ` (${money(totals.margin_pct)}%)` : ''}:{' '}
+              <b className={Number(totals.profit) < 0 ? 'is-neg' : 'is-pos'}>{money(totals.profit)}</b>
+            </span>
+          </span>
+        </div>
+      )}
 
       <TabModal
         open={!!openRow} onCancel={() => setOpenRow(null)} footer={null} width={720}
@@ -369,6 +358,6 @@ export default function Profitability() {
           ]}
         />
       </TabModal>
-    </Card>
+    </ListPage>
   );
 }

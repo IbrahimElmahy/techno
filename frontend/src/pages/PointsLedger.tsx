@@ -2,21 +2,20 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { searchFilter, searchRank, sortByName } from '../utils/arabicSort';
 import { useNavigate } from 'react-router-dom';
 import {
-  Card, Table, Row, Col, Select, Button, Space, Tag, Typography, message, Alert,
+  Table, Select, Button, Tag, Typography, message,
 } from 'antd';
-import { Statistic } from '../components/Statistic';
 import type { ColumnsType } from 'antd/es/table';
-import { ReloadOutlined, DownloadOutlined } from '@ant-design/icons';
+import { ReloadOutlined, DownloadOutlined, StarOutlined } from '@ant-design/icons';
 import type { Dayjs } from 'dayjs';
 import { api } from '../api/client';
 import DateRangeFilter from '../components/DateRangeFilter';
 import { DocRef, type DocKind } from '../components/DocumentLink';
 import { useTableColumns } from '../components/ColumnSettings';
 import { exportCsv as writeCsv, type CsvColumn } from '../utils/exportCsv';
-
-import StatsRow from '../components/StatsRow';
+import ListPage from '../components/ListPage';
+import { useCanSeeStats } from '../components/StatsRow';
 import { qty as num } from '../utils/money';
-const { Text, Title } = Typography;
+const { Text } = Typography;
 
 /**
  * سجل النقاط — كل حركة في دفتر نقاط التجار، مش كارت عميل واحد.
@@ -168,99 +167,70 @@ export default function PointsLedger() {
   const shown = data?.rows.length || 0;
   const total = data?.count || 0;
 
+  // الإجماليات محسوبة في القاعدة على الحركة المفلترة كلها — مش على الصفحة المعروضة.
+  // كانت كروت فوق؛ دلوقتي سطر تحت الجدول جنب الترقيم. والأرقام دي للي معاه
+  // `stats.view` بس — نفس شرط `StatsRow` اللي كانت فيه.
+  const canSeeStats = useCanSeeStats();
+  const footer = (
+    <span className="sl-foot">
+      <span>عدد الحركات: <b>{num(total)}</b></span>
+      {total > 0 && <span>المعروض: <b>{num(shown)}</b></span>}
+      {canSeeStats && (<>
+        <span>وارد: <b className="is-pos">{num(data?.earned)}</b></span>
+        <span>منصرف: <b className="is-neg">{num(data?.spent)}</b></span>
+        <span>الصافي: <b className={net < 0 ? 'is-neg' : 'is-pos'}>{num(data?.net)}</b></span>
+      </>)}
+    </span>
+  );
+
   return (
-    <div style={{ padding: 16 }}>
-      <Space style={{ marginBottom: 12, width: '100%', justifyContent: 'space-between' }}>
-        <Title level={4} style={{ margin: 0 }}>سجل النقاط</Title>
-        <Space>
-          {columnSettings}
-          <Button icon={<DownloadOutlined />} onClick={exportCsv} disabled={!shown}>
-            تصدير الصفحة
-          </Button>
-          <Button icon={<ReloadOutlined />} onClick={load} loading={loading}>تحديث</Button>
-        </Space>
-      </Space>
-
-      {/* الإجماليات محسوبة في القاعدة على الحركة المفلترة كلها — مش على الصفحة المعروضة. */}
-      <StatsRow gutter={[12, 12]} style={{ marginBottom: 16 }}>
-        <Col xs={12} md={6}>
-          <Card size="small">
-            <Statistic title="وارد (نقط مكتسبة)" value={num(data?.earned)}
-              valueStyle={{ color: '#3f8600' }} />
-          </Card>
-        </Col>
-        <Col xs={12} md={6}>
-          <Card size="small">
-            <Statistic title="منصرف (كوبونات ومعاينات)" value={num(data?.spent)}
-              valueStyle={{ color: '#cf1322' }} />
-          </Card>
-        </Col>
-        <Col xs={12} md={6}>
-          <Card size="small">
-            <Statistic title="الصافي" value={num(data?.net)}
-              valueStyle={{ color: net < 0 ? '#cf1322' : '#1677ff' }} />
-          </Card>
-        </Col>
-        <Col xs={12} md={6}>
-          <Card size="small">
-            <Statistic title="عدد الحركات" value={total} />
-          </Card>
-        </Col>
-      </StatsRow>
-
-      <Card size="small" style={{ marginBottom: 12 }}>
-        <Row gutter={[8, 8]} align="middle">
-          <Col xs={24} md={8}>
-            <Select
-              allowClear showSearch
-              style={{ width: '100%' }}
-              placeholder="كل العملاء"
-              value={customerId}
-              onChange={setCustomerId}
-              options={customerOptions} filterOption={searchFilter} filterSort={searchRank}/>
-          </Col>
-          <Col xs={24} md={8}>
-            <Select
-              allowClear mode="multiple"
-              style={{ width: '100%' }}
-              placeholder="كل أنواع الحركة"
-              value={kinds}
-              onChange={setKinds}
-              options={kindOptions}
-              maxTagCount="responsive"
-            />
-          </Col>
-          <Col xs={24} md={8}>
-            <DateRangeFilter value={range} onChange={setRange} />
-          </Col>
-        </Row>
-      </Card>
-
-      {total > 0 && (
-        <Alert
-          type="info" showIcon style={{ marginBottom: 12 }}
-          message={`المعروض ${num(shown)} من ${num(total)} حركة`}
+    <ListPage
+      icon={<StarOutlined />}
+      title="سجل النقاط"
+      subtitle="كل حركات دفتر نقاط التجار — الوارد من الفواتير والمنصرف في الكوبونات والمعاينات"
+      actions={(<>
+        {columnSettings}
+        <Button icon={<DownloadOutlined />} onClick={exportCsv} disabled={!shown}>
+          تصدير الصفحة
+        </Button>
+        <Button icon={<ReloadOutlined />} onClick={load} loading={loading}>تحديث</Button>
+      </>)}
+      filters={(<>
+        <Select
+          className="sl-f-customer"
+          allowClear showSearch
+          placeholder="كل العملاء"
+          value={customerId}
+          onChange={setCustomerId}
+          options={customerOptions} filterOption={searchFilter} filterSort={searchRank}/>
+        <Select
+          allowClear mode="multiple"
+          placeholder="كل أنواع الحركة"
+          value={kinds}
+          onChange={setKinds}
+          options={kindOptions}
+          maxTagCount="responsive"
         />
-      )}
-
-      <Card size="small" bodyStyle={{ padding: 0 }}>
-        <Table<PointRow>
-          size="small"
-          rowKey="id"
-          loading={loading}
-          dataSource={data?.rows || []}
-          columns={columns}
-          scroll={{ x: true }}
-          pagination={{
-            current: page,
-            pageSize: PAGE_SIZE,
-            total,
-            showSizeChanger: false,
-            onChange: setPage,
-            showTotal: (t) => `${num(t)} حركة`,
-          }}
-        />
-      </Card>
-    </div>
+        <DateRangeFilter className="sl-f-dates" value={range} onChange={setRange} />
+      </>)}
+    >
+      <Table<PointRow>
+        className="sl-table"
+        size="small"
+        rowKey="id"
+        loading={loading}
+        dataSource={data?.rows || []}
+        columns={columns}
+        scroll={{ x: true }}
+        pagination={{
+          current: page,
+          pageSize: PAGE_SIZE,
+          total,
+          showSizeChanger: false,
+          onChange: setPage,
+          showTotal: () => footer,
+        }}
+      />
+    </ListPage>
   );
 }

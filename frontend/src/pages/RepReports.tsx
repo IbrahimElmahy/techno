@@ -1,26 +1,26 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { PAGE_SIZE } from '../utils/pagination';
 import { searchFilter, searchRank, compareArabic } from '../utils/arabicSort';
-import {
-  Button, Card, DatePicker, Select, Space, Tabs, Tag, message,
-} from 'antd';
+import { Button, Input, Select, Tag, message } from 'antd';
 // فلتر على كل عمود — شوف `FilterTable`.
 import { FilterTable as Table } from '../components/FilterTable';
-import { Statistic } from '../components/Statistic';
-import { ReloadOutlined, TeamOutlined } from '@ant-design/icons';
+import {
+  ClearOutlined, ReloadOutlined, SearchOutlined, TeamOutlined,
+} from '@ant-design/icons';
 import dayjs, { Dayjs } from 'dayjs';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../api/client';
 import { useTableColumns } from '../components/ColumnSettings';
-import ListToolbar, { useListFilter } from '../components/ListToolbar';
+import { useListFilter } from '../components/ListToolbar';
+import ListPage from '../components/ListPage';
 import DateRangeFilter from '../components/DateRangeFilter';
 import StatementFilter from '../components/StatementFilter';
 import { useQueryTab } from '../components/useQueryTab';
-import { useTableKeyboard } from '../components/keyboard';
+import { useScreenShortcuts, useTableKeyboard } from '../components/keyboard';
 import { textColumn, numberColumn } from '../components/gridColumns';
 
 import { useCanSeeStats } from '../components/StatsRow';
-import { money, qty } from '../utils/money';
+import { money, numeralsLocale, qty } from '../utils/money';
 /**
  * تقارير مندوبين — three of their four report screens; the fourth (عمولة تحصيلات مندوبين) already
  * lives on the finance screen and its menu entry points there.
@@ -129,21 +129,6 @@ export default function RepReports() {
     filters: { rep_user_id: (r, v) => r.rep_user_id === v },
   });
 
-  const header = (
-    <Space wrap>
-      <div style={{ width: 280 }}>
-        <DateRangeFilter
-          value={range as any} onChange={(v) => setRange(v as any)} allowClear={false}
-        />
-      </div>
-      <Select
-        allowClear showSearch style={{ minWidth: 200 }}
-        placeholder="كل المناديب" value={repId} onChange={setRepId} options={repOptions} filterOption={searchFilter} filterSort={searchRank}/>
-      <StatementFilter value={statement} onChange={setStatement} style={{ width: 220 }} />
-      <Button icon={<ReloadOutlined />} onClick={load}>تحديث</Button>
-    </Space>
-  );
-
   // كل سطر هنا بيتكلم عن حد أو حاجة ليها ملف: المندوب، العميل، الصنف. فالسطر بيروح للملف ده،
   // بدل ما الاسم بس يكون لينك واللي بيقرا الأرقام على الشمال ما يوصلش لحاجة.
   const collectionKb = useTableKeyboard<CollectionRow>({
@@ -228,99 +213,136 @@ export default function RepReports() {
 
   const canSeeStats = useCanSeeStats();
 
-  return (
-    <Card title={<span><TeamOutlined /> تقارير المندوبين</span>} extra={header}>
-      {canSeeStats && (
-      <Space size="large" style={{ marginBottom: 12 }}>
-        <Statistic title="إجمالي المُحصّل" value={totalCollected} precision={2}
-          valueStyle={{ color: '#6AB42D' }} />
-        <Statistic title="إجمالي المبيعات (صافي)" value={totalSold} precision={2} />
-      </Space>
-      )}
+  // شريط الفلاتر واحد للتلات تابات — البحث وفلتر المندوب بتوع التاب المفتوح.
+  const TAB_META: Record<string, {
+    label: string; search: string; total: number; byRep: boolean;
+    filter: { query: string; setQuery: (v: string) => void; values: Record<string, any>;
+      setValue: (k: string, v: any) => void; reset: () => void; filtered: unknown[] };
+    control: React.ReactNode;
+  }> = {
+    collections: {
+      label: 'تحصيلات المندوبين', search: 'بحث باسم المندوب', total: collections.length,
+      byRep: false, filter: collectionFilter, control: repCollectionsCols.control,
+    },
+    'collections-by-customer': {
+      label: 'تحصيلات المندوبين عملاء', search: 'بحث بالمندوب أو العميل', total: byCustomer.length,
+      byRep: true, filter: customerFilter, control: repCustomersCols.control,
+    },
+    items: {
+      label: 'مبيعات اصناف مندوبين', search: 'بحث بالمندوب أو الصنف', total: items.length,
+      byRep: true, filter: itemFilter, control: repItemsCols.control,
+    },
+  };
+  const cur = TAB_META[tab];
 
-      <Tabs
-        activeKey={tab} onChange={setTab}
-        items={[
-          {
-            key: 'collections',
-            label: 'تحصيلات المندوبين',
-            children: (
-              <>
-                <ListToolbar
-                  searchPlaceholder="بحث باسم المندوب"
-                  query={collectionFilter.query} onQueryChange={collectionFilter.setQuery}
-                  onReset={collectionFilter.reset}
-                  total={collections.length} shown={collectionFilter.filtered.length}
-                  searchSpan={10}
-                />
-                <div style={{ textAlign: 'end', marginBottom: 8 }}>{repCollectionsCols.control}</div>
-                <Table
-                  {...collectionKb.tableProps}
-                  rowKey="rep_user_id" size="middle" loading={loading}
-                  dataSource={collectionFilter.filtered}
-                  locale={{ emptyText: 'لا توجد تحصيلات في هذه الفترة' }}
-                  pagination={false}
-                  columns={repCollectionsCols.columns}
-                />
-              </>
-            ),
-          },
-          {
-            key: 'collections-by-customer',
-            label: 'تحصيلات المندوبين عملاء',
-            children: (
-              <>
-                <ListToolbar
-                  searchPlaceholder="بحث بالمندوب أو العميل"
-                  query={customerFilter.query} onQueryChange={customerFilter.setQuery}
-                  values={customerFilter.values} onValueChange={customerFilter.setValue}
-                  onReset={customerFilter.reset}
-                  total={byCustomer.length} shown={customerFilter.filtered.length}
-                  filters={[{ key: 'rep_user_id', placeholder: 'المندوب', span: 7,
-                    options: repOptions }]}
-                />
-                <div style={{ textAlign: 'end', marginBottom: 8 }}>{repCustomersCols.control}</div>
-                <Table
-                  {...customerKb.tableProps}
-                  rowKey={(r) => `${r.rep_user_id}-${r.customer_id ?? 0}`}
-                  size="middle" loading={loading} dataSource={customerFilter.filtered}
-                  locale={{ emptyText: 'لا توجد تحصيلات في هذه الفترة' }}
-                  pagination={{ defaultPageSize: PAGE_SIZE, showSizeChanger: true,
-                    showTotal: (t) => `الإجمالي: ${t}` }}
-                  columns={repCustomersCols.columns}
-                />
-              </>
-            ),
-          },
-          {
-            key: 'items',
-            label: 'مبيعات اصناف مندوبين',
-            children: (
-              <>
-                <ListToolbar
-                  searchPlaceholder="بحث بالمندوب أو الصنف"
-                  query={itemFilter.query} onQueryChange={itemFilter.setQuery}
-                  values={itemFilter.values} onValueChange={itemFilter.setValue}
-                  onReset={itemFilter.reset}
-                  total={items.length} shown={itemFilter.filtered.length}
-                  filters={[{ key: 'rep_user_id', placeholder: 'المندوب', span: 7,
-                    options: repOptions }]}
-                />
-                <div style={{ textAlign: 'end', marginBottom: 8 }}>{repItemsCols.control}</div>
-                <Table
-                  {...itemKb.tableProps}
-                  rowKey={(r) => `${r.rep_user_id}-${r.item_id}`}
-                  size="middle" loading={loading} dataSource={itemFilter.filtered}
-                  locale={{ emptyText: 'لا توجد مبيعات في هذه الفترة' }}
-                  pagination={{ defaultPageSize: PAGE_SIZE, showSizeChanger: true,
-                    showTotal: (t) => `الإجمالي: ${t}` }}
-                  columns={repItemsCols.columns}
-                />
-              </>
-            ),
-          },
-        ]}
-      />
-    </Card>
+  // F3 للبحث — كانت جاية من `ListToolbar`.
+  const searchRef = useRef<any>(null);
+  useScreenShortcuts({ onSearch: () => { searchRef.current?.focus?.(); } });
+
+  // الفلتر بالمندوب جوّه التاب بيقبل أكتر من واحد — زي ما كان في `ListToolbar`.
+  const repFilterValue = (() => {
+    const v = cur?.filter.values.rep_user_id;
+    if (v === undefined || v === null || v === '') return undefined;
+    return Array.isArray(v) ? v : [v];
+  })();
+
+  const footer = cur ? (
+    <span className="sl-foot">
+      <span>
+        المعروض: <b>{cur.filter.filtered.length.toLocaleString(numeralsLocale())}</b>
+        {' '}من {cur.total.toLocaleString(numeralsLocale())}
+      </span>
+      {canSeeStats && (<>
+        <span>إجمالي المُحصّل: <b className="is-pos">{money(totalCollected)}</b></span>
+        <span>إجمالي المبيعات (صافي): <b>{money(totalSold)}</b></span>
+      </>)}
+    </span>
+  ) : null;
+
+  const pagination = {
+    defaultPageSize: PAGE_SIZE, showSizeChanger: true,
+    locale: { items_per_page: '' },
+    showTotal: () => footer,
+  };
+
+  return (
+    <ListPage
+      icon={<TeamOutlined />}
+      title={cur?.label ?? 'تقارير المندوبين'}
+      subtitle="تحصيلات ومبيعات المندوبين في الفترة — نفس الفترة للتلات تقارير"
+      tabs={Object.entries(TAB_META).map(([key, m]) => ({ key, label: m.label, count: m.total }))}
+      activeTab={tab}
+      onTabChange={setTab}
+      actions={(<>
+        {cur?.control}
+        <Button icon={<ReloadOutlined />} onClick={load}>تحديث</Button>
+      </>)}
+      filters={(<>
+        <DateRangeFilter
+          className="sl-f-dates"
+          value={range as any} onChange={(v) => setRange(v as any)} allowClear={false}
+        />
+        <Select
+          allowClear showSearch
+          placeholder="كل المناديب" value={repId} onChange={setRepId} options={repOptions} filterOption={searchFilter} filterSort={searchRank}/>
+        <StatementFilter value={statement} onChange={setStatement} />
+        {cur && (<>
+          <Input
+            ref={searchRef}
+            className="sl-f-search"
+            allowClear
+            prefix={<SearchOutlined />}
+            placeholder={cur.search}
+            value={cur.filter.query}
+            onChange={(e) => cur.filter.setQuery(e.target.value)}
+          />
+          {cur.byRep && (
+            <Select
+              allowClear showSearch mode="multiple" maxTagCount="responsive"
+              placeholder="المندوب"
+              value={repFilterValue}
+              onChange={(v) => cur.filter.setValue('rep_user_id',
+                Array.isArray(v) && !v.length ? undefined : v)}
+              options={repOptions} filterOption={searchFilter} filterSort={searchRank}/>
+          )}
+          <Button className="sl-f-clear" icon={<ClearOutlined />} onClick={cur.filter.reset}>مسح</Button>
+        </>)}
+      </>)}
+    >
+      {tab === 'collections' && (<>
+        <Table
+          {...collectionKb.tableProps}
+          className="sl-table"
+          rowKey="rep_user_id" size="small" loading={loading}
+          dataSource={collectionFilter.filtered}
+          locale={{ emptyText: 'لا توجد تحصيلات في هذه الفترة' }}
+          pagination={false}
+          columns={repCollectionsCols.columns}
+        />
+        <div style={{ padding: '10px 4px', borderTop: '1px solid #f1f5f9' }}>{footer}</div>
+      </>)}
+      {tab === 'collections-by-customer' && (
+        <Table
+          {...customerKb.tableProps}
+          className="sl-table"
+          rowKey={(r) => `${r.rep_user_id}-${r.customer_id ?? 0}`}
+          size="small" loading={loading} dataSource={customerFilter.filtered}
+          locale={{ emptyText: 'لا توجد تحصيلات في هذه الفترة' }}
+          pagination={pagination}
+          columns={repCustomersCols.columns}
+        />
+      )}
+      {tab === 'items' && (
+        <Table
+          {...itemKb.tableProps}
+          className="sl-table"
+          rowKey={(r) => `${r.rep_user_id}-${r.item_id}`}
+          size="small" loading={loading} dataSource={itemFilter.filtered}
+          locale={{ emptyText: 'لا توجد مبيعات في هذه الفترة' }}
+          pagination={pagination}
+          columns={repItemsCols.columns}
+        />
+      )}
+    </ListPage>
   );
 }

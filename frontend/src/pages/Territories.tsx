@@ -1,11 +1,12 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { searchFilter, searchRank } from '../utils/arabicSort';
 import {
-  Alert, Button, Card, Empty, Input, Modal, Select, Space, Switch, Table, Tag, Tooltip, message,
+  Button, Empty, Input, Modal, Select, Space, Switch, Table, Tag, Tooltip, message,
 } from 'antd';
-import { DeleteOutlined, PlusOutlined, ReloadOutlined, SearchOutlined } from '@ant-design/icons';
+import { AimOutlined, DeleteOutlined, PlusOutlined, ReloadOutlined, SearchOutlined } from '@ant-design/icons';
 import { api } from '../api/client';
 import { useTableColumns } from '../components/ColumnSettings';
+import ListPage from '../components/ListPage';
 
 /**
  * المناطق — مستويين: منطقة رئيسية وتحتها فرعية.
@@ -144,32 +145,33 @@ export default function Territories() {
   });
 
   return (
-    <Card
+    <>
+    <ListPage
+      icon={<AimOutlined />}
       title="المناطق"
-      extra={
-        <Space>
-          {cols.control}
-          <Button type="primary" icon={<PlusOutlined />} onClick={() => {
-            setDraft({ name: '', branch_id: branches[0]?.id });
-            setAdding(true);
-          }}>منطقة جديدة</Button>
-          <Button icon={<ReloadOutlined />} onClick={load}>تحديث</Button>
-        </Space>
-      }
+      // الشرح اللي كان في التنبيه فوق الجدول — سطر واحد هنا، وتلميح الحذف بيكمّل الباقي.
+      subtitle="المنطقة الرئيسية تجمع تحتها مناطق فرعية، والمنطقة التي عليها عملاء لا تُحذف — أوقفها بدلاً من ذلك"
+      actions={(<>
+        <Button type="primary" className="sl-create" icon={<PlusOutlined />} onClick={() => {
+          setDraft({ name: '', branch_id: branches[0]?.id });
+          setAdding(true);
+        }}>منطقة جديدة</Button>
+        <Button icon={<ReloadOutlined />} onClick={load}>تحديث</Button>
+        {cols.control}
+      </>)}
+      filters={(
+        <Input className="sl-f-search" allowClear prefix={<SearchOutlined />}
+          placeholder="بحث بالاسم أو الفرع"
+          value={query} onChange={(e) => setQuery(e.target.value)} />
+      )}
     >
-      <Alert type="info" showIcon style={{ marginBottom: 12 }}
-        message="المنطقة الرئيسية تجمع تحتها مناطق فرعية — «٦ أكتوبر» فوق «الحى الأول» و«الفردوس»."
-        description="عمود «عملاء» يقول إن كانت المنطقة مستعملة فعلاً. والمنطقة التي عليها عملاء لا تُحذف — أوقفها بدلاً من ذلك، فيبقى اسمها مقروءاً على ما ارتبط بها." />
-
-      <Input allowClear prefix={<SearchOutlined />} style={{ width: 300, marginBottom: 12 }}
-        placeholder="بحث بالاسم أو الفرع"
-        value={query} onChange={(e) => setQuery(e.target.value)} />
-
       <Table
+        className="sl-table"
         rowKey="id" size="small" loading={loading} dataSource={visible}
         columns={cols.columns} tableLayout="fixed" pagination={false}
         locale={{ emptyText: <Empty description="لا توجد مناطق" /> }}
       />
+    </ListPage>
 
       <Modal
         open={adding} title="منطقة جديدة" okText="أضف" cancelText="إلغاء"
@@ -198,6 +200,6 @@ export default function Territories() {
               .map((p) => ({ value: p.id, label: p.name }))} filterOption={searchFilter} filterSort={searchRank} />
         </Space>
       </Modal>
-    </Card>
+    </>
   );
 }

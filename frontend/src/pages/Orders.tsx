@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { PAGE_SIZE } from '../utils/pagination';
 import {
   Alert, Button, Card, Col, DatePicker, Empty, Form, Input, Row, Select,
@@ -11,7 +11,7 @@ import { Popconfirm } from '../components/noConfirm';
 import {
   DeleteOutlined, PlusOutlined, ReloadOutlined, ArrowLeftOutlined, FileAddOutlined,
   SaveOutlined, UndoOutlined, EditOutlined, SearchOutlined, ArrowRightOutlined,
-  PrinterOutlined, BankOutlined, CheckOutlined,
+  PrinterOutlined, BankOutlined, CheckOutlined, FileTextOutlined, ClearOutlined,
 } from '@ant-design/icons';
 import dayjs, { Dayjs } from 'dayjs';
 import { api } from '../api/client';
@@ -19,7 +19,11 @@ import { netOf, MAX_DISCOUNT_PCT } from '../utils/discounts';
 import { useQueryTab } from '../components/useQueryTab';
 import { useDocRoute } from '../components/useDocRoute';
 import DocumentLink from '../components/DocumentLink';
-import ListToolbar, { useListFilter } from '../components/ListToolbar';
+import { useListFilter } from '../components/ListToolbar';
+import ListPage from '../components/ListPage';
+import ExportExcelButton from '../components/ExportExcelButton';
+import DateRangeFilter from '../components/DateRangeFilter';
+import { useScreenShortcuts } from '../components/keyboard';
 import { matchesStatement } from '../utils/statements';
 import ProductPickerModal from '../components/ProductPickerModal';
 import { useLookup, labelMap } from '../hooks/useLookup';
@@ -31,7 +35,7 @@ import SummaryTile from '../components/saleDoc/SummaryTile';
 import DocumentAttachments from '../components/DocumentAttachments';
 import { printReport } from '../print/reportSheet';
 import { QTY_DATA_ATTR, flashExistingItem } from '../utils/duplicateItem';
-import { money, qty } from '../utils/money';
+import { money, numeralsLocale, qty } from '../utils/money';
 import './docs.extra.css';
 
 /**
@@ -596,59 +600,84 @@ export default function Orders() {
   ];
 
   // إخفاء وترتيب الأعمدة — نفس المحرك اللي كل الجداول بتستخدمه.
-  const tableCols = useTableColumns('orders', columns, {
-    export: { name: `شيت تسعير ${kindLabel}`, rows: filter.filtered },
-  });
+  // التصدير زرار لوحده في ترويسة الكشف — بنفس الأعمدة المعروضة.
+  const tableCols = useTableColumns('orders', columns);
+
+  // خانة بحث الكشف — F3 كانت جاية من `ListToolbar`، والخانة بقت في سطر فلاتر `ListPage`.
+  const listSearchRef = useRef<any>(null);
+  useScreenShortcuts({ onSearch: () => { listSearchRef.current?.focus?.(); } }, !docOpen);
+
+  // من غير الطرف (عمود «الطرف» مابيتجمعش) — العدد وإجمالي المعروض.
+  const shownTotal = filter.filtered.reduce((n, o) => n + Number(o.total || 0), 0);
+  const listFooter = (
+    <span className="sl-foot">
+      <span>إجمالي السجلات: <b>{filter.filtered.length.toLocaleString(numeralsLocale())}</b> طلب</span>
+      <span>إجمالي المعروض: <b>{money(shownTotal)}</b></span>
+    </span>
+  );
 
   return (
     <>
     {!docOpen && (
-    <Card
-      title={`شيت تسعير ${kindLabel}`}
-      extra={(
-        <Space>
-          {tableCols.control}
-          {/* زرار واحد بنوع الشاشة. من غير `data-shortcut` هنا: F2 على «إضافة صنف» جوّه
-              الشيت، ونفس المفتاح على زرارين في شاشة واحدة معناه إن اللي بيضغطه مش عارف
-              هيحصل إيه — نفس ترتيب فاتورة البيع بالظبط. */}
-          <Button type="primary" icon={<PlusOutlined />}
-            onClick={() => startNew(kind)}>{sheetName}</Button>
-          <Button icon={<ReloadOutlined />} onClick={load}>تحديث</Button>
-        </Space>
-      )}
-    >
-      <Alert
-        type="info" showIcon style={{ marginBottom: 12 }}
-        message="ورقة تسعير — لا تحرّك مخزوناً ولا خزينة ولا أي شيء آخر."
-        description="اكتب أي كمية بغض النظر عن المتاح في المخزن — الغرض التسعير أو العرض، لا الترحيل. وعند تأكيد البيع أنشئ الفاتورة واربطها بهذا الطلب."
-      />
-
-      <ListToolbar
-        searchPlaceholder="بحث برقم الطلب أو الملاحظات أو البيان"
-        query={filter.query} onQueryChange={filter.setQuery}
-        values={filter.values} onValueChange={filter.setValue}
-        showDateRange range={filter.range} onRangeChange={filter.setRange}
-        onReset={filter.reset} total={orders.length} shown={filter.filtered.length}
-        filters={[
-          // فلتر «النوع» اتشال: القايمة كلها نوع واحد أصلاً، وفلتر إجابته واحدة بياخد
-          // مساحة ويورّي إن فيه اختيار مالهوش وجود.
-          { key: 'status', placeholder: 'الحالة', options: [
+    <ListPage
+      icon={<FileTextOutlined />}
+      title={`شيت تسعير ${kindLabel}`} muted={`(سجل طلبات ال${kind === 'sale' ? 'بيع' : 'شراء'})`}
+      // كان تنبيه كبير فوق الكشف — نفس الكلام في سطر تحت العنوان.
+      subtitle="ورقة تسعير — لا تحرّك مخزوناً ولا خزينة. اكتب أي كمية بغض النظر عن المتاح، وعند تأكيد البيع أنشئ الفاتورة واربطها بالطلب."
+      actions={(<>
+        {/* زرار واحد بنوع الشاشة. من غير `data-shortcut` هنا: F2 على «إضافة صنف» جوّه
+            الشيت، ونفس المفتاح على زرارين في شاشة واحدة معناه إن اللي بيضغطه مش عارف
+            هيحصل إيه — نفس ترتيب فاتورة البيع بالظبط. */}
+        <Button type="primary" icon={<PlusOutlined />} className="sl-create"
+          onClick={() => startNew(kind)}>{sheetName}</Button>
+        <Button icon={<ReloadOutlined />} onClick={load}>تحديث</Button>
+        <ExportExcelButton name={`شيت تسعير ${kindLabel}`} rows={filter.filtered}
+          tableColumns={tableCols.columns as any} style={{ marginInlineStart: 0 }} />
+        {tableCols.control}
+      </>)}
+      filters={(<>
+        <Input
+          className="sl-f-search"
+          allowClear
+          ref={listSearchRef}
+          value={filter.query}
+          placeholder="بحث برقم الطلب أو الملاحظات أو البيان"
+          prefix={<SearchOutlined />}
+          onChange={(e) => filter.setQuery(e.target.value)}
+        />
+        {/* فلتر «النوع» اتشال: القايمة كلها نوع واحد أصلاً. */}
+        <Select allowClear showSearch mode="multiple" maxTagCount="responsive"
+          placeholder="الحالة"
+          value={filter.values.status ?? undefined}
+          onChange={(v: any[]) => filter.setValue('status', v?.length ? v : undefined)}
+          options={[
             { value: 'open', label: 'مفتوح' },
             { value: 'converted', label: 'تم التحويل' },
-            { value: 'cancelled', label: 'ملغي' }] },
-          { key: 'statement', placeholder: 'البيان', kind: 'text' },
-        ]}
-      />
-
+            { value: 'cancelled', label: 'ملغي' }]} />
+        <Input allowClear placeholder="البيان"
+          value={filter.values.statement ?? undefined}
+          onChange={(e) => filter.setValue('statement', e.target.value || undefined)} />
+        <DateRangeFilter className="sl-f-dates"
+          value={filter.range ?? null}
+          onChange={(v) => filter.setRange(v)} />
+        <Button className="sl-f-clear" icon={<ClearOutlined />} onClick={filter.reset}>مسح</Button>
+      </>)}
+    >
       <Table<Order>
+        className="sl-table"
         rowKey="id" size="small" loading={loading} dataSource={filter.filtered}
         onRow={(r) => ({ onClick: () => openOrder(r), style: { cursor: 'pointer' } })}
         locale={{ emptyText: 'لا توجد طلبات' }}
-        pagination={{ defaultPageSize: PAGE_SIZE, showSizeChanger: true }}
+        // الترقيم شمال، والإجماليات يمين في نفس السطر — زي سجل المبيعات.
+        pagination={{
+          defaultPageSize: PAGE_SIZE, showSizeChanger: true,
+          locale: { items_per_page: '' },
+          showTotal: () => listFooter,
+        }}
         scroll={{ x: 'max-content' }}
         columns={tableCols.columns}
       />
-    </Card>
+    </ListPage>
     )}
 
       {/* باب «مين العميل؟» اتشال — الشيت ده مش بيتكتب على حد. */}

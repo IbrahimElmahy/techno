@@ -2,17 +2,20 @@ import React, { useEffect, useState } from 'react';
 import { searchFilter, searchRank } from '../utils/arabicSort';
 import { PAGE_SIZE } from '../utils/pagination';
 import {
-  Button, Card, Descriptions, Dropdown, Form, Input, Select, Space, Table, Tooltip, message,
+  Button, Descriptions, Dropdown, Form, Input, Select, Space, Table, Tooltip, message,
 } from 'antd';
 import { Popconfirm } from '../components/noConfirm';
 import {
   PlusOutlined, DeleteOutlined, EditOutlined, ReloadOutlined, PrinterOutlined,
   EyeOutlined, DownOutlined, CloseCircleOutlined, CheckCircleOutlined,
+  AppstoreOutlined, SearchOutlined, ClearOutlined,
 } from '@ant-design/icons';
 import { api } from '../api/client';
 import { invalidateCategoryTree } from '../hooks/useCategoryTree';
 import { useTableKeyboard } from '../components/keyboard';
-import ListToolbar, { useListFilter } from '../components/ListToolbar';
+import { useListFilter } from '../components/ListToolbar';
+import ListPage from '../components/ListPage';
+import { numeralsLocale } from '../utils/money';
 import { useScreenShortcuts } from '../components/keyboard';
 import { TabModal } from '../components/TabModal';
 import { useTableColumns } from '../components/ColumnSettings';
@@ -297,43 +300,57 @@ export default function Categories() {
     export: { name: 'الفئات', rows: filter.filtered },
   });
 
+  const activeFilter = filter.values.active;
   return (
-    <Card
-      // Their page is titled «الفئات» while the menu entry reads «فئات الاصناف». Both are kept as
-      // they are: the menu is how you find it, the title is what it calls itself, and changing
-      // either to match the other would be us tidying up someone else's vocabulary.
-      title="الفئات"
-      extra={(
-        <Space>
-          {tableCols.control}
-          <Button data-shortcut="F2" type="primary" icon={<PlusOutlined />} onClick={openCreate} />
-          <Button type="primary" onClick={load}>اعادة تحميل</Button>
-          <Dropdown menu={{ items: moreMenu }}>
-            <Button>المزيد <DownOutlined /></Button>
-          </Dropdown>
-          <Button icon={<PrinterOutlined />} onClick={() => window.print()} />
-        </Space>
-      )}
+    <>
+    {/* العنوان «الفئات» زي شاشتهم، والقايمة بتقول «فئات الاصناف» — الاتنين متسابين. */}
+    <ListPage
+      icon={<AppstoreOutlined />}
+      title="الفئات" muted="(فئات الاصناف)"
+      subtitle="الفئات الرئيسية والفرعية اللي الأصناف بتتصنّف عليها"
+      actions={(<>
+        <Button data-shortcut="F2" type="primary" icon={<PlusOutlined />} className="sl-create"
+          onClick={openCreate}>فئة جديدة</Button>
+        <Button icon={<ReloadOutlined />} onClick={load}>اعادة تحميل</Button>
+        <Dropdown menu={{ items: moreMenu }}>
+          <Button>المزيد <DownOutlined /></Button>
+        </Dropdown>
+        <Button icon={<PrinterOutlined />} onClick={() => window.print()} />
+        {tableCols.control}
+      </>)}
+      filters={(<>
+        <Input className="sl-f-search" allowClear ref={searchRef}
+          value={filter.query} placeholder="بحث باسم الفئة"
+          prefix={<SearchOutlined />}
+          onChange={(e) => filter.setQuery(e.target.value)} />
+        <Select allowClear placeholder="الحالة"
+          value={activeFilter === undefined || activeFilter === null || activeFilter === ''
+            ? undefined : activeFilter}
+          onChange={(v) => filter.setValue('active', v)}
+          options={[{ value: 'active', label: 'ظاهرة' }, { value: 'inactive', label: 'مخفية' }]} />
+        <Button className="sl-f-clear" icon={<ClearOutlined />} onClick={filter.reset}>مسح</Button>
+      </>)}
     >
-      <ListToolbar
-        searchPlaceholder="بحث باسم الفئة"
-        query={filter.query} onQueryChange={filter.setQuery}
-        values={filter.values} onValueChange={filter.setValue}
-        onReset={filter.reset}
-        total={rows.length} shown={filter.filtered.length}
-        filters={[{ key: 'active', placeholder: 'الحالة', options: [
-          { value: 'active', label: 'ظاهرة' }, { value: 'inactive', label: 'مخفية' },
-        ] }]}
-      />
-
       <Table<Category>
           {...kb.tableProps}
+        className="sl-table"
         rowKey="id" size="small" loading={loading} dataSource={filter.filtered}
         locale={{ emptyText: 'لا توجد فئات' }}
-        pagination={{ defaultPageSize: PAGE_SIZE, showSizeChanger: true }}
+        pagination={{
+          defaultPageSize: PAGE_SIZE, showSizeChanger: true, locale: { items_per_page: '' },
+          showTotal: () => (
+            <span className="sl-foot">
+              <span>إجمالي الفئات: <b>{rows.length.toLocaleString(numeralsLocale())}</b></span>
+              {filter.filtered.length < rows.length && (
+                <span>المعروض: <b>{filter.filtered.length.toLocaleString(numeralsLocale())}</b></span>
+              )}
+            </span>
+          ),
+        }}
         // Their column order exactly: رقم · الاسم · مخفي · وصف, then the row's three icons.
         columns={tableCols.columns}
       />
+    </ListPage>
 
       <TabModal
         open={!!viewing} onCancel={() => setViewing(null)} footer={null} destroyOnHidden
@@ -378,6 +395,6 @@ export default function Categories() {
           <Button type="primary" htmlType="submit" block>حفظ</Button>
         </Form>
       </TabModal>
-    </Card>
+    </>
   );
 }

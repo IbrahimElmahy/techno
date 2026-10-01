@@ -2,15 +2,16 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { PAGE_SIZE } from '../utils/pagination';
 import { searchFilter, searchRank, compareArabic } from '../utils/arabicSort';
 import {
-  Alert, Button, Card, Checkbox, Col, DatePicker, Descriptions, Empty, Input, Row, Select,
+  Alert, Button, Checkbox, Descriptions, Empty, Input, Select,
   Space, Spin, Tag, message,
 } from 'antd';
 // فلتر على كل عمود — شوف `FilterTable`.
 import { FilterTable as Table } from '../components/FilterTable';
-import { Statistic } from '../components/Statistic';
 import {
   DownloadOutlined, LinkOutlined, PrinterOutlined, ReloadOutlined, SearchOutlined,
+  FileSearchOutlined, ClearOutlined,
 } from '@ant-design/icons';
+import ListPage from '../components/ListPage';
 import dayjs, { Dayjs } from 'dayjs';
 import { useSearchParams } from 'react-router-dom';
 import { api } from '../api/client';
@@ -28,7 +29,6 @@ import { normalizeAr } from '../components/ListToolbar';
 import { exportCsv as writeCsv, type CsvColumn } from '../utils/exportCsv';
 import { printReport, type PrintColumn } from '../print/reportSheet';
 
-import StatsRow from '../components/StatsRow';
 import { money, numeralsLocale } from '../utils/money';
 type Subject = 'account' | 'item';
 
@@ -885,248 +885,221 @@ export default function AccountStatement() {
     );
   };
 
+  /** «مسح» بيشيل فلاتر السطور بس — الحساب/الصنف والفترة بيفضلوا زي ما هم. */
+  const clearLineFilters = () => {
+    setQuery(''); setTypeFilter([]); setRepFilter(undefined); setCcFilter([]);
+    setDocNo(''); setStmtQ(''); setExactMatch(false); setHideZero(false);
+  };
+
+  const shownDebit = shownLines.reduce((t, l) => t + Number(l.debit || 0), 0);
+  const shownCredit = shownLines.reduce((t, l) => t + Number(l.credit || 0), 0);
+
+  // سطر أرصدة مضغوط — كان صف كروت. الأرصدة هي لبّ الكشف، فبيفضل فوق الجدول.
+  const summaryLine: React.CSSProperties = {
+    display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '6px 18px',
+    padding: '8px 4px', borderBottom: '1px solid #f1f5f9',
+  };
+
   return (
-    <Card
+    <ListPage<Subject>
+      icon={<FileSearchOutlined />}
       title={isItem ? 'كشف صنف' : 'كشف حساب'}
-      extra={(
-        <>
-          {tableCols.control}
-          <Button icon={<LinkOutlined />} onClick={copyLink}
-            disabled={!statement?.lines?.length} style={{ marginInlineEnd: 8 }}>نسخ الرابط</Button>
-          <Button icon={<DownloadOutlined />} onClick={exportCsv}
-            disabled={!statement?.lines?.length} style={{ marginInlineEnd: 8 }}>تصدير CSV</Button>
-          <Button icon={<PrinterOutlined />} onClick={printIt}
-            disabled={!statement?.lines?.length}
-            style={{ marginInlineEnd: 8 }}>طباعة</Button>
-          <Button icon={<ReloadOutlined />} onClick={load}
-            disabled={isItem ? !itemId : (!accountId && !mainKey)}>تحديث</Button>
-        </>
-      )}
+      muted={statement?.account_name ? `(${statement.account_name})` : undefined}
+      subtitle={isItem
+        ? 'حركة الصنف داخل وخارج برصيده قبل وبعد كل حركة'
+        : 'حركات الحساب برصيدها قبل وبعد كل سطر — أو كشف مجمّع لحساب رئيسي'}
+      tabs={[
+        { key: 'account', label: 'كشف حساب' },
+        { key: 'item', label: 'كشف صنف' },
+      ]}
+      activeTab={subject}
+      onTabChange={(v) => {
+        if (v === subject) return;
+        setSubject(v);
+        setAccountId(undefined); setItemId(undefined);
+        setWarehouseId(undefined); setStatement(null);
+      }}
+      actions={(<>
+        <Button icon={<PrinterOutlined />} onClick={printIt}
+          disabled={!statement?.lines?.length}>طباعة</Button>
+        <Button icon={<DownloadOutlined />} onClick={exportCsv}
+          disabled={!statement?.lines?.length}>تصدير CSV</Button>
+        {tableCols.control}
+        <Button icon={<LinkOutlined />} onClick={copyLink}
+          disabled={!statement?.lines?.length}>نسخ الرابط</Button>
+        <Button icon={<ReloadOutlined />} onClick={load}
+          disabled={isItem ? !itemId : (!accountId && !mainKey)}>تحديث</Button>
+      </>)}
+      filters={(<>
+        {isItem ? (<>
+          <Select
+            className="sl-f-customer"
+            showSearch
+            placeholder="اختر الصنف" value={itemId} onChange={setItemId}
+            options={items.map((i: any) => ({
+              value: i.id,
+              label: i.name, search: i.code || '',
+            })).sort(abc)} filterOption={searchFilter} filterSort={searchRank}/>
+          <Select
+            showSearch allowClear
+            placeholder="كل المخازن" value={warehouseId} onChange={setWarehouseId}
+            options={warehouses.map((w: any) => ({ value: w.id, label: w.name })).sort(abc)} filterOption={searchFilter} filterSort={searchRank}/>
+        </>) : (<>
+          <Select
+            showSearch allowClear
+            placeholder="الحساب الرئيسي" value={mainKey}
+            onChange={(v) => { setMainKey(v); setAccountId(undefined); }}
+            options={mainOptions} filterOption={searchFilter} filterSort={searchRank}/>
+          <Select
+            className="sl-f-customer"
+            showSearch
+            placeholder={mainKey ? 'الكل (كشف مجمّع) — أو اختر حساباً' : 'اختر الحساب'}
+            value={accountId} onChange={setAccountId} allowClear
+            options={visibleAccounts.map((a: any) => ({ value: a.id, label: labelOf(a) }))} filterOption={searchFilter} filterSort={searchRank}/>
+        </>)}
+        <DateRangeFilter
+          className="sl-f-dates"
+          value={range as any}
+          onChange={(v) => setRange(v as any)}
+        />
+        <Input className="sl-f-search" allowClear prefix={<SearchOutlined />} placeholder="بحث في الكشف"
+          value={query} onChange={(e) => setQuery(e.target.value)} />
+        <Select
+          mode="multiple" showSearch
+          allowClear maxTagCount="responsive"
+          placeholder="نوع الحركة" value={typeFilter} onChange={setTypeFilter}
+          options={typeOptions} disabled={!typeOptions.length && !typeFilter.length} filterOption={searchFilter} filterSort={searchRank}/>
+        <Select
+          showSearch allowClear
+          placeholder="المندوب" value={repFilter} onChange={setRepFilter}
+          options={repOptions}
+          // مقفولة بس لو فاضية: مندوب متختار من كشف حساب تاني ومالوش سطور هنا كان
+          // بيقفل الخانة وهي شايلاه — الكشف فاضي ومافيش أي طريقة تشيله بيها.
+          disabled={!repOptions.length && !repFilter} filterOption={searchFilter} filterSort={searchRank}/>
+        <Select
+          mode="multiple" showSearch
+          allowClear maxTagCount="responsive"
+          placeholder="مركز التكلفة" value={ccFilter} onChange={setCcFilter}
+          options={ccOptions} disabled={!ccOptions.length && !ccFilter.length} filterOption={searchFilter} filterSort={searchRank}/>
+        <Input allowClear prefix={<SearchOutlined />} placeholder="رقم المستند"
+          value={docNo} onChange={(e) => setDocNo(e.target.value)} />
+        <StatementFilter value={stmtQ} onChange={setStmtQ} />
+        <Button className="sl-f-clear" icon={<ClearOutlined />} onClick={clearLineFilters}
+          disabled={!filtering && !exactMatch}>مسح</Button>
+      </>)}
     >
-      <Row gutter={[8, 8]} style={{ marginBottom: 12 }}>
-        <Col xs={24} md={4}>
-          <Select
-            style={{ width: '100%' }} value={subject}
-            onChange={(v) => {
-              setSubject(v as Subject);
-              setAccountId(undefined); setItemId(undefined);
-              setWarehouseId(undefined); setStatement(null);
-            }}
-            options={[
-              { value: 'account', label: 'كشف حساب' },
-              { value: 'item', label: 'كشف صنف' },
-            ]}
-          />
-        </Col>
-
-        {isItem ? (
-          <>
-            <Col xs={24} md={8}>
-              <Select
-                showSearch style={{ width: '100%' }}
-                placeholder="اختر الصنف" value={itemId} onChange={setItemId}
-                options={items.map((i: any) => ({
-                  value: i.id,
-                  label: i.name, search: i.code || '',
-                })).sort(abc)} filterOption={searchFilter} filterSort={searchRank}/>
-            </Col>
-            <Col xs={24} md={4}>
-              <Select
-                showSearch style={{ width: '100%' }} allowClear
-                placeholder="كل المخازن" value={warehouseId} onChange={setWarehouseId}
-                options={warehouses.map((w: any) => ({ value: w.id, label: w.name })).sort(abc)} filterOption={searchFilter} filterSort={searchRank}/>
-            </Col>
-          </>
-        ) : (
-          <>
-            <Col xs={24} md={4}>
-              <Select
-                showSearch style={{ width: '100%' }} allowClear
-                placeholder="الحساب الرئيسي" value={mainKey}
-                onChange={(v) => { setMainKey(v); setAccountId(undefined); }}
-                options={mainOptions} filterOption={searchFilter} filterSort={searchRank}/>
-            </Col>
-            <Col xs={24} md={8}>
-              <Select
-                showSearch style={{ width: '100%' }}
-                placeholder={mainKey ? 'الكل (كشف مجمّع) — أو اختر حساباً' : 'اختر الحساب'}
-                value={accountId} onChange={setAccountId} allowClear
-                options={visibleAccounts.map((a: any) => ({ value: a.id, label: labelOf(a) }))} filterOption={searchFilter} filterSort={searchRank}/>
-            </Col>
-          </>
+      {/* اختصارات الفترة وخيارات العرض — سطر واحد فوق الكشف. */}
+      <div style={{ ...summaryLine, gap: '6px 8px' }}>
+        {PRESETS.map((p) => (
+          <Button key={p.label} size="small"
+            type={presetActive(p) ? 'primary' : 'default'}
+            onClick={() => setRange(p.get())}>{p.label}</Button>
+        ))}
+        {range && (
+          <Button size="small" onClick={() => setRange(null)}>مسح الفترة</Button>
         )}
-        <Col xs={24} md={7}>
-          <DateRangeFilter
-            value={range as any}
-            onChange={(v) => setRange(v as any)}
-          />
-        </Col>
-        <Col xs={24} md={4}>
-          <Input allowClear prefix={<SearchOutlined />} placeholder="بحث في الكشف"
-            value={query} onChange={(e) => setQuery(e.target.value)} />
-        </Col>
-        <Col xs={24} md={4}>
-          <Select
-            mode="multiple" showSearch style={{ width: '100%' }}
-            allowClear maxTagCount="responsive"
-            placeholder="نوع الحركة" value={typeFilter} onChange={setTypeFilter}
-            options={typeOptions} disabled={!typeOptions.length && !typeFilter.length} filterOption={searchFilter} filterSort={searchRank}/>
-        </Col>
-        <Col xs={24} md={4}>
-          <Select
-            showSearch style={{ width: '100%' }} allowClear
-            placeholder="المندوب" value={repFilter} onChange={setRepFilter}
-            options={repOptions}
-            // مقفولة بس لو فاضية: مندوب متختار من كشف حساب تاني ومالوش سطور هنا كان
-            // بيقفل الخانة وهي شايلاه — الكشف فاضي ومافيش أي طريقة تشيله بيها.
-            disabled={!repOptions.length && !repFilter} filterOption={searchFilter} filterSort={searchRank}/>
-        </Col>
-      </Row>
-
-      <Row gutter={[8, 8]} style={{ marginBottom: 12 }}>
-        <Col xs={24} md={5}>
-          <Select
-            mode="multiple" showSearch style={{ width: '100%' }}
-            allowClear maxTagCount="responsive"
-            placeholder="مركز التكلفة" value={ccFilter} onChange={setCcFilter}
-            options={ccOptions} disabled={!ccOptions.length && !ccFilter.length} filterOption={searchFilter} filterSort={searchRank}/>
-        </Col>
-        <Col xs={24} md={4}>
-          <Input allowClear prefix={<SearchOutlined />} placeholder="رقم المستند"
-            value={docNo} onChange={(e) => setDocNo(e.target.value)} />
-        </Col>
-        <Col xs={24} md={4}>
-          <StatementFilter value={stmtQ} onChange={setStmtQ} />
-        </Col>
-        <Col xs={24} md={11}>
-          <Space wrap size={[4, 8]}>
-            {PRESETS.map((p) => (
-              <Button key={p.label} size="small"
-                type={presetActive(p) ? 'primary' : 'default'}
-                onClick={() => setRange(p.get())}>{p.label}</Button>
-            ))}
-            {range && (
-              <Button size="small" onClick={() => setRange(null)}>مسح الفترة</Button>
-            )}
-            <Checkbox checked={exactMatch}
-              onChange={(e) => setExactMatch(e.target.checked)}>تطابق تام</Checkbox>
-            <Checkbox checked={hideZero}
-              onChange={(e) => setHideZero(e.target.checked)}>إخفاء الحركات الصفرية</Checkbox>
-            {customerFamilies.length > 1 && (
-              <Checkbox checked={allCustomerAccounts}
-                onChange={(e) => setAllCustomerAccounts(e.target.checked)}>
-                كل حسابات العميل
-                {' '}
-                <span style={{ color: '#8c8c8c', fontSize: 12 }}>
-                  ({customerFamilies.map((f) => `${f.family ?? 'بدون نوع'} ${money(f.balance)}`)
-                    .join(' · ')})
-                </span>
-              </Checkbox>
-            )}
-          </Space>
-        </Col>
-      </Row>
+        <Checkbox checked={exactMatch}
+          onChange={(e) => setExactMatch(e.target.checked)}>تطابق تام</Checkbox>
+        <Checkbox checked={hideZero}
+          onChange={(e) => setHideZero(e.target.checked)}>إخفاء الحركات الصفرية</Checkbox>
+        {customerFamilies.length > 1 && (
+          <Checkbox checked={allCustomerAccounts}
+            onChange={(e) => setAllCustomerAccounts(e.target.checked)}>
+            كل حسابات العميل
+            {' '}
+            <span style={{ color: '#8c8c8c', fontSize: 12 }}>
+              ({customerFamilies.map((f) => `${f.family ?? 'بدون نوع'} ${money(f.balance)}`)
+                .join(' · ')})
+            </span>
+          </Checkbox>
+        )}
+        {statement && (<>
+          <Checkbox checked={showStock} onChange={(e) => {
+            const on = e.target.checked;
+            setShowStock(on);
+            if (!on) setExpandedKeys([]);
+          }}>
+            حركة مخزنية — فرد أصناف كل المستندات
+          </Checkbox>
+          <span style={{ marginInlineStart: 'auto', color: '#8c8c8c' }}>تجميع:</span>
+          <Select size="small" style={{ width: 150 }} value={groupBy}
+            onChange={(v) => setGroupBy(v)}
+            options={[
+              { value: 'none', label: 'بدون تجميع' },
+              { value: 'month', label: 'بالشهر' },
+              { value: 'type', label: 'بنوع الحركة' },
+            ]} />
+        </>)}
+      </div>
 
       {((isItem && !itemId) || (!isItem && !accountId && !mainKey)) && (
-        <Empty description={isItem ? 'اختر صنفاً لعرض كشفه'
+        <Empty style={{ padding: '32px 0' }} description={isItem ? 'اختر صنفاً لعرض كشفه'
           : 'اختر حساباً — أو حساباً رئيسياً فقط لكشف مجمّع لكل ما تحته'} />
       )}
 
       {statement && (
         <>
-          <StatsRow gutter={[8, 8]} style={{ marginBottom: 12 }}>
-            <Col xs={12} md={6}>
-              <Card size="small">
-                <Statistic title={isItem ? 'رصيد أول المدة' : 'رصيد أول المدة (الحساب كله)'}
-                  value={num(statement.opening_balance)} />
-              </Card>
-            </Col>
-            <Col xs={12} md={6}>
-              <Card size="small">
-                {/* أي فلتر مش المندوب بس — بفلتر نوع أو بيان كان الكارت بيقول إجمالي
-                    الحساب كله والجدول تحته بيعرض جزء منه، والرقمين مابيتقابلوش. */}
-                <Statistic title={filtering ? `${LABELS.debit} (المعروض)` : `إجمالي ${LABELS.debit}`}
-                  value={num(filtering
-                    ? shownLines.reduce((t, l) => t + Number(l.debit || 0), 0)
-                    : statement.total_debit)} />
-              </Card>
-            </Col>
-            <Col xs={12} md={6}>
-              <Card size="small">
-                <Statistic title={filtering ? `${LABELS.credit} (المعروض)` : `إجمالي ${LABELS.credit}`}
-                  value={num(filtering
-                    ? shownLines.reduce((t, l) => t + Number(l.credit || 0), 0)
-                    : statement.total_credit)} />
-              </Card>
-            </Col>
-            <Col xs={12} md={3}>
-              <Card size="small">
-                <Statistic title="رصيد الحركة"
-                  value={num(Number(statement.total_debit || 0) - Number(statement.total_credit || 0))} />
-              </Card>
-            </Col>
-            <Col xs={12} md={3}>
-              <Card size="small">
-                <Statistic title={`الرصيد — ${statement.account_name}`}
-                  value={num(statement.closing_balance)}
-                  valueStyle={{ color: '#0B5CA8' }} />
-              </Card>
-            </Col>
-          </StatsRow>
+          <div style={summaryLine}>
+            <span className="sl-foot">
+              <span>{isItem ? 'رصيد أول المدة' : 'رصيد أول المدة (الحساب كله)'}:{' '}
+                <b>{num(statement.opening_balance)}</b></span>
+              {/* أي فلتر مش المندوب بس — بفلتر نوع أو بيان كان الرقم بيقول إجمالي
+                  الحساب كله والجدول تحته بيعرض جزء منه، والرقمين مابيتقابلوش. */}
+              <span>{filtering ? `${LABELS.debit} (المعروض)` : `إجمالي ${LABELS.debit}`}:{' '}
+                <b>{num(filtering ? shownDebit : statement.total_debit)}</b></span>
+              <span>{filtering ? `${LABELS.credit} (المعروض)` : `إجمالي ${LABELS.credit}`}:{' '}
+                <b>{num(filtering ? shownCredit : statement.total_credit)}</b></span>
+              <span>رصيد الحركة:{' '}
+                <b>{num(Number(statement.total_debit || 0) - Number(statement.total_credit || 0))}</b></span>
+              <span>الرصيد — {statement.account_name}:{' '}
+                <b style={{ color: '#0B5CA8', fontSize: 15 }}>{num(statement.closing_balance)}</b></span>
+            </span>
+          </div>
 
           {reconcilable && (
-            <Card size="small" style={{ marginBottom: 12 }}
-              styles={{ body: { padding: '10px 12px' } }}>
-              <StatsRow gutter={[8, 8]} align="middle">
-                <Col xs={12} md={5}>
-                  <Statistic title="إجمالي المستحق" value={num(totalDue)}
-                    valueStyle={{ color: totalDue ? '#0B5CA8' : undefined, fontSize: 20 }} />
-                </Col>
-                <Col xs={12} md={5}>
-                  <Statistic title="منه متأخر" value={num(totalOverdue)}
-                    valueStyle={{ color: totalOverdue ? '#cf1322' : '#52c41a', fontSize: 20 }} />
-                </Col>
-                <Col xs={24} md={14}>
-                  {/* أعمار الدين — الشرائح نفسها التي يقرؤها تقرير الأعمار، من نفس
-                      الحساب في السيرفر. رقمان لنفس السؤال في شاشتين يتفقان بالصدفة
-                      لا بالبناء، وأول يوم يختلفان لا أحد يعرف أيهما الصحيح. */}
-                  <div style={{ fontSize: 12, color: '#8c8c8c', marginBottom: 4 }}>
-                    أعمار المستحق
-                  </div>
-                  <Space size={4} wrap>
-                    {([
-                      ['الحالي', aging?.current, '#52c41a'],
-                      ['١–٣٠ يوم', aging?.d30, '#faad14'],
-                      ['٣١–٦٠', aging?.d60, '#fa8c16'],
-                      ['٦١–٩٠', aging?.d90, '#f5222d'],
-                      ['أقدم من ٩٠', aging?.older, '#a8071a'],
-                    ] as [string, string | undefined, string][]).map(([label, value, color]) => (
-                      <Tag key={label} color={Number(value || 0) ? color : undefined}
-                        style={{ margin: 0 }}>
-                        {label}: <b>{num(value || 0)}</b>
-                      </Tag>
-                    ))}
-                  </Space>
-                </Col>
-              </StatsRow>
+            <div style={summaryLine}>
+              <span className="sl-foot">
+                <span>إجمالي المستحق:{' '}
+                  <b style={{ color: totalDue ? '#0B5CA8' : undefined }}>{num(totalDue)}</b></span>
+                <span>منه متأخر:{' '}
+                  <b className={totalOverdue ? 'is-neg' : 'is-pos'}>{num(totalOverdue)}</b></span>
+              </span>
+              {/* أعمار الدين — الشرائح نفسها التي يقرؤها تقرير الأعمار، من نفس
+                  الحساب في السيرفر. رقمان لنفس السؤال في شاشتين يتفقان بالصدفة
+                  لا بالبناء، وأول يوم يختلفان لا أحد يعرف أيهما الصحيح. */}
+              <Space size={4} wrap>
+                <span style={{ fontSize: 12, color: '#8c8c8c' }}>أعمار المستحق:</span>
+                {([
+                  ['الحالي', aging?.current, '#52c41a'],
+                  ['١–٣٠ يوم', aging?.d30, '#faad14'],
+                  ['٣١–٦٠', aging?.d60, '#fa8c16'],
+                  ['٦١–٩٠', aging?.d90, '#f5222d'],
+                  ['أقدم من ٩٠', aging?.older, '#a8071a'],
+                ] as [string, string | undefined, string][]).map(([label, value, color]) => (
+                  <Tag key={label} color={Number(value || 0) ? color : undefined}
+                    style={{ margin: 0 }}>
+                    {label}: <b>{num(value || 0)}</b>
+                  </Tag>
+                ))}
+              </Space>
               {Number(aging?.credit_open || 0) > 0 && (
-                <div style={{ fontSize: 12, color: '#8c8c8c', marginTop: 6 }}>
+                <span style={{ fontSize: 12, color: '#8c8c8c' }}>
                   مطلوب <b>{num(aging?.debit_open || 0)}</b> ·
                   دفعات لسه ماتخصمتش من فاتورة <b>{num(aging?.credit_open || 0)}</b> ·
-                  الصافي هو المستحق فوق
-                </div>
+                  الصافي هو المستحق
+                </span>
               )}
               {!totalDue && (
-                <div style={{ fontSize: 12, color: '#8c8c8c', marginTop: 6 }}>
+                <span style={{ fontSize: 12, color: '#8c8c8c' }}>
                   لا يوجد مستحق مفتوح على هذا الحساب.
-                </div>
+                </span>
               )}
-            </Card>
+            </div>
           )}
 
           {filtering && (
             <Alert
-              type="info" showIcon style={{ marginBottom: 12 }}
+              type="info" showIcon style={{ margin: '8px 0' }}
               message={[
                 repFilter && `حركة «${repFilter}»`,
                 ccFilter.length && `مركز تكلفة «${ccFilter.join('، ')}»`,
@@ -1142,31 +1115,11 @@ export default function AccountStatement() {
             />
           )}
 
-          <Space style={{ marginBottom: 8 }} wrap>
-            <span style={{ color: '#8c8c8c' }}>تجميع:</span>
-            <Select size="small" style={{ width: 150 }} value={groupBy}
-              onChange={(v) => setGroupBy(v)}
-              options={[
-                { value: 'none', label: 'بدون تجميع' },
-                { value: 'month', label: 'بالشهر' },
-                { value: 'type', label: 'بنوع الحركة' },
-              ]} />
-          </Space>
-
-          <div style={{ marginBottom: 8 }}>
-            <Checkbox checked={showStock} onChange={(e) => {
-              const on = e.target.checked;
-              setShowStock(on);
-              if (!on) setExpandedKeys([]);
-            }}>
-              حركة مخزنية — فرد أصناف كل المستندات
-            </Checkbox>
-          </div>
-
           {groupBy !== 'none' ? (
             /* المجموعة أولاً ومجاميعها، وتُفتح فتُعرض سطورها بنفس أعمدة الجدول
                وبنفس تفاصيل السطر — لا نسخة ثانية من الشاشة تتأخّر عن الأصل. */
             <Table
+              className="sl-table"
               size="small" loading={loading} rowKey="key" dataSource={groups}
               pagination={false}
               locale={{ emptyText: 'لا توجد حركات في هذه الفترة' }}
@@ -1224,10 +1177,19 @@ export default function AccountStatement() {
           ) : (
           <Table<StatementLine>
             {...kb.tableProps}
+            className="sl-table"
             rowKey={rowKeyOf}
             size="small" loading={loading} dataSource={shownLines}
             locale={{ emptyText: 'لا توجد حركات في هذه الفترة' }}
-            pagination={{ defaultPageSize: PAGE_SIZE, showSizeChanger: true }}
+            pagination={{
+              defaultPageSize: PAGE_SIZE, showSizeChanger: true, locale: { items_per_page: '' },
+              showTotal: (t) => (
+                <span className="sl-foot">
+                  <span>عدد الحركات: <b>{t}</b>{filtering ? ` من ${lines.length}` : ''}</span>
+                  <span>الرصيد: <b>{num(statement.closing_balance)}</b></span>
+                </span>
+              ),
+            }}
             scroll={{ x: 'max-content' }}
             columns={tableCols.columns}
             rowClassName={(l) => (l.days_overdue ? 'statement-overdue' : '')}
@@ -1237,8 +1199,8 @@ export default function AccountStatement() {
               expandedRowRender: rowDetail,
             }}
             summary={() => {
-              const td = shownLines.reduce((t, l) => t + Number(l.debit || 0), 0);
-              const tc = shownLines.reduce((t, l) => t + Number(l.credit || 0), 0);
+              const td = shownDebit;
+              const tc = shownCredit;
               const cols = tableCols.columns;
               const di = cols.findIndex((c: any) => c.dataIndex === 'debit');
               const ci = cols.findIndex((c: any) => c.dataIndex === 'credit');
@@ -1257,6 +1219,6 @@ export default function AccountStatement() {
           )}
         </>
       )}
-    </Card>
+    </ListPage>
   );
 }

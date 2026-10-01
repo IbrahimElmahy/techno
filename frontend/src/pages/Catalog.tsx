@@ -3,14 +3,13 @@ import { PAGE_SIZE, PAGE_SIZE_OPTIONS } from '../utils/pagination';
 import { searchFilter, searchRank, sortByName } from '../utils/arabicSort';
 import { useNavigate } from 'react-router-dom';
 import {
-  Button, Card, Checkbox, Col, Collapse, Divider, Empty, Form, Input, Modal, Row, Segmented, Select, Space, Table, Tag, Tooltip, message,
+  Button, Checkbox, Col, Collapse, Divider, Empty, Form, Input, Modal, Row, Select, Space, Table, Tag, Tooltip, message,
 } from 'antd';
-import { Statistic } from '../components/Statistic';
 import { InputNumber } from '../components/NumberInput';
 import {
   PlusOutlined, DollarOutlined, ColumnWidthOutlined, DeleteOutlined, BarcodeOutlined,
   EditOutlined, StopOutlined, SearchOutlined, ClearOutlined, AppstoreOutlined,
-  UnorderedListOutlined, DownloadOutlined, UploadOutlined,
+  UnorderedListOutlined, DownloadOutlined, UploadOutlined, InboxOutlined,
 } from '@ant-design/icons';
 import { api } from '../api/client';
 import { netOf } from '../utils/discounts';
@@ -22,7 +21,7 @@ import { TabModal } from '../components/TabModal';
 import { useTableColumns } from '../components/ColumnSettings';
 import { money, numeralsLocale } from '../utils/money';
 
-import StatsRow from '../components/StatsRow';
+import ListPage from '../components/ListPage';
 // The five negotiated tiers plus the published list price, in the order and wording their form
 // uses. Order is not cosmetic: whoever fills this in reads down a column on paper, and a different
 // order means checking every line instead of typing six numbers. The labels are theirs too — «نص
@@ -849,125 +848,106 @@ export default function Catalog() {
     } finally { setImporting(false); }
   };
 
+  // ملخّص اللي الفلتر رجّعه — كان كروت فوق، بقى سطر تحت الكشف.
+  const footer = (
+    <span className="sl-foot">
+      <span>عدد الأصناف الظاهرة: <b>{summary.count.toLocaleString(numeralsLocale())}</b></span>
+      <span>متوفرة: <b className="is-pos">{summary.inStock.toLocaleString(numeralsLocale())}</b></span>
+      <span>برصيد صفر: <b>{summary.out.toLocaleString(numeralsLocale())}</b></span>
+    </span>
+  );
+
   return (
-    <div>
+    <>
       <input ref={importingRef} type="file" accept=".xlsx,.xls" style={{ display: 'none' }}
         onChange={onImportFile} />
-      <Card
-        title="الأصناف"
-        extra={
-          <Space>
-            {tableCols.control}
-            {canManageItems && (
-              <Button icon={<DownloadOutlined />} onClick={downloadTemplate}>تنزيل القالب</Button>
-            )}
-            {canManageItems && (
-              <Button icon={<UploadOutlined />} loading={importing} onClick={() => importingRef.current?.click()}>
-                استيراد Excel
-              </Button>
-            )}
-            {canManageItems && (
-              <Button data-shortcut="F2" type="primary" icon={<PlusOutlined />} onClick={() => openCreateForCategory()}>
-                إضافة صنف للكتالوج
-              </Button>
-            )}
-          </Space>
-        }
+      <ListPage<'grouped' | 'table'>
+        icon={<InboxOutlined />}
+        title="الأصناف" muted="(كتالوج المنتجات)"
+        subtitle="بيانات الأصناف وشرائح أسعار البيع والرصيد الحالي"
+        tabs={[
+          { key: 'grouped', label: <><AppstoreOutlined /> مجمّع بالفئات</> },
+          { key: 'table', label: <><UnorderedListOutlined /> جدول واحد</> },
+        ]}
+        activeTab={view}
+        onTabChange={setView}
+        actions={(<>
+          {canManageItems && (
+            <Button data-shortcut="F2" type="primary" icon={<PlusOutlined />} className="sl-create"
+              onClick={() => openCreateForCategory()}>
+              إضافة صنف للكتالوج
+            </Button>
+          )}
+          {canManageItems && (
+            <Button icon={<DownloadOutlined />} onClick={downloadTemplate}>تنزيل القالب</Button>
+          )}
+          {canManageItems && (
+            <Button icon={<UploadOutlined />} loading={importing} onClick={() => importingRef.current?.click()}>
+              استيراد Excel
+            </Button>
+          )}
+          {tableCols.control}
+        </>)}
+        // الفلاتر على السيرفر، فبتغطّي كل الأصناف مش الصفحة اللي اتحمّلت بس.
+        filters={(<>
+          <Input.Search
+            className="sl-f-search"
+            allowClear
+            value={search}
+            placeholder="بحث بالاسم أو الكود أو الفئة"
+            prefix={<SearchOutlined />}
+            onChange={(e) => setSearch(e.target.value)}
+            onSearch={(v) => setFilter('q', v.trim() || undefined)}
+            onBlur={applySearch}
+          />
+          <Select allowClear placeholder="النوع"
+            value={filters.kind}
+            onChange={(v) => setFilter('kind', v)}
+            options={[
+              { value: 'product', label: 'منتج تام' },
+              { value: 'raw_material', label: 'مادة خام' },
+            ]} />
+          {/* اختيار فئة رئيسية بيجيب فروعها معاها — التوسعة بتحصل على السيرفر
+              (`with_children`)، عشان الكشف مترقّم والفلترة عليه مش محلية. */}
+          <Select allowClear showSearch placeholder="الفئة"
+            value={filters.category}
+            onChange={(v) => setFilter('category', v)}
+            options={categoryTreeOptions} filterOption={searchFilter} filterSort={searchRank} />
+          <Select allowClear showSearch placeholder="المخزن الافتراضي"
+            value={filters.warehouse_id}
+            onChange={(v) => setFilter('warehouse_id', v)}
+            filterOption={searchFilter} filterSort={searchRank}
+            options={sortByName(warehouses, (w) => w.name).map((w) => ({ value: w.id, label: w.name }))} />
+          <Select allowClear placeholder="حالة المخزون"
+            value={filters.stock_filter}
+            onChange={(v) => setFilter('stock_filter', v)}
+            options={[
+              { value: 'in_stock', label: 'متوفر' },
+              { value: 'out_of_stock', label: 'رصيد صفر' },
+              { value: 'negative', label: 'رصيد سالب' },
+            ]} />
+          <Select allowClear placeholder="الحالة"
+            value={filters.active}
+            onChange={(v) => setFilter('active', v)}
+            options={[{ value: true, label: 'نشط' }, { value: false, label: 'معطل' }]} />
+          <Button className="sl-f-clear" icon={<ClearOutlined />} onClick={resetFilters}>مسح</Button>
+        </>)}
       >
-        {/* --- Search + filters (server-side, so they cover every item) --- */}
-        <Row gutter={[8, 8]} style={{ marginBottom: 12 }}>
-          <Col xs={24} md={7}>
-            <Input
-              allowClear
-              value={search}
-              placeholder="بحث بالاسم أو الكود أو الفئة"
-              prefix={<SearchOutlined />}
-              onChange={(e) => setSearch(e.target.value)}
-              onPressEnter={applySearch}
-              onBlur={applySearch}
-            />
-          </Col>
-          <Col xs={12} md={4}>
-            <Select allowClear style={{ width: '100%' }} placeholder="النوع"
-              value={filters.kind}
-              onChange={(v) => setFilter('kind', v)}
-              options={[
-                { value: 'product', label: 'منتج تام' },
-                { value: 'raw_material', label: 'مادة خام' },
-              ]} />
-          </Col>
-          <Col xs={12} md={4}>
-            {/* اختيار فئة رئيسية بيجيب فروعها معاها — التوسعة بتحصل على السيرفر
-                (`with_children`)، عشان الكشف مترقّم والفلترة عليه مش محلية. */}
-            <Select allowClear showSearch
-              style={{ width: '100%' }} placeholder="الفئة"
-              value={filters.category}
-              onChange={(v) => setFilter('category', v)}
-              options={categoryTreeOptions} filterOption={searchFilter} filterSort={searchRank} />
-          </Col>
-          <Col xs={12} md={4}>
-            <Select allowClear showSearch style={{ width: '100%' }} placeholder="المخزن الافتراضي"
-              value={filters.warehouse_id}
-              onChange={(v) => setFilter('warehouse_id', v)}
-              filterOption={searchFilter} filterSort={searchRank}
-              options={sortByName(warehouses, (w) => w.name).map((w) => ({ value: w.id, label: w.name }))} />
-          </Col>
-          <Col xs={12} md={5}>
-            <Select allowClear style={{ width: '100%' }} placeholder="حالة المخزون"
-              value={filters.stock_filter}
-              onChange={(v) => setFilter('stock_filter', v)}
-              options={[
-                { value: 'in_stock', label: 'متوفر' },
-                { value: 'out_of_stock', label: 'رصيد صفر' },
-                { value: 'negative', label: 'رصيد سالب' },
-              ]} />
-          </Col>
-          <Col xs={12} md={4}>
-            <Select allowClear style={{ width: '100%' }} placeholder="الحالة"
-              value={filters.active}
-              onChange={(v) => setFilter('active', v)}
-              options={[{ value: true, label: 'نشط' }, { value: false, label: 'معطل' }]} />
-          </Col>
-          <Col xs={24} md={6}>
-            <Space>
-              <Button type="primary" icon={<SearchOutlined />} onClick={applySearch}>بحث</Button>
-              <Button icon={<ClearOutlined />} onClick={resetFilters}>مسح الفلاتر</Button>
-            </Space>
-          </Col>
-        </Row>
-
-        <StatsRow gutter={12} style={{ marginBottom: 12 }}>
-          <Col xs={24} md={8}>
-            <Card size="small"><Statistic title="عدد الأصناف الظاهرة" value={summary.count} /></Card>
-          </Col>
-          <Col xs={24} md={8}>
-            <Card size="small"><Statistic title="أصناف متوفرة" value={summary.inStock} /></Card>
-          </Col>
-          <Col xs={24} md={8}>
-            <Card size="small"><Statistic title="أصناف برصيد صفر" value={summary.out} /></Card>
-          </Col>
-        </StatsRow>
-
-        <Segmented
-          style={{ marginBottom: 12 }}
-          value={view}
-          onChange={(v) => setView(v as 'grouped' | 'table')}
-          options={[
-            { value: 'grouped', label: 'مجمّع بالفئات', icon: <AppstoreOutlined /> },
-            { value: 'table', label: 'جدول واحد', icon: <UnorderedListOutlined /> },
-          ]}
-        />
-
         {view === 'table' ? (
           <Table
+            className="sl-table"
             dataSource={filteredItems}
             columns={tableCols.columns}
             rowKey="id"
             loading={loading}
-            size="middle"
+            size="small"
             tableLayout="fixed"
             expandable={{ expandedRowRender: expandedRow }}
-            pagination={{ defaultPageSize: PAGE_SIZE, showSizeChanger: true, showTotal: (t) => `الإجمالي: ${t}`, pageSizeOptions: PAGE_SIZE_OPTIONS }}
+            pagination={{
+              defaultPageSize: PAGE_SIZE, showSizeChanger: true, pageSizeOptions: PAGE_SIZE_OPTIONS,
+              locale: { items_per_page: '' },
+              showTotal: () => footer,
+            }}
             // The whole row opens the product file.
             onRow={(record) => ({
               onClick: () => navigate(`/catalog/${record.id}`),
@@ -975,9 +955,11 @@ export default function Catalog() {
             })}
           />
         ) : grouped.length === 0 ? (
-          <Empty description="لا توجد أصناف مطابقة" />
-        ) : (
+          <Empty description="لا توجد أصناف مطابقة" style={{ padding: '24px 0' }} />
+        ) : (<>
           <Collapse
+            ghost
+            style={{ marginTop: 4 }}
             defaultActiveKey={grouped.length <= 3 ? grouped.map((g) => g.key) : []}
             items={grouped.map((g) => ({
               key: g.key,
@@ -1004,6 +986,7 @@ export default function Catalog() {
               // نفس القايمة مجمّعة بالفئة — فبتترتّب وتتخفي بنفس الاختيار.
               children: (
                 <Table
+                  className="sl-table"
                   dataSource={g.rows}
                   columns={tableCols.columns}
                   rowKey="id"
@@ -1012,7 +995,8 @@ export default function Catalog() {
                   tableLayout="fixed"
                   expandable={{ expandedRowRender: expandedRow }}
                   pagination={g.rows.length > 10
-                    ? { defaultPageSize: PAGE_SIZE, showSizeChanger: true, pageSizeOptions: PAGE_SIZE_OPTIONS }
+                    ? { defaultPageSize: PAGE_SIZE, showSizeChanger: true, pageSizeOptions: PAGE_SIZE_OPTIONS,
+                        locale: { items_per_page: '' } }
                     : false}
                   onRow={(record) => ({
                     onClick: () => navigate(`/catalog/${record.id}`),
@@ -1022,8 +1006,10 @@ export default function Catalog() {
               ),
             }))}
           />
-        )}
-      </Card>
+          {/* المجمّع مالوش ترقيم واحد يشيل الإجماليات — فبتنزل في سطر لوحدها. */}
+          <div style={{ padding: '10px 4px', borderTop: '1px solid #f1f5f9' }}>{footer}</div>
+        </>)}
+      </ListPage>
 
       {/* صنف جديد — laid out field for field against their الأصناف form: the same groups in the
           same order, because someone entering a hundred items a week does it by muscle memory, and
@@ -1244,6 +1230,6 @@ export default function Catalog() {
         </Form>
       </TabModal>
 
-    </div>
+    </>
   );
 }

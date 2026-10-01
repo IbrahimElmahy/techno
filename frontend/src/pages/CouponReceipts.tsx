@@ -2,20 +2,22 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { PAGE_SIZE_OPTIONS } from '../utils/pagination';
 import { searchFilter, searchRank, compareArabic } from '../utils/arabicSort';
 import {
-  Alert, Button, Card, Col, DatePicker, Descriptions, Empty, Input, Row, Segmented, Select,
-  Space, Table, Tabs, Tag, Typography, message,
+  Alert, Button, Col, DatePicker, Descriptions, Empty, Input, Row, Segmented, Select,
+  Space, Table, Tag, Typography, message,
 } from 'antd';
-import { Statistic } from '../components/Statistic';
 import dayjs, { Dayjs } from 'dayjs';
 import { useNavigate } from 'react-router-dom';
 import { InputNumber } from '../components/NumberInput';
 import {
   DeleteOutlined, PlusOutlined, ReloadOutlined, SaveOutlined, ArrowLeftOutlined, SettingOutlined,
+  TagsOutlined, SearchOutlined, ClearOutlined,
 } from '@ant-design/icons';
 import { api } from '../api/client';
 import { useTableColumns } from '../components/ColumnSettings';
 import DocumentLink from '../components/DocumentLink';
-import ListToolbar from '../components/ListToolbar';
+import ListPage from '../components/ListPage';
+import { useScreenShortcuts } from '../components/keyboard';
+import { numeralsLocale } from '../utils/money';
 import { useLookup } from '../hooks/useLookup';
 import CouponStatsOverview from '../components/CouponStatsOverview';
 import { useLiveRefresh } from '../utils/live';
@@ -392,30 +394,33 @@ export default function CouponReceipts() {
   // Read-only on purpose: a receipt is the act that spends coupons — un-spending one by editing
   // the paper would leave the system counting a coupon the customer already handed over.
 
+  // الشريحة المفتوحة — كانت `Tabs` من غير حالة، وأول شريحة هي الافتراضية.
+  const [tab, setTab] = useState<'receive' | 'history'>('receive');
+
+  // زرار «تفريغ» و«تسجيل الاستلام» بقوا في الترويسة، على شمال الشرايح.
+  const receiveActions = (
+    <>
+      <Button type="primary" className="sl-create" icon={<SaveOutlined />} loading={saving}
+        disabled={!counted.length || !!rejects.length || !kind || !customerId}
+        onClick={save}>
+        تسجيل الاستلام
+      </Button>
+      <Button
+        icon={<ReloadOutlined />}
+        onClick={() => {
+          // «تفريغ» بيفضّي الفئة كمان: الشاشة بترجع لسؤالها الأول بدل ما تفضل
+          // محطوط عليها دفتر المستند اللي فات.
+          setEntries([]); setNotes(''); setCustomerId(undefined); setKind('');
+          setValue(null);
+        }}
+      >
+        تفريغ
+      </Button>
+    </>
+  );
+
   const receiveTab = (
-    <Card
-      title="تسجيل استلام جديد"
-      extra={(
-        <Space>
-          <Button
-            icon={<ReloadOutlined />}
-            onClick={() => {
-              // «تفريغ» بيفضّي الفئة كمان: الشاشة بترجع لسؤالها الأول بدل ما تفضل
-              // محطوط عليها دفتر المستند اللي فات.
-              setEntries([]); setNotes(''); setCustomerId(undefined); setKind('');
-              setValue(null);
-            }}
-          >
-            تفريغ
-          </Button>
-          <Button type="primary" icon={<SaveOutlined />} loading={saving}
-            disabled={!counted.length || !!rejects.length || !kind || !customerId}
-            onClick={save}>
-            تسجيل الاستلام
-          </Button>
-        </Space>
-      )}
-    >
+    <>
       <Row gutter={[8, 8]}>
         <Col xs={24} md={5}>
           <DatePicker
@@ -510,6 +515,7 @@ export default function CouponReceipts() {
       )}
 
       <Table<Entry>
+        className="sl-table"
         rowKey="serial" size="small" dataSource={entries} pagination={false}
         locale={{ emptyText: 'لا توجد كوبونات مضافة' }}
         scroll={{ y: 320 }} style={{ marginTop: 12 }}
@@ -596,7 +602,7 @@ export default function CouponReceipts() {
           {rejects.length ? ' · فيه مرفوض' : ''}
         </Typography.Text>
       </div>
-    </Card>
+    </>
   );
 
   const detailBody = detail && (
@@ -644,30 +650,19 @@ export default function CouponReceipts() {
   );
 
   const historyTab = detail ? (
-    <Card
-      title={(
+    <>
+      <Space style={{ width: '100%', justifyContent: 'space-between', marginBottom: 12 }}>
         <Space>
           <Button type="text" icon={<ArrowLeftOutlined />}
             onClick={() => setDetail(null)}>رجوع</Button>
-          <span>{detail.document_number}</span>
+          <b>{detail.document_number}</b>
         </Space>
-      )}
-      extra={(
         <Button onClick={() => setDetail(null)}>إغلاق</Button>
-      )}
-    >
+      </Space>
       {detailBody}
-    </Card>
+    </>
   ) : (
-    <Card size="small" title="سجل الاستلامات"
-      extra={(
-        <Space>
-          {listCols.control}
-          {/* `onClick` بيبعت حدث الماوس كأول باراميتر — و`loadReceipts` أول باراميتر
-              عنده رقم الصفحة، فالزرار كان بيطلب صفحة اسمها MouseEvent. */}
-          <Button icon={<ReloadOutlined />} onClick={() => loadReceipts()}>تحديث</Button>
-        </Space>
-      )}>
+    <>
       <CouponStatsOverview
         totalCount={summaryData.total_coupons}
         totalValue={summaryData.total_value}
@@ -677,16 +672,8 @@ export default function CouponReceipts() {
           count: summaryData.kind_counts[k.value] || 0,
         }))}
       />
-      <ListToolbar
-        searchPlaceholder="بحث برقم المستند أو رقم كوبون أو اسم العميل"
-        query={searchQuery}
-        onQueryChange={setSearchQuery}
-        onReset={() => setSearchQuery('')}
-        total={totalCount}
-        shown={receipts.length}
-        searchSpan={10}
-      />
       <Table<Receipt>
+        className="sl-table"
         rowKey="id"
         size="small"
         loading={loading}
@@ -699,31 +686,68 @@ export default function CouponReceipts() {
           total: totalCount,
           showSizeChanger: true,
           pageSizeOptions: PAGE_SIZE_OPTIONS,
+          locale: { items_per_page: '' },
           onChange: (p, ps) => {
             setPage(p);
             setPageSize(ps);
             loadReceipts(p, ps, searchQuery);
           },
-          showTotal: (t) => `إجمالي ${t} استلام`,
+          showTotal: (t) => (
+            <span className="sl-foot">
+              <span>إجمالي الاستلامات: <b>{t.toLocaleString(numeralsLocale())}</b></span>
+              <span>المعروض: <b>{receipts.length.toLocaleString(numeralsLocale())}</b></span>
+            </span>
+          ),
         }}
         columns={listCols.columns}
       />
-    </Card>
+    </>
   );
 
+  // F3 للبحث — كانت جاية من `ListToolbar`، والخانة دلوقتي في سطر الفلاتر.
+  const searchRef = useRef<any>(null);
+  const listShown = tab === 'history' && !detail;
+  useScreenShortcuts({ onSearch: () => { searchRef.current?.focus?.(); } }, listShown);
+
   return (
-    <Card
+    <ListPage<'receive' | 'history'>
+      icon={<TagsOutlined />}
       title="استلام الكوبونات"
-      extra={(
+      subtitle="تسجيل ورق الكوبونات الراجع من السباكين والتجار، وسجل الاستلامات"
+      tabs={[
+        { key: 'receive', label: 'استلام كوبونات' },
+        { key: 'history', label: 'السجل', count: totalCount },
+      ]}
+      activeTab={tab}
+      onTabChange={setTab}
+      actions={(<>
+        {tab === 'receive' && receiveActions}
+        {listShown && (<>
+          {listCols.control}
+          {/* `onClick` بيبعت حدث الماوس كأول باراميتر — و`loadReceipts` أول باراميتر
+              عنده رقم الصفحة، فالزرار كان بيطلب صفحة اسمها MouseEvent. */}
+          <Button icon={<ReloadOutlined />} onClick={() => loadReceipts()}>تحديث</Button>
+        </>)}
         <Button icon={<SettingOutlined />} onClick={() => navigate('/loyalty?tab=kinds')}>
           إدارة أنواع وفئات الكوبونات
         </Button>
-      )}
+      </>)}
+      filters={listShown ? (<>
+        <Input
+          className="sl-f-search"
+          ref={searchRef}
+          allowClear
+          prefix={<SearchOutlined />}
+          placeholder="بحث برقم المستند أو رقم كوبون أو اسم العميل"
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+        />
+        <Button className="sl-f-clear" icon={<ClearOutlined />} onClick={() => setSearchQuery('')}>
+          مسح
+        </Button>
+      </>) : undefined}
     >
-      <Tabs items={[
-        { key: 'receive', label: 'استلام كوبونات', children: receiveTab },
-        { key: 'history', label: `السجل (${totalCount})`, children: historyTab },
-      ]} />
-    </Card>
+      {tab === 'receive' ? receiveTab : historyTab}
+    </ListPage>
   );
 }

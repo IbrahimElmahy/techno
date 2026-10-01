@@ -2,9 +2,8 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { PAGE_SIZE_OPTIONS } from '../utils/pagination';
 import { searchFilter, searchRank, sortByName } from '../utils/arabicSort';
 import {
-  Button, Card, Col, DatePicker, Descriptions, Input, Modal, Radio, Select, Space, Table, Tag, message,
+  Button, Card, Descriptions, Input, Radio, Select, Space, Table, Tag, message,
 } from 'antd';
-import { Statistic } from '../components/Statistic';
 import { InputNumber } from '../components/NumberInput';
 import { Popconfirm } from '../components/noConfirm';
 import {
@@ -16,6 +15,7 @@ import {
   CloseCircleOutlined,
   SaveOutlined,
   ArrowLeftOutlined,
+  EnvironmentOutlined,
 } from '@ant-design/icons';
 import dayjs, { Dayjs } from 'dayjs';
 import { useNavigate } from 'react-router-dom';
@@ -26,8 +26,8 @@ import type { ColumnsType } from 'antd/es/table';
 import { useTableColumns } from '../components/ColumnSettings';
 import ExportExcelButton from '../components/ExportExcelButton';
 import DateRangeFilter from '../components/DateRangeFilter';
-
-import StatsRow from '../components/StatsRow';
+import ListPage from '../components/ListPage';
+import { useCanSeeStats } from '../components/StatsRow';
 import { numeralsLocale } from '../utils/money';
 import { useLiveRefresh } from '../utils/live';
 interface InspectionLine {
@@ -448,83 +448,77 @@ const Inspections: React.FC<{ fixedKind?: 'technician' | 'regular' }> = ({ fixed
   // إخفاء وترتيب الأعمدة — نفس المحرك اللي كل الجداول بتستخدمه.
   const tableCols = useTableColumns('inspections', columns);
 
-  return (
-    <div>
-      {!detail && (
-      <>
-      <StatsRow gutter={16} style={{ marginBottom: 16 }}>
-        <Col span={6}>
-          <Card>
-            <Statistic title={fixedKind === 'regular' ? 'عدد الزيارات' : 'عدد المعاينات'}
-                       value={summary.total_count} prefix={<MobileOutlined />} />
-          </Card>
-        </Col>
-        <Col span={6}>
-          <Card>
-            <Statistic
-              title="مقبولة"
-              value={summary.accepted_count}
-              valueStyle={{ color: '#2e9e6b' }}
-            />
-          </Card>
-        </Col>
-        <Col span={6}>
-          <Card>
-            <Statistic
-              title="مرفوضة"
-              value={summary.rejected_count}
-              valueStyle={{ color: '#d64545' }}
-            />
-          </Card>
-        </Col>
-        <Col span={6}>
-          <Card>
-            <Statistic title="نقاط المقبولة" value={summary.accepted_points} precision={3} />
-          </Card>
-        </Col>
-      </StatsRow>
+  // كروت الإجماليات اللي كانت فوق بقت سطر تحت الجدول — وبنفس شرطها: `stats.view` بس.
+  // العدد نفسه كان باين للكل في الترقيم، فبيفضل باين.
+  const canSeeStats = useCanSeeStats();
+  const loc = numeralsLocale();
+  const isVisits = fixedKind === 'regular';
+  const footer = (t: number) => (
+    <span className="sl-foot">
+      <span>{isVisits ? 'إجمالي الزيارات' : 'إجمالي المعاينات'}: <b>{t.toLocaleString(loc)}</b></span>
+      {canSeeStats && (<>
+        <span>مقبولة: <b className="is-pos">{summary.accepted_count.toLocaleString(loc)}</b></span>
+        <span>مرفوضة: <b className="is-neg">{summary.rejected_count.toLocaleString(loc)}</b></span>
+        <span>نقاط المقبولة: <b>{summary.accepted_points.toLocaleString(loc, { maximumFractionDigits: 3 })}</b></span>
+      </>)}
+    </span>
+  );
 
-      <Card title={fixedKind === 'regular'
-          ? 'الزيارات العادية (متابعات وزيارات العملاء)'
-          : 'مراجعة زيارات المناديب (المعاينات)'}>
-        <Space wrap style={{ marginBottom: 16 }}>
-          <div style={{ width: 280 }}>
-            <DateRangeFilter
-              value={range as any}
-              onChange={(v) => setRange(v as any)}
-            />
-          </div>
+  return (
+    <>
+      {!detail && (
+      <ListPage
+        icon={isVisits ? <EnvironmentOutlined /> : <MobileOutlined />}
+        title={isVisits ? 'الزيارات العادية' : 'المعاينات'}
+        muted={isVisits ? '(متابعات وزيارات العملاء)' : '(مراجعة زيارات المناديب)'}
+        subtitle={isVisits
+          ? 'زيارات المناديب للعملاء من غير فني — بتتزامن من التطبيق'
+          : 'معاينات الفنيين من التطبيق — القبول والرفض وطباعة شهادة الضمان'}
+        actions={(<>
+          {tableCols.control}
+          {/* الزرار هنا مش جوّه «الأعمدة» — `useTableColumns` هنا من غير تصدير. */}
+          <ExportExcelButton
+            name={isVisits ? 'الزيارات العادية' : 'المعاينات'}
+            rows={rows}
+            tableColumns={tableCols.columns}
+            style={{ marginInlineStart: 0 }}
+          />
+          <Button icon={<ReloadOutlined />} onClick={() => { setPage(1); load(1, pageSize); loadSummary(); }}>
+            تحديث
+          </Button>
+        </>)}
+        filters={(<>
+          <DateRangeFilter
+            className="sl-f-dates"
+            value={range as any}
+            onChange={(v) => setRange(v as any)}
+          />
           <InputNumber
             placeholder="رقم الشهادة"
-            style={{ width: 130 }}
             value={certNo}
             onChange={(v) => setCertNo(v as number | null)}
             controls={false}
           />
           <Input
             placeholder="المالك"
-            style={{ width: 140 }}
             value={ownerF}
             onChange={(e) => setOwnerF(e.target.value)}
             allowClear
           />
           <Input
             placeholder="الفني"
-            style={{ width: 140 }}
             value={technicianF}
             onChange={(e) => setTechnicianF(e.target.value)}
             allowClear
           />
           <Input
             placeholder="التاجر"
-            style={{ width: 140 }}
             value={traderF}
             onChange={(e) => setTraderF(e.target.value)}
             allowClear
           />
           <Select
             placeholder="المندوب"
-            style={{ width: 160 }}
             allowClear
             showSearch
             value={repId}
@@ -532,7 +526,6 @@ const Inspections: React.FC<{ fixedKind?: 'technician' | 'regular' }> = ({ fixed
             options={users.map((u) => ({ value: u.id, label: u.full_name || u.username }))} filterOption={searchFilter} filterSort={searchRank}/>
           <Select
             placeholder="حالة الشهادة"
-            style={{ width: 130 }}
             allowClear
             value={statusF}
             onChange={setStatusF}
@@ -543,7 +536,6 @@ const Inspections: React.FC<{ fixedKind?: 'technician' | 'regular' }> = ({ fixed
           />
           <Select
             placeholder="حالة الطباعة"
-            style={{ width: 135 }}
             allowClear
             value={printedF}
             onChange={setPrintedF}
@@ -554,7 +546,6 @@ const Inspections: React.FC<{ fixedKind?: 'technician' | 'regular' }> = ({ fixed
           />
           <Select
             placeholder="نوع الزيارة"
-            style={{ width: 120 }}
             allowClear
             value={visitTypeF}
             onChange={setVisitTypeF}
@@ -563,7 +554,6 @@ const Inspections: React.FC<{ fixedKind?: 'technician' | 'regular' }> = ({ fixed
           {!fixedKind && (
             <Select
               placeholder="نوع التسجيل"
-              style={{ width: 135 }}
               allowClear
               value={kindFilter}
               onChange={setKindFilter}
@@ -573,19 +563,11 @@ const Inspections: React.FC<{ fixedKind?: 'technician' | 'regular' }> = ({ fixed
               ]}
             />
           )}
-          <Button icon={<ReloadOutlined />} onClick={() => { setPage(1); load(1, pageSize); loadSummary(); }}>
-            تحديث
-          </Button>
-          {/* الزرار هنا مش جنب «الأعمدة» — دي بتتعرض في كارت التفاصيل بس، فالقايمة كانت هتفضل من غير تصدير. */}
-          <ExportExcelButton
-            name={fixedKind === 'regular' ? 'الزيارات العادية' : 'المعاينات'}
-            rows={rows}
-            tableColumns={tableCols.columns}
-            style={{ marginInlineStart: 0 }}
-          />
-        </Space>
-
+        </>)}
+      >
         <Table<InspectionRecord>
+          className="sl-table"
+          size="small"
           rowKey="id"
           loading={loading}
           dataSource={rows}
@@ -596,13 +578,13 @@ const Inspections: React.FC<{ fixedKind?: 'technician' | 'regular' }> = ({ fixed
             total: totalCount,
             showSizeChanger: true,
             pageSizeOptions: PAGE_SIZE_OPTIONS,
+            locale: { items_per_page: '' },
             onChange: handlePageChange,
-            showTotal: (t) => `إجمالي ${t} معاينة`,
+            showTotal: (t) => footer(t),
           }}
           columns={tableCols.columns}
         />
-      </Card>
-      </>
+      </ListPage>
       )}
 
       {detail && (
@@ -615,18 +597,14 @@ const Inspections: React.FC<{ fixedKind?: 'technician' | 'regular' }> = ({ fixed
           </Space>
         )}
         extra={
+          // «الأعمدة» اتنقلت لترويسة الكشف — مكانها هنا كان غلط (التفاصيل مالهاش جدول بيها).
           <Space>
-            {tableCols.control}
-            (
-              <Space>
-                {detail.status === 'rejected' ? (
-                  <Tag color="red">مرفوضة</Tag>
-                ) : (
-                  <Tag color="green">مقبولة</Tag>
-                )}
-                {detail.printed && <Tag color="blue">تم الطباعة</Tag>}
-              </Space>
-            )
+            {detail.status === 'rejected' ? (
+              <Tag color="red">مرفوضة</Tag>
+            ) : (
+              <Tag color="green">مقبولة</Tag>
+            )}
+            {detail.printed && <Tag color="blue">تم الطباعة</Tag>}
           </Space>
         }
       >
@@ -788,7 +766,7 @@ const Inspections: React.FC<{ fixedKind?: 'technician' | 'regular' }> = ({ fixed
         </div>
       </Card>
       )}
-    </div>
+    </>
   );
 };
 

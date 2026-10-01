@@ -62,7 +62,8 @@ function pressWhenReady(text: string, onMissing: () => void) {
   const tick = () => {
     const btn = [...document.querySelectorAll<HTMLElement>('button')].find((b) =>
       b.offsetParent !== null && !b.hasAttribute('disabled')
-      && (b.textContent || '').replace(/\s+/g, ' ').trim() === text);
+      // بيبدأ بالاسم، مش بيساويه: الزرار ممكن يكون «تسجيل طلب بيع جديد» أو عليه اختصار.
+      && (b.textContent || '').replace(/\s+/g, ' ').trim().startsWith(text));
     if (btn) { btn.click(); return; }
     if (Date.now() - started > 6000) { onMissing(); return; }
     window.setTimeout(tick, 150);

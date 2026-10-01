@@ -1,11 +1,11 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { searchFilter, searchRank, sortByName } from '../utils/arabicSort';
-import { money, qty } from '../utils/money';
+import { money, qty, numeralsLocale } from '../utils/money';
 import DocumentBar from '../components/DocumentBar';
 import DraftTag from '../components/DraftTag';
 import { PAGE_SIZE } from '../utils/pagination';
 import {
-  Alert, Button, Card, Col, DatePicker, Form, Input, Row, Segmented, Select, Space, Tabs, Tag, message,
+  Alert, Button, Col, DatePicker, Form, Input, Row, Segmented, Select, Space, Tabs, Tag, message,
 } from 'antd';
 // كل جدول هنا بفلتر على كل عمود — شوف `FilterTable`.
 import { FilterTable as Table } from '../components/FilterTable';
@@ -14,7 +14,7 @@ import { advanceFrom } from '../components/lineKeyboard';
 import { Popconfirm } from '../components/noConfirm';
 import {
   DeleteOutlined, PlusOutlined, ReloadOutlined, RollbackOutlined, ArrowRightOutlined,
-  EditOutlined, PrinterOutlined, CheckOutlined,
+  EditOutlined, PrinterOutlined, CheckOutlined, FileTextOutlined, SearchOutlined, ClearOutlined,
 } from '@ant-design/icons';
 import { printPermit } from '../print/permitSheet';
 import dayjs, { Dayjs } from 'dayjs';
@@ -23,7 +23,10 @@ import { api } from '../api/client';
 import { useDocRoute } from '../components/useDocRoute';
 import { useDraft } from '../components/useDraft';
 import { useQueryTab } from '../components/useQueryTab';
-import ListToolbar, { useListFilter } from '../components/ListToolbar';
+import { useListFilter } from '../components/ListToolbar';
+import ListPage, { type ListTab } from '../components/ListPage';
+import DateRangeFilter from '../components/DateRangeFilter';
+import { useScreenShortcuts } from '../components/keyboard';
 import { matchesStatement } from '../utils/statements';
 import ProductPickerModal from '../components/ProductPickerModal';
 import { useLookup, labelMap } from '../hooks/useLookup';
@@ -48,6 +51,7 @@ import './docs.extra.css';
  */
 
 type Kind = 'receipt' | 'issue' | 'opening';
+type KindTab = Kind | 'all';
 
 /** «بضاعة أول المدة» behaves like a receipt — same direction, same typed cost — and is labelled
  *  separately so «إمتى بدأنا؟» stays answerable and a stock-as-of-date report for a day before
@@ -756,6 +760,22 @@ export default function StockPermits() {
     export: { name: 'أذونات المخزن', rows: filter.filtered },
   });
 
+  // فلتر «نوع الإذن» بقى شرايح فوق — نفس قيمة الفلتر، فالمسح وفتح «أول المدة» من القايمة شغّالين زي ما هم.
+  const kindVal = filter.values.kind;
+  const activeKindTab: KindTab = Array.isArray(kindVal)
+    ? (kindVal.length === 1 ? kindVal[0] : 'all')
+    : (kindVal || 'all');
+  const kindCount = (k: Kind) => permits.filter((p) => p.kind === k).length;
+  const kindTabs: ListTab<KindTab>[] = [
+    { key: 'all', label: 'الكل', count: permits.length },
+    { key: 'receipt', label: 'إذن إضافة', dot: '#52c41a', count: kindCount('receipt') },
+    { key: 'issue', label: 'إذن صرف', dot: '#f5222d', count: kindCount('issue') },
+    { key: 'opening', label: 'بضاعة أول المدة', dot: '#1677ff', count: kindCount('opening') },
+  ];
+  // F3 للبحث — كانت جاية من `ListToolbar`، وبتشتغل على الكشف بس.
+  const listSearchRef = useRef<any>(null);
+  useScreenShortcuts({ onSearch: () => listSearchRef.current?.focus?.() }, !(creating || detail));
+
   // The document page — the SAME page whether it is being written or being read. This is the
   // whole point: «افتح الإذن» lands where «اعمل إذن» lands, so nothing has to be relearned to
   // look at what you typed yesterday.
@@ -809,36 +829,37 @@ export default function StockPermits() {
         {detail ? postedDoc : createForm}
       </div>
   ) : (
-    <Card
-      title="أذونات المخزن"
-      extra={(
-        <Space>
-          {tableCols.control}
-          <Button data-shortcut="F2" type="primary" icon={<PlusOutlined />}
-            onClick={() => { setKind('receipt'); startNew(); }}>إذن إضافة</Button>
-          <Button icon={<PlusOutlined />}
-            onClick={() => { setKind('issue'); startNew(); }}>إذن صرف</Button>
-          <Button icon={<PlusOutlined />}
-            onClick={() => { setKind('opening'); setCreating(true); }}>بضاعة أول المدة</Button>
-          <Button icon={<ReloadOutlined />} onClick={() => load()}>تحديث</Button>
-        </Space>
-      )}
+    <ListPage<KindTab>
+      icon={<FileTextOutlined />}
+      title="أذونات المخزن" muted="(إضافة · صرف · أول المدة)"
+      subtitle="حركات دخول وخروج البضاعة من المخازن لأسباب غير البيع والشراء"
+      tabs={kindTabs} activeTab={activeKindTab}
+      onTabChange={(k) => filter.setValue('kind', k === 'all' ? undefined : k)}
+      actions={(<>
+        <Button data-shortcut="F2" type="primary" icon={<PlusOutlined />} className="sl-create"
+          onClick={() => { setKind('receipt'); startNew(); }}>إذن إضافة</Button>
+        <Button icon={<PlusOutlined />}
+          onClick={() => { setKind('issue'); startNew(); }}>إذن صرف</Button>
+        <Button icon={<PlusOutlined />}
+          onClick={() => { setKind('opening'); setCreating(true); }}>بضاعة أول المدة</Button>
+        <Button icon={<ReloadOutlined />} onClick={() => load()}>تحديث</Button>
+        {tableCols.control}
+      </>)}
+      filters={(<>
+        <Input className="sl-f-search" allowClear ref={listSearchRef}
+          value={filter.query} placeholder="بحث برقم الإذن أو السبب أو البيان"
+          prefix={<SearchOutlined />}
+          onChange={(e) => filter.setQuery(e.target.value)} />
+        <Input allowClear placeholder="البيان"
+          value={filter.values.statement ?? undefined}
+          onChange={(e) => filter.setValue('statement', e.target.value || undefined)} />
+        <DateRangeFilter className="sl-f-dates"
+          value={filter.range ?? null} onChange={(v) => filter.setRange(v)} />
+        <Button className="sl-f-clear" icon={<ClearOutlined />} onClick={filter.reset}>مسح</Button>
+      </>)}
     >
-
-      <ListToolbar
-        searchPlaceholder="بحث برقم الإذن أو السبب أو البيان"
-        query={filter.query} onQueryChange={filter.setQuery}
-        values={filter.values} onValueChange={filter.setValue}
-        showDateRange range={filter.range} onRangeChange={filter.setRange}
-        onReset={filter.reset} total={permits.length} shown={filter.filtered.length}
-        filters={[{ key: 'kind', placeholder: 'نوع الإذن', options: [
-          { value: 'receipt', label: 'إذن إضافة' },
-          { value: 'issue', label: 'إذن صرف' },
-          { value: 'opening', label: 'بضاعة أول المدة' },
-        ] }, { key: 'statement', placeholder: 'البيان', kind: 'text' }]}
-      />
-
       <Table<Permit>
+        className="sl-table"
         rowKey="id" size="small" loading={loading}
         // المسودّات فوق، وبرّه `filter.filtered`: المسودّة مش إذن.
         dataSource={[
@@ -866,11 +887,20 @@ export default function StockPermits() {
           style: { cursor: 'pointer' },
         })}
         locale={{ emptyText: 'لا توجد أذونات' }}
-        pagination={{ defaultPageSize: PAGE_SIZE, showSizeChanger: true }}
+        pagination={{
+          defaultPageSize: PAGE_SIZE, showSizeChanger: true, locale: { items_per_page: '' },
+          showTotal: () => (
+            <span className="sl-foot">
+              <span>إجمالي الأذون: <b>{permits.length.toLocaleString(numeralsLocale())}</b></span>
+              {filter.filtered.length < permits.length && (
+                <span>المعروض: <b>{filter.filtered.length.toLocaleString(numeralsLocale())}</b></span>
+              )}
+            </span>
+          ),
+        }}
         columns={tableCols.columns}
       />
-
-    </Card>
+    </ListPage>
   );
 
   return (

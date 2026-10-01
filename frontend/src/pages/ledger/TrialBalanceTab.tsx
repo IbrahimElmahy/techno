@@ -184,6 +184,7 @@ export default function TrialBalanceTab() {
             return (
               <Table
                 {...trialKb.tableProps}
+                className="sl-table"
                 key={nature ?? 'none'} rowKey="account_id" dataSource={book} columns={trialBalanceTabCols.columns}
                 loading={loading} pagination={false} size="small"
                 expandable={{
@@ -216,6 +217,7 @@ export default function TrialBalanceTab() {
           {shownRows.some((r) => !r.nature) && (
             <Table
               {...trialKb.tableProps}
+              className="sl-table"
               rowKey="account_id" columns={trialBalanceTabCols.columns} pagination={false} size="small"
               dataSource={shownRows.filter((r) => !r.nature)}
               expandable={{
@@ -241,7 +243,7 @@ export default function TrialBalanceTab() {
         </>
       ) : data ? (
         <>
-          <Table {...trialKb.tableProps} rowKey="account_id" dataSource={shownRows} columns={trialBalanceTabCols.columns} loading={loading}
+          <Table {...trialKb.tableProps} className="sl-table" rowKey="account_id" dataSource={shownRows} columns={trialBalanceTabCols.columns} loading={loading}
             pagination={false} size="small"
             summary={() => (
               <Table.Summary fixed>

@@ -1,24 +1,22 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { PAGE_SIZE, PAGE_SIZE_OPTIONS } from '../utils/pagination';
 import { searchFilter, searchRank, sortByName } from '../utils/arabicSort';
 import {
-  Card, Tabs, Form, Segmented, Select, DatePicker, Input, Button, Space, Tag, Col, message, Descriptions, Alert,
+  Form, Select, Input, Button, Space, Tag, message, Descriptions, Alert, Empty,
 } from 'antd';
 // فلتر على كل عمود — شوف `FilterTable`.
 import { FilterTable as Table } from '../components/FilterTable';
-import { Statistic } from '../components/Statistic';
-import { InputNumber } from '../components/NumberInput';
 import { Popconfirm } from '../components/noConfirm';
 import {
-  DollarOutlined,
-  ExportOutlined,
-  SwapOutlined,
+  WalletOutlined,
   FileSearchOutlined,
   DeleteOutlined,
   UndoOutlined,
   PrinterOutlined,
   SearchOutlined,
   PlusOutlined,
+  ClearOutlined,
+  ReloadOutlined,
 } from '@ant-design/icons';
 import { entryTypeLabel } from '../components/labels';
 import dayjs, { Dayjs } from 'dayjs';
@@ -29,7 +27,8 @@ import { useTableColumns } from '../components/ColumnSettings';
 import ExportExcelButton from '../components/ExportExcelButton';
 import { useQueryTab } from '../components/useQueryTab';
 import { useDocRoute } from '../components/useDocRoute';
-import ListToolbar, { useListFilter, normalizeAr } from '../components/ListToolbar';
+import { useListFilter, normalizeAr } from '../components/ListToolbar';
+import ListPage, { ListTab } from '../components/ListPage';
 import { matchesStatement } from '../utils/statements';
 import DateRangeFilter from '../components/DateRangeFilter';
 import { printDocument } from '../print/brand';
@@ -49,7 +48,6 @@ import ExpenseModal from './vouchers/ExpenseModal';
 import TransferModal from './vouchers/TransferModal';
 import ChequeModal from './vouchers/ChequeModal';
 
-import StatsRow from '../components/StatsRow';
 // الأنواع والتسميات راحت `vouchers/types.ts` — الشاشة وبوباباتها بيقروا من نسخة واحدة،
 // عشان نوع يتغيّر في مكان ويفضل قديم في التاني يبقى مستحيل.
 import {
@@ -57,9 +55,13 @@ import {
 } from './vouchers/types';
 import { useLiveRefresh } from '../utils/live';
 
-const TreasuryMovementTab: React.FC<{ treasuries: any[] }> = ({ treasuries }) => {
-  const [treasuryId, setTreasuryId] = useState<number | undefined>();
-  const [range, setRange] = useState<any>(null);
+/**
+ * حركة الخزينة — الخزينة والفترة بقوا في سطر فلاتر الصفحة، فبيتبعتوا من برّه
+ * (`Vouchers`) عشان يفضلوا محفوظين لما تتنقل بين الشرايح.
+ */
+const TreasuryMovementTab: React.FC<{ treasuries: any[]; treasuryId?: number; range: any }> = ({
+  treasuries, treasuryId, range,
+}) => {
   const [statement, setStatement] = useState<any>(null);
   const [loading, setLoading] = useState(false);
 
@@ -82,55 +84,48 @@ const TreasuryMovementTab: React.FC<{ treasuries: any[] }> = ({ treasuries }) =>
   const fmt = (v: any) => Number(v || 0).toLocaleString(numeralsLocale(),
     { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
-  return (
-    <Card title="حركة الخزينة">
-      <Space wrap style={{ marginBottom: 12 }}>
-        <Select
-          style={{ width: 260 }} placeholder="اختر الخزينة" showSearch
-          value={treasuryId} onChange={setTreasuryId}
-          // صندوق لكل خط لكل مندوب — القايمة طويلة، فبتتبحث وبتترتّب زي أي قايمة أسماء.
-          options={sortByName(treasuries, (t) => t.name)
-            .map((t) => ({ value: t.id, label: `${t.name} (${fmt(t.balance)})` }))}
-          filterOption={searchFilter} filterSort={searchRank}
-        />
-        <div style={{ width: 280 }}>
-          <DateRangeFilter value={range} onChange={(v) => setRange(v)} />
-        </div>
-      </Space>
+  if (!statement) {
+    return (
+      <Empty style={{ padding: '32px 0' }} image={Empty.PRESENTED_IMAGE_SIMPLE}
+        description={loading ? 'جاري التحميل…' : 'اختر الخزينة من سطر الفلاتر'} />
+    );
+  }
 
-      {statement && (
-        <>
-          <Space wrap size="large" style={{ marginBottom: 12 }}>
+  return (
+    <Table
+      className="sl-table"
+      rowKey={(l: any) => `${l.entry_id}-${l.balance}`} size="small" loading={loading}
+      dataSource={statement.lines}
+      locale={{ emptyText: 'لا توجد حركة في هذه الفترة' }}
+      pagination={{
+        defaultPageSize: PAGE_SIZE, showSizeChanger: true, locale: { items_per_page: '' },
+        // الأرصدة هي لبّ الكشف — في سطر الترقيم بدل كروت فوق.
+        showTotal: () => (
+          <span className="sl-foot">
             <span>رصيد أول المدة: <b>{fmt(statement.opening_balance)}</b></span>
-            <span>وارد: <b style={{ color: '#6AB42D' }}>{fmt(statement.total_debit)}</b></span>
-            <span>منصرف: <b style={{ color: '#cf1322' }}>{fmt(statement.total_credit)}</b></span>
-            <span>الرصيد: <b style={{ color: '#0B5CA8' }}>{fmt(statement.closing_balance)}</b></span>
-          </Space>
-          <Table
-            rowKey={(l: any) => `${l.entry_id}-${l.balance}`} size="small" loading={loading}
-            dataSource={statement.lines}
-            locale={{ emptyText: 'لا توجد حركة في هذه الفترة' }}
-            pagination={{ defaultPageSize: PAGE_SIZE, showSizeChanger: true }}
-            scroll={{ x: 'max-content' }}
-            columns={[
-              { title: 'التاريخ', dataIndex: 'entry_date',
-                render: (d: string) => String(d).slice(0, 10) },
-              { title: 'النوع', dataIndex: 'entry_type',
-                render: (t: string) => <Tag>{entryTypeLabel(t)}</Tag> },
-              { title: 'البيان', dataIndex: 'description' },
-              { title: 'الرصيد قبل', dataIndex: 'balance_before', align: 'left' as const,
-                render: (v: string) => <span style={{ color: '#6b6b6b' }}>{fmt(v)}</span> },
-              { title: 'وارد', dataIndex: 'debit', align: 'left' as const,
-                render: (v: string) => (Number(v) ? fmt(v) : '-') },
-              { title: 'منصرف', dataIndex: 'credit', align: 'left' as const,
-                render: (v: string) => (Number(v) ? fmt(v) : '-') },
-              { title: 'الرصيد بعد', dataIndex: 'balance', align: 'left' as const,
-                render: (v: string) => <b>{fmt(v)}</b> },
-            ]}
-          />
-        </>
-      )}
-    </Card>
+            <span>وارد: <b className="is-pos">{fmt(statement.total_debit)}</b></span>
+            <span>منصرف: <b className="is-neg">{fmt(statement.total_credit)}</b></span>
+            <span>الرصيد: <b>{fmt(statement.closing_balance)}</b></span>
+          </span>
+        ),
+      }}
+      scroll={{ x: 'max-content' }}
+      columns={[
+        { title: 'التاريخ', dataIndex: 'entry_date',
+          render: (d: string) => String(d).slice(0, 10) },
+        { title: 'النوع', dataIndex: 'entry_type',
+          render: (t: string) => <Tag>{entryTypeLabel(t)}</Tag> },
+        { title: 'البيان', dataIndex: 'description' },
+        { title: 'الرصيد قبل', dataIndex: 'balance_before', align: 'left' as const,
+          render: (v: string) => <span style={{ color: '#6b6b6b' }}>{fmt(v)}</span> },
+        { title: 'وارد', dataIndex: 'debit', align: 'left' as const,
+          render: (v: string) => (Number(v) ? fmt(v) : '-') },
+        { title: 'منصرف', dataIndex: 'credit', align: 'left' as const,
+          render: (v: string) => (Number(v) ? fmt(v) : '-') },
+        { title: 'الرصيد بعد', dataIndex: 'balance', align: 'left' as const,
+          render: (v: string) => <b>{fmt(v)}</b> },
+      ]}
+    />
   );
 };
 
@@ -212,6 +207,11 @@ const Vouchers: React.FC = () => {
   const [treasuryForm] = Form.useForm();
   const [chequeForm] = Form.useForm();
   const [chequeOpen, setChequeOpen] = useState(false);
+  // حركة الخزينة — الخزينة والفترة في سطر الفلاتر، فمكانهم هنا مش جوّه الشريحة.
+  const [tmTreasuryId, setTmTreasuryId] = useState<number | undefined>();
+  const [tmRange, setTmRange] = useState<any>(null);
+  // F3 — خانة البحث في الشريحة المفتوحة (كانت جوّه `ListToolbar` في الشيكات).
+  const searchRef = useRef<any>(null);
   const [receiptOpen, setReceiptOpen] = useState(false);
   const [paymentOpen, setPaymentOpen] = useState(false);
   const [handoverOpen, setHandoverOpen] = useState(false);
@@ -230,6 +230,7 @@ const Vouchers: React.FC = () => {
       };
       open[tab]?.();
     },
+    onSearch: () => searchRef.current?.focus?.(),
   });
 
   const loadVouchers = useCallback(async (opts?: { silent?: boolean }) => {
@@ -532,11 +533,8 @@ const Vouchers: React.FC = () => {
     },
   ];
 
-  // الأعمدة دي بتخدم ست جداول، بس الزرار متعلّق في تبويب «سند قبض» لوحده — فالملف اللي بيطلع
-  // منه هو سندات القبض. سجل السندات تحت ليه زرار خاص بيه بصفوفه.
-  const voucherCols = useTableColumns('vouchers', voucherColumns, {
-    export: { name: 'سندات القبض', rows: byKind('receipt') },
-  });
+  // التصدير بقى زرار لكل شريحة في الترويسة بصفوفها هي — فمش محتاجينه هنا.
+  const voucherCols = useTableColumns('vouchers', voucherColumns);
 
   const totals = {
     receipts: vouchers.filter((v) => v.kind === 'receipt' && !v.is_reversal)
@@ -547,547 +545,555 @@ const Vouchers: React.FC = () => {
       .reduce((s, v) => s + Number(v.amount), 0),
   };
 
-  return (
-    <div>
-      <VoucherKeyStrip world={keyWorld}
-        onPosted={() => { loadVouchers(); loadTreasuries(); }} />
-      <StatsRow gutter={16} style={{ marginBottom: 16 }}>
-        <Col span={8}>
-          <Card>
-            <Statistic
-              title="إجمالي التحصيل"
-              value={totals.receipts}
-              precision={2}
-              prefix={<DollarOutlined />}
-              valueStyle={{ color: '#2e9e6b' }}
-            />
-          </Card>
-        </Col>
-        <Col span={8}>
-          <Card>
-            <Statistic
-              title="إجمالي المدفوعات"
-              value={totals.payments}
-              precision={2}
-              prefix={<ExportOutlined />}
-              valueStyle={{ color: '#d64545' }}
-            />
-          </Card>
-        </Col>
-        <Col span={8}>
-          <Card>
-            <Statistic
-              title="توريدات المناديب"
-              value={totals.handovers}
-              precision={2}
-              prefix={<SwapOutlined />}
-              valueStyle={{ color: '#0e4c6d' }}
-            />
-          </Card>
-        </Col>
-      </StatsRow>
+  /** شرايح السندات — كل واحدة نفس الجدول على نوع واحد. */
+  const VOUCHER_TABS: Record<string, {
+    kind: string; label: string; subtitle: string; empty: string; file: string;
+    kb: { tableProps: any }; create: string; onCreate: () => void;
+  }> = {
+    receipt: { kind: 'receipt', label: 'سند قبض', subtitle: 'تحصيل من عميل',
+      empty: 'لا توجد سندات قبض', file: 'سندات القبض', kb: receiptKb, create: 'سند قبض جديد',
+      onCreate: () => { setReceiptTarget(''); openVoucher(receiptForm, setReceiptOpen); } },
+    payment: { kind: 'payment', label: 'سند صرف', subtitle: 'دفع لمورد',
+      empty: 'لا توجد سندات صرف', file: 'سندات الصرف', kb: paymentKb, create: 'سند صرف جديد',
+      onCreate: () => openVoucher(paymentForm, setPaymentOpen) },
+    handover: { kind: 'rep_handover', label: 'توريد مندوب', subtitle: 'استلام نقدية من عهدة مندوب',
+      empty: 'لا توجد سندات توريد', file: 'توريدات المناديب', kb: handoverKb, create: 'توريد جديد',
+      onCreate: () => { handoverForm.resetFields(); setHandoverOpen(true); } },
+    expense: { kind: 'expense', label: 'سند مصروف', subtitle: 'صرف مصروف من الخزينة',
+      empty: 'لا توجد مصروفات', file: 'سندات المصروفات', kb: expenseKb, create: 'مصروف جديد',
+      onCreate: () => openVoucher(expenseForm, setExpenseOpen) },
+    transfer: { kind: 'cash_transfer', label: 'تحويل بين الخزائن', subtitle: 'تحويل نقدية بين خزينتين',
+      empty: 'لا توجد تحويلات', file: 'التحويلات بين الخزائن', kb: transferKb, create: 'تحويل جديد',
+      onCreate: () => { transferForm.resetFields(); setTransferOpen(true); } },
+  };
+  const vTab = VOUCHER_TABS[tab];
 
-      {/* لافتة «الفترة مقفلة حتى كذا — أي سند بتاريخ أقدم هيترفض» اتشالت مع القفل نفسه.
-          الترحيل بقى مسموح بأي تاريخ، ولافتة بتحذّر من رفض مش بيحصل بتخلّي اللي بيقراها
-          يبعد عن حاجة مالهاش داعي. */}
+  const SUBTITLES: Record<string, string> = {
+    'treasury-movement': 'وارد ومنصرف خزينة بعينها برصيدها قبل وبعد كل حركة',
+    cheques: 'أوراق القبض والدفع — تحصيل وصرف وارتداد',
+    statement: 'كشف حساب عميل أو مورد أو عهدة مندوب',
+    log: 'كل السندات في الفترة — بحث ونوع وتاريخ',
+  };
 
-      <Tabs
-        activeKey={tab} onChange={setTab}
-        items={[
-          {
-            key: 'receipt',
-            label: 'سند قبض',
-            children: (
-              <Card title="تحصيل من عميل"
-                extra={(
-                  <Space>
-                  {voucherCols.control}
-                  <Button type="primary" icon={<PlusOutlined />}
-                    onClick={() => { setReceiptTarget(''); openVoucher(receiptForm, setReceiptOpen); }}>
-                    سند قبض جديد
-                  </Button>
-                  </Space>
-                )}>
-                <Table<VoucherRecord>
-                  {...receiptKb.tableProps}
-                  rowKey="id" size="small" loading={loading}
-                  dataSource={byKind('receipt')}
-                  columns={voucherCols.columns}
-                  locale={{ emptyText: 'لا توجد سندات قبض' }}
-                  pagination={{ defaultPageSize: PAGE_SIZE, showTotal: (t) => `إجمالي ${t}` }}
-                />
-              </Card>
-            ),
-          },
-          {
-            key: 'payment',
-            label: 'سند صرف',
-            children: (
-              <Card title="دفع لمورد"
-                extra={(
-                  <Button type="primary" icon={<PlusOutlined />}
-                    onClick={() => openVoucher(paymentForm, setPaymentOpen)}>
-                    سند صرف جديد
-                  </Button>
-                )}>
-                <Table<VoucherRecord>
-                  {...paymentKb.tableProps}
-                  rowKey="id" size="small" loading={loading}
-                  dataSource={byKind('payment')}
-                  columns={voucherCols.columns}
-                  locale={{ emptyText: 'لا توجد سندات صرف' }}
-                  pagination={{ defaultPageSize: PAGE_SIZE, showTotal: (t) => `إجمالي ${t}` }}
-                />
-              </Card>
-            ),
-          },
-          {
-            key: 'handover',
-            label: 'توريد مندوب',
-            children: (
-              <Card title="استلام نقدية من عهدة مندوب"
-                extra={(
-                  <Button type="primary" icon={<PlusOutlined />}
-                    onClick={() => { handoverForm.resetFields(); setHandoverOpen(true); }}>
-                    توريد جديد
-                  </Button>
-                )}>
-                <Table<VoucherRecord>
-                  {...handoverKb.tableProps}
-                  rowKey="id" size="small" loading={loading}
-                  dataSource={byKind('rep_handover')}
-                  columns={voucherCols.columns}
-                  locale={{ emptyText: 'لا توجد سندات توريد' }}
-                  pagination={{ defaultPageSize: PAGE_SIZE, showTotal: (t) => `إجمالي ${t}` }}
-                />
-              </Card>
-            ),
-          },
-          {
-            key: 'expense',
-            label: 'سند مصروف',
-            children: (
-              <Card title="صرف مصروف من الخزينة"
-                extra={(
-                  <Button type="primary" icon={<PlusOutlined />}
-                    onClick={() => openVoucher(expenseForm, setExpenseOpen)}>
-                    مصروف جديد
-                  </Button>
-                )}>
-                <Table<VoucherRecord>
-                  {...expenseKb.tableProps}
-                  rowKey="id" size="small" loading={loading}
-                  dataSource={byKind('expense')}
-                  columns={voucherCols.columns}
-                  locale={{ emptyText: 'لا توجد مصروفات' }}
-                  pagination={{ defaultPageSize: PAGE_SIZE, showTotal: (t) => `إجمالي ${t}` }}
-                />
-                {expenseAccounts.length === 0 && (
-                  <Alert
-                    type="info"
-                    showIcon
-                    style={{ marginTop: 12 }}
-                    message="لا توجد حسابات مصروفات"
-                    description="أضف حساب مصروف من شجرة الحسابات (طبيعة: مصروفات) حتى تتمكن من الصرف عليه."
-                  />
-                )}
-              </Card>
-            ),
-          },
-          {
-            key: 'transfer',
-            label: 'تحويل بين الخزائن',
-            children: (
-              <Card title="تحويل نقدية بين خزينتين"
-                extra={(
-                  <Button type="primary" icon={<PlusOutlined />}
-                    onClick={() => { transferForm.resetFields(); setTransferOpen(true); }}>
-                    تحويل جديد
-                  </Button>
-                )}>
-                <Table<VoucherRecord>
-                  {...transferKb.tableProps}
-                  rowKey="id" size="small" loading={loading}
-                  dataSource={byKind('cash_transfer')}
-                  columns={voucherCols.columns}
-                  locale={{ emptyText: 'لا توجد تحويلات' }}
-                  pagination={{ defaultPageSize: PAGE_SIZE, showTotal: (t) => `إجمالي ${t}` }}
-                />
+  const tabs: ListTab[] = [
+    ...Object.entries(VOUCHER_TABS).map(([key, t]) => ({
+      key, label: t.label, count: byKind(t.kind).length,
+    })),
+    { key: 'treasury-movement', label: 'حركة الخزينة' },
+    { key: 'cheques', label: 'الشيكات', count: cheques.length },
+    { key: 'statement', label: 'كشف حساب' },
+    { key: 'log', label: 'سجل السندات', count: shownVouchers.length },
+  ];
 
-                <Table
-                  rowKey="id"
-                  size="small"
-                  style={{ marginTop: 20 }}
-                  title={() => 'الخزائن'}
-                  dataSource={treasuries}
-                  pagination={false}
-                  columns={[
-                    { title: 'الخزينة', dataIndex: 'name' },
-                    {
-                      title: 'النوع',
-                      dataIndex: 'kind',
-                      width: 100,
-                      render: (v: string) => (
-                        <Tag color={v === 'bank' ? 'purple' : 'gold'}>{v === 'bank' ? 'بنك' : 'نقدية'}</Tag>
-                      ),
-                    },
-                    { title: 'البنك', dataIndex: 'bank_name', width: 140 },
-                    {
-                      title: 'الرصيد',
-                      dataIndex: 'balance',
-                      width: 150,
-                      align: 'left' as const,
-                      render: (v: string) => <b>{money(v)}</b>,
-                    },
-                    {
-                      title: '',
-                      width: 110,
-                      render: (_: any, t: any) =>
-                        t.is_default ? <Tag color="blue">الافتراضية</Tag> : t.active ? null : <Tag>موقوفة</Tag>,
-                    },
-                  ]}
-                />
+  /** مجموع السندات المعروضة (من غير العكسية) — نفس قاعدة الإجماليات. */
+  const voucherFoot = (rows: VoucherRecord[]) => (
+    <span className="sl-foot">
+      <span>عدد: <b>{rows.length}</b></span>
+      <span>الإجمالي: <b>{money(rows.filter((v) => !v.is_reversal)
+        .reduce((s, v) => s + Number(v.amount), 0))}</b></span>
+    </span>
+  );
 
-                <Form
-                  form={treasuryForm}
-                  layout="inline"
-                  style={{ marginTop: 16 }}
-                  onFinish={async (v) => {
-                    setPosting(true);
-                    try {
-                      await api.post('/api/v1/treasuries', v);
-                      message.success('تم إنشاء الخزينة ✔');
-                      treasuryForm.resetFields();
-                      loadTreasuries();
-                    } catch {
-                    } finally {
-                      setPosting(false);
-                    }
-                  }}
-                >
-                  <Form.Item name="name" label="خزينة جديدة" rules={[{ required: true, message: 'اكتب الاسم' }]}>
-                    <Input placeholder="اسم الخزينة" style={{ width: 180 }} />
-                  </Form.Item>
-                  <Form.Item name="kind" label="النوع" initialValue="cash">
-                    <Select
-                      style={{ width: 120 }}
-                      options={[
-                        { value: 'cash', label: 'نقدية' },
-                        { value: 'bank', label: 'بنك' },
-                      ]}
-                    />
-                  </Form.Item>
-                  <Form.Item name="bank_name" label="البنك">
-                    <Input placeholder="اختياري" style={{ width: 150 }} />
-                  </Form.Item>
-                  <Form.Item>
-                    <Button htmlType="submit" loading={posting}>
-                      إضافة
-                    </Button>
-                  </Form.Item>
-                </Form>
-              </Card>
-            ),
-          },
-          {
-            key: 'treasury-movement',
-            label: 'حركة الخزينة',
-            children: <TreasuryMovementTab treasuries={treasuries} />,
-          },
-          {
-            key: 'cheques',
-            label: 'الشيكات',
-            children: (
-              <Card title="الشيكات"
-                extra={(
-                  <Button type="primary" icon={<PlusOutlined />}
-                    onClick={() => { chequeForm.resetFields(); setChequeOpen(true); }}>
-                    ورقة جديدة
-                  </Button>
-                )}>
-                <div>
-                  <ListToolbar
-                    searchPlaceholder="بحث برقم الشيك أو المستند أو البنك أو الطرف أو البيان"
-                    query={chequeFilter.query} onQueryChange={chequeFilter.setQuery}
-                    values={chequeFilter.values} onValueChange={chequeFilter.setValue}
-                    showDateRange range={chequeFilter.range} onRangeChange={chequeFilter.setRange}
-                    onReset={chequeFilter.reset}
-                    total={cheques.length} shown={chequeFilter.filtered.length}
-                    filters={[
-                      { key: 'direction', placeholder: 'النوع', span: 4,
-                        options: [{ value: 'incoming', label: 'وارد' }, { value: 'outgoing', label: 'صادر' }] },
-                      { key: 'status', placeholder: 'الحالة', span: 4,
-                        options: [
-                          { value: 'pending', label: 'تحت التحصيل' },
-                          { value: 'settled', label: 'تم' },
-                          { value: 'bounced', label: 'مرتد' },
-                          { value: 'cancelled', label: 'ملغي' },
-                        ] },
-                      { key: 'statement', placeholder: 'البيان', kind: 'text', span: 4 },
-                    ]}
-                  />
-                </div>
+  const resetVoucherFilters = () => {
+    setVoucherQuery('');
+    setKindFilter(undefined);
+    setRange([dayjs().subtract(30, 'day'), dayjs()]);
+  };
 
-                <Table
-                  rowKey="id"
-                  size="small"
-                  dataSource={chequeFilter.filtered}
-                  pagination={{ defaultPageSize: PAGE_SIZE, showSizeChanger: true, pageSizeOptions: PAGE_SIZE_OPTIONS }}
-                  columns={[
-                    { title: 'المستند', dataIndex: 'document_number', width: 120 },
-                    {
-                      title: 'النوع',
-                      dataIndex: 'direction',
-                      width: 110,
-                      render: (v: string) => (
-                        <Tag color={v === 'incoming' ? 'green' : 'red'}>{v === 'incoming' ? 'وارد' : 'صادر'}</Tag>
-                      ),
-                    },
-                    { title: 'رقم الشيك', dataIndex: 'cheque_number', width: 110 },
-                    { title: 'البنك', dataIndex: 'bank_name', width: 120 },
-                    {
-                      title: 'المبلغ',
-                      dataIndex: 'amount',
-                      width: 130,
-                      align: 'left' as const,
-                      render: (v: string) => <b>{money(v)}</b>,
-                    },
-                    { title: 'الاستحقاق', dataIndex: 'due_date', width: 110 },
-                    { title: 'البيان', dataIndex: 'statement1', width: 160, ellipsis: true,
-                      render: (v: string | null) => v || '-' },
-                    {
-                      title: 'الحالة',
-                      dataIndex: 'status',
-                      width: 120,
-                      render: (v: string) => {
-                        const map: Record<string, [string, string]> = {
-                          pending: ['orange', 'تحت التحصيل'],
-                          settled: ['green', 'تم'],
-                          bounced: ['red', 'مرتد'],
-                          cancelled: ['default', 'ملغي'],
-                        };
-                        const [color, label] = map[v] || ['default', v];
-                        return <Tag color={color}>{label}</Tag>;
-                      },
-                    },
-                    {
-                      title: '',
-                      width: 240,
-                      render: (_: any, c: any) =>
-                        c.status === 'settled' ? (
-                          <Popconfirm
-                            title="عكس التحصيل؟"
-                            description="القيمة هترجع للحساب الوسيط وتخرج من الخزينة، والشيك يرجع تحت التحصيل."
-                            okText="عكس"
-                            cancelText="إلغاء"
-                            okButtonProps={{ danger: true }}
-                            onConfirm={async () => {
-                              try {
-                                await api.post(`/api/v1/cheques/${c.id}/unsettle`);
-                                message.success('تم عكس التحصيل — الشيك رجع تحت التحصيل');
-                                loadCheques();
-                                loadTreasuries();
-                              } catch {
-                              }
-                            }}
-                          >
-                            <Button size="small" icon={<UndoOutlined />}>
-                              {c.direction === 'incoming' ? 'عكس التحصيل' : 'عكس الصرف'}
-                            </Button>
-                          </Popconfirm>
-                        ) : c.status !== 'pending' ? null : (
-                          <Space>
-                            <Button
-                              size="small"
-                              type="primary"
-                              onClick={async () => {
-                                try {
-                                  await api.post(`/api/v1/cheques/${c.id}/settle`, {});
-                                  message.success(c.direction === 'incoming' ? 'تم التحصيل ✔' : 'تم الصرف ✔');
-                                  loadCheques();
-                                  loadTreasuries();
-                                } catch {
-                                }
-                              }}
-                            >
-                              {c.direction === 'incoming' ? 'تحصيل' : 'صرف'}
-                            </Button>
-                            {c.direction === 'incoming' && (
-                              <Popconfirm
-                                title="ارتداد الشيك؟"
-                                description="الدين هيرجع على العميل."
-                                okText="ارتداد"
-                                cancelText="إلغاء"
-                                okButtonProps={{ danger: true }}
-                                onConfirm={async () => {
-                                  try {
-                                    await api.post(`/api/v1/cheques/${c.id}/bounce`);
-                                    message.success('تم تسجيل الارتداد');
-                                    loadCheques();
-                                  } catch {
-                                  }
-                                }}
-                              >
-                                <Button size="small" danger>
-                                  ارتداد
-                                </Button>
-                              </Popconfirm>
-                            )}
-                          </Space>
-                        ),
-                    },
-                  ]}
-                />
-              </Card>
-            ),
-          },
-          {
-            key: 'statement',
-            label: 'كشف حساب',
-            children: (
-              <Card
-                title="كشف حساب"
-                extra={
-                  statement && (
-                    <Button icon={<PrinterOutlined />} onClick={printStatement}>
-                      طباعة
-                    </Button>
-                  )
+  const chequeColumns = [
+    { title: 'المستند', dataIndex: 'document_number', width: 120 },
+    {
+      title: 'النوع',
+      dataIndex: 'direction',
+      width: 110,
+      render: (v: string) => (
+        <Tag color={v === 'incoming' ? 'green' : 'red'}>{v === 'incoming' ? 'وارد' : 'صادر'}</Tag>
+      ),
+    },
+    { title: 'رقم الشيك', dataIndex: 'cheque_number', width: 110 },
+    { title: 'البنك', dataIndex: 'bank_name', width: 120 },
+    {
+      title: 'المبلغ',
+      dataIndex: 'amount',
+      width: 130,
+      align: 'left' as const,
+      render: (v: string) => <b>{money(v)}</b>,
+    },
+    { title: 'الاستحقاق', dataIndex: 'due_date', width: 110 },
+    { title: 'البيان', dataIndex: 'statement1', width: 160, ellipsis: true,
+      render: (v: string | null) => v || '-' },
+    {
+      title: 'الحالة',
+      dataIndex: 'status',
+      width: 120,
+      render: (v: string) => {
+        const map: Record<string, [string, string]> = {
+          pending: ['orange', 'تحت التحصيل'],
+          settled: ['green', 'تم'],
+          bounced: ['red', 'مرتد'],
+          cancelled: ['default', 'ملغي'],
+        };
+        const [color, label] = map[v] || ['default', v];
+        return <Tag color={color}>{label}</Tag>;
+      },
+    },
+    {
+      title: '',
+      width: 240,
+      render: (_: any, c: any) =>
+        c.status === 'settled' ? (
+          <Popconfirm
+            title="عكس التحصيل؟"
+            description="القيمة هترجع للحساب الوسيط وتخرج من الخزينة، والشيك يرجع تحت التحصيل."
+            okText="عكس"
+            cancelText="إلغاء"
+            okButtonProps={{ danger: true }}
+            onConfirm={async () => {
+              try {
+                await api.post(`/api/v1/cheques/${c.id}/unsettle`);
+                message.success('تم عكس التحصيل — الشيك رجع تحت التحصيل');
+                loadCheques();
+                loadTreasuries();
+              } catch {
+              }
+            }}
+          >
+            <Button size="small" icon={<UndoOutlined />}>
+              {c.direction === 'incoming' ? 'عكس التحصيل' : 'عكس الصرف'}
+            </Button>
+          </Popconfirm>
+        ) : c.status !== 'pending' ? null : (
+          <Space>
+            <Button
+              size="small"
+              type="primary"
+              onClick={async () => {
+                try {
+                  await api.post(`/api/v1/cheques/${c.id}/settle`, {});
+                  message.success(c.direction === 'incoming' ? 'تم التحصيل ✔' : 'تم الصرف ✔');
+                  loadCheques();
+                  loadTreasuries();
+                } catch {
                 }
+              }}
+            >
+              {c.direction === 'incoming' ? 'تحصيل' : 'صرف'}
+            </Button>
+            {c.direction === 'incoming' && (
+              <Popconfirm
+                title="ارتداد الشيك؟"
+                description="الدين هيرجع على العميل."
+                okText="ارتداد"
+                cancelText="إلغاء"
+                okButtonProps={{ danger: true }}
+                onConfirm={async () => {
+                  try {
+                    await api.post(`/api/v1/cheques/${c.id}/bounce`);
+                    message.success('تم تسجيل الارتداد');
+                    loadCheques();
+                  } catch {
+                  }
+                }}
               >
-                <Space wrap style={{ marginBottom: 16 }}>
-                  <Select
-                    value={stKind}
-                    style={{ width: 130 }}
-                    onChange={(v) => {
-                      setStKind(v);
-                      setStParty(undefined);
-                      setStatement(null);
-                    }}
-                    options={[
-                      { value: 'customer', label: 'عميل' },
-                      { value: 'supplier', label: 'مورد' },
-                      { value: 'rep', label: 'عهدة مندوب' },
-                    ]}
-                  />
-                  <Select
-                    showSearch
-                    style={{ width: 240 }}
-                    placeholder="اختر الطرف"
-                    value={stParty}
-                    onChange={setStParty}
-                    options={stPartyOptions} filterOption={searchFilter} filterSort={searchRank}/>
-                  <div style={{ width: 280 }}>
-                    <DateRangeFilter value={stRange as any} onChange={(v) => setStRange(v as any)} />
-                  </div>
-                  <Button type="primary" icon={<FileSearchOutlined />} onClick={loadStatement}>
-                    عرض الكشف
-                  </Button>
-                </Space>
+                <Button size="small" danger>
+                  ارتداد
+                </Button>
+              </Popconfirm>
+            )}
+          </Space>
+        ),
+    },
+  ];
 
-                {statement && (
-                  <>
-                    <Descriptions bordered size="small" column={4} style={{ marginBottom: 12 }}>
-                      <Descriptions.Item label="رصيد أول المدة">
-                        {money(statement.opening_balance)}
-                      </Descriptions.Item>
-                      <Descriptions.Item label="إجمالي مدين">{money(statement.total_debit)}</Descriptions.Item>
-                      <Descriptions.Item label="إجمالي دائن">{money(statement.total_credit)}</Descriptions.Item>
-                      <Descriptions.Item label="الرصيد النهائي">
-                        <b style={{ color: Number(statement.closing_balance) > 0 ? '#d64545' : '#2e9e6b' }}>
-                          {money(statement.closing_balance)}
-                        </b>
-                      </Descriptions.Item>
-                    </Descriptions>
-                    <Table<StatementLine>
-                      rowKey={(r) => `${r.entry_id}-${r.entry_date}-${r.debit}-${r.credit}`}
-                      loading={stLoading}
-                      dataSource={statement.lines}
-                      pagination={{ defaultPageSize: PAGE_SIZE, showSizeChanger: true, pageSizeOptions: PAGE_SIZE_OPTIONS }}
-                      size="small"
-                      columns={[
-                        { title: 'التاريخ', dataIndex: 'entry_date', width: 110 },
-                        {
-                          title: 'النوع',
-                          dataIndex: 'entry_type',
-                          width: 120,
-                          render: (v: string) => entryTypeLabel(v),
-                        },
-                        { title: 'البيان', dataIndex: 'description' },
-                        {
-                          title: 'مدين',
-                          dataIndex: 'debit',
-                          width: 110,
-                          align: 'left' as const,
-                          render: (v: string) => (Number(v) ? money(v) : ''),
-                        },
-                        {
-                          title: 'دائن',
-                          dataIndex: 'credit',
-                          width: 110,
-                          align: 'left' as const,
-                          render: (v: string) => (Number(v) ? money(v) : ''),
-                        },
-                        {
-                          title: 'الرصيد',
-                          dataIndex: 'balance',
-                          width: 120,
-                          align: 'left' as const,
-                          render: (v: string) => <b>{money(v)}</b>,
-                        },
-                      ]}
-                    />
-                  </>
-                )}
-              </Card>
-            ),
+  // قوايم الشيكات بتقبل أكتر من قيمة — زي ما كانت في `ListToolbar`.
+  const multiValue = (v: any) => (v === undefined || v === null || v === ''
+    ? undefined : Array.isArray(v) ? v : [v]);
+
+  // ── الترويسة: الأزرار بتتغيّر مع الشريحة ──
+  const actions = (
+    <>
+      {vTab && (<>
+        <Button type="primary" icon={<PlusOutlined />} className="sl-create" onClick={vTab.onCreate}>
+          {vTab.create}
+        </Button>
+        <ExportExcelButton name={vTab.file} rows={byKind(vTab.kind)}
+          tableColumns={voucherCols.columns} style={{ marginInlineStart: 0 }} />
+        {voucherCols.control}
+      </>)}
+      {tab === 'cheques' && (<>
+        <Button type="primary" icon={<PlusOutlined />} className="sl-create"
+          onClick={() => { chequeForm.resetFields(); setChequeOpen(true); }}>
+          ورقة جديدة
+        </Button>
+        <ExportExcelButton name="الشيكات" rows={chequeFilter.filtered}
+          tableColumns={chequeColumns as any} style={{ marginInlineStart: 0 }} />
+      </>)}
+      {tab === 'statement' && statement && (
+        <Button icon={<PrinterOutlined />} onClick={printStatement}>طباعة</Button>
+      )}
+      {tab === 'log' && (<>
+        <ExportExcelButton name="سجل السندات" rows={shownVouchers}
+          tableColumns={voucherCols.columns} style={{ marginInlineStart: 0 }} />
+        {voucherCols.control}
+      </>)}
+      {(vTab || tab === 'log') && (
+        <Button icon={<ReloadOutlined />} onClick={() => loadVouchers()}>تحديث</Button>
+      )}
+    </>
+  );
+
+  // ── سطر الفلاتر ──
+  const voucherSearch = (
+    <Input
+      className="sl-f-search"
+      allowClear
+      ref={searchRef}
+      value={voucherQuery}
+      onChange={(e) => setVoucherQuery(e.target.value)}
+      prefix={<SearchOutlined />}
+      placeholder="بحث برقم السند أو الطرف أو البيان"
+    />
+  );
+  const voucherDates = (
+    <DateRangeFilter className="sl-f-dates" value={range as any} onChange={(v) => setRange(v as any)} />
+  );
+
+  let filters: React.ReactNode = null;
+  if (vTab) {
+    filters = (<>
+      {voucherSearch}
+      {voucherDates}
+      <Button className="sl-f-clear" icon={<ClearOutlined />} onClick={resetVoucherFilters}>مسح</Button>
+    </>);
+  } else if (tab === 'log') {
+    filters = (<>
+      {voucherSearch}
+      <Select
+        placeholder="نوع السند"
+        allowClear
+        value={kindFilter}
+        onChange={setKindFilter}
+        options={Object.entries(KIND_LABEL).map(([value, label]) => ({ value, label }))}
+      />
+      {voucherDates}
+      <Button className="sl-f-clear" icon={<ClearOutlined />} onClick={resetVoucherFilters}>مسح</Button>
+    </>);
+  } else if (tab === 'treasury-movement') {
+    filters = (<>
+      <Select
+        className="sl-f-customer" placeholder="اختر الخزينة" showSearch
+        value={tmTreasuryId} onChange={setTmTreasuryId}
+        // صندوق لكل خط لكل مندوب — القايمة طويلة، فبتتبحث وبتترتّب زي أي قايمة أسماء.
+        options={sortByName(treasuries, (t) => t.name)
+          .map((t) => ({ value: t.id, label: `${t.name} (${money(t.balance)})` }))}
+        filterOption={searchFilter} filterSort={searchRank}
+      />
+      <DateRangeFilter className="sl-f-dates" value={tmRange} onChange={(v) => setTmRange(v)} />
+    </>);
+  } else if (tab === 'cheques') {
+    filters = (<>
+      <Input
+        className="sl-f-search"
+        allowClear
+        ref={searchRef}
+        value={chequeFilter.query}
+        onChange={(e) => chequeFilter.setQuery(e.target.value)}
+        prefix={<SearchOutlined />}
+        placeholder="بحث برقم الشيك أو المستند أو البنك أو الطرف أو البيان"
+      />
+      <Select
+        mode="multiple" maxTagCount="responsive" allowClear placeholder="النوع"
+        value={multiValue(chequeFilter.values.direction)}
+        onChange={(v) => chequeFilter.setValue('direction', v?.length ? v : undefined)}
+        options={[{ value: 'incoming', label: 'وارد' }, { value: 'outgoing', label: 'صادر' }]}
+      />
+      <Select
+        mode="multiple" maxTagCount="responsive" allowClear placeholder="الحالة"
+        value={multiValue(chequeFilter.values.status)}
+        onChange={(v) => chequeFilter.setValue('status', v?.length ? v : undefined)}
+        options={[
+          { value: 'pending', label: 'تحت التحصيل' },
+          { value: 'settled', label: 'تم' },
+          { value: 'bounced', label: 'مرتد' },
+          { value: 'cancelled', label: 'ملغي' },
+        ]}
+      />
+      <Input
+        allowClear placeholder="البيان"
+        value={chequeFilter.values.statement ?? undefined}
+        onChange={(e) => chequeFilter.setValue('statement', e.target.value || undefined)}
+      />
+      <DateRangeFilter className="sl-f-dates" value={chequeFilter.range ?? null}
+        onChange={(v) => chequeFilter.setRange(v)} />
+      <Button className="sl-f-clear" icon={<ClearOutlined />} onClick={chequeFilter.reset}>مسح</Button>
+    </>);
+  } else if (tab === 'statement') {
+    filters = (<>
+      <Select
+        value={stKind}
+        onChange={(v) => {
+          setStKind(v);
+          setStParty(undefined);
+          setStatement(null);
+        }}
+        options={[
+          { value: 'customer', label: 'عميل' },
+          { value: 'supplier', label: 'مورد' },
+          { value: 'rep', label: 'عهدة مندوب' },
+        ]}
+      />
+      <Select
+        className="sl-f-customer"
+        showSearch
+        placeholder="اختر الطرف"
+        value={stParty}
+        onChange={setStParty}
+        options={stPartyOptions} filterOption={searchFilter} filterSort={searchRank}/>
+      <DateRangeFilter className="sl-f-dates" value={stRange as any} onChange={(v) => setStRange(v as any)} />
+      <Button type="primary" icon={<FileSearchOutlined />} onClick={loadStatement}
+        style={{ flex: '0 0 auto' }}>
+        عرض الكشف
+      </Button>
+    </>);
+  }
+
+  // ── الجسم ──
+  const voucherTable = (rows: VoucherRecord[], kbProps: any, empty: string) => (
+    <Table<VoucherRecord>
+      {...kbProps}
+      className="sl-table"
+      rowKey="id" size="small" loading={loading}
+      dataSource={rows}
+      columns={voucherCols.columns}
+      locale={{ emptyText: empty }}
+      pagination={{
+        defaultPageSize: PAGE_SIZE, showSizeChanger: true, pageSizeOptions: PAGE_SIZE_OPTIONS,
+        locale: { items_per_page: '' },
+        showTotal: () => voucherFoot(rows),
+      }}
+    />
+  );
+
+  let body: React.ReactNode = null;
+  if (vTab) {
+    body = (<>
+      {voucherTable(byKind(vTab.kind), vTab.kb.tableProps, vTab.empty)}
+      {tab === 'expense' && expenseAccounts.length === 0 && (
+        <Alert
+          type="info"
+          showIcon
+          style={{ margin: '4px 0 10px' }}
+          message="لا توجد حسابات مصروفات"
+          description="أضف حساب مصروف من شجرة الحسابات (طبيعة: مصروفات) حتى تتمكن من الصرف عليه."
+        />
+      )}
+      {tab === 'transfer' && (<>
+        <Table
+          className="sl-table"
+          rowKey="id"
+          size="small"
+          style={{ marginTop: 12 }}
+          title={() => <b>الخزائن</b>}
+          dataSource={treasuries}
+          pagination={false}
+          columns={[
+            { title: 'الخزينة', dataIndex: 'name' },
+            {
+              title: 'النوع',
+              dataIndex: 'kind',
+              width: 100,
+              render: (v: string) => (
+                <Tag color={v === 'bank' ? 'purple' : 'gold'}>{v === 'bank' ? 'بنك' : 'نقدية'}</Tag>
+              ),
+            },
+            { title: 'البنك', dataIndex: 'bank_name', width: 140 },
+            {
+              title: 'الرصيد',
+              dataIndex: 'balance',
+              width: 150,
+              align: 'left' as const,
+              render: (v: string) => <b>{money(v)}</b>,
+            },
+            {
+              title: '',
+              width: 110,
+              render: (_: any, t: any) =>
+                t.is_default ? <Tag color="blue">الافتراضية</Tag> : t.active ? null : <Tag>موقوفة</Tag>,
+            },
+          ]}
+        />
+
+        <Form
+          form={treasuryForm}
+          layout="inline"
+          style={{ margin: '12px 0', rowGap: 8 }}
+          onFinish={async (v) => {
+            setPosting(true);
+            try {
+              await api.post('/api/v1/treasuries', v);
+              message.success('تم إنشاء الخزينة ✔');
+              treasuryForm.resetFields();
+              loadTreasuries();
+            } catch {
+            } finally {
+              setPosting(false);
+            }
+          }}
+        >
+          <Form.Item name="name" label="خزينة جديدة" rules={[{ required: true, message: 'اكتب الاسم' }]}>
+            <Input placeholder="اسم الخزينة" style={{ width: 180 }} />
+          </Form.Item>
+          <Form.Item name="kind" label="النوع" initialValue="cash">
+            <Select
+              style={{ width: 120 }}
+              options={[
+                { value: 'cash', label: 'نقدية' },
+                { value: 'bank', label: 'بنك' },
+              ]}
+            />
+          </Form.Item>
+          <Form.Item name="bank_name" label="البنك">
+            <Input placeholder="اختياري" style={{ width: 150 }} />
+          </Form.Item>
+          <Form.Item>
+            <Button htmlType="submit" loading={posting}>
+              إضافة
+            </Button>
+          </Form.Item>
+        </Form>
+      </>)}
+    </>);
+  } else if (tab === 'treasury-movement') {
+    body = <TreasuryMovementTab treasuries={treasuries} treasuryId={tmTreasuryId} range={tmRange} />;
+  } else if (tab === 'cheques') {
+    body = (
+      <Table
+        className="sl-table"
+        rowKey="id"
+        size="small"
+        dataSource={chequeFilter.filtered}
+        pagination={{
+          defaultPageSize: PAGE_SIZE, showSizeChanger: true, pageSizeOptions: PAGE_SIZE_OPTIONS,
+          locale: { items_per_page: '' },
+          // المعروض من الإجمالي — عشان القايمة المفلترة ماتتقريش على إنها الكل.
+          showTotal: () => (
+            <span className="sl-foot">
+              <span>المعروض: <b>{chequeFilter.filtered.length}</b> من {cheques.length}</span>
+              <span>الإجمالي: <b>{money(chequeFilter.filtered
+                .reduce((s: number, c: any) => s + Number(c.amount || 0), 0))}</b></span>
+            </span>
+          ),
+        }}
+        columns={chequeColumns}
+      />
+    );
+  } else if (tab === 'statement') {
+    body = statement ? (
+      <Table<StatementLine>
+        className="sl-table"
+        rowKey={(r) => `${r.entry_id}-${r.entry_date}-${r.debit}-${r.credit}`}
+        loading={stLoading}
+        dataSource={statement.lines}
+        pagination={{
+          defaultPageSize: PAGE_SIZE, showSizeChanger: true, pageSizeOptions: PAGE_SIZE_OPTIONS,
+          locale: { items_per_page: '' },
+          showTotal: () => (
+            <span className="sl-foot">
+              <span>رصيد أول المدة: <b>{money(statement.opening_balance)}</b></span>
+              <span>إجمالي مدين: <b>{money(statement.total_debit)}</b></span>
+              <span>إجمالي دائن: <b>{money(statement.total_credit)}</b></span>
+              <span>الرصيد النهائي: <b
+                className={Number(statement.closing_balance) > 0 ? 'is-neg' : 'is-pos'}>
+                {money(statement.closing_balance)}
+              </b></span>
+            </span>
+          ),
+        }}
+        size="small"
+        columns={[
+          { title: 'التاريخ', dataIndex: 'entry_date', width: 110,
+            render: (d: string) => String(d || '').slice(0, 10) },
+          {
+            title: 'النوع',
+            dataIndex: 'entry_type',
+            width: 120,
+            render: (v: string) => entryTypeLabel(v),
+          },
+          { title: 'البيان', dataIndex: 'description' },
+          {
+            title: 'مدين',
+            dataIndex: 'debit',
+            width: 110,
+            align: 'left' as const,
+            render: (v: string) => (Number(v) ? money(v) : ''),
+          },
+          {
+            title: 'دائن',
+            dataIndex: 'credit',
+            width: 110,
+            align: 'left' as const,
+            render: (v: string) => (Number(v) ? money(v) : ''),
+          },
+          {
+            title: 'الرصيد',
+            dataIndex: 'balance',
+            width: 120,
+            align: 'left' as const,
+            render: (v: string) => <b>{money(v)}</b>,
           },
         ]}
       />
+    ) : (
+      <Empty style={{ padding: '32px 0' }} image={Empty.PRESENTED_IMAGE_SIMPLE}
+        description={stLoading ? 'جاري التحميل…' : 'اختر الطرف واضغط «عرض الكشف»'} />
+    );
+  } else if (tab === 'log') {
+    body = (
+      <Table<VoucherRecord>
+        className="sl-table"
+        rowKey="id"
+        loading={loading}
+        dataSource={shownVouchers}
+        columns={voucherCols.columns}
+        pagination={{
+          defaultPageSize: PAGE_SIZE, showSizeChanger: true, pageSizeOptions: PAGE_SIZE_OPTIONS,
+          locale: { items_per_page: '' },
+          // كروت الإجماليات اللي كانت فوق الشاشة — في سطر الترقيم.
+          showTotal: (t) => (
+            <span className="sl-foot">
+              <span>عدد: <b>{t}</b></span>
+              <span>إجمالي التحصيل: <b className="is-pos">{money(totals.receipts)}</b></span>
+              <span>إجمالي المدفوعات: <b className="is-neg">{money(totals.payments)}</b></span>
+              <span>توريدات المناديب: <b>{money(totals.handovers)}</b></span>
+            </span>
+          ),
+        }}
+        size="small"
+      />
+    );
+  }
 
-      <Card
-        title="سجل السندات"
-        style={{ marginTop: 16 }}
-        extra={
-          <Space wrap>
-            <Input
-              allowClear
-              value={voucherQuery}
-              onChange={(e) => setVoucherQuery(e.target.value)}
-              prefix={<SearchOutlined />}
-              placeholder="بحث برقم السند أو الطرف أو البيان"
-              style={{ width: 250 }}
-            />
-            <Select
-              placeholder="نوع السند"
-              allowClear
-              style={{ width: 140 }}
-              value={kindFilter}
-              onChange={setKindFilter}
-              options={Object.entries(KIND_LABEL).map(([value, label]) => ({ value, label }))}
-            />
-            <div style={{ width: 280 }}>
-              <DateRangeFilter value={range as any} onChange={(v) => setRange(v as any)} />
-            </div>
-            <Button onClick={() => loadVouchers()}>تحديث</Button>
-            <ExportExcelButton
-              name="سجل السندات"
-              rows={shownVouchers}
-              tableColumns={voucherCols.columns}
-              style={{ marginInlineStart: 0 }}
-            />
-          </Space>
-        }
-      >
-        <Table<VoucherRecord>
-          rowKey="id"
-          loading={loading}
-          dataSource={shownVouchers}
-          columns={voucherCols.columns}
-          pagination={{ defaultPageSize: PAGE_SIZE, showTotal: (t) => `إجمالي ${t}` }}
-          size="small"
-        />
-      </Card>
+  return (
+    <>
+    {/* الإطار والشكل في `ListPage` — والشرايح هي نفس `?tab=` اللي القايمة بتفتح بيه. */}
+    <ListPage
+      icon={<WalletOutlined />}
+      title="سندات القبض والصرف"
+      muted={vTab ? `(${vTab.label})` : undefined}
+      subtitle={vTab ? vTab.subtitle : SUBTITLES[tab]}
+      tabs={tabs} activeTab={tab} onTabChange={setTab}
+      actions={actions}
+      filters={filters}
+    >
+      {/* لافتة «الفترة مقفلة حتى كذا — أي سند بتاريخ أقدم هيترفض» اتشالت مع القفل نفسه.
+          الترحيل بقى مسموح بأي تاريخ، ولافتة بتحذّر من رفض مش بيحصل بتخلّي اللي بيقراها
+          يبعد عن حاجة مالهاش داعي. */}
+      <div style={{ paddingTop: 6 }}>
+        <VoucherKeyStrip world={keyWorld}
+          onPosted={() => { loadVouchers(); loadTreasuries(); }} />
+      </div>
+      {body}
+    </ListPage>
 
       <TabModal
         open={voucherView !== null}
@@ -1152,7 +1158,7 @@ const Vouchers: React.FC = () => {
         customers={customers} suppliers={suppliers}
         onSaved={loadCheques} defaultDirection={chequeDir}
       />
-    </div>
+    </>
   );
 };
 

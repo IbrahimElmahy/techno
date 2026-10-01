@@ -1,29 +1,28 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { PAGE_SIZE, PAGE_SIZE_OPTIONS } from '../utils/pagination';
-import {
-  Alert, Button, Card, Col, DatePicker, Select, Space, Tag, message,
-} from 'antd';
+import { Button, DatePicker, Input, Select, Space, Tag, message } from 'antd';
 // كل جدول هنا بفلتر على كل عمود — شوف `FilterTable`.
 import { FilterTable as Table } from '../components/FilterTable';
-import { Statistic } from '../components/Statistic';
 import dayjs, { Dayjs } from 'dayjs';
 import { InputNumber } from '../components/NumberInput';
-import { ReloadOutlined, DownloadOutlined, PrinterOutlined } from '@ant-design/icons';
+import {
+  ClearOutlined, ContainerOutlined, DownloadOutlined, PrinterOutlined, ReloadOutlined, SearchOutlined,
+} from '@ant-design/icons';
+import ListPage from '../components/ListPage';
 import { useSearchParams } from 'react-router-dom';
 import { api } from '../api/client';
-import ListToolbar, { useListFilter } from '../components/ListToolbar';
+import { useListFilter } from '../components/ListToolbar';
 import ColumnSettings, { useHiddenColumns } from '../components/ColumnSettings';
 import ExportExcelButton from '../components/ExportExcelButton';
 import { textColumn, numberColumn, choiceColumn } from '../components/gridColumns';
 import MovementHistoryLog from '../components/MovementHistoryLog';
-import { useTableKeyboard } from '../components/keyboard';
+import { useScreenShortcuts, useTableKeyboard } from '../components/keyboard';
 import { exportCsv as writeCsv, type CsvColumn } from '../utils/exportCsv';
 import { printReport, type PrintColumn } from '../print/reportSheet';
-import StatsRow from '../components/StatsRow';
 import {
   LOG_LIMIT, exportItemsWithLogs, fetchLog, printItemsWithLogs,
 } from '../print/itemLogSheet';
-import { qty, money } from '../utils/money';
+import { qty, money, numeralsLocale } from '../utils/money';
 import { STOCK_TOPICS, useLiveRefresh } from '../utils/live';
 
 /**
@@ -435,19 +434,35 @@ export default function StockSheet() {
     );
   };
 
+  // F3 للبحث — كانت جاية من `ListToolbar`، والخانة بقت في سطر الفلاتر.
+  const searchRef = useRef<any>(null);
+  useScreenShortcuts({ onSearch: () => { searchRef.current?.focus?.(); } });
+
+  // سطر الإجماليات تحت الجدول — مكان كروت الأرقام اللي كانت فوق.
+  const footer = (
+    <span className="sl-foot">
+      <span>المعروض: <b>{shown.length.toLocaleString(numeralsLocale())}</b>
+        {' '}من {source.length.toLocaleString(numeralsLocale())} سطر</span>
+      {picked.length > 0 && <span>المحدد: <b>{picked.length.toLocaleString(numeralsLocale())}</b></span>}
+      <span>إجمالي الكمية: <b>{qty(sumQty)}</b></span>
+      <span>قيمة المخزون: <b style={{ color: '#0B5CA8' }}>{money(sumValue)}</b></span>
+    </span>
+  );
+
   return (
-    <Card
+    <ListPage
+      icon={<ContainerOutlined />}
       title={TITLES[view]}
-      extra={(
-        <Space>
-          <ColumnSettings
-            choices={columns.map((c: any) => ({
-              key: String(c.key), title: typeof c.title === 'string' ? c.title : '',
-              locked: c.key === 'name',
-            }))}
-            hidden={cols.hidden} onChange={cols.setHidden}
-            order={cols.order} onMove={(k, d) => cols.move(k, d, columns.map((c) => String(c.key ?? (c as any).dataIndex ?? '')))}
-          />
+      subtitle={general
+        ? 'سطر لكل صنف، والمخازن متجمّعة — اللي عند الشركة كلها'
+        : 'سطر لكل صنف في كل مخزن — اكتب العدد الفعلي والفرق بيطلع لوحده'}
+      actions={(<>
+          <Button icon={<PrinterOutlined />} onClick={printIt}>
+            {picked.length ? `طباعة (${picked.length})` : 'طباعة'}
+          </Button>
+          <Button icon={<DownloadOutlined />} onClick={exportCsv}>
+            {picked.length ? `تصدير (${picked.length})` : 'تصدير'}
+          </Button>
           {/* التصدير والطباعة القديمين بيمشوا على المحدّد لو فيه تحديد. ملف الإكسل بياخد
               اللي على الشاشة زي ما هو — نفس قاعدة الزرار في كل الشاشات. */}
           <ExportExcelButton
@@ -456,78 +471,60 @@ export default function StockSheet() {
             tableColumns={visibleColumns}
             style={{ marginInlineStart: 0 }}
           />
-          <Button icon={<PrinterOutlined />} onClick={printIt}>
-            {picked.length ? `طباعة (${picked.length})` : 'طباعة'}
-          </Button>
-          <Button icon={<DownloadOutlined />} onClick={exportCsv}>
-            {picked.length ? `تصدير (${picked.length})` : 'تصدير'}
-          </Button>
+          <ColumnSettings
+            choices={columns.map((c: any) => ({
+              key: String(c.key), title: typeof c.title === 'string' ? c.title : '',
+              locked: c.key === 'name',
+            }))}
+            hidden={cols.hidden} onChange={cols.setHidden}
+            order={cols.order} onMove={(k, d) => cols.move(k, d, columns.map((c) => String(c.key ?? (c as any).dataIndex ?? '')))}
+          />
           <Button icon={<ReloadOutlined />} onClick={() => load()}>تحديث</Button>
-        </Space>
-      )}
+      </>)}
+      filters={(<>
+        <Input
+          className="sl-f-search" allowClear ref={searchRef}
+          prefix={<SearchOutlined />}
+          placeholder="بحث بالكود أو الاسم أو الفئة أو الموقع"
+          value={filter.query} onChange={(e) => filter.setQuery(e.target.value)}
+        />
+        {/* فترة سجل الحركات — بتتحدّد هنا مرة وبتتطبّق على كل صنف يتفتح تحته. */}
+        <Select
+          value={logPreset}
+          onChange={(v) => {
+            const key = v as LogPreset;
+            setLogPreset(key);
+            if (key === 'all') { setLogFrom(null); setLogTo(null); return; }
+            if (key === 'custom') {
+              setLogFrom(logFrom ?? dayjs().subtract(1, 'month'));
+              setLogTo(logTo ?? dayjs());
+              return;
+            }
+            setLogFrom(dayjs().subtract(LOG_MONTHS[key], 'month'));
+            setLogTo(dayjs());
+          }}
+          options={[
+            { value: 'all', label: 'سجل: كل الحركات' },
+            { value: 'm1', label: 'سجل: آخر شهر' },
+            { value: 'm3', label: 'سجل: آخر ٣ شهور' },
+            { value: 'm12', label: 'سجل: آخر سنة' },
+            { value: 'custom', label: 'سجل: فترة محددة' },
+          ]}
+        />
+        {logPreset === 'custom' && (
+          <Space.Compact className="sl-f-dates">
+            <DatePicker format="YYYY-MM-DD" placeholder="من" allowClear={false}
+              style={{ width: '50%', height: 38 }} value={logFrom} onChange={setLogFrom} />
+            <DatePicker format="YYYY-MM-DD" placeholder="إلى" allowClear={false}
+              style={{ width: '50%', height: 38 }} value={logTo} onChange={setLogTo} />
+          </Space.Compact>
+        )}
+        <Button className="sl-f-clear" icon={<ClearOutlined />} onClick={filter.reset}>مسح</Button>
+      </>)}
     >
       {/* التنبيه اللي كان هنا اتشال بطلب صاحب النظام.
           كان بيقول إن الورقة للعدّ والمراجعة وإن التسوية بتتعمل من «دورة الجرد» —
           تلات سطور فوق ورقة بتتقرا كل يوم، بتتقال مرة وتتقرا مية. */}
-      {/* نفس الكروت اللي فوق «جرد حتى تاريخ»، عشان التلات شاشات تتقرا بنفس العين. */}
-      <StatsRow gutter={[8, 8]} style={{ marginBottom: 12 }}>
-        <Col xs={8}>
-          <Card size="small"><Statistic title="عدد السطور" value={shown.length} /></Card>
-        </Col>
-        <Col xs={8}>
-          <Card size="small"><Statistic title="إجمالي الكمية" value={qty(sumQty)} /></Card>
-        </Col>
-        <Col xs={8}>
-          <Card size="small">
-            <Statistic title="قيمة المخزون" value={money(sumValue)}
-              valueStyle={{ color: '#0B5CA8' }} />
-          </Card>
-        </Col>
-      </StatsRow>
-
-      <ListToolbar
-        searchPlaceholder="بحث بالكود أو الاسم أو الفئة أو الموقع"
-        query={filter.query} onQueryChange={filter.setQuery}
-        values={filter.values} onValueChange={filter.setValue}
-        onReset={filter.reset}
-        total={source.length} shown={shown.length}
-        extra={(
-          <Space size={6} style={{ flex: '0 0 auto' }}>
-            {/* فترة سجل الحركات — بتتحدّد هنا مرة وبتتطبّق على كل صنف يتفتح تحته. */}
-            <Select
-              size="small" style={{ minWidth: 130 }} value={logPreset}
-              onChange={(v) => {
-                const key = v as LogPreset;
-                setLogPreset(key);
-                if (key === 'all') { setLogFrom(null); setLogTo(null); return; }
-                if (key === 'custom') {
-                  setLogFrom(logFrom ?? dayjs().subtract(1, 'month'));
-                  setLogTo(logTo ?? dayjs());
-                  return;
-                }
-                setLogFrom(dayjs().subtract(LOG_MONTHS[key], 'month'));
-                setLogTo(dayjs());
-              }}
-              options={[
-                { value: 'all', label: 'كل الحركات' },
-                { value: 'm1', label: 'آخر شهر' },
-                { value: 'm3', label: 'آخر ٣ شهور' },
-                { value: 'm12', label: 'آخر سنة' },
-                { value: 'custom', label: 'فترة محددة' },
-              ]}
-            />
-            {logPreset === 'custom' && (
-              <>
-                <DatePicker size="small" format="YYYY-MM-DD" placeholder="من" allowClear={false}
-                  style={{ width: 128 }} value={logFrom} onChange={setLogFrom} />
-                <DatePicker size="small" format="YYYY-MM-DD" placeholder="إلى" allowClear={false}
-                  style={{ width: 128 }} value={logTo} onChange={setLogTo} />
-              </>
-            )}
-          </Space>
-        )}
-      />
-
       <Table
         // السجل بيتفتح تحت السطر بتاعه، وأكتر من سطر مع بعض.
         expandable={{
@@ -550,6 +547,7 @@ export default function StockSheet() {
           onChange: (keys) => setPicked(keys),
           preserveSelectedRowKeys: true,
         }}
+        className="sl-table"
         rowKey={rowKey}
         size="small"
         loading={loading}
@@ -561,7 +559,8 @@ export default function StockSheet() {
         pagination={{
           defaultPageSize: PAGE_SIZE, showSizeChanger: true,
           pageSizeOptions: PAGE_SIZE_OPTIONS,
-          showTotal: (t) => `الإجمالي: ${t} سطر`,
+          locale: { items_per_page: '' },
+          showTotal: () => footer,
         }}
         summary={(pageRows) => {
           /*
@@ -609,7 +608,6 @@ export default function StockSheet() {
           );
         }}
       />
-
-    </Card>
+    </ListPage>
   );
 }

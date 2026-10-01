@@ -1,13 +1,10 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { PAGE_SIZE } from '../utils/pagination';
 import { searchFilter, searchRank, sortByName } from '../utils/arabicSort';
-import {
-  Alert, Button, Card, Col, DatePicker, Row, Segmented, Select, Tag, message,
-} from 'antd';
+import { Alert, Button, Select, Tag, message } from 'antd';
 // فلتر على كل عمود — شوف `FilterTable`.
 import { FilterTable as Table } from '../components/FilterTable';
-import { Statistic } from '../components/Statistic';
-import { DownloadOutlined, PrinterOutlined, ReloadOutlined } from '@ant-design/icons';
+import { BarChartOutlined, DownloadOutlined, PrinterOutlined, ReloadOutlined } from '@ant-design/icons';
 import dayjs, { Dayjs } from 'dayjs';
 import { api } from '../api/client';
 import { useTableColumns } from '../components/ColumnSettings';
@@ -20,8 +17,9 @@ import { textColumn, numberColumn, dateColumn } from '../components/gridColumns'
 import { columnsFromTable, exportCsv as writeCsv } from '../utils/exportCsv';
 import { printReport, type PrintColumn, type PrintTotal } from '../print/reportSheet';
 
-import StatsRow from '../components/StatsRow';
-import { money, qty } from '../utils/money';
+import ListPage from '../components/ListPage';
+import { useCanSeeStats } from '../components/StatsRow';
+import { money, numeralsLocale, qty } from '../utils/money';
 // Only the kinds that have a screen able to show them; a purchase return has no screen of its
 // own yet, so its rows stay unlinked rather than pointing somewhere that cannot open them.
 const DOC_SCREEN: Partial<Record<DocType, DocKind>> = {
@@ -329,136 +327,84 @@ export default function TradeReports() {
     export: { name: view ? view.label : 'تقارير المبيعات والمشتريات', rows },
   });
 
-  return (
-    <Card
-      title={(
+  // كروت الإجماليات بقت سطر تحت الجدول — ولسه للي عنده `stats.view` بس، زي `StatsRow`.
+  const canSeeStats = useCanSeeStats();
+  const footer = totals && canSeeStats ? (
+    <span className="sl-foot">
+      <span>عدد المستندات: <b>{totals.document_count.toLocaleString(numeralsLocale())}</b></span>
+      <span>إجمالي الكمية: <b>{qty(totals.quantity)}</b></span>
+      <span>الصافي: <b>{money(totals.net)}</b></span>
+      {wantsProfit && (<>
+        <span>التكلفة: <b>{money(totals.cost)}</b></span>
         <span>
-          {view ? view.label : 'تقارير المبيعات والمشتريات'}
-          {offPreset ? (
-            <Tag color="orange" style={{ marginInlineStart: 8, fontWeight: 400 }}>
-              معدّل
-            </Tag>
-          ) : null}
+          الربح ({money(totals.margin_pct)}%):{' '}
+          <b className={Number(totals.profit) < 0 ? 'is-neg' : 'is-pos'}>{money(totals.profit)}</b>
         </span>
-      )}
-      extra={(
-        <>
-          {tableCols.control}
-          <Button icon={<DownloadOutlined />} onClick={exportCsv}
-            style={{ marginInlineStart: 8 }}>
-            تصدير CSV
-          </Button>
-          <Button icon={<PrinterOutlined />} onClick={printIt}
-            style={{ marginInlineStart: 8, marginInlineEnd: 8 }}>
-            طباعة
-          </Button>
-          <Button icon={<ReloadOutlined />} onClick={load}>تحديث</Button>
-        </>
-      )}
+      </>)}
+    </span>
+  ) : null;
+
+  return (
+    <ListPage<DocType>
+      icon={<BarChartOutlined />}
+      title={view ? view.label : 'تقارير المبيعات والمشتريات'}
+      muted={offPreset ? <Tag color="orange" style={{ fontWeight: 400 }}>معدّل</Tag> : undefined}
+      subtitle="المبيعات والمشتريات ومرتجعاتها — بالمستند أو بالصنف، تفصيلي أو مجمّع"
+      tabs={(Object.keys(DOC_LABELS) as DocType[]).map((k) => ({ key: k, label: DOC_LABELS[k] }))}
+      activeTab={docType}
+      onTabChange={setDocType}
+      actions={(<>
+        <Button icon={<PrinterOutlined />} onClick={printIt}>طباعة</Button>
+        <Button icon={<DownloadOutlined />} onClick={exportCsv}>تصدير CSV</Button>
+        {tableCols.control}
+        <Button icon={<ReloadOutlined />} onClick={load}>تحديث</Button>
+      </>)}
+      filters={(<>
+        <Select
+          value={level}
+          onChange={(v) => setLevel(v as Level)}
+          options={[
+            { value: 'document', label: 'بالمستند' },
+            { value: 'line', label: 'بالصنف (سطور)' },
+          ]}
+        />
+        <Select
+          value={groupBy}
+          onChange={(v) => setGroupBy(v as GroupBy)}
+          options={[
+            { value: 'none', label: 'تفصيلي' },
+            { value: 'party', label: isSale ? 'بالعميل' : 'بالمورد' },
+            { value: 'item', label: 'بالصنف' },
+            { value: 'category', label: 'بالفئة' },
+            { value: 'main_category', label: 'بالرئيسية' },
+            { value: 'warehouse', label: 'بالمخزن' },
+          ]}
+        />
+        <DateRangeFilter
+          className="sl-f-dates"
+          value={range as any}
+          onChange={(v) => setRange(v as any)}
+        />
+        <Select
+          className="sl-f-customer"
+          allowClear showSearch
+          placeholder={isSale ? 'كل العملاء' : 'كل الموردين'}
+          value={partyId} onChange={setPartyId}
+          options={partyOptions} filterOption={searchFilter} filterSort={searchRank}/>
+        <Select
+          allowClear showSearch
+          placeholder="كل الأصناف" value={itemId} onChange={setItemId}
+          options={items.map((i) => ({ value: i.id, label: i.name }))} filterOption={searchFilter} filterSort={searchRank}/>
+        <Select showSearch
+          allowClear placeholder="كل المخازن"
+          value={warehouseId} onChange={setWarehouseId}
+          options={sortByName(warehouses, (w) => w.name).map((w) => ({ value: w.id, label: w.name }))} filterOption={searchFilter} filterSort={searchRank} />
+        <StatementFilter value={statement} onChange={setStatement} />
+      </>)}
     >
-      <Row gutter={[8, 8]} style={{ marginBottom: 12 }}>
-        <Col xs={24} lg={10}>
-          <Segmented
-            block
-            value={docType}
-            onChange={(v) => setDocType(v as DocType)}
-            options={(Object.keys(DOC_LABELS) as DocType[])
-              .map((k) => ({ value: k, label: DOC_LABELS[k] }))}
-          />
-        </Col>
-        <Col xs={12} lg={6}>
-          <Segmented
-            block
-            value={level}
-            onChange={(v) => setLevel(v as Level)}
-            options={[
-              { value: 'document', label: 'بالمستند' },
-              { value: 'line', label: 'بالصنف (سطور)' },
-            ]}
-          />
-        </Col>
-        <Col xs={12} lg={8}>
-          <Segmented
-            block
-            value={groupBy}
-            onChange={(v) => setGroupBy(v as GroupBy)}
-            options={[
-              { value: 'none', label: 'تفصيلي' },
-              { value: 'party', label: isSale ? 'بالعميل' : 'بالمورد' },
-              { value: 'item', label: 'بالصنف' },
-              { value: 'category', label: 'بالفئة' },
-              { value: 'main_category', label: 'بالرئيسية' },
-              { value: 'warehouse', label: 'بالمخزن' },
-            ]}
-          />
-        </Col>
-      </Row>
-
-      <Row gutter={[8, 8]} style={{ marginBottom: 12 }}>
-        <Col xs={24} md={6}>
-          <DateRangeFilter
-            value={range as any}
-            onChange={(v) => setRange(v as any)}
-          />
-        </Col>
-        <Col xs={24} md={5}>
-          <Select
-            allowClear showSearch style={{ width: '100%' }}
-            placeholder={isSale ? 'كل العملاء' : 'كل الموردين'}
-            value={partyId} onChange={setPartyId}
-            options={partyOptions} filterOption={searchFilter} filterSort={searchRank}/>
-        </Col>
-        <Col xs={24} md={5}>
-          <Select
-            allowClear showSearch style={{ width: '100%' }}
-            placeholder="كل الأصناف" value={itemId} onChange={setItemId}
-            options={items.map((i) => ({ value: i.id, label: i.name }))} filterOption={searchFilter} filterSort={searchRank}/>
-        </Col>
-        <Col xs={24} md={4}>
-          <Select showSearch
-            allowClear style={{ width: '100%' }} placeholder="كل المخازن"
-            value={warehouseId} onChange={setWarehouseId}
-            options={sortByName(warehouses, (w) => w.name).map((w) => ({ value: w.id, label: w.name }))} filterOption={searchFilter} filterSort={searchRank} />
-        </Col>
-        <Col xs={24} md={4}>
-          <StatementFilter value={statement} onChange={setStatement} />
-        </Col>
-      </Row>
-
-      {totals && (
-        <StatsRow gutter={[8, 8]} style={{ marginBottom: 12 }}>
-          <Col xs={12} md={wantsProfit ? 5 : 8}>
-            <Card size="small"><Statistic title="عدد المستندات" value={totals.document_count} /></Card>
-          </Col>
-          <Col xs={12} md={wantsProfit ? 5 : 8}>
-            <Card size="small"><Statistic title="إجمالي الكمية" value={qty(totals.quantity)} /></Card>
-          </Col>
-          <Col xs={12} md={wantsProfit ? 5 : 8}>
-            <Card size="small">
-              <Statistic title="الصافي" value={money(totals.net)} valueStyle={{ color: '#0B5CA8' }} />
-            </Card>
-          </Col>
-          {wantsProfit && (
-            <>
-              <Col xs={12} md={5}>
-                <Card size="small"><Statistic title="التكلفة" value={money(totals.cost)} /></Card>
-              </Col>
-              <Col xs={24} md={4}>
-                <Card size="small">
-                  <Statistic
-                    title={`الربح (${money(totals.margin_pct)}%)`} value={money(totals.profit)}
-                    valueStyle={{ color: Number(totals.profit) < 0 ? '#cf1322' : '#6AB42D' }}
-                  />
-                </Card>
-              </Col>
-            </>
-          )}
-        </StatsRow>
-      )}
-
       {wantsProfit && !!totals?.lines_without_cost && (
         <Alert
-          type="warning" showIcon style={{ marginBottom: 12 }}
+          type="warning" showIcon style={{ margin: '6px 0 8px' }}
           message={`${totals.lines_without_cost} سطر بدون تكلفة محفوظة`}
           description="سطور اتباعت قبل تفعيل حفظ التكلفة عند البيع — الربح المعروض لا يشملها، ولذلك هو أعلى من الحقيقي في هذه السطور."
         />
@@ -466,12 +412,17 @@ export default function TradeReports() {
 
       <Table
         {...kb.tableProps}
+        className="sl-table"
         rowKey={rowKeyOf}
         size="small" loading={loading} dataSource={rows} columns={tableCols.columns}
         locale={{ emptyText: 'لا توجد بيانات في هذه الفترة' }}
-        pagination={{ defaultPageSize: PAGE_SIZE, showSizeChanger: true }}
+        pagination={{
+          defaultPageSize: PAGE_SIZE, showSizeChanger: true,
+          locale: { items_per_page: '' },
+          showTotal: () => footer,
+        }}
         scroll={{ x: 'max-content' }}
       />
-    </Card>
+    </ListPage>
   );
 }

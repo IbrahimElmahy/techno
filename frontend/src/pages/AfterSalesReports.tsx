@@ -1,15 +1,16 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { PAGE_SIZE } from '../utils/pagination';
 import {
-  Card, Space, Table, Tabs, Tag, message,
+  Button, Input, Table, Tag, message,
 } from 'antd';
-import { Statistic } from '../components/Statistic';
+import { BarChartOutlined, SearchOutlined, ClearOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import { Dayjs } from 'dayjs';
 import { api } from '../api/client';
 import { useTableColumns } from '../components/ColumnSettings';
-import ListToolbar, { useListFilter } from '../components/ListToolbar';
-import ExportExcelButton from '../components/ExportExcelButton';
+import { useListFilter } from '../components/ListToolbar';
+import ListPage from '../components/ListPage';
+import { useScreenShortcuts } from '../components/keyboard';
 import DateRangeFilter from '../components/DateRangeFilter';
 import { useQueryTab } from '../components/useQueryTab';
 
@@ -194,74 +195,96 @@ export default function AfterSalesReports() {
     points: reps.reduce((s, r) => s + Number(r.points || 0), 0),
   }), [plumbers, distributors, reps]);
 
-  // الإجماليات دي أرقام الشركة — للمالك وحده.
+  // الإجماليات دي أرقام الشركة — للمالك وحده. كانت صف فوق التبويبات؛ دلوقتي كل
+  // شريحة بتعرض اللي يخصّها في سطر تحت الجدول.
   const canSeeStats = useCanSeeStats();
-  const stats = !canSeeStats ? null : (
-    <Space size={24} wrap style={{ marginBottom: 12 }}>
-      <Statistic title="اتصرف للموزعين" value={num(totals.issued)} />
-      <Statistic title="رجع من السباكين" value={num(totals.returnedByPlumbers)} />
-      <Statistic title="لسه برّه" value={num(totals.outstanding)}
-        valueStyle={{ color: totals.outstanding > 0 ? '#d46b08' : '#389e0d' }} />
-      <Statistic title="معاينات" value={num(totals.visits)} />
-      <Statistic title="نقاط المعاينات" value={pts(totals.points)} />
-    </Space>
+
+  // F3 للبحث — كانت جاية من `ListToolbar`.
+  const searchRef = useRef<any>(null);
+  useScreenShortcuts({ onSearch: () => { searchRef.current?.focus?.(); } });
+
+  type TabKey = 'plumbers' | 'distributors' | 'technicians' | 'reps';
+  const tabs: Record<TabKey, {
+    label: string; rows: any[]; filter: any; cols: any; hint: string; stats: [string, string, string?][];
+  }> = {
+    plumbers: {
+      label: 'كوبونات السباكين', rows: plumbers, filter: plumberFilter, cols: plumberCols,
+      hint: 'كل فني رجّع كام ورقة. الورقة بتتصرف للموزع وبترجع من الفني، '
+        + 'فالمتبقّي بيتحسب على الموزع مش عليه.',
+      stats: [['رجع من السباكين', num(totals.returnedByPlumbers)]],
+    },
+    distributors: {
+      label: 'كوبونات الموزعين', rows: distributors, filter: distFilter, cols: distCols,
+      hint: 'اتصرف له كام، رجع من الصرف ده كام، والفرق لسه برّه.',
+      stats: [
+        ['اتصرف للموزعين', num(totals.issued)],
+        ['لسه برّه', num(totals.outstanding), totals.outstanding > 0 ? 'is-neg' : 'is-pos'],
+      ],
+    },
+    technicians: {
+      label: 'الزيارات بنقاط الفني', rows: techs, filter: techFilter, cols: techCols,
+      hint: 'كل فني عمل كام معاينة وجمّع كام نقطة.',
+      stats: [['معاينات', num(totals.visits)], ['نقاط المعاينات', pts(totals.points)]],
+    },
+    reps: {
+      label: 'زيارات المناديب', rows: reps, filter: repFilter, cols: repCols,
+      hint: 'كل مندوب نزل كام معاينة وعند كام عميل.',
+      stats: [['معاينات', num(totals.visits)], ['نقاط المعاينات', pts(totals.points)]],
+    },
+  };
+  const tabKey: TabKey = (activeTab in tabs ? activeTab : 'plumbers') as TabKey;
+  const cur = tabs[tabKey];
+
+  const footer = (
+    <span className="sl-foot">
+      <span>العدد: <b>{num(cur.rows.length)}</b></span>
+      {cur.filter.filtered.length !== cur.rows.length && (
+        <span>المعروض: <b>{num(cur.filter.filtered.length)}</b></span>
+      )}
+      {canSeeStats && cur.stats.map(([label, value, cls]) => (
+        <span key={label}>{label}: <b className={cls}>{value}</b></span>
+      ))}
+    </span>
   );
 
-  const period = <DateRangeFilter value={range} onChange={setRange} size="small" />;
-
-  // `name` غير `label`: عنوان التبويب جوّاه العدد بين قوسين، وده مايصلحش اسم ملف.
-  const tab = (
-    key: string, label: string, name: string, rows: any[], filter: any, cols: any, hint: string,
-  ) => ({
-    key,
-    label,
-    children: (
-      <div>
-        <div style={{ color: '#8c8c8c', fontSize: 12, marginBottom: 8 }}>{hint}</div>
-        <ListToolbar
-          searchPlaceholder="بحث بالاسم"
-          query={filter.query} onQueryChange={filter.setQuery} onReset={filter.reset}
-          total={rows.length} shown={filter.filtered.length} searchSpan={10}
-          extra={(
-            <ExportExcelButton name={name} rows={filter.filtered} tableColumns={cols.columns} style={{ marginInlineStart: 0 }} />
-          )}
-        />
-        <Table
-          rowKey={(r: any) => String(r.customer_id ?? r.rep_user_id ?? r.name)}
-          size="small" loading={loading} dataSource={filter.filtered}
-          columns={cols.columns} tableLayout="fixed"
-          pagination={{ defaultPageSize: PAGE_SIZE, showSizeChanger: true }}
-          locale={{ emptyText: 'لا توجد بيانات في الفترة دي' }}
-        />
-      </div>
-    ),
-  });
-
+  // الفترة مشتركة بين الشرايح (`range` واحد)، والبحث لكل شريحة لوحدها زي ما كان.
   return (
-    <Card
-      title="تقارير ما بعد البيع"
-      extra={<Space>{period}</Space>}
+    <ListPage<TabKey>
+      icon={<BarChartOutlined />}
+      title="تقارير ما بعد البيع" muted="(تقارير المتابعة)"
+      subtitle={cur.hint}
+      tabs={(Object.keys(tabs) as TabKey[]).map((k) => ({
+        key: k, label: tabs[k].label, count: tabs[k].rows.length,
+      }))}
+      activeTab={tabKey}
+      onTabChange={setActiveTab}
+      actions={cur.cols.control}
+      filters={(<>
+        <Input
+          className="sl-f-search"
+          ref={searchRef}
+          allowClear
+          prefix={<SearchOutlined />}
+          placeholder="بحث بالاسم"
+          value={cur.filter.query}
+          onChange={(e) => cur.filter.setQuery(e.target.value)}
+        />
+        <DateRangeFilter className="sl-f-dates" value={range} onChange={setRange} />
+        <Button className="sl-f-clear" icon={<ClearOutlined />} onClick={cur.filter.reset}>مسح</Button>
+      </>)}
     >
-      {stats}
-      <Tabs
-        activeKey={activeTab}
-        onChange={setActiveTab}
-        items={[
-          tab('plumbers', `كوبونات السباكين (${plumbers.length})`, 'كوبونات السباكين',
-            plumbers, plumberFilter,
-            plumberCols, 'كل فني رجّع كام ورقة. الورقة بتتصرف للموزع وبترجع من الفني، '
-            + 'فالمتبقّي بيتحسب على الموزع مش عليه.'),
-          tab('distributors', `كوبونات الموزعين (${distributors.length})`, 'كوبونات الموزعين',
-            distributors, distFilter,
-            distCols, 'اتصرف له كام، رجع من الصرف ده كام، والفرق لسه برّه.'),
-          tab('technicians', `الزيارات بنقاط الفني (${techs.length})`, 'الزيارات بنقاط الفني',
-            techs, techFilter,
-            techCols, 'كل فني عمل كام معاينة وجمّع كام نقطة.'),
-          tab('reps', `زيارات المناديب (${reps.length})`, 'زيارات المناديب',
-            reps, repFilter,
-            repCols, 'كل مندوب نزل كام معاينة وعند كام عميل.'),
-        ]}
+      <Table
+        key={tabKey}
+        className="sl-table"
+        rowKey={(r: any) => String(r.customer_id ?? r.rep_user_id ?? r.name)}
+        size="small" loading={loading} dataSource={cur.filter.filtered}
+        columns={cur.cols.columns} tableLayout="fixed"
+        pagination={{
+          defaultPageSize: PAGE_SIZE, showSizeChanger: true, locale: { items_per_page: '' },
+          showTotal: () => footer,
+        }}
+        locale={{ emptyText: 'لا توجد بيانات في الفترة دي' }}
       />
-    </Card>
+    </ListPage>
   );
 }

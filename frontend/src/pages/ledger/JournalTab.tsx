@@ -565,6 +565,8 @@ export default function JournalTab() {
       <div style={{ textAlign: 'end', marginBottom: 8 }}>{journalTabCols.control}</div>
       <GroupedTable<JournalEntry>
         {...entryKb.tableProps}
+        className="sl-table"
+        size="small"
         rowKey="id"
         loading={loading}
         dataSource={filter.filtered}

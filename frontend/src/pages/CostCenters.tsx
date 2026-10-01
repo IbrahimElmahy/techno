@@ -2,11 +2,13 @@ import React, { useEffect, useRef, useState } from 'react';
 import { PAGE_SIZE } from '../utils/pagination';
 import { searchFilter, searchRank } from '../utils/arabicSort';
 import {
-  Button, Card, Col, Form, Input, Row, Select, Space, Table, Tag, Tooltip, message
+  Button, Col, Form, Input, Row, Select, Space, Table, Tag, Tooltip, message
 } from 'antd';
 import {
   PlusOutlined, StopOutlined, SearchOutlined, ReloadOutlined, EditOutlined, CheckOutlined,
+  ClusterOutlined,
 } from '@ant-design/icons';
+import ListPage from '../components/ListPage';
 import { api } from '../api/client';
 import { useScreenShortcuts, useTableKeyboard } from '../components/keyboard';
 import { useAuth } from '../components/AuthProvider';
@@ -190,42 +192,42 @@ export default function CostCenters() {
   });
 
   return (
-    <div>
-      <Card
+    <>
+      <ListPage
+        icon={<ClusterOutlined />}
         title="مراكز التكلفة"
-        extra={
-          <Space>
-            {tableCols.control}
-            <Button icon={<ReloadOutlined />} onClick={load}>اعادة تحميل</Button>
-            {canWrite && (
-              <Button data-shortcut="F2" type="primary" icon={<PlusOutlined />} onClick={() => setCreateOpen(true)}>
-                مركز جديد
-              </Button>
-            )}
-          </Space>
-        }
+        subtitle="تقسيم المصروفات والإيرادات على الأقسام وخطوط الإنتاج — بمستويات"
+        actions={(<>
+          {canWrite && (
+            <Button data-shortcut="F2" type="primary" className="sl-create" icon={<PlusOutlined />}
+              onClick={() => setCreateOpen(true)}>
+              مركز جديد
+            </Button>
+          )}
+          <Button icon={<ReloadOutlined />} onClick={load}>اعادة تحميل</Button>
+          {tableCols.control}
+        </>)}
+        filters={(
+          <Input className="sl-f-search" allowClear value={search}
+            placeholder="بحث بالاسم أو الكود أو المركز الأب"
+            ref={searchRef}
+            prefix={<SearchOutlined />} onChange={(e) => setSearch(e.target.value)} />
+        )}
       >
-        <Row style={{ marginBottom: 12 }}>
-          <Col xs={24} md={8}>
-            <Input allowClear value={search} placeholder="بحث بالاسم أو الكود أو المركز الأب"
-              ref={searchRef}
-              prefix={<SearchOutlined />} onChange={(e) => setSearch(e.target.value)} />
-          </Col>
-        </Row>
-
         <Table
           {...kb.tableProps}
+          className="sl-table"
           dataSource={filtered}
           columns={tableCols.columns}
           rowKey="id"
           loading={loading}
-          size="middle"
+          size="small"
           tableLayout="fixed"
           locale={{ emptyText: 'لا توجد مراكز تكلفة' }}
           pagination={{ defaultPageSize: PAGE_SIZE, showSizeChanger: true,
-            showTotal: (t) => `عدد: ${t}` }}
+            showTotal: (t) => <span className="sl-foot"><span>عدد المراكز: <b>{t}</b></span></span> }}
         />
-      </Card>
+      </ListPage>
 
       <TabModal footer={null} centered title="مركز تكلفة جديد" width={620} destroyOnHidden
         open={createOpen} onCancel={() => setCreateOpen(false)}>
@@ -290,6 +292,6 @@ export default function CostCenters() {
           </Form>
         )}
       </TabModal>
-    </div>
+    </>
   );
 }

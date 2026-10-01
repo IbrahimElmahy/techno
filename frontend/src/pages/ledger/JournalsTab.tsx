@@ -149,7 +149,7 @@ export default function JournalsTab() {
         تغيير من ورا النظام بيبان في «سلامة الدفاتر». تشغيلها بيقفل الدفتر على نفسه —
         قيده مايرجعش مسودة ومايتحذفش — وبتتشغّل على الدفتر اللي فواتيره اتسلّمت بس.
       </div>
-      <Table rowKey="id" loading={loading} dataSource={rows} columns={columns}
+      <Table className="sl-table" rowKey="id" loading={loading} dataSource={rows} columns={columns}
         pagination={false} size="small" />
 
       <TabModal footer={null} centered width={520} destroyOnHidden

@@ -3,11 +3,12 @@ import { forgetFactoryBranches } from '../components/useFactoryBranch';
 import { PAGE_SIZE } from '../utils/pagination';
 import { searchFilter, searchRank } from '../utils/arabicSort';
 import {
-  Button, Card, Checkbox, Col, Form, Input, Row, Select, Space, Table, Tag, Tooltip, message
+  Button, Checkbox, Col, Form, Input, Row, Select, Space, Table, Tag, Tooltip, message
 } from 'antd';
 import {
-  PlusOutlined, EditOutlined, StopOutlined, SearchOutlined, ReloadOutlined,
+  PlusOutlined, EditOutlined, StopOutlined, SearchOutlined, ReloadOutlined, ShopOutlined,
 } from '@ant-design/icons';
+import ListPage from '../components/ListPage';
 import { api } from '../api/client';
 import { useTableKeyboard } from '../components/keyboard';
 import { useScreenShortcuts } from '../components/keyboard';
@@ -275,41 +276,41 @@ export default function Branches() {
   });
 
   return (
-    <div>
-      <Card
+    <>
+      <ListPage
+        icon={<ShopOutlined />}
         title="الفروع"
-        extra={
-          <Space>
-            {tableCols.control}
-            <Button icon={<ReloadOutlined />} onClick={fetchAll}>اعادة تحميل</Button>
-            {canWrite && (
-              <Button data-shortcut="F2" type="primary" icon={<PlusOutlined />} onClick={() => setCreateOpen(true)}>
-                فرع جديد
-              </Button>
-            )}
-          </Space>
-        }
+        subtitle="فروع الشركة ومحافظاتها — والمركز الرئيسي وفروع التصنيع"
+        actions={(<>
+          {canWrite && (
+            <Button data-shortcut="F2" type="primary" className="sl-create" icon={<PlusOutlined />}
+              onClick={() => setCreateOpen(true)}>
+              فرع جديد
+            </Button>
+          )}
+          <Button icon={<ReloadOutlined />} onClick={fetchAll}>اعادة تحميل</Button>
+          {tableCols.control}
+        </>)}
+        filters={(
+          <Input className="sl-f-search" allowClear value={search}
+            placeholder="بحث بالاسم أو المحافظة أو البيان"
+            ref={searchRef}
+            prefix={<SearchOutlined />} onChange={(e) => setSearch(e.target.value)} />
+        )}
       >
-        <Row style={{ marginBottom: 12 }}>
-          <Col xs={24} md={8}>
-            <Input allowClear value={search} placeholder="بحث بالاسم أو المحافظة أو البيان"
-              ref={searchRef}
-              prefix={<SearchOutlined />} onChange={(e) => setSearch(e.target.value)} />
-          </Col>
-        </Row>
-
         <Table
           {...kb.tableProps}
+          className="sl-table"
           dataSource={filtered}
           columns={tableCols.columns}
           rowKey="id"
           loading={loading}
-          size="middle"
+          size="small"
           tableLayout="fixed"
           pagination={{ defaultPageSize: PAGE_SIZE, showSizeChanger: true,
-            showTotal: (t) => `عدد: ${t}` }}
+            showTotal: (t) => <span className="sl-foot"><span>عدد الفروع: <b>{t}</b></span></span> }}
         />
-      </Card>
+      </ListPage>
 
       <TabModal footer={null} centered title="فرع جديد" width={560} destroyOnHidden
         open={createOpen} onCancel={() => setCreateOpen(false)}>
@@ -332,6 +333,6 @@ export default function Branches() {
           </Space>
         </Form>
       </TabModal>
-    </div>
+    </>
   );
 }

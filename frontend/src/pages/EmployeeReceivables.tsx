@@ -1,8 +1,9 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { PAGE_SIZE } from '../utils/pagination';
-import { Alert, Button, Card, Col, Input, Row, Segmented, Select, Space, Table, Tag, message } from 'antd';
-import { Statistic } from '../components/Statistic';
-import { DownloadOutlined, PrinterOutlined, ReloadOutlined } from '@ant-design/icons';
+import { Alert, Button, Input, Select, Table, Tag, message } from 'antd';
+import {
+  DownloadOutlined, IdcardOutlined, PrinterOutlined, ReloadOutlined,
+} from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
 
 import { api } from '../api/client';
@@ -11,8 +12,9 @@ import { useTableKeyboard } from '../components/keyboard';
 import { exportCsv as writeCsv, type CsvColumn } from '../utils/exportCsv';
 import { printReport, type PrintColumn, type PrintTotal } from '../print/reportSheet';
 
-import StatsRow from '../components/StatsRow';
-import { money } from '../utils/money';
+import { money, numeralsLocale } from '../utils/money';
+import ListPage from '../components/ListPage';
+
 /**
  * ذمم الموظفين — «سلفت مين وكام، ولسه عليه كام».
  *
@@ -186,64 +188,37 @@ export default function EmployeeReceivables() {
   const tableCols = useTableColumns('employee-receivables', columns,
     { export: { name: 'ذمم الموظفين', rows } });
 
+  const netBalance = Number(data?.total_balance ?? 0);
+
   return (
-    <Card
+    <ListPage<'nonzero' | 'all'>
+      icon={<IdcardOutlined />}
       title="ذمم الموظفين"
-      extra={(
-        <>
-          {tableCols.control}
-          <Button icon={<DownloadOutlined />} style={{ marginInlineStart: 8 }}
-            onClick={() => writeCsv('employee-receivables', csvCols, rows)}>تصدير CSV</Button>
-          <Button icon={<PrinterOutlined />} style={{ marginInlineStart: 8, marginInlineEnd: 8 }}
-            onClick={printIt}>طباعة</Button>
-          <Button icon={<ReloadOutlined />} onClick={load}>تحديث</Button>
-        </>
-      )}
+      subtitle="اللي على كل موظف من الدفتر — سلف، عهد، بضاعة، وفلوس محصّلة لسه ماتورّدتش"
+      // «الكل» بيوري الحسابات الصفرية كمان.
+      tabs={[
+        { key: 'nonzero', label: 'اللي عليهم رصيد' },
+        { key: 'all', label: 'كل الحسابات' },
+      ]}
+      activeTab={scope} onTabChange={setScope}
+      actions={(<>
+        <Button icon={<PrinterOutlined />} onClick={printIt}>طباعة</Button>
+        <Button icon={<DownloadOutlined />}
+          onClick={() => writeCsv('employee-receivables', csvCols, rows)}>تصدير CSV</Button>
+        {tableCols.control}
+        <Button icon={<ReloadOutlined />} onClick={load}>تحديث</Button>
+      </>)}
+      filters={(<>
+        <Input.Search className="sl-f-search" allowClear placeholder="بحث بالاسم أو الكود"
+          onSearch={setQ} onChange={(e) => { if (!e.target.value) setQ(''); }} />
+        <Select className="sl-f-customer" allowClear placeholder="كل الفروع"
+          value={branchId} onChange={setBranchId}
+          options={branches.map((b) => ({ value: b.id, label: b.name }))} />
+      </>)}
     >
-      <Row gutter={[8, 8]} style={{ marginBottom: 12 }}>
-        <Col xs={24} md={8}>
-          <Input.Search allowClear placeholder="بحث بالاسم أو الكود"
-            onSearch={setQ} onChange={(e) => { if (!e.target.value) setQ(''); }} />
-        </Col>
-        <Col xs={12} md={6}>
-          <Select allowClear style={{ width: '100%' }} placeholder="كل الفروع"
-            value={branchId} onChange={setBranchId}
-            options={branches.map((b) => ({ value: b.id, label: b.name }))} />
-        </Col>
-        <Col xs={12} md={6}>
-          <Segmented block value={scope} onChange={(v) => setScope(v as any)}
-            options={[
-              { value: 'nonzero', label: 'اللي عليهم رصيد' },
-              { value: 'all', label: 'كل الحسابات' },
-            ]} />
-        </Col>
-      </Row>
-
-      <StatsRow gutter={[8, 8]} style={{ marginBottom: 12 }}>
-        <Col xs={12} md={6}>
-          <Card size="small"><Statistic title="عدد الذمم" value={rows.length} /></Card>
-        </Col>
-        <Col xs={12} md={6}>
-          <Card size="small">
-            <Statistic title="إجمالي المدين" value={money(data?.total_debit)} />
-          </Card>
-        </Col>
-        <Col xs={12} md={6}>
-          <Card size="small">
-            <Statistic title="إجمالي الدائن" value={money(data?.total_credit)} />
-          </Card>
-        </Col>
-        <Col xs={12} md={6}>
-          <Card size="small">
-            <Statistic title="صافي الذمم" value={money(data?.total_balance)}
-              valueStyle={{ color: Number(data?.total_balance ?? 0) < 0 ? '#cf1322' : '#3f8600' }} />
-          </Card>
-        </Col>
-      </StatsRow>
-
       {data && data.unlinked_employees > 0 ? (
         <Alert
-          type="info" showIcon style={{ marginBottom: 12 }}
+          type="info" showIcon style={{ margin: '6px 0 8px' }}
           message={`${data.unlinked_employees} موظف نشط مالوش حساب ذمة في شجرة a5`}
           description={
             'دول مش «رصيدهم صفر» — دول مالهمش حساب أصلاً، يعني الشاشة مش بتعرف عنهم حاجة. '
@@ -254,28 +229,28 @@ export default function EmployeeReceivables() {
       ) : null}
 
       <Table<Row>
+        className="sl-table"
         rowKey={(r) => String(r.account_id)}
         columns={tableCols.columns}
         dataSource={rows}
         loading={loading}
         size="small"
         scroll={{ x: 'max-content' }}
-        pagination={{ pageSize: PAGE_SIZE, showSizeChanger: true, showTotal: (t) => `الإجمالي: ${t}` }}
+        pagination={{
+          pageSize: PAGE_SIZE, showSizeChanger: true,
+          // الإجماليات من السيرفر — كانت كروت فوق الجدول وسطر ملخّص تحته.
+          showTotal: (t) => (
+            <span className="sl-foot">
+              <span>عدد الذمم: <b>{t.toLocaleString(numeralsLocale())}</b></span>
+              <span>مدين: <b>{money(data?.total_debit)}</b></span>
+              <span>دائن: <b>{money(data?.total_credit)}</b></span>
+              <span>صافي الذمم: <b className={netBalance < 0 ? 'is-neg' : 'is-pos'}>
+                {money(data?.total_balance)}</b></span>
+            </span>
+          ),
+        }}
         {...kb.tableProps}
-        summary={() => (
-          <Table.Summary fixed>
-            <Table.Summary.Row>
-              <Table.Summary.Cell index={0} colSpan={tableCols.columns.length}>
-                <Space size="large">
-                  <b>صافي الذمم: {money(data?.total_balance)}</b>
-                  <span>مدين {money(data?.total_debit)}</span>
-                  <span>دائن {money(data?.total_credit)}</span>
-                </Space>
-              </Table.Summary.Cell>
-            </Table.Summary.Row>
-          </Table.Summary>
-        )}
       />
-    </Card>
+    </ListPage>
   );
 }

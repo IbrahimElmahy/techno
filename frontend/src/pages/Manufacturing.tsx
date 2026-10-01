@@ -11,17 +11,18 @@ import { Popconfirm } from '../components/noConfirm';
 import {
   PlusOutlined, RollbackOutlined, EditOutlined, DeleteOutlined, ExperimentOutlined,
   BuildOutlined, PlayCircleOutlined, PrinterOutlined, DownloadOutlined, UndoOutlined,
-  CheckOutlined, InboxOutlined,
+  CheckOutlined, InboxOutlined, ClearOutlined, SearchOutlined,
 } from '@ant-design/icons';
+import ListPage from '../components/ListPage';
 import dayjs from 'dayjs';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../api/client';
 import { useQueryTab } from '../components/useQueryTab';
 import { useDocRoute } from '../components/useDocRoute';
 import { showReversalConfirm } from '../components/ConfirmationDialog';
-import ListToolbar, { useListFilter } from '../components/ListToolbar';
+import { useListFilter } from '../components/ListToolbar';
 import { matchesStatement } from '../utils/statements';
-import { useTableKeyboard } from '../components/keyboard';
+import { useScreenShortcuts, useTableKeyboard } from '../components/keyboard';
 import { TabModal } from '../components/TabModal';
 import { useTableColumns } from '../components/ColumnSettings';
 
@@ -158,56 +159,87 @@ export default function Manufacturing() {
 
   useEffect(() => { loadAll(); }, []);
 
+  // عدد أوامر التشغيل من السيرفر — بيوصل من التبويب نفسه (الترقيم هناك).
+  const [ordersTotal, setOrdersTotal] = useState<number | null>(null);
+
+  // التبويبات بقت شرايح في ترويسة `ListPage` — كل قسم بيرسم الترويسة بتاعته بالشرايح دي.
+  const header: SectionHeader = {
+    tabs: [
+      { key: 'orders', label: 'أوامر التشغيل', count: ordersTotal },
+      { key: 'recipes', label: 'الوصفات (BOM)', count: boms.length },
+      { key: 'wastage', label: 'مستندات الهالك', count: wastages.length },
+    ],
+    activeTab: tab as Section,
+    onTabChange: setTab,
+  };
+
+  // زي antd `Tabs`: القسم بيتركّب أول ما يتفتح، وبعدها بيفضل متركّب ومخفي — فالفلاتر
+  // والنوافذ المفتوحة مابتضيعش لما تروح وترجع.
+  const [visited, setVisited] = useState<Set<string>>(() => new Set([tab]));
+  useEffect(() => {
+    setVisited((v) => (v.has(tab) ? v : new Set(v).add(tab)));
+  }, [tab]);
+  const pane = (key: Section, node: React.ReactNode) => (
+    visited.has(key) || tab === key
+      ? <div key={key} style={{ display: tab === key ? 'contents' : 'none' }}>{node}</div>
+      : null
+  );
+
   return (
-    <Tabs
-      activeKey={tab} onChange={setTab}
-      items={[
-        {
-          // الشاشة المطلوبة: أمر تشغيل واحد بسطور منتجات وسطور خامات. القديمة (منتج
-          // واحد للأمر) اتنقلت لتبويب جنبها — تلات فروع شغّالة عليها دلوقتي، وشيلها
-          // معناه إن شغلهم يقف في نفس اليوم.
-          key: 'orders',
-          label: <span><BuildOutlined /> أوامر التشغيل</span>,
-          children: (
-            <ProductionOrdersTab
-              products={products} rawMaterials={rawMaterials} warehouses={warehouses}
-              branches={branches} boms={boms} itemName={itemName} itemUnit={itemUnit}
-              itemCode={itemCode} whName={whName} active={tab === 'orders'}
-            />
-          ),
-        },
-        {
-          key: 'recipes',
-          label: <span><ExperimentOutlined /> الوصفات (BOM)</span>,
-          children: (
-            <RecipesTab
-              boms={boms} products={products} rawMaterials={rawMaterials}
-              itemName={itemName} loading={loading} reload={loadAll}
-            />
-          ),
-        },
-        {
-          key: 'wastage',
-          label: <span><DeleteOutlined /> مستندات الهالك</span>,
-          children: (
-            <WastageTab
-              wastages={wastages} warehouses={warehouses}
-              rawMaterials={rawMaterials} products={products}
-              itemName={itemName} whName={whName} loading={loading} reload={loadAll}
-            />
-          ),
-        },
-      ]}
-    />
+    <>
+      {/* الشاشة المطلوبة: أمر تشغيل واحد بسطور منتجات وسطور خامات. القديمة (منتج
+          واحد للأمر) اتنقلت لتبويب جنبها — تلات فروع شغّالة عليها دلوقتي، وشيلها
+          معناه إن شغلهم يقف في نفس اليوم. */}
+      {pane('orders', (
+        <ProductionOrdersTab
+          header={header} onTotal={setOrdersTotal}
+          products={products} rawMaterials={rawMaterials} warehouses={warehouses}
+          branches={branches} boms={boms} itemName={itemName} itemUnit={itemUnit}
+          itemCode={itemCode} whName={whName} active={tab === 'orders'}
+        />
+      ))}
+      {pane('recipes', (
+        <RecipesTab
+          header={header}
+          boms={boms} products={products} rawMaterials={rawMaterials}
+          itemName={itemName} loading={loading} reload={loadAll}
+        />
+      ))}
+      {pane('wastage', (
+        <WastageTab
+          header={header}
+          wastages={wastages} warehouses={warehouses}
+          rawMaterials={rawMaterials} products={products}
+          itemName={itemName} whName={whName} loading={loading} reload={loadAll}
+        />
+      ))}
+    </>
   );
 }
+
+type Section = 'orders' | 'recipes' | 'wastage';
+/** ترويسة الشاشة المشتركة — الشرايح بتاعة الأقسام التلاتة. */
+interface SectionHeader {
+  tabs: { key: Section; label: string; count?: number | null }[];
+  activeTab: Section;
+  onTabChange: (k: Section) => void;
+}
+
+/** عدّاد الكشف تحت الجدول. */
+const footOf = (shown: number, total: number, noun: string) => (
+  <span className="sl-foot">
+    <span>المعروض: <b>{shown.toLocaleString(numeralsLocale())}</b>
+      {' '}من {total.toLocaleString(numeralsLocale())} {noun}</span>
+  </span>
+);
 
 // ---------------------------------------------------------------------------
 // Recipes (BOM) tab
 // ---------------------------------------------------------------------------
 function RecipesTab({
-  boms, products, rawMaterials, itemName, loading, reload,
+  header, boms, products, rawMaterials, itemName, loading, reload,
 }: {
+  header: SectionHeader;
   boms: Bom[]; products: Item[]; rawMaterials: Item[];
   itemName: (id: number) => string; loading: boolean; reload: () => void;
 }) {
@@ -342,32 +374,50 @@ function RecipesTab({
     export: { name: 'الوصفات', rows: filter.filtered },
   });
 
-  return (
-    <div>
-      <div style={{ marginBottom: 16, textAlign: 'left' }}>
-        <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>وصفة جديدة</Button>
-      </div>
+  // F3 للبحث — كانت جاية من `ListToolbar`؛ للقسم الظاهر بس.
+  const searchRef = React.useRef<any>(null);
+  useScreenShortcuts({ onSearch: () => { searchRef.current?.focus?.(); } },
+    header.activeTab === 'recipes');
 
-      <ListToolbar
-        searchPlaceholder="بحث باسم الوصفة أو المنتج"
-        query={filter.query} onQueryChange={filter.setQuery}
-        values={filter.values} onValueChange={filter.setValue}
-        onReset={filter.reset}
-        total={boms.length} shown={filter.filtered.length}
-        filters={[
-          { key: 'product_id', placeholder: 'المنتج',
-            options: products.map((p) => ({ value: p.id, label: p.name })) },
-          { key: 'active', placeholder: 'الحالة', options: [
+  return (
+    <>
+    <ListPage<Section>
+      icon={<BuildOutlined />}
+      title="عمليات التصنيع" muted="(الوصفات)"
+      subtitle="نسب الإنتاج — خامات وموارد كل منتج، اللي أوامر التشغيل بتتفجّر منها"
+      tabs={header.tabs} activeTab={header.activeTab} onTabChange={header.onTabChange}
+      actions={(<>
+        <Button type="primary" icon={<PlusOutlined />} className="sl-create" onClick={openCreate}>
+          وصفة جديدة
+        </Button>
+        {recipesTabCols.control}
+      </>)}
+      filters={(<>
+        <Input className="sl-f-search" allowClear ref={searchRef}
+          prefix={<SearchOutlined />} placeholder="بحث باسم الوصفة أو المنتج"
+          value={filter.query} onChange={(e) => filter.setQuery(e.target.value)} />
+        <Select allowClear showSearch mode="multiple" maxTagCount="responsive" placeholder="المنتج"
+          value={filter.values.product_id} onChange={(v) => filter.setValue('product_id', v)}
+          options={products.map((p) => ({ value: p.id, label: p.name }))}
+          filterOption={searchFilter} filterSort={searchRank} />
+        <Select allowClear mode="multiple" maxTagCount="responsive" placeholder="الحالة"
+          value={filter.values.active} onChange={(v) => filter.setValue('active', v)}
+          options={[
             { value: 'active', label: 'نشطة' },
             { value: 'inactive', label: 'غير نشطة' },
-          ] },
-        ]}
-      />
-
-      <div style={{ textAlign: 'end', marginBottom: 8 }}>{recipesTabCols.control}</div>
+          ]} />
+        <Button className="sl-f-clear" icon={<ClearOutlined />} onClick={filter.reset}>مسح</Button>
+      </>)}
+    >
       <Table {...bomsKb.tableProps}
+        className="sl-table" size="small"
         rowKey="id" loading={loading} dataSource={filter.filtered} columns={recipesTabCols.columns}
+        pagination={{
+          showSizeChanger: true, locale: { items_per_page: '' },
+          showTotal: () => footOf(filter.filtered.length, boms.length, 'وصفة'),
+        }}
         locale={{ emptyText: 'لا يوجد وصفات بعد' }} />
+    </ListPage>
 
       <TabModal centered
         title={editing ? 'تعديل وصفة' : 'وصفة جديدة'} width={560} open={open}
@@ -497,7 +547,7 @@ function RecipesTab({
           </Form.List>
         </Form>
       </TabModal>
-    </div>
+    </>
   );
 }
 
@@ -505,8 +555,9 @@ function RecipesTab({
 // Wastage documents tab
 // ---------------------------------------------------------------------------
 function WastageTab({
-  wastages, warehouses, rawMaterials, products, itemName, whName, loading, reload,
+  header, wastages, warehouses, rawMaterials, products, itemName, whName, loading, reload,
 }: {
+  header: SectionHeader;
   wastages: Wastage[]; warehouses: Warehouse[]; rawMaterials: Item[]; products: Item[];
   itemName: (id: number) => string; whName: (id: number | null | undefined) => string;
   loading: boolean; reload: () => void;
@@ -598,35 +649,57 @@ function WastageTab({
     export: { name: 'مستندات الهالك', rows: filter.filtered },
   });
 
-  return (
-    <div>
-      <div style={{ marginBottom: 16, textAlign: 'left' }}>
-        <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>هالك جديد</Button>
-      </div>
+  // F3 للبحث — كانت جاية من `ListToolbar`؛ للقسم الظاهر بس.
+  const searchRef = React.useRef<any>(null);
+  useScreenShortcuts({ onSearch: () => { searchRef.current?.focus?.(); } },
+    header.activeTab === 'wastage');
 
-      <ListToolbar
-        searchPlaceholder="بحث برقم المستند أو الصنف أو السبب أو البيان"
-        query={filter.query} onQueryChange={filter.setQuery}
-        values={filter.values} onValueChange={filter.setValue}
-        onReset={filter.reset}
-        total={wastages.length} shown={filter.filtered.length}
-        filters={[
-          { key: 'item_id', placeholder: 'الصنف',
-            options: [...rawMaterials, ...products].map((i) => ({ value: i.id, label: i.name })) },
-          { key: 'warehouse_id', placeholder: 'المخزن',
-            options: warehouses.map((w) => ({ value: w.id, label: w.name })) },
-          { key: 'status', placeholder: 'الحالة', options: [
+  return (
+    <>
+    <ListPage<Section>
+      icon={<BuildOutlined />}
+      title="عمليات التصنيع" muted="(مستندات الهالك)"
+      subtitle="الكميات اللي اتهلكت من المخزن بتكلفتها — والعكس بيرجّعها"
+      tabs={header.tabs} activeTab={header.activeTab} onTabChange={header.onTabChange}
+      actions={(<>
+        <Button type="primary" icon={<PlusOutlined />} className="sl-create" onClick={openCreate}>
+          هالك جديد
+        </Button>
+        {wastageTabCols.control}
+      </>)}
+      filters={(<>
+        <Input className="sl-f-search" allowClear ref={searchRef}
+          prefix={<SearchOutlined />} placeholder="بحث برقم المستند أو الصنف أو السبب أو البيان"
+          value={filter.query} onChange={(e) => filter.setQuery(e.target.value)} />
+        <Select allowClear showSearch mode="multiple" maxTagCount="responsive" placeholder="الصنف"
+          value={filter.values.item_id} onChange={(v) => filter.setValue('item_id', v)}
+          options={[...rawMaterials, ...products].map((i) => ({ value: i.id, label: i.name }))}
+          filterOption={searchFilter} filterSort={searchRank} />
+        <Select allowClear showSearch mode="multiple" maxTagCount="responsive" placeholder="المخزن"
+          value={filter.values.warehouse_id} onChange={(v) => filter.setValue('warehouse_id', v)}
+          options={warehouses.map((w) => ({ value: w.id, label: w.name }))}
+          filterOption={searchFilter} filterSort={searchRank} />
+        <Select allowClear mode="multiple" maxTagCount="responsive" placeholder="الحالة"
+          value={filter.values.status} onChange={(v) => filter.setValue('status', v)}
+          options={[
             { value: 'posted', label: 'مرحّل' },
             { value: 'reversal', label: 'حركة عكسية' },
-          ] },
-          { key: 'statement', placeholder: 'البيان', kind: 'text' },
-        ]}
-      />
-
-      <div style={{ textAlign: 'end', marginBottom: 8 }}>{wastageTabCols.control}</div>
+          ]} />
+        <Input allowClear placeholder="البيان"
+          value={filter.values.statement ?? undefined}
+          onChange={(e) => filter.setValue('statement', e.target.value || undefined)} />
+        <Button className="sl-f-clear" icon={<ClearOutlined />} onClick={filter.reset}>مسح</Button>
+      </>)}
+    >
       <Table {...wastageKb.tableProps}
+        className="sl-table" size="small"
         rowKey="id" loading={loading} dataSource={filter.filtered} columns={wastageTabCols.columns}
+        pagination={{
+          showSizeChanger: true, locale: { items_per_page: '' },
+          showTotal: () => footOf(filter.filtered.length, wastages.length, 'مستند'),
+        }}
         locale={{ emptyText: 'لا يوجد مستندات هالك بعد' }} />
+    </ListPage>
 
       <TabModal centered
         title="مستند هالك جديد" width={480} open={open} onCancel={() => setOpen(false)}
@@ -653,7 +726,7 @@ function WastageTab({
           </Form.Item>
         </Form>
       </TabModal>
-    </div>
+    </>
   );
 }
 
@@ -840,9 +913,12 @@ const poPaper = (r: { external_document_number: string | null }) => {
 };
 
 function ProductionOrdersTab({
-  products, rawMaterials, warehouses, branches, boms: propBoms, itemName, itemUnit,
+  header, onTotal, products, rawMaterials, warehouses, branches, boms: propBoms, itemName, itemUnit,
   itemCode, whName, active,
 }: {
+  header: SectionHeader;
+  /** العدد الكلي من السيرفر — لعدّاد الشريحة في الترويسة. */
+  onTotal: (n: number) => void;
   products: Item[]; rawMaterials: Item[]; warehouses: Warehouse[];
   branches: { id: number; name: string }[]; boms: Bom[];
   itemName: (id: number) => string;
@@ -933,6 +1009,7 @@ function ProductionOrdersTab({
       });
       setRows(res.data?.rows ?? []);
       setTotal(res.data?.total ?? 0);
+      onTotal(res.data?.total ?? 0);
     } catch (err) { console.error(err); } finally { setLoading(false); }
   };
 
@@ -1554,36 +1631,48 @@ function ProductionOrdersTab({
   ];
 
   return (
-    <div>
-      <div style={{ marginBottom: 16, textAlign: 'left' }}>
-        <Button data-shortcut="F2" type="primary" icon={<PlusOutlined />} onClick={openNew}>
+    <>
+    <ListPage<Section>
+      icon={<BuildOutlined />}
+      title="عمليات التصنيع" muted="(أوامر التشغيل)"
+      subtitle="انتاج حسب النسب — كل أمر بمنتجاته وخاماته، والفرق بين المفروض واللي حصل"
+      tabs={header.tabs} activeTab={header.activeTab} onTabChange={header.onTabChange}
+      actions={(
+        <Button data-shortcut="F2" type="primary" icon={<PlusOutlined />} className="sl-create"
+          onClick={openNew}>
           أمر تشغيل جديد
         </Button>
-      </div>
-
-      <Space style={{ marginBottom: 12 }} wrap>
-        <Input.Search allowClear style={{ width: 300 }}
+      )}
+      filters={(<>
+        <Input.Search className="sl-f-search" allowClear
           placeholder="بحث برقم المستند أو رقم الورقة أو البيان"
           value={query} onChange={(e) => setQuery(e.target.value)}
           onSearch={() => { setPage(1); load(); }} />
-        <Select allowClear style={{ width: 160 }} placeholder="الحالة" value={stateFilter}
+        <Select allowClear placeholder="الحالة" value={stateFilter}
           onChange={(v) => { setStateFilter(v); setPage(1); }}
           options={(Object.keys(PO_STATE_TAG) as POState[]).map((k) => ({
             value: k, label: PO_STATE_TAG[k].label }))} />
-        <Select style={{ width: 180 }} value={scope}
+        <Select value={scope}
           onChange={(v) => { setScope(v); setPage(1); }}
           options={[
             { value: 'all', label: 'الكل' },
             { value: 'ours', label: 'المكتوب عندنا' },
             { value: 'imported', label: 'المنقول من a5' },
           ]} />
-      </Space>
-
+      </>)}
+    >
       <Table
+        className="sl-table" size="small"
         rowKey="id" loading={loading} dataSource={rows} columns={columns}
         pagination={{
           current: page, pageSize, total, showSizeChanger: true,
           pageSizeOptions: PAGE_SIZE_OPTIONS,
+          locale: { items_per_page: '' },
+          showTotal: (t) => (
+            <span className="sl-foot">
+              <span>إجمالي الأوامر: <b>{t.toLocaleString(numeralsLocale())}</b></span>
+            </span>
+          ),
           onChange: (p, s) => { setPage(p); setPageSize(s); },
         }}
         expandable={{
@@ -1675,6 +1764,7 @@ function ProductionOrdersTab({
         }}
         locale={{ emptyText: 'مافيش أوامر تشغيل' }}
       />
+    </ListPage>
 
       <TabModal centered title={editingId ? 'تعديل مسودة أمر تشغيل' : 'أمر تشغيل جديد'}
         width={1050} open={open} onCancel={closeEditor} destroyOnHidden
@@ -2129,6 +2219,6 @@ function ProductionOrdersTab({
           );
         })()}
       </TabModal>
-    </div>
+    </>
   );
 }

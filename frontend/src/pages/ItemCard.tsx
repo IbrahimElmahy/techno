@@ -1,12 +1,12 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { PAGE_SIZE } from '../utils/pagination';
-import {
-  Alert, Button, Card, Col, DatePicker, Empty, Row, Select, Tag, message,
-} from 'antd';
+import { Alert, Button, Empty, Select, Tag, message } from 'antd';
 // كل جدول هنا بفلتر على كل عمود — شوف `FilterTable`.
 import { FilterTable as Table } from '../components/FilterTable';
-import { Statistic } from '../components/Statistic';
-import { DownloadOutlined, PrinterOutlined, ReloadOutlined } from '@ant-design/icons';
+import {
+  ClearOutlined, DownloadOutlined, PrinterOutlined, ProfileOutlined, ReloadOutlined,
+} from '@ant-design/icons';
+import ListPage from '../components/ListPage';
 import dayjs, { Dayjs } from 'dayjs';
 import { useSearchParams } from 'react-router-dom';
 import { api } from '../api/client';
@@ -19,11 +19,10 @@ import DateRangeFilter from '../components/DateRangeFilter';
 import { exportCsv as writeCsv, type CsvColumn } from '../utils/exportCsv';
 import { printReport, type PrintColumn } from '../print/reportSheet';
 
-import StatsRow from '../components/StatsRow';
 import { useMovementLabels, useMovementTypes } from '../lib/movementTypes';
 import { useLookup, labelMap } from '../hooks/useLookup';
 import { compareArabic, searchFilter, searchRank, sortByName } from '../utils/arabicSort';
-import { qty, money } from '../utils/money';
+import { qty, money, numeralsLocale } from '../utils/money';
 /**
  * كارت الصنف — every movement of one item with the balance before it and the balance after it.
  *
@@ -310,24 +309,34 @@ export default function ItemCard() {
     export: { name: 'كارت الصنف', rows: cardRows },
   });
 
+  // سطر الإجماليات تحت الجدول — مكان كروت الأرقام اللي كانت فوق.
+  const footer = card && (
+    <span className="sl-foot">
+      <span>عدد الحركات: <b>{card.rows.length.toLocaleString(numeralsLocale())}</b></span>
+      <span>رصيد أول المدة: <b>{qty(card.opening_balance)}</b></span>
+      <span>إجمالي الوارد: <b className="is-pos">{qty(card.total_in)}</b></span>
+      <span>إجمالي المنصرف: <b className="is-neg">{qty(card.total_out)}</b></span>
+      <span>الرصيد الحالي — {card.location}: <b style={{ color: '#0B5CA8' }}>{qty(card.closing_balance)}</b></span>
+    </span>
+  );
+
   return (
-    <Card
+    <ListPage
+      icon={<ProfileOutlined />}
       title="كارت الصنف"
-      extra={(
-        <>
-          {tableCols.control}
-          <Button icon={<DownloadOutlined />} onClick={exportCsv} style={{ marginInlineEnd: 8 }}
-            disabled={!card?.rows.length}>تصدير CSV</Button>
-          <Button icon={<PrinterOutlined />} onClick={printIt} disabled={!card?.rows.length}
-            style={{ marginInlineEnd: 8 }}>طباعة</Button>
-          <Button icon={<ReloadOutlined />} onClick={load} disabled={!itemId}>تحديث</Button>
-        </>
-      )}
-    >
-      <Row gutter={[8, 8]} style={{ marginBottom: 12 }}>
-        <Col xs={24} md={4}>
+      subtitle={card
+        ? <>{card.item_name}{card.item_code && <span dir="ltr"> · {card.item_code}</span>}</>
+        : 'كل حركة على الصنف بالرصيد قبلها وبعدها'}
+      actions={(<>
+        <Button icon={<PrinterOutlined />} onClick={printIt} disabled={!card?.rows.length}>طباعة</Button>
+        <Button icon={<DownloadOutlined />} onClick={exportCsv}
+          disabled={!card?.rows.length}>تصدير CSV</Button>
+        {tableCols.control}
+        <Button icon={<ReloadOutlined />} onClick={load} disabled={!itemId}>تحديث</Button>
+      </>)}
+      filters={(<>
           <Select
-            allowClear showSearch style={{ width: '100%' }}
+            allowClear showSearch
             placeholder="كل الفئات" value={category}
             onChange={(c) => {
               setCategory(c);
@@ -338,70 +347,42 @@ export default function ItemCard() {
               }
             }}
             options={categories.map((c: string) => ({ value: c, label: categoryLabels[c] || c }))} filterOption={searchFilter} filterSort={searchRank}/>
-        </Col>
-        <Col xs={24} md={7}>
           <Select
-            showSearch style={{ width: '100%' }}
+            className="sl-f-search"
+            showSearch
             placeholder={category ? `أصناف «${categoryLabels[category] || category}»` : 'اختر الصنف'}
             value={itemId} onChange={setItemId}
             options={pickableItems.map((i: any) => ({
               value: i.id, label: i.name, search: i.code || '' }))}
             notFoundContent={category ? 'مافيش صنف بالاسم ده في الفئة دي' : undefined} filterOption={searchFilter} filterSort={searchRank}/>
-        </Col>
-        <Col xs={24} md={4}>
           <Select showSearch
-            allowClear style={{ width: '100%' }} placeholder="كل المواقع"
+            allowClear placeholder="كل المواقع"
             value={warehouseId} onChange={setWarehouseId}
             options={sortByName(warehouses, (w) => w.name).map((w) => ({ value: w.id, label: w.name }))} filterOption={searchFilter} filterSort={searchRank} />
-        </Col>
-        <Col xs={24} md={7}>
           <DateRangeFilter
+            className="sl-f-dates"
             value={range as any}
             onChange={(v) => setRange(v as any)}
           />
-        </Col>
-        <Col xs={24} md={5}>
           <Select
-            allowClear style={{ width: '100%' }} placeholder="كل أنواع الحركة"
+            allowClear placeholder="كل أنواع الحركة"
             value={movementType} onChange={setMovementType}
             options={moveTypes}
           />
-        </Col>
-      </Row>
-
-      {!itemId && <Empty description="اختر صنفاً لعرض كارته" />}
+          {/* الصنف نفسه بيفضل — المسح للفلاتر اللي حواليه بس. */}
+          <Button className="sl-f-clear" icon={<ClearOutlined />}
+            onClick={() => { setCategory(undefined); setWarehouseId(undefined); setRange(null); setMovementType(undefined); }}>
+            مسح
+          </Button>
+      </>)}
+    >
+      {!itemId && <Empty description="اختر صنفاً لعرض كارته" style={{ padding: '32px 0' }} />}
 
       {card && (
         <>
-          <StatsRow gutter={[8, 8]} style={{ marginBottom: 12 }}>
-            <Col xs={12} md={6}>
-              <Card size="small">
-                <Statistic title="رصيد أول المدة" value={qty(card.opening_balance)} />
-              </Card>
-            </Col>
-            <Col xs={12} md={6}>
-              <Card size="small">
-                <Statistic title="إجمالي الوارد" value={qty(card.total_in)}
-                  valueStyle={{ color: '#6AB42D' }} />
-              </Card>
-            </Col>
-            <Col xs={12} md={6}>
-              <Card size="small">
-                <Statistic title="إجمالي المنصرف" value={qty(card.total_out)}
-                  valueStyle={{ color: '#cf1322' }} />
-              </Card>
-            </Col>
-            <Col xs={12} md={6}>
-              <Card size="small">
-                <Statistic title={`الرصيد الحالي — ${card.location}`}
-                  value={qty(card.closing_balance)} valueStyle={{ color: '#0B5CA8' }} />
-              </Card>
-            </Col>
-          </StatsRow>
-
           {(movementType || range) && (
             <Alert
-              type="info" showIcon style={{ marginBottom: 12 }}
+              type="info" showIcon style={{ margin: '6px 0' }}
               message="الفلاتر تخفي سطوراً ولا تغيّر الأرصدة."
               description="الرصيد قبل/بعد محسوب على كل حركات الصنف، فالرصيد الحالي هو الرصيد الحقيقي مهما كان المعروض."
             />
@@ -409,14 +390,19 @@ export default function ItemCard() {
 
           <Table<CardRow>
             {...kb.tableProps}
+            className="sl-table"
             rowKey="movement_id" size="small" loading={loading} dataSource={card.rows}
             locale={{ emptyText: 'لا توجد حركات في هذه الفترة' }}
-            pagination={{ defaultPageSize: PAGE_SIZE, showSizeChanger: true }}
+            pagination={{
+              defaultPageSize: PAGE_SIZE, showSizeChanger: true,
+              locale: { items_per_page: '' },
+              showTotal: () => footer,
+            }}
             scroll={{ x: 'max-content' }}
             columns={tableCols.columns}
           />
         </>
       )}
-    </Card>
+    </ListPage>
   );
 }

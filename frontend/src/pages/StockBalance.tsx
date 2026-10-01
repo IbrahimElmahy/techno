@@ -1,8 +1,9 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Card, Col, Empty, Input, Radio, Row, Spin, Tag , Space} from 'antd';
+import { Button, Col, Empty, Input, Row, Spin, Tag } from 'antd';
 // كل جدول هنا بفلتر على كل عمود — شوف `FilterTable`.
 import { FilterTable as Table } from '../components/FilterTable';
-import { SearchOutlined } from '@ant-design/icons';
+import { ClearOutlined, DatabaseOutlined, SearchOutlined } from '@ant-design/icons';
+import ListPage from '../components/ListPage';
 import { api } from '../api/client';
 import { useTableColumns } from '../components/ColumnSettings';
 import { useQueryTab } from '../components/useQueryTab';
@@ -198,20 +199,35 @@ export default function StockBalance() {
     export: { name: TITLES[view] ?? TITLES.balance, rows: balance?.locations ?? [] },
   });
 
+  // شرايح النطاق — «له حركة» عدّاده بييجي بعد أول طلب بس.
+  const scopeTabs: { key: 'all' | 'in_stock' | 'moved'; label: string; count?: number | null }[] = [
+    { key: 'all', label: 'كل الأصناف', count: products.length },
+    { key: 'in_stock', label: 'رصيد فقط',
+      count: products.filter((p) => Number(p.on_hand || 0) > 0).length },
+    { key: 'moved', label: 'له حركة', count: moved.size || null },
+  ];
+
   return (
     <>
       <MovementHistoryLog target={history} onClose={() => setHistory(null)} />
-    <Card title={TITLES[view] ?? TITLES.balance} styles={{ body: { paddingTop: 12 } }}
-      extra={
-        <Space>
-        {locCols.control}
-        <Radio.Group size="small" value={stockScope} onChange={(e) => setStockScope(e.target.value)}>
-          <Radio.Button value="all">كل الأصناف</Radio.Button>
-          <Radio.Button value="in_stock">رصيد فقط</Radio.Button>
-          <Radio.Button value="moved">له حركة</Radio.Button>
-        </Radio.Group>
-        </Space>
-      }>
+    <ListPage<'all' | 'in_stock' | 'moved'>
+      icon={<DatabaseOutlined />}
+      title={TITLES[view] ?? TITLES.balance}
+      subtitle="اختار الفئة والصنف — الأسعار ورصيد كل مخزن قدامك مرة واحدة"
+      tabs={scopeTabs} activeTab={stockScope} onTabChange={setStockScope}
+      actions={locCols.control}
+      filters={(<>
+        <Input className="sl-f-search" allowClear prefix={<SearchOutlined />} placeholder="البحث بالاسم"
+          value={nameQuery} onChange={(e) => setNameQuery(e.target.value)} />
+        <Input allowClear placeholder="البحث بالكود"
+          value={codeQuery} onChange={(e) => setCodeQuery(e.target.value)} />
+        <Button className="sl-f-clear" icon={<ClearOutlined />}
+          onClick={() => { setNameQuery(''); setCodeQuery(''); setCategoryQuery(''); setCategory(ALL); }}>
+          مسح
+        </Button>
+      </>)}
+    >
+      <div style={{ padding: '8px 4px 12px' }}>
       <Row gutter={12}>
         {/* 1) Category */}
         <Col xs={24} md={5}>
@@ -246,17 +262,7 @@ export default function StockBalance() {
 
         {/* 2) Item — by name or by code */}
         <Col xs={24} md={10}>
-          <Row gutter={8}>
-            <Col span={12}>
-              <Input allowClear placeholder="البحث بالاسم"
-                value={nameQuery} onChange={(e) => setNameQuery(e.target.value)} />
-            </Col>
-            <Col span={12}>
-              <Input allowClear placeholder="البحث بالكود"
-                value={codeQuery} onChange={(e) => setCodeQuery(e.target.value)} />
-            </Col>
-          </Row>
-          <div style={{ marginTop: 8, maxHeight: 460, overflowY: 'auto',
+          <div style={{ maxHeight: 500, overflowY: 'auto',
                         border: '1px solid #f0f0f0', borderRadius: 8 }}>
             {loading ? (
               <div style={{ textAlign: 'center', padding: 24 }}><Spin /></div>
@@ -309,6 +315,7 @@ export default function StockBalance() {
 
               <Table
                 {...locKb.tableProps}
+                className="sl-table"
                 style={{ marginTop: 12 }}
                 size="small"
                 rowKey={(r) => `${r.kind}-${r.id}`}
@@ -328,7 +335,8 @@ export default function StockBalance() {
           )}
         </Col>
       </Row>
-    </Card>
+      </div>
+    </ListPage>
     </>
   );
 }

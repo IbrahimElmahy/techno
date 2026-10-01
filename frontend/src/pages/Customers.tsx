@@ -2,15 +2,14 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { PAGE_SIZE_OPTIONS } from '../utils/pagination';
 import { searchFilter, searchRank, sortByName } from '../utils/arabicSort';
 import {
-  Button, Card, Checkbox, Col, Divider, Form, Input, Modal, Row, Select, Space, Tag, Tooltip, message,
+  Button, Checkbox, Col, Divider, Form, Input, Modal, Row, Select, Space, Tag, Tooltip, message,
 } from 'antd';
 // فلتر على كل عمود — شوف `FilterTable`.
 import { FilterTable as Table } from '../components/FilterTable';
-import { Statistic } from '../components/Statistic';
 import { InputNumber } from '../components/NumberInput';
 import {
   UserAddOutlined, PlusOutlined, MinusCircleOutlined, EyeOutlined, StopOutlined,
-  SearchOutlined, ClearOutlined, DeleteOutlined,
+  SearchOutlined, ClearOutlined, DeleteOutlined, TeamOutlined,
 } from '@ant-design/icons';
 import { api } from '../api/client';
 import { useAuth } from '../components/AuthProvider';
@@ -19,9 +18,8 @@ import { useLookup, labelMap } from '../hooks/useLookup';
 import { useNavigate } from 'react-router-dom';
 import { TabModal } from '../components/TabModal';
 import { useTableColumns } from '../components/ColumnSettings';
-
-import StatsRow from '../components/StatsRow';
-import { money } from '../utils/money';
+import ListPage, { type ListTab } from '../components/ListPage';
+import { money, numeralsLocale } from '../utils/money';
 import { useLiveRefresh } from '../utils/live';
 interface CustomerRecord {
   id: number;
@@ -523,115 +521,100 @@ export default function Customers() {
     </Space>
   );
 
+  // «الحالة» بقت شرايح — نفس فلتر `active` اللي بيروح للسيرفر.
+  type StatusTab = 'active' | 'inactive' | 'all';
+  const statusTab: StatusTab = filters.active === true ? 'active'
+    : filters.active === false ? 'inactive' : 'all';
+  // العدد من الملخّص — بيتحسب على الفلاتر الحالية، فبيتكتب على الشريحة المفتوحة بس.
+  const countIf = (k: StatusTab) => (k === statusTab ? summaryData.total_count : undefined);
+  const statusTabs: ListTab<StatusTab>[] = [
+    { key: 'active', label: 'نشط', dot: '#52c41a', count: countIf('active') },
+    { key: 'inactive', label: 'معطل', dot: '#cf1322', count: countIf('inactive') },
+    { key: 'all', label: 'الكل', count: countIf('all') },
+  ];
+
+  // كروت الإجماليات اللي كانت فوق بقت سطر تحت الجدول.
+  const footer = (
+    <span className="sl-foot">
+      <span>عدد العملاء: <b>{summaryData.total_count.toLocaleString(numeralsLocale())}</b></span>
+      <span>عليهم مديونية: <b>{summaryData.debtors_count.toLocaleString(numeralsLocale())}</b></span>
+      <span>
+        إجمالي المديونية:{' '}
+        <b className={summaryData.total_debt > 0 ? 'is-neg' : undefined}>{money(summaryData.total_debt)}</b>
+      </span>
+    </span>
+  );
+
   return (
-    <div>
-      <Card
+    <>
+      <ListPage<StatusTab>
+        icon={<TeamOutlined />}
         title="العملاء"
-        extra={
-          <Space>
-            {tableCols.control}
-            <Button data-shortcut="F2" type="primary" icon={<UserAddOutlined />}
-              onClick={() => setDrawerVisible(true)}>
-              إضافة عميل
-            </Button>
-          </Space>
-        }
+        subtitle="بطاقات العملاء وأرصدتهم ومناديبهم — الضغط على السطر يفتح ملف العميل"
+        tabs={statusTabs}
+        activeTab={statusTab}
+        onTabChange={(k) => setFilter('active', k === 'active' ? true : k === 'inactive' ? false : undefined)}
+        actions={(<>
+          <Button data-shortcut="F2" type="primary" className="sl-create" icon={<UserAddOutlined />}
+            onClick={() => setDrawerVisible(true)}>
+            إضافة عميل
+          </Button>
+          {tableCols.control}
+        </>)}
+        filters={(<>
+          {/* الفلاتر على السيرفر، فبتغطّي كل العملاء مش الصفحة المحمّلة بس. */}
+          <Input
+            className="sl-f-search"
+            allowClear
+            value={search}
+            placeholder="بحث بالاسم أو الكود أو الهاتف أو العنوان"
+            prefix={<SearchOutlined />}
+            onChange={(e) => setSearch(e.target.value)}
+            onPressEnter={applySearch}
+            onBlur={applySearch}
+          />
+          <Select allowClear placeholder="التصنيف"
+            value={filters.customer_type}
+            onChange={(v) => setFilter('customer_type', v)}
+            options={customerTypeOptions.map((o) => ({ value: o.value, label: o.label }))} />
+          <Select allowClear showSearch placeholder="مندوب البيع"
+            value={filters.rep_id}
+            onChange={(v) => setFilter('rep_id', v)}
+            filterOption={searchFilter} filterSort={searchRank}
+            options={reps.map((r) => ({ value: r.id, label: r.full_name }))} />
+          <Select allowClear showSearch placeholder="مندوب الخدمة"
+            value={filters.service_rep_id}
+            onChange={(v) => setFilter('service_rep_id', v)}
+            filterOption={searchFilter} filterSort={searchRank}
+            options={serviceReps.map((r) => ({ value: r.id, label: r.full_name }))} />
+          <Select allowClear showSearch placeholder="المحافظة"
+            value={filters.governorate_id}
+            onChange={(v) => setFilter('governorate_id', v)}
+            filterOption={searchFilter} filterSort={searchRank}
+            options={governorates.map((g) => ({ value: g.id, label: g.name }))} />
+          <Select allowClear showSearch placeholder="المنطقة"
+            value={filters.territory_id}
+            onChange={(v) => setFilter('territory_id', v)}
+            filterOption={searchFilter} filterSort={searchRank}
+            options={territories.map((t) => ({ value: t.id, label: t.name }))} />
+          <Select allowClear placeholder="حالة الذمة"
+            value={filters.balance_filter}
+            onChange={(v) => setFilter('balance_filter', v)}
+            options={[
+              { value: 'debtors', label: 'عليه مديونية' },
+              { value: 'settled', label: 'مسدّد بالكامل' },
+              { value: 'credit', label: 'له رصيد (دائن)' },
+            ]} />
+          <Button className="sl-f-clear" icon={<ClearOutlined />} onClick={resetFilters}>مسح</Button>
+        </>)}
       >
-        {/* --- Search + filters (server-side, so they cover every customer) --- */}
-        <Row gutter={[8, 8]} style={{ marginBottom: 12 }}>
-          <Col xs={24} md={7}>
-            <Input
-              allowClear
-              value={search}
-              placeholder="بحث بالاسم أو الكود أو الهاتف أو العنوان"
-              prefix={<SearchOutlined />}
-              onChange={(e) => setSearch(e.target.value)}
-              onPressEnter={applySearch}
-              onBlur={applySearch}
-            />
-          </Col>
-          <Col xs={12} md={4}>
-            <Select allowClear style={{ width: '100%' }} placeholder="التصنيف"
-              value={filters.customer_type}
-              onChange={(v) => setFilter('customer_type', v)}
-              options={customerTypeOptions.map((o) => ({ value: o.value, label: o.label }))} />
-          </Col>
-          <Col xs={12} md={4}>
-            <Select allowClear showSearch style={{ width: '100%' }} placeholder="مندوب البيع"
-              value={filters.rep_id}
-              onChange={(v) => setFilter('rep_id', v)}
-              filterOption={searchFilter} filterSort={searchRank}
-              options={reps.map((r) => ({ value: r.id, label: r.full_name }))} />
-          </Col>
-          <Col xs={12} md={4}>
-            <Select allowClear showSearch style={{ width: '100%' }} placeholder="مندوب الخدمة"
-              value={filters.service_rep_id}
-              onChange={(v) => setFilter('service_rep_id', v)}
-              filterOption={searchFilter} filterSort={searchRank}
-              options={serviceReps.map((r) => ({ value: r.id, label: r.full_name }))} />
-          </Col>
-          <Col xs={12} md={4}>
-            <Select allowClear showSearch style={{ width: '100%' }} placeholder="المحافظة"
-              value={filters.governorate_id}
-              onChange={(v) => setFilter('governorate_id', v)}
-              filterOption={searchFilter} filterSort={searchRank}
-              options={governorates.map((g) => ({ value: g.id, label: g.name }))} />
-          </Col>
-          <Col xs={12} md={5}>
-            <Select allowClear showSearch style={{ width: '100%' }} placeholder="المنطقة"
-              value={filters.territory_id}
-              onChange={(v) => setFilter('territory_id', v)}
-              filterOption={searchFilter} filterSort={searchRank}
-              options={territories.map((t) => ({ value: t.id, label: t.name }))} />
-          </Col>
-          <Col xs={12} md={5}>
-            <Select allowClear style={{ width: '100%' }} placeholder="حالة الذمة"
-              value={filters.balance_filter}
-              onChange={(v) => setFilter('balance_filter', v)}
-              options={[
-                { value: 'debtors', label: 'عليه مديونية' },
-                { value: 'settled', label: 'مسدّد بالكامل' },
-                { value: 'credit', label: 'له رصيد (دائن)' },
-              ]} />
-          </Col>
-          <Col xs={12} md={4}>
-            <Select allowClear style={{ width: '100%' }} placeholder="الحالة"
-              value={filters.active as any}
-              onChange={(v) => setFilter('active', v)}
-              options={[
-                { value: true, label: 'نشط' },
-                { value: false, label: 'معطل' },
-              ]} />
-          </Col>
-          <Col xs={24} md={5}>
-            <Space>
-              <Button type="primary" icon={<SearchOutlined />} onClick={applySearch}>بحث</Button>
-              <Button icon={<ClearOutlined />} onClick={resetFilters}>مسح الفلاتر</Button>
-            </Space>
-          </Col>
-        </Row>
-
-        <StatsRow gutter={12} style={{ marginBottom: 12 }}>
-          <Col xs={24} md={8}>
-            <Card size="small"><Statistic title="عدد العملاء" value={summaryData.total_count} /></Card>
-          </Col>
-          <Col xs={24} md={8}>
-            <Card size="small">
-              <Statistic title="إجمالي المديونية" value={money(summaryData.total_debt)}
-                valueStyle={{ color: summaryData.total_debt > 0 ? '#cf1322' : undefined }} />
-            </Card>
-          </Col>
-          <Col xs={24} md={8}>
-            <Card size="small"><Statistic title="عملاء عليهم مديونية" value={summaryData.debtors_count} /></Card>
-          </Col>
-        </StatsRow>
-
         <Table
+          className="sl-table"
           dataSource={customers}
           columns={tableCols.columns}
           rowKey="id"
           loading={loading}
-          size="middle"
+          size="small"
           tableLayout="fixed"
           expandable={{ expandedRowRender: expandedRow }}
           pagination={{
@@ -640,8 +623,9 @@ export default function Customers() {
             total: totalCount,
             showSizeChanger: true,
             pageSizeOptions: PAGE_SIZE_OPTIONS,
+            locale: { items_per_page: '' },
             onChange: handlePageChange,
-            showTotal: (t) => `الإجمالي: ${t}`,
+            showTotal: () => footer,
           }}
           // The whole row opens the customer file — no dedicated button needed.
           onRow={(record) => ({
@@ -649,7 +633,7 @@ export default function Customers() {
             style: { cursor: 'pointer' },
           })}
         />
-      </Card>
+      </ListPage>
 
       {/* عميل جديد — laid out field for field against their العملاء form: the same groups, three
           to a row, in their order. Whoever registers customers off a paper application reads down
@@ -801,8 +785,6 @@ export default function Customers() {
           </Space>
         </Form>
       </TabModal>
-
-
-    </div>
+    </>
   );
 }

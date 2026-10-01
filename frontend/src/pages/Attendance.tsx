@@ -2,8 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { PAGE_SIZE } from '../utils/pagination';
 import { searchFilter, searchRank } from '../utils/arabicSort';
 import {
-  Alert, Button, Card, Col, DatePicker, Input, Row, Select, Space, Table, Tabs, Tag, Upload,
-  message,
+  Alert, Button, Col, DatePicker, Input, Row, Select, Space, Table, Tag, Upload, message,
 } from 'antd';
 import {
   ClockCircleOutlined, DownloadOutlined, PrinterOutlined, ReloadOutlined, UploadOutlined,
@@ -18,6 +17,7 @@ import { useTableKeyboard } from '../components/keyboard';
 import { useQueryTab } from '../components/useQueryTab';
 import { exportCsv as writeCsv, type CsvColumn } from '../utils/exportCsv';
 import { printReport, type PrintColumn } from '../print/reportSheet';
+import ListPage from '../components/ListPage';
 
 /**
  * الحضور والانصراف.
@@ -259,42 +259,31 @@ export default function Attendance() {
   );
 
   const daysTab = (
-    <>
-      <Row gutter={[8, 8]} style={{ marginBottom: 12 }}>
-        <Col xs={24} md={9}>
-          <DateRangeFilter
-            value={range as any} onChange={(v) => setRange(v as any)}
-          />
-        </Col>
-        <Col xs={24} md={7}>
-          <Select
-            allowClear showSearch style={{ width: '100%' }}
-            placeholder="كل الموظفين" value={employeeId} onChange={setEmployeeId}
-            options={employees.map((e) => ({ value: e.id, label: e.name }))} filterOption={searchFilter} filterSort={searchRank}/>
-        </Col>
-        <Col xs={24} md={8}>
-          <Space wrap>
-            <Tag color="green">حاضر {totals.present}</Tag>
-            <Tag color="red">غايب {totals.absent}</Tag>
-            <Tag color="orange">متأخر {totals.late}</Tag>
-            <Tag color="blue">إضافي {totals.overtime.toFixed(2)} س</Tag>
-          </Space>
-        </Col>
-      </Row>
-
-      <Table
-        {...kb.tableProps}
-        rowKey="id" size="small" loading={loading}
-        columns={cols.columns} dataSource={rows}
-        pagination={{ defaultPageSize: PAGE_SIZE, showSizeChanger: true }}
-        scroll={{ x: 'max-content' }}
-        locale={{ emptyText: 'لا توجد أيام في هذا المدى' }}
-      />
-    </>
+    <Table
+      {...kb.tableProps}
+      className="sl-table"
+      rowKey="id" size="small" loading={loading}
+      columns={cols.columns} dataSource={rows}
+      pagination={{
+        defaultPageSize: PAGE_SIZE, showSizeChanger: true,
+        // ملخّص المدى تحت الجدول بدل الشرايح اللي كانت فوق.
+        showTotal: () => (
+          <span className="sl-foot">
+            <span>أيام: <b>{rows.length}</b></span>
+            <span>حاضر: <b className="is-pos">{totals.present}</b></span>
+            <span>غايب: <b className="is-neg">{totals.absent}</b></span>
+            <span>متأخر: <b>{totals.late}</b></span>
+            <span>إضافي: <b>{totals.overtime.toFixed(2)}</b> س</span>
+          </span>
+        ),
+      }}
+      scroll={{ x: 'max-content' }}
+      locale={{ emptyText: 'لا توجد أيام في هذا المدى' }}
+    />
   );
 
   const entryTab = (
-    <Row gutter={[10, 10]} style={{ maxWidth: 720 }}>
+    <Row gutter={[10, 10]} style={{ maxWidth: 720, padding: '10px 6px 12px' }}>
       <Col span={12}>
         <div style={{ marginBottom: 4 }}>الموظف *</div>
         <Select
@@ -335,7 +324,7 @@ export default function Attendance() {
   );
 
   const importTab = (
-    <>
+    <div style={{ padding: '8px 6px 12px' }}>
       <Alert
         type="info" showIcon style={{ marginBottom: 12 }}
         message="ملف جهاز البصمة"
@@ -422,35 +411,43 @@ export default function Attendance() {
           </Button>
         </>
       ) : null}
-    </>
+    </div>
   );
 
   return (
-    <Card
-      title={<span><ClockCircleOutlined /> الحضور والانصراف</span>}
-      extra={(
-        <Space>
-          {tab === 'days' ? cols.control : null}
-          {tab === 'days' ? (
-            <>
-              <Button icon={<DownloadOutlined />} disabled={!rows.length}
-                onClick={() => writeCsv('attendance', csvCols, rows)}>تصدير CSV</Button>
-              <Button icon={<PrinterOutlined />} disabled={!rows.length}
-                onClick={printIt}>طباعة</Button>
-            </>
-          ) : null}
-          <Button icon={<ReloadOutlined />} onClick={load}>تحديث</Button>
-        </Space>
-      )}
+    <ListPage
+      icon={<ClockCircleOutlined />}
+      title="الحضور والانصراف"
+      subtitle="سجل الأيام، الإدخال اليدوي للتصحيح، واستيراد ملف جهاز البصمة"
+      tabs={[
+        { key: 'days', label: 'السجل', count: rows.length },
+        { key: 'entry', label: 'إدخال يوم' },
+        { key: 'import', label: 'استيراد بصمة' },
+      ]}
+      activeTab={tab} onTabChange={setTab}
+      actions={(<>
+        {tab === 'days' ? (<>
+          <Button icon={<PrinterOutlined />} disabled={!rows.length}
+            onClick={printIt}>طباعة</Button>
+          <Button icon={<DownloadOutlined />} disabled={!rows.length}
+            onClick={() => writeCsv('attendance', csvCols, rows)}>تصدير CSV</Button>
+          {cols.control}
+        </>) : null}
+        <Button icon={<ReloadOutlined />} onClick={load}>تحديث</Button>
+      </>)}
+      filters={tab === 'days' ? (<>
+        <DateRangeFilter
+          className="sl-f-dates"
+          value={range as any} onChange={(v) => setRange(v as any)}
+        />
+        <Select
+          className="sl-f-customer"
+          allowClear showSearch
+          placeholder="كل الموظفين" value={employeeId} onChange={setEmployeeId}
+          options={employees.map((e) => ({ value: e.id, label: e.name }))} filterOption={searchFilter} filterSort={searchRank}/>
+      </>) : undefined}
     >
-      <Tabs
-        activeKey={tab} onChange={setTab}
-        items={[
-          { key: 'days', label: 'السجل', children: daysTab },
-          { key: 'entry', label: 'إدخال يوم', children: entryTab },
-          { key: 'import', label: 'استيراد بصمة', children: importTab },
-        ]}
-      />
-    </Card>
+      {tab === 'entry' ? entryTab : tab === 'import' ? importTab : daysTab}
+    </ListPage>
   );
 }

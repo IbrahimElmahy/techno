@@ -1,9 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import { PAGE_SIZE } from '../utils/pagination';
 import {
-  Alert, Button, Card, Col, DatePicker, Descriptions, Row, Select, Space, Table, Tag, message,
+  Alert, Button, Col, DatePicker, Descriptions, Row, Select, Space, Table, Tag, message,
 } from 'antd';
-import { Statistic } from '../components/Statistic';
 import { InputNumber } from '../components/NumberInput';
 import { Popconfirm } from '../components/noConfirm';
 import {
@@ -21,8 +20,9 @@ import { TabModal } from '../components/TabModal';
 import { exportCsv as writeCsv, type CsvColumn } from '../utils/exportCsv';
 import { printReport, printPayslip } from '../print/reportSheet';
 
-import StatsRow from '../components/StatsRow';
 import { money } from '../utils/money';
+import ListPage from '../components/ListPage';
+
 /**
  * مسير الرواتب.
  *
@@ -264,121 +264,135 @@ export default function Payroll() {
 
   const posted = detail?.status === 'posted';
 
+  const inDetail = tab === 'detail' && !!detail;
+
   return (
-    <Card
-      title={<span><SolutionOutlined /> مسير الرواتب</span>}
-      extra={(
-        <Space>
-          {tab === 'detail' && detail ? lineTable.control : runTable.control}
-          <Button onClick={() => setRemitOpen(true)}>سداد تأمينات / ضريبة</Button>
-          <Button icon={<ReloadOutlined />} onClick={load}>تحديث</Button>
-        </Space>
-      )}
+    <>
+    <ListPage
+      icon={<SolutionOutlined />}
+      title="مسير الرواتب"
+      muted={inDetail && detail
+        ? `(${detail.document_number} · ${periodLabel(detail.year, detail.month)})` : undefined}
+      subtitle={inDetail
+        ? 'الترحيل بيكتب القيد ويقفل حضور الشهر — والتصحيح بعده بالعكس مش بالتعديل.'
+        : 'الحساب بيعمل مسودة — مابيلمسش الأستاذ، وينفع يتعاد.'}
+      actions={!inDetail || !detail ? (<>
+        <DatePicker picker="month" format="YYYY/MM" allowClear={false}
+          value={period} onChange={(v) => setPeriod(v || dayjs())} />
+        <Button type="primary" className="sl-create" loading={busy} onClick={compute}>
+          حساب مسير الشهر
+        </Button>
+        <Button onClick={() => setRemitOpen(true)}>سداد تأمينات / ضريبة</Button>
+        {runTable.control}
+        <Button icon={<ReloadOutlined />} onClick={load}>تحديث</Button>
+      </>) : (<>
+        <Button onClick={() => { setDetail(null); setTab('runs'); }}>رجوع للقايمة</Button>
+        <Tag color={STATUS[detail.status]?.color} style={{ fontSize: 14, marginInlineEnd: 0 }}>
+          {STATUS[detail.status]?.label}
+        </Tag>
+        {detail.status === 'draft' ? (
+          <Popconfirm
+            title="ترحّل المسير؟"
+            description="سيُكتب قيد في الأستاذ، ويُغلق حضور الشهر. والتصحيح بعد ذلك يكون بالعكس لا بالتعديل."
+            okText="ترحيل" cancelText="رجوع"
+            onConfirm={() => act('post')}
+          >
+            <Button type="primary" className="sl-create" icon={<CheckCircleOutlined />}
+              loading={busy}>ترحيل</Button>
+          </Popconfirm>
+        ) : null}
+        {posted && detail.paid < detail.employees ? (
+          <Popconfirm title="تصرف المرتبات؟"
+            description="مدين مرتبات مستحقة / دائن الخزنة."
+            okText="صرف" cancelText="رجوع" onConfirm={() => act('pay')}>
+            <Button icon={<DollarOutlined />} loading={busy}>صرف المرتبات</Button>
+          </Popconfirm>
+        ) : null}
+        {posted ? (
+          <Popconfirm
+            title="تعكس المسير؟"
+            description="سيُعكس القيد ويعود الشهر مفتوحاً. ويبقى المستند برقمه."
+            okText="عكس" cancelText="رجوع" okButtonProps={{ danger: true }}
+            onConfirm={() => act('reverse')}
+          >
+            <Button danger icon={<RollbackOutlined />} loading={busy}>عكس المسير</Button>
+          </Popconfirm>
+        ) : null}
+        <Button icon={<PrinterOutlined />}
+          onClick={() => printReport(
+            { title: 'مسير الرواتب', number: detail.document_number,
+              meta: [['الشهر', periodLabel(detail.year, detail.month)],
+                ['الحالة', STATUS[detail.status]?.label ?? detail.status]] },
+            lineCsv as any, detail.lines,
+            [{ label: 'الإجمالي', value: money(detail.gross) },
+              { label: 'الاستقطاعات', value: money(detail.total_deductions) },
+              { label: 'الصافي', value: money(detail.net) }])}>
+          طباعة المسير
+        </Button>
+        <Button icon={<DownloadOutlined />}
+          onClick={() => writeCsv(
+            `payroll-${detail.year}-${detail.month}`, lineCsv, detail.lines)}>
+          تصدير CSV
+        </Button>
+        {lineTable.control}
+        <Button onClick={() => setRemitOpen(true)}>سداد تأمينات / ضريبة</Button>
+        <Button icon={<ReloadOutlined />} onClick={load}>تحديث</Button>
+      </>)}
     >
-      {tab !== 'detail' || !detail ? (
-        <>
-          <Space style={{ marginBottom: 12 }}>
-            <DatePicker picker="month" format="YYYY/MM" allowClear={false}
-              value={period} onChange={(v) => setPeriod(v || dayjs())} />
-            <Button type="primary" loading={busy} onClick={compute}>
-              حساب مسير الشهر
-            </Button>
-            <span style={{ color: '#888' }}>
-              الحساب بيعمل مسودة — مابيلمسش الأستاذ، وينفع يتعاد.
-            </span>
-          </Space>
-          <Table
-            {...runKb.tableProps}
-            rowKey="id" size="small" loading={loading}
-            columns={runTable.columns} dataSource={runs}
-            pagination={{ defaultPageSize: PAGE_SIZE }}
-            locale={{ emptyText: 'لا توجد مسيّرات' }}
-          />
-        </>
+      {!inDetail || !detail ? (
+        <Table
+          {...runKb.tableProps}
+          className="sl-table"
+          rowKey="id" size="small" loading={loading}
+          columns={runTable.columns} dataSource={runs}
+          pagination={{
+            defaultPageSize: PAGE_SIZE,
+            showTotal: () => (
+              <span className="sl-foot">
+                <span>المسيّرات: <b>{runs.length}</b></span>
+                <span>مسودّات: <b>{runs.filter((r) => r.status === 'draft').length}</b></span>
+              </span>
+            ),
+          }}
+          locale={{ emptyText: 'لا توجد مسيّرات' }}
+        />
       ) : (
         <>
-          <Space wrap style={{ marginBottom: 12 }}>
-            <Button onClick={() => { setDetail(null); setTab('runs'); }}>رجوع للقايمة</Button>
-            <Tag color={STATUS[detail.status]?.color} style={{ fontSize: 14 }}>
-              {detail.document_number} · {periodLabel(detail.year, detail.month)} ·
-              {' '}{STATUS[detail.status]?.label}
-            </Tag>
-            {detail.status === 'draft' ? (
-              <Popconfirm
-                title="ترحّل المسير؟"
-                description="سيُكتب قيد في الأستاذ، ويُغلق حضور الشهر. والتصحيح بعد ذلك يكون بالعكس لا بالتعديل."
-                okText="ترحيل" cancelText="رجوع"
-                onConfirm={() => act('post')}
-              >
-                <Button type="primary" icon={<CheckCircleOutlined />} loading={busy}>ترحيل</Button>
-              </Popconfirm>
-            ) : null}
-            {posted && detail.paid < detail.employees ? (
-              <Popconfirm title="تصرف المرتبات؟"
-                description="مدين مرتبات مستحقة / دائن الخزنة."
-                okText="صرف" cancelText="رجوع" onConfirm={() => act('pay')}>
-                <Button icon={<DollarOutlined />} loading={busy}>صرف المرتبات</Button>
-              </Popconfirm>
-            ) : null}
-            {posted ? (
-              <Popconfirm
-                title="تعكس المسير؟"
-                description="سيُعكس القيد ويعود الشهر مفتوحاً. ويبقى المستند برقمه."
-                okText="عكس" cancelText="رجوع" okButtonProps={{ danger: true }}
-                onConfirm={() => act('reverse')}
-              >
-                <Button danger icon={<RollbackOutlined />} loading={busy}>عكس المسير</Button>
-              </Popconfirm>
-            ) : null}
-            <Button icon={<DownloadOutlined />}
-              onClick={() => writeCsv(
-                `payroll-${detail.year}-${detail.month}`, lineCsv, detail.lines)}>
-              تصدير CSV
-            </Button>
-            <Button icon={<PrinterOutlined />}
-              onClick={() => printReport(
-                { title: 'مسير الرواتب', number: detail.document_number,
-                  meta: [['الشهر', periodLabel(detail.year, detail.month)],
-                    ['الحالة', STATUS[detail.status]?.label ?? detail.status]] },
-                lineCsv as any, detail.lines,
-                [{ label: 'الإجمالي', value: money(detail.gross) },
-                  { label: 'الاستقطاعات', value: money(detail.total_deductions) },
-                  { label: 'الصافي', value: money(detail.net) }])}>
-              طباعة المسير
-            </Button>
-          </Space>
-
           {detail.without_attendance ? (
             <Alert
-              type="warning" showIcon style={{ marginBottom: 12 }}
+              type="warning" showIcon style={{ margin: '6px 0 8px' }}
               message={`${detail.without_attendance} موظف من غير سجل حضور — اتحسبوا حضور كامل`}
               description={'«لم يُرفع الملف» ليست «غياب الشهر كله». احتُسب لهم راتب كامل عن قصد، '
                 + 'لكن يجب أن يعلم أحد بحدوث ذلك قبل الترحيل.'}
             />
           ) : null}
 
-          <StatsRow gutter={[8, 8]} style={{ marginBottom: 12 }}>
-            <Col><Card size="small"><Statistic title="عدد الموظفين" value={detail.employees} /></Card></Col>
-            <Col><Card size="small"><Statistic title="الإجمالي" value={money(detail.gross)} /></Card></Col>
-            <Col><Card size="small"><Statistic title="تأمينات (الموظف)" value={money(detail.insurance_employee)} /></Card></Col>
-            <Col><Card size="small"><Statistic title="حصة الشركة" value={money(detail.insurance_employer)} /></Card></Col>
-            <Col><Card size="small"><Statistic title="ضريبة" value={money(detail.tax)} /></Card></Col>
-            <Col><Card size="small"><Statistic title="سلف" value={money(detail.advances)} /></Card></Col>
-            <Col><Card size="small">
-              <Statistic title="الصافي" value={money(detail.net)} valueStyle={{ color: '#0B5CA8' }} />
-            </Card></Col>
-          </StatsRow>
-
           <Table
             {...lineKb.tableProps}
+            className="sl-table"
             rowKey="id" size="small"
             columns={lineTable.columns} dataSource={detail.lines}
-            pagination={{ defaultPageSize: PAGE_SIZE, showSizeChanger: true }}
+            pagination={{
+              defaultPageSize: PAGE_SIZE, showSizeChanger: true,
+              // إجماليات المسير — كانت كروت فوق الجدول.
+              showTotal: () => (
+                <span className="sl-foot">
+                  <span>الموظفين: <b>{detail.employees}</b></span>
+                  <span>الإجمالي: <b>{money(detail.gross)}</b></span>
+                  <span>تأمينات (الموظف): <b>{money(detail.insurance_employee)}</b></span>
+                  <span>حصة الشركة: <b>{money(detail.insurance_employer)}</b></span>
+                  <span>ضريبة: <b>{money(detail.tax)}</b></span>
+                  <span>سلف: <b>{money(detail.advances)}</b></span>
+                  <span>الصافي: <b style={{ color: '#0B5CA8' }}>{money(detail.net)}</b></span>
+                </span>
+              ),
+            }}
             scroll={{ x: 'max-content' }}
             locale={{ emptyText: 'لا توجد سطور' }}
           />
         </>
       )}
+    </ListPage>
 
       <TabModal
         open={!!slip} width={640} title={`قسيمة راتب — ${slip?.employee_name ?? ''}`}
@@ -460,6 +474,6 @@ export default function Payroll() {
           </Col>
         </Row>
       </TabModal>
-    </Card>
+    </>
   );
 }

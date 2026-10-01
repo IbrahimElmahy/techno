@@ -185,6 +185,8 @@ export default function ChartTab() {
       <div style={{ textAlign: 'end', marginBottom: 8 }}>{chartTabCols.control}</div>
       <Table
         {...chartKb.tableProps}
+        className="sl-table"
+        size="small"
         rowKey="id"
         loading={loading}
         dataSource={filter.filtered}

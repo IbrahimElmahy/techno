@@ -2,13 +2,14 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { PAGE_SIZE } from '../utils/pagination';
 import { searchFilter, searchRank } from '../utils/arabicSort';
 import {
-  Button, Card, Col, Collapse, Empty, Form, Input, Row, Select, Skeleton, Space, Switch, Table, Tag, Tooltip, message,
+  Button, Col, Collapse, Empty, Form, Input, Row, Select, Skeleton, Space, Switch, Table, Tag, Tooltip, message,
 } from 'antd';
 import { Popconfirm } from '../components/noConfirm';
 import {
   PlusOutlined, EditOutlined, DeleteOutlined, SearchOutlined, ReloadOutlined,
-  EyeOutlined, EyeInvisibleOutlined,
+  EyeOutlined, EyeInvisibleOutlined, PartitionOutlined,
 } from '@ant-design/icons';
+import ListPage from '../components/ListPage';
 import { api } from '../api/client';
 import { useTableKeyboard } from '../components/keyboard';
 import { useScreenShortcuts } from '../components/keyboard';
@@ -30,6 +31,7 @@ function AccountGroup({ rows, columns, onOpen }: {
   return (
     <Table
       {...kb.tableProps}
+      className="sl-table"
       dataSource={rows}
       columns={columns}
       rowKey="id"
@@ -37,7 +39,7 @@ function AccountGroup({ rows, columns, onOpen }: {
       tableLayout="fixed"
       pagination={rows.length > 25
         ? { defaultPageSize: PAGE_SIZE, showSizeChanger: true, size: 'small',
-            showTotal: (t: number) => `عدد: ${t}` }
+            showTotal: (t: number) => <span className="sl-foot"><span>عدد: <b>{t}</b></span></span> }
         : false}
     />
   );
@@ -294,35 +296,36 @@ export default function SubAccounts() {
   const activeKeys = searching ? sections.map((s) => s.name) : openKeys;
 
   return (
-    <div>
-      <FocusedRowsBanner focus={focus} total={rows.length} noun="حساب"
-                         shown={filtered.length} />
-      <Card
+    <>
+      <ListPage
+        icon={<PartitionOutlined />}
         title="الحسابات الفرعيه"
-        extra={
-          <Space>
-            {tableCols.control}
-            <Button icon={<ReloadOutlined />} onClick={load}>اعادة تحميل</Button>
-            {canWrite && (
-              <Button data-shortcut="F2" type="primary" icon={<PlusOutlined />} onClick={() => setCreateOpen(true)}>
-                حساب فرعي جديد
-              </Button>
-            )}
-          </Space>
-        }
+        subtitle="الحسابات اللي بتتسجّل عليها القيود — متجمّعة تحت حساباتها الرئيسية"
+        actions={(<>
+          {canWrite && (
+            <Button data-shortcut="F2" type="primary" className="sl-create" icon={<PlusOutlined />}
+              onClick={() => setCreateOpen(true)}>
+              حساب فرعي جديد
+            </Button>
+          )}
+          <Button icon={<ReloadOutlined />} onClick={load}>اعادة تحميل</Button>
+          {tableCols.control}
+        </>)}
+        filters={(
+          <Input className="sl-f-search" allowClear value={search}
+            placeholder="بحث بالاسم أو الكود أو الحساب الرئيسي"
+            ref={searchRef}
+            prefix={<SearchOutlined />} onChange={(e) => setSearch(e.target.value)} />
+        )}
       >
-        <Row style={{ marginBottom: 12 }}>
-          <Col xs={24} md={8}>
-            <Input allowClear value={search} placeholder="بحث بالاسم أو الكود أو الحساب الرئيسي"
-              ref={searchRef}
-              prefix={<SearchOutlined />} onChange={(e) => setSearch(e.target.value)} />
-          </Col>
-        </Row>
+        <FocusedRowsBanner focus={focus} total={rows.length} noun="حساب"
+                           shown={filtered.length} />
 
         {loading && <Skeleton active paragraph={{ rows: 4 }} />}
         {!loading && !sections.length && <Empty description="لا توجد حسابات مطابقة" />}
 
         <Collapse
+          style={{ margin: '6px 0' }}
           accordion={false}
           activeKey={activeKeys}
           onChange={(k) => setOpenKeys(Array.isArray(k) ? k : [k])}
@@ -341,7 +344,15 @@ export default function SubAccounts() {
             ),
           }))}
         />
-      </Card>
+        {!loading && sections.length > 0 && (
+          <div style={{ padding: '10px 4px', borderTop: '1px solid #f1f5f9' }}>
+            <span className="sl-foot">
+              <span>عدد الحسابات: <b>{filtered.length}</b></span>
+              <span>الحسابات الرئيسية: <b>{sections.length}</b></span>
+            </span>
+          </div>
+        )}
+      </ListPage>
 
       <TabModal footer={null} centered title="حساب فرعي جديد" width={720} destroyOnHidden
         open={createOpen} onCancel={() => setCreateOpen(false)}>
@@ -364,6 +375,6 @@ export default function SubAccounts() {
           </Space>
         </Form>
       </TabModal>
-    </div>
+    </>
   );
 }

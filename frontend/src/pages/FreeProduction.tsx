@@ -1,24 +1,28 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { PAGE_SIZE, PAGE_SIZE_OPTIONS } from '../utils/pagination';
 import { searchFilter, searchRank, sortByName } from '../utils/arabicSort';
 import {
-  Alert, Button, Card, Col, DatePicker, Divider, Form, Input, Row, Select, Space, Table, Tag, message,
+  Button, Col, DatePicker, Form, Input, Row, Select, Space, Table, Tag, message,
 } from 'antd';
-import { Statistic } from '../components/Statistic';
 import { InputNumber } from '../components/NumberInput';
-import { BuildOutlined, DeleteOutlined, PlusOutlined, ReloadOutlined } from '@ant-design/icons';
+import {
+  ArrowRightOutlined, BuildOutlined, ClearOutlined, DeleteOutlined, PlusOutlined, ReloadOutlined,
+  SearchOutlined,
+} from '@ant-design/icons';
+import ListPage from '../components/ListPage';
+import DateRangeFilter from '../components/DateRangeFilter';
 import dayjs, { Dayjs } from 'dayjs';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../api/client';
 import ColumnSettings, { useHiddenColumns } from '../components/ColumnSettings';
 import ExportExcelButton from '../components/ExportExcelButton';
 import { guardQuantity } from '../components/quantityGuard';
-import ListToolbar, { useListFilter } from '../components/ListToolbar';
+import { useListFilter } from '../components/ListToolbar';
 import { matchesStatement } from '../utils/statements';
 import ProductPickerModal from '../components/ProductPickerModal';
-import { useTableKeyboard } from '../components/keyboard';
+import { useScreenShortcuts, useTableKeyboard } from '../components/keyboard';
 import { useLookup, labelMap } from '../hooks/useLookup';
-import { money } from '../utils/money';
+import { money, numeralsLocale } from '../utils/money';
 
 /**
  * انتاج حر — production that happened without a stored recipe.
@@ -265,19 +269,51 @@ export default function FreeProduction() {
       ? prev.filter((k) => k !== o.id) : [...prev, o.id])),
   });
 
+  /**
+   * ورقة الإنتاج الجديد — بقت شاشة لوحدها زي إذن التحويل (السجل هو الصفحة، والزرار الأخضر
+   * بيفتح الورقة). الحالة نفسها ماتلمستش: اللي اتكتب بيفضل لو رجعت وفتحت تاني.
+   */
+  const [entryOpen, setEntryOpen] = useState(false);
+
+  // F3 للبحث في السجل — كانت جاية من `ListToolbar`.
+  const searchRef = useRef<any>(null);
+  useScreenShortcuts({ onSearch: () => { searchRef.current?.focus?.(); } }, !entryOpen);
+
+  const shownTotal = filter.filtered.reduce((t, o) => t + Number(o.total_cost || 0), 0);
+  const footer = (
+    <span className="sl-foot">
+      <span>المعروض: <b>{filter.filtered.length.toLocaleString(numeralsLocale())}</b>
+        {' '}من {orders.length.toLocaleString(numeralsLocale())} أمر</span>
+      <span>اجمالي المنتجات المعروضة: <b>{money(shownTotal)}</b></span>
+    </span>
+  );
+
   return (
-    <div>
+    <>
       {productWindow}
-      <Card
-        title={<span><BuildOutlined /> إنتاج حر</span>}
-        style={{ marginBottom: 16 }}
-        extra={<Button onClick={reset}>تفريغ</Button>}
-      >
-        <Alert
-          type="info" showIcon style={{ marginBottom: 12 }}
-          message="إنتاج من غير وصفة"
-          description="اكتب الخامات المنصرفة فعلاً والمنتج الناتج. تُؤخذ الكميات كما هي دون أي نسب تضربها، حتى لا يتغيّر الرقم المقيس."
-        />
+      {entryOpen ? (
+      // شكل المستند الجديد: كروت بيضا على رمادي. الشكل بس — نفس الخانات والأوامر.
+      <div className="sale-doc">
+        <div className="sale-card sale-head">
+          <div className="sale-head-row">
+            <Button size="small" icon={<ArrowRightOutlined />} onClick={() => setEntryOpen(false)}>
+              رجوع للسجل
+            </Button>
+            <span className="sale-title"><BuildOutlined /> إنتاج حر</span>
+            <Tag color="blue" style={{ marginInlineEnd: 0 }}>من غير وصفة</Tag>
+            <div className="sale-toolbar-row">
+              <Button onClick={reset}>تفريغ</Button>
+              <Button type="primary" loading={saving} onClick={submit}>ترحيل الإنتاج</Button>
+            </div>
+          </div>
+        </div>
+
+        <div className="sale-form">
+        <div className="sale-card">
+        {/* كان تنبيه أزرق — بقى سطر شرح فوق الخانات. */}
+        <div style={{ color: '#64748b', fontSize: 12, marginBottom: 10 }}>
+          اكتب الخامات المنصرفة فعلاً والمنتج الناتج. تُؤخذ الكميات كما هي دون أي نسب تضربها، حتى لا يتغيّر الرقم المقيس.
+        </div>
 
         <Row gutter={[12, 12]}>
           <Col xs={24} md={8}>
@@ -331,9 +367,10 @@ export default function FreeProduction() {
             </Form.Item>
           </Col>
         </Row>
+        </div>
 
-        <Divider orientation="right" style={{ marginTop: 16 }}>الخامات المصروفة</Divider>
-
+        <div className="sale-card">
+        <div style={{ fontWeight: 700, marginBottom: 8 }}>الخامات المصروفة</div>
         <Table
           size="small" pagination={false} rowKey="key" dataSource={lines}
           columns={[
@@ -390,25 +427,36 @@ export default function FreeProduction() {
           ]}
         />
 
-        <Space style={{ marginTop: 12 }}>
+        <Space style={{ marginTop: 12 }} size={16}>
           <Button
             icon={<PlusOutlined />}
             onClick={() => setPickerOpen(true)}
           >
             إضافة خامة
           </Button>
-          <Statistic
-            title="تكلفة الخامات" value={materialCost} precision={2}
-            valueStyle={{ fontSize: 18 }}
-          />
+          <span>تكلفة الخامات: <b style={{ fontSize: 16 }}>{money(materialCost)}</b></span>
           <Button type="primary" loading={saving} onClick={submit}>ترحيل الإنتاج</Button>
         </Space>
-      </Card>
+        </div>
+        </div>
+      </div>
+      ) : (
 
-      <Card
-        title="سجل الإنتاج الحر"
-        extra={
-          <Space>
+      <ListPage
+        icon={<BuildOutlined />}
+        title="إنتاج حر" muted="(من غير وصفة)"
+        subtitle="الخامات المنصرفة فعلاً والمنتج الناتج — الكميات زي ما اتقاست، من غير نسب"
+        actions={(<>
+            <Button data-shortcut="F2" type="primary" icon={<PlusOutlined />} className="sl-create"
+              onClick={() => setEntryOpen(true)}>
+              تسجيل إنتاج حر
+            </Button>
+            <ExportExcelButton
+              name="سجل الإنتاج الحر"
+              rows={filter.filtered}
+              tableColumns={visibleColumns}
+              style={{ marginInlineStart: 0 }}
+            />
             <ColumnSettings
               choices={columns.map((c: any) => ({
                 key: String(c.key), title: typeof c.title === 'string' ? c.title : '',
@@ -417,28 +465,24 @@ export default function FreeProduction() {
               hidden={cols.hidden} onChange={cols.setHidden}
               order={cols.order} onMove={(k, d) => cols.move(k, d, columns.map((c) => String(c.key ?? (c as any).dataIndex ?? '')))}
             />
-            <ExportExcelButton
-              name="سجل الإنتاج الحر"
-              rows={filter.filtered}
-              tableColumns={visibleColumns}
-              style={{ marginInlineStart: 0 }}
-            />
             <Button icon={<ReloadOutlined />} onClick={load}>تحديث</Button>
-          </Space>
-        }
+        </>)}
+        filters={(<>
+          <Input className="sl-f-search" allowClear ref={searchRef}
+            prefix={<SearchOutlined />} placeholder="بحث برقم السند أو المنتج أو أمر التشغيل أو البيان"
+            value={filter.query} onChange={(e) => filter.setQuery(e.target.value)} />
+          <DateRangeFilter className="sl-f-dates" value={filter.range} onChange={filter.setRange} />
+          <Input allowClear placeholder="البيان"
+            value={filter.values.statement ?? undefined}
+            onChange={(e) => filter.setValue('statement', e.target.value || undefined)} />
+          <Button className="sl-f-clear" icon={<ClearOutlined />} onClick={filter.reset}>مسح</Button>
+        </>)}
       >
-        <ListToolbar
-          searchPlaceholder="بحث برقم السند أو المنتج أو أمر التشغيل أو البيان"
-          query={filter.query} onQueryChange={filter.setQuery}
-          values={filter.values} onValueChange={filter.setValue}
-          showDateRange range={filter.range} onRangeChange={filter.setRange}
-          onReset={filter.reset} total={orders.length} shown={filter.filtered.length}
-          filters={[{ key: 'statement', placeholder: 'البيان', kind: 'text' }]}
-        />
         <Table
           {...kb.tableProps}
+          className="sl-table"
           dataSource={filter.filtered} columns={visibleColumns} rowKey="id" loading={loading}
-          size="middle" tableLayout="fixed"
+          size="small" tableLayout="fixed"
           expandable={{
             expandedRowKeys: expanded,
             onExpandedRowsChange: (keys) => setExpanded(keys as number[]),
@@ -461,10 +505,12 @@ export default function FreeProduction() {
           }}
           pagination={{
             defaultPageSize: PAGE_SIZE, showSizeChanger: true,
-            showTotal: (t) => `الإجمالي: ${t}`, pageSizeOptions: PAGE_SIZE_OPTIONS,
+            locale: { items_per_page: '' },
+            showTotal: () => footer, pageSizeOptions: PAGE_SIZE_OPTIONS,
           }}
         />
-      </Card>
-    </div>
+      </ListPage>
+      )}
+    </>
   );
 }

@@ -1,10 +1,8 @@
 import React, { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { PAGE_SIZE, PAGE_SIZE_OPTIONS } from '../utils/pagination';
 import { searchFilter, searchRank, sortByName } from '../utils/arabicSort';
-import {
-  Tabs, Table, Select, DatePicker, Card, Tag, Button, Space, Col, Divider, Empty,
-} from 'antd';
-import { Statistic } from '../components/Statistic';
+import { Table, Select, Tag, Button, Divider, Empty } from 'antd';
 import { InputNumber } from '../components/NumberInput';
 import { useFocusedIds, FocusedRowsBanner } from '../components/FocusedRows';
 import {
@@ -20,7 +18,8 @@ import { useTableColumns } from '../components/ColumnSettings';
 import DateRangeFilter from '../components/DateRangeFilter';
 import StatementFilter, { statementColumn } from '../components/StatementFilter';
 
-import StatsRow from '../components/StatsRow';
+import ListPage from '../components/ListPage';
+import { useCanSeeStats } from '../components/StatsRow';
 import { numeralsLocale } from '../utils/money';
 // --- Shared helpers -----------------------------------------------------------------------
 type Period = 'week' | 'month' | 'year';
@@ -93,50 +92,89 @@ export default function Reports() {
     api.get('/api/v1/items').then((r) => setItems(r.data)).catch((err) => console.error(err));
   }, []);
 
+  // التاب اللي اتفتح مرة بيفضل متركّب (زي `Tabs` قبل كده) — فلاتره وداتاه مابتضيعش لما ترجعله.
+  const [visited, setVisited] = useState<Set<string>>(() => new Set([tab]));
+  useEffect(() => {
+    setVisited((v) => (v.has(tab) ? v : new Set(v).add(tab)));
+  }, [tab]);
+
+  // فلاتر التاب وأزراره بتترسم في سطر الفلاتر والترويسة بتوع الإطار — بـportal، والحالة جوّه التاب.
+  const [filtersSlot, setFiltersSlot] = useState<HTMLElement | null>(null);
+  const [actionsSlot, setActionsSlot] = useState<HTMLElement | null>(null);
+
   const shared = { period, range, warehouses, items };
+  const TABS: { key: string; label: string; icon: React.ReactNode; dot?: string;
+    render: (slots?: Slots) => React.ReactNode }[] = [
+    { key: 'production', label: 'الإنتاج والاستهلاك', icon: <BuildOutlined />,
+      render: (slots) => <ProductionTab {...shared} slots={slots} /> },
+    { key: 'inventory', label: 'المخازن (الأرصدة)', icon: <DatabaseOutlined />,
+      render: (slots) => <InventoryTab {...shared} slots={slots} /> },
+    { key: 'wastage', label: 'الهوالك', icon: <DeleteOutlined />,
+      render: (slots) => <WastageTab {...shared} slots={slots} /> },
+    { key: 'stagnant', label: 'الرواكد', icon: <HourglassOutlined />, dot: '#cf1322',
+      render: (slots) => <StagnantTab {...shared} slots={slots} /> },
+    { key: 'sales', label: 'المبيعات', icon: <ShoppingOutlined />,
+      render: (slots) => <SalesTab {...shared} slots={slots} /> },
+  ];
+  const cur = TABS.find((t) => t.key === tab);
 
   return (
-    <Card title="التقارير الشاملة">
-      <Space wrap style={{ marginBottom: 16 }}>
-        <span>الفترة:</span>
-        <Select<Period>
-          value={period}
-          onChange={setPeriod}
-          style={{ width: 130 }}
-          options={(Object.keys(PERIOD_LABEL) as Period[]).map((p) => ({ value: p, label: PERIOD_LABEL[p] }))}
-        />
-        <div style={{ width: 280 }}>
-          <DateRangeFilter
-            value={range as any}
-            onChange={(v) => setRange(v as Range)}
-          />
-        </div>
-        <Divider type="vertical" />
-        <span>تصدير:</span>
+    <ListPage
+      icon={cur?.icon ?? <BuildOutlined />}
+      title={cur?.label ?? 'التقارير الشاملة'}
+      muted="(التقارير الشاملة)"
+      subtitle="الإنتاج والمخازن والهوالك والرواكد والمبيعات — على نفس الفترة"
+      tabs={TABS.map((t) => ({ key: t.key, label: <>{t.icon} {t.label}</>, dot: t.dot }))}
+      activeTab={tab}
+      onTabChange={setTab}
+      actions={(<>
+        <span ref={setActionsSlot} className="sl-slot" />
         <ExportButton type="sales" label="المبيعات CSV" params={dateParams(range)} />
         <ExportButton type="purchases" label="المشتريات CSV" params={dateParams(range)} />
         <ExportButton type="treasury" label="الأرصدة CSV" />
-      </Space>
-
-      <Tabs
-        activeKey={tab} onChange={setTab}
-        items={[
-          { key: 'production', label: <span><BuildOutlined /> الإنتاج والاستهلاك</span>, children: <ProductionTab {...shared} /> },
-          { key: 'inventory', label: <span><DatabaseOutlined /> المخازن (الأرصدة)</span>, children: <InventoryTab {...shared} /> },
-          { key: 'wastage', label: <span><DeleteOutlined /> الهوالك</span>, children: <WastageTab {...shared} /> },
-          { key: 'stagnant', label: <span style={{ color: '#cf1322' }}><HourglassOutlined /> الرواكد</span>, children: <StagnantTab {...shared} /> },
-          { key: 'sales', label: <span><ShoppingOutlined /> المبيعات</span>, children: <SalesTab {...shared} /> },
-        ]}
-      />
-    </Card>
+      </>)}
+      filters={(<>
+        <Select<Period>
+          value={period}
+          onChange={setPeriod}
+          labelRender={({ label }) => <>الفترة: {label}</>}
+          options={(Object.keys(PERIOD_LABEL) as Period[]).map((p) => ({ value: p, label: PERIOD_LABEL[p] }))}
+        />
+        <DateRangeFilter
+          className="sl-f-dates"
+          value={range as any}
+          onChange={(v) => setRange(v as Range)}
+        />
+        <span ref={setFiltersSlot} style={{ display: 'contents' }} />
+      </>)}
+    >
+      {TABS.filter((t) => visited.has(t.key)).map((t) => (
+        <div key={t.key} style={{ display: t.key === tab ? undefined : 'none' }}>
+          {t.render(t.key === tab ? { filters: filtersSlot, actions: actionsSlot } : undefined)}
+        </div>
+      ))}
+    </ListPage>
   );
 }
+
+interface Slots { filters: HTMLElement | null; actions: HTMLElement | null }
+
+/** بيرسم المحتوى في مكانه من الإطار — والتاب المستخبي مالوش فلاتر ظاهرة. */
+function Slot({ to, children }: { to?: HTMLElement | null; children: React.ReactNode }) {
+  return to ? createPortal(children, to) : null;
+}
+
+const PAGINATION = {
+  defaultPageSize: PAGE_SIZE, showSizeChanger: true, pageSizeOptions: PAGE_SIZE_OPTIONS,
+  locale: { items_per_page: '' },
+};
 
 interface TabProps {
   period: Period;
   range: Range;
   warehouses: Lookup[];
   items: Lookup[];
+  slots?: Slots;
 }
 
 // --- 1) Production & consumption ----------------------------------------------------------
@@ -159,7 +197,7 @@ interface ProdPeriodRow {
   total_cost: string;
 }
 
-function ProductionTab({ period, range, items }: TabProps) {
+function ProductionTab({ period, range, items, slots }: TabProps) {
   const [productId, setProductId] = useState<number | undefined>();
   const [statement, setStatement] = useState('');
   // السيرفر بيقول لو المستند ده عليه «بيان» أصلاً — الخانة بتظهر بس لما يكون فيه.
@@ -205,7 +243,7 @@ function ProductionTab({ period, range, items }: TabProps) {
 
   return (
     <div>
-      <Space wrap style={{ marginBottom: 16 }}>
+      <Slot to={slots?.filters}>
         <Select
           allowClear showSearch placeholder="كل المنتجات"
           style={{ width: 240 }} value={productId} onChange={setProductId}
@@ -214,17 +252,17 @@ function ProductionTab({ period, range, items }: TabProps) {
           <StatementFilter value={statement} onChange={setStatement} style={{ width: 240 }} />
         )}
         <Button type="primary" icon={<ReloadOutlined />} onClick={load} loading={loading}>تطبيق</Button>
-      </Space>
+      </Slot>
 
       <Divider orientation="right">ملخص حسب الفترة ({PERIOD_LABEL[period]})</Divider>
-      <Table rowKey={(r) => r.period} size="small" loading={loading} pagination={false}
+      <Table className="sl-table" rowKey={(r) => r.period} size="small" loading={loading} pagination={false}
         dataSource={byPeriod} columns={periodCols}
         locale={{ emptyText: <Empty description="لا توجد بيانات" /> }} />
 
       <Divider orientation="right">التفاصيل</Divider>
       {/* `_key` مش رقم المستند: الدفعة المنقولة ممكن رقمها يطابق أمر تصنيع، والمفتاح المكرر
           بيخلّي الجدول يعيد رسم صف مكان التاني. */}
-      <Table rowKey="_key" loading={loading} pagination={{ defaultPageSize: PAGE_SIZE, showSizeChanger: true, pageSizeOptions: PAGE_SIZE_OPTIONS }}
+      <Table className="sl-table" size="small" rowKey="_key" loading={loading} pagination={PAGINATION}
         dataSource={rows} columns={detailCols}
         locale={{ emptyText: <Empty description="لا توجد بيانات" /> }} />
     </div>
@@ -240,7 +278,7 @@ interface InvRow {
   value: string;
 }
 
-function InventoryTab({ warehouses, items }: TabProps) {
+function InventoryTab({ warehouses, items, slots }: TabProps) {
   const [warehouseId, setWarehouseId] = useState<number | undefined>();
   const [itemId, setItemId] = useState<number | undefined>();
   const [rows, setRows] = useState<InvRow[]>([]);
@@ -277,7 +315,7 @@ function InventoryTab({ warehouses, items }: TabProps) {
 
   return (
     <div>
-      <Space wrap style={{ marginBottom: 16 }}>
+      <Slot to={slots?.filters}>
         <Select showSearch
           allowClear placeholder="كل المخازن" style={{ width: 200 }} value={warehouseId} onChange={setWarehouseId}
           options={sortByName(warehouses, (w) => w.name).map((w) => ({ value: w.id, label: w.name }))} filterOption={searchFilter} filterSort={searchRank} />
@@ -286,10 +324,10 @@ function InventoryTab({ warehouses, items }: TabProps) {
           style={{ width: 240 }} value={itemId} onChange={setItemId}
           options={items.map((i) => ({ value: i.id, label: i.name }))} filterOption={searchFilter} filterSort={searchRank}/>
         <Button type="primary" icon={<ReloadOutlined />} onClick={load} loading={loading}>تطبيق</Button>
-      </Space>
+      </Slot>
+      <Slot to={slots?.actions}>{inventoryTabCols.control}</Slot>
 
-      <div style={{ textAlign: 'end', marginBottom: 8 }}>{inventoryTabCols.control}</div>
-      <Table rowKey="_key" loading={loading} pagination={{ defaultPageSize: PAGE_SIZE, showSizeChanger: true, pageSizeOptions: PAGE_SIZE_OPTIONS }}
+      <Table className="sl-table" size="small" rowKey="_key" loading={loading} pagination={PAGINATION}
         dataSource={rows} columns={inventoryTabCols.columns}
         summary={(data) => {
           const total = data.reduce((s, r) => s + Number(r.value ?? 0), 0);
@@ -317,7 +355,7 @@ interface WasteRow {
   created_at: string;
 }
 
-function WastageTab({ range, warehouses, items }: TabProps) {
+function WastageTab({ range, warehouses, items, slots }: TabProps) {
   const [itemId, setItemId] = useState<number | undefined>();
   const [warehouseId, setWarehouseId] = useState<number | undefined>();
   const [statement, setStatement] = useState('');
@@ -366,9 +404,18 @@ function WastageTab({ range, warehouses, items }: TabProps) {
     export: { name: 'الهوالك', rows },
   });
 
+  // كروت الإجماليات بقت سطر تحت الجدول — ولسه للي عنده `stats.view` بس.
+  const canSeeStats = useCanSeeStats();
+  const footer = canSeeStats ? (
+    <span className="sl-foot">
+      <span>إجمالي كمية الهالك: <b className="is-neg">{qty(totalQty)}</b></span>
+      <span>إجمالي تكلفة الهالك: <b className="is-neg">{egp(totalCost)}</b></span>
+    </span>
+  ) : null;
+
   return (
     <div>
-      <Space wrap style={{ marginBottom: 16 }}>
+      <Slot to={slots?.filters}>
         <Select
           allowClear showSearch placeholder="كل الأصناف"
           style={{ width: 240 }} value={itemId} onChange={setItemId}
@@ -380,19 +427,12 @@ function WastageTab({ range, warehouses, items }: TabProps) {
           <StatementFilter value={statement} onChange={setStatement} style={{ width: 240 }} />
         )}
         <Button type="primary" icon={<ReloadOutlined />} onClick={load} loading={loading}>تطبيق</Button>
-      </Space>
+      </Slot>
 
-      <StatsRow gutter={16} style={{ marginBottom: 16 }}>
-        <Col span={12}>
-          <Card><Statistic title="إجمالي كمية الهالك" value={Number(totalQty)} precision={3} valueStyle={{ color: '#cf1322' }} /></Card>
-        </Col>
-        <Col span={12}>
-          <Card><Statistic title="إجمالي تكلفة الهالك" value={Number(totalCost)} precision={2} valueStyle={{ color: '#cf1322' }} /></Card>
-        </Col>
-      </StatsRow>
+      <Slot to={slots?.actions}>{wastageTabCols.control}</Slot>
 
-      <div style={{ textAlign: 'end', marginBottom: 8 }}>{wastageTabCols.control}</div>
-      <Table rowKey="_key" loading={loading} pagination={{ defaultPageSize: PAGE_SIZE, showSizeChanger: true, pageSizeOptions: PAGE_SIZE_OPTIONS }}
+      <Table className="sl-table" size="small" rowKey="_key" loading={loading}
+        pagination={{ ...PAGINATION, showTotal: () => footer }}
         dataSource={rows} columns={wastageTabCols.columns}
         locale={{ emptyText: <Empty description="لا توجد بيانات" /> }} />
     </div>
@@ -408,7 +448,7 @@ interface StagnantRow {
   value: string;
 }
 
-function StagnantTab({ warehouses }: TabProps) {
+function StagnantTab({ warehouses, slots }: TabProps) {
   const [days, setDays] = useState<number>(90);
   const [warehouseId, setWarehouseId] = useState<number | undefined>();
   const [rows, setRows] = useState<StagnantRow[]>([]);
@@ -453,20 +493,22 @@ function StagnantTab({ warehouses }: TabProps) {
 
   return (
     <div>
-      <Space wrap style={{ marginBottom: 16 }}>
-        <span>عدد الأيام دون حركة:</span>
-        <InputNumber min={1} value={days} onChange={(v) => setDays(v || 90)} style={{ width: 120 }} />
+      <Slot to={slots?.filters}>
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+          <span>عدد الأيام دون حركة:</span>
+          <InputNumber min={1} value={days} onChange={(v) => setDays(v || 90)} style={{ width: 120 }} />
+        </span>
         <Select showSearch
           allowClear placeholder="كل المخازن" style={{ width: 200 }} value={warehouseId} onChange={setWarehouseId}
           options={sortByName(warehouses, (w) => w.name).map((w) => ({ value: w.id, label: w.name }))} filterOption={searchFilter} filterSort={searchRank} />
         <Button type="primary" danger icon={<ReloadOutlined />} onClick={load} loading={loading}>تطبيق</Button>
         {asOf && <Tag color="default">حتى تاريخ: {dayjs(asOf).format('YYYY-MM-DD')}</Tag>}
-      </Space>
+      </Slot>
+      <Slot to={slots?.actions}>{stagnantTabCols.control}</Slot>
 
       <FocusedRowsBanner focus={focus} total={rows.length} noun="صنف"
                          shown={shownRows.length} />
-      <div style={{ textAlign: 'end', marginBottom: 8 }}>{stagnantTabCols.control}</div>
-      <Table rowKey="_key" loading={loading} pagination={{ defaultPageSize: PAGE_SIZE, showSizeChanger: true, pageSizeOptions: PAGE_SIZE_OPTIONS }}
+      <Table className="sl-table" size="small" rowKey="_key" loading={loading} pagination={PAGINATION}
         dataSource={shownRows} columns={stagnantTabCols.columns}
         rowClassName={(r) => (r.last_out_date === null ? 'stagnant-never-moved' : '')}
         onRow={(r) => (r.last_out_date === null ? { style: { background: '#fff1f0' } } : {})}
@@ -500,7 +542,7 @@ interface SalesPeriodRow {
   net: string;
 }
 
-function SalesTab({ period, range }: TabProps) {
+function SalesTab({ period, range, slots }: TabProps) {
   const [statement, setStatement] = useState('');
   const [rows, setRows] = useState<SalesRow[]>([]);
   const [byPeriod, setByPeriod] = useState<SalesPeriodRow[]>([]);
@@ -524,6 +566,15 @@ function SalesTab({ period, range }: TabProps) {
   // أي فلتر يتغيّر بيحمّل على طول.
   useEffect(() => { load(); }, [period, range, statement]);
 
+  // كروت الإجماليات بقت سطر تحت الجدول — ولسه للي عنده `stats.view` بس.
+  const canSeeStats = useCanSeeStats();
+  const footer = canSeeStats ? (
+    <span className="sl-foot">
+      <span>إجمالي المبيعات: <b>{egp(grossTotal)}</b></span>
+      <span>صافي المبيعات: <b className="is-pos">{egp(netTotal)}</b></span>
+    </span>
+  ) : null;
+
   const periodCols = [
     { title: 'الفترة', dataIndex: 'period', key: 'period', ...textColumn(byPeriod, (r: any) => r.period) },
     { title: 'الإجمالي', dataIndex: 'gross', key: 'gross', ...numberColumn<any>((r) => r.gross), align: 'left' as const, render: egp },
@@ -542,29 +593,23 @@ function SalesTab({ period, range }: TabProps) {
 
   return (
     <div>
-      <Space wrap style={{ marginBottom: 16 }}>
+      <Slot to={slots?.filters}>
         <StatementFilter value={statement} onChange={setStatement} style={{ width: 240 }} />
         <Button type="primary" icon={<ReloadOutlined />} onClick={load} loading={loading}>تطبيق</Button>
+      </Slot>
+      <Slot to={slots?.actions}>
         <ExportButton type="sales" label="تصدير CSV"
           params={{ ...dateParams(range), ...(statement ? { statement } : {}) }} />
-      </Space>
-
-      <StatsRow gutter={16} style={{ marginBottom: 16 }}>
-        <Col span={12}>
-          <Card><Statistic title="إجمالي المبيعات" value={Number(grossTotal)} precision={2} valueStyle={{ color: '#888' }} /></Card>
-        </Col>
-        <Col span={12}>
-          <Card><Statistic title="صافي المبيعات" value={Number(netTotal)} precision={2} valueStyle={{ color: '#3f8600' }} /></Card>
-        </Col>
-      </StatsRow>
+      </Slot>
 
       <Divider orientation="right">ملخص حسب الفترة ({PERIOD_LABEL[period]})</Divider>
-      <Table rowKey={(r) => r.period} size="small" loading={loading} pagination={false}
+      <Table className="sl-table" rowKey={(r) => r.period} size="small" loading={loading} pagination={false}
         dataSource={byPeriod} columns={periodCols}
         locale={{ emptyText: <Empty description="لا توجد بيانات" /> }} />
 
       <Divider orientation="right">التفاصيل</Divider>
-      <Table rowKey={(r) => r.document_number} loading={loading} pagination={{ defaultPageSize: PAGE_SIZE, showSizeChanger: true, pageSizeOptions: PAGE_SIZE_OPTIONS }}
+      <Table className="sl-table" size="small" rowKey={(r) => r.document_number} loading={loading}
+        pagination={{ ...PAGINATION, showTotal: () => footer }}
         dataSource={rows} columns={detailCols}
         locale={{ emptyText: <Empty description="لا توجد بيانات" /> }} />
     </div>

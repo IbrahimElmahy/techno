@@ -6,33 +6,52 @@
  * **والمسار والتبويبات زي ما هما بالظبط** — `?tab=journal` لسه بيفتح نفس الشاشة،
  * والقايمة والروابط القديمة ماتلمستش.
  */
-import React from 'react';
-import { Tabs } from 'antd';
+import React, { useEffect, useState } from 'react';
 import {
   BookOutlined, FileAddOutlined, BankOutlined, ProfileOutlined,
-  SafetyCertificateOutlined,
+  SafetyCertificateOutlined, AuditOutlined,
 } from '@ant-design/icons';
 import { useQueryTab } from '../components/useQueryTab';
+import ListPage from '../components/ListPage';
 import ChartTab from './ledger/ChartTab';
 import JournalTab from './ledger/JournalTab';
 import TrialBalanceTab from './ledger/TrialBalanceTab';
 import JournalsTab from './ledger/JournalsTab';
 import IntegrityTab from './ledger/IntegrityTab';
+import './GeneralLedger.css';
+
+const TABS = [
+  { key: 'chart', icon: <BookOutlined />, label: 'دليل الحسابات', render: () => <ChartTab /> },
+  { key: 'journal', icon: <FileAddOutlined />, label: 'القيود اليومية', render: () => <JournalTab /> },
+  { key: 'trial', icon: <BankOutlined />, label: 'ميزان المراجعة', render: () => <TrialBalanceTab /> },
+  { key: 'journals', icon: <ProfileOutlined />, label: 'الدفاتر', render: () => <JournalsTab /> },
+  { key: 'integrity', icon: <SafetyCertificateOutlined />, label: 'سلامة الدفاتر', render: () => <IntegrityTab /> },
+];
 
 export default function GeneralLedger() {
   const [activeTab, selectTab] = useQueryTab('chart');
+
+  // زي `Tabs` بتاعة antd: التبويب بيتبني أول ما يتفتح ويفضل عايش لما تسيبه —
+  // القيد اللي بتكتبه مايضيعش لو بصّيت على الميزان ورجعت.
+  const [visited, setVisited] = useState<string[]>([activeTab]);
+  useEffect(() => {
+    setVisited((v) => (v.includes(activeTab) ? v : [...v, activeTab]));
+  }, [activeTab]);
+
   return (
-    <>
-    <Tabs
-      activeKey={activeTab} onChange={selectTab}
-      items={[
-        { key: 'chart', label: <span><BookOutlined /> دليل الحسابات</span>, children: <ChartTab /> },
-        { key: 'journal', label: <span><FileAddOutlined /> القيود اليومية</span>, children: <JournalTab /> },
-        { key: 'trial', label: <span><BankOutlined /> ميزان المراجعة</span>, children: <TrialBalanceTab /> },
-        { key: 'journals', label: <span><ProfileOutlined /> الدفاتر</span>, children: <JournalsTab /> },
-        { key: 'integrity', label: <span><SafetyCertificateOutlined /> سلامة الدفاتر</span>, children: <IntegrityTab /> },
-      ]}
-    />
-    </>
+    <ListPage
+      icon={<AuditOutlined />}
+      title="الأستاذ العام"
+      subtitle="دليل الحسابات والقيود وميزان المراجعة والدفاتر — كله في مكان واحد"
+      tabs={TABS.map((t) => ({ key: t.key, label: <>{t.icon} {t.label}</> }))}
+      activeTab={activeTab}
+      onTabChange={selectTab}
+    >
+      {TABS.filter((t) => t.key === activeTab || visited.includes(t.key)).map((t) => (
+        <div key={t.key} className="gl-tab" style={{ display: t.key === activeTab ? undefined : 'none' }}>
+          {t.render()}
+        </div>
+      ))}
+    </ListPage>
   );
 }

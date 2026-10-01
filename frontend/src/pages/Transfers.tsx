@@ -6,12 +6,11 @@ import { PAGE_SIZE as TABLE_PAGE_SIZE, PAGE_SIZE_OPTIONS }
   from '../utils/pagination';
 import { searchFilter, searchRank, sortByName } from '../utils/arabicSort';
 import {
-  Alert, Button, Card, Col, DatePicker, Descriptions, Empty, Form, Input, Modal, Row,
+  Alert, Button, Col, DatePicker, Descriptions, Empty, Form, Input, Modal, Row,
   Select, Space, Tag, Tooltip, message,
 } from 'antd';
 // كل جدول هنا بفلتر على كل عمود — شوف `FilterTable`.
 import { FilterTable as Table } from '../components/FilterTable';
-import { Statistic } from '../components/Statistic';
 import dayjs, { Dayjs } from 'dayjs';
 import { InputNumber } from '../components/NumberInput';
 import { Popconfirm } from '../components/noConfirm';
@@ -19,7 +18,7 @@ import {
   PlusOutlined, CheckCircleOutlined, RollbackOutlined, DeleteOutlined,
   ClearOutlined, ArrowLeftOutlined, ArrowRightOutlined, CloseCircleOutlined,
   FileSearchOutlined, EditOutlined, EyeOutlined, PrinterOutlined, ExclamationCircleOutlined,
-  CheckOutlined,
+  CheckOutlined, SwapOutlined, SearchOutlined,
 } from '@ant-design/icons';
 import { useSearchParams } from 'react-router-dom';
 import { api } from '../api/client';
@@ -30,21 +29,22 @@ import { useLookup, labelMap } from '../hooks/useLookup';
 import { guardQuantity } from '../components/quantityGuard';
 import { advanceFrom } from '../components/lineKeyboard';
 import { printTransfer } from '../components/TransferDocument';
-import ListToolbar, { useListFilter } from '../components/ListToolbar';
+import { useListFilter } from '../components/ListToolbar';
+import ListPage, { type ListTab } from '../components/ListPage';
+import DateRangeFilter from '../components/DateRangeFilter';
 import { matchesStatement } from '../utils/statements';
 import ProductPickerModal from '../components/ProductPickerModal';
 import DocumentToolbar, { ToolbarAction } from '../components/DocumentToolbar';
 import { SaveOutlined, FileAddOutlined, UndoOutlined } from '@ant-design/icons';
 import DocumentAuditModal from '../components/DocumentAuditModal';
-import { useTableKeyboard } from '../components/keyboard';
+import { useTableKeyboard, useScreenShortcuts } from '../components/keyboard';
 import { TabModal } from '../components/TabModal';
 import WarehouseGate from '../components/WarehouseGate';
 import DocumentAttachments from '../components/DocumentAttachments';
 import { useTableColumns } from '../components/ColumnSettings';
 import { QTY_DATA_ATTR, flashExistingItem } from '../utils/duplicateItem';
 
-import StatsRow from '../components/StatsRow';
-import { qty } from '../utils/money';
+import { qty, numeralsLocale } from '../utils/money';
 import { useLiveRefresh } from '../utils/live';
 import SummaryTile from '../components/saleDoc/SummaryTile';
 import './docs.extra.css';
@@ -1759,54 +1759,62 @@ export default function Transfers() {
    * التعليق القديم كان واصف نُص المشكلة («الباب بيتفكّ ساعة ما يفتح الصفحة اللي
    * وراه») وحطّ الباب في الفرعين — وده اللي بيسبّبها. الحل إن يكون مخرج واحد.
    */
+  // فلتر «الحالة» بقى شرايح فوق بعدّاداتها — مكان كروت الإحصائيات. نفس قيمة الفلتر.
+  const statusVal = filter.values.status;
+  const activeStatusTab: string = Array.isArray(statusVal)
+    ? (statusVal.length === 1 ? statusVal[0] : 'all')
+    : (statusVal || 'all');
+  const STATUS_DOTS: Record<string, string> = {
+    pending: '#F5A11D', approved: '#6AB42D', rejected: '#f5222d', reversed: '#8c8c8c',
+  };
+  const statusTabs: ListTab[] = [
+    { key: 'all', label: 'الكل', count: summary.total },
+    ...Object.entries(STATUS_TAGS).map(([k, v]) => ({
+      key: k, label: v.text, dot: STATUS_DOTS[k],
+      count: transfers.filter((t) => t.status === k).length,
+    })),
+  ];
+  // F3 للبحث — كانت جاية من `ListToolbar`، وبتشتغل على الكشف بس.
+  const listSearchRef = useRef<any>(null);
+  useScreenShortcuts({ onSearch: () => listSearchRef.current?.focus?.() }, !screen);
+  const routeVal = filter.values.route;
+
   const list = (
-      <Card
-        title="إدارة تحويلات ومناقلات المخزون"
-        extra={
-          <Space>
-            {tableCols.control}
-            <Button data-shortcut="F2" type="primary" icon={<PlusOutlined />}
-              onClick={startNew}>
-              طلب تحويل مخزني
-            </Button>
-          </Space>
-        }
-      >
-        <ListToolbar
-          searchPlaceholder="بحث برقم المستند أو الموقع أو البيان"
-          query={filter.query} onQueryChange={filter.setQuery}
-          values={filter.values} onValueChange={filter.setValue}
-          showDateRange range={filter.range} onRangeChange={filter.setRange}
-          onReset={filter.reset}
-          total={transfers.length} shown={filter.filtered.length}
-          filters={[
-            { key: 'status', placeholder: 'الحالة',
-              options: Object.entries(STATUS_TAGS).map(([k, v]) => ({ value: k, label: v.text })) },
-            { key: 'route', placeholder: 'نوع المناقلة',
-              options: Object.entries(ROUTE_LABELS).map(([k, v]) => ({ value: k, label: v })) },
-            { key: 'statement', placeholder: 'البيان', kind: 'text' },
-          ]}
-        />
-
-        <StatsRow gutter={12} style={{ marginBottom: 12 }}>
-          <Col xs={24} md={8}>
-            <Card size="small"><Statistic title="إجمالي المستندات" value={summary.total} /></Card>
-          </Col>
-          <Col xs={24} md={8}>
-            <Card size="small">
-              <Statistic title="بانتظار الاعتماد" value={summary.pending}
-                valueStyle={{ color: summary.pending ? '#F5A11D' : undefined }} />
-            </Card>
-          </Col>
-          <Col xs={24} md={8}>
-            <Card size="small">
-              <Statistic title="معتمدة" value={summary.approved} valueStyle={{ color: '#6AB42D' }} />
-            </Card>
-          </Col>
-        </StatsRow>
-
+    <ListPage
+      icon={<SwapOutlined />}
+      title="اذن تحويل مخازن" muted="(تحويلات ومناقلات المخزون)"
+      subtitle="نقل البضاعة بين المخازن وعهد المناديب، واعتماد الطلبات"
+      tabs={statusTabs} activeTab={activeStatusTab}
+      onTabChange={(k) => filter.setValue('status', k === 'all' ? undefined : k)}
+      actions={(<>
+        <Button data-shortcut="F2" type="primary" icon={<PlusOutlined />} className="sl-create"
+          onClick={startNew}>
+          طلب تحويل مخزني
+        </Button>
+        {tableCols.control}
+      </>)}
+      filters={(<>
+        <Input className="sl-f-search" allowClear ref={listSearchRef}
+          value={filter.query} placeholder="بحث برقم المستند أو الموقع أو البيان"
+          prefix={<SearchOutlined />}
+          onChange={(e) => filter.setQuery(e.target.value)} />
+        <Select allowClear mode="multiple" maxTagCount="responsive" placeholder="نوع المناقلة"
+          value={routeVal === undefined || routeVal === null || routeVal === ''
+            ? undefined : (Array.isArray(routeVal) ? routeVal : [routeVal])}
+          onChange={(v) => filter.setValue('route', Array.isArray(v) && !v.length ? undefined : v)}
+          options={Object.entries(ROUTE_LABELS).map(([k, v]) => ({ value: k, label: v }))} />
+        <Input allowClear placeholder="البيان"
+          value={filter.values.statement ?? undefined}
+          onChange={(e) => filter.setValue('statement', e.target.value || undefined)} />
+        <DateRangeFilter className="sl-f-dates"
+          value={filter.range ?? null} onChange={(v) => filter.setRange(v)} />
+        <Button className="sl-f-clear" icon={<ClearOutlined />} onClick={filter.reset}>مسح</Button>
+      </>)}
+    >
         <Table
           {...listKb.tableProps}
+          className="sl-table"
+          size="small"
           // المسودّات فوق، وبرّه `filter.filtered`: المسودّة مش إذن.
           dataSource={[
             ...(drafts || []).map((d: any) => {
@@ -1844,14 +1852,24 @@ export default function Transfers() {
           }}
           columns={tableCols.columns} rowKey="id" loading={loading}
           pagination={{ defaultPageSize: TABLE_PAGE_SIZE, showSizeChanger: true,
-            showTotal: (t) => `الإجمالي: ${t}`, pageSizeOptions: PAGE_SIZE_OPTIONS }}
+            pageSizeOptions: PAGE_SIZE_OPTIONS, locale: { items_per_page: '' },
+            showTotal: () => (
+              <span className="sl-foot">
+                <span>إجمالي المستندات: <b>{summary.total.toLocaleString(numeralsLocale())}</b></span>
+                {filter.filtered.length < summary.total && (
+                  <span>المعروض: <b>{filter.filtered.length.toLocaleString(numeralsLocale())}</b></span>
+                )}
+                <span>بانتظار الاعتماد: <b>{summary.pending.toLocaleString(numeralsLocale())}</b></span>
+                <span>معتمدة: <b className="is-pos">{summary.approved.toLocaleString(numeralsLocale())}</b></span>
+              </span>
+            ) }}
         />
-      </Card>
+    </ListPage>
   );
 
   return (
-    // صفحة الإذن بطول الشاشة — عشان الملخص والأزرار يقعدوا في آخرها (`.sale-doc` بـ`min-height:100%`).
-    <div style={screen ? { height: '100%' } : undefined}>
+    // بطول الشاشة — صفحة الإذن عشان الملخص والأزرار يقعدوا في آخرها، والكشف عشان الرمادي يغطّي الصفحة.
+    <div style={{ height: '100%' }}>
       {dialogs}
       {doors}
       {screen ?? list}

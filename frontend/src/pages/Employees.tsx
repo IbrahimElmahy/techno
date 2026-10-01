@@ -1,20 +1,24 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { PAGE_SIZE } from '../utils/pagination';
 import { searchFilter, searchRank, sortByName } from '../utils/arabicSort';
 import {
-  Button, Card, Col, DatePicker, Input, Row, Select, Space, Table, Tabs, Tag, message,
+  Button, Col, DatePicker, Input, Row, Select, Space, Table, Tag, message,
 } from 'antd';
 import { InputNumber } from '../components/NumberInput';
 import { Popconfirm } from '../components/noConfirm';
-import { DeleteOutlined, EditOutlined, PlusOutlined, ReloadOutlined } from '@ant-design/icons';
+import {
+  ClearOutlined, DeleteOutlined, EditOutlined, PlusOutlined, ReloadOutlined, SearchOutlined,
+  TeamOutlined,
+} from '@ant-design/icons';
 import dayjs from 'dayjs';
 import { api } from '../api/client';
 import type { ColumnsType } from 'antd/es/table';
 import { useTableColumns } from '../components/ColumnSettings';
-import { useTableKeyboard } from '../components/keyboard';
-import ListToolbar, { useListFilter } from '../components/ListToolbar';
+import { useScreenShortcuts, useTableKeyboard } from '../components/keyboard';
+import { useListFilter } from '../components/ListToolbar';
 import { TabModal } from '../components/TabModal';
 import { numeralsLocale } from '../utils/money';
+import ListPage from '../components/ListPage';
 
 /**
  * الموظفون والوظائف — deliberately not the users screen.
@@ -53,6 +57,7 @@ export default function Employees() {
   const [saving, setSaving] = useState(false);
 
   const [newTitle, setNewTitle] = useState('');
+  const [view, setView] = useState<'employees' | 'titles'>('employees');
 
   const load = async () => {
     setLoading(true);
@@ -78,6 +83,21 @@ export default function Employees() {
       job_title_id: (e, v) => e.job_title_id === v,
     },
   });
+
+  // F3 كانت جاية من `ListToolbar` — الخانة بقت هنا فبتتسجّل هنا.
+  const searchRef = useRef<any>(null);
+  useScreenShortcuts({ onSearch: () => { searchRef.current?.focus?.(); } });
+  // قوايم الفلاتر — نفس اللي كانت في `ListToolbar` (أكتر من قيمة، والمعنى «أي واحدة منهم»).
+  const multiSelect = (key: string, placeholder: string, options: { value: any; label: string }[]) => {
+    const v = filter.values[key];
+    return (
+      <Select allowClear showSearch mode="multiple" maxTagCount="responsive" placeholder={placeholder}
+        // القيمة الابتدائية (`initialValues`) ممكن تبقى مفردة — وضع المتعدد بيستنى قايمة.
+        value={v === undefined || v === null || v === '' ? undefined : (Array.isArray(v) ? v : [v])}
+        onChange={(x) => filter.setValue(key, Array.isArray(x) && !x.length ? undefined : x)}
+        options={options} filterOption={searchFilter} filterSort={searchRank} />
+    );
+  };
 
   // السطر يفتح التعديل — البيانات الأساسية مافيهاش «عرض» غير الفورم بتاعها نفسه.
   const kb = useTableKeyboard<Employee>({
@@ -181,142 +201,151 @@ export default function Employees() {
     export: { name: 'الموظفون', rows: filter.filtered },
   });
 
-  const employeesTab = (
-    <Card
-      title="الموظفون"
-      extra={(
-        <Space>
-          {employeeCols.control}
-          <Button data-shortcut="F2" type="primary" icon={<PlusOutlined />} onClick={startCreate}>موظف جديد</Button>
-          <Button icon={<ReloadOutlined />} onClick={load}>تحديث</Button>
-        </Space>
-      )}
-    >
-      <ListToolbar
-        searchPlaceholder="بحث بالكود أو الاسم أو القسم أو التليفون"
-        query={filter.query} onQueryChange={filter.setQuery}
-        values={filter.values} onValueChange={filter.setValue}
-        onReset={filter.reset} total={employees.length} shown={filter.filtered.length}
-        filters={[
-          { key: 'active', placeholder: 'الحالة', options: [
-            { value: 'active', label: 'على رأس العمل' }, { value: 'inactive', label: 'موقوف' }] },
-          { key: 'job_title_id', placeholder: 'الوظيفة',
-            options: titles.map((t) => ({ value: t.id, label: t.name })) },
-        ]}
-      />
-
-      <Table<Employee>
-          {...kb.tableProps}
-        rowKey="id" size="small" loading={loading} dataSource={filter.filtered}
-        locale={{ emptyText: 'لا يوجد موظفون' }}
-        pagination={{ defaultPageSize: PAGE_SIZE, showSizeChanger: true }}
-        scroll={{ x: 'max-content' }}
-        columns={employeeCols.columns}
-      />
-
-      <TabModal
-        open={open} onCancel={() => setOpen(false)} onOk={save} confirmLoading={saving}
-        title={editing ? `تعديل ${editing.name}` : 'موظف جديد'}
-        okText="حفظ" cancelText="إلغاء" destroyOnHidden width={720}
-      >
-        {/* Their موظف جديد form, group for group: name/branch/job, then contact, then the
-            working details, then the commission. Ordered as theirs because whoever fills this in
-            has the employee's paper in front of them in that order. */}
-        <Row gutter={[8, 8]}>
-          <Col xs={24} md={8}>
-            <Input placeholder="الاسم" value={form.name}
-              onChange={(e) => setForm({ ...form, name: e.target.value })} />
-          </Col>
-          <Col xs={24} md={8}>
-            <Select allowClear style={{ width: '100%' }} placeholder="الفرع"
-              value={form.branch_id} onChange={(v) => setForm({ ...form, branch_id: v })}
-              options={branches.map((b) => ({ value: b.id, label: b.name }))} />
-          </Col>
-          <Col xs={24} md={8}>
-            <Select showSearch allowClear style={{ width: '100%' }} placeholder="الوظيفة"
-              value={form.job_title_id}
-              onChange={(v) => setForm({ ...form, job_title_id: v })}
-              options={titles.filter((t) => t.active)
-                .map((t) => ({ value: t.id, label: t.name }))} filterOption={searchFilter} filterSort={searchRank} />
-          </Col>
-
-          <Col xs={24} md={12}>
-            <Input placeholder="الهاتف" value={form.phone}
-              onChange={(e) => setForm({ ...form, phone: e.target.value })} />
-          </Col>
-          <Col xs={24} md={12}>
-            <Input placeholder="العنوان" value={form.address}
-              onChange={(e) => setForm({ ...form, address: e.target.value })} />
-          </Col>
-
-          <Col xs={24} md={6}>
-            <DatePicker style={{ width: '100%' }} value={hireDate} onChange={setHireDate}
-              placeholder="يوم بداية العمل" />
-          </Col>
-          <Col xs={24} md={6}>
-            {/* Free text, not a time picker: what gets written is «٨ ص» as often as a clean time,
-                and a field that refuses that is a field nobody fills. */}
-            <Input placeholder="الحضور" value={form.work_start}
-              onChange={(e) => setForm({ ...form, work_start: e.target.value })} />
-          </Col>
-          <Col xs={24} md={6}>
-            <Input placeholder="انصراف" value={form.work_end}
-              onChange={(e) => setForm({ ...form, work_end: e.target.value })} />
-          </Col>
-          <Col xs={24} md={6}>
-            <InputNumber style={{ width: '100%' }} min={0} placeholder="المرتب"
-              value={form.salary} onChange={(v) => setForm({ ...form, salary: v })} />
-          </Col>
-
-          <Col xs={24} md={8}>
-            <InputNumber style={{ width: '100%' }} min={0} max={100} addonAfter="%"
-              placeholder="عمولة تحصيلات" value={form.collection_commission_pct}
-              onChange={(v) => setForm({ ...form, collection_commission_pct: v })} />
-          </Col>
-          <Col xs={24} md={8}>
-            <Select showSearch allowClear style={{ width: '100%' }} placeholder="المخزن"
-              value={form.warehouse_id} onChange={(v) => setForm({ ...form, warehouse_id: v })}
-              options={sortByName(warehouses, (w) => w.name).map((w) => ({ value: w.id, label: w.name }))} filterOption={searchFilter} filterSort={searchRank} />
-          </Col>
-          <Col xs={24} md={8}>
-            <Select allowClear showSearch style={{ width: '100%' }}
-              placeholder="مربوط بمستخدم (اختياري)" value={form.user_id}
-              onChange={(v) => setForm({ ...form, user_id: v })}
-              options={users.map((u) => ({
-                value: u.id, label: u.full_name || u.username }))} filterOption={searchFilter} filterSort={searchRank}/>
-          </Col>
-        </Row>
-      </TabModal>
-    </Card>
-  );
-
-  const titlesTab = (
-    <Card title="الوظائف">
-      <Space style={{ marginBottom: 12 }}>
-        <Input placeholder="اسم الوظيفة" value={newTitle} style={{ width: 240 }}
-          onChange={(e) => setNewTitle(e.target.value)} onPressEnter={addTitle} />
-        <Button type="primary" icon={<PlusOutlined />} onClick={addTitle}>إضافة</Button>
-      </Space>
-      <Table<JobTitle>
-        rowKey="id" size="small" dataSource={titles} loading={loading}
-        locale={{ emptyText: 'لا توجد وظائف' }}
-        pagination={{ defaultPageSize: PAGE_SIZE }}
-        columns={[
-          { title: 'الوظيفة', dataIndex: 'name', render: (v: string) => <b>{v}</b> },
-          { title: 'عدد الموظفين',
-            render: (_: any, r: JobTitle) =>
-              employees.filter((e) => e.job_title_id === r.id).length },
-          { title: 'الحالة', dataIndex: 'active',
-            render: (v: boolean) => (v ? <Tag color="green">مفعّلة</Tag> : <Tag>موقوفة</Tag>) },
-        ]}
-      />
-    </Card>
-  );
+  const onEmployees = view === 'employees';
 
   return (
-    <Tabs items={[
-      { key: 'employees', label: `الموظفون (${employees.length})`, children: employeesTab },
-      { key: 'titles', label: `الوظائف (${titles.length})`, children: titlesTab },
-    ]} />
+    <>
+    <ListPage<'employees' | 'titles'>
+      icon={<TeamOutlined />}
+      title="الموظفين" muted="(الموظفون والوظائف)"
+      subtitle="كل اللي الشركة مشغّلاهم — مش حسابات الدخول، والموظف ممكن يتربط بمستخدم"
+      tabs={[
+        { key: 'employees', label: 'الموظفون', count: employees.length },
+        { key: 'titles', label: 'الوظائف', count: titles.length },
+      ]}
+      activeTab={view} onTabChange={setView}
+      actions={onEmployees ? (<>
+        <Button data-shortcut="F2" type="primary" className="sl-create" icon={<PlusOutlined />}
+          onClick={startCreate}>موظف جديد</Button>
+        {employeeCols.control}
+        <Button icon={<ReloadOutlined />} onClick={load}>تحديث</Button>
+      </>) : (<>
+        <Input placeholder="اسم الوظيفة" value={newTitle} style={{ width: 220 }}
+          onChange={(e) => setNewTitle(e.target.value)} onPressEnter={addTitle} />
+        <Button type="primary" className="sl-create" icon={<PlusOutlined />}
+          onClick={addTitle}>إضافة وظيفة</Button>
+      </>)}
+      filters={onEmployees ? (<>
+        <Input className="sl-f-search" allowClear ref={searchRef} value={filter.query}
+          placeholder="بحث بالكود أو الاسم أو القسم أو التليفون" prefix={<SearchOutlined />}
+          onChange={(e) => filter.setQuery(e.target.value)} />
+        {multiSelect('active', 'الحالة', [
+          { value: 'active', label: 'على رأس العمل' }, { value: 'inactive', label: 'موقوف' }])}
+        {multiSelect('job_title_id', 'الوظيفة', titles.map((t) => ({ value: t.id, label: t.name })))}
+        <Button className="sl-f-clear" icon={<ClearOutlined />} onClick={filter.reset}>مسح</Button>
+      </>) : undefined}
+    >
+      {onEmployees ? (
+        <Table<Employee>
+          {...kb.tableProps}
+          className="sl-table"
+          rowKey="id" size="small" loading={loading} dataSource={filter.filtered}
+          locale={{ emptyText: 'لا يوجد موظفون' }}
+          pagination={{
+            defaultPageSize: PAGE_SIZE, showSizeChanger: true,
+            showTotal: () => (
+              <span className="sl-foot">
+                <span>المعروض: <b>{filter.filtered.length.toLocaleString(numeralsLocale())}</b>
+                  {' '}من {employees.length.toLocaleString(numeralsLocale())} موظف</span>
+                <span>على رأس العمل: <b className="is-pos">
+                  {employees.filter((e) => e.active).length.toLocaleString(numeralsLocale())}</b></span>
+              </span>
+            ),
+          }}
+          scroll={{ x: 'max-content' }}
+          columns={employeeCols.columns}
+        />
+      ) : (
+        <Table<JobTitle>
+          className="sl-table"
+          rowKey="id" size="small" dataSource={titles} loading={loading}
+          locale={{ emptyText: 'لا توجد وظائف' }}
+          pagination={{ defaultPageSize: PAGE_SIZE }}
+          columns={[
+            { title: 'الوظيفة', dataIndex: 'name', render: (v: string) => <b>{v}</b> },
+            { title: 'عدد الموظفين',
+              render: (_: any, r: JobTitle) =>
+                employees.filter((e) => e.job_title_id === r.id).length },
+            { title: 'الحالة', dataIndex: 'active',
+              render: (v: boolean) => (v ? <Tag color="green">مفعّلة</Tag> : <Tag>موقوفة</Tag>) },
+          ]}
+        />
+      )}
+    </ListPage>
+
+    <TabModal
+      open={open} onCancel={() => setOpen(false)} onOk={save} confirmLoading={saving}
+      title={editing ? `تعديل ${editing.name}` : 'موظف جديد'}
+      okText="حفظ" cancelText="إلغاء" destroyOnHidden width={720}
+    >
+      {/* Their موظف جديد form, group for group: name/branch/job, then contact, then the
+          working details, then the commission. Ordered as theirs because whoever fills this in
+          has the employee's paper in front of them in that order. */}
+      <Row gutter={[8, 8]}>
+        <Col xs={24} md={8}>
+          <Input placeholder="الاسم" value={form.name}
+            onChange={(e) => setForm({ ...form, name: e.target.value })} />
+        </Col>
+        <Col xs={24} md={8}>
+          <Select allowClear style={{ width: '100%' }} placeholder="الفرع"
+            value={form.branch_id} onChange={(v) => setForm({ ...form, branch_id: v })}
+            options={branches.map((b) => ({ value: b.id, label: b.name }))} />
+        </Col>
+        <Col xs={24} md={8}>
+          <Select showSearch allowClear style={{ width: '100%' }} placeholder="الوظيفة"
+            value={form.job_title_id}
+            onChange={(v) => setForm({ ...form, job_title_id: v })}
+            options={titles.filter((t) => t.active)
+              .map((t) => ({ value: t.id, label: t.name }))} filterOption={searchFilter} filterSort={searchRank} />
+        </Col>
+
+        <Col xs={24} md={12}>
+          <Input placeholder="الهاتف" value={form.phone}
+            onChange={(e) => setForm({ ...form, phone: e.target.value })} />
+        </Col>
+        <Col xs={24} md={12}>
+          <Input placeholder="العنوان" value={form.address}
+            onChange={(e) => setForm({ ...form, address: e.target.value })} />
+        </Col>
+
+        <Col xs={24} md={6}>
+          <DatePicker style={{ width: '100%' }} value={hireDate} onChange={setHireDate}
+            placeholder="يوم بداية العمل" />
+        </Col>
+        <Col xs={24} md={6}>
+          {/* Free text, not a time picker: what gets written is «٨ ص» as often as a clean time,
+              and a field that refuses that is a field nobody fills. */}
+          <Input placeholder="الحضور" value={form.work_start}
+            onChange={(e) => setForm({ ...form, work_start: e.target.value })} />
+        </Col>
+        <Col xs={24} md={6}>
+          <Input placeholder="انصراف" value={form.work_end}
+            onChange={(e) => setForm({ ...form, work_end: e.target.value })} />
+        </Col>
+        <Col xs={24} md={6}>
+          <InputNumber style={{ width: '100%' }} min={0} placeholder="المرتب"
+            value={form.salary} onChange={(v) => setForm({ ...form, salary: v })} />
+        </Col>
+
+        <Col xs={24} md={8}>
+          <InputNumber style={{ width: '100%' }} min={0} max={100} addonAfter="%"
+            placeholder="عمولة تحصيلات" value={form.collection_commission_pct}
+            onChange={(v) => setForm({ ...form, collection_commission_pct: v })} />
+        </Col>
+        <Col xs={24} md={8}>
+          <Select showSearch allowClear style={{ width: '100%' }} placeholder="المخزن"
+            value={form.warehouse_id} onChange={(v) => setForm({ ...form, warehouse_id: v })}
+            options={sortByName(warehouses, (w) => w.name).map((w) => ({ value: w.id, label: w.name }))} filterOption={searchFilter} filterSort={searchRank} />
+        </Col>
+        <Col xs={24} md={8}>
+          <Select allowClear showSearch style={{ width: '100%' }}
+            placeholder="مربوط بمستخدم (اختياري)" value={form.user_id}
+            onChange={(v) => setForm({ ...form, user_id: v })}
+            options={users.map((u) => ({
+              value: u.id, label: u.full_name || u.username }))} filterOption={searchFilter} filterSort={searchRank}/>
+        </Col>
+      </Row>
+    </TabModal>
+    </>
   );
 }

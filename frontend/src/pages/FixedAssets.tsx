@@ -1,21 +1,23 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { PAGE_SIZE } from '../utils/pagination';
 import { searchFilter, searchRank } from '../utils/arabicSort';
 import {
   Alert, Button, Card, Col, DatePicker, Descriptions, Input, Row, Select, Space, Table, Tag, message,
 } from 'antd';
-import { Statistic } from '../components/Statistic';
 import { InputNumber } from '../components/NumberInput';
 import { Popconfirm } from '../components/noConfirm';
-import { PlusOutlined, ReloadOutlined, ArrowLeftOutlined } from '@ant-design/icons';
+import {
+  PlusOutlined, ReloadOutlined, ArrowLeftOutlined, BuildOutlined, SearchOutlined, ClearOutlined,
+} from '@ant-design/icons';
 import dayjs, { Dayjs } from 'dayjs';
 import { api } from '../api/client';
-import ListToolbar, { useListFilter } from '../components/ListToolbar';
+import { useListFilter } from '../components/ListToolbar';
+import ListPage from '../components/ListPage';
+import { useScreenShortcuts } from '../components/keyboard';
 import { TabModal } from '../components/TabModal';
 import type { ColumnsType } from 'antd/es/table';
 import { useTableColumns } from '../components/ColumnSettings';
 
-import StatsRow from '../components/StatsRow';
 import { money } from '../utils/money';
 /**
  * الأصول الثابتة والإهلاك — an asset is paid for once and consumed over years, so its cost
@@ -108,6 +110,10 @@ export default function FixedAssets() {
       .then((r) => setSchedule(r.data || []))
       .catch(console.error);
   }, [detail]);
+
+  // F3 كانت جاية من `ListToolbar` — الخانة بقت هنا فبتتسجّل هنا.
+  const searchRef = useRef<any>(null);
+  useScreenShortcuts({ onSearch: () => { searchRef.current?.focus?.(); } });
 
   const filter = useListFilter(assets, {
     search: (a) => [a.code, a.name, a.category],
@@ -232,76 +238,71 @@ export default function FixedAssets() {
   return (
     <>
     {!docOpen && (
-    <Card
+    <ListPage
+      icon={<BuildOutlined />}
       title="الاصول الثابتة"
-      extra={(
-        <Space>
-          {tableCols.control}
-          <Button data-shortcut="F2" type="primary" icon={<PlusOutlined />}
-            onClick={() => setCreating(true)}>أصل جديد</Button>
-          <Button icon={<ReloadOutlined />} onClick={load}>تحديث</Button>
-        </Space>
-      )}
-    >
-      <Card size="small" style={{ marginBottom: 12 }} title="ترحيل إهلاك الشهر">
-        <Space wrap align="center">
-          <DatePicker picker="month" value={period} allowClear={false}
-            onChange={(v) => v && setPeriod(v)} />
-          <Button type="primary" loading={running} onClick={runDepreciation}>
-            ترحيل الإهلاك
-          </Button>
-          <Popconfirm title="عكس إهلاك الشهر؟"
-            description="هيتعمل قيد عكسي والشهر يرجع متاح للترحيل تاني."
-            onConfirm={reverseDepreciation} okText="عكس" cancelText="إلغاء">
-            <Button danger>عكس الشهر</Button>
-          </Popconfirm>
-          <span style={{ color: '#888' }}>
-            آمن تضغط أكتر من مرة — الأصل المرحّل للشهر ده بيتخطّى، فالمصروف ما بيتضاعفش.
-          </span>
-        </Space>
-      </Card>
-
-      <StatsRow gutter={[8, 8]} style={{ marginBottom: 12 }}>
-        <Col xs={8}>
-          <Card size="small"><Statistic title="أصول قائمة" value={active.length} /></Card>
-        </Col>
-        <Col xs={8}>
-          <Card size="small">
-            <Statistic title="إجمالي التكلفة" value={money(totalCost)} />
-          </Card>
-        </Col>
-        <Col xs={8}>
-          <Card size="small">
-            <Statistic title="القيمة الدفترية" value={money(totalBook)}
-              valueStyle={{ color: '#0B5CA8' }} />
-          </Card>
-        </Col>
-      </StatsRow>
-
-      <ListToolbar
-        searchPlaceholder="بحث بالكود أو الاسم أو الفئة"
-        query={filter.query} onQueryChange={filter.setQuery}
-        values={filter.values} onValueChange={filter.setValue}
-        onReset={filter.reset} total={assets.length} shown={filter.filtered.length}
-        filters={[
-          { key: 'status', placeholder: 'الحالة', options: [
-            { value: 'active', label: 'قائم' }, { value: 'disposed', label: 'متصرّف فيه' }] },
-          { key: 'method', placeholder: 'طريقة الإهلاك', options: [
+      subtitle="سجل الأصول وإهلاكها الشهري — والاستبعاد بيترحّل بربحه أو خسارته"
+      actions={(<>
+        <Button data-shortcut="F2" type="primary" className="sl-create" icon={<PlusOutlined />}
+          onClick={() => setCreating(true)}>أصل جديد</Button>
+        <Button icon={<ReloadOutlined />} onClick={load}>تحديث</Button>
+        {tableCols.control}
+      </>)}
+      filters={(<>
+        <Input className="sl-f-search" allowClear ref={searchRef} value={filter.query}
+          placeholder="بحث بالكود أو الاسم أو الفئة" prefix={<SearchOutlined />}
+          onChange={(e) => filter.setQuery(e.target.value)} />
+        <Select allowClear mode="multiple" maxTagCount="responsive" placeholder="الحالة"
+          value={filter.values.status}
+          onChange={(v) => filter.setValue('status', v?.length ? v : undefined)}
+          options={[{ value: 'active', label: 'قائم' }, { value: 'disposed', label: 'متصرّف فيه' }]} />
+        <Select allowClear mode="multiple" maxTagCount="responsive" placeholder="طريقة الإهلاك"
+          value={filter.values.method}
+          onChange={(v) => filter.setValue('method', v?.length ? v : undefined)}
+          options={[
             { value: 'straight_line', label: 'القسط الثابت' },
-            { value: 'declining_balance', label: 'القسط المتناقص' }] },
-        ]}
-      />
+            { value: 'declining_balance', label: 'القسط المتناقص' }]} />
+        <Button className="sl-f-clear" icon={<ClearOutlined />} onClick={filter.reset}>مسح</Button>
+      </>)}
+    >
+      {/* ترحيل إهلاك الشهر — سطر صغير فوق الكشف بدل كارت لوحده. */}
+      <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 8,
+        padding: '6px 4px 10px', borderBottom: '1px solid #f1f5f9', marginBottom: 6 }}>
+        <b style={{ color: '#334155' }}>ترحيل إهلاك الشهر:</b>
+        <DatePicker picker="month" value={period} allowClear={false}
+          onChange={(v) => v && setPeriod(v)} />
+        <Button type="primary" loading={running} onClick={runDepreciation}>
+          ترحيل الإهلاك
+        </Button>
+        <Popconfirm title="عكس إهلاك الشهر؟"
+          description="هيتعمل قيد عكسي والشهر يرجع متاح للترحيل تاني."
+          onConfirm={reverseDepreciation} okText="عكس" cancelText="إلغاء">
+          <Button danger>عكس الشهر</Button>
+        </Popconfirm>
+        <span style={{ color: '#8c8c8c', fontSize: 12 }}>
+          آمن تضغط أكتر من مرة — الأصل المرحّل للشهر ده بيتخطّى، فالمصروف ما بيتضاعفش.
+        </span>
+      </div>
 
       <Table<Asset>
+        className="sl-table"
         rowKey="id" size="small" loading={loading} dataSource={filter.filtered}
         onRow={(r) => ({ onClick: () => setDetail(r), style: { cursor: 'pointer' } })}
         locale={{ emptyText: 'لا توجد أصول مسجّلة' }}
-        pagination={{ defaultPageSize: PAGE_SIZE, showSizeChanger: true }}
+        pagination={{ defaultPageSize: PAGE_SIZE, showSizeChanger: true,
+          showTotal: () => (
+            <span className="sl-foot">
+              <span>المعروض: <b>{filter.filtered.length}</b> من {assets.length}</span>
+              <span>أصول قائمة: <b>{active.length}</b></span>
+              <span>إجمالي التكلفة: <b>{money(totalCost)}</b></span>
+              <span>القيمة الدفترية: <b style={{ color: '#0B5CA8' }}>{money(totalBook)}</b></span>
+            </span>
+          ) }}
         tableLayout="fixed"
         expandable={{ expandedRowRender: expandedRow }}
         columns={tableCols.columns}
       />
-    </Card>
+    </ListPage>
     )}
 
       {creating && (

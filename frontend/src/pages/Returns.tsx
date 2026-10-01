@@ -4,12 +4,11 @@ import { PAGE_SIZE, PAGE_SIZE_OPTIONS } from '../utils/pagination';
 import { searchFilter, searchRank, sortByName } from '../utils/arabicSort';
 import { customersOfRep, customerFitsRep } from '../utils/repScope';
 import {
-  Button, Card, Col, DatePicker, Empty, Form, Input, Modal, Row, Segmented, Select,
+  Button, Col, DatePicker, Empty, Form, Input, Modal, Row, Segmented, Select,
   Space, Tag, Tooltip, message,
 } from 'antd';
 // فلتر على كل عمود — شوف `FilterTable`.
 import { FilterTable as Table } from '../components/FilterTable';
-import { Statistic } from '../components/Statistic';
 import { InputNumber } from '../components/NumberInput';
 import { advanceFrom } from '../components/lineKeyboard';
 // التأكيدات اتشالت من النظام — الشيم بينفّذ من غير ما يسأل (`components/noConfirm`).
@@ -19,6 +18,7 @@ import {
   FileAddOutlined, EditOutlined, EyeOutlined, UndoOutlined, SaveOutlined, PrinterOutlined,
   ArrowLeftOutlined, ArrowRightOutlined, BankOutlined, ReloadOutlined,
   ExclamationCircleOutlined, CheckOutlined, ShoppingCartOutlined, PhoneOutlined, InfoCircleOutlined,
+  RollbackOutlined,
 } from '@ant-design/icons';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import dayjs, { Dayjs } from 'dayjs';
@@ -54,7 +54,7 @@ import { money, numeralsLocale } from '../utils/money';
 import { applyPct, combinePct, splitLineDiscount } from '../utils/discounts';
 import { QTY_DATA_ATTR, flashExistingItem } from '../utils/duplicateItem';
 
-import StatsRow from '../components/StatsRow';
+import ListPage from '../components/ListPage';
 import { useLiveRefresh } from '../utils/live';
 /**
  * مرتجعات المبيعات — a full "return like a sale, reversed" screen: pick a customer, then the goods
@@ -1920,85 +1920,78 @@ export default function Returns({ embedded }: { embedded?: { onExit: () => void 
 
   const visibleColumns = returnCols.apply(columns);
 
+  // كروت الإجماليات اللي كانت فوق بقت سطر تحت الجدول (نفس سجل المبيعات).
+  const footer = (
+    <span className="sl-foot">
+      <span>عدد المرتجعات الظاهرة: <b>{summary.count.toLocaleString(numeralsLocale())}</b></span>
+      <span>إجمالي صافي المرتجعات: <b>{money(summary.net)}</b></span>
+      <span>إجمالي الخصم من الحسابات: <b>{money(summary.credit)}</b></span>
+    </span>
+  );
+
   const list = (
-      <Card
-        title="مرتجعات المبيعات"
-        extra={
-          <Space>
-            <ColumnSettings
-              choices={columns.map((c: any) => ({
-                key: String(c.key ?? c.dataIndex ?? ''),
-                title: typeof c.title === 'string' ? c.title : '',
-                locked: c.key === 'document_number',
-              }))}
-              hidden={returnCols.hidden}
-              onChange={returnCols.setHidden}
-              order={returnCols.order}
-              onMove={(k, d) => returnCols.move(k, d, columns.map((c) => String(c.key ?? (c as any).dataIndex ?? '')))}
-            />
-            <ExportExcelButton
-              name="مرتجعات المبيعات"
-              rows={returns}
-              tableColumns={visibleColumns}
-              style={{ marginInlineStart: 0 }}
-            />
-            <PrintOptionsMenu value={printOpts} onChange={setPrintOpts} />
-            <Button type="primary" danger icon={<PlusOutlined />}
-              onClick={() => { setReturnDate(dayjs()); setNewStep('party'); }}>
-              تسجيل مرتجع بيع
-            </Button>
-          </Space>
-        }
-      >
-        <Row gutter={[8, 8]} style={{ marginBottom: 12 }}>
-          <Col xs={24} md={5}>
-            <Input allowClear value={search} placeholder="بحث برقم السند" prefix={<SearchOutlined />}
-              onChange={(e) => setSearch(e.target.value)} onPressEnter={applySearch} onBlur={applySearch} />
-          </Col>
-          <Col xs={24} md={5}>
-            <Select allowClear showSearch style={{ width: '100%' }} placeholder="العميل"
-              value={filters.customer_id} onChange={(v) => setFilter('customer_id', v)}
-              filterOption={searchFilter} filterSort={searchRank}
-              options={filterCustomerOptions} />
-          </Col>
-          <Col xs={12} md={4}>
-            <Select allowClear showSearch style={{ width: '100%' }} placeholder="المندوب"
-              value={filters.rep_id} onChange={(v) => setFilter('rep_id', v)}
-              filterOption={searchFilter} filterSort={searchRank}
-              options={sortByName(reps, (r) => r.full_name || r.username)
-                .map((r) => ({ value: r.id, label: r.full_name || r.username }))} />
-          </Col>
-          <Col xs={12} md={5}>
-            <DateRangeFilter
-              value={filters.date_from && filters.date_to
-                ? [dayjs(filters.date_from), dayjs(filters.date_to)] : null}
-              onChange={(v) => {
-                const next = {
-                  ...filters,
-                  date_from: v?.[0] ? v[0].format('YYYY-MM-DD') : undefined,
-                  date_to: v?.[1] ? v[1].format('YYYY-MM-DD') : undefined,
-                };
-                setFilters(next); fetchReturns(next);
-              }}
-            />
-          </Col>
-          <Col xs={16} md={3}>
-            <Input.Search allowClear placeholder="البيان" value={stmtText}
-              onChange={(e) => { setStmtText(e.target.value); if (!e.target.value) setFilter('statement', undefined); }}
-              onSearch={(v) => setFilter('statement', v.trim() || undefined)} />
-          </Col>
-          <Col xs={8} md={2}>
-            <Button icon={<ClearOutlined />} onClick={resetFilters} block>مسح</Button>
-          </Col>
-        </Row>
-
-        <StatsRow gutter={12} style={{ marginBottom: 12 }}>
-          <Col xs={24} md={8}><Card size="small"><Statistic title="عدد المرتجعات الظاهرة" value={summary.count} /></Card></Col>
-          <Col xs={24} md={8}><Card size="small"><Statistic title="إجمالي صافي المرتجعات" value={money(summary.net)} /></Card></Col>
-          <Col xs={24} md={8}><Card size="small"><Statistic title="إجمالي الخصم من الحسابات" value={money(summary.credit)} /></Card></Col>
-        </StatsRow>
-
+    <ListPage
+      icon={<RollbackOutlined />}
+      title="مرتجعات المبيعات"
+      subtitle="سندات البضاعة الراجعة من العملاء وأثرها على حساباتهم والخزنة"
+      actions={(<>
+        <Button type="primary" className="sl-create" icon={<PlusOutlined />}
+          onClick={() => { setReturnDate(dayjs()); setNewStep('party'); }}>
+          تسجيل مرتجع بيع
+        </Button>
+        <PrintOptionsMenu value={printOpts} onChange={setPrintOpts} />
+        <ExportExcelButton
+          name="مرتجعات المبيعات"
+          rows={returns}
+          tableColumns={visibleColumns}
+          style={{ marginInlineStart: 0 }}
+        />
+        <ColumnSettings
+          choices={columns.map((c: any) => ({
+            key: String(c.key ?? c.dataIndex ?? ''),
+            title: typeof c.title === 'string' ? c.title : '',
+            locked: c.key === 'document_number',
+          }))}
+          hidden={returnCols.hidden}
+          onChange={returnCols.setHidden}
+          order={returnCols.order}
+          onMove={(k, d) => returnCols.move(k, d, columns.map((c) => String(c.key ?? (c as any).dataIndex ?? '')))}
+        />
+      </>)}
+      filters={(<>
+        <Input className="sl-f-search" allowClear value={search} placeholder="بحث برقم السند"
+          prefix={<SearchOutlined />}
+          onChange={(e) => setSearch(e.target.value)} onPressEnter={applySearch} onBlur={applySearch} />
+        <Select className="sl-f-customer" allowClear showSearch placeholder="العميل"
+          value={filters.customer_id} onChange={(v) => setFilter('customer_id', v)}
+          filterOption={searchFilter} filterSort={searchRank}
+          options={filterCustomerOptions} />
+        <Select allowClear showSearch placeholder="المندوب"
+          value={filters.rep_id} onChange={(v) => setFilter('rep_id', v)}
+          filterOption={searchFilter} filterSort={searchRank}
+          options={sortByName(reps, (r) => r.full_name || r.username)
+            .map((r) => ({ value: r.id, label: r.full_name || r.username }))} />
+        <Input.Search allowClear placeholder="البيان..." value={stmtText}
+          onChange={(e) => { setStmtText(e.target.value); if (!e.target.value) setFilter('statement', undefined); }}
+          onSearch={(v) => setFilter('statement', v.trim() || undefined)} />
+        <DateRangeFilter
+          className="sl-f-dates"
+          value={filters.date_from && filters.date_to
+            ? [dayjs(filters.date_from), dayjs(filters.date_to)] : null}
+          onChange={(v) => {
+            const next = {
+              ...filters,
+              date_from: v?.[0] ? v[0].format('YYYY-MM-DD') : undefined,
+              date_to: v?.[1] ? v[1].format('YYYY-MM-DD') : undefined,
+            };
+            setFilters(next); fetchReturns(next);
+          }}
+        />
+        <Button className="sl-f-clear" icon={<ClearOutlined />} onClick={resetFilters}>مسح</Button>
+      </>)}
+    >
         <Table
+          className="sl-table"
           // المسودّات فوق، وبرّه `returns` عن قصد: الإجماليات بتتبني منه والمسودّة مش مرتجع.
           dataSource={[
             ...(drafts || []).map((d: any) => {
@@ -2025,13 +2018,17 @@ export default function Returns({ embedded }: { embedded?: { onExit: () => void 
           // مع `tableLayout: fixed` وكل عمود له عرض، المتصفح بيوزّع الفرق على الأعمدة كلها
           // بالنسبة: زادت تتفرد شوية، قلّت تتضغط شوية. اللي كان بيكسّر الشكل هو عمود من غير
           // عرض — الفاضي كله كان بينزل عليه لوحده فيطلع شريط أبيض في نص الجدول.
-          pagination={{ defaultPageSize: PAGE_SIZE, showSizeChanger: true, showTotal: (t) => `الإجمالي: ${t}`, pageSizeOptions: PAGE_SIZE_OPTIONS }}
+          pagination={{
+            defaultPageSize: PAGE_SIZE, showSizeChanger: true, pageSizeOptions: PAGE_SIZE_OPTIONS,
+            locale: { items_per_page: '' },
+            showTotal: () => footer,
+          }}
           onRow={(record: any) => ({
             onClick: () => (record.__isDraft ? resumeDraft(record.__draft) : openDetail(record)),
             style: { cursor: 'pointer' },
           })}
         />
-      </Card>
+    </ListPage>
   );
 
   // جوّه شاشة تانية: مافيش كشف نرجعله — اتقفل المستند أو اتلغى الباب ⇒ نخرج.

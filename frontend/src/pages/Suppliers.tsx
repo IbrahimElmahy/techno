@@ -5,10 +5,9 @@ import {
   Button, Card, Checkbox, Col, Divider, Form, Input, Modal, Row, Select, Space,
   Table, Tag, Tooltip, message,
 } from 'antd';
-import { Statistic } from '../components/Statistic';
 import {
   PlusOutlined, MinusCircleOutlined, EyeOutlined, StopOutlined,
-  SearchOutlined, ClearOutlined, DeleteOutlined,
+  SearchOutlined, ClearOutlined, DeleteOutlined, ShopOutlined,
 } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../api/client';
@@ -16,9 +15,10 @@ import { showDeactivationConfirm } from '../components/ConfirmationDialog';
 import { useLookup, labelMap } from '../hooks/useLookup';
 import { TabModal } from '../components/TabModal';
 import { useTableColumns } from '../components/ColumnSettings';
+import ListPage from '../components/ListPage';
+import ExportExcelButton from '../components/ExportExcelButton';
+import { money, numeralsLocale } from '../utils/money';
 
-import StatsRow from '../components/StatsRow';
-import { money } from '../utils/money';
 interface SupplierRecord {
   id: number;
   code: string;
@@ -309,9 +309,8 @@ export default function Suppliers() {
   ];
 
   // إخفاء وترتيب الأعمدة — نفس المحرك اللي كل الجداول بتستخدمه.
-  const tableCols = useTableColumns('suppliers', columns, {
-    export: { name: 'الموردين', rows: suppliers },
-  });
+  // التصدير زرار لوحده في ترويسة الكشف — بنفس الأعمدة المعروضة.
+  const tableCols = useTableColumns('suppliers', columns);
 
   // Ours, given back in full one click away rather than made narrower for everyone.
   const expandedRow = (record: SupplierRecord) => (
@@ -331,87 +330,83 @@ export default function Suppliers() {
     </Space>
   );
 
+  const footer = (
+    <span className="sl-foot">
+      <span>عدد الموردين الظاهرين: <b>{summary.count.toLocaleString(numeralsLocale())}</b></span>
+      <span>
+        إجمالي المستحق للموردين:{' '}
+        <b className={summary.total > 0 ? 'is-neg' : undefined}>{money(summary.total)}</b>
+      </span>
+      <span>موردين لهم مستحقات: <b>{summary.due.toLocaleString(numeralsLocale())}</b></span>
+    </span>
+  );
+
   return (
-    <div>
-      <Card
-        title="الموردين"
-        extra={
-          <Space>
-            {tableCols.control}
-            <Button data-shortcut="F2" type="primary" icon={<PlusOutlined />} onClick={() => setDrawerVisible(true)}>
-              إضافة مورد
-            </Button>
-          </Space>
-        }
+    <>
+      <ListPage
+        icon={<ShopOutlined />}
+        title="الموردين" muted="(دليل الموردين وأرصدتهم)"
+        subtitle="بيانات الموردين والرصيد الدائن لكل مورد — اضغط على السطر لفتح ملفه"
+        actions={(<>
+          {/* الاسم ده بالظبط — «اختصارات الإنشاء» بتدوّر على الزرار بنصّه. */}
+          <Button data-shortcut="F2" type="primary" icon={<PlusOutlined />} className="sl-create"
+            onClick={() => setDrawerVisible(true)}>
+            إضافة مورد
+          </Button>
+          <ExportExcelButton name="الموردين" rows={suppliers}
+            tableColumns={tableCols.columns as any} style={{ marginInlineStart: 0 }} />
+          {tableCols.control}
+        </>)}
+        // البحث والفلاتر على السيرفر — بتغطّي كل الموردين.
+        filters={(<>
+          <Input
+            className="sl-f-search"
+            allowClear
+            value={search}
+            placeholder="بحث بالاسم أو الكود أو الهاتف أو العنوان"
+            prefix={<SearchOutlined />}
+            onChange={(e) => setSearch(e.target.value)}
+            onPressEnter={applySearch}
+            onBlur={applySearch}
+          />
+          <Select allowClear placeholder="حالة الذمة"
+            value={filters.balance_filter}
+            onChange={(v) => setFilter('balance_filter', v)}
+            options={[
+              { value: 'due', label: 'مستحق له (علينا)' },
+              { value: 'settled', label: 'مسدّد بالكامل' },
+              { value: 'advance', label: 'دفعنا مقدماً (له علينا سالب)' },
+            ]} />
+          <Select allowClear placeholder="الحالة"
+            value={filters.active as any}
+            onChange={(v) => setFilter('active', v)}
+            options={[{ value: true, label: 'نشط' }, { value: false, label: 'معطل' }]} />
+          <Button className="sl-f-clear" icon={<SearchOutlined />} onClick={applySearch}>بحث</Button>
+          <Button className="sl-f-clear" icon={<ClearOutlined />} onClick={resetFilters}>مسح</Button>
+        </>)}
       >
-        {/* --- Search + filters (server-side, so they cover every supplier) --- */}
-        <Row gutter={[8, 8]} style={{ marginBottom: 12 }}>
-          <Col xs={24} md={9}>
-            <Input
-              allowClear
-              value={search}
-              placeholder="بحث بالاسم أو الكود أو الهاتف أو العنوان"
-              prefix={<SearchOutlined />}
-              onChange={(e) => setSearch(e.target.value)}
-              onPressEnter={applySearch}
-              onBlur={applySearch}
-            />
-          </Col>
-          <Col xs={12} md={5}>
-            <Select allowClear style={{ width: '100%' }} placeholder="حالة الذمة"
-              value={filters.balance_filter}
-              onChange={(v) => setFilter('balance_filter', v)}
-              options={[
-                { value: 'due', label: 'مستحق له (علينا)' },
-                { value: 'settled', label: 'مسدّد بالكامل' },
-                { value: 'advance', label: 'دفعنا مقدماً (له علينا سالب)' },
-              ]} />
-          </Col>
-          <Col xs={12} md={4}>
-            <Select allowClear style={{ width: '100%' }} placeholder="الحالة"
-              value={filters.active as any}
-              onChange={(v) => setFilter('active', v)}
-              options={[{ value: true, label: 'نشط' }, { value: false, label: 'معطل' }]} />
-          </Col>
-          <Col xs={24} md={6}>
-            <Space>
-              <Button type="primary" icon={<SearchOutlined />} onClick={applySearch}>بحث</Button>
-              <Button icon={<ClearOutlined />} onClick={resetFilters}>مسح الفلاتر</Button>
-            </Space>
-          </Col>
-        </Row>
-
-        <StatsRow gutter={12} style={{ marginBottom: 12 }}>
-          <Col xs={24} md={8}>
-            <Card size="small"><Statistic title="عدد الموردين الظاهرين" value={summary.count} /></Card>
-          </Col>
-          <Col xs={24} md={8}>
-            <Card size="small">
-              <Statistic title="إجمالي المستحق للموردين" value={money(summary.total)}
-                valueStyle={{ color: summary.total > 0 ? '#cf1322' : undefined }} />
-            </Card>
-          </Col>
-          <Col xs={24} md={8}>
-            <Card size="small"><Statistic title="موردين لهم مستحقات" value={summary.due} /></Card>
-          </Col>
-        </StatsRow>
-
         <Table
+          className="sl-table"
           dataSource={suppliers}
           columns={tableCols.columns}
           rowKey="id"
           loading={loading}
-          size="middle"
+          size="small"
           tableLayout="fixed"
           expandable={{ expandedRowRender: expandedRow }}
-          pagination={{ defaultPageSize: PAGE_SIZE, showSizeChanger: true, showTotal: (t) => `الإجمالي: ${t}`, pageSizeOptions: PAGE_SIZE_OPTIONS }}
+          // الترقيم شمال، والإجماليات يمين في نفس السطر — زي سجل المبيعات.
+          pagination={{
+            defaultPageSize: PAGE_SIZE, showSizeChanger: true, pageSizeOptions: PAGE_SIZE_OPTIONS,
+            locale: { items_per_page: '' },
+            showTotal: () => footer,
+          }}
           // The whole row opens the supplier file.
           onRow={(record) => ({
             onClick: () => navigate(`/suppliers/${record.id}`),
             style: { cursor: 'pointer' },
           })}
         />
-      </Card>
+      </ListPage>
 
       {/* مورد جديد — laid out field for field against their الموردين form: the same groups, three
           to a row, in their order. Note what their form does NOT have — no خصم, no ض.م, no default
@@ -515,6 +510,6 @@ export default function Suppliers() {
         </Form>
       </TabModal>
 
-    </div>
+    </>
   );
 }

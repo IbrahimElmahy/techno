@@ -1,21 +1,18 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { PAGE_SIZE } from '../utils/pagination';
-import {
-  Alert, Button, Card, Col, Space, Tag,
-} from 'antd';
+import { Button, Input, Tag } from 'antd';
 // كل جدول هنا بفلتر على كل عمود — شوف `FilterTable`.
 import { FilterTable as Table } from '../components/FilterTable';
-import { Statistic } from '../components/Statistic';
-import { ReloadOutlined } from '@ant-design/icons';
+import { AlertOutlined, ClearOutlined, ReloadOutlined, SearchOutlined } from '@ant-design/icons';
+import ListPage from '../components/ListPage';
 import { api } from '../api/client';
-import ListToolbar, { useListFilter } from '../components/ListToolbar';
-import { useTableKeyboard } from '../components/keyboard';
+import { useListFilter } from '../components/ListToolbar';
+import { useScreenShortcuts, useTableKeyboard } from '../components/keyboard';
 import { textColumn, numberColumn, choiceColumn } from '../components/gridColumns';
 import { useTableColumns } from '../components/ColumnSettings';
 import { useNavigate } from 'react-router-dom';
 
-import StatsRow from '../components/StatsRow';
-import { qty } from '../utils/money';
+import { qty, numeralsLocale } from '../utils/money';
 import { STOCK_TOPICS, useLiveRefresh } from '../utils/live';
 /**
  * تنبيهات المخزون — the two questions a stock manager asks that a balance list cannot answer:
@@ -122,51 +119,66 @@ export default function StockAlerts() {
     export: { name: 'تنبيهات المخزون', rows: reorderFilter.filtered },
   });
 
+  // F3 للبحث — كانت جاية من `ListToolbar`.
+  const searchRef = useRef<any>(null);
+  useScreenShortcuts({ onSearch: () => { searchRef.current?.focus?.(); } });
+
+  // فلتر «الحالة» بقى شرايح — نفس القيمة الواحدة في `reorderFilter.values.flag`.
+  type FlagTab = 'all' | 'below_min' | 'above_max';
+  const flagValue = reorderFilter.values.flag;
+  const activeFlag: FlagTab = flagValue === 'below_min' || flagValue === 'above_max' ? flagValue : 'all';
+  const flagTabs: { key: FlagTab; label: string; dot?: string; count?: number }[] = [
+    { key: 'all', label: 'الكل', count: reorder.length },
+    { key: 'below_min', label: 'تحت الحد الأدنى', dot: '#cf1322', count: summary.below_min },
+    { key: 'above_max', label: 'فوق الحد الأقصى', dot: '#F5A11D', count: summary.above_max },
+  ];
+
+  const footer = (
+    <span className="sl-foot">
+      <span>المعروض: <b>{reorderFilter.filtered.length.toLocaleString(numeralsLocale())}</b>
+        {' '}من {reorder.length.toLocaleString(numeralsLocale())} صنف</span>
+      <span>تحتاج شراء: <b className={summary.below_min ? 'is-neg' : undefined}>
+        {summary.below_min.toLocaleString(numeralsLocale())}</b></span>
+      <span>تكدّس: <b style={summary.above_max ? { color: '#F5A11D' } : undefined}>
+        {summary.above_max.toLocaleString(numeralsLocale())}</b></span>
+    </span>
+  );
+
   // تبويب واحد بس فضل، فمافيش شريط تبويبات. «قرب انتهاء الصلاحية» و«حركات انتهاء
   // الصلاحية» اتشالوا بطلب العميل — الشركة مابتستعملهمش.
   return (
-            <Card title="الأصناف خارج حدودها المخزنية"
-              extra={<Space>{tableCols.control}
-                <Button icon={<ReloadOutlined />} onClick={() => loadReorder()}>تحديث</Button></Space>}>
-              <Alert type="info" showIcon style={{ marginBottom: 12 }}
-                message="الحدود إرشادية للتخطيط فقط — لا تمنع أي عملية بيع."
-                description="الصنف يظهر هنا لو رصيده الكلي نزل تحت الحد الأدنى أو تعدّى الحد الأقصى." />
-
-              <StatsRow gutter={12} style={{ marginBottom: 12 }}>
-                <Col xs={24} md={12}>
-                  <Card size="small">
-                    <Statistic title="تحت الحد الأدنى (تحتاج شراء)" value={summary.below_min}
-                      valueStyle={{ color: summary.below_min ? '#cf1322' : undefined }} />
-                  </Card>
-                </Col>
-                <Col xs={24} md={12}>
-                  <Card size="small">
-                    <Statistic title="فوق الحد الأقصى (تكدّس)" value={summary.above_max}
-                      valueStyle={{ color: summary.above_max ? '#F5A11D' : undefined }} />
-                  </Card>
-                </Col>
-              </StatsRow>
-
-              <ListToolbar
-                searchPlaceholder="بحث بالصنف أو الكود"
-                query={reorderFilter.query} onQueryChange={reorderFilter.setQuery}
-                values={reorderFilter.values} onValueChange={reorderFilter.setValue}
-                onReset={reorderFilter.reset}
-                total={reorder.length} shown={reorderFilter.filtered.length}
-                filters={[{ key: 'flag', placeholder: 'الحالة', options: [
-                  { value: 'below_min', label: 'تحت الحد الأدنى' },
-                  { value: 'above_max', label: 'فوق الحد الأقصى' },
-                ] }]}
-              />
-
+    <ListPage<FlagTab>
+      icon={<AlertOutlined />}
+      title="حد إعادة الطلب" muted="(الأصناف خارج حدودها المخزنية)"
+      subtitle="الحدود إرشادية للتخطيط فقط — لا تمنع أي عملية بيع. الصنف بيظهر لو رصيده الكلي نزل تحت الأدنى أو عدّى الأقصى."
+      tabs={flagTabs} activeTab={activeFlag}
+      onTabChange={(k) => reorderFilter.setValue('flag', k === 'all' ? undefined : k)}
+      actions={(<>
+        {tableCols.control}
+        <Button icon={<ReloadOutlined />} onClick={() => loadReorder()}>تحديث</Button>
+      </>)}
+      filters={(<>
+        <Input
+          className="sl-f-search" allowClear ref={searchRef}
+          prefix={<SearchOutlined />} placeholder="بحث بالصنف أو الكود"
+          value={reorderFilter.query} onChange={(e) => reorderFilter.setQuery(e.target.value)}
+        />
+        <Button className="sl-f-clear" icon={<ClearOutlined />} onClick={reorderFilter.reset}>مسح</Button>
+      </>)}
+    >
               <Table
                 {...reorderKb.tableProps}
+                className="sl-table"
                 rowKey="item_id" size="small" loading={loading}
                 dataSource={reorderFilter.filtered}
                 locale={{ emptyText: 'كل الأصناف داخل حدودها' }}
-                pagination={{ defaultPageSize: PAGE_SIZE, showSizeChanger: true }}
+                pagination={{
+                  defaultPageSize: PAGE_SIZE, showSizeChanger: true,
+                  locale: { items_per_page: '' },
+                  showTotal: () => footer,
+                }}
                 columns={tableCols.columns}
               />
-            </Card>
+    </ListPage>
   );
 }

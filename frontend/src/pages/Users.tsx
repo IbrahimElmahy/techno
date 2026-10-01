@@ -1,18 +1,19 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { searchFilter, searchRank } from '../utils/arabicSort';
 import { PAGE_SIZE, PAGE_SIZE_OPTIONS } from '../utils/pagination';
 import {
-  Button, Card, Form, Input, Modal, Select, Space, Switch, Table, Tag, message
+  Button, Form, Input, Modal, Select, Space, Switch, Table, Tag, message
 } from 'antd';
 import {
   UserAddOutlined, LockOutlined, EditOutlined, DeleteOutlined,
-  ExclamationCircleOutlined,
+  ExclamationCircleOutlined, TeamOutlined, SearchOutlined, ClearOutlined,
 } from '@ant-design/icons';
+import ListPage from '../components/ListPage';
 import { api } from '../api/client';
-import { useTableKeyboard } from '../components/keyboard';
+import { useScreenShortcuts, useTableKeyboard } from '../components/keyboard';
 import { useAuth, RoleName } from '../components/AuthProvider';
 import { showDeactivationConfirm } from '../components/ConfirmationDialog';
-import ListToolbar, { useListFilter } from '../components/ListToolbar';
+import { useListFilter } from '../components/ListToolbar';
 import { TabModal } from '../components/TabModal';
 import { useTableColumns } from '../components/ColumnSettings';
 
@@ -63,6 +64,10 @@ export default function Users() {
       active: (u, v) => u.active === (v === 'active'),
     },
   });
+
+  // F3 كانت جاية من `ListToolbar` — الخانة بقت هنا فبتتسجّل هنا.
+  const searchRef = useRef<any>(null);
+  useScreenShortcuts({ onSearch: () => { searchRef.current?.focus?.(); } });
 
   // السطر يفتح التعديل — البيانات الأساسية مافيهاش «عرض» غير الفورم بتاعها نفسه.
   const kb = useTableKeyboard<UserRecord>({
@@ -292,44 +297,57 @@ export default function Users() {
     export: { name: 'مستخدمي النظام', rows: filter.filtered },
   });
 
+  // قوايم الفلاتر — نفس اللي كانت في `ListToolbar` (أكتر من قيمة، والمعنى «أي واحدة منهم»).
+  const multiSelect = (key: string, placeholder: string, options: { value: any; label: string }[]) => (
+    <Select allowClear showSearch mode="multiple" maxTagCount="responsive" placeholder={placeholder}
+      value={filter.values[key]}
+      onChange={(v) => filter.setValue(key, Array.isArray(v) && !v.length ? undefined : v)}
+      options={options} filterOption={searchFilter} filterSort={searchRank} />
+  );
+
   return (
-    <div>
-      <Card
-        title="إدارة مستخدمي النظام"
-        extra={
-          <Space>
-            {tableCols.control}
-            <Button data-shortcut="F2" type="primary" icon={<UserAddOutlined />}
-              onClick={() => setDrawerVisible(true)}>
-              إضافة مستخدم
-            </Button>
-          </Space>
-        }
+    <>
+      <ListPage
+        icon={<TeamOutlined />}
+        title="المستخدمين"
+        muted="(إدارة مستخدمي النظام)"
+        subtitle="حسابات الدخول وأدوارها وربطها بالفروع والمناطق"
+        actions={(<>
+          <Button data-shortcut="F2" type="primary" className="sl-create" icon={<UserAddOutlined />}
+            onClick={() => setDrawerVisible(true)}>
+            إضافة مستخدم
+          </Button>
+          {tableCols.control}
+        </>)}
+        filters={(<>
+          <Input className="sl-f-search" allowClear ref={searchRef} value={filter.query}
+            placeholder="بحث بالاسم أو اسم المستخدم" prefix={<SearchOutlined />}
+            onChange={(e) => filter.setQuery(e.target.value)} />
+          {multiSelect('role', 'الدور',
+            Object.entries(ROLE_LABELS).map(([v, l]) => ({ value: v, label: l })))}
+          {multiSelect('branch_id', 'الفرع', branches.map((b) => ({ value: b.id, label: b.name })))}
+          {multiSelect('active', 'الحالة',
+            [{ value: 'active', label: 'نشط' }, { value: 'inactive', label: 'موقوف' }])}
+          <Button className="sl-f-clear" icon={<ClearOutlined />} onClick={filter.reset}>مسح</Button>
+        </>)}
       >
-        <ListToolbar
-          searchPlaceholder="بحث بالاسم أو اسم المستخدم"
-          query={filter.query} onQueryChange={filter.setQuery}
-          values={filter.values} onValueChange={filter.setValue}
-          onReset={filter.reset}
-          total={users.length} shown={filter.filtered.length}
-          filters={[
-            { key: 'role', placeholder: 'الدور',
-              options: Object.entries(ROLE_LABELS).map(([v, l]) => ({ value: v, label: l })) },
-            { key: 'branch_id', placeholder: 'الفرع',
-              options: branches.map((b) => ({ value: b.id, label: b.name })) },
-            { key: 'active', placeholder: 'الحالة',
-              options: [{ value: 'active', label: 'نشط' }, { value: 'inactive', label: 'موقوف' }] },
-          ]}
-        />
         <Table
           {...kb.tableProps}
+          className="sl-table"
+          size="small"
           dataSource={filter.filtered}
           columns={tableCols.columns}
           rowKey="id"
           loading={loading}
-          pagination={{ defaultPageSize: PAGE_SIZE, showSizeChanger: true, pageSizeOptions: PAGE_SIZE_OPTIONS }}
+          pagination={{ defaultPageSize: PAGE_SIZE, showSizeChanger: true, pageSizeOptions: PAGE_SIZE_OPTIONS,
+            showTotal: () => (
+              <span className="sl-foot">
+                <span>المعروض: <b>{filter.filtered.length}</b> من {users.length}</span>
+                <span>النشطين: <b className="is-pos">{users.filter((u) => u.active).length}</b></span>
+              </span>
+            ) }}
         />
-      </Card>
+      </ListPage>
 
       <TabModal footer={null} centered
         title="إضافة مستخدم جديد"
@@ -565,6 +583,6 @@ export default function Users() {
           </Form.Item>
         </Form>
       </TabModal>
-    </div>
+    </>
   );
 }

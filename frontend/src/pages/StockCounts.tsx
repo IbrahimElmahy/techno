@@ -1,19 +1,24 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { PAGE_SIZE, PAGE_SIZE_OPTIONS } from '../utils/pagination';
 import { searchFilter, searchRank, sortByName } from '../utils/arabicSort';
 import {
-  Alert, Button, Card, DatePicker, Form, Input, Segmented, Select, Space, Tag, message,
+  Button, DatePicker, Form, Input, Segmented, Select, Space, Tag, message,
 } from 'antd';
 // كل جدول هنا بفلتر على كل عمود — شوف `FilterTable`.
 import { FilterTable as Table } from '../components/FilterTable';
-import { Statistic } from '../components/Statistic';
 import { InputNumber } from '../components/NumberInput';
 import { Popconfirm } from '../components/noConfirm';
-import { CheckOutlined, PlusOutlined, ReloadOutlined, StopOutlined , ArrowRightOutlined } from '@ant-design/icons';
+import {
+  ArrowRightOutlined, AuditOutlined, CheckOutlined, ClearOutlined, PlusOutlined, ReloadOutlined,
+  SearchOutlined, StopOutlined,
+} from '@ant-design/icons';
+import ListPage from '../components/ListPage';
+import DateRangeFilter from '../components/DateRangeFilter';
+import { useScreenShortcuts } from '../components/keyboard';
 import dayjs, { Dayjs } from 'dayjs';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../api/client';
-import ListToolbar, { useListFilter } from '../components/ListToolbar';
+import { useListFilter } from '../components/ListToolbar';
 import { matchesStatement } from '../utils/statements';
 import { useDocRoute } from '../components/useDocRoute';
 import { choiceColumn, numberColumn, textColumn } from '../components/gridColumns';
@@ -22,7 +27,7 @@ import { TabModal } from '../components/TabModal';
 import { useTableColumns } from '../components/ColumnSettings';
 
 import { useCanSeeStats } from '../components/StatsRow';
-import { qty, money } from '../utils/money';
+import { qty, money, numeralsLocale } from '../utils/money';
 /**
  * جرد المخازن و جرد عام — the counting cycle.
  *
@@ -343,66 +348,90 @@ export default function StockCounts() {
     export: { name: 'كشوف الجرد', rows: filter.filtered },
   });
 
+  // F3 للبحث — كانت جاية من `ListToolbar`؛ بتشتغل على القايمة بس.
+  const searchRef = useRef<any>(null);
+  useScreenShortcuts({ onSearch: () => { searchRef.current?.focus?.(); } }, !(detailVisible && sheet));
+
+  // فلتر «الحالة» بقى شرايح — نفس القيمة في `filter.values.status`.
+  type StatusTab = 'all' | Sheet['status'];
+  const statusValue = filter.values.status;
+  const activeStatus: StatusTab = statusValue === 'draft' || statusValue === 'posted'
+    || statusValue === 'cancelled' ? statusValue : 'all';
+  const statusCount = (st: Sheet['status']) => sheets.filter((x) => x.status === st).length;
+  const statusTabs: { key: StatusTab; label: string; dot?: string; count?: number }[] = [
+    { key: 'all', label: 'الكل', count: sheets.length },
+    { key: 'draft', label: 'مفتوح', dot: '#1677ff', count: statusCount('draft') },
+    { key: 'posted', label: 'مترحّل', dot: '#52c41a', count: statusCount('posted') },
+    { key: 'cancelled', label: 'ملغي', dot: '#bfbfbf', count: statusCount('cancelled') },
+  ];
+
+  const footer = (
+    <span className="sl-foot">
+      <span>المعروض: <b>{filter.filtered.length.toLocaleString(numeralsLocale())}</b>
+        {' '}من {sheets.length.toLocaleString(numeralsLocale())} كشف</span>
+    </span>
+  );
+
   return (
-    <div>
+    <>
       {/* Mounted at the root so it survives the sheet dialog closing under it. */}
       {/* صفحة واحدة في المرة: يا القايمة يا الكشف. الكشف كان بيتفتح في نافذة عرضها ٨٨٠ بكسل
           و١٢ سطر في الصفحة — وجرد كلي بيبقى مئات السطور، فاللي بيعدّ كان بيعدّ من خرم إبرة.
           دلوقتي بياخد الصفحة كلها. */}
       {!(detailVisible && sheet) && (
-      <Card
-        title="دورة الجرد — عدّ وتسوية"
-        extra={
-          <Space>
-            {tableCols.control}
-            <Button icon={<ReloadOutlined />} onClick={load}>تحديث</Button>
-            <Button data-shortcut="F2" type="primary" icon={<PlusOutlined />}
+      <ListPage<StatusTab>
+        icon={<AuditOutlined />}
+        title="دورة الجرد" muted="(عدّ وتسوية)"
+        // كان تنبيه فوق الجدول — بقى سطر تحت العنوان.
+        subtitle="الجرد بيسوّي الفرق لحد ما الرصيد يساوي المعدود — على الرصيد الحالي، فحركة حصلت أثناء العدّ ماتتحسبش مرتين"
+        tabs={statusTabs} activeTab={activeStatus}
+        onTabChange={(k) => filter.setValue('status', k === 'all' ? undefined : k)}
+        actions={(<>
+            <Button data-shortcut="F2" type="primary" icon={<PlusOutlined />} className="sl-create"
               onClick={() => {
                 setWarehouseId(undefined); setNotes(''); setStatement1(''); setOpenVisible(true);
               }}>
               فتح كشف جرد
             </Button>
-          </Space>
-        }
-      >
-        <Alert
-          type="info" showIcon style={{ marginBottom: 12 }}
-          message="الجرد بيسوّي الفرق لحد ما الرصيد يساوي المعدود"
-          description="يفتح الكشف بأرصدة الدفاتر حينها. وإن حدث بيع أو صرف أثناء العدّ، تُحتسب التسوية على الرصيد الحالي لا على الفرق القديم — فلا تُحتسب تلك الحركة مرتين."
-        />
-
-        <ListToolbar
-          searchPlaceholder="بحث برقم الكشف أو المخزن أو البيان"
-          query={filter.query} onQueryChange={filter.setQuery}
-          values={filter.values} onValueChange={filter.setValue}
-          showDateRange range={filter.range} onRangeChange={filter.setRange}
-          onReset={filter.reset} total={sheets.length} shown={filter.filtered.length}
-          filters={[
-            { key: 'status', placeholder: 'الحالة', span: 5, options: [
-              { value: 'draft', label: 'مفتوح' },
-              { value: 'posted', label: 'مترحّل' },
-              { value: 'cancelled', label: 'ملغي' }] },
-            { key: 'kind', placeholder: 'نوع الجرد', span: 5, options: [
+            {tableCols.control}
+            <Button icon={<ReloadOutlined />} onClick={load}>تحديث</Button>
+        </>)}
+        filters={(<>
+          <Input
+            className="sl-f-search" allowClear ref={searchRef}
+            prefix={<SearchOutlined />} placeholder="بحث برقم الكشف أو المخزن أو البيان"
+            value={filter.query} onChange={(e) => filter.setQuery(e.target.value)}
+          />
+          <DateRangeFilter className="sl-f-dates" value={filter.range} onChange={filter.setRange} />
+          <Select allowClear mode="multiple" maxTagCount="responsive" placeholder="نوع الجرد"
+            value={filter.values.kind} onChange={(v) => filter.setValue('kind', v)}
+            options={[
               { value: 'full', label: 'كلي' },
               { value: 'cycle', label: 'دوري' },
-              { value: 'spot', label: 'عينة' }] },
-            { key: 'progress', placeholder: 'حالة العد', span: 5, options: [
+              { value: 'spot', label: 'عينة' }]} />
+          <Select allowClear mode="multiple" maxTagCount="responsive" placeholder="حالة العد"
+            value={filter.values.progress} onChange={(v) => filter.setValue('progress', v)}
+            options={[
               { value: 'incomplete', label: 'لم ينتهِ العدّ بعد' },
-              { value: 'complete', label: 'العد خلص' }] },
-            { key: 'statement', placeholder: 'البيان', kind: 'text', advanced: true, span: 6 },
-          ]}
-        />
-
+              { value: 'complete', label: 'العد خلص' }]} />
+          <Input allowClear placeholder="البيان"
+            value={filter.values.statement ?? undefined}
+            onChange={(e) => filter.setValue('statement', e.target.value || undefined)} />
+          <Button className="sl-f-clear" icon={<ClearOutlined />} onClick={filter.reset}>مسح</Button>
+        </>)}
+      >
         <Table
-          dataSource={filter.filtered} rowKey="id" loading={loading} size="middle"
+          className="sl-table"
+          dataSource={filter.filtered} rowKey="id" loading={loading} size="small"
           tableLayout="fixed"
           onRow={(r) => ({ onClick: () => openDetail(r), style: { cursor: 'pointer' } })}
           locale={{ emptyText: 'لا توجد كشوف جرد' }}
           pagination={{ defaultPageSize: PAGE_SIZE, showSizeChanger: true,
-            showTotal: (t) => `الإجمالي: ${t}` }}
+            locale: { items_per_page: '' },
+            showTotal: () => footer }}
           columns={tableCols.columns}
         />
-      </Card>
+      </ListPage>
       )}
 
       <TabModal
@@ -469,49 +498,67 @@ export default function StockCounts() {
       </TabModal>
 
       {detailVisible && sheet && (
-      <Card
-        title={(
-          <Space>
-            <Button type="text" icon={<ArrowRightOutlined />}
-              onClick={closeDoc}>رجوع للكشوف</Button>
-            <span>كشف الجرد {sheet.document_number}</span>
-            <Tag color={sheet.status === 'posted' ? 'green'
+      // شكل المستند الجديد (زي إذن التحويل): كروت بيضا على رمادي. الشكل بس.
+      <div className="sale-doc">
+        <div className="sale-card sale-head">
+          <div className="sale-head-row">
+            <Button size="small" icon={<ArrowRightOutlined />} onClick={closeDoc}>رجوع للكشوف</Button>
+            <span className="sale-title">كشف الجرد <b dir="ltr">{sheet.document_number}</b></span>
+            <Tag style={{ marginInlineEnd: 0 }} color={sheet.status === 'posted' ? 'green'
               : sheet.status === 'cancelled' ? 'default' : 'blue'}>
               {sheet.status === 'posted' ? 'مترحّل'
                 : sheet.status === 'cancelled' ? 'ملغي' : 'مفتوح'}
             </Tag>
-          </Space>
-        )}
-        extra={isDraft ? (
-          <Space>
-            <Popconfirm title="إلغاء الكشف؟" okText="إلغاء الكشف" cancelText="رجوع"
-              onConfirm={() => cancelSheet(sheet.id)}>
-              <Button danger icon={<StopOutlined />}>إلغاء الكشف</Button>
-            </Popconfirm>
-            <Button data-shortcut="F9" onClick={saveCounts} loading={busy}>حفظ العدّ</Button>
-            <Popconfirm
-              title="ترحيل الجرد؟"
-              description="ستُسوّى الفروق في المخزن. والسطور التي بلا رقم لن تتغيّر."
-              okText="ترحيل" cancelText="رجوع" onConfirm={postSheet}>
-              <Button type="primary" icon={<CheckOutlined />} loading={busy}>ترحيل الجرد</Button>
-            </Popconfirm>
-          </Space>
-        ) : null}
-      >
-          <>
-{canSeeStats && (
-            <Space size="large" style={{ marginBottom: 12 }}>
-              <Statistic title="متعدود" value={`${countedNow} / ${allLines.length}`} />
-              <Statistic title="سطور بفرق" value={differing}
-                valueStyle={{ color: differing ? '#cf1322' : undefined }} />
-              {/* العجز والزيادة بالفلوس — الرقم اللي بيتاخد عليه قرار. */}
-              <Statistic title="قيمة العجز" value={`${money(Math.abs(totalShort))}`}
-                valueStyle={{ color: totalShort < -0.005 ? '#cf1322' : undefined }} />
-              <Statistic title="قيمة الزيادة" value={`${money(totalOver)}`}
-                valueStyle={{ color: totalOver > 0.005 ? '#6AB42D' : undefined }} />
-            </Space>
+            {isDraft && (
+              <div className="sale-toolbar-row">
+                <Popconfirm title="إلغاء الكشف؟" okText="إلغاء الكشف" cancelText="رجوع"
+                  onConfirm={() => cancelSheet(sheet.id)}>
+                  <Button danger icon={<StopOutlined />}>إلغاء الكشف</Button>
+                </Popconfirm>
+                <Button data-shortcut="F9" onClick={saveCounts} loading={busy}>حفظ العدّ</Button>
+                <Popconfirm
+                  title="ترحيل الجرد؟"
+                  description="ستُسوّى الفروق في المخزن. والسطور التي بلا رقم لن تتغيّر."
+                  okText="ترحيل" cancelText="رجوع" onConfirm={postSheet}>
+                  <Button type="primary" icon={<CheckOutlined />} loading={busy}>ترحيل الجرد</Button>
+                </Popconfirm>
+              </div>
             )}
+          </div>
+        </div>
 
+        <div className="sale-form">
+          {canSeeStats && (
+            <div className="sale-tiles">
+              <div className="sale-tile">
+                <div className="sale-tile-label">متعدود</div>
+                <div className="sale-tile-value">{`${countedNow} / ${allLines.length}`}</div>
+              </div>
+              <div className="sale-tile">
+                <div className="sale-tile-label">سطور بفرق</div>
+                <div className="sale-tile-value" style={{ color: differing ? '#cf1322' : undefined }}>
+                  {differing}
+                </div>
+              </div>
+              {/* العجز والزيادة بالفلوس — الرقم اللي بيتاخد عليه قرار. */}
+              <div className="sale-tile">
+                <div className="sale-tile-label">قيمة العجز</div>
+                <div className="sale-tile-value"
+                  style={{ color: totalShort < -0.005 ? '#cf1322' : undefined }}>
+                  {money(Math.abs(totalShort))}
+                </div>
+              </div>
+              <div className="sale-tile">
+                <div className="sale-tile-label">قيمة الزيادة</div>
+                <div className="sale-tile-value"
+                  style={{ color: totalOver > 0.005 ? '#6AB42D' : undefined }}>
+                  {money(totalOver)}
+                </div>
+              </div>
+            </div>
+          )}
+
+          <div className="sale-card">
             {/* البيان — بيتعدّل والكشف مفتوح وبيتحفظ مع «حفظ العدّ»؛ بعد الترحيل للقراية بس. */}
             <div style={{ marginBottom: 10, maxWidth: 520 }}>
               <div style={{ marginBottom: 4, fontWeight: 600 }}>البيان</div>
@@ -672,9 +719,10 @@ export default function StockCounts() {
                 },
               ]}
             />
-          </>
-      </Card>
+          </div>
+        </div>
+      </div>
       )}
-    </div>
+    </>
   );
 }

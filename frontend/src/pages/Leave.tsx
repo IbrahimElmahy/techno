@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { PAGE_SIZE } from '../utils/pagination';
 import { searchFilter, searchRank } from '../utils/arabicSort';
 import {
-  Alert, Button, Card, Col, DatePicker, Input, Row, Select, Space, Table, Tabs, Tag, message,
+  Alert, Button, Col, Input, Row, Select, Space, Table, Tag, message,
 } from 'antd';
 import { InputNumber } from '../components/NumberInput';
 import { Popconfirm } from '../components/noConfirm';
@@ -21,6 +21,7 @@ import { TabModal } from '../components/TabModal';
 import DateRangeFilter from '../components/DateRangeFilter';
 import { exportCsv as writeCsv, type CsvColumn } from '../utils/exportCsv';
 import { printReport, type PrintColumn } from '../print/reportSheet';
+import ListPage from '../components/ListPage';
 
 /**
  * الأجازات — الطلبات والأرصدة والأنواع.
@@ -265,118 +266,115 @@ export default function Leave() {
   const onBalances = tab === 'balances';
 
   return (
-    <Card
-      title={(
-        <Space>
-          <CalendarOutlined /> الأجازات
-          {pending ? <Tag color="orange">{pending} مستنية</Tag> : null}
-        </Space>
-      )}
-      extra={(
-        <Space>
-          {onBalances ? balTable.control : reqTable.control}
-          <Button icon={<DownloadOutlined />}
-            onClick={() => (onBalances
-              ? writeCsv(`leave-balances-${year}`, balCsv, balances)
-              : writeCsv('leave-requests', reqCsv, requests))}>تصدير CSV</Button>
-          <Button icon={<PrinterOutlined />}
-            onClick={() => (onBalances
-              ? printReport({ title: 'أرصدة الأجازات', meta: [['السنة', String(year)]] },
-                balCsv as PrintColumn<BalanceRow>[], balances)
-              : printReport({ title: 'طلبات الأجازات' },
-                reqCsv as PrintColumn<LeaveRequestRow>[], requests))}>طباعة</Button>
-          <Button data-shortcut="F2" type="primary" icon={<PlusOutlined />}
-            onClick={() => setCreating(true)}>طلب أجازة</Button>
-          <Button icon={<ReloadOutlined />} onClick={load}>تحديث</Button>
-        </Space>
-      )}
+    <>
+    <ListPage
+      icon={<CalendarOutlined />}
+      title="الأجازات"
+      muted={pending ? `(${pending} طلب مستني الاعتماد)` : undefined}
+      subtitle="طلبات الأجازات واعتمادها، أرصدة السنة، وأنواع الأجازات"
+      tabs={[
+        { key: 'requests', label: 'الطلبات', count: requests.length },
+        { key: 'balances', label: 'الأرصدة', count: balances.length },
+        { key: 'types', label: 'الأنواع', count: types.length },
+      ]}
+      activeTab={tab} onTabChange={setTab}
+      actions={(<>
+        <Button data-shortcut="F2" type="primary" className="sl-create" icon={<PlusOutlined />}
+          onClick={() => setCreating(true)}>طلب أجازة</Button>
+        {tab === 'types' ? (
+          <Button icon={<PlusOutlined />} onClick={() => setTypeOpen(true)}>نوع جديد</Button>
+        ) : null}
+        <Button icon={<PrinterOutlined />}
+          onClick={() => (onBalances
+            ? printReport({ title: 'أرصدة الأجازات', meta: [['السنة', String(year)]] },
+              balCsv as PrintColumn<BalanceRow>[], balances)
+            : printReport({ title: 'طلبات الأجازات' },
+              reqCsv as PrintColumn<LeaveRequestRow>[], requests))}>طباعة</Button>
+        <Button icon={<DownloadOutlined />}
+          onClick={() => (onBalances
+            ? writeCsv(`leave-balances-${year}`, balCsv, balances)
+            : writeCsv('leave-requests', reqCsv, requests))}>تصدير CSV</Button>
+        {onBalances ? balTable.control : reqTable.control}
+        <Button icon={<ReloadOutlined />} onClick={load}>تحديث</Button>
+      </>)}
+      filters={tab === 'requests' ? (
+        <Select
+          allowClear style={{ flex: '0 1 240px' }} placeholder="كل الحالات"
+          value={statusFilter} onChange={setStatusFilter}
+          options={Object.entries(STATUS)
+            .map(([k, v]) => ({ value: k, label: v.label }))}
+        />
+      ) : onBalances ? (<>
+        <InputNumber value={year} onChange={(v) => setYear(Number(v) || year)}
+          style={{ flex: '0 0 120px' }} />
+        <span style={{ color: '#888', flex: '1 1 auto' }}>
+          المستهلك محسوب من الطلبات المعتمدة، مش رقم مخزّن.
+        </span>
+      </>) : undefined}
     >
       {!types.length ? (
         <Alert
-          type="info" showIcon style={{ marginBottom: 12 }}
+          type="info" showIcon style={{ margin: '6px 0 8px' }}
           message="لا توجد أنواع إجازات بعد"
           description="ابدأ من تبويب «الأنواع» — سنوية، عارضة، مرضية، بدون أجر."
         />
       ) : null}
 
-      <Tabs
-        activeKey={tab} onChange={setTab}
-        items={[
-          {
-            key: 'requests',
-            label: 'الطلبات',
-            children: (
-              <>
-                <Space style={{ marginBottom: 10 }}>
-                  <Select
-                    allowClear style={{ width: 180 }} placeholder="كل الحالات"
-                    value={statusFilter} onChange={setStatusFilter}
-                    options={Object.entries(STATUS)
-                      .map(([k, v]) => ({ value: k, label: v.label }))}
-                  />
-                </Space>
-                <Table
-                  {...kb.tableProps}
-                  rowKey="id" size="small" loading={loading}
-                  columns={reqTable.columns} dataSource={requests}
-                  pagination={{ defaultPageSize: PAGE_SIZE, showSizeChanger: true }}
-                  scroll={{ x: 'max-content' }}
-                  locale={{ emptyText: 'لا توجد طلبات' }}
-                />
-              </>
+      {tab === 'balances' ? (
+        <Table
+          className="sl-table"
+          rowKey={(r) => `${r.employee_id}-${r.leave_type_id}`}
+          size="small" loading={loading}
+          columns={balTable.columns} dataSource={balances}
+          pagination={{
+            defaultPageSize: PAGE_SIZE, showSizeChanger: true,
+            showTotal: () => (
+              <span className="sl-foot">
+                <span>أرصدة سنة <b>{year}</b>: <b>{balances.length}</b></span>
+              </span>
             ),
-          },
-          {
-            key: 'balances',
-            label: 'الأرصدة',
-            children: (
-              <>
-                <Space style={{ marginBottom: 10 }}>
-                  <InputNumber value={year} onChange={(v) => setYear(Number(v) || year)}
-                    style={{ width: 110 }} />
-                  <span style={{ color: '#888' }}>
-                    المستهلك محسوب من الطلبات المعتمدة، مش رقم مخزّن.
-                  </span>
-                </Space>
-                <Table
-                  rowKey={(r) => `${r.employee_id}-${r.leave_type_id}`}
-                  size="small" loading={loading}
-                  columns={balTable.columns} dataSource={balances}
-                  pagination={{ defaultPageSize: PAGE_SIZE, showSizeChanger: true }}
-                  scroll={{ x: 'max-content' }}
-                  locale={{ emptyText: 'لا توجد أرصدة' }}
-                />
-              </>
+          }}
+          scroll={{ x: 'max-content' }}
+          locale={{ emptyText: 'لا توجد أرصدة' }}
+        />
+      ) : tab === 'types' ? (
+        <Table
+          className="sl-table"
+          rowKey="id" size="small" dataSource={types}
+          pagination={false}
+          columns={[
+            { title: 'الكود', dataIndex: 'code', width: 90 },
+            { title: 'النوع', dataIndex: 'name' },
+            { title: 'الرصيد السنوي', dataIndex: 'annual_quota',
+              render: (v: string) => Number(v) },
+            { title: 'مدفوعة', dataIndex: 'paid',
+              render: (v: boolean) => (v ? <Tag color="green">أيوه</Tag> : <Tag>لأ</Tag>) },
+            { title: 'بتخصم من المرتب', dataIndex: 'deducts_salary',
+              render: (v: boolean) => (v ? <Tag color="red">أيوه</Tag> : '—') },
+            { title: 'بتحسب الجمعة والسبت', dataIndex: 'counts_weekend',
+              render: (v: boolean) => (v ? 'أيوه' : 'لأ') },
+          ]}
+        />
+      ) : (
+        <Table
+          {...kb.tableProps}
+          className="sl-table"
+          rowKey="id" size="small" loading={loading}
+          columns={reqTable.columns} dataSource={requests}
+          pagination={{
+            defaultPageSize: PAGE_SIZE, showSizeChanger: true,
+            showTotal: () => (
+              <span className="sl-foot">
+                <span>الطلبات: <b>{requests.length}</b></span>
+                <span>مستنية الاعتماد: <b>{pending}</b></span>
+              </span>
             ),
-          },
-          {
-            key: 'types',
-            label: 'الأنواع',
-            children: (
-              <>
-                <Button icon={<PlusOutlined />} onClick={() => setTypeOpen(true)}
-                  style={{ marginBottom: 10 }}>نوع جديد</Button>
-                <Table
-                  rowKey="id" size="small" dataSource={types}
-                  pagination={false}
-                  columns={[
-                    { title: 'الكود', dataIndex: 'code', width: 90 },
-                    { title: 'النوع', dataIndex: 'name' },
-                    { title: 'الرصيد السنوي', dataIndex: 'annual_quota',
-                      render: (v: string) => Number(v) },
-                    { title: 'مدفوعة', dataIndex: 'paid',
-                      render: (v: boolean) => (v ? <Tag color="green">أيوه</Tag> : <Tag>لأ</Tag>) },
-                    { title: 'بتخصم من المرتب', dataIndex: 'deducts_salary',
-                      render: (v: boolean) => (v ? <Tag color="red">أيوه</Tag> : '—') },
-                    { title: 'بتحسب الجمعة والسبت', dataIndex: 'counts_weekend',
-                      render: (v: boolean) => (v ? 'أيوه' : 'لأ') },
-                  ]}
-                />
-              </>
-            ),
-          },
-        ]}
-      />
+          }}
+          scroll={{ x: 'max-content' }}
+          locale={{ emptyText: 'لا توجد طلبات' }}
+        />
+      )}
+    </ListPage>
 
       <TabModal
         open={creating} title="طلب أجازة" onCancel={() => setCreating(false)}
@@ -454,6 +452,6 @@ export default function Leave() {
           </Col>
         </Row>
       </TabModal>
-    </Card>
+    </>
   );
 }

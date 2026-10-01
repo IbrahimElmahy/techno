@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { PAGE_SIZE } from '../utils/pagination';
 import { searchFilter, searchRank } from '../utils/arabicSort';
 import {
-  Alert, Button, Card, Col, DatePicker, Input, Row, Select, Space, Table, Tabs, Tag, message,
+  Alert, Button, Col, DatePicker, Input, Row, Select, Table, Tag, message,
 } from 'antd';
 import { InputNumber } from '../components/NumberInput';
 import { Popconfirm } from '../components/noConfirm';
@@ -20,6 +20,7 @@ import { TabModal } from '../components/TabModal';
 import { exportCsv as writeCsv, type CsvColumn } from '../utils/exportCsv';
 import { printReport, type PrintColumn } from '../print/reportSheet';
 import { money } from '../utils/money';
+import ListPage from '../components/ListPage';
 
 /**
  * السلف والجزاءات.
@@ -280,96 +281,102 @@ export default function Advances() {
   const onAdvances = tab === 'advances';
 
   return (
-    <Card
-      title={(
-        <Space>
-          <WalletOutlined /> السلف والجزاءات
-          {totals.open
-            ? <Tag color="blue">{totals.open} سلفة · متبقي {money(totals.outstanding)}</Tag>
-            : null}
-        </Space>
-      )}
-      extra={(
-        <Space>
-          {onAdvances ? advCols.control : adjCols.control}
-          <Button icon={<DownloadOutlined />}
-            onClick={() => (onAdvances
-              ? writeCsv('advances', advCsv, advances)
-              : writeCsv('adjustments', adjCsv, adjustments))}>تصدير CSV</Button>
-          <Button icon={<PrinterOutlined />}
-            onClick={() => (onAdvances
-              ? printReport({ title: 'سلف العاملين' },
-                advCsv as PrintColumn<Advance>[], advances)
-              : printReport({ title: 'الجزاءات والمكافآت' },
-                adjCsv as PrintColumn<Adjustment>[], adjustments))}>طباعة</Button>
-          <Button data-shortcut="F2" type="primary" icon={<PlusOutlined />}
-            onClick={() => (onAdvances ? setAdvOpen(true) : setAdjOpen(true))}>
-            {onAdvances ? 'صرف سلفة' : 'جزاء أو مكافأة'}
-          </Button>
-          <Button icon={<ReloadOutlined />} onClick={load}>تحديث</Button>
-        </Space>
-      )}
-    >
-      <Space style={{ marginBottom: 10 }}>
+    <>
+    <ListPage
+      icon={<WalletOutlined />}
+      title="سلف العاملين" muted="(السلف والجزاءات والمكافآت)"
+      subtitle="صرف السلف وتقسيطها على المرتب، والجزاءات والمكافآت اللي بتتحسب في المسير"
+      tabs={[
+        { key: 'advances', label: 'السلف', count: advances.length },
+        { key: 'adjustments', label: 'الجزاءات والمكافآت', count: adjustments.length },
+      ]}
+      activeTab={tab} onTabChange={setTab}
+      actions={(<>
+        <Button data-shortcut="F2" type="primary" className="sl-create" icon={<PlusOutlined />}
+          onClick={() => (onAdvances ? setAdvOpen(true) : setAdjOpen(true))}>
+          {onAdvances ? 'صرف سلفة' : 'جزاء أو مكافأة'}
+        </Button>
+        <Button icon={<PrinterOutlined />}
+          onClick={() => (onAdvances
+            ? printReport({ title: 'سلف العاملين' },
+              advCsv as PrintColumn<Advance>[], advances)
+            : printReport({ title: 'الجزاءات والمكافآت' },
+              adjCsv as PrintColumn<Adjustment>[], adjustments))}>طباعة</Button>
+        <Button icon={<DownloadOutlined />}
+          onClick={() => (onAdvances
+            ? writeCsv('advances', advCsv, advances)
+            : writeCsv('adjustments', adjCsv, adjustments))}>تصدير CSV</Button>
+        {onAdvances ? advCols.control : adjCols.control}
+        <Button icon={<ReloadOutlined />} onClick={load}>تحديث</Button>
+      </>)}
+      filters={(
         <Select
-          allowClear showSearch style={{ width: 260 }}
+          allowClear showSearch style={{ flex: '0 1 320px' }}
           placeholder="كل الموظفين" value={employeeId} onChange={setEmployeeId}
           options={employees.map((e) => ({ value: e.id, label: e.name }))} filterOption={searchFilter} filterSort={searchRank}/>
-      </Space>
-
-      <Tabs
-        activeKey={tab} onChange={setTab}
-        items={[
-          {
-            key: 'advances',
-            label: 'السلف',
-            children: (
+      )}
+    >
+      {onAdvances ? (
+        <Table
+          {...kb.tableProps}
+          className="sl-table"
+          rowKey="id" size="small" loading={loading}
+          columns={advCols.columns} dataSource={advances}
+          pagination={{
+            defaultPageSize: PAGE_SIZE, showSizeChanger: true,
+            // المتبقي هو اللي كان في ترويسة الكارت — مكانه دلوقتي تحت الجدول.
+            showTotal: () => (
+              <span className="sl-foot">
+                <span>سلف بتتقسّط: <b>{totals.open}</b></span>
+                <span>إجمالي المتبقي: <b className={totals.outstanding ? 'is-neg' : 'is-pos'}>
+                  {money(totals.outstanding)}</b></span>
+              </span>
+            ),
+          }}
+          scroll={{ x: 'max-content' }}
+          locale={{ emptyText: 'لا توجد سلف' }}
+          // جدول الأقساط تحت السلفة — «هيتخصم مني كام الشهر الجاي» سؤال بيتسأل
+          // ساعة الاستلاف، والإجابة مكانها هنا مش في شاشة تانية.
+          expandable={{
+            expandedRowRender: (r: Advance) => (
               <Table
-                {...kb.tableProps}
-                rowKey="id" size="small" loading={loading}
-                columns={advCols.columns} dataSource={advances}
-                pagination={{ defaultPageSize: PAGE_SIZE, showSizeChanger: true }}
-                scroll={{ x: 'max-content' }}
-                locale={{ emptyText: 'لا توجد سلف' }}
-                // جدول الأقساط تحت السلفة — «هيتخصم مني كام الشهر الجاي» سؤال بيتسأل
-                // ساعة الاستلاف، والإجابة مكانها هنا مش في شاشة تانية.
-                expandable={{
-                  expandedRowRender: (r: Advance) => (
-                    <Table
-                      size="small" pagination={false} rowKey={(p) => `${p.year}-${p.month}`}
-                      dataSource={r.schedule}
-                      columns={[
-                        { title: 'الشهر', key: 'period', width: 120,
-                          render: (_: any, p: ScheduleRow) =>
-                            `${p.year}/${String(p.month).padStart(2, '0')}` },
-                        { title: 'القسط', dataIndex: 'amount', width: 140,
-                          render: (v: string) => money(v) },
-                        { title: '', dataIndex: 'paid',
-                          render: (v: boolean) => (v
-                            ? <Tag color="green">اتخصم</Tag>
-                            : <Tag color="orange">لسه</Tag>) },
-                      ]}
-                    />
-                  ),
-                }}
+                size="small" pagination={false} rowKey={(p) => `${p.year}-${p.month}`}
+                dataSource={r.schedule}
+                columns={[
+                  { title: 'الشهر', key: 'period', width: 120,
+                    render: (_: any, p: ScheduleRow) =>
+                      `${p.year}/${String(p.month).padStart(2, '0')}` },
+                  { title: 'القسط', dataIndex: 'amount', width: 140,
+                    render: (v: string) => money(v) },
+                  { title: '', dataIndex: 'paid',
+                    render: (v: boolean) => (v
+                      ? <Tag color="green">اتخصم</Tag>
+                      : <Tag color="orange">لسه</Tag>) },
+                ]}
               />
             ),
-          },
-          {
-            key: 'adjustments',
-            label: 'الجزاءات والمكافآت',
-            children: (
-              <Table
-                rowKey="id" size="small" loading={loading}
-                columns={adjCols.columns} dataSource={adjustments}
-                pagination={{ defaultPageSize: PAGE_SIZE, showSizeChanger: true }}
-                scroll={{ x: 'max-content' }}
-                locale={{ emptyText: 'لا توجد جزاءات ولا مكافآت' }}
-              />
+          }}
+        />
+      ) : (
+        <Table
+          className="sl-table"
+          rowKey="id" size="small" loading={loading}
+          columns={adjCols.columns} dataSource={adjustments}
+          pagination={{
+            defaultPageSize: PAGE_SIZE, showSizeChanger: true,
+            showTotal: () => (
+              <span className="sl-foot">
+                <span>السجلات: <b>{adjustments.length}</b></span>
+                <span>بانتظار المسيّر: <b>
+                  {adjustments.filter((r) => !r.applied && r.status !== 'cancelled').length}</b></span>
+              </span>
             ),
-          },
-        ]}
-      />
+          }}
+          scroll={{ x: 'max-content' }}
+          locale={{ emptyText: 'لا توجد جزاءات ولا مكافآت' }}
+        />
+      )}
+    </ListPage>
 
       <TabModal
         open={advOpen} title="صرف سلفة" onCancel={() => setAdvOpen(false)}
@@ -484,6 +491,6 @@ export default function Advances() {
           </Col>
         </Row>
       </TabModal>
-    </Card>
+    </>
   );
 }

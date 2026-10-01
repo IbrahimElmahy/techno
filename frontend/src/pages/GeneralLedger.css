@@ -1,0 +1,24 @@
+/* الأستاذ العام جوّه `ListPage`: كارت كل تبويب بيتفرد على الكارت الأبيض بتاع الإطار
+   بدل ما يبقى كارت جوّه كارت — العنوان وأزراره بيفضلوا سطر فوق الكشف. */
+.list-page .gl-tab > .ant-card {
+  border: 0;
+  box-shadow: none;
+  background: transparent;
+}
+.list-page .gl-tab > .ant-card > .ant-card-head {
+  padding: 0 4px;
+  min-height: 46px;
+  border-bottom-color: #f1f5f9;
+}
+.list-page .gl-tab > .ant-card > .ant-card-head .ant-card-head-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: #334155;
+}
+.list-page .gl-tab > .ant-card > .ant-card-head .ant-btn {
+  border-radius: 8px;
+  font-weight: 600;
+}
+.list-page .gl-tab > .ant-card > .ant-card-body {
+  padding: 10px 0 4px;
+}

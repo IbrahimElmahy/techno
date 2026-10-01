@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
-  Alert, Button, Card, Col, DatePicker, Divider, Input, Row, Select, Space, Table, Tabs, Tag, message,
+  Alert, Button, Col, DatePicker, Divider, Input, Row, Select, Space, Table, Tag, message,
 } from 'antd';
 import { Statistic } from '../components/Statistic';
 import { InputNumber } from '../components/NumberInput';
@@ -12,6 +12,7 @@ import { useQueryTab } from '../components/useQueryTab';
 import { useTableColumns } from '../components/ColumnSettings';
 import { TabModal } from '../components/TabModal';
 import { money } from '../utils/money';
+import ListPage from '../components/ListPage';
 
 /**
  * إعدادات المرتبات — البنود، والشرايح، وأرقام المسير.
@@ -262,102 +263,95 @@ export default function PayrollSettings() {
   });
 
   return (
-    <Card
-      title={<span><SettingOutlined /> إعدادات المرتبات</span>}
-      extra={<Button icon={<ReloadOutlined />} onClick={load}>تحديث</Button>}
+    <>
+    <ListPage
+      icon={<SettingOutlined />}
+      title="إعدادات المرتبات"
+      subtitle="شرايح الضريبة والتأمينات، بنود الراتب، وأرقام المسير"
+      tabs={[
+        { key: 'schemes', label: 'الشرايح والنسب', count: versions.length },
+        { key: 'components', label: 'بنود الراتب', count: components.length },
+        { key: 'rules', label: 'أرقام المسير' },
+      ]}
+      activeTab={tab} onTabChange={setTab}
+      actions={(<>
+        {tab === 'schemes' ? (<>
+          <Button data-shortcut="F2" type="primary" className="sl-create" icon={<PlusOutlined />}
+            onClick={openNew}>إصدار جديد</Button>
+          {schemeCols.control}
+        </>) : tab === 'components' ? (<>
+          <Button type="primary" className="sl-create" icon={<PlusOutlined />}
+            onClick={() => setCompOpen(true)}>بند جديد</Button>
+          {componentCols.control}
+        </>) : null}
+        <Button icon={<ReloadOutlined />} onClick={load}>تحديث</Button>
+      </>)}
     >
       {noSchemes ? (
         <Alert
-          type="warning" showIcon style={{ marginBottom: 12 }}
+          type="warning" showIcon style={{ margin: '6px 0 8px' }}
           message="لم تُحدَّد الشرائح بعد"
           description={'لا يأتي النظام بأي نسب — فأول إصدار يكتبه محاسب الشركة ويعتمده. '
             + 'من غيره المسير هيحسب الضريبة والتأمينات صفر.'}
         />
       ) : null}
 
-      <Tabs
-        activeKey={tab} onChange={setTab}
-        items={[
-          {
-            key: 'schemes',
-            label: 'الشرايح والنسب',
-            children: (
-              <>
-                <Space style={{ marginBottom: 10 }}>
-                  <Button data-shortcut="F2" type="primary" icon={<PlusOutlined />}
-                    onClick={openNew}>إصدار جديد</Button>
-                  {schemeCols.control}
-                </Space>
-                <Table
-                  rowKey="id" size="small" loading={loading} dataSource={versions}
-                  pagination={false}
-                  onRow={(r) => ({ onDoubleClick: () => openEdit(r) })}
-                  columns={schemeCols.columns}
-                />
-              </>
-            ),
-          },
-          {
-            key: 'components',
-            label: 'بنود الراتب',
-            children: (
-              <>
-                <Space style={{ marginBottom: 10 }}>
-                  <Button icon={<PlusOutlined />} onClick={() => setCompOpen(true)}>بند جديد</Button>
-                  {componentCols.control}
-                </Space>
-                <Table
-                  rowKey="id" size="small" dataSource={components} pagination={false}
-                  columns={componentCols.columns}
-                />
-              </>
-            ),
-          },
-          {
-            key: 'rules',
-            label: 'أرقام المسير',
-            children: settings ? (
-              <Row gutter={[12, 12]} style={{ maxWidth: 640 }}>
-                <Col span={12}>
-                  <div style={{ marginBottom: 4 }}>أيام الشهر</div>
-                  <InputNumber style={{ width: '100%' }} min={1} max={31}
-                    value={settings.days_per_month}
-                    onChange={(v) => saveSettings({ days_per_month: v })} />
-                  <div style={{ color: '#888', fontSize: 12, marginTop: 4 }}>
-                    «ثلاثون» أم «أيام الشهر الفعلية» — كلاهما مستعمل، وليس أحدهما خطأً.
-                  </div>
-                </Col>
-                <Col span={12}>
-                  <div style={{ marginBottom: 4 }}>ساعات اليوم</div>
-                  <InputNumber style={{ width: '100%' }} min={1} max={24}
-                    value={Number(settings.hours_per_day)}
-                    onChange={(v) => saveSettings({ hours_per_day: String(v) })} />
-                </Col>
-                <Col span={12}>
-                  <div style={{ marginBottom: 4 }}>نسبة الإضافي العادي ٪</div>
-                  <InputNumber style={{ width: '100%' }} min={0}
-                    value={Number(settings.overtime_normal_pct)}
-                    onChange={(v) => saveSettings({ overtime_normal_pct: String(v) })} />
-                </Col>
-                <Col span={12}>
-                  <div style={{ marginBottom: 4 }}>نسبة إضافي العطلات ٪</div>
-                  <InputNumber style={{ width: '100%' }} min={0}
-                    value={Number(settings.overtime_holiday_pct)}
-                    onChange={(v) => saveSettings({ overtime_holiday_pct: String(v) })} />
-                </Col>
-                <Col span={24}>
-                  <Alert
-                    type="info" showIcon
-                    message={`سياسة التأخير: ${settings.late_policy === 'none'
-                      ? 'يُسجَّل ولا يُخصم' : settings.late_policy}`}
-                    description="الافتراضي ألا يُخصم. والخصم الصامت على التأخير أسرع طريق لفقدان ثقة الموظفين في أول شهر."
-                  />
-                </Col>
-              </Row>
-            ) : null,
-          },
-        ]}
-      />
+      {tab === 'components' ? (
+        <Table
+          className="sl-table"
+          rowKey="id" size="small" dataSource={components} pagination={false}
+          columns={componentCols.columns}
+        />
+      ) : tab === 'rules' ? (
+        settings ? (
+          <Row gutter={[12, 12]} style={{ maxWidth: 640, padding: '10px 6px 12px' }}>
+            <Col span={12}>
+              <div style={{ marginBottom: 4 }}>أيام الشهر</div>
+              <InputNumber style={{ width: '100%' }} min={1} max={31}
+                value={settings.days_per_month}
+                onChange={(v) => saveSettings({ days_per_month: v })} />
+              <div style={{ color: '#888', fontSize: 12, marginTop: 4 }}>
+                «ثلاثون» أم «أيام الشهر الفعلية» — كلاهما مستعمل، وليس أحدهما خطأً.
+              </div>
+            </Col>
+            <Col span={12}>
+              <div style={{ marginBottom: 4 }}>ساعات اليوم</div>
+              <InputNumber style={{ width: '100%' }} min={1} max={24}
+                value={Number(settings.hours_per_day)}
+                onChange={(v) => saveSettings({ hours_per_day: String(v) })} />
+            </Col>
+            <Col span={12}>
+              <div style={{ marginBottom: 4 }}>نسبة الإضافي العادي ٪</div>
+              <InputNumber style={{ width: '100%' }} min={0}
+                value={Number(settings.overtime_normal_pct)}
+                onChange={(v) => saveSettings({ overtime_normal_pct: String(v) })} />
+            </Col>
+            <Col span={12}>
+              <div style={{ marginBottom: 4 }}>نسبة إضافي العطلات ٪</div>
+              <InputNumber style={{ width: '100%' }} min={0}
+                value={Number(settings.overtime_holiday_pct)}
+                onChange={(v) => saveSettings({ overtime_holiday_pct: String(v) })} />
+            </Col>
+            <Col span={24}>
+              <Alert
+                type="info" showIcon
+                message={`سياسة التأخير: ${settings.late_policy === 'none'
+                  ? 'يُسجَّل ولا يُخصم' : settings.late_policy}`}
+                description="الافتراضي ألا يُخصم. والخصم الصامت على التأخير أسرع طريق لفقدان ثقة الموظفين في أول شهر."
+              />
+            </Col>
+          </Row>
+        ) : null
+      ) : (
+        <Table
+          className="sl-table"
+          rowKey="id" size="small" loading={loading} dataSource={versions}
+          pagination={false}
+          onRow={(r) => ({ onDoubleClick: () => openEdit(r) })}
+          columns={schemeCols.columns}
+        />
+      )}
+    </ListPage>
 
       <TabModal
         open={open} width={860}
@@ -533,6 +527,6 @@ export default function PayrollSettings() {
           </Col>
         </Row>
       </TabModal>
-    </Card>
+    </>
   );
 }

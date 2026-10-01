@@ -1621,3 +1621,8 @@ html[data-density='comfortable'] .ant-table-thead > tr > th {
 .list-page .sl-slot:empty {
   display: none;
 }
+
+/* جوّه أزرار الكشف الـ`Space` هو اللي بيباعد — مسافة زرار الإكسل الافتراضية بتبقى زيادة. */
+.list-page .sl-actions .ant-btn {
+  margin-inline-start: 0 !important;
+}

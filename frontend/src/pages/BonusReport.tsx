@@ -1,13 +1,15 @@
 import React, { useEffect, useState } from 'react';
-import { Card, Col, Row, Segmented, Space, Button, Typography } from 'antd';
+import { Button } from 'antd';
+import type { ColumnsType } from 'antd/es/table';
 // فلتر على كل عمود — شوف `FilterTable`.
 import { FilterTable as Table } from '../components/FilterTable';
-import { Statistic } from '../components/Statistic';
-import { PrinterOutlined, ReloadOutlined } from '@ant-design/icons';
+import { GiftOutlined, PrinterOutlined, ReloadOutlined } from '@ant-design/icons';
 import dayjs, { Dayjs } from 'dayjs';
 import { api } from '../api/client';
 import DateRangeFilter from '../components/DateRangeFilter';
-import { money } from '../utils/money';
+import { money, numeralsLocale } from '../utils/money';
+import ListPage from '../components/ListPage';
+import ExportExcelButton from '../components/ExportExcelButton';
 import { printReport } from '../print/reportSheet';
 
 /**
@@ -71,49 +73,53 @@ export default function BonusReport() {
     ],
   );
 
+  const columns: ColumnsType<Row> = [
+    { title: GROUP_LABEL[group], dataIndex: 'name' },
+    { title: 'فواتير', dataIndex: 'invoices', width: 90, align: 'center',
+      sorter: (a, b) => a.invoices - b.invoices },
+    { title: 'القيمة بسعر البيع', dataIndex: 'value', width: 160,
+      render: (v) => `${money(v)}`, sorter: (a, b) => Number(a.value) - Number(b.value) },
+    { title: 'التكلفة', dataIndex: 'cost', width: 160,
+      render: (v) => `${money(v)}`, sorter: (a, b) => Number(a.cost) - Number(b.cost),
+      defaultSortOrder: 'descend' },
+  ];
+
+  // كروت الإجماليات اللي كانت فوق بقت سطر تحت الجدول.
+  const footer = (
+    <span className="sl-foot">
+      <span>فواتير البونص: <b>{Number(totals.invoices || 0).toLocaleString(numeralsLocale())}</b></span>
+      <span>القيمة بسعر البيع: <b>{money(totals.value)}</b></span>
+      <span>التكلفة: <b className="is-neg">{money(totals.cost)}</b></span>
+    </span>
+  );
+
   return (
-    <Card
-      title={<Typography.Text strong style={{ fontSize: 16 }}>تقرير البونص</Typography.Text>}
-      extra={
-        <Space>
-          <Button icon={<ReloadOutlined />} onClick={load}>تحديث</Button>
-          <Button icon={<PrinterOutlined />} onClick={print} disabled={!rows.length}>طباعة</Button>
-        </Space>
-      }
+    <ListPage<Group>
+      icon={<GiftOutlined />}
+      title="تقرير البونص"
+      subtitle="البضاعة المصروفة بونص بسعر البيع والتكلفة — مجمّعة لكل عميل أو مندوب أو شهر"
+      tabs={[
+        { key: 'customer', label: 'لكل عميل' },
+        { key: 'rep', label: 'لكل مندوب' },
+        { key: 'month', label: 'لكل شهر' },
+      ]}
+      activeTab={group}
+      onTabChange={setGroup}
+      actions={(<>
+        <Button icon={<PrinterOutlined />} onClick={print} disabled={!rows.length}>طباعة</Button>
+        <ExportExcelButton name="تقرير البونص" rows={rows} tableColumns={columns as any}
+          style={{ marginInlineStart: 0 }} />
+        <Button icon={<ReloadOutlined />} onClick={load}>تحديث</Button>
+      </>)}
+      filters={<DateRangeFilter className="sl-f-dates" value={range} onChange={setRange} />}
     >
-      <Space wrap style={{ marginBottom: 12 }}>
-        <Segmented<Group> value={group} onChange={(v) => setGroup(v)}
-          options={[
-            { value: 'customer', label: 'لكل عميل' },
-            { value: 'rep', label: 'لكل مندوب' },
-            { value: 'month', label: 'لكل شهر' },
-          ]} />
-        <DateRangeFilter value={range} onChange={setRange} />
-      </Space>
-      <Row gutter={16} style={{ marginBottom: 12 }}>
-        <Col xs={24} md={8}><Statistic title="فواتير البونص" value={totals.invoices} /></Col>
-        <Col xs={24} md={8}>
-          <Statistic title="القيمة بسعر البيع" value={money(totals.value)} />
-        </Col>
-        <Col xs={24} md={8}>
-          <Statistic title="التكلفة" value={money(totals.cost)}
-            valueStyle={{ color: '#cf1322' }} />
-        </Col>
-      </Row>
       <Table<Row>
+        className="sl-table"
         size="small" loading={loading} rowKey={(r) => String(r.key ?? 'none')}
-        dataSource={rows} pagination={{ pageSize: 50 }}
-        columns={[
-          { title: GROUP_LABEL[group], dataIndex: 'name' },
-          { title: 'فواتير', dataIndex: 'invoices', width: 90, align: 'center',
-            sorter: (a, b) => a.invoices - b.invoices },
-          { title: 'القيمة بسعر البيع', dataIndex: 'value', width: 160,
-            render: (v) => `${money(v)}`, sorter: (a, b) => Number(a.value) - Number(b.value) },
-          { title: 'التكلفة', dataIndex: 'cost', width: 160,
-            render: (v) => `${money(v)}`, sorter: (a, b) => Number(a.cost) - Number(b.cost),
-            defaultSortOrder: 'descend' },
-        ]}
+        dataSource={rows}
+        pagination={{ pageSize: 50, showTotal: () => footer }}
+        columns={columns}
       />
-    </Card>
+    </ListPage>
   );
 }

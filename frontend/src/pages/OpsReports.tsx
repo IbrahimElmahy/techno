@@ -2,13 +2,12 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { PAGE_SIZE } from '../utils/pagination';
 import { compareArabic, searchFilter, searchRank } from '../utils/arabicSort';
 import { customerFitsRep, customersOfRep } from '../utils/repScope';
-import {
-  Alert, Button, Card, Col, DatePicker, Row, Segmented, Select, Tag, message,
-} from 'antd';
+import { Alert, Button, Select, Tag, message } from 'antd';
 // فلتر على كل عمود — شوف `FilterTable`.
 import { FilterTable as Table } from '../components/FilterTable';
-import { Statistic } from '../components/Statistic';
-import { DownloadOutlined, PrinterOutlined, ReloadOutlined } from '@ant-design/icons';
+import {
+  DownloadOutlined, FileSearchOutlined, PrinterOutlined, ReloadOutlined,
+} from '@ant-design/icons';
 import dayjs, { Dayjs } from 'dayjs';
 import { api } from '../api/client';
 import { useTableColumns } from '../components/ColumnSettings';
@@ -20,8 +19,9 @@ import { textColumn, numberColumn, dateColumn } from '../components/gridColumns'
 import { columnsFromTable, exportCsv as writeCsv } from '../utils/exportCsv';
 import { printReport, type PrintColumn, type PrintTotal } from '../print/reportSheet';
 
-import StatsRow from '../components/StatsRow';
-import { money, qty as num } from '../utils/money';
+import ListPage from '../components/ListPage';
+import { useCanSeeStats } from '../components/StatsRow';
+import { money, numeralsLocale, qty as num } from '../utils/money';
 /**
  * تقارير التشغيل — النقاط والكوبونات والمعاينات والشيكات والطلبات والحجوزات.
  *
@@ -403,152 +403,111 @@ export default function OpsReports() {
     export: { name: view?.label ?? SUBJECT_LABELS[subject], rows },
   });
 
+  // كروت الإجماليات بقت سطر تحت الجدول — ولسه للي عنده `stats.view` بس، زي `StatsRow`.
+  const canSeeStats = useCanSeeStats();
+  const footer = totals && canSeeStats ? (
+    <span className="sl-foot">
+      <span>
+        عدد السطور: <b>{totals.rows.toLocaleString(numeralsLocale())}</b>
+        {totals.excluded ? <span style={{ color: '#d48806' }}> ({totals.excluded} ملغي)</span> : null}
+      </span>
+      <span>{points ? 'إجمالي النقاط' : 'العدد'}: <b>{num(totals.quantity)}</b></span>
+      <span>إجمالي المبلغ: <b>{money(totals.amount)}</b></span>
+    </span>
+  ) : null;
+
   return (
-    <Card
-      title={(
-        <span>
-          {view ? view.label : 'تقارير التشغيل'}
-          {offPreset ? (
-            <Tag color="orange" style={{ marginInlineStart: 8, fontWeight: 400 }}>معدّل</Tag>
-          ) : null}
-        </span>
-      )}
-      extra={(
-        <>
-          {tableCols.control}
-          <Button icon={<DownloadOutlined />} onClick={exportCsv}
-            style={{ marginInlineStart: 8 }}>تصدير CSV</Button>
-          <Button icon={<PrinterOutlined />} onClick={printIt}
-            style={{ marginInlineStart: 8, marginInlineEnd: 8 }}>طباعة</Button>
-          <Button icon={<ReloadOutlined />} onClick={load}>تحديث</Button>
-        </>
-      )}
-    >
-      <Row gutter={[8, 8]} style={{ marginBottom: 12 }}>
-        <Col xs={24} lg={14}>
-          <Segmented
-            block value={subject} onChange={(v) => setSubject(v as Subject)}
-            options={(Object.keys(SUBJECT_LABELS) as Subject[])
-              .map((k) => ({ value: k, label: SUBJECT_LABELS[k] }))}
-          />
-        </Col>
-        <Col xs={24} lg={10}>
+    <ListPage<Subject>
+      icon={<FileSearchOutlined />}
+      title={view ? view.label : 'تقارير التشغيل'}
+      muted={offPreset ? <Tag color="orange" style={{ fontWeight: 400 }}>معدّل</Tag> : undefined}
+      subtitle="النقاط والكوبونات والمعاينات والشيكات والطلبات والحجوزات — تفصيلي أو مجمّع"
+      tabs={(Object.keys(SUBJECT_LABELS) as Subject[])
+        .map((k) => ({ key: k, label: SUBJECT_LABELS[k] }))}
+      activeTab={subject}
+      onTabChange={setSubject}
+      actions={(<>
+        <Button icon={<PrinterOutlined />} onClick={printIt}>طباعة</Button>
+        <Button icon={<DownloadOutlined />} onClick={exportCsv}>تصدير CSV</Button>
+        {tableCols.control}
+        <Button icon={<ReloadOutlined />} onClick={load}>تحديث</Button>
+      </>)}
+      filters={(<>
+        <Select
+          value={groupBy}
+          onChange={(v) => {
+            setGroupBy(v);
+            setLevel(v === 'none' ? 'detail' : 'summary');
+          }}
+          options={[
+            { value: 'none', label: 'تفصيلي' },
+            { value: 'customer', label: 'مجمّع بالعميل' },
+            { value: 'rep', label: 'مجمّع بالمندوب' },
+            { value: 'kind', label: 'مجمّع بالنوع' },
+            { value: 'status', label: 'مجمّع بالحالة' },
+            { value: 'month', label: 'مجمّع بالشهر' },
+            { value: 'branch', label: 'مجمّع بالفرع' },
+            { value: 'shop', label: 'مجمّع بمحل الشراء', disabled: subject !== 'inspections' },
+          ]}
+        />
+        <DateRangeFilter
+          className="sl-f-dates"
+          value={range as any}
+          onChange={(v) => setRange(v as any)}
+        />
+        {isCheque && (
           <Select
-            style={{ width: '100%' }} value={groupBy}
-            onChange={(v) => {
-              setGroupBy(v);
-              setLevel(v === 'none' ? 'detail' : 'summary');
-            }}
+            allowClear placeholder="بيستحق خلال…"
+            value={dueWithin} onChange={setDueWithin}
             options={[
-              { value: 'none', label: 'تفصيلي' },
-              { value: 'customer', label: 'مجمّع بالعميل' },
-              { value: 'rep', label: 'مجمّع بالمندوب' },
-              { value: 'kind', label: 'مجمّع بالنوع' },
-              { value: 'status', label: 'مجمّع بالحالة' },
-              { value: 'month', label: 'مجمّع بالشهر' },
-              { value: 'branch', label: 'مجمّع بالفرع' },
-              { value: 'shop', label: 'مجمّع بمحل الشراء', disabled: subject !== 'inspections' },
+              { value: 7, label: 'أسبوع' },
+              { value: 30, label: 'شهر' },
+              { value: 90, label: 'تلات شهور' },
             ]}
           />
-        </Col>
-      </Row>
-
-      <Row gutter={[8, 8]} style={{ marginBottom: 12 }}>
-        <Col xs={24} md={8}>
-          <DateRangeFilter
-            value={range as any}
-            onChange={(v) => setRange(v as any)}
-          />
-        </Col>
-        {isCheque && (
-          <Col xs={24} md={5}>
-            <Select
-              allowClear style={{ width: '100%' }} placeholder="بيستحق خلال…"
-              value={dueWithin} onChange={setDueWithin}
-              options={[
-                { value: 7, label: 'أسبوع' },
-                { value: 30, label: 'شهر' },
-                { value: 90, label: 'تلات شهور' },
-              ]}
-            />
-          </Col>
         )}
         {/* المندوب قبل العميل: اختيار المندوب بيضيّق قايمة العملاء اللي بعده. */}
-        <Col xs={24} md={4}>
-          <Select
-            allowClear showSearch style={{ width: '100%' }}
-            placeholder="كل المندوبين" value={repId}
-            onChange={(v) => {
-              setRepId(v);
-              // عميل مش بتاع المندوب الجديد بيتشال في نفس الضغطة — لو فضل، الكشف بيطلع فاضي
-              // والعميل نفسه مش ظاهر في القايمة عشان حد يفهم ليه. والتحديثين مع بعض = طلب واحد.
-              if (!customerFitsRep(customers, customerId, v)) setCustomerId(undefined);
-            }}
-            options={repOptions} filterOption={searchFilter} filterSort={searchRank}/>
-        </Col>
-        <Col xs={24} md={5}>
-          <Select
-            allowClear showSearch style={{ width: '100%' }}
-            placeholder={repId ? 'كل عملاء المندوب' : 'كل العملاء'}
-            value={customerId} onChange={setCustomerId}
-            options={customerOptions} filterOption={searchFilter} filterSort={searchRank}/>
-        </Col>
-        <Col xs={24} md={isCheque ? 2 : 7}>
-          <Select
-            style={{ width: '100%' }} value={onlyOpen ? 'open' : 'all'}
-            onChange={(v) => setOnlyOpen(v === 'open')}
-            options={[
-              { value: 'all', label: 'الكل' },
-              { value: 'open', label: 'المفتوح فقط' },
-            ]}
-          />
-        </Col>
+        <Select
+          allowClear showSearch
+          placeholder="كل المندوبين" value={repId}
+          onChange={(v) => {
+            setRepId(v);
+            // عميل مش بتاع المندوب الجديد بيتشال في نفس الضغطة — لو فضل، الكشف بيطلع فاضي
+            // والعميل نفسه مش ظاهر في القايمة عشان حد يفهم ليه. والتحديثين مع بعض = طلب واحد.
+            if (!customerFitsRep(customers, customerId, v)) setCustomerId(undefined);
+          }}
+          options={repOptions} filterOption={searchFilter} filterSort={searchRank}/>
+        <Select
+          className="sl-f-customer"
+          allowClear showSearch
+          placeholder={repId ? 'كل عملاء المندوب' : 'كل العملاء'}
+          value={customerId} onChange={setCustomerId}
+          options={customerOptions} filterOption={searchFilter} filterSort={searchRank}/>
+        <Select
+          value={onlyOpen ? 'open' : 'all'}
+          onChange={(v) => setOnlyOpen(v === 'open')}
+          options={[
+            { value: 'all', label: 'الكل' },
+            { value: 'open', label: 'المفتوح فقط' },
+          ]}
+        />
         {(statementOn || statement) && (
-          <Col xs={24} md={6}>
-            <StatementFilter value={statement} onChange={setStatement} />
-          </Col>
+          <StatementFilter value={statement} onChange={setStatement} />
         )}
-      </Row>
-
+      </>)}
+    >
       {denied && (
         <Alert
-          type="warning" showIcon style={{ marginBottom: 12 }}
+          type="warning" showIcon style={{ margin: '6px 0 8px' }}
           message="مالكش صلاحية على التقرير ده"
           description="كل موضوع مقيَّد بصلاحية القسم الذي يقرأ منه. اختر موضوعاً آخر، أو اطلب الصلاحية من مدير النظام."
         />
       )}
 
-      {totals && (
-        <StatsRow gutter={[8, 8]} style={{ marginBottom: 12 }}>
-          <Col xs={8}>
-            <Card size="small">
-              <Statistic title="عدد السطور" value={totals.rows}
-                suffix={totals.excluded
-                  ? <span style={{ fontSize: 13, color: '#d48806' }}>
-                      ({totals.excluded} ملغي)
-                    </span>
-                  : undefined} />
-            </Card>
-          </Col>
-          <Col xs={8}>
-            <Card size="small">
-              <Statistic title={points ? 'إجمالي النقاط' : 'العدد'}
-                value={num(totals.quantity)} />
-            </Card>
-          </Col>
-          <Col xs={8}>
-            <Card size="small">
-              <Statistic title="إجمالي المبلغ" value={money(totals.amount)}
-                valueStyle={{ color: '#0B5CA8' }} />
-            </Card>
-          </Col>
-        </StatsRow>
-      )}
-
       {/* الملغي بيتعرض ومابيتحسبش — والسطر ده بيقول الاتنين، عشان مايبقاش فيه نص ساكت. */}
       {!!totals?.excluded && (
         <Alert
-          type="info" showIcon style={{ marginBottom: 12 }}
+          type="info" showIcon style={{ margin: '6px 0 8px' }}
           message={`${totals.excluded} سطر ملغي معروض وغير محسوب في الإجماليات`}
           description="يبقى الملغى على الشاشة ليجده من يبحث عن سبب اختفائه، ولا يُحتسب في الأرقام حتى لا يوهم بوجود التزام غير قائم."
         />
@@ -556,14 +515,15 @@ export default function OpsReports() {
 
       {page?.truncated && (
         <Alert
-          type="info" showIcon style={{ marginBottom: 12 }}
+          type="info" showIcon style={{ margin: '6px 0 8px' }}
           message={`معروض ${rows.length} سطر من ${page.total_rows}`}
-          description="الإجماليات أعلاه محسوبة على كل السطور في المدى المحدد، لا على المعروض منها. ضيّق الفترة أو الفلاتر لعرض الباقي."
+          description="الإجماليات تحت الجدول محسوبة على كل السطور في المدى المحدد، لا على المعروض منها. ضيّق الفترة أو الفلاتر لعرض الباقي."
         />
       )}
 
       <Table
         {...kb.tableProps}
+        className="sl-table"
         rowKey={rowKeyOf}
         size="small" loading={loading} dataSource={rows} columns={tableCols.columns}
         // الملغي باهت — بيتقري، ومابيتقروش كأنه شغّال. ولازم يتلمّ مع كلاس مؤشر الكيبورد، لأن
@@ -572,9 +532,13 @@ export default function OpsReports() {
           r.counts === false ? 'row-muted' : '', kb.rowClassName(r),
         ].filter(Boolean).join(' ')}
         locale={{ emptyText: denied ? 'مالكش صلاحية على التقرير ده' : 'لا توجد بيانات في هذه الفترة' }}
-        pagination={{ defaultPageSize: PAGE_SIZE, showSizeChanger: true }}
+        pagination={{
+          defaultPageSize: PAGE_SIZE, showSizeChanger: true,
+          locale: { items_per_page: '' },
+          showTotal: () => footer,
+        }}
         scroll={{ x: 'max-content' }}
       />
-    </Card>
+    </ListPage>
   );
 }

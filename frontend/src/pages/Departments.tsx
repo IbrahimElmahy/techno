@@ -1,17 +1,20 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { searchFilter, searchRank } from '../utils/arabicSort';
 import {
-  Alert, Button, Card, Col, Input, Row, Select, Space, Table, Tag, message,
+  Alert, Button, Col, Input, Row, Select, Space, Table, Tag, message,
 } from 'antd';
 import { Popconfirm } from '../components/noConfirm';
-import { ApartmentOutlined, PlusOutlined, ReloadOutlined, ImportOutlined } from '@ant-design/icons';
+import {
+  ApartmentOutlined, ClearOutlined, ImportOutlined, PlusOutlined, ReloadOutlined, SearchOutlined,
+} from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
 
 import { api } from '../api/client';
-import ListToolbar, { useListFilter } from '../components/ListToolbar';
+import { useListFilter } from '../components/ListToolbar';
 import { TabModal } from '../components/TabModal';
 import { useTableColumns } from '../components/ColumnSettings';
-import { useTableKeyboard } from '../components/keyboard';
+import { useScreenShortcuts, useTableKeyboard } from '../components/keyboard';
+import ListPage from '../components/ListPage';
 
 /**
  * الأقسام — الهيكل التنظيمي.
@@ -116,6 +119,21 @@ export default function Departments() {
   // The tree is built from what the search left, so filtering never hides a matched row behind a
   // parent that did not match.
   const tree = useMemo(() => toTree(filter.filtered), [filter.filtered]);
+
+  // F3 كانت جاية من `ListToolbar` — الخانة بقت هنا فبتتسجّل هنا.
+  const searchRef = useRef<any>(null);
+  useScreenShortcuts({ onSearch: () => { searchRef.current?.focus?.(); } });
+  // قوايم الفلاتر — نفس اللي كانت في `ListToolbar` (أكتر من قيمة، والمعنى «أي واحدة منهم»).
+  const multiSelect = (key: string, placeholder: string, options: { value: any; label: string }[]) => {
+    const v = filter.values[key];
+    return (
+      <Select allowClear showSearch mode="multiple" maxTagCount="responsive" placeholder={placeholder}
+        // القيمة الابتدائية (`initialValues`) ممكن تبقى مفردة — وضع المتعدد بيستنى قايمة.
+        value={v === undefined || v === null || v === '' ? undefined : (Array.isArray(v) ? v : [v])}
+        onChange={(x) => filter.setValue(key, Array.isArray(x) && !x.length ? undefined : x)}
+        options={options} filterOption={searchFilter} filterSort={searchRank} />
+    );
+  };
 
   const openCreate = () => {
     setForm({ ...emptyForm });
@@ -227,42 +245,41 @@ export default function Departments() {
   const unmapped = employees.length && rows.length === 0;
 
   return (
-    <Card
-      title={<span><ApartmentOutlined /> الأقسام</span>}
-      extra={(
-        <Space>
-          {cols.control}
-          <Button icon={<ImportOutlined />} onClick={runImport}>ترحيل الأقسام القديمة</Button>
-          <Button data-shortcut="F2" type="primary" icon={<PlusOutlined />}
-            onClick={openCreate}>قسم جديد</Button>
-          <Button icon={<ReloadOutlined />} onClick={load}>تحديث</Button>
-        </Space>
-      )}
+    <>
+    <ListPage
+      icon={<ApartmentOutlined />}
+      title="الأقسام" muted="(الهيكل التنظيمي)"
+      subtitle="الأقسام وتبعيتها ومديريها ومراكز تكلفتها"
+      actions={(<>
+        <Button data-shortcut="F2" type="primary" className="sl-create" icon={<PlusOutlined />}
+          onClick={openCreate}>قسم جديد</Button>
+        <Button icon={<ImportOutlined />} onClick={runImport}>ترحيل الأقسام القديمة</Button>
+        {cols.control}
+        <Button icon={<ReloadOutlined />} onClick={load}>تحديث</Button>
+      </>)}
+      filters={(<>
+        <Input className="sl-f-search" allowClear ref={searchRef} value={filter.query}
+          placeholder="بحث بالاسم أو الكود أو المدير" prefix={<SearchOutlined />}
+          onChange={(e) => filter.setQuery(e.target.value)} />
+        {multiSelect('active', 'الحالة', [
+          { value: 'yes', label: 'الشغّالة' },
+          { value: 'no', label: 'المقفولة' },
+        ])}
+        <Button className="sl-f-clear" icon={<ClearOutlined />} onClick={filter.reset}>مسح</Button>
+      </>      )}
     >
       {unmapped ? (
         <Alert
-          type="info" showIcon style={{ marginBottom: 12 }}
+          type="info" showIcon style={{ margin: '6px 0 8px' }}
           message="لا توجد أقسام بعد"
           description={'«القسم» كان مكتوب بالإيد على كارت الموظف. اضغط «ترحيل الأقسام القديمة» '
             + 'وسيُنشئ قسماً لكل اسم مكتوب ويربط الموظفين به — ويمكن الضغط عليه أكثر من مرة بأمان.'}
         />
       ) : null}
 
-      <ListToolbar
-        searchPlaceholder="بحث بالاسم أو الكود أو المدير"
-        query={filter.query} onQueryChange={filter.setQuery}
-        values={filter.values} onValueChange={filter.setValue}
-        onReset={filter.reset} total={rows.length} shown={filter.filtered.length}
-        filters={[
-          { key: 'active', placeholder: 'الحالة', options: [
-            { value: 'yes', label: 'الشغّالة' },
-            { value: 'no', label: 'المقفولة' },
-          ] },
-        ]}
-      />
-
       <Table
         {...kb.tableProps}
+        className="sl-table"
         rowKey="id"
         size="small"
         loading={loading}
@@ -273,6 +290,13 @@ export default function Departments() {
         scroll={{ x: 'max-content' }}
         locale={{ emptyText: 'لا توجد أقسام' }}
       />
+      <div style={{ padding: '10px 4px', borderTop: '1px solid #f1f5f9' }}>
+        <span className="sl-foot">
+          <span>الأقسام المعروضة: <b>{filter.filtered.length}</b> من {rows.length}</span>
+          <span>موظفين فيها: <b>{filter.filtered.reduce((n, r) => n + (r.employee_count || 0), 0)}</b></span>
+        </span>
+      </div>
+    </ListPage>
 
       <TabModal
         open={creating}
@@ -346,6 +370,6 @@ export default function Departments() {
           </Col>
         </Row>
       </TabModal>
-    </Card>
+    </>
   );
 }

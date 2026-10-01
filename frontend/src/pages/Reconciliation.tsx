@@ -1,15 +1,15 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { PAGE_SIZE } from '../utils/pagination';
 import {
-  Alert, Button, Card, Col, Empty, Input, Row, Segmented, Space, Tabs, Tag,
+  Alert, Button, Card, Col, Empty, Input, Row, Select, Space, Tag,
   Tooltip, message,
 } from 'antd';
 // فلتر على كل عمود — شوف `FilterTable`.
 import { FilterTable as Table } from '../components/FilterTable';
-import { Statistic } from '../components/Statistic';
 import {
-  LinkOutlined, DisconnectOutlined, ReloadOutlined, ThunderboltOutlined,
+  LinkOutlined, DisconnectOutlined, ReloadOutlined, ThunderboltOutlined, SearchOutlined,
 } from '@ant-design/icons';
+import ListPage from '../components/ListPage';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 
 import { api } from '../api/client';
@@ -216,7 +216,8 @@ export default function Reconciliation() {
           {r.move_type_label && <Tag color="purple">{r.move_type_label}</Tag>}
         </Space>
       ) },
-    { title: 'التاريخ', dataIndex: 'entry_date', key: 'entry_date', width: 110 },
+    { title: 'التاريخ', dataIndex: 'entry_date', key: 'entry_date', width: 110,
+      render: (d: string | null) => (d ? String(d).slice(0, 10) : '-') },
     { title: 'الاستحقاق', dataIndex: 'date_maturity', key: 'date_maturity', width: 110,
       render: (d: string | null) => {
         if (!d) return '-';
@@ -238,6 +239,7 @@ export default function Reconciliation() {
     <Card size="small" styles={{ body: { padding: 8 } }}
       title={<span style={{ color }}>{title} — {rows.length}</span>}>
       <Table
+        className="sl-table"
         rowKey="line_id" size="small" dataSource={rows} columns={lineColumns(rows)}
         loading={loading} pagination={false} scroll={{ y: 380 }}
         rowSelection={{
@@ -252,187 +254,185 @@ export default function Reconciliation() {
     </Card>
   );
 
+  const canMatch = selected.length >= 2 && selectedTotals.sameAccount
+    && selectedTotals.willMatch > 0;
+
   return (
     <>
-    <Card
+    <ListPage
+      icon={<LinkOutlined />}
       title="تسوية الحسابات"
-      extra={
-        <Space>
-          <Segmented
-            value={kind}
-            onChange={(v) => setParam({ kind: String(v), partner: null })}
-            options={Object.entries(KIND_LABEL).map(([value, label]) => ({ value, label }))}
-          />
-          <Button icon={<ReloadOutlined />} onClick={reload}>تحديث</Button>
-        </Space>
-      }
+      muted={activePartner ? `(${activePartner.partner_name})` : undefined}
+      subtitle="الفاتورة اتدفعت بإيه، وفاضل عليه إيه — مطابقة الفواتير بالدفعات"
+      tabs={[
+        { key: 'open', label: 'المفتوح', count: partners.length },
+        { key: 'matched', label: 'المطابقات', count: matched.length },
+      ]}
+      activeTab={tab} onTabChange={setTab}
+      actions={(<>
+        {tab === 'open' && partnerId && (<>
+          <Tooltip title={blockReason}>
+            <Button type="primary" className="sl-create" icon={<LinkOutlined />}
+              disabled={!canMatch} onClick={doReconcile}>
+              طابق المحدد
+              {selectedTotals.willMatch > 0
+                && ` (${egp(selectedTotals.willMatch)})`}
+            </Button>
+          </Tooltip>
+          <Button icon={<ThunderboltOutlined />} onClick={doAuto}>
+            مطابقة تلقائية — الأقدم أولاً
+          </Button>
+          {activePartner && (
+            <Button type="link"
+              onClick={() => navigate(
+                kind === 'supplier'
+                  ? `/suppliers/${partnerId}`
+                  : `/customers/${partnerId}`)}>
+              كارت {activePartner.partner_name}
+            </Button>
+          )}
+        </>)}
+        <Button icon={<ReloadOutlined />} onClick={reload}>تحديث</Button>
+      </>)}
+      filters={(<>
+        <Select
+          value={kind}
+          onChange={(v) => setParam({ kind: String(v), partner: null })}
+          options={Object.entries(KIND_LABEL).map(([value, label]) => ({ value, label }))}
+        />
+        {tab === 'open' && (
+          <Input className="sl-f-search" placeholder="دوّر على الطرف بالاسم" allowClear value={q}
+            prefix={<SearchOutlined />}
+            onChange={(e) => setQ(e.target.value)} />
+        )}
+      </>)}
     >
-      <Tabs
-        activeKey={tab} onChange={setTab}
-        items={[
-          {
-            key: 'open',
-            label: 'المفتوح',
-            children: (
-              <Row gutter={12}>
-                <Col span={6}>
-                  <Card size="small" title="الأطراف اللي عليها مفتوح"
-                    styles={{ body: { padding: 8 } }}>
-                    <Input.Search placeholder="دوّر بالاسم" allowClear value={q}
-                      onChange={(e) => setQ(e.target.value)} style={{ marginBottom: 8 }} />
-                    <Table
-                      rowKey="partner_id" size="small" pagination={false} scroll={{ y: 460 }}
-                      showHeader={false} dataSource={shownPartners}
-                      onRow={(r) => ({
-                        onClick: () => setParam({ partner: String(r.partner_id) }),
-                        style: {
-                          cursor: 'pointer',
-                          background: r.partner_id === partnerId ? '#f0f7e6' : undefined,
-                        },
-                      })}
-                      columns={[
-                        { title: 'الطرف', dataIndex: 'partner_name', key: 'partner_name',
-                          render: (n: string, r: PartnerRow) => (
-                            <div>
-                              <div>{n}</div>
-                              <div style={{ fontSize: 12, color: '#888' }}>
-                                {r.open_lines} سطر مفتوح
-                              </div>
-                            </div>
-                          ) },
-                        { title: 'الرصيد', dataIndex: 'balance', key: 'balance', width: 110,
-                          align: 'end' as const,
-                          render: (v: string) => (
-                            <strong style={{ color: Number(v) >= 0 ? '#C0392B' : '#6AB42D' }}>
-                              {egp(Math.abs(Number(v)))}
-                            </strong>
-                          ) },
-                      ]}
-                      locale={{ emptyText: <Empty description="مافيش أطراف عليها مفتوح"
-                        image={Empty.PRESENTED_IMAGE_SIMPLE} /> }}
-                    />
-                  </Card>
-                </Col>
-                <Col span={18}>
-                  {!partnerId ? (
-                    <Alert type="info" showIcon
-                      message="اختار طرف من القايمة عشان تشوف المفتوح عليه" />
-                  ) : (
-                    <>
-                      <Row gutter={12} style={{ marginBottom: 12 }}>
-{canSeeStats && (<>
-                        <Col span={6}>
-                          <Card size="small">
-                            <Statistic title="مستحق عليه" value={egp(data?.total_debit ?? 0)} />
-                          </Card>
-                        </Col>
-                        <Col span={6}>
-                          <Card size="small">
-                            <Statistic title="دفعات ملهاش فواتير"
-                              value={egp(data?.total_credit ?? 0)} />
-                          </Card>
-                        </Col>
-                        <Col span={6}>
-                          <Card size="small">
-                            <Statistic title="الصافي المفتوح"
-                              value={egp(data?.balance ?? 0)} />
-                          </Card>
-                        </Col>
-                        </>)}
-                        <Col span={6}>
-                          <Space direction="vertical" style={{ width: '100%' }}>
-                            <Tooltip title={blockReason}>
-                              <Button type="primary" icon={<LinkOutlined />} block
-                                disabled={selected.length < 2 || !selectedTotals.sameAccount
-                                  || selectedTotals.willMatch <= 0}
-                                onClick={doReconcile}>
-                                طابق المحدد
-                                {selectedTotals.willMatch > 0
-                                  && ` (${egp(selectedTotals.willMatch)})`}
-                              </Button>
-                            </Tooltip>
-                            <Button icon={<ThunderboltOutlined />} block onClick={doAuto}>
-                              مطابقة تلقائية — الأقدم أولاً
-                            </Button>
-                            {activePartner && (
-                              <Button type="link" size="small" block
-                                onClick={() => navigate(
-                                  kind === 'supplier'
-                                    ? `/suppliers/${partnerId}`
-                                    : `/customers/${partnerId}`)}>
-                                كارت {activePartner.partner_name}
-                              </Button>
-                            )}
-                          </Space>
-                        </Col>
-                      </Row>
-                      <Row gutter={12}>
-                        <Col span={12}>{table(debits, 'فواتير ومستحقات', '#C0392B')}</Col>
-                        <Col span={12}>{table(credits, 'دفعات ومرتجعات', '#6AB42D')}</Col>
-                      </Row>
-                    </>
-                  )}
-                </Col>
-              </Row>
-            ),
-          },
-          {
-            key: 'matched',
-            label: 'المطابقات',
-            children: (
+      {tab === 'open' ? (
+        <Row gutter={12} style={{ padding: '8px 0' }}>
+          <Col span={6}>
+            <Card size="small" title="الأطراف اللي عليها مفتوح"
+              styles={{ body: { padding: 8 } }}>
               <Table
-                rowKey="number" size="small" dataSource={matched}
-                pagination={{ defaultPageSize: PAGE_SIZE }}
-                expandable={{
-                  expandedRowRender: (g: MatchedGroup) => (
-                    <Table
-                      rowKey="line_id" size="small" pagination={false} dataSource={g.lines}
-                      columns={[
-                        { title: 'المستند', dataIndex: 'entry_number', key: 'n',
-                          render: (n: string | null, r: OpenLine) => (
-                            <a onClick={() => navigate(
-                              `/general-ledger?tab=journal&entry=${r.entry_id}`)}>
-                              {n || `#${r.entry_id}`}
-                            </a>
-                          ) },
-                        { title: 'النوع', dataIndex: 'move_type_label', key: 't',
-                          render: (t: string | null) => t ? <Tag color="purple">{t}</Tag> : '-' },
-                        { title: 'التاريخ', dataIndex: 'entry_date', key: 'd' },
-                        { title: 'البيان', dataIndex: 'description', key: 'desc' },
-                        { title: 'الاتجاه', dataIndex: 'direction', key: 'dir',
-                          render: (d: string) => (
-                            <Tag color={d === 'debit' ? 'red' : 'green'}>
-                              {d === 'debit' ? 'مدين' : 'دائن'}
-                            </Tag>
-                          ) },
-                        { title: 'القيمة', dataIndex: 'amount', key: 'a',
-                          render: (v: string) => egp(v) },
-                      ]}
-                    />
-                  ),
-                }}
+                className="sl-table"
+                rowKey="partner_id" size="small" pagination={false} scroll={{ y: 460 }}
+                showHeader={false} dataSource={shownPartners}
+                onRow={(r) => ({
+                  onClick: () => setParam({ partner: String(r.partner_id) }),
+                  style: {
+                    cursor: 'pointer',
+                    background: r.partner_id === partnerId ? '#f0f7e6' : undefined,
+                  },
+                })}
                 columns={[
-                  { title: 'رقم المطابقة', dataIndex: 'number', key: 'number', width: 140,
-                    render: (n: string) => <Tag color="blue">{n}</Tag> },
-                  { title: 'التاريخ', dataIndex: 'created_at', key: 'created_at', width: 130 },
-                  { title: 'المستندات', dataIndex: 'lines', key: 'lines', width: 110,
-                    render: (ls: OpenLine[]) => `${ls.length} سطر` },
-                  { title: 'القيمة', dataIndex: 'amount', key: 'amount', width: 130,
-                    render: (v: string) => <strong>{egp(v)}</strong> },
-                  { title: '', key: 'actions', width: 140,
-                    render: (_: unknown, g: MatchedGroup) => (
-                      <Button type="link" danger icon={<DisconnectOutlined />}
-                        onClick={() => doUnreconcile(g.number)}>فك المطابقة</Button>
+                  { title: 'الطرف', dataIndex: 'partner_name', key: 'partner_name',
+                    render: (n: string, r: PartnerRow) => (
+                      <div>
+                        <div>{n}</div>
+                        <div style={{ fontSize: 12, color: '#888' }}>
+                          {r.open_lines} سطر مفتوح
+                        </div>
+                      </div>
+                    ) },
+                  { title: 'الرصيد', dataIndex: 'balance', key: 'balance', width: 110,
+                    align: 'end' as const,
+                    render: (v: string) => (
+                      <strong style={{ color: Number(v) >= 0 ? '#C0392B' : '#6AB42D' }}>
+                        {egp(Math.abs(Number(v)))}
+                      </strong>
                     ) },
                 ]}
-                locale={{ emptyText: <Empty description="مافيش مطابقات لسه"
+                locale={{ emptyText: <Empty description="مافيش أطراف عليها مفتوح"
                   image={Empty.PRESENTED_IMAGE_SIMPLE} /> }}
               />
+            </Card>
+          </Col>
+          <Col span={18}>
+            {!partnerId ? (
+              <Alert type="info" showIcon
+                message="اختار طرف من القايمة عشان تشوف المفتوح عليه" />
+            ) : (
+              <>
+                {/* الأرقام التلاتة كانت كروت — سطر واحد فوق الجدولين. */}
+                {canSeeStats && (
+                  <div style={{ marginBottom: 10 }}>
+                    <span className="sl-foot">
+                      <span>مستحق عليه: <b className="is-neg">{egp(data?.total_debit ?? 0)}</b></span>
+                      <span>دفعات ملهاش فواتير: <b className="is-pos">{egp(data?.total_credit ?? 0)}</b></span>
+                      <span>الصافي المفتوح: <b>{egp(data?.balance ?? 0)}</b></span>
+                    </span>
+                  </div>
+                )}
+                <Row gutter={12}>
+                  <Col span={12}>{table(debits, 'فواتير ومستحقات', '#C0392B')}</Col>
+                  <Col span={12}>{table(credits, 'دفعات ومرتجعات', '#6AB42D')}</Col>
+                </Row>
+              </>
+            )}
+          </Col>
+        </Row>
+      ) : (
+        <Table
+          className="sl-table"
+          rowKey="number" size="small" dataSource={matched}
+          pagination={{
+            defaultPageSize: PAGE_SIZE, showSizeChanger: true, locale: { items_per_page: '' },
+            showTotal: (t) => (
+              <span className="sl-foot">
+                <span>عدد: <b>{t}</b></span>
+                <span>إجمالي المطابَق: <b>{egp(matched
+                  .reduce((s, g) => s + Number(g.amount || 0), 0))}</b></span>
+              </span>
             ),
-          },
-        ]}
-      />
-    </Card>
+          }}
+          expandable={{
+            expandedRowRender: (g: MatchedGroup) => (
+              <Table
+                rowKey="line_id" size="small" pagination={false} dataSource={g.lines}
+                columns={[
+                  { title: 'المستند', dataIndex: 'entry_number', key: 'n',
+                    render: (n: string | null, r: OpenLine) => (
+                      <a onClick={() => navigate(
+                        `/general-ledger?tab=journal&entry=${r.entry_id}`)}>
+                        {n || `#${r.entry_id}`}
+                      </a>
+                    ) },
+                  { title: 'النوع', dataIndex: 'move_type_label', key: 't',
+                    render: (t: string | null) => t ? <Tag color="purple">{t}</Tag> : '-' },
+                  { title: 'التاريخ', dataIndex: 'entry_date', key: 'd',
+                    render: (d: string | null) => (d ? String(d).slice(0, 10) : '-') },
+                  { title: 'البيان', dataIndex: 'description', key: 'desc' },
+                  { title: 'الاتجاه', dataIndex: 'direction', key: 'dir',
+                    render: (d: string) => (
+                      <Tag color={d === 'debit' ? 'red' : 'green'}>
+                        {d === 'debit' ? 'مدين' : 'دائن'}
+                      </Tag>
+                    ) },
+                  { title: 'القيمة', dataIndex: 'amount', key: 'a',
+                    render: (v: string) => egp(v) },
+                ]}
+              />
+            ),
+          }}
+          columns={[
+            { title: 'رقم المطابقة', dataIndex: 'number', key: 'number', width: 140,
+              render: (n: string) => <Tag color="blue">{n}</Tag> },
+            { title: 'التاريخ', dataIndex: 'created_at', key: 'created_at', width: 130,
+              render: (d: string | null) => (d ? String(d).slice(0, 10) : '-') },
+            { title: 'المستندات', dataIndex: 'lines', key: 'lines', width: 110,
+              render: (ls: OpenLine[]) => `${ls.length} سطر` },
+            { title: 'القيمة', dataIndex: 'amount', key: 'amount', width: 130,
+              render: (v: string) => <strong>{egp(v)}</strong> },
+            { title: '', key: 'actions', width: 140,
+              render: (_: unknown, g: MatchedGroup) => (
+                <Button type="link" danger icon={<DisconnectOutlined />}
+                  onClick={() => doUnreconcile(g.number)}>فك المطابقة</Button>
+              ) },
+          ]}
+          locale={{ emptyText: <Empty description="مافيش مطابقات لسه"
+            image={Empty.PRESENTED_IMAGE_SIMPLE} /> }}
+        />
+      )}
+    </ListPage>
     </>
   );
 }

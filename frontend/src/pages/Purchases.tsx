@@ -4,9 +4,8 @@ import { PAGE_SIZE, PAGE_SIZE_OPTIONS } from '../utils/pagination';
 import { searchFilter, searchRank, sortByName } from '../utils/arabicSort';
 import {
   Alert, Button, Card, Col, Descriptions, Empty, Form, Input, Modal, Result,
-  Row, Segmented, Select, Space, Table, Tag, Tooltip, message, DatePicker,
+  Row, Select, Space, Table, Tag, Tooltip, message, DatePicker,
 } from 'antd';
-import { Statistic } from '../components/Statistic';
 import { Popconfirm } from '../components/noConfirm';
 import { InputNumber } from '../components/NumberInput';
 import {
@@ -14,6 +13,7 @@ import {
   PrinterOutlined, FileAddOutlined, EditOutlined, UndoOutlined, SaveOutlined,
   ArrowLeftOutlined, ArrowRightOutlined, SearchOutlined, BankOutlined, ReloadOutlined,
   ExclamationCircleOutlined, CheckOutlined, PhoneOutlined, ShoppingCartOutlined,
+  ShoppingOutlined, ClearOutlined, DownOutlined, UpOutlined,
 } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import { useDocRoute, type DocMode } from '../components/useDocRoute';
@@ -32,13 +32,16 @@ import LoadPeriodModal from '../components/LoadPeriodModal';
 import DocumentToolbar, { ToolbarAction } from '../components/DocumentToolbar';
 import PrintOptionsMenu from '../components/PrintOptionsMenu';
 import { PrintOptions, loadPrintOptions } from '../print/printOptions';
-import ListToolbar, { useListFilter } from '../components/ListToolbar';
+import { useListFilter } from '../components/ListToolbar';
+import ListPage from '../components/ListPage';
+import ExportExcelButton from '../components/ExportExcelButton';
+import DateRangeFilter from '../components/DateRangeFilter';
 import { matchesStatement, statementMeta, statementText } from '../utils/statements';
 import { useDraft } from '../components/useDraft';
 import { textColumn, numberColumn, dateColumn } from '../components/gridColumns';
 import PartyPickerModal, { Party } from '../components/PartyPickerModal';
 import ProductPickerModal from '../components/ProductPickerModal';
-import { useTableKeyboard } from '../components/keyboard';
+import { useScreenShortcuts, useTableKeyboard } from '../components/keyboard';
 import { useLookup, labelMap } from '../hooks/useLookup';
 import { TabModal } from '../components/TabModal';
 import WarehouseGate from '../components/WarehouseGate';
@@ -48,7 +51,6 @@ import { fingerprint, verdictOnLeave } from '../utils/unsavedWork';
 import { applyPct, combinePct, splitLineDiscount } from '../utils/discounts';
 import { QTY_DATA_ATTR, flashExistingItem } from '../utils/duplicateItem';
 
-import StatsRow from '../components/StatsRow';
 import { useLiveRefresh } from '../utils/live';
 /** الاسم القديم في الشاشة دي — نفس الدالة. */
 const fmtMoney = money;
@@ -2119,124 +2121,115 @@ export default function Purchases() {
   const listCols = useTableColumns('purchase-list', listColumns, {
     defaultHidden: ['gross', 'combined_pct', 'tax_pct', 'expense_account_name', 'notes',
       'statement1'],
-    export: { name: 'المشتريات', rows: purchasesFilter.filtered },
+    // التصدير زرار لوحده في ترويسة الكشف (`ExportExcelButton` تحت) — بنفس الأعمدة المعروضة.
   });
+  const [showMoreFilters, setShowMoreFilters] = useState(false);
+  // F3 لخانة البحث — كانت جاية من `ListToolbar`، والخانة بقت في سطر فلاتر `ListPage`.
+  useScreenShortcuts({ onSearch: () => { listSearchRef.current?.focus?.(); } }, !createVisible);
+
+  // الشريحة المختارة — نفس فلتر «النوع» اللي كان في الشريط، بقى شرايح فوق.
+  const kindTab = (purchasesFilter.values.kind || 'all') as 'all' | 'purchase' | 'return';
+  const kindTabs = [
+    { key: 'all' as const, label: 'الكل',
+      count: purchasesSummary.totalPurchasesCount + purchasesSummary.totalReturnsCount },
+    { key: 'purchase' as const, label: 'فواتير المشتريات', dot: '#0958d9',
+      count: purchasesSummary.totalPurchasesCount },
+    { key: 'return' as const, label: 'مردودات المشتريات', dot: '#d46b08',
+      count: purchasesSummary.totalReturnsCount },
+  ];
+  // الفلاتر النصية تحت «فلاتر أكثر» — والطيّة بتفتح لوحدها لو فيها قيمة شغّالة.
+  const moreActive = ['document_number', 'external_document_number', 'notes', 'statement']
+    .some((k) => !!purchasesFilter.values[k]);
+  const moreOpen = showMoreFilters || moreActive;
+  const textFilter = (key: string, placeholder: string) => (
+    <Input key={key} allowClear placeholder={placeholder}
+      value={purchasesFilter.values[key] ?? undefined}
+      onChange={(e) => purchasesFilter.setValue(key, e.target.value || undefined)} />
+  );
+  const shownCount = purchasesFilter.filtered.length;
+  const listFooter = (
+    <span className="sl-foot">
+      <span>
+        إجمالي السجلات: <b>{shownCount.toLocaleString(numeralsLocale())}</b>
+        {shownCount < purchases.length && <> من {purchases.length.toLocaleString(numeralsLocale())}</>} مستند
+      </span>
+      <span>صافي المشتريات الفعلي: <b className="is-pos">{money(purchasesSummary.netPurchases)}</b></span>
+      <span>
+        المستحق للموردين:{' '}
+        <b className={purchasesSummary.totalCredit > 0 ? 'is-neg' : undefined}>
+          {money(purchasesSummary.totalCredit)}
+        </b>
+      </span>
+    </span>
+  );
 
   const listContent = (
-    <Card
-      title="المشتريات (سجل الفواتير والمردودات)"
-      extra={(
-        <Space>
-          {listCols.control}
-          <PrintOptionsMenu value={printOpts} onChange={setPrintOpts} />
-          <Button type="primary" icon={<PlusOutlined />}
-            style={{ fontWeight: 600 }}
-            onClick={() => {
-              form.resetFields();
-              setPurchaseItems([{ key: '1', item_id: null, quantity: null, unit_price: 0,
-                unit: null, discount_pct: null, fixed_discount_pct: null, warehouse_id: null }]);
-              setPurchaseDate(dayjs());
-              setDetail(null);
-              setDocResult(null);
-              setEditingId(null);
-              setNewStep('party');
-            }}>
-            تسجيل فاتورة شراء
-          </Button>
-        </Space>
-      )}
-    >
-      {/* --- Summary Statistics --- */}
-      <StatsRow gutter={[12, 12]} style={{ marginBottom: 16 }}>
-        <Col xs={12} md={6}>
-          <Card size="small" style={{ borderRadius: 8, borderColor: '#91caff', backgroundColor: '#e6f4ff' }}>
-            <Statistic
-              title="إجمالي فواتير المشتريات"
-              value={money(purchasesSummary.totalPurchasesNet)}
-              prefix={<Tag color="blue">{purchasesSummary.totalPurchasesCount} فاتورة</Tag>}
-              valueStyle={{ color: '#0958d9', fontWeight: 'bold' }}
-            />
-          </Card>
-        </Col>
-        <Col xs={12} md={6}>
-          <Card size="small" style={{ borderRadius: 8, borderColor: '#ffd591', backgroundColor: '#fff7e6' }}>
-            <Statistic
-              title="إجمالي مردودات المشتريات"
-              value={money(purchasesSummary.totalReturnsNet)}
-              prefix={<Tag color="orange">{purchasesSummary.totalReturnsCount} مردود</Tag>}
-              valueStyle={{ color: '#d46b08', fontWeight: 'bold' }}
-            />
-          </Card>
-        </Col>
-        <Col xs={12} md={6}>
-          <Card size="small" style={{ borderRadius: 8, borderColor: '#d9f7be', backgroundColor: '#f6ffed' }}>
-            <Statistic
-              title="صافي المشتريات الفعلي"
-              value={money(purchasesSummary.netPurchases)}
-              valueStyle={{ color: '#389e0d', fontWeight: 'bold' }}
-            />
-          </Card>
-        </Col>
-        <Col xs={12} md={6}>
-          <Card size="small" style={{ borderRadius: 8, borderColor: '#ffa39e', backgroundColor: '#fff1f0' }}>
-            <Statistic
-              title="إجمالي المستحق للموردين"
-              value={money(purchasesSummary.totalCredit)}
-              valueStyle={{ color: '#cf1322', fontWeight: 'bold' }}
-            />
-          </Card>
-        </Col>
-      </StatsRow>
-
-      {/* --- Quick Tabs / Segmented --- */}
-      <div style={{ marginBottom: 12 }}>
-        <Segmented
-          size="middle"
-          value={purchasesFilter.values.kind || 'all'}
-          onChange={(v: any) => purchasesFilter.setValue('kind', v === 'all' ? undefined : v)}
-          options={[
-            { label: <span>الكل ({purchasesSummary.totalPurchasesCount + purchasesSummary.totalReturnsCount})</span>, value: 'all' },
-            { label: <span style={{ color: '#0958d9', fontWeight: 600 }}>🔵 فواتير المشتريات ({purchasesSummary.totalPurchasesCount})</span>, value: 'purchase' },
-            { label: <span style={{ color: '#d46b08', fontWeight: 600 }}>🟠 مردودات المشتريات ({purchasesSummary.totalReturnsCount})</span>, value: 'return' },
-          ]}
+    <ListPage<'all' | 'purchase' | 'return'>
+      icon={<ShoppingOutlined />}
+      title="المشتريات" muted="(سجل فواتير الشراء والمردودات)"
+      subtitle="تسجيل ومتابعة فواتير الشراء ومردوداتها والمستحق للموردين"
+      tabs={kindTabs} activeTab={kindTab}
+      onTabChange={(k) => purchasesFilter.setValue('kind', k === 'all' ? undefined : k)}
+      actions={(<>
+        <Button type="primary" icon={<PlusOutlined />} className="sl-create"
+          onClick={() => {
+            form.resetFields();
+            setPurchaseItems([{ key: '1', item_id: null, quantity: null, unit_price: 0,
+              unit: null, discount_pct: null, fixed_discount_pct: null, warehouse_id: null }]);
+            setPurchaseDate(dayjs());
+            setDetail(null);
+            setDocResult(null);
+            setEditingId(null);
+            setNewStep('party');
+          }}>
+          {/* الاسم ده بالظبط — «اختصارات الإنشاء» بتدوّر على الزرار بنصّه. */}
+          تسجيل فاتورة شراء
+        </Button>
+        <PrintOptionsMenu value={printOpts} onChange={setPrintOpts} />
+        <ExportExcelButton name="المشتريات" rows={purchasesFilter.filtered}
+          tableColumns={listCols.columns as any} style={{ marginInlineStart: 0 }} />
+        {listCols.control}
+      </>)}
+      filters={(<>
+        <Input
+          className="sl-f-search"
+          allowClear
+          ref={listSearchRef}
+          value={purchasesFilter.query}
+          placeholder="بحث برقم المستند أو المورد أو رقم فاتورته أو الملاحظات أو البيان"
+          prefix={<SearchOutlined />}
+          onChange={(e) => purchasesFilter.setQuery(e.target.value)}
         />
-      </div>
-
-      <ListToolbar
-        searchRef={listSearchRef}
-        searchSpan={5}
-        searchPlaceholder="بحث برقم المستند أو المورد أو رقم فاتورته أو الملاحظات أو البيان"
-        query={purchasesFilter.query} onQueryChange={purchasesFilter.setQuery}
-        values={purchasesFilter.values} onValueChange={purchasesFilter.setValue}
-        showDateRange range={purchasesFilter.range} onRangeChange={purchasesFilter.setRange}
-        onReset={purchasesFilter.reset}
-        total={purchases.length} shown={purchasesFilter.filtered.length}
-        filters={[
-          // الصف الأول: بحث ٥ + فرع ٤ + مورد ٤ + تاريخ ٦ + «فلاتر أكثر» ٣ + مسح ٢ + عدّاد ٢ = ٢٦
-          // على شاشة عريضة، وبيتلمّ على ٢٤ بإن العدّاد والمسح أيقونة بس.
-          { key: 'kind', placeholder: 'النوع', span: 3,
-            options: [{ value: 'purchase', label: 'فواتير' },
-              { value: 'return', label: 'مرتجعات' }] },
-          { key: 'branch_id', placeholder: 'الفرع', span: 4,
-            options: branches.map((b: any) => ({ value: b.id, label: b.name })) },
-          { key: 'supplier_id', placeholder: 'المورد', span: 4,
-            options: sortByName(suppliers, (s) => s.name).map((s) => ({ value: s.id, label: s.name })) },
-          // تحت الطيّة: بيتسألوا كل شوية، ولهم فلتر على العمود نفسه كمان.
-          { key: 'document_number', placeholder: 'مستند رقم', kind: 'text',
-            advanced: true, span: 5 },
-          { key: 'external_document_number', placeholder: 'الفاتورة رقم', kind: 'text',
-            advanced: true, span: 5 },
-          { key: 'notes', placeholder: 'ملاحظات', kind: 'text', advanced: true, span: 6 },
-          { key: 'statement', placeholder: 'البيان', kind: 'text', advanced: true, span: 6 },
-        ]}
-      />
-      {/*
-        * سبعتاشر عمود عايزين مساحة — `max-content` بيدّي كل عمود عرضه الطبيعي والجدول بيتمرّر
-        * أفقياً، بدل ما antd تعصر الأرقام في عرض الشاشة وتلفّ «١٢٬٥٠٠٫٠٠» على سطرين.
-        *
-        * و«مستند رقم» مثبّت: وانت بتمرّر لتحت الشمال عشان تشوف الباقي والضرايب، لازم تفضل عارف
-        * إنت في سطر مين. من غيره بتعدّ السطور بصباعك على الشاشة.
-        */}
+        <Select className="sl-f-customer" allowClear showSearch mode="multiple"
+          maxTagCount="responsive" placeholder="جميع الموردين"
+          value={purchasesFilter.values.supplier_id ?? undefined}
+          onChange={(v: any[]) => purchasesFilter.setValue('supplier_id', v?.length ? v : undefined)}
+          filterOption={searchFilter} filterSort={searchRank}
+          options={sortByName(suppliers, (s) => s.name).map((s) => ({ value: s.id, label: s.name }))} />
+        <Select allowClear showSearch mode="multiple" maxTagCount="responsive"
+          placeholder="جميع الفروع"
+          value={purchasesFilter.values.branch_id ?? undefined}
+          onChange={(v: any[]) => purchasesFilter.setValue('branch_id', v?.length ? v : undefined)}
+          filterOption={searchFilter} filterSort={searchRank}
+          options={branches.map((b: any) => ({ value: b.id, label: b.name }))} />
+        <DateRangeFilter className="sl-f-dates"
+          value={purchasesFilter.range ?? null}
+          onChange={(v) => purchasesFilter.setRange(v)} />
+        {moreOpen && (<>
+          {textFilter('document_number', 'مستند رقم')}
+          {textFilter('external_document_number', 'الفاتورة رقم')}
+          {textFilter('notes', 'ملاحظات')}
+          {textFilter('statement', 'البيان')}
+        </>)}
+        <Button className="sl-f-clear" type="link"
+          icon={moreOpen ? <UpOutlined /> : <DownOutlined />}
+          onClick={() => setShowMoreFilters((v) => !v)}>
+          فلاتر أكثر
+        </Button>
+        <Button className="sl-f-clear" icon={<ClearOutlined />}
+          onClick={purchasesFilter.reset}>مسح</Button>
+      </>)}
+    >
       <Table
         {...listKb.tableProps}
         // الضغط على مسودّة بيستكملها؛ الباقي بيفتح مستنده زي ما هو.
@@ -2250,6 +2243,7 @@ export default function Purchases() {
           };
         }}
         rowClassName={(r: any) => (r.__isDraft ? 'row-draft' : '')}
+        className="sl-table"
         size="small"
         // المسودّات فوق، وبرّه `purchasesFilter.filtered` عن قصد: الإجماليات في ذيل
         // الجدول بتتبني منه، والمسودّة مش مستند — مايصحّش تتحسب في «إجمالي المشتريات».
@@ -2280,7 +2274,12 @@ export default function Purchases() {
         // مع `tableLayout: fixed` وكل عمود له عرض، المتصفح بيوزّع الفرق على الأعمدة كلها
         // بالنسبة: زادت تتفرد شوية، قلّت تتضغط شوية. اللي كان بيكسّر الشكل هو عمود من غير
         // عرض — الفاضي كله كان بينزل عليه لوحده فيطلع شريط أبيض في نص الجدول.
-        pagination={{ defaultPageSize: PAGE_SIZE, showSizeChanger: true, pageSizeOptions: PAGE_SIZE_OPTIONS }}
+        // الترقيم شمال، والإجماليات يمين في نفس السطر — زي سجل المبيعات.
+        pagination={{
+          defaultPageSize: PAGE_SIZE, showSizeChanger: true, pageSizeOptions: PAGE_SIZE_OPTIONS,
+          locale: { items_per_page: '' },
+          showTotal: () => listFooter,
+        }}
         locale={{ emptyText: 'لا يوجد عمليات شراء بعد' }}
         summary={(rows) => {
           /*
@@ -2327,7 +2326,7 @@ export default function Purchases() {
           );
         }}
       />
-    </Card>
+    </ListPage>
   );
 
   const detailLineColumns = [

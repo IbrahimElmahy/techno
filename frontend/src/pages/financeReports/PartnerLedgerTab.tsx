@@ -6,11 +6,11 @@
  * بيديله الفترة وبس.
  */
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { PAGE_SIZE } from '../../utils/pagination';
-import { Alert, Button, Card, Col, Row, Select, Space, Tag } from 'antd';
+import { Alert, Button, Select, Tag } from 'antd';
 // فلتر على كل عمود — شوف `FilterTable`.
 import { FilterTable as Table } from '../../components/FilterTable';
-import { Statistic } from '../../components/Statistic';
 import { ReloadOutlined, LinkOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../../api/client';
@@ -18,7 +18,13 @@ import { useQueryTab } from '../../components/useQueryTab';
 import StatementFilter, { statementMatches } from '../../components/StatementFilter';
 import { money, PartnerLedgerRow, PartnerLedgerLine } from './types';
 
-export default function PartnerLedgerTab({ params }: { params: () => Record<string, string> }) {
+/** أماكن الفلاتر والأزرار في إطار الصفحة (`ListPage`) — التاب المستخبي بيستلم `undefined`. */
+export interface TabSlots { filters: HTMLElement | null; actions: HTMLElement | null }
+
+export default function PartnerLedgerTab({ params, slots }: {
+  params: () => Record<string, string>;
+  slots?: TabSlots;
+}) {
   const navigate = useNavigate();
   const [partnerRows, setPartnerRows] = useState<PartnerLedgerRow[]>([]);
   const [partnerKind, setPartnerKind] = useQueryTab('customer', 'pkind') as
@@ -65,10 +71,10 @@ export default function PartnerLedgerTab({ params }: { params: () => Record<stri
   }, [partnerRows, stmtQ]);
 
   return (
-    <Card
-      title="دفتر الشريك"
-      extra={
-        <Space>
+    <div>
+      {/* الفلاتر في سطر فلاتر الصفحة، و«تحديث» في الترويسة — والحالة هنا زي ما هي. */}
+      {slots?.filters && createPortal(
+        <>
           <Select
             value={partnerKind}
             style={{ width: 140 }}
@@ -89,24 +95,32 @@ export default function PartnerLedgerTab({ params }: { params: () => Record<stri
             ]}
           />
           <StatementFilter value={stmtQ} onChange={setStmtQ} style={{ width: 200 }} />
-          <Button icon={<ReloadOutlined />} onClick={loadPartner}
-                  loading={partnerLoading}>تحديث</Button>
-        </Space>
-      }
-    >
+        </>,
+        slots.filters,
+      )}
+      {slots?.actions && createPortal(
+        <Button icon={<ReloadOutlined />} onClick={loadPartner}
+                loading={partnerLoading}>تحديث</Button>,
+        slots.actions,
+      )}
       {!!stmtQ && (
         <Alert
-          type="info" showIcon style={{ marginBottom: 12 }}
+          type="info" showIcon style={{ margin: '6px 0 8px' }}
           message={`بيان «${stmtQ}» — ${shownRows.length} طرف من ${partnerRows.length}`}
           description="المدين والدائن للسطور المطابقة للبيان فقط؛ أول وآخر المدة رصيد الطرف كله."
         />
       )}
       <Table<PartnerLedgerRow>
+        className="sl-table"
         rowKey={(r) => `${r.partner_kind}:${r.partner_id}`}
         size="small"
         loading={partnerLoading}
         dataSource={shownRows}
-        pagination={{ defaultPageSize: PAGE_SIZE, showTotal: (t) => `إجمالي ${t}` }}
+        pagination={{
+          defaultPageSize: PAGE_SIZE,
+          locale: { items_per_page: '' },
+          showTotal: (t) => <span className="sl-foot"><span>إجمالي الأطراف: <b>{t}</b></span></span>,
+        }}
         expandable={{
           expandedRowRender: (row) => (
             <Table<PartnerLedgerLine>
@@ -198,6 +212,6 @@ export default function PartnerLedgerTab({ params }: { params: () => Record<stri
           },
         ]}
       />
-    </Card>
+    </div>
   );
 }

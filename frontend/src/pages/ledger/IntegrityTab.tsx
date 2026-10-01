@@ -99,6 +99,7 @@ export default function IntegrityTab() {
         </Tag>
       )}
       <Table<JournalIntegrity>
+        className="sl-table"
         rowKey="journal_id" size="small" pagination={false} loading={loading}
         dataSource={rows}
         columns={[

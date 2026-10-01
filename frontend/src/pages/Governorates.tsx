@@ -1,8 +1,9 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Button, Card, Empty, Input, Modal, Space, Table, Tag, message } from 'antd';
-import { EditOutlined, PlusOutlined, ReloadOutlined, SearchOutlined } from '@ant-design/icons';
+import { Button, Empty, Input, Modal, Space, Table, Tag, message } from 'antd';
+import { EditOutlined, EnvironmentOutlined, PlusOutlined, ReloadOutlined, SearchOutlined } from '@ant-design/icons';
 import { api } from '../api/client';
 import { useTableColumns } from '../components/ColumnSettings';
+import ListPage from '../components/ListPage';
 
 /**
  * المحافظات — أعلى مستوى في الهيكل: المحافظة فوق الفرع فوق المنطقة.
@@ -94,27 +95,31 @@ export default function Governorates() {
   };
 
   return (
-    <Card
+    <>
+    <ListPage
+      icon={<EnvironmentOutlined />}
       title="المحافظات"
-      extra={
-        <Space>
-          {cols.control}
-          <Button type="primary" icon={<PlusOutlined />}
-            onClick={() => { setEditing({ id: 0, name: '' }); setName(''); }}>
-            محافظة جديدة
-          </Button>
-          <Button icon={<ReloadOutlined />} onClick={load}>تحديث</Button>
-        </Space>
-      }
+      subtitle="أعلى مستوى في الهيكل — المحافظة فوق الفرع فوق المنطقة"
+      actions={(<>
+        <Button type="primary" className="sl-create" icon={<PlusOutlined />}
+          onClick={() => { setEditing({ id: 0, name: '' }); setName(''); }}>
+          محافظة جديدة
+        </Button>
+        <Button icon={<ReloadOutlined />} onClick={load}>تحديث</Button>
+        {cols.control}
+      </>)}
+      filters={(
+        <Input className="sl-f-search" allowClear prefix={<SearchOutlined />}
+          placeholder="بحث بالاسم" value={query} onChange={(e) => setQuery(e.target.value)} />
+      )}
     >
-      <Input allowClear prefix={<SearchOutlined />} style={{ width: 280, marginBottom: 12 }}
-        placeholder="بحث بالاسم" value={query} onChange={(e) => setQuery(e.target.value)} />
-
       <Table
+        className="sl-table"
         rowKey="id" size="small" loading={loading} dataSource={visible}
         columns={cols.columns} tableLayout="fixed" pagination={false}
         locale={{ emptyText: <Empty description="لا توجد محافظات" /> }}
       />
+    </ListPage>
 
       <Modal
         open={Boolean(editing)}
@@ -127,6 +132,6 @@ export default function Governorates() {
         <Input placeholder="اسم المحافظة" value={name} autoFocus
           onChange={(e) => setName(e.target.value)} onPressEnter={save} />
       </Modal>
-    </Card>
+    </>
   );
 }

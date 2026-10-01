@@ -1,15 +1,16 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { searchFilter, searchRank } from '../utils/arabicSort';
 import {
-  Button, Card, Empty, Input, Modal, Select, Space, Switch, Table, Tag, Tooltip, message,
+  Button, Empty, Input, Modal, Select, Space, Switch, Table, Tooltip, message,
 } from 'antd';
 import {
-  ReloadOutlined, SearchOutlined, StopOutlined, SwapOutlined, TeamOutlined,
+  CarOutlined, ReloadOutlined, SearchOutlined, StopOutlined, SwapOutlined, TeamOutlined,
 } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import { Popconfirm } from '../components/noConfirm';
 import { api } from '../api/client';
 import { useTableColumns } from '../components/ColumnSettings';
+import ListPage from '../components/ListPage';
 
 /**
  * المناديب — كل ما يخص المندوب في شاشة واحدة.
@@ -206,26 +207,34 @@ export default function Reps() {
   });
   const others = rows.filter((r) => r.user_id !== moveFrom?.user_id && r.active);
 
-  return (
-    <Card
-      title="المناديب"
-      extra={
-        <Space>
-          {cols.control}
-          <Space size={4}>
-            <Switch size="small" checked={showInactive}
-              onChange={(v) => { setShowInactive(v); load(v); }} />
-            <span style={{ fontSize: 12 }}>يشمل الموقوفين</span>
-          </Space>
-          <Button icon={<ReloadOutlined />} onClick={() => load()}>تحديث</Button>
-        </Space>
-      }
-    >
-      <Input allowClear prefix={<SearchOutlined />} style={{ width: 320, marginBottom: 12 }}
-        placeholder="بحث بالاسم أو الفرع أو المنطقة"
-        value={query} onChange={(e) => setQuery(e.target.value)} />
+  // مفتاح «يشمل الموقوفين» بقى شريحتين — نفس الطلب للسيرفر.
+  type RepTab = 'active' | 'all';
+  const repTab: RepTab = showInactive ? 'all' : 'active';
 
+  return (
+    <>
+    <ListPage<RepTab>
+      icon={<CarOutlined />}
+      title="المناديب"
+      subtitle="فرع كل مندوب ومنطقته ومخزن بضاعته وعملاؤه في شاشة واحدة"
+      tabs={[
+        { key: 'active', label: 'النشطين', dot: '#52c41a', count: showInactive ? undefined : rows.length },
+        { key: 'all', label: 'يشمل الموقوفين', count: showInactive ? rows.length : undefined },
+      ]}
+      activeTab={repTab}
+      onTabChange={(k) => { const v = k === 'all'; setShowInactive(v); load(v); }}
+      actions={(<>
+        <Button icon={<ReloadOutlined />} onClick={() => load()}>تحديث</Button>
+        {cols.control}
+      </>)}
+      filters={(
+        <Input className="sl-f-search" allowClear prefix={<SearchOutlined />}
+          placeholder="بحث بالاسم أو الفرع أو المنطقة"
+          value={query} onChange={(e) => setQuery(e.target.value)} />
+      )}
+    >
       <Table
+        className="sl-table"
         rowKey="user_id"
         size="small"
         loading={loading}
@@ -235,6 +244,7 @@ export default function Reps() {
         pagination={false}
         locale={{ emptyText: <Empty description="لا يوجد مناديب" /> }}
       />
+    </ListPage>
 
       <Modal
         open={Boolean(moveFrom)}
@@ -265,6 +275,6 @@ export default function Reps() {
             label: `${r.full_name}${r.branch_name ? ` — ${r.branch_name}` : ''}`,
           }))} filterOption={searchFilter} filterSort={searchRank} />
       </Modal>
-    </Card>
+    </>
   );
 }
