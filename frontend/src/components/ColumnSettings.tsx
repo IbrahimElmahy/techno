@@ -1,6 +1,6 @@
 import React from 'react';
 import { Button, Checkbox, Dropdown, Space } from 'antd';
-import { SettingOutlined, ArrowUpOutlined, ArrowDownOutlined } from '@ant-design/icons';
+import { SettingOutlined, HolderOutlined } from '@ant-design/icons';
 import ExportExcelButton, { type ExcelExport } from './ExportExcelButton';
 
 /**
@@ -144,6 +144,22 @@ interface Props {
 export default function ColumnSettings({ choices, hidden, onChange, order, onMove, onResetOrder }: Props) {
   const toggle = (key: string, show: boolean) =>
     onChange(show ? hidden.filter((k) => k !== key) : [...hidden, key]);
+  /**
+   * **السحب والإفلات** (طلب العميل ٢٠٢٦-١٠-٠١) — بدل أسهم فوق/تحت سطر سطر.
+   *
+   * العمود بيتمسك من المقبض ويتساب مكانه. الحركة بتتنفّذ بنفس `onMove` خطوة خطوة، فكل
+   * الشاشات اللي بتستعمل الأداة اشتغلت من غير ما تتغيّر.
+   */
+  const [dragKey, setDragKey] = React.useState<string | null>(null);
+  const [overKey, setOverKey] = React.useState<string | null>(null);
+  const dropOn = (targetKey: string) => {
+    if (!onMove || !dragKey || dragKey === targetKey) return;
+    const from = ranked.indexOf(dragKey);
+    const to = ranked.indexOf(targetKey);
+    if (from < 0 || to < 0) return;
+    const dir: -1 | 1 = to > from ? 1 : -1;
+    for (let n = 0; n < Math.abs(to - from); n += 1) onMove(dragKey, dir);
+  };
 
   // Rendered rank order, same rule the hook applies to the table itself — so the list in the
   // dropdown reads top-to-bottom exactly like the columns read right-to-left.
@@ -164,28 +180,31 @@ export default function ColumnSettings({ choices, hidden, onChange, order, onMov
             الأعمدة الظاهرة{onMove ? ' وترتيبها' : ''}
           </div>
           <Space direction="vertical" style={{ width: '100%' }}>
-            {rows.map((c, i) => (
+            {/* **كل الأعمدة بتتخفي وبتتحرك** (طلب العميل ٢٠٢٦-١٠-٠١) — كان فيه أعمدة مقفولة
+                (الصنف، الكمية، الإجمالي…) مابتتشالش ولا بتتنقل. «إظهار الكل» تحت بيرجّع أي
+                عمود اتشال بالغلط. */}
+            {rows.map((c) => (
               <div key={c.key}
+                draggable={!!onMove}
+                onDragStart={(e) => { setDragKey(c.key); e.dataTransfer.effectAllowed = 'move'; }}
+                onDragOver={(e) => { if (dragKey) { e.preventDefault(); setOverKey(c.key); } }}
+                onDragLeave={() => setOverKey((k) => (k === c.key ? null : k))}
+                onDrop={(e) => { e.preventDefault(); dropOn(c.key); setDragKey(null); setOverKey(null); }}
+                onDragEnd={() => { setDragKey(null); setOverKey(null); }}
                 style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                  gap: 8 }}>
+                  gap: 8, padding: '2px 4px', borderRadius: 6,
+                  background: overKey === c.key && dragKey !== c.key ? '#eaf5e2' : undefined,
+                  borderTop: overKey === c.key && dragKey !== c.key ? '2px solid #6AB42D' : '2px solid transparent',
+                  opacity: dragKey === c.key ? 0.5 : 1 }}>
                 <Checkbox
-                  disabled={c.locked}
                   checked={!hidden.includes(c.key)}
                   onChange={(e) => toggle(c.key, e.target.checked)}
                 >
                   {c.title}
                 </Checkbox>
-                {/* Locked columns anchor the table and do not move — moving the row's own
-                    identity would make «الصف ده» ambiguous. */}
-                {onMove && !c.locked && (
-                  <Space size={0}>
-                    <Button type="text" size="small" icon={<ArrowUpOutlined />}
-                      disabled={i === 0 || rows[i - 1]?.locked}
-                      onClick={() => onMove(c.key, -1)} />
-                    <Button type="text" size="small" icon={<ArrowDownOutlined />}
-                      disabled={i === rows.length - 1}
-                      onClick={() => onMove(c.key, 1)} />
-                  </Space>
+                {onMove && (
+                  <HolderOutlined title="اسحب لتغيير الترتيب"
+                    style={{ cursor: 'grab', color: '#8c8c8c', fontSize: 14 }} />
                 )}
               </div>
             ))}

@@ -223,6 +223,8 @@ export default function Purchases() {
 
   // Form state
   const [form] = Form.useForm();
+  // المورد المختار — لخانة تليفونه في الترويسة.
+  const watchedSupplierId = Form.useWatch('supplier_id', form);
   const [purchaseItems, setPurchaseItems] = useState<PurchaseItem[]>([
     { key: '1', item_id: null, quantity: null, unit_price: 0, unit: null,
     discount_pct: null, fixed_discount_pct: null, warehouse_id: null },
@@ -1649,7 +1651,16 @@ export default function Purchases() {
       />
       </Space>
     )}
-      extra={<PrintOptionsMenu value={printOpts} onChange={setPrintOpts} />}>
+      // شريط الأدوات و«الأعمدة» في سطر العنوان على الشمال (٢٠٢٦-١٠-٠١) — زي فاتورة البيع.
+      styles={{ title: { whiteSpace: 'normal', overflow: 'visible' } }}
+      extra={(
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap',
+                      fontWeight: 400 }}>
+          <DocumentToolbar actions={purchaseToolbar()} inline />
+          {lineGrid.control}
+          <PrintOptionsMenu value={printOpts} onChange={setPrintOpts} />
+        </div>
+      )}>
       <LoadPeriodModal
         open={loadPeriodOpen} onCancel={() => setLoadPeriodOpen(false)}
         title="تحميل فواتير شراء فترة" endpoint="/api/v1/purchases"
@@ -1660,13 +1671,19 @@ export default function Purchases() {
           { title: 'الإجمالي', key: 'total', width: 130, money: true },
         ]}
         onPick={(r) => openDetail(r)} />
-      <DocumentToolbar actions={purchaseToolbar()} />
       <Form form={form} layout="vertical" size="small" className="doc-form"
         onValuesChange={() => setFormTick((n) => n + 1)}
         onFinish={handleSubmit} requiredMark={false}>
           {/* **الترويسة في سطرين** (طلب العميل ٢٠٢٦-٠٩-٣٠: «واخدة نص صفحة»). التاريخ مش هنا —
               هو في سطر العنوان فوق بنفس القيمة، كان مكتوب مرتين. */}
+          {/* الترتيب زي فاتورة البيع (٢٠٢٦-١٠-٠١): رقم المستند ← المورد وتليفونه ← المخزن. */}
           <Row gutter={16}>
+            <Col xs={12} md={4}>
+              <Form.Item name="external_document_number" label="رقم المستند"
+                style={{ marginBottom: 8 }}>
+                <Input placeholder="رقم فاتورة المورد" disabled={viewOnly} />
+              </Form.Item>
+            </Col>
             <Col xs={24} md={7}>
               <Form.Item name="supplier_id" label="المورد"
                 rules={[{ required: true, message: 'يرجى اختيار المورد!' }]}
@@ -1677,6 +1694,12 @@ export default function Purchases() {
                   onClick={() => { if (!viewOnly) setPartyPickerOpen(true); }}
                   options={sortByName(suppliers, (sp) => sp.name).map((sp) => ({
                     value: sp.id, label: sp.code ? `${sp.name} (${sp.code})` : sp.name }))} filterOption={searchFilter} filterSort={searchRank}/>
+              </Form.Item>
+            </Col>
+            <Col xs={12} md={3}>
+              <Form.Item label="الهاتف" style={{ marginBottom: 8 }}>
+                <Input readOnly disabled dir="ltr" placeholder="-"
+                  value={(suppliers.find((sp) => sp.id === watchedSupplierId) as any)?.phone || ''} />
               </Form.Item>
             </Col>
             <Col xs={12} md={5}>
@@ -1692,18 +1715,12 @@ export default function Purchases() {
                   }))} filterOption={searchFilter} filterSort={searchRank} />
               </Form.Item>
             </Col>
-            <Col xs={12} md={4}>
-              <Form.Item name="external_document_number" label="المستند"
-                style={{ marginBottom: 8 }}>
-                <Input placeholder="رقم فاتورة المورد" disabled={viewOnly} />
-              </Form.Item>
-            </Col>
-            <Col xs={12} md={4}>
+            <Col xs={12} md={5}>
               <Form.Item name="notes" label="ملاحظات" style={{ marginBottom: 8 }}>
                 <Input placeholder="اختياري" disabled={viewOnly} />
               </Form.Item>
             </Col>
-            <Col xs={12} md={4}>
+            <Col xs={12} md={6}>
               <Form.Item label="مركز التكلفة" style={{ marginBottom: 8 }}>
                 <Space.Compact style={{ width: '100%' }}>
                   <Form.Item name="cost_center_id" noStyle>
@@ -1716,7 +1733,7 @@ export default function Purchases() {
               </Form.Item>
             </Col>
             {([1, 2, 3] as const).map((n) => (
-              <Col xs={24} md={8} key={n}>
+              <Col xs={24} md={6} key={n}>
                 <Form.Item name={`statement${n}`} label={`بيان ${n}`}
                   style={{ marginBottom: 8 }}>
                   <Input placeholder="اختياري" disabled={viewOnly} />
@@ -1738,7 +1755,6 @@ export default function Purchases() {
                   >
                     إضافة صنف للفاتورة (Enter أو F2)
                   </Button>
-                  <div style={{ flexShrink: 0 }}>{lineGrid.control}</div>
                 </div>
               )}
 

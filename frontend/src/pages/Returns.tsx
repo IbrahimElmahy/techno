@@ -1254,7 +1254,16 @@ export default function Returns() {
         />
           </Space>
         )}
-          extra={<PrintOptionsMenu value={printOpts} onChange={setPrintOpts} />}>
+          // شريط الأدوات و«الأعمدة» في سطر العنوان على الشمال (٢٠٢٦-١٠-٠١) — زي فاتورة البيع.
+      styles={{ title: { whiteSpace: 'normal', overflow: 'visible' } }}
+      extra={(
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap',
+                      fontWeight: 400 }}>
+          <DocumentToolbar actions={returnToolbar()} inline />
+          {lineGrid.control}
+          <PrintOptionsMenu value={printOpts} onChange={setPrintOpts} />
+        </div>
+      )}>
           <LoadPeriodModal
             open={loadPeriodOpen} onCancel={() => setLoadPeriodOpen(false)}
             title="تحميل مرتجعات فترة" endpoint="/api/v1/sales/returns"
@@ -1265,20 +1274,26 @@ export default function Returns() {
               { title: 'القيمة', key: 'value', width: 130, money: true },
             ]}
             onPick={(r) => openDetail(r)} />
-          <DocumentToolbar actions={returnToolbar()} />
           <Form form={createForm} layout="vertical" size="small" className="doc-form"
             onFinish={handleSubmit}>
             {/* **الترويسة في سطرين** (طلب العميل ٢٠٢٦-٠٩-٣٠). «نوع المستند: مردود مبيعات»
                 اتشالت — العنوان فوق بيقولها. */}
             <Row gutter={16}>
+              {/* الترتيب زي فاتورة البيع (٢٠٢٦-١٠-٠١): رقم المستند أول حاجة، والعميل وتليفونه. */}
               <Col xs={12} md={4}>
+                <Form.Item label="رقم المستند" style={{ marginBottom: 8 }}>
+                  <Input placeholder="رقم ورقة العميل" disabled={viewOnly} value={externalDocNumber}
+                    onChange={(e) => setExternalDocNumber(e.target.value)} />
+                </Form.Item>
+              </Col>
+              <Col xs={12} md={3}>
                 <Form.Item label="التاريخ" style={{ marginBottom: 8 }}>
                   <DatePicker style={{ width: '100%' }} allowClear={false} format="YYYY-MM-DD"
                     disabled={viewOnly}
                     value={returnDate} onChange={(v) => setReturnDate(v || dayjs())} />
                 </Form.Item>
               </Col>
-              <Col xs={24} md={7}>
+              <Col xs={24} md={6}>
                 <Form.Item label="اسم العميل" required style={{ marginBottom: 8 }}>
                   <Select open={false} showSearch={false} suffixIcon={<SearchOutlined />}
                     disabled={viewOnly}
@@ -1288,7 +1303,13 @@ export default function Returns() {
                     options={customers.map((c: any) => ({ value: c.id, label: c.name }))} filterOption={searchFilter} filterSort={searchRank}/>
                 </Form.Item>
               </Col>
-              <Col xs={12} md={5}>
+              <Col xs={12} md={3}>
+                <Form.Item label="الهاتف" style={{ marginBottom: 8 }}>
+                  <Input readOnly disabled dir="ltr" placeholder="-"
+                    value={(customers.find((c: any) => c.id === customerId) as any)?.phone || ''} />
+                </Form.Item>
+              </Col>
+              <Col xs={12} md={4}>
                 <Form.Item label="المخزن" required style={{ marginBottom: 8 }}>
                   <Select
                     showSearch
@@ -1320,12 +1341,6 @@ export default function Returns() {
                       { value: 'بولي', label: 'بولي' },
                     ]}
                   />
-                </Form.Item>
-              </Col>
-              <Col xs={12} md={4}>
-                <Form.Item label="رقم المستند" style={{ marginBottom: 8 }}>
-                  <Input placeholder="رقم ورقة العميل" disabled={viewOnly} value={externalDocNumber}
-                    onChange={(e) => setExternalDocNumber(e.target.value)} />
                 </Form.Item>
               </Col>
               <Col xs={12} md={6}>
@@ -1459,7 +1474,6 @@ export default function Returns() {
                     >
                       إضافة صنف للمرتجع (F2)
                     </Button>
-                    <div style={{ flexShrink: 0 }}>{lineGrid.control}</div>
                   </div>
                 )}
 
@@ -1491,7 +1505,6 @@ export default function Returns() {
                 {lines.length === 0 ? (
                   <Empty description="اختر الفئة ثم الأصناف لإضافتها للمرتجع" style={{ margin: '12px 0' }} />
                 ) : (<>
-                  <div style={{ textAlign: 'left', marginBottom: 8 }}>{lineGrid.control}</div>
                   {linesByCategory.map((group) => (
                     <div key={group.category ?? '__none__'}
                       style={{ border: '1px solid #e6efe3', borderRadius: 10, overflow: 'hidden', marginBottom: 12 }}>

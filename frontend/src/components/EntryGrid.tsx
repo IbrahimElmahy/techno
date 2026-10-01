@@ -65,7 +65,8 @@ export function useEntryGrid<T>(storageKey: string, columns: EntryColumn<T>[]) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [columns, prefs.order]);
 
-  const shown = ordered.filter((c) => c.locked || !prefs.hidden.includes(c.key));
+  // كل عمود بيتخفي — حتى «المقفول» (طلب العميل ٢٠٢٦-١٠-٠١). شوف `ColumnSettings`.
+  const shown = ordered.filter((c) => !prefs.hidden.includes(c.key));
 
   const control = (
     <ColumnSettings

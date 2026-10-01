@@ -1001,6 +1001,14 @@ export default function PurchaseReturns() {
   // اسم آخر مورد اتختار من النافذة. قايمة `suppliers` مبنية من المردودات اللي في الكشف،
   // فمورد أول مرة يترجّع له كان بيظهر في خانة «المورد» كرقم مش كاسم.
   const [pickedSupplier, setPickedSupplier] = useState<{ value: number; label: string } | null>(null);
+  // تليفون المورد المختار — لخانته في الترويسة (٢٠٢٦-١٠-٠١).
+  const [supplierPhone, setSupplierPhone] = useState('');
+  useEffect(() => {
+    if (!supplierFilter) { setSupplierPhone(''); return; }
+    api.get(`/api/v1/suppliers/${supplierFilter}`)
+      .then((r) => setSupplierPhone(r.data?.phone || ''))
+      .catch(() => setSupplierPhone(''));
+  }, [supplierFilter]);
   const suppliers = useMemo(() => {
     const seen = new Map<number, string>();
     rows.forEach((r) => { if (r.supplier_id) seen.set(r.supplier_id, r.supplier_name || ''); });
@@ -1224,7 +1232,16 @@ export default function PurchaseReturns() {
         />
         </Space>
       )}
-      extra={<PrintOptionsMenu value={printOpts} onChange={setPrintOpts} />}>
+      // شريط الأدوات و«الأعمدة» في سطر العنوان على الشمال (٢٠٢٦-١٠-٠١) — زي فاتورة البيع.
+      styles={{ title: { whiteSpace: 'normal', overflow: 'visible' } }}
+      extra={(
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap',
+                      fontWeight: 400 }}>
+          <DocumentToolbar actions={returnToolbar()} inline />
+          {lineGrid.control}
+          <PrintOptionsMenu value={printOpts} onChange={setPrintOpts} />
+        </div>
+      )}>
         <LoadPeriodModal
           open={loadPeriodOpen} onCancel={() => setLoadPeriodOpen(false)}
           title="تحميل مردودات شراء فترة" endpoint="/api/v1/purchases/returns"
@@ -1235,11 +1252,17 @@ export default function PurchaseReturns() {
             { title: 'القيمة', key: 'value', width: 130, money: true },
           ]}
           onPick={(r) => openReturn(r)} />
-        <DocumentToolbar actions={returnToolbar()} />
 
         <Form layout="vertical" size="small" className="doc-form">
           {/* الترويسة في سطرين (طلب العميل ٢٠٢٦-٠٩-٣٠). */}
+          {/* الترتيب زي فاتورة البيع (٢٠٢٦-١٠-٠١): رقم المستند ← التاريخ ← المورد وتليفونه. */}
           <Row gutter={16}>
+            <Col xs={12} md={4}>
+              <Form.Item label="رقم المستند" style={{ marginBottom: 8 }}>
+                <Input placeholder="رقم إشعار المورد" disabled={viewOnly} value={externalNumber}
+                  onChange={(e) => setExternalNumber(e.target.value)} />
+              </Form.Item>
+            </Col>
             <Col xs={12} md={4}>
               <Form.Item label="التاريخ" style={{ marginBottom: 8 }}>
                 <DatePicker style={{ width: '100%' }} allowClear={false} format="YYYY-MM-DD"
@@ -1256,13 +1279,12 @@ export default function PurchaseReturns() {
                   options={suppliers} filterOption={searchFilter} filterSort={searchRank}/>
               </Form.Item>
             </Col>
-            <Col xs={12} md={4}>
-              <Form.Item label="المستند" style={{ marginBottom: 8 }}>
-                <Input placeholder="رقم إشعار المورد" disabled={viewOnly} value={externalNumber}
-                  onChange={(e) => setExternalNumber(e.target.value)} />
+            <Col xs={12} md={3}>
+              <Form.Item label="الهاتف" style={{ marginBottom: 8 }}>
+                <Input readOnly disabled dir="ltr" placeholder="-" value={supplierPhone} />
               </Form.Item>
             </Col>
-            <Col xs={24} md={9}>
+            <Col xs={24} md={6}>
               <Form.Item label="ملاحظات" style={{ marginBottom: 8 }}>
                 <Input placeholder="سبب الرجوع (مكسورة، ناقصة، غلط في الصنف…)"
                   disabled={viewOnly}
@@ -1293,7 +1315,6 @@ export default function PurchaseReturns() {
             >
               إضافة صنف للمردود (F2)
             </Button>
-            <div style={{ flexShrink: 0 }}>{lineGrid.control}</div>
           </div>
         )}
 
