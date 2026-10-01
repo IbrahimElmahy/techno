@@ -491,6 +491,53 @@ def create_payment(
     return _out(v)
 
 
+def _replace(db: Session, current: CurrentUser, voucher_id: int, kind: VoucherKind,
+             fields: dict) -> VoucherOut:
+    """تعديل سند قبض/صرف — نفس الـid والرقم، والقيد بيتكتب من جديد."""
+    if current.role == RoleName.sales_rep:
+        own = db.get(Voucher, voucher_id)
+        if own is not None and current.id not in (own.actor_user_id, own.rep_user_id):
+            raise HTTPException(status.HTTP_403_FORBIDDEN,
+                                {"code": "forbidden", "message": "السند ده مش بتاعك."})
+    try:
+        v = voucher_service.replace_voucher(
+            db, voucher_id=voucher_id, kind=kind, editor_user_id=current.id,
+            editor_role=current.role, fields=fields)
+    except voucher_service.VoucherNotFound as exc:
+        raise HTTPException(status.HTTP_404_NOT_FOUND,
+                            {"code": "not_found", "message": str(exc)})
+    except (VoucherError, LedgerError, TreasuryError) as exc:
+        raise _conflict(exc)
+    db.commit()
+    return _out(v)
+
+
+@router.put("/vouchers/receipts/{voucher_id}", response_model=VoucherOut)
+def update_receipt(
+    voucher_id: int,
+    body: ReceiptIn,
+    current: CurrentUser = Depends(require_capability(CAP_VOUCHER_WRITE)),
+    db: Session = Depends(get_db),
+) -> VoucherOut:
+    """تعديل سند قبض — بنفس صلاحية إنشاؤه."""
+    return _replace(db, current, voucher_id, VoucherKind.receipt,
+                    body.model_dump(exclude={"client_uuid"}))
+
+
+@router.put("/vouchers/payments/{voucher_id}", response_model=VoucherOut)
+def update_payment(
+    voucher_id: int,
+    body: PaymentIn,
+    current: CurrentUser = Depends(require_capability(CAP_VOUCHER_WRITE)),
+    db: Session = Depends(get_db),
+) -> VoucherOut:
+    """تعديل سند صرف — ممنوع على المناديب زي إنشاؤه."""
+    if current.role == RoleName.sales_rep:
+        raise HTTPException(status.HTTP_403_FORBIDDEN,
+                            {"code": "forbidden", "message": "الصرف للموردين من المكتب فقط."})
+    return _replace(db, current, voucher_id, VoucherKind.payment, body.model_dump())
+
+
 @router.post("/vouchers/handovers", response_model=VoucherOut,
              status_code=status.HTTP_201_CREATED)
 def create_handover(
@@ -787,6 +834,23 @@ def list_vouchers(
         paged_rows = visible_rows[offset:offset + clamped_limit]
         return PaginatedVouchersOut(rows=[_out(v) for v in paged_rows], total=total, limit=clamped_limit, offset=offset)
     return [_out(v) for v in visible_rows]
+
+
+@router.get("/vouchers/{voucher_id}", response_model=VoucherOut)
+def get_voucher(
+    voucher_id: int,
+    current: CurrentUser = Depends(require_capability(CAP_VOUCHER_READ)),
+    db: Session = Depends(get_db),
+) -> VoucherOut:
+    """سند واحد — لفتحه للتعديل من سجل المبيعات أو المشتريات."""
+    v = db.get(Voucher, voucher_id)
+    if v is not None and current.role == RoleName.sales_rep \
+            and current.id not in (v.actor_user_id, v.rep_user_id):
+        v = None
+    if v is None or not branch_scope.visible(current, [v]):
+        raise HTTPException(status.HTTP_404_NOT_FOUND,
+                            {"code": "not_found", "message": "السند مش موجود."})
+    return _out(v)
 
 
 @router.get("/customers/{customer_id}/statement", response_model=StatementOut)

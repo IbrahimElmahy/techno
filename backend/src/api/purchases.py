@@ -332,6 +332,17 @@ def payments_log(
     sup_ids = {r.supplier_id for r in invs} | {v.supplier_id for v in vouchers}
     sups = dict(db.execute(select(Supplier.id, Supplier.name)
                            .where(Supplier.id.in_(sup_ids))).all()) if sup_ids else {}
+    # بيانات المستند كاملة في الجدول — الخزنة ومركز التكلفة بأسماءهم، كله بقواميس.
+    from src.models.cost_center import CostCenter
+    from src.services.voucher_service import cash_labeler
+    cash_label = cash_labeler(db, treasury_ids={v.treasury_id for v in vouchers},
+                              account_ids={v.cash_account_id for v in vouchers})
+    cc_ids = {x.cost_center_id for x in [*invs, *vouchers] if x.cost_center_id}
+    ccs = dict(db.execute(select(CostCenter.id, CostCenter.name)
+                          .where(CostCenter.id.in_(cc_ids))).all()) if cc_ids else {}
+
+    def _iso(t):
+        return t.isoformat() if t else None
 
     rows = []
     for r in invs:
@@ -344,6 +355,13 @@ def payments_log(
             "rep_id": r.rep_id, "rep_name": users.get(r.rep_id),
             "store": wh_names.get(r.location_id) if k == "warehouse" else None,
             "amount": str(r.cash_amount), "family": None, "source": "system",
+            # فاتورة الشرا مابتحفظش خزنة الدفع.
+            "treasury": None, "payment_method": None,
+            "statement": r.statement1, "notes": r.notes, "description": None,
+            "external_document_number": r.external_document_number, "reference": None,
+            "actor_name": users.get(r.actor_user_id), "created_at": _iso(r.created_at),
+            "cost_center": ccs.get(r.cost_center_id),
+            "invoice_total": str(r.total), "credit_amount": str(r.credit_amount),
         })
     for v in vouchers:
         rows.append({
@@ -353,7 +371,16 @@ def payments_log(
             "party_id": v.supplier_id, "party_name": sups.get(v.supplier_id),
             "rep_id": v.rep_user_id, "rep_name": users.get(v.rep_user_id),
             "store": None, "amount": str(v.amount), "family": v.family,
+            "on_total": v.family is None,
             "source": "app" if v.client_uuid else "system",
+            "treasury": cash_label(v.treasury_id, v.cash_account_id),
+            "payment_method": v.payment_method,
+            "statement": v.statement1 or v.description, "notes": v.description,
+            "description": v.description,
+            "external_document_number": v.external_document_number, "reference": v.reference,
+            "actor_name": users.get(v.actor_user_id), "created_at": _iso(v.created_at),
+            "cost_center": ccs.get(v.cost_center_id),
+            "invoice_total": None, "credit_amount": None,
         })
     rows.sort(key=lambda x: (x["date"], x["id"]), reverse=True)
     rows = rows[:limit]

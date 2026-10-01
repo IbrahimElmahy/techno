@@ -27,6 +27,7 @@ import { Party, UserRecord, money } from './types';
 export default function ReceiptModal({
   open, onCancel, form, posting, submit, customers, treasuries,
   methodOptions, families, setFamilies, target, setTarget, reps = [],
+  editing = false, treasuryOptional = false,
 }: {
   open: boolean;
   onCancel: () => void;
@@ -42,12 +43,16 @@ export default function ReceiptModal({
   setTarget: (v: string) => void;
   /** المناديب — لخانة «المندوب» (اختيارية). */
   reps?: UserRecord[];
+  /** بيعدّل سند موجود — العنوان والزرار بيقولوا كده. */
+  editing?: boolean;
+  /** السند اللي بيتعدّل في عهدة المندوب — فاضي = يفضل فيها. */
+  treasuryOptional?: boolean;
 }) {
   return (
       <TabModal
         open={open}
-        title="سند قبض — تحصيل من عميل"
-        okText="تسجيل السند" cancelText="إلغاء"
+        title={editing ? 'تعديل سند قبض' : 'سند قبض — تحصيل من عميل'}
+        okText={editing ? 'حفظ التعديل' : 'تسجيل السند'} cancelText="إلغاء"
         confirmLoading={posting}
         onCancel={onCancel}
         onOk={() => form.submit()}
@@ -115,7 +120,8 @@ export default function ReceiptModal({
                   <Form.Item name="voucher_date" label="التاريخ" initialValue={dayjs()}>
                     <DatePicker />
                   </Form.Item>
-                  <TreasuryField treasuries={treasuries} />
+                  <TreasuryField treasuries={treasuries} optional={treasuryOptional}
+                    placeholder={treasuryOptional ? 'عهدة المندوب (من غير تغيير)' : undefined} />
                   {/* المندوب اللي حصّل — فاضي = مندوب العميل. من غيره السند كان بيتكتب من غير
                       مندوب، فكشف الحساب وفلتر المندوب مابيشوفوش التحصيل ده. */}
                   <Form.Item name="rep_user_id" label="المندوب" tooltip="فاضي = مندوب العميل">
@@ -153,7 +159,7 @@ export default function ReceiptModal({
                   </Form.Item>
                   <Form.Item>
                     <Button type="primary" htmlType="submit" loading={posting}>
-                      تسجيل السند
+                      {editing ? 'حفظ التعديل' : 'تسجيل السند'}
                     </Button>
                   </Form.Item>
                 </Form>

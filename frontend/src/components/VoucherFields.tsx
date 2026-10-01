@@ -45,8 +45,12 @@ export interface ExpenseAccount {
  * amount larger than what is in it is flagged as it is typed rather than refused at save.
  */
 export function TreasuryField({
-  treasuries, amount, width = 260,
-}: { treasuries: Treasury[]; amount?: number | null; width?: number }) {
+  treasuries, amount, width = 260, optional = false, placeholder,
+}: {
+  treasuries: Treasury[]; amount?: number | null; width?: number;
+  /** تعديل سند في عهدة مندوب — فاضي = يفضل في العهدة. */
+  optional?: boolean; placeholder?: string;
+}) {
   const live = treasuries.filter((t) => t.active !== false);
 
   const options = live.map((t) => {
@@ -69,11 +73,11 @@ export function TreasuryField({
       label="الخزينة"
       // Required, deliberately. The old form allowed «no answer» and resolved it server-side, which
       // is the same as answering for them.
-      rules={[{ required: true, message: 'اختر الخزينة التي ستتحرك منها الأموال' }]}
+      rules={optional ? [] : [{ required: true, message: 'اختر الخزينة التي ستتحرك منها الأموال' }]}
     >
       <Select
-        showSearch style={{ width }}
-        placeholder="اختر الخزينة"
+        showSearch style={{ width }} allowClear={optional}
+        placeholder={placeholder ?? 'اختر الخزينة'}
         options={options.map((o) => ({
           value: o.value,
           label: o.label,

@@ -67,9 +67,10 @@ import { buildLineColumns } from './invoices/lineColumns';
 import { buildRegisterColumns } from './invoices/registerColumns';
 // سند القبض بيتعمل من شريحة «سندات القبض» هنا — نفس بوباب شاشة السندات، مش نسخة منه.
 import ReceiptModal from './vouchers/ReceiptModal';
-import { useQuickVoucher } from './vouchers/useQuickVoucher';
+import { useQuickVoucher, type EditableVoucher } from './vouchers/useQuickVoucher';
 import { useLiveRefresh } from '../utils/live';
 import ListPage from '../components/ListPage';
+import { useQueryTab } from '../components/useQueryTab';
 /** رقم فريد للمستند (`client_uuid`). `randomUUID` مش موجود خارج https، فالبديل عشوائي كفاية. */
 // المرتجع الجديد بيتفتح جوّه السجل (`embedded`) — كسول عشان مايتحمّلش مع كل فاتورة.
 const ReturnsScreen = React.lazy(() => import('./Returns'));
@@ -359,7 +360,9 @@ export default function Invoices() {
   const [salesReturns, setSalesReturns] = useState<any[]>([]);
   // إجماليات الكشف كله زي ما السيرفر حسبها — مش مجموع الصفحة اللي ظاهرة.
   const [serverSummary, setServerSummary] = useState<any>(null);
-  const [docKindFilter, setDocKindFilter] = useState<'all' | 'sale' | 'return' | 'bonus' | 'receipts'>('all');
+  // الشريحة في الرابط (`?tab=`) — الريلود بيرجّع لنفس الشريحة (طلب العميل ٢٠٢٦-١٠-٠١).
+  const [docKindRaw, setDocKindFilter] = useQueryTab('all');
+  const docKindFilter = docKindRaw as 'all' | 'sale' | 'return' | 'bonus' | 'receipts';
   // صفوف السجل المتعلّمة — العدد بس اللي بيظهر تحت («المحدد»).
   const [selectedKeys, setSelectedKeys] = useState<React.Key[]>([]);
   // مكان أزرار جدول سندات القبض (تصدير/أعمدة) في الترويسة — `PaymentsLogPanel` بيرسمها هنا.
@@ -3184,6 +3187,23 @@ function couponsTotal(inv: any): number {
   /** سند قبض جديد هنا في نفس الشاشة — نفس فتح شاشة السندات: فورم فاضي على الخزنة الافتراضية. */
   const openReceipt = () => { setReceiptTarget(''); receipt.show(); };
 
+  /**
+   * تعديل سند قبض من الشريحة — نفس البوباب مليان بالسند. خطوط العميل بتتجاب عشان سؤال
+   * «على أنهي مديونية» يظهر بإجابة السند: خطه، أو «على الإجمالي» لو مالوش خط.
+   */
+  const editReceipt = (v: EditableVoucher) => {
+    const cid = v.customer_id;
+    setReceiptTarget(v.family || '__total__');
+    if (cid && !receiptFamilies[cid]) {
+      api.get(`/api/v1/customers/${cid}/accounts`)
+        .then((r) => setReceiptFamilies((prev) => ({
+          ...prev, [cid]: (r.data?.accounts || []).filter((a: any) => a.family),
+        })))
+        .catch(() => setReceiptFamilies((prev) => ({ ...prev, [cid]: [] })));
+    }
+    receipt.edit(v);
+  };
+
   const startNewReturn = () => setEmbeddedReturn(true);
 
   // الشرايح وعدّاداتها — نفس أرقام الملخّص اللي من السيرفر.
@@ -3333,7 +3353,11 @@ function couponsTotal(inv: any): number {
             partyId={filters.customer_id} repId={filters.rep_id}
             dateFrom={filters.date_from} dateTo={filters.date_to}
             onOpenInvoice={(id) => openDetail({ id } as InvoiceRecord)}
-            onOpenVoucher={() => navigate('/vouchers?tab=receipt')}
+            onEditInvoice={canEditInvoice ? (id, r) => handleEditInvoice(
+              { id, document_number: r.document_number } as InvoiceRecord) : undefined}
+            onDeleteInvoice={canDeleteInvoice ? (id, r) => handleDeleteInvoice(
+              { id, document_number: r.document_number } as InvoiceRecord) : undefined}
+            onEditVoucher={editReceipt}
             controlSlot={receiptsSlot} />
         ) : (<>
         <FocusedRowsBanner focus={focus} total={unifiedRecords.length} noun="فاتورة"
@@ -3408,6 +3432,7 @@ function couponsTotal(inv: any): number {
         families={receiptFamilies} setFamilies={setReceiptFamilies}
         target={receiptTarget} setTarget={setReceiptTarget}
         reps={reps as any}
+        editing={receipt.editing} treasuryOptional={receipt.custodyEdit}
       />
 
       {/*

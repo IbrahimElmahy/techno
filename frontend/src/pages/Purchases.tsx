@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 
 import PaymentsLogPanel from '../components/PaymentsLogPanel';
+import { useQueryTab } from '../components/useQueryTab';
 import PaymentModal from './vouchers/PaymentModal';
 import { useQuickVoucher } from './vouchers/useQuickVoucher';
 import DraftTag from '../components/DraftTag';
@@ -262,7 +263,9 @@ export default function Purchases() {
   // مردود شراء جديد شغّال جوّه السجل (من شريحة المردودات).
   const [embeddedReturn, setEmbeddedReturn] = useState(false);
   // شريحة «سندات الصرف»: النقدي المدفوع مع فواتير الشرا + سندات الصرف للموردين.
-  const [paymentsTab, setPaymentsTab] = useState(false);
+  // الشريحة في الرابط (`?tab=`) — الريلود بيرجّع لنفس الشريحة (طلب العميل ٢٠٢٦-١٠-٠١).
+  const [listTab, setListTab] = useQueryTab('all');
+  const paymentsTab = listTab === 'payments';
   const [paymentsKey, setPaymentsKey] = useState(0);
   const [paymentsSlot, setPaymentsSlot] = useState<HTMLSpanElement | null>(null);
   // سند صرف جديد من هنا — نفس فتح وحفظ شاشة السندات (`useQuickVoucher`).
@@ -2143,6 +2146,15 @@ export default function Purchases() {
 
   // الشريحة المختارة — نفس فلتر «النوع» اللي كان في الشريط، بقى شرايح فوق.
   const kindTab = (purchasesFilter.values.kind || 'all') as 'all' | 'purchase' | 'return';
+  // الرابط ← فلتر النوع مرة واحدة عند الفتح، وبعدها الفلتر ← الرابط (زي «مسح»).
+  const tabSynced = useRef(false);
+  useEffect(() => {
+    if (listTab === 'purchase' || listTab === 'return') purchasesFilter.setValue('kind', listTab);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (!tabSynced.current) { tabSynced.current = true; return; }
+    if (!paymentsTab && kindTab !== listTab) setListTab(kindTab);
+  }, [kindTab]); // eslint-disable-line react-hooks/exhaustive-deps
   const supplierIds = purchasesFilter.values.supplier_id as number[] | undefined;
   const kindTabs = [
     { key: 'all' as const, label: 'الكل',
@@ -2186,7 +2198,7 @@ export default function Purchases() {
       subtitle="تسجيل ومتابعة فواتير الشراء ومردوداتها والمستحق للموردين"
       tabs={kindTabs} activeTab={paymentsTab ? 'payments' : kindTab}
       onTabChange={(k) => {
-        setPaymentsTab(k === 'payments');
+        setListTab(k);
         if (k !== 'payments') purchasesFilter.setValue('kind', k === 'all' ? undefined : k);
       }}
       actions={(<>
@@ -2271,7 +2283,16 @@ export default function Purchases() {
           dateFrom={purchasesFilter.range?.[0]?.format('YYYY-MM-DD')}
           dateTo={purchasesFilter.range?.[1]?.format('YYYY-MM-DD')}
           onOpenInvoice={(id) => openDetail({ id } as PurchaseRecord)}
-          onOpenVoucher={() => navigate('/vouchers?tab=payment')}
+          onEditInvoice={async (id) => {
+            await openDetail({ id } as PurchaseRecord, 'edit');
+            setViewOnly(false);
+          }}
+          onDeleteInvoice={async (id) => {
+            await api.delete(`/api/v1/purchases/${id}`);
+            message.success('تم الحذف بنجاح');
+            fetchPurchases({ silent: true });
+          }}
+          onEditVoucher={payment.edit}
           controlSlot={paymentsSlot} />
       ) : (
       <Table
@@ -2492,7 +2513,7 @@ export default function Purchases() {
         open={payment.open} onCancel={payment.close}
         form={payment.form} posting={payment.posting} submit={payment.submit}
         suppliers={suppliers as any} treasuries={payment.treasuries}
-        methodOptions={payment.methodOptions} />
+        methodOptions={payment.methodOptions} editing={payment.editing} />
       {embeddedReturn ? (
         <React.Suspense fallback={<div style={{ textAlign: 'center', padding: 48 }}><Spin /></div>}>
           <PurchaseReturnsScreen embedded={{

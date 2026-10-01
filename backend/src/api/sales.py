@@ -1519,6 +1519,18 @@ def receipts_log(
     cust_ids = {r.customer_id for r in invs} | {v.customer_id for v in vouchers}
     custs = dict(db.execute(select(Customer.id, Customer.name)
                             .where(Customer.id.in_(cust_ids))).all()) if cust_ids else {}
+    # بيانات المستند كاملة في الجدول — الخزنة ومركز التكلفة بأسماءهم، كله بقواميس.
+    from src.models.cost_center import CostCenter
+    from src.services.voucher_service import cash_labeler
+    cash_label = cash_labeler(
+        db, treasury_ids={v.treasury_id for v in vouchers},
+        account_ids={r.cash_account_id for r in invs} | {v.cash_account_id for v in vouchers})
+    cc_ids = {x.cost_center_id for x in [*invs, *vouchers] if x.cost_center_id}
+    ccs = dict(db.execute(select(CostCenter.id, CostCenter.name)
+                          .where(CostCenter.id.in_(cc_ids))).all()) if cc_ids else {}
+
+    def _iso(t):
+        return t.isoformat() if t else None
 
     rows = []
     for r in invs:
@@ -1532,6 +1544,13 @@ def receipts_log(
             "store": loc_name(r.origin_location_kind, r.origin_location_id),
             "amount": str(r.cash_amount), "family": r.family,
             "source": "app" if r.client_uuid else "system",
+            "treasury": cash_label(None, r.cash_account_id), "payment_method": None,
+            "statement": r.statement1, "notes": r.notes, "description": None,
+            "external_document_number": r.external_document_number, "reference": None,
+            "actor_name": users.get(r.actor_user_id), "created_at": _iso(r.created_at),
+            "cost_center": ccs.get(r.cost_center_id),
+            "invoice_total": str(to_money(Decimal(r.net or 0) + Decimal(r.tax_amount or 0))),
+            "credit_amount": str(r.credit_amount),
         })
     for v in vouchers:
         rep = v.rep_user_id or (v.actor_user_id if v.client_uuid else None)
@@ -1544,7 +1563,16 @@ def receipts_log(
             "rep_id": rep, "rep_name": users.get(rep),
             "store": store_of_rep(rep),
             "amount": str(v.amount), "family": v.family,
+            "on_total": v.family is None,
             "source": "app" if v.client_uuid else "system",
+            "treasury": cash_label(v.treasury_id, v.cash_account_id),
+            "payment_method": v.payment_method,
+            "statement": v.statement1 or v.description, "notes": v.description,
+            "description": v.description,
+            "external_document_number": v.external_document_number, "reference": v.reference,
+            "actor_name": users.get(v.actor_user_id), "created_at": _iso(v.created_at),
+            "cost_center": ccs.get(v.cost_center_id),
+            "invoice_total": None, "credit_amount": None,
         })
     rows.sort(key=lambda x: (x["date"], x["key"]), reverse=True)
     total_inv = sum((Decimal(x["amount"]) for x in rows if x["kind"] == "invoice"), Decimal("0"))

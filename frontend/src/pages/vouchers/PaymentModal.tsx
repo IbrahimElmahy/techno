@@ -24,7 +24,7 @@ import { api } from '../../api/client';
 import { Party, UserRecord, money } from './types';
 
 export default function PaymentModal({
-  open, onCancel, form, posting, submit, suppliers, treasuries, methodOptions,
+  open, onCancel, form, posting, submit, suppliers, treasuries, methodOptions, editing = false,
 }: {
   open: boolean;
   onCancel: () => void;
@@ -34,12 +34,14 @@ export default function PaymentModal({
   suppliers: Party[];
   treasuries: any[];
   methodOptions: { value: string; label: string }[];
+  /** بيعدّل سند موجود — العنوان والزرار بيقولوا كده. */
+  editing?: boolean;
 }) {
   return (
       <TabModal
         open={open}
-        title="سند صرف — دفع لمورد"
-        okText="تسجيل السند" cancelText="إلغاء"
+        title={editing ? 'تعديل سند صرف' : 'سند صرف — دفع لمورد'}
+        okText={editing ? 'حفظ التعديل' : 'تسجيل السند'} cancelText="إلغاء"
         confirmLoading={posting}
         onCancel={onCancel}
         onOk={() => form.submit()}
@@ -91,7 +93,7 @@ export default function PaymentModal({
                   </Form.Item>
                   <Form.Item>
                     <Button type="primary" htmlType="submit" loading={posting}>
-                      تسجيل السند
+                      {editing ? 'حفظ التعديل' : 'تسجيل السند'}
                     </Button>
                   </Form.Item>
                 </Form>

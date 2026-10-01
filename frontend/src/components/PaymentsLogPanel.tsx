@@ -1,11 +1,22 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Empty, Spin, Tag, Typography } from 'antd';
+import {
+  Button, Descriptions, Empty, Modal, Space, Spin, Tag, Tooltip, Typography, message,
+} from 'antd';
+import {
+  DeleteOutlined, EditOutlined, ExclamationCircleOutlined, EyeOutlined,
+} from '@ant-design/icons';
 import { api } from '../api/client';
 import { useLiveRefresh } from '../utils/live';
 import { money } from '../utils/money';
+import { labelMap, useLookup } from '../hooks/useLookup';
+import { deleteVoucher, fetchVoucher, EditableVoucher } from '../pages/vouchers/useQuickVoucher';
 import { FilterTable as Table } from './FilterTable';
 import { useTableColumns } from './ColumnSettings';
+import { useAuth } from './AuthProvider';
+import { TabModal } from './TabModal';
+import VoucherDocument, { VoucherDoc, voucherFooter } from './VoucherDocument';
+import DocumentAttachments from './DocumentAttachments';
 
 /**
  * **شريحة السندات في السجلات** — «سندات القبض» في سجل المبيعات و«سندات الصرف» في سجل
@@ -29,6 +40,20 @@ export interface PaymentRow {
   amount: string;
   family: 'أبيض' | 'بولي' | null;
   source: 'app' | 'system';
+  // بيانات المستند كاملة — عشان الجدول يغني عن فتح كل سند.
+  treasury?: string | null;
+  payment_method?: string | null;
+  statement?: string | null;
+  notes?: string | null;
+  description?: string | null;
+  external_document_number?: string | null;
+  reference?: string | null;
+  actor_name?: string | null;
+  created_at?: string | null;
+  cost_center?: string | null;
+  /** صفوف «على فاتورة» بس: إجمالي الفاتورة واللي اتبقى آجل. */
+  invoice_total?: string | null;
+  credit_amount?: string | null;
 }
 
 export type PaymentsLogKind = 'receipts' | 'payments';
@@ -36,16 +61,17 @@ export type PaymentsLogKind = 'receipts' | 'payments';
 /** كل اللي بيفرق بين سندات القبض وسندات الصرف — في مكان واحد. */
 const PAYMENTS_LOGS: Record<PaymentsLogKind, {
   endpoint: string; partyParam: string; partyLabel: string; name: string;
-  storageKey: string; live: string[]; showRepStore: boolean;
+  storageKey: string; live: string[]; showRepStore: boolean; voucherName: string;
 }> = {
   receipts: {
     endpoint: '/api/v1/sales/receipts-log', partyParam: 'customer_id', partyLabel: 'العميل',
     name: 'سندات القبض', storageKey: 'sales-receipts', live: ['sales', 'vouchers'], showRepStore: true,
+    voucherName: 'سند قبض',
   },
   payments: {
     endpoint: '/api/v1/purchases/payments-log', partyParam: 'supplier_id', partyLabel: 'المورد',
     name: 'سندات الصرف', storageKey: 'purchase-payments', live: ['purchases', 'vouchers'],
-    showRepStore: false,
+    showRepStore: false, voucherName: 'سند صرف',
   },
 };
 
@@ -55,16 +81,28 @@ interface Props {
   repId?: number | null;
   dateFrom?: string | null;
   dateTo?: string | null;
-  onOpenInvoice?: (id: number) => void;
-  onOpenVoucher?: (id: number) => void;
+  /** صف «على فاتورة» — عرض/تعديل/حذف الفاتورة نفسها. الأيقونة بتستخبى لو الشاشة مابعتتش. */
+  onOpenInvoice?: (id: number, row: PaymentRow) => void;
+  onEditInvoice?: (id: number, row: PaymentRow) => void;
+  /** الحذف الفعلي بس — التأكيد هنا في اللوحة. */
+  onDeleteInvoice?: (id: number, row: PaymentRow) => Promise<void> | void;
+  /** صف «دفعة» — الشاشة شايلة بوباب السند (`useQuickVoucher`)، فهي اللي بتفتحه للتعديل. */
+  onEditVoucher?: (v: EditableVoucher) => void;
   /** مكان «تصدير Excel» و«الأعمدة» في ترويسة الشاشة الشايلة — نفس سطر باقي الشرايح. */
   controlSlot?: HTMLElement | null;
 }
 
 export default function PaymentsLogPanel({
-  kind, partyId, repId, dateFrom, dateTo, onOpenInvoice, onOpenVoucher, controlSlot,
+  kind, partyId, repId, dateFrom, dateTo, onOpenInvoice, onEditInvoice, onDeleteInvoice,
+  onEditVoucher, controlSlot,
 }: Props) {
   const cfg = PAYMENTS_LOGS[kind];
+  const { can } = useAuth();
+  const canWriteVoucher = can('voucher.write');
+  const { options: methodOptions } = useLookup('payment_method');
+  const methodLabel = labelMap(methodOptions);
+  // ورقة السند المفتوحة للعرض/الطباعة — نفس `VoucherDocument` بتاع شاشة السندات.
+  const [view, setView] = useState<{ row: PaymentRow; v: any } | null>(null);
   const [rows, setRows] = useState<PaymentRow[]>([]);
   const [loading, setLoading] = useState(false);
   // آخر طلب بس هو اللي يكتب — تغيير فلتر سريع مايخليش رد قديم يغطي على الجديد
@@ -94,6 +132,65 @@ export default function PaymentsLogPanel({
   useEffect(() => { load(); }, [kind, partyId, repId, dateFrom, dateTo]); // eslint-disable-line react-hooks/exhaustive-deps
   useLiveRefresh(cfg.live, () => load(true));
 
+  const openVoucher = async (r: PaymentRow) => {
+    try {
+      setView({ row: r, v: await fetchVoucher(r.id) });
+    } catch { /* رسالة الخطأ من `api` */ }
+  };
+
+  const editVoucher = async (r: PaymentRow) => {
+    if (!onEditVoucher) return;
+    try {
+      onEditVoucher(await fetchVoucher(r.id));
+    } catch { /* رسالة الخطأ من `api` */ }
+  };
+
+  /** الحذف بسؤال — زي حذف الفاتورة من سجل المشتريات. */
+  const confirmDelete = (r: PaymentRow) => {
+    const isInv = r.kind === 'invoice';
+    Modal.confirm({
+      title: isInv ? 'تأكيد حذف الفاتورة' : `تأكيد حذف ${cfg.voucherName}`,
+      icon: <ExclamationCircleOutlined style={{ color: '#ff4d4f' }} />,
+      content: isInv
+        ? `هل أنت متأكد من حذف الفاتورة رقم (${r.document_number})؟`
+        : `هل أنت متأكد من حذف السند رقم (${r.document_number})؟ هيتمسح هو وقيده.`,
+      okText: 'نعم، احذف',
+      okType: 'danger',
+      cancelText: 'إلغاء',
+      onOk: async () => {
+        try {
+          if (isInv) {
+            await onDeleteInvoice?.(r.id, r);
+          } else {
+            await deleteVoucher(r.id);
+            message.success('تم حذف السند');
+          }
+          load(true);
+        } catch { /* رسالة الخطأ من `api` */ }
+      },
+    });
+  };
+
+  const voucherDoc = (x: { row: PaymentRow; v: any }): VoucherDoc => ({
+    kind: kind === 'receipts' ? 'receipt' : 'payment',
+    document_number: x.v.document_number,
+    date: x.v.voucher_date,
+    amount: x.v.amount,
+    partyLabel: cfg.partyLabel,
+    partyName: x.row.party_name ?? undefined,
+    treasury: x.row.treasury ?? null,
+    paymentMethod: x.v.payment_method ? (methodLabel[x.v.payment_method] || x.v.payment_method) : null,
+    reference: x.v.reference,
+    description: x.v.description,
+    statement: x.v.statement1 ?? null,
+    family: x.v.family ?? null,
+    entryId: x.v.ledger_entry_id ?? null,
+    isReversal: x.v.is_reversal,
+  });
+
+  const dash = (v: string | null | undefined) => v || '—';
+  const moneyOrDash = (v: string | null | undefined) => (v != null ? money(v) : '—');
+
   const columns = [
     {
       title: 'النوع', key: 'kind', dataIndex: 'kind', width: 100,
@@ -111,24 +208,87 @@ export default function PaymentsLogPanel({
     {
       title: 'رقم المستند', key: 'document_number', dataIndex: 'document_number',
       render: (v: string, r: PaymentRow) => {
-        const open = r.kind === 'invoice' ? onOpenInvoice : onOpenVoucher;
-        return open ? <Typography.Link onClick={() => open(r.id)}>{v}</Typography.Link> : v;
+        if (r.kind === 'voucher') {
+          return <Typography.Link onClick={() => openVoucher(r)}>{v}</Typography.Link>;
+        }
+        return onOpenInvoice
+          ? <Typography.Link onClick={() => onOpenInvoice(r.id, r)}>{v}</Typography.Link> : v;
       },
     },
     { title: cfg.partyLabel, key: 'party_name', dataIndex: 'party_name' },
     ...(cfg.showRepStore ? [
-      { title: 'المندوب', key: 'rep_name', dataIndex: 'rep_name', render: (v: string | null) => v || '—' },
-      { title: 'المخزن', key: 'store', dataIndex: 'store', render: (v: string | null) => v || '—' },
-      { title: 'الخط', key: 'family', dataIndex: 'family', width: 80, render: (v: string | null) => v || '—' },
+      { title: 'المندوب', key: 'rep_name', dataIndex: 'rep_name', render: dash },
+      { title: 'المخزن', key: 'store', dataIndex: 'store', render: dash },
+      { title: 'الخط', key: 'family', dataIndex: 'family', width: 80, render: dash },
     ] : []),
+    { title: 'الخزنة', key: 'treasury', dataIndex: 'treasury', render: dash },
+    {
+      title: 'طريقة الدفع', key: 'payment_method', dataIndex: 'payment_method',
+      render: (v: string | null) => (v ? (methodLabel[v] || v) : '—'),
+    },
+    { title: 'البيان', key: 'statement', dataIndex: 'statement', render: dash },
+    {
+      title: 'المستند الخارجي', key: 'external_document_number',
+      dataIndex: 'external_document_number', render: dash,
+    },
+    { title: 'المرجع', key: 'reference', dataIndex: 'reference', render: dash },
+    { title: 'ملاحظات', key: 'notes', dataIndex: 'notes', render: dash },
+    { title: 'مركز التكلفة', key: 'cost_center', dataIndex: 'cost_center', render: dash },
+    { title: 'كتبه', key: 'actor_name', dataIndex: 'actor_name', render: dash },
+    {
+      title: 'وقت الإنشاء', key: 'created_at', dataIndex: 'created_at',
+      render: (v: string | null) => (v ? v.slice(0, 16).replace('T', ' ') : '—'),
+    },
+    {
+      title: 'إجمالي الفاتورة', key: 'invoice_total', dataIndex: 'invoice_total',
+      align: 'left' as const, render: moneyOrDash,
+    },
+    {
+      title: 'الآجل', key: 'credit_amount', dataIndex: 'credit_amount',
+      align: 'left' as const, render: moneyOrDash,
+    },
     {
       title: 'المبلغ', key: 'amount', dataIndex: 'amount', align: 'left' as const,
       render: (v: string) => <strong>{money(v)}</strong>,
+    },
+    {
+      title: 'الإجراءات', key: 'actions', width: 110,
+      render: (_: unknown, r: PaymentRow) => {
+        const isInv = r.kind === 'invoice';
+        const canView = isInv ? !!onOpenInvoice : true;
+        const canEdit = isInv ? !!onEditInvoice : (!!onEditVoucher && canWriteVoucher);
+        const canDelete = isInv ? !!onDeleteInvoice : canWriteVoucher;
+        return (
+          <Space size={2} onClick={(e) => e.stopPropagation()}>
+            {canView && (
+              <Tooltip title="عرض">
+                <Button type="text" size="small" icon={<EyeOutlined />}
+                  onClick={() => (isInv ? onOpenInvoice?.(r.id, r) : openVoucher(r))} />
+              </Tooltip>
+            )}
+            {canEdit && (
+              <Tooltip title="تعديل">
+                <Button type="text" size="small" icon={<EditOutlined />}
+                  onClick={() => (isInv ? onEditInvoice?.(r.id, r) : editVoucher(r))} />
+              </Tooltip>
+            )}
+            {canDelete && (
+              <Tooltip title="حذف">
+                <Button type="text" size="small" danger icon={<DeleteOutlined />}
+                  onClick={() => confirmDelete(r)} />
+              </Tooltip>
+            )}
+          </Space>
+        );
+      },
     },
   ];
 
   const tableCols = useTableColumns(cfg.storageKey, columns, {
     locked: ['document_number'],
+    // الخزنة وطريقة الدفع والبيان والمستند الخارجي ظاهرين؛ الباقي من «الأعمدة».
+    defaultHidden: ['reference', 'notes', 'cost_center', 'actor_name', 'created_at',
+      'invoice_total', 'credit_amount'],
     export: { name: cfg.name, rows },
   });
 
@@ -150,6 +310,30 @@ export default function PaymentsLogPanel({
           locale={{ emptyText: <Empty description={`لا توجد ${cfg.name} بهذه الفلاتر`} /> }}
         />
       </Spin>
+
+      <TabModal
+        open={view !== null}
+        title={view ? `${cfg.voucherName} ${view.v.document_number}` : 'سند'}
+        onCancel={() => setView(null)}
+        footer={voucherFooter(view ? voucherDoc(view) : null, () => setView(null))}
+        width={760}
+        centered
+        destroyOnHidden
+      >
+        {view && (
+          <>
+            <VoucherDocument doc={voucherDoc(view)} />
+            {/* تحت الورقة مش جوّاها — زي شاشة السندات: رقم ورقة الطرف ومين كتبه والمرفقات. */}
+            <Descriptions column={2} size="small" bordered style={{ marginTop: 12 }}>
+              <Descriptions.Item label="رقم المستند">
+                {view.v.external_document_number || '-'}
+              </Descriptions.Item>
+              <Descriptions.Item label="كتبه">{view.row.actor_name || '-'}</Descriptions.Item>
+            </Descriptions>
+            <DocumentAttachments docType="voucher" docId={view.v.id} />
+          </>
+        )}
+      </TabModal>
     </div>
   );
 }

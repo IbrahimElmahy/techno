@@ -155,9 +155,12 @@ def _create(
     # بيروح لسطور القيد وبيتقرا في كشف الحساب؛ ده بيفضل على المستند وبس.
     statement1: str | None = None,
     external_document_number: str | None = None,
+    # تعديل سند: نفس الـid والرقم وتاريخ الإنشاء والفرع — السند بيتكتب من جديد في مكانه.
+    replacing: dict | None = None,
 ) -> Voucher:
     voucher = Voucher(
-        document_number=_doc_number(db, kind), kind=kind, amount=amount,
+        document_number=_doc_number(db, kind) if replacing is None
+        else replacing["document_number"], kind=kind, amount=amount,
         customer_id=customer_id, supplier_id=supplier_id, rep_user_id=rep_user_id,
         cash_account_id=cash_account_id, party_account_id=party_account_id,
         treasury_id=treasury_id, to_treasury_id=to_treasury_id,
@@ -171,6 +174,11 @@ def _create(
         branch_id=branch_for(db, actor_user_id=actor_user_id),
         client_uuid=client_uuid,
     )
+    if replacing is not None:
+        voucher.id = replacing["id"]
+        voucher.client_uuid = replacing["client_uuid"]
+        voucher.created_at = replacing["created_at"]
+        voucher.branch_id = replacing["branch_id"]
     db.add(voucher)
     db.flush()
     # (المرحلة ٢) السند على مين. ده اللي بيخلّي التسوية في المرحلة ٣ تعرف تقفل
@@ -204,6 +212,8 @@ def _create(
     )
     voucher.ledger_entry_id = entry.id
     db.flush()
+    if replacing is not None:
+        return voucher      # التعديل بيكتب سطر `voucher.update` بتاعه
     audit_service.record(
         db, action=f"voucher.{kind.value}", actor_user_id=actor_user_id,
         entity_type="voucher", entity_id=voucher.id,
@@ -260,6 +270,7 @@ def create_receipt(
     cost_center_id: int | None = None, statement1: str | None = None,
     external_document_number: str | None = None,
     rep_user_id: int | None = None,
+    replacing: dict | None = None,
 ) -> Voucher:
     """سند قبض — تحصيل من عميل. النقدية تدخل الخزينة المختارة أو عهدة المندوب المحصِّل.
 
@@ -296,7 +307,7 @@ def create_receipt(
             family=None,        # None on the voucher means «على الإجمالي», same as the argument
             client_uuid=client_uuid, statement1=statement1, external_document_number=external_document_number,
             # مركز التكلفة كان بيقع هنا بس — نفس السند على خط واحد كان بيشيله.
-            cost_center_id=cost_center_id, rep_user_id=rep_id,
+            cost_center_id=cost_center_id, rep_user_id=rep_id, replacing=replacing,
         )
 
     party = _customer_account(db, customer_id, family)
@@ -310,6 +321,7 @@ def create_receipt(
         customer_id=customer_id, treasury_id=safe_id, family=family,
         client_uuid=client_uuid, rep_user_id=rep_id,
         cost_center_id=cost_center_id, statement1=statement1, external_document_number=external_document_number,
+        replacing=replacing,
     )
 
 
@@ -328,6 +340,7 @@ def create_payment(
     treasury_id: int | None = None,
     cost_center_id: int | None = None, statement1: str | None = None,
     external_document_number: str | None = None,
+    replacing: dict | None = None,
 ) -> Voucher:
     """سند صرف — دفع لمورد من الخزينة."""
     value = _positive(amount)
@@ -343,6 +356,7 @@ def create_payment(
         payment_method=payment_method, entry_type="payment", statement="دفع لمورد",
         supplier_id=supplier_id, treasury_id=safe_id,
         cost_center_id=cost_center_id, statement1=statement1, external_document_number=external_document_number,
+        replacing=replacing,
     )
 
 
@@ -446,6 +460,104 @@ def create_handover(
         rep_user_id=rep_user_id,
         cost_center_id=cost_center_id, statement1=statement1, external_document_number=external_document_number,
     )
+
+
+def cash_labeler(db: Session, *, treasury_ids, account_ids):
+    """اسم الخزنة/الصندوق لصفوف السجلات — باستعلامين بس مهما كان عدد الصفوف.
+
+    بالخزنة لو السند سمّاها، وإلا بحساب النقدية: خزنة مربوطة بيه، أو اسم الحساب نفسه
+    (صندوق عهدة المندوب مالوش خزنة).
+    """
+    from sqlalchemy import or_
+    from src.models.treasury import Treasury
+
+    treasury_ids = {i for i in treasury_ids if i}
+    account_ids = {i for i in account_ids if i}
+    by_id: dict[int, str] = {}
+    by_acc: dict[int, str] = {}
+    if treasury_ids or account_ids:
+        for tid, name, acc in db.execute(select(Treasury.id, Treasury.name, Treasury.account_id)
+                                         .where(or_(Treasury.id.in_(treasury_ids),
+                                                    Treasury.account_id.in_(account_ids)))).all():
+            by_id[tid] = name
+            by_acc[acc] = name
+    missing = account_ids - set(by_acc)
+    if missing:
+        by_acc.update({i: n for i, n in db.execute(
+            select(Account.id, Account.name).where(Account.id.in_(missing))).all() if n})
+
+    def label(treasury_id, account_id) -> str | None:
+        return by_id.get(treasury_id) or by_acc.get(account_id)
+    return label
+
+
+class VoucherNotFound(VoucherError):
+    pass
+
+
+def replace_voucher(
+    db: Session, *, voucher_id: int, kind: VoucherKind, editor_user_id: int,
+    editor_role: RoleName, fields: dict,
+) -> Voucher:
+    """تعديل سند قبض/صرف — بيتمسح هو وقيده ويتكتب من جديد **في مكانه**.
+
+    نفس الـid والرقم ورقم الجهاز وتاريخ الإنشاء والفرع، ونفس اللي كتبه بصلاحيته — فتحصيل
+    المندوب من التطبيق بيفضل في عهدته إلا لو التعديل سمّى خزنة. المسح بنفس طريقة
+    `document_edit_service.delete_voucher` (السند وقيده، والمطابقة بتتفك)، والكل في
+    ترانزاكشن واحدة: لو الكتابة الجديدة وقعت، الاتنين بيرجعوا.
+    """
+    from src.models.role import Role
+    from src.services.document_edit_service import DocumentEditError, _drop_entry
+
+    original = db.get(Voucher, voucher_id)
+    if original is None:
+        raise VoucherNotFound("السند مش موجود.")
+    if original.kind != kind:
+        raise VoucherError("نوع السند مش مطابق.")
+    if original.reverses_id is not None:
+        raise VoucherError("لا يمكن تعديل سند عكسي.")
+    if db.scalar(select(Voucher.id).where(Voucher.reverses_id == voucher_id)) is not None:
+        raise VoucherError("السند معكوس — مايتعدّلش.")
+
+    keep = {
+        "id": original.id, "document_number": original.document_number,
+        "client_uuid": original.client_uuid, "created_at": original.created_at,
+        "branch_id": original.branch_id,
+    }
+    old_amount = str(original.amount)
+    actor_id = original.actor_user_id
+    actor = db.get(User, actor_id)
+    role = db.get(Role, actor.role_id) if actor is not None else None
+    actor_role = role.name if role is not None else editor_role
+    # تحصيل المندوب بيفضل في عهدته — إلا لو المكتب سمّى خزنة صريحة.
+    if (actor_role == RoleName.sales_rep and fields.get("treasury_id") is not None
+            and editor_role != RoleName.sales_rep):
+        actor_role = editor_role
+
+    entry_id = original.ledger_entry_id
+    original.ledger_entry_id = None
+    db.flush()
+    try:
+        _drop_entry(db, entry_id)
+    except DocumentEditError as exc:
+        raise VoucherError(str(exc)) from exc
+    db.delete(original)
+    db.flush()
+
+    args = {k: v for k, v in fields.items() if k != "client_uuid"}
+    if kind == VoucherKind.receipt:
+        v = create_receipt(db, actor_user_id=actor_id, actor_role=actor_role,
+                           replacing=keep, **args)
+    else:
+        v = create_payment(db, actor_user_id=actor_id, actor_role=actor_role,
+                           replacing=keep, **args)
+    audit_service.record(
+        db, action="voucher.update", actor_user_id=editor_user_id,
+        entity_type="voucher", entity_id=v.id,
+        before={"doc": keep["document_number"], "amount": old_amount},
+        after={"doc": v.document_number, "amount": str(v.amount)},
+    )
+    return v
 
 
 def reverse_voucher(db: Session, *, voucher_id: int, actor_user_id: int) -> Voucher:
