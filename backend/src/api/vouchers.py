@@ -62,6 +62,8 @@ class ReceiptIn(BaseModel):
     # على السندات؛ التلاتة اللي في الفواتير جم من مطابقة a5.
     statement1: str | None = Field(default=None, max_length=200)
     external_document_number: str | None = Field(default=None, max_length=40)
+    # المندوب المحصِّل — اختياري للمكتب. فاضي = مندوب العميل، والمندوب نفسه دايماً هو.
+    rep_user_id: int | None = None
 
 
 class PaymentIn(BaseModel):
@@ -212,6 +214,10 @@ class StatementLineOut(BaseModel):
     # And a مندوب column. The LINE never held one — the document that posted it did.
     rep_user_id: int | None = None
     rep_name: str | None = None
+    # المخزن: مكان البضاعة في البيع والمرتجع، ومخزن المندوب في السند.
+    store_name: str | None = None
+    # سطر «مدفوع نقداً مع الفاتورة» — مش سطر في القيد، الكشف بيفصله من سطر الفاتورة.
+    cash_on_invoice: bool = False
     # (a5) في الكشف المجمّع كل سطر بيقول هو بتاع أنهي حساب فرعي.
     account_id: int | None = None
     account_name: str | None = None
@@ -267,6 +273,8 @@ class StatementOut(BaseModel):
     # statement that is not a customer's.
     family: str | None = None
     families: list[FamilyBalanceOut] = []
+    # العميل صاحب الحساب لو حساب ذمم عميل — الشاشة بتعرض «كل حسابات العميل» على أساسه.
+    customer_id: int | None = None
     # المستحق على كل السطور المفتوحة لحد تاريخ القفل — مش مجموع الفترة المعروضة.
     total_due: Decimal = Decimal("0")
     total_overdue: Decimal = Decimal("0")
@@ -297,9 +305,11 @@ def _treasury_out(db: Session, t) -> TreasuryOut:
     )
 
 
-def _statement_out(s, docs: dict | None = None, reps: dict | None = None) -> StatementOut:
+def _statement_out(s, docs: dict | None = None, reps: dict | None = None,
+                   stores: dict | None = None) -> StatementOut:
     docs = docs or {}
     reps = reps or {}
+    stores = stores or {}
     return StatementOut(
         account_id=s.account_id, account_name=s.account_name,
         main_account_id=getattr(s, "main_account_id", None),
@@ -328,6 +338,8 @@ def _statement_out(s, docs: dict | None = None, reps: dict | None = None) -> Sta
             rep_user_id=((docs.get(ln.entry_id) or {}).get("rep_user_id") or ln.rep_id),
             rep_name=(reps.get((docs.get(ln.entry_id) or {}).get("rep_user_id"))
                       or ln.rep_name),
+            store_name=stores.get(ln.entry_id),
+            cash_on_invoice=bool(getattr(ln, "cash_on_invoice", False)),
             line_id=getattr(ln, "line_id", None),
             residual=getattr(ln, "residual", None),
             due_date=getattr(ln, "due_date", None),
@@ -358,7 +370,67 @@ def _with_docs(db: Session, s) -> StatementOut:
         from src.models.user import User
         reps = {u.id: (u.full_name or u.username)
                 for u in db.scalars(select(User).where(User.id.in_(rep_ids))).all()}
-    return _statement_out(s, docs, reps)
+    return _statement_out(s, docs, reps, _stores_of(db, s, docs))
+
+
+def _stores_of(db: Session, s, docs: dict) -> dict[int, str]:
+    """اسم المخزن لكل قيد في الكشف.
+
+    البيع والمرتجع: المكان اللي البضاعة خرجت منه/رجعت له على المستند. السند مالوش
+    بضاعة، فمخزنه هو مخزن المندوب اللي حصّله (`rep_store`) — نفس الإجابة اللي البيع
+    بيستعملها لـ«المندوب ده بيبيع منين».
+    """
+    from src.models.stock import LocationKind
+    from src.models.user import User
+    from src.models.warehouse import Custody, Warehouse
+    from src.services.rep_store_service import rep_store
+
+    wanted: dict[int, tuple] = {}
+    rep_cache: dict[int, tuple | None] = {}
+    rep_of_entry = {ln.entry_id: ln.rep_id for ln in s.lines}
+    for entry_id, d in docs.items():
+        if d.get("origin_kind") and d.get("origin_id"):
+            wanted[entry_id] = (d["origin_kind"], int(d["origin_id"]))
+        elif d.get("kind") == "voucher":
+            rep_id = d.get("rep_user_id") or rep_of_entry.get(entry_id)
+            if not rep_id:
+                continue
+            if rep_id not in rep_cache:
+                rep_cache[rep_id] = rep_store(db, rep_id)
+            if rep_cache[rep_id] is not None:
+                wanted[entry_id] = rep_cache[rep_id]
+    if not wanted:
+        return {}
+
+    def _kind(k) -> str:
+        return k.value if isinstance(k, LocationKind) else str(k)
+
+    wh_ids = {i for k, i in wanted.values() if _kind(k) == "warehouse"}
+    cu_ids = {i for k, i in wanted.values() if _kind(k) == "custody"}
+    custodies = ({c.id: c for c in db.scalars(
+        select(Custody).where(Custody.id.in_(cu_ids))).all()} if cu_ids else {})
+    wh_ids |= {c.warehouse_id for c in custodies.values() if c.warehouse_id}
+    wh_names = ({w.id: w.name for w in db.scalars(
+        select(Warehouse).where(Warehouse.id.in_(wh_ids))).all()} if wh_ids else {})
+    rep_ids = {c.rep_id for c in custodies.values() if c.rep_id}
+    rep_names = ({u.id: (u.full_name or u.username) for u in db.scalars(
+        select(User).where(User.id.in_(rep_ids))).all()} if rep_ids else {})
+
+    out: dict[int, str] = {}
+    for entry_id, (k, i) in wanted.items():
+        if _kind(k) == "warehouse":
+            name = wh_names.get(i)
+        else:
+            c = custodies.get(i)
+            if c is None:
+                name = None
+            elif c.warehouse_id and wh_names.get(c.warehouse_id):
+                name = wh_names[c.warehouse_id]
+            else:
+                name = f"عهدة {rep_names.get(c.rep_id) or ''}".strip()
+        if name:
+            out[entry_id] = name
+    return out
 
 
 def _conflict(exc: Exception) -> HTTPException:
@@ -387,7 +459,8 @@ def create_receipt(
             reference=body.reference, payment_method=body.payment_method,
             family=body.family, on_total=body.on_total,
             client_uuid=body.client_uuid, cost_center_id=body.cost_center_id,
-            statement1=body.statement1, external_document_number=body.external_document_number)
+            statement1=body.statement1, external_document_number=body.external_document_number,
+            rep_user_id=body.rep_user_id)
     except (VoucherError, LedgerError) as exc:
         raise _conflict(exc)
     db.commit()
@@ -845,6 +918,8 @@ def any_account_statement(
     account_id: int,
     date_from: date | None = Query(default=None),
     date_to: date | None = Query(default=None),
+    all_customer_accounts: bool = Query(
+        default=False, description="حساب عميل؟ هات كل حساباته (أبيض/بولي) في كشف واحد"),
     _: CurrentUser = Depends(require_capability(CAP_VOUCHER_READ)),
     db: Session = Depends(get_db),
 ) -> StatementOut:
@@ -852,14 +927,40 @@ def any_account_statement(
 
     Same engine as the party statements; a treasury or an expense account has exactly the same
     question asked of it, and there was no reason only two account types could be read.
+
+    حساب ذمم عميل عنده أكتر من حساب (أبيض/بولي): الكشف بيرجّع حساباته وأرصدتها، و
+    `all_customer_accounts` بيجمعهم برصيد جاري واحد. التحصيل «على الإجمالي» بيتوزّع على
+    الحسابين، فكشف حساب واحد منهم كان بيوري نص السند بس.
     """
+    from src.models.customer import Customer, CustomerAccount
+
+    link = db.scalars(
+        select(CustomerAccount).where(CustomerAccount.account_id == account_id)).first()
+    siblings = (voucher_service._customer_accounts(db, link.customer_id)
+                if link is not None else [])
+    also = ([a.account_id for a in siblings if a.account_id != account_id]
+            if all_customer_accounts and len(siblings) > 1 else [])
     try:
         s = statement_service.account_statement(
-            db, account_id=account_id, date_from=date_from, date_to=date_to)
+            db, account_id=account_id, also_accounts=also,
+            date_from=date_from, date_to=date_to)
     except StatementError as exc:
         raise HTTPException(status.HTTP_404_NOT_FOUND,
                             {"code": "not_found", "message": str(exc)}) from exc
-    return _with_docs(db, s)
+    out = _with_docs(db, s)
+    if link is not None:
+        out.customer_id = link.customer_id
+        if len(siblings) > 1:
+            out.families = [
+                FamilyBalanceOut(family=a.family, account_id=a.account_id,
+                                 balance=ledger_service.balance_of(db, a.account_id))
+                for a in siblings
+            ]
+            if also:
+                cust = db.get(Customer, link.customer_id)
+                out.account_name = (
+                    f"عميل — {cust.name if cust else link.customer_id} (كل الحسابات)")
+    return out
 
 
 @router.get("/suppliers/{supplier_id}/statement", response_model=StatementOut)

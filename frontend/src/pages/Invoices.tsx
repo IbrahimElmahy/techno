@@ -20,6 +20,7 @@ import {
   EditOutlined, RollbackOutlined, EyeOutlined, ExclamationCircleOutlined,
   ArrowRightOutlined, ArrowLeftOutlined, SearchOutlined, ClearOutlined,
   FileAddOutlined, UndoOutlined, SaveOutlined, BankOutlined, ReloadOutlined,
+  PhoneOutlined, CheckOutlined, InfoCircleOutlined, ShoppingCartOutlined,
 } from '@ant-design/icons';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import dayjs, { Dayjs } from 'dayjs';
@@ -43,7 +44,8 @@ import ExportExcelButton from '../components/ExportExcelButton';
 import { useEntryGrid, type EntryColumn } from '../components/EntryGrid';
 import { guardQuantity } from '../components/quantityGuard';
 import { useAuth } from '../components/AuthProvider';
-import TotalsLadder from '../components/TotalsLadder';
+import SummaryTile from '../components/saleDoc/SummaryTile';
+import SalesReceiptsPanel from '../components/SalesReceiptsPanel';
 import { useLookup, labelMap } from '../hooks/useLookup';
 import { TabModal } from '../components/TabModal';
 import WarehouseGate from '../components/WarehouseGate';
@@ -352,7 +354,7 @@ export default function Invoices() {
   const [salesReturns, setSalesReturns] = useState<any[]>([]);
   // إجماليات الكشف كله زي ما السيرفر حسبها — مش مجموع الصفحة اللي ظاهرة.
   const [serverSummary, setServerSummary] = useState<any>(null);
-  const [docKindFilter, setDocKindFilter] = useState<'all' | 'sale' | 'return' | 'bonus'>('all');
+  const [docKindFilter, setDocKindFilter] = useState<'all' | 'sale' | 'return' | 'bonus' | 'receipts'>('all');
   // **فواتير البونص في قايمة لوحدها، مش وسط فواتير البيع.** الكشف كان بيجيب الاتنين في
   // صفحة واحدة، فشريحة «فواتير المبيعات» كانت فيها فواتير بصفر مش بيع، وكل بونص بياخد
   // مكان فاتورة بيع من الـ٦٠٠ صف. كل نوع ليه صفحته من السيرفر (`kind=`).
@@ -540,6 +542,8 @@ export default function Invoices() {
       combined = saleRows;
     } else if (docKindFilter === 'bonus') {
       combined = bonusRows;
+    } else if (docKindFilter === 'receipts') {
+      combined = [];   // سندات القبض ليها جدولها — `SalesReceiptsPanel`
     } else {
       combined = returnRows;
     }
@@ -1776,6 +1780,7 @@ export default function Invoices() {
     viewOnly, warehouses, totalPoints, pointValues, productName, saleUnitOptions,
     saleLineNet, linePoints, checkedQuantity, handleLineChange, handleRemoveLine,
     advanceFrom, setDocWarehouseId, setPanelItemId, hidePoints: isFactory, isBonus,
+    productCode: (id) => products.find((p) => p.id === id)?.code,
   });
   const lineGrid = useEntryGrid('invoice-lines-grid', lineColumns);
 
@@ -2248,6 +2253,7 @@ function couponsTotal(inv: any): number {
         key: 'new',
         label: 'جديد',
         shortcut: 'F2',
+        primary: true,
         icon: <FileAddOutlined />,
         onClick: startNew,
       },
@@ -2404,97 +2410,91 @@ function couponsTotal(inv: any): number {
   );
 
   if (createVisible) {
+    // الكوبونات مش في المصنع، ومابتظهرش في فاتورة محفوظة مافيهاش كوبونات.
+    const showCouponBlock = !isFactory
+      && !(viewOnly && !couponRows.some((r) => r.serial_from || r.coupon_kind));
     return (
-      <div>
+      // **شكل فاتورة البيع الجديد** (تصميم العميل ٢٠٢٦-١٠-٠١): كروت بيضا على خلفية رمادي —
+      // ترويسة وأدوات، خانات المستند، الأصناف، وتحت الدفع والملخص. الشكل بس اللي اتغيّر:
+      // نفس الخانات ونفس الحالة ونفس الأوامر والمفاتيح.
+      <div className="sale-doc">
       {partyPicker}
-      <Card
-          // سطر العنوان بيلفّ لو ضاق — antd بيقصّه بـ«…» افتراضياً.
-          styles={{ title: { whiteSpace: 'normal', overflow: 'visible' } }}
-          title={
-            <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
-            <Space wrap>
-              <Button type="text" icon={<ArrowRightOutlined />}
-                onClick={closeCreate}>رجوع</Button>
-              <Typography.Text strong style={{ fontSize: 16 }}>
-                {viewInvoice
-                  ? `${isBonus ? 'فاتورة بونص' : 'طلب بيع'} رقم: ${viewInvoice.document_number || ''}`
-                  : editingInvoice
-                    ? `تعديل ${isBonus ? 'فاتورة بونص' : 'طلب بيع'} #${editingInvoice.id}`
-                    : isBonus ? 'تسجيل فاتورة بونص جديدة' : 'تسجيل طلب بيع جديد'}
-              </Typography.Text>
-              {/* **نوع الفاتورة فوق، جنب رقمها.** كان متحدّد في باب «الفاتورة على
-                  أنهي حساب؟» وبعدها مايبانش في أي حتة — فاللي فاتح فاتورة من الكشف
-                  مايعرفش هي أبيض ولا بولي غير لما يفتكر أو يسأل. */}
-              {((viewInvoice as any)?.family || invoiceFamily) && (
-                <Tag color={((viewInvoice as any)?.family || invoiceFamily) === 'أبيض'
-                  ? 'default' : 'blue'}
-                  style={{ fontWeight: 700, fontSize: 13 }}>
-                  {(viewInvoice as any)?.family || invoiceFamily}
-                </Tag>
+      <div className="sale-card sale-head">
+        <div className="sale-head-row">
+          <Button size="small" icon={<ArrowRightOutlined />} onClick={closeCreate}>رجوع</Button>
+          <span className="sale-title">
+            {viewInvoice
+              ? <>{isBonus ? 'فاتورة بونص' : 'طلب بيع'} رقم: <b dir="ltr">{viewInvoice.document_number || ''}</b></>
+              : editingInvoice
+                ? `تعديل ${isBonus ? 'فاتورة بونص' : 'طلب بيع'} #${editingInvoice.id}`
+                : isBonus ? 'تسجيل فاتورة بونص جديدة' : 'تسجيل طلب بيع جديد'}
+          </span>
+          {/* **نوع الفاتورة فوق، جنب رقمها.** كان متحدّد في باب «الفاتورة على
+              أنهي حساب؟» وبعدها مايبانش في أي حتة — فاللي فاتح فاتورة من الكشف
+              مايعرفش هي أبيض ولا بولي غير لما يفتكر أو يسأل. */}
+          {((viewInvoice as any)?.family || invoiceFamily) && (
+            <Tag color={((viewInvoice as any)?.family || invoiceFamily) === 'أبيض'
+              ? 'default' : 'blue'}
+              style={{ fontWeight: 700, marginInlineEnd: 0 }}>
+              {(viewInvoice as any)?.family || invoiceFamily}
+            </Tag>
+          )}
+          {viewInvoice && !viewOnly && (
+            <Tag color="gold" style={{ fontWeight: 600, marginInlineEnd: 0 }}>وضع التعديل</Tag>
+          )}
+          {editingInvoice?.voided && (
+            <Tag color="volcano" style={{ marginInlineEnd: 0 }}>مردود / ملغي</Tag>
+          )}
+          <span className="sale-pager">
+            <DocumentBar
+              listLabel="فواتير البيع"
+              listTo="/invoices"
+              title={viewInvoice
+                ? (viewInvoice.document_number || `#${viewInvoice.id}`)
+                : editingInvoice
+                  ? `تعديل #${editingInvoice.id}`
+                  : 'فاتورة جديدة'}
+              position={viewInvoice
+                ? invoices.findIndex((r: any) => r.id === viewInvoice.id) + 1 || null
+                : null}
+              total={viewInvoice ? invoices.length : null}
+              onPrev={viewInvoice && neighbour(-1)
+                ? () => { const n = neighbour(-1); if (n) openDetail(n); } : undefined}
+              onNext={viewInvoice && neighbour(1)
+                ? () => { const n = neighbour(1); if (n) openDetail(n); } : undefined}
+              steps={[
+                { key: 'draft', label: 'مسودة' },
+                { key: 'posted', label: 'مرحّل', color: 'green' },
+                { key: 'voided', label: 'مردود / ملغي', color: 'volcano' },
+              ]}
+              current={!viewInvoice && !editingInvoice
+                ? 'draft'
+                : (viewInvoice || editingInvoice)?.voided ? 'voided' : 'posted'}
+              extra={(
+                <DatePicker size="small"
+                  value={invoiceDate} allowClear={false} format="YYYY-MM-DD"
+                  disabled={viewOnly}
+                  onChange={(v) => setInvoiceDate(v || dayjs())}
+                />
               )}
-              {viewInvoice && !viewOnly && (
-                <Tag color="orange" style={{ fontWeight: 600 }}>وضع التعديل</Tag>
-              )}
-              {editingInvoice?.voided && (
-                <Tag color="volcano">مردود / ملغي</Tag>
-              )}
-              <DatePicker
-                value={invoiceDate} allowClear={false} format="YYYY-MM-DD"
-                disabled={viewOnly}
-                onChange={(v) => setInvoiceDate(v || dayjs())}
-              />
-              <DocumentBar
-          listLabel="فواتير البيع"
-          listTo="/invoices"
-          title={viewInvoice
-            ? (viewInvoice.document_number || `#${viewInvoice.id}`)
-            : editingInvoice
-              ? `تعديل #${editingInvoice.id}`
-              : 'فاتورة جديدة'}
-          position={viewInvoice
-            ? invoices.findIndex((r: any) => r.id === viewInvoice.id) + 1 || null
-            : null}
-          total={viewInvoice ? invoices.length : null}
-          onPrev={viewInvoice && neighbour(-1)
-            ? () => { const n = neighbour(-1); if (n) openDetail(n); } : undefined}
-          onNext={viewInvoice && neighbour(1)
-            ? () => { const n = neighbour(1); if (n) openDetail(n); } : undefined}
-          steps={[
-            { key: 'draft', label: 'مسودة' },
-            { key: 'posted', label: 'مرحّل', color: 'green' },
-            { key: 'voided', label: 'مردود / ملغي', color: 'volcano' },
-          ]}
-          current={!viewInvoice && !editingInvoice
-            ? 'draft'
-            : (viewInvoice || editingInvoice)?.voided ? 'voided' : 'posted'}
-        />
-            </Space>
-            {/* **شريط الأدوات والأعمدة في نفس سطر «طلب بيع»، على الشمال** (طلب العميل
-                ٢٠٢٦-١٠-٠١) — كانوا صفين لوحدهم تحت العنوان وفوق الأصناف. */}
-            <div style={{ marginInlineStart: 'auto', display: 'flex', alignItems: 'center',
-                          gap: 6, flexWrap: 'wrap', fontWeight: 400 }}>
-              <DocumentToolbar actions={docToolbar()} inline />
-              {lineGrid.control}
-            </div>
-            </div>
-          }
-        >
-        {/* `doc-form` بيضغط المسافات ويغمّق الأسماء — نفس فاتورة الشرا. */}
-        <Form form={createForm} layout="vertical" size="small" className="doc-form"
+            />
+          </span>
+        </div>
+        <div className="sale-toolbar-row">
+          <DocumentToolbar actions={docToolbar()} variant="buttons" />
+          {lineGrid.control}
+        </div>
+      </div>
+
+        <Form form={createForm} layout="vertical" size="small" className="doc-form sale-form"
           onValuesChange={() => setFormTick((n) => n + 1)}
           onFinish={handleCreateSubmit} requiredMark={false}>
-          {/*
-            * ترويسة المستند: **التاريخ ← العميل ← المندوب ← المستند** — بترتيب ما بيتسأل.
-            *
-            * الفاتورة بتبدأ بيوم وطرف، وبعدين مين بيبيعله، وآخر حاجة رقم ورقته. الترتيب ده
-            * هو اللي الإيد بتمشي عليه، والقفز بين خانات مش مترتبة بترتيب السؤال هو اللي
-            * بيخلّي الواحد يرجع لورا كل شوية.
-            */}
           {/* الترتيب (طلب العميل ٢٠٢٦-١٠-٠١): نوع المستند ← رقم المستند ← العميل وتليفونه ←
-              المخزن ← المندوب، وبعدهم الباقي. */}
-          <Row gutter={16}>
-            <Col xs={12} md={3}>
-              <Form.Item label="نوع المستند" style={{ marginBottom: 8 }}>
+              المخزن ← المندوب، وتحتهم مركز التكلفة والبيان والملاحظات والكوبونات. */}
+          <div className="sale-card sale-fields">
+          <Row gutter={12}>
+            <Col xs={12} md={4}>
+              <Form.Item label="نوع المستند">
                 {/* «فاتورة بونص» بتظهر للي معاه صلاحيتها بس. التبديل بيمسح الفاتورة المربوطة:
                     الرجوع لطلب بيع مايسيبش ربط مالوش معنى. */}
                 <Select value={isBonus ? 'bonus' : 'sale'} disabled={viewOnly || (!canBonus && !isBonus)}
@@ -2510,14 +2510,13 @@ function couponsTotal(inv: any): number {
               </Form.Item>
             </Col>
             <Col xs={12} md={3}>
-              <Form.Item name="external_document_number" label="رقم المستند"
-                style={{ marginBottom: 8 }}>
-                <Input placeholder="رقم فاتورة العميل" disabled={viewOnly} />
+              <Form.Item name="external_document_number" label="رقم ف. العميل">
+                <Input placeholder="اختياري" disabled={viewOnly} />
               </Form.Item>
             </Col>
             {isBonus && (
               <Col xs={24} md={8}>
-                <Form.Item label="على فاتورة بيع (اختياري)" style={{ marginBottom: 8 }}
+                <Form.Item label="على فاتورة بيع (اختياري)"
                   help={!selectedCustomerId ? 'اختار العميل الأول' : undefined}>
                   <Select showSearch allowClear disabled={viewOnly || !selectedCustomerId}
                     placeholder="من غير ربط — على أكتر من فاتورة"
@@ -2532,14 +2531,13 @@ function couponsTotal(inv: any): number {
               </Col>
             )}
             {/* التاريخ مش هنا: هو في سطر العنوان فوق (نفس القيمة) — كان مكتوب مرتين. */}
-            <Col xs={24} md={6}>
+            <Col xs={24} md={6} className="sale-party">
               {/* Picked from a searchable modal that can also create the customer on the spot,
                   so a new walk-in never costs the half-entered invoice. */}
               <Form.Item
                 name="customer_id"
-                label="اسم العميل"
+                label={<>اسم العميل <span style={{ color: '#ef4444' }}>*</span></>}
                 rules={[{ required: true, message: 'يرجى اختيار العميل!' }]}
-                style={{ marginBottom: 8 }}
               >
                 <Select open={false} showSearch={false} suffixIcon={<SearchOutlined />}
                   placeholder="اضغط لاختيار العميل"
@@ -2552,14 +2550,15 @@ function couponsTotal(inv: any): number {
               </Form.Item>
             </Col>
             {/* تليفون العميل — للقراية، من كارته (طلب العميل ٢٠٢٦-١٠-٠١). */}
-            <Col xs={12} md={3}>
-              <Form.Item label="الهاتف" style={{ marginBottom: 8 }}>
+            <Col xs={12} md={4}>
+              <Form.Item label="الهاتف">
                 <Input readOnly disabled dir="ltr" placeholder="-"
+                  suffix={<PhoneOutlined style={{ color: '#94a3b8' }} />}
                   value={(customers.find((c) => c.id === selectedCustomerId) as any)?.phone || ''} />
               </Form.Item>
             </Col>
-            <Col xs={12} md={5}>
-              <Form.Item label="المخزن" required style={{ marginBottom: 8 }}>
+            <Col xs={12} md={4}>
+              <Form.Item label="المخزن" required>
                 <Select
                   showSearch
                   placeholder="اختر المخزن للبيع منه"
@@ -2573,9 +2572,9 @@ function couponsTotal(inv: any): number {
                   options={warehouses.map((w) => ({ value: w.id, label: w.name }))} filterOption={searchFilter} filterSort={searchRank}/>
               </Form.Item>
             </Col>
-            <Col xs={12} md={4}>
+            <Col xs={12} md={3}>
               {/* Filled from the customer, and changeable. A rep on leave is an ordinary day. */}
-              <Form.Item name="rep_id" label="المندوب" style={{ marginBottom: 8 }}>
+              <Form.Item name="rep_id" label="المندوب">
                 <Select allowClear showSearch placeholder="من العميل"
                   disabled={viewOnly}
                   onChange={(v) => {
@@ -2588,11 +2587,10 @@ function couponsTotal(inv: any): number {
               </Form.Item>
             </Col>
             {/* الخط أداة تجزئة — مش في المصنع. الشرح فوق عند `isFactory`. */}
-            {/* الخط هنا بس لو مافيش شريط «أبيض/بولي» تحت (عميل بحساب واحد) — كان مكتوب
-                تلات مرات: هنا، وفي الشريط، وفي العنوان. */}
+            {/* الخط هنا بس لو مافيش شريط «أبيض/بولي» فوق الأصناف (عميل بحساب واحد). */}
             {!isFactory && families.length <= 1 && (
             <Col xs={12} md={4}>
-              <Form.Item label="الخط" style={{ marginBottom: 8 }}>
+              <Form.Item label="الخط">
                 <Select
                   allowClear
                   placeholder="أبيض / بولي"
@@ -2604,132 +2602,126 @@ function couponsTotal(inv: any): number {
               </Form.Item>
             </Col>
             )}
-            <Col xs={12} md={5}>
-              <Form.Item name="notes" label="ملاحظات" style={{ marginBottom: 8 }}>
-                <Input placeholder="اختياري" disabled={viewOnly} />
-              </Form.Item>
-            </Col>
-            {/* **البيان** — كان بيتبعت للسيرفر (`statement1`) ومالوش خانة على الشاشة، فعمر ما
-                حد كتبه. بقى جنب الملاحظات، وبيتطبع، وبيتفلتر بيه في الكشف والتقارير. */}
-            <Col xs={24} md={8}>
-              <Form.Item name="statement1" label="البيان" style={{ marginBottom: 8 }}>
-                <Input placeholder="اختياري — بيتطبع على الفاتورة وبيتدوّر بيه" disabled={viewOnly} />
-              </Form.Item>
-            </Col>
-            <Col xs={12} md={7}>
-              <Form.Item label="مركز التكلفة" style={{ marginBottom: 8 }}>
+          </Row>
+
+          <Row gutter={12}>
+            <Col xs={24} md={5}>
+              <Form.Item label="مركز التكلفة">
                 <Space.Compact style={{ width: '100%' }}>
                   <Form.Item name="cost_center_id" noStyle>
                     <CostCenterField />
                   </Form.Item>
                   <Form.Item name="cost_center_distribution" noStyle>
-                    <CostCenterSplit size="middle" disabled={viewOnly} />
+                    <CostCenterSplit size="small" disabled={viewOnly} />
                   </Form.Item>
                 </Space.Compact>
               </Form.Item>
             </Col>
-          </Row>
+            {/* **البيان** — كان بيتبعت للسيرفر (`statement1`) ومالوش خانة على الشاشة، فعمر ما
+                حد كتبه. بقى جنب الملاحظات، وبيتطبع، وبيتفلتر بيه في الكشف والتقارير. */}
+            <Col xs={24} md={showCouponBlock ? 6 : 11}>
+              <Form.Item name="statement1" label="البيان">
+                <Input placeholder="اختياري — بيتطبع على الفاتورة وبيتدوّر بيه" disabled={viewOnly} />
+              </Form.Item>
+            </Col>
+            <Col xs={24} md={showCouponBlock ? 4 : 8}>
+              <Form.Item name="notes" label="ملاحظات الفاتورة">
+                <Input placeholder="اختياري" disabled={viewOnly} />
+              </Form.Item>
+            </Col>
 
-          {/* الكوبونات المصروفة — مش في المصنع */}
-          {/* الكوبونات: مسافات أقل، ومابتظهرش في فاتورة محفوظة مافيهاش كوبونات. */}
-          {!isFactory && !(viewOnly && !couponRows.some((r) => r.serial_from || r.coupon_kind)) && (
-          <div style={{ marginTop: 2, marginBottom: 6 }}>
-            <Row gutter={8} className="mini-head">
-              <Col xs={24} md={7}>فئة الكوبون</Col>
-              <Col xs={8} md={4}>العدد</Col>
-              <Col xs={8} md={5}>من رقم</Col>
-              <Col xs={8} md={5}>إلى رقم</Col>
-              <Col xs={24} md={3} />
-            </Row>
-            {couponRows.map((row, i) => (
-              <Row gutter={8} key={row.key} align="middle" style={{ marginBottom: 6 }}>
-                <Col xs={24} md={7}>
-                  <Select allowClear showSearch style={{ width: '100%' }}
-                    disabled={viewOnly}
-                    placeholder="عادي / فضي / ذهبي"
-                    value={row.coupon_kind}
-                    onChange={(v) => setCouponRows((rs) => rs.map((x) => (x.key === row.key
-                      ? { ...x, coupon_kind: v as string } : x)))}
-                    options={couponKindOptions.map((k) => ({ value: k.value, label: k.label }))} filterOption={searchFilter} filterSort={searchRank}/>
-                </Col>
-                <Col xs={8} md={4}>
-                  <InputNumber style={{ width: '100%' }} disabled
-                    value={couponCount(row.serial_from, row.serial_to) ?? undefined} />
-                </Col>
-                <Col xs={8} md={5}>
-                  <Input value={row.serial_from || ''} disabled={viewOnly}
-                    onChange={(e) => setCouponRows((rs) => rs.map((x) => (x.key === row.key
-                      ? { ...x, serial_from: e.target.value } : x)))} />
-                </Col>
-                <Col xs={8} md={5}>
-                  <Input value={row.serial_to || ''} disabled={viewOnly}
-                    onChange={(e) => setCouponRows((rs) => rs.map((x) => (x.key === row.key
-                      ? { ...x, serial_to: e.target.value } : x)))} />
-                </Col>
-                <Col xs={24} md={3}>
-                  {!viewOnly && (
-                    <>
-                      {i === couponRows.length - 1 && (
-                        <Button size="small" icon={<PlusOutlined />} title="نوع كوبون تاني"
-                          onClick={() => setCouponRows((rs) => [...rs, blankCoupon()])} />
+            {/* الكوبونات المصروفة — مش في المصنع، ومابتظهرش في فاتورة محفوظة مافيهاش كوبونات. */}
+            {showCouponBlock && (
+            <Col xs={24} md={9}>
+              <div className="coupon-grid">
+                <div className="coupon-row coupon-head">
+                  <span>فئة الكوبون</span><span>العدد</span><span>من رقم</span><span>إلى رقم</span><span />
+                </div>
+                {couponRows.map((row, i) => (
+                  <div className="coupon-row" key={row.key}>
+                    <Select allowClear showSearch style={{ width: '100%' }}
+                      disabled={viewOnly}
+                      placeholder="عادي / فضي / ذهبي"
+                      value={row.coupon_kind}
+                      onChange={(v) => setCouponRows((rs) => rs.map((x) => (x.key === row.key
+                        ? { ...x, coupon_kind: v as string } : x)))}
+                      options={couponKindOptions.map((k) => ({ value: k.value, label: k.label }))} filterOption={searchFilter} filterSort={searchRank}/>
+                    <InputNumber style={{ width: '100%' }} disabled
+                      value={couponCount(row.serial_from, row.serial_to) ?? undefined} />
+                    <Input value={row.serial_from || ''} disabled={viewOnly}
+                      onChange={(e) => setCouponRows((rs) => rs.map((x) => (x.key === row.key
+                        ? { ...x, serial_from: e.target.value } : x)))} />
+                    <Input value={row.serial_to || ''} disabled={viewOnly}
+                      onChange={(e) => setCouponRows((rs) => rs.map((x) => (x.key === row.key
+                        ? { ...x, serial_to: e.target.value } : x)))} />
+                    <div className="coupon-actions">
+                      {!viewOnly && (
+                        <>
+                          {i === couponRows.length - 1 && (
+                            <Button size="small" type="primary" className="sale-green-btn"
+                              icon={<PlusOutlined />} title="نوع كوبون تاني"
+                              onClick={() => setCouponRows((rs) => [...rs, blankCoupon()])} />
+                          )}
+                          <Button size="small" danger icon={<DeleteOutlined />} title="امسح الصف"
+                            onClick={() => setCouponRows((rs) => (rs.length === 1
+                              ? [blankCoupon()]
+                              : rs.filter((x) => x.key !== row.key)))} />
+                        </>
                       )}
-                      <Button type="text" danger icon={<DeleteOutlined />} title="امسح الصف"
-                        onClick={() => setCouponRows((rs) => (rs.length === 1
-                          ? [blankCoupon()]
-                          : rs.filter((x) => x.key !== row.key)))} />
-                    </>
-                  )}
-                </Col>
-              </Row>
-            ))}
-            {couponRows.some((r) => couponCount(r.serial_from, r.serial_to)) && (
-              <div style={{ fontSize: 12, color: '#4a4a4a' }}>
-                الإجمالي: {couponRows.reduce(
-                  (t, r) => t + (couponCount(r.serial_from, r.serial_to) ?? 0), 0)} كوبون
+                    </div>
+                  </div>
+                ))}
+                {couponRows.some((r) => couponCount(r.serial_from, r.serial_to)) && (
+                  <div className="coupon-note">
+                    الإجمالي: {couponRows.reduce(
+                      (t, r) => t + (couponCount(r.serial_from, r.serial_to) ?? 0), 0)} كوبون
+                  </div>
+                )}
+                {repCustody.length > 0 && (
+                  <div className="coupon-note">
+                    عهدة المندوب:{' '}
+                    {repCustody.map((b) => `${b.coupon_kind} ${b.available}${b.ranges.length
+                      ? ` (${b.ranges.map(([a, z]) => (a === z ? a : `${a}–${z}`)).join('، ')})`
+                      : ' — خلصت'}`).join(' · ')}
+                  </div>
+                )}
               </div>
+            </Col>
             )}
-            {repCustody.length > 0 && (
-              <div style={{ fontSize: 12, color: '#4a4a4a', marginTop: 4 }}>
-                عهدة المندوب:{' '}
-                {repCustody.map((b) => `${b.coupon_kind} ${b.available}${b.ranges.length
-                  ? ` (${b.ranges.map(([a, z]) => (a === z ? a : `${a}–${z}`)).join('، ')})`
-                  : ' — خلصت'}`).join(' · ')}
-              </div>
-            )}
+          </Row>
           </div>
-          )}
 
-          {!isFactory && families.length > 1 && (
-            <div style={{ marginBottom: 6 }}>
-              <Segmented
-                block
-                disabled={viewOnly}
-                value={invoiceFamily ?? ''}
-                onChange={(v: string | number) => setInvoiceFamily(String(v) || null)}
-                options={families.map((a) => ({
-                  value: a.family as string,
-                  label: (
-                    <span style={{ fontWeight: 700 }}>
-                      {a.family}
-                      <span style={{ color: '#5a6b5a', marginInlineStart: 8, fontSize: 13,
-                                     fontWeight: 400 }}>
-                        ({money(Number(a.balance || 0))})
+          <div className="sale-card sale-lines">
+          {/* شريط الأصناف: «أبيض/بولي» بأرصدتهم وعدد البنود يمين، وزرار الإضافة شمال. */}
+          <div className="sale-items-bar">
+            <div className="sale-items-info">
+              {!isFactory && families.length > 1 && (
+                <Segmented
+                  disabled={viewOnly}
+                  value={invoiceFamily ?? ''}
+                  onChange={(v: string | number) => setInvoiceFamily(String(v) || null)}
+                  options={families.map((a) => ({
+                    value: a.family as string,
+                    label: (
+                      <span style={{ fontWeight: 700 }}>
+                        {a.family}
+                        <span style={{ color: '#64748b', marginInlineStart: 6, fontSize: 12,
+                                       fontWeight: 400 }}>
+                          ({money(Number(a.balance || 0))})
+                        </span>
                       </span>
-                    </span>
-                  ),
-                }))}
-              />
+                    ),
+                  }))}
+                />
+              )}
+              <span>
+                عدد البنود الحالية: <b style={{ color: '#0f172a' }}>
+                  {lines.filter((l) => l.item_id !== null).length}</b> أصناف
+              </span>
             </div>
-          )}
-
-          <Row gutter={16}>
-          <Col xs={24}>
-
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8, marginTop: 2 }}>
             {!viewOnly && (
-              <Button
-                type="primary" icon={<PlusOutlined />}
-                style={{ flex: 1, height: 32, fontSize: 13, fontWeight: 700, borderRadius: 6, background: '#6AB42D', borderColor: '#6AB42D' }}
+              <Button type="primary" className="sale-green-btn" icon={<ShoppingCartOutlined />}
+                style={{ fontWeight: 700 }}
                 onClick={() => setPickerOpen(true)}
               >
                 إضافة صنف للفاتورة (Enter)
@@ -2803,35 +2795,33 @@ function couponsTotal(inv: any): number {
           />
 
           {/*
-            * سطور الفاتورة كجدول مضغوط — نفس جدول فاتورة الشرا بالظبط.
+            * سطور الفاتورة كجدول مضغوط — نفس أعمدة فاتورة الشرا، بترويسة كحلي (تصميم العميل).
             *
             * كانت كروت متجمّعة بالفئة: كل سطر بياخد مساحة كبيرة، وترويسة فئة فوق كل مجموعة،
             * وفاتورة خمستاشر صنف بتبقى صفحتين تمرير. وأهم من المساحة إن الكميات والأسعار
             * مكانش ليها عمود تتقارن فيه رأسياً — واللي بيراجع فاتورة طويلة بيقارن رأسياً.
-            *
-            * الشاشتين بقوا نفس المستند من الناحيتين، فاللي اتعلّم إيده على واحدة اتعلّم التانية.
             */}
           {lines.length === 0 ? (
             <Empty description="اختر الفئة ثم المنتجات لإضافتها للفاتورة"
               style={{ margin: '12px 0' }} />
           ) : (
-            <div style={{ border: '1px solid #e6efe3', borderRadius: 10, overflowX: 'auto' }}>
-              <table className="entry-grid">
+            <div className="sale-grid-wrap">
+              <table className="entry-grid sale-grid">
                 <thead>{lineGrid.head}</thead>
                 <tbody>
                   {linesByCategory.map((group) => (
                     <React.Fragment key={group.category ?? '__none__'}>
                       {linesByCategory.length > 1 && (
-                        <tr style={{ background: '#f6faf3', borderTop: '1.5px solid #6AB42D', borderBottom: '1px solid #e2ede0' }}>
-                          <td colSpan={20} style={{ padding: '1px 8px', background: '#f6faf3' }}>
+                        <tr className="sale-group-row">
+                          <td colSpan={20}>
                             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                               <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                                <Tag color="success" style={{ fontWeight: 700, fontSize: 11, padding: '0 6px', borderRadius: 3, margin: 0 }}>
+                                <Tag color="success" style={{ fontWeight: 700, fontSize: 11, padding: '0 6px', borderRadius: 4, margin: 0 }}>
                                   {group.category ? (categoryLabels[group.category] || group.category) : 'بدون فئة'}
                                 </Tag>
-                                <span style={{ color: '#555', fontSize: 11, fontWeight: 600 }}>({group.items.length} صنف)</span>
+                                <span style={{ color: '#64748b', fontSize: 11, fontWeight: 600 }}>({group.items.length} صنف)</span>
                               </div>
-                              <span style={{ color: '#666', fontSize: 11, fontWeight: 600 }}>
+                              <span style={{ color: '#64748b', fontSize: 11, fontWeight: 600 }}>
                                 إجمالي الفئة: {money(group.items.reduce((s, l) => s + saleLineNet(l), 0))}
                               </span>
                             </div>
@@ -2844,38 +2834,102 @@ function couponsTotal(inv: any): number {
                     </React.Fragment>
                   ))}
                 </tbody>
-                <tfoot>{lineGrid.foot(lines)}</tfoot>
+                <tfoot>{lineGrid.foot(lines, (
+                  <>الإجماليات: <span style={{ color: '#64748b', fontWeight: 600 }}>
+                    ({new Set(lines.filter((l) => l.item_id !== null).map((l) => l.item_id)).size} بنود مختلفة)
+                  </span></>
+                ))}</tfoot>
               </table>
             </div>
           )}
-
-          </Col>
-          </Row>
+          </div>
 
           {/*
             * لوحة «رصيد الصنف في المخازن» اتشالت بطلب صاحب النظام — زي ما اتشالت من فاتورة الشرا.
-            *
-            * كانت صندوق كبير مكتوب فيه «اختر فئة أو صنف عشان تشوف رصيده» وطالع الصفحة لتحت من
-            * غير ما يقول حاجة. ورصيد الصنف بيتشاف جوّه بوباب اختيار الصنف — وهو المكان اللي
-            * السؤال بيتسأل فيه فعلاً وانت بتقول هاخد منه كام.
+            * رصيد الصنف بيتشاف جوّه بوباب اختيار الصنف — وهو المكان اللي السؤال بيتسأل فيه.
             */}
-          {/* صور الورقة — الفاتورة الموقّعة وإيصال الاستلام. `viewInvoice` بيفضل `null`
-              على الفاتورة الجديدة (شوف `resetDocument`)، والمكوّن بيختفي لحد ما تترحّل
-              وياخد رقم يتعلّق عليه. */}
-          <DocumentAttachments docType="sales_invoice" docId={viewInvoice?.id} />
 
-          {/* Totals + payment — see TotalsLadder for why this is one ladder and not a strip. */}
+          {/* الدفع والملخص: نفس أرقام سُلّم الإجماليات القديم بالظبط، في مربعات (تصميم العميل). */}
           {(() => {
             const invoiceDiscount = grossTotal - netTotal;
             const hasParty = !!selectedCustomerId && customerBalance !== null;
             const balance = customerBalance ?? 0;
             const due = balance + netTotal - cashAmount;
             return (
-              <TotalsLadder
-                tone="sale"
-                inputs={(
-                  <>
-                    <Form.Item label="خصم على إجمالي الفاتورة" style={{ marginBottom: 12 }}>
+              <Row gutter={[10, 10]}>
+                <Col xs={24} lg={16}>
+                  <div className="sale-tiles">
+                    <SummaryTile label="إجمالي الأصناف" value={money(grossTotal)} sub="جنيه مصري" />
+                    {/* البونص بيتعرض ١٠٠٪ — `discountPct` فيه آخر رقم اتكتب قبل التحويل (١٠ من «١٠٠»). */}
+                    {invoiceDiscount > 0.001 && (
+                      <SummaryTile label={`خصم الفاتورة (${isBonus ? 100 : discountPct}%)`}
+                        value={`− ${money(invoiceDiscount)}`} color="#dc2626" />
+                    )}
+                    <SummaryTile label="صافي الفاتورة" value={money(netTotal)} color="#16a34a"
+                      sub="مستحق السداد" />
+                    {/* مربع لكل خط، واللي الفاتورة عليه بإطار — تلات أرقام شبه بعض من غير ما
+                        يبان أنهي واحد الفاتورة دي بتحرّكه محدش بيقراهم. */}
+                    {hasParty && families.map((a) => {
+                      const b = Number(a.balance || 0);
+                      return (
+                        <SummaryTile key={a.family} label={`مديونية ${a.family}`}
+                          value={money(b)} color={b > 0 ? '#dc2626' : '#16a34a'}
+                          active={a.family === invoiceFamily}
+                          sub={b > 0.001 ? 'مستحق عليه' : 'لا يوجد متأخرات'} />
+                      );
+                    })}
+                    {hasParty && (
+                      <SummaryTile label="إجمالي المديونية" tone="yellow" value={money(balance)}
+                        color={balance > 0 ? '#dc2626' : '#16a34a'} sub="قبل الفاتورة دي" />
+                    )}
+                    {hasParty && (
+                      <SummaryTile label="المدفوع نقداً" tone="mint" value={`− ${money(cashAmount)}`}
+                        color="#16a34a" sub="تم التحصيل" />
+                    )}
+                  </div>
+
+                  <div className="sale-card sale-notes">
+                    <div className="sale-notes-line">
+                      {hasParty && (
+                        <span className="sale-hint">
+                          <InfoCircleOutlined /> ممكن يزيد عن الفاتورة فيسدّد المديونية القديمة
+                        </span>
+                      )}
+                      {!isFactory && (
+                        <span>النقاط المكتسبة: <b style={{ color: '#2563eb' }}>
+                          {totalPoints.toLocaleString(numeralsLocale(), { maximumFractionDigits: 3 })}</b></span>
+                      )}
+                      {/* «كوبونات سابقة» مش «الكوبونات»: دي اللي اتصرفت للعميل قبل كده ولسه
+                          ماترجعتش — **مش** الدفتر اللي بيتسلّم على الفاتورة دي. */}
+                      {hasParty && (
+                        <span>كوبونات سابقة للعميل:{' '}
+                          {customerCoupons.length
+                            ? <b style={{ color: '#F5A11D' }}>
+                                {customerCoupons.length} — من {couponRange.from} إلى {couponRange.to}</b>
+                            : <b>لا يوجد</b>}
+                        </span>
+                      )}
+                      {creditAmount < -0.001 && (
+                        <span>يسدّد من المديونية القديمة:{' '}
+                          <b style={{ color: '#16a34a' }}>{money(Math.abs(creditAmount))} ج.م</b></span>
+                      )}
+                      {creditAmount > 0.001 && (
+                        <span>آجل على الفاتورة دي:{' '}
+                          <b style={{ color: '#dc2626' }}>{money(creditAmount)} ج.م</b></span>
+                      )}
+                    </div>
+                    {/* صور الورقة — الفاتورة الموقّعة وإيصال الاستلام. `viewInvoice` بيفضل `null`
+                        على الفاتورة الجديدة (شوف `resetDocument`)، والمكوّن بيختفي لحد ما تترحّل
+                        وياخد رقم يتعلّق عليه. */}
+                    <div className="sale-attach">
+                      <DocumentAttachments docType="sales_invoice" docId={viewInvoice?.id} title="مرفقات" />
+                    </div>
+                  </div>
+                </Col>
+
+                <Col xs={24} lg={8}>
+                  <div className="sale-card sale-pay">
+                    <Form.Item label="خصم على إجمالي الفاتورة">
                       <InputNumber min={0} max={100} style={{ width: '100%' }} addonAfter="%"
                         disabled={viewOnly}
                         value={isBonus ? 100 : discountPct} onChange={(val) => {
@@ -2893,84 +2947,40 @@ function couponsTotal(inv: any): number {
                           setDiscountPct(v >= 100 ? 0 : v);
                         }} />
                     </Form.Item>
-                    <Form.Item label="المبلغ المدفوع نقداً" style={{ marginBottom: 0 }}
-                      help={hasParty ? 'ممكن يزيد عن الفاتورة فيسدّد المديونية القديمة' : undefined}>
+                    <Form.Item label="المبلغ المدفوع نقداً">
                       <InputNumber min={0} style={{ width: '100%' }} addonAfter="ج.م"
+                        className="sale-cash-input"
                         disabled={viewOnly || isBonus}
                         value={isBonus ? 0 : cashAmount} onChange={(val) => setCashAmount(val || 0)} />
                     </Form.Item>
-                  </>
-                )}
-                rows={[
-                  { label: 'إجمالي الأصناف', value: money(grossTotal) },
-                  // البونص بيتعرض ١٠٠٪ — `discountPct` فيه آخر رقم اتكتب قبل التحويل (١٠ من «١٠٠»).
-                  { label: `خصم الفاتورة (${isBonus ? 100 : discountPct}%)`,
-                    value: `− ${money(invoiceDiscount)}`, color: '#cf1322',
-                    show: invoiceDiscount > 0.001 },
-                  { label: 'صافي الفاتورة', value: money(netTotal),
-                    strong: true, color: '#6AB42D', rule: true },
-                  // One line per product family, the chosen one tinted, then the whole debt.
-                  // Three similar numbers in a column with nothing marking which one this invoice
-                  // moves is three numbers nobody reads.
-                  ...families.map((a) => ({
-                    label: `مديونية ${a.family}`,
-                    value: money(Number(a.balance || 0)),
-                    color: Number(a.balance || 0) > 0 ? '#cf1322' : '#6AB42D',
-                    highlight: a.family === invoiceFamily,
-                    show: hasParty,
-                  })),
-                  { label: 'إجمالي المديونية', value: money(balance), strong: true,
-                    color: balance > 0 ? '#cf1322' : '#6AB42D',
-                    rule: true, show: hasParty },
-                  { label: 'المدفوع نقداً', value: `− ${money(cashAmount)}`, color: '#6AB42D',
-                    show: hasParty && cashAmount > 0.001 },
-                  { label: 'الباقي على العميل', value: money(due), big: true, rule: true,
-                    color: due > 0.001 ? '#cf1322' : '#6AB42D', show: hasParty },
-                ]}
-                notes={[
-                  isFactory ? null : (
-                  <>النقاط: <b style={{ color: '#F5A11D' }}>
-                    {totalPoints.toLocaleString(numeralsLocale(), { maximumFractionDigits: 3 })}</b></>),
-                  creditAmount < -0.001 ? (
-                    <>يسدّد من المديونية القديمة:{' '}
-                      <b style={{ color: '#6AB42D' }}>{money(Math.abs(creditAmount))} ج.م</b></>
-                  ) : null,
-                  creditAmount > 0.001 ? (
-                    <>آجل على الفاتورة دي:{' '}
-                      <b style={{ color: '#cf1322' }}>{money(creditAmount)} ج.م</b></>
-                  ) : null,
-                  // «كوبونات سابقة» مش «الكوبونات»: دي اللي اتصرفت للعميل قبل كده ولسه
-                  // ماترجعتش — **مش** الدفتر اللي بيتسلّم على الفاتورة دي. الاسم القديم
-                  // كان واقع تحت صفوف كوبونات الفاتورة على طول، فالشاشة كانت بتقول
-                  // «الإجمالي: ٥ كوبون» وتحتها «الكوبونات: لا يوجد».
-                  hasParty ? (
-                    <>كوبونات سابقة للعميل:{' '}
-                      {customerCoupons.length
-                        ? <b style={{ color: '#F5A11D' }}>
-                            {customerCoupons.length} — من {couponRange.from} إلى {couponRange.to}</b>
-                        : <b>لا يوجد</b>}
-                    </>
-                  ) : null,
-                ]}
-              />
+                    {hasParty && (
+                      <div className={`sale-due ${due > 0.001 ? 'is-due' : 'is-clear'}`}>
+                        <div>
+                          <div className="sale-due-label">الباقي على العميل</div>
+                          <div className="sale-due-sub">
+                            {due > 0.001 ? 'بيتسجّل آجل على حسابه' : 'مافيش باقي عليه'}
+                          </div>
+                        </div>
+                        <div className="sale-due-value">{money(due)} <small>ج.م</small></div>
+                      </div>
+                    )}
+                    {!viewOnly && (
+                      <div className="sale-pay-actions">
+                        <Button type="primary" htmlType="submit" loading={saving}
+                          icon={<CheckOutlined />} className="sale-green-btn sale-save-btn">
+                          {editingInvoice ? 'حفظ تعديلات الفاتورة' : 'تسجيل وحفظ فاتورة البيع'} (F9)
+                        </Button>
+                        <Button onClick={closeCreate}>إلغاء</Button>
+                      </div>
+                    )}
+                  </div>
+                </Col>
+              </Row>
             );
           })()}
 
-          {!viewOnly && (
-            <Form.Item style={{ marginTop: 20, marginBottom: 0 }}>
-              <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-                <Space>
-                  <Button type="primary" htmlType="submit" loading={saving}>
-                    {editingInvoice ? 'حفظ تعديلات الفاتورة' : 'تسجيل وحفظ فاتورة البيع'}
-                  </Button>
-                  <Button onClick={closeCreate}>إلغاء</Button>
-                </Space>
-              </div>
-            </Form.Item>
-          )}
-
           {viewReturns.length > 0 && (
-            <div style={{ marginTop: 20 }}>
+            <div className="sale-card">
               <Divider orientation="right">المرتجعات المسجلة على هذه الفاتورة</Divider>
               <Table
                 size="small" pagination={false} rowKey="id"
@@ -2985,7 +2995,6 @@ function couponsTotal(inv: any): number {
             </div>
           )}
         </Form>
-        </Card>
 
         {/* **منتقي الطرف واحد في الشاشة، مش اتنين.**
             كان فيه نسخة هنا ونسخة تحت، والاتنين بيسمعوا `partyPickerOpen` — فالدوسة
@@ -3210,6 +3219,8 @@ function couponsTotal(inv: any): number {
               { label: <span style={{ color: '#389e0d', fontWeight: 600 }}>🟢 فواتير المبيعات ({summary.totalSalesCount})</span>, value: 'sale' },
               { label: <span style={{ color: '#eb2f96', fontWeight: 600 }}>🔴 مرتجعات المبيعات ({summary.totalReturnsCount})</span>, value: 'return' },
               { label: <span style={{ color: '#d48806', fontWeight: 600 }}>🎁 فواتير البونص ({summary.totalBonusCount})</span>, value: 'bonus' },
+              // النقدي اللي اتدفع مع الفاتورة + سندات القبض المستقلة (من النظام والتطبيق).
+              { label: <span style={{ color: '#0958d9', fontWeight: 600 }}>🧾 سندات القبض</span>, value: 'receipts' },
             ]}
           />
           {/* قيمة البونص قبل خصم الـ١٠٠٪ بنفس الفلاتر — سطر مش كارت، عشان مايتقريش جنب
@@ -3293,6 +3304,12 @@ function couponsTotal(inv: any): number {
           </Col>
         </Row>
 
+        {docKindFilter === 'receipts' ? (
+          <SalesReceiptsPanel customerId={filters.customer_id} repId={filters.rep_id}
+            dateFrom={filters.date_from} dateTo={filters.date_to}
+            onOpenInvoice={(id) => openDetail({ id } as InvoiceRecord)}
+            onOpenVoucher={() => navigate('/vouchers?tab=receipt')} />
+        ) : (<>
         <FocusedRowsBanner focus={focus} total={unifiedRecords.length} noun="فاتورة"
                            shown={focusedRecords.length} />
         <Table
@@ -3340,6 +3357,7 @@ function couponsTotal(inv: any): number {
             style: { cursor: 'pointer' },
           })}
         />
+        </>)}
       </Card>
 
 

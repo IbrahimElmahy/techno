@@ -186,6 +186,9 @@ def _create(
         db, entry_type=entry_type, actor_user_id=actor_user_id,
         description=description or statement,
         entry_date=voucher.voucher_date,
+        # المندوب والفرع على القيد نفسه — كشف الحساب بيقرا المندوب من القيد لما المستند
+        # مايقولش، والقيد من غيرهم كان بيطلع في الكشف من غير مندوب ولا فرع.
+        rep_id=rep_user_id, branch_id=voucher.branch_id,
         partner_kind=v_partner_kind, partner_id=v_partner_id,
         cost_center_id=cost_center_id,
         cost_center_distribution=cost_center_distribution,
@@ -228,6 +231,26 @@ def _cash_side(
     return treasury.account_id, treasury.id
 
 
+def _receipt_rep(
+    db: Session, *, customer_id: int, actor_user_id: int, actor_role: RoleName,
+    rep_user_id: int | None,
+) -> int | None:
+    """مندوب سند القبض.
+
+    المندوب اللي كتب السند بنفسه هو المحصِّل — مافيش سؤال. المكتب يقدر يقول مين حصّل،
+    ولو ماقالش يبقى مندوب العميل. من غير ده السند كان بيتكتب من غير مندوب خالص، فكشف
+    الحساب وفلتر المندوب مابيشوفوش تحصيلاته.
+    """
+    if actor_role == RoleName.sales_rep:
+        return actor_user_id
+    if rep_user_id is not None:
+        if db.get(User, rep_user_id) is None:
+            raise VoucherError("المندوب غير موجود.")
+        return rep_user_id
+    customer = db.get(Customer, customer_id)
+    return customer.rep_id if customer is not None else None
+
+
 def create_receipt(
     db: Session, *, customer_id: int, amount, actor_user_id: int, actor_role: RoleName,
     voucher_date: date | None = None, description: str | None = None,
@@ -236,6 +259,7 @@ def create_receipt(
     on_total: bool = False, client_uuid: str | None = None,
     cost_center_id: int | None = None, statement1: str | None = None,
     external_document_number: str | None = None,
+    rep_user_id: int | None = None,
 ) -> Voucher:
     """سند قبض — تحصيل من عميل. النقدية تدخل الخزينة المختارة أو عهدة المندوب المحصِّل.
 
@@ -247,6 +271,8 @@ def create_receipt(
     collection landing on the wrong line is money the next statement cannot explain.
     """
     value = _positive(amount)
+    rep_id = _receipt_rep(db, customer_id=customer_id, actor_user_id=actor_user_id,
+                          actor_role=actor_role, rep_user_id=rep_user_id)
     # نفس خط الفاتورة يروح للطرفين: حساب المديونية اللي بيتخصم، والصندوق اللي بينزل فيه.
     cash_account_id, safe_id = _cash_side(
         db, actor_role=actor_role, actor_user_id=actor_user_id, treasury_id=treasury_id,
@@ -269,6 +295,8 @@ def create_receipt(
             credit_split=[(a.account_id, v) for a, v in parts],
             family=None,        # None on the voucher means «على الإجمالي», same as the argument
             client_uuid=client_uuid, statement1=statement1, external_document_number=external_document_number,
+            # مركز التكلفة كان بيقع هنا بس — نفس السند على خط واحد كان بيشيله.
+            cost_center_id=cost_center_id, rep_user_id=rep_id,
         )
 
     party = _customer_account(db, customer_id, family)
@@ -280,7 +308,7 @@ def create_receipt(
         payment_method=payment_method, entry_type="receipt",
         statement="تحصيل من عميل" + (f" — {family}" if family else ""),
         customer_id=customer_id, treasury_id=safe_id, family=family,
-        client_uuid=client_uuid,
+        client_uuid=client_uuid, rep_user_id=rep_id,
         cost_center_id=cost_center_id, statement1=statement1, external_document_number=external_document_number,
     )
 
@@ -429,8 +457,8 @@ def reverse_voucher(db: Session, *, voucher_id: int, actor_user_id: int) -> Vouc
         raise VoucherError("لا يمكن عكس سند عكسي.")
     if db.scalar(select(Voucher).where(Voucher.reverses_id == voucher_id)) is not None:
         raise VoucherError("السند معكوس بالفعل.")
-    ledger_service.reverse_entry(db, original_id=original.ledger_entry_id,
-                                 actor_user_id=actor_user_id)
+    counter = ledger_service.reverse_entry(db, original_id=original.ledger_entry_id,
+                                           actor_user_id=actor_user_id)
     mirror = Voucher(
         document_number=_doc_number(db, original.kind), kind=original.kind,
         amount=original.amount, customer_id=original.customer_id,
@@ -441,7 +469,11 @@ def reverse_voucher(db: Session, *, voucher_id: int, actor_user_id: int) -> Vouc
         reference=original.reference, description=f"عكس {original.document_number}",
         # البيان بيتورّث: العكس بيتعرض جنب أصله، ومن غير بيان بيبقى سطر بمبلغ مالوش سبب.
         statement1=getattr(original, "statement1", None),
-        ledger_entry_id=None, reverses_id=voucher_id, actor_user_id=actor_user_id,
+        # السند العكسي مربوط بقيده — من غيره الكشف مابيعرفش يوصّل سطر العكس بمستنده،
+        # وبيطلع «قيد يدوي» من غير مندوب.
+        ledger_entry_id=counter.id, reverses_id=voucher_id, actor_user_id=actor_user_id,
+        family=getattr(original, "family", None),
+        cost_center_id=getattr(original, "cost_center_id", None),
         # القيد المضاد بيقعد في فرع السند اللي بيعكسه، مش فرع اللي عكسه.
         branch_id=getattr(original, "branch_id", None),
     )

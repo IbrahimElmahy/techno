@@ -21,11 +21,12 @@ import CostCenterField from '../../components/CostCenterField';
 import CostCenterSplit from '../../components/CostCenterSplit';
 import { TreasuryField, ExpenseAccountField } from '../../components/VoucherFields';
 import { api } from '../../api/client';
+import { searchFilter, searchRank } from '../../utils/arabicSort';
 import { Party, UserRecord, money } from './types';
 
 export default function ReceiptModal({
   open, onCancel, form, posting, submit, customers, treasuries,
-  methodOptions, families, setFamilies, target, setTarget,
+  methodOptions, families, setFamilies, target, setTarget, reps = [],
 }: {
   open: boolean;
   onCancel: () => void;
@@ -39,6 +40,8 @@ export default function ReceiptModal({
   setFamilies: React.Dispatch<React.SetStateAction<Record<number, any[]>>>;
   target: string;
   setTarget: (v: string) => void;
+  /** المناديب — لخانة «المندوب» (اختيارية). */
+  reps?: UserRecord[];
 }) {
   return (
       <TabModal
@@ -113,6 +116,16 @@ export default function ReceiptModal({
                     <DatePicker />
                   </Form.Item>
                   <TreasuryField treasuries={treasuries} />
+                  {/* المندوب اللي حصّل — فاضي = مندوب العميل. من غيره السند كان بيتكتب من غير
+                      مندوب، فكشف الحساب وفلتر المندوب مابيشوفوش التحصيل ده. */}
+                  <Form.Item name="rep_user_id" label="المندوب" tooltip="فاضي = مندوب العميل">
+                    <Select
+                      allowClear showSearch style={{ width: 220 }}
+                      placeholder="مندوب العميل (تلقائي)"
+                      options={reps.map((r) => ({ value: r.id, label: r.full_name || r.username }))}
+                      filterOption={searchFilter} filterSort={searchRank}
+                    />
+                  </Form.Item>
                   <Form.Item name="payment_method" label="طريقة الدفع">
                     <Select
                       allowClear

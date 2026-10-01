@@ -47,6 +47,10 @@ interface StatementLine {
   balance_before: string;
   balance: string;
   rep_name?: string | null;
+  /** المخزن: مكان البضاعة في البيع والمرتجع، ومخزن المندوب في السند. */
+  store_name?: string | null;
+  /** سطر «مدفوع نقداً مع الفاتورة» — السيرفر بيفصله من سطر الفاتورة، مش سطر في القيد. */
+  cash_on_invoice?: boolean;
   cost_center_name?: string | null;
   account_id?: number | null;
   account_name?: string | null;
@@ -92,6 +96,9 @@ interface StatementOut {
   total_overdue?: string;
   aging?: Aging;
   reconcilable?: boolean;
+  /** حساب ذمم عميل: حساباته كلها (أبيض/بولي) بأرصدتها — فاضية لو عنده حساب واحد. */
+  families?: { family: string | null; account_id: number; balance: string }[];
+  customer_id?: number | null;
 }
 
 export default function AccountStatement() {
@@ -112,6 +119,8 @@ export default function AccountStatement() {
     st: search.get('st') || '',
     x: search.get('x') === '1',
     z: search.get('z') === '1',
+    // «كل حسابات العميل» شغّالة افتراضياً — `all=0` بس هو اللي بيقفلها.
+    all: search.get('all') !== '0',
   };
   const [accounts, setAccounts] = useState<any[]>([]);
   const [accountId, setAccountId] = useState<number | undefined>(u0.account);
@@ -145,6 +154,9 @@ export default function AccountStatement() {
   const [costCenters, setCostCenters] = useState<any[]>([]);
   const [statement, setStatement] = useState<StatementOut | null>(null);
   const [loading, setLoading] = useState(false);
+  // العميل اللي عنده أكتر من حساب (أبيض/بولي): الكشف بيجمعهم برصيد واحد. التحصيل «على
+  // الإجمالي» بيتوزّع على الحسابين، فحساب واحد لوحده بيوري نص السند بس.
+  const [allCustomerAccounts, setAllCustomerAccounts] = useState<boolean>(u0.all);
 
   useEffect(() => {
     api.get('/api/v1/accounts')
@@ -176,6 +188,7 @@ export default function AccountStatement() {
         }
         let res;
         if (accountId) {
+          if (allCustomerAccounts) params.all_customer_accounts = true;
           res = await api.get(`/api/v1/accounts/${accountId}/statement`, { params });
         } else {
           if (mainKey!.startsWith('grp:')) params.owner_group = mainKey!.slice(4);
@@ -235,7 +248,8 @@ export default function AccountStatement() {
     } finally { setLoading(false); }
   };
 
-  useEffect(() => { load(); }, [subject, accountId, mainKey, itemId, warehouseId, range]);
+  useEffect(() => { load(); }, [subject, accountId, mainKey, itemId, warehouseId, range,
+    allCustomerAccounts]);
 
   const asked = Number(search.get('account')) || undefined;
   useEffect(() => {
@@ -292,6 +306,10 @@ export default function AccountStatement() {
   }, [accountId, accounts, mainKey]);
 
   const lines: StatementLine[] = statement?.lines ?? [];
+  // حسابات العميل (أبيض/بولي) — لو أكتر من واحد بتظهر خانة «كل حسابات العميل».
+  const customerFamilies = subject === 'account' && accountId ? (statement?.families ?? []) : [];
+  // الكشف فيه سطور من أكتر من حساب (كل حسابات العميل) — عمود «الحساب الفرعي» بيقول مين.
+  const multiAccount = new Set(lines.map((l) => l.account_id).filter(Boolean)).size > 1;
 
   const [repFilter, setRepFilter] = useState<string | undefined>(u0.rep);
   const [query, setQuery] = useState(u0.q);
@@ -357,9 +375,10 @@ export default function AccountStatement() {
     if (stmtQ.trim()) p.set('st', stmtQ.trim());
     if (exactMatch) p.set('x', '1');
     if (hideZero) p.set('z', '1');
+    if (!allCustomerAccounts) p.set('all', '0');
     setSearch(p, { replace: true });
   }, [subject, accountId, mainKey, itemId, warehouseId, range, repFilter, typeFilter,
-    ccFilter, query, docNo, stmtQ, exactMatch, hideZero, setSearch]);
+    ccFilter, query, docNo, stmtQ, exactMatch, hideZero, allCustomerAccounts, setSearch]);
 
   const copyLink = async () => {
     try {
@@ -386,7 +405,8 @@ export default function AccountStatement() {
         if (exactMatch ? dn !== d : !dn.includes(d)) return false;
       }
       if (!q) return true;
-      const haystacks = [l.description, l.doc_statement, l.doc_number, l.rep_name, l.cost_center_name,
+      const haystacks = [l.description, l.doc_statement, l.doc_number, l.rep_name, l.store_name,
+        l.cost_center_name,
         l.account_name, entryTypeLabel(l.entry_type)];
       return haystacks.some((v) => {
         const n = normalizeAr(v);
@@ -467,7 +487,7 @@ export default function AccountStatement() {
     { title: 'النوع', dataIndex: 'entry_type',
       ...textColumn(lines, (l: StatementLine) => entryTypeLabel(l.entry_type)),
       render: (t: string) => <Tag>{entryTypeLabel(t)}</Tag> },
-    ...(grouped ? [{
+    ...(grouped || multiAccount ? [{
       title: 'الحساب الفرعي', dataIndex: 'account_name', width: 180, ellipsis: true,
       ...textColumn(lines, (l: StatementLine) => l.account_name),
       render: (v: string | null, l: StatementLine) => (l.account_id ? (
@@ -478,14 +498,21 @@ export default function AccountStatement() {
       ...textColumn(lines, (l: StatementLine) => l.description),
       // بيان المستند تحت وصف القيد — القيد بيقول «فاتورة بيع …» واللي كتبه المستخدم على
       // الفاتورة («توريد مشروع كذا») كان مابيبانش في الكشف خالص.
-      render: (v: string, l: StatementLine) => (l.doc_statement && l.doc_statement !== v ? (
-        <Space direction="vertical" size={0}>
-          <span>{v}</span>
-          <span style={{ color: '#8c8c8c', fontSize: 12 }}>{l.doc_statement}</span>
-        </Space>
-      ) : v) },
+      render: (v: string, l: StatementLine) => {
+        // النقدي المدفوع مع الفاتورة: سطر عرض بس، بلون مختلف عشان مايتقريش كسند قبض.
+        const text = l.cash_on_invoice ? <span style={{ color: '#389e0d' }}>{v}</span> : v;
+        return l.doc_statement && l.doc_statement !== v && !l.cash_on_invoice ? (
+          <Space direction="vertical" size={0}>
+            <span>{text}</span>
+            <span style={{ color: '#8c8c8c', fontSize: 12 }}>{l.doc_statement}</span>
+          </Space>
+        ) : text;
+      } },
     { title: 'مندوب', dataIndex: 'rep_name', width: 140, ellipsis: true,
       ...textColumn(lines, (l: StatementLine) => l.rep_name),
+      render: (v: string | null) => v ?? <span style={{ color: '#8c8c8c' }}>-</span> },
+    { title: 'المخزن', dataIndex: 'store_name', width: 150, ellipsis: true,
+      ...textColumn(lines, (l: StatementLine) => l.store_name),
       render: (v: string | null) => v ?? <span style={{ color: '#8c8c8c' }}>-</span> },
     { title: 'مركز التكلفة', dataIndex: 'cost_center_name', width: 160,
       ...textColumn(lines, (l: StatementLine) => l.cost_center_name),
@@ -572,6 +599,7 @@ export default function AccountStatement() {
             ? `${l.description} — ${l.doc_statement}` : l.description),
         };
       case 'rep_name': return { title: 'مندوب', value: (l) => l.rep_name ?? '' };
+      case 'store_name': return { title: 'المخزن', value: (l) => l.store_name ?? '' };
       case 'cost_center_name': return { title: 'مركز التكلفة', value: (l) => l.cost_center_name ?? '' };
       case 'balance_before': return { title: LABELS.before, value: 'balance_before', numeric: true };
       case 'debit': return { title: LABELS.debit, value: 'debit', numeric: true };
@@ -984,6 +1012,17 @@ export default function AccountStatement() {
               onChange={(e) => setExactMatch(e.target.checked)}>تطابق تام</Checkbox>
             <Checkbox checked={hideZero}
               onChange={(e) => setHideZero(e.target.checked)}>إخفاء الحركات الصفرية</Checkbox>
+            {customerFamilies.length > 1 && (
+              <Checkbox checked={allCustomerAccounts}
+                onChange={(e) => setAllCustomerAccounts(e.target.checked)}>
+                كل حسابات العميل
+                {' '}
+                <span style={{ color: '#8c8c8c', fontSize: 12 }}>
+                  ({customerFamilies.map((f) => `${f.family ?? 'بدون نوع'} ${money(f.balance)}`)
+                    .join(' · ')})
+                </span>
+              </Checkbox>
+            )}
           </Space>
         </Col>
       </Row>

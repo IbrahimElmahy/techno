@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react';
-import { Tooltip } from 'antd';
+import { Button, Tooltip } from 'antd';
 import { KEY_MAP, ShortcutAction, ScreenShortcuts, useScreenShortcuts } from './keyboard';
 
 /**
@@ -37,17 +37,21 @@ export interface ToolbarAction {
   /** Shown in the tooltip, e.g. «F9». */
   shortcut?: string;
   danger?: boolean;
+  /** زرار أساسي مليان (في `variant="buttons"` بس) — «جديد» في فاتورة البيع. */
+  primary?: boolean;
 }
 
 /** «F9» as written on the button → the action the keyboard knows it by. */
 const BY_KEYS: Record<string, ShortcutAction> = Object.fromEntries(
   KEY_MAP.map((k) => [k.keys.toLowerCase(), k.action]));
 
-export default function DocumentToolbar({ actions, inline = false }: {
+export default function DocumentToolbar({ actions, inline = false, variant = 'plain' }: {
   actions: ToolbarAction[];
   /** جوّه سطر العنوان (٢٠٢٦-١٠-٠١): من غير خلفية ولا إطار ولا مسافة تحت — مكانه جنب
    *  «طلب بيع» مش صف لوحده. */
   inline?: boolean;
+  /** `buttons`: زراير بإطار وأيقونة (شكل فاتورة البيع الجديد). الافتراضي زي ما هو. */
+  variant?: 'plain' | 'buttons';
 }) {
   const handlers = useMemo(() => {
     const out: ScreenShortcuts = {};
@@ -66,6 +70,25 @@ export default function DocumentToolbar({ actions, inline = false }: {
     return out;
   }, [actions]);
   useScreenShortcuts(handlers);
+
+  // نفس الأوامر ونفس المفاتيح — الشكل بس اللي بيتغيّر.
+  if (variant === 'buttons') {
+    return (
+      <div className="doc-toolbar-buttons"
+        style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center' }}>
+        {actions.map((a) => (
+          <Tooltip key={a.key} title={a.shortcut ? `${a.label} — ${a.shortcut}` : undefined}>
+            <Button size="small" icon={a.icon} disabled={a.disabled} onClick={a.onClick}
+              type={a.primary ? 'primary' : 'default'} danger={a.danger}
+              className={a.primary ? 'doc-tb-primary' : undefined}
+              style={{ fontWeight: 600, fontSize: 12 }}>
+              {a.label}
+            </Button>
+          </Tooltip>
+        ))}
+      </div>
+    );
+  }
 
   return (
     <div

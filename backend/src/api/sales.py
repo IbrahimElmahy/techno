@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from decimal import Decimal
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
 from datetime import date, timedelta
 from typing import Literal
@@ -1446,6 +1446,109 @@ def bonus_report(
         "total_value": str(to_money(sum((Decimal(r[2]) for r in rows), Decimal(0)))),
         "total_cost": str(to_money(sum((Decimal(r[3]) for r in rows), Decimal(0)))),
     }
+
+
+@router.get("/receipts-log", response_model=dict)
+def receipts_log(
+    customer_id: int | None = Query(None),
+    rep_id: int | None = Query(None),
+    date_from: date | None = Query(None),
+    date_to: date | None = Query(None),
+    limit: int = Query(500, le=2000),
+    current: CurrentUser = Depends(require_capability(CAP_SALES_READ)),
+    db: Session = Depends(get_db),
+) -> dict:
+    """**سندات القبض في سجل المبيعات** (طلب العميل ٢٠٢٦-١٠-٠١) — نوعين في قايمة واحدة:
+
+    * **على فاتورة** — النقدي اللي اندفع مع فاتورة البيع نفسها (`cash_amount`).
+    * **دفعة** — سند قبض لوحده: من النظام، أو تحصيل المندوب من التطبيق (`client_uuid`).
+
+    كل صف معاه مندوبه ومخزنه: الفاتورة بمخزن صرفها، والدفعة بمخزن المندوب اللي حصّلها.
+    المندوب في الدفعة هو `rep_user_id`، ولو فاضي والسند جاي من التطبيق فهو اللي كتبه.
+    """
+    from src.models.voucher import Voucher, VoucherKind
+    from src.auth import branch_scope as _bs
+
+    users = dict(db.execute(select(User.id, User.full_name)).all())
+    wh_names = dict(db.execute(select(Warehouse.id, Warehouse.name)).all())
+    # العهدة مالهاش اسم — اسمها اسم المندوب اللي شايلها.
+    cu_names = {cid: f"عهدة {users.get(rid) or ''}".strip()
+                for cid, rid in db.execute(select(Custody.id, Custody.rep_id)).all()}
+
+    def loc_name(kind, loc_id):
+        if loc_id is None:
+            return None
+        k = getattr(kind, "value", kind)
+        return (cu_names if k == "custody" else wh_names).get(loc_id)
+
+    store_cache: dict[int, str | None] = {}
+
+    def store_of_rep(uid):
+        if not uid:
+            return None
+        if uid not in store_cache:
+            st = rep_store(db, uid)
+            store_cache[uid] = loc_name(st[0], st[1]) if st else None
+        return store_cache[uid]
+
+    inv_stmt = _bs.scope(select(SalesInvoice), SalesInvoice, current).where(
+        SalesInvoice.cash_amount > 0,
+        or_(SalesInvoice.is_bonus.is_(None), SalesInvoice.is_bonus.is_(False)))
+    v_stmt = _bs.scope(select(Voucher), Voucher, current).where(
+        Voucher.kind == VoucherKind.receipt, Voucher.customer_id.is_not(None))
+    inv_day = func.coalesce(SalesInvoice.invoice_date, cast(SalesInvoice.created_at, Date))
+    if customer_id:
+        inv_stmt = inv_stmt.where(SalesInvoice.customer_id == customer_id)
+        v_stmt = v_stmt.where(Voucher.customer_id == customer_id)
+    if rep_id:
+        inv_stmt = inv_stmt.where(SalesInvoice.rep_id == rep_id)
+        v_stmt = v_stmt.where(or_(Voucher.rep_user_id == rep_id,
+                                  (Voucher.rep_user_id.is_(None)
+                                   & Voucher.client_uuid.is_not(None)
+                                   & (Voucher.actor_user_id == rep_id))))
+    if date_from:
+        inv_stmt = inv_stmt.where(inv_day >= date_from)
+        v_stmt = v_stmt.where(Voucher.voucher_date >= date_from)
+    if date_to:
+        inv_stmt = inv_stmt.where(inv_day <= date_to)
+        v_stmt = v_stmt.where(Voucher.voucher_date <= date_to)
+
+    invs = db.scalars(inv_stmt.order_by(inv_day.desc(), SalesInvoice.id.desc()).limit(limit)).all()
+    vouchers = db.scalars(v_stmt.order_by(Voucher.voucher_date.desc(), Voucher.id.desc())
+                          .limit(limit)).all()
+    cust_ids = {r.customer_id for r in invs} | {v.customer_id for v in vouchers}
+    custs = dict(db.execute(select(Customer.id, Customer.name)
+                            .where(Customer.id.in_(cust_ids))).all()) if cust_ids else {}
+
+    rows = []
+    for r in invs:
+        rows.append({
+            "key": f"inv-{r.id}", "kind": "invoice", "id": r.id,
+            "date": str(r.invoice_date or r.created_at)[:10],
+            "document_number": r.document_number,
+            "customer_id": r.customer_id, "customer_name": custs.get(r.customer_id),
+            "rep_id": r.rep_id, "rep_name": users.get(r.rep_id),
+            "store": loc_name(r.origin_location_kind, r.origin_location_id),
+            "amount": str(r.cash_amount), "family": r.family,
+            "source": "app" if r.client_uuid else "system",
+        })
+    for v in vouchers:
+        rep = v.rep_user_id or (v.actor_user_id if v.client_uuid else None)
+        rows.append({
+            "key": f"rcv-{v.id}", "kind": "voucher", "id": v.id,
+            "date": str(v.voucher_date)[:10],
+            "document_number": v.document_number,
+            "customer_id": v.customer_id, "customer_name": custs.get(v.customer_id),
+            "rep_id": rep, "rep_name": users.get(rep),
+            "store": store_of_rep(rep),
+            "amount": str(v.amount), "family": v.family,
+            "source": "app" if v.client_uuid else "system",
+        })
+    rows.sort(key=lambda x: (x["date"], x["key"]), reverse=True)
+    total_inv = sum((Decimal(x["amount"]) for x in rows if x["kind"] == "invoice"), Decimal("0"))
+    total_v = sum((Decimal(x["amount"]) for x in rows if x["kind"] == "voucher"), Decimal("0"))
+    return {"rows": rows, "total_on_invoice": str(total_inv), "total_payments": str(total_v),
+            "total": str(total_inv + total_v)}
 
 
 @router.get("/summary", response_model=dict)

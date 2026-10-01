@@ -1120,6 +1120,7 @@ const Vouchers: React.FC = () => {
         customers={customers} treasuries={treasuries} methodOptions={methodOptions}
         families={receiptFamilies} setFamilies={setReceiptFamilies}
         target={receiptTarget} setTarget={setReceiptTarget}
+        reps={reps}
       />
 
       <PaymentModal

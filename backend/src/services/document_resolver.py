@@ -96,5 +96,8 @@ def resolve_many(db: Session, entry_ids: list[int]) -> dict[int, dict]:
                 # وصفه بيتولّد («فاتورة بيع …») — فكشف الحساب من غيره مايعرفش يتفلتر بالبيان
                 # اللي المستخدم كتبه بإيده على الفاتورة.
                 "statement": report_statement.text_of(doc),
+                # مكان البضاعة على المستند (البيع والمرتجع) — عمود «المخزن» في الكشف.
+                "origin_kind": getattr(doc, "origin_location_kind", None),
+                "origin_id": getattr(doc, "origin_location_id", None),
             }
     return found

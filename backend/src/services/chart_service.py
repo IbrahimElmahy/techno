@@ -382,6 +382,14 @@ def bulk_owner_names(db: Session, accounts: list[Account]) -> dict[int, str]:
                 out[account_id] = f"{prefix} — {name}"
 
     _link(CustomerAccount, Customer, CustomerAccount.customer_id, "عميل")
+    # العميل اللي عنده حساب لكل خط: الاسم لوحده بيطلع مرتين في قايمة الحسابات ومافيش
+    # طريقة تفرّق بين «أبيض» و«بولي» غير بفتح الكشف.
+    for account_id, family in db.execute(
+        select(CustomerAccount.account_id, CustomerAccount.family)
+        .where(CustomerAccount.account_id.in_(wanted), CustomerAccount.family.isnot(None))
+    ).all():
+        if account_id in out and family:
+            out[account_id] = f"{out[account_id]} — {family}"
     _link(SupplierAccount, Supplier, SupplierAccount.supplier_id, "مورد")
 
     for account_id, name in db.execute(

@@ -17,7 +17,7 @@ from sqlalchemy.orm import Session, selectinload
 from src.core.money import ZERO, to_money
 from src.models.cost_center import CostCenter
 from src.models.user import User
-from src.models.ledger import Account, LedgerEntry, LedgerLine
+from src.models.ledger import Account, Direction, LedgerEntry, LedgerLine
 from src.models.reconcile import PartialReconcile
 from src.services import ledger_service, reconcile_service
 
@@ -66,6 +66,8 @@ class StatementLine:
     # المستندات اللي قفلت جزء من السطر ده: الدفعة بتقول سدّدت أنهي فواتير، والفاتورة
     # بتقول اتسدّدت بأنهي دفعات — نفس الجدول مقروء من الوشين.
     matches: tuple = ()
+    # سطر «مدفوع نقداً مع الفاتورة» — مش سطر في القيد، الكشف بيفصله (شوف `_cash_on_invoices`).
+    cash_on_invoice: bool = False
 
 
 @dataclass(frozen=True)
@@ -264,6 +266,117 @@ def due_summary(
     )
 
 
+@dataclass(frozen=True)
+class _WholeCash:
+    """فاتورة اتدفعت كلها نقدي — مالهاش سطر على حساب العميل."""
+
+    when: date
+    entry: LedgerEntry
+    account_id: int
+    cash: Decimal
+    doc_number: str
+    cost_center_id: int | None
+
+
+def _cash_on_invoices(
+    db: Session, *, ids: Sequence[int], rows: Sequence[LedgerLine],
+    window: Sequence[tuple[date, LedgerLine]], date_from: date | None, date_to: date | None,
+) -> tuple[dict[int, tuple[Decimal, Decimal, str]], list[_WholeCash]]:
+    """النقدي اللي اتدفع **على** فاتورة البيع، عشان يبان في كشف العميل.
+
+    قيد البيع بيدين الخزنة بالنقدي ومابيدينش العميل غير بالآجل، فكشف العميل كان بيوري
+    الفاتورة بالآجل بس — والنقدي اللي دفعه مالوش أثر. الدفاتر صح؛ الكشف هو اللي ناقص.
+    فالكشف (مش القيد) بيقسم:
+
+    * فاتورة جزء منها آجل: سطر المديونية بيتعرض بالمستحق كله (آجل + نقدي) وبعده سطر
+      «مدفوع نقداً» بالنقدي. ولو دفع أكتر من الفاتورة (الزيادة بتنزل دائن على حسابه)
+      نفس الشكل: الفاتورة بالمستحق، والنقدي كله دائن — الصافي هو نفس سطر القيد.
+    * فاتورة نقدي بالكامل: القيد مالوش سطر على العميل خالص، فبيتعرض سطرين بيلغوا بعض.
+
+    الرصيد بعد السطرين هو نفس الرصيد بعد سطر القيد بالظبط. وبيتطبق بس لما سطر القيد
+    يطابق آجل الفاتورة — فاتورة متنقولة من a5 بقيد شكله تاني بتتعرض زي ما هي.
+    البونص مالوش فلوس، فمش داخل.
+    """
+    from src.models.customer import CustomerAccount
+    from src.models.sales import SalesInvoice
+
+    links = {ca.account_id: ca for ca in db.scalars(
+        select(CustomerAccount).where(CustomerAccount.account_id.in_(list(ids)))).all()}
+    if not links:
+        return {}, []
+
+    # ── فاتورة جزء منها آجل (أو دفع زيادة): سطرها على الحساب بيتقسم ──────────────
+    split: dict[int, tuple[Decimal, Decimal, str]] = {}
+    wanted = {line.entry_id for _w, line in window if line.account_id in links}
+    if wanted:
+        invoices = {
+            inv.ledger_entry_id: inv
+            for inv in db.scalars(select(SalesInvoice).where(
+                SalesInvoice.ledger_entry_id.in_(wanted), SalesInvoice.cash_amount > 0)).all()
+            if not inv.is_bonus
+        }
+        done: set[int] = set()
+        for _w, line in window:
+            inv = invoices.get(line.entry_id)
+            if inv is None or line.account_id not in links or line.entry_id in done:
+                continue
+            cash = to_money(inv.cash_amount)
+            on_credit = to_money(inv.credit_amount)
+            amount = to_money(line.amount)
+            if line.direction == Direction.debit and on_credit > ZERO and amount == on_credit:
+                due = on_credit + cash
+            elif (line.direction == Direction.credit and on_credit < ZERO
+                  and amount == -on_credit and cash + on_credit > ZERO):
+                due = cash + on_credit
+            else:
+                continue
+            split[line.id] = (to_money(due), cash, inv.document_number)
+            done.add(line.entry_id)
+
+    # ── فاتورة نقدي بالكامل: مالهاش سطر على الحساب ─────────────────────────────
+    touched = {line.entry_id for line in rows}
+    customer_ids = {ca.customer_id for ca in links.values()}
+    all_accounts: dict[int, list[CustomerAccount]] = {}
+    for ca in db.scalars(select(CustomerAccount).where(
+            CustomerAccount.customer_id.in_(customer_ids))).all():
+        all_accounts.setdefault(ca.customer_id, []).append(ca)
+
+    def account_of(inv) -> int | None:
+        # نفس قاعدة `customer_merge_service.receivable_account` اللي البيع رحّل بيها.
+        own = all_accounts.get(inv.customer_id, [])
+        if inv.family is not None:
+            hit = next((a for a in own if a.family == inv.family), None)
+            if hit is not None:
+                return hit.account_id
+        if len(own) == 1:
+            return own[0].account_id
+        if inv.family is None:
+            plain = next((a for a in own if a.family is None), None)
+            return plain.account_id if plain is not None else None
+        return None
+
+    whole: list[_WholeCash] = []
+    for inv, entry in db.execute(
+        select(SalesInvoice, LedgerEntry)
+        .join(LedgerEntry, LedgerEntry.id == SalesInvoice.ledger_entry_id)
+        .where(SalesInvoice.customer_id.in_(customer_ids),
+               SalesInvoice.cash_amount > 0, SalesInvoice.credit_amount == 0,
+               ledger_service.is_posted_sql())
+    ).all():
+        if inv.is_bonus or entry.id in touched:
+            continue
+        when = _effective_date(entry)
+        if (date_from is not None and when < date_from) or (date_to is not None and when > date_to):
+            continue
+        account_id = account_of(inv)
+        if account_id is None or account_id not in links:
+            continue
+        whole.append(_WholeCash(
+            when=when, entry=entry, account_id=account_id, cash=to_money(inv.cash_amount),
+            doc_number=inv.document_number, cost_center_id=inv.cost_center_id))
+    return split, whole
+
+
 def account_statement(
     db: Session, *, account_id: int, date_from: date | None = None,
     date_to: date | None = None, also_accounts: Sequence[int] = (),
@@ -336,41 +449,87 @@ def account_statement(
     matches = _matches_by_line(db, [line.id for _when, line in window])
     as_of = date_to or date.today()
     terms = payment_terms_days(db)
-    for when, line in window:
-        amount = to_money(line.amount)
-        is_debit = line.direction.value == "debit"
-        debit = amount if is_debit else ZERO
-        credit = amount if not is_debit else ZERO
+    # النقدي اللي اتدفع على فاتورة البيع — عرض بس، الدفاتر زي ما هي.
+    split, whole = _cash_on_invoices(db, ids=ids, rows=rows, window=window,
+                                     date_from=date_from, date_to=date_to)
+
+    def emit(*, when: date, entry: LedgerEntry, account_id: int, debit: Decimal,
+             credit: Decimal, description: str, cost_center_id: int | None,
+             line: LedgerLine | None = None, cash_row: bool = False) -> None:
+        nonlocal balance, total_debit, total_credit
         total_debit += debit
         total_credit += credit
         # Both sides of every row: what the account stood at before this movement and after it,
         # so a single line can be read on its own without adding up the ones above it.
         before = balance
-        balance = to_money(balance + signed(line))
+        side = accounts[account_id].normal_side
+        moved = (debit - credit) if side == Direction.debit else (credit - debit)
+        balance = to_money(balance + moved)
         lines.append(StatementLine(
-            entry_id=line.entry_id, entry_date=when, entry_type=line.entry.entry_type,
-            description=line.statement or line.entry.description or "",
+            entry_id=entry.id, entry_date=when, entry_type=entry.entry_type,
+            description=description,
             debit=debit, credit=credit, balance_before=before, balance=balance,
-            cost_center_id=line.cost_center_id,
-            cost_center_name=cost_centers.get(line.cost_center_id),
+            cost_center_id=cost_center_id,
+            cost_center_name=cost_centers.get(cost_center_id),
             # المندوب على القيد مش على السطر: القيد الواحد بيتكتب في جولة مندوب واحد.
-            rep_id=line.entry.rep_id,
-            rep_name=reps.get(line.entry.rep_id),
-            account_id=line.account_id,
-            account_name=name_of(line.account_id),
-            line_id=line.id,
+            rep_id=entry.rep_id,
+            rep_name=reps.get(entry.rep_id),
+            account_id=account_id,
+            account_name=name_of(account_id),
+            line_id=line.id if line is not None else None,
             residual=(to_money(line.amount_residual)
-                      if line.amount_residual is not None else None),
-            due_date=due_date_of(line, when, terms),
+                      if line is not None and line.amount_residual is not None else None),
+            due_date=due_date_of(line, when, terms) if line is not None else None,
             # المتأخر بيتقاس على **تاريخ قفل الكشف** مش على النهاردة: كشف مقفول على
             # آخر يونيو لازم يقول التأخير اللي كان وقتها، وإلا الورقة المطبوعة
             # بتتغيّر كل يوم وهي مفترض تكون صورة لحظة.
-            days_overdue=_days_overdue(line, when, as_of, terms),
-            payment_state=line.entry.payment_state,
+            days_overdue=(_days_overdue(line, when, as_of, terms)
+                          if line is not None else None),
+            payment_state=entry.payment_state,
             payment_state_label=reconcile_service.PAYMENT_STATE_LABEL.get(
-                line.entry.payment_state or ""),
-            matches=tuple(matches.get(line.id, ())),
+                entry.payment_state or ""),
+            matches=tuple(matches.get(line.id, ())) if line is not None else (),
+            cash_on_invoice=cash_row,
         ))
+
+    # السطور والفواتير النقدية بالكامل (اللي مالهاش سطر على الحساب) في ترتيب واحد.
+    items: list[tuple] = [(when, line.entry_id, line.id, line, None) for when, line in window]
+    items += [(w.when, w.entry.id, 0, None, w) for w in whole]
+    items.sort(key=lambda it: (it[0], it[1], it[2]))
+
+    for when, _eid, _lid, line, cash_inv in items:
+        if cash_inv is not None:
+            # فاتورة اتدفعت كلها نقدي: القيد مالوش سطر على العميل، فالكشف كان بيعدّيها
+            # كأنها مااتعملتش. سطرين بيلغوا بعض — الرصيد مابيتحركش.
+            emit(when=when, entry=cash_inv.entry, account_id=cash_inv.account_id,
+                 debit=cash_inv.cash, credit=ZERO,
+                 description=cash_inv.entry.description or "",
+                 cost_center_id=cash_inv.cost_center_id)
+            emit(when=when, entry=cash_inv.entry, account_id=cash_inv.account_id,
+                 debit=ZERO, credit=cash_inv.cash,
+                 description=f"مدفوع نقداً مع الفاتورة {cash_inv.doc_number}",
+                 cost_center_id=cash_inv.cost_center_id, cash_row=True)
+            continue
+
+        amount = to_money(line.amount)
+        is_debit = line.direction.value == "debit"
+        description = line.statement or line.entry.description or ""
+        cut = split.get(line.id)
+        if cut is not None:
+            due, cash, doc_number = cut
+            # سطر الفاتورة بالمستحق كله، وبعده على طول النقدي اللي اتدفع معاها. المطابقة
+            # بتفضل على الصف اللي في نفس اتجاه سطر القيد الحقيقي.
+            emit(when=when, entry=line.entry, account_id=line.account_id, debit=due,
+                 credit=ZERO, description=description, cost_center_id=line.cost_center_id,
+                 line=line if is_debit else None)
+            emit(when=when, entry=line.entry, account_id=line.account_id, debit=ZERO,
+                 credit=cash, description=f"مدفوع نقداً مع الفاتورة {doc_number}",
+                 cost_center_id=line.cost_center_id,
+                 line=None if is_debit else line, cash_row=True)
+            continue
+        emit(when=when, entry=line.entry, account_id=line.account_id,
+             debit=amount if is_debit else ZERO, credit=ZERO if is_debit else amount,
+             description=description, cost_center_id=line.cost_center_id, line=line)
 
     reconcilable = reconcile_service.is_reconcilable(account)
     total_due = total_overdue = ZERO
