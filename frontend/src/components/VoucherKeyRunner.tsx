@@ -497,7 +497,7 @@ export default function VoucherKeyRunner({ keyDef, world, onClose, onPosted }: R
               <Descriptions.Item label="الطرف">{partyName()}</Descriptions.Item>
             )}
             <Descriptions.Item label="المبلغ">
-              <b style={{ fontSize: 16 }}>{money(values.amount)} ج.م</b>
+              <b style={{ fontSize: 16 }}>{money(values.amount)}</b>
             </Descriptions.Item>
             <Descriptions.Item label="التاريخ">
               {(values.voucher_date as Dayjs)?.format('YYYY-MM-DD')}

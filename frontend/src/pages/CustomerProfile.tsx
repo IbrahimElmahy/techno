@@ -158,7 +158,7 @@ const docColumns = (amountTitle: string) => [
   },
   {
     title: amountTitle, dataIndex: 'amount', key: 'amount',
-    render: (v: string) => <b>{money(v)} ج.م</b>,
+    render: (v: string) => <b>{money(v)}</b>,
   },
   { title: 'تفاصيل', dataIndex: 'detail', key: 'detail' },
 ];
@@ -777,7 +777,7 @@ export default function CustomerProfile() {
                         const n = Number(v || 0);
                         return (
                           <b style={{ color: n > 0 ? '#cf1322' : n < 0 ? '#1677ff' : '#3f8600' }}>
-                            {money(v)} ج.م
+                            {money(v)}
                           </b>
                         );
                       } },
@@ -789,7 +789,7 @@ export default function CustomerProfile() {
                       </Table.Summary.Cell>
                       <Table.Summary.Cell index={1}>
                         <strong>
-                          {money(families.reduce((t, a) => t + Number(a.balance || 0), 0))} ج.م
+                          {money(families.reduce((t, a) => t + Number(a.balance || 0), 0))}
                         </strong>
                       </Table.Summary.Cell>
                     </Table.Summary.Row>
@@ -804,7 +804,6 @@ export default function CustomerProfile() {
                   <Statistic
                     title="الرصيد المستحق (الذمة)"
                     value={money(data.balance)}
-                    suffix="ج.م"
                     valueStyle={{
                       color: balance > 0 ? '#cf1322' : balance < 0 ? '#1677ff' : '#3f8600',
                     }}
@@ -813,12 +812,12 @@ export default function CustomerProfile() {
               </Col>
               <Col xs={12} md={6}>
                 <Card size="small">
-                  <Statistic title="إجمالي المبيعات" value={money(data.total_sales)} suffix="ج.م" />
+                  <Statistic title="إجمالي المبيعات" value={money(data.total_sales)} />
                 </Card>
               </Col>
               <Col xs={12} md={6}>
                 <Card size="small">
-                  <Statistic title="إجمالي التحصيلات" value={money(data.total_receipts)} suffix="ج.م" />
+                  <Statistic title="إجمالي التحصيلات" value={money(data.total_receipts)} />
                 </Card>
               </Col>
               <Col xs={12} md={6}>
@@ -860,7 +859,7 @@ export default function CustomerProfile() {
                         {data.last_invoice_date ? data.last_invoice_date.slice(0, 10) : '-'}
                       </Descriptions.Item>
                       <Descriptions.Item label="إجمالي المرتجعات">
-                        {money(data.total_returns)} ج.م
+                        {money(data.total_returns)}
                       </Descriptions.Item>
                       <Descriptions.Item label="رقم الحساب بالدفتر">
                         {data.account_id ?? '-'}
@@ -980,7 +979,7 @@ export default function CustomerProfile() {
                             <Col xs={12} md={5}>
                               <Card size="small">
                                 <Statistic title="رصيد أول المدة"
-                                  value={money(statement.opening_balance)} suffix="ج.م" />
+                                  value={money(statement.opening_balance)} />
                               </Card>
                             </Col>
                             <Col xs={12} md={5}>
@@ -988,7 +987,7 @@ export default function CustomerProfile() {
                                 <Statistic title={repFilter ? `مدين — ${repFilter}` : 'إجمالي مدين'}
                                   value={money(repFilter
                                     ? shownLines.reduce((t, l) => t + Number(l.debit || 0), 0)
-                                    : statement.total_debit)} suffix="ج.م" />
+                                    : statement.total_debit)} />
                               </Card>
                             </Col>
                             <Col xs={12} md={5}>
@@ -996,19 +995,19 @@ export default function CustomerProfile() {
                                 <Statistic title={repFilter ? `دائن — ${repFilter}` : 'إجمالي دائن'}
                                   value={money(repFilter
                                     ? shownLines.reduce((t, l) => t + Number(l.credit || 0), 0)
-                                    : statement.total_credit)} suffix="ج.م" />
+                                    : statement.total_credit)} />
                               </Card>
                             </Col>
                             <Col xs={12} md={4}>
                               <Card size="small">
                                 <Statistic title="رصيد الحركة"
-                                  value={money(Number(statement.total_debit || 0) - Number(statement.total_credit || 0))} suffix="ج.م" />
+                                  value={money(Number(statement.total_debit || 0) - Number(statement.total_credit || 0))} />
                               </Card>
                             </Col>
                             <Col xs={12} md={5}>
                               <Card size="small">
                                 <Statistic title="رصيد آخر المدة (الذمة)"
-                                  value={money(statement.closing_balance)} suffix="ج.م"
+                                  value={money(statement.closing_balance)}
                                   valueStyle={{ color: '#0B5CA8' }} />
                               </Card>
                             </Col>
@@ -1020,12 +1019,12 @@ export default function CustomerProfile() {
                               <StatsRow gutter={[8, 8]} align="middle">
                                 <Col xs={12} md={5}>
                                   <Statistic title="إجمالي المستحق"
-                                    value={money(statement.total_due || 0)} suffix="ج.م"
+                                    value={money(statement.total_due || 0)}
                                     valueStyle={{ fontSize: 20, color: '#0B5CA8' }} />
                                 </Col>
                                 <Col xs={12} md={5}>
                                   <Statistic title="منه متأخر"
-                                    value={money(statement.total_overdue || 0)} suffix="ج.م"
+                                    value={money(statement.total_overdue || 0)}
                                     valueStyle={{ fontSize: 20,
                                       color: Number(statement.total_overdue || 0) ? '#cf1322' : '#52c41a' }} />
                                 </Col>
@@ -1204,7 +1203,7 @@ export default function CustomerProfile() {
                         { title: 'البنك', dataIndex: 'bank_name', key: 'b',
                           render: (v: string) => v || '-' },
                         { title: 'القيمة', dataIndex: 'amount', key: 'a',
-                          render: (v: string) => <b>{money(v)} ج.م</b> },
+                          render: (v: string) => <b>{money(v)}</b> },
                         { title: 'الاستحقاق', dataIndex: 'due_date', key: 'd' },
                         { title: 'الحالة', dataIndex: 'status', key: 's',
                           render: (s: string) => <Tag>{STATUS_LABELS[s] || s}</Tag> },
@@ -1272,7 +1271,7 @@ export default function CustomerProfile() {
                         columns={[
                           { title: 'السريال', dataIndex: 'serial', key: 's' },
                           { title: 'القيمة', dataIndex: 'value', key: 'v',
-                            render: (v: string) => `${money(v)} ج.م` },
+                            render: (v: string) => `${money(v)}` },
                           { title: 'النقاط المستهلكة', dataIndex: 'points_consumed', key: 'p' },
                           { title: 'الحالة', dataIndex: 'status', key: 'st',
                             render: (s: string) => <Tag>{STATUS_LABELS[s] || s}</Tag> },

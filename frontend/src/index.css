@@ -1379,9 +1379,9 @@ html[data-density='comfortable'] .ant-table-thead > tr > th {
 /* ==========================================================================
    سجل المبيعات — تصميم العميل (٢٠٢٦-١٠-٠١)
    ترويسة بسطر واحد (العنوان والشرايح والأزرار)، فلاتر بيضا مدوّرة في سطر، جدول مضغوط،
-   وتحته الترقيم شمال والإجماليات يمين. كله تحت `.sales-log` — مالوش أثر برّه الشاشة دي.
+   وتحته الترقيم شمال والإجماليات يمين. كله تحت `.list-page` — مالوش أثر برّه الشاشة دي.
    ========================================================================== */
-.sales-log {
+.list-page {
   background: #f3f4f6;
   padding: 10px;
   /* طبقة واحدة رمادي ورا الكروت — بتغطّي حاوية الصفحة البيضا (زي `.sale-doc`). */
@@ -1393,28 +1393,28 @@ html[data-density='comfortable'] .ant-table-thead > tr > th {
   flex-direction: column;
   gap: 10px;
 }
-.sales-log .sl-head,
-.sales-log .sl-filters,
-.sales-log .sl-body {
+.list-page .sl-head,
+.list-page .sl-filters,
+.list-page .sl-body {
   background: #fff;
   border: 1px solid #e5e7eb;
   border-radius: 10px;
 }
 
 /* --- الترويسة --- */
-.sales-log .sl-head {
+.list-page .sl-head {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
   gap: 10px 16px;
   padding: 10px 14px;
 }
-.sales-log .sl-title {
+.list-page .sl-title {
   display: flex;
   align-items: center;
   gap: 10px;
 }
-.sales-log .sl-title-icon {
+.list-page .sl-title-icon {
   width: 38px;
   height: 38px;
   border-radius: 10px;
@@ -1425,28 +1425,28 @@ html[data-density='comfortable'] .ant-table-thead > tr > th {
   font-size: 19px;
   flex-shrink: 0;
 }
-.sales-log .sl-title-main {
+.list-page .sl-title-main {
   font-size: 17px;
   font-weight: 800;
   color: #0f172a;
   white-space: nowrap;
   line-height: 1.3;
 }
-.sales-log .sl-title-muted {
+.list-page .sl-title-muted {
   font-size: 13px;
   font-weight: 500;
   color: #8c8c8c;
 }
-.sales-log .sl-subtitle {
+.list-page .sl-subtitle {
   font-size: 12px;
   color: #8c8c8c;
 }
-.sales-log .sl-tabs {
+.list-page .sl-tabs {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
 }
-.sales-log .sl-tab {
+.list-page .sl-tab {
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -1463,28 +1463,28 @@ html[data-density='comfortable'] .ant-table-thead > tr > th {
   white-space: nowrap;
   transition: border-color .15s, background .15s, color .15s;
 }
-.sales-log .sl-tab:hover {
+.list-page .sl-tab:hover {
   border-color: #6AB42D;
 }
-.sales-log .sl-tab:focus-visible {
+.list-page .sl-tab:focus-visible {
   outline: 2px solid #6AB42D;
   outline-offset: 1px;
 }
-.sales-log .sl-tab.is-active {
+.list-page .sl-tab.is-active {
   background: #6AB42D;
   border-color: #6AB42D;
   color: #fff;
 }
-.sales-log .sl-dot {
+.list-page .sl-dot {
   width: 8px;
   height: 8px;
   border-radius: 50%;
   flex-shrink: 0;
 }
-.sales-log .sl-tab.is-active .sl-dot {
+.list-page .sl-tab.is-active .sl-dot {
   box-shadow: 0 0 0 2px #fff;
 }
-.sales-log .sl-count {
+.list-page .sl-count {
   min-width: 22px;
   height: 20px;
   line-height: 20px;
@@ -1496,128 +1496,128 @@ html[data-density='comfortable'] .ant-table-thead > tr > th {
   font-weight: 700;
   text-align: center;
 }
-.sales-log .sl-tab.is-active .sl-count {
+.list-page .sl-tab.is-active .sl-count {
   background: rgba(255, 255, 255, .25);
   color: #fff;
 }
 /* الأزرار في آخر السطر (الشمال في RTL) */
-.sales-log .sl-actions {
+.list-page .sl-actions {
   margin-inline-start: auto;
 }
-.sales-log .sl-actions .ant-btn {
+.list-page .sl-actions .ant-btn {
   height: 34px;
   border-radius: 8px;
   font-weight: 600;
 }
-.sales-log .sl-actions .sl-create {
+.list-page .sl-actions .sl-create {
   font-weight: 700;
 }
 
 /* --- الفلاتر: سطر واحد، والضيّق بيلفّ --- */
-.sales-log .sl-filters {
+.list-page .sl-filters {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 8px;
   padding: 10px 12px;
 }
-.sales-log .sl-filters > * {
+.list-page .sl-filters > * {
   flex: 1 1 130px;
   min-width: 0;
 }
-.sales-log .sl-filters > .sl-f-search { flex: 2 1 230px; }
-.sales-log .sl-filters > .sl-f-customer { flex: 1.6 1 190px; }
-.sales-log .sl-filters > .sl-f-dates { flex: 2 1 280px; }
-.sales-log .sl-filters > .sl-f-clear { flex: 0 0 auto; }
+.list-page .sl-filters > .sl-f-search { flex: 2 1 230px; }
+.list-page .sl-filters > .sl-f-customer { flex: 1.6 1 190px; }
+.list-page .sl-filters > .sl-f-dates { flex: 2 1 280px; }
+.list-page .sl-filters > .sl-f-clear { flex: 0 0 auto; }
 /* نفس طول خانات التاريخ (٣٨ في `DateRangeFilter`) وزواياها */
-.sales-log .sl-filters .ant-input-affix-wrapper,
-.sales-log .sl-filters .ant-select .ant-select-selector,
-.sales-log .sl-filters .ant-btn {
+.list-page .sl-filters .ant-input-affix-wrapper,
+.list-page .sl-filters .ant-select .ant-select-selector,
+.list-page .sl-filters .ant-btn {
   min-height: 38px;
   border-radius: 8px;
   align-items: center;
 }
-.sales-log .sl-filters .ant-select-single .ant-select-selector {
+.list-page .sl-filters .ant-select-single .ant-select-selector {
   height: 38px;
 }
-.sales-log .sl-filters .ant-select-single .ant-select-selection-item,
-.sales-log .sl-filters .ant-select-single .ant-select-selection-placeholder {
+.list-page .sl-filters .ant-select-single .ant-select-selection-item,
+.list-page .sl-filters .ant-select-single .ant-select-selection-placeholder {
   line-height: 36px;
 }
-.sales-log .sl-filters .ant-input-search .ant-input-affix-wrapper,
-.sales-log .sl-filters .ant-input-search > .ant-input-group > .ant-input {
+.list-page .sl-filters .ant-input-search .ant-input-affix-wrapper,
+.list-page .sl-filters .ant-input-search > .ant-input-group > .ant-input {
   border-start-end-radius: 0;
   border-end-end-radius: 0;
 }
-.sales-log .sl-filters .ant-input-search .ant-input-group-addon .ant-btn {
+.list-page .sl-filters .ant-input-search .ant-input-group-addon .ant-btn {
   border-start-start-radius: 0;
   border-end-start-radius: 0;
 }
 
 /* --- الجدول: مضغوط، حدود خفيفة، من غير تخطيط --- */
-.sales-log .sl-body {
+.list-page .sl-body {
   padding: 4px 8px 0;
 }
-.sales-log .sl-table .ant-table-thead > tr > th {
+.list-page .sl-table .ant-table-thead > tr > th {
   background: #f8fafc;
   color: #475569;
   font-weight: 700;
   font-size: 12.5px;
   padding: 8px 8px;
 }
-.sales-log .sl-table .ant-table-tbody > tr > td {
+.list-page .sl-table .ant-table-tbody > tr > td {
   padding: 5px 8px;
   border-bottom-color: #f1f5f9;
 }
-.sales-log .sl-table .ant-tag {
+.list-page .sl-table .ant-tag {
   margin-inline-end: 0;
 }
-.sales-log .sl-table .sl-docno {
+.list-page .sl-table .sl-docno {
   font-weight: 600;
 }
-.sales-log .sl-table .ant-btn-text {
+.list-page .sl-table .ant-btn-text {
   width: 28px;
   height: 28px;
 }
 
 /* --- تحت الجدول: الإجماليات يمين والترقيم شمال في نفس السطر --- */
-.sales-log .sl-table .ant-table-pagination.ant-pagination {
+.list-page .sl-table .ant-table-pagination.ant-pagination {
   margin: 0;
   padding: 10px 4px;
   border-top: 1px solid #f1f5f9;
   align-items: center;
 }
-.sales-log .sl-table .ant-pagination .ant-pagination-total-text {
+.list-page .sl-table .ant-pagination .ant-pagination-total-text {
   margin-inline-end: auto;
 }
-.sales-log .sl-foot {
+.list-page .sl-foot {
   display: inline-flex;
   flex-wrap: wrap;
   gap: 4px 18px;
   color: #64748b;
   font-size: 13px;
 }
-.sales-log .sl-foot b {
+.list-page .sl-foot b {
   color: #0f172a;
 }
-.sales-log .sl-foot b.is-pos {
+.list-page .sl-foot b.is-pos {
   color: #237804;
 }
-.sales-log .sl-foot b.is-neg {
+.list-page .sl-foot b.is-neg {
   color: #cf1322;
 }
-.sales-log .sl-table .ant-pagination-options::before {
+.list-page .sl-table .ant-pagination-options::before {
   content: 'عرض:';
   margin-inline-end: 6px;
   color: #64748b;
   font-size: 13px;
 }
 
-.sales-log .sl-slot {
+.list-page .sl-slot {
   display: inline-flex;
   align-items: center;
   gap: 6px;
 }
-.sales-log .sl-slot:empty {
+.list-page .sl-slot:empty {
   display: none;
 }

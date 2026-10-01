@@ -163,7 +163,7 @@ export default function TreasuryGate({
           </span>
           <span style={{ color: tone, fontWeight: 700, whiteSpace: 'nowrap' }}>
             {Math.abs(amount) > 0.004
-              ? `${inbound ? '+' : '−'} ${money(amount)} ج.م`
+              ? `${inbound ? '+' : '−'} ${money(amount)}`
               : 'كله آجل — مافيش نقدي دلوقتي'}
           </span>
         </div>

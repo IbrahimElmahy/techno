@@ -114,7 +114,7 @@ export default function ChequeModal({
             <Col span={12}>
               <Form.Item name="amount" label="المبلغ"
                 rules={[{ required: true, message: 'أدخل المبلغ' }]}>
-                <InputNumber min={0.01} step={0.01} style={{ width: '100%' }} addonAfter="ج.م" />
+                <InputNumber min={0.01} step={0.01} style={{ width: '100%' }} />
               </Form.Item>
             </Col>
             <Col span={12}>

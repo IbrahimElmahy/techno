@@ -110,7 +110,7 @@ const ExtraPhonesList = () => (
 const CustomerBalance = ({ value }: { value?: string | null }) => {
   const n = Number(value || 0);
   const color = n > 0 ? '#cf1322' : n < 0 ? '#1677ff' : undefined;
-  return <span style={{ fontWeight: 'bold', color }}>{money(n)} ج.م</span>;
+  return <span style={{ fontWeight: 'bold', color }}>{money(n)}</span>;
 };
 
 export default function Customers() {
@@ -617,7 +617,7 @@ export default function Customers() {
           </Col>
           <Col xs={24} md={8}>
             <Card size="small">
-              <Statistic title="إجمالي المديونية" value={money(summaryData.total_debt)} suffix="ج.م"
+              <Statistic title="إجمالي المديونية" value={money(summaryData.total_debt)}
                 valueStyle={{ color: summaryData.total_debt > 0 ? '#cf1322' : undefined }} />
             </Card>
           </Col>

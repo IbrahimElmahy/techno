@@ -98,7 +98,7 @@ export function printVoucher(d: VoucherDoc): void {
     <div style="margin:18px 0;padding:16px 18px;border:2px solid ${BRAND.green};
                 border-radius:10px;background:#f7fbf8">
       <div style="font-size:13px;color:#5d6f64">المبلغ</div>
-      <div style="font-size:30px;font-weight:800;color:${BRAND.green}">${n(d.amount)} ج.م</div>
+      <div style="font-size:30px;font-weight:800;color:${BRAND.green}">${n(d.amount)}</div>
       <div style="margin-top:8px;font-size:14px;font-weight:700">
         ${amountToArabicWords(d.amount)}
       </div>
@@ -162,7 +162,7 @@ export default function VoucherDocument({ doc }: { doc: VoucherDoc }) {
         borderRadius: 10, background: '#f7fbf8',
       }}>
         <div style={{ fontSize: 12, color: '#5d6f64' }}>المبلغ</div>
-        <div style={{ fontSize: 28, fontWeight: 800, color: BRAND.green }}>{n(doc.amount)} ج.م</div>
+        <div style={{ fontSize: 28, fontWeight: 800, color: BRAND.green }}>{n(doc.amount)}</div>
         <div style={{ marginTop: 6, fontWeight: 700 }}>{amountToArabicWords(doc.amount)}</div>
         {doc.partyName && (
           <div style={{ marginTop: 8 }}>

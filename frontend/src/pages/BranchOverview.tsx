@@ -142,25 +142,25 @@ export default function BranchOverview() {
       <StatsRow gutter={[12, 12]} style={{ marginBottom: 16 }}>
         <Col xs={12} md={6}>
           <Card size="small" style={{ background: '#f6ffed', borderColor: '#d9f7be' }}>
-            <Statistic title="مبيعات الشركة" value={money(total.sales)} suffix="ج.م"
+            <Statistic title="مبيعات الشركة" value={money(total.sales)}
               valueStyle={{ color: '#389e0d', fontSize: 20 }} />
           </Card>
         </Col>
         <Col xs={12} md={6}>
           <Card size="small" style={{ background: '#fff0f6', borderColor: '#ffd6e7' }}>
-            <Statistic title="مرتجعات الشركة" value={money(total.returns)} suffix="ج.م"
+            <Statistic title="مرتجعات الشركة" value={money(total.returns)}
               valueStyle={{ color: '#eb2f96', fontSize: 20 }} />
           </Card>
         </Col>
         <Col xs={12} md={6}>
           <Card size="small" style={{ background: '#e6f4ff', borderColor: '#91caff' }}>
-            <Statistic title="مشتريات الشركة" value={money(total.purchases)} suffix="ج.م"
+            <Statistic title="مشتريات الشركة" value={money(total.purchases)}
               valueStyle={{ color: '#0958d9', fontSize: 20 }} />
           </Card>
         </Col>
         <Col xs={12} md={6}>
           <Card size="small">
-            <Statistic title="تحصيل الشركة" value={money(total.receipts)} suffix="ج.م"
+            <Statistic title="تحصيل الشركة" value={money(total.receipts)}
               valueStyle={{ fontSize: 20 }} />
           </Card>
         </Col>

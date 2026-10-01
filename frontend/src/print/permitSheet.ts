@@ -57,7 +57,7 @@ export function printPermit(p: PermitDoc): void {
     <div class="f-cols">
       <div class="f-col">
         <div class="f-row"><span>عدد الأصناف</span><b>${p.lines.length}</b></div>
-        <div class="f-row f-strong"><span>إجمالي التكلفة</span><b>${money(p.total_cost)} ج.م</b></div>
+        <div class="f-row f-strong"><span>إجمالي التكلفة</span><b>${money(p.total_cost)}</b></div>
       </div>
     </div>
     <div class="c-sigs">

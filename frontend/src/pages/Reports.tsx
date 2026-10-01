@@ -27,7 +27,7 @@ type Period = 'week' | 'month' | 'year';
 type Range = [Dayjs | null, Dayjs | null] | null;
 
 const egp = (v: string | number | null | undefined) =>
-  Number(v ?? 0).toLocaleString(numeralsLocale(), { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' ج.م';
+  Number(v ?? 0).toLocaleString(numeralsLocale(), { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + '';
 
 const qty = (v: string | number | null | undefined) =>
   Number(v ?? 0).toLocaleString(numeralsLocale(), { minimumFractionDigits: 0, maximumFractionDigits: 3 });
@@ -387,7 +387,7 @@ function WastageTab({ range, warehouses, items }: TabProps) {
           <Card><Statistic title="إجمالي كمية الهالك" value={Number(totalQty)} precision={3} valueStyle={{ color: '#cf1322' }} /></Card>
         </Col>
         <Col span={12}>
-          <Card><Statistic title="إجمالي تكلفة الهالك" value={Number(totalCost)} precision={2} valueStyle={{ color: '#cf1322' }} suffix="ج.م" /></Card>
+          <Card><Statistic title="إجمالي تكلفة الهالك" value={Number(totalCost)} precision={2} valueStyle={{ color: '#cf1322' }} /></Card>
         </Col>
       </StatsRow>
 
@@ -551,10 +551,10 @@ function SalesTab({ period, range }: TabProps) {
 
       <StatsRow gutter={16} style={{ marginBottom: 16 }}>
         <Col span={12}>
-          <Card><Statistic title="إجمالي المبيعات" value={Number(grossTotal)} precision={2} valueStyle={{ color: '#888' }} suffix="ج.م" /></Card>
+          <Card><Statistic title="إجمالي المبيعات" value={Number(grossTotal)} precision={2} valueStyle={{ color: '#888' }} /></Card>
         </Col>
         <Col span={12}>
-          <Card><Statistic title="صافي المبيعات" value={Number(netTotal)} precision={2} valueStyle={{ color: '#3f8600' }} suffix="ج.م" /></Card>
+          <Card><Statistic title="صافي المبيعات" value={Number(netTotal)} precision={2} valueStyle={{ color: '#3f8600' }} /></Card>
         </Col>
       </StatsRow>
 

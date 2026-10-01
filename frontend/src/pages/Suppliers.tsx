@@ -74,7 +74,7 @@ const ExtraPhonesList = () => (
 const SupplierBalance = ({ value }: { value?: string | null }) => {
   const n = Number(value || 0);
   const color = n > 0 ? '#cf1322' : n < 0 ? '#1677ff' : undefined;
-  return <span style={{ fontWeight: 'bold', color }}>{money(n)} ج.م</span>;
+  return <span style={{ fontWeight: 'bold', color }}>{money(n)}</span>;
 };
 
 export default function Suppliers() {
@@ -387,7 +387,7 @@ export default function Suppliers() {
           </Col>
           <Col xs={24} md={8}>
             <Card size="small">
-              <Statistic title="إجمالي المستحق للموردين" value={money(summary.total)} suffix="ج.م"
+              <Statistic title="إجمالي المستحق للموردين" value={money(summary.total)}
                 valueStyle={{ color: summary.total > 0 ? '#cf1322' : undefined }} />
             </Card>
           </Col>

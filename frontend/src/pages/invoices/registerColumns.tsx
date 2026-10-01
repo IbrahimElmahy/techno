@@ -179,7 +179,7 @@ export function buildRegisterColumns({
       width: 115,
       align: 'left' as const,
       sorter: (a: any, b: any) => a.gross - b.gross,
-      render: (val: number) => `${money(val)} ج.م`,
+      render: (val: number) => `${money(val)}`,
     },
     {
       title: 'خصم',
@@ -188,7 +188,7 @@ export function buildRegisterColumns({
       width: 105,
       align: 'left' as const,
       sorter: (a: any, b: any) => a.discount_value - b.discount_value,
-      render: (val: number) => `${money(val)} ج.م`,
+      render: (val: number) => `${money(val)}`,
     },
     {
       // **النسبة من الفرق الحقيقي، مش من `combined_pct`.**
@@ -263,7 +263,7 @@ export function buildRegisterColumns({
       sorter: (a: any, b: any) => a.net - b.net,
       render: (val: number, r: any) => (
         <strong style={{ color: r.doc_type === 'sale' ? '#237804' : '#cf1322' }}>
-          {r.doc_type === 'return' ? '-' : ''}{money(val)} ج.م
+          {r.doc_type === 'return' ? '-' : ''}{money(val)}
         </strong>
       ),
     },
@@ -284,7 +284,7 @@ export function buildRegisterColumns({
       onCell: () => ({ style: { color: '#389e0d' } }),
       render: (_v: any, row: any) => {
         const res = Number(row.residual ?? row.credit_amount ?? 0);
-        return `${money(Number(row.net || 0) - res)} ج.م`;
+        return `${money(Number(row.net || 0) - res)}`;
       },
     },
     {
@@ -300,7 +300,7 @@ export function buildRegisterColumns({
       render: (_v: any, row: any) => {
         const n = Number(row.residual ?? row.credit_amount ?? 0);
         const color = n > 0.005 ? '#cf1322' : n < -0.005 ? '#6AB42D' : undefined;
-        return <span style={{ color, fontWeight: Math.abs(n) > 0.005 ? 600 : undefined }}>{money(n)} ج.م</span>;
+        return <span style={{ color, fontWeight: Math.abs(n) > 0.005 ? 600 : undefined }}>{money(n)}</span>;
       },
     },
     {
@@ -321,7 +321,7 @@ export function buildRegisterColumns({
           : r.payment_state === 'partial' ? 'orange' : 'red';
         const rest = Number(r.residual ?? 0);
         return (
-          <Tooltip title={rest > 0 ? `متبقّي ${money(rest)} ج.م` : 'مقفولة بالكامل'}>
+          <Tooltip title={rest > 0 ? `متبقّي ${money(rest)}` : 'مقفولة بالكامل'}>
             <Tag
               color={color}
               style={{ cursor: 'pointer' }}

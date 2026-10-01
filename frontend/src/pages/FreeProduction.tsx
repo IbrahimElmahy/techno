@@ -222,21 +222,21 @@ export default function FreeProduction() {
     },
     {
       title: 'اجمالي خامات', dataIndex: 'material_cost', key: 'material_cost', width: 125,
-      align: 'left' as const, render: (v: string) => `${money(v)} ج.م`,
+      align: 'left' as const, render: (v: string) => `${money(v)}`,
     },
     {
       // Labour and machine time. On a free order there is no recipe standard to read, so this is
       // zero unless the order stated resources of its own — and showing it says which it was.
       title: 'مصروفات', dataIndex: 'resource_cost', key: 'resource_cost', width: 115,
-      align: 'left' as const, render: (v: string) => `${money(v)} ج.م`,
+      align: 'left' as const, render: (v: string) => `${money(v)}`,
     },
     {
       title: 'اجمالي منتجات', dataIndex: 'total_cost', key: 'total_cost', width: 130,
-      align: 'left' as const, render: (v: string) => <strong>{money(v)} ج.م</strong>,
+      align: 'left' as const, render: (v: string) => <strong>{money(v)}</strong>,
     },
     {
       title: 'تكلفة الوحدة', dataIndex: 'unit_cost', key: 'unit_cost', width: 120,
-      align: 'left' as const, render: (v: string) => `${money(v)} ج.م`,
+      align: 'left' as const, render: (v: string) => `${money(v)}`,
     },
     {
       title: 'البيان', dataIndex: 'statement1', key: 'statement1', ellipsis: true,
@@ -375,7 +375,7 @@ export default function FreeProduction() {
             {
               title: 'التكلفة', width: 130, align: 'left' as const,
               render: (_: any, l: DraftLine) => (
-                <span>{money((l.quantity || 0) * priceOf(l.item_id))} ج.م</span>
+                <span>{money((l.quantity || 0) * priceOf(l.item_id))}</span>
               ),
             },
             {
@@ -398,7 +398,7 @@ export default function FreeProduction() {
             إضافة خامة
           </Button>
           <Statistic
-            title="تكلفة الخامات" value={materialCost} precision={2} suffix="ج.م"
+            title="تكلفة الخامات" value={materialCost} precision={2}
             valueStyle={{ fontSize: 18 }}
           />
           <Button type="primary" loading={saving} onClick={submit}>ترحيل الإنتاج</Button>
@@ -453,7 +453,7 @@ export default function FreeProduction() {
                   { title: 'المصروف', dataIndex: 'quantity', render: (q: string) => Number(q) },
                   {
                     title: 'التكلفة', dataIndex: 'line_cost', align: 'left' as const,
-                    render: (v: string) => `${money(v)} ج.م`,
+                    render: (v: string) => `${money(v)}`,
                   },
                 ]}
               />

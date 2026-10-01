@@ -164,11 +164,8 @@ interface PurchaseDetail extends PurchaseRecord {
 }
 
 
-const fmtDate = (v: string) => {
-  if (!v) return '-';
-  const d = new Date(v);
-  return isNaN(d.getTime()) ? v : d.toLocaleString(numeralsLocale());
-};
+// التاريخ من غير ساعة (طلب العميل ٢٠٢٦-١٠-٠١) — `YYYY-MM-DD` زي باقي الكشوف.
+const fmtDate = (v: string) => (v ? String(v).slice(0, 10) : '-');
 
 export default function Purchases() {
   const navigate = useNavigate();
@@ -1032,7 +1029,7 @@ export default function Purchases() {
 
   const detailReturnColumns = [
     { title: 'رقم السند', dataIndex: 'document_number', key: 'document_number', render: (d: string) => <Tag color="volcano">{d}</Tag> },
-    { title: 'القيمة', dataIndex: 'value', key: 'value', render: (v: string) => `${fmtMoney(v)} ج.م` },
+    { title: 'القيمة', dataIndex: 'value', key: 'value', render: (v: string) => `${fmtMoney(v)}` },
     { title: 'التاريخ', dataIndex: 'created_at', key: 'created_at', render: (v: string) => fmtDate(v) },
   ];
 
@@ -1528,11 +1525,11 @@ export default function Purchases() {
             <b style={{ fontSize: 13 }}>{line.item_id ? itemName(line.item_id) : 'اختر الصنف'}</b>
             {itemObj?.purchase_price && Number(itemObj.purchase_price) > 0 ? (
               <div style={{ fontSize: 10, color: '#1677ff', marginTop: 1 }}>
-                شراء: {fmtMoney(itemObj.purchase_price)} ج.م
+                شراء: {fmtMoney(itemObj.purchase_price)}
               </div>
             ) : itemObj?.sale_price && Number(itemObj.sale_price) > 0 ? (
               <div style={{ fontSize: 10, color: '#52c41a', marginTop: 1 }}>
-                بيع: {fmtMoney(itemObj.sale_price)} ج.م
+                بيع: {fmtMoney(itemObj.sale_price)}
               </div>
             ) : null}
           </div>
@@ -1813,7 +1810,7 @@ export default function Purchases() {
             {creditAmount > 0.001 && (
               <div className="sale-notes-line">
                 <span>آجل على الفاتورة دي:{' '}
-                  <b style={{ color: '#dc2626' }}>{money(creditAmount)} ج.م</b></span>
+                  <b style={{ color: '#dc2626' }}>{money(creditAmount)}</b></span>
               </div>
             )}
             {/* صور الورقة — فاتورة المورد وإذن الاستلام. `viewPurchase` بيفضل `null` على
@@ -1829,7 +1826,7 @@ export default function Purchases() {
           <Row gutter={[10, 10]}>
             <Col xs={24} lg={16}>
               <div className="sale-tiles">
-                <SummaryTile label="إجمالي الأصناف" value={money(grossTotal)} sub="جنيه مصري" />
+                <SummaryTile label="إجمالي الأصناف" value={money(grossTotal)} />
                 {variableDiscount > 0.001 && (
                   <SummaryTile label={`خصم الفاتورة (${variableDiscount}%)`}
                     value={`− ${money(grossTotal - invoiceTotal)}`} color="#dc2626" />
@@ -1855,7 +1852,7 @@ export default function Purchases() {
                 </Form.Item>
                 <Form.Item label="المبلغ المدفوع نقداً"
                   tooltip="الباقي بيتسجّل آجل على حساب المورد">
-                  <InputNumber style={{ width: '100%' }} min={0} addonAfter="ج.م"
+                  <InputNumber style={{ width: '100%' }} min={0}
                     className="sale-cash-input"
                     disabled={viewOnly}
                     value={cashAmount} onChange={(val) => setCashAmount(val || 0)} />
@@ -1868,7 +1865,7 @@ export default function Purchases() {
                       {creditAmount > 0.001 ? 'بيتسجّل آجل على حسابه' : 'مافيش باقي له'}
                     </div>
                   </div>
-                  <div className="sale-due-value">{money(creditAmount)} <small>ج.م</small></div>
+                  <div className="sale-due-value">{money(creditAmount)}</div>
                 </div>
                 {!viewOnly && (
                   <div className="sale-pay-actions">
@@ -1998,18 +1995,18 @@ export default function Purchases() {
       render: (v: string | null) => v || '-' },
     { title: 'اجمالي قبل', dataIndex: 'gross', key: 'gross', align: 'left' as const,
       ...numberColumn<PurchaseRecord>((r) => r.gross),
-      render: (v: string | null) => (v === null ? '-' : `${fmtMoney(v)} ج.م`) },
+      render: (v: string | null) => (v === null ? '-' : `${fmtMoney(v)}`) },
     { title: 'خصم فاتورة', dataIndex: 'discount_amount', key: 'discount_amount', width: 115,
       align: 'left' as const,
       ...numberColumn<PurchaseRecord>((r) => r.discount_amount),
-      render: (v: string) => (Number(v) ? `${fmtMoney(v)} ج.م` : '-') },
+      render: (v: string) => (Number(v) ? `${fmtMoney(v)}` : '-') },
     { title: 'خصم فاتورة %', dataIndex: 'combined_pct', key: 'combined_pct', width: 110,
       align: 'left' as const,
       ...numberColumn<PurchaseRecord>((r) => r.combined_pct),
       render: (v: string) => (Number(v) ? `${fmtMoney(v)}%` : '-') },
     { title: 'الضرائب', dataIndex: 'tax_amount', key: 'tax_amount', width: 110, align: 'left' as const,
       ...numberColumn<PurchaseRecord>((r) => r.tax_amount),
-      render: (v: string) => (Number(v) ? `${fmtMoney(v)} ج.م` : '-') },
+      render: (v: string) => (Number(v) ? `${fmtMoney(v)}` : '-') },
     { title: 'الضرائب %', dataIndex: 'tax_pct', key: 'tax_pct', width: 100, align: 'left' as const,
       ...numberColumn<PurchaseRecord>((r) => r.tax_pct),
       render: (v: string) => (Number(v) ? `${fmtMoney(v)}%` : '-') },
@@ -2021,21 +2018,21 @@ export default function Purchases() {
       ...numberColumn<PurchaseRecord>((r) => r.net),
       render: (v: string | null, r: PurchaseRecord) => (v === null ? '-' : (
         <strong style={{ color: r.kind === 'purchase' ? '#0958d9' : '#d46b08' }}>
-          {r.kind === 'return' ? '-' : ''}{fmtMoney(v)} ج.م
+          {r.kind === 'return' ? '-' : ''}{fmtMoney(v)}
         </strong>
       )),
     },
     { title: 'الاجمالي', dataIndex: 'total', key: 'total', align: 'left' as const,
       ...numberColumn<PurchaseRecord>((r) => r.total),
-      render: (val: string) => <strong style={{ color: '#6AB42D' }}>{fmtMoney(val)} ج.م</strong> },
+      render: (val: string) => <strong style={{ color: '#6AB42D' }}>{fmtMoney(val)}</strong> },
     { title: 'تم السداد', dataIndex: 'cash_amount', key: 'cash_amount', width: 115, align: 'left' as const,
       ...numberColumn<PurchaseRecord>((r) => r.cash_amount),
-      render: (val: string | null) => (val === null ? '-' : `${fmtMoney(val)} ج.م`) },
+      render: (val: string | null) => (val === null ? '-' : `${fmtMoney(val)}`) },
     { title: 'الباقي', dataIndex: 'credit_amount', key: 'credit_amount', align: 'left' as const,
       ...numberColumn<PurchaseRecord>((r) => r.credit_amount),
       render: (val: string | null) => (val === null ? '-' : Number(val)
-        ? <b style={{ color: '#cf1322' }}>{fmtMoney(val)} ج.م</b>
-        : `${fmtMoney(val)} ج.م`) },
+        ? <b style={{ color: '#cf1322' }}>{fmtMoney(val)}</b>
+        : `${fmtMoney(val)}`) },
     { title: 'ملاحظات', dataIndex: 'notes', key: 'notes', width: 170, ellipsis: true,
       ...textColumn(purchases, (r: PurchaseRecord) => r.notes),
       render: (v: string | null) => v || '-' },
@@ -2156,7 +2153,6 @@ export default function Purchases() {
             <Statistic
               title="إجمالي فواتير المشتريات"
               value={money(purchasesSummary.totalPurchasesNet)}
-              suffix="ج.م"
               prefix={<Tag color="blue">{purchasesSummary.totalPurchasesCount} فاتورة</Tag>}
               valueStyle={{ color: '#0958d9', fontWeight: 'bold' }}
             />
@@ -2167,7 +2163,6 @@ export default function Purchases() {
             <Statistic
               title="إجمالي مردودات المشتريات"
               value={money(purchasesSummary.totalReturnsNet)}
-              suffix="ج.م"
               prefix={<Tag color="orange">{purchasesSummary.totalReturnsCount} مردود</Tag>}
               valueStyle={{ color: '#d46b08', fontWeight: 'bold' }}
             />
@@ -2178,7 +2173,6 @@ export default function Purchases() {
             <Statistic
               title="صافي المشتريات الفعلي"
               value={money(purchasesSummary.netPurchases)}
-              suffix="ج.م"
               valueStyle={{ color: '#389e0d', fontWeight: 'bold' }}
             />
           </Card>
@@ -2188,7 +2182,6 @@ export default function Purchases() {
             <Statistic
               title="إجمالي المستحق للموردين"
               value={money(purchasesSummary.totalCredit)}
-              suffix="ج.م"
               valueStyle={{ color: '#cf1322', fontWeight: 'bold' }}
             />
           </Card>
@@ -2239,7 +2232,7 @@ export default function Purchases() {
       />
       {/*
         * سبعتاشر عمود عايزين مساحة — `max-content` بيدّي كل عمود عرضه الطبيعي والجدول بيتمرّر
-        * أفقياً، بدل ما antd تعصر الأرقام في عرض الشاشة وتلفّ «١٢٬٥٠٠٫٠٠ ج.م» على سطرين.
+        * أفقياً، بدل ما antd تعصر الأرقام في عرض الشاشة وتلفّ «١٢٬٥٠٠٫٠٠» على سطرين.
         *
         * و«مستند رقم» مثبّت: وانت بتمرّر لتحت الشمال عشان تشوف الباقي والضرايب، لازم تفضل عارف
         * إنت في سطر مين. من غيره بتعدّ السطور بصباعك على الشاشة.
@@ -2325,7 +2318,7 @@ export default function Purchases() {
                     <Table.Summary.Cell key={key} index={i}
                       align={get ? ('left' as const) : undefined}>
                       {i === 0 ? `${list.length} فاتورة`
-                        : get ? `${fmtMoney(sum(get))} ج.م` : ''}
+                        : get ? `${fmtMoney(sum(get))}` : ''}
                     </Table.Summary.Cell>
                   );
                 })}
@@ -2341,8 +2334,8 @@ export default function Purchases() {
     { title: 'الصنف', key: 'item', render: (_: any, r: PurchaseDetailLine) => itemName(r.item_id) },
     { title: 'الوحدة', dataIndex: 'unit', key: 'unit', render: (u: string | null) => u || 'الأساسية' },
     { title: 'الكمية', dataIndex: 'quantity', key: 'quantity', render: (q: string) => Number(q) },
-    { title: 'سعر الوحدة', dataIndex: 'unit_price', key: 'unit_price', render: (v: string) => `${fmtMoney(v)} ج.م` },
-    { title: 'الإجمالي', dataIndex: 'line_total', key: 'line_total', render: (v: string) => `${fmtMoney(v)} ج.م` },
+    { title: 'سعر الوحدة', dataIndex: 'unit_price', key: 'unit_price', render: (v: string) => `${fmtMoney(v)}` },
+    { title: 'الإجمالي', dataIndex: 'line_total', key: 'line_total', render: (v: string) => `${fmtMoney(v)}` },
   ];
 
 

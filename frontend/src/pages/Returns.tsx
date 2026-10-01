@@ -907,7 +907,7 @@ export default function Returns({ embedded }: { embedded?: { onExit: () => void 
       (cashAccountId) => {
         showReversalConfirm({
           title: 'تأكيد تسجيل مرتجع المبيعات',
-          content: `سيتم إرجاع ${valid.length} صنف إلى المخزن وتسوية مبلغ ${money(netTotal)} ج.م لحساب العميل. متابعة؟`,
+          content: `سيتم إرجاع ${valid.length} صنف إلى المخزن وتسوية مبلغ ${money(netTotal)} لحساب العميل. متابعة؟`,
           onOk: async () => {
             try {
               // التعديل بيروح للمرتجع نفسه بنفس رقمه — كان بيتعكس ويتكتب سند جديد.
@@ -1010,7 +1010,7 @@ export default function Returns({ embedded }: { embedded?: { onExit: () => void 
               name: productName(line.item_id as number),
               rows: info?.history || [],
             })}>
-            <HistoryOutlined /> {money(last)} ج.م
+            <HistoryOutlined /> {money(last)}
           </Tag>
         ) : <Tag>لم يشترِه من قبل</Tag>;
       } },
@@ -1620,7 +1620,7 @@ export default function Returns({ embedded }: { embedded?: { onExit: () => void 
                   <span>نقاط تُخصم من العميل: <b style={{ color: '#F5A11D' }}>
                     {totalPoints.toLocaleString(numeralsLocale(), { maximumFractionDigits: 3 })}</b></span>
                   {cashRefund > 0.001 && (
-                    <span>مسترد نقداً: <b style={{ color: '#cf4b1a' }}>{money(cashRefund)} ج.م</b></span>
+                    <span>مسترد نقداً: <b style={{ color: '#cf4b1a' }}>{money(cashRefund)}</b></span>
                   )}
                 </div>
                 {/* صور الورقة — سند المردود الموقّع عليه. `viewReturn` بيفضل `null` على
@@ -1634,7 +1634,7 @@ export default function Returns({ embedded }: { embedded?: { onExit: () => void 
               <Row gutter={[10, 10]}>
                 <Col xs={24} lg={16}>
                   <div className="sale-tiles">
-                    <SummaryTile label="إجمالي الأصناف المرتجعة" value={money(grossTotal)} sub="جنيه مصري" />
+                    <SummaryTile label="إجمالي الأصناف المرتجعة" value={money(grossTotal)} />
                     {returnDiscount > 0.001 && (
                       <SummaryTile label={`خصم المرتجع (${discountPct}%)`}
                         value={`− ${money(returnDiscount)}`} color="#dc2626" />
@@ -1678,7 +1678,7 @@ export default function Returns({ embedded }: { embedded?: { onExit: () => void 
                           value={discountPct} onChange={(val) => setDiscountPct(val || 0)} />
                       </Form.Item>
                       <Form.Item label="المبلغ المسترد نقداً">
-                        <InputNumber min={0} style={{ width: '100%' }} addonAfter="ج.م"
+                        <InputNumber min={0} style={{ width: '100%' }}
                           className="sale-cash-input"
                           disabled={viewOnly}
                           value={cashRefund} onChange={(val) => setCashRefund(val || 0)} />
@@ -1692,7 +1692,7 @@ export default function Returns({ embedded }: { embedded?: { onExit: () => void 
                             {after > 0.001 ? 'بعد خصم المرتجع من حسابه' : 'مافيش باقي عليه'}
                           </div>
                         </div>
-                        <div className="sale-due-value">{money(after)} <small>ج.م</small></div>
+                        <div className="sale-due-value">{money(after)}</div>
                       </div>
                     )}
                     {!viewOnly && (
@@ -1740,9 +1740,9 @@ export default function Returns({ embedded }: { embedded?: { onExit: () => void 
               { title: 'الفاتورة', dataIndex: 'document_number', render: (d: string) => <Tag color="blue">{d}</Tag> },
               { title: 'التاريخ', dataIndex: 'date', render: (d: string) => (d ? String(d).slice(0, 10) : '-') },
               { title: 'الكمية', dataIndex: 'quantity', render: (q: string) => Number(q) },
-              { title: 'سعر الوحدة', dataIndex: 'unit_price', render: (v: string) => `${money(v)} ج.م` },
+              { title: 'سعر الوحدة', dataIndex: 'unit_price', render: (v: string) => `${money(v)}` },
               { title: 'السعر الفعلي', dataIndex: 'effective_price',
-                render: (v: string) => <strong style={{ color: '#6AB42D' }}>{money(v)} ج.م</strong> },
+                render: (v: string) => <strong style={{ color: '#6AB42D' }}>{money(v)}</strong> },
             ]} />
         </TabModal>
       </div>
@@ -1805,13 +1805,13 @@ export default function Returns({ embedded }: { embedded?: { onExit: () => void 
     },
     {
       title: 'اجمالي قبل', dataIndex: 'gross', key: 'gross', width: 115,
-      align: 'left' as const, render: (v: string) => `${money(v)} ج.م`,
+      align: 'left' as const, render: (v: string) => `${money(v)}`,
     },
     {
       title: 'خصم', key: 'discount_value', width: 105, align: 'left' as const,
       // Derived from the two beside it, so it can never disagree with them.
       render: (_: any, r: ReturnRecord) =>
-        `${money(Number(r.gross || 0) * (Number(r.combined_pct || 0) / 100))} ج.م`,
+        `${money(Number(r.gross || 0) * (Number(r.combined_pct || 0) / 100))}`,
     },
     {
       title: 'خصم%', dataIndex: 'combined_pct', key: 'combined_pct', width: 85,
@@ -1819,11 +1819,11 @@ export default function Returns({ embedded }: { embedded?: { onExit: () => void 
     },
     {
       title: 'ض.م', dataIndex: 'tax_amount', key: 'tax_amount', width: 100,
-      align: 'left' as const, render: (v: string) => `${money(v)} ج.م`,
+      align: 'left' as const, render: (v: string) => `${money(v)}`,
     },
     {
       title: 'الصافى', dataIndex: 'net', key: 'net', width: 115, align: 'left' as const,
-      render: (v: string) => <strong style={{ color: '#cf4b1a' }}>{money(v)} ج.م</strong>,
+      render: (v: string) => <strong style={{ color: '#cf4b1a' }}>{money(v)}</strong>,
     },
     {
       // (031) أبيض ولا بولي — which of the customer's debts this document moved. It was stored on
@@ -1856,11 +1856,11 @@ export default function Returns({ embedded }: { embedded?: { onExit: () => void 
     },
     {
       title: 'تم السداد', dataIndex: 'cash_refund', key: 'cash_refund', width: 110,
-      align: 'left' as const, render: (v: string) => `${money(v)} ج.م`,
+      align: 'left' as const, render: (v: string) => `${money(v)}`,
     },
     {
       title: 'الباقى', dataIndex: 'credit_reduction', key: 'credit_reduction', width: 110,
-      align: 'left' as const, render: (v: string) => `${money(v)} ج.م`,
+      align: 'left' as const, render: (v: string) => `${money(v)}`,
     },
     {
       title: 'الإجراءات', key: 'actions', width: 140,
@@ -1994,8 +1994,8 @@ export default function Returns({ embedded }: { embedded?: { onExit: () => void 
 
         <StatsRow gutter={12} style={{ marginBottom: 12 }}>
           <Col xs={24} md={8}><Card size="small"><Statistic title="عدد المرتجعات الظاهرة" value={summary.count} /></Card></Col>
-          <Col xs={24} md={8}><Card size="small"><Statistic title="إجمالي صافي المرتجعات" value={money(summary.net)} suffix="ج.م" /></Card></Col>
-          <Col xs={24} md={8}><Card size="small"><Statistic title="إجمالي الخصم من الحسابات" value={money(summary.credit)} suffix="ج.م" /></Card></Col>
+          <Col xs={24} md={8}><Card size="small"><Statistic title="إجمالي صافي المرتجعات" value={money(summary.net)} /></Card></Col>
+          <Col xs={24} md={8}><Card size="small"><Statistic title="إجمالي الخصم من الحسابات" value={money(summary.credit)} /></Card></Col>
         </StatsRow>
 
         <Table

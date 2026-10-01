@@ -66,8 +66,8 @@ export default function BonusReport() {
     rows,
     [
       { label: 'عدد فواتير البونص', value: totals.invoices },
-      { label: 'القيمة بسعر البيع', value: `${money(totals.value)} ج.م` },
-      { label: 'التكلفة', value: `${money(totals.cost)} ج.م` },
+      { label: 'القيمة بسعر البيع', value: `${money(totals.value)}` },
+      { label: 'التكلفة', value: `${money(totals.cost)}` },
     ],
   );
 
@@ -93,10 +93,10 @@ export default function BonusReport() {
       <Row gutter={16} style={{ marginBottom: 12 }}>
         <Col xs={24} md={8}><Statistic title="فواتير البونص" value={totals.invoices} /></Col>
         <Col xs={24} md={8}>
-          <Statistic title="القيمة بسعر البيع" value={money(totals.value)} suffix="ج.م" />
+          <Statistic title="القيمة بسعر البيع" value={money(totals.value)} />
         </Col>
         <Col xs={24} md={8}>
-          <Statistic title="التكلفة" value={money(totals.cost)} suffix="ج.م"
+          <Statistic title="التكلفة" value={money(totals.cost)}
             valueStyle={{ color: '#cf1322' }} />
         </Col>
       </Row>
@@ -108,9 +108,9 @@ export default function BonusReport() {
           { title: 'فواتير', dataIndex: 'invoices', width: 90, align: 'center',
             sorter: (a, b) => a.invoices - b.invoices },
           { title: 'القيمة بسعر البيع', dataIndex: 'value', width: 160,
-            render: (v) => `${money(v)} ج.م`, sorter: (a, b) => Number(a.value) - Number(b.value) },
+            render: (v) => `${money(v)}`, sorter: (a, b) => Number(a.value) - Number(b.value) },
           { title: 'التكلفة', dataIndex: 'cost', width: 160,
-            render: (v) => `${money(v)} ج.م`, sorter: (a, b) => Number(a.cost) - Number(b.cost),
+            render: (v) => `${money(v)}`, sorter: (a, b) => Number(a.cost) - Number(b.cost),
             defaultSortOrder: 'descend' },
         ]}
       />

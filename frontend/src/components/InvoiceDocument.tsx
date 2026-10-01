@@ -153,7 +153,7 @@ function footerColumns(
 ): string {
   const row = (k: string, v: string, strong = false) =>
     `<div class="f-row${strong ? ' f-strong' : ''}"><span>${k}</span><b>${v}</b></div>`;
-  const cur = (v: number | string) => `${n(v)} ج.م`;
+  const cur = (v: number | string) => `${n(v)}`;
   const due = payable(d);
 
   const col1: string[] = [];
@@ -309,22 +309,22 @@ export default function InvoiceDocument({
   const prior = doc.priorBalance == null ? null : Number(doc.priorBalance);
   const totals: [string, string, boolean?][] = [
     ...(prior != null && doc.kind === 'sale'
-      ? ([['الحساب السابق', `${n(prior)} ج.م`]] as [string, string][])
+      ? ([['الحساب السابق', `${n(prior)}`]] as [string, string][])
       : []),
-    ['الإجمالي قبل الخصم', `${n(doc.gross)} ج.م`],
+    ['الإجمالي قبل الخصم', `${n(doc.gross)}`],
     ...(discount > 0
-      ? ([[`الخصم (${Number(doc.discountPct || 0)}%)`, `${n(discount)} ج.م`]] as [string, string][])
+      ? ([[`الخصم (${Number(doc.discountPct || 0)}%)`, `${n(discount)}`]] as [string, string][])
       : []),
-    ['الصافي', `${n(doc.net)} ج.م`],
+    ['الصافي', `${n(doc.net)}`],
     ...(Number(doc.tax || 0) > 0
-      ? ([['ضريبة القيمة المضافة', `${n(doc.tax)} ج.م`]] as [string, string][])
+      ? ([['ضريبة القيمة المضافة', `${n(doc.tax)}`]] as [string, string][])
       : []),
-    [cashLabel(doc), `${n(doc.cash)} ج.م`],
-    [creditLabel(doc), `${n(doc.credit)} ج.م`],
-    [payableLabel(doc), `${n(payable(doc))} ج.م`, true],
+    [cashLabel(doc), `${n(doc.cash)}`],
+    [creditLabel(doc), `${n(doc.credit)}`],
+    [payableLabel(doc), `${n(payable(doc))}`, true],
     ...(prior != null && doc.kind === 'sale'
       ? ([['الرصيد بعد الطلب',
-           `${n(prior + payable(doc) - Number(doc.cash || 0))} ج.م`, true]] as
+           `${n(prior + payable(doc) - Number(doc.cash || 0))}`, true]] as
           [string, string, boolean][])
       : []),
     ...(Number(doc.totalPoints || 0) > 0

@@ -577,9 +577,9 @@ function WastageTab({
     { title: 'المخزن', key: 'wh', render: (_: any, r: Wastage) => whName(r.warehouse_id) },
     { title: 'الكمية', dataIndex: 'quantity', key: 'qty', render: (q: string) => Number(q) },
     { title: 'تكلفة الوحدة', dataIndex: 'unit_cost', key: 'unit',
-      render: (v: string) => `${fmtMoney(v)} ج.م` },
+      render: (v: string) => `${fmtMoney(v)}` },
     { title: 'إجمالي التكلفة', dataIndex: 'total_cost', key: 'total',
-      render: (v: string) => `${fmtMoney(v)} ج.م` },
+      render: (v: string) => `${fmtMoney(v)}` },
     { title: 'السبب', dataIndex: 'reason', key: 'reason', render: (v: string | null) => v || '-' },
     { title: 'البيان', dataIndex: 'statement1', key: 'statement1', ellipsis: true,
       render: (v: string | null) => v || '-' },
@@ -1422,7 +1422,7 @@ function ProductionOrdersTab({
    * واللي لسه بصفر بيفضل «—» بدل ما يقول إن التشغيلة ماكلفتش حاجة.
    */
   const noMoney = (r: ProductionOrder, v: string) =>
-    (r.state !== 'done' || !Number(v) ? '—' : `${fmtMoney(v)} ج.م`);
+    (r.state !== 'done' || !Number(v) ? '—' : `${fmtMoney(v)}`);
 
   const columns = [
     // **المستند هو ورقة صاحبه، مش الرقم اللي وّلدناه.**

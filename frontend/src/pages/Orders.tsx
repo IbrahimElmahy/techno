@@ -769,8 +769,7 @@ export default function Orders() {
                 <div className="sale-tiles">
                   <SummaryTile label="عدد الأصناف"
                     value={String(lines.filter((l) => l.item_id).length)} />
-                  <SummaryTile label="الإجمالي قبل الخصم" value={money(grossTotal)}
-                    sub="جنيه مصري" />
+                  <SummaryTile label="الإجمالي قبل الخصم" value={money(grossTotal)} />
                   {grossTotal - netBeforeDoc > 0.005 && (
                     <SummaryTile label="خصم السطور" value={`− ${money(grossTotal - netBeforeDoc)}`}
                       color="#dc2626" />
@@ -935,7 +934,7 @@ export default function Orders() {
               <Col xs={24} lg={16}>
                 <div className="sale-tiles">
                   <SummaryTile label="عدد الأصناف" value={String(detail.lines.length)} />
-                  <SummaryTile label="قبل الخصم" value={money(detail.gross)} sub="جنيه مصري" />
+                  <SummaryTile label="قبل الخصم" value={money(detail.gross)} />
                   <SummaryTile label="خصم الورقة"
                     value={Number(detail.variable_discount_pct || 0)
                       ? `${Number(detail.variable_discount_pct)}%` : '-'} />

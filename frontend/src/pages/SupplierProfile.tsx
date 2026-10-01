@@ -104,7 +104,7 @@ const docColumns = (amountTitle: string) => [
   },
   {
     title: amountTitle, dataIndex: 'amount', key: 'amount',
-    render: (v: string) => <b>{money(v)} ج.م</b>,
+    render: (v: string) => <b>{money(v)}</b>,
   },
   { title: 'تفاصيل', dataIndex: 'detail', key: 'detail' },
 ];
@@ -617,7 +617,6 @@ export default function SupplierProfile() {
                   <Statistic
                     title="الرصيد المستحق للمورد"
                     value={money(data.balance)}
-                    suffix="ج.م"
                     valueStyle={{
                       color: balance > 0 ? '#cf1322' : balance < 0 ? '#1677ff' : '#3f8600',
                     }}
@@ -626,17 +625,17 @@ export default function SupplierProfile() {
               </Col>
               <Col xs={12} md={6}>
                 <Card size="small">
-                  <Statistic title="إجمالي المشتريات" value={money(data.total_purchases)} suffix="ج.م" />
+                  <Statistic title="إجمالي المشتريات" value={money(data.total_purchases)} />
                 </Card>
               </Col>
               <Col xs={12} md={6}>
                 <Card size="small">
-                  <Statistic title="إجمالي المدفوعات" value={money(data.total_payments)} suffix="ج.م" />
+                  <Statistic title="إجمالي المدفوعات" value={money(data.total_payments)} />
                 </Card>
               </Col>
               <Col xs={12} md={6}>
                 <Card size="small">
-                  <Statistic title="إجمالي المرتجعات" value={money(data.total_returns)} suffix="ج.م" />
+                  <Statistic title="إجمالي المرتجعات" value={money(data.total_returns)} />
                 </Card>
               </Col>
             </StatsRow>
@@ -761,7 +760,7 @@ export default function SupplierProfile() {
                             <Col xs={12} md={5}>
                               <Card size="small">
                                 <Statistic title="رصيد أول المدة"
-                                  value={money(statement.opening_balance)} suffix="ج.م" />
+                                  value={money(statement.opening_balance)} />
                               </Card>
                             </Col>
                             <Col xs={12} md={5}>
@@ -769,7 +768,7 @@ export default function SupplierProfile() {
                                 <Statistic title={repFilter ? `مدين — ${repFilter}` : 'إجمالي مدين'}
                                   value={money(repFilter
                                     ? shownLines.reduce((t, l) => t + Number(l.debit || 0), 0)
-                                    : statement.total_debit)} suffix="ج.م" />
+                                    : statement.total_debit)} />
                               </Card>
                             </Col>
                             <Col xs={12} md={5}>
@@ -777,19 +776,19 @@ export default function SupplierProfile() {
                                 <Statistic title={repFilter ? `دائن — ${repFilter}` : 'إجمالي دائن'}
                                   value={money(repFilter
                                     ? shownLines.reduce((t, l) => t + Number(l.credit || 0), 0)
-                                    : statement.total_credit)} suffix="ج.م" />
+                                    : statement.total_credit)} />
                               </Card>
                             </Col>
                             <Col xs={12} md={4}>
                               <Card size="small">
                                 <Statistic title="رصيد الحركة"
-                                  value={money(Number(statement.total_debit || 0) - Number(statement.total_credit || 0))} suffix="ج.م" />
+                                  value={money(Number(statement.total_debit || 0) - Number(statement.total_credit || 0))} />
                               </Card>
                             </Col>
                             <Col xs={12} md={5}>
                               <Card size="small">
                                 <Statistic title="رصيد آخر المدة للمورد"
-                                  value={money(statement.closing_balance)} suffix="ج.م"
+                                  value={money(statement.closing_balance)}
                                   valueStyle={{ color: '#0B5CA8' }} />
                               </Card>
                             </Col>
@@ -801,12 +800,12 @@ export default function SupplierProfile() {
                               <StatsRow gutter={[8, 8]} align="middle">
                                 <Col xs={12} md={5}>
                                   <Statistic title="إجمالي المستحق للمورد"
-                                    value={money(statement.total_due || 0)} suffix="ج.م"
+                                    value={money(statement.total_due || 0)}
                                     valueStyle={{ fontSize: 20, color: '#0B5CA8' }} />
                                 </Col>
                                 <Col xs={12} md={5}>
                                   <Statistic title="منه متأخر"
-                                    value={money(statement.total_overdue || 0)} suffix="ج.م"
+                                    value={money(statement.total_overdue || 0)}
                                     valueStyle={{ fontSize: 20,
                                       color: Number(statement.total_overdue || 0) ? '#cf1322' : '#52c41a' }} />
                                 </Col>
@@ -993,7 +992,7 @@ export default function SupplierProfile() {
                           { title: 'البنك', dataIndex: 'bank_name', key: 'b',
                             render: (v: string) => v || '-' },
                           { title: 'القيمة', dataIndex: 'amount', key: 'a',
-                            render: (v: string) => <b>{money(v)} ج.م</b> },
+                            render: (v: string) => <b>{money(v)}</b> },
                           { title: 'الاستحقاق', dataIndex: 'due_date', key: 'd' },
                           { title: 'الحالة', dataIndex: 'status', key: 's',
                             render: (v: string) => <Tag>{STATUS_LABELS[v] || v}</Tag> },

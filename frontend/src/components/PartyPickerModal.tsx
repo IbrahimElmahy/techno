@@ -359,7 +359,7 @@ export default function PartyPickerModal({
                   {party.balance != null && Number(party.balance) !== 0 && (
                     <Tag color={Number(party.balance) > 0 ? 'red' : 'green'}>
                       {Number(Math.abs(Number(party.balance))).toLocaleString(numeralsLocale(),
-                        { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ج.م
+                        { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                     </Tag>
                   )}
                 </Space>

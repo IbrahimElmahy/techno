@@ -152,12 +152,12 @@ export default function ItemProfile() {
       ...numberColumn<any>((r) => r.quantity),
       render: (v: string) => qty(v) },
     { title: 'سعر البيع', dataIndex: 'unit_price', key: 'u', ...numberColumn<any>((r) => r.unit_price),
-      render: (v: string) => <b>{money(v)} ج.م</b> },
+      render: (v: string) => <b>{money(v)}</b> },
     { title: 'الفئة', dataIndex: 'tier', key: 't',
       ...textColumn(data?.sales ?? [], (r: any) => r.tier),
       render: (v: string) => (v ? TIER_LABELS[v] || v : '-') },
     { title: 'الإجمالي', dataIndex: 'line_total', key: 'tot', ...numberColumn<any>((r) => r.line_total),
-      render: (v: string) => `${money(v)} ج.م` },
+      render: (v: string) => `${money(v)}` },
     // The item's history used to be read-only rows; now each one leads
     // back to the invoice it came from.
     { title: '', key: 'link', width: 180,
@@ -222,12 +222,12 @@ export default function ItemProfile() {
               </Col>
               <Col xs={12} md={6}>
                 <Card size="small">
-                  <Statistic title="قيمة المبيعات" value={money(data.sold_value)} suffix="ج.م" />
+                  <Statistic title="قيمة المبيعات" value={money(data.sold_value)} />
                 </Card>
               </Col>
               <Col xs={12} md={6}>
                 <Card size="small">
-                  <Statistic title="قيمة المشتريات" value={money(data.purchased_value)} suffix="ج.م" />
+                  <Statistic title="قيمة المشتريات" value={money(data.purchased_value)} />
                 </Card>
               </Col>
             </StatsRow>
@@ -258,16 +258,16 @@ export default function ItemProfile() {
                           {it.active ? <Tag color="green">نشط</Tag> : <Tag color="red">معطل</Tag>}
                         </Descriptions.Item>
                         <Descriptions.Item label="سعر البيع">
-                          {it.sale_price ? `${money(it.sale_price)} ج.م` : '-'}
+                          {it.sale_price ? `${money(it.sale_price)}` : '-'}
                         </Descriptions.Item>
                         <Descriptions.Item label="سعر الشراء">
-                          {it.purchase_price ? `${money(it.purchase_price)} ج.م` : '-'}
+                          {it.purchase_price ? `${money(it.purchase_price)}` : '-'}
                         </Descriptions.Item>
                         <Descriptions.Item label="متوسط سعر البيع الفعلي">
-                          {money(data.avg_sale_price)} ج.م
+                          {money(data.avg_sale_price)}
                         </Descriptions.Item>
                         <Descriptions.Item label="متوسط سعر الشراء الفعلي">
-                          {money(data.avg_purchase_price)} ج.م
+                          {money(data.avg_purchase_price)}
                         </Descriptions.Item>
                         <Descriptions.Item label="بسريال">
                           {it.is_serialized ? 'نعم' : 'لا'}
@@ -310,7 +310,7 @@ export default function ItemProfile() {
                               { title: 'الفئة', dataIndex: 'tier', key: 't', ...textColumn(data?.tier_prices ?? [], (r: any) => r.tier),
                                 render: (v: string) => TIER_LABELS[v] || v },
                               { title: 'السعر', dataIndex: 'price', key: 'p', ...numberColumn<any>((r) => r.price),
-                                render: (v: string) => <b>{money(v)} ج.م</b> },
+                                render: (v: string) => <b>{money(v)}</b> },
                             ]}
                           />
                         </>
@@ -430,10 +430,10 @@ export default function ItemProfile() {
                             ...numberColumn<any>((r) => r.quantity),
                             render: (v: string) => qty(v) },
                           { title: 'سعر الشراء', dataIndex: 'unit_price', key: 'u', ...numberColumn<any>((r) => r.unit_price),
-                            render: (v: string) => <b>{money(v)} ج.م</b> },
+                            render: (v: string) => <b>{money(v)}</b> },
                           { title: 'الإجمالي', dataIndex: 'line_total', key: 'tot',
                             ...numberColumn<any>((r) => r.line_total),
-                            render: (v: string) => `${money(v)} ج.م` },
+                            render: (v: string) => `${money(v)}` },
                           { title: '', key: 'link', width: 140,
                             render: (_: any, r: any) => (r.invoice_id
                               ? <DocumentLink kind="purchase" id={r.invoice_id} size="small" />
@@ -481,9 +481,9 @@ export default function ItemProfile() {
                         { title: 'السعر', dataIndex: 'field', key: 'f', ...textColumn(data?.price_history ?? [], (r: any) => r.field),
                           render: (v: string) => PRICE_FIELD_LABELS[v] || v },
                         { title: 'من', dataIndex: 'old_value', key: 'o', ...numberColumn<any>((r) => r.old_value),
-                          render: (v: string | null) => (v === null ? '—' : `${money(v)} ج.م`) },
+                          render: (v: string | null) => (v === null ? '—' : `${money(v)}`) },
                         { title: 'إلى', dataIndex: 'new_value', key: 'n', ...numberColumn<any>((r) => r.new_value),
-                          render: (v: string | null) => (v === null ? '—' : <b>{money(v)} ج.م</b>) },
+                          render: (v: string | null) => (v === null ? '—' : <b>{money(v)}</b>) },
                         {
                           title: 'التغيير', key: 'delta',
                           // فلتر على نسبة التغيير نفسها: «إيه اللي غلي أكتر من ١٠٪» مالهاش

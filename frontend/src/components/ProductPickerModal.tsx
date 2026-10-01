@@ -57,7 +57,7 @@ interface Props {
   hidePurchasePrice?: boolean;
 }
 
-const fmtPrice = (v: any) => Number(v || 0).toLocaleString(numeralsLocale(), { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' ج.م';
+const fmtPrice = (v: any) => Number(v || 0).toLocaleString(numeralsLocale(), { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + '';
 
 /**
  * **الشباك بيرجع مكانه.** اللي بيختار صنف وبيرجع يختار التاني كان بيلاقي البحث اتمسح

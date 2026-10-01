@@ -403,7 +403,7 @@ export default function Stocktake() {
               </Table.Summary.Cell>
               <Table.Summary.Cell index={1} colSpan={2} />
               <Table.Summary.Cell index={2}>
-                <strong style={{ color: '#0B5CA8' }}>{money(total)} ج.م</strong>
+                <strong style={{ color: '#0B5CA8' }}>{money(total)}</strong>
               </Table.Summary.Cell>
             </Table.Summary.Row>
           );

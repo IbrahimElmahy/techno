@@ -184,7 +184,7 @@ export function buildLineColumns({
     { key: 'total', title: 'الإجمالي النهائي', minWidth: 100, locked: true,
       cellStyle: { fontWeight: 700, whiteSpace: 'nowrap', color: '#15803d' },
       cell: (line) => (
-        <>{money(saleLineNet(line))} <small style={{ color: '#94a3b8', fontWeight: 500 }}>ج.م</small></>
+        <>{money(saleLineNet(line))}</>
       ),
       footer: (rows) => (
         <span style={{ color: '#15803d' }}>{money(rows.reduce((n, l) => n + saleLineNet(l), 0))}</span>

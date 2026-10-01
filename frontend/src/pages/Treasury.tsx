@@ -278,7 +278,7 @@ export default function Treasury() {
                 {line.direction === 'debit' ? '[مدين] ' : '[دائن] '}
               </span>
               <span>{accountDisplay(line.account_id)}: </span>
-              <strong>{money(line.amount)} ج.م</strong>
+              <strong>{money(line.amount)}</strong>
             </div>
           ))}
         </div>
@@ -348,7 +348,7 @@ export default function Treasury() {
               </div>
               <div>
                 <span style={{ color: '#888', fontSize: 13 }}>رصيد الخزينة الموحد (السيولة المتوفرة)</span>
-                <h2 style={{ margin: 0, color: '#6AB42D' }}>{balance} ج.م</h2>
+                <h2 style={{ margin: 0, color: '#6AB42D' }}>{balance}</h2>
               </div>
             </div>
           </Card>
@@ -484,13 +484,13 @@ export default function Treasury() {
             <Col span={12}>
               <div style={{ padding: 12, background: '#f5f5f5', borderRadius: 8, textAlign: 'center' }}>
                 <span style={{ fontSize: '13px', color: '#888' }}>إجمالي الحركات المدينة</span>
-                <h3 style={{ margin: '4px 0 0', color: '#6AB42D' }}>{money(totalDebits)} ج.م</h3>
+                <h3 style={{ margin: '4px 0 0', color: '#6AB42D' }}>{money(totalDebits)}</h3>
               </div>
             </Col>
             <Col span={12}>
               <div style={{ padding: 12, background: '#f5f5f5', borderRadius: 8, textAlign: 'center' }}>
                 <span style={{ fontSize: '13px', color: '#888' }}>إجمالي الحركات الدائنة</span>
-                <h3 style={{ margin: '4px 0 0', color: '#F5A11D' }}>{money(totalCredits)} ج.م</h3>
+                <h3 style={{ margin: '4px 0 0', color: '#F5A11D' }}>{money(totalCredits)}</h3>
               </div>
             </Col>
           </Row>

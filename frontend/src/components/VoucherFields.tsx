@@ -55,7 +55,7 @@ export function TreasuryField({
       value: t.id,
       // `label` is what the closed box shows and what the search matches, so it stays plain text.
       label: `${t.name}${t.is_default ? ' (الافتراضية)' : ''}`,
-      title: `${t.name} — ${money(bal)} ج.م`,
+      title: `${t.name} — ${money(bal)}`,
       short: t.name,
       balance: bal,
       kind: t.kind,
@@ -92,7 +92,7 @@ export function TreasuryField({
               </span>
               {/* «فيها كام» — the question behind choosing a safe, answered before the choice. */}
               <span style={{ color: short ? '#cf1322' : '#6AB42D', fontSize: 12 }}>
-                {money(o.balance)} ج.م
+                {money(o.balance)}
               </span>
             </div>
           );
@@ -177,7 +177,7 @@ export function ExpenseAccountField({
             return (
               <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12 }}>
                 <span>{o.full}</span>
-                <span style={{ color: '#6b6b6b', fontSize: 12 }}>{money(o.spent)} ج.م</span>
+                <span style={{ color: '#6b6b6b', fontSize: 12 }}>{money(o.spent)}</span>
               </div>
             );
           }}

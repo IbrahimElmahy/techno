@@ -440,8 +440,7 @@ export default function CouponReceipts() {
         </Col>
         <Col xs={12} md={4}>
           <InputNumber
-            style={{ width: '100%' }} placeholder="قيمة الكوبون" min={0}
-            addonAfter="ج.م" value={value} onChange={(v) => setValue(v as number | null)}
+            style={{ width: '100%' }} placeholder="قيمة الكوبون" min={0} value={value} onChange={(v) => setValue(v as number | null)}
           />
         </Col>
         <Col xs={24} md={10}>

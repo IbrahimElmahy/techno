@@ -59,7 +59,7 @@ const TONES = {
 };
 
 export default function TotalsLadder({
-  inputs, rows, notes = [], tone = 'sale', currency = 'ج.م',
+  inputs, rows, notes = [], tone = 'sale', currency = '',
 }: Props) {
   const t = TONES[tone];
   const visible = rows.filter((r) => r.show !== false);
@@ -111,7 +111,7 @@ export default function TotalsLadder({
                   fontSize: 15, fontWeight: r.strong ? 800 : 700, color: r.color,
                   whiteSpace: 'nowrap',
                 }}>
-                  {r.value} {currency}
+                  {r.value}{currency ? ` ${currency}` : ''}
                 </div>
               </div>
             ))}
@@ -124,7 +124,7 @@ export default function TotalsLadder({
             }}>
               <span style={{ fontSize: 14, fontWeight: 700, color: '#4a4a4a' }}>{r.label}</span>
               <span style={{ fontSize: 22, fontWeight: 800, color: r.color }}>
-                {r.value} {currency}
+                {r.value}{currency ? ` ${currency}` : ''}
               </span>
             </div>
           ))}

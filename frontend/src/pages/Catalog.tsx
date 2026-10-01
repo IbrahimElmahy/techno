@@ -70,12 +70,12 @@ const PriceTiersButton = ({ itemId, canEdit }: { itemId: number; canEdit: boolea
       <Button size="small" type="link" icon={<DollarOutlined />} onClick={onOpen}>الأسعار</Button>
       <TabModal title="الأطر السعرية الخمسة" open={open} onCancel={() => setOpen(false)}
         onOk={onSave} okText={canEdit ? 'حفظ' : 'إغلاق'} okButtonProps={{ disabled: !canEdit }}>
-        <p style={{ color: '#888' }}>سعر البيع المرجعي (الأساس): {base ? `${base} ج.م` : '—'} — يُستخدم كبديل لأي فئة غير محددة.</p>
+        <p style={{ color: '#888' }}>سعر البيع المرجعي (الأساس): {base ? `${base}` : '—'} — يُستخدم كبديل لأي فئة غير محددة.</p>
         {PRICE_TIERS.map((t) => (
           <Row key={t.key} gutter={8} align="middle" style={{ marginBottom: 8 }}>
             <Col span={10}>{t.label}</Col>
             <Col span={14}>
-              <InputNumber min={0} step={0.01} style={{ width: '100%' }} addonAfter="ج.م"
+              <InputNumber min={0} step={0.01} style={{ width: '100%' }}
                 disabled={!canEdit} value={vals[t.key] ?? undefined}
                 onChange={(v) => setVals({ ...vals, [t.key]: v as number })} />
             </Col>
@@ -723,7 +723,7 @@ export default function Catalog() {
             </Tag>
             {price > 0 && (
               <div style={{ fontSize: 11, color: '#8c8c8c' }}>
-                صافي {money(netOf(price, pct))} ج.م
+                صافي {money(netOf(price, pct))}
               </div>
             )}
           </div>
@@ -790,7 +790,7 @@ export default function Catalog() {
       </span>
       <span>
         <span style={{ color: '#888' }}>سعر الشراء المرجعي: </span>
-        {record.purchase_price ? `${money(record.purchase_price)} ج.م` : '—'}
+        {record.purchase_price ? `${money(record.purchase_price)}` : '—'}
       </span>
       {record.kind === 'product' && (
         <span>

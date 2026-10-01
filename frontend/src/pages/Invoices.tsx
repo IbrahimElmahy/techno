@@ -69,6 +69,7 @@ import { buildRegisterColumns } from './invoices/registerColumns';
 import ReceiptModal from './vouchers/ReceiptModal';
 import { defaultTreasuryId } from '../components/VoucherFields';
 import { useLiveRefresh } from '../utils/live';
+import ListPage from '../components/ListPage';
 /** رقم فريد للمستند (`client_uuid`). `randomUUID` مش موجود خارج https، فالبديل عشوائي كفاية. */
 // المرتجع الجديد بيتفتح جوّه السجل (`embedded`) — كسول عشان مايتحمّلش مع كل فاتورة.
 const ReturnsScreen = React.lazy(() => import('./Returns'));
@@ -972,7 +973,7 @@ export default function Invoices() {
       content: verdict === 'confirm-edit'
         ? 'التعديلات اللي عملتها مااتحفظتش. الفاتورة نفسها هتفضل زي ما هي.'
         : lines.length
-          ? `فيه ${lines.length} صنف بإجمالي ${money(netTotal)} ج.م — هيروحوا ومش هيرجعوا.`
+          ? `فيه ${lines.length} صنف بإجمالي ${money(netTotal)} — هيروحوا ومش هيرجعوا.`
           : 'اللي كتبته هيروح ومش هيرجع.',
       okText: verdict === 'confirm-edit' ? 'اخرج من غير حفظ' : 'اخرج واسيبه',
       okButtonProps: { danger: true },
@@ -2559,7 +2560,7 @@ function couponsTotal(inv: any): number {
                     optionFilterProp="label"
                     options={bonusTargets.map((t) => ({
                       value: t.id,
-                      label: `${t.document_number} — ${t.invoice_date ?? ''} — ${money(t.net)} ج.م`,
+                      label: `${t.document_number} — ${t.invoice_date ?? ''} — ${money(t.net)}`,
                     }))} />
                 </Form.Item>
               </Col>
@@ -2891,9 +2892,9 @@ function couponsTotal(inv: any): number {
                 dataSource={viewReturns}
                 columns={[
                   { title: 'سند المرتجع', dataIndex: 'document_number', render: (d: string) => <Tag color="volcano">{d}</Tag> },
-                  { title: 'القيمة', dataIndex: 'value', render: (v: string) => `${money(v)} ج.م` },
-                  { title: 'ردّ نقدي', dataIndex: 'cash_refund', render: (v: string) => `${money(v)} ج.م` },
-                  { title: 'خصم آجل', dataIndex: 'credit_reduction', render: (v: string) => `${money(v)} ج.م` },
+                  { title: 'القيمة', dataIndex: 'value', render: (v: string) => `${money(v)}` },
+                  { title: 'ردّ نقدي', dataIndex: 'cash_refund', render: (v: string) => `${money(v)}` },
+                  { title: 'خصم آجل', dataIndex: 'credit_reduction', render: (v: string) => `${money(v)}` },
                 ]}
               />
             </div>
@@ -2931,11 +2932,11 @@ function couponsTotal(inv: any): number {
                   )}
                   {creditAmount < -0.001 && (
                     <span>يسدّد من المديونية القديمة:{' '}
-                      <b style={{ color: '#16a34a' }}>{money(Math.abs(creditAmount))} ج.م</b></span>
+                      <b style={{ color: '#16a34a' }}>{money(Math.abs(creditAmount))}</b></span>
                   )}
                   {creditAmount > 0.001 && (
                     <span>آجل على الفاتورة دي:{' '}
-                      <b style={{ color: '#dc2626' }}>{money(creditAmount)} ج.م</b></span>
+                      <b style={{ color: '#dc2626' }}>{money(creditAmount)}</b></span>
                   )}
                 </div>
                 {/* صور الورقة — الفاتورة الموقّعة وإيصال الاستلام. `viewInvoice` بيفضل `null`
@@ -2951,7 +2952,7 @@ function couponsTotal(inv: any): number {
               <Row gutter={[10, 10]}>
                 <Col xs={24} lg={16}>
                   <div className="sale-tiles">
-                    <SummaryTile label="إجمالي الأصناف" value={money(grossTotal)} sub="جنيه مصري" />
+                    <SummaryTile label="إجمالي الأصناف" value={money(grossTotal)} />
                     {/* البونص بيتعرض ١٠٠٪ — `discountPct` فيه آخر رقم اتكتب قبل التحويل (١٠ من «١٠٠»). */}
                     {invoiceDiscount > 0.001 && (
                       <SummaryTile label={`خصم الفاتورة (${isBonus ? 100 : discountPct}%)`}
@@ -3004,7 +3005,7 @@ function couponsTotal(inv: any): number {
                         }} />
                     </Form.Item>
                     <Form.Item label="المبلغ المدفوع نقداً">
-                      <InputNumber min={0} style={{ width: '100%' }} addonAfter="ج.م"
+                      <InputNumber min={0} style={{ width: '100%' }}
                         className="sale-cash-input"
                         disabled={viewOnly || isBonus}
                         value={isBonus ? 0 : cashAmount} onChange={(val) => setCashAmount(val || 0)} />
@@ -3018,7 +3019,7 @@ function couponsTotal(inv: any): number {
                             {due > 0.001 ? 'بيتسجّل آجل على حسابه' : 'مافيش باقي عليه'}
                           </div>
                         </div>
-                        <div className="sale-due-value">{money(due)} <small>ج.م</small></div>
+                        <div className="sale-due-value">{money(due)}</div>
                       </div>
                     )}
                     {!viewOnly && (
@@ -3258,43 +3259,21 @@ function couponsTotal(inv: any): number {
       <span>المحدد: <b>{selectedKeys.length.toLocaleString(numeralsLocale())}</b></span>
       <span>
         {footNet.label}:{' '}
-        <b className={footNet.value < 0 ? 'is-neg' : 'is-pos'}>{money(footNet.value)} ج.م</b>
+        <b className={footNet.value < 0 ? 'is-neg' : 'is-pos'}>{money(footNet.value)}</b>
       </span>
     </span>
   );
 
   return (
-    <div className="sales-log">
-      {/* --- الترويسة: العنوان، الشرايح، والأزرار — سطر واحد --- */}
-      <div className="sl-head">
-        <div className="sl-title">
-          <span className="sl-title-icon"><ShoppingCartOutlined /></span>
-          <div>
-            <div className="sl-title-main">
-              المبيعات <span className="sl-title-muted">(سجل الفواتير والمرتجعات)</span>
-            </div>
-            <div className="sl-subtitle">إدارة ومتابعة حركات البيع، المرتجعات وسندات القبض النقدية</div>
-          </div>
-        </div>
-
-        <div className="sl-tabs" role="tablist">
-          {kindTabs.map((t) => (
-            <button
-              key={t.key}
-              type="button"
-              role="tab"
-              aria-selected={docKindFilter === t.key}
-              className={`sl-tab${docKindFilter === t.key ? ' is-active' : ''}`}
-              onClick={() => { setDocKindFilter(t.key); setSelectedKeys([]); }}
-            >
-              {t.dot && <span className="sl-dot" style={{ background: t.dot }} />}
-              {t.label}
-              {t.count != null && <span className="sl-count">{t.count.toLocaleString(numeralsLocale())}</span>}
-            </button>
-          ))}
-        </div>
-
-        <Space className="sl-actions" size={6} wrap>
+    <>
+    {/* الإطار والشكل في `ListPage` — مشترك مع باقي الكشوف. */}
+    <ListPage<DocKind>
+      icon={<ShoppingCartOutlined />}
+      title="المبيعات" muted="(سجل الفواتير والمرتجعات)"
+      subtitle="إدارة ومتابعة حركات البيع، المرتجعات وسندات القبض النقدية"
+      tabs={kindTabs} activeTab={docKindFilter}
+      onTabChange={(k) => { setDocKindFilter(k); setSelectedKeys([]); }}
+      actions={(<>
           {create.visible && (
             <Button type="primary" icon={create.icon} className="sl-create" onClick={create.onCreate}>
               {create.label}
@@ -3324,11 +3303,8 @@ function couponsTotal(inv: any): number {
               onMove={(k, d) => invoiceCols.move(k, d, columns.map((c) => String(c.key ?? (c as any).dataIndex ?? '')))}
             />
           </>)}
-        </Space>
-      </div>
-
-      {/* --- البحث والفلاتر (من السيرفر، فبتغطي كل الفواتير) — سطر واحد --- */}
-      <div className="sl-filters">
+      </>)}
+      filters={(<>
         <Input
           className="sl-f-search"
           allowClear
@@ -3382,9 +3358,8 @@ function couponsTotal(inv: any): number {
             { value: 'partial', label: 'جزئي (نقدي + آجل)' },
           ]} />
         <Button className="sl-f-clear" icon={<ClearOutlined />} onClick={resetFilters}>مسح</Button>
-      </div>
-
-      <div className="sl-body">
+      </>)}
+    >
         {docKindFilter === 'receipts' ? (
           <SalesReceiptsPanel key={receiptsKey}
             customerId={filters.customer_id} repId={filters.rep_id}
@@ -3434,7 +3409,7 @@ function couponsTotal(inv: any): number {
             columnWidth: 36,
           }}
           loading={loading}
-          // الترقيم شمال، والإجماليات يمين في نفس السطر (`showTotal` + CSS تحت `.sales-log`).
+          // الترقيم شمال، والإجماليات يمين في نفس السطر (`showTotal` + CSS تحت `.list-page`).
           pagination={{
             defaultPageSize: TABLE_PAGE_SIZE, showSizeChanger: true, pageSizeOptions: PAGE_SIZE_OPTIONS,
             locale: { items_per_page: '' },
@@ -3456,7 +3431,7 @@ function couponsTotal(inv: any): number {
           })}
         />
         </>)}
-      </div>
+    </ListPage>
 
       <ReceiptModal
         open={receiptOpen} onCancel={() => setReceiptOpen(false)}
@@ -3479,6 +3454,6 @@ function couponsTotal(inv: any): number {
         */}
       {partyPicker}
 
-    </div>
+    </>
   );
 }

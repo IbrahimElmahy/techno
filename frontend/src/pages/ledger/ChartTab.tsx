@@ -114,7 +114,7 @@ export default function ChartTab() {
       ...choiceColumn<Account>([{ text: 'نظام', value: 'yes' }, { text: 'مضاف', value: 'no' }],
         (a: any, v) => (v === 'yes' ? !!a.is_system : !a.is_system)),
       render: (s: boolean) => s ? <Tag color="purple">نظام</Tag> : '-' },
-    { title: 'الرصيد (ج.م)', dataIndex: 'balance', key: 'balance', align: 'left' as const,
+    { title: 'الرصيد', dataIndex: 'balance', key: 'balance', align: 'left' as const,
       ...numberColumn<Account>((a: any) => a.balance),
       render: (b: string) => <strong>{egp(b)}</strong> },
   ];
@@ -138,7 +138,7 @@ export default function ChartTab() {
     { title: 'المستوى الرئيسي', value: (a: Account) => a.main_level ?? '' },
     { title: 'يظهر في', value: (a: Account) => (a.appears_in && APPEARS_IN_LABEL[a.appears_in]) || '' },
     { title: 'النظام', value: (a: Account) => (a.is_system ? 'نظام' : '') },
-    { title: 'الرصيد (ج.م)', value: (a: Account) => a.balance, numeric: true },
+    { title: 'الرصيد', value: (a: Account) => a.balance, numeric: true },
   ];
   const shownAccounts = () => filter.filtered.flatMap(flatten);
   const exportChart = () => {

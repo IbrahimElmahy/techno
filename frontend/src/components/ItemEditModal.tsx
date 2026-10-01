@@ -198,11 +198,11 @@ export default function ItemEditModal({
             <Col xs={24} md={12}>
               {isProduct ? (
                 <Form.Item name="sale_price" label="سعر البيع المرجعي">
-                  <InputNumber min={0} step={0.01} style={{ width: '100%' }} addonAfter="ج.م" />
+                  <InputNumber min={0} step={0.01} style={{ width: '100%' }} />
                 </Form.Item>
               ) : (
                 <Form.Item name="purchase_price" label="سعر الشراء المرجعي">
-                  <InputNumber min={0} step={0.01} style={{ width: '100%' }} addonAfter="ج.م" />
+                  <InputNumber min={0} step={0.01} style={{ width: '100%' }} />
                 </Form.Item>
               )}
             </Col>
@@ -259,7 +259,7 @@ export default function ItemEditModal({
                 {TIERS.map(([key, label]) => (
                   <Col xs={12} md={8} key={key}>
                     <Form.Item name={key} label={label}>
-                      <InputNumber min={0} step={0.01} style={{ width: '100%' }} addonAfter="ج.م" />
+                      <InputNumber min={0} step={0.01} style={{ width: '100%' }} />
                     </Form.Item>
                   </Col>
                 ))}

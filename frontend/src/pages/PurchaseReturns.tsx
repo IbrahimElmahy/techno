@@ -869,7 +869,7 @@ export default function PurchaseReturns() {
     {
       title: 'القيمة', dataIndex: 'value', key: 'value', width: 140, align: 'left' as const,
       ...numberColumn<ReturnRow>((r) => r.value),
-      render: (v: string) => <strong style={{ color: '#cf4b1a' }}>{money(v)} ج.م</strong>,
+      render: (v: string) => <strong style={{ color: '#cf4b1a' }}>{money(v)}</strong>,
     },
     {
       title: 'ملاحظات', dataIndex: 'notes', key: 'notes', ellipsis: true,
@@ -1145,7 +1145,7 @@ export default function PurchaseReturns() {
                       <Table.Summary.Cell key={key} index={i}
                         align={key === 'value' ? ('left' as const) : undefined}>
                         {i === 0 ? `${list.length} مردود`
-                          : key === 'value' ? `${money(total)} ج.م` : ''}
+                          : key === 'value' ? `${money(total)}` : ''}
                       </Table.Summary.Cell>
                     );
                   })}
@@ -1405,7 +1405,7 @@ export default function PurchaseReturns() {
           <Row gutter={[10, 10]}>
             <Col xs={24} lg={16}>
               <div className="sale-tiles">
-                <SummaryTile label="اجمالي قبل" value={money(grossTotal)} sub="جنيه مصري" />
+                <SummaryTile label="اجمالي قبل" value={money(grossTotal)} />
                 {variableDiscount > 0.001 && (
                   <SummaryTile label={`خصم المردود (${variableDiscount}%)`}
                     value={`− ${money(grossTotal - draftValue)}`} color="#dc2626" />
@@ -1431,7 +1431,7 @@ export default function PurchaseReturns() {
                     <div className="sale-due-label">قيمة المردود</div>
                     <div className="sale-due-sub">بتنزل من اللي علينا للمورد</div>
                   </div>
-                  <div className="sale-due-value">{money(draftValue)} <small>ج.م</small></div>
+                  <div className="sale-due-value">{money(draftValue)}</div>
                 </div>
                 {!viewOnly && (
                   <div className="sale-pay-actions">

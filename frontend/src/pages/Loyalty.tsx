@@ -319,7 +319,7 @@ export default function Loyalty() {
           <div style={{ direction: 'rtl', marginTop: 16 }}>
             <p>تم استهلاك النقاط وتوليد كوبون خصم جديد:</p>
             <p><strong>كود الكوبون: </strong> <Tag color="purple" style={{ fontSize: 16, padding: '4px 8px' }}>{generated.serial}</Tag></p>
-            <p><strong>قيمة الكوبون: </strong> {money(generated.value)} ج.م</p>
+            <p><strong>قيمة الكوبون: </strong> {money(generated.value)}</p>
           </div>
         ),
         okText: 'موافق',
@@ -406,7 +406,7 @@ export default function Loyalty() {
       dataIndex: 'value',
       key: 'value',
       ...numberColumn<CouponType>((r) => r.value),
-      render: (val: string) => `${money(val)} ج.م`,
+      render: (val: string) => `${money(val)}`,
     },
     {
       title: 'حالة العرض',
@@ -469,7 +469,7 @@ export default function Loyalty() {
       dataIndex: 'value',
       key: 'value',
       ...numberColumn<any>((r) => r.value),
-      render: (val: string) => `${money(val)} ج.م`,
+      render: (val: string) => `${money(val)}`,
     },
     {
       title: 'النقاط المستهلكة',
@@ -676,7 +676,7 @@ export default function Loyalty() {
 
           <Form.Item
             name="value"
-            label="القيمة المالية المستفادة (ج.م)"
+            label="القيمة المالية المستفادة"
             rules={[{ required: true, message: 'يرجى إدخال القيمة المالية!' }]}
           >
             <InputNumber min={0.01} step={0.01} style={{ width: '100%' }} />
@@ -723,7 +723,7 @@ export default function Loyalty() {
 
           <Form.Item
             name="value"
-            label="القيمة المالية المستفادة (ج.م)"
+            label="القيمة المالية المستفادة"
             rules={[{ required: true, message: 'يرجى إدخال القيمة المالية!' }]}
           >
             <InputNumber min={0.01} step={0.01} style={{ width: '100%' }} />
@@ -794,7 +794,7 @@ export default function Loyalty() {
                 .filter((t) => t.active)
                 .map((t) => (
                   <Select.Option key={t.id} value={t.id}>
-                    {t.name} (يكلف {t.point_cost} نقطة - يعطي {money(t.value)} ج.م)
+                    {t.name} (يكلف {t.point_cost} نقطة - يعطي {money(t.value)})
                   </Select.Option>
                 ))}
             </Select>

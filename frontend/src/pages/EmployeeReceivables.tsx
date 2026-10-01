@@ -225,17 +225,17 @@ export default function EmployeeReceivables() {
         </Col>
         <Col xs={12} md={6}>
           <Card size="small">
-            <Statistic title="إجمالي المدين" value={money(data?.total_debit)} suffix="ج.م" />
+            <Statistic title="إجمالي المدين" value={money(data?.total_debit)} />
           </Card>
         </Col>
         <Col xs={12} md={6}>
           <Card size="small">
-            <Statistic title="إجمالي الدائن" value={money(data?.total_credit)} suffix="ج.م" />
+            <Statistic title="إجمالي الدائن" value={money(data?.total_credit)} />
           </Card>
         </Col>
         <Col xs={12} md={6}>
           <Card size="small">
-            <Statistic title="صافي الذمم" value={money(data?.total_balance)} suffix="ج.م"
+            <Statistic title="صافي الذمم" value={money(data?.total_balance)}
               valueStyle={{ color: Number(data?.total_balance ?? 0) < 0 ? '#cf1322' : '#3f8600' }} />
           </Card>
         </Col>
@@ -267,7 +267,7 @@ export default function EmployeeReceivables() {
             <Table.Summary.Row>
               <Table.Summary.Cell index={0} colSpan={tableCols.columns.length}>
                 <Space size="large">
-                  <b>صافي الذمم: {money(data?.total_balance)} ج.م</b>
+                  <b>صافي الذمم: {money(data?.total_balance)}</b>
                   <span>مدين {money(data?.total_debit)}</span>
                   <span>دائن {money(data?.total_credit)}</span>
                 </Space>

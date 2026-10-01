@@ -64,7 +64,6 @@ export default function CouponStatsOverview({
             <Statistic
               title={<span style={{ fontSize: 13, color: '#595959', fontWeight: 600 }}>{valueTitle}</span>}
               value={money(totalValue)}
-              suffix="ج.م"
               valueStyle={{ color: '#52c41a', fontWeight: 700 }}
             />
           </Card>
@@ -108,7 +107,7 @@ export default function CouponStatsOverview({
                     </div>
                     {k.value !== undefined && (
                       <div style={{ fontSize: 11, color: '#8c8c8c', marginTop: 1 }}>
-                        {money(k.value)} ج.م
+                        {money(k.value)}
                       </div>
                     )}
                   </div>

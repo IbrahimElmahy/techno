@@ -39,7 +39,7 @@ export default function CustomerAccountPanel({
   const credit = balance < 0;
   const label = owes ? 'إجمالي المستحق على العميل' : credit ? 'رصيد دائن للعميل' : 'رصيد العميل';
   const color = owes ? '#cf1322' : credit ? '#6AB42D' : '#555';
-  const value = `${money(Math.abs(balance))} ج.م`;
+  const value = `${money(Math.abs(balance))}`;
 
   if (variant === 'inline') {
     return (

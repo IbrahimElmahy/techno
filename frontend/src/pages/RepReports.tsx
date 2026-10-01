@@ -175,7 +175,7 @@ export default function RepReports() {
     // showing a rep selling more than the customer was billed.
     { title: 'الصافي', dataIndex: 'net', width: 165, align: 'left' as const,
       ...numberColumn<RepItemRow>((r) => r.net),
-      render: (v: string) => <b>{money(v)} ج.م</b> },
+      render: (v: string) => <b>{money(v)}</b> },
   ];
 
   // إخفاء وترتيب الأعمدة — نفس المحرك اللي كل الجداول بتستخدمه.
@@ -199,7 +199,7 @@ export default function RepReports() {
     { title: 'المُحصّل', dataIndex: 'collected', width: 165,
       align: 'left' as const,
       ...numberColumn<ByCustomerRow>((r) => r.collected),
-      render: (v: string) => <b>{money(v)} ج.م</b> },
+      render: (v: string) => <b>{money(v)}</b> },
   ];
 
   // إخفاء وترتيب الأعمدة — نفس المحرك اللي كل الجداول بتستخدمه.
@@ -217,7 +217,7 @@ export default function RepReports() {
       align: 'left' as const,
       ...numberColumn<CollectionRow>((r) => r.collected),
       render: (v: string) => (
-        <b style={{ color: '#6AB42D' }}>{money(v)} ج.م</b>
+        <b style={{ color: '#6AB42D' }}>{money(v)}</b>
       ) },
   ];
 
@@ -232,9 +232,9 @@ export default function RepReports() {
     <Card title={<span><TeamOutlined /> تقارير المندوبين</span>} extra={header}>
       {canSeeStats && (
       <Space size="large" style={{ marginBottom: 12 }}>
-        <Statistic title="إجمالي المُحصّل" value={totalCollected} precision={2} suffix="ج.م"
+        <Statistic title="إجمالي المُحصّل" value={totalCollected} precision={2}
           valueStyle={{ color: '#6AB42D' }} />
-        <Statistic title="إجمالي المبيعات (صافي)" value={totalSold} precision={2} suffix="ج.م" />
+        <Statistic title="إجمالي المبيعات (صافي)" value={totalSold} precision={2} />
       </Space>
       )}
 

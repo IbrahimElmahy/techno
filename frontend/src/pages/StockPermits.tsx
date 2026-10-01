@@ -565,8 +565,7 @@ export default function StockPermits() {
             <div className="sale-tiles">
               <SummaryTile label="عدد الأصناف" value={lines.length} />
               {kind !== 'issue' && (
-                <SummaryTile label="إجمالي التكلفة" value={money(draftTotal)} color="#16a34a"
-                  sub="جنيه مصري" />
+                <SummaryTile label="إجمالي التكلفة" value={money(draftTotal)} color="#16a34a" />
               )}
             </div>
           </Col>
@@ -691,7 +690,7 @@ export default function StockPermits() {
             <div className="sale-tiles">
               <SummaryTile label="عدد الأصناف" value={detail.lines.length} />
               <SummaryTile label="إجمالي التكلفة" value={money(detail.total_cost)}
-                color="#16a34a" sub="جنيه مصري" />
+                color="#16a34a" />
             </div>
           </Col>
           <Col xs={24} lg={8}>

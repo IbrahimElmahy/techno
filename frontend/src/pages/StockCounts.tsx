@@ -270,7 +270,7 @@ export default function StockCounts() {
     return d !== null && d !== 0;
   });
 
-  /** قيمة الفرق بالفلوس. «ناقص ٣ قطع» و«ناقص ٤٥٠ ج.م» مش نفس المعلومة، والتانية هي اللي المدير
+  /** قيمة الفرق بالفلوس. «ناقص ٣ قطع» و«ناقص ٤٥٠» مش نفس المعلومة، والتانية هي اللي المدير
    *  بياخد عليها قرار — تلات مسامير وتلات طلمبات بيتقروا زي بعض من غيرها. */
   const diffValue = (ln: Line) => {
     const d = isDraft ? diffOf(ln)
@@ -505,9 +505,9 @@ export default function StockCounts() {
               <Statistic title="سطور بفرق" value={differing}
                 valueStyle={{ color: differing ? '#cf1322' : undefined }} />
               {/* العجز والزيادة بالفلوس — الرقم اللي بيتاخد عليه قرار. */}
-              <Statistic title="قيمة العجز" value={`${money(Math.abs(totalShort))} ج.م`}
+              <Statistic title="قيمة العجز" value={`${money(Math.abs(totalShort))}`}
                 valueStyle={{ color: totalShort < -0.005 ? '#cf1322' : undefined }} />
-              <Statistic title="قيمة الزيادة" value={`${money(totalOver)} ج.م`}
+              <Statistic title="قيمة الزيادة" value={`${money(totalOver)}`}
                 valueStyle={{ color: totalOver > 0.005 ? '#6AB42D' : undefined }} />
             </Space>
             )}
@@ -638,7 +638,7 @@ export default function StockCounts() {
                     }
                     return (
                       <b style={{ color: v < 0 ? '#cf1322' : '#6AB42D' }}>
-                        {v > 0 ? '+' : ''}{money(v)} ج.م
+                        {v > 0 ? '+' : ''}{money(v)}
                       </b>
                     );
                   },
