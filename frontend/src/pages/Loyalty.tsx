@@ -8,7 +8,8 @@ import {
   CheckCircleOutlined, RollbackOutlined, EditOutlined, StopOutlined, DeleteOutlined, TagsOutlined,
 } from '@ant-design/icons';
 import ListPage from '../components/ListPage';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useQueryTab } from '../components/useQueryTab';
+import { useNavigate } from 'react-router-dom';
 import { api } from '../api/client';
 import { useTableColumns } from '../components/ColumnSettings';
 import { showReversalConfirm, showDeactivationConfirm } from '../components/ConfirmationDialog';
@@ -55,9 +56,8 @@ const STATUS_TAGS: Record<string, { color: string; text: string }> = {
 
 export default function Loyalty() {
   const navigate = useNavigate();
-  const [searchParams, setSearchParams] = useSearchParams();
-  const initialTab = searchParams.get('tab') || 'settings';
-  const [activeTab, setActiveTab] = useState(initialTab);
+  // الشريحة في الرابط (`?tab=`) — كانت بتتقري بس عند الفتح؛ دلوقتي التنقّل بيكتبها كمان فالريفرش بيرجع عليها.
+  const [activeTab, setActiveTab] = useQueryTab('settings');
   const [couponTypes, setCouponTypes] = useState<CouponType[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [coupons, setCoupons] = useState<Coupon[]>([]);

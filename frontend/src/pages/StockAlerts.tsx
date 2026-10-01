@@ -5,6 +5,7 @@ import { Button, Input, Tag } from 'antd';
 import { FilterTable as Table } from '../components/FilterTable';
 import { AlertOutlined, ClearOutlined, ReloadOutlined, SearchOutlined } from '@ant-design/icons';
 import ListPage from '../components/ListPage';
+import { useQueryTab } from '../components/useQueryTab';
 import { api } from '../api/client';
 import { useListFilter } from '../components/ListToolbar';
 import { useScreenShortcuts, useTableKeyboard } from '../components/keyboard';
@@ -127,6 +128,17 @@ export default function StockAlerts() {
   type FlagTab = 'all' | 'below_min' | 'above_max';
   const flagValue = reorderFilter.values.flag;
   const activeFlag: FlagTab = flagValue === 'below_min' || flagValue === 'above_max' ? flagValue : 'all';
+  // الشريحة في الرابط (`?tab=`): الرابط ← الفلتر مرة واحدة عند الفتح، وبعدها الفلتر ← الرابط (زي «مسح»).
+  const [listTab, setListTab] = useQueryTab('all');
+  const lastTab = useRef(activeFlag);
+  useEffect(() => {
+    if (listTab === 'below_min' || listTab === 'above_max') reorderFilter.setValue('flag', listTab);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (lastTab.current === activeFlag) return;
+    lastTab.current = activeFlag;
+    if (activeFlag !== listTab) setListTab(activeFlag);
+  }, [activeFlag]); // eslint-disable-line react-hooks/exhaustive-deps
   const flagTabs: { key: FlagTab; label: string; dot?: string; count?: number }[] = [
     { key: 'all', label: 'الكل', count: reorder.length },
     { key: 'below_min', label: 'تحت الحد الأدنى', dot: '#cf1322', count: summary.below_min },

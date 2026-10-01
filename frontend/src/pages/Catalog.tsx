@@ -22,6 +22,7 @@ import { useTableColumns } from '../components/ColumnSettings';
 import { money, numeralsLocale } from '../utils/money';
 
 import ListPage from '../components/ListPage';
+import { useQueryTab } from '../components/useQueryTab';
 // The five negotiated tiers plus the published list price, in the order and wording their form
 // uses. Order is not cosmetic: whoever fills this in reads down a column on paper, and a different
 // order means checking every line instead of typing six numbers. The labels are theirs too — «نص
@@ -341,7 +342,9 @@ export default function Catalog() {
   // alternate units. They were reachable only AFTER the item existed, so creating one meant
   // going back for them.
   const [unitRows, setUnitRows] = useState<{ name: string; factor: number | null }[]>([]);
-  const [view, setView] = useState<'grouped' | 'table'>('grouped');
+  // طريقة العرض في الرابط (`?tab=`) عشان الريفرش يفتح على نفس الشريحة.
+  const [viewRaw, setView] = useQueryTab('grouped');
+  const view = (viewRaw === 'table' ? 'table' : 'grouped') as 'grouped' | 'table';
   const [form] = Form.useForm();
   const [editForm] = Form.useForm();
   const { can } = useAuth();

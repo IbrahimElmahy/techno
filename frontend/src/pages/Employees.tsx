@@ -19,6 +19,7 @@ import { useListFilter } from '../components/ListToolbar';
 import { TabModal } from '../components/TabModal';
 import { numeralsLocale } from '../utils/money';
 import ListPage from '../components/ListPage';
+import { useQueryTab } from '../components/useQueryTab';
 
 /**
  * الموظفون والوظائف — deliberately not the users screen.
@@ -57,7 +58,9 @@ export default function Employees() {
   const [saving, setSaving] = useState(false);
 
   const [newTitle, setNewTitle] = useState('');
-  const [view, setView] = useState<'employees' | 'titles'>('employees');
+  // الشريحة في الرابط (`?tab=`) — الريفرش بيرجع عليها.
+  const [viewRaw, setView] = useQueryTab('employees');
+  const view = (viewRaw === 'titles' ? 'titles' : 'employees') as 'employees' | 'titles';
 
   const load = async () => {
     setLoading(true);

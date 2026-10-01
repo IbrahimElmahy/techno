@@ -31,6 +31,7 @@ import { advanceFrom } from '../components/lineKeyboard';
 import { printTransfer } from '../components/TransferDocument';
 import { useListFilter } from '../components/ListToolbar';
 import ListPage, { type ListTab } from '../components/ListPage';
+import { useQueryTab } from '../components/useQueryTab';
 import DateRangeFilter from '../components/DateRangeFilter';
 import { matchesStatement } from '../utils/statements';
 import ProductPickerModal from '../components/ProductPickerModal';
@@ -1764,6 +1765,17 @@ export default function Transfers() {
   const activeStatusTab: string = Array.isArray(statusVal)
     ? (statusVal.length === 1 ? statusVal[0] : 'all')
     : (statusVal || 'all');
+  // الشريحة في الرابط (`?tab=`، جنب `?doc=`): الرابط ← الفلتر مرة واحدة عند الفتح، وبعدها الفلتر ← الرابط.
+  const [listTab, setListTab] = useQueryTab('all');
+  const lastTab = useRef(activeStatusTab);
+  useEffect(() => {
+    if (Object.prototype.hasOwnProperty.call(STATUS_TAGS, listTab)) filter.setValue('status', listTab);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (lastTab.current === activeStatusTab) return;
+    lastTab.current = activeStatusTab;
+    if (activeStatusTab !== listTab) setListTab(activeStatusTab);
+  }, [activeStatusTab]); // eslint-disable-line react-hooks/exhaustive-deps
   const STATUS_DOTS: Record<string, string> = {
     pending: '#F5A11D', approved: '#6AB42D', rejected: '#f5222d', reversed: '#8c8c8c',
   };

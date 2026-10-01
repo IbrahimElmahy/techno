@@ -15,6 +15,7 @@ import DateRangeFilter from '../components/DateRangeFilter';
 import { Popconfirm } from '../components/noConfirm';
 import { PAGE_SIZE_OPTIONS } from '../utils/pagination';
 import ListPage from '../components/ListPage';
+import { useQueryTab } from '../components/useQueryTab';
 import { numeralsLocale } from '../utils/money';
 
 /**
@@ -93,7 +94,9 @@ export default function CouponCustody() {
   const [balance, setBalance] = useState<BalanceRow[]>([]);
   const [balanceLoading, setBalanceLoading] = useState(false);
   // الشريحة المفتوحة — كانت `Tabs` من غير حالة، والمستندات هي الافتراضية.
-  const [tab, setTab] = useState<'docs' | 'balance'>('docs');
+  // الشريحة في الرابط (`?tab=`) — الريفرش بيرجع عليها.
+  const [tabRaw, setTab] = useQueryTab('docs');
+  const tab = (tabRaw === 'balance' ? 'balance' : 'docs') as 'docs' | 'balance';
 
   // مودال الصرف/الاسترجاع — نفس الفورم للاتنين، الفرق في الاتجاه.
   const [modal, setModal] = useState<'out' | 'in' | null>(null);

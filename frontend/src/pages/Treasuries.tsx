@@ -10,6 +10,7 @@ import {
   BankOutlined, ClearOutlined,
 } from '@ant-design/icons';
 import ListPage from '../components/ListPage';
+import { useQueryTab } from '../components/useQueryTab';
 import { api } from '../api/client';
 import { useTableKeyboard } from '../components/keyboard';
 import { useScreenShortcuts } from '../components/keyboard';
@@ -67,7 +68,9 @@ export default function Treasuries() {
   const [safesLoading, setSafesLoading] = useState(false);
   const [familyFilter, setFamilyFilter] = useState<string>('الكل');
   // الجدولين (الخزائن · صناديق المناديب) بقوا شريحتين في الترويسة.
-  const [view, setView] = useState<'treasuries' | 'safes'>('treasuries');
+  // الشريحة في الرابط (`?tab=`) — الريفرش بيرجع عليها.
+  const [viewRaw, setView] = useQueryTab('treasuries');
+  const view = (viewRaw === 'safes' ? 'safes' : 'treasuries') as 'treasuries' | 'safes';
   const [createOpen, setCreateOpen] = useState(false);
   const [editing, setEditing] = useState<TreasuryRecord | null>(null);
   const [form] = Form.useForm();

@@ -16,6 +16,7 @@ import { api } from '../api/client';
 import { useTableColumns } from '../components/ColumnSettings';
 import DocumentLink from '../components/DocumentLink';
 import ListPage from '../components/ListPage';
+import { useQueryTab } from '../components/useQueryTab';
 import { useScreenShortcuts } from '../components/keyboard';
 import { numeralsLocale } from '../utils/money';
 import { useLookup } from '../hooks/useLookup';
@@ -395,7 +396,9 @@ export default function CouponReceipts() {
   // the paper would leave the system counting a coupon the customer already handed over.
 
   // الشريحة المفتوحة — كانت `Tabs` من غير حالة، وأول شريحة هي الافتراضية.
-  const [tab, setTab] = useState<'receive' | 'history'>('receive');
+  // الشريحة في الرابط (`?tab=`) — الريفرش بيرجع عليها.
+  const [tabRaw, setTab] = useQueryTab('receive');
+  const tab = (tabRaw === 'history' ? 'history' : 'receive') as 'receive' | 'history';
 
   // زرار «تفريغ» و«تسجيل الاستلام» بقوا في الترويسة، على شمال الشرايح.
   const receiveActions = (

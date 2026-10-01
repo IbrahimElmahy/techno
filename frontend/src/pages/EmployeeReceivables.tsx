@@ -14,6 +14,7 @@ import { printReport, type PrintColumn, type PrintTotal } from '../print/reportS
 
 import { money, numeralsLocale } from '../utils/money';
 import ListPage from '../components/ListPage';
+import { useQueryTab } from '../components/useQueryTab';
 
 /**
  * ذمم الموظفين — «سلفت مين وكام، ولسه عليه كام».
@@ -65,7 +66,9 @@ export default function EmployeeReceivables() {
   const [branches, setBranches] = useState<{ id: number; name: string }[]>([]);
   // «الكل» بيوري الحسابات الصفرية كمان — الموظف اللي خلّص ذمته له سطر بصفر، وده
   // جواب مختلف عن «مش في الكشف».
-  const [scope, setScope] = useState<'nonzero' | 'all'>('nonzero');
+  // الشريحة في الرابط (`?tab=`) — الريفرش بيرجع عليها.
+  const [scopeRaw, setScope] = useQueryTab('nonzero');
+  const scope = (scopeRaw === 'all' ? 'all' : 'nonzero') as 'nonzero' | 'all';
 
   const load = useCallback(async () => {
     setLoading(true);

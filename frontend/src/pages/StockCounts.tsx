@@ -13,6 +13,7 @@ import {
   SearchOutlined, StopOutlined,
 } from '@ant-design/icons';
 import ListPage from '../components/ListPage';
+import { useQueryTab } from '../components/useQueryTab';
 import DateRangeFilter from '../components/DateRangeFilter';
 import { useScreenShortcuts } from '../components/keyboard';
 import dayjs, { Dayjs } from 'dayjs';
@@ -357,6 +358,17 @@ export default function StockCounts() {
   const statusValue = filter.values.status;
   const activeStatus: StatusTab = statusValue === 'draft' || statusValue === 'posted'
     || statusValue === 'cancelled' ? statusValue : 'all';
+  // الشريحة في الرابط (`?tab=`، جنب `?doc=`): الرابط ← الفلتر مرة واحدة عند الفتح، وبعدها الفلتر ← الرابط.
+  const [listTab, setListTab] = useQueryTab('all');
+  const lastTab = useRef(activeStatus);
+  useEffect(() => {
+    if (listTab === 'draft' || listTab === 'posted' || listTab === 'cancelled') filter.setValue('status', listTab);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (lastTab.current === activeStatus) return;
+    lastTab.current = activeStatus;
+    if (activeStatus !== listTab) setListTab(activeStatus);
+  }, [activeStatus]); // eslint-disable-line react-hooks/exhaustive-deps
   const statusCount = (st: Sheet['status']) => sheets.filter((x) => x.status === st).length;
   const statusTabs: { key: StatusTab; label: string; dot?: string; count?: number }[] = [
     { key: 'all', label: 'الكل', count: sheets.length },

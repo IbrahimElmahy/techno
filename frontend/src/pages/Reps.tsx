@@ -11,6 +11,7 @@ import { Popconfirm } from '../components/noConfirm';
 import { api } from '../api/client';
 import { useTableColumns } from '../components/ColumnSettings';
 import ListPage from '../components/ListPage';
+import { useQueryTab } from '../components/useQueryTab';
 
 /**
  * المناديب — كل ما يخص المندوب في شاشة واحدة.
@@ -39,7 +40,9 @@ export default function Reps() {
   const [territories, setTerritories] = useState<any[]>([]);
   const [warehouses, setWarehouses] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
-  const [showInactive, setShowInactive] = useState(false);
+  // الشريحة في الرابط (`?tab=active|all`) — الريفرش بيرجع عليها وبيحمّل بنفس النطاق.
+  const [listTab, setListTab] = useQueryTab('active');
+  const showInactive = listTab === 'all';
   const [query, setQuery] = useState('');
   const [moveFrom, setMoveFrom] = useState<Rep | null>(null);
   const [moveTo, setMoveTo] = useState<number | null>(null);
@@ -222,7 +225,7 @@ export default function Reps() {
         { key: 'all', label: 'يشمل الموقوفين', count: showInactive ? rows.length : undefined },
       ]}
       activeTab={repTab}
-      onTabChange={(k) => { const v = k === 'all'; setShowInactive(v); load(v); }}
+      onTabChange={(k) => { setListTab(k); load(k === 'all'); }}
       actions={(<>
         <Button icon={<ReloadOutlined />} onClick={() => load()}>تحديث</Button>
         {cols.control}

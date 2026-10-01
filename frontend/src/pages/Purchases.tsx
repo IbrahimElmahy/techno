@@ -2147,12 +2147,14 @@ export default function Purchases() {
   // الشريحة المختارة — نفس فلتر «النوع» اللي كان في الشريط، بقى شرايح فوق.
   const kindTab = (purchasesFilter.values.kind || 'all') as 'all' | 'purchase' | 'return';
   // الرابط ← فلتر النوع مرة واحدة عند الفتح، وبعدها الفلتر ← الرابط (زي «مسح»).
-  const tabSynced = useRef(false);
+  // آخر نوع اتكتب في الرابط — بيكتب لما النوع يتغيّر فعلاً بس (StrictMode بيشغّل التأثير مرتين).
+  const lastKind = useRef(kindTab);
   useEffect(() => {
     if (listTab === 'purchase' || listTab === 'return') purchasesFilter.setValue('kind', listTab);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
-    if (!tabSynced.current) { tabSynced.current = true; return; }
+    if (kindTab === lastKind.current) return;
+    lastKind.current = kindTab;
     if (!paymentsTab && kindTab !== listTab) setListTab(kindTab);
   }, [kindTab]); // eslint-disable-line react-hooks/exhaustive-deps
   const supplierIds = purchasesFilter.values.supplier_id as number[] | undefined;

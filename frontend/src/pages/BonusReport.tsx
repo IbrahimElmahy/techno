@@ -11,6 +11,7 @@ import { money, numeralsLocale } from '../utils/money';
 import ListPage from '../components/ListPage';
 import ExportExcelButton from '../components/ExportExcelButton';
 import { printReport } from '../print/reportSheet';
+import { useQueryTab } from '../components/useQueryTab';
 
 /**
  * **تقرير البونص** — البضاعة اللي خرجت هدية، بسعر بيعها وبتكلفتها.
@@ -24,7 +25,9 @@ interface Row { key: string | number | null; name: string; invoices: number; val
 const GROUP_LABEL: Record<Group, string> = { customer: 'العميل', rep: 'المندوب', month: 'الشهر' };
 
 export default function BonusReport() {
-  const [group, setGroup] = useState<Group>('customer');
+  // التجميع في الرابط (`?tab=`) — الريفرش بيرجع على نفس الشريحة.
+  const [groupRaw, setGroup] = useQueryTab('customer');
+  const group: Group = ['customer', 'rep', 'month'].includes(groupRaw) ? groupRaw as Group : 'customer';
   const [range, setRange] = useState<[Dayjs, Dayjs] | null>(
     [dayjs().startOf('year'), dayjs().endOf('day')]);
   const [rows, setRows] = useState<Row[]>([]);

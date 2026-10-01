@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { PAGE_SIZE_OPTIONS } from '../utils/pagination';
 import { searchFilter, searchRank, sortByName } from '../utils/arabicSort';
 import {
@@ -19,6 +19,7 @@ import { useNavigate } from 'react-router-dom';
 import { TabModal } from '../components/TabModal';
 import { useTableColumns } from '../components/ColumnSettings';
 import ListPage, { type ListTab } from '../components/ListPage';
+import { useQueryTab } from '../components/useQueryTab';
 import { money, numeralsLocale } from '../utils/money';
 import { useLiveRefresh } from '../utils/live';
 interface CustomerRecord {
@@ -137,7 +138,11 @@ export default function Customers() {
   // بيفتح على «نشط»: الكشف فيه ٦٢٣ كارت معطّل — خط بولي مدموج وأطراف ما بعد البيع
   // اللي مالهاش ولا حركة — وعرضهم افتراضياً بيدّي نفس الراجل مرتين ويغرّق الكشف.
   // الفلتر فوق لسه فيه «معطل» و«الكل» لمن يحتاجهم.
-  const [filters, setFilters] = useState<Filters>({ active: true });
+  // شريحة الحالة في الرابط (`?tab=`): الفلتر بيبدأ منها عند الفتح عشان الريفرش يرجع عليها.
+  const [listTab, setListTab] = useQueryTab('active');
+  const [filters, setFilters] = useState<Filters>(() => ({
+    active: listTab === 'all' ? undefined : listTab !== 'inactive',
+  }));
   const [search, setSearch] = useState('');           // typed text, applied on Enter/button
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
@@ -525,6 +530,13 @@ export default function Customers() {
   type StatusTab = 'active' | 'inactive' | 'all';
   const statusTab: StatusTab = filters.active === true ? 'active'
     : filters.active === false ? 'inactive' : 'all';
+  // الفلتر ← الرابط (الشرايح و«مسح») — بس لما الشريحة تتغيّر فعلاً، عشان أول رندر مايكتبش فوق اللي في الرابط.
+  const lastTab = useRef(statusTab);
+  useEffect(() => {
+    if (lastTab.current === statusTab) return;
+    lastTab.current = statusTab;
+    if (statusTab !== listTab) setListTab(statusTab);
+  }, [statusTab]); // eslint-disable-line react-hooks/exhaustive-deps
   // العدد من الملخّص — بيتحسب على الفلاتر الحالية، فبيتكتب على الشريحة المفتوحة بس.
   const countIf = (k: StatusTab) => (k === statusTab ? summaryData.total_count : undefined);
   const statusTabs: ListTab<StatusTab>[] = [

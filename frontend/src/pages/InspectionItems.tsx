@@ -13,6 +13,7 @@ import { api } from '../api/client';
 import { useTableKeyboard, useScreenShortcuts } from '../components/keyboard';
 import { useListFilter } from '../components/ListToolbar';
 import ListPage from '../components/ListPage';
+import { useQueryTab } from '../components/useQueryTab';
 import { numeralsLocale } from '../utils/money';
 import { TabModal } from '../components/TabModal';
 import type { ColumnsType } from 'antd/es/table';
@@ -36,7 +37,9 @@ const fmtPoints = (v: string) => {
 const InspectionItems: React.FC = () => {
   const [rows, setRows] = useState<ItemType[]>([]);
   const [loading, setLoading] = useState(false);
-  const [showInactive, setShowInactive] = useState(false);
+  // الشريحة في الرابط (`?tab=active|all`) — الريفرش بيرجع عليها.
+  const [listTab, setListTab] = useQueryTab('active');
+  const showInactive = listTab === 'all';
   const [editing, setEditing] = useState<ItemType | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -210,7 +213,7 @@ const InspectionItems: React.FC = () => {
           { key: 'all', label: 'الكل مع الموقوفة', count: rows.length },
         ]}
         activeTab={showInactive ? 'all' : 'active'}
-        onTabChange={(k) => setShowInactive(k === 'all')}
+        onTabChange={setListTab}
         actions={(<>
           <Button data-shortcut="F2" type="primary" className="sl-create" icon={<PlusOutlined />}
             onClick={openNew}>
