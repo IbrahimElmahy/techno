@@ -5,8 +5,10 @@
  */
 import React, { useEffect, useMemo, useState } from 'react';
 import {
-  Button, Card, Col, DatePicker, Divider, Empty, Form, Input, Row, Select, Space, Switch, Table, Tabs, Tag, Tooltip, message, Radio,
+  Button, Card, Col, DatePicker, Divider, Empty, Form, Input, Row, Select, Space, Switch, Tabs, Tag, Tooltip, message, Radio,
 } from 'antd';
+// فلتر على كل عمود — شوف `FilterTable`.
+import { FilterTable as Table } from '../../components/FilterTable';
 import { Statistic } from '../../components/Statistic';
 import { InputNumber } from '../../components/NumberInput';
 import {

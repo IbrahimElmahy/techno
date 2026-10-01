@@ -3,8 +3,10 @@ import { PAGE_SIZE } from '../utils/pagination';
 import { searchFilter, searchRank, compareArabic } from '../utils/arabicSort';
 import {
   Alert, Button, Card, Checkbox, Col, DatePicker, Descriptions, Empty, Input, Row, Select,
-  Space, Spin, Table, Tag, message,
+  Space, Spin, Tag, message,
 } from 'antd';
+// فلتر على كل عمود — شوف `FilterTable`.
+import { FilterTable as Table } from '../components/FilterTable';
 import { Statistic } from '../components/Statistic';
 import {
   DownloadOutlined, LinkOutlined, PrinterOutlined, ReloadOutlined, SearchOutlined,

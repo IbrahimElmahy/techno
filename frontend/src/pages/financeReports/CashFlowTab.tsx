@@ -7,8 +7,10 @@
  */
 import React, { useCallback, useEffect, useState } from 'react';
 import {
-  Alert, Button, Card, Col, Select, Space, Table, Tag,
+  Alert, Button, Card, Col, Select, Space, Tag,
 } from 'antd';
+// فلتر على كل عمود — شوف `FilterTable`.
+import { FilterTable as Table } from '../../components/FilterTable';
 import { Statistic } from '../../components/Statistic';
 import { ReloadOutlined, LinkOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';

@@ -1,9 +1,11 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { PAGE_SIZE } from '../utils/pagination';
 import {
-  Alert, Button, Card, Col, Empty, Input, Row, Segmented, Space, Table, Tabs, Tag,
+  Alert, Button, Card, Col, Empty, Input, Row, Segmented, Space, Tabs, Tag,
   Tooltip, message,
 } from 'antd';
+// فلتر على كل عمود — شوف `FilterTable`.
+import { FilterTable as Table } from '../components/FilterTable';
 import { Statistic } from '../components/Statistic';
 import {
   LinkOutlined, DisconnectOutlined, ReloadOutlined, ThunderboltOutlined,

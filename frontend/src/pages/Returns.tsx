@@ -5,8 +5,10 @@ import { searchFilter, searchRank, sortByName } from '../utils/arabicSort';
 import { customersOfRep, customerFitsRep } from '../utils/repScope';
 import {
   Button, Card, Col, DatePicker, Divider, Empty, Form, Input, Modal, Row, Segmented, Select,
-  Space, Table, Tag, Tooltip, Typography, message,
+  Space, Tag, Tooltip, Typography, message,
 } from 'antd';
+// فلتر على كل عمود — شوف `FilterTable`.
+import { FilterTable as Table } from '../components/FilterTable';
 import { Statistic } from '../components/Statistic';
 import { InputNumber } from '../components/NumberInput';
 import { advanceFrom } from '../components/lineKeyboard';

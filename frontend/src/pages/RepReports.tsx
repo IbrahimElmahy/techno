@@ -2,8 +2,10 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { PAGE_SIZE } from '../utils/pagination';
 import { searchFilter, searchRank, compareArabic } from '../utils/arabicSort';
 import {
-  Button, Card, DatePicker, Select, Space, Table, Tabs, Tag, message,
+  Button, Card, DatePicker, Select, Space, Tabs, Tag, message,
 } from 'antd';
+// فلتر على كل عمود — شوف `FilterTable`.
+import { FilterTable as Table } from '../components/FilterTable';
 import { Statistic } from '../components/Statistic';
 import { ReloadOutlined, TeamOutlined } from '@ant-design/icons';
 import dayjs, { Dayjs } from 'dayjs';

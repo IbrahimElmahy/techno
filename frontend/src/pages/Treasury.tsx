@@ -2,8 +2,10 @@ import React, { useEffect, useState } from 'react';
 import { searchFilter, searchRank } from '../utils/arabicSort';
 import { PAGE_SIZE, PAGE_SIZE_OPTIONS } from '../utils/pagination';
 import {
-  Button, Card, Col, Divider, Form, Input, Row, Select, Space, Table, Tag, message,
+  Button, Card, Col, Divider, Form, Input, Row, Select, Space, Tag, message,
 } from 'antd';
+// فلتر على كل عمود — شوف `FilterTable`.
+import { FilterTable as Table } from '../components/FilterTable';
 import { InputNumber } from '../components/NumberInput';
 import { PlusOutlined, RollbackOutlined, WalletOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';

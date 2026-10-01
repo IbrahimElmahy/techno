@@ -1,6 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import { PAGE_SIZE } from '../../utils/pagination';
-import { Button, Empty, Skeleton, Table, Tag } from 'antd';
+import { Button, Empty, Skeleton, Tag } from 'antd';
+// فلتر على كل عمود — شوف `FilterTable`.
+import { FilterTable as Table } from '../../components/FilterTable';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../../api/client';
 

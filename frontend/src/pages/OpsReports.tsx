@@ -3,8 +3,10 @@ import { PAGE_SIZE } from '../utils/pagination';
 import { compareArabic, searchFilter, searchRank } from '../utils/arabicSort';
 import { customerFitsRep, customersOfRep } from '../utils/repScope';
 import {
-  Alert, Button, Card, Col, DatePicker, Row, Segmented, Select, Table, Tag, message,
+  Alert, Button, Card, Col, DatePicker, Row, Segmented, Select, Tag, message,
 } from 'antd';
+// فلتر على كل عمود — شوف `FilterTable`.
+import { FilterTable as Table } from '../components/FilterTable';
 import { Statistic } from '../components/Statistic';
 import { DownloadOutlined, PrinterOutlined, ReloadOutlined } from '@ant-design/icons';
 import dayjs, { Dayjs } from 'dayjs';

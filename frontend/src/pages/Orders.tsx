@@ -2,8 +2,10 @@ import React, { useEffect, useState } from 'react';
 import { PAGE_SIZE } from '../utils/pagination';
 import {
   Alert, Button, Card, Col, DatePicker, Descriptions, Divider, Empty, Form, Input, Row, Select,
-  Space, Table, Tag, message,
+  Space, Tag, message,
 } from 'antd';
+// فلتر على كل عمود — شوف `FilterTable`.
+import { FilterTable as Table } from '../components/FilterTable';
 import { InputNumber } from '../components/NumberInput';
 import { Popconfirm } from '../components/noConfirm';
 import {

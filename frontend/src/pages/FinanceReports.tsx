@@ -1,8 +1,10 @@
 import React, { useCallback, useEffect, useState, useMemo } from 'react';
 import { PAGE_SIZE } from '../utils/pagination';
 import {
-  Card, Tabs, Table, DatePicker, Select, Space, Button, Col, Tag, Descriptions, Alert,
+  Card, Tabs, DatePicker, Select, Space, Button, Col, Tag, Descriptions, Alert,
 } from 'antd';
+// فلتر على كل عمود — شوف `FilterTable`.
+import { FilterTable as Table } from '../components/FilterTable';
 import { Statistic } from '../components/Statistic';
 import { ReloadOutlined, PrinterOutlined, LinkOutlined } from '@ant-design/icons';
 import { useTableColumns } from '../components/ColumnSettings';

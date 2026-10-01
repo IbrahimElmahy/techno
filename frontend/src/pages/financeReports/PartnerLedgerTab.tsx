@@ -7,7 +7,9 @@
  */
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { PAGE_SIZE } from '../../utils/pagination';
-import { Alert, Button, Card, Col, Row, Select, Space, Table, Tag } from 'antd';
+import { Alert, Button, Card, Col, Row, Select, Space, Tag } from 'antd';
+// فلتر على كل عمود — شوف `FilterTable`.
+import { FilterTable as Table } from '../../components/FilterTable';
 import { Statistic } from '../../components/Statistic';
 import { ReloadOutlined, LinkOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
