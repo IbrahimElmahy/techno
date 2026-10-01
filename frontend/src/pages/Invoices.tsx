@@ -2479,10 +2479,12 @@ function couponsTotal(inv: any): number {
               )}
             />
           </span>
-        </div>
-        <div className="sale-toolbar-row">
-          <DocumentToolbar actions={docToolbar()} variant="buttons" />
-          {lineGrid.control}
+          {/* الأدوات (جديد/تعديل/…) و«الأعمدة» في نفس سطر «طلب بيع» على الشمال، وأكبر
+              شوية (طلب العميل ٢٠٢٦-١٠-٠١). */}
+          <div className="sale-toolbar-row">
+            <DocumentToolbar actions={docToolbar()} variant="buttons" />
+            {lineGrid.control}
+          </div>
         </div>
       </div>
 
@@ -2856,6 +2858,48 @@ function couponsTotal(inv: any): number {
             const balance = customerBalance ?? 0;
             const due = balance + netTotal - cashAmount;
             return (
+              <>
+              {/* الملاحظات والمرفقات فوق — برّه الجزء المثبّت عشان مايطولوش. */}
+              <div className="sale-card sale-notes">
+                <div className="sale-notes-line">
+                  {hasParty && (
+                    <span className="sale-hint">
+                      <InfoCircleOutlined /> ممكن يزيد عن الفاتورة فيسدّد المديونية القديمة
+                    </span>
+                  )}
+                  {!isFactory && (
+                    <span>النقاط المكتسبة: <b style={{ color: '#2563eb' }}>
+                      {totalPoints.toLocaleString(numeralsLocale(), { maximumFractionDigits: 3 })}</b></span>
+                  )}
+                  {/* «كوبونات سابقة» مش «الكوبونات»: دي اللي اتصرفت للعميل قبل كده ولسه
+                      ماترجعتش — **مش** الدفتر اللي بيتسلّم على الفاتورة دي. */}
+                  {hasParty && (
+                    <span>كوبونات سابقة للعميل:{' '}
+                      {customerCoupons.length
+                        ? <b style={{ color: '#F5A11D' }}>
+                            {customerCoupons.length} — من {couponRange.from} إلى {couponRange.to}</b>
+                        : <b>لا يوجد</b>}
+                    </span>
+                  )}
+                  {creditAmount < -0.001 && (
+                    <span>يسدّد من المديونية القديمة:{' '}
+                      <b style={{ color: '#16a34a' }}>{money(Math.abs(creditAmount))} ج.م</b></span>
+                  )}
+                  {creditAmount > 0.001 && (
+                    <span>آجل على الفاتورة دي:{' '}
+                      <b style={{ color: '#dc2626' }}>{money(creditAmount)} ج.م</b></span>
+                  )}
+                </div>
+                {/* صور الورقة — الفاتورة الموقّعة وإيصال الاستلام. `viewInvoice` بيفضل `null`
+                    على الفاتورة الجديدة (شوف `resetDocument`)، والمكوّن بيختفي لحد ما تترحّل
+                    وياخد رقم يتعلّق عليه. */}
+                <div className="sale-attach">
+                  <DocumentAttachments docType="sales_invoice" docId={viewInvoice?.id} title="مرفقات" />
+                </div>
+              </div>
+              {/* **الإجمالي والدفع مثبّتين في آخر الشاشة** (طلب العميل ٢٠٢٦-١٠-٠١): بيفضلوا
+                  ظاهرين وانت بتنزل في الأصناف، ولما توصل لآخر الفاتورة بيقعدوا في مكانهم. */}
+              <div className="sale-bottom">
               <Row gutter={[10, 10]}>
                 <Col xs={24} lg={16}>
                   <div className="sale-tiles">
@@ -2888,47 +2932,11 @@ function couponsTotal(inv: any): number {
                     )}
                   </div>
 
-                  <div className="sale-card sale-notes">
-                    <div className="sale-notes-line">
-                      {hasParty && (
-                        <span className="sale-hint">
-                          <InfoCircleOutlined /> ممكن يزيد عن الفاتورة فيسدّد المديونية القديمة
-                        </span>
-                      )}
-                      {!isFactory && (
-                        <span>النقاط المكتسبة: <b style={{ color: '#2563eb' }}>
-                          {totalPoints.toLocaleString(numeralsLocale(), { maximumFractionDigits: 3 })}</b></span>
-                      )}
-                      {/* «كوبونات سابقة» مش «الكوبونات»: دي اللي اتصرفت للعميل قبل كده ولسه
-                          ماترجعتش — **مش** الدفتر اللي بيتسلّم على الفاتورة دي. */}
-                      {hasParty && (
-                        <span>كوبونات سابقة للعميل:{' '}
-                          {customerCoupons.length
-                            ? <b style={{ color: '#F5A11D' }}>
-                                {customerCoupons.length} — من {couponRange.from} إلى {couponRange.to}</b>
-                            : <b>لا يوجد</b>}
-                        </span>
-                      )}
-                      {creditAmount < -0.001 && (
-                        <span>يسدّد من المديونية القديمة:{' '}
-                          <b style={{ color: '#16a34a' }}>{money(Math.abs(creditAmount))} ج.م</b></span>
-                      )}
-                      {creditAmount > 0.001 && (
-                        <span>آجل على الفاتورة دي:{' '}
-                          <b style={{ color: '#dc2626' }}>{money(creditAmount)} ج.م</b></span>
-                      )}
-                    </div>
-                    {/* صور الورقة — الفاتورة الموقّعة وإيصال الاستلام. `viewInvoice` بيفضل `null`
-                        على الفاتورة الجديدة (شوف `resetDocument`)، والمكوّن بيختفي لحد ما تترحّل
-                        وياخد رقم يتعلّق عليه. */}
-                    <div className="sale-attach">
-                      <DocumentAttachments docType="sales_invoice" docId={viewInvoice?.id} title="مرفقات" />
-                    </div>
-                  </div>
                 </Col>
 
                 <Col xs={24} lg={8}>
                   <div className="sale-card sale-pay">
+                    <div className="sale-pay-inputs">
                     <Form.Item label="خصم على إجمالي الفاتورة">
                       <InputNumber min={0} max={100} style={{ width: '100%' }} addonAfter="%"
                         disabled={viewOnly}
@@ -2953,6 +2961,7 @@ function couponsTotal(inv: any): number {
                         disabled={viewOnly || isBonus}
                         value={isBonus ? 0 : cashAmount} onChange={(val) => setCashAmount(val || 0)} />
                     </Form.Item>
+                    </div>
                     {hasParty && (
                       <div className={`sale-due ${due > 0.001 ? 'is-due' : 'is-clear'}`}>
                         <div>
@@ -2976,6 +2985,8 @@ function couponsTotal(inv: any): number {
                   </div>
                 </Col>
               </Row>
+              </div>
+              </>
             );
           })()}
 
