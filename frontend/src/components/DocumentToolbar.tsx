@@ -43,7 +43,12 @@ export interface ToolbarAction {
 const BY_KEYS: Record<string, ShortcutAction> = Object.fromEntries(
   KEY_MAP.map((k) => [k.keys.toLowerCase(), k.action]));
 
-export default function DocumentToolbar({ actions }: { actions: ToolbarAction[] }) {
+export default function DocumentToolbar({ actions, inline = false }: {
+  actions: ToolbarAction[];
+  /** جوّه سطر العنوان (٢٠٢٦-١٠-٠١): من غير خلفية ولا إطار ولا مسافة تحت — مكانه جنب
+   *  «طلب بيع» مش صف لوحده. */
+  inline?: boolean;
+}) {
   const handlers = useMemo(() => {
     const out: ScreenShortcuts = {};
     actions.forEach((a) => {
@@ -66,8 +71,10 @@ export default function DocumentToolbar({ actions }: { actions: ToolbarAction[] 
     <div
       style={{
         // شريط رفيع: الأيقونة جنب الاسم مش فوقه (٢٠٢٦-٠٩-٣٠ — الترويسة كانت واخدة نص الصفحة).
-        display: 'flex', flexWrap: 'wrap', gap: 2, padding: '2px 4px', marginBottom: 6,
-        background: '#f6faf3', border: '1px solid #e2ede0', borderRadius: 8,
+        display: 'flex', flexWrap: 'wrap', gap: 2, padding: inline ? 0 : '2px 4px',
+        marginBottom: inline ? 0 : 6,
+        background: inline ? 'transparent' : '#f6faf3',
+        border: inline ? 'none' : '1px solid #e2ede0', borderRadius: 8,
       }}
     >
       {actions.map((a) => {

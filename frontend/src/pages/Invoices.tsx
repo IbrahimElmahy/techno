@@ -2408,7 +2408,10 @@ function couponsTotal(inv: any): number {
       <div>
       {partyPicker}
       <Card
+          // سطر العنوان بيلفّ لو ضاق — antd بيقصّه بـ«…» افتراضياً.
+          styles={{ title: { whiteSpace: 'normal', overflow: 'visible' } }}
           title={
+            <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
             <Space wrap>
               <Button type="text" icon={<ArrowRightOutlined />}
                 onClick={closeCreate}>رجوع</Button>
@@ -2466,9 +2469,16 @@ function couponsTotal(inv: any): number {
             : (viewInvoice || editingInvoice)?.voided ? 'voided' : 'posted'}
         />
             </Space>
+            {/* **شريط الأدوات والأعمدة في نفس سطر «طلب بيع»، على الشمال** (طلب العميل
+                ٢٠٢٦-١٠-٠١) — كانوا صفين لوحدهم تحت العنوان وفوق الأصناف. */}
+            <div style={{ marginInlineStart: 'auto', display: 'flex', alignItems: 'center',
+                          gap: 6, flexWrap: 'wrap', fontWeight: 400 }}>
+              <DocumentToolbar actions={docToolbar()} inline />
+              {lineGrid.control}
+            </div>
+            </div>
           }
         >
-        <DocumentToolbar actions={docToolbar()} />
         {/* `doc-form` بيضغط المسافات ويغمّق الأسماء — نفس فاتورة الشرا. */}
         <Form form={createForm} layout="vertical" size="small" className="doc-form"
           onValuesChange={() => setFormTick((n) => n + 1)}
@@ -2480,8 +2490,10 @@ function couponsTotal(inv: any): number {
             * هو اللي الإيد بتمشي عليه، والقفز بين خانات مش مترتبة بترتيب السؤال هو اللي
             * بيخلّي الواحد يرجع لورا كل شوية.
             */}
+          {/* الترتيب (طلب العميل ٢٠٢٦-١٠-٠١): نوع المستند ← رقم المستند ← العميل وتليفونه ←
+              المخزن ← المندوب، وبعدهم الباقي. */}
           <Row gutter={16}>
-            <Col xs={12} md={4}>
+            <Col xs={12} md={3}>
               <Form.Item label="نوع المستند" style={{ marginBottom: 8 }}>
                 {/* «فاتورة بونص» بتظهر للي معاه صلاحيتها بس. التبديل بيمسح الفاتورة المربوطة:
                     الرجوع لطلب بيع مايسيبش ربط مالوش معنى. */}
@@ -2495,6 +2507,12 @@ function couponsTotal(inv: any): number {
                     ...(canBonus || isBonus ? [{ value: 'bonus', label: 'فاتورة بونص' }] : []),
                   ]}
                   style={{ fontWeight: 700 }} />
+              </Form.Item>
+            </Col>
+            <Col xs={12} md={3}>
+              <Form.Item name="external_document_number" label="رقم المستند"
+                style={{ marginBottom: 8 }}>
+                <Input placeholder="رقم فاتورة العميل" disabled={viewOnly} />
               </Form.Item>
             </Col>
             {isBonus && (
@@ -2514,7 +2532,7 @@ function couponsTotal(inv: any): number {
               </Col>
             )}
             {/* التاريخ مش هنا: هو في سطر العنوان فوق (نفس القيمة) — كان مكتوب مرتين. */}
-            <Col xs={24} md={7}>
+            <Col xs={24} md={6}>
               {/* Picked from a searchable modal that can also create the customer on the spot,
                   so a new walk-in never costs the half-entered invoice. */}
               <Form.Item
@@ -2531,6 +2549,13 @@ function couponsTotal(inv: any): number {
                     value: c.id,
                     label: `${c.name}${c.default_price_tier ? ` — ${TIER_LABELS[c.default_price_tier]}` : ''}`,
                   }))} filterOption={searchFilter} filterSort={searchRank}/>
+              </Form.Item>
+            </Col>
+            {/* تليفون العميل — للقراية، من كارته (طلب العميل ٢٠٢٦-١٠-٠١). */}
+            <Col xs={12} md={3}>
+              <Form.Item label="الهاتف" style={{ marginBottom: 8 }}>
+                <Input readOnly disabled dir="ltr" placeholder="-"
+                  value={(customers.find((c) => c.id === selectedCustomerId) as any)?.phone || ''} />
               </Form.Item>
             </Col>
             <Col xs={12} md={5}>
@@ -2579,12 +2604,6 @@ function couponsTotal(inv: any): number {
               </Form.Item>
             </Col>
             )}
-            <Col xs={12} md={4}>
-              <Form.Item name="external_document_number" label="رقم المستند"
-                style={{ marginBottom: 8 }}>
-                <Input placeholder="رقم فاتورة العميل" disabled={viewOnly} />
-              </Form.Item>
-            </Col>
             <Col xs={12} md={5}>
               <Form.Item name="notes" label="ملاحظات" style={{ marginBottom: 8 }}>
                 <Input placeholder="اختياري" disabled={viewOnly} />
@@ -2716,7 +2735,6 @@ function couponsTotal(inv: any): number {
                 إضافة صنف للفاتورة (Enter)
               </Button>
             )}
-            <div style={{ flexShrink: 0 }}>{lineGrid.control}</div>
           </div>
 
           {/*
