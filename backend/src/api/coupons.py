@@ -66,7 +66,8 @@ def list_coupons(
         stmt = stmt.where(Coupon.customer_id == customer_id)
     if status_filter is not None:
         stmt = stmt.where(Coupon.status == status_filter)
-    return [_c_out(c) for c in db.scalars(stmt).all()]
+    # الأحدث فوق (طلب العميل ٢٠٢٦-١٠-٠١).
+    return [_c_out(c) for c in db.scalars(stmt.order_by(Coupon.created_at.desc(), Coupon.id.desc())).all()]
 
 
 @router.post("/{coupon_id}/redeem", response_model=RedemptionOut, status_code=status.HTTP_201_CREATED)

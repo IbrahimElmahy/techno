@@ -182,6 +182,10 @@ def list_employees(
     if job_title_id:
         stmt = stmt.where(Employee.job_title_id == job_title_id)
     rows = db.scalars(stmt.order_by(Employee.name)).all()
+    # المسميات تتحمّل مرة وتفضل ماسكينها — من غيرها `db.get` في `_out` بيسأل عن نفس
+    # المسمى مع كل موظف (خريطة الهوية ضعيفة): ٩٥ استعلام للقايمة.
+    _titles = db.scalars(select(JobTitle)).all()  # noqa: F841 — المرجع هو اللي بيمسكهم
+    _depts = db.scalars(select(Department)).all()  # noqa: F841
     return [_out(db, e) for e in rows]
 
 

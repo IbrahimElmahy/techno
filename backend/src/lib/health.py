@@ -320,7 +320,12 @@ def check_reorder(db: Session, on_hand, labels, scope: Scope | None = None) -> l
         totals[iid] = totals.get(iid, ZERO) + qty
 
     below, above = [], []
-    for item in db.scalars(select(Item).where(Item.active.is_(True))).all():
+    # الأعمدة اللي الفحص بيقراها بس — مش الصنف كله بعلاقاته: ~٢٦٠٠ أوبجكت كانوا بياخدوا
+    # ~٢٠٠ms من فتحة الرئيسية. نفس الجدول ونفس الشرط، فنفس الصفوف بنفس الترتيب.
+    for item in db.execute(
+        select(Item.id, Item.code, Item.name, Item.min_stock, Item.max_stock)
+        .where(Item.active.is_(True))
+    ).all():
         if item.min_stock is None and item.max_stock is None:
             continue
         if not sc.item(item.id):

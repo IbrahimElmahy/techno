@@ -558,17 +558,17 @@ def balance_of(db: Session, account_id: int) -> Decimal:
     account = db.get(Account, account_id)
     if account is None:
         raise LedgerError("الحساب مش موجود.")
-    total = ZERO
-    lines = db.scalars(
-        select(LedgerLine)
+    # الجمع في القاعدة مش في بايثون: الخزنة الرئيسية عليها آلاف السطور، وتحميلها كلها
+    # كأوبجكتات (بتوزيعاتها) كان بياخد ~٤٠٠ms في كل نداء لـ`/treasuries`. نفس الرقم بالظبط —
+    # المبلغ عمود بخانتين عشريتين، فـ`to_money` على كل سطر ماكانتش بتغيّر حاجة.
+    signed = case(
+        (LedgerLine.direction == account.normal_side, LedgerLine.amount),
+        else_=-LedgerLine.amount,
+    )
+    total = db.scalar(
+        select(func.coalesce(func.sum(signed), 0))
+        .select_from(LedgerLine)
         .join(LedgerEntry, LedgerEntry.id == LedgerLine.entry_id)
         .where(LedgerLine.account_id == account_id, is_posted_sql())
-    ).all()
-    for line in lines:
-        signed = (
-            to_money(line.amount)
-            if line.direction == account.normal_side
-            else -to_money(line.amount)
-        )
-        total += signed
-    return to_money(total)
+    )
+    return to_money(total if total is not None else ZERO)

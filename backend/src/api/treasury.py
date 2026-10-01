@@ -15,6 +15,7 @@ from src.auth import branch_scope
 from src.auth.dependencies import CurrentUser, require_capability
 from src.auth.rbac import CAP_LEDGER_POST, CAP_LEDGER_READ, CAP_LEDGER_REVERSE, CAP_TREASURY_READ
 from src.core.db import get_db
+from src.lib.doc_order import newest_first
 from src.models.ledger import Account, AccountType, Direction, LedgerEntry
 from src.services import audit_service, ledger_service
 from src.services.ledger_service import LedgerError, LineInput
@@ -141,7 +142,8 @@ def list_ledger_entries(
     stmt = branch_scope.scope(select(LedgerEntry), LedgerEntry, current)
     if branch_id is not None:
         stmt = stmt.where(LedgerEntry.branch_id == branch_id)
-    entries = db.scalars(stmt).all()
+    # الأحدث فوق بتاريخ القيد (طلب العميل ٢٠٢٦-١٠-٠١).
+    entries = db.scalars(stmt.order_by(*newest_first(LedgerEntry, LedgerEntry.entry_date))).all()
     return [_entry_out(e) for e in entries]
 
 

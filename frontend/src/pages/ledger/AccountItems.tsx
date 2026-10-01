@@ -67,7 +67,8 @@ export default function AccountItems({
       size="small"
       dataSource={lines}
       pagination={lines.length > 20 ? { defaultPageSize: PAGE_SIZE } : false}
-      title={() => <span style={{ color: '#888' }}>رصيد أول المدة: {money(opening)}</span>}
+      // الأحدث فوق: رصيد آخر المدة فوق الجدول، وأول المدة تحت مع أقدم حركة.
+      title={() => <span style={{ color: '#888' }}>رصيد آخر المدة: {money(lines[0]?.balance ?? opening)}</span>}
       columns={[
         { title: 'التاريخ', dataIndex: 'entry_date', width: 105 },
         {
@@ -103,10 +104,10 @@ export default function AccountItems({
       summary={() => (
         <Table.Summary.Row>
           <Table.Summary.Cell index={0} colSpan={5}>
-            <Tag>{lines.length} حركة</Tag>
+            <Tag>{lines.length} حركة</Tag> رصيد أول المدة
           </Table.Summary.Cell>
           <Table.Summary.Cell index={5}>
-            <b>{money(lines[lines.length - 1]?.balance ?? 0)}</b>
+            <b>{money(opening)}</b>
           </Table.Summary.Cell>
         </Table.Summary.Row>
       )}

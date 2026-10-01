@@ -306,7 +306,9 @@ export default function SupplierProfile() {
   const runningOf = useMemo(() => {
     const m = new Map<string, number>();
     let acc = 0;
-    for (const l of shownLines) {
+    // الكشف جاي الأحدث فوق — التراكمي بيتجمع من تحت (الأقدم) لفوق.
+    for (let i = shownLines.length - 1; i >= 0; i -= 1) {
+      const l = shownLines[i];
       acc += Number(l.debit || 0) - Number(l.credit || 0);
       m.set(`${l.entry_id}-${l.entry_date}-${l.balance}`, acc);
     }

@@ -16,6 +16,7 @@ from sqlalchemy.orm import Session
 from src.auth.dependencies import CurrentUser, require_capability
 from src.auth.rbac import CAP_COUPON_RECEIVE
 from src.core.db import get_db
+from src.core.fast_json import model_json
 from src.models.role import RoleName
 from src.auth import branch_scope
 from src.services import coupon_receipt_service
@@ -199,8 +200,14 @@ def list_receipts(
     response.headers["X-Total-Count"] = str(total)
 
     if limit is not None:
-        return PaginatedReceiptsOut(rows=items_out, total=total, limit=min(limit, 500), offset=offset)
-    return items_out
+        page = PaginatedReceiptsOut(
+            rows=items_out,
+            total=total,
+            limit=min(limit, 500),
+            offset=offset,
+        )
+        return model_json(page, headers={"X-Total-Count": str(total)})
+    return model_json(items_out, headers={"X-Total-Count": str(total)})
 
 
 def _seen_receipt(db: Session, receipt_id: int, current: CurrentUser):

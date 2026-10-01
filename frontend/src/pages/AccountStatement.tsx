@@ -443,7 +443,9 @@ export default function AccountStatement() {
   const runningOf = useMemo(() => {
     const m = new Map<string, number>();
     let acc = 0;
-    for (const l of shownLines) {
+    // الكشف جاي الأحدث فوق — التراكمي بيتجمع من تحت (الأقدم) لفوق.
+    for (let i = shownLines.length - 1; i >= 0; i -= 1) {
+      const l = shownLines[i];
       acc += Number(l.debit || 0) - Number(l.credit || 0);
       m.set(`${l.entry_id}-${l.entry_date}-${l.balance}`, acc);
     }
@@ -745,7 +747,8 @@ export default function AccountStatement() {
         credit: g.rows.reduce((t, l) => t + Number(l.credit || 0), 0),
         overdue: g.rows.reduce((t, l) => t + (l.days_overdue ? Math.abs(Number(l.residual || 0)) : 0), 0),
       }))
-      .sort((a, b) => a.key.localeCompare(b.key));
+      // الشهور الأحدث فوق زي السطور؛ الأنواع بترتيبها الأبجدي.
+      .sort((a, b) => (groupBy === 'month' ? b.key.localeCompare(a.key) : a.key.localeCompare(b.key)));
   }, [shownLines, groupBy]);
 
   const acctName = (id: number) => {

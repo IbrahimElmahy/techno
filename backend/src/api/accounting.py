@@ -25,6 +25,7 @@ from src.auth.rbac import (
     CAP_ACCOUNTING_TRIAL_BALANCE_READ,
 )
 from src.core.db import get_db
+from src.lib.doc_order import newest_first
 from src.models.customer import Customer
 from src.models.employee import Employee
 from src.models.journal import JOURNAL_KIND_LABEL, Journal, JournalKind
@@ -562,12 +563,11 @@ def list_journal_entries(
         stmt = stmt.where(LedgerEntry.partner_kind == partner_kind)
     if partner_id is not None:
         stmt = stmt.where(LedgerEntry.partner_id == partner_id)
+    # الأحدث فوق بتاريخ القيد (طلب العميل ٢٠٢٦-١٠-٠١) — والحد بياخد أحدث `limit` قيد.
+    stmt = stmt.order_by(*newest_first(LedgerEntry, LedgerEntry.entry_date))
     if limit is not None and limit > 0:
-        # الأحدث أولاً في الاستعلام، وبعدين بنرجّع الترتيب زي ما الشاشة مستنياه.
-        entries = list(reversed(
-            db.scalars(stmt.order_by(LedgerEntry.id.desc()).limit(limit)).all()))
-    else:
-        entries = list(db.scalars(stmt.order_by(LedgerEntry.id)).all())
+        stmt = stmt.limit(limit)
+    entries = list(db.scalars(stmt).all())
     names = _partner_names(db, entries)
     return [_entry_out(e, names) for e in entries]
 

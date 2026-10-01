@@ -202,7 +202,7 @@ def list_holidays(
     _: CurrentUser = Depends(require_capability(CAP_HR_READ)),
     db: Session = Depends(get_db),
 ) -> list[HolidayOut]:
-    stmt = select(Holiday).order_by(Holiday.holiday_date)
+    stmt = select(Holiday).order_by(Holiday.holiday_date.desc(), Holiday.id.desc())  # الأحدث فوق
     if year:
         stmt = stmt.where(Holiday.holiday_date >= date(year, 1, 1),
                           Holiday.holiday_date <= date(year, 12, 31))

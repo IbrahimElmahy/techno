@@ -205,7 +205,7 @@ def coupon_statement(
     current: CurrentUser = Depends(require_capability(CAP_COUPON_RECEIVE)),
     db: Session = Depends(get_db),
 ) -> list[CouponStatementRow]:
-    """كشف حساب الفنى — كل ورقة خرجت له أو رجعت منه، بالترتيب الزمني."""
+    """كشف حساب الفنى — كل ورقة خرجت له أو رجعت منه، الأحدث فوق."""
     out: list[CouponStatementRow] = []
 
     issues = branch_scope.scope(select(CouponIssue), CouponIssue, current).where(
@@ -236,7 +236,8 @@ def coupon_statement(
             count=len(serials), serial_from=serials[0] if serials else None,
             serial_to=serials[-1] if serials else None))
 
-    out.sort(key=lambda r: (r.happened_on or date.min, r.document_number))
+    # الأحدث فوق (طلب العميل ٢٠٢٦-١٠-٠١).
+    out.sort(key=lambda r: (r.happened_on or date.min, r.document_number), reverse=True)
     return out
 
 

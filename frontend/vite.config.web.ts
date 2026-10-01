@@ -13,10 +13,12 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import * as path from 'path';
+import { manualChunks } from './vite.chunks';
 
 export default defineConfig({
   base: '/',
   plugins: [react()],
   resolve: { alias: { '@': path.resolve(__dirname, './src') } },
   server: { port: 5173, strictPort: true },
+  build: { rollupOptions: { output: { manualChunks } } },
 });

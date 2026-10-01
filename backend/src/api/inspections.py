@@ -22,6 +22,7 @@ from src.auth.rbac import (
     CAP_SETTINGS_WRITE,
 )
 from src.core.db import get_db
+from src.core.fast_json import model_json
 from src.lib import phones
 from src.models.customer import Customer
 from src.models.inspection import InspectionStatus, VisitKind
@@ -429,8 +430,14 @@ def list_inspections(
     response.headers["X-Total-Count"] = str(total)
 
     if limit is not None:
-        return PaginatedInspectionsOut(rows=items_out, total=total, limit=min(limit, 500), offset=offset)
-    return items_out
+        page = PaginatedInspectionsOut(
+            rows=items_out,
+            total=total,
+            limit=min(limit, 500),
+            offset=offset,
+        )
+        return model_json(page, headers={"X-Total-Count": str(total)})
+    return model_json(items_out, headers={"X-Total-Count": str(total)})
 
 
 class InspectionPatch(BaseModel):

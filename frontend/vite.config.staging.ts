@@ -7,10 +7,11 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import * as path from 'path';
+import { manualChunks } from './vite.chunks';
 
 export default defineConfig({
   base: '/staging/',
   plugins: [react()],
   resolve: { alias: { '@': path.resolve(__dirname, './src') } },
-  build: { outDir: 'dist-staging' },
+  build: { outDir: 'dist-staging', rollupOptions: { output: { manualChunks } } },
 });

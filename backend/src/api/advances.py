@@ -170,7 +170,7 @@ def list_adjustments(
     db: Session = Depends(get_db),
 ) -> list[dict]:
     stmt = select(PayrollAdjustment).order_by(
-        PayrollAdjustment.year.desc(), PayrollAdjustment.month.desc())
+        PayrollAdjustment.year.desc(), PayrollAdjustment.month.desc(), PayrollAdjustment.id.desc())
     if employee_id:
         stmt = stmt.where(PayrollAdjustment.employee_id == employee_id)
     if year:

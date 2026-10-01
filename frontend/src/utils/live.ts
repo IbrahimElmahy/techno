@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { api, clearApiCache, getApiBaseURL } from '../api/client';
+import { api, clearApiCache, getApiBaseURL, setLiveConnected } from '../api/client';
 import { useOnScreen } from '../components/keyboard';
 
 /**
@@ -84,6 +84,8 @@ async function connect() {
 
   es.onopen = () => {
     failures = 0;
+    // الكاش يطوّل عمره بس والإعلانات واصلة — شوف `TTL_LIVE_MS` في `api/client.ts`.
+    setLiveConnected(true);
     // كنا مقطوعين فترة (لابتوب نام، النت فصل، السيرفر اتعمله ريستارت)؟ الإعلانات اللي
     // حصلت ساعتها ضاعت، فكل شاشة بتحدّث نفسها مرة. القفل الدوري من السيرفر بيرجع في
     // ثانية فمابيعدّيش على الشرط ده.
@@ -99,6 +101,7 @@ async function connect() {
   };
 
   es.onerror = () => {
+    setLiveConnected(false);
     // إعادة الاتصال بإيدنا مش بتاعة المتصفح: المتصفح بيعيد بنفس الرابط — يعني نفس التذكرة
     // اللي اتصرفت — وعلى 401 بيسيبها خالص. هنا بناخد تذكرة جديدة ونستنى أكتر مع كل فشل.
     es.close();
@@ -116,6 +119,7 @@ export function startLive() {
 /** مع الخروج — الاتصال مايفضلش مفتوح بتوكن حد خرج. */
 export function stopLive() {
   wanted = false;
+  setLiveConnected(false);
   window.clearTimeout(retryTimer);
   source?.close();
   source = null;

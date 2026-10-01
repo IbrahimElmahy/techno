@@ -247,7 +247,7 @@ def export_report(
         doc_date = func.coalesce(SalesInvoice.invoice_date, cast(SalesInvoice.created_at, Date))
         invoices = db.scalars(_window(
             branch_scope.scope(select(SalesInvoice), SalesInvoice, current), doc_date)
-            .order_by(doc_date, SalesInvoice.id)).all()
+            .order_by(doc_date.desc(), SalesInvoice.id.desc())).all()
         for inv in invoices:
             if not report_statement.matches_obj(inv, wanted):
                 continue
@@ -263,7 +263,7 @@ def export_report(
                                  cast(PurchaseInvoice.created_at, Date))
         invoices = db.scalars(_window(
             branch_scope.scope(select(PurchaseInvoice), PurchaseInvoice, current), doc_date)
-            .order_by(doc_date, PurchaseInvoice.id)).all()
+            .order_by(doc_date.desc(), PurchaseInvoice.id.desc())).all()
         for inv in invoices:
             if not report_statement.matches_obj(inv, wanted):
                 continue

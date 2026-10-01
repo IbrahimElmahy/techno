@@ -13,6 +13,7 @@ from src.auth import branch_scope
 from src.auth.dependencies import CurrentUser, require_capability
 from src.auth.rbac import CAP_PURCHASE_WRITE, CAP_STOCK_READ, CAP_TRANSFER_INITIATE
 from src.core.db import get_db
+from src.core.fast_json import model_json
 from src.lib import arabic, stock_docs
 from src.services import rep_store_service
 from src.models.catalog import Item, StockBatchMovement
@@ -445,16 +446,22 @@ class PermitOut(BaseModel):
     lines: list[PermitLineOut] = []
 
 
-def _permit_out(db: Session, p) -> PermitOut:
+def _permit_out(db: Session, p, pre: dict | None = None) -> PermitOut:
+    """`pre` من `_permit_prefetch` — للقايمة: نفس الرد من غير ٣ استعلامات لكل إذن."""
     from src.models.stock_permit import StockPermit as _P
     from src.models.warehouse import Warehouse as _W
 
-    item_names = {
-        i.id: i.name for i in db.scalars(
-            select(Item).where(Item.id.in_([ln.item_id for ln in p.lines] or [0]))).all()
-    }
-    warehouse = db.get(_W, p.warehouse_id)
-    reversal = db.scalar(select(_P.id).where(_P.reverses_id == p.id))
+    if pre is not None:
+        item_names = pre["items"]
+        warehouse = pre["warehouses"].get(p.warehouse_id)
+        reversal = pre["reversals"].get(p.id)
+    else:
+        item_names = {
+            i.id: i.name for i in db.scalars(
+                select(Item).where(Item.id.in_([ln.item_id for ln in p.lines] or [0]))).all()
+        }
+        warehouse = db.get(_W, p.warehouse_id)
+        reversal = db.scalar(select(_P.id).where(_P.reverses_id == p.id))
     return PermitOut(
         id=p.id, document_number=p.document_number, kind=p.kind.value,
         warehouse_id=p.warehouse_id, warehouse_name=warehouse.name if warehouse else None,
@@ -468,6 +475,33 @@ def _permit_out(db: Session, p) -> PermitOut:
             quantity=ln.quantity, unit_cost=ln.unit_cost, line_cost=ln.line_cost)
             for ln in p.lines],
     )
+
+
+def _permit_prefetch(db: Session, permits: list) -> dict:
+    """أسامي الأصناف والمخازن والإذن العاكس لكل الأذونات مرة واحدة.
+
+    `_permit_out` كان بيسأل ٣ أسئلة لكل إذن، فشاشة الأذونات (٢٤٠ إذن) كانت ٧٣٠ استعلام
+    و~نص ثانية. هنا ٣ استعلامات للقايمة كلها.
+    """
+    from src.models.stock_permit import StockPermit as _P
+    from src.models.warehouse import Warehouse as _W
+
+    item_ids = {ln.item_id for p in permits for ln in p.lines}
+    wh_ids = {p.warehouse_id for p in permits if p.warehouse_id is not None}
+    p_ids = [p.id for p in permits]
+    reversals: dict[int, int] = {}
+    if p_ids:
+        for rid, rev in db.execute(
+                select(_P.id, _P.reverses_id).where(_P.reverses_id.in_(p_ids))
+                .order_by(_P.id)).all():
+            reversals.setdefault(rev, rid)
+    return {
+        "items": {i.id: i.name for i in db.scalars(
+            select(Item).where(Item.id.in_(item_ids or [0]))).all()},
+        "warehouses": {w.id: w for w in db.scalars(
+            select(_W).where(_W.id.in_(wh_ids or [0]))).all()},
+        "reversals": reversals,
+    }
 
 
 @router.post("/permits", response_model=PermitOut, status_code=201)
@@ -530,8 +564,17 @@ def list_permits(
     if limit is not None:
         clamped_limit = min(limit, 500)
         paged_rows = rows[offset:offset + clamped_limit]
-        return PaginatedPermitsOut(rows=[_permit_out(db, p) for p in paged_rows], total=total, limit=clamped_limit, offset=offset)
-    return [_permit_out(db, p) for p in rows]
+        pre = _permit_prefetch(db, paged_rows)
+        page = PaginatedPermitsOut(
+            rows=[_permit_out(db, p, pre) for p in paged_rows],
+            total=total,
+            limit=clamped_limit,
+            offset=offset,
+        )
+        return model_json(page, headers={"X-Total-Count": str(total)})
+    pre = _permit_prefetch(db, rows)
+    return model_json([_permit_out(db, p, pre) for p in rows],
+                      headers={"X-Total-Count": str(total)})
 
 
 def _seen_permit(db: Session, permit_id: int, current: CurrentUser):

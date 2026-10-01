@@ -440,7 +440,9 @@ export default function CustomerProfile() {
   const runningOf = useMemo(() => {
     const m = new Map<string, number>();
     let acc = 0;
-    for (const l of shownLines) {
+    // الكشف جاي الأحدث فوق — التراكمي بيتجمع من تحت (الأقدم) لفوق.
+    for (let i = shownLines.length - 1; i >= 0; i -= 1) {
+      const l = shownLines[i];
       acc += Number(l.debit || 0) - Number(l.credit || 0);
       m.set(`${l.entry_id}-${l.entry_date}-${l.balance}`, acc);
     }
@@ -1347,15 +1349,14 @@ export default function CustomerProfile() {
                               render: (v: string | null) => <b>{pointsNum(v)}</b> },
                           ]} />
                       )}
-                      {/* القص لازم يبان: من غير السطر ده الشاشة بتعرض أقدم صفحة وبس،
-                          و«عدد الحركات» بيقول رقم أكبر من اللي في الجدول من غير تفسير،
-                          وآخر «رصيد جاري» بيخالف كارت «الرصيد». */}
+                      {/* القص لازم يبان: الدفتر الأحدث فوق، فالمعروض أحدث صفحة وبس،
+                          و«عدد الحركات» بيقول رقم أكبر من اللي في الجدول من غير تفسير. */}
                       {points && points.count > points.rows.length && (
                         <Alert
                           style={{ marginTop: 12 }}
                           type="warning"
                           showIcon
-                          message={`معروض ${points.rows.length} حركة من ${points.count} — الباقي لسه ماتحمّلش، فآخر «رصيد جاري» في الجدول مش هو رصيد العميل النهائي.`}
+                          message={`معروض ${points.rows.length} حركة من ${points.count} — الحركات الأقدم لسه ماتحمّلتش.`}
                           action={(
                             <Button size="small" loading={pointsMoreLoading}
                               onClick={() => loadPoints(points.rows.length)}>

@@ -587,6 +587,10 @@ def account_statement(
              debit=amount if is_debit else ZERO, credit=ZERO if is_debit else amount,
              description=description, cost_center_id=line.cost_center_id, line=line)
 
+    # **الأحدث فوق** (طلب العميل ٢٠٢٦-١٠-٠١). الرصيد اتحسب فوق بالترتيب الزمني، فكل سطر
+    # شايل رصيده الصح — القلب للعرض بس، وأول المدة بقى تحت مع أقدم حركة.
+    lines.reverse()
+
     reconcilable = reconcile_service.is_reconcilable(account)
     total_due = total_overdue = ZERO
     aging = AgingBuckets()

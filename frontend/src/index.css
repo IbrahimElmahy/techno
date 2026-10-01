@@ -1630,3 +1630,27 @@ html[data-density='comfortable'] .ant-table-thead > tr > th {
 /* خانات اختيار الحساب في كشف الحساب — أعرض، والقايمة بعرض الأسماء مش بعرض الخانة. */
 .list-page .sl-filters > .sl-f-account { flex: 2 1 240px; }
 .sl-account-popup { min-width: 300px; }
+
+/* ==========================================================================
+   الكلام في نص العمود في كل جداول النظام (طلب العميل ٢٠٢٦-١٠-٠١) — الترويسة والخلايا
+   والإجماليات. `!important` عشان يغلب `align` اللي الأعمدة بتحطه inline.
+   ========================================================================== */
+.ant-table-wrapper .ant-table-thead > tr > th,
+.ant-table-wrapper .ant-table-tbody > tr > td,
+.ant-table-wrapper .ant-table-summary > tr > td,
+.ant-table-wrapper .ant-table-summary > tr > th,
+.entry-grid thead th,
+.entry-grid tbody td,
+.entry-grid tfoot td {
+  text-align: center !important;
+}
+/* الخانات جوّه الخلية (كمية/سعر/خصم) بتتسنتر هي كمان. */
+.ant-table-wrapper .ant-table-tbody > tr > td .ant-input-number-input,
+.entry-grid tbody td .ant-input-number-input,
+.entry-grid tbody td .ant-input {
+  text-align: center;
+}
+/* أعمدة الشجرة (الحسابات/الأقسام) بتفضل جنب السهم — سنترتها بتبعد الاسم عن علامة الفتح. */
+.ant-table-wrapper .ant-table-tbody > tr > td.ant-table-cell-with-append {
+  text-align: start !important;
+}

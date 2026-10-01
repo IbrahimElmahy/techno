@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from src.auth import branch_scope
@@ -90,23 +90,39 @@ def _build(db: Session, users: list[User]) -> list[RepOut]:
         .where(SalesInvoice.rep_id.in_(ids)).group_by(SalesInvoice.rep_id)).all())
 
     # كام صنف فعلاً في مكان بضاعته — الرقم اللي بيفرّق بين مندوب في الشارع وحساب فاضي.
-    stock_n: dict[int, int] = {}
+    # استعلام واحد لكل الأماكن (كان واحد لكل مندوب: ٢٠ مسح لجدول الحركات = ~٤٠٠ms).
+    # العدّ نفسه زي ما هو: صف لكل صنف اتحرّك في المكان. (العهدة كانت مكتوبة
+    # `LocationKind.rep` — قيمة مش موجودة، فمندوب بعهدة ومن غير مخزن كان بيوقّع الشاشة.)
+    user_loc: dict[int, tuple] = {}
     for u in users:
         emp = emps.get(u.id)
-        loc = None
         if emp is not None and emp.warehouse_id:
-            loc = (LocationKind.warehouse, emp.warehouse_id)
+            user_loc[u.id] = (LocationKind.warehouse, emp.warehouse_id)
         elif u.id in custody:
-            loc = (LocationKind.rep, custody[u.id])
-        if loc is None:
-            continue
-        rows = db.execute(
-            select(StockMovement.item_id,
-                   func.sum(func.coalesce(StockMovement.quantity, 0)))
-            .where(StockMovement.location_kind == loc[0],
-                   StockMovement.location_id == loc[1])
-            .group_by(StockMovement.item_id)).all()
-        stock_n[u.id] = len(rows)
+            user_loc[u.id] = (LocationKind.custody, custody[u.id])
+    per_loc: dict[tuple, int] = {}
+    if user_loc:
+        wh_ids = {lid for kind, lid in user_loc.values() if kind == LocationKind.warehouse}
+        cust_ids = {lid for kind, lid in user_loc.values() if kind == LocationKind.custody}
+        conds = []
+        if wh_ids:
+            conds.append((StockMovement.location_kind == LocationKind.warehouse)
+                         & StockMovement.location_id.in_(wh_ids))
+        if cust_ids:
+            conds.append((StockMovement.location_kind == LocationKind.custody)
+                         & StockMovement.location_id.in_(cust_ids))
+        for kind, lid, _item in db.execute(
+            select(StockMovement.location_kind, StockMovement.location_id,
+                   StockMovement.item_id)
+            .where(or_(*conds))
+            .group_by(StockMovement.location_kind, StockMovement.location_id,
+                      StockMovement.item_id)).all():
+            key = (getattr(kind, "value", kind), lid)
+            per_loc[key] = per_loc.get(key, 0) + 1
+    stock_n: dict[int, int] = {
+        uid: per_loc.get((getattr(kind, "value", kind), lid), 0)
+        for uid, (kind, lid) in user_loc.items()
+    }
 
     out = []
     for u in users:

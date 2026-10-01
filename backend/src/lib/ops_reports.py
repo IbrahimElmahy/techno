@@ -172,7 +172,7 @@ def _collect_points(db, look, filters) -> list[dict]:
         stmt = stmt.where(PointRecord.customer_id == filters["customer_id"])
 
     rows = []
-    for record in db.scalars(stmt.order_by(PointRecord.created_at)).all():
+    for record in db.scalars(stmt.order_by(PointRecord.created_at.desc(), PointRecord.id.desc())).all():
         when = record.created_at.date() if record.created_at else None
         kind = record.kind.value
         rows.append(_row(
@@ -199,7 +199,7 @@ def _collect_coupons(db, look, filters) -> list[dict]:
     date_from, date_to = filters["date_from"], filters["date_to"]
     types = {t.id: t.name for t in db.scalars(select(CouponType)).all()}
     rows = []
-    for coupon in db.scalars(select(Coupon).order_by(Coupon.created_at)).all():
+    for coupon in db.scalars(select(Coupon).order_by(Coupon.created_at.desc(), Coupon.id.desc())).all():
         when = coupon.created_at.date() if coupon.created_at else None
         if not _within(when, date_from, date_to):
             continue
@@ -225,7 +225,7 @@ def _collect_coupon_receipts(db, look, filters) -> list[dict]:
     """استلام الكوبونات من التجّار — «مين سلّم كام، ومين لسه»."""
     date_from, date_to = filters["date_from"], filters["date_to"]
     rows = []
-    for receipt in db.scalars(select(CouponReceipt).order_by(CouponReceipt.id)).all():
+    for receipt in db.scalars(select(CouponReceipt).order_by(CouponReceipt.id.desc())).all():
         # الاستلامات القديمة `received_date` فيها فاضي — بنرجع لتاريخ التسجيل بدل ما الصف يتشال
         # خالص. استلام مالوش تاريخ مسجّل لسه اتسجّل في يوم معروف.
         when = receipt.received_date or (
@@ -263,7 +263,7 @@ def _collect_inspections(db, look, filters) -> list[dict]:
     """المعاينات — نقاط مش فلوس. أصناف المعاينة مابتخصمش من عهدة حد."""
     date_from, date_to = filters["date_from"], filters["date_to"]
     rows = []
-    for visit in db.scalars(select(Inspection).order_by(Inspection.inspection_date)).all():
+    for visit in db.scalars(select(Inspection).order_by(Inspection.inspection_date.desc(), Inspection.id.desc())).all():
         when = visit.inspection_date
         if not _within(when, date_from, date_to):
             continue
@@ -306,7 +306,7 @@ def _collect_cheques(db, look, filters, *, today: date) -> list[dict]:
     """
     date_from, date_to = filters["date_from"], filters["date_to"]
     rows = []
-    for cheque in db.scalars(select(Cheque).order_by(Cheque.due_date)).all():
+    for cheque in db.scalars(select(Cheque).order_by(Cheque.due_date.desc(), Cheque.id.desc())).all():
         if not _within(cheque.due_date, date_from, date_to):
             continue
         incoming = cheque.direction == ChequeDirection.incoming
@@ -347,7 +347,7 @@ _ORDER_STATUS = {"open": "مفتوح", "converted": "اتحوّل لفاتورة
 def _collect_orders(db, look, filters, *, today: date) -> list[dict]:
     date_from, date_to = filters["date_from"], filters["date_to"]
     rows = []
-    for order in db.scalars(select(TradeOrder).order_by(TradeOrder.order_date)).all():
+    for order in db.scalars(select(TradeOrder).order_by(TradeOrder.order_date.desc(), TradeOrder.id.desc())).all():
         if not _within(order.order_date, date_from, date_to):
             continue
         sale = order.kind.value == "sale"
@@ -384,7 +384,7 @@ _HOLD_PLACE = {"warehouse": "مخزن", "custody": "عهدة مندوب"}
 def _collect_reservations(db, look, filters, *, today: date) -> list[dict]:
     date_from, date_to = filters["date_from"], filters["date_to"]
     rows = []
-    for hold in db.scalars(select(Reservation).order_by(Reservation.expires_on)).all():
+    for hold in db.scalars(select(Reservation).order_by(Reservation.expires_on.desc(), Reservation.id.desc())).all():
         if not _within(hold.expires_on, date_from, date_to):
             continue
         if filters.get("customer_id") and hold.customer_id != filters["customer_id"]:
@@ -442,7 +442,11 @@ def _group(rows: list[dict], group_by: str) -> list[dict]:
         "key": b["key"], "label": b["label"], "rows": b["rows"], "counted": b["counted"],
         "quantity": str(to_qty(b["quantity"])), "amount": str(to_money(b["amount"])),
     } for b in buckets.values()]
-    out.sort(key=lambda r: (Decimal(r["amount"]), Decimal(r["quantity"])), reverse=True)
+    if group_by == "month":
+        # التجميع بالشهر محوره التاريخ — الأحدث فوق.
+        out.sort(key=lambda r: str(r["key"] or ""), reverse=True)
+    else:
+        out.sort(key=lambda r: (Decimal(r["amount"]), Decimal(r["quantity"])), reverse=True)
     return out
 
 
@@ -515,6 +519,10 @@ def ops(
         rows = _collect_orders(db, look, filters, today=today)
     else:
         rows = _collect_reservations(db, look, filters, today=today)
+
+    # الأحدث فوق في كل المواضيع (طلب العميل ٢٠٢٦-١٠-٠١) — الترتيب ثابت، فجوّه اليوم
+    # الواحد بيفضل ترتيب الاستعلام (الأحدث تسجيلاً فوق)، واللي مالوش تاريخ تحت.
+    rows.sort(key=lambda r: r["date"] or "", reverse=True)
 
     if status:
         rows = [r for r in rows if r["status"] == status]

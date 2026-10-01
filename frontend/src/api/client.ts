@@ -37,7 +37,7 @@ export function getApiBaseURL() {
  *
  * فالمطابقة بقت على المسار **بالظبط**: القايمة نفسها بس، وأي حاجة تحتها بتعدّي زي ما هي.
  */
-const getCache = new Map<string, { data: any; expiry: number }>();
+const getCache = new Map<string, { data: any; headers: any; expiry: number }>();
 const inflightRequests = new Map<string, Promise<any>>();
 
 /**
@@ -65,10 +65,73 @@ const CACHEABLE_PATHS = new Set([
   '/api/v1/employees',
   '/api/v1/users',
   '/api/v1/customers',
+  '/api/v1/customers/options',
   '/api/v1/suppliers',
   '/api/v1/items',
   '/api/v1/products/point-values',
+  // قوايم صغيرة بس بتتطلب مع فتحة كل شاشة تقريباً — كل واحدة رحلة للسيرفر (~٣٠٠ms من
+  // عند العميل) ومكان من الستة اللي المتصفح بيفتحهم على نفس الدومين.
+  '/api/v1/territories',
+  '/api/v1/governorates',
+  '/api/v1/cost-centers',
+  '/api/v1/treasuries',
+  '/api/v1/custodies',
+  '/api/v1/cash-accounts',
+  '/api/v1/reps',
+  '/api/v1/hr/departments',
 ]);
+
+/**
+ * **عمر الكاش بيطول لما التحديث الحي شغّال** (٢٠٢٦-١٠-٠١ — «السيستم لسه تقيل»).
+ *
+ * الـ٢٠ ثانية كانت هي الضمان الوحيد إن القايمة ماتقدمش. بس من ساعة التحديث الحي، أي حفظ
+ * من أي جهاز بيوصل إعلان بيفضّي الكاش كله (`utils/live.ts`)، وأي حفظ من الجهاز ده بيفضّيه
+ * هنا. يعني الـ٢٠ ثانية بقت بتطلب نفس القوايم من جديد مع كل تنقّل بعد نص دقيقة — من غير
+ * ما يكون فيه جديد أصلاً.
+ *
+ * فالعمر بقى خمس دقايق **طول ما قناة التحديث متوصّلة** — وده نفس الضمان: اللي اتغيّر
+ * بيوصل إعلانه. ولو القناة واقعة (نت فاصل، سيرفر بيقوم) بنرجع للـ٢٠ ثانية زي الأول.
+ */
+const TTL_LIVE_MS = 5 * 60 * 1000;
+const TTL_OFFLINE_MS = 20000;
+let liveConnected = false;
+
+/** `utils/live.ts` بيقول هنا القناة متوصّلة ولا لأ. */
+export function setLiveConnected(on: boolean) {
+  liveConnected = on;
+  if (on) return;
+  // القناة وقعت ⇒ اللي اتخزّن وهي شغّالة مايعيشش أكتر من ٢٠ ثانية من دلوقتي: الإعلانات
+  // اللي هتفوتنا وإحنا مقطوعين مش هتفضّيه.
+  const cap = Date.now() + TTL_OFFLINE_MS;
+  getCache.forEach((entry) => { if (entry.expiry > cap) entry.expiry = cap; });
+}
+
+/**
+ * نداءات POST مابتغيّرش داتا حد — مابتفضّيش الكاش.
+ *
+ * التجديد الدوري للتوكن، تذكرة التحديث الحي، وحفظ المسودّة (بيحصل كل كام ثانية وانت بتكتب
+ * فاتورة) كانوا بيفضّوا الكاش كله زي أي حفظ. وأسوأها التجديد اللي بيجري مع فتحة البرنامج:
+ * كان بيرجع وطلبات أول شاشة لسه طايرة، فالرقم بيتغيّر وردودها ماتتخزّنش — فأول تنقّل بعد
+ * أي ريفرش كان بيعيد كل القوايم. نفس القايمة اللي السيرفر مابيعلنش عنها (`_SKIP_TOPICS`
+ * في `backend/src/lib/live_events.py`).
+ */
+const NON_DATA_PREFIXES = ['/api/v1/auth/', '/api/v1/live/', '/api/v1/drafts'];
+
+function isDataMutation(url: string | undefined): boolean {
+  if (!url) return true;
+  // الرابط ممكن يكون كامل (نسخة سطح المكتب) — المقارنة على المسار بس.
+  const path = url.replace(/^[a-z]+:\/\/[^/]+/i, '').replace(/^.*?(\/api\/v1\/)/, '$1');
+  return !NON_DATA_PREFIXES.some((p) => path.startsWith(p));
+}
+
+/**
+ * عدد الطلبات الطايرة — `preloadAllPages` بيستنى لحد ما يبقى صفر قبل ما ينزّل ملف شاشة،
+ * عشان التحميل في الخلفية مايزاحمش طلبات الشاشة المفتوحة على اتصالات المتصفح.
+ */
+let inflight = 0;
+export function apiBusy(): boolean {
+  return inflight > 0;
+}
 
 const originalGet = api.get.bind(api);
 
@@ -84,7 +147,7 @@ api.get = function (url: string, config?: any): Promise<any> {
     if (cached && Date.now() < cached.expiry) {
       return Promise.resolve({
         data: cached.data, status: 200, statusText: 'OK',
-        headers: {}, config: config || {},
+        headers: cached.headers, config: config || {},
       });
     }
 
@@ -98,7 +161,11 @@ api.get = function (url: string, config?: any): Promise<any> {
         inflightRequests.delete(fullKey);
         // حصل حفظ والطلب ده كان طاير؟ رده صحيح للّي طلبه، وقديم لأي حد جاي بعده.
         if (startedAt === cacheEpoch) {
-          getCache.set(fullKey, { data: res.data, expiry: Date.now() + 20000 });
+          // الهيدرات معاها — `X-Total-Count` بيتقرا منها، والرد المخزّن كان بيرجع من غيرها.
+          getCache.set(fullKey, {
+            data: res.data, headers: res.headers || {},
+            expiry: Date.now() + (liveConnected ? TTL_LIVE_MS : TTL_OFFLINE_MS),
+          });
         }
         return res;
       })
@@ -117,6 +184,7 @@ api.get = function (url: string, config?: any): Promise<any> {
 // Request interceptor to attach JWT token
 api.interceptors.request.use(
   (config) => {
+    inflight += 1;
     const token = localStorage.getItem('token');
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
@@ -131,14 +199,17 @@ api.interceptors.request.use(
 // Response interceptor for errors and auto-logout
 api.interceptors.response.use(
   (response) => {
+    inflight = Math.max(0, inflight - 1);
     // Clear cache on any data mutations so UI is always fresh
     const method = response.config.method?.toUpperCase();
-    if (method && ['POST', 'PUT', 'DELETE', 'PATCH'].includes(method)) {
+    if (method && ['POST', 'PUT', 'DELETE', 'PATCH'].includes(method)
+        && isDataMutation(response.config.url)) {
       clearApiCache();
     }
     return response;
   },
   (error) => {
+    inflight = Math.max(0, inflight - 1);
     const { response } = error;
 
     if (response) {

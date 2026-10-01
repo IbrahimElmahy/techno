@@ -1,6 +1,7 @@
 import React, { lazy, Suspense, useEffect } from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { Spin } from 'antd';
+import { apiBusy } from '../api/client';
 
 /**
  * كل شاشة في ملف لوحدها — بتتحمّل أول ما تتفتح.
@@ -102,6 +103,10 @@ export function preloadAllPages() {
     ? (window as any).requestIdleCallback(cb, { timeout: 2000 })
     : window.setTimeout(cb, 200));
   const next = () => {
+    // الشاشة المفتوحة لسه بتجيب داتاها؟ نستنى. على HTTP/1.1 المتصفح بيفتح ستة اتصالات بس
+    // للدومين (وواحد منهم للتحديث الحي)، وملف شاشة نازل في الخلفية كان بياخد مكان طلب
+    // الشاشة اللي قدامك — ولما `timeout` الـ`requestIdleCallback` يخلص كان بينزل برضه.
+    if (apiBusy()) { window.setTimeout(() => idle(next), 400); return; }
     const load = loaders.shift();
     if (!load) return;
     load().catch(() => { /* شاشة وقعت في التحميل — هتتحمّل لما تتفتح */ }).finally(() => idle(next));

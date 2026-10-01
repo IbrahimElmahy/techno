@@ -330,7 +330,7 @@ def list_assets(
         stmt = stmt.where(FixedAsset.status == AssetStatus(status))
     if category:
         stmt = stmt.where(FixedAsset.category == category)
-    return list(db.scalars(stmt.order_by(FixedAsset.id.desc())).all())
+    return list(db.scalars(stmt.order_by(FixedAsset.acquisition_date.desc(), FixedAsset.id.desc())).all())
 
 
 def get_asset(db: Session, asset_id: int) -> FixedAsset:
@@ -344,5 +344,5 @@ def schedule_of(db: Session, asset_id: int) -> list[DepreciationRecord]:
     return list(db.scalars(
         select(DepreciationRecord)
         .where(DepreciationRecord.asset_id == asset_id)
-        .order_by(DepreciationRecord.year, DepreciationRecord.month)
+        .order_by(DepreciationRecord.year.desc(), DepreciationRecord.month.desc())  # الأحدث فوق
     ).all())

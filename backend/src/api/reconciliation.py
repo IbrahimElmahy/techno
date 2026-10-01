@@ -111,7 +111,8 @@ def open_items(
     rows = reconcile_service.open_lines(
         db, partner_kind=partner_kind, partner_id=partner_id, account_id=account_id)
     names = _account_names(db, [r.account_id for r in rows])
-    lines = [_to_out(r, names) for r in rows]
+    # الخدمة بترجّعها الأقدم الأول عشان المطابقة التلقائية؛ الشاشة الأحدث فوق.
+    lines = [_to_out(r, names) for r in reversed(rows)]
     debit = sum((r.residual for r in rows if r.residual > ZERO), ZERO)
     credit = sum((-r.residual for r in rows if r.residual < ZERO), ZERO)
     return OpenLinesOut(

@@ -184,6 +184,9 @@ def card(
         })
 
     _document_detail(db, item_id, rows, names)
+    # **الأحدث فوق** (طلب العميل ٢٠٢٦-١٠-٠١). الرصيد اتحسب فوق من الأقدم للأحدث، فكل سطر
+    # شايل رصيده قبل وبعد صح — القلب للعرض بس.
+    rows.reverse()
 
     return {
         "item_id": item_id,

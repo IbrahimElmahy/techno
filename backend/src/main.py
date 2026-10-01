@@ -380,6 +380,9 @@ _ADDED_INDEXES: list[tuple[str, str, str]] = [
     # كل سطور الدفتر عشان تلاقي عشرين سطر.
     ("ix_ledger_line_residual", "ledger_line", "amount_residual"),
     ("ix_ledger_line_full_reconcile", "ledger_line", "full_reconcile_id"),
+    # «المخزن/العهدة دي فيها إيه» (`/stock/by-location`، أرصدة المناديب، فحص المتاح وقت
+    # الحفظ) كانت بتلف على جدول الحركات كله (~١٤٠ ألف صف، ~٢٠ms للنداء) عشان مكان واحد.
+    ("ix_stock_movement_location", "stock_movement", "location_kind, location_id"),
 ]
 
 

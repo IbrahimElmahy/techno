@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 from src.auth.dependencies import CurrentUser, require_capability
 from src.auth.rbac import CAP_CUSTOMER_READ, CAP_CUSTOMER_REASSIGN, CAP_CUSTOMER_WRITE
 from src.core.db import get_db
+from src.core.fast_json import model_json
 # **باسم تاني عن قصد.** الاسم `phones` محجوز في الملف ده لقايمة أرقام العميل
 # الإضافية (`_out(..., phones=...)` و`bulk_phone_values`)، فاستيراد الموديول
 # بنفس الاسم بيتحجب جوّه الدالة و`phones.display` بتتنادى على `dict` وترمي.
@@ -447,8 +448,9 @@ def list_customers(
 
     response.headers["X-Total-Count"] = str(total)
     if limit is not None:
-        return PaginatedCustomersOut(rows=out, total=total, limit=min(limit, 500), offset=offset)
-    return out
+        page = PaginatedCustomersOut(rows=out, total=total, limit=min(limit, 500), offset=offset)
+        return model_json(page, headers={"X-Total-Count": str(total)})
+    return model_json(out, headers={"X-Total-Count": str(total)})
 
 
 @router.post("", response_model=CustomerCreated, status_code=status.HTTP_201_CREATED)

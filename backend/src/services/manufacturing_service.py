@@ -15,6 +15,7 @@ from src.services import numbering
 
 from src.core.money import ZERO, to_money, to_qty
 from src.lib import production
+from src.lib.doc_order import newest_first
 from src.models.bom import Bom, BomComponent, BomResource, ResourceKind
 from src.models.catalog import Item, ItemKind
 from src.models.manufacturing import (
@@ -422,7 +423,8 @@ def create_order(
 
 
 def list_orders(db: Session):
-    return db.scalars(select(ManufacturingOrder).order_by(ManufacturingOrder.id.desc())).all()
+    return db.scalars(select(ManufacturingOrder).order_by(
+        *newest_first(ManufacturingOrder, ManufacturingOrder.production_date))).all()  # الأحدث فوق
 
 
 def get_order(db: Session, order_id: int) -> ManufacturingOrder | None:

@@ -18,6 +18,7 @@ from sqlalchemy.orm import Session
 from src.auth.dependencies import CurrentUser, require_capability
 from src.auth.rbac import CAP_VOUCHER_READ, CAP_VOUCHER_WRITE
 from src.core.db import get_db
+from src.core.fast_json import model_json
 from src.models.ledger import Account
 from src.models.role import RoleName
 from src.models.treasury import TreasuryKind
@@ -832,8 +833,14 @@ def list_vouchers(
     if limit is not None:
         clamped_limit = min(limit, 500)
         paged_rows = visible_rows[offset:offset + clamped_limit]
-        return PaginatedVouchersOut(rows=[_out(v) for v in paged_rows], total=total, limit=clamped_limit, offset=offset)
-    return [_out(v) for v in visible_rows]
+        page = PaginatedVouchersOut(
+            rows=[_out(v) for v in paged_rows],
+            total=total,
+            limit=clamped_limit,
+            offset=offset,
+        )
+        return model_json(page, headers={"X-Total-Count": str(total)})
+    return model_json([_out(v) for v in visible_rows], headers={"X-Total-Count": str(total)})
 
 
 @router.get("/vouchers/{voucher_id}", response_model=VoucherOut)

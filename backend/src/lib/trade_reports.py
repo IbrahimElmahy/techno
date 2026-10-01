@@ -213,7 +213,9 @@ def _collect(db: Session, doc_type: str, date_from, date_to, party_id, item_id, 
     # لما التاريخ كان `created_at` (بيزيد مع الـid). بعد ما بقى تاريخ المستند الحقيقي،
     # العمود بيعرض حاجة والترتيب بيقول حاجة تانية — والكشف بيبان مبعثر.
     # `date` ممكن تكون None لو المستند مالوش تاريخ، فبتتاخر للآخر بدل ما توقّع المقارنة.
-    kept.sort(key=lambda r: (r["date"] is None, r["date"], r["doc_id"]))
+    # **الأحدث فوق** (طلب العميل ٢٠٢٦-١٠-٠١)؛ وسطور المستند الواحد بترتيبها (الفرز ثابت).
+    kept.sort(key=lambda r: (r["date"] is not None, r["date"] or date.min, r["doc_id"]),
+              reverse=True)
     return kept
 
 

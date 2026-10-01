@@ -120,8 +120,8 @@ export default function MovementHistoryLog({
    *
    * كان قايمة بتتفتح سطر سطر: التاريخ والنوع والكمية في العنوان، والمستند والطرف والموقع
    * جوّه لما تدوس. فاللي بيدوّر على «فين راحت الخمس قطع» كان بيفتح عشرين سطر. دلوقتي كله
-   * ظاهر في أعمدة، وكل عمود بيتفلتر (`FilterTable`). والسيرفر بيبعت الحركات بترتيبها عشان
-   * «الرصيد بعدها» يتحسب صح؛ العرض بس اللي بيتقلب.
+   * ظاهر في أعمدة، وكل عمود بيتفلتر (`FilterTable`). والسيرفر بيحسب «الرصيد بعدها» بالترتيب
+   * الزمني وبيبعت الحركات مقلوبة خلاص (الأحدث فوق) — مابنقلبهاش تاني هنا.
    */
   const tableRows = useMemo(() => rows.map((r: any, i: number) => ({
     key: String(r.movement_id ?? i),
@@ -135,7 +135,7 @@ export default function MovementHistoryLog({
     location: r.location || '',
     before: Number(r.balance_before ?? 0),
     after: Number(r.balance_after ?? 0),
-  })).reverse(), [rows, moveLabels]);
+  })), [rows, moveLabels]);
 
   const columns = [
     { title: 'التاريخ', dataIndex: 'date', width: 110 },

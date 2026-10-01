@@ -32,6 +32,7 @@ from sqlalchemy.orm import Session
 
 from src.core.money import ZERO, to_money, to_qty
 from src.lib import production
+from src.lib.doc_order import newest_first
 from src.models.bom import Bom
 from src.models.catalog import Item
 from src.models.manufacturing import (
@@ -674,7 +675,8 @@ def list_orders(db: Session, *, search: str | None = None, branch_id: int | None
     if statement and statement.strip():
         # فلتر «البيان» لوحده — جزء من الكلام، من غير فرق حروف كبيرة وصغيرة.
         stmt = stmt.where(ProductionOrder.statement1.ilike(f"%{statement.strip()}%"))
-    return db.scalars(stmt.order_by(ProductionOrder.id.desc())).all()
+    # الأحدث فوق بتاريخ الإنتاج مش بترتيب الإدخال — المنقول من a5 اتكتب دفعة واحدة.
+    return db.scalars(stmt.order_by(*newest_first(ProductionOrder, ProductionOrder.production_date))).all()
 
 
 def get_order(db: Session, order_id: int) -> ProductionOrder | None:

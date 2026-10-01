@@ -70,6 +70,9 @@ def list_users(
     scoped_branch = branch_scope.visible_branch_id(current)
     if scoped_branch is not None:
         stmt = stmt.where(User.branch_id == scoped_branch)
+    # الأدوار تتحمّل مرة وتفضل ماسكينها: خريطة الهوية في الجلسة ضعيفة، فـ`db.get` في
+    # `_to_out` كان بيرجع يسأل القاعدة عن نفس الدور مع كل مستخدم (٦٢ استعلام للقايمة).
+    _roles = db.scalars(select(Role)).all()  # noqa: F841 — المرجع هو اللي بيمسكهم
     return [_to_out(db, u) for u in db.scalars(stmt).all()]
 
 

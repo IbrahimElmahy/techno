@@ -267,4 +267,5 @@ def list_cheques(
         stmt = stmt.where(Cheque.due_date >= due_from)
     if due_to is not None:
         stmt = stmt.where(Cheque.due_date <= due_to)
-    return db.scalars(stmt.order_by(Cheque.due_date, Cheque.id)).all()
+    # الأحدث فوق (طلب العميل ٢٠٢٦-١٠-٠١).
+    return db.scalars(stmt.order_by(Cheque.due_date.desc(), Cheque.id.desc())).all()

@@ -236,7 +236,7 @@ def production_consumption(db: Session, *, date_from=None, date_to=None, period=
                                {"produced": ZERO, "consumed": ZERO, "total_cost": ZERO})
         b["produced"] += to_qty(batch["produced"])
         b["consumed"] += to_qty(batch["consumed"])
-    rows.sort(key=lambda r: r["created_at"])
+    rows.sort(key=lambda r: r["created_at"], reverse=True)  # الأحدث فوق (٢٠٢٦-١٠-٠١)
     return {
         "rows": rows,
         # الشاشة بتعرض خانة «البيان» بس لما المستند عنده بيان أصلاً.
@@ -245,7 +245,7 @@ def production_consumption(db: Session, *, date_from=None, date_to=None, period=
         "by_period": [{"period": k, "produced_quantity": str(to_qty(v["produced"])),
                        "consumed_quantity": str(to_qty(v["consumed"])),
                        "total_cost": str(to_money(v["total_cost"]))}
-                      for k, v in sorted(buckets.items())],
+                      for k, v in sorted(buckets.items(), reverse=True)],
     }
 
 
@@ -352,7 +352,7 @@ def wastage(db: Session, *, date_from=None, date_to=None, item_id: int | None = 
                      "statement": report_statement.text_of(d),
                      "created_at": str(d.created_at)})
 
-    rows.sort(key=lambda r: r["created_at"])
+    rows.sort(key=lambda r: r["created_at"], reverse=True)  # الأحدث فوق
     return {"rows": rows, "total_quantity": str(to_qty(total_qty)),
             "total_cost": str(to_money(total_cost)),
             "statement_supported": (report_statement.supported(ManufacturingOrder)
@@ -471,11 +471,12 @@ def sales(db: Session, *, date_from=None, date_to=None, period="month",
         b["gross"] += to_money(inv.gross)
         b["net"] += to_money(inv.net)
     # الترتيب بتاريخ المستند — الاستعلام بالـid، والفواتير المنقولة أرقامها مش بترتيب تواريخها.
-    rows.sort(key=lambda r: (r["created_at"], r["id"]))
+    # والأحدث فوق (طلب العميل ٢٠٢٦-١٠-٠١)، والفترات كمان.
+    rows.sort(key=lambda r: (r["created_at"], r["id"]), reverse=True)
     return {
         "rows": rows, "gross_total": str(to_money(gross_total)), "net_total": str(to_money(net_total)),
         "by_period": [{"period": k, "gross": str(to_money(v["gross"])), "net": str(to_money(v["net"]))}
-                      for k, v in sorted(buckets.items())],
+                      for k, v in sorted(buckets.items(), reverse=True)],
     }
 
 

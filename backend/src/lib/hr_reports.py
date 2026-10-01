@@ -163,7 +163,8 @@ _ATTENDANCE_LABEL = {
 
 
 def _collect_attendance(db, look, keep, date_from, date_to) -> list[dict]:
-    stmt = select(AttendanceDay).order_by(AttendanceDay.work_date, AttendanceDay.employee_id)
+    # الأحدث فوق في كل تقارير الموارد البشرية (طلب العميل ٢٠٢٦-١٠-٠١).
+    stmt = select(AttendanceDay).order_by(AttendanceDay.work_date.desc(), AttendanceDay.employee_id)
     # الفلترة في SQL مش في بايثون — الجدول ده موظفين × أيام.
     if date_from:
         stmt = stmt.where(AttendanceDay.work_date >= date_from)
@@ -196,7 +197,7 @@ def _collect_attendance(db, look, keep, date_from, date_to) -> list[dict]:
 
 def _collect_leave(db, look, keep, date_from, date_to) -> list[dict]:
     types = {t.id: t.name for t in db.scalars(select(LeaveType)).all()}
-    stmt = select(LeaveRequest).order_by(LeaveRequest.date_from)
+    stmt = select(LeaveRequest).order_by(LeaveRequest.date_from.desc(), LeaveRequest.id.desc())
     if date_from:
         stmt = stmt.where(LeaveRequest.date_to >= date_from)
     if date_to:
@@ -231,7 +232,8 @@ def _collect_payroll(db, look, keep, filters, *, by_component: bool) -> list[dic
     if not run_ids:
         return []
 
-    lines = db.scalars(select(PayrollLine).where(PayrollLine.run_id.in_(run_ids))).all()
+    lines = db.scalars(select(PayrollLine).where(PayrollLine.run_id.in_(run_ids))
+                       .order_by(PayrollLine.id)).all()
     if not by_component:
         rows = []
         for line in lines:
@@ -261,6 +263,7 @@ def _collect_payroll(db, look, keep, filters, *, by_component: bool) -> list[dic
                     "has_attendance": line.has_attendance, "paid": line.paid,
                 },
             ))
+        rows.sort(key=lambda r: r["period"], reverse=True)  # الشهر الأحدث فوق
         return rows
 
     by_line = {line.id: line for line in lines}
@@ -281,11 +284,12 @@ def _collect_payroll(db, look, keep, filters, *, by_component: bool) -> list[dic
             extra={"source": detail.source.value, "component_id": detail.component_id,
                    "run_id": run.id},
         ))
+    rows.sort(key=lambda r: r["period"], reverse=True)  # الشهر الأحدث فوق
     return rows
 
 
 def _collect_advances(db, look, keep, date_from, date_to) -> list[dict]:
-    stmt = select(EmployeeAdvance).order_by(EmployeeAdvance.advance_date)
+    stmt = select(EmployeeAdvance).order_by(EmployeeAdvance.advance_date.desc(), EmployeeAdvance.id.desc())
     if date_from:
         stmt = stmt.where(EmployeeAdvance.advance_date >= date_from)
     if date_to:
@@ -316,7 +320,7 @@ def _collect_advances(db, look, keep, date_from, date_to) -> list[dict]:
 
 def _collect_adjustments(db, look, keep, filters) -> list[dict]:
     stmt = select(PayrollAdjustment).order_by(
-        PayrollAdjustment.year, PayrollAdjustment.month)
+        PayrollAdjustment.year.desc(), PayrollAdjustment.month.desc(), PayrollAdjustment.id.desc())
     if filters.get("year"):
         stmt = stmt.where(PayrollAdjustment.year == filters["year"])
     if filters.get("month"):
@@ -369,7 +373,11 @@ def _group(rows: list[dict], group_by: str) -> list[dict]:
         "key": b["key"], "label": b["label"], "rows": b["rows"],
         "quantity": str(to_qty(b["quantity"])), "amount": str(to_money(b["amount"])),
     } for b in buckets.values()]
-    out.sort(key=lambda r: Decimal(r["amount"]), reverse=True)
+    if group_by == "month":
+        # التجميع بالشهر محوره التاريخ — الأحدث فوق زي التفاصيل.
+        out.sort(key=lambda r: str(r["key"] or ""), reverse=True)
+    else:
+        out.sort(key=lambda r: Decimal(r["amount"]), reverse=True)
     return out
 
 

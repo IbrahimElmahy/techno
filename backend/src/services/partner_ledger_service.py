@@ -232,6 +232,8 @@ def partner_ledger(
                 reconcile_number=recon_numbers.get(line.full_reconcile_id or -1),
             ))
         row.closing = running
+        # الأحدث فوق — الرصيد الجاري اتحسب بالترتيب الزمني فوق، القلب للعرض بس.
+        row.lines.reverse()
 
     out = [r for r in rows.values() if r.lines or r.opening != ZERO]
     if only_open:

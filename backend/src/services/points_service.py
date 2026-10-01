@@ -218,24 +218,29 @@ def ledger(
                 PointRecord.created_at < datetime.combine(date_from, datetime.min.time()),
             )
         ))
-    if customer_id is not None and offset:
-        # الصفحة التانية بتبدأ من رصيد آخر سطر في الأولى، مش من الصفر. من غير ده كل صفحة
-        # بتقول رصيد جاري بيبدأ من أول الدنيا، وآخر سطر في آخر صفحة بيخالف رصيد العميل.
-        skipped = db.scalars(_filtered(
-            select(PointRecord.delta), customer_id=customer_id, kinds=kinds,
-            date_from=date_from, date_to=date_to,
-        ).order_by(PointRecord.created_at, PointRecord.id).limit(offset)).all()
-        opening = _points(opening + sum((_points(d) for d in skipped), ZERO))
-
     stmt = _filtered(select(PointRecord), customer_id=customer_id, kinds=kinds,
                      date_from=date_from, date_to=date_to)
-    # تصاعدي للعميل الواحد عشان الرصيد الجاري يتقرا من فوق لتحت؛ وتنازلي للكشف العام
-    # عشان أحدث حركة تبان الأول.
-    if customer_id is not None:
-        stmt = stmt.order_by(PointRecord.created_at, PointRecord.id)
-    else:
-        stmt = stmt.order_by(PointRecord.created_at.desc(), PointRecord.id.desc())
+    # **الأحدث فوق** في الدفترين (طلب العميل ٢٠٢٦-١٠-٠١). الرصيد الجاري لسه بيتحسب
+    # بالترتيب الزمني: بنبدأ من رصيد آخر الفترة ونرجع لورا — سطر فوق التاني بيقول رصيده
+    # بعد حركته بالظبط زي ما كان، والصفحة التانية (الأقدم) بتكمّل من تحت الأولى.
+    stmt = stmt.order_by(PointRecord.created_at.desc(), PointRecord.id.desc())
     records = list(db.scalars(stmt.limit(limit).offset(offset)).all())
+
+    running = ZERO
+    if customer_id is not None:
+        window_sum = _points(db.scalar(_filtered(
+            select(func.coalesce(func.sum(PointRecord.delta), 0)),
+            customer_id=customer_id, kinds=kinds, date_from=date_from, date_to=date_to,
+        )))
+        running = _points(opening + window_sum)
+        if offset:
+            # الصفحات اللي فوق (الأحدث) اتعرضت خلاص — رصيد أول سطر هنا هو اللي قبلها.
+            newer = db.scalars(_filtered(
+                select(PointRecord.delta), customer_id=customer_id, kinds=kinds,
+                date_from=date_from, date_to=date_to,
+            ).order_by(PointRecord.created_at.desc(), PointRecord.id.desc())
+                .limit(offset)).all()
+            running = _points(running - sum((_points(d) for d in newer), ZERO))
 
     docs = _doc_numbers(db, records)
     names: dict[int, str] = {}
@@ -246,7 +251,6 @@ def ledger(
         names = dict(db.execute(
             select(Customer.id, Customer.name).where(Customer.id.in_(ids))).all())
 
-    running = opening
     rows = []
     for r in records:
         delta = _points(r.delta)
@@ -276,8 +280,8 @@ def ledger(
             "running": None,
         }
         if customer_id is not None:
-            running += delta
             row["running"] = str(_points(running))
+            running -= delta
         rows.append(row)
 
     return {

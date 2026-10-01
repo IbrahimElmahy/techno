@@ -16,6 +16,7 @@ from src.services.account_resolver import AccountResolutionError
 from src.services import analytic_read, document_edit_service
 from src.services.document_edit_service import DocumentEditError
 from src.core.db import get_db
+from src.core.fast_json import model_json
 from src.core.money import to_money
 from src.models.catalog import Item
 from src.models.ledger import Account
@@ -281,8 +282,9 @@ def list_purchases(
 
     response.headers["X-Total-Count"] = str(total)
     if limit is not None:
-        return PaginatedPurchasesOut(rows=out, total=total, limit=min(limit, 500), offset=offset)
-    return out
+        page = PaginatedPurchasesOut(rows=out, total=total, limit=min(limit, 500), offset=offset)
+        return model_json(page, headers={"X-Total-Count": str(total)})
+    return model_json(out, headers={"X-Total-Count": str(total)})
 
 
 # Declared BEFORE `/{purchase_id}` on purpose: FastAPI matches in declaration order, and a later
