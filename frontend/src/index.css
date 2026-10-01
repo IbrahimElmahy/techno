@@ -911,13 +911,16 @@ html[data-density='comfortable'] .ant-table-thead > tr > th {
 .sale-doc {
   background: #f3f4f6;
   padding: 10px;
-  border-radius: 10px;
   display: flex;
   flex-direction: column;
   gap: 10px;
+  /* طبقة واحدة ورا الكروت (طلب العميل ٢٠٢٦-١٠-٠١): الرمادي بيغطّي الحاوية البيضا بتاعة
+     الصفحة بحشوها (١٦) بدل ما يبقى رمادي جوّه أبيض جوّه رمادي. */
+  margin: -16px;
+  border-radius: 8px;
   /* طول الشاشة على الأقل — عشان الإجمالي والدفع يقعدوا في آخرها حتى لو الفاتورة قصيرة */
   box-sizing: border-box;
-  min-height: 100%;
+  min-height: calc(100% + 32px);
 }
 .sale-doc .sale-form {
   display: flex;
