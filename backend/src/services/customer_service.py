@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from src.services.numbering import next_document_number
 from src.models.customer import Customer, CustomerAccount
 from src.models.ledger import Account, AccountType, Direction
 from src.services import audit_service
@@ -22,8 +23,13 @@ class CreateResult:
 
 
 def _next_code(db: Session) -> str:
-    count = db.scalar(select(func.count()).select_from(Customer)) or 0
-    return f"CUST-{count + 1:06d}"
+    """أكبر كود اتصرف + ١ — مش «عدد العملاء + ١» (`numbering.next_document_number`).
+
+    العدد بيقع أول ما عميل يتمسح أو كود يتنقل بره الترتيب: العدد ٣٨٥١ والكود CUST-003852
+    موجود خلاص، فكل عميل جديد كان بيتصادم والحفظ يقع بـ٥٠٠ (٢٠٢٦-١٠-٠١ — «خطأ غير متوقع
+    في الخادم الرئيسي» على «عميل جديد»).
+    """
+    return next_document_number(db, Customer, "CUST", column=Customer.code, width=6)
 
 
 class CustomerError(Exception):

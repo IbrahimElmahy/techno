@@ -17,6 +17,7 @@ from decimal import Decimal
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from src.services.numbering import next_document_number
 from src.core.money import ZERO, to_money
 from src.lib import depreciation
 from src.models.fixed_asset import (
@@ -82,8 +83,8 @@ def default_accounts(db: Session) -> dict[str, Account]:
 
 
 def _code(db: Session) -> str:
-    n = db.scalar(select(func.count()).select_from(FixedAsset)) or 0
-    return f"FA-{n + 1:05d}"
+    # أكبر كود + ١ مش العدد + ١ — شوف `numbering` (٢٠٢٦-١٠-٠١).
+    return next_document_number(db, FixedAsset, "FA", column=FixedAsset.code, width=5)
 
 
 def create_asset(

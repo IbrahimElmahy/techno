@@ -8,6 +8,7 @@ from pydantic import BaseModel
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from src.services.numbering import next_document_number
 from src.auth.dependencies import CurrentUser, require_capability
 from src.auth.rbac import CAP_SUPPLIER_READ, CAP_SUPPLIER_WRITE
 from src.core.db import get_db
@@ -185,11 +186,12 @@ def create_supplier(
     _: CurrentUser = Depends(require_capability(CAP_SUPPLIER_WRITE)),
     db: Session = Depends(get_db),
 ) -> SupplierOut:
-    n = db.scalar(select(func.count()).select_from(Supplier)) or 0
+    # أكبر كود + ١ مش العدد + ١ — نفس عيب العملاء (٢٠٢٦-١٠-٠١). شوف `numbering`.
+    code = next_document_number(db, Supplier, "SUP", column=Supplier.code, width=5)
     acc = Account(account_type=AccountType.supplier_payable, normal_side=Direction.credit)
     db.add(acc)
     db.flush()
-    supplier = Supplier(code=f"SUP-{n + 1:05d}", name=body.name, phone=body.phone,
+    supplier = Supplier(code=code, name=body.name, phone=body.phone,
                         address=body.address, branch_id=body.branch_id,
                         governorate_id=body.governorate_id, markaz=body.markaz)
     _apply_card(supplier, body)
