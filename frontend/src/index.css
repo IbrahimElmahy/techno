@@ -915,11 +915,15 @@ html[data-density='comfortable'] .ant-table-thead > tr > th {
   display: flex;
   flex-direction: column;
   gap: 10px;
+  /* طول الشاشة على الأقل — عشان الإجمالي والدفع يقعدوا في آخرها حتى لو الفاتورة قصيرة */
+  box-sizing: border-box;
+  min-height: 100%;
 }
 .sale-doc .sale-form {
   display: flex;
   flex-direction: column;
   gap: 10px;
+  flex: 1 0 auto;
 }
 .sale-doc .sale-card {
   background: #fff;
@@ -970,7 +974,7 @@ html[data-density='comfortable'] .ant-table-thead > tr > th {
   bottom: 0;
   z-index: 20;
   background: #f3f4f6;
-  margin: 0 -10px -10px;
+  margin: auto -10px -10px;   /* auto فوق = يتزق لآخر الشاشة */
   padding: 8px 10px 10px;
   border-top: 1px solid #e5e7eb;
   box-shadow: 0 -6px 14px -8px rgba(15, 23, 42, 0.25);

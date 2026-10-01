@@ -2851,6 +2851,22 @@ function couponsTotal(inv: any): number {
             * رصيد الصنف بيتشاف جوّه بوباب اختيار الصنف — وهو المكان اللي السؤال بيتسأل فيه.
             */}
 
+          {viewReturns.length > 0 && (
+            <div className="sale-card">
+              <Divider orientation="right">المرتجعات المسجلة على هذه الفاتورة</Divider>
+              <Table
+                size="small" pagination={false} rowKey="id"
+                dataSource={viewReturns}
+                columns={[
+                  { title: 'سند المرتجع', dataIndex: 'document_number', render: (d: string) => <Tag color="volcano">{d}</Tag> },
+                  { title: 'القيمة', dataIndex: 'value', render: (v: string) => `${money(v)} ج.م` },
+                  { title: 'ردّ نقدي', dataIndex: 'cash_refund', render: (v: string) => `${money(v)} ج.م` },
+                  { title: 'خصم آجل', dataIndex: 'credit_reduction', render: (v: string) => `${money(v)} ج.م` },
+                ]}
+              />
+            </div>
+          )}
+
           {/* الدفع والملخص: نفس أرقام سُلّم الإجماليات القديم بالظبط، في مربعات (تصميم العميل). */}
           {(() => {
             const invoiceDiscount = grossTotal - netTotal;
@@ -2990,21 +3006,6 @@ function couponsTotal(inv: any): number {
             );
           })()}
 
-          {viewReturns.length > 0 && (
-            <div className="sale-card">
-              <Divider orientation="right">المرتجعات المسجلة على هذه الفاتورة</Divider>
-              <Table
-                size="small" pagination={false} rowKey="id"
-                dataSource={viewReturns}
-                columns={[
-                  { title: 'سند المرتجع', dataIndex: 'document_number', render: (d: string) => <Tag color="volcano">{d}</Tag> },
-                  { title: 'القيمة', dataIndex: 'value', render: (v: string) => `${money(v)} ج.م` },
-                  { title: 'ردّ نقدي', dataIndex: 'cash_refund', render: (v: string) => `${money(v)} ج.م` },
-                  { title: 'خصم آجل', dataIndex: 'credit_reduction', render: (v: string) => `${money(v)} ج.م` },
-                ]}
-              />
-            </div>
-          )}
         </Form>
 
         {/* **منتقي الطرف واحد في الشاشة، مش اتنين.**
