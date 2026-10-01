@@ -1,5 +1,5 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Card, Empty, Segmented, Space, Spin, Statistic, Tag, Typography } from 'antd';
+import React, { useEffect, useRef, useState } from 'react';
+import { Empty, Spin, Tag, Typography } from 'antd';
 import { api } from '../api/client';
 import { useLiveRefresh } from '../utils/live';
 import { money } from '../utils/money';
@@ -46,16 +46,11 @@ interface Props {
   onOpenVoucher?: (id: number) => void;
 }
 
-type KindFilter = 'all' | 'invoice' | 'voucher';
-type SourceFilter = 'all' | 'app' | 'system';
-
 export default function SalesReceiptsPanel({
   customerId, repId, dateFrom, dateTo, onOpenInvoice, onOpenVoucher,
 }: Props) {
   const [rows, setRows] = useState<ReceiptRow[]>([]);
   const [loading, setLoading] = useState(false);
-  const [kind, setKind] = useState<KindFilter>('all');
-  const [source, setSource] = useState<SourceFilter>('all');
   // آخر طلب بس هو اللي يكتب — تغيير فلتر سريع مايخليش رد قديم يغطي على الجديد
   const seq = useRef(0);
 
@@ -83,22 +78,6 @@ export default function SalesReceiptsPanel({
   useEffect(() => { load(); }, [customerId, repId, dateFrom, dateTo]); // eslint-disable-line react-hooks/exhaustive-deps
   useLiveRefresh(['sales', 'vouchers'], () => load(true));
 
-  const shown = useMemo(
-    () => rows.filter((r) => (kind === 'all' || r.kind === kind) && (source === 'all' || r.source === source)),
-    [rows, kind, source],
-  );
-
-  // الإجماليات من الصفوف المعروضة — السيرفر بيجمع نفس الصفوف اللي بيرجّعها، فده بيطابقه
-  // من غير فلتر، ومع فلتر النوع/المصدر بيفضل الرقم ماشي مع الجدول.
-  const totals = useMemo(() => {
-    let inv = 0;
-    let pay = 0;
-    for (const r of shown) {
-      if (r.kind === 'invoice') inv += Number(r.amount || 0);
-      else pay += Number(r.amount || 0);
-    }
-    return { inv, pay, all: inv + pay };
-  }, [shown]);
 
   const columns = [
     {
@@ -131,6 +110,9 @@ export default function SalesReceiptsPanel({
     },
   ];
 
+  // من غير فلاتر زيادة ولا كروت إجماليات (طلب العميل ٢٠٢٦-١٠-٠١) — فلاتر الأعمدة العادية بس.
+  const shown = rows;
+
   const tableCols = useTableColumns('sales-receipts', columns, {
     locked: ['document_number'],
     export: { name: 'سندات القبض', rows: shown },
@@ -138,36 +120,7 @@ export default function SalesReceiptsPanel({
 
   return (
     <div>
-      <Space wrap style={{ marginBottom: 12, width: '100%', justifyContent: 'space-between' }}>
-        <Space wrap>
-          <Segmented<KindFilter>
-            value={kind}
-            onChange={setKind}
-            options={[
-              { label: 'الكل', value: 'all' },
-              { label: 'على فاتورة', value: 'invoice' },
-              { label: 'دفعات', value: 'voucher' },
-            ]}
-          />
-          <Segmented<SourceFilter>
-            size="small"
-            value={source}
-            onChange={setSource}
-            options={[
-              { label: 'الكل', value: 'all' },
-              { label: 'من التطبيق', value: 'app' },
-              { label: 'من النظام', value: 'system' },
-            ]}
-          />
-        </Space>
-        <div>{tableCols.control}</div>
-      </Space>
-
-      <Space wrap style={{ marginBottom: 12 }}>
-        <Card size="small"><Statistic title="إجمالي المقبوض على الفواتير" value={money(totals.inv)} /></Card>
-        <Card size="small"><Statistic title="إجمالي الدفعات" value={money(totals.pay)} /></Card>
-        <Card size="small"><Statistic title="الإجمالي" value={money(totals.all)} valueStyle={{ fontWeight: 700 }} /></Card>
-      </Space>
+      <div style={{ textAlign: 'left', marginBottom: 8 }}>{tableCols.control}</div>
 
       <Spin spinning={loading}>
         <Table<ReceiptRow>
