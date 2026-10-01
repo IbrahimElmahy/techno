@@ -2420,7 +2420,7 @@ export default function Purchases() {
         * `kinds` بيدّي تصنيف جوّه البوباب، فاللي بيدوّر على اسم ومش لاقيه في الموردين يبص في
         * العملاء من غير ما يقفل ويفتح تاني.
         */}
-      <PartyPickerModal
+      <PartyPickerModal contextLabel="فاتورة شراء"
         open={partyPickerOpen || newStep === 'party'} kind="supplier"
         kinds={['supplier', 'customer']}
         date={purchaseDate} onDateChange={(d) => setPurchaseDate(d)}

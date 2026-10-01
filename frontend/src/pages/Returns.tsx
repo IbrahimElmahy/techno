@@ -1218,7 +1218,7 @@ export default function Returns({ embedded }: { embedded?: { onExit: () => void 
 
   const doors = (
     <>
-      <PartyPickerModal
+      <PartyPickerModal contextLabel="مرتجع مبيعات"
         open={newStep === 'party' || partyPickerOpen} kind="customer"
         kinds={['customer', 'employee', 'supplier']}
         excludeTypes={['plumber']}

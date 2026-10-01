@@ -97,7 +97,7 @@ export default function ProductPickerModal({
   open, categories, categoryLabels, products, activeCategory, onCategoryChange,
   onPick, onPickMany, onCancel, title = 'اختر الصنف', availableFor, priceFor,
   disableOutOfStock = false, availabilityVersion, hidePurchasePrice = false,
-  variant = 'classic', warehouseName, priceTier, priceTierLabel,
+  variant = 'cards', warehouseName, priceTier, priceTierLabel,
 }: Props) {
   const cards = variant === 'cards';
   const memory = (memories[title] ??= { query: '', scrollTop: 0, cursor: 0 });

@@ -1264,7 +1264,7 @@ export default function PurchaseReturns({ embedded }: { embedded?: { onExit: () 
         onPick={(id) => { setPickerOpen(false); addReturnLine(id); }}
         onPickMany={(ids) => { setPickerOpen(false); ids.forEach(addReturnLine); }} />
 
-      <PartyPickerModal
+      <PartyPickerModal contextLabel="مردود مشتريات"
         open={newStep === 'party' || partyPickerOpen} kind="supplier"
         kinds={['supplier', 'customer']}
         date={returnDate} onDateChange={(d) => setReturnDate(d)}

@@ -101,7 +101,7 @@ const debtState = (k: PartyKind, balance?: string | null): DebtState => {
 
 export default function PartyPickerModal({
   open, kind, onPick, onCancel, date, onDateChange, kinds, title, excludeTypes,
-  variant = 'classic', contextLabel,
+  variant = 'cards', contextLabel,
 }: {
   open: boolean;
   /** التصنيف اللي البوباب بيفتح عليه. */
@@ -126,7 +126,7 @@ export default function PartyPickerModal({
    excludeTypes?: string[];
    /**
     * الشكل بس — المنطق واحد. `classic` القايمة القديمة، `cards` كروت بعواميد وفلتر مديونية.
-    * التعميم بعدين = تغيير الافتراضي هنا.
+    * اتعمّم على كل المستندات (٢٠٢٦-١٠-٠١) — `classic` لسه موجود لو شاشة احتاجته.
     */
    variant?: 'classic' | 'cards';
    /** شارة جنب العنوان في شكل الكروت — «طلب بيع مباشر» / «فاتورة بونص». */
