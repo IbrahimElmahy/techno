@@ -2294,20 +2294,6 @@ function couponsTotal(inv: any): number {
         onClick: () => { createForm.submit(); },
       },
       {
-        key: 'next',
-        label: 'التالى',
-        icon: <ArrowLeftOutlined />,
-        disabled: !isSaved ? invoices.length === 0 : !neighbour(1),
-        onClick: () => {
-          if (isSaved) {
-            const n = neighbour(1);
-            if (n) openDetail(n);
-          } else {
-            stepFromDraft(0);
-          }
-        },
-      },
-      {
         key: 'search',
         label: 'بحث',
         shortcut: 'F3',
@@ -2326,6 +2312,20 @@ function couponsTotal(inv: any): number {
             if (n) openDetail(n);
           } else {
             stepFromDraft(1);
+          }
+        },
+      },
+      {
+        key: 'next',
+        label: 'التالى',
+        icon: <ArrowLeftOutlined />,
+        disabled: !isSaved ? invoices.length === 0 : !neighbour(1),
+        onClick: () => {
+          if (isSaved) {
+            const n = neighbour(1);
+            if (n) openDetail(n);
+          } else {
+            stepFromDraft(0);
           }
         },
       },
@@ -2377,8 +2377,8 @@ function couponsTotal(inv: any): number {
         key: 'reload',
         label: 'تحميل',
         icon: <ReloadOutlined />,
-        // **الدوسة التانية بترجّع الكشف اللي اتحمّل، مش بتمسحه.** واللي عايز فترة
-        // تانية بيدوس «فترة تانية» جوّه الكشف — فمحدش بيخسر تحميل بالغلط.
+        // فترة ← أحدث فاتورة فيها بتتفتح، والتنقّل بـ«السابق»/«التالى» جوّه الفترة —
+        // من غير كشف (طلب العميل ٢٠٢٦-١٠-٠١).
         onClick: () => setLoadRangeOpen(true),
       },
     ];
@@ -3032,6 +3032,7 @@ function couponsTotal(inv: any): number {
             { title: 'الإجمالي', key: 'total', width: 130, money: true },
           ]}
           onLoaded={(rows) => { setInvoices(rows); setPeriodRows(rows); }}
+          openNewest dateKey="invoice_date"
           onPick={(r) => openDetail(r)} />
 
         {/*

@@ -768,13 +768,6 @@ export default function Returns() {
         onClick: () => createForm.submit(),
       },
       {
-        key: 'next',
-        label: 'التالى',
-        icon: <ArrowLeftOutlined />,
-        disabled: returns.length === 0,
-        onClick: () => stepFromDraft(1),
-      },
-      {
         key: 'search',
         label: 'بحث',
         shortcut: 'F3',
@@ -793,6 +786,13 @@ export default function Returns() {
         icon: <ArrowRightOutlined />,
         disabled: returns.length === 0,
         onClick: () => stepFromDraft(-1),
+      },
+      {
+        key: 'next',
+        label: 'التالى',
+        icon: <ArrowLeftOutlined />,
+        disabled: returns.length === 0,
+        onClick: () => stepFromDraft(1),
       },
       {
         key: 'delete',

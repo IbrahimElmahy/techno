@@ -932,13 +932,6 @@ export default function Purchases() {
         onClick: () => form.submit(),
       },
       {
-        key: 'next',
-        label: 'التالى',
-        icon: <ArrowLeftOutlined />,
-        disabled: invoicesInList.length === 0,
-        onClick: () => stepDoc(1),
-      },
-      {
         key: 'search',
         label: 'بحث',
         shortcut: 'F3',
@@ -957,6 +950,13 @@ export default function Purchases() {
         icon: <ArrowRightOutlined />,
         disabled: invoicesInList.length === 0,
         onClick: () => stepDoc(-1),
+      },
+      {
+        key: 'next',
+        label: 'التالى',
+        icon: <ArrowLeftOutlined />,
+        disabled: invoicesInList.length === 0,
+        onClick: () => stepDoc(1),
       },
       {
         key: 'delete',

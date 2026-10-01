@@ -393,13 +393,6 @@ export default function PurchaseReturns() {
         },
       },
       {
-        key: 'next',
-        label: 'التالى',
-        icon: <ArrowLeftOutlined />,
-        disabled: filter.filtered.length === 0,
-        onClick: () => stepList(1),
-      },
-      {
         key: 'search',
         label: 'بحث',
         shortcut: 'F3',
@@ -420,6 +413,13 @@ export default function PurchaseReturns() {
         icon: <ArrowRightOutlined />,
         disabled: filter.filtered.length === 0,
         onClick: () => stepList(-1),
+      },
+      {
+        key: 'next',
+        label: 'التالى',
+        icon: <ArrowLeftOutlined />,
+        disabled: filter.filtered.length === 0,
+        onClick: () => stepList(1),
       },
       {
         key: 'delete',

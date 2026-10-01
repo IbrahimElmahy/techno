@@ -38,7 +38,7 @@ const DEFAULT_COLS: PeriodColumn[] = [
 
 export default function LoadPeriodModal({
   open, onCancel, title, endpoint, params, columns = DEFAULT_COLS, onPick, rowsRef,
-  onLoaded,
+  onLoaded, openNewest = false, dateKey = 'date',
 }: {
   open: boolean;
   onCancel: () => void;
@@ -60,6 +60,14 @@ export default function LoadPeriodModal({
    * و«التالى» تمشي جوّه الفترة اللي اتحمّلت مش جوّه آخر صفحة كانت مفتوحة.
    */
   onLoaded?: (rows: any[]) => void;
+  /**
+   * **من غير كشف** (فاتورة البيع، طلب العميل ٢٠٢٦-١٠-٠١): الفترة بتتحمّل الأحدث الأول،
+   * والشباك بيقفل ويفتح أحدث مستند على طول — والتنقّل بعد كده بـ«السابق» و«التالى»
+   * جوّه الفترة (`onLoaded` بيحطها في كشف الشاشة).
+   */
+  openNewest?: boolean;
+  /** اسم خانة التاريخ للترتيب في `openNewest` — `invoice_date` في المبيعات مثلاً. */
+  dateKey?: string;
 }) {
   const [range, setRange] = React.useState<any>(null);
   const [rows, setRows] = React.useState<any[] | null>(null);
@@ -88,6 +96,17 @@ export default function LoadPeriodModal({
       // على المشتريات — والشباك بيفضل على شاشة التاريخ وكأن الزرار مش شغال.
       const d: any = res.data;
       const data = Array.isArray(d) ? d : (d?.rows ?? d?.items ?? []);
+      if (openNewest) {
+        const sorted = [...data].sort((a: any, b: any) =>
+          String(b?.[dateKey] || '').localeCompare(String(a?.[dateKey] || ''))
+          || Number(b?.id || 0) - Number(a?.id || 0));
+        if (!sorted.length) { message.info('مافيش مستندات في الفترة دي'); return; }
+        onLoaded?.(sorted);
+        onCancel();
+        onPick(sorted[0]);
+        message.success(`اتحمّل ${sorted.length} — اتنقّل بينهم بـ«السابق» و«التالى»`);
+        return;
+      }
       setRows(data);
       onLoaded?.(data);
       if (!data.length) message.info('مافيش مستندات في الفترة دي');
@@ -137,7 +156,9 @@ export default function LoadPeriodModal({
         <>
           <DateRangeFilter value={range} onChange={(v: any) => setRange(v)} />
           <div style={{ marginTop: 10, color: '#6b6b6b', fontSize: 13 }}>
-            هيتحمّل مستندات الفترة دي في كشف، وتدوس على اللي عايزه فيفتح.
+            {openNewest
+              ? 'هيتفتح أحدث مستند في الفترة، وتتنقّل بينهم بـ«السابق» و«التالى».'
+              : 'هيتحمّل مستندات الفترة دي في كشف، وتدوس على اللي عايزه فيفتح.'}
           </div>
         </>
       )}
