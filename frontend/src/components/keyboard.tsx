@@ -178,7 +178,10 @@ function nextInGridColumn(el: HTMLElement, dir: 1 | -1 = 1): boolean {
   if (i === -1) return false;
   const next = cells[i + dir];
   if (!next) return true;   // handled: at the end, stay put rather than wrap
-  next.focus();
+  // من غير ما المتصفح يمرّر بنفسه: لو الخانة برّا الشاشة كان بيجيبها لنص الشاشة والسطر
+  // «بينطّ». `keepInView` بيحرّك بأقل مسافة، وبيحسب حساب الإجمالي المثبّت تحت.
+  next.focus({ preventScroll: true });
+  keepInView(next.closest('tr') ?? next);
   if (next instanceof HTMLInputElement && next.type !== 'checkbox') next.select();
   return true;
 }
@@ -235,7 +238,8 @@ function enterMovesOn(e: KeyboardEvent): boolean {
   e.preventDefault();
   const next = fields[i + 1];
   if (next) {
-    next.focus();
+    next.focus({ preventScroll: true });
+    keepInView(next);
     if (next instanceof HTMLInputElement && next.type !== 'checkbox') next.select();
     return true;
   }

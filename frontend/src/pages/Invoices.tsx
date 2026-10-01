@@ -2427,7 +2427,7 @@ function couponsTotal(inv: any): number {
     <PartyPickerModal
       open={partyPickerOpen || newStep === 'party'} kind="customer"
       kinds={['customer', 'employee']}
-      excludeTypes={['plumber']}
+      excludeTypes={['plumber']} variant="cards" contextLabel={isBonus ? 'فاتورة بونص' : 'طلب بيع مباشر'}
       date={invoiceDate} onDateChange={(d) => setInvoiceDate(d)}
       onPick={handlePartyPicked}
       onCancel={() => {
@@ -2803,6 +2803,7 @@ function couponsTotal(inv: any): number {
           </TabModal>
 
           <ProductPickerModal
+            variant="cards" warehouseName={warehouses.find((w) => w.id === docWarehouseId)?.name} priceTier={customerTier || 'consumer'} priceTierLabel={TIER_LABELS[customerTier || 'consumer']}
             open={pickerOpen}
             categories={productCategories}
             categoryLabels={categoryLabels}

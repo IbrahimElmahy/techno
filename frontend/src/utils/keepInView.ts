@@ -31,6 +31,18 @@ export function keepInView(
   if (!b) return;
   const br = b.getBoundingClientRect();
   const er = el.getBoundingClientRect();
-  if (er.top < br.top) b.scrollTop -= (br.top - er.top);
-  else if (er.bottom > br.bottom) b.scrollTop += (er.bottom - br.bottom);
+  // الحاجات المثبّتة جوّه الصندوق بتغطّي جزء منه: ترويسة جدول مثبّتة فوق، وإجمالي المستند
+  // المثبّت تحت (`.sale-bottom`). الصف اللي تحتهم مش ظاهر حتى لو جوّه حدود الصندوق.
+  let top = br.top;
+  let bottom = br.bottom;
+  b.querySelectorAll<HTMLElement>('.sale-bottom, .ant-table-sticky-holder').forEach((s) => {
+    if (s.contains(el)) return;
+    const r = s.getBoundingClientRect();
+    if (r.height === 0) return;
+    if (s.classList.contains('sale-bottom')) { if (r.top < bottom && r.bottom >= bottom - 2) bottom = r.top; }
+    else if (r.top <= top + 2 && r.bottom > top) top = r.bottom;
+  });
+  const pad = 6;
+  if (er.top < top) b.scrollTop -= (top - er.top) + pad;
+  else if (er.bottom > bottom) b.scrollTop += (er.bottom - bottom) + pad;
 }

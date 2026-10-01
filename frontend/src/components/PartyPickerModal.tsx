@@ -4,14 +4,18 @@ import {
   Button, Col, DatePicker, Empty, Form, Input, Row, Select, Space, Spin, Tag, message,
 } from 'antd';
 import { InputNumber } from './NumberInput';
-import { PlusOutlined, SearchOutlined } from '@ant-design/icons';
+import {
+  CloseOutlined, EllipsisOutlined, PhoneOutlined, PlusOutlined, SearchOutlined, TeamOutlined,
+} from '@ant-design/icons';
 import { Dayjs } from 'dayjs';
+import { useNavigate } from 'react-router-dom';
 import { api } from '../api/client';
 import { normalizeAr } from './ListToolbar';
-import { useLookup } from '../hooks/useLookup';
+import { useLookup, labelMap } from '../hooks/useLookup';
 import { TabModal } from './TabModal';
 import { keepInView } from '../utils/keepInView';
-import { numeralsLocale } from '../utils/money';
+import { money, num, numeralsLocale } from '../utils/money';
+import './PartyPickerModal.css';
 
 /**
  * اختيار الطرف — the first step of every sale/purchase document.
@@ -76,8 +80,28 @@ const KIND_ENDPOINT: Record<PartyKind, string> = {
 /** التصنيف اللي التبويب ده بيفلتر بيه كشف العملاء. `null` = من غير فلترة. */
 const KIND_CUSTOMER_TYPE: Partial<Record<PartyKind, string>> = { employee: 'employee' };
 
+/** أسماء التبويبات والوحدة اللي بتتعدّ بيها — لشكل الكروت. */
+const KIND_TAB: Record<PartyKind, string> = { customer: 'العملاء', supplier: 'الموردين', employee: 'الموظفين' };
+const KIND_UNIT: Record<PartyKind, string> = { customer: 'عميل', supplier: 'مورد', employee: 'موظف' };
+
+/**
+ * حالة المديونية — **من ناحيتنا**: «عليهم» يعني الطرف مديون لنا.
+ *
+ * رصيد العميل (والموظف، نفس الدفتر) مدين: موجب = عليه لنا، سالب = له عندنا — نفس
+ * `filter_by_balance` في السيرفر (debtors > 0، credit < 0). رصيد المورد دائن: موجب =
+ * مستحق له، فالإشارة بتتقلب عشان «عليهم» تفضل معناها واحد في كل تبويب.
+ */
+type DebtState = 'owes' | 'credit' | 'zero';
+const debtState = (k: PartyKind, balance?: string | null): DebtState => {
+  const b = Number(balance || 0) * (k === 'supplier' ? -1 : 1);
+  if (b > 0) return 'owes';
+  if (b < 0) return 'credit';
+  return 'zero';
+};
+
 export default function PartyPickerModal({
   open, kind, onPick, onCancel, date, onDateChange, kinds, title, excludeTypes,
+  variant = 'classic', contextLabel,
 }: {
   open: boolean;
   /** التصنيف اللي البوباب بيفتح عليه. */
@@ -100,7 +124,16 @@ export default function PartyPickerModal({
    /** تصنيفات عملاء مستبعدة من القايمة — شاشات البيع بتبعت `['plumber']`
     *  (السباك مالوش بيع). شاشات الكوبونات مابتبعتش حاجة. */
    excludeTypes?: string[];
+   /**
+    * الشكل بس — المنطق واحد. `classic` القايمة القديمة، `cards` كروت بعواميد وفلتر مديونية.
+    * التعميم بعدين = تغيير الافتراضي هنا.
+    */
+   variant?: 'classic' | 'cards';
+   /** شارة جنب العنوان في شكل الكروت — «طلب بيع مباشر» / «فاتورة بونص». */
+   contextLabel?: string;
  }) {
+  const cards = variant === 'cards';
+  const navigate = useNavigate();
   // التصنيف الحالي — بيبدأ من اللي الشاشة فتحت بيه وبيرجعله كل مرة تتفتح.
   const [activeKind, setActiveKind] = useState<PartyKind>(kind);
   useEffect(() => { if (open) setActiveKind(kind); }, [open, kind]);
@@ -113,6 +146,7 @@ export default function PartyPickerModal({
   /** تصنيفات العملاء من قايمة الإعدادات — كانت حالة معرّفة ومفيش حاجة بتملاها، فالقايمة
    *  كانت بتفضل فاضية والفورم بيقع على قايمة مكتوبة في الكود. */
   const { options: customerTypes } = useLookup('customer_type');
+  const typeLabels = useMemo(() => labelMap(customerTypes), [customerTypes]);
   // الملّاك ليهم شاشتهم — مايتخلقوش من منتقي الطرف.
   const pickerTypes = useMemo(
     () => customerTypes.filter((o: any) => o.value !== 'owner'),
@@ -121,6 +155,8 @@ export default function PartyPickerModal({
   const [loading, setLoading] = useState(false);
   const [query, setQuery] = useState('');
   const [branchId, setBranchId] = useState<number | undefined>();
+  /** فلتر «حالة المديونية» — بيظهر في شكل الكروت بس؛ في القديم بيفضل `all` فمابيفلترش. */
+  const [debt, setDebt] = useState<'all' | DebtState>('all');
   // The highlighted row. The list opens with the first one lit so Enter has something to answer
   // and the arrows have somewhere to move from — the same as «اختر الصنف» a step later.
   const [cursor, setCursor] = useState(0);
@@ -137,7 +173,8 @@ export default function PartyPickerModal({
         api.get('/api/v1/branches').catch(() => ({ data: [] })),
         activeKind === 'customer' ? api.get('/api/v1/users').catch(() => ({ data: [] }))
           : Promise.resolve({ data: [] }),
-        activeKind === 'customer' ? api.get('/api/v1/territories').catch(() => ({ data: [] }))
+        // المنطقة بتتعرض على الكارت كمان، فبتتجاب لتبويب الموظفين (نفس دفتر العملاء).
+        activeKind !== 'supplier' ? api.get('/api/v1/territories').catch(() => ({ data: [] }))
           : Promise.resolve({ data: [] }),
       ]);
       setParties(pRes.data);
@@ -150,6 +187,7 @@ export default function PartyPickerModal({
   };
 
   useEffect(() => { if (open) { load(); setQuery(''); setCreating(false); } }, [open, activeKind]);
+  useEffect(() => { if (open) setDebt('all'); }, [open]);
 
   // الاسم موحَّد مرة واحدة للكشف كله — الترتيب تحت بيقارن آلاف الأسماء مع كل حرف.
   const bareNames = useMemo(
@@ -184,25 +222,84 @@ export default function PartyPickerModal({
       if (onlyType && (p as any).customer_type !== onlyType) return false;
       if (excludeTypes?.includes((p as any).customer_type)) return false;
       if (branchId && p.branch_id !== branchId) return false;
+      if (debt !== 'all' && debtState(activeKind, p.balance) !== debt) return false;
       if (!needle) return true;
       return matchesWords(bare(p), needle) || normalizeAr(p.phone).includes(needle);
     }).sort((a, b) => (rank(a) - rank(b)) || arCollator.compare(bare(a), bare(b)));
-  }, [parties, bareNames, query, branchId, activeKind]);
+  }, [parties, bareNames, query, branchId, activeKind, debt]);
+
+  /** عدد كل تبويب بعد فلتر الفرع — للي كشفه متحمّل بس (العملاء والموظفين نفس الكشف). */
+  const kindCounts = useMemo(() => {
+    const base = parties.filter((p) => !excludeTypes?.includes((p as any).customer_type)
+      && (!branchId || p.branch_id === branchId));
+    const out: Partial<Record<PartyKind, number>> = {};
+    (kinds ?? [kind]).forEach((k) => {
+      if (KIND_ENDPOINT[k] !== KIND_ENDPOINT[activeKind]) return;
+      const t = KIND_CUSTOMER_TYPE[k];
+      out[k] = t ? base.filter((p) => (p as any).customer_type === t).length : base.length;
+    });
+    return out;
+  }, [parties, excludeTypes, branchId, kinds, kind, activeKind]);
+
+  /**
+   * الكروت بتترسم على دفعات — الكشف ممكن يبقى ٣٠٠٠ طرف، والكارت أتقل من سطر القايمة
+   * القديمة. الدفعة اللي بعدها بتنزل لما التمرير يقرّب من الآخر أو المؤشر يوصل لها.
+   */
+  const PAGE = 150;
+  const [renderLimit, setRenderLimit] = useState(PAGE);
+  useEffect(() => { setRenderLimit(PAGE); }, [visible]);
+
+  /**
+   * مين اللي حرّك المؤشر — الكيبورد ولا الماوس.
+   *
+   * في شكل الكروت الماوس بيلوّن الكارت اللي تحته **من غير ما القايمة تتحرك**: لو المؤشر
+   * اللي جه من الماوس اتعمله `keepInView`، كارت نصّه باين تحت الماوس بيشدّ القايمة، والكارت
+   * اللي بعده يدخل تحت الماوس فيشدّها تاني — وده «النطّ لنص الشاشة».
+   */
+  const cursorByMouse = useRef(false);
+  /** آخر مكان حقيقي للماوس — المتصفح بيبعت حركة ماوس وهمية بعد التمرير من غير ما الإيد تتحرك. */
+  const lastPointer = useRef<{ x: number; y: number } | null>(null);
 
   // Back to the top when the list changes, and never past its end.
-  useEffect(() => { setCursor(0); }, [query, branchId, open]);
+  useEffect(() => { setCursor(0); }, [query, branchId, open, debt]);
+  const listRef = useRef<HTMLDivElement | null>(null);
+  // الكروت: تغيير التبويب فلتر زي أي فلتر — المؤشر والتمرير يرجعوا لأول القايمة.
+  useEffect(() => {
+    if (!cards) return;
+    cursorByMouse.current = false;
+    setCursor(0);
+    if (listRef.current) listRef.current.scrollTop = 0;
+  }, [cards, query, branchId, debt, activeKind]);
+  // الدفعة اللي جاية بتترسم **قبل** ما المؤشر يوصل لآخر كارت مترسوم، فالكارت اللي المؤشر
+  // عليه موجود دايماً وقت `keepInView`. والزيادة بتتحط تحت، فالتمرير مابيتحركش.
+  useEffect(() => {
+    if (cards && cursor >= renderLimit - 10 && renderLimit < visible.length) {
+      setRenderLimit((n) => n + PAGE);
+    }
+  }, [cursor, renderLimit, cards, visible.length]);
   useEffect(() => {
     setCursor((c) => Math.min(c, Math.max(visible.length - 1, 0)));
   }, [visible.length]);
   // القايمة بس هي اللي بتتحرك — شوف `keepInView`.
-  const listRef = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
+    if (cards && cursorByMouse.current) return;
     keepInView(rowRefs.current[cursor], listRef.current);
   }, [cursor, visible.length]);
+
+  /** الماوس في الكروت: حركة حقيقية بس هي اللي بتنقل المؤشر، ومن غير تمرير. */
+  const onCardPointer = (i: number) => (e: React.MouseEvent) => {
+    const p = lastPointer.current;
+    if (p && p.x === e.clientX && p.y === e.clientY) return;
+    lastPointer.current = { x: e.clientX, y: e.clientY };
+    if (i === cursor) return;
+    cursorByMouse.current = true;
+    setCursor(i);
+  };
 
   /** ↑↓ to move, Enter to take the highlighted one — the same keys as «اختر الصنف», so the two
    *  steps of opening a document are driven identically. */
   const onListKey = (e: React.KeyboardEvent) => {
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') cursorByMouse.current = false;
     if (e.key === 'ArrowDown') {
       e.preventDefault(); setCursor((c) => Math.min(c + 1, visible.length - 1));
     }
@@ -249,8 +346,219 @@ export default function PartyPickerModal({
     } finally { setSaving(false); }
   };
 
+  /* ---------------------------------------------------------------- شكل الكروت
+   * نفس الحالة والفلترة والكيبورد والإنشاء — الرسم بس اللي مختلف. */
+  const creatable = (kinds ?? [kind]).filter((k) => k !== 'employee');
+  const kindTotal = kindCounts[activeKind] ?? parties.length;
+  const branchName = (id?: number | null) =>
+    (id ? branches.find((b: any) => b.id === id)?.name : null) ?? '—';
+  const territoryName = (id?: number | null) =>
+    (id ? territories.find((t: any) => t.id === id)?.name : null) ?? null;
+  const shown = cards ? visible.slice(0, renderLimit) : visible;
+  const onCardsScroll = (e: React.UIEvent<HTMLDivElement>) => {
+    const el = e.currentTarget;
+    if (renderLimit < visible.length
+      && el.scrollTop + el.clientHeight > el.scrollHeight - 400) {
+      setRenderLimit((n) => n + PAGE);
+    }
+  };
+  /** كارت الطرف — في شاشته. العملاء والموظفين نفس الكارت. الفاتورة بتفضل مفتوحة ورا. */
+  const openCard = (p: Party) => navigate(
+    activeKind === 'supplier' ? `/suppliers/${p.id}` : `/customers/${p.id}`);
+
+  const balanceView = (p: Party) => {
+    const raw = Number(p.balance || 0);
+    const st = debtState(activeKind, p.balance);
+    const abs = Math.abs(raw);
+    // «صغير» = فكّة أقل من جنيه — بواقي تقريب مش مديونية حقيقية.
+    const small = abs > 0 && abs < 1;
+    const tone = small ? 'warn' : st;
+    const pill = small ? 'حساب منتظم (خالص)'
+      : st === 'owes' ? 'مديونية مستحقة'
+        : st === 'credit'
+          ? (activeKind === 'supplier' ? 'رصيد لصالحنا' : `رصيد لصالح ${KIND_LABEL[activeKind]}`)
+          : 'خالص (مسدد)';
+    return (
+      <div className={`pp-bal pp-bal--${tone}`}>
+        <div className="pp-bal-amount">{money(abs)}</div>
+        <span className="pp-bal-pill">{pill}</span>
+      </div>
+    );
+  };
+
+  const DEBT_CHIPS = [
+    ['all', 'الكل'], ['owes', 'عليهم مديونية'], ['credit', 'لهم رصيد دائن'], ['zero', 'رصيد صفري'],
+  ] as const;
+
+  const cardsView = (
+    <TabModal
+      open={open} onCancel={onCancel} width="min(1100px, 92vw)" centered destroyOnHidden
+      className="pp-cards" closable={false}
+      title={(
+        <div className="pp-head">
+          <div className="pp-head-main">
+            <div className="pp-head-icon"><TeamOutlined /></div>
+            <div>
+              <div className="pp-head-title">
+                <span>{title ?? `اختيار جهة التعامل / ${KIND_LABEL[activeKind]}`}</span>
+                {contextLabel && <span className="pp-context">{contextLabel}</span>}
+              </div>
+              <div className="pp-head-sub">
+                اختر {KIND_LABEL[activeKind]} بالضغط المباشر أو الضغط على Enter للانتقال الفوري
+                إلى الفاتورة
+              </div>
+            </div>
+          </div>
+          <div className="pp-head-actions">
+            {!creating && creatable.map((k) => (
+              <button key={k} type="button" className="pp-btn pp-btn--primary"
+                onClick={() => { setActiveKind(k); setCreating(true); }}>
+                <PlusOutlined /> {k === 'customer' ? 'إضافة عميل جديد' : 'إضافة مورد جديد'}
+              </button>
+            ))}
+            <button type="button" className="pp-close" aria-label="إغلاق" onClick={onCancel}>
+              <CloseOutlined />
+            </button>
+          </div>
+        </div>
+      )}
+      footer={(
+        <div className="pp-foot">
+          <div className="pp-foot-count">
+            عرض <b>{num(visible.length)}</b> من أصل <b>{num(kindTotal)}</b>
+            {' '}{KIND_UNIT[activeKind]} مسجل
+          </div>
+          <div className="pp-foot-hint">
+            اضغط على أي {KIND_UNIT[activeKind]} أو اضغط <kbd className="pp-kbd">Enter</kbd>
+            {' '}للاختيار الفوري والانتقال المباشر للفاتورة
+          </div>
+          <button type="button" className="pp-btn pp-btn--ghost" onClick={onCancel}>
+            إلغاء وإغلاق النافذة <kbd className="pp-kbd">Esc</kbd>
+          </button>
+        </div>
+      )}
+    >
+      <div className="pp-search-row">
+        <Input allowClear autoFocus size="large" className="pp-search"
+          prefix={<SearchOutlined />}
+          suffix={<kbd className="pp-kbd">Enter للاختيار</kbd>}
+          placeholder="ابحث بالاسم، الكود أو الهاتف…"
+          value={query} onChange={(e) => setQuery(e.target.value)}
+          onKeyDown={onListKey} />
+        <div className="pp-field">
+          <span>الفرع:</span>
+          <Select allowClear size="large" style={{ minWidth: 230 }}
+            placeholder="كل الفروع النشطة (الافتراضي)"
+            value={branchId} onChange={(v) => setBranchId(v)}
+            options={branches.map((b: any) => ({ value: b.id, label: b.name }))} />
+        </div>
+        {date && onDateChange && (
+          <div className="pp-field">
+            <span>تاريخ القيد:</span>
+            <DatePicker allowClear={false} size="large" format="YYYY-MM-DD"
+              value={date} onChange={(v) => v && onDateChange(v)} />
+          </div>
+        )}
+      </div>
+
+      <div className="pp-filter-row">
+        <div className="pp-seg">
+          {(kinds ?? [kind]).map((k) => (
+            <button key={k} type="button"
+              className={`pp-seg-item${k === activeKind ? ' is-active' : ''}`}
+              onClick={() => setActiveKind(k)}>
+              {KIND_TAB[k]}
+              {kindCounts[k] != null && (
+                <span className="pp-seg-count">{num(kindCounts[k])}</span>)}
+            </button>
+          ))}
+        </div>
+        <div className="pp-debt">
+          <span className="pp-debt-label">حالة المديونية:</span>
+          {DEBT_CHIPS.map(([v, l]) => (
+            <button key={v} type="button"
+              className={`pp-chip pp-chip--${v}${debt === v ? ' is-active' : ''}`}
+              onClick={() => setDebt(v)}>
+              {(v === 'owes' || v === 'credit') && <i className="pp-dot" />}{l}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="pp-cols">
+        <div>اسم {KIND_LABEL[activeKind]} / الكود / التصنيف</div>
+        <div>الهاتف والاتصال</div>
+        <div>الفرع / المنطقة</div>
+        <div>الرصيد المالي الحالي</div>
+        <div>الإجراء</div>
+      </div>
+
+      <div ref={listRef} className="pp-list" onKeyDown={onListKey} onScroll={onCardsScroll}>
+        {loading ? (
+          <div style={{ textAlign: 'center', padding: 32 }}><Spin /></div>
+        ) : visible.length === 0 ? (
+          <Empty description="لا توجد نتائج — استخدم زر الإضافة بالأعلى"
+            style={{ margin: '32px 0' }} />
+        ) : shown.map((party, i) => {
+          const p = party as any;
+          const active = i === cursor;
+          const st = debtState(activeKind, party.balance);
+          const area = [territoryName(p.territory_id), p.markaz].filter(Boolean).join(' • ');
+          const typeLabel = p.customer_type
+            ? (typeLabels[p.customer_type] ?? p.customer_type) : null;
+          return (
+            <div key={party.id} className={`pp-card${active ? ' is-active' : ''}`}
+              onClick={() => onPick(party)}
+              ref={(el) => { rowRefs.current[i] = el; }}
+              onMouseMove={onCardPointer(i)}>
+              <div className="pp-c-name">
+                <div className="pp-avatar">{(party.name || '?').trim().charAt(0)}</div>
+                <div className="pp-name-text">
+                  <div className="pp-name-line">
+                    <b>{party.name}</b>
+                    {st === 'credit' && activeKind !== 'supplier' && (
+                      <span className="pp-tag pp-tag--credit">دائن</span>)}
+                    {p.is_cash && <span className="pp-tag">نقدي</span>}
+                    {p.active === false && <span className="pp-tag pp-tag--off">غير نشط</span>}
+                  </div>
+                  <div className="pp-sub">
+                    {p.code && <>كود: <span dir="ltr">{p.code}</span></>}
+                    {p.code && typeLabel && ' • '}
+                    {typeLabel}
+                  </div>
+                </div>
+              </div>
+              <div className="pp-c-phone">
+                {party.phone
+                  ? <><PhoneOutlined /> <span dir="ltr">{party.phone}</span></>
+                  : <span className="pp-muted">—</span>}
+              </div>
+              <div className="pp-c-branch">
+                <b>{branchName(party.branch_id)}</b>
+                {area && <div className="pp-sub">{area}</div>}
+              </div>
+              <div className="pp-c-bal">{balanceView(party)}</div>
+              <div className="pp-c-act">
+                <button type="button" className="pp-btn pp-btn--primary pp-btn--sm"
+                  onClick={(e) => { e.stopPropagation(); onPick(party); }}>
+                  اختيار ومتابعة الفاتورة
+                </button>
+                <button type="button" className="pp-icon-btn"
+                  title={`كارت ${KIND_LABEL[activeKind]}`}
+                  onClick={(e) => { e.stopPropagation(); openCard(party); }}>
+                  <EllipsisOutlined />
+                </button>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </TabModal>
+  );
+
   return (
     <>
+    {cards ? cardsView : (
     <TabModal
       open={open} onCancel={onCancel} width={780} centered destroyOnHidden
       title={(
@@ -373,6 +681,7 @@ export default function PartyPickerModal({
         </Col>
       </Row>
     </TabModal>
+    )}
 
     {/*
       * «عميل جديد» بوباب فوق البوباب — مش بديل عنه.

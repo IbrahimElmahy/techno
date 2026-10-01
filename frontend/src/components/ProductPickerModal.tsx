@@ -1,13 +1,15 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { compareArabic, matchesWords, sortByName } from '../utils/arabicSort';
 import {
-  Button, Col, Empty, Input, Row, Space, Tag
+  Button, Checkbox, Col, Empty, Input, Row, Select, Space, Tag
 } from 'antd';
+import { AppstoreOutlined, CheckOutlined, PlusOutlined, SearchOutlined } from '@ant-design/icons';
 import { keepInView } from '../utils/keepInView';
 import { normalizeAr } from './ListToolbar';
 import { TabModal } from './TabModal';
-import { qty, numeralsLocale } from '../utils/money';
+import { qty, money, numeralsLocale } from '../utils/money';
 import { useCategoryTree, withChildren } from '../hooks/useCategoryTree';
+import './ProductPickerModal.css';
 
 /**
  * اختيار الصنف — categories on one side, their products on the other, in a window of its own.
@@ -55,7 +57,24 @@ interface Props {
    * أو بيرجّع من عميل (فاتورة البيع ومردودها وطلب البيع). الشرا ومردوده بيفضل ظاهر فيهم.
    */
   hidePurchasePrice?: boolean;
+  /**
+   * شكل الشباك. `classic` هو اللي كان (الافتراضي)، و`cards` التصميم الجديد بكروت —
+   * شغّال في فاتورة البيع بس لحد ما يتراجع، وبعدها الافتراضي بيتقلب. نفس البيانات
+   * ونفس الفلترة ونفس الكيبورد؛ الفرق في الرسم بس.
+   */
+  variant?: 'classic' | 'cards';
+  /** اسم المخزن اللي `availableFor` بتقيس عليه — بيتكتب في رأس شكل الكروت. */
+  warehouseName?: string | null;
+  /** شريحة سعر المستند (`tier_prices` في الصنف) — السعر على الكارت بيبقى سعرها لو موجود. */
+  priceTier?: string | null;
+  /** اسمها المعروض («مستهلك»، «جملة»…). */
+  priceTierLabel?: string | null;
 }
+
+/** الرصيد اللي تحته بيتعلّم «حرج» في شكل الكروت. */
+const LOW_STOCK = 5;
+const CAT_PREVIEW = 14;
+type SortKey = 'name' | 'avail' | 'price_desc' | 'price_asc';
 
 const fmtPrice = (v: any) => Number(v || 0).toLocaleString(numeralsLocale(), { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + '';
 
@@ -78,7 +97,9 @@ export default function ProductPickerModal({
   open, categories, categoryLabels, products, activeCategory, onCategoryChange,
   onPick, onPickMany, onCancel, title = 'اختر الصنف', availableFor, priceFor,
   disableOutOfStock = false, availabilityVersion, hidePurchasePrice = false,
+  variant = 'classic', warehouseName, priceTier, priceTierLabel,
 }: Props) {
+  const cards = variant === 'cards';
   const memory = (memories[title] ??= { query: '', scrollTop: 0, cursor: 0 });
   const [query, setQuery] = useState(() => memory.query);
   const [cursor, setCursor] = useState(() => memory.cursor);
@@ -255,6 +276,43 @@ export default function ProductPickerModal({
   }, [query, accepted, products, disableOutOfStock, onlyAvailableStock,
       availabilityVersion]);
 
+  /**
+   * الترتيب في شكل الكروت (اختيار المستخدم). الافتراضي `name` هو نفس `visible` بالحرف —
+   * والشكل القديم مابيغيّرهوش أبداً، فالقايمة فيه هي هي.
+   */
+  const [sortKey, setSortKey] = useState<SortKey>('name');
+  /** سعر البيع اللي بيتعرض على الكارت: شريحة المستند لو ليها سعر، وإلا سعر الصنف. */
+  const salePriceOf = (p: any): number | null => {
+    const t = priceTier && p.tier_prices ? p.tier_prices[priceTier] : null;
+    const v = t != null ? t : (p.sale_price ?? p.consumer_price);
+    return v != null && v !== '' ? Number(v) : null;
+  };
+  const ordered = useMemo(() => {
+    if (sortKey === 'name') return visible;
+    const list = [...visible];
+    if (sortKey === 'avail') {
+      const avail = availableRef.current;
+      if (!avail) return visible;
+      const val = (p: any) => { const v = avail(p.id); return v === null ? -Infinity : v; };
+      return list.sort((a, b) => val(b) - val(a));
+    }
+    const dir = sortKey === 'price_desc' ? -1 : 1;
+    const val = (p: any) => {
+      const v = priceFor ? priceFor(p.id) : salePriceOf(p);
+      return typeof v === 'number' ? v : Number(v) || 0;
+    };
+    return list.sort((a, b) => dir * (val(a) - val(b)));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visible, sortKey, priceTier, availabilityVersion]);
+
+  /** عدد أصناف كل فئة لشكل الكروت لما الفلتر مش شغّال (`stockCounts` = null). */
+  const allCounts = useMemo(() => {
+    if (!cards) return null;
+    const counts = new Map<string, number>();
+    products.forEach((p) => counts.set(p.category, (counts.get(p.category) || 0) + 1));
+    return counts;
+  }, [cards, products]);
+
   /** بيترسم من القايمة قد إيه.
    *
    *  الكتالوج آلاف الأصناف، وكلهم كانوا بيتحطوا في الـDOM مرة واحدة — الشباك بيتجمّد
@@ -263,8 +321,8 @@ export default function ProductPickerModal({
   // الصفحة الأولى لازم تشمل الصف اللي كان مختار — وإلا Enter بيضيف صف مش ظاهر.
   const [shown, setShown] = useState(() => Math.max(PAGE, memory.cursor + PAGE));
   // مش على `open`: الفتحة الجديدة بترجع لنفس المكان (شوف `memory` فوق).
-  useEffect(() => { setShown((n) => Math.max(PAGE, Math.min(n, memory.cursor + PAGE))); }, [query, activeCategory, activeRoot, onlyAvailableStock]);
-  const rendered = useMemo(() => visible.slice(0, shown), [visible, shown]);
+  useEffect(() => { setShown((n) => Math.max(PAGE, Math.min(n, memory.cursor + PAGE))); }, [query, activeCategory, activeRoot, onlyAvailableStock, sortKey]);
+  const rendered = useMemo(() => ordered.slice(0, shown), [ordered, shown]);
 
   // Back to the top whenever the list underneath changes, so the highlight is never left pointing
   // at a row that scrolled out from under it.
@@ -272,11 +330,11 @@ export default function ProductPickerModal({
   useEffect(() => {
     if (firstRender.current) { firstRender.current = false; return; }
     setCursor(0);
-  }, [query, activeCategory, activeRoot, onlyAvailableStock]);
+  }, [query, activeCategory, activeRoot, onlyAvailableStock, sortKey]);
   // …and never past the end when a search narrows the list.
   useEffect(() => {
-    setCursor((c) => Math.min(c, Math.max(visible.length - 1, 0)));
-  }, [visible.length]);
+    setCursor((c) => Math.min(c, Math.max(ordered.length - 1, 0)));
+  }, [ordered.length]);
 
   // Keep the highlighted row on screen — arrowing past the fold is how a keyboard user loses
   // track of what Enter is about to add.
@@ -292,9 +350,24 @@ export default function ProductPickerModal({
   // بالكامل، من غير ما القايمة تتحرك من تحت الإيد.
   const rowRefs = useRef<Record<number, HTMLDivElement | null>>({});
   const listRef = useRef<HTMLDivElement | null>(null);
+  /**
+   * شكل الكروت: المؤشر اللي اتحرّك بالماوس مابيحرّكش القايمة.
+   *
+   * الصف اللي تحت الماوس ظاهر أصلاً — ولو نصّه بس ظاهر على الحافة، `keepInView` كان
+   * هيمرّر القايمة تحت الإيد. والعلَم ده بيتصفّر مع أول سهم.
+   */
+  const mouseCursor = useRef(false);
+  /** آخر مكان حقيقي للماوس — عشان حركة «وهمية» بعد التمرير ماتتحسبش (شوف الكارت). */
+  const pointerRef = useRef<{ x: number; y: number } | null>(null);
+  /**
+   * مكان التمرير المتفتكر بيترجّع **مرة واحدة** أول ما القايمة تتركّب، قبل أي سهم —
+   * مش بمؤقّت بعد ٦٠ms ممكن يوصل بعد ما المستخدم اتحرك ويرجّع القايمة لورا.
+   */
+  const pendingScroll = useRef<number | null>(null);
   useEffect(() => {
+    if (mouseCursor.current) { mouseCursor.current = false; return; }
     keepInView(rowRefs.current[cursor], listRef.current);
-  }, [cursor, visible.length]);
+  }, [cursor, ordered.length]);
   useEffect(() => {
     if (!open) return;
     setQuery(memory.query);
@@ -302,24 +375,32 @@ export default function ProductPickerModal({
     setPicked([]);
     setBulk(false);
     const jumpTo = memory.lastPicked;
+    if (cards) {
+      mouseCursor.current = false;
+      pendingScroll.current = jumpTo == null ? memory.scrollTop : null;
+      if (pendingScroll.current != null && listRef.current) {
+        listRef.current.scrollTop = pendingScroll.current;
+        pendingScroll.current = null;
+      }
+    }
     setTimeout(() => {
-      searchRef.current?.focus?.();
+      searchRef.current?.focus?.(cards ? { preventScroll: true } : undefined);
       // اتختار صنف بالبحث ⇒ القايمة كلها رجعت، فمكان التمرير القديم كان على قايمة تانية.
       // المؤشر بيروح على الصنف نفسه و`keepInView` بيجيبه قدام العين.
-      if (jumpTo == null && listRef.current) listRef.current.scrollTop = memory.scrollTop;
+      if (!cards && jumpTo == null && listRef.current) listRef.current.scrollTop = memory.scrollTop;
     }, 60);
   }, [open]);
   useEffect(() => {
     // بيستنى البحث يتفضّى الأول: الشباك بيفضل متركّب بين الفتحات، فأول رندر بعد الفتح
     // لسه شايل القايمة المتفلترة بالكلمة القديمة — والمكان فيها مش مكانه في القايمة كلها.
     if (!open || memory.lastPicked == null || query) return;
-    const idx = visible.findIndex((p) => p.id === memory.lastPicked);
+    const idx = ordered.findIndex((p) => p.id === memory.lastPicked);
     memory.lastPicked = null;
     if (idx < 0) return;
     setShown((n) => Math.max(n, idx + PAGE));
     setCursor(idx);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, visible, query]);
+  }, [open, ordered, query]);
   /** اختيار صنف — بيفضّي البحث للفتحة الجاية (شوف `PickerMemory`). */
   const pick = (id: number) => {
     if (memory.query) { memory.query = ''; memory.lastPicked = id; }
@@ -333,17 +414,307 @@ export default function ProductPickerModal({
     setPicked((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
 
   const onKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'ArrowDown') { e.preventDefault(); setCursor((c) => Math.min(c + 1, visible.length - 1)); }
+    if (cards && (e.key === 'ArrowDown' || e.key === 'ArrowUp')) {
+      mouseCursor.current = false;
+      pendingScroll.current = null;
+      // الصف الجاي لسه مش مترسوم ⇒ الصفحة الجاية بتتضاف تحت في نفس الرندر، فالمؤشر
+      // مابيقعش على صف مش موجود، والإضافة تحت مابتحرّكش اللي فوق.
+      if (e.key === 'ArrowDown' && cursor + 1 >= shown && shown < ordered.length) {
+        setShown((n) => n + PAGE);
+      }
+    }
+    if (e.key === 'ArrowDown') { e.preventDefault(); setCursor((c) => Math.min(c + 1, ordered.length - 1)); }
     if (e.key === 'ArrowUp') { e.preventDefault(); setCursor((c) => Math.max(c - 1, 0)); }
-    if (e.key === 'Enter' && visible[cursor]) {
+    if (e.key === 'Enter' && ordered[cursor]) {
       e.preventDefault();
-      const p = visible[cursor];
+      const p = ordered[cursor];
       const av = availableFor ? availableFor(p.id) : null;
       if (disableOutOfStock && av !== null && av <= 0) return;
-      if (bulk) toggle(p.id);
+      if (cards) addOne(p.id);
+      else if (bulk) toggle(p.id);
       else pick(p.id);
     }
   };
+
+  /** إضافة المحدّدين مرة واحدة — نفس زرار «أضف N صنف» في الشكل القديم. */
+  const commitMany = (ids: number[]) => {
+    if (!onPickMany || !ids.length) return;
+    if (memory.query) { memory.query = ''; memory.lastPicked = ids[ids.length - 1] ?? null; }
+    onPickMany(ids);
+    setPicked([]);
+  };
+  /**
+   * إضافة صنف واحد من شكل الكروت (Enter أو «+ إضافة»). لو فيه أصناف متعلّمة، بتتضاف
+   * معاه — الشباك بيتقفل بعد الإضافة، والتحديد اللي كان متعمل مايضيعش من غير ما يتقال.
+   */
+  const addOne = (id: number) => {
+    if (onPickMany && picked.length) commitMany([...picked.filter((x) => x !== id), id]);
+    else pick(id);
+  };
+
+  const [catsExpanded, setCatsExpanded] = useState(false);
+
+  if (cards) {
+    const allActive = activeCategory === null && activeRoot === null;
+    const cardCount = (c: string, children: string[] = []) => [c, ...children].reduce(
+      (n, x) => n + ((stockCounts ? stockCounts.get(x) : allCounts?.get(x)) || 0), 0);
+    const totalCount = stockCounts
+      ? Array.from(stockCounts.values()).reduce((a, b) => a + b, 0) : products.length;
+    const catTotal = groups.reduce((n, g) => n + 1 + g.children.length, 0);
+    // المطويّة بتفضل شايلة الفئة المختارة، عشان الاختيار مايختفيش من على الجنب.
+    const shownGroups = catsExpanded ? groups : groups.filter((g, i) => i < CAT_PREVIEW
+      || g.value === activeRoot || g.value === activeCategory
+      || (activeCategory != null && g.children.includes(activeCategory)));
+    const heading = title === 'اختر الصنف' ? 'اختيار صنف من المخزن / الكتالوج' : title;
+    const forDoc = hidePurchasePrice ? 'للفاتورة' : 'للمستند';
+    const showStockToggle = Boolean(availableFor && disableOutOfStock);
+    const sortOptions = [
+      { value: 'name', label: 'الاسم (أبجدي)' },
+      ...(availableFor ? [{ value: 'avail', label: 'الأكثر رصيداً' }] : []),
+      { value: 'price_desc', label: 'السعر: الأعلى أولاً' },
+      { value: 'price_asc', label: 'السعر: الأقل أولاً' },
+    ];
+    const toggleStock = () => {
+      const next = !onlyAvailableStock;
+      setOnlyAvailableStock(next);
+      try { localStorage.setItem('picker.onlyAvailable', next ? '1' : '0'); }
+      catch { /* متصفح مقفّل التخزين — الاختيار بيعيش للجلسة دي */ }
+      searchRef.current?.focus?.({ preventScroll: true });
+    };
+    const catItem = (key: string, label: string, count: number | null, active: boolean,
+      onClick: () => void, child = false) => (
+      <div key={key} className={`ppk-cat${active ? ' is-active' : ''}${child ? ' is-child' : ''}`}
+        onMouseDown={(e) => e.preventDefault()} onClick={onClick}>
+        <span className="ppk-cat-label">{label}</span>
+        {count != null && <span className="ppk-cat-count">{qty(count)}</span>}
+      </div>
+    );
+
+    return (
+      <TabModal open={open} onCancel={onCancel} footer={null} width={1150}
+        rootClassName="ppk-cards" focusTriggerAfterClose={false} destroyOnHidden
+        title={(
+          <div className="ppk-head">
+            <div className="ppk-head-icon"><AppstoreOutlined /></div>
+            <div className="ppk-head-text">
+              <div className="ppk-title">
+                {heading}
+                <span className="ppk-pill">بحث فوري</span>
+              </div>
+              <div className="ppk-sub">
+                {warehouseName && (
+                  <span><span className="ppk-dot" />المخزن النشط: <b>{warehouseName}</b></span>
+                )}
+                {availableFor && <span>رصيد متاح لحظي</span>}
+                {priceTierLabel && <span>سعر البيع الافتراضي: <b>{priceTierLabel}</b></span>}
+              </div>
+            </div>
+          </div>
+        )}>
+        <div className="ppk-body">
+          <div className="ppk-search-row">
+            <Input
+              ref={searchRef} size="large" allowClear value={query} className="ppk-search"
+              prefix={<SearchOutlined className="ppk-search-icon" />}
+              suffix={<span className="ppk-key">Enter</span>}
+              placeholder={activeLabel
+                ? `ابحث في «${activeLabel}» بالاسم أو كود الصنف…`
+                : 'ابحث بالاسم، كود الصنف (SKU)، المقاس…'}
+              onChange={(e) => setQuery(e.target.value)}
+              onKeyDown={onKeyDown}
+            />
+            {showStockToggle && (
+              <button type="button"
+                className={`ppk-chip${onlyAvailableStock ? ' is-on' : ''}`}
+                onMouseDown={(e) => e.preventDefault()} onClick={toggleStock}>
+                {onlyAvailableStock && <CheckOutlined />} المتاح في المخزن فقط
+              </button>
+            )}
+            <Select
+              className="ppk-sort" size="large" value={sortKey} options={sortOptions}
+              popupMatchSelectWidth={false}
+              onChange={(v) => { setSortKey(v as SortKey); setTimeout(() => searchRef.current?.focus?.({ preventScroll: true }), 0); }}
+            />
+          </div>
+
+          <div className="ppk-split">
+            <aside className="ppk-side-cats">
+              <div className="ppk-cats-head">
+                <span>التصنيفات والمجموعات</span>
+                <span className="ppk-cats-badge">{qty(catTotal)}</span>
+              </div>
+              <div className="ppk-cats-list">
+                {catItem('__all', 'كل الفئات', totalCount, allActive,
+                  () => { setActiveRoot(null); onCategoryChange(null); })}
+                {shownGroups.map((g) => {
+                  const rootActive = activeRoot === g.value && !activeCategory;
+                  return (
+                    <React.Fragment key={g.value}>
+                      {catItem(g.value, catLabel(g.value), cardCount(g.value, g.children),
+                        rootActive || activeCategory === g.value,
+                        () => {
+                          if (g.children.length) { setActiveRoot(g.value); onCategoryChange(null); }
+                          else { setActiveRoot(null); onCategoryChange(g.value); }
+                        })}
+                      {g.children.map((c) => catItem(c, catLabel(c), cardCount(c),
+                        c === activeCategory,
+                        () => { setActiveRoot(g.value); onCategoryChange(c); }, true))}
+                    </React.Fragment>
+                  );
+                })}
+                {groups.length > CAT_PREVIEW && (
+                  <button type="button" className="ppk-more-cats"
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={() => setCatsExpanded((x) => !x)}>
+                    {catsExpanded ? 'عرض أقل' : `عرض المزيد (${qty(groups.length - shownGroups.length)})`}
+                  </button>
+                )}
+              </div>
+            </aside>
+
+            <section className="ppk-main">
+              <div className="ppk-main-head">
+                <div>
+                  <b>{hidePurchasePrice ? 'الأصناف المتاحة للبيع' : 'الأصناف'}</b>
+                  <span className="ppk-found"> (تم العثور على {qty(ordered.length)} صنف مطابق)</span>
+                </div>
+                {availableFor && (
+                  <div className="ppk-legend">
+                    <span><i className="ppk-lg ok" />رصيد متاح</span>
+                    <span><i className="ppk-lg low" />رصيد حرج (&lt;{qty(LOW_STOCK)})</span>
+                  </div>
+                )}
+              </div>
+              <div className="ppk-list" onKeyDown={onKeyDown} onScroll={rememberScroll}
+                ref={(el) => {
+                  listRef.current = el;
+                  if (el && pendingScroll.current != null) {
+                    el.scrollTop = pendingScroll.current;
+                    pendingScroll.current = null;
+                  }
+                }}>
+                {ordered.length === 0 ? (
+                  <Empty image={Empty.PRESENTED_IMAGE_SIMPLE}
+                    description={query
+                      ? (activeLabel
+                        ? `لا يوجد صنف بهذا الاسم في «${activeLabel}» — جرّب «كل الفئات»`
+                        : 'لا يوجد صنف بهذا الاسم')
+                      : (onlyAvailableStock ? 'لا توجد أصناف برصيد متاح في هذا المخزن' : 'لا توجد أصناف')} />
+                ) : rendered.map((p, i) => {
+                  const available = availableFor ? availableFor(p.id) : null;
+                  const out = Boolean(disableOutOfStock && available !== null && available <= 0);
+                  const checked = picked.includes(p.id);
+                  const isCursor = i === cursor;
+                  const level = available === null ? null
+                    : (available <= 0 ? 'zero' : (available < LOW_STOCK ? 'low' : 'ok'));
+                  const price = priceFor ? priceFor(p.id) : salePriceOf(p);
+                  const priceLabel = priceFor ? 'السعر'
+                    : (priceTierLabel && priceTier && p.tier_prices?.[priceTier] != null
+                      ? `سعر ${priceTierLabel}` : 'سعر البيع');
+                  const cost = !priceFor && !hidePurchasePrice && p.purchase_price != null
+                    && Number(p.purchase_price) > 0 ? Number(p.purchase_price) : null;
+                  const pack = p.pieces_per_unit && Number(p.pieces_per_unit) > 0
+                    ? `${qty(p.pieces_per_unit)} ${p.piece_name || 'قطعة'}` : null;
+                  return (
+                    <div key={p.id}
+                      ref={(el) => { rowRefs.current[i] = el; }}
+                      className={['ppk-card', isCursor && 'is-cursor', checked && 'is-checked',
+                        out && 'is-out'].filter(Boolean).join(' ')}
+                      // الضغط على الكارت مايسحبش التركيز من خانة البحث (شوف الشكل القديم تحت).
+                      onMouseDown={(e) => e.preventDefault()}
+                      onClick={() => {
+                        if (out) return;
+                        if (onPickMany) toggle(p.id); else pick(p.id);
+                      }}
+                      // `mousemove` مش `mouseenter`: لما القايمة بتتمرّر بالأسهم، الصف اللي
+                      // بيعدّي تحت ماوس واقف بياخد `mouseenter` — والمؤشر كان بيقفز لنص الشاشة.
+                      // الحركة اللي مالهاش إزاحة (المتصفح بيبعتها بعد التمرير) بتتساب.
+                      onMouseMove={(e) => {
+                        const last = pointerRef.current;
+                        if (e.movementX === 0 && e.movementY === 0) return;
+                        if (last && last.x === e.clientX && last.y === e.clientY) return;
+                        pointerRef.current = { x: e.clientX, y: e.clientY };
+                        if (i !== cursor) { mouseCursor.current = true; setCursor(i); }
+                      }}>
+                      {onPickMany && (
+                        <Checkbox className="ppk-check" checked={checked} disabled={out} tabIndex={-1} />
+                      )}
+                      <div className="ppk-info">
+                        <div className="ppk-name-row">
+                          <b className="ppk-name">{p.name}</b>
+                          {p.code && <span className="ppk-code">{p.code}</span>}
+                          {level === 'low' && <span className="ppk-tag low">رصيد محدود</span>}
+                          {level === 'zero' && <span className="ppk-tag zero">غير متاح في المخزن</span>}
+                          {p.is_serialized && <span className="ppk-tag info">بسيريال</span>}
+                        </div>
+                        <div className="ppk-meta">
+                          {p.category && <span>الفئة: {catLabel(p.category)}</span>}
+                          {p.unit_of_measure && <span>الوحدة: {p.unit_of_measure}</span>}
+                          {pack && <span>التعبئة: {pack}</span>}
+                        </div>
+                      </div>
+                      <div className="ppk-figs">
+                        {level !== null && (
+                          <div className={`ppk-box avail ${level}`}>
+                            <span>المتاح</span><b>{qty(available)}</b>
+                          </div>
+                        )}
+                        {price != null && price !== '' && (
+                          <div className="ppk-box price">
+                            <span>{priceLabel}</span>
+                            <b>{typeof price === 'number' ? money(price) : price}</b>
+                          </div>
+                        )}
+                        {cost != null && (
+                          <div className="ppk-box cost"><span>سعر الشراء</span><b>{money(cost)}</b></div>
+                        )}
+                        <Button type="primary" className="ppk-add" disabled={out} tabIndex={-1}
+                          icon={isCursor ? undefined : <PlusOutlined />}
+                          onMouseDown={(e) => e.preventDefault()}
+                          onClick={(e) => { e.stopPropagation(); if (!out) addOne(p.id); }}>
+                          {isCursor ? 'إضافة ↵' : 'إضافة'}
+                        </Button>
+                      </div>
+                    </div>
+                  );
+                })}
+                {rendered.length < ordered.length && (
+                  <button type="button" className="ppk-more-items"
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={() => setShown((n) => n + PAGE)}>
+                    عرض المزيد ({qty(ordered.length - rendered.length)} صنف كمان)
+                  </button>
+                )}
+              </div>
+            </section>
+          </div>
+
+          <div className="ppk-foot">
+            <div className="ppk-foot-actions">
+              {onPickMany && (
+                <Button disabled={!picked.length} onClick={() => commitMany(picked)}>
+                  إضافة مجمعة ({qty(picked.length)} محدد)
+                </Button>
+              )}
+            </div>
+            <div className="ppk-hints">
+              <span><span className="ppk-key">اكتب</span> للبحث الفوري</span>
+              <span><span className="ppk-key">↑↓</span> للتنقل بين السطور</span>
+              <span><span className="ppk-key">Enter</span> للإضافة السريعة {forDoc}</span>
+              <span><span className="ppk-key">Esc</span> للإغلاق</span>
+            </div>
+            <div className="ppk-foot-actions">
+              <Button onClick={onCancel}>إغلاق (Esc)</Button>
+              <Button type="primary" className="ppk-done" icon={<CheckOutlined />}
+                onClick={() => { if (onPickMany && picked.length) commitMany(picked); else onCancel(); }}>
+                تم واعتماد الأصناف {forDoc}
+              </Button>
+            </div>
+          </div>
+        </div>
+      </TabModal>
+    );
+  }
 
   return (
     <TabModal open={open} onCancel={onCancel} footer={null} width={860} title={title}
