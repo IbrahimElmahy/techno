@@ -1384,7 +1384,11 @@ html[data-density='comfortable'] .ant-table-thead > tr > th {
 .sales-log {
   background: #f3f4f6;
   padding: 10px;
-  border-radius: 10px;
+  /* طبقة واحدة رمادي ورا الكروت — بتغطّي حاوية الصفحة البيضا (زي `.sale-doc`). */
+  margin: -16px;
+  border-radius: 8px;
+  box-sizing: border-box;
+  min-height: calc(100% + 32px);
   display: flex;
   flex-direction: column;
   gap: 10px;
@@ -1607,4 +1611,13 @@ html[data-density='comfortable'] .ant-table-thead > tr > th {
   margin-inline-end: 6px;
   color: #64748b;
   font-size: 13px;
+}
+
+.sales-log .sl-slot {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.sales-log .sl-slot:empty {
+  display: none;
 }

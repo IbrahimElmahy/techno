@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { Empty, Spin, Tag, Typography } from 'antd';
 import { api } from '../api/client';
 import { useLiveRefresh } from '../utils/live';
@@ -44,10 +45,12 @@ interface Props {
   dateTo?: string | null;
   onOpenInvoice?: (id: number) => void;
   onOpenVoucher?: (id: number) => void;
+  /** مكان «تصدير Excel» و«الأعمدة» في ترويسة الشاشة الشايلة — نفس سطر باقي الشرايح. */
+  controlSlot?: HTMLElement | null;
 }
 
 export default function SalesReceiptsPanel({
-  customerId, repId, dateFrom, dateTo, onOpenInvoice, onOpenVoucher,
+  customerId, repId, dateFrom, dateTo, onOpenInvoice, onOpenVoucher, controlSlot,
 }: Props) {
   const [rows, setRows] = useState<ReceiptRow[]>([]);
   const [loading, setLoading] = useState(false);
@@ -120,7 +123,9 @@ export default function SalesReceiptsPanel({
 
   return (
     <div>
-      <div style={{ textAlign: 'left', marginBottom: 8 }}>{tableCols.control}</div>
+      {controlSlot
+        ? createPortal(tableCols.control, controlSlot)
+        : <div style={{ textAlign: 'left', marginBottom: 8 }}>{tableCols.control}</div>}
 
       <Spin spinning={loading}>
         <Table<ReceiptRow>

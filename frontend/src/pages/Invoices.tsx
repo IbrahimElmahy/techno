@@ -361,6 +361,8 @@ export default function Invoices() {
   const [docKindFilter, setDocKindFilter] = useState<'all' | 'sale' | 'return' | 'bonus' | 'receipts'>('all');
   // صفوف السجل المتعلّمة — العدد بس اللي بيظهر تحت («المحدد»).
   const [selectedKeys, setSelectedKeys] = useState<React.Key[]>([]);
+  // مكان أزرار جدول سندات القبض (تصدير/أعمدة) في الترويسة — `SalesReceiptsPanel` بيرسمها هنا.
+  const [receiptsSlot, setReceiptsSlot] = useState<HTMLSpanElement | null>(null);
   // سند قبض من شريحة «سندات القبض» — البوباب نفسه من `vouchers/ReceiptModal`، والحالة
   // اللي محتاجها هنا. الخزن بتتجاب أول مرة يتفتح بس.
   const { options: paymentMethodOptions } = useLookup('payment_method');
@@ -3300,7 +3302,8 @@ function couponsTotal(inv: any): number {
           )}
           <PrintOptionsMenu value={printOpts} onChange={setPrintOpts}
                 hideKeys={['logo', 'companyName']} />
-          {/* شريحة السندات ليها جدولها وتصديره وأعمدته — دول بتوع كشف الفواتير. */}
+          {/* شريحة السندات ليها جدولها وتصديره وأعمدته — بيترسموا هنا في نفس المكان. */}
+          {docKindFilter === 'receipts' && <span ref={setReceiptsSlot} className="sl-slot" />}
           {docKindFilter !== 'receipts' && (<>
             {/* جوّه `Space`، فالمسافة الافتراضية بتتشال — الـ`Space` بيباعد لوحده. */}
             <ExportExcelButton
@@ -3387,7 +3390,8 @@ function couponsTotal(inv: any): number {
             customerId={filters.customer_id} repId={filters.rep_id}
             dateFrom={filters.date_from} dateTo={filters.date_to}
             onOpenInvoice={(id) => openDetail({ id } as InvoiceRecord)}
-            onOpenVoucher={() => navigate('/vouchers?tab=receipt')} />
+            onOpenVoucher={() => navigate('/vouchers?tab=receipt')}
+            controlSlot={receiptsSlot} />
         ) : (<>
         <FocusedRowsBanner focus={focus} total={unifiedRecords.length} noun="فاتورة"
                            shown={focusedRecords.length} />
