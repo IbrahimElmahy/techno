@@ -670,6 +670,15 @@ export default function Orders() {
             onClick={() => setCreating(false)}>رجوع</Button>
           <span>{sheetName}</span>
         </Space>
+      )}
+      // الأدوات و«الأعمدة» في سطر العنوان على الشمال — زي فاتورة البيع (٢٠٢٦-١٠-٠١).
+      styles={{ title: { whiteSpace: 'normal', overflow: 'visible' } }}
+      extra={(
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap',
+                      fontWeight: 400 }}>
+          <DocumentToolbar actions={sheetToolbar()} inline />
+          {lineGrid.control}
+        </div>
       )}>
         {/*
           * الشيت من جوه نسخة من فاتورة البيع بالظبط، بطلب صاحب النظام.
@@ -682,7 +691,6 @@ export default function Orders() {
           * الفرق الحقيقي: مفيش طرف، ومفيش مخزن، ومفيش خصم على المستند — دي حاجات المستند
           * اللي بيرحّل بيسألها، والورقة دي مابترحّلش.
           */}
-        <DocumentToolbar actions={sheetToolbar()} />
 
         <Form layout="vertical" size="small" className="doc-form" requiredMark={false}>
           {/* مبدّل «بيع / شرا» اتشال من هنا: الورقة بتتفتح من مدخل نوعه معروف، وتغييره
@@ -691,25 +699,25 @@ export default function Orders() {
           {/* ترويسة الورقة: التاريخ ← السعر ساري لحد ← ملاحظات. مفيش عميل ولا مخزن — الورقة
               دي مش بتتكتب على حد ولا بتخرج من مكان. */}
           <Row gutter={16}>
-            <Col xs={12} md={5}>
+            <Col xs={12} md={4}>
               <Form.Item label="التاريخ" style={{ marginBottom: 8 }}>
                 <DatePicker style={{ width: '100%' }} allowClear={false} format="YYYY-MM-DD"
                   value={sheetDate} onChange={(v) => setSheetDate(v || dayjs())} />
               </Form.Item>
             </Col>
-            <Col xs={12} md={5}>
+            <Col xs={12} md={4}>
               <Form.Item label="ساري لحد" style={{ marginBottom: 8 }}>
                 <DatePicker style={{ width: '100%' }} format="YYYY-MM-DD"
                   placeholder="اختياري" value={dueDate} onChange={setDueDate} />
               </Form.Item>
             </Col>
-            <Col xs={24} md={14}>
+            <Col xs={24} md={8}>
               <Form.Item label="ملاحظات" style={{ marginBottom: 8 }}>
                 <Input placeholder="اختياري" value={notes}
                   onChange={(e) => setNotes(e.target.value)} />
               </Form.Item>
             </Col>
-            <Col xs={24}>
+            <Col xs={24} md={8}>
               <Form.Item label="البيان" style={{ marginBottom: 8 }}>
                 <Input placeholder="اختياري — بيتطبع على الورقة" value={statement1}
                   maxLength={200} onChange={(e) => setStatement1(e.target.value)} />
@@ -717,7 +725,7 @@ export default function Orders() {
             </Col>
           </Row>
 
-          <Divider style={{ margin: '10px 0' }} />
+          <Divider style={{ margin: '4px 0' }} />
 
           {/* زرار واحد وشباك واحد — نفس فاتورة البيع. */}
           <Button data-shortcut="F2"
@@ -733,7 +741,6 @@ export default function Orders() {
               style={{ margin: '12px 0' }} />
           ) : (
             <div style={{ border: '1px solid #e6efe3', borderRadius: 10, overflowX: 'auto' }}>
-              <div style={{ textAlign: 'left', padding: '6px 8px 0' }}>{lineGrid.control}</div>
               <table className="entry-grid">
                 <thead>{lineGrid.head}</thead>
                 <tbody>

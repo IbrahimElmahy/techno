@@ -32,7 +32,6 @@ import { printTransfer } from '../components/TransferDocument';
 import ListToolbar, { useListFilter } from '../components/ListToolbar';
 import { matchesStatement } from '../utils/statements';
 import ProductPickerModal from '../components/ProductPickerModal';
-import DocumentBar from '../components/DocumentBar';
 import DocumentToolbar, { ToolbarAction } from '../components/DocumentToolbar';
 import { SaveOutlined, FileAddOutlined, UndoOutlined } from '@ant-design/icons';
 import DocumentAuditModal from '../components/DocumentAuditModal';
@@ -1455,25 +1454,6 @@ export default function Transfers() {
     activeCategory === NO_CATEGORY ? !s.category : s.category === activeCategory));
   const screen = createVisible ? (
       <div>
-        {/* **شريط الحالة** — نفس اللي على فاتورة البيع.
-            الحالة كانت بتتعرف من الأزرار المتاحة: اللي شايف «عكس» يبقى المستند مرحّل،
-            واللي مش شايفه يبقى… مش واضح. دلوقتي مكتوبة، وجنبها المسار والترقيم في
-            السجل والأسهم اللي بتمشي على نفس الترتيب اللي قدامك. */}
-        <DocumentBar
-          listLabel="التحويلات"
-          listTo="/transfers"
-          title={editing
-            ? (editing.document_number || `#${editing.id}`)
-            : 'تحويل جديد'}
-          steps={[
-            { key: 'draft', label: 'مسودة' },
-            { key: 'posted', label: 'مرحّل', color: 'green' },
-            { key: 'reversed', label: 'معكوس', color: 'volcano' },
-          ]}
-          current={!editing ? 'draft'
-            : ((editing as any)?.status === 'approved' ? 'posted' : 'draft')}
-        />
-        <DocumentToolbar actions={transferToolbar()} />
         <Card title={(
           <Space>
             <Button type="text" icon={<ArrowRightOutlined />} onClick={closeCreate}>رجوع</Button>
@@ -1487,7 +1467,18 @@ export default function Transfers() {
                 {(STATUS_TAGS[editing.status] || {}).text || editing.status}
               </Tag>
             )}
+            {/* المستند الجديد: «مسودة» — المحفوظ بيقول حالته الحقيقية في الشارة اللي قبلها. */}
+            {!editing && <Tag color="blue">مسودة</Tag>}
           </Space>
+        )}
+        // الأدوات و«الأعمدة» في سطر العنوان على الشمال — زي فاتورة البيع (٢٠٢٦-١٠-٠١).
+        styles={{ title: { whiteSpace: 'normal', overflow: 'visible' } }}
+        extra={(
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap',
+                        fontWeight: 400 }}>
+            <DocumentToolbar actions={transferToolbar()} inline />
+            {editing ? docCols.control : draftCols.control}
+          </div>
         )}>
           {editing && editing.status === 'pending' && !viewOnly && (
             <Alert type="info" showIcon style={{ marginBottom: 12 }}
@@ -1519,57 +1510,60 @@ export default function Transfers() {
                     <b>{editing.reject_reason}</b></span> : undefined} />
           )}
 
-          {/* 1) التاريخ ومن أين وإلى أين */}
-          <Divider orientation="right" style={{ fontWeight: 700 }}>١) بيانات الإذن والمواقع</Divider>
+          {/* **الترويسة في سطرين** — زي فاتورة البيع (٢٠٢٦-١٠-٠١): رقم المستند ← التاريخ ←
+              من ← إلى، وتحتهم البيان والملاحظات. الكلام بيتحفظ لما المؤشر يسيب الخانة والإذن
+              لسه تحت الاعتماد، وبعد الاعتماد بيتقفل زي التاريخ والمصدر. */}
+          <Form layout="vertical" size="small" className="doc-form" component={false}>
           <Row gutter={16}>
-            <Col xs={24} md={8}>
-              <div style={{ marginBottom: 6, fontWeight: 600 }}>التاريخ</div>
-              <DatePicker size="large" style={{ width: '100%' }}
-                disabled={!!editing || viewOnly}
-                value={transferDate} onChange={(v) => setTransferDate(v || dayjs())} format="YYYY-MM-DD" allowClear={false} />
+            <Col xs={12} md={4}>
+              <Form.Item label="رقم المستند" style={{ marginBottom: 8 }}>
+                <Input placeholder="رقم الإذن الورقي" disabled={textsLocked}
+                  maxLength={40}
+                  value={externalDocNumber} onChange={(e) => setExternalDocNumber(e.target.value)}
+                  onBlur={() => saveEditingText('external_document_number', externalDocNumber)} />
+              </Form.Item>
+            </Col>
+            <Col xs={12} md={4}>
+              <Form.Item label="التاريخ" style={{ marginBottom: 8 }}>
+                <DatePicker style={{ width: '100%' }}
+                  disabled={!!editing || viewOnly}
+                  value={transferDate} onChange={(v) => setTransferDate(v || dayjs())} format="YYYY-MM-DD" allowClear={false} />
+              </Form.Item>
             </Col>
             <Col xs={24} md={8}>
-              <div style={{ marginBottom: 6, fontWeight: 600 }}>من (المصدر)</div>
-              <Select showSearch size="large" style={{ width: '100%' }}
-                placeholder="اختر المخزن أو العهدة المصدر"
-                disabled={!!editing || viewOnly}
-                value={source ?? undefined} onChange={onSourceChange}
-                options={locationOptions} filterOption={searchFilter} filterSort={searchRank}/>
+              <Form.Item label="من (المصدر)" style={{ marginBottom: 8 }}>
+                <Select showSearch style={{ width: '100%' }}
+                  placeholder="اختر المخزن أو العهدة المصدر"
+                  disabled={!!editing || viewOnly}
+                  value={source ?? undefined} onChange={onSourceChange}
+                  options={locationOptions} filterOption={searchFilter} filterSort={searchRank}/>
+              </Form.Item>
             </Col>
             <Col xs={24} md={8}>
-              <div style={{ marginBottom: 6, fontWeight: 600 }}>إلى (الوجهة)</div>
-              <Select showSearch size="large" style={{ width: '100%' }}
-                placeholder="اختر المخزن أو العهدة الوجهة"
-                disabled={!!editing || viewOnly}
-                value={dest ?? undefined} onChange={(v) => setDest(v)}
-                options={locationOptions} filterOption={searchFilter} filterSort={searchRank}/>
+              <Form.Item label="إلى (الوجهة)" style={{ marginBottom: 8 }}>
+                <Select showSearch style={{ width: '100%' }}
+                  placeholder="اختر المخزن أو العهدة الوجهة"
+                  disabled={!!editing || viewOnly}
+                  value={dest ?? undefined} onChange={(v) => setDest(v)}
+                  options={locationOptions} filterOption={searchFilter} filterSort={searchRank}/>
+              </Form.Item>
+            </Col>
+            <Col xs={24} md={12}>
+              <Form.Item label="البيان" style={{ marginBottom: 8 }}>
+                <Input placeholder="اختياري" disabled={textsLocked} maxLength={200}
+                  value={statement1} onChange={(e) => setStatement1(e.target.value)}
+                  onBlur={() => saveEditingText('statement1', statement1)} />
+              </Form.Item>
+            </Col>
+            <Col xs={24} md={12}>
+              <Form.Item label="ملاحظات" style={{ marginBottom: 8 }}>
+                <Input placeholder="اختياري" disabled={textsLocked} maxLength={500}
+                  value={docNotes} onChange={(e) => setDocNotes(e.target.value)}
+                  onBlur={() => saveEditingText('notes', docNotes)} />
+              </Form.Item>
             </Col>
           </Row>
-
-          {/* سطور الكلام. بتتكتب وقت الإنشاء، وبتتعدّل والإذن لسه تحت الاعتماد (بتتحفظ لما
-              المؤشر يسيب الخانة — زي كمية السطر). بعد الاعتماد بتتقفل زي التاريخ والمصدر:
-              التصحيح وقتها بإلغاء وطلب جديد، والكلام بيتنقل معاه. */}
-          <Row gutter={16} style={{ marginTop: 12 }}>
-            <Col xs={24} md={8}>
-              <div style={{ marginBottom: 6, fontWeight: 600 }}>بيان</div>
-              <Input size="large" placeholder="اختياري" disabled={textsLocked} maxLength={200}
-                value={statement1} onChange={(e) => setStatement1(e.target.value)}
-                onBlur={() => saveEditingText('statement1', statement1)} />
-            </Col>
-            <Col xs={24} md={8}>
-              <div style={{ marginBottom: 6, fontWeight: 600 }}>رقم المستند</div>
-              <Input size="large" placeholder="رقم الإذن الورقي" disabled={textsLocked}
-                maxLength={40}
-                value={externalDocNumber} onChange={(e) => setExternalDocNumber(e.target.value)}
-                onBlur={() => saveEditingText('external_document_number', externalDocNumber)} />
-            </Col>
-            <Col xs={24} md={8}>
-              <div style={{ marginBottom: 6, fontWeight: 600 }}>ملاحظات</div>
-              <Input size="large" placeholder="اختياري" disabled={textsLocked} maxLength={500}
-                value={docNotes} onChange={(e) => setDocNotes(e.target.value)}
-                onBlur={() => saveEditingText('notes', docNotes)} />
-            </Col>
-          </Row>
+          </Form>
 
           {source && dest && sameLocation && (
             <Alert style={{ marginTop: 12 }} type="error" showIcon
@@ -1586,8 +1580,8 @@ export default function Transfers() {
           )}
 
           {/* 2) الفئة ثم 3) الأصناف */}
-          <Divider orientation="right" style={{ fontWeight: 700 }}>
-            {editing ? 'أصناف الإذن' : '٢) الفئة والأصناف'}
+          <Divider orientation="right" style={{ fontWeight: 700, margin: '6px 0' }}>
+            {editing ? 'أصناف الإذن' : 'الفئة والأصناف'}
           </Divider>
           {editing ? null : !source ? (
             <Empty description="اختر المصدر أولاً لعرض الأصناف المتاحة فيه" style={{ margin: '12px 0' }} />
@@ -1627,7 +1621,6 @@ export default function Transfers() {
               dataSource={docLines(editing)}
               locale={{ emptyText: 'لا توجد أصناف على الإذن — ارفضه بدلاً من اعتماده' }}
               columns={docCols.columns}
-              title={() => <div style={{ textAlign: 'left' }}>{docCols.control}</div>}
             />
           )}
 
@@ -1637,9 +1630,6 @@ export default function Transfers() {
               style={{ marginTop: 16 }} size="small" rowKey="key" pagination={false}
               dataSource={lines}
               columns={draftCols.columns}
-              title={() => (
-                <div style={{ textAlign: 'left' }}>{draftCols.control}</div>
-              )}
             />
           )}
 

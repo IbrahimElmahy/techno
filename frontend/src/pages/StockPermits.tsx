@@ -418,34 +418,43 @@ export default function StockPermits() {
         ]}
       />
 
-      <Row gutter={[8, 8]} style={{ marginBottom: 12 }}>
-        <Col xs={24} md={8}>
-          <Select showSearch
-            style={{ width: '100%' }} placeholder="المخزن" value={warehouseId}
-            onChange={setWarehouseId}
-            options={sortByName(warehouses, (w) => w.name).map((w) => ({ value: w.id, label: w.name }))} filterOption={searchFilter} filterSort={searchRank} />
+      {/* الترويسة في سطر واحد — زي فاتورة البيع (٢٠٢٦-١٠-٠١): رقم المستند أول حاجة. */}
+      <Form layout="vertical" size="small" className="doc-form" component={false}>
+      <Row gutter={16}>
+        <Col xs={12} md={4}>
+          <Form.Item label="رقم المستند" style={{ marginBottom: 8 }}>
+            <Input placeholder="رقم الإذن الورقي" value={externalDocNumber}
+              onChange={(e) => setExternalDocNumber(e.target.value)} />
+          </Form.Item>
         </Col>
-        <Col xs={24} md={8}>
-          <DatePicker style={{ width: '100%' }} value={permitDate}
-            onChange={(v) => v && setPermitDate(v)} placeholder="تاريخ الإذن" />
+        <Col xs={12} md={4}>
+          <Form.Item label="التاريخ" style={{ marginBottom: 8 }}>
+            <DatePicker style={{ width: '100%' }} value={permitDate}
+              onChange={(v) => v && setPermitDate(v)} placeholder="تاريخ الإذن" />
+          </Form.Item>
         </Col>
-        <Col xs={24} md={8}>
-          <Input placeholder="السبب (جرد، مرتجع ورشة، عينة…)" value={reason}
-            onChange={(e) => setReason(e.target.value)} />
+        <Col xs={24} md={6}>
+          <Form.Item label="المخزن" style={{ marginBottom: 8 }}>
+            <Select showSearch
+              style={{ width: '100%' }} placeholder="المخزن" value={warehouseId}
+              onChange={setWarehouseId}
+              options={sortByName(warehouses, (w) => w.name).map((w) => ({ value: w.id, label: w.name }))} filterOption={searchFilter} filterSort={searchRank} />
+          </Form.Item>
+        </Col>
+        <Col xs={24} md={5}>
+          <Form.Item label="السبب" style={{ marginBottom: 8 }}>
+            <Input placeholder="جرد، مرتجع ورشة، عينة…" value={reason}
+              onChange={(e) => setReason(e.target.value)} />
+          </Form.Item>
+        </Col>
+        <Col xs={24} md={5}>
+          <Form.Item label="البيان" style={{ marginBottom: 8 }}>
+            <Input placeholder="اختياري" value={statement1} maxLength={200}
+              onChange={(e) => setStatement1(e.target.value)} />
+          </Form.Item>
         </Col>
       </Row>
-
-      {/* «بيان» و«رقم المستند» — سطر كلام زيادة، ورقم الورقة اللي في إيده. */}
-      <Row gutter={[8, 8]} style={{ marginBottom: 12 }}>
-        <Col xs={24} md={12}>
-          <Input placeholder="البيان (اختياري)" value={statement1} maxLength={200}
-            onChange={(e) => setStatement1(e.target.value)} />
-        </Col>
-        <Col xs={24} md={12}>
-          <Input placeholder="رقم المستند — رقم الإذن الورقي" value={externalDocNumber}
-            onChange={(e) => setExternalDocNumber(e.target.value)} />
-        </Col>
-      </Row>
+      </Form>
 
       <Table<DraftLine> autoFilters={false}
         size="small" rowKey="key" dataSource={lines} pagination={false}
@@ -574,19 +583,6 @@ export default function StockPermits() {
    */
   const postedDoc = detail && (
     <>
-      {/* **شريط الحالة** — نفس اللي على فاتورة البيع. الحالة كانت بتتعرف من نص
-          التنبيه؛ دلوقتي مكتوبة كشريحة وجنبها المسار للسجل. */}
-      <DocumentBar
-        listLabel="أذون المخزن"
-        listTo="/stock-permits"
-        title={detail.document_number || `#${detail.id}`}
-        steps={[
-          { key: 'draft', label: 'مسودة' },
-          { key: 'posted', label: 'مرحّل', color: 'green' },
-          { key: 'reversed', label: 'معكوس', color: 'volcano' },
-        ]}
-        current={detail.reversed_by ? 'reversed' : 'posted'}
-      />
       <Alert
         type={detail.reversed_by ? 'warning' : 'info'} showIcon style={{ marginBottom: 12 }}
         message={detail.reversed_by ? 'الإذن ده اتعكس' : 'هذا الإذن مُرحَّل بالفعل'}
@@ -732,6 +728,18 @@ export default function StockPermits() {
               : kind === 'issue' ? 'إذن صرف مخزني'
                 : kind === 'opening' ? 'بضاعة أول المدة' : 'إذن إضافة مخزني'}</span>
             {detail?.reversed_by && <Tag color="default">اتعكس</Tag>}
+            {/* الحالة في سطر العنوان — زي فاتورة البيع (٢٠٢٦-١٠-٠١). */}
+            {detail && <DocumentBar
+          listLabel="أذون المخزن"
+          listTo="/stock-permits"
+          title={detail.document_number || `#${detail.id}`}
+          steps={[
+            { key: 'draft', label: 'مسودة' },
+            { key: 'posted', label: 'مرحّل', color: 'green' },
+            { key: 'reversed', label: 'معكوس', color: 'volcano' },
+          ]}
+          current={detail.reversed_by ? 'reversed' : 'posted'}
+        />}
           </Space>
         )}>
           {detail ? postedDoc : createForm}
