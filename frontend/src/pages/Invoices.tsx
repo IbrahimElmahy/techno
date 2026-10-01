@@ -44,7 +44,7 @@ import { useEntryGrid, type EntryColumn } from '../components/EntryGrid';
 import { guardQuantity } from '../components/quantityGuard';
 import { useAuth } from '../components/AuthProvider';
 import SummaryTile from '../components/saleDoc/SummaryTile';
-import SalesReceiptsPanel from '../components/SalesReceiptsPanel';
+import PaymentsLogPanel from '../components/PaymentsLogPanel';
 import { useLookup, labelMap } from '../hooks/useLookup';
 import { TabModal } from '../components/TabModal';
 import WarehouseGate from '../components/WarehouseGate';
@@ -67,7 +67,7 @@ import { buildLineColumns } from './invoices/lineColumns';
 import { buildRegisterColumns } from './invoices/registerColumns';
 // سند القبض بيتعمل من شريحة «سندات القبض» هنا — نفس بوباب شاشة السندات، مش نسخة منه.
 import ReceiptModal from './vouchers/ReceiptModal';
-import { defaultTreasuryId } from '../components/VoucherFields';
+import { useQuickVoucher } from './vouchers/useQuickVoucher';
 import { useLiveRefresh } from '../utils/live';
 import ListPage from '../components/ListPage';
 /** رقم فريد للمستند (`client_uuid`). `randomUUID` مش موجود خارج https، فالبديل عشوائي كفاية. */
@@ -362,19 +362,16 @@ export default function Invoices() {
   const [docKindFilter, setDocKindFilter] = useState<'all' | 'sale' | 'return' | 'bonus' | 'receipts'>('all');
   // صفوف السجل المتعلّمة — العدد بس اللي بيظهر تحت («المحدد»).
   const [selectedKeys, setSelectedKeys] = useState<React.Key[]>([]);
-  // مكان أزرار جدول سندات القبض (تصدير/أعمدة) في الترويسة — `SalesReceiptsPanel` بيرسمها هنا.
+  // مكان أزرار جدول سندات القبض (تصدير/أعمدة) في الترويسة — `PaymentsLogPanel` بيرسمها هنا.
   const [receiptsSlot, setReceiptsSlot] = useState<HTMLSpanElement | null>(null);
   // سند قبض من شريحة «سندات القبض» — البوباب نفسه من `vouchers/ReceiptModal`، والحالة
   // اللي محتاجها هنا. الخزن بتتجاب أول مرة يتفتح بس.
-  const { options: paymentMethodOptions } = useLookup('payment_method');
-  const [receiptForm] = Form.useForm();
-  const [receiptOpen, setReceiptOpen] = useState(false);
-  const [receiptPosting, setReceiptPosting] = useState(false);
   const [receiptFamilies, setReceiptFamilies] = useState<Record<number, any[]>>({});
   const [receiptTarget, setReceiptTarget] = useState('');
-  const [treasuries, setTreasuries] = useState<any[]>([]);
   // بيتزوّد بعد كل سند ⇒ لوحة السندات تتعاد من الأول وتجيبه.
   const [receiptsKey, setReceiptsKey] = useState(0);
+  // سند قبض جديد من هنا — نفس فتح وحفظ شاشة السندات (`useQuickVoucher`).
+  const receipt = useQuickVoucher(() => setReceiptsKey((k) => k + 1));
   // مرتجع بيع جديد جوّه السجل نفسه (`Returns` بـ`embedded`). لما يخرج، المرتجعات تتجاب
   // تاني عشان الجديد يظهر — من تأثير، عشان `fetchInvoices` يقرا الفلاتر اللي دلوقتي.
   const [embeddedReturn, setEmbeddedReturn] = useState(false);
@@ -571,7 +568,7 @@ export default function Invoices() {
     } else if (docKindFilter === 'bonus') {
       combined = bonusRows;
     } else if (docKindFilter === 'receipts') {
-      combined = [];   // سندات القبض ليها جدولها — `SalesReceiptsPanel`
+      combined = [];   // سندات القبض ليها جدولها — `PaymentsLogPanel`
     } else {
       combined = returnRows;
     }
@@ -3185,36 +3182,7 @@ function couponsTotal(inv: any): number {
   type DocKind = typeof docKindFilter;
 
   /** سند قبض جديد هنا في نفس الشاشة — نفس فتح شاشة السندات: فورم فاضي على الخزنة الافتراضية. */
-  const openReceipt = async () => {
-    let list = treasuries;
-    if (!list.length) {
-      list = (await api.get<any[]>('/api/v1/treasuries').catch(() => ({ data: [] as any[] }))).data || [];
-      setTreasuries(list);
-    }
-    receiptForm.resetFields();
-    setReceiptTarget('');
-    const id = defaultTreasuryId(list);
-    if (id) receiptForm.setFieldsValue({ treasury_id: id });
-    setReceiptOpen(true);
-  };
-
-  /** الحفظ اللي البوباب بيستناه (`submit`) — نفس شكل الحمولة بتاع شاشة السندات. */
-  const submitReceipt = async (path: string, values: any, form: any, okMsg: string) => {
-    setReceiptPosting(true);
-    try {
-      const payload: any = { ...values, amount: String(values.amount) };
-      if (values.voucher_date) payload.voucher_date = values.voucher_date.format('YYYY-MM-DD');
-      await api.post(path, payload);
-      message.success(okMsg);
-      form.resetFields();
-      setReceiptOpen(false);
-      setReceiptsKey((k) => k + 1);
-    } catch {
-      // رسالة الخطأ بيطلّعها `api` نفسه.
-    } finally {
-      setReceiptPosting(false);
-    }
-  };
+  const openReceipt = () => { setReceiptTarget(''); receipt.show(); };
 
   const startNewReturn = () => setEmbeddedReturn(true);
 
@@ -3361,8 +3329,8 @@ function couponsTotal(inv: any): number {
       </>)}
     >
         {docKindFilter === 'receipts' ? (
-          <SalesReceiptsPanel key={receiptsKey}
-            customerId={filters.customer_id} repId={filters.rep_id}
+          <PaymentsLogPanel key={receiptsKey} kind="receipts"
+            partyId={filters.customer_id} repId={filters.rep_id}
             dateFrom={filters.date_from} dateTo={filters.date_to}
             onOpenInvoice={(id) => openDetail({ id } as InvoiceRecord)}
             onOpenVoucher={() => navigate('/vouchers?tab=receipt')}
@@ -3434,9 +3402,9 @@ function couponsTotal(inv: any): number {
     </ListPage>
 
       <ReceiptModal
-        open={receiptOpen} onCancel={() => setReceiptOpen(false)}
-        form={receiptForm} posting={receiptPosting} submit={submitReceipt}
-        customers={customers} treasuries={treasuries} methodOptions={paymentMethodOptions}
+        open={receipt.open} onCancel={receipt.close}
+        form={receipt.form} posting={receipt.posting} submit={receipt.submit}
+        customers={customers} treasuries={receipt.treasuries} methodOptions={receipt.methodOptions}
         families={receiptFamilies} setFamilies={setReceiptFamilies}
         target={receiptTarget} setTarget={setReceiptTarget}
         reps={reps as any}

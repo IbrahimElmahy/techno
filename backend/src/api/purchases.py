@@ -287,6 +287,82 @@ def list_purchases(
 
 # Declared BEFORE `/{purchase_id}` on purpose: FastAPI matches in declaration order, and a later
 # `/returns` would be swallowed by the id route and fail parsing "returns" as an int.
+@router.get("/payments-log", response_model=dict)
+def payments_log(
+    supplier_id: int | None = Query(None),
+    date_from: date | None = Query(None),
+    date_to: date | None = Query(None),
+    limit: int = Query(500, le=2000),
+    current: CurrentUser = Depends(require_capability(CAP_STOCK_READ)),
+    db: Session = Depends(get_db),
+) -> dict:
+    """**سندات الصرف في سجل المشتريات** (طلب العميل ٢٠٢٦-١٠-٠١) — نفس شكل `/sales/receipts-log`:
+
+    * **على فاتورة** — النقدي اللي اتدفع مع فاتورة الشرا نفسها (`cash_amount`).
+    * **دفعة** — سند صرف لوحده لمورد.
+
+    الصفوف بنفس الأسماء اللي في سندات القبض (`party_*`)، فالشاشة بتعرض الاتنين بنفس اللوحة.
+    """
+    from sqlalchemy import func
+    from src.models.user import User
+    from src.models.voucher import Voucher, VoucherKind
+    from src.models.warehouse import Warehouse
+
+    users = dict(db.execute(select(User.id, User.full_name)).all())
+    wh_names = dict(db.execute(select(Warehouse.id, Warehouse.name)).all())
+
+    inv_stmt = branch_scope.scope(select(PurchaseInvoice), PurchaseInvoice, current).where(
+        PurchaseInvoice.cash_amount > 0)
+    v_stmt = branch_scope.scope(select(Voucher), Voucher, current).where(
+        Voucher.kind == VoucherKind.payment, Voucher.supplier_id.is_not(None))
+    inv_day = func.coalesce(PurchaseInvoice.purchase_date, func.date(PurchaseInvoice.created_at))
+    if supplier_id:
+        inv_stmt = inv_stmt.where(PurchaseInvoice.supplier_id == supplier_id)
+        v_stmt = v_stmt.where(Voucher.supplier_id == supplier_id)
+    if date_from:
+        inv_stmt = inv_stmt.where(inv_day >= date_from)
+        v_stmt = v_stmt.where(Voucher.voucher_date >= date_from)
+    if date_to:
+        inv_stmt = inv_stmt.where(inv_day <= date_to)
+        v_stmt = v_stmt.where(Voucher.voucher_date <= date_to)
+
+    invs = db.scalars(inv_stmt.order_by(inv_day.desc(), PurchaseInvoice.id.desc()).limit(limit)).all()
+    vouchers = db.scalars(v_stmt.order_by(Voucher.voucher_date.desc(), Voucher.id.desc())
+                          .limit(limit)).all()
+    sup_ids = {r.supplier_id for r in invs} | {v.supplier_id for v in vouchers}
+    sups = dict(db.execute(select(Supplier.id, Supplier.name)
+                           .where(Supplier.id.in_(sup_ids))).all()) if sup_ids else {}
+
+    rows = []
+    for r in invs:
+        k = getattr(r.location_kind, "value", r.location_kind)
+        rows.append({
+            "key": f"inv-{r.id}", "kind": "invoice", "id": r.id,
+            "date": str(r.purchase_date or r.created_at)[:10],
+            "document_number": r.document_number,
+            "party_id": r.supplier_id, "party_name": sups.get(r.supplier_id),
+            "rep_id": r.rep_id, "rep_name": users.get(r.rep_id),
+            "store": wh_names.get(r.location_id) if k == "warehouse" else None,
+            "amount": str(r.cash_amount), "family": None, "source": "system",
+        })
+    for v in vouchers:
+        rows.append({
+            "key": f"pay-{v.id}", "kind": "voucher", "id": v.id,
+            "date": str(v.voucher_date)[:10],
+            "document_number": v.document_number,
+            "party_id": v.supplier_id, "party_name": sups.get(v.supplier_id),
+            "rep_id": v.rep_user_id, "rep_name": users.get(v.rep_user_id),
+            "store": None, "amount": str(v.amount), "family": v.family,
+            "source": "app" if v.client_uuid else "system",
+        })
+    rows.sort(key=lambda x: (x["date"], x["id"]), reverse=True)
+    rows = rows[:limit]
+    on_inv = sum((Decimal(x["amount"]) for x in rows if x["kind"] == "invoice"), Decimal("0"))
+    pays = sum((Decimal(x["amount"]) for x in rows if x["kind"] == "voucher"), Decimal("0"))
+    return {"rows": rows, "total_on_invoice": str(on_inv), "total_payments": str(pays),
+            "total": str(on_inv + pays)}
+
+
 @router.get("/returns", response_model=list[PurchaseReturnListOut])
 def list_purchase_returns(
     supplier_id: int | None = None,

@@ -1,7 +1,8 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 
-// مردود شراء جديد من نفس السجل — الشاشة نفسها متركّبة هنا (`PurchaseReturns embedded`).
-const PurchaseReturnsScreen = React.lazy(() => import('./PurchaseReturns'));
+import PaymentsLogPanel from '../components/PaymentsLogPanel';
+import PaymentModal from './vouchers/PaymentModal';
+import { useQuickVoucher } from './vouchers/useQuickVoucher';
 import DraftTag from '../components/DraftTag';
 import { PAGE_SIZE, PAGE_SIZE_OPTIONS } from '../utils/pagination';
 import { searchFilter, searchRank, sortByName } from '../utils/arabicSort';
@@ -54,6 +55,9 @@ import { applyPct, combinePct, splitLineDiscount } from '../utils/discounts';
 import { QTY_DATA_ATTR, flashExistingItem } from '../utils/duplicateItem';
 
 import { useLiveRefresh } from '../utils/live';
+
+// مردود شراء جديد من نفس السجل — الشاشة نفسها متركّبة هنا (`PurchaseReturns embedded`).
+const PurchaseReturnsScreen = React.lazy(() => import('./PurchaseReturns'));
 /** الاسم القديم في الشاشة دي — نفس الدالة. */
 const fmtMoney = money;
 
@@ -257,6 +261,12 @@ export default function Purchases() {
   const [createVisible, setCreateVisible] = useState(false);
   // مردود شراء جديد شغّال جوّه السجل (من شريحة المردودات).
   const [embeddedReturn, setEmbeddedReturn] = useState(false);
+  // شريحة «سندات الصرف»: النقدي المدفوع مع فواتير الشرا + سندات الصرف للموردين.
+  const [paymentsTab, setPaymentsTab] = useState(false);
+  const [paymentsKey, setPaymentsKey] = useState(0);
+  const [paymentsSlot, setPaymentsSlot] = useState<HTMLSpanElement | null>(null);
+  // سند صرف جديد من هنا — نفس فتح وحفظ شاشة السندات (`useQuickVoucher`).
+  const payment = useQuickVoucher(() => setPaymentsKey((k) => k + 1));
   /** عدّاد بيتزوّد مع كل تغيير في حقول `Form` — حقول antd مش state، فالـ`useMemo`
    *  اللي بيبني حمولة المسودّة مايشوفش تغيّرها من غيره: المورد يتغيّر والمسودّة تفضل
    *  على اللي قبله. */
@@ -2133,6 +2143,7 @@ export default function Purchases() {
 
   // الشريحة المختارة — نفس فلتر «النوع» اللي كان في الشريط، بقى شرايح فوق.
   const kindTab = (purchasesFilter.values.kind || 'all') as 'all' | 'purchase' | 'return';
+  const supplierIds = purchasesFilter.values.supplier_id as number[] | undefined;
   const kindTabs = [
     { key: 'all' as const, label: 'الكل',
       count: purchasesSummary.totalPurchasesCount + purchasesSummary.totalReturnsCount },
@@ -2140,6 +2151,7 @@ export default function Purchases() {
       count: purchasesSummary.totalPurchasesCount },
     { key: 'return' as const, label: 'مردودات المشتريات', dot: '#d46b08',
       count: purchasesSummary.totalReturnsCount },
+    { key: 'payments' as const, label: 'سندات الصرف', dot: '#cf1322' },
   ];
   // الفلاتر النصية تحت «فلاتر أكثر» — والطيّة بتفتح لوحدها لو فيها قيمة شغّالة.
   const moreActive = ['document_number', 'external_document_number', 'notes', 'statement']
@@ -2168,15 +2180,23 @@ export default function Purchases() {
   );
 
   const listContent = (
-    <ListPage<'all' | 'purchase' | 'return'>
+    <ListPage<'all' | 'purchase' | 'return' | 'payments'>
       icon={<ShoppingOutlined />}
       title="المشتريات" muted="(سجل فواتير الشراء والمردودات)"
       subtitle="تسجيل ومتابعة فواتير الشراء ومردوداتها والمستحق للموردين"
-      tabs={kindTabs} activeTab={kindTab}
-      onTabChange={(k) => purchasesFilter.setValue('kind', k === 'all' ? undefined : k)}
+      tabs={kindTabs} activeTab={paymentsTab ? 'payments' : kindTab}
+      onTabChange={(k) => {
+        setPaymentsTab(k === 'payments');
+        if (k !== 'payments') purchasesFilter.setValue('kind', k === 'all' ? undefined : k);
+      }}
       actions={(<>
         {/* الزرار بيتغيّر مع الشريحة: شريحة المردودات ⇒ مردود شراء جديد في نفس الصفحة. */}
-        {kindTab === 'return' ? (
+        {paymentsTab ? (
+          <Button type="primary" icon={<PlusOutlined />} className="sl-create"
+            onClick={payment.show}>
+            سند صرف جديد
+          </Button>
+        ) : kindTab === 'return' ? (
           <Button type="primary" icon={<PlusOutlined />} className="sl-create"
             onClick={() => setEmbeddedReturn(true)}>
             تسجيل مردود شراء
@@ -2198,9 +2218,12 @@ export default function Purchases() {
         </Button>
         )}
         <PrintOptionsMenu value={printOpts} onChange={setPrintOpts} />
-        <ExportExcelButton name="المشتريات" rows={purchasesFilter.filtered}
-          tableColumns={listCols.columns as any} style={{ marginInlineStart: 0 }} />
-        {listCols.control}
+        {/* شريحة السندات ليها جدولها وتصديره وأعمدته — بيترسموا هنا في نفس المكان. */}
+        {paymentsTab ? <span ref={setPaymentsSlot} className="sl-slot" /> : (<>
+          <ExportExcelButton name="المشتريات" rows={purchasesFilter.filtered}
+            tableColumns={listCols.columns as any} style={{ marginInlineStart: 0 }} />
+          {listCols.control}
+        </>)}
       </>)}
       filters={(<>
         <Input
@@ -2242,6 +2265,15 @@ export default function Purchases() {
           onClick={purchasesFilter.reset}>مسح</Button>
       </>)}
     >
+      {paymentsTab ? (
+        <PaymentsLogPanel key={paymentsKey} kind="payments"
+          partyId={supplierIds?.length === 1 ? supplierIds[0] : undefined}
+          dateFrom={purchasesFilter.range?.[0]?.format('YYYY-MM-DD')}
+          dateTo={purchasesFilter.range?.[1]?.format('YYYY-MM-DD')}
+          onOpenInvoice={(id) => openDetail({ id } as PurchaseRecord)}
+          onOpenVoucher={() => navigate('/vouchers?tab=payment')}
+          controlSlot={paymentsSlot} />
+      ) : (
       <Table
         {...listKb.tableProps}
         // الضغط على مسودّة بيستكملها؛ الباقي بيفتح مستنده زي ما هو.
@@ -2338,6 +2370,7 @@ export default function Purchases() {
           );
         }}
       />
+      )}
     </ListPage>
   );
 
@@ -2455,6 +2488,11 @@ export default function Purchases() {
   return (
     <div style={createVisible || embeddedReturn ? { height: '100%' } : undefined}>
       {doors}
+      <PaymentModal
+        open={payment.open} onCancel={payment.close}
+        form={payment.form} posting={payment.posting} submit={payment.submit}
+        suppliers={suppliers as any} treasuries={payment.treasuries}
+        methodOptions={payment.methodOptions} />
       {embeddedReturn ? (
         <React.Suspense fallback={<div style={{ textAlign: 'center', padding: 48 }}><Spin /></div>}>
           <PurchaseReturnsScreen embedded={{
