@@ -334,9 +334,11 @@ def payments_log(
                            .where(Supplier.id.in_(sup_ids))).all()) if sup_ids else {}
     # بيانات المستند كاملة في الجدول — الخزنة ومركز التكلفة بأسماءهم، كله بقواميس.
     from src.models.cost_center import CostCenter
-    from src.services.voucher_service import cash_labeler
+    from src.services.voucher_service import cash_labeler, invoice_cash_accounts
+    # فاتورة الشرا مابتحفظش الخزنة — بتتقرا من قيدها (السطر الدائن بمبلغ النقدي).
+    inv_cash = invoice_cash_accounts(db, invs, direction="credit")
     cash_label = cash_labeler(db, treasury_ids={v.treasury_id for v in vouchers},
-                              account_ids={v.cash_account_id for v in vouchers})
+                              account_ids=set(inv_cash.values()) | {v.cash_account_id for v in vouchers})
     cc_ids = {x.cost_center_id for x in [*invs, *vouchers] if x.cost_center_id}
     ccs = dict(db.execute(select(CostCenter.id, CostCenter.name)
                           .where(CostCenter.id.in_(cc_ids))).all()) if cc_ids else {}
@@ -355,9 +357,9 @@ def payments_log(
             "rep_id": r.rep_id, "rep_name": users.get(r.rep_id),
             "store": wh_names.get(r.location_id) if k == "warehouse" else None,
             "amount": str(r.cash_amount), "family": None, "source": "system",
-            # فاتورة الشرا مابتحفظش خزنة الدفع.
-            "treasury": None, "payment_method": None,
-            "statement": r.statement1, "notes": r.notes, "description": None,
+            "treasury": cash_label(None, inv_cash.get(r.id)), "payment_method": "cash",
+            "statement": r.statement1 or r.notes or f"نقدي مع الفاتورة {r.document_number}",
+            "notes": r.notes, "description": None,
             "external_document_number": r.external_document_number, "reference": None,
             "actor_name": users.get(r.actor_user_id), "created_at": _iso(r.created_at),
             "cost_center": ccs.get(r.cost_center_id),
@@ -374,8 +376,9 @@ def payments_log(
             "on_total": v.family is None,
             "source": "app" if v.client_uuid else "system",
             "treasury": cash_label(v.treasury_id, v.cash_account_id),
-            "payment_method": v.payment_method,
-            "statement": v.statement1 or v.description, "notes": v.description,
+            "payment_method": v.payment_method or "cash",
+            "statement": v.statement1 or v.description or "دفع لمورد",
+            "notes": v.description,
             "description": v.description,
             "external_document_number": v.external_document_number, "reference": v.reference,
             "actor_name": users.get(v.actor_user_id), "created_at": _iso(v.created_at),

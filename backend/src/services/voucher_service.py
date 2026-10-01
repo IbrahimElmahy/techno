@@ -462,6 +462,28 @@ def create_handover(
     )
 
 
+def invoice_cash_accounts(db: Session, invoices, *, direction: str) -> dict[int, int]:
+    """حساب النقدية اللي النقدي بتاع كل فاتورة دخل منه/خرج فيه — من قيدها.
+
+    الفاتورة مابتحفظش الخزنة (الشرا خالص، والبيع ساعات): القيد هو اللي فيه. السطر اللي
+    في الاتجاه المطلوب (`debit` للبيع — النقدية داخلة، `credit` للشرا — خارجة) وبمبلغ
+    النقدي بالظبط هو سطر الخزنة/العهدة. استعلام واحد لكل الفواتير.
+    """
+    from src.models.ledger import Direction, LedgerLine
+
+    by_entry = {i.ledger_entry_id: i for i in invoices if i.ledger_entry_id}
+    if not by_entry:
+        return {}
+    want = Direction(direction)
+    out: dict[int, int] = {}
+    for line in db.scalars(select(LedgerLine).where(
+            LedgerLine.entry_id.in_(list(by_entry)), LedgerLine.direction == want)).all():
+        inv = by_entry[line.entry_id]
+        if inv.id not in out and abs(Decimal(line.amount) - Decimal(inv.cash_amount or 0)) < Decimal("0.005"):
+            out[inv.id] = line.account_id
+    return out
+
+
 def cash_labeler(db: Session, *, treasury_ids, account_ids):
     """اسم الخزنة/الصندوق لصفوف السجلات — باستعلامين بس مهما كان عدد الصفوف.
 

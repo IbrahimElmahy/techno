@@ -264,10 +264,26 @@ export default function AccountStatement() {
     const named = a.name || a.owner_name || `حساب #${a.id}`;
     return a.code ? `${a.code} — ${named}` : named;
   };
+  /**
+   * **الاسم الأول، والكود صغير في آخر السطر** (طلب العميل ٢٠٢٦-١٠-٠١): الكود كان قبل الاسم
+   * فبياكل نص الخانة والاسم يتقصّ. الخانة المختارة بتوري الاسم بس، والبحث بالكود لسه شغّال.
+   */
+  const accountOption = (a: any) => ({
+    value: a.id, label: a.name || a.owner_name || `حساب #${a.id}`,
+    search: a.code || '', code: a.code || '', title: labelOf(a),
+  });
+  const renderAccountOption = (o: any) => (
+    <span style={{ display: 'flex', justifyContent: 'space-between', gap: 12 }}>
+      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{o.label}</span>
+      {o.data?.code && (
+        <span style={{ color: '#94a3b8', fontSize: 12, flexShrink: 0 }} dir="ltr">{o.data.code}</span>
+      )}
+    </span>
+  );
 
   const mainOptions = useMemo(() => {
     const roots = accounts.filter((a: any) => !a.parent_id && a.code)
-      .map((a: any) => ({ value: `acc:${a.id}`, label: labelOf(a) }));
+      .map((a: any) => ({ ...accountOption(a), value: `acc:${a.id}` }));
     const groups = [...new Set(accounts
       .filter((a: any) => !a.parent_id && !a.code && a.owner_group)
       .map((a: any) => a.owner_group))]
@@ -946,16 +962,19 @@ export default function AccountStatement() {
             options={warehouses.map((w: any) => ({ value: w.id, label: w.name })).sort(abc)} filterOption={searchFilter} filterSort={searchRank}/>
         </>) : (<>
           <Select
+            className="sl-f-account"
             showSearch allowClear
             placeholder="الحساب الرئيسي" value={mainKey}
             onChange={(v) => { setMainKey(v); setAccountId(undefined); }}
+            popupMatchSelectWidth={false} popupClassName="sl-account-popup" optionRender={renderAccountOption}
             options={mainOptions} filterOption={searchFilter} filterSort={searchRank}/>
           <Select
-            className="sl-f-customer"
+            className="sl-f-account"
             showSearch
             placeholder={mainKey ? 'الكل (كشف مجمّع) — أو اختر حساباً' : 'اختر الحساب'}
             value={accountId} onChange={setAccountId} allowClear
-            options={visibleAccounts.map((a: any) => ({ value: a.id, label: labelOf(a) }))} filterOption={searchFilter} filterSort={searchRank}/>
+            popupMatchSelectWidth={false} popupClassName="sl-account-popup" optionRender={renderAccountOption}
+            options={visibleAccounts.map(accountOption)} filterOption={searchFilter} filterSort={searchRank}/>
         </>)}
         <DateRangeFilter
           className="sl-f-dates"

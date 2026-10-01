@@ -1626,3 +1626,7 @@ html[data-density='comfortable'] .ant-table-thead > tr > th {
 .list-page .sl-actions .ant-btn {
   margin-inline-start: 0 !important;
 }
+
+/* خانات اختيار الحساب في كشف الحساب — أعرض، والقايمة بعرض الأسماء مش بعرض الخانة. */
+.list-page .sl-filters > .sl-f-account { flex: 2 1 240px; }
+.sl-account-popup { min-width: 300px; }
