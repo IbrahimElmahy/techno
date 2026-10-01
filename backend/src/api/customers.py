@@ -208,11 +208,19 @@ def _scope_filter(stmt, current: CurrentUser):
         return stmt
     if current.rep_id is not None:  # Sales Rep -> only own customers (FR-009)
         return stmt.where(Customer.rep_id == current.rep_id)
-    if current.branch_id is not None:  # branch-scoped -> own branch via territory
+    if current.branch_id is not None:  # branch-scoped -> own branch
+        from sqlalchemy import and_, or_
+
         from src.models.org import Territory
 
+        # **فرع الكارت الأول، والمنطقة لو الكارت مالوش فرع** (٢٠٢٦-١٠-٠١). كانت بالمنطقة
+        # بس — وموظفين العلياء (٥٦ كارت، فرعهم العلياء) متسجّلين على «منطقة وسط» بتاعة
+        # أكتوبر، فتبويب «الموظفين» في فاتورة بيع العلياء كان فاضي وأكتوبر شايفهم.
         branch_territories = select(Territory.id).where(Territory.branch_id == current.branch_id)
-        return stmt.where(Customer.territory_id.in_(branch_territories))
+        return stmt.where(or_(
+            Customer.branch_id == current.branch_id,
+            and_(Customer.branch_id.is_(None), Customer.territory_id.in_(branch_territories)),
+        ))
     return stmt
 
 
