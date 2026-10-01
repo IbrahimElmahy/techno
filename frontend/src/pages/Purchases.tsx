@@ -1,11 +1,13 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+
+// مردود شراء جديد من نفس السجل — الشاشة نفسها متركّبة هنا (`PurchaseReturns embedded`).
+const PurchaseReturnsScreen = React.lazy(() => import('./PurchaseReturns'));
 import DraftTag from '../components/DraftTag';
 import { PAGE_SIZE, PAGE_SIZE_OPTIONS } from '../utils/pagination';
 import { searchFilter, searchRank, sortByName } from '../utils/arabicSort';
 import {
   Alert, Button, Card, Col, Descriptions, Empty, Form, Input, Modal, Result,
-  Row, Select, Space, Table, Tag, Tooltip, message, DatePicker,
-} from 'antd';
+  Row, Select, Space, Table, Tag, Tooltip, message, DatePicker, Spin } from 'antd';
 import { Popconfirm } from '../components/noConfirm';
 import { InputNumber } from '../components/NumberInput';
 import {
@@ -253,6 +255,8 @@ export default function Purchases() {
    * person a pause every time they switch.
    */
   const [createVisible, setCreateVisible] = useState(false);
+  // مردود شراء جديد شغّال جوّه السجل (من شريحة المردودات).
+  const [embeddedReturn, setEmbeddedReturn] = useState(false);
   /** عدّاد بيتزوّد مع كل تغيير في حقول `Form` — حقول antd مش state، فالـ`useMemo`
    *  اللي بيبني حمولة المسودّة مايشوفش تغيّرها من غيره: المورد يتغيّر والمسودّة تفضل
    *  على اللي قبله. */
@@ -2125,7 +2129,7 @@ export default function Purchases() {
   });
   const [showMoreFilters, setShowMoreFilters] = useState(false);
   // F3 لخانة البحث — كانت جاية من `ListToolbar`، والخانة بقت في سطر فلاتر `ListPage`.
-  useScreenShortcuts({ onSearch: () => { listSearchRef.current?.focus?.(); } }, !createVisible);
+  useScreenShortcuts({ onSearch: () => { listSearchRef.current?.focus?.(); } }, !createVisible && !embeddedReturn);
 
   // الشريحة المختارة — نفس فلتر «النوع» اللي كان في الشريط، بقى شرايح فوق.
   const kindTab = (purchasesFilter.values.kind || 'all') as 'all' | 'purchase' | 'return';
@@ -2171,6 +2175,13 @@ export default function Purchases() {
       tabs={kindTabs} activeTab={kindTab}
       onTabChange={(k) => purchasesFilter.setValue('kind', k === 'all' ? undefined : k)}
       actions={(<>
+        {/* الزرار بيتغيّر مع الشريحة: شريحة المردودات ⇒ مردود شراء جديد في نفس الصفحة. */}
+        {kindTab === 'return' ? (
+          <Button type="primary" icon={<PlusOutlined />} className="sl-create"
+            onClick={() => setEmbeddedReturn(true)}>
+            تسجيل مردود شراء
+          </Button>
+        ) : (
         <Button type="primary" icon={<PlusOutlined />} className="sl-create"
           onClick={() => {
             form.resetFields();
@@ -2185,6 +2196,7 @@ export default function Purchases() {
           {/* الاسم ده بالظبط — «اختصارات الإنشاء» بتدوّر على الزرار بنصّه. */}
           تسجيل فاتورة شراء
         </Button>
+        )}
         <PrintOptionsMenu value={printOpts} onChange={setPrintOpts} />
         <ExportExcelButton name="المشتريات" rows={purchasesFilter.filtered}
           tableColumns={listCols.columns as any} style={{ marginInlineStart: 0 }} />
@@ -2441,8 +2453,15 @@ export default function Purchases() {
    */
   // `height` عشان `.sale-doc` (min-height:100%) يقعد بطول الشاشة والإجمالي يتزق لآخرها.
   return (
-    <div style={createVisible ? { height: '100%' } : undefined}>
-      {doors}{createVisible ? createContent : listContent}
+    <div style={createVisible || embeddedReturn ? { height: '100%' } : undefined}>
+      {doors}
+      {embeddedReturn ? (
+        <React.Suspense fallback={<div style={{ textAlign: 'center', padding: 48 }}><Spin /></div>}>
+          <PurchaseReturnsScreen embedded={{
+            onExit: () => { setEmbeddedReturn(false); fetchPurchases({ silent: true }); },
+          }} />
+        </React.Suspense>
+      ) : createVisible ? createContent : listContent}
     </div>
   );
 }

@@ -89,7 +89,12 @@ interface PurchaseLine {
   item_id: number; quantity: string; unit_price: string; line_total: string; unit: string | null;
 }
 
-export default function PurchaseReturns() {
+/**
+ * **`embedded`: مردود شراء جديد جوّه سجل المشتريات** (طلب العميل ٢٠٢٦-١٠-٠١) — نفس فكرة
+ * `Returns embedded`: نفس الشاشة بمنطقها، بتبدأ بباب المورد، مابترسمش كشف المردودات
+ * ومابتلمسش العنوان، ولما المستند يتقفل أو الباب يتلغي بتنده `onExit`.
+ */
+export default function PurchaseReturns({ embedded }: { embedded?: { onExit: () => void } } = {}) {
   const navigate = useNavigate();
   const { can } = useAuth();
   const canWriteReturn = can('return.write');
@@ -107,7 +112,7 @@ export default function PurchaseReturns() {
   const [creating, setCreating] = useState(false);
   // The date is asked first, the way the sale and the sales return ask it — the day the goods
   // went back is a fact about the goods, not about when somebody got to the screen.
-  const [newStep, setNewStep] = useState<null | 'party'>(null);
+  const [newStep, setNewStep] = useState<null | 'party'>(embedded ? 'party' : null);
   /** حقول المستند — نفس اللي على فاتورة الشرا بالظبط.
    *
    * الفرع وحساب الترحيل اتشالوا مع خاناتهم: الفرع بيتعرف من المخزن، وحساب المشتريات بياخد
@@ -204,6 +209,7 @@ export default function PurchaseReturns() {
     loading,
     // `openReturn` بيجيب المستند بالرقم بنفسه، فالصف المبدئي كفاية.
     fetchOne: async (id) => ({ id } as ReturnRow),
+    enabled: !embedded,
   });
 
   /** المسودّة — نفس قاعدة طلب البيع. الشرح في `useDraft`. */
@@ -1072,10 +1078,16 @@ export default function PurchaseReturns() {
     </span>
   );
 
+  // جوّه سجل المشتريات: مافيش كشف نرجعله — اتقفل المستند أو اتلغى الباب ⇒ نخرج.
+  const onExit = embedded?.onExit;
+  useEffect(() => {
+    if (onExit && !creating && !newStep) onExit();
+  }, [onExit, creating, newStep]);
+
   return (
     // المستند المفتوح بياخد خلفية فاتورة البيع الرمادي (`sale-doc`) — والكشف زي ما هو.
     <div className={docOpen ? 'sale-doc' : undefined}>
-      {!docOpen && (
+      {!docOpen && !embedded && (
       <ListPage
         icon={<RollbackOutlined />}
         title="مردودات الشراء" muted="(سجل المردودات للموردين)"
