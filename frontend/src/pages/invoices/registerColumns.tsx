@@ -52,7 +52,7 @@ export function buildRegisterColumns({
       render: (_label: string, r: any) => r.doc_type === 'sale'
         ? (r.is_bonus
           // البونص نوع لوحده — قيمته صفر، واللي بيقرا الكشف لازم يعرفه من غير ما يفتحه.
-          ? <Tag color="gold" style={{ fontWeight: 600 }}>فاتورة بونص</Tag>
+          ? <Tag color="orange" style={{ fontWeight: 600 }}>فاتورة بونص</Tag>
           : <Tag color="green" style={{ fontWeight: 600 }}>فاتورة بيع</Tag>)
         : <Tag color="magenta" style={{ fontWeight: 600 }}>مرتجع بيع</Tag>,
     },
@@ -97,7 +97,9 @@ export function buildRegisterColumns({
           {/* المسودّة مالهاش رقم — الرقم بيتحجز وقت الترحيل مش قبله. */}
           {r.__isDraft
             ? <DraftTag onDelete={() => onDeleteDraft?.(r.__draft.id)} />
-            : <Tag color={r.doc_type === 'sale' ? 'blue' : 'volcano'}>{doc}</Tag>}
+            // بإطار بلون نوع المستند — بيع أخضر، مرتجع وردي، بونص برتقالي.
+            : <Tag bordered className="sl-docno"
+                color={r.doc_type !== 'sale' ? 'magenta' : r.is_bonus ? 'orange' : 'green'}>{doc}</Tag>}
           {r.original_invoice_number && (
             <span style={{ fontSize: 11, color: '#8c8c8c' }}>عن: {r.original_invoice_number}</span>
           )}
@@ -117,7 +119,7 @@ export function buildRegisterColumns({
       },
     },
     {
-      title: 'جهه التعامل',
+      title: 'جهة التعامل',
       dataIndex: 'customer_id',
       key: 'customer_id',
       width: 190,
@@ -162,7 +164,7 @@ export function buildRegisterColumns({
       render: (t: string | null) => t ? <Tag color="geekblue">{t}</Tag> : '-',
     },
     {
-      title: 'مندوب',
+      title: 'المندوب',
       dataIndex: 'rep_id',
       key: 'rep_id',
       width: 95,
@@ -171,7 +173,7 @@ export function buildRegisterColumns({
         row.rep_name || reps.find((r) => r.id === id)?.full_name || '-',
     },
     {
-      title: 'اجمالي قبل',
+      title: 'إجمالي قبل',
       dataIndex: 'gross',
       key: 'gross',
       width: 115,
@@ -253,14 +255,14 @@ export function buildRegisterColumns({
       },
     },
     {
-      title: 'الصافى',
+      title: 'الصافي',
       dataIndex: 'net',
       key: 'net',
       width: 115,
       align: 'left' as const,
       sorter: (a: any, b: any) => a.net - b.net,
       render: (val: number, r: any) => (
-        <strong style={{ color: r.doc_type === 'sale' ? '#237804' : '#c41d7f' }}>
+        <strong style={{ color: r.doc_type === 'sale' ? '#237804' : '#cf1322' }}>
           {r.doc_type === 'return' ? '-' : ''}{money(val)} ج.م
         </strong>
       ),
@@ -278,6 +280,8 @@ export function buildRegisterColumns({
       align: 'left' as const,
       sorter: (a: any, b: any) =>
         (a.net - (a.residual ?? a.credit_amount)) - (b.net - (b.residual ?? b.credit_amount)),
+      // اللون من الخلية مش من الرسم — الرسم بيفضل نص عشان التصدير بيقراه.
+      onCell: () => ({ style: { color: '#389e0d' } }),
       render: (_v: any, row: any) => {
         const res = Number(row.residual ?? row.credit_amount ?? 0);
         return `${money(Number(row.net || 0) - res)} ج.م`;
@@ -286,7 +290,7 @@ export function buildRegisterColumns({
     {
       // المتبقّي الحي كمان — وبيبقى **سالب** لو العميل دفع أكتر من الفاتورة، وده
       // رصيد له مش عليه، فبيتلوّن أخضر مش أحمر.
-      title: 'الباقى',
+      title: 'الباقي',
       dataIndex: 'residual',
       key: 'credit_amount',
       width: 100,

@@ -5,7 +5,7 @@ import DocumentBar from '../components/DocumentBar';
 import DraftTag from '../components/DraftTag';
 import { PAGE_SIZE } from '../utils/pagination';
 import {
-  Alert, Button, Card, Col, DatePicker, Descriptions, Form, Input, Row, Segmented, Select, Space, Tabs, Tag, message,
+  Alert, Button, Card, Col, DatePicker, Form, Input, Row, Segmented, Select, Space, Tabs, Tag, message,
 } from 'antd';
 // كل جدول هنا بفلتر على كل عمود — شوف `FilterTable`.
 import { FilterTable as Table } from '../components/FilterTable';
@@ -13,8 +13,8 @@ import { InputNumber } from '../components/NumberInput';
 import { advanceFrom } from '../components/lineKeyboard';
 import { Popconfirm } from '../components/noConfirm';
 import {
-  DeleteOutlined, PlusOutlined, ReloadOutlined, RollbackOutlined, ArrowLeftOutlined,
-  EditOutlined, PrinterOutlined,
+  DeleteOutlined, PlusOutlined, ReloadOutlined, RollbackOutlined, ArrowRightOutlined,
+  EditOutlined, PrinterOutlined, CheckOutlined,
 } from '@ant-design/icons';
 import { printPermit } from '../print/permitSheet';
 import dayjs, { Dayjs } from 'dayjs';
@@ -34,6 +34,8 @@ import DocumentAttachments from '../components/DocumentAttachments';
 import type { ColumnsType } from 'antd/es/table';
 import { useTableColumns } from '../components/ColumnSettings';
 import { useLiveRefresh } from '../utils/live';
+import SummaryTile from '../components/saleDoc/SummaryTile';
+import './docs.extra.css';
 
 /**
  * إذن إضافة / إذن صرف — stock in and out for reasons that are not a trade.
@@ -407,10 +409,13 @@ export default function StockPermits() {
   );
 
   const createForm = (
-    <>
+    <div className="sale-form">
+      {/* الترويسة — زي فاتورة البيع (٢٠٢٦-١٠-٠١): نوع الإذن، وتحته رقم المستند أول حاجة،
+          والاسم فوق الخانة. */}
+      <div className="sale-card sale-fields">
       <Segmented
         block value={kind} onChange={(v) => { setKind(v as Kind); setLines([]); }}
-        style={{ marginBottom: 12 }}
+        style={{ marginBottom: 10 }}
         options={[
           { value: 'receipt', label: 'إذن إضافة (دخول للمخزن)' },
           { value: 'issue', label: 'إذن صرف (خروج من المخزن)' },
@@ -418,23 +423,23 @@ export default function StockPermits() {
         ]}
       />
 
-      {/* الترويسة في سطر واحد — زي فاتورة البيع (٢٠٢٦-١٠-٠١): رقم المستند أول حاجة. */}
       <Form layout="vertical" size="small" className="doc-form" component={false}>
-      <Row gutter={16}>
+      <Row gutter={12}>
         <Col xs={12} md={4}>
-          <Form.Item label="رقم المستند" style={{ marginBottom: 8 }}>
+          <Form.Item label="رقم المستند">
             <Input placeholder="رقم الإذن الورقي" value={externalDocNumber}
               onChange={(e) => setExternalDocNumber(e.target.value)} />
           </Form.Item>
         </Col>
         <Col xs={12} md={4}>
-          <Form.Item label="التاريخ" style={{ marginBottom: 8 }}>
+          <Form.Item label="التاريخ">
             <DatePicker style={{ width: '100%' }} value={permitDate}
               onChange={(v) => v && setPermitDate(v)} placeholder="تاريخ الإذن" />
           </Form.Item>
         </Col>
-        <Col xs={24} md={6}>
-          <Form.Item label="المخزن" style={{ marginBottom: 8 }}>
+        {/* المخزن هو الخانة الأساسية هنا — بإطار أخضر زي خانة العميل في الفاتورة. */}
+        <Col xs={24} md={6} className="sale-party">
+          <Form.Item label="المخزن">
             <Select showSearch
               style={{ width: '100%' }} placeholder="المخزن" value={warehouseId}
               onChange={setWarehouseId}
@@ -442,23 +447,38 @@ export default function StockPermits() {
           </Form.Item>
         </Col>
         <Col xs={24} md={5}>
-          <Form.Item label="السبب" style={{ marginBottom: 8 }}>
+          <Form.Item label="السبب">
             <Input placeholder="جرد، مرتجع ورشة، عينة…" value={reason}
               onChange={(e) => setReason(e.target.value)} />
           </Form.Item>
         </Col>
         <Col xs={24} md={5}>
-          <Form.Item label="البيان" style={{ marginBottom: 8 }}>
+          <Form.Item label="البيان">
             <Input placeholder="اختياري" value={statement1} maxLength={200}
               onChange={(e) => setStatement1(e.target.value)} />
           </Form.Item>
         </Col>
       </Row>
       </Form>
+      </div>
 
+      <div className="sale-card sale-lines">
+        {/* عدد البنود يمين، وزرار الإضافة شمال — كان في ذيل الجدول. */}
+        <div className="sale-items-bar">
+          <div className="sale-items-info">
+            <span>
+              عدد البنود الحالية: <b style={{ color: '#0f172a' }}>{lines.length}</b> أصناف
+            </span>
+          </div>
+          <Button type="primary" className="sale-green-btn" icon={<PlusOutlined />}
+            style={{ fontWeight: 700 }} onClick={() => setPickerOpen(true)}>
+            إضافة صنف
+          </Button>
+        </div>
+      <div className="sale-grid-wrap">
       <Table<DraftLine> autoFilters={false}
+        className="sale-grid"
         size="small" rowKey="key" dataSource={lines} pagination={false}
-        style={{ marginBottom: 12 }}
         columns={[
           // Picked in the window, not hunted in a dropdown — the line already knows its item by
           // the time it exists, so there is no half-written row to read past.
@@ -522,55 +542,49 @@ export default function StockPermits() {
                 onClick={() => setLines((prev) => prev.filter((l) => l.key !== r.key))} />
             ) },
         ]}
-        footer={() => (
-          <Space>
-            <Button icon={<PlusOutlined />} size="small" onClick={() => setPickerOpen(true)}>
-              إضافة صنف
-            </Button>
-            {kind !== 'issue' && (
-              <span>إجمالي التكلفة: <b>{money(draftTotal)}</b></span>
-            )}
-          </Space>
-        )}
       />
-
-      <Input.TextArea rows={2} placeholder="ملاحظات" value={notes}
-        onChange={(e) => setNotes(e.target.value)} />
-
-      <Alert
-        type="info" showIcon style={{ marginTop: 12 }}
-        message={kind === 'issue'
-          ? 'الصرف من المتاح فقط — ممنوع أي رصيد سالب.'
-          : 'لو سِبت التكلفة فاضية هتتاخد من تكلفة الصنف الحالية.'}
-      />
-
-      <div style={{
-        marginTop: 16, padding: 16, borderRadius: 10,
-        background: '#f6faf3', border: '1px solid #e6efe3',
-        display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16,
-        flexWrap: 'wrap',
-      }}>
-        <Space size={32} wrap>
-          <span>
-            <span style={{ color: '#6b6b6b', fontSize: 12 }}>عدد الأصناف: </span>
-            <b>{lines.length}</b>
-          </span>
-          {kind !== 'issue' && (
-            <span>
-              <span style={{ color: '#6b6b6b', fontSize: 12 }}>إجمالي التكلفة: </span>
-              <b style={{ color: '#6AB42D', fontSize: 18 }}>{money(draftTotal)}</b>
-            </span>
-          )}
-        </Space>
-        <Space>
-          <Button type="primary" size="large" loading={saving} onClick={submit}
-            disabled={!warehouseId || lines.length === 0}>
-            ترحيل الإذن
-          </Button>
-          <Button size="large" onClick={closeDoc}>إلغاء</Button>
-        </Space>
       </div>
-    </>
+      </div>
+
+      <div className="sale-card sale-notes">
+        <Input.TextArea rows={2} placeholder="ملاحظات" value={notes}
+          onChange={(e) => setNotes(e.target.value)} />
+
+        <Alert
+          type="info" showIcon
+          message={kind === 'issue'
+            ? 'الصرف من المتاح فقط — ممنوع أي رصيد سالب.'
+            : 'لو سِبت التكلفة فاضية هتتاخد من تكلفة الصنف الحالية.'}
+        />
+      </div>
+
+      {/* الملخص والحفظ مثبّتين في آخر الشاشة — زي فاتورة البيع. */}
+      <div className="sale-bottom">
+        <Row gutter={[10, 10]}>
+          <Col xs={24} lg={16}>
+            <div className="sale-tiles">
+              <SummaryTile label="عدد الأصناف" value={lines.length} />
+              {kind !== 'issue' && (
+                <SummaryTile label="إجمالي التكلفة" value={money(draftTotal)} color="#16a34a"
+                  sub="جنيه مصري" />
+              )}
+            </div>
+          </Col>
+          <Col xs={24} lg={8}>
+            <div className="sale-card sale-pay">
+              <div className="sale-pay-actions">
+                <Button type="primary" loading={saving} onClick={submit}
+                  icon={<CheckOutlined />} className="sale-green-btn sale-save-btn"
+                  disabled={!warehouseId || lines.length === 0}>
+                  ترحيل الإذن
+                </Button>
+                <Button onClick={closeDoc}>إلغاء</Button>
+              </div>
+            </div>
+          </Col>
+        </Row>
+      </div>
+    </div>
   );
 
   /**
@@ -582,86 +596,131 @@ export default function StockPermits() {
    * and leaves both papers behind.
    */
   const postedDoc = detail && (
-    <>
+    <div className="sale-form">
       <Alert
-        type={detail.reversed_by ? 'warning' : 'info'} showIcon style={{ marginBottom: 12 }}
+        type={detail.reversed_by ? 'warning' : 'info'} showIcon
         message={detail.reversed_by ? 'الإذن ده اتعكس' : 'هذا الإذن مُرحَّل بالفعل'}
         description={detail.reversed_by
           ? 'أُنشئ له إذن عكسي أعاد المخزون إلى ما كان عليه — وكلاهما موجود في القائمة.'
           : 'تحركت البضاعة على المخزن فعلاً، فلا يُعدَّل الإذن في مكانه. و«تعديل الإذن» يعكسه ويفتحه من جديد بمحتواه لتصحّح وتُرحِّل مرة أخرى — وتبقى الثلاثة في السجل.'}
       />
-      <Descriptions column={2} size="small" bordered style={{ marginBottom: 12 }}>
-        <Descriptions.Item label="النوع">
-          <Tag color={KIND_COLOR[detail.kind]}>{KIND_LABEL[detail.kind] || detail.kind}</Tag>
-          {detail.is_reversal && <Tag color="orange">عكسي</Tag>}
-        </Descriptions.Item>
-        <Descriptions.Item label="المخزن">{detail.warehouse_name}</Descriptions.Item>
-        <Descriptions.Item label="التاريخ">
-          {(detail.permit_date || detail.created_at || '').slice(0, 10)}
-        </Descriptions.Item>
-        <Descriptions.Item label="إجمالي التكلفة">
-          <b>{money(detail.total_cost)}</b>
-        </Descriptions.Item>
-        <Descriptions.Item label="السبب" span={2}>{detail.reason || '-'}</Descriptions.Item>
-        <Descriptions.Item label="البيان">{detail.statement1 || '-'}</Descriptions.Item>
-        {/* رقم الورقة اللي عنده — بيتعرض جنب رقم الإذن عندنا اللي في عنوان الصفحة. */}
-        <Descriptions.Item label="رقم المستند">
-          {detail.external_document_number || '-'}
-        </Descriptions.Item>
-        <Descriptions.Item label="ملاحظات" span={2}>{detail.notes || '-'}</Descriptions.Item>
-      </Descriptions>
-      <Table<PermitLine>
-        rowKey="id" size="small" dataSource={detail.lines} pagination={false}
-        columns={[
-          { title: 'الصنف', dataIndex: 'item_name' },
-          { title: 'الكمية', dataIndex: 'quantity', render: (v: string) => qty(v) },
-          { title: 'تكلفة الوحدة', dataIndex: 'unit_cost', render: (v: string) => money(v) },
-          { title: 'الإجمالي', dataIndex: 'line_cost',
-            render: (v: string) => <b>{money(v)}</b> },
-        ]}
-      />
+      {/* بيانات الإذن — للقراية بس، بنفس شكل خانات الفاتورة (الاسم فوق الخانة).
+          إجمالي التكلفة تحت في المربعات. */}
+      <div className="sale-card sale-fields">
+      <Form layout="vertical" size="small" component={false}>
+        <Row gutter={12}>
+          <Col xs={12} md={4}>
+            <Form.Item label="النوع">
+              <div style={{ minHeight: 28, display: 'flex', alignItems: 'center' }}>
+                <Tag color={KIND_COLOR[detail.kind]}>{KIND_LABEL[detail.kind] || detail.kind}</Tag>
+                {detail.is_reversal && <Tag color="orange">عكسي</Tag>}
+              </div>
+            </Form.Item>
+          </Col>
+          <Col xs={12} md={4}>
+            {/* رقم الورقة اللي عنده — بيتعرض جنب رقم الإذن عندنا اللي في عنوان الصفحة. */}
+            <Form.Item label="رقم المستند">
+              <Input readOnly value={detail.external_document_number || '-'} />
+            </Form.Item>
+          </Col>
+          <Col xs={12} md={4}>
+            <Form.Item label="التاريخ">
+              <Input readOnly dir="ltr"
+                value={(detail.permit_date || detail.created_at || '').slice(0, 10)} />
+            </Form.Item>
+          </Col>
+          <Col xs={12} md={6} className="sale-party">
+            <Form.Item label="المخزن">
+              <Input readOnly value={detail.warehouse_name || ''} />
+            </Form.Item>
+          </Col>
+          <Col xs={24} md={6}>
+            <Form.Item label="السبب">
+              <Input readOnly value={detail.reason || '-'} />
+            </Form.Item>
+          </Col>
+          <Col xs={24} md={12}>
+            <Form.Item label="البيان">
+              <Input readOnly value={detail.statement1 || '-'} />
+            </Form.Item>
+          </Col>
+          <Col xs={24} md={12}>
+            <Form.Item label="ملاحظات">
+              <Input readOnly value={detail.notes || '-'} />
+            </Form.Item>
+          </Col>
+        </Row>
+      </Form>
+      </div>
+
+      <div className="sale-card sale-lines">
+        <div className="sale-items-bar">
+          <div className="sale-items-info">
+            <span>
+              عدد البنود: <b style={{ color: '#0f172a' }}>{detail.lines.length}</b> أصناف
+            </span>
+          </div>
+        </div>
+        <div className="sale-grid-wrap">
+          <Table<PermitLine>
+            className="sale-grid"
+            rowKey="id" size="small" dataSource={detail.lines} pagination={false}
+            columns={[
+              { title: 'الصنف', dataIndex: 'item_name' },
+              { title: 'الكمية', dataIndex: 'quantity', render: (v: string) => qty(v) },
+              { title: 'تكلفة الوحدة', dataIndex: 'unit_cost', render: (v: string) => money(v) },
+              { title: 'الإجمالي', dataIndex: 'line_cost',
+                render: (v: string) => <b>{money(v)}</b> },
+            ]}
+          />
+        </div>
+      </div>
 
       {/* صور الورقة — الإذن الموقّع عليه، وإيصال الاستلام. بيتقبل بعد الترحيل لأن
           الصورة مابتغيّرش كمية ولا قيد، والورق أصلاً بيتصوّر بعد ما يتوقّع. */}
-      <DocumentAttachments docType="stock_permit" docId={detail.id} />
-
-      <div style={{
-        marginTop: 16, padding: 16, borderRadius: 10,
-        background: '#f6faf3', border: '1px solid #e6efe3',
-        display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16,
-        flexWrap: 'wrap',
-      }}>
-        <Space size={32} wrap>
-          <span>
-            <span style={{ color: '#6b6b6b', fontSize: 12 }}>عدد الأصناف: </span>
-            <b>{detail.lines.length}</b>
-          </span>
-          <span>
-            <span style={{ color: '#6b6b6b', fontSize: 12 }}>إجمالي التكلفة: </span>
-            <b style={{ color: '#6AB42D', fontSize: 18 }}>{money(detail.total_cost)}</b>
-          </span>
-        </Space>
-        <Space>
-          {!detail.is_reversal && !detail.reversed_by && (
-            <>
-              <Button type="primary" size="large" icon={<EditOutlined />}
-                onClick={() => editPosted(detail)}>
-                تعديل الإذن
-              </Button>
-              <Popconfirm title="عكس الإذن؟" description="سيعود المخزون إلى ما كان عليه."
-                onConfirm={() => reverse(detail)} okText="عكس" cancelText="إلغاء">
-                <Button danger size="large" icon={<RollbackOutlined />}>عكس الإذن</Button>
-              </Popconfirm>
-            </>
-          )}
-          {/* **الإذن بقى بيتطبع.** كان مالوش ورقة خالص — وإذن الصرف بالذات بيتمسك في
-              الإيد: أمين المخزن بيسلّم بيه والمستلم بيمضي. الشرح في `print/permitSheet`. */}
-          <Button size="large" icon={<PrinterOutlined />}
-            onClick={() => printPermit(detail)}>طباعة</Button>
-          <Button size="large" onClick={closeDoc}>إغلاق</Button>
-        </Space>
+      <div className="sale-card sale-notes">
+        <div className="sale-attach">
+          <DocumentAttachments docType="stock_permit" docId={detail.id} title="مرفقات" />
+        </div>
       </div>
-    </>
+
+      {/* الملخص والأزرار مثبّتين في آخر الشاشة — زي فاتورة البيع. */}
+      <div className="sale-bottom">
+        <Row gutter={[10, 10]}>
+          <Col xs={24} lg={16}>
+            <div className="sale-tiles">
+              <SummaryTile label="عدد الأصناف" value={detail.lines.length} />
+              <SummaryTile label="إجمالي التكلفة" value={money(detail.total_cost)}
+                color="#16a34a" sub="جنيه مصري" />
+            </div>
+          </Col>
+          <Col xs={24} lg={8}>
+            <div className="sale-card sale-pay">
+              <div className="sale-pay-actions is-wrap">
+                {!detail.is_reversal && !detail.reversed_by && (
+                  <>
+                    <Button type="primary" icon={<EditOutlined />}
+                      className="sale-green-btn sale-save-btn"
+                      onClick={() => editPosted(detail)}>
+                      تعديل الإذن
+                    </Button>
+                    <Popconfirm title="عكس الإذن؟" description="سيعود المخزون إلى ما كان عليه."
+                      onConfirm={() => reverse(detail)} okText="عكس" cancelText="إلغاء">
+                      <Button danger icon={<RollbackOutlined />}>عكس الإذن</Button>
+                    </Popconfirm>
+                  </>
+                )}
+                {/* **الإذن بقى بيتطبع.** كان مالوش ورقة خالص — وإذن الصرف بالذات بيتمسك في
+                    الإيد: أمين المخزن بيسلّم بيه والمستلم بيمضي. الشرح في `print/permitSheet`. */}
+                <Button icon={<PrinterOutlined />}
+                  onClick={() => printPermit(detail)}>طباعة</Button>
+                <Button onClick={closeDoc}>إغلاق</Button>
+              </div>
+            </div>
+          </Col>
+        </Row>
+      </div>
+    </div>
   );
 
   const columns: ColumnsType<Permit> = [
@@ -719,31 +778,36 @@ export default function StockPermits() {
    * ولا تركيب ولا قناع فاضل.
    */
   const screen = (creating || detail) ? (
-      <div>
-        <Card title={(
-          <Space>
-            <Button type="text" icon={<ArrowLeftOutlined />} onClick={closeDoc}>رجوع</Button>
-            <span>{detail
-              ? `${KIND_LABEL[detail.kind] || detail.kind} — ${detail.document_number}`
+      // **شكل فاتورة البيع الجديد** (٢٠٢٦-١٠-٠١): كروت بيضا على رمادي — الترويسة، خانات
+      // الإذن، الأصناف، وتحت الملخص والأزرار مثبّتين. الشكل بس: نفس الحالة والأوامر.
+      <div className="sale-doc">
+        <div className="sale-card sale-head">
+          <div className="sale-head-row">
+            <Button size="small" icon={<ArrowRightOutlined />} onClick={closeDoc}>رجوع</Button>
+            <span className="sale-title">{detail
+              ? <>{KIND_LABEL[detail.kind] || detail.kind} — <b dir="ltr">{detail.document_number}</b></>
               : kind === 'issue' ? 'إذن صرف مخزني'
                 : kind === 'opening' ? 'بضاعة أول المدة' : 'إذن إضافة مخزني'}</span>
-            {detail?.reversed_by && <Tag color="default">اتعكس</Tag>}
+            {detail?.reversed_by && <Tag color="default" style={{ marginInlineEnd: 0 }}>اتعكس</Tag>}
             {/* الحالة في سطر العنوان — زي فاتورة البيع (٢٠٢٦-١٠-٠١). */}
-            {detail && <DocumentBar
-          listLabel="أذون المخزن"
-          listTo="/stock-permits"
-          title={detail.document_number || `#${detail.id}`}
-          steps={[
-            { key: 'draft', label: 'مسودة' },
-            { key: 'posted', label: 'مرحّل', color: 'green' },
-            { key: 'reversed', label: 'معكوس', color: 'volcano' },
-          ]}
-          current={detail.reversed_by ? 'reversed' : 'posted'}
-        />}
-          </Space>
-        )}>
-          {detail ? postedDoc : createForm}
-        </Card>
+            {detail && (
+              <span className="sale-pager">
+                <DocumentBar
+                  listLabel="أذون المخزن"
+                  listTo="/stock-permits"
+                  title={detail.document_number || `#${detail.id}`}
+                  steps={[
+                    { key: 'draft', label: 'مسودة' },
+                    { key: 'posted', label: 'مرحّل', color: 'green' },
+                    { key: 'reversed', label: 'معكوس', color: 'volcano' },
+                  ]}
+                  current={detail.reversed_by ? 'reversed' : 'posted'}
+                />
+              </span>
+            )}
+          </div>
+        </div>
+        {detail ? postedDoc : createForm}
       </div>
   ) : (
     <Card

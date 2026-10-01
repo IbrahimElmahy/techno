@@ -7,12 +7,11 @@ import { PAGE_SIZE as TABLE_PAGE_SIZE, PAGE_SIZE_OPTIONS }
 import { searchFilter, searchRank, sortByName } from '../utils/arabicSort';
 import { customersOfRep, customerFitsRep } from '../utils/repScope';
 import {
-  Alert, Button, Card, Col, DatePicker, Descriptions, Divider, Empty, Form, Input, Modal, Result, Row, Segmented, Select, Space, Tag,
+  Alert, Button, Card, Col, DatePicker, Descriptions, Divider, Empty, Form, Input, Modal, Result, Row, Segmented, Select, Space, Spin, Tag,
   Tooltip, Typography, message,
 } from 'antd';
 // فلتر على كل عمود — شوف `FilterTable`.
 import { FilterTable as Table } from '../components/FilterTable';
-import { Statistic } from '../components/Statistic';
 import { InputNumber } from '../components/NumberInput';
 import { Popconfirm } from '../components/noConfirm';
 import {
@@ -20,7 +19,7 @@ import {
   EditOutlined, RollbackOutlined, EyeOutlined, ExclamationCircleOutlined,
   ArrowRightOutlined, ArrowLeftOutlined, SearchOutlined, ClearOutlined,
   FileAddOutlined, UndoOutlined, SaveOutlined, BankOutlined, ReloadOutlined,
-  PhoneOutlined, CheckOutlined, InfoCircleOutlined, ShoppingCartOutlined,
+  PhoneOutlined, CheckOutlined, InfoCircleOutlined, ShoppingCartOutlined, GiftOutlined,
 } from '@ant-design/icons';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import dayjs, { Dayjs } from 'dayjs';
@@ -66,9 +65,14 @@ import {
 } from './invoices/types';
 import { buildLineColumns } from './invoices/lineColumns';
 import { buildRegisterColumns } from './invoices/registerColumns';
-import StatsRow from '../components/StatsRow';
+// سند القبض بيتعمل من شريحة «سندات القبض» هنا — نفس بوباب شاشة السندات، مش نسخة منه.
+import ReceiptModal from './vouchers/ReceiptModal';
+import { defaultTreasuryId } from '../components/VoucherFields';
 import { useLiveRefresh } from '../utils/live';
 /** رقم فريد للمستند (`client_uuid`). `randomUUID` مش موجود خارج https، فالبديل عشوائي كفاية. */
+// المرتجع الجديد بيتفتح جوّه السجل (`embedded`) — كسول عشان مايتحمّلش مع كل فاتورة.
+const ReturnsScreen = React.lazy(() => import('./Returns'));
+
 const newUuid = (): string =>
   (globalThis.crypto as any)?.randomUUID?.()
   ?? `${Date.now().toString(16)}-${Math.random().toString(16).slice(2)}-${Math.random().toString(16).slice(2)}`;
@@ -149,13 +153,11 @@ export default function Invoices() {
   // All of their columns exist; these start hidden. A sales list is read for «who, when, how much,
   // how much is still owed» — the paper trail and the two expense figures are there when a question
   // needs them, and «حدد الأعمدة» turns any of them on for good.
+  // الافتراضي على تصميم العميل (٢٠٢٦-١٠-٠١): رقم · مستند رقم · إجمالي قبل · خصم% ظاهرين؛
+  // الحساب الفرعي وقيمة الخصم والكوبونات والتحصيل والملاحظات من «الأعمدة» لما تتطلب.
+  // (اللي ظبط أعمدته قبل كده اختياره المحفوظ هو اللي بيمشي.)
   const invoiceCols = useHiddenColumns('invoices-list', [
-    // Theirs carries a row number AND the invoice number. Ours is the invoice number people
-    // actually say out loud, so the bare sequence starts hidden rather than spending width on a
-    // second identifier for the same row.
-    'id',
-    'external_document_number', 'revenue_account_id', 'gross', 'discount_value',
-    'combined_pct', 'notes',
+    'revenue_account_id', 'discount_value', 'coupons', 'payment_state', 'notes',
   ]);
   const [viewInvoice, setViewInvoice] = useState<any>(null);
   const [viewReturns, setViewReturns] = useState<any[]>([]);
@@ -232,6 +234,8 @@ export default function Invoices() {
   const { can, user } = useAuth();
   const canEditInvoice = can('sale.edit');
   const canBonus = can('sale.bonus');
+  // زرار «مرتجع بيع جديد» في السجل — نفس الصلاحية اللي شاشة المرتجعات بتسألها.
+  const canWriteReturn = can('return.write');
   // بوباب الخزنة قبل الحفظ. المندوب مابيتسألش — صندوق خطه بيتحدد لوحده (أمر ٠٠٩ بند ٥)،
   // والسؤال هنا للمكتب اللي قدامه أكتر من صندوق.
   const { ask: askTreasury, gateProps: treasuryGate } = useTreasuryGate(
@@ -355,6 +359,27 @@ export default function Invoices() {
   // إجماليات الكشف كله زي ما السيرفر حسبها — مش مجموع الصفحة اللي ظاهرة.
   const [serverSummary, setServerSummary] = useState<any>(null);
   const [docKindFilter, setDocKindFilter] = useState<'all' | 'sale' | 'return' | 'bonus' | 'receipts'>('all');
+  // صفوف السجل المتعلّمة — العدد بس اللي بيظهر تحت («المحدد»).
+  const [selectedKeys, setSelectedKeys] = useState<React.Key[]>([]);
+  // سند قبض من شريحة «سندات القبض» — البوباب نفسه من `vouchers/ReceiptModal`، والحالة
+  // اللي محتاجها هنا. الخزن بتتجاب أول مرة يتفتح بس.
+  const { options: paymentMethodOptions } = useLookup('payment_method');
+  const [receiptForm] = Form.useForm();
+  const [receiptOpen, setReceiptOpen] = useState(false);
+  const [receiptPosting, setReceiptPosting] = useState(false);
+  const [receiptFamilies, setReceiptFamilies] = useState<Record<number, any[]>>({});
+  const [receiptTarget, setReceiptTarget] = useState('');
+  const [treasuries, setTreasuries] = useState<any[]>([]);
+  // بيتزوّد بعد كل سند ⇒ لوحة السندات تتعاد من الأول وتجيبه.
+  const [receiptsKey, setReceiptsKey] = useState(0);
+  // مرتجع بيع جديد جوّه السجل نفسه (`Returns` بـ`embedded`). لما يخرج، المرتجعات تتجاب
+  // تاني عشان الجديد يظهر — من تأثير، عشان `fetchInvoices` يقرا الفلاتر اللي دلوقتي.
+  const [embeddedReturn, setEmbeddedReturn] = useState(false);
+  const [returnsReload, setReturnsReload] = useState(0);
+  const exitEmbeddedReturn = useCallback(() => {
+    setEmbeddedReturn(false);
+    setReturnsReload((n) => n + 1);
+  }, []);
   // **فواتير البونص في قايمة لوحدها، مش وسط فواتير البيع.** الكشف كان بيجيب الاتنين في
   // صفحة واحدة، فشريحة «فواتير المبيعات» كانت فيها فواتير بصفر مش بيع، وكل بونص بياخد
   // مكان فاتورة بيع من الـ٦٠٠ صف. كل نوع ليه صفحته من السيرفر (`kind=`).
@@ -555,6 +580,8 @@ export default function Invoices() {
   // الأرقام اتغيّرت (دوس «اعرض الكل» أو جه من الرئيسية) ⇒ الكشف يتجاب من جديد.
   const focusKey = focusRef.current ?? '';
   useEffect(() => { fetchInvoices(); /* eslint-disable-next-line */ }, [focusKey]);
+  // رجع من مرتجع جديد اتعمل هنا ⇒ الكشف يتجاب بنفس الفلاتر.
+  useEffect(() => { if (returnsReload) fetchInvoices(); /* eslint-disable-next-line */ }, [returnsReload]);
 
   const focusedRecords = useMemo(
     () => focus.filter(unifiedRecords, (r: any) => r.id),
@@ -2207,10 +2234,13 @@ function couponsTotal(inv: any): number {
     openDetail(target);
   };
 
-  const startNew = () => {
+  const startNew = (opts?: { bonus?: boolean }) => {
     // التفضية الأول، وبعدين أول باب في الدورة.
     const go = () => {
       resetDocument();
+      // «فاتورة بونص جديدة» من شريحة البونص — نفس التحويل اللي خانة «نوع المستند»
+      // و«خصم ١٠٠٪» بيعملوه، بس من أول الدورة.
+      if (opts?.bonus) { setIsBonus(true); setBonusForId(null); setCashAmount(0); }
       setCreateVisible(true);
       setNewStep('party');
       setPartyPickerOpen(true);
@@ -2255,7 +2285,7 @@ function couponsTotal(inv: any): number {
         shortcut: 'F2',
         primary: true,
         icon: <FileAddOutlined />,
-        onClick: startNew,
+        onClick: () => startNew(),
       },
       {
         key: 'edit',
@@ -3138,12 +3168,147 @@ function couponsTotal(inv: any): number {
     );
   }
 
+
+  // مرتجع بيع جديد شغّال جوّه السجل ⇒ شاشته مكان الكشف لحد ما تقفل (`onExit`).
+  if (embeddedReturn) {
+    return (
+      <React.Suspense fallback={<div style={{ textAlign: 'center', padding: 48 }}><Spin /></div>}>
+        <ReturnsScreen embedded={{ onExit: exitEmbeddedReturn }} />
+      </React.Suspense>
+    );
+  }
+
+  // ── سجل المبيعات (تصميم العميل ٢٠٢٦-١٠-٠١) ──
+  type DocKind = typeof docKindFilter;
+
+  /** سند قبض جديد هنا في نفس الشاشة — نفس فتح شاشة السندات: فورم فاضي على الخزنة الافتراضية. */
+  const openReceipt = async () => {
+    let list = treasuries;
+    if (!list.length) {
+      list = (await api.get<any[]>('/api/v1/treasuries').catch(() => ({ data: [] as any[] }))).data || [];
+      setTreasuries(list);
+    }
+    receiptForm.resetFields();
+    setReceiptTarget('');
+    const id = defaultTreasuryId(list);
+    if (id) receiptForm.setFieldsValue({ treasury_id: id });
+    setReceiptOpen(true);
+  };
+
+  /** الحفظ اللي البوباب بيستناه (`submit`) — نفس شكل الحمولة بتاع شاشة السندات. */
+  const submitReceipt = async (path: string, values: any, form: any, okMsg: string) => {
+    setReceiptPosting(true);
+    try {
+      const payload: any = { ...values, amount: String(values.amount) };
+      if (values.voucher_date) payload.voucher_date = values.voucher_date.format('YYYY-MM-DD');
+      await api.post(path, payload);
+      message.success(okMsg);
+      form.resetFields();
+      setReceiptOpen(false);
+      setReceiptsKey((k) => k + 1);
+    } catch {
+      // رسالة الخطأ بيطلّعها `api` نفسه.
+    } finally {
+      setReceiptPosting(false);
+    }
+  };
+
+  const startNewReturn = () => setEmbeddedReturn(true);
+
+  // الشرايح وعدّاداتها — نفس أرقام الملخّص اللي من السيرفر.
+  const kindTabs: { key: DocKind; label: string; dot?: string; count?: number }[] = [
+    { key: 'all', label: 'الكل',
+      count: summary.totalSalesCount + summary.totalReturnsCount + summary.totalBonusCount },
+    { key: 'sale', label: 'فواتير المبيعات', dot: '#52c41a', count: summary.totalSalesCount },
+    { key: 'return', label: 'مرتجعات المبيعات', dot: '#eb2f96', count: summary.totalReturnsCount },
+    { key: 'bonus', label: 'فواتير البونص', dot: '#fa8c16', count: summary.totalBonusCount },
+    // النقدي اللي اتدفع مع الفاتورة + سندات القبض المستقلة (من النظام والتطبيق).
+    { key: 'receipts', label: 'سندات القبض', dot: '#1677ff' },
+  ];
+
+  // زرار الإنشاء بيمشي مع الشريحة — تعريف واحد هنا، والزرار فوق بيقرا منه.
+  const newSale = { label: 'تسجيل طلب بيع جديد', icon: <PlusOutlined />, onCreate: () => startNew(), visible: true };
+  const createByKind: Record<DocKind, { label: string; icon: React.ReactNode; onCreate: () => void; visible: boolean }> = {
+    all: newSale,
+    sale: newSale,
+    bonus: { label: 'تسجيل فاتورة بونص جديدة', icon: <GiftOutlined />,
+      onCreate: () => startNew({ bonus: true }), visible: canBonus },
+    return: { label: 'تسجيل مرتجع بيع جديد', icon: <RollbackOutlined />,
+      onCreate: startNewReturn, visible: canWriteReturn },
+    receipts: { label: 'سند قبض جديد', icon: <BankOutlined />, onCreate: openReceipt, visible: true },
+  };
+  const create = createByKind[docKindFilter];
+
+  // سطر الإجماليات تحت الجدول. «إجمالي السجلات» عدد الشريحة كلها من السيرفر — الجدول
+  // شايل صفحة منها بس — إلا لو الكشف متفلتر على أرقام بعينها (فحص النظام).
+  const tabCount = focus.ids
+    ? focusedRecords.length
+    : (kindTabs.find((t) => t.key === docKindFilter)?.count ?? focusedRecords.length);
+  const shownNet = focusedRecords.reduce(
+    (t: number, r: any) => t + (r.doc_type === 'return' ? -Number(r.net || 0) : Number(r.net || 0)), 0);
+  // البونص صافيه صفر دايماً — رقمه اللي يتقري القيمة قبل خصم الـ١٠٠٪.
+  const footNet = docKindFilter === 'bonus'
+    ? { label: 'إجمالي البونص قبل الخصم', value: summary.totalBonusGross }
+    : { label: docKindFilter === 'return' ? 'صافي المرتجعات المعروضة' : 'صافي المبيعات المعروضة', value: shownNet };
+  const footer = (
+    <span className="sl-foot">
+      <span>إجمالي السجلات: <b>{tabCount.toLocaleString(numeralsLocale())}</b> مستند</span>
+      <span>المحدد: <b>{selectedKeys.length.toLocaleString(numeralsLocale())}</b></span>
+      <span>
+        {footNet.label}:{' '}
+        <b className={footNet.value < 0 ? 'is-neg' : 'is-pos'}>{money(footNet.value)} ج.م</b>
+      </span>
+    </span>
+  );
+
   return (
-    <div>
-      <Card
-        title="المبيعات (سجل الفواتير والمرتجعات)"
-        extra={(
-          <Space>
+    <div className="sales-log">
+      {/* --- الترويسة: العنوان، الشرايح، والأزرار — سطر واحد --- */}
+      <div className="sl-head">
+        <div className="sl-title">
+          <span className="sl-title-icon"><ShoppingCartOutlined /></span>
+          <div>
+            <div className="sl-title-main">
+              المبيعات <span className="sl-title-muted">(سجل الفواتير والمرتجعات)</span>
+            </div>
+            <div className="sl-subtitle">إدارة ومتابعة حركات البيع، المرتجعات وسندات القبض النقدية</div>
+          </div>
+        </div>
+
+        <div className="sl-tabs" role="tablist">
+          {kindTabs.map((t) => (
+            <button
+              key={t.key}
+              type="button"
+              role="tab"
+              aria-selected={docKindFilter === t.key}
+              className={`sl-tab${docKindFilter === t.key ? ' is-active' : ''}`}
+              onClick={() => { setDocKindFilter(t.key); setSelectedKeys([]); }}
+            >
+              {t.dot && <span className="sl-dot" style={{ background: t.dot }} />}
+              {t.label}
+              {t.count != null && <span className="sl-count">{t.count.toLocaleString(numeralsLocale())}</span>}
+            </button>
+          ))}
+        </div>
+
+        <Space className="sl-actions" size={6} wrap>
+          {create.visible && (
+            <Button type="primary" icon={create.icon} className="sl-create" onClick={create.onCreate}>
+              {create.label}
+            </Button>
+          )}
+          <PrintOptionsMenu value={printOpts} onChange={setPrintOpts}
+                hideKeys={['logo', 'companyName']} />
+          {/* شريحة السندات ليها جدولها وتصديره وأعمدته — دول بتوع كشف الفواتير. */}
+          {docKindFilter !== 'receipts' && (<>
+            {/* جوّه `Space`، فالمسافة الافتراضية بتتشال — الـ`Space` بيباعد لوحده. */}
+            <ExportExcelButton
+              name={docKindFilter === 'bonus' ? 'فواتير البونص' : 'سجل الفواتير والمرتجعات'}
+              rows={unifiedRecords}
+              tableColumns={tableColumns}
+              style={{ marginInlineStart: 0 }}
+            />
             <ColumnSettings
               choices={columns.map((c: any) => ({
                 key: String(c.key ?? c.dataIndex ?? ''),
@@ -3155,170 +3320,71 @@ function couponsTotal(inv: any): number {
               order={invoiceCols.order}
               onMove={(k, d) => invoiceCols.move(k, d, columns.map((c) => String(c.key ?? (c as any).dataIndex ?? '')))}
             />
-            {/* جوّه `Space`، فالمسافة الافتراضية بتتشال — الـ`Space` بيباعد لوحده. */}
-            <ExportExcelButton
-              name={docKindFilter === 'bonus' ? 'فواتير البونص' : 'سجل الفواتير والمرتجعات'}
-              rows={unifiedRecords}
-              tableColumns={tableColumns}
-              style={{ marginInlineStart: 0 }}
-            />
-            <PrintOptionsMenu value={printOpts} onChange={setPrintOpts}
-                  hideKeys={['logo', 'companyName']} />
-            <Button type="primary" icon={<PlusOutlined />}
-              style={{ fontWeight: 600 }}
-              // نفس تفضية «جديد» بالظبط. الزرار ده كان بيفتح الدورة على الحالة اللي
-              // سايبها المستند اللي قبله — ودي كانت أقصر طريق لكوبونات فاتورة غلط.
-              onClick={() => { resetDocument(); setNewStep('party'); }}>
-              تسجيل طلب بيع
-            </Button>
-          </Space>
-        )}
-      >
-        {/* --- Summary Statistics --- */}
-        <StatsRow gutter={[12, 12]} style={{ marginBottom: 16 }}>
-          <Col xs={12} md={6}>
-            <Card size="small" style={{ borderRadius: 8, borderColor: '#d9f7be', backgroundColor: '#f6ffed' }}>
-              <Statistic
-                title="إجمالي فواتير المبيعات"
-                value={money(summary.totalSalesNet)}
-                suffix="ج.م"
-                prefix={<Tag color="green">{summary.totalSalesCount} فاتورة</Tag>}
-                valueStyle={{ color: '#389e0d', fontWeight: 'bold' }}
-              />
-            </Card>
-          </Col>
-          <Col xs={12} md={6}>
-            <Card size="small" style={{ borderRadius: 8, borderColor: '#ffd6e7', backgroundColor: '#fff0f6' }}>
-              <Statistic
-                title="إجمالي مرتجعات المبيعات"
-                value={money(summary.totalReturnsNet)}
-                suffix="ج.م"
-                prefix={<Tag color="magenta">{summary.totalReturnsCount} مرتجع</Tag>}
-                valueStyle={{ color: '#eb2f96', fontWeight: 'bold' }}
-              />
-            </Card>
-          </Col>
-          <Col xs={12} md={6}>
-            <Card size="small" style={{ borderRadius: 8, borderColor: '#91caff', backgroundColor: '#e6f4ff' }}>
-              <Statistic
-                title="صافي المبيعات الفعلي"
-                value={money(summary.netSales)}
-                suffix="ج.م"
-                valueStyle={{ color: '#0958d9', fontWeight: 'bold' }}
-              />
-            </Card>
-          </Col>
-          <Col xs={12} md={6}>
-            <Card size="small" style={{ borderRadius: 8, borderColor: '#ffa39e', backgroundColor: '#fff1f0' }}>
-              <Statistic
-                title="المتبقي آجل على العملاء"
-                value={money(summary.totalCredit)}
-                suffix="ج.م"
-                valueStyle={{ color: '#cf1322', fontWeight: 'bold' }}
-              />
-            </Card>
-          </Col>
-        </StatsRow>
+          </>)}
+        </Space>
+      </div>
 
-        {/* --- Filter Segmented Tabs --- */}
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, flexWrap: 'wrap', gap: 8 }}>
-          <Segmented
-            size="middle"
-            value={docKindFilter}
-            onChange={(v: any) => setDocKindFilter(v)}
-            options={[
-              // «الكل» = كل اللي الشرايح بتعرضه، والبونص منهم. الكروت فوق بتفضل على البيع بس.
-              { label: <span>الكل ({summary.totalSalesCount + summary.totalReturnsCount + summary.totalBonusCount})</span>, value: 'all' },
-              { label: <span style={{ color: '#389e0d', fontWeight: 600 }}>🟢 فواتير المبيعات ({summary.totalSalesCount})</span>, value: 'sale' },
-              { label: <span style={{ color: '#eb2f96', fontWeight: 600 }}>🔴 مرتجعات المبيعات ({summary.totalReturnsCount})</span>, value: 'return' },
-              { label: <span style={{ color: '#d48806', fontWeight: 600 }}>🎁 فواتير البونص ({summary.totalBonusCount})</span>, value: 'bonus' },
-              // النقدي اللي اتدفع مع الفاتورة + سندات القبض المستقلة (من النظام والتطبيق).
-              { label: <span style={{ color: '#0958d9', fontWeight: 600 }}>🧾 سندات القبض</span>, value: 'receipts' },
-            ]}
-          />
-          {/* قيمة البونص قبل خصم الـ١٠٠٪ بنفس الفلاتر — سطر مش كارت، عشان مايتقريش جنب
-            * «إجمالي فواتير المبيعات» كأنه بيع. */}
-          {docKindFilter === 'bonus' && (
-            <Tag color="gold" style={{ fontSize: 14, padding: '4px 10px', margin: 0 }}>
-              إجمالي البونص قبل الخصم: <b>{money(summary.totalBonusGross)} ج.م</b>
-              {' '}— {summary.totalBonusCount} فاتورة
-            </Tag>
-          )}
-        </div>
+      {/* --- البحث والفلاتر (من السيرفر، فبتغطي كل الفواتير) — سطر واحد --- */}
+      <div className="sl-filters">
+        <Input
+          className="sl-f-search"
+          allowClear
+          ref={listSearchRef}
+          value={search}
+          placeholder="بحث برقم المستند، الفاتورة أو العميل..."
+          prefix={<SearchOutlined />}
+          onChange={(e) => setSearch(e.target.value)}
+          onPressEnter={applySearch}
+          onBlur={applySearch}
+        />
+        <Select className="sl-f-customer" allowClear showSearch placeholder="جميع العملاء (جهة التعامل)"
+          value={filters.customer_id}
+          onChange={(v) => setFilter('customer_id', v)}
+          filterOption={searchFilter} filterSort={searchRank}
+          options={filterCustomerOptions} />
+        <Select className="sl-f-rep" allowClear showSearch placeholder="جميع المناديب"
+          value={filters.rep_id}
+          onChange={(v) => setFilter('rep_id', v)}
+          filterOption={searchFilter} filterSort={searchRank}
+          options={sortByName(reps, (r) => r.full_name)
+            .map((r) => ({ value: r.id, label: r.full_name }))} />
+        <Select className="sl-f-family" allowClear placeholder="نوع الفاتورة"
+          value={filters.family}
+          onChange={(v) => setFilter('family', v)}
+          options={FAMILY_OPTIONS} />
+        {/* البيان — بيتدوّر عليه في السيرفر (جزء من الكلام)، على الفواتير والمرتجعات. */}
+        <Input.Search className="sl-f-statement" allowClear placeholder="البيان..." value={stmtText}
+          onChange={(e) => { setStmtText(e.target.value); if (!e.target.value) setFilter('statement', undefined); }}
+          onSearch={(v) => setFilter('statement', v.trim() || undefined)} />
+        <DateRangeFilter
+          className="sl-f-dates"
+          value={filters.date_from && filters.date_to
+            ? [dayjs(filters.date_from), dayjs(filters.date_to)] : null}
+          onChange={(v) => {
+            const next = {
+              ...filters,
+              date_from: v?.[0] ? v[0].format('YYYY-MM-DD') : undefined,
+              date_to: v?.[1] ? v[1].format('YYYY-MM-DD') : undefined,
+            };
+            setFilters(next);
+            fetchInvoices(next);
+          }}
+        />
+        <Select className="sl-f-payment" allowClear placeholder="طريقة السداد"
+          value={filters.payment}
+          onChange={(v) => setFilter('payment', v)}
+          options={[
+            { value: 'cash', label: 'نقدي بالكامل' },
+            { value: 'credit', label: 'آجل بالكامل' },
+            { value: 'partial', label: 'جزئي (نقدي + آجل)' },
+          ]} />
+        <Button className="sl-f-clear" icon={<ClearOutlined />} onClick={resetFilters}>مسح</Button>
+      </div>
 
-        {/* --- Search + filters (server-side, so they cover every invoice) --- */}
-        <Row gutter={[8, 8]} style={{ marginBottom: 12 }}>
-          <Col xs={24} sm={12} md={5}>
-            <Input
-              allowClear
-              ref={listSearchRef}
-              value={search}
-              placeholder="بحث برقم المستند أو الفاتورة"
-              prefix={<SearchOutlined />}
-              onChange={(e) => setSearch(e.target.value)}
-              onPressEnter={applySearch}
-              onBlur={applySearch}
-            />
-          </Col>
-          <Col xs={24} sm={12} md={4}>
-            <Select allowClear showSearch style={{ width: '100%' }} placeholder="العميل"
-              value={filters.customer_id}
-              onChange={(v) => setFilter('customer_id', v)}
-              filterOption={searchFilter} filterSort={searchRank}
-              options={filterCustomerOptions} />
-          </Col>
-          <Col xs={12} sm={12} md={3}>
-            <Select allowClear showSearch style={{ width: '100%' }} placeholder="المندوب"
-              value={filters.rep_id}
-              onChange={(v) => setFilter('rep_id', v)}
-              filterOption={searchFilter} filterSort={searchRank}
-              options={sortByName(reps, (r) => r.full_name)
-                .map((r) => ({ value: r.id, label: r.full_name }))} />
-          </Col>
-          <Col xs={12} sm={12} md={3}>
-            <Select allowClear style={{ width: '100%' }} placeholder="نوع الفاتورة"
-              value={filters.family}
-              onChange={(v) => setFilter('family', v)}
-              options={FAMILY_OPTIONS} />
-          </Col>
-          {/* البيان — بيتدوّر عليه في السيرفر (جزء من الكلام)، على الفواتير والمرتجعات. */}
-          <Col xs={12} sm={12} md={3}>
-            <Input.Search allowClear placeholder="البيان" value={stmtText}
-              onChange={(e) => { setStmtText(e.target.value); if (!e.target.value) setFilter('statement', undefined); }}
-              onSearch={(v) => setFilter('statement', v.trim() || undefined)} />
-          </Col>
-          <Col xs={12} sm={12} md={4}>
-            <DateRangeFilter
-              value={filters.date_from && filters.date_to
-                ? [dayjs(filters.date_from), dayjs(filters.date_to)] : null}
-              onChange={(v) => {
-                const next = {
-                  ...filters,
-                  date_from: v?.[0] ? v[0].format('YYYY-MM-DD') : undefined,
-                  date_to: v?.[1] ? v[1].format('YYYY-MM-DD') : undefined,
-                };
-                setFilters(next);
-                fetchInvoices(next);
-              }}
-            />
-          </Col>
-          <Col xs={12} sm={12} md={3}>
-            <Select allowClear style={{ width: '100%' }} placeholder="طريقة السداد"
-              value={filters.payment}
-              onChange={(v) => setFilter('payment', v)}
-              options={[
-                { value: 'cash', label: 'نقدي بالكامل' },
-                { value: 'credit', label: 'آجل بالكامل' },
-                { value: 'partial', label: 'جزئي (نقدي + آجل)' },
-              ]} />
-          </Col>
-          <Col xs={24} sm={24} md={2}>
-            <Button icon={<ClearOutlined />} onClick={resetFilters} block>مسح</Button>
-          </Col>
-        </Row>
-
+      <div className="sl-body">
         {docKindFilter === 'receipts' ? (
-          <SalesReceiptsPanel customerId={filters.customer_id} repId={filters.rep_id}
+          <SalesReceiptsPanel key={receiptsKey}
+            customerId={filters.customer_id} repId={filters.rep_id}
             dateFrom={filters.date_from} dateTo={filters.date_to}
             onOpenInvoice={(id) => openDetail({ id } as InvoiceRecord)}
             onOpenVoucher={() => navigate('/vouchers?tab=receipt')} />
@@ -3326,6 +3392,7 @@ function couponsTotal(inv: any): number {
         <FocusedRowsBanner focus={focus} total={unifiedRecords.length} noun="فاتورة"
                            shown={focusedRecords.length} />
         <Table
+          className="sl-table"
           // المسودّات فوق، وبرّه `focusedRecords` عن قصد: ملخّص المبيعات فوق بيتبني
           // من المستندات، والمسودّة مش مستند — مايصحّش تتحسب في «صافي المبيعات».
           dataSource={[
@@ -3355,10 +3422,24 @@ function couponsTotal(inv: any): number {
           // عرض — الفاضي كله كان بينزل عليه لوحده فيطلع شريط أبيض في نص الجدول.
           rowKey="rowKey"
           rowClassName={(r: any) => (r.__isDraft ? 'row-draft' : '')}
+          // المسودّة مش مستند — مالهاش علامة.
+          rowSelection={{
+            selectedRowKeys: selectedKeys,
+            onChange: (keys) => setSelectedKeys(keys),
+            getCheckboxProps: (r: any) => ({ disabled: Boolean(r.__isDraft) }),
+            columnWidth: 36,
+          }}
           loading={loading}
-          pagination={{ defaultPageSize: TABLE_PAGE_SIZE, showSizeChanger: true, showTotal: (t) => `الإجمالي: ${t}`, pageSizeOptions: PAGE_SIZE_OPTIONS }}
+          // الترقيم شمال، والإجماليات يمين في نفس السطر (`showTotal` + CSS تحت `.sales-log`).
+          pagination={{
+            defaultPageSize: TABLE_PAGE_SIZE, showSizeChanger: true, pageSizeOptions: PAGE_SIZE_OPTIONS,
+            locale: { items_per_page: '' },
+            showTotal: () => footer,
+          }}
           onRow={(record: any) => ({
-            onClick: () => {
+            onClick: (e) => {
+              // العلامة مش فتح — الضغطة على خانتها بتعلّم وبس.
+              if ((e.target as HTMLElement).closest?.('.ant-table-selection-column')) return;
               // المسودّة مالهاش مستند يتفتح — الضغط بيستكملها.
               if (record.__isDraft) { resumeDraft(record.__draft); return; }
               if (record.doc_type === 'sale') {
@@ -3371,9 +3452,16 @@ function couponsTotal(inv: any): number {
           })}
         />
         </>)}
-      </Card>
+      </div>
 
-
+      <ReceiptModal
+        open={receiptOpen} onCancel={() => setReceiptOpen(false)}
+        form={receiptForm} posting={receiptPosting} submit={submitReceipt}
+        customers={customers} treasuries={treasuries} methodOptions={paymentMethodOptions}
+        families={receiptFamilies} setFamilies={setReceiptFamilies}
+        target={receiptTarget} setTarget={setReceiptTarget}
+        reps={reps as any}
+      />
 
       {/*
         * باب واحد بيفتح الفاتورة — الفرع والتاريخ والتصنيف والبحث والقايمة في نافذة واحدة.

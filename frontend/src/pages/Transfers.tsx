@@ -6,8 +6,8 @@ import { PAGE_SIZE as TABLE_PAGE_SIZE, PAGE_SIZE_OPTIONS }
   from '../utils/pagination';
 import { searchFilter, searchRank, sortByName } from '../utils/arabicSort';
 import {
-  Alert, Button, Card, Col, DatePicker, Descriptions, Divider, Empty, Form, Input, Modal, Row,
-  Select, Space, Tag, Tooltip, Typography, message,
+  Alert, Button, Card, Col, DatePicker, Descriptions, Empty, Form, Input, Modal, Row,
+  Select, Space, Tag, Tooltip, message,
 } from 'antd';
 // كل جدول هنا بفلتر على كل عمود — شوف `FilterTable`.
 import { FilterTable as Table } from '../components/FilterTable';
@@ -19,6 +19,7 @@ import {
   PlusOutlined, CheckCircleOutlined, RollbackOutlined, DeleteOutlined,
   ClearOutlined, ArrowLeftOutlined, ArrowRightOutlined, CloseCircleOutlined,
   FileSearchOutlined, EditOutlined, EyeOutlined, PrinterOutlined, ExclamationCircleOutlined,
+  CheckOutlined,
 } from '@ant-design/icons';
 import { useSearchParams } from 'react-router-dom';
 import { api } from '../api/client';
@@ -45,6 +46,8 @@ import { QTY_DATA_ATTR, flashExistingItem } from '../utils/duplicateItem';
 import StatsRow from '../components/StatsRow';
 import { qty } from '../utils/money';
 import { useLiveRefresh } from '../utils/live';
+import SummaryTile from '../components/saleDoc/SummaryTile';
+import './docs.extra.css';
 // حجم الصفحة. الكشف كله بقى 1437 تحويل بـ17 ألف سطر بعد نقل داتا a5، وتحميلهم
 // كلهم كان بياخد 7.6 ثانية على السيرفر نفسه قبل ما الشبكة تشوف حاجة.
 const PAGE_SIZE = 300;
@@ -1453,35 +1456,35 @@ export default function Transfers() {
   const stockOfCategory = sourceStock.filter((s) => (
     activeCategory === NO_CATEGORY ? !s.category : s.category === activeCategory));
   const screen = createVisible ? (
-      <div>
-        <Card title={(
-          <Space>
-            <Button type="text" icon={<ArrowRightOutlined />} onClick={closeCreate}>رجوع</Button>
-            <Typography.Text strong style={{ fontSize: 16 }}>
+      // **شكل فاتورة البيع الجديد** (٢٠٢٦-١٠-٠١): كروت بيضا على رمادي — الترويسة والأدوات،
+      // خانات الإذن، الأصناف، وتحت الملخص والأزرار مثبّتين. الشكل بس: نفس الحالة والأوامر.
+      <div className="sale-doc">
+        <div className="sale-card sale-head">
+          <div className="sale-head-row">
+            <Button size="small" icon={<ArrowRightOutlined />} onClick={closeCreate}>رجوع</Button>
+            <span className="sale-title">
               {editing
-                ? `إذن تحويل ${editing.document_number}`
+                ? <>إذن تحويل <b dir="ltr">{editing.document_number}</b></>
                 : 'طلب تحويل مخزني جديد'}
-            </Typography.Text>
+            </span>
             {editing && (
-              <Tag color={(STATUS_TAGS[editing.status] || {}).color}>
+              <Tag color={(STATUS_TAGS[editing.status] || {}).color} style={{ marginInlineEnd: 0 }}>
                 {(STATUS_TAGS[editing.status] || {}).text || editing.status}
               </Tag>
             )}
             {/* المستند الجديد: «مسودة» — المحفوظ بيقول حالته الحقيقية في الشارة اللي قبلها. */}
-            {!editing && <Tag color="blue">مسودة</Tag>}
-          </Space>
-        )}
-        // الأدوات و«الأعمدة» في سطر العنوان على الشمال — زي فاتورة البيع (٢٠٢٦-١٠-٠١).
-        styles={{ title: { whiteSpace: 'normal', overflow: 'visible' } }}
-        extra={(
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap',
-                        fontWeight: 400 }}>
-            <DocumentToolbar actions={transferToolbar()} inline />
-            {editing ? docCols.control : draftCols.control}
+            {!editing && <Tag color="blue" style={{ marginInlineEnd: 0 }}>مسودة</Tag>}
+            {/* الأدوات و«الأعمدة» في نفس سطر العنوان على الشمال — زي فاتورة البيع. */}
+            <div className="sale-toolbar-row">
+              <DocumentToolbar actions={transferToolbar()} variant="buttons" />
+              {editing ? docCols.control : draftCols.control}
+            </div>
           </div>
-        )}>
+        </div>
+
+        <div className="sale-form">
           {editing && editing.status === 'pending' && !viewOnly && (
-            <Alert type="info" showIcon style={{ marginBottom: 12 }}
+            <Alert type="info" showIcon
               message={canApprove
                 ? 'هذا الإذن ما زال بانتظار الاعتماد'
                 : 'هذا الإذن ما زال بانتظار اعتماد مدير المخزن'}
@@ -1490,7 +1493,7 @@ export default function Transfers() {
                 : 'يمكنك عرضه ومراجعته — أما الاعتماد فمن صلاحية مدير المخزن.'} />
           )}
           {editing && editing.status !== 'pending' && !viewOnly && (
-            <Alert type="warning" showIcon style={{ marginBottom: 12 }}
+            <Alert type="warning" showIcon
               message={{
                 approved: 'الإذن ده اتعتمد واتشحن',
                 rejected: 'الإذن ده اترفض',
@@ -1513,10 +1516,11 @@ export default function Transfers() {
           {/* **الترويسة في سطرين** — زي فاتورة البيع (٢٠٢٦-١٠-٠١): رقم المستند ← التاريخ ←
               من ← إلى، وتحتهم البيان والملاحظات. الكلام بيتحفظ لما المؤشر يسيب الخانة والإذن
               لسه تحت الاعتماد، وبعد الاعتماد بيتقفل زي التاريخ والمصدر. */}
+          <div className="sale-card sale-fields">
           <Form layout="vertical" size="small" className="doc-form" component={false}>
-          <Row gutter={16}>
+          <Row gutter={12}>
             <Col xs={12} md={4}>
-              <Form.Item label="رقم المستند" style={{ marginBottom: 8 }}>
+              <Form.Item label="رقم المستند">
                 <Input placeholder="رقم الإذن الورقي" disabled={textsLocked}
                   maxLength={40}
                   value={externalDocNumber} onChange={(e) => setExternalDocNumber(e.target.value)}
@@ -1524,14 +1528,15 @@ export default function Transfers() {
               </Form.Item>
             </Col>
             <Col xs={12} md={4}>
-              <Form.Item label="التاريخ" style={{ marginBottom: 8 }}>
+              <Form.Item label="التاريخ">
                 <DatePicker style={{ width: '100%' }}
                   disabled={!!editing || viewOnly}
                   value={transferDate} onChange={(v) => setTransferDate(v || dayjs())} format="YYYY-MM-DD" allowClear={false} />
               </Form.Item>
             </Col>
-            <Col xs={24} md={8}>
-              <Form.Item label="من (المصدر)" style={{ marginBottom: 8 }}>
+            {/* المصدر والوجهة هما الخانتين الأساسيتين — بإطار أخضر زي خانة العميل. */}
+            <Col xs={24} md={8} className="sale-party">
+              <Form.Item label="من (المصدر)">
                 <Select showSearch style={{ width: '100%' }}
                   placeholder="اختر المخزن أو العهدة المصدر"
                   disabled={!!editing || viewOnly}
@@ -1539,8 +1544,8 @@ export default function Transfers() {
                   options={locationOptions} filterOption={searchFilter} filterSort={searchRank}/>
               </Form.Item>
             </Col>
-            <Col xs={24} md={8}>
-              <Form.Item label="إلى (الوجهة)" style={{ marginBottom: 8 }}>
+            <Col xs={24} md={8} className="sale-party">
+              <Form.Item label="إلى (الوجهة)">
                 <Select showSearch style={{ width: '100%' }}
                   placeholder="اختر المخزن أو العهدة الوجهة"
                   disabled={!!editing || viewOnly}
@@ -1549,14 +1554,14 @@ export default function Transfers() {
               </Form.Item>
             </Col>
             <Col xs={24} md={12}>
-              <Form.Item label="البيان" style={{ marginBottom: 8 }}>
+              <Form.Item label="البيان">
                 <Input placeholder="اختياري" disabled={textsLocked} maxLength={200}
                   value={statement1} onChange={(e) => setStatement1(e.target.value)}
                   onBlur={() => saveEditingText('statement1', statement1)} />
               </Form.Item>
             </Col>
             <Col xs={24} md={12}>
-              <Form.Item label="ملاحظات" style={{ marginBottom: 8 }}>
+              <Form.Item label="ملاحظات">
                 <Input placeholder="اختياري" disabled={textsLocked} maxLength={500}
                   value={docNotes} onChange={(e) => setDocNotes(e.target.value)}
                   onBlur={() => saveEditingText('notes', docNotes)} />
@@ -1566,23 +1571,42 @@ export default function Transfers() {
           </Form>
 
           {source && dest && sameLocation && (
-            <Alert style={{ marginTop: 12 }} type="error" showIcon
+            <Alert style={{ marginTop: 4 }} type="error" showIcon
               message="المصدر والوجهة نفس الموقع — اختر وجهة مختلفة" />
           )}
           {source && dest && !sameLocation && !route && (
-            <Alert style={{ marginTop: 12 }} type="warning" showIcon
+            <Alert style={{ marginTop: 4 }} type="warning" showIcon
               message="التحويل من عهدة مندوب إلى مخزن غير متاح من هذه الشاشة"
               description="استخدم شاشة تسليم عهدة المندوب لإرجاع البضاعة إلى المخزن." />
           )}
           {route && !sameLocation && (
-            <Alert style={{ marginTop: 12 }} type="success" showIcon
+            <Alert style={{ marginTop: 4 }} type="success" showIcon
               message={`نوع التحويل: ${ROUTE_LABELS[route]}`} />
           )}
+          </div>
+
+          <div className="sale-card sale-lines">
+          {/* شريط الأصناف: اسم القسم وعدد البنود والمسار يمين. */}
+          <div className="sale-items-bar">
+            <div className="sale-items-info">
+              <b style={{ color: '#0f172a', fontSize: 13 }}>
+                {editing ? 'أصناف الإذن' : 'الفئة والأصناف'}
+              </b>
+              <span>
+                عدد البنود الحالية: <b style={{ color: '#0f172a' }}>
+                  {editing ? docLines(editing).length : lines.length}</b> أصناف
+              </span>
+              {source && dest && route && !sameLocation && (
+                <span>
+                  {locationName(parseLoc(source).kind, parseLoc(source).id)}
+                  {' ← '}
+                  {locationName(parseLoc(dest).kind, parseLoc(dest).id)}
+                </span>
+              )}
+            </div>
+          </div>
 
           {/* 2) الفئة ثم 3) الأصناف */}
-          <Divider orientation="right" style={{ fontWeight: 700, margin: '6px 0' }}>
-            {editing ? 'أصناف الإذن' : 'الفئة والأصناف'}
-          </Divider>
           {editing ? null : !source ? (
             <Empty description="اختر المصدر أولاً لعرض الأصناف المتاحة فيه" style={{ margin: '12px 0' }} />
           ) : stockLoading ? (
@@ -1616,98 +1640,102 @@ export default function Transfers() {
               dropping an item IS the edit, and it is what an approver does while deciding. A
               closed permit is read-only — approval already moved goods across two warehouses. */}
           {editing && (
-            <Table
-              style={{ marginTop: 16 }} size="small" rowKey="id" pagination={false}
-              dataSource={docLines(editing)}
-              locale={{ emptyText: 'لا توجد أصناف على الإذن — ارفضه بدلاً من اعتماده' }}
-              columns={docCols.columns}
-            />
+            <div className="sale-grid-wrap">
+              <Table
+                className="sale-grid" size="small" rowKey="id" pagination={false}
+                dataSource={docLines(editing)}
+                locale={{ emptyText: 'لا توجد أصناف على الإذن — ارفضه بدلاً من اعتماده' }}
+                columns={docCols.columns}
+              />
+            </div>
           )}
 
           {/* Lines */}
           {!editing && lines.length > 0 && (
-            <Table autoFilters={false}
-              style={{ marginTop: 16 }} size="small" rowKey="key" pagination={false}
-              dataSource={lines}
-              columns={draftCols.columns}
-            />
+            <div className="sale-grid-wrap" style={{ marginTop: 10 }}>
+              <Table autoFilters={false}
+                className="sale-grid" size="small" rowKey="key" pagination={false}
+                dataSource={lines}
+                columns={draftCols.columns}
+              />
+            </div>
+          )}
+          </div>
+
+          {/* صور الورقة — إذن التحويل الموقّع عليه وإيصال الاستلام. المكوّن بيختفي على الإذن
+              الجديد لحد ما يترحّل وياخد رقم يتعلّق عليه — فالكارت كمان. */}
+          {editing && (
+            <div className="sale-card sale-notes">
+              <div className="sale-attach">
+                <DocumentAttachments docType="stock_transfer" docId={editing.id} title="مرفقات" />
+              </div>
+            </div>
           )}
 
-          {/* صور الورقة — إذن التحويل الموقّع عليه وإيصال الاستلام. `editing?.id`
-              بيبقى `undefined` على الإذن الجديد، والمكوّن بيختفي لحد ما يترحّل
-              وياخد رقم يتعلّق عليه. */}
-          <DocumentAttachments docType="stock_transfer" docId={editing?.id} />
-
-          <div style={{
-            marginTop: 16, padding: 16, borderRadius: 10,
-            background: '#f6faf3', border: '1px solid #e6efe3',
-            display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16,
-            flexWrap: 'wrap',
-          }}>
-            <Space size={32} wrap>
-              <span>
-                <span style={{ color: '#6b6b6b', fontSize: 12 }}>عدد الأصناف: </span>
-                <b>{editing ? docLines(editing).length : lines.length}</b>
-              </span>
-              <span>
-                <span style={{ color: '#6b6b6b', fontSize: 12 }}>إجمالي الكميات: </span>
-                <b style={{ color: '#6AB42D', fontSize: 18 }}>
-                  {qty(editing
-                    ? docLines(editing).reduce(
-                      (t: number, l: any) => t + Number(l.quantity || 0), 0)
-                    : totalUnits)}
-                </b>
-              </span>
-              {source && dest && route && !sameLocation && (
-                <span style={{ fontSize: 13 }}>
-                  {locationName(parseLoc(source).kind, parseLoc(source).id)}
-                  {' ← '}
-                  {locationName(parseLoc(dest).kind, parseLoc(dest).id)}
-                </span>
-              )}
-            </Space>
-            <Space>
-              {viewOnly ? (
-                <Button size="large" onClick={closeCreate}>إغلاق</Button>
-              ) : editing ? (
-                <>
-                  {editing.status === 'pending' && canApprove && (
-                    <>
-                      <Button type="primary" size="large" icon={<CheckCircleOutlined />}
-                        disabled={(editing.lines?.length ?? 0) === 0 && !editing.item_id}
-                        onClick={() => handleApprove(editing.id)}>
-                        اعتماد الإذن
-                      </Button>
-                      <Button danger size="large" onClick={() => setRejectOpen(true)}>رفض</Button>
-                    </>
-                  )}
-                  {editing.status === 'approved' && canApprove && (
-                    <>
-                      <Button type="primary" size="large" icon={<EditOutlined />}
-                        onClick={() => editApproved(editing)}>
-                        تعديل الإذن
-                      </Button>
-                      <Button danger size="large" icon={<CloseCircleOutlined />}
-                        onClick={() => handleCancel(editing)}>إلغاء</Button>
-                      <Button danger size="large" icon={<DeleteOutlined />}
-                        onClick={() => handleDelete(editing)}>حذف</Button>
-                    </>
-                  )}
-                  <Button size="large" onClick={closeCreate}>إغلاق</Button>
-                </>
-              ) : (
-                <>
-                  <Button type="primary" size="large" loading={submitting}
-                    disabled={!route || sameLocation || lines.length === 0}
-                    onClick={handleSubmit}>
-                    إرسال طلب التحويل
-                  </Button>
-                  <Button size="large" onClick={closeCreate}>إلغاء</Button>
-                </>
-              )}
-            </Space>
+          {/* الملخص والأزرار مثبّتين في آخر الشاشة — زي فاتورة البيع. */}
+          <div className="sale-bottom">
+            <Row gutter={[10, 10]}>
+              <Col xs={24} lg={16}>
+                <div className="sale-tiles">
+                  <SummaryTile label="عدد الأصناف"
+                    value={editing ? docLines(editing).length : lines.length} />
+                  <SummaryTile label="إجمالي الكميات" color="#16a34a"
+                    value={qty(editing
+                      ? docLines(editing).reduce(
+                        (t: number, l: any) => t + Number(l.quantity || 0), 0)
+                      : totalUnits)} />
+                </div>
+              </Col>
+              <Col xs={24} lg={8}>
+                <div className="sale-card sale-pay">
+                  <div className="sale-pay-actions is-wrap">
+                    {viewOnly ? (
+                      <Button onClick={closeCreate}>إغلاق</Button>
+                    ) : editing ? (
+                      <>
+                        {editing.status === 'pending' && canApprove && (
+                          <>
+                            <Button type="primary" icon={<CheckCircleOutlined />}
+                              className="sale-green-btn sale-save-btn"
+                              disabled={(editing.lines?.length ?? 0) === 0 && !editing.item_id}
+                              onClick={() => handleApprove(editing.id)}>
+                              اعتماد الإذن
+                            </Button>
+                            <Button danger onClick={() => setRejectOpen(true)}>رفض</Button>
+                          </>
+                        )}
+                        {editing.status === 'approved' && canApprove && (
+                          <>
+                            <Button type="primary" icon={<EditOutlined />}
+                              className="sale-green-btn sale-save-btn"
+                              onClick={() => editApproved(editing)}>
+                              تعديل الإذن
+                            </Button>
+                            <Button danger icon={<CloseCircleOutlined />}
+                              onClick={() => handleCancel(editing)}>إلغاء</Button>
+                            <Button danger icon={<DeleteOutlined />}
+                              onClick={() => handleDelete(editing)}>حذف</Button>
+                          </>
+                        )}
+                        <Button onClick={closeCreate}>إغلاق</Button>
+                      </>
+                    ) : (
+                      <>
+                        <Button type="primary" loading={submitting}
+                          icon={<CheckOutlined />} className="sale-green-btn sale-save-btn"
+                          disabled={!route || sameLocation || lines.length === 0}
+                          onClick={handleSubmit}>
+                          إرسال طلب التحويل
+                        </Button>
+                        <Button onClick={closeCreate}>إلغاء</Button>
+                      </>
+                    )}
+                  </div>
+                </div>
+              </Col>
+            </Row>
           </div>
-        </Card>
+        </div>
       </div>
   ) : null;
 
@@ -1822,7 +1850,8 @@ export default function Transfers() {
   );
 
   return (
-    <div>
+    // صفحة الإذن بطول الشاشة — عشان الملخص والأزرار يقعدوا في آخرها (`.sale-doc` بـ`min-height:100%`).
+    <div style={screen ? { height: '100%' } : undefined}>
       {dialogs}
       {doors}
       {screen ?? list}

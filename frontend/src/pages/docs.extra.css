@@ -1,0 +1,61 @@
+/* ==========================================================================
+   باقي المستندات على شكل فاتورة البيع (٢٠٢٦-١٠-٠١) — التسعيرة وإذن التحويل وأذون المخزن.
+   الأساس كله من قواعد `.sale-doc` في `index.css`؛ هنا بس اللي ناقص لهم:
+   جداول antd (مش `entry-grid`) جوّه `.sale-grid` بنفس الترويسة الكحلي.
+   ========================================================================== */
+.sale-doc .sale-grid.ant-table-wrapper .ant-table {
+  border-radius: 0;
+}
+.sale-doc .sale-grid.ant-table-wrapper .ant-table-container,
+.sale-doc .sale-grid.ant-table-wrapper .ant-table-container table > thead > tr:first-child > *:first-child,
+.sale-doc .sale-grid.ant-table-wrapper .ant-table-container table > thead > tr:first-child > *:last-child {
+  border-radius: 0;
+}
+.sale-doc .sale-grid.ant-table-wrapper .ant-table-thead > tr > th {
+  background: #1e293b;
+  color: #fff;
+  font-weight: 700;
+  border-bottom: none;
+  border-inline-end-color: #334155;
+  padding: 7px 6px;
+  font-size: 12px;
+}
+/* الفاصل الرمادي بين أسامي الأعمدة مابيبانش على الكحلي */
+.sale-doc .sale-grid.ant-table-wrapper .ant-table-thead > tr > th::before {
+  background-color: #334155 !important;
+}
+.sale-doc .sale-grid.ant-table-wrapper .ant-table-thead > tr > th.ant-table-column-has-sorters:hover,
+.sale-doc .sale-grid.ant-table-wrapper .ant-table-thead > tr > th.ant-table-column-sort {
+  background: #334155;
+}
+.sale-doc .sale-grid.ant-table-wrapper .ant-table-thead .ant-table-filter-trigger,
+.sale-doc .sale-grid.ant-table-wrapper .ant-table-thead .ant-table-column-sorter {
+  color: #cbd5e1;
+}
+.sale-doc .sale-grid.ant-table-wrapper .ant-table-thead .ant-table-filter-trigger.active {
+  color: #86efac;
+}
+.sale-doc .sale-grid.ant-table-wrapper .ant-table-tbody > tr > td {
+  padding: 5px 6px;
+  border-bottom: 1px solid #f1f5f9;
+}
+.sale-doc .sale-grid.ant-table-wrapper .ant-table-tbody > tr:hover > td {
+  background: #f8fafc;
+}
+.sale-doc .sale-grid.ant-table-wrapper .ant-table-tbody > tr:focus-within > td {
+  background: #f0fdf4;
+}
+
+/* أزرار آخر الشاشة: المستند المحفوظ عنده أكتر من زرارين (اعتماد/رفض/عكس/طباعة) — بتلف */
+.sale-doc .sale-pay-actions.is-wrap {
+  flex-wrap: wrap;
+}
+.sale-doc .sale-pay-actions.is-wrap .ant-btn {
+  flex: 1 1 auto;
+}
+
+/* سطر الشرح الصغير تحت الأزرار */
+.sale-doc .sale-pay-note {
+  font-size: 11.5px;
+  color: #64748b;
+}

@@ -3,15 +3,15 @@ import DraftTag from '../components/DraftTag';
 import { PAGE_SIZE, PAGE_SIZE_OPTIONS } from '../utils/pagination';
 import { searchFilter, searchRank, sortByName } from '../utils/arabicSort';
 import {
-  Alert, Button, Card, Col, DatePicker, Descriptions, Divider, Empty, Form, Input, Modal, Row,
-  Select, Space, Table, Tag, Tooltip, Typography, message,
+  Alert, Button, Card, Col, DatePicker, Descriptions, Empty, Form, Input, Modal, Row,
+  Select, Space, Table, Tag, Tooltip, message,
 } from 'antd';
 import { Popconfirm } from '../components/noConfirm';
 import { InputNumber } from '../components/NumberInput';
 import { advanceFrom, useQtyFocus } from '../components/lineKeyboard';
 import {
-  ArrowLeftOutlined, ArrowRightOutlined, BankOutlined, DeleteOutlined, EditOutlined,
-  EyeOutlined, FileAddOutlined, PlusOutlined, PrinterOutlined, ReloadOutlined,
+  ArrowLeftOutlined, ArrowRightOutlined, BankOutlined, CheckOutlined, DeleteOutlined, EditOutlined,
+  EyeOutlined, FileAddOutlined, PhoneOutlined, PlusOutlined, PrinterOutlined, ReloadOutlined,
   SaveOutlined, SearchOutlined, UndoOutlined, ExclamationCircleOutlined,
 } from '@ant-design/icons';
 import { useNavigate, useSearchParams } from 'react-router-dom';
@@ -33,7 +33,7 @@ import PartyPickerModal from '../components/PartyPickerModal';
 import DocumentBar from '../components/DocumentBar';
 import LoadPeriodModal from '../components/LoadPeriodModal';
 import DocumentToolbar, { ToolbarAction } from '../components/DocumentToolbar';
-import TotalsLadder from '../components/TotalsLadder';
+import SummaryTile from '../components/saleDoc/SummaryTile';
 import DocumentAttachments from '../components/DocumentAttachments';
 import ProductPickerModal from '../components/ProductPickerModal';
 import { useTableKeyboard } from '../components/keyboard';
@@ -349,6 +349,7 @@ export default function PurchaseReturns() {
         key: 'new',
         label: 'جديد',
         shortcut: 'F2',
+        primary: true,
         icon: <FileAddOutlined />,
         onClick: () => openCreate(),
       },
@@ -484,6 +485,7 @@ export default function PurchaseReturns() {
         key: 'reload',
         label: 'تحميل',
         icon: <ReloadOutlined />,
+        // بيفتح أحدث مردود في الفترة على طول، و«السابق»/«التالى» بيمشوا جوّاها —
         // الشرح في `components/LoadPeriodModal`.
         onClick: () => setLoadPeriodOpen(true),
       },
@@ -1031,8 +1033,19 @@ export default function PurchaseReturns() {
    */
   const docOpen = creating;
 
+  /** جيران المردود المفتوح في نفس الكشف اللي «السابق»/«التالى» بيمشوا فيه — لأسهم العدّاد. */
+  const neighbourReturn = (step: number) => {
+    if (!viewing) return null;
+    const at = filter.filtered.findIndex((r) => r.id === viewing.id);
+    if (at < 0) return null;
+    return filter.filtered[at + step] ?? null;
+  };
+  const prevReturn = neighbourReturn(-1);
+  const nextReturn = neighbourReturn(1);
+
   return (
-    <div>
+    // المستند المفتوح بياخد خلفية فاتورة البيع الرمادي (`sale-doc`) — والكشف زي ما هو.
+    <div className={docOpen ? 'sale-doc' : undefined}>
       {!docOpen && (
       <Card
         title="مردودات الشراء"
@@ -1205,73 +1218,86 @@ export default function PurchaseReturns() {
         }}
         onCancel={() => { setNewStep(null); setPartyPickerOpen(false); }} />
 
-      {creating && (
-      <Card title={(
-        <Space>
-          <Button type="text" icon={<ArrowRightOutlined />}
-            onClick={() => { setCreating(false); setViewOnly(false); setEditingId(null); setViewing(null); }}>رجوع</Button>
-          <Typography.Text strong style={{ fontSize: 16 }}>
-            {viewing ? `مردود شراء ${viewing.document_number}` : (editingId ? 'تعديل مردود شراء' : 'تسجيل مردود شراء جديد')}
-          </Typography.Text>
-          <DocumentBar
-          listLabel="مردودات الشراء"
-          listTo="/purchase-returns"
-          title={viewing
-            ? (viewing.document_number || `#${viewing.id}`)
-            : (editingId ? `تعديل #${editingId}` : 'مردود شراء جديد')}
-          position={viewing
-            ? rows.findIndex((r: any) => r.id === viewing.id) + 1 || null : null}
-          total={viewing ? rows.length : null}
-          steps={[
-            { key: 'draft', label: 'مسودة' },
-            { key: 'posted', label: 'مرحّل', color: 'green' },
-            { key: 'reversed', label: 'معكوس', color: 'volcano' },
-          ]}
-          current={!viewing && !editingId ? 'draft'
-            : (viewing?.reversed_by ? 'reversed' : 'posted')}
-        />
-        </Space>
-      )}
-      // شريط الأدوات و«الأعمدة» في سطر العنوان على الشمال (٢٠٢٦-١٠-٠١) — زي فاتورة البيع.
-      styles={{ title: { whiteSpace: 'normal', overflow: 'visible' } }}
-      extra={(
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap',
-                      fontWeight: 400 }}>
-          <DocumentToolbar actions={returnToolbar()} inline />
-          {lineGrid.control}
-          <PrintOptionsMenu value={printOpts} onChange={setPrintOpts} />
-        </div>
-      )}>
-        <LoadPeriodModal
-          open={loadPeriodOpen} onCancel={() => setLoadPeriodOpen(false)}
-          title="تحميل مردودات شراء فترة" endpoint="/api/v1/purchases/returns"
-          columns={[
-            { title: 'المستند', key: 'document_number', width: 150 },
-            { title: 'التاريخ', key: 'return_date', width: 120 },
-            { title: 'المورد', key: 'supplier_name' },
-            { title: 'القيمة', key: 'value', width: 130, money: true },
-          ]}
-          onPick={(r) => openReturn(r)} />
+      {/* المكوّن مشترك مع البيع والشرا والمرتجع — الشرح في `components/LoadPeriodModal`.
+          `openNewest` بيفتح أحدث مردود في الفترة من غير كشف، و`onLoaded` بيحط الفترة في
+          كشف الشاشة (والفلاتر بتتصفّر) — فـ«السابق» و«التالى» يمشوا جوّه اللي اتحمّل. */}
+      <LoadPeriodModal
+        open={loadPeriodOpen} onCancel={() => setLoadPeriodOpen(false)}
+        title="تحميل مردودات شراء فترة" endpoint="/api/v1/purchases/returns"
+        columns={[
+          { title: 'المستند', key: 'document_number', width: 150 },
+          { title: 'التاريخ', key: 'return_date', width: 120 },
+          { title: 'المورد', key: 'supplier_name' },
+          { title: 'القيمة', key: 'value', width: 130, money: true },
+        ]}
+        onLoaded={(loaded) => { setRows(loaded); filter.reset(); }}
+        openNewest dateKey="return_date"
+        onPick={(r) => openReturn(r)} />
 
-        <Form layout="vertical" size="small" className="doc-form">
-          {/* الترويسة في سطرين (طلب العميل ٢٠٢٦-٠٩-٣٠). */}
-          {/* الترتيب زي فاتورة البيع (٢٠٢٦-١٠-٠١): رقم المستند ← التاريخ ← المورد وتليفونه. */}
-          <Row gutter={16}>
+      {creating && (
+      <>
+      {/* **شكل فاتورة البيع الجديد** (تصميم العميل ٢٠٢٦-١٠-٠١): كروت بيضا على خلفية رمادي —
+          الشكل بس اللي اتغيّر: نفس الخانات ونفس الحالة ونفس الأوامر والمفاتيح. */}
+      <div className="sale-card sale-head">
+        <div className="sale-head-row">
+          <Button size="small" icon={<ArrowRightOutlined />}
+            onClick={() => { setCreating(false); setViewOnly(false); setEditingId(null); setViewing(null); }}>رجوع</Button>
+          <span className="sale-title">
+            {viewing
+              ? <>مردود شراء رقم: <b dir="ltr">{viewing.document_number || ''}</b></>
+              : (editingId ? 'تعديل مردود شراء' : 'تسجيل مردود شراء جديد')}
+          </span>
+          {viewing && !viewOnly && (
+            <Tag color="gold" style={{ fontWeight: 600, marginInlineEnd: 0 }}>وضع التعديل</Tag>
+          )}
+          <span className="sale-pager">
+            <DocumentBar
+              listLabel="مردودات الشراء"
+              listTo="/purchase-returns"
+              title={viewing
+                ? (viewing.document_number || `#${viewing.id}`)
+                : (editingId ? `تعديل #${editingId}` : 'مردود شراء جديد')}
+              position={viewing
+                ? filter.filtered.findIndex((r) => r.id === viewing.id) + 1 || null : null}
+              total={viewing ? filter.filtered.length : null}
+              onPrev={prevReturn ? () => openReturn(prevReturn) : undefined}
+              onNext={nextReturn ? () => openReturn(nextReturn) : undefined}
+              steps={[
+                { key: 'draft', label: 'مسودة' },
+                { key: 'posted', label: 'مرحّل', color: 'green' },
+                { key: 'reversed', label: 'معكوس', color: 'volcano' },
+              ]}
+              current={!viewing && !editingId ? 'draft'
+                : (viewing?.reversed_by ? 'reversed' : 'posted')}
+              extra={(
+                <DatePicker size="small" allowClear={false} format="YYYY-MM-DD"
+                  disabled={viewOnly}
+                  value={returnDate} onChange={(v: Dayjs | null) => v && setReturnDate(v)} />
+              )}
+            />
+          </span>
+          {/* الأدوات و«الأعمدة» وخيارات الطباعة في نفس سطر العنوان على الشمال — زي فاتورة البيع. */}
+          <div className="sale-toolbar-row">
+            <DocumentToolbar actions={returnToolbar()} variant="buttons" />
+            {lineGrid.control}
+            <PrintOptionsMenu value={printOpts} onChange={setPrintOpts} />
+          </div>
+        </div>
+      </div>
+
+        <Form layout="vertical" size="small" className="doc-form sale-form" requiredMark={false}>
+          {/* الترتيب زي فاتورة البيع (٢٠٢٦-١٠-٠١): رقم المستند ← المورد وتليفونه ← الملاحظات،
+              وتحتهم البيانات. التاريخ مش هنا: هو في سطر العنوان فوق. */}
+          <div className="sale-card sale-fields">
+          <Row gutter={12}>
             <Col xs={12} md={4}>
-              <Form.Item label="رقم المستند" style={{ marginBottom: 8 }}>
+              <Form.Item label="رقم المستند">
                 <Input placeholder="رقم إشعار المورد" disabled={viewOnly} value={externalNumber}
                   onChange={(e) => setExternalNumber(e.target.value)} />
               </Form.Item>
             </Col>
-            <Col xs={12} md={4}>
-              <Form.Item label="التاريخ" style={{ marginBottom: 8 }}>
-                <DatePicker style={{ width: '100%' }} allowClear={false} format="YYYY-MM-DD"
-                  disabled={viewOnly}
-                  value={returnDate} onChange={(v: Dayjs | null) => v && setReturnDate(v)} />
-              </Form.Item>
-            </Col>
-            <Col xs={24} md={7}>
-              <Form.Item label="المورد" required style={{ marginBottom: 8 }}>
+            <Col xs={24} md={8} className="sale-party">
+              <Form.Item label={<>المورد <span style={{ color: '#ef4444' }}>*</span></>} required>
                 <Select open={false} showSearch={false} suffixIcon={<SearchOutlined />}
                   disabled={viewOnly}
                   placeholder="اضغط لاختيار المورد" value={supplierFilter ?? undefined}
@@ -1279,13 +1305,15 @@ export default function PurchaseReturns() {
                   options={suppliers} filterOption={searchFilter} filterSort={searchRank}/>
               </Form.Item>
             </Col>
-            <Col xs={12} md={3}>
-              <Form.Item label="الهاتف" style={{ marginBottom: 8 }}>
-                <Input readOnly disabled dir="ltr" placeholder="-" value={supplierPhone} />
+            <Col xs={12} md={4}>
+              <Form.Item label="الهاتف">
+                <Input readOnly disabled dir="ltr" placeholder="-"
+                  suffix={<PhoneOutlined style={{ color: '#94a3b8' }} />}
+                  value={supplierPhone} />
               </Form.Item>
             </Col>
-            <Col xs={24} md={6}>
-              <Form.Item label="ملاحظات" style={{ marginBottom: 8 }}>
+            <Col xs={24} md={8}>
+              <Form.Item label="ملاحظات">
                 <Input placeholder="سبب الرجوع (مكسورة، ناقصة، غلط في الصنف…)"
                   disabled={viewOnly}
                   value={notes} onChange={(e) => setNotes(e.target.value)} />
@@ -1293,7 +1321,7 @@ export default function PurchaseReturns() {
             </Col>
             {([1, 2, 3] as const).map((n) => (
               <Col xs={24} md={8} key={n}>
-                <Form.Item label={`بيان ${n}`} style={{ marginBottom: 8 }}>
+                <Form.Item label={`بيان ${n}`}>
                   <Input placeholder="اختياري" disabled={viewOnly} value={statements[n - 1]}
                     onChange={(e) => setStatements((prev) => {
                       const next = [...prev]; next[n - 1] = e.target.value; return next;
@@ -1302,105 +1330,126 @@ export default function PurchaseReturns() {
               </Col>
             ))}
           </Row>
-        </Form>
-
-        <Divider style={{ margin: '4px 0' }} />
-
-        {!viewOnly && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8, marginTop: 2 }}>
-            <Button data-shortcut="F2"
-              type="primary" danger icon={<PlusOutlined />}
-              style={{ flex: 1, height: 32, fontSize: 13, fontWeight: 700, borderRadius: 6 }}
-              onClick={() => setPickerOpen(true)}
-            >
-              إضافة صنف للمردود (F2)
-            </Button>
           </div>
-        )}
 
-        {returnLines.length === 0 ? (
-          <Empty description="اختر الأصناف المرتجعة" style={{ margin: '12px 0' }} />
-        ) : (
-          <div style={{ border: '1px solid #f3e0d8', borderRadius: 10, overflowX: 'auto' }}>
-            <table className="entry-grid">
-              <thead>{lineGrid.head}</thead>
-              <tbody>
-                {linesByCategory.map((group) => (
-                  <React.Fragment key={group.category ?? '__none__'}>
-                    {linesByCategory.length > 1 && (
-                      <tr style={{ background: '#fdf3ee', borderTop: '1.5px solid #cf4b1a', borderBottom: '1px solid #f3e0d8' }}>
-                        <td colSpan={20} style={{ padding: '1px 8px', background: '#fdf3ee' }}>
-                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                              <Tag color="volcano" style={{ fontWeight: 700, fontSize: 11, padding: '0 6px', borderRadius: 3, margin: 0 }}>
-                                {group.category ? (categoryLabels[group.category] || group.category) : 'بدون فئة'}
-                              </Tag>
-                              <span style={{ color: '#555', fontSize: 11, fontWeight: 600 }}>({group.items.length} صنف)</span>
+          <div className="sale-card sale-lines">
+          {/* شريط الأصناف: عدد البنود يمين، وزرار الإضافة شمال. */}
+          <div className="sale-items-bar">
+            <div className="sale-items-info">
+              <span>
+                عدد البنود الحالية: <b style={{ color: '#0f172a' }}>
+                  {returnLines.filter((l) => l.item_id).length}</b> أصناف
+              </span>
+            </div>
+            {!viewOnly && (
+              <Button data-shortcut="F2"
+                type="primary" className="sale-green-btn" icon={<PlusOutlined />}
+                style={{ fontWeight: 700 }}
+                onClick={() => setPickerOpen(true)}
+              >
+                إضافة صنف للمردود (F2)
+              </Button>
+            )}
+          </div>
+
+          {returnLines.length === 0 ? (
+            <Empty description="اختر الأصناف المرتجعة" style={{ margin: '12px 0' }} />
+          ) : (
+            <div className="sale-grid-wrap">
+              <table className="entry-grid sale-grid">
+                <thead>{lineGrid.head}</thead>
+                <tbody>
+                  {linesByCategory.map((group) => (
+                    <React.Fragment key={group.category ?? '__none__'}>
+                      {linesByCategory.length > 1 && (
+                        <tr className="sale-group-row">
+                          <td colSpan={20}>
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                <Tag color="success" style={{ fontWeight: 700, fontSize: 11, padding: '0 6px', borderRadius: 4, margin: 0 }}>
+                                  {group.category ? (categoryLabels[group.category] || group.category) : 'بدون فئة'}
+                                </Tag>
+                                <span style={{ color: '#64748b', fontSize: 11, fontWeight: 600 }}>({group.items.length} صنف)</span>
+                              </div>
+                              <span style={{ color: '#64748b', fontSize: 11, fontWeight: 600 }}>
+                                إجمالي الفئة: {money(group.items.reduce((s, l) => s + lineNet(l), 0))}
+                              </span>
                             </div>
-                            <span style={{ color: '#666', fontSize: 11, fontWeight: 600 }}>
-                              إجمالي الفئة: {money(group.items.reduce((s, l) => s + lineNet(l), 0))}
-                            </span>
-                          </div>
-                        </td>
-                      </tr>
-                    )}
-                    {group.items.map((line, idx) => (
-                      <tr key={line.key}>{lineGrid.row(line, idx)}</tr>
-                    ))}
-                  </React.Fragment>
-                ))}
-              </tbody>
-              <tfoot>{lineGrid.foot(returnLines)}</tfoot>
-            </table>
-          </div>
-        )}
-
-        {/* صور الورقة — إشعار المورد وإذن الخروج. `editingId` بيفضل `null` على المردود
-            الجديد، والمكوّن بيختفي لحد ما يترحّل وياخد رقم يتعلّق عليه. */}
-        <DocumentAttachments docType="purchase_return" docId={editingId} />
-
-        <Divider style={{ margin: '10px 0' }} />
-
-        <TotalsLadder
-          tone="sale"
-          inputs={(
-            <Form layout="vertical" size="small" className="doc-form">
-              <Form.Item label="خصم على المردود %" style={{ marginBottom: 0 }}
-                help="يُطبَّق على مجموع السطور بعد خصم كل سطر — كفاتورة الشراء">
-                <InputNumber style={{ width: '100%' }} min={0} max={99.99} step={0.5}
-                  disabled={viewOnly}
-                  addonAfter="%" value={variableDiscount}
-                  onChange={(v) => setVariableDiscount((v as number) || 0)} />
-              </Form.Item>
-            </Form>
+                          </td>
+                        </tr>
+                      )}
+                      {group.items.map((line, idx) => (
+                        <tr key={line.key}>{lineGrid.row(line, idx)}</tr>
+                      ))}
+                    </React.Fragment>
+                  ))}
+                </tbody>
+                <tfoot>{lineGrid.foot(returnLines)}</tfoot>
+              </table>
+            </div>
           )}
-          rows={[
-            { label: 'اجمالي قبل', value: money(grossTotal) },
-            { label: 'خصم المردود',
-              value: `\u2212 ${money(grossTotal - draftValue)}`,
-              color: '#cf1322', show: variableDiscount > 0.001 },
-            { label: 'خصم المردود %', value: `${variableDiscount}%`,
-              show: variableDiscount > 0.001 },
-            { label: 'قيمة المردود', value: money(draftValue),
-              big: true, rule: true, color: '#cf4b1a' },
-          ]}
-        />
-
-        {!viewOnly && (
-          <div style={{
-            marginTop: 16, padding: 16, borderRadius: 10,
-            background: '#fdf6f3', border: '1px solid #f3e0d8',
-            display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 8,
-          }}>
-            <Button type="primary" danger loading={saving} onClick={() => submit()}>
-              {editingId !== null ? 'حفظ التعديل' : 'ترحيل المردود'}
-            </Button>
-            <Button
-              onClick={() => { setCreating(false); setEditingId(null);
-                setSupplierFilter(null); }}>إلغاء</Button>
           </div>
-        )}
-      </Card>
+
+          {/* صور الورقة — إشعار المورد وإذن الخروج. `editingId` بيفضل `null` على المردود
+              الجديد، والمكوّن بيختفي لحد ما يترحّل وياخد رقم يتعلّق عليه. فوق الجزء المثبّت
+              عشان مايطوّلوش. */}
+          <div className="sale-card sale-notes">
+            <div className="sale-attach">
+              <DocumentAttachments docType="purchase_return" docId={editingId} title="مرفقات" />
+            </div>
+          </div>
+
+          {/* **الإجمالي والدفع مثبّتين في آخر الشاشة** — نفس أرقام سُلّم الإجماليات القديم بالظبط،
+              في مربعات زي فاتورة البيع. */}
+          <div className="sale-bottom">
+          <Row gutter={[10, 10]}>
+            <Col xs={24} lg={16}>
+              <div className="sale-tiles">
+                <SummaryTile label="اجمالي قبل" value={money(grossTotal)} sub="جنيه مصري" />
+                {variableDiscount > 0.001 && (
+                  <SummaryTile label={`خصم المردود (${variableDiscount}%)`}
+                    value={`− ${money(grossTotal - draftValue)}`} color="#dc2626" />
+                )}
+                <SummaryTile label="قيمة المردود" value={money(draftValue)} color="#16a34a"
+                  sub="بتنزل من حساب المورد" />
+              </div>
+            </Col>
+
+            <Col xs={24} lg={8}>
+              <div className="sale-card sale-pay">
+                <div className="sale-pay-inputs">
+                  <Form.Item label="خصم على المردود %" style={{ gridColumn: '1 / -1' }}
+                    help="يُطبَّق على مجموع السطور بعد خصم كل سطر — كفاتورة الشراء">
+                    <InputNumber style={{ width: '100%' }} min={0} max={99.99} step={0.5}
+                      disabled={viewOnly}
+                      addonAfter="%" value={variableDiscount}
+                      onChange={(v) => setVariableDiscount((v as number) || 0)} />
+                  </Form.Item>
+                </div>
+                <div className="sale-due is-clear">
+                  <div>
+                    <div className="sale-due-label">قيمة المردود</div>
+                    <div className="sale-due-sub">بتنزل من اللي علينا للمورد</div>
+                  </div>
+                  <div className="sale-due-value">{money(draftValue)} <small>ج.م</small></div>
+                </div>
+                {!viewOnly && (
+                  <div className="sale-pay-actions">
+                    <Button type="primary" loading={saving} onClick={() => submit()}
+                      icon={<CheckOutlined />} className="sale-green-btn sale-save-btn">
+                      {editingId !== null ? 'حفظ التعديل' : 'ترحيل المردود'} (F9)
+                    </Button>
+                    <Button
+                      onClick={() => { setCreating(false); setEditingId(null);
+                        setSupplierFilter(null); }}>إلغاء</Button>
+                  </div>
+                )}
+              </div>
+            </Col>
+          </Row>
+          </div>
+        </Form>
+      </>
       )}
     </div>
   );

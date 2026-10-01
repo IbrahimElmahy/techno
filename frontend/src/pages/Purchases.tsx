@@ -3,17 +3,17 @@ import DraftTag from '../components/DraftTag';
 import { PAGE_SIZE, PAGE_SIZE_OPTIONS } from '../utils/pagination';
 import { searchFilter, searchRank, sortByName } from '../utils/arabicSort';
 import {
-  Alert, Button, Card, Col, Descriptions, Divider, Empty, Form, Input, Modal, Result,
-  Row, Segmented, Select, Space, Table, Tag, Tooltip, Typography, message, DatePicker,
+  Alert, Button, Card, Col, Descriptions, Empty, Form, Input, Modal, Result,
+  Row, Segmented, Select, Space, Table, Tag, Tooltip, message, DatePicker,
 } from 'antd';
 import { Statistic } from '../components/Statistic';
 import { Popconfirm } from '../components/noConfirm';
 import { InputNumber } from '../components/NumberInput';
 import {
-  PlusOutlined, DeleteOutlined, FileDoneOutlined, EyeOutlined, RollbackOutlined,
+  PlusOutlined, DeleteOutlined, EyeOutlined, RollbackOutlined,
   PrinterOutlined, FileAddOutlined, EditOutlined, UndoOutlined, SaveOutlined,
   ArrowLeftOutlined, ArrowRightOutlined, SearchOutlined, BankOutlined, ReloadOutlined,
-  ExclamationCircleOutlined,
+  ExclamationCircleOutlined, CheckOutlined, PhoneOutlined, ShoppingCartOutlined,
 } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import { useDocRoute, type DocMode } from '../components/useDocRoute';
@@ -23,8 +23,8 @@ import CostCenterSplit from '../components/CostCenterSplit';
 import { api } from '../api/client';
 import { useTableColumns } from '../components/ColumnSettings';
 import { useEntryGrid, type EntryColumn } from '../components/EntryGrid';
-import TotalsLadder from '../components/TotalsLadder';
 import DocumentAttachments from '../components/DocumentAttachments';
+import SummaryTile from '../components/saleDoc/SummaryTile';
 import InvoiceDocument, { InvoiceDoc, invoiceFooter, printInvoice }
   from '../components/InvoiceDocument';
 import DocumentBar from '../components/DocumentBar';
@@ -875,6 +875,7 @@ export default function Purchases() {
         label: 'جديد',
         shortcut: 'F2',
         icon: <FileAddOutlined />,
+        primary: true,
         onClick: () => {
           form.resetFields();
           setPurchaseItems([
@@ -1022,7 +1023,8 @@ export default function Purchases() {
         icon: <ReloadOutlined />,
         // **«تحميل» بقى بيعمل حاجة تبان.** كان بيعيد تحميل المستند المفتوح أو
         // القوايم — يعني بيشتغل من غير ما يحصل حاجة، وده شكل الزرار المكسور.
-        // الشرح في `components/LoadPeriodModal`.
+        // دلوقتي بيحمّل فترة ويفتح أحدث فاتورة فيها على طول، و«السابق»/«التالى» بيمشوا
+        // جوّه الفترة دي (`openNewest` + `onLoaded`). الشرح في `components/LoadPeriodModal`.
         onClick: () => setLoadPeriodOpen(true),
       },
     ];
@@ -1620,74 +1622,75 @@ export default function Purchases() {
       </Card>
     </div>
   ) : (
-    <Card title={(
-      <Space>
-        <Button type="text" icon={<ArrowRightOutlined />}
-          onClick={() => closeCreate()}>رجوع</Button>
-        <Typography.Text strong style={{ fontSize: 16 }}>
-          {viewPurchase ? `فاتورة شراء ${viewPurchase.document_number}` : (editingId !== null ? 'تعديل فاتورة شراء' : 'فاتورة شراء جديدة')}
-        </Typography.Text>
-        <DatePicker
-          disabled={viewOnly}
-          value={purchaseDate} allowClear={false} format="YYYY-MM-DD"
-          onChange={(v: Dayjs | null) => setPurchaseDate(v || dayjs())}
-        />
-        <DocumentBar
-        listLabel="فواتير الشراء"
-        listTo="/purchases"
-        title={viewPurchase
-          ? (viewPurchase.document_number || `#${viewPurchase.id}`)
-          : (editingId ? `تعديل #${editingId}` : 'فاتورة شراء جديدة')}
-        position={viewPurchase
-          ? purchases.findIndex((r: any) => r.id === viewPurchase.id) + 1 || null : null}
-        total={viewPurchase ? purchases.length : null}
-        steps={[
-          { key: 'draft', label: 'مسودة' },
-          { key: 'posted', label: 'مرحّل', color: 'green' },
-          { key: 'reversed', label: 'معكوس', color: 'volcano' },
-        ]}
-        current={!viewPurchase && !editingId ? 'draft'
-          : ((viewPurchase as any)?.reversed_by ? 'reversed' : 'posted')}
-      />
-      </Space>
-    )}
-      // شريط الأدوات و«الأعمدة» في سطر العنوان على الشمال (٢٠٢٦-١٠-٠١) — زي فاتورة البيع.
-      styles={{ title: { whiteSpace: 'normal', overflow: 'visible' } }}
-      extra={(
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap',
-                      fontWeight: 400 }}>
-          <DocumentToolbar actions={purchaseToolbar()} inline />
-          {lineGrid.control}
-          <PrintOptionsMenu value={printOpts} onChange={setPrintOpts} />
+    // **شكل فاتورة البيع الجديد** (تصميم العميل ٢٠٢٦-١٠-٠١): كروت بيضا على خلفية رمادي —
+    // ترويسة وأدوات، خانات المستند، الأصناف، وتحت الدفع والملخص. الشكل بس اللي اتغيّر:
+    // نفس الخانات ونفس الحالة ونفس الأوامر والمفاتيح.
+    <div className="sale-doc">
+      <div className="sale-card sale-head">
+        <div className="sale-head-row">
+          <Button size="small" icon={<ArrowRightOutlined />}
+            onClick={() => closeCreate()}>رجوع</Button>
+          <span className="sale-title">
+            {viewPurchase
+              ? <>فاتورة شراء رقم: <b dir="ltr">{viewPurchase.document_number || ''}</b></>
+              : editingId !== null
+                ? `تعديل فاتورة شراء #${editingId}`
+                : 'تسجيل فاتورة شراء جديدة'}
+          </span>
+          {viewPurchase && !viewOnly && (
+            <Tag color="gold" style={{ fontWeight: 600, marginInlineEnd: 0 }}>وضع التعديل</Tag>
+          )}
+          <span className="sale-pager">
+            <DocumentBar
+              listLabel="فواتير الشراء"
+              listTo="/purchases"
+              title={viewPurchase
+                ? (viewPurchase.document_number || `#${viewPurchase.id}`)
+                : (editingId ? `تعديل #${editingId}` : 'فاتورة شراء جديدة')}
+              position={viewPurchase
+                ? purchases.findIndex((r: any) => r.id === viewPurchase.id) + 1 || null : null}
+              total={viewPurchase ? purchases.length : null}
+              steps={[
+                { key: 'draft', label: 'مسودة' },
+                { key: 'posted', label: 'مرحّل', color: 'green' },
+                { key: 'reversed', label: 'معكوس', color: 'volcano' },
+              ]}
+              current={!viewPurchase && !editingId ? 'draft'
+                : ((viewPurchase as any)?.reversed_by ? 'reversed' : 'posted')}
+              extra={(
+                <DatePicker size="small"
+                  disabled={viewOnly}
+                  value={purchaseDate} allowClear={false} format="YYYY-MM-DD"
+                  onChange={(v: Dayjs | null) => setPurchaseDate(v || dayjs())}
+                />
+              )}
+            />
+          </span>
+          {/* الأدوات و«الأعمدة» في نفس سطر العنوان على الشمال، وأكبر — زي فاتورة البيع. */}
+          <div className="sale-toolbar-row">
+            <DocumentToolbar actions={purchaseToolbar()} variant="buttons" />
+            {lineGrid.control}
+            <PrintOptionsMenu value={printOpts} onChange={setPrintOpts} />
+          </div>
         </div>
-      )}>
-      <LoadPeriodModal
-        open={loadPeriodOpen} onCancel={() => setLoadPeriodOpen(false)}
-        title="تحميل فواتير شراء فترة" endpoint="/api/v1/purchases"
-        columns={[
-          { title: 'المستند', key: 'document_number', width: 150 },
-          { title: 'التاريخ', key: 'purchase_date', width: 120 },
-          { title: 'المورد', key: 'supplier_name' },
-          { title: 'الإجمالي', key: 'total', width: 130, money: true },
-        ]}
-        onPick={(r) => openDetail(r)} />
-      <Form form={form} layout="vertical" size="small" className="doc-form"
+      </div>
+
+      <Form form={form} layout="vertical" size="small" className="doc-form sale-form"
         onValuesChange={() => setFormTick((n) => n + 1)}
         onFinish={handleSubmit} requiredMark={false}>
-          {/* **الترويسة في سطرين** (طلب العميل ٢٠٢٦-٠٩-٣٠: «واخدة نص صفحة»). التاريخ مش هنا —
-              هو في سطر العنوان فوق بنفس القيمة، كان مكتوب مرتين. */}
-          {/* الترتيب زي فاتورة البيع (٢٠٢٦-١٠-٠١): رقم المستند ← المورد وتليفونه ← المخزن. */}
-          <Row gutter={16}>
+          {/* الترتيب زي فاتورة البيع (٢٠٢٦-١٠-٠١): رقم المستند ← المورد وتليفونه ← المخزن.
+              التاريخ مش هنا — هو في سطر العنوان فوق بنفس القيمة، كان مكتوب مرتين. */}
+          <div className="sale-card sale-fields">
+          <Row gutter={12}>
             <Col xs={12} md={4}>
-              <Form.Item name="external_document_number" label="رقم المستند"
-                style={{ marginBottom: 8 }}>
+              <Form.Item name="external_document_number" label="رقم المستند">
                 <Input placeholder="رقم فاتورة المورد" disabled={viewOnly} />
               </Form.Item>
             </Col>
-            <Col xs={24} md={7}>
-              <Form.Item name="supplier_id" label="المورد"
-                rules={[{ required: true, message: 'يرجى اختيار المورد!' }]}
-                style={{ marginBottom: 8 }}>
+            <Col xs={24} md={7} className="sale-party">
+              <Form.Item name="supplier_id"
+                label={<>المورد <span style={{ color: '#ef4444' }}>*</span></>}
+                rules={[{ required: true, message: 'يرجى اختيار المورد!' }]}>
                 <Select open={false} showSearch={false} suffixIcon={<SearchOutlined />}
                   disabled={viewOnly}
                   placeholder="اضغط لاختيار المورد"
@@ -1696,14 +1699,15 @@ export default function Purchases() {
                     value: sp.id, label: sp.code ? `${sp.name} (${sp.code})` : sp.name }))} filterOption={searchFilter} filterSort={searchRank}/>
               </Form.Item>
             </Col>
-            <Col xs={12} md={3}>
-              <Form.Item label="الهاتف" style={{ marginBottom: 8 }}>
+            <Col xs={12} md={4}>
+              <Form.Item label="الهاتف">
                 <Input readOnly disabled dir="ltr" placeholder="-"
+                  suffix={<PhoneOutlined style={{ color: '#94a3b8' }} />}
                   value={(suppliers.find((sp) => sp.id === watchedSupplierId) as any)?.phone || ''} />
               </Form.Item>
             </Col>
             <Col xs={12} md={5}>
-              <Form.Item label="المخزن" style={{ marginBottom: 8 }}>
+              <Form.Item label="المخزن">
                 <Select showSearch
                   disabled={viewOnly}
                   placeholder="اختر المخزن الافتراضي"
@@ -1715,147 +1719,188 @@ export default function Purchases() {
                   }))} filterOption={searchFilter} filterSort={searchRank} />
               </Form.Item>
             </Col>
-            <Col xs={12} md={5}>
-              <Form.Item name="notes" label="ملاحظات" style={{ marginBottom: 8 }}>
+            <Col xs={12} md={4}>
+              <Form.Item name="notes" label="ملاحظات">
                 <Input placeholder="اختياري" disabled={viewOnly} />
               </Form.Item>
             </Col>
-            <Col xs={12} md={6}>
-              <Form.Item label="مركز التكلفة" style={{ marginBottom: 8 }}>
+          </Row>
+
+          <Row gutter={12}>
+            <Col xs={24} md={6}>
+              <Form.Item label="مركز التكلفة">
                 <Space.Compact style={{ width: '100%' }}>
                   <Form.Item name="cost_center_id" noStyle>
                     <CostCenterField />
                   </Form.Item>
                   <Form.Item name="cost_center_distribution" noStyle>
-                    <CostCenterSplit size="middle" disabled={viewOnly} />
+                    <CostCenterSplit size="small" disabled={viewOnly} />
                   </Form.Item>
                 </Space.Compact>
               </Form.Item>
             </Col>
             {([1, 2, 3] as const).map((n) => (
               <Col xs={24} md={6} key={n}>
-                <Form.Item name={`statement${n}`} label={`بيان ${n}`}
-                  style={{ marginBottom: 8 }}>
+                <Form.Item name={`statement${n}`} label={`بيان ${n}`}>
                   <Input placeholder="اختياري" disabled={viewOnly} />
                 </Form.Item>
               </Col>
             ))}
           </Row>
+          </div>
 
-          <Divider style={{ margin: '4px 0' }} />
+          <div className="sale-card sale-lines">
+          {/* شريط الأصناف: عدد البنود يمين، وزرار الإضافة شمال. */}
+          <div className="sale-items-bar">
+            <div className="sale-items-info">
+              <span>
+                عدد البنود الحالية: <b style={{ color: '#0f172a' }}>
+                  {purchaseItems.filter((l) => l.item_id !== null).length}</b> أصناف
+              </span>
+            </div>
+            {!viewOnly && (
+              <Button data-shortcut="F2"
+                type="primary" className="sale-green-btn" icon={<ShoppingCartOutlined />}
+                style={{ fontWeight: 700 }}
+                onClick={() => setPickerOpen(true)}
+              >
+                إضافة صنف للفاتورة (Enter أو F2)
+              </Button>
+            )}
+          </div>
 
-          <Row gutter={16}>
-            <Col xs={24}>
-              {!viewOnly && (
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8, marginTop: 2 }}>
-                  <Button data-shortcut="F2"
-                    type="primary" icon={<PlusOutlined />}
-                    style={{ flex: 1, height: 32, fontSize: 13, fontWeight: 700, borderRadius: 6, background: '#1677ff', borderColor: '#1677ff' }}
-                    onClick={() => setPickerOpen(true)}
-                  >
-                    إضافة صنف للفاتورة (Enter أو F2)
-                  </Button>
-                </div>
-              )}
-
-              {purchaseItems.length === 0 ? (
-                <Empty description="اختر الفئة ثم الأصناف لإضافتها للفاتورة"
-                  style={{ margin: '12px 0' }} />
-              ) : (
-                <div style={{ border: '1px solid #e6efe3', borderRadius: 10,
-                              overflowX: 'auto' }}>
-                  <table className="entry-grid">
-                    <thead>{lineGrid.head}</thead>
-                    <tbody>
-                      {linesByCategory.map((group) => (
-                        <React.Fragment key={group.category ?? '__none__'}>
-                          {linesByCategory.length > 1 && (
-                            <tr style={{ background: '#f6faf3', borderTop: '1.5px solid #1677ff', borderBottom: '1px solid #e2ede0' }}>
-                              <td colSpan={20} style={{ padding: '1px 8px', background: '#f6faf3' }}>
-                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                                    <Tag color="blue" style={{ fontWeight: 700, fontSize: 11, padding: '0 6px', borderRadius: 3, margin: 0 }}>
-                                      {group.category ? (categoryLabels[group.category] || group.category) : 'بدون فئة'}
-                                    </Tag>
-                                    <span style={{ color: '#555', fontSize: 11, fontWeight: 600 }}>({group.items.length} صنف)</span>
-                                  </div>
-                                  <span style={{ color: '#666', fontSize: 11, fontWeight: 600 }}>
-                                    إجمالي الفئة: {fmtMoney(group.items.reduce((s, l) => s + lineTotal(l), 0))} ج.م
-                                  </span>
-                                </div>
-                              </td>
-                            </tr>
-                          )}
-                          {group.items.map((line, idx) => (
-                            <tr key={line.key}>{lineGrid.row(line, idx)}</tr>
-                          ))}
-                        </React.Fragment>
+          {purchaseItems.length === 0 ? (
+            <Empty description="اختر الفئة ثم الأصناف لإضافتها للفاتورة"
+              style={{ margin: '12px 0' }} />
+          ) : (
+            <div className="sale-grid-wrap">
+              <table className="entry-grid sale-grid">
+                <thead>{lineGrid.head}</thead>
+                <tbody>
+                  {linesByCategory.map((group) => (
+                    <React.Fragment key={group.category ?? '__none__'}>
+                      {linesByCategory.length > 1 && (
+                        <tr className="sale-group-row">
+                          <td colSpan={20}>
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                <Tag color="success" style={{ fontWeight: 700, fontSize: 11, padding: '0 6px', borderRadius: 4, margin: 0 }}>
+                                  {group.category ? (categoryLabels[group.category] || group.category) : 'بدون فئة'}
+                                </Tag>
+                                <span style={{ color: '#64748b', fontSize: 11, fontWeight: 600 }}>({group.items.length} صنف)</span>
+                              </div>
+                              <span style={{ color: '#64748b', fontSize: 11, fontWeight: 600 }}>
+                                إجمالي الفئة: {fmtMoney(group.items.reduce((s, l) => s + lineTotal(l), 0))}
+                              </span>
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                      {group.items.map((line, idx) => (
+                        <tr key={line.key}>{lineGrid.row(line, idx)}</tr>
                       ))}
-                    </tbody>
-                    <tfoot>{lineGrid.foot(purchaseItems)}</tfoot>
-                  </table>
-                </div>
-              )}
+                    </React.Fragment>
+                  ))}
+                </tbody>
+                <tfoot>{lineGrid.foot(purchaseItems)}</tfoot>
+              </table>
+            </div>
+          )}
+          </div>
+
+          {/* الملاحظات والمرفقات فوق — برّه الجزء المثبّت عشان مايطولوش. */}
+          <div className="sale-card sale-notes">
+            {creditAmount > 0.001 && (
+              <div className="sale-notes-line">
+                <span>آجل على الفاتورة دي:{' '}
+                  <b style={{ color: '#dc2626' }}>{money(creditAmount)} ج.م</b></span>
+              </div>
+            )}
+            {/* صور الورقة — فاتورة المورد وإذن الاستلام. `viewPurchase` بيفضل `null` على
+                الفاتورة الجديدة، والمكوّن بيختفي لحد ما تترحّل وتاخد رقم يتعلّق عليه. */}
+            <div className="sale-attach">
+              <DocumentAttachments docType="purchase_invoice" docId={viewPurchase?.id} title="مرفقات" />
+            </div>
+          </div>
+
+          {/* **الإجمالي والدفع مثبّتين في آخر الشاشة** — نفس أرقام سُلّم الإجماليات القديم
+              بالظبط، في مربعات (تصميم فاتورة البيع ٢٠٢٦-١٠-٠١). */}
+          <div className="sale-bottom">
+          <Row gutter={[10, 10]}>
+            <Col xs={24} lg={16}>
+              <div className="sale-tiles">
+                <SummaryTile label="إجمالي الأصناف" value={money(grossTotal)} sub="جنيه مصري" />
+                {variableDiscount > 0.001 && (
+                  <SummaryTile label={`خصم الفاتورة (${variableDiscount}%)`}
+                    value={`− ${money(grossTotal - invoiceTotal)}`} color="#dc2626" />
+                )}
+                <SummaryTile label="صافي الفاتورة" value={money(invoiceTotal)} color="#16a34a"
+                  sub="مستحق للمورد" />
+                {cashAmount > 0.001 && (
+                  <SummaryTile label="المدفوع نقداً" tone="mint" value={`− ${money(cashAmount)}`}
+                    color="#16a34a" sub="اتدفع للمورد" />
+                )}
+              </div>
             </Col>
-          </Row>
 
-          {/* صور الورقة — فاتورة المورد وإذن الاستلام. `viewPurchase` بيفضل `null` على
-              الفاتورة الجديدة، والمكوّن بيختفي لحد ما تترحّل وتاخد رقم يتعلّق عليه. */}
-          <DocumentAttachments docType="purchase_invoice" docId={viewPurchase?.id} />
-
-          <Divider />
-
-          <TotalsLadder
-            tone="sale"
-            inputs={(
-              <>
-                <Form.Item label="خصم على الفاتورة %" style={{ marginBottom: 12 }}
-                  help="يُطبَّق على مجموع السطور بعد خصم كل سطر — كفاتورة البيع">
+            <Col xs={24} lg={8}>
+              <div className="sale-card sale-pay">
+                <div className="sale-pay-inputs">
+                <Form.Item label="خصم على الفاتورة %"
+                  tooltip="يُطبَّق على مجموع السطور بعد خصم كل سطر — كفاتورة البيع">
                   <InputNumber style={{ width: '100%' }} min={0} max={99.99} step={0.5}
                     disabled={viewOnly}
                     addonAfter="%" value={variableDiscount}
                     onChange={(val) => setVariableDiscount(val || 0)} />
                 </Form.Item>
-                <Form.Item label="المبلغ المدفوع نقداً" style={{ marginBottom: 0 }}
-                  help="الباقي بيتسجّل آجل على حساب المورد">
+                <Form.Item label="المبلغ المدفوع نقداً"
+                  tooltip="الباقي بيتسجّل آجل على حساب المورد">
                   <InputNumber style={{ width: '100%' }} min={0} addonAfter="ج.م"
+                    className="sale-cash-input"
                     disabled={viewOnly}
                     value={cashAmount} onChange={(val) => setCashAmount(val || 0)} />
                 </Form.Item>
-              </>
-            )}
-            rows={[
-              { label: 'اجمالي قبل', value: money(grossTotal) },
-              { label: 'خصم فاتورة',
-                value: `− ${money(grossTotal - invoiceTotal)}`,
-                color: '#cf1322', show: variableDiscount > 0.001 },
-              { label: 'خصم فاتورة %', value: `${variableDiscount}%`,
-                show: variableDiscount > 0.001 },
-              { label: 'الاجمالي', value: money(invoiceTotal),
-                strong: true, color: '#6AB42D' },
-              { label: 'المدفوع', value: `− ${money(cashAmount)}`,
-                color: '#6AB42D', show: cashAmount > 0.001 },
-              { label: 'الباقي', value: money(creditAmount),
-                big: true, rule: true,
-                color: creditAmount > 0.001 ? '#cf1322' : '#6AB42D' },
-            ]}
-          />
-
-          {!viewOnly && (
-            <Form.Item style={{ marginTop: 24, textAlign: 'left' }}>
-              <Button
-                type="primary"
-                htmlType="submit"
-                icon={<FileDoneOutlined />}
-                size="large"
-                loading={submitLoading}
-              >
-                {editingId !== null ? 'حفظ التعديل' : 'تسجيل وترحيل فاتورة الشراء'}
-              </Button>
-            </Form.Item>
-          )}
+                </div>
+                <div className={`sale-due ${creditAmount > 0.001 ? 'is-due' : 'is-clear'}`}>
+                  <div>
+                    <div className="sale-due-label">الباقي للمورد</div>
+                    <div className="sale-due-sub">
+                      {creditAmount > 0.001 ? 'بيتسجّل آجل على حسابه' : 'مافيش باقي له'}
+                    </div>
+                  </div>
+                  <div className="sale-due-value">{money(creditAmount)} <small>ج.م</small></div>
+                </div>
+                {!viewOnly && (
+                  <div className="sale-pay-actions">
+                    <Button type="primary" htmlType="submit" loading={submitLoading}
+                      icon={<CheckOutlined />} className="sale-green-btn sale-save-btn">
+                      {editingId !== null ? 'حفظ التعديل' : 'تسجيل وترحيل فاتورة الشراء'} (F9)
+                    </Button>
+                    <Button onClick={() => closeCreate()}>إلغاء</Button>
+                  </div>
+                )}
+              </div>
+            </Col>
+          </Row>
+          </div>
       </Form>
-    </Card>
+
+      {/* المكوّن مشترك مع البيع والمرتجعين — الشرح في `components/LoadPeriodModal`.
+          بيفتح أحدث فاتورة في الفترة على طول، و`onLoaded` بيحط الفترة في كشف الشاشة،
+          فـ«السابق» و«التالى» يمشوا جوّه اللي اتحمّل مش جوّه السجل كله. */}
+      <LoadPeriodModal
+        open={loadPeriodOpen} onCancel={() => setLoadPeriodOpen(false)}
+        title="تحميل فواتير شراء فترة" endpoint="/api/v1/purchases"
+        columns={[
+          { title: 'المستند', key: 'document_number', width: 150 },
+          { title: 'التاريخ', key: 'purchase_date', width: 120 },
+          { title: 'المورد', key: 'supplier_name' },
+          { title: 'الإجمالي', key: 'total', width: 130, money: true },
+        ]}
+        onLoaded={(rows) => setPurchases(rows.map((r: any) => ({ ...r, kind: 'purchase' as const })))}
+        openNewest dateKey="purchase_date"
+        onPick={(r) => openDetail(r)} />
+    </div>
   );
 
   /**
@@ -2402,5 +2447,10 @@ export default function Purchases() {
    * `portal` بتاع antd واقف في نص أنيميشن القفل ومابيتشالش — قناع ميّت فوق الشاشة،
    * كل حاجة مغمّقة ومافيش حاجة بتترد. المخرج الواحد بيمنع الفكّ من أصله.
    */
-  return <div>{doors}{createVisible ? createContent : listContent}</div>;
+  // `height` عشان `.sale-doc` (min-height:100%) يقعد بطول الشاشة والإجمالي يتزق لآخرها.
+  return (
+    <div style={createVisible ? { height: '100%' } : undefined}>
+      {doors}{createVisible ? createContent : listContent}
+    </div>
+  );
 }

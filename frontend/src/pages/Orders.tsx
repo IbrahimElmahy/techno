@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { PAGE_SIZE } from '../utils/pagination';
 import {
-  Alert, Button, Card, Col, DatePicker, Descriptions, Divider, Empty, Form, Input, Row, Select,
+  Alert, Button, Card, Col, DatePicker, Empty, Form, Input, Row, Select,
   Space, Tag, message,
 } from 'antd';
 // فلتر على كل عمود — شوف `FilterTable`.
@@ -11,7 +11,7 @@ import { Popconfirm } from '../components/noConfirm';
 import {
   DeleteOutlined, PlusOutlined, ReloadOutlined, ArrowLeftOutlined, FileAddOutlined,
   SaveOutlined, UndoOutlined, EditOutlined, SearchOutlined, ArrowRightOutlined,
-  PrinterOutlined, BankOutlined,
+  PrinterOutlined, BankOutlined, CheckOutlined,
 } from '@ant-design/icons';
 import dayjs, { Dayjs } from 'dayjs';
 import { api } from '../api/client';
@@ -27,11 +27,12 @@ import type { ColumnsType } from 'antd/es/table';
 import { useTableColumns } from '../components/ColumnSettings';
 import { useEntryGrid, type EntryColumn } from '../components/EntryGrid';
 import DocumentToolbar, { ToolbarAction } from '../components/DocumentToolbar';
-import TotalsLadder from '../components/TotalsLadder';
+import SummaryTile from '../components/saleDoc/SummaryTile';
 import DocumentAttachments from '../components/DocumentAttachments';
 import { printReport } from '../print/reportSheet';
 import { QTY_DATA_ATTR, flashExistingItem } from '../utils/duplicateItem';
 import { money, qty } from '../utils/money';
+import './docs.extra.css';
 
 /**
  * طلبات البيع والشراء — شيت تسعير، مش مستند حركة.
@@ -664,224 +665,295 @@ export default function Orders() {
         onPick={addItem} />
 
       {creating && (
-      <Card title={(
-        <Space>
-          <Button type="text" icon={<ArrowLeftOutlined />}
-            onClick={() => setCreating(false)}>رجوع</Button>
-          <span>{sheetName}</span>
-        </Space>
-      )}
-      // الأدوات و«الأعمدة» في سطر العنوان على الشمال — زي فاتورة البيع (٢٠٢٦-١٠-٠١).
-      styles={{ title: { whiteSpace: 'normal', overflow: 'visible' } }}
-      extra={(
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap',
-                      fontWeight: 400 }}>
-          <DocumentToolbar actions={sheetToolbar()} inline />
-          {lineGrid.control}
+      // **شكل فاتورة البيع الجديد** (٢٠٢٦-١٠-٠١): كروت بيضا على رمادي — الترويسة والأدوات،
+      // خانات الورقة، الأصناف، وتحت الملخص والحفظ مثبّتين. الشكل بس: نفس الخانات والحساب.
+      <div className="sale-doc">
+        <div className="sale-card sale-head">
+          <div className="sale-head-row">
+            <Button size="small" icon={<ArrowRightOutlined />}
+              onClick={() => setCreating(false)}>رجوع</Button>
+            <span className="sale-title">{sheetName}</span>
+            {/* الأدوات و«الأعمدة» في نفس سطر العنوان على الشمال — زي فاتورة البيع. */}
+            <div className="sale-toolbar-row">
+              <DocumentToolbar actions={sheetToolbar()} variant="buttons" />
+              {lineGrid.control}
+            </div>
+          </div>
         </div>
-      )}>
         {/*
           * الشيت من جوه نسخة من فاتورة البيع بالظبط، بطلب صاحب النظام.
           *
-          * نفس شريط الأفعال الحداشر، نفس الترويسة المضغوطة (`doc-form`، الاسم جنب الخانة)،
-          * نفس جدول السطور (`entry-grid`) بترويسته اللاصقة، ونفس سُلّم الإجماليات. اللي
-          * بيسعّر النهارده هو اللي بيفوتر بكرة، والشاشتين المفروض ماتختلفوش في حاجة غير
-          * اللي الورقتين مختلفتين فيه فعلاً.
+          * نفس شريط الأفعال الحداشر، نفس الترويسة، نفس جدول السطور (`entry-grid`) بترويسته
+          * اللاصقة، ونفس مربعات الملخص. اللي بيسعّر النهارده هو اللي بيفوتر بكرة، والشاشتين
+          * المفروض ماتختلفوش في حاجة غير اللي الورقتين مختلفتين فيه فعلاً.
           *
-          * الفرق الحقيقي: مفيش طرف، ومفيش مخزن، ومفيش خصم على المستند — دي حاجات المستند
-          * اللي بيرحّل بيسألها، والورقة دي مابترحّلش.
+          * الفرق الحقيقي: مفيش طرف، ومفيش مخزن، ومفيش دفع — دي حاجات المستند اللي بيرحّل
+          * بيسألها، والورقة دي مابترحّلش.
           */}
 
-        <Form layout="vertical" size="small" className="doc-form" requiredMark={false}>
+        <Form layout="vertical" size="small" className="doc-form sale-form" requiredMark={false}>
           {/* مبدّل «بيع / شرا» اتشال من هنا: الورقة بتتفتح من مدخل نوعه معروف، وتغييره
             في نص الكتابة كان بيفضّي السطور اللي اتكتبت — تراجع كامل من غير ما حد يطلبه. */}
 
           {/* ترويسة الورقة: التاريخ ← السعر ساري لحد ← ملاحظات. مفيش عميل ولا مخزن — الورقة
               دي مش بتتكتب على حد ولا بتخرج من مكان. */}
-          <Row gutter={16}>
+          <div className="sale-card sale-fields">
+          <Row gutter={12}>
             <Col xs={12} md={4}>
-              <Form.Item label="التاريخ" style={{ marginBottom: 8 }}>
+              <Form.Item label="التاريخ">
                 <DatePicker style={{ width: '100%' }} allowClear={false} format="YYYY-MM-DD"
                   value={sheetDate} onChange={(v) => setSheetDate(v || dayjs())} />
               </Form.Item>
             </Col>
             <Col xs={12} md={4}>
-              <Form.Item label="ساري لحد" style={{ marginBottom: 8 }}>
+              <Form.Item label="ساري لحد">
                 <DatePicker style={{ width: '100%' }} format="YYYY-MM-DD"
                   placeholder="اختياري" value={dueDate} onChange={setDueDate} />
               </Form.Item>
             </Col>
             <Col xs={24} md={8}>
-              <Form.Item label="ملاحظات" style={{ marginBottom: 8 }}>
+              <Form.Item label="ملاحظات">
                 <Input placeholder="اختياري" value={notes}
                   onChange={(e) => setNotes(e.target.value)} />
               </Form.Item>
             </Col>
             <Col xs={24} md={8}>
-              <Form.Item label="البيان" style={{ marginBottom: 8 }}>
+              <Form.Item label="البيان">
                 <Input placeholder="اختياري — بيتطبع على الورقة" value={statement1}
                   maxLength={200} onChange={(e) => setStatement1(e.target.value)} />
               </Form.Item>
             </Col>
           </Row>
+          </div>
 
-          <Divider style={{ margin: '4px 0' }} />
+          <div className="sale-card sale-lines">
+            {/* عدد البنود يمين، وزرار الإضافة شمال — زرار واحد وشباك واحد، نفس فاتورة البيع. */}
+            <div className="sale-items-bar">
+              <div className="sale-items-info">
+                <span>
+                  عدد البنود الحالية: <b style={{ color: '#0f172a' }}>
+                    {lines.filter((l) => l.item_id).length}</b> أصناف
+                </span>
+              </div>
+              <Button data-shortcut="F2"
+                type="primary" className="sale-green-btn" icon={<PlusOutlined />}
+                style={{ fontWeight: 700 }}
+                onClick={() => setPickerOpen(true)}
+              >
+                إضافة صنف للتسعيرة
+              </Button>
+            </div>
 
-          {/* زرار واحد وشباك واحد — نفس فاتورة البيع. */}
-          <Button data-shortcut="F2"
-            type="primary" icon={<PlusOutlined />} block
-            style={{ marginBottom: 10, height: 38 }}
-            onClick={() => setPickerOpen(true)}
-          >
-            إضافة صنف للتسعيرة
-          </Button>
+            {lines.length === 0 ? (
+              <Empty description="اختر الفئة ثم الأصناف المراد تسعيرها"
+                style={{ margin: '12px 0' }} />
+            ) : (
+              <div className="sale-grid-wrap">
+                <table className="entry-grid sale-grid">
+                  <thead>{lineGrid.head}</thead>
+                  <tbody>
+                    {lines.map((line, idx) => (
+                      <tr key={line.key}>{lineGrid.row(line, idx)}</tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
 
-          {lines.length === 0 ? (
-            <Empty description="اختر الفئة ثم الأصناف المراد تسعيرها"
-              style={{ margin: '12px 0' }} />
-          ) : (
-            <div style={{ border: '1px solid #e6efe3', borderRadius: 10, overflowX: 'auto' }}>
-              <table className="entry-grid">
-                <thead>{lineGrid.head}</thead>
-                <tbody>
-                  {lines.map((line, idx) => (
-                    <tr key={line.key}>{lineGrid.row(line, idx)}</tr>
-                  ))}
-                </tbody>
-              </table>
+          {/* الملخص والحفظ مثبّتين في آخر الشاشة — نفس أرقام سُلّم الإجماليات القديم، في
+              مربعات. مفيش «المدفوع نقداً» ولا «المستحق»: الورقة دي مابتقبضش فلوس. */}
+          <div className="sale-bottom">
+            <Row gutter={[10, 10]}>
+              <Col xs={24} lg={16}>
+                <div className="sale-tiles">
+                  <SummaryTile label="عدد الأصناف"
+                    value={String(lines.filter((l) => l.item_id).length)} />
+                  <SummaryTile label="الإجمالي قبل الخصم" value={money(grossTotal)}
+                    sub="جنيه مصري" />
+                  {grossTotal - netBeforeDoc > 0.005 && (
+                    <SummaryTile label="خصم السطور" value={`− ${money(grossTotal - netBeforeDoc)}`}
+                      color="#dc2626" />
+                  )}
+                  {netBeforeDoc - draftTotal > 0.005 && (
+                    <SummaryTile label={`خصم الورقة ${discountPct}%`}
+                      value={`− ${money(netBeforeDoc - draftTotal)}`} color="#dc2626" />
+                  )}
+                  <SummaryTile label="الإجمالي" value={money(draftTotal)} color="#16a34a"
+                    tone="mint" />
+                </div>
+              </Col>
+              <Col xs={24} lg={8}>
+                <div className="sale-card sale-pay">
+                  <Form.Item label="خصم على إجمالي الورقة">
+                    <InputNumber min={0} max={99.99} style={{ width: '100%' }} addonAfter="%"
+                      value={discountPct} onChange={(v) => setDiscountPct(v || 0)} />
+                  </Form.Item>
+                  <div className="sale-pay-note">ورقة تسعير — لا مخزون يتحرك ولا أموال تُقيَّد.</div>
+                  <div className="sale-pay-actions">
+                    <Button type="primary" loading={saving} onClick={submit}
+                      icon={<CheckOutlined />} className="sale-green-btn sale-save-btn">
+                      حفظ التسعيرة (F9)
+                    </Button>
+                    <Button onClick={() => setCreating(false)}>إلغاء</Button>
+                  </div>
+                </div>
+              </Col>
+            </Row>
+          </div>
+        </Form>
+      </div>
+      )}
+
+      {/* الطلب مفتوح — نفس الصفحة، بنفس شكل فاتورة البيع. An order is a promise, not a
+          posting: nothing has moved, so the only decision on it is whether it still stands. */}
+      {detail && (
+      <div className="sale-doc">
+        <div className="sale-card sale-head">
+          <div className="sale-head-row">
+            <Button size="small" icon={<ArrowRightOutlined />} onClick={closeDoc}>رجوع</Button>
+            <span className="sale-title">
+              {detail.kind === 'sale' ? 'تسعيرة بيع' : 'تسعيرة شراء'} رقم:{' '}
+              <b dir="ltr">{detail.document_number}</b>
+            </span>
+            {/* الحالة جنب الرقم — كانت سطر في جدول البيانات. */}
+            <Tag color={STATUS_LABELS[detail.status]?.color} style={{ marginInlineEnd: 0 }}>
+              {STATUS_LABELS[detail.status]?.text}
+            </Tag>
+            <div className="sale-toolbar-row">
+              <Button icon={<PrinterOutlined />}
+                onClick={() => printOrder(detail)}>طباعة</Button>
+              {detail.status === 'open' && (
+                <Popconfirm title="إلغاء الطلب؟" onConfirm={() => cancel(detail)}
+                  okText="إلغاء الطلب" cancelText="رجوع">
+                  <Button danger>إلغاء الطلب</Button>
+                </Popconfirm>
+              )}
+            </div>
+          </div>
+        </div>
+
+        <div className="sale-form">
+          {/* بيانات الطلب — للقراية بس، بنفس شكل خانات الفاتورة (الاسم فوق الخانة).
+              أرقام الإجمالي تحت في المربعات. */}
+          <Form layout="vertical" size="small" component={false}>
+          <div className="sale-card sale-fields">
+            <Row gutter={12}>
+              <Col xs={12} md={4}>
+                <Form.Item label="النوع">
+                  <Input readOnly
+                    value={detail.kind === 'sale' ? 'تسعيرة بيع' : 'تسعيرة شراء'} />
+                </Form.Item>
+              </Col>
+              <Col xs={12} md={5}>
+                <Form.Item label="الطرف">
+                  <Input readOnly value={partyName(detail)} />
+                </Form.Item>
+              </Col>
+              <Col xs={12} md={4}>
+                <Form.Item label="الاستحقاق">
+                  <Input readOnly dir="ltr"
+                    value={detail.due_date ? String(detail.due_date).slice(0, 10) : '-'} />
+                </Form.Item>
+              </Col>
+              <Col xs={24} md={6}>
+                <Form.Item label="البيان">
+                  <Input readOnly value={detail.statement1 || '-'} />
+                </Form.Item>
+              </Col>
+              <Col xs={24} md={5}>
+                <Form.Item label="ملاحظات">
+                  <Input readOnly value={detail.notes || '-'} />
+                </Form.Item>
+              </Col>
+            </Row>
+          </div>
+          </Form>
+
+          <div className="sale-card sale-lines">
+            <div className="sale-items-bar">
+              <div className="sale-items-info">
+                <span>
+                  عدد البنود: <b style={{ color: '#0f172a' }}>{detail.lines.length}</b> أصناف
+                </span>
+              </div>
+            </div>
+            <div className="sale-grid-wrap">
+              <Table<OrderLine>
+                className="sale-grid"
+                rowKey="id" size="small" dataSource={detail.lines} pagination={false}
+                columns={[
+                  { title: 'الصنف', dataIndex: 'item_name' },
+                  { title: 'الوحدة', dataIndex: 'unit', render: (v: string | null) => v || 'الأساسية' },
+                  { title: 'الكمية', dataIndex: 'quantity', render: (v: string) => qty(v) },
+                  { title: 'السعر', dataIndex: 'unit_price', render: (v: string) => money(v) },
+                  { title: 'اجمالي قبل', render: (_: any, r: OrderLine) => money(
+                    Number(r.quantity || 0) * Number(r.unit_price || 0)) },
+                  { title: 'خصم %', dataIndex: 'discount_pct',
+                    render: (v: string | null) => (Number(v || 0) ? `${Number(v)}%` : '-') },
+                  { title: 'الإجمالي', dataIndex: 'line_total',
+                    render: (v: string) => <b>{money(v)}</b> },
+                ]}
+              />
+            </div>
+          </div>
+
+          {detail.status === 'open' && (
+            <div className="sale-card">
+              <div className="sale-items-bar">
+                <span className="sale-title">ربط بفاتورة</span>
+              </div>
+              <Space wrap>
+                <InputNumber placeholder="رقم الفاتورة" value={invoiceId}
+                  onChange={(v) => setInvoiceId(v as number)} style={{ width: 160 }} />
+                <Button type="primary" className="sale-green-btn" onClick={convert}>ربط</Button>
+              </Space>
+              <div style={{ color: '#64748b', marginTop: 8, fontSize: 12 }}>
+                اعمل الفاتورة من شاشة الفواتير الأول عشان تعدّي على كل الفحوصات (التوافر
+                والتكلفة والقيد)، وبعدين اربطها بالطلب هنا. الربط بيحصل مرة واحدة بس.
+              </div>
             </div>
           )}
 
-          {/* سُلّم الإجماليات — نفس اللي تحت فاتورة البيع، بنفس الدرجات وبنفس الترتيب.
-              مفيش «المدفوع نقداً» ولا «المستحق»: الورقة دي مابتقبضش فلوس. */}
-          <TotalsLadder
-            tone="sale"
-            inputs={(
-              <Form.Item label="خصم على إجمالي الورقة" style={{ marginBottom: 0 }}>
-                <InputNumber min={0} max={99.99} style={{ width: '100%' }} addonAfter="%"
-                  value={discountPct} onChange={(v) => setDiscountPct(v || 0)} />
-              </Form.Item>
-            )}
-            rows={[
-              { label: 'عدد الأصناف', value: String(lines.filter((l) => l.item_id).length) },
-              { label: 'الإجمالي قبل الخصم', value: money(grossTotal) },
-              { label: 'خصم السطور', value: money(grossTotal - netBeforeDoc),
-                show: grossTotal - netBeforeDoc > 0.005 },
-              { label: `خصم الورقة ${discountPct}%`, value: money(netBeforeDoc - draftTotal),
-                show: netBeforeDoc - draftTotal > 0.005 },
-              { label: 'الإجمالي', value: money(draftTotal), big: true, strong: true,
-                rule: true, highlight: true },
-            ]}
-            notes={['ورقة تسعير — لا مخزون يتحرك ولا أموال تُقيَّد.']}
-          />
+          {detail.converted_invoice_id && (
+            <Alert type="success" showIcon
+              message={`اتحوّل لفاتورة رقم #${detail.converted_invoice_id}`}
+              action={<DocumentLink kind="invoice" id={detail.converted_invoice_id}
+                size="small" allowEdit onNavigate={() => setDetail(null)} />} />
+          )}
 
-          <div style={{
-            marginTop: 12, display: 'flex', alignItems: 'center',
-            justifyContent: 'flex-end', gap: 8,
-          }}>
-            <Button onClick={() => setCreating(false)}>إلغاء</Button>
-            <Button type="primary" loading={saving} onClick={submit}>حفظ التسعيرة</Button>
+          {/* صور الورقة — التسعيرة الممضية أو طلب العميل بخطّ إيده. */}
+          <div className="sale-card sale-notes">
+            <div className="sale-attach">
+              <DocumentAttachments docType="trade_order" docId={detail.id} title="مرفقات" />
+            </div>
           </div>
-        </Form>
-      </Card>
-      )}
 
-      {/* الطلب مفتوح — نفس الصفحة. An order is a promise, not a posting: nothing has moved, so
-          the only decision on it is whether it still stands. */}
-      {detail && (
-      <Card
-        title={(
-          <Space>
-            <Button type="text" icon={<ArrowLeftOutlined />}
-              onClick={closeDoc}>رجوع</Button>
-            <span>{detail.document_number}</span>
-          </Space>
-        )}
-        extra={(
-          <Space>
-            <Button icon={<PrinterOutlined />}
-              onClick={() => printOrder(detail)}>طباعة</Button>
-            {detail.status === 'open' && (
-              <Popconfirm title="إلغاء الطلب؟" onConfirm={() => cancel(detail)}
-                okText="إلغاء الطلب" cancelText="رجوع">
-                <Button danger>إلغاء الطلب</Button>
-              </Popconfirm>
-            )}
-          </Space>
-        )}
-      >
-        {detail && (
-          <>
-            <Descriptions column={1} size="small" bordered style={{ marginBottom: 12 }}>
-              <Descriptions.Item label="النوع">
-                {detail.kind === 'sale' ? 'تسعيرة بيع' : 'تسعيرة شراء'}
-              </Descriptions.Item>
-              <Descriptions.Item label="الطرف">{partyName(detail)}</Descriptions.Item>
-              <Descriptions.Item label="الاستحقاق">
-                {detail.due_date ? String(detail.due_date).slice(0, 10) : '-'}
-              </Descriptions.Item>
-              <Descriptions.Item label="قبل الخصم">{money(detail.gross)}</Descriptions.Item>
-              <Descriptions.Item label="خصم الورقة">
-                {Number(detail.variable_discount_pct || 0)
-                  ? `${Number(detail.variable_discount_pct)}%` : '-'}
-              </Descriptions.Item>
-              <Descriptions.Item label="الإجمالي"><b>{money(detail.total)}</b></Descriptions.Item>
-              <Descriptions.Item label="الحالة">
-                <Tag color={STATUS_LABELS[detail.status]?.color}>
-                  {STATUS_LABELS[detail.status]?.text}
-                </Tag>
-              </Descriptions.Item>
-              <Descriptions.Item label="البيان">{detail.statement1 || '-'}</Descriptions.Item>
-              <Descriptions.Item label="ملاحظات">{detail.notes || '-'}</Descriptions.Item>
-            </Descriptions>
-
-            <Table<OrderLine>
-              rowKey="id" size="small" dataSource={detail.lines} pagination={false}
-              style={{ marginBottom: 12 }}
-              columns={[
-                { title: 'الصنف', dataIndex: 'item_name' },
-                { title: 'الوحدة', dataIndex: 'unit', render: (v: string | null) => v || 'الأساسية' },
-                { title: 'الكمية', dataIndex: 'quantity', render: (v: string) => qty(v) },
-                { title: 'السعر', dataIndex: 'unit_price', render: (v: string) => money(v) },
-                { title: 'اجمالي قبل', render: (_: any, r: OrderLine) => money(
-                  Number(r.quantity || 0) * Number(r.unit_price || 0)) },
-                { title: 'خصم %', dataIndex: 'discount_pct',
-                  render: (v: string | null) => (Number(v || 0) ? `${Number(v)}%` : '-') },
-                { title: 'الإجمالي', dataIndex: 'line_total',
-                  render: (v: string) => <b>{money(v)}</b> },
-              ]}
-            />
-
-            {/* صور الورقة — التسعيرة الممضية أو طلب العميل بخطّ إيده. */}
-            <DocumentAttachments docType="trade_order" docId={detail.id} />
-
-            {detail.status === 'open' && (
-              <Card size="small" title="ربط بفاتورة">
-                <Space wrap>
-                  <InputNumber placeholder="رقم الفاتورة" value={invoiceId}
-                    onChange={(v) => setInvoiceId(v as number)} style={{ width: 160 }} />
-                  <Button type="primary" onClick={convert}>ربط</Button>
-                </Space>
-                <div style={{ color: '#888', marginTop: 8 }}>
-                  اعمل الفاتورة من شاشة الفواتير الأول عشان تعدّي على كل الفحوصات (التوافر
-                  والتكلفة والقيد)، وبعدين اربطها بالطلب هنا. الربط بيحصل مرة واحدة بس.
+          {/* الإجمالي مثبّت في آخر الشاشة — نفس أرقام جدول البيانات القديم. */}
+          <div className="sale-bottom">
+            <Row gutter={[10, 10]}>
+              <Col xs={24} lg={16}>
+                <div className="sale-tiles">
+                  <SummaryTile label="عدد الأصناف" value={String(detail.lines.length)} />
+                  <SummaryTile label="قبل الخصم" value={money(detail.gross)} sub="جنيه مصري" />
+                  <SummaryTile label="خصم الورقة"
+                    value={Number(detail.variable_discount_pct || 0)
+                      ? `${Number(detail.variable_discount_pct)}%` : '-'} />
+                  <SummaryTile label="الإجمالي" value={money(detail.total)} color="#16a34a"
+                    tone="mint" />
                 </div>
-              </Card>
-            )}
-
-            {detail.converted_invoice_id && (
-              <Alert type="success" showIcon
-                message={`اتحوّل لفاتورة رقم #${detail.converted_invoice_id}`}
-                action={<DocumentLink kind="invoice" id={detail.converted_invoice_id}
-                  size="small" allowEdit onNavigate={() => setDetail(null)} />} />
-            )}
-          </>
-        )}
-
-        <div style={{ marginTop: 16, textAlign: 'left' }}>
-          <Button onClick={closeDoc}>إغلاق</Button>
+              </Col>
+              <Col xs={24} lg={8}>
+                <div className="sale-card sale-pay">
+                  <div className="sale-pay-actions">
+                    <Button className="sale-save-btn" onClick={closeDoc}>إغلاق</Button>
+                  </div>
+                </div>
+              </Col>
+            </Row>
+          </div>
         </div>
-      </Card>
+      </div>
       )}
     </>
   );

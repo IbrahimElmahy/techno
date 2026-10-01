@@ -4,8 +4,8 @@ import { PAGE_SIZE, PAGE_SIZE_OPTIONS } from '../utils/pagination';
 import { searchFilter, searchRank, sortByName } from '../utils/arabicSort';
 import { customersOfRep, customerFitsRep } from '../utils/repScope';
 import {
-  Button, Card, Col, DatePicker, Divider, Empty, Form, Input, Modal, Row, Segmented, Select,
-  Space, Tag, Tooltip, Typography, message,
+  Button, Card, Col, DatePicker, Empty, Form, Input, Modal, Row, Segmented, Select,
+  Space, Tag, Tooltip, message,
 } from 'antd';
 // فلتر على كل عمود — شوف `FilterTable`.
 import { FilterTable as Table } from '../components/FilterTable';
@@ -18,7 +18,7 @@ import {
   PlusOutlined, DeleteOutlined, SearchOutlined, ClearOutlined, HistoryOutlined,
   FileAddOutlined, EditOutlined, EyeOutlined, UndoOutlined, SaveOutlined, PrinterOutlined,
   ArrowLeftOutlined, ArrowRightOutlined, BankOutlined, ReloadOutlined,
-  ExclamationCircleOutlined,
+  ExclamationCircleOutlined, CheckOutlined, ShoppingCartOutlined, PhoneOutlined, InfoCircleOutlined,
 } from '@ant-design/icons';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import dayjs, { Dayjs } from 'dayjs';
@@ -29,7 +29,7 @@ import { useDraft } from '../components/useDraft';
 import { netOf } from '../utils/discounts';
 import ProductPickerModal from '../components/ProductPickerModal';
 import PartyPickerModal, { Party } from '../components/PartyPickerModal';
-import TotalsLadder from '../components/TotalsLadder';
+import SummaryTile from '../components/saleDoc/SummaryTile';
 import DocumentAttachments from '../components/DocumentAttachments';
 import { showReversalConfirm } from '../components/ConfirmationDialog';
 import InvoiceDocument, { InvoiceDoc, invoiceFooter, printInvoice } from '../components/InvoiceDocument';
@@ -142,7 +142,13 @@ function blankCoupon(): CouponRow {
 /** فاصل السيريالات — سطر جديد. مكتوب كثابت عشان يفضل واضح في الـJSX. */
 const SERIAL_SEP = '\n';
 
-export default function Returns() {
+/**
+ * **`embedded`: مرتجع جديد جوّه شاشة تانية** (سجل المبيعات، طلب العميل ٢٠٢٦-١٠-٠١).
+ * نفس الشاشة بكل منطقها — مش نسخة: بتبدأ على طول بباب العميل، مابترسمش كشف المرتجعات،
+ * ومابتلمسش العنوان (`?doc=` بتاع الشاشة اللي شايلاها). أول ما المستند يتقفل أو الباب
+ * يتلغي بتنده `onExit` فالشاشة الشايلة ترجع لكشفها.
+ */
+export default function Returns({ embedded }: { embedded?: { onExit: () => void } } = {}) {
   const { options: categoryOptions } = useLookup('item_category');
   const categoryLabels = labelMap(categoryOptions);
   const navigate = useNavigate();
@@ -185,7 +191,7 @@ export default function Returns() {
   const [returnFamily, setReturnFamily] = useState<string | null>(null);
   const families = familyAccounts.filter((a) => a.family);
 
-  const [newStep, setNewStep] = useState<null | 'party' | 'warehouse'>(null);
+  const [newStep, setNewStep] = useState<null | 'party' | 'warehouse'>(embedded ? 'party' : null);
   // Also opened from inside the document to change the party mid-return, exactly as the sale does.
   const [partyPickerOpen, setPartyPickerOpen] = useState(false);
   const [returnDate, setReturnDate] = useState<Dayjs>(dayjs());
@@ -348,6 +354,7 @@ export default function Returns() {
     loading,
     // `openDetail` بيجيب السند بالرقم بنفسه، فالصف المبدئي كفاية.
     fetchOne: async (id) => ({ id } as ReturnRecord),
+    enabled: !embedded,
   });
   const [editingSourceId, setEditingSourceId] = useState<number | null>(null);
   const [printing, setPrinting] = useState(false);
@@ -717,6 +724,7 @@ export default function Returns() {
         key: 'new',
         label: 'جديد',
         shortcut: 'F2',
+        primary: true,
         icon: <FileAddOutlined />,
         onClick: () => {
           createForm.resetFields();
@@ -858,6 +866,7 @@ export default function Returns() {
         key: 'reload',
         label: 'تحميل',
         icon: <ReloadOutlined />,
+        // بيفتح أحدث مرتجع في الفترة على طول، و«السابق»/«التالى» بيمشوا جوّه الفترة —
         // الشرح في `components/LoadPeriodModal`.
         onClick: () => setLoadPeriodOpen(true),
       },
@@ -978,11 +987,11 @@ export default function Returns() {
     { key: 'idx', title: '#', width: 28, span: 1, xs: 2, locked: true,
       cellStyle: { color: '#6b6b6b', textAlign: 'center' },
       cell: (_l: any, i: number) => i + 1 },
-    { key: 'item', title: 'الصنف', span: 4, xs: 24, locked: true,
+    { key: 'item', title: 'الصنف', span: 4, xs: 24, locked: true, minWidth: 170,
       cell: (line) => <b>{productName(line.item_id as number)}</b> },
-    { key: 'warehouse', title: 'المخزن', span: 3, xs: 12,
+    { key: 'warehouse', title: 'المخزن', span: 3, xs: 12, minWidth: 120,
       cell: (line) => (
-        <Select size="small" style={{ width: '100%' }} placeholder="المخزن"
+        <Select size="small" className="sale-wh-select" style={{ width: '100%' }} placeholder="المخزن"
           disabled={viewOnly}
           value={line.warehouse_id ?? docWarehouseId ?? undefined}
           onChange={(val) => {
@@ -991,7 +1000,7 @@ export default function Returns() {
           }}
           options={warehouses.map((w) => ({ value: w.id, label: w.name }))} />
       ) },
-    { key: 'last_price', title: 'آخر سعر شراء', span: 2, xs: 12,
+    { key: 'last_price', title: 'آخر سعر شراء', span: 2, xs: 12, minWidth: 110,
       cell: (line) => {
         const info = line.item_id ? lastInfo[line.item_id] : undefined;
         const last = info?.last_price;
@@ -1005,7 +1014,9 @@ export default function Returns() {
           </Tag>
         ) : <Tag>لم يشترِه من قبل</Tag>;
       } },
-    { key: 'quantity', title: 'الكمية', span: 2, xs: 8, locked: true,
+    { key: 'quantity', title: 'الكمية', span: 2, xs: 8, locked: true, minWidth: 80,
+      footer: (rows) => rows.reduce((n, l) => n + Number(l.quantity || 0), 0)
+        .toLocaleString(numeralsLocale(), { maximumFractionDigits: 3 }),
       cellProps: (line) => (line.item_id != null
         ? { [QTY_DATA_ATTR]: line.item_id } as any : {}),
       cell: (line) => (
@@ -1029,28 +1040,35 @@ export default function Returns() {
             advance(line.key);
           }} />
       ) },
-    { key: 'unit_price', title: 'سعر الإرجاع', span: 2, xs: 8,
+    { key: 'unit_price', title: 'سعر الإرجاع', span: 2, xs: 8, minWidth: 85,
       cell: (line) => (
         <InputNumber size="small" min={0} step={0.01} style={{ width: '100%' }}
           disabled={viewOnly}
           value={line.unit_price}
           onChange={(val) => handleLineChange(line.key, 'unit_price', val || 0)} />
       ) },
-    { key: 'variable_discount', title: 'خصم متغير %', span: 2, xs: 8,
+    { key: 'variable_discount', title: 'خصم متغير %', span: 2, xs: 8, minWidth: 75,
       cell: (line) => (
         <InputNumber size="small" min={0} max={99.99} step={0.5} style={{ width: '100%' }}
           disabled={viewOnly}
           placeholder="متغير" value={line.discount}
           onChange={(val) => handleLineChange(line.key, 'discount', val || 0)} />
       ) },
-    { key: 'fixed_discount', title: 'خصم ثابت %', span: 2, xs: 8,
+    { key: 'fixed_discount', title: 'خصم ثابت %', span: 2, xs: 8, minWidth: 75,
       cell: (line) => (
         <InputNumber size="small" min={0} max={99.99} step={0.5} style={{ width: '100%' }}
           disabled={viewOnly}
           placeholder="ثابت" value={line.fixed_discount}
           onChange={(val) => handleLineChange(line.key, 'fixed_discount', val || 0)} />
       ) },
-    { key: 'points', title: 'النقاط', span: 2, xs: 12, align: 'center',
+    { key: 'points', title: 'النقاط', span: 2, xs: 12, align: 'center', minWidth: 60,
+      cellStyle: { textAlign: 'center' },
+      footer: (rows) => (
+        <span style={{ color: '#F5A11D' }}>
+          {rows.reduce((s, l) => s + linePoints(l), 0)
+            .toLocaleString(numeralsLocale(), { maximumFractionDigits: 3 })}
+        </span>
+      ),
       // زي الفاتورة: الصفر ممكن يكون «الصنف مالوش نقط» أو «الكمية لسه فاضية».
       // التاني بيتقال بنقطة الوحدة عشان اللي بيبص يعرف إن النقط جاية.
       cell: (line) => {
@@ -1071,10 +1089,14 @@ export default function Returns() {
           )
           : <span style={{ color: '#b0b0b0' }}>-</span>;
       } },
-    { key: 'total', title: 'الإجمالي', span: 3, xs: 12, align: 'center', locked: true,
+    { key: 'total', title: 'الإجمالي', span: 3, xs: 12, align: 'center', locked: true, minWidth: 95,
+      cellStyle: { textAlign: 'center' },
+      footer: (rows) => (
+        <span style={{ color: '#cf4b1a' }}>{money(rows.reduce((s, l) => s + lineTotal(l), 0))}</span>
+      ),
       cell: (line) => <b style={{ color: '#cf4b1a' }}>{money(lineTotal(line))}</b> },
     { key: 'actions', title: '', label: 'حذف السطر', span: 1, xs: 4, align: 'center',
-      locked: true,
+      locked: true, width: 40, cellStyle: { textAlign: 'center' },
       cell: (line) => (viewOnly ? null : (
         <Button type="text" size="small" danger icon={<DeleteOutlined />}
           onClick={() => handleRemoveLine(line.key)} />
@@ -1228,73 +1250,80 @@ export default function Returns() {
    * كل حاجة مغمّقة ومافيش حاجة بتترد. المخرج الواحد بيمنع الفكّ من أصله.
    */
   const screen = createVisible ? (
-      <div>
-        <Card title={(
-          <Space>
-            <Button type="text" icon={<ArrowRightOutlined />} onClick={closeCreate}>رجوع</Button>
-            <Typography.Text strong style={{ fontSize: 16 }}>
-              {viewReturn ? `مردود مبيعات ${viewReturn.document_number}` : (editingSourceId ? 'تعديل مردود مبيعات' : 'تسجيل مرتجع مبيعات جديد')}
-            </Typography.Text>
-            <DocumentBar
-          listLabel="مرتجعات المبيعات"
-          listTo="/returns"
-          title={viewReturn
-            ? (viewReturn.document_number || `#${viewReturn.id}`)
-            : (editingSourceId ? 'تعديل مرتجع' : 'مرتجع جديد')}
-          position={viewReturn
-            ? returns.findIndex((r: any) => r.id === viewReturn.id) + 1 || null : null}
-          total={viewReturn ? returns.length : null}
-          steps={[
-            { key: 'draft', label: 'مسودة' },
-            { key: 'posted', label: 'مرحّل', color: 'green' },
-            { key: 'reversed', label: 'معكوس', color: 'volcano' },
-          ]}
-          current={!viewReturn && !editingSourceId ? 'draft'
-            : (viewReturn?.reversed_by ? 'reversed' : 'posted')}
-        />
-          </Space>
-        )}
-          // شريط الأدوات و«الأعمدة» في سطر العنوان على الشمال (٢٠٢٦-١٠-٠١) — زي فاتورة البيع.
-      styles={{ title: { whiteSpace: 'normal', overflow: 'visible' } }}
-      extra={(
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap',
-                      fontWeight: 400 }}>
-          <DocumentToolbar actions={returnToolbar()} inline />
-          {lineGrid.control}
-          <PrintOptionsMenu value={printOpts} onChange={setPrintOpts} />
+      // **شكل فاتورة البيع الجديد** (تصميم العميل ٢٠٢٦-١٠-٠١): كروت بيضا على خلفية رمادي —
+      // ترويسة وأدوات، خانات المستند، الأصناف، وتحت الدفع والملخص. الشكل بس اللي اتغيّر:
+      // نفس الخانات ونفس الحالة ونفس الأوامر والمفاتيح. الـCSS كله تحت `.sale-doc` في `index.css`.
+      <div className="sale-doc" style={{ flex: '1 0 auto' }}>
+        <div className="sale-card sale-head">
+          <div className="sale-head-row">
+            <Button size="small" icon={<ArrowRightOutlined />} onClick={closeCreate}>رجوع</Button>
+            <span className="sale-title">
+              {viewReturn
+                ? <>مردود مبيعات رقم: <b dir="ltr">{viewReturn.document_number || ''}</b></>
+                : (editingSourceId ? 'تعديل مردود مبيعات' : 'تسجيل مرتجع مبيعات جديد')}
+            </span>
+            {(viewReturn?.family || returnFamily) && (
+              <Tag color={(viewReturn?.family || returnFamily) === 'أبيض' ? 'default' : 'blue'}
+                style={{ fontWeight: 700, marginInlineEnd: 0 }}>
+                {viewReturn?.family || returnFamily}
+              </Tag>
+            )}
+            {viewReturn && !viewOnly && (
+              <Tag color="gold" style={{ fontWeight: 600, marginInlineEnd: 0 }}>وضع التعديل</Tag>
+            )}
+            {viewReturn?.reversed_by && (
+              <Tag color="volcano" style={{ marginInlineEnd: 0 }}>معكوس</Tag>
+            )}
+            {/* التاريخ هنا جنب العدّاد زي فاتورة البيع — نفس القيمة اللي كانت في الخانات. */}
+            <span className="sale-pager">
+              <DocumentBar
+                listLabel="مرتجعات المبيعات"
+                listTo="/returns"
+                title={viewReturn
+                  ? (viewReturn.document_number || `#${viewReturn.id}`)
+                  : (editingSourceId ? 'تعديل مرتجع' : 'مرتجع جديد')}
+                position={viewReturn
+                  ? returns.findIndex((r: any) => r.id === viewReturn.id) + 1 || null : null}
+                total={viewReturn ? returns.length : null}
+                onPrev={viewReturn && neighbour(-1) ? () => stepFromDraft(-1) : undefined}
+                onNext={viewReturn && neighbour(1) ? () => stepFromDraft(1) : undefined}
+                steps={[
+                  { key: 'draft', label: 'مسودة' },
+                  { key: 'posted', label: 'مرحّل', color: 'green' },
+                  { key: 'reversed', label: 'معكوس', color: 'volcano' },
+                ]}
+                current={!viewReturn && !editingSourceId ? 'draft'
+                  : (viewReturn?.reversed_by ? 'reversed' : 'posted')}
+                extra={(
+                  <DatePicker size="small" allowClear={false} format="YYYY-MM-DD"
+                    disabled={viewOnly}
+                    value={returnDate} onChange={(v) => setReturnDate(v || dayjs())} />
+                )}
+              />
+            </span>
+            {/* الأدوات و«الأعمدة» في نفس سطر العنوان على الشمال — زي فاتورة البيع. */}
+            <div className="sale-toolbar-row">
+              <DocumentToolbar actions={returnToolbar()} variant="buttons" />
+              {lineGrid.control}
+              <PrintOptionsMenu value={printOpts} onChange={setPrintOpts} />
+            </div>
+          </div>
         </div>
-      )}>
-          <LoadPeriodModal
-            open={loadPeriodOpen} onCancel={() => setLoadPeriodOpen(false)}
-            title="تحميل مرتجعات فترة" endpoint="/api/v1/sales/returns"
-            columns={[
-              { title: 'المستند', key: 'document_number', width: 150 },
-              { title: 'التاريخ', key: 'return_date', width: 120 },
-              { title: 'العميل', key: 'customer_name' },
-              { title: 'القيمة', key: 'value', width: 130, money: true },
-            ]}
-            onPick={(r) => openDetail(r)} />
-          <Form form={createForm} layout="vertical" size="small" className="doc-form"
-            onFinish={handleSubmit}>
-            {/* **الترويسة في سطرين** (طلب العميل ٢٠٢٦-٠٩-٣٠). «نوع المستند: مردود مبيعات»
-                اتشالت — العنوان فوق بيقولها. */}
-            <Row gutter={16}>
-              {/* الترتيب زي فاتورة البيع (٢٠٢٦-١٠-٠١): رقم المستند أول حاجة، والعميل وتليفونه. */}
+
+        <Form form={createForm} layout="vertical" size="small" className="doc-form sale-form"
+          onFinish={handleSubmit}>
+          {/* الترتيب زي فاتورة البيع (٢٠٢٦-١٠-٠١): رقم المستند ← العميل وتليفونه ← المخزن ←
+              المندوب ← الخط، وتحتهم الملاحظات والبيان والكوبونات الراجعة. */}
+          <div className="sale-card sale-fields">
+            <Row gutter={12}>
               <Col xs={12} md={4}>
-                <Form.Item label="رقم المستند" style={{ marginBottom: 8 }}>
+                <Form.Item label="رقم المستند">
                   <Input placeholder="رقم ورقة العميل" disabled={viewOnly} value={externalDocNumber}
                     onChange={(e) => setExternalDocNumber(e.target.value)} />
                 </Form.Item>
               </Col>
-              <Col xs={12} md={3}>
-                <Form.Item label="التاريخ" style={{ marginBottom: 8 }}>
-                  <DatePicker style={{ width: '100%' }} allowClear={false} format="YYYY-MM-DD"
-                    disabled={viewOnly}
-                    value={returnDate} onChange={(v) => setReturnDate(v || dayjs())} />
-                </Form.Item>
-              </Col>
-              <Col xs={24} md={6}>
-                <Form.Item label="اسم العميل" required style={{ marginBottom: 8 }}>
+              <Col xs={24} md={6} className="sale-party">
+                <Form.Item label="اسم العميل" required>
                   <Select open={false} showSearch={false} suffixIcon={<SearchOutlined />}
                     disabled={viewOnly}
                     placeholder="اضغط لاختيار العميل"
@@ -1303,14 +1332,15 @@ export default function Returns() {
                     options={customers.map((c: any) => ({ value: c.id, label: c.name }))} filterOption={searchFilter} filterSort={searchRank}/>
                 </Form.Item>
               </Col>
-              <Col xs={12} md={3}>
-                <Form.Item label="الهاتف" style={{ marginBottom: 8 }}>
+              <Col xs={12} md={4}>
+                <Form.Item label="الهاتف">
                   <Input readOnly disabled dir="ltr" placeholder="-"
+                    suffix={<PhoneOutlined style={{ color: '#94a3b8' }} />}
                     value={(customers.find((c: any) => c.id === customerId) as any)?.phone || ''} />
                 </Form.Item>
               </Col>
               <Col xs={12} md={4}>
-                <Form.Item label="المخزن" required style={{ marginBottom: 8 }}>
+                <Form.Item label="المخزن" required>
                   <Select
                     showSearch
                     disabled={viewOnly}
@@ -1320,16 +1350,16 @@ export default function Returns() {
                     options={warehouses.map((w: any) => ({ value: w.id, label: w.name }))} filterOption={searchFilter} filterSort={searchRank}/>
                 </Form.Item>
               </Col>
-              <Col xs={12} md={4}>
-                <Form.Item label="المندوب" style={{ marginBottom: 8 }}>
+              <Col xs={12} md={3}>
+                <Form.Item label="المندوب">
                   <Select allowClear showSearch placeholder="بدون مندوب"
                     disabled={viewOnly}
                     value={repId ?? undefined} onChange={(v) => setRepId((v as number) ?? null)}
                     options={reps.map((r) => ({ value: r.id, label: r.full_name || r.username }))} filterOption={searchFilter} filterSort={searchRank}/>
                 </Form.Item>
               </Col>
-              <Col xs={12} md={4}>
-                <Form.Item label="الخط" style={{ marginBottom: 8 }}>
+              <Col xs={12} md={3}>
+                <Form.Item label="الخط">
                   <Select
                     allowClear
                     disabled={viewOnly}
@@ -1343,15 +1373,18 @@ export default function Returns() {
                   />
                 </Form.Item>
               </Col>
-              <Col xs={12} md={6}>
-                <Form.Item label="ملاحظات" style={{ marginBottom: 8 }}>
+            </Row>
+
+            <Row gutter={12}>
+              <Col xs={24} md={8}>
+                <Form.Item label="ملاحظات">
                   <Input placeholder="اختياري" disabled={viewOnly} value={docNotes}
                     onChange={(e) => setDocNotes(e.target.value)} />
                 </Form.Item>
               </Col>
               {/* **البيان** — كان بيتبعت (`statement1`) ومالوش خانة، زي فاتورة البيع بالظبط. */}
-              <Col xs={24} md={14}>
-                <Form.Item label="البيان" style={{ marginBottom: 8 }}>
+              <Col xs={24} md={16}>
+                <Form.Item label="البيان">
                   <Input placeholder="اختياري — بيتطبع وبيتدوّر بيه" disabled={viewOnly}
                     value={statements[0]}
                     onChange={(e) => setStatements([e.target.value, statements[1], statements[2]])} />
@@ -1359,33 +1392,9 @@ export default function Returns() {
               </Col>
             </Row>
 
-            {families.length > 1 && (
-              <div style={{ marginBottom: 10 }}>
-                <Segmented
-                  block
-                  size="large"
-                  disabled={viewOnly}
-                  value={returnFamily ?? ''}
-                  onChange={(v: string | number) => setReturnFamily(String(v) || null)}
-                  options={families.map((a) => ({
-                    value: a.family as string,
-                    label: (
-                      <span style={{ fontWeight: 700 }}>
-                        {a.family}
-                        <span style={{ color: '#5a6b5a', marginInlineStart: 8, fontSize: 13,
-                                       fontWeight: 400 }}>
-                          ({money(Number(a.balance || 0))})
-                        </span>
-                      </span>
-                    ),
-                  }))}
-                />
-              </div>
-            )}
-
             {customerId && issuedBooks.length > 0 && (
-              <div style={{ marginTop: 14, marginBottom: 12 }}>
-                <Row gutter={8} className="mini-head">
+              <div style={{ marginTop: 4 }}>
+                <Row gutter={8} className="coupon-head" style={{ marginBottom: 4 }}>
                   <Col xs={24} md={12}>الدفتر المصروف له</Col>
                   <Col xs={12} md={5}>العدد الراجع</Col>
                   <Col xs={12} md={4}>الأرقام</Col>
@@ -1435,48 +1444,75 @@ export default function Returns() {
                         </span>
                       </Col>
                       <Col xs={24} md={3}>
-                        {!viewOnly && i === couponRows.length - 1 && (
-                          <Button size="small" icon={<PlusOutlined />} title="دفتر تاني"
-                            onClick={() => setCouponRows((rs) => [...rs, blankCoupon()])} />
-                        )}
-                        {!viewOnly && (
-                          <Button type="text" danger icon={<DeleteOutlined />} title="امسح الصف"
-                            onClick={() => setCouponRows((rs) => (rs.length === 1
-                              ? [blankCoupon()]
-                              : rs.filter((x) => x.key !== row.key)))} />
-                        )}
+                        <div className="coupon-actions">
+                          {!viewOnly && i === couponRows.length - 1 && (
+                            <Button size="small" type="primary" className="sale-green-btn"
+                              icon={<PlusOutlined />} title="دفتر تاني"
+                              onClick={() => setCouponRows((rs) => [...rs, blankCoupon()])} />
+                          )}
+                          {!viewOnly && (
+                            <Button size="small" danger icon={<DeleteOutlined />} title="امسح الصف"
+                              onClick={() => setCouponRows((rs) => (rs.length === 1
+                                ? [blankCoupon()]
+                                : rs.filter((x) => x.key !== row.key)))} />
+                          )}
+                        </div>
                       </Col>
                     </Row>
                   );
                 })}
                 {couponRows.some((r) => Number(r.count || 0) > 0) && (
-                  <div style={{ fontSize: 12, color: '#4a4a4a' }}>
+                  <div className="coupon-note">
                     الإجمالي: {couponRows.reduce((t, r) => t + Number(r.count || 0), 0)} كوبون
                   </div>
                 )}
               </div>
             )}
+          </div>
 
-            <Divider style={{ margin: '10px 0' }} />
+          <div className="sale-card sale-lines">
+            {/* شريط الأصناف: «أبيض/بولي» بأرصدتهم وعدد البنود يمين، وزرار الإضافة شمال. */}
+            <div className="sale-items-bar">
+              <div className="sale-items-info">
+                {families.length > 1 && (
+                  <Segmented
+                    disabled={viewOnly}
+                    value={returnFamily ?? ''}
+                    onChange={(v: string | number) => setReturnFamily(String(v) || null)}
+                    options={families.map((a) => ({
+                      value: a.family as string,
+                      label: (
+                        <span style={{ fontWeight: 700 }}>
+                          {a.family}
+                          <span style={{ color: '#64748b', marginInlineStart: 6, fontSize: 12,
+                                         fontWeight: 400 }}>
+                            ({money(Number(a.balance || 0))})
+                          </span>
+                        </span>
+                      ),
+                    }))}
+                  />
+                )}
+                <span>
+                  عدد البنود الحالية: <b style={{ color: '#0f172a' }}>
+                    {lines.filter((l) => l.item_id !== null).length}</b> أصناف
+                </span>
+              </div>
+              {customerId && !viewOnly && (
+                <Button data-shortcut="F2"
+                  type="primary" className="sale-green-btn" icon={<ShoppingCartOutlined />}
+                  style={{ fontWeight: 700 }}
+                  onClick={() => setPickerOpen(true)}
+                >
+                  إضافة صنف للمرتجع (F2)
+                </Button>
+              )}
+            </div>
 
             {!customerId ? (
               <Empty description="اختر العميل أولاً لعرض آخر أسعار الشراء تلقائياً" style={{ margin: '12px 0' }} />
             ) : (
               <>
-                <Row gutter={16}>
-                <Col xs={24}>
-                {!viewOnly && (
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12, marginTop: 4 }}>
-                    <Button data-shortcut="F2"
-                      type="primary" danger icon={<PlusOutlined />}
-                      style={{ flex: 1, height: 40, fontSize: 15, fontWeight: 700, borderRadius: 8 }}
-                      onClick={() => setPickerOpen(true)}
-                    >
-                      إضافة صنف للمرتجع (F2)
-                    </Button>
-                  </div>
-                )}
-
                 <ProductPickerModal
                   open={pickerOpen}
                   title="اختر الصنف المرتجع"
@@ -1502,151 +1538,197 @@ export default function Returns() {
                   }}
                 />
 
+                {/* سطور المرتجع جدول واحد بترويسة كحلي زي فاتورة البيع — كانت كروت متجمّعة
+                    بالفئة. الفئة بقت صف فاصل جوّه الجدول (لما يكون فيه أكتر من فئة)، والسيريالات
+                    صف كامل تحت السطر بتاعها. */}
                 {lines.length === 0 ? (
                   <Empty description="اختر الفئة ثم الأصناف لإضافتها للمرتجع" style={{ margin: '12px 0' }} />
-                ) : (<>
-                  {linesByCategory.map((group) => (
-                    <div key={group.category ?? '__none__'}
-                      style={{ border: '1px solid #e6efe3', borderRadius: 10, overflow: 'hidden', marginBottom: 12 }}>
-                      <div style={{ background: '#fdf3ee', padding: '8px 12px', display: 'flex', alignItems: 'center', gap: 8 }}>
-                        <Tag color="volcano" style={{ fontWeight: 700, margin: 0 }}>
-                          {group.category ? (categoryLabels[group.category] || group.category) : 'بدون فئة'}
-                        </Tag>
-                        <span style={{ color: '#6b6b6b', fontSize: 12 }}>{group.items.length} صنف</span>
-                      </div>
-
-                      {/* **الصنف كله في صف واحد، والإجمالي آخره.** المجموع كان ٢٤ خانة + عمود
-                          الترقيم، فالصف بيتكسر والإجمالي ينزل سطر لوحده تحت (الترقيم من غير
-                          عرض بياخد ٢ من `colHead`). دلوقتي ٢٤ بالظبط. على الموبايل بيتكسر عن قصد (`xs`). */}
-                      <Row gutter={8} style={{ padding: '6px 12px 0', color: '#6b6b6b', fontSize: 12 }}>
-                        {lineGrid.colHead.map((c) => (
-                          <Col key={c.key} md={c.span}
-                            style={c.align ? { textAlign: c.align } : undefined}>
-                            {c.title}
-                          </Col>
-                        ))}
-                      </Row>
-
-                      {group.items.map((line) => (
-                        <div key={line.key}
-                          style={{ padding: '4px 12px 6px', borderTop: '1px solid #f5efec' }}>
-                          <Row gutter={8} align="middle">
-                            {/* الترقيم على المستند كله مش جوّه الفئة — كان بيتبعت ٠ فكل سطر «١». */}
-                            {lineGrid.colRow(line, lines.indexOf(line)).map((c) => (
-                              <Col key={c.key} md={c.span} xs={c.xs}
-                                style={c.align ? { textAlign: c.align } : undefined}
-                                {...(c.key === 'quantity' && line.item_id != null
-                                  ? { [QTY_DATA_ATTR]: line.item_id } : {})}>
-                                {c.node}
-                              </Col>
+                ) : (
+                  <div className="sale-grid-wrap">
+                    <table className="entry-grid sale-grid">
+                      <thead>{lineGrid.head}</thead>
+                      <tbody>
+                        {linesByCategory.map((group) => (
+                          <React.Fragment key={group.category ?? '__none__'}>
+                            {linesByCategory.length > 1 && (
+                              <tr className="sale-group-row">
+                                <td colSpan={lineGrid.count}>
+                                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                      <Tag color="success" style={{ fontWeight: 700, fontSize: 11, padding: '0 6px', borderRadius: 4, margin: 0 }}>
+                                        {group.category ? (categoryLabels[group.category] || group.category) : 'بدون فئة'}
+                                      </Tag>
+                                      <span style={{ color: '#64748b', fontSize: 11, fontWeight: 600 }}>({group.items.length} صنف)</span>
+                                    </div>
+                                    <span style={{ color: '#64748b', fontSize: 11, fontWeight: 600 }}>
+                                      إجمالي الفئة: {money(group.items.reduce((s, l) => s + lineTotal(l), 0))}
+                                    </span>
+                                  </div>
+                                </td>
+                              </tr>
+                            )}
+                            {group.items.map((line) => (
+                              <React.Fragment key={line.key}>
+                                {/* الترقيم على المستند كله مش جوّه الفئة — كان بيتبعت ٠ فكل سطر «١». */}
+                                <tr>{lineGrid.row(line, lines.indexOf(line))}</tr>
+                                {line.is_serialized && (
+                                  <tr>
+                                    <td colSpan={lineGrid.count}>
+                                      <Input.TextArea
+                                        disabled={viewOnly}
+                                        size="small" rows={2}
+                                        placeholder="السيريالات المرتجعة — رقم في كل سطر بعدد الكمية"
+                                        value={(line.serials || []).join(SERIAL_SEP)}
+                                        onChange={(e) => handleLineChange(line.key, 'serials',
+                                          e.target.value.split(SERIAL_SEP)
+                                            .map((x) => x.trim()).filter(Boolean))}
+                                      />
+                                    </td>
+                                  </tr>
+                                )}
+                              </React.Fragment>
                             ))}
-                          </Row>
-                          {line.is_serialized && (
-                            <Row gutter={8}>
-                              <Col span={24}>
-                                <Input.TextArea
-                                  disabled={viewOnly}
-                                  size="small" rows={2}
-                                  placeholder="السيريالات المرتجعة — رقم في كل سطر بعدد الكمية"
-                                  value={(line.serials || []).join(SERIAL_SEP)}
-                                  onChange={(e) => handleLineChange(line.key, 'serials',
-                                    e.target.value.split(SERIAL_SEP)
-                                      .map((x) => x.trim()).filter(Boolean))}
-                                />
-                              </Col>
-                            </Row>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  ))}
-                </>)}
-                </Col>
-                </Row>
+                          </React.Fragment>
+                        ))}
+                      </tbody>
+                      <tfoot>{lineGrid.foot(lines, (
+                        <>الإجماليات: <span style={{ color: '#64748b', fontWeight: 600 }}>
+                          ({new Set(lines.filter((l) => l.item_id !== null).map((l) => l.item_id)).size} بنود مختلفة)
+                        </span></>
+                      ))}</tfoot>
+                    </table>
+                  </div>
+                )}
               </>
             )}
+          </div>
 
-            {/* صور الورقة — سند المردود الموقّع عليه. `viewReturn` بيفضل `null` على
-                السند الجديد، والمكوّن بيختفي لحد ما يترحّل وياخد رقم يتعلّق عليه. */}
-            <DocumentAttachments docType="sales_return" docId={viewReturn?.id} />
+          {/* الدفع والملخص: نفس أرقام سُلّم الإجماليات القديم بالظبط، في مربعات (تصميم العميل). */}
+          {(() => {
+            const returnDiscount = grossTotal - netTotal;
+            const hasParty = !!customerId && customerBalance !== null;
+            const balance = customerBalance ?? 0;
+            const after = balance - creditReduction;
+            return (
+              <>
+              {/* الملاحظات والمرفقات فوق — برّه الجزء المثبّت عشان مايطولوش. */}
+              <div className="sale-card sale-notes">
+                <div className="sale-notes-line">
+                  <span className="sale-hint">
+                    <InfoCircleOutlined /> الباقي بعد المسترد نقداً بيتخصم من حساب العميل
+                  </span>
+                  <span>نقاط تُخصم من العميل: <b style={{ color: '#F5A11D' }}>
+                    {totalPoints.toLocaleString(numeralsLocale(), { maximumFractionDigits: 3 })}</b></span>
+                  {cashRefund > 0.001 && (
+                    <span>مسترد نقداً: <b style={{ color: '#cf4b1a' }}>{money(cashRefund)} ج.م</b></span>
+                  )}
+                </div>
+                {/* صور الورقة — سند المردود الموقّع عليه. `viewReturn` بيفضل `null` على
+                    السند الجديد، والمكوّن بيختفي لحد ما يترحّل وياخد رقم يتعلّق عليه. */}
+                <div className="sale-attach">
+                  <DocumentAttachments docType="sales_return" docId={viewReturn?.id} title="مرفقات" />
+                </div>
+              </div>
+              {/* **الإجمالي والاسترداد مثبّتين في آخر الشاشة** زي فاتورة البيع. */}
+              <div className="sale-bottom">
+              <Row gutter={[10, 10]}>
+                <Col xs={24} lg={16}>
+                  <div className="sale-tiles">
+                    <SummaryTile label="إجمالي الأصناف المرتجعة" value={money(grossTotal)} sub="جنيه مصري" />
+                    {returnDiscount > 0.001 && (
+                      <SummaryTile label={`خصم المرتجع (${discountPct}%)`}
+                        value={`− ${money(returnDiscount)}`} color="#dc2626" />
+                    )}
+                    <SummaryTile label="صافي المرتجع" value={money(netTotal)} color="#cf4b1a"
+                      sub="بيرجع للعميل" />
+                    {totalReturnPoints > 0 && (
+                      <SummaryTile label="النقاط المستردّة" color="#b26a00"
+                        value={totalReturnPoints.toLocaleString(numeralsLocale(), { maximumFractionDigits: 3 })} />
+                    )}
+                    {hasParty && families.map((a) => {
+                      const b = Number(a.balance || 0);
+                      return (
+                        <SummaryTile key={a.family} label={`مديونية ${a.family}`}
+                          value={money(b)} color={b > 0 ? '#dc2626' : '#16a34a'}
+                          active={a.family === returnFamily}
+                          sub={b > 0.001 ? 'مستحق عليه' : 'لا يوجد متأخرات'} />
+                      );
+                    })}
+                    {hasParty && families.length > 1 && (
+                      <SummaryTile label="إجمالي المديونية" tone="yellow" value={money(balance)}
+                        color={balance > 0 ? '#dc2626' : '#16a34a'} sub="قبل المرتجع ده" />
+                    )}
+                    {hasParty && families.length <= 1 && Math.abs(balance) > 0.001 && (
+                      <SummaryTile label="حساب سابق على العميل" tone="yellow" value={money(balance)}
+                        color={balance > 0 ? '#dc2626' : '#16a34a'} sub="قبل المرتجع ده" />
+                    )}
+                    {hasParty && creditReduction > 0.001 && (
+                      <SummaryTile label="يُخصم من حسابه (آجل)" tone="mint"
+                        value={`− ${money(creditReduction)}`} color="#16a34a" />
+                    )}
+                  </div>
+                </Col>
 
-            {(() => {
-              const returnDiscount = grossTotal - netTotal;
-              const hasParty = !!customerId && customerBalance !== null;
-              const balance = customerBalance ?? 0;
-              const after = balance - creditReduction;
-              return (
-                <TotalsLadder
-                  tone="return"
-                  inputs={(
-                    <>
-                      <Form.Item label="خصم على إجمالي المرتجع" style={{ marginBottom: 12 }}>
+                <Col xs={24} lg={8}>
+                  <div className="sale-card sale-pay">
+                    <div className="sale-pay-inputs">
+                      <Form.Item label="خصم على إجمالي المرتجع">
                         <InputNumber min={0} max={100} style={{ width: '100%' }} addonAfter="%"
                           disabled={viewOnly}
                           value={discountPct} onChange={(val) => setDiscountPct(val || 0)} />
                       </Form.Item>
-                      <Form.Item label="المبلغ المسترد نقداً" style={{ marginBottom: 0 }}
-                        help="الباقي بيتخصم من حساب العميل">
+                      <Form.Item label="المبلغ المسترد نقداً">
                         <InputNumber min={0} style={{ width: '100%' }} addonAfter="ج.م"
+                          className="sale-cash-input"
                           disabled={viewOnly}
                           value={cashRefund} onChange={(val) => setCashRefund(val || 0)} />
                       </Form.Item>
-                    </>
-                  )}
-                  rows={[
-                    { label: 'إجمالي الأصناف المرتجعة', value: money(grossTotal) },
-                    { label: `خصم المرتجع (${discountPct}%)`,
-                      value: `− ${money(returnDiscount)}`, color: '#cf1322',
-                      show: returnDiscount > 0.001 },
-                    { label: 'صافي المرتجع', value: money(netTotal),
-                      strong: true, color: '#cf4b1a', rule: true },
-                    { label: 'النقاط المستردّة', value: totalReturnPoints
-                        .toLocaleString(numeralsLocale(), { maximumFractionDigits: 3 }),
-                      color: '#b26a00', show: totalReturnPoints > 0 },
-                    ...families.map((a) => ({
-                      label: `مديونية ${a.family}`,
-                      value: money(Number(a.balance || 0)),
-                      color: Number(a.balance || 0) > 0 ? '#cf1322' : '#6AB42D',
-                      highlight: a.family === returnFamily,
-                      show: hasParty,
-                    })),
-                    { label: 'إجمالي المديونية', value: money(balance), strong: true,
-                      color: balance > 0 ? '#cf1322' : '#6AB42D',
-                      rule: families.length > 1,
-                      show: hasParty && families.length > 1 },
-                    { label: 'حساب سابق على العميل', value: money(balance),
-                      color: balance > 0 ? '#cf1322' : '#6AB42D',
-                      show: hasParty && families.length <= 1 && Math.abs(balance) > 0.001 },
-                    { label: 'يُخصم من حسابه (آجل)', value: `− ${money(creditReduction)}`,
-                      color: '#6AB42D', show: hasParty && creditReduction > 0.001 },
-                    { label: 'الباقي على العميل', value: money(after), big: true, rule: true,
-                      color: after > 0.001 ? '#cf1322' : '#6AB42D', show: hasParty },
-                  ]}
-                  notes={[
-                    <>نقاط تُخصم من العميل: <b style={{ color: '#F5A11D' }}>
-                      {totalPoints.toLocaleString(numeralsLocale(), { maximumFractionDigits: 3 })}</b></>,
-                    cashRefund > 0.001 ? (
-                      <>مسترد نقداً: <b style={{ color: '#cf4b1a' }}>{money(cashRefund)} ج.م</b></>
-                    ) : null,
-                  ]}
-                />
-              );
-            })()}
+                    </div>
+                    {hasParty && (
+                      <div className={`sale-due ${after > 0.001 ? 'is-due' : 'is-clear'}`}>
+                        <div>
+                          <div className="sale-due-label">الباقي على العميل</div>
+                          <div className="sale-due-sub">
+                            {after > 0.001 ? 'بعد خصم المرتجع من حسابه' : 'مافيش باقي عليه'}
+                          </div>
+                        </div>
+                        <div className="sale-due-value">{money(after)} <small>ج.م</small></div>
+                      </div>
+                    )}
+                    {!viewOnly && (
+                      <div className="sale-pay-actions">
+                        <Button type="primary" htmlType="submit"
+                          icon={<CheckOutlined />} className="sale-green-btn sale-save-btn">
+                          {editingSourceId ? 'حفظ التعديل' : 'تسجيل وحفظ مرتجع المبيعات'} (F9)
+                        </Button>
+                        <Button onClick={closeCreate}>إلغاء</Button>
+                      </div>
+                    )}
+                  </div>
+                </Col>
+              </Row>
+              </div>
+              </>
+            );
+          })()}
+        </Form>
 
-            {!viewOnly && (
-              <Form.Item style={{ marginTop: 20, marginBottom: 0 }}>
-                <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-                  <Space>
-                    <Button type="primary" danger htmlType="submit">
-                      {editingSourceId ? 'حفظ التعديل' : 'تسجيل وحفظ مرتجع المبيعات'}
-                    </Button>
-                    <Button onClick={closeCreate}>إلغاء</Button>
-                  </Space>
-                </div>
-              </Form.Item>
-            )}
-          </Form>
-        </Card>
+        {/* المكوّن مشترك مع البيع والشرا — الشرح في `components/LoadPeriodModal`.
+            `openNewest` بيفتح أحدث مرتجع في الفترة على طول، و`onLoaded` بيحط الفترة في
+            `returns` — الكشف اللي «السابق» و«التالى» بيمشوا فيه — فالتنقّل يفضل جوّه
+            اللي اتحمّل مش جوّه آخر صفحة كانت مفتوحة. */}
+        <LoadPeriodModal
+          open={loadPeriodOpen} onCancel={() => setLoadPeriodOpen(false)}
+          title="تحميل مرتجعات فترة" endpoint="/api/v1/sales/returns"
+          columns={[
+            { title: 'المستند', key: 'document_number', width: 150 },
+            { title: 'التاريخ', key: 'return_date', width: 120 },
+            { title: 'العميل', key: 'customer_name' },
+            { title: 'القيمة', key: 'value', width: 130, money: true },
+          ]}
+          onLoaded={(rows) => setReturns(rows)}
+          openNewest dateKey="return_date"
+          onPick={(r) => openDetail(r)} />
 
         <TabModal centered width={560} open={!!histModal} onCancel={() => setHistModal(null)}
           title={`سجل شراء العميل — ${histModal?.name ?? ''}`}
@@ -1952,10 +2034,19 @@ export default function Returns() {
       </Card>
   );
 
+  // جوّه شاشة تانية: مافيش كشف نرجعله — اتقفل المستند أو اتلغى الباب ⇒ نخرج.
+  const onExit = embedded?.onExit;
+  useEffect(() => {
+    if (onExit && !createVisible && !newStep) onExit();
+  }, [onExit, createVisible, newStep]);
+
   return (
-    <div>
+    // المستند المفتوح بطول الشاشة على الأقل (زي فاتورة البيع) عشان الإجمالي والاسترداد
+    // يقعدوا في آخرها. نفس الـ`div` في الفرعين — البوابات مابتتفكّش (الشرح فوق `screen`).
+    <div style={screen
+      ? { minHeight: '100%', display: 'flex', flexDirection: 'column' } : undefined}>
       {doors}
-      {screen ?? list}
+      {screen ?? (embedded ? null : list)}
     </div>
   );
 }
