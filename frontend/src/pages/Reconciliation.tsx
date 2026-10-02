@@ -328,7 +328,7 @@ export default function Reconciliation() {
                     render: (n: string, r: PartnerRow) => (
                       <div>
                         <div>{n}</div>
-                        <div style={{ fontSize: 12, color: '#888' }}>
+                        <div style={{ fontSize: 12.5, color: '#888' }}>
                           {r.open_lines} سطر مفتوح
                         </div>
                       </div>

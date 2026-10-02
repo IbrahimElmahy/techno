@@ -24,7 +24,7 @@ import { useNavigate } from 'react-router-dom';
  * around is how the next person adds a link that quietly goes nowhere.
  */
 export type DocKind = 'invoice' | 'return' | 'purchase' | 'purchase_return'
-  | 'transfer' | 'stock_permit';
+  | 'transfer' | 'stock_permit' | 'stock_count' | 'production_order' | 'voucher';
 
 const SCREEN: Record<DocKind, string> = {
   invoice: '/invoices',
@@ -38,6 +38,25 @@ const SCREEN: Record<DocKind, string> = {
   // رقم مستند مايقدرش يفتحه.
   transfer: '/transfers',
   stock_permit: '/stock-permits',
+  // كشف الجرد (تسوية العجز/الزيادة) وأمر التشغيل — الاتنين بيحرّكوا مخزون وشاشتهم
+  // بتفتح المستند من العنوان (`useDocRoute`). التصنيع لازم يتقال له التبويب: الشاشة ممكن
+  // تكون متمسّكة على «الهالك»، وأوامر التشغيل بس هي اللي بتقرا الرقم.
+  stock_count: '/stock-counts',
+  production_order: '/manufacturing?tab=orders',
+  // السند رجع (٢٠٢٦-١٠-٠٢): شاشة السندات بقى ليها ورقة عرض بتتفتح من العنوان، و«سجل
+  // السندات» فيه كل الأنواع — فسطر السند في كشف الحساب بيفتح السند نفسه.
+  voucher: '/vouchers?tab=log',
+};
+
+/**
+ * البارامتر اللي الشاشة بتكتبه لما تفتح المستند بنفسها.
+ *
+ * أمر التشغيل مالوش غير شكل واحد (الورقة نفسها) وشاشته بتكتبه `?edit=`. لو الرابط بعت
+ * `?doc=`، الشاشة بتدفع خطوة `?edit=` فوقه، و«رجوع» بيقع على خطوة `?doc=` فيفتح الأمر
+ * تاني بدل ما يرجّع للجرد. فالرابط بيتكلم بلغة الشاشة.
+ */
+const OPEN_PARAM: Partial<Record<DocKind, 'doc' | 'edit'>> = {
+  production_order: 'edit',
 };
 
 /**
@@ -58,17 +77,26 @@ const SCREEN: Record<DocKind, string> = {
  * اتصلحت مرة واحدة — كارت الصنف، كشف الحساب، كارت العميل.
  */
 export function docKindOf(sourceDocType: string | null | undefined): DocKind | null {
-  switch (sourceDocType) {
+  // حركة العكس (`reverse_sales_invoice`) بتاعة نفس المستند — بتفتحه هو.
+  const t = (sourceDocType || '').replace(/^reverse_/, '');
+  switch (t) {
     case 'sale':
     case 'sales_invoice': return 'invoice';
     case 'sale_return':
-    case 'sales_return': return 'return';
+    case 'sales_return':
+    // عكس المرتجع مكتوب على رقم المرتجع نفسه (`source_doc_id = ret.id`).
+    case 'sale_return_reversal': return 'return';
     case 'purchase':
     case 'purchase_invoice': return 'purchase';
-    case 'purchase_return': return 'purchase_return';
+    case 'purchase_return':
+    case 'purchase_return_reversal': return 'purchase_return';
     case 'transfer':
     case 'stock_transfer': return 'transfer';
+    // `permit` الاسم القديم لنفس الإذن (إضافة/صرف/أول مدة) — كان بيرجع null ويتعرض نص ميّت.
+    case 'permit':
     case 'stock_permit': return 'stock_permit';
+    case 'stock_count': return 'stock_count';
+    case 'production_order': return 'production_order';
     default: return null;
   }
 }
@@ -109,7 +137,9 @@ export function useOpenDocument() {
     // والعلامة في العنوان مش في `state` بتاع الراوتر عن قصد: شاشة الفواتير بتمسح
     // بارامتراتها بـ`replace` أول ما تفتح المستند، والاستبدال بيرمي الـ`state` معاه.
     // العنوان بيتقرا قبل المسح، فالعلامة بتوصل.
-    navigate(`${SCREEN[kind]}?doc=${id}&back=1`);
+    const screen = SCREEN[kind];
+    const param = OPEN_PARAM[kind] ?? 'doc';
+    navigate(`${screen}${screen.includes('?') ? '&' : '?'}${param}=${id}&back=1`);
   };
 }
 

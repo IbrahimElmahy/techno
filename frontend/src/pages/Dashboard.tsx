@@ -180,7 +180,7 @@ export default function Dashboard() {
                     <div style={{ fontSize: 20, fontWeight: 700, lineHeight: 1.2 }}>
                       {n} <span style={{ fontSize: 14, fontWeight: 500 }}>{s.label}</span>
                     </div>
-                    <div style={{ color: '#6b6b6b', fontSize: 12 }}>{s.note}</div>
+                    <div style={{ color: '#6b6b6b', fontSize: 12.5 }}>{s.note}</div>
                   </div>
                 </Space>
               </Card>
@@ -228,14 +228,14 @@ export default function Dashboard() {
                       <List.Item style={{ paddingInline: 0 }}>
                         <Space size={8} wrap>
                           <span style={{ fontWeight: 500 }}>{sample.label}</span>
-                          <span style={{ color: '#6b6b6b', fontSize: 12 }}>{sample.detail}</span>
+                          <span style={{ color: '#6b6b6b', fontSize: 12.5 }}>{sample.detail}</span>
                         </Space>
                       </List.Item>
                     )}
                   />
                 )}
                 {issue.count > issue.samples.length && (
-                  <div style={{ color: '#6b6b6b', fontSize: 12, marginTop: 4 }}>
+                  <div style={{ color: '#6b6b6b', fontSize: 12.5, marginTop: 4 }}>
                     {/* Never let a truncated list read as the whole list. */}
                     و{issue.count - issue.samples.length} غيرهم — افتح الصفحة تشوفهم كلهم
                   </div>

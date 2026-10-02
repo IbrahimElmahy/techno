@@ -183,7 +183,7 @@ export default function Treasuries() {
       ellipsis: true,
       render: (name: string, r: RepSafe) => (
         <Space size={4}>
-          <span style={{ fontWeight: 600 }}>{name || <span style={{ color: '#8c8c8c' }}>حساب بلا اسم</span>}</span>
+          <span style={{ fontWeight: 600 }}>{name || <span style={{ color: '#555b65' }}>حساب بلا اسم</span>}</span>
           {!r.active && <Tag color="red">مقفول</Tag>}
         </Space>
       ),
@@ -203,7 +203,7 @@ export default function Treasuries() {
       width: 110,
       render: (f: string | null) => (f
         ? <Tag color={f === 'أبيض' ? 'default' : 'blue'}>{f}</Tag>
-        : <span style={{ color: '#8c8c8c' }}>بدون خط</span>),
+        : <span style={{ color: '#555b65' }}>بدون خط</span>),
     },
     {
       title: 'المندوب',
@@ -219,7 +219,7 @@ export default function Treasuries() {
       width: 140,
       align: 'left' as const,
       render: (b: string | null) =>
-        b === null ? <span style={{ color: '#999' }} title="الرصيد مااتقراش">—</span>
+        b === null ? <span style={{ color: '#555b65' }} title="الرصيد مااتقراش">—</span>
                    : <strong>{egp(b)}</strong>,
       sorter: (a: RepSafe, b: RepSafe) => Number(a.balance || 0) - Number(b.balance || 0),
     },
@@ -339,7 +339,7 @@ export default function Treasuries() {
       width: 140,
       align: 'left' as const,
       render: (b: string | null) =>
-        b === null ? <span style={{ color: '#999' }} title="الرصيد مااتقراش">—</span>
+        b === null ? <span style={{ color: '#555b65' }} title="الرصيد مااتقراش">—</span>
                    : <strong>{egp(b)}</strong>,
       sorter: (a: TreasuryRecord, b: TreasuryRecord) =>
         Number(a.balance || 0) - Number(b.balance || 0),

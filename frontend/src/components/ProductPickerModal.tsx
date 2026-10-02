@@ -861,7 +861,7 @@ export default function ProductPickerModal({
                     }}>
                     {catLabel(g.value)}
                     {(stockCounts || g.children.length > 0) && (
-                      <span style={{ fontSize: 11, opacity: 0.75, marginInlineStart: 6 }}>
+                      <span style={{ fontSize: 12.5, opacity: 0.75, marginInlineStart: 6 }}>
                         ({stockCounts ? countOf(g.value, g.children) : g.children.length})
                       </span>
                     )}
@@ -880,7 +880,7 @@ export default function ProductPickerModal({
                         }}>
                         {catLabel(c)}
                         {stockCounts && (
-                          <span style={{ fontSize: 11, opacity: 0.75, marginInlineStart: 6 }}>
+                          <span style={{ fontSize: 12.5, opacity: 0.75, marginInlineStart: 6 }}>
                             ({countOf(c)})
                           </span>
                         )}
@@ -947,22 +947,22 @@ export default function ProductPickerModal({
                         {picked.includes(p.id) ? '☑' : '☐'}
                       </span>
                     )}
-                    <b style={{ color: out ? '#999' : undefined }}>{p.name}</b>
+                    <b style={{ color: out ? '#555b65' : undefined }}>{p.name}</b>
                     {/* الكود مابيتعرضش (قرار العميل) — البحث بيه لسه شغّال فوق. */}
                   </span>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
                     {priceFor && priceFor(p.id) != null && (
-                      <Tag color="blue" style={{ fontWeight: 600, fontSize: 12, padding: '2px 8px', borderRadius: 6 }}>
+                      <Tag color="blue" style={{ fontWeight: 600, fontSize: 12.5, padding: '2px 8px', borderRadius: 6 }}>
                         السعر: {typeof priceFor(p.id) === 'number' ? fmtPrice(priceFor(p.id)) : priceFor(p.id)}
                       </Tag>
                     )}
                     {!priceFor && !hidePurchasePrice && p.purchase_price != null && Number(p.purchase_price) > 0 && (
-                      <Tag color="blue" style={{ fontWeight: 600, fontSize: 12, padding: '2px 8px', borderRadius: 6 }}>
+                      <Tag color="blue" style={{ fontWeight: 600, fontSize: 12.5, padding: '2px 8px', borderRadius: 6 }}>
                         شراء: {fmtPrice(p.purchase_price)}
                       </Tag>
                     )}
                     {!priceFor && (p.sale_price != null || p.consumer_price != null) && Number(p.sale_price || p.consumer_price) > 0 && (
-                      <Tag color="cyan" style={{ fontWeight: 600, fontSize: 12, padding: '2px 8px', borderRadius: 6 }}>
+                      <Tag color="cyan" style={{ fontWeight: 600, fontSize: 12.5, padding: '2px 8px', borderRadius: 6 }}>
                         بيع: {fmtPrice(p.sale_price || p.consumer_price)}
                       </Tag>
                     )}
@@ -971,7 +971,7 @@ export default function ProductPickerModal({
                         color={available > 0 ? 'success' : 'error'}
                         style={{
                           fontWeight: 700,
-                          fontSize: 12,
+                          fontSize: 12.5,
                           padding: '2px 8px',
                           borderRadius: 6,
                         }}
@@ -991,7 +991,7 @@ export default function ProductPickerModal({
 
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center',
         marginTop: 10, gap: 12, flexWrap: 'wrap' }}>
-        <span style={{ fontSize: 12, color: '#6b6b6b' }}>
+        <span style={{ fontSize: 12.5, color: '#6b6b6b' }}>
           اكتب للبحث · ↑↓ للتنقل · Enter {bulk ? 'للتحديد' : 'للإضافة'}
         </span>
         {onPickMany && (

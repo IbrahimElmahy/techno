@@ -715,7 +715,7 @@ function CustomerMergeCard() {
           {plan.skipped?.length > 0 && (
             <div style={{ marginTop: 8 }}>
               {plan.skipped.map(([name, why]: [string, string]) => (
-                <div key={name} style={{ color: '#d46b08', fontSize: 12 }}>{name}: {why}</div>
+                <div key={name} style={{ color: '#d46b08', fontSize: 12.5 }}>{name}: {why}</div>
               ))}
             </div>
           )}

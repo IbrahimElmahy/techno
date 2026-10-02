@@ -1403,7 +1403,7 @@ export default function PurchaseReturns({ embedded }: { embedded?: { onExit: () 
             <Col xs={12} md={4}>
               <Form.Item label="الهاتف">
                 <Input readOnly disabled dir="ltr" placeholder="-"
-                  suffix={<PhoneOutlined style={{ color: '#94a3b8' }} />}
+                  suffix={<PhoneOutlined style={{ color: '#5b6575' }} />}
                   value={supplierPhone} />
               </Form.Item>
             </Col>
@@ -1461,12 +1461,12 @@ export default function PurchaseReturns({ embedded }: { embedded?: { onExit: () 
                           <td colSpan={20}>
                             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                               <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                                <Tag color="success" style={{ fontWeight: 700, fontSize: 11, padding: '0 6px', borderRadius: 4, margin: 0 }}>
+                                <Tag color="success" style={{ fontWeight: 700, fontSize: 12.5, padding: '0 6px', borderRadius: 4, margin: 0 }}>
                                   {group.category ? (categoryLabels[group.category] || group.category) : 'بدون فئة'}
                                 </Tag>
-                                <span style={{ color: '#64748b', fontSize: 11, fontWeight: 600 }}>({group.items.length} صنف)</span>
+                                <span style={{ color: '#64748b', fontSize: 12.5, fontWeight: 600 }}>({group.items.length} صنف)</span>
                               </div>
-                              <span style={{ color: '#64748b', fontSize: 11, fontWeight: 600 }}>
+                              <span style={{ color: '#64748b', fontSize: 12.5, fontWeight: 600 }}>
                                 إجمالي الفئة: {money(group.items.reduce((s, l) => s + lineNet(l), 0))}
                               </span>
                             </div>

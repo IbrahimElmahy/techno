@@ -724,7 +724,7 @@ export default function Catalog() {
               {pct.toFixed(pct % 1 === 0 ? 0 : 2)}%
             </Tag>
             {price > 0 && (
-              <div style={{ fontSize: 11, color: '#8c8c8c' }}>
+              <div style={{ fontSize: 12.5, color: '#555b65' }}>
                 صافي {money(netOf(price, pct))}
               </div>
             )}

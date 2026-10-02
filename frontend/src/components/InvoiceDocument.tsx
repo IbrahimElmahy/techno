@@ -348,7 +348,7 @@ export default function InvoiceDocument({
         <div>
           <div style={{ fontSize: 20, fontWeight: 800, color: BRAND.green }}>{COMPANY.nameAr}</div>
           {companyLines().map((l) => (
-            <div key={l} style={{ fontSize: 11, color: '#5d6f64' }}>{l}</div>
+            <div key={l} style={{ fontSize: 12.5, color: '#5d6f64' }}>{l}</div>
           ))}
         </div>
         <Logo width={150} />
@@ -448,7 +448,7 @@ export default function InvoiceDocument({
         </tbody>
       </table>
 
-      <div style={{ marginTop: 16, fontSize: 11, color: '#5d6f64' }}>{NOTE[doc.kind]}</div>
+      <div style={{ marginTop: 16, fontSize: 12.5, color: '#5d6f64' }}>{NOTE[doc.kind]}</div>
     </div>
   );
 }

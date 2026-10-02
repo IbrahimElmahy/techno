@@ -398,7 +398,7 @@ export default function Leave() {
             <div style={{ marginBottom: 4 }}>المدة *</div>
             <DateRangeFilter
               value={form.range} onChange={(v) => setForm({ ...form, range: v })} />
-            <div style={{ color: '#888', fontSize: 12, marginTop: 4 }}>
+            <div style={{ color: '#888', fontSize: 12.5, marginTop: 4 }}>
               الجمعة والسبت والعطلات الرسمية مابيتخصموش من الرصيد.
             </div>
           </Col>

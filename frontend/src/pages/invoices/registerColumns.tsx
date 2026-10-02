@@ -101,7 +101,7 @@ export function buildRegisterColumns({
             : <Tag bordered className="sl-docno"
                 color={r.doc_type !== 'sale' ? 'magenta' : r.is_bonus ? 'orange' : 'green'}>{doc}</Tag>}
           {r.original_invoice_number && (
-            <span style={{ fontSize: 11, color: '#8c8c8c' }}>عن: {r.original_invoice_number}</span>
+            <span style={{ fontSize: 12.5, color: '#555b65' }}>عن: {r.original_invoice_number}</span>
           )}
         </Space>
       ),
@@ -113,7 +113,7 @@ export function buildRegisterColumns({
       width: 140,
       ellipsis: true,
       render: (id: number | null) => {
-        if (!id) return <span style={{ color: '#8c8c8c' }}>الافتراضي</span>;
+        if (!id) return <span style={{ color: '#555b65' }}>الافتراضي</span>;
         const a = postingAccounts.find((x: any) => x.id === id);
         return a ? (a.name || a.code || `#${id}`) : `#${id}`;
       },
@@ -134,7 +134,7 @@ export function buildRegisterColumns({
         // الاسم جاي مع الصف؛ الكشف المحلي فاضل كخطة بديلة للصفوف القديمة.
         const name = row.customer_name || customers.find((cust) => cust.id === cId)?.name;
         // مسودّة لسه ما اتحطّ فيها عميل — «—» أصدق من «عميل #null» ورابط مايفتحش.
-        if (cId == null) return <span style={{ color: '#8c8c8c' }}>—</span>;
+        if (cId == null) return <span style={{ color: '#555b65' }}>—</span>;
         return (
           <a onClick={(e) => { e.stopPropagation(); navigate(`/customers/${cId}`); }}>
             {name || `عميل #${cId}`}
@@ -421,7 +421,7 @@ export function buildRegisterColumns({
                       content: (
                         <div>
                           <p>هل أنت متأكد من حذف {isSale ? 'فاتورة البيع' : 'سند المرتجع'} رقم: <b>{record.document_number}</b>؟</p>
-                          <p style={{ color: '#8c8c8c', fontSize: 13 }}>سيتم حذف المستند بالكامل وإلغاء أثره المحاسبي والمخزني.</p>
+                          <p style={{ color: '#555b65', fontSize: 13 }}>سيتم حذف المستند بالكامل وإلغاء أثره المحاسبي والمخزني.</p>
                         </div>
                       ),
                       okText: 'نعم، احذف',

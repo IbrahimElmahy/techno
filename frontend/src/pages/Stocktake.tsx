@@ -39,6 +39,8 @@ interface Row {
   // one category at a time, and without the column the only way there was a name search per item.
   category: string | null;
   unit_of_measure: string | null; location: string;
+  // مكان السطر — `stock_as_of` بيرجّعه دايماً (السطر = صنف × مكان)، والسجل بيتفلتر بيه.
+  location_kind: string; location_id: number;
   quantity: string; unit_cost: string; value: string;
 }
 
@@ -112,6 +114,17 @@ export default function Stocktake() {
   useEffect(() => { load(); }, [asOf, warehouseId]);
 
   const rowKey = (r: Row) => `${r.item_id}-${r.location}`;
+  /**
+   * **سجل السطر = سجل مكانه، مش الصنف في كل المخازن.** (بلاغ العميل ٢٠٢٦-١٠-٠٢)
+   *
+   * كل سطر هنا صنف في مكان واحد — والسجل كان بيتنده من غير مكان، فالكارت بيرجّع حركة
+   * الصنف في كل المخازن: اللي محدّد «مخزن العلياء» بيلاقي تحويلات وبيع مخزن أكتوبر،
+   * و«الرصيد بعد» مابيطابقش الكمية اللي على السطر. نفس منطق «جرد المخازن».
+   */
+  const logLocation = (r: Row) => ({
+    locationKind: r.location_kind ?? (warehouseId ? 'warehouse' : null),
+    locationId: r.location_id ?? warehouseId ?? null,
+  });
   /** الفرق = اللي في النظام − اللي اتعدّ. Null until somebody counts, which is not zero. */
   const diffOf = (r: Row) => {
     const a = actual[rowKey(r)];
@@ -136,7 +149,7 @@ export default function Stocktake() {
       row: r,
       name: `${r.name}${r.location ? ` — ${r.location}` : ''}`,
       log: await fetchLog(
-        { itemId: r.item_id, itemName: r.name },
+        { itemId: r.item_id, itemName: r.name, ...logLocation(r) },
         dateFrom.format('YYYY-MM-DD'), asOf.format('YYYY-MM-DD'),
       ),
     })));
@@ -360,6 +373,7 @@ export default function Stocktake() {
             <MovementHistoryLog
               target={{
                 itemId: r.item_id, itemName: r.name,
+                ...logLocation(r),
                 dateFrom: dateFrom.format('YYYY-MM-DD'),
                 dateTo: asOf.format('YYYY-MM-DD'),
               }}

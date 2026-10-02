@@ -136,7 +136,7 @@ export default function VoucherDocument({ doc }: { doc: VoucherDoc }) {
         <div>
           <div style={{ fontSize: 20, fontWeight: 800, color: BRAND.green }}>{COMPANY.nameAr}</div>
           {companyLines().map((l) => (
-            <div key={l} style={{ fontSize: 11, color: '#5d6f64' }}>{l}</div>
+            <div key={l} style={{ fontSize: 12.5, color: '#5d6f64' }}>{l}</div>
           ))}
         </div>
         <Logo width={150} />
@@ -161,7 +161,7 @@ export default function VoucherDocument({ doc }: { doc: VoucherDoc }) {
         margin: '14px 0', padding: '14px 16px', border: `2px solid ${BRAND.green}`,
         borderRadius: 10, background: '#f7fbf8',
       }}>
-        <div style={{ fontSize: 12, color: '#5d6f64' }}>المبلغ</div>
+        <div style={{ fontSize: 12.5, color: '#5d6f64' }}>المبلغ</div>
         <div style={{ fontSize: 28, fontWeight: 800, color: BRAND.green }}>{n(doc.amount)}</div>
         <div style={{ marginTop: 6, fontWeight: 700 }}>{amountToArabicWords(doc.amount)}</div>
         {doc.partyName && (
@@ -186,7 +186,7 @@ export default function VoucherDocument({ doc }: { doc: VoucherDoc }) {
         {[a, b, c].map((s) => (
           <div key={s} style={{
             width: 170, textAlign: 'center', borderTop: '1px solid #98acb9',
-            paddingTop: 6, fontSize: 12,
+            paddingTop: 6, fontSize: 12.5,
           }}>{s}</div>
         ))}
       </div>

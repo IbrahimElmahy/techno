@@ -69,7 +69,7 @@ export default function ItemStockPanel({
         <>
           <div style={{ marginBottom: 10 }}>
             <div style={{ fontWeight: 700, fontSize: 14 }}>{balance.item?.name}</div>
-            <div style={{ fontSize: 12, color: '#6b6b6b' }}>
+            <div style={{ fontSize: 12.5, color: '#6b6b6b' }}>
               الإجمالي في كل المواقع:{' '}
               <b style={{ color: Number(balance.total) > 0 ? '#6AB42D' : '#cf1322' }}>
                 {qty(balance.total)} {balance.item?.unit_of_measure || ''}
@@ -103,13 +103,13 @@ export default function ItemStockPanel({
           )}
 
           {held.length === 0 && (
-            <div style={{ marginTop: 8, fontSize: 12, color: '#cf1322' }}>
+            <div style={{ marginTop: 8, fontSize: 12.5, color: '#cf1322' }}>
               لا يوجد رصيد لهذا الصنف في أي مخزن.
             </div>
           )}
 
           {(balance.prices?.last_purchase || balance.prices?.last_sale) && (
-            <div style={{ marginTop: 10, fontSize: 12, color: '#6b6b6b' }}>
+            <div style={{ marginTop: 10, fontSize: 12.5, color: '#6b6b6b' }}>
               {balance.prices?.last_purchase && (
                 <div>آخر سعر شراء: <b>{money(balance.prices.last_purchase)}</b></div>
               )}
@@ -128,7 +128,7 @@ export default function ItemStockPanel({
       }
       return (
         <div>
-          <div style={{ fontSize: 12, color: '#6b6b6b', marginBottom: 8 }}>
+          <div style={{ fontSize: 12.5, color: '#6b6b6b', marginBottom: 8 }}>
             أصناف الفئة ورصيدها الكلي — اضغط على صنف تشوف توزيعه على المخازن.
           </div>
           {categoryItems.map((p) => {

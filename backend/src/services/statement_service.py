@@ -425,6 +425,23 @@ def _cash_on_invoices(
     return split, whole
 
 
+def _newest_first(lines: list[StatementLine]) -> list[StatementLine]:
+    """الأحدث فوق، والفاتورة وسطر نقديها كتلة واحدة بترتيبها (الفاتورة ثم الدفعة).
+
+    سطر النقدي بيتكتب دايماً بعد سطر فاتورته على طول (`emit` في `account_statement`)،
+    فبيتلزق في السطر اللي قبله لو نفس القيد ونفس الحساب.
+    """
+    blocks: list[list[StatementLine]] = []
+    for ln in lines:
+        prev = blocks[-1][-1] if blocks else None
+        if (ln.cash_on_invoice and prev is not None and not prev.cash_on_invoice
+                and prev.entry_id == ln.entry_id and prev.account_id == ln.account_id):
+            blocks[-1].append(ln)
+        else:
+            blocks.append([ln])
+    return [ln for block in reversed(blocks) for ln in block]
+
+
 def account_statement(
     db: Session, *, account_id: int, date_from: date | None = None,
     date_to: date | None = None, also_accounts: Sequence[int] = (),
@@ -589,7 +606,12 @@ def account_statement(
 
     # **الأحدث فوق** (طلب العميل ٢٠٢٦-١٠-٠١). الرصيد اتحسب فوق بالترتيب الزمني، فكل سطر
     # شايل رصيده الصح — القلب للعرض بس، وأول المدة بقى تحت مع أقدم حركة.
-    lines.reverse()
+    #
+    # **بس الفاتورة ونقديها بيتقلبوا كتلة واحدة** (طلب العميل ٢٠٢٦-١٠-٠٢): قلب السطور واحد
+    # واحد كان بيطلّع «مدفوع نقداً مع الفاتورة» فوق الفاتورة نفسها. دلوقتي الفاتورة فوق
+    # والدفعة تحتها على طول. الأرصدة ماتحركتش: سطر الفاتورة رصيده بعد الفاتورة، وسطر
+    # الدفعة رصيده بعد الدفعة — وده نفس رصيد بعد الكتلة اللي السطر الأحدث بيبدأ منه.
+    lines = _newest_first(lines)
 
     reconcilable = reconcile_service.is_reconcilable(account)
     total_due = total_overdue = ZERO

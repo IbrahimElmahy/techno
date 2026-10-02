@@ -200,6 +200,9 @@ class StatementLineOut(BaseModel):
     doc_kind: str | None = None
     doc_id: int | None = None
     doc_number: str | None = None
+    # عمود «نوع الفاتورة»: خط المستند (أبيض/بولي) ونوع السند (receipt/payment/…).
+    doc_family: str | None = None
+    voucher_kind: str | None = None
     entry_date: date
     entry_type: str
     description: str
@@ -326,6 +329,8 @@ def _statement_out(s, docs: dict | None = None, reps: dict | None = None,
             doc_id=(docs.get(ln.entry_id) or {}).get("id"),
             doc_number=(docs.get(ln.entry_id) or {}).get("document_number"),
             doc_statement=(docs.get(ln.entry_id) or {}).get("statement"),
+            doc_family=(docs.get(ln.entry_id) or {}).get("family"),
+            voucher_kind=(docs.get(ln.entry_id) or {}).get("voucher_kind"),
             cost_center_id=ln.cost_center_id, cost_center_name=ln.cost_center_name,
             account_id=getattr(ln, "account_id", None),
             account_name=getattr(ln, "account_name", None),

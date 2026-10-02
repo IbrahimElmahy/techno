@@ -1,0 +1,32 @@
+/*
+ * ألوان صفوف كشف الحساب — شوف `rowTone` في AccountStatement.tsx.
+ *
+ * سطور المستند الواحد لون واحد، والمستندات ورا بعض بالتبادل (أبيض / رمادي مزرق فاتح)،
+ * والدفعات أخضر فاتح. الـhover أغمق شوية من لون الصف نفسه. المتأخر (`statement-overdue`)
+ * والمؤشر (`row-cursor`) بـ`!important` في index.css فبيغلبوا الألوان دي — وده الصح.
+ */
+.st-table .ant-table-tbody > tr.ant-table-row.st-doc-a > td {
+  background: #ffffff;
+}
+.st-table .ant-table-tbody > tr.ant-table-row.st-doc-b > td {
+  background: #f1f5fb;
+}
+.st-table .ant-table-tbody > tr.ant-table-row.st-doc-b:hover > td {
+  background: #e3ebf7;
+}
+.st-table .ant-table-tbody > tr.ant-table-row.st-pay > td {
+  background: #e8f6e6;
+}
+.st-table .ant-table-tbody > tr.ant-table-row.st-pay:hover > td {
+  background: #d6eed2;
+}
+.st-table .ant-table-tbody > tr.ant-table-row.st-pay > td:first-child {
+  border-inline-start: 3px solid #52c41a;
+}
+
+@media print {
+  .st-table .ant-table-tbody > tr.ant-table-row > td {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+}

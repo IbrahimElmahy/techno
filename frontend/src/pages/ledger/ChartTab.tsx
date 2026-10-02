@@ -109,7 +109,7 @@ export default function ChartTab() {
       ...textColumn(flatAccounts, (a: any) => (a.appears_in ? APPEARS_IN_LABEL[a.appears_in] : '')),
       render: (a: string | null) => (a && APPEARS_IN_LABEL[a]
         ? <Tag color="geekblue">{APPEARS_IN_LABEL[a]}</Tag>
-        : <span style={{ color: '#8c8c8c' }}>حسب الطبيعة</span>) },
+        : <span style={{ color: '#555b65' }}>حسب الطبيعة</span>) },
     { title: 'النظام', dataIndex: 'is_system', key: 'is_system', width: 90,
       ...choiceColumn<Account>([{ text: 'نظام', value: 'yes' }, { text: 'مضاف', value: 'no' }],
         (a: any, v) => (v === 'yes' ? !!a.is_system : !a.is_system)),

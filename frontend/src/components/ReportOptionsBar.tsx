@@ -95,7 +95,7 @@ export function DeltaCell({ now, before, goodWhenUp = true }: {
     <span style={{ color: good ? '#2e9e6b' : '#d64545', whiteSpace: 'nowrap' }}>
       {diff > 0 ? '▲' : '▼'}{' '}
       {Math.abs(diff).toLocaleString('en-EG', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-      {pct !== null && <span style={{ fontSize: 12 }}> ({Math.abs(pct).toFixed(1)}%)</span>}
+      {pct !== null && <span style={{ fontSize: 12.5 }}> ({Math.abs(pct).toFixed(1)}%)</span>}
     </span>
   );
 }

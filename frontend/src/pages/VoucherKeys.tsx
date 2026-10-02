@@ -339,7 +339,7 @@ export default function VoucherKeys() {
                   {KIND_LABELS[k.voucher_kind] || k.voucher_kind}
                 </Tag>
               </Space>
-              <div style={{ marginTop: 8, fontSize: 12, color: '#666' }}>
+              <div style={{ marginTop: 8, fontSize: 12.5, color: '#666' }}>
                 <div>مدين: {k.debit_account_name || '—'}</div>
                 <div>دائن: {k.credit_account_name || '—'}</div>
               </div>

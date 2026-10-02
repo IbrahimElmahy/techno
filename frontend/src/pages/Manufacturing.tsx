@@ -842,7 +842,7 @@ function Qty({ value, unit }: { value: string | number; unit?: string }) {
  */
 function Variance({ planned, actual }: { planned: string; actual: string }) {
   const p = Number(planned);
-  if (!p) return <span style={{ color: '#aaa' }}>—</span>;
+  if (!p) return <span style={{ color: '#5b6575' }}>—</span>;
   const d = Number(actual) - p;
   if (!d) return <Tag color="green">مطابق</Tag>;
   return (
@@ -1906,7 +1906,7 @@ function ProductionOrdersTab({
                     <Tag color={st.color}>{st.short}</Tag>
                     {st.value === 'production' ? 'خامات بتدخل الماكينة' : 'مواد بتتحط بعد الإنتاج'}
                     {rows.length > 0 && (
-                      <span style={{ color: '#8c8c8c', fontSize: 12 }}>
+                      <span style={{ color: '#555b65', fontSize: 12.5 }}>
                         {' '}· {num(rows.length)}
                       </span>
                     )}
@@ -1942,8 +1942,8 @@ function ProductionOrdersTab({
                           const need = Number(m.planned_quantity ?? 0);
                           if (have == null) return null;
                           return (
-                            <span style={{ fontSize: 12, lineHeight: '32px',
-                                           color: have < need ? '#cf1322' : '#8c8c8c',
+                            <span style={{ fontSize: 12.5, lineHeight: '32px',
+                                           color: have < need ? '#cf1322' : '#555b65',
                                            fontWeight: have < need ? 600 : 400 }}>
                               متاح {num(have.toFixed(3))} {m.item_id ? itemUnit(m.item_id) : ''}
                               {have < need && ` · ناقص ${num((need - have).toFixed(3))}`}
@@ -1953,7 +1953,7 @@ function ProductionOrdersTab({
                       </Col>
                       <Col span={3}>
                         {/* نقل السطر للمرحلة التانية — أسهل من مسحه وكتابته تاني. */}
-                        <Button type="text" size="small" style={{ fontSize: 12 }}
+                        <Button type="text" size="small" style={{ fontSize: 12.5 }}
                           onClick={() => patchMaterial(ln.key, m.key, {
                             stage: st.value === 'production' ? 'quality' : 'production' })}>
                           ← {st.value === 'production' ? 'جودة' : 'تصنيع'}
@@ -2051,7 +2051,7 @@ function ProductionOrdersTab({
                               style={{ marginBottom: 12 }}>
                               <Col span={9}>
                                 <div style={{ fontWeight: 600 }}>{itemName(p.item_id)}</div>
-                                <div style={{ fontSize: 12, color: '#8c8c8c' }}>
+                                <div style={{ fontSize: 12.5, color: '#555b65' }}>
                                   المطلوب <Qty value={p.planned_quantity}
                                     unit={itemUnit(p.item_id)} />
                                   {got > 0 && <> · اتستلم <b>{num(got)}</b></>}
@@ -2067,7 +2067,7 @@ function ProductionOrdersTab({
                               </Col>
                               {/* **الإجمالي بعد الدفعة دي، والفرق عن المخطّط.** الزيادة
                                   والنقص الاتنين مسموحين — اللي طلع هو اللي طلع. */}
-                              <Col span={9} style={{ fontSize: 12 }}>
+                              <Col span={9} style={{ fontSize: 12.5 }}>
                                 {now > 0 ? (
                                   <>
                                     الإجمالي <b>{num(after)}</b> {itemUnit(p.item_id)}
@@ -2083,7 +2083,7 @@ function ProductionOrdersTab({
                                     )}
                                   </>
                                 ) : (
-                                  <span style={{ color: '#8c8c8c' }}>
+                                  <span style={{ color: '#555b65' }}>
                                     {plan - got > 0
                                       ? `الباقي ${num(plan - got)}` : 'اتستلم بالكامل'}
                                   </span>
@@ -2152,7 +2152,7 @@ function ProductionOrdersTab({
                             style={{ marginBottom: 10 }}>
                             <Col span={10}>
                               <div style={{ fontWeight: 600 }}>{itemName(p.item_id)}</div>
-                              <div style={{ fontSize: 12, color: '#8c8c8c' }}>
+                              <div style={{ fontSize: 12.5, color: '#555b65' }}>
                                 المطلوب <Qty value={p.planned_quantity}
                                   unit={itemUnit(p.item_id)} />
                               </div>
@@ -2188,7 +2188,7 @@ function ProductionOrdersTab({
                                     {stageLabel(m.stage)}
                                   </Tag>
                                 </Col>
-                                <Col span={7} style={{ opacity: 0.65, fontSize: 12 }}>
+                                <Col span={7} style={{ opacity: 0.65, fontSize: 12.5 }}>
                                   اتصرف <Qty value={m.quantity} unit={itemUnit(m.item_id)} />
                                 </Col>
                                 <Col span={7}>

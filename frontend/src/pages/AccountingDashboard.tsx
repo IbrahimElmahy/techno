@@ -136,7 +136,7 @@ export default function AccountingDashboard() {
                         <Statistic
                           title="حركة الشهر" value={Number(j.month_total)} precision={2}
                           valueStyle={{ fontSize: 18 }}
-                          suffix={<span style={{ fontSize: 12, color: '#888' }}>
+                          suffix={<span style={{ fontSize: 12.5, color: '#888' }}>
                             · {j.month_entries} قيد
                           </span>}
                         />
@@ -170,7 +170,7 @@ export default function AccountingDashboard() {
                       )}
                     </Space>
 
-                    <div style={{ marginTop: 8, color: '#888', fontSize: 12 }}>
+                    <div style={{ marginTop: 8, color: '#888', fontSize: 12.5 }}>
                       {j.last_number
                         ? <>آخر قيد: {j.last_number} · {j.last_date}</>
                         : 'مافيش قيود لسه'}
@@ -206,7 +206,7 @@ export default function AccountingDashboard() {
                     value={Number(t.balance)} precision={2}
                     valueStyle={{ fontSize: 22, color: Number(t.balance) < 0 ? '#d64545' : '#0e4c6d' }}
                   />
-                  <div style={{ color: '#888', fontSize: 12 }}>
+                  <div style={{ color: '#888', fontSize: 12.5 }}>
                     {t.bank_name || (t.kind === 'bank' ? 'بنك' : 'خزنة نقدية')}
                   </div>
                 </Card>

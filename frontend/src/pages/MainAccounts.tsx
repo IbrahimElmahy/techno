@@ -157,7 +157,7 @@ export default function MainAccounts() {
       width: 140,
       render: (a: string | null) => (a && APPEARS_IN_LABEL[a]
         ? <Tag color="geekblue">{APPEARS_IN_LABEL[a]}</Tag>
-        : <span style={{ color: '#8c8c8c' }}>حسب الطبيعة</span>),
+        : <span style={{ color: '#555b65' }}>حسب الطبيعة</span>),
     },
     {
       title: 'الرصيد',

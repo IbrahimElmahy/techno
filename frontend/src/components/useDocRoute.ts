@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useSearchParams } from 'react-router-dom';
+import { useReturnToOrigin } from './docReturn';
 
 /** ورقة للقراءة، ولا نموذج للتعديل. */
 export type DocMode = 'view' | 'edit';
@@ -40,9 +41,9 @@ export type DocMode = 'view' | 'edit';
  * من العنوان بس — فتلاقي نفسك في **كشف الفواتير**، وشاشة مالكش دعوة بيها، ولازم ترجع
  * تدوّر على الصنف اللي كنت فيه من الأول.
  *
- * `useOpenDocument` بيحط `back=1` على العنوان، وساعتها «رجوع» بيعمل خطوة
- * رجوع حقيقية في تاريخ المتصفح — والخطوة دي هي الشاشة اللي جيت منها بالظبط، لأن الفتح
- * بيدفع خطوة واحدة.
+ * `useOpenDocument` بيحط `back=1` على العنوان، وساعتها «رجوع» بيرجع في تاريخ المتصفح
+ * للخطوة اللي الرابط وصل منها بالظبط — حتى لو التالي/السابق زوّدوا خطوات بعدها
+ * (`useReturnToOrigin` في `docReturn.ts`).
  *
  * وفيه شرطين بيمنعوا خطوة زيادة:
  *
@@ -82,13 +83,13 @@ export function useDocRoute<T extends { id: number }>(opts: {
 }) {
   const { rows, openId, open, close, fetchOne, loading, enabled = true } = opts;
   const [params, setParams] = useSearchParams();
-  const navigate = useNavigate();
   // جاي من شاشة تانية (كارت صنف، كشف حساب، تقرير) — مش من كشف الشاشة دي.
   const fromScreen = params.get('back') === '1';
   const editRaw = params.get('edit');
   const raw = params.get('doc') || editRaw;
   const wanted = raw ? Number(raw) : null;
   const mode: DocMode = editRaw ? 'edit' : 'view';
+  const origin = useReturnToOrigin(wanted != null);
 
   // أحدث نسخة من الدوال من غير ما تبقى اعتماد — وإلا المزامنة بتشتغل مع كل رندر.
   const ref = useRef({ open, close, fetchOne, rows });
@@ -115,6 +116,8 @@ export function useDocRoute<T extends { id: number }>(opts: {
   useEffect(() => {
     // تبويب مخفي: مايسمعش ومايقفلش. الشرح عند `enabled`.
     if (!enabled) return;
+    // رابط من شاشة تانية وصل ⇒ احفظ هي فين، قبل أي حاجة تزوّد خطوات.
+    if (wanted != null && fromScreen && !origin.hasOrigin()) origin.capture();
     if (wanted === openId) {
       handled.current = wanted;
       pendingOpen.current = null;
@@ -168,14 +171,17 @@ export function useDocRoute<T extends { id: number }>(opts: {
     // العنوان اتنضّف خلاص (رجوع المتصفح) ⇒ مافيش خطوة تانية تتعمل.
     if (!params.get('doc') && !params.get('edit')) return;
     pendingClose.current = true;
-    if (fromScreen) { navigate(-1); return; }
+    // جاي من شاشة تانية ⇒ بعد ما العنوان يتنضّف بنرجع للشاشة دي. من غير أصل (رابط
+    // اتفتح في تبويب متصفح جديد) القفل عادي — `navigate(-1)` كان هيخرج من النظام.
+    origin.leave();
     setParams((p) => {
       const next = new URLSearchParams(p);
       next.delete('doc');
       next.delete('edit');
+      next.delete('back');
       return next;
     }, { replace: true });
-  }, [params, fromScreen, navigate, setParams, enabled]);
+  }, [params, setParams, enabled, origin]);
 
   return { markOpen, markClosed };
 }

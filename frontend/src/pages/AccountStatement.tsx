@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { PAGE_SIZE } from '../utils/pagination';
 import { searchFilter, searchRank, compareArabic } from '../utils/arabicSort';
 import {
@@ -15,7 +15,7 @@ import ListPage from '../components/ListPage';
 import dayjs, { Dayjs } from 'dayjs';
 import { useSearchParams } from 'react-router-dom';
 import { api } from '../api/client';
-import { useTableKeyboard } from '../components/keyboard';
+import { useOnScreen, useTableKeyboard } from '../components/keyboard';
 import { textColumn, numberColumn, dateColumn } from '../components/gridColumns';
 import DocumentLink, { DocKind, docKindOf, useOpenDocument } from '../components/DocumentLink';
 import { entryTypeLabel } from '../components/labels';
@@ -28,8 +28,10 @@ import StatementFilter, { statementMatches } from '../components/StatementFilter
 import { normalizeAr } from '../components/ListToolbar';
 import { exportCsv as writeCsv, type CsvColumn } from '../utils/exportCsv';
 import { printReport, type PrintColumn } from '../print/reportSheet';
+import './AccountStatement.css';
 
 import { money, numeralsLocale } from '../utils/money';
+import { runningTotals } from '../utils/statementOrder';
 type Subject = 'account' | 'item';
 
 interface StatementLine {
@@ -51,6 +53,11 @@ interface StatementLine {
   store_name?: string | null;
   /** سطر «مدفوع نقداً مع الفاتورة» — السيرفر بيفصله من سطر الفاتورة، مش سطر في القيد. */
   cash_on_invoice?: boolean;
+  /** خط المستند (أبيض/بولي) ونوع السند — منهم بيتحسب «نوع الفاتورة». */
+  doc_family?: string | null;
+  voucher_kind?: string | null;
+  /** «نوع الفاتورة» محسوب على الشاشة (`invoiceTypeOf`) — حقل عشان التصدير يقراه. */
+  invoice_type?: string;
   cost_center_name?: string | null;
   account_id?: number | null;
   account_name?: string | null;
@@ -99,6 +106,41 @@ interface StatementOut {
   /** حساب ذمم عميل: حساباته كلها (أبيض/بولي) بأرصدتها — فاضية لو عنده حساب واحد. */
   families?: { family: string | null; account_id: number; balance: string }[];
   customer_id?: number | null;
+}
+
+const PAYMENT = 'دفعة';
+const VOUCHER_TYPE: Record<string, string> = {
+  receipt: PAYMENT, payment: PAYMENT,
+  rep_handover: 'توريد', expense: 'مصروف', cash_transfer: 'تحويل',
+};
+
+/**
+ * «نوع الفاتورة»: البيع بخطّه (أبيض/بولي)، والشرا بخطّه لو ليه وإلا «شراء»، والمرتجعين
+ * «مرتجع»، والسندات ونقدي الفاتورة «دفعة»، والباقي «قيد» أو اسم نوع الحركة.
+ */
+function invoiceTypeOf(l: StatementLine): string {
+  if (l.cash_on_invoice) return PAYMENT;
+  switch (String(l.doc_kind ?? '')) {
+    case 'invoice': return l.doc_family || 'بيع';
+    case 'purchase': return l.doc_family || 'شراء';
+    case 'return':
+    case 'purchase_return': return 'مرتجع';
+    case 'voucher': return VOUCHER_TYPE[l.voucher_kind ?? ''] ?? PAYMENT;
+    default: break;
+  }
+  if (l.entry_type === 'receipt' || l.entry_type === 'payment') return PAYMENT;
+  if (l.entry_type === 'sale_return' || l.entry_type === 'purchase_return') return 'مرتجع';
+  if (!l.entry_type || l.entry_type === 'journal') return 'قيد';
+  return entryTypeLabel(l.entry_type);
+}
+
+/** أقرب أب بيعمل scroll — صندوق المحتوى في `AppLayout`. */
+function scrollParentOf(el: HTMLElement | null): HTMLElement | null {
+  for (let cur = el?.parentElement ?? null; cur; cur = cur.parentElement) {
+    const oy = getComputedStyle(cur).overflowY;
+    if (oy === 'auto' || oy === 'scroll') return cur;
+  }
+  return null;
 }
 
 export default function AccountStatement() {
@@ -429,7 +471,7 @@ export default function AccountStatement() {
         return exactMatch ? n === q : n.includes(q);
       });
     })
-      .map((l, i) => ({ ...l, _serial: i + 1 }));
+      .map((l, i) => ({ ...l, _serial: i + 1, invoice_type: invoiceTypeOf(l) }));
   }, [lines, repFilter, typeFilter, ccFilter, hideZero, docNo, stmtQ, query, exactMatch]);
 
   const filtering = !!(repFilter || ccFilter.length || typeFilter.length
@@ -440,18 +482,31 @@ export default function AccountStatement() {
   const aging = statement?.aging;
   const totalDue = Number(statement?.total_due || 0);
   const totalOverdue = Number(statement?.total_overdue || 0);
-  const runningOf = useMemo(() => {
-    const m = new Map<string, number>();
-    let acc = 0;
-    // الكشف جاي الأحدث فوق — التراكمي بيتجمع من تحت (الأقدم) لفوق.
-    for (let i = shownLines.length - 1; i >= 0; i -= 1) {
-      const l = shownLines[i];
-      acc += Number(l.debit || 0) - Number(l.credit || 0);
-      m.set(`${l.entry_id}-${l.entry_date}-${l.balance}`, acc);
-    }
-    return m;
-  }, [shownLines]);
+  // الكشف جاي الأحدث فوق — التراكمي بيتجمع بالترتيب الزمني (الفاتورة قبل نقديها).
+  const runningOf = useMemo(() => runningTotals(
+    shownLines, (l) => `${l.entry_id}-${l.entry_date}-${l.balance}`), [shownLines]);
   const openDoc = useOpenDocument();
+
+  /**
+   * مكان الـscroll بيرجع زي ما كان لما ترجع للكشف من مستند فتحته منه.
+   *
+   * صندوق المحتوى واحد لكل الشاشات، فلما الكشف يستخبى والمستند يظهر الصندوق بيتقص
+   * والمكان بيضيع. بنسجّل المكان والكشف ظاهر بس، وبنرجّعه أول ما يظهر تاني. والتسجيل
+   * بيتشال في `useLayoutEffect` عشان الـscroll اللي بيحصل من الاستخباء نفسه مايتسجّلش.
+   */
+  const anchorRef = useRef<HTMLSpanElement>(null);
+  const onScreen = useOnScreen();
+  const savedScroll = useRef(0);
+  useLayoutEffect(() => {
+    if (!onScreen) return undefined;
+    const box = scrollParentOf(anchorRef.current);
+    if (!box) return undefined;
+    const top = savedScroll.current;
+    const raf = requestAnimationFrame(() => { if (top) box.scrollTop = top; });
+    const onScroll = () => { savedScroll.current = box.scrollTop; };
+    box.addEventListener('scroll', onScroll, { passive: true });
+    return () => { cancelAnimationFrame(raf); box.removeEventListener('scroll', onScroll); };
+  }, [onScreen]);
 
   const loadEntry = async (entryId: number) => {
     if (entryId in entryCache || entryBusy[entryId]) return;
@@ -467,6 +522,28 @@ export default function AccountStatement() {
   };
 
   const rowKeyOf = (l: StatementLine) => `${l.entry_id}-${l.entry_date}-${l.balance}`;
+
+  /**
+   * لون كل صف: سطور المستند الواحد لون واحد، والمستندات ورا بعض بالتبادل بين لونين،
+   * والدفعات (السندات ونقدي الفاتورة) لونها لوحدها مهما كان دورها في التبادل.
+   */
+  const rowTone = useMemo(() => {
+    const m = new Map<string, string>();
+    let prev: string | null = null;
+    let odd = false;
+    for (const l of shownLines) {
+      const doc = l.doc_kind && l.doc_id ? `${l.doc_kind}:${l.doc_id}` : `e:${l.entry_id}`;
+      if (prev !== null && doc !== prev) odd = !odd;
+      prev = doc;
+      m.set(rowKeyOf(l), l.invoice_type === PAYMENT ? 'st-pay' : odd ? 'st-doc-b' : 'st-doc-a');
+    }
+    return m;
+  }, [shownLines]);
+  // المؤشر بتاع الكيبورد + المتأخر + لون المستند. كان `rowClassName` بتاع المتأخر بيمسح
+  // بتاع الكيبورد لأنه جاي بعده على الجدول.
+  const rowClass = (l: StatementLine) => [
+    kb.rowClassName(l), l.days_overdue ? 'statement-overdue' : '', rowTone.get(rowKeyOf(l)) ?? '',
+  ].filter(Boolean).join(' ');
 
   const toggleRow = (l: StatementLine) => {
     const k = rowKeyOf(l);
@@ -505,6 +582,14 @@ export default function AccountStatement() {
     { title: 'النوع', dataIndex: 'entry_type',
       ...textColumn(lines, (l: StatementLine) => entryTypeLabel(l.entry_type)),
       render: (t: string) => <Tag>{entryTypeLabel(t)}</Tag> },
+    ...(!isItem ? [{
+      title: 'نوع الفاتورة', dataIndex: 'invoice_type', width: 110, align: 'center' as const,
+      ...textColumn(shownLines as StatementLine[], (l: StatementLine) => l.invoice_type),
+      render: (v: string | undefined) => (v ? (
+        <Tag color={v === PAYMENT ? 'green' : v === 'بولي' ? 'purple'
+          : v === 'مرتجع' ? 'orange' : v === 'أبيض' ? 'blue' : undefined}>{v}</Tag>
+      ) : '-'),
+    }] : []),
     ...(grouped || multiAccount ? [{
       title: 'الحساب الفرعي', dataIndex: 'account_name', width: 180, ellipsis: true,
       ...textColumn(lines, (l: StatementLine) => l.account_name),
@@ -609,6 +694,7 @@ export default function AccountStatement() {
       case '_serial': return { title: 'رقم', value: (l) => l._serial ?? '' };
       case 'entry_date': return { title: 'التاريخ', value: (l) => String(l.entry_date || '').slice(0, 10) };
       case 'entry_type': return { title: 'النوع', value: (l) => entryTypeLabel(l.entry_type) };
+      case 'invoice_type': return { title: 'نوع الفاتورة', value: (l) => l.invoice_type ?? '' };
       case 'account_name': return { title: 'الحساب الفرعي', value: (l) => l.account_name ?? '' };
       case 'description':
         return {
@@ -1010,6 +1096,7 @@ export default function AccountStatement() {
           disabled={!filtering && !exactMatch}>مسح</Button>
       </>)}
     >
+      <span ref={anchorRef} style={{ display: 'none' }} />
       {/* اختصارات الفترة وخيارات العرض — سطر واحد فوق الكشف. */}
       <div style={{ ...summaryLine, gap: '6px 8px' }}>
         {PRESETS.map((p) => (
@@ -1166,10 +1253,11 @@ export default function AccountStatement() {
               expandable={{
                 expandedRowRender: (g: any) => (
                   <Table<StatementLine>
+                    className="st-table"
                     rowKey={rowKeyOf} size="small" dataSource={g.rows}
                     pagination={false} scroll={{ x: 'max-content' }}
                     columns={tableCols.columns}
-                    rowClassName={(l) => (l.days_overdue ? 'statement-overdue' : '')}
+                    rowClassName={rowClass}
                     expandable={{
                       expandedRowKeys: expandedKeys,
                       onExpand: (_open, l) => toggleRow(l),
@@ -1199,7 +1287,7 @@ export default function AccountStatement() {
           ) : (
           <Table<StatementLine>
             {...kb.tableProps}
-            className="sl-table"
+            className="sl-table st-table"
             rowKey={rowKeyOf}
             size="small" loading={loading} dataSource={shownLines}
             locale={{ emptyText: 'لا توجد حركات في هذه الفترة' }}
@@ -1214,7 +1302,7 @@ export default function AccountStatement() {
             }}
             scroll={{ x: 'max-content' }}
             columns={tableCols.columns}
-            rowClassName={(l) => (l.days_overdue ? 'statement-overdue' : '')}
+            rowClassName={rowClass}
             expandable={{
               expandedRowKeys: expandedKeys,
               onExpand: (_open, l) => toggleRow(l),

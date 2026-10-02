@@ -221,8 +221,8 @@ textarea.ant-input[disabled] {
 .ant-input-number-input::placeholder,
 .ant-select-selection-placeholder,
 .ant-picker-input > input::placeholder {
-  color: #8c8c8c !important;
-  -webkit-text-fill-color: #8c8c8c;
+  color: #555b65 !important;
+  -webkit-text-fill-color: #555b65;
 }
 
 /* Custom scrollbar styled for RTL layout */
@@ -380,7 +380,7 @@ html[data-density='comfortable'] .ant-table-thead > tr > th {
   line-height: 1.1;
 }
 .doc-form .ant-form-item-label > label {
-  font-size: 12px;
+  font-size: 12.5px;
   font-weight: 700;
   color: #3a4a3a;
   height: auto;
@@ -447,7 +447,7 @@ html[data-density='comfortable'] .ant-table-thead > tr > th {
   width: 100%;
   border-collapse: collapse;
   /* مقاس مريح ومضغوط عشان يسيع أكبر عدد سطور من غير سكرول */
-  font-size: 12px;
+  font-size: 12.5px;
   color: #141414;
   table-layout: auto;
 }
@@ -463,14 +463,14 @@ html[data-density='comfortable'] .ant-table-thead > tr > th {
   position: sticky;
   top: 0;
   z-index: 2;
-  font-size: 12px;
+  font-size: 12.5px;
   line-height: 1.2;
 }
 .entry-grid tbody td {
   padding: 1px 3px;
   border-bottom: 1px solid #eef4ec;
   vertical-align: middle;
-  font-size: 12px;
+  font-size: 12.5px;
 }
 .entry-grid tbody tr:last-child td {
   border-bottom: none;
@@ -494,7 +494,7 @@ html[data-density='comfortable'] .ant-table-thead > tr > th {
   background: #f2f9f3;
   padding: 3px 4px;
   border-top: 1.5px solid #dce8d9;
-  font-size: 12px;
+  font-size: 12.5px;
   line-height: 1.2;
 }
 
@@ -507,7 +507,7 @@ html[data-density='comfortable'] .ant-table-thead > tr > th {
 .entry-grid .ant-input-number,
 .entry-grid .ant-select-selector,
 .entry-grid .ant-input {
-  font-size: 12px !important;
+  font-size: 12.5px !important;
 }
 .entry-grid .ant-input-number {
   border-radius: 3px !important;
@@ -516,7 +516,7 @@ html[data-density='comfortable'] .ant-table-thead > tr > th {
   height: 22px !important;
   line-height: 22px !important;
   padding: 0 4px !important;
-  font-size: 12px !important;
+  font-size: 12.5px !important;
 }
 .entry-grid .ant-select-single:not(.ant-select-customize-input) .ant-select-selector {
   height: 22px !important;
@@ -526,7 +526,7 @@ html[data-density='comfortable'] .ant-table-thead > tr > th {
 }
 .entry-grid .ant-select-single .ant-select-selector .ant-select-selection-item {
   line-height: 20px !important;
-  font-size: 12px !important;
+  font-size: 12.5px !important;
 }
 .entry-grid .ant-btn {
   height: 22px !important;
@@ -546,7 +546,7 @@ html[data-density='comfortable'] .ant-table-thead > tr > th {
  * I» is the more urgent of the two things the row is saying.
  */
 .row-muted > td {
-  color: #8c8c8c;
+  color: #555b65;
   background: #fafafa;
 }
 .row-muted.row-cursor > td {
@@ -608,7 +608,7 @@ html[data-density='comfortable'] .ant-table-thead > tr > th {
  * نفس شكل ترويسة `.entry-grid` عشان الاتنين يتقروا بنفس الطريقة.
  */
 .mini-head {
-  font-size: 12px;
+  font-size: 12.5px;
   font-weight: 700;
   color: #3a4a3a;
   padding-bottom: 2px;
@@ -639,7 +639,7 @@ html[data-density='comfortable'] .ant-table-thead > tr > th {
 /* سطر الشرح تحت الخانة — أصغر وأفتح، عشان يبان إنه شرح مش اسم حقل تاني. */
 .doc-form .ladder-inputs .ant-form-item-explain,
 .doc-form .ladder-inputs .ant-form-item-extra {
-  font-size: 11px;
+  font-size: 12.5px;
   line-height: 1.5;
   color: #6b6b6b;
   padding-top: 2px;
@@ -688,7 +688,7 @@ html[data-density='comfortable'] .ant-table-thead > tr > th {
 }
 
 .ant-picker-range .ant-picker-input > input::placeholder {
-  color: #8c8c8c !important;
+  color: #555b65 !important;
   font-weight: 500 !important;
 }
 
@@ -773,7 +773,7 @@ html[data-density='comfortable'] .ant-table-thead > tr > th {
 
 .ant-picker-content th {
   font-family: 'Cairo', sans-serif !important;
-  font-size: 12px !important;
+  font-size: 12.5px !important;
   font-weight: 700 !important;
   color: #4a4a4a !important;
   text-align: center !important;
@@ -958,7 +958,7 @@ html[data-density='comfortable'] .ant-table-thead > tr > th {
 .sale-doc .sale-head .ant-btn {
   height: 26px;
   padding: 0 9px;
-  font-size: 12px;
+  font-size: 12.5px;
   font-weight: 600;
   border-radius: 6px;
 }
@@ -999,7 +999,7 @@ html[data-density='comfortable'] .ant-table-thead > tr > th {
   line-height: 1.4;
 }
 .sale-doc .sale-bottom .sale-tile-sub {
-  font-size: 12px;
+  font-size: 12.5px;
 }
 .sale-doc .sale-pay-inputs {
   display: grid;
@@ -1044,9 +1044,9 @@ html[data-density='comfortable'] .ant-table-thead > tr > th {
 }
 .sale-doc .sale-fields .ant-form-item-label > label,
 .sale-doc .coupon-head {
-  font-size: 11.5px;
+  font-size: 12.5px;
   font-weight: 700;
-  color: #64748b;
+  color: #3f4a5a;
 }
 .sale-doc .sale-fields .ant-input,
 .sale-doc .sale-fields .ant-input-affix-wrapper,
@@ -1107,8 +1107,8 @@ html[data-density='comfortable'] .ant-table-thead > tr > th {
   border-radius: 6px;
 }
 .sale-doc .coupon-note {
-  font-size: 11.5px;
-  color: #64748b;
+  font-size: 12.5px;
+  color: #3f4a5a;
 }
 
 /* --- شريط الأصناف وجدولها --- */
@@ -1125,8 +1125,8 @@ html[data-density='comfortable'] .ant-table-thead > tr > th {
   align-items: center;
   flex-wrap: wrap;
   gap: 12px;
-  font-size: 12px;
-  color: #64748b;
+  font-size: 12.5px;
+  color: #3f4a5a;
 }
 .sale-doc .sale-items-bar .sale-green-btn {
   height: 30px;
@@ -1143,7 +1143,7 @@ html[data-density='comfortable'] .ant-table-thead > tr > th {
   border-bottom: none;
   border-inline-end-color: #334155;
   padding: 7px 6px;
-  font-size: 12px;
+  font-size: 12.5px;
 }
 .sale-doc .sale-grid tbody td {
   padding: 5px 6px;
@@ -1181,7 +1181,7 @@ html[data-density='comfortable'] .ant-table-thead > tr > th {
   border: none;
   background: #f8fafc;
   color: #475569;
-  font-size: 10px;
+  font-size: 12.5px;
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -1211,12 +1211,12 @@ html[data-density='comfortable'] .ant-table-thead > tr > th {
   border: 1px solid #fed7aa;
   color: #c2410c;
   font-weight: 700;
-  font-size: 11.5px;
+  font-size: 12.5px;
 }
 .sale-doc .pct-pill-zero {
   background: #f1f5f9;
   border-color: #e2e8f0;
-  color: #94a3b8;
+  color: #5b6575;
 }
 .sale-doc .sale-grid .pct-pill-input.ant-input-number {
   background: #fff7ed;
@@ -1235,7 +1235,7 @@ html[data-density='comfortable'] .ant-table-thead > tr > th {
   background: #fff7ed;
   border: 1px solid #fde4c8;
   color: #9a3412;
-  font-size: 11px;
+  font-size: 12.5px;
 }
 .sale-doc .sale-grid .sale-wh-select .ant-select-selector {
   background: #fff7ed !important;
@@ -1267,9 +1267,9 @@ html[data-density='comfortable'] .ant-table-thead > tr > th {
   box-shadow: inset 0 0 0 1px #6AB42D;
 }
 .sale-doc .sale-tile-label {
-  font-size: 11.5px;
+  font-size: 12.5px;
   font-weight: 600;
-  color: #64748b;
+  color: #3f4a5a;
 }
 .sale-doc .sale-tile-value {
   font-size: 18px;
@@ -1278,15 +1278,15 @@ html[data-density='comfortable'] .ant-table-thead > tr > th {
   line-height: 1.4;
 }
 .sale-doc .sale-tile-sub {
-  font-size: 10.5px;
-  color: #94a3b8;
+  font-size: 12.5px;
+  color: #5b6575;
 }
 .sale-doc .sale-notes {
   margin-top: 8px;
   display: flex;
   flex-direction: column;
   gap: 6px;
-  font-size: 12px;
+  font-size: 12.5px;
   color: #475569;
 }
 .sale-doc .sale-notes-line {
@@ -1342,7 +1342,7 @@ html[data-density='comfortable'] .ant-table-thead > tr > th {
   color: #b91c1c;
 }
 .sale-doc .sale-due-sub {
-  font-size: 11px;
+  font-size: 12.5px;
   color: #ef4444;
 }
 .sale-doc .sale-due-value {
@@ -1359,7 +1359,7 @@ html[data-density='comfortable'] .ant-table-thead > tr > th {
   color: #16a34a;
 }
 .sale-doc .sale-due-value small {
-  font-size: 12px;
+  font-size: 12.5px;
   font-weight: 600;
 }
 .sale-doc .sale-pay-actions {
@@ -1435,11 +1435,11 @@ html[data-density='comfortable'] .ant-table-thead > tr > th {
 .list-page .sl-title-muted {
   font-size: 13px;
   font-weight: 500;
-  color: #8c8c8c;
+  color: #555b65;
 }
 .list-page .sl-subtitle {
-  font-size: 12px;
-  color: #8c8c8c;
+  font-size: 12.5px;
+  color: #555b65;
 }
 .list-page .sl-tabs {
   display: flex;
@@ -1492,7 +1492,7 @@ html[data-density='comfortable'] .ant-table-thead > tr > th {
   border-radius: 999px;
   background: #f1f5f9;
   color: #475569;
-  font-size: 12px;
+  font-size: 12.5px;
   font-weight: 700;
   text-align: center;
 }
@@ -1594,7 +1594,7 @@ html[data-density='comfortable'] .ant-table-thead > tr > th {
   display: inline-flex;
   flex-wrap: wrap;
   gap: 4px 18px;
-  color: #64748b;
+  color: #3f4a5a;
   font-size: 13px;
 }
 .list-page .sl-foot b {
@@ -1609,7 +1609,7 @@ html[data-density='comfortable'] .ant-table-thead > tr > th {
 .list-page .sl-table .ant-pagination-options::before {
   content: 'عرض:';
   margin-inline-end: 6px;
-  color: #64748b;
+  color: #3f4a5a;
   font-size: 13px;
 }
 
@@ -1653,4 +1653,17 @@ html[data-density='comfortable'] .ant-table-thead > tr > th {
 /* أعمدة الشجرة (الحسابات/الأقسام) بتفضل جنب السهم — سنترتها بتبعد الاسم عن علامة الفتح. */
 .ant-table-wrapper .ant-table-tbody > tr > td.ant-table-cell-with-append {
   text-align: start !important;
+}
+
+/* وضوح أعلى (طلب العميل ٢٠٢٦-١٠-٠٢): الخلايا والخانات والترويسات أتقل شوية. */
+.ant-table-wrapper .ant-table-tbody > tr > td,
+.ant-table-wrapper .ant-table-thead > tr > th,
+.entry-grid tbody td,
+.entry-grid thead th,
+.ant-input,
+.ant-input-number-input,
+.ant-select-selection-item,
+.ant-picker-input > input,
+.ant-form-item-label > label {
+  font-weight: 700;
 }

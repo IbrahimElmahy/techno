@@ -20,7 +20,7 @@ interface Props {
   money: (v: any) => string;
 }
 
-const dash = <span style={{ color: '#8c8c8c' }}>-</span>;
+const dash = <span style={{ color: '#555b65' }}>-</span>;
 
 export default function JournalEntryLines({
   lines, currentAccountId, currentAccountIds, accountLabel, costCenterName, onOpenAccount, money,

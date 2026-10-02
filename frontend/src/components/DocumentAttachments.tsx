@@ -155,7 +155,7 @@ function Attachments({ docType, docId, title = 'المرفقات' }: Props) {
       <Space style={{ marginBottom: 8 }} align="center">
         <b>{title}</b>
         {rows.length > 0 && (
-          <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+          <Typography.Text type="secondary" style={{ fontSize: 12.5 }}>
             ({num(rows.length)})
           </Typography.Text>
         )}
@@ -169,7 +169,7 @@ function Attachments({ docType, docId, title = 'المرفقات' }: Props) {
         style={{ display: 'none' }} onChange={onPick} />
 
       {rows.length === 0 && !loading && (
-        <div style={{ color: '#8c8c8c', fontSize: 12 }}>
+        <div style={{ color: '#555b65', fontSize: 12.5 }}>
           مافيش صور على المستند ده لسه.
         </div>
       )}
@@ -195,7 +195,7 @@ function Attachments({ docType, docId, title = 'المرفقات' }: Props) {
                       justifyContent: 'center', height: '100%', gap: 4, color: '#c0392b',
                     }}>
                     <FilePdfOutlined style={{ fontSize: 28 }} />
-                    <span style={{ fontSize: 10, color: '#595959' }}>PDF</span>
+                    <span style={{ fontSize: 12.5, color: '#595959' }}>PDF</span>
                   </a>
                 ) : src ? (
                   <Image src={src} alt={a.filename} width={96} height={96}
@@ -247,7 +247,7 @@ class AttachmentsBoundary extends React.Component<
   render() {
     if (this.state.failed) {
       return (
-        <div style={{ marginTop: 16, color: '#8c8c8c', fontSize: 12 }}>
+        <div style={{ marginTop: 16, color: '#555b65', fontSize: 12.5 }}>
           تعذّر عرض المرفقات.
         </div>
       );

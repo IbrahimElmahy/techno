@@ -181,9 +181,14 @@ const Vouchers: React.FC = () => {
     open: (v) => openView(v),
     close: () => closeView(),
     loading: loading || !listLoaded,
+    // سند برّه الفترة المعروضة (جاي من كشف حساب مثلاً) بيتجاب بالرقم.
     fetchOne: async (id) => {
-      message.warning(`السند رقم ${id} مش في الفترة المعروضة — وسّع المدى وافتحه من الكشف`);
-      return null;
+      try {
+        return (await api.get<VoucherRecord>(`/api/v1/vouchers/${id}`)).data;
+      } catch {
+        message.warning(`السند رقم ${id} مش موجود أو مش من صلاحيتك`);
+        return null;
+      }
     },
   });
 

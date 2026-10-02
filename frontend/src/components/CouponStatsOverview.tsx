@@ -70,7 +70,7 @@ export default function CouponStatsOverview({
         </Col>
         <Col xs={24} sm={8} md={12}>
           <div style={{ background: '#fff', padding: '10px 12px', borderRadius: 8, border: '1px solid #f0f0f0' }}>
-            <div style={{ fontSize: 12, color: '#8c8c8c', marginBottom: 8, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div style={{ fontSize: 12.5, color: '#555b65', marginBottom: 8, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <span style={{ fontWeight: 600, color: '#595959' }}>{kindsTitle}</span>
               {currentKind && (
                 <Tag color="cyan" style={{ borderRadius: 4 }}>النوع الحالي: {currentKind}</Tag>
@@ -93,7 +93,7 @@ export default function CouponStatsOverview({
                     }}
                   >
                     <div style={{
-                      fontSize: 12,
+                      fontSize: 12.5,
                       fontWeight: k.active ? 700 : 500,
                       color: k.active ? '#0958d9' : (k.color || '#262626'),
                       whiteSpace: 'nowrap',
@@ -106,7 +106,7 @@ export default function CouponStatsOverview({
                       {Number(k.count || 0).toLocaleString(numeralsLocale())}
                     </div>
                     {k.value !== undefined && (
-                      <div style={{ fontSize: 11, color: '#8c8c8c', marginTop: 1 }}>
+                      <div style={{ fontSize: 12.5, color: '#555b65', marginTop: 1 }}>
                         {money(k.value)}
                       </div>
                     )}

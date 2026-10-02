@@ -160,7 +160,8 @@ export default function App() {
            * و`colorText` أغمق من الافتراضي `rgba(0,0,0,0.88)`، و`colorTextSecondary` كان
            * `0.65` — رمادي فاتح على أبيض، وهو اللي كان بيخلّي العناوين تبان باهتة.
            */
-          fontSize: 15,
+          // ١٦ (طلب العميل ٢٠٢٦-١٠-٠٢: «الخط مش واضح… كبّر الخط»).
+          fontSize: 16,
           colorText: '#141414',
           colorTextSecondary: '#303030',
           colorTextDescription: '#4a4a4a',

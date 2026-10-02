@@ -245,7 +245,7 @@ export default function CouponCustody() {
     { title: 'السريالات المتاحة', dataIndex: 'ranges',
       render: (v: [string, string][]) => (v?.length
         ? <Typography.Text style={{ direction: 'ltr', display: 'inline-block' }}>{rangesText(v)}</Typography.Text>
-        : <span style={{ color: '#8c8c8c' }}>خلصت</span>) },
+        : <span style={{ color: '#555b65' }}>خلصت</span>) },
     { title: 'اتصرف لعملاء', dataIndex: 'given', width: 110 },
     { title: 'رجع المكتب', dataIndex: 'returned', width: 100 },
     { title: 'إجمالي المصروف', dataIndex: 'issued', width: 110 },

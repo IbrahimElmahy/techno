@@ -52,7 +52,7 @@ export function buildLineColumns({
   // قبل · متغير · ثابت · النهائي · النقاط · إجراء. اللي رتّب أعمدته بإيده بيفضل على ترتيبه.
   return [
     { key: 'idx', title: '#', width: 28, locked: true,
-      cellStyle: { color: '#94a3b8', textAlign: 'center' }, cell: (_l, i) => i + 1 },
+      cellStyle: { color: '#5b6575', textAlign: 'center' }, cell: (_l, i) => i + 1 },
     { key: 'item', title: 'اسم الصنف والوصف', minWidth: 190, locked: true,
       cell: (line) => {
         const code = line.item_id ? productCode?.(line.item_id) : null;
@@ -62,7 +62,7 @@ export function buildLineColumns({
               {line.item_id ? productName(line.item_id) : 'اختر الصنف'}
             </div>
             {code ? (
-              <div dir="ltr" style={{ fontSize: 10.5, color: '#94a3b8', fontWeight: 500, textAlign: 'end' }}>
+              <div dir="ltr" style={{ fontSize: 12.5, color: '#5b6575', fontWeight: 500, textAlign: 'end' }}>
                 {code}
               </div>
             ) : null}
@@ -92,7 +92,7 @@ export function buildLineColumns({
     { key: 'unit', title: 'الوحدة', minWidth: 80,
       cell: (line) => (
         viewOnly ? (
-          <span style={{ fontSize: 12 }}>{line.unit || 'أساسية'}</span>
+          <span style={{ fontSize: 12.5 }}>{line.unit || 'أساسية'}</span>
         ) : (
           <Select size="small" style={{ width: '100%' }} placeholder="الوحدة"
             value={line.unit ?? '__base__'}
@@ -155,7 +155,7 @@ export function buildLineColumns({
     { key: 'variable_discount', title: 'خصم متغير %', minWidth: 75,
       cellStyle: { textAlign: 'center' },
       cell: (line) => (
-        isBonus ? <span style={{ color: '#8c8c8c' }}>-</span> : viewOnly ? (
+        isBonus ? <span style={{ color: '#555b65' }}>-</span> : viewOnly ? (
           <span className={line.variable_discount ? 'pct-pill' : 'pct-pill pct-pill-zero'}>
             {line.variable_discount ? `${line.variable_discount}%` : '0%'}
           </span>

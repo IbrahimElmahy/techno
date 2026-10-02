@@ -137,8 +137,8 @@ export default function Permissions() {
         <div style={{ textAlign: 'center' as const, lineHeight: 1.4 }}>
           <div>{role.label}</div>
           {role.is_default
-            ? <Tag color="default" style={{ margin: 0, fontSize: 11 }}>افتراضي</Tag>
-            : <Tag color="blue" style={{ margin: 0, fontSize: 11 }}>مضبوط</Tag>}
+            ? <Tag color="default" style={{ margin: 0, fontSize: 12.5 }}>افتراضي</Tag>
+            : <Tag color="blue" style={{ margin: 0, fontSize: 12.5 }}>مضبوط</Tag>}
         </div>
       ),
       key: role.role,

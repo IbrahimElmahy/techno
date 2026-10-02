@@ -11,6 +11,7 @@ type Preset = 'all' | 'm1' | 'm3' | 'm12' | 'custom';
 const PRESET_MONTHS: Record<'m1' | 'm3' | 'm12', number> = { m1: 1, m3: 3, m12: 12 };
 import { api } from '../api/client';
 import { useMovementLabels } from '../lib/movementTypes';
+import { DocRef, docKindOf } from './DocumentLink';
 import { qty } from '../utils/money';
 
 /**
@@ -81,9 +82,23 @@ export default function MovementHistoryLog({
   const [preset, setPreset] = useState<Preset>('all');
   const box = useRef<HTMLDivElement>(null);
 
+  /**
+   * **الهدف بقيمته مش بهويته.** الشاشات بتبني `target` جوّه الرندر (`{ itemId, ... }`)،
+   * فكل رندر للشاشة اللي فوق — حد كتب عدد فعلي في الجرد — كان بيعمل كائن جديد، والسجل
+   * يعيد الجلب ويرجّع الفترة لأولها ويعمل سكرول، في كل سطر مفتوح. المفتاح ده بيتغيّر بس
+   * لما السؤال نفسه يتغيّر.
+   */
+  const targetKey = target ? JSON.stringify([
+    target.itemId, target.locationKind ?? null, target.locationId ?? null,
+    target.dateFrom ?? null, target.dateTo ?? null,
+  ]) : '';
+  const targetRef = useRef(target);
+  targetRef.current = target;
+
   // A new target resets the range to whatever that caller asked for — carrying the previous
   // item's dates over would silently answer a different question than the one just clicked.
   useEffect(() => {
+    const target = targetRef.current;
     if (!target) return;
     const asked = target.dateFrom || target.dateTo;
     setRange(asked ? [
@@ -93,27 +108,31 @@ export default function MovementHistoryLog({
     // والزرار بيتحط على «مخصص» لما الشاشة اللي نادت بتقول فترة بعينها — من غير كده كان
     // هيفضل واقف على «كل الحركات» والقايمة متفلترة، والزرار يكدب على اللي تحته.
     setPreset(asked ? 'custom' : 'all');
-  }, [target]);
+  }, [targetKey]);
 
   useEffect(() => {
+    const target = targetRef.current;
     if (!target) { setRows([]); return; }
     setLoading(true);
     const params: any = {};
-    if (target.locationKind) params.location_kind = target.locationKind;
-    if (target.locationId) params.location_id = target.locationId;
+    // الاتنين مع بعض أو ولا واحد — الكارت بيرفض نوع من غير رقم.
+    if (target.locationKind && target.locationId) {
+      params.location_kind = target.locationKind;
+      params.location_id = target.locationId;
+    }
     if (range?.[0]) params.date_from = range[0]!.format('YYYY-MM-DD');
     if (range?.[1]) params.date_to = range[1]!.format('YYYY-MM-DD');
     api.get(`/api/v1/items/${target.itemId}/card`, { params })
       .then((r) => setRows(r.data?.rows || []))
       .catch(() => setRows([]))
       .finally(() => setLoading(false));
-  }, [target, range]);
+  }, [targetKey, range]);
 
   // Harmless where the caller expands a row (antd has already brought it into view) and still
   // needed on the screens that render this on its own — رصيد الصنف and ملف الصنف.
   useEffect(() => {
-    if (target) box.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-  }, [target]);
+    if (targetRef.current) box.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }, [targetKey]);
 
   /**
    * **السجل جدول — عمود لكل حاجة، وفلتر على كل عمود، والأحدث فوق.** (طلب العميل ٢٠٢٦-٠٩-٣٠)
@@ -131,6 +150,8 @@ export default function MovementHistoryLog({
     qin: Number(r.quantity_in || 0) || null,
     qout: Number(r.quantity_out || 0) || null,
     document_number: r.document_number || '',
+    doc_kind: docKindOf(r.source_doc_type),
+    doc_id: r.source_doc_id ?? null,
     party: r.party || '',
     location: r.location || '',
     before: Number(r.balance_before ?? 0),
@@ -141,7 +162,17 @@ export default function MovementHistoryLog({
     { title: 'التاريخ', dataIndex: 'date', width: 110 },
     { title: 'نوع الحركة', dataIndex: 'kind',
       render: (v: string, r: any) => <Tag color={r.direction === 'وارد' ? 'green' : 'red'}>{v}</Tag> },
-    { title: 'المستند', dataIndex: 'document_number' },
+    /**
+     * رقم المستند بيفتح المستند نفسه في شاشته (طلب العميل ٢٠٢٦-١٠-٠٢).
+     *
+     * كان نص وبس: اللي لاقى العجز في فاتورة بيع أو تحويل كان بيقف عند الرقم، ويروح يدوّر
+     * عليه بنفسه في شاشة الفواتير. دلوقتي بيفتح للعرض، ومن هناك «تعديل» لو عنده صلاحية.
+     * الأنواع اللي مالهاش شاشة مستند (أول المدة، الهالك، المعاينة) بتفضل نص.
+     */
+    { title: 'المستند', dataIndex: 'document_number',
+      render: (v: string, r: any) => (r.doc_kind && r.doc_id
+        ? <DocRef kind={r.doc_kind} id={r.doc_id} label={v || `#${r.doc_id}`} />
+        : (v || '')) },
     { title: 'جهة التعامل', dataIndex: 'party' },
     { title: 'الموقع', dataIndex: 'location' },
     { title: 'وارد', dataIndex: 'qin', align: 'center' as const,

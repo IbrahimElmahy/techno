@@ -18,9 +18,9 @@ import {
   PlusOutlined, CheckCircleOutlined, RollbackOutlined, DeleteOutlined,
   ClearOutlined, ArrowLeftOutlined, ArrowRightOutlined, CloseCircleOutlined,
   FileSearchOutlined, EditOutlined, EyeOutlined, PrinterOutlined, ExclamationCircleOutlined,
-  CheckOutlined, SwapOutlined, SearchOutlined,
+  CheckOutlined, SwapOutlined, SearchOutlined, ShoppingCartOutlined, MinusOutlined,
 } from '@ant-design/icons';
-import { useSearchParams } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { api } from '../api/client';
 import { useDraft } from '../components/useDraft';
 import { useAuth } from '../components/AuthProvider';
@@ -43,6 +43,7 @@ import { TabModal } from '../components/TabModal';
 import WarehouseGate from '../components/WarehouseGate';
 import DocumentAttachments from '../components/DocumentAttachments';
 import { useTableColumns } from '../components/ColumnSettings';
+import { useEntryGrid, type EntryColumn } from '../components/EntryGrid';
 import { QTY_DATA_ATTR } from '../utils/duplicateItem';
 import { addPickedSequentially, type PickResult } from '../utils/pickMany';
 
@@ -57,9 +58,9 @@ const PAGE_SIZE = 300;
 /**
  * تحويلات المخزون — move stock between locations.
  *
- * The form follows the order the storekeeper thinks in: FROM where, TO where, then the category,
- * then the items. Because the source is known first, the item picker is driven by what that
- * location actually holds (`/stock/by-location`): an item with nothing there is never offered, and
+ * The form follows the order the storekeeper thinks in: FROM where, TO where, then the items —
+ * picked from the same product window as the sale invoice. Because the source is known first, the
+ * item picker is driven by what that location actually holds (`/stock/by-location`): an item with nothing there is never offered, and
  * each quantity is capped at what is available. The backend refuses an over-transfer regardless —
  * this only stops the user hitting that wall.
  */
@@ -125,9 +126,6 @@ const STATUS_TAGS: Record<string, { color: string; text: string }> = {
   reversed: { color: 'default', text: 'ملغي' },
 };
 
-/** Bucket for items that carry no category, so they stay reachable in the category-first flow. */
-const NO_CATEGORY = '__none__';
-
 /** Locations are picked from one combined list; the value carries its kind. */
 const locValue = (kind: string, id: number) => `${kind}:${id}`;
 const parseLoc = (v: string) => {
@@ -187,8 +185,20 @@ export default function Transfers() {
   const [statement1, setStatement1] = useState('');
   const [externalDocNumber, setExternalDocNumber] = useState('');
   const [docNotes, setDocNotes] = useState('');
+  /** السطور متجمّعة بالفئة — نفس ترويسات الفئات في فاتورة البيع لما يبقى فيه أكتر من فئة. */
+  const linesByCategory = useMemo(() => {
+    const groups: { category: string | null; items: TransferLine[] }[] = [];
+    lines.forEach((l) => {
+      let g = groups.find((x) => x.category === (l.category ?? null));
+      if (!g) { g = { category: l.category ?? null, items: [] }; groups.push(g); }
+      g.items.push(l);
+    });
+    return groups;
+  }, [lines]);
+  /** ترتيب السطور زي ما هي مرسومة (بالفئة) — الترقيم وEnter ماشيين عليه. */
+  const shownLines = useMemo(() => linesByCategory.flatMap((g) => g.items), [linesByCategory]);
   /** Enter بينقل للسطر اللي بعده، وآخر سطر بيفتح شباك الأصناف — انظر `lineKeyboard`. */
-  const advance = advanceFrom(lines, setFocusLineKey, () => setPickerOpen(true));
+  const advance = advanceFrom(shownLines, setFocusLineKey, () => setPickerOpen(true));
 
   const [submitting, setSubmitting] = useState(false);
 
@@ -308,18 +318,28 @@ export default function Transfers() {
     if (v) loadSourceStock(v);
   };
 
-  /** Categories present in the source's stock. Items with no category are still reachable through
-   *  a "بدون فئة" bucket — otherwise stock that exists could never be transferred. */
+  /** فئات أصناف المصدر — للشريط الجانبي في شباك الأصناف. الصنف اللي مالوش فئة بيبان
+   *  تحت «كل الفئات» زي فاتورة البيع. */
   const categories = useMemo(() => {
     const set = new Set<string>();
-    let hasUncategorised = false;
-    sourceStock.forEach((s) => {
-      if (s.category) set.add(s.category); else hasUncategorised = true;
+    sourceStock.forEach((s) => { if (s.category) set.add(s.category); });
+    return [...set].sort((a, b) => a.localeCompare(b, 'ar'));
+  }, [sourceStock]);
+
+  /** أصناف الشباك والمتاح من كل واحد — متحسوبين مرة لكل رصيد، مش كل رندر (الشباك بيفلتر عليهم). */
+  const pickerProducts = useMemo(() => sourceStock.map((r) => ({
+    id: r.item_id, name: r.name, category: r.category, code: r.code,
+    unit_of_measure: r.unit_of_measure,
+  })), [sourceStock]);
+  const availableById = useMemo(() => {
+    const m: Record<number, number> = {};
+    sourceStock.forEach((r) => {
+      m[r.item_id] = Math.max(0, Number(r.on_hand || 0) - Number(r.pending_out || 0));
     });
-    const list = [...set].sort((a, b) => a.localeCompare(b, 'ar'))
-      .map((c) => ({ value: c, label: categoryLabels[c] || c }));
-    return hasUncategorised ? [...list, { value: NO_CATEGORY, label: 'بدون فئة' }] : list;
-  }, [sourceStock, categoryLabels]);
+    return m;
+  }, [sourceStock]);
+  const codeById = useMemo(() => Object.fromEntries(
+    sourceStock.map((r) => [r.item_id, r.code])) as Record<number, string | null>, [sourceStock]);
 
   const addItem = (itemId: number, qtyTyped: number | null = null): PickResult => {
     const row = sourceStock.find((s) => s.item_id === itemId);
@@ -402,6 +422,9 @@ export default function Transfers() {
 
   const closeCreate = () => {
     clearDocParam();
+    // الإذن اتفتح برابط من شاشة تانية (الجرد، كارت الصنف) ⇒ القفل يرجّع هناك، مش لكشف
+    // التحويلات — نفس اللي شاشة الفواتير بتعمله.
+    if (cameFromScreen.current) { cameFromScreen.current = false; navigate(-1); }
     setCreateVisible(false); setEditing(null); setDraftQty({}); setViewOnly(false);
     setSource(null); setDest(null); setSourceStock([]); setLines([]); setActiveCategory(null);
     setStatement1(''); setExternalDocNumber(''); setDocNotes('');
@@ -443,9 +466,11 @@ export default function Transfers() {
   const writeDocParam = useCallback((id: number) => {
     docInUrl.current = id;
     const next = new URLSearchParams(window.location.search);
+    // العنوان شايل الإذن ده خلاص (جاي من رابط) ⇒ استبدال، مش نفس الإذن مرتين في التاريخ.
+    const already = next.get('doc') === String(id);
     next.set('doc', String(id));
     next.delete('edit'); next.delete('back');
-    setSearchParams(next, { replace: false });
+    setSearchParams(next, { replace: already });
   }, [setSearchParams]);
   const clearDocParam = useCallback(() => {
     docInUrl.current = null;
@@ -458,25 +483,44 @@ export default function Transfers() {
    *  بترجّع للكشف. */
   const closeOnBackRef = useRef<(() => void) | null>(null);
 
-  closeOnBackRef.current = closeCreate;
+  // «رجوع» المتصفح هو اللي قفل ⇒ الخطوة اتعملت خلاص، فالقفل مايرجعش خطوة كمان.
+  closeOnBackRef.current = () => { cameFromScreen.current = false; closeCreate(); };
 
   const pendingDoc = useRef<number | null>(null);
+  /** جاي برابط من شاشة تانية (`back=1`) — بيتلقط قبل ما البارامتر يتمسح. */
+  const cameFromScreen = useRef(false);
+  /** الإذن اللي بيتجاب بالرقم دلوقتي — عشان صحوة التأثير التانية ماتجيبهوش مرتين. */
+  const fetchingDoc = useRef<number | null>(null);
+  const navigate = useNavigate();
   useEffect(() => {
     const doc = searchParams.get('doc') || searchParams.get('edit');
     // البارامتر اللي إحنا كاتبينه وقت الفتح مش طلب فتح.
-    if (doc && Number(doc) === docInUrl.current) return;
+    if (doc && Number(doc) === docInUrl.current) {
+      // رابط من بره لنفس الإذن المفتوح ⇒ «رجوع» يودّي للشاشة دي.
+      if (searchParams.get('back') === '1') {
+        cameFromScreen.current = true;
+        const next = new URLSearchParams(window.location.search);
+        next.delete('back');
+        setSearchParams(next, { replace: true });
+      }
+      return;
+    }
     // راح وإحنا لسه فاتحين ⇒ اللي شاله «رجوع» مش إحنا.
     if (!doc && docInUrl.current !== null) {
       docInUrl.current = null;
       closeOnBackRef.current?.();
       return;
     }
-    if (doc) {
+    if (doc && Number(doc) !== fetchingDoc.current) {
       pendingDoc.current = Number(doc);
+      // `back` بيتقرا هنا بس — المسح اللي تحت بيشيله، والصحوة الجاية مابتلاقيهوش.
+      if (searchParams.get('back') === '1') cameFromScreen.current = true;
       // `edit`/`back` بيتمسحوا؛ و`doc` بيفضل عشان التحديث يرجّعك لنفس الإذن.
-      const next = new URLSearchParams(window.location.search);
-      next.delete('edit'); next.delete('back');
-      setSearchParams(next, { replace: true });
+      if (searchParams.has('edit') || searchParams.has('back')) {
+        const next = new URLSearchParams(window.location.search);
+        next.delete('edit'); next.delete('back');
+        setSearchParams(next, { replace: true });
+      }
     }
     const wanted = pendingDoc.current;
     if (!wanted || !transfers.length) return;
@@ -485,9 +529,11 @@ export default function Transfers() {
     if (target) { openTransfer(target); return; }
     // **مش في الصفحة المحمّلة ≠ مش موجود.** القايمة بصفحات، والرابط الجاي من كارت الصنف
     // ممكن يبقى لإذن قديم برّه الصفحة. بنجيبه بالرقم.
+    fetchingDoc.current = wanted;
     api.get(`/api/v1/transfers/${wanted}`)
       .then((r) => openTransfer(r.data))
-      .catch(() => message.warning(`إذن التحويل رقم ${wanted} مش موجود`));
+      .catch(() => message.warning(`إذن التحويل رقم ${wanted} مش موجود`))
+      .finally(() => { if (fetchingDoc.current === wanted) fetchingDoc.current = null; });
   }, [searchParams, transfers]);
 
   /** المسودّة — الطلب اللي اتكتب ولسه ما اتبعتش. الشرح في `useDraft`. */
@@ -586,7 +632,12 @@ export default function Transfers() {
       const res = await api.get('/api/v1/transfers', { params: { limit: PAGE_SIZE } });
       const rows = res.data || [];
       setTransfers(rows);
-      const found = rows.find((t: TransferRecord) => t.id === id) ?? null;
+      let found = rows.find((t: TransferRecord) => t.id === id) ?? null;
+      // إذن قديم برّه أول صفحة (اتفتح من سجل الجرد أو كارت الصنف) ⇒ بيتجاب بالرقم. من
+      // غيرها أول تعديل على سطر فيه كان بيقفل الإذن كأنه اتمسح.
+      if (!found) {
+        found = await api.get(`/api/v1/transfers/${id}`).then((r) => r.data).catch(() => null);
+      }
       setEditing(found);
       if (!found) closeCreate();
     } catch (err) { console.error(err); }
@@ -1128,17 +1179,46 @@ export default function Transfers() {
 
   const totalUnits = lines.reduce((s, l) => s + (l.quantity || 0), 0);
 
+  /**
+   * Enter على الإذن الجديد بيفتح شباك الأصناف — زي فاتورة البيع بالظبط.
+   *
+   * مابيشتغلش وانت جوّه خانة (Enter هناك معناه «اللي بعده») ولا وفيه شباك تاني مفتوح.
+   */
+  useEffect(() => {
+    if (!createVisible || editing || viewOnly || !source) return undefined;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Enter' || e.shiftKey || e.ctrlKey || e.altKey || e.metaKey) return;
+      if (pickerOpen || newStep || rejectOpen || auditFor !== null) return;
+      const el = e.target as HTMLElement | null;
+      if (el && typeof el.closest === 'function') {
+        if (['INPUT', 'TEXTAREA', 'BUTTON'].includes(el.tagName)) return;
+        if (el.closest('.ant-select, .ant-modal, button')) return;
+      }
+      e.preventDefault();
+      setPickerOpen(true);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [createVisible, editing, viewOnly, source, pickerOpen, newStep, rejectOpen, auditFor]);
+
   const doors = (
     <>
+      {/* نفس شباك فاتورة البيع: كروت وفئات على الجنب واختيار أكتر من صنف بكمية لكل واحد.
+          المتاح بيتقاس على المصدر، والصنف اللي مافيش منه مابيتختارش. */}
       <ProductPickerModal
+        variant="cards"
+        warehouseName={source ? locationName(parseLoc(source).kind, parseLoc(source).id) : null}
         open={pickerOpen}
         title="اختر الصنف المحوَّل"
-        categories={categories.map((c) => c.value)}
+        categories={categories}
         categoryLabels={categoryLabels}
-        products={sourceStock.map((r) => ({
-          id: r.item_id, name: r.name, category: r.category })) as any}
+        products={pickerProducts}
         activeCategory={activeCategory}
         onCategoryChange={setActiveCategory}
+        availableFor={(id) => (stockLoading ? null : (availableById[id] ?? 0))}
+        availabilityVersion={`${source ?? ''}|${sourceStock.length}|${stockLoading ? 1 : 0}`}
+        disableOutOfStock
+        hidePurchasePrice
         onCancel={() => setPickerOpen(false)}
         onPick={(id: number, q) => {
           setPickerOpen(false);
@@ -1424,57 +1504,83 @@ export default function Transfers() {
     },
   });
 
-  const draftLineColumns = [
-    // ترقيم السطور — نفس سبب الفاتورة: ورقة بـ٣٥ صنف مالهاش أرقام
-    // مابتتقالش في التليفون ولا بتتقارن بورقة مطبوعة.
-    { key: 'idx', title: '#', width: 40, align: 'center' as const,
-      render: (_v: any, _r: any, i: number) => (
-        <span style={{ color: '#6b6b6b' }}>{i + 1}</span>) },
-    { key: 'name', title: 'الصنف', dataIndex: 'name', render: (n: string) => <b>{n}</b> },
-    { key: 'category', title: 'الفئة', dataIndex: 'category',
-      render: (c: string | null) => (c ? <Tag>{categoryLabels[c] || c}</Tag> : '-') },
-    { key: 'available', title: 'المتاح في المصدر', dataIndex: 'available',
-      render: (v: number, r: TransferLine) => (
-        <span style={{ color: '#6AB42D', fontWeight: 600 }}>
-          {qty(v)} {r.unit || ''}
-        </span>
-      ) },
-    { key: 'quantity', title: 'الكمية المحوّلة', dataIndex: 'quantity',
-      onCell: (r: TransferLine) => ({ [QTY_DATA_ATTR]: r.item_id } as any),
-      render: (v: number, r: TransferLine) => (
-        <InputNumber size="small" step={1} value={v}
-          style={{ width: 120 }}
-          data-qty-key={r.key}
-          data-grid-col="qty" keyboard={false}
-          onBlur={() => setLineQty(r.key, guardQuantity(
-            { value: r.quantity, available: r.available, itemName: r.name, unit: r.unit },
-            null) as number)}
-          onPressEnter={(e) => {
-            e.preventDefault();
-            const kept = guardQuantity(
-              { value: r.quantity, available: r.available, itemName: r.name, unit: r.unit },
-              null);
-            setLineQty(r.key, kept as number);
-            if (kept !== null) advance(r.key);
-          }}
-          onChange={(val) => setLineQty(r.key, Number(val))} />
-      ) },
-    { key: 'remaining', title: 'المتبقي بعد التحويل', dataIndex: 'remaining',
-      render: (_: any, r: TransferLine) => qty(r.available - Number(r.quantity || 0)) },
-    { key: 'actions', title: '', width: 50,
-      render: (_: any, r: TransferLine) => (
-        <Button type="text" size="small" danger icon={<DeleteOutlined />}
+  /**
+   * سطور الإذن الجديد — **نفس شبكة فاتورة البيع** (`entry-grid sale-grid`): ترويسة كحلي،
+   * الاسم وتحته الكود، والكمية بـ− و+. الأعمدة بتاعة التحويل (المتاح والمتبقي) مكان السعر
+   * والخصم، والكمية بتعدّي على نفس حارس `setLineQty`.
+   */
+  const lineQtyGuard = (r: TransferLine, value: number | null = r.quantity) => guardQuantity(
+    { value, available: r.available, itemName: r.name, unit: r.unit }, null);
+  const draftLineColumns: EntryColumn<TransferLine>[] = [
+    { key: 'idx', title: '#', width: 28, locked: true,
+      cellStyle: { color: '#5b6575', textAlign: 'center' }, cell: (_l, i) => i + 1 },
+    { key: 'item', title: 'اسم الصنف والوصف', minWidth: 190, locked: true,
+      cell: (r) => {
+        const code = codeById[r.item_id];
+        return (
+          <div style={{ lineHeight: 1.25 }}>
+            <div style={{ fontWeight: 700, fontSize: 13, color: '#0f172a' }}>{r.name}</div>
+            {code ? (
+              <div dir="ltr" style={{ fontSize: 12.5, color: '#5b6575', fontWeight: 500, textAlign: 'end' }}>
+                {code}
+              </div>
+            ) : null}
+          </div>
+        );
+      } },
+    { key: 'unit', title: 'الوحدة', minWidth: 70,
+      cellStyle: { textAlign: 'center' },
+      cell: (r) => <span style={{ fontSize: 12.5 }}>{r.unit || 'أساسية'}</span> },
+    { key: 'available', title: 'المتاح في المصدر', minWidth: 90,
+      cellStyle: { textAlign: 'center', whiteSpace: 'nowrap', color: '#6AB42D', fontWeight: 600 },
+      cell: (r) => qty(r.available) },
+    { key: 'quantity', title: 'الكمية', minWidth: 112, locked: true,
+      cellStyle: { textAlign: 'center' },
+      cellProps: (r) => ({ [QTY_DATA_ATTR]: r.item_id } as any),
+      cell: (r) => (
+        // − [الكمية] + — الزرارين برّه التاب عشان Enter يفضل ماشي من سطر لسطر، و«+» بيعدّي
+        // على نفس سقف المتاح.
+        <div className="qty-stepper">
+          <button type="button" tabIndex={-1} className="qty-step" title="قلّل واحد"
+            disabled={Number(r.quantity || 0) <= 1}
+            onClick={() => {
+              const q = Number(r.quantity || 0);
+              if (q > 1) setLineQty(r.key, q - 1);
+            }}><MinusOutlined /></button>
+          <InputNumber size="small" style={{ width: 54 }}
+            data-qty-key={r.key} data-grid-col="qty" keyboard={false} controls={false}
+            placeholder="الكمية" value={r.quantity ?? undefined}
+            onChange={(val) => setLineQty(r.key, val == null ? null : Number(val))}
+            onBlur={() => setLineQty(r.key, lineQtyGuard(r))}
+            onPressEnter={(e) => {
+              e.preventDefault();
+              const kept = lineQtyGuard(r);
+              setLineQty(r.key, kept);
+              if (kept !== null) advance(r.key);
+            }} />
+          <button type="button" tabIndex={-1} className="qty-step" title="زوّد واحد"
+            onClick={() => setLineQty(r.key, Number(r.quantity || 0) + 1)}>
+            <PlusOutlined /></button>
+        </div>
+      ),
+      footer: (rows) => qty(rows.reduce((n, l) => n + Number(l.quantity || 0), 0)) },
+    { key: 'remaining', title: 'المتبقي بعد التحويل', minWidth: 100,
+      cellStyle: { textAlign: 'center', whiteSpace: 'nowrap', color: '#475569' },
+      cell: (r) => qty(r.available - Number(r.quantity || 0)) },
+    { key: 'actions', title: 'إجراء', label: 'حذف السطر', width: 40, locked: true,
+      cellStyle: { textAlign: 'center' },
+      cell: (r) => (
+        <Button size="small" danger type="text" icon={<DeleteOutlined />} title="امسح السطر"
           onClick={() => removeLine(r.key)} />
-      ) },
+      ),
+      footer: () => null },
   ];
-  const draftCols = useTableColumns('transfer-draft-lines', draftLineColumns);
+  const lineGrid = useEntryGrid('transfer-lines-grid', draftLineColumns);
 
   const tableCols = useTableColumns('transfer-requests', columns, {
     export: { name: 'التحويلات', rows: filter.filtered },
   });
 
-  const stockOfCategory = sourceStock.filter((s) => (
-    activeCategory === NO_CATEGORY ? !s.category : s.category === activeCategory));
   const screen = createVisible ? (
       // **شكل فاتورة البيع الجديد** (٢٠٢٦-١٠-٠١): كروت بيضا على رمادي — الترويسة والأدوات،
       // خانات الإذن، الأصناف، وتحت الملخص والأزرار مثبّتين. الشكل بس: نفس الحالة والأوامر.
@@ -1497,7 +1603,7 @@ export default function Transfers() {
             {/* الأدوات و«الأعمدة» في نفس سطر العنوان على الشمال — زي فاتورة البيع. */}
             <div className="sale-toolbar-row">
               <DocumentToolbar actions={transferToolbar()} variant="buttons" />
-              {editing ? docCols.control : draftCols.control}
+              {editing ? docCols.control : lineGrid.control}
             </div>
           </div>
         </div>
@@ -1606,12 +1712,10 @@ export default function Transfers() {
           </div>
 
           <div className="sale-card sale-lines">
-          {/* شريط الأصناف: اسم القسم وعدد البنود والمسار يمين. */}
+          {/* شريط الأصناف زي فاتورة البيع: عدد البنود والمسار يمين، وزرار الإضافة شمال. */}
           <div className="sale-items-bar">
             <div className="sale-items-info">
-              <b style={{ color: '#0f172a', fontSize: 13 }}>
-                {editing ? 'أصناف الإذن' : 'الفئة والأصناف'}
-              </b>
+              {editing && <b style={{ color: '#0f172a', fontSize: 13 }}>أصناف الإذن</b>}
               <span>
                 عدد البنود الحالية: <b style={{ color: '#0f172a' }}>
                   {editing ? docLines(editing).length : lines.length}</b> أصناف
@@ -1624,38 +1728,16 @@ export default function Transfers() {
                 </span>
               )}
             </div>
+            {!editing && !viewOnly && (
+              <Button type="primary" className="sale-green-btn" icon={<ShoppingCartOutlined />}
+                style={{ fontWeight: 700 }}
+                disabled={!source || stockLoading}
+                onClick={() => setPickerOpen(true)}
+              >
+                إضافة صنف للإذن (Enter)
+              </Button>
+            )}
           </div>
-
-          {/* 2) الفئة ثم 3) الأصناف */}
-          {editing ? null : !source ? (
-            <Empty description="اختر المصدر أولاً لعرض الأصناف المتاحة فيه" style={{ margin: '12px 0' }} />
-          ) : stockLoading ? (
-            <Empty description="جارٍ تحميل أرصدة المصدر..." style={{ margin: '12px 0' }} />
-          ) : sourceStock.length === 0 ? (
-            <Alert type="info" showIcon message="لا توجد أي أصناف برصيد متاح في هذا الموقع" />
-          ) : (
-            <Row gutter={12}>
-              <Col xs={24} md={7}>
-                <Select showSearch size="large" style={{ width: '100%' }}
-                  placeholder="اختر الفئة" value={activeCategory ?? undefined}
-                  disabled={viewOnly}
-                  onChange={(v) => setActiveCategory(v ?? null)}
-                  options={categories} filterOption={searchFilter} filterSort={searchRank}/>
-              </Col>
-              <Col xs={24} md={17}>
-                <Select showSearch size="large" style={{ width: '100%' }} value={null}
-                  disabled={!activeCategory || viewOnly}
-                  placeholder={activeCategory ? 'اختر صنفاً لإضافته (المتاح فقط)' : 'اختر الفئة أولاً'}
-                  onChange={(v) => {
-                    if (v) addPickedSequentially([v as number], undefined, addItem, setFocusLineKey);
-                  }}
-                  options={stockOfCategory.map((s) => ({
-                    value: s.item_id,
-                    label: `${s.name} — المتاح: ${qty(s.on_hand)}`,
-                  }))} filterOption={searchFilter} filterSort={searchRank}/>
-              </Col>
-            </Row>
-          )}
 
           {/* السطور المحفوظة — بتتعدّل على السيرفر على طول.
               A saved permit's lines are rows in the database, not a draft: changing a quantity or
@@ -1672,15 +1754,52 @@ export default function Transfers() {
             </div>
           )}
 
-          {/* Lines */}
-          {!editing && lines.length > 0 && (
-            <div className="sale-grid-wrap" style={{ marginTop: 10 }}>
-              <Table autoFilters={false}
-                className="sale-grid" size="small" rowKey="key" pagination={false}
-                dataSource={lines}
-                columns={draftCols.columns}
-              />
+          {/* سطور الإذن الجديد — نفس جدول فاتورة البيع. والفاضي بيقول الخطوة الجاية. */}
+          {editing ? null : lines.length > 0 ? (
+            <div className="sale-grid-wrap">
+              <table className="entry-grid sale-grid">
+                <thead>{lineGrid.head}</thead>
+                <tbody>
+                  {linesByCategory.map((group) => (
+                    <React.Fragment key={group.category ?? '__none__'}>
+                      {linesByCategory.length > 1 && (
+                        <tr className="sale-group-row">
+                          <td colSpan={20}>
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                <Tag color="success" style={{ fontWeight: 700, fontSize: 12.5, padding: '0 6px', borderRadius: 4, margin: 0 }}>
+                                  {group.category ? (categoryLabels[group.category] || group.category) : 'بدون فئة'}
+                                </Tag>
+                                <span style={{ color: '#64748b', fontSize: 12.5, fontWeight: 600 }}>({group.items.length} صنف)</span>
+                              </div>
+                              <span style={{ color: '#64748b', fontSize: 12.5, fontWeight: 600 }}>
+                                إجمالي الفئة: {qty(group.items.reduce((n, l) => n + Number(l.quantity || 0), 0))}
+                              </span>
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                      {group.items.map((line) => (
+                        <tr key={line.key}>{lineGrid.row(line, shownLines.indexOf(line))}</tr>
+                      ))}
+                    </React.Fragment>
+                  ))}
+                </tbody>
+                <tfoot>{lineGrid.foot(lines, (
+                  <>الإجماليات: <span style={{ color: '#64748b', fontWeight: 600 }}>
+                    ({lines.length} بنود مختلفة)
+                  </span></>
+                ))}</tfoot>
+              </table>
             </div>
+          ) : !source ? (
+            <Empty description="اختر المصدر أولاً لعرض الأصناف المتاحة فيه" style={{ margin: '12px 0' }} />
+          ) : stockLoading ? (
+            <Empty description="جارٍ تحميل أرصدة المصدر..." style={{ margin: '12px 0' }} />
+          ) : sourceStock.length === 0 ? (
+            <Alert type="info" showIcon message="لا توجد أي أصناف برصيد متاح في هذا الموقع" />
+          ) : (
+            <Empty description="اختر الفئة ثم الأصناف لإضافتها للإذن" style={{ margin: '12px 0' }} />
           )}
           </div>
 

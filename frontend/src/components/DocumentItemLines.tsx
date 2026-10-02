@@ -45,7 +45,7 @@ interface Line {
   warehouse_id: number | null;
 }
 
-const dash = <span style={{ color: '#8c8c8c' }}>-</span>;
+const dash = <span style={{ color: '#555b65' }}>-</span>;
 
 export default function DocumentItemLines({ kind, id, itemName, warehouseName, money }: Props) {
   const [lines, setLines] = useState<Line[] | null>(null);
@@ -78,11 +78,11 @@ export default function DocumentItemLines({ kind, id, itemName, warehouseName, m
   }, [kind, id]);
 
   if (failed) {
-    return <span style={{ color: '#8c8c8c' }}>تعذر تحميل أصناف المستند</span>;
+    return <span style={{ color: '#555b65' }}>تعذر تحميل أصناف المستند</span>;
   }
   if (lines === null) return <Spin size="small" />;
   if (!lines.length) {
-    return <span style={{ color: '#8c8c8c' }}>لا توجد لهذا المستند سطور أصناف</span>;
+    return <span style={{ color: '#555b65' }}>لا توجد لهذا المستند سطور أصناف</span>;
   }
 
   const qty = (v: any) => Number(v || 0).toLocaleString(numeralsLocale(), { maximumFractionDigits: 3 });

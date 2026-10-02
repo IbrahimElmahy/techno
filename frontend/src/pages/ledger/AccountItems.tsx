@@ -42,6 +42,7 @@ export default function AccountItems({
   const navigate = useNavigate();
   const [lines, setLines] = useState<Line[] | null>(null);
   const [opening, setOpening] = useState<string>('0');
+  const [closing, setClosing] = useState<string | null>(null);
 
   useEffect(() => {
     let alive = true;
@@ -53,6 +54,7 @@ export default function AccountItems({
         if (!alive) return;
         setLines(r.data?.lines || []);
         setOpening(r.data?.opening_balance ?? '0');
+        setClosing(r.data?.closing_balance ?? null);
       })
       .catch(() => alive && setLines([]));
     return () => { alive = false; };
@@ -67,8 +69,9 @@ export default function AccountItems({
       size="small"
       dataSource={lines}
       pagination={lines.length > 20 ? { defaultPageSize: PAGE_SIZE } : false}
-      // الأحدث فوق: رصيد آخر المدة فوق الجدول، وأول المدة تحت مع أقدم حركة.
-      title={() => <span style={{ color: '#888' }}>رصيد آخر المدة: {money(lines[0]?.balance ?? opening)}</span>}
+      // الأحدث فوق: رصيد آخر المدة فوق الجدول، وأول المدة تحت مع أقدم حركة. من السيرفر مش
+      // من أول سطر: الفاتورة ونقديها كتلة (الفاتورة فوق)، فأول سطر ممكن يبقى رصيد قبل الدفعة.
+      title={() => <span style={{ color: '#888' }}>رصيد آخر المدة: {money(closing ?? lines[0]?.balance ?? opening)}</span>}
       columns={[
         { title: 'التاريخ', dataIndex: 'entry_date', width: 105 },
         {

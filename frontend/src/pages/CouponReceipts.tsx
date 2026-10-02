@@ -534,7 +534,7 @@ export default function CouponReceipts() {
             key: 'issued_to',
             render: (_: any, r: Entry) => {
               const name = r.issuedToName || (r.issuedToId ? customerName(r.issuedToId) : null);
-              if (!name) return <span style={{ color: '#8c8c8c' }}>-</span>;
+              if (!name) return <span style={{ color: '#555b65' }}>-</span>;
               return (
                 <Tag color="cyan" style={{ fontSize: 13, padding: '2px 8px' }}>
                   {name}
@@ -546,7 +546,7 @@ export default function CouponReceipts() {
             title: 'الفاتورة الأصلية',
             dataIndex: 'documentNumber',
             width: 150,
-            render: (v: string) => (v ? <Tag color="default">{v}</Tag> : <span style={{ color: '#8c8c8c' }}>-</span>),
+            render: (v: string) => (v ? <Tag color="default">{v}</Tag> : <span style={{ color: '#555b65' }}>-</span>),
           },
           {
             title: 'حالة الكوبون',

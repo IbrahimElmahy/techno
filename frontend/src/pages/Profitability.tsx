@@ -127,7 +127,7 @@ export default function Profitability() {
     { title: dimension === 'cost_center' ? 'مركز التكلفة' : 'الفرع', dataIndex: 'label',
       ...textColumn(rows, (r: Row) => r.label),
       render: (v: string, r: Row) => (
-        <b style={{ color: r.unassigned ? '#8c8c8c' : undefined }}>{v}</b>) },
+        <b style={{ color: r.unassigned ? '#555b65' : undefined }}>{v}</b>) },
     { title: 'سطور', dataIndex: 'lines', align: 'left' as const,
       ...numberColumn<Row>((r) => r.lines) },
     { title: 'الإيرادات', dataIndex: 'income', align: 'left' as const,

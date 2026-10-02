@@ -35,7 +35,7 @@ function describe(before: any, after: any): React.ReactNode {
   const a = after || {};
   const keys = [...new Set([...Object.keys(b), ...Object.keys(a)])];
   const changed = keys.filter((k) => String(b[k] ?? '') !== String(a[k] ?? ''));
-  if (!changed.length) return <span style={{ color: '#8c8c8c' }}>-</span>;
+  if (!changed.length) return <span style={{ color: '#555b65' }}>-</span>;
   return (
     <span>
       {changed.map((k) => (
@@ -94,7 +94,7 @@ export default function DocumentAuditModal({
             { title: 'المستخدم', dataIndex: 'actor_user_id', width: 140,
               render: (id: number | null) => (id
                 ? (userNames?.[id] || `#${id}`)
-                : <span style={{ color: '#8c8c8c' }}>-</span>) },
+                : <span style={{ color: '#555b65' }}>-</span>) },
             { title: 'ما تغيّر', key: 'change',
               render: (_: any, r: any) => describe(r.before, r.after) },
           ]}

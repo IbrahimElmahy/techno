@@ -74,10 +74,10 @@ export default function BranchOverview() {
         <Space size={4}>
           <b>{v}</b>
           {best && r.branch_id === best.branch_id && netOf(r) > 0 && (
-            <Tag color="green" style={{ fontSize: 11 }}>الأعلى</Tag>
+            <Tag color="green" style={{ fontSize: 12.5 }}>الأعلى</Tag>
           )}
           {r.branch_id === null && (
-            <Tag color="default" style={{ fontSize: 11 }}>مستندات قديمة</Tag>
+            <Tag color="default" style={{ fontSize: 12.5 }}>مستندات قديمة</Tag>
           )}
         </Space>
       ),

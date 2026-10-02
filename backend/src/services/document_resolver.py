@@ -42,6 +42,13 @@ def _rep_of(doc) -> int | None:
     return getattr(doc, "rep_id", None) or getattr(doc, "rep_user_id", None)
 
 
+def _kind_value(k) -> str | None:
+    """قيمة الـenum كنص — `VoucherKind.receipt` ⇒ «receipt»."""
+    if k is None:
+        return None
+    return str(getattr(k, "value", k))
+
+
 def resolve_entry(db: Session, entry_id: int) -> dict | None:
     """The document that posted this entry, or None for a hand-written journal entry.
 
@@ -99,5 +106,9 @@ def resolve_many(db: Session, entry_ids: list[int]) -> dict[int, dict]:
                 # مكان البضاعة على المستند (البيع والمرتجع) — عمود «المخزن» في الكشف.
                 "origin_kind": getattr(doc, "origin_location_kind", None),
                 "origin_id": getattr(doc, "origin_location_id", None),
+                # عمود «نوع الفاتورة» في الكشف: خط الفاتورة (أبيض/بولي)، ونوع السند (قبض/صرف/…).
+                "family": getattr(doc, "family", None),
+                "voucher_kind": (_kind_value(getattr(doc, "kind", None))
+                                 if kind == "voucher" else None),
             }
     return found

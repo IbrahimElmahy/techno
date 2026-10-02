@@ -33,6 +33,7 @@ import { printReport, type PrintColumn } from '../print/reportSheet';
 
 import StatsRow from '../components/StatsRow';
 import { money } from '../utils/money';
+import { runningTotals } from '../utils/statementOrder';
 /**
  * ملف المورد (Supplier 360) — the mirror of the customer file: balance, account statement,
  * purchase invoices, returns, payment vouchers and cheques, each row opening in a popup.
@@ -303,17 +304,9 @@ export default function SupplierProfile() {
   const filtering = !!(repFilter || ccFilter.length || typeFilter.length
     || query.trim() || docNo.trim() || hideZero);
 
-  const runningOf = useMemo(() => {
-    const m = new Map<string, number>();
-    let acc = 0;
-    // الكشف جاي الأحدث فوق — التراكمي بيتجمع من تحت (الأقدم) لفوق.
-    for (let i = shownLines.length - 1; i >= 0; i -= 1) {
-      const l = shownLines[i];
-      acc += Number(l.debit || 0) - Number(l.credit || 0);
-      m.set(`${l.entry_id}-${l.entry_date}-${l.balance}`, acc);
-    }
-    return m;
-  }, [shownLines]);
+  // الكشف جاي الأحدث فوق — التراكمي بيتجمع بالترتيب الزمني (الفاتورة قبل نقديها).
+  const runningOf = useMemo(() => runningTotals(
+    shownLines, (l) => `${l.entry_id}-${l.entry_date}-${l.balance}`), [shownLines]);
 
   const loadEntry = async (entryId: number) => {
     if (entryId in entryCache || entryBusy[entryId]) return;

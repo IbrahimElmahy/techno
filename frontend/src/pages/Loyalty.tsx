@@ -534,7 +534,7 @@ export default function Loyalty() {
       count: couponKinds.length,
       children: (
         <div>
-          <div style={{ color: '#8c8c8c', fontSize: 12, padding: '6px 4px 8px' }}>
+          <div style={{ color: '#555b65', fontSize: 12.5, padding: '6px 4px 8px' }}>
             الفئة مع رقم الكوبون هما هويته: «٥ ذهبي» غير «٥ فضي».
           </div>
           <Table

@@ -36,6 +36,8 @@ export const CREATE_ACTIONS: Action[] = [
   { id: 'cheque-in', group: 'السندات', label: 'ورقة قبض', route: '/vouchers?tab=cheques&direction=incoming', button: 'ورقة جديدة' },
   { id: 'cheque-out', group: 'السندات', label: 'ورقة دفع', route: '/vouchers?tab=cheques&direction=outgoing', button: 'ورقة جديدة' },
   { id: 'transfer', group: 'المخازن', label: 'طلب تحويل مخزني', route: '/transfers', button: 'طلب تحويل مخزني' },
+  // شاشة مش إنشاء (طلب العميل ٢٠٢٦-١٠-٠٢) — `button` فاضي = بيفتح الشاشة بس.
+  { id: 'account-statement', group: 'الحسابات', label: 'كشف حساب', route: '/account-statement', button: '' },
 ];
 
 interface Props {
@@ -132,7 +134,7 @@ export default function ShortcutsDock({ userId, tree, openTab }: Props) {
     <span style={{ display: 'flex', justifyContent: 'space-between', gap: 16, minWidth: 180 }}>
       <span>{text}</span>
       <CloseOutlined data-del="1" title="شيل الاختصار"
-        style={{ fontSize: 11, color: '#999', padding: 2 }} />
+        style={{ fontSize: 12.5, color: '#555b65', padding: 2 }} />
     </span>
   );
 
@@ -174,6 +176,7 @@ export default function ShortcutsDock({ userId, tree, openTab }: Props) {
       const a = available.find((x) => x.id === id);
       if (!a) return;
       openTab(a.route);
+      if (!a.button) return;
       pressWhenReady(a.button, () => message.info(
         `«${a.label}» — اقفل المستند المفتوح في الشاشة دي الأول، وبعدين دوس الاختصار تاني`));
       return;
@@ -226,7 +229,7 @@ export default function ShortcutsDock({ userId, tree, openTab }: Props) {
         <div style={{ margin: '12px 0 6px' }}>اللينك</div>
         <Input value={linkUrl} onChange={(e) => setLinkUrl(e.target.value)} dir="ltr"
           placeholder="https://app.technothermeg.com/..." onPressEnter={addLink} />
-        <div style={{ marginTop: 8, fontSize: 12, color: '#6b6b6b' }}>
+        <div style={{ marginTop: 8, fontSize: 12.5, color: '#6b6b6b' }}>
           لينك صفحة في النظام بيتفتح في تبويب جوّه النظام، وأي لينك تاني بيتفتح في المتصفح.
         </div>
       </Modal>

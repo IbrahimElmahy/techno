@@ -354,7 +354,7 @@ export default function Warehouses() {
       width: 110,
       render: (_: any, record: WarehouseRecord) => {
         const n = repsOf(record.id).length;
-        return n ? <Tag color="blue">{n}</Tag> : <span style={{ color: '#8c8c8c' }}>—</span>;
+        return n ? <Tag color="blue">{n}</Tag> : <span style={{ color: '#555b65' }}>—</span>;
       },
     },
     ...(canWrite ? [{

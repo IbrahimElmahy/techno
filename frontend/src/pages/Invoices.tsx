@@ -1712,9 +1712,12 @@ export default function Invoices() {
   const writeDocParam = useCallback((id: number) => {
     docInUrl.current = id;
     const next = new URLSearchParams(window.location.search);
+    // العنوان شايل المستند ده خلاص (جاي من رابط) ⇒ استبدال مش خطوة جديدة. من غيرها
+    // التاريخ بيبقى فيه نفس الفاتورة مرتين، و«رجوع» أول مرة يبان إنه مابيعملش حاجة.
+    const already = next.get('doc') === String(id);
     next.set('doc', String(id));
     next.delete('edit'); next.delete('id'); next.delete('back');
-    setSearchParams(next, { replace: false });
+    setSearchParams(next, { replace: already });
   }, [setSearchParams]);
   const clearDocParam = useCallback(() => {
     docInUrl.current = null;
@@ -1741,7 +1744,16 @@ export default function Invoices() {
     const edit = searchParams.get('edit');
     const id = searchParams.get('id');
     // البارامتر اللي إحنا كاتبينه لما فتحنا المستند مش طلب فتح — تخطّيه.
-    if (doc && Number(doc) === docInUrl.current) return;
+    if (doc && Number(doc) === docInUrl.current) {
+      // بس لو جاي برابط من شاشة تانية لنفس الفاتورة المفتوحة، «رجوع» لازم يودّي هناك.
+      if (searchParams.get('back') === '1') {
+        cameFromScreen.current = true;
+        const next = new URLSearchParams(window.location.search);
+        next.delete('back');
+        setSearchParams(next, { replace: true });
+      }
+      return;
+    }
     // **«رجوع» بتاع المتصفح بيقفل المستند.**
     //
     // البارامتر راح وإحنا لسه فاتحين — يبقى اللي شاله هو زرار الرجوع مش إحنا
@@ -1755,6 +1767,11 @@ export default function Invoices() {
     if (doc || edit || id) {
       pendingIntent.current = { id: Number(doc || edit || id), mode: edit ? 'edit' : 'view' };
       cameFromScreen.current = searchParams.get('back') === '1';
+      // **الطلب ده اتاخد.** المسح اللي تحت بيغيّر العنوان والتأثير بيصحى تاني — ومن غير
+      // العلامة دي كان بيعتبر `?doc=` نفسه طلب جديد: يفتح الفاتورة مرتين، ويقرا `back`
+      // بعد ما اتمسح فـ«رجوع» يودّي لكشف الفواتير بدل الشاشة اللي الفاتورة اتفتحت منها
+      // (الجرد، كارت الصنف). `edit` مالوش علامة: المسح بيشيله من العنوان خالص.
+      if (doc && !edit && !id) docInUrl.current = Number(doc);
       // `edit`/`id`/`back` بيتمسحوا عشان مايتعادوش عند إعادة التحميل. و`doc` **بيفضل**:
       // هو اللي بيخلّي تحديث الصفحة يرجّعك لنفس المستند بدل ما يرميك على الكشف.
       const next = new URLSearchParams(window.location.search);
@@ -1777,7 +1794,9 @@ export default function Invoices() {
     // The list itself is the order — the server already returns it filtered and sorted, and the
     // table renders it unchanged, so the arrows walk exactly what the user is looking at.
     // فاتورة البونص بتمشي وسط البونص — مش في قايمة البيع اللي هي مش فيها أصلاً.
-    const rows = viewInvoice.is_bonus ? bonusInvoices : invoices;
+    // فترة اتحمّلت («تحميل») ⇒ التنقّل جوّه الفترة دي بس، بيع وبونص مع بعض. من غيرها فاتورة
+    // البونص كانت بتمشي في قايمة البونص كلها — فالسابق/التالى بيجيب بونص بس.
+    const rows = periodRows ?? (viewInvoice.is_bonus ? bonusInvoices : invoices);
     const at = rows.findIndex((r: any) => r.id === viewInvoice.id);
     if (at < 0) return null;
     return rows[at + step] ?? null;
@@ -2072,6 +2091,9 @@ function couponsTotal(inv: any): number {
     } catch (err: any) {
       console.error(err);
       message.error(err?.response?.data?.detail?.message || 'تعذر فتح الفاتورة');
+      // الفتح فشل ⇒ العنوان مايفضلش شايل رقم مش معروض، وإلا الضغطة الجاية على نفس
+      // الرابط بتتفسّر «مفتوح خلاص» ومابتعملش حاجة.
+      if (docInUrl.current === record.id) clearDocParam();
     } finally {
       setLoading(false);
     }
@@ -2353,20 +2375,8 @@ function couponsTotal(inv: any): number {
         key: 'prev',
         label: 'السابق',
         icon: <ArrowRightOutlined />,
-        disabled: !isSaved ? invoices.length === 0 : !neighbour(-1),
-        onClick: () => {
-          if (isSaved) {
-            const n = neighbour(-1);
-            if (n) openDetail(n);
-          } else {
-            stepFromDraft(1);
-          }
-        },
-      },
-      {
-        key: 'next',
-        label: 'التالى',
-        icon: <ArrowLeftOutlined />,
+        // القايمة الأحدث الأول: «السابق» = الأقدم (اللي بعده في القايمة)، ومن مستند جديد
+        // = آخر فاتورة اتحفظت. و«التالى» = الأحدث، ومستند جديد مالوش تالى.
         disabled: !isSaved ? invoices.length === 0 : !neighbour(1),
         onClick: () => {
           if (isSaved) {
@@ -2375,6 +2385,16 @@ function couponsTotal(inv: any): number {
           } else {
             stepFromDraft(0);
           }
+        },
+      },
+      {
+        key: 'next',
+        label: 'التالى',
+        icon: <ArrowLeftOutlined />,
+        disabled: !isSaved || !neighbour(-1),
+        onClick: () => {
+          const n = neighbour(-1);
+          if (n) openDetail(n);
         },
       },
       {
@@ -2503,13 +2523,13 @@ function couponsTotal(inv: any): number {
                   ? `تعديل #${editingInvoice.id}`
                   : 'فاتورة جديدة'}
               position={viewInvoice
-                ? invoices.findIndex((r: any) => r.id === viewInvoice.id) + 1 || null
+                ? (periodRows ?? invoices).findIndex((r: any) => r.id === viewInvoice.id) + 1 || null
                 : null}
-              total={viewInvoice ? invoices.length : null}
-              onPrev={viewInvoice && neighbour(-1)
-                ? () => { const n = neighbour(-1); if (n) openDetail(n); } : undefined}
-              onNext={viewInvoice && neighbour(1)
+              total={viewInvoice ? (periodRows ?? invoices).length : null}
+              onPrev={viewInvoice && neighbour(1)
                 ? () => { const n = neighbour(1); if (n) openDetail(n); } : undefined}
+              onNext={viewInvoice && neighbour(-1)
+                ? () => { const n = neighbour(-1); if (n) openDetail(n); } : undefined}
               steps={[
                 { key: 'draft', label: 'مسودة' },
                 { key: 'posted', label: 'مرحّل', color: 'green' },
@@ -2603,7 +2623,7 @@ function couponsTotal(inv: any): number {
             <Col xs={12} md={4}>
               <Form.Item label="الهاتف">
                 <Input readOnly disabled dir="ltr" placeholder="-"
-                  suffix={<PhoneOutlined style={{ color: '#94a3b8' }} />}
+                  suffix={<PhoneOutlined style={{ color: '#5b6575' }} />}
                   value={(customers.find((c) => c.id === selectedCustomerId) as any)?.phone || ''} />
               </Form.Item>
             </Col>
@@ -2755,7 +2775,7 @@ function couponsTotal(inv: any): number {
                     label: (
                       <span style={{ fontWeight: 700 }}>
                         {a.family}
-                        <span style={{ color: '#64748b', marginInlineStart: 6, fontSize: 12,
+                        <span style={{ color: '#64748b', marginInlineStart: 6, fontSize: 12.5,
                                        fontWeight: 400 }}>
                           ({money(Number(a.balance || 0))})
                         </span>
@@ -2870,12 +2890,12 @@ function couponsTotal(inv: any): number {
                           <td colSpan={20}>
                             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                               <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                                <Tag color="success" style={{ fontWeight: 700, fontSize: 11, padding: '0 6px', borderRadius: 4, margin: 0 }}>
+                                <Tag color="success" style={{ fontWeight: 700, fontSize: 12.5, padding: '0 6px', borderRadius: 4, margin: 0 }}>
                                   {group.category ? (categoryLabels[group.category] || group.category) : 'بدون فئة'}
                                 </Tag>
-                                <span style={{ color: '#64748b', fontSize: 11, fontWeight: 600 }}>({group.items.length} صنف)</span>
+                                <span style={{ color: '#64748b', fontSize: 12.5, fontWeight: 600 }}>({group.items.length} صنف)</span>
                               </div>
-                              <span style={{ color: '#64748b', fontSize: 11, fontWeight: 600 }}>
+                              <span style={{ color: '#64748b', fontSize: 12.5, fontWeight: 600 }}>
                                 إجمالي الفئة: {money(group.items.reduce((s, l) => s + saleLineNet(l), 0))}
                               </span>
                             </div>

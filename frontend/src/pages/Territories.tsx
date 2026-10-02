@@ -85,7 +85,7 @@ export default function Territories() {
         <Space size={6} style={{ paddingInlineStart: r.parent_id ? 22 : 0 }}>
           {r.parent_id ? <span style={{ color: '#bfbfbf' }}>↳</span> : null}
           <b style={{ color: r.active ? undefined : '#bfbfbf' }}>{v}</b>
-          {!r.parent_id && <Tag color="blue" style={{ fontSize: 11 }}>رئيسية</Tag>}
+          {!r.parent_id && <Tag color="blue" style={{ fontSize: 12.5 }}>رئيسية</Tag>}
         </Space>
       ),
     },

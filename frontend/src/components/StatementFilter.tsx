@@ -51,7 +51,7 @@ export default function StatementFilter({
   return (
     <Input
       allowClear
-      prefix={<FileTextOutlined style={{ color: '#8c8c8c' }} />}
+      prefix={<FileTextOutlined style={{ color: '#555b65' }} />}
       placeholder={placeholder}
       aria-label="البيان"
       title="البيان — جزء من الكلام المكتوب على المستند"
@@ -79,6 +79,6 @@ export function statementColumn<T extends { statement?: string | null }>(rows: T
     width: 220,
     ellipsis: true,
     ...textColumn(rows, (r: T) => r.statement),
-    render: (v: string | null) => v || <span style={{ color: '#8c8c8c' }}>-</span>,
+    render: (v: string | null) => v || <span style={{ color: '#555b65' }}>-</span>,
   };
 }

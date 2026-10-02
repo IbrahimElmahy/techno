@@ -1345,7 +1345,7 @@ export default function Returns({ embedded }: { embedded?: { onExit: () => void 
               <Col xs={12} md={4}>
                 <Form.Item label="الهاتف">
                   <Input readOnly disabled dir="ltr" placeholder="-"
-                    suffix={<PhoneOutlined style={{ color: '#94a3b8' }} />}
+                    suffix={<PhoneOutlined style={{ color: '#5b6575' }} />}
                     value={(customers.find((c: any) => c.id === customerId) as any)?.phone || ''} />
                 </Form.Item>
               </Col>
@@ -1449,7 +1449,7 @@ export default function Returns({ embedded }: { embedded?: { onExit: () => void 
                             ? { ...x, count: (v as number) ?? undefined } : x)))} />
                       </Col>
                       <Col xs={12} md={4}>
-                        <span style={{ fontSize: 12, color: '#4a4a4a' }}>
+                        <span style={{ fontSize: 12.5, color: '#4a4a4a' }}>
                           {book?.serial_from ? `${book.serial_from}–${book.serial_to}` : '—'}
                         </span>
                       </Col>
@@ -1494,7 +1494,7 @@ export default function Returns({ embedded }: { embedded?: { onExit: () => void 
                       label: (
                         <span style={{ fontWeight: 700 }}>
                           {a.family}
-                          <span style={{ color: '#64748b', marginInlineStart: 6, fontSize: 12,
+                          <span style={{ color: '#64748b', marginInlineStart: 6, fontSize: 12.5,
                                          fontWeight: 400 }}>
                             ({money(Number(a.balance || 0))})
                           </span>
@@ -1565,12 +1565,12 @@ export default function Returns({ embedded }: { embedded?: { onExit: () => void 
                                 <td colSpan={lineGrid.count}>
                                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                                     <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                                      <Tag color="success" style={{ fontWeight: 700, fontSize: 11, padding: '0 6px', borderRadius: 4, margin: 0 }}>
+                                      <Tag color="success" style={{ fontWeight: 700, fontSize: 12.5, padding: '0 6px', borderRadius: 4, margin: 0 }}>
                                         {group.category ? (categoryLabels[group.category] || group.category) : 'بدون فئة'}
                                       </Tag>
-                                      <span style={{ color: '#64748b', fontSize: 11, fontWeight: 600 }}>({group.items.length} صنف)</span>
+                                      <span style={{ color: '#64748b', fontSize: 12.5, fontWeight: 600 }}>({group.items.length} صنف)</span>
                                     </div>
-                                    <span style={{ color: '#64748b', fontSize: 11, fontWeight: 600 }}>
+                                    <span style={{ color: '#64748b', fontSize: 12.5, fontWeight: 600 }}>
                                       إجمالي الفئة: {money(group.items.reduce((s, l) => s + lineTotal(l), 0))}
                                     </span>
                                   </div>
@@ -1802,7 +1802,7 @@ export default function Returns({ embedded }: { embedded?: { onExit: () => void 
       // cannot follow leaves that answered only halfway.
       render: (v: string | null, r: ReturnRecord) => (v
         ? <DocRef kind="invoice" id={r.sales_invoice_id} label={v} />
-        : <span style={{ color: '#8c8c8c' }}>مستقل</span>),
+        : <span style={{ color: '#555b65' }}>مستقل</span>),
     },
     {
       title: 'جهه التعامل', dataIndex: 'customer_id', key: 'customer_id', ellipsis: true,
@@ -1852,17 +1852,17 @@ export default function Returns({ embedded }: { embedded?: { onExit: () => void 
       render: (v: number | null, r: any) => {
         const rep = reps.find((x) => x.id === v);
         const name = rep ? (rep.full_name || rep.username) : r?.rep_name;
-        return name || <span style={{ color: '#8c8c8c' }}>-</span>;
+        return name || <span style={{ color: '#555b65' }}>-</span>;
       },
     },
     {
       title: 'مستند رقم', dataIndex: 'external_document_number', key: 'external_document_number',
       width: 130,
-      render: (v: string | null) => v ?? <span style={{ color: '#8c8c8c' }}>-</span>,
+      render: (v: string | null) => v ?? <span style={{ color: '#555b65' }}>-</span>,
     },
     {
       title: 'ملاحظات', dataIndex: 'notes', key: 'notes', ellipsis: true,
-      render: (v: string | null) => v ?? <span style={{ color: '#8c8c8c' }}>-</span>,
+      render: (v: string | null) => v ?? <span style={{ color: '#555b65' }}>-</span>,
     },
     {
       title: 'تم السداد', dataIndex: 'cash_refund', key: 'cash_refund', width: 110,
