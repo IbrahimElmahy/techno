@@ -7,6 +7,9 @@ import 'package:http_parser/http_parser.dart';
 import '../db/local_db.dart';
 import '../models/models.dart';
 
+/// «خلص كام من كام» — للشريط اللي تحت (`services/task_progress.dart`).
+typedef CountProgress = void Function(int done, int total);
+
 class ApiException implements Exception {
   final int statusCode;
   final String message;
@@ -130,8 +133,11 @@ class ApiClient {
   }
 
   /// Pull the inspection point-items + lookups + customers into the offline cache.
-  Future<void> pullReferenceData() async {
+  ///
+  /// [onStep] = اسم الخطوة اللي شغّالة دلوقتي — للشريط اللي تحت.
+  Future<void> pullReferenceData({void Function(String step)? onStep}) async {
     final headers = await _headers();
+    onStep?.call('بيجيب أصناف المعاينة…');
     // أصناف المعاينة (حساب النقاط) — the list shown in the app, separate from system products.
     final typesR = await http
         .get(await _uri('/inspections/item-types'), headers: headers)
@@ -148,6 +154,7 @@ class ApiClient {
         )
     ]);
 
+    onStep?.call('بيجيب القوائم…');
     for (final category in ['inspection_description', 'inspection_type', 'coupon_kind']) {
       final r = await http
           .get(await _uri('/settings/lookups', {'category': category}), headers: headers)
@@ -165,6 +172,7 @@ class ApiClient {
       ]);
     }
     // Customers for the regular-visit picker (cached so it works offline).
+    onStep?.call('بيجيب العملاء…');
     final custR = await http
         .get(await _uri('/customers'), headers: headers)
         .timeout(const Duration(seconds: 60));
@@ -202,6 +210,7 @@ class ApiClient {
     try {
       const page = 1000;
       for (var offset = 0;; offset += page) {
+        onStep?.call(offset == 0 ? 'بيجيب الملّاك…' : 'بيجيب الملّاك ($offset)…');
         final ownR = await http
             .get(await _uri('/owners', {'limit': '$page', 'offset': '$offset'}),
                 headers: headers)
@@ -485,7 +494,7 @@ class ApiClient {
   /// قبل البيع، فالعربية بتقول أكتر من اللي فيها وبتخالف النظام لحد أول مزامنة كاملة.
   ///
   /// `false` في المزامنة الشاملة بس، لأنها بتسحب الحزمة بنفسها بعد الرفع على طول.
-  Future<int> pushSaleInvoices({bool refreshStock = true}) async {
+  Future<int> pushSaleInvoices({bool refreshStock = true, CountProgress? onProgress}) async {
     // **البونص بيترفع بعد فواتير البيع.**
     //
     // القايمة جاية من الأحدث للأقدم، والبونص بيتكتب بعد الفاتورة اللي هو عليها — فكان
@@ -504,6 +513,7 @@ class ApiClient {
       throw ApiException(0, 'اسحب البيانات الأول — مخزنك مش معروف على الجهاز.');
     }
     for (final inv in pending) {
+      onProgress?.call(sent, pending.length);
       final lines = await LocalDb.instance
           .saleInvoiceLines(inv['local_id'] as int);
       final isBonus = (inv['is_bonus'] as int? ?? 0) == 1;
@@ -604,10 +614,11 @@ class ApiClient {
   /// المستند بيوصل كامل أو مايوصلش. و`client_uuid` بيخلّي الإعادة ترجّع نفس المستند
   /// بدل ما تعمل واحد جديد: الاتصال اللي بيقطع بعد ما السيرفر يكتب وقبل ما الرد يوصل
   /// كان بيعمل نسختين من نفس البضاعة.
-  Future<int> pushTransfers() async {
+  Future<int> pushTransfers({CountProgress? onProgress}) async {
     final pending = await LocalDb.instance.transfers(synced: false);
     var sent = 0;
     for (final t in pending) {
+      onProgress?.call(sent, pending.length);
       final lines = await LocalDb.instance.transferLines(t['local_id'] as int);
       if (lines.isEmpty) continue;
       final first = lines.first;
@@ -674,10 +685,11 @@ class ApiClient {
   ///
   /// كل واحد بـ`client_uuid` بتاعه — التحصيل اللي وصل قبل ما الاتصال يقطع بيرجع زي ما هو
   /// بدل ما يتقيّد تاني وينقّص مديونية العميل بالضعف.
-  Future<int> pushReceipts() async {
+  Future<int> pushReceipts({CountProgress? onProgress}) async {
     final pending = await LocalDb.instance.receipts(synced: false);
     var sent = 0;
     for (final row in pending) {
+      onProgress?.call(sent, pending.length);
       final r = await http
           .post(await _uri('/vouchers/receipts'),
               headers: await _headers(),
@@ -822,10 +834,11 @@ class ApiClient {
 
   /// Push every queued handover. Each carries its client_uuid, so a receipt that went up before
   /// the connection dropped is recognised by the server instead of being posted twice.
-  Future<int> pushCouponReceipts() async {
+  Future<int> pushCouponReceipts({CountProgress? onProgress}) async {
     final pending = await LocalDb.instance.couponReceipts(synced: false);
     var sent = 0;
     for (final row in pending) {
+      onProgress?.call(sent, pending.length);
       final serials = (row['serials'] as String)
           .split(',')
           .where((s) => s.trim().isNotEmpty)

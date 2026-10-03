@@ -10,10 +10,14 @@ import 'screens/login_screen.dart';
 import 'screens/splash_screen.dart';
 import 'services/app_updater.dart';
 import 'theme.dart';
+import 'widgets/task_progress_bar.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
   _useTheRightDatabaseForThisPlatform();
+  // فحص التحديث كل ما التطبيق يرجع من الخلفية (متقنّن جوّه `check`). أندرويد بيسيب
+  // التطبيق شغّال أيام، فالفحص عند الفتح من الصفر لوحده ماكانش بيحصل تقريباً.
+  AppUpdater.instance.attach();
   runApp(const TechnoInspectionsApp());
 }
 
@@ -57,8 +61,9 @@ class TechnoInspectionsApp extends StatelessWidget {
         GlobalWidgetsLocalizations.delegate,
         GlobalCupertinoLocalizations.delegate,
       ],
-      builder: (context, child) =>
-          Directionality(textDirection: TextDirection.rtl, child: child!),
+      // الشريط اللي تحت (التحديث · المزامنة · القوائم) — فوق أي شاشة، مرة واحدة هنا.
+      builder: (context, child) => Directionality(
+          textDirection: TextDirection.rtl, child: TaskBarHost(child: child!)),
       home: home ?? const _Gate(),
     );
   }

@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 
-import '../api/api_client.dart';
 import '../db/local_db.dart';
 import '../services/app_updater.dart';
 import '../services/auto_sync.dart';
@@ -425,43 +424,71 @@ class _HomeScreenState extends State<HomeScreen> {
               ],
             ),
           ),
+          // **التلاتة اللي بتكلّم السيرفر فوق، وكل واحدة بتبان في الشريط اللي تحت** —
+          // «بيرفع الفواتير ٣/٧»، «بيجيب الملّاك…»، «بينزّل التحديث ٤٥٪». قبل كده كانوا
+          // بيشتغلوا من غير أي علامة لحد ما يخلصوا (أو يقعوا)، فالمندوب كان بيفتكرهم بايظين.
           ListTile(
             leading: const Icon(Icons.sync),
-            title: const Text('مزامنة البيانات'),
+            title: const Text('مزامنة الآن'),
+            subtitle: _pendingSales + _pendingReceipts + _pending > 0
+                ? Text('${_pendingSales + _pendingReceipts + _pending} مستند مستني الرفع')
+                : null,
             onTap: () async {
               Navigator.pop(context);
-              await Navigator.push(
-                  context, MaterialPageRoute(builder: (_) => const SyncScreen()));
+              await AutoSync.instance.run();
               _refresh();
             },
           ),
           ListTile(
             leading: const Icon(Icons.download_outlined),
             title: const Text('تحديث الأصناف والقوائم'),
+            // **كل** اللي بينزل: أصناف المعاينة والقوائم والعملاء والملّاك، وحزمة البيع
+            // (أصناف العربية وأسعارها وأقل سعر وعملاءك وأرصدتهم والمخازن والكوبونات).
             onTap: () async {
               Navigator.pop(context);
-              final messenger = ScaffoldMessenger.of(context);
-              try {
-                await ApiClient.instance.pullReferenceData();
-                // **وأصناف العربية كمان.** الزرار ده كان بيسحب الكتالوج والقوائم بس
-                // ويقول «تم تحديث الأصناف ✔» — وأصناف عربية المندوب (اللي بيبيع منها)
-                // مابتتحدّثش هنا خالص، هي بتنزل مع حزمة البيع. فالمندوب يضغط، يشوف
-                // علامة الصح، يفتح الفاتورة ويلاقيها فاضية. الزرار بيقول «الأصناف»
-                // فلازم يجيب الأصناف اللي هو قاصدها.
-                var mine = 0;
-                try {
-                  await ApiClient.instance.pullSalesBundle();
-                  mine = (await LocalDb.instance.saleItems()).length;
-                } on ApiException catch (e) {
-                  if (e.statusCode != 403) rethrow; // ٤٠٣ = مش مندوب، عادي
-                }
-                messenger.showSnackBar(SnackBar(
-                    content: Text(mine > 0
-                        ? 'اتحدثت القوائم و$mine صنف في عربيتك ✔'
-                        : 'تم تحديث القوائم ✔ — مافيش أصناف في عربيتك')));
-              } catch (e) {
-                messenger.showSnackBar(SnackBar(content: Text('فشل التحديث: $e')));
-              }
+              await AutoSync.instance.refreshLists();
+              _refresh();
+            },
+          ),
+          // بيسأل السيرفر **دايماً** (مافيش تقنين ولا تأجيل) وبيقول النتيجة تحت.
+          // التحديث بيتسأل عليه لوحده كمان: عند الفتح، والرجوع من الخلفية، وبعد المزامنة.
+          ValueListenableBuilder<AppRelease?>(
+            valueListenable: AppUpdater.instance.available,
+            builder: (context, next, _) => ListTile(
+              leading: Icon(Icons.system_update,
+                  color: next == null ? null : AppColors.accent),
+              title: const Text('تحديث التطبيق'),
+              subtitle: _version == null ? null : Text('الإصدار $_version'),
+              trailing: next == null
+                  ? null
+                  : Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                      decoration: BoxDecoration(
+                        color: AppColors.accent,
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Text('متاح ${next.name}',
+                          style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w700)),
+                    ),
+              onTap: () {
+                Navigator.pop(context);
+                AppUpdater.instance.check(manual: true);
+              },
+            ),
+          ),
+          const Divider(),
+          ListTile(
+            leading: const Icon(Icons.cloud_sync_outlined),
+            title: const Text('شاشة المزامنة'),
+            subtitle: const Text('المستني وآخر مزامنة'),
+            onTap: () async {
+              Navigator.pop(context);
+              await Navigator.push(
+                  context, MaterialPageRoute(builder: (_) => const SyncScreen()));
+              _refresh();
             },
           ),
           // عهدة الكوبونات — للقراءة: أنهي سريالات في إيده قبل ما يكتب مدى في فاتورة.
@@ -472,17 +499,6 @@ class _HomeScreenState extends State<HomeScreen> {
               Navigator.pop(context);
               Navigator.push(context,
                   MaterialPageRoute(builder: (_) => const CouponCustodyScreen()));
-            },
-          ),
-          // التحديث بيحصل لوحده (أول ما التطبيق يفتح وبعد المزامنة، مرة كل ٦ ساعات)، ده
-          // للي عايز يتأكد دلوقتي — أو اللي الإدارة قالتله «حدّث».
-          ListTile(
-            leading: const Icon(Icons.system_update_outlined),
-            title: const Text('البحث عن تحديث'),
-            subtitle: _version == null ? null : Text('الإصدار $_version'),
-            onTap: () {
-              Navigator.pop(context);
-              AppUpdater.instance.check(manual: true);
             },
           ),
           const Divider(),
@@ -584,7 +600,7 @@ class _SyncBannerState extends State<_SyncBanner> {
   void _tick() {
     if (!mounted) return;
     setState(() {});
-    if (AutoSync.instance.state == AutoSyncState.done) {
+    if (AutoSync.instance.state == AutoSyncState.done && !_hasWarning) {
       // الرسالة الناجحة بتقعد أربع ثواني وتمشي. الفشل بيفضل — ده اللي محتاج قرار.
       Future.delayed(const Duration(seconds: 4), () {
         if (mounted && AutoSync.instance.state == AutoSyncState.done) {
@@ -594,10 +610,18 @@ class _SyncBannerState extends State<_SyncBanner> {
     }
   }
 
+  bool get _hasWarning => AutoSync.instance.message?.contains('⚠') ?? false;
+
   @override
   Widget build(BuildContext context) {
     final sync = AutoSync.instance;
-    if (sync.state == AutoSyncState.idle) return const SizedBox.shrink();
+    // «شغّالة» و«تمت» بتبان في الشريط اللي تحت (`TaskBarHost`) على كل الشاشات. هنا بيفضل
+    // اللي محتاج قرار بس: الفشل بزرار «حاول تاني»، والتحذير (فاتورة اترفضت) لحد المزامنة الجاية.
+    if (sync.state == AutoSyncState.idle ||
+        sync.state == AutoSyncState.running ||
+        (sync.state == AutoSyncState.done && !_hasWarning)) {
+      return const SizedBox.shrink();
+    }
 
     final running = sync.state == AutoSyncState.running;
     final failed = sync.state == AutoSyncState.failed;

@@ -3,6 +3,9 @@ package com.technotherm.techno_inspections
 import android.content.ActivityNotFoundException
 import android.content.ClipData
 import android.content.Intent
+import android.net.Uri
+import android.os.Build
+import android.provider.Settings
 import androidx.core.content.FileProvider
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
@@ -32,6 +35,38 @@ class MainActivity : FlutterActivity() {
                     result.error("NOT_INSTALLED", "WhatsApp is not installed", null)
                 } catch (e: Exception) {
                     result.error("FAILED", e.message, null)
+                }
+            }
+
+        // التحديث من السيرفر (`lib/services/app_updater.dart`): أندرويد ٨+ مابيثبّتش APK من
+        // تطبيق غير لما المستخدم يسمح له بإعداد «السماح من هذا المصدر». بنسأل قبل التنزيل
+        // ونفتح الإعداد ده بالظبط، بدل ما المندوب ينزّل ٢٨ ميجا ويتقفل في وشّه.
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "techno/installer")
+            .setMethodCallHandler { call, result ->
+                when (call.method) {
+                    "canInstall" -> result.success(
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O)
+                            packageManager.canRequestPackageInstalls()
+                        else true
+                    )
+                    "openInstallSettings" -> {
+                        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
+                            result.success(false)
+                        } else {
+                            try {
+                                startActivity(
+                                    Intent(
+                                        Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
+                                        Uri.parse("package:$packageName")
+                                    )
+                                )
+                                result.success(true)
+                            } catch (e: ActivityNotFoundException) {
+                                result.success(false)
+                            }
+                        }
+                    }
+                    else -> result.notImplemented()
                 }
             }
     }

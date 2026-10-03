@@ -1,7 +1,11 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../api/api_client.dart';
 import '../db/local_db.dart';
+import '../services/app_updater.dart';
+import '../services/task_progress.dart';
 import '../theme.dart';
 import 'receipt_print_screen.dart';
 
@@ -121,16 +125,18 @@ class _ReceiptsReviewScreenState extends State<ReceiptsReviewScreen> {
 
   Future<void> _push() async {
     setState(() => _pushing = true);
-    final messenger = ScaffoldMessenger.of(context);
+    // التقدّم والنتيجة في الشريط اللي تحت، زي «فواتيري».
+    final tr = TaskTracker.instance;
+    tr.start(BgTask.upload, 'بيرفع التحصيلات…');
     try {
-      final n = await ApiClient.instance.pushReceipts();
-      messenger.showSnackBar(SnackBar(
-        content: Text(n == 0 ? 'مافيش تحصيلات مستنية' : 'اترفع $n تحصيل ✔'),
-        backgroundColor: n == 0 ? null : AppColors.success,
-      ));
+      final n = await ApiClient.instance.pushReceipts(
+          onProgress: (done, total) => tr.update(
+              BgTask.upload, 'بيرفع التحصيلات ${done + 1}/$total',
+              progress: total == 0 ? null : done / total));
+      tr.finish(BgTask.upload, n == 0 ? 'مافيش تحصيلات مستنية' : 'اترفع $n تحصيل ✔');
+      unawaited(AppUpdater.instance.check());
     } catch (e) {
-      messenger.showSnackBar(
-          SnackBar(content: Text('$e'), backgroundColor: AppColors.danger));
+      tr.finish(BgTask.upload, '$e', error: true, hold: const Duration(seconds: 12));
     } finally {
       if (mounted) setState(() => _pushing = false);
       _load();

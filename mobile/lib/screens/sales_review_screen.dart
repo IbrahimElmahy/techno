@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
@@ -10,7 +11,9 @@ import 'invoice_print_screen.dart';
 import 'sale_coupons_section.dart';
 import 'sale_invoice_screen.dart';
 import 'bonus_invoice_screen.dart';
+import '../services/app_updater.dart';
 import '../services/auto_sync.dart';
+import '../services/task_progress.dart';
 
 /// فواتير الجهاز — اللي راحت واللي لسه.
 ///
@@ -109,15 +112,20 @@ class _SalesReviewScreenState extends State<SalesReviewScreen> {
 
   Future<void> _push() async {
     setState(() => _pushing = true);
-    final messenger = ScaffoldMessenger.of(context);
+    // التقدّم والنتيجة في الشريط اللي تحت — «بيرفع الفواتير ٣/٧»، والرفض بسببه.
+    final tr = TaskTracker.instance;
+    tr.start(BgTask.upload, 'بيرفع الفواتير…');
     try {
-      final n = await ApiClient.instance.pushSaleInvoices();
-      messenger.showSnackBar(SnackBar(
-        content: Text(n == 0 ? 'مافيش فواتير مستنية' : 'اترفعت $n فاتورة ✔'),
-        backgroundColor: n == 0 ? null : AppColors.success,
-      ));
+      final n = await ApiClient.instance.pushSaleInvoices(
+          onProgress: (done, total) => tr.update(
+              BgTask.upload, 'بيرفع الفواتير ${done + 1}/$total',
+              progress: total == 0 ? null : done / total));
+      tr.finish(BgTask.upload, n == 0 ? 'مافيش فواتير مستنية' : 'اترفعت $n فاتورة ✔');
+      // **ده الطريق اللي المناديب بيرفعوا منه فعلاً** — ومكانش بيسأل عن تحديث خالص،
+      // فالأجهزة الشغّالة ماكانتش بتعرف إن فيه نسخة جديدة. متقنّن جوّه `check`.
+      unawaited(AppUpdater.instance.check());
     } catch (e) {
-      messenger.showSnackBar(SnackBar(content: Text('$e'), backgroundColor: AppColors.danger));
+      tr.finish(BgTask.upload, '$e', error: true, hold: const Duration(seconds: 12));
     } finally {
       if (mounted) setState(() => _pushing = false);
       _load();

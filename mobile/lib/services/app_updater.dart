@@ -5,6 +5,7 @@ import 'dart:io';
 import 'package:device_info_plus/device_info_plus.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 import 'package:ota_update/ota_update.dart';
 import 'package:package_info_plus/package_info_plus.dart';
@@ -14,6 +15,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../api/api_client.dart';
 import '../db/local_db.dart';
 import '../theme.dart';
+import 'task_progress.dart';
 
 /// النسخة اللي متثبّتة على الموبايل.
 class InstalledVersion {
@@ -71,6 +73,15 @@ class AppRelease {
       );
 }
 
+/// بتقول السؤال للسيرفر وقع ليه — بالعربي، للشريط اللي تحت.
+class _FetchError implements Exception {
+  _FetchError(this.message);
+  final String message;
+}
+
+/// الفحص واقف فين — عشان نعرف «مشغول» حقيقي ولا عالق.
+enum _Phase { idle, fetching, dialog, downloading }
+
 /// **التطبيق بيحدّث نفسه من السيرفر** — «التطبيق يتحدث مباشر، مش كل شوية نبعت update».
 ///
 /// التطبيق مش على المتجر، فكل نسخة كانت بتتبعت APK لكل مندوب في الشارع. دلوقتي بيسأل
@@ -83,8 +94,17 @@ class AppRelease {
 /// البناء — لو اتغيّر، أندرويد هيرفض التحديث ويطلب مسح التطبيق، وده اللي بيضيّع الطابور.
 /// فالتوقيع مايتلمسش.
 ///
-/// **ومابيوقفش حد.** مافيش نت؟ السيرفر واقع؟ السؤال بيفشل في صمت والمندوب بيكمّل شغله.
-class AppUpdater {
+/// **إمتى بيسأل.** أول ما التطبيق يفتح، وكل ما يرجع من الخلفية (مرة كل نص ساعة بالكتير)،
+/// وبعد أي مزامنة أو رفع نجح. ودوسة «تحديث التطبيق» في القايمة بتسأل **دايماً** —
+/// من غير تقنين ولا تأجيل — وبتقول النتيجة في الشريط اللي تحت أياً كانت.
+///
+/// قبل كده كان بيسأل عند الفتح من الصفر وبعد المزامنة التلقائية بس. أندرويد بيسيب
+/// التطبيق شغّال في الخلفية أيام، والمندوب بيرفع فواتيره من «فواتيري» مش من المزامنة —
+/// فالأجهزة الشغّالة ماكانتش بتسأل خالص (سجل السيرفر من ١ أكتوبر: ولا نداء).
+///
+/// **ومابيوقفش حد.** مافيش نت؟ السيرفر واقع؟ الفحص التلقائي بيفشل في صمت والمندوب
+/// بيكمّل شغله.
+class AppUpdater with WidgetsBindingObserver {
   AppUpdater._();
   static final AppUpdater instance = AppUpdater._();
 
@@ -92,86 +112,193 @@ class AppUpdater {
   /// (المزامنة مثلاً)، والرسالة لازم تطلع فوق أي شاشة مفتوحة.
   static final navigatorKey = GlobalKey<NavigatorState>();
 
+  /// قناة `MainActivity.kt` — إذن «التثبيت من مصادر غير معروفة» وفتح إعداداته.
+  static const _installer = MethodChannel('techno/installer');
+
   static const _snoozeCodeKey = 'app_update_snooze_code';
   static const _snoozeAtKey = 'app_update_snooze_ms';
 
   /// **«بعدين» بتأجّل النسخة دي ٦ ساعات — مش الفحص.** المندوب بيفتح التطبيق ويقفله عشرات
   /// المرات في اليوم، ورسالة كل مرة بتتقفل من غير ما تتقري. بس التأجيل على الفحص نفسه كان
   /// بيخبّي نسخة اتنشرت بعد فحص لقى «مافيش جديد» — المندوب يستنى ٦ ساعات من غير سبب.
-  /// فالسؤال للسيرفر بيحصل كل مرة (رد صغير)، والتأجيل بس للي المندوب قال عليه «بعدين».
+  /// فالسؤال للسيرفر بيحصل، والتأجيل بس للي المندوب قال عليه «بعدين».
   static const _snooze = Duration(hours: 6);
+
+  /// أقل مدة بين فحصين تلقائيين (الرجوع من الخلفية وبعد المزامنة). الدوسة مش متقنّنة.
+  static const _autoEvery = Duration(minutes: 30);
 
   /// كود المعمارية اللي Flutter بيحطه قدّام رقم النسخة (`FlutterPluginConstants.ABI_VERSION`).
   static const _abiCodes = {'armeabi-v7a': 1, 'arm64-v8a': 2, 'x86_64': 4};
 
-  bool _busy = false;
+  /// النسخة الأحدث اللي السيرفر قال عليها — القايمة بتعرض «متاح X» منها. `null` = مافيش.
+  final available = ValueNotifier<AppRelease?>(null);
+
+  _Phase _phase = _Phase.idle;
+
+  /// الفحص الشغّال ده بيقول نتيجته؟ (اتبدأ بدوسة، أو اتداس عليه وهو شغّال)
+  bool _manual = false;
+  DateTime? _phaseSince;
+
+  /// آخر فحص تلقائي وصل للسيرفر — للتقنين.
+  DateTime? _lastAutoCheck;
+
+  /// مستنيين المندوب يرجع من إعدادات «السماح بالتثبيت».
+  Completer<void>? _resumeWaiter;
+  bool _attached = false;
 
   /// المتصفح (نسخة التجربة) مالوش APK يتثبّت.
   static bool get supported => !kIsWeb && Platform.isAndroid;
+
+  /// بيسمع رجوع التطبيق من الخلفية. بيتنادى مرة من `main()`.
+  void attach() {
+    if (_attached) return;
+    _attached = true;
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state != AppLifecycleState.resumed) return;
+    final w = _resumeWaiter;
+    _resumeWaiter = null;
+    if (w != null && !w.isCompleted) w.complete();
+    // متقنّن جوّه `check` — مرة كل نص ساعة بالكتير.
+    unawaited(check(resume: true));
+  }
 
   Future<InstalledVersion> installed() async {
     final p = await PackageInfo.fromPlatform();
     return InstalledVersion(p.version, int.tryParse(p.buildNumber) ?? 0);
   }
 
+  bool get _busy {
+    if (_phase == _Phase.idle) return false;
+    // **السؤال للسيرفر مالوش إنه يطوّل** (مهلته ١٥ ثانية). لو الحالة لسه «بيسأل» بعد
+    // دقيقتين يبقى حاجة وقعت من غير ما ترجّع الحالة — والفحص كان بيفضل «مشغول» للأبد
+    // وكل دوسة بعدها بتتبلع. الحوار والتنزيل ليهم حالتهم ومابيتحسبوش عالقين.
+    if (_phase == _Phase.fetching &&
+        _phaseSince != null &&
+        DateTime.now().difference(_phaseSince!) > const Duration(minutes: 2)) {
+      _setPhase(_Phase.idle);
+      return false;
+    }
+    return true;
+  }
+
+  void _setPhase(_Phase p) {
+    _phase = p;
+    _phaseSince = DateTime.now();
+  }
+
   /// فيه نسخة أحدث؟ ولو فيه، اعرضها.
   ///
-  /// [manual] = المندوب داس «البحث عن تحديث»: مافيش تأجيل، والنتيجة بتتقال أياً كانت.
+  /// [manual] = المندوب داس «تحديث التطبيق»: بيسأل السيرفر دايماً (مافيش تقنين ولا تأجيل)،
+  /// والنتيجة بتتقال في الشريط اللي تحت أياً كانت.
   ///
-  /// [atStart] = أول ما التطبيق يفتح — نفس الفحص، والاسم بيوضّح مين نادى.
-  Future<void> check({bool manual = false, bool atStart = false}) async {
+  /// [atStart] = أول ما التطبيق يفتح — بيسأل دايماً، وبيسكت لو مافيش جديد.
+  ///
+  /// [resume] = التطبيق رجع من الخلفية. هو والفحص اللي بعد المزامنة متقنّنين بـ[_autoEvery].
+  Future<void> check({bool manual = false, bool atStart = false, bool resume = false}) async {
+    final tr = TaskTracker.instance;
     if (!supported) {
-      if (manual) _say('التحديث من السيرفر على أندرويد بس');
+      if (manual) tr.finish(BgTask.update, 'التحديث من السيرفر على أندرويد بس', error: true);
       return;
     }
     if (_busy) {
-      if (manual) _say('بيدوّر على تحديث بالفعل…');
+      // التنزيل باين في الشريط أصلاً. البحث بيخلص في ثواني.
+      // ولو لسه بيسأل، الدوسة بتتحسب: النتيجة هتتقال في الشريط زي ما تكون هي اللي بدأته.
+      if (manual && _phase == _Phase.fetching) {
+        _manual = true;
+        tr.update(BgTask.update, 'بيدوّر على تحديث…');
+      }
       return;
     }
-    _busy = true;
+    if (!manual && !atStart && _lastAutoCheck != null &&
+        DateTime.now().difference(_lastAutoCheck!) < _autoEvery) {
+      return;
+    }
+    _setPhase(_Phase.fetching);
+    _manual = manual;
     try {
-      final prefs = await SharedPreferences.getInstance();
-      final now = DateTime.now().millisecondsSinceEpoch;
-
-      if (manual) _say('بيدوّر على تحديث…', short: true);
+      if (manual) tr.start(BgTask.update, 'بيدوّر على تحديث…');
       final AppRelease latest;
       try {
         latest = await _fetch();
-      } catch (_) {
-        if (manual) _say('مقدرناش نوصل للسيرفر — جرّب تاني لما يبقى فيه نت');
+      } on _FetchError catch (e) {
+        if (_manual) {
+          tr.finish(BgTask.update, e.message,
+              error: true, action: TaskAction('جرّب تاني', () => check(manual: true)));
+        }
         return;
       }
+      _lastAutoCheck = DateTime.now();
       final me = await installed();
 
       if (latest.code <= me.code) {
-        if (manual) _say('عندك آخر نسخة (${me.label}) ✔');
+        available.value = null;
+        if (_manual) tr.finish(BgTask.update, 'عندك آخر نسخة (${me.label}) ✔');
         return;
       }
-      final snoozed = !manual && !latest.force &&
+      available.value = latest;
+
+      final prefs = await SharedPreferences.getInstance();
+      final now = DateTime.now().millisecondsSinceEpoch;
+      final snoozed = !_manual && !latest.force &&
           prefs.getInt(_snoozeCodeKey) == latest.code &&
           now - (prefs.getInt(_snoozeAtKey) ?? 0) < _snooze.inMilliseconds;
       if (snoozed) return;
-      final later = await _offer(latest, me, manual: manual);
+
+      if (_manual) {
+        tr.update(BgTask.update, 'فيه نسخة جديدة (${latest.name})');
+      }
+      final later = await _offer(latest, me, manual: _manual);
       if (later) {
         await prefs.setInt(_snoozeCodeKey, latest.code);
         await prefs.setInt(_snoozeAtKey, now);
+        if (_manual) {
+          tr.finish(BgTask.update,
+              'النسخة ${latest.name} مستنياك — دوس «تحديث التطبيق» من القايمة وقت ما تحب');
+        }
       }
-    } catch (_) {
+    } catch (e) {
       // الفحص التلقائي بيتنادى من غير `await` — خطأ هنا مالوش حد يمسكه، ومالوش لازمة
-      // يوقّف المندوب في نص شغله.
-      if (manual) _say('التحديث مانفعش — جرّب تاني');
+      // يوقّف المندوب في نص شغله. اليدوي بيقول.
+      if (_manual || tr.isRunning(BgTask.update)) {
+        tr.finish(BgTask.update, 'التحديث مانفعش — جرّب تاني',
+            error: true, action: TaskAction('جرّب تاني', () => check(manual: true)));
+      }
     } finally {
-      _busy = false;
+      // **دايماً**، في كل طريق — «مشغول» اللي مابيرجعش كان بيبلع كل دوسة بعده.
+      _setPhase(_Phase.idle);
+      // لو الشريط لسه بيقول «بيدوّر»/«فيه نسخة جديدة» (المندوب قفل الحوار)، يتقفل.
+      if (tr.isRunning(BgTask.update)) tr.clear(BgTask.update);
     }
   }
 
   Future<AppRelease> _fetch() async {
     final base = await ApiClient.instance.baseUrl();
-    final r = await http
-        .get(Uri.parse('$base/api/v1/app-update/latest'))
-        .timeout(const Duration(seconds: 8));
-    if (r.statusCode != 200) throw HttpException('app-update ${r.statusCode}');
-    return AppRelease.fromJson(jsonDecode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>);
+    final http.Response r;
+    try {
+      r = await http.get(
+        Uri.parse('$base/api/v1/app-update/latest'),
+        // أي proxy في السكة مايرجّعش رد قديم — النسخة الجديدة لازم تبان أول ما تتنشر.
+        headers: const {'Cache-Control': 'no-cache'},
+      ).timeout(const Duration(seconds: 15));
+    } on TimeoutException {
+      throw _FetchError('السيرفر مارضيش يرد — جرّب تاني كمان شوية');
+    } catch (_) {
+      throw _FetchError('مافيش نت — جرّب تاني لما يبقى فيه نت');
+    }
+    if (r.statusCode == 404) throw _FetchError('مافيش نسخة منشورة على السيرفر لسه');
+    if (r.statusCode != 200) {
+      throw _FetchError('السيرفر رد بخطأ (${r.statusCode}) — جرّب تاني كمان شوية');
+    }
+    try {
+      return AppRelease.fromJson(
+          jsonDecode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>);
+    } catch (_) {
+      throw _FetchError('رد السيرفر مش مفهوم — كلّم الإدارة');
+    }
   }
 
   /// أنهي ملف ينزل للموبايل ده.
@@ -195,6 +322,7 @@ class AppUpdater {
 
   /// بترجع `true` لو المندوب داس «بعدين» — الفحص بيأجّل النسخة دي بيها.
   Future<bool> _offer(AppRelease r, InstalledVersion me, {required bool manual}) async {
+    final tr = TaskTracker.instance;
     final ctx = navigatorKey.currentContext;
     if (ctx == null) return false;
 
@@ -203,7 +331,9 @@ class AppUpdater {
     if (abi == null) {
       // مابيحصلش غير لو النسخة اتنشرت ناقصة. التلقائي بيسكت — المندوب مايقدرش يعمل حاجة.
       if (manual || r.force) {
-        _say('فيه نسخة جديدة (${r.name}) بس مش منشورة لنوع موبايلك — كلّم الإدارة');
+        tr.finish(BgTask.update,
+            'فيه نسخة جديدة (${r.name}) بس مش منشورة لنوع موبايلك — كلّم الإدارة',
+            error: true);
       }
       return false;
     }
@@ -212,6 +342,7 @@ class AppUpdater {
     final size = r.size[abi];
     if (!ctx.mounted) return false;
 
+    _setPhase(_Phase.dialog);
     final go = await showDialog<bool>(
       context: ctx,
       barrierDismissible: !r.force,
@@ -279,64 +410,121 @@ class AppUpdater {
     return go == false;
   }
 
+  /// أندرويد سامح للتطبيق ده يثبّت تحديثاته؟ (إعداد «السماح من هذا المصدر»)
+  Future<bool> _canInstall() async {
+    try {
+      return await _installer.invokeMethod<bool>('canInstall') ?? true;
+    } catch (_) {
+      // القناة مش موجودة (نسخة قديمة من الكود الأصلي) — نسيب أندرويد يسأل بنفسه.
+      return true;
+    }
+  }
+
+  Future<bool> _openInstallSettings() async {
+    try {
+      return await _installer.invokeMethod<bool>('openInstallSettings') ?? false;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// **الإذن قبل التنزيل، مش بعده.** من غيره المندوب كان بينزّل ٢٨ ميجا، وأندرويد يقوله
+  /// «غير مسموح بالتثبيت من المصدر ده»، يروح الإعدادات ويرجع يلاقي التحديث ضاع ويبدأ من
+  /// الأول. دلوقتي بنسأل الأول، بنفتح له الإعداد بنفسنا، ولما يرجع للتطبيق بنكمّل لوحدنا.
+  Future<bool> _ensureInstallPermission() async {
+    if (await _canInstall()) return true;
+    while (true) {
+      final ctx = navigatorKey.currentContext;
+      if (ctx == null || !ctx.mounted) return false;
+      final open = await showDialog<bool>(
+        context: ctx,
+        builder: (c) => AlertDialog(
+          icon: const Icon(Icons.security_update_good_outlined,
+              color: AppColors.primary, size: 36),
+          title: const Text('اسمح بتثبيت التحديث'),
+          content: const Text(
+            'أندرويد محتاج تسمح للتطبيق ده إنه يثبّت تحديثاته.\n\n'
+            'دوس «افتح الإعدادات»، فعّل «السماح من هذا المصدر»، وارجع للتطبيق — '
+            'التحديث هيكمّل لوحده.',
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('إلغاء')),
+            FilledButton.icon(
+              onPressed: () => Navigator.pop(c, true),
+              icon: const Icon(Icons.settings),
+              label: const Text('افتح الإعدادات'),
+            ),
+          ],
+        ),
+      );
+      if (open != true) return false;
+      final back = Completer<void>();
+      _resumeWaiter = back;
+      if (!await _openInstallSettings()) {
+        // الإعداد مافتحش (موبايل غريب) — نكمّل وأندرويد هيسأل بنفسه وقت التثبيت.
+        _resumeWaiter = null;
+        return true;
+      }
+      await back.future.timeout(const Duration(minutes: 10), onTimeout: () {});
+      if (await _canInstall()) return true;
+    }
+  }
+
   /// بينزّل الملف ويسلّمه لشاشة التثبيت. بيرجع لما شاشة التثبيت تفتح أو التنزيل يقع.
+  ///
+  /// **التنزيل في الشريط اللي تحت مش في حوار قافل الشاشة** — المندوب يقدر يكمّل شغله
+  /// وهو بينزل، و«إلغاء» جنب النسبة.
   Future<void> _download(AppRelease r, String abi) async {
+    final tr = TaskTracker.instance;
+    if (!await _ensureInstallPermission()) {
+      tr.finish(BgTask.update, 'التحديث محتاج تسمح بالتثبيت من التطبيق ده',
+          error: true,
+          action: TaskAction('افتح الإعدادات', () => unawaited(_openInstallSettings())));
+      return;
+    }
+
     final base = await ApiClient.instance.baseUrl();
     final url = '$base${r.urls[abi]}';
     // الاسم بيتحط في `files/ota_update/`؛ المكتبة بترفض أي `/` فيه.
     final filename = (r.files[abi] ?? 'techno-${r.code}-$abi.apk').split('/').last;
     final checksum = r.sha256[abi];
 
-    final ctx = navigatorKey.currentContext;
-    if (ctx == null || !ctx.mounted) return;
-
-    final percent = ValueNotifier<int?>(null);
+    _setPhase(_Phase.downloading);
     final ota = OtaUpdate();
-    BuildContext? progressCtx;
-    unawaited(showDialog<void>(
-      context: ctx,
-      barrierDismissible: false,
-      builder: (c) {
-        progressCtx = c;
-        return PopScope(
-          canPop: false,
-          child: AlertDialog(
-            title: const Text('بينزّل التحديث…'),
-            content: ValueListenableBuilder<int?>(
-              valueListenable: percent,
-              builder: (_, p, __) => Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  LinearProgressIndicator(value: p == null ? null : p / 100),
-                  const SizedBox(height: 12),
-                  Text(p == null ? 'بيبدأ…' : '$p٪',
-                      style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
-                ],
-              ),
-            ),
-            actions: [
-              TextButton(onPressed: () => ota.cancel(), child: const Text('إلغاء')),
-            ],
-          ),
-        );
-      },
-    ));
-    // الشاشة لازم تكون اترسمت قبل ما التنزيل يبدأ: خطأ فوري (رابط غلط) كان بيرجع قبل ما
-    // `progressCtx` يتعرف، فالشاشة تفضل مفتوحة ومابتتقفلش — ومفيهاش رجوع.
-    await WidgetsBinding.instance.endOfFrame;
+    final cancel = TaskAction('إلغاء', () => unawaited(ota.cancel()));
+    tr.start(BgTask.update, 'بينزّل التحديث ${r.name}…', action: cancel);
 
     // آخر حالة — تثبيت اتفتح، أو خطأ، أو إلغاء. `null` = القناة اتقفلت من غير ما تقول.
     final done = Completer<OtaEvent?>();
     StreamSubscription<OtaEvent>? sub;
+    // **حارس السكوت:** لو التنزيل بدأ وبعدين وقف يبعت أي حاجة دقيقتين، بنلغيه ونقول.
+    // من غيره «مشغول» كان ممكن يفضل للأبد لو القناة سكتت (الموبايل نام في نص التنزيل).
+    Timer? watchdog;
+    void arm() {
+      watchdog?.cancel();
+      watchdog = Timer(const Duration(minutes: 2), () {
+        unawaited(ota.cancel());
+        if (!done.isCompleted) {
+          done.complete(OtaEvent(OtaStatus.DOWNLOAD_ERROR, 'stalled'));
+        }
+      });
+    }
+
     try {
       sub = ota
           .execute(url, destinationFilename: filename, sha256checksum: checksum)
           .listen((e) {
         if (e.status == OtaStatus.DOWNLOADING) {
-          percent.value = int.tryParse(e.value ?? '');
+          arm();
+          final p = int.tryParse(e.value ?? '');
+          tr.update(BgTask.update,
+              p == null ? 'بينزّل التحديث ${r.name}…' : 'بينزّل التحديث $p٪',
+              progress: p == null ? null : (p / 100).clamp(0.0, 1.0), action: cancel);
         } else if (!done.isCompleted) {
           done.complete(e);
         }
+      }, onError: (Object e) {
+        if (!done.isCompleted) done.complete(OtaEvent(OtaStatus.INTERNAL_ERROR, '$e'));
       }, onDone: () {
         if (!done.isCompleted) done.complete(null);
       });
@@ -345,24 +533,47 @@ class AppUpdater {
     }
 
     final result = await done.future;
+    watchdog?.cancel();
     await sub?.cancel();
-    final pc = progressCtx;
-    if (pc != null && pc.mounted) Navigator.of(pc).pop();
 
+    // ⚠ ota_update 7.1.0 مرقّم حالتين بالعكس بين جافا ودارت (INSTALLATION_ERROR و
+    // ALREADY_RUNNING_ERROR) — فبنفرّقهم بالرسالة اللي جاية من جافا مش بالرقم.
+    final value = result?.value ?? '';
+    final alreadyRunning = value.toLowerCase().contains('already running');
     final String? error = switch (result?.status) {
-      OtaStatus.INSTALLING || OtaStatus.INSTALLATION_DONE || OtaStatus.CANCELED => null,
-      null => null,
+      OtaStatus.INSTALLING || OtaStatus.INSTALLATION_DONE || null => null,
+      OtaStatus.CANCELED => null,
       OtaStatus.CHECKSUM_ERROR => await _dropCorrupt(filename),
       OtaStatus.DOWNLOAD_ERROR => 'التنزيل وقف — اتأكد من النت وجرّب تاني.',
       OtaStatus.PERMISSION_NOT_GRANTED_ERROR =>
         'لازم تسمح بالتثبيت من التطبيق ده عشان التحديث يكمّل.',
-      OtaStatus.ALREADY_RUNNING_ERROR => 'فيه تنزيل شغّال بالفعل — استنى يخلص.',
-      _ => 'التحديث مانفعش: ${result?.value ?? ''}',
+      OtaStatus.ALREADY_RUNNING_ERROR || OtaStatus.INSTALLATION_ERROR => alreadyRunning
+          ? 'فيه تنزيل شغّال بالفعل — استنى يخلص.'
+          : 'التثبيت مانفعش — جرّب تاني.',
+      _ => 'التحديث مانفعش — جرّب تاني.',
     };
-    if (error == null) return;
+
+    if (error == null) {
+      if (result?.status == OtaStatus.CANCELED) {
+        tr.finish(BgTask.update, 'اتلغى تنزيل التحديث — تقدر تبدأه تاني من القايمة');
+      } else {
+        // شاشة التثبيت بتاعة أندرويد اتفتحت (أو هتفتح دلوقتي).
+        tr.finish(BgTask.update, 'جاهز للتثبيت — دوس «تثبيت» في الشاشة اللي طلعت ✔',
+            hold: const Duration(seconds: 8));
+      }
+      return;
+    }
+
+    final permission = result?.status == OtaStatus.PERMISSION_NOT_GRANTED_ERROR;
+    tr.finish(BgTask.update, error,
+        error: true,
+        action: permission
+            ? TaskAction('افتح الإعدادات', () => unawaited(_openInstallSettings()))
+            : null);
 
     final c2 = navigatorKey.currentContext;
     if (c2 == null || !c2.mounted) return;
+    _setPhase(_Phase.dialog);
     final retry = await showDialog<bool>(
       context: c2,
       builder: (c) => AlertDialog(
@@ -370,6 +581,13 @@ class AppUpdater {
         content: Text(error),
         actions: [
           TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('إغلاق')),
+          if (permission)
+            TextButton(
+              onPressed: () {
+                unawaited(_openInstallSettings());
+              },
+              child: const Text('افتح الإعدادات'),
+            ),
           FilledButton(onPressed: () => Navigator.pop(c, true), child: const Text('جرّب تاني')),
         ],
       ),
@@ -389,17 +607,5 @@ class AppUpdater {
       if (await f.exists()) await f.delete();
     } catch (_) {/* المكتبة بتمسحه قبل التنزيل الجاي على أي حال */}
     return 'الملف نزل ناقص أو متغيّر فاتمسح. جرّب تاني.';
-  }
-
-  void _say(String text, {bool short = false}) {
-    final ctx = navigatorKey.currentContext;
-    if (ctx == null) return;
-    final m = ScaffoldMessenger.maybeOf(ctx);
-    if (m == null) return;
-    m.hideCurrentSnackBar();
-    m.showSnackBar(SnackBar(
-      content: Text(text),
-      duration: short ? const Duration(seconds: 2) : const Duration(seconds: 4),
-    ));
   }
 }
