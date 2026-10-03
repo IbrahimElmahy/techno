@@ -223,6 +223,10 @@ class SaleItem {
   final double defaultDiscountPct;
   final Map<String, double> tierPrices;
 
+  /// أقل سعر بيع للوحدة = تكلفة الصنف (متوسط الشرا). **للتحذير بس — مابيتعرضش.**
+  /// فاضي = الصنف ماتشراش أو سيرفر قديم ⇒ مافيش حد.
+  final double? minPrice;
+
   const SaleItem({
     required this.itemId,
     required this.name,
@@ -233,6 +237,7 @@ class SaleItem {
     this.basePrice,
     this.defaultDiscountPct = 0,
     this.tierPrices = const {},
+    this.minPrice,
   });
 
   /// سعر الصنف لعميل فئته دي — وبيرجع للسعر الأساسي لو الفئة مالهاش سعر خاص.
@@ -262,6 +267,7 @@ class SaleItem {
         // الفئات بتتخزّن نص «فئة=سعر» مفصولين بفاصلة — عمود واحد بدل جدول تاني لحاجة
         // بتتقرا كلها مع الصنف ومابتتسألش لوحدها أبداً.
         'tier_prices': tierPrices.entries.map((e) => '${e.key}=${e.value}').join(','),
+        'min_price': minPrice,
       };
 
   static SaleItem fromRow(Map<String, Object?> r) => SaleItem(
@@ -277,6 +283,7 @@ class SaleItem {
           for (final part in ((r['tier_prices'] as String?) ?? '').split(','))
             if (part.contains('=')) part.split('=')[0]: double.tryParse(part.split('=')[1]) ?? 0
         },
+        minPrice: (r['min_price'] as num?)?.toDouble(),
       );
 }
 

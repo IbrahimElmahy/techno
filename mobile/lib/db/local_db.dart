@@ -23,7 +23,12 @@ class LocalDb {
     // و`main` خد ٢٢ و٢٥ و٢٦ — فالأجهزة اللي في الشارع دلوقتي كل واحد ناقصه ترقيات
     // التاني. الرقم ده أعلى من الاتنين وبيعمل **كل** اللي فاتهم، وكل واحدة محميّة
     // بـ`try`: اللي اتعمل قبل كده بيرمي وبيتتجاهل.
-    _db = await openDatabase(path, version: 31, onUpgrade: (d, from, to) async {
+    _db = await openDatabase(path, version: 32, onUpgrade: (d, from, to) async {
+      if (from < 32) {
+        // أقل سعر بيع للصنف (تكلفته) — للتحذير بس. بيتملى من أول مزامنة؛ لحد ساعتها فاضي
+        // ومافيش تحذير (السيرفر لسه بيرفض).
+        try { await d.execute('ALTER TABLE sale_item ADD COLUMN min_price REAL'); } catch (_) {}
+      }
       if (from < 31) {
         // فاتورة البونص — بضاعة هدية على فاتورة بيع لنفس العميل. الربط بيتخزّن بالاتنين:
         // رقم السيرفر لو الفاتورة اتاخدت من النظام، و`client_uuid` لو اتكتبت على الجهاز
@@ -1689,7 +1694,8 @@ CREATE TABLE sale_item(
   pending_out REAL NOT NULL DEFAULT 0,
   base_price REAL,
   default_discount_pct REAL NOT NULL DEFAULT 0,
-  tier_prices TEXT
+  tier_prices TEXT,
+  min_price REAL
 )''';
 
 /// كتالوج أصناف الفرع — لإذن التحويل **ولكشف التسعير**.

@@ -163,6 +163,12 @@ class _SaleInvoiceScreenState extends State<SaleInvoiceScreen> {
   /// بيكتب، والحفظ بيقراها من جديد.
   CouponCustody _couponCustody = CouponCustody.none;
 
+  /// أقل سعر بيع للوحدة لكل صنف (تكلفته) — للتحذير بس، الرقم مابيتعرضش أبداً.
+  Map<int, double> _minPrices = {};
+
+  /// معاه «البيع تحت سعر التكلفة»؟ — من غيرها الحفظ بيتمنع على السطر اللي تحت التكلفة.
+  bool _canSellBelowCost = true;
+
   /// رقم الفاتورة اللي بتتعدّل على الجهاز — `null` يعني فاتورة جديدة.
   int? get _editingId => widget.existing?['local_id'] as int?;
   bool get _isEditing => _editingId != null;
@@ -172,6 +178,7 @@ class _SaleInvoiceScreenState extends State<SaleInvoiceScreen> {
     super.initState();
     _loadRepInfo();
     _loadFree();
+    _loadMinPrices();
     if (_isEditing) {
       _loadExisting();
     } else if (widget.initialLines != null) {
@@ -202,6 +209,30 @@ class _SaleInvoiceScreenState extends State<SaleInvoiceScreen> {
       _holds = holds;
       _couponCustody = custody;
     });
+  }
+
+  Future<void> _loadMinPrices() async {
+    final items = await LocalDb.instance.saleItems();
+    final can = await LocalDb.instance.getKv('can_sell_below_cost');
+    if (!mounted) return;
+    setState(() {
+      _minPrices = {
+        for (final i in items)
+          if ((i.minPrice ?? 0) > 0) i.itemId: i.minPrice!,
+      };
+      // مش متسجّلة (حزمة قديمة) ⇒ مسموح، والسيرفر هو الحكم.
+      _canSellBelowCost = can != '0';
+    });
+  }
+
+  /// صافي سعر الوحدة (بعد خصم السطر) أقل من سعر الشراء؟ — نفس قاعدة السيرفر
+  /// (`sales_service._assert_not_below_cost`). البونص والصنف اللي ماتشراش معفيين.
+  bool _belowCost(SaleDraftLine l) {
+    if (_isBonus) return false;
+    final min = _minPrices[l.itemId];
+    if (min == null || min <= 0) return false;
+    double r2(double v) => (v * 100).roundToDouble() / 100;
+    return r2(netOf(l.unitPrice, l.discountPct)) < r2(min) - 0.0001;
   }
 
   /// بترجّع الفاتورة اللي في الطابور للشاشة زي ما اتكتبت.
@@ -824,6 +855,42 @@ class _SaleInvoiceScreenState extends State<SaleInvoiceScreen> {
               '${_money(listed)} — البيع تحت السعر محتاج صلاحية مالكش إياها. '
               'ظبّط السعر أو كلّم المكتب.');
         }
+      }
+    }
+    // **سعر البيع أقل من سعر الشراء** — ممنوع من غير صلاحية «البيع تحت سعر التكلفة».
+    // الأصناف كلها في رسالة واحدة. والسيرفر بيرفضها برضه لو عدّت من هنا.
+    if (!_canSellBelowCost) {
+      final under = <String>{for (final l in _lines) if (_belowCost(l)) l.itemName};
+      if (under.isNotEmpty) {
+        if (!mounted) return;
+        await showDialog<void>(
+          context: context,
+          builder: (d) => Directionality(
+            textDirection: TextDirection.rtl,
+            child: AlertDialog(
+              title: const Text('سعر البيع أقل من سعر الشراء'),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('الأصناف دي صافي سعرها أقل من سعر الشراء:'),
+                  const SizedBox(height: 6),
+                  for (final n in under)
+                    Text('• $n',
+                        style: const TextStyle(fontWeight: FontWeight.w700)),
+                  const SizedBox(height: 8),
+                  const Text('ارفع السعر أو قلّل الخصم — البيع تحت سعر الشراء '
+                      'محتاج صلاحية «البيع تحت سعر التكلفة».'),
+                ],
+              ),
+              actions: [
+                TextButton(
+                    onPressed: () => Navigator.pop(d), child: const Text('تمام')),
+              ],
+            ),
+          ),
+        );
+        return;
       }
     }
     final over = await _overCustody();
@@ -1576,6 +1643,32 @@ class _SaleInvoiceScreenState extends State<SaleInvoiceScreen> {
                         style: TextStyle(
                             fontSize: 11,
                             color: AppColors.danger,
+                            fontWeight: FontWeight.w700),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            // صافي السعر تحت سعر الشراء — أحمر لو الحفظ هيتمنع، برتقالي لو مسموح له.
+            if (_belowCost(l))
+              Padding(
+                padding: const EdgeInsets.only(top: 4),
+                child: Row(
+                  children: [
+                    Icon(Icons.trending_down,
+                        size: 14,
+                        color: _canSellBelowCost ? Colors.orange : AppColors.danger),
+                    const SizedBox(width: 4),
+                    Expanded(
+                      child: Text(
+                        _canSellBelowCost
+                            ? 'سعر البيع أقل من سعر الشراء'
+                            : 'سعر البيع أقل من سعر الشراء — الفاتورة مش هتتحفظ كده',
+                        style: TextStyle(
+                            fontSize: 11,
+                            color: _canSellBelowCost
+                                ? Colors.orange.shade800
+                                : AppColors.danger,
                             fontWeight: FontWeight.w700),
                       ),
                     ),

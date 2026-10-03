@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- الملفات اللي التطبيق بيبعتها لتطبيق تاني (فاتورة PDF لواتساب). الملف بيتكتب في الكاش
+     (getTemporaryDirectory)، وواتساب مابيقدرش يقراه غير برابط content:// من الـprovider ده.
+     منفصل عن ota_update_filepaths عشان كل provider مايكشفش غير مجلده. -->
+<paths xmlns:android="http://schemas.android.com/apk/res/android">
+    <cache-path name="shared" path="." />
+</paths>

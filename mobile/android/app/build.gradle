@@ -52,4 +52,7 @@ flutter {
 dependencies {
     // نفس النسخة اللي ota_update 7.1.0 مبني عليها.
     coreLibraryDesugaring 'com.android.tools:desugar_jdk_libs:2.1.4'
+    // FileProvider في MainActivity (إرسال الفاتورة لواتساب). موجود أصلاً بالتبعية، بس
+    // من غير سطر صريح الكود بتاعنا بيتكل على تبعية حد تاني ممكن تتشال.
+    implementation 'androidx.core:core:1.13.1'
 }

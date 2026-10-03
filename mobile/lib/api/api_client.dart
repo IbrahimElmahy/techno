@@ -349,6 +349,9 @@ class ApiClient {
     // سيرفر قديم مابيرجّعهاش ⇒ `true`، والسلوك زي ما كان.
     await LocalDb.instance.setKv(
         'can_sell_below_price', (body['can_sell_below_price'] ?? true) == true ? '1' : '0');
+    // «البيع تحت سعر التكلفة». سيرفر قديم مابيرجّعهاش ⇒ مسموح (ومافيش min_price أصلاً).
+    await LocalDb.instance.setKv(
+        'can_sell_below_cost', (body['can_sell_below_cost'] ?? true) == true ? '1' : '0');
     await LocalDb.instance.replaceCustomers([
       for (final c in (body['customers'] as List))
         CustomerRef(
@@ -391,6 +394,8 @@ class ApiClient {
             for (final e in ((i['tier_prices'] as Map?) ?? {}).entries)
               e.key.toString(): double.tryParse('${e.value}') ?? 0
           },
+          // تكلفة الوحدة الأساسية — للتحذير بس.
+          minPrice: i['min_price'] == null ? null : double.tryParse('${i['min_price']}'),
         )
     ]);
     // كتالوج الفرع — أصناف إذن التحويل. سيرفر قديم مابيرجّعهوش ⇒ الجدول بيفضل زي ما
