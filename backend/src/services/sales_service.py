@@ -224,6 +224,41 @@ def _assert_bonus_target(db: Session, target_id: int | None, customer_id: int,
         raise SalesError("فاتورة البونص لازم تبقى لنفس عميل الفاتورة اللي عليها.")
 
 
+def _assert_not_below_cost(db: Session, built, base_costs: dict[int, Decimal], *,
+                           allowed: bool) -> None:
+    """سعر البيع مايقلّش عن سعر الشراء (طلب العميل ٢٠٢٦-١٠-٠٣).
+
+    القاعدة: **صافي سعر الوحدة بعد خصم السطر** (الثابت والمتغيّر مركّبين) لازم يبقى
+    ≥ **تكلفة الوحدة المختارة** = متوسط تكلفة الوحدة الأساسية × معامل الوحدة.
+    خصم الفاتورة نفسها مش داخل: التحذير على الصنف، وخصم المستند مالوش صنف.
+    «سعر الشراء» هنا التكلفة الفعلية (`average_cost`) مش `Item.purchase_price` — ده سعر
+    لستة المورد قبل خصمه وغالباً شبه سعر البيع. صنف تكلفته صفر (ماتشراش لسه) معفي.
+    كل الأصناف المخالفة بتطلع في رسالة واحدة.
+    """
+    if allowed:
+        return
+    bad: list[str] = []
+    for ln, unit_price, _total, _tier, factor, line_disc in built:
+        base_cost = base_costs.get(ln.item_id) or ZERO
+        if base_cost <= ZERO:
+            continue
+        unit_cost = to_money(Decimal(str(base_cost)) * factor)
+        net_unit = discounts.net_of(unit_price, line_disc)
+        if net_unit < unit_cost:
+            item = db.get(Item, ln.item_id)
+            name = item.name if item else str(ln.item_id)
+            if name not in bad:
+                bad.append(name)
+    if not bad:
+        return
+    if len(bad) == 1:
+        raise SalesError(f"سعر بيع «{bad[0]}» أقل من سعر الشراء — محتاج صلاحية "
+                         f"«البيع تحت سعر التكلفة».")
+    names = "، ".join(f"«{n}»" for n in bad)
+    raise SalesError(f"سعر البيع أقل من سعر الشراء في الأصناف دي: {names} — محتاج صلاحية "
+                     f"«البيع تحت سعر التكلفة».")
+
+
 def create_sale(
     db: Session,
     *,
@@ -243,6 +278,8 @@ def create_sale(
     # الخزنة اللي اتختارت من البوباب. فاضية ⇒ تتستنتج من الخط.
     cash_account_id: int | None = None,
     can_sell_below: bool = False,
+    # البيع بصافي أقل من تكلفة الصنف — صلاحية «البيع تحت سعر التكلفة» (sell.below_cost).
+    can_sell_below_cost: bool = False,
     # (التعديل) تكلفة الوحدة الأساسية اللي كانت مجمّدة على الفاتورة قبل ما تتفضّى.
     # الصنف اللي فيها بياخد رقمه القديم؛ اللي مش فيها (سطر اتزوّد دلوقتي) بياخد
     # متوسط النهارده. شوف `document_edit_service.frozen_costs`.
@@ -414,6 +451,20 @@ def create_sale(
         gross += line_total
         built.append((ln, unit_price, line_total, tier, factor, line_disc))
     gross = to_money(gross)
+
+    # **تكلفة الوحدة الأساسية لكل صنف** — نفس الرقم اللي بيتجمّد على السطر تحت: المجمّد
+    # القديم في التعديل، وإلا متوسط النهارده. محسوبة مرة واحدة هنا للفحص وللتجميد.
+    base_costs: dict[int, Decimal] = {}
+    fresh_ids = [ln.item_id for ln, *_ in built
+                 if (keep_costs or {}).get(ln.item_id) is None]
+    base_costs.update(costing_service.average_cost_bulk(db, fresh_ids) if fresh_ids else {})
+    for ln, *_ in built:
+        kept = (keep_costs or {}).get(ln.item_id)
+        if kept is not None:
+            base_costs[ln.item_id] = Decimal(str(kept))
+    _assert_not_below_cost(db, built, base_costs,
+                           allowed=can_sell_below_cost or is_bonus)
+
     net = discounts.apply(gross, fixed, variable)
     # VAT (021): zero rate ⇒ tax 0 and `payable == net`, i.e. the original contract exactly.
     tax = tax_service.tax_on(net, tax_service.vat_rate(db))
@@ -582,8 +633,7 @@ def create_sale(
         # النهارده مكان تكلفة يومها، والهامش يتحرك من غير ما حد يطلب ده. السطر اللي
         # كان موجود بياخد رقمه القديم، واللي اتزوّد في التعديل بياخد متوسط النهارده
         # لأنه فعلاً بيع جديد.
-        kept = (keep_costs or {}).get(ln.item_id)
-        base_cost = kept if kept is not None else costing_service.average_cost(db, ln.item_id)
+        base_cost = base_costs.get(ln.item_id, ZERO)
         unit_cost = to_money(Decimal(str(base_cost)) * factor)
         invoice.lines.append(
             SalesInvoiceLine(item_id=ln.item_id, quantity=ln.quantity,

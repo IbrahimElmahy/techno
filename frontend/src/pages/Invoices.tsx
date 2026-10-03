@@ -64,11 +64,12 @@ import {
   InvoiceRecord, ItemPrices, Customer, RepEmployee, Product, Warehouse, SaleLineItem,
   ItemUnit, InvoiceDetail, InvoiceFilters, CouponRow, couponRowHasContent,
 } from './invoices/types';
-import { buildLineColumns } from './invoices/lineColumns';
+import { afterFixedOf, buildLineColumns } from './invoices/lineColumns';
 import { buildRegisterColumns } from './invoices/registerColumns';
 // سند القبض بيتعمل من شريحة «سندات القبض» هنا — نفس بوباب شاشة السندات، مش نسخة منه.
 import ReceiptModal from './vouchers/ReceiptModal';
-import { useQuickVoucher, type EditableVoucher } from './vouchers/useQuickVoucher';
+import { useQuickVoucher, fetchVoucher, type EditableVoucher } from './vouchers/useQuickVoucher';
+import { useRegisterReceipts } from './invoices/useRegisterReceipts';
 import { useLiveRefresh } from '../utils/live';
 import ListPage from '../components/ListPage';
 import { useQueryTab } from '../components/useQueryTab';
@@ -314,6 +315,21 @@ export default function Invoices() {
   const [party, setParty] = useState<Party | null>(null);
   // The document's warehouse — the default every line falls back to when it has none of its own.
   const [docWarehouseId, setDocWarehouseId] = useState<number | null>(null);
+  // أقل سعر بيع للوحدة الأساسية = تكلفة الصنف (متوسط الشرا) — للتحذير بس، الرقم مابيتعرضش.
+  // التكلفة واحدة في كل المخازن، وبتتجدد مع تغيير المخزن (طلب رخيص). السيرفر هو الحكم.
+  const [minPrices, setMinPrices] = useState<Record<number, number>>({});
+  const [canSellBelowCost, setCanSellBelowCost] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    api.get('/api/v1/items/min-prices').then((r) => {
+      if (!alive) return;
+      const out: Record<number, number> = {};
+      Object.entries(r.data?.min_prices || {}).forEach(([k, v]) => { out[Number(k)] = Number(v); });
+      setMinPrices(out);
+      setCanSellBelowCost(!!r.data?.can_sell_below_cost);
+    }).catch(() => { /* من غيرها مافيش تحذير — السيرفر لسه بيرفض */ });
+    return () => { alive = false; };
+  }, [docWarehouseId]);
   /**
    * نفس القيمة، بس مقروءة في نفس اللحظة.
    *
@@ -484,6 +500,13 @@ export default function Invoices() {
   // فحص النظام بيبعت أرقام الفواتير اللي فيها الخلل في الرابط. من غير ده الزرار
   // بيوديك على الكشف كله وتدوّر انت على الأربعة اللي هو عارفهم. `FocusedRows` بيشرح.
 
+  // سندات القبض المستقلة في «الكل» بس — النقدي مع الفاتورة جزء من صفها. فلتر فحص النظام
+  // (أرقام فواتير بعينها) ⇒ مافيش سندات.
+  const registerReceipts = useRegisterReceipts({
+    enabled: docKindFilter === 'all' && !focus.ids, filters, reloadKey: receiptsKey,
+  });
+  const receiptRows = registerReceipts.rows;
+
   const unifiedRecords = useMemo(() => {
     const toSaleRow = (s: any) => {
       // **البونص بقيمته قبل خصم الـ١٠٠٪.** `gross` المخزّن بعد خصم السطور، وسطر البونص
@@ -569,7 +592,7 @@ export default function Invoices() {
 
     let combined: any[] = [];
     if (docKindFilter === 'all') {
-      combined = [...saleRows, ...bonusRows, ...returnRows];
+      combined = [...saleRows, ...bonusRows, ...returnRows, ...receiptRows];
     } else if (docKindFilter === 'sale') {
       combined = saleRows;
     } else if (docKindFilter === 'bonus') {
@@ -581,7 +604,7 @@ export default function Invoices() {
     }
 
     return combined.sort((a, b) => (b.date || '').localeCompare(a.date || '') || b.id - a.id);
-  }, [invoices, bonusInvoices, salesReturns, docKindFilter]);
+  }, [invoices, bonusInvoices, salesReturns, receiptRows, docKindFilter]);
 
   /** الكشف بعد فلتر «ودّيني على اللي فيه المشكلة» — أو هو زي ما هو لو مافيش فلتر. */
   // الأرقام اتغيّرت (دوس «اعرض الكل» أو جه من الرئيسية) ⇒ الكشف يتجاب من جديد.
@@ -774,6 +797,8 @@ export default function Invoices() {
 
   // Invoice computations: per-line discounts first, then the invoice-total discount.
   const grossTotal = lines.reduce((sum, line) => sum + lineTotal(line), 0);
+  // مجموع عمود «الإجمالي بعد الخصم الثابت» — نفس الدالة اللي العمود بيعرض بيها.
+  const afterFixedTotal = lines.reduce((sum, line) => sum + afterFixedOf(line), 0);
   // البونص قيمته صفر — «إجمالي الأصناف» فوق بيفضل يقول قيمتها بسعر البيع.
   const netTotal = isBonus ? 0 : netOf(grossTotal, discountPct);
 
@@ -1067,6 +1092,21 @@ export default function Invoices() {
     if (!unit) return 1;
     const u = (unitsCache[itemId] || []).find((x) => x.name === unit);
     return u ? u.factor : 1;
+  };
+
+  /**
+   * السطر صافيه (بعد خصم السطر، من غير خصم الفاتورة) أقل من تكلفة الوحدة؟ — نفس قاعدة
+   * `sales_service._assert_not_below_cost`. البونص والصنف اللي ماتشراش معفيين.
+   */
+  const belowCost = (l: SaleLineItem): boolean => {
+    if (isBonus || !l.item_id) return false;
+    const base = minPrices[l.item_id];
+    if (!base) return false;
+    // وحدة مش متحمّلة معاملها لسه ⇒ مانحكمش (السيرفر بيحكم).
+    if (l.unit && !(unitsCache[l.item_id] || []).some((u) => u.name === l.unit)) return false;
+    const min = Math.round(base * unitFactor(l.item_id, l.unit) * 100) / 100;
+    const net = Math.round(netOf(l.unit_price || 0, lineDiscountPct(l)) * 100) / 100;
+    return net < min - 0.0001;
   };
 
   // Resolve a line's price = base-tier price × unit factor (matches the backend, 007+008).
@@ -1514,6 +1554,28 @@ export default function Invoices() {
       }
     }
 
+    // سعر البيع أقل من سعر الشراء ⇒ ممنوع من غير صلاحية «البيع تحت سعر التكلفة».
+    // الأصناف كلها في رسالة واحدة، ومن غير ما نروح للسيرفر.
+    const underCost = validLines.filter(belowCost);
+    if (underCost.length && !canSellBelowCost) {
+      Modal.error({
+        title: 'سعر البيع أقل من سعر الشراء',
+        content: (
+          <div>
+            <div>الأصناف دي صافي سعرها أقل من سعر الشراء:</div>
+            <ul style={{ margin: '6px 0', paddingInlineStart: 18 }}>
+              {[...new Set(underCost.map((l) => productName(l.item_id as number)))]
+                .map((n) => <li key={n}>{n}</li>)}
+            </ul>
+            <div>ارفع السعر أو قلّل الخصم — البيع تحت سعر الشراء محتاج صلاحية «البيع تحت سعر التكلفة».</div>
+          </div>
+        ),
+        okText: 'تمام',
+      });
+      setFocusLineKey(underCost[0].key);
+      return;
+    }
+
     // بوباب الخزنة (أمر ٠٠٩ بند ٤): فاتورة البيع **بتضيف** للخزنة، والاقتراح صندوق خط
     // الفاتورة. الحفظ بيتم بعد الاختيار — والرجوع مابيحفظش. نقدي بصفر (كله آجل) يعني
     // مافيش فلوس بتتحرّك، فالبوباب مابيظهرش والحفظ بيعدّي على طول.
@@ -1845,6 +1907,7 @@ export default function Invoices() {
     saleLineNet, linePoints, checkedQuantity, handleLineChange, handleRemoveLine,
     advanceFrom, setDocWarehouseId, setPanelItemId, hidePoints: isFactory, isBonus,
     productCode: (id) => products.find((p) => p.id === id)?.code,
+    belowCost, canSellBelowCost,
   });
   const lineGrid = useEntryGrid('invoice-lines-grid', lineColumns);
 
@@ -2213,6 +2276,11 @@ function couponsTotal(inv: any): number {
     invoiceDoc, canEditInvoice, canDeleteInvoice, handleEditInvoice, handleDeleteInvoice,
     handleDeleteReturn,
     onDeleteDraft: (id: number) => removeDraft(id),
+    // صفوف سند القبض في «الكل».
+    canWriteVoucher: can('voucher.write'),
+    onViewReceipt: registerReceipts.view,
+    onEditReceipt: (r: any) => { fetchVoucher(r.id).then((v) => editReceipt(v)).catch(() => {}); },
+    onDeleteReceipt: registerReceipts.remove,
   });
 
   // الأعمدة بعد الإخفاء والترتيب، محسوبة مرة واحدة: الجدول بيرسمها والتصدير بيكتبها، ولازم
@@ -2991,6 +3059,7 @@ function couponsTotal(inv: any): number {
               <Row gutter={[10, 10]}>
                 <Col xs={24} lg={16}>
                   <div className="sale-tiles">
+                    <SummaryTile label="بعد الخصم الثابت" value={money(afterFixedTotal)} />
                     <SummaryTile label="إجمالي الأصناف" value={money(grossTotal)} />
                     {/* البونص بيتعرض ١٠٠٪ — `discountPct` فيه آخر رقم اتكتب قبل التحويل (١٠ من «١٠٠»). */}
                     {invoiceDiscount > 0.001 && (
@@ -3248,7 +3317,9 @@ function couponsTotal(inv: any): number {
   // الشرايح وعدّاداتها — نفس أرقام الملخّص اللي من السيرفر.
   const kindTabs: { key: DocKind; label: string; dot?: string; count?: number }[] = [
     { key: 'all', label: 'الكل',
-      count: summary.totalSalesCount + summary.totalReturnsCount + summary.totalBonusCount },
+      // + سندات القبض المعروضة (بتتجاب على «الكل» بس).
+      count: summary.totalSalesCount + summary.totalReturnsCount + summary.totalBonusCount
+        + receiptRows.length },
     { key: 'sale', label: 'فواتير المبيعات', dot: '#52c41a', count: summary.totalSalesCount },
     { key: 'return', label: 'مرتجعات المبيعات', dot: '#eb2f96', count: summary.totalReturnsCount },
     { key: 'bonus', label: 'فواتير البونص', dot: '#fa8c16', count: summary.totalBonusCount },
@@ -3274,8 +3345,11 @@ function couponsTotal(inv: any): number {
   const tabCount = focus.ids
     ? focusedRecords.length
     : (kindTabs.find((t) => t.key === docKindFilter)?.count ?? focusedRecords.length);
-  const shownNet = focusedRecords.reduce(
-    (t: number, r: any) => t + (r.doc_type === 'return' ? -Number(r.net || 0) : Number(r.net || 0)), 0);
+  // التحصيلات مش مبيعات — بره الصافي، ورقمها لوحده.
+  const shownNet = focusedRecords.reduce((t: number, r: any) => (r.doc_type === 'receipt' ? t
+    : t + (r.doc_type === 'return' ? -Number(r.net || 0) : Number(r.net || 0))), 0);
+  const shownReceipts = focusedRecords.filter((r: any) => r.doc_type === 'receipt');
+  const shownCollected = shownReceipts.reduce((t: number, r: any) => t + Number(r.amount || 0), 0);
   // البونص صافيه صفر دايماً — رقمه اللي يتقري القيمة قبل خصم الـ١٠٠٪.
   const footNet = docKindFilter === 'bonus'
     ? { label: 'إجمالي البونص قبل الخصم', value: summary.totalBonusGross }
@@ -3288,6 +3362,9 @@ function couponsTotal(inv: any): number {
         {footNet.label}:{' '}
         <b className={footNet.value < 0 ? 'is-neg' : 'is-pos'}>{money(footNet.value)}</b>
       </span>
+      {shownReceipts.length > 0 && (
+        <span>التحصيلات المعروضة: <b className="is-pos">{money(shownCollected)}</b></span>
+      )}
     </span>
   );
 
@@ -3454,6 +3531,8 @@ function couponsTotal(inv: any): number {
               if (record.__isDraft) { resumeDraft(record.__draft); return; }
               if (record.doc_type === 'sale') {
                 openDetail(record.raw);
+              } else if (record.doc_type === 'receipt') {
+                registerReceipts.view(record);
               } else {
                 navigate(`/returns?id=${record.id}`);
               }
@@ -3473,6 +3552,8 @@ function couponsTotal(inv: any): number {
         reps={reps as any}
         editing={receipt.editing} treasuryOptional={receipt.custodyEdit}
       />
+      {/* ورقة سند القبض من صفه في «الكل». */}
+      {registerReceipts.modal}
 
       {/*
         * باب واحد بيفتح الفاتورة — الفرع والتاريخ والتصنيف والبحث والقايمة في نافذة واحدة.

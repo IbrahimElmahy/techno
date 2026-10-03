@@ -182,6 +182,12 @@ for _role in (RoleName.system_admin, RoleName.branch_manager, RoleName.sales_man
     ROLE_CAPABILITIES.setdefault(_role, set()).add(CAP_SELL_BELOW_PRICE)
 ALL_CAPABILITIES.add(CAP_SELL_BELOW_PRICE)
 
+# البيع بصافي أقل من تكلفة الصنف (متوسط سعر الشراء) — طلب العميل ٢٠٢٦-١٠-٠٣. غير «تحت
+# السعر» اللي فوق: دي خسارة فعلية مش خصم. افتراضياً لمدير النظام والمالك بس (المالك بياخد
+# كل حاجة تحت)، والباقي يتدّاله من شاشة الصلاحيات.
+CAP_SELL_BELOW_COST = "sell.below_cost"
+ALL_CAPABILITIES.add(CAP_SELL_BELOW_COST)
+
 # ---------------------------------------------------------------------------
 # After-Sales Loyalty (003) capability extension — additive.
 # ---------------------------------------------------------------------------
@@ -368,7 +374,9 @@ ROLE_CAPABILITIES[RoleName.viewer] = {
 # واللي عايز يضيّق أكتر بقى يقدر: شاشة الصلاحيات بتكتب فوق الافتراضي ده.
 # و`stats.view` معاهم: مدير الفرع بياخد «كل حاجة ما عدا» من `ALL_CAPABILITIES`، فأي
 # صلاحية جديدة بتوصله لوحدها — وكروت الإحصائيات دي بالظبط اللي المالك قفلها.
-_NOT_FOR_BRANCH_MANAGER = {CAP_BRANCH_WRITE, CAP_LOYALTY_SETTINGS_WRITE, CAP_STATS_VIEW}
+# و«البيع تحت التكلفة» برضه — قرار شركة مش فرع؛ يتدّاله صراحةً لو المالك عايز.
+_NOT_FOR_BRANCH_MANAGER = {CAP_BRANCH_WRITE, CAP_LOYALTY_SETTINGS_WRITE, CAP_STATS_VIEW,
+                           CAP_SELL_BELOW_COST}
 ROLE_CAPABILITIES[RoleName.branch_manager] = ALL_CAPABILITIES - _NOT_FOR_BRANCH_MANAGER
 
 

@@ -12,7 +12,12 @@ import { InputNumber } from '../../components/NumberInput';
 import type { EntryColumn } from '../../components/EntryGrid';
 import { money, numeralsLocale } from '../../utils/money';
 import { QTY_DATA_ATTR } from '../../utils/duplicateItem';
+import { applyPct } from '../../utils/discounts';
 import { SaleLineItem, Warehouse } from './types';
+
+/** إجمالي السطر بعد الخصم الثابت بس (الكمية × السعر بالوحدة المختارة) — من غير المتغيّر. */
+export const afterFixedOf = (l: SaleLineItem) =>
+  applyPct(Number(l.quantity || 0) * (l.unit_price || 0), l.fixed_discount);
 
 export interface LineColumnsCtx {
   viewOnly: boolean;
@@ -38,6 +43,10 @@ export interface LineColumnsCtx {
   isBonus?: boolean;
   /** كود الصنف — بيتكتب صغير تحت اسمه (لو موجود). */
   productCode?: (id: number) => string | null | undefined;
+  /** صافي السطر أقل من سعر الشراء؟ — تحذير على خانة السعر (الرقم نفسه مابيتعرضش). */
+  belowCost?: (l: SaleLineItem) => boolean;
+  /** معاه «البيع تحت سعر التكلفة» ⇒ التحذير أصفر مش أحمر. */
+  canSellBelowCost?: boolean;
 }
 
 const fmtQty = (n: number) => n.toLocaleString(numeralsLocale(), { maximumFractionDigits: 3 });
@@ -46,7 +55,7 @@ export function buildLineColumns({
   viewOnly, warehouses, totalPoints, pointValues, productName, saleUnitOptions,
   saleLineNet, linePoints, checkedQuantity, handleLineChange, handleRemoveLine,
   advanceFrom, setDocWarehouseId, setPanelItemId, hidePoints = false, isBonus = false,
-  productCode,
+  productCode, belowCost, canSellBelowCost = false,
 }: LineColumnsCtx): EntryColumn<SaleLineItem>[] {
   // الترتيب الافتراضي زي تصميم العميل (٢٠٢٦-١٠-٠١): # · الصنف · المخزن · الكمية · السعر ·
   // قبل · متغير · ثابت · النهائي · النقاط · إجراء. اللي رتّب أعمدته بإيده بيفضل على ترتيبه.
@@ -136,16 +145,28 @@ export function buildLineColumns({
       ),
       footer: (rows) => fmtQty(rows.reduce((n, l) => n + Number(l.quantity || 0), 0)) },
     { key: 'unit_price', title: 'سعر الوحدة', minWidth: 80,
-      cell: (line) => (
-        viewOnly ? (
-          <span>{money(line.unit_price)}</span>
-        ) : (
-          <InputNumber size="small" min={0} step={0.01} style={{ width: '100%' }}
-            placeholder="السعر" value={line.unit_price}
-            onChange={(v) => handleLineChange(line.key, 'unit_price', v || 0)}
-            onPressEnter={(e) => { e.preventDefault(); advanceFrom(line.key); }} />
-        )
-      ),
+      cell: (line) => {
+        const under = !viewOnly && !!belowCost?.(line);
+        return (
+          <>
+            {viewOnly ? (
+              <span>{money(line.unit_price)}</span>
+            ) : (
+              <InputNumber size="small" min={0} step={0.01} style={{ width: '100%' }}
+                status={under ? (canSellBelowCost ? 'warning' : 'error') : undefined}
+                placeholder="السعر" value={line.unit_price}
+                onChange={(v) => handleLineChange(line.key, 'unit_price', v || 0)}
+                onPressEnter={(e) => { e.preventDefault(); advanceFrom(line.key); }} />
+            )}
+            {under ? (
+              <Tag color={canSellBelowCost ? 'gold' : 'red'}
+                style={{ marginTop: 2, marginInlineEnd: 0, fontSize: 11, whiteSpace: 'nowrap' }}>
+                أقل من سعر الشراء
+              </Tag>
+            ) : null}
+          </>
+        );
+      },
       footer: () => null },
     { key: 'gross', title: 'الإجمالي قبل', minWidth: 85,
       cellStyle: { whiteSpace: 'nowrap', color: '#475569' },
@@ -181,6 +202,11 @@ export function buildLineColumns({
         )
       ),
       footer: () => null },
+    // طلب العميل ٢٠٢٦-١٠-٠٣ — في البونص كمان: الثابت بيتطبّق عادي.
+    { key: 'after_fixed', title: 'الإجمالي بعد الخصم الثابت', minWidth: 100,
+      cellStyle: { whiteSpace: 'nowrap', color: '#475569' },
+      cell: (line) => money(afterFixedOf(line)),
+      footer: (rows) => money(rows.reduce((n, l) => n + afterFixedOf(l), 0)) },
     { key: 'total', title: 'الإجمالي النهائي', minWidth: 100, locked: true,
       cellStyle: { fontWeight: 700, whiteSpace: 'nowrap', color: '#15803d' },
       cell: (line) => (

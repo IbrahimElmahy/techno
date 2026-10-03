@@ -21,6 +21,7 @@ from src.auth.rbac import (
     CAP_SALE_WRITE,
     CAP_SALES_READ,
     CAP_SELL_BELOW_PRICE,
+    CAP_SELL_BELOW_COST,
     role_has_capability,
 )
 from src.core import clock
@@ -675,6 +676,12 @@ def rep_bundle(
     coupon_custody, coupon_custody_kinds = coupon_custody_service.rep_bundle(
         db, current.rep_id)
 
+    # أقل سعر بيع للوحدة الأساسية = تكلفتها (متوسط الشراء) — الجهاز بيحذّر على السطر
+    # اللي صافيه أقل منها، من غير ما يعرض الرقم. صفر = ماتشراش ⇒ مافيش حد.
+    from src.services import costing_service
+
+    min_prices = costing_service.average_cost_bulk(db, [r[0] for r in live]) if live else {}
+
     return {
         "rep_id": current.rep_id,
         # [{"kind": "فضي", "ranges": [["1001", "1050"]], "count": 50}, …] — المتاح معاه بس.
@@ -691,6 +698,8 @@ def rep_bundle(
         #
         # سيرفر قديم مابيرجّعهاش ⇒ التطبيق بيفترض إنه مسموح، فالسلوك زي ما كان.
         "can_sell_below_price": role_has_capability(current.role, CAP_SELL_BELOW_PRICE),
+        # «البيع تحت سعر التكلفة» — من غيرها الجهاز بيمنع حفظ سطر صافيه أقل من `min_price`.
+        "can_sell_below_cost": role_has_capability(current.role, CAP_SELL_BELOW_COST),
         # التطبيق بيبعت المكان ده زي ما هو وقت الترحيل، فبينزل بنوعه مش برقمه بس:
         # مندوب على عهدة ومندوب على مخزن بيبعتوا `location_kind` مختلف.
         "store_kind": store_kind.value,
@@ -769,6 +778,9 @@ def rep_bundle(
                 "pending_out": str(pending_out.get(r[0], Decimal("0"))),
                 "category": cat_label.get(r[6], r[6]),
                 "tier_prices": tiers.get(r[0], {}),
+                # تكلفة الوحدة الأساسية — للتحذير بس، مابتتعرضش للمندوب.
+                "min_price": (str(min_prices[r[0]])
+                              if min_prices.get(r[0], Decimal("0")) > 0 else None),
             }
             for r in live
         ],
@@ -904,6 +916,7 @@ def _build_sale(
             raise HTTPException(403, {"code": "forbidden",
                                       "message": "البونص لازم يبقى على فاتورة من فواتيرك."})
     can_sell_below = role_has_capability(current.role, CAP_SELL_BELOW_PRICE)
+    can_sell_below_cost = role_has_capability(current.role, CAP_SELL_BELOW_COST)
     try:
         inv = sales_service.create_sale(
             db, customer_id=body.customer_id, origin_location_kind=body.origin.location_kind,
@@ -920,6 +933,7 @@ def _build_sale(
                 c.coupon_kind or c.coupon_type_id is not None or c.count
                 or c.serial_from or c.serial_to for c in body.coupons),
             can_sell_below=can_sell_below,
+            can_sell_below_cost=can_sell_below_cost,
             is_bonus=body.is_bonus, bonus_for_invoice_id=bonus_for,
             rep_id=body.rep_id, revenue_account_id=body.revenue_account_id,
             external_document_number=body.external_document_number, notes=body.notes,

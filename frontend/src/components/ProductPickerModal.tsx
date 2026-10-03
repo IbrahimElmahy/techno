@@ -523,7 +523,7 @@ export default function ProductPickerModal({
     );
 
     return (
-      <TabModal open={open} onCancel={onCancel} footer={null} width={1150}
+      <TabModal open={open} onCancel={onCancel} footer={null} width={1320}
         rootClassName="ppk-cards" focusTriggerAfterClose={false} destroyOnHidden
         title={(
           <div className="ppk-head">
@@ -682,16 +682,14 @@ export default function ProductPickerModal({
                       )}
                       <div className="ppk-info">
                         <div className="ppk-name-row">
+                          {/* من غير كود ولا فئة تحت الاسم (طلب العميل ٢٠٢٦-١٠-٠٣) — الفئة متختارة من
+                              على اليمين أصلاً، والصنف بياخد سطر واحد. */}
                           <b className="ppk-name">{p.name}</b>
-                          {p.code && <span className="ppk-code">{p.code}</span>}
+                          {p.unit_of_measure && <span className="ppk-unit">{p.unit_of_measure}</span>}
+                          {pack && <span className="ppk-unit">التعبئة: {pack}</span>}
                           {level === 'low' && <span className="ppk-tag low">رصيد محدود</span>}
                           {level === 'zero' && <span className="ppk-tag zero">غير متاح في المخزن</span>}
                           {p.is_serialized && <span className="ppk-tag info">بسيريال</span>}
-                        </div>
-                        <div className="ppk-meta">
-                          {p.category && <span>الفئة: {catLabel(p.category)}</span>}
-                          {p.unit_of_measure && <span>الوحدة: {p.unit_of_measure}</span>}
-                          {pack && <span>التعبئة: {pack}</span>}
                         </div>
                       </div>
                       <div className="ppk-figs">

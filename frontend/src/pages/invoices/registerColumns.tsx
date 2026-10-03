@@ -34,13 +34,23 @@ export interface RegisterColumnsCtx {
   handleDeleteReturn: (r: any) => void;
   /** مسح مسودّة من الكشف. اختياري عشان اللي بينده من غيرها مايتكسرش. */
   onDeleteDraft?: (id: number) => void;
+  /** صفوف سند القبض في «الكل» (`doc_type: 'receipt'`) — عرض/تعديل/حذف السند. */
+  onViewReceipt?: (r: any) => void;
+  onEditReceipt?: (r: any) => void;
+  /** الحذف الفعلي بس — التأكيد هنا. */
+  onDeleteReceipt?: (r: any) => Promise<void> | void;
+  canWriteVoucher?: boolean;
 }
+
+// سند القبض مالوش إجمالي ولا خصم ولا باقي — «—» بدل صفر يوهم.
+const DASH = '—';
 
 export function buildRegisterColumns({
   customers, reps, postingAccounts, filters, printOpts, navigate, openDetail,
   invoiceDoc, canEditInvoice, canDeleteInvoice, handleEditInvoice, handleDeleteInvoice,
-  handleDeleteReturn, onDeleteDraft,
+  handleDeleteReturn, onDeleteDraft, onViewReceipt, onEditReceipt, onDeleteReceipt, canWriteVoucher,
 }: RegisterColumnsCtx): any[] {
+  const isRcv = (r: any) => r.doc_type === 'receipt';
   return [
     {
       title: 'نوع المستند',
@@ -49,7 +59,9 @@ export function buildRegisterColumns({
       dataIndex: 'doc_type_label',
       key: 'doc_type',
       width: 100,
-      render: (_label: string, r: any) => r.doc_type === 'sale'
+      render: (_label: string, r: any) => isRcv(r)
+        ? <Tag color="blue" style={{ fontWeight: 600 }}>سند قبض</Tag>
+        : r.doc_type === 'sale'
         ? (r.is_bonus
           // البونص نوع لوحده — قيمته صفر، واللي بيقرا الكشف لازم يعرفه من غير ما يفتحه.
           ? <Tag color="orange" style={{ fontWeight: 600 }}>فاتورة بونص</Tag>
@@ -99,7 +111,7 @@ export function buildRegisterColumns({
             ? <DraftTag onDelete={() => onDeleteDraft?.(r.__draft.id)} />
             // بإطار بلون نوع المستند — بيع أخضر، مرتجع وردي، بونص برتقالي.
             : <Tag bordered className="sl-docno"
-                color={r.doc_type !== 'sale' ? 'magenta' : r.is_bonus ? 'orange' : 'green'}>{doc}</Tag>}
+                color={isRcv(r) ? 'blue' : r.doc_type !== 'sale' ? 'magenta' : r.is_bonus ? 'orange' : 'green'}>{doc}</Tag>}
           {r.original_invoice_number && (
             <span style={{ fontSize: 12.5, color: '#555b65' }}>عن: {r.original_invoice_number}</span>
           )}
@@ -112,7 +124,8 @@ export function buildRegisterColumns({
       key: 'revenue_account_id',
       width: 140,
       ellipsis: true,
-      render: (id: number | null) => {
+      render: (id: number | null, r: any) => {
+        if (isRcv(r)) return DASH;
         if (!id) return <span style={{ color: '#555b65' }}>الافتراضي</span>;
         const a = postingAccounts.find((x: any) => x.id === id);
         return a ? (a.name || a.code || `#${id}`) : `#${id}`;
@@ -150,8 +163,9 @@ export function buildRegisterColumns({
       key: 'family',
       width: 100,
       sorter: (a: any, b: any) => (a.family || '').localeCompare(b.family || ''),
-      render: (f: string | null) =>
-        f ? <Tag color={f === 'بولي' ? 'purple' : 'default'}>{f}</Tag> : '-',
+      render: (f: string | null, r: any) =>
+        f ? <Tag color={f === 'بولي' ? 'purple' : 'default'}>{f}</Tag>
+          : isRcv(r) ? 'على الإجمالي' : '-',
     },
     {
       // «النوع» = تصنيف العميل (تاجر/سباك/معرض)، مش عائلة الفاتورة.
@@ -178,8 +192,8 @@ export function buildRegisterColumns({
       key: 'gross',
       width: 115,
       align: 'left' as const,
-      sorter: (a: any, b: any) => a.gross - b.gross,
-      render: (val: number) => `${money(val)}`,
+      sorter: (a: any, b: any) => (a.gross ?? 0) - (b.gross ?? 0),
+      render: (val: number, r: any) => (isRcv(r) ? DASH : `${money(val)}`),
     },
     {
       title: 'خصم',
@@ -187,8 +201,8 @@ export function buildRegisterColumns({
       key: 'discount_value',
       width: 105,
       align: 'left' as const,
-      sorter: (a: any, b: any) => a.discount_value - b.discount_value,
-      render: (val: number) => `${money(val)}`,
+      sorter: (a: any, b: any) => (a.discount_value ?? 0) - (b.discount_value ?? 0),
+      render: (val: number, r: any) => (isRcv(r) ? DASH : `${money(val)}`),
     },
     {
       // **النسبة من الفرق الحقيقي، مش من `combined_pct`.**
@@ -261,11 +275,18 @@ export function buildRegisterColumns({
       width: 115,
       align: 'left' as const,
       sorter: (a: any, b: any) => a.net - b.net,
-      render: (val: number, r: any) => (
+      render: (val: number, r: any) => (isRcv(r)
+        // تحصيل مش بيع — بلون وكلمة تفرّقه عن صافي الفاتورة.
+        ? <Tooltip title="تحصيل من عميل — مش داخل في صافي المبيعات">
+            <strong style={{ color: '#389e0d' }}>
+              <span style={{ fontSize: 11.5, fontWeight: 500 }}>تحصيل </span>{money(val)}
+            </strong>
+          </Tooltip>
+        : (
         <strong style={{ color: r.doc_type === 'sale' ? '#237804' : '#cf1322' }}>
           {r.doc_type === 'return' ? '-' : ''}{money(val)}
         </strong>
-      ),
+      )),
     },
     {
       // **اللي اتحصّل فعلاً، مش نقدي يوم البيع.**
@@ -283,6 +304,7 @@ export function buildRegisterColumns({
       // اللون من الخلية مش من الرسم — الرسم بيفضل نص عشان التصدير بيقراه.
       onCell: () => ({ style: { color: '#389e0d' } }),
       render: (_v: any, row: any) => {
+        if (isRcv(row)) return `${money(row.amount)}`;
         const res = Number(row.residual ?? row.credit_amount ?? 0);
         return `${money(Number(row.net || 0) - res)}`;
       },
@@ -298,6 +320,7 @@ export function buildRegisterColumns({
       sorter: (a: any, b: any) =>
         (a.residual ?? a.credit_amount) - (b.residual ?? b.credit_amount),
       render: (_v: any, row: any) => {
+        if (isRcv(row)) return DASH;
         const n = Number(row.residual ?? row.credit_amount ?? 0);
         const color = n > 0.005 ? '#cf1322' : n < -0.005 ? '#6AB42D' : undefined;
         return <span style={{ color, fontWeight: Math.abs(n) > 0.005 ? 600 : undefined }}>{money(n)}</span>;
@@ -355,6 +378,41 @@ export function buildRegisterColumns({
       // «الصافى» and «الباقى» together — and those are the two numbers the list exists for.
       render: (_: any, record: any) => {
         const isSale = record.doc_type === 'sale';
+        // سند القبض: عرض الورقة، تعديل في بوباب السند، وحذف بسؤال — زي شريحة «سندات القبض».
+        if (isRcv(record)) {
+          return (
+            <Space size={2} onClick={(e) => e.stopPropagation()}>
+              <Tooltip title="عرض السند">
+                <Button type="text" icon={<EyeOutlined />} onClick={() => onViewReceipt?.(record)} />
+              </Tooltip>
+              {canWriteVoucher && onEditReceipt && (
+                <Tooltip title="تعديل">
+                  <Button type="text" icon={<EditOutlined />} onClick={() => onEditReceipt(record)} />
+                </Tooltip>
+              )}
+              {canWriteVoucher && onDeleteReceipt && (
+                <Tooltip title="حذف">
+                  <Button
+                    type="text"
+                    danger
+                    icon={<DeleteOutlined />}
+                    onClick={() => Modal.confirm({
+                      title: 'تأكيد حذف سند القبض',
+                      icon: <ExclamationCircleOutlined style={{ color: '#ff4d4f' }} />,
+                      content: `هل أنت متأكد من حذف السند رقم (${record.document_number})؟ هيتمسح هو وقيده.`,
+                      okText: 'نعم، احذف',
+                      okType: 'danger',
+                      cancelText: 'إلغاء',
+                      onOk: async () => {
+                        try { await onDeleteReceipt(record); } catch { /* رسالة الخطأ من `api` */ }
+                      },
+                    })}
+                  />
+                </Tooltip>
+              )}
+            </Space>
+          );
+        }
         // **سطر المسودّة مالوش أزرار مستند.**
         //
         // الكشف فيه نوعين سطور: مستندات ومسودّات. والمسودّة مالهاش رقم ولا أثر — رقمها

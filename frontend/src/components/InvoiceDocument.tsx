@@ -243,6 +243,8 @@ export function printInvoice(d: InvoiceDoc, opts?: PrintOptions): void {
       // بتقراها في الورقة، والمكتب بيفرز بيها قبل أي رقم.
       title: d.family ? `${titleOf(d)} — ${d.family}` : titleOf(d),
       number: d.document_number,
+      // الـPDF بيتحفظ باسم العميل مش برقم الفاتورة (طلب العميل ٢٠٢٦-١٠-٠٣).
+      fileName: d.partyName || undefined,
       // **الشكل المضغوط** — الشرح عند `DocMeta.compact`. الترويسة والذيل كانوا
       // بياخدوا تلت الصفحة، فطلب بعشرين صنف كان بيطلع في صفحتين.
       compact: true,

@@ -470,6 +470,9 @@ export default function Returns({ embedded }: { embedded?: { onExit: () => void 
     Math.min(99.99, combinePct(l.fixed_discount, l.discount));
   const lineTotal = (l: ReturnLineItem) =>
     applyPct(Number(l.quantity || 0) * l.unit_price, l.fixed_discount, l.discount);
+  /** بعد الخصم الثابت بس (طلب العميل ٢٠٢٦-١٠-٠٣) — نفس عمود فاتورة البيع. */
+  const lineAfterFixed = (l: ReturnLineItem) =>
+    applyPct(Number(l.quantity || 0) * l.unit_price, l.fixed_discount);
   const linePoints = (l: ReturnLineItem) =>
     (l.item_id ? (pointValues[l.item_id] || 0) : 0) * (l.quantity || 0);
 
@@ -477,6 +480,7 @@ export default function Returns({ embedded }: { embedded?: { onExit: () => void 
   const totalReturnPoints = lines.reduce((sum, l) => sum + linePoints(l), 0);
 
   const grossTotal = lines.reduce((s, l) => s + lineTotal(l), 0);
+  const afterFixedTotal = lines.reduce((s, l) => s + lineAfterFixed(l), 0);
   const netTotal = netOf(grossTotal, discountPct);
   const totalPoints = lines.reduce((s, l) => s + linePoints(l), 0);
 
@@ -1071,6 +1075,10 @@ export default function Returns({ embedded }: { embedded?: { onExit: () => void 
           placeholder="ثابت" value={line.fixed_discount}
           onChange={(val) => handleLineChange(line.key, 'fixed_discount', val || 0)} />
       ) },
+    { key: 'after_fixed', title: 'الإجمالي بعد الخصم الثابت', span: 2, xs: 12, minWidth: 100,
+      cellStyle: { whiteSpace: 'nowrap', color: '#475569' },
+      cell: (line) => money(lineAfterFixed(line)),
+      footer: (rows) => money(rows.reduce((s, l) => s + lineAfterFixed(l), 0)) },
     { key: 'points', title: 'النقاط', span: 2, xs: 12, align: 'center', minWidth: 60,
       cellStyle: { textAlign: 'center' },
       footer: (rows) => (
@@ -1644,6 +1652,7 @@ export default function Returns({ embedded }: { embedded?: { onExit: () => void 
               <Row gutter={[10, 10]}>
                 <Col xs={24} lg={16}>
                   <div className="sale-tiles">
+                    <SummaryTile label="بعد الخصم الثابت" value={money(afterFixedTotal)} />
                     <SummaryTile label="إجمالي الأصناف المرتجعة" value={money(grossTotal)} />
                     {returnDiscount > 0.001 && (
                       <SummaryTile label={`خصم المرتجع (${discountPct}%)`}

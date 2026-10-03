@@ -12,6 +12,8 @@ export interface DocMeta {
   title: string;
   /** e.g. «SINV-000123» — printed as the document number chip. */
   number?: string;
+  /** اسم الملف لما الورقة تتحفظ PDF (عنوان الصفحة) — من غيره العنوان والرقم. */
+  fileName?: string;
   date?: string;
   /** Extra header cells: [label, value] pairs (customer, rep, payment terms…). */
   meta?: [string, string][];
@@ -251,7 +253,7 @@ export function printDocument(meta: DocMeta, bodyHtml: string): void {
   const page = compact ? '<style>@page { size: A4; margin: 7mm; }</style>' : '';
   const head = compact ? compactHead(meta) : letterhead(meta);
   const html = `<!DOCTYPE html><html dir="rtl" lang="ar"><head><meta charset="utf-8">
-<title>${meta.title}${meta.number ? ` ${meta.number}` : ''}</title>
+<title>${meta.fileName ? meta.fileName.replace(/[\/:*?"<>|]/g, ' ').trim() : `${meta.title}${meta.number ? ` ${meta.number}` : ''}`}</title>
 <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800&display=swap" rel="stylesheet">
 <style>${printStyles}</style>${page}</head>
 <body class="${compact ? 'compact' : ''}"><div class="sheet">${head}${bodyHtml}${footer(meta.note, Boolean(meta.hide?.companyFooter))}</div>

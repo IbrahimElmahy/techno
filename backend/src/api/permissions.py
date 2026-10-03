@@ -52,6 +52,7 @@ CAPABILITY_LABELS: dict[str, str] = {
     "sale.edit": "تعديل فاتورة بيع",
     "sale.delete": "حذف فاتورة بيع",
     "sell.below_price": "البيع تحت السعر المحدد",
+    "sell.below_cost": "البيع تحت سعر التكلفة",
     "return.write": "تسجيل مرتجع",
     "purchase.write": "تسجيل فاتورة شراء",
     "treasury.read": "عرض الخزينة",

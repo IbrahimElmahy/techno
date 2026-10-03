@@ -16,6 +16,8 @@ from src.auth.rbac import (
     CAP_CATALOG_WRITE,
     CAP_PRODUCT_POINTS_WRITE,
     CAP_PURCHASE_WRITE,
+    CAP_SALES_READ,
+    CAP_SELL_BELOW_COST,
     CAP_STOCK_READ,
     role_has_capability,
 )
@@ -322,6 +324,28 @@ _TIER_COLUMNS: list[tuple[str, PriceTier]] = [
     ("سعر المستهلك", PriceTier.consumer),
     ("سعر اللستة", PriceTier.list_price),
 ]
+
+
+@router.get("/min-prices", response_model=dict)
+def item_min_prices(
+    current: CurrentUser = Depends(require_capability(CAP_SALES_READ)),
+    db: Session = Depends(get_db),
+) -> dict:
+    """أقل سعر بيع لكل صنف (للوحدة الأساسية) = تكلفته — متوسط سعر الشراء الفعلي.
+
+    شاشة البيع بتحذّر بيه على السطر اللي صافيه أقل منه، ومابتعرضش الرقم. التكلفة واحدة
+    للصنف في كل المخازن (`costing_service.average_cost`)، فمافيش فلتر بالمخزن. الصنف اللي
+    ماتشراش (تكلفته صفر) مش في القايمة. والسيرفر هو الحكم وقت الحفظ (`sales_service`).
+    """
+    from src.services import costing_service
+
+    ids = db.scalars(select(Item.id).where(
+        Item.kind == ItemKind.product, Item.active.is_(True))).all()
+    costs = costing_service.average_cost_bulk(db, ids)
+    return {
+        "can_sell_below_cost": role_has_capability(current.role, CAP_SELL_BELOW_COST),
+        "min_prices": {str(i): str(c) for i, c in costs.items() if c > 0},
+    }
 
 
 @router.get("/import-template")
