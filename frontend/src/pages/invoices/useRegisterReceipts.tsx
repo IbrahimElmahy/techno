@@ -16,7 +16,8 @@ import { InvoiceFilters, PAGE_SIZE } from './types';
  * التحصيل من عميل (من النظام أو التطبيق) بيظهر وسط الفواتير والمرتجعات كصف `doc_type: 'receipt'`.
  * النقدي اللي اندفع مع الفاتورة **مش هنا** — هو أصلاً جزء من صف الفاتورة.
  *
- * السيرفر بيفلتر بالعميل والمندوب والتاريخ بس؛ «نوع الفاتورة» والبيان والبحث بيتطبّقوا هنا.
+ * السيرفر بيفلتر بكل فلاتر الشريحة (عميل، مندوب، تاريخ، نوع الفاتورة، البيان، البحث)، وبيرجّع
+ * عدد السندات وإجماليها على الكشف كله — مش على الصفوف المحمّلة — لسطر الإجماليات فوق.
  * و«طريقة السداد» أو فلتر فحص النظام ⇒ مافيش سندات (مالهمش معنى على السند).
  */
 export function useRegisterReceipts(opts: {
@@ -28,6 +29,8 @@ export function useRegisterReceipts(opts: {
   const { enabled, filters: f } = opts;
   const skip = !enabled || !!f.payment;
   const [raw, setRaw] = useState<PaymentRow[]>([]);
+  // عدد وإجمالي السندات المستقلة على كل اللي الفلاتر سابته (من السيرفر).
+  const [totals, setTotals] = useState<{ count: number; total: number }>({ count: 0, total: 0 });
   const [view, setView] = useState<{ row: any; v: EditableVoucher & Record<string, any> } | null>(null);
   const { options: methodOptions } = useLookup('payment_method');
   const methodLabel = labelMap(methodOptions);
@@ -36,37 +39,37 @@ export function useRegisterReceipts(opts: {
 
   const load = async () => {
     const my = ++seq.current;
-    if (skip) { setRaw([]); return; }
+    if (skip) { setRaw([]); setTotals({ count: 0, total: 0 }); return; }
     try {
-      const { data } = await api.get<{ rows: PaymentRow[] }>('/api/v1/sales/receipts-log', {
-        params: {
-          customer_id: f.customer_id ?? undefined,
-          rep_id: f.rep_id ?? undefined,
-          date_from: f.date_from || undefined,
-          date_to: f.date_to || undefined,
-          limit: PAGE_SIZE,
-        },
-      });
-      if (my === seq.current) setRaw((data.rows ?? []).filter((r) => r.kind === 'voucher'));
+      const { data } = await api.get<{ rows: PaymentRow[]; [k: string]: any }>(
+        '/api/v1/sales/receipts-log', {
+          params: {
+            customer_id: f.customer_id ?? undefined,
+            rep_id: f.rep_id ?? undefined,
+            date_from: f.date_from || undefined,
+            date_to: f.date_to || undefined,
+            family: f.family || undefined,
+            statement: f.statement || undefined,
+            q: f.q || undefined,
+            limit: PAGE_SIZE,
+          },
+        });
+      if (my === seq.current) {
+        setRaw((data.rows ?? []).filter((r) => r.kind === 'voucher'));
+        setTotals({ count: Number(data.count_payments ?? 0), total: Number(data.total_payments ?? 0) });
+      }
     } catch {
-      if (my === seq.current) setRaw([]);
+      if (my === seq.current) { setRaw([]); setTotals({ count: 0, total: 0 }); }
     }
   };
 
   useEffect(() => { load(); }, // eslint-disable-line react-hooks/exhaustive-deps
-    [skip, f.customer_id, f.rep_id, f.date_from, f.date_to, opts.reloadKey]);
+    [skip, f.customer_id, f.rep_id, f.date_from, f.date_to, f.family, f.statement, f.q,
+      opts.reloadKey]);
   useLiveRefresh(['sales', 'vouchers'], () => { if (!skip) load(); }, { enabled: !skip });
 
-  // الفلاتر اللي السيرفر مابيعرفهاش — بتتطبّق هنا.
-  const has = (v: unknown, q: string) => String(v ?? '').toLowerCase().includes(q);
-  const fam = f.family;
-  const stmt = String(f.statement || '').trim().toLowerCase();
-  const q = String(f.q || '').trim().toLowerCase();
+  // الفلترة كلها في السيرفر — فالصفوف والإجمالي اللي فوق من نفس الكشف.
   const rows = skip ? [] : raw
-    .filter((r) => !fam || r.family === fam)
-    .filter((r) => !stmt || has(r.statement, stmt) || has(r.notes, stmt))
-    .filter((r) => !q || [r.document_number, r.party_name, r.external_document_number, r.reference]
-      .some((v) => has(v, q)))
     .map((r) => {
       const amount = Number(r.amount || 0);
       return {
@@ -156,5 +159,5 @@ export function useRegisterReceipts(opts: {
     </TabModal>
   );
 
-  return { rows, view: openView, remove, modal };
+  return { rows, totals: skip ? { count: 0, total: 0 } : totals, view: openView, remove, modal };
 }

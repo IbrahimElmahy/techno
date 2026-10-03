@@ -21,8 +21,28 @@ export interface ListTab<K extends string = string> {
   dot?: string;
 }
 
+/**
+ * مربع رقم صغير في سطر الإجماليات فوق الكشف (`summary`) — العنوان رمادي صغير فوق والرقم تقيل.
+ * `tone` بيلوّن الرقم: مبيعات أخضر، مرتجعات أحمر، تحصيلات أزرق، بونص برتقاني.
+ */
+export function ListStat({ label, value, tone, hint }: {
+  label: React.ReactNode;
+  value: React.ReactNode;
+  tone?: 'pos' | 'neg' | 'info' | 'warn' | 'strong';
+  /** سطر باهت تحت الرقم — «(المعروض)» مثلاً. */
+  hint?: React.ReactNode;
+}) {
+  return (
+    <div className={`sl-stat${tone ? ` is-${tone}` : ''}`}>
+      <div className="sl-stat-label">{label}</div>
+      <div className="sl-stat-value">{value}</div>
+      {hint ? <div className="sl-stat-hint">{hint}</div> : null}
+    </div>
+  );
+}
+
 export default function ListPage<K extends string = string>({
-  icon, title, muted, subtitle, tabs, activeTab, onTabChange, actions, filters, children,
+  icon, title, muted, subtitle, tabs, activeTab, onTabChange, actions, filters, summary, children,
 }: {
   icon?: React.ReactNode;
   title: React.ReactNode;
@@ -36,6 +56,8 @@ export default function ListPage<K extends string = string>({
   actions?: React.ReactNode;
   /** عناصر سطر الفلاتر — كل عنصر بياخد عرض بالنسبة (`.sl-filters > *`). */
   filters?: React.ReactNode;
+  /** سطر الإجماليات بين الترويسة والفلاتر — مربعات `ListStat` (طلب العميل ٢٠٢٦-١٠-٠٣). */
+  summary?: React.ReactNode;
   children: React.ReactNode;
 }) {
   return (
@@ -74,6 +96,8 @@ export default function ListPage<K extends string = string>({
 
         {actions && <Space className="sl-actions" size={6} wrap>{actions}</Space>}
       </div>
+
+      {summary && <div className="sl-summary">{summary}</div>}
 
       {filters && <div className="sl-filters">{filters}</div>}
 

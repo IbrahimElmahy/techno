@@ -75,6 +75,16 @@ const PAYMENTS_LOGS: Record<PaymentsLogKind, {
   },
 };
 
+/** إجماليات اللوحة على كل اللي الفلاتر سابته (من السيرفر، مش من الصفوف المحمّلة). */
+export interface PaymentsLogTotals {
+  count: number;
+  countOnInvoice: number;
+  countPayments: number;
+  onInvoice: number;
+  payments: number;
+  total: number;
+}
+
 interface Props {
   kind: PaymentsLogKind;
   partyId?: number | null;
@@ -90,11 +100,13 @@ interface Props {
   onEditVoucher?: (v: EditableVoucher) => void;
   /** مكان «تصدير Excel» و«الأعمدة» في ترويسة الشاشة الشايلة — نفس سطر باقي الشرايح. */
   controlSlot?: HTMLElement | null;
+  /** بيتنده بعد كل تحميل — الشاشة بتعرض الأرقام في سطر الإجماليات فوق (`null` = فشل). */
+  onTotals?: (t: PaymentsLogTotals | null) => void;
 }
 
 export default function PaymentsLogPanel({
   kind, partyId, repId, dateFrom, dateTo, onOpenInvoice, onEditInvoice, onDeleteInvoice,
-  onEditVoucher, controlSlot,
+  onEditVoucher, controlSlot, onTotals,
 }: Props) {
   const cfg = PAYMENTS_LOGS[kind];
   const { can } = useAuth();
@@ -112,7 +124,7 @@ export default function PaymentsLogPanel({
     const my = ++seq.current;
     if (!silent) setLoading(true);
     try {
-      const { data } = await api.get<{ rows: PaymentRow[] }>(cfg.endpoint, {
+      const { data } = await api.get<{ rows: PaymentRow[]; [k: string]: any }>(cfg.endpoint, {
         params: {
           [cfg.partyParam]: partyId ?? undefined,
           rep_id: repId ?? undefined,
@@ -121,9 +133,19 @@ export default function PaymentsLogPanel({
           limit: 2000,
         },
       });
-      if (my === seq.current) setRows(data.rows ?? []);
+      if (my === seq.current) {
+        setRows(data.rows ?? []);
+        onTotals?.({
+          count: Number(data.count ?? (data.rows ?? []).length),
+          countOnInvoice: Number(data.count_on_invoice ?? 0),
+          countPayments: Number(data.count_payments ?? 0),
+          onInvoice: Number(data.total_on_invoice ?? 0),
+          payments: Number(data.total_payments ?? 0),
+          total: Number(data.total ?? 0),
+        });
+      }
     } catch {
-      if (my === seq.current && !silent) setRows([]);
+      if (my === seq.current && !silent) { setRows([]); onTotals?.(null); }
     } finally {
       if (my === seq.current && !silent) setLoading(false);
     }

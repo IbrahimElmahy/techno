@@ -703,9 +703,9 @@ export default function PurchaseReturns({ embedded }: { embedded?: { onExit: () 
    * شايل خليته وإجماليه، فالاتنين بيتحركوا معاه.
    */
   const lineColumns: EntryColumn<ReturnLineDraft>[] = [
-    { key: 'idx', title: '#', width: 28, locked: true,
+    { key: 'idx', title: '#', width: 32, locked: true,
       cellStyle: { color: '#6b6b6b', textAlign: 'center' }, cell: (_l, i) => i + 1 },
-    { key: 'warehouse', title: 'المخزن', minWidth: 120,
+    { key: 'warehouse', title: 'المخزن', width: 130,
       cell: (line) => (
         <Select showSearch size="small" style={{ width: '100%' }} placeholder="المخزن"
           disabled={viewOnly}
@@ -720,9 +720,12 @@ export default function PurchaseReturns({ embedded }: { embedded?: { onExit: () 
             label: `${w.name} (${w.warehouse_type === 'central' ? 'مركزي' : 'فرعي'})`,
           }))} filterOption={searchFilter} filterSort={searchRank} />
       ) },
-    { key: 'item', title: 'الصنف', minWidth: 170, locked: true,
-      cell: (line) => <b style={{ fontSize: 13 }}>{line.item_id ? itemName(line.item_id) : 'اختر الصنف'}</b> },
-    { key: 'unit', title: 'الوحدة', minWidth: 80,
+    { key: 'item', title: 'الصنف', width: 210, minWidth: 120, locked: true,
+      cell: (line) => {
+        const name = line.item_id ? itemName(line.item_id) : 'اختر الصنف';
+        return <b className="eg-ellipsis" title={name} style={{ fontSize: 13 }}>{name}</b>;
+      } },
+    { key: 'unit', title: 'الوحدة', width: 80,
       cell: (line) => (
         <Select size="small" style={{ width: '100%' }} placeholder="الوحدة"
           disabled={viewOnly}
@@ -731,7 +734,7 @@ export default function PurchaseReturns({ embedded }: { embedded?: { onExit: () 
             l.key === line.key ? { ...l, unit: v === '__base__' ? null : v } : l)))}
           options={unitOptions(line.item_id)} />
       ) },
-    { key: 'qty', title: 'الكمية', minWidth: 70, locked: true,
+    { key: 'qty', title: 'الكمية', width: 90, locked: true,
       cellProps: (line) => ({ [QTY_DATA_ATTR]: line.item_id } as any),
       cell: (line) => (
         <InputNumber size="small" style={{ width: '100%' }} min={0.001}
@@ -749,7 +752,7 @@ export default function PurchaseReturns({ embedded }: { embedded?: { onExit: () 
             }, null) } : l)))} />
       ),
       footer: (rows) => rows.reduce((n, l) => n + Number(l.quantity || 0), 0) },
-    { key: 'price', title: 'سعر الوحدة', minWidth: 80,
+    { key: 'price', title: 'سعر الوحدة', width: 100,
       cell: (line) => (
         <InputNumber size="small" style={{ width: '100%' }} min={0} step={0.01}
           disabled={viewOnly}
@@ -759,12 +762,12 @@ export default function PurchaseReturns({ embedded }: { embedded?: { onExit: () 
             l.key === line.key ? { ...l, unit_price: (v as number) || 0 } : l)))} />
       ),
       footer: () => null },
-    { key: 'gross', title: 'اجمالي قبل', minWidth: 85,
+    { key: 'gross', title: 'اجمالي قبل', width: 100,
       cellStyle: { whiteSpace: 'nowrap' },
       cell: (line) => money(Number(line.quantity || 0) * (line.unit_price || 0)),
       footer: (rows) => money(rows.reduce(
         (n, l) => n + Number(l.quantity || 0) * (l.unit_price || 0), 0)) },
-    { key: 'disc_var', title: 'خصم متغير %', minWidth: 75,
+    { key: 'disc_var', title: 'خصم متغير %', width: 70,
       cell: (line) => (
         <InputNumber size="small" min={0} max={99.99} step={0.5} style={{ width: '100%' }}
           disabled={viewOnly}
@@ -773,7 +776,7 @@ export default function PurchaseReturns({ embedded }: { embedded?: { onExit: () 
             l.key === line.key ? { ...l, discount_pct: (v as number) ?? null } : l)))} />
       ),
       footer: () => null },
-    { key: 'disc_fixed', title: 'خصم ثابت %', minWidth: 75,
+    { key: 'disc_fixed', title: 'خصم ثابت %', width: 70,
       cell: (line) => (
         <InputNumber size="small" min={0} max={99.99} step={0.5} style={{ width: '100%' }}
           disabled={viewOnly}
@@ -782,11 +785,11 @@ export default function PurchaseReturns({ embedded }: { embedded?: { onExit: () 
             l.key === line.key ? { ...l, fixed_discount_pct: (v as number) ?? null } : l)))} />
       ),
       footer: () => null },
-    { key: 'total', title: 'الإجمالي', minWidth: 90, locked: true,
+    { key: 'total', title: 'الإجمالي', width: 110, locked: true,
       cellStyle: { fontWeight: 700, whiteSpace: 'nowrap' },
       cell: (line) => money(lineNet(line)),
       footer: (rows) => money(rows.reduce((n, l) => n + lineNet(l), 0)) },
-    { key: 'actions', title: '', label: 'حذف السطر', width: 32, locked: true,
+    { key: 'actions', title: '', label: 'حذف السطر', width: 50, minWidth: 40, locked: true,
       cell: (line) => (viewOnly ? null : (
         <Button size="small" danger type="text" icon={<DeleteOutlined />}
           onClick={() => setReturnLines((prev) => prev.filter((l) => l.key !== line.key))} />
@@ -1451,14 +1454,15 @@ export default function PurchaseReturns({ embedded }: { embedded?: { onExit: () 
             <Empty description="اختر الأصناف المرتجعة" style={{ margin: '12px 0' }} />
           ) : (
             <div className="sale-grid-wrap">
-              <table className="entry-grid sale-grid">
+              <table {...lineGrid.tableProps}>
+                {lineGrid.cols}
                 <thead>{lineGrid.head}</thead>
                 <tbody>
                   {linesByCategory.map((group) => (
                     <React.Fragment key={group.category ?? '__none__'}>
                       {linesByCategory.length > 1 && (
                         <tr className="sale-group-row">
-                          <td colSpan={20}>
+                          <td colSpan={lineGrid.count}>
                             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                               <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                                 <Tag color="success" style={{ fontWeight: 700, fontSize: 12.5, padding: '0 6px', borderRadius: 4, margin: 0 }}>

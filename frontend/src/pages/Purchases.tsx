@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 
-import PaymentsLogPanel from '../components/PaymentsLogPanel';
+import PaymentsLogPanel, { type PaymentsLogTotals } from '../components/PaymentsLogPanel';
 import { useQueryTab } from '../components/useQueryTab';
 import PaymentModal from './vouchers/PaymentModal';
 import { useQuickVoucher } from './vouchers/useQuickVoucher';
@@ -37,7 +37,7 @@ import DocumentToolbar, { ToolbarAction } from '../components/DocumentToolbar';
 import PrintOptionsMenu from '../components/PrintOptionsMenu';
 import { PrintOptions, loadPrintOptions } from '../print/printOptions';
 import { useListFilter } from '../components/ListToolbar';
-import ListPage from '../components/ListPage';
+import ListPage, { ListStat } from '../components/ListPage';
 import ExportExcelButton from '../components/ExportExcelButton';
 import DateRangeFilter from '../components/DateRangeFilter';
 import { matchesStatement, statementMeta, statementText } from '../utils/statements';
@@ -268,6 +268,8 @@ export default function Purchases() {
   const paymentsTab = listTab === 'payments';
   const [paymentsKey, setPaymentsKey] = useState(0);
   const [paymentsSlot, setPaymentsSlot] = useState<HTMLSpanElement | null>(null);
+  // إجماليات شريحة «سندات الصرف» — `PaymentsLogPanel` بيبلّغ بيها بعد كل تحميل (من السيرفر).
+  const [paymentsTotals, setPaymentsTotals] = useState<PaymentsLogTotals | null>(null);
   // سند صرف جديد من هنا — نفس فتح وحفظ شاشة السندات (`useQuickVoucher`).
   const payment = useQuickVoucher(() => setPaymentsKey((k) => k + 1));
   /** عدّاد بيتزوّد مع كل تغيير في حقول `Form` — حقول antd مش state، فالـ`useMemo`
@@ -1545,9 +1547,9 @@ export default function Purchases() {
    * دلوقتي كل عمود شايل خليته وإجماليه، فالاتنين بيتحركوا معاه.
    */
   const lineColumns: EntryColumn<PurchaseItem>[] = [
-    { key: 'idx', title: '#', width: 28, locked: true,
+    { key: 'idx', title: '#', width: 32, locked: true,
       cellStyle: { color: '#6b6b6b', textAlign: 'center' }, cell: (_l, i) => i + 1 },
-    { key: 'warehouse', title: 'المخزن', minWidth: 120,
+    { key: 'warehouse', title: 'المخزن', width: 130,
       cell: (line) => (
         <Select showSearch size="small" style={{ width: '100%' }} placeholder="مخزن الاستلام"
           disabled={viewOnly}
@@ -1561,12 +1563,13 @@ export default function Purchases() {
             label: `${w.name} (${w.warehouse_type === 'central' ? 'مركزي' : 'فرعي'})`,
           }))} filterOption={searchFilter} filterSort={searchRank} />
       ) },
-    { key: 'item', title: 'الصنف', minWidth: 170, locked: true,
+    { key: 'item', title: 'الصنف', width: 210, minWidth: 120, locked: true,
       cell: (line) => {
         const itemObj = line.item_id ? items.find((i) => i.id === line.item_id) : null;
+        const name = line.item_id ? itemName(line.item_id) : 'اختر الصنف';
         return (
           <div>
-            <b style={{ fontSize: 13 }}>{line.item_id ? itemName(line.item_id) : 'اختر الصنف'}</b>
+            <b className="eg-ellipsis" title={name} style={{ fontSize: 13 }}>{name}</b>
             {itemObj?.purchase_price && Number(itemObj.purchase_price) > 0 ? (
               <div style={{ fontSize: 12.5, color: '#1677ff', marginTop: 1 }}>
                 شراء: {fmtMoney(itemObj.purchase_price)}
@@ -1579,7 +1582,7 @@ export default function Purchases() {
           </div>
         );
       } },
-    { key: 'unit', title: 'الوحدة', minWidth: 80,
+    { key: 'unit', title: 'الوحدة', width: 80,
       cell: (line) => (
         <Select size="small" style={{ width: '100%' }} placeholder="الوحدة"
           disabled={viewOnly}
@@ -1588,7 +1591,7 @@ export default function Purchases() {
             line.key, 'unit', val === '__base__' ? null : val)}
           options={unitOptions(line.item_id)} />
       ) },
-    { key: 'qty', title: 'الكمية', minWidth: 70, locked: true,
+    { key: 'qty', title: 'الكمية', width: 90, locked: true,
       cellProps: (line) => (line.item_id != null
         ? { [QTY_DATA_ATTR]: line.item_id } as any : {}),
       cell: (line) => (
@@ -1601,7 +1604,7 @@ export default function Purchases() {
       ),
       footer: (rows) => rows.reduce((n, l) => n + Number(l.quantity || 0), 0)
         .toLocaleString(numeralsLocale(), { maximumFractionDigits: 3 }) },
-    { key: 'price', title: 'سعر الوحدة', minWidth: 80,
+    { key: 'price', title: 'سعر الوحدة', width: 100,
       cell: (line) => (
         <InputNumber size="small" min={0} step={0.01} style={{ width: '100%' }}
           disabled={viewOnly}
@@ -1610,12 +1613,12 @@ export default function Purchases() {
           onPressEnter={(e) => { e.preventDefault(); advanceFrom(line.key); }} />
       ),
       footer: () => null },
-    { key: 'gross', width: 115, title: 'اجمالي قبل', minWidth: 85,
+    { key: 'gross', width: 100, title: 'اجمالي قبل',
       cellStyle: { whiteSpace: 'nowrap' },
       cell: (line) => fmtMoney(Number(line.quantity || 0) * (line.unit_price || 0)),
       footer: (rows) => fmtMoney(rows.reduce(
         (n, l) => n + Number(l.quantity || 0) * (l.unit_price || 0), 0)) },
-    { key: 'disc_var', title: 'خصم متغير %', minWidth: 75,
+    { key: 'disc_var', title: 'خصم متغير %', width: 70,
       cell: (line) => (
         <InputNumber size="small" min={0} max={99.99} step={0.5} style={{ width: '100%' }}
           disabled={viewOnly}
@@ -1624,7 +1627,7 @@ export default function Purchases() {
           onPressEnter={(e) => { e.preventDefault(); advanceFrom(line.key); }} />
       ),
       footer: () => null },
-    { key: 'disc_fixed', title: 'خصم ثابت %', minWidth: 75,
+    { key: 'disc_fixed', title: 'خصم ثابت %', width: 70,
       cell: (line) => (
         <InputNumber size="small" min={0} max={99.99} step={0.5} style={{ width: '100%' }}
           disabled={viewOnly}
@@ -1634,11 +1637,11 @@ export default function Purchases() {
           onPressEnter={(e) => { e.preventDefault(); advanceFrom(line.key); }} />
       ),
       footer: () => null },
-    { key: 'total', width: 120, title: 'الإجمالي', minWidth: 90, locked: true,
+    { key: 'total', width: 110, title: 'الإجمالي', locked: true,
       cellStyle: { fontWeight: 700, whiteSpace: 'nowrap' },
       cell: (line) => fmtMoney(lineTotal(line)),
       footer: () => fmtMoney(grossTotal) },
-    { key: 'actions', title: '', label: 'حذف السطر', width: 32, locked: true,
+    { key: 'actions', title: '', label: 'حذف السطر', width: 50, minWidth: 40, locked: true,
       cell: (line) => (viewOnly ? null : (
         <Button size="small" danger type="text" icon={<DeleteOutlined />}
           onClick={() => handleRemoveItem(line.key)} />
@@ -1815,14 +1818,15 @@ export default function Purchases() {
               style={{ margin: '12px 0' }} />
           ) : (
             <div className="sale-grid-wrap">
-              <table className="entry-grid sale-grid">
+              <table {...lineGrid.tableProps}>
+                {lineGrid.cols}
                 <thead>{lineGrid.head}</thead>
                 <tbody>
                   {linesByCategory.map((group) => (
                     <React.Fragment key={group.category ?? '__none__'}>
                       {linesByCategory.length > 1 && (
                         <tr className="sale-group-row">
-                          <td colSpan={20}>
+                          <td colSpan={lineGrid.count}>
                             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                               <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                                 <Tag color="success" style={{ fontWeight: 700, fontSize: 12.5, padding: '0 6px', borderRadius: 4, margin: 0 }}>
@@ -2202,21 +2206,54 @@ export default function Purchases() {
       onChange={(e) => purchasesFilter.setValue(key, e.target.value || undefined)} />
   );
   const shownCount = purchasesFilter.filtered.length;
+  // الفلوس في سطر الإجماليات فوق — الذيل بيعدّ بس.
   const listFooter = (
     <span className="sl-foot">
       <span>
         إجمالي السجلات: <b>{shownCount.toLocaleString(numeralsLocale())}</b>
         {shownCount < purchases.length && <> من {purchases.length.toLocaleString(numeralsLocale())}</>} مستند
       </span>
-      <span>صافي المشتريات الفعلي: <b className="is-pos">{money(purchasesSummary.netPurchases)}</b></span>
-      <span>
-        المستحق للموردين:{' '}
-        <b className={purchasesSummary.totalCredit > 0 ? 'is-neg' : undefined}>
-          {money(purchasesSummary.totalCredit)}
-        </b>
-      </span>
     </span>
   );
+
+  // ── سطر الإجماليات فوق (طلب العميل ٢٠٢٦-١٠-٠٣) ──
+  // السجل بيحمّل كل الفواتير والمردودات، فالجمع على `filtered` هو الكشف كله بعد الفلاتر
+  // (المورد، الفرع، الفترة، البحث، الفلاتر النصية) — مش صفحة منه.
+  const fmtCount = (n: number) => n.toLocaleString(numeralsLocale());
+  const shownInv = purchasesFilter.filtered.filter((r) => r.kind === 'purchase');
+  const shownRet = purchasesFilter.filtered.filter((r) => r.kind === 'return');
+  const sumOf = (list: PurchaseRecord[], get: (r: PurchaseRecord) => any) =>
+    list.reduce((t, r) => t + Number(get(r) || 0), 0);
+  const invNet = sumOf(shownInv, (r) => r.net || r.total);
+  const retNet = sumOf(shownRet, (r) => r.net || r.total);
+  const invCash = sumOf(shownInv, (r) => r.cash_amount);
+  const invCredit = sumOf(shownInv, (r) => r.credit_amount);
+  const pt = paymentsTotals;
+  const listSummary = paymentsTab ? (<>
+    {/* شريحة السندات بتفلتر بالمورد (لو واحد) والفترة بس — زي جدولها. */}
+    <ListStat label="عدد السندات" value={pt ? fmtCount(pt.count) : '…'} />
+    <ListStat label="مدفوع على الفواتير" value={pt ? money(pt.onInvoice) : '…'} />
+    <ListStat label="دفعات مستقلة" value={pt ? money(pt.payments) : '…'} />
+    <ListStat label="الإجمالي" value={pt ? money(pt.total) : '…'} tone="neg" />
+  </>) : kindTab === 'purchase' ? (<>
+    <ListStat label="عدد الفواتير" value={fmtCount(shownInv.length)} />
+    <ListStat label="الإجمالي قبل الخصم" value={money(sumOf(shownInv, (r) => r.gross))} />
+    <ListStat label="الخصم" value={money(sumOf(shownInv, (r) => r.discount_amount))} tone="pos" />
+    <ListStat label="الصافي" value={money(invNet)} tone="info" />
+    <ListStat label="النقدي" value={money(invCash)} />
+    <ListStat label="الآجل" value={money(invCredit)} tone="warn" />
+  </>) : kindTab === 'return' ? (<>
+    <ListStat label="عدد المردودات" value={fmtCount(shownRet.length)} />
+    <ListStat label="قيمة المردودات" value={money(retNet)} tone="warn" />
+  </>) : (<>
+    <ListStat label="عدد المستندات" value={fmtCount(shownCount)} />
+    <ListStat label="المشتريات" value={money(invNet)} tone="info" />
+    <ListStat label="المردودات" value={money(retNet)} tone="warn" />
+    <ListStat label="صافي المشتريات" value={money(invNet - retNet)} tone="strong" />
+    <ListStat label="المدفوع نقداً" value={money(invCash)} />
+    <ListStat label="المستحق للموردين" value={money(invCredit - sumOf(shownRet, (r) => r.credit_amount))}
+      tone="neg" />
+  </>);
 
   const listContent = (
     <ListPage<'all' | 'purchase' | 'return' | 'payments'>
@@ -2224,8 +2261,10 @@ export default function Purchases() {
       title="المشتريات" muted="(سجل فواتير الشراء والمردودات)"
       subtitle="تسجيل ومتابعة فواتير الشراء ومردوداتها والمستحق للموردين"
       tabs={kindTabs} activeTab={paymentsTab ? 'payments' : kindTab}
+      summary={listSummary}
       onTabChange={(k) => {
         setListTab(k);
+        setPaymentsTotals(null);
         if (k !== 'payments') purchasesFilter.setValue('kind', k === 'all' ? undefined : k);
       }}
       actions={(<>
@@ -2320,6 +2359,7 @@ export default function Purchases() {
             fetchPurchases({ silent: true });
           }}
           onEditVoucher={payment.edit}
+          onTotals={setPaymentsTotals}
           controlSlot={paymentsSlot} />
       ) : (
       <Table

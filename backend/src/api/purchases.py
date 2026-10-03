@@ -328,6 +328,16 @@ def payments_log(
         inv_stmt = inv_stmt.where(inv_day <= date_to)
         v_stmt = v_stmt.where(Voucher.voucher_date <= date_to)
 
+    # الإجماليات على كل اللي الفلاتر سابته — مش على الصفوف المحمّلة (`limit`).
+    def _agg(stmt, col):
+        sub = stmt.subquery()
+        n, total = db.execute(select(func.count(), func.coalesce(func.sum(sub.c[col]), 0))
+                              .select_from(sub)).one()
+        return int(n or 0), to_money(Decimal(str(total or 0)))
+
+    n_inv, on_inv = _agg(inv_stmt, "cash_amount")
+    n_v, pays = _agg(v_stmt, "amount")
+
     invs = db.scalars(inv_stmt.order_by(inv_day.desc(), PurchaseInvoice.id.desc()).limit(limit)).all()
     vouchers = db.scalars(v_stmt.order_by(Voucher.voucher_date.desc(), Voucher.id.desc())
                           .limit(limit)).all()
@@ -389,10 +399,9 @@ def payments_log(
         })
     rows.sort(key=lambda x: (x["date"], x["id"]), reverse=True)
     rows = rows[:limit]
-    on_inv = sum((Decimal(x["amount"]) for x in rows if x["kind"] == "invoice"), Decimal("0"))
-    pays = sum((Decimal(x["amount"]) for x in rows if x["kind"] == "voucher"), Decimal("0"))
     return {"rows": rows, "total_on_invoice": str(on_inv), "total_payments": str(pays),
-            "total": str(on_inv + pays)}
+            "total": str(on_inv + pays),
+            "count_on_invoice": n_inv, "count_payments": n_v, "count": n_inv + n_v}
 
 
 @router.get("/returns", response_model=list[PurchaseReturnListOut])

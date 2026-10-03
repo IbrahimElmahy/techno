@@ -1512,14 +1512,14 @@ export default function Transfers() {
   const lineQtyGuard = (r: TransferLine, value: number | null = r.quantity) => guardQuantity(
     { value, available: r.available, itemName: r.name, unit: r.unit }, null);
   const draftLineColumns: EntryColumn<TransferLine>[] = [
-    { key: 'idx', title: '#', width: 28, locked: true,
+    { key: 'idx', title: '#', width: 32, locked: true,
       cellStyle: { color: '#5b6575', textAlign: 'center' }, cell: (_l, i) => i + 1 },
-    { key: 'item', title: 'اسم الصنف والوصف', minWidth: 190, locked: true,
+    { key: 'item', title: 'اسم الصنف والوصف', width: 220, minWidth: 120, locked: true,
       cell: (r) => {
         const code = codeById[r.item_id];
         return (
           <div style={{ lineHeight: 1.25 }}>
-            <div style={{ fontWeight: 700, fontSize: 13, color: '#0f172a' }}>{r.name}</div>
+            <div className="eg-ellipsis" title={r.name} style={{ fontWeight: 700, fontSize: 13, color: '#0f172a' }}>{r.name}</div>
             {code ? (
               <div dir="ltr" style={{ fontSize: 12.5, color: '#5b6575', fontWeight: 500, textAlign: 'end' }}>
                 {code}
@@ -1528,13 +1528,13 @@ export default function Transfers() {
           </div>
         );
       } },
-    { key: 'unit', title: 'الوحدة', minWidth: 70,
+    { key: 'unit', title: 'الوحدة', width: 80,
       cellStyle: { textAlign: 'center' },
       cell: (r) => <span style={{ fontSize: 12.5 }}>{r.unit || 'أساسية'}</span> },
-    { key: 'available', title: 'المتاح في المصدر', minWidth: 90,
+    { key: 'available', title: 'المتاح في المصدر', width: 100,
       cellStyle: { textAlign: 'center', whiteSpace: 'nowrap', color: '#6AB42D', fontWeight: 600 },
       cell: (r) => qty(r.available) },
-    { key: 'quantity', title: 'الكمية', minWidth: 112, locked: true,
+    { key: 'quantity', title: 'الكمية', width: 114, locked: true,
       cellStyle: { textAlign: 'center' },
       cellProps: (r) => ({ [QTY_DATA_ATTR]: r.item_id } as any),
       cell: (r) => (
@@ -1564,10 +1564,10 @@ export default function Transfers() {
         </div>
       ),
       footer: (rows) => qty(rows.reduce((n, l) => n + Number(l.quantity || 0), 0)) },
-    { key: 'remaining', title: 'المتبقي بعد التحويل', minWidth: 100,
+    { key: 'remaining', title: 'المتبقي بعد التحويل', width: 110,
       cellStyle: { textAlign: 'center', whiteSpace: 'nowrap', color: '#475569' },
       cell: (r) => qty(r.available - Number(r.quantity || 0)) },
-    { key: 'actions', title: 'إجراء', label: 'حذف السطر', width: 40, locked: true,
+    { key: 'actions', title: 'إجراء', label: 'حذف السطر', width: 50, minWidth: 40, locked: true,
       cellStyle: { textAlign: 'center' },
       cell: (r) => (
         <Button size="small" danger type="text" icon={<DeleteOutlined />} title="امسح السطر"
@@ -1757,14 +1757,15 @@ export default function Transfers() {
           {/* سطور الإذن الجديد — نفس جدول فاتورة البيع. والفاضي بيقول الخطوة الجاية. */}
           {editing ? null : lines.length > 0 ? (
             <div className="sale-grid-wrap">
-              <table className="entry-grid sale-grid">
+              <table {...lineGrid.tableProps}>
+                {lineGrid.cols}
                 <thead>{lineGrid.head}</thead>
                 <tbody>
                   {linesByCategory.map((group) => (
                     <React.Fragment key={group.category ?? '__none__'}>
                       {linesByCategory.length > 1 && (
                         <tr className="sale-group-row">
-                          <td colSpan={20}>
+                          <td colSpan={lineGrid.count}>
                             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                               <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                                 <Tag color="success" style={{ fontWeight: 700, fontSize: 12.5, padding: '0 6px', borderRadius: 4, margin: 0 }}>

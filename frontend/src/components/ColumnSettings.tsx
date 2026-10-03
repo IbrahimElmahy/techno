@@ -139,9 +139,13 @@ interface Props {
   order?: string[];
   onMove?: (key: string, direction: -1 | 1) => void;
   onResetOrder?: () => void;
+  /** شبكات السطور: يرجّع عرض الأعمدة للافتراضي. */
+  onResetWidths?: () => void;
 }
 
-export default function ColumnSettings({ choices, hidden, onChange, order, onMove, onResetOrder }: Props) {
+export default function ColumnSettings({
+  choices, hidden, onChange, order, onMove, onResetOrder, onResetWidths,
+}: Props) {
   const toggle = (key: string, show: boolean) =>
     onChange(show ? hidden.filter((k) => k !== key) : [...hidden, key]);
   /**
@@ -216,6 +220,11 @@ export default function ColumnSettings({ choices, hidden, onChange, order, onMov
             {onResetOrder && (
               <Button size="small" onClick={onResetOrder}>
                 استعادة الترتيب
+              </Button>
+            )}
+            {onResetWidths && (
+              <Button size="small" onClick={onResetWidths}>
+                إعادة العرض الافتراضي
               </Button>
             )}
           </div>

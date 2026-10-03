@@ -998,12 +998,15 @@ export default function Returns({ embedded }: { embedded?: { onExit: () => void 
   const lineColumns: EntryColumn<ReturnLineItem>[] = [
     // ترقيم السطور — اللي بيراجع ورقة فيها ٣٥ صنف محتاج يقول «السطر رقم ١٢»
     // بدل ما يعدّ بصباعه، واللي بيقارنها بورقة مطبوعة محتاج نفس الأرقام.
-    { key: 'idx', title: '#', width: 28, span: 1, xs: 2, locked: true,
+    { key: 'idx', title: '#', width: 32, span: 1, xs: 2, locked: true,
       cellStyle: { color: '#6b6b6b', textAlign: 'center' },
       cell: (_l: any, i: number) => i + 1 },
-    { key: 'item', title: 'الصنف', span: 4, xs: 24, locked: true, minWidth: 170,
-      cell: (line) => <b>{productName(line.item_id as number)}</b> },
-    { key: 'warehouse', title: 'المخزن', span: 3, xs: 12, minWidth: 120,
+    { key: 'item', title: 'الصنف', span: 4, xs: 24, locked: true, width: 210, minWidth: 120,
+      cell: (line) => {
+        const name = productName(line.item_id as number);
+        return <b className="eg-ellipsis" title={name}>{name}</b>;
+      } },
+    { key: 'warehouse', title: 'المخزن', span: 3, xs: 12, width: 120,
       cell: (line) => (
         <Select size="small" className="sale-wh-select" style={{ width: '100%' }} placeholder="المخزن"
           disabled={viewOnly}
@@ -1014,7 +1017,7 @@ export default function Returns({ embedded }: { embedded?: { onExit: () => void 
           }}
           options={warehouses.map((w) => ({ value: w.id, label: w.name }))} />
       ) },
-    { key: 'last_price', title: 'آخر سعر شراء', span: 2, xs: 12, minWidth: 110,
+    { key: 'last_price', title: 'آخر سعر شراء', span: 2, xs: 12, width: 110,
       cell: (line) => {
         const info = line.item_id ? lastInfo[line.item_id] : undefined;
         const last = info?.last_price;
@@ -1028,7 +1031,7 @@ export default function Returns({ embedded }: { embedded?: { onExit: () => void 
           </Tag>
         ) : <Tag>لم يشترِه من قبل</Tag>;
       } },
-    { key: 'quantity', title: 'الكمية', span: 2, xs: 8, locked: true, minWidth: 80,
+    { key: 'quantity', title: 'الكمية', span: 2, xs: 8, locked: true, width: 90,
       footer: (rows) => rows.reduce((n, l) => n + Number(l.quantity || 0), 0)
         .toLocaleString(numeralsLocale(), { maximumFractionDigits: 3 }),
       cellProps: (line) => (line.item_id != null
@@ -1054,32 +1057,33 @@ export default function Returns({ embedded }: { embedded?: { onExit: () => void 
             advance(line.key);
           }} />
       ) },
-    { key: 'unit_price', title: 'سعر الإرجاع', span: 2, xs: 8, minWidth: 85,
+    { key: 'unit_price', title: 'سعر الإرجاع', span: 2, xs: 8, width: 100,
       cell: (line) => (
         <InputNumber size="small" min={0} step={0.01} style={{ width: '100%' }}
           disabled={viewOnly}
           value={line.unit_price}
           onChange={(val) => handleLineChange(line.key, 'unit_price', val || 0)} />
       ) },
-    { key: 'variable_discount', title: 'خصم متغير %', span: 2, xs: 8, minWidth: 75,
+    { key: 'variable_discount', title: 'خصم متغير %', span: 2, xs: 8, width: 70,
       cell: (line) => (
         <InputNumber size="small" min={0} max={99.99} step={0.5} style={{ width: '100%' }}
           disabled={viewOnly}
           placeholder="متغير" value={line.discount}
           onChange={(val) => handleLineChange(line.key, 'discount', val || 0)} />
       ) },
-    { key: 'fixed_discount', title: 'خصم ثابت %', span: 2, xs: 8, minWidth: 75,
+    { key: 'fixed_discount', title: 'خصم ثابت %', span: 2, xs: 8, width: 70,
       cell: (line) => (
         <InputNumber size="small" min={0} max={99.99} step={0.5} style={{ width: '100%' }}
           disabled={viewOnly}
           placeholder="ثابت" value={line.fixed_discount}
           onChange={(val) => handleLineChange(line.key, 'fixed_discount', val || 0)} />
       ) },
-    { key: 'after_fixed', title: 'الإجمالي بعد الخصم الثابت', span: 2, xs: 12, minWidth: 100,
+    { key: 'after_fixed', title: 'بعد الثابت', label: 'الإجمالي بعد الخصم الثابت',
+      tip: 'الإجمالي بعد الخصم الثابت', span: 2, xs: 12, width: 100,
       cellStyle: { whiteSpace: 'nowrap', color: '#475569' },
       cell: (line) => money(lineAfterFixed(line)),
       footer: (rows) => money(rows.reduce((s, l) => s + lineAfterFixed(l), 0)) },
-    { key: 'points', title: 'النقاط', span: 2, xs: 12, align: 'center', minWidth: 60,
+    { key: 'points', title: 'النقاط', span: 2, xs: 12, align: 'center', width: 64,
       cellStyle: { textAlign: 'center' },
       footer: (rows) => (
         <span style={{ color: '#F5A11D' }}>
@@ -1107,14 +1111,14 @@ export default function Returns({ embedded }: { embedded?: { onExit: () => void 
           )
           : <span style={{ color: '#b0b0b0' }}>-</span>;
       } },
-    { key: 'total', title: 'الإجمالي', span: 3, xs: 12, align: 'center', locked: true, minWidth: 95,
+    { key: 'total', title: 'الإجمالي', span: 3, xs: 12, align: 'center', locked: true, width: 105,
       cellStyle: { textAlign: 'center' },
       footer: (rows) => (
         <span style={{ color: '#cf4b1a' }}>{money(rows.reduce((s, l) => s + lineTotal(l), 0))}</span>
       ),
       cell: (line) => <b style={{ color: '#cf4b1a' }}>{money(lineTotal(line))}</b> },
     { key: 'actions', title: '', label: 'حذف السطر', span: 1, xs: 4, align: 'center',
-      locked: true, width: 40, cellStyle: { textAlign: 'center' },
+      locked: true, width: 50, minWidth: 40, cellStyle: { textAlign: 'center' },
       cell: (line) => (viewOnly ? null : (
         <Button type="text" size="small" danger icon={<DeleteOutlined />}
           onClick={() => handleRemoveLine(line.key)} />
@@ -1563,7 +1567,8 @@ export default function Returns({ embedded }: { embedded?: { onExit: () => void 
                   <Empty description="اختر الفئة ثم الأصناف لإضافتها للمرتجع" style={{ margin: '12px 0' }} />
                 ) : (
                   <div className="sale-grid-wrap">
-                    <table className="entry-grid sale-grid">
+                    <table {...lineGrid.tableProps}>
+                      {lineGrid.cols}
                       <thead>{lineGrid.head}</thead>
                       <tbody>
                         {linesByCategory.map((group) => (

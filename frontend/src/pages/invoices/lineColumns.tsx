@@ -59,16 +59,19 @@ export function buildLineColumns({
 }: LineColumnsCtx): EntryColumn<SaleLineItem>[] {
   // الترتيب الافتراضي زي تصميم العميل (٢٠٢٦-١٠-٠١): # · الصنف · المخزن · الكمية · السعر ·
   // قبل · متغير · ثابت · النهائي · النقاط · إجراء. اللي رتّب أعمدته بإيده بيفضل على ترتيبه.
+  // العروض (٢٠٢٦-١٠-٠٣) افتراضية: فاتورة عادية تسيع والإجراء يفضل باين — وكلها بتتسحب.
   return [
-    { key: 'idx', title: '#', width: 28, locked: true,
+    { key: 'idx', title: '#', width: 32, locked: true,
       cellStyle: { color: '#5b6575', textAlign: 'center' }, cell: (_l, i) => i + 1 },
-    { key: 'item', title: 'اسم الصنف والوصف', minWidth: 190, locked: true,
+    { key: 'item', title: 'اسم الصنف والوصف', width: 210, minWidth: 120, locked: true,
       cell: (line) => {
         const code = line.item_id ? productCode?.(line.item_id) : null;
+        const name = line.item_id ? productName(line.item_id) : 'اختر الصنف';
         return (
           <div style={{ cursor: 'pointer', lineHeight: 1.25 }} onClick={() => setPanelItemId(line.item_id)}>
-            <div style={{ fontWeight: 700, fontSize: 13, color: '#0f172a' }}>
-              {line.item_id ? productName(line.item_id) : 'اختر الصنف'}
+            {/* الاسم الطويل بيتقص بـ«…» والاسم كله في التلميح. */}
+            <div className="eg-ellipsis" title={name} style={{ fontWeight: 700, fontSize: 13, color: '#0f172a' }}>
+              {name}
             </div>
             {code ? (
               <div dir="ltr" style={{ fontSize: 12.5, color: '#5b6575', fontWeight: 500, textAlign: 'end' }}>
@@ -83,7 +86,7 @@ export function buildLineColumns({
     // تغييره هنا بيغيّر مخزن الفاتورة كمان، فالأصناف اللي بتتضاف بعده بتنزل على نفس
     // المخزن من غير ما تتقال تاني. السطور اللي اتكتبت قبل كده بتفضل مكانها: اللي اتقال
     // مرة مايتغيّرش من ورا اللي كتبه.
-    { key: 'warehouse', title: 'المخزن', minWidth: 120,
+    { key: 'warehouse', title: 'المخزن', width: 120,
       cellStyle: { textAlign: 'center' },
       cell: (line) => (
         viewOnly ? (
@@ -98,7 +101,7 @@ export function buildLineColumns({
             options={warehouses.map((w) => ({ value: w.id, label: w.name }))} />
         )
       ) },
-    { key: 'unit', title: 'الوحدة', minWidth: 80,
+    { key: 'unit', title: 'الوحدة', width: 80,
       cell: (line) => (
         viewOnly ? (
           <span style={{ fontSize: 12.5 }}>{line.unit || 'أساسية'}</span>
@@ -109,7 +112,7 @@ export function buildLineColumns({
             options={saleUnitOptions(line.item_id)} />
         )
       ) },
-    { key: 'quantity', title: 'الكمية', minWidth: 112, locked: true,
+    { key: 'quantity', title: 'الكمية', width: 114, locked: true,
       cellStyle: { textAlign: 'center' },
       cellProps: (line) => (line.item_id != null
         ? { [QTY_DATA_ATTR]: line.item_id } as any : {}),
@@ -144,7 +147,7 @@ export function buildLineColumns({
         )
       ),
       footer: (rows) => fmtQty(rows.reduce((n, l) => n + Number(l.quantity || 0), 0)) },
-    { key: 'unit_price', title: 'سعر الوحدة', minWidth: 80,
+    { key: 'unit_price', title: 'سعر الوحدة', width: 100,
       cell: (line) => {
         const under = !viewOnly && !!belowCost?.(line);
         return (
@@ -160,7 +163,7 @@ export function buildLineColumns({
             )}
             {under ? (
               <Tag color={canSellBelowCost ? 'gold' : 'red'}
-                style={{ marginTop: 2, marginInlineEnd: 0, fontSize: 11, whiteSpace: 'nowrap' }}>
+                style={{ marginTop: 2, marginInlineEnd: 0, fontSize: 11, whiteSpace: 'normal', lineHeight: 1.3 }}>
                 أقل من سعر الشراء
               </Tag>
             ) : null}
@@ -168,12 +171,12 @@ export function buildLineColumns({
         );
       },
       footer: () => null },
-    { key: 'gross', title: 'الإجمالي قبل', minWidth: 85,
+    { key: 'gross', title: 'الإجمالي قبل', width: 95,
       cellStyle: { whiteSpace: 'nowrap', color: '#475569' },
       cell: (line) => money(Number(line.quantity || 0) * (line.unit_price || 0)),
       footer: (rows) => money(rows.reduce(
         (n, l) => n + Number(l.quantity || 0) * (l.unit_price || 0), 0)) },
-    { key: 'variable_discount', title: 'خصم متغير %', minWidth: 75,
+    { key: 'variable_discount', title: 'خصم متغير %', width: 70,
       cellStyle: { textAlign: 'center' },
       cell: (line) => (
         isBonus ? <span style={{ color: '#555b65' }}>-</span> : viewOnly ? (
@@ -181,7 +184,7 @@ export function buildLineColumns({
             {line.variable_discount ? `${line.variable_discount}%` : '0%'}
           </span>
         ) : (
-          <InputNumber size="small" min={0} max={99.99} step={0.5} style={{ width: 64 }}
+          <InputNumber size="small" min={0} max={99.99} step={0.5} style={{ width: '100%', maxWidth: 64 }}
             className="pct-pill-input"
             placeholder="متغير" value={line.variable_discount ?? undefined}
             onChange={(v) => handleLineChange(line.key, 'variable_discount', (v as number) ?? null)}
@@ -189,13 +192,13 @@ export function buildLineColumns({
         )
       ),
       footer: () => null },
-    { key: 'fixed_discount', title: 'خصم ثابت %', minWidth: 75,
+    { key: 'fixed_discount', title: 'خصم ثابت %', width: 70,
       cellStyle: { textAlign: 'center' },
       cell: (line) => (
         viewOnly ? (
           <span>{line.fixed_discount ? `${line.fixed_discount}%` : '-'}</span>
         ) : (
-          <InputNumber size="small" min={0} max={99.99} step={0.5} style={{ width: 64 }}
+          <InputNumber size="small" min={0} max={99.99} step={0.5} style={{ width: '100%', maxWidth: 64 }}
             placeholder="ثابت" value={line.fixed_discount ?? undefined}
             onChange={(v) => handleLineChange(line.key, 'fixed_discount', (v as number) ?? 0)}
             onPressEnter={(e) => { e.preventDefault(); advanceFrom(line.key); }} />
@@ -203,11 +206,13 @@ export function buildLineColumns({
       ),
       footer: () => null },
     // طلب العميل ٢٠٢٦-١٠-٠٣ — في البونص كمان: الثابت بيتطبّق عادي.
-    { key: 'after_fixed', title: 'الإجمالي بعد الخصم الثابت', minWidth: 100,
+    // العنوان مختصر — الاسم الكامل في التلميح وفي قايمة الأعمدة.
+    { key: 'after_fixed', title: 'بعد الثابت', label: 'الإجمالي بعد الخصم الثابت',
+      tip: 'الإجمالي بعد الخصم الثابت', width: 100,
       cellStyle: { whiteSpace: 'nowrap', color: '#475569' },
       cell: (line) => money(afterFixedOf(line)),
       footer: (rows) => money(rows.reduce((n, l) => n + afterFixedOf(l), 0)) },
-    { key: 'total', title: 'الإجمالي النهائي', minWidth: 100, locked: true,
+    { key: 'total', title: 'الإجمالي النهائي', width: 105, locked: true,
       cellStyle: { fontWeight: 700, whiteSpace: 'nowrap', color: '#15803d' },
       cell: (line) => (
         <>{money(saleLineNet(line))}</>
@@ -216,7 +221,7 @@ export function buildLineColumns({
         <span style={{ color: '#15803d' }}>{money(rows.reduce((n, l) => n + saleLineNet(l), 0))}</span>
       ) },
     // عمود النقاط بيتشال خالص في المصنع — عرضه فاضي بيخلّي اللي بيبص يسأل ليه.
-    ...(hidePoints ? [] : [{ key: 'points', title: 'النقاط', minWidth: 60,
+    ...(hidePoints ? [] : [{ key: 'points', title: 'النقاط', width: 64,
       cellStyle: { whiteSpace: 'nowrap', color: '#2563eb', textAlign: 'center' },
       // «مالوش نقط» و«لسه ماكتبتش الكمية» كانوا شكلهم واحد: شرطة. النقط = نقطة الصنف
       // × الكمية، فسطر لسه كميته فاضية بيطلع صفر — واللي بيبص بيفتكر إن الصنف مالوش
@@ -237,7 +242,7 @@ export function buildLineColumns({
       footer: () => (
         <span style={{ color: '#2563eb' }}>{fmtQty(totalPoints)}</span>
       ) }] as EntryColumn<SaleLineItem>[]),
-    { key: 'actions', title: 'إجراء', label: 'حذف السطر', width: 40, locked: true,
+    { key: 'actions', title: 'إجراء', label: 'حذف السطر', width: 50, minWidth: 40, locked: true,
       cellStyle: { textAlign: 'center' },
       cell: (line) => (
         viewOnly ? null : (

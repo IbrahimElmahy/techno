@@ -44,7 +44,7 @@ import { useEntryGrid, type EntryColumn } from '../components/EntryGrid';
 import { guardQuantity } from '../components/quantityGuard';
 import { useAuth } from '../components/AuthProvider';
 import SummaryTile from '../components/saleDoc/SummaryTile';
-import PaymentsLogPanel from '../components/PaymentsLogPanel';
+import PaymentsLogPanel, { type PaymentsLogTotals } from '../components/PaymentsLogPanel';
 import { useLookup, labelMap } from '../hooks/useLookup';
 import { TabModal } from '../components/TabModal';
 import WarehouseGate from '../components/WarehouseGate';
@@ -71,7 +71,7 @@ import ReceiptModal from './vouchers/ReceiptModal';
 import { useQuickVoucher, fetchVoucher, type EditableVoucher } from './vouchers/useQuickVoucher';
 import { useRegisterReceipts } from './invoices/useRegisterReceipts';
 import { useLiveRefresh } from '../utils/live';
-import ListPage from '../components/ListPage';
+import ListPage, { ListStat } from '../components/ListPage';
 import { useQueryTab } from '../components/useQueryTab';
 /** رقم فريد للمستند (`client_uuid`). `randomUUID` مش موجود خارج https، فالبديل عشوائي كفاية. */
 // المرتجع الجديد بيتفتح جوّه السجل (`embedded`) — كسول عشان مايتحمّلش مع كل فاتورة.
@@ -387,6 +387,8 @@ export default function Invoices() {
   const [selectedKeys, setSelectedKeys] = useState<React.Key[]>([]);
   // مكان أزرار جدول سندات القبض (تصدير/أعمدة) في الترويسة — `PaymentsLogPanel` بيرسمها هنا.
   const [receiptsSlot, setReceiptsSlot] = useState<HTMLSpanElement | null>(null);
+  // إجماليات شريحة «سندات القبض» — `PaymentsLogPanel` بيبلّغ بيها بعد كل تحميل (من السيرفر).
+  const [receiptsTotals, setReceiptsTotals] = useState<PaymentsLogTotals | null>(null);
   // سند قبض من شريحة «سندات القبض» — البوباب نفسه من `vouchers/ReceiptModal`، والحالة
   // اللي محتاجها هنا. الخزن بتتجاب أول مرة يتفتح بس.
   const [receiptFamilies, setReceiptFamilies] = useState<Record<number, any[]>>({});
@@ -448,7 +450,10 @@ export default function Invoices() {
         api.get('/api/v1/sales/returns', {
           params: { ...params, payment: undefined, limit: PAGE_SIZE } })
           .catch(() => ({ data: [] })),
-        api.get('/api/v1/sales/summary', { params }).catch(() => ({ data: null })),
+        // نفس فلاتر الكشف بالظبط — وأرقام فحص النظام كمان، عشان الإجماليات فوق توصف اللي تحت.
+        api.get('/api/v1/sales/summary', {
+          params: { ...params, ...(focusIds ? { ids: focusIds } : {}) },
+        }).catch(() => ({ data: null })),
       ]);
       setInvoices(salesRes.data);
       setBonusInvoices(bonusRes.data || []);
@@ -630,6 +635,9 @@ export default function Invoices() {
 
     const bonusGross = (bonusInvoices || []).reduce(
       (t: number, i: any) => t + Number(i.gross_before_line_discount || 0), 0);
+    const sumOf = (list: any[], get: (x: any) => any) =>
+      (list || []).reduce((t: number, x: any) => t + Number(get(x) || 0), 0);
+    const localGross = sumOf(invoices, (i) => i.gross_before_line_discount || i.gross);
 
     // السيرفر بيحسب على الكشف كله؛ الجمع المحلي فاضل كخطة بديلة لو النداء وقع.
     const s = serverSummary;
@@ -643,6 +651,16 @@ export default function Invoices() {
       totalReturnsNet: s ? Number(s.returns_net) : totalReturnsNet,
       netSales: s ? Number(s.net_sales) : netSales,
       totalCredit: s ? Number(s.credit_outstanding) : totalCredit,
+      // تفصيل الشرايح لسطر الإجماليات فوق — السيرفر على الكشف كله، والمحلي احتياط.
+      salesGross: s?.sales_gross != null ? Number(s.sales_gross) : localGross,
+      salesDiscount: s?.sales_discount != null ? Number(s.sales_discount) : localGross - totalSalesNet,
+      salesCash: s?.sales_cash != null ? Number(s.sales_cash) : sumOf(invoices, (i) => i.cash_amount),
+      salesCredit: s?.sales_credit != null ? Number(s.sales_credit) : sumOf(invoices, (i) => i.credit_amount),
+      returnsCash: s?.returns_cash != null ? Number(s.returns_cash) : sumOf(salesReturns, (r) => r.cash_refund),
+      returnsCredit: s?.returns_credit != null ? Number(s.returns_credit)
+        : sumOf(salesReturns, (r) => r.credit_reduction),
+      // من غير السيرفر الأرقام دي من الصفحة المحمّلة بس.
+      partial: !s,
       filteredCount: unifiedRecords.length,
     };
   }, [invoices, bonusInvoices, salesReturns, unifiedRecords, serverSummary]);
@@ -2948,14 +2966,15 @@ function couponsTotal(inv: any): number {
               style={{ margin: '12px 0' }} />
           ) : (
             <div className="sale-grid-wrap">
-              <table className="entry-grid sale-grid">
+              <table {...lineGrid.tableProps}>
+                {lineGrid.cols}
                 <thead>{lineGrid.head}</thead>
                 <tbody>
                   {linesByCategory.map((group) => (
                     <React.Fragment key={group.category ?? '__none__'}>
                       {linesByCategory.length > 1 && (
                         <tr className="sale-group-row">
-                          <td colSpan={20}>
+                          <td colSpan={lineGrid.count}>
                             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                               <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                                 <Tag color="success" style={{ fontWeight: 700, fontSize: 12.5, padding: '0 6px', borderRadius: 4, margin: 0 }}>
@@ -3319,7 +3338,7 @@ function couponsTotal(inv: any): number {
     { key: 'all', label: 'الكل',
       // + سندات القبض المعروضة (بتتجاب على «الكل» بس).
       count: summary.totalSalesCount + summary.totalReturnsCount + summary.totalBonusCount
-        + receiptRows.length },
+        + registerReceipts.totals.count },
     { key: 'sale', label: 'فواتير المبيعات', dot: '#52c41a', count: summary.totalSalesCount },
     { key: 'return', label: 'مرتجعات المبيعات', dot: '#eb2f96', count: summary.totalReturnsCount },
     { key: 'bonus', label: 'فواتير البونص', dot: '#fa8c16', count: summary.totalBonusCount },
@@ -3345,28 +3364,58 @@ function couponsTotal(inv: any): number {
   const tabCount = focus.ids
     ? focusedRecords.length
     : (kindTabs.find((t) => t.key === docKindFilter)?.count ?? focusedRecords.length);
-  // التحصيلات مش مبيعات — بره الصافي، ورقمها لوحده.
-  const shownNet = focusedRecords.reduce((t: number, r: any) => (r.doc_type === 'receipt' ? t
-    : t + (r.doc_type === 'return' ? -Number(r.net || 0) : Number(r.net || 0))), 0);
-  const shownReceipts = focusedRecords.filter((r: any) => r.doc_type === 'receipt');
-  const shownCollected = shownReceipts.reduce((t: number, r: any) => t + Number(r.amount || 0), 0);
-  // البونص صافيه صفر دايماً — رقمه اللي يتقري القيمة قبل خصم الـ١٠٠٪.
-  const footNet = docKindFilter === 'bonus'
-    ? { label: 'إجمالي البونص قبل الخصم', value: summary.totalBonusGross }
-    : { label: docKindFilter === 'return' ? 'صافي المرتجعات المعروضة' : 'صافي المبيعات المعروضة', value: shownNet };
+  // الفلوس في سطر الإجماليات فوق — الذيل بيعدّ بس، عشان نفس الرقم مايتكتبش مرتين.
   const footer = (
     <span className="sl-foot">
       <span>إجمالي السجلات: <b>{tabCount.toLocaleString(numeralsLocale())}</b> مستند</span>
       <span>المحدد: <b>{selectedKeys.length.toLocaleString(numeralsLocale())}</b></span>
-      <span>
-        {footNet.label}:{' '}
-        <b className={footNet.value < 0 ? 'is-neg' : 'is-pos'}>{money(footNet.value)}</b>
-      </span>
-      {shownReceipts.length > 0 && (
-        <span>التحصيلات المعروضة: <b className="is-pos">{money(shownCollected)}</b></span>
-      )}
     </span>
   );
+
+  // ── سطر الإجماليات فوق (طلب العميل ٢٠٢٦-١٠-٠٣) ──
+  // كله من `/sales/summary` بنفس فلاتر الكشف — على الكشف كله مش على الـ٣٠٠ صف المحمّلين.
+  // التحصيلات في «الكل» من `receipts-log` بنفس الفلاتر، وشريحة السندات من لوحتها.
+  const fmtCount = (n: number) => n.toLocaleString(numeralsLocale());
+  const partialHint = summary.partial ? '(المعروض)' : undefined;
+  const showCollections = !focus.ids && !filters.payment;
+  const rt = receiptsTotals;
+  const summaryByKind: Record<DocKind, React.ReactNode> = {
+    all: (<>
+      <ListStat label="عدد المستندات" value={fmtCount(kindTabs[0].count ?? 0)} />
+      <ListStat label="إجمالي المبيعات" value={money(summary.totalSalesNet)} tone="pos" hint={partialHint} />
+      <ListStat label="المرتجعات" value={money(summary.totalReturnsNet)} tone="neg" hint={partialHint} />
+      <ListStat label="صافي المبيعات" value={money(summary.netSales)} tone="strong" hint={partialHint} />
+      <ListStat label="البونص (قبل الخصم)" value={money(summary.totalBonusGross)} tone="warn" hint={partialHint} />
+      {showCollections && (
+        <ListStat label="التحصيلات (سندات مستقلة)" value={money(registerReceipts.totals.total)} tone="info" />
+      )}
+    </>),
+    sale: (<>
+      <ListStat label="عدد الفواتير" value={fmtCount(summary.totalSalesCount)} />
+      <ListStat label="الإجمالي قبل الخصم" value={money(summary.salesGross)} hint={partialHint} />
+      <ListStat label="الخصم" value={money(summary.salesDiscount)} tone="neg" hint={partialHint} />
+      <ListStat label="الصافي" value={money(summary.totalSalesNet)} tone="pos" hint={partialHint} />
+      <ListStat label="النقدي" value={money(summary.salesCash)} tone="info" hint={partialHint} />
+      <ListStat label="الآجل" value={money(summary.salesCredit)} tone="warn" hint={partialHint} />
+    </>),
+    return: (<>
+      <ListStat label="عدد المرتجعات" value={fmtCount(summary.totalReturnsCount)} />
+      <ListStat label="قيمة المرتجعات" value={money(summary.totalReturnsNet)} tone="neg" hint={partialHint} />
+      <ListStat label="رد نقدي" value={money(summary.returnsCash)} hint={partialHint} />
+      <ListStat label="خصم من الآجل" value={money(summary.returnsCredit)} hint={partialHint} />
+    </>),
+    bonus: (<>
+      <ListStat label="عدد فواتير البونص" value={fmtCount(summary.totalBonusCount)} />
+      <ListStat label="إجمالي البونص قبل الخصم" value={money(summary.totalBonusGross)} tone="warn" hint={partialHint} />
+    </>),
+    // شريحة السندات بتفلتر بالعميل والمندوب والتاريخ بس (زي جدولها).
+    receipts: (<>
+      <ListStat label="عدد السندات" value={rt ? fmtCount(rt.count) : '…'} />
+      <ListStat label="مقبوض على الفواتير" value={rt ? money(rt.onInvoice) : '…'} />
+      <ListStat label="دفعات مستقلة" value={rt ? money(rt.payments) : '…'} />
+      <ListStat label="الإجمالي" value={rt ? money(rt.total) : '…'} tone="info" />
+    </>),
+  };
 
   return (
     <>
@@ -3376,7 +3425,8 @@ function couponsTotal(inv: any): number {
       title="المبيعات" muted="(سجل الفواتير والمرتجعات)"
       subtitle="إدارة ومتابعة حركات البيع، المرتجعات وسندات القبض النقدية"
       tabs={kindTabs} activeTab={docKindFilter}
-      onTabChange={(k) => { setDocKindFilter(k); setSelectedKeys([]); }}
+      onTabChange={(k) => { setDocKindFilter(k); setSelectedKeys([]); setReceiptsTotals(null); }}
+      summary={summaryByKind[docKindFilter]}
       actions={(<>
           {create.visible && (
             <Button type="primary" icon={create.icon} className="sl-create" onClick={create.onCreate}>
@@ -3474,6 +3524,7 @@ function couponsTotal(inv: any): number {
             onDeleteInvoice={canDeleteInvoice ? (id, r) => handleDeleteInvoice(
               { id, document_number: r.document_number } as InvoiceRecord) : undefined}
             onEditVoucher={editReceipt}
+            onTotals={setReceiptsTotals}
             controlSlot={receiptsSlot} />
         ) : (<>
         <FocusedRowsBanner focus={focus} total={unifiedRecords.length} noun="فاتورة"

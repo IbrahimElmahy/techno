@@ -1468,6 +1468,10 @@ def receipts_log(
     rep_id: int | None = Query(None),
     date_from: date | None = Query(None),
     date_to: date | None = Query(None),
+    # فلاتر شريحة «الكل» في سجل المبيعات (نوع الفاتورة · البيان · البحث) — اختيارية.
+    family: str | None = Query(None),
+    statement: str | None = Query(None),
+    q: str | None = Query(None),
     limit: int = Query(500, le=2000),
     current: CurrentUser = Depends(require_capability(CAP_SALES_READ)),
     db: Session = Depends(get_db),
@@ -1526,6 +1530,34 @@ def receipts_log(
     if date_to:
         inv_stmt = inv_stmt.where(inv_day <= date_to)
         v_stmt = v_stmt.where(Voucher.voucher_date <= date_to)
+    if family:
+        inv_stmt = inv_stmt.where(SalesInvoice.family == family)
+        v_stmt = v_stmt.where(Voucher.family == family)
+    if (cond := _statement_like(SalesInvoice, statement)) is not None:
+        inv_stmt = inv_stmt.where(cond)
+        needle = " ".join(statement.split()).lower()
+        for a, b in _AR_FOLD:
+            needle = needle.replace(a, b)
+        v_stmt = v_stmt.where(or_(_fold_sql(Voucher.statement1).like(f"%{needle}%"),
+                                  _fold_sql(Voucher.description).like(f"%{needle}%")))
+    if q and q.strip():
+        pat = f"%{q.strip()}%"
+        named = select(Customer.id).where(Customer.name.like(pat))
+        inv_stmt = inv_stmt.where(SalesInvoice.document_number.like(pat))
+        v_stmt = v_stmt.where(or_(Voucher.document_number.like(pat),
+                                  Voucher.external_document_number.like(pat),
+                                  Voucher.reference.like(pat),
+                                  Voucher.customer_id.in_(named)))
+
+    # الإجماليات على كل اللي الفلاتر سابته — مش على الصفوف المحمّلة (`limit`).
+    def _agg(stmt, col):
+        sub = stmt.subquery()
+        n, s = db.execute(select(func.count(), func.coalesce(func.sum(sub.c[col]), 0))
+                          .select_from(sub)).one()
+        return int(n or 0), to_money(Decimal(str(s or 0)))
+
+    n_inv, total_inv = _agg(inv_stmt, "cash_amount")
+    n_v, total_v = _agg(v_stmt, "amount")
 
     invs = db.scalars(inv_stmt.order_by(inv_day.desc(), SalesInvoice.id.desc()).limit(limit)).all()
     vouchers = db.scalars(v_stmt.order_by(Voucher.voucher_date.desc(), Voucher.id.desc())
@@ -1597,10 +1629,9 @@ def receipts_log(
             "invoice_total": None, "credit_amount": None,
         })
     rows.sort(key=lambda x: (x["date"], x["key"]), reverse=True)
-    total_inv = sum((Decimal(x["amount"]) for x in rows if x["kind"] == "invoice"), Decimal("0"))
-    total_v = sum((Decimal(x["amount"]) for x in rows if x["kind"] == "voucher"), Decimal("0"))
     return {"rows": rows, "total_on_invoice": str(total_inv), "total_payments": str(total_v),
-            "total": str(total_inv + total_v)}
+            "total": str(total_inv + total_v),
+            "count_on_invoice": n_inv, "count_payments": n_v, "count": n_inv + n_v}
 
 
 @router.get("/summary", response_model=dict)
@@ -1614,6 +1645,8 @@ def sales_summary(
     family: str | None = None,
     external_document_number: str | None = None,
     statement: str | None = None,
+    # أرقام فواتير بعينها (فحص النظام) — نفس `ids` بتاع الكشف.
+    ids: str | None = None,
     current: CurrentUser = Depends(require_capability(CAP_SALES_READ)),
     db: Session = Depends(get_db),
 ) -> dict:
@@ -1623,46 +1656,36 @@ def sales_summary(
     تتحمّل: ٦١٦٣ فاتورة = ٢.٩ ميجا في كل فتحة، ٤٧ ثانية على الشبكة، والشاشة بتفصل قبلها.
     الجمع هنا بيخلّي القايمة تجيب صفحة والأرقام تفضل صح.
     """
-    # البونص مش بيع: قيمته صفر، وعدّه كان بيكبّر «عدد الفواتير» من غير ما يدخل جنيه.
-    inv = branch_scope.scope(select(SalesInvoice), SalesInvoice, current).where(
-        or_(SalesInvoice.is_bonus.is_(None), SalesInvoice.is_bonus.is_(False)))
+    # **فواتير البيع من `_sales_list_stmt` نفسها** — كانت بفلاترها هنا لوحدها على ساعة الإدخال
+    # (`created_at`) والكشف على تاريخ الفاتورة، فالكارت والجدول كانوا بيقولوا رقمين. البونص بره.
+    inv = _sales_list_stmt(
+        current, q=q, customer_id=customer_id, date_from=date_from, date_to=date_to,
+        payment=payment, rep_id=rep_id, family=family,
+        external_document_number=external_document_number, ids=ids, kind="sale",
+        statement=statement)
+    # المرتجعات بنفس فلاتر `/sales/returns` (اللي الجدول بيعرضها).
     ret = branch_scope.scope(select(SalesReturn), SalesReturn, current).where(
         SalesReturn.customer_id.isnot(None), SalesReturn.reversed_at.is_(None))
-
-    if (c1 := _statement_like(SalesInvoice, statement)) is not None:
-        inv = inv.where(c1)
-        ret = ret.where(_statement_like(SalesReturn, statement))
+    if (c1 := _statement_like(SalesReturn, statement)) is not None:
+        ret = ret.where(c1)
     if rep_id is not None:
-        inv = inv.where(SalesInvoice.rep_id == rep_id)
         ret = ret.where(SalesReturn.rep_id == rep_id)
     if family:
-        inv = inv.where(SalesInvoice.family == family)
         ret = ret.where(SalesReturn.family == family)
-    if external_document_number:
-        inv = inv.where(SalesInvoice.external_document_number.like(
-            f"%{external_document_number.strip()}%"))
     if current.rep_id is not None:
-        mine = select(Customer.id).where(Customer.rep_id == current.rep_id)
-        inv = inv.where(SalesInvoice.customer_id.in_(mine))
-        ret = ret.where(SalesReturn.customer_id.in_(mine))
+        ret = ret.where(SalesReturn.customer_id.in_(
+            select(Customer.id).where(Customer.rep_id == current.rep_id)))
     if q:
-        inv = inv.where(SalesInvoice.document_number.like(f"%{q.strip()}%"))
         ret = ret.where(SalesReturn.document_number.like(f"%{q.strip()}%"))
     if customer_id is not None:
-        inv = inv.where(SalesInvoice.customer_id == customer_id)
         ret = ret.where(SalesReturn.customer_id == customer_id)
     if date_from is not None:
-        inv = inv.where(SalesInvoice.created_at >= clock.day_start_utc(date_from))
         ret = ret.where(SalesReturn.created_at >= clock.day_start_utc(date_from))
     if date_to is not None:
-        inv = inv.where(SalesInvoice.created_at < clock.day_end_utc(date_to))
         ret = ret.where(SalesReturn.created_at < clock.day_end_utc(date_to))
-    if payment == "cash":
-        inv = inv.where(SalesInvoice.credit_amount == 0)
-    elif payment == "credit":
-        inv = inv.where(SalesInvoice.cash_amount == 0)
-    elif payment == "partial":
-        inv = inv.where(SalesInvoice.cash_amount > 0, SalesInvoice.credit_amount > 0)
+    if ids:
+        # فحص النظام على فواتير بعينها — مافيش مرتجعات في الصورة.
+        ret = ret.where(SalesReturn.id.in_([-1]))
 
     def totals(stmt, *cols):
         sub = stmt.subquery()
@@ -1671,8 +1694,23 @@ def sales_summary(
                          .select_from(sub)).one()
         return row
 
-    inv_count, inv_net, inv_credit = totals(inv, "net", "credit_amount")
-    ret_count, ret_net, ret_credit = totals(ret, "value", "credit_reduction")
+    # الإجمالي قبل الخصم = الكمية × السعر من السطور (زي عمود الكشف)، والفاتورة اللي
+    # مالهاش سطور بـ`gross` بتاعها. استعلام واحد بـjoin على مجاميع السطور.
+    inv_sub = inv.subquery()
+    line_sum = (select(SalesInvoiceLine.invoice_id.label("iid"),
+                       func.sum(SalesInvoiceLine.quantity * SalesInvoiceLine.unit_price)
+                       .label("before"))
+                .where(SalesInvoiceLine.invoice_id.in_(select(inv_sub.c.id)))
+                .group_by(SalesInvoiceLine.invoice_id).subquery())
+    inv_count, inv_net, inv_credit, inv_cash, inv_before = db.execute(
+        select(func.count(),
+               func.coalesce(func.sum(inv_sub.c.net), 0),
+               func.coalesce(func.sum(inv_sub.c.credit_amount), 0),
+               func.coalesce(func.sum(inv_sub.c.cash_amount), 0),
+               func.coalesce(func.sum(func.coalesce(line_sum.c.before, inv_sub.c.gross)), 0))
+        .select_from(inv_sub.outerjoin(line_sum, line_sum.c.iid == inv_sub.c.id))).one()
+    ret_count, ret_net, ret_credit, ret_cash = totals(
+        ret, "value", "credit_reduction", "cash_refund")
 
     # **البونص لوحده — بقيمته قبل خصم الـ١٠٠٪.** صافيه صفر، فجمع `net` أو `gross` بيدّي صفر
     # (الـ`gross` المخزّن بعد خصم السطور). القيمة الحقيقية الكمية × سعر السطر، وهي نفس
@@ -1682,7 +1720,7 @@ def sales_summary(
     bonus_ids = _sales_list_stmt(
         current, q=q, customer_id=customer_id, date_from=date_from, date_to=date_to,
         payment=payment, rep_id=rep_id, family=family,
-        external_document_number=external_document_number, kind="bonus",
+        external_document_number=external_document_number, ids=ids, kind="bonus",
         statement=statement).with_only_columns(SalesInvoice.id).subquery()
     bonus_count = db.scalar(select(func.count()).select_from(bonus_ids)) or 0
     # قيمة البونص بعد خصم اللسته — شوف `_line_discounts`.
@@ -1721,7 +1759,15 @@ def sales_summary(
 
     return {
         "sales_count": inv_count, "sales_net": inv_net,
+        # تفصيل شريحة «فواتير المبيعات»: قبل الخصم · الخصم · النقدي · الآجل.
+        "sales_gross": to_money(Decimal(str(inv_before))),
+        "sales_discount": to_money(Decimal(str(inv_before)) - Decimal(str(inv_net))),
+        "sales_cash": to_money(Decimal(str(inv_cash))),
+        "sales_credit": to_money(Decimal(str(inv_credit))),
         "returns_count": ret_count, "returns_net": ret_net,
+        # تفصيل شريحة «المرتجعات»: رد نقدي · خصم من الآجل.
+        "returns_cash": to_money(Decimal(str(ret_cash))),
+        "returns_credit": to_money(Decimal(str(ret_credit))),
         "net_sales": inv_net - ret_net,
         "credit_outstanding": outstanding,
         # الآجل يوم البيع — رقم الفترة، مش المديونية. بيترجع باسمه الصريح عشان
