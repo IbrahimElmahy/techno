@@ -20,7 +20,7 @@ import {
   FileSearchOutlined, EditOutlined, EyeOutlined, PrinterOutlined, ExclamationCircleOutlined,
   CheckOutlined, SwapOutlined, SearchOutlined, ShoppingCartOutlined, MinusOutlined,
 } from '@ant-design/icons';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useSearchParams } from 'react-router-dom';
 import { api } from '../api/client';
 import { useDraft } from '../components/useDraft';
 import { useAuth } from '../components/AuthProvider';
@@ -38,7 +38,8 @@ import ProductPickerModal from '../components/ProductPickerModal';
 import DocumentToolbar, { ToolbarAction } from '../components/DocumentToolbar';
 import { SaveOutlined, FileAddOutlined, UndoOutlined } from '@ant-design/icons';
 import DocumentAuditModal from '../components/DocumentAuditModal';
-import { useTableKeyboard, useScreenShortcuts } from '../components/keyboard';
+import { useTableKeyboard, useScreenShortcuts, useOnScreen } from '../components/keyboard';
+import { useDocReturn } from '../components/docReturn';
 import { TabModal } from '../components/TabModal';
 import WarehouseGate from '../components/WarehouseGate';
 import DocumentAttachments from '../components/DocumentAttachments';
@@ -414,17 +415,27 @@ export default function Transfers() {
 
   /** One way in, whichever button was pressed — the list's «جديد» and the toolbar's F2. */
   const startNew = () => {
+    // «جديد» بيفضل في الشاشة: الإذن اللي كان مفتوح يتشال من العنوان ومعاه الأصل (`ret`).
+    clearDocParam();
     setSource(null); setDest(null); setLines([]); setCreateVisible(false);
     setViewOnly(false); setEditing(null);
     setStatement1(''); setExternalDocNumber(''); setDocNotes('');
     setNewStep('source');
   };
 
-  const closeCreate = () => {
-    clearDocParam();
-    // الإذن اتفتح برابط من شاشة تانية (الجرد، كارت الصنف) ⇒ القفل يرجّع هناك، مش لكشف
-    // التحويلات — نفس اللي شاشة الفواتير بتعمله.
-    if (cameFromScreen.current) { cameFromScreen.current = false; navigate(-1); }
+  /**
+   * الإذن اتفتح برابط من شاشة تانية (الجرد، كارت الصنف) ⇒ القفل يرجّع هناك (`ret`)، مش
+   * لكشف التحويلات. `stay` للقفل اللي مش خروج («رجوع» المتصفح شال المستند خلاص).
+   * كائن مش `boolean` عشان `onClick={closeCreate}` بيبعت حدث الماوس — فالأزرار بتنده `() => closeCreate()`.
+   */
+  const closeCreate = (opts?: { stay?: boolean }) => {
+    if (opts?.stay !== true && docReturn.origin()) {
+      // تبويبنا بياخد كشفه من `leave` نفسه — مانكتبش في العنوان.
+      docInUrl.current = null;
+      if (!docReturn.leave()) clearDocParam();
+    } else {
+      clearDocParam();
+    }
     setCreateVisible(false); setEditing(null); setDraftQty({}); setViewOnly(false);
     setSource(null); setDest(null); setSourceStock([]); setLines([]); setActiveCategory(null);
     setStatement1(''); setExternalDocNumber(''); setDocNotes('');
@@ -463,10 +474,20 @@ export default function Transfers() {
    * بتكتب العنوان، والعنوان بيقود عند التحميل الأول وعند «رجوع» وبس.
    */
   const docInUrl = useRef<number | null>(null);
+  // بارامترات **التبويب ده** مش `window.location` (بتاع التبويب الظاهر)، والشاشة المخفية
+  // مابتكتبش في العنوان: `setSearchParams` منها بيشدّ المستخدم لكشف التحويلات.
+  const paramsRef = useRef(searchParams);
+  paramsRef.current = searchParams;
+  const onScreen = useOnScreen();
+  const onScreenRef = useRef(onScreen);
+  onScreenRef.current = onScreen;
+  const docReturn = useDocReturn();
   const writeDocParam = useCallback((id: number) => {
     docInUrl.current = id;
-    const next = new URLSearchParams(window.location.search);
+    if (!onScreenRef.current) return;
+    const next = new URLSearchParams(paramsRef.current);
     // العنوان شايل الإذن ده خلاص (جاي من رابط) ⇒ استبدال، مش نفس الإذن مرتين في التاريخ.
+    // و`ret` بيفضل مكانه.
     const already = next.get('doc') === String(id);
     next.set('doc', String(id));
     next.delete('edit'); next.delete('back');
@@ -474,37 +495,27 @@ export default function Transfers() {
   }, [setSearchParams]);
   const clearDocParam = useCallback(() => {
     docInUrl.current = null;
-    const next = new URLSearchParams(window.location.search);
-    if (!next.has('doc') && !next.has('edit')) return;
-    next.delete('doc'); next.delete('edit'); next.delete('back');
+    if (!onScreenRef.current) return;
+    const next = new URLSearchParams(paramsRef.current);
+    if (!next.has('doc') && !next.has('edit') && !next.has('ret')) return;
+    next.delete('doc'); next.delete('edit'); next.delete('back'); next.delete('ret');
     setSearchParams(next, { replace: true });
   }, [setSearchParams]);
   /** قفل الإذن لما «رجوع» يشيله من العنوان — مش تفضية الحالة وبس: `closeCreate` هي اللي
    *  بترجّع للكشف. */
   const closeOnBackRef = useRef<(() => void) | null>(null);
 
-  // «رجوع» المتصفح هو اللي قفل ⇒ الخطوة اتعملت خلاص، فالقفل مايرجعش خطوة كمان.
-  closeOnBackRef.current = () => { cameFromScreen.current = false; closeCreate(); };
+  // «رجوع» المتصفح هو اللي قفل ⇒ الخطوة اتعملت خلاص، فالقفل مايروحش لحتة تانية.
+  closeOnBackRef.current = () => { closeCreate({ stay: true }); };
 
   const pendingDoc = useRef<number | null>(null);
-  /** جاي برابط من شاشة تانية (`back=1`) — بيتلقط قبل ما البارامتر يتمسح. */
-  const cameFromScreen = useRef(false);
   /** الإذن اللي بيتجاب بالرقم دلوقتي — عشان صحوة التأثير التانية ماتجيبهوش مرتين. */
   const fetchingDoc = useRef<number | null>(null);
-  const navigate = useNavigate();
   useEffect(() => {
     const doc = searchParams.get('doc') || searchParams.get('edit');
-    // البارامتر اللي إحنا كاتبينه وقت الفتح مش طلب فتح.
-    if (doc && Number(doc) === docInUrl.current) {
-      // رابط من بره لنفس الإذن المفتوح ⇒ «رجوع» يودّي للشاشة دي.
-      if (searchParams.get('back') === '1') {
-        cameFromScreen.current = true;
-        const next = new URLSearchParams(window.location.search);
-        next.delete('back');
-        setSearchParams(next, { replace: true });
-      }
-      return;
-    }
+    // البارامتر اللي إحنا كاتبينه وقت الفتح مش طلب فتح. (رابط تاني لنفس الإذن بيجيب `ret`
+    // جديد في العنوان، و«رجوع» بيقراه وقت الضغط — مافيش حاجة تتلقط.)
+    if (doc && Number(doc) === docInUrl.current) return;
     // راح وإحنا لسه فاتحين ⇒ اللي شاله «رجوع» مش إحنا.
     if (!doc && docInUrl.current !== null) {
       docInUrl.current = null;
@@ -513,11 +524,10 @@ export default function Transfers() {
     }
     if (doc && Number(doc) !== fetchingDoc.current) {
       pendingDoc.current = Number(doc);
-      // `back` بيتقرا هنا بس — المسح اللي تحت بيشيله، والصحوة الجاية مابتلاقيهوش.
-      if (searchParams.get('back') === '1') cameFromScreen.current = true;
-      // `edit`/`back` بيتمسحوا؛ و`doc` بيفضل عشان التحديث يرجّعك لنفس الإذن.
-      if (searchParams.has('edit') || searchParams.has('back')) {
-        const next = new URLSearchParams(window.location.search);
+      // `edit`/`back` بيتمسحوا؛ و`doc` و`ret` بيفضلوا عشان التحديث يرجّعك لنفس الإذن
+      // و«رجوع» بعده للشاشة اللي جيت منها.
+      if ((searchParams.has('edit') || searchParams.has('back')) && onScreenRef.current) {
+        const next = new URLSearchParams(searchParams);
         next.delete('edit'); next.delete('back');
         setSearchParams(next, { replace: true });
       }
@@ -1365,7 +1375,7 @@ export default function Transfers() {
         onClick: () => setLines([]), disabled: lines.length === 0,
       } as ToolbarAction]),
       { key: 'close', label: 'إغلاق', shortcut: 'Esc', icon: <ArrowRightOutlined />,
-        onClick: closeCreate },
+        onClick: () => closeCreate() },
     ];
   };
 
@@ -1587,7 +1597,7 @@ export default function Transfers() {
       <div className="sale-doc">
         <div className="sale-card sale-head">
           <div className="sale-head-row">
-            <Button size="small" icon={<ArrowRightOutlined />} onClick={closeCreate}>رجوع</Button>
+            <Button size="small" icon={<ArrowRightOutlined />} onClick={() => closeCreate()}>رجوع</Button>
             <span className="sale-title">
               {editing
                 ? <>إذن تحويل <b dir="ltr">{editing.document_number}</b></>
@@ -1832,7 +1842,7 @@ export default function Transfers() {
                 <div className="sale-card sale-pay">
                   <div className="sale-pay-actions is-wrap">
                     {viewOnly ? (
-                      <Button onClick={closeCreate}>إغلاق</Button>
+                      <Button onClick={() => closeCreate()}>إغلاق</Button>
                     ) : editing ? (
                       <>
                         {editing.status === 'pending' && canApprove && (
@@ -1859,7 +1869,7 @@ export default function Transfers() {
                               onClick={() => handleDelete(editing)}>حذف</Button>
                           </>
                         )}
-                        <Button onClick={closeCreate}>إغلاق</Button>
+                        <Button onClick={() => closeCreate()}>إغلاق</Button>
                       </>
                     ) : (
                       <>
@@ -1869,7 +1879,7 @@ export default function Transfers() {
                           onClick={handleSubmit}>
                           إرسال طلب التحويل
                         </Button>
-                        <Button onClick={closeCreate}>إلغاء</Button>
+                        <Button onClick={() => closeCreate()}>إلغاء</Button>
                       </>
                     )}
                   </div>

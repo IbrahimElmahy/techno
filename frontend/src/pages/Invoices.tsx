@@ -22,6 +22,9 @@ import {
   PhoneOutlined, CheckOutlined, InfoCircleOutlined, ShoppingCartOutlined, GiftOutlined,
 } from '@ant-design/icons';
 import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useDocReturn } from '../components/docReturn';
+import { useOnScreen } from '../components/keyboard';
+import { useOpenDocument } from '../components/DocumentLink';
 import dayjs, { Dayjs } from 'dayjs';
 import CostCenterField from '../components/CostCenterField';
 import CostCenterSplit from '../components/CostCenterSplit';
@@ -274,6 +277,16 @@ export default function Invoices() {
   // The link carries only the intent; the acting lives here, where it already is and where it is
   // already guarded, so no second screen learns how to reverse an invoice.
   const [searchParams, setSearchParams] = useSearchParams();
+  // بارامترات **التبويب ده** — مش `window.location` اللي بتاع التبويب الظاهر. والشاشة
+  // المخفية مابتكتبش في العنوان خالص: `setSearchParams` منها بيشدّ المستخدم لهنا.
+  const paramsRef = useRef(searchParams);
+  paramsRef.current = searchParams;
+  const onScreen = useOnScreen();
+  const onScreenRef = useRef(onScreen);
+  onScreenRef.current = onScreen;
+  // الفاتورة جاية من شاشة تانية (`ret`) ⇒ «رجوع» يرجّع لها. الشرح في `docReturn.ts`.
+  const docReturn = useDocReturn();
+  const openDoc = useOpenDocument();
   const [focusLineKey, setFocusLineKey] = useState<string | null>(null);
 
   const [invoiceDate, setInvoiceDate] = useState<any>(dayjs());
@@ -851,13 +864,15 @@ export default function Invoices() {
    * بتسيب `newStep` على `null` وبتقفل المناتق — اللي بيفتح مستند جديد بيبدأ دورة الأبواب
    * من أول خطوة بنفسه بعد النداء.
    */
-  const resetDocument = () => {
+  const resetDocument = (opts?: { keepUrl?: boolean }) => {
     clientUuidRef.current = null;
     setViewOnly(false);
     setViewInvoice(null);
     // العنوان بيرجع للكشف مع قفل المستند — `replace` مش `push` عشان «رجوع» مايعيدش
-    // فتح اللي انت قافله لسه.
-    clearDocParam();
+    // فتح اللي انت قافله لسه. `keepUrl`: الراجع لشاشة تانية — `docReturn.leave` هو اللي
+    // بيكتب لتبويبنا كشفه، فإحنا مانلمسش العنوان.
+    if (opts?.keepUrl) docInUrl.current = null;
+    else clearDocParam();
     setViewReturns([]);
     setEditingInvoice(null);
     setOpenedFingerprint(null);
@@ -997,13 +1012,24 @@ export default function Invoices() {
    * والمستند اللي بيتعرض للقراية بس (`viewOnly`) بيقفل من غير سؤال: مافيش حاجة تضيع،
    * والسؤال ساعتها عقبة مالهاش سبب.
    */
-  const closeCreate = () => {
-    const leave = () => {
-      resetDocument();
+  /**
+   * المستند بيتقفل: جاي من شاشة تانية (`ret` في عنوان التبويب) ⇒ يرجع لها، غير كده
+   * لكشف الفواتير. `stay` للقفل اللي مش خروج (قبل فتح مستند تاني).
+   */
+  const finishClose = (stay = false) => {
+    if (!stay && docReturn.origin()) {
+      resetDocument({ keepUrl: true });
       setCreateVisible(false);
-      // المستند اتفتح من شاشة تانية ⇒ «رجوع» يرجّع لهناك، مش لكشف الفواتير.
-      if (cameFromScreen.current) { cameFromScreen.current = false; navigate(-1); }
-    };
+      if (!docReturn.leave()) clearDocParam();
+      return;
+    }
+    resetDocument();
+    setCreateVisible(false);
+  };
+
+  /** كائن مش `boolean` عشان `onClick={closeCreate}` بيبعت حدث الماوس — فالأزرار بتنده `() => closeCreate()`. */
+  const closeCreate = (opts?: { stay?: boolean }) => {
+    const leave = () => finishClose(opts?.stay === true);
     const verdict = verdictOnLeave({
       readOnly: viewOnly,
       savedDocument: editingInvoice != null,
@@ -1696,9 +1722,8 @@ export default function Invoices() {
           // **قفل من غير سؤال.** `closeCreate` بيقارن اللي على الشاشة باللي اتفتح، والفاتورة
           // لسه مليانة بسطورها — فكان بيسأل «تسيب المستند؟ … هيروحوا ومش هيرجعوا» عن
           // فاتورة اتحفظت حالاً، واللي يدوس «أكمّل» يلاقيها قدامه ويحفظها تاني.
-          resetDocument();
-          setCreateVisible(false);
-          if (cameFromScreen.current) { cameFromScreen.current = false; navigate(-1); }
+          // جاية من شاشة تانية ⇒ الحفظ بيرجّع لها، زي «رجوع».
+          finishClose();
           fetchInvoices();
         } catch (err: any) {
           console.error(err);
@@ -1791,9 +1816,11 @@ export default function Invoices() {
   const closeOnBackRef = useRef<(() => void) | null>(null);
   const writeDocParam = useCallback((id: number) => {
     docInUrl.current = id;
-    const next = new URLSearchParams(window.location.search);
+    if (!onScreenRef.current) return;
+    const next = new URLSearchParams(paramsRef.current);
     // العنوان شايل المستند ده خلاص (جاي من رابط) ⇒ استبدال مش خطوة جديدة. من غيرها
     // التاريخ بيبقى فيه نفس الفاتورة مرتين، و«رجوع» أول مرة يبان إنه مابيعملش حاجة.
+    // و`ret` بيفضل: التالي/السابق مابيضيّعش الشاشة اللي الفاتورة اتفتحت منها.
     const already = next.get('doc') === String(id);
     next.set('doc', String(id));
     next.delete('edit'); next.delete('id'); next.delete('back');
@@ -1801,39 +1828,27 @@ export default function Invoices() {
   }, [setSearchParams]);
   const clearDocParam = useCallback(() => {
     docInUrl.current = null;
-    const next = new URLSearchParams(window.location.search);
-    if (!next.has('doc') && !next.has('edit') && !next.has('id')) return;
+    if (!onScreenRef.current) return;
+    const next = new URLSearchParams(paramsRef.current);
+    if (!next.has('doc') && !next.has('edit') && !next.has('id') && !next.has('ret')) return;
+    // القفل هنا بيفضل في الشاشة («جديد»، أو قفل من غير أصل) ⇒ الأصل بيتشال معاه.
     next.delete('doc'); next.delete('edit'); next.delete('id'); next.delete('back');
+    next.delete('ret');
     setSearchParams(next, { replace: true });
   }, [setSearchParams]);
 
   closeOnBackRef.current = () => { resetDocument(); setCreateVisible(false); };
 
   const pendingIntent = useRef<{ id: number; mode: 'view' | 'edit' } | null>(null);
-  /**
-   * **جاي من شاشة تانية** — كارت صنف، كشف حساب، كارت عميل، تقرير.
-   *
-   * لازم تتلتقط هنا بالذات: السطر اللي تحت بيمسح البارامترات، فالعلامة بتروح معاها.
-   * ولو راحت، «رجوع» بيرجّع لكشف الفواتير — شاشة اللي ضغط مالوش دعوة بيها، ولازم
-   * يروح يدوّر على الصنف اللي كان فيه من الأول.
-   */
-  const cameFromScreen = useRef(false);
 
   useEffect(() => {
     const doc = searchParams.get('doc');
     const edit = searchParams.get('edit');
     const id = searchParams.get('id');
     // البارامتر اللي إحنا كاتبينه لما فتحنا المستند مش طلب فتح — تخطّيه.
-    if (doc && Number(doc) === docInUrl.current) {
-      // بس لو جاي برابط من شاشة تانية لنفس الفاتورة المفتوحة، «رجوع» لازم يودّي هناك.
-      if (searchParams.get('back') === '1') {
-        cameFromScreen.current = true;
-        const next = new URLSearchParams(window.location.search);
-        next.delete('back');
-        setSearchParams(next, { replace: true });
-      }
-      return;
-    }
+    // (رابط من شاشة تانية لنفس الفاتورة المفتوحة بيجيب `ret` جديد في العنوان — و«رجوع»
+    // بيقراه من العنوان وقت الضغط، فمافيش حاجة تتلقط هنا.)
+    if (doc && Number(doc) === docInUrl.current) return;
     // **«رجوع» بتاع المتصفح بيقفل المستند.**
     //
     // البارامتر راح وإحنا لسه فاتحين — يبقى اللي شاله هو زرار الرجوع مش إحنا
@@ -1846,17 +1861,18 @@ export default function Invoices() {
     }
     if (doc || edit || id) {
       pendingIntent.current = { id: Number(doc || edit || id), mode: edit ? 'edit' : 'view' };
-      cameFromScreen.current = searchParams.get('back') === '1';
       // **الطلب ده اتاخد.** المسح اللي تحت بيغيّر العنوان والتأثير بيصحى تاني — ومن غير
-      // العلامة دي كان بيعتبر `?doc=` نفسه طلب جديد: يفتح الفاتورة مرتين، ويقرا `back`
-      // بعد ما اتمسح فـ«رجوع» يودّي لكشف الفواتير بدل الشاشة اللي الفاتورة اتفتحت منها
-      // (الجرد، كارت الصنف). `edit` مالوش علامة: المسح بيشيله من العنوان خالص.
+      // العلامة دي كان بيعتبر `?doc=` نفسه طلب جديد ويفتح الفاتورة مرتين. `edit` مالوش
+      // علامة: المسح بيشيله من العنوان خالص.
       if (doc && !edit && !id) docInUrl.current = Number(doc);
-      // `edit`/`id`/`back` بيتمسحوا عشان مايتعادوش عند إعادة التحميل. و`doc` **بيفضل**:
-      // هو اللي بيخلّي تحديث الصفحة يرجّعك لنفس المستند بدل ما يرميك على الكشف.
-      const next = new URLSearchParams(window.location.search);
-      next.delete('edit'); next.delete('id'); next.delete('back');
-      setSearchParams(next, { replace: true });
+      // `edit`/`id`/`back` بيتمسحوا عشان مايتعادوش عند إعادة التحميل. و`doc` و`ret`
+      // **بيفضلوا**: التحديث يرجّعك لنفس المستند، و«رجوع» بعده لنفس الشاشة اللي جيت منها.
+      // ومن بارامترات التبويب نفسه، والمخفي مابيكتبش (الشرح عند `paramsRef`).
+      if ((edit || id || searchParams.has('back')) && onScreenRef.current) {
+        const next = new URLSearchParams(searchParams);
+        next.delete('edit'); next.delete('id'); next.delete('back');
+        setSearchParams(next, { replace: true });
+      }
     }
     const wanted = pendingIntent.current;
     if (!wanted) return;
@@ -2291,6 +2307,7 @@ function couponsTotal(inv: any): number {
   // الأعمدة اتفصلت لملفها — تعريف بلا حالة مالوش لازمة يقعد في نص الشاشة.
   const columns = buildRegisterColumns({
     customers, reps, postingAccounts, filters, printOpts, navigate, openDetail,
+    openReturn: (rid: number) => openDoc('return', rid),
     invoiceDoc, canEditInvoice, canDeleteInvoice, handleEditInvoice, handleDeleteInvoice,
     handleDeleteReturn,
     onDeleteDraft: (id: number) => removeDraft(id),
@@ -2356,7 +2373,7 @@ function couponsTotal(inv: any): number {
     //
     // كانت بتسأل لما يكون في المستند سطور اتكتبت ولسه ماتحفظتش. اللي بيدوس «التالي» أو
     // «السابق» وهو في نص كتابة بيسيب اللي كتبه، وده بقى قراره من غير وقفة.
-    closeCreate();
+    closeCreate({ stay: true });
     openDetail(target);
   };
 
@@ -2575,7 +2592,7 @@ function couponsTotal(inv: any): number {
       {partyPicker}
       <div className="sale-card sale-head">
         <div className="sale-head-row">
-          <Button size="small" icon={<ArrowRightOutlined />} onClick={closeCreate}>رجوع</Button>
+          <Button size="small" icon={<ArrowRightOutlined />} onClick={() => closeCreate()}>رجوع</Button>
           <span className="sale-title">
             {viewInvoice
               ? <>{isBonus ? 'فاتورة بونص' : 'طلب بيع'} رقم: <b dir="ltr">{viewInvoice.document_number || ''}</b></>
@@ -3155,7 +3172,7 @@ function couponsTotal(inv: any): number {
                           icon={<CheckOutlined />} className="sale-green-btn sale-save-btn">
                           {editingInvoice ? 'حفظ تعديلات الفاتورة' : 'تسجيل وحفظ فاتورة البيع'} (F9)
                         </Button>
-                        <Button onClick={closeCreate}>إلغاء</Button>
+                        <Button onClick={() => closeCreate()}>إلغاء</Button>
                       </div>
                     )}
                   </div>
@@ -3585,7 +3602,8 @@ function couponsTotal(inv: any): number {
               } else if (record.doc_type === 'receipt') {
                 registerReceipts.view(record);
               } else {
-                navigate(`/returns?id=${record.id}`);
+                // شاشة المرتجعات بتقرا `?doc=` — `?id=` كان بيوصّل للكشف بس.
+                openDoc('return', record.id);
               }
             },
             style: { cursor: 'pointer' },

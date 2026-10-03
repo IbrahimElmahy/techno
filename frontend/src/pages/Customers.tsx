@@ -9,7 +9,8 @@ import { FilterTable as Table } from '../components/FilterTable';
 import { InputNumber } from '../components/NumberInput';
 import {
   UserAddOutlined, PlusOutlined, MinusCircleOutlined, EyeOutlined, StopOutlined,
-  SearchOutlined, ClearOutlined, DeleteOutlined, TeamOutlined,
+  SearchOutlined, ClearOutlined, DeleteOutlined, TeamOutlined, EditOutlined,
+  LoadingOutlined, CheckCircleFilled,
 } from '@ant-design/icons';
 import { api } from '../api/client';
 import { useAuth } from '../components/AuthProvider';
@@ -104,6 +105,151 @@ const ExtraPhonesList = () => (
   </Form.List>
 );
 
+// ---- تعديل بيانات العملاء من الجدول (نفس فكرة «تعديل الأسعار والخصم» في الأصناف) ----
+// كل خانة بتحفظ لوحدها لما تسيبها؛ لو السيرفر رفض الرسالة بتطلع من `api/client.ts`
+// والخانة بترجع لقيمتها. معرّفين برّه الصفحة عشان المؤشر مايطيرش مع كل رندر.
+type CellStatus = 'idle' | 'saving' | 'saved';
+
+const CellStatusIcon = ({ status }: { status: CellStatus }) => (
+  <span style={{ width: 12, display: 'inline-flex', justifyContent: 'center', flex: 'none' }}>
+    {status === 'saving' && <LoadingOutlined style={{ fontSize: 11 }} />}
+    {status === 'saved' && <CheckCircleFilled style={{ fontSize: 11, color: '#52c41a' }} />}
+  </span>
+);
+
+const useCellStatus = () => {
+  const [status, setStatus] = useState<CellStatus>('idle');
+  const timer = useRef<number | undefined>(undefined);
+  useEffect(() => () => window.clearTimeout(timer.current), []);
+  const run = async (save: () => Promise<void>) => {
+    setStatus('saving');
+    try {
+      await save();
+      setStatus('saved');
+      window.clearTimeout(timer.current);
+      timer.current = window.setTimeout(() => setStatus('idle'), 1800);
+    } catch (err) {
+      setStatus('idle');
+      throw err;
+    }
+  };
+  return { status, run };
+};
+
+// تليفون مصري بشكل متساهل: أرقام بس (و+ في الأول)، والموبايل اللي بيبدأ بـ01 لازم ١١ رقم.
+const phoneError = (digits: string): string | null => {
+  if (!digits) return null;
+  if (!/^\+?\d{6,15}$/.test(digits)) return 'رقم التليفون أرقام بس (من ٦ لـ١٥ رقم)';
+  if (/^01/.test(digits) && digits.length !== 11) return 'رقم الموبايل لازم ١١ رقم ويبدأ بـ01';
+  return null;
+};
+
+const InlineTextCell = ({
+  value, gridCol, placeholder, normalize, validate, onCommit,
+}: {
+  value: string | null;
+  gridCol: string;
+  placeholder?: string;
+  normalize?: (v: string) => string;
+  validate?: (v: string) => string | null;
+  onCommit: (v: string) => Promise<void>;
+}) => {
+  const [draft, setDraft] = useState(value ?? '');
+  const { status, run } = useCellStatus();
+  // آخر قيمة اتبعتت — Enter وبعده blur على نفس الخانة مايبعتوش مرتين.
+  const committed = useRef(value ?? '');
+
+  useEffect(() => {
+    if (status === 'saving') return;
+    committed.current = value ?? '';
+    setDraft(value ?? '');
+  }, [value]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const commit = async () => {
+    const v = normalize ? normalize(draft) : draft.trim();
+    if (v === committed.current) { setDraft(committed.current); return; }
+    const err = validate?.(v);
+    if (err) {
+      message.warning(err);
+      setDraft(committed.current);
+      return;
+    }
+    const previous = committed.current;
+    committed.current = v;
+    setDraft(v);
+    try {
+      await run(() => onCommit(v));
+    } catch {
+      committed.current = previous;
+      setDraft(previous);
+    }
+  };
+
+  return (
+    <div onClick={(e) => e.stopPropagation()}>
+      <Input
+        data-grid-col={gridCol}
+        size="small"
+        value={draft}
+        placeholder={placeholder}
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={commit}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') commit();
+          if (e.key === 'Escape') setDraft(committed.current);
+        }}
+        // الأيقونة دايماً موجودة: تغيير `suffix` من لا حاجة لحاجة بيعيد بناء الخانة.
+        suffix={<CellStatusIcon status={status} />}
+      />
+    </div>
+  );
+};
+
+// القايمة بتحفظ أول ما تختار — مافيش «سيب الخانة».
+const InlineSelectCell = ({
+  value, options, onCommit,
+}: {
+  value: number | null;
+  options: { value: number; label: string }[];
+  onCommit: (v: number) => Promise<void>;
+}) => {
+  const [current, setCurrent] = useState<number | null>(value);
+  const { status, run } = useCellStatus();
+  useEffect(() => {
+    if (status !== 'saving') setCurrent(value);
+  }, [value]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const onChange = async (v: number) => {
+    if (v === current) return;
+    const previous = current;
+    setCurrent(v);
+    try {
+      await run(() => onCommit(v));
+    } catch {
+      setCurrent(previous);
+    }
+  };
+
+  return (
+    <div onClick={(e) => e.stopPropagation()}
+      style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+      <Select
+        size="small"
+        showSearch
+        style={{ flex: 1, minWidth: 0 }}
+        popupMatchSelectWidth={false}
+        value={current ?? undefined}
+        placeholder="—"
+        disabled={status === 'saving'}
+        filterOption={searchFilter} filterSort={searchRank}
+        options={options}
+        onChange={onChange}
+      />
+      <CellStatusIcon status={status} />
+    </div>
+  );
+};
+
 // The list endpoint now carries each customer's balance (one grouped query on the server),
 // so the grid no longer fires a request per row.
 const CustomerBalance = ({ value }: { value?: string | null }) => {
@@ -155,7 +301,35 @@ export default function Customers() {
   const navigate = useNavigate();
 
   const [form] = Form.useForm();
-  const { user: currentUser } = useAuth();
+  const { user: currentUser, can } = useAuth();
+
+  // «تعديل بيانات العملاء» — نفس صلاحية فورم التعديل. المنطقة بتتغيّر من مسار النقل
+  // (`/reassign`) فليها صلاحيتها.
+  const canEditCustomers = can('customer.write');
+  const canEditTerritory = can('customer.reassign');
+  const [editModeRaw, setEditMode] = useState(false);
+  const editMode = editModeRaw && canEditCustomers;
+  // الـblur الأول بيحفظ اللي اتكتب قبل ما الخانات تختفي.
+  const leaveEditMode = () => {
+    (document.activeElement as HTMLElement | null)?.blur?.();
+    setEditMode(false);
+  };
+  const mergeRow = (id: number, data: Partial<CustomerRecord>) =>
+    setCustomers((prev) => prev.map((c) => (c.id === id ? { ...c, ...data } : c)));
+  // PATCH جزئي: اللي مااتبعتش مابيتلمسش (الأرقام الإضافية والخصم والمندوب…).
+  const saveField = async (r: CustomerRecord, body: Partial<CustomerRecord>) => {
+    const res = await api.patch(`/api/v1/customers/${r.id}`, body);
+    mergeRow(r.id, {
+      phone: res.data.phone, governorate_id: res.data.governorate_id, markaz: res.data.markaz,
+    });
+  };
+  // المنطقة من غير مندوب جديد — السيرفر بيسيب المندوب زي ما هو.
+  const saveTerritory = async (r: CustomerRecord, territoryId: number) => {
+    const res = await api.post(`/api/v1/customers/${r.id}/reassign`, {
+      new_territory_id: territoryId,
+    });
+    mergeRow(r.id, { territory_id: res.data.territory_id, rep_id: res.data.rep_id });
+  };
 
   const loadSummary = async (activeFilters = filters) => {
     try {
@@ -242,6 +416,11 @@ export default function Customers() {
     setPageSize(newPageSize);
     fetchCustomers(filters, newPage, newPageSize);
   };
+
+  const governorateOptions = useMemo(
+    () => governorates.map((g) => ({ value: g.id, label: g.name })), [governorates]);
+  const territoryOptions = useMemo(
+    () => territories.map((t) => ({ value: t.id, label: t.name })), [territories]);
 
   const fetchLookups = async () => {
     try {
@@ -396,7 +575,11 @@ export default function Customers() {
       dataIndex: 'phone',
       key: 'phone',
       width: 125,
-      render: (phone: string | null) => phone || '-',
+      render: (phone: string | null, r: CustomerRecord) => (editMode
+        ? <InlineTextCell gridCol="phone" value={phone} placeholder="01000000000"
+            normalize={(v) => v.replace(/[\s-]/g, '')} validate={phoneError}
+            onCommit={(v) => saveField(r, { phone: v })} />
+        : phone || '-'),
     },
     {
       title: 'مندوب البيع',
@@ -447,7 +630,14 @@ export default function Customers() {
       dataIndex: 'governorate_id',
       key: 'governorate_id',
       ellipsis: true,
-      render: (gId: number | null) => {
+      render: (gId: number | null, r: CustomerRecord) => {
+        // مافيش «مسح» للمحافظة: الـPATCH بيعتبر الفاضي «من غير تغيير».
+        if (editMode) {
+          return (
+            <InlineSelectCell value={gId} options={governorateOptions}
+              onCommit={(v) => saveField(r, { governorate_id: v })} />
+          );
+        }
         const gov = governorates.find((g) => g.id === gId);
         return gov ? gov.name : '-';
       },
@@ -457,7 +647,10 @@ export default function Customers() {
       dataIndex: 'markaz',
       key: 'markaz',
       ellipsis: true,
-      render: (v: string | null) => v || '-',
+      render: (v: string | null, r: CustomerRecord) => (editMode
+        ? <InlineTextCell gridCol="markaz" value={v}
+            onCommit={(val) => saveField(r, { markaz: val })} />
+        : v || '-'),
     },
     {
       title: 'الرصيد',
@@ -498,6 +691,38 @@ export default function Customers() {
   const tableCols = useTableColumns('customers', columns, {
     export: { name: 'العملاء', rows: customers },
   });
+
+  // المنطقة مكانها السطر المتوسّع؛ بتبقى عمود في وضع التعديل بس (بعد المدينة).
+  const territoryColumn = {
+    title: 'المنطقة',
+    dataIndex: 'territory_id',
+    key: 'territory_id',
+    width: 150,
+    render: (tId: number, r: CustomerRecord) => (canEditTerritory
+      ? <InlineSelectCell value={tId} options={territoryOptions}
+          onCommit={(v) => saveTerritory(r, v)} />
+      : territories.find((t) => t.id === tId)?.name || '-'),
+  };
+  // في وضع التعديل الخانات اللي بتتعدّل لازم تبان حتى لو مخفية من «الأعمدة» —
+  // من غير ما نلمس الإعداد المحفوظ، فبترجع زي ما كانت لما التعديل يخلص.
+  let tableColumns: any[] = tableCols.columns;
+  if (editMode) {
+    const authored: any[] = [...columns];
+    authored.splice(authored.findIndex((c) => c.key === 'markaz') + 1, 0, territoryColumn);
+    const out: any[] = [...tableCols.columns];
+    for (const key of ['phone', 'governorate_id', 'markaz', 'territory_id']) {
+      if (out.some((c) => c.key === key)) continue;
+      const idx = authored.findIndex((c) => c.key === key);
+      // جنب أقرب عمود ظاهر قبله في الترتيب الأصلي.
+      let at = 0;
+      for (let i = idx - 1; i >= 0; i -= 1) {
+        const pos = out.findIndex((c) => c.key === authored[i].key);
+        if (pos !== -1) { at = pos + 1; break; }
+      }
+      out.splice(at, 0, authored[idx]);
+    }
+    tableColumns = out;
+  }
 
   // The three of ours that used to be columns. Opening a row costs one click and gives them back
   // in full, rather than making every row narrower for everyone who never looks at them.
@@ -565,8 +790,17 @@ export default function Customers() {
         subtitle="بطاقات العملاء وأرصدتهم ومناديبهم — الضغط على السطر يفتح ملف العميل"
         tabs={statusTabs}
         activeTab={statusTab}
-        onTabChange={(k) => setFilter('active', k === 'active' ? true : k === 'inactive' ? false : undefined)}
+        onTabChange={(k) => {
+          leaveEditMode();
+          setFilter('active', k === 'active' ? true : k === 'inactive' ? false : undefined);
+        }}
         actions={(<>
+          {canEditCustomers && (
+            <Button icon={<EditOutlined />} type={editMode ? 'primary' : 'default'}
+              onClick={() => (editMode ? leaveEditMode() : setEditMode(true))}>
+              {editMode ? 'إنهاء التعديل' : 'تعديل بيانات العملاء'}
+            </Button>
+          )}
           <Button data-shortcut="F2" type="primary" className="sl-create" icon={<UserAddOutlined />}
             onClick={() => setDrawerVisible(true)}>
             إضافة عميل
@@ -623,7 +857,7 @@ export default function Customers() {
         <Table
           className="sl-table"
           dataSource={customers}
-          columns={tableCols.columns}
+          columns={tableColumns}
           rowKey="id"
           loading={loading}
           size="small"
@@ -639,8 +873,8 @@ export default function Customers() {
             onChange: handlePageChange,
             showTotal: () => footer,
           }}
-          // The whole row opens the customer file — no dedicated button needed.
-          onRow={(record) => ({
+          // The whole row opens the customer file — إلا وإحنا بنعدّل.
+          onRow={(record) => (editMode ? {} : {
             onClick: () => navigate(`/customers/${record.id}`),
             style: { cursor: 'pointer' },
           })}

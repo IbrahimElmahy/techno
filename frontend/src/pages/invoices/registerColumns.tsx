@@ -26,6 +26,8 @@ export interface RegisterColumnsCtx {
   printOpts: any;
   navigate: (to: string) => void;
   openDetail: (r: InvoiceRecord) => void;
+  /** فتح مرتجع في شاشته — ومعاه `ret` عشان «رجوع» يرجّع للسجل. */
+  openReturn?: (id: number) => void;
   invoiceDoc: (inv: any) => any;
   canEditInvoice: boolean;
   canDeleteInvoice: boolean;
@@ -46,7 +48,7 @@ export interface RegisterColumnsCtx {
 const DASH = '—';
 
 export function buildRegisterColumns({
-  customers, reps, postingAccounts, filters, printOpts, navigate, openDetail,
+  customers, reps, postingAccounts, filters, printOpts, navigate, openDetail, openReturn,
   invoiceDoc, canEditInvoice, canDeleteInvoice, handleEditInvoice, handleDeleteInvoice,
   handleDeleteReturn, onDeleteDraft, onViewReceipt, onEditReceipt, onDeleteReceipt, canWriteVoucher,
 }: RegisterColumnsCtx): any[] {
@@ -444,7 +446,9 @@ export function buildRegisterColumns({
                   if (isSale) {
                     openDetail(record.raw || record);
                   } else {
-                    navigate(`/returns?id=${record.id}`);
+                    // الشاشة بتقرا `?doc=` — `?id=` كان بيوصّل للكشف بس.
+                    if (openReturn) openReturn(record.id);
+                    else navigate(`/returns?doc=${record.id}`);
                   }
                 }} />
             </Tooltip>

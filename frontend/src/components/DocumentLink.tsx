@@ -1,7 +1,8 @@
 import React from 'react';
 import { Button, Tag, Tooltip } from 'antd';
 import { ExportOutlined } from '@ant-design/icons';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
+import { withReturn } from './docReturn';
 
 /**
  * The thread that ties a document to the screen that owns it.
@@ -126,20 +127,19 @@ export function docKindOf(sourceDocType: string | null | undefined): DocKind | n
  */
 export function useOpenDocument() {
   const navigate = useNavigate();
+  // جوّه تبويب، `useLocation` بيرجّع مسار التبويب ده (`<Routes location>`) — يعني الشاشة
+  // اللي الرابط اتداس فيها بالظبط، باستعلامها (الصنف المختار، فترة الكشف…).
+  const here = useLocation();
   return (kind: DocKind, id: number | null | undefined, _opts?: { readOnly?: boolean }) => {
     if (!id) return;
     // Always open in view mode ('doc'). The user clicks 'تعديل' on the toolbar if they want to edit.
     //
-    // **`back=1` هي اللي بتخلّي «رجوع» يرجّع لهنا.** من غيرها «رجوع» بتاع شاشة
-    // المستند بيشيل المستند من العنوان بس، فاللي فتح فاتورة من كارت الصنف بيلاقي
-    // نفسه في كشف الفواتير — شاشة مالوش دعوة بيها.
-    //
-    // والعلامة في العنوان مش في `state` بتاع الراوتر عن قصد: شاشة الفواتير بتمسح
-    // بارامتراتها بـ`replace` أول ما تفتح المستند، والاستبدال بيرمي الـ`state` معاه.
-    // العنوان بيتقرا قبل المسح، فالعلامة بتوصل.
+    // **`ret` هو اللي بيخلّي «رجوع» يرجّع لهنا** — الأصل مكتوب في الرابط نفسه، مش متخمّن
+    // من تاريخ المتصفح. الشرح في `docReturn.ts`.
     const screen = SCREEN[kind];
     const param = OPEN_PARAM[kind] ?? 'doc';
-    navigate(`${screen}${screen.includes('?') ? '&' : '?'}${param}=${id}&back=1`);
+    const target = `${screen}${screen.includes('?') ? '&' : '?'}${param}=${id}`;
+    navigate(withReturn(target, here.pathname + here.search));
   };
 }
 

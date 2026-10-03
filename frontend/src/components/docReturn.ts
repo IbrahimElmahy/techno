@@ -1,78 +1,106 @@
-import { useCallback, useEffect, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useCallback, useMemo, useRef } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
+import { baseOf, useTabsOptional } from './TabsContext';
 import { useOnScreen } from './keyboard';
 
-/** رقم الخطوة الحالية في تاريخ المتصفح — الراوتر بيكتبه في `history.state.idx`. */
-export function historyIdx(): number | null {
-  const idx = (window.history.state as any)?.idx;
-  return typeof idx === 'number' ? idx : null;
+/**
+ * «رجوع» من مستند اتفتح من شاشة تانية بيرجّع **للشاشة دي بالظبط** — من العنوان، مش من
+ * تاريخ المتصفح.
+ *
+ * ---------------------------------------------------------------------------
+ * **ليه اتشال `back=1` و`navigate(-1)`.** (٢٠٢٦-١٠-٠٣ — كارت الصنف/كشف الحساب ← فاتورة
+ * ← رجوع كان بيودّي لسجل المبيعات.)
+ *
+ * كل شاشة تبويب في مساحة الشغل، والعنوان واحد بيعكس التبويب الظاهر. والرجوع القديم كان
+ * بيعمل تنقّلين ورا بعض: `replace` يشيل المستند من العنوان، و`go(-1)` للشاشة اللي قبله.
+ * الراوتر بيدمج الاتنين في لفّة واحدة، فتبويب المستند **مابيشوفش** العنوان النضيف وبيفضل
+ * مخفي وشايل `?doc=`. وأول ما كشفه يتحدّث (`useLiveRefresh` — أي فاتورة من أي جهاز)
+ * الشاشة المخفية بتشوف «رقم في العنوان ومش مفتوح» فتعتبره رابط جديد، وتكتب في العنوان
+ * **المشترك** (`setSearchParams` بينقل الراوتر كله) — فالمستخدم بيتشدّ لكشف الفواتير.
+ * وكانت كمان بتبني البارامترات من `window.location.search`، اللي هو عنوان التبويب
+ * الظاهر مش بتاعها.
+ *
+ * ---------------------------------------------------------------------------
+ * **دلوقتي:** الرابط بيشيل الأصل نفسه — `ret=<مسار التبويب اللي اتفتح منه بالاستعلام>`.
+ * و«رجوع» بيكتب لتبويب المستند كشفه النضيف مباشرة (`retireTab`، من غير تنقّل)، وبعدين
+ * بيروح للأصل بـ`replace`. المزامنة في `TabsContext` بتلاقي تبويب الأصل مفتوح بنفس المسار
+ * فبتظهره زي ما هو — بحالته وسكروله — ولو مش مفتوح بتفتحه من مساره.
+ *
+ * **و`replace` مش `push`:** خطوة المستند بتتبدّل بالأصل، فزرار رجوع المتصفح عمره ما
+ * بيرجّع مستند انت قافله. التمن خطوة مكرّرة للأصل في التاريخ — مابتغيّرش حاجة على الشاشة.
+ *
+ * وتحديث الصفحة على مستند فيه `ret` بيفضل يرجّع للأصل: الأصل مكتوب في العنوان نفسه.
+ */
+
+/** اسمه `ret` مش `from`: كشف الحساب بيستعمل `from` لأول الفترة، و`doc` لرقم المستند. */
+export const RET_PARAM = 'ret';
+
+/** بارامترات المستند المفتوح — اللي بتتشال لما الشاشة ترجع لكشفها. `back` قديم. */
+const DOC_PARAMS = ['doc', 'edit', 'id', 'back', RET_PARAM];
+
+/** الأصل من الاستعلام — مسار جوّه النظام بس (`/…`)، غير كده يتجاهل. */
+export function readReturn(search: URLSearchParams | string | null | undefined): string | null {
+  if (search == null) return null;
+  const p = typeof search === 'string' ? new URLSearchParams(search) : search;
+  const v = p.get(RET_PARAM);
+  if (!v || !v.startsWith('/') || v.startsWith('//')) return null;
+  return v;
 }
 
 /**
- * «رجوع» من مستند اتفتح من شاشة تانية (`?back=1`) بيرجّع **للشاشة دي بالظبط**.
+ * رابط المستند ومعاه الأصل.
  *
- * كان بيعمل `navigate(-1)` — خطوة واحدة. بس شاشة المستند ساعات بتزوّد خطوات في التاريخ
- * من غير ما تقصد (الفواتير كانت بتكتب `?doc=` تاني فوق نفسها، والتالي/السابق بيدفعوا
- * مستند جديد)، فالخطوة الواحدة كانت بتوقع على المستند نفسه أو على كشف الفواتير.
- * دلوقتي بنحفظ رقم الخطوة اللي جيت منها لحظة وصول الرابط، والرجوع بيقفز لها مهما زاد بعدها.
- *
- * **والقفز بيستنى العنوان النضيف يوصل للشاشة الأول.** الشاشة بتشيل `?doc=` بـ`replace`،
- * ولو قفزنا قبل ما ده يتعرض كان التبويب المخفي هيفضل شايل `?doc=` ويفتح المستند تاني
- * وهو ورا الستار. فـ`leave()` بيجهّز، والقفز بيحصل أول ما `hasDoc` يبقى `false`.
- *
- * الأصل بيتنسي لما الشاشة تستخبى (رجوع المتصفح، أو قسم تاني من القايمة) — ساعتها
- * «رجوع» بعدين بيرجع للكشف العادي. ولو الرابط اتفتح في تبويب متصفح جديد (أول خطوة)
- * مافيش أصل، والقفل بيبقى عادي بدل ما يخرج من النظام.
+ * لو الأصل هو نفس شاشة المستند (فاتورة بتفتح فاتورة) مافيش «شاشة تانية» نرجع لها —
+ * بس لو الشاشة دي نفسها جاية من أصل، الأصل ده بيتورّث عشان مايضيعش في النص.
  */
-export function useReturnToOrigin(hasDoc: boolean) {
-  const navigate = useNavigate();
-  const onScreen = useOnScreen();
-  const origin = useRef<number | null>(null);
-  const pending = useRef(false);
-  const hasDocRef = useRef(hasDoc);
-  hasDocRef.current = hasDoc;
-  const onScreenRef = useRef(onScreen);
-  onScreenRef.current = onScreen;
+export function withReturn(target: string, origin: string | null | undefined): string {
+  if (!origin) return target;
+  const ret = baseOf(origin) === baseOf(target)
+    ? readReturn(origin.split('?')[1] ?? '')
+    : origin;
+  if (!ret) return target;
+  const [path, qs = ''] = target.split('?');
+  const p = new URLSearchParams(qs);
+  p.set(RET_PARAM, ret);
+  return `${path}?${p.toString()}`;
+}
 
-  const jump = useCallback(() => {
-    pending.current = false;
-    const o = origin.current;
-    origin.current = null;
-    const now = historyIdx();
-    if (o == null || now == null || now <= o) return;
-    navigate(o - now);
+/** نفس مسار الشاشة من غير المستند ولا الأصل — كشفها. */
+export function cleanDocPath(pathname: string, search: string | URLSearchParams): string {
+  const p = new URLSearchParams(search);
+  DOC_PARAMS.forEach((k) => p.delete(k));
+  const qs = p.toString();
+  return qs ? `${pathname}?${qs}` : pathname;
+}
+
+/**
+ * الخُطّاف اللي كل شاشة مستند بتستعمله لـ«رجوع».
+ *
+ * * `origin()` — الأصل اللي في عنوان **التبويب ده** (مش `window.location`)، أو `null`.
+ * * `leave()` — لو فيه أصل: كشف التبويب ده بيتكتب له، وبنروح للأصل، وبيرجّع `true`.
+ *   الشاشة بتفضّي حالتها هي بنفسها **من غير ما تلمس العنوان**. من غير أصل بيرجّع `false`
+ *   والشاشة تقفل زي ما كانت.
+ *
+ * الشاشة المخفية مابتمشيش لأي حتة — العنوان بتاع التبويب الظاهر مش بتاعها.
+ */
+export function useDocReturn() {
+  const navigate = useNavigate();
+  const loc = useLocation();
+  const tabs = useTabsOptional();
+  const onScreen = useOnScreen();
+  const ref = useRef({ loc, tabs, onScreen });
+  ref.current = { loc, tabs, onScreen };
+
+  const origin = useCallback((): string | null => readReturn(ref.current.loc.search), []);
+
+  const leave = useCallback((): boolean => {
+    const { loc: l, tabs: t, onScreen: shown } = ref.current;
+    const to = readReturn(l.search);
+    if (!to || !shown) return false;
+    t?.retireTab(l.pathname + l.search, cleanDocPath(l.pathname, l.search));
+    navigate(to, { replace: true });
+    return true;
   }, [navigate]);
 
-  useEffect(() => {
-    if (!onScreen) { origin.current = null; pending.current = false; }
-  }, [onScreen]);
-
-  useEffect(() => {
-    if (!hasDoc && pending.current) jump();
-  }, [hasDoc, jump]);
-
-  /** وصل رابط `back=1` — الخطوة اللي قبله هي الشاشة اللي فتحته. */
-  const capture = useCallback(() => {
-    // شاشة مخفية بتصحى على تحديث بياناتها والعنوان لسه فيه `back=1` قديم — مش رابط جديد.
-    if (!onScreenRef.current) return;
-    const now = historyIdx();
-    origin.current = now != null && now > 0 ? now - 1 : null;
-  }, []);
-
-  /**
-   * القفل بيرجّع للأصل؟ `true` = آه، والقفز هيحصل بعد ما العنوان يتنضّف (أو حالاً لو
-   * نضيف أصلاً). `false` = مافيش أصل، والشاشة تقفل عادي.
-   */
-  const leave = useCallback((): boolean => {
-    if (origin.current == null) return false;
-    if (!hasDocRef.current) { jump(); return true; }
-    pending.current = true;
-    // احتياطي: لو العنوان مااتنضّفش لأي سبب، المستخدم داس «رجوع» ولازم يرجع.
-    window.setTimeout(() => { if (pending.current) jump(); }, 1000);
-    return true;
-  }, [jump]);
-
-  const hasOrigin = useCallback(() => origin.current != null, []);
-
-  return { capture, leave, hasOrigin };
+  return useMemo(() => ({ origin, leave }), [origin, leave]);
 }

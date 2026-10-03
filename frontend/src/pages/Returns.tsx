@@ -320,9 +320,9 @@ export default function Returns({ embedded }: { embedded?: { onExit: () => void 
   const resumeDraft = (d: any) => {
     const x = d.payload || {};
     adoptDraft(d.id);
-    // **مش `closeCreate()`**: دي بتنده `markClosed()` اللي بترجع خطوة في المتصفح لو الشاشة
-    // اتفتحت من مكان تاني (`?back=1`) — فالمسودّة كانت بتفتح وتتقفل في نفس اللحظة والصفحة
-    // ترجع لورا. التفضية هنا بإيدنا، من غير لمس العنوان.
+    // **مش `closeCreate()`**: دي بتنده `markClosed()` اللي بترجع للشاشة اللي المرتجع اتفتح
+    // منها (`ret`) — فالمسودّة كانت بتفتح وتتقفل في نفس اللحظة. التفضية هنا بإيدنا، من غير
+    // لمس العنوان.
     setViewOnly(false); setViewReturn(null); setEditingSourceId(null);
     setLastInfo({}); setCustomerBalance(null); setIssuedBooks([]); setActiveCategory(null);
     setStatements(['', '', '']);
@@ -492,8 +492,11 @@ export default function Returns({ embedded }: { embedded?: { onExit: () => void 
 
   const productName = (id: number) => products.find((p) => p.id === id)?.name ?? `صنف #${id}`;
 
-  const closeCreate = () => {
-    markClosed();
+  /** `stay`: القفل ده مش خروج (F3 بحث) — يفضل في الشاشة ومايرجعش للأصل. `keepUrl`:
+   *  التالي/السابق — العنوان مايتلمسش، والفتح اللي بعده بيكتب المستند الجديد ومعاه `ret`.
+   *  كائن مش `boolean` عشان `onClick={closeCreate}` بيبعت حدث الماوس — فالأزرار بتنده `() => closeCreate()`. */
+  const closeCreate = (opts?: { stay?: boolean; keepUrl?: boolean }) => {
+    if (opts?.keepUrl !== true) markClosed({ stay: opts?.stay === true });
     setCreateVisible(false);
     setViewOnly(false);
     setViewReturn(null);
@@ -726,7 +729,7 @@ export default function Returns({ embedded }: { embedded?: { onExit: () => void 
     //
     // كانت بتسأل لما يكون في المستند سطور اتكتبت ولسه ماتحفظتش. اللي بيدوس «التالي» أو
     // «السابق» وهو في نص كتابة بيسيب اللي كتبه، وده بقى قراره من غير وقفة.
-    closeCreate();
+    closeCreate({ keepUrl: true });
     openDetail(target);
   };
 
@@ -796,7 +799,7 @@ export default function Returns({ embedded }: { embedded?: { onExit: () => void 
         icon: <SearchOutlined />,
         onClick: () => {
           if (viewOnly) {
-            closeCreate();
+            closeCreate({ stay: true });
           } else {
             setPickerOpen(true);
           }
@@ -1278,7 +1281,7 @@ export default function Returns({ embedded }: { embedded?: { onExit: () => void 
       <div className="sale-doc" style={{ flex: '1 0 auto' }}>
         <div className="sale-card sale-head">
           <div className="sale-head-row">
-            <Button size="small" icon={<ArrowRightOutlined />} onClick={closeCreate}>رجوع</Button>
+            <Button size="small" icon={<ArrowRightOutlined />} onClick={() => closeCreate()}>رجوع</Button>
             <span className="sale-title">
               {viewReturn
                 ? <>مردود مبيعات رقم: <b dir="ltr">{viewReturn.document_number || ''}</b></>
@@ -1725,7 +1728,7 @@ export default function Returns({ embedded }: { embedded?: { onExit: () => void 
                           icon={<CheckOutlined />} className="sale-green-btn sale-save-btn">
                           {editingSourceId ? 'حفظ التعديل' : 'تسجيل وحفظ مرتجع المبيعات'} (F9)
                         </Button>
-                        <Button onClick={closeCreate}>إلغاء</Button>
+                        <Button onClick={() => closeCreate()}>إلغاء</Button>
                       </div>
                     )}
                   </div>

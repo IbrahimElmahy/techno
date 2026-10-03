@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { useReturnToOrigin } from './docReturn';
+import { useDocReturn } from './docReturn';
+import { useOnScreen } from './keyboard';
 
 /** ورقة للقراءة، ولا نموذج للتعديل. */
 export type DocMode = 'view' | 'edit';
@@ -41,9 +42,9 @@ export type DocMode = 'view' | 'edit';
  * من العنوان بس — فتلاقي نفسك في **كشف الفواتير**، وشاشة مالكش دعوة بيها، ولازم ترجع
  * تدوّر على الصنف اللي كنت فيه من الأول.
  *
- * `useOpenDocument` بيحط `back=1` على العنوان، وساعتها «رجوع» بيرجع في تاريخ المتصفح
- * للخطوة اللي الرابط وصل منها بالظبط — حتى لو التالي/السابق زوّدوا خطوات بعدها
- * (`useReturnToOrigin` في `docReturn.ts`).
+ * `useOpenDocument` بيحط `ret=<الأصل>` على العنوان، و«رجوع» (`markClosed`) بيروح للأصل ده
+ * مباشرة — مش خطوة في تاريخ المتصفح. والتالي/السابق والتعديل (`markOpen`) بيسيبوا `ret`
+ * مكانه، فالرجوع بعد التنقّل بيرجّع لنفس الأصل. الشرح الكامل في `docReturn.ts`.
  *
  * وفيه شرطين بيمنعوا خطوة زيادة:
  *
@@ -83,13 +84,15 @@ export function useDocRoute<T extends { id: number }>(opts: {
 }) {
   const { rows, openId, open, close, fetchOne, loading, enabled = true } = opts;
   const [params, setParams] = useSearchParams();
-  // جاي من شاشة تانية (كارت صنف، كشف حساب، تقرير) — مش من كشف الشاشة دي.
-  const fromScreen = params.get('back') === '1';
   const editRaw = params.get('edit');
   const raw = params.get('doc') || editRaw;
   const wanted = raw ? Number(raw) : null;
   const mode: DocMode = editRaw ? 'edit' : 'view';
-  const origin = useReturnToOrigin(wanted != null);
+  const docReturn = useDocReturn();
+  // الشاشة المخفية مابتكتبش في العنوان: العنوان بتاع التبويب الظاهر، و`setParams` منها
+  // كان بيشدّ المستخدم لشاشتها.
+  const onScreen = useOnScreen();
+  const writable = enabled && onScreen;
 
   // أحدث نسخة من الدوال من غير ما تبقى اعتماد — وإلا المزامنة بتشتغل مع كل رندر.
   const ref = useRef({ open, close, fetchOne, rows });
@@ -116,8 +119,6 @@ export function useDocRoute<T extends { id: number }>(opts: {
   useEffect(() => {
     // تبويب مخفي: مايسمعش ومايقفلش. الشرح عند `enabled`.
     if (!enabled) return;
-    // رابط من شاشة تانية وصل ⇒ احفظ هي فين، قبل أي حاجة تزوّد خطوات.
-    if (wanted != null && fromScreen && !origin.hasOrigin()) origin.capture();
     if (wanted === openId) {
       handled.current = wanted;
       pendingOpen.current = null;
@@ -149,6 +150,7 @@ export function useDocRoute<T extends { id: number }>(opts: {
     if (!enabled) return;
     handled.current = id;
     pendingClose.current = false;
+    if (!writable) return;
     // العنوان بيقول كده خلاص ⇒ مافيش خطوة جديدة. الشرح فوق.
     const key = m === 'edit' ? 'edit' : 'doc';
     const other = key === 'doc' ? 'edit' : 'doc';
@@ -159,29 +161,36 @@ export function useDocRoute<T extends { id: number }>(opts: {
       next.delete('doc');
       next.delete('edit');
       next.set(m === 'edit' ? 'edit' : 'doc', String(id));
+      // `ret` بيفضل — التالي/السابق جوّه المستند مابيضيّعش الشاشة اللي اتفتح منها.
       return next;
     });
-  }, [params, setParams]);
+  }, [params, setParams, enabled, writable]);
 
-  /** بيتنده جوّه دالة القفل — بيشيل المستند من العنوان من غير ما يزوّد خطوة. */
-  const markClosed = useCallback(() => {
+  /**
+   * بيتنده جوّه دالة القفل — بيشيل المستند من العنوان من غير ما يزوّد خطوة.
+   *
+   * المستند جاي من شاشة تانية (`ret`) ⇒ بيرجّع لها. `stay` للقفل اللي مش خروج («جديد»،
+   * أو قفل قبل فتح غيره): بيفضل في الشاشة، والأصل بيتشال لأن الشغل بقى شغلها.
+   */
+  const markClosed = useCallback((opts?: { stay?: boolean }) => {
     if (!enabled) return;
     handled.current = null;
     pendingOpen.current = null;
+    if (!writable) return;
     // العنوان اتنضّف خلاص (رجوع المتصفح) ⇒ مافيش خطوة تانية تتعمل.
     if (!params.get('doc') && !params.get('edit')) return;
+    // الأصل: تبويب الشاشة دي بياخد كشفه، والتنقّل للأصل. الشاشة قفلت حالتها بنفسها.
+    if (opts?.stay !== true && docReturn.leave()) return;
     pendingClose.current = true;
-    // جاي من شاشة تانية ⇒ بعد ما العنوان يتنضّف بنرجع للشاشة دي. من غير أصل (رابط
-    // اتفتح في تبويب متصفح جديد) القفل عادي — `navigate(-1)` كان هيخرج من النظام.
-    origin.leave();
     setParams((p) => {
       const next = new URLSearchParams(p);
       next.delete('doc');
       next.delete('edit');
       next.delete('back');
+      next.delete('ret');
       return next;
     }, { replace: true });
-  }, [params, setParams, enabled, origin]);
+  }, [params, setParams, enabled, writable, docReturn]);
 
   return { markOpen, markClosed };
 }

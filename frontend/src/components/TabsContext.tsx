@@ -111,6 +111,11 @@ interface TabsContextType {
   openTab: (path: string, title?: string) => void;
   activateTab: (id: string) => void;
   closeTab: (id: string) => void;
+  /**
+   * المستند اللي اتقفل وهو راجع لشاشة تانية — تبويبه بيرجع لكشفه **من غير تنقّل**.
+   * `fromPath` مسار التبويب دلوقتي، و`cleanPath` نفس المسار من غير المستند.
+   */
+  retireTab: (fromPath: string, cleanPath: string) => void;
 }
 
 const TabsContext = createContext<TabsContextType | undefined>(undefined);
@@ -187,6 +192,26 @@ export function TabsProvider({ children }: { children: React.ReactNode }) {
     }
   }, [navigate]);
 
+  /**
+   * **ليه مش `navigate` للكشف الأول وبعدين للأصل.** التنقّلين بيتعملوا في نفس اللفّة،
+   * والراوتر (`v7_startTransition`) بيدمجهم — فالمزامنة فوق بتشوف الأصل بس، وتبويب
+   * المستند بيفضل شايل `?doc=` وهو مخفي. وأول ما الكشف بتاعه يتحدّث (فاتورة اتعملت من
+   * جهاز تاني) الشاشة المخفية بتعتبره رابط جديد وبتكتب في العنوان المشترك — فتشدّ
+   * المستخدم لكشف المستند. هنا المسار بيتكتب في التبويب مباشرة، فمافيش حاجة تتسابق.
+   *
+   * ولو الكشف النضيف بقى تبويب تاني (`/manufacturing?tab=orders` مدخل في القايمة)،
+   * التبويب ده كان للمستند بس — فبيتشال.
+   */
+  const retireTab = useCallback((fromPath: string, cleanPath: string) => {
+    const id = baseOf(fromPath);
+    setTabs((prev) => {
+      if (!prev.some((t) => t.id === id)) return prev;
+      if (baseOf(cleanPath) !== id) return prev.filter((t) => t.id !== id);
+      return prev.map((t) => (t.id === id
+        ? { ...t, path: cleanPath, title: titleForPath(cleanPath) } : t));
+    });
+  }, []);
+
   // القيمة متمسّكة، مش كائن جديد كل رندر.
   //
   // الـProvider ده بيقرا `useLocation`، يعني بيتعمله رندر مع **أي** حركة في العنوان. وكل
@@ -195,8 +220,8 @@ export function TabsProvider({ children }: { children: React.ReactNode }) {
   // فتح فاتورة وانت فاتح ٥ تبويبات كان بيرندر الخمسة من الأول. الدوال كلها `useCallback`
   // أصلاً، فالحاجة الوحيدة اللي كانت بتتغير هي غلاف الكائن.
   const value = useMemo(
-    () => ({ tabs, activeId, openTab, activateTab, closeTab }),
-    [tabs, activeId, openTab, activateTab, closeTab],
+    () => ({ tabs, activeId, openTab, activateTab, closeTab, retireTab }),
+    [tabs, activeId, openTab, activateTab, closeTab, retireTab],
   );
 
   return (
@@ -204,6 +229,11 @@ export function TabsProvider({ children }: { children: React.ReactNode }) {
       {children}
     </TabsContext.Provider>
   );
+}
+
+/** زي `useTabs` بس مابيوقعش برّه مساحة الشغل — للخطاطيف اللي بتتنده من أي حتة. */
+export function useTabsOptional(): TabsContextType | undefined {
+  return useContext(TabsContext);
 }
 
 export function useTabs() {

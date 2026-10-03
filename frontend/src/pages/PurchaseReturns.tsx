@@ -327,7 +327,8 @@ export default function PurchaseReturns({ embedded }: { embedded?: { onExit: () 
     setPurchaseId(undefined); setDetail(null); setQty({});
     setReturnDate(dayjs()); setNotes(''); setCreating(false); setNewStep('party');
     setEditingId(null); setSupplierFilter(null); setViewing(null); setViewOnly(false);
-    markClosed();
+    // «جديد» مش خروج — الشغل بقى شغل الشاشة دي، فمايرجعش للأصل.
+    markClosed({ stay: true });
     setReturnLines([]); setWarehouseId(null);
     setExternalNumber(''); setStatements(['', '', '']);
     setVariableDiscount(0);

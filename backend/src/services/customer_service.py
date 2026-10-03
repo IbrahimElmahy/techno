@@ -293,7 +293,7 @@ def reassign_customer(
     db: Session,
     *,
     customer: Customer,
-    new_rep_id: int,
+    new_rep_id: int | None,
     new_territory_id: int,
     actor_user_id: int,
 ) -> Customer:

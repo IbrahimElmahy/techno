@@ -119,7 +119,8 @@ class CustomerCreated(CustomerOut):
 
 
 class CustomerReassign(BaseModel):
-    new_rep_id: int
+    # فاضي = المندوب زي ما هو (تغيير المنطقة لوحدها من الجدول، والسباك مالوش مندوب بيع).
+    new_rep_id: int | None = None
     new_territory_id: int
 
 
@@ -731,7 +732,8 @@ def update_customer(
     if body.name is not None:
         c.name = body.name
     if body.phone is not None:
-        c.phone = body.phone
+        # الخانة الفاضية بتمسح الرقم (تعديل الجدول) — NULL مش نص فاضي.
+        c.phone = body.phone.strip() or None
     if body.customer_type is not None:
         if body.customer_type == "owner":
             raise HTTPException(422, {"code": "validation",
@@ -748,7 +750,10 @@ def update_customer(
         c.active = body.active
     for field in ("governorate_id", "markaz", "address"):  # (v4)
         val = getattr(body, field)
-        if val is not None:
+        if isinstance(val, str):
+            val = val.strip() or None
+            setattr(c, field, val)  # النص الفاضي = مسح
+        elif val is not None:
             setattr(c, field, val)
     _apply_card(c, body)
     contact_service.set_phones(db, PhoneOwner.customer, c.id, body.phones)
@@ -803,11 +808,12 @@ def reassign_customer(
     # أصلاً مايقدرش ينقله.
     c = _seen(db, customer_id, current)
     customer_service.reassign_customer(
-        db, customer=c, new_rep_id=body.new_rep_id,
+        db, customer=c,
+        new_rep_id=body.new_rep_id if body.new_rep_id is not None else c.rep_id,
         new_territory_id=body.new_territory_id, actor_user_id=current.id,
     )
     db.commit()
-    return _out(c)
+    return _out(c, db)
 
 
 class CustomerBulkAssign(BaseModel):

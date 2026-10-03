@@ -463,7 +463,11 @@ export default function AccountStatement() {
     return r[0].isSame(s, 'day') && r[1].isSame(e, 'day');
   };
 
+  // الكشف وهو مخفي (فاتورة مفتوحة منه) مابيكتبش في العنوان: العنوان بتاع التبويب الظاهر،
+  // والكتابة منه كانت بتشدّ المستخدم للكشف. لما يظهر تاني بيكتب حالته عادي.
+  const urlShown = useOnScreen();
   useEffect(() => {
+    if (!urlShown) return;
     const p = new URLSearchParams();
     if (subject === 'item') p.set('subject', 'item');
     if (accountId) p.set('account', String(accountId));
@@ -483,7 +487,7 @@ export default function AccountStatement() {
     if (!allCustomerAccounts) p.set('all', '0');
     setSearch(p, { replace: true });
   }, [subject, accountId, mainKey, itemId, warehouseId, range, repFilter, typeFilter,
-    ccFilter, query, docNo, stmtQ, exactMatch, hideZero, allCustomerAccounts, setSearch]);
+    ccFilter, query, docNo, stmtQ, exactMatch, hideZero, allCustomerAccounts, setSearch, urlShown]);
 
   const copyLink = async () => {
     try {

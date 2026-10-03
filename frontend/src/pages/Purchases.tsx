@@ -21,6 +21,7 @@ import {
 } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import { useDocRoute, type DocMode } from '../components/useDocRoute';
+import { useOpenDocument } from '../components/DocumentLink';
 import dayjs, { Dayjs } from 'dayjs';
 import CostCenterField from '../components/CostCenterField';
 import CostCenterSplit from '../components/CostCenterSplit';
@@ -178,6 +179,7 @@ const fmtDate = (v: string) => (v ? String(v).slice(0, 10) : '-');
 
 export default function Purchases() {
   const navigate = useNavigate();
+  const openDoc = useOpenDocument();
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
 
@@ -957,7 +959,7 @@ export default function Purchases() {
         icon: <SearchOutlined />,
         onClick: () => {
           if (viewOnly) {
-            closeCreate();
+            closeCreate({ stay: true });
           } else {
             setPickerOpen(true);
           }
@@ -1490,16 +1492,16 @@ export default function Purchases() {
    */
   /**
    * `keepUrl` لـ«التالى»/«السابق» بس: الحركة دي بتقفل مستند وتفتح اللي بعده على طول،
-   * فتنضيف العنوان في النص بيعمل خطوة رجوع فعلية لو الفاتورة اتفتحت من شاشة تانية
-   * (`back=1`) — يعني تطلع من الشاشة بدل ما تتنقّل جوّاها.
+   * فتنضيف العنوان في النص كان هيرجّع للشاشة اللي الفاتورة اتفتحت منها (`ret`) — يعني
+   * تطلع من الشاشة بدل ما تتنقّل جوّاها. و`stay` للقفل اللي بيفضل في الشاشة (F3 بحث).
    *
    * وبياخد **كائن** مش `boolean` عن قصد: `onClick={closeCreate}` بيمرّر حدث الماوس،
    * واللي كان هيبقى `true` لو البارامتر منطقي.
    */
-  const closeCreate = (opts?: { keepUrl?: boolean }) => {
+  const closeCreate = (opts?: { keepUrl?: boolean; stay?: boolean }) => {
     const keepUrl = opts?.keepUrl === true;
     const leave = () => {
-      if (!keepUrl) markClosed();
+      if (!keepUrl) markClosed({ stay: opts?.stay === true });
       setCreateVisible(false);
       setDetail(null);
       setDocResult(null);
@@ -1962,8 +1964,8 @@ export default function Purchases() {
    */
   const openRow = async (row: PurchaseRecord) => {
     if (row.kind === 'return') {
-      // `back=1` عشان «رجوع» يرجّع لكشف المشتريات، مش لكشف المردودات.
-      navigate(`/purchase-returns?doc=${row.id}&back=1`);
+      // `ret` عشان «رجوع» يرجّع لكشف المشتريات، مش لكشف المردودات.
+      openDoc('purchase_return', row.id);
       return;
     }
     openDetail(row);
