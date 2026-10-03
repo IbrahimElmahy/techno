@@ -351,7 +351,13 @@ def create_sale(
         try:
             base_price = pricing_service.tier_price(db, item, tier)
         except PricingError as exc:
-            raise SalesError(str(exc)) from exc
+            # **صنف مالوش سعر في الكتالوج بس السطر جاي بسعره** (٢٠٢٦-١٠-٠٣): المندوب كتب السعر
+            # في التطبيق، والفاتورة كانت بتترفض كلها وتفضل «مستنية الرفع» على الجهاز. السعر
+            # المكتوب هو سعر الشريحة هنا (مافيش سعر نقارن بيه). من غير سعر خالص — الرفض زي ما هو.
+            if ln.unit_price is not None and to_money(ln.unit_price) > 0 and not is_bonus:
+                base_price = to_money(ln.unit_price) / factor
+            else:
+                raise SalesError(f"«{item.name}»: {exc}") from exc
         list_price = to_money(base_price * factor)  # price for one of the chosen unit
         unit_price = to_money(ln.unit_price) if ln.unit_price is not None else list_price
         # البونص بيتسجّل بسعر الشريحة زي ما هو — السعر هنا للتقرير مش للتحصيل.
