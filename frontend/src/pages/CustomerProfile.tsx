@@ -1053,21 +1053,6 @@ export default function CustomerProfile() {
                             </Card>
                           )}
 
-                          {filtering && (
-                            <Alert
-                              type="info" showIcon style={{ marginBottom: 12 }}
-                              message={[
-                                repFilter && `حركة «${repFilter}»`,
-                                ccFilter.length && `مركز تكلفة «${ccFilter.join('، ')}»`,
-                                typeFilter.length && `نوع «${typeFilter.map(entryTypeLabel).join('، ')}»`,
-                                docNo.trim() && `مستند «${docNo.trim()}»`,
-                                query.trim() && `بحث «${query.trim()}»${exactMatch ? ' (تطابق تام)' : ''}`,
-                                hideZero && 'بدون الحركات الصفرية',
-                              ].filter(Boolean).join(' · ')}
-                              description={`${shownLines.length} حركة من إجمالي ${statementLines.length}. `
-                                + 'الرصيد أول وآخر المدة للحساب كله — والعمود «تراكمي المعروض» هو الذي يسير مع السطور المعروضة.'}
-                            />
-                          )}
 
                           <div style={{ marginBottom: 8 }}>
                             <Checkbox checked={showStock} onChange={(e) => {

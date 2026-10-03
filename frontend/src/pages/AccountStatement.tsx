@@ -1257,23 +1257,6 @@ export default function AccountStatement() {
             </div>
           )}
 
-          {filtering && (
-            <Alert
-              type="info" showIcon style={{ margin: '8px 0' }}
-              message={[
-                repFilter && `حركة «${repFilter}»`,
-                ccFilter.length && `مركز تكلفة «${ccFilter.join('، ')}»`,
-                typeFilter.length && `نوع «${typeFilter.map(entryTypeLabel).join('، ')}»`,
-                docNo.trim() && `مستند «${docNo.trim()}»`,
-                stmtQ.trim() && `بيان «${stmtQ.trim()}»`,
-                query.trim() && `بحث «${query.trim()}»${exactMatch ? ' (تطابق تام)' : ''}`,
-                hideZero && 'بدون الحركات الصفرية',
-              ].filter(Boolean).join(' · ')}
-              description={`${shownLines.length} حركة من إجمالي ${lines.length}. `
-                + 'الرصيد أول وآخر المدة للحساب كله — والعمود «تراكمي المعروض» هو الذي يسير '
-                + 'مع السطور المعروضة أمامك.'}
-            />
-          )}
 
           {groupBy !== 'none' ? (
             /* المجموعة أولاً ومجاميعها، وتُفتح فتُعرض سطورها بنفس أعمدة الجدول
