@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:math';
 
 import 'package:flutter/material.dart';
@@ -6,6 +7,7 @@ import '../api/api_client.dart';
 import '../db/local_db.dart';
 import '../models/models.dart';
 import '../theme.dart';
+import 'receipt_print_screen.dart';
 
 /// تحصيل من عميل — سند قبض من الشارع.
 ///
@@ -190,7 +192,7 @@ class _CollectCashScreenState extends State<CollectCashScreen> {
       // ٦٤-بت فالسطر كان شغّال، والعطل مابيظهرش غير في نسخة الويب.
       final uuid = 'rcp-${DateTime.now().microsecondsSinceEpoch}-'
           '${Random().nextInt(4294967296).toRadixString(16)}';
-      await LocalDb.instance.saveReceipt(
+      final localId = await LocalDb.instance.saveReceipt(
         clientUuid: uuid,
         customerId: _customer!.id,
         customerName: _customer!.name,
@@ -198,6 +200,9 @@ class _CollectCashScreenState extends State<CollectCashScreen> {
         receiptDate: _date.toIso8601String().substring(0, 10),
         family: _family,
         notes: _notes.text.trim().isEmpty ? null : _notes.text.trim(),
+        // الحساب اللي المندوب شافه قبل الدفعة — ورقة السند بتحسب منه «الباقي بعد الدفعة».
+        prevBalance: _customer!.balance,
+        prevBalancesJson: jsonEncode(_customer!.familyBalances),
       );
       var pushed = false;
       try {
@@ -215,6 +220,10 @@ class _CollectCashScreenState extends State<CollectCashScreen> {
         _family = null;
       });
       _loadRecent();
+      // بعد الحفظ على ورقة السند على طول — زي الفاتورة. الصف بيتقري من القاعدة عشان
+      // رقم المستند لو الرفع نجح.
+      final saved = await LocalDb.instance.receiptByLocalId(localId);
+      if (saved != null && mounted) await _openPrint(saved);
     } catch (e) {
       if (mounted) _say('تعذّر الحفظ: $e');
     } finally {
@@ -223,6 +232,12 @@ class _CollectCashScreenState extends State<CollectCashScreen> {
   }
 
   String _money(double v) => v.toStringAsFixed(2);
+
+  Future<void> _openPrint(Map<String, Object?> r) async {
+    await Navigator.push(
+        context, MaterialPageRoute(builder: (_) => ReceiptPrintScreen(receipt: r)));
+    if (mounted) _loadRecent();
+  }
 
   Widget _balanceRow(String label, double v,
       {bool highlight = false, bool big = false}) {
@@ -234,7 +249,7 @@ class _CollectCashScreenState extends State<CollectCashScreen> {
                 fontSize: big ? 15 : 13,
                 fontWeight: highlight ? FontWeight.w700 : FontWeight.w400,
                 color: highlight ? Colors.black87 : Colors.black54)),
-        Text('${_money(v)} ج.م',
+        Text('${_money(v)}',
             style: TextStyle(
                 fontSize: big ? 18 : 14,
                 fontWeight: FontWeight.w800,
@@ -270,7 +285,7 @@ class _CollectCashScreenState extends State<CollectCashScreen> {
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   const Text('المبلغ', style: TextStyle(color: Colors.black54)),
-                  Text('${_money(amount)} ج.م',
+                  Text('${_money(amount)}',
                       style: const TextStyle(
                           fontSize: 20,
                           fontWeight: FontWeight.w800,
@@ -437,7 +452,6 @@ class _CollectCashScreenState extends State<CollectCashScreen> {
                     onChanged: (_) => setState(() {}),
                     decoration: const InputDecoration(
                       labelText: 'المبلغ المحصّل',
-                      suffixText: 'ج.م',
                     ),
                   ),
                   const SizedBox(height: 10),
@@ -540,8 +554,19 @@ class _CollectCashScreenState extends State<CollectCashScreen> {
                   else
                     'لسه على الجهاز',
                 ].where((s) => s.isNotEmpty).join(' · ')),
-                trailing: Text('${(r['amount'] as num?)?.toStringAsFixed(2) ?? '0.00'} ج.م',
-                    style: const TextStyle(fontWeight: FontWeight.w700)),
+                trailing: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text('${(r['amount'] as num?)?.toStringAsFixed(2) ?? '0.00'}',
+                        style: const TextStyle(fontWeight: FontWeight.w700)),
+                    IconButton(
+                      tooltip: 'طباعة / إرسال',
+                      icon: const Icon(Icons.print_outlined, color: AppColors.primary),
+                      onPressed: () => _openPrint(r),
+                    ),
+                  ],
+                ),
+                onTap: () => _openPrint(r),
                 onLongPress: (r['synced'] as int?) == 1
                     ? null
                     : () async {

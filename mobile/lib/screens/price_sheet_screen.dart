@@ -478,7 +478,7 @@ class _PriceSheetScreenState extends State<PriceSheetScreen> {
                   fontSize: big ? 15 : 14,
                   fontWeight: big ? FontWeight.w700 : FontWeight.w400,
                   color: big ? Colors.black87 : Colors.black54)),
-          Text('$value ج.م',
+          Text('$value',
               style: TextStyle(
                   fontSize: big ? 22 : 16,
                   fontWeight: FontWeight.w800,
@@ -575,7 +575,7 @@ class _PriceSheetScreenState extends State<PriceSheetScreen> {
                   ),
                 ],
                 const SizedBox(width: 6),
-                Text('${_money(l.net)} ج.م',
+                Text('${_money(l.net)}',
                     style: const TextStyle(
                         fontWeight: FontWeight.w800,
                         fontSize: 14,

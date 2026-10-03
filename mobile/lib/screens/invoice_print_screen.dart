@@ -1,11 +1,8 @@
 import 'dart:convert';
-import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart'
-    show MethodChannel, MissingPluginException, PlatformException, rootBundle;
-import 'package:path_provider/path_provider.dart';
+import 'package:flutter/services.dart' show rootBundle;
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
@@ -14,6 +11,7 @@ import '../db/local_db.dart';
 import '../models/discount.dart';
 import '../models/models.dart';
 import '../theme.dart';
+import '../utils/pdf_share.dart';
 
 /// طباعة الفاتورة من الموبايل — ورقة للعميل، أو PDF يتبعت واتساب.
 ///
@@ -94,7 +92,7 @@ class _InvoicePrintScreenState extends State<InvoicePrintScreen> {
     final title = synced ? (inv['document_number'] as String? ?? 'طلب بيع') : 'طلب بيع';
     // اسم الملف = اسم العميل (طلب العميل ٢٠٢٦-١٠-٠٣) — مش رقم المستند. الحروف اللي
     // مابتنفعش في اسم ملف بتتشال. العنوان فوق بيفضل رقم المستند.
-    final customer = '${inv['customer_name'] ?? ''}'.replaceAll(RegExp(r'[\/:*?"<>|]'), ' ').trim();
+    final customer = safeFileName('${inv['customer_name'] ?? ''}');
     final fileTitle = customer.isNotEmpty ? customer : title;
     return Scaffold(
       appBar: AppBar(title: Text(title)),
@@ -185,57 +183,27 @@ class _InvoicePrintScreenState extends State<InvoicePrintScreen> {
     );
   }
 
-  static const _whatsapp = MethodChannel('techno/whatsapp');
-
   /// «إرسال» — الـPDF على شات العميل في واتساب على طول (طلب العميل ٢٠٢٦-١٠-٠٣).
   ///
   /// شاشة المشاركة كانت بتفتح قايمة واتساب كلها والمندوب بيدوّر على العميل بالاسم —
   /// والأسماء بتتكرر، فالورقة ممكن تروح لحد غلط. الرقم اللي على كارت العميل بيحسم.
-  ///
-  /// **ولو مانفعش، الإرسال مابيقعش:** مافيش رقم، أو واتساب مش متثبت، أو أي خطأ →
-  /// شاشة المشاركة العادية زي الأول، ومعاها سطر بيقول ليه.
+  /// الإرسال نفسه والرجوع للمشاركة في `sendPdfToWhatsApp`.
   Future<void> _send(String fileTitle) async {
-    final messenger = ScaffoldMessenger.of(context);
     final inv = widget.invoice;
     final bytes = await _buildPdf(PdfPageFormat.a4);
-    final phone = _whatsappNumber(_phone);
-
-    Future<void> fallback(String? why) async {
-      if (why != null) {
-        messenger.showSnackBar(SnackBar(content: Text(why)));
-      }
-      await Printing.sharePdf(bytes: bytes, filename: '$fileTitle.pdf');
-    }
-
-    if (!Platform.isAndroid) return fallback(null);
-    if (phone == null) {
-      return fallback('العميل مالوش رقم متسجل — اختار من المشاركة');
-    }
-    try {
-      // الكاش (`getTemporaryDirectory`) هو المجلد اللي provider المشاركة بيدّي منه رابط.
-      final dir = Directory('${(await getTemporaryDirectory()).path}/invoices');
-      await dir.create(recursive: true);
-      final file = File('${dir.path}/$fileTitle.pdf');
-      await file.writeAsBytes(bytes, flush: true);
-      final number = '${inv['document_number'] ?? ''}'.trim();
-      final customer = '${inv['customer_name'] ?? ''}'.trim();
-      await _whatsapp.invokeMethod('sendFile', {
-        'path': file.path,
-        'phone': phone,
-        'text': [
-          number.isEmpty ? 'فاتورة' : 'فاتورة $number',
-          if (customer.isNotEmpty) customer,
-        ].join(' — '),
-      });
-    } on PlatformException catch (e) {
-      await fallback(e.code == 'NOT_INSTALLED'
-          ? 'واتساب مش متثبت على الجهاز — اختار من المشاركة'
-          : 'ماقدرناش نفتح واتساب — اختار من المشاركة');
-    } on MissingPluginException {
-      await fallback('ماقدرناش نفتح واتساب — اختار من المشاركة');
-    } catch (_) {
-      await fallback('ماقدرناش نفتح واتساب — اختار من المشاركة');
-    }
+    if (!mounted) return;
+    final number = '${inv['document_number'] ?? ''}'.trim();
+    final customer = '${inv['customer_name'] ?? ''}'.trim();
+    await sendPdfToWhatsApp(
+      context,
+      bytes: bytes,
+      fileTitle: fileTitle,
+      phone: _phone,
+      text: [
+        number.isEmpty ? 'فاتورة' : 'فاتورة $number',
+        if (customer.isNotEmpty) customer,
+      ].join(' — '),
+    );
   }
 
   Future<Uint8List> _buildPdf(PdfPageFormat format) async {
@@ -734,7 +702,7 @@ pw.Widget _total(String label, String value, {bool big = false}) => pw.Padding(
         mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
         children: [
           pw.Text(label, style: pw.TextStyle(fontSize: big ? 12 : 11)),
-          pw.Text('$value ج.م',
+          pw.Text('$value',
               style: pw.TextStyle(
                   fontSize: big ? 15 : 12,
                   color: big ? _brand : PdfColors.black,
@@ -749,16 +717,3 @@ String _trim(double v) {
 }
 
 String _money(num v) => v.toStringAsFixed(2);
-
-/// رقم العميل بالصيغة الدولية اللي واتساب عايزها — أرقام بس، من غير `+`.
-///
-/// الكروت متسجل عليها `01xxxxxxxxx` (مصري محلي) غالباً، وواتساب مابيعرفش الرقم ده
-/// غير بكود الدولة: `201xxxxxxxxx`. `null` = مافيش رقم يتبعت عليه.
-String? _whatsappNumber(String? raw) {
-  var d = (raw ?? '').replaceAll(RegExp(r'\D'), '');
-  if (d.startsWith('00')) d = d.substring(2); // 0020… = +20…
-  if (d.length == 11 && d.startsWith('01')) return '2$d';
-  if (d.length == 10 && d.startsWith('1')) return '20$d'; // الصفر اللي في الأول ضاع
-  if (d.startsWith('20') && d.length >= 12) return d;
-  return d.length >= 10 ? d : null;
-}

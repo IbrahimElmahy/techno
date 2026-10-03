@@ -147,7 +147,7 @@ class _PriceSheetsScreenState extends State<PriceSheetsScreen> {
       trailing: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Text('${_money(total)} ج.م',
+          Text('${_money(total)}',
               style: const TextStyle(
                   fontWeight: FontWeight.w700, color: AppColors.primary)),
           IconButton(

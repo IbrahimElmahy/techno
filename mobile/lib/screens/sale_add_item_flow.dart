@@ -524,11 +524,11 @@ class _SaleItemDialogState extends State<_SaleItemDialog> {
                             '${it.unit}',
                           if (widget.showPrice)
                             widget.showNetPrice
-                                ? '${_money(it.netPriceFor(widget.priceTier))} ج.م'
+                                ? '${_money(it.netPriceFor(widget.priceTier))}'
                                     '${it.defaultDiscountPct > 0
                                         ? ' (بعد خصم ${_fmt(it.defaultDiscountPct)}%)'
                                         : ''}'
-                                : '${_money(it.priceFor(widget.priceTier))} ج.م',
+                                : '${_money(it.priceFor(widget.priceTier))}',
                         ];
                         return ListTile(
                           enabled: !out,
@@ -648,7 +648,7 @@ class _SaleQuantityDialogState extends State<_SaleQuantityDialog> {
                 widget.showPrice
                     ? 'السعر: ${_money(widget.showNetPrice
                             ? price
-                            : widget.item.priceFor(widget.priceTier))} ج.م'
+                            : widget.item.priceFor(widget.priceTier))}'
                         '${widget.showNetPrice && widget.item.defaultDiscountPct > 0
                             ? ' (بعد خصم ${_fmt(widget.item.defaultDiscountPct)}%)'
                             : ''}'
@@ -677,7 +677,7 @@ class _SaleQuantityDialogState extends State<_SaleQuantityDialog> {
             Align(
               alignment: AlignmentDirectional.centerStart,
               child: Text(
-                total > 0 ? 'الإجمالي: ${_money(total)} ج.م' : 'الإجمالي: —',
+                total > 0 ? 'الإجمالي: ${_money(total)}' : 'الإجمالي: —',
                 style: TextStyle(
                   color: total > 0 ? AppColors.success : Colors.blueGrey,
                   fontWeight: FontWeight.w700,

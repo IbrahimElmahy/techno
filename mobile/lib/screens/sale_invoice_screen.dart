@@ -519,7 +519,7 @@ class _SaleInvoiceScreenState extends State<SaleInvoiceScreen> {
                 children: [
                   const Text('المبلغ المحصّل',
                       style: TextStyle(color: Colors.black54)),
-                  Text('${_money(_cashAmount)} ج.م',
+                  Text('${_money(_cashAmount)}',
                       style: const TextStyle(
                           fontSize: 20,
                           fontWeight: FontWeight.w800,
@@ -1261,7 +1261,7 @@ class _SaleInvoiceScreenState extends State<SaleInvoiceScreen> {
                   // البونص إجماليه صفر — «بإجمالي ٠٫٠٠» مابتقولش اللي هيضيع.
                   : 'فيها ${_lines.length} صنف '
                       '${_isBonus ? 'بقيمة ${_money(_bonusValue)}' : 'بإجمالي ${_money(_total)}'}'
-                      ' ج.م — هتروح كلها ومش هترجع.'),
+                      ' — هتروح كلها ومش هترجع.'),
           actions: [
             TextButton(
                 onPressed: () => Navigator.pop(dctx, false),
@@ -1593,7 +1593,7 @@ class _SaleInvoiceScreenState extends State<SaleInvoiceScreen> {
                           decoration: TextDecoration.lineThrough)),
                   const SizedBox(width: 4),
                 ],
-                Text('${_money(_isBonus ? netOf(l.gross, l.fixedDiscountPct) : l.net)} ج.م',
+                Text('${_money(_isBonus ? netOf(l.gross, l.fixedDiscountPct) : l.net)}',
                     style: const TextStyle(
                         fontWeight: FontWeight.w800,
                         fontSize: 14,
@@ -1901,7 +1901,6 @@ class _SaleInvoiceScreenState extends State<SaleInvoiceScreen> {
               keyboardType: const TextInputType.numberWithOptions(decimal: true),
               decoration: const InputDecoration(
                 labelText: 'المدفوع نقداً',
-                suffixText: 'ج.م',
               ),
               onChanged: (_) => setState(() {}),
             ),
@@ -2006,7 +2005,7 @@ class _SaleInvoiceScreenState extends State<SaleInvoiceScreen> {
                 fontSize: big ? 15 : 14,
                 fontWeight: highlight ? FontWeight.w700 : FontWeight.w400,
                 color: highlight ? Colors.black87 : Colors.black54)),
-        Text('$value ج.م',
+        Text('$value',
             style: TextStyle(
                 fontSize: big ? 22 : 16,
                 fontWeight: FontWeight.w800,
@@ -2056,7 +2055,7 @@ class _SaleInvoiceScreenState extends State<SaleInvoiceScreen> {
                                 _isBonus ? FontWeight.w800 : FontWeight.w400)),
                     const SizedBox(width: 8),
                     Expanded(
-                      child: Text('${_money(_total)} ج.م',
+                      child: Text('${_money(_total)}',
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: const TextStyle(
@@ -2143,7 +2142,7 @@ class _BonusTarget {
   String get label => [
         number ?? 'فاتورة لسه على الجهاز',
         if (date != null && date!.isNotEmpty) date!,
-        if (net != null) '${_money(net!)} ج.م',
+        if (net != null) '${_money(net!)}',
         if (onDevice && number == null) 'بتترفع قبل البونص',
       ].join(' · ');
 }
@@ -2296,7 +2295,7 @@ class _BonusTargetSheetState extends State<_BonusTargetSheet> {
                             style: const TextStyle(fontWeight: FontWeight.w700)),
                         subtitle: Text([
                           if (t.date != null && t.date!.isNotEmpty) t.date!,
-                          if (t.net != null) '${_money(t.net!)} ج.م',
+                          if (t.net != null) '${_money(t.net!)}',
                           if (t.onDevice) 'في الطابور',
                           if (t.repName != null && t.repName!.isNotEmpty)
                             'مندوب: ${t.repName}',

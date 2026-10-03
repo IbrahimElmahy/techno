@@ -23,7 +23,15 @@ class LocalDb {
     // و`main` خد ٢٢ و٢٥ و٢٦ — فالأجهزة اللي في الشارع دلوقتي كل واحد ناقصه ترقيات
     // التاني. الرقم ده أعلى من الاتنين وبيعمل **كل** اللي فاتهم، وكل واحدة محميّة
     // بـ`try`: اللي اتعمل قبل كده بيرمي وبيتتجاهل.
-    _db = await openDatabase(path, version: 32, onUpgrade: (d, from, to) async {
+    _db = await openDatabase(path, version: 33, onUpgrade: (d, from, to) async {
+      if (from < 33) {
+        // حساب العميل ساعة التحصيل — ورقة سند القبض بتقول «الباقي بعد الدفعة» بالرقم اللي
+        // المندوب شافه وهو واقف، مش من الكاش اللي بيتغيّر بعد أي مزامنة. السندات القديمة
+        // فاضية والورقة بتطلع من غير الصندوق ده.
+        for (final col in ['prev_balance REAL', 'prev_balances TEXT']) {
+          try { await d.execute('ALTER TABLE sale_receipt ADD COLUMN $col'); } catch (_) {}
+        }
+      }
       if (from < 32) {
         // أقل سعر بيع للصنف (تكلفته) — للتحذير بس. بيتملى من أول مزامنة؛ لحد ساعتها فاضي
         // ومافيش تحذير (السيرفر لسه بيرفض).
@@ -1560,6 +1568,8 @@ class LocalDb {
     required String receiptDate,
     String? family,
     String? notes,
+    double? prevBalance,
+    String? prevBalancesJson,
   }) async {
     final d = await db;
     return d.insert('sale_receipt', {
@@ -1570,6 +1580,8 @@ class LocalDb {
       'receipt_date': receiptDate,
       'family': family,
       'notes': notes,
+      'prev_balance': prevBalance,
+      'prev_balances': prevBalancesJson,
       'synced': 0,
       'created_at': DateTime.now().toIso8601String(),
     });
@@ -1581,6 +1593,13 @@ class LocalDb {
         where: synced == null ? null : 'synced = ?',
         whereArgs: synced == null ? null : [synced ? 1 : 0],
         orderBy: 'local_id DESC');
+  }
+
+  Future<Map<String, Object?>?> receiptByLocalId(int localId) async {
+    final d = await db;
+    final rows = await d.query('sale_receipt',
+        where: 'local_id = ?', whereArgs: [localId], limit: 1);
+    return rows.isEmpty ? null : rows.first;
   }
 
   Future<int> pendingReceiptsCount() async {
@@ -1776,7 +1795,9 @@ CREATE TABLE sale_receipt(
   notes TEXT,
   synced INTEGER NOT NULL DEFAULT 0,
   document_number TEXT,
-  created_at TEXT NOT NULL
+  created_at TEXT NOT NULL,
+  prev_balance REAL,
+  prev_balances TEXT
 )''';
 
 

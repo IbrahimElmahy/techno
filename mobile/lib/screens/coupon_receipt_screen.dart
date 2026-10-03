@@ -377,7 +377,6 @@ class _CouponReceiptScreenState extends State<CouponReceiptScreen> {
                             isDense: true,
                             labelText: 'القيمة',
                             hintText: '0.00',
-                            suffixText: 'ج.م',
                           ),
                         ),
                       ),
@@ -569,7 +568,7 @@ class _CouponReceiptScreenState extends State<CouponReceiptScreen> {
                         children: [
                           const Text('الإجمالي',
                               style: TextStyle(fontWeight: FontWeight.w800)),
-                          Text('${_totalValue.toStringAsFixed(2)} ج.م',
+                          Text('${_totalValue.toStringAsFixed(2)}',
                               style: const TextStyle(
                                   fontWeight: FontWeight.w800, color: AppColors.success)),
                         ],

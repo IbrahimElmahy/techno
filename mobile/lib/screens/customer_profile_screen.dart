@@ -227,7 +227,7 @@ class _CustomerProfileScreenState extends State<CustomerProfileScreen> {
               child: Column(
                 children: [
                   const Text('عليه', style: TextStyle(color: Colors.black54)),
-                  Text('${_num(p['balance'])} ج.م',
+                  Text('${_num(p['balance'])}',
                       style: const TextStyle(
                           fontSize: 30, fontWeight: FontWeight.w800, color: AppColors.primary)),
                   // المديونية بالخط — نفس السطرين اللي في الفاتورة والتحصيل.
@@ -241,7 +241,7 @@ class _CustomerProfileScreenState extends State<CustomerProfileScreen> {
                             Padding(
                               padding: const EdgeInsets.symmetric(horizontal: 8),
                               child: Text(
-                                  '${a['family']}: ${_num(a['balance'])} ج.م',
+                                  '${a['family']}: ${_num(a['balance'])}',
                                   style: const TextStyle(
                                       fontSize: 13,
                                       fontWeight: FontWeight.w700,
@@ -341,7 +341,7 @@ class _CustomerProfileScreenState extends State<CustomerProfileScreen> {
             title: Text('${r['document_number'] ?? ''}'
                 '${'${r['document_number'] ?? ''}'.startsWith('BNS-') ? ' · بونص' : ''}'),
             subtitle: Text('${r['date'] ?? r['created_at'] ?? ''}'.split('T').first),
-            trailing: Text('${_num(r['amount'] ?? r['net'] ?? r['value'])} ج.م',
+            trailing: Text('${_num(r['amount'] ?? r['net'] ?? r['value'])}',
                 style: const TextStyle(fontWeight: FontWeight.w700)),
           ),
       ],

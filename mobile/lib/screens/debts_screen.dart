@@ -256,7 +256,7 @@ class _DebtsScreenState extends State<DebtsScreen> {
             ListTile(
               title: Text(c.name,
                   style: const TextStyle(fontWeight: FontWeight.w800)),
-              subtitle: Text('عليه ${_money(_total(c))} ج.م'),
+              subtitle: Text('عليه ${_money(_total(c))}'),
             ),
             const Divider(height: 1),
             ListTile(

@@ -60,6 +60,49 @@ def bulk_balances(db: Session, customer_ids: list[int] | None = None) -> dict[in
     return {cid: to_money(total or 0) for cid, total in db.execute(stmt).all()}
 
 
+def family_balances_subquery(as_of: date | None = None):
+    """رصيد كل عميل مقسوم على العيلة (أبيض / بولي / غيرهم) — استعلام واحد مجمّع.
+
+    نفس حساب `bulk_balances` (المدين = عليه لينا) بس بعمود لكل عيلة، ومعاه تاريخ آخر
+    حركة. `as_of` بيقطع على تاريخ القيد الفعلي (`entry_date` ولو فاضي يوم الإنشاء) —
+    نفس التاريخ اللي كشف الحساب بيرتّب عليه، فالرصيد هنا = رصيد الكشف في اليوم ده.
+
+    العميل اللي مالوش ولا سطر مرحّل مش هيطلع هنا — اللي بيعمل join يحط له صفر.
+    """
+    from src.models.ledger import LedgerEntry
+    from src.services.customer_merge_service import FAMILY_POLY, FAMILY_WHITE
+
+    signed = case(
+        (LedgerLine.direction == Account.normal_side, LedgerLine.amount),
+        else_=-LedgerLine.amount,
+    )
+    zero = Decimal("0")
+    eff_date = func.coalesce(LedgerEntry.entry_date, func.date(LedgerEntry.created_at))
+    stmt = (
+        select(
+            CustomerAccount.customer_id.label("customer_id"),
+            func.sum(case((CustomerAccount.family == FAMILY_WHITE, signed), else_=zero))
+            .label("white"),
+            func.sum(case((CustomerAccount.family == FAMILY_POLY, signed), else_=zero))
+            .label("poly"),
+            # أي عيلة تانية أو الحساب القديم اللي من غير عيلة.
+            func.sum(case(
+                (CustomerAccount.family.in_((FAMILY_WHITE, FAMILY_POLY)), zero),
+                else_=signed)).label("other"),
+            func.sum(signed).label("total"),
+            func.max(eff_date).label("last_date"),
+        )
+        .join(Account, Account.id == CustomerAccount.account_id)
+        .join(LedgerLine, LedgerLine.account_id == Account.id)
+        .join(LedgerEntry, LedgerEntry.id == LedgerLine.entry_id)
+        .where(ledger_service.is_posted_sql())
+        .group_by(CustomerAccount.customer_id)
+    )
+    if as_of is not None:
+        stmt = stmt.where(eff_date <= as_of)
+    return stmt.subquery("fam_bal")
+
+
 # ----------------------------------------------------------------------------- search
 
 

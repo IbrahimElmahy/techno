@@ -25,6 +25,7 @@ const Treasuries = lazy(() => import('../pages/Treasuries'));
 const CostCenters = lazy(() => import('../pages/CostCenters'));
 const Customers = lazy(() => import('../pages/Customers'));
 const CustomerProfile = lazy(() => import('../pages/CustomerProfile'));
+const CustomerDebts = lazy(() => import('../pages/CustomerDebts'));
 const SupplierProfile = lazy(() => import('../pages/SupplierProfile'));
 const Suppliers = lazy(() => import('../pages/Suppliers'));
 const Catalog = lazy(() => import('../pages/Catalog'));
@@ -143,6 +144,7 @@ export default function PageRoutes({ location }: { location?: string }) {
       <Route path="/cost-centers" element={<CostCenters />} />
       <Route path="/customers" element={<Customers />} />
       <Route path="/customers/:customerId" element={<CustomerProfile />} />
+      <Route path="/customer-debts" element={<CustomerDebts />} />
       <Route path="/suppliers" element={<Suppliers />} />
       <Route path="/suppliers/:supplierId" element={<SupplierProfile />} />
       <Route path="/categories" element={<Categories />} />

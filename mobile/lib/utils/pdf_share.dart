@@ -1,0 +1,78 @@
+import 'dart:io';
+import 'dart:typed_data';
+
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart'
+    show MethodChannel, MissingPluginException, PlatformException;
+import 'package:path_provider/path_provider.dart';
+import 'package:printing/printing.dart';
+
+/// المشترك بين ورق التطبيق اللي بيتبعت (الفاتورة وسند القبض): رقم واتساب، اسم الملف،
+/// والإرسال على شات العميل مع الرجوع لشاشة المشاركة لو مانفعش.
+
+const _whatsapp = MethodChannel('techno/whatsapp');
+
+/// رقم العميل بالصيغة الدولية اللي واتساب عايزها — أرقام بس، من غير `+`.
+///
+/// الكروت متسجل عليها `01xxxxxxxxx` (مصري محلي) غالباً، وواتساب مابيعرفش الرقم ده
+/// غير بكود الدولة: `201xxxxxxxxx`. `null` = مافيش رقم يتبعت عليه.
+String? whatsappNumber(String? raw) {
+  var d = (raw ?? '').replaceAll(RegExp(r'\D'), '');
+  if (d.startsWith('00')) d = d.substring(2); // 0020… = +20…
+  if (d.length == 11 && d.startsWith('01')) return '2$d';
+  if (d.length == 10 && d.startsWith('1')) return '20$d'; // الصفر اللي في الأول ضاع
+  if (d.startsWith('20') && d.length >= 12) return d;
+  return d.length >= 10 ? d : null;
+}
+
+/// اسم ملف من اسم العميل — الحروف اللي مابتنفعش في اسم ملف بتتشال.
+String safeFileName(String raw) =>
+    raw.replaceAll(RegExp(r'[\/:*?"<>|]'), ' ').trim();
+
+/// «إرسال» — الـPDF على شات العميل في واتساب على طول.
+///
+/// **ولو مانفعش، الإرسال مابيقعش:** مافيش رقم، أو واتساب مش متثبت، أو أي خطأ →
+/// شاشة المشاركة العادية، ومعاها سطر بيقول ليه.
+Future<void> sendPdfToWhatsApp(
+  BuildContext context, {
+  required Uint8List bytes,
+  required String fileTitle,
+  required String? phone,
+  required String text,
+  String subdir = 'invoices',
+}) async {
+  final messenger = ScaffoldMessenger.of(context);
+  final number = whatsappNumber(phone);
+
+  Future<void> fallback(String? why) async {
+    if (why != null) {
+      messenger.showSnackBar(SnackBar(content: Text(why)));
+    }
+    await Printing.sharePdf(bytes: bytes, filename: '$fileTitle.pdf');
+  }
+
+  if (!Platform.isAndroid) return fallback(null);
+  if (number == null) {
+    return fallback('العميل مالوش رقم متسجل — اختار من المشاركة');
+  }
+  try {
+    // الكاش (`getTemporaryDirectory`) هو المجلد اللي provider المشاركة بيدّي منه رابط.
+    final dir = Directory('${(await getTemporaryDirectory()).path}/$subdir');
+    await dir.create(recursive: true);
+    final file = File('${dir.path}/$fileTitle.pdf');
+    await file.writeAsBytes(bytes, flush: true);
+    await _whatsapp.invokeMethod('sendFile', {
+      'path': file.path,
+      'phone': number,
+      'text': text,
+    });
+  } on PlatformException catch (e) {
+    await fallback(e.code == 'NOT_INSTALLED'
+        ? 'واتساب مش متثبت على الجهاز — اختار من المشاركة'
+        : 'ماقدرناش نفتح واتساب — اختار من المشاركة');
+  } on MissingPluginException {
+    await fallback('ماقدرناش نفتح واتساب — اختار من المشاركة');
+  } catch (_) {
+    await fallback('ماقدرناش نفتح واتساب — اختار من المشاركة');
+  }
+}

@@ -301,7 +301,7 @@ class _CouponReviewScreenState extends State<CouponReviewScreen> {
                   Text('$grand كوبون من ${_rows.length} عميل',
                       style: const TextStyle(fontWeight: FontWeight.w800)),
                   if (grandValue > 0)
-                    Text('${grandValue.toStringAsFixed(2)} ج.م',
+                    Text('${grandValue.toStringAsFixed(2)}',
                         style: const TextStyle(
                             fontWeight: FontWeight.w800, color: AppColors.success)),
                 ],
@@ -347,7 +347,7 @@ class _CouponReviewScreenState extends State<CouponReviewScreen> {
                                     style: const TextStyle(
                                         fontSize: 20, fontWeight: FontWeight.w800)),
                                 if (r.value > 0)
-                                  Text('${r.value.toStringAsFixed(0)} ج.م',
+                                  Text('${r.value.toStringAsFixed(0)}',
                                       style: const TextStyle(
                                           fontSize: 12, color: AppColors.success)),
                               ],

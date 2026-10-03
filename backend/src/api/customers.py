@@ -1,6 +1,7 @@
 """Customers router (T050). FR-018–021, FR-020a. No loyalty schema (After-Sales owns it)."""
 from __future__ import annotations
 
+from datetime import date
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
@@ -12,6 +13,7 @@ from src.auth.dependencies import CurrentUser, require_capability
 from src.auth.rbac import CAP_CUSTOMER_READ, CAP_CUSTOMER_REASSIGN, CAP_CUSTOMER_WRITE
 from src.core.db import get_db
 from src.core.fast_json import model_json
+from src.core.money import to_money
 # **باسم تاني عن قصد.** الاسم `phones` محجوز في الملف ده لقايمة أرقام العميل
 # الإضافية (`_out(..., phones=...)` و`bulk_phone_values`)، فاستيراد الموديول
 # بنفس الاسم بيتحجب جوّه الدالة و`phones.display` بتتنادى على `dict` وترمي.
@@ -390,6 +392,234 @@ def customer_options(
             discount_pct=r.discount_pct)
         for r in rows
     ]
+
+
+# ----------------------------------------------------------------- مديونيات العملاء
+
+
+class CustomerDebtRow(BaseModel):
+    id: int
+    code: str
+    name: str
+    phone: str | None = None
+    customer_type: str
+    active: bool = True
+    branch_id: int | None = None
+    branch_name: str | None = None
+    territory_id: int | None = None
+    territory_name: str | None = None
+    governorate_id: int | None = None
+    governorate_name: str | None = None
+    markaz: str | None = None
+    rep_id: int | None = None
+    rep_name: str | None = None
+    # موجب = عليه لينا (مدين)، سالب = له عندنا (دائن).
+    balance_white: Decimal
+    balance_poly: Decimal
+    balance_other: Decimal
+    total: Decimal
+    last_movement_date: date | None = None
+
+
+class CustomerDebtsSummary(BaseModel):
+    count: int
+    sum_white: Decimal
+    sum_poly: Decimal
+    sum_other: Decimal
+    # الصافي (مدين − دائن)، ومعاه كل طرف لوحده عشان «الكل» مايخبّيش ده في ده.
+    sum_total: Decimal
+    sum_debit: Decimal
+    sum_credit: Decimal
+    debtors_count: int
+    creditors_count: int
+    # عدد اللي عندهم رصيد على حساب من غير عيلة — صفر يعني عمود «أخرى» ملوش لازمة.
+    other_count: int
+
+
+class CustomerDebtsCounts(BaseModel):
+    """عدّادات الشرايح — على نفس الفلاتر من غير فلتر الحالة."""
+    debtors: int
+    creditors: int
+    nonzero: int
+    all: int
+
+
+class CustomerDebtsOut(BaseModel):
+    rows: list[CustomerDebtRow]
+    total: int
+    limit: int
+    offset: int
+    summary: CustomerDebtsSummary
+    counts: CustomerDebtsCounts
+
+
+_DEBT_SORTS = {"total", "white", "poly", "other", "name", "code", "last_date",
+               "phone", "type", "branch", "territory", "rep", "governorate", "markaz"}
+
+
+@router.get("/debts", response_model=CustomerDebtsOut)
+def customer_debts(
+    q: str | None = Query(None, description="الاسم أو الكود أو التليفون"),
+    rep_id: int | None = Query(None),
+    territory_id: int | None = Query(None),
+    branch_id: int | None = Query(None),
+    governorate_id: int | None = Query(None),
+    customer_type: str | None = Query(None),
+    family: str | None = Query(None, description="أبيض / بولي / other — اللي رصيده مش صفر عليها"),
+    status: str = Query("debtors", description="debtors | creditors | nonzero | all"),
+    min_total: Decimal | None = Query(None),
+    max_total: Decimal | None = Query(None),
+    active: bool | None = Query(None),
+    as_of: date | None = Query(None, description="الرصيد لحد التاريخ ده"),
+    sort: str = Query("total"),
+    order: str = Query("desc"),
+    limit: int = Query(100, ge=1, le=5000),
+    offset: int = Query(0, ge=0),
+    current: CurrentUser = Depends(require_capability(CAP_CUSTOMER_READ)),
+    db: Session = Depends(get_db),
+):
+    """مديونيات العملاء — صف لكل عميل برصيده على أبيض وبولي والإجمالي.
+
+    كله استعلام مجمّع واحد للأرصدة (`family_balances_subquery`)، والإجماليات على كل
+    الصفوف المفلترة مش الصفحة. العزل بنفس `_scope_filter` بتاعة كشف العملاء.
+    """
+    from sqlalchemy import and_, case, func
+
+    from src.models.org import Branch, Governorate, Territory
+    from src.services.customer_merge_service import FAMILY_POLY, FAMILY_WHITE
+
+    base = customer_profile_service.apply_filters(
+        _scope_filter(select(Customer.id), current),
+        customer_type=customer_type, rep_id=rep_id, territory_id=territory_id,
+        governorate_id=governorate_id, active=active,
+    ).where(Customer.customer_type != "owner")
+    if branch_id is not None:
+        # فرع الكارت الأول، والمنطقة لو الكارت مالوش فرع — نفس قاعدة العزل.
+        branch_terr = select(Territory.id).where(Territory.branch_id == branch_id)
+        base = base.where(or_(
+            Customer.branch_id == branch_id,
+            and_(Customer.branch_id.is_(None), Customer.territory_id.in_(branch_terr)),
+        ))
+    if q and q.strip():
+        like = f"%{arabic.bare(q)}%"
+        conds = [arabic.sort_key(Customer.name).like(like),
+                 arabic.sort_key(Customer.code).like(like),
+                 Customer.phone.ilike(f"%{q.strip()}%")]
+        # التليفون متخزّن أحياناً من غير الصفر الأول — «0100…» لازم تلاقي «100…».
+        digits = (arabic.western_digits(q) or "").strip()
+        if digits.isdigit() and digits.lstrip("0"):
+            conds.append(Customer.phone.like(f"%{digits.lstrip('0')}%"))
+        base = base.where(or_(*conds))
+    cust_ids = base.subquery("cust_ids")
+
+    bal = customer_profile_service.family_balances_subquery(as_of)
+    zero = Decimal("0")
+    white = func.coalesce(bal.c.white, zero)
+    poly = func.coalesce(bal.c.poly, zero)
+    other = func.coalesce(bal.c.other, zero)
+    total = func.coalesce(bal.c.total, zero)
+
+    joined = (
+        select(
+            cust_ids.c.id.label("id"),
+            white.label("white"), poly.label("poly"), other.label("other"),
+            total.label("total"), bal.c.last_date.label("last_date"),
+        )
+        .select_from(cust_ids)
+        .outerjoin(bal, bal.c.customer_id == cust_ids.c.id)
+    )
+    if family:
+        fam_col = {FAMILY_WHITE: white, FAMILY_POLY: poly}.get(family, other)
+        joined = joined.where(fam_col != 0)
+    if min_total is not None:
+        joined = joined.where(total >= min_total)
+    if max_total is not None:
+        joined = joined.where(total <= max_total)
+
+    # عدّادات الشرايح قبل فلتر الحالة.
+    pre = joined.subquery("pre")
+    c_row = db.execute(select(
+        func.count(),
+        func.coalesce(func.sum(case((pre.c.total > 0, 1), else_=0)), 0),
+        func.coalesce(func.sum(case((pre.c.total < 0, 1), else_=0)), 0),
+        func.coalesce(func.sum(case((pre.c.total != 0, 1), else_=0)), 0),
+    ).select_from(pre)).one()
+    counts = CustomerDebtsCounts(all=int(c_row[0] or 0), debtors=int(c_row[1] or 0),
+                                 creditors=int(c_row[2] or 0), nonzero=int(c_row[3] or 0))
+
+    if status == "debtors":
+        joined = joined.where(total > 0)
+    elif status == "creditors":
+        joined = joined.where(total < 0)
+    elif status == "nonzero":
+        joined = joined.where(total != 0)
+    flt = joined.subquery("flt")
+
+    s = db.execute(select(
+        func.count(),
+        func.coalesce(func.sum(flt.c.white), zero),
+        func.coalesce(func.sum(flt.c.poly), zero),
+        func.coalesce(func.sum(flt.c.other), zero),
+        func.coalesce(func.sum(flt.c.total), zero),
+        func.coalesce(func.sum(case((flt.c.total > 0, flt.c.total), else_=zero)), zero),
+        func.coalesce(func.sum(case((flt.c.total < 0, -flt.c.total), else_=zero)), zero),
+        func.coalesce(func.sum(case((flt.c.total > 0, 1), else_=0)), 0),
+        func.coalesce(func.sum(case((flt.c.total < 0, 1), else_=0)), 0),
+        func.coalesce(func.sum(case((flt.c.other != 0, 1), else_=0)), 0),
+    ).select_from(flt)).one()
+    summary = CustomerDebtsSummary(
+        count=int(s[0] or 0), sum_white=to_money(s[1] or 0), sum_poly=to_money(s[2] or 0),
+        sum_other=to_money(s[3] or 0), sum_total=to_money(s[4] or 0),
+        sum_debit=to_money(s[5] or 0), sum_credit=to_money(s[6] or 0),
+        debtors_count=int(s[7] or 0), creditors_count=int(s[8] or 0),
+        other_count=int(s[9] or 0))
+
+    # الصفحة نفسها — بأسماء الفرع والمنطقة والمحافظة والمندوب في نفس الاستعلام.
+    sort_key = sort if sort in _DEBT_SORTS else "total"
+    sort_col = {
+        "total": flt.c.total, "white": flt.c.white, "poly": flt.c.poly,
+        "other": flt.c.other, "last_date": flt.c.last_date,
+        "name": arabic.sort_key(Customer.name), "code": Customer.code,
+        "phone": Customer.phone, "type": Customer.customer_type,
+        "branch": Branch.name, "territory": Territory.name, "rep": User.full_name,
+        "governorate": Governorate.name, "markaz": Customer.markaz,
+    }[sort_key]
+    # الفاضي (عميل من غير حركة) آخر الكشف في الاتجاهين — من غير NULLS LAST عشان MySQL.
+    ordered = [sort_col.is_(None), sort_col.asc() if order == "asc" else sort_col.desc()]
+    page_stmt = (
+        select(
+            Customer, flt.c.white, flt.c.poly, flt.c.other, flt.c.total, flt.c.last_date,
+            Branch.name.label("branch_name"), Territory.name.label("territory_name"),
+            Governorate.name.label("governorate_name"), User.full_name.label("rep_name"),
+        )
+        .select_from(flt)
+        .join(Customer, Customer.id == flt.c.id)
+        .outerjoin(Branch, Branch.id == Customer.branch_id)
+        .outerjoin(Territory, Territory.id == Customer.territory_id)
+        .outerjoin(Governorate, Governorate.id == Customer.governorate_id)
+        .outerjoin(User, User.id == Customer.rep_id)
+        .order_by(*ordered, Customer.id.desc())
+        .limit(limit).offset(offset)
+    )
+    rows = []
+    for r in db.execute(page_stmt).all():
+        c: Customer = r[0]
+        rows.append(CustomerDebtRow(
+            id=c.id, code=c.code, name=c.name,
+            phone=phone_fmt.display(c.phone) or None,
+            customer_type=getattr(c.customer_type, "value", c.customer_type),
+            active=c.active, branch_id=c.branch_id, branch_name=r.branch_name,
+            territory_id=c.territory_id, territory_name=r.territory_name,
+            governorate_id=c.governorate_id, governorate_name=r.governorate_name,
+            markaz=c.markaz, rep_id=c.rep_id, rep_name=r.rep_name or None,
+            balance_white=to_money(r.white or 0), balance_poly=to_money(r.poly or 0),
+            balance_other=to_money(r.other or 0), total=to_money(r.total or 0),
+            last_movement_date=r.last_date,
+        ))
+
+    out = CustomerDebtsOut(rows=rows, total=summary.count, limit=limit, offset=offset,
+                           summary=summary, counts=counts)
+    return model_json(out, headers={"X-Total-Count": str(summary.count)})
 
 
 @router.get("", response_model=None)

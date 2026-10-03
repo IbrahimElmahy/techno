@@ -24,6 +24,7 @@ const BASE_TITLES: Record<string, string> = {
   '/users': 'إدارة المستخدمين',
   '/org': 'الهيكل التنظيمي',
   '/customers': 'العملاء والذمم',
+  '/customer-debts': 'مديونيات العملاء',
   '/suppliers': 'الموردين والمدفوعات',
   '/catalog': 'كتالوج المنتجات',
   '/purchases': 'إدخال المشتريات',

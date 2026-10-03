@@ -146,7 +146,7 @@ class _DaySummaryScreenState extends State<DaySummaryScreen> {
             children: [
               Text(label, style: const TextStyle(color: Colors.black54)),
               const SizedBox(height: 4),
-              Text('${_money(value)} ج.م',
+              Text('${_money(value)}',
                   style: TextStyle(fontSize: 28, fontWeight: FontWeight.w800, color: color)),
             ],
           ),

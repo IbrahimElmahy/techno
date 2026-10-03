@@ -317,7 +317,7 @@ class _SalesReviewScreenState extends State<SalesReviewScreen> {
         ),
         subtitle: Text([
           r['invoice_date'] as String? ?? '',
-          '${(r['total'] as num?)?.toStringAsFixed(2) ?? '0.00'} ج.م',
+          '${(r['total'] as num?)?.toStringAsFixed(2) ?? '0.00'}',
           if (bonusFor != null) 'على $bonusFor',
           // العدد على السطر المقفول كمان — فاتورة كوبونات بس إجماليها صفر، وكانت
           // بتبان في القايمة كأنها ورقة فاضية ماحصلش فيها حاجة.
@@ -343,7 +343,7 @@ class _SalesReviewScreenState extends State<SalesReviewScreen> {
                         else if (l.variableDiscountPct > 0)
                           'إضافي ${_trim(l.variableDiscountPct)}%',
                       ].join(' — ')),
-                      trailing: Text('${l.net.toStringAsFixed(2)} ج.م',
+                      trailing: Text('${l.net.toStringAsFixed(2)}',
                           style: const TextStyle(fontWeight: FontWeight.w700)),
                     ),
                   // الكوبونات المسلّمة — زي ما هي على الورقة المطبوعة بالظبط.

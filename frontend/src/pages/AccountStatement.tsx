@@ -582,7 +582,10 @@ export default function AccountStatement() {
       const doc = l.doc_kind && l.doc_id ? `${l.doc_kind}:${l.doc_id}` : `e:${l.entry_id}`;
       if (prev !== null && doc !== prev) odd = !odd;
       prev = doc;
-      m.set(rowKeyOf(l), l.invoice_type === PAYMENT ? 'st-pay' : odd ? 'st-doc-b' : 'st-doc-a');
+      // النقدي اللي نزل مع الفاتورة بياخد لون فاتورته (طلب العميل ٢٠٢٦-١٠-٠٣) — الأخضر
+      // للدفعات المستقلة (سندات القبض والصرف) بس.
+      const pay = l.invoice_type === PAYMENT && !l.cash_on_invoice;
+      m.set(rowKeyOf(l), pay ? 'st-pay' : odd ? 'st-doc-b' : 'st-doc-a');
     }
     return m;
   }, [shownLines]);

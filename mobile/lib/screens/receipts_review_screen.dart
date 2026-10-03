@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../api/api_client.dart';
 import '../db/local_db.dart';
 import '../theme.dart';
+import 'receipt_print_screen.dart';
 
 /// تحصيلات الجهاز — اللي راحت واللي لسه.
 ///
@@ -110,6 +111,12 @@ class _ReceiptsReviewScreenState extends State<ReceiptsReviewScreen> {
   Future<void> _load() async {
     final rows = await LocalDb.instance.receipts();
     if (mounted) setState(() { _rows = rows; _loading = false; });
+  }
+
+  Future<void> _openPrint(Map<String, Object?> r) async {
+    await Navigator.push(
+        context, MaterialPageRoute(builder: (_) => ReceiptPrintScreen(receipt: r)));
+    if (mounted) _load();
   }
 
   Future<void> _push() async {
@@ -220,7 +227,7 @@ class _ReceiptsReviewScreenState extends State<ReceiptsReviewScreen> {
                       Text('${rows.length} سند',
                           style: const TextStyle(fontSize: 13)),
                       const Spacer(),
-                      Text('الإجمالي ${_money(total)} ج.م',
+                      Text('الإجمالي ${_money(total)}',
                           style: const TextStyle(
                               fontSize: 15, fontWeight: FontWeight.w700,
                               color: AppColors.primary)),
@@ -273,11 +280,23 @@ class _ReceiptsReviewScreenState extends State<ReceiptsReviewScreen> {
                                   if (notes.isNotEmpty) notes,
                                 ].join(' · '),
                                     style: const TextStyle(fontSize: 12)),
-                                trailing: Text(
-                                    '${_money((r['amount'] as num?)?.toDouble() ?? 0)} ج.م',
-                                    style: const TextStyle(
-                                        fontWeight: FontWeight.w700,
-                                        color: AppColors.primary)),
+                                trailing: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Text(
+                                        '${_money((r['amount'] as num?)?.toDouble() ?? 0)}',
+                                        style: const TextStyle(
+                                            fontWeight: FontWeight.w700,
+                                            color: AppColors.primary)),
+                                    IconButton(
+                                      tooltip: 'طباعة / إرسال',
+                                      icon: const Icon(Icons.print_outlined,
+                                          color: AppColors.primary),
+                                      onPressed: () => _openPrint(r),
+                                    ),
+                                  ],
+                                ),
+                                onTap: () => _openPrint(r),
                               );
                             },
                           ),
