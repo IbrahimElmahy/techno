@@ -10,6 +10,7 @@ import {
   PlusOutlined, DollarOutlined, ColumnWidthOutlined, DeleteOutlined, BarcodeOutlined,
   EditOutlined, StopOutlined, SearchOutlined, ClearOutlined, AppstoreOutlined,
   UnorderedListOutlined, DownloadOutlined, UploadOutlined, InboxOutlined,
+  LoadingOutlined, CheckCircleFilled,
 } from '@ant-design/icons';
 import { api } from '../api/client';
 import { netOf } from '../utils/discounts';
@@ -111,6 +112,102 @@ interface ItemRecord {
   is_perishable: boolean;
   description: string | null;
 }
+
+/**
+ * خانة سعر/خصم بتتعدّل من جوّه الجدول (وضع «تعديل الأسعار والخصم»).
+ *
+ * بتحفظ لوحدها لما تسيبها (blur أو Enter) — Enter بينزل لنفس العمود في الصف اللي بعده عن
+ * طريق `data-grid-col` في `components/keyboard.tsx`، فالنزول نفسه هو اللي بيحفظ. لو السيرفر
+ * رفض، الرسالة بتطلع من `api/client.ts` والخانة بترجع لقيمتها.
+ *
+ * معرّفة برّه الصفحة عن قصد: لو اتعرّفت جوّاها كانت هتتبني من الأول مع كل رندر والمؤشر يطير.
+ */
+const InlineNumberCell = ({
+  value, min, max, emptyAs, gridCol, onCommit,
+}: {
+  value: number | null;
+  min: number;
+  max?: number;
+  /** الخانة الفاضية بتتحفظ كده (الخصم ⇐ ٠). من غيرها الفاضي بيرجع للقيمة القديمة. */
+  emptyAs?: number;
+  gridCol: string;
+  onCommit: (v: number) => Promise<void>;
+}) => {
+  const [draft, setDraft] = useState<number | null>(value);
+  const [status, setStatus] = useState<'idle' | 'saving' | 'saved'>('idle');
+  // آخر قيمة اتبعتت — Enter وبعده blur على نفس الخانة مايبعتوش مرتين.
+  const committed = useRef<number | null>(value);
+  const timer = useRef<number | undefined>(undefined);
+
+  useEffect(() => {
+    if (status === 'saving') return;
+    committed.current = value;
+    setDraft(value);
+  }, [value]);
+  useEffect(() => () => window.clearTimeout(timer.current), []);
+
+  const same = (a: number | null, b: number | null) =>
+    a === b || (a !== null && b !== null && Math.abs(a - b) < 0.005);
+
+  const commit = async () => {
+    let v = draft;
+    if ((v === null || v === undefined) && emptyAs !== undefined) v = emptyAs;
+    if (same(v, committed.current)) { setDraft(committed.current); return; }
+    if (v === null || v === undefined || Number.isNaN(v) || v < min
+      || (max !== undefined && v > max)) {
+      message.warning(max !== undefined
+        ? `القيمة لازم تبقى بين ${min} و${max}`
+        : `القيمة لازم تبقى ${min} أو أكتر`);
+      setDraft(committed.current);
+      return;
+    }
+    const rounded = Math.round(v * 100) / 100;
+    const previous = committed.current;
+    committed.current = rounded;
+    setDraft(rounded);
+    setStatus('saving');
+    try {
+      await onCommit(rounded);
+      setStatus('saved');
+      window.clearTimeout(timer.current);
+      timer.current = window.setTimeout(() => setStatus('idle'), 1800);
+    } catch {
+      committed.current = previous;
+      setDraft(previous);
+      setStatus('idle');
+    }
+  };
+
+  return (
+    <div onClick={(e) => e.stopPropagation()}>
+      <InputNumber
+        data-grid-col={gridCol}
+        size="small"
+        style={{ width: '100%' }}
+        min={min}
+        max={max}
+        precision={2}
+        controls={false}
+        keyboard={false}
+        value={draft}
+        onChange={(v) => setDraft(v === null || v === undefined || v === '' ? null : Number(v))}
+        onBlur={commit}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') commit();
+          if (e.key === 'Escape') setDraft(committed.current);
+        }}
+        // الأيقونة دايماً موجودة (حتى فاضية): تغيير `suffix` من لا حاجة لحاجة بيعيد بناء
+        // الخانة والمؤشر يطير منها.
+        suffix={(
+          <span style={{ width: 12, display: 'inline-flex', justifyContent: 'center' }}>
+            {status === 'saving' && <LoadingOutlined style={{ fontSize: 11 }} />}
+            {status === 'saved' && <CheckCircleFilled style={{ fontSize: 11, color: '#52c41a' }} />}
+          </span>
+        )}
+      />
+    </div>
+  );
+};
 
 const KIND_LABELS: Record<string, string> = {
   raw_material: 'مادة خام',
@@ -357,6 +454,40 @@ export default function Catalog() {
   const canEditPoints = can('product_points.write');
   const canEditPrices = can('catalog.write');
   const canManageItems = can('catalog.write');
+
+  // **تعديل الأسعار والخصم من برّه** — في «جدول واحد» بس، من غير ما يفتح ملف الصنف.
+  // كل خانة بتتحفظ لوحدها على نفس الـendpoints اللي شاشة تعديل الصنف بتستعملها.
+  const [priceEditRaw, setPriceEdit] = useState(false);
+  const priceEdit = priceEditRaw && view === 'table' && canEditPrices;
+  // اللي بيكتب وداس على الزرار أو التاب: الـblur بيحفظ اللي اتكتب قبل ما الخانات تختفي.
+  const leavePriceEdit = () => {
+    (document.activeElement as HTMLElement | null)?.blur?.();
+    setPriceEdit(false);
+  };
+  const switchView = (k: 'grouped' | 'table') => { leavePriceEdit(); setView(k); };
+  // والتاب لو اتغيّر من الرابط برضه بيقفل الوضع، عشان الرجوع للجدول مايفتحش عليه.
+  useEffect(() => { if (view !== 'table') setPriceEdit(false); }, [view]);
+
+  const patchRow = (id: number, patch: (r: ItemRecord) => Partial<ItemRecord>) =>
+    setItems((prev) => prev.map((r) => (r.id === id ? { ...r, ...patch(r) } : r)));
+
+  // نفس اللي `onSaveItem` بيعمله: الشريحة على `/prices` (الشرايح التانية ماتتلمسش)،
+  // و«مستهلك» هو كمان `sale_price` المرجعي اللي باقي النظام بيقراه.
+  const saveTierPrice = async (r: ItemRecord, tier: string, price: number) => {
+    const s = price.toFixed(2);
+    await api.put(`/api/v1/items/${r.id}/prices`, { tiers: [{ tier, price: s }] });
+    if (tier === 'consumer') await api.patch(`/api/v1/items/${r.id}`, { sale_price: s });
+    patchRow(r.id, (row) => ({
+      tier_prices: { ...(row.tier_prices ?? {}), [tier]: s },
+      ...(tier === 'consumer' ? { consumer_price: s, sale_price: s } : {}),
+    }));
+  };
+
+  const saveDiscount = async (r: ItemRecord, pct: number) => {
+    const s = pct.toFixed(2);
+    await api.patch(`/api/v1/items/${r.id}`, { default_discount_pct: s });
+    patchRow(r.id, () => ({ default_discount_pct: s }));
+  };
 
   // Filtering happens on the server so it covers ALL items, not just the loaded page.
   const fetchItems = async (override?: Record<string, any>) => {
@@ -692,6 +823,15 @@ export default function Catalog() {
       render: (_: any, r: ItemRecord) => {
         const price = (r.tier_prices ?? {})[t.key]
           ?? (t.key === 'consumer' ? (r.consumer_price ?? r.sale_price) : undefined);
+        // الخامة مالهاش أسعار بيع (السيرفر بيرفضها)، فبتفضل للقراية بس.
+        if (priceEdit && r.kind === 'product') {
+          return (
+            <InlineNumberCell
+              gridCol={`tier_${t.key}`} min={0}
+              value={price === undefined || price === null ? null : Number(price)}
+              onCommit={(v) => saveTierPrice(r, t.key, v)} />
+          );
+        }
         // الخانة الفاضية معناها «مش بيتباع بالشريحة دي»، والصفر معناه «ببلاش» —
         // والفرق بيتقرا على ورقة التسعير، فالفاضي بيفضل فاضي.
         return price === undefined || price === null
@@ -715,6 +855,14 @@ export default function Catalog() {
       sorter: (a: ItemRecord, b: ItemRecord) =>
         Number(a.default_discount_pct || 0) - Number(b.default_discount_pct || 0),
       render: (_: any, r: ItemRecord) => {
+        if (priceEdit) {
+          return (
+            <InlineNumberCell
+              gridCol="default_discount_pct" min={0} max={100} emptyAs={0}
+              value={Number(r.default_discount_pct || 0)}
+              onCommit={(v) => saveDiscount(r, v)} />
+          );
+        }
         const pct = Number(r.default_discount_pct || 0);
         if (!pct) return <span style={{ color: '#bfbfbf' }}>—</span>;
         const price = Number(r.consumer_price ?? r.sale_price ?? 0);
@@ -873,8 +1021,14 @@ export default function Catalog() {
           { key: 'table', label: <><UnorderedListOutlined /> جدول واحد</> },
         ]}
         activeTab={view}
-        onTabChange={setView}
+        onTabChange={switchView}
         actions={(<>
+          {canEditPrices && view === 'table' && (
+            <Button icon={<EditOutlined />} type={priceEdit ? 'primary' : 'default'}
+              onClick={() => (priceEdit ? leavePriceEdit() : setPriceEdit(true))}>
+              {priceEdit ? 'إنهاء التعديل' : 'تعديل الأسعار والخصم'}
+            </Button>
+          )}
           {canManageItems && (
             <Button data-shortcut="F2" type="primary" icon={<PlusOutlined />} className="sl-create"
               onClick={() => openCreateForCategory()}>
@@ -951,8 +1105,8 @@ export default function Catalog() {
               locale: { items_per_page: '' },
               showTotal: () => footer,
             }}
-            // The whole row opens the product file.
-            onRow={(record) => ({
+            // The whole row opens the product file — إلا وإحنا بنعدّل الأسعار.
+            onRow={(record) => (priceEdit ? {} : {
               onClick: () => navigate(`/catalog/${record.id}`),
               style: { cursor: 'pointer' },
             })}
