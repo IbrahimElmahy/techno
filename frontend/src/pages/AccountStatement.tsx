@@ -233,9 +233,12 @@ export default function AccountStatement() {
           if (allCustomerAccounts) params.all_customer_accounts = true;
           res = await api.get(`/api/v1/accounts/${accountId}/statement`, { params });
         } else {
-          if (mainKey!.startsWith('grp:')) params.owner_group = mainKey!.slice(4);
-          else params.root_id = Number(mainKey!.slice(4));
-          res = await api.get('/api/v1/accounts-group/statement', { params });
+          const { roots, group } = rootsOf(mainKey!);
+          if (group) params.owner_group = group;
+          if (roots.length) params.root_ids = roots;
+          res = await api.get('/api/v1/accounts-group/statement', {
+            params, paramsSerializer: { indexes: null },
+          });
         }
         setStatement(res.data);
       } catch (err: any) {
@@ -310,6 +313,9 @@ export default function AccountStatement() {
    * **الاسم الأول، والكود صغير في آخر السطر** (طلب العميل ٢٠٢٦-١٠-٠١): الكود كان قبل الاسم
    * فبياكل نص الخانة والاسم يتقصّ. الخانة المختارة بتوري الاسم بس، والبحث بالكود لسه شغّال.
    */
+  /** فرع الحساب من كوده — الشجرتين المنقولتين من a5: `AL-…` العلياء، والباقي أكتوبر. */
+  const branchOfCode = (code?: string | null) => (!code ? '' : code.startsWith('AL-') ? 'العلياء'
+    : code.startsWith('A5') ? 'أكتوبر' : '');
   const accountOption = (a: any) => ({
     value: a.id, label: a.name || a.owner_name || `حساب #${a.id}`,
     search: a.code || '', code: a.code || '', title: labelOf(a),
@@ -323,44 +329,85 @@ export default function AccountStatement() {
     </span>
   );
 
-  const mainOptions = useMemo(() => {
-    const roots = accounts.filter((a: any) => !a.parent_id && a.code)
-      .map((a: any) => ({ ...accountOption(a), value: `acc:${a.id}` }));
-    const groups = [...new Set(accounts
-      .filter((a: any) => !a.parent_id && !a.code && a.owner_group)
-      .map((a: any) => a.owner_group))]
-      .map((g) => ({ value: `grp:${g}`, label: String(g) }));
-    return [...roots, ...groups];
+  /**
+   * **الحساب الرئيسي بالاسم — مرة واحدة** (طلب العميل ٢٠٢٦-١٠-٠٣). الشجرة اتنقلت من a5
+   * لفرعين، فكل حساب رئيسي موجود مرتين بنفس الاسم («A5M-5 العملاء» أكتوبر و«AL-A5M-5
+   * العملاء» العلياء)، وفوقهم مجموعة «العملاء» لحسابات الأطراف. القايمة كانت بتكرّرهم؛
+   * دلوقتي الاسم الواحد = كل الجذور اللي بيه + المجموعة اللي بنفس الاسم، وكشفه مجمّع.
+   */
+  const mainGroups = useMemo(() => {
+    const map = new Map<string, { roots: number[]; group?: string }>();
+    accounts.filter((a: any) => !a.parent_id && a.code).forEach((a: any) => {
+      const name = (a.name || a.owner_name || `#${a.id}`).trim();
+      const g = map.get(name) ?? { roots: [] };
+      g.roots.push(a.id);
+      map.set(name, g);
+    });
+    accounts.filter((a: any) => !a.parent_id && !a.code && a.owner_group).forEach((a: any) => {
+      const name = String(a.owner_group).trim();
+      // «الموردين» (مجموعة) و«الموردون» (جذر) نفس المعنى — بيتدمجوا تحت اسم الجذر.
+      const alias = name === 'الموردين' && map.has('الموردون') ? 'الموردون' : name;
+      const g = map.get(alias) ?? { roots: [] };
+      g.group = name;
+      map.set(alias, g);
+    });
+    return map;
   }, [accounts]);
+  const mainOptions = useMemo(() => [...mainGroups.entries()]
+    .map(([name, g]) => ({
+      value: `nm:${name}`, label: name, search: '', code: '',
+      title: g.roots.length > 1 ? `${name} — ${g.roots.length} فروع` : name,
+    })), [mainGroups]);
+  /** الحسابات اللي تحت اختيار «الحساب الرئيسي» — بأي شكل اتكتب في العنوان (nm/acc/grp). */
+  const rootsOf = (key: string): { roots: number[]; group?: string } => {
+    if (key.startsWith('nm:')) return mainGroups.get(key.slice(3)) ?? { roots: [] };
+    if (key.startsWith('grp:')) return { roots: [], group: key.slice(4) };
+    return { roots: [Number(key.slice(4))] };
+  };
 
   const visibleAccounts = useMemo(() => {
     if (!mainKey) return accounts;
-    if (mainKey.startsWith('grp:')) {
-      const group = mainKey.slice(4);
-      return accounts.filter((a: any) => a.owner_group === group);
-    }
-    const rootId = Number(mainKey.slice(4));
+    const { roots, group } = rootsOf(mainKey);
+    const rootSet = new Set(roots);
     const byId = new Map<number, any>(accounts.map((a: any) => [a.id, a]));
     const inTree = (a: any) => {
+      if (group && a.owner_group === group) return true;
       let cur: any = a;
       for (let hops = 0; cur && hops < 12; hops += 1) {
-        if (cur.id === rootId) return true;
+        if (rootSet.has(cur.id)) return true;
         cur = cur.parent_id ? byId.get(cur.parent_id) : null;
       }
       return false;
     };
     return accounts.filter(inTree);
-  }, [accounts, mainKey]);
+  }, [accounts, mainKey, mainGroups]); // eslint-disable-line react-hooks/exhaustive-deps
+  /** الأسماء المكررة في الحساب الفرعي بتاخد الفرع جنبها (ولو لسه مكررة، الكود). */
+  const subOptions = useMemo(() => {
+    const base = visibleAccounts.map(accountOption);
+    const count = new Map<string, number>();
+    base.forEach((o) => count.set(o.label, (count.get(o.label) ?? 0) + 1));
+    const withBranch = base.map((o) => (count.get(o.label)! > 1 && branchOfCode(o.code)
+      ? { ...o, label: `${o.label} — ${branchOfCode(o.code)}` } : o));
+    const again = new Map<string, number>();
+    withBranch.forEach((o) => again.set(o.label, (again.get(o.label) ?? 0) + 1));
+    return withBranch.map((o) => (again.get(o.label)! > 1 && o.code
+      ? { ...o, label: `${o.label} (${o.code})` } : o));
+  }, [visibleAccounts]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (!accountId || mainKey || !accounts.length) return;
     const chosen = accounts.find((a: any) => a.id === accountId);
     if (!chosen) return;
-    if (chosen.owner_group && !chosen.code) { setMainKey(`grp:${chosen.owner_group}`); return; }
+    const nameOfGroup = (g: string) => [...mainGroups.entries()].find(([, v]) => v.group === g)?.[0];
+    if (chosen.owner_group && !chosen.code) {
+      const n = nameOfGroup(chosen.owner_group);
+      setMainKey(n ? `nm:${n}` : `grp:${chosen.owner_group}`);
+      return;
+    }
     const byId = new Map<number, any>(accounts.map((a: any) => [a.id, a]));
     let cur: any = chosen;
     for (let hops = 0; cur?.parent_id && hops < 12; hops += 1) cur = byId.get(cur.parent_id);
-    if (cur && cur.id !== chosen.id) setMainKey(`acc:${cur.id}`);
+    if (cur && cur.id !== chosen.id) setMainKey(`nm:${(cur.name || cur.owner_name || `#${cur.id}`).trim()}`);
   }, [accountId, accounts, mainKey]);
 
   const lines: StatementLine[] = statement?.lines ?? [];
@@ -1063,7 +1110,7 @@ export default function AccountStatement() {
             placeholder={mainKey ? 'الكل (كشف مجمّع) — أو اختر حساباً' : 'اختر الحساب'}
             value={accountId} onChange={setAccountId} allowClear
             popupMatchSelectWidth={false} popupClassName="sl-account-popup" optionRender={renderAccountOption}
-            options={visibleAccounts.map(accountOption)} filterOption={searchFilter} filterSort={searchRank}/>
+            options={subOptions} filterOption={searchFilter} filterSort={searchRank}/>
         </>)}
         <DateRangeFilter
           className="sl-f-dates"
@@ -1078,7 +1125,8 @@ export default function AccountStatement() {
           placeholder="نوع الحركة" value={typeFilter} onChange={setTypeFilter}
           options={typeOptions} disabled={!typeOptions.length && !typeFilter.length} filterOption={searchFilter} filterSort={searchRank}/>
         <Select
-          showSearch allowClear
+          className="sl-f-rep"
+          showSearch allowClear popupMatchSelectWidth={false}
           placeholder="المندوب" value={repFilter} onChange={setRepFilter}
           options={repOptions}
           // مقفولة بس لو فاضية: مندوب متختار من كشف حساب تاني ومالوش سطور هنا كان
@@ -1091,7 +1139,7 @@ export default function AccountStatement() {
           options={ccOptions} disabled={!ccOptions.length && !ccFilter.length} filterOption={searchFilter} filterSort={searchRank}/>
         <Input allowClear prefix={<SearchOutlined />} placeholder="رقم المستند"
           value={docNo} onChange={(e) => setDocNo(e.target.value)} />
-        <StatementFilter value={stmtQ} onChange={setStmtQ} />
+        <span className="sl-f-stmt"><StatementFilter value={stmtQ} onChange={setStmtQ} /></span>
         <Button className="sl-f-clear" icon={<ClearOutlined />} onClick={clearLineFilters}
           disabled={!filtering && !exactMatch}>مسح</Button>
       </>)}

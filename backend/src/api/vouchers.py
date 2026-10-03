@@ -932,6 +932,8 @@ def customer_statement(
 def account_group_statement(
     owner_group: str | None = Query(default=None),
     root_id: int | None = Query(default=None),
+    # كذا جذر بنفس الاسم (شجرة العلياء + شجرة أكتوبر من a5) ومعاهم المجموعة — كشف واحد.
+    root_ids: list[int] | None = Query(default=None),
     date_from: date | None = Query(default=None),
     date_to: date | None = Query(default=None),
     _: CurrentUser = Depends(require_capability(CAP_VOUCHER_READ)),
@@ -949,7 +951,22 @@ def account_group_statement(
     يقرا كذا حساب مع بعض (also_accounts) ويوقّع كل سطر بجانب حسابه هو.
     """
     accounts = db.scalars(select(Account)).all()
-    if owner_group:
+    if root_ids:
+        # الاسم الواحد في القايمة = كل الجذور اللي بالاسم ده + المجموعة لو اتبعتت.
+        by_id = {a.id: a for a in accounts}
+        roots = set(root_ids)
+        def in_any(a: Account) -> bool:
+            cur, hops = a, 0
+            while cur is not None and hops < 12:
+                if cur.id in roots:
+                    return True
+                cur = by_id.get(cur.parent_id) if cur.parent_id else None
+                hops += 1
+            return False
+        members = [a for a in accounts if in_any(a) or (
+            owner_group and chart_service.owner_group_label(a.account_type) == owner_group)]
+        title = next((by_id[r].name for r in root_ids if r in by_id and by_id[r].name), owner_group or "")
+    elif owner_group:
         # «owner_group» مش عمود — بيتشتق من نوع الحساب، بنفس الاشتقاق اللي شاشة الشجرة
         # بتعرضه بيه، فاللي الشاشة بتسميه «العملاء» هو نفسه اللي بيتبعت هنا.
         members = [a for a in accounts

@@ -30,3 +30,10 @@
     print-color-adjust: exact;
   }
 }
+
+/* الحساب الرئيسي أضيق، والفرعي والمندوب والبيان أعرض — الأسماء ماتتقصّش (٢٠٢٦-١٠-٠٣). */
+.list-page .sl-filters > .sl-f-account:first-child { flex: 1.2 1 170px; }
+.list-page .sl-filters > .sl-f-account + .sl-f-account { flex: 2.2 1 260px; }
+.list-page .sl-filters > .sl-f-rep { flex: 1.6 1 200px; }
+.list-page .sl-filters > .sl-f-stmt { flex: 1.8 1 220px; display: flex; }
+.list-page .sl-filters > .sl-f-stmt > * { flex: 1; min-width: 0; }
