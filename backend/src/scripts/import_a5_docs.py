@@ -41,8 +41,9 @@ from sqlalchemy import select
 
 from src.core.db import SessionLocal
 from src.core.money import to_money, to_qty
+from src.lib import discounts
 from src.models.catalog import Item
-from src.models.customer import Customer
+from src.models.customer import Customer, CustomerAccount
 from src.models.org import Branch, Territory
 from src.models.purchasing import (
     PurchaseInvoice,
@@ -64,8 +65,8 @@ from src.models.transfer import (
 from src.models.user import User
 from src.models.warehouse import Warehouse
 from src.scripts.import_a5 import _clean, _money, _read, mine
-from src.lib import discounts
-from src.services import account_resolver, stock_service
+from src.services import account_resolver, customer_merge_service, stock_service
+from src.services.customer_merge_service import FAMILY_POLY, FAMILY_WHITE
 
 ZERO = Decimal("0")
 
@@ -146,6 +147,19 @@ class Ctx:
             select(Customer).where(Customer.branch_id == branch.id)).all()
         self.cust_by_code = {c.code: c for c in branch_custs if c.code}
         self.cust = {c.name: c for c in branch_custs if c.active}
+        # **الكارت المدموج بيتبع دمجه.** «تكنو فلان» اتقفل واتعلّم «(مدموج في #N)» وحسابه
+        # بقى «بولي» عند «فلان» — بس كوده `AL-A5-<Cust_id>` لسه عليه. كانت كل فاتورة بولي
+        # جديدة من التزامن الليلي بتنزل على الكارت المقفول: الفلوس صح (القيد على الحساب)،
+        # والفاتورة باسم «تكنو فلان (مدموج …)» برّه صفحة العميل. ٧٦ كارت على الإنتاج.
+        everyone = db.scalars(select(Customer)).all()
+        targets = customer_merge_service.final_targets(everyone)
+        by_id = {c.id: c for c in everyone}
+        self.merged_into: dict[int, Customer] = {
+            cid: by_id[t] for cid, t in targets.items() if t in by_id}
+        # العميل اللي اتلمّ من كارتين عنده حساب لكل خط — فالفاتورة لازم تقول على أنهي خط.
+        split_ids = {cid for (cid,) in db.execute(
+            select(CustomerAccount.customer_id).where(CustomerAccount.family.is_not(None)))}
+        self.split: set[int] = split_ids
         supps = db.scalars(select(Supplier)).all()
         self.supp_by_code = {s.code: s for s in supps if s.code}
         self.supp = {s.name: s for s in supps}
@@ -198,6 +212,8 @@ class Ctx:
             by_code = self.supp_by_code if supplier else self.cust_by_code
             hit = by_code.get(f"{self.prefix}A5-{pid}")
             if hit is not None:
+                if not supplier and hit.id in self.merged_into:
+                    return self.merged_into[hit.id]
                 return hit
         if not name:
             return None
@@ -224,6 +240,26 @@ class Ctx:
         book[name] = row
         self.made["أطراف من الفواتير"] += 1
         return row
+
+    def family_of(self, party_id: str) -> str | None:
+        """الخط (أبيض/بولي) اللي فاتورة a5 دي عليه — من كارت a5 نفسه.
+
+        كارت «تكنو فلان» المدموج هو خط البولي (حسابه اتنقل «بولي»)، وكارت «فلان» اللي
+        اتلمّ فيه هو الأبيض. العميل اللي عمره ما اتقسم مالوش سؤال — بيفضل فاضي زي الأول.
+        """
+        pid = _clean(party_id)
+        if not pid or pid == "0":
+            return None
+        card = self.cust_by_code.get(f"{self.prefix}A5-{pid}")
+        if card is None:
+            return None
+        if card.id in self.merged_into:
+            return FAMILY_POLY
+        if card.id in self.split:
+            # نفس قاعدة `set_a5_families`: البادئة على اسم الكارت هي الخط، والمجرد أبيض.
+            key = customer_merge_service.match_key(card.name)
+            return FAMILY_POLY if key.startswith(("تكنو", "بولي")) else FAMILY_WHITE
+        return None
 
     def item(self, r: list[str]) -> Item | None:
         return (self.item_by_code.get(f"{self.prefix}{_clean(r[L_CODE])}")
@@ -287,6 +323,7 @@ def _sale(c: Ctx, h: list[str], rows: list[list[str]]) -> None:
         customer_id=cust.id, rep_id=rep.id if rep else cust.rep_id,
         origin_location_kind=LocationKind.warehouse, origin_location_id=ls[0][1].id,
         invoice_date=_date(h[H_DATE]), notes=_clean(h[H_MEMO])[:500] or None,
+        family=c.family_of(_party_id(h)),
         gross=gross, fixed_discount_pct=ZERO, variable_discount_pct=pct,
         combined_pct=pct, net=to_money(gross - bons),
         tax_amount=to_money(_money(h[H_TAX])),
@@ -327,6 +364,7 @@ def _sale_return(c: Ctx, h: list[str], rows: list[list[str]]) -> None:
         customer_id=cust.id if cust else None,
         origin_location_kind=LocationKind.warehouse, origin_location_id=ls[0][1].id,
         return_date=_date(h[H_DATE]), notes=_clean(h[H_MEMO])[:500] or None,
+        family=c.family_of(_party_id(h)) if cust else None,
         gross=gross, combined_pct=_pct(bons, gross), value=to_money(gross - bons),
         tax_amount=to_money(_money(h[H_TAX])),
         cash_refund=to_money(_money(h[H_CASH])),

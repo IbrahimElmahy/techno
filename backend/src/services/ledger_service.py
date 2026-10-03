@@ -13,6 +13,7 @@ from sqlalchemy import case, exists, func, select
 from sqlalchemy.orm import Session
 
 from src.core.money import ZERO, to_money
+from src.lib import entry_text
 from src.models.journal import Journal
 from src.models.ledger import (
     Account,
@@ -510,7 +511,7 @@ def reverse_entry(db: Session, *, original_id: int, actor_user_id: int) -> Ledge
         entry_type="reversal",
         actor_user_id=actor_user_id,
         lines=swapped,
-        description=f"Reversal of entry {original_id}",
+        description=entry_text.reversal(original_id),
         rep_id=original.rep_id,
         branch_id=original.branch_id,
         reverses_entry_id=original_id,

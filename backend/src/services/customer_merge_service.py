@@ -23,8 +23,11 @@ not something to discover the shape of by running it.
 """
 from __future__ import annotations
 
+import re
+import unicodedata
 from dataclasses import dataclass, field
 
+from sqlalchemy import inspect as sa_inspect
 from sqlalchemy import select, text, update
 from sqlalchemy.orm import Session
 
@@ -92,6 +95,60 @@ def _normalise(name: str) -> str:
     return " ".join(str(name or "").split())
 
 
+# الهمزات والتاء المربوطة والألف المقصورة. «تكنو اسامة ترابيس» عند a5 و«اسامه ترابيس»
+# نفس الراجل بنفس المندوب — والمطابقة بالمسافات بس سابت ٣ أزواج من غير دمج على الإنتاج
+# (ترابيس، عناني/عنانى، أبو/ابو كمال). المفتاح ده للمقارنة بس؛ الاسم المكتوب مابيتغيّرش.
+_AR_FOLD = str.maketrans({"أ": "ا", "إ": "ا", "آ": "ا", "ٱ": "ا", "ى": "ي", "ة": "ه",
+                          "ـ": "", "\xa0": " "})
+
+
+def match_key(name: str) -> str:
+    s = unicodedata.normalize("NFKC", str(name or "")).translate(_AR_FOLD)
+    s = "".join(c for c in s if not ("ً" <= c <= "ْ"))
+    return " ".join(s.split()).casefold()
+
+
+def _digits(phone: str | None) -> str:
+    """آخر ١٠ أرقام — «+20 100…» و«0100…» نفس الرقم."""
+    d = re.sub(r"\D", "", phone or "")
+    return d[-10:] if len(d) >= 8 else ""
+
+
+_MERGED_RX = re.compile(re.escape(MERGED_MARK) + r"(\d+)\)")
+
+
+def merged_target_id(name: str | None) -> int | None:
+    """الكارت اللي الكارت ده اندمج فيه، من العلامة على اسمه — أو None."""
+    m = _MERGED_RX.search(name or "")
+    return int(m.group(1)) if m else None
+
+
+def final_targets(customers) -> dict[int, int]:
+    """كل كارت مدموج → الكارت **الشغّال** اللي في آخر السلسلة.
+
+    السلسلة (أ اندمج في ب، وب اندمج بعدين في ج) بتتمشي لآخرها؛ الحلقة أو هدف مش
+    موجود بيرجع من غير هدف — المستورد بيفضل على الكارت الأصلي بدل ما يخمّن.
+    """
+    by_id = {c.id: c for c in customers}
+    out: dict[int, int] = {}
+    for c in by_id.values():
+        t = merged_target_id(c.name)
+        if t is None:
+            continue
+        seen = {c.id}
+        final = None
+        while t in by_id and t not in seen:
+            seen.add(t)
+            nxt = merged_target_id(by_id[t].name)
+            if nxt is None:
+                final = t
+                break
+            t = nxt
+        if final is not None and by_id[final].active:
+            out[c.id] = final
+    return out
+
+
 def plan(db: Session) -> MergePlan:
     """What `apply` would do. Reads only."""
     out = MergePlan()
@@ -102,7 +159,10 @@ def plan(db: Session) -> MergePlan:
     # كارت فرع. الاسم بيتكرر بين الفرعين، والحساب لأ.
     by_name: dict[tuple[int | None, str], list[Customer]] = {}
     for c in customers:
-        by_name.setdefault((c.branch_id, _normalise(c.name)), []).append(c)
+        by_name.setdefault((c.branch_id, match_key(c.name)), []).append(c)
+    families: dict[int, list[str | None]] = {}
+    for cid, fam in db.execute(select(CustomerAccount.customer_id, CustomerAccount.family)):
+        families.setdefault(cid, []).append(fam)
 
     for c in customers:
         name = _normalise(c.name)
@@ -113,7 +173,7 @@ def plan(db: Session) -> MergePlan:
             out.skipped.append((c.name, "«تكنو» من غير اسم بعدها"))
             continue
 
-        candidates = by_name.get((c.branch_id, base), [])
+        candidates = by_name.get((c.branch_id, match_key(base)), [])
         if not candidates:
             out.techno_only.append((c.id, c.name))
             continue
@@ -125,6 +185,22 @@ def plan(db: Session) -> MergePlan:
 
         keep = candidates[0]
         if keep.id == c.id:
+            continue
+        # تليفونين مختلفين على الكارتين = احتمال راجلين بنفس الاسم. الاسم وحده مش دليل.
+        p_keep, p_dupe = _digits(keep.phone), _digits(c.phone)
+        if p_keep and p_dupe and p_keep != p_dupe:
+            out.skipped.append(
+                (c.name, f"تليفون مختلف عن «{keep.name}» ({keep.phone} / {c.phone})"))
+            continue
+        # الحساب اللي بيتنقل بيبقى «بولي» عند الباقي. لو الباقي عنده بولي بالفعل، أو المكرر
+        # شايل أكتر من حساب، النقل بيقع على قيد التفرّد (customer_id, family) ويوقّع الدفعة كلها.
+        keep_fams, dupe_fams = families.get(keep.id, []), families.get(c.id, [])
+        if FAMILY_POLY in keep_fams:
+            out.skipped.append((c.name, f"«{keep.name}» عنده حساب بولي بالفعل"))
+            continue
+        if len(dupe_fams) > 1 or any(f not in (None, FAMILY_POLY) for f in dupe_fams):
+            fams = " / ".join(f or "-" for f in dupe_fams)
+            out.skipped.append((c.name, f"المكرر عنده حسابات ({fams})"))
             continue
         out.pairs.append(MergePair(
             base_name=base,
@@ -138,7 +214,8 @@ def plan(db: Session) -> MergePlan:
     return out
 
 
-def apply(db: Session, *, dry_run: bool = True, limit: int | None = None) -> dict:
+def apply(db: Session, *, dry_run: bool = True, limit: int | None = None,
+          actor_user_id: int | None = None) -> dict:
     """Perform the merge. `dry_run=True` (the default) reports and changes nothing.
 
     Defaulted to a dry run on purpose: the dangerous call should be the one you have to ask for.
@@ -238,7 +315,21 @@ def apply(db: Session, *, dry_run: bool = True, limit: int | None = None) -> dic
         db.execute(update(CustomerAccount), account_changes)
     if customer_changes:
         db.execute(update(Customer), customer_changes)
+    # التليفون والعنوان: الكارت الباقي بياخدهم من المكرر لو خانته فاضية بس.
+    for dupe_id, keep_id in moved.items():
+        db.execute(text(
+            "UPDATE customer k SET phone = COALESCE(NULLIF(k.phone, ''), d.phone), "
+            "address = COALESCE(NULLIF(k.address, ''), d.address) "
+            "FROM customer d WHERE k.id = :keep AND d.id = :dupe"),
+            {"keep": keep_id, "dupe": dupe_id})
+    # الفاتورة اللي على «تكنو فلان» هي فاتورة الخط البولي — حسابها هو اللي بقى «بولي» عند
+    # الباقي. من غير النوع، الفاتورة بتتنقل وتفضل «من غير نوع» جنب فواتيره الأبيض.
+    families_tagged = tag_untagged_family(db, list(moved), FAMILY_POLY)
     documents_moved = _move_documents(db, moved)
+    for pair in p.pairs:
+        if pair.merge_customer_id in moved:
+            _audit(db, actor_user_id, pair.merge_customer_id, pair.keep_customer_id,
+                   pair.merge_name, pair.keep_name, kind="pair")
 
     # The session still holds the pre-update rows; a caller reading a balance straight afterwards
     # must see what the database now has, not what it had when this started.
@@ -249,21 +340,94 @@ def apply(db: Session, *, dry_run: bool = True, limit: int | None = None) -> dic
     done["remaining"] = max(0, result["remaining"] - len(p.pairs) - renamed)
     done["merged_now"] = len(p.pairs) + renamed
     done["documents_moved"] = documents_moved
+    done["families_tagged"] = families_tagged
     return done
 
 
-# كل جدول بيشاور على العميل. القايمة مكتوبة بالاسم عن قصد: جدول جديد بيتضاف بعدين لازم
+# كل خانة بتشاور على العميل. القايمة مكتوبة بالاسم عن قصد: جدول جديد بيتضاف بعدين لازم
 # حد ياخد باله ويحطه هنا، والبديل (اكتشاف المفاتيح وقت التشغيل) بينقل صفوف من غير ما حد
 # قرر إنها تتنقل.
-DOCUMENT_TABLES = [
-    "sales_invoice", "sales_return", "voucher", "cheque", "trade_order",
-    "reservation", "inspection", "coupon", "coupon_receipt", "coupon_redemption",
-    "point_record", "point_conversion",
-]
+#
+# (الجدول، العمود، شرط زيادة). كانت قايمة جداول بعمود `customer_id` بس، فكانت بتسيب على
+# الكارت المقفول: `coupon_issue` (دفاتر الكوبونات)، `inspection.merchant_customer_id` (التاجر
+# على المعاينة)، `customer_external_ref` (جسر أكواد ERP)، التليفونات الإضافية، وطرف القيد
+# (`partner_id`) اللي التسوية وأعمار الديون بيقروا منه.
+CUSTOMER_REFS: tuple[tuple[str, str, str], ...] = (
+    ("sales_invoice", "customer_id", ""),
+    ("sales_return", "customer_id", ""),
+    ("voucher", "customer_id", ""),
+    ("cheque", "customer_id", ""),
+    ("trade_order", "customer_id", ""),
+    ("reservation", "customer_id", ""),
+    ("inspection", "customer_id", ""),
+    ("inspection", "merchant_customer_id", ""),
+    ("coupon", "customer_id", ""),
+    ("coupon_issue", "customer_id", ""),
+    ("coupon_receipt", "customer_id", ""),
+    ("coupon_redemption", "customer_id", ""),
+    ("point_record", "customer_id", ""),
+    ("point_conversion", "customer_id", ""),
+    ("customer_external_ref", "customer_id", ""),
+    ("contact_phone", "owner_id", "owner_type = 'customer'"),
+    ("ledger_line", "partner_id", "partner_kind = 'customer'"),
+    # طرف القيد داخل في بصمة الدفتر المتجزّأ (`secure_hash_service.canonical_string`) —
+    # القيد المتجزّأ بيفضل زي ما هو.
+    ("ledger_entry", "partner_id", "partner_kind = 'customer' AND inalterable_hash IS NULL"),
+)
+# الاسم القديم — جداول `customer_id` بس.
+DOCUMENT_TABLES = sorted({t for t, c, _ in CUSTOMER_REFS if c == "customer_id"})
+
+
+def _existing_refs(db: Session) -> list[tuple[str, str, str]]:
+    """الخانات الموجودة فعلاً في القاعدة دي — الستيجنج والإنتاج مش دايماً نفس السكيما.
+
+    UPDATE على جدول مش موجود في Postgres بيوقّع الـtransaction كلها، مش السطر بس.
+    """
+    insp = sa_inspect(db.get_bind())
+    tables = set(insp.get_table_names())
+    cols: dict[str, set[str]] = {}
+    out = []
+    for t, c, extra in CUSTOMER_REFS:
+        if t not in tables:
+            continue
+        if t not in cols:
+            cols[t] = {x["name"] for x in insp.get_columns(t)}
+        if c in cols[t]:
+            out.append((t, c, extra))
+    return out
+
+
+def count_refs(db: Session, customer_ids) -> dict[int, dict[str, int]]:
+    """كام صف بيشاور على كل كارت، خانة خانة — للتقرير قبل أي نقل."""
+    ids = [int(i) for i in customer_ids]
+    out: dict[int, dict[str, int]] = {i: {} for i in ids}
+    if not ids:
+        return out
+    for t, c, extra in _existing_refs(db):
+        where = f"{c} = ANY(:ids)" + (f" AND {extra}" if extra else "")
+        for cid, n in db.execute(text(
+                f"SELECT {c}, count(*) FROM {t} WHERE {where} GROUP BY {c}"), {"ids": ids}):
+            out[int(cid)][f"{t}.{c}"] = int(n)
+    return out
+
+
+def tag_untagged_family(db: Session, customer_ids, family: str) -> dict[str, int]:
+    """يحطّ النوع على فواتير ومرتجعات الكارت اللي مالهاش نوع — قبل ما تتنقل."""
+    ids = [int(i) for i in customer_ids]
+    out: dict[str, int] = {}
+    if not ids:
+        return out
+    for t in ("sales_invoice", "sales_return"):
+        n = db.execute(text(
+            f"UPDATE {t} SET family = :f WHERE customer_id = ANY(:ids) AND family IS NULL"),
+            {"f": family, "ids": ids}).rowcount or 0
+        if n:
+            out[t] = n
+    return out
 
 
 def _move_documents(db: Session, moved: dict[int, int]) -> dict[str, int]:
-    """ينقل مستندات العميل المكرر للعميل الباقي.
+    """ينقل كل اللي بيشاور على العميل المكرر للعميل الباقي.
 
     من غير الخطوة دي الرصيد بيبقى صح والصفحة غلط: الفلوس على الحساب اللي اتنقل، والفواتير
     فاضلة على صف معطّل — فصفحة العميل بتوريه نص شغله.
@@ -271,16 +435,108 @@ def _move_documents(db: Session, moved: dict[int, int]) -> dict[str, int]:
     if not moved:
         return {}
     out: dict[str, int] = {}
-    for table in DOCUMENT_TABLES:
+    for t, c, extra in _existing_refs(db):
         n = 0
         for dupe_id, keep_id in moved.items():
             res = db.execute(text(
-                f"UPDATE {table} SET customer_id = :keep WHERE customer_id = :dupe"
+                f"UPDATE {t} SET {c} = :keep WHERE {c} = :dupe"
+                + (f" AND {extra}" if extra else "")
             ), {"keep": keep_id, "dupe": dupe_id})
             n += res.rowcount or 0
         if n:
-            out[table] = n
+            out[f"{t}.{c}"] = n
     return out
+
+
+def _audit(db: Session, actor_user_id: int | None, dupe_id: int, keep_id: int,
+           dupe_name: str, keep_name: str, *, kind: str) -> None:
+    """صف في سجل التدقيق لكل دمج — مين اندمج في مين، عشان الرجوع يبقى ممكن."""
+    from src.services import audit_service
+
+    audit_service.record(
+        db, action="customer.merge", actor_user_id=actor_user_id,
+        entity_type="customer", entity_id=dupe_id,
+        before={"id": dupe_id, "name": dupe_name},
+        after={"merged_into": keep_id, "keep_name": keep_name, "kind": kind})
+
+
+# ---------------------------------------------------------------------------
+# بواقي الدمج: كارت اتقفل ولسه فيه حاجات بتشاور عليه.
+#
+# الدمج نقل المستندات اللي كانت موجودة ساعتها. بعده التزامن الليلي مع a5
+# (`import_a5_docs`) كان بيلاقي العميل بكوده `AL-A5-<Cust_id>` — وكود «تكنو فلان» لسه على
+# الكارت المقفول — فكل فاتورة بولي جديدة كانت بتنزل عليه، من غير نوع. الفلوس صح (القيد
+# بيروح لحساب a5 اللي بقى بولي الباقي)، بس الفاتورة بتظهر باسم «تكنو فلان (مدموج في #…)»
+# وصفحة العميل بتوريه نص شغله. ده بيلمّها.
+
+
+@dataclass
+class Leftover:
+    dupe_id: int
+    dupe_name: str
+    keep_id: int | None
+    keep_name: str | None
+    refs: dict[str, int]
+    accounts: int
+    problem: str | None = None
+
+
+def plan_leftovers(db: Session) -> list[Leftover]:
+    """الكروت المتعلّمة «مدموج» اللي لسه في حاجة بتشاور عليها. بيقرا بس."""
+    customers = db.scalars(select(Customer)).all()
+    by_id = {c.id: c for c in customers}
+    targets = final_targets(customers)
+    merged = [c for c in customers if MERGED_MARK in (c.name or "")]
+    refs = count_refs(db, [c.id for c in merged])
+    accs: dict[int, int] = {}
+    for (cid,) in db.execute(select(CustomerAccount.customer_id).where(
+            CustomerAccount.customer_id.in_([c.id for c in merged] or [0]))):
+        accs[cid] = accs.get(cid, 0) + 1
+    out: list[Leftover] = []
+    for c in merged:
+        r = {k: v for k, v in refs.get(c.id, {}).items() if v}
+        if not r and not accs.get(c.id) and not c.active:
+            continue
+        t = targets.get(c.id)
+        keep = by_id.get(t) if t else None
+        problem = None
+        if keep is None:
+            problem = f"الهدف #{merged_target_id(c.name)} مش موجود أو مش شغّال أو السلسلة مقفولة"
+        elif keep.branch_id != c.branch_id:
+            problem = "الهدف في فرع تاني"
+        elif accs.get(c.id):
+            # حساب لسه على الكارت المقفول = الدمج نفسه ماكملش. ده مش بواقي مستندات،
+            # ونقله أوتوماتيك ممكن يقع على قيد (customer_id, family).
+            problem = f"لسه عليه {accs[c.id]} حساب ذمم — محتاج دمج حقيقي"
+        elif c.active:
+            problem = "متعلّم مدموج بس لسه شغّال"
+        out.append(Leftover(c.id, c.name, keep.id if keep else None,
+                            keep.name if keep else None, r, accs.get(c.id, 0), problem))
+    out.sort(key=lambda x: x.dupe_id)
+    return out
+
+
+def apply_leftovers(db: Session, *, actor_user_id: int | None = None,
+                    dry_run: bool = True) -> dict:
+    """ينقل البواقي للكارت الشغّال اللي في آخر السلسلة. `dry_run` افتراضي."""
+    items = plan_leftovers(db)
+    ok = [x for x in items if x.problem is None and x.keep_id is not None]
+    result: dict = {"leftovers": len(ok),
+                    "problems": [(x.dupe_id, x.dupe_name, x.problem) for x in items if x.problem]}
+    if dry_run or not ok:
+        result["applied"] = False
+        return result
+    moved = {x.dupe_id: x.keep_id for x in ok}
+    # الكروت دي اتقفلت كخط بولي (حسابها بقى «بولي» عند الباقي) — فالفاتورة اللي عليها بولي.
+    poly = [x.dupe_id for x in ok if _normalise(x.dupe_name).startswith(TECHNO_PREFIX)]
+    result["families_tagged"] = tag_untagged_family(db, poly, FAMILY_POLY)
+    result["moved"] = _move_documents(db, moved)
+    for x in ok:
+        _audit(db, actor_user_id, x.dupe_id, x.keep_id, x.dupe_name, x.keep_name or "",
+               kind="leftover")
+    db.expire_all()
+    result["applied"] = True
+    return result
 
 
 def receivable_account(db: Session, customer_id: int, family: str | None = None):

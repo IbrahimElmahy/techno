@@ -19,6 +19,7 @@ from sqlalchemy import Select, case, func, or_, select
 from sqlalchemy.orm import Session
 
 from src.core.money import ZERO, to_money
+from src.lib import entry_text
 from src.models.customer import MERGED_MARK, Customer, CustomerAccount
 from src.models.ledger import Account, LedgerLine
 from src.services import ledger_service
@@ -560,7 +561,7 @@ def _entry_detail(db: Session, customer_id: int, record_id: int) -> dict:
             {"label": "رقم القيد", "value": str(entry.id)},
             {"label": "النوع", "value": entry.entry_type},
             {"label": "التاريخ", "value": str(entry.entry_date or _as_date(entry.created_at) or "")},
-            {"label": "البيان", "value": entry.description or "-"},
+            {"label": "البيان", "value": entry_text.arabic(entry.description) or "-"},
             {"label": "قيد عكسي لـ", "value": str(entry.reverses_entry_id or "-")},
         ],
         "line_columns": ["الحساب", "مدين", "دائن", "البيان"],

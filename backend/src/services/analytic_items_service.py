@@ -22,6 +22,7 @@ from decimal import Decimal
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from src.lib import entry_text
 from src.core.money import ZERO, to_money
 from src.lib.analysis_reports import _pnl_lines
 from src.models.cost_center import CostCenter
@@ -62,7 +63,7 @@ def analytic_items(
                 "entry_number": entry.number,
                 "entry_date": str(entry.entry_date or entry.created_at.date()),
                 "move_type_label": move_registry.MOVE_TYPE_LABEL.get(entry.move_type or ""),
-                "description": entry.description or "",
+                "description": entry_text.arabic(entry.description),
                 "statement": line.statement,
                 "account_id": line.account_id,
                 "account_code": line.account.code,

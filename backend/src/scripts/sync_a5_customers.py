@@ -55,6 +55,7 @@ from src.models.customer import Customer
 from src.models.org import Branch, Territory
 from src.models.role import Role, RoleName
 from src.models.user import User
+from src.services.customer_merge_service import match_key
 
 # ملف التصدير → (اسم الفرع عندنا، بادئة الأكواد)
 SOURCES = {
@@ -111,7 +112,8 @@ def run(folder: str, *, execute: bool) -> None:
         by_name: dict[tuple[int, str], Customer] = {}
         for c in all_customers:
             if c.active and c.branch_id is not None:
-                by_name.setdefault((c.branch_id, _clean(c.name)), c)
+                # بالمفتاح المطبّع: «تكنو اسامة» عند a5 و«اسامه» عندنا نفس الراجل.
+                by_name.setdefault((c.branch_id, match_key(c.name)), c)
         poly: list[tuple[str, str, Customer]] = []
         # الكروت اللي عليها حركة — الحارس اللي بيمنع قفل صف شايل تاريخ.
         busy: set[int] = set()
@@ -153,7 +155,7 @@ def run(folder: str, *, execute: bool) -> None:
 
                 c = by_code.get(code)
                 if name.startswith(TECHNO_PREFIX):
-                    twin = by_name.get((branch.id, name[len(TECHNO_PREFIX):].strip()))
+                    twin = by_name.get((branch.id, match_key(name[len(TECHNO_PREFIX):])))
                     if twin is not None and (c is None or c.id != twin.id):
                         # الكارت ده الخط البولي بتاع عميل مدموج. مافيش كارت
                         # بيتعمل — ولو تشغيلة قديمة عملته، بيتقفل هنا بنفس علامة

@@ -11,6 +11,7 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from src.lib import entry_text
 from src.auth import branch_scope
 from src.auth.dependencies import CurrentUser, require_capability
 from src.auth.rbac import CAP_LEDGER_POST, CAP_LEDGER_READ, CAP_LEDGER_REVERSE, CAP_TREASURY_READ
@@ -81,7 +82,7 @@ def _entry_out(entry: LedgerEntry) -> LedgerEntryOut:
     return LedgerEntryOut(
         id=entry.id,
         entry_type=entry.entry_type,
-        description=entry.description,
+        description=entry_text.arabic(entry.description),
         actor_user_id=entry.actor_user_id,
         rep_id=entry.rep_id,
         branch_id=entry.branch_id,

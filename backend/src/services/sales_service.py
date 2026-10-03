@@ -18,6 +18,7 @@ from src.services import numbering
 from src.core import hooks
 from src.lib import discounts
 from src.core.money import ZERO, to_money, to_qty
+from src.lib import entry_text
 from src.lib import discounts
 from src.models.catalog import Item, ItemKind, PriceTier
 from src.models.customer import Customer, CustomerAccount
@@ -715,7 +716,7 @@ def create_sale(
         entry = ledger_service.post_entry(
             db, entry_type="sale", actor_user_id=actor_user_id, lines=entry_lines,
             rep_id=invoice.rep_id,
-            description=f"Sale {invoice.document_number}",
+            description=entry_text.sale(invoice.document_number),
             # Same date as the document: the books and the paper have to agree.
             entry_date=invoice_date,
             # (المرحلة ٢) الفاتورة قيد على عميل. من غير السطرين دول الدفعة مابتعرفش
@@ -1093,7 +1094,7 @@ def return_sale(
     entry = ledger_service.post_entry(
         db, entry_type="sale_return", actor_user_id=actor_user_id, lines=entry_lines,
         rep_id=ret.rep_id,
-        description=f"Sales return {ret.document_number}",
+        description=entry_text.sale_return(ret.document_number),
         entry_date=ret.return_date,
         partner_kind=PartnerKind.customer, partner_id=inv.customer_id,
         # المردود بيرجع على نفس مركز الفاتورة — غير كده الربح بينزل من مركز والرد
@@ -1344,7 +1345,7 @@ def create_standalone_return(
     entry = ledger_service.post_entry(
         db, entry_type="sale_return", actor_user_id=actor_user_id, lines=entry_lines,
         rep_id=ret.rep_id,
-        description=f"Sales return {ret.document_number}",
+        description=entry_text.sale_return(ret.document_number),
         entry_date=ret.return_date,
         partner_kind=PartnerKind.customer, partner_id=ret.customer_id,
         cost_center_id=getattr(ret, "cost_center_id", None),

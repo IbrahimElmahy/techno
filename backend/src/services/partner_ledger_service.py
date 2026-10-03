@@ -25,6 +25,7 @@ from decimal import Decimal
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
+from src.lib import entry_text
 from src.core.money import ZERO, to_money
 from src.models.customer import Customer, CustomerAccount
 from src.models.employee import Employee
@@ -223,7 +224,7 @@ def partner_ledger(
                 account_id=acc.id,
                 account_code=acc.code,
                 account_name=acc.name,
-                description=entry.description or "",
+                description=entry_text.arabic(entry.description),
                 statement=line.statement,
                 debit=debit,
                 credit=credit,

@@ -16,6 +16,7 @@ from sqlalchemy.orm import Session
 from src.services import numbering
 
 from src.core.money import ZERO, to_money, to_qty
+from src.lib import entry_text
 from src.lib import discounts
 from src.models.catalog import Item
 from src.models.ledger import Account, Direction, PartnerKind
@@ -242,7 +243,7 @@ def create_purchase(
     entry = ledger_service.post_entry(
         db, entry_type="purchase", actor_user_id=actor_user_id, lines=entry_lines,
         rep_id=rep_id,
-        description=f"Purchase {invoice.document_number}",
+        description=entry_text.purchase(invoice.document_number),
         # (المرحلة ٢) القيد بتاريخ المستند وعلى المورد — كان بتاريخ النهارده وبلا شريك،
         # فالفاتورة اللي اتسجّلت متأخرة كانت بتقع في شهر غير شهرها.
         entry_date=invoice.purchase_date,
@@ -358,7 +359,7 @@ def return_purchase(
         entry_lines.append(LineInput(supplier_acc.account_id, Direction.debit, credit_reduction))
     entry = ledger_service.post_entry(
         db, entry_type="purchase_return", actor_user_id=actor_user_id, lines=entry_lines,
-        description=f"Purchase return {ret.document_number}",
+        description=entry_text.purchase_return(ret.document_number),
         entry_date=ret.return_date,
         partner_kind=PartnerKind.supplier, partner_id=inv.supplier_id,
         # المردود بيرجع على نفس مركز الفاتورة — غير كده المصروف بينزل على مركز والرد
@@ -600,7 +601,7 @@ def create_standalone_purchase_return(
             LineInput(expense_acc.id, Direction.credit, value),
             LineInput(supplier_acc.account_id, Direction.debit, value),
         ],
-        description=f"Standalone purchase return {ret.document_number}",
+        description=entry_text.purchase_return(ret.document_number),
         entry_date=ret.return_date,
         partner_kind=PartnerKind.supplier, partner_id=supplier_id,
         cost_center_id=cost_center_id,

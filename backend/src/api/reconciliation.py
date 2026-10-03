@@ -12,6 +12,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
+from src.lib import entry_text
 from src.auth.dependencies import CurrentUser, require_capability
 from src.auth.rbac import CAP_ACCOUNTING_CHART_READ, CAP_ACCOUNTING_JOURNAL_POST
 from src.core.db import get_db
@@ -269,7 +270,7 @@ def matched_groups(
                         ln.entry.move_type or ""),
                     account_id=ln.account_id, account_name=names.get(ln.account_id),
                     entry_date=ln.entry.entry_date or ln.entry.created_at.date(),
-                    date_maturity=ln.date_maturity, description=ln.entry.description,
+                    date_maturity=ln.date_maturity, description=entry_text.arabic(ln.entry.description),
                     statement=ln.statement, direction=ln.direction.value,
                     amount=to_money(ln.amount), residual=to_money(ln.amount_residual or 0),
                 )
@@ -326,7 +327,7 @@ def entry_matching(
                 "move_type_label": move_registry.MOVE_TYPE_LABEL.get(
                     ln.entry.move_type or ""),
                 "date": str(ln.entry.entry_date or ln.entry.created_at.date()),
-                "description": ln.entry.description,
+                "description": entry_text.arabic(ln.entry.description),
                 "applied": str(amount_by_line.get(ln.id, ZERO)),
             }
             for ln in rows

@@ -15,6 +15,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from src.lib import entry_text
 from src.auth import branch_scope
 from src.auth.dependencies import CurrentUser, require_capability
 from src.auth.rbac import (
@@ -357,7 +358,7 @@ def _entry_out(entry: LedgerEntry, partner_names: dict | None = None) -> Journal
     journal = entry.journal
     return JournalEntryOut(
         id=entry.id, entry_type=entry.entry_type, date=entry.entry_date,
-        description=entry.description, branch_id=entry.branch_id, actor_user_id=entry.actor_user_id,
+        description=entry_text.arabic(entry.description), branch_id=entry.branch_id, actor_user_id=entry.actor_user_id,
         reverses_entry_id=entry.reverses_entry_id,
         journal_id=entry.journal_id,
         journal_code=journal.code if journal else None,

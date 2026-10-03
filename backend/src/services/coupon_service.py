@@ -13,6 +13,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from src.core.money import to_money
+from src.lib import entry_text
 from src.models.catalog import Item, ItemKind
 from src.models.customer import CustomerAccount
 from src.models.ledger import Direction, LedgerLine, PartnerKind
@@ -113,7 +114,7 @@ def _post_money_redemption(
             LineInput(expense.id, Direction.debit, value),
             LineInput(receivable_id, Direction.credit, value, statement=note),
         ],
-        description=f"Coupon {coupon.serial} redeemed ({mode.value})",
+        description=entry_text.coupon_redeemed(coupon.serial),
         partner_kind=PartnerKind.customer, partner_id=coupon.customer_id,
     )
     red = CouponRedemption(
@@ -212,7 +213,7 @@ def reverse_redemption(db, *, coupon: Coupon, actor_user_id: int) -> CouponRedem
                 LineInput(receivable_id, Direction.debit, to_money(original.value)),
                 LineInput(expense.id, Direction.credit, to_money(original.value)),
             ],
-            description=f"Reverse redemption of coupon {coupon.serial}",
+            description=entry_text.coupon_unredeemed(coupon.serial),
             partner_kind=PartnerKind.customer, partner_id=coupon.customer_id,
         )
         rev.ledger_entry_id = entry.id

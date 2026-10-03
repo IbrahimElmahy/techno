@@ -14,6 +14,7 @@ from decimal import Decimal
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
+from src.lib import entry_text
 from src.core.money import ZERO, to_money
 from src.models.cost_center import CostCenter
 from src.models.user import User
@@ -573,7 +574,7 @@ def account_statement(
             debit, credit = pair(cash_inv.side, cash_inv.cash)
             emit(when=when, entry=cash_inv.entry, account_id=cash_inv.account_id,
                  debit=debit, credit=credit,
-                 description=cash_inv.entry.description or "",
+                 description=entry_text.arabic(cash_inv.entry.description),
                  cost_center_id=cash_inv.cost_center_id)
             emit(when=when, entry=cash_inv.entry, account_id=cash_inv.account_id,
                  debit=credit, credit=debit,
@@ -583,7 +584,7 @@ def account_statement(
 
         amount = to_money(line.amount)
         is_debit = line.direction.value == "debit"
-        description = line.statement or line.entry.description or ""
+        description = line.statement or entry_text.arabic(line.entry.description)
         cut = split.get(line.id)
         if cut is not None:
             due, cash, doc_number, side = cut
