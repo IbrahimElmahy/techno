@@ -233,8 +233,10 @@ def create_purchase(
     # غالباً، واللي بيحفظ هو اللي يعرف منين.
     cash_acc = (account_resolver.explicit_treasury(db, cash_account_id)
                 or account_resolver.resolve_cash_account(
-                    db, role=actor_role, user_id=actor_user_id))
-    expense_acc = account_resolver.purchases_expense_account(db)
+                    db, role=actor_role, user_id=actor_user_id, branch_id=invoice.branch_id))
+    # حساب المشتريات **بتاع فرع الفاتورة** (٢٠٢٦-١٠-٠٤) — من غير الفرع كان بيرجع حساب
+    # الفرع الافتراضي (أكتوبر)، فشرا العلياء كان بيتسجّل على أكتوبر.
+    expense_acc = account_resolver.purchases_expense_account(db, branch_id=invoice.branch_id)
     entry_lines = [LineInput(expense_acc.id, Direction.debit, total)]
     if to_money(cash_amount) > ZERO:
         entry_lines.append(LineInput(cash_acc.id, Direction.credit, to_money(cash_amount)))
@@ -242,7 +244,7 @@ def create_purchase(
         entry_lines.append(LineInput(supplier_acc.account_id, Direction.credit, to_money(credit_amount)))
     entry = ledger_service.post_entry(
         db, entry_type="purchase", actor_user_id=actor_user_id, lines=entry_lines,
-        rep_id=rep_id,
+        rep_id=rep_id, branch_id=invoice.branch_id,
         description=entry_text.purchase(invoice.document_number),
         # (المرحلة ٢) القيد بتاريخ المستند وعلى المورد — كان بتاريخ النهارده وبلا شريك،
         # فالفاتورة اللي اتسجّلت متأخرة كانت بتقع في شهر غير شهرها.
@@ -349,8 +351,9 @@ def return_purchase(
         ret.lines.append(PurchaseReturnLine(item_id=item_id, quantity=Decimal(qty)))
 
     # Reverse money proportionally: credit purchases_expense V; debit cash Cr + supplier_payable Pr.
-    cash_acc = account_resolver.resolve_cash_account(db, role=actor_role, user_id=actor_user_id)
-    expense_acc = account_resolver.purchases_expense_account(db)
+    cash_acc = account_resolver.resolve_cash_account(db, role=actor_role, user_id=actor_user_id,
+                                                     branch_id=ret.branch_id)
+    expense_acc = account_resolver.purchases_expense_account(db, branch_id=ret.branch_id)
     supplier_acc = supplier_service.require_account(db, inv.supplier_id)
     entry_lines = [LineInput(expense_acc.id, Direction.credit, value)]
     if cash_refund > ZERO:
@@ -359,6 +362,7 @@ def return_purchase(
         entry_lines.append(LineInput(supplier_acc.account_id, Direction.debit, credit_reduction))
     entry = ledger_service.post_entry(
         db, entry_type="purchase_return", actor_user_id=actor_user_id, lines=entry_lines,
+        branch_id=ret.branch_id,
         description=entry_text.purchase_return(ret.document_number),
         entry_date=ret.return_date,
         partner_kind=PartnerKind.supplier, partner_id=inv.supplier_id,
@@ -590,13 +594,14 @@ def create_standalone_purchase_return(
     # مفيش استرداد نقدي على المستند: المردود المستقل مالوش فاتورة يعرف منها اتدفع كام نقدي،
     # والفلوس الراجعة نقداً بتتسجّل بسند صرف لما تحصل فعلاً.
     expense_acc = (db.get(Account, expense_account_id) if expense_account_id
-                   else account_resolver.purchases_expense_account(db))
+                   else account_resolver.purchases_expense_account(db, branch_id=ret.branch_id))
     if expense_acc is None:
         raise PurchaseError("حساب المشتريات مش موجود.")
     supplier_acc = supplier_service.require_account(db, supplier_id)
 
     entry = ledger_service.post_entry(
         db, entry_type="purchase_return", actor_user_id=actor_user_id,
+        branch_id=ret.branch_id,
         lines=[
             LineInput(expense_acc.id, Direction.credit, value),
             LineInput(supplier_acc.account_id, Direction.debit, value),

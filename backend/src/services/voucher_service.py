@@ -237,6 +237,19 @@ def _cash_side(
         # متوازن، والفرق مايبانش غير في جرد بعد شهر.
         return account_resolver.resolve_cash_account(
             db, role=actor_role, user_id=actor_user_id, family=family).id, None
+    if treasury_id is None:
+        # من غير خزنة مختارة: خزنة فرع اللي بيكتب (خزنة لكل فرع — ٢٠٢٦-١٠-٠٤). الافتراضية
+        # العامة كانت هتنزّل سند موظف أكتوبر في خزنة العلياء.
+        from src.models.treasury import Treasury
+        from src.models.user import User
+
+        user = db.get(User, actor_user_id)
+        if user is not None and user.branch_id:
+            own = db.scalar(select(Treasury).where(
+                Treasury.branch_id == user.branch_id, Treasury.active.is_(True)
+            ).order_by(Treasury.id))
+            if own is not None:
+                return own.account_id, own.id
     treasury = treasury_service.resolve(db, treasury_id)
     return treasury.account_id, treasury.id
 
@@ -450,7 +463,12 @@ def create_handover(
     held = ledger_service.balance_of(db, custody.account_id)
     if value > held:
         raise VoucherError(f"رصيد عهدة المندوب {held} — لا يمكن توريد {value}.")
-    treasury = account_resolver.treasury_account(db)
+    # التوريد لخزنة فرع المندوب — مش الافتراضية (أكتوبر) لمندوب العلياء.
+    from src.models.user import User
+
+    rep_user = db.get(User, rep_user_id)
+    treasury = account_resolver.treasury_account(
+        db, branch_id=rep_user.branch_id if rep_user is not None else None)
     return _create(
         db, kind=VoucherKind.rep_handover, amount=value, cash_account_id=treasury.id,
         party_account_id=custody.account_id, debit_account_id=treasury.id,

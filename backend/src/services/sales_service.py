@@ -83,14 +83,16 @@ class SaleLine:
     warehouse_id: int | None = None
 
 
-def _revenue_account_id(db: Session, chosen: int | None) -> int:
+def _revenue_account_id(db: Session, chosen: int | None, branch_id: int | None = None) -> int:
     """The account revenue posts to: the one named on the document, else the system default.
 
     A chosen account must be postable — posting to a group account would silently corrupt the
     trial balance, so it is refused up front rather than discovered at report time.
     """
     if chosen is None:
-        return account_resolver.sales_revenue_account(db).id
+        # حساب المبيعات **بتاع فرع الفاتورة** (٢٠٢٦-١٠-٠٤). من غير الفرع كان بيرجع حساب الفرع
+        # الافتراضي (أكتوبر)، فإيراد فواتير العلياء كان بيتسجّل على أكتوبر.
+        return account_resolver.sales_revenue_account(db, branch_id=branch_id).id
     from src.models.ledger import Account
 
     acc = db.get(Account, chosen)
@@ -511,7 +513,10 @@ def create_sale(
     # من غير ده كان البوباب بيسأل والإجابة تترمي، والفلوس تروح لمكان تالت من غير
     # ما حد يعرف إن اختياره اتلغى.
     cash_acc = account_resolver.explicit_treasury(db, cash_account_id) or account_resolver.resolve_cash_account(
-        db, role=actor_role, user_id=actor_user_id, family=family)
+        db, role=actor_role, user_id=actor_user_id, family=family,
+        branch_id=branch_for(db, actor_user_id=actor_user_id,
+                             location_kind=origin_location_kind,
+                             location_id=origin_location_id))
 
     # الفاتورة اللي بتتعدّل بتحتفظ برقمها وتاريخ إنشائها — الرقم ده اتطبع واتقال في
     # التليفون، وتغييره عشان سعر اتظبط بيخلّي الورقة اللي في إيد العميل تشاور على حاجة
@@ -690,7 +695,8 @@ def create_sale(
     # (030) Revenue posts to the account chosen on the document when there is one, so a company
     # can split sales across several revenue accounts; otherwise the system's default.
     if net > ZERO:
-        entry_lines.append(LineInput(_revenue_account_id(db, revenue_account_id),
+        entry_lines.append(LineInput(_revenue_account_id(db, revenue_account_id,
+                                                         invoice.branch_id),
                                      Direction.credit, net))
     if tax > ZERO:  # output VAT is owed to the authority, not revenue
         entry_lines.append(LineInput(tax_service.output_tax_account(db).id,
@@ -715,7 +721,7 @@ def create_sale(
     if entry_lines:
         entry = ledger_service.post_entry(
             db, entry_type="sale", actor_user_id=actor_user_id, lines=entry_lines,
-            rep_id=invoice.rep_id,
+            rep_id=invoice.rep_id, branch_id=invoice.branch_id,
             description=entry_text.sale(invoice.document_number),
             # Same date as the document: the books and the paper have to agree.
             entry_date=invoice_date,
@@ -1083,7 +1089,8 @@ def return_sale(
             db, inv.customer_id, family=getattr(inv, "family", None))
     except (MergeError, customer_service.CustomerError) as exc:
         raise SalesError(str(exc)) from exc
-    entry_lines = [LineInput(account_resolver.sales_revenue_account(db).id, Direction.debit, value)]
+    entry_lines = [LineInput(account_resolver.sales_revenue_account(db, branch_id=ret.branch_id).id,
+                             Direction.debit, value)]
     if tax_refund > ZERO:
         entry_lines.append(LineInput(tax_service.output_tax_account(db).id, Direction.debit,
                                      tax_refund, statement="رد ضريبة القيمة المضافة"))
@@ -1093,7 +1100,7 @@ def return_sale(
         entry_lines.append(LineInput(cust_acc.account_id, Direction.credit, credit_reduction))
     entry = ledger_service.post_entry(
         db, entry_type="sale_return", actor_user_id=actor_user_id, lines=entry_lines,
-        rep_id=ret.rep_id,
+        rep_id=ret.rep_id, branch_id=ret.branch_id,
         description=entry_text.sale_return(ret.document_number),
         entry_date=ret.return_date,
         partner_kind=PartnerKind.customer, partner_id=inv.customer_id,
@@ -1244,7 +1251,10 @@ def create_standalone_return(
     cash_acc = (
         (account_resolver.explicit_treasury(db, cash_account_id)
          or account_resolver.resolve_cash_account(
-             db, role=actor_role, user_id=actor_user_id, family=family))
+             db, role=actor_role, user_id=actor_user_id, family=family,
+             branch_id=branch_for(db, actor_user_id=actor_user_id,
+                                  location_kind=origin_location_kind,
+                                  location_id=origin_location_id)))
         if to_money(cash_refund) > ZERO else None)
 
     existing = db.get(SalesReturn, replace_return_id) if replace_return_id else None
@@ -1334,7 +1344,8 @@ def create_standalone_return(
             unit_cost=to_money(costing_service.average_cost(db, ln.item_id) * factor),
         ))
 
-    entry_lines = [LineInput(account_resolver.sales_revenue_account(db).id, Direction.debit, net)]
+    entry_lines = [LineInput(account_resolver.sales_revenue_account(db, branch_id=ret.branch_id).id,
+                             Direction.debit, net)]
     if tax > ZERO:
         entry_lines.append(LineInput(tax_service.output_tax_account(db).id, Direction.debit,
                                      tax, statement="رد ضريبة القيمة المضافة"))
@@ -1344,7 +1355,7 @@ def create_standalone_return(
         entry_lines.append(LineInput(cust_acc.account_id, Direction.credit, to_money(credit_reduction)))
     entry = ledger_service.post_entry(
         db, entry_type="sale_return", actor_user_id=actor_user_id, lines=entry_lines,
-        rep_id=ret.rep_id,
+        rep_id=ret.rep_id, branch_id=ret.branch_id,
         description=entry_text.sale_return(ret.document_number),
         entry_date=ret.return_date,
         partner_kind=PartnerKind.customer, partner_id=ret.customer_id,
