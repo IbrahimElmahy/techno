@@ -87,13 +87,22 @@ export default function FreeProduction() {
   const load = async () => {
     setLoading(true);
     try {
-      const [i, w, o] = await Promise.all([
+      const [i, w, o, b] = await Promise.all([
         api.get('/api/v1/items'),
         api.get('/api/v1/warehouses'),
         api.get('/api/v1/manufacturing/orders'),
+        api.get('/api/v1/branches'),
       ]);
       setItems(i.data || []);
-      setWarehouses(w.data || []);
+      // الإنتاج في فرع المصنع بس — مخازن الفروع اللي `is_factory` وحدها، والسيرفر بيرفض
+      // غيرها (`org_service.production_branch_problem`). مافيش فرع مصنع ⇒ القايمة كاملة.
+      const factory = new Set<number>((b.data || [])
+        .filter((x: { is_factory?: boolean }) => x.is_factory)
+        .map((x: { id: number }) => Number(x.id)));
+      const allWh: { id: number; name: string; branch_id?: number | null }[] = w.data || [];
+      setWarehouses(factory.size
+        ? allWh.filter((x) => x.branch_id != null && factory.has(Number(x.branch_id)))
+        : allWh);
       // Only the recipe-less ones — this screen is a register of free production, and mixing in
       // recipe orders would make «why is this one not in أوامر التصنيع?» a question.
       setOrders((o.data || []).filter((x: Order) => x.bom_id === null));

@@ -26,7 +26,7 @@ from src.models.manufacturing import (
     ManufacturingOrderResource,
 )
 from src.models.stock import LocationKind, StockDirection
-from src.services import audit_service, stock_service, uom_service
+from src.services import audit_service, org_service, stock_service, uom_service
 
 
 class ManufacturingError(Exception):
@@ -341,6 +341,14 @@ def create_order(
         ]
 
     wastes = wastes or {}
+
+    # الإنتاج في فرع المصنع بس — نفس قيد أوامر التشغيل، والشرح في
+    # `org_service.production_branch_problem`.
+    branch_id, problem = org_service.production_branch_problem(
+        db, branch_id,
+        [location_id] if location_kind == LocationKind.warehouse else [])
+    if problem:
+        raise ManufacturingError(problem)
 
     # Defaulted here rather than in the column so an order always carries a real production day —
     # a NULL would push every report that groups by day into guessing.

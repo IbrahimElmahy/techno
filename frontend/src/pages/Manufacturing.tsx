@@ -28,7 +28,8 @@ import { useTableColumns } from '../components/ColumnSettings';
 
 import StatsRow from '../components/StatsRow';
 import { numeralsLocale } from '../utils/money';
-interface Warehouse { id: number; name: string; }
+interface Warehouse { id: number; name: string; branch_id?: number | null; }
+interface BranchRef { id: number; name: string; is_factory?: boolean; }
 interface Item {
   id: number; code: string; name: string;
   kind: 'raw_material' | 'product'; unit_of_measure: string;
@@ -90,7 +91,7 @@ export default function Manufacturing() {
   // «نسب انتاج» and «انتاج حسب النسب» are two entries in their menu and two tabs here.
   const [tab, setTab] = useQueryTab('orders');
   const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
-  const [branches, setBranches] = useState<{ id: number; name: string }[]>([]);
+  const [branches, setBranches] = useState<BranchRef[]>([]);
   const [rawMaterials, setRawMaterials] = useState<Item[]>([]);
   const [products, setProducts] = useState<Item[]>([]);
   const [boms, setBoms] = useState<Bom[]>([]);
@@ -920,7 +921,7 @@ function ProductionOrdersTab({
   /** العدد الكلي من السيرفر — لعدّاد الشريحة في الترويسة. */
   onTotal: (n: number) => void;
   products: Item[]; rawMaterials: Item[]; warehouses: Warehouse[];
-  branches: { id: number; name: string }[]; boms: Bom[];
+  branches: BranchRef[]; boms: Bom[];
   itemName: (id: number) => string;
   itemUnit: (id: number) => string;
   itemCode: (id: number) => string;
@@ -989,7 +990,29 @@ function ProductionOrdersTab({
   const itemOptions = (list: Item[]) =>
     // الكود مش بيتعرض، بيتبحث بيه — الشرح في `utils/itemLabel`.
     list.map((i) => ({ value: i.id, label: i.name, search: i.code || '' }));
-  const whOptions = sortByName(warehouses, (w) => w.name).map((w) => ({ value: w.id, label: w.name }));
+  /**
+   * **أمر التشغيل في فرع المصنع بس** — نفس قيد السيرفر (`org_service.production_branch_problem`).
+   *
+   * قايمة الفرع كانت الفروع كلها والمخازن كلها، والورقة بتتكتب على العلياء عادي.
+   * دلوقتي: الفروع اللي `is_factory` بس، والفرع الواحد بيتختار لوحده ومايتغيّرش،
+   * والمخازن (منتج وخامة، واختيار «أنسب مخزن» من الرصيد) من فرع الورقة وبس.
+   * ولو مافيش فرع متعلّم مصنع، القوايم بتفضل كاملة زي الأول — نفس السيرفر.
+   */
+  const factoryBranches = useMemo(() => branches.filter((b) => b.is_factory), [branches]);
+  const branchChoices = factoryBranches.length ? factoryBranches : branches;
+  const soleFactory = factoryBranches.length === 1 ? factoryBranches[0].id : undefined;
+  const orderBranch = branchId ?? soleFactory;
+  const allowedWh = useMemo(() => {
+    if (!factoryBranches.length) return null;
+    const ok = new Set(factoryBranches.map((b) => b.id));
+    return new Set(warehouses
+      .filter((w) => w.branch_id != null && (orderBranch != null
+        ? w.branch_id === orderBranch : ok.has(w.branch_id)))
+      .map((w) => w.id));
+  }, [factoryBranches, warehouses, orderBranch]);
+  const whOptions = sortByName(
+    allowedWh ? warehouses.filter((w) => allowedWh.has(w.id)) : warehouses, (w) => w.name,
+  ).map((w) => ({ value: w.id, label: w.name }));
 
   const branchName = useMemo(() => {
     const m = new Map(branches.map((b) => [b.id, b.name]));
@@ -1030,7 +1053,7 @@ function ProductionOrdersTab({
   };
 
   const openNew = () => {
-    resetForm(); setLines([newPOProduct()]); refreshBoms(); setOpen(true);
+    resetForm(); setBranchId(soleFactory); setLines([newPOProduct()]); refreshBoms(); setOpen(true);
   };
 
   /**
@@ -1226,7 +1249,9 @@ function ProductionOrdersTab({
    * «مخزن الخامات»، وأربع خامات من خمسة مالهمش فيه ولا وحدة، والصرف وقع عند «ابدأ».
    */
   const bestWarehouse = (itemId?: number, need = 0, fallback?: number) => {
-    const rows = itemId ? stock.get(itemId) : undefined;
+    // الرصيد في مخازن فرع الورقة بس — مخزن من فرع تاني السيرفر هيرفضه عند الحفظ.
+    const rows = (itemId ? stock.get(itemId) : undefined)
+      ?.filter((r) => !allowedWh || allowedWh.has(r.wh));
     if (!rows?.length) return fallback;
     return (rows.find((r) => r.qty >= need) ?? rows[0]).wh;
   };
@@ -1308,7 +1333,7 @@ function ProductionOrdersTab({
 
   const payload = () => ({
     production_date: productionDate ? productionDate.format('YYYY-MM-DD') : undefined,
-    branch_id: branchId ?? undefined,
+    branch_id: orderBranch ?? undefined,
     external_document_number: externalRef || undefined,
     statement1: statement || undefined,
     notes: notes || undefined,
@@ -1795,8 +1820,9 @@ function ProductionOrdersTab({
           </Col>
           <Col span={8}>
             <div style={{ marginBottom: 4 }}>الفرع</div>
-            <Select allowClear style={{ width: '100%' }} value={branchId} onChange={setBranchId}
-              options={branches.map((b) => ({ value: b.id, label: b.name }))} placeholder="الفرع" />
+            <Select allowClear={!soleFactory} disabled={!!soleFactory} style={{ width: '100%' }}
+              value={orderBranch} onChange={setBranchId}
+              options={branchChoices.map((b) => ({ value: b.id, label: b.name }))} placeholder="الفرع" />
           </Col>
           <Col span={8}>
             <div style={{ marginBottom: 4 }}>رقم الورقة</div>

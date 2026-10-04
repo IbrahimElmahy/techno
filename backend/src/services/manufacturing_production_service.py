@@ -44,7 +44,14 @@ from src.models.manufacturing import (
 )
 from src.models.stock import LocationKind, StockDirection
 from src.models.warehouse import Warehouse
-from src.services import audit_service, costing_service, numbering, stock_service, uom_service
+from src.services import (
+    audit_service,
+    costing_service,
+    numbering,
+    org_service,
+    stock_service,
+    uom_service,
+)
 
 #: اسم المستند في `stock_movement.source_doc_type` — مسجّل في `lib/stock_docs`.
 DOC_TYPE = "production_order"
@@ -228,6 +235,19 @@ def _build_lines(db: Session, order: ProductionOrder, products) -> None:
     db.flush()
 
 
+def _enforce_factory_branch(db: Session, order: ProductionOrder) -> None:
+    """الورقة على فرع المصنع ومخازنها منه — الشرح في `org_service.production_branch_problem`.
+
+    بيتنده بعد بناء السطور: المخازن مابتتعرفش غير بعده (السطر ممكن ياخد المخزن الافتراضي
+    للصنف). والرفض بيرجّع الطلب كله — الـflush اللي فات بيترجع مع الـrollback بتاع الـAPI.
+    """
+    whs = [p.warehouse_id for p in order.products] + [m.warehouse_id for m in order.materials]
+    branch_id, problem = org_service.production_branch_problem(db, order.branch_id, whs)
+    if problem:
+        raise ProductionOrderError(problem)
+    order.branch_id = branch_id
+
+
 def create_order(
     db: Session,
     *,
@@ -259,9 +279,10 @@ def create_order(
     db.add(order)
     db.flush()
     _build_lines(db, order, products)
-    if order.branch_id is None and order.products:
+    if order.branch_id is None and order.products and len(org_service.factory_branches(db)) != 1:
         w = db.get(Warehouse, order.products[0].warehouse_id)
         order.branch_id = w.branch_id if w is not None else None
+    _enforce_factory_branch(db, order)
     audit_service.record(db, action="production_order.create", actor_user_id=actor_user_id,
                          entity_type="production_order", entity_id=order.id,
                          after={"doc": order.document_number})
@@ -297,6 +318,7 @@ def update_order(db: Session, *, order_id: int, products, actor_user_id: int, **
         db.delete(line)
     db.flush()
     _build_lines(db, order, products)
+    _enforce_factory_branch(db, order)
     # المؤكد اللي اتعدّل بيرجع مسودة — المراجعة اتعملت على أرقام اتغيّرت.
     order.state = ProductionState.draft
     order.reviewed = False
@@ -701,6 +723,61 @@ def delete_draft(db: Session, *, order_id: int, actor_user_id: int) -> None:
                          before={"doc": order.document_number})
     db.delete(order)
     db.flush()
+
+
+def purge_order(db: Session, *, order_id: int, actor_user_id: int, pair_ok: bool = False) -> str:
+    """**مسح أمر تشغيل بكل أثره** — سطوره ودفعات استلامه وكل حركة مخزون كتبها.
+
+    مش طريق الشغل اليومي: اليومي هو `reverse_order` (حركة مرآة بتفضل في السجل). ده
+    لتنضيف ورق تجريبي اتكتب على داتا حقيقية — العكس كان هيسيب أمرين وحركتين لكل غلطة
+    في كارت كل صنف. نفس أسلوب `document_edit_service`: الحركة بتتشال خالص، والرصيد
+    مشتق منها فبيرجع لوحده.
+
+    ⛔ **المنقول من a5 مايتمسحش من هنا** — حركاته بتاعة `ManufacturingOp` والمصدر هو اللي
+    بيحكم عليه. ولا الأمر اللي عليه عكس أو هو نفسه عكس: المسح لازم يشيل الاتنين مع بعض،
+    والقرار ده مايتاخدش في الضهر.
+
+    بيرجّع رقم المستند اللي اتمسح.
+    """
+    from sqlalchemy import delete
+
+    from src.models.stock import StockMovement
+    from src.services.document_edit_service import _drop_stock
+
+    order = db.get(ProductionOrder, order_id)
+    if order is None:
+        raise ProductionOrderError("أمر التشغيل مش موجود.")
+    if order.imported_from is not None:
+        raise ProductionOrderError(
+            f"{order.document_number} منقول من a5 — مايتمسحش من هنا.")
+    # `pair_ok`: السكربت بيمسح الأمر وعكسه مع بعض (العكس الأول) — قرار متاخد فوق.
+    if not pair_ok and (order.reverses_id is not None or db.scalar(select(ProductionOrder.id).where(
+            ProductionOrder.reverses_id == order_id)) is not None):
+        raise ProductionOrderError(
+            f"{order.document_number} عليه أمر عكس (أو هو عكس) — امسحهم مع بعض بقرار.")
+    doc = order.document_number
+    before = {"doc": doc, "state": order.state.value if order.state else None,
+              "branch_id": order.branch_id}
+
+    # السطور بتشاور على الحركات، فبتتشال الأول. والخامة والاستلام بيشاوروا على سطر
+    # المنتج، فبيتشالوا قبله.
+    db.execute(delete(ProductionOrderReceipt).where(ProductionOrderReceipt.order_id == order_id))
+    db.execute(delete(ProductionOrderMaterial).where(
+        ProductionOrderMaterial.order_id == order_id))
+    db.execute(delete(ProductionOrderProduct).where(
+        ProductionOrderProduct.order_id == order_id))
+    # حركة «عكس دفعة استلام» بتشاور على حركة الدفعة نفسها — بتتشال قبلها.
+    db.execute(delete(StockMovement).where(
+        StockMovement.source_doc_type == "production_order",
+        StockMovement.source_doc_id == order_id,
+        StockMovement.reverses_movement_id.is_not(None)))
+    _drop_stock(db, source_doc_type="production_order", source_doc_id=order_id)
+    db.execute(delete(ProductionOrder).where(ProductionOrder.id == order_id))
+    db.flush()
+    db.expire_all()
+    audit_service.record(db, action="production_order.purge", actor_user_id=actor_user_id,
+                         entity_type="production_order", entity_id=order_id, before=before)
+    return doc
 
 
 def reverse_order(db: Session, *, order_id: int, actor_user_id: int) -> ProductionOrder:
