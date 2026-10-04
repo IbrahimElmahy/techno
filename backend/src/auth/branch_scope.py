@@ -16,17 +16,46 @@
 """
 from __future__ import annotations
 
+from contextvars import ContextVar
+
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from src.auth.dependencies import CurrentUser
 
+#: **فلتر الفرع بتاع المالك/الأدمن** (٢٠٢٦-١٠-٠٤). اللي فوق الفروع بيشوف التلاتة، ومن الشريط
+#: فوق بيختار فرع يتفرّج عليه — الواجهة بتبعته في هيدر `X-View-Branch` مع كل طلب، والـmiddleware
+#: في `main.py` بيحطه هنا. فكل قايمة وتقرير بيسألوا `visible_branch_id` بيتفلتروا من مكان واحد،
+#: من غير ما نلمس ٩٠ موضع.
+_view_branch: ContextVar[int | None] = ContextVar("view_branch", default=None)
+
+
+def set_view_branch(branch_id: int | None):
+    """بيتنده من الـmiddleware بس — بيرجّع التوكن عشان يترجع بعد الطلب."""
+    return _view_branch.set(branch_id)
+
+
+def reset_view_branch(token) -> None:
+    _view_branch.reset(token)
+
 
 def visible_branch_id(current: CurrentUser) -> int | None:
-    """الفرع اللي الشخص ده محبوس فيه، أو None لو بيشوف الكل."""
+    """الفرع اللي الشخص ده بيشوفه، أو None لو بيشوف الكل.
+
+    موظف الفرع: فرعه، دايماً. المالك/الأدمن: الفرع اللي اختاره من الفلتر، وإلا الكل.
+    """
     if current.is_admin:
-        return None
+        return _view_branch.get()
     return current.branch_id
+
+
+def sees_all_branches(current: CurrentUser) -> bool:
+    """**صلاحية** مش عرض: اللي فوق الفروع (أو مالوش فرع) — مابيتأثرش بفلتر الفرع.
+
+    الأماكن اللي كانت بتسأل «`visible_branch_id` فاضي؟» عشان تدّي صلاحية (اعتماد تحويل
+    أي فرع مثلاً) بتسأل هنا، عشان المالك وهو مفلتر على فرع مايفقدش صلاحيته.
+    """
+    return current.is_admin or current.branch_id is None
 
 
 def scope(stmt, model, current: CurrentUser):

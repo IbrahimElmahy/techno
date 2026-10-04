@@ -134,6 +134,19 @@ def create_app() -> FastAPI:
             "Strict-Transport-Security", "max-age=31536000; includeSubDomains")
         return response
 
+    # فلتر الفرع بتاع المالك/الأدمن — هيدر `X-View-Branch` ⇒ `branch_scope` (الشرح هناك).
+    # موظف الفرع مابيتأثرش: `visible_branch_id` بيرجّعله فرعه مهما الهيدر قال.
+    from src.auth import branch_scope as _branch_scope
+
+    @app.middleware("http")
+    async def _view_branch(request, call_next):
+        raw = request.headers.get("x-view-branch")
+        token = _branch_scope.set_view_branch(int(raw) if raw and raw.isdigit() else None)
+        try:
+            return await call_next(request)
+        finally:
+            _branch_scope.reset_view_branch(token)
+
     prefix = "/api/v1"
     app.include_router(auth.router, prefix=prefix)
     app.include_router(users.router, prefix=prefix)

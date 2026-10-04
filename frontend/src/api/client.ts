@@ -21,6 +21,27 @@ export function getApiBaseURL() {
 }
 
 /**
+ * **فلتر الفرع بتاع المالك/الأدمن** (٢٠٢٦-١٠-٠٤) — بيتبعت هيدر `X-View-Branch` مع كل طلب،
+ * والسيرفر بيفلتر بيه كل القوايم والتقارير من مكان واحد (`branch_scope.visible_branch_id`).
+ * موظف الفرع السيرفر بيتجاهل الهيدر بتاعه ويرجّعله فرعه هو.
+ */
+const VIEW_BRANCH_KEY = 'viewBranch';
+
+export function getViewBranch(): number | null {
+  try {
+    const v = Number(localStorage.getItem(VIEW_BRANCH_KEY));
+    return Number.isInteger(v) && v > 0 ? v : null;
+  } catch { return null; }
+}
+
+export function setViewBranch(id: number | null) {
+  try {
+    if (id) localStorage.setItem(VIEW_BRANCH_KEY, String(id));
+    else localStorage.removeItem(VIEW_BRANCH_KEY);
+  } catch { /* تخزين مقفول — الفلتر بيفضل للجلسة دي بس */ }
+}
+
+/**
  * كاش في الذاكرة للقوايم المرجعية — عشان التنقل بين الشاشات يبقى فوري.
  *
  * الشاشات بتفتح وبتطلب نفس القوايم كل مرة: المخازن، الفروع، شجرة الحسابات، العملاء،
@@ -139,7 +160,8 @@ api.get = function (url: string, config?: any): Promise<any> {
   const isNoCache = config?.headers?.['Cache-Control'] === 'no-cache';
   // اللي بعد «؟» جزء من العنوان، فبيتشال قبل المقارنة وبيدخل في المفتاح.
   const path = url.split('?')[0];
-  const fullKey = `${url}?${JSON.stringify(config?.params || {})}`;
+  // الفرع جزء من المفتاح: نفس القايمة بفلتر فرع تاني رد تاني.
+  const fullKey = `${url}?${JSON.stringify(config?.params || {})}#b${getViewBranch() ?? ''}`;
   const isCacheable = !isNoCache && CACHEABLE_PATHS.has(path);
 
   if (isCacheable) {
@@ -189,6 +211,8 @@ api.interceptors.request.use(
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
     }
+    const viewBranch = getViewBranch();
+    if (viewBranch) config.headers['X-View-Branch'] = String(viewBranch);
     return config;
   },
   (error) => {

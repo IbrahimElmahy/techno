@@ -149,7 +149,8 @@ def list_branches(
 ) -> list[BranchOut]:
     stmt = select(Branch)
     # مافيش فرع ⇒ بيشوف الفروع كلها؛ `Branch.id == NULL` كان بيرجّع قايمة فاضية.
-    scoped_branch = branch_scope.visible_branch_id(current)
+    # والمالك/الأدمن بيشوف التلاتة حتى وهو مفلتر — فلتر الفرع نفسه بيقرا القايمة دي.
+    scoped_branch = None if branch_scope.sees_all_branches(current) else current.branch_id
     if scoped_branch is not None:
         stmt = stmt.where(Branch.id == scoped_branch)
     return [_branch_out(b) for b in db.scalars(stmt).all()]

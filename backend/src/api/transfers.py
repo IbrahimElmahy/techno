@@ -229,7 +229,7 @@ def _may_approve_now(db: Session, current: CurrentUser, t) -> bool:
         db, t.source_location_kind, t.source_location_id)
     # نفس قاعدة `approve_transfer`: اللي بيشوف الفروع كلها بيعتمد لأي فرع. `is_admin`
     # لوحدها معناها `system_admin` وبس، والمالك مالوش فرع فكان بيقع بين الاتنين.
-    sees_all = branch_scope.visible_branch_id(current) is None
+    sees_all = branch_scope.sees_all_branches(current)
     if src_branch is None:
         return sees_all
     return sees_all or (current.role == RoleName.branch_manager
@@ -262,7 +262,7 @@ def self_approve(
     # (٢٠٢٦-٠٩-٣٠) السطر ده كان متزق جوّه الـ`if` اللي فوق بعد `return` — عمره ما اتنفّذ،
     # فكل اعتماد تلقائي كان بيقع بـ`UnboundLocalError`، والـ`except` تحت كان بيداريه
     # ويرجّع الإذن «معلّق». ده اللي خلّى الإذن من السيستم مايتعتمدش لوحده.
-    sees_all = branch_scope.visible_branch_id(current) is None
+    sees_all = branch_scope.sees_all_branches(current)
     try:
         t = transfer_service.approve(
             db, transfer_id=transfer_id, approver_role=current.role,
@@ -292,7 +292,7 @@ def approve_transfer(
         t = transfer_service.approve(
             db, transfer_id=transfer_id, approver_role=current.role,
             approver_branch_id=current.branch_id, approver_user_id=current.id,
-            is_admin=branch_scope.visible_branch_id(current) is None)
+            is_admin=branch_scope.sees_all_branches(current))
     except TransferDenied as exc:
         raise HTTPException(status.HTTP_403_FORBIDDEN, {"code": "forbidden", "message": str(exc)})
     except (TransferError, StockError, SerialError, BatchError) as exc:

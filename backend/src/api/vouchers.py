@@ -648,7 +648,7 @@ class CashAccountOut(BaseModel):
 
 @router.get("/cash-accounts", response_model=list[CashAccountOut])
 def list_cash_accounts(
-    _: CurrentUser = Depends(require_capability(CAP_VOUCHER_READ)),
+    current: CurrentUser = Depends(require_capability(CAP_VOUCHER_READ)),
     db: Session = Depends(get_db),
 ) -> list[CashAccountOut]:
     """حسابات الخزن اللي ينفع يترحّل عليها — لبوباب «الفلوس رايحة فين» قبل الحفظ.
@@ -675,6 +675,11 @@ def list_cash_accounts(
             Custody.account_id.isnot(None))).all()
     }
     names = {u.id: (u.full_name or u.username) for u in db.scalars(select(User)).all()}
+    # صناديق فرع اللي بيكتب بس (أو اللي فرّعه المالك من الفلتر). كانت بترجع صناديق الفروع
+    # كلها، فموظف العلياء بيشوف ١٣ صندوق من أكتوبر في بوباب «الفلوس رايحة فين».
+    bid = branch_scope.visible_branch_id(current)
+    if bid is not None:
+        accounts = [a for a in accounts if a.branch_id in (bid, None)]
     out: list[CashAccountOut] = []
     for a in accounts:
         # الحساب اللي مالوش اسم ولا كود مايتعرضش: «خزينة #٣٧٦٧» مش اختيار، دي مطالبة

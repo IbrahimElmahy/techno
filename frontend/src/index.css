@@ -1784,3 +1784,10 @@ body.eg-resizing * {
 @media (max-width: 480px) {
   .list-page .sl-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
+
+/* فلتر الفرع وهو شغّال — لازم يبان إن اللي قدامك فرع واحد مش الكل. */
+.branch-filter.is-on .ant-select-selector {
+  background: #fff7e6 !important;
+  border-color: #fa8c16 !important;
+  font-weight: 700;
+}

@@ -9,6 +9,7 @@ from pydantic import BaseModel
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
+from src.auth import branch_scope
 from src.auth.dependencies import CurrentUser, require_capability
 from src.auth.rbac import CAP_CUSTOMER_READ, CAP_CUSTOMER_REASSIGN, CAP_CUSTOMER_WRITE
 from src.core.db import get_db
@@ -207,12 +208,17 @@ def _apply_card(c: Customer, body: _CustomerCard) -> None:
             setattr(c, field, val)
 
 
-def _scope_filter(stmt, current: CurrentUser):
+def _scope_filter(stmt, current: CurrentUser, *, view_filter: bool = True):
+    branch_id = current.branch_id
     if current.is_admin:
-        return stmt
-    if current.rep_id is not None:  # Sales Rep -> only own customers (FR-009)
+        # المالك/الأدمن: الكل، إلا لو مختار فرع من فلتر الفرع (القوايم بس — فتح كارت بالرقم
+        # من كشف أو رابط مابيتقفلش بالفلتر: `view_filter=False` من `_seen`).
+        branch_id = branch_scope.visible_branch_id(current) if view_filter else None
+        if branch_id is None:
+            return stmt
+    elif current.rep_id is not None:  # Sales Rep -> only own customers (FR-009)
         return stmt.where(Customer.rep_id == current.rep_id)
-    if current.branch_id is not None:  # branch-scoped -> own branch
+    if branch_id is not None:  # branch-scoped -> own branch
         from sqlalchemy import and_, or_
 
         from src.models.org import Territory
@@ -220,9 +226,9 @@ def _scope_filter(stmt, current: CurrentUser):
         # **فرع الكارت الأول، والمنطقة لو الكارت مالوش فرع** (٢٠٢٦-١٠-٠١). كانت بالمنطقة
         # بس — وموظفين العلياء (٥٦ كارت، فرعهم العلياء) متسجّلين على «منطقة وسط» بتاعة
         # أكتوبر، فتبويب «الموظفين» في فاتورة بيع العلياء كان فاضي وأكتوبر شايفهم.
-        branch_territories = select(Territory.id).where(Territory.branch_id == current.branch_id)
+        branch_territories = select(Territory.id).where(Territory.branch_id == branch_id)
         return stmt.where(or_(
-            Customer.branch_id == current.branch_id,
+            Customer.branch_id == branch_id,
             and_(Customer.branch_id.is_(None), Customer.territory_id.in_(branch_territories)),
         ))
     return stmt
@@ -242,7 +248,8 @@ def _seen(db: Session, customer_id: int, current: CurrentUser) -> Customer:
 
     و٤٠٤ مش ٤٠٣: ٤٠٣ بيقول «موجود بس مش بتاعك»، ودي معلومة عن فرع تاني لوحدها.
     """
-    c = db.scalar(_scope_filter(select(Customer).where(Customer.id == customer_id), current))
+    c = db.scalar(_scope_filter(select(Customer).where(Customer.id == customer_id), current,
+                                view_filter=False))
     if c is None:
         raise HTTPException(404, {"code": "not_found", "message": "Customer not found"})
     return c

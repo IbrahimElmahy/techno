@@ -34,6 +34,7 @@ import NumeralsControl from './Numerals';
 import { bindNumeralsUser } from '../utils/numerals';
 import { useFullscreen } from './FullscreenToggle';
 import Logo from './Logo';
+import BranchFilter from './BranchFilter';
 import { useTabs } from './TabsContext';
 import TabWorkspace from './TabWorkspace';
 
@@ -437,6 +438,8 @@ export default function AppLayout() {
           }}>
             {/* الأيقونة وبس — الاسم والإعدادات جوّه القايمة. الصف العلوي شغله يعرض
                 الأقسام، وكل بكسل بياخده حاجة تانية بيتاخد منها. */}
+            {/* فلتر الفرع — اللي فوق الفروع بس (المالك والأدمن). */}
+            {(user?.role === 'owner' || user?.role === 'system_admin') && <BranchFilter />}
             <Dropdown menu={{ items: userDropdownItems }} placement="bottomLeft">
               <Tooltip title={user?.name}>
                 <Avatar size={28} style={{ backgroundColor: '#6AB42D', cursor: 'pointer' }}
