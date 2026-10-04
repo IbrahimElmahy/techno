@@ -162,32 +162,13 @@ def create_order(
     #
     # الأعمدة nullable من الأصل، والفاتورة نفسها لسه بتطلب عميل زي ما هي.
 
-    # (فصل الفروع) فرع الورقة: موظف الفرع فرعه هو مهما اتبعت (كان بياخد `branch_id` من
-    # الجسم زي ما هو)، والأدمن اللي اختاره، وإلا فرع المخزن أو الطرف. والمخزن والطرف
-    # لازم يكونوا من نفس الفرع.
-    from src.models.customer import Customer
-    from src.models.supplier import Supplier
-    from src.services import org_service
-
-    cust = db.get(Customer, body.customer_id) if body.customer_id else None
-    sup = db.get(Supplier, body.supplier_id) if body.supplier_id else None
-    branch_id = org_service.bound_branch(db, current.id) or body.branch_id or \
-        org_service.document_branch(
-            db, actor_user_id=current.id,
-            locations=[("warehouse", body.warehouse_id)] if body.warehouse_id else [],
-            owners=[cust.branch_id if cust else None, sup.branch_id if sup else None])
-    org_service.assert_same_branch(
-        db, branch_id,
-        locations=[("warehouse", body.warehouse_id)] if body.warehouse_id else [],
-        customer_id=body.customer_id, supplier_id=body.supplier_id)
-
     n = db.scalar(select(func.count()).select_from(TradeOrder).where(
         TradeOrder.kind == kind)) or 0
     order = TradeOrder(
         document_number=f"{_PREFIX[kind]}-{n + 1:06d}", kind=kind,
         customer_id=body.customer_id, supplier_id=body.supplier_id,
         order_date=body.order_date, due_date=body.due_date, warehouse_id=body.warehouse_id,
-        branch_id=branch_id, notes=body.notes,
+        branch_id=body.branch_id, notes=body.notes,
         statement1=(body.statement1 or "").strip() or None,
         gross=ZERO, variable_discount_pct=to_money(body.variable_discount_pct or 0),
         total=ZERO, actor_user_id=current.id,

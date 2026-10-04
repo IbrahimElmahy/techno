@@ -34,7 +34,6 @@ from src.services import (
     supplier_service,
     audit_service,
     ledger_service,
-    org_service,
     sales_service,
     stock_service,
     tax_service,
@@ -47,16 +46,6 @@ from src.auth.branch_scope import branch_for
 
 class PurchaseError(Exception):
     pass
-
-
-def branch_keys(doc) -> frozenset:
-    """حاجات فاتورة الشراء/المردود قبل التفضية في التعديل — بتعدّي فحص الفروع."""
-    locs = [(getattr(doc, "location_kind", None) or getattr(doc, "origin_location_kind", None),
-             getattr(doc, "location_id", None) or getattr(doc, "origin_location_id", None))]
-    locs += [(ln.line_location_kind, ln.line_location_id) for ln in getattr(doc, "lines", [])]
-    return org_service.resource_keys(
-        locations=locs, accounts=[getattr(doc, "expense_account_id", None)],
-        supplier_id=doc.supplier_id, rep_id=getattr(doc, "rep_id", None))
 
 
 @dataclass(frozen=True)
@@ -110,8 +99,6 @@ def create_purchase(
     # بيغلب `cost_center_id` — المستند متقسّم فمافيش مركز واحد يتكتب عليه. مالوش
     # عمود على المستند: سطور قيده شايلاه، والقراءة بترجع منها.
     cost_center_distribution: dict | None = None,
-    # (فصل الفروع) حاجات الفاتورة قبل التعديل — شوف `branch_keys`.
-    branch_keep: frozenset = frozenset(),
 ) -> PurchaseInvoice:
     if not lines:
         raise PurchaseError("فاتورة الشراء لازم يكون فيها صنف واحد على الأقل.")
@@ -177,16 +164,6 @@ def create_purchase(
     if replace_invoice_id and existing is None:
         raise PurchaseError("فاتورة الشراء اللي بتتعدّل مش موجودة.")
 
-    # (فصل الفروع) فرع الفاتورة — ومخازن السطور والمورد والمندوب لازم يكونوا منه.
-    doc_branch = org_service.document_branch(
-        db, actor_user_id=actor_user_id, locations=[(location_kind, location_id)],
-        existing=existing.branch_id if existing is not None else None)
-    org_service.assert_same_branch(
-        db, doc_branch, error=PurchaseError, keep=branch_keep,
-        locations=[(location_kind, location_id)]
-        + [(LocationKind.warehouse, ln.warehouse_id) for ln, *_ in built if ln.warehouse_id],
-        accounts=[expense_account_id], supplier_id=supplier_id, rep_id=rep_id)
-
     invoice = existing or PurchaseInvoice(
         document_number=_doc_number(db, PurchaseInvoice, "PINV"),
         supplier_id=supplier_id, location_kind=location_kind, location_id=location_id,
@@ -194,8 +171,8 @@ def create_purchase(
         combined_pct=combined, net=net, tax_amount=tax,
         total=total, cash_amount=to_money(cash_amount), credit_amount=to_money(credit_amount),
         ledger_entry_id=None, actor_user_id=actor_user_id,
-        branch_id=doc_branch or branch_for(db, actor_user_id=actor_user_id,
-                                           location_kind=location_kind, location_id=location_id),
+        branch_id=branch_for(db, actor_user_id=actor_user_id,
+                             location_kind=location_kind, location_id=location_id),
         rep_id=rep_id, expense_account_id=expense_account_id,
         external_document_number=(external_document_number or None),
         notes=notes, statement1=statement1, statement2=statement2, statement3=statement3,
@@ -256,10 +233,7 @@ def create_purchase(
     # غالباً، واللي بيحفظ هو اللي يعرف منين.
     cash_acc = (account_resolver.explicit_treasury(db, cash_account_id)
                 or account_resolver.resolve_cash_account(
-                    db, role=actor_role, user_id=actor_user_id, branch_id=doc_branch))
-    if to_money(cash_amount) != ZERO:
-        org_service.assert_same_branch(db, doc_branch, error=PurchaseError, keep=branch_keep,
-                                       cash_accounts=[cash_acc.id])
+                    db, role=actor_role, user_id=actor_user_id))
     expense_acc = account_resolver.purchases_expense_account(db)
     entry_lines = [LineInput(expense_acc.id, Direction.debit, total)]
     if to_money(cash_amount) > ZERO:
@@ -317,9 +291,6 @@ def return_purchase(
     inv = db.get(PurchaseInvoice, purchase_invoice_id)
     if inv is None:
         raise PurchaseError("فاتورة الشراء مش موجودة.")
-    # بيطلّع من مخازن الفاتورة نفسها — الفحص الوحيد إن موظف الفرع مايردّش على فاتورة فرع تاني.
-    org_service.assert_actor_branch(db, actor_user_id, inv.branch_id,
-                                    what=f"الفاتورة {inv.document_number}", error=PurchaseError)
     # السعر اللي الفاتورة حسبته فعلاً، مش سعر القايمة — نفس علّة مرتجع البيع
     # بالظبط: المرتجع كان بيخصم من المورد سعر من غير خصومات الفاتورة، فالمردود
     # بيطلع أكبر من اللي اتشرى وفرق بيفضل على حسابه.
@@ -378,12 +349,7 @@ def return_purchase(
         ret.lines.append(PurchaseReturnLine(item_id=item_id, quantity=Decimal(qty)))
 
     # Reverse money proportionally: credit purchases_expense V; debit cash Cr + supplier_payable Pr.
-    # الفلوس الراجعة بتدخل خزنة فرع الفاتورة — كانت بتدخل خزنة الفرع الافتراضي لأي فرع.
-    cash_acc = account_resolver.resolve_cash_account(db, role=actor_role, user_id=actor_user_id,
-                                                     branch_id=inv.branch_id)
-    if cash_refund > ZERO:
-        org_service.assert_same_branch(db, inv.branch_id, error=PurchaseError,
-                                       cash_accounts=[cash_acc.id])
+    cash_acc = account_resolver.resolve_cash_account(db, role=actor_role, user_id=actor_user_id)
     expense_acc = account_resolver.purchases_expense_account(db)
     supplier_acc = supplier_service.require_account(db, inv.supplier_id)
     entry_lines = [LineInput(expense_acc.id, Direction.credit, value)]
@@ -501,8 +467,6 @@ def create_standalone_purchase_return(
     # بيغلب `cost_center_id` — المستند متقسّم فمافيش مركز واحد يتكتب عليه. مالوش
     # عمود على المستند: سطور قيده شايلاه، والقراءة بترجع منها.
     cost_center_distribution: dict | None = None,
-    # (فصل الفروع) حاجات المردود قبل التعديل — شوف `branch_keys`.
-    branch_keep: frozenset = frozenset(),
 ) -> PurchaseReturn:
     """مردود شرا مستقل — **نسخة من فاتورة الشرا بالعكس**.
 
@@ -565,25 +529,15 @@ def create_standalone_purchase_return(
     if replace_return_id and existing is None:
         raise PurchaseError("المردود اللي بيتعدّل مش موجود.")
 
-    doc_branch = org_service.document_branch(
-        db, actor_user_id=actor_user_id,
-        locations=[(origin_location_kind, origin_location_id)],
-        existing=existing.branch_id if existing is not None else None)
-    org_service.assert_same_branch(
-        db, doc_branch, error=PurchaseError, keep=branch_keep,
-        locations=[(origin_location_kind, origin_location_id)]
-        + [(b["location_kind"], b["location_id"]) for b in built],
-        accounts=[expense_account_id], supplier_id=supplier_id)
-
     ret = existing or PurchaseReturn(
         document_number=_doc_number(db, PurchaseReturn, "PRET"),
         purchase_invoice_id=None,
         supplier_id=supplier_id,
         origin_location_kind=origin_location_kind,
         origin_location_id=origin_location_id,
-        branch_id=doc_branch or branch_for(db, actor_user_id=actor_user_id,
-                                           location_kind=origin_location_kind,
-                                           location_id=origin_location_id),
+        branch_id=branch_for(db, actor_user_id=actor_user_id,
+                             location_kind=origin_location_kind,
+                             location_id=origin_location_id),
         gross=gross, variable_discount_pct=variable,
         combined_pct=discounts.combine(fixed, variable), value=value,
         ledger_entry_id=None, actor_user_id=actor_user_id,

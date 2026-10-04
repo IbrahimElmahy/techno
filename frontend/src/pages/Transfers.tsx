@@ -24,7 +24,6 @@ import { useSearchParams } from 'react-router-dom';
 import { api } from '../api/client';
 import { useDraft } from '../components/useDraft';
 import { useAuth } from '../components/AuthProvider';
-import { useBranchScope } from '../hooks/useBranchScope';
 import { showReversalConfirm } from '../components/ConfirmationDialog';
 import { useLookup, labelMap } from '../hooks/useLookup';
 import { guardQuantity } from '../components/quantityGuard';
@@ -161,8 +160,6 @@ export default function Transfers() {
   const [transfers, setTransfers] = useState<TransferRecord[]>([]);
   const [warehouses, setWarehouses] = useState<any[]>([]);
   const [custodies, setCustodies] = useState<any[]>([]);
-  const [branchNames, setBranchNames] = useState<Record<number, string>>({});
-  const branchScope = useBranchScope(null);
   const [loading, setLoading] = useState(false);
 
   // Create page
@@ -235,76 +232,41 @@ export default function Transfers() {
 
   const loadLookups = async () => {
     try {
-      // (فصل الفروع) التحويل هو المستند الوحيد اللي بين فرعين — فالقايمة فيها مخازن وعهد
-      // الفروع كلها، وموظف الفرع بيتقيّد بإنه يكون طرف (شوف `transferEnds` تحت والسيرفر).
-      const [whRes, custRes, brRes] = await Promise.all([
-        api.get('/api/v1/warehouses', { params: { all_branches: true } }),
-        api.get('/api/v1/custodies', { params: { all_branches: true } }),
-        api.get('/api/v1/branches').catch(() => ({ data: [] })),
+      const [whRes, custRes] = await Promise.all([
+        api.get('/api/v1/warehouses'),
+        api.get('/api/v1/custodies'),
       ]);
       setWarehouses(whRes.data);
       setCustodies(custRes.data);
-      setBranchNames(Object.fromEntries((brRes.data || []).map((b: any) => [b.id, b.name])));
     } catch (err) { console.error(err); }
   };
 
   useEffect(() => { fetchTransfers(); loadLookups(); }, []);
-
-  /** فرع المكان (`kind:id`) — من المخزن أو العهدة المحمّلين. */
-  const branchOfLoc = (loc: string | null): number | null => {
-    if (!loc) return null;
-    const { kind, id } = parseLoc(loc);
-    const list = kind === 'warehouse' ? warehouses : custodies;
-    return list.find((x: any) => x.id === id)?.branch_id ?? null;
-  };
-  /** اسم المكان + فرعه لو من فرع غير فرع الموظف — عشان التحويل بين الفروع يبان. */
-  const withBranch = (name: string, branchId?: number | null) => (
-    branchId && branchId !== branchScope.bound && (branchScope.bound || Object.keys(branchNames).length > 1)
-      ? `${name} — ${branchNames[branchId] ?? `فرع ${branchId}`}` : name);
 
   /** Warehouses and custodies in one list, each tagged with its kind. */
   const locationOptions = useMemo(() => ([
     {
       label: 'المخازن',
       options: sortByName(warehouses, (w) => w.name).map((w) => ({
-        value: locValue('warehouse', w.id), label: withBranch(w.name || `مخزن #${w.id}`, w.branch_id),
+        value: locValue('warehouse', w.id), label: w.name || `مخزن #${w.id}`,
       })),
     },
     {
       label: 'عهد المناديب',
       options: sortByName(custodies, (c) => c.name).map((c) => ({
-        value: locValue('custody', c.id), label: withBranch(c.name || `عهدة #${c.id}`, c.branch_id),
+        value: locValue('custody', c.id), label: c.name || `عهدة #${c.id}`,
       })),
     },
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  ]), [warehouses, custodies, branchNames, branchScope.bound]);
-
-  /**
-   * (فصل الفروع) موظف الفرع لازم يكون طرف في التحويل: لو المصدر مش من فرعه، الوجهة
-   * لازم تبقى من فرعه (طلب لفرعه). الأدمن مالوش قيد.
-   */
-  const transferEnds = (opts: typeof locationOptions, other: string | null) => {
-    const mine = branchScope.bound;
-    if (!mine || !other) return opts;
-    const ob = branchOfLoc(other);
-    if (ob == null || ob === mine) return opts;
-    return opts
-      .map((g) => ({ ...g, options: g.options.filter((o) => {
-        const b = branchOfLoc(o.value);
-        return b == null || b === mine;
-      }) }))
-      .filter((g) => g.options.length > 0);
-  };
+  ]), [warehouses, custodies]);
 
   /** نفس القايمة من غير المصدر. الاستبعاد لازم يحصل **جوّه** المجموعة — المجموعة نفسها
    *  مالهاش `value`، فالفلترة على المستوى الأعلى كانت بتعدّي كل حاجة والمصدر يفضل مختار
    *  من الوجهة. والمجموعة اللي فضلت فاضية بتتشال عشان مايبانش عنوان تحته ولا خيار. */
   const destOptions = useMemo(
     () =>
-      transferEnds(locationOptions, source)
+      locationOptions
         .map((g) => ({ ...g, options: g.options.filter((o) => o.value !== source) }))
         .filter((g) => g.options.length > 0),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
     [locationOptions, source],
   );
 
@@ -1724,7 +1686,7 @@ export default function Transfers() {
                   placeholder="اختر المخزن أو العهدة الوجهة"
                   disabled={!!editing || viewOnly}
                   value={dest ?? undefined} onChange={(v) => setDest(v)}
-                  options={destOptions} filterOption={searchFilter} filterSort={searchRank}/>
+                  options={locationOptions} filterOption={searchFilter} filterSort={searchRank}/>
               </Form.Item>
             </Col>
             <Col xs={24} md={12}>

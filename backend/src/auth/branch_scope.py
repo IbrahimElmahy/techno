@@ -90,13 +90,6 @@ def branch_for(db: Session, *, actor_user_id: int | None = None,
             rep = db.get(User, location_id)
             if rep and rep.branch_id:
                 return rep.branch_id
-        elif kind == "custody":
-            # عهدة المندوب — `LocationKind` اسمها custody مش rep، فكانت بتقع على فرع اللي كتب.
-            from src.services.org_service import location_branch
-
-            got = location_branch(db, kind, location_id)
-            if got:
-                return got
     if actor_user_id:
         from src.models.user import User
 

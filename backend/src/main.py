@@ -134,18 +134,6 @@ def create_app() -> FastAPI:
             "Strict-Transport-Security", "max-age=31536000; includeSubDomains")
         return response
 
-    # (فصل الفروع) مستند بيخلط فرعين — 409 برسالة بتسمّي الحاجة اللي من فرع تاني، بنفس
-    # شكل باقي الأخطاء. خدمات بترفعه بنوع خطأها هي (`error=SalesError`) والباقي بيوصل هنا،
-    # فمافيش مسار ينسى يمسكه ويطلّعه 500.
-    from fastapi.responses import JSONResponse
-
-    from src.services.org_service import BranchMixError
-
-    @app.exception_handler(BranchMixError)
-    async def _branch_mix(_request, exc: BranchMixError):  # pragma: no cover — غلاف
-        return JSONResponse(status_code=409, content={
-            "detail": {"code": "branch_mix", "message": str(exc)}})
-
     prefix = "/api/v1"
     app.include_router(auth.router, prefix=prefix)
     app.include_router(users.router, prefix=prefix)

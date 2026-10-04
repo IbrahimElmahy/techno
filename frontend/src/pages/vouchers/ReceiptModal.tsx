@@ -17,7 +17,6 @@ import type { FormInstance } from 'antd';
 import { InputNumber } from '../../components/NumberInput';
 import { TabModal } from '../../components/TabModal';
 import PartyField from '../../components/PartyField';
-import { filterBranch } from '../../hooks/useBranchScope';
 import CostCenterField from '../../components/CostCenterField';
 import CostCenterSplit from '../../components/CostCenterSplit';
 import { TreasuryField, ExpenseAccountField } from '../../components/VoucherFields';
@@ -49,9 +48,6 @@ export default function ReceiptModal({
   /** السند اللي بيتعدّل في عهدة المندوب — فاضي = يفضل فيها. */
   treasuryOptional?: boolean;
 }) {
-  /** فرع العميل المختار — فاضي = مشترك/مش متحدد ⇒ مافيش فلترة. */
-  const customerBranch = (id?: number | null) =>
-    (id ? customers.find((c) => c.id === id)?.branch_id : null) ?? null;
   return (
       <TabModal
         open={open}
@@ -124,29 +120,17 @@ export default function ReceiptModal({
                   <Form.Item name="voucher_date" label="التاريخ" initialValue={dayjs()}>
                     <DatePicker />
                   </Form.Item>
-                  <Form.Item noStyle shouldUpdate={(a, b) => a.customer_id !== b.customer_id}>
-                    {({ getFieldValue }) => (
-                      // (فصل الفروع) خزن فرع العميل بس — السيرفر بيرفض خزنة من فرع تاني.
-                      <TreasuryField treasuries={treasuries} optional={treasuryOptional}
-                        branchId={customerBranch(getFieldValue('customer_id'))}
-                        placeholder={treasuryOptional ? 'عهدة المندوب (من غير تغيير)' : undefined} />
-                    )}
-                  </Form.Item>
+                  <TreasuryField treasuries={treasuries} optional={treasuryOptional}
+                    placeholder={treasuryOptional ? 'عهدة المندوب (من غير تغيير)' : undefined} />
                   {/* المندوب اللي حصّل — فاضي = مندوب العميل. من غيره السند كان بيتكتب من غير
                       مندوب، فكشف الحساب وفلتر المندوب مابيشوفوش التحصيل ده. */}
-                  <Form.Item noStyle shouldUpdate={(a, b) => a.customer_id !== b.customer_id}>
-                    {({ getFieldValue }) => (
-                      <Form.Item name="rep_user_id" label="المندوب" tooltip="فاضي = مندوب العميل">
-                        <Select
-                          allowClear showSearch style={{ width: 220 }}
-                          placeholder="مندوب العميل (تلقائي)"
-                          // مناديب فرع العميل بس — نفس قاعدة الخزنة.
-                          options={filterBranch(reps as any[], customerBranch(getFieldValue('customer_id')))
-                            .map((r: any) => ({ value: r.id, label: r.full_name || r.username }))}
-                          filterOption={searchFilter} filterSort={searchRank}
-                        />
-                      </Form.Item>
-                    )}
+                  <Form.Item name="rep_user_id" label="المندوب" tooltip="فاضي = مندوب العميل">
+                    <Select
+                      allowClear showSearch style={{ width: 220 }}
+                      placeholder="مندوب العميل (تلقائي)"
+                      options={reps.map((r) => ({ value: r.id, label: r.full_name || r.username }))}
+                      filterOption={searchFilter} filterSort={searchRank}
+                    />
                   </Form.Item>
                   <Form.Item name="payment_method" label="طريقة الدفع">
                     <Select

@@ -15,8 +15,7 @@ from src.lib import production
 from src.models.catalog import Item
 from src.models.stock import LocationKind, StockDirection
 from src.models.wastage import WastageDocument
-from src.models.warehouse import Warehouse
-from src.services import audit_service, org_service, stock_service
+from src.services import audit_service, stock_service
 
 
 class WastageError(Exception):
@@ -37,12 +36,6 @@ def create_wastage(
     item = db.get(Item, item_id)
     if item is None:
         raise WastageError("الصنف مش موجود.")
-    wh = db.get(Warehouse, warehouse_id)
-    if wh is None:
-        raise WastageError("المخزن مش موجود.")
-    # (فصل الفروع) موظف الفرع مايهلكش من مخزن فرع تاني.
-    org_service.assert_actor_branch(db, actor_user_id, wh.branch_id,
-                                    what=f"المخزن «{wh.name}»", error=WastageError)
     unit_cost = to_money(item.purchase_price) if item.purchase_price is not None else ZERO
     doc = WastageDocument(
         document_number=_doc_number(db), item_id=item_id, warehouse_id=warehouse_id, quantity=qty,

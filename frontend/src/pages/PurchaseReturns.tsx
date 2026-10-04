@@ -45,7 +45,6 @@ import PrintOptionsMenu from '../components/PrintOptionsMenu';
 import { PrintOptions, loadPrintOptions } from '../print/printOptions';
 import dayjs, { Dayjs } from 'dayjs';
 import { TabModal } from '../components/TabModal';
-import { branchOf, useBranchScope } from '../hooks/useBranchScope';
 import { money, numeralsLocale } from '../utils/money';
 import { applyPct, combinePct, splitLineDiscount } from '../utils/discounts';
 import { QTY_DATA_ATTR } from '../utils/duplicateItem';
@@ -145,11 +144,6 @@ export default function PurchaseReturns({ embedded }: { embedded?: { onExit: () 
   /** الكميات اللي اتكتبت في الشباك للأصناف اللي مستنية سؤال المخزن. */
   const pendingQtys = useRef<Record<number, number>>({});
   const [warehouses, setWarehouses] = useState<any[]>([]);
-  // (فصل الفروع) فرع المردود: فرع الموظف، وإلا فرع المخزن، وإلا فرع المورد. مخازن السطور
-  // من الفرع ده بس — نفس `useBranchScope` اللي في الفاتورة.
-  const [supplierBranch, setSupplierBranch] = useState<number | null>(null);
-  const docScope = useBranchScope(branchOf(warehouses, warehouseId) ?? supplierBranch);
-  const branchWarehouses = useMemo(() => docScope.keep(warehouses), [docScope, warehouses]);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [activeCategory, setActiveCategory] = useState<string | null>(null);
 
@@ -627,7 +621,7 @@ export default function PurchaseReturns({ embedded }: { embedded?: { onExit: () 
     if (warehouseId === null) {
       if (qty) pendingQtys.current[itemId] = qty;
       setPendingItems((prev) => (prev.includes(itemId) ? prev : [...prev, itemId]));
-      setPendingWarehouse((prev) => prev ?? branchWarehouses[0]?.id ?? null);
+      setPendingWarehouse((prev) => prev ?? warehouses[0]?.id ?? null);
       return null;
     }
     return addReturnLineWith(itemId, warehouseId, qty);
@@ -722,7 +716,7 @@ export default function PurchaseReturns({ embedded }: { embedded?: { onExit: () 
               l.key === line.key ? { ...l, warehouse_id: v ?? null } : l)));
             if (v != null) setWarehouseId(v as number);
           }}
-          options={sortByName(branchWarehouses, (w: any) => w.name).map((w: any) => ({
+          options={sortByName(warehouses, (w: any) => w.name).map((w: any) => ({
             value: w.id,
             label: `${w.name} (${w.warehouse_type === 'central' ? 'مركزي' : 'فرعي'})`,
           }))} filterOption={searchFilter} filterSort={searchRank} />
@@ -1051,10 +1045,10 @@ export default function PurchaseReturns({ embedded }: { embedded?: { onExit: () 
   // تليفون المورد المختار — لخانته في الترويسة (٢٠٢٦-١٠-٠١).
   const [supplierPhone, setSupplierPhone] = useState('');
   useEffect(() => {
-    if (!supplierFilter) { setSupplierPhone(''); setSupplierBranch(null); return; }
+    if (!supplierFilter) { setSupplierPhone(''); return; }
     api.get(`/api/v1/suppliers/${supplierFilter}`)
-      .then((r) => { setSupplierPhone(r.data?.phone || ''); setSupplierBranch(r.data?.branch_id ?? null); })
-      .catch(() => { setSupplierPhone(''); setSupplierBranch(null); });
+      .then((r) => setSupplierPhone(r.data?.phone || ''))
+      .catch(() => setSupplierPhone(''));
   }, [supplierFilter]);
   const suppliers = useMemo(() => {
     const seen = new Map<number, string>();
@@ -1282,7 +1276,7 @@ export default function PurchaseReturns({ embedded }: { embedded?: { onExit: () 
           placeholder="اختر المخزن"
           value={pendingWarehouse ?? undefined}
           onChange={(v) => setPendingWarehouse(v as number)}
-          options={sortByName(branchWarehouses, (w: any) => w.name).map((w: any) => ({ value: w.id, label: w.name }))} filterOption={searchFilter} filterSort={searchRank}/>
+          options={sortByName(warehouses, (w: any) => w.name).map((w: any) => ({ value: w.id, label: w.name }))} filterOption={searchFilter} filterSort={searchRank}/>
         <div style={{ marginTop: 10, color: '#6b6b6b', fontSize: 13 }}>
           هيثبت لكل أصناف المردود. تقدر تغيّر مخزن أي سطر من عمود «المخزن».
         </div>

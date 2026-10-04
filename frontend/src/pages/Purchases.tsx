@@ -51,7 +51,6 @@ import { useLookup, labelMap } from '../hooks/useLookup';
 import { TabModal } from '../components/TabModal';
 import WarehouseGate from '../components/WarehouseGate';
 import TreasuryGate, { useTreasuryGate } from '../components/TreasuryGate';
-import { branchOf, filterBranch, useBranchScope } from '../hooks/useBranchScope';
 import { money, numeralsLocale } from '../utils/money';
 import { fingerprint, verdictOnLeave } from '../utils/unsavedWork';
 import { applyPct, combinePct, splitLineDiscount } from '../utils/discounts';
@@ -74,7 +73,6 @@ interface Warehouse {
   id: number;
   name: string;
   warehouse_type: string;
-  branch_id?: number | null;
 }
 
 interface RawMaterial {
@@ -378,33 +376,8 @@ export default function Purchases() {
    * فبدل ما تبقى خانة بتتكتب وتروح في اللا حاجة، بتعمل الحاجة الوحيدة اللي ليها معنى — تقصر
    * قايمة المخازن على بتاعة الفرع ده، فاللي شغّال على فرع مابيشوفش مخازن غيره.
    */
-  // خانة الفرع اتشالت من الترويسة. (فصل الفروع) فرع الفاتورة بقى من مخزنها (أو المورد
-  // للأدمن قبل ما يختار مخزن)، ومخازن السطور من الفرع ده بس — السيرفر بيرفض الخلط.
-  const docScope = useBranchScope(branchOf(warehouses, stickyWarehouseId) ?? party?.branch_id ?? null);
-  const headerWarehouses = useMemo(
-    () => filterBranch(warehouses, docScope.bound ?? party?.branch_id ?? null),
-    [warehouses, docScope.bound, party]);
-  const lineWarehouses = useMemo(() => docScope.keep(warehouses), [docScope, warehouses]);
-  /** مخزن الترويسة لفرع تاني والسطور على الفرع القديم ⇒ بنسأل وبننقلها. */
-  const onHeaderWarehouseChange = (warehouseId: number | null) => {
-    const nb = branchOf(warehouses, warehouseId);
-    const stale = nb == null ? [] : purchaseItems.filter((l) => {
-      const lb = branchOf(warehouses, l.warehouse_id);
-      return l.warehouse_id != null && lb != null && lb !== nb;
-    });
-    if (!stale.length) { setStickyWarehouseId(warehouseId); return; }
-    Modal.confirm({
-      title: 'المخزن ده من فرع تاني',
-      content: `${stale.length} سطر على مخازن الفرع القديم — هيتنقلوا للمخزن الجديد. `
-        + 'الفاتورة الواحدة ماتخلطش فروع.',
-      okText: 'انقلهم', cancelText: 'رجوع',
-      onOk: () => {
-        const keys = new Set(stale.map((l) => l.key));
-        setPurchaseItems((prev) => prev.map((l) => (keys.has(l.key) ? { ...l, warehouse_id: warehouseId } : l)));
-        setStickyWarehouseId(warehouseId);
-      },
-    });
-  };
+  // خانة الفرع اتشالت من الترويسة، فقايمة مخازن السطر بقت كل المخازن.
+  const lineWarehouses = warehouses;
   useEffect(() => {
     api.get('/api/v1/branches').then((r) => setBranches(r.data || [])).catch(console.error);
   }, []);
@@ -1201,7 +1174,6 @@ export default function Purchases() {
         amount: Number(cashAmount) || 0,
         direction: 'out',
         docLabel: 'فاتورة الشراء',
-        branchId: docScope.branchId,
       },
       async (cashAccountId) => {
         setSubmitLoading(true);
@@ -1786,8 +1758,8 @@ export default function Purchases() {
                   disabled={viewOnly}
                   placeholder="اختر المخزن الافتراضي"
                   value={stickyWarehouseId ?? undefined}
-                  onChange={(val) => onHeaderWarehouseChange(val ?? null)}
-                  options={sortByName(headerWarehouses, (w: any) => w.name).map((w: any) => ({
+                  onChange={(val) => setStickyWarehouseId(val ?? null)}
+                  options={sortByName(lineWarehouses, (w: any) => w.name).map((w: any) => ({
                     value: w.id,
                     label: `${w.name} (${w.warehouse_type === 'central' ? 'مركزي' : 'فرعي'})`,
                   }))} filterOption={searchFilter} filterSort={searchRank} />
@@ -2562,8 +2534,8 @@ export default function Purchases() {
         title="الشحنة دي داخلة أنهي مخزن؟"
         subtitle="ده المخزن الافتراضي للسطور الجديدة. تقدر تغيّر مخزن أي سطر من عمود «المخزن»."
         value={stickyWarehouseId}
-        onChange={(v) => onHeaderWarehouseChange(v as number)}
-        warehouses={headerWarehouses}
+        onChange={(v) => setStickyWarehouseId(v as number)}
+        warehouses={lineWarehouses}
         onCancel={() => { setStickyWarehouseId(null); setNewStep('party'); setPartyPickerOpen(true); }}
         onOk={() => { setNewStep(null); setCreateVisible(true); }}
       />

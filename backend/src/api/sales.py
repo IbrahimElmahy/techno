@@ -424,9 +424,7 @@ def _line_locations_check(db: Session, current: CurrentUser, body) -> None:
     ونفس الباب لموظف أي فرع. بيتنادى في البيع والمرتجع الحر (إنشاء وتعديل).
 
     * المندوب: السطر يا من غير مخزن (بياخد مخزن المستند، اللي اتفحص قبله) يا مخزنه هو.
-    * اللي محبوس في فرع: **اتنقل للخدمة** (`org_service.assert_same_branch`) — هناك بيتفحص
-      لكل اليوزرز (الأدمن كمان بفرع المستند)، وبيعدّي القديم في التعديل. هنا كان بيرفض
-      تعديل فاتورة a5 قديمة عشان سطر محدش لمسه.
+    * اللي محبوس في فرع: مخزن المستند ومخزن كل سطر في فرعه (أو مالهمش فرع).
     """
     from src.models.warehouse import Warehouse
 
@@ -438,12 +436,19 @@ def _line_locations_check(db: Session, current: CurrentUser, body) -> None:
             raise HTTPException(403, {"code": "forbidden",
                                       "message": "لازم كل الأصناف تتحرّك من مخزنك انت."})
         return
+    branch_id = branch_scope.visible_branch_id(current)
+    if branch_id is None:
+        return
     whs = set(line_whs)
     if getattr(body.origin.location_kind, "value", body.origin.location_kind) == "warehouse":
         whs.add(body.origin.location_id)
     for wid in whs:
-        if db.get(Warehouse, wid) is None:
+        wh = db.get(Warehouse, wid)
+        if wh is None:
             raise HTTPException(422, {"code": "validation", "message": f"مخزن رقم {wid} مش موجود."})
+        if wh.branch_id is not None and wh.branch_id != branch_id:
+            raise HTTPException(403, {"code": "forbidden",
+                                      "message": f"«{wh.name}» مش في فرعك — ماينفعش تبيع منه."})
 
 
 def _rep_treasuries(db: Session, rep_id: int) -> list[dict]:
@@ -878,7 +883,6 @@ def _build_sale(
     db: Session, body: "SaleCreate", current: CurrentUser, *,
     replace_invoice_id: int | None = None,
     keep_costs: dict[int, Decimal] | None = None,
-    branch_keep: frozenset = frozenset(),
 ) -> SalesInvoice:
     """بيبني الفاتورة من الجسم — سواء جديدة أو مكان واحدة موجودة.
 
@@ -943,7 +947,6 @@ def _build_sale(
             client_uuid=body.client_uuid,
             replace_invoice_id=replace_invoice_id,
             keep_costs=keep_costs,
-            branch_keep=branch_keep,
         )
     except SalesError as exc:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -1032,14 +1035,12 @@ def update_sale(
         # التكلفة المجمّدة بتتقرا **قبل** التفضية، لأن التفضية بتمسح السطور اللي شايلاها.
         # من غيرها البناء بيجمّد تكلفة النهارده على فاتورة قديمة — شوف `frozen_costs`.
         kept_costs = document_edit_service.frozen_costs(db, inv)
-        # (فصل الفروع) اللي على الفاتورة قبل التفضية بيعدّي — القديم مايقفلش التعديل.
-        branch_keep = sales_service.branch_keys(inv)
         document_edit_service.purge_sale(db, inv)
     except DocumentEditError as exc:
         raise HTTPException(status.HTTP_409_CONFLICT,
                             {"code": "edit_blocked", "message": str(exc)})
     inv = _build_sale(db, body, current, replace_invoice_id=sale_id,
-                      keep_costs=kept_costs, branch_keep=branch_keep)
+                      keep_costs=kept_costs)
     db.commit()
     return _inv_out(inv, db, payment_states=_payment_states(db, [inv]))
 
@@ -1954,7 +1955,6 @@ def update_standalone_return(
     _rep_scope_check(db, current, body.customer_id, body.origin)
     _line_locations_check(db, current, body)
     _reject_non_trader(db, body.customer_id)
-    branch_keep = sales_service.branch_keys(ret)
     try:
         document_edit_service.purge_sales_return(db, ret)
     except DocumentEditError as exc:
@@ -1981,7 +1981,6 @@ def update_standalone_return(
             cost_center_id=body.cost_center_id,
             cost_center_distribution=body.cost_center_distribution,
             replace_return_id=return_id,
-            branch_keep=branch_keep,
         )
     except SalesError as exc:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY,

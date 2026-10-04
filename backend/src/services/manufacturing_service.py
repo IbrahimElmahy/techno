@@ -349,9 +349,6 @@ def create_order(
         [location_id] if location_kind == LocationKind.warehouse else [])
     if problem:
         raise ManufacturingError(problem)
-    # (فصل الفروع) موظف فرع تاني مايكتبش أمر على المصنع.
-    org_service.assert_actor_branch(db, actor_user_id, branch_id, what="أمر التشغيل",
-                                    error=ManufacturingError)
 
     # Defaulted here rather than in the column so an order always carries a real production day —
     # a NULL would push every report that groups by day into guessing.

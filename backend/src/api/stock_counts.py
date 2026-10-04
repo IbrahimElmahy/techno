@@ -10,7 +10,6 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from src.auth import branch_scope
 from src.auth.dependencies import CurrentUser, require_capability
 from src.auth.rbac import CAP_STOCK_READ, CAP_PURCHASE_WRITE
 from src.core.db import get_db
@@ -37,8 +36,6 @@ class OpenIn(BaseModel):
     kind: Literal["full", "cycle", "spot"] = "full"
     # For a cycle count: how many lines this batch carries. Defaulted in the service.
     batch_size: int | None = Field(default=None, ge=1, le=500)
-    # (فصل الفروع) فرع الجرد العام (من غير مخزن). موظف الفرع بياخد فرعه مهما اتبعت.
-    branch_id: int | None = None
 
 
 class CountIn(BaseModel):
@@ -146,31 +143,22 @@ def _out(sheet: StockCount, items, warehouses, categories=None, costs=None,
 @router.get("", response_model=list[CountOut])
 def list_counts(
     status_filter: str | None = None,
-    current: CurrentUser = Depends(require_capability(CAP_STOCK_READ)),
+    _: CurrentUser = Depends(require_capability(CAP_STOCK_READ)),
     db: Session = Depends(get_db),
 ) -> list[CountOut]:
     items, warehouses, categories, costs = _names(db)
     return [_out(s, items, warehouses, categories, costs, with_lines=False)
-            for s in stock_count_service.listing(db, status=status_filter)
-            if _may_see_count(db, current, s)]
-
-
-def _may_see_count(db: Session, current: CurrentUser, sheet) -> bool:
-    """(فصل الفروع) الجرد مالوش فرع على راسه — فرعه من مخازنه. موظف الفرع بيشوف جرد فرعه."""
-    mine = branch_scope.visible_branch_id(current)
-    if mine is None:
-        return True
-    return not (stock_count_service.count_branches(db, sheet) - {mine})
+            for s in stock_count_service.listing(db, status=status_filter)]
 
 
 @router.get("/{count_id}", response_model=CountOut)
 def get_count(
     count_id: int,
-    current: CurrentUser = Depends(require_capability(CAP_STOCK_READ)),
+    _: CurrentUser = Depends(require_capability(CAP_STOCK_READ)),
     db: Session = Depends(get_db),
 ) -> CountOut:
     sheet = stock_count_service.get(db, count_id)
-    if sheet is None or not _may_see_count(db, current, sheet):
+    if sheet is None:
         raise HTTPException(404, {"code": "not_found", "message": "الجرد غير موجود"})
     items, warehouses, categories, costs = _names(db)
     return _out(sheet, items, warehouses, categories, costs, with_lines=True)
@@ -186,7 +174,7 @@ def open_count(
         sheet = stock_count_service.open_sheet(
             db, warehouse_id=body.warehouse_id, count_date=body.count_date,
             actor_user_id=current.id, item_ids=body.item_ids, notes=body.notes,
-            statement1=body.statement1, branch_id=body.branch_id,
+            statement1=body.statement1,
             kind=StockCountKind(body.kind), batch_size=body.batch_size)
     except StockCountError as exc:
         raise HTTPException(409, {"code": "count_invalid", "message": str(exc)}) from exc

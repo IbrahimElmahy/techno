@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from decimal import Decimal
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -76,8 +76,6 @@ class CustodyOut(BaseModel):
     family: str | None = None
     warehouse_id: int | None
     active: bool
-    # (فصل الفروع) فرع العهدة — فرع مندوبها أو مخزنها — عشان الشاشة تفلتر من غير ما تجمع.
-    branch_id: int | None = None
 
 
 class BalanceOut(BaseModel):
@@ -87,9 +85,6 @@ class BalanceOut(BaseModel):
 
 @router.get("/warehouses", response_model=list[WarehouseOut])
 def list_warehouses(
-    # (فصل الفروع) لوجهة التحويل بين الفروع بس — المكان الوحيد اللي موظف الفرع محتاج يشوف
-    # فيه مخزن فرع تاني. الإنشاء نفسه بيفحص إنه طرف (`org_service.assert_transfer_ends`).
-    all_branches: bool = Query(default=False),
     current: CurrentUser = Depends(require_capability(CAP_WAREHOUSE_READ)),
     db: Session = Depends(get_db),
 ) -> list[WarehouseOut]:
@@ -97,7 +92,7 @@ def list_warehouses(
     # **اللي مالوش فرع بيشوف كل المخازن** — هي نفس قاعدة `branch_scope`، والسطر ده كان
     # كاتبها بإيده وناسي الحالة دي: `branch_id == NULL` مابيساويش أي صف في SQL، فحساب
     # مركزي (المالك مثلاً) كان بياخد قايمة فاضية — ومن غير مخزن مافيش فاتورة بيع أصلاً.
-    scoped_branch = None if all_branches else branch_scope.visible_branch_id(current)
+    scoped_branch = branch_scope.visible_branch_id(current)
     if scoped_branch is not None:
         # Branch warehouses of own branch + the shared central warehouse.
         stmt = stmt.where(
@@ -228,7 +223,6 @@ def deactivate_warehouse(
 
 @router.get("/custodies", response_model=list[CustodyOut])
 def list_custodies(
-    all_branches: bool = Query(default=False),   # لوجهة التحويل بين الفروع — شوف /warehouses
     current: CurrentUser = Depends(require_capability(CAP_CUSTODY_READ)),
     db: Session = Depends(get_db),
 ) -> list[CustodyOut]:
@@ -239,10 +233,8 @@ def list_custodies(
     # إخفاء اللي مش متأكدين منه بيخفي شغل شغّال.
     from src.models.user import User
 
-    branch_id = None if all_branches else branch_scope.visible_branch_id(current)
+    branch_id = branch_scope.visible_branch_id(current)
     rows = db.scalars(select(Custody)).all()
-    users = {u.id: u.branch_id for u in db.scalars(select(User)).all()}
-    wh_branch = {w.id: w.branch_id for w in db.scalars(select(Warehouse)).all()}
     if branch_id is not None:
         whs = {w.id for w in db.scalars(
             branch_scope.scope(select(Warehouse), Warehouse, current)).all()}
@@ -257,8 +249,6 @@ def list_custodies(
         CustodyOut(
             id=c.id, holder_type=c.holder_type, rep_id=c.rep_id, family=c.family,
             warehouse_id=c.warehouse_id, active=c.active,
-            branch_id=(users.get(c.rep_id) if c.rep_id else None)
-            or (wh_branch.get(c.warehouse_id) if c.warehouse_id else None),
         )
         for c in rows
     ]

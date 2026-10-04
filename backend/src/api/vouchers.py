@@ -155,8 +155,6 @@ class TreasuryOut(BaseModel):
     is_default: bool
     active: bool
     balance: Decimal
-    # (فصل الفروع) الفروع اللي الخزنة دي متوجّهة لها كخزنة عامة — بتظهر في سندات الفروع دي.
-    routed_branch_ids: list[int] = []
 
 
 class PeriodLockIn(BaseModel):
@@ -304,14 +302,10 @@ def _out(v) -> VoucherOut:
 
 
 def _treasury_out(db: Session, t) -> TreasuryOut:
-    from src.models.account_routing import AccountRouting
-
-    routed = sorted(b for b in db.scalars(select(AccountRouting.branch_id).where(
-        AccountRouting.role == "treasury", AccountRouting.account_id == t.account_id)).all() if b)
     return TreasuryOut(
         id=t.id, name=t.name, kind=t.kind, branch_id=t.branch_id, account_id=t.account_id,
         bank_name=t.bank_name, account_number=t.account_number, is_default=t.is_default,
-        active=t.active, balance=treasury_service.balance(db, t), routed_branch_ids=routed,
+        active=t.active, balance=treasury_service.balance(db, t),
     )
 
 
@@ -625,20 +619,11 @@ def create_cash_transfer(
 @router.get("/treasuries", response_model=list[TreasuryOut])
 def list_treasuries(
     active_only: bool = Query(default=False),
-    # (فصل الفروع) خزن فرع المستند بس — والمتوجّهة له. موظف الفرع فرعه هو مهما اتبعت.
-    branch_id: int | None = Query(default=None),
-    current: CurrentUser = Depends(require_capability(CAP_VOUCHER_READ)),
+    _: CurrentUser = Depends(require_capability(CAP_VOUCHER_READ)),
     db: Session = Depends(get_db),
 ) -> list[TreasuryOut]:
     treasury_service.default_treasury(db)  # adopt the legacy safe on first call
     rows = treasury_service.list_treasuries(db, active_only=active_only)
-    wanted = branch_scope.visible_branch_id(current) or branch_id
-    if wanted:
-        from src.services import org_service
-
-        routed = org_service.routed_treasury_accounts(db, wanted)
-        rows = [t for t in rows
-                if t.account_id in routed or org_service.treasury_branch(db, t.id) in (None, wanted)]
     out = [_treasury_out(db, t) for t in rows]
     db.commit()
     return out
@@ -654,17 +639,11 @@ class CashAccountOut(BaseModel):
     family: str | None
     rep_id: int | None
     rep_name: str | None
-    # (فصل الفروع) فرع الصندوق — العهدة بفرع مندوبها، وإلا صف الخزنة، وإلا الحساب.
-    branch_id: int | None = None
-    # الفروع اللي الصندوق ده متوجّه لها كخزنة عامة («خزينة المركز الرئيسى» للتلاتة).
-    routed_branch_ids: list[int] = []
 
 
 @router.get("/cash-accounts", response_model=list[CashAccountOut])
 def list_cash_accounts(
-    # (فصل الفروع) صناديق فرع المستند بس (ومعاها الخزنة المتوجّهة له). موظف الفرع فرعه هو.
-    branch_id: int | None = Query(default=None),
-    current: CurrentUser = Depends(require_capability(CAP_VOUCHER_READ)),
+    _: CurrentUser = Depends(require_capability(CAP_VOUCHER_READ)),
     db: Session = Depends(get_db),
 ) -> list[CashAccountOut]:
     """حسابات الخزن اللي ينفع يترحّل عليها — لبوباب «الفلوس رايحة فين» قبل الحفظ.
@@ -690,18 +669,7 @@ def list_cash_accounts(
         c.account_id: c for c in db.scalars(select(Custody).where(
             Custody.account_id.isnot(None))).all()
     }
-    users = {u.id: u for u in db.scalars(select(User)).all()}
-    names = {i: (u.full_name or u.username) for i, u in users.items()}
-    from src.models.account_routing import AccountRouting
-    from src.models.treasury import Treasury
-
-    safe_branch = {t.account_id: t.branch_id for t in db.scalars(select(Treasury)).all()
-                   if t.branch_id}
-    routed: dict[int, list[int]] = {}
-    for r in db.scalars(select(AccountRouting).where(AccountRouting.role == "treasury")).all():
-        if r.branch_id:
-            routed.setdefault(r.account_id, []).append(r.branch_id)
-    wanted = branch_scope.visible_branch_id(current) or branch_id
+    names = {u.id: (u.full_name or u.username) for u in db.scalars(select(User)).all()}
     out: list[CashAccountOut] = []
     for a in accounts:
         # الحساب اللي مالوش اسم ولا كود مايتعرضش: «خزينة #٣٧٦٧» مش اختيار، دي مطالبة
@@ -710,20 +678,11 @@ def list_cash_accounts(
         if not (a.name or "").strip() and not (a.code or "").strip():
             continue
         c = links.get(a.id)
-        # نفس ترتيب `org_service.cash_account_branch`: العهدة الأول (حسابات عهد العلياء
-        # والسادات فرعها غلط = أكتوبر)، وبعدها صف الخزنة، وبعدها الحساب.
-        rep_user = users.get(c.rep_id) if c is not None and c.rep_id else None
-        owner = (rep_user.branch_id if rep_user is not None and rep_user.branch_id else None) \
-            or safe_branch.get(a.id) or a.branch_id
-        shared = sorted(routed.get(a.id, []))
-        if wanted and not (owner in (None, wanted) or wanted in shared):
-            continue
         out.append(CashAccountOut(
             account_id=a.id, code=a.code, name=a.name,
             family=c.family if c is not None else None,
             rep_id=c.rep_id if c is not None else None,
             rep_name=names.get(c.rep_id) if c is not None else None,
-            branch_id=owner, routed_branch_ids=shared,
         ))
     return out
 

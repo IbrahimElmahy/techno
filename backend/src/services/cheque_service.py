@@ -17,8 +17,7 @@ from src.services import numbering
 from src.core.money import ZERO, to_money
 from src.models.cheque import Cheque, ChequeDirection, ChequeStatus
 from src.models.ledger import Account, AccountNature, AccountType, Direction, PartnerKind
-from src.services import (
-    audit_service, ledger_service, org_service, treasury_service, voucher_service)
+from src.services import audit_service, ledger_service, treasury_service, voucher_service
 from src.services.ledger_service import LineInput
 
 # Holding accounts, created once on first use (system accounts, not user-editable).
@@ -75,23 +74,6 @@ def _cheque_partner(cheque) -> tuple[PartnerKind | None, int | None]:
     return None, None
 
 
-def _assert_cheque_branch(db: Session, *, actor_user_id: int, customer_id: int | None,
-                          supplier_id: int | None, treasury_id: int | None) -> None:
-    """(فصل الفروع) الشيك مالوش فرع على راسه — فرعه فرع اللي كتبه أو فرع صاحبه، والخزنة
-    والطرف لازم يكونوا منه."""
-    from src.models.customer import Customer
-    from src.models.supplier import Supplier
-
-    cust = db.get(Customer, customer_id) if customer_id else None
-    sup = db.get(Supplier, supplier_id) if supplier_id else None
-    branch = org_service.document_branch(
-        db, actor_user_id=actor_user_id,
-        owners=[cust.branch_id if cust else None, sup.branch_id if sup else None],
-        treasuries=[treasury_id])
-    org_service.assert_same_branch(db, branch, error=ChequeError, treasuries=[treasury_id],
-                                   customer_id=customer_id, supplier_id=supplier_id)
-
-
 def register_cheque(
     db: Session, *, direction: ChequeDirection, cheque_number: str, amount, due_date: date,
     actor_user_id: int, issue_date: date | None = None, bank_name: str | None = None,
@@ -120,8 +102,6 @@ def register_cheque(
         debit, credit = party.account_id, holding.id
         statement = "شيك صادر تحت الدفع"
 
-    _assert_cheque_branch(db, actor_user_id=actor_user_id, customer_id=customer_id,
-                          supplier_id=supplier_id, treasury_id=treasury_id)
     cheque = Cheque(
         document_number=_doc_number(db, direction), direction=direction,
         status=ChequeStatus.pending, cheque_number=cheque_number.strip(), bank_name=bank_name,
@@ -162,10 +142,6 @@ def settle_cheque(
         raise ChequeError("الشيك ليس تحت التحصيل/الدفع.")
     when = settled_on or date.today()
     treasury = treasury_service.resolve(db, treasury_id or cheque.treasury_id)
-    if treasury_id is not None:
-        # الخزنة اللي اتختارت ساعة التحصيل — لازم تبقى من فرع صاحب الشيك.
-        _assert_cheque_branch(db, actor_user_id=actor_user_id, customer_id=cheque.customer_id,
-                              supplier_id=cheque.supplier_id, treasury_id=treasury.id)
 
     if cheque.direction == ChequeDirection.incoming:
         holding = under_collection_account(db)

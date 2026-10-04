@@ -49,8 +49,6 @@ export interface Customer {
   // Every customer has exactly one rep, required since 001. It is the first link in the chain
   // that lets choosing a customer fill in who is selling and which store the goods leave from.
   rep_id: number;
-  /** (فصل الفروع) فرع الكارت — فاضي = عميل مشترك. */
-  branch_id?: number | null;
 }
 
 /** An employee — the payroll record. `warehouse_id` is the store this person works out of, and
@@ -97,8 +95,6 @@ export interface Product {
 export interface Warehouse {
   id: number;
   name: string;
-  /** (فصل الفروع) فرع المخزن — السطور بتتفلتر بيه على فرع الفاتورة. */
-  branch_id?: number | null;
 }
 
 export interface SaleLineItem {

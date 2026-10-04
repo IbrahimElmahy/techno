@@ -146,47 +146,6 @@ def _out(t) -> TransferOut:
     )
 
 
-def _dest_in_branch(branch_id: int):
-    """شرط «وجهة الإذن في الفرع ده» — مخزن الفرع أو عهدة مندوب منه."""
-    from sqlalchemy import and_, or_
-
-    from src.models.user import User
-    from src.models.warehouse import Custody, Warehouse
-
-    return or_(
-        and_(StockTransfer.dest_location_kind == LocationKind.warehouse,
-             StockTransfer.dest_location_id.in_(
-                 select(Warehouse.id).where(Warehouse.branch_id == branch_id))),
-        and_(StockTransfer.dest_location_kind == LocationKind.custody,
-             StockTransfer.dest_location_id.in_(
-                 select(Custody.id).join(User, User.id == Custody.rep_id)
-                 .where(User.branch_id == branch_id))),
-    )
-
-
-def _scope_transfers(stmt, current: CurrentUser):
-    """(فصل الفروع) فرع الإذن = فرع المصدر — بس **الفرع المستلم كمان بيشوفه**.
-
-    التحويل بين فرعين كان بيبان عند اللي صرف بس، فالفرع اللي البضاعة جايّاله مايعرفش
-    إن فيه حاجة في السكة. الاعتماد لسه لمدير فرع المصدر.
-    """
-    from sqlalchemy import or_
-
-    mine = branch_scope.visible_branch_id(current)
-    if mine is None:
-        return stmt
-    return stmt.where(or_(StockTransfer.branch_id == mine, StockTransfer.branch_id.is_(None),
-                          _dest_in_branch(mine)))
-
-
-def _incoming(db: Session, current: CurrentUser, t) -> bool:
-    """الإذن ده جاي لفرعي؟ — لفتحه بالرقم من الفرع المستلم."""
-    mine = branch_scope.visible_branch_id(current)
-    if mine is None:
-        return True
-    return transfer_service._location_branch(db, t.dest_location_kind, t.dest_location_id) == mine
-
-
 @router.get("", response_model=list[TransferOut])
 def list_transfers(
     status_filter: str | None = None,   # pending | approved | rejected | reversed
@@ -201,7 +160,7 @@ def list_transfers(
     السطور بتتجاب مع المستندات في نداء واحد. من غير كده كل مستند بيقرا سطوره لوحده —
     ١٤٣٧ تحويل يعني ١٤٣٧ نداء، وde كان بياخد ٧.٧ ثانية على السيرفر نفسه.
     """
-    stmt = _scope_transfers(select(StockTransfer), current)
+    stmt = branch_scope.scope(select(StockTransfer), StockTransfer, current)
     if status_filter:
         stmt = stmt.where(StockTransfer.status == status_filter)
     if item_id is not None:
@@ -385,7 +344,7 @@ def get_transfer(
     بالرقم المباشر — وإلا الرابط بيبقى باب خلفي حوالين الفلترة.
     """
     t = db.get(StockTransfer, transfer_id)
-    if t is None or not (branch_scope.may_see(current, t) or _incoming(db, current, t)):
+    if t is None or not branch_scope.may_see(current, t):
         raise HTTPException(404, {"code": "not_found", "message": "إذن التحويل مش موجود."})
     return _out(t)
 

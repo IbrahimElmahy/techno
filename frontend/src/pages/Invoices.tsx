@@ -53,7 +53,6 @@ import { TabModal } from '../components/TabModal';
 import WarehouseGate from '../components/WarehouseGate';
 import DocumentAttachments from '../components/DocumentAttachments';
 import TreasuryGate, { useTreasuryGate } from '../components/TreasuryGate';
-import { branchOf, filterBranch, useBranchScope } from '../hooks/useBranchScope';
 import DateRangeFilter from '../components/DateRangeFilter';
 import { money, numeralsLocale } from '../utils/money';
 import { fingerprint, verdictOnLeave } from '../utils/unsavedWork';
@@ -117,7 +116,7 @@ export default function Invoices() {
   const [products, setProducts] = useState<Product[]>([]);
   const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
   const [employees, setEmployees] = useState<RepEmployee[]>([]);
-  const [reps, setReps] = useState<{ id: number; full_name: string; branch_id?: number | null }[]>([]);
+  const [reps, setReps] = useState<{ id: number; full_name: string }[]>([]);
   // Only to put a NAME on «الحساب الفرعي» in the list — the id alone tells a reader nothing.
   const [postingAccounts, setPostingAccounts] = useState<any[]>([]);
   // مفاتيح الطباعة — read once from the browser they are saved in, and passed to every print
@@ -329,16 +328,6 @@ export default function Invoices() {
   const [party, setParty] = useState<Party | null>(null);
   // The document's warehouse — the default every line falls back to when it has none of its own.
   const [docWarehouseId, setDocWarehouseId] = useState<number | null>(null);
-  // (فصل الفروع) فرع الفاتورة: فرع الموظف، وإلا فرع مخزنها، وإلا فرع العميل. السطور
-  // والمندوب والخزنة بيتعرضوا من الفرع ده بس — والسيرفر بيرفض أي خلط في الآخر.
-  const customerBranch = customers.find((c) => c.id === selectedCustomerId)?.branch_id ?? null;
-  const docScope = useBranchScope(branchOf(warehouses, docWarehouseId) ?? customerBranch);
-  // مخزن الترويسة والباب: فرع العميل (أو الموظف) — منه الأدمن بيختار فرع الفاتورة.
-  const headerWarehouses = useMemo(
-    () => filterBranch(warehouses, docScope.bound ?? customerBranch),
-    [warehouses, docScope.bound, customerBranch]);
-  const branchWarehouses = useMemo(() => docScope.keep(warehouses), [docScope, warehouses]);
-  const branchReps = useMemo(() => docScope.keep(reps), [docScope, reps]);
   // أقل سعر بيع للوحدة الأساسية = تكلفة الصنف (متوسط الشرا) — للتحذير بس، الرقم مابيتعرضش.
   // التكلفة واحدة في كل المخازن، وبتتجدد مع تغيير المخزن (طلب رخيص). السيرفر هو الحكم.
   const [minPrices, setMinPrices] = useState<Record<number, number>>({});
@@ -1119,7 +1108,7 @@ export default function Invoices() {
     if (docWarehouseId === null) {
       if (qty) pendingQtys.current[itemId] = qty;
       setPendingItems((prev) => (prev.includes(itemId) ? prev : [...prev, itemId]));
-      setPendingWarehouse((prev) => prev ?? branchWarehouses[0]?.id ?? null);
+      setPendingWarehouse((prev) => prev ?? warehouses[0]?.id ?? null);
       return null;
     }
     return addProductByIdWith(itemId, docWarehouseId, qty);
@@ -1436,30 +1425,6 @@ export default function Invoices() {
   };
 
   /**
-   * (فصل الفروع) مخزن الترويسة اتغيّر لفرع تاني والسطور على مخازن الفرع القديم ⇒ بنسأل
-   * وبننقلها لمخزن الفاتورة الجديد. الفاتورة الواحدة ماتخلطش فرعين — السيرفر بيرفضها.
-   */
-  const onHeaderWarehouseChange = (warehouseId: number) => {
-    const nb = branchOf(warehouses, warehouseId);
-    const stale = nb == null ? [] : lines.filter((l) => {
-      const lb = branchOf(warehouses, l.warehouse_id);
-      return l.warehouse_id != null && lb != null && lb !== nb;
-    });
-    if (!stale.length) { onWarehouseChange(warehouseId); return; }
-    Modal.confirm({
-      title: 'المخزن ده من فرع تاني',
-      content: `${stale.length} سطر على مخازن الفرع القديم — هيتنقلوا للمخزن الجديد. `
-        + 'الفاتورة الواحدة ماتخلطش فروع.',
-      okText: 'انقلهم', cancelText: 'رجوع',
-      onOk: () => {
-        const keys = new Set(stale.map((l) => l.key));
-        setLines((prev) => prev.map((l) => (keys.has(l.key) ? { ...l, warehouse_id: warehouseId } : l)));
-        onWarehouseChange(warehouseId);
-      },
-    });
-  };
-
-  /**
    * الباب اللي بعد المخزن — ولا ولا حاجة.
    *
    * «نوع الفاتورة» سؤال عن حساب العميل، فمابيتسألش غير لما يكون عنده أكتر من حساب فعلاً.
@@ -1665,7 +1630,6 @@ export default function Invoices() {
         family: invoiceFamily,
         docLabel: 'فاتورة البيع',
         preselect: docCashAccountId,
-        branchId: docScope.branchId,
       },
       async (cashAccountId) => {
         if (savingRef.current) return;
@@ -1973,8 +1937,7 @@ export default function Invoices() {
   // بتاخده يكون اتعرّف قبلها. اللي كان فوق كان بيقرا الدوال دي جوّه closures، فماكانش
   // بيلمسها غير وقت الرسم.
   const lineColumns = buildLineColumns({
-    // عمود المخزن بيعرض مخازن فرع الفاتورة بس؛ الاسم في وضع العرض بيتقرا من القايمة كلها.
-    viewOnly, warehouses: viewOnly ? warehouses : branchWarehouses, totalPoints, pointValues, productName, saleUnitOptions,
+    viewOnly, warehouses, totalPoints, pointValues, productName, saleUnitOptions,
     saleLineNet, linePoints, checkedQuantity, handleLineChange, handleRemoveLine,
     advanceFrom, setDocWarehouseId, setPanelItemId, hidePoints: isFactory, isBonus,
     productCode: (id) => products.find((p) => p.id === id)?.code,
@@ -2778,8 +2741,8 @@ function couponsTotal(inv: any): number {
                   // بيتجاب من السيرفر أول ما يتقال. من غيرها المخزن بيتغيّر والرصيد بيفضل
                   // فاضي، فكل صنف بيقرا صفر — والشباك بيقفل الأصناف كلها ويقول «غير متوفر»
                   // عن مخزن مليان.
-                  onChange={(v) => onHeaderWarehouseChange(v as number)}
-                  options={headerWarehouses.map((w) => ({ value: w.id, label: w.name }))} filterOption={searchFilter} filterSort={searchRank}/>
+                  onChange={(v) => onWarehouseChange(v as number)}
+                  options={warehouses.map((w) => ({ value: w.id, label: w.name }))} filterOption={searchFilter} filterSort={searchRank}/>
               </Form.Item>
             </Col>
             <Col xs={12} md={3}>
@@ -2793,7 +2756,7 @@ function couponsTotal(inv: any): number {
                     // إيه اللي فيها، فبيعرض الكتالوج كله بكل فئاته.
                     if (store) onWarehouseChange(store);
                   }}
-                  options={branchReps.map((r) => ({ value: r.id, label: r.full_name }))} filterOption={searchFilter} filterSort={searchRank}/>
+                  options={reps.map((r) => ({ value: r.id, label: r.full_name }))} filterOption={searchFilter} filterSort={searchRank}/>
               </Form.Item>
             </Col>
             {/* الخط أداة تجزئة — مش في المصنع. الشرح فوق عند `isFactory`. */}
@@ -2974,7 +2937,7 @@ function couponsTotal(inv: any): number {
               placeholder="اختر المخزن"
               value={pendingWarehouse ?? undefined}
               onChange={(v) => setPendingWarehouse(v as number)}
-              options={branchWarehouses.map((w) => ({ value: w.id, label: w.name }))} filterOption={searchFilter} filterSort={searchRank}/>
+              options={warehouses.map((w) => ({ value: w.id, label: w.name }))} filterOption={searchFilter} filterSort={searchRank}/>
             <div style={{ marginTop: 10, color: '#6b6b6b', fontSize: 13 }}>
               هيثبت لكل أصناف الفاتورة. تقدر تغيّر مخزن أي سطر من عمود «المخزن».
             </div>
@@ -3264,8 +3227,8 @@ function couponsTotal(inv: any): number {
           open={newStep === 'warehouse' && !viewOnly && !editingInvoice}
           title="الفاتورة دي هتتصرف من أنهي مخزن؟"
           value={docWarehouseId}
-          onChange={(v) => { doorWarehouseRef.current = v as number; onHeaderWarehouseChange(v as number); }}
-          warehouses={headerWarehouses}
+          onChange={(v) => { doorWarehouseRef.current = v as number; onWarehouseChange(v as number); }}
+          warehouses={warehouses}
           onCancel={() => { setDocWarehouseId(null); setNewStep('party'); setPartyPickerOpen(true); }}
           onOk={() => setNewStep(afterWarehouseStep())}
         />

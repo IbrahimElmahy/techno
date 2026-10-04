@@ -25,7 +25,6 @@ import { useDocRoute } from '../components/useDocRoute';
 import { choiceColumn, numberColumn, textColumn } from '../components/gridColumns';
 import MovementHistoryLog from '../components/MovementHistoryLog';
 import { TabModal } from '../components/TabModal';
-import { useBranchScope } from '../hooks/useBranchScope';
 import { useTableColumns } from '../components/ColumnSettings';
 
 import { useCanSeeStats } from '../components/StatsRow';
@@ -78,11 +77,6 @@ export default function StockCounts() {
   const [openVisible, setOpenVisible] = useState(false);
   const [opening, setOpening] = useState(false);
   const [warehouseId, setWarehouseId] = useState<number | undefined>();
-  // (فصل الفروع) الجرد العام لفرع واحد — موظف الفرع فرعه، والأدمن بيختار. المخازن
-  // بتتفلتر على الفرع المختار.
-  const [countBranch, setCountBranch] = useState<number | undefined>();
-  const [branches, setBranches] = useState<any[]>([]);
-  const countScope = useBranchScope(countBranch ?? null);
   const [countDate, setCountDate] = useState<Dayjs>(dayjs());
   const [notes, setNotes] = useState('');
   const [statement1, setStatement1] = useState('');
@@ -116,13 +110,11 @@ export default function StockCounts() {
   const load = async () => {
     setLoading(true);
     try {
-      const [s, w, b] = await Promise.all([
+      const [s, w] = await Promise.all([
         api.get('/api/v1/stock-counts'),
         api.get('/api/v1/warehouses'),
-        api.get('/api/v1/branches').catch(() => ({ data: [] })),
       ]);
       setSheets(s.data || []); setWarehouses(w.data || []);
-      setBranches((b.data || []).filter((x: any) => x.active !== false));
     } catch {
       message.error('تعذر تحميل الجرد');
     } finally { setLoading(false); }
@@ -136,8 +128,6 @@ export default function StockCounts() {
       const res = await api.post('/api/v1/stock-counts', {
         // Empty means every active warehouse — the general count, chosen here rather than by route.
         warehouse_id: warehouseId ?? null,
-        // فرع الجرد العام — السيرفر بيرفض جرد عام من غير فرع لو فيه أكتر من فرع.
-        branch_id: warehouseId ? null : (countScope.branchId ?? null),
         count_date: countDate.format('YYYY-MM-DD'),
         notes: notes || null,
         statement1: statement1 || null,
@@ -498,22 +488,12 @@ export default function StockCounts() {
             </Form.Item>
           )}
 
-          {countScope.isAdmin && branches.length > 1 && (
-            <Form.Item label="الفرع" required={!warehouseId}
-              help="الجرد العام بيبقى لفرع واحد — ماينفعش يعدّ مخازن فرعين في كشف واحد">
-              <Select allowClear showSearch placeholder="اختر الفرع"
-                value={countBranch}
-                onChange={(v) => { setCountBranch(v); setWarehouseId(undefined); }}
-                options={branches.map((b: any) => ({ value: b.id, label: b.name }))}
-                filterOption={searchFilter} filterSort={searchRank}/>
-            </Form.Item>
-          )}
           <Form.Item label="المخزن"
-            help="سيبه فاضي والكشف هيفتح على كل مخازن الفرع النشطة (جرد عام)">
+            help="سيبه فاضي والكشف هيفتح على كل المخازن النشطة (جرد عام)">
             <Select allowClear showSearch
-              placeholder="كل مخازن الفرع النشطة"
+              placeholder="كل المخازن النشطة"
               value={warehouseId} onChange={setWarehouseId}
-              options={sortByName(countScope.keep(warehouses), (w: any) => w.name).map((w: any) => ({ value: w.id, label: w.name }))} filterOption={searchFilter} filterSort={searchRank}/>
+              options={sortByName(warehouses, (w) => w.name).map((w) => ({ value: w.id, label: w.name }))} filterOption={searchFilter} filterSort={searchRank}/>
           </Form.Item>
           <Form.Item label="تاريخ الجرد">
             <DatePicker style={{ width: '100%' }} value={countDate} allowClear={false}

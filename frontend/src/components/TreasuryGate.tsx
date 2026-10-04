@@ -4,7 +4,6 @@ import { Select, message } from 'antd';
 import { TabModal } from './TabModal';
 import { api } from '../api/client';
 import { money } from '../utils/money';
-import { inBranchCash } from '../hooks/useBranchScope';
 
 /**
  * بوباب الخزنة — آخر سؤال قبل ما المستند يتحفظ: **الفلوس دي رايحة فين، وجاية منين**.
@@ -41,9 +40,6 @@ export interface TreasuryChoice {
   label: string;
   /** خط الصندوق زي ما اسمه بيقول — «أبيض» / «بولي» / `null` لصندوق مالوش خط. */
   family: string | null;
-  /** (فصل الفروع) فرع الصندوق، والفروع اللي هو متوجّه لها كخزنة عامة. */
-  branch_id?: number | null;
-  routed_branch_ids?: number[];
 }
 
 /** عربية مجرّدة من اختلافات الهمزة والتاء المربوطة — «ابيض» و«أبيض» كلمة واحدة. */
@@ -95,8 +91,6 @@ export function useTreasurySafes(enabled = true): [TreasuryChoice[], boolean] {
           // الخط من العهدة المربوطة بالصندوق؛ والقراءة من الاسم فضلت كاحتياطي للصناديق
           // اللي مالهاش عهدة (المركز الرئيسي، البونص).
           family: t.family ?? familyOfSafe(t.name || ''),
-          branch_id: t.branch_id ?? null,
-          routed_branch_ids: t.routed_branch_ids || [],
         })));
       })
       .catch((e) => {
@@ -199,11 +193,6 @@ export interface TreasuryAsk {
   family?: string | null;
   docLabel?: string;
   /**
-   * (فصل الفروع) فرع المستند — البوباب بيعرض صناديق الفرع ده بس (ومعاها الخزنة العامة
-   * المتوجّهة له). السيرفر بيرفض أي صندوق من فرع تاني، فعرضه كان هيبقى فخ.
-   */
-  branchId?: number | null;
-  /**
    * الخزنة المكتوبة على المستند خلاص — للتعديل.
    *
    * **المستند اللي بيتعدّل مش بيتسأل من الأول.** كان بيتسأل: الشاشة مابتحمّلش
@@ -225,14 +214,9 @@ export interface TreasuryAsk {
  * (نقدي صفر، أو مافيش صناديق) بتتنده على طول بـ`null` — الحفظ مايتعطّلش.
  */
 export function useTreasuryGate(enabled = true) {
-  const [allOptions, failed] = useTreasurySafes(enabled);
+  const [options, failed] = useTreasurySafes(enabled);
   const [req, setReq] = useState<(TreasuryAsk & { run: (id: number | null) => void }) | null>(null);
   const [value, setValue] = useState<number | null>(null);
-  // صناديق فرع المستند بس — الفرع بييجي مع السؤال لأنه بيتعرف وقت الحفظ (من المخزن).
-  const options = useMemo(
-    () => (req?.branchId ? allOptions.filter((o) => inBranchCash(o, req.branchId)) : allOptions),
-    [allOptions, req],
-  );
 
   const suggested = useMemo(() => {
     if (!req) return null;
@@ -286,13 +270,13 @@ export function useTreasuryGate(enabled = true) {
       run(null);
       return;
     }
-    if (allOptions.length === 0) {
+    if (options.length === 0) {
       run(null);
       return;
     }
     setValue(null);
     setReq({ ...o, run });
-  }, [enabled, allOptions, failed]);
+  }, [enabled, options, failed]);
 
   const close = useCallback(() => { setReq(null); setValue(null); }, []);
 

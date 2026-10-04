@@ -7,7 +7,6 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
-from src.auth import branch_scope
 from src.auth.dependencies import CurrentUser, require_capability
 from src.auth.rbac import CAP_MANUFACTURE_READ, CAP_MANUFACTURE_WRITE
 from src.core.db import get_db
@@ -50,21 +49,10 @@ def _out(d) -> WastageOut:
 
 @router.get("", response_model=list[WastageOut])
 def list_wastage(
-    current: CurrentUser = Depends(require_capability(CAP_MANUFACTURE_READ)),
+    _: CurrentUser = Depends(require_capability(CAP_MANUFACTURE_READ)),
     db: Session = Depends(get_db),
 ) -> list[WastageOut]:
-    rows = wastage_service.list_wastage(db)
-    # (فصل الفروع) الهالك على مخزن، والمخزن تبع فرع — موظف الفرع بيشوف هالك فرعه بس.
-    mine = branch_scope.visible_branch_id(current)
-    if mine is not None:
-        from sqlalchemy import select
-
-        from src.models.warehouse import Warehouse
-
-        foreign = set(db.scalars(select(Warehouse.id).where(
-            Warehouse.branch_id.isnot(None), Warehouse.branch_id != mine)).all())
-        rows = [d for d in rows if d.warehouse_id not in foreign]
-    return [_out(d) for d in rows]
+    return [_out(d) for d in wastage_service.list_wastage(db)]
 
 
 @router.post("", response_model=WastageOut, status_code=status.HTTP_201_CREATED)
