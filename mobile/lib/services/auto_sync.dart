@@ -273,6 +273,11 @@ class AutoSync extends ChangeNotifier {
     var items = 0;
     String? note;
     onBundle();
+    // صلاحيات التطبيق (الكروت) بتتحدّث مع كل مزامنة — اللي اتقفل من شاشة صلاحيات المستخدمين
+    // بيختفي من غير ما المندوب يخرج ويدخل. فشلها مايوقفش حاجة.
+    try {
+      await ApiClient.instance.refreshAppCapabilities();
+    } catch (_) {}
     try {
       await ApiClient.instance.pullSalesBundle();
       items = (await LocalDb.instance.saleItems()).length;

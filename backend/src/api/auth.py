@@ -54,6 +54,10 @@ class UserOut(BaseModel):
     # the same string. This is disclosure of the user's OWN permissions, never a substitute for
     # the server-side gate — every endpoint still checks for itself.
     capabilities: list[str] = []
+    # (٢٠٢٦-١٠-٠٥) صفحات اتظهرت أو اتخبّت للمستخدم ده بعينه — مسار الصفحة (`/invoices`).
+    # الصفحة اللي مش هنا بتبان حسب دوره زي ما كانت.
+    pages_shown: list[str] = []
+    pages_hidden: list[str] = []
 
 
 @router.post("/auth/login", response_model=TokenResponse)
@@ -199,6 +203,11 @@ def me(current: CurrentUser = Depends(get_current_user), db: Session = Depends(g
         # **اللي الدور ده بيقدر عليه فعلاً** — نفس `role_has_capability` اللي السيرفر بيحكم
         # بيه. كان بيرجّع الافتراضي، فأي تعديل من شاشة الصلاحيات كان بيتطبّق في السيرفر
         # ومابيوصلش للشاشة: زرار يبان لحد اتمنع منه، أو يختفي عن حد اتدّاله.
+        # ودلوقتي **بفروق المستخدم نفسه** كمان (`UserCapability`) — نفس `current.can`.
         capabilities=sorted(ALL_CAPABILITIES if current.role == RoleName.system_admin
-                            else effective_capabilities(current.role)),
+                            else (set(effective_capabilities(current.role)) | {
+                                c for c in current.grants if not c.startswith("page:")})
+                            - set(current.denies)),
+        pages_shown=sorted(c[5:] for c in current.grants if c.startswith("page:")),
+        pages_hidden=sorted(c[5:] for c in current.denies if c.startswith("page:")),
     )

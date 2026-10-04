@@ -76,7 +76,7 @@ class BalanceOut(BaseModel):
 
 def _reader(current: CurrentUser = Depends(get_current_user)) -> CurrentUser:
     """المكتب اللي بيدير العهدة، أو المندوب (على نفسه بس — القفل في كل نقطة تحت)."""
-    if current.rep_id is not None or role_has_capability(current.role, CAP_COUPON_CUSTODY):
+    if current.rep_id is not None or current.can(CAP_COUPON_CUSTODY):
         return current
     raise HTTPException(403, {"code": "forbidden", "message": "مالكش صلاحية «عهدة الكوبونات»."})
 
@@ -88,7 +88,7 @@ def _balance_reader(current: CurrentUser = Depends(get_current_user)) -> Current
     بس لما السيرفر يرفض.
     """
     if current.rep_id is not None or any(
-            role_has_capability(current.role, cap)
+            current.can(cap)
             for cap in (CAP_COUPON_CUSTODY, CAP_COUPON_RECEIVE, CAP_SALE_WRITE,
                         CAP_SALES_READ)):
         return current

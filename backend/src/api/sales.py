@@ -697,9 +697,9 @@ def rep_bundle(
         # بنفس الحساب اللي `sales_service` بيعمله.
         #
         # سيرفر قديم مابيرجّعهاش ⇒ التطبيق بيفترض إنه مسموح، فالسلوك زي ما كان.
-        "can_sell_below_price": role_has_capability(current.role, CAP_SELL_BELOW_PRICE),
+        "can_sell_below_price": current.can(CAP_SELL_BELOW_PRICE),
         # «البيع تحت سعر التكلفة» — من غيرها الجهاز بيمنع حفظ سطر صافيه أقل من `min_price`.
-        "can_sell_below_cost": role_has_capability(current.role, CAP_SELL_BELOW_COST),
+        "can_sell_below_cost": current.can(CAP_SELL_BELOW_COST),
         # التطبيق بيبعت المكان ده زي ما هو وقت الترحيل، فبينزل بنوعه مش برقمه بس:
         # مندوب على عهدة ومندوب على مخزن بيبعتوا `location_kind` مختلف.
         "store_kind": store_kind.value,
@@ -901,7 +901,7 @@ def _build_sale(
     if not body.is_bonus and _is_full_discount(body):
         body.is_bonus = True
     if body.is_bonus:
-        if not role_has_capability(current.role, CAP_SALE_BONUS):
+        if not current.can(CAP_SALE_BONUS):
             raise HTTPException(403, {"code": "forbidden",
                                       "message": "مالكش صلاحية «إصدار فاتورة بونص»."})
         if bonus_for is None and body.bonus_for_client_uuid:
@@ -915,8 +915,8 @@ def _build_sale(
                     or (target.rep_id is None and target.actor_user_id == current.id)))):
             raise HTTPException(403, {"code": "forbidden",
                                       "message": "البونص لازم يبقى على فاتورة من فواتيرك."})
-    can_sell_below = role_has_capability(current.role, CAP_SELL_BELOW_PRICE)
-    can_sell_below_cost = role_has_capability(current.role, CAP_SELL_BELOW_COST)
+    can_sell_below = current.can(CAP_SELL_BELOW_PRICE)
+    can_sell_below_cost = current.can(CAP_SELL_BELOW_COST)
     try:
         inv = sales_service.create_sale(
             db, customer_id=body.customer_id, origin_location_kind=body.origin.location_kind,

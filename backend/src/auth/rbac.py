@@ -336,6 +336,31 @@ ALL_CAPABILITIES |= _HR_ALL | _PAYROLL_ALL
 CAP_STATS_VIEW = "stats.view"
 ALL_CAPABILITIES |= {CAP_STATS_VIEW}
 
+# ---------------------------------------------------------------- التطبيق (الموبايل)
+#
+# (٢٠٢٦-١٠-٠٥) كل كارت في الشاشة الرئيسية للتطبيق ليه صلاحية — التطبيق بيقراها من
+# `/auth/me` وبيخبّي الكارت اللي مش مسموح. الافتراضي: المندوب وكل اللي فوقه بيشوفوا كله زي
+# ما كان، والشيل بيبقى من شاشة صلاحيات المستخدمين لمستخدم بعينه.
+APP_CAPABILITIES: dict[str, str] = {
+    "app.sale": "التطبيق: فاتورة بيع",
+    "app.bonus": "التطبيق: فاتورة بونص",
+    "app.my_invoices": "التطبيق: فواتيري",
+    "app.collect": "التطبيق: تحصيل من عميل",
+    "app.my_collections": "التطبيق: تحصيلاتي",
+    "app.my_stock": "التطبيق: بضاعتي",
+    "app.price_sheet": "التطبيق: كشف تسعير",
+    "app.transfers": "التطبيق: طلبات التحويل",
+    "app.debts": "التطبيق: كشف المديونيات",
+    "app.customer_account": "التطبيق: حساب عميل",
+    "app.day_summary": "التطبيق: ملخّص اليوم",
+    "app.visits": "التطبيق: الزيارات",
+    "app.coupon_receive": "التطبيق: استلام كوبونات",
+    "app.coupon_review": "التطبيق: مراجعة الكوبونات",
+    "app.visit_review": "التطبيق: مراجعة الزيارات",
+}
+ALL_CAPABILITIES |= set(APP_CAPABILITIES)
+ROLE_CAPABILITIES.setdefault(RoleName.sales_rep, set()).update(APP_CAPABILITIES)
+
 # «المالك» — كل حاجة، وهو الوحيد اللي بياخد `stats.view` صراحةً.
 ROLE_CAPABILITIES[RoleName.owner] = set(ALL_CAPABILITIES)
 ROLE_CAPABILITIES.setdefault(RoleName.system_admin, set()).add(CAP_STATS_VIEW)
@@ -418,6 +443,11 @@ ROLE_CAPABILITIES[RoleName.accountant].update(
 # لو اتاخدت عند تعريف الدور كانت هتبقى صورة من نص القايمة — وأي صلاحية بتتضاف تحت
 # مكانتش هتوصله، وهو الدور الوحيد اللي مالوش شاشة تكمّله.
 ROLE_CAPABILITIES[RoleName.owner] = set(ALL_CAPABILITIES)
+
+# كروت التطبيق لكل الأدوار افتراضياً — التطبيق قبل كده كان بيعرض كله لأي حد بيدخله، فشيل
+# كارت من دور كامل كان هيبقى تغيير محدش طلبه. الشيل بقى لمستخدم بعينه.
+for _role in RoleName:
+    ROLE_CAPABILITIES.setdefault(_role, set()).update(APP_CAPABILITIES)
 
 
 # ما ضبطه المستخدم من شاشة الصلاحيات — بيتقرا من قاعدة البيانات مرة عند الإقلاع وبعد كل حفظ.

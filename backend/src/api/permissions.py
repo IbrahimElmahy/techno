@@ -85,6 +85,8 @@ CAPABILITY_LABELS: dict[str, str] = {
     "payroll.read": "عرض الرواتب",
     "payroll.post": "ترحيل الرواتب",
     "salary.view": "عرض قيمة الراتب",
+    "stats.view": "كروت الإحصائيات",
+    **rbac.APP_CAPABILITIES,
 }
 
 # القسم اللي الصلاحية بتقع تحته في الشاشة — عشان ٥٨ صلاحية تتقرا، مش تتفحص.
@@ -100,6 +102,7 @@ GROUPS: list[tuple[str, list[str]]] = [
     ("ما بعد البيع والتصنيع", ["inspection.", "manufacture."]),
     ("الموارد البشرية", ["hr.", "payroll.", "salary."]),
     ("الإحصائيات", ["stats."]),
+    ("التطبيق (الموبايل)", ["app."]),
 ]
 
 ROLE_LABELS: dict[str, str] = {
@@ -240,3 +243,209 @@ def reset_role_permissions(
     db.commit()
     rbac.refresh_overrides(db)
     return _role_out(role, is_default=True)
+
+
+# ======================================================================
+# صلاحيات المستخدمين — فرق كل مستخدم عن دوره (٢٠٢٦-١٠-٠٥)
+# ======================================================================
+#
+# المالك والأدمن بيديروا أي مستخدم. مدير الفرع (أو أي حد معاه `user.write`) بيدير مستخدمين
+# فرعه اللي أدوارهم **تحته** بس، وبيدّي من صلاحياته هو بس — مايقدرش يدّي حد حاجة مش عنده.
+# الشيل مسموح من غير قيد: إنك تقفل على حد أقل مش أكتر.
+
+from src.auth.rbac import CAP_USER_WRITE  # noqa: E402
+from src.models.permission import UserCapability  # noqa: E402
+from src.models.user import User  # noqa: E402
+
+PAGE_PREFIX = "page:"
+
+
+def _manager(current: CurrentUser = Depends(get_current_user)) -> CurrentUser:
+    if current.is_admin:
+        return current
+    if not current.can(CAP_USER_WRITE) or current.branch_id is None:
+        raise HTTPException(status.HTTP_403_FORBIDDEN,
+                            {"code": "forbidden", "message": "مش مسموح لك تدير صلاحيات المستخدمين."})
+    return current
+
+
+def _role_name(db: Session, user: User) -> RoleName:
+    from src.models.role import Role
+
+    return db.get(Role, user.role_id).name
+
+
+def _manageable(db: Session, current: CurrentUser, user: User | None) -> User:
+    """المستخدم ده من حقك تديره؟ — و٤٠٤ لو لأ (مانقولش إنه موجود في فرع تاني)."""
+    from src.api.users import BELOW_BRANCH_MANAGER
+
+    if user is None:
+        raise HTTPException(404, {"code": "not_found", "message": "المستخدم مش موجود."})
+    role = _role_name(db, user)
+    if current.is_admin:
+        # حساب الأدمن والمالك مايتلمسش إلا من المالك — نفس قاعدة شاشة المستخدمين.
+        if role in (RoleName.system_admin, RoleName.owner) and not current.is_owner:
+            raise HTTPException(403, {"code": "forbidden",
+                                      "message": "صلاحيات مدير النظام أو المالك مابتتعدّلش إلا من المالك."})
+        return user
+    if user.branch_id != current.branch_id or role not in BELOW_BRANCH_MANAGER:
+        raise HTTPException(404, {"code": "not_found", "message": "المستخدم مش موجود."})
+    return user
+
+
+def _assignable(current: CurrentUser) -> set[str]:
+    """الصلاحيات اللي اللي بيدير يقدر يدّيها — كل حاجة للأدمن، وصلاحياته هو لغيره."""
+    if current.is_admin:
+        return set(rbac.ALL_CAPABILITIES)
+    return {c for c in rbac.ALL_CAPABILITIES if current.can(c)}
+
+
+class UserRow(BaseModel):
+    id: int
+    username: str
+    full_name: str | None
+    role: str
+    role_label: str
+    branch_id: int | None
+    branch_name: str | None
+    active: bool
+    overrides: int
+
+
+class UserPermsOut(BaseModel):
+    user: UserRow
+    role_capabilities: list[str]
+    grants: list[str]
+    denies: list[str]
+    assignable: list[str]
+    #: صفحات المدير نفسه المخفية عنه — مايقدرش يظهّرها لحد.
+    manager_hidden_pages: list[str]
+    capabilities: list[CapabilityOut]
+
+
+class UserPermsIn(BaseModel):
+    grants: list[str] = []
+    denies: list[str] = []
+
+
+def _branches(db: Session) -> dict[int, str]:
+    from src.models.org import Branch
+
+    return {b.id: b.name for b in db.query(Branch).all()}
+
+
+def _user_row(db: Session, u: User, counts: dict, branches: dict) -> UserRow:
+    role = _role_name(db, u)
+    return UserRow(
+        id=u.id, username=u.username, full_name=u.full_name, role=role.value,
+        role_label=ROLE_LABELS.get(role.value, role.value), branch_id=u.branch_id,
+        branch_name=branches.get(u.branch_id) if u.branch_id else None,
+        active=u.active, overrides=counts.get(u.id, 0))
+
+
+@router.get("/permissions/users", response_model=list[UserRow])
+def list_user_permissions(
+    current: CurrentUser = Depends(_manager),
+    db: Session = Depends(get_db),
+) -> list[UserRow]:
+    from sqlalchemy import func, select
+
+    from src.api.users import BELOW_BRANCH_MANAGER
+    from src.auth import branch_scope
+    from src.models.role import Role
+
+    stmt = select(User).order_by(User.active.desc(), User.full_name, User.username)
+    if current.is_admin:
+        bid = branch_scope.visible_branch_id(current)
+        if bid is not None:
+            stmt = stmt.where(User.branch_id == bid)
+    else:
+        below = [r.id for r in db.scalars(select(Role)).all() if r.name in BELOW_BRANCH_MANAGER]
+        stmt = stmt.where(User.branch_id == current.branch_id, User.role_id.in_(below or [0]))
+    counts = dict(db.execute(select(UserCapability.user_id, func.count())
+                             .group_by(UserCapability.user_id)).all())
+    branches = _branches(db)
+    rows = [_user_row(db, u, counts, branches) for u in db.scalars(stmt).all()]
+    if not current.is_owner:
+        rows = [r for r in rows if r.role not in ("system_admin", "owner")]
+    return rows
+
+
+def _perms_out(db: Session, current: CurrentUser, u: User) -> UserPermsOut:
+    from sqlalchemy import select
+
+    role = _role_name(db, u)
+    rows = db.execute(select(UserCapability.capability, UserCapability.granted)
+                      .where(UserCapability.user_id == u.id)).all()
+    return UserPermsOut(
+        user=_user_row(db, u, {u.id: len(rows)}, _branches(db)),
+        role_capabilities=sorted(rbac.ALL_CAPABILITIES if role == RoleName.system_admin
+                                 else rbac.effective_capabilities(role)),
+        grants=sorted(c for c, g in rows if g),
+        denies=sorted(c for c, g in rows if not g),
+        assignable=sorted(_assignable(current)),
+        manager_hidden_pages=sorted(c[len(PAGE_PREFIX):] for c in current.denies
+                                    if c.startswith(PAGE_PREFIX)),
+        capabilities=[CapabilityOut(key=c, label=CAPABILITY_LABELS.get(c, c), group=_group_of(c))
+                      for c in sorted(rbac.ALL_CAPABILITIES)],
+    )
+
+
+@router.get("/permissions/users/{user_id}", response_model=UserPermsOut)
+def read_user_permissions(
+    user_id: int,
+    current: CurrentUser = Depends(_manager),
+    db: Session = Depends(get_db),
+) -> UserPermsOut:
+    return _perms_out(db, current, _manageable(db, current, db.get(User, user_id)))
+
+
+@router.put("/permissions/users/{user_id}", response_model=UserPermsOut)
+def set_user_permissions(
+    user_id: int,
+    body: UserPermsIn,
+    current: CurrentUser = Depends(_manager),
+    db: Session = Depends(get_db),
+) -> UserPermsOut:
+    from sqlalchemy import select
+
+    u = _manageable(db, current, db.get(User, user_id))
+    if u.id == current.id and not current.is_owner:
+        raise HTTPException(403, {"code": "forbidden",
+                                  "message": "مايصحّش تعدّل صلاحياتك بنفسك — اطلبها من اللي فوقك."})
+    grants, denies = set(body.grants), set(body.denies)
+    both = grants & denies
+    if both:
+        raise HTTPException(422, {"code": "validation",
+                                  "message": "صلاحية مدّية ومشالة في نفس الوقت: " + "، ".join(sorted(both))})
+    caps = {c for c in grants | denies if not c.startswith(PAGE_PREFIX)}
+    unknown = sorted(caps - rbac.ALL_CAPABILITIES)
+    if unknown:
+        raise HTTPException(422, {"code": "unknown_capability",
+                                  "message": "صلاحيات مش معروفة: " + "، ".join(unknown)})
+    if not current.is_admin:
+        # بيدّي من اللي عنده بس — والصفحة اللي مخفية عنه مايظهّرهاش لحد.
+        allowed = _assignable(current)
+        over = sorted(c for c in grants if not c.startswith(PAGE_PREFIX) and c not in allowed)
+        hidden = sorted(c for c in grants if c.startswith(PAGE_PREFIX) and c in current.denies)
+        if over or hidden:
+            names = ([CAPABILITY_LABELS.get(c, c) for c in over]
+                     + [c[len(PAGE_PREFIX):] for c in hidden])
+            raise HTTPException(403, {"code": "forbidden",
+                                      "message": "مش هتقدر تدّي حاجة مش عندك: " + "، ".join(names)})
+
+    before = db.execute(select(UserCapability.capability, UserCapability.granted)
+                        .where(UserCapability.user_id == u.id)).all()
+    db.execute(delete(UserCapability).where(UserCapability.user_id == u.id))
+    for c in sorted(grants):
+        db.add(UserCapability(user_id=u.id, capability=c, granted=True, actor_user_id=current.id))
+    for c in sorted(denies):
+        db.add(UserCapability(user_id=u.id, capability=c, granted=False, actor_user_id=current.id))
+    db.flush()
+    audit_record(db, action="permissions.user.update", actor_user_id=current.id,
+                 entity_type="user", entity_id=u.id,
+                 before={"grants": sorted(c for c, g in before if g),
+                         "denies": sorted(c for c, g in before if not g)},
+                 after={"grants": sorted(grants), "denies": sorted(denies)})
+    db.commit()
+    return _perms_out(db, current, u)

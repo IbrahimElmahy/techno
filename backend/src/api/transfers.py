@@ -234,7 +234,7 @@ def _may_approve_now(db: Session, current: CurrentUser, t) -> bool:
     «اتسجّل طلب التحويل»، وهو بيروح يبص على المخزن يلاقي مافيش حاجة اتحركت — لأنه مستني
     موافقة نفسه على ورقة كتبها بنفسه. ده كان أكبر سبب إن «التحويل مش بيخصم ولا بيزود».
     """
-    if not role_has_capability(current.role, CAP_TRANSFER_APPROVE):
+    if not current.can(CAP_TRANSFER_APPROVE):
         return False
     src_branch = transfer_service._location_branch(
         db, t.source_location_kind, t.source_location_id)

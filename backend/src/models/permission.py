@@ -35,3 +35,28 @@ class RoleCapability(Base):
     actor_user_id: Mapped[int | None] = mapped_column(ForeignKey("user.id"), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime, server_default=func.now(), nullable=False)
+
+
+class UserCapability(Base):
+    """صلاحية **لمستخدم بعينه** فوق صلاحيات دوره (٢٠٢٦-١٠-٠٥).
+
+    عكس جدول الأدوار: هنا الصف **فرق** مش بديل — `granted=True` بيدّي المستخدم صلاحية
+    دوره مافيهاش، و`False` بيشيل منه صلاحية دوره فيها. اللي مالوش صف بيمشي على دوره، فلما
+    دوره يتغيّر (أو الافتراضي يتحدّث) بيتحرّك معاه — والفرق اللي اتقال صراحةً بيفضل.
+
+    `capability` ممكن تكون صلاحية من `rbac` (`sale.delete`)، أو صلاحية تطبيق (`app.visits`)،
+    أو صفحة في النظام (`page:/invoices`) — الصفحات من غير صلاحيات بتبان حسب الدور، والفرق
+    هنا بيظهّر أو بيخبّي صفحة لمستخدم واحد.
+    """
+    __tablename__ = "user_capability"
+    __table_args__ = (
+        UniqueConstraint("user_id", "capability", name="uq_user_capability"),
+    )
+
+    id: Mapped[int] = mapped_column(BigIntPK, primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("user.id"), nullable=False, index=True)
+    capability: Mapped[str] = mapped_column(String(120), nullable=False)
+    granted: Mapped[bool] = mapped_column(nullable=False)
+    actor_user_id: Mapped[int | None] = mapped_column(ForeignKey("user.id"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=func.now(), nullable=False)

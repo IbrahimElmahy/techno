@@ -1792,3 +1792,32 @@ body.eg-resizing * {
   border-color: #fa8c16 !important;
   font-weight: 700;
 }
+
+/* صلاحيات المستخدمين — القايمة على جنب والتفاصيل جنبها. */
+.up-layout { display: flex; gap: 14px; align-items: stretch; min-height: 60vh; }
+.up-users { flex: 0 0 300px; display: flex; flex-direction: column; gap: 8px; }
+.up-users-list { flex: 1; overflow-y: auto; max-height: 70vh; display: flex; flex-direction: column; gap: 4px; }
+.up-user { text-align: start; border: 1px solid #e6ebe4; background: #fff; border-radius: 10px;
+  padding: 8px 10px; cursor: pointer; display: flex; flex-direction: column; gap: 2px; font: inherit; }
+.up-user:hover { border-color: #b7dba0; }
+.up-user.is-on { border-color: #6AB42D; background: #f3faee; }
+.up-user.is-off { opacity: .55; }
+.up-user-name { font-weight: 800; }
+.up-user-meta { color: #4a4a4a; font-size: 15px; }
+.up-detail { flex: 1; min-width: 0; background: #fff; border-radius: 12px; border: 1px solid #e6ebe4; padding: 12px 16px; }
+.up-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap;
+  border-bottom: 1px solid #eef2ec; padding-bottom: 10px; margin-bottom: 4px; }
+.up-head-name { font-size: 20px; font-weight: 800; }
+.up-head-meta { display: flex; gap: 6px; align-items: center; margin-top: 4px; color: #4a4a4a; }
+.up-body { max-height: 62vh; overflow-y: auto; padding-inline-end: 6px; }
+.up-section { margin-bottom: 14px; }
+.up-section-title { font-weight: 800; font-size: 17px; color: #2f6b12; margin-bottom: 6px;
+  border-bottom: 1px dashed #dbe8d2; padding-bottom: 3px; }
+.up-sub { margin: 4px 0 8px; }
+.up-sub-title { font-weight: 700; color: #555; margin-bottom: 4px; }
+.up-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 4px 14px; }
+.up-row { display: flex; align-items: center; min-height: 32px; }
+@media (max-width: 900px) {
+  .up-layout { flex-direction: column; }
+  .up-users { flex: 0 0 auto; }
+}

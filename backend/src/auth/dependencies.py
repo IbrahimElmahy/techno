@@ -6,7 +6,7 @@ branch assignment denies mid-session (spec Edge Case).
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
@@ -28,6 +28,22 @@ class CurrentUser:
     role: RoleName
     branch_id: int | None
     territory_id: int | None
+    #: فروق المستخدم ده عن دوره (`UserCapability`) — بتتحمّل مع كل طلب.
+    grants: frozenset = field(default_factory=frozenset)
+    denies: frozenset = field(default_factory=frozenset)
+
+    def can(self, capability: str) -> bool:
+        """الصلاحية **للمستخدم ده**: المشال منه مشال، والمدّيه متدّيه، والباقي من دوره.
+
+        مدير النظام مابيتقفلش عليه (نفس قاعدة `role_has_capability`) — الشيل منه مابيأثرش.
+        """
+        if self.role == RoleName.system_admin:
+            return role_has_capability(self.role, capability)
+        if capability in self.denies:
+            return False
+        if capability in self.grants:
+            return True
+        return role_has_capability(self.role, capability)
 
     @property
     def is_owner(self) -> bool:
@@ -98,20 +114,34 @@ def get_current_user(
             },
         )
     role = db.get(Role, user.role_id)
+    grants, denies = user_overrides(db, user.id)
     return CurrentUser(
         id=user.id,
         username=user.username,
         role=role.name,
         branch_id=user.branch_id,
         territory_id=user.territory_id,
+        grants=grants,
+        denies=denies,
     )
+
+
+def user_overrides(db: Session, user_id: int) -> tuple[frozenset, frozenset]:
+    """(المدّي، المشال) لمستخدم — استعلام صغير واحد لكل طلب، من غير كاش يقدم بين العمال."""
+    from sqlalchemy import select
+
+    from src.models.permission import UserCapability
+
+    rows = db.execute(select(UserCapability.capability, UserCapability.granted)
+                      .where(UserCapability.user_id == user_id)).all()
+    return (frozenset(c for c, g in rows if g), frozenset(c for c, g in rows if not g))
 
 
 def require_capability(capability: str):
     """Dependency factory: 403 unless the acting role explicitly has the capability."""
 
     def _dep(current: CurrentUser = Depends(get_current_user)) -> CurrentUser:
-        if not role_has_capability(current.role, capability):
+        if not current.can(capability):
             raise _deny(f"Capability '{capability}' not granted to role '{current.role.value}'.")
         return current
 

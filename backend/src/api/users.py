@@ -92,6 +92,25 @@ def _guard_elevated(current: CurrentUser, target_role) -> None:
              "message": "حساب مدير النظام أو المالك مايتعدّلش إلا من المالك."})
 
 
+#: الأدوار اللي اللي مش أدمن (مدير الفرع) يقدر يعمل بيها مستخدمين أو يحوّل لها — **أقل منه**.
+#: (٢٠٢٦-١٠-٠٥) كان مدير الفرع يقدر يعمل «مدير نظام» أو «مالك» أو مدير فرع تاني جوّه فرعه.
+BELOW_BRANCH_MANAGER = {
+    RoleName.sales_rep, RoleName.sales_manager, RoleName.purchasing_manager,
+    RoleName.accountant, RoleName.after_sales_staff, RoleName.viewer,
+}
+
+
+def _guard_role_ceiling(current: CurrentUser, target_role) -> None:
+    if current.is_admin:
+        return
+    name = getattr(target_role, "value", target_role)
+    if name not in {r.value for r in BELOW_BRANCH_MANAGER}:
+        raise HTTPException(
+            status.HTTP_403_FORBIDDEN,
+            {"code": "forbidden",
+             "message": "مدير الفرع بيدير الأدوار اللي تحته بس — مش مدير فرع ولا أدمن ولا مالك."})
+
+
 @router.post("", response_model=UserOut, status_code=status.HTTP_201_CREATED)
 def create_user(
     body: UserCreate,
@@ -99,7 +118,12 @@ def create_user(
     db: Session = Depends(get_db),
 ) -> UserOut:
     # Branch-scoped creators may only create within their own branch.
+    _guard_elevated(current, body.role)
+    _guard_role_ceiling(current, body.role)
     if not current.is_admin:
+        if body.branch_id is None or body.branch_id != current.branch_id:
+            raise HTTPException(403, {"code": "forbidden",
+                                      "message": "المستخدم الجديد لازم يبقى على فرعك."})
         ensure_branch_access(current, body.branch_id)
     # Validate required scope by role.
     if body.role in (RoleName.branch_manager, RoleName.purchasing_manager, RoleName.sales_manager):
@@ -163,8 +187,12 @@ def update_user(
     if user is None:
         raise HTTPException(404, {"code": "not_found", "message": "User not found"})
     _guard_elevated(current, db.get(Role, user.role_id).name)
+    if user.id != current.id:   # ولا يلمس مدير فرع زيه — بس يعدّل نفسه عادي
+        _guard_role_ceiling(current, db.get(Role, user.role_id).name)
     if body.role is not None:
         _guard_elevated(current, body.role)   # ولا يترقّى حد لأدمن إلا من المالك
+        if body.role != db.get(Role, user.role_id).name:   # نفس الدور مش ترقية
+            _guard_role_ceiling(current, body.role)
     if not current.is_admin:
         ensure_branch_access(current, user.branch_id)
         ensure_branch_access(current, body.branch_id if body.branch_id is not None else user.branch_id)
@@ -227,6 +255,7 @@ def deactivate_user(
     if user is None:
         raise HTTPException(404, {"code": "not_found", "message": "User not found"})
     _guard_elevated(current, db.get(Role, user.role_id).name)
+    _guard_role_ceiling(current, db.get(Role, user.role_id).name)
     if not current.is_admin:
         ensure_branch_access(current, user.branch_id)
     before = {"active": user.active}
@@ -270,6 +299,7 @@ def delete_user(
         raise HTTPException(
             409, {"code": "self", "message": "مش هتمسح حسابك وانت داخل بيه"})
     _guard_elevated(current, db.get(Role, user.role_id).name)
+    _guard_role_ceiling(current, db.get(Role, user.role_id).name)
     if not current.is_admin:
         ensure_branch_access(current, user.branch_id)
 

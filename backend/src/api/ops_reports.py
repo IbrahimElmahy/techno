@@ -46,7 +46,7 @@ def _require_subject(current: CurrentUser, subject: str) -> None:
     if needed is None:
         raise HTTPException(422, {"code": "report_invalid",
                                   "message": f"موضوع مش معروف: {subject}"})
-    if not role_has_capability(current.role, needed):
+    if not current.can(needed):
         raise HTTPException(403, {"code": "forbidden",
                                   "message": "مالكش صلاحية على التقرير ده."})
 

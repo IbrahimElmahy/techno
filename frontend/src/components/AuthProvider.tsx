@@ -41,6 +41,9 @@ export interface User {
    * and the screen hides an action rather than offering one that would be refused.
    */
   capabilities?: string[];
+  /** صفحات اتظهرت/اتخبّت للمستخدم ده بعينه (شاشة صلاحيات المستخدمين) — مسار الصفحة. */
+  pages_shown?: string[];
+  pages_hidden?: string[];
 }
 
 interface AuthContextType {
@@ -110,7 +113,10 @@ export function AuthProvider({ children, apiUrl }: { children: React.ReactNode; 
         if (me.data?.capabilities) {
           setUser((prev) => {
             if (!prev) return prev;
-            const next = { ...prev, capabilities: me.data.capabilities };
+            const next = {
+              ...prev, capabilities: me.data.capabilities,
+              pages_shown: me.data.pages_shown ?? [], pages_hidden: me.data.pages_hidden ?? [],
+            };
             localStorage.setItem('user', JSON.stringify(next));
             return next;
           });

@@ -147,7 +147,7 @@ def _resolve(doc_type: str, doc_id: int, current: CurrentUser, db: Session) -> s
             "message": f"نوع مستند مش متسجّل للمرفقات: «{doc_type}»."})
     module_name, class_name, capability = spec
 
-    if not role_has_capability(current.role, capability):
+    if not current.can(capability):
         raise HTTPException(status.HTTP_403_FORBIDDEN, {
             "code": "forbidden", "message": "مالكش صلاحية على المستند ده."})
 

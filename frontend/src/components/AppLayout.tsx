@@ -172,7 +172,10 @@ export default function AppLayout() {
     nodes
       .map((node) => {
         if (!isGroup(node)) {
-          return node.roles.includes(userRole) ? { key: node.key, label: node.label } : null;
+          // الدور، وفوقه فرق المستخدم نفسه: صفحة اتخبّت عنه بتتشال، واتظهرتله بتبان.
+          if (user?.pages_hidden?.includes(node.key)) return null;
+          return node.roles.includes(userRole) || user?.pages_shown?.includes(node.key)
+            ? { key: node.key, label: node.label } : null;
         }
         // قسم المصنع بيتشال من غير فرع التصنيع — زي ما المجموعة اللي مافيهاش صلاحية
         // بتتشال. الشرح في `navigation.ts` و`useFactoryBranch`.

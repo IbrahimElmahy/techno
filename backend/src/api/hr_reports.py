@@ -46,7 +46,7 @@ def hr_report(
     if subject in _MONEY_SUBJECTS:
         from src.auth.rbac import role_has_capability
 
-        if not role_has_capability(current.role, CAP_SALARY_VIEW):
+        if not current.can(CAP_SALARY_VIEW):
             raise HTTPException(403, {"code": "forbidden",
                                       "message": "التقرير ده فيه مبالغ باسم موظف."})
     try:

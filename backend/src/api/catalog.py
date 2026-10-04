@@ -343,7 +343,7 @@ def item_min_prices(
         Item.kind == ItemKind.product, Item.active.is_(True))).all()
     costs = costing_service.average_cost_bulk(db, ids)
     return {
-        "can_sell_below_cost": role_has_capability(current.role, CAP_SELL_BELOW_COST),
+        "can_sell_below_cost": current.can(CAP_SELL_BELOW_COST),
         "min_prices": {str(i): str(c) for i, c in costs.items() if c > 0},
     }
 
@@ -522,7 +522,7 @@ def create_item(
         # catalogue, and a purchasing manager may create items without being allowed to price
         # loyalty. Refusing BEFORE the commit is what keeps «اتسجّل الصنف» honest — the older
         # shape created the item, got a 403 on a second call, and reported success anyway.
-        if not role_has_capability(current.role, CAP_PRODUCT_POINTS_WRITE):
+        if not current.can(CAP_PRODUCT_POINTS_WRITE):
             raise HTTPException(403, {"code": "forbidden",
                                       "message": "لا تملك صلاحية تحديد نقاط المنتج"})
         _apply_point_value(db, item, body.point_value, actor_user_id=current.id)

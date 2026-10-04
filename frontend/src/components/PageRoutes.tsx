@@ -76,6 +76,7 @@ const Reports = lazy(() => import('../pages/Reports'));
 const TradeReports = lazy(() => import('../pages/TradeReports'));
 const Settings = lazy(() => import('../pages/Settings'));
 const Permissions = lazy(() => import('../pages/Permissions'));
+const UserPermissions = lazy(() => import('../pages/UserPermissions'));
 const BranchOverview = lazy(() => import('../pages/BranchOverview'));
 const Reps = lazy(() => import('../pages/Reps'));
 const Territories = lazy(() => import('../pages/Territories'));
@@ -202,6 +203,7 @@ export default function PageRoutes({ location }: { location?: string }) {
       <Route path="/trade-reports" element={<TradeReports />} />
       <Route path="/settings" element={<Settings />} />
       <Route path="/permissions" element={<Permissions />} />
+      <Route path="/user-permissions" element={<UserPermissions />} />
       <Route path="/branch-overview" element={<BranchOverview />} />
       <Route path="/reps" element={<Reps />} />
       <Route path="/territories" element={<Territories />} />

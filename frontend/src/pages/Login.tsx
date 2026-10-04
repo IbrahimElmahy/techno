@@ -77,6 +77,8 @@ export default function Login() {
         // What the server says this user may do. Screens ask `can(...)` rather than listing role
         // names, so a screen and the endpoint behind it always quote the same rule.
         capabilities: profile.capabilities ?? [],
+        pages_shown: profile.pages_shown ?? [],
+        pages_hidden: profile.pages_hidden ?? [],
       };
 
       // 3. Confirm login in auth context

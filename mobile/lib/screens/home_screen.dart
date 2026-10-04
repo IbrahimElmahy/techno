@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 
 import '../db/local_db.dart';
@@ -39,6 +41,11 @@ class _HomeScreenState extends State<HomeScreen> {
   int _pendingReceipts = 0;
   /// «0.3.3 (6)» — تحت زرار التحديث في القايمة. أول سؤال الدعم بيسأله في التليفون.
   String? _version;
+  /// كروت التطبيق المسموحة للمستخدم ده (`app.*` من السيرفر). `null` = لسه ماتجابتش ⇒
+  /// كله بيبان زي الأول، عشان أول تشغيل من غير نت مايخبّيش حاجة.
+  Set<String>? _appCaps;
+
+  bool _can(String cap) => _appCaps == null || _appCaps!.contains(cap);
 
   @override
   void initState() {
@@ -72,8 +79,16 @@ class _HomeScreenState extends State<HomeScreen> {
     final p = await LocalDb.instance.pendingCount();
     final ps = await LocalDb.instance.pendingSalesCount();
     final pr = await LocalDb.instance.pendingReceiptsCount();
+    final capsRaw = await LocalDb.instance.getKv('app_caps');
+    Set<String>? caps;
+    if (capsRaw != null && capsRaw.isNotEmpty) {
+      try {
+        caps = (jsonDecode(capsRaw) as List).map((e) => e.toString()).toSet();
+      } catch (_) {}
+    }
     if (mounted) {
       setState(() {
+        _appCaps = caps;
         _username = u;
         _pending = p;
         _pendingSales = ps;
@@ -202,6 +217,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     ),
                   const SizedBox(height: 8),
                   // البيع فوق: ده اللي بيتعمل كل يوم، والمعاينة بتحصل لما تحصل.
+                  if (_can('app.sale'))
                   _BigAction(
                     icon: Icons.receipt_long_outlined,
                     color: AppColors.success,
@@ -216,6 +232,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   const SizedBox(height: 14),
                   // **البونص صفحة لوحده جنب البيع** — بطلب العميل. كان زرار جوّه فاتورة
                   // البيع، فاللي عايز يدّي هدية كان بيفتح بيع ويقلبه؛ دلوقتي الطريق باسمه.
+                  if (_can('app.bonus'))
                   _BigAction(
                     icon: Icons.card_giftcard_outlined,
                     color: AppColors.accent,
@@ -228,6 +245,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     },
                   ),
                   const SizedBox(height: 14),
+                  if (_can('app.my_invoices'))
                   _BigAction(
                     icon: Icons.receipt_outlined,
                     color: AppColors.primary,
@@ -242,6 +260,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     },
                   ),
                   const SizedBox(height: 14),
+                  if (_can('app.collect'))
                   _BigAction(
                     icon: Icons.payments_outlined,
                     color: AppColors.accent,
@@ -260,6 +279,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   // بيشوف الطابور: سند يقعد يومين على الجهاز والعميل في الدفاتر
                   // لسه عليه فلوس هو دفعها. والمندوب نفسه ماكانش عنده حتة تقول له
                   // «حصّلت كام النهارده».
+                  if (_can('app.my_collections'))
                   _BigAction(
                     icon: Icons.receipt_long_outlined,
                     color: AppColors.accent,
@@ -274,6 +294,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     },
                   ),
                   const SizedBox(height: 14),
+                  if (_can('app.my_stock'))
                   _BigAction(
                     icon: Icons.local_shipping_outlined,
                     color: AppColors.primary,
@@ -285,6 +306,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   const SizedBox(height: 14),
                   // جنب «بضاعتي» مش جنب الفاتورة: الاتنين بيجاوبوا «إيه المتاح وبكام»،
                   // والفرق إن ده بيغطي أصناف النظام كلها مش اللي في العربية.
+                  if (_can('app.price_sheet'))
                   _BigAction(
                     icon: Icons.request_quote_outlined,
                     color: AppColors.primary,
@@ -300,6 +322,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     },
                   ),
                   const SizedBox(height: 14),
+                  if (_can('app.transfers'))
                   _BigAction(
                     icon: Icons.swap_horiz_outlined,
                     color: AppColors.accent,
@@ -321,6 +344,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   // كشف المديونيات قبل «حساب عميل»: الأول بيجاوب «أروح لمين»،
                   // والتاني بيجاوب «الراجل ده عليه إيه» — والسؤال الأول بيتسأل
                   // الصبح والتاني وهو واقف قدامه.
+                  if (_can('app.debts'))
                   _BigAction(
                     icon: Icons.receipt_long_outlined,
                     color: AppColors.danger,
@@ -333,6 +357,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     },
                   ),
                   const SizedBox(height: 14),
+                  if (_can('app.customer_account'))
                   _BigAction(
                     icon: Icons.account_balance_wallet_outlined,
                     color: AppColors.success,
@@ -342,6 +367,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         MaterialPageRoute(builder: (_) => const CustomerProfileScreen())),
                   ),
                   const SizedBox(height: 14),
+                  if (_can('app.day_summary'))
                   _BigAction(
                     icon: Icons.insights_outlined,
                     color: AppColors.accent,
@@ -351,6 +377,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         MaterialPageRoute(builder: (_) => const DaySummaryScreen())),
                   ),
                   const SizedBox(height: 14),
+                  if (_can('app.visits'))
                   _BigAction(
                     icon: Icons.assignment_add,
                     color: AppColors.primary,
@@ -363,6 +390,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     },
                   ),
                   const SizedBox(height: 14),
+                  if (_can('app.coupon_receive'))
                   _BigAction(
                     icon: Icons.confirmation_number_outlined,
                     color: AppColors.accent,
@@ -375,6 +403,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     },
                   ),
                   const SizedBox(height: 14),
+                  if (_can('app.coupon_review'))
                   _BigAction(
                     icon: Icons.summarize_outlined,
                     color: AppColors.primary,
@@ -384,6 +413,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         MaterialPageRoute(builder: (_) => const CouponReviewScreen())),
                   ),
                   const SizedBox(height: 14),
+                  if (_can('app.visit_review'))
                   _BigAction(
                     icon: Icons.fact_check_outlined,
                     color: AppColors.success,

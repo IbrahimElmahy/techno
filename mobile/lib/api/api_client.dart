@@ -130,6 +130,26 @@ class ApiClient {
     await LocalDb.instance.setKv('token', body['access_token'] as String);
     await LocalDb.instance.setKv('username', username);
     await LocalDb.instance.setKv('data_owner', me);
+    // صلاحيات التطبيق — الكروت اللي بتبان في الشاشة الرئيسية. فشلها مايوقفش الدخول.
+    try {
+      await refreshAppCapabilities();
+    } catch (_) {}
+  }
+
+  /// **صلاحيات التطبيق** (`app.*`) من `/auth/me` — بتتخزّن على الجهاز عشان الكروت تتخبّى
+  /// من غير نت كمان. بتتنده مع الدخول ومع كل مزامنة. لو عمرها ماتجابت (`app_caps` فاضي)
+  /// الشاشة بتعرض كله زي الأول.
+  Future<void> refreshAppCapabilities() async {
+    final r = await http
+        .get(await _uri('/auth/me'), headers: await _headers())
+        .timeout(const Duration(seconds: 20));
+    if (r.statusCode != 200) return;
+    final me = jsonDecode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
+    final caps = ((me['capabilities'] as List?) ?? const [])
+        .map((e) => e.toString())
+        .where((c) => c.startsWith('app.'))
+        .toList();
+    await LocalDb.instance.setKv('app_caps', jsonEncode(caps));
   }
 
   /// Pull the inspection point-items + lookups + customers into the offline cache.
