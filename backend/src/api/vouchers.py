@@ -619,11 +619,16 @@ def create_cash_transfer(
 @router.get("/treasuries", response_model=list[TreasuryOut])
 def list_treasuries(
     active_only: bool = Query(default=False),
-    _: CurrentUser = Depends(require_capability(CAP_VOUCHER_READ)),
+    current: CurrentUser = Depends(require_capability(CAP_VOUCHER_READ)),
     db: Session = Depends(get_db),
 ) -> list[TreasuryOut]:
     treasury_service.default_treasury(db)  # adopt the legacy safe on first call
     rows = treasury_service.list_treasuries(db, active_only=active_only)
+    # خزنة لكل فرع (`scripts/branch_treasuries.py`): موظف الفرع بيشوف خزنة فرعه بس، والمالك
+    # والأدمن التلاتة. من غيرها خزن أكتوبر والسادات كانت هتظهر لموظف العلياء أول ما تتعمل.
+    bid = branch_scope.visible_branch_id(current)
+    if bid is not None:
+        rows = [t for t in rows if t.branch_id in (bid, None)]
     out = [_treasury_out(db, t) for t in rows]
     db.commit()
     return out
