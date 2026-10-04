@@ -66,7 +66,13 @@ export default function PaymentModal({
                   <Form.Item name="voucher_date" label="التاريخ" initialValue={dayjs()}>
                     <DatePicker />
                   </Form.Item>
-                  <TreasuryField treasuries={treasuries} />
+                  <Form.Item noStyle shouldUpdate={(x, y) => x.supplier_id !== y.supplier_id}>
+                    {({ getFieldValue }) => (
+                      // (فصل الفروع) خزن فرع المورد بس — السيرفر بيرفض خزنة من فرع تاني.
+                      <TreasuryField treasuries={treasuries}
+                        branchId={(suppliers as any[]).find((x) => x.id === getFieldValue('supplier_id'))?.branch_id ?? null} />
+                    )}
+                  </Form.Item>
                   <Form.Item name="payment_method" label="طريقة الدفع">
                     <Select
                       allowClear

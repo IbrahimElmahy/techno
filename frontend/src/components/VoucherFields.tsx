@@ -8,6 +8,7 @@ import { PlusOutlined } from '@ant-design/icons';
 import { api } from '../api/client';
 import { TabModal } from './TabModal';
 import { money } from '../utils/money';
+import { inBranchCash } from '../hooks/useBranchScope';
 
 /**
  * الخزنة وحساب المصروف — الحقلين اللي بيتحدد بيهم الفلوس بتتحرك منين وعلى إيه.
@@ -28,6 +29,9 @@ export interface Treasury {
   is_default?: boolean; active?: boolean; bank_name?: string | null;
   /** حساب الخزنة في الشجرة — بيه بنعرف إن الحساب ده خزنة، ومين. */
   account_id?: number;
+  /** (فصل الفروع) فرع الخزنة، والفروع اللي هي متوجّهة لها كخزنة عامة. */
+  branch_id?: number | null;
+  routed_branch_ids?: number[];
 }
 
 export interface ExpenseAccount {
@@ -45,13 +49,15 @@ export interface ExpenseAccount {
  * amount larger than what is in it is flagged as it is typed rather than refused at save.
  */
 export function TreasuryField({
-  treasuries, amount, width = 260, optional = false, placeholder,
+  treasuries, amount, width = 260, optional = false, placeholder, branchId,
 }: {
   treasuries: Treasury[]; amount?: number | null; width?: number;
   /** تعديل سند في عهدة مندوب — فاضي = يفضل في العهدة. */
   optional?: boolean; placeholder?: string;
+  /** (فصل الفروع) فرع السند — خزن الفرع ده بس (ومعاها العامة المتوجّهة له). */
+  branchId?: number | null;
 }) {
-  const live = treasuries.filter((t) => t.active !== false);
+  const live = treasuries.filter((t) => t.active !== false && inBranchCash(t, branchId));
 
   const options = live.map((t) => {
     const bal = Number(t.balance || 0);

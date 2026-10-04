@@ -28,7 +28,8 @@ from src.models.supplier import Supplier, SupplierAccount
 from src.models.user import User
 from src.models.voucher import Voucher, VoucherKind
 from src.models.warehouse import Custody
-from src.services import account_resolver, audit_service, ledger_service, treasury_service
+from src.services import (
+    account_resolver, audit_service, ledger_service, org_service, treasury_service)
 from src.services.ledger_service import LineInput
 from src.auth.branch_scope import branch_for
 
@@ -158,6 +159,11 @@ def _create(
     # تعديل سند: نفس الـid والرقم وتاريخ الإنشاء والفرع — السند بيتكتب من جديد في مكانه.
     replacing: dict | None = None,
 ) -> Voucher:
+    doc_branch = _voucher_branch(
+        db, kind=kind, actor_user_id=actor_user_id, cash_account_id=cash_account_id,
+        party_account_id=party_account_id, treasury_id=treasury_id,
+        to_treasury_id=to_treasury_id, customer_id=customer_id, supplier_id=supplier_id,
+        rep_user_id=rep_user_id, replacing=replacing)
     voucher = Voucher(
         document_number=_doc_number(db, kind) if replacing is None
         else replacing["document_number"], kind=kind, amount=amount,
@@ -170,8 +176,9 @@ def _create(
         reverses_id=reverses_id, actor_user_id=actor_user_id, family=family,
         statement1=statement1,
         external_document_number=external_document_number,
-        # السند مالوش مخزن، ففرعه فرع اللي كتبه.
-        branch_id=branch_for(db, actor_user_id=actor_user_id),
+        # (فصل الفروع) فرع اللي كتبه لو محبوس في فرع، وإلا فرع الطرف (عميل/مورد/مندوب/
+        # حساب المصروف) — مش فرع الخزنة: الخزنة العامة مشتركة وحسابها على العلياء.
+        branch_id=doc_branch or branch_for(db, actor_user_id=actor_user_id),
         client_uuid=client_uuid,
     )
     if replacing is not None:
@@ -222,6 +229,44 @@ def _create(
     return voucher
 
 
+def _voucher_branch(
+    db: Session, *, kind: VoucherKind, actor_user_id: int, cash_account_id: int,
+    party_account_id: int, treasury_id: int | None, to_treasury_id: int | None,
+    customer_id: int | None, supplier_id: int | None, rep_user_id: int | None,
+    replacing: dict | None,
+) -> int | None:
+    """(فصل الفروع) فرع السند — وكل اللي عليه لازم يكون منه، إلا تحويل النقدية بين فرعين.
+
+    التعديل بيعدّي اللي كان على السند قبله (`replacing["branch_keep"]`).
+    """
+    if kind == VoucherKind.cash_transfer:
+        # «تحويلات نقدية فروع» مسموحة — بس موظف الفرع لازم يكون طرف فيها.
+        src_b = org_service.treasury_branch(db, treasury_id) or org_service.cash_account_branch(
+            db, cash_account_id)
+        dst_b = org_service.treasury_branch(db, to_treasury_id) or org_service.cash_account_branch(
+            db, party_account_id)
+        org_service.assert_transfer_ends(db, actor_user_id, src_b, dst_b,
+                                         what="تحويل النقدية", error=VoucherError)
+        return (replacing or {}).get("branch_id") or org_service.bound_branch(
+            db, actor_user_id) or src_b
+    party_owned = kind in (VoucherKind.expense, VoucherKind.rep_handover)
+    owners = [
+        db.get(Customer, customer_id).branch_id if customer_id and db.get(Customer, customer_id) else None,
+        db.get(Supplier, supplier_id).branch_id if supplier_id and db.get(Supplier, supplier_id) else None,
+        db.get(User, rep_user_id).branch_id if rep_user_id and db.get(User, rep_user_id) else None,
+        org_service.cash_account_branch(db, party_account_id) if party_owned else None,
+    ]
+    doc_branch = org_service.document_branch(
+        db, actor_user_id=actor_user_id, owners=owners, cash_accounts=[cash_account_id],
+        existing=(replacing or {}).get("branch_id"))
+    org_service.assert_same_branch(
+        db, doc_branch, error=VoucherError, keep=(replacing or {}).get("branch_keep", frozenset()),
+        cash_accounts=[cash_account_id], treasuries=[treasury_id],
+        accounts=[party_account_id] if party_owned else [],
+        customer_id=customer_id, supplier_id=supplier_id, rep_id=rep_user_id)
+    return doc_branch
+
+
 def _cash_side(
     db: Session, *, actor_role: RoleName, actor_user_id: int, treasury_id: int | None,
     family: str | None = None,
@@ -237,6 +282,15 @@ def _cash_side(
         # متوازن، والفرق مايبانش غير في جرد بعد شهر.
         return account_resolver.resolve_cash_account(
             db, role=actor_role, user_id=actor_user_id, family=family).id, None
+    if treasury_id is None:
+        # (فصل الفروع) موظف الفرع من غير ما يختار ⇒ خزنة فرعه لو ليه خزنة، مش الافتراضية العامة.
+        from src.models.treasury import Treasury
+
+        bound = org_service.bound_branch(db, actor_user_id)
+        own = db.scalar(select(Treasury.id).where(
+            Treasury.branch_id == bound, Treasury.active.is_(True))
+            .order_by(Treasury.is_default.desc(), Treasury.id)) if bound else None
+        treasury_id = own
     treasury = treasury_service.resolve(db, treasury_id)
     return treasury.account_id, treasury.id
 
@@ -436,7 +490,8 @@ def create_handover(
     مقيّد برصيد العهدة: المندوب ما يقدرش يورّد أكتر مما تحصّله فعلاً.
     """
     value = _positive(amount)
-    if db.get(User, rep_user_id) is None:
+    rep_user = db.get(User, rep_user_id)
+    if rep_user is None:
         raise VoucherError("المندوب غير موجود.")
     # المندوب بقى له صندوق لكل خط. التوريد لازم يقول بيورّد من أنهي صندوق — `scalar`
     # كان بياخد صف عشوائي، فالرصيد اللي بيتفحص ممكن يكون بتاع صندوق تاني خالص، والقيد
@@ -450,7 +505,8 @@ def create_handover(
     held = ledger_service.balance_of(db, custody.account_id)
     if value > held:
         raise VoucherError(f"رصيد عهدة المندوب {held} — لا يمكن توريد {value}.")
-    treasury = account_resolver.treasury_account(db)
+    # الفلوس بتدخل خزنة فرع المندوب (أو المتوجّهة له) — مش خزنة الفرع الافتراضي.
+    treasury = account_resolver.treasury_account(db, branch_id=rep_user.branch_id)
     return _create(
         db, kind=VoucherKind.rep_handover, amount=value, cash_account_id=treasury.id,
         party_account_id=custody.account_id, debit_account_id=treasury.id,
@@ -545,6 +601,11 @@ def replace_voucher(
         "id": original.id, "document_number": original.document_number,
         "client_uuid": original.client_uuid, "created_at": original.created_at,
         "branch_id": original.branch_id,
+        # (فصل الفروع) خزنة السند وطرفه قبل التعديل بيعدّوا حتى لو من فرع تاني.
+        "branch_keep": org_service.resource_keys(
+            cash_accounts=[original.cash_account_id], treasuries=[original.treasury_id],
+            accounts=[original.party_account_id], customer_id=original.customer_id,
+            supplier_id=original.supplier_id, rep_id=original.rep_user_id),
     }
     old_amount = str(original.amount)
     actor_id = original.actor_user_id

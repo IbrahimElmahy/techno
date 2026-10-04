@@ -18,7 +18,7 @@ from src.models.stock import LocationKind, StockDirection
 from src.models.stock_count import (
     StockCount, StockCountKind, StockCountLine, StockCountStatus)
 from src.models.warehouse import Warehouse
-from src.services import audit_service, stock_service
+from src.services import audit_service, org_service, stock_service
 
 ZERO = to_qty(0)
 
@@ -52,6 +52,8 @@ def open_sheet(
     actor_user_id: int, item_ids: list[int] | None = None, notes: str | None = None,
     kind: StockCountKind = StockCountKind.full, batch_size: int | None = None,
     statement1: str | None = None,
+    # (فصل الفروع) فرع الجرد العام — موظف الفرع فرعه هو، والأدمن بيختار.
+    branch_id: int | None = None,
 ) -> StockCount:
     """Open a sheet with a line per item to be counted.
 
@@ -76,10 +78,25 @@ def open_sheet(
         # Defaulted rather than refused: «دفعة» without a size is a reasonable thing to ask for,
         # and twenty lines is a batch one person finishes in a morning.
         batch_size = 20
-    warehouses = (
-        [db.get(Warehouse, warehouse_id)] if warehouse_id is not None
-        else list(db.scalars(select(Warehouse).where(Warehouse.active.is_(True))).all())
-    )
+    # (فصل الفروع) **الجرد العام = مخازن فرع واحد.** كان بيلم كل مخازن الشركة في ورقة واحدة،
+    # فجرد «عام» من موظف العلياء كان بيعدّ مخازن أكتوبر والسادات ويسوّيها. موظف الفرع
+    # فرعه هو؛ الأدمن بيختار الفرع، ولو فيه أكتر من فرع ومااختارش بيترفض بدل ما يخلط.
+    bound = org_service.bound_branch(db, actor_user_id)
+    if warehouse_id is not None:
+        wh = db.get(Warehouse, warehouse_id)
+        if wh is None:
+            raise StockCountError("المخزن غير موجود.")
+        org_service.assert_actor_branch(db, actor_user_id, wh.branch_id,
+                                        what=f"المخزن «{wh.name}»", error=StockCountError)
+        warehouses = [wh]
+    else:
+        target = bound or branch_id
+        stmt = select(Warehouse).where(Warehouse.active.is_(True))
+        if target:
+            stmt = stmt.where(Warehouse.branch_id == target)
+        warehouses = list(db.scalars(stmt).all())
+        if not target and len({w.branch_id for w in warehouses if w.branch_id}) > 1:
+            raise StockCountError("الجرد العام بيبقى لفرع واحد — اختار الفرع الأول.")
     if any(w is None for w in warehouses):
         raise StockCountError("المخزن غير موجود.")
     if not warehouses:
@@ -151,6 +168,7 @@ def enter_counts(
     sheet = db.get(StockCount, count_id)
     if sheet is None:
         raise StockCountError("الجرد غير موجود.")
+    _assert_own_count(db, sheet, actor_user_id)
     if sheet.status != StockCountStatus.draft:
         raise StockCountError("الجرد ده مش مفتوح — القيم مابتتغيّرش بعد الترحيل.")
     if statement1 is not _UNSET:
@@ -186,6 +204,7 @@ def post(db: Session, *, count_id: int, actor_user_id: int) -> StockCount:
     sheet = db.get(StockCount, count_id)
     if sheet is None:
         raise StockCountError("الجرد غير موجود.")
+    _assert_own_count(db, sheet, actor_user_id)
     if sheet.status != StockCountStatus.draft:
         raise StockCountError("الجرد ده اترحّل أو اتلغى قبل كده.")
     if not any(ln.counted_quantity is not None for ln in sheet.lines):
@@ -246,11 +265,29 @@ def cancel(db: Session, *, count_id: int, actor_user_id: int) -> StockCount:
     sheet = db.get(StockCount, count_id)
     if sheet is None:
         raise StockCountError("الجرد غير موجود.")
+    _assert_own_count(db, sheet, actor_user_id)
     if sheet.status == StockCountStatus.posted:
         raise StockCountError("الجرد اترحّل — حركاته موجودة في المخزن وماتتلغيش بإلغاء الورقة.")
     sheet.status = StockCountStatus.cancelled
     db.flush()
     return sheet
+
+
+def count_branches(db: Session, sheet: StockCount) -> set[int]:
+    """فروع مخازن الجرد — من السطور، لأن الجرد العام مالوش مخزن على راسه."""
+    ids = {ln.warehouse_id for ln in sheet.lines}
+    if sheet.warehouse_id:
+        ids.add(sheet.warehouse_id)
+    if not ids:
+        return set()
+    return {b for b in db.scalars(select(Warehouse.branch_id).where(Warehouse.id.in_(ids))).all() if b}
+
+
+def _assert_own_count(db: Session, sheet: StockCount, actor_user_id: int) -> None:
+    """موظف الفرع مايعدّش ولا يرحّل جرد فيه مخزن من فرع تاني."""
+    bound = org_service.bound_branch(db, actor_user_id)
+    if bound and count_branches(db, sheet) - {bound}:
+        raise StockCountError("الجرد ده فيه مخازن من فرع تاني — مش من صلاحيتك.")
 
 
 def get(db: Session, count_id: int) -> StockCount | None:

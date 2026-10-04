@@ -42,6 +42,7 @@ from src.services import (
     batch_service,
     costing_service,
     ledger_service,
+    org_service,
     pricing_service,
     serial_service,
     stock_service,
@@ -57,6 +58,21 @@ from src.auth.branch_scope import branch_for
 
 class SalesError(Exception):
     pass
+
+
+def branch_keys(doc) -> frozenset:
+    """حاجات الفاتورة/المرتجع زي ما هي دلوقتي — بتتاخد **قبل** التفضية في التعديل.
+
+    التعديل بيمسح السطور الأول وبعدين يبني، فالبصمة لازم تتاخد قبلها عشان القديم يعدّي
+    (`org_service.branch_mix_problem(keep=...)`).
+    """
+    locs = [(getattr(doc, "origin_location_kind", None), getattr(doc, "origin_location_id", None))]
+    locs += [(ln.location_kind, ln.location_id) for ln in getattr(doc, "lines", [])]
+    return org_service.resource_keys(
+        locations=locs, cash_accounts=[doc.cash_account_id],
+        accounts=[getattr(doc, "revenue_account_id", None)]
+        + [e.account_id for e in getattr(doc, "expenses", []) or []],
+        customer_id=doc.customer_id, rep_id=doc.rep_id)
 
 
 @dataclass(frozen=True)
@@ -323,6 +339,9 @@ def create_sale(
     # ٢٠٢٦-٠٩-٢٨ — كان إجباري، والرسالة كانت بتوقّف المندوب والمكتب). لو اتبعت بيتفحص.
     is_bonus: bool = False,
     bonus_for_invoice_id: int | None = None,
+    # (فصل الفروع) حاجات الفاتورة قبل التعديل — بتعدّي الفحص حتى لو من فرع تاني.
+    # شوف `branch_keys` و`org_service.branch_mix_problem`.
+    branch_keep: frozenset = frozenset(),
 ) -> SalesInvoice:
     if is_bonus:
         if bonus_for_invoice_id is not None:
@@ -510,15 +529,30 @@ def create_sale(
     # تتحصّل في خزنة تانية (المركز الرئيسي، صندوق بونص)، واللي بيحفظ هو اللي يعرف.
     # من غير ده كان البوباب بيسأل والإجابة تترمي، والفلوس تروح لمكان تالت من غير
     # ما حد يعرف إن اختياره اتلغى.
-    cash_acc = account_resolver.explicit_treasury(db, cash_account_id) or account_resolver.resolve_cash_account(
-        db, role=actor_role, user_id=actor_user_id, family=family)
-
     # الفاتورة اللي بتتعدّل بتحتفظ برقمها وتاريخ إنشائها — الرقم ده اتطبع واتقال في
     # التليفون، وتغييره عشان سعر اتظبط بيخلّي الورقة اللي في إيد العميل تشاور على حاجة
     # مش موجودة.
     existing = db.get(SalesInvoice, replace_invoice_id) if replace_invoice_id else None
     if replace_invoice_id and existing is None:
         raise SalesError("الفاتورة اللي بتتعدّل مش موجودة.")
+
+    # (فصل الفروع) فرع الفاتورة — وكل اللي عليها لازم يكون منه.
+    doc_branch = org_service.document_branch(
+        db, actor_user_id=actor_user_id,
+        locations=[(origin_location_kind, origin_location_id)],
+        existing=existing.branch_id if existing is not None else None)
+    cash_acc = account_resolver.explicit_treasury(db, cash_account_id) or account_resolver.resolve_cash_account(
+        db, role=actor_role, user_id=actor_user_id, family=family, branch_id=doc_branch)
+    moves_cash = to_money(cash_amount or ZERO) != ZERO or operating_expenses > ZERO
+    org_service.assert_same_branch(
+        db, doc_branch, error=SalesError, keep=branch_keep,
+        locations=[(origin_location_kind, origin_location_id)]
+        + [_line_location(ln, origin_location_kind, origin_location_id) for ln, *_ in built],
+        cash_accounts=[cash_acc.id] if moves_cash else [],
+        accounts=[revenue_account_id] + [e.get("account_id") for e in (expenses or [])],
+        customer_id=customer_id,
+        rep_id=rep_id if rep_id is not None else (
+            actor_user_id if actor_role == RoleName.sales_rep else None))
 
     # **حساب العميل قبل الفاتورة دي — بيتقفل هنا، قبل ما القيد يترحّل.**
     #
@@ -557,9 +591,9 @@ def create_sale(
         variable_discount_pct=variable, combined_pct=combined, net=net, tax_amount=tax,
         cash_amount=to_money(cash_amount), credit_amount=to_money(credit_amount),
         cash_account_id=cash_acc.id, ledger_entry_id=None, actor_user_id=actor_user_id,
-        branch_id=branch_for(db, actor_user_id=actor_user_id,
-                             location_kind=origin_location_kind,
-                             location_id=origin_location_id),
+        branch_id=doc_branch or branch_for(db, actor_user_id=actor_user_id,
+                                           location_kind=origin_location_kind,
+                                           location_id=origin_location_id),
         # (030) Falls back to the seller's own rep id, so the document always names someone.
         rep_id=rep_id if rep_id is not None else (
             actor_user_id if actor_role == RoleName.sales_rep else None),
@@ -949,6 +983,10 @@ def return_sale(
     inv = db.get(SalesInvoice, sales_invoice_id)
     if inv is None:
         raise SalesError("فاتورة البيع مش موجودة.")
+    # المرتجع بيرجع على أماكن الفاتورة وخزنتها نفسها — فالفحص الوحيد إن موظف الفرع
+    # مايرجّعش على فاتورة فرع تاني.
+    org_service.assert_actor_branch(db, actor_user_id, inv.branch_id,
+                                    what=f"الفاتورة {inv.document_number}", error=SalesError)
     # (008) carry the line's unit_factor so the return reverses stock in base units.
     # **السعر اللي الفاتورة حسبته فعلاً، مش سعر القايمة.**
     #
@@ -1160,6 +1198,8 @@ def create_standalone_return(
     # بيغلب `cost_center_id` — المستند متقسّم فمافيش مركز واحد يتكتب عليه. مالوش
     # عمود على المستند: سطور قيده شايلاه، والقراءة بترجع منها.
     cost_center_distribution: dict | None = None,
+    # (فصل الفروع) حاجات المرتجع قبل التعديل — شوف `branch_keys`.
+    branch_keep: frozenset = frozenset(),
 ) -> SalesReturn:
     """A sales return built like a sale but reversed (028): pick a customer + items directly (no
     originating invoice), goods go back INTO stock, and the customer is credited (cash refund from a
@@ -1240,24 +1280,35 @@ def create_standalone_return(
             else f"cash refund + credit reduction must equal the total including VAT ({refund_total})."
         )
 
+    existing = db.get(SalesReturn, replace_return_id) if replace_return_id else None
+    if replace_return_id and existing is None:
+        raise SalesError("المرتجع اللي بيتعدّل مش موجود.")
+
+    doc_branch = org_service.document_branch(
+        db, actor_user_id=actor_user_id,
+        locations=[(origin_location_kind, origin_location_id)],
+        existing=existing.branch_id if existing is not None else None)
     # نفس خط الفاتورة: الفلوس اللي بترجع للعميل بتطلع من صندوق نفس الخط اللي نزلت فيه.
     cash_acc = (
         (account_resolver.explicit_treasury(db, cash_account_id)
          or account_resolver.resolve_cash_account(
-             db, role=actor_role, user_id=actor_user_id, family=family))
+             db, role=actor_role, user_id=actor_user_id, family=family, branch_id=doc_branch))
         if to_money(cash_refund) > ZERO else None)
-
-    existing = db.get(SalesReturn, replace_return_id) if replace_return_id else None
-    if replace_return_id and existing is None:
-        raise SalesError("المرتجع اللي بيتعدّل مش موجود.")
+    org_service.assert_same_branch(
+        db, doc_branch, error=SalesError, keep=branch_keep,
+        locations=[(origin_location_kind, origin_location_id)]
+        + [((LocationKind.warehouse, ln.warehouse_id) if getattr(ln, "warehouse_id", None)
+            else (origin_location_kind, origin_location_id)) for ln, *_ in built],
+        cash_accounts=[cash_acc.id] if cash_acc else [],
+        accounts=[revenue_account_id], customer_id=customer_id, rep_id=rep_id)
 
     ret = existing or SalesReturn(
         document_number=_doc_number(db, SalesReturn, "SRET"),
         sales_invoice_id=None, customer_id=customer_id, family=family,
         origin_location_kind=origin_location_kind, origin_location_id=origin_location_id,
-        branch_id=branch_for(db, actor_user_id=actor_user_id,
-                             location_kind=origin_location_kind,
-                             location_id=origin_location_id),
+        branch_id=doc_branch or branch_for(db, actor_user_id=actor_user_id,
+                                           location_kind=origin_location_kind,
+                                           location_id=origin_location_id),
         # النسبة المجمّعة للعرض — الخصمين ورا بعض، نفس اللي الصافي اتحسب بيه.
         gross=gross, combined_pct=discounts.combine(fixed, variable), value=net, tax_amount=tax,
         cash_refund=to_money(cash_refund), credit_reduction=to_money(credit_reduction),

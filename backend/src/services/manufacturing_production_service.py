@@ -235,7 +235,8 @@ def _build_lines(db: Session, order: ProductionOrder, products) -> None:
     db.flush()
 
 
-def _enforce_factory_branch(db: Session, order: ProductionOrder) -> None:
+def _enforce_factory_branch(db: Session, order: ProductionOrder,
+                            actor_user_id: int | None = None) -> None:
     """الورقة على فرع المصنع ومخازنها منه — الشرح في `org_service.production_branch_problem`.
 
     بيتنده بعد بناء السطور: المخازن مابتتعرفش غير بعده (السطر ممكن ياخد المخزن الافتراضي
@@ -245,6 +246,9 @@ def _enforce_factory_branch(db: Session, order: ProductionOrder) -> None:
     branch_id, problem = org_service.production_branch_problem(db, order.branch_id, whs)
     if problem:
         raise ProductionOrderError(problem)
+    # (فصل الفروع) موظف فرع تاني مايكتبش أمر على المصنع.
+    org_service.assert_actor_branch(db, actor_user_id, branch_id, what="أمر الإنتاج",
+                                    error=ProductionOrderError)
     order.branch_id = branch_id
 
 
@@ -282,7 +286,7 @@ def create_order(
     if order.branch_id is None and order.products and len(org_service.factory_branches(db)) != 1:
         w = db.get(Warehouse, order.products[0].warehouse_id)
         order.branch_id = w.branch_id if w is not None else None
-    _enforce_factory_branch(db, order)
+    _enforce_factory_branch(db, order, actor_user_id)
     audit_service.record(db, action="production_order.create", actor_user_id=actor_user_id,
                          entity_type="production_order", entity_id=order.id,
                          after={"doc": order.document_number})
@@ -318,7 +322,7 @@ def update_order(db: Session, *, order_id: int, products, actor_user_id: int, **
         db.delete(line)
     db.flush()
     _build_lines(db, order, products)
-    _enforce_factory_branch(db, order)
+    _enforce_factory_branch(db, order, actor_user_id)
     # المؤكد اللي اتعدّل بيرجع مسودة — المراجعة اتعملت على أرقام اتغيّرت.
     order.state = ProductionState.draft
     order.reviewed = False

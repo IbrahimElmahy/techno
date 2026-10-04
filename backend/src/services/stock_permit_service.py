@@ -29,7 +29,7 @@ from src.models.stock import LocationKind, StockDirection, StockDoc
 from src.models.stock_permit import PermitKind, StockPermit, StockPermitLine
 from src.models.warehouse import Warehouse
 from src.services import batch_service
-from src.services import audit_service, costing_service, stock_service
+from src.services import audit_service, costing_service, org_service, stock_service
 
 ZERO_QTY = to_qty(0)
 
@@ -63,8 +63,12 @@ def create_permit(
         raise StockPermitError("نوع الإذن غير صحيح.") from exc
     if not lines:
         raise StockPermitError("لازم سطر واحد على الأقل.")
-    if db.get(Warehouse, warehouse_id) is None:
+    wh = db.get(Warehouse, warehouse_id)
+    if wh is None:
         raise StockPermitError("المخزن غير موجود.")
+    # (فصل الفروع) الإذن مخزن واحد فمايخلطش جوّاه — بس موظف الفرع مايكتبش على مخزن فرع تاني.
+    org_service.assert_actor_branch(db, actor_user_id, wh.branch_id,
+                                    what=f"المخزن «{wh.name}»", error=StockPermitError)
 
     built: list[tuple[Item, object, object, object]] = []
     for raw in lines:

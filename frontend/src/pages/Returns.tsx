@@ -49,6 +49,7 @@ import { useLookup, labelMap } from '../hooks/useLookup';
 import { TabModal } from '../components/TabModal';
 import WarehouseGate from '../components/WarehouseGate';
 import TreasuryGate, { useTreasuryGate } from '../components/TreasuryGate';
+import { branchOf, filterBranch, useBranchScope } from '../hooks/useBranchScope';
 import DateRangeFilter from '../components/DateRangeFilter';
 import { money, numeralsLocale } from '../utils/money';
 import { applyPct, combinePct, splitLineDiscount } from '../utils/discounts';
@@ -84,13 +85,13 @@ interface ReturnRecord {
   created_at?: string | null;
 }
 
-interface Customer { id: number; name: string; phone?: string | null; rep_id?: number | null; }
+interface Customer { id: number; name: string; phone?: string | null; rep_id?: number | null; branch_id?: number | null; }
 interface Product {
   id: number; name: string; sale_price: string | null; is_serialized: boolean; category: string | null;
   /** خصم الصنف — المرتجع بيفتح عليه زي الفاتورة، عشان البضاعة ترجع بنفس اللي اتباعت بيه. */
   default_discount_pct?: string | null;
 }
-interface Warehouse { id: number; name: string; }
+interface Warehouse { id: number; name: string; branch_id?: number | null; }
 
 interface HistRow {
   document_number: string; date: string | null; quantity: string; unit: string | null;
@@ -236,6 +237,35 @@ export default function Returns({ embedded }: { embedded?: { onExit: () => void 
   const [customerBalance, setCustomerBalance] = useState<number | null>(null);
   // The document's warehouse — the default each line falls back to when it has none of its own.
   const [docWarehouseId, setDocWarehouseId] = useState<number | null>(null);
+  // (فصل الفروع) فرع المرتجع — نفس قاعدة الفاتورة (`useBranchScope`): فرع الموظف، وإلا
+  // فرع المخزن، وإلا فرع العميل. السطور والمندوب والخزنة من الفرع ده بس.
+  const customerBranch = customers.find((c) => c.id === customerId)?.branch_id ?? null;
+  const docScope = useBranchScope(branchOf(warehouses, docWarehouseId) ?? customerBranch);
+  const headerWarehouses = useMemo(
+    () => filterBranch(warehouses, docScope.bound ?? customerBranch),
+    [warehouses, docScope.bound, customerBranch]);
+  const branchWarehouses = useMemo(() => docScope.keep(warehouses), [docScope, warehouses]);
+  const branchReps = useMemo(() => docScope.keep(reps), [docScope, reps]);
+  /** مخزن الترويسة لفرع تاني والسطور على الفرع القديم ⇒ بنسأل وبننقلها. */
+  const onHeaderWarehouseChange = (warehouseId: number) => {
+    const nb = branchOf(warehouses, warehouseId);
+    const stale = nb == null ? [] : lines.filter((l) => {
+      const lb = branchOf(warehouses, l.warehouse_id);
+      return l.warehouse_id != null && lb != null && lb !== nb;
+    });
+    if (!stale.length) { setDocWarehouseId(warehouseId); return; }
+    Modal.confirm({
+      title: 'المخزن ده من فرع تاني',
+      content: `${stale.length} سطر على مخازن الفرع القديم — هيتنقلوا للمخزن الجديد. `
+        + 'المرتجع الواحد مايخلطش فروع.',
+      okText: 'انقلهم', cancelText: 'رجوع',
+      onOk: () => {
+        const keys = new Set(stale.map((l) => l.key));
+        setLines((prev) => prev.map((l) => (keys.has(l.key) ? { ...l, warehouse_id: warehouseId } : l)));
+        setDocWarehouseId(warehouseId);
+      },
+    });
+  };
   const [availability, setAvailability] = useState<Record<number, Record<number, number>>>({});
 
   /**
@@ -920,6 +950,7 @@ export default function Returns({ embedded }: { embedded?: { onExit: () => void 
         direction: 'out',
         family: returnFamily,
         docLabel: 'مردود المبيعات',
+        branchId: docScope.branchId,
       },
       (cashAccountId) => {
         showReversalConfirm({
@@ -1018,7 +1049,7 @@ export default function Returns({ embedded }: { embedded?: { onExit: () => void 
             handleLineChange(line.key, 'warehouse_id', val);
             if (val != null) setDocWarehouseId(val as number);
           }}
-          options={warehouses.map((w) => ({ value: w.id, label: w.name }))} />
+          options={branchWarehouses.map((w) => ({ value: w.id, label: w.name }))} />
       ) },
     { key: 'last_price', title: 'آخر سعر شراء', span: 2, xs: 12, width: 110,
       cell: (line) => {
@@ -1258,8 +1289,8 @@ export default function Returns({ embedded }: { embedded?: { onExit: () => void 
         title="المرتجع ده هيدخل أنهي مخزن؟"
         subtitle="ده المخزن الافتراضي للسطور الجديدة. تقدر تغيّر مخزن أي سطر من عمود «المخزن»."
         value={docWarehouseId}
-        onChange={(v) => setDocWarehouseId(v as number)}
-        warehouses={warehouses}
+        onChange={(v) => onHeaderWarehouseChange(v as number)}
+        warehouses={headerWarehouses}
         onCancel={() => { setDocWarehouseId(null); setNewStep('party'); setPartyPickerOpen(true); }}
         onOk={() => { setNewStep(null); setCreateVisible(true); }}
       />
@@ -1371,8 +1402,8 @@ export default function Returns({ embedded }: { embedded?: { onExit: () => void 
                     disabled={viewOnly}
                     placeholder="اختر المخزن المستلم"
                     value={docWarehouseId ?? undefined}
-                    onChange={(v) => setDocWarehouseId(v as number)}
-                    options={warehouses.map((w: any) => ({ value: w.id, label: w.name }))} filterOption={searchFilter} filterSort={searchRank}/>
+                    onChange={(v) => onHeaderWarehouseChange(v as number)}
+                    options={headerWarehouses.map((w: any) => ({ value: w.id, label: w.name }))} filterOption={searchFilter} filterSort={searchRank}/>
                 </Form.Item>
               </Col>
               <Col xs={12} md={3}>
@@ -1380,7 +1411,7 @@ export default function Returns({ embedded }: { embedded?: { onExit: () => void 
                   <Select allowClear showSearch placeholder="بدون مندوب"
                     disabled={viewOnly}
                     value={repId ?? undefined} onChange={(v) => setRepId((v as number) ?? null)}
-                    options={reps.map((r) => ({ value: r.id, label: r.full_name || r.username }))} filterOption={searchFilter} filterSort={searchRank}/>
+                    options={branchReps.map((r) => ({ value: r.id, label: r.full_name || r.username }))} filterOption={searchFilter} filterSort={searchRank}/>
                 </Form.Item>
               </Col>
               <Col xs={12} md={3}>

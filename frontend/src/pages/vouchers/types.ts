@@ -46,12 +46,15 @@ export interface StatementData {
 export interface Party {
   id: number;
   name: string;
+  /** (فصل الفروع) فرع الكارت — فاضي = مشترك. */
+  branch_id?: number | null;
 }
 export interface UserRecord {
   id: number;
   full_name: string | null;
   username: string;
   role?: string;
+  branch_id?: number | null;
 }
 
 export const KIND_LABEL: Record<string, string> = {

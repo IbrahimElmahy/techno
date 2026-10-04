@@ -139,7 +139,8 @@ def _rep_name(db: Session, user_id: int) -> str:
 
 
 def resolve_cash_account(
-    db: Session, *, role: RoleName, user_id: int, family: str | None = None
+    db: Session, *, role: RoleName, user_id: int, family: str | None = None,
+    branch_id: int | None = None,
 ) -> Account:
     """The actor's cash location: the Sales Rep's safe **for this product line**, else the treasury.
 
@@ -152,7 +153,8 @@ def resolve_cash_account(
     والرصيد بيبان معقول، والفرق مايظهرش غير في جرد بعد شهر ومحدش عارف منين جه.
     """
     if role != RoleName.sales_rep:
-        return treasury_account(db)
+        # خزنة فرع المستند (أو المتوجّهة له) — مش خزنة الفرع الافتراضي لكل الفروع.
+        return treasury_account(db, branch_id=branch_id)
 
     # النشط الأول عند التعادل — عهدة اتقفلت مايتقيّدش عليها وفيه واحدة شغالة جنبها.
     rows = db.scalars(

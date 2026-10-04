@@ -603,6 +603,8 @@ def update_purchase(
         raise HTTPException(404, {"code": "not_found", "message": "الفاتورة مش موجودة"})
     try:
         document_edit_service.assert_purchase_editable(db, inv)
+        # (فصل الفروع) اللي على الفاتورة قبل التفضية بيعدّي — القديم مايقفلش التعديل.
+        branch_keep = purchase_service.branch_keys(inv)
         document_edit_service.purge_purchase(db, inv)
     except DocumentEditError as exc:
         raise HTTPException(status.HTTP_409_CONFLICT,
@@ -624,7 +626,7 @@ def update_purchase(
             statement1=body.statement1, statement2=body.statement2, statement3=body.statement3,
             purchase_date=body.purchase_date,
             variable_discount_pct=body.variable_discount_pct,
-            replace_invoice_id=purchase_id,
+            replace_invoice_id=purchase_id, branch_keep=branch_keep,
         )
     except (PurchaseError, StockError, AccountResolutionError) as exc:
         # خزنة مختارة غلط أو مندوب مالوش عهدة = إعداد ناقص، مش عطل سيرفر. من غير السطر ده
@@ -799,6 +801,7 @@ def update_purchase_return(
         raise HTTPException(404, {"code": "not_found", "message": "المردود غير موجود"})
     if not branch_scope.may_see(current, ret):
         raise HTTPException(404, {"code": "not_found", "message": "المردود مش موجود"})
+    branch_keep = purchase_service.branch_keys(ret)
     try:
         document_edit_service.purge_purchase_return(db, ret)
     except DocumentEditError as exc:
@@ -826,7 +829,7 @@ def update_purchase_return(
             statement1=body.statement1, statement2=body.statement2,
             statement3=body.statement3,
             variable_discount_pct=body.variable_discount_pct,
-            replace_return_id=return_id,
+            replace_return_id=return_id, branch_keep=branch_keep,
         )
     except (PurchaseError, StockError, AccountResolutionError) as exc:
         raise HTTPException(status.HTTP_409_CONFLICT,

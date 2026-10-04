@@ -585,6 +585,31 @@ def get_journal_entry(
     return _entry_out(entry, _partner_names(db, [entry]))
 
 
+def _journal_branch_check(db: Session, current: CurrentUser, branch_id: int | None, body) -> None:
+    """(فصل الفروع) محاسب الفرع بيقيّد على حسابات فرعه وعملاء/موردين فرعه بس.
+
+    **الأدمن والمالك لأ** — القيد اليدوي هو أداة التصحيح، وتسوية بين فرعين (أو تصليح
+    مستند a5 اتنقل على فرع غلط) محتاجة حسابات من شجرتين. كل فرع ليه شجرته، فمحاسب
+    العلياء اللي بيختار حساب من شجرة أكتوبر غلطان مش بيصحح.
+    """
+    from src.auth import branch_scope
+    from src.services import org_service
+
+    if branch_scope.visible_branch_id(current) is None or not branch_id:
+        return
+    lines = getattr(body, "lines", None) or []
+    parties = [(getattr(body, "partner_kind", None), getattr(body, "partner_id", None))]
+    parties += [(l.partner_kind, l.partner_id) for l in lines]
+    org_service.assert_same_branch(
+        db, branch_id, accounts=[l.account_id for l in lines])
+    for kind, pid in parties:
+        kind = getattr(kind, "value", kind)
+        if pid and kind == "customer":
+            org_service.assert_same_branch(db, branch_id, customer_id=pid)
+        elif pid and kind == "supplier":
+            org_service.assert_same_branch(db, branch_id, supplier_id=pid)
+
+
 @router.post("/journal-entries", response_model=JournalEntryOut, status_code=status.HTTP_201_CREATED)
 def post_journal_entry(
     body: JournalEntryCreate,
@@ -595,6 +620,7 @@ def post_journal_entry(
     # لو اتعمل على `None` كان محاسب الفرع هيترفض على قيد فرعه هو.
     branch_id = body.branch_id if body.branch_id is not None else current.branch_id
     _ensure_accounting_branch(current, branch_id)  # branch-scoped users post only their branch
+    _journal_branch_check(db, current, branch_id, body)
     try:
         entry = journal_service.post_entry(
             db,
@@ -634,6 +660,7 @@ def update_journal_entry(
         raise HTTPException(status.HTTP_404_NOT_FOUND,
                             {"code": "not_found", "message": "القيد مش موجود"})
     _ensure_accounting_branch(current, existing.branch_id)
+    _journal_branch_check(db, current, existing.branch_id, body)
     try:
         entry = journal_service.update_draft(
             db, entry_id=entry_id, actor_user_id=current.id,

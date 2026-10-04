@@ -81,6 +81,14 @@ def initiate(db, *, item_id, quantity, route: TransferRoute, source_kind, source
         raise TransferError("كمية التحويل لازم تكون أكبر من صفر.")
     if source_kind == dest_kind and source_id == dest_id:
         raise TransferError("المصدر والوجهة لازم يكونوا مكانين مختلفين.")
+    # (فصل الفروع) **التحويل هو المستند الوحيد اللي مسموح يبقى بين فرعين** («تحويلات
+    # مخازن فروع»). بس موظف الفرع لازم يكون طرف: بيبعت من فرعه أو بيطلب لفرعه. والاعتماد
+    # فاضل لمدير فرع المصدر زي ما هو (`approve`).
+    from src.services import org_service
+
+    org_service.assert_transfer_ends(
+        db, initiated_by, _location_branch(db, source_kind, source_id),
+        _location_branch(db, dest_kind, dest_id), what="التحويل", error=TransferError)
     # **الطلب بيتقبل حتى لو المصدر ماعندوش الكمية.** ده طلب، مش صرف.
     #
     # كان فيه فحص مبكر بيرفض `qty > available` — ومعناه إن المندوب اللي محتاج ١٠٠
