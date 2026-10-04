@@ -125,7 +125,7 @@ export default function Permissions() {
       key: 'label',
       width: 260,
       render: (_: any, r: any) => (r.isGroup
-        ? <b style={{ fontSize: 13 }}>{r.group}</b>
+        ? <b style={{ fontSize: 15 }}>{r.group}</b>
         : (
           <Tooltip title={r.key} placement="right">
             <span style={{ paddingInlineStart: 14 }}>{r.label}</span>
@@ -137,8 +137,8 @@ export default function Permissions() {
         <div style={{ textAlign: 'center' as const, lineHeight: 1.4 }}>
           <div>{role.label}</div>
           {role.is_default
-            ? <Tag color="default" style={{ margin: 0, fontSize: 12.5 }}>افتراضي</Tag>
-            : <Tag color="blue" style={{ margin: 0, fontSize: 12.5 }}>مضبوط</Tag>}
+            ? <Tag color="default" style={{ margin: 0, fontSize: 14 }}>افتراضي</Tag>
+            : <Tag color="blue" style={{ margin: 0, fontSize: 14 }}>مضبوط</Tag>}
         </div>
       ),
       key: role.role,

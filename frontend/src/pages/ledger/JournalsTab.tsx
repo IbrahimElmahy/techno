@@ -141,7 +141,7 @@ export default function JournalsTab() {
         </Space>
       }
     >
-      <div style={{ marginBottom: 12, color: '#888', fontSize: 13 }}>
+      <div style={{ marginBottom: 12, color: '#888', fontSize: 15 }}>
         كل قيد بيعيش في دفتر، والدفتر بيدّيه رقمه المتسلسل — <code>INV/2026/00001</code>.
         الترقيم بيتصفّر مع كل سنة، والسنة بتتاخد من تاريخ القيد مش من تاريخ النهارده.
         <br />

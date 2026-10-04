@@ -279,7 +279,7 @@ export default function FixedAssets() {
           onConfirm={reverseDepreciation} okText="عكس" cancelText="إلغاء">
           <Button danger>عكس الشهر</Button>
         </Popconfirm>
-        <span style={{ color: '#555b65', fontSize: 12.5 }}>
+        <span style={{ color: '#555b65', fontSize: 14 }}>
           آمن تضغط أكتر من مرة — الأصل المرحّل للشهر ده بيتخطّى، فالمصروف ما بيتضاعفش.
         </span>
       </div>

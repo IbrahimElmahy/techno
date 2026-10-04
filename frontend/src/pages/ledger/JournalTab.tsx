@@ -409,7 +409,7 @@ export default function JournalTab() {
       render: (ls: JournalLine[]) => (
         <div>
           {ls.map((l, i) => (
-            <div key={i} style={{ fontSize: 13 }}>
+            <div key={i} style={{ fontSize: 15 }}>
               <span style={{ color: l.direction === 'debit' ? '#6AB42D' : '#F5A11D' }}>
                 {l.direction === 'debit' ? '[مدين] ' : '[دائن] '}
               </span>
@@ -753,7 +753,7 @@ export default function JournalTab() {
               </Form.Item>
             </Col>
           </Row>
-          <p style={{ color: '#888', fontSize: 13 }}>
+          <p style={{ color: '#888', fontSize: 15 }}>
             يُسجَّل كل مبلغ على الجانب الطبيعي للحساب، ويُقابَل الإجمالي بحساب «أرصدة افتتاحية».
           </p>
           {openLines.map((l) => (

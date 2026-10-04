@@ -245,7 +245,7 @@ export default function MovementHistoryLog({
             </>
           ) : (
             // الفترة بتتقال، مابتتسألش: اللي بيقرا لازم يعرف الأرقام دي بتاعة إمتى.
-            <span style={{ fontSize: 12, color: '#4a4a4a' }}>
+            <span style={{ fontSize: 14, color: '#4a4a4a' }}>
               الفترة:{' '}
               <b>
                 {range?.[0] ? range[0]!.format('YYYY-MM-DD') : 'من الأول'}
@@ -256,7 +256,7 @@ export default function MovementHistoryLog({
             </span>
           )}
 
-          <span style={{ marginInlineStart: 'auto', fontSize: 12, color: '#4a4a4a' }}>
+          <span style={{ marginInlineStart: 'auto', fontSize: 14, color: '#4a4a4a' }}>
             {rows.length} حركة
           </span>
         </div>

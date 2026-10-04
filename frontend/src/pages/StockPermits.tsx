@@ -5,7 +5,8 @@ import DocumentBar from '../components/DocumentBar';
 import DraftTag from '../components/DraftTag';
 import { PAGE_SIZE } from '../utils/pagination';
 import {
-  Alert, Button, Col, DatePicker, Form, Input, Row, Segmented, Select, Space, Tabs, Tag, message,
+  Alert, Button, Col, DatePicker, Form, Input, Modal, Row, Segmented, Select, Space, Tabs, Tag,
+  Tooltip, message,
 } from 'antd';
 // كل جدول هنا بفلتر على كل عمود — شوف `FilterTable`.
 import { FilterTable as Table } from '../components/FilterTable';
@@ -15,7 +16,10 @@ import { Popconfirm } from '../components/noConfirm';
 import {
   DeleteOutlined, PlusOutlined, ReloadOutlined, RollbackOutlined, ArrowRightOutlined,
   EditOutlined, PrinterOutlined, CheckOutlined, FileTextOutlined, SearchOutlined, ClearOutlined,
+  ArrowLeftOutlined, EyeOutlined, FileAddOutlined, SaveOutlined, UndoOutlined,
 } from '@ant-design/icons';
+import DocumentToolbar, { type ToolbarAction } from '../components/DocumentToolbar';
+import LoadPeriodModal from '../components/LoadPeriodModal';
 import { printPermit } from '../print/permitSheet';
 import dayjs, { Dayjs } from 'dayjs';
 import { useSearchParams } from 'react-router-dom';
@@ -102,6 +106,11 @@ export default function StockPermits() {
    * longer says what happened).
    */
   const [detail, setDetail] = useState<Permit | null>(null);
+  /** الإذن اللي بيتعدّل في مكانه (٢٠٢٦-١٠-٠٥) — الحفظ بيبقى `PUT` على نفس الرقم. */
+  const [editingId, setEditingId] = useState<number | null>(null);
+  /** «تحميل» — أذونات فترة، والسابق/التالى بيمشوا جوّاها (زي فاتورة البيع). */
+  const [periodRows, setPeriodRows] = useState<Permit[] | null>(null);
+  const [loadRangeOpen, setLoadRangeOpen] = useState(false);
 
   const [creating, setCreating] = useState(false);
   // «أول المدة» is a screen of its own in their menu. Here it is one of three permit kinds, so
@@ -231,6 +240,7 @@ export default function StockPermits() {
   };
 
   const resetDraft = () => {
+    setEditingId(null);
     setLines([]); setReason(''); setNotes('');
     setStatement1(''); setExternalDocNumber('');
     setPermitDate(dayjs()); setWarehouseId(undefined);
@@ -315,15 +325,21 @@ export default function StockPermits() {
     if (!payload.length) { message.warning('أضف سطراً واحداً على الأقل'); return; }
     setSaving(true);
     try {
-      await api.post('/api/v1/stock/permits', {
+      const body = {
         kind, warehouse_id: warehouseId, lines: payload,
         reason: reason || null, notes: notes || null,
         statement1: statement1 || null,
         external_document_number: externalDocNumber || null,
         permit_date: permitDate.format('YYYY-MM-DD'),
-      });
-      message.success(kind === 'issue' ? 'تم تسجيل إذن الصرف'
-        : kind === 'opening' ? 'تم تسجيل بضاعة أول المدة' : 'تم تسجيل إذن الإضافة');
+      };
+      if (editingId) {
+        await api.put(`/api/v1/stock/permits/${editingId}`, body);
+        message.success('تم تعديل الإذن');
+      } else {
+        await api.post('/api/v1/stock/permits', body);
+        message.success(kind === 'issue' ? 'تم تسجيل إذن الصرف'
+          : kind === 'opening' ? 'تم تسجيل بضاعة أول المدة' : 'تم تسجيل إذن الإضافة');
+      }
       // بعد ما السيرفر رد بنجاح وبس — المرفوض بيفضل مسودّة.
       discardDraft();
       setCreating(false); resetDraft(); load();
@@ -343,14 +359,10 @@ export default function StockPermits() {
    * No confirmation: pressing تعديل IS the answer. What protects the record is that the reversal
    * is a posting with its own document — the original, its reversal and the correction all stay.
    */
-  const editPosted = async (p: Permit) => {
-    try {
-      await api.post(`/api/v1/stock/permits/${p.id}/reverse`);
-    } catch (err: any) {
-      message.error(err?.response?.data?.detail?.message || 'تعذر عكس الإذن');
-      return;
-    }
-    message.success('اتعكس الإذن — عدّل ورحّل من جديد');
+  const editPosted = (p: Permit) => {
+    // (٢٠٢٦-١٠-٠٥) التعديل بقى في مكانه — نفس الرقم، والسيرفر بيشيل أثره القديم ويبنيه من
+    // جديد. كان بيعكس الإذن ويفتح واحد جديد، فالغلطة الواحدة بتسيب تلات أذونات في السجل.
+    setEditingId(p.id);
     // Refill from what it actually held, so the correction starts from the document rather than
     // from a blank form somebody has to retype.
     setKind(p.kind);
@@ -368,7 +380,34 @@ export default function StockPermits() {
     })));
     setDetail(null);
     setCreating(true);
-    load();
+  };
+
+  /** حذف الإذن وأثره على المخزن — بعد تأكيد. السيرفر بيرفض لو الحذف هيخلّي رصيد بالسالب. */
+  const deletePermit = (p: Permit) => {
+    Modal.confirm({
+      title: 'حذف الإذن',
+      content: `هل أنت متأكد من حذف الإذن ${p.document_number}؟ حركته على المخزن هتتشال.`,
+      okText: 'نعم، احذف', okType: 'danger', cancelText: 'تراجع',
+      onOk: async () => {
+        try {
+          await api.delete(`/api/v1/stock/permits/${p.id}`);
+          message.success('تم حذف الإذن');
+          setPeriodRows((rows) => (rows ? rows.filter((r) => r.id !== p.id) : rows));
+          if (detail?.id === p.id) closeDoc();
+          load();
+        } catch (err: any) {
+          message.error(err?.response?.data?.detail?.message || 'تعذر حذف الإذن');
+        }
+      },
+    });
+  };
+
+  /** القايمة اللي السابق/التالى بيمشوا فيها: الفترة المحمّلة، وإلا الكشف — الأحدث الأول. */
+  const navRows = (periodRows ?? permits) as Permit[];
+  const neighbour = (step: number): Permit | null => {
+    if (!detail) return null;
+    const at = navRows.findIndex((r) => r.id === detail.id);
+    return at < 0 ? null : navRows[at + step] ?? null;
   };
 
   const reverse = async (p: Permit) => {
@@ -399,6 +438,7 @@ export default function StockPermits() {
         title={kind === 'issue' ? 'اختر الصنف المصروف' : 'اختر الصنف المضاف'}
         categories={categories}
         categoryLabels={categoryLabels}
+        hideCategories
         products={pickable}
         activeCategory={activeCategory}
         onCategoryChange={setActiveCategory}
@@ -436,6 +476,8 @@ export default function StockPermits() {
       <div className="sale-card sale-fields">
       <Segmented
         block value={kind} onChange={(v) => { setKind(v as Kind); setLines([]); }}
+        // نوع الإذن مابيتغيّرش وهو بيتعدّل — التعديل بيبني نفس الإذن بنفس رقمه.
+        disabled={!!editingId}
         style={{ marginBottom: 10 }}
         options={[
           { value: 'receipt', label: 'إذن إضافة (دخول للمخزن)' },
@@ -619,10 +661,10 @@ export default function StockPermits() {
     <div className="sale-form">
       <Alert
         type={detail.reversed_by ? 'warning' : 'info'} showIcon
-        message={detail.reversed_by ? 'الإذن ده اتعكس' : 'هذا الإذن مُرحَّل بالفعل'}
+        message={detail.reversed_by ? 'الإذن ده اتعكس' : 'هذا الإذن مُرحَّل'}
         description={detail.reversed_by
           ? 'أُنشئ له إذن عكسي أعاد المخزون إلى ما كان عليه — وكلاهما موجود في القائمة.'
-          : 'تحركت البضاعة على المخزن فعلاً، فلا يُعدَّل الإذن في مكانه. و«تعديل الإذن» يعكسه ويفتحه من جديد بمحتواه لتصحّح وتُرحِّل مرة أخرى — وتبقى الثلاثة في السجل.'}
+          : 'تحركت البضاعة على المخزن. «تعديل» بيفتح الإذن بنفس رقمه ويعدّل حركته، و«حذف» بيشيله هو وحركته.'}
       />
       {/* بيانات الإذن — للقراية بس، بنفس شكل خانات الفاتورة (الاسم فوق الخانة).
           إجمالي التكلفة تحت في المربعات. */}
@@ -726,10 +768,11 @@ export default function StockPermits() {
                     </Button>
                     <Popconfirm title="عكس الإذن؟" description="سيعود المخزون إلى ما كان عليه."
                       onConfirm={() => reverse(detail)} okText="عكس" cancelText="إلغاء">
-                      <Button danger icon={<RollbackOutlined />}>عكس الإذن</Button>
+                      <Button icon={<RollbackOutlined />}>عكس الإذن</Button>
                     </Popconfirm>
                   </>
                 )}
+                <Button danger icon={<DeleteOutlined />} onClick={() => deletePermit(detail)}>حذف</Button>
                 {/* **الإذن بقى بيتطبع.** كان مالوش ورقة خالص — وإذن الصرف بالذات بيتمسك في
                     الإيد: أمين المخزن بيسلّم بيه والمستلم بيمضي. الشرح في `print/permitSheet`. */}
                 <Button icon={<PrinterOutlined />}
@@ -742,6 +785,33 @@ export default function StockPermits() {
       </div>
     </div>
   );
+
+  /** شريط المستند — نفس أوامر فاتورة البيع ومفاتيحها (٢٠٢٦-١٠-٠٥). */
+  const locked = !!detail && (detail.is_reversal || !!detail.reversed_by);
+  const permitToolbar = (): ToolbarAction[] => [
+    { key: 'new', label: 'جديد', shortcut: 'F2', icon: <FileAddOutlined />, primary: true,
+      onClick: () => startNew() },
+    { key: 'edit', label: 'تعديل', icon: <EditOutlined />,
+      disabled: !detail || locked, onClick: () => detail && editPosted(detail) },
+    { key: 'undo', label: 'تراجع', icon: <UndoOutlined />,
+      disabled: !creating || lines.length === 0, onClick: () => setLines([]) },
+    { key: 'save', label: 'حفظ', shortcut: 'F9', icon: <SaveOutlined />,
+      disabled: !creating || !warehouseId || lines.length === 0 || saving, onClick: submit },
+    { key: 'prev', label: 'السابق', icon: <ArrowRightOutlined />,
+      disabled: !detail ? navRows.length === 0 || creating : !neighbour(1),
+      onClick: () => {
+        const n = detail ? neighbour(1) : navRows[0];
+        if (n) openPermit(n);
+      } },
+    { key: 'next', label: 'التالى', icon: <ArrowLeftOutlined />,
+      disabled: !neighbour(-1), onClick: () => { const n = neighbour(-1); if (n) openPermit(n); } },
+    { key: 'delete', label: 'حذف', shortcut: 'F8', icon: <DeleteOutlined />, danger: true,
+      disabled: !detail, onClick: () => detail && deletePermit(detail) },
+    { key: 'print', label: 'طباعة', shortcut: 'F7', icon: <PrinterOutlined />,
+      disabled: !detail, onClick: () => detail && printPermit(detail) },
+    { key: 'reload', label: 'تحميل', icon: <ReloadOutlined />,
+      onClick: () => setLoadRangeOpen(true) },
+  ];
 
   const columns: ColumnsType<Permit> = [
     { title: 'رقم الإذن', dataIndex: 'document_number',
@@ -770,6 +840,22 @@ export default function StockPermits() {
       render: (v: string | null) => v || '-' },
     { title: 'التكلفة', dataIndex: 'total_cost', align: 'left',
       render: (v: string) => <b>{money(v)}</b> },
+    { title: 'الإجراءات', key: 'actions', width: 130, align: 'center',
+      render: (_: unknown, r: any) => (r.__isDraft ? null : (
+        <Space size={2} onClick={(e) => e.stopPropagation()}>
+          <Tooltip title="عرض">
+            <Button type="text" size="small" icon={<EyeOutlined />} onClick={() => openPermit(r)} />
+          </Tooltip>
+          <Tooltip title={r.is_reversal || r.reversed_by ? 'إذن معكوس — امسحه بدل التعديل' : 'تعديل'}>
+            <Button type="text" size="small" icon={<EditOutlined />}
+              disabled={r.is_reversal || !!r.reversed_by} onClick={() => editPosted(r)} />
+          </Tooltip>
+          <Tooltip title="حذف">
+            <Button type="text" size="small" danger icon={<DeleteOutlined />}
+              onClick={() => deletePermit(r)} />
+          </Tooltip>
+        </Space>
+      )) },
   ];
 
   // إخفاء وترتيب الأعمدة — نفس المحرك اللي كل الجداول بتستخدمه.
@@ -822,8 +908,10 @@ export default function StockPermits() {
             <Button size="small" icon={<ArrowRightOutlined />} onClick={closeDoc}>رجوع</Button>
             <span className="sale-title">{detail
               ? <>{KIND_LABEL[detail.kind] || detail.kind} — <b dir="ltr">{detail.document_number}</b></>
-              : kind === 'issue' ? 'إذن صرف مخزني'
-                : kind === 'opening' ? 'بضاعة أول المدة' : 'إذن إضافة مخزني'}</span>
+              : editingId ? 'تعديل إذن'
+                : kind === 'issue' ? 'إذن صرف مخزني'
+                  : kind === 'opening' ? 'بضاعة أول المدة' : 'إذن إضافة مخزني'}</span>
+            <DocumentToolbar actions={permitToolbar()} variant="buttons" />
             {detail?.reversed_by && <Tag color="default" style={{ marginInlineEnd: 0 }}>اتعكس</Tag>}
             {/* الحالة في سطر العنوان — زي فاتورة البيع (٢٠٢٦-١٠-٠١). */}
             {detail && (
@@ -832,6 +920,10 @@ export default function StockPermits() {
                   listLabel="أذون المخزن"
                   listTo="/stock-permits"
                   title={detail.document_number || `#${detail.id}`}
+                  position={navRows.findIndex((r) => r.id === detail.id) + 1 || null}
+                  total={navRows.length}
+                  onPrev={neighbour(1) ? () => { const n = neighbour(1); if (n) openPermit(n); } : undefined}
+                  onNext={neighbour(-1) ? () => { const n = neighbour(-1); if (n) openPermit(n); } : undefined}
                   steps={[
                     { key: 'draft', label: 'مسودة' },
                     { key: 'posted', label: 'مرحّل', color: 'green' },
@@ -926,6 +1018,18 @@ export default function StockPermits() {
     <>
       {doors}
       {screen}
+      <LoadPeriodModal
+        open={loadRangeOpen} onCancel={() => setLoadRangeOpen(false)}
+        title="تحميل أذونات فترة" endpoint="/api/v1/stock/permits"
+        columns={[
+          { title: 'الإذن', key: 'document_number', width: 150 },
+          { title: 'التاريخ', key: 'permit_date', width: 120 },
+          { title: 'المخزن', key: 'warehouse_name' },
+          { title: 'التكلفة', key: 'total_cost', width: 130, money: true },
+        ]}
+        onLoaded={(rows) => setPeriodRows(rows as Permit[])}
+        openNewest dateKey="permit_date"
+        onPick={(r) => openPermit(r as Permit)} />
     </>
   );
 }

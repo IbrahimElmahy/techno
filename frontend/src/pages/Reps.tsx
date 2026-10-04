@@ -91,7 +91,7 @@ export default function Reps() {
       render: (v: string, r: Rep) => (
         <Space direction="vertical" size={0}>
           <b style={{ color: r.active ? undefined : '#bfbfbf' }}>{v}</b>
-          <span style={{ fontSize: 12.5, color: '#555b65' }}>{r.username}</span>
+          <span style={{ fontSize: 14, color: '#555b65' }}>{r.username}</span>
         </Space>
       ),
     },
@@ -131,7 +131,7 @@ export default function Reps() {
               .map((w: any) => ({ value: w.id, label: w.name }))} filterOption={searchFilter} filterSort={searchRank} />
           {!v && !r.custody_id && (
             // من غير مكان بضاعة، التطبيق بيرد «مالكش عهدة ولا مخزن» ومابيزامنش أصلاً.
-            <span style={{ fontSize: 12.5, color: '#cf1322' }}>التطبيق مش هيزامن من غير مخزن</span>
+            <span style={{ fontSize: 14, color: '#cf1322' }}>التطبيق مش هيزامن من غير مخزن</span>
           )}
         </Space>
       ),

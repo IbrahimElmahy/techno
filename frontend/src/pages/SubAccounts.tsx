@@ -335,7 +335,7 @@ export default function SubAccounts() {
               <Space size={8} wrap>
                 <span style={{ fontWeight: 600 }}>{s.name}</span>
                 <Tag>{s.items.length}</Tag>
-                <span style={{ color: '#6b6b6b', fontSize: 12.5 }}>الإجمالي {egp(s.total)}</span>
+                <span style={{ color: '#6b6b6b', fontSize: 14 }}>الإجمالي {egp(s.total)}</span>
                 {s.hidden > 0 && <Tag color="red">{s.hidden} مخفي</Tag>}
               </Space>
             ),

@@ -70,11 +70,11 @@ export function buildLineColumns({
         return (
           <div style={{ cursor: 'pointer', lineHeight: 1.25 }} onClick={() => setPanelItemId(line.item_id)}>
             {/* الاسم الطويل بيتقص بـ«…» والاسم كله في التلميح. */}
-            <div className="eg-ellipsis" title={name} style={{ fontWeight: 700, fontSize: 13, color: '#0f172a' }}>
+            <div className="eg-ellipsis" title={name} style={{ fontWeight: 700, fontSize: 15, color: '#0f172a' }}>
               {name}
             </div>
             {code ? (
-              <div dir="ltr" style={{ fontSize: 12.5, color: '#5b6575', fontWeight: 500, textAlign: 'end' }}>
+              <div dir="ltr" style={{ fontSize: 14, color: '#5b6575', fontWeight: 500, textAlign: 'end' }}>
                 {code}
               </div>
             ) : null}
@@ -104,7 +104,7 @@ export function buildLineColumns({
     { key: 'unit', title: 'الوحدة', width: 80,
       cell: (line) => (
         viewOnly ? (
-          <span style={{ fontSize: 12.5 }}>{line.unit || 'أساسية'}</span>
+          <span style={{ fontSize: 14 }}>{line.unit || 'أساسية'}</span>
         ) : (
           <Select size="small" style={{ width: '100%' }} placeholder="الوحدة"
             value={line.unit ?? '__base__'}
@@ -163,7 +163,7 @@ export function buildLineColumns({
             )}
             {under ? (
               <Tag color={canSellBelowCost ? 'gold' : 'red'}
-                style={{ marginTop: 2, marginInlineEnd: 0, fontSize: 11, whiteSpace: 'normal', lineHeight: 1.3 }}>
+                style={{ marginTop: 2, marginInlineEnd: 0, fontSize: 14, whiteSpace: 'normal', lineHeight: 1.3 }}>
                 أقل من سعر الشراء
               </Tag>
             ) : null}

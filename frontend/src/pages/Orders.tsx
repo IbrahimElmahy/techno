@@ -958,7 +958,7 @@ export default function Orders() {
                   onChange={(v) => setInvoiceId(v as number)} style={{ width: 160 }} />
                 <Button type="primary" className="sale-green-btn" onClick={convert}>ربط</Button>
               </Space>
-              <div style={{ color: '#64748b', marginTop: 8, fontSize: 12.5 }}>
+              <div style={{ color: '#64748b', marginTop: 8, fontSize: 14 }}>
                 اعمل الفاتورة من شاشة الفواتير الأول عشان تعدّي على كل الفحوصات (التوافر
                 والتكلفة والقيد)، وبعدين اربطها بالطلب هنا. الربط بيحصل مرة واحدة بس.
               </div>

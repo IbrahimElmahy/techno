@@ -95,7 +95,7 @@ export function TreasuryField({
                 {o.isDefault && <Tag color="green" style={{ marginInlineStart: 6 }}>الافتراضية</Tag>}
               </span>
               {/* «فيها كام» — the question behind choosing a safe, answered before the choice. */}
-              <span style={{ color: short ? '#cf1322' : '#6AB42D', fontSize: 12.5 }}>
+              <span style={{ color: short ? '#cf1322' : '#6AB42D', fontSize: 14 }}>
                 {money(o.balance)}
               </span>
             </div>
@@ -181,7 +181,7 @@ export function ExpenseAccountField({
             return (
               <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12 }}>
                 <span>{o.full}</span>
-                <span style={{ color: '#6b6b6b', fontSize: 12.5 }}>{money(o.spent)}</span>
+                <span style={{ color: '#6b6b6b', fontSize: 14 }}>{money(o.spent)}</span>
               </div>
             );
           }}
@@ -220,7 +220,7 @@ export function ExpenseAccountField({
             rules={[{ required: true, message: 'اكتب اسم الحساب' }]}>
             <Input placeholder="مثال: بنزين وانتقالات" />
           </Form.Item>
-          <div style={{ color: '#6b6b6b', fontSize: 12.5 }}>
+          <div style={{ color: '#6b6b6b', fontSize: 14 }}>
             بيتعمل كحساب مصروف يقبل الترحيل، فيبان في القايمة على طول.
             وتقدر تعدّله أو تخفيه بعد كده من «اداره الانشاءات ← الحسابات الفرعيه».
           </div>

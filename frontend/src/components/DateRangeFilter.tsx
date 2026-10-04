@@ -99,7 +99,7 @@ export default function DateRangeFilter({
           format="YYYY-MM-DD"
         />
       </div>
-      <span style={{ color: '#555555', fontWeight: 'bold', fontSize: 13, flexShrink: 0 }}>إلى</span>
+      <span style={{ color: '#555555', fontWeight: 'bold', fontSize: 15, flexShrink: 0 }}>إلى</span>
       <div style={{ flex: 1, minWidth: 120 }}>
         <DatePicker
           style={{

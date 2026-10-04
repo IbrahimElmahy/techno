@@ -177,7 +177,7 @@ export default function TreasuryGate({
           value={value ?? undefined}
           onChange={(v) => { chosenRef.current = v as number; onChange(v as number); }}
           options={options.map((o) => ({ value: o.value, label: o.label }))} filterOption={searchFilter} filterSort={searchRank}/>
-        <div style={{ marginTop: 10, color: '#6b6b6b', fontSize: 13 }}>
+        <div style={{ marginTop: 10, color: '#6b6b6b', fontSize: 15 }}>
           المقترح صندوق خط المستند — غيّره لو الفلوس اتحطّت في خزنة تانية.
         </div>
       </div>

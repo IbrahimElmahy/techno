@@ -18,7 +18,7 @@
   border-bottom: none;
   border-inline-end-color: #334155;
   padding: 7px 6px;
-  font-size: 12.5px;
+  font-size: 15px;
 }
 /* الفاصل الرمادي بين أسامي الأعمدة مابيبانش على الكحلي */
 .sale-doc .sale-grid.ant-table-wrapper .ant-table-thead > tr > th::before {
@@ -56,6 +56,6 @@
 
 /* سطر الشرح الصغير تحت الأزرار */
 .sale-doc .sale-pay-note {
-  font-size: 12.5px;
+  font-size: 15px;
   color: #3f4a5a;
 }

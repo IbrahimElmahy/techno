@@ -287,7 +287,7 @@ export default function Payroll() {
         <Button icon={<ReloadOutlined />} onClick={load}>تحديث</Button>
       </>) : (<>
         <Button onClick={() => { setDetail(null); setTab('runs'); }}>رجوع للقايمة</Button>
-        <Tag color={STATUS[detail.status]?.color} style={{ fontSize: 14, marginInlineEnd: 0 }}>
+        <Tag color={STATUS[detail.status]?.color} style={{ fontSize: 15, marginInlineEnd: 0 }}>
           {STATUS[detail.status]?.label}
         </Tag>
         {detail.status === 'draft' ? (

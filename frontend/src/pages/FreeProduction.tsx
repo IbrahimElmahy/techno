@@ -330,7 +330,7 @@ export default function FreeProduction() {
         <div className="sale-form">
         <div className="sale-card">
         {/* كان تنبيه أزرق — بقى سطر شرح فوق الخانات. */}
-        <div style={{ color: '#64748b', fontSize: 12.5, marginBottom: 10 }}>
+        <div style={{ color: '#64748b', fontSize: 14, marginBottom: 10 }}>
           اكتب الخامات المنصرفة فعلاً والمنتج الناتج. تُؤخذ الكميات كما هي دون أي نسب تضربها، حتى لا يتغيّر الرقم المقيس.
         </div>
 

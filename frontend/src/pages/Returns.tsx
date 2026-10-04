@@ -1465,7 +1465,7 @@ export default function Returns({ embedded }: { embedded?: { onExit: () => void 
                             ? { ...x, count: (v as number) ?? undefined } : x)))} />
                       </Col>
                       <Col xs={12} md={4}>
-                        <span style={{ fontSize: 12.5, color: '#4a4a4a' }}>
+                        <span style={{ fontSize: 14, color: '#4a4a4a' }}>
                           {book?.serial_from ? `${book.serial_from}–${book.serial_to}` : '—'}
                         </span>
                       </Col>
@@ -1510,7 +1510,7 @@ export default function Returns({ embedded }: { embedded?: { onExit: () => void 
                       label: (
                         <span style={{ fontWeight: 700 }}>
                           {a.family}
-                          <span style={{ color: '#64748b', marginInlineStart: 6, fontSize: 12.5,
+                          <span style={{ color: '#64748b', marginInlineStart: 6, fontSize: 14,
                                          fontWeight: 400 }}>
                             ({money(Number(a.balance || 0))})
                           </span>
@@ -1582,12 +1582,12 @@ export default function Returns({ embedded }: { embedded?: { onExit: () => void 
                                 <td colSpan={lineGrid.count}>
                                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                                     <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                                      <Tag color="success" style={{ fontWeight: 700, fontSize: 12.5, padding: '0 6px', borderRadius: 4, margin: 0 }}>
+                                      <Tag color="success" style={{ fontWeight: 700, fontSize: 14, padding: '0 6px', borderRadius: 4, margin: 0 }}>
                                         {group.category ? (categoryLabels[group.category] || group.category) : 'بدون فئة'}
                                       </Tag>
-                                      <span style={{ color: '#64748b', fontSize: 12.5, fontWeight: 600 }}>({group.items.length} صنف)</span>
+                                      <span style={{ color: '#64748b', fontSize: 14, fontWeight: 600 }}>({group.items.length} صنف)</span>
                                     </div>
-                                    <span style={{ color: '#64748b', fontSize: 12.5, fontWeight: 600 }}>
+                                    <span style={{ color: '#64748b', fontSize: 14, fontWeight: 600 }}>
                                       إجمالي الفئة: {money(group.items.reduce((s, l) => s + lineTotal(l), 0))}
                                     </span>
                                   </div>

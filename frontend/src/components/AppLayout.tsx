@@ -243,7 +243,7 @@ export default function AppLayout() {
         // الوقفة دي عشان اختيار الارتفاع مايقفلش القايمة — بتتجرّب على الجدول اللي
         // وراها، واللي بيجرّب بيعدّي على التلاتة.
         <div onClick={(e) => e.stopPropagation()} style={{ padding: '2px 0' }}>
-          <div style={{ fontSize: 12.5, color: '#888', marginBottom: 6 }}>ارتفاع الصف</div>
+          <div style={{ fontSize: 14, color: '#888', marginBottom: 6 }}>ارتفاع الصف</div>
           <RowDensityControl />
         </div>
       ),
@@ -253,7 +253,7 @@ export default function AppLayout() {
       key: 'numerals',
       label: (
         <div onClick={(e) => e.stopPropagation()} style={{ padding: '2px 0' }}>
-          <div style={{ fontSize: 12.5, color: '#888', marginBottom: 6 }}>شكل الأرقام</div>
+          <div style={{ fontSize: 14, color: '#888', marginBottom: 6 }}>شكل الأرقام</div>
           <NumeralsControl />
         </div>
       ),

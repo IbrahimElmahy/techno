@@ -68,7 +68,7 @@ export default function PendingScreen() {
               </Typography.Paragraph>
             )}
             {pending?.note && (
-              <Typography.Paragraph type="secondary" style={{ fontSize: 13, marginBottom: 8 }}>
+              <Typography.Paragraph type="secondary" style={{ fontSize: 15, marginBottom: 8 }}>
                 {pending.note}
               </Typography.Paragraph>
             )}

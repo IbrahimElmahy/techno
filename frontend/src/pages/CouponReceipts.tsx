@@ -536,7 +536,7 @@ export default function CouponReceipts() {
               const name = r.issuedToName || (r.issuedToId ? customerName(r.issuedToId) : null);
               if (!name) return <span style={{ color: '#555b65' }}>-</span>;
               return (
-                <Tag color="cyan" style={{ fontSize: 13, padding: '2px 8px' }}>
+                <Tag color="cyan" style={{ fontSize: 15, padding: '2px 8px' }}>
                   {name}
                 </Tag>
               );

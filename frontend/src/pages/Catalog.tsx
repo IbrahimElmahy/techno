@@ -200,8 +200,8 @@ const InlineNumberCell = ({
         // الخانة والمؤشر يطير منها.
         suffix={(
           <span style={{ width: 12, display: 'inline-flex', justifyContent: 'center' }}>
-            {status === 'saving' && <LoadingOutlined style={{ fontSize: 11 }} />}
-            {status === 'saved' && <CheckCircleFilled style={{ fontSize: 11, color: '#52c41a' }} />}
+            {status === 'saving' && <LoadingOutlined style={{ fontSize: 14 }} />}
+            {status === 'saved' && <CheckCircleFilled style={{ fontSize: 14, color: '#52c41a' }} />}
           </span>
         )}
       />
@@ -872,7 +872,7 @@ export default function Catalog() {
               {pct.toFixed(pct % 1 === 0 ? 0 : 2)}%
             </Tag>
             {price > 0 && (
-              <div style={{ fontSize: 12.5, color: '#555b65' }}>
+              <div style={{ fontSize: 14, color: '#555b65' }}>
                 صافي {money(netOf(price, pct))}
               </div>
             )}
@@ -1329,7 +1329,7 @@ export default function Catalog() {
           <Divider orientation="right" style={{ margin: '12px 0 8px' }}>
             وحدات القياس البديلة
           </Divider>
-          <div style={{ color: '#888', marginBottom: 8, fontSize: 13 }}>
+          <div style={{ color: '#888', marginBottom: 8, fontSize: 15 }}>
             الوحدة الأساسية هي الأولى. أضف الوحدات الأكبر بمعاملاتها (مثلاً: كرتونة = ١٢).
           </div>
           {unitRows.map((r, i) => (

@@ -412,7 +412,7 @@ export default function Advances() {
               value={advForm.instalments}
               onChange={(v) => setAdvForm({ ...advForm, instalments: v })} />
             {advForm.amount && advForm.instalments > 1 ? (
-              <div style={{ color: '#888', fontSize: 12.5, marginTop: 4 }}>
+              <div style={{ color: '#888', fontSize: 14, marginTop: 4 }}>
                 ≈ {money(Number(advForm.amount) / advForm.instalments)} في الشهر
               </div>
             ) : null}
@@ -443,7 +443,7 @@ export default function Advances() {
             <DatePicker picker="month" style={{ width: '100%' }} format="YYYY/MM"
               allowClear={false} value={adjForm.period}
               onChange={(v) => setAdjForm({ ...adjForm, period: v || dayjs() })} />
-            <div style={{ color: '#888', fontSize: 12.5, marginTop: 4 }}>
+            <div style={{ color: '#888', fontSize: 14, marginTop: 4 }}>
               الشهر الذي سيُطبَّق فيه — وجزاء الشهر الماضي يُطبَّق في المسيّر المفتوح.
             </div>
           </Col>
@@ -478,7 +478,7 @@ export default function Advances() {
                 <InputNumber style={{ width: '100%' }} min={0.5} step={0.5}
                   value={adjForm.quantity}
                   onChange={(v) => setAdjForm({ ...adjForm, quantity: v })} />
-                <div style={{ color: '#888', fontSize: 12.5, marginTop: 4 }}>
+                <div style={{ color: '#888', fontSize: 14, marginTop: 4 }}>
                   المسير بيحوّلها لفلوس بأجر يوم الشهر ده.
                 </div>
               </>

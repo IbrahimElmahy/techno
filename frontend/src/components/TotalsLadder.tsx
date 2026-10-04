@@ -102,7 +102,7 @@ export default function TotalsLadder({
                 borderRadius: 8, padding: '5px 10px',
               }}>
                 <div style={{
-                  fontSize: 12.5,
+                  fontSize: 14,
                   color: r.highlight ? '#3f6b26' : '#6b6b6b',
                   fontWeight: r.highlight ? 700 : 500,
                   whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
@@ -122,7 +122,7 @@ export default function TotalsLadder({
               marginTop: 6, padding: '6px 12px', borderRadius: 8,
               background: '#fff', border: `1px solid ${t.rule}`,
             }}>
-              <span style={{ fontSize: 14, fontWeight: 700, color: '#4a4a4a' }}>{r.label}</span>
+              <span style={{ fontSize: 15, fontWeight: 700, color: '#4a4a4a' }}>{r.label}</span>
               <span style={{ fontSize: 22, fontWeight: 800, color: r.color }}>
                 {r.value}{currency ? ` ${currency}` : ''}
               </span>
@@ -132,7 +132,7 @@ export default function TotalsLadder({
           {shownNotes.length > 0 && (
             <div style={{
               display: 'flex', gap: 16, flexWrap: 'wrap', marginTop: 6, paddingTop: 6,
-              borderTop: `1px dashed ${t.rule}`, fontSize: 12.5, color: '#6b6b6b',
+              borderTop: `1px dashed ${t.rule}`, fontSize: 14, color: '#6b6b6b',
             }}>
               {shownNotes.map((n, i) => <span key={i}>{n}</span>)}
             </div>

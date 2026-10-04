@@ -2902,7 +2902,7 @@ function couponsTotal(inv: any): number {
                     label: (
                       <span style={{ fontWeight: 700 }}>
                         {a.family}
-                        <span style={{ color: '#64748b', marginInlineStart: 6, fontSize: 12.5,
+                        <span style={{ color: '#64748b', marginInlineStart: 6, fontSize: 14,
                                        fontWeight: 400 }}>
                           ({money(Number(a.balance || 0))})
                         </span>
@@ -2962,7 +2962,7 @@ function couponsTotal(inv: any): number {
               value={pendingWarehouse ?? undefined}
               onChange={(v) => setPendingWarehouse(v as number)}
               options={warehouses.map((w) => ({ value: w.id, label: w.name }))} filterOption={searchFilter} filterSort={searchRank}/>
-            <div style={{ marginTop: 10, color: '#6b6b6b', fontSize: 13 }}>
+            <div style={{ marginTop: 10, color: '#6b6b6b', fontSize: 15 }}>
               هيثبت لكل أصناف الفاتورة. تقدر تغيّر مخزن أي سطر من عمود «المخزن».
             </div>
           </TabModal>
@@ -3018,12 +3018,12 @@ function couponsTotal(inv: any): number {
                           <td colSpan={lineGrid.count}>
                             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                               <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                                <Tag color="success" style={{ fontWeight: 700, fontSize: 12.5, padding: '0 6px', borderRadius: 4, margin: 0 }}>
+                                <Tag color="success" style={{ fontWeight: 700, fontSize: 14, padding: '0 6px', borderRadius: 4, margin: 0 }}>
                                   {group.category ? (categoryLabels[group.category] || group.category) : 'بدون فئة'}
                                 </Tag>
-                                <span style={{ color: '#64748b', fontSize: 12.5, fontWeight: 600 }}>({group.items.length} صنف)</span>
+                                <span style={{ color: '#64748b', fontSize: 14, fontWeight: 600 }}>({group.items.length} صنف)</span>
                               </div>
-                              <span style={{ color: '#64748b', fontSize: 12.5, fontWeight: 600 }}>
+                              <span style={{ color: '#64748b', fontSize: 14, fontWeight: 600 }}>
                                 إجمالي الفئة: {money(group.items.reduce((s, l) => s + saleLineNet(l), 0))}
                               </span>
                             </div>
@@ -3320,7 +3320,7 @@ function couponsTotal(inv: any): number {
                     <span style={{ fontWeight: 700 }}>
                       {o.label}
                       {families.length > 1 && acc ? (
-                        <span style={{ color: '#5a6b5a', marginInlineStart: 8, fontSize: 13,
+                        <span style={{ color: '#5a6b5a', marginInlineStart: 8, fontSize: 15,
                                        fontWeight: 400 }}>
                           ({money(Number(acc.balance || 0))})
                         </span>
@@ -3330,7 +3330,7 @@ function couponsTotal(inv: any): number {
                 };
               })}
             />
-            <div style={{ marginTop: 10, color: '#6b6b6b', fontSize: 13 }}>
+            <div style={{ marginTop: 10, color: '#6b6b6b', fontSize: 15 }}>
               بيتغيّر من خانة «نوع الفاتورة» في الترويسة في أي وقت.
             </div>
           </div>

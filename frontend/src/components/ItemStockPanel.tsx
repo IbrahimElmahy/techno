@@ -68,8 +68,8 @@ export default function ItemStockPanel({
       return (
         <>
           <div style={{ marginBottom: 10 }}>
-            <div style={{ fontWeight: 700, fontSize: 14 }}>{balance.item?.name}</div>
-            <div style={{ fontSize: 12.5, color: '#6b6b6b' }}>
+            <div style={{ fontWeight: 700, fontSize: 15 }}>{balance.item?.name}</div>
+            <div style={{ fontSize: 14, color: '#6b6b6b' }}>
               الإجمالي في كل المواقع:{' '}
               <b style={{ color: Number(balance.total) > 0 ? '#6AB42D' : '#cf1322' }}>
                 {qty(balance.total)} {balance.item?.unit_of_measure || ''}
@@ -91,7 +91,7 @@ export default function ItemStockPanel({
                       background: has ? '#f6faf3' : '#fafafa',
                       border: `1px solid ${has ? '#e6efe3' : '#f0f0f0'}`,
                     }}>
-                    <span style={{ fontSize: 13, color: has ? undefined : '#b0b0b0' }}>
+                    <span style={{ fontSize: 15, color: has ? undefined : '#b0b0b0' }}>
                       {l.kind === 'custody' && <Tag color="gold" style={{ marginInlineEnd: 4 }}>عهدة</Tag>}
                       {l.name}
                     </span>
@@ -103,13 +103,13 @@ export default function ItemStockPanel({
           )}
 
           {held.length === 0 && (
-            <div style={{ marginTop: 8, fontSize: 12.5, color: '#cf1322' }}>
+            <div style={{ marginTop: 8, fontSize: 14, color: '#cf1322' }}>
               لا يوجد رصيد لهذا الصنف في أي مخزن.
             </div>
           )}
 
           {(balance.prices?.last_purchase || balance.prices?.last_sale) && (
-            <div style={{ marginTop: 10, fontSize: 12.5, color: '#6b6b6b' }}>
+            <div style={{ marginTop: 10, fontSize: 14, color: '#6b6b6b' }}>
               {balance.prices?.last_purchase && (
                 <div>آخر سعر شراء: <b>{money(balance.prices.last_purchase)}</b></div>
               )}
@@ -128,7 +128,7 @@ export default function ItemStockPanel({
       }
       return (
         <div>
-          <div style={{ fontSize: 12.5, color: '#6b6b6b', marginBottom: 8 }}>
+          <div style={{ fontSize: 14, color: '#6b6b6b', marginBottom: 8 }}>
             أصناف الفئة ورصيدها الكلي — اضغط على صنف تشوف توزيعه على المخازن.
           </div>
           {categoryItems.map((p) => {
@@ -143,7 +143,7 @@ export default function ItemStockPanel({
                   border: `1px solid ${has ? '#e6efe3' : '#ffe0e0'}`,
                 }}>
                 <Tooltip title={p.name}>
-                  <span style={{ fontSize: 13, overflow: 'hidden', textOverflow: 'ellipsis',
+                  <span style={{ fontSize: 15, overflow: 'hidden', textOverflow: 'ellipsis',
                     whiteSpace: 'nowrap', maxWidth: 170 }}>{p.name}</span>
                 </Tooltip>
                 <b style={{ color: has ? '#6AB42D' : '#cf1322' }}>{qty(p.on_hand)}</b>

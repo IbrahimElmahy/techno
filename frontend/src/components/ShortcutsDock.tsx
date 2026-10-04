@@ -134,7 +134,7 @@ export default function ShortcutsDock({ userId, tree, openTab }: Props) {
     <span style={{ display: 'flex', justifyContent: 'space-between', gap: 16, minWidth: 180 }}>
       <span>{text}</span>
       <CloseOutlined data-del="1" title="شيل الاختصار"
-        style={{ fontSize: 12.5, color: '#555b65', padding: 2 }} />
+        style={{ fontSize: 14, color: '#555b65', padding: 2 }} />
     </span>
   );
 
@@ -229,7 +229,7 @@ export default function ShortcutsDock({ userId, tree, openTab }: Props) {
         <div style={{ margin: '12px 0 6px' }}>اللينك</div>
         <Input value={linkUrl} onChange={(e) => setLinkUrl(e.target.value)} dir="ltr"
           placeholder="https://app.technothermeg.com/..." onPressEnter={addLink} />
-        <div style={{ marginTop: 8, fontSize: 12.5, color: '#6b6b6b' }}>
+        <div style={{ marginTop: 8, fontSize: 14, color: '#6b6b6b' }}>
           لينك صفحة في النظام بيتفتح في تبويب جوّه النظام، وأي لينك تاني بيتفتح في المتصفح.
         </div>
       </Modal>

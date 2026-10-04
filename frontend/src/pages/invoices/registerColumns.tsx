@@ -115,7 +115,7 @@ export function buildRegisterColumns({
             : <Tag bordered className="sl-docno"
                 color={isRcv(r) ? 'blue' : r.doc_type !== 'sale' ? 'magenta' : r.is_bonus ? 'orange' : 'green'}>{doc}</Tag>}
           {r.original_invoice_number && (
-            <span style={{ fontSize: 12.5, color: '#555b65' }}>عن: {r.original_invoice_number}</span>
+            <span style={{ fontSize: 14, color: '#555b65' }}>عن: {r.original_invoice_number}</span>
           )}
         </Space>
       ),
@@ -281,7 +281,7 @@ export function buildRegisterColumns({
         // تحصيل مش بيع — بلون وكلمة تفرّقه عن صافي الفاتورة.
         ? <Tooltip title="تحصيل من عميل — مش داخل في صافي المبيعات">
             <strong style={{ color: '#389e0d' }}>
-              <span style={{ fontSize: 11.5, fontWeight: 500 }}>تحصيل </span>{money(val)}
+              <span style={{ fontSize: 14, fontWeight: 500 }}>تحصيل </span>{money(val)}
             </strong>
           </Tooltip>
         : (
@@ -483,7 +483,7 @@ export function buildRegisterColumns({
                       content: (
                         <div>
                           <p>هل أنت متأكد من حذف {isSale ? 'فاتورة البيع' : 'سند المرتجع'} رقم: <b>{record.document_number}</b>؟</p>
-                          <p style={{ color: '#555b65', fontSize: 13 }}>سيتم حذف المستند بالكامل وإلغاء أثره المحاسبي والمخزني.</p>
+                          <p style={{ color: '#555b65', fontSize: 15 }}>سيتم حذف المستند بالكامل وإلغاء أثره المحاسبي والمخزني.</p>
                         </div>
                       ),
                       okText: 'نعم، احذف',

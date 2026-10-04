@@ -725,7 +725,7 @@ export default function PurchaseReturns({ embedded }: { embedded?: { onExit: () 
     { key: 'item', title: 'الصنف', width: 210, minWidth: 120, locked: true,
       cell: (line) => {
         const name = line.item_id ? itemName(line.item_id) : 'اختر الصنف';
-        return <b className="eg-ellipsis" title={name} style={{ fontSize: 13 }}>{name}</b>;
+        return <b className="eg-ellipsis" title={name} style={{ fontSize: 15 }}>{name}</b>;
       } },
     { key: 'unit', title: 'الوحدة', width: 80,
       cell: (line) => (
@@ -1280,7 +1280,7 @@ export default function PurchaseReturns({ embedded }: { embedded?: { onExit: () 
           value={pendingWarehouse ?? undefined}
           onChange={(v) => setPendingWarehouse(v as number)}
           options={sortByName(warehouses, (w: any) => w.name).map((w: any) => ({ value: w.id, label: w.name }))} filterOption={searchFilter} filterSort={searchRank}/>
-        <div style={{ marginTop: 10, color: '#6b6b6b', fontSize: 13 }}>
+        <div style={{ marginTop: 10, color: '#6b6b6b', fontSize: 15 }}>
           هيثبت لكل أصناف المردود. تقدر تغيّر مخزن أي سطر من عمود «المخزن».
         </div>
       </TabModal>
@@ -1469,12 +1469,12 @@ export default function PurchaseReturns({ embedded }: { embedded?: { onExit: () 
                           <td colSpan={lineGrid.count}>
                             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                               <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                                <Tag color="success" style={{ fontWeight: 700, fontSize: 12.5, padding: '0 6px', borderRadius: 4, margin: 0 }}>
+                                <Tag color="success" style={{ fontWeight: 700, fontSize: 14, padding: '0 6px', borderRadius: 4, margin: 0 }}>
                                   {group.category ? (categoryLabels[group.category] || group.category) : 'بدون فئة'}
                                 </Tag>
-                                <span style={{ color: '#64748b', fontSize: 12.5, fontWeight: 600 }}>({group.items.length} صنف)</span>
+                                <span style={{ color: '#64748b', fontSize: 14, fontWeight: 600 }}>({group.items.length} صنف)</span>
                               </div>
-                              <span style={{ color: '#64748b', fontSize: 12.5, fontWeight: 600 }}>
+                              <span style={{ color: '#64748b', fontSize: 14, fontWeight: 600 }}>
                                 إجمالي الفئة: {money(group.items.reduce((s, l) => s + lineNet(l), 0))}
                               </span>
                             </div>

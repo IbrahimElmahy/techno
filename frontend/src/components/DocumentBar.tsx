@@ -75,7 +75,7 @@ export default function DocumentBar({
                     disabled={!onPrev} onClick={onPrev} />
           </Tooltip>
           {position != null && total != null && (
-            <span style={{ color: '#888', fontSize: 12.5, minWidth: 48, textAlign: 'center' }}>
+            <span style={{ color: '#888', fontSize: 14, minWidth: 48, textAlign: 'center' }}>
               {position} / {total}
             </span>
           )}

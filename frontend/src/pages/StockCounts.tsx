@@ -466,7 +466,7 @@ export default function StockCounts() {
                 { value: 'spot', label: 'عينة' },
               ]}
             />
-            <div style={{ color: '#6b6b6b', fontSize: 12, marginTop: 6 }}>
+            <div style={{ color: '#6b6b6b', fontSize: 14, marginTop: 6 }}>
               {kind === 'full' && 'كل صنف له رصيد في المخزن — الجردة التي تُغلق عندها الأرفف.'}
               {kind === 'cycle' && 'دفعة بالتناوب، الأقدم عدّاً الأول — بتغطي المخزن مع الوقت من غير ما الشغل يقف.'}
               {kind === 'spot' && 'الأصناف التي تحددها فقط — حتى لو كانت الدفاتر تقول إنها نفدت.'}
@@ -603,7 +603,7 @@ export default function StockCounts() {
                   options={categories.map((c) => ({ value: c, label: c }))} filterOption={searchFilter} filterSort={searchRank}/>
               )}
               {draftLines.length !== allLines.length && (
-                <span style={{ color: '#6b6b6b', fontSize: 12 }}>
+                <span style={{ color: '#6b6b6b', fontSize: 14 }}>
                   معروض {draftLines.length} من {allLines.length}
                 </span>
               )}

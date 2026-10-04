@@ -61,6 +61,28 @@ def create_permit(
         permit_kind = PermitKind(kind)
     except ValueError as exc:
         raise StockPermitError("نوع الإذن غير صحيح.") from exc
+    built = _validate_lines(db, permit_kind, warehouse_id, lines)
+
+    permit = StockPermit(
+        document_number=_doc_number(db, permit_kind), kind=permit_kind,
+        warehouse_id=warehouse_id, permit_date=permit_date, reason=reason, notes=notes,
+        statement1=statement1, external_document_number=external_document_number,
+        total_cost=ZERO, actor_user_id=actor_user_id,
+    )
+    db.add(permit)
+    db.flush()
+    _post_lines(db, permit, built, actor_user_id)
+    audit_service.record(
+        db, action="stock_permit.create", actor_user_id=actor_user_id,
+        entity_type="stock_permit", entity_id=permit.id,
+        after={"doc": permit.document_number, "kind": permit_kind.value,
+               "cost": str(permit.total_cost)},
+    )
+    return permit
+
+
+def _validate_lines(db: Session, permit_kind: PermitKind, warehouse_id: int,
+                    lines: list[dict]) -> list[tuple]:
     if not lines:
         raise StockPermitError("لازم سطر واحد على الأقل.")
     if db.get(Warehouse, warehouse_id) is None:
@@ -91,16 +113,13 @@ def create_permit(
             raise StockPermitError(
                 f"«{item.name}» صنف له صلاحية — لازم تكتب تاريخ صلاحية البضاعة الداخلة.")
         built.append((item, quantity, cost, expiry))
+    return built
 
-    permit = StockPermit(
-        document_number=_doc_number(db, permit_kind), kind=permit_kind,
-        warehouse_id=warehouse_id, permit_date=permit_date, reason=reason, notes=notes,
-        statement1=statement1, external_document_number=external_document_number,
-        total_cost=ZERO, actor_user_id=actor_user_id,
-    )
-    db.add(permit)
-    db.flush()
 
+def _post_lines(db: Session, permit: StockPermit, built: list[tuple], actor_user_id: int) -> None:
+    """سطور الإذن وحركاتها ودفعاتها — للإنشاء وللتعديل في مكانه."""
+    permit_kind = permit.kind
+    warehouse_id = permit.warehouse_id
     movement_type, direction = _MOVEMENT[permit_kind]
     total = ZERO
     for item, quantity, cost, expiry in built:
@@ -145,12 +164,106 @@ def create_permit(
 
     permit.total_cost = total
     db.flush()
+
+
+# ---------------------------------------------------------------- تعديل وحذف في المكان
+#
+# (٢٠٢٦-١٠-٠٥، طلب العميل: «العمليات اللي عليهم حذف وابديت تكون مسموحة».) الإذن كان
+# «يتعكس بس» — والتعديل كان يعكس الإذن ويفتح واحد جديد، فالسجل بيفضل فيه تلات أذونات على
+# غلطة واحدة. دلوقتي زي فاتورة البيع: الأثر القديم (الحركات والدفعات والسطور) بيتشال
+# والإذن بيتبني تاني بنفس رقمه، والحذف بيشيل الإذن وأثره. الرصيد مشتق من الحركات، فشيل
+# الحركة بيرجّعه لوحده، والسالب بيتمنع وقت إعادة البناء زي الإنشاء بالظبط.
+
+def _purge(db: Session, permit: StockPermit) -> None:
+    from sqlalchemy import delete
+
+    from src.services.document_edit_service import _drop_stock, _restore_batches
+
+    _restore_batches(db, document_type=StockDoc.PERMIT, document_id=permit.id)
+    # السطور الأول: كل سطر شايل رقم حركته (`stock_movement_id`)، فالحركة مابتتمسحش وهو موجود.
+    db.flush()
+    db.execute(delete(StockPermitLine).where(StockPermitLine.permit_id == permit.id))
+    _drop_stock(db, source_doc_type=StockDoc.PERMIT, source_doc_id=permit.id)
+    db.flush()
+    db.expire(permit, ["lines"])
+
+
+def _assert_not_negative(db: Session, warehouse_id: int, item_ids: set[int]) -> None:
+    """شيل إذن إضافة (أو تقليل كميته) ممكن يخلّي رصيد صنف بالسالب لو البضاعة اتصرفت بعده —
+    نفس قاعدة «مافيش رصيد سالب» اللي على الإنشاء، والعملية كلها بترجع لو اتكسرت."""
+    for item_id in item_ids:
+        bal = stock_service.on_hand(db, item_id, LocationKind.warehouse, warehouse_id)
+        if bal < ZERO:
+            item = db.get(Item, item_id)
+            raise StockPermitError(
+                f"مش هينفع — رصيد «{item.name if item else item_id}» هيبقى بالسالب ({bal}): "
+                "البضاعة دي اتصرفت بعد الإذن.")
+
+
+def _reversal_of(db: Session, permit: StockPermit) -> StockPermit | None:
+    return db.scalar(select(StockPermit).where(StockPermit.reverses_id == permit.id))
+
+
+def update_permit(
+    db: Session, *, permit_id: int, warehouse_id: int, lines: list[dict], actor_user_id: int,
+    reason: str | None = None, notes: str | None = None, statement1: str | None = None,
+    external_document_number: str | None = None, permit_date: date | None = None,
+) -> StockPermit:
+    permit = db.get(StockPermit, permit_id)
+    if permit is None:
+        raise StockPermitError("الإذن غير موجود.")
+    if permit.reverses_id is not None:
+        raise StockPermitError("ده إذن عكس — امسحه بدل ما تعدّله.")
+    if _reversal_of(db, permit) is not None:
+        raise StockPermitError("الإذن ده اتعكس — امسح إذن العكس الأول وبعدين عدّله.")
+    built = _validate_lines(db, permit.kind, warehouse_id, lines)
+    before = {"doc": permit.document_number, "cost": str(permit.total_cost),
+              "warehouse_id": permit.warehouse_id}
+    touched = {ln.item_id for ln in permit.lines}
+    old_wh = permit.warehouse_id
+    _purge(db, permit)
+    permit.warehouse_id = warehouse_id
+    permit.permit_date = permit_date
+    permit.reason, permit.notes = reason, notes
+    permit.statement1, permit.external_document_number = statement1, external_document_number
+    db.flush()
+    _post_lines(db, permit, built, actor_user_id)
+    _assert_not_negative(db, old_wh, touched)
     audit_service.record(
-        db, action="stock_permit.create", actor_user_id=actor_user_id,
-        entity_type="stock_permit", entity_id=permit.id,
-        after={"doc": permit.document_number, "kind": permit_kind.value, "cost": str(total)},
+        db, action="stock_permit.update", actor_user_id=actor_user_id,
+        entity_type="stock_permit", entity_id=permit.id, before=before,
+        after={"doc": permit.document_number, "cost": str(permit.total_cost),
+               "warehouse_id": permit.warehouse_id},
     )
     return permit
+
+
+def delete_permit(db: Session, *, permit_id: int, actor_user_id: int) -> None:
+    """الإذن وأثره — ولو كان اتعكس، إذن العكس بيروح معاه (مالوش معنى من غيره)."""
+    permit = db.get(StockPermit, permit_id)
+    if permit is None:
+        raise StockPermitError("الإذن غير موجود.")
+    victims = [permit]
+    rev = _reversal_of(db, permit)
+    if rev is not None:
+        victims.insert(0, rev)
+    # الاتنين بيتشالوا الأول وبعدين الفحص: شيل إذن العكس لوحده ممكن يبان سالب لحظياً
+    # قبل ما أصله يتشال وراه.
+    touched: dict[int, set[int]] = {}
+    for p in victims:
+        touched.setdefault(p.warehouse_id, set()).update(ln.item_id for ln in p.lines)
+    for p in victims:
+        doc = p.document_number
+        _purge(db, p)
+        db.delete(p)
+        db.flush()
+        audit_service.record(
+            db, action="stock_permit.delete", actor_user_id=actor_user_id,
+            entity_type="stock_permit", entity_id=p.id,
+            before={"doc": doc, "cascade_from": permit.document_number if p is not permit else None},
+        )
+    for wh, items in touched.items():
+        _assert_not_negative(db, wh, items)
 
 
 def reverse_permit(db: Session, *, permit_id: int, actor_user_id: int) -> StockPermit:

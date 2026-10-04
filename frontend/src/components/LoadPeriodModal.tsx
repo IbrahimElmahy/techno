@@ -155,7 +155,7 @@ export default function LoadPeriodModal({
       ) : (
         <>
           <DateRangeFilter value={range} onChange={(v: any) => setRange(v)} />
-          <div style={{ marginTop: 10, color: '#6b6b6b', fontSize: 13 }}>
+          <div style={{ marginTop: 10, color: '#6b6b6b', fontSize: 15 }}>
             {openNewest
               ? 'هيتفتح أحدث مستند في الفترة، وتتنقّل بينهم بـ«السابق» و«التالى».'
               : 'هيتحمّل مستندات الفترة دي في كشف، وتدوس على اللي عايزه فيفتح.'}

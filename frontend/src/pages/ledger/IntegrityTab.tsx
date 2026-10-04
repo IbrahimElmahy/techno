@@ -82,7 +82,7 @@ export default function IntegrityTab() {
       title="سلامة الدفاتر"
       extra={<Button icon={<ReloadOutlined />} onClick={load} loading={loading}>فحص</Button>}
     >
-      <div style={{ marginBottom: 12, color: '#888', fontSize: 13 }}>
+      <div style={{ marginBottom: 12, color: '#888', fontSize: 15 }}>
         كل قيد في دفتر عليه سلسلة بياخد بصمة محسوبة من محتواه ومن بصمة القيد اللي قبله.
         الفحص ده بيعيد حسابها من أول السلسلة — فأي تغيير حصل من ورا النظام بيوقف عليه
         بالظبط، هو وكل اللي بعده.
@@ -90,11 +90,11 @@ export default function IntegrityTab() {
       {covered.length === 0 ? (
         <Empty description="مافيش دفتر شغّالة عليه سلسلة التجزئة — شغّلها من تبويب «الدفاتر»." />
       ) : broken.length === 0 ? (
-        <Tag color="green" style={{ marginBottom: 12, fontSize: 14, padding: '4px 10px' }}>
+        <Tag color="green" style={{ marginBottom: 12, fontSize: 15, padding: '4px 10px' }}>
           كل الدفاتر المغطّاة سليمة
         </Tag>
       ) : (
-        <Tag color="red" style={{ marginBottom: 12, fontSize: 14, padding: '4px 10px' }}>
+        <Tag color="red" style={{ marginBottom: 12, fontSize: 15, padding: '4px 10px' }}>
           فيه {broken.length} دفتر سلسلته مكسورة
         </Tag>
       )}

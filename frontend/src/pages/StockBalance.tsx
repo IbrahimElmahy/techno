@@ -152,7 +152,7 @@ export default function StockBalance() {
 
   const priceCell = (label: string, value: any) => (
     <div style={{ display: 'flex', border: '1px solid #e6efe3', borderRadius: 6, overflow: 'hidden' }}>
-      <div style={{ background: '#f2f9f3', padding: '6px 10px', fontSize: 12, fontWeight: 600,
+      <div style={{ background: '#f2f9f3', padding: '6px 10px', fontSize: 14, fontWeight: 600,
                     minWidth: 92, textAlign: 'center' }}>{label}</div>
       <div style={{ padding: '6px 10px', flex: 1, textAlign: 'center', fontWeight: 600 }}>
         {money(value)}
@@ -255,7 +255,7 @@ export default function StockBalance() {
               </div>
             ))}
             {categories.length === 0 && (
-              <div style={{ padding: 12, color: '#6b6b6b', fontSize: 12 }}>لا توجد فئات مطابقة</div>
+              <div style={{ padding: 12, color: '#6b6b6b', fontSize: 14 }}>لا توجد فئات مطابقة</div>
             )}
           </div>
         </Col>
@@ -276,12 +276,12 @@ export default function StockBalance() {
                   background: selectedId === p.id ? '#eef7e8' : undefined,
                   borderInlineStart: selectedId === p.id ? '3px solid #6AB42D' : '3px solid transparent',
                 }}>
-                <span style={{ color: '#6b6b6b', fontSize: 12, direction: 'ltr' }}>{p.code || '-'}</span>
+                <span style={{ color: '#6b6b6b', fontSize: 14, direction: 'ltr' }}>{p.code || '-'}</span>
                 <span style={{ fontWeight: selectedId === p.id ? 700 : 400 }}>{p.name}</span>
               </div>
             ))}
           </div>
-          <div style={{ marginTop: 6, color: '#6b6b6b', fontSize: 12 }}>
+          <div style={{ marginTop: 6, color: '#6b6b6b', fontSize: 14 }}>
             {visibleItems.length} من {products.length} صنف
           </div>
         </Col>

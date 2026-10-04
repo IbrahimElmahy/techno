@@ -112,8 +112,8 @@ type CellStatus = 'idle' | 'saving' | 'saved';
 
 const CellStatusIcon = ({ status }: { status: CellStatus }) => (
   <span style={{ width: 12, display: 'inline-flex', justifyContent: 'center', flex: 'none' }}>
-    {status === 'saving' && <LoadingOutlined style={{ fontSize: 11 }} />}
-    {status === 'saved' && <CheckCircleFilled style={{ fontSize: 11, color: '#52c41a' }} />}
+    {status === 'saving' && <LoadingOutlined style={{ fontSize: 14 }} />}
+    {status === 'saved' && <CheckCircleFilled style={{ fontSize: 14, color: '#52c41a' }} />}
   </span>
 );
 

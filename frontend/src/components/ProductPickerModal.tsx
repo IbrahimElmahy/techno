@@ -31,6 +31,11 @@ interface Props {
   /** Category currently in focus; lifted so the caller's stock panel can follow it. */
   activeCategory: string | null;
   onCategoryChange: (category: string | null) => void;
+  /**
+   * من غير شريط التصنيفات (طلب العميل ٢٠٢٦-١٠-٠٥ — إذن التحويل والصرف والإضافة): الأصناف
+   * كلها في قايمة واحدة بالبحث، من غير تقسيم بالفئة.
+   */
+  hideCategories?: boolean;
   /** `qty` = الكمية اللي اتكتبت على الكارت (شكل الكروت بس) — `null` لو ماتكتبتش. */
   onPick: (itemId: number, qty?: number | null) => void;
   /**
@@ -98,7 +103,7 @@ type PickerMemory = { query: string; scrollTop: number; cursor: number; lastPick
 const memories: Record<string, PickerMemory> = {};
 
 export default function ProductPickerModal({
-  open, categories, categoryLabels, products, activeCategory, onCategoryChange,
+  open, categories, categoryLabels, products, activeCategory, onCategoryChange, hideCategories,
   onPick, onPickMany, onCancel, title = 'اختر الصنف', availableFor, priceFor,
   disableOutOfStock = false, availabilityVersion, hidePurchasePrice = false,
   variant = 'cards', warehouseName, priceTier, priceTierLabel,
@@ -570,7 +575,7 @@ export default function ProductPickerModal({
           </div>
 
           <div className="ppk-split">
-            <aside className="ppk-side-cats">
+            {!hideCategories && <aside className="ppk-side-cats">
               <div className="ppk-cats-head">
                 <span>التصنيفات والمجموعات</span>
                 <span className="ppk-cats-badge">{qty(catTotal)}</span>
@@ -602,7 +607,7 @@ export default function ProductPickerModal({
                   </button>
                 )}
               </div>
-            </aside>
+            </aside>}
 
             <section className="ppk-main">
               <div className="ppk-main-head">
@@ -859,7 +864,7 @@ export default function ProductPickerModal({
                     }}>
                     {catLabel(g.value)}
                     {(stockCounts || g.children.length > 0) && (
-                      <span style={{ fontSize: 12.5, opacity: 0.75, marginInlineStart: 6 }}>
+                      <span style={{ fontSize: 14, opacity: 0.75, marginInlineStart: 6 }}>
                         ({stockCounts ? countOf(g.value, g.children) : g.children.length})
                       </span>
                     )}
@@ -871,14 +876,14 @@ export default function ProductPickerModal({
                         onClick={() => { setActiveRoot(g.value); onCategoryChange(c); }}
                         style={{
                           padding: '6px 10px', borderRadius: 6, marginBottom: 4,
-                          marginInlineStart: 14, cursor: 'pointer', fontSize: 13,
+                          marginInlineStart: 14, cursor: 'pointer', fontSize: 15,
                           background: active ? '#6AB42D' : '#fbfdfa',
                           color: active ? '#fff' : undefined,
                           border: '1px solid #eef4ec', fontWeight: active ? 700 : 400,
                         }}>
                         {catLabel(c)}
                         {stockCounts && (
-                          <span style={{ fontSize: 12.5, opacity: 0.75, marginInlineStart: 6 }}>
+                          <span style={{ fontSize: 14, opacity: 0.75, marginInlineStart: 6 }}>
                             ({countOf(c)})
                           </span>
                         )}
@@ -950,17 +955,17 @@ export default function ProductPickerModal({
                   </span>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
                     {priceFor && priceFor(p.id) != null && (
-                      <Tag color="blue" style={{ fontWeight: 600, fontSize: 12.5, padding: '2px 8px', borderRadius: 6 }}>
+                      <Tag color="blue" style={{ fontWeight: 600, fontSize: 14, padding: '2px 8px', borderRadius: 6 }}>
                         السعر: {typeof priceFor(p.id) === 'number' ? fmtPrice(priceFor(p.id)) : priceFor(p.id)}
                       </Tag>
                     )}
                     {!priceFor && !hidePurchasePrice && p.purchase_price != null && Number(p.purchase_price) > 0 && (
-                      <Tag color="blue" style={{ fontWeight: 600, fontSize: 12.5, padding: '2px 8px', borderRadius: 6 }}>
+                      <Tag color="blue" style={{ fontWeight: 600, fontSize: 14, padding: '2px 8px', borderRadius: 6 }}>
                         شراء: {fmtPrice(p.purchase_price)}
                       </Tag>
                     )}
                     {!priceFor && (p.sale_price != null || p.consumer_price != null) && Number(p.sale_price || p.consumer_price) > 0 && (
-                      <Tag color="cyan" style={{ fontWeight: 600, fontSize: 12.5, padding: '2px 8px', borderRadius: 6 }}>
+                      <Tag color="cyan" style={{ fontWeight: 600, fontSize: 14, padding: '2px 8px', borderRadius: 6 }}>
                         بيع: {fmtPrice(p.sale_price || p.consumer_price)}
                       </Tag>
                     )}
@@ -969,7 +974,7 @@ export default function ProductPickerModal({
                         color={available > 0 ? 'success' : 'error'}
                         style={{
                           fontWeight: 700,
-                          fontSize: 12.5,
+                          fontSize: 14,
                           padding: '2px 8px',
                           borderRadius: 6,
                         }}
@@ -989,7 +994,7 @@ export default function ProductPickerModal({
 
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center',
         marginTop: 10, gap: 12, flexWrap: 'wrap' }}>
-        <span style={{ fontSize: 12.5, color: '#6b6b6b' }}>
+        <span style={{ fontSize: 14, color: '#6b6b6b' }}>
           اكتب للبحث · ↑↓ للتنقل · Enter {bulk ? 'للتحديد' : 'للإضافة'}
         </span>
         {onPickMany && (

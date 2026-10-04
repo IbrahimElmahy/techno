@@ -126,7 +126,7 @@ export default function WarehouseGate({
           }}
           options={normalizedOptions} filterOption={searchFilter} filterSort={searchRank}/>
         {subtitle && (
-          <div style={{ marginTop: 10, color: '#6b6b6b', fontSize: 13 }}>
+          <div style={{ marginTop: 10, color: '#6b6b6b', fontSize: 15 }}>
             {subtitle}
           </div>
         )}

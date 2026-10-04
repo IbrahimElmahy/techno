@@ -180,7 +180,7 @@ export default function ColumnSettings({
           boxShadow: '0 4px 16px rgba(0,0,0,0.12)', maxHeight: '60vh', overflowY: 'auto',
           minWidth: 220,
         }}>
-          <div style={{ fontSize: 12.5, color: '#6b6b6b', marginBottom: 8, fontWeight: 600 }}>
+          <div style={{ fontSize: 14, color: '#6b6b6b', marginBottom: 8, fontWeight: 600 }}>
             الأعمدة الظاهرة{onMove ? ' وترتيبها' : ''}
           </div>
           <Space direction="vertical" style={{ width: '100%' }}>
@@ -208,7 +208,7 @@ export default function ColumnSettings({
                 </Checkbox>
                 {onMove && (
                   <HolderOutlined title="اسحب لتغيير الترتيب"
-                    style={{ cursor: 'grab', color: '#555b65', fontSize: 14 }} />
+                    style={{ cursor: 'grab', color: '#555b65', fontSize: 15 }} />
                 )}
               </div>
             ))}

@@ -81,7 +81,7 @@ export default function DocumentToolbar({ actions, inline = false, variant = 'pl
             <Button size="small" icon={a.icon} disabled={a.disabled} onClick={a.onClick}
               type={a.primary ? 'primary' : 'default'} danger={a.danger}
               className={a.primary ? 'doc-tb-primary' : undefined}
-              style={{ fontWeight: 600, fontSize: 12.5 }}>
+              style={{ fontWeight: 600, fontSize: 14 }}>
               {a.label}
             </Button>
           </Tooltip>
@@ -129,8 +129,8 @@ export default function DocumentToolbar({ actions, inline = false, variant = 'pl
                 e.currentTarget.style.borderColor = 'transparent';
               }}
             >
-              <span style={{ fontSize: 14, display: 'block', lineHeight: 1 }}>{a.icon}</span>
-              <span style={{ fontSize: 12.5, fontWeight: 600 }}>{a.label}</span>
+              <span style={{ fontSize: 15, display: 'block', lineHeight: 1 }}>{a.icon}</span>
+              <span style={{ fontSize: 14, fontWeight: 600 }}>{a.label}</span>
             </button>
           </Tooltip>
         );

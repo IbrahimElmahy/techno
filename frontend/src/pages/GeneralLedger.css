@@ -11,13 +11,13 @@
   border-bottom-color: #f1f5f9;
 }
 .list-page .gl-tab > .ant-card > .ant-card-head .ant-card-head-title {
-  font-size: 14px;
+  font-size: 15px;
   font-weight: 700;
   color: #334155;
 }
 .list-page .gl-tab > .ant-card > .ant-card-head .ant-btn {
   border-radius: 8px;
-  font-weight: 600;
+  font-weight: 700;
 }
 .list-page .gl-tab > .ant-card > .ant-card-body {
   padding: 10px 0 4px;

@@ -236,7 +236,7 @@ export default function TrialBalanceTab() {
               title={() => <strong style={{ color: '#d46b08' }}>بدون تصنيف</strong>}
             />
           )}
-          <div style={{ marginTop: 12, color: '#888', fontSize: 13 }}>
+          <div style={{ marginTop: 12, color: '#888', fontSize: 15 }}>
             الإجمالي العام: مدين {egp(data.grand_total_debit)} · دائن {egp(data.grand_total_credit)}
             {' '}{data.balanced ? <Tag color="green">متوازن ✓</Tag> : <Tag color="red">غير متوازن</Tag>}
           </div>
@@ -258,7 +258,7 @@ export default function TrialBalanceTab() {
               </Table.Summary>
             )}
           />
-          <div style={{ marginTop: 12, color: '#888', fontSize: 13 }}>
+          <div style={{ marginTop: 12, color: '#888', fontSize: 15 }}>
             مشتقّ بالكامل من دفتر الأستاذ — إجمالي المدين = إجمالي الدائن دائماً.
           </div>
         </>

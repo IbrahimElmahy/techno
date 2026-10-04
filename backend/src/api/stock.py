@@ -606,6 +606,49 @@ def get_permit(
     return _permit_out(db, _seen_permit(db, permit_id, current))
 
 
+@router.put("/permits/{permit_id}", response_model=PermitOut)
+def update_permit(
+    permit_id: int,
+    body: PermitIn,
+    current: CurrentUser = Depends(require_capability(CAP_TRANSFER_INITIATE)),
+    db: Session = Depends(get_db),
+) -> PermitOut:
+    """تعديل الإذن في مكانه — نفس رقمه، والأثر القديم بيتشال ويتبني من جديد (٢٠٢٦-١٠-٠٥)."""
+    _seen_permit(db, permit_id, current)
+    try:
+        permit = stock_permit_service.update_permit(
+            db, permit_id=permit_id, warehouse_id=body.warehouse_id,
+            lines=[ln.model_dump() for ln in body.lines], actor_user_id=current.id,
+            reason=body.reason, notes=body.notes, statement1=body.statement1,
+            external_document_number=body.external_document_number,
+            permit_date=body.permit_date,
+        )
+    except stock_permit_service.StockPermitError as exc:
+        raise HTTPException(409, {"code": "permit_invalid", "message": str(exc)}) from exc
+    except StockError as exc:
+        raise HTTPException(409, {"code": "insufficient_stock", "message": str(exc)}) from exc
+    out = _permit_out(db, permit)
+    db.commit()
+    return out
+
+
+@router.delete("/permits/{permit_id}", status_code=204)
+def delete_permit(
+    permit_id: int,
+    current: CurrentUser = Depends(require_capability(CAP_TRANSFER_INITIATE)),
+    db: Session = Depends(get_db),
+) -> None:
+    """حذف الإذن وأثره على المخزن (ولو اتعكس، إذن العكس معاه)."""
+    _seen_permit(db, permit_id, current)
+    try:
+        stock_permit_service.delete_permit(db, permit_id=permit_id, actor_user_id=current.id)
+    except stock_permit_service.StockPermitError as exc:
+        raise HTTPException(409, {"code": "permit_invalid", "message": str(exc)}) from exc
+    except StockError as exc:
+        raise HTTPException(409, {"code": "insufficient_stock", "message": str(exc)}) from exc
+    db.commit()
+
+
 @router.post("/permits/{permit_id}/reverse", response_model=PermitOut, status_code=201)
 def reverse_permit(
     permit_id: int,

@@ -1572,13 +1572,13 @@ export default function Purchases() {
         const name = line.item_id ? itemName(line.item_id) : 'اختر الصنف';
         return (
           <div>
-            <b className="eg-ellipsis" title={name} style={{ fontSize: 13 }}>{name}</b>
+            <b className="eg-ellipsis" title={name} style={{ fontSize: 15 }}>{name}</b>
             {itemObj?.purchase_price && Number(itemObj.purchase_price) > 0 ? (
-              <div style={{ fontSize: 12.5, color: '#1677ff', marginTop: 1 }}>
+              <div style={{ fontSize: 14, color: '#1677ff', marginTop: 1 }}>
                 شراء: {fmtMoney(itemObj.purchase_price)}
               </div>
             ) : itemObj?.sale_price && Number(itemObj.sale_price) > 0 ? (
-              <div style={{ fontSize: 12.5, color: '#52c41a', marginTop: 1 }}>
+              <div style={{ fontSize: 14, color: '#52c41a', marginTop: 1 }}>
                 بيع: {fmtMoney(itemObj.sale_price)}
               </div>
             ) : null}
@@ -1832,12 +1832,12 @@ export default function Purchases() {
                           <td colSpan={lineGrid.count}>
                             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                               <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                                <Tag color="success" style={{ fontWeight: 700, fontSize: 12.5, padding: '0 6px', borderRadius: 4, margin: 0 }}>
+                                <Tag color="success" style={{ fontWeight: 700, fontSize: 14, padding: '0 6px', borderRadius: 4, margin: 0 }}>
                                   {group.category ? (categoryLabels[group.category] || group.category) : 'بدون فئة'}
                                 </Tag>
-                                <span style={{ color: '#64748b', fontSize: 12.5, fontWeight: 600 }}>({group.items.length} صنف)</span>
+                                <span style={{ color: '#64748b', fontSize: 14, fontWeight: 600 }}>({group.items.length} صنف)</span>
                               </div>
-                              <span style={{ color: '#64748b', fontSize: 12.5, fontWeight: 600 }}>
+                              <span style={{ color: '#64748b', fontSize: 14, fontWeight: 600 }}>
                                 إجمالي الفئة: {fmtMoney(group.items.reduce((s, l) => s + lineTotal(l), 0))}
                               </span>
                             </div>
@@ -2022,7 +2022,7 @@ export default function Purchases() {
             ? <DraftTag onDelete={() => removeDraft(r.__draft.id)} />
             : <Tag color={r.kind === 'purchase' ? 'blue' : 'orange'}>{doc}</Tag>}
           {r.parent_document_number && (
-            <span style={{ fontSize: 12.5, color: '#555b65' }}>عن: {r.parent_document_number}</span>
+            <span style={{ fontSize: 14, color: '#555b65' }}>عن: {r.parent_document_number}</span>
           )}
         </Space>
       ),

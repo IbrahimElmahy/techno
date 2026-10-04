@@ -333,7 +333,7 @@ export default function AccountStatement() {
     <span style={{ display: 'flex', justifyContent: 'space-between', gap: 12 }}>
       <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{o.label}</span>
       {o.data?.code && (
-        <span style={{ color: '#94a3b8', fontSize: 12, flexShrink: 0 }} dir="ltr">{o.data.code}</span>
+        <span style={{ color: '#94a3b8', fontSize: 14, flexShrink: 0 }} dir="ltr">{o.data.code}</span>
       )}
     </span>
   );
@@ -671,7 +671,7 @@ export default function AccountStatement() {
         return l.doc_statement && l.doc_statement !== v && !l.cash_on_invoice ? (
           <Space direction="vertical" size={0}>
             <span>{text}</span>
-            <span style={{ color: '#8c8c8c', fontSize: 12 }}>{l.doc_statement}</span>
+            <span style={{ color: '#8c8c8c', fontSize: 14 }}>{l.doc_statement}</span>
           </Space>
         ) : text;
       } },
@@ -928,7 +928,7 @@ export default function AccountStatement() {
     const open = Math.abs(Number(l.residual || 0));
     return (
       <div style={{ marginTop: 10 }}>
-        <div style={{ fontSize: 12, color: '#8c8c8c', marginBottom: 4 }}>
+        <div style={{ fontSize: 14, color: '#8c8c8c', marginBottom: 4 }}>
           المطابقة
           {l.payment_state_label && <Tag style={{ marginInlineStart: 6 }}
             color={l.payment_state === 'paid' ? 'green'
@@ -1182,7 +1182,7 @@ export default function AccountStatement() {
             onChange={(e) => setAllCustomerAccounts(e.target.checked)}>
             كل حسابات العميل
             {' '}
-            <span style={{ color: '#8c8c8c', fontSize: 12 }}>
+            <span style={{ color: '#8c8c8c', fontSize: 14 }}>
               ({customerFamilies.map((f) => `${f.family ?? 'بدون نوع'} ${money(f.balance)}`)
                 .join(' · ')})
             </span>
@@ -1243,7 +1243,7 @@ export default function AccountStatement() {
                   الحساب في السيرفر. رقمان لنفس السؤال في شاشتين يتفقان بالصدفة
                   لا بالبناء، وأول يوم يختلفان لا أحد يعرف أيهما الصحيح. */}
               <Space size={4} wrap>
-                <span style={{ fontSize: 12, color: '#8c8c8c' }}>أعمار المستحق:</span>
+                <span style={{ fontSize: 14, color: '#8c8c8c' }}>أعمار المستحق:</span>
                 {([
                   ['الحالي', aging?.current, '#52c41a'],
                   ['١–٣٠ يوم', aging?.d30, '#faad14'],
@@ -1258,14 +1258,14 @@ export default function AccountStatement() {
                 ))}
               </Space>
               {Number(aging?.credit_open || 0) > 0 && (
-                <span style={{ fontSize: 12, color: '#8c8c8c' }}>
+                <span style={{ fontSize: 14, color: '#8c8c8c' }}>
                   مطلوب <b>{num(aging?.debit_open || 0)}</b> ·
                   دفعات لسه ماتخصمتش من فاتورة <b>{num(aging?.credit_open || 0)}</b> ·
                   الصافي هو المستحق
                 </span>
               )}
               {!totalDue && (
-                <span style={{ fontSize: 12, color: '#8c8c8c' }}>
+                <span style={{ fontSize: 14, color: '#8c8c8c' }}>
                   لا يوجد مستحق مفتوح على هذا الحساب.
                 </span>
               )}

@@ -152,6 +152,9 @@ def list_transfers(
     item_id: int | None = None,
     limit: int | None = None,
     offset: int = 0,
+    # «تحميل» فترة في شاشة الإذن (٢٠٢٦-١٠-٠٥) — بتاريخ الإذن، وإلا يوم إنشائه.
+    date_from: date | None = None,
+    date_to: date | None = None,
     current: CurrentUser = Depends(require_capability(CAP_TRANSFER_INITIATE)),
     db: Session = Depends(get_db),
 ) -> list[TransferOut]:
@@ -165,6 +168,14 @@ def list_transfers(
         stmt = stmt.where(StockTransfer.status == status_filter)
     if item_id is not None:
         stmt = stmt.where(StockTransfer.item_id == item_id)
+    if date_from or date_to:
+        from sqlalchemy import Date, cast, func
+
+        day = func.coalesce(StockTransfer.transfer_date, cast(StockTransfer.created_at, Date))
+        if date_from:
+            stmt = stmt.where(day >= date_from)
+        if date_to:
+            stmt = stmt.where(day <= date_to)
     stmt = stmt.order_by(*newest_first(StockTransfer, StockTransfer.transfer_date)).options(
         selectinload(StockTransfer.lines))
     if limit is not None:

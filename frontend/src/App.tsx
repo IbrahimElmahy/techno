@@ -162,6 +162,11 @@ export default function App() {
            */
           // ١٦ (طلب العميل ٢٠٢٦-١٠-٠٢: «الخط مش واضح… كبّر الخط»).
           fontSize: 16,
+          // الصغير والكبير كمان (٢٠٢٦-١٠-٠٥): antd بتستعمل `fontSizeSM` (افتراضي ١٢) للتاجات
+          // والشارات والمكونات الصغيرة — وده كان أصغر كلام في الشاشة.
+          fontSizeSM: 14,
+          fontSizeLG: 18,
+          fontWeightStrong: 800,
           colorText: '#141414',
           colorTextSecondary: '#303030',
           colorTextDescription: '#4a4a4a',

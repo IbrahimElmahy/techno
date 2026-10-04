@@ -48,7 +48,7 @@ export default function CustomerAccountPanel({
         borderRadius: 8, background: owes ? '#fff1f0' : credit ? '#f6ffed' : '#fafafa',
         border: `1px solid ${owes ? '#ffccc7' : credit ? '#b7eb8f' : '#eee'}`,
       }}>
-        <span style={{ fontSize: 13, color: '#555' }}>{label}:</span>
+        <span style={{ fontSize: 15, color: '#555' }}>{label}:</span>
         <b style={{ fontSize: 16, color }}>{value}</b>
       </div>
     );

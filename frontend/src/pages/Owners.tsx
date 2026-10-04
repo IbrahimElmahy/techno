@@ -217,7 +217,7 @@ export default function Owners() {
       sorter: (a: OwnerListItem, b: OwnerListItem) => a.inspection_count - b.inspection_count,
       render: (cnt: number) =>
         cnt > 0 ? (
-          <Tag color="blue" style={{ fontSize: 13, padding: '2px 8px' }}>
+          <Tag color="blue" style={{ fontSize: 15, padding: '2px 8px' }}>
             {cnt}
           </Tag>
         ) : (

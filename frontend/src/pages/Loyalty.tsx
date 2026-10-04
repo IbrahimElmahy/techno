@@ -534,7 +534,7 @@ export default function Loyalty() {
       count: couponKinds.length,
       children: (
         <div>
-          <div style={{ color: '#555b65', fontSize: 12.5, padding: '6px 4px 8px' }}>
+          <div style={{ color: '#555b65', fontSize: 14, padding: '6px 4px 8px' }}>
             الفئة مع رقم الكوبون هما هويته: «٥ ذهبي» غير «٥ فضي».
           </div>
           <Table
@@ -546,7 +546,7 @@ export default function Loyalty() {
             pagination={false}
             columns={[
               { title: 'اسم الفئة / النوع', dataIndex: 'label', key: 'label',
-                render: (l: string) => <Tag color="blue" style={{ fontSize: 13, padding: '2px 8px' }}>{l}</Tag> },
+                render: (l: string) => <Tag color="blue" style={{ fontSize: 15, padding: '2px 8px' }}>{l}</Tag> },
               { title: 'القيمة المرجعية', dataIndex: 'value', key: 'value' },
               { title: 'الحالة', dataIndex: 'active', key: 'active',
                 render: (active: boolean) => (

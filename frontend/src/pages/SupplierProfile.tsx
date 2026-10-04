@@ -805,7 +805,7 @@ export default function SupplierProfile() {
                                       color: Number(statement.total_overdue || 0) ? '#cf1322' : '#52c41a' }} />
                                 </Col>
                                 <Col xs={24} md={14}>
-                                  <div style={{ fontSize: 12, color: '#8c8c8c', marginBottom: 4 }}>
+                                  <div style={{ fontSize: 14, color: '#8c8c8c', marginBottom: 4 }}>
                                     أعمار المستحق
                                   </div>
                                   <Space size={4} wrap>
@@ -825,7 +825,7 @@ export default function SupplierProfile() {
                                 </Col>
                               </StatsRow>
                   {Number(statement.aging?.credit_open || 0) > 0 && (
-                    <div style={{ fontSize: 12, color: '#8c8c8c', marginTop: 6 }}>
+                    <div style={{ fontSize: 14, color: '#8c8c8c', marginTop: 6 }}>
                       مستحق للمورد <b>{money(statement.aging?.debit_open || 0)}</b> ·
                       دفعات لسه ماتخصمتش من فاتورة <b>{money(statement.aging?.credit_open || 0)}</b> ·
                       الصافي هو المستحق فوق

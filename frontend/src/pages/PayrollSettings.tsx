@@ -310,7 +310,7 @@ export default function PayrollSettings() {
               <InputNumber style={{ width: '100%' }} min={1} max={31}
                 value={settings.days_per_month}
                 onChange={(v) => saveSettings({ days_per_month: v })} />
-              <div style={{ color: '#888', fontSize: 12.5, marginTop: 4 }}>
+              <div style={{ color: '#888', fontSize: 14, marginTop: 4 }}>
                 «ثلاثون» أم «أيام الشهر الفعلية» — كلاهما مستعمل، وليس أحدهما خطأً.
               </div>
             </Col>
@@ -402,7 +402,7 @@ export default function PayrollSettings() {
                 <div style={{ marginBottom: 4 }}>الحد الأقصى للأجر</div>
                 <InputNumber style={{ width: '100%' }} value={form.max_base}
                   onChange={(v) => setForm({ ...form, max_base: v })} />
-                <div style={{ color: '#888', fontSize: 12.5, marginTop: 4 }}>
+                <div style={{ color: '#888', fontSize: 14, marginTop: 4 }}>
                   الأجر فوق السقف بيدفع على السقف.
                 </div>
               </Col>
@@ -475,7 +475,7 @@ export default function PayrollSettings() {
                   <Statistic title="شهرياً"
                     value={money(previewTax(trial, bands, form.annual_exemption || 0) / 12)} />
                 </Space>
-                <div style={{ color: '#888', fontSize: 12.5, marginTop: 6 }}>
+                <div style={{ color: '#888', fontSize: 14, marginTop: 6 }}>
                   المعاينة دي عشان تراجع الشرايح قبل ما تحفظ — كل رقم بيوصل قسيمة راتب بيتحسب
                   على السيرفر.
                 </div>
@@ -521,7 +521,7 @@ export default function PayrollSettings() {
               ]} />
           </Col>
           <Col span={24}>
-            <div style={{ color: '#888', fontSize: 12.5 }}>
+            <div style={{ color: '#888', fontSize: 14 }}>
               هذان سؤالان مختلفان: بدل الانتقالات قد يكون خارج الأجر التأميني وداخل وعاء الضريبة.
             </div>
           </Col>

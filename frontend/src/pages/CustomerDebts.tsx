@@ -666,7 +666,7 @@ function CustomerOpsDrawer({ row, asOf, onClose, onOpenStatement, onOpenCard }: 
 
   const tile = (label: string, value: unknown, color?: string) => (
     <div style={{ padding: '6px 12px', background: '#fafafa', border: '1px solid #f0f0f0', borderRadius: 8 }}>
-      <div style={{ fontSize: 12, color: '#8c8c8c' }}>{label}</div>
+      <div style={{ fontSize: 14, color: '#8c8c8c' }}>{label}</div>
       <div style={{ fontWeight: 700, color }}>{money(value)}</div>
     </div>
   );
@@ -733,7 +733,7 @@ function CustomerOpsDrawer({ row, asOf, onClose, onOpenStatement, onOpenCard }: 
                 tableLayout="fixed"
                 pagination={{ pageSize: 50, showSizeChanger: false, hideOnSinglePage: true }}
               />
-              <Space size={20} wrap style={{ fontSize: 13 }}>
+              <Space size={20} wrap style={{ fontSize: 15 }}>
                 <span>رصيد أول المدة: <b>{money(data.opening_balance)}</b></span>
                 <span>إجمالي مدين: <b>{money(data.total_debit)}</b></span>
                 <span>إجمالي دائن: <b>{money(data.total_credit)}</b></span>

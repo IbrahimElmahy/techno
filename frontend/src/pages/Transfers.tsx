@@ -18,8 +18,9 @@ import {
   PlusOutlined, CheckCircleOutlined, RollbackOutlined, DeleteOutlined,
   ClearOutlined, ArrowLeftOutlined, ArrowRightOutlined, CloseCircleOutlined,
   FileSearchOutlined, EditOutlined, EyeOutlined, PrinterOutlined, ExclamationCircleOutlined,
-  CheckOutlined, SwapOutlined, SearchOutlined, ShoppingCartOutlined, MinusOutlined,
+  CheckOutlined, SwapOutlined, SearchOutlined, ShoppingCartOutlined, MinusOutlined, ReloadOutlined,
 } from '@ant-design/icons';
+import LoadPeriodModal from '../components/LoadPeriodModal';
 import { useSearchParams } from 'react-router-dom';
 import { api } from '../api/client';
 import { useDraft } from '../components/useDraft';
@@ -159,6 +160,9 @@ export default function Transfers() {
   const canApprove = can('transfer.approve');
 
   const [transfers, setTransfers] = useState<TransferRecord[]>([]);
+  /** «تحميل» — أذون فترة، والسابق/التالى بيمشوا جوّاها (زي فاتورة البيع، ٢٠٢٦-١٠-٠٥). */
+  const [periodRows, setPeriodRows] = useState<TransferRecord[] | null>(null);
+  const [loadRangeOpen, setLoadRangeOpen] = useState(false);
   const [warehouses, setWarehouses] = useState<any[]>([]);
   const [custodies, setCustodies] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
@@ -187,17 +191,15 @@ export default function Transfers() {
   const [statement1, setStatement1] = useState('');
   const [externalDocNumber, setExternalDocNumber] = useState('');
   const [docNotes, setDocNotes] = useState('');
-  /** السطور متجمّعة بالفئة — نفس ترويسات الفئات في فاتورة البيع لما يبقى فيه أكتر من فئة. */
-  const linesByCategory = useMemo(() => {
-    const groups: { category: string | null; items: TransferLine[] }[] = [];
-    lines.forEach((l) => {
-      let g = groups.find((x) => x.category === (l.category ?? null));
-      if (!g) { g = { category: l.category ?? null, items: [] }; groups.push(g); }
-      g.items.push(l);
-    });
-    return groups;
-  }, [lines]);
-  /** ترتيب السطور زي ما هي مرسومة (بالفئة) — الترقيم وEnter ماشيين عليه. */
+  /**
+   * السطور **بترتيب الإدخال، من غير تجميع بالفئة** (طلب العميل ٢٠٢٦-١٠-٠٥: «إذن التحويل
+   * عايزه كله على بعضه»). كانت متجمّعة تحت ترويسة لكل فئة زي فاتورة البيع، فالصنف اللي
+   * المندوب دخله أخير ممكن يطلع في النص. مجموعة واحدة ⇒ مافيش ترويسات فئات خالص.
+   */
+  const linesByCategory = useMemo(
+    () => (lines.length ? [{ category: null as string | null, items: lines as TransferLine[] }] : []),
+    [lines]);
+  /** ترتيب السطور زي ما هي مرسومة — الترقيم وEnter ماشيين عليه. */
   const shownLines = useMemo(() => linesByCategory.flatMap((g) => g.items), [linesByCategory]);
   /** Enter بينقل للسطر اللي بعده، وآخر سطر بيفتح شباك الأصناف — انظر `lineKeyboard`. */
   const advance = advanceFrom(shownLines, setFocusLineKey, () => setPickerOpen(true));
@@ -718,7 +720,7 @@ export default function Transfers() {
               {o.free <= 0 ? ' (مفيش رصيد متاح)' : ''}
             </div>
           ))}
-          <div style={{ marginTop: 10, fontSize: 12, color: '#888' }}>
+          <div style={{ marginTop: 10, fontSize: 14, color: '#888' }}>
             المتاح هنا بعد خصم اللي متعهّد عليه على أذونات تحويل لسه مستنية الاعتماد.
           </div>
         </div>
@@ -1238,6 +1240,7 @@ export default function Transfers() {
         title="اختر الصنف المحوَّل"
         categories={categories}
         categoryLabels={categoryLabels}
+        hideCategories
         products={pickerProducts}
         activeCategory={activeCategory}
         onCategoryChange={setActiveCategory}
@@ -1347,8 +1350,27 @@ export default function Transfers() {
     <>
       {rejectDialog}
       {auditDialog}
+      <LoadPeriodModal
+        open={loadRangeOpen} onCancel={() => setLoadRangeOpen(false)}
+        title="تحميل أذون تحويل فترة" endpoint="/api/v1/transfers"
+        columns={[
+          { title: 'الإذن', key: 'document_number', width: 150 },
+          { title: 'التاريخ', key: 'transfer_date', width: 120 },
+          { title: 'البيان', key: 'statement1' },
+        ]}
+        onLoaded={(rows) => setPeriodRows(rows as TransferRecord[])}
+        openNewest dateKey="transfer_date"
+        onPick={(r) => openTransfer(r as TransferRecord)} />
     </>
   );
+
+  /** القايمة اللي السابق/التالى بيمشوا فيها — الأحدث الأول: «السابق» = الأقدم. */
+  const navRows = periodRows ?? transfers;
+  const neighbour = (step: number): TransferRecord | null => {
+    if (!editing) return null;
+    const at = navRows.findIndex((r) => r.id === editing.id);
+    return at < 0 ? null : navRows[at + step] ?? null;
+  };
 
   const transferToolbar = (): ToolbarAction[] => {
     const pending = editing?.status === 'pending';
@@ -1359,6 +1381,12 @@ export default function Transfers() {
       { key: 'edit', label: 'تعديل', icon: <EditOutlined />,
         disabled: !isSaved || !viewOnly,
         onClick: () => { if (editing) openForEdit(editing); } },
+      { key: 'prev', label: 'السابق', icon: <ArrowRightOutlined />,
+        disabled: isSaved ? !neighbour(1) : navRows.length === 0,
+        onClick: () => { const n = isSaved ? neighbour(1) : navRows[0]; if (n) openTransfer(n); } },
+      { key: 'next', label: 'التالى', icon: <ArrowLeftOutlined />,
+        disabled: !neighbour(-1),
+        onClick: () => { const n = neighbour(-1); if (n) openTransfer(n); } },
       ...(editing ? [] : [{
         key: 'save', label: 'حفظ', shortcut: 'F9', icon: <SaveOutlined />,
         onClick: handleSubmit,
@@ -1390,6 +1418,8 @@ export default function Transfers() {
         key: 'undo', label: 'تراجع', icon: <UndoOutlined />,
         onClick: () => setLines([]), disabled: lines.length === 0,
       } as ToolbarAction]),
+      { key: 'reload', label: 'تحميل', icon: <ReloadOutlined />,
+        onClick: () => setLoadRangeOpen(true) },
       { key: 'close', label: 'إغلاق', shortcut: 'Esc', icon: <ArrowRightOutlined />,
         onClick: () => closeCreate() },
     ];
@@ -1545,9 +1575,9 @@ export default function Transfers() {
         const code = codeById[r.item_id];
         return (
           <div style={{ lineHeight: 1.25 }}>
-            <div className="eg-ellipsis" title={r.name} style={{ fontWeight: 700, fontSize: 13, color: '#0f172a' }}>{r.name}</div>
+            <div className="eg-ellipsis" title={r.name} style={{ fontWeight: 700, fontSize: 15, color: '#0f172a' }}>{r.name}</div>
             {code ? (
-              <div dir="ltr" style={{ fontSize: 12.5, color: '#5b6575', fontWeight: 500, textAlign: 'end' }}>
+              <div dir="ltr" style={{ fontSize: 14, color: '#5b6575', fontWeight: 500, textAlign: 'end' }}>
                 {code}
               </div>
             ) : null}
@@ -1556,7 +1586,7 @@ export default function Transfers() {
       } },
     { key: 'unit', title: 'الوحدة', width: 80,
       cellStyle: { textAlign: 'center' },
-      cell: (r) => <span style={{ fontSize: 12.5 }}>{r.unit || 'أساسية'}</span> },
+      cell: (r) => <span style={{ fontSize: 14 }}>{r.unit || 'أساسية'}</span> },
     { key: 'available', title: 'المتاح في المصدر', width: 100,
       cellStyle: { textAlign: 'center', whiteSpace: 'nowrap', color: '#6AB42D', fontWeight: 600 },
       cell: (r) => qty(r.available) },
@@ -1626,6 +1656,11 @@ export default function Transfers() {
             )}
             {/* المستند الجديد: «مسودة» — المحفوظ بيقول حالته الحقيقية في الشارة اللي قبلها. */}
             {!editing && <Tag color="blue" style={{ marginInlineEnd: 0 }}>مسودة</Tag>}
+            {editing && navRows.some((r) => r.id === editing.id) && (
+              <Tag style={{ marginInlineEnd: 0 }}>
+                {navRows.findIndex((r) => r.id === editing.id) + 1} / {navRows.length}
+              </Tag>
+            )}
             {/* الأدوات و«الأعمدة» في نفس سطر العنوان على الشمال — زي فاتورة البيع. */}
             <div className="sale-toolbar-row">
               <DocumentToolbar actions={transferToolbar()} variant="buttons" />
@@ -1741,7 +1776,7 @@ export default function Transfers() {
           {/* شريط الأصناف زي فاتورة البيع: عدد البنود والمسار يمين، وزرار الإضافة شمال. */}
           <div className="sale-items-bar">
             <div className="sale-items-info">
-              {editing && <b style={{ color: '#0f172a', fontSize: 13 }}>أصناف الإذن</b>}
+              {editing && <b style={{ color: '#0f172a', fontSize: 15 }}>أصناف الإذن</b>}
               <span>
                 عدد البنود الحالية: <b style={{ color: '#0f172a' }}>
                   {editing ? docLines(editing).length : lines.length}</b> أصناف
@@ -1794,12 +1829,12 @@ export default function Transfers() {
                           <td colSpan={lineGrid.count}>
                             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                               <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                                <Tag color="success" style={{ fontWeight: 700, fontSize: 12.5, padding: '0 6px', borderRadius: 4, margin: 0 }}>
+                                <Tag color="success" style={{ fontWeight: 700, fontSize: 14, padding: '0 6px', borderRadius: 4, margin: 0 }}>
                                   {group.category ? (categoryLabels[group.category] || group.category) : 'بدون فئة'}
                                 </Tag>
-                                <span style={{ color: '#64748b', fontSize: 12.5, fontWeight: 600 }}>({group.items.length} صنف)</span>
+                                <span style={{ color: '#64748b', fontSize: 14, fontWeight: 600 }}>({group.items.length} صنف)</span>
                               </div>
-                              <span style={{ color: '#64748b', fontSize: 12.5, fontWeight: 600 }}>
+                              <span style={{ color: '#64748b', fontSize: 14, fontWeight: 600 }}>
                                 إجمالي الفئة: {qty(group.items.reduce((n, l) => n + Number(l.quantity || 0), 0))}
                               </span>
                             </div>
