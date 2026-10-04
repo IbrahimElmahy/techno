@@ -135,6 +135,15 @@ function invoiceTypeOf(l: StatementLine): string {
 }
 
 /** أقرب أب بيعمل scroll — صندوق المحتوى في `AppLayout`. */
+/** «البيان» من غير رقم المستند (SINV-000355 وأمثاله) — الرقم ليه عمود لوحده. */
+const SERIAL_RE = /\s*\b(?:[A-Z]{1,4}-)?[A-Z]{1,6}-?\d{3,}\b/g;
+function stripSerial(desc: string | null | undefined, docNumber?: string | null): string {
+  let s = String(desc ?? '');
+  if (docNumber) s = s.split(docNumber).join('');
+  s = s.replace(SERIAL_RE, '').replace(/\s{2,}/g, ' ').replace(/\s+([—،:])/g, ' $1').trim();
+  return s || '-';
+}
+
 function scrollParentOf(el: HTMLElement | null): HTMLElement | null {
   for (let cur = el?.parentElement ?? null; cur; cur = cur.parentElement) {
     const oy = getComputedStyle(cur).overflowY;
@@ -652,12 +661,13 @@ export default function AccountStatement() {
       ) : (v ?? '-')),
     }] : []),
     { title: 'البيان', dataIndex: 'description',
-      ...textColumn(lines, (l: StatementLine) => l.description),
+      ...textColumn(lines, (l: StatementLine) => stripSerial(l.description, l.doc_number)),
       // بيان المستند تحت وصف القيد — القيد بيقول «فاتورة بيع …» واللي كتبه المستخدم على
       // الفاتورة («توريد مشروع كذا») كان مابيبانش في الكشف خالص.
       render: (v: string, l: StatementLine) => {
         // النقدي المدفوع مع الفاتورة: سطر عرض بس، بلون مختلف عشان مايتقريش كسند قبض.
-        const text = l.cash_on_invoice ? <span style={{ color: '#389e0d' }}>{v}</span> : v;
+        const shown = stripSerial(v, l.doc_number);
+        const text = l.cash_on_invoice ? <span style={{ color: '#389e0d' }}>{shown}</span> : shown;
         return l.doc_statement && l.doc_statement !== v && !l.cash_on_invoice ? (
           <Space direction="vertical" size={0}>
             <span>{text}</span>
@@ -754,7 +764,8 @@ export default function AccountStatement() {
         return {
           title: 'البيان',
           value: (l) => (l.doc_statement && l.doc_statement !== l.description
-            ? `${l.description} — ${l.doc_statement}` : l.description),
+            ? `${stripSerial(l.description, l.doc_number)} — ${l.doc_statement}`
+            : stripSerial(l.description, l.doc_number)),
         };
       case 'rep_name': return { title: 'مندوب', value: (l) => l.rep_name ?? '' };
       case 'store_name': return { title: 'المخزن', value: (l) => l.store_name ?? '' };
@@ -960,7 +971,7 @@ export default function AccountStatement() {
       }}>
         <Tag>{entryTypeLabel(l.entry_type)}</Tag>
         <span style={{ color: '#8c8c8c' }}>{String(l.entry_date || '').slice(0, 10)}</span>
-        <span>{l.description}</span>
+        <span>{stripSerial(l.description, l.doc_number)}</span>
         <span style={{ marginInlineStart: 'auto' }}>
           {l.doc_kind && l.doc_id ? (
             <DocumentLink kind={l.doc_kind} id={l.doc_id}

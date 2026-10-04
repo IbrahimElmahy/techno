@@ -115,7 +115,7 @@ interface TabsContextType {
    * المستند اللي اتقفل وهو راجع لشاشة تانية — تبويبه بيرجع لكشفه **من غير تنقّل**.
    * `fromPath` مسار التبويب دلوقتي، و`cleanPath` نفس المسار من غير المستند.
    */
-  retireTab: (fromPath: string, cleanPath: string) => void;
+  retireTab: (fromPath: string, cleanPath: string, toPath?: string) => void;
 }
 
 const TabsContext = createContext<TabsContextType | undefined>(undefined);
@@ -202,14 +202,34 @@ export function TabsProvider({ children }: { children: React.ReactNode }) {
    * ولو الكشف النضيف بقى تبويب تاني (`/manufacturing?tab=orders` مدخل في القايمة)،
    * التبويب ده كان للمستند بس — فبيتشال.
    */
-  const retireTab = useCallback((fromPath: string, cleanPath: string) => {
+  /*
+   * **`toPath` — الأصل بيظهر في نفس اللحظة.** (٢٠٢٦-١٠-٠٤ — «رجوع» من فاتورة لكارت الصنف
+   * كان بيورّي سجل المبيعات جزء من الثانية.) الشاشة بتفضّي المستند فوراً، والتنقّل للأصل
+   * بيتأجّل (`v7_startTransition`) لحد ما المزامنة فوق تقلب التبويب — فالكشف كان بيترسم
+   * في النص. التبويب الظاهر بيتقلب هنا مع تفضية الشاشة في نفس الرسمة، والمزامنة بعدها
+   * بتلاقي كل حاجة مكانها. وكل لوحة بتقرا مسارها هي (`PageRoutes location`)، فالأصل
+   * مابيشوفش عنوان المستند في اللحظة دي.
+   */
+  const retireTab = useCallback((fromPath: string, cleanPath: string, toPath?: string) => {
     const id = baseOf(fromPath);
+    const toId = toPath ? baseOf(toPath) : null;
     setTabs((prev) => {
-      if (!prev.some((t) => t.id === id)) return prev;
-      if (baseOf(cleanPath) !== id) return prev.filter((t) => t.id !== id);
-      return prev.map((t) => (t.id === id
-        ? { ...t, path: cleanPath, title: titleForPath(cleanPath) } : t));
+      let next = prev;
+      if (next.some((t) => t.id === id)) {
+        next = baseOf(cleanPath) !== id
+          ? next.filter((t) => t.id !== id)
+          : next.map((t) => (t.id === id
+            ? { ...t, path: cleanPath, title: titleForPath(cleanPath) } : t));
+      }
+      if (toPath && toId && toId !== id) {
+        const title = titleForPath(toPath);
+        next = next.some((t) => t.id === toId)
+          ? next.map((t) => (t.id === toId ? { ...t, path: toPath, title } : t))
+          : [...next, { id: toId, path: toPath, title }];
+      }
+      return next;
     });
+    if (toId && toId !== id) setActiveId(toId);
   }, []);
 
   // القيمة متمسّكة، مش كائن جديد كل رندر.

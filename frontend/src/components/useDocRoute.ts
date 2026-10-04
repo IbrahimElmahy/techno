@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useDocReturn } from './docReturn';
 import { useOnScreen } from './keyboard';
@@ -115,6 +115,8 @@ export function useDocRoute<T extends { id: number }>(opts: {
    */
   const pendingOpen = useRef<number | null>(null);
   const pendingClose = useRef(false);
+  /** المستند اللي اتطلب ومالقيناهوش — عشان `opening` مايفضلش شغّال على رقم مش موجود. */
+  const [missing, setMissing] = useState<number | null>(null);
 
   useEffect(() => {
     // تبويب مخفي: مايسمعش ومايقفلش. الشرح عند `enabled`.
@@ -135,15 +137,23 @@ export function useDocRoute<T extends { id: number }>(opts: {
       ref.current.close();
       return;
     }
-    if (handled.current === wanted || loading) return;
+    if (handled.current === wanted) return;
     handled.current = wanted;
     const inPage = ref.current.rows.find((r) => r.id === wanted);
     if (inPage) { ref.current.open(inPage, mode); return; }
     // **مش في الصفحة المحمّلة ≠ مش موجود.** الكشف بيتحمّل بصفحات، والرابط الجاي من
     // كارت الصنف ممكن يبقى لمستند قديم برّه الصفحة.
-    ref.current.fetchOne(wanted).then((r) => { if (r) ref.current.open(r, mode); });
+    //
+    // **ومابنستناش الكشف يخلص.** (٢٠٢٦-١٠-٠٤) كان الفتح بيستنى `loading` — يعني الكشف كله
+    // يتحمّل الأول عشان يمكن المستند يطلع فيه — والمستخدم واقف قدام الكشف لحد ما المستند
+    // يفتح. طلب واحد بالرقم أسرع من استنية الصفحة كلها.
+    const id = wanted;
+    ref.current.fetchOne(id)
+      .then((r) => { if (r) ref.current.open(r, mode); else setMissing(id); })
+      .catch(() => setMissing(id));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [wanted, mode, openId, loading, rows.length, enabled]);
+  }, [wanted, mode, openId, rows.length, enabled]);
+  void loading;
 
   /** بيتنده جوّه دالة الفتح بتاعة الشاشة — بيدفع المستند على العنوان. */
   const markOpen = useCallback((id: number, m: DocMode = 'view') => {
@@ -192,5 +202,15 @@ export function useDocRoute<T extends { id: number }>(opts: {
     }, { replace: true });
   }, [params, setParams, enabled, writable, docReturn]);
 
-  return { markOpen, markClosed };
+  /**
+   * **العنوان طالب مستند ولسه مافتحش** — الشاشة بتعرض `DocOpening` مكان كشفها.
+   *
+   * من غيره اللي فاتح فاتورة من كارت الصنف بيشوف كشف الشاشة جزء من الثانية قبل المستند.
+   * بيتحسب من العنوان وقت الرسم مش في تأثير، عشان أول رسمة نفسها ماتورّيش الكشف. والقفل
+   * اللي في السكة (`pendingClose`) مش «فتح»: العنوان لسه شايل المستند اللي اتقفل.
+   */
+  const opening = enabled && wanted != null && wanted !== openId
+    && !pendingClose.current && missing !== wanted;
+
+  return { markOpen, markClosed, opening };
 }

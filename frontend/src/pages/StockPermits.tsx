@@ -21,6 +21,7 @@ import dayjs, { Dayjs } from 'dayjs';
 import { useSearchParams } from 'react-router-dom';
 import { api } from '../api/client';
 import { useDocRoute } from '../components/useDocRoute';
+import DocOpening from '../components/DocOpening';
 import { useDraft } from '../components/useDraft';
 import { useQueryTab } from '../components/useQueryTab';
 import { useListFilter } from '../components/ListToolbar';
@@ -248,7 +249,7 @@ export default function StockPermits() {
    * للقايمة اللي هو فيها.
    */
   // الإذن المفتوح جزء من العنوان، فالـ«رجوع» بيقفله ويرجّع للكشف — الشرح في `useDocRoute`.
-  const { markOpen, markClosed } = useDocRoute<Permit>({
+  const { markOpen, markClosed, opening: docOpening } = useDocRoute<Permit>({
     rows: permits,
     openId: detail?.id ?? null,
     open: (x) => openPermit(x),
@@ -919,6 +920,8 @@ export default function StockPermits() {
     </ListPage>
   );
 
+  // مستند جاي من شاشة تانية ولسه بيفتح ⇒ مكان الكشف فاضي (الشرح في `useDocRoute.opening`).
+  if (docOpening) return <DocOpening />;
   return (
     <>
       {doors}

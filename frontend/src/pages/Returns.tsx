@@ -25,6 +25,7 @@ import dayjs, { Dayjs } from 'dayjs';
 import { api } from '../api/client';
 import { statementMeta } from '../utils/statements';
 import { useDocRoute } from '../components/useDocRoute';
+import DocOpening from '../components/DocOpening';
 import { useDraft } from '../components/useDraft';
 import { netOf } from '../utils/discounts';
 import ProductPickerModal from '../components/ProductPickerModal';
@@ -346,7 +347,7 @@ export default function Returns({ embedded }: { embedded?: { onExit: () => void 
     setDocNotes(x.docNotes || '');
   };
 
-  const { markOpen, markClosed } = useDocRoute<ReturnRecord>({
+  const { markOpen, markClosed, opening: docOpening } = useDocRoute<ReturnRecord>({
     rows: returns,
     openId: viewReturn?.id ?? null,
     open: (r) => openDetail(r),
@@ -2064,6 +2065,8 @@ export default function Returns({ embedded }: { embedded?: { onExit: () => void 
     if (onExit && !createVisible && !newStep) onExit();
   }, [onExit, createVisible, newStep]);
 
+  // مستند جاي من شاشة تانية ولسه بيفتح ⇒ مكان الكشف فاضي (الشرح في `useDocRoute.opening`).
+  if (docOpening) return <DocOpening />;
   return (
     // المستند المفتوح بطول الشاشة على الأقل (زي فاتورة البيع) عشان الإجمالي والاسترداد
     // يقعدوا في آخرها. نفس الـ`div` في الفرعين — البوابات مابتتفكّش (الشرح فوق `screen`).

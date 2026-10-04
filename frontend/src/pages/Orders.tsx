@@ -18,6 +18,7 @@ import { api } from '../api/client';
 import { netOf, MAX_DISCOUNT_PCT } from '../utils/discounts';
 import { useQueryTab } from '../components/useQueryTab';
 import { useDocRoute } from '../components/useDocRoute';
+import DocOpening from '../components/DocOpening';
 import DocumentLink from '../components/DocumentLink';
 import { useListFilter } from '../components/ListToolbar';
 import ListPage from '../components/ListPage';
@@ -135,7 +136,7 @@ export default function Orders() {
   const openOrder = (o: Order) => { setCreating(false); setDetail(o); markOpen(o.id); };
 
   // الطلب المفتوح جزء من العنوان — الشرح في `useDocRoute`.
-  const { markOpen, markClosed } = useDocRoute<Order>({
+  const { markOpen, markClosed, opening: docOpening } = useDocRoute<Order>({
     rows: orders,
     openId: detail?.id ?? null,
     open: (o) => openOrder(o),
@@ -627,6 +628,8 @@ export default function Orders() {
     </span>
   );
 
+  // مستند جاي من شاشة تانية ولسه بيفتح ⇒ مكان الكشف فاضي (الشرح في `useDocRoute.opening`).
+  if (docOpening) return <DocOpening />;
   return (
     <>
     {!docOpen && (

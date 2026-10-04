@@ -97,7 +97,7 @@ export function useDocReturn() {
     const { loc: l, tabs: t, onScreen: shown } = ref.current;
     const to = readReturn(l.search);
     if (!to || !shown) return false;
-    t?.retireTab(l.pathname + l.search, cleanDocPath(l.pathname, l.search));
+    t?.retireTab(l.pathname + l.search, cleanDocPath(l.pathname, l.search), to);
     navigate(to, { replace: true });
     return true;
   }, [navigate]);

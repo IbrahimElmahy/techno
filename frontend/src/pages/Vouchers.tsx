@@ -27,6 +27,7 @@ import { useTableColumns } from '../components/ColumnSettings';
 import ExportExcelButton from '../components/ExportExcelButton';
 import { useQueryTab } from '../components/useQueryTab';
 import { useDocRoute } from '../components/useDocRoute';
+import DocOpening from '../components/DocOpening';
 import { useListFilter, normalizeAr } from '../components/ListToolbar';
 import ListPage, { ListTab } from '../components/ListPage';
 import { matchesStatement } from '../utils/statements';
@@ -175,7 +176,7 @@ const Vouchers: React.FC = () => {
    * فاضية. `VoucherDocument` بيقرا `kind` و`document_number` والمبلغ من الصف، وصف
    * ناقص فيه كان هيفضي الشاشة.
    */
-  const { markOpen, markClosed } = useDocRoute<VoucherRecord>({
+  const { markOpen, markClosed, opening: docOpening } = useDocRoute<VoucherRecord>({
     rows: vouchers,
     openId: voucherView?.id ?? null,
     open: (v) => openView(v),
@@ -1078,6 +1079,8 @@ const Vouchers: React.FC = () => {
     );
   }
 
+  // مستند جاي من شاشة تانية ولسه بيفتح ⇒ مكان الكشف فاضي (الشرح في `useDocRoute.opening`).
+  if (docOpening) return <DocOpening />;
   return (
     <>
     {/* الإطار والشكل في `ListPage` — والشرايح هي نفس `?tab=` اللي القايمة بتفتح بيه. */}

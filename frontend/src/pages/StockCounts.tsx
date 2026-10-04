@@ -22,6 +22,7 @@ import { api } from '../api/client';
 import { useListFilter } from '../components/ListToolbar';
 import { matchesStatement } from '../utils/statements';
 import { useDocRoute } from '../components/useDocRoute';
+import DocOpening from '../components/DocOpening';
 import { choiceColumn, numberColumn, textColumn } from '../components/gridColumns';
 import MovementHistoryLog from '../components/MovementHistoryLog';
 import { TabModal } from '../components/TabModal';
@@ -166,7 +167,7 @@ export default function StockCounts() {
   };
 
   // الكشف المفتوح جزء من العنوان، فالـ«رجوع» بيقفله ويرجّع للكشوف — الشرح في `useDocRoute`.
-  const { markOpen, markClosed } = useDocRoute<Sheet>({
+  const { markOpen, markClosed, opening: docOpening } = useDocRoute<Sheet>({
     rows: sheets,
     // `sheet` بيفضل محطوط بعد القفل، فالمعوّل عليه إن الصفحة نفسها مفتوحة.
     openId: detailVisible && sheet ? sheet.id : null,
@@ -384,6 +385,8 @@ export default function StockCounts() {
     </span>
   );
 
+  // مستند جاي من شاشة تانية ولسه بيفتح ⇒ مكان الكشف فاضي (الشرح في `useDocRoute.opening`).
+  if (docOpening) return <DocOpening />;
   return (
     <>
       {/* Mounted at the root so it survives the sheet dialog closing under it. */}

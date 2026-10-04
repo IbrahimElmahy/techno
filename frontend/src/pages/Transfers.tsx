@@ -40,6 +40,7 @@ import { SaveOutlined, FileAddOutlined, UndoOutlined } from '@ant-design/icons';
 import DocumentAuditModal from '../components/DocumentAuditModal';
 import { useTableKeyboard, useScreenShortcuts, useOnScreen } from '../components/keyboard';
 import { useDocReturn } from '../components/docReturn';
+import DocOpening from '../components/DocOpening';
 import { TabModal } from '../components/TabModal';
 import WarehouseGate from '../components/WarehouseGate';
 import DocumentAttachments from '../components/DocumentAttachments';
@@ -431,6 +432,7 @@ export default function Transfers() {
   const closeCreate = (opts?: { stay?: boolean }) => {
     if (opts?.stay !== true && docReturn.origin()) {
       // تبويبنا بياخد كشفه من `leave` نفسه — مانكتبش في العنوان.
+      closedDocRef.current = docInUrl.current;
       docInUrl.current = null;
       if (!docReturn.leave()) clearDocParam();
     } else {
@@ -474,6 +476,8 @@ export default function Transfers() {
    * بتكتب العنوان، والعنوان بيقود عند التحميل الأول وعند «رجوع» وبس.
    */
   const docInUrl = useRef<number | null>(null);
+  /** آخر إذن اتقفل والعنوان لسه مالحقش يتنضّف — مش «رابط جديد» (الشرح عند `DocOpening` تحت). */
+  const closedDocRef = useRef<number | null>(null);
   // بارامترات **التبويب ده** مش `window.location` (بتاع التبويب الظاهر)، والشاشة المخفية
   // مابتكتبش في العنوان: `setSearchParams` منها بيشدّ المستخدم لكشف التحويلات.
   const paramsRef = useRef(searchParams);
@@ -494,6 +498,8 @@ export default function Transfers() {
     setSearchParams(next, { replace: already });
   }, [setSearchParams]);
   const clearDocParam = useCallback(() => {
+    closedDocRef.current = docInUrl.current
+      ?? (Number(paramsRef.current.get('doc') || paramsRef.current.get('edit')) || null);
     docInUrl.current = null;
     if (!onScreenRef.current) return;
     const next = new URLSearchParams(paramsRef.current);
@@ -509,10 +515,12 @@ export default function Transfers() {
   closeOnBackRef.current = () => { closeCreate({ stay: true }); };
 
   const pendingDoc = useRef<number | null>(null);
+  const [docFetching, setDocFetching] = useState(false);
   /** الإذن اللي بيتجاب بالرقم دلوقتي — عشان صحوة التأثير التانية ماتجيبهوش مرتين. */
   const fetchingDoc = useRef<number | null>(null);
   useEffect(() => {
     const doc = searchParams.get('doc') || searchParams.get('edit');
+    if (!doc) closedDocRef.current = null;
     // البارامتر اللي إحنا كاتبينه وقت الفتح مش طلب فتح. (رابط تاني لنفس الإذن بيجيب `ret`
     // جديد في العنوان، و«رجوع» بيقراه وقت الضغط — مافيش حاجة تتلقط.)
     if (doc && Number(doc) === docInUrl.current) return;
@@ -533,17 +541,25 @@ export default function Transfers() {
       }
     }
     const wanted = pendingDoc.current;
-    if (!wanted || !transfers.length) return;
+    if (!wanted) return;
     pendingDoc.current = null;
     const target = transfers.find((t) => t.id === wanted);
     if (target) { openTransfer(target); return; }
     // **مش في الصفحة المحمّلة ≠ مش موجود.** القايمة بصفحات، والرابط الجاي من كارت الصنف
-    // ممكن يبقى لإذن قديم برّه الصفحة. بنجيبه بالرقم.
+    // ممكن يبقى لإذن قديم برّه الصفحة. بنجيبه بالرقم — ومن غير مانستنى الكشف يتحمّل
+    // (٢٠٢٦-١٠-٠٤): الاستنية دي كانت بتورّي كشف التحويلات قبل الإذن.
     fetchingDoc.current = wanted;
+    setDocFetching(true);
     api.get(`/api/v1/transfers/${wanted}`)
       .then((r) => openTransfer(r.data))
-      .catch(() => message.warning(`إذن التحويل رقم ${wanted} مش موجود`))
-      .finally(() => { if (fetchingDoc.current === wanted) fetchingDoc.current = null; });
+      .catch(() => {
+        message.warning(`إذن التحويل رقم ${wanted} مش موجود`);
+        if (docInUrl.current == null) clearDocParam();
+      })
+      .finally(() => {
+        if (fetchingDoc.current === wanted) fetchingDoc.current = null;
+        setDocFetching(false);
+      });
   }, [searchParams, transfers]);
 
   /** المسودّة — الطلب اللي اتكتب ولسه ما اتبعتش. الشرح في `useDraft`. */
@@ -2030,12 +2046,20 @@ export default function Transfers() {
     </ListPage>
   );
 
+  /*
+   * إذن جاي من شاشة تانية (الجرد، كارت الصنف) ⇒ مكان الكشف فاضي لحد ما يفتح، بدل ما كشف
+   * التحويلات يبان جزء من الثانية. الرسمة الأولى بتتعرف من العنوان نفسه.
+   */
+  const urlDoc = Number(searchParams.get('doc') || searchParams.get('edit')) || null;
+  const opening = !createVisible && (docFetching || (urlDoc != null
+    && urlDoc !== docInUrl.current && urlDoc !== closedDocRef.current && onScreen));
+
   return (
     // بطول الشاشة — صفحة الإذن عشان الملخص والأزرار يقعدوا في آخرها، والكشف عشان الرمادي يغطّي الصفحة.
     <div style={{ height: '100%' }}>
       {dialogs}
       {doors}
-      {screen ?? list}
+      {screen ?? (opening ? <DocOpening /> : list)}
     </div>
   );
 }

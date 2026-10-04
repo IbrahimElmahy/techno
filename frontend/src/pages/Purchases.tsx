@@ -21,6 +21,7 @@ import {
 } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import { useDocRoute, type DocMode } from '../components/useDocRoute';
+import DocOpening from '../components/DocOpening';
 import { useOpenDocument } from '../components/DocumentLink';
 import dayjs, { Dayjs } from 'dayjs';
 import CostCenterField from '../components/CostCenterField';
@@ -510,7 +511,7 @@ export default function Purchases() {
   const routeRows = useMemo(
     () => purchases.filter((p) => p.kind === 'purchase'), [purchases]);
 
-  const { markOpen, markClosed } = useDocRoute<PurchaseRecord>({
+  const { markOpen, markClosed, opening: docOpening } = useDocRoute<PurchaseRecord>({
     rows: routeRows,
     // الفاتورة المحفوظة بس هي اللي ليها عنوان — المستند الجديد لسه مالوش رقم يتكتب.
     openId: createVisible && editingId != null ? editingId : null,
@@ -2574,6 +2575,8 @@ export default function Purchases() {
    * كل حاجة مغمّقة ومافيش حاجة بتترد. المخرج الواحد بيمنع الفكّ من أصله.
    */
   // `height` عشان `.sale-doc` (min-height:100%) يقعد بطول الشاشة والإجمالي يتزق لآخرها.
+  // مستند جاي من شاشة تانية ولسه بيفتح ⇒ مكان الكشف فاضي (الشرح في `useDocRoute.opening`).
+  if (docOpening) return <DocOpening />;
   return (
     <div style={createVisible || embeddedReturn ? { height: '100%' } : undefined}>
       {doors}

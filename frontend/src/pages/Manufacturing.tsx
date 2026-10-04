@@ -19,6 +19,7 @@ import { useNavigate } from 'react-router-dom';
 import { api } from '../api/client';
 import { useQueryTab } from '../components/useQueryTab';
 import { useDocRoute } from '../components/useDocRoute';
+import DocOpening from '../components/DocOpening';
 import { showReversalConfirm } from '../components/ConfirmationDialog';
 import { useListFilter } from '../components/ListToolbar';
 import { matchesStatement } from '../utils/statements';
@@ -1068,7 +1069,7 @@ function ProductionOrdersTab({
    * وبيتجاب بالرقم من السيرفر مش من الصفحة المحمّلة: `openEdit` بيقرا `r.products`
    * و`r.materials` سطر سطر، وصف ناقص فيهم بيفضّي الشاشة.
    */
-  const { markOpen, markClosed } = useDocRoute<ProductionOrder>({
+  const { markOpen, markClosed, opening: docOpening } = useDocRoute<ProductionOrder>({
     rows,
     enabled: active,
     openId: open && editingId != null ? editingId : null,
@@ -1655,6 +1656,8 @@ function ProductionOrdersTab({
       } },
   ];
 
+  // مستند جاي من شاشة تانية ولسه بيفتح ⇒ مكان الكشف فاضي (الشرح في `useDocRoute.opening`).
+  if (docOpening) return <DocOpening />;
   return (
     <>
     <ListPage<Section>

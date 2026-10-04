@@ -18,6 +18,7 @@ import {
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { api } from '../api/client';
 import { useDocRoute } from '../components/useDocRoute';
+import DocOpening from '../components/DocOpening';
 import { useDraft } from '../components/useDraft';
 import { DocRef } from '../components/DocumentLink';
 import ColumnSettings, { useHiddenColumns } from '../components/ColumnSettings';
@@ -204,7 +205,7 @@ export default function PurchaseReturns({ embedded }: { embedded?: { onExit: () 
   const [editingId, setEditingId] = useState<number | null>(null);
 
   // المردود المفتوح جزء من العنوان، فالـ«رجوع» بيقفله ويرجّع للكشف — الشرح في `useDocRoute`.
-  const { markOpen, markClosed } = useDocRoute<ReturnRow>({
+  const { markOpen, markClosed, opening: docOpening } = useDocRoute<ReturnRow>({
     rows,
     openId: editingId,
     open: (row, mode) => { if (mode === 'edit') editPosted(row); else openReturn(row); },
@@ -1114,6 +1115,8 @@ export default function PurchaseReturns({ embedded }: { embedded?: { onExit: () 
     if (onExit && !creating && !newStep) onExit();
   }, [onExit, creating, newStep]);
 
+  // مستند جاي من شاشة تانية ولسه بيفتح ⇒ مكان الكشف فاضي (الشرح في `useDocRoute.opening`).
+  if (docOpening) return <DocOpening />;
   return (
     // المستند المفتوح بياخد خلفية فاتورة البيع الرمادي (`sale-doc`) — والكشف زي ما هو.
     <div className={docOpen ? 'sale-doc' : undefined}>

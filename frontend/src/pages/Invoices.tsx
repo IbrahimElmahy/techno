@@ -23,6 +23,7 @@ import {
 } from '@ant-design/icons';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useDocReturn } from '../components/docReturn';
+import DocOpening from '../components/DocOpening';
 import { useOnScreen } from '../components/keyboard';
 import { useOpenDocument } from '../components/DocumentLink';
 import dayjs, { Dayjs } from 'dayjs';
@@ -129,6 +130,8 @@ export default function Invoices() {
 
   // Drawers
   const [createVisible, setCreateVisible] = useState(false);
+  /** فاتورة بتتجاب عشان تتفتح — مكان الكشف بيفضل فاضي لحد ما توصل (`DocOpening`). */
+  const [docOpening, setDocOpening] = useState(false);
   const [viewOnly, setViewOnly] = useState(false);
   /** عدّاد بيتزوّد مع كل تغيير في حقول `Form` — حقول antd مش state، فالـ`useMemo`
    *  اللي بيبني حمولة المسودّة مايشوفش تغيّرها من غيره: العميل يتغيّر والمسودّة تفضل
@@ -871,7 +874,7 @@ export default function Invoices() {
     // العنوان بيرجع للكشف مع قفل المستند — `replace` مش `push` عشان «رجوع» مايعيدش
     // فتح اللي انت قافله لسه. `keepUrl`: الراجع لشاشة تانية — `docReturn.leave` هو اللي
     // بيكتب لتبويبنا كشفه، فإحنا مانلمسش العنوان.
-    if (opts?.keepUrl) docInUrl.current = null;
+    if (opts?.keepUrl) { closedDocRef.current = docInUrl.current; docInUrl.current = null; }
     else clearDocParam();
     setViewReturns([]);
     setEditingInvoice(null);
@@ -1802,6 +1805,11 @@ export default function Invoices() {
    */
   const docInUrl = useRef<number | null>(null);
   /**
+   * آخر فاتورة اتقفلت والعنوان لسه مالحقش يتنضّف (التنقّل متأجّل لفّة) — عشان الرسمة دي
+   * ماتتقريش «رابط لفاتورة جديدة» وتعرض `DocOpening` مكان الكشف.
+   */
+  const closedDocRef = useRef<number | null>(null);
+  /**
    * قفل المستند لما «رجوع» بتاع المتصفح يشيله من العنوان.
    *
    * **مش `resetDocument` وحدها** — دي بتفضّي حالة المستند وبس، والشاشة بتفضل على صفحة
@@ -1827,6 +1835,8 @@ export default function Invoices() {
     setSearchParams(next, { replace: already });
   }, [setSearchParams]);
   const clearDocParam = useCallback(() => {
+    closedDocRef.current = docInUrl.current
+      ?? (Number(paramsRef.current.get('doc') || paramsRef.current.get('edit')) || null);
     docInUrl.current = null;
     if (!onScreenRef.current) return;
     const next = new URLSearchParams(paramsRef.current);
@@ -1845,6 +1855,7 @@ export default function Invoices() {
     const doc = searchParams.get('doc');
     const edit = searchParams.get('edit');
     const id = searchParams.get('id');
+    if (!doc && !edit && !id) closedDocRef.current = null;
     // البارامتر اللي إحنا كاتبينه لما فتحنا المستند مش طلب فتح — تخطّيه.
     // (رابط من شاشة تانية لنفس الفاتورة المفتوحة بيجيب `ret` جديد في العنوان — و«رجوع»
     // بيقراه من العنوان وقت الضغط، فمافيش حاجة تتلقط هنا.)
@@ -2012,6 +2023,7 @@ function couponsTotal(inv: any): number {
   const openDetail = async (record: InvoiceRecord) => {
     try {
       setLoading(true);
+      if (!createVisible) setDocOpening(true);
       const [detRes, retRes] = await Promise.all([
         api.get(`/api/v1/sales/${record.id}`),
         api.get(`/api/v1/sales/${record.id}/returns`).catch(() => ({ data: [] })),
@@ -2193,6 +2205,7 @@ function couponsTotal(inv: any): number {
       if (docInUrl.current === record.id) clearDocParam();
     } finally {
       setLoading(false);
+      setDocOpening(false);
     }
   };
 
@@ -2579,6 +2592,17 @@ function couponsTotal(inv: any): number {
         setNewStep(null);
       }} />
   );
+
+  /*
+   * **فاتورة جاية من شاشة تانية بتفتح على طول — من غير ما سجل المبيعات يبان قبلها.**
+   * (٢٠٢٦-١٠-٠٤) العنوان بيوصل بـ`?doc=` والكشف كان بيترسم لحد ما الفاتورة تتجاب. الرسمة
+   * الأولى (قبل ما التأثير يمسك الطلب) بتتعرف من العنوان نفسه، والباقي من `docOpening`.
+   */
+  const urlDocWanted = Number(searchParams.get('doc') || searchParams.get('edit')
+    || searchParams.get('id')) || null;
+  const urlDocFresh = urlDocWanted != null && urlDocWanted !== docInUrl.current
+    && urlDocWanted !== closedDocRef.current && onScreen;
+  if (!createVisible && (docOpening || urlDocFresh)) return <DocOpening />;
 
   if (createVisible) {
     // الكوبونات مش في المصنع، ومابتظهرش في فاتورة محفوظة مافيهاش كوبونات.
