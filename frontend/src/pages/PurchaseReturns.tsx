@@ -599,16 +599,11 @@ export default function PurchaseReturns({ embedded }: { embedded?: { onExit: () 
     return [...set].sort((a, b) => a.localeCompare(b, 'ar'));
   }, [items]);
 
-  const linesByCategory = useMemo(() => {
-    const groups: { category: string | null; items: ReturnLineDraft[] }[] = [];
-    returnLines.forEach((l) => {
-      const cat = (l.item_id ? items.find((i: any) => i.id === l.item_id)?.category : null) || null;
-      let g = groups.find((x) => x.category === cat);
-      if (!g) { g = { category: cat, items: [] }; groups.push(g); }
-      g.items.push(l);
-    });
-    return groups;
-  }, [returnLines, items]);
+  // **من غير تجميع بالفئة** (طلب العميل ٢٠٢٦-١٠-٠٥): الأصناف تحت بعض بترتيب إدخالها في
+  // عرض المستند. الفئات لسه في شباك اختيار الصنف — الاختيار بالفئة، والعرض مش متقسّم.
+  const linesByCategory = useMemo(
+    () => (returnLines.length ? [{ category: null as string | null, items: returnLines as ReturnLineDraft[] }] : []),
+    [returnLines]);
 
   /**
    * إضافة صنف للمردود — الصنف اللي موجود بتزيد كميته بدل ما يتكرّر سطر.

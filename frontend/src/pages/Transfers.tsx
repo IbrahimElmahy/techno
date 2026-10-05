@@ -1240,7 +1240,6 @@ export default function Transfers() {
         title="اختر الصنف المحوَّل"
         categories={categories}
         categoryLabels={categoryLabels}
-        hideCategories
         products={pickerProducts}
         activeCategory={activeCategory}
         onCategoryChange={setActiveCategory}

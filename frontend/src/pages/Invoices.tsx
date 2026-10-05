@@ -727,16 +727,11 @@ export default function Invoices() {
     return [...set].sort((a, b) => a.localeCompare(b, 'ar'));
   }, [products]);
 
-  // Added products grouped by category, in first-appearance order.
-  const linesByCategory = React.useMemo(() => {
-    const groups: { category: string | null; items: SaleLineItem[] }[] = [];
-    lines.forEach((l) => {
-      let g = groups.find((x) => x.category === (l.category ?? null));
-      if (!g) { g = { category: l.category ?? null, items: [] }; groups.push(g); }
-      g.items.push(l);
-    });
-    return groups;
-  }, [lines]);
+  // **من غير تجميع بالفئة** (طلب العميل ٢٠٢٦-١٠-٠٥): الأصناف تحت بعض بترتيب إدخالها في
+  // عرض المستند. الفئات لسه في شباك اختيار الصنف — الاختيار بالفئة، والعرض مش متقسّم.
+  const linesByCategory = React.useMemo(
+    () => (lines.length ? [{ category: null as string | null, items: lines as SaleLineItem[] }] : []),
+    [lines]);
 
   /**
    * خصم السطر كنسبة واحدة — الثابت بتاع الصنف زائد اللي اتكتب، بحد ٩٩٫٩٩.

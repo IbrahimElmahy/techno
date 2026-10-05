@@ -438,7 +438,6 @@ export default function StockPermits() {
         title={kind === 'issue' ? 'اختر الصنف المصروف' : 'اختر الصنف المضاف'}
         categories={categories}
         categoryLabels={categoryLabels}
-        hideCategories
         products={pickable}
         activeCategory={activeCategory}
         onCategoryChange={setActiveCategory}

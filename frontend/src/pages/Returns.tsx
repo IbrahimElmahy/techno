@@ -456,15 +456,11 @@ export default function Returns({ embedded }: { embedded?: { onExit: () => void 
     return [...set].sort((a, b) => a.localeCompare(b, 'ar'));
   }, [products]);
 
-  const linesByCategory = useMemo(() => {
-    const groups: { category: string | null; items: ReturnLineItem[] }[] = [];
-    lines.forEach((l) => {
-      let g = groups.find((x) => x.category === (l.category ?? null));
-      if (!g) { g = { category: l.category ?? null, items: [] }; groups.push(g); }
-      g.items.push(l);
-    });
-    return groups;
-  }, [lines]);
+  // **من غير تجميع بالفئة** (طلب العميل ٢٠٢٦-١٠-٠٥): الأصناف تحت بعض بترتيب إدخالها في
+  // عرض المستند. الفئات لسه في شباك اختيار الصنف — الاختيار بالفئة، والعرض مش متقسّم.
+  const linesByCategory = useMemo(
+    () => (lines.length ? [{ category: null as string | null, items: lines as ReturnLineItem[] }] : []),
+    [lines]);
 
   /** الاتنين ورا بعض — خصم بعد خصم، زي فاتورة البيع بالظبط. */
   const lineDiscountPct = (l: ReturnLineItem) =>
