@@ -121,7 +121,10 @@ def create_user(
     _guard_elevated(current, body.role)
     _guard_role_ceiling(current, body.role)
     if not current.is_admin:
-        if body.branch_id is None or body.branch_id != current.branch_id:
+        # من غير فرع ⇒ فرع اللي بيعمله (الشاشة كانت بتسيبها فاضية وتترفض من غير ما يبان ليه).
+        if body.branch_id is None:
+            body.branch_id = current.branch_id
+        if body.branch_id != current.branch_id:
             raise HTTPException(403, {"code": "forbidden",
                                       "message": "المستخدم الجديد لازم يبقى على فرعك."})
         ensure_branch_access(current, body.branch_id)

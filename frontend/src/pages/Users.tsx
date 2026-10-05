@@ -55,6 +55,13 @@ export default function Users() {
   const [editingUser, setEditingUser] = useState<UserRecord | null>(null);
   const [editForm] = Form.useForm();
   const { user: currentUser } = useAuth();
+  /**
+   * مدير الفرع بيعمل ويعدّل الأدوار اللي **تحته** بس، على **فرعه** بس (٢٠٢٦-١٠-٠٥) — نفس قاعدة
+   * السيرفر. القايمة كانت بتعرض الأدوار كلها، فاللي يختار «مدير فرع» يترفض بـ403 ومايعرفش ليه.
+   */
+  const isAdminUser = currentUser?.role === 'owner' || currentUser?.role === 'system_admin';
+  const BELOW_BM = ['sales_rep', 'sales_manager', 'purchasing_manager', 'accountant', 'after_sales_staff', 'viewer'];
+  const roleEntries = Object.entries(ROLE_LABELS).filter(([k]) => isAdminUser || BELOW_BM.includes(k));
 
   const filter = useListFilter(users, {
     search: (u) => [u.username, u.full_name, ROLE_LABELS[u.role]],
@@ -170,7 +177,8 @@ export default function Users() {
     try {
       const payload = {
         ...values,
-        branch_id: values.branch_id || null,
+        // مدير الفرع: المستخدم الجديد على فرعه هو دايماً.
+        branch_id: (isAdminUser ? values.branch_id : currentUser?.branch_id) || null,
         territory_id: values.territory_id || null,
       };
 
@@ -356,7 +364,8 @@ export default function Users() {
         open={drawerVisible}
         destroyOnHidden
       >
-        <Form form={form} layout="vertical" onFinish={onFinish} requiredMark={false}>
+        <Form form={form} layout="vertical" onFinish={onFinish} requiredMark={false}
+          initialValues={isAdminUser ? undefined : { branch_id: currentUser?.branch_id ?? undefined }}>
           <Form.Item
             name="full_name"
             label="الاسم الكامل للموظف"
@@ -387,7 +396,7 @@ export default function Users() {
             rules={[{ required: true, message: 'يرجى تحديد صلاحية الدور!' }]}
           >
             <Select placeholder="اختر دور الموظف">
-              {Object.entries(ROLE_LABELS).map(([key, label]) => (
+              {roleEntries.map(([key, label]) => (
                 <Select.Option key={key} value={key}>
                   {label}
                 </Select.Option>
@@ -417,6 +426,7 @@ export default function Users() {
                   >
                     <Select
                       placeholder="اختر الفرع للربط التنظيمي"
+                      disabled={!isAdminUser}
                       allowClear
                       onChange={() => form.setFieldsValue({ territory_id: undefined })}
                     >
@@ -496,7 +506,7 @@ export default function Users() {
             rules={[{ required: true, message: 'يرجى تحديد صلاحية الدور!' }]}
           >
             <Select placeholder="اختر دور الموظف">
-              {Object.entries(ROLE_LABELS).map(([key, label]) => (
+              {roleEntries.map(([key, label]) => (
                 <Select.Option key={key} value={key}>
                   {label}
                 </Select.Option>
@@ -525,6 +535,7 @@ export default function Users() {
                   >
                     <Select
                       placeholder="اختر الفرع للربط التنظيمي"
+                      disabled={!isAdminUser}
                       allowClear
                       onChange={() => editForm.setFieldsValue({ territory_id: undefined })}
                     >
