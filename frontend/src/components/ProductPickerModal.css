@@ -320,3 +320,10 @@
 .ppk-cards .ppk-add-lite:disabled { background: #d9d9d9; cursor: not-allowed; }
 .ppk-compact .ppk-add-lite { width: 40px; flex: 0 0 40px; }
 
+
+/* الخانة اللي بتكتب فيها بالكيبورد — السطر اللي واقف عليه بالأسهم (٢٠٢٦-١٠-٠٥). */
+.ppk-cards .ppk-qty-lite.is-active {
+  border: 2px solid var(--ppk-green); background: #f0fdf4;
+  box-shadow: 0 0 0 3px rgba(22,163,74,.18);
+}
+.ppk-cards .ppk-qty-lite.is-active::placeholder { color: var(--ppk-green); }

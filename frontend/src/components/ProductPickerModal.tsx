@@ -149,12 +149,19 @@ export default function ProductPickerModal({
    * والاختيار بيتفتكر في المتصفح: اللي فتح الكتالوج كله عشان يشوف صنف ناقص، مش عايز
    * يعيد الضغطة مع كل فاتورة.
    */
-  const [onlyAvailableStock, setOnlyAvailableStock] = useState(() => {
+  const [onlyAvailableStockPref, setOnlyAvailableStock] = useState(() => {
     try {
       const v = localStorage.getItem('picker.onlyAvailable');
       return v === null ? true : v === '1';
     } catch { return true; }
   });
+  /**
+   * **بيع أو صرف من مخزن ⇒ أصناف المخزن ده بس، دايماً** (٢٠٢٦-١٠-٠٥ — «الأصناف اللي بتطلع
+   * المفروض بتاعت المخزن اللي مختاره»). التبديل كان بيفتح الكتالوج كله — أصناف التلات فروع
+   * — والصنف اللي مش في المخزن بيبان مقفول أصلاً ومايتختارش، فكان كلام زيادة بيلخبط.
+   * الشرا والإضافة (`disableOutOfStock` مقفول) بيفضلوا على الكتالوج كله.
+   */
+  const onlyAvailableStock = variant === 'cards' && disableOutOfStock ? true : onlyAvailableStockPref;
   const searchRef = useRef<any>(null);
 
   /** `availableFor` بتوصل دالة جديدة كل رندر من الشاشة اللي بتنده الشباك، ولو دخلت
@@ -278,7 +285,9 @@ export default function ProductPickerModal({
       //
       // القاعدة هنا بتمسك ده وأي سبب تاني يعمله (النداء وقع، المخزن فاضي فعلاً):
       // النتيجة الفاضية معناها إن القياس مش موثوق، والكتالوج الكامل أنفع من شاشة فاضية.
-      list = inStock.length ? inStock : list;
+      // الأرصدة لسه ماوصلتش (كل صنف بيقول «مش معروف») ⇒ استنّى، ماتعرضش الكتالوج كله.
+      const unknown = list.length > 0 && list.every((p) => avail(p.id) === null);
+      list = unknown && cards ? [] : (inStock.length || cards ? inStock : list);
     }
     // **الترتيب أبجدي عربي، آخر خطوة قبل العرض.**
     //
@@ -436,11 +445,58 @@ export default function ProductPickerModal({
   useEffect(() => { memory.cursor = cursor; }, [cursor]);
   const rememberScroll = () => { if (listRef.current) memory.scrollTop = listRef.current.scrollTop; };
 
+  /** وضع السطر بعد الأسهم — الشرح في `onKeyDown`. */
+  const [rowMode, setRowMode] = useState(false);
+  const qtyDraft = useRef<{ id: number; text: string } | null>(null);
+  useEffect(() => { if (!open) { setRowMode(false); qtyDraft.current = null; } }, [open]);
+
   const toggle = (id: number) =>
     setPicked((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
 
   const onKeyDown = (e: React.KeyboardEvent) => {
+    // **وضع السطر** (طلب العميل ٢٠٢٦-١٠-٠٥): بعد ما تتحرّك بالأسهم، الأرقام بتتكتب في كمية
+    // الصنف اللي واقف عليه (مش في البحث)، وEnter بيعلّمه ويرجّعك للبحث فاضي تكتب من جديد.
+    // أي حرف تاني بيرجّع للبحث عادي. والتأكيد بزرار «تم واعتماد الأصناف».
+    const at = ordered[cursor];
+    if (cards && rowMode && at) {
+      const ch = e.key.length === 1
+        ? e.key.replace(/[٠-٩]/g, (d) => String('٠١٢٣٤٥٦٧٨٩'.indexOf(d))).replace('٫', '.')
+        : e.key;
+      const draft = qtyDraft.current;
+      const prevText = draft && draft.id === at.id
+        ? draft.text : (qtys[at.id] != null ? String(qtys[at.id]) : '');
+      if (/^[0-9.]$/.test(ch)) {
+        e.preventDefault();
+        const text = (draft && draft.id === at.id ? prevText : '') + ch;
+        qtyDraft.current = { id: at.id, text };
+        const n = Number(text);
+        setQtyOf(at.id, Number.isNaN(n) ? null : n);
+        return;
+      }
+      if (e.key === 'Backspace') {
+        e.preventDefault();
+        const text = prevText.slice(0, -1);
+        qtyDraft.current = { id: at.id, text };
+        setQtyOf(at.id, text === '' ? null : Number(text));
+        return;
+      }
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        const av = availableFor ? availableFor(at.id) : null;
+        if (disableOutOfStock && av !== null && av <= 0) return;
+        if (!onPickMany) { addOne(at.id); return; }
+        setPicked((prev) => (prev.includes(at.id) ? prev : [...prev, at.id]));
+        qtyDraft.current = null;
+        setRowMode(false);
+        setQuery('');
+        searchRef.current?.focus?.({ preventScroll: true });
+        return;
+      }
+      if (e.key.length === 1) { setRowMode(false); qtyDraft.current = null; }
+    }
     if (cards && (e.key === 'ArrowDown' || e.key === 'ArrowUp')) {
+      setRowMode(true);
+      qtyDraft.current = null;
       mouseCursor.current = false;
       pendingScroll.current = null;
       // الصف الجاي لسه مش مترسوم ⇒ الصفحة الجاية بتتضاف تحت في نفس الرندر، فالمؤشر
@@ -508,7 +564,8 @@ export default function ProductPickerModal({
       || (activeCategory != null && g.children.includes(activeCategory)));
     const heading = title === 'اختر الصنف' ? 'اختيار صنف من المخزن / الكتالوج' : title;
     const forDoc = hidePurchasePrice ? 'للفاتورة' : 'للمستند';
-    const showStockToggle = Boolean(availableFor && disableOutOfStock);
+    // في الكروت التبديل اتشال: البيع والصرف من مخزن بيعرضوا رصيده بس (شوف `onlyAvailableStock`).
+    const showStockToggle = false;
     const sortOptions = [
       { value: 'name', label: 'الاسم (أبجدي)' },
       ...(availableFor ? [{ value: 'avail', label: 'الأكثر رصيداً' }] : []),
@@ -741,7 +798,8 @@ export default function ProductPickerModal({
                           onMouseDown={(e) => e.stopPropagation()}
                           onClick={(e) => e.stopPropagation()}>
                           <input
-                            className="ppk-qty-lite" inputMode="decimal" tabIndex={-1} disabled={out}
+                            className={`ppk-qty-lite${isCursor && rowMode ? ' is-active' : ''}`}
+                            inputMode="decimal" tabIndex={-1} disabled={out}
                             placeholder="الكمية" value={qtys[p.id] ?? ''}
                             onChange={(e) => {
                               const raw = e.target.value
@@ -796,7 +854,7 @@ export default function ProductPickerModal({
             <div className="ppk-hints">
               <span><span className="ppk-key">اكتب</span> للبحث الفوري</span>
               <span><span className="ppk-key">↑↓</span> للتنقل بين السطور</span>
-              <span><span className="ppk-key">Enter</span> للإضافة السريعة {forDoc}</span>
+              <span><span className="ppk-key">↑↓</span> ثم الرقم = الكمية · <span className="ppk-key">Enter</span> يعلّمه ويرجّعك للبحث</span>
               <span><span className="ppk-key">Esc</span> للإغلاق</span>
             </div>
             <div className="ppk-foot-actions">
