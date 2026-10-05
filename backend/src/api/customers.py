@@ -509,15 +509,18 @@ def customer_debts(
             and_(Customer.branch_id.is_(None), Customer.territory_id.in_(branch_terr)),
         ))
     if q and q.strip():
-        like = f"%{arabic.bare(q)}%"
-        conds = [arabic.sort_key(Customer.name).like(like),
-                 arabic.sort_key(Customer.code).like(like),
-                 Customer.phone.ilike(f"%{q.strip()}%")]
-        # التليفون متخزّن أحياناً من غير الصفر الأول — «0100…» لازم تلاقي «100…».
-        digits = (arabic.western_digits(q) or "").strip()
-        if digits.isdigit() and digits.lstrip("0"):
-            conds.append(Customer.phone.like(f"%{digits.lstrip('0')}%"))
-        base = base.where(or_(*conds))
+        # **كل كلمة لوحدها، وبأي ترتيب** (طلب العميل ٢٠٢٦-١٠-٠٥ — «لازم أكتب الاسم بالكامل»):
+        # «محمد حسن» بتلاقي «محمد ابراهيم حسن». كانت الجملة كلها لازم تيجي ورا بعض في الاسم.
+        for word in q.split():
+            like = f"%{arabic.bare(word)}%"
+            conds = [arabic.sort_key(Customer.name).like(like),
+                     arabic.sort_key(Customer.code).like(like),
+                     Customer.phone.ilike(f"%{word.strip()}%")]
+            # التليفون متخزّن أحياناً من غير الصفر الأول — «0100…» لازم تلاقي «100…».
+            digits = (arabic.western_digits(word) or "").strip()
+            if digits.isdigit() and digits.lstrip("0"):
+                conds.append(Customer.phone.like(f"%{digits.lstrip('0')}%"))
+            base = base.where(or_(*conds))
     cust_ids = base.subquery("cust_ids")
 
     bal = customer_profile_service.family_balances_subquery(as_of)

@@ -122,6 +122,15 @@ export default function CustomerDebts() {
 
   const [filters, setFilters] = useState<Filters>({});
   const [search, setSearch] = useState('');
+  // البحث بيشتغل وانت بتكتب (بعد وقفة صغيرة) — مش لازم Enter (٢٠٢٦-١٠-٠٥).
+  useEffect(() => {
+    const t = window.setTimeout(() => {
+      const q = search.trim() || undefined;
+      if (q !== filters.q) setFilter('q', q);
+    }, 400);
+    return () => window.clearTimeout(t);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [search]);
   const [minDraft, setMinDraft] = useState<number | null>(null);
   const [maxDraft, setMaxDraft] = useState<number | null>(null);
   const [page, setPage] = useState(1);
@@ -445,10 +454,13 @@ export default function CustomerDebts() {
               // زرار المسح (×) بيرجّع الكشف على طول.
               if (!e.target.value && filters.q) setFilter('q', undefined);
             }}
+            style={{ minWidth: 240 }}
             onPressEnter={applySearch}
             onBlur={applySearch}
           />
           <Select allowClear showSearch placeholder="المندوب" value={filters.rep_id}
+            // أعرض — أسامي المناديب كانت بتتقص (طلب العميل ٢٠٢٦-١٠-٠٥).
+            style={{ minWidth: 240 }} popupMatchSelectWidth={false}
             onChange={(v) => setFilter('rep_id', v)}
             filterOption={searchFilter} filterSort={searchRank}
             options={reps.map((r) => ({ value: r.id, label: r.full_name }))} />
