@@ -6,7 +6,7 @@ import {
 import { AppstoreOutlined, CheckOutlined, PlusOutlined, SearchOutlined } from '@ant-design/icons';
 import { keepInView } from '../utils/keepInView';
 import { normalizeAr } from './ListToolbar';
-import { TabDrawer, TabModal } from './TabModal';
+import { TabModal } from './TabModal';
 import { qty, money, numeralsLocale } from '../utils/money';
 import { useCategoryTree, withChildren } from '../hooks/useCategoryTree';
 import './ProductPickerModal.css';
@@ -540,13 +540,10 @@ export default function ProductPickerModal({
     );
 
     return (
-      // **شريط جانبي بطول الشاشة** (اختيار العميل ٢٠٢٦-١٠-٠٥، الفكرة ١): أصناف أكتر في الشاشة
-      // (سطر رفيع لكل صنف)، والفاتورة باينة جنبه على اليمين — أسامي الأصناف اللي اتضافت
-      // ماتتغطّاش. والفئات عمود رأسي على اليمين جوّه الشريط.
-      <TabDrawer open={open} onClose={onCancel} placement="left" width="min(1000px, 96vw)"
-        rootClassName="ppk-cards ppk-drawer" destroyOnHidden maskClosable={false} keyboard
-        styles={{ body: { padding: 0, display: 'flex', flexDirection: 'column' },
-          header: { padding: '10px 16px' }, mask: { background: 'rgba(0,0,0,0.12)' } }}
+      // **في النص، والسطور رفيعة** (طلب العميل ٢٠٢٦-١٠-٠٥): الشريط الجانبي اتلغى ورجع الشباك
+      // في النص، والفئات عمود رأسي على اليمين. السطر بقى رفيع (نفس حجم الخط) فبيبان أصناف أكتر.
+      <TabModal open={open} onCancel={onCancel} footer={null} width={1320}
+        rootClassName="ppk-cards ppk-compact" focusTriggerAfterClose={false} destroyOnHidden
         title={(
           <div className="ppk-head">
             <div className="ppk-head-icon"><AppstoreOutlined /></div>
@@ -811,7 +808,7 @@ export default function ProductPickerModal({
             </div>
           </div>
         </div>
-      </TabDrawer>
+      </TabModal>
     );
   }
 
