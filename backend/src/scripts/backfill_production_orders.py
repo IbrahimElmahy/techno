@@ -67,7 +67,7 @@ from src.services.manufacturing_service import work_order_ref
 SOURCE = "a5"
 
 
-def run(*, execute: bool) -> None:
+def run(*, execute: bool, prefix: str = "") -> None:
     db = SessionLocal()
     try:
         wh_branch = {w.id: w.branch_id for w in db.scalars(select(Warehouse)).all()}
@@ -89,8 +89,9 @@ def run(*, execute: bool) -> None:
         done = {d for (d,) in db.execute(
             select(ProductionOrder.document_number)
             .where(ProductionOrder.imported_from == SOURCE)).all()}
+        # `--prefix FC-` = فرع واحد بس (السادات)؛ الفروع التانية مابتتلمسش.
         todo = {k: v for k, v in groups.items()
-                if f"WO-{SOURCE.upper()}-{k}"[:24] not in done}
+                if f"WO-{SOURCE.upper()}-{k}"[:24] not in done and k.startswith(prefix)}
 
         n_prod = sum(1 for op, _ in (ln for v in todo.values() for ln in v)
                      if op.op_type == ManufactureOpType.produce)
@@ -177,8 +178,9 @@ def run(*, execute: bool) -> None:
 def main() -> None:
     ap = argparse.ArgumentParser(description="لمّ حركة التصنيع المنقولة في أوامر تشغيل")
     ap.add_argument("--yes", action="store_true")
+    ap.add_argument("--prefix", default="", help="بادئة رقم العملية — FC- للسادات بس")
     a = ap.parse_args()
-    run(execute=a.yes)
+    run(execute=a.yes, prefix=a.prefix)
 
 
 if __name__ == "__main__":
