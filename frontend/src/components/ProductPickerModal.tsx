@@ -333,8 +333,18 @@ export default function ProductPickerModal({
    *  الكتالوج آلاف الأصناف، وكلهم كانوا بيتحطوا في الـDOM مرة واحدة — الشباك بيتجمّد
    *  ثواني قبل ما يبان. المعروض بيتقصّ، وبيزيد لما اللي بيدوّر يوصل لآخر القايمة. */
   const PAGE = 120;
+  /** **أول رسمة ٣٠ سطر بس** (٢٠٢٦-١٠-٠٥ — «الشريط بياخد ثانية على ما يظهر»): الشاشة
+   *  بتسيع ~٢٠، فالـ١٢٠ كانت بتتبني كلها قبل ما أي حاجة تبان. الباقي بيتكمّل في الرسمة اللي
+   *  بعدها، واللي بيبص مش بيحس. */
+  const FIRST = 30;
   // الصفحة الأولى لازم تشمل الصف اللي كان مختار — وإلا Enter بيضيف صف مش ظاهر.
-  const [shown, setShown] = useState(() => Math.max(PAGE, memory.cursor + PAGE));
+  const [shown, setShown] = useState(() => Math.max(FIRST, memory.cursor + FIRST));
+  useEffect(() => {
+    if (!open) return undefined;
+    const t = window.setTimeout(() => setShown((n) => Math.max(n, PAGE)), 60);
+    return () => window.clearTimeout(t);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
   // مش على `open`: الفتحة الجديدة بترجع لنفس المكان (شوف `memory` فوق).
   useEffect(() => { setShown((n) => Math.max(PAGE, Math.min(n, memory.cursor + PAGE))); }, [query, activeCategory, activeRoot, onlyAvailableStock, sortKey]);
   const rendered = useMemo(() => ordered.slice(0, shown), [ordered, shown]);
@@ -699,7 +709,9 @@ export default function ProductPickerModal({
                         if (i !== cursor) { mouseCursor.current = true; setCursor(i); }
                       }}>
                       {onPickMany && (
-                        <Checkbox className="ppk-check" checked={checked} disabled={out} tabIndex={-1} />
+                        <span className={`ppk-check-lite${checked ? ' is-on' : ''}`} aria-hidden="true">
+                          {checked ? <CheckOutlined /> : null}
+                        </span>
                       )}
                       <div className="ppk-info">
                         <div className="ppk-name-row">
@@ -731,18 +743,22 @@ export default function ProductPickerModal({
                         <span className="ppk-qty-wrap"
                           onMouseDown={(e) => e.stopPropagation()}
                           onClick={(e) => e.stopPropagation()}>
-                          <InputNumber
-                            className="ppk-qty" size="middle" min={0} controls={false}
-                            keyboard={false} tabIndex={-1} disabled={out}
-                            placeholder="الكمية" value={qtys[p.id] ?? null}
-                            onChange={(v) => setQtyOf(p.id, v == null ? null : Number(v))}
+                          <input
+                            className="ppk-qty-lite" inputMode="decimal" tabIndex={-1} disabled={out}
+                            placeholder="الكمية" value={qtys[p.id] ?? ''}
+                            onChange={(e) => {
+                              const raw = e.target.value
+                                .replace(/[٠-٩]/g, (d) => String('٠١٢٣٤٥٦٧٨٩'.indexOf(d)))
+                                .replace(/[٫,]/g, '.').replace(/[^0-9.]/g, '');
+                              setQtyOf(p.id, raw === '' || Number.isNaN(Number(raw)) ? null : Number(raw));
+                            }}
                             onKeyDown={(e) => {
                               if (e.key === 'Escape') return;
                               e.stopPropagation();
                               // ↑↓ من هنا بترجع للبحث وتكمّل تنقّل — الإيد مابتروحش للماوس.
                               if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
                                 searchRef.current?.focus?.({ preventScroll: true });
-                                onKeyDown(e);
+                                onKeyDown(e as any);
                                 return;
                               }
                               if (e.key !== 'Enter') return;
@@ -751,12 +767,12 @@ export default function ProductPickerModal({
                               searchRef.current?.focus?.({ preventScroll: true });
                             }} />
                         </span>
-                        <Button type="primary" className="ppk-add" disabled={out} tabIndex={-1}
-                          icon={isCursor ? undefined : <PlusOutlined />}
+                        <button type="button" className="ppk-add-lite" disabled={out} tabIndex={-1}
+                          aria-label="إضافة"
                           onMouseDown={(e) => e.preventDefault()}
                           onClick={(e) => { e.stopPropagation(); if (!out) addOne(p.id); }}>
-                          {isCursor ? '↵' : ''}
-                        </Button>
+                          {isCursor ? '↵' : <PlusOutlined />}
+                        </button>
                       </div>
                     </div>
                   );
