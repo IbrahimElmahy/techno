@@ -20,6 +20,7 @@ import {
 } from '@ant-design/icons';
 import DocumentToolbar, { type ToolbarAction } from '../components/DocumentToolbar';
 import LoadPeriodModal from '../components/LoadPeriodModal';
+import QuickAddRow from '../components/QuickAddRow';
 import { printPermit } from '../print/permitSheet';
 import dayjs, { Dayjs } from 'dayjs';
 import { useSearchParams } from 'react-router-dom';
@@ -606,6 +607,13 @@ export default function StockPermits() {
         ]}
       />
       </div>
+      {/* السطر الزيادة: المخزن الأول وبعدين الصنف (٢٠٢٦-١٠-٠٥). */}
+      <QuickAddRow asDiv colSpan={1} items={pickable}
+        warehouses={warehouses} warehouseId={warehouseId ?? null}
+        onWarehouseChange={(w) => setWarehouseId(w)}
+        availableFor={kind === 'issue' && warehouseId ? ((id) => available[id] ?? 0) : undefined}
+        onOpenPicker={() => setPickerOpen(true)}
+        onPick={(id) => addPickedSequentially([id], undefined, addItem, setFocusLineKey)} />
       </div>
 
       <div className="sale-card sale-notes">

@@ -21,6 +21,7 @@ import {
   CheckOutlined, SwapOutlined, SearchOutlined, ShoppingCartOutlined, MinusOutlined, ReloadOutlined,
 } from '@ant-design/icons';
 import LoadPeriodModal from '../components/LoadPeriodModal';
+import QuickAddRow from '../components/QuickAddRow';
 import { useSearchParams } from 'react-router-dom';
 import { api } from '../api/client';
 import { useDraft } from '../components/useDraft';
@@ -1815,7 +1816,7 @@ export default function Transfers() {
           )}
 
           {/* سطور الإذن الجديد — نفس جدول فاتورة البيع. والفاضي بيقول الخطوة الجاية. */}
-          {editing ? null : lines.length > 0 ? (
+          {editing ? null : (lines.length > 0 || (source && !viewOnly && !stockLoading && sourceStock.length > 0)) ? (
             <div className="sale-grid-wrap">
               <table {...lineGrid.tableProps}>
                 {lineGrid.cols}
@@ -1845,6 +1846,12 @@ export default function Transfers() {
                       ))}
                     </React.Fragment>
                   ))}
+                  {/* السطر الزيادة: الصنف على طول من المصدر (٢٠٢٦-١٠-٠٥). */}
+                  <QuickAddRow
+                    colSpan={lineGrid.count} disabled={viewOnly || !source} items={pickerProducts}
+                    availableFor={(id) => (stockLoading ? null : (availableById[id] ?? 0))}
+                    onOpenPicker={() => setPickerOpen(true)}
+                    onPick={(id) => addPickedSequentially([id], undefined, addItem, setFocusLineKey)} />
                 </tbody>
                 <tfoot>{lineGrid.foot(lines, (
                   <>الإجماليات: <span style={{ color: '#64748b', fontWeight: 600 }}>

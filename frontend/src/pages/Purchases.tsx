@@ -35,6 +35,7 @@ import InvoiceDocument, { InvoiceDoc, invoiceFooter, printInvoice }
   from '../components/InvoiceDocument';
 import DocumentBar from '../components/DocumentBar';
 import LoadPeriodModal from '../components/LoadPeriodModal';
+import QuickAddRow from '../components/QuickAddRow';
 import DocumentToolbar, { ToolbarAction } from '../components/DocumentToolbar';
 import PrintOptionsMenu from '../components/PrintOptionsMenu';
 import { PrintOptions, loadPrintOptions } from '../print/printOptions';
@@ -1811,7 +1812,7 @@ export default function Purchases() {
             )}
           </div>
 
-          {purchaseItems.length === 0 ? (
+          {purchaseItems.length === 0 && viewOnly ? (
             <Empty description="اختر الفئة ثم الأصناف لإضافتها للفاتورة"
               style={{ margin: '12px 0' }} />
           ) : (
@@ -1844,6 +1845,13 @@ export default function Purchases() {
                       ))}
                     </React.Fragment>
                   ))}
+                  {/* السطر الزيادة: المخزن الأول وبعدين الصنف (٢٠٢٦-١٠-٠٥). */}
+                  <QuickAddRow
+                    colSpan={lineGrid.count} disabled={viewOnly} items={items as any}
+                    warehouses={lineWarehouses} warehouseId={stickyWarehouseId}
+                    onWarehouseChange={(w) => { setStickyWarehouseId(w); loadWarehouseStock(w); }}
+                    onOpenPicker={() => setPickerOpen(true)}
+                    onPick={(id) => addProductById(id, null)} />
                 </tbody>
                 <tfoot>{lineGrid.foot(purchaseItems)}</tfoot>
               </table>

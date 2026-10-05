@@ -38,6 +38,7 @@ import InvoiceDocument, { InvoiceDoc, invoiceFooter, printInvoice } from '../com
 import CustomerAccountPanel from '../components/CustomerAccountPanel';
 import PartyPickerModal, { Party } from '../components/PartyPickerModal';
 import LoadPeriodModal from '../components/LoadPeriodModal';
+import QuickAddRow from '../components/QuickAddRow';
 import DocumentToolbar, { ToolbarAction } from '../components/DocumentToolbar';
 import PrintOptionsMenu from '../components/PrintOptionsMenu';
 import { PrintOptions, loadPrintOptions } from '../print/printOptions';
@@ -2997,7 +2998,7 @@ function couponsTotal(inv: any): number {
             * وفاتورة خمستاشر صنف بتبقى صفحتين تمرير. وأهم من المساحة إن الكميات والأسعار
             * مكانش ليها عمود تتقارن فيه رأسياً — واللي بيراجع فاتورة طويلة بيقارن رأسياً.
             */}
-          {lines.length === 0 ? (
+          {lines.length === 0 && viewOnly ? (
             <Empty description="اختر الفئة ثم المنتجات لإضافتها للفاتورة"
               style={{ margin: '12px 0' }} />
           ) : (
@@ -3030,6 +3031,19 @@ function couponsTotal(inv: any): number {
                       ))}
                     </React.Fragment>
                   ))}
+                  {/* السطر الزيادة: المخزن الأول وبعدين الصنف (٢٠٢٦-١٠-٠٥). */}
+                  <QuickAddRow
+                    colSpan={lineGrid.count} disabled={viewOnly}
+                    items={products}
+                    warehouses={warehouses} warehouseId={docWarehouseId}
+                    onWarehouseChange={async (w) => { setDocWarehouseId(w); await loadWarehouseStock(w); }}
+                    availableFor={(id) => (docWarehouseId === null || !availability[docWarehouseId]
+                      ? null : availableFor(id, null, docWarehouseId))}
+                    onOpenPicker={() => setPickerOpen(true)}
+                    onPick={(id) => {
+                      setPanelItemId(id);
+                      addPickedSequentially([id], undefined, addProductById, setFocusLineKey);
+                    }} />
                 </tbody>
                 <tfoot>{lineGrid.foot(lines, (
                   <>الإجماليات: <span style={{ color: '#64748b', fontWeight: 600 }}>

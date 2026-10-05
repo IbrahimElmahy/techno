@@ -36,6 +36,7 @@ import { textColumn, numberColumn, dateColumn } from '../components/gridColumns'
 import PartyPickerModal from '../components/PartyPickerModal';
 import DocumentBar from '../components/DocumentBar';
 import LoadPeriodModal from '../components/LoadPeriodModal';
+import QuickAddRow from '../components/QuickAddRow';
 import DocumentToolbar, { ToolbarAction } from '../components/DocumentToolbar';
 import SummaryTile from '../components/saleDoc/SummaryTile';
 import DocumentAttachments from '../components/DocumentAttachments';
@@ -1449,7 +1450,7 @@ export default function PurchaseReturns({ embedded }: { embedded?: { onExit: () 
             )}
           </div>
 
-          {returnLines.length === 0 ? (
+          {returnLines.length === 0 && viewOnly ? (
             <Empty description="اختر الأصناف المرتجعة" style={{ margin: '12px 0' }} />
           ) : (
             <div className="sale-grid-wrap">
@@ -1481,6 +1482,15 @@ export default function PurchaseReturns({ embedded }: { embedded?: { onExit: () 
                       ))}
                     </React.Fragment>
                   ))}
+                  {/* السطر الزيادة: المخزن الأول وبعدين الصنف (٢٠٢٦-١٠-٠٥). */}
+                  <QuickAddRow
+                    colSpan={lineGrid.count} disabled={viewOnly} items={items as any}
+                    warehouses={warehouses} warehouseId={warehouseId}
+                    onWarehouseChange={(w) => { setWarehouseId(w); loadWarehouseStock(w); }}
+                    availableFor={(id) => (warehouseId && availability[warehouseId]
+                      ? (availability[warehouseId][id] ?? 0) : null)}
+                    onOpenPicker={() => setPickerOpen(true)}
+                    onPick={(id) => addPickedSequentially([id], undefined, addReturnLine, setFocusLineKey)} />
                 </tbody>
                 <tfoot>{lineGrid.foot(returnLines)}</tfoot>
               </table>

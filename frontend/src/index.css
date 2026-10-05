@@ -1821,3 +1821,7 @@ body.eg-resizing * {
   .up-layout { flex-direction: column; }
   .up-users { flex: 0 0 auto; }
 }
+
+/* السطر الزيادة في آخر جدول الأصناف — المخزن ثم الصنف (٢٠٢٦-١٠-٠٥). */
+.eg-quick-row td, .eg-quick-div { background: #f7fbf5 !important; border-top: 1px dashed #b7dba0; }
+.eg-quick-div { border: 1px dashed #b7dba0; border-radius: 8px; margin-top: 6px; padding: 2px 6px; }

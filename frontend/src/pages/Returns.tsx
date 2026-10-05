@@ -36,6 +36,7 @@ import { showReversalConfirm } from '../components/ConfirmationDialog';
 import InvoiceDocument, { InvoiceDoc, invoiceFooter, printInvoice } from '../components/InvoiceDocument';
 import DocumentBar from '../components/DocumentBar';
 import LoadPeriodModal from '../components/LoadPeriodModal';
+import QuickAddRow from '../components/QuickAddRow';
 import DocumentToolbar, { ToolbarAction } from '../components/DocumentToolbar';
 import { DocRef } from '../components/DocumentLink';
 import ColumnSettings, { useHiddenColumns } from '../components/ColumnSettings';
@@ -1563,7 +1564,7 @@ export default function Returns({ embedded }: { embedded?: { onExit: () => void 
                 {/* سطور المرتجع جدول واحد بترويسة كحلي زي فاتورة البيع — كانت كروت متجمّعة
                     بالفئة. الفئة بقت صف فاصل جوّه الجدول (لما يكون فيه أكتر من فئة)، والسيريالات
                     صف كامل تحت السطر بتاعها. */}
-                {lines.length === 0 ? (
+                {lines.length === 0 && viewOnly ? (
                   <Empty description="اختر الفئة ثم الأصناف لإضافتها للمرتجع" style={{ margin: '12px 0' }} />
                 ) : (
                   <div className="sale-grid-wrap">
@@ -1613,6 +1614,16 @@ export default function Returns({ embedded }: { embedded?: { onExit: () => void 
                             ))}
                           </React.Fragment>
                         ))}
+                        {/* السطر الزيادة: المخزن الأول وبعدين الصنف (٢٠٢٦-١٠-٠٥). */}
+                        <QuickAddRow
+                          colSpan={lineGrid.count} disabled={viewOnly} items={products}
+                          warehouses={warehouses} warehouseId={docWarehouseId}
+                          onWarehouseChange={(w) => { setDocWarehouseId(w); loadWarehouseStock(w); }}
+                          onOpenPicker={() => setPickerOpen(true)}
+                          onPick={(id) => {
+                            setPanelItemId(id);
+                            addPickedSequentially([id], undefined, addProductById, setFocusLineKey);
+                          }} />
                       </tbody>
                       <tfoot>{lineGrid.foot(lines, (
                         <>الإجماليات: <span style={{ color: '#64748b', fontWeight: 600 }}>
