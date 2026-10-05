@@ -253,22 +253,14 @@
 .ppk-drawer .ppk-chip { height: 32px; padding: 0 10px; }
 .ppk-drawer .ppk-sort { min-width: 160px; }
 
-/* الفئات: أزرار فوق بدل العمود الجانبي */
-.ppk-drawer .ppk-split { flex-direction: column; gap: 8px; }
-.ppk-drawer .ppk-side-cats {
-  flex: 0 0 auto; border: none; background: transparent; border-radius: 0;
-}
-.ppk-drawer .ppk-cats-head { display: none; }
-.ppk-drawer .ppk-cats-list {
-  display: flex; flex-wrap: wrap; gap: 5px; padding: 0; max-height: 84px; overflow-y: auto;
-}
-.ppk-drawer .ppk-cat {
-  margin: 0; padding: 2px 10px; border-radius: 999px; border: 1px solid var(--ppk-line);
-  background: #fff; gap: 6px;
-}
-.ppk-drawer .ppk-cat.is-child { margin-inline-start: 0; border-style: dashed; }
+/* الفئات: عمود رأسي على اليمين (طلب العميل ٢٠٢٦-١٠-٠٥) — ضيّق، والأصناف جنبه. */
+.ppk-drawer .ppk-split { flex-direction: row; gap: 10px; }
+.ppk-drawer .ppk-side-cats { flex: 0 0 170px; border-radius: 10px; }
+.ppk-drawer .ppk-cats-head { padding: 7px 10px; font-size: 14px; }
+.ppk-drawer .ppk-cats-list { padding: 6px; }
+.ppk-drawer .ppk-cat { padding: 4px 8px; margin-bottom: 3px; font-size: 14px; }
+.ppk-drawer .ppk-cat.is-child { margin-inline-start: 10px; }
 .ppk-drawer .ppk-cat-count { padding: 0 5px; font-size: 13px; }
-.ppk-drawer .ppk-more-cats { width: auto; margin: 0; padding: 2px 10px; border-radius: 999px; }
 .ppk-drawer .ppk-main-head { margin-bottom: 4px; }
 .ppk-drawer .ppk-legend { display: none; }
 

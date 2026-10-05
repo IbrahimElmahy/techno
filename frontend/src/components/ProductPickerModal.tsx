@@ -542,8 +542,8 @@ export default function ProductPickerModal({
     return (
       // **شريط جانبي بطول الشاشة** (اختيار العميل ٢٠٢٦-١٠-٠٥، الفكرة ١): أصناف أكتر في الشاشة
       // (سطر رفيع لكل صنف)، والفاتورة باينة جنبه على اليمين — أسامي الأصناف اللي اتضافت
-      // ماتتغطّاش. الفئات بقت أزرار فوق بدل عمود جنب.
-      <TabDrawer open={open} onClose={onCancel} placement="left" width="min(820px, 96vw)"
+      // ماتتغطّاش. والفئات عمود رأسي على اليمين جوّه الشريط.
+      <TabDrawer open={open} onClose={onCancel} placement="left" width="min(1000px, 96vw)"
         rootClassName="ppk-cards ppk-drawer" destroyOnHidden maskClosable={false} keyboard
         styles={{ body: { padding: 0, display: 'flex', flexDirection: 'column' },
           header: { padding: '10px 16px' }, mask: { background: 'rgba(0,0,0,0.12)' } }}
