@@ -241,3 +241,75 @@
   .ppk-cards .ppk-figs { width: 100%; justify-content: flex-end; flex-wrap: wrap; }
   .ppk-cards .ppk-hints { display: none; }
 }
+
+
+/* ══ الشريط الجانبي (٢٠٢٦-١٠-٠٥، الفكرة ١) — سطر رفيع لكل صنف، وأعمدة ثابتة ══ */
+.ppk-drawer .ant-drawer-content-wrapper { box-shadow: -6px 0 18px rgba(0,0,0,.12); }
+.ppk-drawer .ppk-body { flex: 1; min-height: 0; height: auto; padding: 10px 14px 8px; gap: 8px; }
+.ppk-drawer .ppk-head { padding-inline-end: 0; }
+.ppk-drawer .ppk-head-icon { width: 34px; height: 34px; font-size: 17px; }
+.ppk-drawer .ppk-search-row { flex-wrap: wrap; gap: 6px; }
+.ppk-drawer .ppk-search { flex: 1 1 100%; }
+.ppk-drawer .ppk-chip { height: 32px; padding: 0 10px; }
+.ppk-drawer .ppk-sort { min-width: 160px; }
+
+/* الفئات: أزرار فوق بدل العمود الجانبي */
+.ppk-drawer .ppk-split { flex-direction: column; gap: 8px; }
+.ppk-drawer .ppk-side-cats {
+  flex: 0 0 auto; border: none; background: transparent; border-radius: 0;
+}
+.ppk-drawer .ppk-cats-head { display: none; }
+.ppk-drawer .ppk-cats-list {
+  display: flex; flex-wrap: wrap; gap: 5px; padding: 0; max-height: 84px; overflow-y: auto;
+}
+.ppk-drawer .ppk-cat {
+  margin: 0; padding: 2px 10px; border-radius: 999px; border: 1px solid var(--ppk-line);
+  background: #fff; gap: 6px;
+}
+.ppk-drawer .ppk-cat.is-child { margin-inline-start: 0; border-style: dashed; }
+.ppk-drawer .ppk-cat-count { padding: 0 5px; font-size: 13px; }
+.ppk-drawer .ppk-more-cats { width: auto; margin: 0; padding: 2px 10px; border-radius: 999px; }
+.ppk-drawer .ppk-main-head { margin-bottom: 4px; }
+.ppk-drawer .ppk-legend { display: none; }
+
+/* رؤوس الأعمدة + السطور بنفس العروض */
+.ppk-cards .ppk-cols { display: none; }
+.ppk-drawer .ppk-cols {
+  display: flex; align-items: center; gap: 6px; padding: 4px 8px;
+  background: #f2f9f3; border: 1px solid #dce8d9; border-radius: 6px 6px 0 0;
+  font-weight: 800; color: #303030; font-size: 14px;
+}
+.ppk-drawer .ppk-cols .c-check { width: 18px; flex: 0 0 18px; }
+.ppk-drawer .ppk-cols .c-name { flex: 1; min-width: 0; }
+.ppk-drawer .c-avail, .ppk-drawer .ppk-box.avail { width: 72px; flex: 0 0 72px; }
+.ppk-drawer .c-price, .ppk-drawer .ppk-box.price { width: 92px; flex: 0 0 92px; }
+.ppk-drawer .c-cost, .ppk-drawer .ppk-box.cost { width: 86px; flex: 0 0 86px; }
+.ppk-drawer .c-qty, .ppk-drawer .ppk-qty-wrap { width: 76px; flex: 0 0 76px; }
+.ppk-drawer .c-add, .ppk-drawer .ppk-add { width: 40px; flex: 0 0 40px; }
+.ppk-drawer .ppk-cols > span { text-align: center; }
+.ppk-drawer .ppk-cols .c-name { text-align: start; }
+
+.ppk-drawer .ppk-list { border: 1px solid #e4ebe1; border-top: none; border-radius: 0 0 6px 6px; }
+.ppk-drawer .ppk-card {
+  gap: 6px; padding: 3px 8px; margin: 0; border-radius: 0; min-height: 38px;
+  border: none; border-bottom: 1px solid #eef2ec;
+}
+.ppk-drawer .ppk-card.is-cursor,
+.ppk-drawer .ppk-card.is-checked { box-shadow: inset 3px 0 0 var(--ppk-green); }
+.ppk-drawer .ppk-figs { gap: 6px; }
+.ppk-drawer .ppk-box {
+  justify-content: center; padding: 2px 4px; border-radius: 6px; border-color: transparent;
+  background: transparent;
+}
+.ppk-drawer .ppk-box span { display: none; }
+.ppk-drawer .ppk-box b { font-size: 15px; }
+.ppk-drawer .ppk-box.avail.ok, .ppk-drawer .ppk-box.avail.low, .ppk-drawer .ppk-box.avail.zero {
+  border-color: transparent;
+}
+.ppk-drawer .ppk-qty { width: 100%; }
+.ppk-drawer .ppk-qty .ant-input-number-input { height: 28px; text-align: center; }
+.ppk-drawer .ppk-add { height: 28px; padding: 0; }
+.ppk-drawer .ppk-unit, .ppk-drawer .ppk-tag { font-size: 13px; }
+
+.ppk-drawer .ppk-foot { padding: 8px 14px; border-top: 1px solid var(--ppk-line); }
+.ppk-drawer .ppk-hints { display: none; }

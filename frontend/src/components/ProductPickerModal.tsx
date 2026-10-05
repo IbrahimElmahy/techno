@@ -6,7 +6,7 @@ import {
 import { AppstoreOutlined, CheckOutlined, PlusOutlined, SearchOutlined } from '@ant-design/icons';
 import { keepInView } from '../utils/keepInView';
 import { normalizeAr } from './ListToolbar';
-import { TabModal } from './TabModal';
+import { TabDrawer, TabModal } from './TabModal';
 import { qty, money, numeralsLocale } from '../utils/money';
 import { useCategoryTree, withChildren } from '../hooks/useCategoryTree';
 import './ProductPickerModal.css';
@@ -518,6 +518,8 @@ export default function ProductPickerModal({
       return !(disableOutOfStock && av !== null && av <= 0);
     }).map((p) => p.id);
     const allSelected = selectable.length > 0 && selectable.every((id) => picked.includes(id));
+    /** عمود «الشراء» بيبان لو الشاشة بتعرض سعر الشراء أصلاً — ثابت لكل السطور عشان تتحاذى. */
+    const showCost = !priceFor && !hidePurchasePrice;
     const catItem = (key: string, label: string, count: number | null, active: boolean,
       onClick: () => void, child = false) => (
       <div key={key} className={`ppk-cat${active ? ' is-active' : ''}${child ? ' is-child' : ''}`}
@@ -528,8 +530,13 @@ export default function ProductPickerModal({
     );
 
     return (
-      <TabModal open={open} onCancel={onCancel} footer={null} width={1320}
-        rootClassName="ppk-cards" focusTriggerAfterClose={false} destroyOnHidden
+      // **شريط جانبي بطول الشاشة** (اختيار العميل ٢٠٢٦-١٠-٠٥، الفكرة ١): أصناف أكتر في الشاشة
+      // (سطر رفيع لكل صنف)، والفاتورة باينة جنبه على اليمين — أسامي الأصناف اللي اتضافت
+      // ماتتغطّاش. الفئات بقت أزرار فوق بدل عمود جنب.
+      <TabDrawer open={open} onClose={onCancel} placement="left" width="min(820px, 96vw)"
+        rootClassName="ppk-cards ppk-drawer" destroyOnHidden maskClosable={false} keyboard
+        styles={{ body: { padding: 0, display: 'flex', flexDirection: 'column' },
+          header: { padding: '10px 16px' }, mask: { background: 'rgba(0,0,0,0.12)' } }}
         title={(
           <div className="ppk-head">
             <div className="ppk-head-icon"><AppstoreOutlined /></div>
@@ -631,6 +638,15 @@ export default function ProductPickerModal({
                   </div>
                 )}
               </div>
+              <div className="ppk-cols">
+                {onPickMany && <span className="c-check" />}
+                <span className="c-name">الصنف</span>
+                {availableFor && <span className="c-avail">المتاح</span>}
+                <span className="c-price">{priceFor ? 'السعر' : 'سعر البيع'}</span>
+                {showCost && <span className="c-cost">الشراء</span>}
+                <span className="c-qty">الكمية</span>
+                <span className="c-add" />
+              </div>
               <div className="ppk-list" onKeyDown={onKeyDown} onScroll={rememberScroll}
                 ref={(el) => {
                   listRef.current = el;
@@ -698,19 +714,17 @@ export default function ProductPickerModal({
                         </div>
                       </div>
                       <div className="ppk-figs">
-                        {level !== null && (
-                          <div className={`ppk-box avail ${level}`}>
-                            <span>المتاح</span><b>{qty(available)}</b>
+                        {availableFor && (
+                          <div className={`ppk-box avail ${level ?? ''}`}>
+                            <span>المتاح</span><b>{level === null ? '—' : qty(available)}</b>
                           </div>
                         )}
-                        {price != null && price !== '' && (
-                          <div className="ppk-box price">
-                            <span>{priceLabel}</span>
-                            <b>{typeof price === 'number' ? money(price) : price}</b>
-                          </div>
-                        )}
-                        {cost != null && (
-                          <div className="ppk-box cost"><span>سعر الشراء</span><b>{money(cost)}</b></div>
+                        <div className="ppk-box price" title={priceLabel}>
+                          <span>{priceLabel}</span>
+                          <b>{price != null && price !== '' ? (typeof price === 'number' ? money(price) : price) : '—'}</b>
+                        </div>
+                        {showCost && (
+                          <div className="ppk-box cost"><span>سعر الشراء</span><b>{cost != null ? money(cost) : '—'}</b></div>
                         )}
                         {/* الضغط هنا بياخد التركيز (الكارت بيمنعه)، والمفاتيح مابتطلعش للقايمة:
                             Enter = علّم وارجع للبحث، مش «أضف وأقفل». */}
@@ -741,7 +755,7 @@ export default function ProductPickerModal({
                           icon={isCursor ? undefined : <PlusOutlined />}
                           onMouseDown={(e) => e.preventDefault()}
                           onClick={(e) => { e.stopPropagation(); if (!out) addOne(p.id); }}>
-                          {isCursor ? 'إضافة ↵' : 'إضافة'}
+                          {isCursor ? '↵' : ''}
                         </Button>
                       </div>
                     </div>
@@ -781,7 +795,7 @@ export default function ProductPickerModal({
             </div>
           </div>
         </div>
-      </TabModal>
+      </TabDrawer>
     );
   }
 
