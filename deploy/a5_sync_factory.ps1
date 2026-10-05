@@ -59,7 +59,15 @@ $Exports = @(
     @{ Sql = 'exp_cust.sql';         Out = 'a5_cust.tsv'      },
     @{ Sql = 'exp_bal_by_store.sql'; Out = 'a5_bal_store.tsv' },
     @{ Sql = 'exp_hdr.sql';          Out = 'a5_hdr.tsv'       },
-    @{ Sql = 'exp_lines.sql';        Out = 'a5_lines.tsv'     }
+    @{ Sql = 'exp_lines.sql';        Out = 'a5_lines.tsv'     },
+    # (٢٠٢٦-١٠-٠٥) نفس تصدير العلياء وأكتوبر — من غيرهم السندات والقيود وأرصدة العملاء
+    # والحسابات الجديدة وحركة التصنيع ماكانتش بتوصل، والمستندات بس اللي بتتنقل.
+    @{ Sql = 'exp_tree.sql';         Out = 'a5_acc.tsv'       },
+    @{ Sql = 'exp_open.sql';         Out = 'a5_open.tsv'      },
+    @{ Sql = 'exp_emp.sql';          Out = 'a5_emp.tsv'       },
+    @{ Sql = 'exp_acc.sql';          Out = 'a5_acclines.tsv'  },
+    @{ Sql = 'exp_bal.sql';          Out = 'a5_bal.tsv'       },
+    @{ Sql = 'exp_mfg.sql';          Out = 'a5_mfg.tsv'       }
 )
 
 $Sqlcmd = (Get-ChildItem 'C:\Program Files\Microsoft SQL Server',
