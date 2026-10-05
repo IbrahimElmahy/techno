@@ -55,6 +55,9 @@ TABLES = {
     "11": (PurchaseReturn, PurchaseReturnLine, "return_id"),
     "6": (StockTransfer, StockTransferLine, "transfer_id"),
     "3": (StockPermit, StockPermitLine, "permit_id"),
+    # أذون الصرف كانت ناقصة هنا، فالإذن اللي اتعدّل في a5 ماكانش بيتكشف (FC-IS28
+    # في السادات: سطرين اتشالوا عندهم وفضلوا عندنا، ٢٠٢٦-١٠-٠٥).
+    "8": (StockPermit, StockPermitLine, "permit_id"),
 }
 
 

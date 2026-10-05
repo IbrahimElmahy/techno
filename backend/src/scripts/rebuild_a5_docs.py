@@ -49,6 +49,7 @@ DOC_TYPE = {
     "11": "purchase_return",
     "6": "stock_transfer",
     "3": "stock_permit",
+    "8": "stock_permit",
 }
 
 
