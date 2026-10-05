@@ -65,7 +65,8 @@ export function buildLineColumns({
       cellStyle: { color: '#5b6575', textAlign: 'center' }, cell: (_l, i) => i + 1 },
     { key: 'item', title: 'اسم الصنف والوصف', width: 210, minWidth: 120, locked: true,
       cell: (line) => {
-        const code = line.item_id ? productCode?.(line.item_id) : null;
+        // الاسم بس — من غير كود الصنف تحته (طلب العميل ٢٠٢٦-١٠-٠٥: «الكود اللي جنب اسم الصنف
+        // شيله»). الكود لسه في شباك اختيار الصنف وفي كارت الصنف.
         const name = line.item_id ? productName(line.item_id) : 'اختر الصنف';
         return (
           <div style={{ cursor: 'pointer', lineHeight: 1.25 }} onClick={() => setPanelItemId(line.item_id)}>
@@ -73,11 +74,6 @@ export function buildLineColumns({
             <div className="eg-ellipsis" title={name} style={{ fontWeight: 700, fontSize: 15, color: '#0f172a' }}>
               {name}
             </div>
-            {code ? (
-              <div dir="ltr" style={{ fontSize: 14, color: '#5b6575', fontWeight: 500, textAlign: 'end' }}>
-                {code}
-              </div>
-            ) : null}
           </div>
         );
       } },
