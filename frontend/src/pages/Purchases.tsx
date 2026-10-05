@@ -1916,7 +1916,11 @@ export default function Purchases() {
                   <div>
                     <div className="sale-due-label">الباقي للمورد</div>
                     <div className="sale-due-sub">
-                      {creditAmount > 0.001 ? 'بيتسجّل آجل على حسابه' : 'مافيش باقي له'}
+                      {creditAmount > 0.001 ? 'بيتسجّل آجل على حسابه'
+                        // الدفع بالزيادة مسموح (٢٠٢٦-١٠-٠٥): الفرق دفعة مقدّمة على حساب المورد.
+                        : (Number(cashAmount) || 0) - invoiceTotal > 0.001
+                          ? `دفعت زيادة ${money((Number(cashAmount) || 0) - invoiceTotal)} — بتنزل على حساب المورد كدفعة مقدّمة`
+                          : 'مافيش باقي له'}
                     </div>
                   </div>
                   <div className="sale-due-value">{money(creditAmount)}</div>

@@ -242,6 +242,11 @@ def create_purchase(
         entry_lines.append(LineInput(cash_acc.id, Direction.credit, to_money(cash_amount)))
     if to_money(credit_amount) > ZERO:
         entry_lines.append(LineInput(supplier_acc.account_id, Direction.credit, to_money(credit_amount)))
+    elif to_money(credit_amount) < ZERO:
+        # **دفع للمورد أكتر من الفاتورة** (٢٠٢٦-١٠-٠٥ — «ممكن أسدد بالزيادة»): الزيادة دفعة
+        # مقدّمة بتنزل من مديونيته أو بتبقى له رصيد عندنا — زي فاتورة البيع بالظبط. كانت
+        # بتسيب القيد مش متوازن والحفظ بيقع.
+        entry_lines.append(LineInput(supplier_acc.account_id, Direction.debit, -to_money(credit_amount)))
     entry = ledger_service.post_entry(
         db, entry_type="purchase", actor_user_id=actor_user_id, lines=entry_lines,
         rep_id=rep_id, branch_id=invoice.branch_id,

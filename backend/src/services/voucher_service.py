@@ -107,10 +107,11 @@ def _split_across_lines(db: Session, accounts: list[CustomerAccount], amount: De
     balances = [(a, b) for a, b in owing if b > ZERO]
     total = sum((b for _, b in balances), ZERO)
     if total <= ZERO:
-        # Nothing owed on any line: «على الإجمالي» has no proportion to follow. Refusing beats
-        # inventing one — an advance payment has to say which line it is for.
-        raise VoucherError(
-            "مفيش مديونية على العميل عشان توزّع عليها — حدد النوع (أبيض / بولي).")
+        # مافيش مديونية على أي خط ⇒ الفلوس كلها **دفعة تحت الحساب** على حسابه الأساسي (أول حساب
+        # اتعمل له). (٢٠٢٦-١٠-٠٥ — «عميل يدفع فلوس تحت حسابه وماعليهوش حاجة».) كانت بترفض
+        # وتطلب النوع، واللي قدامها مش عارف يختار إيه لفلوس مش على حاجة.
+        main = sorted(accounts, key=lambda a: a.id)[0]
+        return [(main, to_money(amount))]
     out = []
     running = ZERO
     for acc, bal in balances[:-1]:
