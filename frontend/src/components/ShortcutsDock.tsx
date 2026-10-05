@@ -151,6 +151,7 @@ export default function ShortcutsDock({ userId, tree, openTab }: Props) {
     { type: 'divider' as const },
     {
       key: 'grp:add', icon: <PlusOutlined />, label: 'إضافة اختصار',
+      popupClassName: 'shortcuts-menu',
       // مستويين بس: «+» ← «إضافة اختصار» ← الإنشاءات تحت عناوين الأقسام. تلات مستويات
       // بالماوس بتقفل من أقل ميلة وهو ماشي من قايمة للي جنبها.
       children: [
@@ -211,7 +212,9 @@ export default function ShortcutsDock({ userId, tree, openTab }: Props) {
 
   return (
     <div style={{ position: 'fixed', left: 20, bottom: 20, zIndex: 1000 }}>
-      <Dropdown menu={{ items: menu, onClick }} trigger={['hover']} placement="topLeft"
+      {/* خط أكبر وبولد (طلب العميل ٢٠٢٦-١٠-٠٥) — `shortcuts-menu` في index.css. */}
+      <Dropdown menu={{ items: menu, onClick, className: 'shortcuts-menu' }} trigger={['hover']}
+        rootClassName="shortcuts-menu-root" placement="topLeft"
         mouseLeaveDelay={0.3}>
         <button type="button" aria-label="اختصارات الإنشاء" title="اختصارات الإنشاء" style={{
           width: 48, height: 48, borderRadius: '50%', border: 'none', cursor: 'pointer',

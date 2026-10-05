@@ -1825,3 +1825,17 @@ body.eg-resizing * {
 /* السطر الزيادة في آخر جدول الأصناف — المخزن ثم الصنف (٢٠٢٦-١٠-٠٥). */
 .eg-quick-row td, .eg-quick-div { background: #f7fbf5 !important; border-top: 1px dashed #b7dba0; }
 .eg-quick-div { border: 1px dashed #b7dba0; border-radius: 8px; margin-top: 6px; padding: 2px 6px; }
+
+/* قايمة الاختصارات (زرار «+» تحت) — أكبر وبولد (طلب العميل ٢٠٢٦-١٠-٠٥). */
+.shortcuts-menu .ant-dropdown-menu-item,
+.shortcuts-menu .ant-dropdown-menu-submenu-title,
+.shortcuts-menu.ant-dropdown-menu-sub .ant-dropdown-menu-item,
+.shortcuts-menu-root .ant-dropdown-menu-item,
+.shortcuts-menu-root .ant-dropdown-menu-submenu-title {
+  font-size: 17px !important; font-weight: 800 !important; padding-block: 8px !important;
+}
+.shortcuts-menu .ant-dropdown-menu-item-group-title,
+.shortcuts-menu-root .ant-dropdown-menu-item-group-title {
+  font-size: 15px !important; font-weight: 800 !important; color: #2f6b12 !important;
+}
+.shortcuts-menu .anticon, .shortcuts-menu-root .anticon { font-size: 16px !important; }
