@@ -2,7 +2,8 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { PAGE_SIZE_OPTIONS } from '../utils/pagination';
 import { searchFilter, searchRank, sortByName } from '../utils/arabicSort';
 import {
-  Button, Checkbox, Col, Divider, Form, Input, Modal, Row, Select, Space, Tag, Tooltip, message,
+  Button, Checkbox, Col, Divider, Form, Input, Modal, Row, Segmented, Select, Space, Tag, Tooltip,
+  message,
 } from 'antd';
 // فلتر على كل عمود — شوف `FilterTable`.
 import { FilterTable as Table } from '../components/FilterTable';
@@ -16,7 +17,7 @@ import { api } from '../api/client';
 import { useAuth } from '../components/AuthProvider';
 import { showDeactivationConfirm } from '../components/ConfirmationDialog';
 import { useLookup, labelMap } from '../hooks/useLookup';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { TabModal } from '../components/TabModal';
 import { useTableColumns } from '../components/ColumnSettings';
 import ListPage, { type ListTab } from '../components/ListPage';
@@ -286,6 +287,16 @@ export default function Customers() {
   // الفلتر فوق لسه فيه «معطل» و«الكل» لمن يحتاجهم.
   // شريحة الحالة في الرابط (`?tab=`): الفلتر بيبدأ منها عند الفتح عشان الريفرش يرجع عليها.
   const [listTab, setListTab] = useQueryTab('active');
+  // العملاء / الموظفين / الفروع (`?group=`) — الكارت واحد والتصنيف هو اللي بيفرّق:
+  // الموظف «employee» والفرع/الشركة التابعة «internal». كانوا كلهم وسط العملاء.
+  const [urlParams, setUrlParams] = useSearchParams();
+  const partyGroup = (['employees', 'branches'].includes(urlParams.get('group') || '')
+    ? urlParams.get('group') : 'customers') as 'customers' | 'employees' | 'branches';
+  const setPartyGroup = (g: string) => {
+    const next = new URLSearchParams(urlParams);
+    if (g === 'customers') next.delete('group'); else next.set('group', g);
+    setUrlParams(next, { replace: true });
+  };
   const [filters, setFilters] = useState<Filters>(() => ({
     active: listTab === 'all' ? undefined : listTab !== 'inactive',
   }));
@@ -344,7 +355,7 @@ export default function Customers() {
   const loadSummary = async (activeFilters = filters) => {
     try {
       // كروت الموظفين مش عملاء — ليهم «مديونيات الموظفين». فلتر «موظف» بيعرضهم.
-      const params: any = { hide_employees: true };
+      const params: any = { party_group: partyGroup };
       Object.entries(activeFilters).forEach(([k, v]) => {
         if (v !== undefined && v !== null && v !== '') params[k] = v;
       });
@@ -371,7 +382,7 @@ export default function Customers() {
       const params: any = {
         limit: targetPageSize,
         offset: (targetPage - 1) * targetPageSize,
-        hide_employees: true,
+        party_group: partyGroup,
       };
       Object.entries(active).forEach(([k, v]) => {
         if (v !== undefined && v !== null && v !== '') params[k] = v;
@@ -461,6 +472,15 @@ export default function Customers() {
     loadSummary();
     fetchLookups();
   }, []);
+
+  // تغيير العملاء/الموظفين/الفروع بيرجّع لأول صفحة بنفس الفلاتر.
+  const firstGroup = useRef(true);
+  useEffect(() => {
+    if (firstGroup.current) { firstGroup.current = false; return; }
+    setPage(1);
+    fetchCustomers(undefined, 1);
+    loadSummary();
+  }, [partyGroup]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Form.List rows can be blank/undefined; only send real numbers.
   const cleanPhones = (phones: any): string[] =>
@@ -829,7 +849,7 @@ export default function Customers() {
     <>
       <ListPage<StatusTab>
         icon={<TeamOutlined />}
-        title="العملاء"
+        title={partyGroup === 'employees' ? 'الموظفين' : partyGroup === 'branches' ? 'الفروع والشركات التابعة' : 'العملاء'}
         subtitle="بطاقات العملاء وأرصدتهم ومناديبهم — الضغط على السطر يفتح ملف العميل"
         tabs={statusTabs}
         activeTab={statusTab}
@@ -851,6 +871,15 @@ export default function Customers() {
           {tableCols.control}
         </>)}
         filters={(<>
+          <Segmented
+            value={partyGroup}
+            onChange={(v) => { leaveEditMode(); setPartyGroup(String(v)); }}
+            options={[
+              { value: 'customers', label: 'العملاء' },
+              { value: 'employees', label: 'الموظفين' },
+              { value: 'branches', label: 'الفروع' },
+            ]}
+          />
           {/* الفلاتر على السيرفر، فبتغطّي كل العملاء مش الصفحة المحمّلة بس. */}
           <Input
             className="sl-f-search"

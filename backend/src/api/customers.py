@@ -268,6 +268,21 @@ class CustomersSummaryOut(BaseModel):
     total_debt: Decimal
 
 
+def _party_group_filter(stmt, party_group: str | None):
+    """العملاء / الموظفين / الفروع — الكارت واحد في الجدول، والتصنيف هو اللي بيفرّق.
+
+    الموظف «employee» (حسابه تحت ذمم الموظفين)، والفرع أو الشركة التابعة «internal»،
+    والباقي عملاء. من غيره قايمة العملاء كانت فيها الفروع والموظفين وسط التجار.
+    """
+    if party_group == "employees":
+        return stmt.where(Customer.customer_type == "employee")
+    if party_group == "branches":
+        return stmt.where(Customer.customer_type == "internal")
+    if party_group == "customers":
+        return stmt.where(Customer.customer_type.notin_(("employee", "internal")))
+    return stmt
+
+
 @router.get("/summary", response_model=CustomersSummaryOut)
 def customers_summary(
     rep_id: int | None = Query(None),
@@ -279,6 +294,7 @@ def customers_summary(
     active: bool | None = Query(None),
     balance_filter: str | None = Query(None),
     hide_employees: bool = Query(False),
+    party_group: str | None = Query(None, pattern="^(customers|employees|branches)$"),
     current: CurrentUser = Depends(require_capability(CAP_CUSTOMER_READ)),
     db: Session = Depends(get_db),
 ) -> CustomersSummaryOut:
@@ -297,6 +313,7 @@ def customers_summary(
     base_stmt = base_stmt.where(Customer.customer_type != "owner")
     if hide_employees and customer_type != "employee":
         base_stmt = base_stmt.where(Customer.customer_type != "employee")
+    base_stmt = _party_group_filter(base_stmt, party_group)
     signed = case(
         (LedgerLine.direction == Account.normal_side, LedgerLine.amount),
         else_=-LedgerLine.amount,
@@ -651,6 +668,8 @@ def list_customers(
     # الموظفين». القوايم التانية (اختيار طرف الفاتورة) مابتبعتوش، فالبيع بالعهدة لموظف شغّال.
     # واختيار «موظف» من فلتر التصنيف بيعرضهم.
     hide_employees: bool = Query(False),
+    # شاشة «العملاء» فيها اختيار: العملاء / الموظفين / الفروع — كل واحد في مكانه.
+    party_group: str | None = Query(None, pattern="^(customers|employees|branches)$"),
     limit: int | None = Query(None),
     offset: int = Query(0),
     current: CurrentUser = Depends(require_capability(CAP_CUSTOMER_READ)),
@@ -665,6 +684,7 @@ def list_customers(
     ).where(Customer.customer_type != "owner")  # الملّاك في شاشتهم، مش هنا
     if hide_employees and customer_type != "employee":
         stmt = stmt.where(Customer.customer_type != "employee")
+    stmt = _party_group_filter(stmt, party_group)
 
     if balance_filter and balance_filter != "all":
         # Need balances before slicing
