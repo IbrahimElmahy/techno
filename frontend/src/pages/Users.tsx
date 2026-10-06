@@ -25,6 +25,8 @@ interface UserRecord {
   branch_id: number | null;
   territory_id: number | null;
   active: boolean;
+  /** مشرف المناديب اللي المندوب ده تحته — للمندوب بس. */
+  supervisor_id?: number | null;
 }
 
 const ROLE_LABELS: Record<RoleName, string> = {
@@ -39,6 +41,8 @@ const ROLE_LABELS: Record<RoleName, string> = {
   accountant: 'المحاسب',
   // «قارئ» — يشوف ويطبع، ما يغيّرش حاجة.
   viewer: 'قارئ (عرض فقط)',
+  // «مشرف مناديب» — بيتابع شغل المناديب اللي تحته من التطبيق.
+  rep_supervisor: 'مشرف مناديب',
 };
 
 // Roles the backend requires a branch for (see UserCreate/UserUpdate validation).
@@ -60,8 +64,29 @@ export default function Users() {
    * السيرفر. القايمة كانت بتعرض الأدوار كلها، فاللي يختار «مدير فرع» يترفض بـ403 ومايعرفش ليه.
    */
   const isAdminUser = currentUser?.role === 'owner' || currentUser?.role === 'system_admin';
-  const BELOW_BM = ['sales_rep', 'sales_manager', 'purchasing_manager', 'accountant', 'after_sales_staff', 'viewer'];
+  const BELOW_BM = ['sales_rep', 'sales_manager', 'purchasing_manager', 'accountant', 'after_sales_staff', 'viewer', 'rep_supervisor'];
   const roleEntries = Object.entries(ROLE_LABELS).filter(([k]) => isAdminUser || BELOW_BM.includes(k));
+
+  /**
+   * المشرفين اللي ينفع المندوب يتسجّل تحتهم — المستخدمين النشطين بدور «مشرف مناديب».
+   * المندوب بيتربط بمشرفه من هنا (`supervisor_id`)، والمشرف بيشوف شغله من التطبيق.
+   */
+  const supervisors = users.filter((u) => u.role === 'rep_supervisor' && u.active);
+  const supervisorName = (id: number | null | undefined) => {
+    if (!id) return null;
+    const s = users.find((u) => u.id === id);
+    return s ? (s.full_name || s.username) : `#${id}`;
+  };
+  const supervisorField = (
+    <Form.Item
+      name="supervisor_id"
+      label="المشرف"
+      extra={supervisors.length ? 'مشرف المناديب اللي بيتابع شغل المندوب ده من التطبيق' : 'مافيش مستخدمين بدور «مشرف مناديب» لسه'}
+    >
+      <Select allowClear showSearch placeholder="من غير مشرف" filterOption={searchFilter} filterSort={searchRank}
+        options={supervisors.map((s) => ({ value: s.id, label: s.full_name || s.username }))} />
+    </Form.Item>
+  );
 
   const filter = useListFilter(users, {
     search: (u) => [u.username, u.full_name, ROLE_LABELS[u.role]],
@@ -180,6 +205,8 @@ export default function Users() {
         // مدير الفرع: المستخدم الجديد على فرعه هو دايماً.
         branch_id: (isAdminUser ? values.branch_id : currentUser?.branch_id) || null,
         territory_id: values.territory_id || null,
+        // المشرف للمندوب بس — أي دور تاني بيتبعت من غير مشرف.
+        supervisor_id: values.role === 'sales_rep' ? (values.supervisor_id || null) : null,
       };
 
       await api.post('/api/v1/users', payload);
@@ -200,6 +227,7 @@ export default function Users() {
       role: record.role,
       branch_id: record.branch_id ?? undefined,
       territory_id: record.territory_id ?? undefined,
+      supervisor_id: record.supervisor_id ?? undefined,
       active: record.active,
       password: undefined,
     });
@@ -215,6 +243,8 @@ export default function Users() {
         role: values.role,
         branch_id: values.branch_id || null,
         territory_id: values.territory_id || null,
+        // `null` صريح بيشيل المشرف؛ والدور اللي مش مندوب مالوش مشرف.
+        supervisor_id: values.role === 'sales_rep' ? (values.supervisor_id || null) : null,
         active: values.active,
       };
       // Password is optional — send it only when the admin actually typed a new one.
@@ -267,6 +297,13 @@ export default function Users() {
         const territory = territories.find((t) => t.id === territoryId);
         return territory ? territory.name : `منطقة #${territoryId}`;
       },
+    },
+    {
+      title: 'المشرف',
+      dataIndex: 'supervisor_id',
+      key: 'supervisor_id',
+      render: (id: number | null | undefined, r: UserRecord) =>
+        r.role === 'sales_rep' ? (supervisorName(id) ?? '-') : '-',
     },
     {
       title: 'الحالة',
@@ -451,6 +488,8 @@ export default function Users() {
                       ))}
                     </Select>
                   </Form.Item>
+
+                  {isRep && supervisorField}
                 </>
               );
             }}
@@ -560,6 +599,8 @@ export default function Users() {
                       ))}
                     </Select>
                   </Form.Item>
+
+                  {isRep && supervisorField}
                 </>
               );
             }}

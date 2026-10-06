@@ -60,6 +60,7 @@ from src.api import (  # Sales & Inventory (002
     stock,
     stock_counts,  # جرد المخازن (031)
     suppliers,
+    supervisor,  # مشرف المناديب — متابعة شغل المناديب من التطبيق
     tax_commissions,  # VAT return + rep commissions (021)
     transfers,
     treasury,
@@ -166,6 +167,7 @@ def create_app() -> FastAPI:
     app.include_router(branch_overview.router, prefix=prefix)
     app.include_router(owner_stats.router, prefix=prefix)
     app.include_router(reps.router, prefix=prefix)
+    app.include_router(supervisor.router, prefix=prefix)
     # Sales & Inventory (002)
     app.include_router(catalog.router, prefix=prefix)
     app.include_router(serials.router, prefix=prefix)
@@ -431,6 +433,8 @@ _ADDED_COLUMNS: list[tuple[str, str, str]] = [
     ("user", "session_id", "VARCHAR(64)"),
     ("user", "session_client", "VARCHAR(16)"),
     ("user", "session_started_at", "TIMESTAMP"),
+    # مشرف المناديب اللي المندوب تحته — الشرح في `models/user.py`.
+    ("user", "supervisor_id", "BIGINT"),
     ("purchase_return", "expense_account_id", "BIGINT"),
     ("purchase_return", "external_document_number", "VARCHAR(40)"),
     ("purchase_return", "statement1", "VARCHAR(200)"),
@@ -803,7 +807,14 @@ _WIDENED_COLUMNS: list[tuple[str, str, str]] = [
     # ماشي محلياً على SQLite.
     ("role", "name",
      "ENUM('system_admin','branch_manager','purchasing_manager','sales_manager',"
-     "'after_sales_staff','sales_rep','accountant','viewer','owner')"),
+     "'after_sales_staff','sales_rep','accountant','viewer','owner','rep_supervisor')"),
+    # «مشرف مناديب». `role.name` بقى VARCHAR (`_relax_configurable_enum_columns`)، لكن
+    # `role_capability.role` لسه ENUM أصلي — وفي بوستجرس الاتنين كانوا على نفس النوع
+    # (`rolename`)، فلما الأول بقى نص التوسعة اللي فوق بقت مابتلاقيش نوع توسّعه. من غير
+    # السطر ده حفظ صلاحيات الدور الجديد من الشاشة كان هيقع بـ500 على السيرفر بس.
+    ("role_capability", "role",
+     "ENUM('system_admin','branch_manager','purchasing_manager','sales_manager',"
+     "'after_sales_staff','sales_rep','accountant','viewer','owner','rep_supervisor')"),
     # معامل تحويل الوحدة من ٣ منازل لـ٩ (`FACTOR` في core/money.py). صنف أساسه «قطعة»
     # ومتباع بـ«المتر» معامله ١÷طول القطعة — ٠٫٣٣٣ بدل ٠٫٣٣٣٣٣٣٣٣٣ كانت بتخلّي ١٥٠ متر
     # تخصم ٤٩٫٩٥ قطعة. التوسيع مابيغيّرش ولا رقم مكتوب: ١٢٫٠٠٠ بتفضل ١٢.

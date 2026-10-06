@@ -33,6 +33,10 @@ class User(Base):
     session_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     session_client: Mapped[str | None] = mapped_column(String(16), nullable=True)
     session_started_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    # «مشرف المناديب» اللي المندوب ده تحته — بيشوف شغله من التطبيق (`api/supervisor.py`).
+    # على المندوب مش على المشرف: المندوب ليه مشرف واحد، والمشرف ليه كذا مندوب.
+    supervisor_id: Mapped[int | None] = mapped_column(
+        ForeignKey("user.id"), nullable=True, index=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime, server_default=func.now(), nullable=False
     )

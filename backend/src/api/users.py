@@ -30,6 +30,8 @@ class UserCreate(BaseModel):
     full_name: str
     branch_id: int | None = None
     territory_id: int | None = None
+    # مشرف المناديب — للمندوب بس، ولازم يكون مستخدم دوره «مشرف مناديب».
+    supervisor_id: int | None = None
 
 
 class UserUpdate(BaseModel):
@@ -45,6 +47,26 @@ class UserUpdate(BaseModel):
     territory_id: int | None = None
     active: bool | None = None
     password: str | None = None
+    # `null` صريح = شيل المشرف؛ مش مبعوت = ماتلمسوش (`model_fields_set`).
+    supervisor_id: int | None = None
+
+
+def _check_supervisor(db: Session, supervisor_id: int | None, role) -> int | None:
+    """المشرف اللي هيتسجّل على المستخدم — أو None.
+
+    المشرف للمندوب بس: أي دور تاني بيتشال منه (مدير مبيعات مالوش «مشرف مناديب» فوقه).
+    والرقم لازم يشاور على مستخدم دوره «مشرف مناديب» فعلاً — وإلا المندوب يبقى «تحت»
+    محاسب أو قارئ، وشاشة المشرف عنده فاضية من غير ما حد يعرف ليه.
+    """
+    name = getattr(role, "value", role)
+    if not supervisor_id or name != RoleName.sales_rep.value:
+        return None
+    sup = db.get(User, supervisor_id)
+    sup_role = db.get(Role, sup.role_id) if sup is not None else None
+    if sup is None or sup_role is None or sup_role.name != RoleName.rep_supervisor:
+        raise HTTPException(422, {"code": "validation",
+                                  "message": "المشرف لازم يكون مستخدم دوره «مشرف مناديب»."})
+    return sup.id
 
 
 def _to_out(db: Session, user: User) -> UserOut:
@@ -57,6 +79,7 @@ def _to_out(db: Session, user: User) -> UserOut:
         branch_id=user.branch_id,
         territory_id=user.territory_id,
         active=user.active,
+        supervisor_id=user.supervisor_id,
     )
 
 
@@ -97,6 +120,7 @@ def _guard_elevated(current: CurrentUser, target_role) -> None:
 BELOW_BRANCH_MANAGER = {
     RoleName.sales_rep, RoleName.sales_manager, RoleName.purchasing_manager,
     RoleName.accountant, RoleName.after_sales_staff, RoleName.viewer,
+    RoleName.rep_supervisor,
 }
 
 
@@ -137,6 +161,7 @@ def create_user(
             422, {"code": "validation", "message": "sales_rep needs branch_id + territory_id"}
         )
 
+    supervisor_id = _check_supervisor(db, body.supervisor_id, body.role)
     role = db.scalar(select(Role).where(Role.name == body.role))
     if role is None:
         role = Role(name=body.role)
@@ -149,6 +174,7 @@ def create_user(
         full_name=body.full_name,
         branch_id=body.branch_id,
         territory_id=body.territory_id,
+        supervisor_id=supervisor_id,
     )
     db.add(user)
     db.flush()
@@ -240,10 +266,16 @@ def update_user(
         user.active = body.active
     if body.password:
         user.password_hash = hash_password(body.password)
+    # المشرف: المبعوت صراحةً بيتكتب (و`null` بيشيله)، والدور اللي اتغيّر لغير مندوب بيشيله.
+    if "supervisor_id" in body.model_fields_set:
+        user.supervisor_id = _check_supervisor(db, body.supervisor_id, new_role)
+    elif new_role != RoleName.sales_rep:
+        user.supervisor_id = None
     db.flush()
     audit_service.record(db, action="user.update", actor_user_id=current.id,
                          entity_type="user", entity_id=user.id,
-                         after={"role": new_role.value, "active": user.active})
+                         after={"role": new_role.value, "active": user.active,
+                                "supervisor_id": user.supervisor_id})
     db.commit()
     return _to_out(db, user)
 
@@ -320,6 +352,9 @@ def delete_user(
             if fk.get("referred_table") != "user":
                 continue
             col = fk["constrained_columns"][0]
+            # مناديب تحت مشرف مش «شغل» عليه — ربط بيتفك قبل المسح تحت.
+            if (table, col) == ("user", "supervisor_id"):
+                continue
             n = db.execute(text(f'SELECT count(*) FROM "{table}" WHERE {col} = :i'),
                            {"i": user.id}).scalar() or 0
             if n:
@@ -341,5 +376,9 @@ def delete_user(
         before={"username": user.username, "full_name": user.full_name,
                 "role": getattr(user.role, "value", user.role)},
     )
+    # المناديب اللي كانوا تحته بيفضلوا من غير مشرف — مش بيتمنع المسح عشانهم.
+    for rep in db.scalars(select(User).where(User.supervisor_id == user.id)).all():
+        rep.supervisor_id = None
+    db.flush()
     db.delete(user)
     db.commit()

@@ -37,7 +37,10 @@ class ApiClient {
   ///
   /// اللي عنده عنوان متحفوظ في `api_base` بيفضل عليه لحد ما يغيّره من شاشة الدخول
   /// أو المزامنة — مابنمسحش اختياره من تحته.
-  static const defaultBase = 'https://app.technothermeg.com';
+  /// `--dart-define=API_BASE=...` للتجربة المحلية بس (سيرفر الديف) — النسخة اللي بتتنشر
+  /// مابتتبنيش بيه فبتفضل على السحابة.
+  static const defaultBase = String.fromEnvironment('API_BASE',
+      defaultValue: 'https://app.technothermeg.com');
 
   Future<String> baseUrl() async =>
       (await LocalDb.instance.getKv('api_base')) ?? defaultBase;
@@ -130,6 +133,11 @@ class ApiClient {
     await LocalDb.instance.setKv('token', body['access_token'] as String);
     await LocalDb.instance.setKv('username', username);
     await LocalDb.instance.setKv('data_owner', me);
+    // **الدور بيتكتب مع كل دخول** — هو اللي بيقرر الشاشة الرئيسية (مندوب ولا مشرف).
+    // الفاضي مش «زي اللي قبله»: المستخدم اللي قبله ممكن يكون مشرف، والمندوب اللي داخل
+    // بعده لازم يفتح على شاشته هو. `/auth/me` تحت بيأكده.
+    await LocalDb.instance.setKv('role', _roleOf(body) ?? '');
+    await LocalDb.instance.setKv('full_name', '');
     // صلاحيات التطبيق — الكروت اللي بتبان في الشاشة الرئيسية. فشلها مايوقفش الدخول.
     try {
       await refreshAppCapabilities();
@@ -145,12 +153,88 @@ class ApiClient {
         .timeout(const Duration(seconds: 20));
     if (r.statusCode != 200) return;
     final me = jsonDecode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
+    // الدور والاسم مع الصلاحيات — الدور اتغيّر من المكتب (مندوب بقى مشرف) بيبان من
+    // الفتحة الجاية من غير ما يخرج ويدخل.
+    final role = _text(me['role']);
+    if (role != null) await LocalDb.instance.setKv('role', role);
+    final fullName = _text(me['full_name']);
+    if (fullName != null) await LocalDb.instance.setKv('full_name', fullName);
     final caps = ((me['capabilities'] as List?) ?? const [])
         .map((e) => e.toString())
         .where((c) => c.startsWith('app.'))
         .toList();
     await LocalDb.instance.setKv('app_caps', jsonEncode(caps));
   }
+
+  /// الدور من رد الدخول — ولو الرد مافيهوش، من التوكن نفسه (فيه `role` في الـpayload).
+  static String? _roleOf(Object? body) {
+    if (body is Map) {
+      final r = _text(body['role']);
+      if (r != null) return r;
+      final token = body['access_token'];
+      if (token is String) {
+        try {
+          final parts = token.split('.');
+          if (parts.length == 3) {
+            final payload =
+                jsonDecode(utf8.decode(base64Url.decode(base64Url.normalize(parts[1]))));
+            if (payload is Map) return _text(payload['role']);
+          }
+        } catch (_) {}
+      }
+    }
+    return null;
+  }
+
+  /// «مشرف مناديب» — بيفتح على شاشة المتابعة بدل شاشة المندوب، ومابيزامنش حاجة.
+  static const supervisorRole = 'rep_supervisor';
+
+  /// الدور المتخزّن على الجهاز (`null` لو عمره ماتجاب).
+  Future<String?> role() async => _text(await LocalDb.instance.getKv('role'));
+
+  Future<bool> isSupervisor() async => await role() == supervisorRole;
+
+  // ---------------------------------------------------------------------------------
+  // متابعة المناديب — **أونلاين بس**. مابيتخزّنش حاجة: الأرقام بتتغيّر كل دقيقة، والمشرف
+  // اللي بيشوف رقم قديم بيصدّقه.
+  // ---------------------------------------------------------------------------------
+
+  Future<Map<String, dynamic>> _getJson(String path, [Map<String, String>? q]) async {
+    final r = await http
+        .get(await _uri(path, q), headers: await _headers())
+        .timeout(const Duration(seconds: 30));
+    if (r.statusCode == 401) throw ApiException(401, 'انتهت الجلسة — سجّل الدخول تاني');
+    if (r.statusCode == 403) {
+      throw ApiException(403, 'الحساب ده مالوش صلاحية متابعة المناديب');
+    }
+    if (r.statusCode != 200) throw ApiException(r.statusCode, _error(r));
+    return jsonDecode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
+  }
+
+  /// الإجمالي فوق + كارت لكل مندوب، للفترة دي. التواريخ `YYYY-MM-DD`.
+  Future<Map<String, dynamic>> supervisorOverview(String dateFrom, String dateTo) =>
+      _getJson('/supervisor/overview', {'date_from': dateFrom, 'date_to': dateTo});
+
+  /// حركة مندوب — [kind] واحد من `sales|returns|collections|transfers|coupons|inspections|all`.
+  Future<Map<String, dynamic>> supervisorRepActivity(
+    int repId, {
+    String kind = 'all',
+    required String dateFrom,
+    required String dateTo,
+    int limit = 50,
+    int offset = 0,
+  }) =>
+      _getJson('/supervisor/reps/$repId/activity', {
+        'kind': kind,
+        'date_from': dateFrom,
+        'date_to': dateTo,
+        'limit': '$limit',
+        'offset': '$offset',
+      });
+
+  /// مستند بسطوره — [kind] واحد من `sales|returns|transfers`.
+  Future<Map<String, dynamic>> supervisorDocument(int repId, String kind, int id) =>
+      _getJson('/supervisor/reps/$repId/documents/$kind/$id');
 
   /// Pull the inspection point-items + lookups + customers into the offline cache.
   ///

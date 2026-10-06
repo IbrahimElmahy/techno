@@ -3,10 +3,9 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 
 import '../db/local_db.dart';
-import '../services/app_updater.dart';
 import '../services/auto_sync.dart';
 import '../theme.dart';
-import 'login_screen.dart';
+import '../widgets/session_drawer.dart';
 import 'coupon_custody_screen.dart';
 import 'coupon_receipt_screen.dart';
 import 'sale_invoice_screen.dart';
@@ -22,6 +21,7 @@ import 'receipts_review_screen.dart';
 import 'sales_review_screen.dart';
 import 'coupon_review_screen.dart';
 import 'review_screen.dart';
+import 'supervisor_home_screen.dart';
 import 'sync_screen.dart';
 import 'visits_menu_screen.dart';
 
@@ -39,8 +39,8 @@ class _HomeScreenState extends State<HomeScreen> {
   int _pendingSales = 0;
   /// وسندات القبض اللي لسه في الطابور — نفس الحكاية.
   int _pendingReceipts = 0;
-  /// «0.3.3 (6)» — تحت زرار التحديث في القايمة. أول سؤال الدعم بيسأله في التليفون.
-  String? _version;
+  /// الدور المتخزّن — تحت الاسم في القايمة («مندوب»، «المالك»…).
+  String? _role;
   /// كروت التطبيق المسموحة للمستخدم ده (`app.*` من السيرفر). `null` = لسه ماتجابتش ⇒
   /// كله بيبان زي الأول، عشان أول تشغيل من غير نت مايخبّيش حاجة.
   Set<String>? _appCaps;
@@ -51,9 +51,6 @@ class _HomeScreenState extends State<HomeScreen> {
   void initState() {
     super.initState();
     _refresh();
-    AppUpdater.instance.installed().then((v) {
-      if (mounted) setState(() => _version = v.label);
-    });
     AutoSync.instance.addListener(_onSync);
     // **المزامنة بتحصل لوحدها أول ما الشاشة تفتح** — لو فيه نت وآخر واحدة بقى لها
     // شوية. المندوب ماكانش لازم يفتكر: اللي بينسى بيفتح الفاتورة ويلاقيها ناقصة.
@@ -79,6 +76,7 @@ class _HomeScreenState extends State<HomeScreen> {
     final p = await LocalDb.instance.pendingCount();
     final ps = await LocalDb.instance.pendingSalesCount();
     final pr = await LocalDb.instance.pendingReceiptsCount();
+    final role = await LocalDb.instance.getKv('role');
     final capsRaw = await LocalDb.instance.getKv('app_caps');
     Set<String>? caps;
     if (capsRaw != null && capsRaw.isNotEmpty) {
@@ -89,6 +87,7 @@ class _HomeScreenState extends State<HomeScreen> {
     if (mounted) {
       setState(() {
         _appCaps = caps;
+        _role = role;
         _username = u;
         _pending = p;
         _pendingSales = ps;
@@ -97,26 +96,10 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  Future<void> _logout() async {
-    final confirm = await showDialog<bool>(
-      context: context,
-      builder: (c) => AlertDialog(
-        title: const Text('تسجيل الخروج'),
-        content: _pending > 0
-            ? Text('في $_pending معاينة لسه ما اتزامنتش — هتفضل محفوظة على الجهاز.')
-            : const Text('متأكد إنك عايز تخرج؟'),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('إلغاء')),
-          FilledButton(onPressed: () => Navigator.pop(c, true), child: const Text('خروج')),
-        ],
-      ),
-    );
-    if (confirm != true || !mounted) return;
-    await (await LocalDb.instance.db).delete('kv', where: 'key = ?', whereArgs: ['token']);
-    if (!mounted) return;
-    Navigator.of(context)
-        .pushReplacement(MaterialPageRoute(builder: (_) => const LoginScreen()));
-  }
+  Future<void> _logout() => confirmLogout(context,
+      warning: _pending > 0
+          ? 'في $_pending معاينة لسه ما اتزامنتش — هتفضل محفوظة على الجهاز.'
+          : null);
 
   @override
   Widget build(BuildContext context) {
@@ -216,6 +199,19 @@ class _HomeScreenState extends State<HomeScreen> {
                       ),
                     ),
                   const SizedBox(height: 8),
+                  // **متابعة المناديب للمالك والمدير** — بالصلاحية صراحةً، مش «كله بيبان لو
+                  // الصلاحيات ماتجابتش» زي باقي الكروت: دي أرقام الشركة كلها مش شغل المندوب.
+                  if (_appCaps?.contains('app.supervisor') ?? false) ...[
+                    _BigAction(
+                      icon: Icons.groups_2_outlined,
+                      color: AppColors.primary,
+                      title: 'متابعة المناديب',
+                      subtitle: 'مبيعات وتحصيل كل مندوب وحركته — محتاج شبكة',
+                      onTap: () => Navigator.push(context,
+                          MaterialPageRoute(builder: (_) => const SupervisorHomeScreen())),
+                    ),
+                    const SizedBox(height: 14),
+                  ],
                   // البيع فوق: ده اللي بيتعمل كل يوم، والمعاينة بتحصل لما تحصل.
                   if (_can('app.sale'))
                   _BigAction(
@@ -439,21 +435,7 @@ class _HomeScreenState extends State<HomeScreen> {
       child: ListView(
         padding: EdgeInsets.zero,
         children: [
-          DrawerHeader(
-            decoration: const BoxDecoration(gradient: AppColors.headerGradient),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisAlignment: MainAxisAlignment.end,
-              children: [
-                const Icon(Icons.plumbing, color: Colors.white, size: 40),
-                const SizedBox(height: 8),
-                Text(_username,
-                    style: const TextStyle(color: Colors.white, fontSize: 18)),
-                const Text('مندوب معاينات',
-                    style: TextStyle(color: Colors.white70, fontSize: 13)),
-              ],
-            ),
-          ),
+          SessionDrawerHeader(name: _username, role: _role),
           // **التلاتة اللي بتكلّم السيرفر فوق، وكل واحدة بتبان في الشريط اللي تحت** —
           // «بيرفع الفواتير ٣/٧»، «بيجيب الملّاك…»، «بينزّل التحديث ٤٥٪». قبل كده كانوا
           // بيشتغلوا من غير أي علامة لحد ما يخلصوا (أو يقعوا)، فالمندوب كان بيفتكرهم بايظين.
@@ -480,35 +462,7 @@ class _HomeScreenState extends State<HomeScreen> {
               _refresh();
             },
           ),
-          // بيسأل السيرفر **دايماً** (مافيش تقنين ولا تأجيل) وبيقول النتيجة تحت.
-          // التحديث بيتسأل عليه لوحده كمان: عند الفتح، والرجوع من الخلفية، وبعد المزامنة.
-          ValueListenableBuilder<AppRelease?>(
-            valueListenable: AppUpdater.instance.available,
-            builder: (context, next, _) => ListTile(
-              leading: Icon(Icons.system_update,
-                  color: next == null ? null : AppColors.accent),
-              title: const Text('تحديث التطبيق'),
-              subtitle: _version == null ? null : Text('الإصدار $_version'),
-              trailing: next == null
-                  ? null
-                  : Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                      decoration: BoxDecoration(
-                        color: AppColors.accent,
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                      child: Text('متاح ${next.name}',
-                          style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 12,
-                              fontWeight: FontWeight.w700)),
-                    ),
-              onTap: () {
-                Navigator.pop(context);
-                AppUpdater.instance.check(manual: true);
-              },
-            ),
-          ),
+          const AppUpdateTile(),
           const Divider(),
           ListTile(
             leading: const Icon(Icons.cloud_sync_outlined),

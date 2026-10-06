@@ -15,6 +15,16 @@
       "port": 5173
     },
     {
+      "name": "dev-api",
+      "runtimeExecutable": "powershell.exe",
+      "runtimeArgs": [
+        "-NoProfile",
+        "-Command",
+        "$env:DATABASE_URL='postgresql+psycopg2://techno:devpass@127.0.0.1:5433/techno_dev'; $env:JWT_SECRET='dev-only-not-a-secret'; $env:PYTHONIOENCODING='utf-8'; $env:FRONTEND_ORIGINS='http://127.0.0.1:5200,http://localhost:5200'; Set-Location D:/techno-dev-code/backend; D:/techno-dev-code/backend/.venv/Scripts/python.exe -m uvicorn src.main:app --host 127.0.0.1 --port 8000"
+      ],
+      "port": 8000
+    },
+    {
       "name": "backend",
       "runtimeExecutable": "D:/techno/backend/.venv/Scripts/python.exe",
       "runtimeArgs": [
@@ -77,7 +87,8 @@
         "127.0.0.1",
         "--web-port",
         "5200",
-        "--release"
+        "--release",
+        "--dart-define=API_BASE=http://127.0.0.1:8000"
       ],
       "cwd": "D:/techno-dev-code/mobile",
       "port": 5200

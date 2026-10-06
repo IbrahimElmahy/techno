@@ -357,9 +357,15 @@ APP_CAPABILITIES: dict[str, str] = {
     "app.coupon_receive": "التطبيق: استلام كوبونات",
     "app.coupon_review": "التطبيق: مراجعة الكوبونات",
     "app.visit_review": "التطبيق: مراجعة الزيارات",
+    # شاشة «مشرف المناديب» في التطبيق — متابعة شغل المناديب اللي تحته.
+    "app.supervisor": "التطبيق: متابعة المناديب (مشرف)",
 }
+CAP_APP_SUPERVISOR = "app.supervisor"
+# كروت المندوب — كل كروت التطبيق ما عدا شاشة المشرف. دي اللي بتتوزّع على كل الأدوار
+# افتراضياً (تحت)؛ شاشة المشرف لمشرف المناديب وحده، ومن شاشة الصلاحيات لأي حد تاني.
+REP_APP_CAPABILITIES: set[str] = set(APP_CAPABILITIES) - {CAP_APP_SUPERVISOR}
 ALL_CAPABILITIES |= set(APP_CAPABILITIES)
-ROLE_CAPABILITIES.setdefault(RoleName.sales_rep, set()).update(APP_CAPABILITIES)
+ROLE_CAPABILITIES.setdefault(RoleName.sales_rep, set()).update(REP_APP_CAPABILITIES)
 
 # «المالك» — كل حاجة، وهو الوحيد اللي بياخد `stats.view` صراحةً.
 ROLE_CAPABILITIES[RoleName.owner] = set(ALL_CAPABILITIES)
@@ -401,7 +407,7 @@ ROLE_CAPABILITIES[RoleName.viewer] = {
 # صلاحية جديدة بتوصله لوحدها — وكروت الإحصائيات دي بالظبط اللي المالك قفلها.
 # و«البيع تحت التكلفة» برضه — قرار شركة مش فرع؛ يتدّاله صراحةً لو المالك عايز.
 _NOT_FOR_BRANCH_MANAGER = {CAP_BRANCH_WRITE, CAP_LOYALTY_SETTINGS_WRITE, CAP_STATS_VIEW,
-                           CAP_SELL_BELOW_COST}
+                           CAP_SELL_BELOW_COST, CAP_APP_SUPERVISOR}
 ROLE_CAPABILITIES[RoleName.branch_manager] = ALL_CAPABILITIES - _NOT_FOR_BRANCH_MANAGER
 
 
@@ -447,7 +453,17 @@ ROLE_CAPABILITIES[RoleName.owner] = set(ALL_CAPABILITIES)
 # كروت التطبيق لكل الأدوار افتراضياً — التطبيق قبل كده كان بيعرض كله لأي حد بيدخله، فشيل
 # كارت من دور كامل كان هيبقى تغيير محدش طلبه. الشيل بقى لمستخدم بعينه.
 for _role in RoleName:
-    ROLE_CAPABILITIES.setdefault(_role, set()).update(APP_CAPABILITIES)
+    if _role == RoleName.rep_supervisor:
+        continue
+    ROLE_CAPABILITIES.setdefault(_role, set()).update(REP_APP_CAPABILITIES)
+
+# «مشرف مناديب» (٢٠٢٦-١٠-٠٦) — بيتفرّج على شغل مناديبه من التطبيق وبس.
+#
+# مابياخدش كروت المندوب (فاتورة بيع، تحصيل، بضاعتي...): هو مابيبيعش ومالوش عهدة، والكارت
+# اللي يفتح على شاشة بيع لحد مالوش مكان يبيع منه بيوقع في أول ضغطة. شاشته الرئيسية في
+# التطبيق هي شاشة المشرف، و`sales.read` عشان مسارات `/supervisor` بتقرا مبيعات.
+# واللي عايز يدّيه أكتر بيعملها من شاشة الصلاحيات.
+ROLE_CAPABILITIES[RoleName.rep_supervisor] = {CAP_APP_SUPERVISOR, CAP_SALES_READ}
 
 
 # ما ضبطه المستخدم من شاشة الصلاحيات — بيتقرا من قاعدة البيانات مرة عند الإقلاع وبعد كل حفظ.

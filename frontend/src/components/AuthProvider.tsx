@@ -10,7 +10,8 @@ const REFRESH_EVERY_MS = 6 * 60 * 60 * 1000;
 
 // `owner` — صاحب الشركة، أعلى من `system_admin`. كان ناقص من النوع فالشاشات اللي
 // بتقارن بالاسم ما كانتش بتعرفه، ولا TypeScript كان بينبّه عليها.
-export type RoleName = 'owner' | 'system_admin' | 'branch_manager' | 'purchasing_manager' | 'sales_manager' | 'after_sales_staff' | 'sales_rep' | 'accountant' | 'viewer';
+// `rep_supervisor` — «مشرف مناديب»: بيتابع مناديبه من التطبيق، ومالوش شاشات في النظام.
+export type RoleName = 'owner' | 'system_admin' | 'branch_manager' | 'purchasing_manager' | 'sales_manager' | 'after_sales_staff' | 'sales_rep' | 'accountant' | 'viewer' | 'rep_supervisor';
 
 /**
  * **الدور اللي بتتقارن بيه قوايم الأدوار** — المالك بيتعامل كمدير نظام.

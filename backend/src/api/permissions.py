@@ -115,6 +115,7 @@ ROLE_LABELS: dict[str, str] = {
     "accountant": "محاسب",
     "viewer": "قارئ",
     "owner": "المالك",
+    "rep_supervisor": "مشرف مناديب",
 }
 
 

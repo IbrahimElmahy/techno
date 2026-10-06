@@ -3,7 +3,8 @@ import 'package:flutter/material.dart';
 import '../api/api_client.dart';
 import '../db/local_db.dart';
 import '../theme.dart';
-import 'home_screen.dart';
+import '../widgets/session_drawer.dart';
+import 'supervisor_home_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -51,6 +52,14 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
     });
     try {
       await ApiClient.instance.login(_username.text.trim(), _password.text);
+      // **المشرف مابيسحبش حاجة.** مالوش عربية ولا عملاء — السحب كله بيرجع ٤٠٣، وشاشته
+      // أونلاين أصلاً. بيروح على متابعة المناديب على طول.
+      if (await ApiClient.instance.isSupervisor()) {
+        if (!mounted) return;
+        Navigator.of(context).pushReplacement(MaterialPageRoute(
+            builder: (_) => const SupervisorHomeScreen(isRoot: true)));
+        return;
+      }
       // أول سحب بعد الدخول عشان المندوب يشتغل من غير شبكة على طول.
       //
       // **وحزمة البيع معاه.** `pullReferenceData` بتجيب الكتالوج والقوايم — مش أصناف
@@ -64,8 +73,9 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
         await ApiClient.instance.pullSalesBundle();
       } catch (_) {/* مش مندوب، أو مالوش مخزن — شاشة المزامنة بتقول السبب */}
       if (!mounted) return;
-      Navigator.of(context).pushReplacement(
-          MaterialPageRoute(builder: (_) => const HomeScreen()));
+      final home = await postLoginHome();
+      if (!mounted) return;
+      Navigator.of(context).pushReplacement(MaterialPageRoute(builder: (_) => home));
     } catch (e) {
       setState(() => _error = e.toString());
     } finally {

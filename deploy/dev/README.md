@@ -75,3 +75,7 @@ Get-Content D:\techno-dev\pg.log -Tail 30
 Remove-Item D:\techno-dev\pgdata\postmaster.pid -Force
 .\dev_db.ps1 start
 ```
+
+## يوزر تجربة محلي — مشرف مناديب
+
+على قاعدة الديف بس (`techno_dev`): `supervisor.test` / `sup-f53c9796` — تحته مناديب العلياء (15–19).

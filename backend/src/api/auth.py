@@ -41,6 +41,8 @@ class UserOut(BaseModel):
     branch_id: int | None
     territory_id: int | None
     active: bool
+    # مشرف المناديب اللي المندوب ده تحته (`user.supervisor_id`) — فاضي لغير المندوب.
+    supervisor_id: int | None = None
     # (031) What this user may DO, not just what they are called.
     #
     # Every screen was deciding what to show by hard-coding a list of role names, which is the
@@ -200,6 +202,7 @@ def me(current: CurrentUser = Depends(get_current_user), db: Session = Depends(g
         branch_id=user.branch_id,
         territory_id=user.territory_id,
         active=user.active,
+        supervisor_id=user.supervisor_id,
         # **اللي الدور ده بيقدر عليه فعلاً** — نفس `role_has_capability` اللي السيرفر بيحكم
         # بيه. كان بيرجّع الافتراضي، فأي تعديل من شاشة الصلاحيات كان بيتطبّق في السيرفر
         # ومابيوصلش للشاشة: زرار يبان لحد اتمنع منه، أو يختفي عن حد اتدّاله.

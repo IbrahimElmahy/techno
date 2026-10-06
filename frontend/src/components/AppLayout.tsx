@@ -59,6 +59,7 @@ const ROLE_LABELS: Record<RoleName, string> = {
   accountant: 'المحاسب',
   // «قارئ» — يشوف ويطبع، ما يغيّرش حاجة.
   viewer: 'قارئ (عرض فقط)',
+  rep_supervisor: 'مشرف مناديب',
 };
 
 /** One icon per top-level section. Their menu has no icons; ours does, and it costs nothing. */

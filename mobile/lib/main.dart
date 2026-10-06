@@ -5,11 +5,11 @@ import 'package:sqflite/sqflite.dart' show databaseFactory;
 import 'package:sqflite_common_ffi_web/sqflite_ffi_web.dart';
 
 import 'db/local_db.dart';
-import 'screens/home_screen.dart';
 import 'screens/login_screen.dart';
 import 'screens/splash_screen.dart';
 import 'services/app_updater.dart';
 import 'theme.dart';
+import 'widgets/session_drawer.dart';
 import 'widgets/task_progress_bar.dart';
 
 void main() {
@@ -79,6 +79,8 @@ class _Gate extends StatefulWidget {
 
 class _GateState extends State<_Gate> {
   bool? _loggedIn;
+  /// الرئيسية حسب الدور — شاشة المندوب، أو متابعة المناديب للمشرف.
+  Widget? _home;
 
   /// أقل مدة تفضل فيها شاشة البداية ظاهرة.
   ///
@@ -99,8 +101,12 @@ class _GateState extends State<_Gate> {
     final reading = LocalDb.instance.getKv('token');
     await Future<void>.delayed(_minimumSplash);
     final token = await reading;
+    final home = token == null ? null : await postLoginHome();
     if (!mounted) return;
-    setState(() => _loggedIn = token != null);
+    setState(() {
+      _loggedIn = token != null;
+      _home = home;
+    });
     // **التحديث بيتسأل عليه هنا — قبل ما نعرف داخل ولا لأ.** المندوب اللي نسخته القديمة
     // مش عارفة تدخل هو أكتر واحد محتاجه، فشاشة الدخول لازم تشوفه زي الرئيسية بالظبط.
     // العنوان معروف من هنا (المتحفوظ أو الافتراضي). مافيش `await`: الشاشة بتفتح على طول،
@@ -117,7 +123,7 @@ class _GateState extends State<_Gate> {
       duration: const Duration(milliseconds: 450),
       child: _loggedIn == null
           ? const SplashScreen()
-          : (_loggedIn! ? const HomeScreen() : const LoginScreen()),
+          : (_loggedIn! ? _home! : const LoginScreen()),
     );
   }
 }
