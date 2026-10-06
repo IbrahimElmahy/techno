@@ -13,7 +13,9 @@
 
 export const ENTRY_TYPE_LABEL: Record<string, string> = {
   opening_balance: 'رصيد افتتاحي',
-  sale: 'طلب بيع',
+  // «فاتورة بيع» زي a5 وزي حركات a5 المنقولة (`sales_invoice`) — كان «طلب بيع»، فالبيع
+  // كان بيظهر بنوعين في فلتر كشف الحساب (المالك ٢٠٢٦-١٠-٠٦).
+  sale: 'فاتورة بيع',
   sale_return: 'مرتجع بيع',
   purchase: 'فاتورة شراء',
   purchase_return: 'مرتجع شراء',

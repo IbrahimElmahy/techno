@@ -293,6 +293,21 @@ export function footer(note?: string, hideCompany = false): string {
   return `<div class="foot"><span>${left}</span><span>${right}</span></div>`;
 }
 
+/**
+ * **أرقام إنجليزي على الورق كله** (0-9) زي a5 — مهما كان إعداد أرقام الشاشة.
+ * `printDocument` بيعدّي الورقة كلها عليها، فكل نوع مستند (فاتورة، سند، إذن، تحويل، معاينة،
+ * تقرير، كشف) بيطلع بنفس الأرقام من غير ما كل ملف يفتكر (المالك ٢٠٢٦-١٠-٠٦).
+ */
+export function latinDigits(text: string): string {
+  return text
+    .replace(/[\u0660-\u0669]/g, (d) => String(d.charCodeAt(0) - 0x0660))
+    .replace(/[\u06F0-\u06F9]/g, (d) => String(d.charCodeAt(0) - 0x06F0))
+    .replace(/\u066C/g, ',')
+    .replace(/\u066B/g, '.')
+    // علامة اتجاه الحروف اللي `ar-EG` بيحطها قبل السالب.
+    .replace(/\u061C/g, '');
+}
+
 /** Wrap a document body in the branded shell and open the browser's print dialog. */
 export function printDocument(meta: DocMeta, bodyHtml: string): void {
   // المضغوط بيصغّر هامش الصفحة كمان: ١٢ مم من كل ناحية = ٢٤ مم من عرض A4
@@ -312,6 +327,6 @@ export function printDocument(meta: DocMeta, bodyHtml: string): void {
 </body></html>`;
   const win = window.open('', '_blank', 'width=1000,height=1000');
   if (!win) return;
-  win.document.write(html);
+  win.document.write(latinDigits(html));
   win.document.close();
 }

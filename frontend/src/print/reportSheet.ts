@@ -14,7 +14,7 @@
  * The filters go in the header block on purpose. A printed report with no dates on it is a page of
  * numbers nobody can date, and it will be read six months later as if it were current.
  */
-import { type DocMeta, printDocument } from './brand';
+import { type DocMeta, latinDigits, printDocument } from './brand';
 
 /** عمود مطبوع: عنوانه، وإزاي بنطلع قيمته من الصف. */
 export interface PrintColumn<T = any> {
@@ -41,15 +41,7 @@ export interface PrintTotal {
  * فالورقة بتتنسّق هنا بـ`en-US` ثابت، واللي بيعدّي من `money()` بيترجم في الآخر
  * (`latinDigits`) — الشاشة زي ما هي.
  */
-export function latinDigits(text: string): string {
-  return text
-    .replace(/[\u0660-\u0669]/g, (d) => String(d.charCodeAt(0) - 0x0660))
-    .replace(/[\u06F0-\u06F9]/g, (d) => String(d.charCodeAt(0) - 0x06F0))
-    .replace(/\u066C/g, ',')
-    .replace(/\u066B/g, '.')
-    // علامة اتجاه الحروف اللي `ar-EG` بيحطها قبل السالب.
-    .replace(/\u061C/g, '');
-}
+export { latinDigits } from './brand';
 
 /** فلوس على الورق: 1,234.50 — منزلتين، أرقام إنجليزي دايماً. */
 export const printMoney = (v: unknown): string => Number(v || 0).toLocaleString('en-US', {

@@ -432,7 +432,7 @@ export default function AccountStatement() {
 
   const [repFilter, setRepFilter] = useState<string | undefined>(u0.rep);
   const [query, setQuery] = useState(u0.q);
-  const [typeFilter, setTypeFilter] = useState<string[]>(u0.types);
+  const [typeFilter, setTypeFilter] = useState<string[]>(() => [...new Set(u0.types.map((t: string) => entryTypeLabel(t)))]);
   const [ccFilter, setCcFilter] = useState<string[]>(u0.cc);
   const [docNo, setDocNo] = useState(u0.doc);
   // «البيان» — بيدوّر في بيان القيد وفي البيان المكتوب على المستند نفسه. فلتر في الشاشة
@@ -447,8 +447,9 @@ export default function AccountStatement() {
   const abc = (a: { label: string }, b: { label: string }) => compareArabic(a.label, b.label);
   const repOptions = [...new Set(lines.map((l) => l.rep_name).filter(Boolean))]
     .map((r) => ({ value: r as string, label: r as string })).sort(abc);
-  const typeOptions = [...new Set(lines.map((l) => l.entry_type).filter(Boolean))]
-    .map((t) => ({ value: t as string, label: entryTypeLabel(t as string) })).sort(abc);
+  // بالاسم مش بالكود: نوعين ليهم نفس الاسم (فاتورة بيع عندنا وفاتورة بيع من a5) خيار واحد.
+  const typeOptions = [...new Set(lines.filter((l) => l.entry_type).map((l) => entryTypeLabel(l.entry_type)))]
+    .map((t) => ({ value: t, label: t })).sort(abc);
   const ccOptions = [...new Set(lines.map((l) => l.cost_center_name).filter(Boolean))]
     .map((c) => ({ value: c as string, label: c as string })).sort(abc);
 
@@ -519,7 +520,7 @@ export default function AccountStatement() {
     const d = normalizeAr(dRaw).toLowerCase();
     return lines.filter((l) => {
       if (repFilter && l.rep_name !== repFilter) return false;
-      if (typeFilter.length && !typeFilter.includes(l.entry_type)) return false;
+      if (typeFilter.length && !typeFilter.includes(entryTypeLabel(l.entry_type))) return false;
       if (ccFilter.length && !ccFilter.includes(l.cost_center_name ?? '')) return false;
       if (hideZero && !Number(l.debit || 0) && !Number(l.credit || 0)) return false;
       if (stmtQ.trim() && !statementMatches(stmtQ, l.description, l.doc_statement)) return false;
@@ -832,7 +833,7 @@ export default function AccountStatement() {
       ...(repFilter ? [['مندوب', repFilter] as [string, string]] : []),
       ...(ccFilter.length ? [['مركز التكلفة', ccFilter.join('، ')] as [string, string]] : []),
       ...(typeFilter.length
-        ? [['نوع الحركة', typeFilter.map(entryTypeLabel).join('، ')] as [string, string]] : []),
+        ? [['نوع الحركة', typeFilter.join('، ')] as [string, string]] : []),
       ...(docNo.trim() ? [['رقم المستند', docNo.trim()] as [string, string]] : []),
       ...(stmtQ.trim() ? [['البيان', stmtQ.trim()] as [string, string]] : []),
       ...(query.trim()
