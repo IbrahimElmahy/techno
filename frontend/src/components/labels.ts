@@ -37,6 +37,11 @@ export const ENTRY_TYPE_LABEL: Record<string, string> = {
   payroll_accrual: 'استحقاق مرتبات',
   payroll_payment: 'صرف مرتبات',
   payroll_remittance: 'سداد تأمينات/ضرايب',
+  // القيود المنقولة من a5 (`scripts/import_a5_ledger.py`) بأسامي مستنداتها هناك — كانت
+  // بتظهر في كشف الحساب «sales_invoice» بالإنجليزي، وهي أغلب حركات العملاء القديمة.
+  sales_invoice: 'فاتورة بيع',
+  sales_return: 'مرتجع بيع',
+  purchase_invoice: 'فاتورة شراء',
 };
 
 /**

@@ -29,7 +29,8 @@ import { useTableKeyboard } from '../components/keyboard';
 import { textColumn, numberColumn, dateColumn } from '../components/gridColumns';
 import type { ColumnsType } from 'antd/es/table';
 import { exportCsv as writeCsv, type CsvColumn } from '../utils/exportCsv';
-import { printReport, type PrintColumn } from '../print/reportSheet';
+import { type PrintColumn } from '../print/reportSheet';
+import { printStatement } from '../print/statementSheet';
 
 import StatsRow from '../components/StatsRow';
 import { money } from '../utils/money';
@@ -457,38 +458,31 @@ export default function SupplierProfile() {
     writeCsv(`supplier-${supplierId}-statement`, cols, shownLines);
   };
 
+  // ورقة a5 الثابتة — الشرح عند `print/statementSheet` (نفس ورقة كشف الحساب).
   const printIt = () => {
     if (!statement) return;
-    const visibleKeys = tableCols.columns.map((col: any) => String(col.key ?? col.dataIndex ?? ''));
-    const cols = visibleKeys
-      .map((k) => printColOf(k))
-      .filter((col): col is PrintColumn<StatementLine> => !!col);
-    printReport(
-      {
-        title: `كشف حساب مورد: ${s?.name ?? ''} (${s?.code ?? ''})`,
-        meta: [
-          ['المورد', `${s?.name ?? ''}${s?.code ? ` (${s.code})` : ''}`],
-          ...(range ? [[
-            'الفترة',
-            `${range[0].format('YYYY/MM/DD')} ← ${range[1].format('YYYY/MM/DD')}`,
-          ] as [string, string]] : []),
-          ...(repFilter ? [['مندوب', repFilter] as [string, string]] : []),
-          ...(ccFilter.length ? [['مركز التكلفة', ccFilter.join('، ')] as [string, string]] : []),
-          ...(typeFilter.length ? [['نوع الحركة', typeFilter.map(entryTypeLabel).join('، ')] as [string, string]] : []),
-          ...(docNo.trim() ? [['رقم المستند', docNo.trim()] as [string, string]] : []),
-          ...(query.trim() ? [[exactMatch ? 'بحث (تطابق تام)' : 'بحث', query.trim()] as [string, string]] : []),
-          ...(hideZero ? [['عرض', 'بدون الحركات الصفرية'] as [string, string]] : []),
-        ],
-      },
-      cols,
-      shownLines,
-      [
-        { label: 'رصيد أول المدة', value: money(statement.opening_balance) },
-        { label: 'إجمالي مدين (المعروض)', value: money(shownLines.reduce((t, l) => t + Number(l.debit || 0), 0)) },
-        { label: 'إجمالي دائن (المعروض)', value: money(shownLines.reduce((t, l) => t + Number(l.credit || 0), 0)) },
-        { label: 'الرصيد الختامي', value: money(statement.closing_balance) },
-      ],
-    );
+    const filters: [string, string][] = [
+      ...(repFilter ? [['مندوب', repFilter] as [string, string]] : []),
+      ...(ccFilter.length ? [['مركز التكلفة', ccFilter.join('، ')] as [string, string]] : []),
+      ...(typeFilter.length ? [['نوع الحركة', typeFilter.map(entryTypeLabel).join('، ')] as [string, string]] : []),
+      ...(docNo.trim() ? [['رقم المستند', docNo.trim()] as [string, string]] : []),
+      ...(query.trim() ? [[exactMatch ? 'بحث (تطابق تام)' : 'بحث', query.trim()] as [string, string]] : []),
+      ...(hideZero ? [['عرض', 'بدون الحركات الصفرية'] as [string, string]] : []),
+    ];
+    printStatement({
+      title: 'كشف حساب مورد',
+      account: `${s?.name ?? ''}${s?.code ? ` (${s.code})` : ''}`,
+      mainAccount: statement.main_account_name ?? null,
+      from: range ? range[0].format('YYYY/MM/DD') : null,
+      to: range ? range[1].format('YYYY/MM/DD') : null,
+      opening: statement.opening_balance,
+      closing: statement.closing_balance,
+      lines: shownLines,
+      normalSide: 'credit',
+      filtered: filtering,
+      filters,
+      showAccount: new Set(shownLines.map((l) => l.account_id).filter(Boolean)).size > 1,
+    });
   };
 
   const columns: ColumnsType<StatementLine> = [

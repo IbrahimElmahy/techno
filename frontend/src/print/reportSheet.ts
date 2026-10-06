@@ -15,7 +15,6 @@
  * numbers nobody can date, and it will be read six months later as if it were current.
  */
 import { type DocMeta, printDocument } from './brand';
-import { numeralsLocale } from '../utils/money';
 
 /** عمود مطبوع: عنوانه، وإزاي بنطلع قيمته من الصف. */
 export interface PrintColumn<T = any> {
@@ -31,8 +30,52 @@ export interface PrintTotal {
   value: string | number;
 }
 
+/**
+ * **الورق بأرقام إنجليزي (0-9) — كله، مش حتة وحتة.**
+ *
+ * الكشف المطبوع كان طالع بلغتين أرقام في نفس الورقة: خانات الجدول «100000.82» (القيمة
+ * الخام من السيرفر من غير تنسيق) والإجماليات تحته «٢٨٧٩٣٧٫٧٨» (`money()` بشكل الأرقام
+ * اللي المستخدم مختاره للشاشة). ورقة a5 اللي العميل متعوّد عليها 0-9 في كل حتة، والورقة
+ * بتتبعت لعميل ومحاسب مش لنفس الشاشة — فاختيار الشاشة مالوش دعوة بيها.
+ *
+ * فالورقة بتتنسّق هنا بـ`en-US` ثابت، واللي بيعدّي من `money()` بيترجم في الآخر
+ * (`latinDigits`) — الشاشة زي ما هي.
+ */
+export function latinDigits(text: string): string {
+  return text
+    .replace(/[\u0660-\u0669]/g, (d) => String(d.charCodeAt(0) - 0x0660))
+    .replace(/[\u06F0-\u06F9]/g, (d) => String(d.charCodeAt(0) - 0x06F0))
+    .replace(/\u066C/g, ',')
+    .replace(/\u066B/g, '.')
+    // علامة اتجاه الحروف اللي `ar-EG` بيحطها قبل السالب.
+    .replace(/\u061C/g, '');
+}
+
+/** فلوس على الورق: 1,234.50 — منزلتين، أرقام إنجليزي دايماً. */
+export const printMoney = (v: unknown): string => Number(v || 0).toLocaleString('en-US', {
+  minimumFractionDigits: 2, maximumFractionDigits: 2,
+});
+
+/** كميات على الورق: 1,234.5 — من غير منازل مفروضة. */
+export const printQty = (v: unknown): string => Number(v || 0).toLocaleString('en-US', {
+  maximumFractionDigits: 3,
+});
+
+/**
+ * خانة رقمية خام («100000.82» من السيرفر) بفواصل الآلاف، ومنازلها زي ما هي — «12.500»
+ * كمية بتفضل بتلات منازل، و«5» عدد مابيبقاش «5.00». اللي مش رقم بيعدّي زي ما هو.
+ */
+function numericCell(value: unknown): unknown {
+  const raw = typeof value === 'number' ? String(value) : value;
+  if (typeof raw !== 'string' || !/^-?\d+(\.\d+)?$/.test(raw.trim())) return value;
+  const decimals = (raw.trim().split('.')[1] ?? '').length;
+  return Number(raw).toLocaleString('en-US', {
+    minimumFractionDigits: decimals, maximumFractionDigits: decimals,
+  });
+}
+
 /** HTML escaping — a customer called «شركة <النور>» must not become markup. */
-function esc(value: unknown): string {
+export function esc(value: unknown): string {
   if (value === null || value === undefined) return '';
   return String(value)
     .replace(/&/g, '&amp;')
@@ -60,7 +103,8 @@ export function reportTableHtml<T>(
       const cells = columns
         .map((c) => {
           const align = c.numeric ? ' style="text-align:left;direction:ltr"' : '';
-          return `<td${align}>${esc(cellOf(row, c))}</td>`;
+          const v = cellOf(row, c);
+          return `<td${align}>${esc(c.numeric ? numericCell(v) : v)}</td>`;
         })
         .join('');
       return `<tr>${cells}</tr>`;
@@ -94,9 +138,10 @@ export function printReport<T>(
 ): void {
   const counted: DocMeta = {
     ...meta,
-    meta: [...(meta.meta ?? []), ['عدد السطور', String(rows.length)]],
+    meta: [...(meta.meta ?? []), ['عدد السطور', String(rows.length)]]
+      .map(([k, v]) => [k, latinDigits(String(v ?? ''))] as [string, string]),
   };
-  printDocument(counted, reportTableHtml(columns, rows, totals));
+  printDocument(counted, latinDigits(reportTableHtml(columns, rows, totals)));
 }
 
 /**
@@ -120,9 +165,7 @@ export interface PayslipData {
 }
 
 export function printPayslip(slip: PayslipData): void {
-  const money = (v: any) => Number(v || 0).toLocaleString(numeralsLocale(), {
-    minimumFractionDigits: 2, maximumFractionDigits: 2,
-  });
+  const money = printMoney;
   const rows = slip.details.map((d) => `<tr>
       <td style="text-align:start">${esc(d.label)}</td>
       <td>${d.quantity ? esc(Number(d.quantity)) : ''}</td>

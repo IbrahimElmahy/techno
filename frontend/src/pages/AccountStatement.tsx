@@ -27,7 +27,8 @@ import DateRangeFilter from '../components/DateRangeFilter';
 import StatementFilter, { statementMatches } from '../components/StatementFilter';
 import { normalizeAr } from '../components/ListToolbar';
 import { exportCsv as writeCsv, type CsvColumn } from '../utils/exportCsv';
-import { printReport, type PrintColumn } from '../print/reportSheet';
+import { type PrintColumn } from '../print/reportSheet';
+import { printStatement } from '../print/statementSheet';
 import './AccountStatement.css';
 
 import { money, numeralsLocale } from '../utils/money';
@@ -93,6 +94,7 @@ interface Aging {
 interface StatementOut {
   account_id: number;
   account_name: string;
+  main_account_name?: string | null;
   opening_balance: string;
   closing_balance: string;
   total_debit: string;
@@ -129,7 +131,10 @@ function invoiceTypeOf(l: StatementLine): string {
     default: break;
   }
   if (l.entry_type === 'receipt' || l.entry_type === 'payment') return PAYMENT;
-  if (l.entry_type === 'sale_return' || l.entry_type === 'purchase_return') return 'مرتجع';
+  // `sales_return` و`sales_invoice` و`purchase_invoice` أسامي a5 للقيود المنقولة.
+  if (['sale_return', 'sales_return', 'purchase_return'].includes(l.entry_type)) return 'مرتجع';
+  if (l.entry_type === 'sales_invoice') return 'بيع';
+  if (l.entry_type === 'purchase_invoice') return 'شراء';
   if (!l.entry_type || l.entry_type === 'journal') return 'قيد';
   return entryTypeLabel(l.entry_type);
 }
@@ -811,59 +816,56 @@ export default function AccountStatement() {
     writeCsv(`statement-${statement.account_id}`, cols, shownLines);
   };
 
+  /**
+   * الطباعة بورقة a5 الثابتة (`print/statementSheet`) — مش بالأعمدة الظاهرة على الشاشة.
+   * الأعمدة اللي المستخدم بيختارها للشغل (مندوب، مخزن، الرصيد قبل) كانت بتتطبع كلها
+   * وبتحشر البيان في عمود ضيق — العميل رفض الورقة دي وطلب ورقة a5. التصدير CSV لسه
+   * بالأعمدة الظاهرة: ده للي عايز الداتا، مش للي هيمسك الورقة.
+   */
   const printIt = () => {
     if (!statement) return;
-    const cols = visibleKeys
-      .map((k) => printColOf(k))
-      .filter((c): c is PrintColumn<StatementLine> => !!c);
-    printReport(
-      {
-        title: isItem ? 'كشف صنف' : 'كشف حساب',
-        meta: [
-          [isItem ? 'الصنف' : 'الحساب', statement.account_name ?? ''],
-          ...(fullRange() ? [[
-            'الفترة',
-            `${fullRange()![0].format('YYYY/MM/DD')} ← ${fullRange()![1].format('YYYY/MM/DD')}`,
-          ] as [string, string]] : []),
-          ...(isItem && warehouseId
-            ? [['المخزن',
-                warehouses.find((w: any) => w.id === warehouseId)?.name ?? ''] as [string, string]]
-            : []),
-          ...(repFilter ? [['مندوب', repFilter] as [string, string]] : []),
-          ...(ccFilter.length
-            ? [['مركز التكلفة', ccFilter.join('، ')] as [string, string]] : []),
-          ...(typeFilter.length
-            ? [['نوع الحركة', typeFilter.map(entryTypeLabel).join('، ')] as [string, string]] : []),
-          ...(docNo.trim() ? [['رقم المستند', docNo.trim()] as [string, string]] : []),
-          ...(stmtQ.trim() ? [['البيان', stmtQ.trim()] as [string, string]] : []),
-          ...(query.trim()
-            ? [[exactMatch ? 'بحث (تطابق تام)' : 'بحث', query.trim()] as [string, string]] : []),
-          ...(hideZero ? [['عرض', 'بدون الحركات الصفرية'] as [string, string]] : []),
-        ],
-      },
-      cols,
-      shownLines,
-      [
-        { label: 'رصيد أول المدة', value: money(statement.opening_balance) },
-        { label: `إجمالي ${LABELS.debit} (المعروض)`,
-          value: money(shownLines.reduce((t, l) => t + Number(l.debit || 0), 0)) },
-        { label: `إجمالي ${LABELS.credit} (المعروض)`,
-          value: money(shownLines.reduce((t, l) => t + Number(l.credit || 0), 0)) },
-        { label: 'الرصيد الختامي', value: money(statement.closing_balance) },
-        // الورقة المرسَلة للعميل لازم تقول «عليك كام» و«منها متأخر كام» — الرصيد
-        // الختامي وحده بيسيبه يجمع بنفسه، والمتأخر مابيبانش فيه خالص.
-        ...(reconcilable ? [
-          { label: 'إجمالي المستحق', value: money(totalDue) },
-          { label: 'منه متأخر', value: money(totalOverdue) },
-          ...(aging ? [{
-            label: 'أعمار المستحق',
-            value: `الحالي ${money(aging.current)} · ٣٠ ${money(aging.d30)}`
-              + ` · ٦٠ ${money(aging.d60)} · ٩٠ ${money(aging.d90)}`
-              + ` · أقدم ${money(aging.older)}`,
-          }] : []),
-        ] : []),
-      ],
-    );
+    const r = fullRange();
+    const filters: [string, string][] = [
+      ...(isItem && warehouseId
+        ? [['المخزن', warehouses.find((w: any) => w.id === warehouseId)?.name ?? ''] as [string, string]]
+        : []),
+      ...(repFilter ? [['مندوب', repFilter] as [string, string]] : []),
+      ...(ccFilter.length ? [['مركز التكلفة', ccFilter.join('، ')] as [string, string]] : []),
+      ...(typeFilter.length
+        ? [['نوع الحركة', typeFilter.map(entryTypeLabel).join('، ')] as [string, string]] : []),
+      ...(docNo.trim() ? [['رقم المستند', docNo.trim()] as [string, string]] : []),
+      ...(stmtQ.trim() ? [['البيان', stmtQ.trim()] as [string, string]] : []),
+      ...(query.trim()
+        ? [[exactMatch ? 'بحث (تطابق تام)' : 'بحث', query.trim()] as [string, string]] : []),
+      ...(hideZero ? [['عرض', 'بدون الحركات الصفرية'] as [string, string]] : []),
+    ];
+    // ناحية الحساب من الشجرة (عميل مدين، مورد دائن) — الورقة بتستنتجها من السطور لو مالقيتهاش.
+    const acct = accounts.find((a: any) => a.id === (statement.account_id ?? accountId));
+    printStatement({
+      title: isItem ? 'كشف صنف' : 'كشف حساب',
+      account: statement.account_name ?? '',
+      mainAccount: isItem || grouped ? null : statement.main_account_name ?? null,
+      from: r ? r[0].format('YYYY/MM/DD') : null,
+      to: r ? r[1].format('YYYY/MM/DD') : null,
+      opening: statement.opening_balance,
+      closing: statement.closing_balance,
+      lines: shownLines,
+      normalSide: acct?.normal_side === 'credit' ? 'credit' : 'debit',
+      filtered: filtering,
+      filters,
+      quantity: isItem,
+      showAccount: grouped || multiAccount,
+      // الورقة المرسَلة للعميل لازم تقول «عليك كام» و«منها متأخر كام» — الرصيد
+      // الختامي وحده بيسيبه يجمع بنفسه، والمتأخر مابيبانش فيه خالص.
+      extra: reconcilable ? [
+        ['إجمالي المستحق', money(totalDue)],
+        ['منه متأخر', money(totalOverdue)],
+        ...(aging ? [['أعمار المستحق',
+          `الحالي ${money(aging.current)} · ٣٠ ${money(aging.d30)}`
+          + ` · ٦٠ ${money(aging.d60)} · ٩٠ ${money(aging.d90)}`
+          + ` · أقدم ${money(aging.older)}`] as [string, string]] : []),
+      ] : undefined,
+    });
   };
 
   const itemNameOf = (id: number) => {
