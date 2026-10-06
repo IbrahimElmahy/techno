@@ -66,6 +66,7 @@ const BASE_TITLES: Record<string, string> = {
   '/permissions': 'الصلاحيات',
   '/branch-overview': 'نظرة على الفروع',
   '/reps': 'المناديب',
+  '/partners-current': 'جاري الشركاء',
   '/territories': 'المناطق',
   '/governorates': 'المحافظات',
 };

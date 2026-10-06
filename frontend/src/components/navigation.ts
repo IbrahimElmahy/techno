@@ -237,6 +237,8 @@ export const NAVIGATION: (NavGroup | NavScreen)[] = [
       { key: '/account-statement', label: 'كشف حساب', roles: R(BOOKS), a5: '/entriesreport' },
       { key: '/general-ledger?tab=journal', label: 'قيد حر', roles: BOOKS, a5: '/entries' },
       { key: '/treasury', label: 'حركة خزينه', roles: R(BOOKS), a5: '/draweraction' },
+      // «الجاري» في a5 — حسابات الشركاء ورأس المال والاستثمار بأرصدتها (٢٠٢٦-١٠-٠٦).
+      { key: '/partners-current', label: 'جاري الشركاء', roles: R(BOOKS) },
       // تسوية الحسابات — «الفاتورة دي اتدفعت بإيه». مالهاش شاشة عندهم لأن نظامهم
       // مابيقفلش دفعة على فاتورة أصلاً؛ دي الحاجة اللي أودو بيعملها وهما لأ.
       //

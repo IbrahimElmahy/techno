@@ -80,6 +80,7 @@ const Permissions = lazy(() => import('../pages/Permissions'));
 const UserPermissions = lazy(() => import('../pages/UserPermissions'));
 const BranchOverview = lazy(() => import('../pages/BranchOverview'));
 const Reps = lazy(() => import('../pages/Reps'));
+const PartnersCurrent = lazy(() => import('../pages/PartnersCurrent'));
 const Territories = lazy(() => import('../pages/Territories'));
 const Governorates = lazy(() => import('../pages/Governorates'));
 const Inspections = lazy(() => import('../pages/Inspections'));
@@ -208,6 +209,7 @@ export default function PageRoutes({ location }: { location?: string }) {
       <Route path="/user-permissions" element={<UserPermissions />} />
       <Route path="/branch-overview" element={<BranchOverview />} />
       <Route path="/reps" element={<Reps />} />
+      <Route path="/partners-current" element={<PartnersCurrent />} />
       <Route path="/territories" element={<Territories />} />
       <Route path="/governorates" element={<Governorates />} />
       {/* A menu entry whose screen is not built yet lands here and says so, naming the a5 screen

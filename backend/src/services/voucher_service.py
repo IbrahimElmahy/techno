@@ -381,6 +381,9 @@ def create_expense(
     treasury_id: int | None = None,
     cost_center_id: int | None = None,
     cost_center_distribution: dict | None = None, statement1: str | None = None,
+    # «رقم المستند» (رقم السند الورقي) — الشاشة بتبعته، وكان ناقص هنا لوحده من بين السندات
+    # فسند المصروف كله كان بيقع بـ500 (٢٠٢٦-١٠-٠٦).
+    external_document_number: str | None = None,
 ) -> Voucher:
     """سند مصروف — إيجار/مرتبات/بنزين… مدين حساب المصروف ودائن الخزينة."""
     value = _positive(amount)
@@ -409,6 +412,7 @@ def create_expense(
         treasury_id=safe_id,
         cost_center_id=cost_center_id,
         cost_center_distribution=cost_center_distribution, statement1=statement1,
+        external_document_number=external_document_number,
     )
 
 
