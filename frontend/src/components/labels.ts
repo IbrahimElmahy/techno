@@ -34,6 +34,7 @@ export const ENTRY_TYPE_LABEL: Record<string, string> = {
   cheque_settle: 'تحصيل شيك',
   cheque_bounce: 'ارتداد شيك',
   expense: 'مصروف',
+  netting: 'مقاصة',
   depreciation: 'إهلاك',
   asset_disposal: 'استبعاد أصل',
   // الموارد البشرية — السلفة أصل على الموظف، مش مصروف على الشركة.

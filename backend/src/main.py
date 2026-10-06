@@ -62,6 +62,7 @@ from src.api import (  # Sales & Inventory (002
     suppliers,
     supervisor,  # مشرف المناديب — متابعة شغل المناديب من التطبيق
     partners_current,  # «جاري الشركاء» — شاشة «الجاري» بتاعة a5
+    party_links,  # الأطراف المرتبطة — عميل ومورد وموظف نفس الشخص، والمقاصة
     tax_commissions,  # VAT return + rep commissions (021)
     transfers,
     treasury,
@@ -170,6 +171,7 @@ def create_app() -> FastAPI:
     app.include_router(reps.router, prefix=prefix)
     app.include_router(supervisor.router, prefix=prefix)
     app.include_router(partners_current.router, prefix=prefix)
+    app.include_router(party_links.router, prefix=prefix)
     # Sales & Inventory (002)
     app.include_router(catalog.router, prefix=prefix)
     app.include_router(serials.router, prefix=prefix)

@@ -59,6 +59,7 @@ from src.models.sales_expense import SalesInvoiceExpense  # noqa: E402
 from src.models.stock import StockLocator, StockMovement, StockSetting  # noqa: E402
 from src.models.stock_permit import StockPermit, StockPermitLine  # noqa: E402
 from src.models.voucher_key import VoucherKey  # noqa: E402
+from src.models.party_link import PartyGroup, PartyGroupMember  # noqa: E402,F401 — الأطراف المرتبطة
 
 # Sales & Inventory (002) models — imported for metadata; added per phase.
 from src.models.supplier import Supplier, SupplierAccount  # noqa: E402

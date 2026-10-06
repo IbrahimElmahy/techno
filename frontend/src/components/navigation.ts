@@ -84,6 +84,8 @@ export const NAVIGATION: (NavGroup | NavScreen)[] = [
       { key: '/catalog', label: 'الأصناف', roles: R(STOCK), a5: '/items' },
       { key: '/customers', label: 'العملاء', roles: R([...SALES, 'after_sales_staff']), a5: '/clients' },
       { key: '/suppliers', label: 'الموردين', roles: R(BUYING), a5: '/suppliers' },
+      // عميل ومورد (أو موظف/فرع) نفس الشخص — أرصدته مع بعض والمقاصة (المرحلة ٢، ٢٠٢٦-١٠-٠٦).
+      { key: '/party-links', label: 'الأطراف المرتبطة', roles: R([...SALES, ...BUYING]) },
       { key: '/warehouses', label: 'المخازن', roles: R(STOCK), a5: '/stores' },
       // الهيكل من فوق لتحت: محافظة ← فرع ← منطقة. التلاتة كانوا متفرّقين — المحافظات
       // مدفونة في تبويب مش في القائمة، والمناطق مالهاش شاشة أصلاً.
