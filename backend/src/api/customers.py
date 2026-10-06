@@ -278,6 +278,7 @@ def customers_summary(
     governorate_id: int | None = Query(None),
     active: bool | None = Query(None),
     balance_filter: str | None = Query(None),
+    hide_employees: bool = Query(False),
     current: CurrentUser = Depends(require_capability(CAP_CUSTOMER_READ)),
     db: Session = Depends(get_db),
 ) -> CustomersSummaryOut:
@@ -294,6 +295,8 @@ def customers_summary(
     # الملّاك مش عملاء — ليهم جدولهم وشاشتهم (`owner` ← «الملّاك» في ما بعد البيع).
     # الاستبعاد هنا عشان أي صف شارد مايظهرش في الكشف ولا في إجمالياته.
     base_stmt = base_stmt.where(Customer.customer_type != "owner")
+    if hide_employees and customer_type != "employee":
+        base_stmt = base_stmt.where(Customer.customer_type != "employee")
     signed = case(
         (LedgerLine.direction == Account.normal_side, LedgerLine.amount),
         else_=-LedgerLine.amount,
@@ -644,6 +647,10 @@ def list_customers(
     governorate_id: int | None = Query(None),
     active: bool | None = Query(None),
     balance_filter: str | None = Query(None),  # all | debtors | settled | credit
+    # شاشة «العملاء» بتبعته: كروت الموظفين (ذمم الموظفين) مش عملاء — ليهم «مديونيات
+    # الموظفين». القوايم التانية (اختيار طرف الفاتورة) مابتبعتوش، فالبيع بالعهدة لموظف شغّال.
+    # واختيار «موظف» من فلتر التصنيف بيعرضهم.
+    hide_employees: bool = Query(False),
     limit: int | None = Query(None),
     offset: int = Query(0),
     current: CurrentUser = Depends(require_capability(CAP_CUSTOMER_READ)),
@@ -656,6 +663,8 @@ def list_customers(
         service_rep_id=service_rep_id, territory_id=territory_id,
         governorate_id=governorate_id, active=active,
     ).where(Customer.customer_type != "owner")  # الملّاك في شاشتهم، مش هنا
+    if hide_employees and customer_type != "employee":
+        stmt = stmt.where(Customer.customer_type != "employee")
 
     if balance_filter and balance_filter != "all":
         # Need balances before slicing

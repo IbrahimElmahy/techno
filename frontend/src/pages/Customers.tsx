@@ -343,7 +343,8 @@ export default function Customers() {
 
   const loadSummary = async (activeFilters = filters) => {
     try {
-      const params: any = {};
+      // كروت الموظفين مش عملاء — ليهم «مديونيات الموظفين». فلتر «موظف» بيعرضهم.
+      const params: any = { hide_employees: true };
       Object.entries(activeFilters).forEach(([k, v]) => {
         if (v !== undefined && v !== null && v !== '') params[k] = v;
       });
@@ -370,6 +371,7 @@ export default function Customers() {
       const params: any = {
         limit: targetPageSize,
         offset: (targetPage - 1) * targetPageSize,
+        hide_employees: true,
       };
       Object.entries(active).forEach(([k, v]) => {
         if (v !== undefined && v !== null && v !== '') params[k] = v;
