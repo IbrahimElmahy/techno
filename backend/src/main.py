@@ -89,6 +89,11 @@ def create_app() -> FastAPI:
     # عشان الرد اللي بيقع يخرج بترويستها. والسجل بيشوف الطلب زي ما وصل للراوتر بالظبط.
     from src.core.request_audit import RequestAuditMiddleware
 
+    # نسخة المستند مع كل عملية عليه (زرار «السجل»). قبل السجل في الكود يعني جوّاه في التنفيذ —
+    # أقرب طبقة للراوتر، فقراية المستند قبل وبعد بتروح للراوتر على طول من غير ما تتسجّل.
+    from src.core.document_versions import DocumentVersionMiddleware
+
+    app.add_middleware(DocumentVersionMiddleware)
     app.add_middleware(RequestAuditMiddleware)
 
     # التحديث الحي: أي تغيير نجح بيتعلن للشاشات المفتوحة. جوّه CORS زي السجل، وبيعلن بعد
@@ -155,6 +160,8 @@ def create_app() -> FastAPI:
     app.include_router(treasury.router, prefix=prefix)
     app.include_router(customers.router, prefix=prefix)
     app.include_router(audit.router, prefix=prefix)
+    from src.api import document_versions as _document_versions
+    app.include_router(_document_versions.router, prefix=prefix)
     app.include_router(permissions.router, prefix=prefix)
     app.include_router(branch_overview.router, prefix=prefix)
     app.include_router(owner_stats.router, prefix=prefix)

@@ -1,5 +1,6 @@
 """Model package — import all models so metadata is fully populated."""
 from src.models.audit import AuditLogEntry
+from src.models.document_version import DocumentVersion  # noqa: E402 — نسخ المستندات لزرار «السجل»
 from src.models.bom import Bom, BomComponent, BomResource  # noqa: E402
 from src.models.catalog import Item, ItemPrice, ItemSerial, ItemUnit
 from src.models.contact import ContactPhone  # noqa: E402
