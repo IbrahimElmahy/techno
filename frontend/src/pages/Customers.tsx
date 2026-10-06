@@ -206,20 +206,20 @@ const InlineTextCell = ({
 };
 
 // القايمة بتحفظ أول ما تختار — مافيش «سيب الخانة».
-const InlineSelectCell = ({
+const InlineSelectCell = <V extends number | string>({
   value, options, onCommit,
 }: {
-  value: number | null;
-  options: { value: number; label: string }[];
-  onCommit: (v: number) => Promise<void>;
+  value: V | null;
+  options: { value: V; label: string }[];
+  onCommit: (v: V) => Promise<void>;
 }) => {
-  const [current, setCurrent] = useState<number | null>(value);
+  const [current, setCurrent] = useState<V | null>(value);
   const { status, run } = useCellStatus();
   useEffect(() => {
     if (status !== 'saving') setCurrent(value);
   }, [value]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const onChange = async (v: number) => {
+  const onChange = async (v: V) => {
     if (v === current) return;
     const previous = current;
     setCurrent(v);
@@ -319,7 +319,9 @@ export default function Customers() {
   // PATCH جزئي: اللي مااتبعتش مابيتلمسش (الأرقام الإضافية والخصم والمندوب…).
   const saveField = async (r: CustomerRecord, body: Partial<CustomerRecord>) => {
     const res = await api.patch(`/api/v1/customers/${r.id}`, body);
+    // الرد فيه الكارت كله — الاسم والتصنيف والعنوان بيتحدّثوا في السطر من غير إعادة تحميل.
     mergeRow(r.id, {
+      name: res.data.name, customer_type: res.data.customer_type, address: res.data.address,
       phone: res.data.phone, governorate_id: res.data.governorate_id, markaz: res.data.markaz,
     });
   };
@@ -327,6 +329,14 @@ export default function Customers() {
   const saveTerritory = async (r: CustomerRecord, territoryId: number) => {
     const res = await api.post(`/api/v1/customers/${r.id}/reassign`, {
       new_territory_id: territoryId,
+    });
+    mergeRow(r.id, { territory_id: res.data.territory_id, rep_id: res.data.rep_id });
+  };
+
+  // المندوب بيتغيّر من مسار النقل (`/reassign`) زي المنطقة — المنطقة بتفضل زي ما هي.
+  const saveRep = async (r: CustomerRecord, repId: number) => {
+    const res = await api.post(`/api/v1/customers/${r.id}/reassign`, {
+      new_rep_id: repId, new_territory_id: r.territory_id,
     });
     mergeRow(r.id, { territory_id: res.data.territory_id, rep_id: res.data.rep_id });
   };
@@ -546,12 +556,17 @@ export default function Customers() {
       dataIndex: 'name',
       key: 'name',
       ellipsis: true,
-      render: (name: string, record: CustomerRecord) => (
-        <Space size={4}>
-          <span style={{ fontWeight: 600 }}>{name}</span>
-          {!record.active && <Tag color="red">مخفي</Tag>}
-        </Space>
-      ),
+      // الاسم بيتعدّل من هنا كمان (توحيد أسامي التلات فروع، ٢٠٢٦-١٠-٠٦).
+      render: (name: string, record: CustomerRecord) => (editMode
+        ? <InlineTextCell gridCol="name" value={name}
+            validate={(v) => (v ? null : 'الاسم مايبقاش فاضي')}
+            onCommit={(v) => saveField(record, { name: v })} />
+        : (
+          <Space size={4}>
+            <span style={{ fontWeight: 600 }}>{name}</span>
+            {!record.active && <Tag color="red">مخفي</Tag>}
+          </Space>
+        )),
     },
     {
       // «النوع» كان مدفون في السطر المتوسّع. النوع بيحدد الشغل نفسه — مين بيشتري
@@ -563,7 +578,14 @@ export default function Customers() {
       width: 90,
       sorter: (a: CustomerRecord, b: CustomerRecord) =>
         String(a.customer_type || '').localeCompare(String(b.customer_type || '')),
-      render: (t: string) => {
+      render: (t: string, r: CustomerRecord) => {
+        if (editMode) {
+          return (
+            <InlineSelectCell<string> value={t}
+              options={customerTypeOptions.map((o) => ({ value: String(o.value), label: o.label }))}
+              onCommit={(v) => saveField(r, { customer_type: v })} />
+          );
+        }
         const label = typeLabels[t] || TYPE_LABELS[t] || t;
         if (!label) return '-';
         const color = t === 'plumber' ? 'blue' : t === 'owner' ? 'gold' : 'default';
@@ -588,7 +610,14 @@ export default function Customers() {
       ellipsis: true,
       // فاضي مقصود: السباك والمالك مالهمش مندوب بيع — إحنا بنبيع للتجار بس.
       // شرطة بتقول «مافيش»؛ «مندوب #null» كانت بتقول إن فيه مندوب واحنا مش لاقينه.
-      render: (repId: number | null) => {
+      render: (repId: number | null, row: CustomerRecord) => {
+        if (editMode && canEditTerritory) {
+          return (
+            <InlineSelectCell<number> value={repId}
+              options={reps.map((x) => ({ value: x.id, label: x.full_name }))}
+              onCommit={(v) => saveRep(row, v)} />
+          );
+        }
         if (!repId) return '—';
         const rep = reps.find((r) => r.id === repId);
         return rep ? rep.full_name : `مندوب #${repId}`;
@@ -703,14 +732,26 @@ export default function Customers() {
           onCommit={(v) => saveTerritory(r, v)} />
       : territories.find((t) => t.id === tId)?.name || '-'),
   };
+  // العنوان مكانه السطر المتوسّع؛ في وضع التعديل بيبقى عمود عشان يتكتب.
+  const addressColumn = {
+    title: 'العنوان',
+    dataIndex: 'address',
+    key: 'address',
+    width: 220,
+    render: (v: string | null, r: CustomerRecord) => (
+      <InlineTextCell gridCol="address" value={v}
+        onCommit={(val) => saveField(r, { address: val })} />
+    ),
+  };
   // في وضع التعديل الخانات اللي بتتعدّل لازم تبان حتى لو مخفية من «الأعمدة» —
   // من غير ما نلمس الإعداد المحفوظ، فبترجع زي ما كانت لما التعديل يخلص.
   let tableColumns: any[] = tableCols.columns;
   if (editMode) {
     const authored: any[] = [...columns];
-    authored.splice(authored.findIndex((c) => c.key === 'markaz') + 1, 0, territoryColumn);
+    authored.splice(authored.findIndex((c) => c.key === 'markaz') + 1, 0, territoryColumn, addressColumn);
     const out: any[] = [...tableCols.columns];
-    for (const key of ['phone', 'governorate_id', 'markaz', 'territory_id']) {
+    for (const key of ['name', 'customer_type', 'phone', 'rep_id', 'governorate_id', 'markaz',
+      'territory_id', 'address']) {
       if (out.some((c) => c.key === key)) continue;
       const idx = authored.findIndex((c) => c.key === key);
       // جنب أقرب عمود ظاهر قبله في الترتيب الأصلي.
