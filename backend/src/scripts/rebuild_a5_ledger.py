@@ -34,7 +34,7 @@ from __future__ import annotations
 import sys
 from decimal import Decimal
 
-from sqlalchemy import delete as sa_delete
+from sqlalchemy import text, delete as sa_delete
 from sqlalchemy import select, update as sa_update
 
 from src.core.db import SessionLocal
@@ -49,7 +49,8 @@ ZERO = Decimal("0")
 LINKED = (SalesInvoice, SalesReturn, PurchaseInvoice, PurchaseReturn)
 
 
-def run(folder: str, *, branch_name: str, prefix: str, execute: bool) -> int:
+def run(folder: str, *, branch_name: str, prefix: str, execute: bool,
+        amounts_only: bool = False) -> int:
     db = SessionLocal()
     try:
         src = theirs(folder)
@@ -65,7 +66,8 @@ def run(folder: str, *, branch_name: str, prefix: str, execute: bool) -> int:
             if ref.startswith(tag):
                 key = ref[len(tag):]
                 # البادئة الفاضية بتطابق الفرعين — الفرق إن مفتاح العلياء بيبدأ بـ`AL-`.
-                if not prefix and key.startswith("AL-"):
+                # وقيود السادات (`FC-`) كمان — أي مفتاح أكتوبر رقم بس.
+                if not prefix and not key.isdigit():
                     continue
                 mine[key] = e
 
@@ -91,9 +93,15 @@ def run(folder: str, *, branch_name: str, prefix: str, execute: bool) -> int:
             #
             # وعدد السطور بيمسك اللي المبلغين بيخبّوه: سطر اتشال وسطر تاني اتزاد بنفس
             # المبلغ على حساب تاني خالص.
-            if (abs(got - want["amount"]) > TOL
-                    or abs(got_cr - want["credit"]) > TOL
-                    or len(lines) != want["rows"]):
+            if amounts_only:
+                # قيمة القيد بس (أكبر الطرفين). القيد اللي a5 كاتبه مش متوازن وإحنا
+                # وزنّاه بسطر (الافتتاح) دائنه مختلف عن a5 بالقصد — مش فرق.
+                drift = abs(max(got, got_cr) - max(want["amount"], want["credit"])) > TOL
+            else:
+                drift = (abs(got - want["amount"]) > TOL
+                         or abs(got_cr - want["credit"]) > TOL
+                         or len(lines) != want["rows"])
+            if drift:
                 drifted.append((key, e, max(want["amount"], want["credit"]),
                                 max(got, got_cr)))
 
@@ -122,7 +130,14 @@ def run(folder: str, *, branch_name: str, prefix: str, execute: bool) -> int:
                              .values(ledger_entry_id=None))
             unlinked += res.rowcount or 0
         db.flush()
-        # ٢) السطور وبعدها الرأس.
+        # ٢) التسويات (قيد على فاتورة اتسدد) والتوزيع بيشاوروا على السطر — بيتشالوا الأول.
+        #    التسوية بتتحسب تاني من القيد الجديد؛ سيبها والحذف بيقع.
+        db.execute(text("""delete from partial_reconcile where debit_line_id in
+            (select id from ledger_line where entry_id = any(:i)) or credit_line_id in
+            (select id from ledger_line where entry_id = any(:i))"""), {"i": ids})
+        db.execute(text("""delete from ledger_line_distribution where line_id in
+            (select id from ledger_line where entry_id = any(:i))"""), {"i": ids})
+        # ٣) السطور وبعدها الرأس.
         db.execute(sa_delete(LedgerLine).where(LedgerLine.entry_id.in_(ids)))
         db.execute(sa_delete(LedgerEntry).where(LedgerEntry.id.in_(ids)))
         db.commit()
@@ -138,4 +153,8 @@ if __name__ == "__main__":
     folder = args[args.index("--dir") + 1] if "--dir" in args else "C:/pgtmp"
     prefix = args[args.index("--prefix") + 1] if "--prefix" in args else ""
     branch = args[args.index("--branch") + 1] if "--branch" in args else ""
-    sys.exit(run(folder, branch_name=branch, prefix=prefix, execute="--yes" in args))
+    # `--amounts-only`: القيد اللي مدينه ودائنه مطابقين وعندنا سطر زيادة بس اتساب.
+    # السطر الزيادة ده تصحيح قروش أو موازنة عملناها إحنا (قيد الافتتاح في أكتوبر
+    # ٢٦٦ سطر قدام ٢٦٥ بنفس المجموع)، وإعادة البناء كانت هتشيله.
+    sys.exit(run(folder, branch_name=branch, prefix=prefix, execute="--yes" in args,
+                 amounts_only="--amounts-only" in args))

@@ -162,7 +162,9 @@ class Ctx:
         self.split: set[int] = split_ids
         supps = db.scalars(select(Supplier)).all()
         self.supp_by_code = {s.code: s for s in supps if s.code}
-        self.supp = {s.name: s for s in supps}
+        # بالاسم من موردين الفرع ده (أو المشتركين) بس — مورد العلياء أو السادات بنفس
+        # الاسم مايتاخدش لفاتورة أكتوبر.
+        self.supp = {s.name: s for s in supps if s.branch_id in (branch.id, None)}
 
         role = db.scalars(select(Role).where(Role.name == RoleName.sales_rep)).first()
         self.rep: dict[str, User] = {}

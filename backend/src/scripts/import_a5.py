@@ -62,7 +62,7 @@ TIERS = [PriceTier.commercial, PriceTier.semi_commercial, PriceTier.wholesale,
          PriceTier.semi_wholesale, PriceTier.consumer]
 
 # بادئات الفروع التانية — عشان الفرع اللي مالوش بادئة (أكتوبر) مايشوفش أصنافهم.
-OTHER_PREFIXES = ("AL-",)
+OTHER_PREFIXES = ("AL-", "FC-")
 
 
 def mine(rows, prefix: str):

@@ -37,6 +37,25 @@ from src.scripts.import_a5_docs import (
     L_QTY, L_TOTAL, L_TYPE, _doc_key, _party_id,
 )
 from src.scripts.rebuild_a5_docs import _demolish
+from src.services import customer_merge_service
+
+# اللي بيشاور على المستند من برّه المزامنة: نقاط، كوبونات، مرتجع على فاتورة…
+# الهدّ كان بيقع على أول واحد فيهم (نقاط فاتورة S14988 في أكتوبر). فبيتفكّوا قبل الهدّ
+# ويرجعوا يتربطوا بالنسخة الجديدة بنفس الرقم — النقطة اللي اتكسبت ماتضيعش.
+# (الجدول اللي بيشاور، العمود، جدول المستند)
+REFS = (
+    ("point_record", "sales_invoice_id", "sales_invoice"),
+    ("coupon_redemption", "sales_invoice_id", "sales_invoice"),
+    ("coupon_receipt_line", "sales_invoice_id", "sales_invoice"),
+    ("item_serial", "sold_invoice_id", "sales_invoice"),
+    ("reservation", "sales_invoice_id", "sales_invoice"),
+    ("sales_return", "sales_invoice_id", "sales_invoice"),
+    ("point_record", "sales_return_id", "sales_return"),
+    ("purchase_return", "purchase_invoice_id", "purchase_invoice"),
+)
+# إجباريين (مابيتفكّوش): المستند اللي عليه واحد منهم بيتساب ويتقال.
+HARD_REFS = (("sales_invoice_coupon", "invoice_id", "sales_invoice"),
+             ("sales_invoice_expense", "invoice_id", "sales_invoice"))
 
 # رأس a5 → (نوع السطر، حرف رقمنا)
 HEAD = {"SALE": ("7", "S"), "SRET": ("2", "SR"), "BUY": ("1", "P"), "BRET": ("11", "PR")}
@@ -87,6 +106,12 @@ def run(folder: str, *, branch_name: str, prefix: str, execute: bool) -> int:
             "select id, name from customer where branch_id=:b"), {"b": bid}).all()}
         supp_name = {c: n for c, n in db.execute(text(
             "select id, name from supplier where branch_id=:b"), {"b": bid}).all()}
+        # الكارت المدموج («تكنو فلان» في «فلان»): الاستيراد بينزّل فاتورته على الكارت
+        # اللي اتدمج فيه، فده مش فرق. من غيره كل فاتورة على كارت مدموج كانت هتتهد
+        # وتتبني على نفس الكارت تاني (٦ في أكتوبر).
+        by_a5 = {code: cid for cid, code in cust_code.items() if code}
+        merged = customer_merge_service.final_targets(
+            db.scalars(select(import_a5_docs.Customer)).all())
 
         reasons: dict[str, list[str]] = {}
         seen: set[str] = set()
@@ -116,7 +141,10 @@ def run(folder: str, *, branch_name: str, prefix: str, execute: bool) -> int:
                 pid = _party_id(h)
                 if t in ("7", "2"):
                     code = cust_code.get(row[3]) or ""
-                    if pid and code.startswith(f"{prefix}A5-") and code != f"{prefix}A5-{pid}":
+                    want = by_a5.get(f"{prefix}A5-{pid}")
+                    if want is not None and merged.get(want) == row[3]:
+                        pass
+                    elif pid and code.startswith(f"{prefix}A5-") and code != f"{prefix}A5-{pid}":
                         why.append(f"طرف {cust_name.get(row[3])} ← {_clean(h[4])}")
                 theirs = Counter()
                 for r in lines.get(num, []):
@@ -170,12 +198,52 @@ def run(folder: str, *, branch_name: str, prefix: str, execute: bool) -> int:
             print("\nعرض فقط — `--yes` للتنفيذ.")
             return 0
 
+        table_of = {"7": "sales_invoice", "2": "sales_return",
+                    "1": "purchase_invoice", "11": "purchase_return"}
+        detached: list[tuple[str, str, str, list[int]]] = []
+        for n in list(reasons):
+            tbl = table_of.get(type_of(n))
+            if tbl is None:
+                continue
+            hid = db.execute(text(f"select id from {tbl} where document_number=:n and branch_id=:b"),
+                             {"n": n, "b": bid}).scalar()
+            if hid is None:
+                continue
+            hard = [rt for rt, rc, ht in HARD_REFS if ht == tbl and db.execute(text(
+                f"select 1 from {rt} where {rc}=:i limit 1"), {"i": hid}).first()]
+            if hard:
+                print(f"   ⚠ {n} اتساب — عليه {', '.join(hard)} ومايتفكّش")
+                del reasons[n]
+                continue
+            for rt, rc, ht in REFS:
+                if ht != tbl:
+                    continue
+                ids = [i for (i,) in db.execute(text(
+                    f"select id from {rt} where {rc}=:i"), {"i": hid}).all()]
+                if ids:
+                    db.execute(text(f"update {rt} set {rc}=null where id = any(:ids)"),
+                               {"ids": ids})
+                    detached.append((n, rt, rc, ids))
+        db.flush()
         for n in reasons:
             nl, nm = _demolish(db, type_of(n), n)
             print(f"   اتشال {n}: {nl} سطر، {nm} حركة")
         db.commit()
         print("\n— إعادة البناء —")
         import_a5_docs.run(folder, execute=True, branch_name=branch_name, prefix=prefix)
+
+        # ربط اللي اتفكّ بالنسخة الجديدة بنفس الرقم.
+        for n, rt, rc, ids in detached:
+            tbl = table_of[type_of(n)]
+            new = db.execute(text(f"select id from {tbl} where document_number=:n and branch_id=:b"),
+                             {"n": n, "b": bid}).scalar()
+            if new is None:
+                print(f"   ⚠ {n} مابقاش موجود (اتمسح من a5) — {len(ids)} صف في {rt} فاضل من غير مستند")
+                continue
+            db.execute(text(f"update {rt} set {rc}=:new where id = any(:ids)"),
+                       {"new": new, "ids": ids})
+            print(f"   اترجع ربط {len(ids)} صف في {rt} بـ{n}")
+        db.commit()
         return 0
     finally:
         db.close()
@@ -186,7 +254,8 @@ if __name__ == "__main__":
     folder = a[a.index("--dir") + 1] if "--dir" in a else "C:/pgtmp"
     prefix = a[a.index("--prefix") + 1] if "--prefix" in a else ""
     branch = a[a.index("--branch") + 1] if "--branch" in a else ""
-    if not branch or not prefix:
+    # أكتوبر من غير بادئة — فلازم `--prefix ""` تتكتب صريحة، مش تتنسي.
+    if not branch or "--prefix" not in a:
         print("لازم --branch و--prefix — السكربت بيشتغل على فرع واحد بس.")
         sys.exit(2)
     sys.exit(run(folder, branch_name=branch, prefix=prefix, execute="--yes" in a))
