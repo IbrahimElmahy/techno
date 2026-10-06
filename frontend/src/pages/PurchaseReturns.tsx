@@ -38,6 +38,7 @@ import DocumentBar from '../components/DocumentBar';
 import LoadPeriodModal from '../components/LoadPeriodModal';
 import QuickAddRow from '../components/QuickAddRow';
 import DocumentToolbar, { ToolbarAction } from '../components/DocumentToolbar';
+import DocumentHistoryButton from '../components/DocumentHistory';
 import SummaryTile from '../components/saleDoc/SummaryTile';
 import DocumentAttachments from '../components/DocumentAttachments';
 import ProductPickerModal from '../components/ProductPickerModal';
@@ -1377,6 +1378,9 @@ export default function PurchaseReturns({ embedded }: { embedded?: { onExit: () 
           {/* الأدوات و«الأعمدة» وخيارات الطباعة في نفس سطر العنوان على الشمال — زي فاتورة البيع. */}
           <div className="sale-toolbar-row">
             <DocumentToolbar actions={returnToolbar()} variant="buttons" />
+            <DocumentHistoryButton entityType="purchase_return"
+              entityId={editingId ?? viewing?.id}
+              documentNumber={viewing?.document_number} />
             {lineGrid.control}
             <PrintOptionsMenu value={printOpts} onChange={setPrintOpts} />
           </div>

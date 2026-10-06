@@ -40,6 +40,7 @@ import PartyPickerModal, { Party } from '../components/PartyPickerModal';
 import LoadPeriodModal from '../components/LoadPeriodModal';
 import QuickAddRow from '../components/QuickAddRow';
 import DocumentToolbar, { ToolbarAction } from '../components/DocumentToolbar';
+import DocumentHistoryButton from '../components/DocumentHistory';
 import PrintOptionsMenu from '../components/PrintOptionsMenu';
 import { PrintOptions, loadPrintOptions } from '../print/printOptions';
 import ProductPickerModal from '../components/ProductPickerModal';
@@ -2674,6 +2675,9 @@ function couponsTotal(inv: any): number {
               شوية (طلب العميل ٢٠٢٦-١٠-٠١). */}
           <div className="sale-toolbar-row">
             <DocumentToolbar actions={docToolbar()} variant="buttons" />
+            <DocumentHistoryButton entityType="sales_invoice"
+              entityId={viewInvoice?.id ?? editingInvoice?.id}
+              documentNumber={viewInvoice?.document_number} />
             {lineGrid.control}
           </div>
         </div>

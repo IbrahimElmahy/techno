@@ -40,6 +40,7 @@ import { VoucherKeyStrip, RunnerWorld } from '../components/VoucherKeyRunner';
 import { defaultTreasuryId } from '../components/VoucherFields';
 import { TabModal } from '../components/TabModal';
 import DocumentAttachments from '../components/DocumentAttachments';
+import DocumentHistoryButton from '../components/DocumentHistory';
 import { money, numeralsLocale } from '../utils/money';
 // البوبابات اتفصلت لملفاتها — الشاشة كانت ١٤٧٨ سطر فيها ستة فوق بعض.
 import ReceiptModal from './vouchers/ReceiptModal';
@@ -512,12 +513,14 @@ const Vouchers: React.FC = () => {
     { title: 'البيان', dataIndex: 'description' },
     {
       title: '',
-      width: 190,
+      width: 220,
       render: (_: any, r: VoucherRecord) => (
         <Space size={4}>
           <Button size="small" icon={<PrinterOutlined />} onClick={() => openView(r)}>
             عرض / طباعة
           </Button>
+          <DocumentHistoryButton iconOnly entityType="voucher" entityId={r.id}
+            documentNumber={r.document_number} />
           {r.is_reversal ? (
             <Tag>عكسي</Tag>
           ) : (
@@ -1105,7 +1108,13 @@ const Vouchers: React.FC = () => {
 
       <TabModal
         open={voucherView !== null}
-        title={`${voucherView ? VOUCHER_TITLES[voucherView.kind as VoucherDoc['kind']] : 'سند'} ${voucherView?.document_number ?? ''}`}
+        title={(
+          <span style={{ display: 'inline-flex', gap: 8, alignItems: 'center' }}>
+            {`${voucherView ? VOUCHER_TITLES[voucherView.kind as VoucherDoc['kind']] : 'سند'} ${voucherView?.document_number ?? ''}`}
+            <DocumentHistoryButton entityType="voucher" entityId={voucherView?.id}
+              documentNumber={voucherView?.document_number} />
+          </span>
+        )}
         onCancel={closeView}
         footer={voucherFooter(voucherDoc(voucherView), closeView)}
         width={760}

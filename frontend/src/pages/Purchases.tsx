@@ -37,6 +37,7 @@ import DocumentBar from '../components/DocumentBar';
 import LoadPeriodModal from '../components/LoadPeriodModal';
 import QuickAddRow from '../components/QuickAddRow';
 import DocumentToolbar, { ToolbarAction } from '../components/DocumentToolbar';
+import DocumentHistoryButton from '../components/DocumentHistory';
 import PrintOptionsMenu from '../components/PrintOptionsMenu';
 import { PrintOptions, loadPrintOptions } from '../print/printOptions';
 import { useListFilter } from '../components/ListToolbar';
@@ -1712,6 +1713,9 @@ export default function Purchases() {
           {/* الأدوات و«الأعمدة» في نفس سطر العنوان على الشمال، وأكبر — زي فاتورة البيع. */}
           <div className="sale-toolbar-row">
             <DocumentToolbar actions={purchaseToolbar()} variant="buttons" />
+            <DocumentHistoryButton entityType="purchase_invoice"
+              entityId={editingId ?? viewPurchase?.id}
+              documentNumber={viewPurchase?.document_number} />
             {lineGrid.control}
             <PrintOptionsMenu value={printOpts} onChange={setPrintOpts} />
           </div>

@@ -19,6 +19,7 @@ import {
   ArrowLeftOutlined, EyeOutlined, FileAddOutlined, SaveOutlined, UndoOutlined,
 } from '@ant-design/icons';
 import DocumentToolbar, { type ToolbarAction } from '../components/DocumentToolbar';
+import DocumentHistoryButton from '../components/DocumentHistory';
 import LoadPeriodModal from '../components/LoadPeriodModal';
 import QuickAddRow from '../components/QuickAddRow';
 import { printPermit } from '../print/permitSheet';
@@ -919,6 +920,8 @@ export default function StockPermits() {
                 : kind === 'issue' ? 'إذن صرف مخزني'
                   : kind === 'opening' ? 'بضاعة أول المدة' : 'إذن إضافة مخزني'}</span>
             <DocumentToolbar actions={permitToolbar()} variant="buttons" />
+            <DocumentHistoryButton entityType="stock_permit"
+              entityId={detail?.id ?? editingId} documentNumber={detail?.document_number} />
             {detail?.reversed_by && <Tag color="default" style={{ marginInlineEnd: 0 }}>اتعكس</Tag>}
             {/* الحالة في سطر العنوان — زي فاتورة البيع (٢٠٢٦-١٠-٠١). */}
             {detail && (

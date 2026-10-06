@@ -17,7 +17,7 @@ import { Popconfirm } from '../components/noConfirm';
 import {
   PlusOutlined, CheckCircleOutlined, RollbackOutlined, DeleteOutlined,
   ClearOutlined, ArrowLeftOutlined, ArrowRightOutlined, CloseCircleOutlined,
-  FileSearchOutlined, EditOutlined, EyeOutlined, PrinterOutlined, ExclamationCircleOutlined,
+  EditOutlined, EyeOutlined, PrinterOutlined, ExclamationCircleOutlined,
   CheckOutlined, SwapOutlined, SearchOutlined, ShoppingCartOutlined, MinusOutlined, ReloadOutlined,
 } from '@ant-design/icons';
 import LoadPeriodModal from '../components/LoadPeriodModal';
@@ -39,7 +39,7 @@ import { matchesStatement } from '../utils/statements';
 import ProductPickerModal from '../components/ProductPickerModal';
 import DocumentToolbar, { ToolbarAction } from '../components/DocumentToolbar';
 import { SaveOutlined, FileAddOutlined, UndoOutlined } from '@ant-design/icons';
-import DocumentAuditModal from '../components/DocumentAuditModal';
+import DocumentHistoryButton from '../components/DocumentHistory';
 import { useTableKeyboard, useScreenShortcuts, useOnScreen } from '../components/keyboard';
 import { useDocReturn } from '../components/docReturn';
 import DocOpening from '../components/DocOpening';
@@ -873,8 +873,6 @@ export default function Transfers() {
     return [];
   };
   const [rejectOpen, setRejectOpen] = useState(false);
-  /** سجل عمليات الإذن — مين عمل إيه وإمتى. */
-  const [auditFor, setAuditFor] = useState<number | null>(null);
   const [userNames, setUserNames] = useState<Record<number, string>>({});
   useEffect(() => {
     api.get('/api/v1/users')
@@ -1217,7 +1215,7 @@ export default function Transfers() {
     if (!createVisible || editing || viewOnly || !source) return undefined;
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'Enter' || e.shiftKey || e.ctrlKey || e.altKey || e.metaKey) return;
-      if (pickerOpen || newStep || rejectOpen || auditFor !== null) return;
+      if (pickerOpen || newStep || rejectOpen) return;
       const el = e.target as HTMLElement | null;
       if (el && typeof el.closest === 'function') {
         if (['INPUT', 'TEXTAREA', 'BUTTON'].includes(el.tagName)) return;
@@ -1228,7 +1226,7 @@ export default function Transfers() {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [createVisible, editing, viewOnly, source, pickerOpen, newStep, rejectOpen, auditFor]);
+  }, [createVisible, editing, viewOnly, source, pickerOpen, newStep, rejectOpen]);
 
   const doors = (
     <>
@@ -1315,13 +1313,6 @@ export default function Transfers() {
    * there is still no delete: the way to say «مش هيتم» is to reject, which leaves the reason on
    * the document.
    */
-  const auditDialog = (
-    <DocumentAuditModal
-      entityType="stock_transfer" entityId={auditFor}
-      title="سجل عمليات إذن التحويل" userNames={userNames}
-      onClose={() => setAuditFor(null)} />
-  );
-
   const rejectDialog = (
     <TabModal
       open={rejectOpen}
@@ -1349,7 +1340,6 @@ export default function Transfers() {
   const dialogs = (
     <>
       {rejectDialog}
-      {auditDialog}
       <LoadPeriodModal
         open={loadRangeOpen} onCancel={() => setLoadRangeOpen(false)}
         title="تحميل أذون تحويل فترة" endpoint="/api/v1/transfers"
@@ -1411,10 +1401,9 @@ export default function Transfers() {
         key: 'print', label: 'طباعة', shortcut: 'F7', icon: <PrinterOutlined />,
         onClick: () => printOpenTransfer(editing),
       } as ToolbarAction] : []),
-      ...(editing ? [{
-        key: 'log', label: 'سجل العمليات', icon: <FileSearchOutlined />,
-        onClick: () => setAuditFor(editing.id),
-      } as ToolbarAction] : [{
+      // «سجل العمليات» اتشال من هنا (٢٠٢٦-١٠-٠٦): زرار «السجل» جنب الشريط بيوري نفس الكلام
+      // ومعاه شكل الإذن في كل نسخة.
+      ...(editing ? [] : [{
         key: 'undo', label: 'تراجع', icon: <UndoOutlined />,
         onClick: () => setLines([]), disabled: lines.length === 0,
       } as ToolbarAction]),
@@ -1664,6 +1653,8 @@ export default function Transfers() {
             {/* الأدوات و«الأعمدة» في نفس سطر العنوان على الشمال — زي فاتورة البيع. */}
             <div className="sale-toolbar-row">
               <DocumentToolbar actions={transferToolbar()} variant="buttons" />
+              <DocumentHistoryButton entityType="stock_transfer" entityId={editing?.id}
+                documentNumber={editing?.document_number} />
               {editing ? docCols.control : lineGrid.control}
             </div>
           </div>

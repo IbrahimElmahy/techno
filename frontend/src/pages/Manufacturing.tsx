@@ -17,6 +17,7 @@ import ListPage from '../components/ListPage';
 import dayjs from 'dayjs';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../api/client';
+import DocumentHistoryButton from '../components/DocumentHistory';
 import { useQueryTab } from '../components/useQueryTab';
 import { useDocRoute } from '../components/useDocRoute';
 import DocOpening from '../components/DocOpening';
@@ -1602,9 +1603,14 @@ function ProductionOrdersTab({
      * ويختلفوا في «خلصنا ولا لسه» — وزرارين جنب بعض كان بيخلّي اللي عايز يسجّل دفعة
      * يدوس «إقفال» ويقفل الورقة عليها.
      */
-    { title: 'إجراء', key: 'action', width: 150, align: 'center' as const,
+    { title: 'إجراء', key: 'action', width: 180, align: 'center' as const,
       render: (_: any, r: ProductionOrder) => {
-        if (r.imported_from || r.is_reversal) return null;
+        // السجل بيبان حتى على المنقول والعكسي — دول بالذات اللي بيتسأل عنهم «مين عمله؟».
+        const history = (
+          <DocumentHistoryButton iconOnly entityType="production_order" entityId={r.id}
+            documentNumber={r.document_number} />
+        );
+        if (r.imported_from || r.is_reversal) return history;
         const icon = (
           title: string, node: React.ReactNode, onClick: () => void,
           danger = false, primary = false,
@@ -1616,6 +1622,7 @@ function ProductionOrdersTab({
         );
         return (
           <Space size={0}>
+            {history}
             {r.state === 'draft' && (
               <>
                 {icon('تعديل', <EditOutlined />, () => openEdit(r))}

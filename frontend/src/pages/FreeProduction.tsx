@@ -14,6 +14,7 @@ import DateRangeFilter from '../components/DateRangeFilter';
 import dayjs, { Dayjs } from 'dayjs';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../api/client';
+import DocumentHistoryButton from '../components/DocumentHistory';
 import ColumnSettings, { useHiddenColumns } from '../components/ColumnSettings';
 import ExportExcelButton from '../components/ExportExcelButton';
 import { guardQuantity } from '../components/quantityGuard';
@@ -225,6 +226,8 @@ export default function FreeProduction() {
           <Tag color="geekblue">{d}</Tag>
           {r.reversed && <Tag color="red">متراجع</Tag>}
           {r.is_reversal && <Tag color="orange">تراجع</Tag>}
+          <DocumentHistoryButton iconOnly entityType="manufacturing_order" entityId={r.id}
+            documentNumber={r.document_number} />
         </Space>
       ),
     },

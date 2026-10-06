@@ -38,6 +38,7 @@ import DocumentBar from '../components/DocumentBar';
 import LoadPeriodModal from '../components/LoadPeriodModal';
 import QuickAddRow from '../components/QuickAddRow';
 import DocumentToolbar, { ToolbarAction } from '../components/DocumentToolbar';
+import DocumentHistoryButton from '../components/DocumentHistory';
 import { DocRef } from '../components/DocumentLink';
 import ColumnSettings, { useHiddenColumns } from '../components/ColumnSettings';
 import ExportExcelButton from '../components/ExportExcelButton';
@@ -1327,6 +1328,8 @@ export default function Returns({ embedded }: { embedded?: { onExit: () => void 
             {/* الأدوات و«الأعمدة» في نفس سطر العنوان على الشمال — زي فاتورة البيع. */}
             <div className="sale-toolbar-row">
               <DocumentToolbar actions={returnToolbar()} variant="buttons" />
+              <DocumentHistoryButton entityType="sales_return" entityId={viewReturn?.id}
+                documentNumber={viewReturn?.document_number} />
               {lineGrid.control}
               <PrintOptionsMenu value={printOpts} onChange={setPrintOpts} />
             </div>

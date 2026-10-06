@@ -11,6 +11,7 @@ import { InputNumber } from '../components/NumberInput';
 import ListPage from '../components/ListPage';
 import DateRangeFilter from '../components/DateRangeFilter';
 import { api } from '../api/client';
+import DocumentHistoryButton from '../components/DocumentHistory';
 import { useListFilter } from '../components/ListToolbar';
 import { matchesStatement } from '../utils/statements';
 import { searchFilter, searchRank, sortByName } from '../utils/arabicSort';
@@ -232,10 +233,16 @@ export default function RatioProduction() {
     { title: 'مصروفات', dataIndex: 'expense_amount', key: 'e', width: 100, align: 'left' as const, render: (v: string) => money(v || 0) },
     { title: 'اجمالي منتجات', dataIndex: 'total_cost', key: 'c', width: 130, align: 'left' as const, render: (v: string) => <b>{money(v)}</b> },
     { title: 'ملاحظات', dataIndex: 'statement1', key: 's', ellipsis: true, render: (v: string | null) => v || '-' },
-    { title: '', key: 'a', width: 60,
-      render: (_: unknown, r: PO) => (r.state === 'done' && !r.reversed && !r.is_reversal ? (
-        <Button size="small" type="text" danger icon={<RollbackOutlined />} title="تراجع" onClick={(e) => { e.stopPropagation(); reverse(r); }} />
-      ) : null) },
+    { title: '', key: 'a', width: 80,
+      render: (_: unknown, r: PO) => (
+        <Space size={0}>
+          <DocumentHistoryButton iconOnly entityType="production_order" entityId={r.id}
+            documentNumber={r.document_number} />
+          {r.state === 'done' && !r.reversed && !r.is_reversal && (
+            <Button size="small" type="text" danger icon={<RollbackOutlined />} title="تراجع" onClick={(e) => { e.stopPropagation(); reverse(r); }} />
+          )}
+        </Space>
+      ) },
   ];
 
   if (entryOpen) {

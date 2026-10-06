@@ -24,6 +24,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import GroupedTable from '../../components/GroupedTable';
 import CostCenterSplit from '../../components/CostCenterSplit';
 import { api } from '../../api/client';
+import DocumentHistoryButton from '../../components/DocumentHistory';
 import { useQueryTab } from '../../components/useQueryTab';
 import {
   APPEARS_IN_LABEL, CostCenter, MAIN_LEVELS, NATURE_COLOR, NATURE_LABEL, egp,
@@ -428,13 +429,19 @@ export default function JournalTab() {
     { title: 'الإجمالي', dataIndex: 'total', key: 'total', width: 120,
       ...numberColumn<JournalEntry>((e: any) => e.total),
       render: (t: string) => <strong>{egp(t)}</strong> },
-    { title: '', key: 'actions', width: 230,
+    { title: '', key: 'actions', width: 260,
       render: (_: any, r: JournalEntry) => {
         const state = r.state ?? 'posted';
-        if (state === 'cancelled') return <Tag>ملغي</Tag>;
+        // «السجل» أول أيقونة في كل حالة — حتى الملغي، اللي بيتسأل عنه «اتلغى إمتى ومين لغاه؟».
+        const history = (
+          <DocumentHistoryButton iconOnly entityType="journal_entry" entityId={r.id}
+            documentNumber={r.number} />
+        );
+        if (state === 'cancelled') return <Space size={4}>{history}<Tag>ملغي</Tag></Space>;
         if (state === 'draft') {
           return (
             <Space size={0}>
+              {history}
               <Button type="link" icon={<EditOutlined />} onClick={() => openDraft(r)}>تعديل</Button>
               <Button type="link" icon={<CheckCircleOutlined />}
                 onClick={() => handlePostDraft(r)}>ترحيل</Button>
@@ -446,6 +453,7 @@ export default function JournalTab() {
         const reversed = entries.some((e) => e.reverses_entry_id === r.id);
         return (
           <Space size={0}>
+            {history}
             {r.partner_id && r.partner_kind && (
               <Tooltip title="افتح المفتوح على الطرف ده وقفله">
                 <Button type="link" icon={<LinkOutlined />}

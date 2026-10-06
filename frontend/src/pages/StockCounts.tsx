@@ -19,6 +19,7 @@ import { useScreenShortcuts } from '../components/keyboard';
 import dayjs, { Dayjs } from 'dayjs';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../api/client';
+import DocumentHistoryButton from '../components/DocumentHistory';
 import { useListFilter } from '../components/ListToolbar';
 import { matchesStatement } from '../utils/statements';
 import { useDocRoute } from '../components/useDocRoute';
@@ -524,6 +525,8 @@ export default function StockCounts() {
               {sheet.status === 'posted' ? 'مترحّل'
                 : sheet.status === 'cancelled' ? 'ملغي' : 'مفتوح'}
             </Tag>
+            <DocumentHistoryButton entityType="stock_count" entityId={sheet.id}
+              documentNumber={sheet.document_number} />
             {isDraft && (
               <div className="sale-toolbar-row">
                 <Popconfirm title="إلغاء الكشف؟" okText="إلغاء الكشف" cancelText="رجوع"

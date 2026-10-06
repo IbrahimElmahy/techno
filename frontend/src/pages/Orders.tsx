@@ -32,6 +32,7 @@ import type { ColumnsType } from 'antd/es/table';
 import { useTableColumns } from '../components/ColumnSettings';
 import { useEntryGrid, type EntryColumn } from '../components/EntryGrid';
 import DocumentToolbar, { ToolbarAction } from '../components/DocumentToolbar';
+import DocumentHistoryButton from '../components/DocumentHistory';
 import SummaryTile from '../components/saleDoc/SummaryTile';
 import DocumentAttachments from '../components/DocumentAttachments';
 import { printReport } from '../print/reportSheet';
@@ -873,6 +874,8 @@ export default function Orders() {
             <div className="sale-toolbar-row">
               <Button icon={<PrinterOutlined />}
                 onClick={() => printOrder(detail)}>طباعة</Button>
+              <DocumentHistoryButton entityType="sales_order" entityId={detail.id}
+                documentNumber={detail.document_number} />
               {detail.status === 'open' && (
                 <Popconfirm title="إلغاء الطلب؟" onConfirm={() => cancel(detail)}
                   okText="إلغاء الطلب" cancelText="رجوع">
