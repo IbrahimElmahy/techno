@@ -44,6 +44,9 @@ a5q "$T/totals.sql" "$DEST/a5_doc_totals.txt"
 MAXID=$(iconv -f UTF-16LE -t UTF-8 "$DEST/a5_acclines.tsv" | awk -F"~" '{if($12+0>m)m=$12+0} END{print m}')
 printf '\xEF\xBB\xBFSET NOCOUNT ON;\nSELECT '"'"'R'"'"', acc_id, sysfree, AccBrnch_id, CAST(ISNULL(AccIn,0) AS decimal(24,6)), CAST(ISNULL(AccOut,0) AS decimal(24,6)) FROM acc WHERE acc_id <= %s;\n' "$MAXID" > "$T/rows.sql"
 a5q "$T/rows.sql" "$DEST/a5_acc_rows4.txt"
+# نسب الإنتاج (الوصفات) — شاشة «انتاج حسب النسب» بتحسب الخامات منها.
+printf '\xEF\xBB\xBFSET NOCOUNT ON;\nSELECT '"'"'H'"'"', item_id, Item_cod, Item_n, NUnits FROM Nsb_entag;\nSELECT '"'"'L'"'"', item_id, Item_cod, Kham_item_n, Nsb_units, Nsb_Single, units FROM Nsb_EntagDt;\n' > "$T/recipes.sql"
+a5q "$T/recipes.sql" "$DEST/a5_recipes.txt"
 
 $P.import_a5 "${A[@]}" --yes | tail -12
 # import_a5 بيعمل المورد الجديد من غير فرع.
@@ -54,6 +57,7 @@ for m in add_missing_a5_accounts rebuild_a5_ledger import_a5_ledger prune_a5_del
 done
 # أوامر التصنيع: اللي اتعدّل أو اتمسح في a5 بيتعاد، والجديد بيتضاف، وأوامر نظامنا مابتتلمسش.
 $P.sync_a5_manufacturing_exact "${A[@]}" --yes | tail -4
+$P.sync_a5_recipes --file "$DEST/a5_recipes.txt" --prefix FC- --yes | tail -1
 $P.link_sadat_parties --yes | tail -1
 $P.fix_sadat_doc_totals --file "$DEST/a5_doc_totals.txt" --yes | tail -1
 $P.fix_a5_rounding_balances --rows "$DEST/a5_acc_rows4.txt" --branch السادات --prefix FC- --yes | tail -1
