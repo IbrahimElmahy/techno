@@ -19,7 +19,7 @@ from sqlalchemy import Date, DateTime, Enum, ForeignKey, String, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from src.core.db import Base, BigIntPK
-from src.core.money import MONEY, QTY
+from src.core.money import FACTOR, MONEY, QTY
 
 
 class OrderKind(str, enum.Enum):
@@ -86,7 +86,7 @@ class TradeOrderLine(Base):
     unit_price: Mapped[object] = mapped_column(MONEY, nullable=False, default=0)
     # (008) الوحدة اللي السعر متقال بيها — نفس سطر الفاتورة بالظبط. `None` = الوحدة الأساسية.
     unit: Mapped[str | None] = mapped_column(String(16), nullable=True)
-    unit_factor: Mapped[object | None] = mapped_column(QTY, nullable=True)
+    unit_factor: Mapped[object | None] = mapped_column(FACTOR, nullable=True)
     # (027) خصم السطر. الورقة اللي بتتسعّر عليها بتتسعّر بخصوماتها، وإلا الرقم اللي اتعرض
     # على العميل مش هو الرقم اللي في الورقة.
     discount_pct: Mapped[object | None] = mapped_column(MONEY, nullable=True)

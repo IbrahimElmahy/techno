@@ -24,6 +24,7 @@ import { useTableColumns } from '../components/ColumnSettings';
 import StatsRow from '../components/StatsRow';
 import { useMovementLabels } from '../lib/movementTypes';
 import { money, qty } from '../utils/money';
+import { dualQty, lengthUnits } from '../utils/units';
 /**
  * ملف الصنف (Item 360) — where this item is, who bought it, who we bought it from, every
  * movement it ever made, and every time its price changed.
@@ -212,6 +213,12 @@ export default function ItemProfile() {
                   <Statistic title="الرصيد الحالي" value={qty(data.on_hand)}
                     suffix={it.unit_of_measure}
                     valueStyle={{ color: onHand > 0 ? '#3f8600' : onHand < 0 ? '#cf1322' : undefined }} />
+                  {/* صنف ليه «القطعة = N متر»: نفس الرصيد بالوحدة التانية تحته. */}
+                  {Number(it.meters_per_piece || 0) > 0 ? (
+                    <div style={{ color: '#64748b', fontSize: 13 }}>
+                      {dualQty(onHand, lengthUnits(it.unit_of_measure, it.meters_per_piece))}
+                    </div>
+                  ) : null}
                 </Card>
               </Col>
               <Col xs={12} md={6}>
@@ -245,7 +252,11 @@ export default function ItemProfile() {
                         <Descriptions.Item label="النوع">
                           {KIND_LABEL[it.kind] || it.kind}
                         </Descriptions.Item>
-                        <Descriptions.Item label="وحدة القياس">{it.unit_of_measure}</Descriptions.Item>
+                        <Descriptions.Item label="وحدة القياس">
+                          {it.unit_of_measure}
+                          {Number(it.meters_per_piece || 0) > 0
+                            ? ` — القطعة = ${qty(it.meters_per_piece)} متر` : ''}
+                        </Descriptions.Item>
                         <Descriptions.Item label="التصنيف">
                           {/* **الاسم مش القيمة.** الكارت كان بيعرض `it.category` خام —
                               وهي القيمة المتولّدة وقت الإنشاء (`مواسير_PVC`) — بينما كل

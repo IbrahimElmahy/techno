@@ -16,7 +16,7 @@ from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, String, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from src.core.db import Base, BigIntPK
-from src.core.money import MONEY, QTY
+from src.core.money import FACTOR, MONEY, QTY
 
 
 class ResourceKind(str, enum.Enum):
@@ -73,7 +73,7 @@ class BomComponent(Base):
     # NULL = the item's base unit, and factor 1 — which is what every recipe written before this
     # column existed means, so they keep consuming exactly what they always consumed.
     unit: Mapped[str | None] = mapped_column(String(16), nullable=True)
-    unit_factor: Mapped[object] = mapped_column(QTY, default=1, nullable=False)
+    unit_factor: Mapped[object] = mapped_column(FACTOR, default=1, nullable=False)
     # **مرحلة الشغل اللي الخامة دي بتتصرف فيها.** `production` الخام اللي بيدخل
     # الماكينة، و`quality` التعبئة اللي بتتحط على المنتج بعد ما يطلع (كرتون، أكياس).
     #

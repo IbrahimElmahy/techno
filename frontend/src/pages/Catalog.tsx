@@ -3,7 +3,7 @@ import { PAGE_SIZE, PAGE_SIZE_OPTIONS } from '../utils/pagination';
 import { searchFilter, searchRank, sortByName } from '../utils/arabicSort';
 import { useNavigate } from 'react-router-dom';
 import {
-  Button, Checkbox, Col, Collapse, Divider, Empty, Form, Input, Modal, Row, Select, Space, Table, Tag, Tooltip, message,
+  Button, Checkbox, Col, Collapse, Divider, Empty, Form, Input, Modal, Radio, Row, Select, Space, Table, Tag, Tooltip, message,
 } from 'antd';
 import { InputNumber } from '../components/NumberInput';
 import {
@@ -21,6 +21,7 @@ import { useCategoryTree, categorySelectOptions } from '../hooks/useCategoryTree
 import { TabModal } from '../components/TabModal';
 import { useTableColumns } from '../components/ColumnSettings';
 import { money, numeralsLocale } from '../utils/money';
+import { dualQty, isMeterUnit, lengthUnits } from '../utils/units';
 
 import ListPage from '../components/ListPage';
 import { useQueryTab } from '../components/useQueryTab';
@@ -111,7 +112,18 @@ interface ItemRecord {
   max_stock: string | null;
   is_perishable: boolean;
   description: string | null;
+  /** «القطعة = N متر» — من `item_unit` على السيرفر؛ null لو مش متسجّل. */
+  meters_per_piece?: string | null;
 }
+
+/**
+ * صف وحدة بديلة هو نفسه «القطعة = N متر»؟ — نفس `uom_service._is_length_row`: أساسه متر ⇒
+ * صف «قطعة»، أي أساس تاني ⇒ صف «متر». الصف ده بيتعرض في خانة الطول مش في قايمة الوحدات،
+ * عشان مايتكتبش مرتين ويتحفظ بقيمتين.
+ */
+const isLengthRow = (base: string, name: string): boolean => (
+  isMeterUnit(base) ? ['قطعة', 'قطعه'].includes((name || '').trim()) : isMeterUnit(name)
+);
 
 /**
  * خانة سعر/خصم بتتعدّل من جوّه الجدول (وضع «تعديل الأسعار والخصم»).
@@ -312,7 +324,7 @@ const ItemUnitsButton = ({ itemId, canEdit }: { itemId: number; canEdit: boolean
 
   const onSave = async () => {
     const units = rows.filter((r) => r.name && r.factor && r.factor > 0)
-      .map((r) => ({ name: r.name, factor: Number(r.factor).toFixed(3) }));
+      .map((r) => ({ name: r.name, factor: Number(r.factor).toFixed(9) }));
     try {
       await api.put(`/api/v1/items/${itemId}/units`, { units });
       message.success('تم حفظ الوحدات');
@@ -439,6 +451,17 @@ export default function Catalog() {
   // alternate units. They were reachable only AFTER the item existed, so creating one meant
   // going back for them.
   const [unitRows, setUnitRows] = useState<{ name: string; factor: number | null }[]>([]);
+  /**
+   * اختيار «الرصيد متسجّل بإيه» جنب طول القطعة: متر أو اسم القطعة الحالي. القطعة بتفضل
+   * باسمها لو مش «متر» («قطعه»، «ماسورة») — التصليح بيغيّر اللي غلط بس.
+   */
+  const lengthBaseChoices = (record: ItemRecord | null) => {
+    const current = (record?.unit_of_measure ?? '').trim();
+    const meter = isMeterUnit(current) ? current : 'متر';
+    const piece = !current || isMeterUnit(current) ? 'قطعة' : current;
+    const looksMeter = isMeterUnit(current) || (record?.name ?? '').trim().startsWith('متر');
+    return { meter, piece, suggested: looksMeter ? meter : piece };
+  };
   // طريقة العرض في الرابط (`?tab=`) عشان الريفرش يفتح على نفس الشريحة.
   const [viewRaw, setView] = useQueryTab('grouped');
   const view = (viewRaw === 'table' ? 'table' : 'grouped') as 'grouped' | 'table';
@@ -579,9 +602,14 @@ export default function Catalog() {
       };
 
       // PUT replaces the whole alternate set, so sending it on every save is what makes removing
-      // a unit possible at all.
+      // a unit possible at all. Nine places, like the column: a «متر» row on a piece-based item
+      // is 1÷N, and three places of it is half a piece lost on every 150 metres sold.
       const units = unitRows.filter((r) => r.name && r.factor && r.factor > 0)
-        .map((r) => ({ name: r.name, factor: Number(r.factor).toFixed(3) }));
+        .map((r) => ({ name: r.name, factor: Number(r.factor).toFixed(9) }));
+      // «القطعة = N متر» — فاضي/صفر بيشيله. بيتبعت لوحده (مش صف في `units`) لأن اتجاهه
+      // بيتحدد من الوحدة الأساسية على السيرفر (`uom_service.length_unit`).
+      const length = values.meters_per_piece && Number(values.meters_per_piece) > 0
+        ? Number(values.meters_per_piece) : null;
       // Points belong to a product, and only to somebody allowed to price loyalty.
       const points = values.kind === 'product' && canEditPoints
         && values.point_value !== undefined && values.point_value !== null
@@ -591,9 +619,22 @@ export default function Catalog() {
         // An existing item is edited in place. Each call is idempotent and the item already
         // exists, so a failure cannot leave a half-made record — only a half-applied edit, which
         // the reload below then shows truthfully.
-        await api.patch(`/api/v1/items/${editingItem.id}`, { ...core, active: !values.hidden });
-        if (tiers.length) await api.put(`/api/v1/items/${editingItem.id}/prices`, { tiers });
+        // الوحدات قبل الصنف: الـPUT بيبدّل المجموعة كلها، فلو الصنف (ومعاه الطول) اتحفظ
+        // الأول كان الـPUT هيمسح صف الطول اللي لسه متكتب.
         await api.put(`/api/v1/items/${editingItem.id}/units`, { units });
+        // تصليح اسم الوحدة الأساسية (متر/قطعة) بيتبعت بس لما يتغيّر فعلاً — اسم مش تحويل.
+        const relabel = length && values.length_base
+          && values.length_base !== editingItem.unit_of_measure
+          ? { unit_of_measure: values.length_base } : {};
+        // الطول فاضي واللي بيكتب حاطط «متر»/«قطعة» بإيده في الوحدات البديلة ⇒ مانبعتش
+        // الطول خالص، وإلا السيرفر يشيل الصف اللي لسه متحفظ بالـPUT فوق.
+        const manualLength = !length && unitRows.some((r) => r.name
+          && isLengthRow(editingItem.unit_of_measure, r.name));
+        await api.patch(`/api/v1/items/${editingItem.id}`, {
+          ...core, ...relabel, ...(manualLength ? {} : { meters_per_piece: length }),
+          active: !values.hidden,
+        });
+        if (tiers.length) await api.put(`/api/v1/items/${editingItem.id}/prices`, { tiers });
         if (points !== undefined) {
           await api.put(`/api/v1/products/${editingItem.id}/point-value`,
             { point_value: points });
@@ -608,6 +649,7 @@ export default function Catalog() {
           unit_of_measure: values.unit_of_measure,
           tiers: tiers.length ? tiers : undefined,
           units: units.length ? units : undefined,
+          meters_per_piece: length ?? undefined,
           point_value: points,
         });
         // «مخفي» is a state an item is put into, not one it is born in, so it is a separate edit.
@@ -721,6 +763,10 @@ export default function Catalog() {
       max_stock: record.max_stock ? Number(record.max_stock) : undefined,
       default_warehouse_id: record.default_warehouse_id ?? undefined,
       description: record.description ?? undefined,
+      meters_per_piece: record.meters_per_piece ? Number(record.meters_per_piece) : undefined,
+      // اقتراح الأساس: الاسم أو الكارت بيقول «متر» ⇒ متر. كروت «متر مواسير» في المصنع جاية من
+      // a5 مكتوب عليها «قطعة» وكمياتها أمتار — فالاسم بيكسب هنا، والمستخدم شايف الاختيار.
+      length_base: lengthBaseChoices(record).suggested,
     });
 
     // The three that live elsewhere. Fetched rather than assumed, and each failure left as the
@@ -741,7 +787,9 @@ export default function Catalog() {
 
     try {
       const units = await api.get(`/api/v1/items/${record.id}/units`);
-      setUnitRows((units.data?.units || []).filter((u: any) => !u.is_base)
+      // صف «القطعة = N متر» ليه خانته فوق — مابيتكررش هنا.
+      setUnitRows((units.data?.units || [])
+        .filter((u: any) => !u.is_base && !isLengthRow(record.unit_of_measure, u.name))
         .map((u: any) => ({ name: u.name, factor: parseFloat(u.factor) })));
     } catch (err) { console.error(err); }
 
@@ -888,13 +936,17 @@ export default function Catalog() {
       width: 90,
       align: 'left' as const,
       // The unit is already its own column two along, so repeating it here only bought width.
-      render: (v: string | null) => {
+      render: (v: string | null, r: ItemRecord) => {
         const n = Number(v || 0);
-        return (
+        const b = (
           <b style={{ color: n > 0 ? '#3f8600' : n < 0 ? '#cf1322' : '#6b6b6b' }}>
             {n.toLocaleString(numeralsLocale(), { maximumFractionDigits: 3 })}
           </b>
         );
+        // صنف ليه «القطعة = N متر»: الرصيد بالوحدتين في التلميح («١٥٠ متر = ٥٠ قطعة»).
+        return r.meters_per_piece && Number(r.meters_per_piece) > 0
+          ? <Tooltip title={dualQty(n, lengthUnits(r.unit_of_measure, r.meters_per_piece))}>{b}</Tooltip>
+          : b;
       },
       sorter: (a: any, b: any) => Number(a.on_hand || 0) - Number(b.on_hand || 0),
     },
@@ -1201,9 +1253,10 @@ export default function Catalog() {
             <Col span={8}>
               {/* Locked once the item exists, and NOT sent on edit. Every quantity ever recorded
                   for this item is counted in its base unit; renaming «قطعة» to «كرتونة» would
-                  silently reinterpret its whole stock history rather than convert it. `ItemUpdate`
-                  does not accept the field either, so sending it would have been a change the
-                  screen appeared to make and the server quietly dropped. */}
+                  silently reinterpret its whole stock history rather than convert it. The one
+                  exception is the متر/قطعة correction next to «القطعة = كام متر؟» below: a5
+                  labelled the factory's metre-counted pipes «قطعة», and there the label is what
+                  is wrong, not the quantities — so that switch renames, it never converts. */}
               <Form.Item name="unit_of_measure" label="اسم الوحدة"
                 rules={[{ required: true, message: 'اختر الوحدة' }]}>
                 <Select showSearch placeholder="وحده" disabled={!!editingItem}
@@ -1221,6 +1274,55 @@ export default function Catalog() {
                 <Input placeholder="قطعه" />
               </Form.Item>
             </Col>
+          </Row>
+
+          {/* «القطعة = N متر» — المواسير بتتباع بالقطعة وبالمتر، والفرع هو اللي بيختار. الخانة
+              بتعمل وحدة بديلة على الصنف، والفاتورة بتختار منها على السطر؛ المخزن بيتخصم صح
+              بالوحدتين (٥٠ قطعة × ٣ = ١٥٠ متر). اختيارية لأي صنف بيتقاس بالطول. */}
+          <Row gutter={12} align="bottom">
+            <Col span={8}>
+              <Form.Item name="meters_per_piece" label="القطعة = كام متر؟"
+                tooltip="لو الصنف بيتباع بالمتر وبالقطعة: اكتب طول القطعة. الفاتورة هتسمح باختيار متر أو قطعة على السطر، والسعر والمخزن بيتحسبوا بالوحدة اللي اتختارت. سيبها فاضية لو الصنف مابيتقاسش بالطول.">
+                <InputNumber min={0} step={0.5} style={{ width: '100%' }}
+                  addonBefore="القطعة =" addonAfter="متر" placeholder="مثلاً 3" />
+              </Form.Item>
+            </Col>
+            <Form.Item noStyle shouldUpdate={(a, b) => a.meters_per_piece !== b.meters_per_piece
+              || a.unit_of_measure !== b.unit_of_measure || a.length_base !== b.length_base}>
+              {({ getFieldValue }) => {
+                const n = Number(getFieldValue('meters_per_piece') || 0);
+                if (!(n > 0)) return null;
+                // صنف جديد: الأساس هو اللي في «اسم الوحدة» فوق، مافيش حاجة تتصلّح.
+                if (!editingItem) {
+                  const base = getFieldValue('unit_of_measure') || '';
+                  return (
+                    <Col span={16} style={{ color: '#64748b', paddingBottom: 30 }}>
+                      {isMeterUnit(base)
+                        ? `المخزن بالمتر — البيع بالقطعة بيخصم ${n} متر للقطعة.`
+                        : `المخزن بـ«${base || 'القطعة'}» — البيع بالمتر بيخصم 1÷${n} قطعة للمتر.`}
+                    </Col>
+                  );
+                }
+                const ch = lengthBaseChoices(editingItem);
+                const chosen = getFieldValue('length_base') || ch.suggested;
+                const onHand = Number((editingItem as ItemRecord & { on_hand?: string }).on_hand || 0);
+                return (
+                  <Col span={16}>
+                    <Form.Item name="length_base" label="رصيد الصنف ده متسجّل بـ"
+                      tooltip="تصليح اسم الوحدة الأساسية بس — مفيش كمية بتتحوّل. لو الرصيد مكتوب أمتار والكارت مكتوب عليه «قطعة» اختار «متر».">
+                      <Radio.Group optionType="button" buttonStyle="solid"
+                        options={[{ value: ch.meter, label: 'متر' }, { value: ch.piece, label: ch.piece }]} />
+                    </Form.Item>
+                    {chosen !== editingItem.unit_of_measure ? (
+                      <div style={{ color: '#b45309', marginTop: -16, marginBottom: 12, fontSize: 13 }}>
+                        الوحدة الأساسية هتتغيّر من «{editingItem.unit_of_measure}» لـ«{chosen}» — الاسم بس،
+                        والرصيد ({dualQty(onHand, lengthUnits(chosen, n))}) مابيتحوّلش.
+                      </div>
+                    ) : null}
+                  </Col>
+                );
+              }}
+            </Form.Item>
           </Row>
 
           <Row gutter={12}>

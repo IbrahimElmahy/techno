@@ -8,7 +8,7 @@ from sqlalchemy import BigInteger, Date, DateTime, Enum, ForeignKey, String, fun
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from src.core.db import Base, BigIntPK
-from src.core.money import MONEY, PCT, QTY
+from src.core.money import FACTOR, MONEY, PCT, QTY
 from src.models.stock import LocationKind
 
 
@@ -93,7 +93,7 @@ class PurchaseInvoiceLine(Base):
     line_total: Mapped[object] = mapped_column(MONEY, nullable=False)
     # Unit of measure used on this line (008); NULL = base. Stock in base = quantity × unit_factor.
     unit: Mapped[str | None] = mapped_column(String(16), nullable=True)
-    unit_factor: Mapped[object] = mapped_column(QTY, default=1, nullable=False)
+    unit_factor: Mapped[object] = mapped_column(FACTOR, default=1, nullable=False)
     # (030) The warehouse THIS line is received into. NULL only on pre-030 rows, which the
     # migration backfills from the invoice.
     line_location_kind: Mapped[LocationKind | None] = mapped_column(Enum(LocationKind), nullable=True)
@@ -198,7 +198,7 @@ class PurchaseReturnLine(Base):
     fixed_discount_pct: Mapped[object | None] = mapped_column(PCT, nullable=True)
     variable_discount_pct: Mapped[object | None] = mapped_column(PCT, nullable=True)
     unit: Mapped[str | None] = mapped_column(String(16), nullable=True)
-    unit_factor: Mapped[object] = mapped_column(QTY, default=1, nullable=False)
+    unit_factor: Mapped[object] = mapped_column(FACTOR, default=1, nullable=False)
     line_location_kind: Mapped[LocationKind | None] = mapped_column(
         Enum(LocationKind), nullable=True)
     line_location_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)

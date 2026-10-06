@@ -90,6 +90,10 @@ export interface Product {
   is_serialized: boolean;
   category: string | null;
   default_discount_pct: string | null;   // the item's own fixed discount
+  /** الوحدة الأساسية — اللي المخزن بيتعدّ بيها، وبتتطبع على السطر اللي ماختارش وحدة. */
+  unit_of_measure?: string;
+  /** «القطعة = N متر» لو متسجّل على الصنف. */
+  meters_per_piece?: string | null;
 }
 
 export interface Warehouse {

@@ -22,7 +22,7 @@ from src.auth.rbac import (
     role_has_capability,
 )
 from src.core.db import get_db
-from src.core.money import to_money, to_qty
+from src.core.money import to_factor, to_money
 from src.models.catalog import (
     Item,
     ItemKind,
@@ -34,7 +34,9 @@ from src.models.catalog import (
 )
 from src.models.stock import LocationKind, StockMovement
 from src.lib import item_card as item_card_lib
-from src.services import audit_service, item_profile_service, lookup_service, serial_service
+from src.services import (
+    audit_service, item_profile_service, lookup_service, serial_service, uom_service,
+)
 from src.services.serial_service import SerialError
 
 router = APIRouter(tags=["catalog"], prefix="/items")
@@ -69,6 +71,9 @@ class ItemCreate(BaseModel):
     tiers: list[dict] | None = None
     units: list[dict] | None = None
     point_value: Decimal | None = None
+    # «القطعة = N متر» — بيتكتب كوحدة بديلة في `item_unit` (`uom_service.apply_length`)،
+    # مش عمود على الصنف: البيع والشرا بيحوّلوا بالوحدات أصلاً.
+    meters_per_piece: Decimal | None = None
 
 
 class ItemUpdate(BaseModel):
@@ -87,6 +92,12 @@ class ItemUpdate(BaseModel):
     piece_name: str | None = None
     pieces_per_unit: Decimal | None = None
     description: str | None = None
+    # **تصليح اسم الوحدة الأساسية — اسم بس، مش تحويل.** كروت «متر مواسير» في المصنع جاية
+    # من a5 مكتوب عليها «قطعة» وكمياتها فعلاً أمتار؛ الاسم الغلط بيقلب اتجاه «القطعة = N
+    # متر». تغيير الاسم مابيلمسش ولا كمية ولا حركة — اللي عايز يحوّل رصيد يعمل تسوية.
+    unit_of_measure: str | None = None
+    # «القطعة = N متر»؛ null/0 بيشيله. مش مبعوت ⇒ زي ما هو.
+    meters_per_piece: Decimal | None = None
 
 
 class ItemOut(BaseModel):
@@ -110,6 +121,8 @@ class ItemOut(BaseModel):
     piece_name: str | None = None
     pieces_per_unit: Decimal | None = None
     description: str | None = None
+    # «القطعة = N متر» لو متسجّل (من `item_unit`)، عشان الكارت والشباك يعرضوا الرصيد بالاتنين.
+    meters_per_piece: Decimal | None = None
     # Total on-hand across all locations — filled on the list endpoint (one grouped query).
     on_hand: Decimal | None = None
     # Their list carries the مستهلك price as a column; it lives in its own table, so the list
@@ -236,14 +249,33 @@ def list_items(
         ).all():
             key = tier.value if hasattr(tier, "value") else str(tier)
             tiers.setdefault(item_id, {})[key] = Decimal(str(price))
+    # طول القطعة لكل الأصناف في استعلام واحد — الجدول شبه فاضي، فده تقريباً ببلاش.
+    units_by_item: dict[int, list[ItemUnit]] = {}
+    if ids:
+        for u in db.scalars(select(ItemUnit).where(ItemUnit.item_id.in_(ids))).all():
+            units_by_item.setdefault(u.item_id, []).append(u)
     out = []
     for i in rows:
         o = _out(i)
         o.on_hand = on_hand.get(i.id, Decimal("0.000"))
         o.consumer_price = consumer.get(i.id)
         o.tier_prices = tiers.get(i.id, {})
+        o.meters_per_piece = uom_service.meters_per_piece(
+            i.unit_of_measure, units_by_item.get(i.id, []))
         out.append(o)
     return out
+
+
+def _length_of(db: Session, item: Item) -> Decimal | None:
+    rows = db.scalars(select(ItemUnit).where(ItemUnit.item_id == item.id)).all()
+    return uom_service.meters_per_piece(item.unit_of_measure, rows)
+
+
+def _apply_length(db: Session, item: Item, length: Decimal | None) -> None:
+    try:
+        uom_service.apply_length(db, item, length)
+    except uom_service.UomError as exc:
+        raise HTTPException(422, {"code": "validation", "message": str(exc)}) from exc
 
 
 def _apply_tiers(db: Session, item: Item, tiers: list["TierPrice"], *, actor_user_id: int) -> None:
@@ -275,6 +307,7 @@ def _apply_units(db: Session, item: Item, units: list["UnitIn"]) -> None:
     """Replace the whole alternate-unit set — which is what makes removing one possible."""
     seen = {item.unit_of_measure}
     for u in units:
+        u.name = (u.name or "").strip()
         if u.factor <= 0:
             raise HTTPException(422, {"code": "validation", "message": "factor must be > 0"})
         if u.name in seen:
@@ -283,7 +316,8 @@ def _apply_units(db: Session, item: Item, units: list["UnitIn"]) -> None:
         seen.add(u.name)
     db.execute(delete(ItemUnit).where(ItemUnit.item_id == item.id))
     for u in units:
-        db.add(ItemUnit(item_id=item.id, name=u.name, factor=to_qty(u.factor)))
+        # `to_factor` (٩ منازل): «متر» على صنف أساسه قطعة معامله ١÷N — `to_qty` كان بيقصّه.
+        db.add(ItemUnit(item_id=item.id, name=u.name, factor=to_factor(u.factor)))
     db.flush()
 
 
@@ -517,6 +551,9 @@ def create_item(
         _apply_tiers(db, item, [TierPrice(**t) for t in body.tiers], actor_user_id=current.id)
     if body.units:
         _apply_units(db, item, [UnitIn(**u) for u in body.units])
+    # بعد الوحدات مش قبلها: `_apply_units` بيبدّل المجموعة كلها، فلو الطول اتكتب الأول كان اتمسح.
+    if body.meters_per_piece:
+        _apply_length(db, item, body.meters_per_piece)
     if body.point_value is not None:
         # Checked here rather than trusted: point values are a different capability from the
         # catalogue, and a purchasing manager may create items without being allowed to price
@@ -528,7 +565,9 @@ def create_item(
         _apply_point_value(db, item, body.point_value, actor_user_id=current.id)
 
     db.commit()
-    return _out(item)
+    out = _out(item)
+    out.meters_per_piece = _length_of(db, item)
+    return out
 
 
 class TierPrice(BaseModel):
@@ -835,6 +874,7 @@ def item_profile(
         raise HTTPException(404, {"code": "not_found", "message": str(exc)}) from exc
     base = _out(item)
     base.on_hand = p.on_hand
+    base.meters_per_piece = _length_of(db, item)
     return ItemProfileOut(
         item=base, on_hand=p.on_hand, stock_by_location=p.stock_by_location,
         sold_quantity=p.sold_quantity, sold_value=p.sold_value,
@@ -857,6 +897,7 @@ def get_item(
         raise HTTPException(404, {"code": "not_found", "message": "Item not found"})
     out = _out(item)
     out.on_hand = item_profile_service.bulk_on_hand(db, [item_id]).get(item_id, Decimal("0.000"))
+    out.meters_per_piece = _length_of(db, item)
     return out
 
 
@@ -908,8 +949,41 @@ def update_item(
                 new_value=val, actor_user_id=current.id)
         setattr(item, field, val)
     db.flush()
+
+    # الوحدة الأساسية + طول القطعة — مع بعض، لأن اتجاه صف الطول بيتحدد من الأساس.
+    old_length = _length_of(db, item)
+    relabelled = False
+    if "unit_of_measure" in sent and body.unit_of_measure is not None:
+        label = body.unit_of_measure.strip()
+        if not label:
+            raise HTTPException(422, {"code": "validation", "message": "اسم الوحدة مايبقاش فاضي"})
+        if label != item.unit_of_measure:
+            # التصليح الوحيد المسموح: متر ↔ وحدة عدّ (قطعة/ماسورة…) — اللي بيحصل لما a5 يكتب
+            # «قطعة» على كارت بيتعدّ بالمتر. «قطعة» → «كرتونة» مش تصليح اسم، دي إعادة تفسير
+            # لكل رصيد الصنف وتاريخه، وده لسه مقفول زي ما كان.
+            if uom_service.is_meter_unit(label) == uom_service.is_meter_unit(item.unit_of_measure):
+                raise HTTPException(422, {"code": "validation", "message":
+                    "الوحدة الأساسية بتتصلّح بين «متر» و«قطعة» بس — أي تغيير تاني بيغيّر معنى "
+                    "رصيد الصنف كله."})
+            audit_service.record(db, action="item.unit_label", actor_user_id=current.id,
+                                 entity_type="item", entity_id=item.id,
+                                 before={"unit_of_measure": item.unit_of_measure},
+                                 after={"unit_of_measure": label})
+            item.unit_of_measure = label
+            relabelled = True
+    if "meters_per_piece" in sent or relabelled:
+        _apply_length(db, item,
+                      body.meters_per_piece if "meters_per_piece" in sent else old_length)
+    # اسم الأساس الجديد مايتكررش مع وحدة بديلة تانية (كرتونة…) — كانت هتبقى وحدتين بنفس الاسم
+    # والسطر مايعرفش يختار أنهي.
+    if relabelled and db.scalar(select(ItemUnit.id).where(
+            ItemUnit.item_id == item.id, ItemUnit.name == item.unit_of_measure)):
+        raise HTTPException(422, {"code": "validation",
+                                  "message": f"فيه وحدة بديلة اسمها «{item.unit_of_measure}» بالفعل"})
     db.commit()
-    return _out(item)
+    out = _out(item)
+    out.meters_per_piece = _length_of(db, item)
+    return out
 
 
 def _delete_item(db: Session, item: Item, actor_user_id: int) -> None:

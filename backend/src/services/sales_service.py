@@ -17,7 +17,7 @@ from src.services import numbering
 
 from src.core import hooks
 from src.lib import discounts
-from src.core.money import ZERO, to_money, to_qty
+from src.core.money import ZERO, to_factor, to_money, to_qty
 from src.lib import entry_text
 from src.lib import discounts
 from src.models.catalog import Item, ItemKind, PriceTier
@@ -806,7 +806,7 @@ def reverse_sales_return(
 
     # معامل الوحدة: السطر المستقل شايله بنفسه، والمربوط بفاتورة بيتاخد من سطر الفاتورة —
     # لأن الكمية على السطر متسجّلة بوحدة البيع مش بالوحدة الأساسية، والمخزن بيتحرك بالأساسية.
-    factors = {ln.item_id: to_qty(ln.unit_factor) for ln in inv.lines} if inv else {}
+    factors = {ln.item_id: to_factor(ln.unit_factor) for ln in inv.lines} if inv else {}
 
     for line in ret.lines:
         out_kind = line.location_kind
@@ -815,7 +815,7 @@ def reverse_sales_return(
             out_kind, out_loc = ret.origin_location_kind, ret.origin_location_id
         if out_kind is None or out_loc is None:
             raise SalesError("المرتجع ده مالوش مخزن مسجّل — مايتعكسش.")
-        factor = (to_qty(line.unit_factor) if getattr(line, "unit_factor", None) is not None
+        factor = (to_factor(line.unit_factor) if getattr(line, "unit_factor", None) is not None
                   else factors.get(line.item_id, Decimal("1")))
         base_qty = to_qty(Decimal(line.quantity) * factor)
         stock_service.post_movement(
@@ -1039,7 +1039,7 @@ def return_sale(
     used_serials: dict[int, int] = {}
     for sold_line, qty in parts:
         item_id = sold_line.item_id
-        base_qty = to_qty(qty * to_qty(sold_line.unit_factor))  # (008) reverse stock in base units
+        base_qty = to_qty(qty * to_factor(sold_line.unit_factor))  # (008) reverse stock in base units
         # (030) back to where it left from; lines written before 030 fall back to the invoice's own.
         back_kind = sold_line.location_kind or inv.origin_location_kind
         back_loc = (sold_line.location_id if sold_line.location_id is not None

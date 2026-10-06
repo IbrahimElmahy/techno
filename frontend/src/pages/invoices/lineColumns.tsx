@@ -26,6 +26,8 @@ export interface LineColumnsCtx {
   pointValues: Record<number, number>;
   productName: (id: number) => string;
   saleUnitOptions: (itemId: number | null) => any[];
+  /** «المتاح ١٥٠ متر = ٥٠ قطعة» للصنف اللي ليه وحدة بديلة — null للباقي. */
+  availabilityHint?: (l: SaleLineItem) => string | null;
   saleLineNet: (l: SaleLineItem) => number;
   linePoints: (l: SaleLineItem) => number;
   checkedQuantity: (l: SaleLineItem) => any;
@@ -53,7 +55,7 @@ const fmtQty = (n: number) => n.toLocaleString(numeralsLocale(), { maximumFracti
 
 export function buildLineColumns({
   viewOnly, warehouses, totalPoints, pointValues, productName, saleUnitOptions,
-  saleLineNet, linePoints, checkedQuantity, handleLineChange, handleRemoveLine,
+  availabilityHint, saleLineNet, linePoints, checkedQuantity, handleLineChange, handleRemoveLine,
   advanceFrom, setDocWarehouseId, setPanelItemId, hidePoints = false, isBonus = false,
   productCode, belowCost, canSellBelowCost = false,
 }: LineColumnsCtx): EntryColumn<SaleLineItem>[] {
@@ -97,17 +99,27 @@ export function buildLineColumns({
             options={warehouses.map((w) => ({ value: w.id, label: w.name }))} />
         )
       ) },
+    // الوحدة: الأساسية أو البديلة (مثلاً «قطعة = ٣ متر» على ماسورة بتتعدّ بالمتر). تغييرها
+    // بيحوّل السعر، والسيرفر بيخصم من المخزن الكمية × المعامل بالوحدة الأساسية.
     { key: 'unit', title: 'الوحدة', width: 80,
-      cell: (line) => (
-        viewOnly ? (
-          <span style={{ fontSize: 14 }}>{line.unit || 'أساسية'}</span>
+      cell: (line) => {
+        const hint = availabilityHint?.(line);
+        return viewOnly ? (
+          // اسم الأساسية الحقيقي («متر»/«قطعة») بدل «أساسية» لما يكون معروف.
+          <span style={{ fontSize: 14 }}>{line.unit || saleUnitOptions(line.item_id)[0]?.label || 'أساسية'}</span>
         ) : (
-          <Select size="small" style={{ width: '100%' }} placeholder="الوحدة"
-            value={line.unit ?? '__base__'}
-            onChange={(v) => handleLineChange(line.key, 'unit', v === '__base__' ? null : v)}
-            options={saleUnitOptions(line.item_id)} />
-        )
-      ) },
+          <>
+            <Select size="small" style={{ width: '100%' }} placeholder="الوحدة"
+              value={line.unit ?? '__base__'} popupMatchSelectWidth={false}
+              onChange={(v) => handleLineChange(line.key, 'unit', v === '__base__' ? null : v)}
+              options={saleUnitOptions(line.item_id)} />
+            {hint ? (
+              <div style={{ fontSize: 12, color: '#64748b', lineHeight: 1.3, marginTop: 2,
+                whiteSpace: 'normal' }}>{hint}</div>
+            ) : null}
+          </>
+        );
+      } },
     { key: 'quantity', title: 'الكمية', width: 114, locked: true,
       cellStyle: { textAlign: 'center' },
       cellProps: (line) => (line.item_id != null

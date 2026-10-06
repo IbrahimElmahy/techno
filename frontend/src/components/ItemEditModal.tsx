@@ -112,7 +112,8 @@ export default function ItemEditModal({
       await api.patch(`/api/v1/items/${itemId}`, {
         name: v.name,
         code: v.code,
-        unit_of_measure: v.unit_of_measure,
+        // `unit_of_measure` مش متبعوت: السيرفر كان بيرميه، ودلوقتي بيقبل تصليح متر↔قطعة بس —
+        // وده مكانه خانة «القطعة = كام متر؟» في شاشة الأصناف، اللي بتوضّح إن الرصيد مش بيتحوّل.
         category: v.category ?? null,
         sale_price: item.kind === 'product' ? v.sale_price ?? null : null,
         purchase_price: item.kind === 'raw_material' ? v.purchase_price ?? null : null,
@@ -185,8 +186,9 @@ export default function ItemEditModal({
               </Form.Item>
             </Col>
             <Col xs={24} md={12}>
-              <Form.Item name="unit_of_measure" label="وحدة القياس">
-                <Select showSearch options={uomOptions.map((o) => ({ value: o.value, label: o.label }))} filterOption={searchFilter} filterSort={searchRank}/>
+              <Form.Item name="unit_of_measure" label="وحدة القياس"
+                tooltip="الوحدة الأساسية بتتقفل بعد إنشاء الصنف — كل رصيده متعدّ بيها. تصليح متر/قطعة من «القطعة = كام متر؟» في شاشة الأصناف.">
+                <Select showSearch disabled options={uomOptions.map((o) => ({ value: o.value, label: o.label }))} filterOption={searchFilter} filterSort={searchRank}/>
               </Form.Item>
             </Col>
             <Col xs={24} md={12}>

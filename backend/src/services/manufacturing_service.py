@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 
 from src.services import numbering
 
-from src.core.money import ZERO, to_money, to_qty
+from src.core.money import ZERO, to_factor, to_money, to_qty
 from src.lib import production
 from src.lib.doc_order import newest_first
 from src.models.bom import Bom, BomComponent, BomResource, ResourceKind
@@ -188,7 +188,7 @@ def _persist_recipe_lines(db: Session, bom: Bom, components, resources) -> None:
         item = db.get(Item, item_id)
         factor = uom_service.resolve_factor(db, item, unit) if unit else Decimal(1)
         db.add(BomComponent(bom_id=bom.id, item_id=item_id, quantity=to_qty(qty),
-                            unit=unit, unit_factor=to_qty(factor), stage=stage))
+                            unit=unit, unit_factor=to_factor(factor), stage=stage))
     for kind, name, qty, rate in (resources or []):
         db.add(BomResource(bom_id=bom.id, kind=ResourceKind(kind), name=name,
                            quantity=to_qty(qty), rate=to_money(rate)))

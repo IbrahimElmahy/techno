@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from decimal import Decimal
 
-from src.core.money import to_money, to_qty
+from src.core.money import to_factor, to_money, to_qty
 from src.models.stock import LocationKind
 
 
@@ -30,7 +30,7 @@ def consumed_quantity(component_quantity, scale, unit_factor=1) -> Decimal:
 
     `unit_factor` defaults to 1, which is what every recipe written before units existed means.
     """
-    factor = to_qty(unit_factor or 1)
+    factor = to_factor(unit_factor or 1)
     if factor <= to_qty(0):
         raise ValueError("معامل الوحدة لازم يكون أكبر من صفر.")
     return to_qty(Decimal(component_quantity) * Decimal(scale) * factor)

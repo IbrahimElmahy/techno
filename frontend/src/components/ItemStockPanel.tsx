@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Card, Empty, Spin, Tag, Tooltip } from 'antd';
 import { api } from '../api/client';
 import { qty, money } from '../utils/money';
+import { dualQty, lengthUnits } from '../utils/units';
 
 /**
  * رصيد الصنف في كل المخازن — the side panel that answers "do we actually have it, and where"
@@ -74,6 +75,13 @@ export default function ItemStockPanel({
               <b style={{ color: Number(balance.total) > 0 ? '#6AB42D' : '#cf1322' }}>
                 {qty(balance.total)} {balance.item?.unit_of_measure || ''}
               </b>
+              {/* صنف ليه «القطعة = N متر»: نفس الإجمالي بالوحدة التانية. */}
+              {Number(balance.item?.meters_per_piece || 0) > 0 ? (
+                <span style={{ marginInlineStart: 6 }}>
+                  ({dualQty(Number(balance.total || 0),
+                    lengthUnits(balance.item?.unit_of_measure || '', balance.item?.meters_per_piece))})
+                </span>
+              ) : null}
             </div>
           </div>
 

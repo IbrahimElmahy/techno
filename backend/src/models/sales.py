@@ -14,7 +14,7 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from src.core.db import Base, BigIntPK
-from src.core.money import MONEY, PCT, QTY
+from src.core.money import FACTOR, MONEY, PCT, QTY
 from src.models.catalog import PriceTier
 from src.models.stock import LocationKind
 
@@ -193,7 +193,7 @@ class SalesInvoiceLine(Base):
     # Unit of measure used on this line (008); NULL = base unit. quantity is in this unit;
     # stock moved in base = quantity × unit_factor.
     unit: Mapped[str | None] = mapped_column(String(16), nullable=True)
-    unit_factor: Mapped[object] = mapped_column(QTY, default=1, nullable=False)
+    unit_factor: Mapped[object] = mapped_column(FACTOR, default=1, nullable=False)
     # (030) The warehouse THIS line came out of. NULL only on rows written before 030; the
     # migration backfills them from the invoice, so readers can treat it as always present.
     location_kind: Mapped[LocationKind | None] = mapped_column(Enum(LocationKind), nullable=True)
@@ -285,7 +285,7 @@ class SalesReturnLine(Base):
     variable_discount_pct: Mapped[object | None] = mapped_column(PCT, nullable=True)
     line_total: Mapped[object | None] = mapped_column(MONEY, nullable=True)  # AFTER the line discount
     unit: Mapped[str | None] = mapped_column(String(16), nullable=True)
-    unit_factor: Mapped[object] = mapped_column(QTY, default=1, nullable=False)
+    unit_factor: Mapped[object] = mapped_column(FACTOR, default=1, nullable=False)
     # (030) The warehouse the goods come back INTO, per line.
     location_kind: Mapped[LocationKind | None] = mapped_column(Enum(LocationKind), nullable=True)
     location_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)

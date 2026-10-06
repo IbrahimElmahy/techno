@@ -54,6 +54,7 @@ import WarehouseGate from '../components/WarehouseGate';
 import TreasuryGate, { useTreasuryGate } from '../components/TreasuryGate';
 import DateRangeFilter from '../components/DateRangeFilter';
 import { money, numeralsLocale } from '../utils/money';
+import { convertUnitPrice, factorOf, unitSelectOptions, type UnitRow } from '../utils/units';
 import { applyPct, combinePct, splitLineDiscount } from '../utils/discounts';
 import { QTY_DATA_ATTR } from '../utils/duplicateItem';
 import { addPickedSequentially, type PickResult } from '../utils/pickMany';
@@ -116,6 +117,9 @@ interface ReturnLineItem {
   warehouse_id: number | null;   // (030) this line comes back into its own warehouse
   is_serialized?: boolean;
   serials?: string[];
+  /** الوحدة اللي الكمية والسعر مكتوبين بيها؛ null = الأساسية. السيرفر بيرجّع للمخزن
+   *  الكمية × معامل الوحدة (`create_standalone_return`). */
+  unit?: string | null;
 }
 
 interface Filters {
@@ -217,6 +221,26 @@ export default function Returns({ embedded }: { embedded?: { onExit: () => void 
   const [createForm] = Form.useForm();
   const [customerId, setCustomerId] = useState<number | null>(null);
   const [lines, setLines] = useState<ReturnLineItem[]>([]);
+  /** وحدات كل صنف (الأساسية + البديلة، زي «قطعة = ٣ متر») — بتتجاب مرة لكل صنف. */
+  const [unitsCache, setUnitsCache] = useState<Record<number, UnitRow[]>>({});
+  const unitsRequestedRef = useRef<Set<number>>(new Set());
+  const fetchUnits = async (itemId: number) => {
+    if (unitsCache[itemId] || unitsRequestedRef.current.has(itemId)) return;
+    unitsRequestedRef.current.add(itemId);
+    try {
+      const res = await api.get(`/api/v1/items/${itemId}/units`);
+      setUnitsCache((prev) => ({ ...prev, [itemId]: (res.data.units || []).map((u: any) => ({
+        name: u.name, factor: parseFloat(u.factor), is_base: u.is_base })) }));
+    } catch (err) {
+      unitsRequestedRef.current.delete(itemId);
+      console.error(err);
+    }
+  };
+  // كل سطر — المضاف من الشباك والمتملّي من مرتجع قديم — محتاج وحدات صنفه عشان القايمة
+  // تعرض اسم الأساسية والسعر يتحوّل صح لما الوحدة تتغيّر.
+  useEffect(() => {
+    lines.forEach((l) => { if (l.item_id) fetchUnits(l.item_id); });
+  }, [lines]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const [activeCategory, setActiveCategory] = useState<string | null>(null);
   // The item the side stock panel is showing — on a return it answers "where should this go
@@ -625,8 +649,12 @@ export default function Returns({ embedded }: { embedded?: { onExit: () => void 
      * للحقيقة، وهو اللي بيخلّي المخزون والحساب يقفلوا على نفس المبلغ.
      */
     let price = info.last_price != null ? parseFloat(info.last_price) : 0;
+    // آخر سعر اتدفع مكتوب بوحدة البيع اللي اتباع بيها (قطعة أو متر) — فالسطر بيفتح بنفس
+    // الوحدة، وإلا سعر القطعة يتحط على كمية بالمتر ويطلع المرتجع ٣ أضعاف.
+    let priceUnit: string | null = price > 0 ? (info.history[0]?.unit ?? null) : null;
     let fallbackDisc: number | null = null;
     if (!(price > 0)) {
+      priceUnit = null;
       try {
         const r = await api.get(`/api/v1/items/${itemId}/return-price`);
         if (Number(r.data?.unit_price) > 0) price = Number(r.data.unit_price);
@@ -658,6 +686,7 @@ export default function Returns({ embedded }: { embedded?: { onExit: () => void 
         warehouse_id: warehouseId,
         is_serialized: !!prod?.is_serialized,
         serials: [] as string[],
+        unit: priceUnit,
       }]);
       return qty ? null : { needsQty: key };
     }
@@ -968,6 +997,7 @@ export default function Returns({ embedded }: { embedded?: { onExit: () => void 
                   // (030) only when the line differs from the document's warehouse
                   warehouse_id: l.warehouse_id ?? undefined,
                   serials: l.is_serialized ? (l.serials || []) : undefined,
+                  unit: l.unit ?? null,
                 })),
               });
               message.success(editingSourceId
@@ -1018,6 +1048,22 @@ export default function Returns({ embedded }: { embedded?: { onExit: () => void 
             if (val != null) setDocWarehouseId(val as number);
           }}
           options={warehouses.map((w) => ({ value: w.id, label: w.name }))} />
+      ) },
+    // الوحدة: الأساسية أو البديلة («قطعة = ٣ متر»). تغييرها بيحوّل السعر، والمخزن بيرجعله
+    // الكمية × المعامل بالوحدة الأساسية.
+    { key: 'unit', title: 'الوحدة', span: 2, xs: 8, width: 80,
+      cell: (line) => (
+        <Select size="small" style={{ width: '100%' }} placeholder="الوحدة"
+          disabled={viewOnly} popupMatchSelectWidth={false}
+          value={line.unit ?? '__base__'}
+          onChange={(v) => setLines((prev) => prev.map((l) => {
+            if (l.key !== line.key) return l;
+            const unit = v === '__base__' ? null : (v as string);
+            const units = unitsCache[l.item_id || 0];
+            return { ...l, unit, unit_price: convertUnitPrice(l.unit_price || 0,
+              factorOf(units, l.unit), factorOf(units, unit)) };
+          }))}
+          options={unitSelectOptions(unitsCache[line.item_id || 0])} />
       ) },
     { key: 'last_price', title: 'آخر سعر شراء', span: 2, xs: 12, width: 110,
       cell: (line) => {
@@ -1158,7 +1204,8 @@ export default function Returns({ embedded }: { embedded?: { onExit: () => void 
         name: productName(l.item_id),
         itemId: l.item_id,
         quantity: l.quantity,
-        unit: l.unit,
+        // null = الأساسية — الورقة بتطبع اسمها بدل شرطة.
+        unit: l.unit || unitsCache[l.item_id]?.find((u) => u.is_base)?.name || null,
         unit_price: l.unit_price,
         discount_pct: l.discount_pct,
         points: (pointValues[l.item_id] || 0) * Number(l.quantity || 0),
@@ -1226,6 +1273,7 @@ export default function Returns({ embedded }: { embedded?: { onExit: () => void 
         is_serialized: Boolean(l.serials && l.serials.length > 0),
         serials: l.serials || [],
         points: Number(l.points) || 0,
+        unit: l.unit ?? null,
       })));
       setCreateVisible(true);
     } catch (err) {

@@ -523,11 +523,11 @@ _ADDED_COLUMNS: list[tuple[str, str, str]] = [
     ("trade_order", "gross", "DECIMAL(18,2)"),
     ("trade_order", "variable_discount_pct", "DECIMAL(18,2)"),
     ("trade_order_line", "unit", "VARCHAR(16)"),
-    ("trade_order_line", "unit_factor", "DECIMAL(18,3)"),
+    ("trade_order_line", "unit_factor", "DECIMAL(18,9)"),
     ("trade_order_line", "discount_pct", "DECIMAL(18,2)"),
     ("purchase_return_line", "discount_pct", "DECIMAL(9,4)"),
     ("purchase_return_line", "unit", "VARCHAR(16)"),
-    ("purchase_return_line", "unit_factor", "DECIMAL(18,3)"),
+    ("purchase_return_line", "unit_factor", "DECIMAL(18,9)"),
     ("purchase_return_line", "line_location_kind", "VARCHAR(20)"),
     ("purchase_return_line", "line_location_id", "BIGINT"),
     # المردود المستقل — أصناف راجعة لمورد من غير فاتورة.
@@ -629,7 +629,7 @@ _ADDED_COLUMNS: list[tuple[str, str, str]] = [
     ("manufacturing_order", "notes", "VARCHAR(500)"),
     # The unit a recipe component is written in (a5 parity: نسب انتاج ← الوحدة).
     ("bom_component", "unit", "VARCHAR(16)"),
-    ("bom_component", "unit_factor", "DECIMAL(18,3) NOT NULL DEFAULT 1"),
+    ("bom_component", "unit_factor", "DECIMAL(18,9) NOT NULL DEFAULT 1"),
     # «المستوى الرئيسي» on a chart account (a5 parity).
     ("account", "main_level", "VARCHAR(80)"),
     # Master-data parity: the supplier's location, the store's note, the employee's store.
@@ -715,7 +715,7 @@ _ADDED_COLUMNS: list[tuple[str, str, str]] = [
     ("sales_return_line", "discount_pct", "NUMERIC(5,2) NOT NULL DEFAULT 0"),
     ("sales_return_line", "line_total", "NUMERIC(18,2)"),
     ("sales_return_line", "unit", "VARCHAR(16)"),
-    ("sales_return_line", "unit_factor", "NUMERIC(18,3) NOT NULL DEFAULT 1"),
+    ("sales_return_line", "unit_factor", "NUMERIC(18,9) NOT NULL DEFAULT 1"),
     # 030: the warehouse moves from the document down to the line, the sale freezes its cost,
     # and the document gains rep / posting account / the customer's own paper number + notes.
     ("sales_invoice_line", "location_kind", "VARCHAR(20)"),
@@ -804,6 +804,18 @@ _WIDENED_COLUMNS: list[tuple[str, str, str]] = [
     ("role", "name",
      "ENUM('system_admin','branch_manager','purchasing_manager','sales_manager',"
      "'after_sales_staff','sales_rep','accountant','viewer','owner')"),
+    # معامل تحويل الوحدة من ٣ منازل لـ٩ (`FACTOR` في core/money.py). صنف أساسه «قطعة»
+    # ومتباع بـ«المتر» معامله ١÷طول القطعة — ٠٫٣٣٣ بدل ٠٫٣٣٣٣٣٣٣٣٣ كانت بتخلّي ١٥٠ متر
+    # تخصم ٤٩٫٩٥ قطعة. التوسيع مابيغيّرش ولا رقم مكتوب: ١٢٫٠٠٠ بتفضل ١٢.
+    ("item_unit", "factor", "NUMERIC(18,9)"),
+    ("sales_invoice_line", "unit_factor", "NUMERIC(18,9)"),
+    ("sales_return_line", "unit_factor", "NUMERIC(18,9)"),
+    ("purchase_invoice_line", "unit_factor", "NUMERIC(18,9)"),
+    ("purchase_return_line", "unit_factor", "NUMERIC(18,9)"),
+    ("trade_order_line", "unit_factor", "NUMERIC(18,9)"),
+    ("bom_component", "unit_factor", "NUMERIC(18,9)"),
+    ("production_order_product", "unit_factor", "NUMERIC(18,9)"),
+    ("production_order_material", "unit_factor", "NUMERIC(18,9)"),
 ]
 
 
@@ -925,6 +937,7 @@ def _widen_pg_enum(engine, table: str, column: str, labels: list[str]) -> None:
 def _widen_columns(engine) -> None:
     """Widen column types introduced after release (e.g. integer points -> fractional). Idempotent."""
     import logging
+    import re
 
     from sqlalchemy import inspect as sa_inspect
     from sqlalchemy import text
@@ -950,15 +963,29 @@ def _widen_columns(engine) -> None:
                         conn.execute(text(
                             f"ALTER TABLE `{table}` MODIFY `{column}` {ddl_type} NOT NULL"))
                 continue
-            if "NUMERIC" in str(col["type"]).upper() or "DECIMAL" in str(col["type"]).upper():
-                continue  # already widened
+            current = str(col["type"]).upper()
+            if "NUMERIC" in current or "DECIMAL" in current:
+                # رقمي أصلاً: يا إما اتوسّع خلاص، يا إما التوسيع في عدد المنازل نفسه (معامل
+                # الوحدة من (18,3) لـ(18,9)). المقارنة بالمنازل مش بالاسم — `NUMERIC(18, 9)`
+                # و`DECIMAL(18,9)` نفس الحاجة، والعمود اللي منازله زي المطلوب أو أكتر مايتلمسش.
+                want = re.search(r"\(\s*(\d+)\s*,\s*(\d+)\s*\)", ddl_type)
+                have_scale = getattr(col["type"], "scale", None)
+                if want is None or have_scale is None or have_scale >= int(want.group(2)):
+                    continue  # already widened
+            # MySQL's MODIFY rewrites the whole column definition, so nullability and the default
+            # have to be restated or they are lost (`trade_order_line.unit_factor` is nullable —
+            # forcing NOT NULL on it would fail on the rows that hold NULL).
+            null_sql = "NULL" if col.get("nullable", False) else "NOT NULL"
+            default = col.get("default")
+            default_sql = f" DEFAULT {default}" if default not in (None, "") else ""
             with engine.begin() as conn:
                 if dialect in ("postgresql", "postgres"):
                     conn.execute(text(
                         f'ALTER TABLE {table} ALTER COLUMN {column} TYPE {ddl_type} '
                         f'USING {column}::numeric'))
                 else:
-                    conn.execute(text(f"ALTER TABLE `{table}` MODIFY `{column}` {ddl_type} NOT NULL"))
+                    conn.execute(text(
+                        f"ALTER TABLE `{table}` MODIFY `{column}` {ddl_type} {null_sql}{default_sql}"))
         except Exception as exc:  # pragma: no cover — best-effort
             logging.getLogger("uvicorn.error").info(
                 "widen %s.%s skipped: %s", table, column, exc)

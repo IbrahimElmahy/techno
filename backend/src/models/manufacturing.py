@@ -16,7 +16,7 @@ from sqlalchemy import BigInteger, Boolean, Date, DateTime, Enum, ForeignKey, St
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from src.core.db import Base, BigIntPK
-from src.core.money import MONEY, QTY
+from src.core.money import FACTOR, MONEY, QTY
 from src.models.stock import LocationKind
 
 
@@ -249,7 +249,7 @@ class ProductionOrderProduct(Base):
     quantity: Mapped[object] = mapped_column(QTY, nullable=False)  # بالوحدة الأساسية
     # الوحدة اللي اتكتبت بيها، زي سطر الفاتورة والوصفة بالظبط (008).
     unit: Mapped[str | None] = mapped_column(String(16), nullable=True)
-    unit_factor: Mapped[object] = mapped_column(QTY, nullable=False, default=1)
+    unit_factor: Mapped[object] = mapped_column(FACTOR, nullable=False, default=1)
     # الوصفة اللي السطر اتفتح منها — `NULL` يعني الخامات اتكتبت بالإيد (إنتاج حر).
     #
     # **والوصفة قالب مش قيد.** الكميات المخطّطة بتتنسخ على السطور وقت الإنشاء، وبعدها
@@ -334,7 +334,7 @@ class ProductionOrderMaterial(Base):
     planned_quantity: Mapped[object] = mapped_column(QTY, nullable=False, default=0)
     quantity: Mapped[object] = mapped_column(QTY, nullable=False)
     unit: Mapped[str | None] = mapped_column(String(16), nullable=True)
-    unit_factor: Mapped[object] = mapped_column(QTY, nullable=False, default=1)
+    unit_factor: Mapped[object] = mapped_column(FACTOR, nullable=False, default=1)
     # «متوسط» اللي في شاشتهم = متوسط التكلفة عندنا (`costing_service.average_cost`)،
     # متقفّل على السطر وقت الترحيل زي تكلفة البضاعة المباعة في (030): الأمر اللي اتقفل
     # الشهر اللي فات مايتغيّرش سعره لما يتشترى خامة بسعر جديد النهارده.

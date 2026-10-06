@@ -15,7 +15,7 @@ from sqlalchemy.orm import Session
 
 from src.services import numbering
 
-from src.core.money import ZERO, to_money, to_qty
+from src.core.money import ZERO, to_factor, to_money, to_qty
 from src.lib import entry_text
 from src.lib import discounts
 from src.models.catalog import Item
@@ -302,7 +302,7 @@ def return_purchase(
     # بالظبط: المرتجع كان بيخصم من المورد سعر من غير خصومات الفاتورة، فالمردود
     # بيطلع أكبر من اللي اتشرى وفرق بيفضل على حسابه.
     purchased = {
-        ln.item_id: (Decimal(ln.quantity), to_money(ln.unit_price), to_qty(ln.unit_factor),
+        ln.item_id: (Decimal(ln.quantity), to_money(ln.unit_price), to_factor(ln.unit_factor),
                      Decimal(ln.discount_pct or 0))
         for ln in inv.lines
     }
@@ -423,7 +423,7 @@ def reverse_purchase_return(
                      ln.line_location_id if ln.line_location_id is not None else inv.location_id)
         for ln in inv.lines
     } if inv else {}
-    factors = {ln.item_id: to_qty(ln.unit_factor) for ln in inv.lines} if inv else {}
+    factors = {ln.item_id: to_factor(ln.unit_factor) for ln in inv.lines} if inv else {}
     fallback = ((inv.location_kind, inv.location_id) if inv
                 else (ret.origin_location_kind, ret.origin_location_id))
     if fallback[0] is None or fallback[1] is None:
@@ -520,7 +520,7 @@ def create_standalone_purchase_return(
         line_total = to_money(before * (Decimal("1") - (disc or ZERO) / Decimal("100")))
         gross += line_total
         built.append({
-            "item_id": item.id, "quantity": qty, "unit": unit, "factor": to_qty(factor),
+            "item_id": item.id, "quantity": qty, "unit": unit, "factor": to_factor(factor),
             "unit_price": price, "discount_pct": disc, "line_total": line_total,
             "fixed_discount_pct": ln.get("fixed_discount_pct"),
             "variable_discount_pct": ln.get("variable_discount_pct"),

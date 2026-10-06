@@ -26,7 +26,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from src.core.db import Base, BigIntPK
 from src.core.display_name import DisplayName
-from src.core.money import MONEY, PCT, QTY
+from src.core.money import FACTOR, MONEY, PCT, QTY
 from src.models.stock import LocationKind
 
 
@@ -143,6 +143,10 @@ class ItemUnit(Base):
 
     factor = how many BASE units one of this unit equals (e.g. carton → 12). Stock is always tracked
     in the base unit; documents convert (entered qty × factor) at the boundary.
+
+    طول القطعة («القطعة = ٣ متر») بيتسجّل هنا كمان، مش في عمود لوحده: صنف أساسه «متر»
+    بياخد وحدة «قطعة» معاملها ٣، وصنف أساسه «قطعة» بياخد وحدة «متر» معاملها ١÷٣. الشرح
+    والحساب في `uom_service.length_unit`. والمعامل بـ٩ منازل (`FACTOR`) عشان ١÷٣ يفضل ١÷٣.
     """
 
     __tablename__ = "item_unit"
@@ -151,7 +155,7 @@ class ItemUnit(Base):
     id: Mapped[int] = mapped_column(BigIntPK, primary_key=True, autoincrement=True)
     item_id: Mapped[int] = mapped_column(ForeignKey("item.id"), nullable=False, index=True)
     name: Mapped[str] = mapped_column(String(16), nullable=False)
-    factor: Mapped[object] = mapped_column(QTY, nullable=False)  # base units per one of this unit
+    factor: Mapped[object] = mapped_column(FACTOR, nullable=False)  # base units per one of this unit
 
 
 class SerialStatus(str, enum.Enum):

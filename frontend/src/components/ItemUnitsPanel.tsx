@@ -7,6 +7,7 @@ import {
 import { InputNumber } from './NumberInput';
 import { DeleteOutlined, PlusOutlined, SaveOutlined } from '@ant-design/icons';
 import { api } from '../api/client';
+import { qty } from '../utils/money';
 
 /**
  * Units / serials for one item, as inline panels for the item file.
@@ -35,7 +36,7 @@ export function UnitsPanel({ itemId, canEdit }: { itemId: number; canEdit: boole
 
   const onSave = async () => {
     const units = rows.filter((r) => r.name && r.factor && r.factor > 0)
-      .map((r) => ({ name: r.name, factor: Number(r.factor).toFixed(3) }));
+      .map((r) => ({ name: r.name, factor: Number(r.factor).toFixed(9) }));
     setSaving(true);
     try {
       await api.put(`/api/v1/items/${itemId}/units`, { units });
@@ -65,6 +66,15 @@ export function UnitsPanel({ itemId, canEdit }: { itemId: number; canEdit: boole
             <Button type="text" danger icon={<DeleteOutlined />} disabled={!canEdit}
               onClick={() => setRows(rows.filter((_, j) => j !== i))} />
           </Col>
+          {/* وحدة أصغر من الأساس (زي «متر» على ماسورة متعدّة بالقطعة) معاملها كسر طويل
+              ٠٫٣٣٣٣٣٣٣٣٣ — الجملة دي بتقولها بالكلام اللي اتكتبت بيه: «٣ متر = ١ قطعة». */}
+          {r.name && r.factor && r.factor > 0 && r.factor < 1 ? (
+            <Col span={24}>
+              <Typography.Text type="secondary" style={{ fontSize: 13 }}>
+                {qty(1 / r.factor)} {r.name} = 1 {base}
+              </Typography.Text>
+            </Col>
+          ) : null}
         </Row>
       ))}
       {canEdit && (

@@ -30,7 +30,7 @@ from decimal import Decimal
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from src.core.money import ZERO, to_money, to_qty
+from src.core.money import ZERO, to_factor, to_money, to_qty
 from src.lib import production
 from src.lib.doc_order import newest_first
 from src.models.bom import Bom
@@ -156,7 +156,7 @@ def _build_lines(db: Session, order: ProductionOrder, products) -> None:
 
         line = ProductionOrderProduct(
             order_id=order.id, item_id=item.id, warehouse_id=p_wh,
-            planned_quantity=planned, quantity=actual, unit=p_unit, unit_factor=to_qty(p_factor),
+            planned_quantity=planned, quantity=actual, unit=p_unit, unit_factor=to_factor(p_factor),
             bom_id=p.get("bom_id"), material_cost=ZERO, expense_amount=expense,
             total_cost=ZERO, unit_cost=ZERO)
         order.products.append(line)
@@ -211,7 +211,7 @@ def _build_lines(db: Session, order: ProductionOrder, products) -> None:
                 order_id=order.id, product_line_id=line.id, item_id=raw.id,
                 warehouse_id=_warehouse(db, raw, m.get("warehouse_id")),
                 planned_quantity=m_planned, quantity=m_qty, unit=m_unit,
-                unit_factor=to_qty(m_factor), unit_cost=ZERO, line_cost=ZERO,
+                unit_factor=to_factor(m_factor), unit_cost=ZERO, line_cost=ZERO,
                 waste_quantity=waste,
                 # بتتنسخ من الوصفة وقت الفتح، مابتتقراش منها وقت الصرف: الوصفة
                 # بتتعدّل والأمر القديم لازم يفضل قايل إنه صرف إيه إمتى.

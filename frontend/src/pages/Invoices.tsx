@@ -58,6 +58,7 @@ import DocumentAttachments from '../components/DocumentAttachments';
 import TreasuryGate, { useTreasuryGate } from '../components/TreasuryGate';
 import DateRangeFilter from '../components/DateRangeFilter';
 import { money, numeralsLocale } from '../utils/money';
+import { convertUnitPrice, dualQty, factorOf, unitSelectOptions } from '../utils/units';
 import { fingerprint, verdictOnLeave } from '../utils/unsavedWork';
 import { useFocusedIds, FocusedRowsBanner } from '../components/FocusedRows';
 import { applyPct, combinePct } from '../utils/discounts';
@@ -793,14 +794,22 @@ export default function Invoices() {
   /**
    * خيارات الوحدة — وفيها **دايماً** خيار الوحدة الأساسية.
    */
-  const saleUnitOptions = (itemId: number | null) => {
-    const units = unitsCache[itemId || 0] || [];
-    const base = units.find((u) => u.is_base);
-    return [
-      { value: '__base__', label: base?.name || 'الأساسية' },
-      ...units.filter((u) => !u.is_base)
-        .map((u) => ({ value: u.name, label: `${u.name} (×${u.factor})` })),
-    ];
+  const saleUnitOptions = (itemId: number | null) => unitSelectOptions(unitsCache[itemId || 0]);
+
+  /**
+   * المتاح بكل وحدات الصنف تحت خانة الوحدة: «المتاح ١٥٠ متر = ٥٠ قطعة».
+   *
+   * بيظهر للصنف اللي ليه وحدة بديلة بس (المواسير اللي اتكتب عليها «القطعة = N متر») —
+   * اللي بيبيع بالقطعة من صنف بيتعدّ بالمتر لازم يشوف الرقمين عشان يعرف هو بيطلب كام فعلاً.
+   * الصنف العادي مالوش سطر زيادة، ومن غير مخزن مافيش «متاح» أصلاً.
+   */
+  const availabilityHint = (l: SaleLineItem): string | null => {
+    if (!l.item_id) return null;
+    const units = unitsCache[l.item_id];
+    if (!units || !units.some((u) => !u.is_base)) return null;
+    const wh = lineWarehouse(l);
+    if (!wh || !availability[wh]) return null;
+    return `المتاح ${dualQty(availability[wh][l.item_id] ?? 0, units)}`;
   };
 
   /**
@@ -1132,11 +1141,8 @@ export default function Invoices() {
     setLines(lines.filter((l) => l.key !== key));
   };
 
-  const unitFactor = (itemId: number, unit: string | null): number => {
-    if (!unit) return 1;
-    const u = (unitsCache[itemId] || []).find((x) => x.name === unit);
-    return u ? u.factor : 1;
-  };
+  const unitFactor = (itemId: number, unit: string | null): number => (
+    factorOf(unitsCache[itemId], unit));
 
   /**
    * السطر صافيه (بعد خصم السطر، من غير خصم الفاتورة) أقل من تكلفة الوحدة؟ — نفس قاعدة
@@ -1165,7 +1171,8 @@ export default function Invoices() {
     } else {
       base = (tier && c.tiers[tier] != null) ? c.tiers[tier] : (c.base ?? 0);
     }
-    return base * unitFactor(itemId, unit);
+    // لقرشين زي `to_money` على السيرفر: سعر القطعة ٣٠ × معامل المتر ٠٫٣٣٣٣٣٣٣٣٣ لازم يبقى ١٠.
+    return Math.round(base * unitFactor(itemId, unit) * 100) / 100;
   };
 
   /**
@@ -1197,14 +1204,29 @@ export default function Invoices() {
         fresh = entry;
       } catch (err) { console.error(err); }
     }
-    if (!unitsCache[itemId]) {
-      try {
-        const res = await api.get(`/api/v1/items/${itemId}/units`);
-        setUnitsCache((prev) => ({ ...prev, [itemId]: (res.data.units || []).map((u: any) => ({ name: u.name, factor: parseFloat(u.factor), is_base: u.is_base })) }));
-      } catch (err) { console.error(err); }
-    }
+    await fetchUnits(itemId);
     return fresh;
   };
+
+  /** الطلبات اللي طلعت ولسه مارجعتش — عشان الـeffect تحت مايبعتش نفس الطلب مع كل رسمة. */
+  const unitsRequestedRef = useRef<Set<number>>(new Set());
+  const fetchUnits = async (itemId: number) => {
+    if (unitsCache[itemId] || unitsRequestedRef.current.has(itemId)) return;
+    unitsRequestedRef.current.add(itemId);
+    try {
+      const res = await api.get(`/api/v1/items/${itemId}/units`);
+      setUnitsCache((prev) => ({ ...prev, [itemId]: (res.data.units || []).map((u: any) => ({ name: u.name, factor: parseFloat(u.factor), is_base: u.is_base })) }));
+    } catch (err) {
+      unitsRequestedRef.current.delete(itemId);
+      console.error(err);
+    }
+  };
+  // فاتورة مفتوحة للعرض أو التعديل بتتملي سطورها من غير ما تعدّي على `fetchPrices`، فوحدات
+  // أصنافها ماكانتش بتتحمّل: خانة الوحدة بتبان من غير اسم الأساسية، وتغيير الوحدة كان بيحسب
+  // السعر بمعامل ١ لأن المعامل مش معروف.
+  useEffect(() => {
+    lines.forEach((l) => { if (l.item_id) fetchUnits(l.item_id); });
+  }, [lines]); // eslint-disable-line react-hooks/exhaustive-deps
 
   /**
    * تحذير القص — مرة واحدة لكل محاولة، مش لكل ضغطة زرار.
@@ -1317,7 +1339,13 @@ export default function Invoices() {
           // The item's own fixed discount is applied automatically.
           const prod = products.find((p) => p.id === value);
           updated.fixed_discount = defaultFixedDiscount(value as number, fresh);
-        } else if ((field === 'tier' || field === 'unit') && l.item_id) {
+        } else if (field === 'unit' && l.item_id) {
+          // **السعر بيتحوّل مع الوحدة، مش بيرجع لسعر الشريحة.** سعر المتر ١٠ ⇒ القطعة (٣
+          // متر) ٣٠ — ولو البياع كان كاتب سعر بإيده بيفضل نفس السعر محسوب بالوحدة الجديدة
+          // بدل ما يتمسح. والإجمالي = الكمية × السعر بالوحدة اللي اتختارت.
+          updated.unit_price = convertUnitPrice(l.unit_price || 0,
+            unitFactor(l.item_id, l.unit), unitFactor(l.item_id, updated.unit));
+        } else if (field === 'tier' && l.item_id) {
           updated.unit_price = resolvePrice(l.item_id, updated.tier, updated.unit);
         }
         return updated;
@@ -1455,7 +1483,10 @@ export default function Invoices() {
     if (!itemId || !warehouseId) return 0;
     const base = availability[warehouseId]?.[itemId] ?? 0;
     const f = unitFactor(itemId, unit) || 1;
-    return f > 0 ? base / f : base;
+    if (f === 1) return base;
+    // لتحت لـ٣ منازل (زي عمود الكمية): ٥٠ قطعة ÷ معامل المتر ٠٫٣٣٣٣٣٣٣٣٣ = ١٥٠٫٠٠٠٠٠٠١٥،
+    // والرقم ده لو اتحط في الخانة بيبان كسر غريب. الـ1e-6 عشان ١٥٠ مايبقاش ١٤٩٫٩٩٩.
+    return Math.floor((base / f) * 1000 + 1e-6) / 1000;
   };
 
   /**
@@ -1946,6 +1977,7 @@ export default function Invoices() {
   // بيلمسها غير وقت الرسم.
   const lineColumns = buildLineColumns({
     viewOnly, warehouses, totalPoints, pointValues, productName, saleUnitOptions,
+    availabilityHint,
     saleLineNet, linePoints, checkedQuantity, handleLineChange, handleRemoveLine,
     advanceFrom, setDocWarehouseId, setPanelItemId, hidePoints: isFactory, isBonus,
     productCode: (id) => products.find((p) => p.id === id)?.code,
@@ -2287,7 +2319,10 @@ function couponsTotal(inv: any): number {
         name: productName(l.item_id),
         itemId: l.item_id,
         quantity: l.quantity,
-        unit: l.unit,
+        // السطر اللي اتباع بالأساسية وحدته null — والورقة بتطبع اسمها («متر»/«قطعة») بدل
+        // شرطة، عشان العميل يعرف الكمية دي بإيه.
+        unit: l.unit || unitsCache[l.item_id]?.find((u) => u.is_base)?.name
+          || products.find((p) => p.id === l.item_id)?.unit_of_measure || null,
         unit_price: l.unit_price,
         discount_pct: l.discount_pct,
         points: (pointValues[l.item_id] || 0) * Number(l.quantity || 0),

@@ -55,6 +55,7 @@ import { TabModal } from '../components/TabModal';
 import WarehouseGate from '../components/WarehouseGate';
 import TreasuryGate, { useTreasuryGate } from '../components/TreasuryGate';
 import { money, numeralsLocale } from '../utils/money';
+import { convertUnitPrice, factorOf, unitSelectOptions } from '../utils/units';
 import { fingerprint, verdictOnLeave } from '../utils/unsavedWork';
 import { applyPct, combinePct, splitLineDiscount } from '../utils/discounts';
 import { QTY_DATA_ATTR, flashExistingItem } from '../utils/duplicateItem';
@@ -758,15 +759,7 @@ export default function Purchases() {
    * سطورها فوراً، والوحدات بتيجي بعدها بنداء تاني. فالخيار الوحيد بقى مضمون إنه موجود من
    * غير انتظار، واسمه اسم الوحدة الحقيقي لما تعرف، و«الأساسية» لغاية ما تعرف.
    */
-  const unitOptions = (itemId: number | null) => {
-    const units = unitsCache[itemId || 0] || [];
-    const base = units.find((u) => u.is_base);
-    return [
-      { value: '__base__', label: base?.name || 'الأساسية' },
-      ...units.filter((u) => !u.is_base)
-        .map((u) => ({ value: u.name, label: `${u.name} (×${u.factor})` })),
-    ];
-  };
+  const unitOptions = (itemId: number | null) => unitSelectOptions(unitsCache[itemId || 0]);
 
   /**
    * **خصم الشرا الثابت لكل خط** (طلب العميل ٢٠٢٦-٠٩-٣٠): بولي ٥٢٫٥، وأبيض وجوان ٣٤٫٥.
@@ -844,6 +837,12 @@ export default function Purchases() {
           updatedItem.fixed_discount_pct = defaultFixedDisc(value);
           updatedItem.warehouse_id = updatedItem.warehouse_id ?? stickyWarehouseId ?? lineWarehouses[0]?.id ?? null;
           if (value) fetchUnits(value);
+        } else if (field === 'unit' && item.item_id) {
+          // السعر بيتحوّل مع الوحدة: سعر المتر ١٠ ⇒ القطعة (٣ متر) ٣٠. من غيره اختيار «قطعة»
+          // كان بيسيب سعر المتر على سطر بالقطع، والإجمالي يطلع تلت الحقيقي.
+          const units = unitsCache[item.item_id];
+          updatedItem.unit_price = convertUnitPrice(item.unit_price || 0,
+            factorOf(units, item.unit), factorOf(units, value));
         }
         return updatedItem;
       }

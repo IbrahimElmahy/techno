@@ -8,6 +8,7 @@ import { keepInView } from '../utils/keepInView';
 import { normalizeAr } from './ListToolbar';
 import { TabModal } from './TabModal';
 import { qty, money, numeralsLocale } from '../utils/money';
+import { dualQty, lengthUnits } from '../utils/units';
 import { useCategoryTree, withChildren } from '../hooks/useCategoryTree';
 import './ProductPickerModal.css';
 
@@ -746,6 +747,11 @@ export default function ProductPickerModal({
                     && Number(p.purchase_price) > 0 ? Number(p.purchase_price) : null;
                   const pack = p.pieces_per_unit && Number(p.pieces_per_unit) > 0
                     ? `${qty(p.pieces_per_unit)} ${p.piece_name || 'قطعة'}` : null;
+                  // «القطعة = N متر»: المتاح بيتقال بالوحدتين («١٥٠ متر = ٥٠ قطعة») — اللي
+                  // بيبيع بالقطعة من صنف بيتعدّ بالمتر محتاج يعرف هو عنده كام قطعة.
+                  const mpp = Number(p.meters_per_piece || 0);
+                  const both = mpp > 0 && level !== null
+                    ? dualQty(available as number, lengthUnits(p.unit_of_measure, mpp)) : null;
                   return (
                     <div key={p.id}
                       ref={(el) => { rowRefs.current[i] = el; }}
@@ -779,6 +785,7 @@ export default function ProductPickerModal({
                           <b className="ppk-name">{p.name}</b>
                           {p.unit_of_measure && <span className="ppk-unit">{p.unit_of_measure}</span>}
                           {pack && <span className="ppk-unit">التعبئة: {pack}</span>}
+                          {mpp > 0 && <span className="ppk-unit">القطعة = {qty(mpp)} متر</span>}
                           {level === 'low' && <span className="ppk-tag low">رصيد محدود</span>}
                           {level === 'zero' && <span className="ppk-tag zero">غير متاح في المخزن</span>}
                           {p.is_serialized && <span className="ppk-tag info">بسيريال</span>}
@@ -786,8 +793,9 @@ export default function ProductPickerModal({
                       </div>
                       <div className="ppk-figs">
                         {availableFor && (
-                          <div className={`ppk-box avail ${level ?? ''}`}>
+                          <div className={`ppk-box avail ${level ?? ''}`} title={both ?? undefined}>
                             <span>المتاح</span><b>{level === null ? '—' : qty(available)}</b>
+                            {both && <span style={{ fontSize: 11, whiteSpace: 'nowrap' }}>{both}</span>}
                           </div>
                         )}
                         <div className="ppk-box price" title={priceLabel}>

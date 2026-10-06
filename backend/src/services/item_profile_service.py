@@ -233,6 +233,15 @@ def _doc_mine(model, branch_id: int | None):
     return or_(model.branch_id == branch_id, model.branch_id.is_(None))
 
 
+def _length_str(db: Session, item: Item) -> str | None:
+    from src.models.catalog import ItemUnit
+    from src.services import uom_service
+
+    rows = db.scalars(select(ItemUnit).where(ItemUnit.item_id == item.id)).all()
+    n = uom_service.meters_per_piece(item.unit_of_measure, rows)
+    return str(n) if n is not None else None
+
+
 def balance(db: Session, item_id: int, *, branch_id: int | None = None) -> dict:
     """One item's prices and its quantity in EVERY stock location — the stock-enquiry screen.
 
@@ -302,7 +311,8 @@ def balance(db: Session, item_id: int, *, branch_id: int | None = None) -> dict:
     )
     # "Average" here is the average cost actually paid, which is what a valuation is read against.
     bought_qty, bought_value = db.execute(
-        select(func.coalesce(func.sum(PurchaseInvoiceLine.quantity), 0),
+        select(func.coalesce(
+                   func.sum(PurchaseInvoiceLine.quantity * PurchaseInvoiceLine.unit_factor), 0),
                func.coalesce(func.sum(PurchaseInvoiceLine.line_total), 0))
         .join(PurchaseInvoice, PurchaseInvoice.id == PurchaseInvoiceLine.invoice_id)
         .where(PurchaseInvoiceLine.item_id == item_id)
@@ -314,6 +324,8 @@ def balance(db: Session, item_id: int, *, branch_id: int | None = None) -> dict:
         "item": {
             "id": item.id, "code": item.code, "name": item.name,
             "category": item.category, "unit_of_measure": item.unit_of_measure,
+            # «القطعة = N متر» — شباك الرصيد بيعرض الإجمالي بالوحدتين.
+            "meters_per_piece": _length_str(db, item),
         },
         "prices": {
             "last_sale": str(to_money(last_sale)) if last_sale is not None else None,
@@ -395,8 +407,11 @@ def profile(db: Session, item_id: int, *, limit: int = 200,
         }
         for ln, inv in sale_rows
     ]
+    # بالوحدة الأساسية (الكمية × معامل الوحدة): سطر اتباع بالقطعة من صنف بيتعدّ بالمتر لازم
+    # يتجمع أمتار، وإلا «إجمالي المبيع» ومتوسط السعر بيخلطوا قطع على أمتار.
     sold_qty, sold_value = db.execute(
-        select(func.coalesce(func.sum(SalesInvoiceLine.quantity), 0),
+        select(func.coalesce(
+                   func.sum(SalesInvoiceLine.quantity * SalesInvoiceLine.unit_factor), 0),
                func.coalesce(func.sum(SalesInvoiceLine.line_total), 0))
         .join(SalesInvoice, SalesInvoice.id == SalesInvoiceLine.invoice_id)
         .where(SalesInvoiceLine.item_id == item_id)
@@ -426,7 +441,8 @@ def profile(db: Session, item_id: int, *, limit: int = 200,
         for ln, inv in purchase_rows
     ]
     bought_qty, bought_value = db.execute(
-        select(func.coalesce(func.sum(PurchaseInvoiceLine.quantity), 0),
+        select(func.coalesce(
+                   func.sum(PurchaseInvoiceLine.quantity * PurchaseInvoiceLine.unit_factor), 0),
                func.coalesce(func.sum(PurchaseInvoiceLine.line_total), 0))
         .join(PurchaseInvoice, PurchaseInvoice.id == PurchaseInvoiceLine.invoice_id)
         .where(PurchaseInvoiceLine.item_id == item_id)

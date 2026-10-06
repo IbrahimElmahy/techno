@@ -18,7 +18,7 @@ from src.lib.doc_order import newest_first
 from src.auth.dependencies import CurrentUser, require_capability
 from src.auth.rbac import CAP_SALES_READ
 from src.core.db import get_db
-from src.core.money import ZERO, to_money, to_qty
+from src.core.money import ZERO, to_factor, to_money, to_qty
 from src.lib import discounts
 from src.models.catalog import Item
 from src.models.customer import Customer
@@ -205,7 +205,7 @@ def create_order(
         db.add(TradeOrderLine(
             order_id=order.id, item_id=raw.item_id, quantity=quantity,
             unit_price=to_money(raw.unit_price), unit=raw.unit,
-            unit_factor=to_qty(raw.unit_factor) if raw.unit_factor is not None else None,
+            unit_factor=to_factor(raw.unit_factor) if raw.unit_factor is not None else None,
             discount_pct=line_pct, line_total=line_total, notes=raw.notes))
     order.gross = gross
     # وخصم المحل الثابت معاهم — الورقة لازم تقول الرقم اللي الفاتورة هتقوله، والفاتورة

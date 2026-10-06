@@ -39,6 +39,7 @@ import { printReport } from '../print/reportSheet';
 import { QTY_DATA_ATTR } from '../utils/duplicateItem';
 import { addPickedSequentially, type PickResult } from '../utils/pickMany';
 import { money, numeralsLocale, qty } from '../utils/money';
+import { unitSelectOptions } from '../utils/units';
 import './docs.extra.css';
 
 /**
@@ -259,7 +260,8 @@ export default function Orders() {
             // اختيار «كرتونة» بيسيب سعر القطعة، والورقة تطلع بسعر مالوش علاقة باللي جنبه.
             const factor = (unitsCache[l.item_id || 0] || [])
               .find((u) => u.name === unit)?.factor ?? 1;
-            return { ...l, unit, unit_price: storedPrice(l.item_id) * factor };
+            // لقرشين: سعر القطعة × معامل المتر (١÷٣) بيطلع ٩٫٩٩٩٩٩٩٩٩ من غير تقريب.
+            return { ...l, unit, unit_price: Math.round(storedPrice(l.item_id) * factor * 100) / 100 };
           }))}
           options={unitOptions(line.item_id)} />
       ) },
@@ -334,15 +336,7 @@ export default function Orders() {
     } catch (err) { console.error(err); }
   };
 
-  const unitOptions = (itemId?: number) => {
-    const units = unitsCache[itemId || 0] || [];
-    const base = units.find((u) => u.is_base);
-    return [
-      { value: '__base__', label: base?.name || 'الأساسية' },
-      ...units.filter((u) => !u.is_base)
-        .map((u) => ({ value: u.name, label: `${u.name} (×${u.factor})` })),
-    ];
-  };
+  const unitOptions = (itemId?: number) => unitSelectOptions(unitsCache[itemId || 0]);
 
   const unitFactor = (l: DraftLine) => (l.unit
     ? (unitsCache[l.item_id || 0] || []).find((u) => u.name === l.unit)?.factor ?? 1

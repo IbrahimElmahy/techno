@@ -49,6 +49,7 @@ import { PrintOptions, loadPrintOptions } from '../print/printOptions';
 import dayjs, { Dayjs } from 'dayjs';
 import { TabModal } from '../components/TabModal';
 import { money, numeralsLocale } from '../utils/money';
+import { convertUnitPrice, factorOf, unitSelectOptions } from '../utils/units';
 import { applyPct, combinePct, splitLineDiscount } from '../utils/discounts';
 import { QTY_DATA_ATTR } from '../utils/duplicateItem';
 import { addPickedSequentially, type PickResult } from '../utils/pickMany';
@@ -510,24 +511,26 @@ export default function PurchaseReturns({ embedded }: { embedded?: { onExit: () 
 
   /** وحدات الأصناف — نفس المحرك اللي في الفاتورة. */
   const [unitsCache, setUnitsCache] = useState<Record<number, any[]>>({});
+  const unitsRequestedRef = useRef<Set<number>>(new Set());
   const fetchUnits = async (itemId: number) => {
-    if (unitsCache[itemId]) return;
+    if (unitsCache[itemId] || unitsRequestedRef.current.has(itemId)) return;
+    unitsRequestedRef.current.add(itemId);
     try {
       const res = await api.get(`/api/v1/items/${itemId}/units`);
       setUnitsCache((prev) => ({ ...prev, [itemId]: (res.data.units || []).map((u: any) => ({
         name: u.name, factor: parseFloat(u.factor), is_base: u.is_base })) }));
-    } catch { /* الوحدات مش معروفة — الخيار الأساسي لوحده كفاية */ }
+    } catch {
+      unitsRequestedRef.current.delete(itemId);
+      /* الوحدات مش معروفة — الخيار الأساسي لوحده كفاية */
+    }
   };
+  // المردود المتفتح من جديد بيتملي من غير ما يعدّي على الإضافة، فوحداته ماكانتش بتتجاب —
+  // وتغيير الوحدة كان بيحوّل السعر بمعامل ١.
+  useEffect(() => {
+    returnLines.forEach((l) => { if (l.item_id) fetchUnits(l.item_id); });
+  }, [returnLines]); // eslint-disable-line react-hooks/exhaustive-deps
   /** فيها **دايماً** خيار الوحدة الأساسية — من غيره antd بتعرض المفتاح الداخلي للمستخدم. */
-  const unitOptions = (itemId: number | null) => {
-    const units = unitsCache[itemId || 0] || [];
-    const base = units.find((u: any) => u.is_base);
-    return [
-      { value: '__base__', label: base?.name || 'الأساسية' },
-      ...units.filter((u: any) => !u.is_base)
-        .map((u: any) => ({ value: u.name, label: `${u.name} (×${u.factor})` })),
-    ];
-  };
+  const unitOptions = (itemId: number | null) => unitSelectOptions(unitsCache[itemId || 0]);
 
   /**
    * صافي السطر — نفس ترتيب الفاتورة: خصم السطر بينزل على سطره، والسطور بتتجمع، وخصم
@@ -729,8 +732,14 @@ export default function PurchaseReturns({ embedded }: { embedded?: { onExit: () 
         <Select size="small" style={{ width: '100%' }} placeholder="الوحدة"
           disabled={viewOnly}
           value={line.unit ?? '__base__'}
-          onChange={(v) => setReturnLines((prev) => prev.map((l) => (
-            l.key === line.key ? { ...l, unit: v === '__base__' ? null : v } : l)))}
+          onChange={(v) => setReturnLines((prev) => prev.map((l) => {
+            if (l.key !== line.key) return l;
+            const unit = v === '__base__' ? null : v;
+            // السعر بيتحوّل مع الوحدة (سعر المتر × طول القطعة = سعر القطعة) — نفس الشرا.
+            const units = unitsCache[l.item_id || 0];
+            return { ...l, unit, unit_price: convertUnitPrice(l.unit_price || 0,
+              factorOf(units, l.unit), factorOf(units, unit)) };
+          }))}
           options={unitOptions(line.item_id)} />
       ) },
     { key: 'qty', title: 'الكمية', width: 90, locked: true,
