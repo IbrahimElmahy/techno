@@ -103,8 +103,10 @@ const FinanceReports: React.FC = () => {
     );
   };
 
+  // `grid` = شبكة الورق المشتركة (خطوط غامقة ورأس أسود). من غيرها الجدول كان بيطلع أرقام
+  // عايمة من غير ولا خط — على الطابعة الأبيض والأسود مابتبانش فين السطر بيخلص.
   const linesTable = (rows: ReportLine[]) =>
-    `<table><thead><tr><th>الحساب</th><th>القيمة</th></tr></thead><tbody>${
+    `<table class="grid"><thead><tr><th>الحساب</th><th>القيمة</th></tr></thead><tbody>${
       rows.map((r) => `<tr><td>${r.name || r.code || r.account_id}</td><td class="num">${money(r.amount)}</td></tr>`).join('') ||
       '<tr><td colspan="2">لا توجد حركة</td></tr>'
     }</tbody></table>`;
@@ -279,11 +281,11 @@ const FinanceReports: React.FC = () => {
                 'قائمة الدخل',
                 `<h3>الإيرادات</h3>${linesTable(income.income)}
                  <h3>المصروفات</h3>${linesTable(income.expenses)}
-                 <table><tfoot>
+                 <table class="totals"><tbody>
                   <tr><td>إجمالي الإيرادات</td><td class="num">${money(income.total_income)}</td></tr>
                   <tr><td>إجمالي المصروفات</td><td class="num">${money(income.total_expenses)}</td></tr>
                   <tr><td>صافي الربح</td><td class="num">${money(income.net_profit)}</td></tr>
-                 </tfoot></table>`
+                 </tbody></table>`
               )
             }
           >

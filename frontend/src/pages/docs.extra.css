@@ -13,7 +13,9 @@
 }
 .sale-doc .sale-grid.ant-table-wrapper .ant-table-thead > tr > th {
   background: #1e293b;
-  color: #fff;
+  /* `!important` عشان يغلب `color: #303030 !important` اللي في `index.css` على كل رؤوس
+     جداول antd — من غيره الرأس هنا كان رمادي غامق على كحلي، يعني مش باين خالص. */
+  color: #fff !important;
   font-weight: 700;
   border-bottom: none;
   border-inline-end-color: #334155;

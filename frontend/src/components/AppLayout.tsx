@@ -31,6 +31,7 @@ import ShortcutsDock from './ShortcutsDock';
 import { useAuth, RoleName, roleForAccess } from './AuthProvider';
 import RowDensityControl from './RowDensity';
 import NumeralsControl from './Numerals';
+import ContrastToggle, { ContrastHeaderButton } from './ContrastTheme';
 import { bindNumeralsUser } from '../utils/numerals';
 import { useFullscreen } from './FullscreenToggle';
 import Logo from './Logo';
@@ -262,6 +263,16 @@ export default function AppLayout() {
       ),
     },
     {
+      // «ألوان واضحة / خط أكبر» — نفس المفتاح اللي في زرار العين فوق، بالاسم كامل هنا
+      // للي بيدوّر في الإعدادات مش في الأيقونات.
+      key: 'contrast',
+      label: (
+        <div onClick={(e) => e.stopPropagation()} style={{ padding: '2px 0' }}>
+          <ContrastToggle />
+        </div>
+      ),
+    },
+    {
       key: 'fullscreen',
       icon: fullscreen ? <FullscreenExitOutlined /> : <FullscreenOutlined />,
       label: fullscreen ? 'خروج من ملء الشاشة' : 'ملء الشاشة',
@@ -443,6 +454,9 @@ export default function AppLayout() {
                 الأقسام، وكل بكسل بياخده حاجة تانية بيتاخد منها. */}
             {/* فلتر الفرع — اللي فوق الفروع بس (المالك والأدمن). */}
             {(user?.role === 'owner' || user?.role === 'system_admin') && <BranchFilter />}
+            {/* زرار العين ظاهر على طول (مش جوّه القايمة بس): اللي نظره ضعيف هو بالظبط اللي
+                مش هيلاقي مفتاح صغير مستخبي في قايمة. */}
+            <ContrastHeaderButton />
             <Dropdown menu={{ items: userDropdownItems }} placement="bottomLeft">
               <Tooltip title={user?.name}>
                 <Avatar size={28} style={{ backgroundColor: '#6AB42D', cursor: 'pointer' }}

@@ -88,7 +88,7 @@ export function printItemsWithLogs<T>(
     const head = reportTableHtml(itemColumns, [row]);
     const body = log.length
       ? reportTableHtml(LOG_COLUMNS, log)
-      : '<p style="color:#666;margin:4px 0 12px">مفيش حركات في الفترة دي.</p>';
+      : '<p style="color:#2b2b2b;margin:4px 0 12px">مفيش حركات في الفترة دي.</p>';
     return `<h3 style="margin:16px 0 6px;font-size:14px">${esc(name)}</h3>${head}${body}`;
   }).join('');
 

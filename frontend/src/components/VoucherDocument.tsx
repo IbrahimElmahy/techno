@@ -5,7 +5,9 @@ import Logo, { BRAND } from './Logo';
 import { printDocument } from '../print/brand';
 import { amountToArabicWords } from '../utils/arabicNumberWords';
 import { COMPANY, companyLines } from '../config/company';
-import { money as n } from '../utils/money';
+// الورقة كلها أرقام إنجليزي (زي a5) — مش إعداد أرقام الشاشة، وإلا المبالغ بتطلع عربي
+// جنب كميات وتواريخ إنجليزي في نفس الورقة (ملاحظة العميل ٢٠٢٦-١٠-٠٦).
+import { printMoney as n } from '../print/reportSheet';
 
 /**
  * A real cash voucher (سند) — receipt, payment, expense, rep hand-over or treasury transfer.
@@ -94,11 +96,12 @@ function rows(d: VoucherDoc): [string, string][] {
 /** Print this voucher on the shared company letterhead. */
 export function printVoucher(d: VoucherDoc): void {
   const [a, b, c] = SIGNATURES[d.kind];
+  // المبلغ أسود في إطار أسود: الأخضر على ليزر أبيض وأسود بيطلع رمادي باهت، وده أهم رقم
+  // في السند. الشرح عند PRINT_COLORS في print/brand.ts.
   const body = `
-    <div style="margin:18px 0;padding:16px 18px;border:2px solid ${BRAND.green};
-                border-radius:10px;background:#f7fbf8">
-      <div style="font-size:13px;color:#5d6f64">المبلغ</div>
-      <div style="font-size:30px;font-weight:800;color:${BRAND.green}">${n(d.amount)}</div>
+    <div style="margin:18px 0;padding:16px 18px;border:2px solid #000;border-radius:10px">
+      <div style="font-size:14px;color:#2b2b2b;font-weight:700">المبلغ</div>
+      <div style="font-size:30px;font-weight:800;color:#000">${n(d.amount)}</div>
       <div style="margin-top:8px;font-size:14px;font-weight:700">
         ${amountToArabicWords(d.amount)}
       </div>

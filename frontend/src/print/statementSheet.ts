@@ -210,10 +210,10 @@ const STATEMENT_CSS = `
     display: flex; flex-wrap: wrap; gap: 2px 18px; align-items: baseline;
     margin: 2px 0 6px; font-size: 12.5px;
   }
-  .st-head .k { color: #5d6f64; font-weight: 600; margin-inline-end: 5px; }
+  .st-head .k { color: #2b2b2b; font-weight: 700; margin-inline-end: 5px; }
   .st-head .acc { font-size: 14.5px; font-weight: 800; }
-  .st-filters, .st-extra { font-size: 11px; color: #3a4d41; margin: 0 0 5px; }
-  body.compact table.grid.stmt th { padding: 4px 6px; font-size: 12px; white-space: nowrap; }
+  .st-filters, .st-extra { font-size: 12px; color: #1a1a1a; margin: 0 0 5px; }
+  body.compact table.grid.stmt th { padding: 4px 6px; font-size: 12.5px; white-space: nowrap; }
   body.compact table.grid.stmt td {
     padding: 3px 6px; font-size: 12.5px; line-height: 1.35; vertical-align: top;
   }
@@ -223,24 +223,26 @@ const STATEMENT_CSS = `
   table.grid.stmt td.n {
     text-align: right; direction: ltr; font-variant-numeric: tabular-nums;
   }
-  table.grid.stmt td.s { text-align: center; color: #5d6f64; }
+  table.grid.stmt td.s { text-align: center; color: #1a1a1a; }
   table.grid.stmt td.d { text-align: center; direction: ltr; }
   table.grid.stmt td.b, table.grid.stmt th.b {
     text-align: right; white-space: normal; overflow-wrap: anywhere;
   }
-  table.grid.stmt tr.open td { font-weight: 700; background: #f2f9f3; }
+  table.grid.stmt tr.open td {
+    font-weight: 800; background: #e6e6e6; border-bottom: 1.5px solid #000;
+  }
   table.grid.stmt tr.total td {
-    font-weight: 800; border-top: 2px solid #3a4d41; background: #f2f9f3;
+    font-weight: 800; border-top: 2px solid #000; background: #e6e6e6;
   }
   .st-sum {
-    display: flex; gap: 0; margin-top: 8px; border: 1px solid #9fb8a7; border-radius: 4px;
+    display: flex; gap: 0; margin-top: 8px; border: 1px solid #444; border-radius: 4px;
   }
   .st-sum div {
-    flex: 1; padding: 4px 8px; font-size: 12px; border-inline-start: 1px solid #d9e6dc;
+    flex: 1; padding: 4px 8px; font-size: 12.5px; border-inline-start: 1px solid #444;
     display: flex; flex-direction: column; gap: 1px;
   }
   .st-sum div:first-child { border-inline-start: none; }
-  .st-sum span { color: #5d6f64; }
+  .st-sum span { color: #2b2b2b; }
   .st-sum b { font-size: 13px; white-space: nowrap; }
   .st-sum .close b { font-size: 14px; }
   .st-extra { margin-top: 5px; }

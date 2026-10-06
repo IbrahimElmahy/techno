@@ -163,15 +163,34 @@ body,
  * اللي بتتطبع من المتصفح على طول.)
  */
 @media print {
+  /* خطوط غامقة مصمتة (#444) مش الأخضر الرمادي الفاتح — على ليزر أبيض وأسود الفاتح كان
+     بيطلع متقطّع أو مابيطلعش (٢٠٢٦-١٠-٠٦). والكلام كله أسود. */
   .ant-table-wrapper .ant-table-thead > tr > th,
   .ant-table-wrapper .ant-table-tbody > tr > td,
   .ant-table-wrapper .ant-table-summary > tr > td,
-  .ant-table-wrapper .ant-table-summary > tr > th {
-    border: 1px solid #9fb39a !important;
+  .ant-table-wrapper .ant-table-summary > tr > th,
+  .entry-grid thead th,
+  .entry-grid tbody td,
+  .entry-grid tfoot td {
+    border: 1px solid #444 !important;
+    color: #000 !important;
   }
-  .ant-table-wrapper .ant-table-thead > tr > th {
+  /* الرأس: أسود تقيل على رمادي فاتح ومقفول بخط أسود. أي رأس غامق على الشاشة (زي جدول
+     البيع الكحلي بكلام أبيض) بيتقلب هنا — من غير خلفيات الأبيض على الكحلي بيطلع أبيض
+     على أبيض. */
+  .ant-table-wrapper .ant-table-thead > tr > th,
+  .entry-grid thead th,
+  .sale-grid thead th {
+    background: #e6e6e6 !important;
+    color: #000 !important;
+    font-weight: 800;
+    border-bottom: 2px solid #000 !important;
     -webkit-print-color-adjust: exact;
     print-color-adjust: exact;
+  }
+  .ant-tag {
+    color: #000 !important;
+    border-color: #444 !important;
   }
 }
 /*

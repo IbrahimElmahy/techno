@@ -5,7 +5,9 @@ import Logo, { BRAND } from './Logo';
 import { printDocument } from '../print/brand';
 import { PrintOptions, loadPrintOptions } from '../print/printOptions';
 import { COMPANY, companyLines } from '../config/company';
-import { money as n, numeralsLocale } from '../utils/money';
+// الورقة كلها أرقام إنجليزي (زي a5) — مش إعداد أرقام الشاشة، وإلا المبالغ بتطلع عربي
+// جنب كميات وتواريخ إنجليزي في نفس الورقة (ملاحظة العميل ٢٠٢٦-١٠-٠٦).
+import { printMoney as n } from '../print/reportSheet';
 
 /**
  * A real-looking invoice — used for BOTH sales and purchase invoices, on screen and in print.
@@ -218,7 +220,7 @@ export function printInvoice(d: InvoiceDoc, opts?: PrintOptions): void {
   const warehouses = new Set(d.lines.map((l) => l.warehouse).filter(Boolean));
   const anyWh = warehouses.size > 1;
   const cols = 6 + (anyWh ? 1 : 0) + (anyDisc ? 1 : 0) + (anyPts ? 1 : 0);
-  const pts = (v: any) => Number(v || 0).toLocaleString(numeralsLocale(), { maximumFractionDigits: 3 });
+  const pts = (v: any) => Number(v || 0).toLocaleString('en-US', { maximumFractionDigits: 3 });
   const rows = d.lines.map((l, i) => `
     <tr><td>${i + 1}</td><td style="text-align:right">${l.name}</td>
     ${anyWh ? `<td>${l.warehouse || '-'}</td>` : ''}
@@ -300,7 +302,7 @@ export default function InvoiceDocument({
   // (030) Show the warehouse column only when the document spans more than one.
   const anyLineWarehouse =
     new Set(doc.lines.map((l) => l.warehouse).filter(Boolean)).size > 1;
-  const pts = (v: any) => Number(v || 0).toLocaleString(numeralsLocale(), { maximumFractionDigits: 3 });
+  const pts = (v: any) => Number(v || 0).toLocaleString('en-US', { maximumFractionDigits: 3 });
   // **الحساب كامل، مش رقم الورقة لوحدها.**
   //
   // العميل اللي عليه حساب من قبل بيقرا «الإجمالي المستحق» على إنه كل اللي عليه، فبيدفع

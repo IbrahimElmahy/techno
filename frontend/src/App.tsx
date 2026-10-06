@@ -76,6 +76,7 @@ import Login from './pages/Login';
 import UpdateBanner from './components/UpdateBanner';
 import { setApiBaseURL } from './api/client';
 import { useNumerals } from './utils/numerals';
+import { HC_THEME, UiThemeProvider, useUiThemeState } from './components/ContrastTheme';
 
 export default function App() {
   const [configLoaded, setConfigLoaded] = useState(false);
@@ -91,6 +92,10 @@ export default function App() {
    * النصّ مكتوبة مابتضيعش).
    */
   useNumerals();
+
+  // «ألوان واضحة / خط أكبر» — الشرح عند `ContrastTheme.tsx`. الحالة هنا لأن التوكنز تحت.
+  const uiTheme = useUiThemeState();
+  const hc = uiTheme.theme === 'hc';
 
   useEffect(() => {
     // Load config from Electron IPC
@@ -139,10 +144,14 @@ export default function App() {
   }
 
   return (
+    <UiThemeProvider value={uiTheme}>
     <ConfigProvider
       direction="rtl"
       locale={AR_LOCALE}
       theme={{
+        // الشكل الواضح بيتدمج فوق العادي: اللي مذكور فيه بيغلب، والباقي (الخط والزوايا)
+        // زي ما هو.
+        components: hc ? HC_THEME.components : undefined,
         token: {
           colorPrimary: '#6AB42D',       // Primary green
           colorInfo: '#6AB42D',
@@ -173,6 +182,7 @@ export default function App() {
           // ارتفاع السطر — الحروف العربية ليها نقط وذيول، والسطر الضيق
           // بيخلّيها تتلزق في اللي فوقها وتحتها.
           lineHeight: 1.6,
+          ...(hc ? HC_THEME.token : {}),
         },
       }}
     >
@@ -196,5 +206,6 @@ export default function App() {
       </ColumnResizeProvider>
       </DensityProvider>
     </ConfigProvider>
+    </UiThemeProvider>
   );
 }

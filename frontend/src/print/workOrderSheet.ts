@@ -89,45 +89,44 @@ function qty(v: string | number): string {
 const SHEET_CSS = `
 <style>
   table.wo { width: 100%; border-collapse: collapse; margin-top: 6px; }
+  /* رأس الجدول أسود على رمادي فاتح ومقفول بخط أسود — على الشاشة وعلى الورق بنفس الشكل.
+     كان أبيض على أخضر، والطابعة الأبيض والأسود بتطبع من غير خلفيات فكان بيطلع فاضي.
+     الشرح كامل عند PRINT_COLORS في brand.ts. */
   table.wo > thead > tr > th {
-    background: #3FA92B; color: #fff; padding: 6px 8px; font-size: 12px;
-    border: 1px solid #3FA92B; text-align: center;
+    background: #e6e6e6; color: #000; padding: 6px 8px; font-size: 12.5px; font-weight: 800;
+    border: 1px solid #444; border-bottom: 2px solid #000; text-align: center;
   }
-  /* على الورق الخلفية مابتتطبعش افتراضياً — كتابة غامقة على فاتح بدل الأبيض على الأخضر. */
   @media print {
-    table.wo > thead > tr > th {
-      background: #e3efe6; color: #111; border: 1px solid #7fa58c; font-weight: 800;
-      -webkit-print-color-adjust: exact; print-color-adjust: exact;
-    }
+    table.wo > thead > tr > th { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   }
   table.wo > tbody > tr > td {
-    border: 1px solid #cfe0d4; padding: 6px 8px; font-size: 12px; vertical-align: top;
+    border: 1px solid #444; padding: 6px 8px; font-size: 12.5px; vertical-align: top; color: #000;
   }
   .prod-name { font-weight: 700; font-size: 13px; line-height: 1.5; }
-  .prod-code { color: #5d6f64; font-size: 11px; direction: ltr; display: block; }
-  .kv { margin-top: 5px; font-size: 11.5px; color: #3a4d41; }
-  .kv b { color: #16241c; }
+  .prod-code { color: #2b2b2b; font-size: 11.5px; direction: ltr; display: block; }
+  .kv { margin-top: 5px; font-size: 12px; color: #1a1a1a; }
+  .kv b { color: #000; }
   /* خانة الكتابة بالقلم — سطر مفتوح بعرض معروف، مش مربع فاضي يتلخبط مع الجدول. */
   .pen {
-    display: inline-block; min-width: 74px; border-bottom: 1.4px dotted #7a8f81;
+    display: inline-block; min-width: 74px; border-bottom: 1.4px dotted #333;
     height: 17px; vertical-align: -4px;
   }
   table.mat { width: 100%; border-collapse: collapse; }
   table.mat th {
-    font-size: 10.5px; color: #5d6f64; font-weight: 700; text-align: center;
-    border-bottom: 1px solid #cfe0d4; padding: 2px 4px; background: #f4faf5;
+    font-size: 11.5px; color: #000; font-weight: 800; text-align: center;
+    border-bottom: 1px solid #444; padding: 2px 4px; background: #eee;
   }
   table.mat td {
-    font-size: 11.5px; padding: 3px 4px; border-bottom: 1px dashed #e3eee6;
+    font-size: 12px; padding: 3px 4px; border-bottom: 1px dashed #888;
     text-align: center;
   }
   table.mat td.nm { text-align: right; font-weight: 600; }
-  table.mat td.cd { direction: ltr; color: #5d6f64; font-size: 10.5px; }
+  table.mat td.cd { direction: ltr; color: #2b2b2b; font-size: 11.5px; }
   table.mat tr:last-child td { border-bottom: none; }
-  .none { color: #95a5a6; font-size: 11.5px; }
+  .none { color: #444; font-size: 12px; }
   .hdr-note {
-    background: #f4faf5; border: 1px solid #cfe0d4; padding: 6px 10px;
-    font-size: 11.5px; color: #3a4d41; margin-top: 8px;
+    background: #f2f2f2; border: 1px solid #444; padding: 6px 10px;
+    font-size: 12px; color: #000; margin-top: 8px;
   }
 </style>`;
 
