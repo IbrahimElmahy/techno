@@ -201,7 +201,7 @@ export default function FreeProduction() {
         notes: notes || null,
         statement1: statement1 || null,
       });
-      message.success('تم تسجيل الإنتاج الحر');
+      message.success('تم تسجيل الانتاج الحر');
       reset();
       load();
     } catch (err: any) {
@@ -318,7 +318,7 @@ export default function FreeProduction() {
             <Button size="small" icon={<ArrowRightOutlined />} onClick={() => setEntryOpen(false)}>
               رجوع للسجل
             </Button>
-            <span className="sale-title"><BuildOutlined /> إنتاج حر</span>
+            <span className="sale-title"><BuildOutlined /> انتاج حر</span>
             <Tag color="blue" style={{ marginInlineEnd: 0 }}>من غير وصفة</Tag>
             <div className="sale-toolbar-row">
               <Button onClick={reset}>تفريغ</Button>
@@ -463,12 +463,12 @@ export default function FreeProduction() {
 
       <ListPage
         icon={<BuildOutlined />}
-        title="إنتاج حر" muted="(من غير وصفة)"
+        title="انتاج حر"
         subtitle="الخامات المنصرفة فعلاً والمنتج الناتج — الكميات زي ما اتقاست، من غير نسب"
         actions={(<>
             <Button data-shortcut="F2" type="primary" icon={<PlusOutlined />} className="sl-create"
               onClick={() => setEntryOpen(true)}>
-              تسجيل إنتاج حر
+              انتاج حر جديد
             </Button>
             <ExportExcelButton
               name="سجل الإنتاج الحر"

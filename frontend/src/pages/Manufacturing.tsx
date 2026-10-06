@@ -168,7 +168,7 @@ export default function Manufacturing() {
   const header: SectionHeader = {
     tabs: [
       { key: 'orders', label: 'أوامر التشغيل', count: ordersTotal },
-      { key: 'recipes', label: 'الوصفات (BOM)', count: boms.length },
+      { key: 'recipes', label: 'نسب انتاج', count: boms.length },
       { key: 'wastage', label: 'مستندات الهالك', count: wastages.length },
     ],
     activeTab: tab as Section,
@@ -322,10 +322,10 @@ function RecipesTab({
           name: payload.name, output_quantity: payload.output_quantity,
           components: payload.components, resources: payload.resources,
         });
-        message.success('تم تحديث الوصفة');
+        message.success('تم تحديث نسب الانتاج');
       } else {
         await api.post('/api/v1/manufacturing/boms', payload);
-        message.success('تم إنشاء الوصفة');
+        message.success('تم إضافة نسب الانتاج');
       }
       setOpen(false);
       reload();
@@ -335,14 +335,14 @@ function RecipesTab({
   const deactivate = async (bom: Bom) => {
     try {
       await api.delete(`/api/v1/manufacturing/boms/${bom.id}`);
-      message.success('تم إلغاء تفعيل الوصفة');
+      message.success('تم إلغاء تفعيل نسب الانتاج');
       reload();
     } catch (err) { console.error(err); }
   };
 
   const columns = [
     { title: 'المنتج', key: 'product', render: (_: any, r: Bom) => itemName(r.product_id) },
-    { title: 'اسم الوصفة', dataIndex: 'name', key: 'name' },
+    { title: 'الاسم', dataIndex: 'name', key: 'name' },
     { title: 'كمية الناتج', dataIndex: 'output_quantity', key: 'oq', render: (q: string) => Number(q) },
     { title: 'الخامات', key: 'comp',
       render: (_: any, r: Bom) => (
@@ -362,7 +362,7 @@ function RecipesTab({
         <Space>
           <Button type="link" icon={<EditOutlined />} onClick={() => openEdit(r)}>تعديل</Button>
           {r.active && (
-            <Popconfirm title="إلغاء تفعيل الوصفة؟" okText="نعم" cancelText="لا"
+            <Popconfirm title="إلغاء تفعيل نسب الانتاج؟" okText="نعم" cancelText="لا"
               onConfirm={() => deactivate(r)}>
               <Button type="link" danger icon={<DeleteOutlined />}>إلغاء تفعيل</Button>
             </Popconfirm>
@@ -373,7 +373,7 @@ function RecipesTab({
 
   // إخفاء وترتيب الأعمدة — نفس المحرك اللي كل الجداول بتستخدمه.
   const recipesTabCols = useTableColumns('mfg-recipes', columns, {
-    export: { name: 'الوصفات', rows: filter.filtered },
+    export: { name: 'نسب انتاج', rows: filter.filtered },
   });
 
   // F3 للبحث — كانت جاية من `ListToolbar`؛ للقسم الظاهر بس.
@@ -385,18 +385,20 @@ function RecipesTab({
     <>
     <ListPage<Section>
       icon={<BuildOutlined />}
-      title="عمليات التصنيع" muted="(الوصفات)"
-      subtitle="نسب الإنتاج — خامات وموارد كل منتج، اللي أوامر التشغيل بتتفجّر منها"
+      // أسامي a5 بالظبط (٢٠٢٦-١٠-٠٦) — «نسب انتاج» في القايمة وعلى الشاشة، عشان اللي
+      // جاي من a5 مايتلخبطش بين «وصفة» و«نسب».
+      title="نسب انتاج"
+      subtitle="خامات كل منتج — «انتاج حسب النسب» بيحسب الخامات المصروفة منها"
       tabs={header.tabs} activeTab={header.activeTab} onTabChange={header.onTabChange}
       actions={(<>
         <Button type="primary" icon={<PlusOutlined />} className="sl-create" onClick={openCreate}>
-          وصفة جديدة
+          إضافة نسب انتاج
         </Button>
         {recipesTabCols.control}
       </>)}
       filters={(<>
         <Input className="sl-f-search" allowClear ref={searchRef}
-          prefix={<SearchOutlined />} placeholder="بحث باسم الوصفة أو المنتج"
+          prefix={<SearchOutlined />} placeholder="بحث بالاسم أو المنتج"
           value={filter.query} onChange={(e) => filter.setQuery(e.target.value)} />
         <Select allowClear showSearch mode="multiple" maxTagCount="responsive" placeholder="المنتج"
           value={filter.values.product_id} onChange={(v) => filter.setValue('product_id', v)}
@@ -416,13 +418,13 @@ function RecipesTab({
         rowKey="id" loading={loading} dataSource={filter.filtered} columns={recipesTabCols.columns}
         pagination={{
           showSizeChanger: true, locale: { items_per_page: '' },
-          showTotal: () => footOf(filter.filtered.length, boms.length, 'وصفة'),
+          showTotal: () => footOf(filter.filtered.length, boms.length, 'منتج'),
         }}
         locale={{ emptyText: 'لا يوجد وصفات بعد' }} />
     </ListPage>
 
       <TabModal centered
-        title={editing ? 'تعديل وصفة' : 'وصفة جديدة'} width={560} open={open}
+        title={editing ? 'تعديل نسب انتاج' : 'نسب انتاج جديدة'} width={560} open={open}
         onCancel={() => setOpen(false)} destroyOnHidden
         footer={<Button type="primary" onClick={() => form.submit()}>حفظ</Button>}
       >
@@ -432,10 +434,10 @@ function RecipesTab({
             <Select showSearch placeholder="اختر المنتج" disabled={!!editing}
               options={products.map((p) => ({ value: p.id, label: `${p.name} (${p.unit_of_measure})` }))} filterOption={searchFilter} filterSort={searchRank} />
           </Form.Item>
-          <Form.Item name="name" label="اسم الوصفة" rules={[{ required: true, message: 'أدخل اسم الوصفة' }]}>
-            <Input placeholder="مثال: وصفة تصنيع الطاولة" />
+          <Form.Item name="name" label="الاسم" rules={[{ required: true, message: 'اكتب الاسم' }]}>
+            <Input placeholder="مثال: نسب كوع ٢ بوصة" />
           </Form.Item>
-          <Form.Item name="output_quantity" label="كمية الناتج من الوصفة (batch)"
+          <Form.Item name="output_quantity" label="الكمية الناتجة"
             rules={[{ required: true, message: 'أدخل كمية الناتج' }]}
             tooltip="عدد وحدات المنتج الناتجة من تشغيل الوصفة مرة واحدة">
             <InputNumber min={0.001} style={{ width: '100%' }} />

@@ -105,7 +105,7 @@ export default function Reports() {
   const shared = { period, range, warehouses, items };
   const TABS: { key: string; label: string; icon: React.ReactNode; dot?: string;
     render: (slots?: Slots) => React.ReactNode }[] = [
-    { key: 'production', label: 'الإنتاج والاستهلاك', icon: <BuildOutlined />,
+    { key: 'production', label: 'تقرير الانتاج', icon: <BuildOutlined />,
       render: (slots) => <ProductionTab {...shared} slots={slots} /> },
     { key: 'inventory', label: 'المخازن (الأرصدة)', icon: <DatabaseOutlined />,
       render: (slots) => <InventoryTab {...shared} slots={slots} /> },

@@ -43,7 +43,7 @@ interface POMaterial { id: number; product_line_id: number | null; item_id: numb
 interface PO {
   id: number; document_number: string; production_date: string | null; state: string;
   external_document_number: string | null; statement1: string | null; notes: string | null;
-  total_cost: string; product_quantity: string; imported_from: string | null;
+  total_cost: string; expense_amount: string; product_quantity: string; imported_from: string | null;
   reversed: boolean; is_reversal: boolean; products: POProduct[]; materials: POMaterial[];
 }
 
@@ -215,7 +215,7 @@ export default function RatioProduction() {
 
   const listColumns = [
     { title: 'التاريخ', dataIndex: 'production_date', key: 'd', width: 105, render: (v: string | null) => (v ? v.slice(0, 10) : '-') },
-    { title: 'الرقم', dataIndex: 'document_number', key: 'n', width: 170,
+    { title: 'مستند رقم', dataIndex: 'document_number', key: 'n', width: 170,
       render: (d: string, r: PO) => (
         <Space size={4} wrap>
           <Tag color="geekblue">{d}</Tag>
@@ -223,11 +223,15 @@ export default function RatioProduction() {
           {r.is_reversal && <Tag color="orange">تراجع</Tag>}
           {r.imported_from === 'a5' && <Tag>a5</Tag>}
         </Space>) },
-    { title: 'رقم الورقة', dataIndex: 'external_document_number', key: 'x', width: 100, render: (v: string | null) => v || '-' },
+    { title: 'رقم الانتاج', dataIndex: 'external_document_number', key: 'x', width: 100, render: (v: string | null) => v || '-' },
     { title: 'المنتجات', key: 'p', ellipsis: true,
       render: (_: unknown, r: PO) => r.products.map((p) => `${itemOf(p.item_id)?.name ?? p.item_id} (${fmtQty(Number(p.quantity))})`).join(' · ') },
-    { title: 'تكلفة الإنتاج', dataIndex: 'total_cost', key: 'c', width: 130, align: 'left' as const, render: (v: string) => <b>{money(v)}</b> },
-    { title: 'البيان', dataIndex: 'statement1', key: 's', ellipsis: true, render: (v: string | null) => v || '-' },
+    // أعمدة سجل a5 بأساميها: اجمالي خامات · مصروفات · اجمالي منتجات · ملاحظات.
+    { title: 'اجمالي خامات', key: 'm', width: 120, align: 'left' as const,
+      render: (_: unknown, r: PO) => money(r.materials.reduce((t, m) => t + Number(m.line_cost || 0), 0)) },
+    { title: 'مصروفات', dataIndex: 'expense_amount', key: 'e', width: 100, align: 'left' as const, render: (v: string) => money(v || 0) },
+    { title: 'اجمالي منتجات', dataIndex: 'total_cost', key: 'c', width: 130, align: 'left' as const, render: (v: string) => <b>{money(v)}</b> },
+    { title: 'ملاحظات', dataIndex: 'statement1', key: 's', ellipsis: true, render: (v: string | null) => v || '-' },
     { title: '', key: 'a', width: 60,
       render: (_: unknown, r: PO) => (r.state === 'done' && !r.reversed && !r.is_reversal ? (
         <Button size="small" type="text" danger icon={<RollbackOutlined />} title="تراجع" onClick={(e) => { e.stopPropagation(); reverse(r); }} />
@@ -262,12 +266,12 @@ export default function RatioProduction() {
                 </Form.Item>
               </Col>
               <Col xs={12} md={4}>
-                <Form.Item label="رقم الورقة" style={{ marginBottom: 0 }}>
+                <Form.Item label="امر تشغيل" style={{ marginBottom: 0 }}>
                   <Input value={docNo} onChange={(e) => setDocNo(e.target.value)} />
                 </Form.Item>
               </Col>
               <Col xs={24} md={10}>
-                <Form.Item label="البيان" style={{ marginBottom: 0 }}>
+                <Form.Item label="ملاحظات" style={{ marginBottom: 0 }}>
                   <Input value={statement} maxLength={200} placeholder="اختياري" onChange={(e) => setStatement(e.target.value)} />
                 </Form.Item>
               </Col>
@@ -340,12 +344,12 @@ export default function RatioProduction() {
       icon={<BuildOutlined />} title="انتاج حسب النسب"
       subtitle="ورقة واحدة زي a5: المنتجات وكمياتها، والخامات بتنزل من النسب، والحفظ بيصرف ويدخّل الإنتاج"
       actions={(<>
-        <Button data-shortcut="F2" type="primary" icon={<PlusOutlined />} className="sl-create" onClick={openEntry}>إنتاج جديد</Button>
+        <Button data-shortcut="F2" type="primary" icon={<PlusOutlined />} className="sl-create" onClick={openEntry}>انتاج جديد</Button>
         <Button icon={<ReloadOutlined />} onClick={load}>تحديث</Button>
       </>)}
       filters={(<>
         <Input className="sl-f-search" allowClear ref={searchRef} prefix={<SearchOutlined />}
-          placeholder="بحث بالرقم أو المنتج أو البيان" value={filter.query} onChange={(e) => filter.setQuery(e.target.value)} />
+          placeholder="بحث بالرقم أو المنتج أو الملاحظات" value={filter.query} onChange={(e) => filter.setQuery(e.target.value)} />
         <DateRangeFilter className="sl-f-dates" value={filter.range} onChange={filter.setRange} />
         <Button className="sl-f-clear" icon={<ClearOutlined />} onClick={filter.reset}>مسح</Button>
       </>)}
