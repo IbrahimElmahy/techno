@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:flutter/material.dart';
 
+import '../api/api_client.dart';
 import '../db/local_db.dart';
 import '../services/auto_sync.dart';
 import '../theme.dart';
@@ -52,6 +53,30 @@ class _HomeScreenState extends State<HomeScreen> {
     super.initState();
     _refresh();
     AutoSync.instance.addListener(_onSync);
+    _boot();
+  }
+
+  /// **المشرف مالوش الشاشة دي.** اللي دخل على نسخة قبل 0.3.18 دوره ماتحفظش، فالتطبيق
+  /// بعد التحديث كان بيفتح له رئيسية المندوب ويزامن معاينات مالوش صلاحية عليها
+  /// («inspection.read not granted to rep_supervisor»). فالدور بيتسأل من السيرفر الأول،
+  /// والمشرف بيتحوّل لشاشته من غير ما يخرج ويدخل.
+  Future<void> _boot() async {
+    var supervisor = await ApiClient.instance.isSupervisor();
+    if (!supervisor) {
+      try {
+        await ApiClient.instance.refreshAppCapabilities();
+        supervisor = await ApiClient.instance.isSupervisor();
+      } catch (_) {/* من غير نت: نكمّل كمندوب زي الأول */}
+    }
+    if (!mounted) return;
+    if (supervisor) {
+      AutoSync.instance.clear();
+      Navigator.of(context).pushAndRemoveUntil(
+        MaterialPageRoute(builder: (_) => const SupervisorHomeScreen(isRoot: true)),
+        (_) => false,
+      );
+      return;
+    }
     // **المزامنة بتحصل لوحدها أول ما الشاشة تفتح** — لو فيه نت وآخر واحدة بقى لها
     // شوية. المندوب ماكانش لازم يفتكر: اللي بينسى بيفتح الفاتورة ويلاقيها ناقصة.
     // مافيش `await`: الشاشة بتترسم على طول والعلامة فوق بتقول إنها شغالة.
