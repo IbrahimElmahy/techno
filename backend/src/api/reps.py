@@ -48,6 +48,9 @@ class RepOut(BaseModel):
     warehouse_id: int | None
     warehouse_name: str | None
     custody_id: int | None
+    # «مشرف المناديب» اللي المندوب تحته (`user.supervisor_id`).
+    supervisor_id: int | None = None
+    supervisor_name: str | None = None
     # الأرقام اللي بتقول هو شغّال ولا اسم على ورق
     customer_count: int
     invoice_count: int
@@ -124,6 +127,9 @@ def _build(db: Session, users: list[User]) -> list[RepOut]:
         for uid, (kind, lid) in user_loc.items()
     }
 
+    sup_ids = {u.supervisor_id for u in users if u.supervisor_id}
+    sups = {s.id: (s.full_name or s.username) for s in db.scalars(
+        select(User).where(User.id.in_(sup_ids))).all()} if sup_ids else {}
     out = []
     for u in users:
         emp = emps.get(u.id)
@@ -136,6 +142,7 @@ def _build(db: Session, users: list[User]) -> list[RepOut]:
             employee_id=emp.id if emp else None,
             warehouse_id=wid, warehouse_name=whs.get(wid),
             custody_id=custody.get(u.id),
+            supervisor_id=u.supervisor_id, supervisor_name=sups.get(u.supervisor_id),
             customer_count=cust_n.get(u.id, 0),
             invoice_count=inv_n.get(u.id, 0),
             stock_items=stock_n.get(u.id, 0),

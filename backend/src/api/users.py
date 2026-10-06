@@ -374,6 +374,10 @@ def delete_user(
             # مناديب تحت مشرف مش «شغل» عليه — ربط بيتفك قبل المسح تحت.
             if (table, col) == ("user", "supervisor_id"):
                 continue
+            # ربط المندوب بموظف (مخزن عربيته) من شاشة المناديب مش شغل — بيتفك تحت.
+            # من غيره مندوب اتعمل بالغلط واتحدّد له مخزن مايتمسحش أبداً.
+            if (table, col) == ("employee", "user_id"):
+                continue
             n = db.execute(text(f'SELECT count(*) FROM "{table}" WHERE {col} = :i'),
                            {"i": user.id}).scalar() or 0
             if n:
@@ -393,8 +397,11 @@ def delete_user(
         entity_type="user",
         entity_id=user.id,
         before={"username": user.username, "full_name": user.full_name,
-                "role": getattr(user.role, "value", user.role)},
+                # `user.role` علاقة (صف Role) مش نص — كانت بتوقع المسح كله بـ500.
+                "role": getattr(getattr(user.role, "name", user.role), "value",
+                                str(getattr(user.role, "name", user.role)))},
     )
+    db.execute(text('UPDATE employee SET user_id = NULL WHERE user_id = :i'), {"i": user.id})
     # المناديب اللي كانوا تحته بيفضلوا من غير مشرف — مش بيتمنع المسح عشانهم.
     for rep in db.scalars(select(User).where(User.supervisor_id == user.id)).all():
         rep.supervisor_id = None

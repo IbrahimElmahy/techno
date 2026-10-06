@@ -1,10 +1,11 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { searchFilter, searchRank } from '../utils/arabicSort';
 import {
-  Button, Empty, Input, Modal, Select, Space, Switch, Table, Tooltip, message,
+  Button, Empty, Form, Input, Modal, Select, Space, Switch, Table, Tooltip, message,
 } from 'antd';
 import {
-  CarOutlined, ReloadOutlined, SearchOutlined, StopOutlined, SwapOutlined, TeamOutlined,
+  CarOutlined, DeleteOutlined, EditOutlined, PlusOutlined, ReloadOutlined, SearchOutlined,
+  StopOutlined, SwapOutlined, TeamOutlined,
 } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import { Popconfirm } from '../components/noConfirm';
@@ -31,7 +32,14 @@ interface Rep {
   employee_id: number | null;
   warehouse_id: number | null; warehouse_name: string | null;
   custody_id: number | null;
+  supervisor_id?: number | null; supervisor_name?: string | null;
   customer_count: number; invoice_count: number; stock_items: number;
+}
+
+/** فورم «مندوب جديد» و«تعديل مندوب» — نفس الخانات، والباسورد إجباري في الجديد بس. */
+interface RepForm {
+  full_name: string; username: string; password?: string;
+  branch_id?: number; territory_id?: number; warehouse_id?: number; supervisor_id?: number;
 }
 
 export default function Reps() {
@@ -46,6 +54,12 @@ export default function Reps() {
   const [query, setQuery] = useState('');
   const [moveFrom, setMoveFrom] = useState<Rep | null>(null);
   const [moveTo, setMoveTo] = useState<number | null>(null);
+  const [supervisors, setSupervisors] = useState<any[]>([]);
+  // `null` = مقفول، `'new'` = مندوب جديد، غير كده = المندوب اللي بيتعدّل.
+  const [editing, setEditing] = useState<Rep | 'new' | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [form] = Form.useForm<RepForm>();
+  const formBranch = Form.useWatch('branch_id', form);
   const navigate = useNavigate();
 
   const load = async (inactive = showInactive) => {
@@ -61,6 +75,10 @@ export default function Reps() {
       setBranches(b.data || []);
       setTerritories(t.data || []);
       setWarehouses(w.data || []);
+      // المشرفين (لخانة «المشرف») — اللي مالوش صلاحية يقرا المستخدمين بيكمّل من غيرها.
+      api.get('/api/v1/users').then((u) => setSupervisors(
+        (u.data || []).filter((x: any) => x.role === 'rep_supervisor' && x.active),
+      )).catch(() => setSupervisors([]));
     } finally {
       setLoading(false);
     }
@@ -74,6 +92,68 @@ export default function Reps() {
       const res = await api.patch(`/api/v1/reps/${rep.user_id}`, body);
       setRows((prev) => prev.map((x) => (x.user_id === rep.user_id ? res.data : x)));
       message.success(`تم تعديل ${what}`);
+    } catch { /* الرسالة بتيجي من المعترض العام */ }
+  };
+
+  const openNew = () => {
+    form.resetFields();
+    setEditing('new');
+  };
+  const openEdit = (r: Rep) => {
+    form.resetFields();
+    form.setFieldsValue({
+      full_name: r.full_name, username: r.username,
+      branch_id: r.branch_id ?? undefined, territory_id: r.territory_id ?? undefined,
+      warehouse_id: r.warehouse_id ?? undefined, supervisor_id: r.supervisor_id ?? undefined,
+    });
+    setEditing(r);
+  };
+
+  /**
+   * الحفظ على مرحلتين: الحساب نفسه من `/users` (الاسم والدخول والباسورد والفرع والمنطقة
+   * والمشرف)، ومخزن البضاعة من `/reps` — هو اللي بيربط المندوب بالموظف وبمخزن عربيته.
+   */
+  const save = async () => {
+    const v = await form.validateFields();
+    setSaving(true);
+    try {
+      let userId: number;
+      if (editing === 'new') {
+        const res = await api.post('/api/v1/users', {
+          role: 'sales_rep', full_name: v.full_name.trim(), username: v.username.trim(),
+          password: v.password, branch_id: v.branch_id, territory_id: v.territory_id,
+          supervisor_id: v.supervisor_id ?? null,
+        });
+        userId = res.data.id;
+      } else if (editing) {
+        userId = editing.user_id;
+        await api.patch(`/api/v1/users/${userId}`, {
+          full_name: v.full_name.trim(), username: v.username.trim(),
+          branch_id: v.branch_id, territory_id: v.territory_id,
+          supervisor_id: v.supervisor_id ?? null,
+          ...(v.password ? { password: v.password } : {}),
+        });
+      } else {
+        return;
+      }
+      const before = editing === 'new' ? null : (editing?.warehouse_id ?? null);
+      if ((v.warehouse_id ?? null) !== before) {
+        await api.patch(`/api/v1/reps/${userId}`, { warehouse_id: v.warehouse_id ?? 0 });
+      }
+      message.success(editing === 'new' ? 'اتعمل المندوب' : 'اتعدّل المندوب');
+      setEditing(null);
+      load();
+    } catch { /* الرسالة بتيجي من المعترض العام */ } finally {
+      setSaving(false);
+    }
+  };
+
+  /** الحذف للحساب اللي ماشتغلش بس — السيرفر بيرفض لو عليه شغل ويقول عليه إيه. */
+  const remove = async (r: Rep) => {
+    try {
+      await api.delete(`/api/v1/users/${r.user_id}`);
+      message.success('اتحذف المندوب');
+      load();
     } catch { /* الرسالة بتيجي من المعترض العام */ }
   };
 
@@ -137,6 +217,10 @@ export default function Reps() {
       ),
     },
     {
+      title: 'المشرف', dataIndex: 'supervisor_name', key: 'supervisor_name', width: 150,
+      render: (v: string | null) => <span style={{ color: v ? undefined : '#bfbfbf' }}>{v || '—'}</span>,
+    },
+    {
       title: 'عملاء', dataIndex: 'customer_count', key: 'customer_count', width: 90,
       align: 'center' as const,
       render: (v: number, r: Rep) => (
@@ -169,13 +253,28 @@ export default function Reps() {
       ),
     },
     {
-      title: 'الإجراءات', key: 'actions', width: 130,
+      title: 'الإجراءات', key: 'actions', width: 170,
       render: (_: any, r: Rep) => (
         <Space size={2}>
-          <Tooltip title="تقارير المندوب">
+          <Tooltip title="تعديل المندوب">
+            <Button type="text" size="small" icon={<EditOutlined />} onClick={() => openEdit(r)} />
+          </Tooltip>
+          <Tooltip title="عمليات المندوب (تقارير)">
             <Button type="text" size="small" icon={<TeamOutlined />}
               onClick={() => navigate(`/rep-reports?rep=${r.user_id}`)} />
           </Tooltip>
+          {!r.invoice_count && !r.customer_count && (
+            <Popconfirm
+              title="حذف المندوب؟"
+              description="مالوش فواتير ولا عملاء — الحساب هيتمسح نهائي."
+              okText="حذف" cancelText="إلغاء" okButtonProps={{ danger: true }}
+              onConfirm={() => remove(r)}
+            >
+              <Tooltip title="حذف (للي ماشتغلش بس)">
+                <Button type="text" size="small" danger icon={<DeleteOutlined />} />
+              </Tooltip>
+            </Popconfirm>
+          )}
           {/* إيقاف مش حذف — نفس قاعدة المخازن والموظفين. اسم المندوب مكتوب على فواتير
               وعُهد ومعاينات، والمسح بيخلّي المستندات القديمة تقول «#١٦» بدل اسمه.
               المفتاح في عمود «نشط» بيعمل نفس الحاجة؛ الزرار هنا عشان الإجراء يبان
@@ -227,6 +326,7 @@ export default function Reps() {
       activeTab={repTab}
       onTabChange={(k) => { setListTab(k); load(k === 'all'); }}
       actions={(<>
+        <Button type="primary" icon={<PlusOutlined />} onClick={openNew}>مندوب جديد</Button>
         <Button icon={<ReloadOutlined />} onClick={() => load()}>تحديث</Button>
         {cols.control}
       </>)}
@@ -248,6 +348,57 @@ export default function Reps() {
         locale={{ emptyText: <Empty description="لا يوجد مناديب" /> }}
       />
     </ListPage>
+
+      <Modal
+        open={editing !== null}
+        title={editing === 'new' ? 'مندوب جديد' : `تعديل «${(editing as Rep | null)?.full_name || ''}»`}
+        okText="حفظ" cancelText="إلغاء" confirmLoading={saving}
+        onCancel={() => setEditing(null)} onOk={save} destroyOnClose
+      >
+        <Form form={form} layout="vertical" requiredMark>
+          <Form.Item name="full_name" label="اسم المندوب" rules={[{ required: true, message: 'اكتب الاسم' }]}>
+            <Input placeholder="مثلاً: مندوب السياره ( ه )" />
+          </Form.Item>
+          <Form.Item name="username" label="اسم الدخول (للتطبيق)"
+            rules={[{ required: true, message: 'اكتب اسم الدخول' }, { min: 2, message: 'حرفين على الأقل' }]}>
+            <Input dir="ltr" placeholder="car.e" autoComplete="off" />
+          </Form.Item>
+          <Form.Item name="password"
+            label={editing === 'new' ? 'كلمة السر' : 'كلمة سر جديدة (سيبها فاضية لو مش هتتغيّر)'}
+            rules={editing === 'new' ? [{ required: true, message: 'اكتب كلمة السر' }] : []}>
+            <Input.Password autoComplete="new-password" />
+          </Form.Item>
+          <Form.Item name="branch_id" label="الفرع" rules={[{ required: true, message: 'اختار الفرع' }]}>
+            <Select placeholder="الفرع"
+              onChange={() => form.setFieldsValue({
+                territory_id: undefined, warehouse_id: undefined, supervisor_id: undefined,
+              })}
+              options={branches.map((b: any) => ({ value: b.id, label: b.name }))} />
+          </Form.Item>
+          <Form.Item name="territory_id" label="المنطقة" rules={[{ required: true, message: 'اختار المنطقة' }]}>
+            <Select showSearch placeholder="المنطقة" filterOption={searchFilter} filterSort={searchRank}
+              options={territories
+                .filter((t: any) => !formBranch || t.branch_id === formBranch)
+                .map((t: any) => ({
+                  value: t.id, label: t.parent_name ? `${t.parent_name} ← ${t.name}` : t.name,
+                }))} />
+          </Form.Item>
+          <Form.Item name="warehouse_id" label="مخزن البضاعة (عربيته)"
+            extra="من غير مخزن التطبيق مش هيزامن">
+            <Select showSearch allowClear placeholder="بلا مخزن" filterOption={searchFilter} filterSort={searchRank}
+              options={warehouses
+                .filter((w: any) => !formBranch || !w.branch_id || w.branch_id === formBranch)
+                .map((w: any) => ({ value: w.id, label: w.name }))} />
+          </Form.Item>
+          <Form.Item name="supervisor_id" label="المشرف"
+            extra={supervisors.some((x) => x.branch_id === formBranch) ? undefined : 'مافيش «مشرف مناديب» على الفرع ده'}>
+            <Select allowClear placeholder="من غير مشرف"
+              options={supervisors
+                .filter((x) => x.branch_id === formBranch)
+                .map((x) => ({ value: x.id, label: x.full_name || x.username }))} />
+          </Form.Item>
+        </Form>
+      </Modal>
 
       <Modal
         open={Boolean(moveFrom)}

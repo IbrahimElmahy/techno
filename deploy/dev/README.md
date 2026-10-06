@@ -79,3 +79,7 @@ Remove-Item D:\techno-dev\pgdata\postmaster.pid -Force
 ## يوزر تجربة محلي — مشرف مناديب
 
 على قاعدة الديف بس (`techno_dev`): `supervisor.test` / `sup-f53c9796` — تحته مناديب العلياء (15–19).
+
+## أدمن تجربة محلي
+
+على قاعدة الديف بس: `admin.test` / `adm-7da94fdf`.
