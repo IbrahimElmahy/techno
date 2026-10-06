@@ -156,6 +156,10 @@ class Ctx:
         by_id = {c.id: c for c in everyone}
         self.merged_into: dict[int, Customer] = {
             cid: by_id[t] for cid, t in targets.items() if t in by_id}
+        # أكتوبر بالعكس من العلياء: «فلان وايت» (الأبيض) اللي اتلمّ في «فلان» (البولي) —
+        # `merge_october_white_twins`. فالباقي هنا بولي مش أبيض.
+        self.poly_keeps: set[int] = {
+            t.id for cid, t in self.merged_into.items() if "وايت" in (by_id[cid].name or "")}
         # العميل اللي اتلمّ من كارتين عنده حساب لكل خط — فالفاتورة لازم تقول على أنهي خط.
         split_ids = {cid for (cid,) in db.execute(
             select(CustomerAccount.customer_id).where(CustomerAccount.family.is_not(None)))}
@@ -255,7 +259,11 @@ class Ctx:
         card = self.cust_by_code.get(f"{self.prefix}A5-{pid}")
         if card is None:
             return None
+        if "وايت" in (card.name or ""):
+            return FAMILY_WHITE
         if card.id in self.merged_into:
+            return FAMILY_POLY
+        if card.id in self.poly_keeps:
             return FAMILY_POLY
         if card.id in self.split:
             # نفس قاعدة `set_a5_families`: البادئة على اسم الكارت هي الخط، والمجرد أبيض.
