@@ -338,7 +338,8 @@ export const NAVIGATION: (NavGroup | NavScreen)[] = [
     children: [
       { key: '/manufacturing?tab=recipes', label: 'نسب انتاج', roles: BUYING, a5: '/production-proportions' },
       { key: '/free-production', label: 'انتاج حر', roles: BUYING, a5: '/productions/free' },
-      { key: '/manufacturing?tab=orders', label: 'انتاج حسب النسب', roles: BUYING, a5: '/productions/proportion' },
+      // ورقة واحدة زي a5 (٢٠٢٦-١٠-٠٦) — أوامر التشغيل بمراحلها لسه على `/manufacturing?tab=orders`.
+      { key: '/ratio-production', label: 'انتاج حسب النسب', roles: BUYING, a5: '/productions/proportion' },
       { key: '/reports?view=production', label: 'تقرير الانتاج', roles: R(BUYING), a5: '/productions/report' },
     ],
   },

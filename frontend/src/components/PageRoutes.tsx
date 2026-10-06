@@ -40,6 +40,7 @@ const Categories = lazy(() => import('../pages/Categories'));
 const PendingScreen = lazy(() => import('../pages/PendingScreen'));
 const PurchaseReturns = lazy(() => import('../pages/PurchaseReturns'));
 const FreeProduction = lazy(() => import('../pages/FreeProduction'));
+const RatioProduction = lazy(() => import('../pages/RatioProduction'));
 const RepReports = lazy(() => import('../pages/RepReports'));
 const StockCounts = lazy(() => import('../pages/StockCounts'));
 const ItemCard = lazy(() => import('../pages/ItemCard'));
@@ -198,6 +199,7 @@ export default function PageRoutes({ location }: { location?: string }) {
       <Route path="/reports" element={<Reports />} />
       <Route path="/purchase-returns" element={<PurchaseReturns />} />
       <Route path="/free-production" element={<FreeProduction />} />
+      <Route path="/ratio-production" element={<RatioProduction />} />
       <Route path="/rep-reports" element={<RepReports />} />
       <Route path="/stock-counts" element={<StockCounts />} />
       <Route path="/trade-reports" element={<TradeReports />} />

@@ -675,6 +675,66 @@ def _po_products(body: POIn):
     } for p in body.products]
 
 
+class PlanMaterialOut(BaseModel):
+    item_id: int
+    quantity: Decimal
+    warehouse_id: int | None
+
+
+class RecipePlanOut(BaseModel):
+    product_id: int
+    bom_id: int | None
+    materials: list[PlanMaterialOut]
+
+
+@router.get("/recipe-plan", response_model=RecipePlanOut)
+def recipe_plan(
+    product_id: int,
+    quantity: Decimal,
+    bom_id: int | None = None,
+    current: CurrentUser = Depends(require_capability(CAP_MANUFACTURE_READ)),
+    db: Session = Depends(get_db),
+) -> RecipePlanOut:
+    """خامات منتج بكمية — لشاشة «انتاج حسب النسب» (زي a5: الخامات بتنزل لوحدها من النسب).
+
+    نفس `recipe_plan` اللي الترحيل بيحسب بيه، فاللي بيتعرض هو اللي بيتصرف. ومعاها **مخزن
+    مقترح لكل خامة**: آخر مخزن اتصرفت منه في فرع المستخدم — a5 بيصرف الخامة الواحدة من
+    مخزن ثابت غالباً (خام قطع صرف من «حقن قطع الصرف»)، وساعات من مخزن تاني، فالخانة بتفضل
+    تتغيّر من الشاشة. ولو عمرها ما اتصرفت: مخزن الصنف الافتراضي.
+    """
+    from sqlalchemy import text as _t
+    from src.models.bom import Bom
+    from src.models.catalog import Item
+
+    try:
+        plan = production_order_service.recipe_plan(
+            db, product_id=product_id, quantity=quantity, bom_id=bom_id)
+    except ProductionOrderError as exc:
+        raise _conflict(exc)
+    bom = (db.get(Bom, bom_id) if bom_id else production_order_service._active_bom(
+        db, product_id=product_id))
+    mine = branch_scope.visible_branch_id(current)
+    ids = [i for i, _q in plan]
+    last: dict[int, int] = {}
+    if ids:
+        rows = db.execute(_t("""
+            select distinct on (m.item_id) m.item_id, m.location_id
+            from stock_movement m join warehouse w on w.id = m.location_id
+            where m.item_id = any(:ids) and m.location_kind = 'warehouse'
+              and m.direction = 'out' and m.movement_type = 'consumption_out'
+              and (cast(:b as bigint) is null or w.branch_id = :b)
+            order by m.item_id, m.id desc"""), {"ids": ids, "b": mine}).all()
+        last = {i: w for i, w in rows}
+    out = []
+    for item_id, qty in plan:
+        wh = last.get(item_id)
+        if wh is None:
+            it = db.get(Item, item_id)
+            wh = it.default_warehouse_id if it else None
+        out.append(PlanMaterialOut(item_id=item_id, quantity=qty, warehouse_id=wh))
+    return RecipePlanOut(product_id=product_id, bom_id=bom.id if bom else None, materials=out)
+
+
 @router.get("/production-orders")
 def list_production_orders(
     search: str | None = None,
