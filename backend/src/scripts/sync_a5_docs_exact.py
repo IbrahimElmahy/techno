@@ -144,7 +144,7 @@ def run(folder: str, *, branch_name: str, prefix: str, execute: bool) -> int:
                     want = by_a5.get(f"{prefix}A5-{pid}")
                     if want is not None and merged.get(want) == row[3]:
                         pass
-                    elif pid and code.startswith(f"{prefix}A5-") and code != f"{prefix}A5-{pid}":
+                    elif want is not None and code.startswith(f"{prefix}A5-") and want != row[3]:
                         why.append(f"طرف {cust_name.get(row[3])} ← {_clean(h[4])}")
                 theirs = Counter()
                 for r in lines.get(num, []):

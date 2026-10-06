@@ -38,10 +38,16 @@ from src.models.sales import SalesInvoice, SalesInvoiceLine
 TOLERANCE = Decimal("0.02")
 
 
-def run(*, execute: bool) -> None:
+def run(*, execute: bool, branch: str = "") -> None:
     db = SessionLocal()
     try:
-        rows = db.scalars(select(SalesInvoice).where(SalesInvoice.net == 0)).all()
+        q = select(SalesInvoice).where(SalesInvoice.net == 0)
+        # `--branch`: فرع واحد بس. السادات ليه تصحيحه (`fix_sadat_doc_totals`) ومايتلمسش من هنا.
+        if branch:
+            from src.models.org import Branch
+            bid = db.scalar(select(Branch.id).where(Branch.name == branch))
+            q = q.where(SalesInvoice.branch_id == bid)
+        rows = db.scalars(q).all()
 
         fixable: list[tuple[SalesInvoice, Decimal]] = []
         mismatched: list[tuple[SalesInvoice, Decimal, Decimal]] = []
@@ -103,4 +109,5 @@ def run(*, execute: bool) -> None:
 
 
 if __name__ == "__main__":
-    run(execute="--yes" in sys.argv[1:])
+    a = sys.argv[1:]
+    run(execute="--yes" in a, branch=a[a.index("--branch") + 1] if "--branch" in a else "")
