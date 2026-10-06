@@ -90,10 +90,20 @@ class _InvoicePrintScreenState extends State<InvoicePrintScreen> {
     final inv = widget.invoice;
     final synced = (inv['synced'] as int?) == 1;
     final title = synced ? (inv['document_number'] as String? ?? 'طلب بيع') : 'طلب بيع';
-    // اسم الملف = اسم العميل (طلب العميل ٢٠٢٦-١٠-٠٣) — مش رقم المستند. الحروف اللي
-    // مابتنفعش في اسم ملف بتتشال. العنوان فوق بيفضل رقم المستند.
+    // اسم الملف = «العميل - النوع - التاريخ» (طلب العميل ٢٠٢٦-١٠-٠٣ و٢٠٢٦-١٠-٠٦) — مش
+    // رقم المستند. العميل بيستلم كذا ورقة في نفس الشات، واسم العميل لوحده بيطلع نفس الاسم
+    // لكل الورق؛ النوع (أبيض/بولي) والتاريخ هما اللي بيفرّقوا الورقة عن اللي قبلها من
+    // غير ما يفتحها. فاتورة من غير نوع → «العميل - التاريخ». الحروف اللي مابتنفعش في اسم
+    // ملف بتتشال. العنوان فوق بيفضل رقم المستند.
     final customer = safeFileName('${inv['customer_name'] ?? ''}');
-    final fileTitle = customer.isNotEmpty ? customer : title;
+    final family = safeFileName('${inv['family'] ?? ''}');
+    // التاريخ YYYY-MM-DD بس — لو جه من السيرفر بوقت (`…T…`) الوقت بيتشال.
+    final date = safeFileName('${inv['invoice_date'] ?? ''}'.split('T').first);
+    final fileTitle = [
+      customer.isNotEmpty ? customer : title,
+      if (family.isNotEmpty) family,
+      if (date.isNotEmpty) date,
+    ].join(' - ');
     return Scaffold(
       appBar: AppBar(title: Text(title)),
       body: _loading
