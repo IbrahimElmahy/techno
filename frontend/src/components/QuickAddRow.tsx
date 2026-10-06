@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { Button, Select } from 'antd';
 import { AppstoreOutlined, PlusOutlined } from '@ant-design/icons';
-import { matchesWords } from '../utils/arabicSort';
+import { searchByName } from '../utils/arabicSort';
 import { normalizeAr } from './ListToolbar';
 import { qty as fmtQty } from '../utils/money';
 
@@ -48,10 +48,10 @@ export default function QuickAddRow({
         return av === null || av > 0;
       });
     }
-    if (needle) {
-      list = list.filter((p) => matchesWords(normalizeAr(p.name), needle)
-        || normalizeAr(p.code || '').includes(needle));
-    }
+    // الفلترة والترتيب بالقُرب **قبل** السقف: «ك» ⇒ اللي بيبدأ بالكاف فوق واللي الكاف في
+    // نصّه تحت (`searchByName`). لو السقف قبل الترتيب، الستين اللي بيظهروا كانوا أول ستين
+    // في ترتيب الشاشة — و«كوع» ممكن مايبقاش منهم خالص.
+    if (needle) list = searchByName(list, needle, (p) => p.name, (p) => p.code);
     // سقف عشان القايمة تفتح على طول — اللي بيدوّر بيكمّل كتابة.
     return list.slice(0, 60).map((p) => {
       const av = availableFor ? availableFor(p.id) : null;

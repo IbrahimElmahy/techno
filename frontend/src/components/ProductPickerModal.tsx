@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { compareArabic, matchesWords, sortByName } from '../utils/arabicSort';
+import { compareArabic, searchByName, sortByName } from '../utils/arabicSort';
 import {
   Button, Checkbox, Col, Empty, Input, InputNumber, Row, Select, Space, Tag
 } from 'antd';
@@ -267,8 +267,10 @@ export default function ProductPickerModal({
       // والبحث في الكتالوج كله لسه موجود — بـ«كل الفئات» فوق قايمة الفئات.
       //
       // وكل كلمة لوحدها: «كو نح» بتلاقي «كوع ١/٢ نحاس» (`matchesWords`).
-      list = list.filter((p) => matchesWords(normalizeAr(p.name), needle)
-        || normalizeAr(p.code || '').includes(needle));
+      //
+      // **والنتيجة مرتّبة بالقُرب** (`searchByName`): «ك» ⇒ «كوع» فوق و«تكنو …» تحت. الفلاتر
+      // اللي بعد كده (الرصيد) بتشيل من غير ما تغيّر الترتيب.
+      list = searchByName(list, needle, (p) => p.name, (p) => p.code);
     }
     const avail = availableRef.current;
     if (disableOutOfStock && onlyAvailableStock && avail) {
@@ -295,7 +297,10 @@ export default function ProductPickerModal({
     // بيدوّر بعينه في شباك فيه آلاف الصنف محتاج الاسم يكون في مكانه. والتوحيد في
     // `normalizeAr` عشان الهمزة والتاء المربوطة مايفرّقوش الاسم الواحد، وفي `numeric`
     // عشان «ماسورة 2» تيجي قبل «ماسورة 10» مش بعدها.
-    return sortByName(list, (p) => p.name);
+    //
+    // **وده من غير بحث بس.** مع البحث القايمة مرتّبة فوق بالقُرب وجوّه كل مرتبة أبجدي؛
+    // الترتيب الأبجدي هنا كان بيمسح ده ويرجّع «تكنو كوع» فوق «كوع».
+    return needle ? list : sortByName(list, (p) => p.name);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [query, accepted, products, disableOutOfStock, onlyAvailableStock,
       availabilityVersion]);
