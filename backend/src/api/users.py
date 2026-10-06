@@ -51,7 +51,8 @@ class UserUpdate(BaseModel):
     supervisor_id: int | None = None
 
 
-def _check_supervisor(db: Session, supervisor_id: int | None, role) -> int | None:
+def _check_supervisor(db: Session, supervisor_id: int | None, role,
+                      branch_id: int | None) -> int | None:
     """المشرف اللي هيتسجّل على المستخدم — أو None.
 
     المشرف للمندوب بس: أي دور تاني بيتشال منه (مدير مبيعات مالوش «مشرف مناديب» فوقه).
@@ -66,6 +67,10 @@ def _check_supervisor(db: Session, supervisor_id: int | None, role) -> int | Non
     if sup is None or sup_role is None or sup_role.name != RoleName.rep_supervisor:
         raise HTTPException(422, {"code": "validation",
                                   "message": "المشرف لازم يكون مستخدم دوره «مشرف مناديب»."})
+    # **المشرف للفرع بتاعه بس** (طلب العميل ٢٠٢٦-١٠-٠٦): مندوب فرع تاني مايتسجّلش تحته.
+    if sup.branch_id is None or sup.branch_id != branch_id:
+        raise HTTPException(422, {"code": "validation",
+                                  "message": "المشرف لازم يكون من نفس فرع المندوب."})
     return sup.id
 
 
@@ -153,7 +158,8 @@ def create_user(
                                       "message": "المستخدم الجديد لازم يبقى على فرعك."})
         ensure_branch_access(current, body.branch_id)
     # Validate required scope by role.
-    if body.role in (RoleName.branch_manager, RoleName.purchasing_manager, RoleName.sales_manager):
+    if body.role in (RoleName.branch_manager, RoleName.purchasing_manager, RoleName.sales_manager,
+                     RoleName.rep_supervisor):
         if body.branch_id is None:
             raise HTTPException(422, {"code": "validation", "message": "branch_id required"})
     if body.role == RoleName.sales_rep and (body.branch_id is None or body.territory_id is None):
@@ -161,7 +167,7 @@ def create_user(
             422, {"code": "validation", "message": "sales_rep needs branch_id + territory_id"}
         )
 
-    supervisor_id = _check_supervisor(db, body.supervisor_id, body.role)
+    supervisor_id = _check_supervisor(db, body.supervisor_id, body.role, body.branch_id)
     role = db.scalar(select(Role).where(Role.name == body.role))
     if role is None:
         role = Role(name=body.role)
@@ -268,9 +274,22 @@ def update_user(
         user.password_hash = hash_password(body.password)
     # المشرف: المبعوت صراحةً بيتكتب (و`null` بيشيله)، والدور اللي اتغيّر لغير مندوب بيشيله.
     if "supervisor_id" in body.model_fields_set:
-        user.supervisor_id = _check_supervisor(db, body.supervisor_id, new_role)
+        user.supervisor_id = _check_supervisor(db, body.supervisor_id, new_role, user.branch_id)
     elif new_role != RoleName.sales_rep:
         user.supervisor_id = None
+    elif user.supervisor_id is not None:
+        # المندوب اتنقل فرع: مشرفه القديم من فرع تاني بيتشال بدل ما يفضل يشوفه.
+        sup = db.get(User, user.supervisor_id)
+        if sup is None or sup.branch_id != user.branch_id:
+            user.supervisor_id = None
+    if new_role == RoleName.rep_supervisor:
+        if user.branch_id is None:
+            raise HTTPException(422, {"code": "validation",
+                                      "message": "مشرف المناديب لازم يبقى على فرع."})
+        # المشرف اتنقل فرع: مناديب فرعه القديم بيتفكّوا منه.
+        for rep in db.scalars(select(User).where(User.supervisor_id == user.id,
+                                                  User.branch_id != user.branch_id)).all():
+            rep.supervisor_id = None
     db.flush()
     audit_service.record(db, action="user.update", actor_user_id=current.id,
                          entity_type="user", entity_id=user.id,

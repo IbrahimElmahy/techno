@@ -23,7 +23,6 @@
 """
 from __future__ import annotations
 
-import dataclasses
 from datetime import date, datetime
 from decimal import Decimal
 
@@ -93,12 +92,9 @@ def _gate(current: CurrentUser = Depends(get_current_user)) -> CurrentUser:
 def _doc_view(current: CurrentUser) -> CurrentUser:
     """الهوية اللي المستندات بتتفلتر بيها.
 
-    المشرف نطاقه **مناديبه** مش فرعه: مندوب تحته في فرع تاني لازم شغله يبان كامل. فعزل
-    الفروع بيتشال عنه هنا (`branch_id=None` = «بيشوف الكل» في `branch_scope`) — والقفل
-    الحقيقي إن كل استعلام تحت مربوط بمندوب اتأكدنا إنه تحته. المديرين بيفضلوا على فروعهم.
+    المشرف للفرع بتاعه بس (٢٠٢٦-١٠-٠٦): مناديبه من فرعه، ومستنداتهم بتتفلتر بفرعه زي
+    المديرين — فمستند في فرع تاني مابيبانش له حتى لو المندوب نفسه.
     """
-    if current.role == RoleName.rep_supervisor:
-        return dataclasses.replace(current, branch_id=None)
     return current
 
 
@@ -110,7 +106,9 @@ def _reps_stmt(db: Session, current: CurrentUser, *, include_inactive: bool = Fa
     if not include_inactive:
         stmt = stmt.where(User.active.is_(True))
     if current.role == RoleName.rep_supervisor:
-        return stmt.where(User.supervisor_id == current.id)
+        # مناديبه **في فرعه** بس (٢٠٢٦-١٠-٠٦) — ومشرف من غير فرع مابيشوفش حد.
+        return stmt.where(User.supervisor_id == current.id,
+                          User.branch_id == current.branch_id)
     return branch_scope.scope(stmt, User, current)
 
 

@@ -77,16 +77,22 @@ export default function Users() {
     const s = users.find((u) => u.id === id);
     return s ? (s.full_name || s.username) : `#${id}`;
   };
-  const supervisorField = (
-    <Form.Item
-      name="supervisor_id"
-      label="المشرف"
-      extra={supervisors.length ? 'مشرف المناديب اللي بيتابع شغل المندوب ده من التطبيق' : 'مافيش مستخدمين بدور «مشرف مناديب» لسه'}
-    >
-      <Select allowClear showSearch placeholder="من غير مشرف" filterOption={searchFilter} filterSort={searchRank}
-        options={supervisors.map((s) => ({ value: s.id, label: s.full_name || s.username }))} />
-    </Form.Item>
-  );
+  // المشرف للفرع بتاعه بس: مندوب فرع تاني مايتسجّلش تحته (السيرفر بيرفضه كمان).
+  const supervisorField = (branchId: number | null | undefined) => {
+    const mine = supervisors.filter((s) => branchId && s.branch_id === branchId);
+    return (
+      <Form.Item
+        name="supervisor_id"
+        label="المشرف"
+        extra={!branchId ? 'اختار فرع المندوب الأول'
+          : mine.length ? 'مشرف المناديب اللي بيتابع شغل المندوب ده من التطبيق — من نفس الفرع'
+            : 'مافيش «مشرف مناديب» على الفرع ده لسه'}
+      >
+        <Select allowClear showSearch placeholder="من غير مشرف" filterOption={searchFilter} filterSort={searchRank}
+          options={mine.map((s) => ({ value: s.id, label: s.full_name || s.username }))} />
+      </Form.Item>
+    );
+  };
 
   const filter = useListFilter(users, {
     search: (u) => [u.username, u.full_name, ROLE_LABELS[u.role]],
@@ -451,7 +457,7 @@ export default function Users() {
             {({ getFieldValue }) => {
               const selectedRole = getFieldValue('role');
               const isRep = selectedRole === 'sales_rep';
-              const isScoped = isRep || BRANCH_SCOPED_ROLES.includes(selectedRole);
+              const isScoped = isRep || selectedRole === 'rep_supervisor' || BRANCH_SCOPED_ROLES.includes(selectedRole);
               const branchId = getFieldValue('branch_id');
 
               return (
@@ -465,7 +471,7 @@ export default function Users() {
                       placeholder="اختر الفرع للربط التنظيمي"
                       disabled={!isAdminUser}
                       allowClear
-                      onChange={() => form.setFieldsValue({ territory_id: undefined })}
+                      onChange={() => form.setFieldsValue({ territory_id: undefined, supervisor_id: undefined })}
                     >
                       {branches.map((b) => (
                         <Select.Option key={b.id} value={b.id}>
@@ -489,7 +495,7 @@ export default function Users() {
                     </Select>
                   </Form.Item>
 
-                  {isRep && supervisorField}
+                  {isRep && supervisorField(branchId)}
                 </>
               );
             }}
@@ -562,7 +568,7 @@ export default function Users() {
             {({ getFieldValue }) => {
               const selectedRole = getFieldValue('role');
               const isRep = selectedRole === 'sales_rep';
-              const isScoped = isRep || BRANCH_SCOPED_ROLES.includes(selectedRole);
+              const isScoped = isRep || selectedRole === 'rep_supervisor' || BRANCH_SCOPED_ROLES.includes(selectedRole);
               const branchId = getFieldValue('branch_id');
 
               return (
@@ -576,7 +582,7 @@ export default function Users() {
                       placeholder="اختر الفرع للربط التنظيمي"
                       disabled={!isAdminUser}
                       allowClear
-                      onChange={() => editForm.setFieldsValue({ territory_id: undefined })}
+                      onChange={() => editForm.setFieldsValue({ territory_id: undefined, supervisor_id: undefined })}
                     >
                       {branches.map((b) => (
                         <Select.Option key={b.id} value={b.id}>
@@ -600,7 +606,7 @@ export default function Users() {
                     </Select>
                   </Form.Item>
 
-                  {isRep && supervisorField}
+                  {isRep && supervisorField(branchId)}
                 </>
               );
             }}
