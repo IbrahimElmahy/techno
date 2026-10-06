@@ -110,6 +110,18 @@ export const printStyles = `
     font-size: 11px; color: #5d6f64; display: flex; justify-content: space-between; gap: 12px;
   }
   @media print { .no-print { display: none; } }
+  /* **عناوين الأعمدة بتبان على الورق.** المتصفح بيطبع من غير خلفيات افتراضياً، فالعنوان
+     الأبيض على الأخضر كان بيطلع أبيض على أبيض — «خط البيان مش ظاهر» (نرمين ٢٠٢٦-١٠-٠٦).
+     على الورق: كتابة غامقة على خلفية فاتحة، بتتقري سواء الخلفية اتطبعت ولا لأ. */
+  @media print {
+    table.grid th {
+      background: #e3efe6; color: ${BRAND.ink}; border: 1px solid #7fa58c; font-weight: 800;
+      -webkit-print-color-adjust: exact; print-color-adjust: exact;
+    }
+    .doc-no, .c-doc .n {
+      background: none; color: ${BRAND.green}; border: 1.5px solid ${BRAND.green};
+    }
+  }
 
   /* ============================ المضغوط — الشرح عند DocMeta.compact */
   body.compact .sheet { max-width: none; }

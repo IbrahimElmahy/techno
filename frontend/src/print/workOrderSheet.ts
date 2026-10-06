@@ -93,6 +93,13 @@ const SHEET_CSS = `
     background: #3FA92B; color: #fff; padding: 6px 8px; font-size: 12px;
     border: 1px solid #3FA92B; text-align: center;
   }
+  /* على الورق الخلفية مابتتطبعش افتراضياً — كتابة غامقة على فاتح بدل الأبيض على الأخضر. */
+  @media print {
+    table.wo > thead > tr > th {
+      background: #e3efe6; color: #111; border: 1px solid #7fa58c; font-weight: 800;
+      -webkit-print-color-adjust: exact; print-color-adjust: exact;
+    }
+  }
   table.wo > tbody > tr > td {
     border: 1px solid #cfe0d4; padding: 6px 8px; font-size: 12px; vertical-align: top;
   }

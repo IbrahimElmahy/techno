@@ -1,34 +1,38 @@
-"""رصيد كل حساب في فرع = رصيد a5 بالقرش — بيشيل كسور التقريب المتجمّعة (٢٠٢٦-١٠-٠٥).
+"""كشف حساب كل حساب في فرع = كشف a5 بالقرش، سطر بسطر (٢٠٢٦-١٠-٠٦).
 
-    python -m src.scripts.fix_a5_rounding_balances --dir /opt/techno/a5factory --branch السادات --prefix FC-
+    python -m src.scripts.fix_a5_rounding_balances --rows /opt/techno/a5factory/a5_acc_rows4.txt --branch السادات --prefix FC-
     python -m src.scripts.fix_a5_rounding_balances ... --yes
 
-**منين الكسور.** a5 بيمسك أربع خانات عشرية وإحنا اتنين. `import_a5_ledger._absorb_rounding`
-بيوزن كل قيد ببلع فرق التقريب في أكبر سطر فيه — القيد بيتوزن، بس القروش دي بتتراكم على
-الحساب اللي سطره كان الأكبر. في السادات: ٣٣ حساب فرقهم من قرش لـ٨٣ قرش عن a5، ومجموع
-مديونيات العملاء بيفرق ٢٫٤٧.
+**منين القروش.** a5 بيمسك أربع خانات عشرية وإحنا اتنين. وقت النقل كل سطر اتقرّب لوحده،
+و`import_a5_ledger._absorb_rounding` وزن كل قيد ببلع فرق التقريب في أكبر سطر فيه. القيد
+بيتوزن، بس السطر الكبير بيطلع بقروش زيادة (٤٦١٬٦٩٢٫٣٠٦٢ عند a5 ⇐ ٤٦١٬٦٩٢٫٣٤ عندنا)،
+والقروش بتتراكم على الحساب.
 
-**الإصلاح:** الهدف لكل حساب = رصيد a5 بالدقة الكاملة (`a5_acclines.tsv`) مقرّب لقرش. الفرق
-بيتحط على **آخر سطر a5** على الحساب ده (مش مربوط بتسوية سداد) — الأرصدة اللي قبله في الكشف
-مابتتغيّرش، والرصيد النهائي بيبقى زي a5 بالظبط. مافيش قيد جديد ولا حساب «فروق تقريب».
+النسخة الأولى من السكربت ده (٢٠٢٦-١٠-٠٥) كانت بتحط فرق الحساب كله على آخر سطر. الرصيد
+النهائي طلع مظبوط، بس السطر نفسه بقى غلط: تحصيل ١٠٠٬٠٠٠ عند a5 طلع ١٠٠٬٠٠٠٫٨٢ في كشف
+«فرع اكتوبر»، ورصيد أول المدة اتغيّر (نرمين، ٢٠٢٦-١٠-٠٦).
 
-القيد اللي سطره اتعدّل بيبقى مختلف بين مدينه ودائنه بالقروش دي — زي ما هو عند a5 نفسه لما
-يتقرّب لخانتين. القيود دي a5 أصلاً (مرجعها `a5:`) ومابتتعملش عندنا.
+**الإصلاح: تقريب تراكمي على كل حساب.** المبلغ الدقيق لكل سطر بيتاخد من a5 بالأربع خانات،
+والسطور بتترتّب زي الكشف (التاريخ ثم القيد ثم السطر). السطر بيتكتب = (الرصيد الدقيق بعده
+مقرّب لقرش) − (الرصيد الدقيق قبله مقرّب لقرش). النتيجة:
 
-**`--exact`:** تصدير القيود (`exp_acc.sql`) بيقرّب كل سطر لقرشين، فمجموعه مش رصيد a5 الحقيقي
-(«فرع العلياء» في السادات: مجموع المقرّب −٢١٥٬٢٤٣٫٩٦ والحقيقي −٢١٥٬٢٤٤٫١٢). الملف ده
-(`SELECT` بس على `acc`، محدود بآخر `acc_id` في التصدير) فيه لكل حساب: الرصيد بالدقة الكاملة
-ومجموعه مقرّب سطر سطر — والفرق بينهم بيتزوّد على مجموع التصدير:
+* الرصيد بعد كل سطر = رصيد a5 مقرّب لقرش — فرصيد أول المدة والختامي لأي فترة زي a5.
+* كل مبلغ = مبلغ a5 مقرّب، أو بفرق قرش واحد بالكتير.
 
-    SELECT 'X', AccBrnch_id, SUM(AccIn-AccOut), SUM(ROUND(AccIn,2)-ROUND(AccOut,2)), COUNT(*)
-    FROM acc WHERE acc_id <= <آخر acc_id في a5_acclines> GROUP BY AccBrnch_id
+القيد بيبقى بين مدينه ودائنه فرق قروش — زي ما هو عند a5 نفسه لما يتقرّب لخانتين. القيود
+دي a5 (مرجعها `a5:`)، ومافيش في السادات تسويات سداد عليها.
 
-مقفول على الفرع والبادئة. بيتعاد بأمان: الحساب اللي مطابق مابيتلمسش. شغّله بعد أي
-`rebuild_a5_ledger` / `import_a5_ledger` لأنهم بيرجّعوا القيود بالتقريب القديم.
+**`--rows`:** ملف `SELECT` بس على `acc` (محدود بآخر `acc_id` في التصدير):
+
+    SELECT 'R', acc_id, sysfree, AccBrnch_id, AccIn, AccOut FROM acc WHERE acc_id <= <آخر acc_id>
+
+السطر عندنا بيتقابل مع صف a5 جوّه نفس القيد (`sysfree`) ونفس الحساب ونفس الناحية،
+بالترتيب بالمبلغ — التقريب بيغيّر قروش، مابيغيّرش الترتيب.
+
+مقفول على الفرع والبادئة. بيتعاد بأمان، وشغّله بعد أي `rebuild_a5_ledger` / `import_a5_ledger`.
 """
 from __future__ import annotations
 
-import os
 import sys
 from collections import defaultdict
 from decimal import ROUND_HALF_UP, Decimal
@@ -36,75 +40,117 @@ from decimal import ROUND_HALF_UP, Decimal
 from sqlalchemy import text
 
 from src.core.db import SessionLocal
-from src.scripts.import_a5 import _clean, _money, _read
-from src.scripts.import_a5_ledger import A_ACC, A_IN, A_OUT
 
 C = Decimal("0.01")
+ZERO = Decimal("0")
 
 
-def run(folder: str, *, branch_name: str, prefix: str, execute: bool,
-        exact_file: str = "") -> int:
-    exact: dict[str, Decimal] = defaultdict(Decimal)
-    for r in _read(os.path.join(folder, "a5_acclines.tsv")):
-        if len(r) >= 12:
-            exact[f"{prefix}A5S-{_clean(r[A_ACC])}"] += (Decimal(str(_money(r[A_IN])))
-                                                       - Decimal(str(_money(r[A_OUT]))))
-    if exact_file:
-        for ln in open(exact_file, encoding="utf-8"):
-            p = ln.strip().split("~")
-            if len(p) >= 4 and p[0] == "X":
-                exact[f"{prefix}A5S-{p[1].strip()}"] += Decimal(p[2]) - Decimal(p[3])
+def _r2(x: Decimal) -> Decimal:
+    return x.quantize(C, ROUND_HALF_UP)
+
+
+def run(rows_file: str, *, branch_name: str, prefix: str, execute: bool) -> int:
+    # صفوف a5: (sysfree, حساب, ناحية) ← [المبلغ الدقيق]
+    a5: dict[tuple[str, str, str], list[Decimal]] = defaultdict(list)
+    for ln in open(rows_file, encoding="utf-8"):
+        p = ln.rstrip("\n").split("~")
+        if len(p) < 6 or p[0] != "R":
+            continue
+        sysfree, acc = p[2].strip(), p[3].strip()
+        a_in, a_out = Decimal(p[4] or "0"), Decimal(p[5] or "0")
+        d2, c2 = _r2(a_in), _r2(a_out)
+        if d2 == ZERO and c2 == ZERO:
+            continue                      # نفس تخطّي `import_a5_ledger`
+        out = c2 > d2
+        a5[(sysfree, f"{prefix}A5S-{acc}", "credit" if out else "debit")].append(
+            a_out if out else a_in)
+
     db = SessionLocal()
     try:
         bid = db.execute(text("select id from branch where name=:n"), {"n": branch_name}).scalar_one()
-        ours = {code: (aid, Decimal(str(b))) for aid, code, b in db.execute(text("""
-            select a.id, a.code, coalesce(sum(case when l.direction='debit' then l.amount
-                                                    else -l.amount end), 0)
-            from account a left join ledger_line l on l.account_id = a.id
-            where a.branch_id = :b and a.code like :p group by 1, 2"""),
-            {"b": bid, "p": f"{prefix}A5S-%"}).all()}
+        lines = db.execute(text("""
+            select l.id, a.code, l.direction::text, l.amount, e.external_ref, e.entry_date, e.id
+            from ledger_line l join ledger_entry e on e.id = l.entry_id
+            join account a on a.id = l.account_id
+            where a.branch_id = :b and a.code like :p"""),
+            {"b": bid, "p": f"{prefix}A5S-%"}).all()
 
-        plan = []
-        for code, (aid, bal) in ours.items():
-            if code not in exact:
+        # المبلغ الدقيق لكل سطر عندنا.
+        ours: dict[tuple[str, str, str], list] = defaultdict(list)
+        exact: dict[int, Decimal] = {}
+        ref_p = f"a5:{prefix}"
+        for lid, code, dirn, amt, ref, _d, _e in lines:
+            if ref and ref.startswith(ref_p):
+                ours[(ref[len(ref_p):], code, dirn)].append((Decimal(str(amt)), lid))
+            else:
+                exact[lid] = Decimal(str(amt))     # سطر مش من a5 — زي ما هو
+        mismatch = 0
+        for key, mine in ours.items():
+            theirs = a5.get(key, [])
+            if len(theirs) != len(mine):
+                mismatch += 1
+                if mismatch <= 12:
+                    print(f"   ماتقابلش: قيد {key[0]} حساب {key[1]} {key[2]} — "
+                          f"a5 {len(theirs)} سطر، عندنا {len(mine)}: "
+                          f"{[str(t) for t in theirs][:3]} / {[str(a) for a, _ in mine][:3]}")
+                for amt, lid in mine:
+                    exact[lid] = amt
                 continue
-            target = exact[code].quantize(C, ROUND_HALF_UP)
-            diff = target - bal
-            if diff == 0:
-                continue
-            # آخر سطر a5 على الحساب، مش داخل في تسوية سداد، ومبلغه يستحمل التعديل.
-            ln = db.execute(text("""
-                select l.id, l.direction::text, l.amount, e.external_ref, e.entry_date
-                from ledger_line l join ledger_entry e on e.id = l.entry_id
-                where l.account_id = :a and e.external_ref like :r and e.branch_id = :b
-                  and l.full_reconcile_id is null
-                  and not exists (select 1 from partial_reconcile p
-                                  where p.debit_line_id = l.id or p.credit_line_id = l.id)
-                  and l.amount > :m
-                order by e.entry_date desc nulls last, e.id desc, l.id desc limit 1"""),
-                {"a": aid, "r": f"a5:{prefix}%", "b": bid, "m": abs(diff) + C}).first()
-            plan.append((code, bal, target, diff, ln))
+            for (amt, lid), t in zip(sorted(mine), sorted(theirs)):
+                exact[lid] = t
 
-        print(f"فرع {branch_name}: حسابات فيها كسور تقريب {len(plan)}")
-        for code, bal, target, diff, ln in sorted(plan, key=lambda x: -abs(x[3])):
-            where = f"سطر {ln[0]} ({ln[3]}، {ln[4]})" if ln else "⚠ مالقيتش سطر مناسب"
-            print(f"   {code:<14} عندنا {bal:>16,.2f}  a5 {target:>16,.2f}  فرق {diff:>6}  ← {where}")
+        # التقريب التراكمي بترتيب الكشف.
+        by_acc: dict[str, list] = defaultdict(list)
+        for lid, code, dirn, amt, _ref, d, eid in lines:
+            by_acc[code].append((d, eid, lid, dirn, Decimal(str(amt))))
+        plan: list[tuple[int, str, Decimal]] = []
+        worst = ZERO
+        for code, rows in by_acc.items():
+            rows.sort(key=lambda r: (str(r[0] or ''), r[1], r[2]))
+            cum4 = ZERO
+            prev2 = ZERO
+            out: list[list] = []          # [السطر، الناحية الأصلية، المبلغ القديم، الموقّع الجديد، فيه كسور؟]
+            for _d, _e, lid, dirn, amt in rows:
+                sign = 1 if dirn == "debit" else -1
+                cum4 += exact[lid] * sign
+                frac = exact[lid] != _r2(exact[lid])
+                if not frac:
+                    # **المبلغ اللي اتكتب بالقرش بيفضل زي ما اتكتب.** تحصيل ١٠٬٠٠٠ عند a5
+                    # كان بيطلع ١٠٬٠٠٠٫٠٣ لأن القرش بيقع على أول سطر بيعدّي الحد (نرمين
+                    # ٢٠٢٦-١٠-٠٦). المبلغ الصحيح مابيغيّرش تقريب الرصيد، فالرصيد بعده
+                    # بيفضل = رصيد a5 مقرّب — والقروش بتقع على السطور اللي فيها كسور أصلاً.
+                    signed = exact[lid] * sign
+                    prev2 += signed
+                else:
+                    now2 = _r2(cum4)
+                    signed = now2 - prev2
+                    prev2 = now2
+                out.append([lid, dirn, amt, signed, frac])
+            # نص القرش وهو بيعدّي من موجب لسالب (التقريب بعيد عن الصفر) ممكن يسيب قرش في
+            # الآخر — بيتحط على آخر سطر فيه كسور، مش على مبلغ مكتوب بالقرش.
+            gap = _r2(cum4) - prev2
+            if gap:
+                for o in reversed(out):
+                    if o[4]:
+                        o[3] += gap
+                        break
+            for lid, dirn, amt, signed, _f in out:
+                new_dir = dirn if signed == 0 else ("debit" if signed > 0 else "credit")
+                new_amt = abs(signed)
+                worst = max(worst, abs(new_amt - _r2(exact[lid])) if new_dir == dirn else new_amt)
+                if new_amt != amt or new_dir != dirn:
+                    plan.append((lid, new_dir, new_amt))
+
+        print(f"فرع {branch_name}: سطور {len(lines)} · هتتظبط {len(plan)} · "
+              f"أكبر فرق سطر عن a5 بعد الإصلاح {worst} · قيود ماتقابلتش {mismatch}")
         if not execute:
-            print("\nعرض فقط — `--yes` للتنفيذ.")
+            print("عرض فقط — `--yes` للتنفيذ.")
             return 0
-        n = 0
-        for _code, _bal, _t, diff, ln in plan:
-            if ln is None:
-                continue
-            # المدين بيزوّد الرصيد والدائن بيقلّله.
-            delta = diff if ln[1] == "debit" else -diff
-            db.execute(text("update ledger_line set amount = amount + :d, "
-                            "amount_residual = case when amount_residual is null then null "
-                            "else amount_residual + :d end where id = :i"),
-                       {"d": delta, "i": ln[0]})
-            n += 1
+        for lid, dirn, amt in plan:
+            db.execute(text("update ledger_line set direction = cast(:d as direction), amount = :a "
+                            "where id = :i"), {"d": dirn, "a": amt, "i": lid})
         db.commit()
-        print(f"\n✔ اتظبط {n} حساب على رصيد a5 بالقرش — في {branch_name} بس.")
+        print(f"✔ اتظبط {len(plan)} سطر — في {branch_name} بس.")
         return 0
     finally:
         db.close()
@@ -112,12 +158,10 @@ def run(folder: str, *, branch_name: str, prefix: str, execute: bool,
 
 if __name__ == "__main__":
     a = sys.argv[1:]
-    folder = a[a.index("--dir") + 1] if "--dir" in a else "C:/pgtmp"
+    rows = a[a.index("--rows") + 1] if "--rows" in a else ""
     prefix = a[a.index("--prefix") + 1] if "--prefix" in a else ""
     branch = a[a.index("--branch") + 1] if "--branch" in a else ""
-    if not branch or not prefix:
-        print("لازم --branch و--prefix.")
+    if not rows or not branch or not prefix:
+        print("لازم --rows و--branch و--prefix.")
         sys.exit(2)
-    exact_file = a[a.index("--exact") + 1] if "--exact" in a else ""
-    sys.exit(run(folder, branch_name=branch, prefix=prefix, execute="--yes" in a,
-                 exact_file=exact_file))
+    sys.exit(run(rows, branch_name=branch, prefix=prefix, execute="--yes" in a))
