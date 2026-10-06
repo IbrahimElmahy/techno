@@ -894,8 +894,10 @@ class RoutingOut(BaseModel):
     role: str
     label: str
     account_id: int
-    account_code: str
-    account_name: str
+    # حساب اتعمل من الشاشة (خزنة جديدة مثلاً) ممكن يبقى من غير كود ولا اسم — كان بيوقّع
+    # الشاشة كلها بـ500 (٢٠٢٦-١٠-٠٦).
+    account_code: str | None = None
+    account_name: str | None = None
     # "default" = the account this system seeded; "configured" = one an admin pointed it at. The
     # two are indistinguishable once posted, and an admin chasing a wrong statement needs to know
     # whether somebody changed this or nobody ever did.

@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 from src.lib.doc_order import newest_first
 from src.auth.dependencies import CurrentUser, require_capability
 from src.auth.rbac import CAP_PURCHASE_WRITE, CAP_RETURN_WRITE, CAP_STOCK_READ
+from src.services.ledger_service import LedgerError
 from src.services.account_resolver import AccountResolutionError
 from src.services import analytic_read, document_edit_service
 from src.services.document_edit_service import DocumentEditError
@@ -626,7 +627,7 @@ def update_purchase(
             variable_discount_pct=body.variable_discount_pct,
             replace_invoice_id=purchase_id,
         )
-    except (PurchaseError, StockError, AccountResolutionError) as exc:
+    except (PurchaseError, StockError, AccountResolutionError, LedgerError) as exc:
         # خزنة مختارة غلط أو مندوب مالوش عهدة = إعداد ناقص، مش عطل سيرفر. من غير السطر ده
         # كانت بتطلع 500 والرسالة العربية اللي بتقول الناقص إيه تضيع في اللوج.
         raise HTTPException(status.HTTP_409_CONFLICT,
@@ -675,7 +676,7 @@ def create_purchase(
             purchase_date=body.purchase_date,
             variable_discount_pct=body.variable_discount_pct,
         )
-    except (PurchaseError, StockError, AccountResolutionError) as exc:
+    except (PurchaseError, StockError, AccountResolutionError, LedgerError) as exc:
         raise HTTPException(status.HTTP_409_CONFLICT, {"code": "purchase_invalid", "message": str(exc)})
     db.commit()
     return _doc_out(inv)
@@ -695,7 +696,7 @@ def return_purchase(
             actor_role=current.role, actor_user_id=current.id,
             return_date=body.return_date, notes=body.notes,
         )
-    except (PurchaseError, StockError, AccountResolutionError) as exc:
+    except (PurchaseError, StockError, AccountResolutionError, LedgerError) as exc:
         raise HTTPException(status.HTTP_409_CONFLICT, {"code": "return_invalid", "message": str(exc)})
     db.commit()
     return DocOut(id=ret.id, document_number=ret.document_number, ledger_entry_id=ret.ledger_entry_id)
@@ -779,7 +780,7 @@ def create_standalone_purchase_return(
             statement1=body.statement1, statement2=body.statement2,
             statement3=body.statement3,
         )
-    except (PurchaseError, StockError, AccountResolutionError) as exc:
+    except (PurchaseError, StockError, AccountResolutionError, LedgerError) as exc:
         raise HTTPException(status.HTTP_409_CONFLICT,
                             {"code": "return_invalid", "message": str(exc)}) from exc
     db.commit()
@@ -828,7 +829,7 @@ def update_purchase_return(
             variable_discount_pct=body.variable_discount_pct,
             replace_return_id=return_id,
         )
-    except (PurchaseError, StockError, AccountResolutionError) as exc:
+    except (PurchaseError, StockError, AccountResolutionError, LedgerError) as exc:
         raise HTTPException(status.HTTP_409_CONFLICT,
                             {"code": "return_invalid", "message": str(exc)})
     db.commit()

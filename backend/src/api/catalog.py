@@ -1021,6 +1021,9 @@ def _delete_item(db: Session, item: Item, actor_user_id: int) -> None:
             + ". يمكنك إلغاء تفعيله بدلاً من الحذف."
         )
 
+    from sqlalchemy import text as _text
+    from sqlalchemy.exc import IntegrityError
+
     from src.models.catalog import ItemPriceHistory, ItemSerial, ItemUnit
     from src.models.loyalty import ProductPointValue
 
@@ -1031,7 +1034,19 @@ def _delete_item(db: Session, item: Item, actor_user_id: int) -> None:
     for model in (ItemPrice, ItemUnit, ItemSerial, ItemPriceHistory,
                   ProductPointValue):
         db.execute(delete(model).where(model.item_id == item.id))
+    # مكان الصنف على الرف (`stock_locator`) إعداد بتاعه مش تاريخ — كان بيوقّع الحذف بـ500
+    # («violates foreign key stock_locator_item_id_fkey»، ٢٠٢٦-١٠-٠٦).
+    db.execute(_text("DELETE FROM stock_locator WHERE item_id = :i"), {"i": item.id})
     db.delete(item)
+    try:
+        db.flush()
+    except IntegrityError as exc:
+        # جدول تاني بيشاور على الصنف ومش في القايمة فوق — الرفض برسالة بدل ٥٠٠.
+        db.rollback()
+        where = str(getattr(exc.orig, "diag", None) and exc.orig.diag.table_name or "مستند")
+        raise ValueError(
+            f"لا يمكن حذف الصنف نهائياً — مستخدم في ({where}). يمكنك إلغاء تفعيله بدلاً من الحذف."
+        ) from exc
     db.flush()
 
 

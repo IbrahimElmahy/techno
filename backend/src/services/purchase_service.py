@@ -247,19 +247,23 @@ def create_purchase(
         # مقدّمة بتنزل من مديونيته أو بتبقى له رصيد عندنا — زي فاتورة البيع بالظبط. كانت
         # بتسيب القيد مش متوازن والحفظ بيقع.
         entry_lines.append(LineInput(supplier_acc.account_id, Direction.debit, -to_money(credit_amount)))
-    entry = ledger_service.post_entry(
-        db, entry_type="purchase", actor_user_id=actor_user_id, lines=entry_lines,
-        rep_id=rep_id, branch_id=invoice.branch_id,
-        description=entry_text.purchase(invoice.document_number),
-        # (المرحلة ٢) القيد بتاريخ المستند وعلى المورد — كان بتاريخ النهارده وبلا شريك،
-        # فالفاتورة اللي اتسجّلت متأخرة كانت بتقع في شهر غير شهرها.
-        entry_date=invoice.purchase_date,
-        partner_kind=PartnerKind.supplier, partner_id=invoice.supplier_id,
-        cost_center_id=invoice.cost_center_id,
-        cost_center_distribution=cost_center_distribution,
-    )
-    invoice.ledger_entry_id = entry.id
-    db.flush()
+    # فاتورة شرا بصفر (بونص/هدية من المورد): مافيش فلوس تتقيّد، والسطر الصفري كان بيوقّع
+    # الحفظ كله بـ500 («كل سطر لازم يكون مبلغه أكبر من صفر»). البضاعة بتدخل والقيد مابيتعملش.
+    entry_lines = [ln for ln in entry_lines if to_money(ln.amount) > ZERO]
+    if entry_lines:
+        entry = ledger_service.post_entry(
+            db, entry_type="purchase", actor_user_id=actor_user_id, lines=entry_lines,
+            rep_id=rep_id, branch_id=invoice.branch_id,
+            description=entry_text.purchase(invoice.document_number),
+            # (المرحلة ٢) القيد بتاريخ المستند وعلى المورد — كان بتاريخ النهارده وبلا شريك،
+            # فالفاتورة اللي اتسجّلت متأخرة كانت بتقع في شهر غير شهرها.
+            entry_date=invoice.purchase_date,
+            partner_kind=PartnerKind.supplier, partner_id=invoice.supplier_id,
+            cost_center_id=invoice.cost_center_id,
+            cost_center_distribution=cost_center_distribution,
+        )
+        invoice.ledger_entry_id = entry.id
+        db.flush()
     audit_service.record(db,
                          action="purchase.edit" if replace_invoice_id else "purchase.create",
                          actor_user_id=actor_user_id,
