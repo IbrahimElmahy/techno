@@ -26,6 +26,9 @@ class VoucherKind(str, enum.Enum):
     rep_handover = "rep_handover"    # توريد المندوب لخزينة الشركة
     expense = "expense"              # سند مصروف (إيجار، مرتبات، بنزين…)
     cash_transfer = "cash_transfer"  # تحويل بين الخزائن
+    # «الجاري» في a5 (٢٠٢٦-١٠-٠٦): سحب الشريك من الخزنة (مدين جاريه) وإيداعه/مردوده (دائن).
+    partner_withdraw = "partner_withdraw"
+    partner_deposit = "partner_deposit"
 
 
 class Voucher(Base):

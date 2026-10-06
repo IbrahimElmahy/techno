@@ -28,6 +28,8 @@ export const ENTRY_TYPE_LABEL: Record<string, string> = {
   // The eight that were showing through in English.
   coupon_redeem_reverse: 'إلغاء استبدال كوبون',
   cash_transfer: 'تحويل نقدي',
+  partner_withdraw: 'سحب شريك',
+  partner_deposit: 'إيداع شريك',
   cheque_register: 'تسجيل شيك',
   cheque_settle: 'تحصيل شيك',
   cheque_bounce: 'ارتداد شيك',

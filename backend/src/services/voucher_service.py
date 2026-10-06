@@ -22,7 +22,7 @@ from src.core.money import ZERO, to_money
 from src.models.customer import Customer, CustomerAccount
 from src.services import customer_merge_service
 from src.services.customer_merge_service import MergeError
-from src.models.ledger import Account, AccountNature, Direction, PartnerKind
+from src.models.ledger import Account, AccountNature, Direction, LedgerEntry, PartnerKind
 from src.models.role import RoleName
 from src.models.supplier import Supplier, SupplierAccount
 from src.models.user import User
@@ -38,6 +38,8 @@ _PREFIX = {
     VoucherKind.rep_handover: "HND",
     VoucherKind.expense: "EXP",
     VoucherKind.cash_transfer: "TRF",
+    VoucherKind.partner_withdraw: "PWD",
+    VoucherKind.partner_deposit: "PDP",
 }
 
 
@@ -414,6 +416,52 @@ def create_expense(
         cost_center_distribution=cost_center_distribution, statement1=statement1,
         external_document_number=external_document_number,
     )
+
+
+def create_partner_movement(
+    db: Session, *, account_id: int, withdraw: bool, amount, actor_user_id: int,
+    actor_role: RoleName, treasury_id: int | None = None, voucher_date: date | None = None,
+    description: str | None = None, statement1: str | None = None,
+    external_document_number: str | None = None,
+) -> Voucher:
+    """«الجاري» — سحب شريك من الخزنة أو إيداعه/مردوده فيها، زي سند a5 بالظبط.
+
+    a5 بيكتبها سند نقدي بين «خزينة المركز الرئيسى» وحساب الشريك تحت «جارى الشركاء»
+    (أو سنته): السحب «الى حـ خزينة …» مدين الجاري، والمردود «من حـ خزينة …» دائنه.
+    الحساب لازم يكون تحت مجموعة جاري/رأس مال/استثمار — مش أي حساب في الشجرة.
+    """
+    value = _positive(amount)
+    acc = db.get(Account, account_id)
+    parent = db.get(Account, acc.parent_id) if acc is not None and acc.parent_id else None
+    pname = (parent.name or "") if parent is not None else ""
+    if acc is None or not acc.active or not acc.is_postable or not any(
+            w in pname for w in ("جار", "رأس المال", "راس المال", "استثمار")):
+        raise VoucherError("الحساب لازم يكون حساب شريك تحت «جارى الشركاء» أو «رأس المال».")
+    cash_account_id, safe_id = _cash_side(
+        db, actor_role=actor_role, actor_user_id=actor_user_id, treasury_id=treasury_id)
+    if withdraw:
+        _assert_cash_available(db, cash_account_id, value)
+    kind = VoucherKind.partner_withdraw if withdraw else VoucherKind.partner_deposit
+    label = "سحب شريك" if withdraw else "إيداع شريك"
+    v = _create(
+        db, kind=kind, amount=value, cash_account_id=cash_account_id,
+        party_account_id=acc.id,
+        debit_account_id=acc.id if withdraw else cash_account_id,
+        credit_account_id=cash_account_id if withdraw else acc.id,
+        actor_user_id=actor_user_id, voucher_date=voucher_date, description=description,
+        reference=None, payment_method=None, entry_type=kind.value,
+        statement=f"{label} — {acc.name or acc.code or ''} ({pname})".strip(),
+        treasury_id=safe_id, statement1=statement1,
+        external_document_number=external_document_number,
+    )
+    # الفرع فرع حساب الشريك (السادات مثلاً) مش فرع اللي كتب — المالك مالوش فرع.
+    if v.branch_id is None and acc.branch_id is not None:
+        v.branch_id = acc.branch_id
+        entry = db.get(LedgerEntry, v.ledger_entry_id)
+        if entry is not None and entry.branch_id is None:
+            entry.branch_id = acc.branch_id
+        db.flush()
+    return v
 
 
 def create_cash_transfer(

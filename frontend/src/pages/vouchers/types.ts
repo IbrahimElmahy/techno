@@ -60,6 +60,8 @@ export const KIND_LABEL: Record<string, string> = {
   rep_handover: 'توريد مندوب',
   expense: 'سند مصروف',
   cash_transfer: 'تحويل نقدي',
+  partner_withdraw: 'سحب شريك',
+  partner_deposit: 'إيداع شريك',
 };
 export const KIND_COLOR: Record<string, string> = {
   receipt: 'green',
@@ -67,6 +69,8 @@ export const KIND_COLOR: Record<string, string> = {
   rep_handover: 'blue',
   expense: 'orange',
   cash_transfer: 'purple',
+  partner_withdraw: 'volcano',
+  partner_deposit: 'cyan',
 };
 
 export { money } from '../../utils/money';

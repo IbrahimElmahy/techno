@@ -16,7 +16,8 @@ import { printMoney as n } from '../print/reportSheet';
  * words next to the figure, which is what makes a signed voucher hard to alter afterwards.
  */
 
-export type VoucherKind = 'receipt' | 'payment' | 'expense' | 'rep_handover' | 'cash_transfer';
+export type VoucherKind = 'receipt' | 'payment' | 'expense' | 'rep_handover' | 'cash_transfer'
+  | 'partner_withdraw' | 'partner_deposit';
 
 export interface VoucherDoc {
   kind: VoucherKind;
@@ -54,6 +55,8 @@ export const VOUCHER_TITLES: Record<VoucherKind, string> = {
   expense: 'سند مصروف',
   rep_handover: 'سند توريد مندوب',
   cash_transfer: 'سند تحويل بين الخزائن',
+  partner_withdraw: 'سند سحب شريك',
+  partner_deposit: 'سند إيداع شريك',
 };
 
 /** Who signs which side — a receipt is signed by the payer, a payment by the recipient. */
@@ -63,6 +66,8 @@ const SIGNATURES: Record<VoucherKind, [string, string, string]> = {
   expense: ['المستلم', 'أمين الخزينة', 'المعتمِد'],
   rep_handover: ['أمين الخزينة', 'المندوب', 'المحاسب'],
   cash_transfer: ['أمين الخزينة المُحوِّل', 'أمين الخزينة المستلم', 'المحاسب'],
+  partner_withdraw: ['المستلم', 'أمين الخزينة', 'المحاسب'],
+  partner_deposit: ['المستلم (أمين الخزينة)', 'الدافع', 'المحاسب'],
 };
 
 const STATEMENT: Record<VoucherKind, string> = {
@@ -71,6 +76,8 @@ const STATEMENT: Record<VoucherKind, string> = {
   expense: 'صُرف مقابل',
   rep_handover: 'ورّد المندوب',
   cash_transfer: 'حُوِّل من الخزينة',
+  partner_withdraw: 'صرفنا إلى',
+  partner_deposit: 'استلمنا من',
 };
 
 function rows(d: VoucherDoc): [string, string][] {

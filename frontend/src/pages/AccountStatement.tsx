@@ -114,6 +114,7 @@ const PAYMENT = 'دفعة';
 const VOUCHER_TYPE: Record<string, string> = {
   receipt: PAYMENT, payment: PAYMENT,
   rep_handover: 'توريد', expense: 'مصروف', cash_transfer: 'تحويل',
+  partner_withdraw: 'سحب شريك', partner_deposit: 'إيداع شريك',
 };
 
 /**
