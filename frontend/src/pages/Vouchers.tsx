@@ -1143,13 +1143,14 @@ const Vouchers: React.FC = () => {
         customers={customers} treasuries={treasuries} methodOptions={methodOptions}
         families={receiptFamilies} setFamilies={setReceiptFamilies}
         target={receiptTarget} setTarget={setReceiptTarget}
-        reps={reps}
+        reps={reps} suppliers={suppliers}
       />
 
       <PaymentModal
         open={paymentOpen} onCancel={() => setPaymentOpen(false)}
         form={paymentForm} posting={posting} submit={submit}
         suppliers={suppliers} treasuries={treasuries} methodOptions={methodOptions}
+        customers={customers}
       />
 
       <HandoverModal

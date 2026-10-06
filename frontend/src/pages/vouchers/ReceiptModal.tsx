@@ -23,11 +23,12 @@ import { TreasuryField, ExpenseAccountField } from '../../components/VoucherFiel
 import { api } from '../../api/client';
 import { searchFilter, searchRank } from '../../utils/arabicSort';
 import { Party, UserRecord, money } from './types';
+import { PartyKind, PartyKindField, PartyKindSwitch, isCustomerKind } from './PartyKind';
 
 export default function ReceiptModal({
   open, onCancel, form, posting, submit, customers, treasuries,
   methodOptions, families, setFamilies, target, setTarget, reps = [],
-  editing = false, treasuryOptional = false,
+  editing = false, treasuryOptional = false, suppliers = [],
 }: {
   open: boolean;
   onCancel: () => void;
@@ -47,11 +48,21 @@ export default function ReceiptModal({
   editing?: boolean;
   /** السند اللي بيتعدّل في عهدة المندوب — فاضي = يفضل فيها. */
   treasuryOptional?: boolean;
+  /** الموردين — قبض من مورد (رجّع فلوس). */
+  suppliers?: Party[];
 }) {
+  // الطرف (المرحلة ١): عميل افتراضياً زي الأول، والباقي اختيار.
+  const [kind, setKind] = React.useState<PartyKind>('customer');
+  React.useEffect(() => { if (open) setKind('customer'); }, [open]);
+  const switchKind = (k: PartyKind) => {
+    setKind(k);
+    setTarget('');
+    form.setFieldsValue({ customer_id: undefined, supplier_id: undefined, account_id: undefined });
+  };
   return (
       <TabModal
         open={open}
-        title={editing ? 'تعديل سند قبض' : 'سند قبض — تحصيل من عميل'}
+        title={editing ? 'تعديل سند قبض' : 'سند قبض'}
         okText={editing ? 'حفظ التعديل' : 'تسجيل السند'} cancelText="إلغاء"
         confirmLoading={posting}
         onCancel={onCancel}
@@ -62,6 +73,14 @@ export default function ReceiptModal({
                   form={form}
                   layout="vertical"
                   onFinish={(v) => {
+                    if (!isCustomerKind(kind)) {
+                      submit('/api/v1/vouchers/receipts', {
+                        ...v, customer_id: undefined, rep_user_id: undefined,
+                        supplier_id: kind === 'supplier' ? v.supplier_id : undefined,
+                        account_id: kind === 'account' ? v.account_id : undefined,
+                      }, form, 'تم تسجيل سند القبض ✔');
+                      return;
+                    }
                     const lines = families[v.customer_id] || [];
                     if (lines.length >= 2 && !target) {
                       message.error('حدد أنهي مديونية — أو اختر «على الإجمالي»');
@@ -75,11 +94,14 @@ export default function ReceiptModal({
                     }, form, 'تم تسجيل سند القبض ✔');
                   }}
                 >
-                  <Form.Item name="customer_id" label="العميل" rules={[{ required: true, message: 'اختر العميل' }]}>
-                    <PartyField
-                      kind="customer"
-                      options={customers.map((c) => ({ value: c.id, label: c.name }))}
-                      onChange={(id: number) => {
+                  <PartyKindSwitch value={kind} onChange={switchKind} />
+                  {!isCustomerKind(kind) && (
+                    <PartyKindField kind={kind} customers={customers} suppliers={suppliers} />
+                  )}
+                  {isCustomerKind(kind) && (
+                  <PartyKindField
+                      kind={kind} customers={customers} suppliers={suppliers}
+                      onCustomerChange={(id: number) => {
                         form.setFieldValue('customer_id', id);
                         setTarget('');
                         if (families[id]) return;
@@ -91,7 +113,7 @@ export default function ReceiptModal({
                           .catch(() => setFamilies((prev) => ({ ...prev, [id]: [] })));
                       }}
                     />
-                  </Form.Item>
+                  )}
                   <Form.Item noStyle shouldUpdate={(a, b) => a.customer_id !== b.customer_id}>
                     {({ getFieldValue }) => {
                       const lines = families[getFieldValue('customer_id')] || [];
@@ -124,6 +146,7 @@ export default function ReceiptModal({
                     placeholder={treasuryOptional ? 'عهدة المندوب (من غير تغيير)' : undefined} />
                   {/* المندوب اللي حصّل — فاضي = مندوب العميل. من غيره السند كان بيتكتب من غير
                       مندوب، فكشف الحساب وفلتر المندوب مابيشوفوش التحصيل ده. */}
+                  {isCustomerKind(kind) && (
                   <Form.Item name="rep_user_id" label="المندوب" tooltip="فاضي = مندوب العميل">
                     <Select
                       allowClear showSearch style={{ width: 220 }}
@@ -132,6 +155,7 @@ export default function ReceiptModal({
                       filterOption={searchFilter} filterSort={searchRank}
                     />
                   </Form.Item>
+                  )}
                   <Form.Item name="payment_method" label="طريقة الدفع">
                     <Select
                       allowClear

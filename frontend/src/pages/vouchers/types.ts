@@ -46,6 +46,8 @@ export interface StatementData {
 export interface Party {
   id: number;
   name: string;
+  /** تصنيف كارت العميل — «employee» موظف و«internal» فرع (اختيار طرف السند). */
+  customer_type?: string;
 }
 export interface UserRecord {
   id: number;

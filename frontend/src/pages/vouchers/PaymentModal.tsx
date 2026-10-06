@@ -22,9 +22,11 @@ import CostCenterSplit from '../../components/CostCenterSplit';
 import { TreasuryField, ExpenseAccountField } from '../../components/VoucherFields';
 import { api } from '../../api/client';
 import { Party, UserRecord, money } from './types';
+import { PartyKind, PartyKindField, PartyKindSwitch, isCustomerKind } from './PartyKind';
 
 export default function PaymentModal({
   open, onCancel, form, posting, submit, suppliers, treasuries, methodOptions, editing = false,
+  customers = [],
 }: {
   open: boolean;
   onCancel: () => void;
@@ -36,11 +38,25 @@ export default function PaymentModal({
   methodOptions: { value: string; label: string }[];
   /** بيعدّل سند موجود — العنوان والزرار بيقولوا كده. */
   editing?: boolean;
+  /** العملاء (ومعاهم الموظفين والفروع) — صرف لعميل/سلفة موظف/تحويل لفرع. */
+  customers?: Party[];
 }) {
+  // الطرف (المرحلة ١): مورد افتراضياً زي الأول، والباقي اختيار.
+  const [kind, setKind] = React.useState<PartyKind>('supplier');
+  // خطوط العميل (أبيض/بولي) — لو عنده الاتنين لازم يتحدد الصرف على أنهي واحد.
+  const [lines, setLines] = React.useState<any[]>([]);
+  const [family, setFamily] = React.useState<string>('');
+  React.useEffect(() => { if (open) { setKind('supplier'); setLines([]); setFamily(''); } }, [open]);
+  const switchKind = (k: PartyKind) => {
+    setKind(k);
+    setLines([]);
+    setFamily('');
+    form.setFieldsValue({ customer_id: undefined, supplier_id: undefined, account_id: undefined });
+  };
   return (
       <TabModal
         open={open}
-        title={editing ? 'تعديل سند صرف' : 'سند صرف — دفع لمورد'}
+        title={editing ? 'تعديل سند صرف' : 'سند صرف'}
         okText={editing ? 'حفظ التعديل' : 'تسجيل السند'} cancelText="إلغاء"
         confirmLoading={posting}
         onCancel={onCancel}
@@ -50,16 +66,43 @@ export default function PaymentModal({
       <Form
                   form={form}
                   layout="vertical"
-                  onFinish={(v) =>
-                    submit('/api/v1/vouchers/payments', v, form, 'تم تسجيل سند الصرف ✔')
-                  }
+                  onFinish={(v) => {
+                    if (isCustomerKind(kind) && lines.length >= 2 && !family) {
+                      message.error('حدد الصرف على أنهي حساب — أبيض ولا بولي');
+                      return;
+                    }
+                    submit('/api/v1/vouchers/payments', {
+                      ...v,
+                      supplier_id: kind === 'supplier' ? v.supplier_id : undefined,
+                      customer_id: isCustomerKind(kind) ? v.customer_id : undefined,
+                      account_id: kind === 'account' ? v.account_id : undefined,
+                      family: isCustomerKind(kind) && family ? family : undefined,
+                    }, form, 'تم تسجيل سند الصرف ✔');
+                  }}
                 >
-                  <Form.Item name="supplier_id" label="المورد" rules={[{ required: true, message: 'اختر المورد' }]}>
-                    <PartyField
-                      kind="supplier"
-                      options={suppliers.map((s) => ({ value: s.id, label: s.name }))}
-                    />
-                  </Form.Item>
+                  <PartyKindSwitch value={kind} onChange={switchKind} />
+                  <PartyKindField
+                    kind={kind} customers={customers} suppliers={suppliers}
+                    onCustomerChange={(id: number) => {
+                      form.setFieldValue('customer_id', id);
+                      setFamily('');
+                      api.get(`/api/v1/customers/${id}/accounts`)
+                        .then((r) => setLines((r.data?.accounts || []).filter((a: any) => a.family)))
+                        .catch(() => setLines([]));
+                    }}
+                  />
+                  {isCustomerKind(kind) && lines.length >= 2 && (
+                    <Form.Item label="الصرف على أنهي حساب؟" required>
+                      <Segmented
+                        value={family}
+                        onChange={(x: string | number) => setFamily(String(x))}
+                        options={lines.map((l: any) => ({
+                          value: l.family as string,
+                          label: `${l.family} (${money(Number(l.balance || 0))})`,
+                        }))}
+                      />
+                    </Form.Item>
+                  )}
                   <Form.Item name="amount" label="المبلغ" rules={[{ required: true, message: 'أدخل المبلغ' }]}>
                     <InputNumber min={0.01} step={0.01} style={{ width: 140 }} />
                   </Form.Item>

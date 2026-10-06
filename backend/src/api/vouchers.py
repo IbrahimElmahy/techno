@@ -47,7 +47,11 @@ class ReceiptIn(BaseModel):
     # (031) أنهي مديونية بيسدّد. اسم عيلة، أو `on_total` عشان يتوزّع على الكل بالنسبة.
     family: str | None = None
     on_total: bool = False
-    customer_id: int
+    # الطرف (المرحلة ١، ٢٠٢٦-١٠-٠٦): واحد بس من التلاتة. العميل يشمل الموظف والفرع (كروتهم
+    # عملاء بتصنيفهم)، والمورد = رجّع فلوس، والحساب = أي حساب فرعي من الشجرة زي a5.
+    customer_id: int | None = None
+    supplier_id: int | None = None
+    account_id: int | None = None
     amount: Decimal
     treasury_id: int | None = None
     voucher_date: date | None = None
@@ -68,7 +72,11 @@ class ReceiptIn(BaseModel):
 
 
 class PaymentIn(BaseModel):
-    supplier_id: int
+    # الطرف — واحد بس: مورد، أو عميل/موظف/فرع (ومعاه الخط لو عنده أبيض وبولي)، أو حساب.
+    supplier_id: int | None = None
+    customer_id: int | None = None
+    account_id: int | None = None
+    family: str | None = None
     amount: Decimal
     treasury_id: int | None = None
     voucher_date: date | None = None
@@ -459,7 +467,8 @@ def create_receipt(
             return _out(seen)
     try:
         v = voucher_service.create_receipt(
-            db, customer_id=body.customer_id, amount=body.amount, actor_user_id=current.id,
+            db, customer_id=body.customer_id, supplier_id=body.supplier_id,
+            account_id=body.account_id, amount=body.amount, actor_user_id=current.id,
             actor_role=current.role, treasury_id=body.treasury_id,
             voucher_date=body.voucher_date, description=body.description,
             reference=body.reference, payment_method=body.payment_method,
@@ -467,7 +476,7 @@ def create_receipt(
             client_uuid=body.client_uuid, cost_center_id=body.cost_center_id,
             statement1=body.statement1, external_document_number=body.external_document_number,
             rep_user_id=body.rep_user_id)
-    except (VoucherError, LedgerError) as exc:
+    except (VoucherError, LedgerError, TreasuryError) as exc:
         raise _conflict(exc)
     db.commit()
     return _out(v)
@@ -486,12 +495,14 @@ def create_payment(
                             {"code": "forbidden", "message": "الصرف للموردين من المكتب فقط."})
     try:
         v = voucher_service.create_payment(
-            db, supplier_id=body.supplier_id, amount=body.amount, actor_user_id=current.id,
+            db, supplier_id=body.supplier_id, customer_id=body.customer_id,
+            account_id=body.account_id, family=body.family,
+            amount=body.amount, actor_user_id=current.id,
             actor_role=current.role, treasury_id=body.treasury_id,
             voucher_date=body.voucher_date, description=body.description,
             reference=body.reference, payment_method=body.payment_method,
             cost_center_id=body.cost_center_id, statement1=body.statement1, external_document_number=body.external_document_number)
-    except (VoucherError, LedgerError) as exc:
+    except (VoucherError, LedgerError, TreasuryError) as exc:
         raise _conflict(exc)
     db.commit()
     return _out(v)
@@ -562,7 +573,7 @@ def create_handover(
             voucher_date=body.voucher_date, description=body.description,
             reference=body.reference, family=body.family,
             cost_center_id=body.cost_center_id, statement1=body.statement1, external_document_number=body.external_document_number)
-    except (VoucherError, LedgerError) as exc:
+    except (VoucherError, LedgerError, TreasuryError) as exc:
         raise _conflict(exc)
     db.commit()
     return _out(v)
@@ -805,7 +816,7 @@ def reverse_voucher(
     try:
         v = voucher_service.reverse_voucher(db, voucher_id=voucher_id,
                                             actor_user_id=current.id)
-    except (VoucherError, LedgerError) as exc:
+    except (VoucherError, LedgerError, TreasuryError) as exc:
         raise _conflict(exc)
     db.commit()
     return _out(v)

@@ -22,7 +22,7 @@ from src.core.money import ZERO, to_money
 from src.models.customer import Customer, CustomerAccount
 from src.services import customer_merge_service
 from src.services.customer_merge_service import MergeError
-from src.models.ledger import Account, AccountNature, Direction, LedgerEntry, PartnerKind
+from src.models.ledger import Account, AccountNature, AccountType, Direction, LedgerEntry, PartnerKind
 from src.models.role import RoleName
 from src.models.supplier import Supplier, SupplierAccount
 from src.models.user import User
@@ -278,7 +278,8 @@ def _receipt_rep(
 
 
 def create_receipt(
-    db: Session, *, customer_id: int, amount, actor_user_id: int, actor_role: RoleName,
+    db: Session, *, customer_id: int | None = None, amount, actor_user_id: int,
+    actor_role: RoleName, supplier_id: int | None = None, account_id: int | None = None,
     voucher_date: date | None = None, description: str | None = None,
     reference: str | None = None, payment_method: str | None = None,
     treasury_id: int | None = None, family: str | None = None,
@@ -298,6 +299,17 @@ def create_receipt(
     collection landing on the wrong line is money the next statement cannot explain.
     """
     value = _positive(amount)
+    if len([x for x in (customer_id, supplier_id, account_id) if x]) != 1:
+        raise VoucherError("اختار طرف واحد للسند: عميل أو مورد أو حساب.")
+    if customer_id is None:
+        # (المرحلة ١، ٢٠٢٦-١٠-٠٦) قبض من مورد (رجّع فلوس) أو من أي حساب — زي a5.
+        return _party_voucher(
+            db, receipt=True, value=value, supplier_id=supplier_id, account_id=account_id,
+            actor_user_id=actor_user_id, actor_role=actor_role, treasury_id=treasury_id,
+            voucher_date=voucher_date, description=description, reference=reference,
+            payment_method=payment_method, cost_center_id=cost_center_id,
+            statement1=statement1, external_document_number=external_document_number,
+            replacing=replacing)
     rep_id = _receipt_rep(db, customer_id=customer_id, actor_user_id=actor_user_id,
                           actor_role=actor_role, rep_user_id=rep_user_id)
     # نفس خط الفاتورة يروح للطرفين: حساب المديونية اللي بيتخصم، والصندوق اللي بينزل فيه.
@@ -341,6 +353,85 @@ def create_receipt(
     )
 
 
+# الصفة اللي بتتكتب على السند للعميل حسب تصنيفه — «صرف لموظف» مش «صرف لعميل».
+_CUSTOMER_ROLE = {"employee": "موظف", "internal": "فرع", "owner": "مالك"}
+
+
+def _party_voucher(
+    db: Session, *, receipt: bool, value: Decimal, actor_user_id: int, actor_role: RoleName,
+    customer_id: int | None = None, supplier_id: int | None = None,
+    account_id: int | None = None, family: str | None = None,
+    treasury_id: int | None = None, voucher_date: date | None = None,
+    description: str | None = None, reference: str | None = None,
+    payment_method: str | None = None, cost_center_id: int | None = None,
+    statement1: str | None = None, external_document_number: str | None = None,
+    replacing: dict | None = None,
+) -> Voucher:
+    """سند قبض/صرف على أي طرف — المرحلة ١ (٢٠٢٦-١٠-٠٦).
+
+    a5 بيعمل السند على أي حساب في الشجرة: يصرف لعميل (رد فلوس)، يقبض من مورد (رجّع دفعة)،
+    يصرف سلفة لموظف، يحوّل لفرع. عندنا كان القبض من عميل بس والصرف لمورد بس، فالحاجات دي
+    كانت بتتعمل قيد حر أو ماتتعملش. هنا الطرف واحد من:
+
+    * عميل (ومعاه الموظف والفرع — كروتهم عملاء بتصنيف «موظف»/«فرع») ⇒ حساب ذممه، بالخط لو
+      عنده أبيض وبولي.
+    * مورد ⇒ حساب ذممه.
+    * حساب من الشجرة ⇒ هو نفسه (فرعي ونشط ومش خزنة — نقل الخزن «تحويل»).
+
+    القبض: مدين الخزنة ودائن الطرف. الصرف: مدين الطرف ودائن الخزنة، بعد ما نتأكد إن الخزنة
+    فيها المبلغ.
+    """
+    given = [x for x in (customer_id, supplier_id, account_id) if x]
+    if len(given) != 1:
+        raise VoucherError("اختار طرف واحد للسند: عميل أو مورد أو حساب.")
+    party_name = ""
+    if customer_id:
+        cust = db.get(Customer, customer_id)
+        if cust is None:
+            raise VoucherError("العميل غير موجود.")
+        party_account = _customer_account(db, customer_id, family).account_id
+        role = _CUSTOMER_ROLE.get(str(getattr(cust.customer_type, "value", cust.customer_type)),
+                                  "عميل")
+        party_name = f"{role} {cust.name}"
+    elif supplier_id:
+        sup = db.get(Supplier, supplier_id)
+        party_account = _supplier_account(db, supplier_id).account_id
+        party_name = f"مورد {sup.name if sup else ''}"
+    else:
+        acc = db.get(Account, account_id)
+        if acc is None or not acc.active:
+            raise VoucherError("الحساب غير موجود.")
+        if not acc.is_postable:
+            raise VoucherError("لا يمكن الترحيل على حساب تجميعي — اختر حسابًا فرعيًا.")
+        if acc.account_type == AccountType.treasury:
+            raise VoucherError("ده حساب خزنة — النقل بين الخزن بـ«تحويل نقدي».")
+        party_account = acc.id
+        party_name = acc.name or acc.code or ""
+    cash_account_id, safe_id = _cash_side(
+        db, actor_role=actor_role, actor_user_id=actor_user_id, treasury_id=treasury_id,
+        family=family)
+    if not receipt:
+        _assert_cash_available(db, cash_account_id, value)
+    kind = VoucherKind.receipt if receipt else VoucherKind.payment
+    return _create(
+        db, kind=kind, amount=value, cash_account_id=cash_account_id,
+        party_account_id=party_account,
+        debit_account_id=cash_account_id if receipt else party_account,
+        credit_account_id=party_account if receipt else cash_account_id,
+        # من غير عميل ولا مورد على السند، القايمة مالهاش اسم تعرضه — فالبيان الفاضي بياخد
+        # الطرف («صرف إلى موظف فلان»/«قبض من حساب كذا»).
+        actor_user_id=actor_user_id, voucher_date=voucher_date,
+        description=description or f"{'قبض من' if receipt else 'صرف إلى'} {party_name}".strip(),
+        reference=reference, payment_method=payment_method,
+        entry_type="receipt" if receipt else "payment",
+        statement=f"{'قبض من' if receipt else 'صرف إلى'} {party_name}".strip(),
+        customer_id=customer_id, supplier_id=supplier_id, treasury_id=safe_id,
+        family=family if customer_id else None,
+        cost_center_id=cost_center_id, statement1=statement1,
+        external_document_number=external_document_number, replacing=replacing,
+    )
+
+
 def _assert_cash_available(db: Session, account_id: int, value: Decimal) -> None:
     available = ledger_service.balance_of(db, account_id)
     if value > available:
@@ -350,7 +441,9 @@ def _assert_cash_available(db: Session, account_id: int, value: Decimal) -> None
 
 
 def create_payment(
-    db: Session, *, supplier_id: int, amount, actor_user_id: int, actor_role: RoleName,
+    db: Session, *, supplier_id: int | None = None, amount, actor_user_id: int,
+    actor_role: RoleName, customer_id: int | None = None, account_id: int | None = None,
+    family: str | None = None,
     voucher_date: date | None = None, description: str | None = None,
     reference: str | None = None, payment_method: str | None = None,
     treasury_id: int | None = None,
@@ -358,8 +451,18 @@ def create_payment(
     external_document_number: str | None = None,
     replacing: dict | None = None,
 ) -> Voucher:
-    """سند صرف — دفع لمورد من الخزينة."""
+    """سند صرف — دفع لمورد من الخزينة، أو (المرحلة ١) لعميل/موظف/فرع أو أي حساب."""
     value = _positive(amount)
+    if len([x for x in (customer_id, supplier_id, account_id) if x]) != 1:
+        raise VoucherError("اختار طرف واحد للسند: عميل أو مورد أو حساب.")
+    if supplier_id is None:
+        return _party_voucher(
+            db, receipt=False, value=value, customer_id=customer_id, account_id=account_id,
+            family=family, actor_user_id=actor_user_id, actor_role=actor_role,
+            treasury_id=treasury_id, voucher_date=voucher_date, description=description,
+            reference=reference, payment_method=payment_method, cost_center_id=cost_center_id,
+            statement1=statement1, external_document_number=external_document_number,
+            replacing=replacing)
     party = _supplier_account(db, supplier_id)
     cash_account_id, safe_id = _cash_side(
         db, actor_role=actor_role, actor_user_id=actor_user_id, treasury_id=treasury_id)
