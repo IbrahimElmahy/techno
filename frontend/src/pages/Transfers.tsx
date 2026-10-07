@@ -258,13 +258,18 @@ export default function Transfers() {
         value: locValue('warehouse', w.id), label: withInactiveTag(w.name || `مخزن #${w.id}`, w),
       })),
     },
+    // **عهد المناديب مش أماكن بضاعة.** بضاعة المندوب في مخزنه (زي a5)، والعهدة بقت صندوق
+    // فلوسه — ولا عهدة في التلات فروع عليها حركة مخزون واحدة. ظهورها هنا كان بيخلّي
+    // التحويل يروح لمكان مالوش وجود في الشغل (طلب العميل ٢٠٢٦-١٠-٠٧). الإذن القديم اللي
+    // عليه عهدة بيفضل يعرضها.
     {
       label: 'عهد المناديب',
-      options: sortByName(custodies, (c) => c.name).map((c) => ({
+      options: sortByName(custodies.filter((c) => [source, dest].includes(locValue('custody', c.id))),
+        (c) => c.name).map((c) => ({
         value: locValue('custody', c.id), label: c.name || `عهدة #${c.id}`,
       })),
     },
-  ]), [warehouses, custodies, source, dest]);
+  ].filter((g) => g.options.length > 0)), [warehouses, custodies, source, dest]);
 
   /** نفس القايمة من غير المصدر. الاستبعاد لازم يحصل **جوّه** المجموعة — المجموعة نفسها
    *  مالهاش `value`، فالفلترة على المستوى الأعلى كانت بتعدّي كل حاجة والمصدر يفضل مختار
@@ -1263,7 +1268,7 @@ export default function Transfers() {
         open={newStep === 'source' && !editing && !viewOnly}
         title="التحويل من أين؟"
         subtitle="البضاعة بتطلع من هنا — والرصيد المتاح بيتحمّل على أساسه."
-        placeholder="اختر المخزن أو العهدة المصدر"
+        placeholder="اختر المخزن المصدر"
         value={source}
         onChange={(v) => { onSourceChange(v); }}
         warehouses={locationOptions}
@@ -1277,7 +1282,7 @@ export default function Transfers() {
         open={newStep === 'dest' && !editing && !viewOnly}
         title="التحويل إلى أين؟"
         subtitle="المصدر مستبعد من القايمة — تحويل لنفس المكان مش تحويل."
-        placeholder="اختر المخزن أو العهدة الوجهة"
+        placeholder="اختر المخزن الوجهة"
         value={dest}
         onChange={(v) => {
           if (v === source) {
@@ -1719,7 +1724,7 @@ export default function Transfers() {
             <Col xs={24} md={8} className="sale-party">
               <Form.Item label="من (المصدر)">
                 <Select showSearch style={{ width: '100%' }}
-                  placeholder="اختر المخزن أو العهدة المصدر"
+                  placeholder="اختر المخزن المصدر"
                   disabled={!!editing || viewOnly}
                   value={source ?? undefined} onChange={onSourceChange}
                   options={locationOptions} filterOption={searchFilter} filterSort={searchRank}/>
@@ -1728,7 +1733,7 @@ export default function Transfers() {
             <Col xs={24} md={8} className="sale-party">
               <Form.Item label="إلى (الوجهة)">
                 <Select showSearch style={{ width: '100%' }}
-                  placeholder="اختر المخزن أو العهدة الوجهة"
+                  placeholder="اختر المخزن الوجهة"
                   disabled={!!editing || viewOnly}
                   value={dest ?? undefined} onChange={(v) => setDest(v)}
                   options={locationOptions} filterOption={searchFilter} filterSort={searchRank}/>
@@ -1997,7 +2002,7 @@ export default function Transfers() {
     <ListPage
       icon={<SwapOutlined />}
       title="اذن تحويل مخازن" muted="(تحويلات ومناقلات المخزون)"
-      subtitle="نقل البضاعة بين المخازن وعهد المناديب، واعتماد الطلبات"
+      subtitle="نقل البضاعة بين المخازن، واعتماد الطلبات"
       tabs={statusTabs} activeTab={activeStatusTab}
       onTabChange={(k) => filter.setValue('status', k === 'all' ? undefined : k)}
       actions={(<>
