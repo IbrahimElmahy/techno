@@ -49,3 +49,7 @@ class LookupOption(Base):
     active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     # True for options seeded from a backend Enum — value is locked, row cannot be deleted.
     is_system: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    # فئة أصناف مخفية من «شيت التسعير» في تطبيق المناديب (٢٠٢٦-١٠-٠٧). التحكم من شاشة
+    # الفئات في النظام. `NULL` = ظاهرة — العمود متضاف على قاعدة شغّالة من غير default.
+    # إخفاء رئيسية بيخفي فروعها كمان (`sales._price_sheet_hidden`).
+    hidden_in_price_sheet: Mapped[bool | None] = mapped_column(Boolean, nullable=True)

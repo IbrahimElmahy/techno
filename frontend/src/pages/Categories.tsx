@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { searchFilter, searchRank } from '../utils/arabicSort';
 import { PAGE_SIZE } from '../utils/pagination';
 import {
-  Button, Descriptions, Dropdown, Form, Input, Select, Space, Table, Tooltip, message,
+  Button, Descriptions, Dropdown, Form, Input, Select, Space, Switch, Table, Tooltip, message,
 } from 'antd';
 import { Popconfirm } from '../components/noConfirm';
 import {
@@ -49,6 +49,8 @@ interface Category {
    * الصنف، فـ`Item.category` لكل صنف موجود فضل زي ما هو بالحرف والترقية كلها إضافة.
    */
   parent_value: string | null;
+  /** مخفية من شيت التسعير في تطبيق المناديب. */
+  hidden_in_price_sheet?: boolean;
 }
 
 export default function Categories() {
@@ -224,6 +226,21 @@ export default function Categories() {
     }
   };
 
+  /**
+   * إظهار/إخفاء الفئة من شيت التسعير في التطبيق — من الجدول على طول من غير فورم.
+   * بيوصل الموبايل مع أول مزامنة للمندوب. إخفاء رئيسية بيخفي فروعها كمان.
+   */
+  const toggleSheet = async (row: Category, show: boolean) => {
+    setRows((rs) => rs.map((r) => (r.id === row.id ? { ...r, hidden_in_price_sheet: !show } : r)));
+    try {
+      await api.patch(`/api/v1/settings/lookups/${row.id}`, { hidden_in_price_sheet: !show });
+      message.success(show ? `«${row.label}» ظاهرة في شيت التسعير` : `«${row.label}» اتخفت من شيت التسعير`);
+    } catch (err: any) {
+      message.error(err?.response?.data?.detail?.message || 'تعذر الحفظ');
+      load();
+    }
+  };
+
   const remove = async (row: Category) => {
     try {
       await api.delete(`/api/v1/settings/lookups/${row.id}`);
@@ -273,6 +290,19 @@ export default function Categories() {
       render: (a: boolean) => (a
         ? <CloseCircleOutlined style={{ color: '#cf1322' }} />
         : <CheckCircleOutlined style={{ color: '#6AB42D' }} />) },
+    { title: 'شيت التسعير (التطبيق)', key: 'price_sheet', width: 150, align: 'center' as const,
+      render: (_: unknown, row: Category) => {
+        // فرعية أبوها مخفي — بتتخفي معاه مهما كان مفتاحها.
+        const byParent = !!(row.parent_value && byValue.get(row.parent_value)?.hidden_in_price_sheet);
+        return (
+          <Tooltip title={byParent ? 'مخفية لأن الفئة الرئيسية مخفية' : undefined}>
+            <Switch size="small" checkedChildren="ظاهرة" unCheckedChildren="مخفية"
+              checked={!row.hidden_in_price_sheet && !byParent} disabled={byParent}
+              onClick={(_c, e) => e.stopPropagation()}
+              onChange={(v) => toggleSheet(row, v)} />
+          </Tooltip>
+        );
+      } },
     { title: 'وصف', dataIndex: 'description', render: (v: string) => v || '' },
     { title: '', key: 'act', width: 110, align: 'center' as const,
       render: (_: unknown, row: Category) => (

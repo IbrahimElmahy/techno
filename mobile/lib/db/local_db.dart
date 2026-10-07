@@ -837,6 +837,17 @@ class LocalDb {
     return [for (final r in rows) SaleItem.fromRow(r)];
   }
 
+  /// فئات مايظهرش أصنافها في شيت التسعير — بتيجي من النظام مع حزمة المندوب.
+  Future<Set<String>> priceSheetHiddenCategories() async {
+    final raw = await getKv('price_sheet_hidden_categories');
+    if (raw == null || raw.isEmpty) return const {};
+    try {
+      return {for (final c in (jsonDecode(raw) as List)) '$c'};
+    } catch (_) {
+      return const {};
+    }
+  }
+
   Future<List<SaleItem>> saleItems({String query = ''}) async {
     final d = await db;
     final rows = await d.query('sale_item',

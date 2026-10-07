@@ -453,6 +453,13 @@ class ApiClient {
     // بيتبعتوا مختلفين وقت الترحيل — فالجهاز بيحفظ اللي السيرفر قاله مش بيفترض.
     await LocalDb.instance.setKv('store_kind', '${body['store_kind'] ?? 'custody'}');
     await LocalDb.instance.setKv('store_id', '${body['store_id']}');
+    // فئات مخفية من شيت التسعير — التحكم من شاشة الفئات في النظام. سيرفر قديم
+    // مابيبعتهاش ⇒ مابنلمسش اللي متخزّن.
+    final hiddenCats = body['price_sheet_hidden_categories'];
+    if (hiddenCats is List) {
+      await LocalDb.instance.setKv(
+          'price_sheet_hidden_categories', jsonEncode([for (final c in hiddenCats) '$c']));
+    }
     // **البيع تحت سعر الشريحة — مسموح ولا لأ.**
     //
     // الجهاز ماكانش يعرف، فكان بيسيب المندوب يكتب الفاتورة بسعر أقل وتقعد في الطابور

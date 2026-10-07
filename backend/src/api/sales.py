@@ -541,9 +541,16 @@ def rep_bundle(
     # الفئة باسم تاني — والمندوب والمكتب بيتكلموا في التليفون على نفس الفئة.
     from src.models.lookup import LookupOption
 
-    cat_label = dict(db.execute(
-        select(LookupOption.value, LookupOption.label)
-        .where(LookupOption.category == "item_category")).all())
+    cat_rows = db.execute(
+        select(LookupOption.value, LookupOption.label, LookupOption.parent_value,
+               LookupOption.hidden_in_price_sheet)
+        .where(LookupOption.category == "item_category")).all()
+    cat_label = {r[0]: r[1] for r in cat_rows}
+    # الفئات المخفية من شيت التسعير (بتتحكم من شاشة الفئات) — بالاسم زي ما الصنف
+    # بيوصل الجهاز. الرئيسية المخفية بتخفي فروعها.
+    hidden_vals = {r[0] for r in cat_rows if r[3]}
+    price_sheet_hidden = sorted(
+        r[1] for r in cat_rows if r[0] in hidden_vals or r[2] in hidden_vals)
 
     acct_balance = chart_service.bulk_balances(db)
     accounts_by_customer: dict[int, list[CustomerAccount]] = {}
@@ -798,6 +805,9 @@ def rep_bundle(
             }
             for c in catalog
         ],
+        # فئات مايظهرش أصنافها في شيت التسعير بتاع التطبيق. الكتالوج نفسه مابيتفلترش
+        # لأن إذن التحويل بيستخدمه — الجهاز هو اللي بيشيلها من الشيت.
+        "price_sheet_hidden_categories": price_sheet_hidden,
     }
 
 

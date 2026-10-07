@@ -30,6 +30,8 @@ class OptionOut(BaseModel):
     # قيمة الفئة الأب — `None` يعني رئيسية. (031) بتنزل مع كل قايمة، والشاشات اللي
     # مش عاملة شجرة بتلاقيها `None` في كل صف فبتتصرف زي ما هي.
     parent_value: str | None = None
+    # فئات الأصناف بس: مخفية من شيت التسعير في التطبيق.
+    hidden_in_price_sheet: bool = False
 
 
 class OptionCreate(BaseModel):
@@ -49,13 +51,16 @@ class OptionUpdate(BaseModel):
     # `null`/غايب = ماتلمسش الأب · `""` = خلّيها رئيسية. لازم تتفرّق الحالتين، وإلا
     # أي تعديل اسم من شاشة قديمة مابتبعتش الحقل كان بيفكّ الشجرة في صمت.
     parent_value: str | None = None
+    # غايب = ماتلمسش.
+    hidden_in_price_sheet: bool | None = None
 
 
 def _out(o) -> OptionOut:
     return OptionOut(id=o.id, category=o.category, value=o.value, label=o.label,
                      sort_order=o.sort_order, active=o.active, is_system=o.is_system,
                      description=getattr(o, 'description', None),
-                     parent_value=getattr(o, 'parent_value', None))
+                     parent_value=getattr(o, 'parent_value', None),
+                     hidden_in_price_sheet=bool(getattr(o, 'hidden_in_price_sheet', None)))
 
 
 @router.get("/categories")
@@ -106,6 +111,8 @@ def update_option(
             db, option_id=option_id, label=body.label, sort_order=body.sort_order,
             active=body.active, description=body.description,
             parent_value=body.parent_value)
+        if body.hidden_in_price_sheet is not None:
+            opt.hidden_in_price_sheet = body.hidden_in_price_sheet
     except LookupError as exc:
         raise HTTPException(status.HTTP_404_NOT_FOUND, {"code": "not_found", "message": str(exc)})
     db.commit()

@@ -102,7 +102,13 @@ class _PriceSheetScreenState extends State<PriceSheetScreen> {
   }
 
   Future<void> _load() async {
-    final items = await LocalDb.instance.catalogItems();
+    // الفئات اللي النظام مخبّيها من الشيت بتتشال من المنتقي. السطور المتحفوظة قبل
+    // الإخفاء بتفضل زي ما هي — عرض اتبعت لتاجر مابيتغيّرش من تحته.
+    final hidden = await LocalDb.instance.priceSheetHiddenCategories();
+    final items = [
+      for (final it in await LocalDb.instance.catalogItems())
+        if (!hidden.contains(it.category?.trim() ?? '')) it
+    ];
     // الشيت المتحفوظ بيتقرا **بعد** الكتالوج: السطور فيها اسم الصنف وسعره زي ما
     // اتحفظوا، فالشيت بيفتح بأرقامه هو حتى لو سعر القايمة اتغيّر بعد كده. عرض
     // اتبعت للتاجر بأرقام، ولما يرجع يتفتح لازم يقول نفس الأرقام.

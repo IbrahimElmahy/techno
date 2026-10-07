@@ -654,6 +654,8 @@ _ADDED_COLUMNS: list[tuple[str, str, str]] = [
     ("item_price", "vat_pct", "DECIMAL(5,2)"),
     # A free note on a configurable list option (a5 parity: فئات الأصناف have a وصف).
     ("lookup_option", "description", "VARCHAR(300)"),
+    # فئة مخفية من شيت التسعير في التطبيق (٢٠٢٦-١٠-٠٧). NULL = ظاهرة.
+    ("lookup_option", "hidden_in_price_sheet", "BOOLEAN"),
     # Invoice expense totals (a5 parity): billed to the customer vs borne by us.
     ("sales_invoice", "expenses_billed", "DECIMAL(18,2)"),
     ("sales_invoice", "expenses_operating", "DECIMAL(18,2)"),
