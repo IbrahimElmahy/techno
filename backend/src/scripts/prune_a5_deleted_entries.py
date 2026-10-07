@@ -52,6 +52,12 @@ def run(folder: str, *, branch_name: str, prefix: str, execute: bool) -> int:
         db.execute(text("""delete from partial_reconcile where debit_line_id in
             (select id from ledger_line where entry_id = any(:i)) or credit_line_id in
             (select id from ledger_line where entry_id = any(:i))"""), {"i": ids})
+        # السندات اللي اتعملت على القيود دي من a5 (`a5_entries_to_vouchers`) بتتشال معاها وبترجع
+        # بعد الاستيراد؛ وسند نظامنا اللي خد رقم a5 (`adopt_native_vouchers`) بيتفك من قيده.
+        db.execute(text("delete from voucher where ledger_entry_id = any(:i) and client_uuid like 'a5:%'"),
+                   {"i": ids})
+        db.execute(text("update voucher set ledger_entry_id = null where ledger_entry_id = any(:i)"),
+                   {"i": ids})
         db.execute(text("delete from ledger_line where entry_id = any(:i)"), {"i": ids})
         db.execute(text("delete from ledger_entry where id = any(:i)"), {"i": ids})
         db.commit()

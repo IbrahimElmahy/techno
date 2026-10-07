@@ -708,6 +708,10 @@ def replace_voucher(
     original = db.get(Voucher, voucher_id)
     if original is None:
         raise VoucherNotFound("السند مش موجود.")
+    # السند اللي جاي من a5 بيتعدّل في a5 — المزامنة بتجيب التعديل. تعديله هنا كان هيعمل سند
+    # جديد من غير رقم a5، والمزامنة الجاية تجيب الأصلي تاني فيبقوا اتنين.
+    if (original.client_uuid or "").startswith("a5:"):
+        raise VoucherError("السند ده منقول من a5 — عدّله في a5 والمزامنة هتجيب التعديل.")
     if original.kind != kind:
         raise VoucherError("نوع السند مش مطابق.")
     if original.reverses_id is not None:

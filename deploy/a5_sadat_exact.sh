@@ -64,6 +64,8 @@ $P.fix_a5_rounding_balances --rows "$DEST/a5_acc_rows4.txt" --branch الساد�
 # الموظف بيسجّل السند في نظامنا وفي a5 — سندنا بيفضل ويخد رقم قيد a5، والنسخة المكررة بتتشال
 # (اتقاس ٢٠٢٦-١٠-٠٦: ١٠ سندات manager3 اتكرروا).
 $P.adopt_native_vouchers --branch السادات --prefix FC- --yes | tail -1
+# قيود سندات a5 ⇒ سندات في شاشة السندات (قبض/صرف/مصروف/تحويل/جاري) على نفس القيد.
+$P.a5_entries_to_vouchers --branch السادات --prefix FC- --yes | tail -1
 # قيد الافتتاح في a5 السادات مش متوازن من الأصل (٥٣٬٤٩٨٫٩١) — لو اتعاد، سطر الموازنة بيرجع.
 $P.balance_opening_entries --yes | tail -1
 echo "== تأكيد"

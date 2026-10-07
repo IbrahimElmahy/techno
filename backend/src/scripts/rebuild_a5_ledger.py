@@ -130,6 +130,12 @@ def run(folder: str, *, branch_name: str, prefix: str, execute: bool,
                              .values(ledger_entry_id=None))
             unlinked += res.rowcount or 0
         db.flush()
+        # السندات اللي اتعملت على القيود دي من a5 (`a5_entries_to_vouchers`) بتتشال معاها وبترجع
+        # بعد الاستيراد؛ وسند نظامنا اللي خد رقم a5 (`adopt_native_vouchers`) بيتفك من قيده.
+        db.execute(text("delete from voucher where ledger_entry_id = any(:i) and client_uuid like 'a5:%'"),
+                   {"i": ids})
+        db.execute(text("update voucher set ledger_entry_id = null where ledger_entry_id = any(:i)"),
+                   {"i": ids})
         # ٢) التسويات (قيد على فاتورة اتسدد) والتوزيع بيشاوروا على السطر — بيتشالوا الأول.
         #    التسوية بتتحسب تاني من القيد الجديد؛ سيبها والحذف بيقع.
         db.execute(text("""delete from partial_reconcile where debit_line_id in
