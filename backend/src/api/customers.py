@@ -4,7 +4,7 @@ from __future__ import annotations
 from datetime import date
 from decimal import Decimal
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from pydantic import BaseModel
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 from src.auth import branch_scope
 from src.auth.dependencies import CurrentUser, require_capability
 from src.auth.rbac import CAP_CUSTOMER_READ, CAP_CUSTOMER_REASSIGN, CAP_CUSTOMER_WRITE
+from src.core.client_app import is_mobile_app
 from src.core.db import get_db
 from src.core.fast_json import model_json
 from src.core.money import to_money
@@ -655,6 +656,7 @@ def customer_debts(
 
 @router.get("", response_model=None)
 def list_customers(
+    request: Request,
     response: Response,
     rep_id: int | None = Query(None),
     service_rep_id: int | None = Query(None),
@@ -676,6 +678,10 @@ def list_customers(
     db: Session = Depends(get_db),
 ):
     """List customers with search + filters, each carrying its receivable balance."""
+    # التطبيق بيسحب الكشف ده كله لمنتقي الزيارة من غير `active` — فالعميل الموقوف
+    # (٧٥٣ على الإنتاج) كان بيتعرض للمندوب. شوف `client_app`.
+    if active is None and is_mobile_app(request):
+        active = True
     stmt = customer_profile_service.apply_filters(
         _scope_filter(select(Customer), current),
         q=q, customer_type=customer_type, rep_id=rep_id,

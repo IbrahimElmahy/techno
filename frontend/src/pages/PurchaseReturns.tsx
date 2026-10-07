@@ -54,6 +54,7 @@ import { applyPct, combinePct, splitLineDiscount } from '../utils/discounts';
 import { QTY_DATA_ATTR } from '../utils/duplicateItem';
 import { addPickedSequentially, type PickResult } from '../utils/pickMany';
 import { useLiveRefresh } from '../utils/live';
+import { activeChoices, activeOptions, withInactiveTag } from '../utils/active';
 
 /**
  * مردودات شراء — goods going back to the supplier, as a register of its own.
@@ -717,9 +718,10 @@ export default function PurchaseReturns({ embedded }: { embedded?: { onExit: () 
               l.key === line.key ? { ...l, warehouse_id: v ?? null } : l)));
             if (v != null) setWarehouseId(v as number);
           }}
-          options={sortByName(warehouses, (w: any) => w.name).map((w: any) => ({
+          options={sortByName(activeChoices(warehouses, [line.warehouse_id, warehouseId]),
+            (w: any) => w.name).map((w: any) => ({
             value: w.id,
-            label: `${w.name} (${w.warehouse_type === 'central' ? 'مركزي' : 'فرعي'})`,
+            label: withInactiveTag(`${w.name} (${w.warehouse_type === 'central' ? 'مركزي' : 'فرعي'})`, w),
           }))} filterOption={searchFilter} filterSort={searchRank} />
       ) },
     { key: 'item', title: 'الصنف', width: 210, minWidth: 120, locked: true,
@@ -1285,7 +1287,7 @@ export default function PurchaseReturns({ embedded }: { embedded?: { onExit: () 
           placeholder="اختر المخزن"
           value={pendingWarehouse ?? undefined}
           onChange={(v) => setPendingWarehouse(v as number)}
-          options={sortByName(warehouses, (w: any) => w.name).map((w: any) => ({ value: w.id, label: w.name }))} filterOption={searchFilter} filterSort={searchRank}/>
+          options={activeOptions(sortByName(warehouses, (w: any) => w.name), pendingWarehouse)} filterOption={searchFilter} filterSort={searchRank}/>
         <div style={{ marginTop: 10, color: '#6b6b6b', fontSize: 15 }}>
           هيثبت لكل أصناف المردود. تقدر تغيّر مخزن أي سطر من عمود «المخزن».
         </div>

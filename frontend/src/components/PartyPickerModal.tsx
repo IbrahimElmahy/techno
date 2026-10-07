@@ -17,6 +17,7 @@ import { keepInView } from '../utils/keepInView';
 import { money, num, numeralsLocale } from '../utils/money';
 import './PartyPickerModal.css';
 import { repOptions } from '../utils/reps';
+import { activeChoices, activeOptions } from '../utils/active';
 
 /**
  * اختيار الطرف — the first step of every sale/purchase document.
@@ -178,7 +179,9 @@ export default function PartyPickerModal({
         activeKind !== 'supplier' ? api.get('/api/v1/territories').catch(() => ({ data: [] }))
           : Promise.resolve({ data: [] }),
       ]);
-      setParties(pRes.data);
+      // الموقوف من شاشة العملاء/الموردين مايتختارش على مستند جديد. الطرف اللي على
+      // المستند المفتوح بيتعرض من المستند نفسه، مش من هنا.
+      setParties(activeChoices(pRes.data || []));
       // قوايم فورم الإنشاء أبجدي — بتتعرض بترتيبها قبل ما حد يكتب.
       const byName = (r: any) => r.full_name || r.username || r.name;
       setBranches(sortByName(bRes.data || [], byName));
@@ -723,7 +726,7 @@ export default function PartyPickerModal({
               <Col xs={24} md={8}>
                 <Form.Item name="branch_id" label="الفرع" style={{ marginBottom: 10 }}>
                   <Select allowClear placeholder="الفرع"
-                    options={branches.map((b: any) => ({ value: b.id, label: b.name }))} />
+                    options={activeOptions(branches)} />
                 </Form.Item>
               </Col>
               <Col xs={24} md={8}>
@@ -745,7 +748,7 @@ export default function PartyPickerModal({
             <Col xs={24} md={8}>
               <Form.Item name="branch_id" label="الفرع" style={{ marginBottom: 10 }}>
                 <Select allowClear placeholder="الفرع"
-                  options={branches.map((b: any) => ({ value: b.id, label: b.name }))} />
+                  options={activeOptions(branches)} />
               </Form.Item>
             </Col>
           )}
@@ -806,7 +809,7 @@ export default function PartyPickerModal({
                   rules={[{ required: true, message: 'المنطقة مطلوبة' }]}
                   style={{ marginBottom: 10 }}>
                   <Select showSearch placeholder="اختر المنطقة"
-                    options={territories.map((t: any) => ({ value: t.id, label: t.name }))} filterOption={searchFilter} filterSort={searchRank}/>
+                    options={activeOptions(territories)} filterOption={searchFilter} filterSort={searchRank}/>
                 </Form.Item>
               </Col>
               <Col xs={24} md={8}>

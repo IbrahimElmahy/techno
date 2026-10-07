@@ -25,6 +25,7 @@ import { addPickedSequentially, type PickResult } from '../utils/pickMany';
 import { useScreenShortcuts, useTableKeyboard } from '../components/keyboard';
 import { useLookup, labelMap } from '../hooks/useLookup';
 import { money, numeralsLocale } from '../utils/money';
+import { activeOptions } from '../utils/active';
 
 /**
  * انتاج حر — production that happened without a stored recipe.
@@ -366,7 +367,7 @@ export default function FreeProduction() {
               <Select
                 showSearch placeholder="اختر المخزن"
                 value={warehouseId} onChange={setWarehouseId}
-                options={sortByName(warehouses, (w) => w.name).map((w) => ({ value: w.id, label: w.name }))} filterOption={searchFilter} filterSort={searchRank}/>
+                options={activeOptions(sortByName(warehouses, (w) => w.name), warehouseId)} filterOption={searchFilter} filterSort={searchRank}/>
             </Form.Item>
           </Col>
           <Col xs={12} md={4}>

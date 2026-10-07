@@ -8,6 +8,7 @@ import { api } from '../api/client';
 import { useLookup } from '../hooks/useLookup';
 import { TabModal } from './TabModal';
 import { repOptions } from '../utils/reps';
+import { activeOptions } from '../utils/active';
 
 /**
  * ONE edit form for a customer — data, address, phones, responsible rep/territory and price
@@ -61,6 +62,7 @@ export default function CustomerEditModal({
 }) {
   const [form] = Form.useForm();
   const watchedRep = Form.useWatch('rep_id', form) as number | undefined;
+  const watchedTerritory = Form.useWatch('territory_id', form) as number | undefined;
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [record, setRecord] = useState<any>(null);
@@ -220,7 +222,7 @@ export default function CustomerEditModal({
               <Form.Item name="territory_id" label="المنطقة الجغرافية"
                 rules={[{ required: true, message: 'يرجى تحديد المنطقة!' }]}>
                 <Select showSearch filterOption={searchFilter} filterSort={searchRank}
-                  options={territories.map((t) => ({ value: t.id, label: t.name }))} />
+                  options={activeOptions(territories, watchedTerritory)} />
               </Form.Item>
             </Col>
             <Col xs={24} md={12}>

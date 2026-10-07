@@ -14,6 +14,7 @@ import { money, numeralsLocale } from '../../utils/money';
 import { QTY_DATA_ATTR } from '../../utils/duplicateItem';
 import { applyPct } from '../../utils/discounts';
 import { SaleLineItem, Warehouse } from './types';
+import { activeOptions } from '../../utils/active';
 
 /** إجمالي السطر بعد الخصم الثابت بس (الكمية × السعر بالوحدة المختارة) — من غير المتغيّر. */
 export const afterFixedOf = (l: SaleLineItem) =>
@@ -96,7 +97,7 @@ export function buildLineColumns({
               handleLineChange(line.key, 'warehouse_id', v ?? null);
               if (v != null) setDocWarehouseId(v as number);
             }}
-            options={warehouses.map((w) => ({ value: w.id, label: w.name }))} />
+            options={activeOptions(warehouses, line.warehouse_id)} />
         )
       ) },
     // الوحدة: الأساسية أو البديلة (مثلاً «قطعة = ٣ متر» على ماسورة بتتعدّ بالمتر). تغييرها

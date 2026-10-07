@@ -10,6 +10,7 @@ import { TabModal } from './TabModal';
 import { qty, money, numeralsLocale } from '../utils/money';
 import { dualQty, lengthUnits } from '../utils/units';
 import { useCategoryTree, withChildren } from '../hooks/useCategoryTree';
+import { activeChoices } from '../utils/active';
 import './ProductPickerModal.css';
 
 /**
@@ -104,12 +105,15 @@ type PickerMemory = { query: string; scrollTop: number; cursor: number; lastPick
 const memories: Record<string, PickerMemory> = {};
 
 export default function ProductPickerModal({
-  open, categories, categoryLabels, products, activeCategory, onCategoryChange, hideCategories,
+  open, categories, categoryLabels, products: allProducts, activeCategory, onCategoryChange, hideCategories,
   onPick, onPickMany, onCancel, title = 'اختر الصنف', availableFor, priceFor,
   disableOutOfStock = false, availabilityVersion, hidePurchasePrice = false,
   variant = 'cards', warehouseName, priceTier, priceTierLabel,
 }: Props) {
   const cards = variant === 'cards';
+  // الصنف الموقوف من «الأصناف» مايتختارش على سطر جديد — الشباك ده للاختيار بس، والسطور
+  // القديمة بتلاقي اسمه من كشف الشاشة نفسها اللي لسه فيه الكل.
+  const products = useMemo(() => activeChoices(allProducts), [allProducts]);
   const memory = (memories[title] ??= { query: '', scrollTop: 0, cursor: 0 });
   const [query, setQuery] = useState(() => memory.query);
   const [cursor, setCursor] = useState(() => memory.cursor);

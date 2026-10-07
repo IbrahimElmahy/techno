@@ -31,6 +31,7 @@ import { useTableColumns } from '../components/ColumnSettings';
 
 import { useCanSeeStats } from '../components/StatsRow';
 import { qty, money, numeralsLocale } from '../utils/money';
+import { activeOptions } from '../utils/active';
 /**
  * جرد المخازن و جرد عام — the counting cycle.
  *
@@ -488,7 +489,7 @@ export default function StockCounts() {
               <Select mode="multiple" allowClear showSearch
                 style={{ width: '100%' }} placeholder="اختر الأصناف"
                 value={spotItems} onChange={setSpotItems}
-                options={items.map((i: any) => ({ value: i.id, label: i.name }))} filterOption={searchFilter} filterSort={searchRank}/>
+                options={activeOptions(items, spotItems)} filterOption={searchFilter} filterSort={searchRank}/>
             </Form.Item>
           )}
 
@@ -497,7 +498,7 @@ export default function StockCounts() {
             <Select allowClear showSearch
               placeholder="كل المخازن النشطة"
               value={warehouseId} onChange={setWarehouseId}
-              options={sortByName(warehouses, (w) => w.name).map((w) => ({ value: w.id, label: w.name }))} filterOption={searchFilter} filterSort={searchRank}/>
+              options={activeOptions(sortByName(warehouses, (w) => w.name), warehouseId)} filterOption={searchFilter} filterSort={searchRank}/>
           </Form.Item>
           <Form.Item label="تاريخ الجرد">
             <DatePicker style={{ width: '100%' }} value={countDate} allowClear={false}

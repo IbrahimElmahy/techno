@@ -8,6 +8,7 @@ export interface WarehouseOption {
   value?: number | string;
   name?: string;
   label?: string;
+  active?: boolean;
   /** مجموعة مش خيار — الشاشة اللي بتخلط مخازن وعهد بتبعت `{label, options:[...]}`. */
   options?: WarehouseOption[];
 }
@@ -52,12 +53,15 @@ export default function WarehouseGate({
       value: w.value !== undefined ? w.value : w.id,
       label: w.label !== undefined ? w.label : w.name,
     });
-    return warehouses.map((w) =>
+    // المخزن الموقوف مايتختارش لمستند جديد — إلا لو هو اللي متحدد دلوقتي (مستند قديم عليه).
+    const live = (w: WarehouseOption) => w.active !== false
+      || (value != null && String(w.value !== undefined ? w.value : w.id) === String(value));
+    return warehouses.filter((w) => w.options || live(w)).map((w) =>
       w.options
-        ? { label: w.label !== undefined ? w.label : w.name, options: w.options.map(leaf) }
+        ? { label: w.label !== undefined ? w.label : w.name, options: w.options.filter(live).map(leaf) }
         : leaf(w),
     );
-  }, [warehouses]);
+  }, [warehouses, value]);
 
   /** الخيارات اللي ينفع تتختار فعلاً — عناوين المجموعات مش منها. */
   const selectableOptions = useMemo(

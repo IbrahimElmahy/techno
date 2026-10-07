@@ -62,6 +62,7 @@ import { addPickedSequentially, type PickResult } from '../utils/pickMany';
 import ListPage from '../components/ListPage';
 import { useLiveRefresh } from '../utils/live';
 import { repOptions } from '../utils/reps';
+import { activeOptions } from '../utils/active';
 /**
  * مرتجعات المبيعات — a full "return like a sale, reversed" screen: pick a customer, then the goods
  * they're bringing back; the items go back INTO stock and the money is credited to the customer.
@@ -1048,7 +1049,7 @@ export default function Returns({ embedded }: { embedded?: { onExit: () => void 
             handleLineChange(line.key, 'warehouse_id', val);
             if (val != null) setDocWarehouseId(val as number);
           }}
-          options={warehouses.map((w) => ({ value: w.id, label: w.name }))} />
+          options={activeOptions(warehouses, [line.warehouse_id, docWarehouseId])} />
       ) },
     // الوحدة: الأساسية أو البديلة («قطعة = ٣ متر»). تغييرها بيحوّل السعر، والمخزن بيرجعله
     // الكمية × المعامل بالوحدة الأساسية.
@@ -1422,7 +1423,7 @@ export default function Returns({ embedded }: { embedded?: { onExit: () => void 
                     placeholder="اختر المخزن المستلم"
                     value={docWarehouseId ?? undefined}
                     onChange={(v) => setDocWarehouseId(v as number)}
-                    options={warehouses.map((w: any) => ({ value: w.id, label: w.name }))} filterOption={searchFilter} filterSort={searchRank}/>
+                    options={activeOptions(warehouses, docWarehouseId)} filterOption={searchFilter} filterSort={searchRank}/>
                 </Form.Item>
               </Col>
               <Col xs={12} md={3}>

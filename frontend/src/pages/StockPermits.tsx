@@ -47,6 +47,7 @@ import { useTableColumns } from '../components/ColumnSettings';
 import { useLiveRefresh } from '../utils/live';
 import SummaryTile from '../components/saleDoc/SummaryTile';
 import './docs.extra.css';
+import { activeOptions } from '../utils/active';
 
 /**
  * إذن إضافة / إذن صرف — stock in and out for reasons that are not a trade.
@@ -507,7 +508,7 @@ export default function StockPermits() {
             <Select showSearch
               style={{ width: '100%' }} placeholder="المخزن" value={warehouseId}
               onChange={setWarehouseId}
-              options={sortByName(warehouses, (w) => w.name).map((w) => ({ value: w.id, label: w.name }))} filterOption={searchFilter} filterSort={searchRank} />
+              options={activeOptions(sortByName(warehouses, (w) => w.name), warehouseId)} filterOption={searchFilter} filterSort={searchRank} />
           </Form.Item>
         </Col>
         <Col xs={24} md={5}>

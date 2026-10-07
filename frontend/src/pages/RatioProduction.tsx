@@ -17,6 +17,7 @@ import { matchesStatement } from '../utils/statements';
 import { searchFilter, searchRank, sortByName } from '../utils/arabicSort';
 import { money, numeralsLocale, qty as fmtQty } from '../utils/money';
 import { PAGE_SIZE, PAGE_SIZE_OPTIONS } from '../utils/pagination';
+import { activeOptions } from '../utils/active';
 
 /**
  * **انتاج حسب النسب — زي a5 بالظبط** (طلب السادات ٢٠٢٦-١٠-٠٦).
@@ -106,7 +107,10 @@ export default function RatioProduction() {
   const itemOf = (id?: number) => items.find((x) => x.id === id);
   const whName = (id?: number | null) => warehouses.find((x) => x.id === id)?.name ?? '-';
   const products = useMemo(() => items.filter((x) => x.active && recipeProducts.has(x.id)), [items, recipeProducts]);
-  const whOptions = useMemo(() => sortByName(warehouses, (w) => w.name).map((w) => ({ value: w.id, label: w.name })), [warehouses]);
+  // المخزن الموقوف مايتختارش لورقة جديدة — إلا اللي متسجّل عليها.
+  const whOptions = useMemo(() => activeOptions(sortByName(warehouses, (w) => w.name),
+    [outWh, ...lines.flatMap((l) => [l.warehouse_id, ...l.materials.map((m) => m.warehouse_id)])]),
+  [warehouses, outWh, lines]);
 
   const ensureStock = async (whId?: number) => {
     if (!whId || stock[whId]) return;

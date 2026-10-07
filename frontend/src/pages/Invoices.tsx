@@ -81,6 +81,7 @@ import { useLiveRefresh } from '../utils/live';
 import ListPage, { ListStat } from '../components/ListPage';
 import { useQueryTab } from '../components/useQueryTab';
 import { repOptions } from '../utils/reps';
+import { activeOptions } from '../utils/active';
 /** رقم فريد للمستند (`client_uuid`). `randomUUID` مش موجود خارج https، فالبديل عشوائي كفاية. */
 // المرتجع الجديد بيتفتح جوّه السجل (`embedded`) — كسول عشان مايتحمّلش مع كل فاتورة.
 const ReturnsScreen = React.lazy(() => import('./Returns'));
@@ -2804,7 +2805,7 @@ function couponsTotal(inv: any): number {
                   // فاضي، فكل صنف بيقرا صفر — والشباك بيقفل الأصناف كلها ويقول «غير متوفر»
                   // عن مخزن مليان.
                   onChange={(v) => onWarehouseChange(v as number)}
-                  options={warehouses.map((w) => ({ value: w.id, label: w.name }))} filterOption={searchFilter} filterSort={searchRank}/>
+                  options={activeOptions(warehouses, docWarehouseId)} filterOption={searchFilter} filterSort={searchRank}/>
               </Form.Item>
             </Col>
             <Col xs={12} md={3}>
@@ -2999,7 +3000,7 @@ function couponsTotal(inv: any): number {
               placeholder="اختر المخزن"
               value={pendingWarehouse ?? undefined}
               onChange={(v) => setPendingWarehouse(v as number)}
-              options={warehouses.map((w) => ({ value: w.id, label: w.name }))} filterOption={searchFilter} filterSort={searchRank}/>
+              options={activeOptions(warehouses, pendingWarehouse)} filterOption={searchFilter} filterSort={searchRank}/>
             <div style={{ marginTop: 10, color: '#6b6b6b', fontSize: 15 }}>
               هيثبت لكل أصناف الفاتورة. تقدر تغيّر مخزن أي سطر من عمود «المخزن».
             </div>

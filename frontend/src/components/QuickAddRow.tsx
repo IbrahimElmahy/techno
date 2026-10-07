@@ -4,6 +4,7 @@ import { AppstoreOutlined, PlusOutlined } from '@ant-design/icons';
 import { searchByName } from '../utils/arabicSort';
 import { normalizeAr } from './ListToolbar';
 import { qty as fmtQty } from '../utils/money';
+import { activeChoices, withInactiveTag } from '../utils/active';
 
 /**
  * **السطر الزيادة في آخر جدول الأصناف** (طلب العميل ٢٠٢٦-١٠-٠٥) — في كل مستند: البيع والشرا
@@ -16,7 +17,7 @@ import { qty as fmtQty } from '../utils/money';
  * الأصناف في البحث: لو `availableFor` متبعتة (بيع أو صرف من مخزن) ⇒ اللي ليه رصيد في المخزن
  * المختار بس — نفس قاعدة شباك الأصناف.
  */
-export interface QuickAddItem { id: number; name: string; code?: string | null }
+export interface QuickAddItem { id: number; name: string; code?: string | null; active?: boolean }
 
 export default function QuickAddRow({
   colSpan, items, onPick, onOpenPicker, warehouses, warehouseId, onWarehouseChange,
@@ -27,7 +28,7 @@ export default function QuickAddRow({
   onPick: (itemId: number) => void;
   onOpenPicker: () => void;
   /** من غيرها مافيش خانة مخزن (المستند مخزنه واحد ومتحدد فوق). */
-  warehouses?: { id: number; name: string }[];
+  warehouses?: { id: number; name: string; active?: boolean }[];
   warehouseId?: number | null;
   onWarehouseChange?: (id: number) => void;
   availableFor?: (itemId: number) => number | null;
@@ -41,7 +42,8 @@ export default function QuickAddRow({
 
   const options = useMemo(() => {
     const needle = normalizeAr(search.trim());
-    let list = items;
+    // الصنف الموقوف مايتضافش على سطر جديد — نفس شباك الاختيار (`ProductPickerModal`).
+    let list = activeChoices(items);
     if (availableFor) {
       list = list.filter((p) => {
         const av = availableFor(p.id);
@@ -78,7 +80,8 @@ export default function QuickAddRow({
               value={warehouseId ?? undefined}
               onChange={(v: number) => onWarehouseChange(v)}
               showSearch optionFilterProp="label"
-              options={warehouses.map((w) => ({ value: w.id, label: w.name }))}
+              options={activeChoices(warehouses, warehouseId)
+                .map((w) => ({ value: w.id, label: withInactiveTag(w.name, w) }))}
             />
           )}
           <Select

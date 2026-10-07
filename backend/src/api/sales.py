@@ -574,7 +574,10 @@ def rep_bundle(
                Item.category)
         .join(StockMovement, StockMovement.item_id == Item.id)
         .where(StockMovement.location_kind == store_kind,
-               StockMovement.location_id == store_id)
+               StockMovement.location_id == store_id,
+               # الصنف الموقوف من «الأصناف» مايتعرضش للبيع في التطبيق — زي الكتالوج تحت
+               # وزي منتقي الأصناف في الويب. الموقوف على الإنتاج مالوش رصيد في أي مكان.
+               Item.active.is_(True))
         .group_by(Item.id, Item.name, Item.unit_of_measure, Item.default_discount_pct,
                   Item.sale_price, Item.category)
         .order_by(arabic.sort_key(Item.name), Item.name)
@@ -637,7 +640,8 @@ def rep_bundle(
                    func.coalesce(func.sum(signed), 0).label("qty"))
             .join(Item, Item.id == StockMovement.item_id)
             .where(StockMovement.location_kind == LocationKind.warehouse,
-                   StockMovement.location_id.in_([w.id for w in scoped]))
+                   StockMovement.location_id.in_([w.id for w in scoped]),
+                   Item.active.is_(True))   # الموقوف مايتطلبش في إذن تحويل جديد
             .group_by(StockMovement.location_id, Item.id, Item.name,
                       Item.unit_of_measure, Item.category)
             .order_by(arabic.sort_key(Item.name), Item.name)

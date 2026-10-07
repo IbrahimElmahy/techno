@@ -25,6 +25,7 @@ import { useQueryTab } from '../components/useQueryTab';
 import { money, numeralsLocale } from '../utils/money';
 import { useLiveRefresh } from '../utils/live';
 import { repOptions } from '../utils/reps';
+import { activeOptions } from '../utils/active';
 interface CustomerRecord {
   id: number;
   code: string;
@@ -443,8 +444,6 @@ export default function Customers() {
 
   const governorateOptions = useMemo(
     () => governorates.map((g) => ({ value: g.id, label: g.name })), [governorates]);
-  const territoryOptions = useMemo(
-    () => territories.map((t) => ({ value: t.id, label: t.name })), [territories]);
 
   const fetchLookups = async () => {
     try {
@@ -751,7 +750,7 @@ export default function Customers() {
     key: 'territory_id',
     width: 150,
     render: (tId: number, r: CustomerRecord) => (canEditTerritory
-      ? <InlineSelectCell value={tId} options={territoryOptions}
+      ? <InlineSelectCell value={tId} options={activeOptions(territories, tId)}
           onCommit={(v) => saveTerritory(r, v)} />
       : territories.find((t) => t.id === tId)?.name || '-'),
   };
@@ -969,7 +968,7 @@ export default function Customers() {
             <Col span={8}>
               <Form.Item name="branch_id" label="الفرع">
                 <Select allowClear showSearch placeholder="اختر الفرع"
-                  options={branches.map((b) => ({ value: b.id, label: b.name }))}
+                  options={activeOptions(branches)}
                   filterOption={searchFilter} filterSort={searchRank} />
               </Form.Item>
             </Col>
@@ -1089,7 +1088,7 @@ export default function Customers() {
               <Form.Item name="territory_id" label="المنطقة الجغرافية"
                 rules={[{ required: true, message: 'يرجى تحديد المنطقة!' }]}>
                 <Select showSearch placeholder="اختر المنطقة"
-                  options={territories.map((t) => ({ value: t.id, label: t.name }))}
+                  options={activeOptions(territories)}
                   filterOption={searchFilter} filterSort={searchRank} />
               </Form.Item>
             </Col>

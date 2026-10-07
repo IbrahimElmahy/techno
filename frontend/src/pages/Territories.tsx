@@ -7,6 +7,7 @@ import { AimOutlined, DeleteOutlined, PlusOutlined, ReloadOutlined, SearchOutlin
 import { api } from '../api/client';
 import { useTableColumns } from '../components/ColumnSettings';
 import ListPage from '../components/ListPage';
+import { activeOptions } from '../utils/active';
 
 /**
  * المناطق — مستويين: منطقة رئيسية وتحتها فرعية.
@@ -192,7 +193,7 @@ export default function Territories() {
             onChange={(e) => setDraft({ ...draft, name: e.target.value })} />
           <Select style={{ width: '100%' }} placeholder="الفرع" value={draft.branch_id}
             onChange={(v) => setDraft({ ...draft, branch_id: v, parent_id: undefined })}
-            options={branches.map((b: any) => ({ value: b.id, label: b.name }))} />
+            options={activeOptions(branches, draft.branch_id)} />
           <Select showSearch style={{ width: '100%' }} allowClear placeholder="تحت منطقة — اتركه فارغاً لمنطقة رئيسية"
             value={draft.parent_id}
             onChange={(v) => setDraft({ ...draft, parent_id: v })}

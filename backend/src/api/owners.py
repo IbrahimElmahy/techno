@@ -7,7 +7,7 @@ from __future__ import annotations
 from datetime import date, datetime
 from decimal import Decimal
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from pydantic import BaseModel, Field
 from sqlalchemy import desc, func, or_, select
 from sqlalchemy.orm import Session
@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session
 from src.auth import branch_scope
 from src.auth.dependencies import CurrentUser, require_capability
 from src.auth.rbac import CAP_INSPECTION_READ, CAP_INSPECTION_WRITE
+from src.core.client_app import is_mobile_app
 from src.core.db import get_db
 from src.lib import phones
 from src.models.inspection import Inspection
@@ -110,6 +111,7 @@ def _seen_owner(db: Session, owner_id: int, current: CurrentUser) -> Owner:
 
 @router.get("", response_model=list[OwnerListItem])
 def list_owners(
+    request: Request,
     search: str | None = Query(default=None),
     territory_id: int | None = Query(default=None),
     branch_id: int | None = Query(default=None),
@@ -154,6 +156,10 @@ def list_owners(
                 Owner.address.ilike(q),
             )
         )
+    # التطبيق بيسحب الملّاك كلهم لخانة المالك في المعاينة — الموقوف مايتعرضش هناك.
+    # شاشة الملّاك في الويب بتفضل شايفاه عشان ترجّعه. شوف `client_app`.
+    if is_mobile_app(request):
+        stmt = stmt.where(Owner.active.is_(True))
     if territory_id is not None:
         stmt = stmt.where(Owner.territory_id == territory_id)
     if branch_id is not None:

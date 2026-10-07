@@ -17,6 +17,7 @@ import { TabModal } from '../components/TabModal';
 import { useTableColumns } from '../components/ColumnSettings';
 import ListPage from '../components/ListPage';
 import { numeralsLocale } from '../utils/money';
+import { activeOptions } from '../utils/active';
 
 /** المخازن — their `/stores`, its own screen at last.
  *
@@ -83,6 +84,8 @@ export default function Warehouses() {
   const [customerDraft, setCustomerDraft] = useState<number[]>([]);
   const [form] = Form.useForm();
   const [editForm] = Form.useForm();
+  // فرع المخزن اللي بيتعدّل — بيفضل في القايمة حتى لو الفرع اتوقف.
+  const editingBranch = Form.useWatch('branch_id', editForm) as number | undefined;
 
   const canWrite = can('warehouse.write');
 
@@ -426,7 +429,7 @@ export default function Warehouses() {
         <Col span={12}>
           <Form.Item name="branch_id" label="الفرع">
             <Select allowClear showSearch placeholder="اختر الفرع"
-              options={branches.map((b) => ({ value: b.id, label: b.name }))}
+              options={activeOptions(branches, editingBranch)}
               filterOption={searchFilter} filterSort={searchRank} />
           </Form.Item>
         </Col>

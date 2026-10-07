@@ -45,6 +45,7 @@ import { useDocReturn } from '../components/docReturn';
 import DocOpening from '../components/DocOpening';
 import { TabModal } from '../components/TabModal';
 import WarehouseGate from '../components/WarehouseGate';
+import { withInactiveTag } from '../utils/active';
 import DocumentAttachments from '../components/DocumentAttachments';
 import { useTableColumns } from '../components/ColumnSettings';
 import { useEntryGrid, type EntryColumn } from '../components/EntryGrid';
@@ -251,8 +252,10 @@ export default function Transfers() {
   const locationOptions = useMemo(() => ([
     {
       label: 'المخازن',
-      options: sortByName(warehouses, (w) => w.name).map((w) => ({
-        value: locValue('warehouse', w.id), label: w.name || `مخزن #${w.id}`,
+      // المخزن الموقوف مايتختارش لإذن جديد — إلا لو هو المصدر/الوجهة على الإذن المفتوح.
+      options: sortByName(warehouses.filter((w) => w.active !== false
+        || [source, dest].includes(locValue('warehouse', w.id))), (w) => w.name).map((w) => ({
+        value: locValue('warehouse', w.id), label: withInactiveTag(w.name || `مخزن #${w.id}`, w),
       })),
     },
     {
@@ -261,7 +264,7 @@ export default function Transfers() {
         value: locValue('custody', c.id), label: c.name || `عهدة #${c.id}`,
       })),
     },
-  ]), [warehouses, custodies]);
+  ]), [warehouses, custodies, source, dest]);
 
   /** نفس القايمة من غير المصدر. الاستبعاد لازم يحصل **جوّه** المجموعة — المجموعة نفسها
    *  مالهاش `value`، فالفلترة على المستوى الأعلى كانت بتعدّي كل حاجة والمصدر يفضل مختار

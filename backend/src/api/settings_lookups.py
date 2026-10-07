@@ -5,12 +5,13 @@ Reads are open to any authenticated user (dropdowns everywhere need them); write
 """
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from src.auth.dependencies import CurrentUser, get_current_user, require_capability
 from src.auth.rbac import CAP_SETTINGS_WRITE
+from src.core.client_app import is_mobile_app
 from src.core.db import get_db
 from src.services import lookup_service
 from src.services.lookup_service import LookupError
@@ -72,11 +73,19 @@ def list_categories(
 
 @router.get("", response_model=list[OptionOut])
 def list_options(
+    request: Request,
     category: str,
     active_only: bool = False,
     _: CurrentUser = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> list[OptionOut]:
+    # التطبيق بيسحب القوايم (وصف المعاينة، نوعها، فئات الكوبونات) من غير `active_only`،
+    # فالاختيار المخفي كان بيفضل في القايمة على الجهاز. شوف `client_app`.
+    #
+    # فئات الأصناف لأ: التطبيق بيقرا منها `hidden_in_price_sheet` بس، وفيه فئات موقوفة
+    # ومخفية من الشيت في نفس الوقت — لو اتشالت من الرد، الجهاز يفتكرها ظاهرة.
+    if is_mobile_app(request) and category != lookup_service.ITEM_CATEGORY:
+        active_only = True
     opts = lookup_service.list_options(db, category, active_only=active_only)
     db.commit()  # persist any lazy-seeded defaults
     return [_out(o) for o in opts]

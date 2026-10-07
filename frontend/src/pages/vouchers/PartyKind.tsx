@@ -15,6 +15,7 @@ import { api } from '../../api/client';
 import PartyField from '../../components/PartyField';
 import { searchFilter, searchRank } from '../../utils/arabicSort';
 import type { Party } from './types';
+import { activeChoices, withInactiveTag } from '../../utils/active';
 
 export type PartyKind = 'customer' | 'employee' | 'branch' | 'supplier' | 'account';
 
@@ -107,6 +108,8 @@ export function PartyKindField({
   extra?: React.ReactNode;
 }) {
   const accounts = usePostableAccounts(kind === 'account');
+  // الحساب الموقوف من «الحسابات الفرعيه» مايتختارش لسند جديد — إلا لو هو اللي على السند المفتوح.
+  const currentAccount = Form.useWatch('account_id') as number | undefined;
   const custs = useMemo(() => customersOfKind(customers, kind), [customers, kind]);
   const label = PARTY_KIND_OPTIONS.find((o) => o.value === kind)?.label || 'الطرف';
 
@@ -135,8 +138,8 @@ export function PartyKindField({
       extra={extra ?? 'أي حساب فرعي في الشجرة — زي a5'}>
       <Select
         showSearch allowClear placeholder="اكتب اسم الحساب أو كوده"
-        options={accounts.map((a: any) => ({
-          value: a.id, label: `${a.name ?? ''}${a.code ? ` — ${a.code}` : ''}`,
+        options={activeChoices(accounts, currentAccount).map((a: any) => ({
+          value: a.id, label: withInactiveTag(`${a.name ?? ''}${a.code ? ` — ${a.code}` : ''}`, a),
         }))}
         filterOption={searchFilter} filterSort={searchRank}
       />

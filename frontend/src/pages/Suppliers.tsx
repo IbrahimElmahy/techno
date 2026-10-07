@@ -18,6 +18,7 @@ import { useTableColumns } from '../components/ColumnSettings';
 import ListPage from '../components/ListPage';
 import ExportExcelButton from '../components/ExportExcelButton';
 import { money, numeralsLocale } from '../utils/money';
+import { activeOptions } from '../utils/active';
 
 interface SupplierRecord {
   id: number;
@@ -424,7 +425,7 @@ export default function Suppliers() {
             <Col span={8}>
               <Form.Item name="branch_id" label="الفرع">
                 <Select allowClear showSearch placeholder="اختر الفرع"
-                  options={branches.map((b) => ({ value: b.id, label: b.name }))}
+                  options={activeOptions(branches)}
                   filterOption={searchFilter} filterSort={searchRank} />
               </Form.Item>
             </Col>

@@ -30,6 +30,7 @@ import { useTableColumns } from '../components/ColumnSettings';
 
 import StatsRow from '../components/StatsRow';
 import { numeralsLocale } from '../utils/money';
+import { activeOptions } from '../utils/active';
 interface Warehouse { id: number; name: string; branch_id?: number | null; }
 interface BranchRef { id: number; name: string; is_factory?: boolean; }
 interface Item {
@@ -1014,9 +1015,11 @@ function ProductionOrdersTab({
         ? w.branch_id === orderBranch : ok.has(w.branch_id)))
       .map((w) => w.id));
   }, [factoryBranches, warehouses, orderBranch]);
-  const whOptions = sortByName(
+  // المخزن الموقوف مايتختارش لأمر جديد — إلا اللي متسجّل على سطر في الورقة المفتوحة.
+  const usedWh = lines.flatMap((l) => [l.warehouse_id, ...l.materials.map((m) => m.warehouse_id)]);
+  const whOptions = activeOptions(sortByName(
     allowedWh ? warehouses.filter((w) => allowedWh.has(w.id)) : warehouses, (w) => w.name,
-  ).map((w) => ({ value: w.id, label: w.name }));
+  ), usedWh);
 
   const branchName = useMemo(() => {
     const m = new Map(branches.map((b) => [b.id, b.name]));
