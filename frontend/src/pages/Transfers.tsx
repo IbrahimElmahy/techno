@@ -1454,6 +1454,9 @@ export default function Transfers() {
       render: (_: any, r: TransferRecord) => docDate(r) || '-' },
     { title: 'البيان', dataIndex: 'statement1', key: 'statement1', ellipsis: true,
       render: (v: string | null) => v || '-' },
+    // رقم الإذن الورقي — عمود في السجل عشان الورقة تتلاقي من غير فتح الإذن.
+    { title: 'رقم المستند الورقي', dataIndex: 'external_document_number', key: 'external_document_number',
+      ellipsis: true, width: 130, render: (v: string | null) => v || '-' },
     {
       title: 'الإجراءات', key: 'actions', width: 140, fixed: 'left' as const,
       render: (_: any, record: TransferRecord) => ((record as any).__isDraft ? (

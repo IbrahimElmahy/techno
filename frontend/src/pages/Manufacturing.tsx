@@ -1667,6 +1667,9 @@ function ProductionOrdersTab({
         );
       } },
   ];
+  // إخفاء وترتيب الأعمدة — نفس المحرك اللي كل الجداول بتستخدمه؛ «رقم الورقة» ظاهر واللي مش
+  // محتاجه يخفيه. لازم قبل `docOpening` عشان ترتيب الهوكس مايتغيّرش بين رسمة والتانية.
+  const ordersTabCols = useTableColumns('mfg-production-orders', columns);
 
   // مستند جاي من شاشة تانية ولسه بيفتح ⇒ مكان الكشف فاضي (الشرح في `useDocRoute.opening`).
   if (docOpening) return <DocOpening />;
@@ -1677,12 +1680,13 @@ function ProductionOrdersTab({
       title="عمليات التصنيع" muted="(أوامر التشغيل)"
       subtitle="انتاج حسب النسب — كل أمر بمنتجاته وخاماته، والفرق بين المفروض واللي حصل"
       tabs={header.tabs} activeTab={header.activeTab} onTabChange={header.onTabChange}
-      actions={(
+      actions={(<>
         <Button data-shortcut="F2" type="primary" icon={<PlusOutlined />} className="sl-create"
           onClick={openNew}>
           أمر تشغيل جديد
         </Button>
-      )}
+        {ordersTabCols.control}
+      </>)}
       filters={(<>
         <Input.Search className="sl-f-search" allowClear
           placeholder="بحث برقم المستند أو رقم الورقة أو البيان"
@@ -1703,7 +1707,7 @@ function ProductionOrdersTab({
     >
       <Table
         className="sl-table" size="small"
-        rowKey="id" loading={loading} dataSource={rows} columns={columns}
+        rowKey="id" loading={loading} dataSource={rows} columns={ordersTabCols.columns}
         pagination={{
           current: page, pageSize, total, showSizeChanger: true,
           pageSizeOptions: PAGE_SIZE_OPTIONS,

@@ -1742,7 +1742,7 @@ export default function Purchases() {
                   placeholder="اضغط لاختيار المورد"
                   onClick={() => { if (!viewOnly) setPartyPickerOpen(true); }}
                   options={sortByName(suppliers, (sp) => sp.name).map((sp) => ({
-                    value: sp.id, label: sp.code ? `${sp.name} (${sp.code})` : sp.name }))} filterOption={searchFilter} filterSort={searchRank}/>
+                    value: sp.id, label: sp.name, search: sp.code || '' }))} filterOption={searchFilter} filterSort={searchRank}/>
               </Form.Item>
             </Col>
             <Col xs={12} md={4}>

@@ -287,11 +287,12 @@ export default function PartyLinks() {
           </Form.Item>
           <Form.Item name="customer_ids" label="كروت العملاء / الموظفين / الفروع">
             <Select mode="multiple" showSearch filterOption={searchFilter} filterSort={searchRank}
-              options={customers.map((c: any) => ({ value: c.id, label: `${c.name}${c.code ? ` — ${c.code}` : ''}` }))} />
+              // الاسم بس (طلب العميل ٢٠٢٦-١٠-٠٧)؛ الكود في `search` فالبحث بيه شغّال.
+              options={customers.map((c: any) => ({ value: c.id, label: c.name, search: c.code || '' }))} />
           </Form.Item>
           <Form.Item name="supplier_ids" label="كروت الموردين">
             <Select mode="multiple" showSearch filterOption={searchFilter} filterSort={searchRank}
-              options={suppliers.map((s: any) => ({ value: s.id, label: `${s.name}${s.code ? ` — ${s.code}` : ''}` }))} />
+              options={suppliers.map((s: any) => ({ value: s.id, label: s.name, search: s.code || '' }))} />
           </Form.Item>
         </Form>
       </Modal>

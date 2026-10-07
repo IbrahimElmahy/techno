@@ -583,6 +583,9 @@ const Vouchers: React.FC = () => {
     },
     { title: 'طريقة الدفع', dataIndex: 'payment_method', width: 110 },
     { title: 'المرجع', dataIndex: 'reference', width: 120 },
+    // رقم السند الورقي اللي في إيد العميل — عمود عشان الورقة تتلاقي من السجل؛ واللي مش محتاجه يخفيه من «الأعمدة».
+    { title: 'رقم المستند الورقي', dataIndex: 'external_document_number', width: 130, ellipsis: true,
+      render: (v: string | null) => v || '-' },
     { title: 'البيان', dataIndex: 'description' },
     {
       title: '',

@@ -77,7 +77,7 @@ export default function PaymentModal({
     const a = accounts.find((x: any) => x.id === accountId);
     counterpart = {
       label: 'الحساب',
-      name: a ? `${a.code ? `${a.code} — ` : ''}${a.name ?? ''}` : null,
+      name: a ? (a.name ?? null) : null,
     };
     balance = { side: 'account', id: accountId };
   }

@@ -490,7 +490,7 @@ export default function PartyPickerModal({
       </div>
 
       <div className="pp-cols">
-        <div>اسم {KIND_LABEL[activeKind]} / الكود / التصنيف</div>
+        <div>اسم {KIND_LABEL[activeKind]} / التصنيف</div>
         <div>الهاتف والاتصال</div>
         <div>الفرع / المنطقة</div>
         <div>الرصيد المالي الحالي</div>
@@ -525,11 +525,9 @@ export default function PartyPickerModal({
                     {p.is_cash && <span className="pp-tag">نقدي</span>}
                     {p.active === false && <span className="pp-tag pp-tag--off">غير نشط</span>}
                   </div>
-                  <div className="pp-sub">
-                    {p.code && <>كود: <span dir="ltr">{p.code}</span></>}
-                    {p.code && typeLabel && ' • '}
-                    {typeLabel}
-                  </div>
+                  {/* الكود اتشال من تحت الاسم (طلب العميل ٢٠٢٦-١٠-٠٧: «الاسم بس في الاختيار»)؛
+                      البحث بالكود من السيرفر زي ما هو. */}
+                  {typeLabel && <div className="pp-sub">{typeLabel}</div>}
                 </div>
               </div>
               <div className="pp-c-phone">

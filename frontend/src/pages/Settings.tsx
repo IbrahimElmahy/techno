@@ -453,7 +453,7 @@ function AccountRoutingCard() {
                 onChange={(v) => save(r.role, v ?? null)}
                 onClear={() => save(r.role, null)}
                 options={accounts.map((a) => ({
-                  value: a.id, label: `${a.code} — ${a.name}`,
+                  value: a.id, label: a.name, search: a.code || '',
                 }))} filterOption={searchFilter} filterSort={searchRank}/>
             ) },
           { title: '', key: 'warn',

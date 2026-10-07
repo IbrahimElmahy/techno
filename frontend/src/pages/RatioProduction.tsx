@@ -9,6 +9,7 @@ import {
 import dayjs, { Dayjs } from 'dayjs';
 import { InputNumber } from '../components/NumberInput';
 import ListPage from '../components/ListPage';
+import { useTableColumns } from '../components/ColumnSettings';
 import DateRangeFilter from '../components/DateRangeFilter';
 import { api } from '../api/client';
 import DocumentHistoryButton from '../components/DocumentHistory';
@@ -248,6 +249,9 @@ export default function RatioProduction() {
         </Space>
       ) },
   ];
+  // إظهار وإخفاء الأعمدة — نفس المحرك اللي كل السجلات ماشية عليه؛ «رقم الانتاج» (رقم الورقة
+  // اللي اتكتب في «امر تشغيل») ظاهر، واللي مش محتاجه يخفيه من «الأعمدة».
+  const listCols = useTableColumns('ratio-production-list', listColumns);
 
   if (entryOpen) {
     return (
@@ -357,6 +361,7 @@ export default function RatioProduction() {
       actions={(<>
         <Button data-shortcut="F2" type="primary" icon={<PlusOutlined />} className="sl-create" onClick={openEntry}>انتاج جديد</Button>
         <Button icon={<ReloadOutlined />} onClick={load}>تحديث</Button>
+        {listCols.control}
       </>)}
       filters={(<>
         <Input className="sl-f-search" allowClear ref={searchRef} prefix={<SearchOutlined />}
@@ -366,7 +371,7 @@ export default function RatioProduction() {
       </>)}
     >
       <Table className="sl-table" size="small" rowKey="id" loading={loading} tableLayout="fixed"
-        dataSource={filter.filtered} columns={listColumns}
+        dataSource={filter.filtered} columns={listCols.columns}
         expandable={{
           expandRowByClick: true,
           expandedRowRender: (r: PO) => (

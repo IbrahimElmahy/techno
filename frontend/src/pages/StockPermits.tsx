@@ -847,6 +847,9 @@ export default function StockPermits() {
     { title: 'السبب', dataIndex: 'reason', render: (v: string) => v || '-' },
     { title: 'البيان', dataIndex: 'statement1', ellipsis: true,
       render: (v: string | null) => v || '-' },
+    // رقم الإذن الورقي — عمود في السجل عشان الورقة تتلاقي من غير فتح الإذن.
+    { title: 'رقم المستند الورقي', dataIndex: 'external_document_number', ellipsis: true,
+      render: (v: string | null | undefined) => v || '-' },
     { title: 'التكلفة', dataIndex: 'total_cost', align: 'left',
       render: (v: string) => <b>{money(v)}</b> },
     { title: 'الإجراءات', key: 'actions', width: 130, align: 'center',

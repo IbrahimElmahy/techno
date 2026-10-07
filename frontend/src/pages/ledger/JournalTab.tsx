@@ -629,7 +629,7 @@ export default function JournalTab() {
               <Form.Item name="journal_id" label="الدفتر"
                 tooltip="لو سِبته فاضي بيروح «قيود متنوعة»">
                 <Select allowClear placeholder="قيود متنوعة"
-                  options={journals.map((j) => ({ value: j.id, label: `${j.code} — ${j.name}` }))} />
+                  options={journals.map((j) => ({ value: j.id, label: j.name || j.code }))} />
               </Form.Item>
             </Col>
           </Row>
@@ -682,7 +682,8 @@ export default function JournalTab() {
               <Col span={9}>
                 <Select placeholder="الحساب" style={{ width: '100%' }} showSearch
                   value={l.account_id} onChange={(v) => setLine(l.key, 'account_id', v)}
-                  options={leaves.map((a) => ({ value: a.id, label: `${a.code ?? ''} ${a.name ?? a.id}` }))} filterOption={searchFilter} filterSort={searchRank}/>
+                  // الاسم بس في الاختيار (طلب العميل ٢٠٢٦-١٠-٠٧)؛ الكود في `search` فالبحث بيه شغّال.
+                  options={leaves.map((a) => ({ value: a.id, label: String(a.name ?? a.id), search: a.code ?? '' }))} filterOption={searchFilter} filterSort={searchRank}/>
               </Col>
               <Col span={5}>
                 <Select value={l.direction} style={{ width: '100%' }}
@@ -706,7 +707,7 @@ export default function JournalTab() {
                   disabled={!!l.cost_center_distribution}
                   value={l.cost_center_id ?? undefined}
                   onChange={(v) => setLine(l.key, 'cost_center_id', v ?? null)}
-                  options={costCenters.map((c) => ({ value: c.id, label: `${c.code} — ${c.name}` }))} filterOption={searchFilter} filterSort={searchRank}/>
+                  options={costCenters.map((c) => ({ value: c.id, label: c.name, search: c.code || '' }))} filterOption={searchFilter} filterSort={searchRank}/>
               </Col>
               <Col span={3} style={{ marginTop: 4 }}>
                 {/* السطر المتقسّم مالوش مركز واحد — فالقايمة بتتقفل والتوزيع هو اللي بيتكتب. */}
@@ -770,7 +771,7 @@ export default function JournalTab() {
                 <Select placeholder="الحساب" style={{ width: '100%' }} showSearch
                   value={l.account_id}
                   onChange={(v) => setOpenLines(openLines.map((x) => x.key === l.key ? { ...x, account_id: v } : x))}
-                  options={leaves.map((a) => ({ value: a.id, label: `${a.code ?? ''} ${a.name ?? a.id}` }))} filterOption={searchFilter} filterSort={searchRank}/>
+                  options={leaves.map((a) => ({ value: a.id, label: String(a.name ?? a.id), search: a.code ?? '' }))} filterOption={searchFilter} filterSort={searchRank}/>
               </Col>
               <Col span={8}>
                 <InputNumber min={0.01} style={{ width: '100%' }} placeholder="المبلغ" value={l.amount}

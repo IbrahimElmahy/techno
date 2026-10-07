@@ -339,23 +339,19 @@ export default function AccountStatement() {
     return a.code ? `${a.code} — ${named}` : named;
   };
   /**
-   * **الاسم الأول، والكود صغير في آخر السطر** (طلب العميل ٢٠٢٦-١٠-٠١): الكود كان قبل الاسم
-   * فبياكل نص الخانة والاسم يتقصّ. الخانة المختارة بتوري الاسم بس، والبحث بالكود لسه شغّال.
+   * **الاسم بس في الاختيار** (طلب العميل ٢٠٢٦-١٠-٠١ ثم ٢٠٢٦-١٠-٠٧): الكود كان قبل الاسم
+   * فبياكل نص الخانة، وبعدين صغير في آخر السطر — والعميل مش عايزه خالص في الاختيارات.
+   * البحث بالكود لسه شغّال من `search` المخفي.
    */
   /** فرع الحساب من كوده — الشجر المنقول من a5: `AL-…` العلياء، `FC-…` السادات، `A5…` أكتوبر. */
   const branchOfCode = (code?: string | null) => (!code ? '' : code.startsWith('AL-') ? 'العلياء'
     : code.startsWith('FC-') ? 'السادات' : code.startsWith('A5') ? 'أكتوبر' : '');
   const accountOption = (a: any) => ({
     value: a.id, label: a.name || a.owner_name || `حساب #${a.id}`,
-    search: a.code || '', code: a.code || '', title: labelOf(a),
+    search: a.code || '', code: a.code || '', title: a.name || a.owner_name || `حساب #${a.id}`,
   });
   const renderAccountOption = (o: any) => (
-    <span style={{ display: 'flex', justifyContent: 'space-between', gap: 12 }}>
-      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{o.label}</span>
-      {o.data?.code && (
-        <span style={{ color: '#94a3b8', fontSize: 14, flexShrink: 0 }} dir="ltr">{o.data.code}</span>
-      )}
-    </span>
+    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{o.label}</span>
   );
 
   /**

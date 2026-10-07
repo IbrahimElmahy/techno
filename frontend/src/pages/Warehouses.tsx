@@ -603,7 +603,8 @@ export default function Warehouses() {
               notFoundContent={null}
               options={customerSearch.map((c) => ({
                 value: c.id,
-                label: `${c.name} · ${c.code}${c.phone ? ` · ${c.phone}` : ''}`
+                // من غير الكود (طلب العميل ٢٠٢٦-١٠-٠٧)؛ البحث بالكود من السيرفر زي ما هو.
+                label: `${c.name}${c.phone ? ` · ${c.phone}` : ''}`
                   + (c.rep_id === customersFor?.user_id ? ' · عنده بالفعل' : ''),
                 disabled: c.rep_id === customersFor?.user_id,
               }))}

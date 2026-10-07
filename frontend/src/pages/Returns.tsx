@@ -392,7 +392,7 @@ export default function Returns({ embedded }: { embedded?: { onExit: () => void 
   // much came back and what it cost us» — the rest are there when a question needs them.
   const returnCols = useHiddenColumns('returns-list', [
     'id', 'gross', 'discount_value', 'combined_pct', 'tax_amount',
-    'rep_id', 'external_document_number', 'notes',
+    'rep_id', 'notes',
   ]);
   // Purchase-history popup for a line's "آخر سعر شراء" tag.
   const [histModal, setHistModal] = useState<{ name: string; rows: HistRow[] } | null>(null);

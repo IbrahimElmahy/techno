@@ -40,8 +40,14 @@ export function useCostCenters(): CostCenterOption[] {
   return rows;
 }
 
-export const costCenterLabel = (c: CostCenterOption) =>
-  c.code ? `${c.code} — ${c.name}` : c.name;
+/**
+ * المعروض في الاختيار: الاسم بس — طلب العميل (٢٠٢٦-١٠-٠٧) «مش عايز الكود في الاختيارات».
+ * الكود بيروح في `search` المخفي (`costCenterOption`) فالبحث بيه لسه شغّال.
+ */
+export const costCenterLabel = (c: CostCenterOption) => c.name || c.code;
+
+export const costCenterOption = (c: CostCenterOption) =>
+  ({ value: c.id, label: costCenterLabel(c), search: c.code || '' });
 
 /**
  * `value`/`onChange` بالشكل اللي `Form.Item` بيحقنه، فبينفع يتحط جوّاه من غير أي ربط.
@@ -65,6 +71,6 @@ export default function CostCenterField({
       style={{ width: '100%', ...style }}
       value={value ?? undefined}
       onChange={(v) => onChange?.(v ?? null)}
-      options={rows.map((c) => ({ value: c.id, label: costCenterLabel(c) }))} filterOption={searchFilter} filterSort={searchRank}/>
+      options={rows.map(costCenterOption)} filterOption={searchFilter} filterSort={searchRank}/>
   );
 }

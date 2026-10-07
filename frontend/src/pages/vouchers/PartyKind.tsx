@@ -139,7 +139,8 @@ export function PartyKindField({
       <Select
         showSearch allowClear placeholder="اكتب اسم الحساب أو كوده"
         options={activeChoices(accounts, currentAccount).map((a: any) => ({
-          value: a.id, label: withInactiveTag(`${a.name ?? ''}${a.code ? ` — ${a.code}` : ''}`, a),
+          // الاسم بس في القايمة (طلب العميل ٢٠٢٦-١٠-٠٧)؛ الكود في `search` المخفي فالبحث بيه لسه شغّال.
+          value: a.id, label: withInactiveTag(a.name ?? '', a), search: a.code ?? '',
         }))}
         filterOption={searchFilter} filterSort={searchRank}
       />

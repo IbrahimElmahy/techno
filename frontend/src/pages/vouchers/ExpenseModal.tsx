@@ -29,7 +29,7 @@ export default function ExpenseModal({
 }) {
   const accountId = Form.useWatch('expense_account_id', form);
   const account = expenseAccounts.find((a) => a.id === accountId);
-  const name = account ? `${account.code ? `${account.code} — ` : ''}${account.name ?? ''}` : null;
+  const name = account ? (account.name ?? null) : null;
 
   const party = (
     <ExpenseAccountField accounts={expenseAccounts} groups={expenseGroups}

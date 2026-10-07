@@ -28,8 +28,8 @@ interface Account {
   main_level?: string | null;
 }
 
-const accLabel = (a: Account) =>
-  `${a.code ? `${a.code} — ` : ''}${a.owner_name || a.name || `#${a.id}`}`;
+/** الاسم بس في الاختيار (طلب العميل ٢٠٢٦-١٠-٠٧)؛ الكود في `search` فالبحث بيه لسه شغّال. */
+const accLabel = (a: Account) => a.owner_name || a.name || `#${a.id}`;
 
 const OWNED_TYPES = ['customer_receivable', 'supplier_payable', 'custody', 'treasury'];
 
@@ -249,7 +249,7 @@ export default function VoucherKeys() {
       && !OWNED_TYPES.includes(a.account_type || ''));
     return [
       { label: 'حسابات رئيسية', options: roots.map((a) => ({
-        value: `a:${a.id}`, label: accLabel(a) })) },
+        value: `a:${a.id}`, label: accLabel(a), search: a.code || '' })) },
       { label: 'مجموعات', options: GROUPS.map((g) => ({
         value: `g:${g.value}`, label: g.label })) },
     ];
@@ -261,7 +261,7 @@ export default function VoucherKeys() {
       const t = mainValue.slice(2);
       // حسابات الأطراف (العملاء بالآلاف) أبجدي — مالهاش كود يرتّبها، فكانت بترتيب الإدخال.
       return sortByName(accounts.filter((a) => (a.account_type || '') === t), accLabel)
-        .map((a) => ({ value: a.id, label: accLabel(a) }));
+        .map((a) => ({ value: a.id, label: accLabel(a), search: a.code || '' }));
     }
     if (!mainValue.startsWith('a:')) return [];
     const out: Account[] = [];
@@ -270,7 +270,7 @@ export default function VoucherKeys() {
       walk(c.id);
     });
     walk(Number(mainValue.slice(2)));
-    return out.map((a) => ({ value: a.id, label: accLabel(a) }));
+    return out.map((a) => ({ value: a.id, label: accLabel(a), search: a.code || '' }));
   }, [childrenBy, accounts]);
 
   const rootOf = useCallback((accountId: number): number => {

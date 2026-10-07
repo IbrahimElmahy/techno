@@ -3,7 +3,7 @@ import { searchFilter, searchRank } from '../utils/arabicSort';
 import { Button, Modal, Select, Space, Table, Tag, Tooltip, message } from 'antd';
 import { InputNumber } from './NumberInput';
 import { DeleteOutlined, PlusOutlined, PartitionOutlined } from '@ant-design/icons';
-import { useCostCenters, costCenterLabel } from './CostCenterField';
+import { useCostCenters, costCenterOption } from './CostCenterField';
 
 /**
  * توزيع تحليلي — سطر واحد على أكتر من مركز تكلفة بنِسَب.
@@ -110,7 +110,7 @@ export default function CostCenterSplit({
                   placeholder="اختر المركز"
                   value={r.cost_center_id ?? undefined}
                   onChange={(v) => set(r.key, 'cost_center_id', v)}
-                  options={centers.map((c) => ({ value: c.id, label: costCenterLabel(c) }))} filterOption={searchFilter} filterSort={searchRank}/>
+                  options={centers.map(costCenterOption)} filterOption={searchFilter} filterSort={searchRank}/>
               ),
             },
             {

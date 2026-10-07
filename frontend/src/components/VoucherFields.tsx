@@ -115,7 +115,7 @@ export function defaultTreasuryId(treasuries: Treasury[]): number | undefined {
 }
 
 /**
- * حساب المصروف — بالكود والاسم واللي اتصرف عليه، ومنه تضيف حساب جديد.
+ * حساب المصروف — بالاسم واللي اتصرف عليه، ومنه تضيف حساب جديد (الكود بيتبحث بيه بس مابيظهرش).
  *
  * It listed `name || code`: never both, so two accounts called «مصروفات إدارية» under different
  * codes were the same line twice. And it showed nothing about the account, though the API returns
@@ -145,8 +145,9 @@ export function ExpenseAccountField({
     // `label` كل اسم بيبقى «كلمة في النص» مش «بيبدأ بـ»، فترتيب القُرب بيقع ويبقى بالكود.
     label: a.name ?? a.code ?? '',
     search: a.code ?? '',
-    // Code AND name. Either alone is ambiguous on a real chart of accounts.
-    full: `${a.code ? `${a.code} — ` : ''}${a.name ?? ''}`.trim(),
+    // الاسم بس — طلب العميل (٢٠٢٦-١٠-٠٧): «مش عايز الكود يظهر في الاختيارات». البحث بالكود
+    // لسه شغّال من `search`.
+    full: a.name ?? a.code ?? '',
     spent: Number(a.balance || 0),
   })), [accounts]);
 
@@ -180,8 +181,6 @@ export function ExpenseAccountField({
           showSearch style={{ width }}
           placeholder="إيجار / مرتبات / بنزين…"
           options={options}
-          // الخانة المقفولة بالكود والاسم زي القايمة.
-          labelRender={({ value, label }) => options.find((x) => x.value === value)?.full ?? label}
           optionRender={(opt) => {
             const o = options.find((x) => x.value === opt.value)!;
             return (
@@ -215,7 +214,7 @@ export function ExpenseAccountField({
             rules={[{ required: true, message: 'اختر الحساب الرئيسي' }]}>
             <Select showSearch placeholder="مصروفات ..."
               options={groups.map((g) => ({
-                value: g.id, label: `${g.code ? `${g.code} — ` : ''}${g.name ?? ''}`.trim(),
+                value: g.id, label: g.name ?? g.code ?? '', search: g.code ?? '',
               }))} filterOption={searchFilter} filterSort={searchRank}/>
           </Form.Item>
           <Form.Item name="code" label="الكود"

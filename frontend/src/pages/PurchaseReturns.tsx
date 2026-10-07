@@ -89,6 +89,8 @@ interface ReturnRow {
   statement1?: string | null;
   statement2?: string | null;
   statement3?: string | null;
+  /** رقم إشعار المورد الورقي — بيتعرض عمود في السجل عشان الورقة تتلاقي من غير فتح المردود. */
+  external_document_number?: string | null;
 }
 
 interface PurchaseLine {
@@ -900,6 +902,12 @@ export default function PurchaseReturns({ embedded }: { embedded?: { onExit: () 
         : <Tag color="volcano">{d}</Tag>),
     },
     {
+      title: 'رقم المستند الورقي', dataIndex: 'external_document_number',
+      key: 'external_document_number', ellipsis: true, width: 130,
+      ...textColumn(rows, (r: ReturnRow) => r.external_document_number),
+      render: (v: string | null) => v || '-',
+    },
+    {
       title: 'الفاتورة رقم', dataIndex: 'purchase_document_number', key: 'purchase_document_number',
       width: 140,
       ...textColumn(rows, (r: ReturnRow) => r.purchase_document_number),
@@ -1034,7 +1042,7 @@ export default function PurchaseReturns({ embedded }: { embedded?: { onExit: () 
 
   const filter = useListFilter<ReturnRow>(rows, {
     search: (r) => [r.document_number, r.purchase_document_number, r.supplier_name,
-      r.value, r.notes, r.statement1, r.statement2, r.statement3],
+      r.value, r.notes, r.statement1, r.statement2, r.statement3, r.external_document_number],
     filters: {
       supplier_id: (r, v) => r.supplier_id === v,
       document_number: (r, v) => (r.document_number || '').includes(String(v)),

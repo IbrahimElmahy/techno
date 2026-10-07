@@ -205,7 +205,7 @@ export default function ChartTab() {
           <Form.Item name="parent_id" label="الحساب الأب (المجموعة)"
             extra="اترك فارغاً لإنشاء حساب جذر">
             <Select allowClear placeholder="اختر المجموعة الأب" showSearch
-              options={groups.map((g) => ({ value: g.id, label: `${g.code} — ${g.name}` }))} filterOption={searchFilter} filterSort={searchRank}/>
+              options={groups.map((g) => ({ value: g.id, label: g.name, search: g.code || '' }))} filterOption={searchFilter} filterSort={searchRank}/>
           </Form.Item>
           <Form.Item name="code" label="كود الحساب (مقطعي)"
             rules={[{ required: true, message: 'أدخل الكود' }]}
