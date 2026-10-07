@@ -7,6 +7,7 @@ import { PlusOutlined, MinusCircleOutlined } from '@ant-design/icons';
 import { api } from '../api/client';
 import { useLookup } from '../hooks/useLookup';
 import { TabModal } from './TabModal';
+import { repOptions } from '../utils/reps';
 
 /**
  * ONE edit form for a customer — data, address, phones, responsible rep/territory and price
@@ -59,6 +60,7 @@ export default function CustomerEditModal({
   onSaved?: () => void;
 }) {
   const [form] = Form.useForm();
+  const watchedRep = Form.useWatch('rep_id', form) as number | undefined;
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [record, setRecord] = useState<any>(null);
@@ -211,7 +213,7 @@ export default function CustomerEditModal({
               <Form.Item name="rep_id" label="المندوب المسؤول"
                 rules={[{ required: true, message: 'يرجى تحديد المندوب!' }]}>
                 <Select showSearch filterOption={searchFilter} filterSort={searchRank}
-                  options={reps.map((r) => ({ value: r.id, label: r.full_name }))} />
+                  options={repOptions(reps, watchedRep)} />
               </Form.Item>
             </Col>
             <Col xs={24} md={12}>

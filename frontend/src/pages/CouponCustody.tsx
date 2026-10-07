@@ -17,6 +17,7 @@ import { PAGE_SIZE_OPTIONS } from '../utils/pagination';
 import ListPage from '../components/ListPage';
 import { useQueryTab } from '../components/useQueryTab';
 import { numeralsLocale } from '../utils/money';
+import { repOptions as repPickerOptions } from '../utils/reps';
 
 /**
  * عهدة الكوبونات — دفاتر مرقّمة في إيد المندوب، زي عهدة البضاعة.
@@ -75,13 +76,12 @@ export default function CouponCustody() {
     () => (kindLookup || []).map((o) => ({ value: o.value, label: o.label })), [kindLookup]);
 
   const [reps, setReps] = useState<{ id: number; full_name: string; username?: string }[]>([]);
+  const [repId, setRepId] = useState<number | undefined>();
   const repOptions = useMemo(
-    () => sortByName(reps, (r) => r.full_name || r.username || '')
-      .map((r) => ({ value: r.id, label: r.full_name || r.username })),
-    [reps]);
+    () => repPickerOptions(sortByName(reps, (r) => r.full_name || r.username || ''), repId),
+    [reps, repId]);
 
   // الفلاتر
-  const [repId, setRepId] = useState<number | undefined>();
   const [kind, setKind] = useState<string | undefined>();
   const [direction, setDirection] = useState<'out' | 'in' | undefined>();
   const [range, setRange] = useState<[Dayjs, Dayjs] | null>(null);

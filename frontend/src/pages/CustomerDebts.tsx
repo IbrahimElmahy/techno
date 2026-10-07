@@ -25,6 +25,7 @@ import { PAGE_SIZE_OPTIONS } from '../utils/pagination';
 import { money, numeralsLocale } from '../utils/money';
 import { useLiveRefresh } from '../utils/live';
 import { printReport, type PrintColumn } from '../print/reportSheet';
+import { repOptions } from '../utils/reps';
 
 /**
  * مديونيات العملاء (طلب العميل ٢٠٢٦-١٠-٠٣) — صف لكل عميل: أبيض وبولي والإجمالي.
@@ -463,7 +464,7 @@ export default function CustomerDebts() {
             style={{ minWidth: 240 }} popupMatchSelectWidth={false}
             onChange={(v) => setFilter('rep_id', v)}
             filterOption={searchFilter} filterSort={searchRank}
-            options={reps.map((r) => ({ value: r.id, label: r.full_name }))} />
+            options={repOptions(reps, filters.rep_id)} />
           <Select allowClear showSearch placeholder="الفرع" value={filters.branch_id}
             onChange={(v) => setFilter('branch_id', v)}
             filterOption={searchFilter} filterSort={searchRank}

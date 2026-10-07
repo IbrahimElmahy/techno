@@ -16,6 +16,7 @@ import {
   usePostableAccounts,
 } from './PartyKind';
 import VoucherShell, { BalanceTarget, Counterpart, PartyBalance, VoucherSubmit } from './VoucherShell';
+import { repOptions } from '../../utils/reps';
 
 export default function ReceiptModal({
   open, onCancel, form, posting, submit, customers, treasuries,
@@ -65,6 +66,7 @@ export default function ReceiptModal({
   const customerId = Form.useWatch('customer_id', form);
   const supplierId = Form.useWatch('supplier_id', form);
   const accountId = Form.useWatch('account_id', form);
+  const repUserId = Form.useWatch('rep_user_id', form) as number | undefined;
   const accounts = usePostableAccounts(kind === 'account');
   const lines = isCustomerKind(kind) ? families[customerId] || [] : [];
 
@@ -176,7 +178,7 @@ export default function ReceiptModal({
       <Form.Item key="rep" name="rep_user_id" label="المندوب" tooltip="فاضي = مندوب العميل">
         <Select
           allowClear showSearch placeholder="مندوب العميل (تلقائي)"
-          options={reps.map((r) => ({ value: r.id, label: r.full_name || r.username }))}
+          options={repOptions(reps, repUserId)}
           filterOption={searchFilter} filterSort={searchRank}
         />
       </Form.Item>,

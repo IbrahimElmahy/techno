@@ -16,6 +16,7 @@ import { TabModal } from './TabModal';
 import { keepInView } from '../utils/keepInView';
 import { money, num, numeralsLocale } from '../utils/money';
 import './PartyPickerModal.css';
+import { repOptions } from '../utils/reps';
 
 /**
  * اختيار الطرف — the first step of every sale/purchase document.
@@ -730,8 +731,7 @@ export default function PartyPickerModal({
                   rules={[{ required: true, message: 'المندوب مطلوب' }]}
                   style={{ marginBottom: 10 }}>
                   <Select showSearch placeholder="اختر المندوب"
-                    options={reps.map((r: any) => ({
-                      value: r.id, label: r.full_name || r.username }))} filterOption={searchFilter} filterSort={searchRank}/>
+                    options={repOptions(reps)} filterOption={searchFilter} filterSort={searchRank}/>
                 </Form.Item>
               </Col>
               <Col xs={24} md={8}>

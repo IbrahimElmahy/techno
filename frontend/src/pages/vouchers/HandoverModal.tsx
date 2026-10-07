@@ -23,6 +23,7 @@ import CostCenterSplit from '../../components/CostCenterSplit';
 import { TreasuryField, ExpenseAccountField } from '../../components/VoucherFields';
 import { api } from '../../api/client';
 import { Party, UserRecord, money } from './types';
+import { repOptions } from '../../utils/reps';
 
 export default function HandoverModal({
   open, onCancel, form, posting, submit, reps,
@@ -56,7 +57,7 @@ export default function HandoverModal({
                       showSearch
                       style={{ width: 240 }}
                       placeholder="اختر المندوب"
-                      options={reps.map((r) => ({ value: r.id, label: r.full_name || r.username }))} filterOption={searchFilter} filterSort={searchRank}/>
+                      options={repOptions(reps)} filterOption={searchFilter} filterSort={searchRank}/>
                   </Form.Item>
                   {/* (009) المندوب بقى له صندوق لكل خط، والتوريد بيسحب من واحد محدد.
                       فاضي = العهدة القديمة اللي من غير خط — اللي شايلة حركة ما قبل التقسيم. */}

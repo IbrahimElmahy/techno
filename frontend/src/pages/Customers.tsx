@@ -24,6 +24,7 @@ import ListPage, { type ListTab } from '../components/ListPage';
 import { useQueryTab } from '../components/useQueryTab';
 import { money, numeralsLocale } from '../utils/money';
 import { useLiveRefresh } from '../utils/live';
+import { repOptions } from '../utils/reps';
 interface CustomerRecord {
   id: number;
   code: string;
@@ -636,7 +637,7 @@ export default function Customers() {
         if (editMode && canEditTerritory) {
           return (
             <InlineSelectCell<number> value={repId}
-              options={reps.map((x) => ({ value: x.id, label: x.full_name }))}
+              options={repOptions(reps, repId)}
               onCommit={(v) => saveRep(row, v)} />
           );
         }
@@ -899,7 +900,7 @@ export default function Customers() {
             value={filters.rep_id}
             onChange={(v) => setFilter('rep_id', v)}
             filterOption={searchFilter} filterSort={searchRank}
-            options={reps.map((r) => ({ value: r.id, label: r.full_name }))} />
+            options={repOptions(reps, filters.rep_id)} />
           <Select allowClear showSearch placeholder="مندوب الخدمة"
             value={filters.service_rep_id}
             onChange={(v) => setFilter('service_rep_id', v)}
@@ -976,7 +977,7 @@ export default function Customers() {
               <Form.Item name="rep_id" label="مندوب"
                 rules={[{ required: true, message: 'يرجى تحديد المندوب!' }]}>
                 <Select showSearch placeholder="اختر المندوب"
-                  options={reps.map((r) => ({ value: r.id, label: r.full_name }))}
+                  options={repOptions(reps)}
                   filterOption={searchFilter} filterSort={searchRank} />
               </Form.Item>
             </Col>

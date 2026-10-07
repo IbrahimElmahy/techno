@@ -80,6 +80,7 @@ import { useRegisterReceipts } from './invoices/useRegisterReceipts';
 import { useLiveRefresh } from '../utils/live';
 import ListPage, { ListStat } from '../components/ListPage';
 import { useQueryTab } from '../components/useQueryTab';
+import { repOptions } from '../utils/reps';
 /** رقم فريد للمستند (`client_uuid`). `randomUUID` مش موجود خارج https، فالبديل عشوائي كفاية. */
 // المرتجع الجديد بيتفتح جوّه السجل (`embedded`) — كسول عشان مايتحمّلش مع كل فاتورة.
 const ReturnsScreen = React.lazy(() => import('./Returns'));
@@ -692,7 +693,9 @@ export default function Invoices() {
         api.get('/api/v1/items?kind=product'),
         api.get('/api/v1/warehouses'),
         api.get('/api/v1/products/point-values'),
-        api.get('/api/v1/employees', { params: { active: true } }),
+        // من غير فلتر «نشط»: الكشف ده عشان مخزن المندوب بس، وكارت الموظف بتاع مناديب أكتوبر
+        // متسجّل غير نشط في الموارد البشرية — فالمخزن ماكانش بيتملى (٢٠٢٦-١٠-٠٧).
+        api.get('/api/v1/employees'),
         api.get('/api/v1/users'),
         api.get('/api/v1/accounts?postable_only=true').catch(() => ({ data: [] })),
         api.get('/api/v1/branches').catch(() => ({ data: [] })),
@@ -2815,7 +2818,7 @@ function couponsTotal(inv: any): number {
                     // إيه اللي فيها، فبيعرض الكتالوج كله بكل فئاته.
                     if (store) onWarehouseChange(store);
                   }}
-                  options={reps.map((r) => ({ value: r.id, label: r.full_name }))} filterOption={searchFilter} filterSort={searchRank}/>
+                  options={repOptions(reps, invoiceRepId)} filterOption={searchFilter} filterSort={searchRank}/>
               </Form.Item>
             </Col>
             {/* الخط أداة تجزئة — مش في المصنع. الشرح فوق عند `isFactory`. */}

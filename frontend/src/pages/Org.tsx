@@ -13,6 +13,7 @@ import { useAuth } from '../components/AuthProvider';
 import { showDeactivationConfirm } from '../components/ConfirmationDialog';
 import ListToolbar, { useListFilter } from '../components/ListToolbar';
 import { TabModal } from '../components/TabModal';
+import { repChoices } from '../utils/reps';
 
 const ADD_LABELS: Record<string, string> = {
   governorates: 'إضافة محافظة',
@@ -645,7 +646,7 @@ export default function Org() {
                         rules={[{ required: true, message: 'يرجى اختيار المندوب!' }]}
                       >
                         <Select showSearch placeholder="اختر المندوب للربط بالعهدة" filterOption={searchFilter} filterSort={searchRank}>
-                          {reps.map((r) => (
+                          {repChoices(reps).map((r) => (
                             <Select.Option key={r.id} value={r.id}>
                               {r.full_name}
                             </Select.Option>

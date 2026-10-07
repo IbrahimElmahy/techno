@@ -138,9 +138,9 @@ export default function OpsReports() {
   // القوايم مرتّبة أبجدياً من غير بحث — والبحث بيرتّبها بالقُرب (`searchRank`).
   // المناديب بس — القايمة كانت بتعرض كل مستخدمي النظام (محاسبين وأمناء مخازن…).
   const repOptions = useMemo(() => users
-    .filter((u: any) => u.role === 'sales_rep')
+    .filter((u: any) => u.role === 'sales_rep' && (u.active !== false || u.id === repId))
     .map((u) => ({ value: u.id, label: String(u.full_name || u.username || `#${u.id}`) }))
-    .sort((a, b) => compareArabic(a.label, b.label)), [users]);
+    .sort((a, b) => compareArabic(a.label, b.label)), [users, repId]);
   const customerOptions = useMemo(() => customersOfRep(customers, repId)
     .map((c) => ({ value: c.id, label: String(c.name ?? '') }))
     .sort((a, b) => compareArabic(a.label, b.label)), [customers, repId]);

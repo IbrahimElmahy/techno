@@ -56,6 +56,7 @@ import {
   VoucherRecord, StatementLine, StatementData, Party, UserRecord, KIND_LABEL, KIND_COLOR,
 } from './vouchers/types';
 import { useLiveRefresh } from '../utils/live';
+import { repOptions } from '../utils/reps';
 
 /**
  * حركة الخزينة — الخزينة والفترة بقوا في سطر فلاتر الصفحة، فبيتبعتوا من برّه
@@ -522,7 +523,7 @@ const Vouchers: React.FC = () => {
       ? customers.map((c) => ({ value: c.id, label: c.name }))
       : stKind === 'supplier'
         ? suppliers.map((s) => ({ value: s.id, label: s.name }))
-        : reps.map((r) => ({ value: r.id, label: r.full_name || r.username })),
+        : repOptions(reps, stParty),
     (o) => o.label);
 
   const stPartyLabel = stPartyOptions.find((o) => o.value === stParty)?.label || '';

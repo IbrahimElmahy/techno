@@ -61,6 +61,7 @@ import { addPickedSequentially, type PickResult } from '../utils/pickMany';
 
 import ListPage from '../components/ListPage';
 import { useLiveRefresh } from '../utils/live';
+import { repOptions } from '../utils/reps';
 /**
  * مرتجعات المبيعات — a full "return like a sale, reversed" screen: pick a customer, then the goods
  * they're bringing back; the items go back INTO stock and the money is credited to the customer.
@@ -1429,7 +1430,7 @@ export default function Returns({ embedded }: { embedded?: { onExit: () => void 
                   <Select allowClear showSearch placeholder="بدون مندوب"
                     disabled={viewOnly}
                     value={repId ?? undefined} onChange={(v) => setRepId((v as number) ?? null)}
-                    options={reps.map((r) => ({ value: r.id, label: r.full_name || r.username }))} filterOption={searchFilter} filterSort={searchRank}/>
+                    options={repOptions(reps, repId)} filterOption={searchFilter} filterSort={searchRank}/>
                 </Form.Item>
               </Col>
               <Col xs={12} md={3}>

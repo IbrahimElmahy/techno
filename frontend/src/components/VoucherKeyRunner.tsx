@@ -11,6 +11,7 @@ import PartyField from './PartyField';
 import { Treasury, defaultTreasuryId } from './VoucherFields';
 import { TabModal } from './TabModal';
 import { money } from '../utils/money';
+import { repOptions } from '../utils/reps';
 
 /**
  * تشغيل المفتاح — الأبواب اللي بيفتحها لحد ما السند يترحّل.
@@ -410,8 +411,7 @@ export default function VoucherKeyRunner({ keyDef, world, onClose, onPosted }: R
             <Form.Item name="rep_user_id" label="المندوب"
               rules={[{ required: true, message: 'اختر المندوب' }]}>
               <Select showSearch placeholder="اختر المندوب"
-                options={world.reps.map((r) => ({
-                  value: r.id, label: r.full_name || r.username || `#${r.id}` }))} filterOption={searchFilter} filterSort={searchRank}/>
+                options={repOptions(world.reps)} filterOption={searchFilter} filterSort={searchRank}/>
             </Form.Item>
           )}
           {(['debit', 'credit'] as const).map((side) => doors.includes(`${side}_account`) && (

@@ -155,6 +155,24 @@ def create_app() -> FastAPI:
         finally:
             _branch_scope.reset_view_branch(token)
 
+    # الطلب البطيء (ثانية وأكتر) بيتكتب في سجل الخدمة — «SLOW <ms> <method> <path>» —
+    # عشان شكوى «النظام تقيل» تتقاس بشاشة بعينها مش بالإحساس (٢٠٢٦-١٠-٠٧).
+    import logging as _logging
+    import time as _time
+
+    _slow_log = _logging.getLogger("uvicorn.error")
+
+    @app.middleware("http")
+    async def _slow_requests(request, call_next):
+        t0 = _time.perf_counter()
+        response = await call_next(request)
+        ms = (_time.perf_counter() - t0) * 1000
+        if ms >= 1000:
+            q = request.url.query
+            _slow_log.warning("SLOW %d %s %s%s", ms, request.method, request.url.path,
+                              f"?{q[:200]}" if q else "")
+        return response
+
     prefix = "/api/v1"
     app.include_router(auth.router, prefix=prefix)
     app.include_router(users.router, prefix=prefix)
