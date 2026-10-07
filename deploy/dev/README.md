@@ -83,3 +83,5 @@ Remove-Item D:\techno-dev\pgdata\postmaster.pid -Force
 ## أدمن تجربة محلي
 
 على قاعدة الديف بس: `admin.test` / `adm-7da94fdf`.
+
+مندوب تجريبي محلي (قاعدة الديف بس): `car.b` / `rep-30bb9982`.

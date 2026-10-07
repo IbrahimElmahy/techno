@@ -5,7 +5,7 @@ enum-bound defaults without an explicit seed step. Enforces the system/custom gu
 """
 from __future__ import annotations
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from src.models.lookup import LookupOption
@@ -31,8 +31,36 @@ def _ensure_seeded(db: Session, category: str) -> None:
     db.flush()
 
 
+def _adopt_item_categories(db: Session) -> None:
+    """فئة على أصناف ومالهاش صف في شاشة الفئات ⇐ بيتعملها صف (٢٠٢٦-١٠-٠٧).
+
+    نقل a5 حط على الأصناف فئات زي «تشغيل» و«تكنو وايت» من غير صف هنا — ٨٥٧ صنف على
+    الإنتاج. الفئة دي مكانتش بتظهر في شاشة الفئات، فمحدش يقدر يخفيها من شيت التسعير ولا
+    يعدّل اسمها، وكانت بتفضل ظاهرة في التطبيق مهما اتخفى غيرها. القيمة هي النص اللي على
+    الصنف بالظبط عشان الربط يمشي من غير ما صنف يتلمس، والمزامنة الجاية لو جابت فئة
+    جديدة بتتلم هنا برضه.
+    """
+    from src.models.catalog import Item
+
+    have = set(db.scalars(select(LookupOption.value)
+                          .where(LookupOption.category == ITEM_CATEGORY)).all())
+    used = {c.strip() for c in db.scalars(
+        select(Item.category).where(Item.category.is_not(None)).distinct()).all() if c and c.strip()}
+    missing = sorted(c for c in used if c not in have and len(c) <= 64)
+    if not missing:
+        return
+    last = db.scalar(select(func.max(LookupOption.sort_order))
+                     .where(LookupOption.category == ITEM_CATEGORY)) or 0
+    for i, value in enumerate(missing, start=1):
+        db.add(LookupOption(category=ITEM_CATEGORY, value=value, label=value[:160],
+                            sort_order=last + i, active=True, is_system=False))
+    db.flush()
+
+
 def list_options(db: Session, category: str, active_only: bool = False) -> list[LookupOption]:
     _ensure_seeded(db, category)
+    if category == ITEM_CATEGORY:
+        _adopt_item_categories(db)
     stmt = select(LookupOption).where(LookupOption.category == category)
     if active_only:
         stmt = stmt.where(LookupOption.active.is_(True))
