@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../api/api_client.dart';
 import '../db/local_db.dart';
 import '../models/models.dart';
 import '../theme.dart';
@@ -104,6 +105,11 @@ class _PriceSheetScreenState extends State<PriceSheetScreen> {
   Future<void> _load() async {
     // الفئات اللي النظام مخبّيها من الشيت بتتشال من المنتقي. السطور المتحفوظة قبل
     // الإخفاء بتفضل زي ما هي — عرض اتبعت لتاجر مابيتغيّرش من تحته.
+    // بيحدّث القايمة من النظام لو فيه شبكة (مهلة قصيرة)، وإلا اللي متخزّن من آخر مزامنة.
+    try {
+      await ApiClient.instance
+          .refreshPriceSheetHidden(timeout: const Duration(seconds: 4));
+    } catch (_) {}
     final hidden = await LocalDb.instance.priceSheetHiddenCategories();
     final items = [
       for (final it in await LocalDb.instance.catalogItems())

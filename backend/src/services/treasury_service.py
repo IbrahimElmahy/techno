@@ -135,6 +135,46 @@ def update_treasury(
     return treasury
 
 
+def account_in_use(db: Session, account_id: int) -> int:
+    """عدد سطور القيود على الحساب — الحساب اللي عليه حركة مايتمسحش."""
+    from sqlalchemy import func
+
+    from src.models.ledger import LedgerLine
+    return db.scalar(select(func.count()).select_from(LedgerLine)
+                     .where(LedgerLine.account_id == account_id)) or 0
+
+
+def delete_treasury(db: Session, *, treasury_id: int, actor_user_id: int) -> None:
+    """حذف خزنة اتعملت غلط — **بس لو مالهاش ولا حركة** (٢٠٢٦-١٠-٠٧).
+
+    اللي عليها قيد أو سند أو شيك بتتخفي مش بتتمسح: تاريخ الفلوس مايضيعش. والحساب بتاعها
+    بيتمسح معاها لأنه اتعمل ليها هي.
+    """
+    from sqlalchemy.exc import IntegrityError
+
+    treasury = db.get(Treasury, treasury_id)
+    if treasury is None:
+        raise TreasuryError("الخزينة غير موجودة.")
+    if treasury.is_default:
+        raise TreasuryError("الخزينة الافتراضية مابتتمسحش.")
+    n = account_in_use(db, treasury.account_id)
+    if n:
+        raise TreasuryError(f"الخزينة عليها {n} حركة فمينفعش تتمسح — استعمل «إخفاء».")
+    before = {"name": treasury.name, "kind": treasury.kind.value, "branch_id": treasury.branch_id}
+    account = db.get(Account, treasury.account_id)
+    try:
+        with db.begin_nested():
+            db.delete(treasury)
+            db.flush()
+            if account is not None and not account.is_system:
+                db.delete(account)
+                db.flush()
+    except IntegrityError:
+        raise TreasuryError("الخزينة مربوطة بسندات أو شيكات أو مرتبات — استعمل «إخفاء».")
+    audit_service.record(db, action="treasury.delete", actor_user_id=actor_user_id,
+                         entity_type="treasury", entity_id=treasury_id, before=before)
+
+
 # --------------------------------------------------------------------------- period lock
 
 def current_lock(db: Session) -> PeriodLock | None:

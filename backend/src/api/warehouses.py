@@ -46,6 +46,9 @@ class WarehouseUpdate(BaseModel):
 
 class CustodyUpdate(BaseModel):
     active: bool | None = None
+    # اسم الصندوق (اسم حسابه في الشجرة) والمندوب اللي ماسكه — من شاشة الخزن والبنوك.
+    name: str | None = None
+    rep_id: int | None = None
     # الخط بيتصحّح، مابيتعادش عمله. صندوق اتفتح على «أبيض» وهو بولي كان لازم يتقفل
     # ويتعمل واحد جديد — والرصيد بيتقسم على صفّين عشان غلطة في قايمة.
     family: str | None = None
@@ -67,6 +70,10 @@ class CustodyCreate(BaseModel):
     # فالتفرّد بقى على (المندوب، الخط) مش على المندوب لوحده.
     family: str | None = None
     warehouse_id: int | None = None
+    # اسم الصندوق. لو اتبعت، الحساب بيتعمل **خزنة** باسمه تحت نفس مجموعة صناديق الفرع —
+    # زي صناديق a5 — فيظهر في «الفلوس رايحة فين» وفي كشف الصندوق. من غيره الحساب بيتعمل
+    # عهدة من غير اسم زي ما كان.
+    name: str | None = None
 
 
 class CustodyOut(BaseModel):
@@ -279,7 +286,24 @@ def create_custody(
             {"code": "custody_exists", "message": "Custody already exists for this holder"},
         )
 
-    account = Account(account_type=AccountType.custody, owner_ref=None, normal_side=Direction.debit)
+    if body.name and body.name.strip():
+        from src.models.ledger import AccountNature
+        from src.models.user import User
+
+        rep = db.get(User, body.rep_id) if body.rep_id else None
+        branch_id = rep.branch_id if rep is not None else None
+        # المجموعة: أب صندوق مندوب تاني في نفس الفرع، عشان الجديد يقعد جنب إخواته في الشجرة.
+        sibling = db.scalar(
+            select(Account).join(Custody, Custody.account_id == Account.id)
+            .where(Account.account_type == AccountType.treasury,
+                   Account.branch_id == branch_id, Account.parent_id.is_not(None))
+            .limit(1)) if branch_id else None
+        account = Account(
+            account_type=AccountType.treasury, owner_ref=None, normal_side=Direction.debit,
+            name=body.name.strip(), nature=AccountNature.asset, is_postable=True,
+            branch_id=branch_id, parent_id=sibling.parent_id if sibling is not None else None)
+    else:
+        account = Account(account_type=AccountType.custody, owner_ref=None, normal_side=Direction.debit)
     db.add(account)
     db.flush()
     custody = Custody(
@@ -310,6 +334,18 @@ def update_custody(
         c.active = body.active
     if body.family is not None:
         c.family = body.family or None
+    if body.rep_id is not None and body.rep_id != c.rep_id:
+        clash = db.scalar(select(Custody).where(
+            Custody.rep_id == body.rep_id, Custody.id != c.id,
+            Custody.family == c.family if c.family else Custody.family.is_(None)))
+        if clash is not None:
+            raise HTTPException(409, {"code": "custody_exists",
+                                      "message": "المندوب ده عنده صندوق لنفس الخط."})
+        c.rep_id = body.rep_id
+    if body.name is not None and body.name.strip() and c.account_id:
+        acc = db.get(Account, c.account_id)
+        if acc is not None:
+            acc.name = body.name.strip()
     db.flush()
     audit_service.record(db, action="custody.update", actor_user_id=current.id,
                          entity_type="custody", entity_id=c.id)
@@ -321,12 +357,50 @@ def update_custody(
 @router.delete("/custodies/{custody_id}", status_code=status.HTTP_204_NO_CONTENT)
 def deactivate_custody(
     custody_id: int,
+    hard: bool = False,
     current: CurrentUser = Depends(require_capability(CAP_CUSTODY_WRITE)),
     db: Session = Depends(get_db),
 ) -> None:
     c = db.get(Custody, custody_id)
     if c is None:
         raise HTTPException(404, {"code": "not_found", "message": "Custody not found"})
+    if hard:
+        # حذف فعلي — بس للصندوق اللي اتعمل غلط ومالوش ولا حركة فلوس ولا بضاعة.
+        from sqlalchemy import text as _text
+        from sqlalchemy.exc import IntegrityError
+
+        from src.services.treasury_service import account_in_use
+
+        blockers = []
+        n = account_in_use(db, c.account_id) if c.account_id else 0
+        if n:
+            blockers.append(f"حركات فلوس: {n}")
+        n_mov = db.execute(_text(
+            "SELECT COUNT(*) FROM stock_movement WHERE location_kind = 'custody' "
+            "AND location_id = :i"), {"i": c.id}).scalar() or 0
+        if n_mov:
+            blockers.append(f"حركات بضاعة: {n_mov}")
+        if blockers:
+            raise HTTPException(409, {"code": "has_history", "message": (
+                "الصندوق ده عليه حركة فمينفعش يتمسح — " + " · ".join(blockers)
+                + ". استعمل «إخفاء» بدل المسح.")})
+        acc = db.get(Account, c.account_id) if c.account_id else None
+        try:
+            with db.begin_nested():
+                db.execute(_text("DELETE FROM stock_locator WHERE location_kind = 'custody' "
+                                 "AND location_id = :i"), {"i": c.id})
+                db.delete(c)
+                db.flush()
+                if acc is not None and not acc.is_system:
+                    db.delete(acc)
+                    db.flush()
+        except IntegrityError:
+            raise HTTPException(409, {"code": "has_history", "message":
+                                      "الصندوق مربوط بسندات أو مستندات — استعمل «إخفاء»."})
+        audit_service.record(db, action="custody.delete", actor_user_id=current.id,
+                             entity_type="custody", entity_id=custody_id)
+        db.commit()
+        return
     c.active = False
     db.flush()
     audit_service.record(db, action="custody.deactivate", actor_user_id=current.id,

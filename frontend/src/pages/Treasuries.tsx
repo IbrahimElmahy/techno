@@ -7,8 +7,9 @@ import {
 } from 'antd';
 import {
   PlusOutlined, EditOutlined, StopOutlined, SearchOutlined, ReloadOutlined, CheckOutlined,
-  BankOutlined, ClearOutlined,
+  BankOutlined, ClearOutlined, DeleteOutlined,
 } from '@ant-design/icons';
+import { Popconfirm } from '../components/noConfirm';
 import ListPage from '../components/ListPage';
 import { useQueryTab } from '../components/useQueryTab';
 import { api } from '../api/client';
@@ -72,6 +73,10 @@ export default function Treasuries() {
   const [viewRaw, setView] = useQueryTab('treasuries');
   const view = (viewRaw === 'safes' ? 'safes' : 'treasuries') as 'treasuries' | 'safes';
   const [createOpen, setCreateOpen] = useState(false);
+  /** صندوق مندوب بيتعدّل — `'new'` = صندوق جديد. */
+  const [safeEditing, setSafeEditing] = useState<RepSafe | 'new' | null>(null);
+  const [safeForm] = Form.useForm();
+  const [repList, setRepList] = useState<{ id: number; name: string; active: boolean }[]>([]);
   const [editing, setEditing] = useState<TreasuryRecord | null>(null);
   const [form] = Form.useForm();
   const [editForm] = Form.useForm();
@@ -115,6 +120,8 @@ export default function Treasuries() {
       ]);
       const repName: Record<number, string> = {};
       (rp.data || []).forEach((r: any) => { repName[r.user_id] = r.full_name || r.username; });
+      setRepList((rp.data || []).map((r: any) => ({
+        id: r.user_id, name: r.full_name || r.username, active: r.active !== false })));
       const account: Record<number, any> = {};
       (acc.data || []).forEach((a: any) => { account[a.id] = a; });
       const rows = (cu.data || []).filter((c: any) => c.holder_type === 'rep');
@@ -224,6 +231,95 @@ export default function Treasuries() {
       sorter: (a: RepSafe, b: RepSafe) => Number(a.balance || 0) - Number(b.balance || 0),
     },
   ];
+
+  /** رسالة السيرفر زي ما هي — «عليه حركة… استعمل إخفاء» أوضح من «تعذر». */
+  const errText = (err: any, fallback: string) =>
+    err?.response?.data?.detail?.message || err?.response?.data?.message || fallback;
+
+  const openSafe = (s: RepSafe | 'new') => {
+    setSafeEditing(s);
+    safeForm.setFieldsValue(s === 'new'
+      ? { name: '', rep_id: undefined, family: undefined }
+      : { name: s.name, rep_id: s.rep_id ?? undefined, family: s.family ?? undefined });
+  };
+
+  const onSaveSafe = async (v: any) => {
+    try {
+      if (safeEditing === 'new') {
+        await api.post('/api/v1/custodies', {
+          holder_type: 'rep', rep_id: v.rep_id, family: v.family || null, name: v.name,
+        });
+        message.success('اتعمل الصندوق');
+      } else if (safeEditing) {
+        await api.patch(`/api/v1/custodies/${safeEditing.custody_id}`, {
+          name: v.name, rep_id: v.rep_id, family: v.family || '',
+        });
+        message.success('اتعدّل الصندوق');
+      }
+      setSafeEditing(null);
+      loadSafes();
+    } catch (err: any) {
+      message.error(errText(err, 'تعذر الحفظ'));
+    }
+  };
+
+  const setSafeActive = async (s: RepSafe, active: boolean) => {
+    try {
+      await api.patch(`/api/v1/custodies/${s.custody_id}`, { active });
+      message.success(active ? 'الصندوق رجع ظاهر' : 'اتخفى الصندوق');
+      loadSafes();
+    } catch (err: any) {
+      message.error(errText(err, 'تعذر الحفظ'));
+    }
+  };
+
+  const deleteSafe = async (s: RepSafe) => {
+    try {
+      await api.delete(`/api/v1/custodies/${s.custody_id}`, { params: { hard: true } });
+      message.success('اتمسح الصندوق');
+      loadSafes();
+    } catch (err: any) {
+      message.error(errText(err, 'تعذر الحذف'));
+    }
+  };
+
+  const deleteTreasury = async (t: TreasuryRecord) => {
+    try {
+      await api.delete(`/api/v1/treasuries/${t.id}`);
+      message.success('اتمسحت الخزينة');
+      load();
+    } catch (err: any) {
+      message.error(errText(err, 'تعذر الحذف'));
+    }
+  };
+
+  const safeActionsColumn = canWrite ? [{
+    title: '',
+    key: 'actions',
+    width: 120,
+    render: (_: any, r: RepSafe) => (
+      <Space size={2}>
+        <Tooltip title="تعديل">
+          <Button type="text" icon={<EditOutlined />} onClick={() => openSafe(r)} />
+        </Tooltip>
+        {r.active ? (
+          <Tooltip title="إخفاء">
+            <Button type="text" icon={<StopOutlined />} onClick={() => setSafeActive(r, false)} />
+          </Tooltip>
+        ) : (
+          <Tooltip title="إظهار">
+            <Button type="text" icon={<CheckOutlined />} onClick={() => setSafeActive(r, true)} />
+          </Tooltip>
+        )}
+        <Popconfirm title="تمسح الصندوق ده؟" description="بيتمسح بس لو مالوش ولا حركة."
+          okText="امسح" cancelText="لأ" onConfirm={() => deleteSafe(r)}>
+          <Tooltip title="حذف">
+            <Button type="text" danger icon={<DeleteOutlined />} />
+          </Tooltip>
+        </Popconfirm>
+      </Space>
+    ),
+  }] : [];
 
   const onCreate = async (v: any) => {
     try {
@@ -347,7 +443,7 @@ export default function Treasuries() {
     ...(canWrite ? [{
       title: '',
       key: 'actions',
-      width: 90,
+      width: 120,
       render: (_: any, record: TreasuryRecord) => (
         <Space size={2}>
           <Tooltip title="تعديل">
@@ -361,6 +457,14 @@ export default function Treasuries() {
             <Tooltip title="إعادة تنشيط">
               <Button type="text" icon={<CheckOutlined />} onClick={() => onReactivate(record)} />
             </Tooltip>
+          )}
+          {!record.is_default && (
+            <Popconfirm title="تمسح الخزينة دي؟" description="بتتمسح بس لو مالهاش ولا حركة."
+              okText="امسح" cancelText="لأ" onConfirm={() => deleteTreasury(record)}>
+              <Tooltip title="حذف">
+                <Button type="text" danger icon={<DeleteOutlined />} />
+              </Tooltip>
+            </Popconfirm>
           )}
         </Space>
       ),
@@ -458,9 +562,15 @@ export default function Treasuries() {
         )}
         {tableCols.control}
         <Button icon={<ReloadOutlined />} onClick={load}>اعادة تحميل</Button>
-      </>) : (
+      </>) : (<>
+        {canWrite && (
+          <Button type="primary" className="sl-create" icon={<PlusOutlined />}
+            onClick={() => openSafe('new')}>
+            صندوق جديد
+          </Button>
+        )}
         <Button icon={<ReloadOutlined />} onClick={loadSafes}>اعادة تحميل</Button>
-      )}
+      </>)}
       filters={(<>
         <Input className="sl-f-search" allowClear value={search}
           placeholder={view === 'treasuries' ? 'بحث بالاسم أو الفرع أو البنك'
@@ -510,7 +620,7 @@ export default function Treasuries() {
         <Table
           className="sl-table"
           dataSource={filteredSafes}
-          columns={safeColumns}
+          columns={[...safeColumns, ...safeActionsColumn]}
           rowKey="custody_id"
           loading={safesLoading}
           size="small"
@@ -537,6 +647,41 @@ export default function Treasuries() {
           <Space style={{ marginTop: 16 }}>
             <Button type="primary" htmlType="submit">حفظ</Button>
             <Button onClick={() => setCreateOpen(false)}>تراجع</Button>
+          </Space>
+        </Form>
+      </TabModal>
+
+      <TabModal footer={null} centered width={560} destroyOnHidden
+        title={safeEditing === 'new' ? 'صندوق مندوب جديد' : 'تعديل صندوق المندوب'}
+        open={!!safeEditing} onCancel={() => setSafeEditing(null)}>
+        <Form form={safeForm} layout="vertical" onFinish={onSaveSafe} requiredMark={false}>
+          <Form.Item name="name" label="اسم الصندوق"
+            rules={[{ required: safeEditing === 'new', message: 'اكتب اسم الصندوق' }]}>
+            <Input placeholder="مثال: صندوق بولي السيارة (ب)" />
+          </Form.Item>
+          <Row gutter={12}>
+            <Col span={14}>
+              <Form.Item name="rep_id" label="المندوب"
+                rules={[{ required: true, message: 'اختر المندوب' }]}>
+                <Select showSearch placeholder="اختر المندوب"
+                  options={repList
+                    .filter((r) => r.active || (safeEditing !== 'new' && r.id === safeEditing?.rep_id))
+                    .map((r) => ({ value: r.id, label: r.name }))}
+                  filterOption={searchFilter} filterSort={searchRank} />
+              </Form.Item>
+            </Col>
+            <Col span={10}>
+              <Form.Item name="family" label="الخط">
+                <Select allowClear placeholder="بدون خط" options={[
+                  { value: 'أبيض', label: 'أبيض' },
+                  { value: 'بولي', label: 'بولي' },
+                ]} />
+              </Form.Item>
+            </Col>
+          </Row>
+          <Space style={{ marginTop: 8 }}>
+            <Button type="primary" htmlType="submit">حفظ</Button>
+            <Button onClick={() => setSafeEditing(null)}>تراجع</Button>
           </Space>
         </Form>
       </TabModal>

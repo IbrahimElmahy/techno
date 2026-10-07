@@ -275,6 +275,7 @@ class ApiClient {
           )
       ]);
     }
+    await refreshPriceSheetHidden();
     // Customers for the regular-visit picker (cached so it works offline).
     onStep?.call('بيجيب العملاء…');
     final custR = await http
@@ -433,6 +434,34 @@ class ApiClient {
   }
 
   // ------------------------------------------------------------ البيع من العربية
+
+  /// الفئات المخفية من شيت التسعير ⇐ `kv`. بتتنده مع المزامنة، ومن الشيت نفسه وهو
+  /// بيفتح (بمهلة قصيرة) — فالإخفاء من النظام بيبان من غير ما يستنى مزامنة.
+  Future<void> refreshPriceSheetHidden(
+      {Duration timeout = const Duration(seconds: 30)}) async {
+    // الفئات المخفية من شيت التسعير — هنا كمان مش في حزمة المندوب بس: الشيت بيفتحه
+    // المدير والمشرف كمان، وحزمتهم بترجع ٤٠٣ فالإخفاء ماكانش بيوصلهم (٢٠٢٦-١٠-٠٧).
+    // الرئيسية المخفية بتخفي فروعها — نفس قاعدة السيرفر.
+    try {
+      final r = await http
+          .get(await _uri('/settings/lookups', {'category': 'item_category'}),
+              headers: await _headers())
+          .timeout(timeout);
+      if (r.statusCode == 200) {
+        final cats = (jsonDecode(utf8.decode(r.bodyBytes)) as List).cast<Map>();
+        final hiddenVals = {
+          for (final c in cats)
+            if (c['hidden_in_price_sheet'] == true) '${c['value']}'
+        };
+        await LocalDb.instance.setKv('price_sheet_hidden_categories', jsonEncode([
+          for (final c in cats)
+            if (hiddenVals.contains('${c['value']}') ||
+                hiddenVals.contains('${c['parent_value']}'))
+              '${c['label'] ?? c['value']}'
+        ]));
+      }
+    } catch (_) {/* الإخفاء مايوقفش المزامنة — بيفضل اللي متخزّن */}
+  }
 
   /// بتسحب كل اللي المندوب محتاجه عشان يبيع من غير شبكة — نداء واحد.
   ///

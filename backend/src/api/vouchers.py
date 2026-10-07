@@ -750,6 +750,23 @@ def update_treasury(
     return _treasury_out(db, t)
 
 
+@router.delete("/treasuries/{treasury_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_treasury(
+    treasury_id: int,
+    current: CurrentUser = Depends(require_capability(CAP_VOUCHER_WRITE)),
+    db: Session = Depends(get_db),
+) -> None:
+    """حذف خزنة مالهاش ولا حركة — اللي عليها حركة بتتخفي."""
+    if current.role == RoleName.sales_rep:
+        raise HTTPException(status.HTTP_403_FORBIDDEN,
+                            {"code": "forbidden", "message": "إدارة الخزائن من المكتب فقط."})
+    try:
+        treasury_service.delete_treasury(db, treasury_id=treasury_id, actor_user_id=current.id)
+    except TreasuryError as exc:
+        raise _conflict(exc)
+    db.commit()
+
+
 @router.get("/period-lock", response_model=PeriodLockOut)
 def get_period_lock(
     _: CurrentUser = Depends(require_capability(CAP_VOUCHER_READ)),
