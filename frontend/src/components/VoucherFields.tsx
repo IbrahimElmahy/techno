@@ -45,11 +45,13 @@ export interface ExpenseAccount {
  * amount larger than what is in it is flagged as it is typed rather than refused at save.
  */
 export function TreasuryField({
-  treasuries, amount, width = 260, optional = false, placeholder,
+  treasuries, amount, width = 260, optional = false, placeholder, extra,
 }: {
-  treasuries: Treasury[]; amount?: number | null; width?: number;
+  treasuries: Treasury[]; amount?: number | null; width?: number | string;
   /** تعديل سند في عهدة مندوب — فاضي = يفضل في العهدة. */
   optional?: boolean; placeholder?: string;
+  /** سطر تحت الخانة — رصيد الخزنة وبعد السند (`VoucherShell`). */
+  extra?: React.ReactNode;
 }) {
   const live = treasuries.filter((t) => t.active !== false);
 
@@ -71,6 +73,7 @@ export function TreasuryField({
     <Form.Item
       name="treasury_id"
       label="الخزينة"
+      extra={extra}
       // Required, deliberately. The old form allowed «no answer» and resolved it server-side, which
       // is the same as answering for them.
       rules={optional ? [] : [{ required: true, message: 'اختر الخزينة التي ستتحرك منها الأموال' }]}
@@ -124,11 +127,13 @@ export function defaultTreasuryId(treasuries: Treasury[]): number | undefined {
  * «مصروفات أخرى».
  */
 export function ExpenseAccountField({
-  accounts, onCreated, width = 300, groups = [],
+  accounts, onCreated, width = 300, groups = [], extra,
 }: {
-  accounts: ExpenseAccount[]; onCreated: () => void; width?: number;
+  accounts: ExpenseAccount[]; onCreated: () => void; width?: number | string;
   /** المجموعات الرئيسية للمصروفات — الحساب الجديد لازم يقع تحت واحدة منها. */
   groups?: ExpenseAccount[];
+  /** سطر تحت الخانة — اللي اتصرف على الحساب لحد دلوقتي. */
+  extra?: React.ReactNode;
 }) {
   const [adding, setAdding] = useState(false);
   const [form] = Form.useForm();
@@ -168,6 +173,7 @@ export function ExpenseAccountField({
       <Form.Item
         name="expense_account_id"
         label="حساب المصروف"
+        extra={extra}
         rules={[{ required: true, message: 'اختر حساب المصروف' }]}
       >
         <Select

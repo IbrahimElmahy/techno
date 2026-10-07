@@ -26,6 +26,27 @@ export const PARTY_KIND_OPTIONS: { value: PartyKind; label: string }[] = [
   { value: 'account', label: 'حساب' },
 ];
 
+/** اسم الطرف على ورقة السند وفي معاينة القيد — «العميل» مش «عميل». */
+export const PARTY_DOC_LABEL: Record<PartyKind, string> = {
+  customer: 'العميل', supplier: 'المورد', employee: 'الموظف', branch: 'الفرع', account: 'الحساب',
+};
+
+/**
+ * نوع الطرف من قيم سند محفوظ — لفتحه للتعديل على النوع الصح.
+ *
+ * من غيرها سند صرف لعميل كان بيتفتح على «مورد» (الافتراضي) فالعميل بيضيع من الفورم،
+ * وسند قبض من مورد بيتفتح على «عميل» فاضي ومايتحفظش.
+ */
+export function kindOfValues(v: any, customers: Party[]): PartyKind | null {
+  if (v?.supplier_id) return 'supplier';
+  if (v?.customer_id) {
+    const t = customers.find((c) => c.id === v.customer_id)?.customer_type;
+    return t === 'employee' ? 'employee' : t === 'internal' ? 'branch' : 'customer';
+  }
+  if (v?.account_id) return 'account';
+  return null;
+}
+
 /** الأنواع اللي بتتقيّد على كارت عميل. */
 export const isCustomerKind = (k: PartyKind) => k === 'customer' || k === 'employee' || k === 'branch';
 
@@ -36,14 +57,29 @@ export function customersOfKind(customers: Party[], kind: PartyKind): Party[] {
   return customers.filter((c) => c.customer_type !== 'employee' && c.customer_type !== 'internal');
 }
 
-/** الحسابات الفرعية من الشجرة (غير الخزن) — بتتحمّل أول ما «حساب» يتختار. */
-function useAccounts(active: boolean) {
+/**
+ * الحسابات الفرعية من الشجرة (غير الخزن) — بتتحمّل أول ما «حساب» يتختار.
+ *
+ * **مرة واحدة للشاشة كلها.** خانة الطرف وتلميح رصيده وكارت القيد التلاتة محتاجين نفس
+ * القايمة؛ لو كل واحد جابها لوحده كانت هتتطلب تلات مرات مع كل اختيار «حساب».
+ */
+let accountsPromise: Promise<any[]> | null = null;
+export function loadPostableAccounts(): Promise<any[]> {
+  if (!accountsPromise) {
+    accountsPromise = api.get('/api/v1/accounts', { params: { postable_only: true } })
+      .then((r) => (r.data || []).filter((a: any) => a.account_type !== 'treasury'))
+      .catch(() => { accountsPromise = null; return []; });
+  }
+  return accountsPromise;
+}
+
+export function usePostableAccounts(active: boolean) {
   const [accounts, setAccounts] = useState<any[]>([]);
   useEffect(() => {
     if (!active || accounts.length) return;
-    api.get('/api/v1/accounts', { params: { postable_only: true } })
-      .then((r) => setAccounts((r.data || []).filter((a: any) => a.account_type !== 'treasury')))
-      .catch(() => setAccounts([]));
+    let alive = true;
+    loadPostableAccounts().then((list) => { if (alive) setAccounts(list); });
+    return () => { alive = false; };
   }, [active]);
   return accounts;
 }
@@ -60,21 +96,24 @@ export function PartyKindSwitch({ value, onChange }: {
 
 /** خانة الطرف للنوع المختار — عميل/موظف/فرع أو مورد أو حساب. */
 export function PartyKindField({
-  kind, customers, suppliers, onCustomerChange,
+  kind, customers, suppliers, onCustomerChange, extra,
 }: {
   kind: PartyKind;
   customers: Party[];
   suppliers: Party[];
   /** للعميل: الشاشة بتجيب خطوطه (أبيض/بولي). */
   onCustomerChange?: (id: number) => void;
+  /** سطر تحت الخانة — رصيد الطرف (`PartyBalance`). */
+  extra?: React.ReactNode;
 }) {
-  const accounts = useAccounts(kind === 'account');
+  const accounts = usePostableAccounts(kind === 'account');
   const custs = useMemo(() => customersOfKind(customers, kind), [customers, kind]);
   const label = PARTY_KIND_OPTIONS.find((o) => o.value === kind)?.label || 'الطرف';
 
   if (isCustomerKind(kind)) {
     return (
-      <Form.Item name="customer_id" label={label} rules={[{ required: true, message: `اختر ال${label}` }]}>
+      <Form.Item name="customer_id" label={label} rules={[{ required: true, message: `اختر ال${label}` }]}
+        extra={extra}>
         <PartyField
           kind="customer"
           options={custs.map((c) => ({ value: c.id, label: c.name }))}
@@ -85,14 +124,15 @@ export function PartyKindField({
   }
   if (kind === 'supplier') {
     return (
-      <Form.Item name="supplier_id" label="المورد" rules={[{ required: true, message: 'اختر المورد' }]}>
+      <Form.Item name="supplier_id" label="المورد" rules={[{ required: true, message: 'اختر المورد' }]}
+        extra={extra}>
         <PartyField kind="supplier" options={suppliers.map((s) => ({ value: s.id, label: s.name }))} />
       </Form.Item>
     );
   }
   return (
     <Form.Item name="account_id" label="الحساب" rules={[{ required: true, message: 'اختر الحساب' }]}
-      extra="أي حساب فرعي في الشجرة — زي a5">
+      extra={extra ?? 'أي حساب فرعي في الشجرة — زي a5'}>
       <Select
         showSearch allowClear placeholder="اكتب اسم الحساب أو كوده"
         options={accounts.map((a: any) => ({

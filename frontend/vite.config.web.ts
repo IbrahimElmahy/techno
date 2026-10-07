@@ -19,6 +19,8 @@ export default defineConfig({
   base: '/',
   plugins: [react()],
   resolve: { alias: { '@': path.resolve(__dirname, './src') } },
-  server: { port: 5173, strictPort: true },
+  // التشغيل المحلي (`npx vite --config vite.config.web.ts`): الواجهة بتنادي `/api` على نفس
+  // الأصل زي السيرفر، فبتتحوّل للباك إند المحلي. مالوش أثر على البيلد.
+  server: { port: 5173, strictPort: true, proxy: { '/api': 'http://127.0.0.1:8000' } },
   build: { rollupOptions: { output: { manualChunks } } },
 });

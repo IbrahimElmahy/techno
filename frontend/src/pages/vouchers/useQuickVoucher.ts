@@ -94,25 +94,34 @@ export function useQuickVoucher(onSaved: () => void) {
     setTimeout(() => form.setFieldsValue(values), 0);
   };
 
-  /** نفس توقيع `submit` اللي الـ`*Modal` بتاع السندات بيستناه. */
-  const submit = async (path: string, values: any, f: any, okMsg: string) => {
+  /**
+   * نفس توقيع `submit` اللي الـ`*Modal` بتاع السندات بيستناه — وبيرجّع السند المحفوظ
+   * (أو `null`) عشان «حفظ وطباعة»، و`keepOpen` لـ«حفظ وجديد».
+   */
+  const submit = async (
+    path: string, values: any, f: any, okMsg: string, opts?: { keepOpen?: boolean },
+  ): Promise<any | null> => {
     setPosting(true);
     try {
       const payload: any = { ...values, amount: String(values.amount) };
       if (values.voucher_date) payload.voucher_date = values.voucher_date.format('YYYY-MM-DD');
+      let data: any;
       if (editing) {
-        await api.put(`${path}/${editing.id}`, payload);
+        data = (await api.put(`${path}/${editing.id}`, payload)).data;
         message.success(`تم تعديل السند ${editing.document_number} ✔`);
       } else {
-        await api.post(path, payload);
+        data = (await api.post(path, payload)).data;
         message.success(okMsg);
       }
       f.resetFields();
-      setOpen(false);
+      // «حفظ وجديد» بيفضّل البوباب مفتوح على سند جديد — حتى لو كان بيعدّل.
+      if (!opts?.keepOpen) setOpen(false);
       setEditing(null);
       onSaved();
+      return data ?? {};
     } catch {
       // رسالة الخطأ بيطلّعها `api` نفسه.
+      return null;
     } finally {
       setPosting(false);
     }

@@ -4,7 +4,8 @@
 export interface VoucherRecord {
   id: number;
   document_number: string;
-  kind: 'receipt' | 'payment' | 'rep_handover' | 'expense' | 'cash_transfer';
+  kind: 'receipt' | 'payment' | 'rep_handover' | 'expense' | 'cash_transfer'
+    | 'partner_withdraw' | 'partner_deposit';
   amount: string;
   customer_id: number | null;
   supplier_id: number | null;
@@ -48,6 +49,8 @@ export interface Party {
   name: string;
   /** تصنيف كارت العميل — «employee» موظف و«internal» فرع (اختيار طرف السند). */
   customer_type?: string;
+  /** رصيد الكارت لو القايمة جايباه (قايمة الموردين بتجيبه) — لتلميح «له/عليه» في السند. */
+  balance?: string | number | null;
 }
 export interface UserRecord {
   id: number;

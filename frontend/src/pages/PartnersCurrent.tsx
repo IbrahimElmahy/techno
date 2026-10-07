@@ -279,7 +279,9 @@ export default function PartnersCurrent() {
             bordered
             rowKey={(m) => `${m.entry_id}-${m.debit}-${m.credit}`}
             loading={movesLoading}
-            dataSource={moves?.rows || []}
+            // الأحدث فوق (زي باقي النظام) — الرصيد المتراكم بيتحسب بالترتيب الزمني في السيرفر
+            // وبيتعرض مقلوب، فكل سطر لسه رصيده بعد الحركة دي.
+            dataSource={[...(moves?.rows || [])].reverse()}
             columns={moveColumns as any}
             pagination={false}
             locale={{ emptyText: <Empty description="مافيش حركة في الفترة دي" /> }}

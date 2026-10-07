@@ -1858,3 +1858,37 @@ body.eg-resizing * {
   font-size: 15px !important; font-weight: 800 !important; color: #2f6b12 !important;
 }
 .shortcuts-menu .anticon, .shortcuts-menu-root .anticon { font-size: 16px !important; }
+
+/*
+ * بوباب السند (`pages/vouchers/VoucherShell.tsx`) — قبض / صرف / مصروف.
+ *
+ * المبلغ هو أهم رقم في السند، فبقى خانة كبيرة بأرقام إنجليزي وفاصلة آلاف (زي الورقة
+ * المطبوعة و a5)، وتحته المبلغ بالحروف. الألوان من توكنز antd في الكود — هنا المقاسات بس.
+ */
+.vs-amount .ant-input-number-input {
+  font-size: 26px;
+  font-weight: 800;
+  height: 52px;
+  direction: ltr;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.5px;
+}
+.vs-words {
+  min-height: 30px;
+  margin-bottom: 18px;
+  padding: 4px 10px;
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.6;
+}
+.vs-hint {
+  font-size: 13.5px;
+}
+.vs-details.ant-collapse {
+  margin-top: 2px;
+}
+.vs-details .ant-collapse-content-box {
+  padding-bottom: 0 !important;
+}

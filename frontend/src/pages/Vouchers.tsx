@@ -131,6 +131,21 @@ const TreasuryMovementTab: React.FC<{ treasuries: any[]; treasuryId?: number; ra
   );
 };
 
+/**
+ * الشريحة ← نوع السند اللي بتتطلب بيه من السيرفر.
+ *
+ * بقت هنا (مش في `VOUCHER_TABS`) لأن التحميل محتاجها قبل ما الشرايح تتبني — التحميل بقى
+ * صفحة صفحة لنوع واحد بدل «كل السندات في الفترة» وتتفلتر على الشاشة.
+ */
+const TAB_KIND: Record<string, string> = {
+  receipt: 'receipt', payment: 'payment', handover: 'rep_handover',
+  expense: 'expense', transfer: 'cash_transfer',
+};
+
+/** الأحدث فوق — بالتاريخ وبعده الرقم. السيرفر بيرتّب كده، والترتيب هنا ضمان مش تكرار. */
+const newestFirst = (a: VoucherRecord, b: VoucherRecord) =>
+  (b.voucher_date || '').localeCompare(a.voucher_date || '') || b.id - a.id;
+
 const Vouchers: React.FC = () => {
   const [tab, setTab] = useQueryTab('receipt');
   const [chequeDir] = useQueryTab('', 'direction');
@@ -240,27 +255,71 @@ const Vouchers: React.FC = () => {
     onSearch: () => searchRef.current?.focus?.(),
   });
 
+  /**
+   * **صفحة صفحة من السيرفر** (٢٠٢٦-١٠-٠٧). بعد نقل سندات a5 القديمة (~١٥ ألف) «كل
+   * سندات النوع في الفترة» بقت آلاف الصفوف في طلب واحد. دلوقتي الشريحة بتطلب نوعها
+   * بـ`limit`/`offset` وبترجع `{rows, total}`، والجدول بيقلّب على السيرفر.
+   *
+   * ⚠️ البحث وفلاتر الأعمدة والتصدير بيشتغلوا على الصفحة المعروضة بس.
+   */
+  const listKind = TAB_KIND[tab] ?? (tab === 'log' ? kindFilter : undefined);
+  const listActive = tab in TAB_KIND || tab === 'log';
+  const [vPage, setVPage] = useState(1);
+  const [vPageSize, setVPageSize] = useState(PAGE_SIZE);
+  const [vTotal, setVTotal] = useState(0);
+  const loadSeq = useRef(0);
+
   const loadVouchers = useCallback(async (opts?: { silent?: boolean }) => {
+    if (!listActive) { setListLoaded(true); return; }
     // الهادي (التحديث الحي) مابيلفّش الجدول بسبينر.
     const silent = !!opts?.silent;
+    const seq = ++loadSeq.current;
     if (!silent) setLoading(true);
     try {
-      const params: Record<string, string> = {};
-      if (kindFilter) params.kind = kindFilter;
+      const params: Record<string, string | number> = {
+        limit: vPageSize, offset: (vPage - 1) * vPageSize,
+      };
+      if (listKind) params.kind = listKind;
       if (range?.[0]) params.date_from = range[0].format('YYYY-MM-DD');
       if (range?.[1]) params.date_to = range[1].format('YYYY-MM-DD');
-      const { data } = await api.get<VoucherRecord[]>('/api/v1/vouchers', { params });
-      setVouchers(data);
+      const { data } = await api.get<any>('/api/v1/vouchers', { params });
+      // طلب أحدث اتبعت وإحنا مستنيين — الرد ده قديم ومايكتبش فوقه.
+      if (seq !== loadSeq.current) return;
+      // ردّ قديم من غير صفحات (مصفوفة) بيتقبل برضه.
+      const rows: VoucherRecord[] = Array.isArray(data) ? data : (data?.rows ?? []);
+      setVouchers([...rows].sort(newestFirst));
+      setVTotal(Array.isArray(data) ? data.length : Number(data?.total ?? rows.length));
     } catch {
     } finally {
-      if (!silent) setLoading(false);
-      setListLoaded(true);
+      if (seq === loadSeq.current) {
+        if (!silent) setLoading(false);
+        setListLoaded(true);
+      }
     }
-  }, [kindFilter, range]);
+  }, [listActive, listKind, range, vPage, vPageSize]);
 
+  // النوع أو الفترة اتغيّروا ⇒ نرجع للصفحة الأولى قبل ما نحمّل (مش الصفحة ٥ من نوع تاني).
+  const queryKey = [listActive, listKind ?? '', range?.[0]?.format('YYYY-MM-DD') ?? '',
+    range?.[1]?.format('YYYY-MM-DD') ?? ''].join('|');
+  const lastQueryKey = useRef(queryKey);
   useEffect(() => {
+    if (lastQueryKey.current !== queryKey) {
+      lastQueryKey.current = queryKey;
+      if (vPage !== 1) { setVPage(1); return; }
+    }
     loadVouchers();
   }, [loadVouchers]);
+
+  /** ترقيم الجدول على السيرفر — نفس الشكل في الشرايح والسجل. */
+  const serverPagination = (foot: (total: number) => React.ReactNode) => ({
+    current: vPage, pageSize: vPageSize, total: vTotal,
+    showSizeChanger: true, pageSizeOptions: PAGE_SIZE_OPTIONS,
+    locale: { items_per_page: '' },
+    onChange: (p: number, size: number) => {
+      if (size !== vPageSize) { setVPageSize(size); setVPage(1); } else setVPage(p);
+    },
+    showTotal: foot,
+  });
 
   const openVoucher = useCallback((form: any, show: (v: boolean) => void) => {
     form.resetFields();
@@ -327,7 +386,9 @@ const Vouchers: React.FC = () => {
       const u = reps.find((r) => r.id === v.rep_user_id);
       return u ? u.full_name || u.username : `#${v.rep_user_id}`;
     }
-    return '—';
+    // سندات a5 المنقولة كتير منها على حساب عادي من الشجرة (مش عميل ولا مورد) — بيانها
+    // هو اللي بيقول اتعمل لمين، فبيتعرض مكان الطرف بدل «—».
+    return v.description || v.statement1 || '—';
   };
 
   const chequeParty = (c: any) =>
@@ -381,23 +442,37 @@ const Vouchers: React.FC = () => {
     };
   };
 
-  const submit = async (path: string, values: any, form: any, okMsg: string) => {
+  /**
+   * الحفظ المشترك للبوبابات. **بيرجّع السند اللي اتعمل** (أو `null` لو فشل) — «حفظ
+   * وطباعة» بيطبعه من الرد. و`keepOpen` لـ«حفظ وجديد»: الفورم بيتفضّى والبوباب يفضل مفتوح.
+   */
+  const submit = async (
+    path: string, values: any, form: any, okMsg: string, opts?: { keepOpen?: boolean },
+  ): Promise<any | null> => {
     setPosting(true);
     try {
       const payload: any = { ...values, amount: String(values.amount) };
       if (values.voucher_date) payload.voucher_date = values.voucher_date.format('YYYY-MM-DD');
-      await api.post(path, payload);
+      const { data } = await api.post(path, payload);
       message.success(okMsg);
       form.resetFields();
-      setReceiptOpen(false);
-      setPaymentOpen(false);
-      setHandoverOpen(false);
-      setExpenseOpen(false);
-      setTransferOpen(false);
+      if (!opts?.keepOpen) {
+        setReceiptOpen(false);
+        setPaymentOpen(false);
+        setHandoverOpen(false);
+        setExpenseOpen(false);
+        setTransferOpen(false);
+      }
       loadVouchers();
       loadTreasuries();
+      // رصيد المورد جاي من قايمة الموردين — بتتحدّث عشان تلميح «له/عليه» يفضل صح.
+      if (payload.supplier_id) {
+        api.get<Party[]>('/api/v1/suppliers').then((r) => setSuppliers(r.data)).catch(() => {});
+      }
       if (statement) loadStatement();
+      return data ?? {};
     } catch {
+      return null;
     } finally {
       setPosting(false);
     }
@@ -586,19 +661,20 @@ const Vouchers: React.FC = () => {
 
   const tabs: ListTab[] = [
     ...Object.entries(VOUCHER_TABS).map(([key, t]) => ({
-      key, label: t.label, count: byKind(t.kind).length,
+      // العدد من السيرفر للشريحة المفتوحة بس — التانية مش متحمّلة.
+      key, label: t.label, count: key === tab ? vTotal : undefined,
     })),
     { key: 'treasury-movement', label: 'حركة الخزينة' },
     { key: 'cheques', label: 'الشيكات', count: cheques.length },
     { key: 'statement', label: 'كشف حساب' },
-    { key: 'log', label: 'سجل السندات', count: shownVouchers.length },
+    { key: 'log', label: 'سجل السندات', count: tab === 'log' ? vTotal : undefined },
   ];
 
   /** مجموع السندات المعروضة (من غير العكسية) — نفس قاعدة الإجماليات. */
   const voucherFoot = (rows: VoucherRecord[]) => (
     <span className="sl-foot">
-      <span>عدد: <b>{rows.length}</b></span>
-      <span>الإجمالي: <b>{money(rows.filter((v) => !v.is_reversal)
+      <span>عدد: <b>{vTotal}</b></span>
+      <span>إجمالي الصفحة: <b>{money(rows.filter((v) => !v.is_reversal)
         .reduce((s, v) => s + Number(v.amount), 0))}</b></span>
     </span>
   );
@@ -875,11 +951,7 @@ const Vouchers: React.FC = () => {
       dataSource={rows}
       columns={voucherCols.columns}
       locale={{ emptyText: empty }}
-      pagination={{
-        defaultPageSize: PAGE_SIZE, showSizeChanger: true, pageSizeOptions: PAGE_SIZE_OPTIONS,
-        locale: { items_per_page: '' },
-        showTotal: () => voucherFoot(rows),
-      }}
+      pagination={serverPagination(() => voucherFoot(rows))}
     />
   );
 
@@ -1064,19 +1136,15 @@ const Vouchers: React.FC = () => {
         loading={loading}
         dataSource={shownVouchers}
         columns={voucherCols.columns}
-        pagination={{
-          defaultPageSize: PAGE_SIZE, showSizeChanger: true, pageSizeOptions: PAGE_SIZE_OPTIONS,
-          locale: { items_per_page: '' },
-          // كروت الإجماليات اللي كانت فوق الشاشة — في سطر الترقيم.
-          showTotal: (t) => (
-            <span className="sl-foot">
-              <span>عدد: <b>{t}</b></span>
-              <span>إجمالي التحصيل: <b className="is-pos">{money(totals.receipts)}</b></span>
-              <span>إجمالي المدفوعات: <b className="is-neg">{money(totals.payments)}</b></span>
-              <span>توريدات المناديب: <b>{money(totals.handovers)}</b></span>
-            </span>
-          ),
-        }}
+        pagination={serverPagination((t) => (
+          // كروت الإجماليات اللي كانت فوق الشاشة — في سطر الترقيم، وبقت للصفحة المعروضة.
+          <span className="sl-foot">
+            <span>عدد: <b>{t}</b></span>
+            <span>تحصيل الصفحة: <b className="is-pos">{money(totals.receipts)}</b></span>
+            <span>مدفوعات الصفحة: <b className="is-neg">{money(totals.payments)}</b></span>
+            <span>توريدات الصفحة: <b>{money(totals.handovers)}</b></span>
+          </span>
+        ))}
         size="small"
       />
     );

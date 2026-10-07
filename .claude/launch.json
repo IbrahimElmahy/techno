@@ -92,6 +92,21 @@
       ],
       "cwd": "D:/techno-dev-code/mobile",
       "port": 5200
+    },
+    {
+      "name": "web",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": [
+        "vite",
+        "--config",
+        "vite.config.web.ts",
+        "--port",
+        "5173",
+        "--host",
+        "127.0.0.1"
+      ],
+      "cwd": "D:/techno-dev-code/frontend",
+      "port": 5173
     }
   ]
 }
