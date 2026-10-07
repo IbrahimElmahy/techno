@@ -138,6 +138,9 @@ class Ctx:
         my_items = mine(db.scalars(select(Item)).all(), prefix)
         self.item_by_code = {i.code: i for i in my_items if i.code}
         self.item_by_name = {i.name: i for i in my_items}
+        # جدول ربط a5 الأول — بعد التوحيد الكود والاسم عندنا مابقوش زي a5 (`a5_item_map`).
+        from src.services.a5_item_map import A5ItemMap
+        self.a5map = A5ItemMap(db, prefix, my_items)
 
         self.wh = {w.name: w for w in db.scalars(
             select(Warehouse).where(Warehouse.branch_id == branch.id)).all()}
@@ -272,8 +275,7 @@ class Ctx:
         return None
 
     def item(self, r: list[str]) -> Item | None:
-        return (self.item_by_code.get(f"{self.prefix}{_clean(r[L_CODE])}")
-                or self.item_by_name.get(_clean(r[L_NAME])))
+        return self.a5map.find_or_remember(r[L_CODE], r[L_NAME])
 
     def store(self, name: str) -> Warehouse | None:
         return self.wh.get(_clean(name))

@@ -88,8 +88,13 @@ def run(folder: str, *, execute: bool, prefix: str) -> None:
         for i in by_code.values():
             by_name.setdefault(i.name, i)
 
+        from src.services.a5_item_map import A5ItemMap
+        a5map = A5ItemMap(db, prefix, [])
+
         def find(code: str, name: str) -> Item | None:
-            return by_code.get(f"{prefix}{_clean(code)}") or by_name.get(_clean(name))
+            # جدول ربط a5 الأول — بعد التوحيد الكود والاسم عندنا مابقوش زي a5.
+            return (a5map.linked(code, name)
+                    or by_code.get(f"{prefix}{_clean(code)}") or by_name.get(_clean(name)))
 
         has_bom = {b.product_id for b in db.scalars(
             select(Bom).where(Bom.active.is_(True))).all()}

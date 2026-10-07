@@ -250,6 +250,9 @@ def run(folder: str, *, execute: bool, branch_name: str = "", prefix: str = "") 
         my_items = mine(all_items, prefix)
         item_by_code = {i.code: i for i in my_items if i.code}
         item_by_name = {i.name: i for i in my_items}
+        # جدول ربط a5 الأول — بعد التوحيد الكود والاسم عندنا مابقوش زي a5 (`a5_item_map`).
+        from src.services.a5_item_map import A5ItemMap
+        a5map = A5ItemMap(db, prefix, my_items)
         taken_codes = {i.code for i in all_items if i.code}
         for r in items:
             if len(r) < 12 or not r[0].isdigit():
@@ -258,7 +261,7 @@ def run(folder: str, *, execute: bool, branch_name: str = "", prefix: str = "") 
             if not name or JUNK.match(name):
                 rep.skip(f"صنف باسم غير صالح: «{name}» (كود {code})")
                 continue
-            it = item_by_code.get(f"{prefix}{code}") or item_by_name.get(name)
+            it = a5map.find(code, name)
             created = it is None
             if it is None:
                 # الكود إجباري وفريد عندنا. a5 عنده أصناف بلا كود، فبيتولّد من رقمه
@@ -277,6 +280,9 @@ def run(folder: str, *, execute: bool, branch_name: str = "", prefix: str = "") 
                 db.flush()
                 item_by_code[it.code] = it
                 item_by_name[name] = it
+                a5map.by_code[it.code] = it
+                a5map.by_name[name] = it
+            a5map.remember(code, name, it, int(r[0]))
             rep.add("أصناف", created)
 
             # **الخصم الثابت على الصنف** — `SaleKhsm1` (عمود ١٤).

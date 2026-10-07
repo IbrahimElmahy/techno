@@ -177,6 +177,8 @@ def run(folder: str, *, execute: bool, branch_name: str = "",
         mine = [i for i in all_items if not prefix or (i.code or "").startswith(prefix)]
         item_by_code = {i.code: i for i in mine if i.code}
         item_by_name = {i.name: i for i in mine}
+        from src.services.a5_item_map import A5ItemMap
+        a5map = A5ItemMap(db, prefix, mine)
         wh_by_name = ({w.name: w for w in db.scalars(
             select(Warehouse).where(Warehouse.branch_id == branch.id)).all()}
             if branch else {})
@@ -204,7 +206,8 @@ def run(folder: str, *, execute: bool, branch_name: str = "",
             if len(r) < 7:
                 continue
             code, name = _clean(r[0]), _clean(r[1])
-            it = item_by_code.get(f"{prefix}{code}") or item_by_name.get(name)
+            # جدول ربط a5 الأول — بعد التوحيد الكود والاسم عندنا مابقوش زي a5.
+            it = a5map.find(code, name)
             if it is None:
                 skipped.append(f"رصيد لصنف مش موجود: «{name}» ({code})")
                 continue

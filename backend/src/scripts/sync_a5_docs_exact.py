@@ -83,8 +83,13 @@ def run(folder: str, *, branch_name: str, prefix: str, execute: bool) -> int:
         by_code = {i.code: i.id for i in my_items if i.code}
         by_name = {i.name: i.id for i in my_items}
 
+        from src.services.a5_item_map import A5ItemMap
+        a5map = A5ItemMap(db, prefix, my_items)
+
         def item_of(r):
-            return by_code.get(f"{prefix}{_clean(r[L_CODE])}") or by_name.get(_clean(r[L_NAME]))
+            # جدول ربط a5 الأول — بعد التوحيد الكود والاسم عندنا مابقوش زي a5.
+            it = a5map.find(r[L_CODE], r[L_NAME])
+            return it.id if it is not None else None
 
         heads = {}
         for h in _read(os.path.join(folder, "a5_hdr.tsv")):
