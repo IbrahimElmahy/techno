@@ -609,7 +609,9 @@ export default function ProductPickerModal({
     return (
       // **في النص، والسطور رفيعة** (طلب العميل ٢٠٢٦-١٠-٠٥): الشريط الجانبي اتلغى ورجع الشباك
       // في النص، والفئات عمود رأسي على اليمين. السطر بقى رفيع (نفس حجم الخط) فبيبان أصناف أكتر.
-      <TabModal open={open} onCancel={onCancel} footer={null} width={1320}
+      // **العرض ١٠٠٠ مش ١٣٢٠** (طلب العميل ٢٠٢٦-١٠-٠٧): اسم الصنف بيتمد ياخد الباقي، فعلى
+      // ١٣٢٠ كان فيه فراغ كبير بينه وبين الكمية والعين بتتوه في السطر.
+      <TabModal open={open} onCancel={onCancel} footer={null} width={1000}
         rootClassName="ppk-cards ppk-compact" focusTriggerAfterClose={false} destroyOnHidden
         title={(
           <div className="ppk-head">
