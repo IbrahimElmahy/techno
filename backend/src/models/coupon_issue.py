@@ -54,7 +54,8 @@ class CouponIssue(Base):
     )
 
     lines: Mapped[list["CouponIssueLine"]] = relationship(  # noqa: UP037
-        back_populates="issue", cascade="all, delete-orphan"
+        back_populates="issue", cascade="all, delete-orphan",
+        order_by="CouponIssueLine.id",  # ترتيب الإدخال
     )
 
 

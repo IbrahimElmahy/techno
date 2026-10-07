@@ -69,7 +69,10 @@ class PurchaseInvoice(Base):
     actor_user_id: Mapped[int] = mapped_column(ForeignKey("user.id"), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), nullable=False)
 
-    lines: Mapped[list[PurchaseInvoiceLine]] = relationship(cascade="all, save-update")
+    # سطور المستند بترجع بترتيب ما اتكتبت (`id` تصاعدي) — من غير `order_by` بوستجرس بيرجّعها
+    # بأي ترتيب، والسطر اللي اتعدّل بيطلع آخر واحد؛ والناس بتعرف المستند من أول صنف فيه.
+    lines: Mapped[list[PurchaseInvoiceLine]] = relationship(
+        cascade="all, save-update", order_by="PurchaseInvoiceLine.id")
 
 
 class PurchaseInvoiceLine(Base):
@@ -174,7 +177,10 @@ class PurchaseReturn(Base):
     reversal_entry_id: Mapped[int | None] = mapped_column(
         ForeignKey("ledger_entry.id"), nullable=True)
 
-    lines: Mapped[list[PurchaseReturnLine]] = relationship(cascade="all, save-update")
+    # سطور المستند بترجع بترتيب ما اتكتبت (`id` تصاعدي) — من غير `order_by` بوستجرس بيرجّعها
+    # بأي ترتيب، والسطر اللي اتعدّل بيطلع آخر واحد؛ والناس بتعرف المستند من أول صنف فيه.
+    lines: Mapped[list[PurchaseReturnLine]] = relationship(
+        cascade="all, save-update", order_by="PurchaseReturnLine.id")
 
 
 class PurchaseReturnLine(Base):

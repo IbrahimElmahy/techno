@@ -92,11 +92,14 @@ class ManufacturingOrder(Base):
     actor_user_id: Mapped[int] = mapped_column(ForeignKey("user.id"), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), nullable=False)
 
+    # ترتيب الإدخال — زي سطور الفاتورة.
     consumptions: Mapped[list[ManufacturingOrderConsumption]] = relationship(
-        cascade="all, save-update", back_populates="order"
+        cascade="all, save-update", back_populates="order",
+        order_by="ManufacturingOrderConsumption.id"
     )
     resources: Mapped[list[ManufacturingOrderResource]] = relationship(
-        cascade="all, save-update", back_populates="order"
+        cascade="all, save-update", back_populates="order",
+        order_by="ManufacturingOrderResource.id"
     )
 
 
@@ -222,12 +225,16 @@ class ProductionOrder(Base):
     actor_user_id: Mapped[int] = mapped_column(ForeignKey("user.id"), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), nullable=False)
 
+    # ترتيب الإدخال — زي سطور الفاتورة.
     products: Mapped[list[ProductionOrderProduct]] = relationship(
-        cascade="all, delete-orphan", back_populates="order")
+        cascade="all, delete-orphan", back_populates="order",
+        order_by="ProductionOrderProduct.id")
     materials: Mapped[list[ProductionOrderMaterial]] = relationship(
-        cascade="all, delete-orphan", back_populates="order")
+        cascade="all, delete-orphan", back_populates="order",
+        order_by="ProductionOrderMaterial.id")
     receipts: Mapped[list[ProductionOrderReceipt]] = relationship(
-        cascade="all, delete-orphan", back_populates="order")
+        cascade="all, delete-orphan", back_populates="order",
+        order_by="ProductionOrderReceipt.id")
 
 
 class ProductionOrderProduct(Base):

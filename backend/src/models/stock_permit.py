@@ -68,7 +68,8 @@ class StockPermit(Base):
     )
 
     lines: Mapped[list["StockPermitLine"]] = relationship(  # noqa: UP037 (SQLAlchemy needs the forward ref)
-        back_populates="permit", cascade="all, delete-orphan"
+        back_populates="permit", cascade="all, delete-orphan",
+        order_by="StockPermitLine.id",  # ترتيب الإدخال — زي سطور الفاتورة
     )
 
 

@@ -224,7 +224,8 @@ class LedgerEntry(Base):
     )
 
     lines: Mapped[list[LedgerLine]] = relationship(
-        back_populates="entry", cascade="all, save-update"
+        back_populates="entry", cascade="all, save-update",
+        order_by="LedgerLine.id",  # القيد بيتقري بترتيب ما اتكتب
     )
     journal: Mapped["Journal | None"] = relationship("Journal", lazy="joined")
 

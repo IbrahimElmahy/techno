@@ -1464,8 +1464,10 @@ class LocalDb {
 
   Future<List<Map<String, Object?>>> transferLines(int transferLocalId) async {
     final d = await db;
+    // بترتيب ما اتكتبت — زي `saleInvoiceLines`؛ الطلب بيتعرف من أول صنف فيه.
     return d.query('stock_transfer_line',
-        where: 'transfer_local_id = ?', whereArgs: [transferLocalId]);
+        where: 'transfer_local_id = ?', whereArgs: [transferLocalId],
+        orderBy: 'local_id');
   }
 
   Future<void> markTransferSynced(int localId, int serverId, String? doc) async {

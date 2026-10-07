@@ -94,8 +94,12 @@ class StockTransfer(Base):
     # المستندات دي واحدة تكفيها.
     statement1: Mapped[str | None] = mapped_column(String(200), nullable=True)
     notes: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    # سطور المستند بترجع بترتيب ما اتكتبت (`id` تصاعدي) — من غير `order_by` بوستجرس بيرجّعها
+    # بأي ترتيب، والسطر اللي اتعدّلت كميته وهو معلّق بيطلع آخر واحد؛ والناس بتعرف المستند
+    # من أول صنف فيه.
     lines: Mapped[list["StockTransferLine"]] = relationship(
-        back_populates="transfer", cascade="all, delete-orphan")
+        back_populates="transfer", cascade="all, delete-orphan",
+        order_by="StockTransferLine.id")
     out_movement_id: Mapped[int | None] = mapped_column(
         ForeignKey("stock_movement.id"), nullable=True
     )

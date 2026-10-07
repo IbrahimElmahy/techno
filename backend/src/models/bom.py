@@ -43,11 +43,12 @@ class Bom(Base):
         DateTime, server_default=func.now(), nullable=False
     )
 
+    # ترتيب الإدخال — زي سطور الفاتورة.
     components: Mapped[list[BomComponent]] = relationship(
-        cascade="all, delete-orphan", back_populates="bom"
+        cascade="all, delete-orphan", back_populates="bom", order_by="BomComponent.id"
     )
     resources: Mapped[list[BomResource]] = relationship(
-        cascade="all, delete-orphan", back_populates="bom"
+        cascade="all, delete-orphan", back_populates="bom", order_by="BomResource.id"
     )
 
 

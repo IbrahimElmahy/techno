@@ -71,7 +71,8 @@ class TradeOrder(Base):
     )
 
     lines: Mapped[list["TradeOrderLine"]] = relationship(  # noqa: UP037 — SQLAlchemy forward ref
-        back_populates="order", cascade="all, delete-orphan"
+        back_populates="order", cascade="all, delete-orphan",
+        order_by="TradeOrderLine.id",  # ترتيب الإدخال — زي سطور الفاتورة
     )
 
 

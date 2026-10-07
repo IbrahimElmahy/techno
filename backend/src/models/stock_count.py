@@ -76,7 +76,9 @@ class StockCount(Base):
     )
     posted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
-    lines: Mapped[list["StockCountLine"]] = relationship(cascade="all, delete-orphan")
+    # ترتيب الإدخال — زي سطور الفاتورة.
+    lines: Mapped[list["StockCountLine"]] = relationship(
+        cascade="all, delete-orphan", order_by="StockCountLine.id")
 
 
 class StockCountLine(Base):

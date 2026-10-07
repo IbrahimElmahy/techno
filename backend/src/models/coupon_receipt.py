@@ -67,7 +67,8 @@ class CouponReceipt(Base):
     )
 
     lines: Mapped[list["CouponReceiptLine"]] = relationship(  # noqa: UP037 — SQLAlchemy ref
-        back_populates="receipt", cascade="all, delete-orphan"
+        back_populates="receipt", cascade="all, delete-orphan",
+        order_by="CouponReceiptLine.id",  # ترتيب الإدخال
     )
 
 
