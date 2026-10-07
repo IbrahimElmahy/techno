@@ -50,7 +50,8 @@ const BOOKS: { nature: TrialRow['nature']; label: string }[] = [
 
 export default function TrialBalanceTab() {
   const navigate = useNavigate();
-  const [range, setRange] = useState<[dayjs.Dayjs, dayjs.Dayjs]>([dayjs().startOf('year'), dayjs().endOf('year')]);
+  // فاضي لما الشاشة تفتح — من غير فترة الميزان بيبقى من أول الحركة لحد النهارده.
+  const [range, setRange] = useState<[dayjs.Dayjs, dayjs.Dayjs] | null>(null);
   const [branchId, setBranchId] = useState<number | undefined>();
   const [costCenterId, setCostCenterId] = useState<number | undefined>();
   const [branches, setBranches] = useState<any[]>([]);
@@ -74,11 +75,11 @@ export default function TrialBalanceTab() {
   const run = async () => {
     setLoading(true);
     try {
-      const params = new URLSearchParams({
-        from: range[0].format('YYYY-MM-DD'),
-        to: range[1].format('YYYY-MM-DD'),
-        include_groups: 'true',
-      });
+      const params = new URLSearchParams({ include_groups: 'true' });
+      if (range) {
+        params.set('from', range[0].format('YYYY-MM-DD'));
+        params.set('to', range[1].format('YYYY-MM-DD'));
+      }
       if (branchId) params.set('branch_id', String(branchId));
       if (costCenterId) params.set('cost_center_id', String(costCenterId));
       const res = await api.get(`/api/v1/trial-balance?${params.toString()}`);
@@ -138,8 +139,8 @@ export default function TrialBalanceTab() {
         title: 'ميزان المراجعة',
         date: dayjs().format('YYYY/MM/DD'),
         meta: [
-          ['من', range[0].format('YYYY/MM/DD')],
-          ['إلى', range[1].format('YYYY/MM/DD')],
+          ['من', range ? range[0].format('YYYY/MM/DD') : 'أول الحركة'],
+          ['إلى', range ? range[1].format('YYYY/MM/DD') : dayjs().format('YYYY/MM/DD')],
           ...(branchId ? ([['الفرع', branches.find((b) => b.id === branchId)?.name ?? String(branchId)]] as [string, string][]) : []),
           ...(costCenterId ? ([['مركز التكلفة', costCenters.find((c) => c.id === costCenterId)?.name ?? String(costCenterId)]] as [string, string][]) : []),
         ],
@@ -158,7 +159,7 @@ export default function TrialBalanceTab() {
         <Input allowClear value={rowQuery} onChange={(e) => setRowQuery(e.target.value)}
           prefix={<SearchOutlined />} placeholder="بحث بكود الحساب أو الاسم" style={{ width: 240 }} />
         <div style={{ width: 280 }}>
-          <DateRangeFilter value={range} onChange={(v) => v && setRange(v)} />
+          <DateRangeFilter value={range} onChange={(v) => setRange(v && v[0] && v[1] ? [v[0], v[1]] : null)} />
         </div>
         <Select allowClear placeholder="كل الفروع" style={{ width: 180 }} value={branchId} onChange={setBranchId}
           options={branches.map((b) => ({ value: b.id, label: b.name }))} />

@@ -83,7 +83,7 @@ export default function Reports() {
   // Four of their report screens are four tabs here, so the entry has to land on its own.
   const [tab, setTab] = useQueryTab('stagnant', 'view');
   const [period, setPeriod] = useState<Period>('month');
-  const [range, setRange] = useState<Range>([dayjs().startOf('month'), dayjs().endOf('month')]);
+  const [range, setRange] = useState<Range>(null);
   const [warehouses, setWarehouses] = useState<Lookup[]>([]);
   const [items, setItems] = useState<Lookup[]>([]);
 

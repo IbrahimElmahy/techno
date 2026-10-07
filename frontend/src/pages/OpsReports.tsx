@@ -110,8 +110,7 @@ export default function OpsReports() {
   const [subject, setSubject] = useState<Subject>(view?.subject ?? 'inspections');
   const [level, setLevel] = useState<Level>(view?.level ?? 'detail');
   const [groupBy, setGroupBy] = useState<GroupBy>(view?.groupBy ?? 'none');
-  const [range, setRange] = useState<[Dayjs, Dayjs] | null>(
-    [dayjs().startOf('month'), dayjs()]);
+  const [range, setRange] = useState<[Dayjs, Dayjs] | null>(null);
   const [customerId, setCustomerId] = useState<number | undefined>();
   const [repId, setRepId] = useState<number | undefined>();
   const [dueWithin, setDueWithin] = useState<number | undefined>(view?.dueWithinDays);

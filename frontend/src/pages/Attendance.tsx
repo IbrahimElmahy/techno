@@ -82,9 +82,7 @@ export default function Attendance() {
   const [rows, setRows] = useState<Day[]>([]);
   const [employees, setEmployees] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
-  const [range, setRange] = useState<[Dayjs, Dayjs] | null>([
-    dayjs().startOf('month'), dayjs(),
-  ]);
+  const [range, setRange] = useState<[Dayjs, Dayjs] | null>(null);
   const [employeeId, setEmployeeId] = useState<number | undefined>();
 
   // إدخال يدوي

@@ -45,8 +45,7 @@ export default function Profitability() {
   const view = REPORT_VIEWS[viewKey];
 
   const [dimension, setDimension] = useState<Dimension>(view?.dimension ?? 'cost_center');
-  const [range, setRange] = useState<[Dayjs, Dayjs] | null>(
-    [dayjs().startOf('year'), dayjs()]);
+  const [range, setRange] = useState<[Dayjs, Dayjs] | null>(null);
   const [includeUnassigned, setIncludeUnassigned] = useState(true);
 
   const [rows, setRows] = useState<Row[]>([]);

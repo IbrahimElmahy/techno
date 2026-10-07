@@ -156,10 +156,7 @@ const Vouchers: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [posting, setPosting] = useState(false);
   const [kindFilter, setKindFilter] = useState<string | undefined>(undefined);
-  const [range, setRange] = useState<[Dayjs | null, Dayjs | null] | null>([
-    dayjs().subtract(30, 'day'),
-    dayjs(),
-  ]);
+  const [range, setRange] = useState<[Dayjs | null, Dayjs | null] | null>(null);
   const { options: methodOptions } = useLookup('payment_method');
 
   const [stKind, setStKind] = useState<'customer' | 'supplier' | 'rep'>('customer');
@@ -682,7 +679,7 @@ const Vouchers: React.FC = () => {
   const resetVoucherFilters = () => {
     setVoucherQuery('');
     setKindFilter(undefined);
-    setRange([dayjs().subtract(30, 'day'), dayjs()]);
+    setRange(null);
   };
 
   const chequeColumns = [

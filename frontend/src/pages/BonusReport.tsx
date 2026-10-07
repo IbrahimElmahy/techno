@@ -28,8 +28,7 @@ export default function BonusReport() {
   // التجميع في الرابط (`?tab=`) — الريفرش بيرجع على نفس الشريحة.
   const [groupRaw, setGroup] = useQueryTab('customer');
   const group: Group = ['customer', 'rep', 'month'].includes(groupRaw) ? groupRaw as Group : 'customer';
-  const [range, setRange] = useState<[Dayjs, Dayjs] | null>(
-    [dayjs().startOf('year'), dayjs().endOf('day')]);
+  const [range, setRange] = useState<[Dayjs, Dayjs] | null>(null);
   const [rows, setRows] = useState<Row[]>([]);
   const [totals, setTotals] = useState({ invoices: 0, value: '0', cost: '0' });
   const [loading, setLoading] = useState(false);

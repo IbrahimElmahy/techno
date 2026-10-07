@@ -128,10 +128,7 @@ const Inspections: React.FC<{ fixedKind?: 'technician' | 'regular' }> = ({ fixed
     accepted_points: 0,
   });
 
-  const [range, setRange] = useState<[Dayjs | null, Dayjs | null] | null>([
-    dayjs().subtract(30, 'day'),
-    dayjs(),
-  ]);
+  const [range, setRange] = useState<[Dayjs | null, Dayjs | null] | null>(null);
   const [kindFilter, setKindFilter] = useState<string | undefined>(undefined);
   // المسار بيحدد النوع؛ والفلتر بيشتغل بس على الصفحة اللي مالهاش نوع ثابت.
   const kind = fixedKind ?? kindFilter;

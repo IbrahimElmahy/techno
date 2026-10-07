@@ -62,7 +62,8 @@ export default function Stocktake() {
    */
   /** الصفوف المحدّدة — للتصدير والطباعة. اللي وقف وحدّد بإيده قال حاجة أوضح من الفلتر. */
   const [picked, setPicked] = useState<React.Key[]>([]);
-  const [dateFrom, setDateFrom] = useState<Dayjs>(dayjs().startOf('month'));
+  // «من» فاضي لما الشاشة تفتح — السجل من أول الحركة؛ «الرصيد حتى» بيفضل النهارده.
+  const [dateFrom, setDateFrom] = useState<Dayjs | null>(null);
   const [asOf, setAsOf] = useState<Dayjs>(dayjs());
   /**
    * العدد الفعلي — اللي على أرض الواقع، بيتكتب هنا.
@@ -150,7 +151,7 @@ export default function Stocktake() {
       name: `${r.name}${r.location ? ` — ${r.location}` : ''}`,
       log: await fetchLog(
         { itemId: r.item_id, itemName: r.name, ...logLocation(r) },
-        dateFrom.format('YYYY-MM-DD'), asOf.format('YYYY-MM-DD'),
+        dateFrom ? dateFrom.format('YYYY-MM-DD') : null, asOf.format('YYYY-MM-DD'),
       ),
     })));
   };
@@ -211,7 +212,7 @@ export default function Stocktake() {
     }
     printItemsWithLogs(
       { title: 'جرد حق تاريخ — بالسجل', date: asOf.format('YYYY/MM/DD'),
-        meta: [['الفترة', `${dateFrom.format('YYYY/MM/DD')} ← ${asOf.format('YYYY/MM/DD')}`]] },
+        meta: [['الفترة', `${dateFrom ? dateFrom.format('YYYY/MM/DD') : 'أول الحركة'} ← ${asOf.format('YYYY/MM/DD')}`]] },
       cols, entries,
     );
   };
@@ -343,8 +344,8 @@ export default function Stocktake() {
           value={[dateFrom, asOf] as any}
           placeholder={['من تاريخ', 'الرصيد حتى']}
           onChange={(v: any) => {
-            if (!v || !v[0] || !v[1]) return;
-            setDateFrom(v[0]);
+            if (!v || !v[1]) { setDateFrom(null); return; }
+            setDateFrom(v[0] || null);
             setAsOf(v[1]);
           }}
         />
@@ -374,7 +375,7 @@ export default function Stocktake() {
               target={{
                 itemId: r.item_id, itemName: r.name,
                 ...logLocation(r),
-                dateFrom: dateFrom.format('YYYY-MM-DD'),
+                dateFrom: dateFrom ? dateFrom.format('YYYY-MM-DD') : null,
                 dateTo: asOf.format('YYYY-MM-DD'),
               }}
               onClose={() => toggleRow(rowKeyOf(r))}

@@ -110,8 +110,7 @@ export default function HrReports() {
   const [subject, setSubject] = useState<Subject>(view?.subject ?? 'payroll');
   const [level, setLevel] = useState<Level>(view?.level ?? 'detail');
   const [groupBy, setGroupBy] = useState<GroupBy>(view?.groupBy ?? 'none');
-  const [range, setRange] = useState<[Dayjs, Dayjs] | null>(
-    [dayjs().startOf('month'), dayjs()]);
+  const [range, setRange] = useState<[Dayjs, Dayjs] | null>(null);
   const [period, setPeriod] = useState<Dayjs | null>(dayjs());
   const [employeeId, setEmployeeId] = useState<number | undefined>();
   const [departmentId, setDepartmentId] = useState<number | undefined>();

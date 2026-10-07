@@ -112,8 +112,7 @@ export default function TradeReports() {
   const [docType, setDocType] = useState<DocType>(view?.docType ?? 'sale');
   const [level, setLevel] = useState<Level>(view?.level ?? 'document');
   const [groupBy, setGroupBy] = useState<GroupBy>(view?.groupBy ?? 'none');
-  const [range, setRange] = useState<[Dayjs, Dayjs] | null>(
-    [dayjs().startOf('month'), dayjs()]);
+  const [range, setRange] = useState<[Dayjs, Dayjs] | null>(null);
   // الطرف محفوظ ومعاه نوعه (عميل ولا مورد): رقم عميل مابينفعش يتبعت كرقم مورد. كان فيه
   // effect بيفضّيه بعد تغيير نوع المستند — بس بعد ما الطلب يكون راح برقم العميل على
   // المشتريات، فالتقرير كان بيتجاب مرتين وأول مرة غلط.

@@ -853,8 +853,10 @@ def post_opening_balances(
 
 @router.get("/trial-balance", response_model=TrialBalanceOut)
 def get_trial_balance(
-    from_: date = Query(alias="from"),
-    to: date = Query(...),
+    # الفترة اختيارية (٢٠٢٦-١٠-٠٧ — «الفلتر يفتح فاضي»): من غير «من» = من أول الحركة،
+    # ومن غير «إلى» = لحد النهارده.
+    from_: date | None = Query(None, alias="from"),
+    to: date | None = Query(None),
     branch_id: int | None = None,
     include_groups: bool = True,
     cost_center_id: int | None = None,
@@ -865,6 +867,10 @@ def get_trial_balance(
     # accountant (no branch assigned) may pass any branch_id or omit it for all branches.
     if not current.is_admin and current.branch_id is not None:
         branch_id = current.branch_id
+    if from_ is None:
+        from_ = date(2000, 1, 1)
+    if to is None:
+        to = date.today()
     result = trial_balance_service.trial_balance(
         db, from_date=from_, to_date=to, branch_id=branch_id, include_groups=include_groups,
         cost_center_id=cost_center_id,

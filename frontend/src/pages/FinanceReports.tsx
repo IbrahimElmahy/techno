@@ -36,10 +36,7 @@ const FinanceReports: React.FC = () => {
   const navigate = useNavigate();
   const [tab, setTab] = useQueryTab('income');
   const [period] = useQueryTab('', 'period');
-  const [range, setRange] = useState<[Dayjs | null, Dayjs | null] | null>([
-    period ? dayjs().startOf('month') : dayjs().startOf('year'),
-    dayjs(),
-  ]);
+  const [range, setRange] = useState<[Dayjs | null, Dayjs | null] | null>(null);
   const [income, setIncome] = useState<IncomeStatement | null>(null);
   const [sheet, setSheet] = useState<BalanceSheet | null>(null);
   const [aging, setAging] = useState<AgingRow[]>([]);

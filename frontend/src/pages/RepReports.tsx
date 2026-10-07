@@ -47,8 +47,7 @@ interface RepItemRow {
 export default function RepReports() {
   const navigate = useNavigate();
   const [tab, setTab] = useQueryTab('collections', 'view');
-  const [range, setRange] = useState<[Dayjs, Dayjs] | null>(
-    [dayjs().startOf('month'), dayjs()]);
+  const [range, setRange] = useState<[Dayjs, Dayjs] | null>(null);
   const [repId, setRepId] = useState<number | undefined>();
   // البيان على السند (التحصيلات) أو على الفاتورة (مبيعات الأصناف) — نفس الخانة للتلات
   // تابات زي الفترة بالظبط، عشان الأرقام اللي جنب بعض تبقى عن نفس المستندات.
