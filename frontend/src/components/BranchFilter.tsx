@@ -41,3 +41,31 @@ export default function BranchFilter() {
     />
   );
 }
+
+/**
+ * اسم الفرع اللي الموظف شغّال عليه — جنب زرار العين (طلب العميل ٢٠٢٦-١٠-٠٧).
+ *
+ * المالك والأدمن شايفينه في فلتر الفرع نفسه؛ موظف الفرع ماكانش فيه حاجة فوق بتقول هو
+ * فين، واللي بيتنقّل بين حسابات الفروع كان بيكتب في فرع وهو فاكر إنه في التاني.
+ */
+export function BranchBadge({ branchId }: { branchId?: number | null }) {
+  const [name, setName] = useState<string>('');
+
+  useEffect(() => {
+    if (!branchId) return;
+    api.get('/api/v1/branches')
+      .then((r) => setName((r.data || []).find((b: any) => b.id === branchId)?.name || ''))
+      .catch(() => setName(''));
+  }, [branchId]);
+
+  if (!name) return null;
+  return (
+    <span className="branch-badge" style={{
+      display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 13, fontWeight: 600,
+      padding: '2px 10px', borderRadius: 6, border: '1px solid #d9d9d9', whiteSpace: 'nowrap',
+    }}>
+      <ApartmentOutlined />
+      {name}
+    </span>
+  );
+}

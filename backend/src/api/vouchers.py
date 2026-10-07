@@ -974,7 +974,7 @@ def account_group_statement(
     root_ids: list[int] | None = Query(default=None),
     date_from: date | None = Query(default=None),
     date_to: date | None = Query(default=None),
-    _: CurrentUser = Depends(require_capability(CAP_VOUCHER_READ)),
+    current: CurrentUser = Depends(require_capability(CAP_VOUCHER_READ)),
     db: Session = Depends(get_db),
 ) -> StatementOut:
     """كشف مجمّع — الحساب الرئيسي بكل الفرعيين اللي تحته، زي نظامهم.
@@ -1030,6 +1030,12 @@ def account_group_statement(
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY,
                             {"code": "missing_group",
                              "message": "حدد owner_group أو root_id"})
+    # حسابات فرع اللي بيسأل بس (أو اللي المالك اختاره من فلتر الفروع). «الخزينة والبنوك»
+    # مجموعة بالنوع من التلات فروع، فكشفها في أكتوبر كان بيخلط صناديق العلياء والسادات
+    # (٢٠٢٦-١٠-٠٧). الحساب اللي مالوش فرع بيفضل — إخفاؤه بيخفي حركة شغّالة.
+    bid = branch_scope.visible_branch_id(current)
+    if bid is not None:
+        members = [a for a in members if a.branch_id in (bid, None)]
     if not members:
         raise HTTPException(status.HTTP_404_NOT_FOUND,
                             {"code": "not_found", "message": "المجموعة دي مافيهاش حسابات"})

@@ -214,11 +214,16 @@ export default function AccountStatement() {
   // العميل اللي عنده أكتر من حساب (أبيض/بولي): الكشف بيجمعهم برصيد واحد. التحصيل «على
   // الإجمالي» بيتوزّع على الحسابين، فحساب واحد لوحده بيوري نص السند بس.
   const [allCustomerAccounts, setAllCustomerAccounts] = useState<boolean>(u0.all);
+  // الكشف المجمّع بيتبني من شجرة الحسابات (`mainGroups`). الصفحة لما بتتفتح من رابط فيه
+  // `main=` كانت بتطلب الكشف قبل ما الشجرة توصل، فالطلب بيروح من غير حسابات → ٤٢٢ «حدد
+  // owner_group أو root_id» والشاشة تفضل فاضية لأن مفيش حاجة بتعيد الطلب بعدها.
+  const [accountsReady, setAccountsReady] = useState(false);
 
   useEffect(() => {
     api.get('/api/v1/accounts')
       .then((r) => setAccounts(r.data || []))
-      .catch(console.error);
+      .catch(console.error)
+      .finally(() => setAccountsReady(true));
     api.get('/api/v1/cost-centers?active=true')
       .then((r) => setCostCenters(r.data || []))
       .catch(() => {});
@@ -235,6 +240,7 @@ export default function AccountStatement() {
     setExpandedKeys([]);
     if (subject === 'account') {
       if (!accountId && !mainKey) { setStatement(null); return; }
+      if (!accountId && !accountsReady) return;
       setLoading(true);
       try {
         const params: any = {};
@@ -249,11 +255,19 @@ export default function AccountStatement() {
           res = await api.get(`/api/v1/accounts/${accountId}/statement`, { params });
         } else {
           const { roots, group } = rootsOf(mainKey!);
-          if (group) params.owner_group = group;
-          if (roots.length) params.root_ids = roots;
+          // المجموعة («الخزينة والبنوك»، «العهد»…) بتتبعت بحساباتها مش باسمها: `owner_group`
+          // على السيرفر بيجيب النوع من التلات فروع، فكشف «الخزينة والبنوك» في أكتوبر كان
+          // بيخلط صناديق العلياء والسادات معاه. الشجرة هنا متفلترة بالفرع أصلاً، فنفس
+          // الحسابات اللي في قايمة «الحساب الفرعي» هي اللي بتتقرا — والجذر بيجيب اللي تحته.
+          const ids = [...new Set([...roots, ...(group
+            ? accounts.filter((a: any) => a.owner_group === group).map((a: any) => a.id) : [])])];
+          if (!ids.length) { setStatement(null); return; }
+          params.root_ids = ids;
           res = await api.get('/api/v1/accounts-group/statement', {
             params, paramsSerializer: { indexes: null },
           });
+          // مجموعة من غير جذر: السيرفر بيسمّي الكشف بأول حساب فيها — العنوان هو المجموعة.
+          if (!roots.length && group) res = { ...res, data: { ...res.data, account_name: group } };
         }
         setStatement(res.data);
       } catch (err: any) {
@@ -309,7 +323,7 @@ export default function AccountStatement() {
   };
 
   useEffect(() => { load(); }, [subject, accountId, mainKey, itemId, warehouseId, range,
-    allCustomerAccounts]);
+    allCustomerAccounts, accountsReady]);
 
   const asked = Number(search.get('account')) || undefined;
   useEffect(() => {
@@ -328,9 +342,9 @@ export default function AccountStatement() {
    * **الاسم الأول، والكود صغير في آخر السطر** (طلب العميل ٢٠٢٦-١٠-٠١): الكود كان قبل الاسم
    * فبياكل نص الخانة والاسم يتقصّ. الخانة المختارة بتوري الاسم بس، والبحث بالكود لسه شغّال.
    */
-  /** فرع الحساب من كوده — الشجرتين المنقولتين من a5: `AL-…` العلياء، والباقي أكتوبر. */
+  /** فرع الحساب من كوده — الشجر المنقول من a5: `AL-…` العلياء، `FC-…` السادات، `A5…` أكتوبر. */
   const branchOfCode = (code?: string | null) => (!code ? '' : code.startsWith('AL-') ? 'العلياء'
-    : code.startsWith('A5') ? 'أكتوبر' : '');
+    : code.startsWith('FC-') ? 'السادات' : code.startsWith('A5') ? 'أكتوبر' : '');
   const accountOption = (a: any) => ({
     value: a.id, label: a.name || a.owner_name || `حساب #${a.id}`,
     search: a.code || '', code: a.code || '', title: labelOf(a),

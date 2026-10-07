@@ -443,6 +443,34 @@ def _newest_first(lines: list[StatementLine]) -> list[StatementLine]:
     return [ln for block in reversed(blocks) for ln in block]
 
 
+def _with_descendants(db: Session, ids: list[int]) -> list[int]:
+    """الحسابات المطلوبة + كل اللي تحتها في الشجرة، والمطلوب الأول فاضل الأول.
+
+    **كشف الحساب الرئيسي = كل الفرعيين اللي تحته** (زي a5). الحساب الرئيسي (مثلاً «الخزينة»
+    A5M-1) مابيتقيدش عليه حاجة — كل الحركة على الصناديق اللي تحته — فالكشف كان بيقرا
+    سطوره هو بس ويطلع فاضي: «الخزينة» في أكتوبر والعلياء رجّعت صفر سطر وتحتها آلاف.
+    هنا بيتحل لنفس اللي «الحساب الرئيسي» في الشاشة بيعمله، فكل اللي بيسأل عن حساب رئيسي
+    (الكشف، وفرد صف في ميزان المراجعة) بياخد نفس الإجابة.
+
+    الحساب الفرعي مالوش أبناء، فالقايمة بترجع زي ما هي — كشف العميل والمورد ماتغيّرش.
+    """
+    kids: dict[int, list[int]] = {}
+    for aid, parent_id in db.execute(
+        select(Account.id, Account.parent_id).where(Account.parent_id.is_not(None))
+    ).all():
+        kids.setdefault(parent_id, []).append(aid)
+    out = list(dict.fromkeys(ids))
+    seen = set(out)
+    stack = [i for i in out if i in kids]
+    while stack:
+        for kid in kids.get(stack.pop(), ()):
+            if kid not in seen:
+                seen.add(kid)
+                out.append(kid)
+                stack.append(kid)
+    return out
+
+
 def account_statement(
     db: Session, *, account_id: int, date_from: date | None = None,
     date_to: date | None = None, also_accounts: Sequence[int] = (),
@@ -458,7 +486,7 @@ def account_statement(
     customers the merge had just fixed. «كل المديونية» is not ambiguous — it is his lines from both
     accounts on one running balance, which is the number anybody asking «هو عليه كام» means.
     """
-    ids = [account_id, *[a for a in also_accounts if a != account_id]]
+    ids = _with_descendants(db, [account_id, *[a for a in also_accounts if a != account_id]])
     accounts = {a.id: a for a in db.scalars(select(Account).where(Account.id.in_(ids))).all()}
     account = accounts.get(account_id)
     if account is None:

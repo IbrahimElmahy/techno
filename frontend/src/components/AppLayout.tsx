@@ -35,7 +35,7 @@ import ContrastToggle, { ContrastHeaderButton } from './ContrastTheme';
 import { bindNumeralsUser } from '../utils/numerals';
 import { useFullscreen } from './FullscreenToggle';
 import Logo from './Logo';
-import BranchFilter from './BranchFilter';
+import BranchFilter, { BranchBadge } from './BranchFilter';
 import { useTabs } from './TabsContext';
 import TabWorkspace from './TabWorkspace';
 
@@ -454,7 +454,8 @@ export default function AppLayout() {
             {/* الأيقونة وبس — الاسم والإعدادات جوّه القايمة. الصف العلوي شغله يعرض
                 الأقسام، وكل بكسل بياخده حاجة تانية بيتاخد منها. */}
             {/* فلتر الفرع — اللي فوق الفروع بس (المالك والأدمن). */}
-            {(user?.role === 'owner' || user?.role === 'system_admin') && <BranchFilter />}
+            {(user?.role === 'owner' || user?.role === 'system_admin')
+              ? <BranchFilter /> : <BranchBadge branchId={user?.branch_id} />}
             {/* زرار العين ظاهر على طول (مش جوّه القايمة بس): اللي نظره ضعيف هو بالظبط اللي
                 مش هيلاقي مفتاح صغير مستخبي في قايمة. */}
             <ContrastHeaderButton />
