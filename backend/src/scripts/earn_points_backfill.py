@@ -1,23 +1,3 @@
-"""الكسب الرجعي: سطر نقاط لكل سطر فاتورة بيع على صنف له قيمة نقطة.
-
-    python -m src.scripts.earn_points_backfill
-    python -m src.scripts.earn_points_backfill --yes
-
-**كسب بس.** الخصم مالوش ترحيل رجعي — المستخدم قرّر إن المعاينات القديمة مابتخصمش،
-فمتضفش هنا ولا في سكربت تاني أي سطر سالب على معاينة قديمة.
-
-**تاريخ السطر تاريخ الفاتورة، مش تاريخ التشغيل.** `created_at` بيتكتب صراحةً من
-`invoice_date`. من غير كده أي كشف نقاط بفترة بيقول إن الشركة وزّعت نص مليون نقطة في
-اليوم اللي شغّلنا فيه السكربت، وحركة أربع سنين بتتلم في صف واحد.
-
-**Idempotent** بسطر لكل (فاتورة، سطر): السطور اللي اتكتبت قبل كده بتتعرف من
-`sales_invoice_id` وبتتعدّى. إعادة التشغيل بتضيف الفواتير الجديدة بس.
-
-الأرقام المتوقعة (اتقاست على قاعدة السيرفر قبل التنفيذ):
-    ٢٨٧٩٠ سطر · ٥٤٦١ فاتورة · ٢٨١ عميل · ٤٦٦٩٧٥٫٧٧٦ نقطة
-لو الأرقام طلعت بعيدة عن دي، وقّف وراجع — يا إما `product_point_value` مااتبذرتش
-(شغّل `seed_item_points` الأول) يا إما فيه سطور اتكتبت قبل كده.
-"""
 from __future__ import annotations
 
 import sys
@@ -31,21 +11,10 @@ from src.models.loyalty import PointKind, PointRecord, ProductPointValue
 from src.models.sales import SalesInvoice, SalesInvoiceLine
 from src.services import points_service
 
-# **الرقم المرجعي بيتحدّث لما الداتا تكبر، مش لما تختلف.**
-#
-# القياس الأصلي (٢٨٬٧٩٠ سطر · ٥٬٤٦١ فاتورة · ٢٨١ عميل · ٤٦٦٬٩٧٥٫٧٧٦ نقطة) اتاخد قبل ما
-# يتستورد باقي تاريخ a5. الاستيراد كمّل بعده — ٢٨٨ فاتورة في ١٠ سبتمبر وحدها، و٧٥ في ١٣
-# — فالأرقام طلعت أعلى والحارس وقف السكربت وهو بيعمل اللي اتكتب عشانه.
-#
-# الرقم اللي تحت اتقاس في ١٦ سبتمبر ٢٠٢٦ **باستعلام مباشر على القاعدة**، وطلع مطابق
-# لحساب السكربت بالحرف — يعني الزيادة استيراد جديد مش تكرار. والتأكيد ده هو اللي بيفرّق
-# بين «الداتا كبرت» و«السكربت بيحسب غلط»، والتاني هو اللي الحارس موجود عشانه.
 EXPECTED = {"lines": 30496, "invoices": 5871, "customers": 345,
             "points": Decimal("500793.714")}
 
-# فرق مسموح قبل ما السكربت يقول «الرقم بعيد». الفواتير بتزيد يوم عن يوم، فالمساواة
-# التامة هتشتكي من غير سبب بعد أول أسبوع؛ الهدف إمساك اختلاف كبير مش حركة يومين.
-TOLERANCE = Decimal("0.02")   # ٢٪
+TOLERANCE = Decimal("0.02")
 
 
 def _points(value) -> Decimal:
@@ -70,7 +39,6 @@ def run(*, execute: bool) -> None:
             raise SystemExit(
                 "`product_point_value` فاضي — شغّل `python -m src.scripts.seed_item_points` الأول.")
 
-        # الفواتير اللي ليها سطر كسب مكتوب قبل كده — استعلام واحد، مش واحد لكل فاتورة.
         done = set(db.scalars(
             select(PointRecord.sales_invoice_id).where(
                 PointRecord.kind == PointKind.earn,
@@ -105,7 +73,6 @@ def run(*, execute: bool) -> None:
             delta = _points(values[item_id] * Decimal(str(quantity or 0)))
             if delta <= 0:
                 continue
-            # الفاتورة من غير تاريخ (لو حصل) بتاخد وقت الإنشاء بدل ما تقع في ١٩٧٠.
             when = (datetime.combine(invoice_date, datetime.min.time())
                     if invoice_date is not None else None)
             if execute:
@@ -113,7 +80,7 @@ def run(*, execute: bool) -> None:
                     db, customer_id=customer_id, kind=PointKind.earn, delta=delta,
                     sales_invoice_id=invoice_id, created_at=when, flush=False)
                 if written % 1000 == 999:
-                    db.flush()   # على دفعات — flush لكل سطر = ٢٨٧٩٠ رحلة للقاعدة
+                    db.flush()
             written += 1
             total_points += delta
             invoices.add(invoice_id)
@@ -140,8 +107,6 @@ def run(*, execute: bool) -> None:
                 ("نقاط", total_points, EXPECTED["points"]),
             ) if _far(actual, expected)
         ]
-        # المقارنة على التشغيل الأول بس. `written` بيعدّ الجديد لوحده، فإعادة تشغيل
-        # بتلاقي ٣٠ سطر متأخرين كانت بتقارن الـ٣٠ بالـ٢٨٧٩٠ وتوقف وهي «واثقة».
         if off and not done:
             print()
             print("⚠ الأرقام بعيدة عن المتوقع في: " + "، ".join(off))

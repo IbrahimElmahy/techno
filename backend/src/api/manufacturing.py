@@ -1,7 +1,3 @@
-"""Manufacturing router (T030, extended by 012-manufacturing-bom).
-
-Two layers: manual consume/produce ops (kept) + recipe-driven manufacturing orders with BOM CRUD.
-"""
 from __future__ import annotations
 
 from datetime import date
@@ -99,20 +95,15 @@ def reverse(
     return _out(op)
 
 
-# ---------------------------------------------------------------------------
-# Bill of materials (recipes) — CRUD.
-# ---------------------------------------------------------------------------
 class ComponentIn(BaseModel):
     item_id: int
     quantity: Decimal
-    # The unit the quantity is written in; omit for the item's base unit (008).
     unit: str | None = None
-    # `production` | `quality` — إمتى الخامة دي بتتصرف. الشرح في `models/bom.py`.
     stage: str | None = None
 
 
 class ResourceIn(BaseModel):
-    kind: str  # labor | machine | overhead | other
+    kind: str
     name: str
     quantity: Decimal
     rate: Decimal
@@ -229,10 +220,6 @@ def update_bom(
     except ManufacturingError as exc:
         raise _conflict(exc)
     db.commit()
-    # **الرد بيتقرا من القاعدة تاني.** التعديل بيمسح السطور ويكتب غيرها، والـsession
-    # لسه ماسك القايمة القديمة — فالرد كان بيرجّع الوصفة **قبل** التعديل، والشاشة
-    # اللي بتصدّقه بتفضل وراها خطوة. أول حاجة بانت منه: المرحلة اتحفظت `quality` في
-    # القاعدة والرد قال `production`.
     db.refresh(bom)
     return _bom_out(bom)
 
@@ -250,9 +237,6 @@ def deactivate_bom(
     db.commit()
 
 
-# ---------------------------------------------------------------------------
-# Manufacturing orders — recipe-driven consume + produce.
-# ---------------------------------------------------------------------------
 class OrderResourceIn(BaseModel):
     kind: str
     name: str
@@ -275,18 +259,14 @@ class OrderIn(BaseModel):
     quantity: Decimal
     location: LocationIn
     bom_id: int | None = None
-    # (031) انتاج حر — production that happened without a stored recipe, so the components are
-    # stated rather than derived. Omit for a recipe-driven order; the two are the same document.
     components: list[OrderComponentIn] | None = None
-    resources: list[OrderResourceIn] | None = None  # override recipe resources; omit = use recipe
-    wastes: list[OrderWasteIn] = []                  # per-component waste recorded on the order
-    # Document fields: the day production happened (defaults to today), the branch, the shop-floor
-    # work order («امر تشغيل») and notes.
+    resources: list[OrderResourceIn] | None = None
+    wastes: list[OrderWasteIn] = []
     production_date: date | None = None
     branch_id: int | None = None
     work_order_ref: str | None = Field(default=None, max_length=60)
     notes: str | None = Field(default=None, max_length=500)
-    statement1: str | None = Field(default=None, max_length=200)  # البيان
+    statement1: str | None = Field(default=None, max_length=200)
 
 
 class OrderConsumptionOut(BaseModel):
@@ -366,7 +346,6 @@ def list_orders(
     db: Session = Depends(get_db),
 ) -> list[OrderOut]:
     reversed_ids = _reversed_ids(db)
-    # نفس عزل أوامر التشغيل — `ManufacturingOrder` عنده `branch_id` هو كمان.
     orders = branch_scope.visible(current, manufacturing_service.list_orders(db))
     return [_order_out(o, reversed_ids) for o in orders]
 
@@ -378,7 +357,6 @@ def get_order(
     db: Session = Depends(get_db),
 ) -> OrderOut:
     order = manufacturing_service.get_order(db, order_id)
-    # ٤٠٤ مش ٤٠٣ للّي مش من فرعه — الشرح عند `_seen_po`.
     if order is None or not branch_scope.may_see(current, order):
         raise HTTPException(404, {"code": "not_found", "message": "Manufacturing order not found"})
     return _order_out(order, _reversed_ids(db))
@@ -424,12 +402,6 @@ def reverse_order(
     return _order_out(order, _reversed_ids(db))
 
 
-# ---------------------------------------------------------------------------
-# أوامر الشغل المنقولة من a5 — قراءة فقط.
-# ---------------------------------------------------------------------------
-# الشرح في `manufacturing_service.list_work_orders`: ٤٬٣٨٩ سطر تصنيع منقولين ومش باينين
-# في ولا شاشة، لأن تبويب الأوامر بيقرا `ManufacturingOrder` وحده. النقطة دي بتوريهم في
-# شكلهم الأصلي — مستند بسطور منتجات وسطور خامات — من غير ما تكتب صف.
 class WorkOrderLineOut(BaseModel):
     op_id: int
     document_number: str
@@ -465,42 +437,16 @@ def list_work_orders(
 ):
     rows = manufacturing_service.list_work_orders(
         db, search=search, date_from=date_from, date_to=date_to)
-    # **صفوف قواميس مش كائنات** — و`branch_scope.may_see` بيقرا بـ`getattr`، فبيرجّع
-    # `None` على كل قاموس ويعدّيه. نفس القاعدة متكتوبة هنا على المفتاح.
     mine = branch_scope.visible_branch_id(current)
     if mine is not None:
         rows = [r for r in rows if r.get("branch_id") in (None, mine)]
-    # نفس عقد الترقيم اللي باقي القوايم ماشية عليه: `limit` بيرجّع غلاف بالإجمالي،
-    # ومن غيره بترجع القايمة زي ما هي عشان أي نداء قديم مايتكسرش.
     if limit is None:
         return rows
     return {"rows": rows[offset:offset + limit], "total": len(rows),
             "limit": limit, "offset": offset}
 
 
-
-
-# ---------------------------------------------------------------------------
-# عزل الفروع في أوامر التشغيل.
-#
-# **اللي كشفه.** كشف أوامر التشغيل كان بيكتب «الفرع #3» بدل «السادات»، ومدير فرع
-# العلياء هو اللي شايفه: `/branches` بيرجّعله فرعه وحده (صح)، فالاسم مالقاش نفسه في
-# الخريطة ووقع على الرقم. يعني الـ«#3» ماكانش عيب عرض — كان **أوامر تشغيل المصنع
-# ظاهرة لمدير فرع تاني**، والرقم هو اللي فضحها. إصلاح اللافتة وحدها كان هيخفيها.
-#
-# المسارات دي كانت بتاخد `CurrentUser` وبترميه (`_`)، فمافيش ولا شرط فرع على القايمة
-# ولا على فتح أمر بالرقم — والرابط المباشر بيبقى باب خلفي حوالين أي فلترة.
-#
-# ومدير النظام (`branch_id = None`) بيفضل شايف الكل زي ما هو، والأوامر القديمة اللي
-# `branch_id` بتاعها NULL بتفضل ظاهرة للكل — نفس قاعدة `branch_scope` في كل حتة تانية.
 def _own_branch(current: CurrentUser, branch_id: int | None) -> int | None:
-    """فرع الأمر الجديد. **اللي محبوس في فرع بيكتب في فرعه وبس.**
-
-    `branch_id` بييجي من الطلب، فمن غير الشرط ده مدير فرع يقدر يكتب أمر تشغيل على
-    المصنع ومايشوفوش بعدها — بيختفي من كشفه وبيظهر في كشف حد تاني.
-
-    ومدير النظام بيعدّي زي ما هو: هو اللي بيتنقّل بين الفروع أصلاً.
-    """
     mine = branch_scope.visible_branch_id(current)
     if mine is None:
         return branch_id
@@ -510,27 +456,17 @@ def _own_branch(current: CurrentUser, branch_id: int | None) -> int | None:
 
 
 def _seen_po(db: Session, order_id: int, current: CurrentUser):
-    """بيجيب أمر التشغيل لو الشخص ده يشوفه — و**٤٠٤ لو لأ، مش ٤٠٣**.
-
-    ٤٠٣ بيقول «موجود بس مش من حقك»، ودي في حد ذاتها معلومة عن فرع تاني: بتخلّي
-    الترقيم قابل للعدّ من بره. ٤٠٤ بيرد نفس رد الأمر اللي مش موجود أصلاً.
-    """
     order = production_order_service.get_order(db, order_id)
     if order is None or not branch_scope.may_see(current, order):
         raise HTTPException(404, {"code": "not_found", "message": "أمر التشغيل مش موجود"})
     return order
 
 
-# ---------------------------------------------------------------------------
-# أوامر التشغيل (032) — كذا منتج وكذا خامة في ورقة واحدة، بحالات صريحة.
-# ---------------------------------------------------------------------------
 class POMaterialIn(BaseModel):
     item_id: int
-    # مرحلة الصرف، بتتنسخ من الوصفة. الشرح في `models/bom.py`.
     stage: str | None = None
-    # اختيارية زي المنتج: الورقة بتتفتح على خطة، والمصروف بيتفتح عليها.
-    quantity: Decimal | None = None                  # اللي اتصرف فعلاً
-    planned_quantity: Decimal | None = None          # المفروض؛ من غيره = نفس المصروف
+    quantity: Decimal | None = None
+    planned_quantity: Decimal | None = None
     warehouse_id: int | None = None
     unit: str | None = None
     waste_quantity: Decimal = Decimal("0")
@@ -538,17 +474,12 @@ class POMaterialIn(BaseModel):
 
 class POProductIn(BaseModel):
     item_id: int
-    # **الكمية اللي طلعت اختيارية وقت الفتح.** الورقة بتتفتح على خطة؛ اللي طلع فعلاً
-    # مايتعرفش غير بعد ما الشغل يخلص، وبيتكتب عند الإقفال (`/execute`). ومن غيرها
-    # بتتفتح على المخطّط — عشان اللي بيسجّل تشغيلة خلصت خلاص مايكتبش نفس الرقم مرتين.
     quantity: Decimal | None = None
     planned_quantity: Decimal | None = None
     warehouse_id: int | None = None
     unit: str | None = None
     bom_id: int | None = None
     expense_amount: Decimal = Decimal("0")
-    # الخامات جوّه المنتج مش قايمة لوحدها: كده مستحيل يتبعت سطر خامة مش منسوب لمنتج،
-    # وتكلفة المنتج تفضل محسوبة من غير تخمين. القايمة الفاضية = اعمل الوصفة زي ما هي.
     materials: list[POMaterialIn] = []
 
 
@@ -560,7 +491,6 @@ class POIn(BaseModel):
     statement1: str | None = Field(default=None, max_length=200)
     notes: str | None = Field(default=None, max_length=500)
     reviewed: bool = False
-    # ترحيل فوري لواحد بيسجّل شغل خلص؛ من غيرها الأمر بيتفتح مسودة ومافيش حركة مخزون.
     execute: bool = False
 
 
@@ -568,8 +498,6 @@ class POMaterialOut(BaseModel):
     id: int
     product_line_id: int | None
     stage: str = "production"
-    # **اتصرف ولا لأ.** الشاشة بتعرف الخطوة الجاية من السطور الباقية، مش من حالة
-    # الأمر — الشرح في `manufacturing_production_service.pending`.
     issued: bool = False
     item_id: int
     warehouse_id: int | None
@@ -625,7 +553,6 @@ class POOut(BaseModel):
     is_reversal: bool
     products: list[POProductOut]
     materials: list[POMaterialOut]
-    # دفعات الاستلام — الشاشة بتوري منها «اتستلم كام وإمتى» جنب المخطّط.
     receipts: list[POReceiptOut] = []
 
 
@@ -695,13 +622,6 @@ def recipe_plan(
     current: CurrentUser = Depends(require_capability(CAP_MANUFACTURE_READ)),
     db: Session = Depends(get_db),
 ) -> RecipePlanOut:
-    """خامات منتج بكمية — لشاشة «انتاج حسب النسب» (زي a5: الخامات بتنزل لوحدها من النسب).
-
-    نفس `recipe_plan` اللي الترحيل بيحسب بيه، فاللي بيتعرض هو اللي بيتصرف. ومعاها **مخزن
-    مقترح لكل خامة**: آخر مخزن اتصرفت منه في فرع المستخدم — a5 بيصرف الخامة الواحدة من
-    مخزن ثابت غالباً (خام قطع صرف من «حقن قطع الصرف»)، وساعات من مخزن تاني، فالخانة بتفضل
-    تتغيّر من الشاشة. ولو عمرها ما اتصرفت: مخزن الصنف الافتراضي.
-    """
     from sqlalchemy import text as _t
     from src.models.bom import Bom
     from src.models.catalog import Item
@@ -743,7 +663,6 @@ def list_production_orders(
     date_from: date | None = None,
     date_to: date | None = None,
     imported: bool | None = None,
-    # البيان — جزء من الكلام (ILIKE). `search` بيدوّر فيه كمان؛ ده للي عايز يضيّق عليه بس.
     statement: str | None = None,
     limit: int | None = None,
     offset: int = 0,
@@ -753,12 +672,8 @@ def list_production_orders(
     orders = production_order_service.list_orders(
         db, search=search, branch_id=branch_id, state=state, date_from=date_from,
         date_to=date_to, imported=imported, statement=statement)
-    # **الفلترة بعد الخدمة مش جوّاها.** `list_orders` بتاخد `branch_id` كفلتر بيبعته
-    # المستخدم، واللي بيختار الفرع بإيده يقدر يختار فرع غيره. العزل شرط تاني فوقه.
     orders = branch_scope.visible(current, orders)
     rev_ids = production_order_service.reversed_ids(db)
-    # نفس عقد الترقيم اللي باقي القوايم ماشية عليه: `limit` بيرجّع غلاف بالإجمالي،
-    # ومن غيره بترجع القايمة زي ما هي.
     if limit is None:
         return [_po_out(o, rev_ids) for o in orders]
     return {"rows": [_po_out(o, rev_ids) for o in orders[offset:offset + limit]],
@@ -838,13 +753,6 @@ def start_production_order(
     current: CurrentUser = Depends(require_capability(CAP_MANUFACTURE_WRITE)),
     db: Session = Depends(get_db),
 ) -> POOut:
-    """مؤكد ← شغّال: **بيصرف الخامات**. الشرح في `start_order`.
-
-    و`StockError` بتتمسك هنا زي التلات نداءات التانية. كانت ناقصة، والبدء بقى بيصرف
-    خامات بعد ما كان مابيحركش حاجة — فخامة مش كفاية كانت بتطلع **500** بدل ٤٠٩،
-    واللي قدام الشاشة بيقرا «حصل خطأ» بدل «الرصيد مايكفيش: «خام قطع صرف» في مخزن
-    الخامات المتاح منه ٠ والمطلوب صرفه ٦٦». الرسالة دي مكتوبة وكانت بتترمي.
-    """
     _seen_po(db, order_id, current)
     try:
         order = production_order_service.start_order(
@@ -856,12 +764,6 @@ def start_production_order(
 
 
 class POOutputIn(BaseModel):
-    """اللي حصل فعلاً — بيتبعت وقت الإقفال.
-
-    `outputs` كمية كل منتج طلعت كام، و`waste` هالك كل خامة. الاتنين مابيتعرفوش وقت
-    الفتح، والورقة بتتقفل عليهم.
-    """
-
     outputs: dict[int, Decimal] = {}
     waste: dict[int, Decimal] = {}
 
@@ -872,11 +774,6 @@ def issue_quality_materials(
     current: CurrentUser = Depends(require_capability(CAP_MANUFACTURE_WRITE)),
     db: Session = Depends(get_db),
 ) -> POOut:
-    """**إذن خامات الجودة** — الكرتون والأكياس بعد ما المنتج يطلع.
-
-    خطوة لوحدها لأن الورقتين بيروحوا لناس مختلفين في وقتين مختلفين. الشرح الكامل
-    في `manufacturing_production_service.issue_quality`.
-    """
     _seen_po(db, order_id, current)
     try:
         order = production_order_service.issue_quality(
@@ -888,8 +785,6 @@ def issue_quality_materials(
 
 
 class POReceiveIn(BaseModel):
-    """دفعة استلام: كمية لكل سطر منتج، وتاريخ الاستلام."""
-
     quantities: dict[int, Decimal] = {}
     receipt_date: date | None = None
     notes: str | None = Field(default=None, max_length=200)
@@ -902,10 +797,6 @@ def receive_production_output(
     current: CurrentUser = Depends(require_capability(CAP_MANUFACTURE_WRITE)),
     db: Session = Depends(get_db),
 ) -> POOut:
-    """**استلام دفعة إنتاج** — البضاعة بتدخل المخزن دلوقتي والأمر بيفضل شغّال.
-
-    الشرح الكامل في `manufacturing_production_service.receive_output`.
-    """
     _seen_po(db, order_id, current)
     try:
         order = production_order_service.receive_output(
@@ -925,7 +816,6 @@ def undo_production_receipt(
     current: CurrentUser = Depends(require_capability(CAP_MANUFACTURE_WRITE)),
     db: Session = Depends(get_db),
 ) -> POOut:
-    """عكس دفعة استلام غلط. الشرح في `production_order_service.undo_receipt`."""
     _seen_po(db, order_id, current)
     try:
         order = production_order_service.undo_receipt(

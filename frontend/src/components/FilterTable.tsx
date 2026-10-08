@@ -3,15 +3,6 @@ import { Table as AntTable } from 'antd';
 import type { TableProps } from 'antd';
 import { autoColumnFilters } from './gridColumns';
 
-/**
- * جدول antd **بفلتر على كل عمود** (طلب العميل ٢٠٢٦-٠٩-٣٠ — صفحات إدارة المخازن).
- *
- * نفس `Table` بالظبط، والفرق إن كل عمود مالوش فلتر بياخد واحد على حسب داتاه — شوف
- * `autoColumnFilters`. الشاشات بتستورده بدل antd ومش محتاجة تغيّر حاجة في أعمدتها.
- *
- * جدول بيتكتب فيه (سطور إذن بتتعدّل) بيبعت `autoFilters={false}`: فلتر على خانات لسه
- * بتتكتب بيخفي سطر من تحت إيد اللي بيكتبه.
- */
 function FilterTableInner<T extends object>(
   { autoFilters = true, columns, dataSource, ...rest }: TableProps<T> & { autoFilters?: boolean },
 ) {

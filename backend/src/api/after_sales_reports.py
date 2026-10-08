@@ -1,28 +1,3 @@
-"""تقارير ما بعد البيع — الكوبونات والمعاينات، بنفس تقسيم نظامهم القديم.
-
-قايمة «تقارير متابعة» عندهم فيها: متابعة كوبونات السباكين · متابعة كوبونات الموزعين ·
-كشف حساب الفنى · الزيارات بنقاط الفني · زيارات المناديب · تقارير المعاينات. الستة دول
-هنا، بنفس السؤال اللي كل واحد بيجاوبه.
-
-مافيش حاجة جديدة بتتسجّل عشان يتبنوا: مستند الصرف بيقول الورقة راحت لمين، والاستلام
-بيقول رجعت من مين، والمعاينة شايلة فنيها ومندوبها ونقاطها. اللي كان ناقص هو قراءتهم
-بالشكل ده.
-
----------------------------------------------------------------------------
-قرارين:
-
-* **«لسه برّه» بتتحسب على صاحب الصرف مش على اللي رجّع.** الورقة بتتصرف لموزع والسباك
-  بيرجّعها — دول مش نفس الراجل. لو حسبنا «اتصرف له ناقص اللي استلمناه منه» بيطلع للسباك
-  رصيد **سالب** (رجّع ٥ ومااتصرفش له حاجة) وللموزع رصيد كامل كأن مافيش حاجة رجعت. فالرجوع
-  بيتنسب لمستند الصرف (`coupon_issue_id`)، وساعتها «لسه برّه» بتقول اللي بجد لسه برّه.
-
-* **السباك تقريره «رجّع كام»، والموزع تقريره «عليه كام».** السؤالين مختلفين: الموزع ماسك
-  ورق، والسباك بيجيب ورق. عمود واحد اسمه «المتبقي» على الاتنين بيخلّي واحد منهم يكدب.
-
-* **الفني بيتلاقى بالعميل مش بالاسم.** الاستلام بيتسجّل على `customer_id`، والاسم على
-  الكارت ممكن يتصلّح بعدين. التقرير اللي بيجمّع بالاسم بيفرّق الراجل الواحد لاتنين أول
-  ما حد يزوّد مسافة.
-"""
 from __future__ import annotations
 
 from datetime import date
@@ -50,25 +25,19 @@ ZERO = Decimal("0.00")
 
 
 class CouponPartyRow(BaseModel):
-    """صف واحد في «متابعة كوبونات السباكين» أو «الموزعين»."""
-
     customer_id: int | None = None
     name: str
     phone: str | None = None
-    # للموزع: اتصرف له كام، ورجع من الصرف ده كام (من أي سباك)، والفرق لسه برّه.
     issued: int = 0
     returned: int = 0
     outstanding: int = 0
-    # للسباك: رجّع كام ورقة بنفسه.
     received: int = 0
     last_issue: date | None = None
     last_receipt: date | None = None
 
 
 class CouponStatementRow(BaseModel):
-    """سطر في كشف حساب الفنى/الموزع — ورقة خرجت أو رجعت."""
-
-    kind: str          # «صرف» أو «استلام»
+    kind: str
     document_number: str
     happened_on: date | None = None
     coupon_kind: str | None = None
@@ -78,8 +47,6 @@ class CouponStatementRow(BaseModel):
 
 
 class TechnicianVisitsRow(BaseModel):
-    """صف في «الزيارات بنقاط الفني»."""
-
     name: str
     customer_id: int | None = None
     visits: int = 0
@@ -88,8 +55,6 @@ class TechnicianVisitsRow(BaseModel):
 
 
 class RepVisitsRow(BaseModel):
-    """صف في «زيارات المناديب»."""
-
     rep_user_id: int | None = None
     name: str
     visits: int = 0
@@ -128,19 +93,10 @@ def _received_counts(db: Session, current: CurrentUser,
 
 def _returned_against_issue(db: Session, current: CurrentUser,
                             date_from: date | None, date_to: date | None):
-    """كل مستند صرف رجع منه كام ورقة — بغضّ النظر عن مين رجّعها.
-
-    الورقة بتخرج لموزع وبترجع من سباك. ربط الرجوع بمستند الصرف هو اللي بيخلّي «لسه برّه»
-    تقول الحقيقة؛ ربطها باللي رجّعها بيدّي للموزع رصيد كامل وللسباك رصيد سالب.
-    """
-    # الربط على المستند مباشرةً — من غير المرور بسطوره. المرور بيهم كان بيضرب العدد
-    # في عدد أوراق المستند: مستند فيه ٥٠ ورقة رجع منه ٤٠ كان بيتحسب ٢٠٠٠، و«لسه برّه»
-    # كانت بتطلع بالسالب بعشرات الألوف.
     stmt = branch_scope.scope(
         select(CouponIssue.customer_id, func.count(CouponReceiptLine.id))
         .join(CouponReceiptLine,
               CouponReceiptLine.coupon_issue_id == CouponIssue.id)
-        # الاستلام اللي لسه بانتظار الاعتماد مايقلّلش «لسه برّه» — المكتب ماشافش الورق.
         .join(CouponReceipt, CouponReceipt.id == CouponReceiptLine.receipt_id)
         .where(receipt_counted()),
         CouponIssue, current)
@@ -184,7 +140,6 @@ def coupons_by_plumber(
     current: CurrentUser = Depends(require_capability(CAP_COUPON_RECEIVE)),
     db: Session = Depends(get_db),
 ) -> list[CouponPartyRow]:
-    """متابعة كوبونات السباكين — كل سباك اتصرف له كام ورجّع كام واللي لسه عليه."""
     return _party_rows(db, current, customer_type="plumber",
                        date_from=date_from, date_to=date_to)
 
@@ -196,7 +151,6 @@ def coupons_by_distributor(
     current: CurrentUser = Depends(require_capability(CAP_COUPON_RECEIVE)),
     db: Session = Depends(get_db),
 ) -> list[CouponPartyRow]:
-    """متابعة كوبونات الموزعين — نفس السؤال للتجار والموزعين."""
     return _party_rows(db, current, customer_type="trader",
                        date_from=date_from, date_to=date_to)
 
@@ -209,7 +163,6 @@ def coupon_statement(
     current: CurrentUser = Depends(require_capability(CAP_COUPON_RECEIVE)),
     db: Session = Depends(get_db),
 ) -> list[CouponStatementRow]:
-    """كشف حساب الفنى — كل ورقة خرجت له أو رجعت منه، الأحدث فوق."""
     out: list[CouponStatementRow] = []
 
     issues = branch_scope.scope(select(CouponIssue), CouponIssue, current).where(
@@ -240,7 +193,6 @@ def coupon_statement(
             count=len(serials), serial_from=serials[0] if serials else None,
             serial_to=serials[-1] if serials else None))
 
-    # الأحدث فوق (طلب العميل ٢٠٢٦-١٠-٠١).
     out.sort(key=lambda r: (r.happened_on or date.min, r.document_number), reverse=True)
     return out
 
@@ -252,7 +204,6 @@ def inspections_by_technician(
     current: CurrentUser = Depends(require_capability(CAP_INSPECTION_READ)),
     db: Session = Depends(get_db),
 ) -> list[TechnicianVisitsRow]:
-    """الزيارات بنقاط الفني — كل فني عمل كام معاينة وجمّع كام نقطة."""
     stmt = branch_scope.scope(
         select(Inspection.technician_name, func.count(Inspection.id),
                func.coalesce(func.sum(Inspection.total_points), 0),
@@ -263,7 +214,6 @@ def inspections_by_technician(
     if date_to:
         stmt = stmt.where(Inspection.inspection_date <= date_to)
     rows = db.execute(stmt.group_by(Inspection.technician_name)).all()
-    # الفني عندنا عميل بتصنيف «سباك» — بنرجّع رقمه عشان الكشف يتفتح منه.
     ids = {c.name: c.id for c in db.scalars(
         select(Customer).where(Customer.customer_type == "plumber")).all()}
     out = [TechnicianVisitsRow(name=name, customer_id=ids.get(name), visits=n,
@@ -280,7 +230,6 @@ def inspections_by_rep(
     current: CurrentUser = Depends(require_capability(CAP_INSPECTION_READ)),
     db: Session = Depends(get_db),
 ) -> list[RepVisitsRow]:
-    """زيارات المناديب — كل مندوب نزل كام معاينة وعند كام عميل."""
     stmt = branch_scope.scope(
         select(Inspection.rep_user_id, func.count(Inspection.id),
                func.coalesce(func.sum(Inspection.total_points), 0),
@@ -320,10 +269,6 @@ def coupons_lifecycle(
     current: CurrentUser = Depends(require_capability(CAP_COUPON_RECEIVE)),
     db: Session = Depends(get_db),
 ) -> dict:
-    """حركة الكوبون — صف لكل ورقة: العهدة ← التسليم لتاجر ← الاستلام من سباك.
-
-    نفس اللي نظامهم القديم بيجاوبه من صف الورقة الواحدة عنده؛ الشرح في `lib/coupon_lifecycle`.
-    """
     try:
         return coupon_lifecycle.lifecycle(
             db, current, date_field=date_field, date_from=date_from, date_to=date_to,

@@ -1,35 +1,3 @@
-"""ينقل المعاينات وبنودها من ملف العميل. المصدر الملف وحده.
-
-    python -m src.scripts.import_wb_visits --dir C:/pgtmp/wb2          # يعرض بس
-    python -m src.scripts.import_wb_visits --dir C:/pgtmp/wb2 --yes    # ينفّذ
-
-بيتعاد تشغيله بأمان: المعاينة اللي رقم مستندها موجود بتتخطى.
-
----------------------------------------------------------------------------
-⛔ **قاعدة `ERP` ممنوع لمسها** (شوف `CLAUDE.md`). المصدر ملف العميل: صفحتَي
-«معاينات» و«نقاط»، مصدَّرتين TSV.
-
-**تلات أطراف على المعاينة الواحدة، وكل واحد في خانته:**
-
-* `owner_id` — صاحب البيت اللي اتزار (`WB-C-{CustomerID}`).
-* `merchant_customer_id` — التاجر اللي اشترى منه. **الملف بيحمل كود a5 صريح**
-  في عمود «كود تاجر» (`AL-A5-58`) على ١٠٬٧٢٥ من ١٠٬٧٩٦ صف، واتأكد إن الأكواد دي
-  كلها ليها كارت عندنا — صفر مفقود. فمافيش مطابقة أسماء هنا خالص.
-* `technician_name` — الفني. أغلبه مش مسجّل عندنا، فبيتكتب اسم ونص.
-
-ودي أدوار مش نسخ: نفس الكارت ممكن يكون تاجر على معاينة عند زبونه، وصاحب بيت على
-معاينة في بيته هو.
-
-**البنود من صفحة «نقاط».** `VisitID` بيربطها بالمعاينة، و`PointCount` نقط الوحدة
-و`TotalPoint` الإجمالي. النقط بتتاخد زي ما هي من الملف — **مش بتتحسب من جديد**:
-لو الحساب عندنا اختلف عن اللي اتقال للسباك ساعتها، اللي اتقال هو اللي حصل.
-
-**أصناف المعاينة مابتخصمش من عهدة المندوب** — `item_id` بيفضل `NULL` و`item_name`
-شايل الاسم. ده قرار قديم في المشروع: المعاينة نقط مش حركة مخزون.
-
-**المندوب بكود الموظف مش بالاسم ولا برقم اليوزر** — نفس السبب اللي في
-`import_wb_plumbers`: الملف بيسمّي الناس بوظايفهم وأرقام اليوزرات فيه من نقل قديم.
-"""
 from __future__ import annotations
 
 import csv
@@ -50,17 +18,15 @@ from src.models.user import User
 from src.scripts.import_wb_traders import ALIAS
 
 BRANCH = "العلياء"
-DOC_PREFIX = "WBV-"            # رقم مستند المعاينة عندنا
-TRADER_PREFIX = "WB-T-"        # تجار صفحة «اضافه تجار» — مش في a5
+DOC_PREFIX = "WBV-"
+TRADER_PREFIX = "WB-T-"
 MARMA, PREVIEW = "مرمة", "معاينة"
-# رقم الملف → التسمية عندنا. شوف `backfill_wb_visit_fields` للتحقق.
 DESCRIPTION = {
     "1": "حمام ومطبخ", "2": "حمام فقط", "3": "مطبخ فقط", "4": "مسجد",
     "5": "محل", "6": "صيدلية", "7": "مرمه", "8": "2حمام ومطبخ",
 }
 INSPECTION_TYPE = {"1": "تغذية وصرف", "2": "تغذية فقط", "3": "صرف فقط"}
 
-# رقم مندوب ERP → حساب الدخول. الجسر عبر كود الموظف في صفحة «مندوب».
 EMP_TO_USER = {
     "EMP-0053": "ashraf", "EMP-0002": "ibrahim.khattab", "EMP-0003": "anas",
     "EMP-0008": "bayoumy", "EMP-0004": "hassan.eid", "EMP-0005": "ahmed.torky",
@@ -80,7 +46,6 @@ def _read(path: str) -> list[dict[str, str]]:
 
 
 def _date(v: str) -> date | None:
-    """`20231214` أو `2023-12-14`."""
     v = (v or "").strip()
     for fmt in ("%Y%m%d", "%Y-%m-%d"):
         try:
@@ -91,7 +56,6 @@ def _date(v: str) -> date | None:
 
 
 def _cut(v: str | None, n: int) -> str | None:
-    """نص مقصوص على حدّ عموده، والفاضي بيرجع None."""
     v = (v or "").strip()
     return v[:n] if v else None
 
@@ -107,13 +71,6 @@ def run(folder: str, *, execute: bool) -> None:
     visits = _read(os.path.join(folder, "visits.tsv"))
     points = _read(os.path.join(folder, "points.tsv"))
     reps = _read(os.path.join(folder, "reps.tsv"))
-    # **رقم المندوب على المعاينة هو `user_id` القديم مش `erp_id`.** الصفحات بتستخدم
-    # مفاتيح مختلفة: صفحة «عملاء» فيها `SalesRepId` = رقم ERP (`10032`)، وصفحة
-    # «معاينات» فيها نفس اسم العمود بس القيمة رقم اليوزر (`48`). خريطة واحدة
-    # للاتنين كانت بتسيب الـ١٠٬٧٩٦ معاينة بلا مندوب.
-    #
-    # والوصول بيعدّي على كود الموظف في الحالتين: الرقم القديم اتغيّر مع إعادة
-    # البناء، وواحد منه (`5` لمحمد ممدوح) بيشاور على `aftersales` — راجل تاني.
     old_uid_to_emp = {r["user_id"]: r["emp_code"] for r in reps if r.get("user_id")}
 
     by_visit: dict[str, list[dict[str, str]]] = defaultdict(list)
@@ -151,8 +108,6 @@ def run(folder: str, *, execute: bool) -> None:
             if owner is None and v.get("owner_erp"):
                 notes["المالك مش عندنا"] += 1
             trader_code = v.get("trader_a5", "")
-            # زي الكوبونات: العمود بيحمل كود a5 أو رقم تاجر من صفحة «اضافه تجار»
-            # اللي كارته عندنا `WB-T-{id}`.
             trader = None
             if trader_code:
                 trader = (custs.get(trader_code)
@@ -167,8 +122,6 @@ def run(folder: str, *, execute: bool) -> None:
             if emp and rep is None:
                 notes[f"مندوب مش موجود: {emp}"] += 1
             if rep is None:
-                # `Inspection.rep_user_id` إجباري — المعاينة من غير مندوب مالهاش
-                # معنى: مين اللي راح البيت؟ الصف بيتقال ومابيتخترعش له مندوب.
                 notes["✘ بلا مندوب — اتخطّى"] += 1
                 continue
             plan.append((v, owner, trader, rep))
@@ -196,12 +149,6 @@ def run(folder: str, *, execute: bool) -> None:
             insp = Inspection(
                 branch_id=branch.id, document_number=DOC_PREFIX + vid,
                 visit_kind=VisitKind.technician,
-                # **النوع والحالة من الملف مش ثوابت.** أول نقل حطّهم قيمة واحدة
-                # للـ١٠٬٧٩٦، فـ٣٬٧٥١ مرمة بانوا معاينات و٢٢٩ مرفوضة بانت مقبولة.
-                # `IsMarma` نوعها، و`VisitType` حالتها (١ مقبولة / ٠ مرفوضة).
-                # رقم الشهادة هو تسلسل النظام القديم نفسه — بيوصل ١٦٠٬٩٧٥ فوق
-                # `CERTIFICATE_SEQUENCE_FLOOR` (١٥٦٬٢٠٤)، فأول شهادة جديدة بتكمّل
-                # من فوقه بدل ما تصطدم بورقة متسلّمة لعميل.
                 certificate_number=int(vid) if vid.isdigit() else None,
                 description=DESCRIPTION.get(v.get("disc", "")),
                 inspection_type=INSPECTION_TYPE.get(v.get("vtype", "")),
@@ -211,8 +158,6 @@ def run(folder: str, *, execute: bool) -> None:
                 inspection_date=_date(v["visit_date"]),
                 owner_id=owner.id if owner else None,
                 owner_name=_cut(v.get("owner_name"), 160) or "—",
-                # كل نص بيتقصّ على حدّ عموده. الملف فيه قيم أطول من الحد —
-                # «الدور» مثلاً بيتكتب جملة مش رقم، والعمود ١٦ حرف.
                 owner_address=_cut(v.get("owner_address") or v.get("address"), 240),
                 floor_number=_cut(v.get("floor"), 16),
                 technician_name=_cut(v.get("plumber_name"), 160),

@@ -1,12 +1,3 @@
-"""«جاري الشركاء» — شاشة a5 «الجاري» (٢٠٢٦-١٠-٠٦).
-
-الحسابات نفسها متنقلة من a5 بأرصدتها (تحت «جارى الشركاء» وسنواته، و«رأس المال»،
-و«استثمار»)، بس ماكانش ليها مكان يتشاف فيه غير شجرة الحسابات — والمحاسب اللي متعوّد على
-شاشة «الجاري» عند a5 مالقاهاش ومالقاش أرصدة الشركاء.
-
-الحساب هنا هو الحساب بتاع a5 زي ما هو — مافيش جدول تاني ولا رصيد بيتحسب بطريقة تانية.
-الرصيد دائن بالموجب (الشريك ليه)، والمدين بالسالب (عليه) — اتجاه حسابات رأس المال.
-"""
 from __future__ import annotations
 
 from datetime import date
@@ -27,8 +18,6 @@ from src.models.org import Branch
 
 router = APIRouter(tags=["partners-current"])
 
-# المجموعات في شجرة a5: «جارى الشركاء» وكل سنة ليها مجموعة («جارى الشركاء.2026.2025»)،
-# و«رأس المال»، و«استثمار». بالاسم لأن رقم المجموعة بيختلف من فرع لفرع.
 GROUP_PATTERNS = ("%جار%", "%رأس المال%", "%راس المال%", "%استثمار%")
 
 
@@ -42,7 +31,7 @@ class PartnerAccountOut(BaseModel):
     branch_name: str | None
     debit: Decimal
     credit: Decimal
-    balance: Decimal          # دائن − مدين: موجب = للشريك، سالب = عليه
+    balance: Decimal
     lines: int
     last_date: date | None
 
@@ -104,10 +93,6 @@ def partners_current(
     return out
 
 
-# ---------------------------------------------------------------------------
-# حركة الحساب + السحب والإيداع — زي شاشة «الجاري» في a5: تختار الشريك، تشوف حركته برصيد
-# متراكم، وتعمل سند سحب (الى حـ الخزينة) أو إيداع/مردود (من حـ الخزينة).
-# ---------------------------------------------------------------------------
 from pydantic import Field  # noqa: E402
 
 from src.auth.rbac import CAP_VOUCHER_WRITE  # noqa: E402
@@ -121,13 +106,13 @@ from src.services.voucher_service import VoucherError  # noqa: E402
 class MovementOut(BaseModel):
     entry_id: int
     entry_date: date | None
-    document: str | None          # رقم السند لو الحركة سند، وإلا رقم القيد
+    document: str | None
     voucher_id: int | None
-    kind: str | None              # partner_withdraw / partner_deposit / … / None (قيد)
+    kind: str | None
     description: str
     debit: Decimal
     credit: Decimal
-    balance: Decimal              # دائن − مدين تراكمي
+    balance: Decimal
 
 
 class MovementsOut(BaseModel):

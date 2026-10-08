@@ -1,14 +1,3 @@
-"""يقول بالظبط ليه سطور دفتر a5 ماوصلتش — سطر سطر، بالسبب.
-
-    python -m src.scripts.diag_ledger_gap --dir C:/pgtmp
-    python -m src.scripts.diag_ledger_gap --dir C:/pgtmp/aliaa --prefix AL-
-
-قراءة بس — مابيكتبش حاجة. بيقرا نفس الملف اللي الاستيراد بيقراه وبيعدّ الصفوف
-بنفس شروطه، فالفرق بين المصدر والقاعدة بيتفسّر برقم مش بتخمين.
-
-الاستيراد بيتخطى صف لسببين: حسابه مش في شجرتنا، أو قيمته صفر على الجنبين. الأولاني
-**فقدان حقيقي** — قيد ناقص طرف؛ والتاني صف فاضي مالوش أثر على أي رصيد.
-"""
 from __future__ import annotations
 
 import sys
@@ -21,7 +10,6 @@ from src.core.money import ZERO, to_money
 from src.models.ledger import Account, LedgerEntry
 from src.scripts.import_a5 import _read
 
-# نفس أعمدة `import_a5_ledger` — أي تغيير هناك لازم يتنقل هنا.
 A_KEY, A_DATE, A_ACC, A_ACCNAME = 0, 1, 2, 3
 A_IN, A_OUT, A_DESC, A_CAT, A_TYPE, A_DOC = 4, 5, 6, 7, 8, 9
 
@@ -39,9 +27,6 @@ def _money(s: str):
 
 def run(folder: str, prefix: str) -> None:
     path = f"{folder}/a5_acclines.tsv"
-    # نفس قارئ المستورد: UTF-16 لو فيه BOM وإلا UTF-8. القراءة القديمة كانت بتفرض
-    # UTF-16LE وبتقص أول صف كأنه رأس — والتزامن اليومي بيكتب UTF-8 من غير رأس، فكانت
-    # بتقرا هراء وتاكل أول قيد من غير ما ترمي خطأ.
     rows = _read(path)
     print(f"الملف: {path}\nصفوف المصدر: {len(rows):,}\n")
 
@@ -65,8 +50,6 @@ def run(folder: str, prefix: str) -> None:
                 continue
             ref = f"a5:{prefix}{_clean(r[A_KEY])}"
             if ref not in refs:
-                # القيد نفسه مادخلش. الاستيراد بيسيب القيد اللي كل سطوره صفر —
-                # فالسؤال هنا: هل فيهم سطر بقيمة؟ ده اللي يبقى فقدان.
                 no_entry += 1
                 if _money(r[A_IN]) != ZERO or _money(r[A_OUT]) != ZERO:
                     no_entry_nonzero += 1

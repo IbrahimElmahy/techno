@@ -1,9 +1,3 @@
-"""هيكل الرواتب والشرايح (HR-4).
-
-`CAP_SALARY_VIEW` gates everything that returns an amount against a named employee. It does NOT end
-in `.read`, deliberately — see the block in `auth/rbac.py`. `hr.read` is not enough here: a branch
-manager who approves attendance has no business reading his colleagues' salaries.
-"""
 from __future__ import annotations
 
 from datetime import date
@@ -43,9 +37,6 @@ def _raise(exc: PayrollSetupError):
     if "استُخدمت في مرتب مرحّل" in text or "اتحسب عليه مسير مرحّل" in text:
         raise HTTPException(409, {"code": "locked", "message": text}) from exc
     raise HTTPException(422, {"code": "validation", "message": text}) from exc
-
-
-# ----------------------------------------------------------------- schemas
 
 
 class ComponentIn(BaseModel):
@@ -150,15 +141,11 @@ def _version_out(db: Session, v: PayrollSchemeVersion) -> dict:
     }
 
 
-# ------------------------------------------------------------- البنود
-
-
 @router.get("/components", response_model=list[ComponentOut])
 def list_components(
     _: CurrentUser = Depends(require_capability(CAP_HR_READ)),
     db: Session = Depends(get_db),
 ) -> list[ComponentOut]:
-    """أسماء البنود مش مبالغ — دي بيانات أساسية، مش مرتب حد."""
     return [ComponentOut.model_validate(c, from_attributes=True)
             for c in db.scalars(select(SalaryComponent).order_by(SalaryComponent.code)).all()]
 
@@ -191,9 +178,6 @@ def deactivate_component(
     db.commit()
 
 
-# ------------------------------------------------------------- هيكل الراتب
-
-
 @router.get("/salaries")
 def list_salaries(
     include_inactive: bool = Query(False),
@@ -201,15 +185,6 @@ def list_salaries(
     current: CurrentUser = Depends(require_capability(CAP_SALARY_VIEW)),
     db: Session = Depends(get_db),
 ) -> list[dict]:
-    """كل الموظفين ومعاهم راتبهم الساري — القايمة جاية من جدول الموظفين نفسه.
-
-    الشاشة دي كانت ناقصة خالص: الهيكل كان متخزّن بـ`employee_id` بس مافيش مكان يتكتب فيه،
-    فالمسير كان بيعدّي على كل الموظفين ويلاقي صفر هياكل. دلوقتي الموظف الجديد بيظهر هنا لوحده
-    بـ«مالوش إعدادات»، والموقوف بيستخبى إلا لو اتطلب.
-    """
-    # الموارد البشرية مفصولة بين الفروع: محاسب الفرع بيشوف مرتبات موظفين فرعه بس (واللي
-    # مالهمش فرع — نفس قاعدة الحضور والأجازات في `branch_scope.employee_ids`)، والمالك/الأدمن
-    # الكل أو الفرع المختار من الفلتر فوق.
     stmt = branch_scope.scope(select(Employee), Employee, current)
     if not include_inactive:
         stmt = stmt.where(Employee.active.is_(True))
@@ -228,7 +203,6 @@ def list_salaries(
             "department": depts.get(e.department_id) if e.department_id else e.department,
             "job_title": titles.get(e.job_title_id) if e.job_title_id else None,
             "hire_date": str(e.hire_date) if e.hire_date else None,
-            # الرقم اللي على كارت الموظف — المسير مابيقراهوش؛ بيتعرض عشان يتنقل لهيكل.
             "card_salary": str(e.salary) if e.salary is not None else None,
             **entry,
         })
@@ -236,7 +210,6 @@ def list_salaries(
 
 
 def _seen_employee(db: Session, employee_id: int, current: CurrentUser) -> Employee:
-    """الموظف لو في فرع اللي بيسأل — وإلا ٤٠٤. هيكل الراتب مالوش فرع؛ فرعه هو فرع الموظف."""
     emp = db.get(Employee, employee_id)
     if emp is None or not branch_scope.may_see(current, emp):
         raise HTTPException(404, {"code": "not_found", "message": "الموظف غير موجود."})
@@ -250,7 +223,6 @@ def employee_salary(
     current: CurrentUser = Depends(require_capability(CAP_SALARY_VIEW)),
     db: Session = Depends(get_db),
 ) -> dict:
-    """هيكل الراتب الساري في يوم — ومعاه كل النسخ عشان الزيادات تتقري."""
     _seen_employee(db, employee_id, current)
     active = setup.salary_on(db, employee_id, on or date.today())
     history = db.scalars(
@@ -265,7 +237,6 @@ def employee_salary(
         "current": (setup.salary_breakdown(db, active) | {
             "id": active.id, "effective_from": str(active.effective_from),
             "payment_method": active.payment_method.value,
-            # القيم زي ما اتكتبت (نسبة أو مبلغ) — شاشة التعديل محتاجاها، مش المحسوبة بس.
             "insurance_base_set": (str(active.insurance_base)
                                    if active.insurance_base is not None else None),
             "bank_name": active.bank_name, "bank_account": active.bank_account,
@@ -288,7 +259,6 @@ def delete_salary(
     current: CurrentUser = Depends(require_capability(CAP_PAYROLL_POST)),
     db: Session = Depends(get_db),
 ) -> None:
-    """مسح نسخة هيكل — اللي قبلها بترجع ساريّة. المستعملة في مسير مرحّل ٤٠٩."""
     row = db.get(EmployeeSalary, salary_id)
     if row is None:
         raise HTTPException(404, {"code": "not_found", "message": "هيكل الراتب غير موجود."})
@@ -306,8 +276,6 @@ def set_salary(
     current: CurrentUser = Depends(require_capability(CAP_PAYROLL_POST)),
     db: Session = Depends(get_db),
 ) -> dict:
-    """الزيادة صف جديد بتاريخ سريان جديد — مش تعديل للقديم، عشان قسيمة الشهر اللي فات
-    تفضل زي ما كانت."""
     _seen_employee(db, body.employee_id, current)
     payload = body.model_dump()
     payload["lines"] = [line for line in (payload.get("lines") or [])] \
@@ -320,9 +288,6 @@ def set_salary(
         "id": row.id, "effective_from": str(row.effective_from)}
     db.commit()
     return out
-
-
-# ------------------------------------------------------------- الشرايح
 
 
 @router.get("/schemes")
@@ -382,12 +347,8 @@ def effective_version(
     _: CurrentUser = Depends(require_capability(CAP_HR_READ)),
     db: Session = Depends(get_db),
 ) -> dict | None:
-    """الإصدار الساري في تاريخ — بيجاوب «الشهر ده هيتحسب بأنهي شرايح» قبل ما يترحّل."""
     row = setup.version_on(db, scheme, on)
     return _version_out(db, row) if row else None
-
-
-# ------------------------------------------------------------- الإعدادات
 
 
 def _settings_out(row) -> dict:
@@ -406,7 +367,6 @@ def read_settings(
     _: CurrentUser = Depends(require_capability(CAP_HR_READ)),
     db: Session = Depends(get_db),
 ) -> dict:
-    """أول قراية بتعمل الصف بالافتراضيات — فالشاشة بتفتح على قيم، مش على فاضي."""
     out = _settings_out(setup.settings(db))
     db.commit()
     return out

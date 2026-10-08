@@ -1,22 +1,3 @@
-"""سجل كل عملية بتغيّر حاجة في النظام — مين عملها، إمتى، وعلى أنهي مستند.
-
-`audit_service.record` بيتكتب بالإيد جوّه الخدمات، وبيدّي أغنى صورة: القيمة قبل وبعد.
-بس اللي بالإيد بيفضل ناقص دايماً — خدمة جديدة بتتكتب والسطر بيتنسي، وشاشة كاملة تعدّي
-من غير أي أثر. تعديل فاتورة البيع نفسه ماكانش بيتسجّل.
-
-الميدل وير دي بتمسك الطبقة اللي تحت: **أي** طلب بيغيّر حاجة (POST/PUT/PATCH/DELETE)
-بيتسجّل من هنا، ناجح كان أو مرفوض. والمرفوض مهم زي الناجح بالظبط — محاولة حذف من حد
-مالوش صلاحية هي بالضبط الحاجة اللي السجل موجود عشانها.
-
-حاجتين مقصودين:
-
-* **الجسم مابيتسجّلش.** فيه باسوردات فيه. المسار والطريقة والنتيجة بيقولوا اللي محتاج
-  يتقال من غير ما السجل يبقى هو نفسه تسريب.
-* **بتتكتب في جلسة لوحدها وبتترحّل لوحدها.** الطلب اللي وقع بيترجع أثره كله، فلو السجل
-  كان راكب على نفس الجلسة كان هيروح معاه — واللي بيقع هو أكتر حاجة محتاج تتسجّل.
-
-القراءة (GET) مابتتسجّلش: FR-031.
-"""
 from __future__ import annotations
 
 import logging
@@ -28,18 +9,12 @@ from src.models.audit import AuditLogEntry
 log = logging.getLogger(__name__)
 
 _SKIP_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
-# الدخول بيتسجّل من `auth` نفسه بالاسم اللي اتكتب بيه — نجح ولا فشل — ومافيش داعي لصف تاني.
-# وتذكرة التحديث المباشر بتتاخد مع كل فتح اتصال (كل عشر دقايق لكل تبويب) — مش عملية.
 _SKIP_PATHS = frozenset({"/api/v1/auth/login", "/api/v1/auth/refresh",
                          "/api/v1/live/ticket"})
 _VERB = {"POST": "create", "PUT": "update", "PATCH": "update", "DELETE": "delete"}
 
 
 def _actor_id(scope) -> int | None:
-    """رقم اللي بعت الطلب من التوكن نفسه — من غير ما نضرب على قاعدة البيانات.
-
-    الصلاحية مش شغلنا هنا: الراوتر هو اللي بيقرر، والسجل بيكتب اللي حصل مهما كان القرار.
-    """
     for key, value in scope.get("headers", ()):
         if key != b"authorization":
             continue
@@ -56,15 +31,6 @@ def _actor_id(scope) -> int | None:
     return None
 
 
-# اسم الكيان من المسار ← الاسم اللي الخدمات بتكتب بيه.
-#
-# **الميدل وير والخدمات كانوا بيسمّوا نفس الحاجة باسمين.** دي بتاخد الاسم من الرابط
-# (`/api/v1/transfers` ⇒ «transfers») والخدمة بتكتب اسم الجدول («stock_transfer»).
-# فنفس الحدث بيتسجّل مرتين بنوعين، وفلتر «النوع» في شاشة السجل بيعرض الحاجة الواحدة
-# مرتين — واللي بيختار واحد منهم بيخفي نص التاريخ عن نفسه من غير ما يعرف.
-#
-# فالرابط بيتترجم هنا لنفس القاموس. واللي مش في الجدول بيعدّي بكلمة الرابط زي ما هي:
-# مورد جديد اسمه واضح أحسن من `None`، والسطر ده بيتزوّد وقت ما يبقى ليه معنى.
 _ENTITY = {
     "transfers": "stock_transfer",
     "sales": "sales_invoice",
@@ -102,11 +68,6 @@ _ENTITY = {
 
 
 def _describe(path: str, method: str) -> tuple[str, str | None, int | None]:
-    """(الفعل، نوع الكيان، رقمه) من المسار.
-
-    `/api/v1/sales/12` ⇐ `sales.delete` على الفاتورة ١٢، و`/api/v1/transfers/5/self-approve`
-    ⇐ `transfers.self-approve` على الإذن ٥ — الذيل بيوصف العملية أحسن من اسم الطريقة.
-    """
     segs = [s for s in path.strip("/").split("/") if s]
     if segs[:2] == ["api", "v1"]:
         segs = segs[2:]
@@ -124,8 +85,6 @@ def _describe(path: str, method: str) -> tuple[str, str | None, int | None]:
 
 
 class RequestAuditMiddleware:
-    """ASGI خام — مش `BaseHTTPMiddleware`، عشان مايتحطّش تاسك زيادة بين الطلب والراوتر."""
-
     def __init__(self, app):
         self.app = app
 
@@ -169,7 +128,7 @@ class RequestAuditMiddleware:
                 },
             ))
             db.commit()
-        except Exception:  # noqa: BLE001 — السجل مايوقعش الطلب أبداً
+        except Exception:  # noqa: BLE001
             db.rollback()
             log.warning("audit: تعذّر تسجيل %s %s", method, path, exc_info=True)
         finally:

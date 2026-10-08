@@ -1,8 +1,3 @@
-"""Lookup (configurable dropdown) service — 013-settings-lookups.
-
-Lazily seeds each category from the registry on first read, so fresh DBs and tests always have the
-enum-bound defaults without an explicit seed step. Enforces the system/custom guard on writes.
-"""
 from __future__ import annotations
 
 from sqlalchemy import func, select
@@ -18,7 +13,6 @@ class LookupError(Exception):
 
 
 def _ensure_seeded(db: Session, category: str) -> None:
-    """Populate a category's default options once (idempotent)."""
     meta = CATEGORIES.get(category)
     if meta is None:
         return
@@ -32,14 +26,6 @@ def _ensure_seeded(db: Session, category: str) -> None:
 
 
 def _adopt_item_categories(db: Session) -> None:
-    """فئة على أصناف ومالهاش صف في شاشة الفئات ⇐ بيتعملها صف (٢٠٢٦-١٠-٠٧).
-
-    نقل a5 حط على الأصناف فئات زي «تشغيل» و«تكنو وايت» من غير صف هنا — ٨٥٧ صنف على
-    الإنتاج. الفئة دي مكانتش بتظهر في شاشة الفئات، فمحدش يقدر يخفيها من شيت التسعير ولا
-    يعدّل اسمها، وكانت بتفضل ظاهرة في التطبيق مهما اتخفى غيرها. القيمة هي النص اللي على
-    الصنف بالظبط عشان الربط يمشي من غير ما صنف يتلمس، والمزامنة الجاية لو جابت فئة
-    جديدة بتتلم هنا برضه.
-    """
     from src.models.catalog import Item
 
     have = set(db.scalars(select(LookupOption.value)
@@ -71,11 +57,6 @@ ITEM_CATEGORY = "item_category"
 
 
 def parent_map(db: Session, category: str) -> dict[str, str]:
-    """قيمة الفئة ← قيمة أبوها، للفئات اللي ليها أب بس. (031)
-
-    استعلام **واحد** للقايمة كلها (عشرات الصفوف)، عشان اللي بيجمّع آلاف السطور يقرا
-    منه بالقاموس بدل استعلام لكل سطر.
-    """
     rows = db.execute(
         select(LookupOption.value, LookupOption.parent_value)
         .where(LookupOption.category == category,
@@ -85,22 +66,12 @@ def parent_map(db: Session, category: str) -> dict[str, str]:
 
 
 def root_of(parents: dict[str, str], value: str | None) -> str | None:
-    """الفئة الرئيسية لقيمة — هي نفسها لو مالهاش أب.
-
-    خطوة واحدة لفوق لأن الشجرة مستويين (شوف `LookupOption.parent_value`). اللي بيجمّع
-    على الرئيسية بيندهها لكل سطر، فمافيش لفّة ولا استعلام هنا — قراءة من قاموس وخلاص.
-    """
     if value is None:
         return None
     return parents.get(value, value)
 
 
 def with_children(db: Session, category: str, value: str) -> list[str]:
-    """القيمة ومعاها فروعها — للفلترة على فئة رئيسية.
-
-    الفئة اللي مالهاش فروع بترجع لوحدها، فاللي مش عامل شجرة بيفلتر بنفس القيمة الواحدة
-    بالظبط زي ما كان.
-    """
     kids = db.scalars(
         select(LookupOption.value)
         .where(LookupOption.category == category, LookupOption.parent_value == value)
@@ -109,7 +80,6 @@ def with_children(db: Session, category: str, value: str) -> list[str]:
 
 
 def _check_parent(db: Session, *, category: str, value: str, parent_value: str) -> None:
-    """حراسة الشجرة: أب موجود، في نفس القايمة، ومستويين وبس."""
     if parent_value == value:
         raise LookupError("الفئة مش ممكن تبقى أب نفسها.")
     parent = db.scalar(
@@ -127,7 +97,6 @@ def _check_parent(db: Session, *, category: str, value: str, parent_value: str) 
 
 
 def categories() -> list[dict]:
-    """Registry grouped by page for the Settings UI."""
     pages: dict[str, dict] = {}
     for key, meta in CATEGORIES.items():
         page = meta["page"]
@@ -181,11 +150,6 @@ def update_option(db: Session, *, option_id: int, label: str | None = None,
                   sort_order: int | None = None, active: bool | None = None,
                   description: str | None = None,
                   parent_value: str | None = None) -> LookupOption:
-    """`parent_value=None` معناها «ماتلمسش الأب»، و`""` معناها «شيل الأب».
-
-    زي `description` بالظبط: الحقل اللي ما اتبعتش مابيتغيّرش. لو `None` كانت معناها
-    «شيل»، كل تعديل اسم من الشاشة القديمة كان هيفكّ الشجرة من غير ما حد يطلب.
-    """
     opt = db.get(LookupOption, option_id)
     if opt is None:
         raise LookupError("الاختيار مش موجود.")
@@ -203,7 +167,6 @@ def update_option(db: Session, *, option_id: int, label: str | None = None,
     if active is not None:
         opt.active = active
     if description is not None:
-        # Blank clears it; the field is a note, so an empty note is a valid state.
         opt.description = description or None
     db.flush()
     return opt
@@ -215,9 +178,6 @@ def delete_option(db: Session, *, option_id: int) -> None:
         raise LookupError("الاختيار مش موجود.")
     if opt.is_system:
         raise LookupError("A system option cannot be deleted — hide it (deactivate) instead.")
-    # الأب اللي تحته فروع مابيتشالش. (031) الفرع بيأشّر على أبوه بقيمته، فشيل الأب
-    # بيسيب فروع بتأشّر على حاجة مش موجودة — بتختفي من الشجرة على الشاشة وتفضل على
-    # الأصناف. الرفض هنا بيخلّي اللي بيشيل يفكّ الفروع الأول وهو شايفها.
     kid = db.scalar(
         select(LookupOption.id).where(LookupOption.category == opt.category,
                                       LookupOption.parent_value == opt.value).limit(1))

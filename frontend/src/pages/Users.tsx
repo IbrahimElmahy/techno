@@ -25,12 +25,10 @@ interface UserRecord {
   branch_id: number | null;
   territory_id: number | null;
   active: boolean;
-  /** مشرف المناديب اللي المندوب ده تحته — للمندوب بس. */
   supervisor_id?: number | null;
 }
 
 const ROLE_LABELS: Record<RoleName, string> = {
-  // المالك فوق مدير النظام — بيعدّي من كل باب بيسأل عن الأدمن.
   owner: 'المالك',
   system_admin: 'مدير النظام الرئيسي',
   branch_manager: 'مدير الفرع',
@@ -39,13 +37,10 @@ const ROLE_LABELS: Record<RoleName, string> = {
   after_sales_staff: 'موظف خدمة ما بعد البيع',
   sales_rep: 'مندوب مبيعات',
   accountant: 'المحاسب',
-  // «قارئ» — يشوف ويطبع، ما يغيّرش حاجة.
   viewer: 'قارئ (عرض فقط)',
-  // «مشرف مناديب» — بيتابع شغل المناديب اللي تحته من التطبيق.
   rep_supervisor: 'مشرف مناديب',
 };
 
-// Roles the backend requires a branch for (see UserCreate/UserUpdate validation).
 const BRANCH_SCOPED_ROLES = ['branch_manager', 'purchasing_manager', 'sales_manager'];
 
 export default function Users() {
@@ -59,25 +54,16 @@ export default function Users() {
   const [editingUser, setEditingUser] = useState<UserRecord | null>(null);
   const [editForm] = Form.useForm();
   const { user: currentUser } = useAuth();
-  /**
-   * مدير الفرع بيعمل ويعدّل الأدوار اللي **تحته** بس، على **فرعه** بس (٢٠٢٦-١٠-٠٥) — نفس قاعدة
-   * السيرفر. القايمة كانت بتعرض الأدوار كلها، فاللي يختار «مدير فرع» يترفض بـ403 ومايعرفش ليه.
-   */
   const isAdminUser = currentUser?.role === 'owner' || currentUser?.role === 'system_admin';
   const BELOW_BM = ['sales_rep', 'sales_manager', 'purchasing_manager', 'accountant', 'after_sales_staff', 'viewer', 'rep_supervisor'];
   const roleEntries = Object.entries(ROLE_LABELS).filter(([k]) => isAdminUser || BELOW_BM.includes(k));
 
-  /**
-   * المشرفين اللي ينفع المندوب يتسجّل تحتهم — المستخدمين النشطين بدور «مشرف مناديب».
-   * المندوب بيتربط بمشرفه من هنا (`supervisor_id`)، والمشرف بيشوف شغله من التطبيق.
-   */
   const supervisors = users.filter((u) => u.role === 'rep_supervisor' && u.active);
   const supervisorName = (id: number | null | undefined) => {
     if (!id) return null;
     const s = users.find((u) => u.id === id);
     return s ? (s.full_name || s.username) : `#${id}`;
   };
-  // المشرف للفرع بتاعه بس: مندوب فرع تاني مايتسجّلش تحته (السيرفر بيرفضه كمان).
   const supervisorField = (branchId: number | null | undefined) => {
     const mine = supervisors.filter((s) => branchId && s.branch_id === branchId);
     return (
@@ -103,16 +89,13 @@ export default function Users() {
     },
   });
 
-  // F3 كانت جاية من `ListToolbar` — الخانة بقت هنا فبتتسجّل هنا.
   const searchRef = useRef<any>(null);
   useScreenShortcuts({ onSearch: () => { searchRef.current?.focus?.(); } });
 
-  // السطر يفتح التعديل — البيانات الأساسية مافيهاش «عرض» غير الفورم بتاعها نفسه.
   const kb = useTableKeyboard<UserRecord>({
     rows: filter.filtered, rowKey: (r) => r.id, onOpen: (r) => openEdit(r),
   });
 
-  // Territories carry a branch_id — narrow the list once a branch is chosen.
   const territoriesForBranch = (branchId: number | null | undefined) =>
     territories.filter(
       (t) => !branchId || t.branch_id === undefined || t.branch_id === null || t.branch_id === branchId,
@@ -164,16 +147,6 @@ export default function Users() {
     });
   };
 
-  /**
-   * حذف الحساب — **للغلط في الإدخال بس.**
-   *
-   * الحساب اللي عليه شغل الباك إند بيرفض مسحه ويقول شغل إيه بالظبط، لأن اسم
-   * المندوب على الفاتورة واسم اللي راجع في سجل المراجعة مش بيانات المستخدم —
-   * دي بيانات الشركة عن اللي حصل، ومسحها بيسيب فواتير بلا مندوب.
-   *
-   * فالزرار موجود جنب «تعطيل» مش بدله: التعطيل بيقفل الدخول ويسيب الشغل منسوب،
-   * والمسح بيشيل حساب اتعمل بالخطأ ومحدش استعمله.
-   */
   const handleDelete = (record: UserRecord) => {
     Modal.confirm({
       title: `حذف حساب ${record.full_name}`,
@@ -196,8 +169,6 @@ export default function Users() {
           fetchUsers();
         } catch (err: any) {
           const d = err?.response?.data?.detail;
-          // ٤٠٩ مش فشل — ده النظام بيقول إن الحساب عليه شغل. الرسالة نفسها فيها
-          // الأرقام، فبتتعرض زي ما هي بدل «حصل خطأ».
           message.error(d?.message ?? 'تعذّر حذف الحساب', 8);
         }
       },
@@ -208,10 +179,8 @@ export default function Users() {
     try {
       const payload = {
         ...values,
-        // مدير الفرع: المستخدم الجديد على فرعه هو دايماً.
         branch_id: (isAdminUser ? values.branch_id : currentUser?.branch_id) || null,
         territory_id: values.territory_id || null,
-        // المشرف للمندوب بس — أي دور تاني بيتبعت من غير مشرف.
         supervisor_id: values.role === 'sales_rep' ? (values.supervisor_id || null) : null,
       };
 
@@ -249,11 +218,9 @@ export default function Users() {
         role: values.role,
         branch_id: values.branch_id || null,
         territory_id: values.territory_id || null,
-        // `null` صريح بيشيل المشرف؛ والدور اللي مش مندوب مالوش مشرف.
         supervisor_id: values.role === 'sales_rep' ? (values.supervisor_id || null) : null,
         active: values.active,
       };
-      // Password is optional — send it only when the admin actually typed a new one.
       if (values.password) payload.password = values.password;
 
       await api.patch(`/api/v1/users/${editingUser.id}`, payload);
@@ -343,12 +310,10 @@ export default function Users() {
     },
   ];
 
-  // إخفاء وترتيب الأعمدة — نفس المحرك اللي كل الجداول بتستخدمه.
   const tableCols = useTableColumns('users', columns, {
     export: { name: 'مستخدمي النظام', rows: filter.filtered },
   });
 
-  // قوايم الفلاتر — نفس اللي كانت في `ListToolbar` (أكتر من قيمة، والمعنى «أي واحدة منهم»).
   const multiSelect = (key: string, placeholder: string, options: { value: any; label: string }[]) => (
     <Select allowClear showSearch mode="multiple" maxTagCount="responsive" placeholder={placeholder}
       value={filter.values[key]}
@@ -447,7 +412,6 @@ export default function Users() {
             </Select>
           </Form.Item>
 
-          {/* Conditional scope: branch/purchasing/sales managers need a branch; a sales rep needs branch + territory */}
           <Form.Item
             noStyle
             shouldUpdate={(prev, curr) =>
@@ -523,8 +487,6 @@ export default function Users() {
         destroyOnHidden
       >
         <Form form={editForm} layout="vertical" onFinish={onEditFinish} requiredMark={false}>
-          {/* اسم الدخول بيتعدّل. الأسماء اللي اتولدت مع نقل a5 طويلة ومحدش بيفتكرها،
-              واللي بيدخل بيها كل يوم هو اللي يقرر تبقى إيه. */}
           <Form.Item
             name="username"
             label="اسم الدخول"

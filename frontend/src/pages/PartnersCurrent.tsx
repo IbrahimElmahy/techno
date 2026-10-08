@@ -11,16 +11,6 @@ import { useNavigate } from 'react-router-dom';
 import { api } from '../api/client';
 import ListPage, { ListStat } from '../components/ListPage';
 
-/**
- * «جاري الشركاء» — شاشة «الجاري» بتاعة a5 (٢٠٢٦-١٠-٠٦).
- *
- * في a5 الجاري مش رصيد وبس: كل حركة سند نقدي بين الخزنة وحساب الشريك تحت «جارى الشركاء»
- * (أو سنته) — السحب «الى حـ خزينة المركز الرئيسى» مدين الجاري، والمردود «من حـ خزينة»
- * دائنه، والبيان اسم اللي استلم. فالشاشة: الحسابات فوق، وتختار حساب تشوف حركته برصيد
- * متراكم تحت، وزرارين «سحب» و«إيداع» بيعملوا السند (سند سحب/إيداع شريك).
- *
- * الرصيد بإشارة الشريك: موجب «له»، سالب «عليه».
- */
 interface Row {
   account_id: number; code: string | null; name: string;
   group_id: number; group_name: string;
@@ -144,7 +134,7 @@ export default function PartnersCurrent() {
       setDialog(null);
       load();
       loadMoves();
-    } catch { /* الرسالة من المعترض العام */ } finally {
+    } catch {} finally {
       setSaving(false);
     }
   };
@@ -279,8 +269,6 @@ export default function PartnersCurrent() {
             bordered
             rowKey={(m) => `${m.entry_id}-${m.debit}-${m.credit}`}
             loading={movesLoading}
-            // الأحدث فوق (زي باقي النظام) — الرصيد المتراكم بيتحسب بالترتيب الزمني في السيرفر
-            // وبيتعرض مقلوب، فكل سطر لسه رصيده بعد الحركة دي.
             dataSource={[...(moves?.rows || [])].reverse()}
             columns={moveColumns as any}
             pagination={false}

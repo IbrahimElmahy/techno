@@ -24,13 +24,6 @@ interface AuditLog {
   created_at: string;
 }
 
-/**
- * أسماء العمليات.
- *
- * السجل بقى فيه نوعين من الأسماء: اللي الخدمات بتكتبه بإيدها (`sale.edit`) واللي الميدل
- * وير بتشتقه من المسار (`transfers.self-approve`). الاتنين شكلهم واحد — `مورد.فعل` —
- * فالترجمة بتتم على كل جزء لوحده وبتتلمّ، بدل جدول بيحاول يعدّ كل تركيبة ممكنة.
- */
 const ACTION_LABEL: Record<string, string> = {
   login: 'دخول',
   login_failed: 'فشل الدخول',
@@ -91,7 +84,6 @@ const actionLabel = (a: string) =>
   (ACTION_LABEL[a] ?? (a.includes('.') ? a.split('.').map(seg).reverse().join(' — ') : a));
 const entityLabel = (e: string | null) => (e ? ENTITY_LABEL[e] ?? e : '-');
 
-/** الطلب المرفوض بيتسجّل زي الناجح — وده أهم صف في الشاشة، فلازم يبان من غير ما يتفتح. */
 const outcomeOf = (l: { after: Record<string, any> | null }) => {
   const st = l.after?.src === 'http' ? l.after?.status : undefined;
   if (typeof st !== 'number') return null;
@@ -107,7 +99,7 @@ export default function Audit() {
     setLoading(true);
     try {
       const res = await api.get('/api/v1/audit');
-      setLogs(res.data);   // السيرفر بيرجّع الأحدث الأول
+      setLogs(res.data);
     } catch (err) {
       console.error(err);
     } finally {
@@ -135,7 +127,6 @@ export default function Audit() {
     return user ? `${user.full_name} (${user.username})` : `مستخدم #${userId}`;
   };
 
-  // F3 كانت جاية من `ListToolbar` — الخانة بقت هنا فبتتسجّل هنا.
   const searchRef = useRef<any>(null);
   useScreenShortcuts({ onSearch: () => { searchRef.current?.focus?.(); } });
 
@@ -230,7 +221,6 @@ export default function Audit() {
       setTrail({ type: r.entity_type, id: r.entity_id }); },
   });
 
-  // قوايم الفلاتر — نفس اللي كانت في `ListToolbar` (أكتر من قيمة، والمعنى «أي واحدة منهم»).
   const multiSelect = (key: string, placeholder: string, options: { value: any; label: string }[]) => (
     <Select allowClear showSearch mode="multiple" maxTagCount="responsive" placeholder={placeholder}
       value={filter.values[key]}

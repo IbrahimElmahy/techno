@@ -1,19 +1,3 @@
-"""أوامر تصنيع فرع = أوامر a5 بالظبط — اللي اتعدّل بيتعاد واللي اتمسح بيتشال (٢٠٢٦-١٠-٠٦).
-
-    python -m src.scripts.sync_a5_manufacturing_exact --dir /opt/techno/a5factory --branch السادات --prefix FC-
-    python -m src.scripts.sync_a5_manufacturing_exact ... --yes
-
-`import_a5_manufacturing` بيتخطّى العملية اللي رقمها موجود (`<بادئة>MFG-<أمر>-<تسلسل>`)، فأمر
-اتعدّل في a5 بعد ما نقلناه بيفضل عندنا بالقديم، والأمر اللي a5 مسحه وعمله تاني بيتلخبط: السطور
-القديمة بتفضل، والجديدة اللي تسلسلها أكبر بتتضاف. في السادات: أمر ٣٥٣٦ (استهلاك زاد بعد النقل)
-و٣٥٤٧ (اتمسح واتعمل تاني ٢٠٢٦-١٠-٠٦) — خامات ناقصة وإنتاج مواسير ٢٦٠٠ متر مش عندنا.
-
-بيقارن كل أمر سطر بسطر (النوع، الصنف، المخزن، الكمية) بنفس قواعد الاستيراد. المختلف بيتهد
-بالكامل — أمر التشغيل (`WO-A5-…`) وسطوره، والعمليات، وحركات المخزون — وبيتبني من a5 بنفس
-`import_a5_manufacturing` وبعده `backfill_production_orders`.
-
-⛔ **أوامر التشغيل اللي اتعملت في نظامنا مابتتلمسش** — الشغل هنا على `MFG-` بتاع a5 بس.
-"""
 from __future__ import annotations
 
 import os
@@ -53,7 +37,7 @@ def _expected(db, folder: str, branch_id: int, prefix: str) -> dict[str, dict[st
             produce = r[imp.M_TYPE] == imp.PRODUCE
             loc = wh.get(_clean(r[imp.M_IN]) if produce else _clean(r[imp.M_OUT]))
             if item is None or loc is None:
-                continue                      # الاستيراد بيتخطّاه كمان
+                continue
             want[f"{prefix}MFG-{ref}-{n:03d}"] = (
                 "produce" if produce else "consume", item, loc, Decimal(str(qty)).quantize(Decimal("0.001")))
         out[ref] = want
@@ -91,8 +75,6 @@ def run(folder: str, *, branch_name: str, prefix: str, execute: bool) -> int:
             have[ref][doc] = (t, item, loc, Decimal(str(qty)).quantize(Decimal("0.001")))
 
         redo = sorted(r for r in want if r in have and want[r] != have[r])
-        # التصدير (`exp_mfg.sql`) بيغطي الأوامر الأخيرة بس (من ٣٥٣٦ في السادات) — الأمر اللي
-        # رقمه أقدم من أول أمر في الملف برّه النطاق، مش ممسوح.
         nums = [int(r) for r in want if r.isdigit()]
         floor = min(nums) if nums else 0
         gone = sorted(r for r in have if r not in want and r.isdigit() and int(r) >= floor)

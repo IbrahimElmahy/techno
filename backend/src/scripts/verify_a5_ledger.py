@@ -1,21 +1,3 @@
-"""يقارن رصيد كل حساب في الدفتر عندنا برصيده عند a5 — بالكود، تفاوت قرش. قراءة بس.
-
-    python -m src.scripts.verify_a5_ledger --dir C:/pgtmp
-    python -m src.scripts.verify_a5_ledger --dir C:/pgtmp/aliaa --prefix AL-
-
-بيخرج بكود ١ لو فيه حساب مختلف أو حساب عند a5 عليه حركة ومش عندنا.
-
----------------------------------------------------------------------------
-**المسطرة:** عند a5 رصيد الحساب = Σ`AccIn` − Σ`AccOut` على `acc` لكل `AccBrnch_id`.
-عندنا = Σمدين − Σدائن على `ledger_line` للحساب اللي كوده `{prefix}A5S-{AccBrnch_id}`.
-نفس الإشارة على الجانبين، فالمقارنة مباشرة من غير ما نعتمد على طبيعة الحساب.
-
-**بالكود مش بالاسم.** `import_a5_ledger` ربط كل سطر بحسابه بالكود ده بالظبط، فالتحقق
-لازم يمشي على نفس المفتاح — وإلا بنقارن على اسم اتغيّر عندنا أو اتكرر عندهم.
-
-**الحساب اللي عند a5 عليه حركة ومش عندنا** = سطور دفتر ضاعت. ده الفرق اللي
-`diag_ledger_gap` بيشرحه صف صف؛ هنا بنقيسه بالمبلغ.
-"""
 from __future__ import annotations
 
 import os
@@ -29,7 +11,6 @@ from src.core.db import SessionLocal
 from src.models.ledger import Account, Direction, LedgerLine
 from src.scripts.import_a5 import _clean, _money, _read
 
-# أعمدة a5_acclines.tsv — زي import_a5_ledger بالظبط
 A_KEY, A_DATE, A_ACC, A_ACCNAME, A_IN, A_OUT = 0, 1, 2, 3, 4, 5
 TOL = Decimal("0.01")
 
@@ -51,7 +32,7 @@ def run(folder: str, prefix: str) -> None:
     db = SessionLocal()
     try:
         accounts = {
-            a.code[len(prefix) + 4:]: a          # «A5S-» أربعة حروف
+            a.code[len(prefix) + 4:]: a
             for a in db.scalars(select(Account).where(Account.code.like(f"{prefix}A5S-%")))
             if a.code and (prefix or not a.code.startswith("AL-"))
         }

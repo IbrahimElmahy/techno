@@ -1,22 +1,7 @@
-"""قراءة صفحات ملف العميل (الإكسل) مباشرةً — بدل خطوة التصدير اليدوي لـTSV.
-
-سكربتات التكميل كانت بتقرا `owners.tsv` و`plumbers.tsv` من فولدر، والملفات دي
-بتتعمل بإيد من الإكسل: تفتح الصفحة، تصدّرها، تسمّي الأعمدة بأسماء إنجليزي صغيرة.
-الخطوة دي هي اللي بتتنسى — فالسكربت يتساب من غير ما يتشغّل، والأرقام اللي في
-الملف تفضل في الملف. `--xlsx` بيشيلها: الملف هو المصدر زي ما العميل بعته.
-
-**الأسماء بتتترجم هنا مرة واحدة.** رؤوس الملف بالعربي وبأسماء a5 (`Phone1`،
-«فون»، `Address2`)، والسكربتات شايلة أسماء موحّدة (`phone1`، `floor`). الجدول
-تحت هو الترجمة — مكتوبة في مكان واحد عشان تصليحها يبقى في مكان واحد.
-
-⛔ الملف ده **هو** مصدر ما بعد البيع الوحيد (شوف `CLAUDE.md`) — قاعدة `ERP` ممنوعة.
-"""
 from __future__ import annotations
 
 import os
 
-#: صفحة «عملاء» = الملّاك. المفتاح اسم العمود في الملف، والقيمة الاسم اللي
-#: السكربت بيدوّر عليه.
 OWNERS_SHEET = "عملاء"
 OWNERS_COLUMNS = {
     "ID": "id",
@@ -26,7 +11,6 @@ OWNERS_COLUMNS = {
     "Phone2": "phone2",
     "Mobile": "mobile",
     "Address": "address",
-    # الاسم بيكدب والمحتوى هو اللي بيحدد: «ارضي»، «أول علوي» — ده الدور.
     "Address2": "floor",
 }
 
@@ -48,26 +32,16 @@ _EMPTY = {"", "none", "null", "nan"}
 
 
 def _clean(v: object) -> str:
-    """القيمة كنص مقصوص — و«NULL» و«None» بيرجعوا فاضي.
-
-    الملف مصدّر من SQL Server، فالفاضي بيوصل كلمة `NULL` مكتوبة. من غير التنضيف
-    ده كنا هنكتب «NULL» في خانة التليفون ونفتكرها رقم.
-    """
     s = "" if v is None else str(v).strip()
     return "" if s.lower() in _EMPTY else s
 
 
 def read_sheet(path: str, sheet: str, columns: dict[str, str]) -> list[dict[str, str]]:
-    """صفوف صفحة واحدة بالأسماء الموحّدة. العمود اللي مش في الملف بيرجع فاضي.
-
-    الصف اللي كل خاناته فاضية بيتشال — الإكسل بيسيب صفوف فاضية في آخر الصفحة،
-    وعدّها بيخلّي التقرير يقول أرقام مش حقيقية.
-    """
     if not os.path.exists(path):
         raise SystemExit(f"مافيش الملف: {path}")
     try:
         import openpyxl
-    except ImportError as exc:  # pragma: no cover - بيئة ناقصة
+    except ImportError as exc:  # pragma: no cover
         raise SystemExit("محتاج openpyxl: pip install openpyxl") from exc
 
     wb = openpyxl.load_workbook(path, read_only=True, data_only=True)

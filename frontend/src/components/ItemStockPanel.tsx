@@ -4,24 +4,6 @@ import { api } from '../api/client';
 import { qty, money } from '../utils/money';
 import { dualQty, lengthUnits } from '../utils/units';
 
-/**
- * رصيد الصنف في كل المخازن — the side panel that answers "do we actually have it, and where"
- * without leaving the invoice.
- *
- * The question comes up on every document that touches stock: a salesman about to promise a
- * delivery, a buyer about to reorder something the branch is already sitting on. Before this,
- * answering it meant abandoning a half-typed invoice to go and look — so the panel is shared by
- * every document screen rather than rebuilt per screen.
- *
- * Two states, because the user arrives from two directions:
- *   • a category chosen but no item yet → the category's items with their total on hand, so the
- *     eye lands on what is short before a line is even added;
- *   • an item chosen → that item broken down per warehouse and custody.
- *
- * Locations holding nothing are still listed, greyed: "this warehouse has none" is an answer, and
- * hiding the row would make it look like the question was never asked.
- */
-
 interface LocationRow {
   kind: string;
   id: number;
@@ -30,13 +12,9 @@ interface LocationRow {
 }
 
 interface Props {
-  /** The item whose per-location balance to show. Takes priority over `category`. */
   itemId?: number | null;
-  /** The category to summarise when no item is selected yet. */
   category?: string | null;
-  /** All loaded products — used for the category summary, so no extra request is needed. */
   products?: any[];
-  /** Clicking an item in the category summary selects it. */
   onPickItem?: (itemId: number) => void;
   title?: string;
 }
@@ -75,7 +53,6 @@ export default function ItemStockPanel({
               <b style={{ color: Number(balance.total) > 0 ? '#6AB42D' : '#cf1322' }}>
                 {qty(balance.total)} {balance.item?.unit_of_measure || ''}
               </b>
-              {/* صنف ليه «القطعة = N متر»: نفس الإجمالي بالوحدة التانية. */}
               {Number(balance.item?.meters_per_piece || 0) > 0 ? (
                 <span style={{ marginInlineStart: 6 }}>
                   ({dualQty(Number(balance.total || 0),

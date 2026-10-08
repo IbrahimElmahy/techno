@@ -1,7 +1,3 @@
-/// المبلغ بالحروف — «فقط ألف ومائتان وخمسون جنيه مصري وخمسون قرش لا غير».
-///
-/// نفس `frontend/src/utils/arabicNumberWords.ts` بالحرف — السند المكتوب بالحروف جنب
-/// الرقم هو اللي بيصعّب تعديله بعد التوقيع.
 library;
 
 const _ones = [
@@ -15,7 +11,6 @@ const _hundreds = [
   'ثمانمائة', 'تسعمائة',
 ];
 
-/// (مفرد، مثنى، جمع) لكل مرتبة.
 const _scales = [
   ['', '', ''],
   ['ألف', 'ألفان', 'آلاف'],
@@ -49,7 +44,6 @@ String _scaled(int count, int level) {
   return '${_under1000(count)} ${s[0]}';
 }
 
-/// عدد صحيح بالحروف.
 String integerToArabicWords(num value) {
   var n = value.abs().floor();
   if (n == 0) return 'صفر';
@@ -65,7 +59,6 @@ String integerToArabicWords(num value) {
   return parts.join(' و');
 }
 
-/// جملة «فقط … لا غير» اللي بتتكتب على السندات.
 String amountToArabicWords(num amount, {String currency = 'جنيه مصري'}) {
   final v = amount.abs();
   final pounds = v.floor();

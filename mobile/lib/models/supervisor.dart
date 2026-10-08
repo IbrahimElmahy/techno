@@ -3,16 +3,12 @@ import 'package:flutter/material.dart';
 import '../theme.dart';
 import '../utils/format.dart';
 
-/// متابعة المناديب — اللي بيرجع من `/supervisor/*`. مابيتخزّنش على الجهاز: المشرف
-/// بيتابع أرقام بتتغيّر كل دقيقة، ورقم قديم متخزّن أوحش من «مافيش شبكة».
-
 int _int(Object? v) => v is int ? v : int.tryParse('${v ?? ''}') ?? 0;
 String? _str(Object? v) {
   final s = v?.toString().trim() ?? '';
   return s.isEmpty ? null : s;
 }
 
-/// أرقام فترة — للإجمالي فوق ولكل مندوب في كارته.
 class SupStats {
   final double sales;
   final int salesCount;
@@ -72,7 +68,6 @@ class SupRep {
         lastActivityAt: parseDateTime(j['last_activity_at']),
       );
 
-  /// أول حرف من الاسم — للدايرة اللي جنبه.
   String get initial {
     final s = fullName.trim();
     return s.isEmpty ? '؟' : s.characters.first;
@@ -100,7 +95,6 @@ class SupOverview {
   }
 }
 
-/// نوع الحركة — الاسم اللي السيرفر بيفهمه، والعنوان والأيقونة واللون اللي بيبانوا.
 enum ActivityKind {
   all('all', 'الكل', Icons.all_inclusive, AppColors.primary),
   sales('sales', 'الفواتير', Icons.receipt_long_outlined, AppColors.primary),
@@ -116,7 +110,6 @@ enum ActivityKind {
   final IconData icon;
   final Color color;
 
-  /// اسم الواحدة — «فاتورة»، «مرتجع»… للكارت ولعنوان شاشة المستند.
   String get single => switch (this) {
         ActivityKind.all => 'حركة',
         ActivityKind.sales => 'فاتورة بيع',
@@ -127,7 +120,6 @@ enum ActivityKind {
         ActivityKind.inspections => 'معاينة',
       };
 
-  /// المستندات اللي ليها سطور — بس دول بيتفتحوا.
   bool get hasDocument =>
       this == ActivityKind.sales ||
       this == ActivityKind.returns ||
@@ -181,7 +173,6 @@ class SupActivity {
         linesCount: j['lines_count'] == null ? null : _int(j['lines_count']),
       );
 
-  /// «2026/10/06 · 10:22 ص» — الوقت من `created_at` لو موجود.
   String get when {
     final d = date ?? createdAt;
     if (d == null) return '';
@@ -219,7 +210,6 @@ class SupDocument {
 
   factory SupDocument.fromJson(Map<String, dynamic> j, {ActivityKind? kind}) {
     final h = <String, dynamic>{...?(j['header'] as Map?)?.cast<String, dynamic>()};
-    // النوع من الطلب نفسه لو الرأس ماقالهوش — الرابط اتفتح بيه أصلاً.
     if (h['kind'] == null && kind != null) h['kind'] = kind.api;
     return SupDocument(
       header: SupActivity.fromJson(h),

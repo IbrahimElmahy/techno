@@ -1,62 +1,26 @@
-/**
- * طباعة أي تقرير على نفس ورق الشركة.
- *
- * Forty-odd reports live in this system and exactly one of them can be printed — the income
- * statement tab of `pages/FinanceReports.tsx`, which builds its own `<table>` HTML by hand. Every
- * other report a manager wants on paper gets a browser screenshot or a phone photograph of the
- * screen.
- *
- * The letterhead, the A4 RTL styles and the `.grid` / `.totals` classes already exist in
- * `print/brand.ts` for invoices and vouchers. All that was missing was the piece that turns a
- * report's columns and rows into that table — so it is here, once, rather than the twelfth
- * hand-built `<table>` string.
- *
- * The filters go in the header block on purpose. A printed report with no dates on it is a page of
- * numbers nobody can date, and it will be read six months later as if it were current.
- */
 import { type DocMeta, latinDigits, printDocument } from './brand';
 
-/** عمود مطبوع: عنوانه، وإزاي بنطلع قيمته من الصف. */
 export interface PrintColumn<T = any> {
   title: string;
   value: keyof T | ((row: T) => unknown);
-  /** «رقم» بيتحاذي لليمين زي باقي الأرقام في المستندات المطبوعة. */
   numeric?: boolean;
 }
 
-/** سطر في جدول الإجماليات تحت التقرير. */
 export interface PrintTotal {
   label: string;
   value: string | number;
 }
 
-/**
- * **الورق بأرقام إنجليزي (0-9) — كله، مش حتة وحتة.**
- *
- * الكشف المطبوع كان طالع بلغتين أرقام في نفس الورقة: خانات الجدول «100000.82» (القيمة
- * الخام من السيرفر من غير تنسيق) والإجماليات تحته «٢٨٧٩٣٧٫٧٨» (`money()` بشكل الأرقام
- * اللي المستخدم مختاره للشاشة). ورقة a5 اللي العميل متعوّد عليها 0-9 في كل حتة، والورقة
- * بتتبعت لعميل ومحاسب مش لنفس الشاشة — فاختيار الشاشة مالوش دعوة بيها.
- *
- * فالورقة بتتنسّق هنا بـ`en-US` ثابت، واللي بيعدّي من `money()` بيترجم في الآخر
- * (`latinDigits`) — الشاشة زي ما هي.
- */
 export { latinDigits } from './brand';
 
-/** فلوس على الورق: 1,234.50 — منزلتين، أرقام إنجليزي دايماً. */
 export const printMoney = (v: unknown): string => Number(v || 0).toLocaleString('en-US', {
   minimumFractionDigits: 2, maximumFractionDigits: 2,
 });
 
-/** كميات على الورق: 1,234.5 — من غير منازل مفروضة. */
 export const printQty = (v: unknown): string => Number(v || 0).toLocaleString('en-US', {
   maximumFractionDigits: 3,
 });
 
-/**
- * خانة رقمية خام («100000.82» من السيرفر) بفواصل الآلاف، ومنازلها زي ما هي — «12.500»
- * كمية بتفضل بتلات منازل، و«5» عدد مابيبقاش «5.00». اللي مش رقم بيعدّي زي ما هو.
- */
 function numericCell(value: unknown): unknown {
   const raw = typeof value === 'number' ? String(value) : value;
   if (typeof raw !== 'string' || !/^-?\d+(\.\d+)?$/.test(raw.trim())) return value;
@@ -66,7 +30,6 @@ function numericCell(value: unknown): unknown {
   });
 }
 
-/** HTML escaping — a customer called «شركة <النور>» must not become markup. */
 export function esc(value: unknown): string {
   if (value === null || value === undefined) return '';
   return String(value)
@@ -82,7 +45,6 @@ function cellOf<T>(row: T, column: PrintColumn<T>): unknown {
     : (row as any)[column.value];
 }
 
-/** بيبني الجدول من غير ما يطبع — عشان يتختبر. */
 export function reportTableHtml<T>(
   columns: PrintColumn<T>[],
   rows: T[],
@@ -102,8 +64,6 @@ export function reportTableHtml<T>(
       return `<tr>${cells}</tr>`;
     })
     .join('');
-  // An empty report still prints. «مفيش حركة في الفترة دي» is itself an answer somebody asked
-  // for, and a blank page does not say it.
   const empty = rows.length
     ? ''
     : `<tr><td colspan="${columns.length}">مفيش بيانات في المدى المحدد</td></tr>`;
@@ -116,12 +76,6 @@ export function reportTableHtml<T>(
     + `<tbody>${body}${empty}</tbody></table>${totalsHtml}`;
 }
 
-/**
- * بيطبع تقرير كامل: ترويسة الشركة + الفلاتر + الجدول + الإجماليات.
- *
- * `meta.meta` carries the filters as [label, value] pairs and lands in the header table — that is
- * what makes a printed page re-readable next year.
- */
 export function printReport<T>(
   meta: DocMeta,
   columns: PrintColumn<T>[],
@@ -136,17 +90,6 @@ export function printReport<T>(
   printDocument(counted, latinDigits(reportTableHtml(columns, rows, totals)));
 }
 
-/**
- * قسيمة راتب — بند بند، مش رقم واحد.
- *
- * A payslip that says «صافي ٥٠٠٠» and nothing else is a number the employee cannot check and
- * therefore will not believe. Every element that made it is printed with its own name: the basic,
- * each allowance, the overtime hours and what they were worth, the absence days and what they
- * cost, the penalty and its reason, the advance instalment, the insurance and the tax.
- *
- * Earnings and deductions in separate columns rather than signed numbers in one — a minus sign is
- * the first thing lost to a bad photocopy, and «−٤٠٠» read as «٤٠٠» flips the whole slip.
- */
 export interface PayslipData {
   employee_name?: string | null;
   run: { document_number: string; year: number; month: number; status: string };

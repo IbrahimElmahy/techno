@@ -3,18 +3,6 @@ import { searchFilter, searchRank } from '../utils/arabicSort';
 import { Select } from 'antd';
 import { api } from '../api/client';
 
-/**
- * خانة مركز التكلفة — قايمة واحدة، مكان واحد.
- *
- * الخانة كانت في القيد اليدوي بس، فتقرير «أرباح مراكز التكلفة» كان بيطلع كله تحت
- * «غير موزّع»: الفواتير والسندات — اللي بتولّد كل الإيراد وكل المصروف — ماكانش
- * فيها خانة أصلاً. الشِّيم ده عشان الخانة تتحط في المستندات من غير ما كل شاشة
- * تكرّر نفس النداء ونفس شكل العنصر.
- *
- * **القايمة بتتحمّل مرة واحدة لكل الشاشة.** مراكز التكلفة عشرات مش آلاف، وبتتغيّر
- * مرة في السنة — فنداء لكل خانة كان هيبقى نداء بيرجّع نفس الرد.
- */
-
 export interface CostCenterOption { id: number; code: string; name: string; }
 
 let cache: CostCenterOption[] | null = null;
@@ -31,7 +19,6 @@ export function loadCostCenters(): Promise<CostCenterOption[]> {
   return inflight;
 }
 
-/** بيصفّر الكاش — بعد إضافة أو تعطيل مركز من شاشة المراكز. */
 export function invalidateCostCenters() { cache = null; }
 
 export function useCostCenters(): CostCenterOption[] {
@@ -40,18 +27,11 @@ export function useCostCenters(): CostCenterOption[] {
   return rows;
 }
 
-/**
- * المعروض في الاختيار: الاسم بس — طلب العميل (٢٠٢٦-١٠-٠٧) «مش عايز الكود في الاختيارات».
- * الكود بيروح في `search` المخفي (`costCenterOption`) فالبحث بيه لسه شغّال.
- */
 export const costCenterLabel = (c: CostCenterOption) => c.name || c.code;
 
 export const costCenterOption = (c: CostCenterOption) =>
   ({ value: c.id, label: costCenterLabel(c), search: c.code || '' });
 
-/**
- * `value`/`onChange` بالشكل اللي `Form.Item` بيحقنه، فبينفع يتحط جوّاه من غير أي ربط.
- */
 export default function CostCenterField({
   value, onChange, size, placeholder = 'مركز التكلفة (اختياري)', style,
 }: {

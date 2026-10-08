@@ -1,28 +1,11 @@
 import { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 
-/**
- * Drives a tabbed screen's active tab from the URL.
- *
- * The menu was rebuilt to mirror the system the client is migrating from, where a screen we
- * implement as one tabbed page — the chart of accounts, the organisation, manufacturing — is several
- * separate entries. «الحسابات الرئيسيه» and «مراكز التكلفة» are two menu items there and two tabs of
- * one screen here.
- *
- * Rather than split those screens into copies that would then drift apart, each menu entry carries
- * the tab it means (`/general-ledger?tab=cc`) and this hook opens it. One implementation, several
- * doors — which is what the situation actually is.
- *
- * The tab stays user-controllable after arrival: clicking another tab moves the URL with it, so the
- * open tab is what gets restored when the workspace reopens that tab later, and a copied link opens
- * on what the sender was looking at.
- */
 export function useQueryTab(fallback: string, param = 'tab'): [string, (key: string) => void] {
   const [searchParams, setSearchParams] = useSearchParams();
   const fromUrl = searchParams.get(param);
   const [active, setActive] = useState(fromUrl || fallback);
 
-  // A later navigation to the same screen with a different tab has to move the tab, not be ignored.
   useEffect(() => {
     if (fromUrl && fromUrl !== active) setActive(fromUrl);
   }, [fromUrl]);
@@ -37,20 +20,12 @@ export function useQueryTab(fallback: string, param = 'tab'): [string, (key: str
   return [active, select];
 }
 
-/**
- * Scroll to a card the menu entry named, for a screen that is a stack of cards rather than tabs.
- *
- * Same purpose as `useQueryTab`: their «أدوات خاصة» is a screen, ours is فحص سلامة البيانات partway
- * down الإعدادات. Landing at the top of a long settings page and expecting somebody to scroll for
- * the thing they clicked is the same failure as landing on the wrong tab.
- */
 export function useSectionParam(): string | null {
   const [searchParams] = useSearchParams();
   const wanted = searchParams.get('section');
 
   useEffect(() => {
     if (!wanted) return;
-    // The card is painted by the same render that runs this; wait a frame for it to exist.
     const id = requestAnimationFrame(() => {
       document.getElementById(`section-${wanted}`)
         ?.scrollIntoView({ behavior: 'smooth', block: 'start' });

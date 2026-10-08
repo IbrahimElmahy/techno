@@ -27,22 +27,6 @@ import { useLookup, labelMap } from '../hooks/useLookup';
 import { money, numeralsLocale } from '../utils/money';
 import { activeOptions } from '../utils/active';
 
-/**
- * انتاج حر — production that happened without a stored recipe.
- *
- * Their `/productions/free` is a screen of its own, and its menu entry here used to land silently
- * on أوامر التصنيع, which requires a recipe. Somebody who produced something one-off had nowhere
- * to record it, and no way to tell that from having missed the button.
- *
- * It posts **one document**, the same `manufacturing_order` a recipe-driven run posts, with
- * `bom_id` left NULL. Consuming the materials through several calls and producing through another
- * would leave stock spent with nothing made whenever one of them failed — and the reversal, the
- * cost and the reports would each have to learn about a second kind of production.
- *
- * The stated quantities are what actually went in, so nothing scales them. On a recipe order «4
- * produced» multiplies the recipe; here it does not touch the numbers somebody measured.
- */
-
 interface Item {
   id: number; code: string; name: string;
   kind: 'raw_material' | 'product'; unit_of_measure: string;
@@ -76,8 +60,6 @@ export default function FreeProduction() {
   const [workOrderRef, setWorkOrderRef] = useState('');
   const [notes, setNotes] = useState('');
   const [statement1, setStatement1] = useState('');
-  // Every typed box opens empty. A quantity that starts at 1 turns «5» into «15» for anybody who
-  // types over it without clearing first — the same rule as every other document here.
   const [lines, setLines] = useState<DraftLine[]>([]);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [focusLineKey, setFocusLineKey] = useState<number | null>(null);
@@ -96,8 +78,6 @@ export default function FreeProduction() {
         api.get('/api/v1/branches'),
       ]);
       setItems(i.data || []);
-      // الإنتاج في فرع المصنع بس — مخازن الفروع اللي `is_factory` وحدها، والسيرفر بيرفض
-      // غيرها (`org_service.production_branch_problem`). مافيش فرع مصنع ⇒ القايمة كاملة.
       const factory = new Set<number>((b.data || [])
         .filter((x: { is_factory?: boolean }) => x.is_factory)
         .map((x: { id: number }) => Number(x.id)));
@@ -105,8 +85,6 @@ export default function FreeProduction() {
       setWarehouses(factory.size
         ? allWh.filter((x) => x.branch_id != null && factory.has(Number(x.branch_id)))
         : allWh);
-      // Only the recipe-less ones — this screen is a register of free production, and mixing in
-      // recipe orders would make «why is this one not in أوامر التصنيع?» a question.
       setOrders((o.data || []).filter((x: Order) => x.bom_id === null));
     } catch {
       message.error('تعذر تحميل البيانات');
@@ -118,9 +96,7 @@ export default function FreeProduction() {
   const products = useMemo(() => items.filter((i) => i.kind === 'product' && i.active), [items]);
   const materials = useMemo(() => items.filter((i) => i.active), [items]);
 
-  /** A material picked in the window becomes a line, and the caret goes to its quantity. */
   const addMaterial = (itemId: number, qty: number | null = null): PickResult => {
-    // العدّاد عشان الإضافة المجمّعة: كل الخامات بتقرا نفس `lines` فكانت هتاخد نفس المفتاح.
     const key = Math.max(lines[lines.length - 1]?.key ?? 0, keySeq.current) + 1;
     keySeq.current = key;
     setLines((prev) => [...prev, { key, item_id: itemId, quantity: qty || null }]);
@@ -165,7 +141,6 @@ export default function FreeProduction() {
   const itemName = (id: number) => items.find((i) => i.id === id)?.name ?? `صنف #${id}`;
   const priceOf = (id?: number) => Number(items.find((i) => i.id === id)?.purchase_price || 0);
 
-  // Shown before posting so the cost is not a surprise that only appears on the saved document.
   const materialCost = useMemo(
     () => lines.reduce((s, l) => s + (l.item_id && l.quantity
       ? l.quantity * priceOf(l.item_id) : 0), 0),
@@ -243,7 +218,6 @@ export default function FreeProduction() {
       render: (q: string) => Number(q),
     },
     {
-      // Their column here reads «رقم الانتاج», not «امر تشغيل» as elsewhere; this is their screen.
       title: 'رقم الانتاج', dataIndex: 'work_order_ref', key: 'work_order_ref', width: 130,
       render: (v: string | null) => v || '-',
     },
@@ -252,8 +226,6 @@ export default function FreeProduction() {
       align: 'left' as const, render: (v: string) => `${money(v)}`,
     },
     {
-      // Labour and machine time. On a free order there is no recipe standard to read, so this is
-      // zero unless the order stated resources of its own — and showing it says which it was.
       title: 'مصروفات', dataIndex: 'resource_cost', key: 'resource_cost', width: 115,
       align: 'left' as const, render: (v: string) => `${money(v)}`,
     },
@@ -284,7 +256,6 @@ export default function FreeProduction() {
     dateOf: (o) => o.production_date,
   });
 
-  // السطر يفتح تفاصيل الأمر — الخامات اللي اتصرفت وتكلفتها، اللي هي أصلاً في السطر المفرود.
   const [expanded, setExpanded] = useState<number[]>([]);
   const kb = useTableKeyboard<Order>({
     rows: filter.filtered, rowKey: (o) => o.id,
@@ -292,13 +263,8 @@ export default function FreeProduction() {
       ? prev.filter((k) => k !== o.id) : [...prev, o.id])),
   });
 
-  /**
-   * ورقة الإنتاج الجديد — بقت شاشة لوحدها زي إذن التحويل (السجل هو الصفحة، والزرار الأخضر
-   * بيفتح الورقة). الحالة نفسها ماتلمستش: اللي اتكتب بيفضل لو رجعت وفتحت تاني.
-   */
   const [entryOpen, setEntryOpen] = useState(false);
 
-  // F3 للبحث في السجل — كانت جاية من `ListToolbar`.
   const searchRef = useRef<any>(null);
   useScreenShortcuts({ onSearch: () => { searchRef.current?.focus?.(); } }, !entryOpen);
 
@@ -315,7 +281,6 @@ export default function FreeProduction() {
     <>
       {productWindow}
       {entryOpen ? (
-      // شكل المستند الجديد: كروت بيضا على رمادي. الشكل بس — نفس الخانات والأوامر.
       <div className="sale-doc">
         <div className="sale-card sale-head">
           <div className="sale-head-row">
@@ -333,7 +298,6 @@ export default function FreeProduction() {
 
         <div className="sale-form">
         <div className="sale-card">
-        {/* كان تنبيه أزرق — بقى سطر شرح فوق الخانات. */}
         <div style={{ color: '#64748b', fontSize: 14, marginBottom: 10 }}>
           اكتب الخامات المنصرفة فعلاً والمنتج الناتج. تُؤخذ الكميات كما هي دون أي نسب تضربها، حتى لا يتغيّر الرقم المقيس.
         </div>
@@ -349,9 +313,6 @@ export default function FreeProduction() {
           </Col>
           <Col xs={12} md={4}>
             <Form.Item label="الكمية المنتجة" required style={{ marginBottom: 0 }}>
-              {/* Production has no shelf to check against — it CREATES the goods. Zero and
-                  negative are still refused: a negative production consumes the product it was
-                  meant to make. */}
               <InputNumber
                 data-grid-col="qty" keyboard={false}
                 style={{ width: '100%' }} value={quantity} placeholder="—"
@@ -397,7 +358,6 @@ export default function FreeProduction() {
         <Table
           size="small" pagination={false} rowKey="key" dataSource={lines}
           columns={[
-            // Picked in the window, not hunted in a dropdown inside an empty row.
             {
               title: 'الصنف', width: '55%',
               render: (_: any, l: DraftLine) => (

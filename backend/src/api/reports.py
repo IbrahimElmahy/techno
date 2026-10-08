@@ -43,7 +43,6 @@ def inventory_report(
     current: CurrentUser = Depends(require_capability(CAP_STOCK_READ)),
     db: Session = Depends(get_db),
 ):
-    # مخازن الفرع بس — المخازن نفسها مفلترة، والجرد كان بيجمّع عليها كلها.
     return reporting.inventory(db, warehouse_id=warehouse_id, item_id=item_id,
                                branch_id=branch_scope.visible_branch_id(current))
 
@@ -87,18 +86,11 @@ def trade_report(
     current: CurrentUser = Depends(require_capability(CAP_SALES_READ)),
     db: Session = Depends(get_db),
 ):
-    """Sales/purchase figures at any level and grouping, with profit where cost was captured.
-
-    One endpoint covers what the legacy system spread over ~16 reports — see
-    `src/lib/trade_reports.py` for why they are the same four shapes.
-    """
     try:
         return trade_reports.trade(
             db, doc_type=doc_type, level=level, group_by=group_by,
             date_from=date_from, date_to=date_to, party_id=party_id,
             item_id=item_id, warehouse_id=warehouse_id, statement=statement,
-            # مستندات الفرع بس — المستندات نفسها مفلترة من زمان في سجلاتها،
-            # والتقرير كان لسه بيجمّع عليها كلها.
             branch_id=branch_scope.visible_branch_id(current),
         )
     except trade_reports.TradeReportError as exc:
@@ -108,20 +100,12 @@ def trade_report(
 @router.get("/stock-as-of")
 def stock_as_of_report(
     as_of: str | None = Query(None, description="ISO date; the stock as it stood that day"),
-    # (031) جرد من تاريخ إلى تاريخ. `date_to` is the day the balance is read at — an alias for
-    # `as_of`, kept so callers that already use `as_of` are untouched.
-    #
-    # There is deliberately NO `date_from` here. A balance is a running total to a moment; summing
-    # only the movements INSIDE a window gives net movement over it, which is a different number
-    # and not a stocktake. The «من» date scopes the movement history a row drills into, and lives
-    # on the screen that asks for it.
     date_to: str | None = Query(None, description="Alias for as_of — the day the balance is read"),
     warehouse_id: int | None = Query(None),
     item_id: int | None = Query(None),
     current: CurrentUser = Depends(require_capability(CAP_STOCK_READ)),
     db: Session = Depends(get_db),
 ):
-    """جرد حق تاريخ — every movement up to that day, nothing after it, valued at cost."""
     return stocktake.stock_as_of(db, as_of=date_to or as_of,
                                  warehouse_id=warehouse_id, item_id=item_id,
                                  branch_id=branch_scope.visible_branch_id(current))
@@ -132,7 +116,6 @@ def reorder_report(
     current: CurrentUser = Depends(require_capability(CAP_STOCK_READ)),
     db: Session = Depends(get_db),
 ):
-    """حد إعادة الطلب — items below their minimum or above their maximum stock (011)."""
     return reporting.reorder(db, branch_id=branch_scope.visible_branch_id(current))
 
 
@@ -155,16 +138,6 @@ def get_summary(
     current: CurrentUser = Depends(require_capability(CAP_SALES_READ)),
     db: Session = Depends(get_db),
 ):
-    """أرقام الرئيسية الكبيرة — **وبفرع اللي بيقرا**.
-
-    التلات أرقام دي (مبيعات، مشتريات، خزنة) كانت بتتحسب على الشركة كلها، فمدير فرع
-    بيفتح الرئيسية فيلاقي إيراد الشركة كلها قدامه — رقم مش بتاعه، وبيخلّي أي مقارنة
-    يعملها بفرعه غلط كمان.
-    """
-    # **بتاريخ المستند، مش بوقت كتابته.** `created_at` في الفواتير المنقولة من a5 هو يومين
-    # النقل نفسهم، فأرقام «الشهر ده» في الرئيسية كانت بتلمّ شغل سنة كاملة أو ترجع صفر —
-    # نفس الغلط اللي اتصلّح في تقارير المبيعات (`trade_reports`) من زمان. الفاتورة من غير
-    # تاريخ بترجع لتاريخ كتابتها بدل ما تقع من الرقم.
     d_from = date.fromisoformat(str(date_from)[:10]) if date_from else None
     d_to = date.fromisoformat(str(date_to)[:10]) if date_to else None
 
@@ -176,7 +149,6 @@ def get_summary(
             stmt = stmt.where(when <= d_to)
         return stmt
 
-    # Calculate total sales (optionally within the requested date range).
     sales_stmt = _apply_dates(branch_scope.scope(select(
         func.sum(SalesInvoice.gross).label("gross"),
         func.sum(SalesInvoice.net).label("net")
@@ -185,16 +157,12 @@ def get_summary(
     sales_gross = sales_res.gross or Decimal("0")
     sales_net = sales_res.net or Decimal("0")
 
-    # Calculate total purchases
     purchases_stmt = _apply_dates(branch_scope.scope(select(
         func.sum(PurchaseInvoice.cash_amount + PurchaseInvoice.credit_amount).label("total")
     ), PurchaseInvoice, current), PurchaseInvoice.purchase_date, PurchaseInvoice.created_at)
     purchases_res = db.execute(purchases_stmt).first()
     purchases_total = purchases_res.total or Decimal("0")
 
-    # Calculate treasury balance
-    # **وخزنة الفرع، مش أول خزنة في الشركة.** كل فرع عنده شجرة حسابات كاملة، فحساب
-    # الخزنة بيتاخد من فرع اللي بيقرا — والقديم كان بياخد أول صف طالع من القاعدة.
     treasury_acc = db.scalar(branch_scope.scope(
         select(Account).where(Account.account_type == AccountType.treasury),
         Account, current))
@@ -219,17 +187,10 @@ def export_report(
     current: CurrentUser = Depends(require_capability(CAP_SALES_READ)),
     db: Session = Depends(get_db),
 ):
-    """تصدير CSV سريع من «التقارير الشاملة».
-
-    **بالأسماء مش بالأرقام الداخلية.** الملف كان بيطلّع «كود العميل» = رقم الصف في قاعدتنا
-    و«نوع الحساب» = اسم الـenum بالإنجليزي — أرقام مالهاش معنى عند اللي بيفتح الإكسل.
-    **وبالفترة المختارة فوق:** كان بيصدّر كل فواتير الشركة من أول يوم مهما كانت الفترة.
-    """
     output = io.StringIO()
     wanted = report_statement.needle(statement)
 
     def _csv(*values) -> str:
-        # الفاصلة جوّه اسم عميل أو بيان كانت بتكسر العمود — كل قيمة بين علامتين.
         return ",".join('"' + str("" if v is None else v).replace('"', '""') + '"'
                         for v in values) + "\n"
 
@@ -271,11 +232,10 @@ def export_report(
                               names.get(inv.supplier_id, ""), report_statement.text_of(inv),
                               inv.cash_amount, inv.credit_amount))
 
-    else: # treasury balance report
+    else:
         from src.services import chart_service
 
         output.write(_csv("رقم الحساب", "اسم الحساب", "المجموعة", "الرصيد المتاح"))
-        # حسابات فرع اللي بيصدّر بس — زي الرئيسية بالظبط.
         accounts = db.scalars(branch_scope.scope(select(Account), Account, current)).all()
         owners = chart_service.bulk_owner_names(db, list(accounts))
         for acc in accounts:
@@ -283,7 +243,6 @@ def export_report(
             output.write(_csv(acc.code or "", acc.name or owners.get(acc.id) or "",
                               chart_service.owner_group_label(acc.account_type) or "", bal))
 
-    # Encode in UTF-8 with BOM for proper Arabic Excel compatibility
     csv_bytes = output.getvalue().encode('utf-8-sig')
     
     return StreamingResponse(
@@ -295,16 +254,7 @@ def export_report(
 
 @router.get("/health")
 def system_health(
-    # `sales.read` rather than admin-only: the point of the screen is that the person who can act
-    # on a finding sees it without asking. The findings name documents and items they already have
-    # every right to open — the diagnosis is not more sensitive than the thing diagnosed.
     current: CurrentUser = Depends(require_capability(CAP_SALES_READ)),
     db: Session = Depends(get_db),
 ):
-    """فحص النظام — كل حاجة فيها خلل في نداء واحد.
-
-    Read-only, and deliberately one call: the dashboard asking eleven endpoints would be eleven
-    round trips to render one page, and would leave the page half-answered whenever one of them
-    failed.
-    """
     return health.run_all(db, branch_id=branch_scope.visible_branch_id(current))

@@ -1,14 +1,3 @@
-"""Expiry batches for perishable items — 011.
-
-A perishable item is not tracked as one pile of stock but as lots, each with its own expiry date.
-Selling draws from the lot that expires soonest (FEFO), which is what stops newer stock going out
-while older stock quietly goes bad on the shelf.
-
-The invariant everything here protects: **for a perishable item at a location, the sum of its batch
-quantities equals its derived on-hand there**. Every operation moves both sides together — receive
-adds a batch AND posts a stock-in, a sale depletes batches AND posts a stock-out. If they were
-allowed to drift, the expiry report would describe stock that isn't there.
-"""
 from __future__ import annotations
 
 from datetime import date
@@ -28,7 +17,7 @@ ZERO_QTY = Decimal("0.000")
 
 
 class BatchError(Exception):
-    """Invalid batch operation (not perishable, missing expiry, insufficient lots, ...)."""
+    pass
 
 
 def _log(
@@ -36,11 +25,6 @@ def _log(
     kind: BatchMovementKind, quantity, document_type: str | None = None,
     document_id: int | None = None, actor_user_id: int | None = None,
 ) -> None:
-    """Record a draw on a lot.
-
-    Written at the moment it happens because it cannot be worked out later: a stock movement says
-    how much moved and when, never which expiry lot it came out of. FEFO makes that choice here.
-    """
     db.add(StockBatchMovement(
         item_id=item_id, expiry_date=expiry, location_kind=location_kind,
         location_id=location_id, kind=kind, quantity=quantity,
@@ -67,11 +51,6 @@ def _find(db: Session, item_id: int, kind: LocationKind, loc_id: int,
 
 def _upsert(db: Session, *, item_id: int, kind: LocationKind, loc_id: int,
             expiry: date, quantity: Decimal) -> StockBatch:
-    """Add to the lot with this exact expiry at this location, creating it the first time.
-
-    Two deliveries of the same item expiring the same day are the same lot — keeping them apart
-    would just make the expiry report longer without telling anyone anything new.
-    """
     batch = _find(db, item_id, kind, loc_id, expiry)
     if batch is None:
         batch = StockBatch(item_id=item_id, location_kind=kind, location_id=loc_id,
@@ -85,7 +64,6 @@ def _upsert(db: Session, *, item_id: int, kind: LocationKind, loc_id: int,
 
 def receive(db: Session, *, item_id: int, location_kind: LocationKind, location_id: int,
             expiry_date: date, quantity: Decimal, actor_user_id: int) -> StockBatch:
-    """Take a lot into stock: register the batch and post the matching stock-in."""
     item = db.get(Item, item_id)
     if item is None:
         raise BatchError("الصنف مش موجود.")
@@ -113,15 +91,6 @@ def add_to_lot(db: Session, *, item_id: int, location_kind: LocationKind, locati
                expiry_date: date, quantity: Decimal,
                document_type: str | None = None, document_id: int | None = None,
                actor_user_id: int | None = None) -> StockBatch:
-    """الدفعة بس — من غير حركة مخزون.
-
-    `receive` posts the stock-in itself, which is right when a lot IS the document. It is wrong
-    for a caller that has already posted its own movement — a stock permit, say — because the
-    goods would be counted twice: once by the permit and once here.
-
-    So this is the batch half on its own, the mirror of `restore_for_return`. Both halves still
-    move together; the caller just owns one of them.
-    """
     item = db.get(Item, item_id)
     if item is None:
         raise BatchError("الصنف مش موجود.")
@@ -143,11 +112,6 @@ def consume_fefo(db: Session, *, item_id: int, location_kind: LocationKind, loca
                  quantity: Decimal, log_kind: BatchMovementKind | None = None,
                  document_type: str | None = None, document_id: int | None = None,
                  actor_user_id: int | None = None) -> list[tuple[date, Decimal]]:
-    """Draw `quantity` from the lots that expire soonest. Returns what came from each lot.
-
-    Only the batch side moves here — the caller (a sale) posts its own stock-out, so the two stay
-    in step. A shortfall is refused rather than partially applied: half a sale is worse than none.
-    """
     item = db.get(Item, item_id)
     if item is None:
         raise BatchError("الصنف مش موجود.")
@@ -162,7 +126,7 @@ def consume_fefo(db: Session, *, item_id: int, location_kind: LocationKind, loca
             StockBatch.location_kind == location_kind,
             StockBatch.location_id == location_id,
             StockBatch.quantity > 0,
-        ).order_by(StockBatch.expiry_date, StockBatch.id)   # earliest expiry, then oldest lot
+        ).order_by(StockBatch.expiry_date, StockBatch.id)
     ).all()
 
     available = to_qty(sum((Decimal(str(b.quantity)) for b in batches), ZERO_QTY))
@@ -181,8 +145,6 @@ def consume_fefo(db: Session, *, item_id: int, location_kind: LocationKind, loca
         batch.quantity = to_qty(have - use)
         remaining = to_qty(remaining - use)
         taken.append((batch.expiry_date, use))
-        # `log_kind` rather than a fixed «consumed»: a relocation draws down the source through
-        # this same path, and calling that a consumption would say goods were sold that only moved.
         _log(db, item_id=item_id, expiry=batch.expiry_date, location_kind=location_kind,
              location_id=location_id, kind=log_kind or BatchMovementKind.consumed, quantity=use,
              document_type=document_type, document_id=document_id, actor_user_id=actor_user_id)
@@ -194,16 +156,6 @@ def relocate(db: Session, *, item_id: int, from_kind: LocationKind, from_id: int
              to_kind: LocationKind, to_id: int, quantity: Decimal,
              transfer_id: int | None = None,
              actor_user_id: int | None = None) -> list[tuple[date, Decimal]]:
-    """Move `quantity` of a perishable item between locations, earliest-expiring lots first.
-
-    A transfer moves the goods; the lots record *when they expire*, so they move too. Leaving them
-    behind would make the source's expiry report list goods it no longer has and the destination's
-    list nothing at all — and FEFO at the destination would have nothing to draw from, so a sale
-    there would be refused for stock that is physically present.
-
-    Earliest-expiring first for the same reason FEFO does it: if some of a lot must move, the stock
-    that must be sold soonest should be where it can be sold.
-    """
     item = db.get(Item, item_id)
     if item is None:
         raise BatchError("الصنف مش موجود.")
@@ -226,12 +178,6 @@ def restore_for_return(db: Session, *, item_id: int, location_kind: LocationKind
                        location_id: int, expiry_date: date, quantity: Decimal,
                        invoice_id: int | None = None,
                        actor_user_id: int | None = None) -> StockBatch:
-    """Put returned goods back into the lot for their expiry date.
-
-    The caller's return already posts the stock-in; this only moves the batch side. The expiry has
-    to be supplied because a sale does not record which lot each unit came from — asking for it
-    keeps the batch sum honest instead of guessing a date.
-    """
     item = db.get(Item, item_id)
     if item is None:
         raise BatchError("الصنف مش موجود.")
@@ -252,7 +198,6 @@ def restore_for_return(db: Session, *, item_id: int, location_kind: LocationKind
 def expiring(db: Session, *, before: date, item_id: int | None = None,
              location_kind: LocationKind | None = None,
              location_id: int | None = None) -> list[dict]:
-    """Lots at or before a cutoff date that still hold stock — soonest first."""
     stmt = select(StockBatch, Item).join(Item, Item.id == StockBatch.item_id).where(
         StockBatch.expiry_date <= before,
         StockBatch.quantity > 0,
@@ -278,7 +223,6 @@ def expiring(db: Session, *, before: date, item_id: int | None = None,
 
 def on_hand_in_batches(db: Session, *, item_id: int, location_kind: LocationKind,
                        location_id: int) -> Decimal:
-    """Total across the item's lots at a location — the figure that must equal derived on-hand."""
     rows = db.scalars(
         select(StockBatch.quantity).where(
             StockBatch.item_id == item_id,

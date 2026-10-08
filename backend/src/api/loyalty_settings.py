@@ -1,4 +1,3 @@
-"""Coupon-type catalog router (T019). FR-015."""
 from __future__ import annotations
 
 from decimal import Decimal
@@ -92,17 +91,6 @@ def delete_type(
     _: CurrentUser = Depends(require_capability(CAP_LOYALTY_SETTINGS_WRITE)),
     db: Session = Depends(get_db),
 ) -> None:
-    """حذف نوع الكوبون — والنوع اللي اتصرف منه كوبونات بيتقفل بدل ما يتمسح.
-
-    `coupon.coupon_type_id` عمود **مش بيقبل الفراغ**، وكوبون مصروف بيحتفظ بنوعه عشان
-    يفضل مقروء بعد سنة. فمسح النوع بيسيب صفوف بتشاور على حاجة مش موجودة — والقاعدة
-    بترفض العملية أصلاً وبترجّع خطأ ٥٠٠ مالوش معنى للّي دايس الزرار.
-
-    واللي بيدوس «حذف» على نوع اتصرف منه كوبونات عايز حاجة واحدة: إنه مايظهرش تاني في
-    قايمة الصرف. والإقفال بيعمل ده بالظبط، وبيسيب الكوبونات القديمة تقرا صح.
-
-    النوع اللي عمره ما اتصرف منه حاجة بيتمسح فعلاً — مافيش سبب يفضل.
-    """
     ct = db.get(CouponType, type_id)
     if ct is None:
         raise HTTPException(404, {"code": "not_found", "message": "نوع الكوبون مش موجود"})

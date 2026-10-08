@@ -1,20 +1,3 @@
-"""يفصل الملّاك عن كشف العملاء إلى جدول `owner`.
-
-الاستخدام:
-    # الخطوة 1: النقل وربط المعاينات (دراي-رن)
-    python -m src.scripts.split_owners
-
-    # الخطوة 1 الفعلية:
-    python -m src.scripts.split_owners --yes
-
-    # الخطوة 2: الحذف النهائي للـ 7045 مالك من جدول customer (دراي-رن)
-    python -m src.scripts.split_owners --purge
-
-    # الخطوة 2 الفعلية:
-    python -m src.scripts.split_owners --purge --yes
-
-Idempotent: يمكن إعادة تشغيله بأمان.
-"""
 from __future__ import annotations
 
 import re
@@ -30,7 +13,6 @@ from src.models.owner import Owner
 def run_split(*, execute: bool) -> None:
     db = SessionLocal()
     try:
-        # 1. جلب كل العملاء من نوع مالك
         owner_customers = db.scalars(
             select(Customer).where(Customer.customer_type == "owner")
         ).all()
@@ -38,7 +20,6 @@ def run_split(*, execute: bool) -> None:
         existing_owners = db.scalars(select(Owner)).all()
         by_code = {o.code: o for o in existing_owners if o.code}
 
-        # جلب بيانات إضافية من المعاينات الخاصة بهؤلاء الملاك (national_id, floor_number) إن وجدت
         cust_ids = [c.id for c in owner_customers]
         insp_extra = {}
         if cust_ids:
@@ -84,7 +65,6 @@ def run_split(*, execute: bool) -> None:
 
         db.flush()
 
-        # خريطة المعاينات لكل مالك
         owner_cust_ids = set(cust_to_owner.keys())
         inspections = db.scalars(select(Inspection)).all()
 
@@ -134,7 +114,6 @@ _A5_CODE = re.compile(r"^(AL-)?A5[A-Z]*-?\d+$")
 def run_purge(*, execute: bool) -> None:
     db = SessionLocal()
     try:
-        # فحص أمان صارم قبل حذف أي صف من customer
         owner_customers = db.scalars(
             select(Customer).where(Customer.customer_type == "owner")
         ).all()
@@ -143,10 +122,6 @@ def run_purge(*, execute: bool) -> None:
             print("جدول customer نظيف تماماً — لا يوجد أي عميل من نوع 'owner'.")
             return
 
-        # ⚠️ **كارت بكود a5 عمره ما يتمسح من هنا.** الحذف ده مشى على التصنيف
-        # لوحده، والتصنيف كان بيتدهس من `import_erp_parties` لما اسم مالك في ERP
-        # يطابق تاجر عند a5 — فاتمسح ٤٩٩ كارت a5 في العلياء. التصنيف رأي، والكود
-        # هوية: `AL-A5-<Cust_id>` بيشاور على صف حقيقي في `Cust` عندهم.
         a5_typed = [c for c in owner_customers if c.code and _A5_CODE.match(c.code)]
         if a5_typed:
             print(f"⚠ {len(a5_typed)} كارت كوده كود a5 ومتصنّف «مالك» — اتستثنوا من الحذف:")
@@ -159,7 +134,6 @@ def run_purge(*, execute: bool) -> None:
 
         owner_ids = [c.id for c in owner_customers]
 
-        # 1. التأكد أن كل مالك له صف في owner
         owners_by_code = {o.code: o for o in db.scalars(select(Owner)).all() if o.code}
         missing_in_owner = [c for c in owner_customers if c.code and c.code not in owners_by_code]
         if missing_in_owner:
@@ -168,7 +142,6 @@ def run_purge(*, execute: bool) -> None:
                 print(f"  - [{m.id}] {m.code} : {m.name}")
             return
 
-        # 2. التأكد أنه لا توجد معاينة ما زالت تشير إليهم عبر customer_id
         insp_still_linked = db.scalars(
             select(Inspection).where(Inspection.customer_id.in_(owner_ids))
         ).all()
@@ -176,7 +149,6 @@ def run_purge(*, execute: bool) -> None:
             print(f"❌ خطأ أمان: يوجد {len(insp_still_linked)} معاينة ما زالت تشير إلى customer_id لمالك!")
             return
 
-        # 3. التأكد من خلوهم التام من أي حركة مالية أو ربط كتاجر أو مفتاح جسر
         sql_check = text("""
             SELECT c.id, c.code, c.name,
                 EXISTS(SELECT 1 FROM sales_invoice si WHERE si.customer_id = c.id) AS has_inv,
@@ -216,19 +188,16 @@ def run_purge(*, execute: bool) -> None:
             print("\n[عرض فقط — DRY RUN] لم يتم حذف أي صف. أضف --yes للحذف الفعلي.")
             return
 
-        # حذف حسابات العملاء التابعة لهم إن وجدت (customer_account)
         accounts_deleted = db.execute(
             text("DELETE FROM customer_account WHERE customer_id = ANY(:ids)"),
             {"ids": owner_ids}
         ).rowcount
 
-        # حذف جهات الاتصال التابعة لهم إن وجدت
         phones_deleted = db.execute(
             text("DELETE FROM contact_phone WHERE owner_type = 'customer' AND owner_id = ANY(:ids)"),
             {"ids": owner_ids}
         ).rowcount
 
-        # حذف صفوف العملاء
         deleted_count = db.execute(
             text("DELETE FROM customer WHERE id = ANY(:ids)"),
             {"ids": owner_ids}

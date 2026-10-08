@@ -8,10 +8,6 @@ import '../screens/supervisor_home_screen.dart';
 import '../services/app_updater.dart';
 import '../theme.dart';
 
-/// اللي مشترك بين قايمة المندوب وقايمة المشرف: اسم الدور، تحديث التطبيق، الخروج،
-/// والشاشة اللي بتفتح بعد الدخول.
-
-/// اسم الدور زي ما بيتقال — تحت الاسم في القايمة.
 String roleLabel(String? role) => switch (role) {
       ApiClient.supervisorRole => 'مشرف مناديب',
       'sales_rep' => 'مندوب',
@@ -26,15 +22,10 @@ String roleLabel(String? role) => switch (role) {
       _ => 'مندوب',
     };
 
-/// **الشاشة الرئيسية حسب الدور.** المشرف بيفتح على متابعة المناديب — شاشة المندوب
-/// بتزامن وتسحب حزمة البيع، وده كله بيرجع ٤٠٣ لحد مالوش عربية ولا مخزن.
 Future<Widget> postLoginHome() async => await ApiClient.instance.isSupervisor()
     ? const SupervisorHomeScreen(isRoot: true)
     : const HomeScreen();
 
-/// تسجيل الخروج بعد التأكيد. [warning] بيتقال بدل «متأكد؟» لو فيه شغل مستني.
-///
-/// بيمسح التوكن بس — الداتا بتفضل لحد ما حد تاني يدخل (`ApiClient.login` بيحكم ده).
 Future<void> confirmLogout(BuildContext context, {String? warning}) async {
   final confirm = await showDialog<bool>(
     context: context,
@@ -51,7 +42,6 @@ Future<void> confirmLogout(BuildContext context, {String? warning}) async {
   await forgetSession(context);
 }
 
-/// بيمسح التوكن ويرجع لشاشة الدخول من غير سؤال — للجلسة اللي خلصت (٤٠١).
 Future<void> forgetSession(BuildContext context) async {
   await (await LocalDb.instance.db).delete('kv', where: 'key = ?', whereArgs: ['token']);
   if (!context.mounted) return;
@@ -59,8 +49,6 @@ Future<void> forgetSession(BuildContext context) async {
       MaterialPageRoute(builder: (_) => const LoginScreen()), (_) => false);
 }
 
-/// «تحديث التطبيق» — بيسأل السيرفر **دايماً** (مافيش تقنين ولا تأجيل) وبيقول النتيجة
-/// تحت. التحديث بيتسأل عليه لوحده كمان: عند الفتح، والرجوع من الخلفية، وبعد المزامنة.
 class AppUpdateTile extends StatefulWidget {
   const AppUpdateTile({super.key});
 
@@ -69,7 +57,6 @@ class AppUpdateTile extends StatefulWidget {
 }
 
 class _AppUpdateTileState extends State<AppUpdateTile> {
-  /// «0.3.3 (6)» — أول سؤال الدعم بيسأله في التليفون.
   String? _version;
 
   @override
@@ -109,7 +96,6 @@ class _AppUpdateTileState extends State<AppUpdateTile> {
   }
 }
 
-/// رأس القايمة — الاسم والدور على التدرّج.
 class SessionDrawerHeader extends StatelessWidget {
   const SessionDrawerHeader({super.key, required this.name, required this.role, this.icon});
 

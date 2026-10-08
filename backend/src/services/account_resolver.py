@@ -1,9 +1,3 @@
-"""Resolve/create the ledger accounts Sales & Inventory posts to (T002).
-
-Reuses the Foundation `account` table and ledger — no new ledger, no balance store. Singleton
-P&L accounts (sales_revenue, purchases_expense) and the consolidated treasury are get-or-created;
-the actor's cash location resolves to their custody (rep) or the treasury (branch/back-office).
-"""
 from __future__ import annotations
 
 from sqlalchemy import select
@@ -13,7 +7,6 @@ from src.models.ledger import Account, AccountNature, AccountType, Direction
 from src.models.role import RoleName
 from src.models.warehouse import Custody
 
-# Normal balance side per account type (debit-normal assets/expenses, credit-normal income/liabs).
 NORMAL_SIDE: dict[AccountType, Direction] = {
     AccountType.treasury: Direction.debit,
     AccountType.custody: Direction.debit,
@@ -22,12 +15,9 @@ NORMAL_SIDE: dict[AccountType, Direction] = {
     AccountType.sales_revenue: Direction.credit,
     AccountType.purchases_expense: Direction.debit,
     AccountType.loyalty_expense: Direction.debit,
-    # General Ledger (005) — equity that opening-balance entries offset against.
     AccountType.opening_balance_equity: Direction.credit,
 }
 
-# Chart classification (005): which AccountNature each system account type belongs to, and the
-# normal side each nature posts on (asset/expense → debit; liability/equity/income → credit).
 NATURE_NORMAL_SIDE: dict[AccountNature, Direction] = {
     AccountNature.asset: Direction.debit,
     AccountNature.expense: Direction.debit,
@@ -38,11 +28,10 @@ NATURE_NORMAL_SIDE: dict[AccountNature, Direction] = {
 
 
 class AccountResolutionError(Exception):
-    """Raised when a required account (e.g., a rep's custody) cannot be resolved."""
+    pass
 
 
 def _routed(db: Session, account_type: AccountType, branch_id: int) -> Account | None:
-    """The admin-configured account for this type, if any. Imported late to avoid a cycle."""
     from src.services import account_routing_service
 
     for role, typ in account_routing_service.ROUTABLE.items():
@@ -54,27 +43,12 @@ def _routed(db: Session, account_type: AccountType, branch_id: int) -> Account |
 def get_or_create_singleton(
     db: Session, account_type: AccountType, *, branch_id: int | None = None
 ) -> Account:
-    """Get-or-create the one owner-less system account of a type **for a branch** (024).
-
-    Each branch has its own treasury / revenue / purchases / equity. When no branch is given
-    the default (main) branch is used, which keeps the pre-multi-branch callers working
-    unchanged — and a legacy branch-less account is adopted into the main branch rather than
-    duplicated, so existing balances stay intact.
-    """
     from src.services import org_service
 
     bid = org_service.resolve_branch_id(db, branch_id)
-    # التوجيه المحاسبي: if an admin has pointed this role at one of their own accounts, that wins.
-    # Checked here rather than in each caller so every posting in the system obeys the setting —
-    # a routing half the modules respect would be worse than none.
     routed = _routed(db, account_type, bid)
     if routed is not None:
         return routed
-    # الترتيب مش تجميل. من (009) بقى فيه صناديق a5 حقيقية بنوع `treasury` على نفس الفرع —
-    # «صندوق بونص» و«صندوق بيع عدد وأدوات» مالهمش صاحب، فـ`owner_ref` بتاعهم NULL وبيدخلوا
-    # في الشرط ده. من غير ترتيب ثابت الاختيار بيبقى مزاج القاعدة: الخزنة العامة ممكن تطلع
-    # صندوق البونص النهارده والمركز الرئيسي بكرة، والفلوس تتقسم على مكانين من غير ما حد يعرف.
-    # `is_system` هي اللي بتقول «دي الخزنة العامة»، والـ id أقدم واحد كسر تعادل ثابت.
     acc = db.scalar(
         select(Account)
         .where(
@@ -86,7 +60,6 @@ def get_or_create_singleton(
     )
     if acc is not None:
         return acc
-    # Adopt a pre-024 branch-less account into the main branch (never into a secondary branch).
     if bid == org_service.default_branch(db).id:
         legacy = db.scalar(
             select(Account).where(
@@ -125,13 +98,11 @@ def loyalty_expense_account(db: Session, *, branch_id: int | None = None) -> Acc
 
 
 def opening_balance_equity_account(db: Session, *, branch_id: int | None = None) -> Account:
-    """The equity account that opening-balance entries offset against (005)."""
     return get_or_create_singleton(
         db, AccountType.opening_balance_equity, branch_id=branch_id)
 
 
 def _rep_name(db: Session, user_id: int) -> str:
-    """اسم المندوب زي ما المكتب بيناديه — عشان رسالة الخطأ تقول مين، مش رقم."""
     from src.models.user import User
 
     u = db.get(User, user_id)
@@ -142,20 +113,7 @@ def resolve_cash_account(
     db: Session, *, role: RoleName, user_id: int, family: str | None = None,
     branch_id: int | None = None,
 ) -> Account:
-    """The actor's cash location: the Sales Rep's safe **for this product line**, else the treasury.
-
-    a5 gives every car rep two safes — «صندوق أبيض السيارة (أ)» و«صندوق بولي السيارة (أ)» — and
-    the cash splits by line exactly the way the debt does. So `family` here is the SAME value that
-    picked the customer's receivable account: one invoice, one line, both sides.
-
-    ⚠️ **مافيش وقوع على صندوق تاني.** المندوب اللي مالوش صندوق للخط ده بيترفض بالاسم — الخط
-    والمندوب — لأن الفلوس اللي بتنزل في صندوق غلط مافيش حاجة بتقولها بعدين: القيد بيتوازن،
-    والرصيد بيبان معقول، والفرق مايظهرش غير في جرد بعد شهر ومحدش عارف منين جه.
-    """
     if role != RoleName.sales_rep:
-        # **خزنة فرع المستند** (`branch_id`)، وإلا فرع اللي بيكتب. (٢٠٢٦-١٠-٠٤ — خزنة لكل فرع)
-        # من غير فرع كانت بترجع خزنة الفرع الافتراضي (أكتوبر) لأي حد في المكتب، فكاش فاتورة
-        # العلياء كان هيقع في خزنة أكتوبر.
         if branch_id is None:
             from src.models.user import User
 
@@ -163,7 +121,6 @@ def resolve_cash_account(
             branch_id = user.branch_id if user is not None else None
         return treasury_account(db, branch_id=branch_id)
 
-    # النشط الأول عند التعادل — عهدة اتقفلت مايتقيّدش عليها وفيه واحدة شغالة جنبها.
     rows = db.scalars(
         select(Custody)
         .where(Custody.rep_id == user_id)
@@ -182,8 +139,6 @@ def resolve_cash_account(
             )
         custody = match[0]
     else:
-        # نداء من غير خط (الشراء، السندات، وكل اللي قبل التقسيم): العهدة اللي مش متقسّمة،
-        # وإلا الوحيدة لو عنده واحدة بس. اتنين متقسّمين من غير خط = اختيار مالوش أساس.
         plain = [c for c in rows if c.family is None]
         if plain:
             custody = plain[0]
@@ -204,11 +159,6 @@ def resolve_cash_account(
 
 
 def explicit_treasury(db: Session, account_id: int | None) -> Account | None:
-    """الخزنة اللي الشاشة اختارتها — أو `None` لو مااتبعتش حاجة.
-
-    الرقم جاي من العميل فمابيتصدّقش: حساب مبيعات أو حساب عميل اتحطّ في الخانة دي بيخلّي
-    الكاش يترحّل على حاجة مش خزنة أصلاً — والقيد بيتوازن، فمافيش حاجة بتشتكي.
-    """
     if account_id is None:
         return None
     acc = db.get(Account, account_id)

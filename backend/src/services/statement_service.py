@@ -1,9 +1,3 @@
-"""Account statements — كشف حساب (018-finance-vouchers).
-
-A running-balance statement for one ledger account over a period: the opening balance carried
-from everything before `date_from`, every movement inside the window, and the closing balance.
-Signed by the account's normal side, so a customer's «مدين» reads positive = he owes us.
-"""
 from __future__ import annotations
 
 from collections.abc import Callable, Sequence
@@ -35,57 +29,28 @@ class StatementLine:
     description: str
     debit: Decimal
     credit: Decimal
-    balance_before: Decimal  # the balance this movement started from
-    balance: Decimal  # running, signed by the account's normal side
-    # (031) Their كشف حساب carries a cost-centre column. The journal line has always held it and
-    # the statement dropped it, so «which project was this against?» meant opening the entry.
+    balance_before: Decimal
+    balance: Decimal
     cost_center_id: int | None = None
     cost_center_name: str | None = None
-    # المندوب اللي حرّك السطر ده. `LedgerEntry.rep_id` كان موجود من زمان والكشف مكانش بيقراه —
-    # فسؤال «المندوب ده حرّك إيه على الحساب ده» مكانش ليه إجابة من الشاشة، والفلتر اللي
-    # المفروض يجاوبه كان مطفي على طول لأن مافيش اسم بيوصل أصلاً.
-    #
-    # A manual journal entry has no rep, and that is a real answer rather than a gap: `None` means
-    # nobody's round put it there.
     rep_id: int | None = None
     rep_name: str | None = None
-    # (a5) الكشف المجمّع — الحساب الرئيسي وتحته كل الفرعيين — بيحتاج كل سطر يقول هو بتاع
-    # مين: عمود «الحساب الفرعي» عندهم. في كشف الحساب الواحد الاتنين بيبقوا نفس الاسم
-    # المكرر، فالشاشة بتخفيهم؛ هنا هما المعلومة.
     account_id: int | None = None
     account_name: str | None = None
-    # ── المطابقة (زي أودو) ────────────────────────────────────────────────────
-    # السطر بيقول قيمته **واللي لسه مفتوح منها**. الكشف اللي بيعرض القيمة بس بيخلّي
-    # اللي بيقراه يجمع الدفعات بنفسه عشان يعرف الفاتورة دي عليها كام لسه — وده
-    # بالظبط السؤال اللي بيتفتح الكشف عشانه.
     line_id: int | None = None
-    residual: Decimal | None = None        # None = حساب مابيتقفلش (مش ذمم)
+    residual: Decimal | None = None
     due_date: date | None = None
-    days_overdue: int | None = None        # موجب = فات ميعاده، None = مش مستحق بعد
+    days_overdue: int | None = None
     payment_state: str | None = None
     payment_state_label: str | None = None
-    # المستندات اللي قفلت جزء من السطر ده: الدفعة بتقول سدّدت أنهي فواتير، والفاتورة
-    # بتقول اتسدّدت بأنهي دفعات — نفس الجدول مقروء من الوشين.
     matches: tuple = ()
-    # سطر «مدفوع نقداً مع الفاتورة» — مش سطر في القيد، الكشف بيفصله (شوف `_cash_on_invoices`).
     cash_on_invoice: bool = False
-    # رصيد **حساب السطر لوحده** قبل وبعد الحركة — غير `balance` اللي هو رصيد الكشف كله.
-    # في كشف «الخزينة» الرصيد الجاري الواحد بيجمع كل الصناديق، فاللي عايز يقرا صندوق
-    # صندوق (التجميع بالحساب الفرعي في الشاشة، زي ورقة a5) محتاج رصيد كل صندوق لوحده.
-    # بيتحسب في نفس اللفّة، فمافيش استعلام زيادة. في كشف الحساب الواحد هو نفس `balance`.
     account_balance_before: Decimal | None = None
     account_balance: Decimal | None = None
 
 
 @dataclass(frozen=True)
 class AccountSummary:
-    """حساب فرعي في الكشف: رصيده أول المدة، حركته في الفترة، ورصيده آخرها.
-
-    الحساب اللي مالوش حركة في الفترة **بس عليه رصيد** بيتعرض (رصيد أول المدة لوحده) —
-    صندوق ماتحركش الشهر ده وفيه فلوس لسه جزء من رصيد الخزينة، وإخفاؤه بيخلّي مجموع
-    الأقسام مايطلعش الرصيد الكلي. اللي صفر وماتحركش بيتشال: سطر أصفار مابيقولش حاجة.
-    """
-
     account_id: int
     account_name: str
     code: str | None
@@ -99,20 +64,12 @@ class AccountSummary:
 
 @dataclass(frozen=True)
 class AgingBuckets:
-    """أعمار المستحق على تاريخ الكشف. الشرائح زي أودو: الحالي ثم ٣٠/٦٠/٩٠ ثم أقدم.
-
-    الشرائح **بإشارتها**، فمجموعها = المستحق بالظبط — وده اللي بيخلّي الجدول قابل
-    للمراجعة. ومعنى إن شريحة تطلع بالسالب إن فيه دفعات غير مخصومة أحدث من فواتيرها،
-    وده وضع حقيقي مش غلط حساب؛ `credit_open` بيقوله بصوت عالي بدل ما يتقرا من إشارة.
-    """
-
     current: Decimal = ZERO
     d30: Decimal = ZERO
     d60: Decimal = ZERO
     d90: Decimal = ZERO
     older: Decimal = ZERO
     total: Decimal = ZERO
-    # المفتوح مفصول: المطلوب من الطرف، والدفعات اللي لسه ماتخصمتش من فاتورة.
     debit_open: Decimal = ZERO
     credit_open: Decimal = ZERO
 
@@ -126,23 +83,13 @@ class Statement:
     total_debit: Decimal
     total_credit: Decimal
     lines: list[StatementLine]
-    # (031) Their كشف حساب names الحساب الرئيسي beside الحساب الفرعي. Ours showed one name and
-    # left the reader to know which book a sub-account sits under — «إيراد المبيعات» is not
-    # self-locating, and two charts can hold a name that reads the same at different levels.
     main_account_id: int | None = None
     main_account_name: str | None = None
-    # ── المستحق (زي أودو) ─────────────────────────────────────────────────────
-    # **بيتحسب على كل السطور المفتوحة لحد تاريخ القفل، مش على الفترة المعروضة.**
-    # «هو عليه كام» سؤال عن الحساب، مش عن الشباك اللي فتحته: عميل عليه فاتورة من
-    # يناير وأنا فاتح كشف سبتمبر لازم أشوفها في المستحق، وإلا الرقم بيطمّن غلط.
     total_due: Decimal = ZERO
     total_overdue: Decimal = ZERO
     aging: AgingBuckets = AgingBuckets()
-    reconcilable: bool = False   # حساب ذمم؟ لو لأ، أعمدة المطابقة مالهاش معنى
-    # ناحية الحساب الطبيعية (debit/credit) — الشاشة بتقسم الرصيد على «رصيد مدين / رصيد دائن»
-    # زي ورقة a5، ومن غيرها الرصيد الدائن لمورد كان هيتكتب «مدين».
+    reconcilable: bool = False
     normal_side: str | None = None
-    # كل حساب فرعي بأرصدته (شوف `AccountSummary`) — مجموع إقفالاتهم = `closing_balance`.
     account_summaries: tuple[AccountSummary, ...] = ()
 
 
@@ -151,11 +98,6 @@ def _effective_date(entry: LedgerEntry) -> date:
 
 
 def _matches_by_line(db: Session, line_ids: list[int]) -> dict[int, list[dict]]:
-    """المستندات اللي قفلت جزء من كل سطر — استعلامين مهما كان عدد السطور.
-
-    استعلام لكل سطر على كشف فيه ٤٠٠ حركة = ٤٠٠ رحلة للقاعدة، والكشف بيبقى بيفتح
-    في تانية بدل ما يفتح.
-    """
     if not line_ids:
         return {}
     wanted = set(line_ids)
@@ -168,7 +110,6 @@ def _matches_by_line(db: Session, line_ids: list[int]) -> dict[int, list[dict]]:
     if not pairs:
         return {}
 
-    # الطرف التاني لكل ربط — سطر واحد ممكن يكون مقفول على كذا مستند.
     other_ids = set()
     for pair in pairs:
         other_ids.add(pair.debit_line_id)
@@ -202,11 +143,6 @@ def _matches_by_line(db: Session, line_ids: list[int]) -> dict[int, list[dict]]:
 
 
 def payment_terms_days(db: Session) -> int:
-    """مهلة السداد المتفق عليها. صفر = الفاتورة مستحقة يوم ما اتكتبت.
-
-    بتتقرا مرة واحدة لكل كشف مش لكل سطر: استعلام جوّه حلقة على ٤٠٠ حركة هو نفس
-    السؤال متسأل ٤٠٠ مرة.
-    """
     from src.models.accounting_setting import AccountingSetting
 
     row = db.scalar(select(AccountingSetting).limit(1))
@@ -214,14 +150,12 @@ def payment_terms_days(db: Session) -> int:
 
 
 def due_date_of(line: LedgerLine, when: date, terms: int) -> date:
-    """تاريخ استحقاق السطر: المكتوب عليه، وإلا تاريخه + المهلة."""
     if line.date_maturity:
         return line.date_maturity
     return when + timedelta(days=terms) if terms else when
 
 
 def _days_overdue(line: LedgerLine, when: date, as_of: date, terms: int = 0) -> int | None:
-    """كام يوم فات على استحقاق السطر ده. `None` لو مافيش متبقّي — يعني اتقفل خلاص."""
     if line.amount_residual is None or to_money(line.amount_residual) == ZERO:
         return None
     days = (as_of - due_date_of(line, when, terms)).days
@@ -229,7 +163,6 @@ def _days_overdue(line: LedgerLine, when: date, as_of: date, terms: int = 0) -> 
 
 
 def _age_bucket(days: int) -> str:
-    """الشريحة اللي المبلغ ده وقع فيها. السالب = لسه مااستحقّش."""
     if days <= 0:
         return "current"
     if days <= 30:
@@ -244,12 +177,6 @@ def _age_bucket(days: int) -> str:
 def due_summary(
     db: Session, *, account_ids: Sequence[int], as_of: date | None = None,
 ) -> tuple[Decimal, Decimal, AgingBuckets]:
-    """المستحق والمتأخر وأعمار الديون على حساب (أو مجموعة حسابات) في تاريخ.
-
-    بيقرا **السطور المفتوحة** — اللي `amount_residual` بتاعها مش صفر — لحد التاريخ
-    ده، مش حركة فترة. ده اللي بيخلّي رقم «عليه كام» هو نفسه في الكشف وفي كارت العميل
-    وفي تقرير الأعمار: مصدر واحد، مش تلات حسابات بتتفق بالصدفة.
-    """
     today = as_of or date.today()
     terms = payment_terms_days(db)
     rows = db.scalars(
@@ -275,14 +202,8 @@ def due_summary(
             debit_open += residual
         else:
             credit_open += -residual
-        # الاستحقاق من السطر لو مكتوب، وإلا تاريخ القيد + مهلة السداد. الفاتورة
-        # النقدية (مهلة صفر) مستحقة يوم ما اتكتبت، ومعاملتها كأنها مالهاش ميعاد
-        # بتخفيها عن المتأخر خالص.
         days = (today - due_date_of(line, when, terms)).days
         buckets[_age_bucket(days)] += residual
-        # **المتأخر من المدين وحده.** الدفعة اللي لسه ماتخصمتش مش «متأخرة» — مفيش
-        # حد متأخر في دفعها. لو جمعناها بإشارتها كان المتأخر بيقلّ وبيزيد مع مهلة
-        # السداد من غير منطق: مهلة ٦٠ يوم كانت بتطلّع متأخر أكبر من مهلة ٤٥.
         if days > 0 and residual > ZERO:
             overdue += residual
 
@@ -300,8 +221,6 @@ def due_summary(
 
 @dataclass(frozen=True)
 class _WholeCash:
-    """فاتورة اتدفعت كلها نقدي — مالهاش سطر على حساب الطرف."""
-
     when: date
     entry: LedgerEntry
     account_id: int
@@ -313,17 +232,11 @@ class _WholeCash:
 
 @dataclass(frozen=True)
 class _CashKind:
-    """البيع ولا الشراء — الفرق بينهم في الكشف هو ده بس.
-
-    `side` اتجاه الفاتورة على حساب الطرف: البيع بيدين العميل، والشراء بيدّي المورد دائن.
-    سطر «مدفوع نقداً» دايماً عكسه.
-    """
-
     side: Direction
     model: type
-    party_col: object                      # SalesInvoice.customer_id / PurchaseInvoice.supplier_id
+    party_col: object
     party_ids: set[int]
-    accounts: set[int]                     # حسابات الطرف اللي في الكشف ده
+    accounts: set[int]
     account_of: Callable[[object], int | None]
     skip: Callable[[object], bool]
 
@@ -343,7 +256,6 @@ def _sales_cash(db: Session, ids: Sequence[int]) -> _CashKind | None:
         all_accounts.setdefault(ca.customer_id, []).append(ca)
 
     def account_of(inv) -> int | None:
-        # نفس قاعدة `customer_merge_service.receivable_account` اللي البيع رحّل بيها.
         own = all_accounts.get(inv.customer_id, [])
         if inv.family is not None:
             hit = next((a for a in own if a.family == inv.family), None)
@@ -356,7 +268,6 @@ def _sales_cash(db: Session, ids: Sequence[int]) -> _CashKind | None:
             return plain.account_id if plain is not None else None
         return None
 
-    # البونص مالوش فلوس، فمش داخل.
     return _CashKind(side=Direction.debit, model=SalesInvoice,
                      party_col=SalesInvoice.customer_id, party_ids=customer_ids,
                      accounts=set(links), account_of=account_of,
@@ -367,7 +278,6 @@ def _purchase_cash(db: Session, ids: Sequence[int]) -> _CashKind | None:
     from src.models.purchasing import PurchaseInvoice
     from src.models.supplier import SupplierAccount
 
-    # المورد ليه حساب دائنين واحد (`supplier_service.require_account`) — هو اللي الشراء رحّل عليه.
     links = {sa.supplier_id: sa.account_id for sa in db.scalars(
         select(SupplierAccount).where(SupplierAccount.account_id.in_(list(ids)))).all()}
     if not links:
@@ -383,21 +293,6 @@ def _cash_on_invoices(
     db: Session, *, ids: Sequence[int], rows: Sequence[LedgerLine],
     window: Sequence[tuple[date, LedgerLine]], date_from: date | None, date_to: date | None,
 ) -> tuple[dict[int, tuple[Decimal, Decimal, str, Direction]], list[_WholeCash]]:
-    """النقدي اللي اتدفع **على** الفاتورة، عشان يبان في كشف العميل أو المورد.
-
-    قيد البيع بيدين الخزنة بالنقدي ومابيدينش العميل غير بالآجل — وقيد الشراء بيدّي
-    الخزنة دائن بالنقدي ومابيدّيش المورد غير بالآجل. فكشف الطرف كان بيوري الفاتورة
-    بالآجل بس، والنقدي مالوش أثر. الدفاتر صح؛ الكشف هو اللي ناقص. فالكشف (مش القيد) بيقسم:
-
-    * فاتورة جزء منها آجل: سطر الفاتورة بيتعرض بالمستحق كله (آجل + نقدي) في اتجاهها،
-      وبعده سطر «مدفوع نقداً» بالنقدي في العكس. ولو اندفع أكتر من الفاتورة (الزيادة بتنزل
-      عكس اتجاه الفاتورة على حسابه) نفس الشكل: الفاتورة بالمستحق، والنقدي كله
-      عكسها — الصافي هو نفس سطر القيد.
-    * فاتورة نقدي بالكامل: القيد مالوش سطر على الطرف خالص، فبيتعرض سطرين بيلغوا بعض.
-
-    الرصيد بعد السطرين هو نفس الرصيد بعد سطر القيد بالظبط. وبيتطبق بس لما سطر القيد
-    يطابق آجل الفاتورة — فاتورة متنقولة من a5 بقيد شكله تاني بتتعرض زي ما هي.
-    """
     split: dict[int, tuple[Decimal, Decimal, str, Direction]] = {}
     whole: list[_WholeCash] = []
     touched = {line.entry_id for line in rows}
@@ -406,7 +301,6 @@ def _cash_on_invoices(
             continue
         model = kind.model
 
-        # ── فاتورة جزء منها آجل (أو دفع زيادة): سطرها على الحساب بيتقسم ──────────
         wanted = {line.entry_id for _w, line in window if line.account_id in kind.accounts}
         if wanted:
             invoices = {
@@ -433,7 +327,6 @@ def _cash_on_invoices(
                 split[line.id] = (to_money(due), cash, inv.document_number, kind.side)
                 done.add(line.entry_id)
 
-        # ── فاتورة نقدي بالكامل: مالهاش سطر على الحساب ─────────────────────────
         for inv, entry in db.execute(
             select(model, LedgerEntry)
             .join(LedgerEntry, LedgerEntry.id == model.ledger_entry_id)
@@ -458,11 +351,6 @@ def _cash_on_invoices(
 
 
 def _newest_first(lines: list[StatementLine]) -> list[StatementLine]:
-    """الأحدث فوق، والفاتورة وسطر نقديها كتلة واحدة بترتيبها (الفاتورة ثم الدفعة).
-
-    سطر النقدي بيتكتب دايماً بعد سطر فاتورته على طول (`emit` في `account_statement`)،
-    فبيتلزق في السطر اللي قبله لو نفس القيد ونفس الحساب.
-    """
     blocks: list[list[StatementLine]] = []
     for ln in lines:
         prev = blocks[-1][-1] if blocks else None
@@ -475,16 +363,6 @@ def _newest_first(lines: list[StatementLine]) -> list[StatementLine]:
 
 
 def _with_descendants(db: Session, ids: list[int]) -> list[int]:
-    """الحسابات المطلوبة + كل اللي تحتها في الشجرة، والمطلوب الأول فاضل الأول.
-
-    **كشف الحساب الرئيسي = كل الفرعيين اللي تحته** (زي a5). الحساب الرئيسي (مثلاً «الخزينة»
-    A5M-1) مابيتقيدش عليه حاجة — كل الحركة على الصناديق اللي تحته — فالكشف كان بيقرا
-    سطوره هو بس ويطلع فاضي: «الخزينة» في أكتوبر والعلياء رجّعت صفر سطر وتحتها آلاف.
-    هنا بيتحل لنفس اللي «الحساب الرئيسي» في الشاشة بيعمله، فكل اللي بيسأل عن حساب رئيسي
-    (الكشف، وفرد صف في ميزان المراجعة) بياخد نفس الإجابة.
-
-    الحساب الفرعي مالوش أبناء، فالقايمة بترجع زي ما هي — كشف العميل والمورد ماتغيّرش.
-    """
     kids: dict[int, list[int]] = {}
     for aid, parent_id in db.execute(
         select(Account.id, Account.parent_id).where(Account.parent_id.is_not(None))
@@ -506,17 +384,6 @@ def account_statement(
     db: Session, *, account_id: int, date_from: date | None = None,
     date_to: date | None = None, also_accounts: Sequence[int] = (),
 ) -> Statement:
-    """كشف حساب — لحساب واحد، أو لكذا حساب مع بعض.
-
-    `also_accounts` exists for one situation: a customer who holds a receivable account per
-    product line (031). Posting to him without naming the line is refused, and rightly — money on
-    «أبيض» that belonged to «بولي» is a silent error nobody could trace.
-
-    But READING is not posting, and كشف الحساب was inheriting that refusal: a merged customer's
-    statement answered 404 «لازم تحدد النوع», which made the screen unopenable for exactly the
-    customers the merge had just fixed. «كل المديونية» is not ambiguous — it is his lines from both
-    accounts on one running balance, which is the number anybody asking «هو عليه كام» means.
-    """
     ids = _with_descendants(db, [account_id, *[a for a in also_accounts if a != account_id]])
     accounts = {a.id: a for a in db.scalars(select(Account).where(Account.id.in_(ids))).all()}
     account = accounts.get(account_id)
@@ -530,9 +397,7 @@ def account_statement(
         .where(LedgerLine.account_id.in_(ids), ledger_service.is_posted_sql())
     ).all()
 
-    # One query for the names rather than one per line: a statement can run to hundreds of rows.
     cost_centers = {c.id: c.name for c in db.scalars(select(CostCenter)).all()}
-    # اسم كل حساب في المجموعة — حسابات الأطراف اسمها عند الطرف مش على الحساب.
     from src.services import chart_service
     owner_names = chart_service.bulk_owner_names(db, list(accounts.values()))
     def name_of(aid: int) -> str:
@@ -540,14 +405,11 @@ def account_statement(
         if a is None:
             return f"#{aid}"
         return a.name or owner_names.get(aid) or f"#{aid}"
-    # نفس المنطق: استعلام واحد للأسماء بدل واحد لكل سطر.
     reps = {u.id: (u.full_name or u.username)
             for u in db.scalars(select(User)).all()}
 
     def signed(line: LedgerLine) -> Decimal:
         amount = to_money(line.amount)
-        # Signed by the line's OWN account's normal side. Reading two accounts together is only
-        # correct if each one is read the way it is kept.
         side = accounts[line.account_id].normal_side
         return amount if line.direction == side else -amount
 
@@ -557,8 +419,6 @@ def account_statement(
     )
 
     opening = ZERO
-    # أول المدة لكل حساب فرعي في نفس اللفّة — كشف «الخزينة» فيه ١٥ ألف سطر، وطلب لكل
-    # صندوق كان هيبقى N رحلة للقاعدة على نفس السطور اللي في إيدنا أصلاً.
     openings: dict[int, Decimal] = {}
     window: list[tuple[date, LedgerLine]] = []
     for when, line in dated:
@@ -574,17 +434,13 @@ def account_statement(
     balance = to_money(opening)
     total_debit = total_credit = ZERO
     lines: list[StatementLine] = []
-    # الرصيد الجاري لكل حساب لوحده، ومدينه ودائنه في الفترة (شوف `AccountSummary`).
     acct_balance: dict[int, Decimal] = {aid: to_money(v) for aid, v in openings.items()}
     acct_debit: dict[int, Decimal] = {}
     acct_credit: dict[int, Decimal] = {}
     acct_lines: dict[int, int] = {}
-    # المطابقة بتتجاب مرة واحدة لكل سطور الشباك — الاستعلام جوّه الحلقة كان هيخلّي
-    # الكشف بيفتح في تانية.
     matches = _matches_by_line(db, [line.id for _when, line in window])
     as_of = date_to or date.today()
     terms = payment_terms_days(db)
-    # النقدي اللي اتدفع على فاتورة البيع أو الشراء — عرض بس، الدفاتر زي ما هي.
     split, whole = _cash_on_invoices(db, ids=ids, rows=rows, window=window,
                                      date_from=date_from, date_to=date_to)
 
@@ -594,8 +450,6 @@ def account_statement(
         nonlocal balance, total_debit, total_credit
         total_debit += debit
         total_credit += credit
-        # Both sides of every row: what the account stood at before this movement and after it,
-        # so a single line can be read on its own without adding up the ones above it.
         before = balance
         side = accounts[account_id].normal_side
         moved = (debit - credit) if side == Direction.debit else (credit - debit)
@@ -612,7 +466,6 @@ def account_statement(
             debit=debit, credit=credit, balance_before=before, balance=balance,
             cost_center_id=cost_center_id,
             cost_center_name=cost_centers.get(cost_center_id),
-            # المندوب على القيد مش على السطر: القيد الواحد بيتكتب في جولة مندوب واحد.
             rep_id=entry.rep_id,
             rep_name=reps.get(entry.rep_id),
             account_id=account_id,
@@ -621,9 +474,6 @@ def account_statement(
             residual=(to_money(line.amount_residual)
                       if line is not None and line.amount_residual is not None else None),
             due_date=due_date_of(line, when, terms) if line is not None else None,
-            # المتأخر بيتقاس على **تاريخ قفل الكشف** مش على النهاردة: كشف مقفول على
-            # آخر يونيو لازم يقول التأخير اللي كان وقتها، وإلا الورقة المطبوعة
-            # بتتغيّر كل يوم وهي مفترض تكون صورة لحظة.
             days_overdue=(_days_overdue(line, when, as_of, terms)
                           if line is not None else None),
             payment_state=entry.payment_state,
@@ -635,19 +485,15 @@ def account_statement(
             account_balance=acct_after,
         ))
 
-    # السطور والفواتير النقدية بالكامل (اللي مالهاش سطر على الحساب) في ترتيب واحد.
     items: list[tuple] = [(when, line.entry_id, line.id, line, None) for when, line in window]
     items += [(w.when, w.entry.id, 0, None, w) for w in whole]
     items.sort(key=lambda it: (it[0], it[1], it[2]))
 
     def pair(side: Direction, amount: Decimal) -> tuple[Decimal, Decimal]:
-        """(مدين، دائن) لمبلغ في اتجاه."""
         return (amount, ZERO) if side == Direction.debit else (ZERO, amount)
 
     for when, _eid, _lid, line, cash_inv in items:
         if cash_inv is not None:
-            # فاتورة اتدفعت كلها نقدي: القيد مالوش سطر على الطرف، فالكشف كان بيعدّيها
-            # كأنها مااتعملتش. سطرين بيلغوا بعض — الرصيد مابيتحركش.
             debit, credit = pair(cash_inv.side, cash_inv.cash)
             emit(when=when, entry=cash_inv.entry, account_id=cash_inv.account_id,
                  debit=debit, credit=credit,
@@ -665,8 +511,6 @@ def account_statement(
         cut = split.get(line.id)
         if cut is not None:
             due, cash, doc_number, side = cut
-            # سطر الفاتورة بالمستحق كله في اتجاهها، وبعده على طول النقدي في العكس. المطابقة
-            # بتفضل على الصف اللي في نفس اتجاه سطر القيد الحقيقي.
             on_side = line.direction == side
             debit, credit = pair(side, due)
             emit(when=when, entry=line.entry, account_id=line.account_id, debit=debit,
@@ -682,13 +526,6 @@ def account_statement(
              debit=amount if is_debit else ZERO, credit=ZERO if is_debit else amount,
              description=description, cost_center_id=line.cost_center_id, line=line)
 
-    # **الأحدث فوق** (طلب العميل ٢٠٢٦-١٠-٠١). الرصيد اتحسب فوق بالترتيب الزمني، فكل سطر
-    # شايل رصيده الصح — القلب للعرض بس، وأول المدة بقى تحت مع أقدم حركة.
-    #
-    # **بس الفاتورة ونقديها بيتقلبوا كتلة واحدة** (طلب العميل ٢٠٢٦-١٠-٠٢): قلب السطور واحد
-    # واحد كان بيطلّع «مدفوع نقداً مع الفاتورة» فوق الفاتورة نفسها. دلوقتي الفاتورة فوق
-    # والدفعة تحتها على طول. الأرصدة ماتحركتش: سطر الفاتورة رصيده بعد الفاتورة، وسطر
-    # الدفعة رصيده بعد الدفعة — وده نفس رصيد بعد الكتلة اللي السطر الأحدث بيبدأ منه.
     lines = _newest_first(lines)
 
     reconcilable = reconcile_service.is_reconcilable(account)
@@ -697,8 +534,6 @@ def account_statement(
     if reconcilable:
         total_due, total_overdue, aging = due_summary(db, account_ids=ids, as_of=date_to)
 
-    # الحسابات الفرعية بأرصدتها، بالكود ثم الاسم — نفس ترتيب الشجرة اللي المحاسب متعوّد عليه.
-    # اللي صفر في أول المدة ومالوش ولا سطر في الفترة بيتشال (صندوق مقفول من سنين).
     summaries = []
     for aid in ids:
         acc = accounts.get(aid)
@@ -718,13 +553,8 @@ def account_statement(
     summaries.sort(key=lambda s: (s.code or "", s.account_name))
 
     parent = db.get(Account, account.parent_id) if account.parent_id else None
-    # A customer's or supplier's account carries no `name` — the party's name lives on the party,
-    # and the chart resolves it as `owner_name`. Reading only `name` made every party statement
-    # open with «#29» as its title, which is precisely the statement people ask for by name.
     return Statement(
         account_id=account_id, account_name=name_of(account_id),
-        # A top-level account IS its own book, and saying so by leaving the field empty is more
-        # honest than repeating its own name back as its parent.
         main_account_id=parent.id if parent else None,
         main_account_name=(parent.name or f"#{parent.id}") if parent else None,
         opening_balance=to_money(opening), closing_balance=balance,

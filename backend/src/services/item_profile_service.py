@@ -1,9 +1,3 @@
-"""Item search + the 360° product file — 027-item-360.
-
-What the catalog screen could never answer before: how much of this item is where, who bought
-it, who we bought it from, every movement it ever made, and when its price changed and by how
-much. All derived — nothing new is stored except the price-change log.
-"""
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -22,7 +16,7 @@ from src.models.stock import LocationKind, StockDirection, StockMovement
 
 
 class ItemProfileError(Exception):
-    """The item does not exist."""
+    pass
 
 
 ZERO_QTY = Decimal("0.000")
@@ -32,11 +26,7 @@ def _qty(v) -> Decimal:
     return Decimal(str(v or 0)).quantize(Decimal("0.001"))
 
 
-# ------------------------------------------------------------------------ on-hand
-
-
 def bulk_on_hand(db: Session, item_ids: list[int] | None = None) -> dict[int, Decimal]:
-    """Total on-hand per item across every location — ONE grouped query for the whole page."""
     signed = case(
         (StockMovement.direction == StockDirection.in_, StockMovement.quantity),
         else_=-StockMovement.quantity,
@@ -53,12 +43,6 @@ def bulk_on_hand(db: Session, item_ids: list[int] | None = None) -> dict[int, De
 
 
 def bulk_has_movement(db: Session, item_ids: list[int] | None = None) -> set[int]:
-    """Which items have ever moved — their «له حركة» filter, in one grouped query.
-
-    Not the same question as «has stock». An item sold down to zero has moved and is worth looking
-    at; one that was created and never touched is catalogue noise on a stock screen. Their رصيد صنف
-    offers both filters side by side, which is the tell that they are different questions.
-    """
     stmt = select(StockMovement.item_id).group_by(StockMovement.item_id)
     if item_ids is not None:
         if not item_ids:
@@ -67,19 +51,7 @@ def bulk_has_movement(db: Session, item_ids: list[int] | None = None) -> set[int
     return {iid for (iid,) in db.execute(stmt).all()}
 
 
-# ------------------------------------------------------------- list columns (shelf price)
-
-
-
-
 def bulk_tier_price(db: Session, item_ids: list[int], tier: PriceTier) -> dict[int, Decimal]:
-    """One tier's price per item — ONE query for the whole page.
-
-    Read from `item_price` rather than from `item.sale_price`: the two agree when an item is
-    created, but the tier grid is edited on its own afterwards, so the tier row is the one that
-    is actually charged. Items with no row for the tier are absent — not zero. A blank cell
-    reads as "not sold at this tier", which is what it means; a zero reads as free.
-    """
     if not item_ids:
         return {}
     rows = db.execute(
@@ -87,9 +59,6 @@ def bulk_tier_price(db: Session, item_ids: list[int], tier: PriceTier) -> dict[i
         .where(ItemPrice.item_id.in_(item_ids), ItemPrice.tier == tier)
     ).all()
     return {iid: to_money(price) for iid, price in rows}
-
-
-# ------------------------------------------------------------------------- search
 
 
 def apply_filters(
@@ -101,14 +70,7 @@ def apply_filters(
     active: bool | None = None,
     warehouse_id: int | None = None,
 ) -> Select:
-    """`q` matches code, name or category (partial). `warehouse_id` = the item's default store."""
     if q:
-        # **اللي بيكتب «٢» لازم يلاقي «2»، واللي بيكتب «جلبه» لازم يلاقي «جلبة».**
-        #
-        # الاسم بيتعرض بأرقام عربية وبيتخزّن إنجليزية، والهمزة والتاء المربوطة
-        # بيتكتبوا بشكلين لنفس الاسم. المقارنة بقت على الاسم **الموحَّد** من
-        # الطرفين (`arabic.sort_key` / `arabic.bare`) — نفس القاعدة اللي الترتيب
-        # بيستعملها، وكانت مطبَّقة على الترتيب وحده فالبحث بيفوّت اللي الترتيب بيجمعه.
         needle = f"%{arabic.bare(q)}%"
         stmt = stmt.where(or_(
             arabic.sort_key(Item.name).like(needle),
@@ -118,10 +80,6 @@ def apply_filters(
     if kind:
         stmt = stmt.where(Item.kind == ItemKind(kind))
     if category:
-        # **الفئة ممكن تيجي قيمة واحدة أو قايمة قيم.** (031) اللي بيفلتر على فئة
-        # رئيسية عايز فروعها معاها — والأصناف متعلّقة بالفرعية، فالرئيسية لوحدها
-        # بترجّع كشف فاضي. اللي بيفلتر على فئة عادية بيبعت قيمة واحدة وبتتقارن
-        # بـ`==` زي ما كانت بالحرف.
         values = [category] if isinstance(category, str) else list(category)
         stmt = (stmt.where(Item.category == values[0]) if len(values) == 1
                 else stmt.where(Item.category.in_(values)))
@@ -136,12 +94,6 @@ def filter_by_stock(
     rows: list[Item], on_hand: dict[int, Decimal], stock_filter: str | None,
     moved: set[int] | None = None,
 ) -> list[Item]:
-    """`in_stock` = has quantity, `out_of_stock` = zero, `negative` = below zero (data problem).
-
-    `moved` is their «له حركة» — a different question from «has stock». An item sold down to zero
-    has moved and is worth looking at; one created and never touched is catalogue noise on a stock
-    screen. Their رصيد صنف offers both side by side, which is the tell that they differ.
-    """
     if not stock_filter or stock_filter == "all":
         return rows
     def keep(i: Item) -> bool:
@@ -156,9 +108,6 @@ def filter_by_stock(
             return i.id in (moved or set())
         return True
     return [i for i in rows if keep(i)]
-
-
-# ------------------------------------------------------------------------ profile
 
 
 @dataclass
@@ -186,7 +135,6 @@ def _as_date(value: date | datetime | None) -> str | None:
 
 
 def _location_names(db: Session) -> dict[tuple[str, int], str]:
-    """Human labels for (kind, id) so movements read «مخزن الخامات» not «warehouse #9»."""
     from src.models.user import User
     from src.models.warehouse import Custody, Warehouse
 
@@ -201,7 +149,6 @@ def _location_names(db: Session) -> dict[tuple[str, int], str]:
 
 
 def _branch_warehouses(db: Session, branch_id: int | None) -> set[int] | None:
-    """مخازن الفرع — أو `None` لما مافيش حصر."""
     if branch_id is None:
         return None
     from src.models.warehouse import Warehouse
@@ -212,12 +159,6 @@ def _branch_warehouses(db: Session, branch_id: int | None) -> set[int] | None:
 
 
 def _only_mine(stmt, mine: set[int] | None):
-    """حركة مخزون في أماكن الفرع.
-
-    **والعهدة بتعدّي زي ما هي.** العهدة مالهاش `branch_id`، وربطها بالمندوب بيضيف
-    استعلامين على صفحة بتتفتح كتير — وهي أصلاً بتتفلتر في شاشتها. اللي كان بيتسرّب
-    هنا هو المخزن.
-    """
     if mine is None:
         return stmt
     return stmt.where((StockMovement.location_kind != LocationKind.warehouse)
@@ -225,7 +166,6 @@ def _only_mine(stmt, mine: set[int] | None):
 
 
 def _doc_mine(model, branch_id: int | None):
-    """شرط الفرع على مستند — أو `TRUE` لما مافيش حصر."""
     from sqlalchemy import true
 
     if branch_id is None:
@@ -243,12 +183,6 @@ def _length_str(db: Session, item: Item) -> str | None:
 
 
 def balance(db: Session, item_id: int, *, branch_id: int | None = None) -> dict:
-    """One item's prices and its quantity in EVERY stock location — the stock-enquiry screen.
-
-    Deliberately lean next to `profile`: a storekeeper flicking through items wants the numbers
-    instantly, not the movement and price history behind them. Locations with nothing are still
-    listed (with zero) so «this warehouse has none» is an answer, not a missing row.
-    """
     from src.models.warehouse import Custody, Warehouse
 
     item = db.get(Item, item_id)
@@ -271,9 +205,6 @@ def balance(db: Session, item_id: int, *, branch_id: int | None = None) -> dict:
     }
     names = _location_names(db)
 
-    # **ومخازن الفرع وحدها في الكشف.** الشاشة دي بتعدّد كل مكان حتى الفاضي — عشان
-    # «المخزن ده مافيهوش» تبقى إجابة — فالكشف الكامل كان بيسمّي مخازن فروع تانية
-    # وكمياتها لواحد مش شايفها في أي شاشة تانية.
     locations: list[dict] = []
     wh_stmt = select(Warehouse)
     if mine is not None:
@@ -309,7 +240,6 @@ def balance(db: Session, item_id: int, *, branch_id: int | None = None) -> dict:
         .where(_doc_mine(PurchaseInvoice, branch_id))
         .order_by(PurchaseInvoice.id.desc()).limit(1)
     )
-    # "Average" here is the average cost actually paid, which is what a valuation is read against.
     bought_qty, bought_value = db.execute(
         select(func.coalesce(
                    func.sum(PurchaseInvoiceLine.quantity * PurchaseInvoiceLine.unit_factor), 0),
@@ -324,7 +254,6 @@ def balance(db: Session, item_id: int, *, branch_id: int | None = None) -> dict:
         "item": {
             "id": item.id, "code": item.code, "name": item.name,
             "category": item.category, "unit_of_measure": item.unit_of_measure,
-            # «القطعة = N متر» — شباك الرصيد بيعرض الإجمالي بالوحدتين.
             "meters_per_piece": _length_str(db, item),
         },
         "prices": {
@@ -342,16 +271,6 @@ def balance(db: Session, item_id: int, *, branch_id: int | None = None) -> dict:
 
 def profile(db: Session, item_id: int, *, limit: int = 200,
             branch_id: int | None = None) -> Profile:
-    """ملف الصنف — **وبفرع اللي بيقرا**.
-
-    **الكتالوج مشترك، وتاريخ الصنف لأ.** الصفحة دي كانت بترجّع لمدير فرع العلياء
-    رصيد مخازن المصنع، و٦٤ فاتورة بيع بأسماء عملاء المصنع وأسعار بيعهم، و١٣ فاتورة
-    شرا بأسعار التكلفة، و١٨٣ حركة مخزون — كل ده من كارت صنف عادي، وهو مش قادر يفتح
-    ولا مستند منهم من شاشته.
-
-    فالصنف نفسه بيفضل مشترك (مافيش عمود فرع على `item`)، واللي بيتفلتر **تاريخه**:
-    الحركة بمخزنها، والفاتورة بفرعها.
-    """
     item = db.get(Item, item_id)
     if item is None:
         raise ItemProfileError("الصنف غير موجود.")
@@ -359,7 +278,6 @@ def profile(db: Session, item_id: int, *, limit: int = 200,
     names = _location_names(db)
     mine = _branch_warehouses(db, branch_id)
 
-    # --- stock, per location and in total ---
     signed = case(
         (StockMovement.direction == StockDirection.in_, StockMovement.quantity),
         else_=-StockMovement.quantity,
@@ -384,7 +302,6 @@ def profile(db: Session, item_id: int, *, limit: int = 200,
         })
     stock_rows.sort(key=lambda r: Decimal(r["quantity"]), reverse=True)
 
-    # --- sales of this item ---
     sale_rows = db.execute(
         select(SalesInvoiceLine, SalesInvoice)
         .join(SalesInvoice, SalesInvoice.id == SalesInvoiceLine.invoice_id)
@@ -407,8 +324,6 @@ def profile(db: Session, item_id: int, *, limit: int = 200,
         }
         for ln, inv in sale_rows
     ]
-    # بالوحدة الأساسية (الكمية × معامل الوحدة): سطر اتباع بالقطعة من صنف بيتعدّ بالمتر لازم
-    # يتجمع أمتار، وإلا «إجمالي المبيع» ومتوسط السعر بيخلطوا قطع على أمتار.
     sold_qty, sold_value = db.execute(
         select(func.coalesce(
                    func.sum(SalesInvoiceLine.quantity * SalesInvoiceLine.unit_factor), 0),
@@ -418,7 +333,6 @@ def profile(db: Session, item_id: int, *, limit: int = 200,
         .where(_doc_mine(SalesInvoice, branch_id))
     ).one()
 
-    # --- purchases of this item ---
     purchase_rows = db.execute(
         select(PurchaseInvoiceLine, PurchaseInvoice)
         .join(PurchaseInvoice, PurchaseInvoice.id == PurchaseInvoiceLine.invoice_id)
@@ -449,14 +363,11 @@ def profile(db: Session, item_id: int, *, limit: int = 200,
         .where(_doc_mine(PurchaseInvoice, branch_id))
     ).one()
 
-    # --- every stock movement, newest first ---
     movements = [
         {
             "id": m.id,
             "date": str(m.movement_date) if m.movement_date else _as_date(m.created_at),
             "movement_type": m.movement_type,
-            # الاسم بييجي من السجل ومعاه المصدر — «تسوية رصيد افتتاحي» مش «بضاعة أول
-            # المدة». الشرح في `_SOURCE_MOVE_LABELS`.
             "movement_label": stock_docs.movement_label(m.movement_type, m.source_doc_type),
             "direction": getattr(m.direction, "value", str(m.direction)),
             "quantity": str(_qty(m.quantity)),
@@ -472,7 +383,6 @@ def profile(db: Session, item_id: int, *, limit: int = 200,
         ).all()
     ]
 
-    # --- price history + the current tier prices ---
     history = [
         {
             "id": h.id,
@@ -531,13 +441,9 @@ def _supplier_names(db: Session, ids: list[int]) -> dict[int, str]:
         select(Supplier.id, Supplier.name).where(Supplier.id.in_(set(ids)))).all()}
 
 
-# ------------------------------------------------------------------ price logging
-
-
 def record_price_change(
     db: Session, *, item_id: int, field_name: str, old_value, new_value, actor_user_id: int | None,
 ) -> None:
-    """Append one price-change row — no-ops when the value did not actually move."""
     old = Decimal(str(old_value)) if old_value is not None else None
     new = Decimal(str(new_value)) if new_value is not None else None
     if old == new:

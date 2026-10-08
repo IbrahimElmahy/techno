@@ -40,7 +40,6 @@ interface Item {
 }
 type Stage = 'production' | 'quality';
 
-/** مرحلة صرف الخامة — إذن لكل واحدة، بيروح لناس مختلفين في وقتين مختلفين. */
 const STAGES: { value: Stage; label: string; short: string; color: string }[] = [
   { value: 'production', label: 'تصنيع — بتدخل الماكينة', short: 'تصنيع', color: 'green' },
   { value: 'quality', label: 'جودة — بتتحط على المنتج بعد ما يطلع', short: 'جودة', color: 'gold' },
@@ -91,7 +90,6 @@ const fmtMoney = (v: string | number) =>
   Number(v).toLocaleString(numeralsLocale(), { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 export default function Manufacturing() {
-  // «نسب انتاج» and «انتاج حسب النسب» are two entries in their menu and two tabs here.
   const [tab, setTab] = useQueryTab('orders');
   const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
   const [branches, setBranches] = useState<BranchRef[]>([]);
@@ -107,17 +105,6 @@ export default function Manufacturing() {
     return (id: number) => m.get(id)?.name ?? `#${id}`;
   }, [rawMaterials, products]);
 
-  /**
-   * وحدة الصنف — **الرقم لوحده مش كمية**.
-   *
-   * «٥٠» في ورقة تصنيع ممكن تكون خمسين قطعة أو خمسين كيلو، والفرق بينهم هو الفرق بين
-   * تشغيلة صح وتشغيلة غلط. الشاشة كانت بتكتب الرقم مجرّد في كل مكان، واللي بيقرا
-   * بيفتح كارت الصنف عشان يعرف هو بيعدّ إيه.
-   *
-   * وبتيجي من الصنف نفسه، مش من السطر: سطر الأمر عنده `unit` (الوحدة اللي اتكتب
-   * بيها) بس الكميات كلها متخزّنة بالوحدة الأساسية بعد الضرب في المعامل — فعرض وحدة
-   * السطر جنب رقم أساسي بيقول حاجة غلط.
-   */
   const itemCode = useMemo(() => {
     const m = new Map<number, string>();
     [...rawMaterials, ...products].forEach((i) => m.set(i.id, i.code || ''));
@@ -139,8 +126,6 @@ export default function Manufacturing() {
   const loadAll = async () => {
     setLoading(true);
     try {
-      // `‎/manufacturing/orders` اتشال من هنا مع تبويبه: الجدول فاضي في الشركة كلها
-      // (صفر صف)، والنداء كان بيتعمل مع كل فتحة للشاشة على حاجة محدش بيقراها.
       const [whRes, brRes, itemsRes, bomRes, wasteRes] = await Promise.all([
         api.get('/api/v1/warehouses'),
         api.get('/api/v1/branches'),
@@ -163,10 +148,8 @@ export default function Manufacturing() {
 
   useEffect(() => { loadAll(); }, []);
 
-  // عدد أوامر التشغيل من السيرفر — بيوصل من التبويب نفسه (الترقيم هناك).
   const [ordersTotal, setOrdersTotal] = useState<number | null>(null);
 
-  // التبويبات بقت شرايح في ترويسة `ListPage` — كل قسم بيرسم الترويسة بتاعته بالشرايح دي.
   const header: SectionHeader = {
     tabs: [
       { key: 'orders', label: 'أوامر التشغيل', count: ordersTotal },
@@ -177,8 +160,6 @@ export default function Manufacturing() {
     onTabChange: setTab,
   };
 
-  // زي antd `Tabs`: القسم بيتركّب أول ما يتفتح، وبعدها بيفضل متركّب ومخفي — فالفلاتر
-  // والنوافذ المفتوحة مابتضيعش لما تروح وترجع.
   const [visited, setVisited] = useState<Set<string>>(() => new Set([tab]));
   useEffect(() => {
     setVisited((v) => (v.has(tab) ? v : new Set(v).add(tab)));
@@ -191,9 +172,6 @@ export default function Manufacturing() {
 
   return (
     <>
-      {/* الشاشة المطلوبة: أمر تشغيل واحد بسطور منتجات وسطور خامات. القديمة (منتج
-          واحد للأمر) اتنقلت لتبويب جنبها — تلات فروع شغّالة عليها دلوقتي، وشيلها
-          معناه إن شغلهم يقف في نفس اليوم. */}
       {pane('orders', (
         <ProductionOrdersTab
           header={header} onTotal={setOrdersTotal}
@@ -222,14 +200,12 @@ export default function Manufacturing() {
 }
 
 type Section = 'orders' | 'recipes' | 'wastage';
-/** ترويسة الشاشة المشتركة — الشرايح بتاعة الأقسام التلاتة. */
 interface SectionHeader {
   tabs: { key: Section; label: string; count?: number | null }[];
   activeTab: Section;
   onTabChange: (k: Section) => void;
 }
 
-/** عدّاد الكشف تحت الجدول. */
 const footOf = (shown: number, total: number, noun: string) => (
   <span className="sl-foot">
     <span>المعروض: <b>{shown.toLocaleString(numeralsLocale())}</b>
@@ -237,9 +213,6 @@ const footOf = (shown: number, total: number, noun: string) => (
   </span>
 );
 
-// ---------------------------------------------------------------------------
-// Recipes (BOM) tab
-// ---------------------------------------------------------------------------
 function RecipesTab({
   header, boms, products, rawMaterials, itemName, loading, reload,
 }: {
@@ -250,9 +223,6 @@ function RecipesTab({
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<Bom | null>(null);
   const [form] = Form.useForm();
-  // Alternate units per raw material, fetched the first time one is picked. Loading every
-  // material's units up front would be a request per material to fill a dropdown most recipes
-  // never open.
   const [unitOpts, setUnitOpts] = useState<Record<number, AltUnit[]>>({});
   const loadUnits = async (itemId: number) => {
     if (!itemId || unitOpts[itemId]) return;
@@ -260,8 +230,6 @@ function RecipesTab({
       const r = await api.get(`/api/v1/items/${itemId}/units`);
       setUnitOpts((prev) => ({ ...prev, [itemId]: r.data?.units || [] }));
     } catch {
-      // A material with no alternate units is normal, not an error — the row then offers the
-      // base unit only, which is what it always did.
       setUnitOpts((prev) => ({ ...prev, [itemId]: [] }));
     }
   };
@@ -282,8 +250,6 @@ function RecipesTab({
     });
     setOpen(true);
   };
-  // A recipe is master data: the row opens it for editing, because there is nothing to «view» in a
-  // recipe that its own form does not already show better.
   const bomsKb = useTableKeyboard<Bom>({
     rows: filter.filtered, rowKey: (b) => b.id, onOpen: (b) => openEdit(b),
   });
@@ -350,8 +316,6 @@ function RecipesTab({
       render: (_: any, r: Bom) => (
         <Space size={[0, 4]} wrap>
           {r.components.map((c) => (
-            // Shows the unit it was written in, so «× ٢ كرتونة» never reads as «× ٢» of
-            // something unstated.
             <Tag key={c.item_id}>
               {itemName(c.item_id)} × {Number(c.quantity)}{c.unit ? ` ${c.unit}` : ''}
             </Tag>
@@ -373,12 +337,10 @@ function RecipesTab({
       ) },
   ];
 
-  // إخفاء وترتيب الأعمدة — نفس المحرك اللي كل الجداول بتستخدمه.
   const recipesTabCols = useTableColumns('mfg-recipes', columns, {
     export: { name: 'نسب انتاج', rows: filter.filtered },
   });
 
-  // F3 للبحث — كانت جاية من `ListToolbar`؛ للقسم الظاهر بس.
   const searchRef = React.useRef<any>(null);
   useScreenShortcuts({ onSearch: () => { searchRef.current?.focus?.(); } },
     header.activeTab === 'recipes');
@@ -387,8 +349,6 @@ function RecipesTab({
     <>
     <ListPage<Section>
       icon={<BuildOutlined />}
-      // أسامي a5 بالظبط (٢٠٢٦-١٠-٠٦) — «نسب انتاج» في القايمة وعلى الشاشة، عشان اللي
-      // جاي من a5 مايتلخبطش بين «وصفة» و«نسب».
       title="نسب انتاج"
       subtitle="خامات كل منتج — «انتاج حسب النسب» بيحسب الخامات المصروفة منها"
       tabs={header.tabs} activeTab={header.activeTab} onTabChange={header.onTabChange}
@@ -454,9 +414,6 @@ function RecipesTab({
                     <Form.Item {...field} name={[field.name, 'item_id']} style={{ flex: 1, marginBottom: 0 }}
                       rules={[{ required: true, message: 'اختر الخامة' }]}>
                       <Select showSearch placeholder="الخامة" style={{ minWidth: 220 }}
-                        // Picking the material loads its units, and clears any unit carried over
-                        // from the previous choice — a unit that belonged to another item would
-                        // be rejected on save, and worse, might not be.
                         onChange={(v: number) => {
                           loadUnits(v);
                           const rows = form.getFieldValue('components') || [];
@@ -465,9 +422,6 @@ function RecipesTab({
                             form.setFieldsValue({ components: rows });
                           }
                         }}
-                        // **كل الأصناف، مش «الخامات» بس.** كتالوج العميل كله `product`
-                        // (٢٬٧٤١ صنف — نقل a5 نقلهم كده)، فالقايمة المفلترة كانت بتطلع
-                        // فاضية والوصفة المفتوحة بتوري رقم الصنف بدل اسمه.
                         options={[...rawMaterials, ...products].map((r) => ({
                           value: r.id, label: `${r.name} (${r.unit_of_measure})`,
                           search: r.code || '' }))} filterOption={searchFilter} filterSort={searchRank} />
@@ -477,9 +431,6 @@ function RecipesTab({
                       <InputNumber min={0.001} placeholder="الكمية"
                         data-grid-col="qty" keyboard={false} />
                     </Form.Item>
-                    {/* «الوحدة» — the recipe is written in whatever unit the workshop speaks
-                        («٢ كرتونة»)، and the conversion to base units happens when the order
-                        consumes, not in someone's head at the keyboard. */}
                     <Form.Item noStyle shouldUpdate>
                       {({ getFieldValue }) => {
                         const iid = getFieldValue(['components', field.name, 'item_id']);
@@ -498,10 +449,6 @@ function RecipesTab({
                         );
                       }}
                     </Form.Item>
-                    {/* **المرحلة** — إمتى الخامة دي بتتصرف. الخام بيتصرف أول ما الأمر
-                        يبدأ ويروح للمكن؛ الكرتون والأكياس بإذن تاني بعد ما المنتج يطلع.
-                        وهي على الوصفة مش على الأمر لأن الفرق ده بتاع المنتج نفسه:
-                        الكرتونة دايماً بتتحط بعد الإنتاج، مش حسب رأي اللي فاتح الورقة. */}
                     <Form.Item {...field} name={[field.name, 'stage']}
                       style={{ marginBottom: 0 }} initialValue="production">
                       <Select style={{ minWidth: 200 }}
@@ -557,9 +504,6 @@ function RecipesTab({
   );
 }
 
-// ---------------------------------------------------------------------------
-// Wastage documents tab
-// ---------------------------------------------------------------------------
 function WastageTab({
   header, wastages, warehouses, rawMaterials, products, itemName, whName, loading, reload,
 }: {
@@ -585,8 +529,6 @@ function WastageTab({
     },
   });
 
-  // مستند الهالك مافيهوش سطور — السطر نفسه هو المستند. فالسطر يودّي لكارت الصنف اللي اتهلك،
-  // اللي هو المكان الوحيد اللي بيفسّر الحركة دي جنب باقي حركات الصنف.
   const wastageKb = useTableKeyboard<Wastage>({
     rows: filter.filtered, rowKey: (w) => w.id,
     onOpen: (w) => navigate(`/catalog/${w.item_id}`),
@@ -650,12 +592,10 @@ function WastageTab({
         ) },
   ];
 
-  // إخفاء وترتيب الأعمدة — نفس المحرك اللي كل الجداول بتستخدمه.
   const wastageTabCols = useTableColumns('mfg-wastage', columns, {
     export: { name: 'مستندات الهالك', rows: filter.filtered },
   });
 
-  // F3 للبحث — كانت جاية من `ListToolbar`؛ للقسم الظاهر بس.
   const searchRef = React.useRef<any>(null);
   useScreenShortcuts({ onSearch: () => { searchRef.current?.focus?.(); } },
     header.activeTab === 'wastage');
@@ -736,28 +676,6 @@ function WastageTab({
   );
 }
 
-// ---------------------------------------------------------------------------
-// أوامر التشغيل (032) — الورقة اللي بتطلّع كذا منتج من كذا خامة
-// ---------------------------------------------------------------------------
-/**
- * الشاشة القديمة كانت بتعرض `ManufacturingOrder` — **منتج واحد لكل أمر**. وأمر المصنع
- * بيطلّع أربعة، فالصفحة كانت بتوري حاجة تانية غير اللي في إيد الورشة.
- *
- * هنا الورقة بشكلها: ترويسة، جدول منتجات، إجماليات، جدول خامات — وكل خامة **منسوبة
- * للمنتج بتاعها**، فتكلفة المنتج = مجموع خاماته + مصاريفه من غير أي توزيع بنسب.
- *
- * **وأهم عمود في الشاشة هو «الفرق».** كل سطر شايل «المفروض» (من الوصفة وقت فتح الأمر)
- * و«اللي حصل»، والفرق بينهم هو الفاقد أو الزيادة. ده الرقم اللي المصنع بيسأل عليه
- * ومافيش شاشة تانية بتقوله: الحركة بتقول اتصرف كام، والوصفة بتقول المفروض كام، ومحدش
- * بيحطهم على نفس السطر.
- *
- * **والحركة مابتحصلش إلا عند التنفيذ.** المسودة تتعدّل وتتمسح براحتها، وماحدش بيخصم
- * مخزون على ورقة لسه بتتكتب.
- *
- * **مافيش معاينة تكلفة في الفورم.** التكلفة بتتجمّد من متوسط التكلفة على السيرفر وقت
- * التنفيذ، والواجهة عندها `purchase_price` وهو رقم تاني — فمعاينة بيه كانت هتقول رقم
- * والورقة تطلع برقم غيره.
- */
 type POState = 'draft' | 'confirmed' | 'in_progress' | 'done' | 'reversed';
 
 interface POMaterial {
@@ -765,7 +683,6 @@ interface POMaterial {
   planned_quantity: string; quantity: string; unit: string | null;
   unit_cost: string; line_cost: string; waste_quantity: string;
   stage?: string | null;
-  /** اتصرف من المخزن ولا لسه. ده اللي بيحدّد الخطوة الجاية، مش حالة الأمر. */
   issued?: boolean;
 }
 interface POReceipt {
@@ -774,7 +691,6 @@ interface POReceipt {
 }
 interface POProduct {
   id: number; item_id: number; warehouse_id: number | null;
-  /** اللي اتستلم من السطر ده لحد دلوقتي — مجموع الدفعات. */
   received_quantity?: string;
   planned_quantity: string; quantity: string; unit: string | null; bom_id: number | null;
   material_cost: string; expense_amount: string; total_cost: string; unit_cost: string;
@@ -798,18 +714,8 @@ const PO_STATE_TAG: Record<POState, { color: string; label: string }> = {
   reversed: { color: 'red', label: 'معكوس' },
 };
 
-/** خط سير الورقة — نفس ترتيب `ProductionState` على السيرفر. */
 const PO_FLOW: POState[] = ['draft', 'confirmed', 'in_progress', 'done'];
 
-/**
- * شريط الحالة فوق الورقة — **اللي بيفتح أمر شغل لازم يعرف هو فين قبل ما يقرا رقم**.
- *
- * الحالة كانت وسم واحد في آخر عمود في الكشف، فاللي بيفتح الورقة مايعرفش إيه اللي
- * فات وإيه اللي جاي — ولا إن «مؤكد» قدامها خطوة تانية أصلاً. الشريط بيقول التلاتة
- * مع بعض: اللي عدّى، اللي إحنا فيه، واللي ناقص.
- *
- * والمعكوس مش مرحلة في الخط — هو نهاية تانية خالص — فبيتقال لوحده.
- */
 function POFlow({ state }: { state: POState }) {
   if (state === 'reversed') {
     return (
@@ -831,7 +737,6 @@ function POFlow({ state }: { state: POState }) {
 
 const num = (v: string | number) => Number(v).toLocaleString(numeralsLocale());
 
-/** كمية ومعاها وحدتها. الوحدة أصغر وأخفت — الرقم هو اللي بيتقرا، وهي بتقول بيعدّ إيه. */
 function Qty({ value, unit }: { value: string | number; unit?: string }) {
   return (
     <span>
@@ -841,11 +746,6 @@ function Qty({ value, unit }: { value: string | number; unit?: string }) {
   );
 }
 
-/**
- * الفرق بين المفروض واللي حصل. **الصفر في «المفروض» معناه مافيش خطة متسجّلة** — زي
- * الأوامر المنقولة من a5، المصدر فيه اللي اتصرف بس — فبنقول «—» بدل ما نعرض الكمية
- * كلها على إنها فاقد.
- */
 function Variance({ planned, actual }: { planned: string; actual: string }) {
   const p = Number(planned);
   if (!p) return <span style={{ color: '#5b6575' }}>—</span>;
@@ -858,43 +758,17 @@ function Variance({ planned, actual }: { planned: string; actual: string }) {
   );
 }
 
-/** سطر في الفورم — مفتاح محلي عشان الحذف مايلخبطش الصفوف. */
 interface DraftMaterial {
   key: number; item_id?: number; warehouse_id?: number; stage?: Stage;
-  /** حد غيّر المرحلة بإيده على السطر ده؟ ساعتها بس بتتبعت للسيرفر. */
   stageTouched?: boolean;
   planned_quantity?: number | null; quantity?: number | null; waste_quantity?: number | null;
-  /**
-   * **حد اختار مخزن الخامة دي بإيده؟**
-   *
-   * من غير العلامة دي مافيش طريقة نفرّق بين مخزن النظام حطّه لوحده ومخزن الراجل
-   * قصده. `materialsTouched` على مستوى سطر المنتج كله — يعني تعديل كمية خامة واحدة
-   * كان هيجمّد مخازن الخمسة، والعكس: إعادة الاختيار التلقائي كانت هتمسح اختياره.
-   */
   warehouseTouched?: boolean;
 }
 interface DraftProduct {
   key: number; item_id?: number; warehouse_id?: number;
   planned_quantity?: number | null; quantity?: number | null;
   bom_id?: number | null; expense_amount?: number | null; materials: DraftMaterial[];
-  /**
-   * **اللي كاتب الورقة لمس الخامات بإيده ولا لأ؟**
-   *
-   * الوصفة بتفجّر الخامات لوحدها أول ما تختار المنتج، وبتتحدّث لما تغيّر الكمية — بس
-   * بعد ما حد يعدّل سطر بإيده، **التحديث التلقائي بيقف**. من غير الشرط ده، واحد بيزوّد
-   * خامة برّه الوصفة أو بيظبّط كمية وبعدين بيصلّح رقم المنتج بيلاقي شغله اتمسح.
-   *
-   * وبيرجع `false` لما يدوس «طلّع الوصفة» صراحةً — ده طلبه إن الورقة ترجع للوصفة.
-   */
   materialsTouched?: boolean;
-  /**
-   * **اللي كاتب الورقة كتب في «اللي طلع» بإيده ولا لأ؟**
-   *
-   * «اللي طلع» بيمشي ورا «المفروض» لحد ما حد يكتب فيه — عشان اللي مايغيّرهوش يبقى
-   * قال «طلع زي ما اتخطّط» صراحةً. وكان بيتحط مرة واحدة بس (`quantity == null`)،
-   * فاللي بيمسح الكمية ويكتب غيرها كان بيسيب «اللي طلع» على الرقم القديم — أو فاضي،
-   * والحفظ يترفض «الكمية لازم تكون أكبر من صفر» وهو شايف رقم قدامه في «المفروض».
-   */
   quantityTouched?: boolean;
 }
 
@@ -902,15 +776,6 @@ let poSeq = 1;
 const newPOMaterial = (): DraftMaterial => ({ key: poSeq++, stage: 'production' });
 const newPOProduct = (): DraftProduct => ({ key: poSeq++, materials: [] });
 
-/** رقم ورقة الأمر المنقول — بأرقام المستخدم، **من غير فاصلة آلاف**.
- *
- * `num` بتعدّي على `toLocaleString`، فرقم الأمر ٣٥٣٧ كان بيطلع «٣٬٥٣٧» — وده رقم
- * مقروء ككمية مش كمستند، واللي بيطابقه على الورقة بيقف عند الفاصلة. فالتحويل هنا
- * على الخانة لوحدها.
- *
- * وبيرجع الرقم زي ما هو لو مش أرقام (حد كتب «أمر ٣٧/ب»)، و«—» لو فاضي: `Number('')`
- * بيطلع صفر، والأمر اللي مالوش ورقة كان هيبان «أمر شغل ٠» وكأن ده رقمه.
- */
 const poPaper = (r: { external_document_number: string | null }) => {
   const v = (r.external_document_number || '').trim();
   if (!v) return '—';
@@ -923,7 +788,6 @@ function ProductionOrdersTab({
   itemCode, whName, active,
 }: {
   header: SectionHeader;
-  /** العدد الكلي من السيرفر — لعدّاد الشريحة في الترويسة. */
   onTotal: (n: number) => void;
   products: Item[]; rawMaterials: Item[]; warehouses: Warehouse[];
   branches: BranchRef[]; boms: Bom[];
@@ -931,10 +795,6 @@ function ProductionOrdersTab({
   itemUnit: (id: number) => string;
   itemCode: (id: number) => string;
   whName: (id: number | null | undefined) => string;
-  /** التبويب ده هو الظاهر دلوقتي — بيتمرّر لـ`useDocRoute` كـ`enabled`.
-   *
-   *  antd بتسيب أي تبويب اتفتح مرة شغّال ومخفي بعدها، فخُطّافه بيفضل بيسمع العنوان
-   *  ويقفل مستند تبويب تاني على «رجوع». المخفي بيسكت. */
   active: boolean;
 }) {
   const [rows, setRows] = useState<ProductionOrder[]>([]);
@@ -949,60 +809,26 @@ function ProductionOrdersTab({
   const [saving, setSaving] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
 
-  // --- الورقة اللي بتتكتب ---
   const [productionDate, setProductionDate] = useState<any>(null);
   const [branchId, setBranchId] = useState<number | undefined>();
   const [externalRef, setExternalRef] = useState('');
   const [statement, setStatement] = useState('');
   const [notes, setNotes] = useState('');
   const [lines, setLines] = useState<DraftProduct[]>([]);
-  // التبويب المفتوح جوّه الفورم. بيرجع لـ«الشغل» مع كل فتح — ده اللي حد فاتح الورقة
-  // عايزه، والبيان والملاحظات بيتكتبوا مرة.
   const [formTab, setFormTab] = useState('work');
-  // الأمر اللي بيتقفل دلوقتي، ومعاه اللي طلع لكل سطر منتج.
   const [closing, setClosing] = useState<ProductionOrder | null>(null);
   const [outputs, setOutputs] = useState<Record<number, number | null>>({});
   const [waste, setWaste] = useState<Record<number, number | null>>({});
-  /**
-   * **شاشة الاستلام** — الأمر اللي شغّال والدفعة اللي وصلت النهارده.
-   *
-   * منفصلة عن الإقفال عن قصد: الإقفال بيقول «الشغل خلص واللي طلع كله كده»،
-   * والاستلام بيقول «وصل الجزء ده النهارده» والأمر لسه شغّال. جمعهم في شاشة واحدة
-   * كان معناه إن اللي بيستلم دفعة بيقفل الورقة عليها.
-   */
   const [receiving, setReceiving] = useState<ProductionOrder | null>(null);
   const [received, setReceived] = useState<Record<number, number | null>>({});
   const [receiptDate, setReceiptDate] = useState<any>(null);
-  /**
-   * **الخامة دي موجودة فين وبكام** — `صنف → [{مخزن، رصيد}]` مرتّبة بالأكبر.
-   *
-   * الورقة بتتكتب على خطة، والصرف بيحصل وقت «ابدأ» — فالمخزن الغلط مابيبانش غلط إلا
-   * بعد ما الورقة تكون اتكتبت واتأكدت. الكشف ده بيخلّي الشاشة تختار المخزن اللي فيه
-   * البضاعة فعلاً وتوري المتاح جنب كل خامة، بدل ما المصنع يكتشف عند الضغطة الأخيرة.
-   */
   const [stock, setStock] = useState<Map<number, { wh: number; qty: number }[]>>(new Map());
-  /**
-   * **نسخة طازة من الوصفات مع كل فتحة للورقة.**
-   *
-   * اللي جاي في الـprops اتحمّل لما الشاشة اتفتحت. تبويب مفتوح من ساعة بيفضل
-   * شايف الوصفة القديمة، والورقة اللي بتتكتب منه بتوري مراحل غلط. السيرفر
-   * بيصلّحها وقت الحفظ، بس اللي قدام الشاشة يستاهل يشوف الصح وهو بيكتب.
-   */
   const [freshBoms, setFreshBoms] = useState<Bom[] | null>(null);
   const boms = freshBoms ?? propBoms;
 
   const allItems = useMemo(() => [...products, ...rawMaterials], [products, rawMaterials]);
   const itemOptions = (list: Item[]) =>
-    // الكود مش بيتعرض، بيتبحث بيه — الشرح في `utils/itemLabel`.
     list.map((i) => ({ value: i.id, label: i.name, search: i.code || '' }));
-  /**
-   * **أمر التشغيل في فرع المصنع بس** — نفس قيد السيرفر (`org_service.production_branch_problem`).
-   *
-   * قايمة الفرع كانت الفروع كلها والمخازن كلها، والورقة بتتكتب على العلياء عادي.
-   * دلوقتي: الفروع اللي `is_factory` بس، والفرع الواحد بيتختار لوحده ومايتغيّرش،
-   * والمخازن (منتج وخامة، واختيار «أنسب مخزن» من الرصيد) من فرع الورقة وبس.
-   * ولو مافيش فرع متعلّم مصنع، القوايم بتفضل كاملة زي الأول — نفس السيرفر.
-   */
   const factoryBranches = useMemo(() => branches.filter((b) => b.is_factory), [branches]);
   const branchChoices = factoryBranches.length ? factoryBranches : branches;
   const soleFactory = factoryBranches.length === 1 ? factoryBranches[0].id : undefined;
@@ -1015,7 +841,6 @@ function ProductionOrdersTab({
         ? w.branch_id === orderBranch : ok.has(w.branch_id)))
       .map((w) => w.id));
   }, [factoryBranches, warehouses, orderBranch]);
-  // المخزن الموقوف مايتختارش لأمر جديد — إلا اللي متسجّل على سطر في الورقة المفتوحة.
   const usedWh = lines.flatMap((l) => [l.warehouse_id, ...l.materials.map((m) => m.warehouse_id)]);
   const whOptions = activeOptions(sortByName(
     allowedWh ? warehouses.filter((w) => allowedWh.has(w.id)) : warehouses, (w) => w.name,
@@ -1043,8 +868,6 @@ function ProductionOrdersTab({
     } catch (err) { console.error(err); } finally { setLoading(false); }
   };
 
-  // الترقيم على السيرفر — المنقول لوحده بالآلاف، وتحميله كله عشان نعرض خمسين بيرجّع
-  // ميجابايتات في كل فتحة للشاشة.
   useEffect(() => { load(); }, [page, pageSize, stateFilter, scope]);
 
   const resetForm = () => {
@@ -1052,29 +875,16 @@ function ProductionOrdersTab({
     setExternalRef(''); setStatement(''); setNotes(''); setLines([]); setFormTab('work');
   };
 
-  /** الوصفات بتتجدّد مع كل فتحة — الشرح عند `freshBoms`. */
   const refreshBoms = () => {
     api.get('/api/v1/manufacturing/boms')
       .then((r) => setFreshBoms(r.data))
-      .catch(() => { /* النسخة اللي في الإيد بتكفّي للعرض */ });
+      .catch(() => {});
   };
 
   const openNew = () => {
     resetForm(); setBranchId(soleFactory); setLines([newPOProduct()]); refreshBoms(); setOpen(true);
   };
 
-  /**
-   * أمر التشغيل المفتوح جزء من العنوان — الشرح في `useDocRoute`.
-   *
-   * **والتبويب ده وحده هو اللي بيقرا `?doc=`.** الشاشة خمس تبويبات، وantd بتسيب أي
-   * تبويب اتفتح مرة شغّال ومخفي بعدها — يعني لو اتنين منهم بيسمعوا نفس البارامتر،
-   * الرقم الواحد هيتفسّر مرتين في مساحتين مختلفتين، وواحد فيهم هيفتح مستند مش بتاعه
-   * أو يوقع وهو بيقرا صف ناقص. فـ«أوامر التشغيل» — المستند الأساسي في الشاشة — بياخد
-   * البارامتر، والباقي زي ما هو.
-   *
-   * وبيتجاب بالرقم من السيرفر مش من الصفحة المحمّلة: `openEdit` بيقرا `r.products`
-   * و`r.materials` سطر سطر، وصف ناقص فيهم بيفضّي الشاشة.
-   */
   const { markOpen, markClosed, opening: docOpening } = useDocRoute<ProductionOrder>({
     rows,
     enabled: active,
@@ -1093,7 +903,6 @@ function ProductionOrdersTab({
     },
   });
 
-  /** بيقفل ورقة الأمر ويرجّع للكشف — والعنوان بيتنضّف معاها. */
   const closeEditor = () => { setOpen(false); resetForm(); markClosed(); };
 
   const openEdit = (r: ProductionOrder) => {
@@ -1109,27 +918,18 @@ function ProductionOrdersTab({
       key: poSeq++, item_id: p.item_id, warehouse_id: p.warehouse_id ?? undefined,
       planned_quantity: Number(p.planned_quantity), quantity: Number(p.quantity),
       bom_id: p.bom_id, expense_amount: Number(p.expense_amount),
-      // والكمية اللي طلعت كذلك: هي رقم مسجّل، مايمشيش ورا «المفروض» لو حد ظبّطه.
       quantityTouched: true,
-      // **الورقة المفتوحة للتعديل خاماتها محسومة.** هي اللي اتسجّل فعلاً — يمكن
-      // اتعدّلت بإيد وقت الشغل — فالتفجير التلقائي مايلمسهاش. من غير السطر ده، أول
-      // تصليح في كمية المنتج كان هيمسح كل اللي اتسجّل ويرجّعه لأرقام الوصفة.
       materialsTouched: true,
       materials: r.materials.filter((m) => m.product_line_id === p.id).map((m) => ({
         key: poSeq++, item_id: m.item_id, warehouse_id: m.warehouse_id ?? undefined,
         planned_quantity: Number(m.planned_quantity), quantity: Number(m.quantity),
         waste_quantity: Number(m.waste_quantity), stage: stageOf(m.stage),
-        // الورقة المحفوظة مرحلتها اتسجّلت خلاص — بتتبعت زي ما هي مش بتتقرا تاني.
         stageTouched: true,
       })),
     })));
     setOpen(true);
   };
 
-  /**
-   * تعديل سطر منتج. `recompute` معناها «ده تغيير الوصفة بتتبعه» — المنتج أو الوصفة
-   * أو الكمية أو المخزن — فالخامات بتتفجّر من الوصفة بعده، إلا لو حد لمسها بإيده.
-   */
   const patchLine = (
     key: number, patch: Partial<DraftProduct>, recompute: false | 'qty' | 'product' = false,
   ) =>
@@ -1142,24 +942,15 @@ function ProductionOrdersTab({
     setLines((p) => p.map((x) => (x.key === lineKey
       ? {
         ...x,
-        // أول لمسة بإيد بتوقف التحديث التلقائي من الوصفة — الشرح عند `materialsTouched`.
         materialsTouched: true,
         materials: x.materials.map((y) => (y.key === matKey
           ? { ...y, ...patch,
-              // اختيار المخزن بإيد بيتقفل عليه — الشرح عند `warehouseTouched`.
               ...('warehouse_id' in patch ? { warehouseTouched: true } : {}),
               ...('stage' in patch ? { stageTouched: true } : {}) }
           : y)),
       }
       : x)));
 
-  /**
-   * **بيجيب أرصدة خامات الورقة، وبيرجّع كل خامة لمخزنها لما الرصيد يوصل.**
-   *
-   * الأرصدة بتتحمّل بعد ما السطر يتكتب (نداء شبكة)، فالتفجير اللي حصل قبلها اختار
-   * مخزن المنتج لأنه ماكانش يعرف حاجة تانية. ده بيصلّحه لما الرد يوصل — وبيسيب أي
-   * مخزن حد اختاره بإيده زي ما هو.
-   */
   useEffect(() => {
     if (!open) return;
     const ids = lines.flatMap((ln) => ln.materials.map((m) => m.item_id))
@@ -1171,9 +962,6 @@ function ProductionOrdersTab({
         const mats = ln.materials.map((m) => {
           if (m.warehouseTouched || !m.item_id || !stock.has(m.item_id)) return m;
           const need = Number(m.planned_quantity ?? 0);
-          // **المخزن اللي شايل الكمية مابيتلمسش.** الورقة القديمة بتتفتح بمخازنها
-          // المحفوظة، وإعادة اختيار عمياء كانت هتزحلق اختيار صح اتعمل بقصد. اللي
-          // بيتصلّح هو اللي فيه أقل من المطلوب — ودي هي اللي بتوقع عند «ابدأ».
           const have = availableIn(m.item_id, m.warehouse_id);
           if (m.warehouse_id && have != null && have >= need) return m;
           const wh = bestWarehouse(m.item_id, need, ln.warehouse_id);
@@ -1187,7 +975,6 @@ function ProductionOrdersTab({
     });
   }, [open, lines, stock]);
 
-  /** بيجيب أرصدة الأصناف دي لو لسه مش عندنا. بيسكت لو كلها متحمّلة. */
   const loadStock = async (ids: number[]) => {
     const want = [...new Set(ids.filter((i) => i && !stock.has(i)))];
     if (!want.length) return;
@@ -1196,8 +983,6 @@ function ProductionOrdersTab({
                                 { params: { item_ids: want.join(',') } });
       setStock((prev) => {
         const next = new Map(prev);
-        // الصنف اللي اتسأل عنه ومالوش صف = مافيش منه حاجة في أي مخزن. لازم يتسجّل
-        // كقايمة فاضية، وإلا هنفضل نساله عليه كل مرة والشاشة تقول «متاح —» بدل «٠».
         want.forEach((i) => next.set(i, []));
         (res.data as { item_id: number; location_id: number; on_hand: string }[])
           .forEach((r) => next.set(r.item_id,
@@ -1206,16 +991,9 @@ function ProductionOrdersTab({
         next.forEach((v) => v.sort((a, b) => b.qty - a.qty));
         return next;
       });
-    } catch { /* الرصيد تحسين للعرض — فشله مايوقفش كتابة الورقة */ }
+    } catch {}
   };
 
-  /**
-   * **الخامات اللي مخزنها مش شايلها** — الورقة دي هتقف عند «ابدأ» بسببها.
-   *
-   * بتتحسب من نفس الأرقام اللي السيرفر هيقيس عليها، فاللي الشاشة بتحذّر منه هو
-   * بالظبط اللي هيترفض. واللي لسه رصيده مش متحمّل مابيدخلش — تحذير من غير رقم
-   * بيخلّي اللي بيقراه يشك في الرقم اللي بعده.
-   */
   const shortages = useMemo(() => {
     const out: { name: string; wh: string; need: number; have: number; unit: string;
                  stage: Stage }[] = [];
@@ -1233,12 +1011,8 @@ function ProductionOrdersTab({
                  need, have, unit: itemUnit(m.item_id), stage: stageOf(m.stage) });
     }));
     return out;
-    // الأسماء في المصفوفة عن قصد: الكشف اتكوّن وهو لسه مالقاش أسماء الأصناف
-    // والمخازن (الورقة بتتفتح من الرابط قبل ما القوايم توصل)، فكان بيقول «#3042 في
-    // #77» — رقم مالوش معنى لحد بيقرا تحذير عن بضاعة ناقصة.
   }, [lines, stock, itemName, whName, itemUnit]);
 
-  /** رصيد الخامة في مخزن معيّن، أو `null` لو لسه مش متحمّل. */
   const availableIn = (itemId?: number, wh?: number | null): number | null => {
     if (!itemId || !wh) return null;
     const rows = stock.get(itemId);
@@ -1246,32 +1020,13 @@ function ProductionOrdersTab({
     return rows.find((r) => r.wh === wh)?.qty ?? 0;
   };
 
-  /**
-   * **المخزن اللي الخامة دي تتصرف منه فعلاً.**
-   *
-   * أول مخزن فيه الكمية المطلوبة؛ وإلا اللي فيه الأكتر (عشان اللي بيكتب يشوف رقم
-   * قريب ويقرّر)؛ وإلا مخزن المنتج زي الأول.
-   *
-   * قبل كده كانت الخامات كلها بتاخد مخزن المنتج — والنتيجة أمر ٢٠٦: منتج مخزنه
-   * «مخزن الخامات»، وأربع خامات من خمسة مالهمش فيه ولا وحدة، والصرف وقع عند «ابدأ».
-   */
   const bestWarehouse = (itemId?: number, need = 0, fallback?: number) => {
-    // الرصيد في مخازن فرع الورقة بس — مخزن من فرع تاني السيرفر هيرفضه عند الحفظ.
     const rows = (itemId ? stock.get(itemId) : undefined)
       ?.filter((r) => !allowedWh || allowedWh.has(r.wh));
     if (!rows?.length) return fallback;
     return (rows.find((r) => r.qty >= need) ?? rows[0]).wh;
   };
 
-  /**
-   * خامات سطر المنتج من وصفته، مضروبة في الكمية — أو `null` لو مافيش وصفة أو كمية.
-   *
-   * **ده «المفروض»**، والمصروف بيتفتح بنفس الرقم عشان اللي مابيغيّرهوش يبقى قال
-   * «اتصرف زي الوصفة» صراحةً مش سابه فاضي.
-   *
-   * ومخزن الخامة بييجي من مخزن الإنتاج لو الوصفة مش قايلة حاجة: الحالة الغالبة إن
-   * الاتنين مكان واحد، والخانة الفاضية كانت بتوقف الحفظ برسالة «الصنف محتاج مخزن».
-   */
   const recipeMaterials = (ln: DraftProduct): DraftMaterial[] | null => {
     const bom = boms.find((b) => b.id === ln.bom_id)
       ?? boms.find((b) => b.active && b.product_id === ln.item_id);
@@ -1280,8 +1035,6 @@ function ProductionOrdersTab({
     if (!qty) return null;
     const scale = qty / Number(bom.output_quantity || 1);
     return bom.components.map((c) => {
-      // × معامل الوحدة زي الباك-إند بالظبط: سطر وصفة «٢ كرتونة» بيصرف ٢٤ قطعة،
-      // ومعاينة بتقول ٢ بتبعت أمين المخزن يدوّر على الـ٢٢ الباقيين.
       const q = Number(c.quantity) * scale * Number(c.unit_factor ?? 1);
       return {
         key: poSeq++, item_id: c.item_id, planned_quantity: q, quantity: q,
@@ -1291,21 +1044,6 @@ function ProductionOrdersTab({
     });
   };
 
-  /**
-   * **الوصفة بتتفجّر لوحدها.** اختيار المنتج أو تغيير الكمية بيعيد بناء الخامات من
-   * غير ما حد يدوس حاجة — ده الغرض من الوصفة أصلاً، والزرار اللي كان لازم تفتكره
-   * كان بيخلّي أمر يتكتب من غير خامات وينكسر عند الحفظ.
-   *
-   * وبيسكت خالص لو اللي كاتب الورقة لمس الخامات بإيده. الشرح عند `materialsTouched`.
-   *
-   * **و`seedQty` بتحط كمية مبدئية لما تكون فاضية** — وده اللي بيخلّي اختيار المنتج
-   * لوحده يوري حاجة. من غيرها، اللي بيختار منتج له وصفة كان بيلاقي «خاماته» فاضية
-   * ويفتكر إن الوصفة مش شغّالة، وهي بس مستنية رقم. الكمية بتبقى ناتج الوصفة (وحدة
-   * في كل وصفات المصنع)، وأول ما يكتب الكمية الحقيقية كل حاجة بتتظبط بالنسبة.
-   *
-   * وبتتحط وقت تغيير المنتج أو الوصفة بس — مش مع كل تغيير في الكمية. لو اتحطت هناك
-   * كمان، اللي بيمسح الرقم عشان يكتب غيره كان هيلاقي «١» بترجع تحت إيده وهو بيكتب.
-   */
   const withRecipe = (ln: DraftProduct, seedQty = false): DraftProduct => {
     if (ln.materialsTouched) return ln;
     let next = ln;
@@ -1321,7 +1059,6 @@ function ProductionOrdersTab({
     return rows ? { ...next, materials: rows } : next;
   };
 
-  /** زر «طلّع الوصفة» — طلب صريح، فبيتجاهل اللمس وبيرجّع السطر للوصفة. */
   const fillFromRecipe = (key: number) => {
     setLines((prev) => prev.map((ln) => {
       if (ln.key !== key) return ln;
@@ -1346,24 +1083,16 @@ function ProductionOrdersTab({
     notes: notes || undefined,
     products: lines.map((ln) => ({
       item_id: ln.item_id,
-      // الفتح بيبعت المخطّط بس — السيرفر بيفتح «اللي طلع» عليه، والإقفال بيستبدله.
       planned_quantity: ln.planned_quantity,
       warehouse_id: ln.warehouse_id ?? undefined,
       bom_id: ln.bom_id ?? undefined,
       expense_amount: ln.expense_amount ?? 0,
-      // **الفلترة على المخطّط مش على المصروف.** «اتصرف» مابقاش خانة في الورقة،
-      // فالخامة اللي حد زوّدها بإيده مالهاش `quantity` — والفلترة القديمة كانت
-      // بتسقّطها في صمت، والأمر يتحفظ من غيرها.
       materials: ln.materials
         .filter((m) => m.item_id && (m.planned_quantity ?? m.quantity))
         .map((m) => ({
           item_id: m.item_id,
           planned_quantity: m.planned_quantity ?? m.quantity,
           warehouse_id: m.warehouse_id ?? undefined,
-          // **المرحلة بتتبعت لو حد غيّرها بإيده بس.** الشاشة عندها نسخة من
-          // الوصفات اتحمّلت لما اتفتحت، وأي ورقة بتتكتب منها بعد ما الوصفة
-          // تتعدّل بتحمل النسخة القديمة لطول عمرها. السيرفر بيقراها من الوصفة
-          // اللي عنده — والسطر اللي حد قصده بيغلبها.
           ...(m.stageTouched ? { stage: stageOf(m.stage) } : {}),
         })),
     })),
@@ -1372,8 +1101,6 @@ function ProductionOrdersTab({
   const submit = async () => {
     if (!lines.length) { message.warning('ضيف منتج واحد على الأقل'); return; }
     for (const ln of lines) {
-      // على المخطّط: «اللي طلع» مابقاش في الورقة، والتحقق عليه كان بيمنع حفظ أي
-      // منتج مالوش وصفة — لأن الرقم ده مابيتحطش غير لما الوصفة تتفجّر.
       if (!ln.item_id || !ln.planned_quantity) {
         message.warning('كل سطر منتج محتاج صنف وكمية'); return;
       }
@@ -1391,11 +1118,9 @@ function ProductionOrdersTab({
     } catch (err) { console.error(err); } finally { setSaving(false); }
   };
 
-  /** ورقة الورشة — الشرح في `print/workOrderSheet`. */
   const printOrder = (r: ProductionOrder, stage: WorkOrderStage = 'production') =>
     printWorkOrder(r, { itemName, itemCode, itemUnit, whName, branchName }, stage);
 
-  /** خامات الجودة اللي لسه ما اتصرفتش — هي اللي بتقرّر الزرار يبان ولا لأ. */
   const qualityPending = (r: ProductionOrder) =>
     r.materials.filter((m) => stageOf(m.stage) === 'quality' && !m.issued).length;
 
@@ -1407,12 +1132,6 @@ function ProductionOrdersTab({
         `/api/v1/manufacturing/production-orders/${r.id}/${verb}`);
       message.success(done);
       load();
-      // **التأكيد بيعرض الطباعة على طول.** ده وقتها بالظبط: الأرقام اتراجعت،
-      // والخطوة اللي بعدها إن حد في الورشة يمسك ورقة. وبتتطبع من رد السيرفر مش من
-      // الصف القديم — الحالة اتغيّرت لسه.
-      // **كل صرف له ورقته.** التأكيد بيعرض إذن التصنيع (اللي بيروح للمكن)، وصرف
-      // الجودة بيعرض إذن التعبئة. ودي وقتهم بالظبط — الورقة بتتطبع وهي لسه هي
-      // اللي هتتنفّذ.
       if (verb === 'confirm' || verb === 'issue-quality') {
         const fresh = (res?.data ?? r) as ProductionOrder;
         const quality = verb === 'issue-quality';
@@ -1428,21 +1147,11 @@ function ProductionOrdersTab({
     } catch (err) { console.error(err); }
   };
 
-  /**
-   * **الإقفال بيسأل عن اللي طلع فعلاً.** الخامة اتصرفت وقت البدء والورقة عارفة
-   * المخطّط؛ الرقم الوحيد اللي لسه ناقص هو اللي خرج من الماكينة — وده اللي بيتكتب
-   * هنا، وعليه بتتقسّم التكلفة.
-   *
-   * وبيتفتح على المخطّط: اللي طلع زي ما اتخطّط بيدوس «إقفال» على طول.
-   */
   const openClose = (r: ProductionOrder) => {
-    // **بيفتح على اللي اتستلم لو فيه دفعات** — ده الرقم اللي حصل فعلاً، والمخطّط
-    // بقى تخمين قديم جنبه. واللي مااستلمش حاجة بيفتح على المخطّط زي الأول.
     setOutputs(Object.fromEntries(r.products.map((p) => [p.id,
       Number(p.received_quantity) > 0
         ? Number(p.received_quantity)
         : (Number(p.planned_quantity) || Number(p.quantity))])));
-    // الهالك بيفتح على اللي متسجّل (صفر في الغالب) — اللي مافيش عنده هالك بيسيبه.
     setWaste(Object.fromEntries(r.materials.map((m) => [m.id, Number(m.waste_quantity) || null])));
     setClosing(r);
   };
@@ -1461,7 +1170,6 @@ function ProductionOrdersTab({
     } catch (err) { console.error(err); }
   };
 
-  /** بيفتح شاشة الاستلام على الباقي — الرقم اللي الغالب إنه هيتكتب. */
   const openReceive = (r: ProductionOrder) => {
     setReceived(Object.fromEntries(r.products.map((p) => {
       const left = Number(p.planned_quantity) - Number(p.received_quantity || 0);
@@ -1522,27 +1230,10 @@ function ProductionOrdersTab({
     } catch (err) { console.error(err); }
   };
 
-  /**
-   * الفلوس بتتعرض لما تكون موجودة فعلاً.
-   *
-   * **والمنقول من a5 بقى عنده تكلفة.** كانت بتتخبّى لأن تصدير التصنيع الأصلي مافيهوش
-   * عمود تكلفة، والصفر كان هيتقري «إنتاج مجاني». دلوقتي `exp_mfg_cost.sql` بيجيب
-   * أرقام a5 نفسها — التكلفة اللي المصنع اشتغل بيها ساعتها — فاللي عنده رقم بيوريه،
-   * واللي لسه بصفر بيفضل «—» بدل ما يقول إن التشغيلة ماكلفتش حاجة.
-   */
   const noMoney = (r: ProductionOrder, v: string) =>
     (r.state !== 'done' || !Number(v) ? '—' : `${fmtMoney(v)}`);
 
   const columns = [
-    // **المستند هو ورقة صاحبه، مش الرقم اللي وّلدناه.**
-    //
-    // الأمر المنقول بياخد عندنا `WO-A5-FC-MFG-3537` — بادئة فرع وكلمة `MFG` حطّيناهم
-    // إحنا عشان نرقّم العمليات، ومالهمش وجود في a5. والورقة اللي في إيد المصنع مكتوب
-    // عليها **«أمر شغل ٣٥٣٧»**، وده اللي بيدوّر بيه اللي واقف في الورشة. فالكشف كان
-    // بيوري رقمين الاتنين من عندنا ومافيش فيهم اللي هو ماسكه.
-    //
-    // ورقمنا بيفضل مكانه في القاعدة — هو مفتاح المستند والروابط ماشية بيه — بس
-    // مابيتعرضش: اللي بيقرا الكشف عايز يطابقه على الورق.
     { title: 'المستند', key: 'doc',
       render: (_: any, r: ProductionOrder) => (
         r.imported_from
@@ -1551,19 +1242,14 @@ function ProductionOrdersTab({
       ) },
     { title: 'التاريخ', dataIndex: 'production_date', key: 'date', width: 115,
       render: (d: string | null) => d || '-' },
-    // ورقة صاحبها للأوامر اللي بتتكتب بإيد؛ المنقول ورقته ظاهرة في عمود المستند نفسه.
     { title: 'رقم الورقة', dataIndex: 'external_document_number', key: 'ext', width: 125,
       render: (v: string | null, r: ProductionOrder) => (r.imported_from ? '—' : v || '-') },
     { title: 'الفرع', key: 'branch', width: 120,
       render: (_: any, r: ProductionOrder) => branchName(r.branch_id) },
     { title: 'المنتجات', key: 'np', width: 85,
       render: (_: any, r: ProductionOrder) => r.products.length },
-    // **المخطّط واللي طلع في خانة واحدة.** ده السؤال اللي الورقة موجودة عشانه، وكان
-    // لازم تفتح صف الأمر عشان تشوفه. المنقول من a5 مالوش خطة متسجّلة فبيقول الكمية بس.
     { title: 'المخطّط / اللي طلع', key: 'pq', width: 170,
       render: (_: any, r: ProductionOrder) => {
-        // وحدة المنتج الأول — الورقة اللي فيها أكتر من منتج بوحدات مختلفة مجموعها
-        // مالوش وحدة واحدة، فبتتساب بدل ما نكتب وحدة غلط على رقم مجمّع.
         const u = r.products.length === 1 ? itemUnit(r.products[0].item_id) : '';
         return Number(r.planned_quantity) ? (
           <Space size={6}>
@@ -1595,20 +1281,8 @@ function ProductionOrdersTab({
           {r.is_reversal && <Tag color="purple">حركة عكسية</Tag>}
         </Space>
       ) },
-    /**
-     * **أيقونات، مش جمل.**
-     *
-     * العمود كان فيه لحد ستة أزرار بنص كامل («اصرف مواد الجودة»، «سجّل اللي طلع
-     * واقفل») فبياخد تلت عرض الشاشة ويلف على سطرين — والكشف اللي المفروض يوري حالة
-     * الشغل بيبقى نصه أزرار. كل إجراء بقى أيقونة واحدة باسمها في التلميح.
-     *
-     * **والاستلام والإقفال بقوا باب واحد**: الاتنين بيسألوا نفس السؤال («طلع كام؟»)
-     * ويختلفوا في «خلصنا ولا لسه» — وزرارين جنب بعض كان بيخلّي اللي عايز يسجّل دفعة
-     * يدوس «إقفال» ويقفل الورقة عليها.
-     */
     { title: 'إجراء', key: 'action', width: 180, align: 'center' as const,
       render: (_: any, r: ProductionOrder) => {
-        // السجل بيبان حتى على المنقول والعكسي — دول بالذات اللي بيتسأل عنهم «مين عمله؟».
         const history = (
           <DocumentHistoryButton iconOnly entityType="production_order" entityId={r.id}
             documentNumber={r.document_number} />
@@ -1642,7 +1316,6 @@ function ProductionOrdersTab({
             {r.state !== 'draft'
               && icon('طباعة إذن التشغيل', <PrinterOutlined />,
                       () => printOrder(r, 'production'))}
-            {/* إذن الجودة بيبان بعد ما موادها تتصرف — قبلها الورقة لسه مش حقيقية. */}
             {r.state !== 'draft' && qualityPending(r) === 0
               && r.materials.some((m) => stageOf(m.stage) === 'quality')
               && icon('طباعة إذن الجودة', <PrinterOutlined style={{ color: '#d48806' }} />,
@@ -1650,8 +1323,6 @@ function ProductionOrdersTab({
             {r.state === 'confirmed'
               && icon('اصرف الخامات وابدأ', <PlayCircleOutlined />,
                       () => act(r, 'start', 'اتصرفت الخامات — الأمر بقى شغّال'), false, true)}
-            {/* **صرف الجودة خطوة لوحدها** — بتبان لما الأمر يبقى شغّال ولسه فيه مواد
-                تعبئة ما اتصرفتش. أول ما تتصرف الأيقونة بتختفي ومكانها طباعة إذنها. */}
             {r.state === 'in_progress' && qualityPending(r) > 0
               && icon(`اصرف مواد الجودة (${num(qualityPending(r))})`,
                       <ExperimentOutlined style={{ color: '#d48806' }} />,
@@ -1667,11 +1338,8 @@ function ProductionOrdersTab({
         );
       } },
   ];
-  // إخفاء وترتيب الأعمدة — نفس المحرك اللي كل الجداول بتستخدمه؛ «رقم الورقة» ظاهر واللي مش
-  // محتاجه يخفيه. لازم قبل `docOpening` عشان ترتيب الهوكس مايتغيّرش بين رسمة والتانية.
   const ordersTabCols = useTableColumns('mfg-production-orders', columns);
 
-  // مستند جاي من شاشة تانية ولسه بيفتح ⇒ مكان الكشف فاضي (الشرح في `useDocRoute.opening`).
   if (docOpening) return <DocOpening />;
   return (
     <>
@@ -1722,9 +1390,6 @@ function ProductionOrdersTab({
         expandable={{
           expandedRowRender: (r: ProductionOrder) => (
             <div>
-              {/* **شريط الحالة فوق الورقة، قبل أي جدول.** اللي بيفتح أمر شغل أول سؤال
-                  عنده «هو فين؟» — والإجابة كانت وسم في آخر عمود في الكشف ورا عشر خانات
-                  أرقام. والأمر المنقول مالوش خط سير عندنا: هو خلص في a5 قبل ما يوصلنا. */}
               <div style={{ marginBottom: 14 }}>
                 {r.imported_from
                   ? <Tag color="gold">منقول من a5 — خلص في نظامهم، مالوش خط سير عندنا</Tag>
@@ -1766,7 +1431,6 @@ function ProductionOrdersTab({
                   { title: 'للمنتج', key: 'p',
                     render: (_: any, m: POMaterial) => {
                       const p = r.products.find((x) => x.id === m.product_line_id);
-                      // المنقول مافيهوش نسبة — المصدر مابيقولش أنهي خامة راحت لأنهي منتج.
                       return p ? itemName(p.item_id) : '—';
                     } },
                   { title: 'المخزن', dataIndex: 'warehouse_id', render: (w: number | null) => whName(w) },
@@ -1820,16 +1484,8 @@ function ProductionOrdersTab({
             </Button>
           </Space>
         }>
-        {/* **الترويسة فوق ثابتة، والشغل جوّه تبويبات.**
-            الورقة كانت عمود واحد طويل: بيانات المستند، وبعدها كل منتج بخاماته، وبعدها
-            الملاحظات. اللي بيكتب تشغيلة فيها تلات منتجات كان بينزل ويطلع في المودال
-            عشان يشوف التاريخ اللي كتبه. دلوقتي التاريخ والفرع والورقة فوق دايماً،
-            والباقي في تبويبين: **الشغل** (المنتجات وخاماتها) و**بيانات المستند**
-            (البيان والملاحظات) — اللي بيتكتب مرة، بره طريق اللي بيتكتب كل سطر. */}
         <Row gutter={12} style={{
           position: 'sticky', top: 0, zIndex: 2, paddingBottom: 12, marginBottom: 4,
-          // خلفية صريحة: العنصر اللاصق بيعوم فوق المحتوى، و`inherit` بيسيبه شفاف
-          // فالسطور بتعدّي من وراه وهي بتتزحلق. النظام فاتح بس (مافيش `darkAlgorithm`).
           background: '#fff',
         }}>
           <Col span={8}>
@@ -1859,10 +1515,6 @@ function ProductionOrdersTab({
               children: <>
           {shortages.length > 0 && (
             <Alert type="error" showIcon style={{ marginBottom: 12 }}
-              // **الرسالة بتقول الأمر هيقف فين بالظبط.** خامة تصنيع ناقصة بتوقف
-              // «ابدأ»، ومادة تعبئة ناقصة بتوقف «اصرف مواد الجودة» — والاتنين
-              // خطوتين مختلفتين في وقتين مختلفين، فتحذير واحد لهم كان بيوري
-              // اللي بيبدأ النهارده مشكلة مالهاش دعوة بيه.
               message={(() => {
                 const prod = shortages.filter((x) => x.stage === 'production').length;
                 const qual = shortages.length - prod;
@@ -1903,7 +1555,6 @@ function ProductionOrdersTab({
                   }, 'product')} />
               </Col>
               <Col span={5}>
-                {/* نسخ الوصفة البديلة (A/B/C عند a5) = وصفات متعددة لنفس المنتج. */}
                 <Select allowClear style={{ width: '100%' }} placeholder="الوصفة"
                   value={ln.bom_id ?? undefined}
                   options={boms.filter((b) => b.product_id === ln.item_id)
@@ -1915,11 +1566,7 @@ function ProductionOrdersTab({
                   options={whOptions}
                   onChange={(v) => patchLine(ln.key, { warehouse_id: v }, 'qty')} filterOption={searchFilter} filterSort={searchRank} />
               </Col>
-              {/* **الورقة بتتفتح على خطة بس.** «اللي طلع» مش خانة هنا: وقت فتح الأمر
-                  محدش يعرف هيطلع كام، والرقمين جنب بعض كانوا بيتكتبوا نفس الرقم مرتين
-                  فالفرق يطلع صفر على طول ورقم الإنتاج يضيع. بيتكتب عند الإقفال. */}
               <Col span={4}>
-                {/* الوحدة جنب الخانة — اللي بيكتب «٥٠» لازم يشوف هو بيكتب قطع ولا كيلو. */}
                 <InputNumber style={{ width: '100%' }} min={0.001} placeholder="الكمية المطلوبة"
                   addonAfter={ln.item_id ? itemUnit(ln.item_id) || undefined : undefined}
                   value={ln.planned_quantity as any}
@@ -1937,14 +1584,8 @@ function ProductionOrdersTab({
               </Col>
             </Row>
 
-            {/* **المرحلتين مفصولتين، مش عمود جوّه جدول واحد.**
-                الكشف الواحد بيخلّي اللي بيكتب يعدّ خامات هتخرج في وقتين مختلفين على
-                إنها طلب واحد، وبيقرا رقم إجمالي مالوش معنى. والقسمين هنا بيوروا
-                بالظبط الورقتين اللي هيتطبعوا: إذن للمكن وإذن للتعبئة. */}
             {STAGES.map((st) => {
               const rows = ln.materials.filter((m) => (m.stage ?? 'production') === st.value);
-              // القسم اللي مالوش سطور بيتعرض بزرار الإضافة بس — عشان اللي عايز
-              // يزوّد مادة تعبئة على منتج مالوش يلاقي مكانها.
               return (
                 <div key={st.value} style={{ marginTop: 10 }}>
                   <Divider orientation="right" style={{ margin: '10px 0 8px' }}>
@@ -1978,9 +1619,6 @@ function ProductionOrdersTab({
                             quantity: m.quantity == null ? (v as any) : m.quantity,
                           })} />
                       </Col>
-                      {/* **المتاح في المخزن ده** — الرقم اللي كان بيتعرف بعد فوات
-                          الأوان: الصرف بيحصل عند «ابدأ»، فالنقص كان بيبان بعد ما
-                          الورقة تتكتب وتتأكد. */}
                       <Col span={4}>
                         {(() => {
                           const have = availableIn(m.item_id, m.warehouse_id);
@@ -1997,7 +1635,6 @@ function ProductionOrdersTab({
                         })()}
                       </Col>
                       <Col span={3}>
-                        {/* نقل السطر للمرحلة التانية — أسهل من مسحه وكتابته تاني. */}
                         <Button type="text" size="small" style={{ fontSize: 14 }}
                           onClick={() => patchMaterial(ln.key, m.key, {
                             stage: st.value === 'production' ? 'quality' : 'production' })}>
@@ -2010,7 +1647,6 @@ function ProductionOrdersTab({
                       </Col>
                     </Row>
                   ))}
-                  {/* زيادة أو مسح خامة بإيد = لمسة، فالتحديث التلقائي من الوصفة بيقف. */}
                   <Button size="small" onClick={() => patchLine(ln.key, {
                     materialsTouched: true,
                     materials: [...ln.materials,
@@ -2043,16 +1679,6 @@ function ProductionOrdersTab({
         />
       </TabModal>
 
-      {/**
-        * **باب واحد: الاستلام والإقفال.**
-        *
-        * الاتنين بيسألوا نفس السؤال — «طلع كام؟» — ويختلفوا في حاجة واحدة: «خلصنا ولا
-        * لسه». شاشتين منفصلتين كانت بتخلّي اللي عايز يسجّل دفعة يدوس «إقفال» ويقفل
-        * الورقة على دفعة من أربعة.
-        *
-        * وسجل الدفعات جوّه معاهم، لأنه الجواب على السؤال اللي بيتسأل قبل الاتنين:
-        * «أنا واصلني كام لحد دلوقتي؟».
-        */}
       <TabModal centered open={receiving != null} onCancel={() => setReceiving(null)}
         title={receiving
           ? `${receiving.document_number} — الاستلام والإقفال`
@@ -2080,8 +1706,6 @@ function ProductionOrdersTab({
                         <Row gutter={8} align="middle" style={{ marginBottom: 14 }}>
                           <Col span={6}>تاريخ الاستلام</Col>
                           <Col span={10}>
-                            {/* **يوم الاستلام، مش يوم الإدخال.** الورشة بتقفل تشغيلة
-                                بالليل والمكتب بيدخّلها الصبح. */}
                             <DatePicker style={{ width: '100%' }} value={receiptDate}
                               onChange={setReceiptDate} allowClear={false} />
                           </Col>
@@ -2110,8 +1734,6 @@ function ProductionOrdersTab({
                                   onChange={(v) => setReceived(
                                     (x) => ({ ...x, [p.id]: v as any }))} />
                               </Col>
-                              {/* **الإجمالي بعد الدفعة دي، والفرق عن المخطّط.** الزيادة
-                                  والنقص الاتنين مسموحين — اللي طلع هو اللي طلع. */}
                               <Col span={9} style={{ fontSize: 14 }}>
                                 {now > 0 ? (
                                   <>
@@ -2165,9 +1787,6 @@ function ProductionOrdersTab({
                                       (x) => x.id === rc.product_line_id);
                                     return <b>{num(v)} {ln ? itemUnit(ln.item_id) : ''}</b>;
                                   } },
-                                /* **دفعة غلط لازم يبقى ليها طريقة.** اللي سجّل ٥٠٠ وهو
-                                   قاصد ٥٠ كان لازم يعكس الأمر كله — فيرجّع خامات اتصرفت
-                                   فعلاً ودفعات صح. */
                                 { title: '', key: 'x', width: 44, align: 'center' as const,
                                   render: (_: any, rc: POReceipt) => (
                                     <Popconfirm title="تعكس الدفعة دي؟"
@@ -2189,9 +1808,6 @@ function ProductionOrdersTab({
                     label: 'إقفال الأمر',
                     children: (
                       <>
-                        {/* **الرقم هنا هو الإجمالي اللي طلع، مش الباقي.** اللي استلم
-                            دفعات بيلاقيه مكتوب — والفرق بينه وبين المستلم هو اللي
-                            بيتحرّك دلوقتي. */}
                         {receiving.products.map((p) => (
                           <Row key={p.id} gutter={8} align="middle"
                             style={{ marginBottom: 10 }}>
@@ -2216,8 +1832,6 @@ function ProductionOrdersTab({
                             </Col>
                           </Row>
                         ))}
-                        {/* **والهالك هنا كمان.** محدش يعرف هيبوظ كام وهو بيخطّط؛ وهو
-                            جزء من الخامة اللي خرجت خلاص — مش خصم زيادة. */}
                         {receiving.materials.length > 0 && (
                           <>
                             <Divider orientation="right" style={{ margin: '14px 0 10px' }}>

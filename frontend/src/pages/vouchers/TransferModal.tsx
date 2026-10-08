@@ -1,13 +1,3 @@
-/**
- * تحويل بين الخزن — اتفصل عن `Vouchers.tsx`.
- *
- * الشاشة كانت مكوّن واحد ١٤٧٨ سطر فيه ستة بوبابات فوق بعض. كل بوباب بقى ملف
- * بمدخلاته مكتوبة: اللي بيعدّل سند المصروف مابيفتحش سند القبض قدامه، واللي بيقرا
- * بيشوف الفورم ده محتاج إيه بالظبط بدل ما يدوّر في حالة الشاشة كلها.
- *
- * الحالة بتفضل في الشاشة الأم — الفورم والقايمات والحفظ بيتبعتوا كمدخلات. البوباب
- * مالوش حالة خاصة بيه غير اللي يخصّه هو.
- */
 import React from 'react';
 import { searchFilter, searchRank } from '../../utils/arabicSort';
 import {
@@ -54,7 +44,6 @@ export default function TransferModal({
                   <Form.Item name="from_treasury_id" label="من" rules={[{ required: true, message: 'اختر الخزينة' }]}>
                     <Select
                       style={{ width: 200 }} showSearch
-                      // صندوق لكل خط لكل مندوب — القايمة طويلة كفاية إنها تتبحث.
                       filterOption={searchFilter} filterSort={searchRank}
                       options={treasuries
                         .filter((t) => t.active)
@@ -74,11 +63,9 @@ export default function TransferModal({
                   <Form.Item name="voucher_date" label="التاريخ" initialValue={dayjs()}>
                     <DatePicker />
                   </Form.Item>
-                  {/* «بيان السند» كلام الورقة — التحويل بين الخزن كان مالوش ولا سطر كلام. */}
                   <Form.Item name="statement1" label="بيان السند">
                     <Input placeholder="الكلام المكتوب على ورقة السند" style={{ width: 220 }} />
                   </Form.Item>
-                  {/* رقم الورقة اللي اتكتبت بالإيد — جنب رقم السند عندنا مش بداله. */}
                   <Form.Item name="external_document_number" label="رقم المستند">
                     <Input placeholder="رقم السند الورقي" style={{ width: 160 }} />
                   </Form.Item>

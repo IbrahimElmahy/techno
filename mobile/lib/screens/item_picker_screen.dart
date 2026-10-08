@@ -4,24 +4,9 @@ import '../db/local_db.dart';
 import '../models/models.dart';
 import '../theme.dart';
 
-/// إضافة أصناف المعاينة — بوبابين ورا بعض، وبتفضل مفتوحة لحد ما تقول «تم».
-///
-/// It used to be a full screen: open it, search, tap an item, type a quantity, and you are dropped
-/// back on the form. A rep recording a visit adds six or seven items in a row, so that is six or
-/// seven round trips through a screen transition to add six lines.
-///
-/// Now it is two dialogs over the form: pick the item, then say how many. «التالي» records that one
-/// and reopens the picker straight away, so the next item is one tap from the last. «تم» records it
-/// and closes.
-///
-/// **The quantity box starts EMPTY on purpose.** It used to be pre-filled with «1», and a
-/// pre-filled number in a box you are about to type in is a number waiting to be half-overwritten —
-/// «1» plus a typed «2» is 12, or 21, depending on where the caret sat. The rep asked for it blank
-/// so the figure on the line is the one he meant.
 class AddItemFlow {
   const AddItemFlow._();
 
-  /// بيفضل يفتح البوبابات لحد ما المستخدم يقفل. `onAdd` بتتنادى لكل صنف يتضاف.
   static Future<void> show(
     BuildContext context,
     void Function(InspectionLine line) onAdd,
@@ -29,12 +14,12 @@ class AddItemFlow {
     var keepGoing = true;
     while (keepGoing && context.mounted) {
       final item = await _pickItem(context);
-      if (item == null) return; // خرج من اختيار الصنف
+      if (item == null) return;
 
       if (!context.mounted) return;
       final answer = await _askQuantity(context, item);
       if (!context.mounted) return;
-      if (answer == null) continue; // رجع يختار صنف تاني
+      if (answer == null) continue;
 
       onAdd(answer.line);
       keepGoing = answer.another;
@@ -42,7 +27,6 @@ class AddItemFlow {
   }
 }
 
-/// نتيجة بوباب الكمية: السطر، وهل المستخدم عايز يضيف صنف تاني.
 class _QuantityAnswer {
   const _QuantityAnswer(this.line, {required this.another});
   final InspectionLine line;
@@ -51,7 +35,6 @@ class _QuantityAnswer {
 
 String _fmt(double v) {
   if (v == v.roundToDouble()) return v.toInt().toString();
-  // Trim trailing zeros on fractional points (0.1667 → 0.1667, 0.5000 → 0.5).
   return v.toStringAsFixed(4).replaceFirst(RegExp(r'0+$'), '').replaceFirst(RegExp(r'\.$'), '');
 }
 
@@ -72,7 +55,6 @@ Future<_QuantityAnswer?> _askQuantity(BuildContext context, CatalogItem item) =>
       ),
     );
 
-/// بوباب اختيار الصنف — بحث وقايمة.
 class _ItemPickerDialog extends StatefulWidget {
   const _ItemPickerDialog();
 
@@ -121,8 +103,6 @@ class _ItemPickerDialogState extends State<_ItemPickerDialog> {
       ),
       content: SizedBox(
         width: 420,
-        // Tall enough to show a useful number of items, capped so the dialog never runs off a
-        // small phone.
         height: MediaQuery.of(context).size.height * 0.55,
         child: Column(
           children: [
@@ -185,7 +165,6 @@ class _ItemPickerDialogState extends State<_ItemPickerDialog> {
   }
 }
 
-/// بوباب الكمية — ومنه «التالي» أو «تم».
 class _QuantityDialog extends StatefulWidget {
   const _QuantityDialog({required this.item});
   final CatalogItem item;
@@ -195,7 +174,6 @@ class _QuantityDialog extends StatefulWidget {
 }
 
 class _QuantityDialogState extends State<_QuantityDialog> {
-  // Empty, not «1» — see the note on AddItemFlow.
   final _qty = TextEditingController();
   String? _error;
 
@@ -207,7 +185,6 @@ class _QuantityDialogState extends State<_QuantityDialog> {
 
   double get _typed => double.tryParse(_qty.text.trim()) ?? 0;
 
-  /// بيقفل البوباب بالسطر — أو بيوقف ويقول الكمية غلط.
   void _finish({required bool another}) {
     final q = _typed;
     if (q <= 0) {
@@ -217,19 +194,6 @@ class _QuantityDialogState extends State<_QuantityDialog> {
     Navigator.pop(
       context,
       _QuantityAnswer(
-        // `item_id` بيفضل null — والقرار ده قرار شغل مش تفصيلة تقنية.
-        //
-        // أصناف المعاينة **بتتعدّ للنقاط بس**؛ المندوب مش بيركّبها من عربيته. اتأكدنا من ده
-        // مع صاحب النظام.
-        //
-        // The server treats a line carrying an `item_id` as a real movement: it renames the line
-        // after that product and posts an `inspection_out` deducting it from the rep's custody.
-        // The two catalogues are numbered from 1 independently, so eight of the thirty-two
-        // inspection ids land on an unrelated product — the line would draw down something the rep
-        // never touched, or be refused outright with «الرصيد غير كافٍ في عهدتك».
-        //
-        // If the business ever changes and these items ARE fitted from the van, this is not the
-        // place to fix it: the inspection catalogue would first have to point at real products.
         InspectionLine(
           itemId: null,
           itemName: widget.item.name,
@@ -266,7 +230,6 @@ class _QuantityDialogState extends State<_QuantityDialog> {
             ),
           ),
           const SizedBox(height: 10),
-          // The running total, so the rep sees what the line is worth before committing it.
           Align(
             alignment: AlignmentDirectional.centerStart,
             child: Text(
@@ -282,8 +245,6 @@ class _QuantityDialogState extends State<_QuantityDialog> {
       actionsPadding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
       actions: [
         TextButton(onPressed: () => Navigator.pop(context), child: const Text('رجوع')),
-        // «التالي» is the common case — a rep adding one item is the exception — so it is the
-        // filled button and the one Enter triggers.
         OutlinedButton(onPressed: () => _finish(another: false), child: const Text('تم')),
         FilledButton(onPressed: () => _finish(another: true), child: const Text('التالي')),
       ],

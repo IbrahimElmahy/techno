@@ -24,14 +24,10 @@ interface Option {
 }
 
 export default function Settings() {
-  // `?section=` لسه بيشتغل لبقية أقسام الصفحة — «أدوات خاصة» اتشالت من القايمة و«الصلاحيات»
-  // بقت مكانها في شاشة مستقلة.
   useSectionParam();
   const [pages, setPages] = useState<PageGroup[]>([]);
   const [loading, setLoading] = useState(false);
   const [seeding, setSeeding] = useState(false);
-  // نوع التكلفة (B5) — how a unit of stock is valued when a NEW cost is derived. Costs already
-  // frozen onto past documents are untouched by it, which is why they were frozen.
   const [costingMethod, setCostingMethod] = useState<string>('average');
   const [savingCosting, setSavingCosting] = useState(false);
 
@@ -83,7 +79,6 @@ export default function Settings() {
       .catch(console.error);
   }, []);
 
-  // Search runs over the flattened categories, then they are regrouped under their page.
   const allCategories = useMemo(
     () => pages.flatMap((pg) =>
       pg.categories.map((c) => ({ ...c, page: pg.page, page_label: pg.page_label }))),
@@ -261,8 +256,6 @@ function CategoryEditor({ meta }: { meta: CategoryMeta }) {
       ),
     },
     {
-      // The note lives beside the name because that is where it is read: "which category is
-      // this again" is answered by the description, not by opening something.
       title: 'الوصف', dataIndex: 'description',
       render: (_: string, r: Option) => (
         <EditableLabel value={r.description || ''} placeholder="اكتب وصفاً (اختياري)"
@@ -299,7 +292,6 @@ function CategoryEditor({ meta }: { meta: CategoryMeta }) {
     },
   ];
 
-  // إخفاء وترتيب الأعمدة — نفس المحرك اللي كل الجداول بتستخدمه.
   const tableCols = useTableColumns('settings-lookups', columns, {
     export: { name: meta.label, rows: filter.filtered },
   });
@@ -369,10 +361,6 @@ function EditableLabel({ value, onSave, placeholder }:
   );
 }
 
-
-// ---------------------------------------------------------------------------
-// التوجيه المحاسبي
-// ---------------------------------------------------------------------------
 interface RoutingRow {
   role: string;
   label: string;
@@ -383,18 +371,6 @@ interface RoutingRow {
   nature_warning?: string | null;
 }
 
-/**
- * Points each posting role at an account from the client's own chart.
- *
- * Every posting in the system names a role, not an account, and the default is an account this
- * system seeded. That default is safe but presumptuous: an accountant who already has a chart
- * wants revenue on *their* revenue account, where their auditor looks for it.
- *
- * Two things this screen is careful about. It shows whether each row is a default or something
- * somebody configured — the two are indistinguishable once posted, and that distinction is the
- * first question when a statement reads wrong. And every row can be put back, because the fastest
- * fix for a role pointed somewhere wrong is the safe behaviour, immediately.
- */
 function AccountRoutingCard() {
   const [rows, setRows] = useState<RoutingRow[]>([]);
   const [accounts, setAccounts] = useState<any[]>([]);
@@ -466,20 +442,6 @@ function AccountRoutingCard() {
   );
 }
 
-
-// ---------------------------------------------------------------------------
-// قفل تعديل المستندات (أيام)
-// ---------------------------------------------------------------------------
-/**
- * إعدادات المستندات — الخصم الثابت ونسبة الضريبة.
- *
- * كان فيها كمان «قفل تعديل المستندات بعد (أيام)»: بعد المدة دي من تاريخ المستند، التعديل
- * للمسؤول بس. الخانة اتشالت لما القفل نفسه اتشال من السيرفر بطلب العميل — والخانة اللي
- * بتوعد بقفل مش بيحصل أوحش من مافيش خانة خالص، لأن اللي بيظبطها بيفتكر إنه اتحمى.
- *
- * العمود `edit_lock_days` لسه في الجدول وفي عقد الـAPI؛ مسحه بيحتاج هجرة على قاعدة فيها
- * بيانات، وقيمته دلوقتي مالهاش أي أثر.
- */
 function DocumentPolicyCard() {
   const [fixedPct, setFixedPct] = useState<string>('0');
   const [vatPct, setVatPct] = useState<string>('0');
@@ -506,14 +468,6 @@ function DocumentPolicyCard() {
   );
 }
 
-
-/**
- * أقفال التواريخ (المرحلة ٤ — موديل أودو).
- *
- * الخانتين بيبدأوا فاضيين وبيفضلوا كده لحد ما الأدمن يحطهم. الإقفال كان اتشال
- * بطلب العميل عشان الفاتورة اللي اتأخرت تتكتب بتاريخها الحقيقي — فرجوعه لازم
- * يبقى قرار مكتوب بإيد، مش سلوك بيشتغل لوحده.
- */
 function LockDatesCard() {
   const [fiscal, setFiscal] = useState<Dayjs | null>(null);
   const [period, setPeriod] = useState<Dayjs | null>(null);
@@ -589,40 +543,12 @@ function LockDatesCard() {
   );
 }
 
-
-/**
- * دمج العملاء المكرّرين — الخطة الأول، والتنفيذ قرار تاني.
- *
- * The old system could give a customer only one receivable account, so selling him two product
- * lines meant opening him twice: «محمد عامر» for أبيض and «تكنو محمد عامر» for بولي. The merge puts
- * them back together — one customer, two family accounts, and a total.
- *
- * It lives here rather than in a script because a script can only ever run against the database on
- * somebody's own machine. That is how production came to keep its duplicates while every local copy
- * had them joined: a deploy carries code and does not touch data, which from outside is
- * indistinguishable from the work never having been done.
- *
- * **Nothing is deleted and no money moves.** The duplicate's LEDGER account carries his whole
- * history and simply becomes the بولي account of the surviving customer; the duplicate row is
- * deactivated, not removed. The server totals every customer balance before and after and refuses
- * the whole thing if the two disagree by a piastre.
- */
 function CustomerMergeCard() {
   const [plan, setPlan] = useState<any>(null);
   const [busy, setBusy] = useState(false);
 
   const [progress, setProgress] = useState<string | null>(null);
 
-  /**
-   * التنفيذ بيمشي على دفعات.
-   *
-   * Merging all 86 in one request kept returning 503: the platform caps how long a request may
-   * run, and that cap is not something this code can see or should have to guess. In batches it
-   * stops mattering — each call is short, and this repeats until nothing is left.
-   *
-   * Safe to interrupt at any point. A merge is per-customer and independent, so «twenty done,
-   * sixty left» is not a half-finished state; it is sixty people who have not been merged yet.
-   */
   const BATCH = 15;
 
   const run = async (apply: boolean) => {
@@ -640,8 +566,6 @@ function CustomerMergeCard() {
 
       let done = 0;
       let last: any = null;
-      // Bounded rather than `while (true)`: a server that always reports work left would otherwise
-      // spin forever, and a loop that cannot end is worse than one that stops and says so.
       for (let round = 0; round < 40; round += 1) {
         const res = await api.post(
           `/api/v1/admin/merge-customers?apply=true&limit=${BATCH}`);
@@ -678,7 +602,6 @@ function CustomerMergeCard() {
             <Tag color={pairs.length ? 'blue' : 'green'}>{pairs.length} عميل متكرّر</Tag>
             <Tag>{plan.techno_only?.length ?? 0} «تكنو» من غير أصل</Tag>
             {plan.skipped?.length ? <Tag color="orange">{plan.skipped.length} اتخطّى</Tag> : null}
-            {/* الرقم اللي بيقول إن الدمج أمان. لو اتغيّر، السيرفر أصلاً رفض. */}
             <Tag color={balancesMatch ? 'green' : 'red'}>
               الأرصدة: {plan.balance_before} {balancesMatch ? '— كما هي' : `← ${plan.balance_after}`}
             </Tag>
@@ -692,10 +615,6 @@ function CustomerMergeCard() {
               pagination={{ defaultPageSize: PAGE_SIZE, showTotal: (t) => `إجمالي ${t}` }}
               columns={[
                 { title: 'الاسم', dataIndex: 'base_name' },
-                // `keep` and `merge` come back NESTED — {id, name} — and these read them flat, so
-                // both columns were blank: the plan showed how many would merge and never which
-                // account survives. That is the one thing it exists to show before an irreversible
-                // merge, so the id goes beside the name; two customers can share one.
                 { title: 'الحساب الذي سيبقى', key: 'keep',
                   render: (_: any, r: any) => (r.keep
                     ? <span>{r.keep.name} <span style={{ color: '#6b6b6b' }}>#{r.keep.id}</span></span>

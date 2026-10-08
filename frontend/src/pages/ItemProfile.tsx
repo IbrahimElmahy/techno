@@ -25,10 +25,6 @@ import StatsRow from '../components/StatsRow';
 import { useMovementLabels } from '../lib/movementTypes';
 import { money, qty } from '../utils/money';
 import { dualQty, lengthUnits } from '../utils/units';
-/**
- * ملف الصنف (Item 360) — where this item is, who bought it, who we bought it from, every
- * movement it ever made, and every time its price changed.
- */
 
 const KIND_LABEL: Record<string, string> = {
   product: 'منتج تام', raw_material: 'مادة خام',
@@ -41,9 +37,7 @@ const PRICE_FIELD_LABELS: Record<string, string> = {
   sale_price: 'سعر البيع', purchase_price: 'سعر الشراء',
   default_discount_pct: 'نسبة الخصم الافتراضية', ...TIER_LABELS,
 };
-// Every movement_type the services actually post — keep in sync with stock/manufacturing.
 
-/** Offer only the values the loaded rows actually contain, labelled in Arabic. */
 const optionsOf = (rows: any[], field: string, labels: Record<string, string> = {}) =>
   Array.from(new Set((rows || []).map((r) => r[field]).filter(Boolean)))
     .map((v: any) => ({ value: v, label: labels[v] || String(v) }));
@@ -52,13 +46,10 @@ export default function ItemProfile() {
   const moveLabels = useMovementLabels();
   const { itemId } = useParams();
   const navigate = useNavigate();
-  /** «رجوع» للمكان اللي جيت منه؛ الكشف خطة بديلة. */
   const goBack = useBackTo('/catalog');
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(false);
-  // شجرة الفئات — الكارت بيعرض الطريق «الرئيسية ← الفرعية» بدل قيمة واحدة. (031)
   const { tree: categoryTree } = useCategoryTree();
-  /** «الرئيسية ← الفرعية» بالأسماء المعروضة، أو الاسم لوحده لو الفئة رئيسية. */
   const categoryPath = (value: string | null | undefined): string => {
     if (!value) return '';
     const label = categoryTree.labels[value] || value;
@@ -68,13 +59,11 @@ export default function ItemProfile() {
   };
   const [editOpen, setEditOpen] = useState(false);
   const { user, can } = useAuth();
-  // Same gate as the catalog list: only the roles allowed to create items may edit one.
   const canEdit = can('catalog.write');
   const canEditPoints = can('product_points.write');
   const canEditPrices = ['system_admin', 'branch_manager', 'purchasing_manager']
     .includes(roleForAccess(user?.role));
 
-  // Each record tab keeps its own search.
   const movementsFilter = useListFilter<any>(data?.movements || [], {
     search: (m) => [m.source, m.location, m.quantity,
                     (m as any).movement_label || moveLabels[m.movement_type] || m.movement_type],
@@ -119,7 +108,6 @@ export default function ItemProfile() {
 
   const openDoc = useOpenDocument();
   const [history, setHistory] = useState<MovementHistoryTarget | null>(null);
-  // رصيد في مخزن بيفتح حركات الصنف في المخزن ده — نفس النافذة اللي أرصدة المخازن بتفتحها.
   const stockKb = useTableKeyboard<any>({
     rows: data?.stock_by_location ?? [], rowKey: (r) => `${r.location_kind}-${r.location_id}`,
     onOpen: (r) => data && setHistory({
@@ -127,7 +115,6 @@ export default function ItemProfile() {
       locationKind: r.location_kind, locationId: r.location_id,
     }),
   });
-  // وسطور البيع والشرا بتفتح فواتيرها — الزرار في آخر السطر، والسطر كله بقى يوصّل لنفس المكان.
   const salesKb = useTableKeyboard<any>({
     rows: salesFilter.filtered,
     rowKey: (r) => `${r.document_number}-${r.date}-${r.party}-${r.line_total}`,
@@ -138,8 +125,6 @@ export default function ItemProfile() {
     rowKey: (r) => `${r.document_number}-${r.date}-${r.party}-${r.line_total}`,
     onOpen: (r) => openDoc('purchase', r.invoice_id),
   });
-  // الحركة نفسها مالهاش رقم مستند مربوط في الرد، فبتفتح كارت الصنف على تاريخها — أقرب حاجة أخص
-  // من غير ما نخترع لينك بيودّي على قايمة.
   const movesKb = useTableKeyboard<any>({
     rows: movementsFilter.filtered, rowKey: (r) => r.id,
     onOpen: () => navigate(`/item-card?item=${itemId}`),
@@ -159,15 +144,12 @@ export default function ItemProfile() {
       render: (v: string) => (v ? TIER_LABELS[v] || v : '-') },
     { title: 'الإجمالي', dataIndex: 'line_total', key: 'tot', ...numberColumn<any>((r) => r.line_total),
       render: (v: string) => `${money(v)}` },
-    // The item's history used to be read-only rows; now each one leads
-    // back to the invoice it came from.
     { title: '', key: 'link', width: 180,
       render: (_: any, r: any) => (r.invoice_id
         ? <DocumentLink kind="invoice" id={r.invoice_id} size="small" allowEdit />
         : null) },
   ];
 
-  // إخفاء وترتيب الأعمدة — نفس المحرك اللي كل الجداول بتستخدمه.
   const tableCols = useTableColumns('item-sales', columns, {
     export: { name: 'سجل بيع الصنف', rows: salesFilter.filtered },
   });
@@ -213,7 +195,6 @@ export default function ItemProfile() {
                   <Statistic title="الرصيد الحالي" value={qty(data.on_hand)}
                     suffix={it.unit_of_measure}
                     valueStyle={{ color: onHand > 0 ? '#3f8600' : onHand < 0 ? '#cf1322' : undefined }} />
-                  {/* صنف ليه «القطعة = N متر»: نفس الرصيد بالوحدة التانية تحته. */}
                   {Number(it.meters_per_piece || 0) > 0 ? (
                     <div style={{ color: '#64748b', fontSize: 13 }}>
                       {dualQty(onHand, lengthUnits(it.unit_of_measure, it.meters_per_piece))}
@@ -258,11 +239,6 @@ export default function ItemProfile() {
                             ? ` — القطعة = ${qty(it.meters_per_piece)} متر` : ''}
                         </Descriptions.Item>
                         <Descriptions.Item label="التصنيف">
-                          {/* **الاسم مش القيمة.** الكارت كان بيعرض `it.category` خام —
-                              وهي القيمة المتولّدة وقت الإنشاء (`مواسير_PVC`) — بينما كل
-                              شاشة تانية بتعرض الليبل. والطريق بيتكتب كامل عشان اللي
-                              عنده فئتين فرعيتين بنفس الاسم تحت رئيسيتين مختلفتين
-                              يعرف هو تحت أنهي واحدة. من غير شجرة بيطلع اسم واحد. */}
                           {categoryPath(it.category) || '-'}
                         </Descriptions.Item>
                         <Descriptions.Item label="الحالة">
@@ -358,9 +334,6 @@ export default function ItemProfile() {
                           pageSizeOptions: PAGE_SIZE_OPTIONS }}
                         columns={[
                         { title: 'التاريخ', dataIndex: 'date', key: 'd', ...dateColumn<any>((r) => r.date) },
-                        // `movement_label` بييجي من السيرفر وبيغلب الاسم العام: «تسوية
-                        // رصيد افتتاحي» حركتها `opening` زي الافتتاحي بالظبط، والصنف
-                        // اللي اتصلّح كان بيبان وكأن افتتاحيه اتسجّل مرتين.
                         { title: 'النوع', dataIndex: 'movement_type', key: 't',
                           ...textColumn(data?.movements ?? [],
                                         (r: any) => r.movement_label || moveLabels[r.movement_type] || r.movement_type),
@@ -400,8 +373,6 @@ export default function ItemProfile() {
                         ]}
                       />
                       <Table
-                        // Keyed by the row's own identity, not its position: these rows are
-                        // filtered, so an index key would re-map content across rows.
                         {...salesKb.tableProps}
                         size="small" dataSource={salesFilter.filtered}
                         rowKey={(r: any) => `${r.document_number}-${r.date}-${r.party}-${r.line_total}`}
@@ -497,8 +468,6 @@ export default function ItemProfile() {
                           render: (v: string | null) => (v === null ? '—' : <b>{money(v)}</b>) },
                         {
                           title: 'التغيير', key: 'delta',
-                          // فلتر على نسبة التغيير نفسها: «إيه اللي غلي أكتر من ١٠٪» مالهاش
-                          // إجابة من عمودي «من» و«إلى» كل واحد لوحده.
                           ...numberColumn<any>((r) => (r.old_value && r.new_value !== null
                             ? ((Number(r.new_value) - Number(r.old_value)) / Number(r.old_value)) * 100
                             : 0)),

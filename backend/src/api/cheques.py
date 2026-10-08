@@ -1,4 +1,3 @@
-"""Cheques + financial statements + aging router — 020-finance-reports."""
 from __future__ import annotations
 
 from datetime import date
@@ -40,7 +39,6 @@ class ChequeIn(BaseModel):
     supplier_id: int | None = None
     treasury_id: int | None = None
     description: str | None = Field(default=None, max_length=255)
-    # البيان — كلام الورقة. الشرح في `models/cheque.py`.
     statement1: str | None = Field(default=None, max_length=200)
 
 
@@ -82,7 +80,6 @@ class IncomeStatementOut(BaseModel):
     total_income: Decimal
     total_expenses: Decimal
     net_profit: Decimal
-    # الخيارات المشتركة — نفس الشكل في كل تقرير.
     posted_only: bool = True
     comparison_label: str | None = None
     comparison: "IncomeStatementOut | None" = None
@@ -142,7 +139,6 @@ def register_cheque(
     current: CurrentUser = Depends(require_capability(CAP_VOUCHER_WRITE)),
     db: Session = Depends(get_db),
 ) -> ChequeOut:
-    """تسجيل شيك وارد من عميل أو صادر لمورد — القيمة تدخل حساب الشيكات لا الخزينة."""
     _office_only(current)
     try:
         c = cheque_service.register_cheque(
@@ -165,7 +161,6 @@ def settle_cheque(
     current: CurrentUser = Depends(require_capability(CAP_VOUCHER_WRITE)),
     db: Session = Depends(get_db),
 ) -> ChequeOut:
-    """تحصيل شيك وارد أو صرف شيك صادر."""
     _office_only(current)
     try:
         c = cheque_service.settle_cheque(
@@ -183,7 +178,6 @@ def bounce_cheque(
     current: CurrentUser = Depends(require_capability(CAP_VOUCHER_WRITE)),
     db: Session = Depends(get_db),
 ) -> ChequeOut:
-    """ارتداد شيك وارد — الدين يرجع على العميل."""
     _office_only(current)
     try:
         c = cheque_service.bounce_cheque(db, cheque_id=cheque_id, actor_user_id=current.id)
@@ -199,7 +193,6 @@ def unsettle_cheque(
     current: CurrentUser = Depends(require_capability(CAP_VOUCHER_WRITE)),
     db: Session = Depends(get_db),
 ) -> ChequeOut:
-    """عكس تحصيل/صرف شيك — القيمة ترجع للحساب الوسيط والشيك يرجع تحت التحصيل."""
     _office_only(current)
     try:
         c = cheque_service.unsettle_cheque(db, cheque_id=cheque_id, actor_user_id=current.id)
@@ -245,17 +238,13 @@ def list_cheques(
 def income_statement(
     date_from: date | None = Query(default=None),
     date_to: date | None = Query(default=None),
-    # سلوك تقارير أودو المشترك — نفس الخيارين في كل تقرير بنفس المعنى.
     posted_only: bool = Query(default=True),
     comparison: str = Query(default="none", pattern="^(none|previous|last_year)$"),
     current: CurrentUser = Depends(require_capability(CAP_VOUCHER_READ)),
     db: Session = Depends(get_db),
 ) -> IncomeStatementOut:
-    """قائمة الدخل — مع عمود مقارنة اختياري."""
     options = ReportOptions(date_from=date_from, date_to=date_to,
                             posted_only=posted_only, comparison=comparison)
-    # مدير الفرع بيشوف قائمة دخل فرعه. المستندات مفلترة من زمان، والتقرير كان
-    # لسه بيجمّع على الشركة كلها — يعني رقم مش بتاعه على شاشته.
     both = financial_reports_service.income_statement_compared(
         db, options, branch_id=branch_scope.visible_branch_id(current))
     s = both["current"]
@@ -282,7 +271,6 @@ def balance_sheet(
     current: CurrentUser = Depends(require_capability(CAP_VOUCHER_READ)),
     db: Session = Depends(get_db),
 ) -> BalanceSheetOut:
-    """الميزانية / المركز المالي — مع عمود مقارنة اختياري."""
     options = ReportOptions(date_to=as_of, posted_only=posted_only, comparison=comparison)
     both = financial_reports_service.balance_sheet_compared(
         db, options, branch_id=branch_scope.visible_branch_id(current))
@@ -311,16 +299,12 @@ def aging(
     current: CurrentUser = Depends(require_capability(CAP_VOUCHER_READ)),
     db: Session = Depends(get_db),
 ) -> list[AgingRowOut]:
-    """أعمار الديون — عملاء أو موردين."""
     branch_id = branch_scope.visible_branch_id(current)
     rows = (financial_reports_service.receivables_aging(db, as_of=as_of, branch_id=branch_id)
             if party == "customers"
             else financial_reports_service.payables_aging(db, as_of=as_of, branch_id=branch_id))
     return [AgingRowOut(party_id=r.party_id, party_name=r.party_name, total=r.total,
                         buckets=r.buckets) for r in rows]
-
-
-# ------------------------------------------------- دفتر الشريك (المرحلة ٤ — موديل أودو)
 
 
 class PartnerLedgerLineOut(BaseModel):
@@ -366,7 +350,6 @@ def partner_ledger(
     current: CurrentUser = Depends(require_capability(CAP_VOUCHER_READ)),
     db: Session = Depends(get_db),
 ) -> list[PartnerLedgerRowOut]:
-    """دفتر الشريك — حركة كل طرف في الفترة برصيد جاري ومتبقّي كل سطر."""
     rows = partner_ledger_service.partner_ledger(
         db, partner_kind=partner_kind, partner_id=partner_id,
         date_from=date_from, date_to=date_to, only_open=only_open,
@@ -380,9 +363,6 @@ def partner_ledger(
         )
         for r in rows
     ]
-
-
-# --------------------------------------------- التدفق النقدي (المرحلة ٤ — موديل أودو)
 
 
 class CashFlowLineOut(BaseModel):
@@ -418,7 +398,6 @@ def cash_flow(
     current: CurrentUser = Depends(require_capability(CAP_VOUCHER_READ)),
     db: Session = Depends(get_db),
 ) -> CashFlowOut:
-    """التدفق النقدي — حركة الخزن والبنوك منسوبة لحسابها المقابل."""
     s = cash_flow_service.cash_flow(db, date_from=date_from, date_to=date_to,
                                     branch_id=branch_scope.visible_branch_id(current))
     return CashFlowOut(

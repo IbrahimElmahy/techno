@@ -1,9 +1,3 @@
-"""Site inspections (معاينات) — 015-inspections-mobile.
-
-Creates inspection documents (technician/regular visits) with item lines and point totals.
-Sync is idempotent: a record whose `client_uuid` already exists is returned unchanged, so the
-mobile app can safely retry a batch after a dropped connection.
-"""
 from __future__ import annotations
 
 import logging
@@ -34,18 +28,11 @@ class InspectionError(Exception):
 
 
 def rep_custody(db: Session, rep_user_id: int) -> Custody | None:
-    """The rep's active custody, or None (admins / reps not yet issued one)."""
     return db.scalar(select(Custody).where(
         Custody.rep_id == rep_user_id, Custody.active.is_(True)))
 
 
 def rep_stock_location(db: Session, rep_user_id: int) -> tuple[LocationKind, int] | None:
-    """Where the rep's carried goods live.
-
-    A custody linked to a warehouse (e.g. «مخزن السياره ب») points at that warehouse — the
-    company stocks it with ordinary transfers. An unlinked custody holds stock directly
-    (central_to_rep transfers). None ⇒ no custody: inspections stay informational.
-    """
     custody = rep_custody(db, rep_user_id)
     if custody is None:
         return None
@@ -57,7 +44,6 @@ def rep_stock_location(db: Session, rep_user_id: int) -> tuple[LocationKind, int
 def location_holdings(
     db: Session, location_kind: LocationKind, location_id: int
 ) -> dict[int, Decimal]:
-    """item_id -> on-hand at one location (derived from movements, Σ in − out)."""
     rows = db.scalars(select(StockMovement).where(
         StockMovement.location_kind == location_kind,
         StockMovement.location_id == location_id,
@@ -82,8 +68,6 @@ def _doc_number(db: Session) -> str:
     return numbering.next_document_number(db, Inspection, "INSP")
 
 
-# The client's paper warranty certificates reached ~156204 in the legacy system —
-# our sequence continues it so the printed numbers stay unique company-wide.
 CERTIFICATE_SEQUENCE_FLOOR = 156204
 
 
@@ -97,11 +81,6 @@ def _points(value) -> Decimal:
 
 
 def seed_item_types(db: Session) -> int:
-    """Seed the point-items catalog from «حساب نقاط» ONCE — only when the table is empty.
-
-    Seeding once (not per-name) is deliberate: the admin fully manages the list afterwards,
-    so a deactivated or renamed item must never be resurrected by the seed.
-    """
     from src.data.inspection_item_seed import INSPECTION_ITEM_TYPES
     from src.models.inspection_item_type import InspectionItemType
 
@@ -131,7 +110,7 @@ def create_item_type(db: Session, *, name: str, points, actor_user_id: int,
                      sort_order: int | None = None):
     from src.models.inspection_item_type import InspectionItemType
 
-    seed_item_types(db)  # so the standard list exists even if the admin adds before any read
+    seed_item_types(db)
     clean = " ".join((name or "").split())
     if not clean:
         raise InspectionError("اسم الصنف مطلوب.")
@@ -184,7 +163,6 @@ def update_item_type(db: Session, *, item_type_id: int, actor_user_id: int,
 
 
 def deactivate_item_type(db: Session, *, item_type_id: int, actor_user_id: int):
-    """Soft-delete — the row stays (so the seed can't resurrect it) but drops out of the app."""
     return update_item_type(db, item_type_id=item_type_id, actor_user_id=actor_user_id,
                             active=False)
 
@@ -202,8 +180,6 @@ def create_inspection(
     customer_id: int | None = None, owner_id: int | None = None, client_uuid: str | None = None,
     merchant_customer_id: int | None = None,
 ) -> Inspection:
-    # A regular visit is tied to a chosen customer; its owner_name is filled from the customer,
-    # so a technician inspection needs a typed owner while a regular visit needs a customer.
     name = (owner_name or "").strip()
     if customer_id is not None:
         from src.models.customer import Customer
@@ -218,23 +194,12 @@ def create_inspection(
 
         owner = db.get(Owner, owner_id)
         if owner is None:
-            # **المرجع الميّت بيتفكّ، والزيارة بتتسجّل.** كان بيترفع استثناء —
-            # فالمندوب اللي اختار مالك من كاش قديم على تليفونه بيقف على «المالك
-            # غير موجود» وهو واقف في البيت خلاص وعمل الشغل. الرقم اللي بقى
-            # مايشاورش على حد (الجدول اتبنى من الصفر بأرقام جديدة) مش سبب كافي
-            # نرمي معاينة حصلت.
-            #
-            # الاسم هو اللي بيفضل، وهو اللي الشاشة بتعرضه أصلاً. الربط ممكن
-            # يترجع بعدين بالاسم؛ الزيارة الضايعة مالهاش رجعة.
-            #
-            # واللي مالوش اسم بيترفض تحت — مستند بلا صاحب مالوش معنى.
             owner_id = None
         elif not name:
             name = owner.name
     if not name:
         raise InspectionError("اسم صاحب الزيارة (أو العميل) مطلوب.")
 
-    # Idempotent sync: the device retries whole batches — an already-synced UUID is a no-op.
     if client_uuid:
         existing = db.scalar(select(Inspection).where(Inspection.client_uuid == client_uuid))
         if existing is not None:
@@ -259,9 +224,6 @@ def create_inspection(
     db.add(insp)
     db.flush()
 
-    # When the recording rep holds a custody, every identified item line deducts from his
-    # stock location (custody or its linked car warehouse) — the rep can only install what he
-    # actually carries (no-negative enforced by stock_service).
     stock_loc = rep_stock_location(db, rep_user_id)
 
     total = Decimal("0")
@@ -269,14 +231,11 @@ def create_inspection(
         qty = to_qty(ln.quantity)
         if qty <= 0:
             raise InspectionError("كمية السطر لازم تكون أكبر من صفر.")
-        # Snapshot the name so the record survives later catalog renames/removals.
         name = ln.item_name
         if ln.item_id is not None:
             item = db.get(Item, ln.item_id)
             if item is not None:
                 name = item.name
-        # Multiply the FULL-precision points by quantity, THEN round — so 6 × (1/6) = 1.000
-        # exactly instead of drifting from a pre-rounded 0.167.
         unit_points = Decimal(str(ln.points))
         line_total = _points(unit_points * qty)
         line = InspectionItem(
@@ -301,7 +260,6 @@ def create_inspection(
         total += line_total
     insp.total_points = _points(total)
     db.flush()
-    # بعد ما الإجمالي يخلص — الخصم بيتحسب على `total_points` النهائي مش على المجموع الجاري.
     sync_inspection_points(db, insp, actor_user_id=actor_user_id)
     audit_service.record(db, action="inspection.create", actor_user_id=actor_user_id,
                          entity_type="inspection", entity_id=insp.id,
@@ -322,9 +280,6 @@ def _build_inspection_stmt(
     stmt = select(Inspection)
     joined_customer = False
 
-    # **العزل بالمندوب ماكانش كفاية.** المعاينة بتتفلتر بـ`rep_user_id`، وده بيحمي
-    # المندوب من إنه يشوف شغل زميله — بس المدير مالوش `rep_id`، فكان بيشوف معاينات
-    # الفروع كلها. المعاينات كلها فرع واحد النهارده، فالمسار مفتوح ومش مسرّب بعد.
     if branch_id is not None:
         stmt = stmt.where(_or(Inspection.branch_id == branch_id,
                               Inspection.branch_id.is_(None)))
@@ -391,7 +346,6 @@ def list_inspections(
         certificate_number=certificate_number, owner=owner, technician=technician,
         trader=trader, q=q, branch_id=branch_id,
     )
-    # Total count after filters
     total_count = db.scalar(select(func.count()).select_from(stmt.order_by(None).subquery())) or 0
 
     query = stmt.options(selectinload(Inspection.items)).order_by(
@@ -435,12 +389,6 @@ def inspections_summary(
     }
 
 
-# --- نقاط المعاينة: الخصم من رصيد التاجر ---
-#
-# 🔴 من دلوقتي بس. المعاينات القديمة (١٠٩٢٢ معاينة) **مابتخصمش** — قرار المستخدم.
-# مافيش سكربت ترحيل خصم، ومتكتبش واحد: خصم رجعي بيحوّل أرصدة تجار موجودة لسالب كبير في
-# يوم وليلة، والتاجر اللي استلم كوبوناته من سنتين مش هيفهم الرقم الجديد.
-
 def _inspection_point_record(db: Session, inspection_id: int, kind):
     from src.models.loyalty import PointRecord
 
@@ -449,15 +397,6 @@ def _inspection_point_record(db: Session, inspection_id: int, kind):
 
 
 def _has_live_deduction(db: Session, inspection_id: int) -> bool:
-    """هل فيه خصم شغّال على المعاينة دي دلوقتي — يعني اتخصم ومااترجعش؟
-
-    السؤال مش «هل اتخصم قبل كده». الدفتر مابيتمسحش، فالخصم القديم بيفضل مكانه حتى بعد
-    ما الرفض يرجّعه بسطر موجب. سؤال «هل فيه سطر خصم» بيقول أيوه في الحالتين — واللي
-    حصل إن معاينة اتقبلت ← اترفضت ← اتقبلت تاني كانت بتعدّي من غير خصم: الدفتر يقول
-    ‑٢٨٤٫٥ و+٢٨٤٫٥ وخلاص، والمعاينة مقبولة والتاجر ماخدش عليها حاجة.
-
-    فالعدّ بيقارن الخصومات بالرجوعات: أكتر خصومات من رجوعات = فيه واحد شغّال.
-    """
     from src.models.loyalty import PointKind, PointRecord
 
     def _count(kind) -> int:
@@ -468,15 +407,6 @@ def _has_live_deduction(db: Session, inspection_id: int) -> bool:
 
 
 def sync_inspection_points(db: Session, inspection: Inspection, *, actor_user_id: int | None = None):
-    """يخصم نقط المعاينة من رصيد التاجر — مرة واحدة مهما اتنادت.
-
-    idempotent عن قصد: القبول بيعدّي من أكتر من طريق (إنشاء من الشاشة، مزامنة من تطبيق
-    المندوب اللي بيعيد إرسال الدفعة بعد قطع الشبكة، وتعبئة التاجر بعدين). سطرين خصم لنفس
-    المعاينة = رصيد التاجر ناقص ضعف اللي عليه فعلاً، ومحدش بيلاحظ غير لما يشتكي.
-
-    معاينة من غير تاجر مربوط مافيهاش خصم — مفيش رصيد نخصم منه. بتتسجّل تحذير بدل ما
-    تعدّي في صمت، لأن ده يبقى إما ربط ناقص أو معاينة اتكتبت غلط.
-    """
     from src.models.loyalty import PointKind
     from src.services import points_service
 
@@ -496,18 +426,10 @@ def sync_inspection_points(db: Session, inspection: Inspection, *, actor_user_id
 
 
 def _reverse_inspection_points(db: Session, inspection: Inspection, *, actor_user_id: int | None):
-    """الرفض بعد القبول بيرجّع الخصم بسطر جديد موجب — والأصلي بيفضل مكانه.
-
-    الدفتر بيحكي اللي حصل: اتخصم، وبعدين اترجع. مسح السطر الأصلي كان هيخلّي الرصيد صح
-    وتاريخه كدّاب، ومحدش يعرف إن المعاينة دي خصمت أصلاً.
-    """
     from src.models.loyalty import PointKind, PointRecord
 
     from src.services import points_service
 
-    # نفس سؤال `_has_live_deduction`: «فيه خصم شغّال؟» مش «فيه سطر خصم؟». الفحص القديم
-    # كان بيقف عند أول سطر رجوع، فالرفض التاني في دورة (قبول ← رفض ← قبول ← رفض)
-    # ماكانش بيرجّع حاجة — المعاينة مرفوضة والخصم لسه واقع على التاجر.
     if not _has_live_deduction(db, inspection.id):
         return None
     original = db.scalar(
@@ -516,7 +438,7 @@ def _reverse_inspection_points(db: Session, inspection: Inspection, *, actor_use
                PointRecord.kind == PointKind.inspection)
         .order_by(PointRecord.id.desc()))
     if original is None:
-        return None  # ماخصمتش أصلاً (معاينة قديمة أو من غير تاجر) — مافيش حاجة ترجع
+        return None
     return points_service.post(
         db, customer_id=original.customer_id, kind=PointKind.inspection_reverse,
         delta=-_points(original.delta), inspection_id=inspection.id,
@@ -533,7 +455,6 @@ def _delete_inspection_points(db: Session, inspection: Inspection) -> None:
 
 
 def _return_stock(db: Session, inspection: Inspection, *, actor_user_id: int) -> None:
-    """Mirror every custody deduction back (used by reject and by admin delete)."""
     for line in inspection.items:
         if line.stock_movement_id is not None:
             stock_service.reverse_movement(
@@ -543,11 +464,6 @@ def _return_stock(db: Session, inspection: Inspection, *, actor_user_id: int) ->
 
 
 def reject_inspection(db: Session, inspection: Inspection, *, actor_user_id: int) -> Inspection:
-    """رفض المعاينة — the legacy system's alternative to deletion.
-
-    Marks the certificate rejected and returns any deducted goods to the rep's stock.
-    Reject-once: a rejected inspection cannot be rejected again (stock would double-return).
-    """
     if inspection.status == InspectionStatus.rejected:
         raise InspectionError("المعاينة مرفوضة بالفعل.")
     _return_stock(db, inspection, actor_user_id=actor_user_id)
@@ -561,12 +477,6 @@ def reject_inspection(db: Session, inspection: Inspection, *, actor_user_id: int
 
 
 def _deduct_stock_again(db: Session, inspection: Inspection, *, actor_user_id: int) -> None:
-    """يخصم من عهدة المندوب تاني بعد ما الرفض رجّعها — للقبول بعد رفض.
-
-    السطر اللي مالوش `stock_movement_id` أصلاً مالهوش عهدة (المعاينة نقاط بس، وهي
-    الحالة الغالبة هنا)، فبيتعدّى. واللي له بيتخصم بنفس نداء الإنشاء عشان يمرّ من
-    نفس بوابة الرصيد — من غير كده الرصيد بيبقى سالب في صمت.
-    """
     stock_loc = rep_stock_location(db, inspection.rep_user_id)
     if stock_loc is None:
         return
@@ -590,15 +500,6 @@ def _deduct_stock_again(db: Session, inspection: Inspection, *, actor_user_id: i
 
 
 def accept_inspection(db: Session, inspection: Inspection, *, actor_user_id: int) -> Inspection:
-    """قبول معاينة مرفوضة — الرجوع عن الرفض.
-
-    الرفض كان طريق باتجاه واحد: الشاشة بتوري «مرفوضة» ومافيش طريق يرجّعها، فالمراجع
-    اللي رفض بالغلط ماكانش قدامه غير الحذف — وده بيمسح شغل حصل بدل ما يصحّح قرار.
-
-    بيرجّع البضاعة لعهدة الشركة تاني (زي القبول الأول) وبيخصم النقط من التاجر من جديد.
-    الخصم بيمرّ من `sync_inspection_points` اللي بيفحص وجود سطر غير معكوس الأول، فالقبول
-    مرتين بيكتب سطر واحد.
-    """
     if inspection.status == InspectionStatus.accepted:
         raise InspectionError("المعاينة مقبولة بالفعل.")
     _deduct_stock_again(db, inspection, actor_user_id=actor_user_id)
@@ -612,15 +513,8 @@ def accept_inspection(db: Session, inspection: Inspection, *, actor_user_id: int
 
 
 def delete_inspection(db: Session, inspection: Inspection, *, actor_user_id: int) -> None:
-    """Hard-delete (admin only) — custody deductions are reversed first so stock stays true.
-
-    A rejected inspection already returned its stock — deleting it must not return it twice.
-    """
     if inspection.status != InspectionStatus.rejected:
         _return_stock(db, inspection, actor_user_id=actor_user_id)
-    # سطور الدفتر بتتشال مع المستند. مش استثناء من «الدفتر مابيتمسحش»: المعاينة اللي
-    # اتمسحت مابقاش ليها وجود، فسطر خصم مربوط بيها بـFK هيمنع المسح أصلاً — وهي نفس
-    # القاعدة المتبعة مع الفاتورة اللي بتتمسح وبتاخد نقاطها معاها.
     _delete_inspection_points(db, inspection)
     audit_service.record(db, action="inspection.delete", actor_user_id=actor_user_id,
                          entity_type="inspection", entity_id=inspection.id,

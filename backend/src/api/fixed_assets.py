@@ -1,4 +1,3 @@
-"""الأصول الثابتة والإهلاك router (B6)."""
 from __future__ import annotations
 
 from datetime import date
@@ -50,9 +49,6 @@ class AssetOut(BaseModel):
     asset_account_id: int
     accumulated_account_id: int
     expense_account_id: int
-    # Accepted on the way in since the feature shipped and never returned on the way out, so the
-    # branch an asset belongs to could be recorded and never read. It is the fourth column on
-    # their الاصول الثابتة list.
     branch_id: int | None = None
     cost_center_id: int | None = None
     disposal_date: date | None = None
@@ -95,7 +91,6 @@ def create_asset(
     current: CurrentUser = Depends(require_capability(CAP_ACCOUNTING_JOURNAL_POST)),
     db: Session = Depends(get_db),
 ) -> AssetOut:
-    """تسجيل أصل ثابت — cost, salvage, life and method, plus the three accounts it posts to."""
     try:
         asset = fixed_asset_service.create_asset(
             db, name=body.name, acquisition_date=body.acquisition_date, cost=body.cost,
@@ -133,7 +128,6 @@ def run_depreciation(
     current: CurrentUser = Depends(require_capability(CAP_ACCOUNTING_JOURNAL_POST)),
     db: Session = Depends(get_db),
 ) -> dict:
-    """ترحيل إهلاك الشهر — safe to click twice: an asset already booked for the month is skipped."""
     try:
         result = fixed_asset_service.run_depreciation(
             db, year=body.year, month=body.month, actor_user_id=current.id)
@@ -151,7 +145,6 @@ def reverse_depreciation(
     current: CurrentUser = Depends(require_capability(CAP_ACCOUNTING_JOURNAL_POST)),
     db: Session = Depends(get_db),
 ) -> dict:
-    """عكس إهلاك شهر — reverses the entry and frees the month to be run again."""
     try:
         result = fixed_asset_service.reverse_depreciation(
             db, year=body.year, month=body.month, actor_user_id=current.id)
@@ -181,7 +174,6 @@ def asset_schedule(
     _: CurrentUser = Depends(require_capability(CAP_ACCOUNTING_CHART_READ)),
     db: Session = Depends(get_db),
 ) -> list[dict]:
-    """جدول الإهلاك — every month currently booked against this asset."""
     rows = fixed_asset_service.schedule_of(db, asset_id)
     return [{"year": r.year, "month": r.month, "amount": str(r.amount),
              "ledger_entry_id": r.ledger_entry_id} for r in rows]
@@ -194,7 +186,6 @@ def dispose_asset(
     current: CurrentUser = Depends(require_capability(CAP_ACCOUNTING_JOURNAL_POST)),
     db: Session = Depends(get_db),
 ) -> AssetOut:
-    """استبعاد أصل — clears cost and accumulated depreciation, books the gain or the loss."""
     try:
         asset = fixed_asset_service.dispose_asset(
             db, asset_id=asset_id, disposal_date=body.disposal_date, proceeds=body.proceeds,

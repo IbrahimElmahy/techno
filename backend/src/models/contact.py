@@ -1,9 +1,3 @@
-"""Additional contact phone numbers (v4).
-
-Customers and suppliers keep their primary number on their own `phone` column (used for the
-duplicate-phone warning); any further numbers live here, one row each, so a contact can have as many
-as needed. Kept generic via (owner_type, owner_id) rather than two near-identical tables.
-"""
 from __future__ import annotations
 
 import enum
@@ -27,4 +21,4 @@ class ContactPhone(Base):
     owner_type: Mapped[PhoneOwner] = mapped_column(Enum(PhoneOwner), nullable=False)
     owner_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
     phone: Mapped[str] = mapped_column(String(32), nullable=False)
-    label: Mapped[str | None] = mapped_column(String(40), nullable=True)  # e.g. واتساب / المحل
+    label: Mapped[str | None] = mapped_column(String(40), nullable=True)

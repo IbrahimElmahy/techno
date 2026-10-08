@@ -1,4 +1,3 @@
-"""الأجازات — الأنواع والأرصدة والطلبات (HR-3)."""
 from __future__ import annotations
 
 from datetime import date
@@ -33,17 +32,11 @@ def _raise(exc: LeaveError):
 
 
 def _own_employee(db: Session, current: CurrentUser, employee_id: int) -> None:
-    """٤٠٤ لو الموظف من فرع تاني.
-
-    جدول الأجازات مالوش فرع — فرع الطلب هو فرع الموظف. القوايم متعزلة بيه، والكتابة
-    (طلب، رصيد) بتاخد رقم الموظف من الطلب، فلازم تتسأل هي كمان.
-    """
     if not branch_scope.may_touch_employee(db, current, employee_id):
         raise HTTPException(404, {"code": "not_found", "message": "الموظف غير موجود."})
 
 
 def _own_request(db: Session, current: CurrentUser, request_id: int) -> None:
-    """اعتماد/رفض/إلغاء طلب فرع تاني بالرقم — ٤٠٤ زي ما يكون مش موجود."""
     row = db.get(LeaveRequest, request_id)
     if row is not None and not branch_scope.may_touch_employee(db, current, row.employee_id):
         raise HTTPException(404, {"code": "not_found", "message": "الطلب غير موجود."})
@@ -119,9 +112,6 @@ def _req_out(db: Session, row: LeaveRequest) -> RequestOut:
     )
 
 
-# ------------------------------------------------------------- الأنواع
-
-
 @router.get("/types", response_model=list[TypeOut])
 def list_types(
     _: CurrentUser = Depends(require_capability(CAP_HR_READ)),
@@ -159,9 +149,6 @@ def deactivate_type(
     db.commit()
 
 
-# ------------------------------------------------------------- الأرصدة
-
-
 @router.get("/balances")
 def balances(
     year: int = Query(...),
@@ -169,7 +156,6 @@ def balances(
     current: CurrentUser = Depends(require_capability(CAP_HR_READ)),
     db: Session = Depends(get_db),
 ) -> list[dict]:
-    """رصيد كل موظف في كل نوع — محسوب، مش مخزّن."""
     stmt = (select(Employee).where(Employee.id == employee_id) if employee_id
             else select(Employee).where(Employee.active.is_(True)))
     employees = db.scalars(branch_scope.scope(stmt, Employee, current)).all()
@@ -200,9 +186,6 @@ def set_entitlement(
         db, employee_id=body.employee_id, leave_type_id=body.leave_type_id, year=body.year)
     db.commit()
     return result
-
-
-# ------------------------------------------------------------- الطلبات
 
 
 @router.get("/requests", response_model=list[RequestOut])
@@ -287,7 +270,6 @@ def cancel_request(
     current: CurrentUser = Depends(require_capability(CAP_HR_WRITE)),
     db: Session = Depends(get_db),
 ) -> RequestOut:
-    """بيلغي الطلب وبيشيل أيام الحضور اللي اتكتبت منه — مش بيمسح الطلب."""
     _own_request(db, current, request_id)
     try:
         row = leave_service.cancel(db, request_id=request_id, actor_user_id=current.id)

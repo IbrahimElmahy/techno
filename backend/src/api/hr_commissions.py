@@ -1,11 +1,3 @@
-"""إعدادات العمولات ومعاينة الشهر — `/hr/commissions/...`.
-
-كل اللي هنا مبالغ أو نسب باسم موظف، فالقراية على `salary.view` (مش `hr.read`: مدير الفرع
-اللي بيعتمد الحضور مالوش يشوف عمولة زمايله) والتعديل على `payroll.post` كمان.
-
-الفرع: موظف الفرع بيشتغل على فرعه بس مهما بعت؛ اللي فوق الفروع بيختار الفرع (أو الفرع
-المختار من الشريط فوق). الحساب نفسه في `services/hr_commission_service.py`.
-"""
 from __future__ import annotations
 
 from decimal import Decimal
@@ -25,7 +17,6 @@ router = APIRouter(tags=["hr-commissions"], prefix="/hr/commissions")
 
 
 def _writer(current: CurrentUser = Depends(require_capability(CAP_SALARY_VIEW))) -> CurrentUser:
-    """التعديل محتاج الاتنين: يشوف المبالغ، ويرحّل المرتبات."""
     if not current.can(CAP_PAYROLL_POST):
         raise HTTPException(status.HTTP_403_FORBIDDEN, {
             "code": "forbidden", "message": "تعديل إعدادات العمولات لمحاسب المرتبات بس."})
@@ -50,8 +41,6 @@ def _raise(exc: CommissionSetupError):
         raise HTTPException(404, {"code": "not_found", "message": text}) from exc
     raise HTTPException(422, {"code": "validation", "message": text}) from exc
 
-
-# ----------------------------------------------------------------- schemas
 
 class SettingsIn(BaseModel):
     point_value: Decimal | None = None
@@ -121,15 +110,12 @@ class ManualIn(BaseModel):
     notes: str | None = None
 
 
-# ----------------------------------------------------------------- الإعدادات
-
 @router.get("/setup")
 def get_setup(
     branch_id: int | None = Query(None),
     current: CurrentUser = Depends(require_capability(CAP_SALARY_VIEW)),
     db: Session = Depends(get_db),
 ) -> dict:
-    """إعدادات الفرع كلها وقوايم الاختيار."""
     bid = _branch(current, branch_id)
     try:
         return svc.setup_payload(db, bid)
@@ -185,7 +171,6 @@ def remove_team(team_id: int, branch_id: int | None = Query(None),
 @router.put("/teams/{team_id}/manual")
 def put_manual(team_id: int, body: ManualIn, branch_id: int | None = Query(None),
                current: CurrentUser = Depends(_writer), db: Session = Depends(get_db)) -> dict:
-    """تحصيل الشهر من بره النظام — أصفار من غير ملاحظة = شيله."""
     _save(svc.set_manual_collection, db, current, branch_id, team_id=team_id, year=body.year,
           month=body.month, poly=body.poly, white=body.white, other=body.other,
           notes=body.notes)
@@ -241,8 +226,6 @@ def remove_technician(technician_id: int, branch_id: int | None = Query(None),
     _save(svc.delete_technician, db, current, branch_id, technician_id=technician_id)
 
 
-# ----------------------------------------------------------------- معاينة الشهر
-
 @router.get("/compute")
 def compute(
     year: int = Query(...),
@@ -251,7 +234,6 @@ def compute(
     current: CurrentUser = Depends(require_capability(CAP_SALARY_VIEW)),
     db: Session = Depends(get_db),
 ) -> dict:
-    """عمولات الشهر: صف لكل موظف + تفاصيل كل سيارة ومشرف وفني (قراية بس)."""
     bid = _branch(current, branch_id)
     try:
         result = svc.compute(db, branch_id=bid, year=year, month=month)

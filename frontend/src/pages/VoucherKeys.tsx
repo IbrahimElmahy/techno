@@ -28,7 +28,6 @@ interface Account {
   main_level?: string | null;
 }
 
-/** الاسم بس في الاختيار (طلب العميل ٢٠٢٦-١٠-٠٧)؛ الكود في `search` فالبحث بيه لسه شغّال. */
 const accLabel = (a: Account) => a.owner_name || a.name || `#${a.id}`;
 
 const OWNED_TYPES = ['customer_receivable', 'supplier_payable', 'custody', 'treasury'];
@@ -259,7 +258,6 @@ export default function VoucherKeys() {
     if (!mainValue) return [];
     if (mainValue.startsWith('g:')) {
       const t = mainValue.slice(2);
-      // حسابات الأطراف (العملاء بالآلاف) أبجدي — مالهاش كود يرتّبها، فكانت بترتيب الإدخال.
       return sortByName(accounts.filter((a) => (a.account_type || '') === t), accLabel)
         .map((a) => ({ value: a.id, label: accLabel(a), search: a.code || '' }));
     }

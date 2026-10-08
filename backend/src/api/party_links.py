@@ -1,14 +1,3 @@
-"""الأطراف المرتبطة — المرحلة ٢ (٢٠٢٦-١٠-٠٦). الشرح في `models/party_link.py`.
-
-* `GET  /party-groups`                 الأطراف المرتبطة بأرصدة كروتها والصافي.
-* `GET  /party-groups/suggestions`     نفس الاسم كعميل وكمورد في نفس الفرع ومش مربوطين.
-* `POST /party-groups`                 ربط كروت (بيعمل طرف، أو بيضيف لطرف موجود).
-* `DELETE /party-groups/{gid}/members/{kind}/{ref_id}`  فك كارت.
-* `POST /party-groups/{gid}/netting`   مقاصة: اللي علي العميل يتخصم من اللي له كمورد.
-
-**الصافي:** موجب = عليه لينا، سالب = ليه عندنا. رصيد العميل موجب لما يبقى عليه، ورصيد المورد
-موجب لما يبقى ليه — فالصافي = مجموع العملاء − مجموع الموردين.
-"""
 from __future__ import annotations
 
 from datetime import date
@@ -42,11 +31,11 @@ class MemberOut(BaseModel):
     kind: str
     ref_id: int
     name: str
-    role: str                     # عميل / موظف / فرع / مورد
+    role: str
     code: str | None
     branch_name: str | None
-    balance: Decimal              # العميل: عليه (+). المورد: ليه (+).
-    lines: list[dict] = []        # خطوط العميل (أبيض/بولي) بأرصدتها — للمقاصة
+    balance: Decimal
+    lines: list[dict] = []
 
 
 class GroupOut(BaseModel):
@@ -54,9 +43,9 @@ class GroupOut(BaseModel):
     name: str
     branch_name: str | None
     members: list[MemberOut]
-    owes_us: Decimal              # مجموع العملاء
-    we_owe: Decimal               # مجموع الموردين
-    net: Decimal                  # owes_us − we_owe
+    owes_us: Decimal
+    we_owe: Decimal
+    net: Decimal
 
 
 def _card(db: Session, kind: str, ref_id: int):
@@ -134,7 +123,6 @@ def suggestions(
     current: CurrentUser = Depends(require_capability(CAP_CUSTOMER_READ)),
     db: Session = Depends(get_db),
 ) -> list[SuggestionOut]:
-    """نفس الاسم (بعد التطبيع) كعميل وكمورد في نفس الفرع، والاتنين مش مربوطين."""
     branches = {b.id: b.name for b in db.scalars(select(Branch))}
     linked = {(m.kind, m.ref_id) for m in db.scalars(select(PartyGroupMember))}
     bid = branch_scope.visible_branch_id(current)
@@ -176,7 +164,6 @@ def link(
     current: CurrentUser = Depends(require_capability(CAP_CUSTOMER_WRITE)),
     db: Session = Depends(get_db),
 ) -> GroupOut:
-    """يربط الكروت دي في طرف واحد. لو واحد منهم في طرف خلاص، الباقي بينضم له."""
     cards = []
     for m in body.members:
         card = _card(db, m.kind, m.ref_id)
@@ -227,7 +214,6 @@ def unlink(
         PartyGroupMember.ref_id == ref_id))
     left = db.scalars(select(PartyGroupMember).where(PartyGroupMember.group_id == gid)).all()
     if len(left) < 2:
-        # طرف بكارت واحد مالوش معنى — بيتفك كله.
         db.execute(delete(PartyGroupMember).where(PartyGroupMember.group_id == gid))
         db.delete(g)
     audit_service.record(db, action="party.unlink", actor_user_id=current.id,
@@ -250,11 +236,6 @@ def netting(
     current: CurrentUser = Depends(require_capability(CAP_VOUCHER_WRITE)),
     db: Session = Depends(get_db),
 ) -> dict:
-    """مقاصة — اللي عليه كعميل يتخصم من اللي ليه كمورد. قيد واحد من غير فلوس:
-
-    مدين حساب المورد (اللي ليه عندنا بيقل) ودائن حساب العميل (اللي عليه بيقل). المبلغ مايعديش
-    أقل الرصيدين — مقاصة أكتر من كده بتقلب العميل دائن والمورد مدين ومحدش يعرف ليه.
-    """
     g = db.get(PartyGroup, gid)
     if g is None or not _visible(current, g.branch_id):
         raise HTTPException(404, {"code": "not_found", "message": "الطرف مش موجود."})

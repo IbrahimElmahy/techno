@@ -1,28 +1,3 @@
-/**
- * تصدير Excel — ملف `.xlsx` حقيقي، من غير مكتبة.
- *
- * جنب الملف ده `exportCsv.ts`، وهو شغّال وهيفضل شغّال. لكن الـCSV بيوصل لسقف بيوقّفه في تلات
- * حاجات المحاسب بيحتاجها كل يوم:
- *
- *   - **الأرقام بتنزل نصوص.** الملف بيتقرا صح، بس `SUM` على عمود المبالغ بيطلع صفر — لأن كل
- *     خانة متقوّسة، وExcel بيقراها كلمة مش رقم. اللي بيصدّر كشف حساب بيصدّره عشان يجمّعه.
- *   - **الورقة بتتفتح من الشمال.** برنامج كله عربي بيطلّع ملف أعمدته بالمقلوب.
- *   - **الـBOM ورطة دايمة.** ماشية معانا هنا، بس أي حد بيفتح الملف في محرر ويحفظه بيضيّعها
- *     والعربي بيتكسّر. في xlsx النص UTF-8 جوّه XML — مافيش ترميز محلي يغلط فيه أصلاً.
- *
- * **ليه من غير مكتبة؟** لأن اللي إحنا محتاجينه شبكة مربعات مسطّحة، و`xlsx` أو `exceljs` بيضيفوا
- * ميجا أو اتنين على حزمة Electron عشان قدرات (صيغ، رسوم، قراءة ملفات موجودة) مش هنلمسها. وملف
- * الـxlsx في الآخر ZIP جوّاه شوية XML — والجزء الوحيد اللي محتاج شغل فيه هو الـZIP، وهو تحت
- * مئة سطر لما تكتبه STORE من غير ضغط. فالثمن هنا أرخص من التبعية.
- */
-
-/* ─── ZIP ────────────────────────────────────────────────────────────────── */
-
-/**
- * جدول CRC32 — بيتحسب مرة واحدة أول ما يتطلب.
- *
- * كل مدخل في الـZIP لازم يشيل تجزئة محتواه؛ لو غلط Excel بيقول «الملف تالف» من غير ما يفتحه.
- */
 let crcTable: Uint32Array | null = null;
 
 function crc32(bytes: Uint8Array): number {
@@ -43,13 +18,6 @@ function crc32(bytes: Uint8Array): number {
 
 interface ZipEntry { name: string; data: Uint8Array }
 
-/**
- * ZIP بطريقة STORE — من غير ضغط.
- *
- * الضغط كان هيحتاج deflate بالإيد أو مكتبة، والمكسب إن ملف الألف صف بيبقى نص ميجا بدل ميجا —
- * ملف بينزل على الجهاز ويتفتح على طول، مش حاجة بتتبعت على الشبكة. Excel بيفتح المدخل غير
- * المضغوط عادي، فالضغط تعقيد بيتدفع تمنه من غير مقابل.
- */
 function zip(entries: ZipEntry[]): Blob {
   const enc = new TextEncoder();
   const locals: Uint8Array[] = [];
@@ -64,11 +32,11 @@ function zip(entries: ZipEntry[]): Blob {
     const local = new Uint8Array(30 + nameBytes.length);
     const lv = new DataView(local.buffer);
     lv.setUint32(0, 0x04034b50, true);
-    lv.setUint16(4, 20, true);   // النسخة المطلوبة
-    lv.setUint16(6, 0, true);    // أعلام
-    lv.setUint16(8, 0, true);    // STORE
-    lv.setUint16(10, 0, true);   // وقت التعديل — ثابت، عشان نفس الجدول يطلع نفس الملف
-    lv.setUint16(12, 0x21, true); // تاريخ التعديل: 1980-01-01، أقدم تاريخ الصيغة بتشيله
+    lv.setUint16(4, 20, true);
+    lv.setUint16(6, 0, true);
+    lv.setUint16(8, 0, true);
+    lv.setUint16(10, 0, true);
+    lv.setUint16(12, 0x21, true);
     lv.setUint32(14, crc, true);
     lv.setUint32(18, size, true);
     lv.setUint32(22, size, true);
@@ -106,9 +74,6 @@ function zip(entries: ZipEntry[]): Blob {
   ev.setUint32(12, centralSize, true);
   ev.setUint32(16, offset, true);
 
-  // القطع بتتلزق في مخزن واحد بدل ما تتبعت لـ`Blob` كقايمة. `TextEncoder` بيرجّع مخزن نوعه
-  // `ArrayBufferLike` — ممكن يبقى مشترك — و`Blob` مابيقبلش غير `ArrayBuffer` صريح، فالنسخ هنا
-  // هو اللي بيحسم النوع، ومعاه بنبطّل نفرد مصفوفة كبيرة في نداء الدالة.
   const parts = [...locals, ...centrals, end];
   const total = parts.reduce((sum, p) => sum + p.length, 0);
   const out = new Uint8Array(total);
@@ -120,27 +85,13 @@ function zip(entries: ZipEntry[]): Blob {
   });
 }
 
-/* ─── قراءة القيم ────────────────────────────────────────────────────────── */
-
-/** عمود في الملف: عنوانه، وإزاي بنطلع قيمته من الصف. */
 export interface ExcelColumn<T = any> {
   title: string;
   value: keyof T | ((row: T) => unknown);
 }
 
-/**
- * نص رقمي بيتحوّل رقم — بس اللي يرجع زي ما هو.
- *
- * الـAPI بيرجّع المبالغ `DECIMAL` كنصوص («1234.50»)، ولو نزلت نصوص مايتجمعش عليها في Excel،
- * وده أول سبب حد بيصدّر كشف أصلاً.
- *
- * لكن مش كل اللي شكله رقم رقم: «0001» رقم مستند و«01001234567» تليفون، والاتنين لو اتحوّلوا
- * بيخسروا الصفر اللي قدّامهم ويبقوا غلط بصمت. فالصفر البادئ بيستني نص، والأرقام الطويلة (فوق
- * ١٥ خانة) كمان — لأن `Number` مابيشيلش دقتها وبيقرّبها.
- */
 const NUMERIC = /^-?(?:0|[1-9]\d*)(?:\.\d+)?$/;
 
-/** تاريخ ISO بالشكل اللي الـAPI بيرجّعه، بساعة أو من غيرها. */
 const ISO_DATE =
   /^(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{2}):(\d{2})(?::(\d{2}))?(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})?)?$/;
 
@@ -151,12 +102,6 @@ type Cell =
   | { kind: 'bool'; value: boolean }
   | { kind: 'text'; value: string };
 
-/**
- * تسلسل تاريخ Excel: عدد الأيام من 1899-12-30.
- *
- * بنحسبه من أرقام النص نفسه مش من `Date` محلي — الجدول بيعرض «2026-09-02»، ولو عدّينا على
- * منطقة زمنية اليوم ممكن يزحف يوم قبل أو بعد، فيبقى الملف مش نفس اللي على الشاشة.
- */
 function toSerial(y: number, m: number, d: number, hh: number, mm: number, ss: number): number {
   const days = Date.UTC(y, m - 1, d) / 86400000 - Date.UTC(1899, 11, 30) / 86400000;
   return days + (hh * 3600 + mm * 60 + ss) / 86400;
@@ -199,11 +144,7 @@ function valueOf<T>(row: T, column: ExcelColumn<T>): unknown {
     : (row as any)[column.value];
 }
 
-/* ─── بناء الملف ─────────────────────────────────────────────────────────── */
-
 function esc(text: string): string {
-  // بنشيل محارف التحكم اللي XML مابيسمحش بيها — بتيجي أحياناً في ملاحظات متلزّقة من مكان تاني،
-  // وواحد منها بيخلّي Excel يرفض الملف كله.
   return text
     .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, '')
     .replace(/&/g, '&amp;')
@@ -212,7 +153,6 @@ function esc(text: string): string {
     .replace(/"/g, '&quot;');
 }
 
-/** رقم عمود → حرفه: 1→A، 27→AA. */
 function colName(index: number): string {
   let n = index;
   let name = '';
@@ -224,7 +164,6 @@ function colName(index: number): string {
   return name;
 }
 
-/** ورقة واحدة اسمها مقبول: Excel بيرفض `[]:*?/\` وبيقف عند ٣١ حرف. */
 function sheetName(name: string): string {
   const clean = name.replace(/[[\]:*?/\\]/g, ' ').trim() || 'ورقة';
   return clean.slice(0, 31);
@@ -232,12 +171,6 @@ function sheetName(name: string): string {
 
 const HEAD = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>';
 
-/**
- * الأنماط: عنوان عريض، وتاريخ، وتاريخ بساعة، ومبلغ بمنزلتين.
- *
- * المبلغ بياخد `0.00` بس لما يبقى فيه كسر — عدد الفواتير `12` يفضل `12`، والمبلغ `1234.5`
- * يبقى `1234.50` زي ما هو مكتوب في الفاتورة (من غير فاصل آلاف — طلب العميل). والاتنين لسه أرقام.
- */
 const STYLES = `${HEAD}
 <styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
 <numFmts count="3">
@@ -286,12 +219,6 @@ function cellXml(ref: string, cell: Cell): string {
   }
 }
 
-/**
- * الورقة نفسها.
- *
- * `rightToLeft` هو كل الفرق بين ملف من برنامج عربي وملف مقلوب: أول عمود بيبقى على اليمين
- * وشريط التمرير من الشمال، زي الجدول اللي الواحد صدّر منه بالظبط.
- */
 function sheetXml(columns: ExcelColumn[], cells: Cell[][], widths: number[]): string {
   const lastCol = colName(columns.length || 1);
   const lastRow = cells.length + 1;
@@ -322,13 +249,6 @@ ${cols ? `<cols>${cols}</cols>` : ''}
 </worksheet>`;
 }
 
-/**
- * عرض العمود بيتحسب من أطول محتوى فيه.
- *
- * الافتراضي بيقطع أي عنوان عربي بعد حرفين وبيملا العمود `####` لو رقم — يعني اللي بيفتح الملف
- * لازم يوسّع كل عمود بإيده قبل ما يقراه. بنقيس أول ٢٠٠ صف بس: الألف صف اللي بعدهم مش بيغيّروا
- * الأقصى غالباً، والقياس الكامل بيبوّظ سرعة التصدير على الكشوف الكبيرة.
- */
 function widthOf(column: ExcelColumn, rows: any[], cells: Cell[][], index: number): number {
   let longest = String(column.title ?? '').length;
   const limit = Math.min(cells.length, 200);
@@ -343,7 +263,6 @@ function widthOf(column: ExcelColumn, rows: any[], cells: Cell[][], index: numbe
   return Math.min(50, Math.max(9, longest + 2));
 }
 
-/** بيبني الملف من غير ما ينزّله — عشان يتقرا ويتختبر. */
 export function buildXlsx<T>(
   columns: ExcelColumn<T>[],
   rows: T[],
@@ -385,12 +304,10 @@ export function buildXlsx<T>(
   ]);
 }
 
-/** اسم الملف: الاسم العربي زي ما هو + تاريخ اليوم. */
 export function excelFilename(name: string): string {
   const now = new Date();
   const pad = (n: number) => String(n).padStart(2, '0');
   const today = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
-  // الشرطة المائلة والنقطتين ممنوعين في أسماء ملفات ويندوز؛ العربي نفسه عادي.
   const clean = name.replace(/[\\/:*?"<>|]/g, '-').trim() || 'تصدير';
   return `${clean}-${today}.xlsx`;
 }
@@ -401,11 +318,9 @@ export function downloadXlsx(filename: string, blob: Blob): void {
   anchor.href = url;
   anchor.download = filename.endsWith('.xlsx') ? filename : `${filename}.xlsx`;
   anchor.click();
-  // نفس الغلطة اللي كانت في نسخ الـCSV: من غير السطر ده الـblob بيفضل في الذاكرة طول عمر التبويب.
   URL.revokeObjectURL(url);
 }
 
-/** التصدير كله في سطر واحد. */
 export function exportExcel<T>(
   name: string,
   columns: ExcelColumn<T>[],
@@ -415,17 +330,6 @@ export function exportExcel<T>(
   downloadXlsx(excelFilename(name), buildXlsx(columns, rows, sheet ?? name));
 }
 
-/**
- * أعمدة الجدول زي ما هي على الشاشة → أعمدة الملف.
- *
- * الملف لازم يبقى اللي الواحد شايفه: الأعمدة اللي مخفهاش وبالترتيب اللي رتّبه — عشان كده بيتبعت
- * `columns` بعد ما `useTableColumns` يعديها، مش قايمة الأعمدة الأصلية. أعمدة من غير `dataIndex`
- * هي زراير الإجراءات: تصديرها بيطلّع عمود فاضي ليه عنوان.
- *
- * القيمة بتتاخد خام من الصف مش من `render`، عشان المبلغ ينزل رقم يتجمع عليه بدل «١٬٢٣٤٫٥٠»
- * المنسّق. بس لما القيمة الخام مش نص ولا رقم — كائن متداخل، أو مش موجودة أصلاً والعمود بيتحسب
- * في `render` — ساعتها `render` هو المصدر الوحيد، وبناخد منه اللي يطلع نص أو رقم.
- */
 export function columnsFromTable<T = any>(
   tableColumns: {
     title?: unknown;
@@ -447,7 +351,6 @@ export function columnsFromTable<T = any>(
             const shown = c.render(raw, row, 0);
             if (typeof shown === 'string' || typeof shown === 'number') return shown;
           } catch {
-            /* عمود بيرسم حاجة محتاجة سياق الجدول — بنسيبه فاضي بدل ما التصدير كله يقع */
           }
         }
         return typeof raw === 'object' ? '' : raw;

@@ -1,27 +1,3 @@
-"""أوامر التشغيل (032) — الورقة اللي بتطلّع كذا منتج من كذا خامة.
-
-الشرح الكامل لليه المستند ده موجود **جنب** `ManufacturingOrder` مش بداله: في
-`models/manufacturing.ProductionOrder`. المهم هنا خمس قواعد الحساب كله ماشي عليها:
-
-* **كل خامة منسوبة لمنتج.** تكلفة سطر المنتج = مجموع خاماته + مصاريفه. مافيش توزيع
-  بنسب ولا باقي قرش بيتحط على أكبر سطر — لأن وصفة a5 نفسها منتج واحد وخاماته، والأمر
-  اللي بيطلّع أربعة هو أربع وصفات اتنفّذت في ورقة واحدة.
-
-* **«المفروض» و«اللي حصل» على نفس السطر.** كل سطر شايل `planned_quantity` (من الوصفة
-  × الكمية المطلوبة، متنسخة وقت الفتح) و`quantity` (اللي اتصرف فعلاً). الفرق بينهم هو
-  الفاقد أو الزيادة، وهو أنفع رقم في المصنع — ومافيش مكان تاني بيقوله.
-
-* **الحركة مابتحصلش إلا عند التنفيذ.** مسودة ← مؤكد ← منفّذ. المسودة تتعدّل براحتها
-  وماحدش يخصم مخزون على ورقة لسه بتتكتب.
-
-* **التكلفة بتتجمّد وقت التنفيذ.** `costing_service.average_cost` بيتقرا مرة واحدة
-  وبيتخزّن على السطر — نفس اللي (030) عمله في تكلفة البضاعة المباعة، عشان ربح الماضي
-  مايتحركش لما تتشترى خامة بسعر جديد النهارده.
-
-* **مافيش قيد دفتر.** حركة مخزون بس. قيد الإنتاج عند a5 بيدين المخزن ويدائنه بنفس
-  الرقم — يعني نقل قيمة بين مخازن، وهي نفس المعلومة اللي `stock_movement` +
-  `costing_service` شايلينها. قيد فوقها بيعدّ نفس الحاجة مرتين.
-"""
 from __future__ import annotations
 
 from datetime import date
@@ -53,7 +29,6 @@ from src.services import (
     uom_service,
 )
 
-#: اسم المستند في `stock_movement.source_doc_type` — مسجّل في `lib/stock_docs`.
 DOC_TYPE = "production_order"
 
 
@@ -66,7 +41,6 @@ def _doc_number(db: Session) -> str:
 
 
 def _factor(db: Session, item: Item, unit: str | None) -> Decimal:
-    """معامل الوحدة المكتوبة، أو ١ لو مافيش وحدة — نفس مسار (008) اللي الوصفة ماشية عليه."""
     if not unit:
         return Decimal(1)
     try:
@@ -76,11 +50,6 @@ def _factor(db: Session, item: Item, unit: str | None) -> Decimal:
 
 
 def _warehouse(db: Session, item: Item, given: int | None) -> int:
-    """مخزن السطر: اللي اتكتب، وإلا المخزن الافتراضي للصنف، وإلا رفض.
-
-    الرفض أحسن من اختيار «أول مخزن» — الحركة اللي بتتكتب في مخزن محدش اختاره بتظهر
-    كعجز في مخزن وزيادة في التاني، ومحدش بيربطها بالورقة اللي عملتها.
-    """
     wid = given if given is not None else item.default_warehouse_id
     if wid is None:
         raise ProductionOrderError(f"الصنف «{item.name}» محتاج مخزن على السطر.")
@@ -90,14 +59,6 @@ def _warehouse(db: Session, item: Item, given: int | None) -> int:
 
 
 def recipe_plan(db: Session, *, product_id: int, quantity, bom_id: int | None = None):
-    """خامات الوصفة مضروبة في الكمية — [(item_id, كمية مخطّطة بالوحدة الأساسية)].
-
-    في الخدمة مش في الشاشة عشان اللي بيتعرض واللي بيتخزّن يبقى رقم واحد: معاينة بتحسب
-    بطريقة وترحيل بيحسب بطريقة تانية بتخلّي أمين المخزن يدوّر على فرق مالوش سبب.
-
-    و`bom_id` بيتبعت صراحةً لما يكون للمنتج أكتر من نسخة وصفة (A/B/C عند a5) — من غيره
-    بتتاخد النشطة.
-    """
     bom = db.get(Bom, bom_id) if bom_id is not None else db.scalar(
         select(Bom).where(Bom.product_id == product_id, Bom.active.is_(True)))
     if bom is None:
@@ -110,11 +71,6 @@ def recipe_plan(db: Session, *, product_id: int, quantity, bom_id: int | None = 
 
 
 def _active_bom(db: Session, *, product_id: int, bom_id=None):
-    """وصفة السطر: اللي اتحدّدت، وإلا النشطة بتاعة المنتج.
-
-    نفس اللي `recipe_plan` بيدوّر عليه — بس هنا محتاجين المكوّنات نفسها مش
-    الكميات، عشان نقرا منها المرحلة.
-    """
     if bom_id:
         return db.get(Bom, int(bom_id))
     return db.scalars(select(Bom).where(Bom.product_id == product_id,
@@ -123,11 +79,6 @@ def _active_bom(db: Session, *, product_id: int, bom_id=None):
 
 
 def _build_lines(db: Session, order: ProductionOrder, products) -> None:
-    """يبني (أو يعيد بناء) سطور الأمر من الطلب. مافيش حركة مخزون هنا خالص.
-
-    الكمية المخطّطة بتتنسخ من الوصفة وقت الفتح — نسخة، مش إشارة للوصفة — عشان تعديل
-    الوصفة بكرة مايغيّرش المفروض اللي الأمر ده اتفتح عليه.
-    """
     if not products:
         raise ProductionOrderError("أمر التشغيل لازم يكون فيه منتج واحد على الأقل.")
 
@@ -142,8 +93,6 @@ def _build_lines(db: Session, order: ProductionOrder, products) -> None:
             raise ProductionOrderError("صنف المنتج مش موجود.")
         p_unit = p.get("unit") or None
         p_factor = _factor(db, item, p_unit)
-        # المخطّط هو الأصل، واللي طلع بيتفتح عليه لو ماتبعتش — الورقة بتتفتح على خطة،
-        # والفعلي بيتكتب عند الإقفال.
         raw_plan = p.get("planned_quantity") or p.get("quantity")
         planned = to_qty(Decimal(str(raw_plan)) * p_factor)
         actual = to_qty(Decimal(str(p.get("quantity") or raw_plan)) * p_factor)
@@ -162,16 +111,6 @@ def _build_lines(db: Session, order: ProductionOrder, products) -> None:
         order.products.append(line)
         db.flush()
 
-        # **مرحلة كل خامة بتتقرا من الوصفة هنا، مش من اللي الشاشة باعته.**
-        #
-        # الشاشة عندها نسخة من الوصفات اتحمّلت لما الصفحة اتفتحت. أول أمر اتكتب
-        # بعد ما المراحل اتظبطت طلع **كل خاماته تصنيع** — الكرتون والأكياس معاهم —
-        # لأن التبويب كان مفتوح من قبل التظبيط، والنسخة اللي في إيده قديمة.
-        #
-        # والحل مش «اعمل ريفريش»: أي شاشة مفتوحة من ساعة بتبقى قديمة، والورقة
-        # اللي بتتكتب منها بتحمل الغلط ده لطول عمرها. فالسيرفر بيقرا المرحلة من
-        # الوصفة اللي عنده، واللي بيتبعت من الشاشة بيغلبها **لو اتبعت صراحةً** —
-        # وده بيحصل بس لما حد يغيّرها بإيده على السطر.
         bom_stage: dict[int, str] = {}
         _bom = _active_bom(db, product_id=item.id, bom_id=p.get("bom_id"))
         if _bom is not None:
@@ -180,15 +119,11 @@ def _build_lines(db: Session, order: ProductionOrder, products) -> None:
 
         rows = p.get("materials") or []
         if not rows:
-            # الوصفة هي المصدر الطبيعي للسطور، فلو مافيش سطور اتبعتت بنجيبها منها بدل
-            # ما نرفض ورقة اللي كاتبها كان قاصد يقول «اعمل الوصفة زي ما هي».
             rows = [{"item_id": iid, "quantity": q, "planned_quantity": q} for iid, q in
                     recipe_plan(db, product_id=item.id, quantity=actual, bom_id=p.get("bom_id"))]
         if not rows:
             raise ProductionOrderError(
                 f"«{item.name}» مالوش خامات ولا وصفة — التكلفة مش هتتحسب من غيرها.")
-        # الصنف مايتكررش تحت نفس المنتج: كل صف بيرحّل حركته وبيترد لوحده، فالمجموع
-        # بيطلع صح بالصدفة وكل قراءة لسطر لوحده بتطلع غلط.
         if len({int(m["item_id"]) for m in rows}) != len(rows):
             raise ProductionOrderError(f"فيه خامة متكررة تحت «{item.name}».")
 
@@ -198,7 +133,6 @@ def _build_lines(db: Session, order: ProductionOrder, products) -> None:
                 raise ProductionOrderError("صنف الخامة مش موجود.")
             m_unit = m.get("unit") or None
             m_factor = _factor(db, raw, m_unit)
-            # نفس قاعدة المنتج: المخطّط هو الأصل، واللي هيتصرف بيتفتح عليه.
             m_plan_raw = m.get("planned_quantity") or m.get("quantity")
             m_planned = to_qty(Decimal(str(m_plan_raw)) * m_factor)
             m_qty = to_qty(Decimal(str(m.get("quantity") or m_plan_raw)) * m_factor)
@@ -213,8 +147,6 @@ def _build_lines(db: Session, order: ProductionOrder, products) -> None:
                 planned_quantity=m_planned, quantity=m_qty, unit=m_unit,
                 unit_factor=to_factor(m_factor), unit_cost=ZERO, line_cost=ZERO,
                 waste_quantity=waste,
-                # بتتنسخ من الوصفة وقت الفتح، مابتتقراش منها وقت الصرف: الوصفة
-                # بتتعدّل والأمر القديم لازم يفضل قايل إنه صرف إيه إمتى.
                 stage=(m.get("stage")
                        or bom_stage.get(raw.id)
                        or STAGE_PRODUCTION)))
@@ -228,19 +160,12 @@ def _build_lines(db: Session, order: ProductionOrder, products) -> None:
     order.planned_quantity = total_plan_qty
     order.product_quantity = total_actual_qty
     order.material_quantity = total_material_qty
-    # التكلفة بتفضل صفر لحد التنفيذ — المسودة مالهاش تكلفة لأنها مااستهلكتش حاجة،
-    # ورقم دلوقتي بيبقى تخمين هيتغيّر لما الأمر يتنفّذ بمتوسط تاني.
     order.material_cost = ZERO
     order.total_cost = to_money(total_expense)
     db.flush()
 
 
 def _enforce_factory_branch(db: Session, order: ProductionOrder) -> None:
-    """الورقة على فرع المصنع ومخازنها منه — الشرح في `org_service.production_branch_problem`.
-
-    بيتنده بعد بناء السطور: المخازن مابتتعرفش غير بعده (السطر ممكن ياخد المخزن الافتراضي
-    للصنف). والرفض بيرجّع الطلب كله — الـflush اللي فات بيترجع مع الـrollback بتاع الـAPI.
-    """
     whs = [p.warehouse_id for p in order.products] + [m.warehouse_id for m in order.materials]
     branch_id, problem = org_service.production_branch_problem(db, order.branch_id, whs)
     if problem:
@@ -261,12 +186,6 @@ def create_order(
     reviewed: bool = False,
     execute: bool = False,
 ) -> ProductionOrder:
-    """يفتح أمر تشغيل **كمسودة** — ولا حركة مخزون واحدة بتتكتب هنا.
-
-    `execute=True` بتنفّذه في نفس النداء لواحد عارف إنه بيسجّل شغل خلص. ولسه مستند
-    واحد بنداء واحد: صرف الخامات في طلب والإنتاج في طلب تاني بيسيب مخزون اتصرف
-    ومافيش حاجة اتعملت لو التاني وقع.
-    """
     order = ProductionOrder(
         document_number=_doc_number(db),
         production_date=production_date or date.today(), branch_id=branch_id,
@@ -292,14 +211,6 @@ def create_order(
 
 
 def update_order(db: Session, *, order_id: int, products, actor_user_id: int, **header) -> ProductionOrder:
-    """يعيد كتابة الأمر اللي لسه ماترحّلش. **المنفّذ لأ** — اتحرّك مخزون عليه، والتعديل
-    فوقه معناه حركة مكتوبة على ورقة بتقول حاجة تانية. اللي عايز يغيّره بيعكسه ويكتب غيره.
-
-    **والشغّال كمان لأ — خاماته خرجت من المخزن.** إعادة بناء سطوره معناها إن حركة
-    الصرف تفضل مكتوبة على سطر اتمسح، والرصيد يقول حاجة والورقة تقول حاجة تانية. اللي
-    عايز يغيّر خامات أمر بدأ بيعكسه ويفتح غيره؛ واللي عايز يسجّل اللي طلع بيقفل الأمر
-    والكميات بتتكتب هناك.
-    """
     order = db.get(ProductionOrder, order_id)
     if order is None:
         raise ProductionOrderError("أمر التشغيل مش موجود.")
@@ -319,7 +230,6 @@ def update_order(db: Session, *, order_id: int, products, actor_user_id: int, **
     db.flush()
     _build_lines(db, order, products)
     _enforce_factory_branch(db, order)
-    # المؤكد اللي اتعدّل بيرجع مسودة — المراجعة اتعملت على أرقام اتغيّرت.
     order.state = ProductionState.draft
     order.reviewed = False
     audit_service.record(db, action="production_order.update", actor_user_id=actor_user_id,
@@ -328,7 +238,6 @@ def update_order(db: Session, *, order_id: int, products, actor_user_id: int, **
 
 
 def confirm_order(db: Session, *, order_id: int, actor_user_id: int) -> ProductionOrder:
-    """مسودة ← مؤكد: مراجعة اتعملت، ولسه مافيش حركة مخزون."""
     order = db.get(ProductionOrder, order_id)
     if order is None:
         raise ProductionOrderError("أمر التشغيل مش موجود.")
@@ -342,27 +251,15 @@ def confirm_order(db: Session, *, order_id: int, actor_user_id: int) -> Producti
     return order
 
 
-#: مراحل صرف الخامة. الشرح في `models/bom.py`.
 STAGE_PRODUCTION = "production"
 STAGE_QUALITY = "quality"
 
 
 def stage_of(material) -> str:
-    """مرحلة السطر — والفاضي تصنيع.
-
-    كل سطر اتكتب قبل العمود ده خامة تصنيع، وده اللي كان بيحصل فعلاً: الكل كان
-    بيتصرف مرة واحدة عند البدء.
-    """
     return material.stage or STAGE_PRODUCTION
 
 
 def pending(order: ProductionOrder, stage: str | None = None) -> list:
-    """الخامات اللي **لسه ما اتصرفتش** — والمرحلة لو اتحدّدت.
-
-    `stock_movement_id` الفاضي هو اللي بيقول إن السطر لسه في المخزن. وده اللي بيخلّي
-    الصرف على مرحلتين ممكن من غير حالة جديدة في `ProductionState`: الأمر بيفضل
-    «شغّال»، واللي بيحدّد الخطوة الجاية هو السطور الباقية مش رقم في عمود.
-    """
     return [m for m in order.materials
             if m.stock_movement_id is None
             and (stage is None or stage_of(m) == stage)]
@@ -370,14 +267,6 @@ def pending(order: ProductionOrder, stage: str | None = None) -> list:
 
 def _issue_materials(db: Session, order: ProductionOrder, actor_user_id: int,
                      *, stage: str | None = None) -> Decimal:
-    """بيصرف خامات المرحلة دي من مخازنها وبيجمّد تكلفتها. بيرجّع قيمة اللي اتصرف.
-
-    **التكلفة بتتجمّد لحظة الصرف**، مش كل مرة الشاشة تتفتح: الأمر اللي خاماته خرجت
-    الشهر اللي فات مايتغيّرش سعره لما تتشترى خامة بسعر جديد النهارده.
-
-    **واللي اتصرف مابيتصرفش تاني.** الصرف بقى على خطوتين، والنداء التاني بيعدّي على
-    نفس القايمة — من غير الشرط ده كان هيخصم الخام مرتين.
-    """
     rows = pending(order, stage)
     if not rows:
         return ZERO
@@ -397,15 +286,6 @@ def _issue_materials(db: Session, order: ProductionOrder, actor_user_id: int,
 
 
 def issue_quality(db: Session, *, order_id: int, actor_user_id: int) -> ProductionOrder:
-    """**إذن خامات الجودة** — التعبئة اللي بتتحط على المنتج بعد ما يطلع.
-
-    خطوة لوحدها لأن الورقتين بيروحوا لناس مختلفين في وقتين مختلفين: إذن التصنيع
-    بيروح للمكن أول ما الأمر يبدأ، وإذن الجودة بيروح للتعبئة بعد ما الإنتاج يخلص.
-    صرفهم مع بعض كان معناه إن الكرتون يخرج من المخزن الصبح وهو مش هيتلمس غير
-    بالليل — والرصيد بيقول إنه مصروف وهو على الرف.
-
-    الأمر بيفضل «شغّال» بعدها؛ اللي بيتغيّر إن مافيش خامات جودة باقية.
-    """
     order = db.get(ProductionOrder, order_id)
     if order is None:
         raise ProductionOrderError("أمر التشغيل مش موجود.")
@@ -427,21 +307,6 @@ def issue_quality(db: Session, *, order_id: int, actor_user_id: int) -> Producti
 
 
 def start_order(db: Session, *, order_id: int, actor_user_id: int) -> ProductionOrder:
-    """مؤكد ← شغّال: **إذن صرف الخامات**. البضاعة بتخرج من المخزن هنا.
-
-    ---------------------------------------------------------------------------
-    **ليه الصرف هنا مش عند الإقفال.** ده ترتيب الشغل على الأرض: الورشة بتاخد الخامة
-    الأول وتشتغل بيها، والناتج بيطلع بعد يوم أو أسبوع. لو الخصم استنى لحد ما الورقة
-    تتقفل، المخزن بيقول إن الخامة لسه موجودة وهي فعلاً في الماكينة — وأي حد بيقرا
-    الرصيد في الوقت ده بيقرا رقم مش حقيقي، ويمكن يبيع أو يصرف حاجة مش عنده.
-
-    والمخطّط هو اللي بيتصرف، لأن ده اللي الورقة اتفتحت عليه. اللي بيطلع فعلاً بيتسجّل
-    عند الإقفال، **والفرق بينهم هو رقم الإنتاج** — واللي كان بيضيع لما الاتنين بيتكتبوا
-    في نفس اللحظة.
-
-    **والخامات بتتقفل بعد الصرف.** تعديلها وهي بره المخزن معناه حركة مكتوبة على ورقة
-    بتقول حاجة تانية؛ اللي عايز يغيّرها بيعكس الأمر ويفتح غيره.
-    """
     order = db.get(ProductionOrder, order_id)
     if order is None:
         raise ProductionOrderError("أمر التشغيل مش موجود.")
@@ -449,8 +314,6 @@ def start_order(db: Session, *, order_id: int, actor_user_id: int) -> Production
         raise ProductionOrderError("الأمر المنقول من a5 خلص في نظامهم.")
     if order.state != ProductionState.confirmed:
         raise ProductionOrderError("التشغيل بيبدأ من الأمر المؤكد بس.")
-    # **خامات التصنيع بس.** خامات الجودة بتتصرف بإذن تاني بعد ما المنتج يطلع —
-    # الشرح في `issue_quality`.
     order.material_cost = _issue_materials(db, order, actor_user_id,
                                            stage=STAGE_PRODUCTION)
     order.total_cost = to_money(order.material_cost + order.expense_amount)
@@ -465,17 +328,6 @@ def start_order(db: Session, *, order_id: int, actor_user_id: int) -> Production
 def receive_output(db: Session, *, order_id: int, actor_user_id: int,
                    rows: dict[int, Decimal], receipt_date=None,
                    notes: str | None = None) -> ProductionOrder:
-    """**استلام دفعة إنتاج** — البضاعة بتدخل المخزن دلوقتي، والأمر بيفضل شغّال.
-
-    أمر بعشرين ألف قطعة مابيتسلّمش مرة واحدة: بيجي ألف النهارده وألفين بكرة. كل
-    دفعة بتكتب حركة `production_in` بتاريخها، فالمخزون بيمشي مع البضاعة اللي
-    دخلت فعلاً بدل ما يستنّى يوم القفل — واللي بيقرا الرصيد في النص كان بيقرا صفر
-    وهو شايف البضاعة قدامه.
-
-    ⛔ **ولا تكلفة بتتحسب هنا.** تكلفة الوحدة = تكلفة الخامات ÷ اللي طلع، واللي
-    طلع مش معروف لحد القفل. حساب تكلفة على أول دفعة بيدّي رقم بيتغيّر تحت إيد
-    اللي بيقراه مع كل دفعة جاية.
-    """
     order = db.get(ProductionOrder, order_id)
     if order is None:
         raise ProductionOrderError("أمر التشغيل مش موجود.")
@@ -518,15 +370,6 @@ def receive_output(db: Session, *, order_id: int, actor_user_id: int,
 
 def undo_receipt(db: Session, *, order_id: int, receipt_id: int,
                  actor_user_id: int) -> ProductionOrder:
-    """**عكس دفعة استلام** — الكمية بتخرج من المخزن والدفعة بتتشال من الورقة.
-
-    لازم يكون فيه طريقة: اللي بيسجّل ٥٠٠ وهو قاصد ٥٠ لازم يقدر يصلّحها، وعكس الأمر
-    كله عشان دفعة غلط بيرجّع خامات اتصرفت فعلاً ودفعات صح اتستلمت فعلاً.
-
-    **والحركة بتتعكس، مش بتتمسح.** البضاعة دخلت المخزن ساعتها وحد يمكن قرا الرصيد
-    بعدها؛ المسح بيخلّي التاريخ يقول إنها مادخلتش أبداً. المرآة بتقول «دخلت
-    وخرجت»، وده اللي حصل.
-    """
     order = db.get(ProductionOrder, order_id)
     if order is None:
         raise ProductionOrderError("أمر التشغيل مش موجود.")
@@ -554,22 +397,6 @@ def undo_receipt(db: Session, *, order_id: int, receipt_id: int,
 def execute_order(db: Session, *, order_id: int, actor_user_id: int,
                   outputs: dict[int, Decimal] | None = None,
                   waste: dict[int, Decimal] | None = None) -> ProductionOrder:
-    """شغّال ← منفّذ: **بيسجّل اللي طلع فعلاً وبيدخّله المخزن**.
-
-    `outputs` = {رقم سطر المنتج: الكمية اللي طلعت}. اللي مش في القايمة بيفضل على
-    كميته المكتوبة. ودي اللحظة اللي الورقة موجودة عشانها: المخطّط اتحدّد وقت الفتح،
-    والخامة اتصرفت وقت البدء، واللي طلع بيتكتب هنا — **والفرق هو رقم الإنتاج**.
-
-    `waste` = {رقم سطر الخامة: الهالك}. **والهالك بيتكتب هنا كمان، مش وقت الفتح** —
-    محدش يعرف هيبوظ كام وهو بيخطّط. وهو جزء من الخامة اللي اتصرفت خلاص (مش خصم
-    زيادة): بيقول قد إيه من اللي خرج راح في الزبالة بدل ما يدخل في المنتج، عشان
-    الفاقد يبقى رقم متقاس مش إحساس.
-
-    **والخامات مابتتصرفش هنا لو اتصرفت خلاص** (الأمر عدّى بـ«شغّال»). واللي بيرحّل
-    من «مسودة» أو «مؤكد» على طول — بيسجّل تشغيلة خلصت خلاص — الاتنين بيحصلوا مع بعض،
-    والخامات الأول: لو خامة مش كفاية، الأمر كله بيقع من غير ما يبقى فيه منتج اتضاف
-    لمخزون على خامة مااتصرفتش.
-    """
     order = db.get(ProductionOrder, order_id)
     if order is None:
         raise ProductionOrderError("أمر التشغيل مش موجود.")
@@ -579,16 +406,6 @@ def execute_order(db: Session, *, order_id: int, actor_user_id: int,
                            ProductionState.in_progress):
         raise ProductionOrderError("الأمر ده اترحّل قبل كده.")
 
-    # **الكمية اللي بتتكتب هنا هي الإجمالي اللي طلع، مش الباقي.**
-    #
-    # اللي استلم دفعات قبل كده بيكتب الرقم النهائي، والفرق بينه وبين المستلم هو
-    # اللي بيتحرّك دلوقتي. لو اتحسبت على إنها «كمية زيادة» كان اللي استلم ٣٬٠٠٠
-    # وكتب ٣٬٠٠٠ عند القفل هيدخّل ٦٬٠٠٠ المخزن.
-    #
-    # ومافيش سقف على المخطّط: **اللي طلع هو اللي طلع**. أمر بعشرة آلاف يطلع منه
-    # ١١ ألف حاجة بتحصل (خامة زيادة، معايرة أحسن)، والنقص كمان. الاتنين بيتسجّلوا
-    # زي ما هم، والفرق عن المخطّط هو **رقم الإنتاج** — أنفع رقم في الورقة، ورفضه
-    # بيخلّي اللي قدام الشاشة يزوّر الرقم عشان يعدّي.
     if outputs:
         by_id = {p.id: p for p in order.products}
         for line_id, qty in outputs.items():
@@ -608,8 +425,6 @@ def execute_order(db: Session, *, order_id: int, actor_user_id: int,
                                             to_qty(0)))
         db.flush()
     else:
-        # مافيش رقم اتكتب: اللي اتستلم هو اللي طلع. ده اللي بيخلّي اللي استلم على
-        # دفعات يقفل الورقة من غير ما يعيد كتابة رقم هو كاتبه أربع مرات.
         for p_line in order.products:
             if to_qty(p_line.received_quantity) > to_qty(0):
                 p_line.quantity = to_qty(p_line.received_quantity)
@@ -631,10 +446,6 @@ def execute_order(db: Session, *, order_id: int, actor_user_id: int,
         db.flush()
 
     by_line: dict[int, Decimal] = {}
-    # **اللي لسه ما اتصرفش بيتصرف هنا** — أي مرحلة. ده بيغطّي التلات طرق بنفس
-    # السطر: اللي بيرحّل من «مسودة» على طول (تشغيلة خلصت خلاص)، واللي بدأ وصرف
-    # الجودة بإذنها، واللي بدأ وقفل من غير ما يصرف الجودة لوحدها. واللي اتصرف قبل
-    # كده بيعدّي بتكلفته المتجمّدة — `pending` بيشيله.
     _issue_materials(db, order, actor_user_id)
     for m in order.materials:
         if m.product_line_id is not None:
@@ -643,9 +454,6 @@ def execute_order(db: Session, *, order_id: int, actor_user_id: int,
 
     material_cost = ZERO
     for p in order.products:
-        # **الباقي بس بيتحرّك.** اللي اتستلم على دفعات دخل المخزن وقتها بحركته،
-        # وإعادة ترحيله هنا بتدخّله تاني. والباقي صفر لما الدفعات غطّت الكمية —
-        # وساعتها مافيش حركة أصلاً.
         remaining = to_qty(to_qty(p.quantity) - to_qty(p.received_quantity))
         mv = (stock_service.post_movement(
             db, item_id=p.item_id, location_kind=LocationKind.warehouse,
@@ -689,15 +497,12 @@ def list_orders(db: Session, *, search: str | None = None, branch_id: int | None
         stmt = stmt.where(ProductionOrder.imported_from.is_(None))
     if search:
         q = f"%{search.strip()}%"
-        # البيان والملاحظات جوّه البحث العام كمان — اللي فاكر «تشغيلة العيد» مش فاكر رقمها.
         stmt = stmt.where(ProductionOrder.document_number.ilike(q)
                           | ProductionOrder.external_document_number.ilike(q)
                           | ProductionOrder.statement1.ilike(q)
                           | ProductionOrder.notes.ilike(q))
     if statement and statement.strip():
-        # فلتر «البيان» لوحده — جزء من الكلام، من غير فرق حروف كبيرة وصغيرة.
         stmt = stmt.where(ProductionOrder.statement1.ilike(f"%{statement.strip()}%"))
-    # الأحدث فوق بتاريخ الإنتاج مش بترتيب الإدخال — المنقول من a5 اتكتب دفعة واحدة.
     return db.scalars(stmt.order_by(*newest_first(ProductionOrder, ProductionOrder.production_date))).all()
 
 
@@ -712,7 +517,6 @@ def reversed_ids(db: Session) -> set[int]:
 
 
 def delete_draft(db: Session, *, order_id: int, actor_user_id: int) -> None:
-    """المسودة تتمسح؛ المنفّذ لأ. المنفّذ حرّك مخزون، ومسحه بيسيب حركة مالهاش ورقة."""
     order = db.get(ProductionOrder, order_id)
     if order is None:
         raise ProductionOrderError("أمر التشغيل مش موجود.")
@@ -726,19 +530,6 @@ def delete_draft(db: Session, *, order_id: int, actor_user_id: int) -> None:
 
 
 def purge_order(db: Session, *, order_id: int, actor_user_id: int, pair_ok: bool = False) -> str:
-    """**مسح أمر تشغيل بكل أثره** — سطوره ودفعات استلامه وكل حركة مخزون كتبها.
-
-    مش طريق الشغل اليومي: اليومي هو `reverse_order` (حركة مرآة بتفضل في السجل). ده
-    لتنضيف ورق تجريبي اتكتب على داتا حقيقية — العكس كان هيسيب أمرين وحركتين لكل غلطة
-    في كارت كل صنف. نفس أسلوب `document_edit_service`: الحركة بتتشال خالص، والرصيد
-    مشتق منها فبيرجع لوحده.
-
-    ⛔ **المنقول من a5 مايتمسحش من هنا** — حركاته بتاعة `ManufacturingOp` والمصدر هو اللي
-    بيحكم عليه. ولا الأمر اللي عليه عكس أو هو نفسه عكس: المسح لازم يشيل الاتنين مع بعض،
-    والقرار ده مايتاخدش في الضهر.
-
-    بيرجّع رقم المستند اللي اتمسح.
-    """
     from sqlalchemy import delete
 
     from src.models.stock import StockMovement
@@ -750,7 +541,6 @@ def purge_order(db: Session, *, order_id: int, actor_user_id: int, pair_ok: bool
     if order.imported_from is not None:
         raise ProductionOrderError(
             f"{order.document_number} منقول من a5 — مايتمسحش من هنا.")
-    # `pair_ok`: السكربت بيمسح الأمر وعكسه مع بعض (العكس الأول) — قرار متاخد فوق.
     if not pair_ok and (order.reverses_id is not None or db.scalar(select(ProductionOrder.id).where(
             ProductionOrder.reverses_id == order_id)) is not None):
         raise ProductionOrderError(
@@ -759,14 +549,11 @@ def purge_order(db: Session, *, order_id: int, actor_user_id: int, pair_ok: bool
     before = {"doc": doc, "state": order.state.value if order.state else None,
               "branch_id": order.branch_id}
 
-    # السطور بتشاور على الحركات، فبتتشال الأول. والخامة والاستلام بيشاوروا على سطر
-    # المنتج، فبيتشالوا قبله.
     db.execute(delete(ProductionOrderReceipt).where(ProductionOrderReceipt.order_id == order_id))
     db.execute(delete(ProductionOrderMaterial).where(
         ProductionOrderMaterial.order_id == order_id))
     db.execute(delete(ProductionOrderProduct).where(
         ProductionOrderProduct.order_id == order_id))
-    # حركة «عكس دفعة استلام» بتشاور على حركة الدفعة نفسها — بتتشال قبلها.
     db.execute(delete(StockMovement).where(
         StockMovement.source_doc_type == "production_order",
         StockMovement.source_doc_id == order_id,
@@ -781,24 +568,13 @@ def purge_order(db: Session, *, order_id: int, actor_user_id: int, pair_ok: bool
 
 
 def reverse_order(db: Session, *, order_id: int, actor_user_id: int) -> ProductionOrder:
-    """يعكس كل حركة في الأمر المنفّذ: بيشيل التام ويرجّع الخامات. مرة واحدة بس.
-
-    **حركة مرآة بتفضل في السجل، مش مسح** — نفس قاعدة `transfer_service.cancel`.
-
-    وشيل التام الأول: لو اتباع أو اتستهلك، منع السالب بيوقّف العكس هنا — قبل ما تكون
-    الخامات رجعت للمخزن على إنتاج لسه في إيد حد.
-    """
     original = db.get(ProductionOrder, order_id)
     if original is None:
         raise ProductionOrderError("أمر التشغيل مش موجود.")
     if original.reverses_id is not None:
         raise ProductionOrderError("الأمر العكسي نفسه مايتعملهوش عكس.")
     if original.imported_from is not None:
-        # المنقول مالوش حركة بتاعته يعكسها — سطوره بتشاور على حركات `ManufacturingOp`
-        # المنقولة، وعكسها من هنا بيسيب العملية الأصلية شايلة حركة اتعكست من تحتها.
         raise ProductionOrderError("الأمر المنقول من a5 للعرض بس — مايتعكسش من هنا.")
-    # **والشغّال بيتعكس كمان** — خاماته خرجت من المخزن ولسه مافيش إنتاج دخل. من غير
-    # كده، التشغيلة اللي اتلغت بعد الصرف بتسيب الخامة مخصومة للأبد ومافيش باب يرجّعها.
     if original.state not in (ProductionState.done, ProductionState.in_progress):
         raise ProductionOrderError("العكس بيتعمل للشغّال والمنفّذ — المسودة تتعدّل أو تتمسح.")
     if db.scalar(select(ProductionOrder).where(
@@ -821,8 +597,6 @@ def reverse_order(db: Session, *, order_id: int, actor_user_id: int) -> Producti
 
     by_line: dict[int, int] = {}
     for p in original.products:
-        # الأمر اللي اتعكس وهو شغّال لسه ماطلّعش إنتاج — السطر موجود بخطته وبس،
-        # ومافيش حركة تتعكس. والمرآة بتتكتب من غير حركة عشان الورقة تفضل مقروءة.
         mirror = (stock_service.reverse_movement(
             db, original_id=p.stock_movement_id, actor_user_id=actor_user_id,
             movement_type="reverse_production_in")
@@ -838,8 +612,6 @@ def reverse_order(db: Session, *, order_id: int, actor_user_id: int) -> Producti
         db.flush()
         by_line[p.id] = line.id
 
-    # **ودفعات الاستلام بتتعكس كمان.** كل دفعة حركتها لوحدها — والعكس اللي بيلحق
-    # حركة القفل بس كان بيسيب اللي اتستلم في النص داخل المخزن للأبد.
     for rc in original.receipts:
         if rc.stock_movement_id:
             stock_service.reverse_movement(
@@ -847,9 +619,6 @@ def reverse_order(db: Session, *, order_id: int, actor_user_id: int) -> Producti
                 movement_type="reverse_production_in")
 
     for m in original.materials:
-        # **السطر اللي ما اتصرفش مالوش مرآة.** الأمر ممكن يتعكس وهو شغّال وخامات
-        # الجودة لسه في المخزن — وعكس حركة مش موجودة كان بيطلّع ٥٠٠. بيتكتب في
-        # الورقة من غير حركة عشان المرآة تفضل مقروءة جنب أصلها.
         mirror = (stock_service.reverse_movement(
             db, original_id=m.stock_movement_id, actor_user_id=actor_user_id,
             movement_type="reverse_consumption_out")

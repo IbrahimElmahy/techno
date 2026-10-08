@@ -1,26 +1,4 @@
 # -*- coding: utf-8 -*-
-"""الطرف اللي بنشتري منه وبنبيع له — كارتين لواحد، بيتوصّلوا.
-
-    python -m src.scripts.link_customer_supplier_pairs
-    python -m src.scripts.link_customer_supplier_pairs --branch السادات --yes
-
-**المشكلة.** عند a5 الطرف كارت واحد: هو في `Mourd` وبس، وفاتورة البيع له بتتكتب
-بـ`Cust_id = 0` — اسمه على الورقة والقيد على حسابه هو. قِسناها: مافيش ولا اسم واحد
-موجود في `Cust` و`Mourd` مع بعض في قاعدة المصنع، والعشر فواتير اللي طرفها مورد كلها
-`Cust_id = 0`.
-
-وعندنا الفاتورة **لازم** يكون ليها عميل — `import_a5_docs.Ctx.party()` بيخترع كارت
-لأي طرف على مستند مش في الكشف، بكود `A5X`. فالراجل بقى كارتين: كارت مورد عليه
-مشترياتنا منه، وكارت عميل مخترع عليه مبيعاتنا له. و«هو عليه كام؟» بقى ليها إجابتين
-مالهمش طريق يتجمعوا.
-
-**والحل رابط، مش مسح.** الفواتير متعلّقة بكارت العميل ومسحه بيضيّعها. الرابط بيخلّي
-الشاشة تعرف إنهم واحد وتوصّل، والتقارير تبطّل تعدّه اتنين.
-
-**والمطابقة بالاسم المجرّد، والمرشّح الواحد بس.** `arabic.bare` بيوحّد الهمزة والتاء
-المربوطة، فـ«احمد» بتلاقي «أحمد». والاسم اللي بيتجرّد لأكتر من مورد بيتقال في الكشف
-ومابيتربطش — ربط غلط أوحش من مافيش ربط، لأنه بيخبّي نفسه.
-"""
 from __future__ import annotations
 
 import argparse
@@ -58,7 +36,6 @@ def main() -> None:
         customers = db.scalars(cstmt).all()
         suppliers = db.scalars(sstmt).all()
 
-        # فهرس الموردين بالاسم المجرّد. الاسم اللي ليه أكتر من مورد بيتقال ومابيتربطش.
         by_bare: dict[str, list[Supplier]] = defaultdict(list)
         for s in suppliers:
             by_bare[arabic.bare(s.name or "")].append(s)
@@ -79,7 +56,6 @@ def main() -> None:
                 already.append((c, s))
                 continue
             if c.supplier_id is not None:
-                # مربوط بمورد تاني — قرار اتاخد قبل كده، ومابنكتبش فوقه.
                 ambiguous.append((c, hits))
                 continue
             linked.append((c, s))

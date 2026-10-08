@@ -1,22 +1,3 @@
-"""مسير الرواتب — التشغيل والسطور والتفاصيل (HR-6).
-
-**`reversal_seq` هي اللي بتخلّي الشهر يتعمل مرة واحدة ويفضل ليه تاريخ.**
-
-`UniqueConstraint(year, month, branch_id, reversal_seq)` — the database itself refuses a second
-run for the same month, so «الترحيل مرتين» cannot happen even if two people press at once. And
-reversing bumps the seq rather than deleting the row, which is where this differs from
-`fixed_asset_service.reverse_depreciation`: that one DELETES its period markers, which is right for
-a marker and wrong for a document. A payroll run has a printed number and an employee is holding a
-payslip that quotes it — erasing it would make the paper in his hand refer to nothing.
-
-**والسطر بيتجمّد.** `department_id`, `job_title_id`, `cost_center_id` are copied onto the line when
-it is computed. Somebody who moves department in April must not change what March's payroll cost
-the warehouse — the report would rewrite itself every time anybody transferred.
-
-`payroll_line_detail` is one row per contributing figure. It is the reason «تقارير كتير جداً» over
-payroll is cheap: every breakdown — by component, by kind, by employee, by department — is a
-group-by over this one table rather than a new query per report.
-"""
 from __future__ import annotations
 
 import enum
@@ -40,17 +21,13 @@ from src.core.money import MONEY, QTY
 
 
 class PayrollRunStatus(str, enum.Enum):
-    draft = "draft"        # محسوب ومش مرحّل — بيتعاد حسابه براحتك
-    # «معتمد» — شيت المرتبات اتقفل للتعديل ومستني الترحيل. خطوة لوحدها لأن اللي بيراجع الشيت
-    # ويعتمده مش بالضرورة اللي بيرحّل، وبين الاتنين الورق بيتطبع ويتمضي.
+    draft = "draft"
     closed = "closed"
-    posted = "posted"      # اترحّل للأستاذ
-    reversed = "reversed"  # اتعكس، والشهر رجع مفتوح
+    posted = "posted"
+    reversed = "reversed"
 
 
 class PayrollRun(Base):
-    """مسير شهر واحد لفرع واحد."""
-
     __tablename__ = "payroll_run"
     __table_args__ = (
         UniqueConstraint("year", "month", "branch_id", "reversal_seq",
@@ -62,14 +39,11 @@ class PayrollRun(Base):
     year: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
     month: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
     branch_id: Mapped[int | None] = mapped_column(ForeignKey("branch.id"), nullable=True)
-    # بيزيد مع كل عكس، فإعادة الترحيل بتدخل من غير ما تصطدم بالقيد الفريد — والمسير القديم
-    # بيفضل موجود برقمه، لأن حد ماسك قسيمة بتقول عليه.
     reversal_seq: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     status: Mapped[PayrollRunStatus] = mapped_column(
         Enum(PayrollRunStatus, native_enum=False, length=12),
         default=PayrollRunStatus.draft, nullable=False, index=True,
     )
-    # الإصدارات اللي اتحسب بيها — إعادة قراية شهر قديم بتستعمل شرايحه هو.
     tax_version_id: Mapped[int | None] = mapped_column(
         ForeignKey("payroll_scheme_version.id"), nullable=True
     )
@@ -105,8 +79,6 @@ class PayrollRun(Base):
 
 
 class PayrollLine(Base):
-    """سطر موظف واحد في مسير — كل أرقامه متجمّدة وقت الحساب."""
-
     __tablename__ = "payroll_line"
     __table_args__ = (
         UniqueConstraint("run_id", "employee_id", name="uq_payroll_line_employee"),
@@ -117,7 +89,6 @@ class PayrollLine(Base):
     employee_id: Mapped[int] = mapped_column(
         ForeignKey("employee.id"), nullable=False, index=True
     )
-    # متجمّدين: نقل موظف في أبريل مايغيّرش تكلفة مارس على المخزن.
     department_id: Mapped[int | None] = mapped_column(ForeignKey("department.id"), nullable=True)
     job_title_id: Mapped[int | None] = mapped_column(ForeignKey("job_title.id"), nullable=True)
     cost_center_id: Mapped[int | None] = mapped_column(
@@ -146,8 +117,6 @@ class PayrollLine(Base):
     other_deductions: Mapped[object] = mapped_column(MONEY, default=0, nullable=False)
     total_deductions: Mapped[object] = mapped_column(MONEY, default=0, nullable=False)
     net: Mapped[object] = mapped_column(MONEY, default=0, nullable=False)
-    # موظف مالوش ولا يوم حضور مسجّل. مش غياب كامل — ده معناه إن محدش رفع الملف، والفرق بين
-    # الاتنين هو الفرق بين مرتب كامل ومرتب صفر.
     has_attendance: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     paid: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     payment_entry_id: Mapped[int | None] = mapped_column(
@@ -173,8 +142,6 @@ class DetailKind(str, enum.Enum):
 
 
 class PayrollLineDetail(Base):
-    """بند واحد على سطر — قسيمة الراتب بتتقرا من هنا، وكل تقارير المرتبات كمان."""
-
     __tablename__ = "payroll_line_detail"
 
     id: Mapped[int] = mapped_column(BigIntPK, primary_key=True, autoincrement=True)
@@ -187,7 +154,6 @@ class PayrollLineDetail(Base):
     component_id: Mapped[int | None] = mapped_column(
         ForeignKey("salary_component.id"), nullable=True
     )
-    # رقم السلفة أو الجزاء اللي السطر ده جاي منه — عشان الرجوع للمستند.
     ref_id: Mapped[int | None] = mapped_column(BigIntPK, nullable=True)
     label: Mapped[str] = mapped_column(String(120), nullable=False)
     kind: Mapped[DetailKind] = mapped_column(
@@ -198,16 +164,11 @@ class PayrollLineDetail(Base):
 
 
 class PayrollRemittance(Base):
-    """سداد التأمينات أو الضريبة للجهة — بيقفل الالتزام من الخزنة.
-
-    من غيره الحسابات دي بتكبر للأبد: المسير بيرحّل عليها كل شهر ومحدش بيقفلها.
-    """
-
     __tablename__ = "payroll_remittance"
 
     id: Mapped[int] = mapped_column(BigIntPK, primary_key=True, autoincrement=True)
     document_number: Mapped[str] = mapped_column(String(24), unique=True, nullable=False)
-    kind: Mapped[str] = mapped_column(String(16), nullable=False)  # insurance | tax
+    kind: Mapped[str] = mapped_column(String(16), nullable=False)
     amount: Mapped[object] = mapped_column(MONEY, nullable=False)
     remit_date: Mapped[date] = mapped_column(Date, nullable=False, index=True)
     treasury_id: Mapped[int | None] = mapped_column(ForeignKey("treasury.id"), nullable=True)

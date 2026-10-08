@@ -1,13 +1,3 @@
-"""Cost of goods — the weighted-average purchase cost of an item (030).
-
-Profit is only meaningful if the cost side is pinned to the moment of the sale. This module answers
-"what did a unit of this item cost us, as of right now"; `sales_service` calls it once per line and
-stores the answer on the line, so later purchases move the average for future sales without
-rewriting the margin of past ones.
-
-Kept as a separate, dependency-light module (Library-First) so reports and any future valuation
-screen can reuse the same definition of cost instead of re-deriving it differently.
-"""
 from __future__ import annotations
 
 from decimal import Decimal
@@ -22,26 +12,10 @@ from src.models.stock import CostingMethod, StockSetting
 
 
 def _after_doc_discount(column):
-    """العمود بعد خصم المستند — `عمود × (١ − النسبة/١٠٠)`.
-
-    التكلفة كانت بتتقرا من `line_total`، وده بعد خصم السطر بس. فاتورة شرا عليها
-    خصم مستند ٥٪ كانت بتسجّل تكلفة أعلى من اللي اتدفع فعلاً — وده بيقلّل الربح
-    المعلن على كل بيعة من الصنف ده. الخصم على المستند فلوس ماطلعتش من الخزنة،
-    فمالهاش حق تبقى في تكلفة البضاعة.
-    """
     return column * (1 - func.coalesce(PurchaseInvoice.combined_pct, 0) / 100)
 
 
 def average_cost(db: Session, item_id: int) -> Decimal:
-    """Weighted-average cost per BASE unit from everything ever purchased, net of returns.
-
-    Returns ZERO — never None — for an item with no purchases (produced in-house, or opening
-    stock). A caller storing this on a document needs a number it can do arithmetic with; a NULL
-    would quietly turn every downstream profit into "unknown".
-
-    **الخصمين الاتنين محسوبين**: خصم السطر جوّه `line_total` خلاص، وخصم المستند
-    بيتضرب هنا. التكلفة هي اللي اتدفع، مش اللي اتكتب في القايمة.
-    """
     bought_qty, bought_value = db.execute(
         select(
             func.coalesce(func.sum(PurchaseInvoiceLine.quantity * PurchaseInvoiceLine.unit_factor), 0),
@@ -51,12 +25,6 @@ def average_cost(db: Session, item_id: int) -> Decimal:
         .where(PurchaseInvoiceLine.item_id == item_id)
     ).one()
 
-    # Returned purchases were never really ours — take them back out of both sides so the average
-    # reflects what we actually kept and paid for.
-    #
-    # **بنفس السعر اللي دخلت بيه بالظبط.** كان بيطرح `unit_price` — سعر القايمة من
-    # غير أي خصم — بينما الدخول اتحسب بالخصمين. يعني المرتجع كان بيشيل فلوس أكتر
-    # من اللي ضافها، ومتوسط تكلفة الباقي في المخزن يتشوّه مع كل مردود.
     returned_qty, returned_value = db.execute(
         select(
             func.coalesce(func.sum(PurchaseReturnLine.quantity), 0),
@@ -83,10 +51,6 @@ def average_cost(db: Session, item_id: int) -> Decimal:
 
 
 def last_purchase_cost(db: Session, item_id: int) -> Decimal:
-    """The unit price on the most recent purchase line — «آخر سعر شراء» (B5).
-
-    Per BASE unit, like `average_cost`, so the two are interchangeable wherever a cost is needed.
-    """
     row = db.execute(
         select(PurchaseInvoiceLine.unit_price, PurchaseInvoiceLine.unit_factor,
                PurchaseInvoiceLine.discount_pct, PurchaseInvoice.combined_pct)
@@ -97,45 +61,23 @@ def last_purchase_cost(db: Session, item_id: int) -> Decimal:
     ).first()
     if row is None or row[0] is None:
         return ZERO
-    # السعر اللي اتدفع فعلاً — بخصم السطر وخصم المستند. «آخر سعر شراء» من غيرهم
-    # بيقول رقم محدش دفعه، وبيتسعّر بيه.
     unit_price = discounts.apply(Decimal(str(row[0])), row[2], row[3])
     factor = Decimal(str(row[1] or 1))
     return to_money(unit_price / factor) if factor else to_money(unit_price)
 
 
 def costing_method(db: Session) -> CostingMethod:
-    """The configured valuation method, defaulting to weighted average (the shipped behaviour)."""
     setting = db.scalar(select(StockSetting).limit(1))
     return setting.costing_method if setting else CostingMethod.average
 
 
 def unit_cost(db: Session, item_id: int) -> Decimal:
-    """The cost of one base unit under whatever method is configured.
-
-    New valuations follow the setting; costs already frozen onto past documents are untouched by
-    it, which is the whole reason they were frozen.
-    """
     if costing_method(db) == CostingMethod.last_purchase:
         return last_purchase_cost(db, item_id)
     return average_cost(db, item_id)
 
 
-# ---------------------------------------------------------------- التكلفة بالجملة
-#
-# **نفس الحساب بالظبط، لكن لكل الأصناف مرة واحدة.**
-#
-# `average_cost` بتعمل استعلامين لكل صنف. الجرد بينده عليها لكل صنف في المخزن —
-# ٢٬٦٠٠ صنف يعني أكتر من ٥٬٢٠٠ استعلام في الطلب الواحد، وقِيس: أربع ثواني ونص لتقرير
-# حجمه ٤٣ كيلوبايت. الحجم ماكانش المشكلة، العدد هو.
-#
-# الدالتين تحت بيعملوا نفس الاستعلامين مجمّعين بـ`GROUP BY item_id`. الحساب متكرر
-# مقصود: لو اتغيّر هنا لازم يتغيّر فوق كمان — والبديل (إعادة كتابة `average_cost`
-# فوق البالك) بتخلّي حساب تكلفة سطر واحد يجيب جدول كامل.
-
-
 def average_cost_bulk(db: Session, item_ids) -> dict[int, Decimal]:
-    """متوسط تكلفة الوحدة لكل صنف في القايمة — في استعلامين مش استعلامين لكل صنف."""
     ids = list({int(i) for i in item_ids})
     if not ids:
         return {}
@@ -187,7 +129,6 @@ def average_cost_bulk(db: Session, item_ids) -> dict[int, Decimal]:
 
 
 def last_purchase_cost_bulk(db: Session, item_ids) -> dict[int, Decimal]:
-    """آخر سعر شرا لكل صنف — سطر واحد لكل صنف، مختار بأحدث فاتورة."""
     ids = list({int(i) for i in item_ids})
     if not ids:
         return {}
@@ -200,7 +141,6 @@ def last_purchase_cost_bulk(db: Session, item_ids) -> dict[int, Decimal]:
         .order_by(PurchaseInvoice.id.asc(), PurchaseInvoiceLine.id.asc())
     ).all()
     out: dict[int, Decimal] = {i: ZERO for i in ids}
-    # مرتّب تصاعدي، فآخر سطر لكل صنف هو الأحدث — بيكتب فوق اللي قبله.
     for item_id, price, factor, line_pct, doc_pct, _inv, _line in rows:
         if price is None:
             continue
@@ -211,7 +151,6 @@ def last_purchase_cost_bulk(db: Session, item_ids) -> dict[int, Decimal]:
 
 
 def unit_cost_bulk(db: Session, item_ids) -> dict[int, Decimal]:
-    """`unit_cost` لقايمة أصناف — بيحترم نفس الإعداد."""
     if costing_method(db) == CostingMethod.last_purchase:
         return last_purchase_cost_bulk(db, item_ids)
     return average_cost_bulk(db, item_ids)

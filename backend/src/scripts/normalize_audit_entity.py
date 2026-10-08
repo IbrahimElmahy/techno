@@ -1,26 +1,4 @@
 # -*- coding: utf-8 -*-
-"""توحيد «نوع الكيان» في سجل الأحداث.
-
-فيه كاتبين للسجل، وكل واحد كان بيسمّي الحاجة باسم:
-
-* `audit_service.record` جوّه الخدمات — بيكتب اسم الجدول (`stock_transfer`).
-* `RequestAuditMiddleware` — بياخد الاسم من الرابط (`/api/v1/transfers` ⇒ `transfers`).
-
-الاتنين مقصودين: اللي بالإيد بيدّي القيمة قبل وبعد، والميدل وير بتمسك أي طلب بيغيّر
-حاجة حتى لو الخدمة نسيت تسجّل. المشكلة إنهم بيسمّوا نفس الحدث باسمين، فشاشة السجل
-بتعرض في فلتر «النوع» نفس الحاجة مرتين — «إذن تحويل» من `transfers` و«إذن تحويل» من
-`stock_transfer` — واللي بيختار واحد بيخفي نص التاريخ عن نفسه من غير ما يعرف.
-
-    transfers 63 · stock_transfer 43    sales 56 · sales_invoice 24
-    warehouses 27 · warehouse 27        users 10 · user 80
-
-الميدل وير اتصلّحت الأول (`_ENTITY` فيها بتترجم الرابط لنفس القاموس)، وده بينضّف اللي
-اتكتب قبلها. السجل سطوره ثابتة مبدئياً، فالتغيير هنا على **عمود التصنيف وحده** — لا
-الفاعل ولا الوقت ولا الفعل ولا القيم بتتلمس، والسكريبت بيتأكد من ده بنفسه.
-
-    python -m src.scripts.normalize_audit_entity            # عرض بس
-    python -m src.scripts.normalize_audit_entity --apply    # بيكتب
-"""
 from __future__ import annotations
 
 import argparse
@@ -63,7 +41,6 @@ def main() -> None:
             print("عرض بس — للكتابة زوّد --apply")
             return
 
-        # البصمة: عدد الصفوف وأقدم وأحدث وقت وعدد الأفعال — كلها لازم تفضل زي ما هي.
         before = db.execute(select(
             func.count(AuditLogEntry.id), func.min(AuditLogEntry.created_at),
             func.max(AuditLogEntry.created_at),

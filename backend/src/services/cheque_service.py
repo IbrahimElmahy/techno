@@ -1,9 +1,3 @@
-"""Cheques — 020-finance-reports.
-
-A cheque is a promise, not cash. Registering one moves the value into a holding account
-(«شيكات تحت التحصيل» / «شيكات تحت الدفع»); only settlement touches a treasury. A bounced
-incoming cheque puts the debt back on the customer.
-"""
 from __future__ import annotations
 
 from datetime import date
@@ -20,7 +14,6 @@ from src.models.ledger import Account, AccountNature, AccountType, Direction, Pa
 from src.services import audit_service, ledger_service, treasury_service, voucher_service
 from src.services.ledger_service import LineInput
 
-# Holding accounts, created once on first use (system accounts, not user-editable).
 UNDER_COLLECTION_CODE = "1150"
 CHEQUES_PAYABLE_CODE = "2150"
 
@@ -66,7 +59,6 @@ def _positive(amount) -> Decimal:
 
 
 def _cheque_partner(cheque) -> tuple[PartnerKind | None, int | None]:
-    """شريك الشيك — العميل اللي دفعه أو المورد اللي اتحرّر له (المرحلة ٢)."""
     if cheque.customer_id is not None:
         return PartnerKind.customer, cheque.customer_id
     if cheque.supplier_id is not None:
@@ -81,7 +73,6 @@ def register_cheque(
     treasury_id: int | None = None, description: str | None = None,
     statement1: str | None = None,
 ) -> Cheque:
-    """استلام شيك من عميل أو تحرير شيك لمورد — القيمة تدخل حساب الشيكات لا الخزينة."""
     value = _positive(amount)
     issued = issue_date or date.today()
     if due_date < issued:
@@ -117,7 +108,6 @@ def register_cheque(
         db, entry_type="cheque_register", actor_user_id=actor_user_id,
         description=description or statement, entry_date=issued,
         partner_kind=partner_kind, partner_id=partner_id,
-        # استحقاق الشيك هو استحقاق السطر — الأعمار بتترتب عليه، مش على يوم تحريره.
         invoice_date_due=due_date,
         lines=[LineInput(debit, Direction.debit, value, statement=statement),
                LineInput(credit, Direction.credit, value, statement=statement)],
@@ -134,7 +124,6 @@ def settle_cheque(
     db: Session, *, cheque_id: int, actor_user_id: int, settled_on: date | None = None,
     treasury_id: int | None = None,
 ) -> Cheque:
-    """تحصيل شيك وارد أو صرف شيك صادر — هنا فقط تتحرك الخزينة."""
     cheque = db.get(Cheque, cheque_id)
     if cheque is None:
         raise ChequeError("الشيك غير موجود.")
@@ -177,7 +166,6 @@ def settle_cheque(
 
 def bounce_cheque(db: Session, *, cheque_id: int, actor_user_id: int,
                   on: date | None = None) -> Cheque:
-    """ارتداد شيك وارد — القيمة ترجع مديونية على العميل."""
     cheque = db.get(Cheque, cheque_id)
     if cheque is None:
         raise ChequeError("الشيك غير موجود.")
@@ -208,12 +196,6 @@ def bounce_cheque(db: Session, *, cheque_id: int, actor_user_id: int,
 
 
 def unsettle_cheque(db: Session, *, cheque_id: int, actor_user_id: int) -> Cheque:
-    """عكس تحصيل/صرف شيك — يعكس قيد التسوية ويرجّع الشيك «تحت التحصيل/الدفع».
-
-    A settled cheque cannot be edited (append-only), so undoing a mistaken collection means
-    reversing the settlement entry: the value leaves the treasury and returns to the holding
-    account, and the cheque is pending again — ready to re-settle or bounce.
-    """
     cheque = db.get(Cheque, cheque_id)
     if cheque is None:
         raise ChequeError("الشيك غير موجود.")
@@ -232,7 +214,6 @@ def unsettle_cheque(db: Session, *, cheque_id: int, actor_user_id: int) -> Chequ
 
 
 def cancel_cheque(db: Session, *, cheque_id: int, actor_user_id: int) -> Cheque:
-    """إلغاء شيك لم يُحصَّل — يعكس قيد التسجيل."""
     cheque = db.get(Cheque, cheque_id)
     if cheque is None:
         raise ChequeError("الشيك غير موجود.")
@@ -267,5 +248,4 @@ def list_cheques(
         stmt = stmt.where(Cheque.due_date >= due_from)
     if due_to is not None:
         stmt = stmt.where(Cheque.due_date <= due_to)
-    # الأحدث فوق (طلب العميل ٢٠٢٦-١٠-٠١).
     return db.scalars(stmt.order_by(Cheque.due_date.desc(), Cheque.id.desc())).all()

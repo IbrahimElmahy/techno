@@ -1,4 +1,3 @@
-"""جرد المخازن / جرد عام — 031-a5-restructure."""
 from __future__ import annotations
 
 from datetime import date
@@ -25,28 +24,22 @@ router = APIRouter(tags=["stock-counts"], prefix="/stock-counts")
 
 
 class OpenIn(BaseModel):
-    # Omit for «جرد عام المخازن» — every active warehouse in one sheet.
     warehouse_id: int | None = None
     count_date: date | None = None
     item_ids: list[int] | None = None
     notes: str | None = Field(default=None, max_length=500)
-    statement1: str | None = Field(default=None, max_length=200)  # البيان
-    # (031) نوع الجرد. The three differ in one thing only — which items land on the sheet — so this
-    # is the whole difference between them at the API.
+    statement1: str | None = Field(default=None, max_length=200)
     kind: Literal["full", "cycle", "spot"] = "full"
-    # For a cycle count: how many lines this batch carries. Defaulted in the service.
     batch_size: int | None = Field(default=None, ge=1, le=500)
 
 
 class CountIn(BaseModel):
     line_id: int
-    # None clears a value back to «not counted», which is not the same as zero.
     counted_quantity: Decimal | None = None
 
 
 class EnterIn(BaseModel):
     counts: list[CountIn]
-    # البيان — اختياري؛ لو مااتبعتش مابيتلمسش (`model_fields_set`).
     statement1: str | None = Field(default=None, max_length=200)
 
 
@@ -60,10 +53,6 @@ class LineOut(BaseModel):
     counted_quantity: Decimal | None
     difference: Decimal | None
     stock_movement_id: int | None
-    # (031) الصنف بيتجرد في فئة، والفرق ليه قيمة بالفلوس.
-    #
-    # «ناقص ٣ قطع» and «ناقص ٤٥٠ ج.م» are not the same information, and the second is the one a
-    # manager acts on: three missing screws and three missing pumps read identically without it.
     category: str | None = None
     unit_cost: Decimal | None = None
 
@@ -75,8 +64,6 @@ class CountOut(BaseModel):
     warehouse_name: str | None
     count_date: str
     status: str
-    # Returned as well as stored: «ليه الصنف ده مش في الجردة؟» is answerable from the kind, and a
-    # cycle count mistaken for a failed full count is how people stop trusting the numbers.
     kind: str = "full"
     notes: str | None
     statement1: str | None = None
@@ -88,13 +75,6 @@ class CountOut(BaseModel):
 
 
 def _names(db: Session):
-    """Names, categories and costs for every item, in one pass.
-
-    Costs come from `costing_service` — the same average the sale freezes onto a line — so a
-    difference is valued the way the rest of the system values stock. Read once for the whole
-    sheet: a count runs to hundreds of lines, and a cost query per line turns opening it into a
-    wait.
-    """
     from src.services import costing_service
 
     all_items = db.scalars(select(Item)).all()
@@ -115,8 +95,6 @@ def _out(sheet: StockCount, items, warehouses, categories=None, costs=None,
                 id=ln.id, item_id=ln.item_id, item_name=items.get(ln.item_id),
                 warehouse_id=ln.warehouse_id, warehouse_name=warehouses.get(ln.warehouse_id),
                 book_quantity=ln.book_quantity, counted_quantity=ln.counted_quantity,
-                # Derived, never stored: a stored difference goes stale the moment either side
-                # of it is edited.
                 difference=(None if ln.counted_quantity is None
                             else Decimal(str(ln.counted_quantity))
                             - Decimal(str(ln.book_quantity))),

@@ -8,7 +8,6 @@ import {
   Alert, Button, Col, DatePicker, Form, Input, Modal, Row, Segmented, Select, Space, Tabs, Tag,
   Tooltip, message,
 } from 'antd';
-// كل جدول هنا بفلتر على كل عمود — شوف `FilterTable`.
 import { FilterTable as Table } from '../components/FilterTable';
 import { InputNumber } from '../components/NumberInput';
 import { advanceFrom } from '../components/lineKeyboard';
@@ -49,22 +48,9 @@ import SummaryTile from '../components/saleDoc/SummaryTile';
 import './docs.extra.css';
 import { activeOptions } from '../utils/active';
 
-/**
- * إذن إضافة / إذن صرف — stock in and out for reasons that are not a trade.
- *
- * Recording a count adjustment or a workshop return as an invoice would put movements that were
- * never traded into the sales figures. A permit is the honest document for them.
- *
- * A receipt asks for the cost (only the person adding the stock knows what it was worth); an
- * issue does not, because stock going out is worth what it cost us, not what someone types.
- */
-
 type Kind = 'receipt' | 'issue' | 'opening';
 type KindTab = Kind | 'all';
 
-/** «بضاعة أول المدة» behaves like a receipt — same direction, same typed cost — and is labelled
- *  separately so «إمتى بدأنا؟» stays answerable and a stock-as-of-date report for a day before
- *  go-live does not show goods the system was not yet keeping. */
 const KIND_LABEL: Record<Kind, string> = {
   receipt: 'إضافة', issue: 'صرف', opening: 'أول المدة',
 };
@@ -81,7 +67,6 @@ interface Permit {
   id: number; document_number: string; kind: Kind;
   warehouse_id: number; warehouse_name: string | null;
   permit_date: string | null; reason: string | null; notes: string | null;
-  /** «بيان» و«رقم المستند» — اختيارية لأن الأذون المنقولة من a5 مالهاش ولا واحدة. */
   statement1?: string | null; external_document_number?: string | null;
   total_cost: string; is_reversal: boolean; reversed_by: number | null;
   created_at: string | null; lines: PermitLine[];
@@ -96,52 +81,24 @@ export default function StockPermits() {
   const [items, setItems] = useState<any[]>([]);
   const [warehouses, setWarehouses] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
-  /**
-   * الإذن المفتوح — نفس صفحة الإنشاء بالظبط.
-   *
-   * A permit used to have two surfaces: a modal to write one and a drawer to look at one. So the
-   * screen that CREATED the document and the screen that SHOWED it were different shapes, and
-   * «افتحه وشوف» landed somewhere that looked nothing like where it was typed.
-   *
-   * One page now, filled or empty. A posted permit is read-only on it and says why — the
-   * movements are already on the shelf, and a permit is create-or-reverse by design (there is no
-   * edit endpoint, deliberately: editing one would leave stock describing a document that no
-   * longer says what happened).
-   */
   const [detail, setDetail] = useState<Permit | null>(null);
-  /** الإذن اللي بيتعدّل في مكانه (٢٠٢٦-١٠-٠٥) — الحفظ بيبقى `PUT` على نفس الرقم. */
   const [editingId, setEditingId] = useState<number | null>(null);
-  /** «تحميل» — أذونات فترة، والسابق/التالى بيمشوا جوّاها (زي فاتورة البيع). */
   const [periodRows, setPeriodRows] = useState<Permit[] | null>(null);
   const [loadRangeOpen, setLoadRangeOpen] = useState(false);
 
   const [creating, setCreating] = useState(false);
-  // «أول المدة» is a screen of its own in their menu. Here it is one of three permit kinds, so
-  // that entry opens this screen with the kind already chosen rather than on إذن إضافة.
   const [kind, setKind] = useQueryTab('receipt', 'kind') as unknown as [Kind, (k: Kind) => void];
   const [warehouseId, setWarehouseId] = useState<number | undefined>();
   const [permitDate, setPermitDate] = useState<Dayjs>(dayjs());
   const [reason, setReason] = useState('');
   const [notes, setNotes] = useState('');
-  /**
-   * «بيان» و«رقم المستند».
-   *
-   * «رقم المستند» مش رقمنا — ده رقم الورقة اللي في إيد اللي جاب البضاعة أو صرفها،
-   * وهو بيدوّر بيه. بيتحفظ **جنب** رقم الإذن عندنا، مش بداله.
-   */
   const [statement1, setStatement1] = useState('');
   const [externalDocNumber, setExternalDocNumber] = useState('');
   const [lines, setLines] = useState<DraftLine[]>([]);
-  // The doors. «إيه نوع الإذن» is already answered by the tab that opened this, so the one thing
-  // left to ask before the lines is which store — and an issue cannot even list its items until
-  // that is known.
   const [newStep, setNewStep] = useState<null | 'warehouse'>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [focusLineKey, setFocusLineKey] = useState<number | null>(null);
   const keySeq = useRef(0);
-  /** Enter بينقل للسطر اللي بعده، وآخر سطر بيفتح شباك الأصناف —
-   *  انظر `lineKeyboard`. كان بيفتح الشباك على طول، فاللي عنده سطور مكتوبة
-   *  كان لازم يرجع للماوس عشان يوصل لأي سطر منهم. */
   const advance = advanceFrom(lines, setFocusLineKey, () => setPickerOpen(true));
 
   const { options: categoryOptions } = useLookup('item_category');
@@ -151,7 +108,6 @@ export default function StockPermits() {
   const [saving, setSaving] = useState(false);
 
   const load = async (opts?: { silent?: boolean }) => {
-    // الهادي (التحديث الحي) مابيلفّش الجدول بسبينر.
     const silent = !!opts?.silent;
     if (!silent) setLoading(true);
     try {
@@ -159,7 +115,6 @@ export default function StockPermits() {
       setPermits(res.data || []);
     } catch (err) { console.error(err); } finally { if (!silent) setLoading(false); }
   };
-  // إذن اتعمل أو اتعكس من جهاز تاني ⇒ القايمة تتحدّث. المسودّة اللي بتتكتب مش في `permits`.
   useLiveRefresh(['stock'], () => load({ silent: true }));
 
   useEffect(() => {
@@ -169,10 +124,7 @@ export default function StockPermits() {
       .catch(console.error);
   }, []);
 
-  // An issue may only offer what the store actually holds — the API refuses the rest anyway,
-  // but a picker that offers stock you do not have is a trap, not a feature.
   useEffect(() => {
-    // مافيش مخزن ⇒ مافيش نداء. النداء بمخزن فاضي بيوصل من غير بارامتر والسيرفر بيرد 422.
     if (kind !== 'issue' || !warehouseId) { setAvailable({}); return; }
     api.get('/api/v1/stock/by-location', { params: {
       location_kind: 'warehouse', location_id: warehouseId, only_available: true } })
@@ -184,8 +136,6 @@ export default function StockPermits() {
       .catch(console.error);
   }, [kind, warehouseId]);
 
-  // «أول المدة» is their own screen, so the entry must show أذون أول المدة — not the whole permits
-  // list with the right kind waiting inside a modal nobody has opened yet.
   const filter = useListFilter(permits, {
     initialValues: kind === 'opening' ? { kind: 'opening' } : {},
     search: (p) => [p.document_number, p.reason, p.warehouse_name, p.statement1,
@@ -194,13 +144,9 @@ export default function StockPermits() {
       kind: (p, v) => p.kind === v,
       statement: (p, v) => matchesStatement(p, v),
     },
-    // الفلتر على تاريخ الإذن نفسه — هو اللي في عمود «التاريخ». `created_at` وقت
-    // كتابة الصف، والمنقول من a5 كله اتكتب في يوم واحد: الفلترة عليه بتخفي إذن
-    // ظاهر تاريخه يوليو لأنه اتسجّل عندنا في سبتمبر.
     dateOf: (p) => p.permit_date || p.created_at,
   });
 
-  /** المسودّة — الإذن اللي اتكتب ولسه ما اترحّلش. الشرح في `useDraft`. */
   const draftPayload = useMemo(() => ({
     kind, warehouseId, lines, reason, notes,
     statement1, external_document_number: externalDocNumber,
@@ -213,7 +159,6 @@ export default function StockPermits() {
   } = useDraft({
     kind: 'stock_permit',
     payload: draftPayload,
-    // الإذن المرحّل مالوش مسودّة — هو مستند اتحركت بيه بضاعة خلاص.
     paused: Boolean(detail),
     isEmpty: (x: any) => !x.warehouseId
       && !(x.lines || []).some((l: any) => l.item_id != null),
@@ -225,7 +170,6 @@ export default function StockPermits() {
     },
   });
 
-  /** بيفتح مسودّة في الشاشة — نفس حالة الشاشة اللي اتحفظت. */
   const resumeDraft = (d: any) => {
     const x = d.payload || {};
     adoptDraft(d.id);
@@ -249,19 +193,10 @@ export default function StockPermits() {
     setPermitDate(dayjs()); setWarehouseId(undefined);
   };
 
-  /** One way in, from the list button or from F2 — the store first, then the lines. */
   const startNew = () => { resetDraft(); setDetail(null); setCreating(false); setNewStep('warehouse'); };
 
-  /** Open a posted permit on the same page it would have been written on. */
   const openPermit = (p: Permit) => { setCreating(false); setDetail(p); markOpen(p.id); };
 
-  /**
-   * `?doc=` — بيفتح الإذن اللي الرابط بيشاور عليه، زي إذن التحويل بالظبط.
-   *
-   * الحركة في كارت الصنف بتقول «إذن إضافة» ورقمه؛ والرابط لازم يوصّل للإذن نفسه مش
-   * للقايمة اللي هو فيها.
-   */
-  // الإذن المفتوح جزء من العنوان، فالـ«رجوع» بيقفله ويرجّع للكشف — الشرح في `useDocRoute`.
   const { markOpen, markClosed, opening: docOpening } = useDocRoute<Permit>({
     rows: permits,
     openId: detail?.id ?? null,
@@ -278,17 +213,13 @@ export default function StockPermits() {
     },
   });
 
-  /** Leave the document, whichever kind it was. */
   const closeDoc = () => {
     setCreating(false); setDetail(null); resetDraft(); markClosed();
   };
 
-  /** An item picked in the window becomes a line, and the caret goes to its quantity. */
   const addItem = (itemId: number, qty: number | null = null): PickResult => {
-    // العدّاد عشان الإضافة المجمّعة: كل الأصناف بتقرا نفس `lines` فكانت هتاخد نفس المفتاح.
     const key = Math.max(lines[lines.length - 1]?.key ?? 0, keySeq.current) + 1;
     keySeq.current = key;
-    // كمية من الشباك بتعدّي على نفس حارس الخانة: الصرف مسقوف برصيد المخزن، والإضافة لأ.
     const quantity = qty ? guardQuantity({
       value: qty,
       available: kind === 'issue' ? available[itemId] : undefined,
@@ -298,8 +229,6 @@ export default function StockPermits() {
     return quantity ? null : { needsQty: key };
   };
 
-  // Keep asking until the caret lands, and CHECK — one attempt lands in whatever the browser is
-  // doing that frame. Same loop as the sale, the return, the purchase and the transfer.
   useEffect(() => {
     if (focusLineKey === null || pickerOpen) return undefined;
     let frames = 0;
@@ -343,7 +272,6 @@ export default function StockPermits() {
         message.success(kind === 'issue' ? 'تم تسجيل إذن الصرف'
           : kind === 'opening' ? 'تم تسجيل بضاعة أول المدة' : 'تم تسجيل إذن الإضافة');
       }
-      // بعد ما السيرفر رد بنجاح وبس — المرفوض بيفضل مسودّة.
       discardDraft();
       setCreating(false); resetDraft(); load();
     } catch (err: any) {
@@ -351,23 +279,8 @@ export default function StockPermits() {
     } finally { setSaving(false); }
   };
 
-  /**
-   * تعديل إذن مترحّل — يتعكس، ويتفتح تاني بمحتواه للتصحيح.
-   *
-   * A posted permit cannot be altered in place: it moved goods, and rewriting a quantity would
-   * leave the shelf describing a document that no longer says what happened. So «تعديل» means what
-   * it means on a posted invoice — reverse it in full, and reopen the form on exactly what it
-   * held. Both papers stay in the record: the original, its reversal, and the corrected one.
-   *
-   * No confirmation: pressing تعديل IS the answer. What protects the record is that the reversal
-   * is a posting with its own document — the original, its reversal and the correction all stay.
-   */
   const editPosted = (p: Permit) => {
-    // (٢٠٢٦-١٠-٠٥) التعديل بقى في مكانه — نفس الرقم، والسيرفر بيشيل أثره القديم ويبنيه من
-    // جديد. كان بيعكس الإذن ويفتح واحد جديد، فالغلطة الواحدة بتسيب تلات أذونات في السجل.
     setEditingId(p.id);
-    // Refill from what it actually held, so the correction starts from the document rather than
-    // from a blank form somebody has to retype.
     setKind(p.kind);
     setWarehouseId(p.warehouse_id);
     setPermitDate(p.permit_date ? dayjs(p.permit_date) : dayjs());
@@ -385,7 +298,6 @@ export default function StockPermits() {
     setCreating(true);
   };
 
-  /** حذف الإذن وأثره على المخزن — بعد تأكيد. السيرفر بيرفض لو الحذف هيخلّي رصيد بالسالب. */
   const deletePermit = (p: Permit) => {
     Modal.confirm({
       title: 'حذف الإذن',
@@ -405,7 +317,6 @@ export default function StockPermits() {
     });
   };
 
-  /** القايمة اللي السابق/التالى بيمشوا فيها: الفترة المحمّلة، وإلا الكشف — الأحدث الأول. */
   const navRows = (periodRows ?? permits) as Permit[];
   const neighbour = (step: number): Permit | null => {
     if (!detail) return null;
@@ -426,8 +337,6 @@ export default function StockPermits() {
   const draftTotal = lines.reduce(
     (sum, l) => sum + Number(l.quantity || 0) * Number(l.unit_cost || 0), 0);
 
-  /** Items this permit may name. An issue can only send out what is actually in the store, so its
-   *  window shows that store's stock; a receipt is bringing goods in and may name anything. */
   const pickable = (kind === 'issue' && warehouseId
     ? items.filter((i) => available[i.id] > 0) : items)
     .filter((i) => !lines.some((l) => l.item_id === i.id));
@@ -473,12 +382,9 @@ export default function StockPermits() {
 
   const createForm = (
     <div className="sale-form">
-      {/* الترويسة — زي فاتورة البيع (٢٠٢٦-١٠-٠١): نوع الإذن، وتحته رقم المستند أول حاجة،
-          والاسم فوق الخانة. */}
       <div className="sale-card sale-fields">
       <Segmented
         block value={kind} onChange={(v) => { setKind(v as Kind); setLines([]); }}
-        // نوع الإذن مابيتغيّرش وهو بيتعدّل — التعديل بيبني نفس الإذن بنفس رقمه.
         disabled={!!editingId}
         style={{ marginBottom: 10 }}
         options={[
@@ -502,7 +408,6 @@ export default function StockPermits() {
               onChange={(v) => v && setPermitDate(v)} placeholder="تاريخ الإذن" />
           </Form.Item>
         </Col>
-        {/* المخزن هو الخانة الأساسية هنا — بإطار أخضر زي خانة العميل في الفاتورة. */}
         <Col xs={24} md={6} className="sale-party">
           <Form.Item label="المخزن">
             <Select showSearch
@@ -528,7 +433,6 @@ export default function StockPermits() {
       </div>
 
       <div className="sale-card sale-lines">
-        {/* عدد البنود يمين، وزرار الإضافة شمال — كان في ذيل الجدول. */}
         <div className="sale-items-bar">
           <div className="sale-items-info">
             <span>
@@ -545,8 +449,6 @@ export default function StockPermits() {
         className="sale-grid"
         size="small" rowKey="key" dataSource={lines} pagination={false}
         columns={[
-          // Picked in the window, not hunted in a dropdown — the line already knows its item by
-          // the time it exists, so there is no half-written row to read past.
           { title: 'الصنف', dataIndex: 'item_id', width: '40%',
             render: (v: any) => {
               const it = items.find((i) => i.id === v);
@@ -564,8 +466,6 @@ export default function StockPermits() {
               <InputNumber
                 style={{ width: '100%' }} value={v}
                 data-qty-key={r.key} data-grid-col="qty" keyboard={false}
-                // An issue takes goods OUT, so it is capped by what the store holds; a receipt
-                // brings them in and has no ceiling. Both refuse zero and negatives.
                 onBlur={() => setLines((prev) => prev.map((l) => (l.key === r.key
                   ? { ...l, quantity: guardQuantity({
                       value: l.quantity,
@@ -599,8 +499,6 @@ export default function StockPermits() {
                   ? { ...l, unit_cost: c as number } : l)))}
               />
             ) }] : []),
-          // The last line may go now: a permit starts with NO lines and gets them from the
-          // window, so «one must remain» would be protecting a row nothing put there.
           { title: '', width: 50,
             render: (_: any, r: DraftLine) => (
               <Button type="text" danger icon={<DeleteOutlined />}
@@ -609,7 +507,6 @@ export default function StockPermits() {
         ]}
       />
       </div>
-      {/* السطر الزيادة: المخزن الأول وبعدين الصنف (٢٠٢٦-١٠-٠٥). */}
       <QuickAddRow asDiv colSpan={1} items={pickable}
         warehouses={warehouses} warehouseId={warehouseId ?? null}
         onWarehouseChange={(w) => setWarehouseId(w)}
@@ -630,7 +527,6 @@ export default function StockPermits() {
         />
       </div>
 
-      {/* الملخص والحفظ مثبّتين في آخر الشاشة — زي فاتورة البيع. */}
       <div className="sale-bottom">
         <Row gutter={[10, 10]}>
           <Col xs={24} lg={16}>
@@ -658,14 +554,6 @@ export default function StockPermits() {
     </div>
   );
 
-  /**
-   * الإذن بعد الترحيل — نفس الصفحة، بس مقفولة.
-   *
-   * There is no edit endpoint for a permit and that is deliberate: posting it moved goods, and
-   * changing a quantity afterwards would leave the shelf describing a document that no longer
-   * says what happened. The way to undo one is to reverse it, which writes the opposite movements
-   * and leaves both papers behind.
-   */
   const postedDoc = detail && (
     <div className="sale-form">
       <Alert
@@ -675,8 +563,6 @@ export default function StockPermits() {
           ? 'أُنشئ له إذن عكسي أعاد المخزون إلى ما كان عليه — وكلاهما موجود في القائمة.'
           : 'تحركت البضاعة على المخزن. «تعديل» بيفتح الإذن بنفس رقمه ويعدّل حركته، و«حذف» بيشيله هو وحركته.'}
       />
-      {/* بيانات الإذن — للقراية بس، بنفس شكل خانات الفاتورة (الاسم فوق الخانة).
-          إجمالي التكلفة تحت في المربعات. */}
       <div className="sale-card sale-fields">
       <Form layout="vertical" size="small" component={false}>
         <Row gutter={12}>
@@ -689,7 +575,6 @@ export default function StockPermits() {
             </Form.Item>
           </Col>
           <Col xs={12} md={4}>
-            {/* رقم الورقة اللي عنده — بيتعرض جنب رقم الإذن عندنا اللي في عنوان الصفحة. */}
             <Form.Item label="رقم المستند">
               <Input readOnly value={detail.external_document_number || '-'} />
             </Form.Item>
@@ -747,15 +632,12 @@ export default function StockPermits() {
         </div>
       </div>
 
-      {/* صور الورقة — الإذن الموقّع عليه، وإيصال الاستلام. بيتقبل بعد الترحيل لأن
-          الصورة مابتغيّرش كمية ولا قيد، والورق أصلاً بيتصوّر بعد ما يتوقّع. */}
       <div className="sale-card sale-notes">
         <div className="sale-attach">
           <DocumentAttachments docType="stock_permit" docId={detail.id} title="مرفقات" />
         </div>
       </div>
 
-      {/* الملخص والأزرار مثبّتين في آخر الشاشة — زي فاتورة البيع. */}
       <div className="sale-bottom">
         <Row gutter={[10, 10]}>
           <Col xs={24} lg={16}>
@@ -782,8 +664,6 @@ export default function StockPermits() {
                   </>
                 )}
                 <Button danger icon={<DeleteOutlined />} onClick={() => deletePermit(detail)}>حذف</Button>
-                {/* **الإذن بقى بيتطبع.** كان مالوش ورقة خالص — وإذن الصرف بالذات بيتمسك في
-                    الإيد: أمين المخزن بيسلّم بيه والمستلم بيمضي. الشرح في `print/permitSheet`. */}
                 <Button icon={<PrinterOutlined />}
                   onClick={() => printPermit(detail)}>طباعة</Button>
                 <Button onClick={closeDoc}>إغلاق</Button>
@@ -795,7 +675,6 @@ export default function StockPermits() {
     </div>
   );
 
-  /** شريط المستند — نفس أوامر فاتورة البيع ومفاتيحها (٢٠٢٦-١٠-٠٥). */
   const locked = !!detail && (detail.is_reversal || !!detail.reversed_by);
   const permitToolbar = (): ToolbarAction[] => [
     { key: 'new', label: 'جديد', shortcut: 'F2', icon: <FileAddOutlined />, primary: true,
@@ -824,7 +703,6 @@ export default function StockPermits() {
 
   const columns: ColumnsType<Permit> = [
     { title: 'رقم الإذن', dataIndex: 'document_number',
-      // المسودّة مالهاش رقم — الرقم بيتحجز وقت الترحيل مش قبله.
       render: (v: string, r: any) => (r.__isDraft
         ? <DraftTag onDelete={() => removeDraft(r.__draft.id)} />
         : <Tag>{v}</Tag>) },
@@ -840,14 +718,10 @@ export default function StockPermits() {
       render: (d: string, r) => (d || r.created_at || '').slice(0, 10) },
     { title: 'المخزن', dataIndex: 'warehouse_name' },
     { title: 'عدد الأصناف', dataIndex: 'lines',
-      // **صفر مش انهيار.** صف المسودّة مالوش `lines` — وde `l.length` على `undefined`
-      // كانت بترمي جوّه `render`، وReact بيفضّي الشجرة كلها: **الشاشة بتطلع بيضا**
-      // لأي حد عنده مسودّة إذن محفوظة. وده اللي كان بيحصل لمدير الفرع بالظبط.
       render: (l?: PermitLine[]) => (l ? l.length : 0) },
     { title: 'السبب', dataIndex: 'reason', render: (v: string) => v || '-' },
     { title: 'البيان', dataIndex: 'statement1', ellipsis: true,
       render: (v: string | null) => v || '-' },
-    // رقم الإذن الورقي — عمود في السجل عشان الورقة تتلاقي من غير فتح الإذن.
     { title: 'رقم المستند الورقي', dataIndex: 'external_document_number', ellipsis: true,
       render: (v: string | null | undefined) => v || '-' },
     { title: 'التكلفة', dataIndex: 'total_cost', align: 'left',
@@ -870,12 +744,10 @@ export default function StockPermits() {
       )) },
   ];
 
-  // إخفاء وترتيب الأعمدة — نفس المحرك اللي كل الجداول بتستخدمه.
   const tableCols = useTableColumns('stock-permits', columns, {
     export: { name: 'أذونات المخزن', rows: filter.filtered },
   });
 
-  // فلتر «نوع الإذن» بقى شرايح فوق — نفس قيمة الفلتر، فالمسح وفتح «أول المدة» من القايمة شغّالين زي ما هم.
   const kindVal = filter.values.kind;
   const activeKindTab: KindTab = Array.isArray(kindVal)
     ? (kindVal.length === 1 ? kindVal[0] : 'all')
@@ -887,33 +759,10 @@ export default function StockPermits() {
     { key: 'issue', label: 'إذن صرف', dot: '#f5222d', count: kindCount('issue') },
     { key: 'opening', label: 'بضاعة أول المدة', dot: '#1677ff', count: kindCount('opening') },
   ];
-  // F3 للبحث — كانت جاية من `ListToolbar`، وبتشتغل على الكشف بس.
   const listSearchRef = useRef<any>(null);
   useScreenShortcuts({ onSearch: () => listSearchRef.current?.focus?.() }, !(creating || detail));
 
-  // The document page — the SAME page whether it is being written or being read. This is the
-  // whole point: «افتح الإذن» lands where «اعمل إذن» lands, so nothing has to be relearned to
-  // look at what you typed yesterday.
-  /**
-   * **البوابات بتتركّب مرة واحدة، بره التفرّع.**
-   *
-   * كانت `{doors}` مكتوبة في الفرعين — فرع الكشف وفرع الفورم. والاتنين `return`
-   * منفصلين، فReact بيشوفهم شجرتين مختلفتين: أول ما `creating` تتقلب، البوابة
-   * بتتفكّ من مكان وتتركّب في التاني. والبوابة اللي اتفكّت بتسيب `portal` بتاع antd
-   * واقف في نص أنيميشن القفل (`ant-zoom-leave`) ومابيتشالش — فبيفضل **قناع ميّت
-   * فوق الشاشة**: كل حاجة مغمّقة ومافيش حاجة بتترد.
-   *
-   * ده اللي كان بيحصل لمدير الفرع بالظبط: يدوس «إذن إضافة» ⇒ تظهر بوابة المخزن ⇒
-   * يختار مخزن ⇒ `creating` تبقى true ⇒ الفرع يتبدّل ⇒ الفورم بيترسم تحت قناعين
-   * والشاشة بتبان فاضية. واللي عنده مخزن واحد مابيشوفش المشكلة أصلاً لأن البوابة
-   * بتعدّي من غير ما تتركّب (`autoAdvanceIfSingle`).
-   *
-   * المخرج الواحد بيخلّي البوابات في نفس المكان من الشجرة في الحالتين، فمافيش فكّ
-   * ولا تركيب ولا قناع فاضل.
-   */
   const screen = (creating || detail) ? (
-      // **شكل فاتورة البيع الجديد** (٢٠٢٦-١٠-٠١): كروت بيضا على رمادي — الترويسة، خانات
-      // الإذن، الأصناف، وتحت الملخص والأزرار مثبّتين. الشكل بس: نفس الحالة والأوامر.
       <div className="sale-doc">
         <div className="sale-card sale-head">
           <div className="sale-head-row">
@@ -927,7 +776,6 @@ export default function StockPermits() {
             <DocumentHistoryButton entityType="stock_permit"
               entityId={detail?.id ?? editingId} documentNumber={detail?.document_number} />
             {detail?.reversed_by && <Tag color="default" style={{ marginInlineEnd: 0 }}>اتعكس</Tag>}
-            {/* الحالة في سطر العنوان — زي فاتورة البيع (٢٠٢٦-١٠-٠١). */}
             {detail && (
               <span className="sale-pager">
                 <DocumentBar
@@ -984,7 +832,6 @@ export default function StockPermits() {
       <Table<Permit>
         className="sl-table"
         rowKey="id" size="small" loading={loading}
-        // المسودّات فوق، وبرّه `filter.filtered`: المسودّة مش إذن.
         dataSource={[
           ...(drafts || []).map((d: any) => {
             const x = d.payload || {};
@@ -994,8 +841,6 @@ export default function StockPermits() {
               kind: x.kind || 'receipt',
               created_at: d.updated_at,
               warehouse_name: null,
-              // صف المسودّة لازم يشيل نفس المفاتيح اللي الأعمدة بتقراها — الناقص
-              // بيوصل لـ`render` على إنه `undefined`.
               lines: (x.lines || []).filter((l: any) => l.item_id != null),
               permit_date: String(x.permit_date || d.updated_at || '').slice(0, 10),
               reason: x.reason || null,
@@ -1026,7 +871,6 @@ export default function StockPermits() {
     </ListPage>
   );
 
-  // مستند جاي من شاشة تانية ولسه بيفتح ⇒ مكان الكشف فاضي (الشرح في `useDocRoute.opening`).
   if (docOpening) return <DocOpening />;
   return (
     <>

@@ -9,16 +9,6 @@ import '../models/models.dart';
 import '../theme.dart';
 import 'receipt_print_screen.dart';
 
-/// تحصيل من عميل — سند قبض من الشارع.
-///
-/// البيع والتحصيل بيحصلوا في نفس الزيارة غالباً: المندوب بيسلّم بضاعة وبياخد فلوس عن
-/// اللي فات. فالتحصيل بيتكتب هنا زي الفاتورة بالظبط — طابور على الجهاز، ورفع لما الشبكة
-/// تيجي، ورقم جهاز بيمنع إنه يتقيّد مرتين لو الرفع اتعاد.
-///
-/// **والتحصيل بالخط** — «المدفوع ده أبيض ولا بولي». العميل مدين على خطين بحسابين،
-/// والفلوس بتنزل في صندوق الخط: من غير السؤال ده السند بيتوزّع بالتخمين والصندوق
-/// بيتاخد عشوائي. والتاريخ **ثابت على النهارده وعرض بس** — نفس قاعدة الفاتورة:
-/// سند بتاريخ قديم بيتكتب من المكتب بقرار، مش من الشارع بغلطة في منتقي تاريخ.
 class CollectCashScreen extends StatefulWidget {
   const CollectCashScreen({super.key});
 
@@ -28,9 +18,7 @@ class CollectCashScreen extends StatefulWidget {
 
 class _CollectCashScreenState extends State<CollectCashScreen> {
   CustomerRef? _customer;
-  /// النهارده دايماً — getter مش حقل، فمافيش طريقة أصلاً تتكتب بيها قيمة تانية.
   DateTime get _date => DateTime.now();
-  /// الخط اللي الدفعة عليه — أبيض ولا بولي. إجباري قبل الحفظ.
   String? _family;
   List<RepTreasury> _treasuries = const [];
   final _amount = TextEditingController();
@@ -52,15 +40,11 @@ class _CollectCashScreenState extends State<CollectCashScreen> {
 
   double get _typed => double.tryParse(_amount.text.trim()) ?? 0;
 
-  /// حساب العميل السابق — الإجمالي، ورصيد كل خط لوحده.
   double get _prevBalance => _customer?.balance ?? 0;
   double _familyBalance(String f) => _customer?.familyBalances[f] ?? 0;
 
-  /// الباقي بعد الدفعة. بيقدر يطلع سالب — العميل دفع أكتر من اللي عليه، ودي دفعة
-  /// مقدّمة بتتقيّد له، مش غلطة بترفض.
   double get _afterPayment => _prevBalance - _typed;
 
-  /// صندوق الخط المختار — نفس منطق شاشة الفاتورة بالحرف.
   RepTreasury? get _treasury {
     if (_family == null) return null;
     for (final t in _treasuries) {
@@ -90,13 +74,10 @@ class _CollectCashScreenState extends State<CollectCashScreen> {
   }
 
   Future<void> _loadRecent() async {
-    // كل الصفوف بتتحمّل والفلترة في الذاكرة — القايمة على الجهاز أصلاً، وقصّها
-    // قبل الفلتر كان هيخلّي البحث يدوّر في آخر ٢٠ بس ويقول «مافيش» على حاجة موجودة.
     final rows = await LocalDb.instance.receipts();
     if (mounted) setState(() => _recent = rows);
   }
 
-  /// البحث والفترة — نفس فلتر «فواتيري» بالحرف.
   final _recentSearch = TextEditingController();
   DateTime? _from;
   DateTime? _to;
@@ -144,7 +125,6 @@ class _CollectCashScreenState extends State<CollectCashScreen> {
     setState(() {
       if (from) {
         _from = d;
-        // «من» بعد «إلى» مالوش معنى — الحد التاني بيتظبط بدل ما النتيجة تطلع فاضية.
         if (_to != null && _to!.isBefore(d)) _to = d;
       } else {
         _to = d;
@@ -156,12 +136,6 @@ class _CollectCashScreenState extends State<CollectCashScreen> {
   String _d(DateTime? v) => v == null ? '' : v.toIso8601String().substring(0, 10);
 
   Future<void> _pickCustomer() async {
-    // **البحث بيسأل القاعدة، مش شريحة اتحمّلت قبله.**
-    //
-    // كانت بتجيب أول ٢٠٠ عميل بالاسم وتدوّر جوّاهم في الذاكرة. العميل رقم ٢٨١
-    // («فنى محمود ناصر عيسي») ما كانش بيظهر أبداً — لا في القايمة ولا في البحث —
-    // بينما شاشة الفاتورة بتلاقيه لأنها بتجيب الكشف كله. فالعميل الواحد بيبان
-    // في شاشة ومايبانش في التانية، واللي قدامها بيفتكر إن العميل نفسه ناقص.
     final picked = await showModalBottomSheet<CustomerRef>(
       context: context,
       isScrollControlled: true,
@@ -175,21 +149,15 @@ class _CollectCashScreenState extends State<CollectCashScreen> {
     if (_customer == null) return _say('اختار العميل');
     if (_family == null) return _say('المدفوع ده أبيض ولا بولي؟');
     if (amount <= 0) return _say('اكتب المبلغ');
-    // مافيش حد أعلى: العميل بيدفع أكتر من اللي عليه عادي، والزيادة بتتقيّد له.
     if (_boxMissing) {
       return _say('مافيش صندوق لخط «$_family» على حسابك — كلّم المكتب.');
     }
 
-    // آخر سؤال قبل الحفظ: الفلوس دي داخلة فين — عرض بس، زي الفاتورة بالظبط.
     if (!await _confirmTreasury(amount)) return;
     if (!mounted) return;
 
     setState(() => _saving = true);
     try {
-      // **الحد مكتوب رقم صريح، مش `1 << 32`.** الإزاحة بـ٣٢ على الويب بترجع صفر —
-      // أعداد dart2js في عمليات البت ٣٢-بت — و`nextInt(0)` بترمي `RangeError`،
-      // فالحفظ كان بيقع كله برسالة مالهاش علاقة بالفاتورة. على الموبايل الأعداد
-      // ٦٤-بت فالسطر كان شغّال، والعطل مابيظهرش غير في نسخة الويب.
       final uuid = 'rcp-${DateTime.now().microsecondsSinceEpoch}-'
           '${Random().nextInt(4294967296).toRadixString(16)}';
       final localId = await LocalDb.instance.saveReceipt(
@@ -200,14 +168,13 @@ class _CollectCashScreenState extends State<CollectCashScreen> {
         receiptDate: _date.toIso8601String().substring(0, 10),
         family: _family,
         notes: _notes.text.trim().isEmpty ? null : _notes.text.trim(),
-        // الحساب اللي المندوب شافه قبل الدفعة — ورقة السند بتحسب منه «الباقي بعد الدفعة».
         prevBalance: _customer!.balance,
         prevBalancesJson: jsonEncode(_customer!.familyBalances),
       );
       var pushed = false;
       try {
         pushed = (await ApiClient.instance.pushReceipts()) > 0;
-      } catch (_) {/* الطابور بيحاول تاني في المزامنة */}
+      } catch (_) {}
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
         content: Text(pushed ? 'التحصيل اترفع ✔' : 'التحصيل اتحفظ — هيرفع مع المزامنة'),
@@ -220,8 +187,6 @@ class _CollectCashScreenState extends State<CollectCashScreen> {
         _family = null;
       });
       _loadRecent();
-      // بعد الحفظ على ورقة السند على طول — زي الفاتورة. الصف بيتقري من القاعدة عشان
-      // رقم المستند لو الرفع نجح.
       final saved = await LocalDb.instance.receiptByLocalId(localId);
       if (saved != null && mounted) await _openPrint(saved);
     } catch (e) {
@@ -267,8 +232,6 @@ class _CollectCashScreenState extends State<CollectCashScreen> {
     );
   }
 
-  /// بوباب «الفلوس داخلة فين» — **قراءة بس**: المندوب مالوش قرار في الصندوق،
-  /// نوع الدفعة حدّده. بيشوف ويأكّد.
   Future<bool> _confirmTreasury(double amount) async {
     final ok = await showDialog<bool>(
       context: context,
@@ -347,7 +310,6 @@ class _CollectCashScreenState extends State<CollectCashScreen> {
                   onTap: _pickCustomer,
                 ),
                 const Divider(height: 1),
-                // التاريخ عرض بس — النهارده وخلاص، مافيش onTap أصلاً.
                 ListTile(
                   leading: const Icon(Icons.event_outlined, color: AppColors.primary),
                   title: const Text('تاريخ التحصيل'),
@@ -358,7 +320,6 @@ class _CollectCashScreenState extends State<CollectCashScreen> {
               ],
             ),
           ),
-          // المدفوع ده أبيض ولا بولي — قبل المبلغ لأن الإجابة بتحدد الصندوق والمديونية.
           Card(
             child: Padding(
               padding: const EdgeInsets.all(14),
@@ -406,7 +367,6 @@ class _CollectCashScreenState extends State<CollectCashScreen> {
               ),
             ),
           ),
-          // حساب العميل — بالخط وبالإجمالي، وبعد الدفعة هيبقى كام.
           if (_customer != null)
             Card(
               child: Padding(
@@ -599,8 +559,6 @@ class _PickSheetState extends State<_PickSheet> {
     _load('');
   }
 
-  /// بيسأل القاعدة بنفسه. `_seq` بيمنع رد قديم إنه يكتب فوق رد أحدث لما
-  /// الكتابة تبقى أسرع من القراءة.
   Future<void> _load(String q) async {
     final mine = ++_seq;
     final rows = await LocalDb.instance.customers(query: q, limit: 200);

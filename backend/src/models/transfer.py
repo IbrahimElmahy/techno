@@ -1,4 +1,3 @@
-"""Stock transfers with source-branch approval (T040). FR-022–024."""
 from __future__ import annotations
 
 import enum
@@ -16,9 +15,6 @@ class TransferRoute(str, enum.Enum):
     central_to_branch = "central_to_branch"
     central_to_rep = "central_to_rep"
     rep_to_rep = "rep_to_rep"
-    # المندوب بيرجّع بضاعة للمخزن. المسار ده كان ناقص، والشاشة كانت بتقول «التحويل من عهدة
-    # مندوب إلى مخزن غير متاح حالياً — استخدم تسليم العهدة»، وتسليم العهدة بيسلّم فلوس مش
-    # بضاعة. يعني البضاعة اللي في عربية المندوب ماكانش ليها طريق ترجع بيه.
     rep_to_central = "rep_to_central"
 
 
@@ -44,59 +40,18 @@ class StockTransfer(Base):
     status: Mapped[TransferStatus] = mapped_column(
         Enum(TransferStatus), default=TransferStatus.pending, nullable=False
     )
-    # (036) اليوم اللي البضاعة اتحركت فيه — مش يوم ما الورقة اتكتبت.
-    #
-    # `created_at` هو وقت التسجيل، وده كتير بيبقى بعد الحركة بيوم أو اتنين. إذن اتعمل يوم
-    # السبت واتكتب يوم الاتنين كان بينزل في أسبوع غلط على كل تقرير بيجمّع بالتاريخ. باقي
-    # المستندات (الفاتورة، المرتجع، مردود الشرا) ليها تاريخها المختار من زمان؛ ده كان
-    # الوحيد اللي فاضل من غير.
-    #
-    # NULL = مستند قديم اتكتب قبل الحقل ده — بيقرا بـ`created_at` زي ما كان.
     transfer_date: Mapped[date | None] = mapped_column(Date, nullable=True)
-    # (037) فرع الإذن = فرع المصدر. البضاعة بتخرج من مكان، والمكان بيتبع فرع؛ والتحويل
-    # لفرع تاني بيفضل مقروء عند المصدر لأنه هو اللي صرفه.
     branch_id: Mapped[int | None] = mapped_column(ForeignKey("branch.id"), nullable=True,
                                                   index=True)
-    # (038) رقم الجهاز للإذن — الرفع من التطبيق مابيكتبش نفس الطلب مرتين.
-    #
-    # الرفع كان بيتعمل على مراحل: المستند الأول وبعده سطر سطر بنداء لكل صنف. طلب فيه
-    # أربعين صنف = واحد وأربعين نداء على شبكة عربية، وأي واحد فيهم يقع بيرمي العملية
-    # كلها قبل ما الطلب يتعلّم إنه اترفع. المزامنة اللي بعدها بتبدأ من الأول فبتعمل
-    # **مستند تاني** ناقص، والأول ناقص برضه — وde اللي المندوب شافه: «الطلب مش واصل
-    # كامل»، والاعتماد بيحرّك اللي وصل بس.
-    #
-    # الرقم ده بيخلّي الإعادة ترجّع نفس المستند بدل ما تعمل واحد جديد، والسطور بقت
-    # بتتبعت مع الترويسة في نداء واحد — فالطلب بيوصل كامل أو مايوصلش.
     client_uuid: Mapped[str | None] = mapped_column(String(64), nullable=True, unique=True)
-    # **رقم الورقة اللي في إيده** — بيتحفظ **جنب** رقمنا، مش بداله.
-    #
-    # المستند عندنا رقمه بيتولّد بالتسلسل (`TRF-000050`)، والورقة اللي بيمضي عليها أمين
-    # المخزن عليها رقم تاني من دفتره. واللي بيدوّر بعد شهر بيدوّر برقم الورقة اللي في
-    # إيده — ومن غير الخانة دي مافيش طريق من الورقة للشاشة غير التاريخ والاسم.
-    #
-    # موجودة على الفواتير الأربعة من (030)؛ التحويل والأذون والسندات كانوا ناقصينها.
     external_document_number: Mapped[str | None] = mapped_column(
         String(40), nullable=True, index=True)
     initiated_by: Mapped[int] = mapped_column(ForeignKey("user.id"), nullable=False)
     approved_by: Mapped[int | None] = mapped_column(ForeignKey("user.id"), nullable=True)
     approved_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
-    # (031) ليه اترفض. On the document because the person who asked for the transfer reads this
-    # screen, not the audit log.
     reject_reason: Mapped[str | None] = mapped_column(String(240), nullable=True)
-    # البيان والملاحظات — نفس اللي على الفاتورة ومردودها، بس خانة بيان واحدة.
-    #
-    # إذن التحويل كان المستند الوحيد اللي بيخرج بضاعة من مكان لمكان من غير ولا سطر كلام
-    # عليه: لا بيان ولا ملاحظات. فاللي بيعتمد بيشوف أصناف وكميات وخلاص، والسبب («تغذية
-    # عربية المندوب قبل خط الصعيد») بيتقال على التليفون ومابيفضلش على الورقة. وبعد
-    # الاعتماد بشهر محدش بيعرف الإذن ده كان ليه.
-    #
-    # خانة واحدة مش تلاتة: التلاتة في الفواتير جم من مطابقة a5، وصاحب النظام قال إن
-    # المستندات دي واحدة تكفيها.
     statement1: Mapped[str | None] = mapped_column(String(200), nullable=True)
     notes: Mapped[str | None] = mapped_column(String(500), nullable=True)
-    # سطور المستند بترجع بترتيب ما اتكتبت (`id` تصاعدي) — من غير `order_by` بوستجرس بيرجّعها
-    # بأي ترتيب، والسطر اللي اتعدّلت كميته وهو معلّق بيطلع آخر واحد؛ والناس بتعرف المستند
-    # من أول صنف فيه.
     lines: Mapped[list["StockTransferLine"]] = relationship(
         back_populates="transfer", cascade="all, delete-orphan",
         order_by="StockTransferLine.id")
@@ -110,20 +65,6 @@ class StockTransfer(Base):
 
 
 class StockTransferLine(Base):
-    """سطر في إذن التحويل — صنف وكمية.
-
-    (031) A transfer used to BE one item: `item_id` and `quantity` sat on the document, so moving
-    five items meant five documents created together with nothing tying them. «امسح صنف من الإذن»
-    then had only one meaning — delete the document — which is exactly what must not happen.
-
-    So the item moves onto lines and the document becomes what it always was in people's heads: one
-    request, from here to there, carrying several things.
-
-    The document's own `item_id`/`quantity` stay for every transfer written before this. Approval
-    reads the lines when there are any and falls back to the document otherwise, so nothing already
-    posted has to be migrated to keep working.
-    """
-
     __tablename__ = "stock_transfer_line"
 
     id: Mapped[int] = mapped_column(BigIntPK, primary_key=True, autoincrement=True)
@@ -132,6 +73,5 @@ class StockTransferLine(Base):
     transfer: Mapped["StockTransfer"] = relationship(back_populates="lines")
     item_id: Mapped[int] = mapped_column(ForeignKey("item.id"), nullable=False)
     quantity: Mapped[object] = mapped_column(QTY, nullable=False)
-    # Set when the line is approved, so a partially-approved document can say which lines moved.
     out_movement_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     in_movement_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)

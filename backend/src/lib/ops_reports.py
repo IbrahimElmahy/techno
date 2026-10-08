@@ -1,25 +1,3 @@
-"""تقارير التشغيل — النقاط والكوبونات والمعاينات والشيكات والطلبات والحجوزات.
-
-سبع مواضيع مالهاش أي تقرير مجمّع في النظام دلوقتي. All seven have a listing screen and nothing
-else: you can page through five thousand point records but not ask «مين أعلى عملاء في النقاط»، ولا
-«المعاينات اتوزّعت إزاي على المندوبين»، ولا «الشيكات اللي بتستحق الأسبوع الجاي». That is the gap
-this module closes, and it closes it the same way `trade_reports.py` and `hr_reports.py` do —
-`subject × level × group_by` over one flattened row shape — because seven separate report modules
-drift apart and one engine does not.
-
-الشيكات هنا مختلفة عن الباقي في حاجة واحدة تستاهل تتقال: **المحفظة مش الحركة**. A cheque report
-that lists what was registered this month answers a question nobody asks. The question is «إيه
-اللي في المحفظة، وإيه اللي بيستحق قريب، وإيه اللي ارتد» — so the date filter runs on
-`due_date`, not on when the cheque was written down, and `days_to_due` is on every row.
-
-نفس القاعدتين بتوع `hr_reports`:
-
-* **الترقيم في السيرفر والإجماليات على كل الصفوف المفلترة.** A total that describes the visible
-  page looks like an answer and is the answer for the first five hundred rows only.
-* **الحركة الملغاة مابتتحسبش في الإجمالي** — a voided coupon and a cancelled reservation are rows
-  worth seeing and figures worth excluding, so they carry `counts=False` and drop out of the
-  totals while staying on screen.
-"""
 from __future__ import annotations
 
 from datetime import date, datetime, timedelta
@@ -49,11 +27,6 @@ GROUPS = ("none", "customer", "supplier", "rep", "kind", "status", "month", "bra
 DEFAULT_LIMIT = 500
 MAX_LIMIT = 5000
 
-# «البيان» — الموديل ورا كل موضوع، واسم خانة البيان عليه لو مش `statement1..3`.
-#
-# الشيك بيانه في `description` (الخانة اللي شاشة الخزينة بتسمّيها «البيان»). الباقي لسه
-# مالوش بيان؛ أول ما موديل منهم ياخد `statement1` الفلتر بيشتغل عليه من غير تعديل هنا —
-# `report_statement` بيعرف العمود من اسمه.
 _STATEMENT_SOURCE = {
     "points": (PointRecord, ()),
     "coupons": (Coupon, ()),
@@ -76,10 +49,7 @@ def _statement_of(subject: str, obj) -> str | None:
 
 
 class OpsReportError(ValueError):
-    """طلب تقرير مالوش معنى — بيترد ٤٢٢ مش ٥٠٠."""
-
-
-# ------------------------------------------------------------------ أدوات
+    pass
 
 
 def _as_date(value) -> date | None:
@@ -109,12 +79,6 @@ def _row(*, when: date | None = None, document_number: str | None = None,
          shop: str | None = None, quantity=ZERO_QTY, amount=ZERO,
          counts: bool = True, statement: str | None = None,
          extra: dict | None = None) -> dict:
-    """الشكل الموحّد اللي كل موضوع بيتسطّح ليه.
-
-    `counts` هو الفرق بين «الصف ده موجود» و«الصف ده بيتحسب». A voided coupon belongs on the
-    screen — somebody is looking for why it is gone — and does not belong in «إجمالي قيمة
-    الكوبونات». Dropping it from the rows would answer the second question by hiding the first.
-    """
     return {
         "date": str(when) if when else None,
         "period": str(when)[:7] if when else "",
@@ -140,33 +104,18 @@ def _within(when: date | None, date_from: date | None, date_to: date | None) -> 
     return not (date_to and when > date_to)
 
 
-# ------------------------------------------------------------------ المواضيع
-
-
 def _point_label(kind: str) -> str:
-    """اسم نوع الحركة بالعربي — من `points_service` عشان مايبقاش فيه نسختين.
-
-    كانت هنا قايمة تانية ناقصة `inspection` و`inspection_reverse`، فأول ما الخصم
-    يشتغل كانوا هيتعرضوا بالإنجليزي الخام في التقرير.
-    """
     from src.services.points_service import KIND_LABELS
 
     return KIND_LABELS.get(kind, kind)
 
 
 def _collect_points(db, look, filters) -> list[dict]:
-    """حركة النقاط — الرصيد هو مجموع الحركة، مش عمود محفوظ في مكان تاني.
-
-    الفلترة في `WHERE` مش في حلقة بايثون. كانت بتجيب الجدول كله وتفلتره في الذاكرة،
-    وده عدّى من غير ما حد ياخد باله لأن الجدول كان صفر صف — أول ما اتعبّى بقى
-    كل فتحة للشاشة بتقرا الدفتر كامل عشان تعرض شهر.
-    """
     date_from, date_to = filters["date_from"], filters["date_to"]
     stmt = select(PointRecord)
     if date_from:
         stmt = stmt.where(PointRecord.created_at >= date_from)
     if date_to:
-        # `created_at` وقت مش تاريخ — المقارنة بـ`<= date_to` بتقص يوم النهاية كله.
         stmt = stmt.where(PointRecord.created_at < date_to + timedelta(days=1))
     if filters.get("customer_id"):
         stmt = stmt.where(PointRecord.customer_id == filters["customer_id"])
@@ -179,10 +128,7 @@ def _collect_points(db, look, filters) -> list[dict]:
             when=when,
             party_id=record.customer_id, party=look["customers"].get(record.customer_id),
             rep_id=record.actor_user_id, rep=look["users"].get(record.actor_user_id),
-            # النوع بالعربي — «النقاط بنوع الحركة» بيجمّع على `kind`، وكان بيعرض أسماء
-            # الـenum الإنجليزي (earn / redeem …) عناوين للصفوف. الإنجليزي فاضل في `status`.
             kind=_point_label(kind), label=_point_label(kind), status=kind,
-            # النقاط بتتحط في `quantity` مش `amount` — دي مش فلوس، والعمود بيقول كده.
             quantity=record.delta,
             statement=_statement_of("points", record),
             extra={"delta": str(record.delta),
@@ -213,7 +159,6 @@ def _collect_coupons(db, look, filters) -> list[dict]:
             label=_COUPON_STATUS.get(status, status), status=status,
             quantity=1, amount=coupon.value,
             statement=_statement_of("coupons", coupon),
-            # الملغي بيتعرض ومابيتحسبش — إجمالي بيعدّ كوبونات ملغاة بيقول إن الشركة مدينة بيها.
             counts=status != "voided",
             extra={"serial": coupon.serial,
                    "points_consumed": coupon.points_consumed},
@@ -222,22 +167,16 @@ def _collect_coupons(db, look, filters) -> list[dict]:
 
 
 def _collect_coupon_receipts(db, look, filters) -> list[dict]:
-    """استلام الكوبونات من التجّار — «مين سلّم كام، ومين لسه»."""
     date_from, date_to = filters["date_from"], filters["date_to"]
     rows = []
-    # المعتمد بس — اللي بانتظار الاعتماد أو اترفض مش ورق اتستلم فعلاً.
     for receipt in db.scalars(select(CouponReceipt).where(receipt_counted())
                               .order_by(CouponReceipt.id.desc())).all():
-        # الاستلامات القديمة `received_date` فيها فاضي — بنرجع لتاريخ التسجيل بدل ما الصف يتشال
-        # خالص. استلام مالوش تاريخ مسجّل لسه اتسجّل في يوم معروف.
         when = receipt.received_date or (
             receipt.created_at.date() if receipt.created_at else None)
         if not _within(when, date_from, date_to):
             continue
         if filters.get("customer_id") and receipt.customer_id != filters["customer_id"]:
             continue
-        # فلتر المندوب كان بيتبعت من الشاشة ومابيتطبّقش هنا — «استلام الكوبونات بالمندوب»
-        # بعد ما تختار مندوب كان بيرجّع كل المناديب.
         if filters.get("rep_id") and receipt.rep_user_id != filters["rep_id"]:
             continue
         rows.append(_row(
@@ -262,7 +201,6 @@ _VISIT_LABEL = {VisitKind.technician: "معاينة فني", VisitKind.regular: 
 
 
 def _collect_inspections(db, look, filters) -> list[dict]:
-    """المعاينات — نقاط مش فلوس. أصناف المعاينة مابتخصمش من عهدة حد."""
     date_from, date_to = filters["date_from"], filters["date_to"]
     rows = []
     for visit in db.scalars(select(Inspection).order_by(Inspection.inspection_date.desc(), Inspection.id.desc())).all():
@@ -284,7 +222,6 @@ def _collect_inspections(db, look, filters) -> list[dict]:
             status=status,
             shop=visit.purchase_shop,
             quantity=visit.total_points,
-            # المرفوضة بديل الحذف — بتفضل بتتعرض ومابتتحسبش.
             counts=status != "rejected",
             statement=_statement_of("inspections", visit),
             extra={"visit_kind": visit.visit_kind.value,
@@ -301,19 +238,12 @@ _CHEQUE_STATUS = {"pending": "تحت التحصيل", "settled": "محصّل",
 
 
 def _collect_cheques(db, look, filters, *, today: date) -> list[dict]:
-    """محفظة الشيكات — بتتفلتر بتاريخ **الاستحقاق** مش بتاريخ التسجيل.
-
-    «الشيكات اللي بتستحق الشهر الجاي» is the question; a report filtered on when the cheque was
-    written down answers a different one and looks identical.
-    """
     date_from, date_to = filters["date_from"], filters["date_to"]
     rows = []
     for cheque in db.scalars(select(Cheque).order_by(Cheque.due_date.desc(), Cheque.id.desc())).all():
         if not _within(cheque.due_date, date_from, date_to):
             continue
         incoming = cheque.direction == ChequeDirection.incoming
-        # فلتر العميل كان بيتجاهَل هنا. والمقارنة على `customer_id` نفسه مش على الطرف: شيك
-        # صادر لمورد رقمه صدفةً زي رقم العميل كان هيعدّي لو قارنّا بالطرف.
         if filters.get("customer_id") and not (
                 incoming and cheque.customer_id == filters["customer_id"]):
             continue
@@ -336,7 +266,6 @@ def _collect_cheques(db, look, filters, *, today: date) -> list[dict]:
                    "settled_on": str(cheque.settled_on) if cheque.settled_on else None,
                    "direction": cheque.direction.value,
                    "days_to_due": days,
-                   # المتأخر هو اللي فات استحقاقه وهو لسه تحت التحصيل — مش أي شيك قديم.
                    "overdue": bool(days is not None and days < 0
                                    and cheque.status == ChequeStatus.pending)},
         ))
@@ -353,7 +282,6 @@ def _collect_orders(db, look, filters, *, today: date) -> list[dict]:
         if not _within(order.order_date, date_from, date_to):
             continue
         sale = order.kind.value == "sale"
-        # نفس فلتر العميل اللي كان بيتجاهَل في الشيكات — وطلب الشراء مالوش عميل أصلاً.
         if filters.get("customer_id") and not (
                 sale and order.customer_id == filters["customer_id"]):
             continue
@@ -373,7 +301,6 @@ def _collect_orders(db, look, filters, *, today: date) -> list[dict]:
             extra={"order_kind": order.kind.value,
                    "due_date": str(order.due_date) if order.due_date else None,
                    "converted_invoice_id": order.converted_invoice_id,
-                   # «فات ميعاده ولسه مفتوح» هو السبب الوحيد اللي حد بيفتح التقرير ده عشانه.
                    "late": late},
         ))
     return rows
@@ -395,7 +322,6 @@ def _collect_reservations(db, look, filters, *, today: date) -> list[dict]:
         rows.append(_row(
             when=hold.expires_on, document_number=hold.document_number,
             party_id=hold.customer_id, party=look["customers"].get(hold.customer_id),
-            # «مخزن» / «عهدة» مش اسم الـenum — التجميع بالنوع كان بيعرض warehouse و custody.
             kind=_HOLD_PLACE.get(hold.location_kind.value, hold.location_kind.value),
             label=_RESERVATION_STATUS.get(status, status), status=status,
             quantity=hold.quantity,
@@ -403,14 +329,10 @@ def _collect_reservations(db, look, filters, *, today: date) -> list[dict]:
             statement=_statement_of("reservations", hold),
             extra={"item_id": hold.item_id,
                    "expires_on": str(hold.expires_on),
-                   # حجز سارٍ فات ميعاده لسه ماسك بضاعة محدش بيسأل عنها.
                    "expired": bool(hold.expires_on and hold.expires_on < today
                                    and status == "active")},
         ))
     return rows
-
-
-# ------------------------------------------------------------------ التجميع
 
 
 _GROUP_KEY = {
@@ -445,7 +367,6 @@ def _group(rows: list[dict], group_by: str) -> list[dict]:
         "quantity": str(to_qty(b["quantity"])), "amount": str(to_money(b["amount"])),
     } for b in buckets.values()]
     if group_by == "month":
-        # التجميع بالشهر محوره التاريخ — الأحدث فوق.
         out.sort(key=lambda r: str(r["key"] or ""), reverse=True)
     else:
         out.sort(key=lambda r: (Decimal(r["amount"]), Decimal(r["quantity"])), reverse=True)
@@ -453,7 +374,6 @@ def _group(rows: list[dict], group_by: str) -> list[dict]:
 
 
 def _totals(rows: list[dict]) -> dict:
-    """على كل الصفوف المفلترة، مش على الصفحة — و«الملغي» بيتعدّ ومابيتجمّعش."""
     counted = [r for r in rows if r.get("counts", True)]
     return {
         "rows": len(rows),
@@ -462,9 +382,6 @@ def _totals(rows: list[dict]) -> dict:
         "quantity": str(to_qty(sum((Decimal(r["quantity"]) for r in counted), ZERO_QTY))),
         "amount": str(to_money(sum((Decimal(r["amount"]) for r in counted), ZERO))),
     }
-
-
-# ------------------------------------------------------------------ المحرك
 
 
 def ops(
@@ -486,7 +403,6 @@ def ops(
     today: date | None = None,
     statement: str | None = None,
 ) -> dict:
-    """`subject` × `level` × `group_by` — تقارير التشغيل كلها من دالة واحدة."""
     if subject not in SUBJECTS:
         raise OpsReportError(f"موضوع مش معروف: {subject}")
     if level not in LEVELS:
@@ -502,7 +418,6 @@ def ops(
         "date_from": _as_date(date_from), "date_to": _as_date(date_to),
         "customer_id": customer_id, "rep_id": rep_id,
     }
-    # «بيستحق خلال ٣٠ يوم» بيتحوّل لمدى تواريخ عادي بدل ما يبقى فرع تاني في كل موضوع.
     if due_within_days is not None:
         filters["date_from"] = filters["date_from"] or today
         filters["date_to"] = today + timedelta(days=int(due_within_days))
@@ -522,8 +437,6 @@ def ops(
     else:
         rows = _collect_reservations(db, look, filters, today=today)
 
-    # الأحدث فوق في كل المواضيع (طلب العميل ٢٠٢٦-١٠-٠١) — الترتيب ثابت، فجوّه اليوم
-    # الواحد بيفضل ترتيب الاستعلام (الأحدث تسجيلاً فوق)، واللي مالوش تاريخ تحت.
     rows.sort(key=lambda r: r["date"] or "", reverse=True)
 
     if status:
@@ -531,7 +444,6 @@ def ops(
     if kind:
         rows = [r for r in rows if r["kind"] == kind]
     if only_open:
-        # «المفتوح» معناه مختلف في كل موضوع، وكله بيرجع لنفس الحاجة: اللي لسه بيستنى تصرّف.
         rows = [r for r in rows if r["status"] in ("pending", "open", "active", "issued")]
     wanted = report_statement.needle(statement)
     if wanted:
@@ -560,13 +472,6 @@ def ops(
 
 def top_customers(db: Session, *, metric: str = "points", limit: int = 20,
                   date_from=None, date_to=None) -> dict:
-    """أعلى العملاء — بالنقاط أو بالكوبونات.
-
-    Its own function rather than another `group_by`, because «أعلى ٢٠» is a ranking and a ranking
-    is a different thing from a grouping: it is sorted, it is cut, and the cut is the point. A
-    grouped report that happens to be sorted invites reading the twenty-first row as absent
-    rather than as below the line.
-    """
     if metric not in ("points", "coupons"):
         raise OpsReportError(f"مقياس مش معروف: {metric}")
     subject = "points" if metric == "points" else "coupons"

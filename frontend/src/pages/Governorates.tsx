@@ -5,15 +5,6 @@ import { api } from '../api/client';
 import { useTableColumns } from '../components/ColumnSettings';
 import ListPage from '../components/ListPage';
 
-/**
- * المحافظات — أعلى مستوى في الهيكل: المحافظة فوق الفرع فوق المنطقة.
- *
- * كانت مدفونة في تبويب داخل «الهيكل التنظيمي» ومش في القائمة، فاللي عايز يضيف محافظة
- * لفرع جديد ماكانش يلاقي المكان. وهي أول حاجة تتسأل لما فرع يتفتح.
- *
- * وعمود «فروع» بيقول إن المحافظة مستعملة — الحذف بيترفض من السيرفر طالما تحتها فرع.
- */
-
 interface Gov { id: number; name: string }
 
 export default function Governorates() {

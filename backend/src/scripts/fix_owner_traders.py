@@ -1,10 +1,3 @@
-"""يحوّل الملّاك الـ١٦ أصحاب الحركات المالية أو المعاينات كتجار إلى تجار (trader).
-
-    python -m src.scripts.fix_owner_traders
-    python -m src.scripts.fix_owner_traders --yes
-
-Idempotent: يمكن إعادة تشغيله بأمان في أي وقت.
-"""
 from __future__ import annotations
 
 import sys
@@ -16,7 +9,6 @@ from src.models.customer import Customer, CustomerType
 def run(*, execute: bool) -> None:
     db = SessionLocal()
     try:
-        # البحث عن الملاك الذين لديهم فواتير، مرتجعات، أو مرتبطين كتاجر في معاينة
         sql = text("""
             SELECT DISTINCT c.id, c.code, c.name,
                 EXISTS(SELECT 1 FROM sales_invoice si WHERE si.customer_id = c.id) AS has_invoice,
@@ -60,7 +52,6 @@ def run(*, execute: bool) -> None:
             print("\n[عرض فقط — DRY RUN] لم يتم حفظ أي تعديل. أضف --yes للتنفيذ الفعلي.")
             return
 
-        # تنفيذ التحويل
         ids = [r.id for r in rows]
         customers = db.scalars(select(Customer).where(Customer.id.in_(ids))).all()
         for c in customers:

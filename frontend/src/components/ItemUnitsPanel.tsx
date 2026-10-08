@@ -9,15 +9,6 @@ import { DeleteOutlined, PlusOutlined, SaveOutlined } from '@ant-design/icons';
 import { api } from '../api/client';
 import { qty } from '../utils/money';
 
-/**
- * Units / serials for one item, as inline panels for the item file.
- *
- * These used to be three popups launched from three buttons in the catalog grid. Same
- * endpoints, same rules — they just live where the rest of the item's data lives now.
- */
-
-// ------------------------------------------------------------------ units of measure
-
 export function UnitsPanel({ itemId, canEdit }: { itemId: number; canEdit: boolean }) {
   const [base, setBase] = useState('');
   const [rows, setRows] = useState<{ name: string; factor: number | null }[]>([]);
@@ -66,8 +57,6 @@ export function UnitsPanel({ itemId, canEdit }: { itemId: number; canEdit: boole
             <Button type="text" danger icon={<DeleteOutlined />} disabled={!canEdit}
               onClick={() => setRows(rows.filter((_, j) => j !== i))} />
           </Col>
-          {/* وحدة أصغر من الأساس (زي «متر» على ماسورة متعدّة بالقطعة) معاملها كسر طويل
-              ٠٫٣٣٣٣٣٣٣٣٣ — الجملة دي بتقولها بالكلام اللي اتكتبت بيه: «٣ متر = ١ قطعة». */}
           {r.name && r.factor && r.factor > 0 && r.factor < 1 ? (
             <Col span={24}>
               <Typography.Text type="secondary" style={{ fontSize: 13 }}>
@@ -89,8 +78,6 @@ export function UnitsPanel({ itemId, canEdit }: { itemId: number; canEdit: boole
     </>
   );
 }
-
-// -------------------------------------------------------------------------- serials
 
 export function SerialsPanel({ itemId, canEdit }: { itemId: number; canEdit: boolean }) {
   const [warehouses, setWarehouses] = useState<any[]>([]);

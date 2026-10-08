@@ -7,16 +7,11 @@ import '../utils/format.dart';
 import '../widgets/supervisor_widgets.dart';
 import 'rep_document_screen.dart';
 
-/// حركة مندوب واحد — فواتيره ومرتجعاته وتحصيلاته وتحويلاته وكوبوناته ومعايناته.
-///
-/// تبويب لكل نوع، و«الكل» الأول. كل تبويب بيحمّل لوحده وعلى صفحات (٥٠ في المرة)، والفترة
-/// فوق بتعيد تحميلهم كلهم.
 class RepActivityScreen extends StatefulWidget {
   const RepActivityScreen({super.key, required this.rep, required this.period});
 
   final SupRep rep;
 
-  /// الفترة اللي كانت مختارة في الرئيسية — بتبدأ بيها.
   final SupPeriod period;
 
   @override
@@ -26,7 +21,6 @@ class RepActivityScreen extends StatefulWidget {
 class _RepActivityScreenState extends State<RepActivityScreen> {
   late SupPeriod _period = widget.period;
 
-  /// أرقام المندوب للفترة — من نفس `/supervisor/overview`. بتبدأ باللي جه من الكارت.
   late SupStats? _stats = widget.rep.stats;
   bool _statsLoading = false;
   int _req = 0;
@@ -44,7 +38,7 @@ class _RepActivityScreenState extends State<RepActivityScreen> {
       for (final r in o.reps) {
         if (r.id == widget.rep.id) s = r.stats;
       }
-    } catch (_) {/* الشريط بيبان «—»، والقوايم تحت بتقول السبب */}
+    } catch (_) {}
     if (!mounted || my != _req) return;
     setState(() {
       _stats = s;
@@ -120,7 +114,6 @@ class _RepActivityScreenState extends State<RepActivityScreen> {
                 children: [
                   for (final k in kinds)
                     _ActivityList(
-                      // الفترة في المفتاح: فترة جديدة = قايمة جديدة من أول صفحة.
                       key: ValueKey('${k.api}|${_period.key}'),
                       repId: widget.rep.id,
                       kind: k,
@@ -181,7 +174,6 @@ class _RepActivityScreenState extends State<RepActivityScreen> {
   }
 }
 
-/// قايمة نوع واحد — صفحة صفحة لحد ما توصل لآخرها.
 class _ActivityList extends StatefulWidget {
   const _ActivityList(
       {super.key, required this.repId, required this.kind, required this.period});
@@ -204,7 +196,6 @@ class _ActivityListState extends State<_ActivityList>
   bool _loading = true;
   bool _loadingMore = false;
   Object? _error;
-  /// فشل تحميل صفحة زيادة — القايمة اللي فوق بتفضل، وتحت زرار «حاول تاني».
   Object? _moreError;
   int _req = 0;
 
@@ -262,7 +253,6 @@ class _ActivityListState extends State<_ActivityList>
           ..clear()
           ..addAll(rows);
         _total = (j['total'] as num?)?.toInt() ?? rows.length;
-        // صفحة ناقصة = مافيش بعدها، مهما قال `total`.
         if (rows.length < _page) _total = _items.length;
         _loading = false;
       });
@@ -378,7 +368,6 @@ class _ActivityListState extends State<_ActivityList>
       );
     }
     if (_hasMore) {
-      // لو القايمة أقصر من الشاشة السكرول مش هيتحرّك — نطلب الصفحة الجاية من هنا.
       WidgetsBinding.instance.addPostFrameCallback((_) => _loadMore());
       return const Padding(
         padding: EdgeInsets.all(16),

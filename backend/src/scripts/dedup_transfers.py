@@ -1,37 +1,3 @@
-"""يشيل سطور التحويلات المكررة — كل تحويل من a5 اتستورد مضروب في اتنين.
-
-    python -m src.scripts.dedup_transfers --aliaa-dir C:/pgtmp/aliaa --oct-dir C:/pgtmp          # يعرض بس
-    python -m src.scripts.dedup_transfers --aliaa-dir C:/pgtmp/aliaa --oct-dir C:/pgtmp --yes    # ينفّذ
-
-**اللي اتقاس (تصدير a5 نفسه على الفرعين):**
-
-* التحويل عند a5 صفّين متطابقين تماماً لنفس الصنف والكمية والمخزنين (`just_id`
-  متتالي) — سطر الخروج وسطر الدخول، والاتنين شايلين الصورة الكاملة. العلياء:
-  ٤٤٬٣١٤ صف = ٢٢٬١٥٧ زوج متطابق، صفر شواذ. أكتوبر: ١٧٬٩١٥ صف = ٨٬٩٥٤ زوج +
-  يتيم واحد (Azn ٤١٩: صف `0030026` توأمه ممسوح عندهم، وفجوة `just_id` وراه).
-* المستورد (`import_a5_docs._transfer`) كان بيعمل حركة خروج+دخول **لكل صف**،
-  فكل زوج حرّك ضعف الكمية. عدد مستنداتنا مطابق لعدد أذونهم (١٤٦٨/٩١٩) —
-  التضاعف جوّه السطور مش في المستندات.
-* الأذون (إضافة/صرف) صفوف مفردة — مافيهاش الأزواج دي، فالتنضيف تحويلات بس.
-
-**القاعدة:** لكل مستند، يقارن سطورنا بالمصدر بعد طيّ الأزواج. المجموعة اللي
-سطورنا فيها ضعف المصدر بالظبط (كل سطر منطقي متكرر مرتين) بيتمسح منها النص.
-أي مجموعة مش مضروبة في اتنين بالظبط (اليتيم وأي حالة غريبة) **بتتقال
-ومابتتلمسش**. المسح سطر + حركتيه (خروج/دخول) بعد التحقق إن الحركة بتاعة نفس
-المستند ونفس الصنف والكمية والاتجاه.
-
-**ليه آمن المسح هنا بالذات (متقاس على السيرفر قبل الكتابة):**
-
-* صفر إشارة خارجية لحركات التحويلات في أي جدول (تصنيع/ولاء/جرد/أذون/هوادر/
-  فحص/عكس)، وحقول `out/in_movement_id` على مستوى المستند فاضية.
-* مافيش صنف قابل للتلف ولا مسلسل أصلاً — فشرط «مجموع الدفعات = الرصيد المشتق»
-  مابيتهزش: مافيش دفعات من الأساس.
-* مافيش تحويل واحد من خارج a5 (٢٣٨٧/٢٣٨٧ بأرقام `T`/`AL-T`) — يعني مافيش شغل
-  مستخدم هيتمس بالغلط.
-
-**الحرّاس:** عرض افتراضي و`--yes` للتنفيذ، وبيتعاد تشغيله بأمان (التانية بتلاقي
-مافيش مجموعات مضروبة فبتمسح صفر). الحفظ على دفعات كل ٥٠٠ مستند.
-"""
 from __future__ import annotations
 
 import os
@@ -64,7 +30,6 @@ def _read(path: str) -> list[list[str]]:
 
 
 def _collapse(rows: list[list[str]]) -> tuple[list[list[str]], int]:
-    """يطوي أزواج a5 المتطابقة لسطر منطقي واحد. بيرجّع (السطور، عدد المطوي)."""
     rows = sorted(rows, key=lambda r: int(r[L_JUST] or 0))
     out: list[list[str]] = []
     i, folded = 0, 0
@@ -87,7 +52,6 @@ def _collapse(rows: list[list[str]]) -> tuple[list[list[str]], int]:
 
 
 def _source_groups(path: str, prefix: str, item_by_code: dict, item_by_name: dict):
-    """Azn ← Counter((item_id, qty)) بعد طيّ الأزواج. واللي مايتربطش بصنف بيتقال."""
     groups: dict[str, Counter] = defaultdict(Counter)
     if not os.path.exists(path):
         return groups, [f"مافيش ملف: {path}"]
@@ -104,8 +68,6 @@ def _source_groups(path: str, prefix: str, item_by_code: dict, item_by_name: dic
             if q <= ZERO:
                 continue
             pairs, single = divmod(k, 2)
-            # الزوج = سطر منطقي واحد (سطر الخروج + سطر الدخول عند a5).
-            # المفرد (يتيم a5 زي Azn ٤١٩) = سطر منطقي واحد برضه.
             it = item_by_code.get(f"{prefix}{c}") or item_by_name.get(n)
             if it is None:
                 unmapped.append(f"{prefix or 'OCT'} Azn={azn} صنف «{n}» ({c}) كمية {q}")
@@ -128,7 +90,6 @@ def run(*, aliaa_dir: str, oct_dir: str, execute: bool) -> None:
         transfers = db.scalars(select(StockTransfer)).all()
         print(f"مستندات تحويل: {len(transfers)}")
 
-        # رصيد كل (صنف×مخزن) من حركات التحويلات قبل التنضيف — عشان نقيس المتأثر.
         def on_hand() -> dict:
             rows = db.execute(select(
                 StockMovement.item_id, StockMovement.location_id,
@@ -162,7 +123,6 @@ def run(*, aliaa_dir: str, oct_dir: str, execute: bool) -> None:
                      if n == 1 and len(ours.get(k, [])) == 0]
             swapped_keys: set[tuple] = set()
             if len(stale) == 1 and len(fresh) == 1:
-                # تعديل رجعي واحد مقابل واحد: سطران قدام بسطر منطقي جديد.
                 (okey, olines), (nkey, _) = stale[0], fresh[0]
                 swaps.append((tr, olines, nkey))
                 swapped_keys = {okey, nkey}
@@ -185,7 +145,6 @@ def run(*, aliaa_dir: str, oct_dir: str, execute: bool) -> None:
                 odd_groups.append(
                     f"{tr.document_number} «{iname}» كمية {key[1]}: زيادة عندنا {len(leftover)} مالوش مصدر")
 
-        # تحقق من حركات السطور الممسوحة والمستبدلة قبل أي كتابة.
         verified: list[tuple[StockTransferLine, StockMovement, StockMovement]] = []
         bad_moves: list[str] = []
 
@@ -225,7 +184,6 @@ def run(*, aliaa_dir: str, oct_dir: str, execute: bool) -> None:
             else:
                 bad_moves.append(f"{tr.document_number} تبديل حركاته مش مطابقة")
 
-        # إشارات خارجية طارئة (اتقاست صفر قبل كده — بيتعاد قياسها قبل الكتابة).
         mids = [m.id for _, o, i in verified for m in (o, i)]
         mids += [m.id for _, _, o0, i0, _, o1, i1, _ in verified_swaps for m in (o0, i0, o1, i1)]
         refs = 0
@@ -264,7 +222,6 @@ def run(*, aliaa_dir: str, oct_dir: str, execute: bool) -> None:
             print(f"\n⚠️ {len(missing_docs)} مستند مالوش أذن في المصدر — مش هيتلمس:")
             for d in missing_docs[:10]:
                 print(f"   {d}")
-        # العكسي: أذون في المصدر مش عندنا (نقل جديد مستني المزامنة).
         have = set()
         for tr in transfers:
             have.add(("AL-" if tr.document_number.startswith("AL-") else "", tr.document_number.split("T", 1)[1]))
@@ -299,14 +256,12 @@ def run(*, aliaa_dir: str, oct_dir: str, execute: bool) -> None:
         swapped = 0
         for tr, ln0, o0, i0, ln1, o1, i1, nkey in verified_swaps:
             item_id, qty = nkey
-            # امسح التوأم القديم بحركاته الأربعة، وازرع السطر الجديد بحركتيه
-            # على نفس مخزني المستند (نفس شكل ما المستورد كان هيعمله).
             for ln, o, i in ((ln0, o0, i0), (ln1, o1, i1)):
                 db.delete(ln)
                 db.delete(o)
                 db.delete(i)
             db.flush()
-            tpl = o0  # قالب الحقول الثابتة من حركة محذوفة أختها
+            tpl = o0
             out = StockMovement(
                 item_id=item_id, location_kind=LocationKind.warehouse,
                 location_id=tr.source_location_id, movement_type="transfer_out",
@@ -337,9 +292,6 @@ def run(*, aliaa_dir: str, oct_dir: str, execute: bool) -> None:
         print(f"\n✔ اتمسح {done} سطر و{2 * done} حركة + {swapped} تعديل رجعي.")
         print(f"   مواقع (صنف×مخزن) اتأثرت: {changed}/{total} ({100 * changed // max(total, 1)}٪)")
 
-        # الشرط الثابت: مافيش مستند يفضى، ومجموع الدفعات = الرصيد المشتق.
-        # (مافيش دفعات أصلاً — صفر صنف قابل للتلف — فالثابت هنا إن كل مستند
-        #  يفضل عليه سطر واحد على الأقل وإن خارج كل مستند = داخله.)
         empty = db.scalar(select(func.count()).select_from(StockTransfer).where(
             ~select(StockTransferLine.id).where(
                 StockTransferLine.transfer_id == StockTransfer.id).exists())) or 0

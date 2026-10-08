@@ -1,4 +1,3 @@
-"""حجز عملاء — 031-a5-restructure."""
 from __future__ import annotations
 
 from datetime import date
@@ -50,7 +49,6 @@ class ReservationOut(BaseModel):
     quantity: Decimal
     expires_on: str
     status: str
-    # Derived from the date, not stored — see `reservation_service._holding`.
     holding: bool
     sales_invoice_id: int | None
     notes: str | None
@@ -112,11 +110,6 @@ def availability(
     _: CurrentUser = Depends(require_capability(CAP_SALES_READ)),
     db: Session = Depends(get_db),
 ) -> AvailabilityOut:
-    """What is actually sellable here, and how much of the shortfall is somebody else's hold.
-
-    Both numbers, not just the answer: «you cannot sell 5» and «you cannot sell 5 because 3 are
-    held for another customer» lead to different next actions.
-    """
     from src.services import stock_service
     on_hand = stock_service.on_hand(db, item_id, location_kind, location_id)
     held = reservation_service.held_against(

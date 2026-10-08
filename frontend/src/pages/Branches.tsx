@@ -17,16 +17,6 @@ import { showDeactivationConfirm } from '../components/ConfirmationDialog';
 import { TabModal } from '../components/TabModal';
 import { useTableColumns } from '../components/ColumnSettings';
 
-/** الفروع — their `/branches`, its own screen.
- *
- * Their list is two columns wide: `رقم · الاسم`. Their form asks for three things: الاسم · بيان 1
- * · بيان 2. That is the entire screen, and the restraint is the point — a branch is mostly a name
- * you hang other records off.
- *
- * Their form has **no governorate**. Ours requires one and keeps it: dropping a required column
- * that already holds data, to match a layout, is a straight loss. It sits after their fields.
- */
-
 interface BranchRecord {
   id: number;
   name: string;
@@ -70,8 +60,6 @@ export default function Branches() {
 
   useEffect(() => { fetchAll(); }, []);
 
-  // F2 opens the form, F3 jumps to search, Esc closes — the same keys on every screen, so the
-  // habit carries from one to the next instead of being relearned per page.
   useScreenShortcuts({
     onNew: canWrite ? () => setCreateOpen(true) : undefined,
     onSearch: () => searchRef.current?.focus(),
@@ -118,8 +106,6 @@ export default function Branches() {
         governorate_id: values.governorate_id,
         is_factory: !!values.is_factory,
       });
-      // الكشف متخزّن في `useFactoryBranch` — لازم يترمي بعد التعديل وإلا القايمة
-      // بتفضل على الوضع القديم لحد ما التبويب يتقفل.
       forgetFactoryBranches();
       message.success('اتعدّل الفرع');
       setEditing(null);
@@ -151,7 +137,6 @@ export default function Branches() {
     });
   };
 
-  // Their two columns: `رقم · الاسم`. Ours follow.
   const columns = [
     {
       title: 'رقم',
@@ -214,14 +199,10 @@ export default function Branches() {
     }] : []),
   ];
 
-  // إخفاء وترتيب الأعمدة — نفس المحرك اللي كل الجداول بتستخدمه.
   const tableCols = useTableColumns('branches', columns, {
     export: { name: 'الفروع', rows: filtered },
   });
 
-  // Their three fields first, then the governorate we keep. The notes are two free lines on
-  // purpose — a branch collects facts that belong to no column, and naming them now would only
-  // be a name somebody has to work around later.
   const formFields = (isCreate: boolean) => (
     <>
       <Form.Item name="name" label="الاسم"
@@ -250,16 +231,6 @@ export default function Branches() {
             </Form.Item>
           </Col>
         )}
-        {/*
-          * **خانة واحدة بتحكم أربع فروق.**
-          *
-          * فرع التصنيع بيشتغل بشكل مختلف: مافيهوش كوبونات ولا نقاط ولا خط (أبيض/بولي)
-          * — دي أدوات بيع التجزئة للتجار — وقسم الإنتاج بتاعه هو وحده. الأربعة دول
-          * جواب سؤال واحد، وأربع خانات معناها إن واحدة تتنسي يوم ما يتفتح مصنع تاني.
-          *
-          * وبتتعدّل بعد الإنشاء كمان، مش وقت الإنشاء بس: الفروع موجودة خلاص، والمصنع
-          * منهم — فلو الخانة على الإنشاء وحده مافيش طريق نعلّم بيها غير قاعدة البيانات.
-          */}
         <Col span={10}>
           <Form.Item name="is_factory" valuePropName="checked" label=" "
             tooltip="الفرع ده بيصنّع: قسم الإنتاج بيبان فيه، والكوبونات والنقاط وخط الفاتورة بيختفوا">
@@ -270,7 +241,6 @@ export default function Branches() {
     </>
   );
 
-  // السطر يفتح التعديل — البيانات الأساسية مافيهاش «عرض» غير الفورم بتاعها نفسه.
   const kb = useTableKeyboard<BranchRecord>({
     rows: filtered, rowKey: (r) => r.id, onOpen: (r) => openEdit(r),
   });

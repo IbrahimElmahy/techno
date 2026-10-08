@@ -1,40 +1,3 @@
-"""يستورد البيانات الأساسية من نظام a5 — نسخ، مش نقل.
-
-بيقرا ملفات مصدّرة من قاعدة a5 على SQL Server (`a5_*.tsv`) وبيكتبها في قاعدتنا. **مابيلمسش
-a5 خالص** — لا قراءة مباشرة ولا اتصال؛ الملفات بتتصدّر بأمر منفصل، والسكربت ده بيقرا ملفات
-على القرص وبس.
-
-    python -m src.scripts.import_a5 --dir C:/pgtmp            # يعرض بس
-    python -m src.scripts.import_a5 --dir C:/pgtmp --yes      # ينفّذ
-
-    # شركة تانية على فرع تاني، بأكوادها لوحدها:
-    python -m src.scripts.import_a5 --dir C:/aliaa --branch العلياء --prefix AL- --yes
-
-بيتعاد تشغيله بأمان: المطابقة بالاسم، والموجود بيتحدّث والناقص بيتعمل. تشغيلتين ورا بعض
-بيدّوا نفس النتيجة.
-
----------------------------------------------------------------------------
-قرارات الترجمة — كل واحد فيهم لأن الشكلين مش واحد:
-
-* **المناطق مستويين بالاسم عندهم، بمفتاح عندنا.** `Areas.Father_n` نص مكرر على كل صف؛
-  إحنا بنعمل المنطقة الأب مرة واحدة وبنشاور عليها. والأسماء المكررة بتتجمّع في واحدة.
-
-* **العميل بيتربط بمنطقته بالاسم عندهم.** بنطابق `Cust.area_name` + `Father_n` على المنطقة
-  اللي اتعملت، فالربط بيبقى مفتاح — وتغيير اسم المنطقة بعدين مايكسرش حاجة.
-
-* **الأسعار الخمسة بتتحول لشرايح.** `item_price1..5` عندهم أعمدة على الصنف؛ عندنا صفوف في
-  `item_price` بفئة لكل شريحة. الصفر مابيتكتبش: سعر صفر مش سعر، هو غياب سعر.
-
-* **كل شركة كتالوجها لوحده.** a5 عنده قاعدة لكل شركة، والكود جوّه كل قاعدة عدّاد بيبدأ
-  من الأول. `0020001` في أكتوبر «تى لحام معزول ٣٢» وفي العلياء «تى ١"×٣/٤ بسن داخلي» —
-  ١٨٠ كود مشترك ومش نفس الصنف. فالبادئة (`--prefix`) بتفصلهم، والبحث عن الموجود بيتقيّد
-  بالبادئة كمان: من غير كده الاستيراد التاني بيلاقي صنف أكتوبر بنفس الاسم وبيكتب عليه سعر
-  العلياء.
-
-* **البيانات الوسخة بتتخطى وبتتقال.** لقينا في a5 مناطق اسمها «.» و«0» و«@@@» وأصناف
-  «@@صنف تجريبى». اللي اسمه رمز أو رقم بس بيتسجّل في تقرير التخطي — مابيتشالش في صمت
-  ومابيتستوردش كأنه بيانات.
-"""
 from __future__ import annotations
 
 import os
@@ -51,45 +14,28 @@ from src.models.org import Branch, Territory
 from src.models.supplier import Supplier
 from src.models.warehouse import Warehouse, WarehouseType
 
-# اسم من دول مش اسم — رمز أو رقم اتكتب في خانة الاسم.
 JUNK = re.compile(r"^[\s.\-_0-9@#*/\\]+$")
 
-# رقم فعلاً: أرقام ومسافات وعلامات الهاتف وبس. اللي فيه حروف اسم مش رقم.
 PHONE = re.compile(r"^[0-9+()\-\s]{5,}$")
 
-# ترتيب الشرايح زي ما هي في `item_price1..5`.
 TIERS = [PriceTier.commercial, PriceTier.semi_commercial, PriceTier.wholesale,
          PriceTier.semi_wholesale, PriceTier.consumer]
 
-# بادئات الفروع التانية — عشان الفرع اللي مالوش بادئة (أكتوبر) مايشوفش أصنافهم.
 OTHER_PREFIXES = ("AL-", "FC-")
 
 
 def mine(rows, prefix: str):
-    """اللي تبع الفرع ده من كتالوج مشترك، بالكود.
-
-    كود a5 عدّاد جوّه كل شركة، فنفس الكود صنفين. بادئة → `startswith`. والبادئة الفاضية
-    (أكتوبر) مش «الكل» — هي «اللي مالوش بادئة فرع تاني»: من غير الاستبعاد ده سطر أكتوبر
-    بلا كود كان بيتحلّ بالاسم على صنف العلياء وبيكتب عليه.
-    """
     if prefix:
         return [r for r in rows if (r.code or "").startswith(prefix)]
     return [r for r in rows if not (r.code or "").startswith(OTHER_PREFIXES)]
 
 
 def _norm_rep(s: str) -> str:
-    """تطبيع أسماء المناديب **بس** — للمطابقة مع `ph1` بتاع a5.
-
-    الهمزة بتتطوى والمسافات بتتشال: «مندوب السياره ( أ )» عندنا هي «( ا )» عندهم،
-    و«(د)» هي «( د )». دي أسماء مناديب محدودة ومعروفة؛ طي الهمزة في أسماء **العملاء**
-    بيدمج ناس مختلفة، فممنوع هناك.
-    """
     s = re.sub(r"[أإآٱ]", "ا", s or "").replace("\xa0", " ")
     return re.sub(r"\s+", "", s).strip()
 
 
 def _read(path: str) -> list[list[str]]:
-    """يقرا ملف مصدّر من sqlcmd — UTF-16 بفاصل ~."""
     if not os.path.exists(path):
         return []
     raw = open(path, "rb").read()
@@ -171,10 +117,7 @@ def run(folder: str, *, execute: bool, branch_name: str = "", prefix: str = "") 
         print(f"\nالفرع المستهدف: {branch.name}"
               + (f" · البادئة: {prefix}" if prefix else "") + "\n")
 
-        # ---------- المناطق: الأب الأول، وبعده اللي تحته ----------
         areas = [r for r in misc if r and r[0] == "AREA"]
-        # المنطقة بتتدوّر جوّه الفرع بس: «الجيزة» في أكتوبر و«الجيزة» في العلياء منطقتين،
-        # ولو الدورة عامة عملاء العلياء بيقعدوا على منطقة أكتوبر وبالتالي على فرعها.
         by_name = {t.name: t for t in db.scalars(
             select(Territory).where(Territory.branch_id == branch.id)).all()}
 
@@ -205,7 +148,6 @@ def run(folder: str, *, execute: bool, branch_name: str = "", prefix: str = "") 
             territory(child, p)
         db.flush()
 
-        # ---------- المخازن ----------
         wh_by_name = {w.name: w for w in db.scalars(
             select(Warehouse).where(Warehouse.branch_id == branch.id)).all()}
         for r in [x for x in misc if x and x[0] == "STORE"]:
@@ -223,7 +165,6 @@ def run(folder: str, *, execute: bool, branch_name: str = "", prefix: str = "") 
             rep.add("مخازن", True)
         db.flush()
 
-        # ---------- الموردين ----------
         sup_by_name = {s.name: s for s in db.scalars(select(Supplier)).all()}
         for r in [x for x in misc if x and x[0] == "SUPP"]:
             name = _clean(r[2] if len(r) > 2 else "")
@@ -233,7 +174,6 @@ def run(folder: str, *, execute: bool, branch_name: str = "", prefix: str = "") 
             if name in sup_by_name:
                 rep.add("موردين", False)
                 continue
-            # الكود إجباري وفريد — بيتولّد من رقم المورد في a5.
             s = Supplier(code=f"{prefix}A5-{r[1]}", name=name,
                          phone=_clean(r[3])[:32] or None,
                          address=_clean(r[4])[:240] or None, active=True)
@@ -242,15 +182,11 @@ def run(folder: str, *, execute: bool, branch_name: str = "", prefix: str = "") 
             rep.add("موردين", True)
         db.flush()
 
-        # ---------- الأصناف وشرايحها ----------
         cat_names = {int(r[0]): _clean(r[1]) for r in cats if r and r[0].isdigit()}
-        # الكتالوج بيتقسّم بالبادئة. من غير كده «كوع ٢٥ لحام» بتاع العلياء بيلاقي صنف
-        # أكتوبر بنفس الاسم وبيكتب عليه أسعار العلياء.
         all_items = db.scalars(select(Item)).all()
         my_items = mine(all_items, prefix)
         item_by_code = {i.code: i for i in my_items if i.code}
         item_by_name = {i.name: i for i in my_items}
-        # جدول ربط a5 الأول — بعد التوحيد الكود والاسم عندنا مابقوش زي a5 (`a5_item_map`).
         from src.services.a5_item_map import A5ItemMap
         a5map = A5ItemMap(db, prefix, my_items)
         taken_codes = {i.code for i in all_items if i.code}
@@ -264,8 +200,6 @@ def run(folder: str, *, execute: bool, branch_name: str = "", prefix: str = "") 
             it = a5map.find(code, name)
             created = it is None
             if it is None:
-                # الكود إجباري وفريد عندنا. a5 عنده أصناف بلا كود، فبيتولّد من رقمه
-                # هناك — رقم أصلي ثابت، أحسن من عدّاد بيتغيّر لو الاستيراد اتعاد.
                 base = f"{prefix}{code}" if code else f"{prefix}A5-{r[0]}"
                 use, n = base, 2
                 while use in taken_codes:
@@ -285,24 +219,12 @@ def run(folder: str, *, execute: bool, branch_name: str = "", prefix: str = "") 
             a5map.remember(code, name, it, int(r[0]))
             rep.add("أصناف", created)
 
-            # **الخصم الثابت على الصنف** — `SaleKhsm1` (عمود ١٤).
-            #
-            # a5 بيمسك خصم لكل سعر من الخمسة؛ الأسعار ٢–٥ أصفار عند العميل ده فالسعر
-            # الأول هو الوحيد الحيّ، وخصمه هو الخصم. من غيره كل صنف عندنا خصمه صفر
-            # والمندوب بيشوف سعر القايمة بينما الفاتورة في a5 بتنزّل ١٠٪ — رقمين
-            # مختلفين لنفس الصنف على ورقتين.
-            #
-            # التصدير القديم كان ١٤ عمود، فالملف اللي لسه ماتصدّرش من جديد بيعدّي
-            # من غير ما يلمس الخصم بدل ما يصفّره.
             if len(r) > 14:
                 disc = _money(r[14])
-                # فوق ١٠٠ مالوش معنى، والـ١٠٠ نفسها بتخلّي السطر بصفر — دي أصناف
-                # بونص عندهم (٣١ صنف في أكتوبر). بتتنقل زي ما هي؛ القرار قرارهم.
                 if 0 <= disc <= 100 and disc != _money(str(it.default_discount_pct or 0)):
                     it.default_discount_pct = disc
                     rep.add("خصم ثابت على صنف", False)
 
-            # الشرايح الخمسة. الصفر مابيتكتبش — سعر صفر غياب سعر مش سعر.
             have = {p.tier: p for p in db.scalars(
                 select(ItemPrice).where(ItemPrice.item_id == it.id)).all()}
             for idx, tier in enumerate(TIERS):
@@ -317,12 +239,6 @@ def run(folder: str, *, execute: bool, branch_name: str = "", prefix: str = "") 
                     rep.add("شرايح أسعار", True)
         db.flush()
 
-        # ---------- العملاء ----------
-        #
-        # العميل عندنا لازم يبقى له مندوب ومنطقة. a5 مش بيلزم بده — `Emp_Bos` فاضي في
-        # الـ٦٥٠ عميل كلهم. فبنحطهم على مندوب واحد ومنطقة واحدة، ومن شاشة المناديب
-        # بيتوزّعوا. الاختيار ده مقصود: عميل على مندوب غلط بيتنقل بضغطة، وعميل مااتستوردش
-        # بيفضل ناقص.
         from src.models.role import Role, RoleName
         from src.models.user import User
 
@@ -343,7 +259,6 @@ def run(folder: str, *, execute: bool, branch_name: str = "", prefix: str = "") 
             db.flush()
         print(f"العملاء بيتحطوا مؤقتاً على: {default_rep.username} / {fallback_terr.name}")
 
-        # مناديبنا بالاسم — عشان اللي مكتوب في a5 يتطابق على مندوب حقيقي.
         rep_by_name: dict[str, int] = {}
         if rep_role:
             for u in db.scalars(select(User).where(User.role_id == rep_role.id,
@@ -352,9 +267,6 @@ def run(folder: str, *, execute: bool, branch_name: str = "", prefix: str = "") 
                     rep_by_name[key] = u.id
         unmatched_reps: dict[str, int] = {}
 
-        # بالكود الأول، وبعده الاسم. الكود بيحمل `Cust_id` بتاع a5 وهو الهوية اللي
-        # مابتتغيّرش؛ الاسم بيتعدّل عندنا وعندهم. واللي لقيناه بالكود **ومقفول** ده خط
-        # بولي اتدمج جوّه صاحبه — بيتخطّى، وإلا إعادة التشغيل بتفكّ الدمج.
         branch_custs = db.scalars(
             select(Customer).where(Customer.branch_id == branch.id)).all()
         cust_by_code = {c.code: c for c in branch_custs if c.code}
@@ -375,29 +287,16 @@ def run(folder: str, *, execute: bool, branch_name: str = "", prefix: str = "") 
                 c = cust_by_name.get(name)
             created = c is None
             if c is None:
-                # الكود والمندوب والمنطقة إجباريين عندنا وa5 مش لازم يبقى عنده الترتيب
-                # ده. الكود بيتولّد من رقمه الأصلي، والمندوب بيتساب على حساب مؤقت لحد ما
-                # يتوزّعوا من شاشة المناديب — أحسن من إننا نخترع مندوب لكل عميل.
                 c = Customer(code=f"{prefix}A5-{r[0]}", name=name, customer_type="trader",
                              rep_id=default_rep.id, territory_id=terr.id,
                              branch_id=terr.branch_id, active=True)
                 db.add(c)
                 cust_by_name[name] = c
                 cust_by_code[c.code] = c
-            # `ph3` هو الموبايل الحقيقي — العمود اللي عمره ما اتصدّر في النقل الأول.
-            # بيتملى لو الخانة فاضية بس؛ اللي اتكتب بالإيد مابيتدهسش.
             if len(r) > 9 and not c.phone:
                 mobile = _clean(r[9])
                 if mobile and PHONE.match(mobile):
                     c.phone = mobile[:32]
-            # `ph1` مش تليفون — هو **اسم المندوب**.
-            #
-            # a5 عنده عمود مخصص للمندوب (`Emp_Bos`) وهو فاضي في الـ٦٥٠ عميل كلهم، واللي
-            # بيدخّل البيانات بيكتب اسم المندوب في خانة التليفون. فحصنا القيم كلها: صفر
-            # منها رقم، والـ٦٥٠ أسماء («عمرو رجب»، «مندوبية الفيوم»…).
-            #
-            # فبتتحط في مكانها. نسخها كتليفون بتدّي ٦٤٩ عميل بأرقام مالهاش وجود —
-            # والمندوب يفضل ضايع، وهو المعلومة الحقيقية اللي جوّه الخانة.
             raw = _clean(r[4])
             if raw and PHONE.match(raw):
                 c.phone = raw[:32]

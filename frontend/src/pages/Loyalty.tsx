@@ -56,7 +56,6 @@ const STATUS_TAGS: Record<string, { color: string; text: string }> = {
 
 export default function Loyalty() {
   const navigate = useNavigate();
-  // الشريحة في الرابط (`?tab=`) — كانت بتتقري بس عند الفتح؛ دلوقتي التنقّل بيكتبها كمان فالريفرش بيرجع عليها.
   const [activeTab, setActiveTab] = useQueryTab('settings');
   const [couponTypes, setCouponTypes] = useState<CouponType[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
@@ -64,28 +63,23 @@ export default function Loyalty() {
   const [couponKinds, setCouponKinds] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
 
-  // Kind modal (فئات الكوبونات)
   const [kindModalVisible, setKindModalVisible] = useState(false);
   const [kindForm] = Form.useForm();
   const [editingKind, setEditingKind] = useState<any>(null);
 
-  // Drawers & Modals
   const [typeVisible, setTypeVisible] = useState(false);
   const [convertVisible, setConvertVisible] = useState(false);
   const [redeemVisible, setRedeemVisible] = useState(false);
   const [selectedCoupon, setSelectedCoupon] = useState<Coupon | null>(null);
 
-  // Edit coupon type
   const [editTypeVisible, setEditTypeVisible] = useState(false);
   const [editingType, setEditingType] = useState<CouponType | null>(null);
 
-  // Forms
   const [typeForm] = Form.useForm();
   const [editTypeForm] = Form.useForm();
   const [convertForm] = Form.useForm();
   const [redeemForm] = Form.useForm();
 
-  // Dynamic balance load
   const [customerPoints, setCustomerPoints] = useState<number | null>(null);
   const selectedCustomer = Form.useWatch('customer_id', convertForm);
 
@@ -197,7 +191,6 @@ export default function Loyalty() {
     fetchData();
   }, []);
 
-  // Fetch live points balance when customer selected
   useEffect(() => {
     if (selectedCustomer) {
       api.get(`/api/v1/customers/${selectedCustomer}/points`)
@@ -370,9 +363,6 @@ export default function Loyalty() {
     });
   };
 
-  // Columns definitions
-  // نوع الكوبون بيانات أساسية: السطر يفتح تعديله. والكوبون المصروف بيخص عميل، فالسطر يفتح ملفه —
-  // «الكوبون ده بتاع مين» بيتسأل أكتر من «الكوبون ده قيمته كام».
   const typeKb = useTableKeyboard<CouponType>({
     rows: typeFilter.filtered, rowKey: (r) => r.id, onOpen: (r) => openEditType(r),
   });
@@ -444,7 +434,6 @@ export default function Loyalty() {
     },
   ];
 
-  // إخفاء وترتيب الأعمدة — نفس المحرك اللي كل الجداول بتستخدمه.
   const typeCols = useTableColumns('loyalty-coupon-types', typeColumns, {
     export: { name: 'أنواع الكوبونات الترويجية', rows: typeFilter.filtered },
   });
@@ -522,7 +511,6 @@ export default function Loyalty() {
     },
   ];
 
-  // إخفاء وترتيب الأعمدة — نفس المحرك اللي كل الجداول بتستخدمه.
   const couponCols = useTableColumns('loyalty-coupons', couponColumns, {
     export: { name: 'الكوبونات', rows: couponFilter.filtered },
   });
@@ -580,7 +568,6 @@ export default function Loyalty() {
   const totalCouponsCount = coupons.length;
   const totalCouponsValue = coupons.reduce((s, c) => s + Number(c.value || 0), 0);
 
-  // الإحصائية على فئات الورق — دي الحاجة الوحيدة اللي للكوبون فئة فيها.
   const kindStats = useMemo(() => {
     if (couponKinds.length > 0) {
       return couponKinds.map((k) => {
@@ -590,8 +577,6 @@ export default function Loyalty() {
           label: k.label,
           count: matching.length,
           value: matching.reduce((s, c) => s + Number(c.value || 0), 0),
-          // مافيش `onClick`: كان بيودّي على تبويب «الكوبونات» ويكتب الفئة في بحثه، والتبويب
-          // ده اتشال (5a2ddf37) — فالضغطة كانت بتفضّي الشاشة وتسيب بحث مخفي شغّال.
         };
       });
     }
@@ -611,8 +596,6 @@ export default function Loyalty() {
     ];
   }, [couponKinds, coupons]);
 
-  // التبويب اللي في الرابط (أو الافتراضي القديم «settings») ممكن يكون اتشال —
-  // ساعتها أول تبويب موجود بدل شاشة من غير محتوى.
   const shownTab = items.some((t) => t.key === activeTab) ? activeTab : items[0]?.key;
 
   return (
@@ -642,7 +625,6 @@ export default function Loyalty() {
         )}
       >
         {items.find((t) => t.key === shownTab)?.children}
-        {/* إجماليات الكوبونات المصروفة — كانت كروت إحصائية فوق، بقت سطر تحت الجدول. */}
         <div style={{ padding: '10px 4px', borderTop: '1px solid #f1f5f9' }}>
           <span className="sl-foot">
             <span>عدد الكوبونات: <b>{totalCouponsCount.toLocaleString(numeralsLocale())}</b></span>
@@ -654,7 +636,6 @@ export default function Loyalty() {
         </div>
       </ListPage>
 
-      {/* Create Coupon Type Settings Drawer */}
       <TabModal footer={null} centered
         title="إضافة نوع كوبون ترويجي جديد"
         width={400}
@@ -709,7 +690,6 @@ export default function Loyalty() {
         </Form>
       </TabModal>
 
-      {/* Edit Coupon Type Drawer */}
       <TabModal footer={null} centered
         title="تعديل نوع الكوبون الترويجي"
         width={400}
@@ -770,7 +750,6 @@ export default function Loyalty() {
         </Form>
       </TabModal>
 
-      {/* Manual Points Conversion Drawer */}
       <TabModal footer={null} centered
         title="تحويل نقاط العميل يدويًا"
         width={400}
@@ -827,7 +806,6 @@ export default function Loyalty() {
         </Form>
       </TabModal>
 
-      {/* Redeem Coupon Modal */}
       <TabModal
         title={`استرداد الكوبون: ${selectedCoupon?.serial || ''}`}
         open={redeemVisible}
@@ -869,7 +847,6 @@ export default function Loyalty() {
         </Form>
       </TabModal>
 
-      {/* Add / Edit Coupon Kind Modal */}
       <TabModal
         title={editingKind ? `تعديل فئة الكوبون: ${editingKind.label}` : 'إضافة فئة كوبون جديدة'}
         open={kindModalVisible}

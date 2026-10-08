@@ -1,22 +1,3 @@
-"""مطابقة مستندات فرع مع a5 بالكامل — مش بالكمية بس (٢٠٢٦-١٠-٠٥، طلب «نسخة طبق الأصل»).
-
-    python -m src.scripts.sync_a5_docs_exact --dir /opt/techno/a5factory --branch السادات --prefix FC-
-    python -m src.scripts.sync_a5_docs_exact ... --yes
-
-`audit_a5_doc_drift` بيقارن **كمية** كل صنف في المستند. ده بيكمّل عليه:
-
-* **رأس الفاتورة/المرتجع:** التاريخ، الطرف (رقمه في a5)، الإجمالي والخصم والنقدي والآجل.
-* **السطر بسعره:** (الصنف، الكمية، السعر، إجمالي السطر) — سعر اتعدّل في a5 بعد ما نقلنا
-  المستند كان بيفضل عندنا بالقديم والكمية زي ما هي، فالمقارنة بالكمية ماتشوفهوش.
-* **المستند اللي اتمسح من a5:** رقمه من a5 (`<بادئة><حرف><رقم>`) وموجود عندنا ومش
-  موجود في التصدير ⇒ بيتشال من عندنا.
-
-المختلف بيتهد بنفس `rebuild_a5_docs._demolish` ويتبني بـ`import_a5_docs` — نفس الكود اللي
-بنى الباقي. القيود مابتتلمسش هنا: `import_a5_ledger` بعده بيربط المستند الجديد بقيده.
-
-**مقفول على الفرع:** المستند عندنا لازم يكون في الفرع ده وببادئته، فالفروع التانية — اللي
-فيها شغل مش في a5 — مابتتلمسش.
-"""
 from __future__ import annotations
 
 import os
@@ -39,10 +20,6 @@ from src.scripts.import_a5_docs import (
 from src.scripts.rebuild_a5_docs import _demolish
 from src.services import customer_merge_service
 
-# اللي بيشاور على المستند من برّه المزامنة: نقاط، كوبونات، مرتجع على فاتورة…
-# الهدّ كان بيقع على أول واحد فيهم (نقاط فاتورة S14988 في أكتوبر). فبيتفكّوا قبل الهدّ
-# ويرجعوا يتربطوا بالنسخة الجديدة بنفس الرقم — النقطة اللي اتكسبت ماتضيعش.
-# (الجدول اللي بيشاور، العمود، جدول المستند)
 REFS = (
     ("point_record", "sales_invoice_id", "sales_invoice"),
     ("coupon_redemption", "sales_invoice_id", "sales_invoice"),
@@ -53,14 +30,11 @@ REFS = (
     ("point_record", "sales_return_id", "sales_return"),
     ("purchase_return", "purchase_invoice_id", "purchase_invoice"),
 )
-# إجباريين (مابيتفكّوش): المستند اللي عليه واحد منهم بيتساب ويتقال.
 HARD_REFS = (("sales_invoice_coupon", "invoice_id", "sales_invoice"),
              ("sales_invoice_expense", "invoice_id", "sales_invoice"))
 
-# رأس a5 → (نوع السطر، حرف رقمنا)
 HEAD = {"SALE": ("7", "S"), "SRET": ("2", "SR"), "BUY": ("1", "P"), "BRET": ("11", "PR")}
 
-# الجدول عندنا وأعمدة الرأس اللي بتتقارن: (التاريخ، الطرف، النقدي، الآجل)
 OURS = {
     "7": ("sales_invoice", "invoice_date", "customer_id", "cash_amount", "credit_amount"),
     "2": ("sales_return", "return_date", "customer_id", "cash_refund", "credit_reduction"),
@@ -87,7 +61,6 @@ def run(folder: str, *, branch_name: str, prefix: str, execute: bool) -> int:
         a5map = A5ItemMap(db, prefix, my_items)
 
         def item_of(r):
-            # جدول ربط a5 الأول — بعد التوحيد الكود والاسم عندنا مابقوش زي a5.
             it = a5map.find(r[L_CODE], r[L_NAME])
             return it.id if it is not None else None
 
@@ -103,17 +76,12 @@ def run(folder: str, *, branch_name: str, prefix: str, execute: bool) -> int:
                 t = r[L_TYPE].strip()
                 lines[f"{prefix}{KIND[t][1]}{_doc_key(r).strip()}"].append(r)
 
-        # الطرف بيتقارن برقمه في a5 لما الكارت عندنا مكتوب عليه (كود FC-A5-<رقم>)،
-        # وإلا بالاسم — نفس ترتيب `Ctx.party`.
         cust_code = {c: n for c, n in db.execute(text(
             "select id, code from customer where branch_id=:b"), {"b": bid}).all()}
         cust_name = {c: n for c, n in db.execute(text(
             "select id, name from customer where branch_id=:b"), {"b": bid}).all()}
         supp_name = {c: n for c, n in db.execute(text(
             "select id, name from supplier where branch_id=:b"), {"b": bid}).all()}
-        # الكارت المدموج («تكنو فلان» في «فلان»): الاستيراد بينزّل فاتورته على الكارت
-        # اللي اتدمج فيه، فده مش فرق. من غيره كل فاتورة على كارت مدموج كانت هتتهد
-        # وتتبني على نفس الكارت تاني (٦ في أكتوبر).
         by_a5 = {code: cid for cid, code in cust_code.items() if code}
         merged = customer_merge_service.final_targets(
             db.scalars(select(import_a5_docs.Customer)).all())
@@ -167,7 +135,6 @@ def run(folder: str, *, branch_name: str, prefix: str, execute: bool) -> int:
                 if why:
                     reasons[num] = why
 
-        # التحويلات والأذون: بالكمية (هو ده كل اللي فيها) — من نفس مسطرة الكشف.
         drift, _missing, _u = collect(db, folder, prefix)
         types = {}
         for d in drift:
@@ -237,7 +204,6 @@ def run(folder: str, *, branch_name: str, prefix: str, execute: bool) -> int:
         print("\n— إعادة البناء —")
         import_a5_docs.run(folder, execute=True, branch_name=branch_name, prefix=prefix)
 
-        # ربط اللي اتفكّ بالنسخة الجديدة بنفس الرقم.
         for n, rt, rc, ids in detached:
             tbl = table_of[type_of(n)]
             new = db.execute(text(f"select id from {tbl} where document_number=:n and branch_id=:b"),
@@ -259,7 +225,6 @@ if __name__ == "__main__":
     folder = a[a.index("--dir") + 1] if "--dir" in a else "C:/pgtmp"
     prefix = a[a.index("--prefix") + 1] if "--prefix" in a else ""
     branch = a[a.index("--branch") + 1] if "--branch" in a else ""
-    # أكتوبر من غير بادئة — فلازم `--prefix ""` تتكتب صريحة، مش تتنسي.
     if not branch or "--prefix" not in a:
         print("لازم --branch و--prefix — السكربت بيشتغل على فرع واحد بس.")
         sys.exit(2)

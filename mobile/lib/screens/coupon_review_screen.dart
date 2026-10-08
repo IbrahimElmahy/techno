@@ -5,16 +5,6 @@ import '../db/local_db.dart';
 import '../theme.dart';
 import 'coupon_receipt_screen.dart';
 
-/// مراجعة استلام الكوبونات — الإجمالي لكل عميل، بالنوع.
-///
-/// Reads what is ON THE PHONE, not the server: the rep needs to answer «العميل ده سلّم كام؟» while
-/// he is standing in front of him, and that is exactly when there is no signal. Receipts still
-/// waiting to sync are counted here too — they were taken, and leaving them out would make the
-/// screen disagree with the receipts in the customer's hand.
-/// تاريخ الاستلام، وإلا يوم ما اتكتب.
-///
-/// Top-level and public so it can be tested on its own: it is the whole of the date filter, and
-/// the bug it fixes was invisible from the screen — the list simply came back empty.
 String? receiptDate(Map<String, Object?> r) {
   final received = (r['received_date'] as String?)?.trim();
   if (received != null && received.isNotEmpty) return received;
@@ -29,11 +19,9 @@ class CouponReviewScreen extends StatefulWidget {
   State<CouponReviewScreen> createState() => _CouponReviewScreenState();
 }
 
-/// إجمالي عميل واحد: العدد لكل نوع، والقيمة.
 class _CustomerTotal {
   _CustomerTotal(this.name);
   final String name;
-  /// عمليات الاستلام اللي الإجمالي ده اتجمّع منها — عشان الضغط يفتحها.
   final List<Map<String, Object?>> rows = [];
   final Map<String, int> byKind = {};
   double value = 0;
@@ -44,7 +32,6 @@ class _CustomerTotal {
 }
 
 class _CouponReviewScreenState extends State<CouponReviewScreen> {
-  // نفس منطق مراجعة الزيارات: التاريخ مكتوب من أول ما الشاشة تفتح.
   DateTime? _from = DateUtils.dateOnly(DateTime.now());
   DateTime? _to = DateUtils.dateOnly(DateTime.now());
   final _customerFilter = TextEditingController();
@@ -76,14 +63,6 @@ class _CouponReviewScreenState extends State<CouponReviewScreen> {
 
     final totals = <String, _CustomerTotal>{};
     for (final r in receipts) {
-      // استلام من غير تاريخ استلام لسه اتسجّل في يوم معروف.
-      //
-      // `received_date` came in with v7 of the phone database; everything saved before it has
-      // NULL. The filter used to drop those rows the moment ANY date was set — so the screen went
-      // blank on a filter that should have narrowed it, and the only way to see anything was to
-      // clear the dates entirely. Falling back to the day the row was written is not a guess:
-      // `created_at` is an ISO timestamp whose first ten characters are that date in the same
-      // format the filter compares.
       final date = receiptDate(r);
       if (from != null && (date == null || date.compareTo(from) < 0)) continue;
       if (to != null && (date == null || date.compareTo(to) > 0)) continue;
@@ -121,7 +100,6 @@ class _CouponReviewScreenState extends State<CouponReviewScreen> {
         set(picked);
         _load();
       },
-      // خانة بسيطة: الأيقونة وزرار المسح كانوا واكلين عرضها والتاريخ بيلف سطرين.
       child: InputDecorator(
         decoration: InputDecoration(
           labelText: label,
@@ -146,11 +124,6 @@ class _CouponReviewScreenState extends State<CouponReviewScreen> {
     super.dispose();
   }
 
-  /// عمليات الاستلام بتاعة عميل واحد — تعديل أو إلغاء طول ما هي متزامنتش.
-  ///
-  /// The row on the screen is a total across several handovers, so «اضغط عليه» cannot open one
-  /// receipt — it opens the list of them. A synced receipt is a document on the server and is not
-  /// touched here: correcting one is a new receipt, not a rewrite of history.
   void _showReceipts(_CustomerTotal t) {
     showModalBottomSheet(
       context: context,
@@ -174,8 +147,6 @@ class _CouponReviewScreenState extends State<CouponReviewScreen> {
                 ListTile(
                   contentPadding: EdgeInsets.zero,
                   title: Text(_receiptLine(r)),
-                  // اللي اترفع بيستنى المكتب يعتمده أو يرفضه — الجهاز مايعرفش القرار، فبيقول
-                  // إنه وصل وبس، مش إنه اتحسب.
                   subtitle: Text((r['synced'] as int?) == 1
                       ? 'اتزامنت — بتتراجع في المكتب'
                       : 'لسه متزامنتش'),
@@ -213,7 +184,6 @@ class _CouponReviewScreenState extends State<CouponReviewScreen> {
     );
   }
 
-  /// «٢٠٢٦/٠٨/١٤ · ذهبي ٣»
   String _receiptLine(Map<String, Object?> r) {
     final date = receiptDate(r) ?? '—';
     final kind = _kinds[r['coupon_kind']] ?? (r['coupon_kind'] ?? '');

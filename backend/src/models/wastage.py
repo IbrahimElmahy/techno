@@ -1,9 +1,3 @@
-"""Standalone wastage / scrap document (014-production-reporting).
-
-Records material (or product) written off outside a manufacturing order — damage, expiry, spoilage.
-Posts one `waste_out` stock movement (quantity-only, no ledger); reversible once, like other docs.
-Costed from the item's purchase price for the wastage report.
-"""
 from __future__ import annotations
 
 from datetime import datetime
@@ -23,13 +17,10 @@ class WastageDocument(Base):
     item_id: Mapped[int] = mapped_column(ForeignKey("item.id"), nullable=False, index=True)
     warehouse_id: Mapped[int] = mapped_column(ForeignKey("warehouse.id"), nullable=False)
     quantity: Mapped[object] = mapped_column(QTY, nullable=False)
-    unit_cost: Mapped[object] = mapped_column(MONEY, nullable=False)   # purchase_price snapshot
-    total_cost: Mapped[object] = mapped_column(MONEY, nullable=False)  # quantity × unit_cost
+    unit_cost: Mapped[object] = mapped_column(MONEY, nullable=False)
+    total_cost: Mapped[object] = mapped_column(MONEY, nullable=False)
     reason: Mapped[str | None] = mapped_column(String(240), nullable=True)
-    # البيان — نفس الخانة اللي على باقي المستندات. غير `reason`: السبب «ليه اتهلك»، والبيان
-    # كلام المستند اللي بيتعرض ويتدوّر بيه في السجل.
     statement1: Mapped[str | None] = mapped_column(String(200), nullable=True)
-    # Nullable so the doc can be inserted before its movement exists (Postgres FK enforcement).
     stock_movement_id: Mapped[int | None] = mapped_column(ForeignKey("stock_movement.id"), nullable=True)
     reverses_id: Mapped[int | None] = mapped_column(
         ForeignKey("wastage_document.id"), unique=True, nullable=True

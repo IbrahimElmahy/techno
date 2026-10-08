@@ -3,17 +3,6 @@ import { Routes, Route, Navigate } from 'react-router-dom';
 import { Spin } from 'antd';
 import { apiBusy } from '../api/client';
 
-/**
- * كل شاشة في ملف لوحدها — بتتحمّل أول ما تتفتح.
- *
- * كانت الشاشات كلها متستوردة على طول، فـVite بيلمّها في ملف واحد. البرنامج كان بيقرا ٢.٣
- * ميجا جافاسكريبت قبل ما يوريك أول شاشة — وفيها الرواتب والتصنيع والتقارير، اللي واحد
- * بيكتب فواتير مش هيفتحهم في يومه أصلاً. `lazy` بيخلّي كل شاشة ملف مستقل، فالبداية بتحمّل
- * الهيكل والشاشة المطلوبة بس.
- *
- * الـ`Suspense` جوّه `PageRoutes`، يعني كل تبويب ليه حدوده — التبويب اللي لسه بيحمّل
- * مايوقّفش اللي مفتوح جنبه.
- */
 const Users = lazy(() => import('../pages/Users'));
 const Org = lazy(() => import('../pages/Org'));
 const Warehouses = lazy(() => import('../pages/Warehouses'));
@@ -105,14 +94,6 @@ const FleetTasks = lazy(() => import('../pages/FleetTasks'));
 const IncomeSheet = lazy(() => import('../pages/IncomeSheet'));
 const PeriodClosing = lazy(() => import('../pages/PeriodClosing'));
 
-/**
- * **كل الشاشات بتتحمّل في الخلفية بعد ما البرنامج يفتح** (٢٠٢٦-٠٩-٣٠ — «الحركة بطيئة»).
- *
- * `lazy` خلّى البداية خفيفة، بس نقل التأخير لأول فتحة لكل شاشة: تدوس «فواتير الشرا» فتستنى
- * ملفها ينزل قبل ما حاجة تبان. هنا بعد ما البرنامج يفتح ويهدى، الملفات بتنزل واحد ورا
- * التاني في الوقت الفاضي — فأول فتحة لأي شاشة بتلاقي كودها جاهز. `import.meta.glob` بيطلّع
- * نفس الملفات اللي `lazy` فوق بيطلبها، فمافيش حاجة بتنزل مرتين.
- */
 let preloaded = false;
 export function preloadAllPages() {
   if (preloaded) return;
@@ -122,13 +103,10 @@ export function preloadAllPages() {
     ? (window as any).requestIdleCallback(cb, { timeout: 2000 })
     : window.setTimeout(cb, 200));
   const next = () => {
-    // الشاشة المفتوحة لسه بتجيب داتاها؟ نستنى. على HTTP/1.1 المتصفح بيفتح ستة اتصالات بس
-    // للدومين (وواحد منهم للتحديث الحي)، وملف شاشة نازل في الخلفية كان بياخد مكان طلب
-    // الشاشة اللي قدامك — ولما `timeout` الـ`requestIdleCallback` يخلص كان بينزل برضه.
     if (apiBusy()) { window.setTimeout(() => idle(next), 400); return; }
     const load = loaders.shift();
     if (!load) return;
-    load().catch(() => { /* شاشة وقعت في التحميل — هتتحمّل لما تتفتح */ }).finally(() => idle(next));
+    load().catch(() => {}).finally(() => idle(next));
   };
   window.setTimeout(() => idle(next), 1500);
 }
@@ -140,10 +118,7 @@ const Placeholder = ({ name }: { name: string }) => (
   </div>
 );
 
-/** The application's page routes, WITHOUT the app chrome — rendered inside each work tab.
- *  `location` renders this tab's routes at its own path without changing the shared URL. */
 export default function PageRoutes({ location }: { location?: string }) {
-  // أول تبويب اتفتح ⇒ باقي الشاشات تبتدي تنزل في الخلفية (شوف `preloadAllPages`).
   useEffect(() => { preloadAllPages(); }, []);
   return (
     <Suspense fallback={<div style={{ padding: 40, textAlign: 'center' }}><Spin size="large" /></div>}>
@@ -152,8 +127,6 @@ export default function PageRoutes({ location }: { location?: string }) {
       <Route path="/dashboard" element={<Dashboard />} />
       <Route path="/users" element={<Users />} />
       <Route path="/org" element={<Org />} />
-      {/* Split out of /org: their menu has each as its own screen, and a menu entry
-          that lands you on a tabbed page is an entry you have to be taught. */}
       <Route path="/warehouses" element={<Warehouses />} />
       <Route path="/branches" element={<Branches />} />
       <Route path="/main-accounts" element={<MainAccounts />} />
@@ -213,7 +186,6 @@ export default function PageRoutes({ location }: { location?: string }) {
       <Route path="/accounting" element={<AccountingDashboard />} />
       <Route path="/loyalty" element={<Loyalty />} />
       <Route path="/audit" element={<Audit />} />
-      {/* النوعين على مسارين — نفس الشاشة، والنوع بيتقفل من المسار. شوف `Inspections`. */}
       <Route path="/inspections" element={<Inspections fixedKind="technician" />} />
       <Route path="/visits" element={<Inspections fixedKind="regular" />} />
       <Route path="/owners" element={<Owners />} />
@@ -245,8 +217,6 @@ export default function PageRoutes({ location }: { location?: string }) {
       <Route path="/fleet/inspections" element={<FleetInspections />} />
       <Route path="/fleet/monthly" element={<FleetMonthly />} />
       <Route path="/fleet/tasks" element={<FleetTasks />} />
-      {/* A menu entry whose screen is not built yet lands here and says so, naming the a5 screen
-          it will mirror. Bouncing to the dashboard instead would read as the click having failed. */}
       <Route path="*" element={<PendingScreen />} />
     </Routes>
     </Suspense>

@@ -1,8 +1,3 @@
-"""Sales invoices + partial returns + settings (T034). FR-017–021, FR-029.
-
-Combined-% discount once on gross; split cash/credit summing to net; returns reverse money
-proportionally (cash_refund/credit_reduction are system-derived, not caller-set).
-"""
 from __future__ import annotations
 
 from datetime import date, datetime
@@ -23,82 +18,33 @@ from src.models.stock import LocationKind
 class SalesInvoice(Base):
     __tablename__ = "sales_invoice"
 
-    # (037) الفرع اللي المستند ده بتاعه — عزل بيانات الفروع.
-    #
-    # بيتاخد من مخزن السطر لو المستند بيحرّك بضاعة، وإلا من فرع اللي كتبه. NULL = مستند
-    # اتكتب قبل العزل، وبيتشاف من كل الفروع لحد ما يتعبّى.
     branch_id: Mapped[int | None] = mapped_column(ForeignKey("branch.id"), nullable=True,
                                                   index=True)
 
     id: Mapped[int] = mapped_column(BigIntPK, primary_key=True, autoincrement=True)
     document_number: Mapped[str] = mapped_column(String(24), unique=True, nullable=False)
     customer_id: Mapped[int] = mapped_column(ForeignKey("customer.id"), nullable=False)
-    # The document's warehouse is now only the DEFAULT for new lines — each line carries its own
-    # (030), so one invoice can be served out of several warehouses.
     origin_location_kind: Mapped[LocationKind] = mapped_column(Enum(LocationKind), nullable=False)
     origin_location_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
-    # --- 030 document fields: who sold it, where it posts, and the paper trail ---
-    # A rep IS a user with the sales_rep role (same as customer.rep_id) — no separate table.
     rep_id: Mapped[int | None] = mapped_column(ForeignKey("user.id"), nullable=True)
     revenue_account_id: Mapped[int | None] = mapped_column(ForeignKey("account.id"), nullable=True)
-    # The customer's own paper number — kept ALONGSIDE our generated document_number, never instead.
     external_document_number: Mapped[str | None] = mapped_column(String(40), nullable=True, index=True)
-    # حساب العميل **قبل** الفاتورة دي، ساعة ترحيلها.
-    #
-    # الورقة اللي بتتسلّم للعميل بتقول «الحساب السابق» — والرقم ده بيتغيّر مع كل حركة
-    # بعد كده. لو اتحسب وقت الطباعة، ورقة اتطبعت تاني الشهر الجاي بتقول رقم تاني لنفس
-    # المستند، واللي بيقارن الورقتين بيلاقي تناقض مالوش تفسير. فبيتقفل هنا وقت الترحيل.
-    #
-    # `None` = فاتورة اترحّلت قبل ما العمود ده يوجد — الورقة ساعتها مابتعرضش السطر
-    # بدل ما تخترع صفر.
     prior_balance: Mapped[Decimal | None] = mapped_column(MONEY, nullable=True)
-    # **مديونية النوع التاني** — لو الفاتورة أبيض فده رصيد البولي، والعكس.
-    #
-    # العميل اللي عنده الخطّين بيسأل عن الاتنين وهو واقف، والورقة كانت بتقول
-    # إجمالي واحد مخلوط مايتفصلش. بيتقفل وقت الترحيل زي `prior_balance` بالظبط —
-    # للسبب نفسه: الرقم بيتغيّر مع كل حركة، والورقة لازم تقول نفس الكلام كل مرة
-    # تتطبع. و`NULL` = العميل عنده خط واحد، والسطر مابيتطبعش.
     other_family_balance: Mapped[Decimal | None] = mapped_column(MONEY, nullable=True)
     other_family: Mapped[str | None] = mapped_column(String(16), nullable=True)
     notes: Mapped[str | None] = mapped_column(String(500), nullable=True)
-    # مركز التكلفة — «المستند ده بتاع أنهي نشاط». اختياري، وبيتورّث لسطور القيد كلها.
     cost_center_id: Mapped[int | None] = mapped_column(
         ForeignKey("cost_center.id"), nullable=True, index=True
     )
     statement1: Mapped[str | None] = mapped_column(String(200), nullable=True)
     statement2: Mapped[str | None] = mapped_column(String(200), nullable=True)
     statement3: Mapped[str | None] = mapped_column(String(200), nullable=True)
-    # --- Coupons handed to the customer with this invoice: a serial RANGE, not a list.
-    # They come off a printed book, so "from 1200 to 1249" is how the counter actually issues
-    # them and how the customer will present them back. Stored on the invoice because that is
-    # the document that proves which coupons were his — the mobile app reads these when the
-    # coupons are handed back in, to check a returned serial belongs to a sale that happened.
-    # The day the sale happened, which is not always the day it was typed. Drives the ledger
-    # entry date too — a document dated one day and posted on another would make every statement
-    # disagree with the paper.
     invoice_date: Mapped[date | None] = mapped_column(Date, nullable=True, index=True)
-    # (033) رقم الجهاز للفاتورة — بيمنع إنها تتكتب مرتين.
-    #
-    # تطبيق المندوب بيكتب الفاتورة وهو من غير شبكة وبيرفعها بعدين. لو الاتصال قطع **بعد** ما
-    # السيرفر كتبها وقبل ما الرد يوصل، الجهاز بيفضل شايفها مش مرفوعة ويعيد الرفع — والعميل
-    # يتباعله مرتين والبضاعة تخرج مرتين. الرقم ده بيتولد على الجهاز مرة واحدة ومابيتغيّرش،
-    # والـUNIQUE عليه بتخلّي المحاولة التانية ترجع نفس الفاتورة بدل ما تعمل واحدة تانية.
-    #
-    # نفس الحماية اللي في المعاينات واستلام الكوبونات — والفواتير كانت هي الناقصة، وهي أخطر
-    # الاتنين لأنها بتحرّك مخزون وفلوس.
     client_uuid: Mapped[str | None] = mapped_column(String(64), nullable=True, unique=True,
                                                     index=True)
-    # **فاتورة بونص** — بضاعة بتخرج هدية على فاتورة بيع. قيمتها صفر ومابتلمسش رصيد العميل،
-    # بس أصنافها بسعرها وتكلفتها على السطور عشان تقرير البونص يقول خرج بكام. كانت بتتكتب
-    # فاتورة عادية بخصم ١٠٠٪ — ٨٨٠ واحدة في ٢٠٢٦ لحد سبتمبر، و٣٧٨ ألف تكلفة في ٣ شهور
-    # مش باينين في أي تقرير. NULL = مش بونص (العمود اتضاف على جدول مليان).
     is_bonus: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
-    # الفاتورة اللي البونص عليها — إجباري للبونص الجديد (قرار العميل)، وممكن NULL للقديم
-    # اللي ماكانش ليه ربط واضح.
     bonus_for_invoice_id: Mapped[int | None] = mapped_column(
         ForeignKey("sales_invoice.id"), nullable=True, index=True)
-    # Denormalised totals of the invoice's expense lines, so a report does not have to join in
-    # order to explain a figure the reader can already see on the document.
     expenses_billed: Mapped[object] = mapped_column(MONEY, nullable=False, default=0)
     expenses_operating: Mapped[object] = mapped_column(MONEY, nullable=False, default=0)
     coupon_serial_from: Mapped[str | None] = mapped_column(String(24), nullable=True, index=True)
@@ -109,22 +55,15 @@ class SalesInvoice(Base):
     variable_discount_pct: Mapped[object] = mapped_column(PCT, nullable=False)
     combined_pct: Mapped[object] = mapped_column(PCT, nullable=False)
     net: Mapped[object] = mapped_column(MONEY, nullable=False)
-    # Output VAT charged on `net` (021); 0 when the tax rate is off. Payable = net + tax.
     tax_amount: Mapped[object] = mapped_column(MONEY, default=0, nullable=False)
-    # (031) أبيض ولا بولي. Stored on the document because the return has to go back to the SAME
-    # account the sale posted to — resolving it again later would send a refund to whichever line
-    # the customer happens to be split into by then.
     family: Mapped[str | None] = mapped_column(String(40), nullable=True)
     cash_amount: Mapped[object] = mapped_column(MONEY, nullable=False)
     credit_amount: Mapped[object] = mapped_column(MONEY, nullable=False)
     cash_account_id: Mapped[int] = mapped_column(ForeignKey("account.id"), nullable=False)
-    # Nullable so the row can be inserted before its ledger entry exists (see purchasing.py note).
     ledger_entry_id: Mapped[int | None] = mapped_column(ForeignKey("ledger_entry.id"), nullable=True)
     actor_user_id: Mapped[int] = mapped_column(ForeignKey("user.id"), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), nullable=False)
 
-    # سطور المستند بترجع بترتيب ما اتكتبت (`id` تصاعدي) — من غير `order_by` بوستجرس بيرجّعها
-    # بأي ترتيب، والسطر اللي اتعدّل بيطلع آخر واحد؛ والناس بتعرف المستند من أول صنف فيه.
     lines: Mapped[list[SalesInvoiceLine]] = relationship(
         cascade="all, save-update", order_by="SalesInvoiceLine.id")
     expenses: Mapped[list["SalesInvoiceExpense"]] = relationship(  # noqa: UP037
@@ -133,31 +72,10 @@ class SalesInvoice(Base):
 
 
 class SalesInvoiceCoupon(Base):
-    """A book of coupons handed over with one invoice — one row per KIND.
-
-    The invoice used to carry a single serial range and a single count, which said «coupons were
-    given» but never WHICH. A counter handing out a hundred gold and fifty silver had one range to
-    put them in and had to pick which truth to record.
-
-    A row per kind instead, each with its own count and its own range. The range stays because it
-    is what the returns app checks a serial against; the kind is what makes «مئة ذهبي» something
-    the books can say rather than something the storekeeper remembers.
-
-    `coupon_type_id` is nullable: a book with no type on it is still a book, and refusing to record
-    it would push the count back to being remembered rather than written.
-    """
-
     __tablename__ = "sales_invoice_coupon"
 
     id: Mapped[int] = mapped_column(BigIntPK, primary_key=True, autoincrement=True)
-    # Indexes are declared in the migration rather than here: `create_all` runs on import in
-    # some environments AND from the test fixtures, and two passes over a brand-new table race to
-    # create the same named index.
     invoice_id: Mapped[int] = mapped_column(ForeignKey("sales_invoice.id"), nullable=False)
-    # فئة الدفتر — عادي / فضي / ذهبي / ماسي. دي اللي بتحدد الكوبون مع رقمه.
-    #
-    # `coupon_type_id` تحتها كان بيشاور على كتالوج استبدال النقاط، وده مش فئة ورقة: دفتر
-    # الكوبونات اللي بيتسلّم للعميل ورق مرقّم، وعرض الاستبدال حاجة بتحصل بعدين ولناس تانية.
     coupon_kind: Mapped[str | None] = mapped_column(String(24), nullable=True, index=True)
     coupon_type_id: Mapped[int | None] = mapped_column(
         ForeignKey("coupon_type.id"), nullable=True
@@ -174,101 +92,57 @@ class SalesInvoiceLine(Base):
     invoice_id: Mapped[int] = mapped_column(ForeignKey("sales_invoice.id"), nullable=False)
     item_id: Mapped[int] = mapped_column(ForeignKey("item.id"), nullable=False)
     quantity: Mapped[object] = mapped_column(QTY, nullable=False)
-    unit_price: Mapped[object] = mapped_column(MONEY, nullable=False)  # list price snapshot (pre-discount)
-    # Per-line discount % applied to this line (027): the item's fixed discount and a typed
-    # variable discount, **compounded** (10% then 5% = 14.5%, not 15% — `src.lib.discounts`).
-    # line_total = quantity × unit_price × (1 − discount_pct/100). This is the number the money
-    # is built on, so it stays the authority; the two below only say how it was reached.
+    unit_price: Mapped[object] = mapped_column(MONEY, nullable=False)
     discount_pct: Mapped[object] = mapped_column(PCT, default=0, nullable=False)
-    # ...and the two halves it was reached by, kept apart so a reviewer can tell what the COMPANY
-    # discounted from what the REP gave away. Combining them into one number lost exactly the
-    # answer to the question everybody asks when a total looks small, and the screen that read the
-    # invoice back had to guess — it showed the whole thing as «خصم ثابت» and «خصم متغير ٠».
-    #
-    # **NULL means "not recorded", not zero.** Lines written before this column — and every line
-    # imported from a5 — genuinely do not know the split, and a written 0 would claim they do.
-    # Readers fall back to showing the combined number when these are NULL.
     fixed_discount_pct: Mapped[object | None] = mapped_column(PCT, nullable=True)
     variable_discount_pct: Mapped[object | None] = mapped_column(PCT, nullable=True)
-    line_total: Mapped[object] = mapped_column(MONEY, nullable=False)  # AFTER the line discount
-    # Resolved price tier snapshot (007); NULL for legacy 002 lines.
+    line_total: Mapped[object] = mapped_column(MONEY, nullable=False)
     price_tier: Mapped[PriceTier | None] = mapped_column(Enum(PriceTier), nullable=True)
-    # Unit of measure used on this line (008); NULL = base unit. quantity is in this unit;
-    # stock moved in base = quantity × unit_factor.
     unit: Mapped[str | None] = mapped_column(String(16), nullable=True)
     unit_factor: Mapped[object] = mapped_column(FACTOR, default=1, nullable=False)
-    # (030) The warehouse THIS line came out of. NULL only on rows written before 030; the
-    # migration backfills them from the invoice, so readers can treat it as always present.
     location_kind: Mapped[LocationKind | None] = mapped_column(Enum(LocationKind), nullable=True)
     location_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
-    # (030) Cost of the goods at the moment they were sold. Frozen: later purchases move the
-    # average, but this invoice's profit must never move with them. NULL = sold before 030.
     unit_cost: Mapped[object | None] = mapped_column(MONEY, nullable=True)
 
 
 class SalesReturn(Base):
     __tablename__ = "sales_return"
 
-    # (037) الفرع اللي المستند ده بتاعه — عزل بيانات الفروع.
-    #
-    # بيتاخد من مخزن السطر لو المستند بيحرّك بضاعة، وإلا من فرع اللي كتبه. NULL = مستند
-    # اتكتب قبل العزل، وبيتشاف من كل الفروع لحد ما يتعبّى.
     branch_id: Mapped[int | None] = mapped_column(ForeignKey("branch.id"), nullable=True,
                                                   index=True)
 
     id: Mapped[int] = mapped_column(BigIntPK, primary_key=True, autoincrement=True)
     document_number: Mapped[str] = mapped_column(String(24), unique=True, nullable=False)
-    # Invoice-bound returns (002) reference the original invoice. Standalone returns (028) — the
-    # "return like a sale but reversed" flow: pick a customer + items directly — leave it NULL and
-    # carry their own customer/location/cash-account instead.
     sales_invoice_id: Mapped[int | None] = mapped_column(ForeignKey("sales_invoice.id"), nullable=True)
     customer_id: Mapped[int | None] = mapped_column(ForeignKey("customer.id"), nullable=True)
-    # Where the returned goods go back into stock (standalone returns).
     origin_location_kind: Mapped[LocationKind | None] = mapped_column(Enum(LocationKind), nullable=True)
     origin_location_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
-    # Document totals (standalone); invoice-bound returns leave gross/combined/tax at their defaults.
     gross: Mapped[object] = mapped_column(MONEY, default=0, nullable=False)
     combined_pct: Mapped[object] = mapped_column(PCT, default=0, nullable=False)
-    value: Mapped[object] = mapped_column(MONEY, nullable=False)  # net (after the invoice-level discount)
+    value: Mapped[object] = mapped_column(MONEY, nullable=False)
     tax_amount: Mapped[object] = mapped_column(MONEY, default=0, nullable=False)
-    cash_refund: Mapped[object] = mapped_column(MONEY, nullable=False)       # derived (invoice-bound) / chosen (standalone)
-    credit_reduction: Mapped[object] = mapped_column(MONEY, nullable=False)  # derived (invoice-bound) / chosen (standalone)
-    # Treasury the cash refund is paid from (standalone). NULL when there is no cash refund.
+    cash_refund: Mapped[object] = mapped_column(MONEY, nullable=False)
+    credit_reduction: Mapped[object] = mapped_column(MONEY, nullable=False)
     cash_account_id: Mapped[int | None] = mapped_column(ForeignKey("account.id"), nullable=True)
-    # --- 030 document fields (same set as the invoice) ---
     rep_id: Mapped[int | None] = mapped_column(ForeignKey("user.id"), nullable=True)
     revenue_account_id: Mapped[int | None] = mapped_column(ForeignKey("account.id"), nullable=True)
     external_document_number: Mapped[str | None] = mapped_column(String(40), nullable=True, index=True)
     notes: Mapped[str | None] = mapped_column(String(500), nullable=True)
-    # مركز التكلفة — «المستند ده بتاع أنهي نشاط». اختياري، وبيتورّث لسطور القيد كلها.
     cost_center_id: Mapped[int | None] = mapped_column(
         ForeignKey("cost_center.id"), nullable=True, index=True
     )
     statement1: Mapped[str | None] = mapped_column(String(200), nullable=True)
     statement2: Mapped[str | None] = mapped_column(String(200), nullable=True)
     statement3: Mapped[str | None] = mapped_column(String(200), nullable=True)
-    # (031) أبيض ولا بولي — which of the customer's receivable accounts this return credits.
-    # The invoice has carried it since the merge and the return did not, so a refund could be
-    # written against a customer holding two debts with nothing on the document saying which one
-    # went down. On an invoice-bound return it is copied off the invoice: goods go back where they
-    # came from, and so does the money.
     family: Mapped[str | None] = mapped_column(String(40), nullable=True)
-    # (031) The day the goods came back, which is not always the day it was typed — the same field
-    # the invoice has as `invoice_date` and for the same reason: a document dated one day and
-    # posted on another makes every statement disagree with the paper.
     return_date: Mapped[date | None] = mapped_column(Date, nullable=True, index=True)
-    # Nullable so the row can be inserted before its ledger entry exists (see purchasing.py note).
     ledger_entry_id: Mapped[int | None] = mapped_column(ForeignKey("ledger_entry.id"), nullable=True)
-    # (032) المرتجع المرحّل بيتعكس، مابيتمسحش — نفس مردود الشرا بالظبط. الصف بيفضل موجود
-    # بعلامة: رقم السند اتصرف، والقيد المضاد بيشاور عليه، واللي بيراجع بيشوف الحكاية كلها.
     reversed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     reversal_entry_id: Mapped[int | None] = mapped_column(ForeignKey("ledger_entry.id"),
                                                           nullable=True)
     actor_user_id: Mapped[int] = mapped_column(ForeignKey("user.id"), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), nullable=False)
 
-    # سطور المستند بترجع بترتيب ما اتكتبت (`id` تصاعدي) — من غير `order_by` بوستجرس بيرجّعها
-    # بأي ترتيب، والسطر اللي اتعدّل بيطلع آخر واحد؛ والناس بتعرف المستند من أول صنف فيه.
     lines: Mapped[list[SalesReturnLine]] = relationship(
         cascade="all, save-update", order_by="SalesReturnLine.id")
 
@@ -280,49 +154,25 @@ class SalesReturnLine(Base):
     return_id: Mapped[int] = mapped_column(ForeignKey("sales_return.id"), nullable=False)
     item_id: Mapped[int] = mapped_column(ForeignKey("item.id"), nullable=False)
     quantity: Mapped[object] = mapped_column(QTY, nullable=False)
-    # Standalone returns record the refunded price per line (invoice-bound ones derive value from the
-    # original invoice, so these stay NULL/default for them).
     unit_price: Mapped[object | None] = mapped_column(MONEY, nullable=True)
     discount_pct: Mapped[object] = mapped_column(PCT, default=0, nullable=False)
-    # نصّي الخصم زي سطر فاتورة البيع — الثابت والمتغيّر. `discount_pct` هو المركّب اللي
-    # الفلوس بتتحسب بيه؛ النصّين للعرض بس. من غيرهم الفاتورة كانت بتتفتح تاني والخصم كله
-    # في خانة «متغيّر» و«ثابت» فاضي. NULL = سطر اتكتب قبل العمودين، مش صفر.
     fixed_discount_pct: Mapped[object | None] = mapped_column(PCT, nullable=True)
     variable_discount_pct: Mapped[object | None] = mapped_column(PCT, nullable=True)
-    line_total: Mapped[object | None] = mapped_column(MONEY, nullable=True)  # AFTER the line discount
+    line_total: Mapped[object | None] = mapped_column(MONEY, nullable=True)
     unit: Mapped[str | None] = mapped_column(String(16), nullable=True)
     unit_factor: Mapped[object] = mapped_column(FACTOR, default=1, nullable=False)
-    # (030) The warehouse the goods come back INTO, per line.
     location_kind: Mapped[LocationKind | None] = mapped_column(Enum(LocationKind), nullable=True)
     location_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
-    # (030) Mirrors the sale's frozen cost so a return reverses exactly the profit the sale booked.
     unit_cost: Mapped[object | None] = mapped_column(MONEY, nullable=True)
 
 
 class SalesSetting(Base):
-    """Singleton runtime sales settings (fixed discount %)."""
-
     __tablename__ = "sales_setting"
 
     id: Mapped[int] = mapped_column(BigIntPK, primary_key=True, autoincrement=True)
     fixed_discount_pct: Mapped[object] = mapped_column(PCT, default=0, nullable=False)
-    # VAT / ضريبة القيمة المضافة (021). Zero = off, which is the shipped default: at 0 the
-    # posting is byte-identical to the pre-VAT behaviour, so enabling it is a deliberate act.
     vat_rate_pct: Mapped[object] = mapped_column(PCT, default=0, nullable=False)
-    # «قفل تعديل المستندات (أيام)» — after this many days from a document's date, only an admin may
-    # reverse it. NULL/0 = off, which is the shipped default.
-    #
-    # This is a *rolling* rule, and it complements the hard period lock rather than replacing it:
-    # the lock is a deliberate act by the accountant on a date they choose, while this closes the
-    # ordinary user's window automatically so last month's invoice cannot be quietly reversed on a
-    # busy Tuesday. Both are needed — the lock is only ever set after somebody remembers to set it.
-    #
-    # It lives here because this singleton is already where company-wide values sit (the VAT rate is
-    # not a sales-only setting either); a fourth settings table would be one more place to look.
     edit_lock_days: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    # **خصم الشرا الثابت لكل خط** (طلب العميل ٢٠٢٦-٠٩-٣٠): بولي (تكنو ثيرم) ٥٢٫٥،
-    # وأبيض وجوان (الصرف) ٣٤٫٥. بيتحط لوحده على سطر فاتورة الشرا، واللي يغيّره من السطر
-    # بيبقى هو الافتراضي من بعدها — «يفضل متثبت ع التغيير الجديد».
     purchase_poly_discount_pct: Mapped[object] = mapped_column(PCT, default=52.5, nullable=False)
     purchase_white_discount_pct: Mapped[object] = mapped_column(PCT, default=34.5, nullable=False)
     updated_by: Mapped[int | None] = mapped_column(ForeignKey("user.id"), nullable=True)

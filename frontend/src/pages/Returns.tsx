@@ -7,11 +7,9 @@ import {
   Button, Col, DatePicker, Empty, Form, Input, Modal, Row, Segmented, Select,
   Space, Tag, Tooltip, message,
 } from 'antd';
-// فلتر على كل عمود — شوف `FilterTable`.
 import { FilterTable as Table } from '../components/FilterTable';
 import { InputNumber } from '../components/NumberInput';
 import { advanceFrom } from '../components/lineKeyboard';
-// التأكيدات اتشالت من النظام — الشيم بينفّذ من غير ما يسأل (`components/noConfirm`).
 import { Popconfirm } from '../components/noConfirm';
 import {
   PlusOutlined, DeleteOutlined, SearchOutlined, ClearOutlined, HistoryOutlined,
@@ -63,12 +61,6 @@ import ListPage from '../components/ListPage';
 import { useLiveRefresh } from '../utils/live';
 import { repOptions } from '../utils/reps';
 import { activeOptions } from '../utils/active';
-/**
- * مرتجعات المبيعات — a full "return like a sale, reversed" screen: pick a customer, then the goods
- * they're bringing back; the items go back INTO stock and the money is credited to the customer.
- * On picking a customer + product it shows what the customer last paid for that item (and their
- * purchase history) and auto-fills that price as the refund price.
- */
 
 interface ReturnRecord {
   sales_invoice_id?: number | null;
@@ -93,7 +85,6 @@ interface ReturnRecord {
 interface Customer { id: number; name: string; phone?: string | null; rep_id?: number | null; }
 interface Product {
   id: number; name: string; sale_price: string | null; is_serialized: boolean; category: string | null;
-  /** خصم الصنف — المرتجع بيفتح عليه زي الفاتورة، عشان البضاعة ترجع بنفس اللي اتباعت بيه. */
   default_discount_pct?: string | null;
 }
 interface Warehouse { id: number; name: string; }
@@ -108,32 +99,22 @@ interface ReturnLineItem {
   key: string;
   category: string | null;
   item_id: number | null;
-  /** null = «not typed yet» — same rule as the sale: a box that opens at 1 makes «5» into «15»
-   *  for anybody who types over it without clearing first. */
   quantity: number | null;
   unit_price: number;
-  /** الخصم المتغيّر — بتاع المرتجع ده. */
   discount: number;
-  /** والثابت — بيجي من الصنف/العميل زي فاتورة البيع. الاتنين بيتجمعوا وقت الإرسال. */
   fixed_discount: number;
-  warehouse_id: number | null;   // (030) this line comes back into its own warehouse
+  warehouse_id: number | null;
   is_serialized?: boolean;
   serials?: string[];
-  /** الوحدة اللي الكمية والسعر مكتوبين بيها؛ null = الأساسية. السيرفر بيرجّع للمخزن
-   *  الكمية × معامل الوحدة (`create_standalone_return`). */
   unit?: string | null;
 }
 
 interface Filters {
   q?: string; customer_id?: number; date_from?: string; date_to?: string;
-  /** مندوب المرتجع — نفس فلتر كشف الفواتير، والسيرفر بيقبله من الأول. */
   rep_id?: number;
-  /** جزء من «البيان». */
   statement?: string;
 }
 
-
-/** صف كوبونات راجعة — دفتر من دفاتر العميل، والعدد الراجع منه. */
 interface CouponRow {
   key: string;
   invoice_id?: number;
@@ -143,41 +124,25 @@ interface CouponRow {
   serial_to?: string;
 }
 
-/** صف فاضي جديد — واحد بيبقى مستني على طول، زي فاتورة البيع. */
 function blankCoupon(): CouponRow {
   return { key: `c${Date.now()}${Math.random().toString(36).slice(2, 7)}` };
 }
 
-
-/** فاصل السيريالات — سطر جديد. مكتوب كثابت عشان يفضل واضح في الـJSX. */
 const SERIAL_SEP = '\n';
 
-/**
- * **`embedded`: مرتجع جديد جوّه شاشة تانية** (سجل المبيعات، طلب العميل ٢٠٢٦-١٠-٠١).
- * نفس الشاشة بكل منطقها — مش نسخة: بتبدأ على طول بباب العميل، مابترسمش كشف المرتجعات،
- * ومابتلمسش العنوان (`?doc=` بتاع الشاشة اللي شايلاها). أول ما المستند يتقفل أو الباب
- * يتلغي بتنده `onExit` فالشاشة الشايلة ترجع لكشفها.
- */
 export default function Returns({ embedded }: { embedded?: { onExit: () => void } } = {}) {
   const { options: categoryOptions } = useLookup('item_category');
   const categoryLabels = labelMap(categoryOptions);
   const navigate = useNavigate();
   const { can, user } = useAuth();
   const canWriteReturn = can('return.write');
-  // بوباب الخزنة قبل الحفظ (أمر ٠٠٩ بند ٤). المندوب مابيتسألش — صندوق خطه بيتحدد لوحده.
   const { ask: askTreasury, gateProps: treasuryGate } = useTreasuryGate(
     user?.role !== 'sales_rep');
 
   const [filters, setFilters] = useState<Filters>({});
   const [search, setSearch] = useState('');
-  // خانة «البيان» — بيتبعت للسيرفر مع Enter بس، مش مع كل حرف.
   const [stmtText, setStmtText] = useState('');
   const [returns, setReturns] = useState<ReturnRecord[]>([]);
-  // `DocumentLink` has always claimed it could open a return in its own screen; this screen never
-  // read the id, so «افتح المستند» landed on the list and left the reader to find the row again.
-  // السند المفتوح جزء من العنوان، فالـ«رجوع» بيقفله ويرجّع للكشف — الشرح في `useDocRoute`.
-  // وده كمان بيخلّي `?doc=` الجاي من `DocumentLink` يفتح السند فعلاً: الشاشة ماكانتش
-  // بتقرا الرقم أصلاً، فـ«افتح المستند» كان بيوصل للكشف واللي بيقرا يدوّر بنفسه.
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
@@ -185,45 +150,25 @@ export default function Returns({ embedded }: { embedded?: { onExit: () => void 
   const [loading, setLoading] = useState(false);
 
   const [createVisible, setCreateVisible] = useState(false);
-  // The sale opens as a run of doors — التاريخ, then العميل, then the page. The client asked for
-  // the return to be the same document worked the same way, and a screen that opens differently is
-  // the one place the habit breaks.
-  /**
-   * (031) نوع المرتجع — بيرجّع على أنهي مديونية.
-   *
-   * The exact mirror of نوع الفاتورة on the sale. A customer can hold one receivable account per
-   * product line, and a refund has to reduce a named one: the standalone return was refused
-   * outright for those customers — «العميل عنده أكتر من حساب (أبيض / بولي) — لازم تحدد النوع» —
-   * because the screen had no field to answer with.
-   */
   const [familyAccounts, setFamilyAccounts] = useState<
     { family: string | null; balance: string }[]>([]);
   const [returnFamily, setReturnFamily] = useState<string | null>(null);
   const families = familyAccounts.filter((a) => a.family);
 
   const [newStep, setNewStep] = useState<null | 'party' | 'warehouse'>(embedded ? 'party' : null);
-  // Also opened from inside the document to change the party mid-return, exactly as the sale does.
   const [partyPickerOpen, setPartyPickerOpen] = useState(false);
   const [returnDate, setReturnDate] = useState<Dayjs>(dayjs());
-  // (031) The document fields. `sales_return` has carried these columns since 030 and the payload
-  // dropped every one of them, so no return ever written could have them filled.
   const [repId, setRepId] = useState<number | null>(null);
   const [externalDocNumber, setExternalDocNumber] = useState('');
   const [docNotes, setDocNotes] = useState('');
   const [statements, setStatements] = useState<[string, string, string]>(['', '', '']);
   const [reps, setReps] = useState<any[]>([]);
-  // Needed to answer «which store does this rep work out of» — the link is on the employee.
   const [employees, setEmployees] = useState<any[]>([]);
-  /** الكوبونات الراجعة. Unlike the sale, this is NOT a free set of boxes: a customer can only
-   *  bring back what he was handed, so the screen loads his books first and each row picks one.
-   *  Validating after the fact would mean telling him at the end of the document that half of it
-   *  cannot be saved, while he is still at the counter. */
   const [issuedBooks, setIssuedBooks] = useState<any[]>([]);
   const [couponRows, setCouponRows] = useState<CouponRow[]>(() => [blankCoupon()]);
   const [createForm] = Form.useForm();
   const [customerId, setCustomerId] = useState<number | null>(null);
   const [lines, setLines] = useState<ReturnLineItem[]>([]);
-  /** وحدات كل صنف (الأساسية + البديلة، زي «قطعة = ٣ متر») — بتتجاب مرة لكل صنف. */
   const [unitsCache, setUnitsCache] = useState<Record<number, UnitRow[]>>({});
   const unitsRequestedRef = useRef<Set<number>>(new Set());
   const fetchUnits = async (itemId: number) => {
@@ -238,45 +183,24 @@ export default function Returns({ embedded }: { embedded?: { onExit: () => void 
       console.error(err);
     }
   };
-  // كل سطر — المضاف من الشباك والمتملّي من مرتجع قديم — محتاج وحدات صنفه عشان القايمة
-  // تعرض اسم الأساسية والسعر يتحوّل صح لما الوحدة تتغيّر.
   useEffect(() => {
     lines.forEach((l) => { if (l.item_id) fetchUnits(l.item_id); });
   }, [lines]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const [activeCategory, setActiveCategory] = useState<string | null>(null);
-  // The item the side stock panel is showing — on a return it answers "where should this go
-  // back to", which is the same question the invoice asks in reverse.
   const [panelItemId, setPanelItemId] = useState<number | null>(null);
-  // Same as the invoice: the picker is a window, and the caret lands in the quantity of the line
-  // it just added. A return is typed at the same counter under the same pressure, so it should
-  // not be the one screen that still needs a mouse between every line.
   const [pickerOpen, setPickerOpen] = useState(false);
   const qtyRefs = useRef<Record<string, any>>({});
   const [focusLineKey, setFocusLineKey] = useState<string | null>(null);
-  /** Enter بينقل للسطر اللي بعده، وآخر سطر بيفتح شباك الأصناف —
-   *  انظر `lineKeyboard`. كان بيفتح الشباك على طول، فاللي عنده سطور مكتوبة
-   *  كان لازم يرجع للماوس عشان يوصل لأي سطر منهم. */
   const advance = advanceFrom(lines, setFocusLineKey, () => setPickerOpen(true));
 
   const [cashRefund, setCashRefund] = useState<number>(0);
   const [creditReduction, setCreditReduction] = useState<number>(0);
   const [discountPct, setDiscountPct] = useState<number>(0);
   const [customerBalance, setCustomerBalance] = useState<number | null>(null);
-  // The document's warehouse — the default each line falls back to when it has none of its own.
   const [docWarehouseId, setDocWarehouseId] = useState<number | null>(null);
   const [availability, setAvailability] = useState<Record<number, Record<number, number>>>({});
 
-  /**
-   * رصيد المخزن المختار — بيتجاب من جديد كل ما الشباك يتفتح.
-   *
-   * كان فيه حارس `if (availability[wh]) return;` بيمنع الجلب لو المخزن اتقرا قبل كده.
-   * والنتيجة إن الأرقام بتتجمّد أول مرة وتفضل كده طول الجلسة: تكتب فاتورة تطلّع خمسة،
-   * تفتح الشباك تاني، يقولك الرقم القديم — والشباك ده اتعمل عشان يقول المتاح دلوقتي.
-   *
-   * والنداء بيتعمل لما الشباك يتفتح بس (الـ`useEffect` معلّق على `pickerOpen`)، فمرة
-   * لكل فتحة مش مع كل حرف بيتكتب.
-   */
   const loadWarehouseStock = async (warehouseId: number) => {
     if (!warehouseId) return;
     try {
@@ -294,18 +218,7 @@ export default function Returns({ embedded }: { embedded?: { onExit: () => void 
       loadWarehouseStock(docWarehouseId);
     }
   }, [docWarehouseId, pickerOpen]);
-  /**
-   * الأصناف اللي مستنية المخزن يتحدّد قبل ما تنزل — نفس بوباب فاتورة البيع.
-   *
-   * السؤال هنا «البضاعة دي راجعة لفين»، وهو سؤال لازم يتسأل: المرتجع بيدخّل بضاعة على
-   * مخزن بعينه، ولو السطر نزل من غير مخزن بيبقى فيه بضاعة داخلة مكان محدش قاله.
-   *
-   * وبيتسأل **مرة واحدة** وبيثبت لباقي السطور، واللي عايز يوزّع بيغيّر مخزن السطر من
-   * عموده. والأصناف بتتجمّع في طابور لأن «اختار كذا صنف مرة واحدة» بينده الإضافة لكل
-   * صنف — لو كل واحد مسح اللي قبله كان هينزل صنف واحد والباقي يضيع في السكوت.
-   */
   const lineSeq = useRef(0);
-  // The customer's purchase history per item — drives the last-price autofill + the info popover.
   const [lastInfo, setLastInfo] = useState<Record<number, LastInfo>>({});
 
   const [detailVisible, setDetailVisible] = useState(false);
@@ -313,7 +226,6 @@ export default function Returns({ embedded }: { embedded?: { onExit: () => void 
   const [viewReturn, setViewReturn] = useState<any>(null);
   const [loadPeriodOpen, setLoadPeriodOpen] = useState(false);
 
-  /** المسودّة — نفس قاعدة طلب البيع. الشرح في `useDraft`. */
   const draftPayload = useMemo(() => ({
     customer_id: customerId,
     family: returnFamily,
@@ -345,13 +257,9 @@ export default function Returns({ embedded }: { embedded?: { onExit: () => void 
     },
   });
 
-  /** بيفتح مسودّة في الشاشة — نفس حالة الشاشة اللي اتحفظت. */
   const resumeDraft = (d: any) => {
     const x = d.payload || {};
     adoptDraft(d.id);
-    // **مش `closeCreate()`**: دي بتنده `markClosed()` اللي بترجع للشاشة اللي المرتجع اتفتح
-    // منها (`ret`) — فالمسودّة كانت بتفتح وتتقفل في نفس اللحظة. التفضية هنا بإيدنا، من غير
-    // لمس العنوان.
     setViewOnly(false); setViewReturn(null); setEditingSourceId(null);
     setLastInfo({}); setCustomerBalance(null); setIssuedBooks([]); setActiveCategory(null);
     setStatements(['', '', '']);
@@ -381,24 +289,19 @@ export default function Returns({ embedded }: { embedded?: { onExit: () => void 
     open: (r) => openDetail(r),
     close: () => closeCreate(),
     loading,
-    // `openDetail` بيجيب السند بالرقم بنفسه، فالصف المبدئي كفاية.
     fetchOne: async (id) => ({ id } as ReturnRecord),
     enabled: !embedded,
   });
   const [editingSourceId, setEditingSourceId] = useState<number | null>(null);
   const [printing, setPrinting] = useState(false);
   const [printOpts, setPrintOpts] = useState<PrintOptions>(loadPrintOptions);
-  // All of their columns exist; these start hidden. A returns list is read for «who, when, how
-  // much came back and what it cost us» — the rest are there when a question needs them.
   const returnCols = useHiddenColumns('returns-list', [
     'id', 'gross', 'discount_value', 'combined_pct', 'tax_amount',
     'rep_id', 'notes',
   ]);
-  // Purchase-history popup for a line's "آخر سعر شراء" tag.
   const [histModal, setHistModal] = useState<{ name: string; rows: HistRow[] } | null>(null);
 
   const fetchReturns = async (override?: Filters, opts?: { silent?: boolean }) => {
-    // الهادي (التحديث الحي): من غير سبينر ولا رسالة، وبنفس الفلاتر اللي على الشاشة.
     const silent = !!opts?.silent;
     if (!silent) setLoading(true);
     try {
@@ -417,7 +320,6 @@ export default function Returns({ embedded }: { embedded?: { onExit: () => void 
       if (!silent) message.error(err?.response?.data?.detail?.message || 'تعذر تحميل المرتجعات');
     } finally { if (!silent) setLoading(false); }
   };
-  // مرتجع اتعمل من التطبيق أو جهاز تاني ⇒ القايمة تتحدّث لوحدها. المرتجعات تحت `/sales`.
   useLiveRefresh(['sales'], () => fetchReturns(undefined, { silent: true }));
 
   const loadLookups = async () => {
@@ -427,15 +329,12 @@ export default function Returns({ embedded }: { embedded?: { onExit: () => void 
         api.get('/api/v1/items?kind=product'),
         api.get('/api/v1/warehouses'),
         api.get('/api/v1/products/point-values'),
-        // Same source the sale uses: a rep IS a user with the sales_rep role.
         api.get('/api/v1/users?role=sales_rep').catch(() => ({ data: [] })),
         api.get('/api/v1/employees').catch(() => ({ data: [] })),
       ]);
       setCustomers(custRes.data);
       setProducts(prodRes.data);
       setWarehouses(whRes.data);
-      // `?role=sales_rep` السيرفر مابيقراهاش (`list_users` مالهاش باراميتر) فبيرجّع كل
-      // المستخدمين — الأدمن والمحاسب كانوا بيطلعوا «مناديب». الفرز هنا، وأبجدي.
       setReps(sortByName((repRes.data || []).filter((u: any) => u.role === 'sales_rep'),
         (u: any) => u.full_name || u.username));
       setEmployees(empRes.data || []);
@@ -452,20 +351,16 @@ export default function Returns({ embedded }: { embedded?: { onExit: () => void 
 
   const setFilter = (key: keyof Filters, value: any) => {
     const next = { ...filters, [key]: value };
-    // مندوب اتختار والعميل المختار مش بتاعه ⇒ العميل يتفضّى في نفس الجلب — زي كشف الفواتير.
     if (key === 'rep_id' && !customerFitsRep(customers, next.customer_id, next.rep_id)) {
       next.customer_id = undefined;
     }
     setFilters(next); fetchReturns(next);
   };
-  // قايمة فلتر «العميل»: مندوب مختار ⇒ عملاءه هو بس (`repScope`). محفوظة عشان آلاف
-  // الأسماء مايتعادش ترتيبهم مع كل رندر.
   const filterCustomerOptions = useMemo(
     () => sortByName(customersOfRep(customers, filters.rep_id), (c) => c.name)
       .map((c) => ({ value: c.id, label: c.name })),
     [customers, filters.rep_id],
   );
-  // الخروج من الخانة من غير تعديل كان بيعيد جلب الكشف كل مرة.
   const applySearch = () => {
     const q = search.trim() || undefined;
     if (q !== filters.q) setFilter('q', q);
@@ -484,24 +379,19 @@ export default function Returns({ embedded }: { embedded?: { onExit: () => void 
     return [...set].sort((a, b) => a.localeCompare(b, 'ar'));
   }, [products]);
 
-  // **من غير تجميع بالفئة** (طلب العميل ٢٠٢٦-١٠-٠٥): الأصناف تحت بعض بترتيب إدخالها في
-  // عرض المستند. الفئات لسه في شباك اختيار الصنف — الاختيار بالفئة، والعرض مش متقسّم.
   const linesByCategory = useMemo(
     () => (lines.length ? [{ category: null as string | null, items: lines as ReturnLineItem[] }] : []),
     [lines]);
 
-  /** الاتنين ورا بعض — خصم بعد خصم، زي فاتورة البيع بالظبط. */
   const lineDiscountPct = (l: ReturnLineItem) =>
     Math.min(99.99, combinePct(l.fixed_discount, l.discount));
   const lineTotal = (l: ReturnLineItem) =>
     applyPct(Number(l.quantity || 0) * l.unit_price, l.fixed_discount, l.discount);
-  /** بعد الخصم الثابت بس (طلب العميل ٢٠٢٦-١٠-٠٣) — نفس عمود فاتورة البيع. */
   const lineAfterFixed = (l: ReturnLineItem) =>
     applyPct(Number(l.quantity || 0) * l.unit_price, l.fixed_discount);
   const linePoints = (l: ReturnLineItem) =>
     (l.item_id ? (pointValues[l.item_id] || 0) : 0) * (l.quantity || 0);
 
-  /** إجمالي النقاط اللي بترجع مع البضاعة — بيتحسب من السطور زي إجمالي الفلوس. */
   const totalReturnPoints = lines.reduce((sum, l) => sum + linePoints(l), 0);
 
   const grossTotal = lines.reduce((s, l) => s + lineTotal(l), 0);
@@ -509,7 +399,6 @@ export default function Returns({ embedded }: { embedded?: { onExit: () => void 
   const netTotal = netOf(grossTotal, discountPct);
   const totalPoints = lines.reduce((s, l) => s + linePoints(l), 0);
 
-  // Default the refund to a credit against the customer's account (cash stays 0 → full credit).
   useEffect(() => {
     const credit = Math.max(0, netTotal - (parseFloat(cashRefund.toString()) || 0));
     setCreditReduction(parseFloat(credit.toFixed(2)));
@@ -517,9 +406,6 @@ export default function Returns({ embedded }: { embedded?: { onExit: () => void 
 
   const productName = (id: number) => products.find((p) => p.id === id)?.name ?? `صنف #${id}`;
 
-  /** `stay`: القفل ده مش خروج (F3 بحث) — يفضل في الشاشة ومايرجعش للأصل. `keepUrl`:
-   *  التالي/السابق — العنوان مايتلمسش، والفتح اللي بعده بيكتب المستند الجديد ومعاه `ret`.
-   *  كائن مش `boolean` عشان `onClick={closeCreate}` بيبعت حدث الماوس — فالأزرار بتنده `() => closeCreate()`. */
   const closeCreate = (opts?: { stay?: boolean; keepUrl?: boolean }) => {
     if (opts?.keepUrl !== true) markClosed({ stay: opts?.stay === true });
     setCreateVisible(false);
@@ -527,8 +413,6 @@ export default function Returns({ embedded }: { embedded?: { onExit: () => void 
     setViewReturn(null);
     setLines([]); setActiveCategory(null); setCashRefund(0); setDiscountPct(0);
     setCustomerId(null); setLastInfo({}); setCustomerBalance(null); setDocWarehouseId(null);
-    // The document fields go back to blank with everything else — a paper number left over from
-    // the last return would be written onto the next one without anybody typing it.
     setRepId(null); setExternalDocNumber(''); setDocNotes(''); setStatements(['', '', '']);
     setCouponRows([blankCoupon()]); setIssuedBooks([]);
     setReturnDate(dayjs());
@@ -536,13 +420,9 @@ export default function Returns({ embedded }: { embedded?: { onExit: () => void 
     createForm.resetFields();
   };
 
-  /** الباب التاني: العميل. Mid-return this only swaps the party; during the opening run it is the
-   *  second door and hands over to the warehouse door — the same sequence, in the same order, as the sale. */
   const handlePartyPicked = (picked: Party) => {
     setPartyPickerOpen(false);
     createForm.setFieldsValue({ customer_id: picked.id });
-    // A customer created inside the picker is not in the loaded list yet, so the field would
-    // render a bare id until the next reload.
     setCustomers((prev) => (prev.some((c: any) => c.id === picked.id)
       ? prev : [...prev, { id: picked.id, name: picked.name } as any]));
     onCustomerChange(picked.id);
@@ -551,7 +431,6 @@ export default function Returns({ embedded }: { embedded?: { onExit: () => void 
     }
   };
 
-  /** Which store a rep works out of. A rep IS a user; the link lives on their employee record. */
   const storeOfRep = (repId: number | null | undefined): number | null => {
     if (!repId) return null;
     return employees.find((e: any) => e.user_id === repId)?.warehouse_id ?? null;
@@ -560,22 +439,10 @@ export default function Returns({ embedded }: { embedded?: { onExit: () => void 
   const onCustomerChange = (cId: number) => {
     setCustomerId(cId);
     const c = customers.find((x: any) => x.id === cId);
-    // Same chain as the sale: the customer fills in his rep, and the rep fills in his store.
-    // Both are DEFAULTS, not locks — a rep on leave and a van that ran out are ordinary days, and
-    // a field that refuses them is a field people work around by putting the document on the
-    // wrong customer. Filled only when empty, so re-picking never undoes a store chosen on purpose.
     if ((c as any)?.rep_id) setRepId((c as any).rep_id);
-    // Where this customer's returns actually came back to last time beats where his rep's van is:
-    // it is a fact about him, learned from a return somebody already wrote, rather than a guess
-    // from the round he happens to be on. His rep's store is the fallback for a customer who has
-    // never had one.
     const remembered = (c as any)?.default_return_warehouse_id ?? null;
     const store = remembered ?? storeOfRep((c as any)?.rep_id);
-    // مافيش خانة مخزن في الترويسة خلاص — ده بقى الافتراضي اللي السطر الجديد بيبتدي بيه بس.
-    // `prev ?? store` مش `!docWarehouseId` — القيمة اللي في الكلوجر ممكن تكون قديمة، والصيغة
-    // الدالية بتقرا اللي في إيد React دلوقتي.
     if (store) setDocWarehouseId((prev) => prev ?? store);
-    // A different customer means different purchase prices — start the lines fresh.
     setLines([]); setLastInfo({}); setActiveCategory(null);
     setCustomerBalance(null);
     setFamilyAccounts([]); setReturnFamily(null);
@@ -584,25 +451,16 @@ export default function Returns({ embedded }: { embedded?: { onExit: () => void 
         const rows = res.data?.accounts || [];
         setFamilyAccounts(rows);
         setCustomerBalance(Number(res.data?.total_balance || 0));
-        // Pre-picked only when there is nothing to pick. With two lines it stays empty on
-        // purpose — choosing for him is choosing which debt the refund comes off.
-        //
-        // **ومابيمسحش نوع اتحدّد خلاص.** الرد ده بيوصل بعد ما المسودّة (أو المستند
-        // المفتوح) حطّت نوعها، فكان بيرجّعه فاضي والحفظ يقول «لازم تحدد النوع» على
-        // مرتجع نوعه متسجّل. الفاضي بس هو اللي بيتملى.
         const named = rows.filter((a: any) => a.family);
         setReturnFamily((cur) => cur ?? (named.length === 1 ? named[0].family : null));
       })
       .catch((err) => { console.error(err); setFamilyAccounts([]); setCustomerBalance(null); });
-    // What he was actually given. A different customer holds different books, so the rows go
-    // with him rather than surviving into somebody else's return.
     setCouponRows([blankCoupon()]);
     api.get(`/api/v1/coupon-receipts/issued-to/${cId}`)
       .then((res) => setIssuedBooks(res.data || []))
       .catch(() => setIssuedBooks([]));
   };
 
-  // Fetch what THIS customer last paid for the item, and its short purchase history.
   const fetchLastInfo = async (itemId: number): Promise<LastInfo> => {
     if (lastInfo[itemId]) return lastInfo[itemId];
     try {
@@ -621,8 +479,6 @@ export default function Returns({ embedded }: { embedded?: { onExit: () => void 
   const addProductById = async (itemId: number, qty: number | null = null): Promise<PickResult> => {
     if (!itemId || !customerId) return null;
     const prod = products.find((p) => p.id === itemId);
-    // مافيش مخزن للمرتجع لسه؟ نسأل مرة واحدة قبل ما السطر ينزل.
-    // الطابور القديم كان بيستنى بوباب اتشال — فالأصناف كانت بتضيع في السكوت. دلوقتي بنقول.
     if (docWarehouseId === null) {
       message.warning('اختار مخزن المرتجع الأول من خانة «المخزن» فوق، وبعدين ضيف الأصناف.');
       return null;
@@ -630,29 +486,12 @@ export default function Returns({ embedded }: { embedded?: { onExit: () => void 
     return addProductByIdWith(itemId, docWarehouseId, qty);
   };
 
-  /**
-   * نفس الإضافة بمخزن **صريح**.
-   *
-   * ضروري لأن `setDocWarehouseId` مابيغيّرش القيمة في نفس اللفّة: الندهة اللي بعده على
-   * طول بتقرا `null` وتنزّل السطر من غير مخزن — وهي دي المشكلة اللي البوباب اتعمل عشانها.
-   */
   const addProductByIdWith = async (
     itemId: number, warehouseId: number, qty: number | null = null,
   ): Promise<PickResult> => {
     const prod = products.find((p) => p.id === itemId);
     const info = await fetchLastInfo(itemId);
-    /**
-     * ترتيب السعر: آخر سعر دفعه العميل ده، فآخر سعر شراء، فسعر الصنف الحالي.
-     *
-     * آخر سعر للعميل هو الأصح لما يكون موجود — البضاعة خرجت من هنا بالسعر ده، فرجوعها
-     * بنفسه بيقفل حسابه مظبوط. والمرتجع الحر ساعات بيتكتب لعميل عمره ما اشترى الصنف ده
-     * (بضاعة اتجمّعت، أو عميل جديد بيرجّع شحنة قديمة)، وساعتها السطر كان بيفتح بسعر
-     * البيع اللي المفروض العميل ياخد بيه — رقم مالوش علاقة باللي رجع. آخر سعر شراء أقرب
-     * للحقيقة، وهو اللي بيخلّي المخزون والحساب يقفلوا على نفس المبلغ.
-     */
     let price = info.last_price != null ? parseFloat(info.last_price) : 0;
-    // آخر سعر اتدفع مكتوب بوحدة البيع اللي اتباع بيها (قطعة أو متر) — فالسطر بيفتح بنفس
-    // الوحدة، وإلا سعر القطعة يتحط على كمية بالمتر ويطلع المرتجع ٣ أضعاف.
     let priceUnit: string | null = price > 0 ? (info.history[0]?.unit ?? null) : null;
     let fallbackDisc: number | null = null;
     if (!(price > 0)) {
@@ -661,12 +500,11 @@ export default function Returns({ embedded }: { embedded?: { onExit: () => void 
         const r = await api.get(`/api/v1/items/${itemId}/return-price`);
         if (Number(r.data?.unit_price) > 0) price = Number(r.data.unit_price);
         if (Number(r.data?.discount_pct) > 0) fallbackDisc = Number(r.data.discount_pct);
-      } catch { /* الكتالوج بيفضل الاحتياطي */ }
+      } catch {}
     }
     if (!(price > 0)) price = prod?.sale_price ? parseFloat(prod.sale_price) : 0;
     const existing = lines.find((x) => x.item_id === itemId);
     if (existing) {
-      // مكرر + كمية من الشباك ⇒ بتتزوّد على السطر الموجود (المرتجع مالوش سقف رصيد).
       if (qty) {
         setLines((prev) => prev.map((x) => (x.key === existing.key
           ? { ...x, quantity: Number(x.quantity || 0) + qty } : x)));
@@ -676,13 +514,10 @@ export default function Returns({ embedded }: { embedded?: { onExit: () => void 
       }
       return { dup: itemId };
     } else {
-      // عدّاد مع الوقت: الإضافة المجمّعة بتنزّل كذا سطر في نفس المللي ثانية.
       const key = `${Date.now()}-${++lineSeq.current}`;
       setLines((prev) => [...prev, {
         key, category: prod?.category ?? null, item_id: itemId,
         quantity: qty || null, unit_price: price, discount: 0,
-        // الثابت من الصنف — نفس اللي فاتورة البيع بتفتح بيه السطر، وخصم الشريحة لو
-        // الصنف مالوش خصم افتراضي مكتوب عليه.
         fixed_discount: prod?.default_discount_pct
           ? parseFloat(prod.default_discount_pct) : (fallbackDisc ?? 0),
         warehouse_id: warehouseId,
@@ -694,10 +529,6 @@ export default function Returns({ embedded }: { embedded?: { onExit: () => void 
     }
   };
 
-  // The caret goes to the new line's quantity — the same rule, and the same three traps, as the
-  // sale. Wait for the picker to be GONE (an open modal traps focus by design), then keep asking
-  // per frame until the box actually has it, finding the box by attribute because antd's ref
-  // hands back a wrapper and cannot answer «did it land?».
   useEffect(() => {
     if (!focusLineKey) return undefined;
     if (pickerOpen) return undefined;
@@ -717,7 +548,6 @@ export default function Returns({ embedded }: { embedded?: { onExit: () => void 
     return () => cancelAnimationFrame(raf);
   }, [focusLineKey, lines.length, pickerOpen]);
 
-  /** On the open return, Enter opens the item picker — the next thing anybody does is add a line. */
   useEffect(() => {
     if (!createVisible) return undefined;
     const onKey = (e: KeyboardEvent) => {
@@ -740,9 +570,6 @@ export default function Returns({ embedded }: { embedded?: { onExit: () => void 
   };
   const handleRemoveLine = (key: string) => setLines(lines.filter((l) => l.key !== key));
 
-  /** شريط أدوات المستند on the return, the same row in the same order. */
-  /** The row beside the one open, in the order the list is currently showing — the same rule the
-   *  sale's arrows follow, so التالى means the same thing on both screens. */
   const neighbour = (step: number) => {
     if (!viewReturn) return null;
     const at = returns.findIndex((r) => r.id === viewReturn.id);
@@ -750,15 +577,9 @@ export default function Returns({ embedded }: { embedded?: { onExit: () => void 
     return returns[at + step] ?? null;
   };
 
-  /** Stepping away from a half-typed return asks first — the sale does, and losing typed lines
-   *  to an arrow key is the same loss whichever document it happened on. */
   const stepFromDraft = (step: number) => {
     const target = neighbour(step);
     if (!target) return;
-    // بيمشي على طول — التأكيدات اتشالت من النظام بطلب صاحبه، ودي منهم.
-    //
-    // كانت بتسأل لما يكون في المستند سطور اتكتبت ولسه ماتحفظتش. اللي بيدوس «التالي» أو
-    // «السابق» وهو في نص كتابة بيسيب اللي كتبه، وده بقى قراره من غير وقفة.
     closeCreate({ keepUrl: true });
     openDetail(target);
   };
@@ -798,12 +619,6 @@ export default function Returns({ embedded }: { embedded?: { onExit: () => void 
         key: 'undo',
         label: 'تراجع',
         icon: <UndoOutlined />,
-        // «تراجع» بيرجّع المستند، مش بيقفل الحقول وبس.
-        //
-        // كان بيعمل `setViewOnly(true)` على طول: الحقول تتقفل واللي اتكتب ومااتحفظش يفضل
-        // ظاهر — مقفول ومقروء، يعني بنفس شكل المحفوظ بالظبط. فاللي غيّر كمية من ١٠ لـ٣
-        // وضغط تراجع بيفضل قدامه ٣ وإجمالي مالوش وجود، ومافيش حاجة على الشاشة بتقول إن ده
-        // مش اللي في القاعدة. إعادة تحميل المستند هي الحاجة الوحيدة اللي بترجّع الأرقام.
         onClick: () => {
           if (!viewOnly && editingSourceId) {
             openDetail({ id: editingSourceId } as ReturnRecord);
@@ -913,8 +728,6 @@ export default function Returns({ embedded }: { embedded?: { onExit: () => void 
         key: 'reload',
         label: 'تحميل',
         icon: <ReloadOutlined />,
-        // بيفتح أحدث مرتجع في الفترة على طول، و«السابق»/«التالى» بيمشوا جوّه الفترة —
-        // الشرح في `components/LoadPeriodModal`.
         onClick: () => setLoadPeriodOpen(true),
       },
     ];
@@ -941,9 +754,6 @@ export default function Returns({ embedded }: { embedded?: { onExit: () => void 
       message.error('مجموع المسترد نقداً + الخصم من الحساب يجب أن يساوي صافي المرتجع');
       return;
     }
-    // بوباب الخزنة (أمر ٠٠٩ بند ٤): مردود المبيعات **بيخصم** من الخزنة — الفلوس راجعة
-    // للعميل. الاقتراح صندوق خط المرتجع، والحفظ بيتم بعد الاختيار؛ الرجوع مابيحفظش.
-    // مرتجع كله خصم من الحساب (المسترد نقداً صفر) ⇒ مافيش فلوس بتتحرّك، فمافيش سؤال.
     askTreasury(
       {
         amount: cash,
@@ -957,15 +767,12 @@ export default function Returns({ embedded }: { embedded?: { onExit: () => void 
           content: `سيتم إرجاع ${valid.length} صنف إلى المخزن وتسوية مبلغ ${money(netTotal)} لحساب العميل. متابعة؟`,
           onOk: async () => {
             try {
-              // التعديل بيروح للمرتجع نفسه بنفس رقمه — كان بيتعكس ويتكتب سند جديد.
               const editingId = editingSourceId;
               const send = editingId
                 ? (b: any) => api.put(`/api/v1/sales/returns/${editingId}`, b)
                 : (b: any) => api.post('/api/v1/sales/returns', b);
               const res = await send({
                 customer_id: customerId,
-                // المخزن من السطر. الترويسة مابقاش فيها خانة مخزن، والـ`origin` بقى أول مخزن
-                // مسمّى في السطور — وكل سطر بيرجع لمخزنه هو على أي حال.
                 origin: {
                   location_kind: 'warehouse',
                   location_id: valid[0]?.warehouse_id ?? docWarehouseId,
@@ -973,8 +780,6 @@ export default function Returns({ embedded }: { embedded?: { onExit: () => void 
                 variable_discount_pct: discountPct,
                 cash_refund: cash,
                 credit_reduction: creditReduction,
-                // (٠٠٩) الخزنة اللي البوباب سأل عنها — المردود **بيخصم** منها. `undefined` =
-                // مااتسألش (مافيش مسترد نقدي) والسيرفر بيقرر زي ما هو بيعمل دلوقتي.
                 cash_account_id: cashAccountId ?? undefined,
                 family: returnFamily,
                 rep_id: repId ?? undefined,
@@ -984,19 +789,14 @@ export default function Returns({ embedded }: { embedded?: { onExit: () => void 
                 statement2: statements[1] || undefined,
                 statement3: statements[2] || undefined,
                 return_date: returnDate.format('YYYY-MM-DD'),
-                // Only the rows that name a book and a count — an empty row is somebody who clicked
-                // «إضافة» and changed their mind, not a coupon.
                 returned_coupons: couponRows
                   .filter((r) => r.serial_from && r.count)
                   .map((r) => ({ serial_from: r.serial_from, serial_to: r.serial_to, count: r.count })),
                 lines: valid.map((l) => ({
                   item_id: l.item_id, quantity: Number(l.quantity || 0), unit_price: l.unit_price,
-                  // الاتنين بيتجمعوا — ده اللي بيتحسب بيه...
                   discount_pct: lineDiscountPct(l),
-                  // ...والنصّين، عشان المرتجع لما يتفتح تاني كل خصم يرجع خانته.
                   fixed_discount_pct: Number(l.fixed_discount || 0),
                   variable_discount_pct: Number(l.discount || 0),
-                  // (030) only when the line differs from the document's warehouse
                   warehouse_id: l.warehouse_id ?? undefined,
                   serials: l.is_serialized ? (l.serials || []) : undefined,
                   unit: l.unit ?? null,
@@ -1005,7 +805,6 @@ export default function Returns({ embedded }: { embedded?: { onExit: () => void 
               message.success(editingSourceId
                 ? `اتحفظ المرتجع. رقم السند: ${res.data.document_number}`
                 : `تم تسجيل المرتجع بنجاح. رقم السند: ${res.data.document_number}`);
-              // بعد ما السيرفر رد بنجاح وبس — المرفوض بيفضل مسودّة.
               discardDraft();
               closeCreate();
               fetchReturns();
@@ -1019,19 +818,7 @@ export default function Returns({ embedded }: { embedded?: { onExit: () => void 
     );
   };
 
-  /**
-   * أعمدة سطر المرتجع كبيانات — عشان تتخفي وتترتّب.
-   *
-   * الشاشة دي مش جدول: السطور متجمّعة تحت رؤوس فئات، فكل مجموعة ليها رأسها. بس رأس
-   * الأعمدة (`Row` من `Col`) وخلايا كل سطر متقابلين بالموضع بالظبط زي `thead`/`tbody` —
-   * فنفس القايمة بترسم الاتنين، والإخفاء والترتيب بيشتغلوا زي أي شبكة تانية.
-   *
-   * السيريالات مش عمود: هي صف كامل بيتفتح تحت السطر لما الصنف يكون بسيريال، فمكانها
-   * جوّه الصف مش جنب الأعمدة.
-   */
   const lineColumns: EntryColumn<ReturnLineItem>[] = [
-    // ترقيم السطور — اللي بيراجع ورقة فيها ٣٥ صنف محتاج يقول «السطر رقم ١٢»
-    // بدل ما يعدّ بصباعه، واللي بيقارنها بورقة مطبوعة محتاج نفس الأرقام.
     { key: 'idx', title: '#', width: 32, span: 1, xs: 2, locked: true,
       cellStyle: { color: '#6b6b6b', textAlign: 'center' },
       cell: (_l: any, i: number) => i + 1 },
@@ -1051,8 +838,6 @@ export default function Returns({ embedded }: { embedded?: { onExit: () => void 
           }}
           options={activeOptions(warehouses, [line.warehouse_id, docWarehouseId])} />
       ) },
-    // الوحدة: الأساسية أو البديلة («قطعة = ٣ متر»). تغييرها بيحوّل السعر، والمخزن بيرجعله
-    // الكمية × المعامل بالوحدة الأساسية.
     { key: 'unit', title: 'الوحدة', span: 2, xs: 8, width: 80,
       cell: (line) => (
         <Select size="small" style={{ width: '100%' }} placeholder="الوحدة"
@@ -1141,8 +926,6 @@ export default function Returns({ embedded }: { embedded?: { onExit: () => void 
             .toLocaleString(numeralsLocale(), { maximumFractionDigits: 3 })}
         </span>
       ),
-      // زي الفاتورة: الصفر ممكن يكون «الصنف مالوش نقط» أو «الكمية لسه فاضية».
-      // التاني بيتقال بنقطة الوحدة عشان اللي بيبص يعرف إن النقط جاية.
       cell: (line) => {
         const v = linePoints(line);
         if (v) {
@@ -1178,15 +961,11 @@ export default function Returns({ embedded }: { embedded?: { onExit: () => void 
 
   const returnDoc = (r: any): InvoiceDoc | null => {
     if (!r) return null;
-    // الاسم جاي مع الصف؛ الكشف المحلي خطة بديلة لو النداء وقع. التليفون بيفضل من الكشف
-    // لأنه مش على المستند — لو الكشف مااتحملش، الطباعة بتطلع بالاسم من غير رقم بدل ما
-    // تطلع بـ«#1841».
     const known = customers.find((c) => c.id === r.customer_id);
     const customerName = r.customer_name || known?.name;
     return {
       kind: 'sale_return',
       document_number: r.document_number,
-      // تاريخ المرتجع نفسه مش يوم إدخاله، والبيان على الورقة زي فاتورة البيع.
       date: r.return_date ?? r.created_at ?? null,
       extraMeta: statementMeta(r),
       partyLabel: 'العميل',
@@ -1206,7 +985,6 @@ export default function Returns({ embedded }: { embedded?: { onExit: () => void 
         name: productName(l.item_id),
         itemId: l.item_id,
         quantity: l.quantity,
-        // null = الأساسية — الورقة بتطبع اسمها بدل شرطة.
         unit: l.unit || unitsCache[l.item_id]?.find((u) => u.is_base)?.name || null,
         unit_price: l.unit_price,
         discount_pct: l.discount_pct,
@@ -1217,12 +995,6 @@ export default function Returns({ embedded }: { embedded?: { onExit: () => void 
     };
   };
 
-  /**
-   * عكس مرتجع مرحّل — للتعديل أو للإلغاء.
-   *
-   * المرتجع المرحّل ماينفعش يتعدّل في مكانه، بنفس السبب اللي في الفاتورة بالظبط: البضاعة
-   * رجعت المخزن والقيد اتكتب، والدفتر مابيتمحاش. فالحذف عكس، والتعديل عكس وكتابة من جديد.
-   */
   const handleDeleteReturn = async (record: ReturnRecord) => {
     try {
       await api.delete(`/api/v1/sales/returns/${record.id}`);
@@ -1233,14 +1005,6 @@ export default function Returns({ embedded }: { embedded?: { onExit: () => void 
     }
   };
 
-  /**
-   * «تعديل» — بيعكس السند ويفتح محتواه من جديد للتصحيح، زي «تعديل الفاتورة» بالحرف.
-   *
-   * والعكس بيحصل **دلوقتي**، مش وقت الحفظ: على عكس الفاتورة اللي عكسها بيطلّع بضاعة من
-   * المخزن (فبيتأجّل لحد ما يبقى فيه بديل يترحّل)، عكس المرتجع بيطلّع البضاعة اللي رجعت.
-   * لو الكمية دي اتباعت تاني في الوقت ده، العكس بيقع — والرسالة بتيجي وهي بتقول حاجة صح،
-   * والسند القديم بيفضل زي ما هو.
-   */
   const openDetail = async (record: ReturnRecord) => {
     markOpen(record.id);
     try {
@@ -1315,18 +1079,7 @@ export default function Returns({ embedded }: { embedded?: { onExit: () => void 
     </>
   );
 
-  /**
-   * **البوابات بتتركّب مرة واحدة، بره التفرّع.**
-   *
-   * لمّا `{doors}` بتتكتب في فرعين و`return` منفصلين، React بيشوفهم شجرتين مختلفتين:
-   * أول ما الفرع يتبدّل البوابة بتتفكّ من مكان وتتركّب في التاني، واللي اتفكّت بتسيب
-   * `portal` بتاع antd واقف في نص أنيميشن القفل ومابيتشالش — قناع ميّت فوق الشاشة،
-   * كل حاجة مغمّقة ومافيش حاجة بتترد. المخرج الواحد بيمنع الفكّ من أصله.
-   */
   const screen = createVisible ? (
-      // **شكل فاتورة البيع الجديد** (تصميم العميل ٢٠٢٦-١٠-٠١): كروت بيضا على خلفية رمادي —
-      // ترويسة وأدوات، خانات المستند، الأصناف، وتحت الدفع والملخص. الشكل بس اللي اتغيّر:
-      // نفس الخانات ونفس الحالة ونفس الأوامر والمفاتيح. الـCSS كله تحت `.sale-doc` في `index.css`.
       <div className="sale-doc" style={{ flex: '1 0 auto' }}>
         <div className="sale-card sale-head">
           <div className="sale-head-row">
@@ -1348,7 +1101,6 @@ export default function Returns({ embedded }: { embedded?: { onExit: () => void 
             {viewReturn?.reversed_by && (
               <Tag color="volcano" style={{ marginInlineEnd: 0 }}>معكوس</Tag>
             )}
-            {/* التاريخ هنا جنب العدّاد زي فاتورة البيع — نفس القيمة اللي كانت في الخانات. */}
             <span className="sale-pager">
               <DocumentBar
                 listLabel="مرتجعات المبيعات"
@@ -1375,7 +1127,6 @@ export default function Returns({ embedded }: { embedded?: { onExit: () => void 
                 )}
               />
             </span>
-            {/* الأدوات و«الأعمدة» في نفس سطر العنوان على الشمال — زي فاتورة البيع. */}
             <div className="sale-toolbar-row">
               <DocumentToolbar actions={returnToolbar()} variant="buttons" />
               <DocumentHistoryButton entityType="sales_return" entityId={viewReturn?.id}
@@ -1388,8 +1139,6 @@ export default function Returns({ embedded }: { embedded?: { onExit: () => void 
 
         <Form form={createForm} layout="vertical" size="small" className="doc-form sale-form"
           onFinish={handleSubmit}>
-          {/* الترتيب زي فاتورة البيع (٢٠٢٦-١٠-٠١): رقم المستند ← العميل وتليفونه ← المخزن ←
-              المندوب ← الخط، وتحتهم الملاحظات والبيان والكوبونات الراجعة. */}
           <div className="sale-card sale-fields">
             <Row gutter={12}>
               <Col xs={12} md={4}>
@@ -1458,7 +1207,6 @@ export default function Returns({ embedded }: { embedded?: { onExit: () => void 
                     onChange={(e) => setDocNotes(e.target.value)} />
                 </Form.Item>
               </Col>
-              {/* **البيان** — كان بيتبعت (`statement1`) ومالوش خانة، زي فاتورة البيع بالظبط. */}
               <Col xs={24} md={16}>
                 <Form.Item label="البيان">
                   <Input placeholder="اختياري — بيتطبع وبيتدوّر بيه" disabled={viewOnly}
@@ -1547,7 +1295,6 @@ export default function Returns({ embedded }: { embedded?: { onExit: () => void 
           </div>
 
           <div className="sale-card sale-lines">
-            {/* شريط الأصناف: «أبيض/بولي» بأرصدتهم وعدد البنود يمين، وزرار الإضافة شمال. */}
             <div className="sale-items-bar">
               <div className="sale-items-info">
                 {families.length > 1 && (
@@ -1614,9 +1361,6 @@ export default function Returns({ embedded }: { embedded?: { onExit: () => void 
                   }}
                 />
 
-                {/* سطور المرتجع جدول واحد بترويسة كحلي زي فاتورة البيع — كانت كروت متجمّعة
-                    بالفئة. الفئة بقت صف فاصل جوّه الجدول (لما يكون فيه أكتر من فئة)، والسيريالات
-                    صف كامل تحت السطر بتاعها. */}
                 {lines.length === 0 && viewOnly ? (
                   <Empty description="اختر الفئة ثم الأصناف لإضافتها للمرتجع" style={{ margin: '12px 0' }} />
                 ) : (
@@ -1646,7 +1390,6 @@ export default function Returns({ embedded }: { embedded?: { onExit: () => void 
                             )}
                             {group.items.map((line) => (
                               <React.Fragment key={line.key}>
-                                {/* الترقيم على المستند كله مش جوّه الفئة — كان بيتبعت ٠ فكل سطر «١». */}
                                 <tr>{lineGrid.row(line, lines.indexOf(line))}</tr>
                                 {line.is_serialized && (
                                   <tr>
@@ -1667,7 +1410,6 @@ export default function Returns({ embedded }: { embedded?: { onExit: () => void 
                             ))}
                           </React.Fragment>
                         ))}
-                        {/* السطر الزيادة: المخزن الأول وبعدين الصنف (٢٠٢٦-١٠-٠٥). */}
                         <QuickAddRow
                           colSpan={lineGrid.count} disabled={viewOnly} items={products}
                           warehouses={warehouses} warehouseId={docWarehouseId}
@@ -1781,10 +1523,6 @@ export default function Returns({ embedded }: { embedded?: { onExit: () => void 
           })()}
         </Form>
 
-        {/* المكوّن مشترك مع البيع والشرا — الشرح في `components/LoadPeriodModal`.
-            `openNewest` بيفتح أحدث مرتجع في الفترة على طول، و`onLoaded` بيحط الفترة في
-            `returns` — الكشف اللي «السابق» و«التالى» بيمشوا فيه — فالتنقّل يفضل جوّه
-            اللي اتحمّل مش جوّه آخر صفحة كانت مفتوحة. */}
         <LoadPeriodModal
           open={loadPeriodOpen} onCancel={() => setLoadPeriodOpen(false)}
           title="تحميل مرتجعات فترة" endpoint="/api/v1/sales/returns"
@@ -1816,48 +1554,25 @@ export default function Returns({ embedded }: { embedded?: { onExit: () => void 
       </div>
   ) : null;
 
-  // --- The list --------------------------------------------------------------------------------
-  // Their مردود مبيعات list, in their order:
-  //   `رقم · التاريخ · مستند رقم · الفاتورة رقم · الحساب الفرعي · جهه التعامل · مندوب · اجمالي قبل ·
-  //    خصم · خصم% · ض.م · ض.م % · الاجمالي · مصروفات · الصافى · تم السداد · الباقى ·
-  //    مصروفات تشغيل · ملاحظات · مراكز التكلفة`
-  //
-  // Same treatment as the sales list: everything we can answer honestly, in their order and under
-  // their wording, with the ones a returns list is not usually read for starting hidden.
-  //
-  // (031) Four of the columns previously left out now have a source: the document fields were
-  // always columns on `sales_return` and the payload dropped them, so nothing could fill them.
-  // That is fixed, so مستند رقم · مندوب · ملاحظات are here — and التاريخ is the return's own day
-  // rather than the day the row was typed.
-  //
-  // Still left out because a return genuinely does not carry them: الحساب الفرعي (the posting
-  // account is stored but this list has no room for a fourth identifier) · مصروفات · مصروفات
-  // تشغيل · مراكز التكلفة.
   const columns = [
     {
       title: 'رقم', dataIndex: 'id', key: 'id', width: 80,
       render: (id: number) => <span style={{ color: '#6b6b6b' }}>{id}</span>,
     },
     {
-      // The day the goods came back, falling back to when the row was written for returns
-      // recorded before the document carried its own date.
       title: 'التاريخ', dataIndex: 'return_date', key: 'return_date', width: 105,
       render: (v: string | null, r: ReturnRecord) => (v || String(r.created_at || '').slice(0, 10)
         || '-'),
     },
     {
       title: 'رقم السند', dataIndex: 'document_number', key: 'document_number', ellipsis: true, width: 125,
-      // المسودّة مالهاش رقم — الرقم بيتحجز وقت الترحيل مش قبله.
       render: (doc: string, r: any) => (r.__isDraft
         ? <DraftTag onDelete={() => removeDraft(r.__draft.id)} />
         : <Tag color="volcano">{doc}</Tag>),
     },
     {
-      // Which sale this undoes. The link was always stored and never shown.
       title: 'الفاتورة رقم', dataIndex: 'invoice_document_number', key: 'invoice_document_number',
       width: 125,
-      // Opens the sale it undoes. The column exists to answer «which one?», and a number you
-      // cannot follow leaves that answered only halfway.
       render: (v: string | null, r: ReturnRecord) => (v
         ? <DocRef kind="invoice" id={r.sales_invoice_id} label={v} />
         : <span style={{ color: '#555b65' }}>مستقل</span>),
@@ -1877,7 +1592,6 @@ export default function Returns({ embedded }: { embedded?: { onExit: () => void 
     },
     {
       title: 'خصم', key: 'discount_value', width: 105, align: 'left' as const,
-      // Derived from the two beside it, so it can never disagree with them.
       render: (_: any, r: ReturnRecord) =>
         `${money(Number(r.gross || 0) * (Number(r.combined_pct || 0) / 100))}`,
     },
@@ -1894,9 +1608,6 @@ export default function Returns({ embedded }: { embedded?: { onExit: () => void 
       render: (v: string) => <strong style={{ color: '#cf4b1a' }}>{money(v)}</strong>,
     },
     {
-      // (031) أبيض ولا بولي — which of the customer's debts this document moved. It was stored on
-      // the document and shown nowhere, so «ده اتسجّل على أنهي حساب؟» had to be answered from the
-      // ledger. Blank for a customer who was never split, which is most of them.
       title: 'النوع',
       dataIndex: 'family',
       key: 'family',
@@ -1905,8 +1616,6 @@ export default function Returns({ embedded }: { embedded?: { onExit: () => void 
     },
     {
       title: 'مندوب', dataIndex: 'rep_id', key: 'rep_id', width: 150, ellipsis: true,
-      // الاسم الجاي مع الصف احتياطي: القايمة فيها المناديب الحاليين بس، والمرتجع القديم
-      // ممكن يكون على مستخدم دوره اتغيّر.
       render: (v: number | null, r: any) => {
         const rep = reps.find((x) => x.id === v);
         const name = rep ? (rep.full_name || rep.username) : r?.rep_name;
@@ -1933,10 +1642,6 @@ export default function Returns({ embedded }: { embedded?: { onExit: () => void 
     {
       title: 'الإجراءات', key: 'actions', width: 140,
       render: (_: any, record: ReturnRecord) => ((record as any).__isDraft ? (
-        // **سطر المسودّة مالوش أزرار مستند.** الكشف فيه نوعين سطور، والمسودّة مالهاش
-        // رقم ولا أثر — رقمها في الجدول سالب عشان يفضل فريد وسط أرقام حقيقية. فزرار
-        // الحذف كان بينده السيرفر برقم مش موجود ويرجّع «المستند مش موجود»، وزرار
-        // الطباعة بيجيب ورقة مافيش. الفعل الوحيد اللي ليه معنى هنا: امسح المسودّة.
         <Space size={2} onClick={(e) => e.stopPropagation()}>
           <Tooltip title="مسح المسودّة">
             <Button type="text" danger icon={<DeleteOutlined />}
@@ -1988,7 +1693,6 @@ export default function Returns({ embedded }: { embedded?: { onExit: () => void 
 
   const visibleColumns = returnCols.apply(columns);
 
-  // كروت الإجماليات اللي كانت فوق بقت سطر تحت الجدول (نفس سجل المبيعات).
   const footer = (
     <span className="sl-foot">
       <span>عدد المرتجعات الظاهرة: <b>{summary.count.toLocaleString(numeralsLocale())}</b></span>
@@ -2060,7 +1764,6 @@ export default function Returns({ embedded }: { embedded?: { onExit: () => void 
     >
         <Table
           className="sl-table"
-          // المسودّات فوق، وبرّه `returns` عن قصد: الإجماليات بتتبني منه والمسودّة مش مرتجع.
           dataSource={[
             ...(drafts || []).map((d: any) => {
               const x = d.payload || {};
@@ -2081,11 +1784,6 @@ export default function Returns({ embedded }: { embedded?: { onExit: () => void 
           rowClassName={(r: any) => (r.__isDraft ? 'row-draft' : '')}
           columns={visibleColumns} rowKey="id" loading={loading}
           size="small" tableLayout="fixed"
-          // من غير `scroll` أفقي — الشاشة مالهاش يمين وشمال.
-          //
-          // مع `tableLayout: fixed` وكل عمود له عرض، المتصفح بيوزّع الفرق على الأعمدة كلها
-          // بالنسبة: زادت تتفرد شوية، قلّت تتضغط شوية. اللي كان بيكسّر الشكل هو عمود من غير
-          // عرض — الفاضي كله كان بينزل عليه لوحده فيطلع شريط أبيض في نص الجدول.
           pagination={{
             defaultPageSize: PAGE_SIZE, showSizeChanger: true, pageSizeOptions: PAGE_SIZE_OPTIONS,
             locale: { items_per_page: '' },
@@ -2099,17 +1797,13 @@ export default function Returns({ embedded }: { embedded?: { onExit: () => void 
     </ListPage>
   );
 
-  // جوّه شاشة تانية: مافيش كشف نرجعله — اتقفل المستند أو اتلغى الباب ⇒ نخرج.
   const onExit = embedded?.onExit;
   useEffect(() => {
     if (onExit && !createVisible && !newStep) onExit();
   }, [onExit, createVisible, newStep]);
 
-  // مستند جاي من شاشة تانية ولسه بيفتح ⇒ مكان الكشف فاضي (الشرح في `useDocRoute.opening`).
   if (docOpening) return <DocOpening />;
   return (
-    // المستند المفتوح بطول الشاشة على الأقل (زي فاتورة البيع) عشان الإجمالي والاسترداد
-    // يقعدوا في آخرها. نفس الـ`div` في الفرعين — البوابات مابتتفكّش (الشرح فوق `screen`).
     <div style={screen
       ? { minHeight: '100%', display: 'flex', flexDirection: 'column' } : undefined}>
       {doors}

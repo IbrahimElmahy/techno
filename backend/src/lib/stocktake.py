@@ -1,18 +1,3 @@
-"""جرد حق تاريخ — the stock as it stood on a past date (B5).
-
-"What did you have on the 31st" cannot be answered from today's balance. It is the same
-derivation the on-hand figure uses, cut off at a date: every movement up to and including that
-day, nothing after it. Two consequences worth stating, because both are the point:
-
-* A document entered late still lands on the day it happened, so the count for a closed month
-  does not depend on when someone got round to typing it.
-* The answer for a past date never drifts as later months trade — the movements behind it are
-  immutable, so the same question always gives the same number.
-
-Valued at the configured costing method (نوع التكلفة). The value is an estimate of what the
-stock is worth *now* at that cost, not a frozen historical valuation — freezing that would need
-per-receipt cost layers, which is a data change and not a report.
-"""
 from __future__ import annotations
 
 from datetime import date
@@ -61,16 +46,10 @@ def stock_as_of(
                   StockMovement.location_id)
     )
     if day is not None:
-        # Compared against the UTC instant the business day ends, not against `date()` of a
-        # UTC timestamp — those differ by the office's offset every night after midnight.
-        # **الجرد بتاريخ بيقيس على تاريخ الورقة.** كان على `created_at`، فالجرد بأي
-        # يوم قبل النقل كان بيرجع مخزن فاضي — كل حركات a5 مكتوبة بيوم النقل.
-        # و`COALESCE` عشان الحركة اللي لسه ما اتعبّاش تاريخها ماتختفيش من الجرد.
         stmt = stmt.where(
             func.coalesce(StockMovement.movement_date,
                           func.cast(StockMovement.created_at, Date)) <= day)
     if branch_id is not None:
-        # مخازن الفرع بس. الجرد بيتجمّع على (صنف × مكان)، والمكان هو اللي بيخصّ فرع.
         from src.models.warehouse import Warehouse
 
         mine = {w.id for w in db.scalars(
@@ -92,11 +71,6 @@ def stock_as_of(
             select(Item).where(Item.id.in_({r[0] for r in raw}))).all()
     }
     names = _location_names(db)
-    # **تكلفة كل الأصناف في استعلامين، مش استعلامين لكل صنف.**
-    #
-    # كانت `costing_service.unit_cost` بتتنده جوّه اللفّة — ٢٬٦٠٠ صنف يعني أكتر من
-    # ٥٬٢٠٠ استعلام، وقِيس: أربع ثواني ونص لتقرير حجمه ٤٣ كيلوبايت. الحجم ماكانش
-    # المشكلة، عدد النداءات هو.
     costs: dict[int, Decimal] = costing_service.unit_cost_bulk(db, {r[0] for r in raw})
 
     rows: list[dict] = []
@@ -104,8 +78,6 @@ def stock_as_of(
     total_value = ZERO
     for item_ref, kind, loc_id, quantity in raw:
         held = _qty(quantity)
-        # A stocktake lists what is there. A zero line is noise on a count sheet — and a negative
-        # one cannot exist, because no movement is allowed to create it.
         if held <= ZERO_QTY:
             continue
         item = items.get(item_ref)
@@ -116,8 +88,6 @@ def stock_as_of(
             "item_id": item_ref,
             "code": item.code if item else None,
             "name": item.name if item else f"#{item_ref}",
-            # (031) الفئة. A count sheet is read one category at a time — «الأدوات الصحية عندنا
-            # منها كام» — and without it the only way to that was a name search per item.
             "category": item.category if item else None,
             "unit_of_measure": item.unit_of_measure if item else None,
             "location_kind": loc_kind,

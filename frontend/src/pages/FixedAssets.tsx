@@ -19,14 +19,6 @@ import type { ColumnsType } from 'antd/es/table';
 import { useTableColumns } from '../components/ColumnSettings';
 
 import { money } from '../utils/money';
-/**
- * الأصول الثابتة والإهلاك — an asset is paid for once and consumed over years, so its cost
- * belongs to the months that used it rather than the month it was bought.
- *
- * The monthly run is a button, not a schedule, and it is safe to press twice: an asset already
- * booked for that month is skipped. The screen reports how many were skipped precisely so that a
- * second press reads as "nothing to do" instead of looking like it failed.
- */
 
 interface Asset {
   id: number; code: string; name: string; category: string | null;
@@ -83,8 +75,6 @@ export default function FixedAssets() {
 
   useEffect(() => { load(); }, []);
 
-  // Ours that used to be columns. The book value is the number an accountant opens this screen
-  // for, but eight of their columns plus five of ours is a table nobody can read across.
   const expandedRow = (r: Asset) => (
     <Space size={32} wrap style={{ paddingInlineStart: 8 }}>
       <span><span style={{ color: '#888' }}>الفئة: </span>{r.category || '—'}</span>
@@ -111,7 +101,6 @@ export default function FixedAssets() {
       .catch(console.error);
   }, [detail]);
 
-  // F3 كانت جاية من `ListToolbar` — الخانة بقت هنا فبتتسجّل هنا.
   const searchRef = useRef<any>(null);
   useScreenShortcuts({ onSearch: () => { searchRef.current?.focus?.(); } });
 
@@ -194,17 +183,9 @@ export default function FixedAssets() {
   const totalCost = active.reduce((s, a) => s + Number(a.cost), 0);
   const totalBook = active.reduce((s, a) => s + Number(a.book_value), 0);
 
-  /**
-   * صفحة الأصل — واحدة، سواء بتسجّل أصل أو بتقرا واحد.
-   *
-   * Registered in a Modal and read in a Drawer: two shapes for one record. The list steps aside
-   * while one is open.
-   */
   const docOpen = creating || !!detail;
 
   const columns: ColumnsType<Asset> = [
-    // Their eight, in their order: `رقم · تاريخ البداية · الاسم · الفرع · فترة الاهلاك ·
-    // نسبه الاهلاك · التكلفه · وصف`. Ours moved into the expanded row.
     { title: 'رقم', dataIndex: 'code', width: 110, render: (v: string) => <Tag>{v}</Tag> },
     { title: 'تاريخ البداية', dataIndex: 'acquisition_date', width: 120,
       render: (d: string) => String(d).slice(0, 10) },
@@ -219,8 +200,6 @@ export default function FixedAssets() {
       render: (id: number | null) => branches.find((b) => b.id === id)?.name || '-' },
     { title: 'فترة الاهلاك', dataIndex: 'useful_life_months', width: 110,
       render: (m: number) => `${m} شهر` },
-    // Derived, not stored. Their form asks for the rate AND the period, which lets the two
-    // contradict each other; one is the other, so we keep the period and show the rate.
     { title: 'نسبه الاهلاك', key: 'rate', width: 110,
       render: (_: any, r: Asset) => (r.useful_life_months
         ? `${(1200 / r.useful_life_months).toFixed(2)}%` : '-') },
@@ -230,7 +209,6 @@ export default function FixedAssets() {
       render: (v: string | null) => v || '-' },
   ];
 
-  // إخفاء وترتيب الأعمدة — نفس المحرك اللي كل الجداول بتستخدمه.
   const tableCols = useTableColumns('fixed-assets', columns, {
     export: { name: 'الاصول الثابتة', rows: filter.filtered },
   });
@@ -265,7 +243,6 @@ export default function FixedAssets() {
         <Button className="sl-f-clear" icon={<ClearOutlined />} onClick={filter.reset}>مسح</Button>
       </>)}
     >
-      {/* ترحيل إهلاك الشهر — سطر صغير فوق الكشف بدل كارت لوحده. */}
       <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 8,
         padding: '6px 4px 10px', borderBottom: '1px solid #f1f5f9', marginBottom: 6 }}>
         <b style={{ color: '#334155' }}>ترحيل إهلاك الشهر:</b>
@@ -348,8 +325,6 @@ export default function FixedAssets() {
                 { value: 'declining_balance', label: 'القسط المتناقص' },
               ]} />
           </Col>
-          {/* الفرع — their fourth column. The API has accepted it since the feature shipped; the
-              form never asked, so it was always null and the column had nothing to show. */}
           <Col xs={24} md={12}>
             <Select allowClear showSearch style={{ width: '100%' }} placeholder="الفرع"
               value={form.branch_id}
@@ -376,7 +351,6 @@ export default function FixedAssets() {
       </Card>
       )}
 
-      {/* الاستبعاد يفضل نافذة: ده قرار على أصل مفتوح قدامك، مش مستند لوحده. */}
       <TabModal
         open={!!disposing} onCancel={() => setDisposing(null)} onOk={dispose}
         title={`استبعاد ${disposing?.name || ''}`} okText="تسجيل الاستبعاد" cancelText="إلغاء"
@@ -398,9 +372,6 @@ export default function FixedAssets() {
         </Space>
       </TabModal>
 
-      {/* الأصل مفتوح — نفس الصفحة. Its cost and its life are what every past depreciation entry
-          was computed from, so they are not editable: the way an asset leaves the books is
-          استبعاد, which posts the disposal instead of rewriting the history. */}
       {detail && (
       <Card
         title={(

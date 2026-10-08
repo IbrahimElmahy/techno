@@ -1,31 +1,3 @@
-"""يشغّل طبقة المطابقة على حسابات الأطراف — المتبقّي، والقفل الأقدم-أولاً، وحالة الدفع.
-
-    python -m src.scripts.activate_reconciliation            # عرض فقط
-    python -m src.scripts.activate_reconciliation --yes
-    python -m src.scripts.activate_reconciliation --account 412
-
-**الآلة كانت مبنية ومطفية.** `reconcile_service` كامل — متبقّي، ربط جزئي، رقم
-مطابقة، فك، حالة دفع زي أودو بالأسماء — بس ولا حساب متعلّم «قابل للتسوية»، فـ
-`amount_residual` كانت NULL على ٥٢٬٦٧١ سطر، و`partial_reconcile` فاضي، و
-`payment_state` NULL على ٢٠٬٨٣٩ قيد. يعني كشف الحساب بيعرف «الرصيد كام» ومابيعرفش
-«الفاتورة دي عليها كام لسه» — وده السؤال اللي بيتفتح الكشف عشانه.
-
-السكربت بيعمل تلاتة على حسابات العملاء والموردين:
-
-1. يعلّم الحساب `reconcilable` — العمود ده هو المفتاح، والنوع سايبينه زي ما هو
-   عشان مانلمسش شجرة الحسابات ولا التقارير اللي بتقرا `account_type`.
-2. يحط المتبقّي الابتدائي على كل سطر مرحّل: قيمة السطر بإشارته.
-3. يقفل المفتوح على بعضه **الأقدم استحقاقاً الأول** — وده اللي أي حد بيعمله في
-   دماغه وهو بيبص على الكشف، وهو نفس الافتراض اللي تقرير الأعمار ماشي بيه أصلاً.
-   الفرق إنه بقى مكتوب: ليه رقم، وينفع يتفك.
-
-**الحارس: المطابقة بتنقل المتبقّي مابتخلقوش.** مجموع المتبقّي على أي حساب لازم
-يساوي مجموع سطوره بإشارتها — قبل القفل وبعده. لو حساب واحد خالف، السكربت بيرجع كل
-حاجة ويقف: رصيد اتغيّر في سكربت المفروض مايغيّرش أرصدة يبقى الغلط في الآلة مش في
-الداتا.
-
-Idempotent: السطر اللي عليه متبقّي مابيتحطّش تاني، والمقفول مابيتقفلش مرتين.
-"""
 from __future__ import annotations
 
 import sys
@@ -40,7 +12,6 @@ from src.services import ledger_service, reconcile_service
 
 
 def _party_account_ids(db) -> set[int]:
-    """حسابات العملاء والموردين — من جداول الربط، مش من اسم الحساب."""
     ids: set[int] = set()
     from src.models.customer import CustomerAccount
 
@@ -49,7 +20,7 @@ def _party_account_ids(db) -> set[int]:
         from src.models.supplier import SupplierAccount
 
         ids |= {row for (row,) in db.execute(select(SupplierAccount.account_id)).all() if row}
-    except Exception:  # noqa: BLE001 — مافيش جدول موردين منفصل في كل النسخ
+    except Exception:  # noqa: BLE001
         pass
     return ids
 

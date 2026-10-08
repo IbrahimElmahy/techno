@@ -17,21 +17,6 @@ import { numeralsLocale } from '../utils/money';
 import { columnsFromTable, exportCsv as writeCsv } from '../utils/exportCsv';
 import { printReport, type PrintColumn } from '../print/reportSheet';
 
-/**
- * حركة الكوبون — صف لكل ورقة: مين كان ماسك الدفتر، اتسلّمت لمين ويوم إيه وعلى أنهي
- * مستند، ورجعت من أنهي سباك ولمين.
- *
- * ده نفس اللي نظامهم القديم بيجاوبه من «صف الورقة» عنده. عندنا الكلام متفرّق على العهدة
- * ومستند الصرف ودفتر الفاتورة والاستلام، والسيرفر هو اللي بيلمّه (`lib/coupon_lifecycle`).
- *
- * **الترقيم في السيرفر.** الورق عشرات الآلاف — تحميله كله في الجدول بيقفّل الشاشة، والعدّ
- * لكل حالة بييجي من السيرفر على كل المفلتر مش على الصفحة المعروضة. التصدير والطباعة
- * بيطلبوا الكل مرة واحدة.
- *
- * الشريحة دي بتعرض نفسها في صفحة «تقارير ما بعد البيع» — فالـhook بيرجّع الفلاتر والأزرار
- * والجدول، والصفحة بتحطهم في أماكنهم، بدل ما الشريحة تبقى صفحة لوحدها برّه التبويبات.
- */
-
 export interface LifecycleRow {
   key: string;
   serial: string;
@@ -77,7 +62,6 @@ const STATUS_OPTIONS = [
 const num = (v: any) => Number(v || 0).toLocaleString(numeralsLocale(), { maximumFractionDigits: 0 });
 const money = (v: any) => Number(v || 0).toLocaleString(numeralsLocale(), { maximumFractionDigits: 2 });
 const dash = (v: any) => (v === null || v === undefined || v === '' ? '-' : v);
-// التصدير بيطلب الكل — نفس حد السيرفر.
 const ALL_ROWS = 100000;
 
 export function useCouponLifecycle(range: [Dayjs, Dayjs] | null, active: boolean) {
@@ -94,7 +78,6 @@ export function useCouponLifecycle(range: [Dayjs, Dayjs] | null, active: boolean
   const [kind, setKind] = useState<string | undefined>();
   const [status, setStatus] = useState<string | undefined>();
   const [onlyUnlinked, setOnlyUnlinked] = useState(false);
-  // الرقم بيتكتب حرف حرف — الطلب بيتبعت لما يخلص (Enter أو مسح)، مش مع كل ضغطة.
   const [serialText, setSerialText] = useState('');
   const [serialToText, setSerialToText] = useState('');
   const [serialQuery, setSerialQuery] = useState<{ from: string; to: string }>({ from: '', to: '' });
@@ -123,7 +106,6 @@ export function useCouponLifecycle(range: [Dayjs, Dayjs] | null, active: boolean
   const repOptions = useMemo(
     () => repPickerOptions(sortByName(reps, (r: any) => r.full_name || r.username || ''), repId),
     [reps, repId]);
-  // اللي اتسلّمله الدفتر تاجر/معرض/موزع، واللي رجّعه سباك — قايمتين عشان الاختيار مايتلخبطش.
   const partyOptions = useMemo(() => sortByName(
     customers.filter((c: any) => c.customer_type !== 'plumber'), (c: any) => c.name || '')
     .map((c: any) => ({ value: c.id, label: String(c.name ?? '') })), [customers]);
@@ -143,7 +125,6 @@ export function useCouponLifecycle(range: [Dayjs, Dayjs] | null, active: boolean
     if (kind) p.kind = kind;
     if (status) p.status = status;
     if (onlyUnlinked) p.only_unlinked = true;
-    // رقم واحد = ورقة واحدة؛ رقمين = نطاق «من … إلى».
     const from = serialQuery.from.trim();
     const to = serialQuery.to.trim();
     if (from && to) { p.serial_from = from; p.serial_to = to; } else if (from) p.serial = from;
@@ -167,8 +148,6 @@ export function useCouponLifecycle(range: [Dayjs, Dayjs] | null, active: boolean
     }
   }, [params, page, pageSize]);
 
-  // الشريحة بتتحمّل لما تتفتح بس — الحساب في السيرفر تقيل نسبياً، ومالوش لازمة لو حد
-  // فاتح «كوبونات السباكين».
   useEffect(() => {
     if (!active) return;
     setPage(1);
@@ -230,7 +209,6 @@ export function useCouponLifecycle(range: [Dayjs, Dayjs] | null, active: boolean
     defaultHidden: ['custody_doc', 'party_type'],
   });
 
-  // التصدير والطباعة على كل المفلتر — الصفحة المعروضة جزء منه بس.
   const fetchAll = async (): Promise<LifecycleRow[] | null> => {
     try {
       const res = await api.get('/api/v1/after-sales-reports/coupons/lifecycle', {
@@ -242,7 +220,6 @@ export function useCouponLifecycle(range: [Dayjs, Dayjs] | null, active: boolean
       return null;
     }
   };
-  // الأعمدة اللي بتتعرض بنص مركّب (النوع) بتتصدّر بالتسمية مش بالكود.
   const flatColumns = () => columnsFromTable<LifecycleRow>(cols.columns as any[]).map((c) => (
     c.value === 'party_type'
       ? { ...c, value: (r: LifecycleRow) => (r.party_type ? (typeLabel[r.party_type] || r.party_type) : '') }
@@ -339,7 +316,6 @@ export function useCouponLifecycle(range: [Dayjs, Dayjs] | null, active: boolean
     </>
   );
 
-  // الأعداد دي على كل الورق المفلتر (من غير فلتر الحالة) — مش على الصفحة.
   const footer = summary ? (
     <span className="sl-foot">
       <span>العدد: <b>{num(total)}</b></span>

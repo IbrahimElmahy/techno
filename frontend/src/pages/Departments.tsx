@@ -22,30 +22,6 @@ import EmployeeFormModal, {
 } from '../components/EmployeeFormModal';
 import type { Employee } from '../components/EmployeeFormModal';
 
-/**
- * الأقسام — الهيكل التنظيمي.
- *
- * «القسم» was a free text box on the employee card, and free text is how «المبيعات» and «مبيعات»
- * and «قسم المبيعات» become three departments in a report nobody can total. It also had nowhere to
- * put a manager, a parent, or a cost centre — so «تكلفة أجور قسم المخازن» had no answer at all.
- *
- * The tree is shown as a tree rather than a flat list with a «القسم الأب» column, because the
- * shape IS the information: «مبيعات القاهرة» sitting under «المبيعات» is the thing somebody opened
- * this screen to see.
- *
- * The import button is offered once and stays: it is safe to press again (it only touches
- * employees with a name and no department yet) and pressing it is how the old free text becomes
- * rows without anybody retyping ninety names.
- *
- * **موظفين القسم من هنا.** العدد لوحده بيقول «فيه ٧» ومابيقولش مين — فاللي بيفتح الشاشة عشان
- * يرتّب قسم كان بيروح شاشة الموظفين ويدوّر بالاسم واحد واحد. دلوقتي العدد بيتضغط ويفتح موظفين
- * القسم، ومنهم إضافة (القسم متعبّي) وتعديل (ومنه النقل لقسم تاني) وإيقاف وحذف — بنفس فورم شاشة
- * الموظفين (`EmployeeFormModal`)، مش نسخة منه.
- *
- * **الإقفال غير الحذف.** الإقفال بيشيل القسم من القوايم ويسيب اسمه مقروء على اللي اتسجّل عليه،
- * والحذف للقسم اللي اتعمل بالغلط ومحدش اتربط بيه — والسيرفر بيرفضه بالأرقام لو عليه حاجة.
- */
-
 interface Department {
   id: number;
   code: string;
@@ -65,7 +41,6 @@ interface TreeRow extends Department {
   children?: TreeRow[];
 }
 
-/** بيحوّل القايمة المسطحة لشجرة. أي قسم أبوه مش ظاهر بيتعلّق في الجذر مش بيختفي. */
 export function toTree(rows: Department[]): TreeRow[] {
   const byId = new Map<number, TreeRow>(rows.map((r) => [r.id, { ...r }]));
   const roots: TreeRow[] = [];
@@ -74,8 +49,6 @@ export function toTree(rows: Department[]): TreeRow[] {
     if (parent) {
       (parent.children ??= []).push(row);
     } else {
-      // A row whose parent was filtered out (or deactivated) still has to appear — dropping it
-      // would make a department vanish from the screen with nothing said.
       roots.push(row);
     }
   }
@@ -100,7 +73,6 @@ export default function Departments() {
   const [form, setForm] = useState({ ...emptyForm });
   const [saving, setSaving] = useState(false);
 
-  // موظفين القسم المفتوح — بيتجابوا من السيرفر مفلترين بالقسم (والفرع، زي القايمة كلها).
   const [viewing, setViewing] = useState<Department | null>(null);
   const [staff, setStaff] = useState<Employee[]>([]);
   const [staffLoading, setStaffLoading] = useState(false);
@@ -109,9 +81,6 @@ export default function Departments() {
   const [empOpen, setEmpOpen] = useState(false);
   const [empEditing, setEmpEditing] = useState<Employee | null>(null);
 
-  // الموارد البشرية متفصّلة بين الفروع: موظف الفرع بيشوف أقسام فرعه والأقسام المشتركة (مالهاش
-  // فرع)، لكن المشتركة مابيغيّرهاش — تغييرها بيأثر على كل الفروع، والسيرفر بيرفضه (٤٠٣). فالأزرار
-  // مش معروضة له أصلاً بدل ما يضغط ويترفض. نفس قاعدة `branch_scope.sees_all_branches`.
   const { user } = useAuth();
   const seesAll = !user?.branch_id || roleForAccess(user?.role) === 'system_admin';
   const canChange = (r: Department) => seesAll || r.branch_id !== null;
@@ -135,7 +104,7 @@ export default function Departments() {
     try {
       const res = await api.get('/api/v1/employees', { params: { department_id: dept.id } });
       setStaff(res.data || []);
-    } catch { /* interceptor */ } finally { setStaffLoading(false); }
+    } catch {} finally { setStaffLoading(false); }
   };
 
   const openStaff = (dept: Department) => {
@@ -162,23 +131,16 @@ export default function Departments() {
   const filter = useListFilter(rows, {
     search: (r) => [r.code, r.name, r.manager_name],
     filters: { active: (r, v) => (v === 'yes' ? r.active : !r.active) },
-    // Closed departments are out of the way by default — they are history, and a tree cluttered
-    // with them is harder to read than one that needs a click to show them.
     initialValues: { active: 'yes' },
   });
-  // The tree is built from what the search left, so filtering never hides a matched row behind a
-  // parent that did not match.
   const tree = useMemo(() => toTree(filter.filtered), [filter.filtered]);
 
-  // F3 كانت جاية من `ListToolbar` — الخانة بقت هنا فبتتسجّل هنا.
   const searchRef = useRef<any>(null);
   useScreenShortcuts({ onSearch: () => { searchRef.current?.focus?.(); } });
-  // قوايم الفلاتر — نفس اللي كانت في `ListToolbar` (أكتر من قيمة، والمعنى «أي واحدة منهم»).
   const multiSelect = (key: string, placeholder: string, options: { value: any; label: string }[]) => {
     const v = filter.values[key];
     return (
       <Select allowClear showSearch mode="multiple" maxTagCount="responsive" placeholder={placeholder}
-        // القيمة الابتدائية (`initialValues`) ممكن تبقى مفردة — وضع المتعدد بيستنى قايمة.
         value={v === undefined || v === null || v === '' ? undefined : (Array.isArray(v) ? v : [v])}
         onChange={(x) => filter.setValue(key, Array.isArray(x) && !x.length ? undefined : x)}
         options={options} filterOption={searchFilter} filterSort={searchRank} />
@@ -226,10 +188,8 @@ export default function Departments() {
       setCreating(false);
       load();
     } catch {
-      // الرسالة بيطلّعها الـinterceptor — كانت بتطلع مرتين.
     } finally { setSaving(false); }
   };
-  // F9 حفظ وهو مفتوح — زي باقي الفورمات.
   useScreenShortcuts({ onSave: save }, creating);
 
   const deactivate = async (row: Department) => {
@@ -237,7 +197,7 @@ export default function Departments() {
       await api.delete(`/api/v1/hr/departments/${row.id}`);
       message.success('اتقفل');
       load();
-    } catch { /* interceptor */ }
+    } catch {}
   };
 
   const reactivate = async (row: Department) => {
@@ -245,23 +205,18 @@ export default function Departments() {
       await api.patch(`/api/v1/hr/departments/${row.id}`, { active: true });
       message.success('اتفعّل');
       load();
-    } catch { /* interceptor */ }
+    } catch {}
   };
 
-  // مسح نهائي — السيرفر بيرفضه لو القسم عليه أي موظف (حتى موقوف) أو قسم فرعي أو مسير، والرسالة
-  // فيها الأرقام وبتقول «استعمل إقفال».
   const remove = async (row: Department) => {
     try {
       await api.delete(`/api/v1/hr/departments/${row.id}`, { params: { hard: true } });
       message.success('اتمسح القسم');
       if (viewing?.id === row.id) setViewing(null);
       load();
-    } catch { /* interceptor */ }
+    } catch {}
   };
 
-  // ---- موظفين القسم
-  // بعد أي تغيير على موظف: القايمة المفتوحة، وعداد الأقسام (ممكن يكون اتنقل لقسم تاني)، وقايمة
-  // «مدير القسم».
   const afterStaffChange = () => { loadStaff(); load(); loadEmployees(); };
   const newEmployee = () => { setEmpEditing(null); setEmpOpen(true); };
   const editEmployee = (e: Employee) => { setEmpEditing(e); setEmpOpen(true); };
@@ -290,7 +245,7 @@ export default function Departments() {
         ? `اتعمل ${created} قسم، واترّبط ${linked} موظف`
         : 'لا توجد أقسام جديدة — كل الموظفين مرتبطون');
       load();
-    } catch { /* interceptor */ }
+    } catch {}
   };
 
   const columns: ColumnsType<TreeRow> = [
@@ -305,7 +260,6 @@ export default function Departments() {
     { title: 'المدير', dataIndex: 'manager_name', key: 'manager_name',
       render: (v: string | null) => v || <span style={{ color: '#6b6b6b' }}>—</span> },
     { title: 'عدد الموظفين', dataIndex: 'employee_count', key: 'employee_count', width: 120,
-      // العدد بيتضغط ويفتح موظفين القسم — العدد لوحده مابيقولش مين.
       render: (v: number, r) => (
         <Tooltip title="عرض موظفين القسم">
           <Tag color={v ? 'blue' : undefined} style={{ cursor: 'pointer' }}
@@ -353,9 +307,6 @@ export default function Departments() {
     locked: ['name'],
     export: { name: 'الأقسام', rows: tree },
   });
-  // F2 على الزرار نفسه (`data-shortcut`) زي شاشة الموظفين — الكيبورد بيدوّر على الزرار
-  // المعلّم لما مافيش شاشة سجّلت `onNew` بنفسها.
-  // السطر بيفتح التعديل — وللقسم اللي مايقدرش يغيّره بيفتح موظفينه بدل فورم هيترفض حفظه.
   const kb = useTableKeyboard({
     rows: tree, rowKey: (r: TreeRow) => r.id,
     onOpen: (r: TreeRow) => (canChange(r) ? openEdit(r) : openStaff(r)),
@@ -372,7 +323,6 @@ export default function Departments() {
       actions={(<>
         <Button data-shortcut="F2" type="primary" className="sl-create" icon={<PlusOutlined />}
           onClick={openCreate}>قسم جديد</Button>
-        {/* الترحيل بيلف على موظفين كل الفروع — للإدارة العامة بس (السيرفر بيرفضه لغيرها). */}
         {seesAll && (
           <Button icon={<ImportOutlined />} onClick={runImport}>ترحيل الأقسام القديمة</Button>
         )}
@@ -454,8 +404,6 @@ export default function Departments() {
               value={form.parent_id}
               onChange={(v) => setForm({ ...form, parent_id: v })}
               options={rows
-                // A department cannot be its own parent — the server refuses it, but offering it
-                // in the list is an invitation to hit an error for no reason.
                 .filter((r) => r.id !== editing?.id && r.active)
                 .map((r) => ({ value: r.id, label: r.name }))} filterOption={searchFilter} filterSort={searchRank}/>
           </Col>
@@ -480,7 +428,6 @@ export default function Departments() {
             <Select
               allowClear showSearch style={{ width: '100%' }}
               value={form.branch_id}
-              // موظف الفرع: السيرفر بيحط فرعه هو مهما اتختار — فالخانة مقفولة بدل ما توهم.
               disabled={!seesAll}
               onChange={(v) => setForm({ ...form, branch_id: v })}
               options={branches.map((b) => ({ value: b.id, label: b.name }))} filterOption={searchFilter} filterSort={searchRank}/>
@@ -509,7 +456,6 @@ export default function Departments() {
             {!viewing.active && <Tag>مقفول</Tag>}
           </Space>
         )}
-        // الإضافة لقسم مقفول بيرفضها السيرفر — فالزرار مش معروض أصلاً.
         extra={viewing?.active ? (
           <Button type="primary" icon={<UserAddOutlined />} onClick={newEmployee}>
             موظف جديد في القسم
@@ -571,7 +517,6 @@ export default function Departments() {
           ]}
         />
         <div style={{ padding: '10px 4px', borderTop: '1px solid #f1f5f9' }}>
-          {/* `sl-foot` بيتظبط جوّه `ListPage` بس — هنا في الدرج كان بيلزق الرقمين في بعض. */}
           <Space size={24}>
             <span>على رأس العمل: <b>{staff.filter((e) => e.active).length}</b></span>
             <span>موقوفين: <b>{staff.filter((e) => !e.active).length}</b></span>
@@ -581,7 +526,6 @@ export default function Departments() {
 
       <EmployeeFormModal
         open={empOpen} employee={empEditing}
-        // الموظف الجديد من هنا بيبدأ في القسم ده وفرعه — من غير كده كان لازم يتختار تاني.
         defaults={viewing
           ? { department_id: viewing.id, branch_id: viewing.branch_id ?? undefined } : undefined}
         onClose={() => setEmpOpen(false)} onSaved={afterStaffChange}

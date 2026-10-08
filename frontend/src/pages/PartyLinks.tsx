@@ -10,15 +10,6 @@ import ListPage, { ListStat } from '../components/ListPage';
 import { useQueryTab } from '../components/useQueryTab';
 import { searchFilter, searchRank } from '../utils/arabicSort';
 
-/**
- * الأطراف المرتبطة — المرحلة ٢ (٢٠٢٦-١٠-٠٦).
- *
- * الشخص (أو الفرع) اللي بنبيع له ونشتري منه ليه كارت عميل وكارت مورد — في a5 وعندنا. هنا
- * بيتربطوا في «طرف» واحد: أرصدته كلها في سطر وصافيها، ومنه «مقاصة» بين اللي عليه كعميل
- * واللي ليه كمورد بقيد واحد من غير فلوس. والكروت نفسها مابتتلمّش — كل كارت بحسابه وتاريخه.
- *
- * الصافي موجب = عليه لينا، سالب = ليه عندنا.
- */
 interface Member {
   kind: 'customer' | 'supplier'; ref_id: number; name: string; role: string; code: string | null;
   branch_name: string | null; balance: string;
@@ -113,7 +104,7 @@ export default function PartyLinks() {
       message.success('اتربطوا');
       setLinkOpen(false);
       load();
-    } catch { /* المعترض العام */ } finally {
+    } catch {} finally {
       setSaving(false);
     }
   };
@@ -123,7 +114,7 @@ export default function PartyLinks() {
       await link([{ kind: 'customer', ref_id: s.customer.ref_id }, { kind: 'supplier', ref_id: s.supplier.ref_id }]);
       message.success(`اتربط «${s.name}»`);
       load();
-    } catch { /* المعترض العام */ }
+    } catch {}
   };
 
   const linkAll = async () => {
@@ -132,7 +123,7 @@ export default function PartyLinks() {
       try {
         await link([{ kind: 'customer', ref_id: s.customer.ref_id }, { kind: 'supplier', ref_id: s.supplier.ref_id }]);
         n += 1;
-      } catch { /* اللي فشل بيفضل في الاقتراحات */ }
+      } catch {}
     }
     message.success(`اتربط ${n} طرف`);
     load();
@@ -143,7 +134,7 @@ export default function PartyLinks() {
       await api.delete(`/api/v1/party-groups/${g.id}/members/${m.kind}/${m.ref_id}`);
       message.success('اتفك');
       load();
-    } catch { /* المعترض العام */ }
+    } catch {}
   };
 
   const openNetting = (g: Group) => {
@@ -177,7 +168,7 @@ export default function PartyLinks() {
       message.success('اتسجّلت المقاصة');
       setNetGroup(null);
       load();
-    } catch { /* المعترض العام */ } finally {
+    } catch {} finally {
       setSaving(false);
     }
   };
@@ -287,7 +278,6 @@ export default function PartyLinks() {
           </Form.Item>
           <Form.Item name="customer_ids" label="كروت العملاء / الموظفين / الفروع">
             <Select mode="multiple" showSearch filterOption={searchFilter} filterSort={searchRank}
-              // الاسم بس (طلب العميل ٢٠٢٦-١٠-٠٧)؛ الكود في `search` فالبحث بيه شغّال.
               options={customers.map((c: any) => ({ value: c.id, label: c.name, search: c.code || '' }))} />
           </Form.Item>
           <Form.Item name="supplier_ids" label="كروت الموردين">

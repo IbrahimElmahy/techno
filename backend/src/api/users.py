@@ -1,4 +1,3 @@
-"""Users router (T031): list/create/get/deactivate. FR-003, FR-006, FR-007."""
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -30,16 +29,10 @@ class UserCreate(BaseModel):
     full_name: str
     branch_id: int | None = None
     territory_id: int | None = None
-    # مشرف المناديب — للمندوب بس، ولازم يكون مستخدم دوره «مشرف مناديب».
     supervisor_id: int | None = None
 
 
 class UserUpdate(BaseModel):
-    """(v4) Edit a user. Password is optional — send it only to reset it."""
-
-    # اسم الدخول نفسه بيتعدّل. كان مقفول بعد الإنشاء، والأسماء اللي اتولدت مع نقل a5
-    # طويلة ومحدش بيفتكرها — واللي بيدخل بيها كل يوم هو اللي يقرر تبقى إيه. الفريد
-    # بيتفحص هنا، ومحدش بيقدر ياخد اسم حد تاني.
     username: str | None = Field(default=None, min_length=2, max_length=50)
     full_name: str | None = None
     role: RoleName | None = None
@@ -47,18 +40,11 @@ class UserUpdate(BaseModel):
     territory_id: int | None = None
     active: bool | None = None
     password: str | None = None
-    # `null` صريح = شيل المشرف؛ مش مبعوت = ماتلمسوش (`model_fields_set`).
     supervisor_id: int | None = None
 
 
 def _check_supervisor(db: Session, supervisor_id: int | None, role,
                       branch_id: int | None) -> int | None:
-    """المشرف اللي هيتسجّل على المستخدم — أو None.
-
-    المشرف للمندوب بس: أي دور تاني بيتشال منه (مدير مبيعات مالوش «مشرف مناديب» فوقه).
-    والرقم لازم يشاور على مستخدم دوره «مشرف مناديب» فعلاً — وإلا المندوب يبقى «تحت»
-    محاسب أو قارئ، وشاشة المشرف عنده فاضية من غير ما حد يعرف ليه.
-    """
     name = getattr(role, "value", role)
     if not supervisor_id or name != RoleName.sales_rep.value:
         return None
@@ -67,7 +53,6 @@ def _check_supervisor(db: Session, supervisor_id: int | None, role,
     if sup is None or sup_role is None or sup_role.name != RoleName.rep_supervisor:
         raise HTTPException(422, {"code": "validation",
                                   "message": "المشرف لازم يكون مستخدم دوره «مشرف مناديب»."})
-    # **المشرف للفرع بتاعه بس** (طلب العميل ٢٠٢٦-١٠-٠٦): مندوب فرع تاني مايتسجّلش تحته.
     if sup.branch_id is None or sup.branch_id != branch_id:
         raise HTTPException(422, {"code": "validation",
                                   "message": "المشرف لازم يكون من نفس فرع المندوب."})
@@ -94,24 +79,15 @@ def list_users(
     db: Session = Depends(get_db),
 ) -> list[UserOut]:
     stmt = select(User)
-    # branch-scoped roles see only their branch (FR-007) — واللي مالوش فرع بيشوف الكل.
     scoped_branch = branch_scope.visible_branch_id(current)
     if scoped_branch is not None:
         stmt = stmt.where(User.branch_id == scoped_branch)
-    # الأدوار تتحمّل مرة وتفضل ماسكينها: خريطة الهوية في الجلسة ضعيفة، فـ`db.get` في
-    # `_to_out` كان بيرجع يسأل القاعدة عن نفس الدور مع كل مستخدم (٦٢ استعلام للقايمة).
-    _roles = db.scalars(select(Role)).all()  # noqa: F841 — المرجع هو اللي بيمسكهم
+    _roles = db.scalars(select(Role)).all()  # noqa: F841
     return [_to_out(db, u) for u in db.scalars(stmt).all()]
 
 
 
 def _guard_elevated(current: CurrentUser, target_role) -> None:
-    """**حساب الأدمن (والمالك) مايتلمسش إلا من المالك.**
-
-    ده الفرق الوحيد اللي بيخلّي المالك فوق الأدمن فعلاً: الأدمن بيدير النظام،
-    والمالك بيدير الأدمن. من غير الشرط ده أي مدير نظام يقدر يعطّل حساب صاحب
-    الشركة أو يغيّر دوره — وده مش تسلسل، ده باب.
-    """
     name = getattr(target_role, "value", target_role)
     if name in (RoleName.system_admin.value, RoleName.owner.value) and not current.is_owner:
         raise HTTPException(
@@ -120,8 +96,6 @@ def _guard_elevated(current: CurrentUser, target_role) -> None:
              "message": "حساب مدير النظام أو المالك مايتعدّلش إلا من المالك."})
 
 
-#: الأدوار اللي اللي مش أدمن (مدير الفرع) يقدر يعمل بيها مستخدمين أو يحوّل لها — **أقل منه**.
-#: (٢٠٢٦-١٠-٠٥) كان مدير الفرع يقدر يعمل «مدير نظام» أو «مالك» أو مدير فرع تاني جوّه فرعه.
 BELOW_BRANCH_MANAGER = {
     RoleName.sales_rep, RoleName.sales_manager, RoleName.purchasing_manager,
     RoleName.accountant, RoleName.after_sales_staff, RoleName.viewer,
@@ -146,18 +120,15 @@ def create_user(
     current: CurrentUser = Depends(require_capability(CAP_USER_WRITE)),
     db: Session = Depends(get_db),
 ) -> UserOut:
-    # Branch-scoped creators may only create within their own branch.
     _guard_elevated(current, body.role)
     _guard_role_ceiling(current, body.role)
     if not current.is_admin:
-        # من غير فرع ⇒ فرع اللي بيعمله (الشاشة كانت بتسيبها فاضية وتترفض من غير ما يبان ليه).
         if body.branch_id is None:
             body.branch_id = current.branch_id
         if body.branch_id != current.branch_id:
             raise HTTPException(403, {"code": "forbidden",
                                       "message": "المستخدم الجديد لازم يبقى على فرعك."})
         ensure_branch_access(current, body.branch_id)
-    # Validate required scope by role.
     if body.role in (RoleName.branch_manager, RoleName.purchasing_manager, RoleName.sales_manager,
                      RoleName.rep_supervisor):
         if body.branch_id is None:
@@ -217,16 +188,15 @@ def update_user(
     current: CurrentUser = Depends(require_capability(CAP_USER_WRITE)),
     db: Session = Depends(get_db),
 ) -> UserOut:
-    """(v4) Edit a user: name, role, scope, active, and optional password reset."""
     user = db.get(User, user_id)
     if user is None:
         raise HTTPException(404, {"code": "not_found", "message": "User not found"})
     _guard_elevated(current, db.get(Role, user.role_id).name)
-    if user.id != current.id:   # ولا يلمس مدير فرع زيه — بس يعدّل نفسه عادي
+    if user.id != current.id:
         _guard_role_ceiling(current, db.get(Role, user.role_id).name)
     if body.role is not None:
-        _guard_elevated(current, body.role)   # ولا يترقّى حد لأدمن إلا من المالك
-        if body.role != db.get(Role, user.role_id).name:   # نفس الدور مش ترقية
+        _guard_elevated(current, body.role)
+        if body.role != db.get(Role, user.role_id).name:
             _guard_role_ceiling(current, body.role)
     if not current.is_admin:
         ensure_branch_access(current, user.branch_id)
@@ -235,7 +205,6 @@ def update_user(
     new_role = body.role or db.get(Role, user.role_id).name
     branch_id = body.branch_id if body.branch_id is not None else user.branch_id
     territory_id = body.territory_id if body.territory_id is not None else user.territory_id
-    # Same scope rules as creation.
     if new_role in (RoleName.branch_manager, RoleName.purchasing_manager, RoleName.sales_manager):
         if branch_id is None:
             raise HTTPException(422, {"code": "validation", "message": f"{new_role.value} needs branch_id"})
@@ -250,8 +219,6 @@ def update_user(
                                       "message": "اسم المستخدم ماينفعش يبقى فاضي."})
         clash = db.scalar(select(User).where(User.username == uname, User.id != user.id))
         if clash is not None:
-            # الرسالة بتقول الاسم اللي اتاخد — «الاسم مستخدم» لوحدها بتخلّي اللي
-            # بيغيّر أسماء كتير ورا بعض يدوّر على أنهي واحد فيهم.
             raise HTTPException(409, {"code": "conflict",
                                       "message": f"«{uname}» متاخد لمستخدم تاني."})
         user.username = uname
@@ -272,13 +239,11 @@ def update_user(
         user.active = body.active
     if body.password:
         user.password_hash = hash_password(body.password)
-    # المشرف: المبعوت صراحةً بيتكتب (و`null` بيشيله)، والدور اللي اتغيّر لغير مندوب بيشيله.
     if "supervisor_id" in body.model_fields_set:
         user.supervisor_id = _check_supervisor(db, body.supervisor_id, new_role, user.branch_id)
     elif new_role != RoleName.sales_rep:
         user.supervisor_id = None
     elif user.supervisor_id is not None:
-        # المندوب اتنقل فرع: مشرفه القديم من فرع تاني بيتشال بدل ما يفضل يشوفه.
         sup = db.get(User, user.supervisor_id)
         if sup is None or sup.branch_id != user.branch_id:
             user.supervisor_id = None
@@ -286,7 +251,6 @@ def update_user(
         if user.branch_id is None:
             raise HTTPException(422, {"code": "validation",
                                       "message": "مشرف المناديب لازم يبقى على فرع."})
-        # المشرف اتنقل فرع: مناديب فرعه القديم بيتفكّوا منه.
         for rep in db.scalars(select(User).where(User.supervisor_id == user.id,
                                                   User.branch_id != user.branch_id)).all():
             rep.supervisor_id = None
@@ -334,18 +298,6 @@ def delete_user(
     current: CurrentUser = Depends(require_capability(CAP_USER_DEACTIVATE)),
     db: Session = Depends(get_db),
 ) -> None:
-    """يمسح الحساب **بشرط إنه ماشتغلش** — وإلا بيقول شغل مين هيضيع.
-
-    الحساب اللي عليه شغل مايتمسحش أبداً: المندوب اسمه على الفاتورة، واللي راجع
-    مستند اسمه في سجل المراجعة، وده مش بيانات المستخدم — ده بيانات الشركة عن
-    اللي حصل. مسحه بيسيب فواتير من غير مندوب وسطور مراجعة بتشاور على حد راح.
-
-    فالمسح هنا **للغلط في الإدخال بس**: حساب اتعمل باسم مكرر أو بالخطأ ومحدش
-    استعمله. أي حاجة غير كده بيرد ٤٠٩ ويقول الأرقام، والصح ساعتها «تعطيل» —
-    الحساب مايدخلش تاني وشغله يفضل منسوب له.
-
-    والتعطيل موجود جنبه في نفس الشاشة، فمافيش داعي إن المسح يعمل شغله بالعافية.
-    """
     user = db.get(User, user_id)
     if user is None:
         raise HTTPException(404, {"code": "not_found", "message": "المستخدم مش موجود"})
@@ -357,8 +309,6 @@ def delete_user(
     if not current.is_admin:
         ensure_branch_access(current, user.branch_id)
 
-    # كل جدول بيشاور على `user.id` — بيتقري من القاعدة نفسها مش من الموديلز، عشان
-    # جدول اتضاف ونسيوا يحدّثوا القايمة مايعديش من غير ما يتعدّ.
     from sqlalchemy import inspect as sa_inspect
     from sqlalchemy import text
 
@@ -371,11 +321,8 @@ def delete_user(
             if fk.get("referred_table") != "user":
                 continue
             col = fk["constrained_columns"][0]
-            # مناديب تحت مشرف مش «شغل» عليه — ربط بيتفك قبل المسح تحت.
             if (table, col) == ("user", "supervisor_id"):
                 continue
-            # ربط المندوب بموظف (مخزن عربيته) من شاشة المناديب مش شغل — بيتفك تحت.
-            # من غيره مندوب اتعمل بالغلط واتحدّد له مخزن مايتمسحش أبداً.
             if (table, col) == ("employee", "user_id"):
                 continue
             n = db.execute(text(f'SELECT count(*) FROM "{table}" WHERE {col} = :i'),
@@ -397,12 +344,10 @@ def delete_user(
         entity_type="user",
         entity_id=user.id,
         before={"username": user.username, "full_name": user.full_name,
-                # `user.role` علاقة (صف Role) مش نص — كانت بتوقع المسح كله بـ500.
                 "role": getattr(getattr(user.role, "name", user.role), "value",
                                 str(getattr(user.role, "name", user.role)))},
     )
     db.execute(text('UPDATE employee SET user_id = NULL WHERE user_id = :i'), {"i": user.id})
-    # المناديب اللي كانوا تحته بيفضلوا من غير مشرف — مش بيتمنع المسح عشانهم.
     for rep in db.scalars(select(User).where(User.supervisor_id == user.id)).all():
         rep.supervisor_id = None
     db.flush()

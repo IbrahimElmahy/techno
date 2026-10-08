@@ -44,13 +44,6 @@ import { APP_SCROLL_CLASS } from './tableDefaults';
 
 const { Header, Sider, Content } = Layout;
 
-/**
- * «قارئ» reaches the screens whose job is looking — lists, cards, statements, reports — and none of
- * the entry screens. A viewer cannot post on those anyway; offering a screen where every button is
- * refused is worse than not offering it, because the user has to discover the refusal one click at
- * a time. The backend is the real guard either way: this only decides what is worth showing.
- */
-// Role translations in Arabic
 const ROLE_LABELS: Record<RoleName, string> = {
   owner: 'المالك',
   system_admin: 'مدير النظام الرئيسي',
@@ -60,12 +53,10 @@ const ROLE_LABELS: Record<RoleName, string> = {
   after_sales_staff: 'موظف خدمة ما بعد البيع',
   sales_rep: 'مندوب مبيعات',
   accountant: 'المحاسب',
-  // «قارئ» — يشوف ويطبع، ما يغيّرش حاجة.
   viewer: 'قارئ (عرض فقط)',
   rep_supervisor: 'مشرف مناديب',
 };
 
-/** One icon per top-level section. Their menu has no icons; ours does, and it costs nothing. */
 const SECTION_ICONS: Record<string, React.ReactNode> = {
   'grp-setup': <ApartmentOutlined />,
   'grp-sales': <ShopOutlined />,
@@ -76,29 +67,16 @@ const SECTION_ICONS: Record<string, React.ReactNode> = {
   'grp-settings': <SettingOutlined />,
   'grp-extra': <MobileOutlined />,
   'grp-fleet': <CarOutlined />,
-  // شاشة مستقلة في الشريط، مش قسم — ليها أيقونتها زي أي مدخل.
   '/voucher-keys': <KeyOutlined />,
 };
 
 export default function AppLayout() {
   const [collapsed, setCollapsed] = useState(false);
-  /**
-   * القايمة بقت فوق، والشجرة الجانبية بقت اختيارية — زي أودو.
-   *
-   * الشجرة كانت واخدة ٢٥٠ بكسل من عرض كل شاشة عشان تعرض نفس الأقسام اللي الشريط
-   * الأفقي بيعرضها في ٤٤ بكسل من الطول. الجداول هي اللي بتستفيد بالعرض ده.
-   *
-   * **بتتخبى مش بتتشال.** الترتيب نفسه متعمّد يحاكي a5 عشان اللي عارف مكان حاجة
-   * يلاقيها — والشريط الأفقي بيعرض **نفس** الشجرة بنفس الأسماء والترتيب، فاللي
-   * حافظ «اذن تحويل مخازن تحت اداره المخازن» بيلاقيها في نفس المكان بالظبط، بس
-   * أفقي. واللي عايز الشجرة ترجع بيضغط زرار واحد فوق.
-   */
   const [showTree, setShowTree] = useState(() => {
     try { return localStorage.getItem('nav.tree') === '1'; } catch { return false; }
   });
   const toggleTree = () => setShowTree((v) => {
-    // بيتفضّل: اللي بيشتغل بالشجرة مايرجعش يفتحها كل يوم.
-    try { localStorage.setItem('nav.tree', v ? '0' : '1'); } catch { /* private mode */ }
+    try { localStorage.setItem('nav.tree', v ? '0' : '1'); } catch {}
     return !v;
   });
   const { user, logout } = useAuth();
@@ -106,13 +84,6 @@ export default function AppLayout() {
   const [fullscreen, toggleFullscreen] = useFullscreen();
   const [isOnline, setIsOnline] = useState(navigator.onLine);
 
-  /*
-   * شكل الأرقام متخزّن باسم المستخدم، والربط بيتعمل من هنا.
-   *
-   * المخزن بيقرا الاسم من الجلسة مرة واحدة وقت تحميل الموديول، وده كفاية لفتحة
-   * الصفحة. إنما اللي يخرج ويدخل بحساب تاني من غير تحديث كان هياخد اختيار اللي
-   * قبله — فالربط بيتعاد كل ما المستخدم يتغيّر.
-   */
   useEffect(() => { bindNumeralsUser(user?.username ?? null); }, [user?.username]);
 
   useEffect(() => {
@@ -122,7 +93,6 @@ export default function AppLayout() {
     window.addEventListener('online', handleOnline);
     window.addEventListener('offline', handleOffline);
 
-    // Version update check
     const electronAPI = (window as any).electronAPI;
     if (electronAPI && electronAPI.checkForUpdates) {
       electronAPI.checkForUpdates().then((res: any) => {
@@ -150,41 +120,17 @@ export default function AppLayout() {
     token: { colorBgContainer, borderRadiusLG },
   } = theme.useToken();
 
-  /**
-   * The sidebar, grouped.
-   *
-   * It had grown to nearly thirty flat entries, which is past the point where anyone reads a
-   * list — you scan it for a word you already know and give up if it isn't near the top. The
-   * groups are the ones the work actually splits into, so a salesman opens one section and a
-   * storekeeper another, and neither scrolls past the other's screens to reach his own.
-   *
-   * Roles stay declared per SCREEN, never per group: a group is a heading, not a permission.
-   * A group whose screens are all forbidden simply disappears.
-   */
-  // The tree itself lives in `navigation.ts` — it mirrors the a5 menu the client's people already
-  // know, section for section. See that file for why the arrangement is copied and the appearance
-  // is not.
   const userRole = user ? roleForAccess(user.role) : 'sales_rep';
 
-  /**
-   * Build antd's menu items from the tree, dropping what this role may not open.
-   *
-   * Recursive because the tree is two deep (section → group → screen), and filtering has to happen
-   * at the leaves: a group is a heading, not a permission. A group left with nothing permitted is
-   * removed rather than rendered empty, since a heading over an empty list reads as broken.
-   */
   const showsFactoryTools = useShowsFactoryTools();
   const buildItems = (nodes: (NavScreen | NavGroup)[]): any[] =>
     nodes
       .map((node) => {
         if (!isGroup(node)) {
-          // الدور، وفوقه فرق المستخدم نفسه: صفحة اتخبّت عنه بتتشال، واتظهرتله بتبان.
           if (user?.pages_hidden?.includes(node.key)) return null;
           return node.roles.includes(userRole) || user?.pages_shown?.includes(node.key)
             ? { key: node.key, label: node.label } : null;
         }
-        // قسم المصنع بيتشال من غير فرع التصنيع — زي ما المجموعة اللي مافيهاش صلاحية
-        // بتتشال. الشرح في `navigation.ts` و`useFactoryBranch`.
         if (node.factoryOnly && !showsFactoryTools) return null;
         const children = buildItems(node.children);
         return children.length ? { key: node.key, label: node.label, children } : null;
@@ -201,9 +147,6 @@ export default function AppLayout() {
     })),
   ];
 
-  // Open every ancestor of the active screen, so a tab restored on load never leaves the sidebar
-  // shut around a highlighted item nobody can see — with two levels, opening only the section
-  // would still hide a report inside its group.
   const ancestorsOf = (target: string, nodes: (NavScreen | NavGroup)[], trail: string[] = []): string[] => {
     for (const node of nodes) {
       if (!isGroup(node)) {
@@ -217,12 +160,10 @@ export default function AppLayout() {
   };
   const openGroupKeys = ancestorsOf(activeId || '/dashboard', [...NAVIGATION, ...EXTRA_SECTIONS]);
 
-  // A menu click opens (or focuses) that section's tab.
   const handleMenuClick = ({ key }: { key: string }) => {
     openTab(key);
   };
 
-  // The active tab's base path drives the sidebar highlight.
   const activeBase = activeId || '/dashboard';
 
   const userDropdownItems = [
@@ -240,17 +181,8 @@ export default function AppLayout() {
       type: 'divider' as const,
     },
     {
-      /*
-       * ارتفاع الصف وملء الشاشة نزلوا هنا من الشريط.
-       *
-       * الاتنين إعدادات بتتظبط مرة كل كام يوم، وكانوا واخدين مكان دايم في صف بيتزاحم
-       * على عرضه مع أقسام النظام كلها. الاسم كمان اتشال من جنب الأيقونة: الأيقونة
-       * بتقول «ده انت» والاسم جوّه القايمة، واللي بيسأل «انا داخل بمين» بيفتحها.
-       */
       key: 'density',
       label: (
-        // الوقفة دي عشان اختيار الارتفاع مايقفلش القايمة — بتتجرّب على الجدول اللي
-        // وراها، واللي بيجرّب بيعدّي على التلاتة.
         <div onClick={(e) => e.stopPropagation()} style={{ padding: '2px 0' }}>
           <div style={{ fontSize: 14, color: '#888', marginBottom: 6 }}>ارتفاع الصف</div>
           <RowDensityControl />
@@ -258,7 +190,6 @@ export default function AppLayout() {
       ),
     },
     {
-      // نفس وقفة الحدث: اللي بيجرّب الشكلين بيبص على الجدول اللي ورا القايمة وهو بيبدّل.
       key: 'numerals',
       label: (
         <div onClick={(e) => e.stopPropagation()} style={{ padding: '2px 0' }}>
@@ -268,8 +199,6 @@ export default function AppLayout() {
       ),
     },
     {
-      // «ألوان واضحة / خط أكبر» — نفس المفتاح اللي في زرار العين فوق، بالاسم كامل هنا
-      // للي بيدوّر في الإعدادات مش في الأيقونات.
       key: 'contrast',
       label: (
         <div onClick={(e) => e.stopPropagation()} style={{ padding: '2px 0' }}>
@@ -296,9 +225,6 @@ export default function AppLayout() {
   ];
 
   return (
-    // The shell is exactly one viewport and never scrolls: the sidebar and the header stay
-    // put, and only the content box below scrolls. With `minHeight` the whole document
-    // scrolled instead, dragging the sidebar (logo included) out of view.
     <Layout style={{ height: '100vh', overflow: 'hidden' }}>
       {!isOnline && (
         <div
@@ -336,8 +262,6 @@ export default function AppLayout() {
         reverseArrow
         width={250}
         theme="light"
-        // `display: none` مش إلغاء المكوّن: الشجرة بتفضل محمّلة ومفتوحة على نفس
-        // المجموعة، فالرجوع ليها بيرجّعها زي ما سبتها مش من أولها.
         style={{
           boxShadow: '0 2px 8px rgba(0,0,0,0.15)',
           zIndex: 10,
@@ -346,9 +270,7 @@ export default function AppLayout() {
           display: showTree ? undefined : 'none',
         }}
       >
-        {/* Flex column so the logo stays pinned and the menu scrolls when items overflow. */}
         <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-          {/* The brand mark itself — collapsed keeps just the house+leaf. */}
           <div
             className="logo"
             style={{
@@ -377,19 +299,9 @@ export default function AppLayout() {
         </div>
       </Sider>
       <Layout style={{ height: '100vh', overflow: 'hidden' }}>
-        {/*
-          * شريط واحد فوق: الأقسام والمستخدم، وخلاص.
-          *
-          * كانوا تلات شرايط — اسم المستخدم، وتبويبات المستندات المفتوحة، والأقسام —
-          * يعني ١٤٠ بكسل من طول الشاشة بتروح في حاجة مش داتا. بقوا صف واحد بارتفاع ٤٨.
-          *
-          * وقايمة الأقسام بتلمّ الزيادة تحت «…» لما الشاشة تصغر، فمابتدفعش حاجة لسطر تاني.
-          */}
         <Header
           style={{
             flexShrink: 0,
-            // `minHeight` مش `height`: لما القايمة تلفّ لسطر تاني الشريط بيطول معاها
-            // بدل ما البنود تتقصّ.
             minHeight: 48,
             height: 'auto',
             lineHeight: '46px',
@@ -403,14 +315,11 @@ export default function AppLayout() {
             zIndex: 9,
           }}
         >
-          {/* العلامة كانت عايشة في الشجرة، والشجرة بقت مخبية — فنقلت هنا. النظام
-              من غير علامة بيبان كأنه اتفتح غلط. */}
           {!showTree && (
             <div style={{ paddingInlineStart: 12, display: 'flex', alignItems: 'center' }}>
               <Logo variant="mark" width={26} />
             </div>
           )}
-          {/* الشجرة اختيارية دلوقتي — الزرار بيظهّرها ويخبّيها، والاختيار بيتفضّل. */}
           <Tooltip title={showTree ? 'إخفاء القائمة الجانبية' : 'إظهار القائمة الجانبية'}>
             <Button
               type="text"
@@ -419,28 +328,11 @@ export default function AppLayout() {
               style={{ fontSize: 16, width: 44, height: 44, flexShrink: 0 }}
             />
           </Tooltip>
-          {/*
-            * الأقسام — نفس شجرة `navigation.ts` بالظبط، بس أفقي.
-            *
-            * نفس الترتيب ونفس الأسماء ونفس التداخل: الترتيب متعمّد يحاكي a5 عشان اللي
-            * عارف مكان حاجة يلاقيها من غير ما يسأل. اللي اتغيّر هو الاتجاه وبس.
-            *
-            * الأيقونات بتتشال: على الشجرة كانت بتفرّق الأقسام بالعين وهي فوق بعض؛ في صف
-            * أفقي هي اللي بتاكل العرض اللي الأسماء محتاجاه.
-            */}
           <Menu
             mode="horizontal"
             selectedKeys={[activeBase]}
             items={filteredMenuItems.map(({ icon, ...rest }: any) => rest)}
             onClick={handleMenuClick}
-            /*
-             * `disabledOverflow` — الأقسام كلها بتتعرض، ومفيش «…» بتلمّ الزيادة.
-             *
-             * القايمة الافتراضية بتقيس العرض وبتخبّي اللي مش لاقي مكان تحت تلات نقط.
-             * ده منطقي في شريط أدوات، وغلط في قايمة تنقّل: القسم اللي اتخبى بيبقى
-             * موجود ومش باين، واللي بيدوّر عليه بيفتكره مش موجود. لما المكان يضيق
-             * بتلفّ لسطر تاني — سطر زيادة أرخص من قسم مختفي.
-             */
             disabledOverflow
             className="top-nav"
             style={{
@@ -449,19 +341,13 @@ export default function AppLayout() {
             }}
           />
 
-          {/* المساحة الفاضية بتدفع المستخدم لآخر الشريط. */}
           <div style={{ flex: 1, minWidth: 0 }} />
 
           <div style={{
             paddingLeft: 16, display: 'flex', alignItems: 'center', gap: 12, flexShrink: 0,
           }}>
-            {/* الأيقونة وبس — الاسم والإعدادات جوّه القايمة. الصف العلوي شغله يعرض
-                الأقسام، وكل بكسل بياخده حاجة تانية بيتاخد منها. */}
-            {/* فلتر الفرع — اللي فوق الفروع بس (المالك والأدمن). */}
             {(user?.role === 'owner' || user?.role === 'system_admin')
               ? <BranchFilter /> : <BranchBadge branchId={user?.branch_id} />}
-            {/* زرار العين ظاهر على طول (مش جوّه القايمة بس): اللي نظره ضعيف هو بالظبط اللي
-                مش هيلاقي مفتاح صغير مستخبي في قايمة. */}
             <ContrastHeaderButton />
             <Dropdown menu={{ items: userDropdownItems }} placement="bottomLeft">
               <Tooltip title={user?.name}>
@@ -472,8 +358,6 @@ export default function AppLayout() {
           </div>
         </Header>
 
-        {/* minHeight:0 lets this flex child actually shrink, so the box below can scroll
-            instead of stretching the page. */}
         <Content style={{
           margin: '10px 16px 0', display: 'flex', flexDirection: 'column',
           minHeight: 0, overflow: 'hidden',
@@ -495,8 +379,6 @@ export default function AppLayout() {
         </Content>
       </Layout>
       <HScrollDock />
-      {/* الاختصارات — «+» تحت على الشمال. نفس الشجرة المفلترة بتاعة القايمة، فالشاشة
-          اللي مالوش صلاحية عليها مابتظهرش في «إضافة اختصار» كمان. */}
       <ShortcutsDock userId={(user as any)?.id} tree={buildItems([...NAVIGATION, ...EXTRA_SECTIONS])}
         openTab={openTab} />
     </Layout>

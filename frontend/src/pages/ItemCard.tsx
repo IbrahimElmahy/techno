@@ -1,7 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { PAGE_SIZE } from '../utils/pagination';
 import { Alert, Button, Empty, Select, Tag, message } from 'antd';
-// كل جدول هنا بفلتر على كل عمود — شوف `FilterTable`.
 import { FilterTable as Table } from '../components/FilterTable';
 import {
   ClearOutlined, DownloadOutlined, PrinterOutlined, ProfileOutlined, ReloadOutlined,
@@ -23,27 +22,6 @@ import { useMovementLabels, useMovementTypes } from '../lib/movementTypes';
 import { useLookup, labelMap } from '../hooks/useLookup';
 import { compareArabic, searchFilter, searchRank, sortByName } from '../utils/arabicSort';
 import { qty, money, numeralsLocale } from '../utils/money';
-/**
- * كارت الصنف — every movement of one item with the balance before it and the balance after it.
- *
- * A movement list says what happened; a card says what you had. That is the point of the two
- * balance columns: any row can be read on its own, and a disputed count can be traced back to
- * the movement that caused it.
- *
- * Filtering is done on the server precisely because the balances must not be recomputed from
- * what happens to be visible — hiding the purchases must not make the sale look like it drew
- * from nothing.
- */
-
-/**
- * **الاسمين الاتنين مقصودين.** الحركة اتكتبت بتسميتين على مدى المشروع: `sale_out`
- * و`sale`، `purchase_in` و`purchase`، `opening_in` و`opening`. الخريطة كانت شايلة
- * الأولانية بس، فالكارت كان بيطبع «sale» و«opening» بالإنجليزي جنب «تحويل وارد»
- * بالعربي — والاسم الخام ده هو أكتر نوع حركة في الداتا أصلاً.
- *
- * الحل هنا مش إعادة تسمية الحركات في القاعدة: ده عمود مكتوب على ملايين الصفوف
- * ومقروء من تقارير تانية. الخريطة بتعرف الاتنين.
- */
 
 interface CardRow {
   movement_id: number;
@@ -59,15 +37,11 @@ interface CardRow {
   source_doc_type: string | null;
   source_doc_id: number | null;
   is_reversal: boolean;
-  // (031) Read off the source document rather than stored on the movement: the party it was with,
-  // its own number, what the line was priced and totalled at, and — for a perishable — the lot
-  // FEFO drew from.
   party: string | null;
   document_number: string | null;
   unit_price: string | null;
   line_total: string | null;
   expiry_date: string | null;
-  // The unit the line was traded in and the quantity in it, beside the pieces the card counts in.
   unit: string | null;
   quantity_in_unit: string | null;
   discount_pct: string | null;
@@ -82,31 +56,19 @@ interface CardOut {
 }
 
 export default function ItemCard() {
-  // الأسماء العربية والقايمة من الخادم — نسخة واحدة لكل الشاشات.
   const moveLabels = useMovementLabels();
   const moveTypes = useMovementTypes();
   const [items, setItems] = useState<any[]>([]);
-  /**
-   * **الفئة الأول، وبعدين الصنف.**
-   *
-   * القايمة فيها ٢٬٦٤٠ صنف، وأسماء زي «كوع ١ فاتح» و«كوع ١" ابيض عاده» بتفرق في كلمة
-   * — فاللي بيدوّر بيقرا عشرين سطر متشابه عشان يلاقي بتاعه. اختيار الفئة بيقلّل
-   * القايمة لأصناف الفئة وبس، وبعدها الاسم بيبان لوحده.
-   *
-   * وفاضية = كل الفئات، فاللي بيعرف اسم صنفه بالظبط مابيتفرضش عليه خطوة زيادة.
-   */
   const [category, setCategory] = useState<string | undefined>();
   const { options: categoryOptions } = useLookup('item_category');
   const categoryLabels = labelMap(categoryOptions);
 
-  /** الفئات اللي فيها أصناف فعلاً — مش كل اللي في قايمة الإعدادات. */
   const categories = useMemo(
     () => ([...new Set(items.map((i: any) => i.category).filter(Boolean))] as string[])
       .sort(compareArabic),
     [items],
   );
 
-  /** الأصناف المعروضة — بتاعة الفئة المختارة، أو الكل لو مافيش فئة. */
   const pickableItems = useMemo(
     () => (category ? items.filter((i: any) => i.category === category) : items),
     [items, category],
@@ -114,17 +76,10 @@ export default function ItemCard() {
   const [warehouses, setWarehouses] = useState<any[]>([]);
   const [itemId, setItemId] = useState<number | undefined>();
   const [warehouseId, setWarehouseId] = useState<number | undefined>();
-  /**
-   * **الفترة ممكن تكون نص فاضية.** `RangePicker` بيرجّع `[null, null]` أو `[Dayjs, null]`
-   * لما اللي بيستعمله يمسح طرف واحد، والنوع `[Dayjs, Dayjs]` بيخفي ده — فالفحص
-   * `if (range)` بيعدّي و`.format` بتنهار على `null`. نفس العطل اللي كان بيفضّي كشف
-   * الحساب. `fullRange()` هي المكان الوحيد اللي بيقرّر إن الفترة مكتملة.
-   */
   const [range, setRange] = useState<[Dayjs | null, Dayjs | null] | null>(null);
   const [movementType, setMovementType] = useState<string | undefined>();
   const [card, setCard] = useState<CardOut | null>(null);
   const [loading, setLoading] = useState(false);
-  // ?item=<id> — arrived at from the item's own file, which already knows which item this is.
   const [search] = useSearchParams();
   const askedItem = Number(search.get('item')) || undefined;
   useEffect(() => { if (askedItem) setItemId(askedItem); }, [askedItem]);
@@ -133,13 +88,6 @@ export default function ItemCard() {
     api.get('/api/v1/warehouses').then((w) => setWarehouses(w.data || [])).catch(console.error);
   }, []);
 
-  /**
-   * **أصناف فرع المخزن المختار بس** (٢٠٢٦-١٠-٠٨). الكتالوج مشترك بين الفروع وفيه أسامي
-   * مكررة حرفياً (كارت العلياء وكارت أكتوبر لنفس الحاجة)، فالمالك اللي شايف الفروع كلها
-   * كان بيختار «ماسورة ٢٥» بتاعة العلياء ويفتحها على مخزن أكتوبر — والكارت يطلع فاضي
-   * وكأن الصنف مااتحركش. أول ما المخزن يتحدد، القايمة بتبقى كتالوج فرعه، والصنف
-   * المختار بيتبدّل بتوأمه اللي بنفس الاسم في الفرع ده.
-   */
   const whBranch = warehouses.find((w) => w.id === warehouseId)?.branch_id as number | undefined;
   useEffect(() => {
     api.get('/api/v1/items', { params: whBranch ? { branch_id: whBranch } : {} })
@@ -157,17 +105,14 @@ export default function ItemCard() {
       .catch(console.error);
   }, [whBranch]);
 
-  /** فرع الصنف من بادئة كوده — نفس قاعدة النقل: `AL-` العلياء، `FC-` السادات، والباقي أكتوبر. */
   const branchOfCode = (code?: string | null) => (!code ? '' : code.startsWith('AL-') ? 'العلياء'
     : code.startsWith('FC-') ? 'السادات' : 'أكتوبر');
-  /** الأسامي اللي متكررة في القايمة — دي بس اللي بيتكتب جنبها الفرع. */
   const dupNames = useMemo(() => {
     const seen = new Map<string, number>();
     items.forEach((i: any) => seen.set((i.name || '').trim(), (seen.get((i.name || '').trim()) || 0) + 1));
     return new Set([...seen].filter(([, n]) => n > 1).map(([k]) => k));
   }, [items]);
 
-  /** الطرفين مع بعض، أو `null` — الفترة النص مالهاش معنى هنا. */
   const fullRange = (): [Dayjs, Dayjs] | null =>
     (range && range[0] && range[1] ? [range[0], range[1]] : null);
 
@@ -225,10 +170,6 @@ export default function ItemCard() {
     );
   };
 
-  // قراية الكارت هي سؤال «الحركة دي جات منين؟»، فالسطر يفتح مستندها. الحركات اللي مالهاش شاشة
-  // مستند (تحويل، تصنيع، جرد) بتفضل ساكتة بدل ما تودّي على قايمة.
-  // The distinct values a column filter offers come from ALL the rows, not the page —
-  // a list that changes as you page through is one nobody trusts.
   const cardRows: CardRow[] = card?.rows ?? [];
   const openDoc = useOpenDocument();
   const kb = useTableKeyboard<CardRow>({
@@ -240,14 +181,6 @@ export default function ItemCard() {
   });
 
   const columns: ColumnsType<CardRow> = [
-    /**
-     * **الأحدث فوق.** السيرفر بيحسب الرصيد الجاري بالترتيب الزمني وبيبعت الحركات مقلوبة
-     * (الأحدث الأول)، واللي بيفتح الكارت بيدوّر على آخر حاجة حصلت. كل سطر شايل رصيده قبل
-     * وبعد، فالقلب مابيكسرش قراءته؛ والترتيب الافتراضي هنا بيأكّد نفس الاتجاه.
-     *
-     * والترتيب بيفصل التعادل برقم الحركة: مية سطر في نفس اليوم مالهومش ترتيب من
-     * التاريخ وحده، والرقم بيمشي مع زمن الكتابة.
-     */
     { title: 'التاريخ', dataIndex: 'date', ...dateColumn<CardRow>((r) => r.date),
       defaultSortOrder: 'descend' as const,
       sorter: (a: CardRow, b: CardRow) =>
@@ -280,19 +213,11 @@ export default function ItemCard() {
       render: (v: string) => <b>{qty(v)}</b> },
     { title: 'الموقع', dataIndex: 'location',
       ...textColumn(cardRows, (r: CardRow) => r.location) },
-    // الوحده / القطعه. The card counts in pieces because that is how stock is kept; the
-    // line was TRADED in whatever unit the customer buys by. «منصرف ٤٨» against a
-    // document saying «٤ كراتين» is one fact told two ways with nothing connecting them.
     { title: 'بالوحدة', dataIndex: 'quantity_in_unit', align: 'left', width: 120,
       ...numberColumn<CardRow>((r) => r.quantity_in_unit),
       render: (v: string | null, r: CardRow) => (v
         ? <span>{qty(v)} <span style={{ color: '#6b6b6b' }}>{r.unit}</span></span>
-        // Empty when the trading unit IS the piece — repeating «٥ قطعة / ٥» on every
-        // loose-sold row is noise, not information.
         : <span style={{ color: '#555b65' }}>-</span>) },
-    // Their card carries the party, the price and the total on every row. None of it was
-    // missing data — a sale line has always known all three — so «منصرف ٥» used to mean
-    // opening the sales screen to find out who took them and for how much.
     { title: 'جهه التعامل', dataIndex: 'party', ellipsis: true,
       ...textColumn(cardRows, (r: CardRow) => r.party),
       render: (v: string | null) => v ?? <span style={{ color: '#555b65' }}>-</span> },
@@ -307,14 +232,10 @@ export default function ItemCard() {
       render: (v: string | null) => (Number(v)
         ? <Tag color="gold">{`${Number(v)}%`}</Tag>
         : <span style={{ color: '#555b65' }}>-</span>) },
-    // The line's share of the document VAT — its share of the gross, which is the same
-    // proportional rule the return already uses to decide how much tax to refund.
     { title: 'ض.م', dataIndex: 'tax_amount', align: 'left', width: 110,
       ...numberColumn<CardRow>((r) => r.tax_amount),
       render: (v: string | null) => (Number(v)
         ? money(v) : <span style={{ color: '#555b65' }}>-</span>) },
-    // Which lot went out. FEFO chose it at the moment of sale; the card reads that back
-    // rather than leaving a recall to guess.
     { title: 'انتهاء', dataIndex: 'expiry_date', width: 120,
       ...dateColumn<CardRow>((r) => r.expiry_date),
       render: (v: string | null) => (v
@@ -322,26 +243,19 @@ export default function ItemCard() {
         : <span style={{ color: '#555b65' }}>-</span>) },
     { title: 'المستند', dataIndex: 'source_doc_id',
       ...textColumn(cardRows, (r: CardRow) => r.document_number),
-      // Reading a card is asking «الحركة دي جات منين؟» — so the row opens its document
-      // when it has one, and stays a plain tag when there is no screen to open.
       render: (id: number | null, r) => (id
         ? (docKindOf(r.source_doc_type)
             ? <DocumentLink kind={docKindOf(r.source_doc_type)!} id={id} size="small"
                 label={r.document_number || `#${id}`}
-                // التعديل للفاتورة اللي اتكتبت عندنا بس. المنقولة من a5
-                // (`sales_invoice`) بتتفتح للعرض: تعديلها بيخلّي نسختنا تفرق عن
-                // نظامهم وهما لسه شغّالين عليه.
                 allowEdit={r.source_doc_type === 'sale'} />
             : <Tag>{r.source_doc_type} #{id}</Tag>)
         : '-') },
   ];
 
-  // إخفاء وترتيب الأعمدة — نفس المحرك اللي كل الجداول بتستخدمه.
   const tableCols = useTableColumns('item-card', columns, {
     export: { name: 'كارت الصنف', rows: cardRows },
   });
 
-  // سطر الإجماليات تحت الجدول — مكان كروت الأرقام اللي كانت فوق.
   const footer = card && (
     <span className="sl-foot">
       <span>عدد الحركات: <b>{card.rows.length.toLocaleString(numeralsLocale())}</b></span>
@@ -372,8 +286,6 @@ export default function ItemCard() {
             placeholder="كل الفئات" value={category}
             onChange={(c) => {
               setCategory(c);
-              // الصنف المختار مش في الفئة الجديدة ⇒ يتفضّى. سيبانه بيدّي كارت صنف
-              // مالوش علاقة بالفئة اللي على الشاشة.
               if (c && itemId && items.find((i) => i.id === itemId)?.category !== c) {
                 setItemId(undefined);
               }
@@ -403,7 +315,6 @@ export default function ItemCard() {
             value={movementType} onChange={setMovementType}
             options={moveTypes}
           />
-          {/* الصنف نفسه بيفضل — المسح للفلاتر اللي حواليه بس. */}
           <Button className="sl-f-clear" icon={<ClearOutlined />}
             onClick={() => { setCategory(undefined); setWarehouseId(undefined); setRange(null); setMovementType(undefined); }}>
             مسح

@@ -1,38 +1,4 @@
 # -*- coding: utf-8 -*-
-"""تكلفة البنود اللي اتباعت من غير تكلفة محفوظة.
-
-«فحص النظام» في الرئيسية بيقول **١١١٧ فاتورة بنودها من غير تكلفة**، وبيقول إن الربح
-عليها بيتحسب وكأن التكلفة صفر. الرقم مخيف، والحقيقة تحته أضيق بكتير: البنود دي ١٣٧١
-سطر بس (من ٤٤٨٣٠)، وكلهم على **تمن أصناف**.
-
-## والتمنية مش نوع واحد
-
-* **أربعة كوبونات** (ذهبى وفضى بكودين لكل واحد) — ١٣٤٩ سطر، يعني ٩٨٪ من المشكلة.
-  والكوبون **بيتشترى بصفر**: خمس فواتير شرا على «كوبون ذهبى» متوسط سعرها 0.00.
-  يعني التكلفة مش مجهولة — هي صفر فعلاً، والـ`NULL` هو اللي بيخلّي الفحص يعدّها خلل
-  والتقارير تقول «مش معروف» بدل «صفر».
-* **صنف واحد ليه تاريخ شرا حقيقي** — «كوع بباب 4" جوان»، ١٨ سطر، متوسط شرا 92.00
-  ومتوسط تكلفة على مبيعاته التانية 68.62. ده اللي فيه رقم اتضاع فعلاً.
-* **تلاتة مالهمش أي أثر** — لا شرا ولا بيعة واحدة بتكلفة. ٤ سطور. مافيش منّهم رقم
-  يتاخد، والسكريبت بيسيبهم زي ما هم ويقولك عليهم.
-
-## بياخد الرقم منين
-
-نفس ترتيب `costing_service` بالظبط، عشان البند المتأخّر يتحسب زي البند اللي قبله:
-
-1. `average_cost` — المتوسط المرجّح من كل المشتريات، صافي المرتجعات والخصمين.
-2. لو الصنف مالوش مشتريات خالص: متوسط `unit_cost` على مبيعاته التانية.
-3. غير كده: بيتساب `NULL`. **تكلفة مخترعة أسوأ من تكلفة ناقصة** — الناقصة الفحص
-   بيقولك عليها، والمخترعة بتعدّي على إنها حقيقة.
-
-والفرق بين الصفر والـ`NULL` مقصود: الصفر بيقول «اتشترى ببلاش»، والـ`NULL` بيقول
-«مش عارفين». الكوبون الأول، والتلاتة التانية.
-
-## التشغيل
-
-    python -m src.scripts.backfill_line_costs            # عرض بس، مابيكتبش
-    python -m src.scripts.backfill_line_costs --apply    # بيكتب
-"""
 from __future__ import annotations
 
 import argparse
@@ -53,11 +19,6 @@ ZERO = Decimal("0")
 
 
 def _fallback_from_sales(db: Session, item_id: int) -> Decimal | None:
-    """متوسط التكلفة على مبيعات الصنف التانية — لما مايكونش له شرا خالص.
-
-    مش تخمين: دي نفس تكلفة الصنف زي ما النظام سجّلها على بنود تانية، فالبند الناقص
-    بياخد رقم إخواته بدل ما يفضل فاضي.
-    """
     avg = db.scalar(
         select(func.avg(SalesInvoiceLine.unit_cost))
         .where(SalesInvoiceLine.item_id == item_id,
@@ -74,7 +35,6 @@ def _has_purchases(db: Session, item_id: int) -> bool:
 
 
 def plan(db: Session) -> tuple[dict[int, Decimal], list[int], dict[int, int]]:
-    """(تكلفة كل صنف، الأصناف اللي مالهاش، عدد السطور لكل صنف)."""
     counts: dict[int, int] = defaultdict(int)
     for (item_id,) in db.execute(
         select(SalesInvoiceLine.item_id).where(SalesInvoiceLine.unit_cost.is_(None))
@@ -85,8 +45,6 @@ def plan(db: Session) -> tuple[dict[int, Decimal], list[int], dict[int, int]]:
     unknown: list[int] = []
     for item_id in counts:
         if _has_purchases(db, item_id):
-            # `average_cost` بيرجّع صفر للصنف اللي مالوش شرا، فالسؤال عن وجود الشرا
-            # لازم يسبقه — غير كده الصنف المجهول بياخد صفر وكأنه اتشترى ببلاش.
             costs[item_id] = to_money(costing_service.average_cost(db, item_id))
             continue
         from_sales = _fallback_from_sales(db, item_id)

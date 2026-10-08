@@ -2,7 +2,6 @@ import React, { useEffect, useRef, useState } from 'react';
 import { searchFilter, searchRank, sortByName } from '../utils/arabicSort';
 import { PAGE_SIZE } from '../utils/pagination';
 import { Button, Input, Select, Tag, message } from 'antd';
-// كل جدول هنا بفلتر على كل عمود — شوف `FilterTable`.
 import { FilterTable as Table } from '../components/FilterTable';
 import { InputNumber } from '../components/NumberInput';
 import {
@@ -25,21 +24,10 @@ import {
 } from '../print/itemLogSheet';
 import { money, numeralsLocale, qty } from '../utils/money';
 
-/**
- * جرد حق تاريخ — the stock as it stood on a chosen day, valued at cost.
- *
- * Today's balance cannot answer "what did we have on the 31st". This is the same derivation cut
- * off at a date, so a document typed late still lands on the day it happened and the count for a
- * closed month does not drift as the month after it trades.
- */
-
 interface Row {
   item_id: number; code: string | null; name: string;
-  // الفئة. `stock_as_of` returns it and this screen was dropping it on the floor — a count is read
-  // one category at a time, and without the column the only way there was a name search per item.
   category: string | null;
   unit_of_measure: string | null; location: string;
-  // مكان السطر — `stock_as_of` بيرجّعه دايماً (السطر = صنف × مكان)، والسجل بيتفلتر بيه.
   location_kind: string; location_id: number;
   quantity: string; unit_cost: string; value: string;
 }
@@ -50,40 +38,10 @@ const METHOD_LABELS: Record<string, string> = {
 };
 
 export default function Stocktake() {
-  /**
-   * جرد من تاريخ إلى تاريخ.
-   *
-   * The quantity is the balance **at the «إلى» date** — a balance is a running total to a moment,
-   * and summing only the movements inside a window would give net movement over it, which is a
-   * different number and not a stocktake.
-   *
-   * The «من» date is what the movement log opens on: «إيه اللي حصل في الفترة دي» is the question a
-   * difference raises, and reciting the item's whole life instead is not an answer to it.
-   */
-  /** الصفوف المحدّدة — للتصدير والطباعة. اللي وقف وحدّد بإيده قال حاجة أوضح من الفلتر. */
   const [picked, setPicked] = useState<React.Key[]>([]);
-  // «من» فاضي لما الشاشة تفتح — السجل من أول الحركة؛ «الرصيد حتى» بيفضل النهارده.
   const [dateFrom, setDateFrom] = useState<Dayjs | null>(null);
   const [asOf, setAsOf] = useState<Dayjs>(dayjs());
-  /**
-   * العدد الفعلي — اللي على أرض الواقع، بيتكتب هنا.
-   *
-   * Held on screen and NOT saved: settling a difference belongs to جرد المخازن, which has the
-   * document, the frozen book quantity and the posting behind it. One way to change stock beats
-   * two with different rules — and the screen says so, so nobody types a hundred counts expecting
-   * them to be kept.
-   */
   const [actual, setActual] = useState<Record<string, number | null>>({});
-  /**
-   * السطور المفتوحة سجلها — أكتر من واحد في نفس الوقت.
-   *
-   * The log used to sit at the bottom of the page and hold ONE item: opening a second closed the
-   * first, and the row it belonged to was three screens up. Reading a stocktake is comparing —
-   * «الصنف ده ناقص خمسة والتاني زايد خمسة، هما نفس الحاجة؟» — and you cannot compare two things
-   * one at a time.
-   *
-   * A set rather than a single key, and it lives under the row it explains.
-   */
   const [openRows, setOpenRows] = useState<React.Key[]>([]);
   const [warehouseId, setWarehouseId] = useState<number | undefined>();
   const [warehouses, setWarehouses] = useState<any[]>([]);
@@ -110,23 +68,13 @@ export default function Stocktake() {
     } finally { setLoading(false); }
   };
 
-  // Only the «إلى» date changes the balances. «من» scopes the history a row drills into, so
-  // changing it must not cost a reload of the whole report.
   useEffect(() => { load(); }, [asOf, warehouseId]);
 
   const rowKey = (r: Row) => `${r.item_id}-${r.location}`;
-  /**
-   * **سجل السطر = سجل مكانه، مش الصنف في كل المخازن.** (بلاغ العميل ٢٠٢٦-١٠-٠٢)
-   *
-   * كل سطر هنا صنف في مكان واحد — والسجل كان بيتنده من غير مكان، فالكارت بيرجّع حركة
-   * الصنف في كل المخازن: اللي محدّد «مخزن العلياء» بيلاقي تحويلات وبيع مخزن أكتوبر،
-   * و«الرصيد بعد» مابيطابقش الكمية اللي على السطر. نفس منطق «جرد المخازن».
-   */
   const logLocation = (r: Row) => ({
     locationKind: r.location_kind ?? (warehouseId ? 'warehouse' : null),
     locationId: r.location_id ?? warehouseId ?? null,
   });
-  /** الفرق = اللي في النظام − اللي اتعدّ. Null until somebody counts, which is not zero. */
   const diffOf = (r: Row) => {
     const a = actual[rowKey(r)];
     if (a === null || a === undefined) return null;
@@ -135,12 +83,10 @@ export default function Stocktake() {
 
   const filter = useListFilter(rows, { search: (r) => [r.code, r.name, r.category, r.location] });
 
-  /** المحدّد لو فيه تحديد، وإلا اللي الفلتر مطلّعه — التحديد أخص من الفلتر. */
   const forOutput = () => (picked.length
     ? filter.filtered.filter((r: any) => picked.includes(rowKeyOf(r)))
     : filter.filtered);
 
-  /** سجل كل صنف في اللي هيطلع — أو `null` لو العدد أكبر من الحد. كل صنف = نداء. */
   const withLogs = async (data: any[]) => {
     if (data.length > LOG_LIMIT) {
       message.info(`يُستخرج السجل لما لا يزيد عن ${LOG_LIMIT} صنف — حدّد الأصناف المطلوب سجلها.`);
@@ -159,8 +105,6 @@ export default function Stocktake() {
   const exportCsv = async () => {
     const data = forOutput();
     if (!data.length) { message.info('لا توجد أرصدة للتصدير'); return; }
-    // The export follows the columns. A file whose headings say «تكلفة الوحدة» over a column of
-    // counted quantities is worse than no export — it is read once, believed, and filed.
     const cols: CsvColumn<any>[] = [
       { title: 'الكود', value: 'code' },
       { title: 'الصنف', value: 'name' },
@@ -172,19 +116,11 @@ export default function Stocktake() {
       { title: 'الفرق', value: (r) => diffOf(r) },
     ];
     const name = `stocktake-${asOf.format('YYYY-MM-DD')}`;
-    // الصنف وسجله في ملف واحد؛ ولو العدد كبير، الورقة وحدها — والسبب اتقال.
     const entries = await withLogs(data);
     if (entries) exportItemsWithLogs(name, cols, entries);
     else writeCsv(name, cols, data);
   };
 
-  /**
-   * طباعة الورقة — **الصنف وسجله**، قسم لكل صنف فيه رصيده وتحته حركاته في الفترة.
-   *
-   * زرار واحد مش اتنين: الورقة اللي بتقول «رصيده كذا» من غير «وليه كذا» بترجّع اللي
-   * بيراجع للشاشة لكل صنف. واللي بيتطبع هو المحدّد لو فيه تحديد، وإلا اللي الفلتر
-   * مطلّعه — ولو العدد أكبر من الحد، بتطلع من غير سجل والسبب بيتقال.
-   */
   const printIt = async () => {
     const data = forOutput();
     if (!data.length) { message.info('لا توجد صفوف للطباعة'); return; }
@@ -198,7 +134,6 @@ export default function Stocktake() {
     ];
     const entries = await withLogs(data);
     if (!entries) {
-      // العدد أكبر من الحد — الورقة بتطلع من غير سجل بدل ما الطباعة تقف.
       printReport(
         { title: 'جرد حق تاريخ', date: asOf.format('YYYY/MM/DD'),
           meta: [
@@ -219,12 +154,10 @@ export default function Stocktake() {
 
   const rowKeyOf = (r: Row) => `${r.item_id}-${r.location}`;
 
-  /** بيفتح أو بيقفل سجل سطر — من غير ما يلمس الباقي. */
   const toggleRow = (key: React.Key) =>
     setOpenRows((prev) => (prev.includes(key)
       ? prev.filter((k) => k !== key) : [...prev, key]));
 
-  // أي سطر في الجرد يفتح سجل حركاته — «الفرق ده جه منين» مالهاش إجابة غير دي.
   const kb = useTableKeyboard<Row>({
     rows: filter.filtered, rowKey: rowKeyOf,
     onOpen: (r) => toggleRow(rowKeyOf(r)),
@@ -246,9 +179,6 @@ export default function Stocktake() {
     { title: 'الكمية', dataIndex: 'quantity', align: 'left' as const,
       ...numberColumn((r: Row) => r.quantity),
       render: (v: string) => <b>{qty(v)}</b> },
-    // العدد الفعلي — typed here, held on screen, never posted. The line under the table
-    // says so, because a hundred counts typed into a screen that keeps none of them is a
-    // morning lost.
     { title: 'العدد الفعلي', key: 'actual', align: 'left' as const, width: 140,
       ...numberColumn<Row>((r) => actual[rowKey(r)]),
       render: (_: any, r: Row) => (
@@ -270,15 +200,12 @@ export default function Stocktake() {
           if (v === 'none') return d === null;
           if (d === null) return false;
           if (v === 'match') return d === 0;
-          // «عجز» = النظام بيقول أكتر من اللي لقيناه.
           return v === 'short' ? d > 0 : d < 0;
         }),
       render: (_: any, r: Row) => {
         const d = diffOf(r);
         if (d === null) return <span style={{ color: '#8c8c8c' }}>—</span>;
         if (d === 0) return <Tag color="green">مطابق</Tag>;
-        // Only a real difference is a link. One that opens an empty log teaches people the
-        // link is broken, and then they stop using the one that works.
         return (
           <a onClick={() => toggleRow(rowKeyOf(r))}>
             <b style={{ color: d > 0 ? '#cf1322' : '#6AB42D' }}>
@@ -289,16 +216,13 @@ export default function Stocktake() {
       } },
   ];
 
-  // إخفاء وترتيب الأعمدة — نفس المحرك اللي كل الجداول بتستخدمه.
   const tableCols = useTableColumns('stocktake', columns, {
     export: { name: 'جرد حق تاريخ', rows: filter.filtered },
   });
 
-  // F3 للبحث — كانت جاية من `ListToolbar`.
   const searchRef = useRef<any>(null);
   useScreenShortcuts({ onSearch: () => { searchRef.current?.focus?.(); } });
 
-  // سطر الإجماليات تحت الجدول — مكان كروت الأرقام اللي كانت فوق.
   const footer = (
     <span className="sl-foot">
       <span>عدد السطور: <b>{Number(totals?.lines ?? 0).toLocaleString(numeralsLocale())}</b></span>
@@ -314,13 +238,11 @@ export default function Stocktake() {
     <ListPage
       icon={<CalendarOutlined />}
       title="جرد حتى تاريخ"
-      // كان تنبيه فوق الجدول — بقى سطر تحت العنوان.
       subtitle={<>
         {`الأرصدة زي ما كانت يوم ${asOf.format('YYYY-MM-DD')} — كل حركة لحد اليوم ده وبس.`}
         {method && ` التقييم بطريقة «${METHOD_LABELS[method] || method}» (تتغيّر من إعدادات المخزون).`}
       </>}
       actions={(<>
-          {/* العدد على الزرار عشان اللي حدّد صفوف يعرف إنه هيطلّع المحدّد مش الكل. */}
           <Button icon={<PrinterOutlined />} onClick={printIt}>
             {picked.length ? `طباعة (${picked.length})` : 'طباعة'}
           </Button>
@@ -336,8 +258,6 @@ export default function Stocktake() {
           prefix={<SearchOutlined />} placeholder="بحث بالصنف أو الكود أو الموقع"
           value={filter.query} onChange={(e) => filter.setQuery(e.target.value)}
         />
-        {/* «إلى» is the day the balance is read at; «من» opens the movement log on the period.
-            Two dates because a difference is a question about a stretch of time, not a day. */}
         <DateRangeFilter
           className="sl-f-dates"
           allowClear={false}
@@ -356,7 +276,6 @@ export default function Stocktake() {
         <Button className="sl-f-clear" icon={<ClearOutlined />} onClick={filter.reset}>مسح</Button>
       </>)}
     >
-      {/* التنبيه اللي كان هنا اتشال بطلب صاحب النظام — نفس اللي اتشال من كشف الجرد. */}
       <Table<Row>
         {...kb.tableProps}
         rowSelection={{
@@ -366,7 +285,6 @@ export default function Stocktake() {
         }}
         className="sl-table"
         rowKey={rowKeyOf} size="small" loading={loading}
-        // السجل بيتفتح تحت السطر بتاعه، وأكتر من سطر بيفضلوا مفتوحين مع بعض.
         expandable={{
           expandedRowKeys: openRows,
           onExpandedRowsChange: (keys) => setOpenRows([...keys]),
@@ -379,7 +297,6 @@ export default function Stocktake() {
                 dateTo: asOf.format('YYYY-MM-DD'),
               }}
               onClose={() => toggleRow(rowKeyOf(r))}
-              // الفترة بتتحدّد فوق الورقة مرة واحدة — مش في كل صنف.
               periodFilter={false}
             />
           ),
@@ -392,12 +309,7 @@ export default function Stocktake() {
           showTotal: () => footer,
         }}
         scroll={{ x: 'max-content' }}
-        // Every column filters and sorts on its own, and the narrowings combine — «خامات مخزن
-        // الفرع اللي قيمتها فوق الألف» is three columns at once, and a single search box above the
-        // table cannot express it however good the search is.
         columns={tableCols.columns}
-        // The bottom line follows the filters: a total that ignores them answers a question nobody
-        // asked, and reads as if the filter had not applied.
         summary={(shown) => {
           const total = shown.reduce((t, r: any) => t + Number(r.value || 0), 0);
           const count = shown.length;

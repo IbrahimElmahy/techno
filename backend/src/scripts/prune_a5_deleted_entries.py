@@ -1,15 +1,3 @@
-"""قيود a5 اللي اتمسحت من a5 بعد ما نقلناها — بتتشال من عندنا (٢٠٢٦-١٠-٠٦).
-
-    python -m src.scripts.prune_a5_deleted_entries --dir /opt/techno/a5factory --branch السادات --prefix FC-
-    python -m src.scripts.prune_a5_deleted_entries ... --yes
-
-`rebuild_a5_ledger` بيعيد بناء القيد اللي **اتغيّر** في a5، بس القيد اللي **اتمسح** هناك بيفضل
-عندنا للأبد. في السادات ٢٠٢٦-١٠-٠٦: سند ٩٬٠٠٠ على الخزنة (33926) وقيدين أمر تصنيع ٣٥٤٧
-(33883/33884) — a5 مسحهم وعمل غيرهم، فالخزنة عندنا بقت ناقصة ٩٬٠٠٠ عن a5.
-
-القيد بيتشال لو مرجعه `a5:<بادئة><sysfree>` ورقمه مش في التصدير (`a5_acclines.tsv`). المستند
-المربوط بيه بيتفك ربطه الأول (`import_a5_ledger` بيربطه بقيده الجديد). مقفول على الفرع.
-"""
 from __future__ import annotations
 
 import os
@@ -52,8 +40,6 @@ def run(folder: str, *, branch_name: str, prefix: str, execute: bool) -> int:
         db.execute(text("""delete from partial_reconcile where debit_line_id in
             (select id from ledger_line where entry_id = any(:i)) or credit_line_id in
             (select id from ledger_line where entry_id = any(:i))"""), {"i": ids})
-        # السندات اللي اتعملت على القيود دي من a5 (`a5_entries_to_vouchers`) بتتشال معاها وبترجع
-        # بعد الاستيراد؛ وسند نظامنا اللي خد رقم a5 (`adopt_native_vouchers`) بيتفك من قيده.
         db.execute(text("delete from voucher where ledger_entry_id = any(:i) and client_uuid like 'a5:%'"),
                    {"i": ids})
         db.execute(text("update voucher set ledger_entry_id = null where ledger_entry_id = any(:i)"),

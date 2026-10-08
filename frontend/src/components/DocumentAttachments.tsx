@@ -5,22 +5,6 @@ import { DeleteOutlined, FilePdfOutlined, PlusOutlined } from '@ant-design/icons
 import { Popconfirm } from './noConfirm';
 import { api } from '../api/client';
 
-/**
- * مرفقات المستند — الصورة اللي بتتعلّق على الورقة، والضغط عليها بيفتحها كبيرة.
- *
- * مكوّن واحد لكل الشاشات: بياخد نوع المستند ورقمه وخلاص. الباك-إند جدول واحد بمفتاح
- * (نوع، رقم) — الشرح في `models/document_attachment.py` — فمافيش سبب يخلّي كل شاشة
- * تكتب نسختها من نفس الرفع والعرض والمسح.
- *
- * ---------------------------------------------------------------------------
- * **الصورة بتتجاب كـblob مش بـ`<img src>` على الـAPI.**
- *
- * التوكن بيتبعت في هيدر `Authorization` من الـinterceptor، و`<img>` مابيعدّيش هيدرات —
- * فالرابط المباشر كان هيرجع 401 وتبان صورة مكسورة. فالملف بيتجاب بـaxios (فبياخد
- * التوكن زي أي طلب) وبيتحوّل لـobject URL محلي، والـURL ده بيترجّع للمتصفح عند الخروج
- * عشان الذاكرة ماتفضلش ماسكة كل صورة اتفتحت.
- */
-
 type Attachment = {
   id: number;
   filename: string;
@@ -30,9 +14,7 @@ type Attachment = {
 };
 
 type Props = {
-  /** الاسم الموحّد للمستند: `stock_permit`، `sales_invoice`، `voucher`… */
   docType: string;
-  /** رقم المستند — المسودّة مالهاش رقم، فالمكوّن بيختفي لحد ما تترحّل. */
   docId?: number | null;
   title?: string;
 };
@@ -46,7 +28,6 @@ const sizeText = (n: number | null) => {
     : `${num(Math.round(n / 1024))} ك.ب`;
 };
 
-/** معرّف عشوائي للرفعة — عشان إعادة المحاولة بعد قطع ماتكتبش نفس الصورة مرتين. */
 const newUuid = () => {
   const c: any = (globalThis as any).crypto;
   if (c?.randomUUID) return c.randomUUID() as string;
@@ -59,8 +40,6 @@ function Attachments({ docType, docId, title = 'المرفقات' }: Props) {
   const [loading, setLoading] = React.useState(false);
   const [busy, setBusy] = React.useState(false);
   const pickerRef = React.useRef<HTMLInputElement>(null);
-  // الـobject URLs في ref كمان، لأن التنضيف عند الخروج بيقرا آخر قيمة — والـstate
-  // في دالة التنضيف بتبقى صورة قديمة.
   const urlsRef = React.useRef<Record<number, string>>({});
 
   const putUrl = (id: number, objectUrl: string) => {
@@ -81,7 +60,6 @@ function Attachments({ docType, docId, title = 'المرفقات' }: Props) {
       const res = await api.get(a.url, { responseType: 'blob' });
       putUrl(a.id, URL.createObjectURL(res.data as Blob));
     } catch {
-      // صورة واحدة ما جتش مابتوقّعش الباقي — بتفضل مكانها من غير معاينة.
     }
   }, []);
 
@@ -94,9 +72,6 @@ function Attachments({ docType, docId, title = 'المرفقات' }: Props) {
       setRows(list);
       list.forEach((a) => { void fetchFile(a); });
     } catch {
-      // **الخطأ هنا مايوقّفش الشاشة.** المرفقات إضافة على المستند — لو الـAPI رجع
-      // خطأ (صلاحية، شبكة، سيرفر قديم) القسم بيفضل فاضي والفاتورة تحته شغّالة زي
-      // ما هي. الشاشة دي فضيت قبل كده عند مدير فرع بسبب سطر واحد في `render`.
       setRows([]);
     } finally {
       setLoading(false);
@@ -105,8 +80,6 @@ function Attachments({ docType, docId, title = 'المرفقات' }: Props) {
 
   React.useEffect(() => { void load(); }, [load]);
 
-  // التنضيف عند الخروج بس — مش مع كل تحديث للقايمة، وإلا الصورة المعروضة بيتسحب
-  // منها الرابط وهي على الشاشة.
   React.useEffect(() => () => {
     Object.values(urlsRef.current).forEach((u) => URL.revokeObjectURL(u));
     urlsRef.current = {};
@@ -174,8 +147,6 @@ function Attachments({ docType, docId, title = 'المرفقات' }: Props) {
         </div>
       )}
 
-      {/* `Image.PreviewGroup` عشان التنقل بين الصور من جوّه المعاينة — اللي بيراجع
-          إذن عليه تلات ورقات مايقفلش ويفتح تلات مرات. */}
       <Image.PreviewGroup>
         <Space wrap size={8}>
           {rows.map((a) => {
@@ -187,8 +158,6 @@ function Attachments({ docType, docId, title = 'المرفقات' }: Props) {
                 border: '1px solid #e6efe3', overflow: 'hidden', background: '#fafafa',
               }}>
                 {isPdf ? (
-                  // PDF مالوش معاينة جوّه الصفحة — بيتفتح في تبويب جديد من الـblob
-                  // اللي اتجاب خلاص، فمافيش طلب تاني ولا مشكلة توكن.
                   <a href={src} target="_blank" rel="noreferrer"
                     style={{
                       display: 'flex', flexDirection: 'column', alignItems: 'center',
@@ -224,13 +193,6 @@ function Attachments({ docType, docId, title = 'المرفقات' }: Props) {
   );
 }
 
-/**
- * حاجز أخطاء حوالين المكوّن.
- *
- * المرفقات إضافة على صفحة المستند، والصفحة دي هي شغل الناس. أي استثناء في `render`
- * بيفضّي الشجرة كلها في رياكت — يعني مرفق بصيغة غريبة كان ينفع يخلّي مدير الفرع يفتح
- * الإذن ويلاقي شاشة بيضا. الحاجز بيحوّل ده لسطر رمادي مكانه، والإذن تحته زي ما هو.
- */
 class AttachmentsBoundary extends React.Component<
   { children: React.ReactNode }, { failed: boolean }
 > {

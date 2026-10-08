@@ -1,10 +1,3 @@
-"""Stock service (T015–T017): post_movement, on_hand, reverse_movement.
-
-The only write path into stock. On-hand is derived from immutable movements (FR-007); writes are
-serialized per (item × location) via a `stock_locator` FOR UPDATE lock so No-Negative-Stock holds
-under concurrency without a stored balance (Principle XI / research R3). Reversal mirrors direction
-(FR-025); reverse-once enforced.
-"""
 from __future__ import annotations
 
 from datetime import date
@@ -24,11 +17,10 @@ from src.models.stock import (
 
 
 class StockError(Exception):
-    """Invalid stock operation (no-negative-stock, double reversal, ...)."""
+    pass
 
 
 def _lock_locator(db: Session, item_id: int, location_kind: LocationKind, location_id: int) -> None:
-    """Get-or-create the (item × location) locator and lock it for the rest of the txn."""
     loc = db.scalar(
         select(StockLocator)
         .where(
@@ -42,7 +34,6 @@ def _lock_locator(db: Session, item_id: int, location_kind: LocationKind, locati
         loc = StockLocator(item_id=item_id, location_kind=location_kind, location_id=location_id)
         db.add(loc)
         db.flush()
-        # Re-select with the lock now that the row exists.
         db.scalar(
             select(StockLocator).where(StockLocator.id == loc.id).with_for_update()
         )
@@ -50,7 +41,6 @@ def _lock_locator(db: Session, item_id: int, location_kind: LocationKind, locati
 
 
 def _branch_of(db: Session, location_kind, location_id: int) -> int | None:
-    """فرع المكان: المخزن بيقول فرعه، والعهدة بتقول فرع المندوب."""
     kind = getattr(location_kind, "value", location_kind)
     if kind == "warehouse":
         from src.models.warehouse import Warehouse
@@ -66,7 +56,6 @@ def _branch_of(db: Session, location_kind, location_id: int) -> int | None:
 
 
 def on_hand(db: Session, item_id: int, location_kind: LocationKind, location_id: int) -> Decimal:
-    """Derived on-hand = Σ(in − out) for the (item × location)."""
     total = ZERO_QTY
     rows = db.scalars(
         select(StockMovement).where(
@@ -82,7 +71,6 @@ def on_hand(db: Session, item_id: int, location_kind: LocationKind, location_id:
 
 
 def _label(db, location_kind: LocationKind, location_id: int) -> str:
-    """اسم المكان زي ما الناس بتناديه — «مخزن الفرع»، مش «warehouse 3»."""
     from src.models.warehouse import Custody, Warehouse
 
     if location_kind == LocationKind.warehouse:
@@ -91,11 +79,6 @@ def _label(db, location_kind: LocationKind, location_id: int) -> str:
     cust = db.get(Custody, location_id)
     if cust is None:
         return f"عهدة #{location_id}"
-    # A custody is held EITHER by a rep or by a warehouse — `holder_type` says which, and the two
-    # ids are nullable accordingly. This read `cust.user_id`, which the model has never had, so
-    # every refusal on a custody raised AttributeError from inside the error message instead of
-    # the refusal itself: the storekeeper got a 500 at the exact moment the system had something
-    # useful to tell them. It went unseen because nothing had ever asked for a custody's label.
     if cust.rep_id is not None:
         from src.models.user import User
         user = db.get(User, cust.rep_id)
@@ -109,17 +92,6 @@ def _label(db, location_kind: LocationKind, location_id: int) -> str:
 
 def not_enough_message(db, item_id: int, location_kind: LocationKind, location_id: int,
                 available, wanted) -> str:
-    """رسالة «الرصيد مايكفيش» — واحدة للنظام كله.
-
-    Every writer that takes stock out — the sale, the transfer, the issue permit, manufacturing,
-    the count adjustment — comes through `post_movement`, so this ONE sentence is what all of them
-    say. Five services each wording the same refusal is how a system stops sounding like itself,
-    and how one of them ends up saying something subtly different from the truth.
-
-    It names the item and the place the way the people using it do. The message it replaces read
-    «No-negative-stock: on-hand 5 < requested out 8 (item 12, warehouse 3)» — every fact a
-    developer needs and not one a storekeeper can act on.
-    """
     from src.models.catalog import Item
 
     item = db.get(Item, item_id)
@@ -133,16 +105,6 @@ def not_enough_message(db, item_id: int, location_kind: LocationKind, location_i
 
 
 def _normalize_names(movement_type: str, source_doc_type: str | None) -> tuple[str, str | None]:
-    """**الباب**: أي حركة بتتكتب بتعدّي من هنا، فالاسم بيتوحّد قبل ما يلمس القاعدة.
-
-    الأسماء كانت نصوص حرّة بتتكتب من ٢٥ موضع، فالنوع الواحد بقى ليه اسمين: الخدمة
-    الحيّة بتكتب `sale_out` ونقل a5 كتب `sale`، والقاري بيدوّر على واحد فيهم بس فبيرجع
-    نُص الحقيقة. الشرح الكامل — وتلات مرات الغلط ده طلع فيهم — في `src/lib/stock_docs`.
-
-    والمجهول **بيترفض مش بيعدّي**. الاسم اللي مش في السجل بيبقى صف مالوش اسم عربي،
-    مايظهرش في فلتر، ومحدش يعرف يدوّر عليه — أرخص إن السطر اللي كاتبه يقع دلوقت من إن
-    البضاعة تتحرك ومحدش يلاقيها بعد سنة.
-    """
     move = stock_docs.canonical(movement_type, kind="movement")
     if move is None:
         raise StockError(
@@ -175,12 +137,6 @@ def post_movement(
     allow_negative: bool = False,
     movement_date=None,
 ) -> StockMovement:
-    """Append one immutable movement; reject an `out` that would drive on-hand below zero.
-
-    `allow_negative` is for replaying history that already happened — استيراد حركة سنة كاملة
-    من نظام قديم. الرصيد وقتها بيتحدد من الحركة نفسها، والرفض معناه إن النقل بيقف عند أول
-    فاتورة النظام القديم سمح فيها بالسالب. مالهاش أي استعمال في الشغل اليومي.
-    """
     q = to_qty(quantity)
     if q <= ZERO_QTY:
         raise StockError("كمية الحركة لازم تكون أكبر من صفر.")
@@ -201,22 +157,9 @@ def post_movement(
         source_doc_id=source_doc_id,
         reverses_movement_id=reverses_movement_id,
         actor_user_id=actor_user_id,
-        # **تاريخ الحركة = تاريخ ورقتها.**
-        #
-        # بيتقرا من المستند نفسه بدل ما يتمرّر من كل واحد من الـ٢٥ موضع اللي بيكتبوا
-        # حركة: اللي بينسى يمرّره كان هيسيب صفوف بتاريخ تاني من غير ما حد يعرف.
-        # ومافيش مستند ⇒ تاريخ النهارده، وهو الصح لحركة اتكتبت النهارده بإيد.
-        # و`movement_date` الصريح بيغلب المستند — الحركة اللي ليها تاريخ **خاص بيها**
-        # جوّه ورقة أطول منها. دفعة استلام إنتاج مثلاً: الأمر اتفتح يوم، والدفعات
-        # بتوصل على أيام، وتأريخهم كلهم بيوم الأمر بيحط إنتاج أسبوع في يوم واحد.
         movement_date=(movement_date
                        or stock_docs.date_of(db, source_doc_type, source_doc_id)
                        or date.today()),
-        # (037) فرع الحركة بيتاخد من مكانها، مش من اللي سجّلها.
-        #
-        # البضاعة بتتحرك في مكان، والمكان بيتبع فرع. كل مستند بيحرّك مخزون بيعدّي من هنا،
-        # فسطر واحد بيغطّي البيع والشرا والمرتجعات والتحويلات والأذون والتصنيع — بدل ما كل
-        # خدمة تفتكر تحطه لوحدها، واللي تنساه يفضل بره العزل في صمت.
         branch_id=_branch_of(db, location_kind, location_id),
     )
     db.add(mv)
@@ -227,7 +170,6 @@ def post_movement(
 def reverse_movement(
     db: Session, *, original_id: int, actor_user_id: int, movement_type: str | None = None
 ) -> StockMovement:
-    """Post the mirror of a movement (direction swapped); reverse-once; obeys no-negative-stock."""
     original = db.get(StockMovement, original_id)
     if original is None:
         raise StockError("الحركة الأصلية مش موجودة.")

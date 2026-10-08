@@ -1,24 +1,3 @@
-"""فحص سلامة البيانات — read-only checks that the stored data still agrees with itself.
-
-Their أدوات خاصة offers «مراجعه المخازن»، «مراجعة رصيد القيود»، «مراجعه السرايل» — jobs that
-*recompute and repair*. Those exist because their system stores derived balances, and a stored
-balance can drift away from the movements it was supposed to summarise.
-
-Ours does not store them. `StockLocator` holds no quantity; on-hand is always summed from
-`stock_movement`, and a ledger account's balance is always summed from its lines. There is nothing
-to recompute, because nothing was ever cached to go stale.
-
-Two things *are* stored alongside the movements and so can genuinely disagree with them:
-
-* **expiry batches** (011) — quantity per lot, whose sum must equal the derived on-hand;
-* **serial numbers** (009) — one row per unit, whose in-stock count must equal it too.
-
-So this module reports rather than repairs. That is the important difference: if a check fails, it
-means a code path wrote one side without the other, and silently "fixing" the numbers would hide the
-bug that produced them — the next occurrence would be repaired just as quietly, and nobody would
-ever learn why the counts drifted. A failure here is a defect to be traced, not a number to be
-patched, so this returns findings and touches nothing.
-"""
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -33,8 +12,6 @@ from src.models.stock import StockDirection, StockMovement
 
 @dataclass
 class Finding:
-    """One disagreement, named precisely enough to be traced back to the code that caused it."""
-
     check: str
     subject: str
     expected: str
@@ -53,7 +30,6 @@ class IntegrityReport:
 
 
 def _derived_on_hand(db: Session) -> dict[tuple[int, str, int], Decimal]:
-    """On-hand per (item, location kind, location id), summed from the movements themselves."""
     rows = db.execute(
         select(
             StockMovement.item_id,
@@ -79,12 +55,6 @@ def _derived_on_hand(db: Session) -> dict[tuple[int, str, int], Decimal]:
 
 
 def check_no_negative_stock(db: Session, report: IntegrityReport) -> None:
-    """The invariant the whole system is built on: no item is ever negative anywhere.
-
-    Enforced at write time by `stock_service.post_movement`, which is the only way stock moves. This
-    check is not redundant with that: it is how we find out if some path ever managed to go around
-    it, which is the one failure that would make every cost and profit figure downstream a guess.
-    """
     balances = _derived_on_hand(db)
     report.checked["stock_balances"] = len(balances)
     zero = to_qty(0)
@@ -100,12 +70,6 @@ def check_no_negative_stock(db: Session, report: IntegrityReport) -> None:
 
 
 def check_batch_sums(db: Session, report: IntegrityReport) -> None:
-    """Σ(batch quantity) == derived on-hand, per perishable item × location (011).
-
-    This is the invariant 011 rests on, written down in `StockBatch` itself: receive, FEFO sale and
-    return each move both sides together, so the lots cannot drift from the stock ledger. Checking it
-    is how we would find out if some path ever moved only one side.
-    """
     from src.models.catalog import StockBatch
 
     rows = db.execute(
@@ -130,11 +94,6 @@ def check_batch_sums(db: Session, report: IntegrityReport) -> None:
 
 
 def check_serial_counts(db: Session, report: IntegrityReport) -> None:
-    """In-stock serial count == derived on-hand, per serialized item × location (009).
-
-    `ItemSerial` states the rule: every status change is paired with a quantity movement, so the
-    in-stock count at a location equals the derived on-hand there.
-    """
     from src.models.catalog import ItemSerial, SerialStatus
 
     rows = db.execute(
@@ -160,12 +119,6 @@ def check_serial_counts(db: Session, report: IntegrityReport) -> None:
 
 
 def check_ledger_entries_balanced(db: Session, report: IntegrityReport) -> None:
-    """Every entry's debits equal its credits.
-
-    `ledger_service` refuses to post an unbalanced entry, so this should never fire — which is
-    exactly why it is worth running. An unbalanced entry would make the trial balance wrong without
-    making any single screen look wrong, and that is the hardest kind of error to notice.
-    """
     from src.models.ledger import Direction, LedgerEntry, LedgerLine
     from src.services import ledger_service
 
@@ -183,7 +136,6 @@ def check_ledger_entries_balanced(db: Session, report: IntegrityReport) -> None:
                 )
             ),
         )
-        # المرحّل بس — المسودة ناقصة بحكم تعريفها.
         .join(LedgerEntry, LedgerEntry.id == LedgerLine.entry_id)
         .where(ledger_service.is_posted_sql())
         .group_by(LedgerLine.entry_id)
@@ -201,16 +153,6 @@ def check_ledger_entries_balanced(db: Session, report: IntegrityReport) -> None:
 
 
 def check_customers_have_a_rep(db: Session, report: IntegrityReport) -> None:
-    """كل عميل مربوط بمندوب موجود وشغّال.
-
-    العمود `customer.rep_id` غير قابل للفراغ والـAPI بتطلبه، فالعميل من غير مندوب مفروض
-    مستحيل. اللي مش مستحيل حاجتين: مندوب **اتمسح** فالرقم بقى بيشاور على حد مش موجود،
-    ومندوب **اتقفل** فعملاؤه بقوا مالهمش حد بيزورهم.
-
-    والاتنين بيعطّلوا حاجات مابتقولش السبب: كشف المندوب بيطلع ناقص، وتطبيق الموبايل
-    مابيوصّلش العميل لحد، والفلاتر اللي بتتبني على أسماء المندوبين بتفضل فاضية. فالفحص
-    ده بيقولها بصوت عالي بدل ما تتكتشف من غياب.
-    """
     from src.models.customer import Customer
     from src.models.user import User
 
@@ -247,15 +189,6 @@ def check_customers_have_a_rep(db: Session, report: IntegrityReport) -> None:
 
 
 def check_reps_have_a_store(db: Session, report: IntegrityReport) -> None:
-    """كل مندوب شغّال ليه مخزن (أو عهدة) بضاعته فيه.
-
-    `rep_store_service` بيدوّر على مخزن الموظف الأول وبعده على عهدته، وبيرجّع `None` لو
-    مالوش الاتنين. والمندوب اللي بيرجّع `None` **مايقدرش يبيع**: كل فاتورة بتتسأل «من
-    فين؟» والإجابة مش موجودة، فالتطبيق بيقف عند خانة المخزن فاضية من غير ما يقول ليه.
-
-    ده مش خطأ بيانات بيحصل بالغلط — ده مندوب اتعمله يوزر ومحدش كمّل ربطه. والفحص ده
-    بيقوله بالاسم بدل ما المندوب يكتشفه وهو واقف عند العميل.
-    """
     from src.models.employee import Employee
     from src.models.role import Role, RoleName
     from src.models.user import User
@@ -284,7 +217,6 @@ def check_reps_have_a_store(db: Session, report: IntegrityReport) -> None:
 
 
 def run_all(db: Session) -> IntegrityReport:
-    """Run every check. Read-only — nothing here writes, by design."""
     report = IntegrityReport()
     check_no_negative_stock(db, report)
     check_batch_sums(db, report)

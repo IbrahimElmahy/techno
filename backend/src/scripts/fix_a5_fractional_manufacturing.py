@@ -1,32 +1,4 @@
 # -*- coding: utf-8 -*-
-"""الكمية الكسرية في حركة التصنيع — بترجع من a5.
-
-    python -m src.scripts.fix_a5_fractional_manufacturing --dir /opt/techno/a5factory \
-        --map /tmp/a5fix/a5_mfg_qty.tsv --branch السادات --prefix FC-
-    python -m src.scripts.fix_a5_fractional_manufacturing --dir ... --map ... --yes
-
-نفس علّة `fix_a5_fractional_quantities` — الكمية عند a5 في عمودين والتصدير أخد
-الوحدات وساب الكسر — بس على حركة التصنيع (`AznType` ٤ و٩)، اللي بتدخل بسكربت
-لوحدها. وفرع المصنع وحده هو اللي فيه كسور، و٢٬٤٠٤ سطر تصنيع متأثرين.
-
-**وفيهم نوعين مختلفين تماماً:**
-
-* **١٬٨١٩ سطر كميته ناقصة** — دخل بـ٢ وهو ٢٫١٠٩.
-* **٥٨٥ سطر مادخلش خالص** — كميته أقل من وحدة (نص كيلو، عُشر لتر)، فالوحدات عنده
-  **صفر** والكسر هو الكمية كلها. والاستيراد بيتخطّى أي سطر بصفر (`qty <= 0`)، فالخامة
-  دي اتستهلكت في المصنع ومااتخصمتش من المخزن ولا مرة.
-
-**والترقيم هو اللي بيربط.** عملية التصنيع عندنا رقمها `FC-MFG-<أمر التشغيل>-<ترتيب
-السطر>`، والترتيب ده جاي من ترتيب سطور `a5_mfg.tsv` الأصلي. فإعادة تصدير الملف
-بترتيب مختلف بتزحلق كل الأرقام. عشان كده السكربت بيقرا **نفس الملف الأصلي** عشان
-يطلّع الأرقام، وبياخد الكمية المصحّحة من كشف مطابقة منفصل (`exp_mfg_qty.sql`)
-مفتاحه (أمر التشغيل، النوع، كود الصنف، المخزنين، الكمية القديمة).
-
-والترقيم بيعدّ **كل** السطور بما فيهم اللي بصفر، فالسطر اللي مادخلش رقمه محجوز له
-وفاضي — وده اللي بيخلّي السطور الناقصة تتكتب برقمها الصح.
-
-وكل تعديل بيمشي على العملية وحركتها مع بعض — الرصيد مشتق من الحركة مش من العملية.
-"""
 from __future__ import annotations
 
 import argparse
@@ -51,7 +23,6 @@ from src.scripts.import_a5_manufacturing import (
 
 ZERO = Decimal("0")
 
-#: أعمدة كشف المطابقة `a5_mfg_qty.tsv`
 (Q_TYPE, Q_REF, Q_CODE, Q_IN, Q_OUT, Q_OLD, Q_NEW) = range(7)
 
 
@@ -69,13 +40,6 @@ def main() -> None:
     ap.add_argument("--limit", type=int, default=12)
     args = ap.parse_args()
 
-    # ---------------------------------------------------------------- الكشف
-    #
-    # المفتاح بيتكرر أحياناً: نفس الصنف اتصرف مرتين في نفس الأمر من نفس المخزن بنفس
-    # عدد الوحدات والكسر مختلف. بنسيب الكميات في **قايمة بترتيبها** وبناخد منها
-    # واحدة ورا التانية — والتوزيع ده مايغيّرش الرصيد: الأمر والصنف والمخزن واحد،
-    # فمجموع المصروف هو هو مهما اتبدّلت الكسور بين السطرين. اللي بيفرق بس هو أنهي
-    # سطر شايل أنهي كسر، ومافيش في a5 حاجة تحسمها.
     fixes: dict[tuple, list] = defaultdict(list)
     for r in _read(args.map):
         if len(r) < 7:
@@ -85,7 +49,6 @@ def main() -> None:
     taken: dict[tuple, int] = defaultdict(int)
     shared = 0
 
-    # ------------------------------------------------- الملف الأصلي (الترقيم)
     rows = [r for r in _read(os.path.join(args.dir, "a5_mfg.tsv"))
             if len(r) >= 9 and r[M_TYPE] in (PRODUCE, CONSUME)]
     groups: dict[str, list[list[str]]] = defaultdict(list)
@@ -142,10 +105,8 @@ def main() -> None:
                 op = db.scalar(select(ManufacturingOp)
                                .where(ManufacturingOp.document_number == doc))
 
-                # -------------------------------------------- سطر موجود: تعديل
                 if op is not None:
                     if op.item_id != item.id:
-                        # الرقم ده لصنف تاني — يبقى الترقيم مااتطابقش، وسيبه.
                         skipped["الرقم على صنف مختلف"] += 1
                         continue
                     if to_qty(op.quantity) != to_qty(old):
@@ -162,9 +123,7 @@ def main() -> None:
                                 skipped["الحركة المكتوبة على العملية مش موجودة"] += 1
                     continue
 
-                # ------------------------------- سطر مادخلش أصلاً: يتكتب برقمه
                 if to_qty(old) > ZERO:
-                    # مش سطر صفر، يبقى غيابه سببه تاني (صنف/مخزن وقت الاستيراد).
                     skipped["العملية مش موجودة والكمية القديمة مش صفر"] += 1
                     continue
                 created.append((doc, item.name, new))
@@ -187,8 +146,6 @@ def main() -> None:
                     quantity=new, actor_user_id=actor.id,
                     source_doc_type="manufacturing", source_doc_id=new_op.id,
                     allow_negative=True)
-                # نفس سبب `import_a5_manufacturing`: العملية مالهاش عمود تاريخ،
-                # ومن غير السطر ده شغل سنة بيتحط في يوم النهارده.
                 mv.movement_date = _date(r[M_DATE]) or mv.movement_date
                 new_op.stock_movement_id = mv.id
 

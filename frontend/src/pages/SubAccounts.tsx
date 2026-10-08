@@ -89,8 +89,6 @@ export default function SubAccounts() {
 
   const accountName = (r: ChartAccount) => r.name || r.owner_name || '-';
 
-  // فحص النظام بيبعت أرقام الحسابات اللي فيها الخلل في الرابط — الشاشة بتفتح عليهم
-  // هم بس بدل ما تسيب اللي فتحها يدوّر في الكشف كله. `FocusedRows` بيشرح ليه.
   const focus = useFocusedIds();
 
   const filtered = focus.filter(rows, (a) => a.id).filter((a) => {
@@ -255,9 +253,6 @@ export default function SubAccounts() {
       </Col>
       {!isCreate && (
         <Col span={24}>
-          {/* (المرحلة ٣) الحساب اللي سطوره بتتقفل على بعضها بيظهر في شاشة التسوية.
-              ذمم العملاء والموردين بتاخده من نوعها من غير ما حد يفكّر؛ ده للحسابات
-              التانية اللي بتتقفل زي «شيكات تحت التحصيل» و«سلف العاملين». */}
           <Form.Item name="reconcilable" label="قابل للتسوية" valuePropName="checked"
             extra="سطوره هتظهر في شاشة تسوية الحسابات عشان تتقفل على بعضها">
             <Switch checkedChildren="أيوه" unCheckedChildren="لأ" />
@@ -268,8 +263,6 @@ export default function SubAccounts() {
   );
 
   const inSection = columns.filter((c: any) => c.key !== 'parent_id');
-  // الشاشة بتقسّم الصفوف على جداول جوّه كل حساب رئيسي، والملف بياخدهم كلهم مرة واحدة —
-  // فالصفوف هنا هي `filtered` نفسها مش صفوف قسم واحد.
   const tableCols = useTableColumns('sub-accounts', inSection, {
     export: { name: 'الحسابات الفرعيه', rows: filtered },
   });

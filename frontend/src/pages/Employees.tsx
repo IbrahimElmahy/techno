@@ -23,14 +23,6 @@ import EmployeeFormModal, {
 } from '../components/EmployeeFormModal';
 import type { Employee } from '../components/EmployeeFormModal';
 
-/**
- * الموظفون والوظائف — deliberately not the users screen.
- *
- * A user is someone who logs in; an employee is someone the company employs, and the two are not
- * the same set. A driver or a storekeeper belongs here without ever having a password. Where the
- * same person is both, the record links to the user instead of duplicating them.
- */
-
 interface JobTitle { id: number; name: string; description: string | null; active: boolean }
 
 const money = (v: any) => (v === null || v === undefined || v === ''
@@ -44,12 +36,10 @@ export default function Employees() {
   const [warehouses, setWarehouses] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
 
-  // الفورم نفسه في `EmployeeFormModal` — شاشة الأقسام بتفتحه هي كمان.
   const [editing, setEditing] = useState<Employee | null>(null);
   const [open, setOpen] = useState(false);
 
   const [newTitle, setNewTitle] = useState('');
-  // الشريحة في الرابط (`?tab=`) — الريفرش بيرجع عليها.
   const [viewRaw, setView] = useQueryTab('employees');
   const view = (viewRaw === 'titles' ? 'titles' : 'employees') as 'employees' | 'titles';
 
@@ -77,22 +67,18 @@ export default function Employees() {
     },
   });
 
-  // F3 كانت جاية من `ListToolbar` — الخانة بقت هنا فبتتسجّل هنا.
   const searchRef = useRef<any>(null);
   useScreenShortcuts({ onSearch: () => { searchRef.current?.focus?.(); } });
-  // قوايم الفلاتر — نفس اللي كانت في `ListToolbar` (أكتر من قيمة، والمعنى «أي واحدة منهم»).
   const multiSelect = (key: string, placeholder: string, options: { value: any; label: string }[]) => {
     const v = filter.values[key];
     return (
       <Select allowClear showSearch mode="multiple" maxTagCount="responsive" placeholder={placeholder}
-        // القيمة الابتدائية (`initialValues`) ممكن تبقى مفردة — وضع المتعدد بيستنى قايمة.
         value={v === undefined || v === null || v === '' ? undefined : (Array.isArray(v) ? v : [v])}
         onChange={(x) => filter.setValue(key, Array.isArray(x) && !x.length ? undefined : x)}
         options={options} filterOption={searchFilter} filterSort={searchRank} />
     );
   };
 
-  // السطر يفتح التعديل — البيانات الأساسية مافيهاش «عرض» غير الفورم بتاعها نفسه.
   const kb = useTableKeyboard<Employee>({
     rows: filter.filtered, rowKey: (r) => r.id, onOpen: (r) => startEdit(r),
   });
@@ -115,7 +101,6 @@ export default function Employees() {
   };
 
   const employeeColumns: ColumnsType<Employee> = [
-    // Their column order: رقم · الاسم · المخزن · الفرع · الوظيفة · مخفي.
     { title: 'رقم', dataIndex: 'code', width: 100, render: (v: string) => <Tag>{v}</Tag> },
     { title: 'الاسم', dataIndex: 'name', render: (v: string) => <b>{v}</b> },
     { title: 'المخزن', dataIndex: 'warehouse_id',
@@ -154,7 +139,6 @@ export default function Employees() {
               </Tooltip>
             </Popconfirm>
           )}
-          {/* المسح للكارت اللي اتعمل بالغلط — السيرفر بيرفضه بالأرقام لو الموظف له أي تاريخ. */}
           <Popconfirm title="حذف الموظف نهائياً؟" onConfirm={() => remove(r)}>
             <Tooltip title="حذف نهائي (لو مالوش أي حركة)">
               <Button type="text" danger icon={<DeleteOutlined />} />
@@ -164,7 +148,6 @@ export default function Employees() {
       ) },
   ];
 
-  // إخفاء وترتيب الأعمدة — نفس المحرك اللي كل الجداول بتستخدمه.
   const employeeCols = useTableColumns('employees', employeeColumns, {
     export: { name: 'الموظفون', rows: filter.filtered },
   });

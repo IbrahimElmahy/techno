@@ -1,27 +1,3 @@
-"""يرجّع حقول ربط العملاء لحالة لقطة اتاخدت قبل التعديل — نقطة رجوع، مش نسخة احتياطية.
-
-    python -m src.scripts.restore_customer_snapshot --file C:/pgtmp/erp/wb/snap.tsv
-    python -m src.scripts.restore_customer_snapshot --file C:/pgtmp/erp/wb/snap.tsv --yes
-
-بيتعاد تشغيله بأمان: بيقارن الموجود باللقطة وبيكتب اللي اختلف بس.
-
----------------------------------------------------------------------------
-**ليه موجود:** `fix_party_links` و`merge_duplicate_parties` بيعدّلوا ربط آلاف
-الكروت في تشغيلة واحدة. القرار إننا نعيد البناء من الأول من ملف العميل بدل ما
-نكمّل فوق شغل قديم محتاج طريق رجوع — وإلا كل تجربة بتبقى قرار مافيش منه رجعة.
-
-**اللقطة أربع حقول بس، وده مقصود.** `customer_type` و`rep_id` و`service_rep_id`
-و`active` — دول اللي السكربتين بيلمسوهم. مافيش مسح صفوف ولا رجوع مستندات، لأن
-مافيش حاجة من دي اتعملت: الدمج نقل **صفر صف** (اتقاس جدول جدول قبل التنفيذ).
-
-**بيمسح مراجع `customer_external_ref` اللي اتضافت بعد اللقطة** — بالتاريخ، مش
-بالشكل. الـ٨٧١ مرجع القديم اتكتبوا قبل كده وبيفضلوا مكانهم، واللي الدمج ضافه
-النهاردة بيتشال عشان الإعادة تبني من نظيف بدل ما تلاقي مفتاح موجود وتتخطّاه.
-
-**اللي مابيرجعش:** `phone`. الدمج كان بيملاه على الكارت الباقي **لو كان فاضي**
-بس، واللقطة مافيهاش عمود تليفون. رقم اتزاد على كارت ناقص مش ضرر، فالسكربت
-بيقول ده صراحةً بدل ما يدّعي رجوع كامل.
-"""
 from __future__ import annotations
 
 import os
@@ -34,10 +10,8 @@ from sqlalchemy import select, text
 from src.core.db import SessionLocal, engine
 from src.models.customer import Customer
 
-# أعمدة اللقطة بالترتيب زي ما اتصدّرت.
 (C_ID, C_CODE, C_NAME, C_TYPE, C_REP, C_REPNAME, C_SVC, C_BRANCH, C_ACTIVE) = range(9)
 
-# كل خانة بتشاور على عميل — الفحص قبل أي حذف بيمرّ عليها كلها.
 REFS = (
     ("sales_invoice", "customer_id"), ("sales_return", "customer_id"),
     ("voucher", "customer_id"), ("cheque", "customer_id"),
@@ -50,7 +24,6 @@ REFS = (
 
 
 def _load(path: str) -> dict[int, list[str]]:
-    """اللقطة: رقم الكارت → صفّه. الملف فيه قسمين، وبنقرا `#CUST` بس."""
     if not os.path.exists(path):
         raise SystemExit(f"مافيش ملف لقطة على {path}")
     out: dict[int, list[str]] = {}
@@ -108,9 +81,6 @@ def run(path: str, *, execute: bool, delete_extras: bool = False) -> None:
         if missing:
             notes["كارت في اللقطة ومش موجود دلوقتي"] = missing
 
-        # الكروت اللي اتعملت بعد اللقطة. بتتمسح مع `--delete-extras` بس، وبعد ما
-        # يتأكد إنها **فاضية** — صفر إشارة في كل جدول بيشاور على عميل. كارت عليه
-        # مستند مابيتمسحش مهما الأمر قال: الرجوع مايستاهلش مرجع مكسور.
         deletable: list[Customer] = []
         if extras:
             eids = [c.id for c in extras]
@@ -125,7 +95,6 @@ def run(path: str, *, execute: bool, delete_extras: bool = False) -> None:
             if busy:
                 notes["منهم عليه مستندات — مش هيتمسح"] = len(busy)
 
-        # المراجع اللي اتضافت بعد اللقطة — بالتاريخ.
         newer = db.execute(text(
             "SELECT count(*) FROM customer_external_ref"
             " WHERE created_at > (SELECT min(created_at) + interval '1 hour'"

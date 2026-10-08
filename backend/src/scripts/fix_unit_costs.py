@@ -1,30 +1,3 @@
-"""يصلّح `unit_cost` اللي متخزّن فيه إجمالي السطر بدل سعر الوحدة — بمطابقة المصدر.
-
-    python -m src.scripts.fix_unit_costs --aliaa-dir C:/pgtmp/aliaa --oct-dir C:/pgtmp          # يعرض بس
-    python -m src.scripts.fix_unit_costs --aliaa-dir C:/pgtmp/aliaa --oct-dir C:/pgtmp --yes    # ينفّذ
-
-**اللي اتقاس (سطور البيع على السيرفر مقابل تصدير a5 نفسه):**
-
-* عمود `a_AvPrice` عند a5 **إجمالي تكلفة السطر** مش سعر الوحدة: في ٩٦٪ من السطور
-  هو أقل من إجمالي البيع (تكلفة حقيقية)، وفي ٦٩ سطر صدى للإجمالي بالحرف. والمستورد
-  حطه في `unit_cost` زي ما هو — فـ٤١ ألف سطر شايلين التكلفة الإجمالية في خانة الوحدة.
-* `unit_price` شكله غلط لكنه سليم: الفرق `price×qty − total` هو خصم الفاتورة
-  (البونص) على الترويسة. فالإصلاح تكلفة بس، والسعر مابيتلمسش.
-* السطور اللي اتعدّلت بعد النقل من الشاشة (تكلفتها محسوبة من المتوسط) بتتكشف
-  لوحدها: تكلفتها الحالية مختلفة عن `a_AvPrice` بتاع المصدر — ودي مابتتلمسش.
-
-**القاعدة:** سطر مستورد كميته مش ١ وتكلفته الحالية بتطابق `a_AvPrice` بتاع نفس
-السطر في المصدر ← التكلفة الجديدة = `AvPrice ÷ الكمية` (مقرّبة لقرشين).
-الحارس: الجديد × الكمية بيطابق `AvPrice` الأصلي — واللي مايطابقش بيتقال
-ومايتغيّرش. سطور الكمية ١ صح أصلاً، والمجهولة التكلفة (`AvPrice = 0`) بتفضل فاضية.
-
-**الأثر:** تقارير الربحية بتحسب `cost = unit_cost × qty` (`lib/trade_reports`) —
-التضاعف كان بيضرب التكلفة في الكمية مرة زيادة. اللي بيفضل بعد الإصلاح هامش
-التكلفة الحقيقية من المصدر نفسه، مش صفري بالعافية.
-
-**الحرّاس:** عرض افتراضي و`--yes` للتنفيذ، وبيتعاد تشغيله بأمان (التانية بتلاقي
-صفر — التكلفة المتصلّحة مابتطابقش `AvPrice` فمابتترشّحش).
-"""
 from __future__ import annotations
 
 import os
@@ -45,23 +18,13 @@ CENT = Decimal("0.01")
 
 
 def _same(cost: Decimal, av: Decimal) -> bool:
-    """التكلفة الحالية هي نفس `AvPrice` بتاع المصدر؟
-
-    التفاوت المطلق لوحده مايكفيش: `AvPrice` متوسط متحرك عند a5 وبيتحرك مع كل
-    شرا جديد، فالقيمة النهاردة مش بالحرف زي يوم النقل (متقاس: انحراف ≤ ٠٫٠٢٪
-    على ٣٩ سطر). والتعديل الحقيقي من الشاشة بيحسب تكلفة وحدة (≈ المتوسط ÷
-    الكمية) فبيبعد بعامل الكمية — فجوة واسعة بين الغبار والحقيقة، والعتبة
-    النسبية ٠٫٢٪ قاعدة في نصها بالأمان.
-    """
     return abs(cost - av) <= max(Decimal("0.05"), abs(av) * Decimal("0.002"))
 
-# نوع a5: بيع (المفتاح Ord) ومردود بيع (المفتاح OrdBk)
 (L_TYPE, L_AZN, _L_DATE, L_ORD, L_ORDBK, _L_POORD, _L_POBK, L_CODE, L_NAME,
  _L_IN, _L_OUT, L_QTY, _L_PRICE, L_TOTAL, _L_MEMO, _L_JUST, L_COST) = range(17)
 
 
 def _src_rows(path: str, doctype: str) -> dict[str, list]:
-    """المفتاح الداخلي (Ord/OrdBk) ← [(الكود، الاسم، الكمية، AvPrice)] لصفوف النوع."""
     out: dict[str, list] = defaultdict(list)
     if not os.path.exists(path):
         return out
@@ -79,7 +42,6 @@ def _src_rows(path: str, doctype: str) -> dict[str, list]:
 
 
 def _hdr_map(path: str, table: str) -> tuple[dict[str, str], list[str]]:
-    """الرقم المطبوع (H_NO) ← المفتاح الداخلي (H_ID). المكرر بيتقال وبيتخطى."""
     ids: dict[str, list] = defaultdict(list)
     if not os.path.exists(path):
         return {}, [f"مافيش ملف: {path}"]
@@ -92,8 +54,6 @@ def _hdr_map(path: str, table: str) -> tuple[dict[str, str], list[str]]:
 
 
 def run(*, aliaa_dir: str, oct_dir: str, execute: bool) -> None:
-    # رقمنا الخارجي = الرقم المطبوع (H_NO) مش الداخلي (Ord) — فالوصلة عبر الرؤوس:
-    # (الفرع، المطبوع) ← سطور المصدر. والمطبوع المكرر عندهم بيقع (بيتقال).
     sale_src: dict[tuple[str, str], list] = {}
     ret_src: dict[tuple[str, str], list] = {}
     hdr_dupes: list[str] = []
@@ -124,10 +84,9 @@ def run(*, aliaa_dir: str, oct_dir: str, execute: bool) -> None:
         unguarded: list[str] = []
         no_source = 0
         av_zero = 0
-        inflated = ZERO  # مجموع التكلفة المتضخمة حالياً على سطور الخطة
-        trued = ZERO     # مجموعها بعد الإصلاح
+        inflated = ZERO
+        trued = ZERO
 
-        # --- البيع ---
         for inv in db.scalars(select(SalesInvoice)).all():
             prefix = "AL-" if inv.document_number.startswith("AL-") else ""
             if not inv.external_document_number:
@@ -169,7 +128,6 @@ def run(*, aliaa_dir: str, oct_dir: str, execute: bool) -> None:
                 inflated += cost * qty
                 trued += av
 
-        # --- مردود البيع ---
         for ret in db.scalars(select(SalesReturn)).all():
             prefix = "AL-" if ret.document_number.startswith("AL-") else ""
             if not ret.external_document_number:

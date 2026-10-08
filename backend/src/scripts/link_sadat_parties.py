@@ -1,26 +1,3 @@
-"""يربط عملاء وموردين وموظفين **السادات بس** بحساباتهم في الشجرة (٢٠٢٦-١٠-٠٥).
-
-    python -m src.scripts.link_sadat_parties          # يعرض بس
-    python -m src.scripts.link_sadat_parties --yes    # ينفّذ
-
-**ليه:** نقل السادات جاب الشجرة والقيود كاملة (سندات القبض والصرف جوّاها، زي العلياء
-وأكتوبر بالظبط)، بس ماربطش الكروت بحساباتها: ٩٢ عميل وصفر مربوط، و١١٨ مورد واتنين
-مربوطين. فالمديونيات وكشوف الحساب بتبان صفر والفلوس قاعدة على حسابات a5 مالهاش كارت.
-
-**مقفول على فرع السادات:** الكروت والحسابات بتتقري بـ`branch_id` السادات بس، وكل
-كتابة بتتأكد إن الطرفين في الفرع ده. العلياء وأكتوبر فيهم شغل مش في a5 —
-`link_a5_party_accounts` العام بيلف على كل الفروع، فمش هو اللي بيتشغّل هنا.
-
-نفس قواعد الربط العام: الاسم بعد التطبيع، والملتبس بيتساب، والحساب لازم يكون تحت
-مجموعته («العملاء»/«ذمم الموظفين» للعملاء، «الموردون» للموردين).
-
-وحسابات «ذمم الموظفين» اللي مالهاش كارت بيتعملها كارت موظف (`customer_type=employee`)
-بكود `FC-A5E-<رقم الحساب>` — نفس `import_a5_employee_cards` للعلياء وأكتوبر —
-عشان رصيده وكشفه يبانوا في تبويب «الموظفين». حسابات العهدة («خزنة…»، «مندوب السيارة»…)
-مش أشخاص ومابيتعملهاش كارت.
-
-بيتعاد تشغيله بأمان: اللي متربط بيتساب، والكود الموجود مابيتعملش تاني.
-"""
 from __future__ import annotations
 
 import re
@@ -84,7 +61,6 @@ def run(*, execute: bool) -> None:
         cids = {c.id for c in customers}
         sids = {s.id for s in suppliers}
 
-        # الحسابات المربوطة في أي فرع — مابنربطش حساب مربوط خلاص.
         used = {x.account_id for x in db.scalars(select(CustomerAccount))}
         used |= {x.account_id for x in db.scalars(select(SupplierAccount))}
         linked_c = {x.customer_id for x in db.scalars(select(CustomerAccount))
@@ -119,16 +95,12 @@ def run(*, execute: bool) -> None:
         resolve("عملاء", customers, cust_book, linked_c)
         resolve("موردين", suppliers, supp_book, linked_s)
 
-        # كارت مالوش حساب في مجموعته وحسابه في المجموعة التانية (١٠ عملاء و٤ موردين في
-        # السادات) = طرف ليه كارتين، والكارت التاني (من النوع الصح) واخد الحساب. مابنربطهوش
-        # بالحساب ده: مورد علينا له فلوس كان هيظهر في المديونيات كأنه مديون لنا.
         for kind, rows, other in (("عملاء", customers, supp_book), ("موردين", suppliers, cust_book)):
             for nm in list(unmatched[kind]):
                 if other.get(_norm(nm.split(" · ", 1)[1])):
                     unmatched[kind].remove(nm)
                     unmatched[kind + " — كارته التاني من النوع التاني واخد الحساب"].append(nm)
 
-        # حسابات موظفين من غير كارت ⇒ كارت موظف جديد.
         codes = {c for (c,) in db.execute(text("select code from customer"))}
         new_emps: list[Account] = []
         skipped_emp: list[str] = []
@@ -163,7 +135,6 @@ def run(*, execute: bool) -> None:
             print("\nعرض فقط — مافيش حاجة اتكتبت. أضف --yes للتنفيذ.")
             return
 
-        # كارت الموظف بياخد منطقة ومندوب أكتر كارت في الفرع.
         terr, rep = db.execute(text("""select territory_id, rep_id from customer where branch_id=:b
             group by 1,2 order by count(*) desc limit 1"""), {"b": bid}).one()
 

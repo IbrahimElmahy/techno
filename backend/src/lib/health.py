@@ -1,29 +1,3 @@
-"""فحص النظام — كل حاجة فيها خلل، في مكان واحد.
-
-The problems this looks for are already discoverable: each one has a screen that shows it, and
-somebody who opens all fourteen of those screens every morning would find everything here. Nobody
-does that. So an item priced at nothing keeps being sold at nothing, a warehouse holding negative
-stock stays negative, and an invoice whose cost was never captured quietly reports infinite profit
-— each one visible, none of them looked at.
-
-What makes this a page rather than a report is that it answers «فيه إيه غلط» without being asked
-about anything in particular. Every check names what is wrong, how many, what it costs to leave
-alone, and the screen that fixes it. A clean system produces an empty page, which is the point:
-the absence of findings has to be a readable answer, not an unpopulated dashboard.
-
-Two rules hold everything here honest:
-
-* **Read-only.** Nothing writes. A diagnosis that changes the patient is not a diagnosis, and this
-  runs unattended on every dashboard load.
-* **No opinions dressed as faults.** «مبيعات الشهر أقل من اللي قبله» is a business fact somebody
-  may want on a chart; it is not a خلل and it is not here. Everything below is either a broken
-  invariant, a missing value that makes some other number wrong, or a threshold the company itself
-  set and the data has crossed.
-
-Cost note: this runs on every dashboard load against the live database, and the customer merge
-already taught us what an N+1 does to a serverless request — 233 round trips, past the timeout,
-503. Every check here is aggregate queries whose count does not grow with the data.
-"""
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
@@ -49,10 +23,9 @@ from src.models.warehouse import Custody
 ZERO = Decimal("0")
 
 
-from src.lib import reporting  # noqa: E402  (دورة استيراد: التقرير بيقرا من هنا كمان)
+from src.lib import reporting  # noqa: E402
 
 def _with_ids(link: str, ids) -> str:
-    """الرابط ومعاه أرقام الصفوف — بيحترم `?` اللي فيه أصلاً."""
     ids = [int(i) for i in ids][:MAX_IDS]
     if not ids:
         return link
@@ -61,95 +34,30 @@ def _with_ids(link: str, ids) -> str:
 
 
 def _money(v) -> str:
-    """Readable money in a sample line. `-36047.66` is a number; no thousands separator — the client asked for the decimal point only (2026-09-29)."""
     return f"{to_money(v or 0):.2f}"
 
-# How many examples travel with each finding. Enough to recognise the problem without turning the
-# response into the report it links to.
 SAMPLE = 5
 
-# أقصى عدد أرقام بتتحط في الرابط. أكتر من كده والرابط بيتكسر، والفلترة بتبقى بلا معنى.
 MAX_IDS = 200
 
-# Severity is about consequence, not about how many rows matched.
-#
-#   high    — a number somewhere in the system is now WRONG. Stock that cannot physically exist,
-#             a ledger entry that does not balance, profit computed against a missing cost.
-#   medium  — nothing is wrong yet, but a decision is being made on incomplete data: an item with
-#             no price, a customer duplicated across two files.
-#   low     — the company's own threshold has been crossed. Worth knowing, not broken.
 SEVERITY_ORDER = {"high": 0, "medium": 1, "low": 2}
 
 
 @dataclass
 class Issue:
-    """واحدة من الحاجات اللي فيها خلل."""
-
     key: str
     title: str
     group: str
     severity: str
     count: int
-    # What it costs to leave alone — the sentence that turns a count into a reason to click.
     hint: str
-    # The screen that fixes it. A finding with nowhere to go is a complaint.
-    #
-    # **لازم يطابق مفتاح موجود في `frontend/src/components/navigation.ts` بالحرف** —
-    # بالتبويب لو الشاشة جوّاها تبويبات. الواجهة بتفتح المسار زي ما هو، والمسار اللي
-    # مالوش مدخل بيوصّل لـ«شاشة غير معروفة» — يعني الفحص بيقول فيه مشكلة وبيوديك
-    # على باب مقفول. حصل مع `/chart-of-accounts` (الصح `/general-ledger?tab=chart`).
     link: str
     samples: list[dict] = field(default_factory=list)
-    # أرقام الصفوف اللي فيها الخلل — الشاشة بتفتح عليهم هم بس.
-    #
-    # **«روح لشاشة الفواتير» مش إجابة.** الفحص بيقول «٤ فواتير بنودها من غير تكلفة»
-    # وبيوديك على ٨٬٦١٣ فاتورة تدوّر فيهم بنفسك على الأربعة. الأرقام بتتبعت هنا،
-    # والرابط بيحملها (`?ids=…`)، والشاشة بتفتح على الأربعة وبس ومعاهم زرار «اعرض الكل».
-    #
-    # بتتقصّ عند `MAX_IDS` — الرابط اللي فيه ألف رقم مابيتفتحش، واللي عنده ألف صف
-    # المشكلة عنده مش في الفلترة.
     ids: list[int] = field(default_factory=list)
-
-
-# ---------------------------------------------------------------------------
-# عزل الفروع — الفحص بيقول للّي بيبصّ اللي **هو** يقدر يصلّحه
-# ---------------------------------------------------------------------------
-#
-# **اللي كشفه.** مدير فرع العلياء بيفتح الرئيسية فيلاقي «رصيد سالب» على أصناف
-# `FC-` (المصنع) و«فواتير بنودها من غير تكلفة» على `FC-S…`. مستندات مش بتاعته،
-# وشاشتها بترفض تفتحها له أصلاً — يعني الفحص بيوريه خلل مايقدرش يوصله ولا يصلّحه.
-#
-# ودي مش مضايقة شكلية: التقرير اللي فيه صفوف اللي بيقراه ماينفعش يعمل حاجة فيها
-# **بيتوقف عن القراية**. `check_stagnant` وحده هو اللي كان متعزل، ولسبب كان أوضح
-# (الرقم على الرئيسية مايطابقش الكشف) — والباقي كان لسه مفتوح.
-#
-# **والقاعدة هي نفسها في كل حتة: `branch_scope`** — اللي مالوش فرع بيشوف الكل، واللي
-# له فرع بيشوف فرعه **ومعاه الصفوف اللي فرعها فاضي** (الداتا القديمة قبل العزل).
-#
-# **وكل نوع بيتعزل من الحتة اللي بتخصّه فعلاً:**
-#
-# | الصف | فرعه منين |
-# |---|---|
-# | حركة مخزون · حجز | المخزن اللي فيه (`Warehouse.branch_id`) |
-# | عهدة | المندوب صاحبها (`User.branch_id`) |
-# | فاتورة · طلب · خزنة · عميل · قيد · حساب | عمود `branch_id` عليها |
-# | شيك | خزنته (`Cheque.treasury_id` → `Treasury.branch_id`) |
-# | صنف | **اتحرّك في مخزن مين** — الكتالوج مشترك ومافيش عليه عمود فرع |
-#
-# والصنف ده الاستثناء الوحيد اللي محتاج شرح: جدول `item` مالوش `branch_id`، والأصناف
-# بعد النقل بقت بأمر الواقع بتاعة فرع (`FC-` للمصنع و`AL-` للعلياء). التقسيم بالكود
-# كان هيبقى قاعدة مكتوبة في نص حرف، فالقاعدة بقت **الحركة**: الصنف اللي اتحرّك في
-# مخزن الفرع بتاعه. واللي مااتحركش في أي مكان بيفضل ظاهر للكل — زي `branch_id` الفاضي
-# بالظبط.
-#
-# **والفحوصات اللي مالهاش عزل مافيش.** كلها بتاخد `scope`، واللي مالوش دعوة بالفرع
-# بيسيبه — عشان الفحص الجاي يتكتب وهو شايف السؤال ده قدامه.
 
 
 @dataclass(frozen=True)
 class Scope:
-    """نطاق اللي بيبصّ. `everything` معناها مدير نظام أو حساب مركزي."""
-
     branch_id: int | None = None
     warehouses: frozenset[int] | None = None
     custodies: frozenset[int] | None = None
@@ -161,11 +69,9 @@ class Scope:
         return self.branch_id is None
 
     def row(self, branch_id) -> bool:
-        """قاعدة `branch_scope` على صف عنده عمود فرع: فرعي، أو فرعه فاضي."""
         return self.everything or branch_id is None or branch_id == self.branch_id
 
     def place(self, kind, location_id: int) -> bool:
-        """مكان مخزون — مخزن أو عهدة."""
         if self.everything:
             return True
         k = getattr(kind, "value", kind)
@@ -180,7 +86,6 @@ class Scope:
 
 
 def _scope(db: Session, branch_id: int | None, on_hand) -> Scope:
-    """بيبني النطاق مرة واحدة — استعلامين زيادة مش أكتر، والباقي من `on_hand`."""
     if branch_id is None:
         return Scope()
     from src.models.warehouse import Warehouse
@@ -194,9 +99,6 @@ def _scope(db: Session, branch_id: int | None, on_hand) -> Scope:
     tre = {t.id for t in db.scalars(select(Treasury)).all()
            if t.branch_id in (None, branch_id)}
 
-    # **الصنف بيتبع مكان حركته.** واللي مالوش حركة خالص بيفضل مشترك: صنف في
-    # الكتالوج ومااتحركش في أي فرع مش بتاع حد، وإخفاؤه بيخلّي «منتج من غير سعر»
-    # ساكت عن أصناف محدش شافها.
     moved: dict[int, set] = {}
     for iid, kind, lid, _q in on_hand:
         moved.setdefault(iid, set()).add((getattr(kind, "value", kind), lid))
@@ -216,12 +118,6 @@ def _scope(db: Session, branch_id: int | None, on_hand) -> Scope:
 
 
 def _branch_sql(model, scope: Scope | None):
-    """شرط الفرع جوّه الاستعلام نفسه — مش فلترة بعد الجلب.
-
-    الفحوصات دي بتجمّع في SQL (`GROUP BY` على آلاف الفواتير)، والفلترة بعدها معناها
-    إن العدّ نفسه اتحسب على الشركة كلها وبعدين اتقصّ — يعني كل شغل الاستعلام اتعمل
-    على داتا هتترمي، والصفحة دي بتشتغل مع كل فتحة للرئيسية.
-    """
     from sqlalchemy import or_, true
 
     if scope is None or scope.everything:
@@ -230,7 +126,6 @@ def _branch_sql(model, scope: Scope | None):
 
 
 def _on_hand_by_location(db: Session) -> list[tuple[int, str, int, Decimal]]:
-    """الرصيد لكل صنف في كل مكان — استعلام واحد."""
     signed = func.sum(case(
         (StockMovement.direction == StockDirection.in_, StockMovement.quantity),
         else_=-StockMovement.quantity,
@@ -245,7 +140,6 @@ def _on_hand_by_location(db: Session) -> list[tuple[int, str, int, Decimal]]:
 
 
 def _item_labels(db: Session) -> dict[int, str]:
-    """«كود — اسم» لكل صنف. A finding that names an id names nothing."""
     return {
         row.id: f"{row.code} — {row.name}"
         for row in db.execute(select(Item.id, Item.code, Item.name)).all()
@@ -253,12 +147,6 @@ def _item_labels(db: Session) -> dict[int, str]:
 
 
 def _location_labels(db: Session) -> dict[tuple[str, int], str]:
-    """«مخزن الجودة» بدل `warehouse #74`.
-
-    نفس سبب `_item_labels`: الفحص اللي بيسمّي رقم مابيسمّيش حاجة. اللي بيقرا
-    «رصيد سالب في warehouse #74» لازم يفتح شاشة تانية عشان يعرف أنهي مخزن، وبيكون
-    الفحص قال له اللي يعرفه بره الفحص.
-    """
     from src.models.user import User
     from src.models.warehouse import Custody, Warehouse
 
@@ -271,19 +159,8 @@ def _location_labels(db: Session) -> dict[tuple[str, int], str]:
     return out
 
 
-# ---------------------------------------------------------------------------
-# المخزون — الأرقام اللي بتبقى غلط فعلاً
-# ---------------------------------------------------------------------------
-
 def check_negative_stock(db: Session, on_hand, labels, places=None,
                          scope: Scope | None = None) -> Issue | None:
-    """رصيد سالب.
-
-    The invariant the whole system is built on (Principle XI): no item is negative anywhere, ever.
-    A negative balance is not a warning about the future — it says goods left a location that did
-    not have them, so every cost, every valuation and every availability check downstream of that
-    location is now computed from a quantity that never existed.
-    """
     sc = scope or Scope()
     bad = [(iid, kind, lid, qty) for iid, kind, lid, qty in on_hand
            if qty < ZERO and sc.place(kind, lid)]
@@ -306,12 +183,6 @@ def check_negative_stock(db: Session, on_hand, labels, places=None,
 
 
 def check_reorder(db: Session, on_hand, labels, scope: Scope | None = None) -> list[Issue]:
-    """تحت الحد الأدنى / فوق الحد الأقصى — الحدود اللي الشركة نفسها حطتها (011).
-
-    **والرصيد بيتجمّع من أماكن الفرع وحدها.** الحد الأدنى على الصنف رقم واحد للشركة،
-    بس اللي بيقرا الفحص بيشتري لفرعه — فجمع بضاعة فرع تاني معاه بيقول «عندك كفاية»
-    والرف عنده فاضي.
-    """
     sc = scope or Scope()
     totals: dict[int, Decimal] = {}
     for iid, kind, lid, qty in on_hand:
@@ -320,8 +191,6 @@ def check_reorder(db: Session, on_hand, labels, scope: Scope | None = None) -> l
         totals[iid] = totals.get(iid, ZERO) + qty
 
     below, above = [], []
-    # الأعمدة اللي الفحص بيقراها بس — مش الصنف كله بعلاقاته: ~٢٦٠٠ أوبجكت كانوا بياخدوا
-    # ~٢٠٠ms من فتحة الرئيسية. نفس الجدول ونفس الشرط، فنفس الصفوف بنفس الترتيب.
     for item in db.execute(
         select(Item.id, Item.code, Item.name, Item.min_stock, Item.max_stock)
         .where(Item.active.is_(True))
@@ -359,12 +228,6 @@ def check_reorder(db: Session, on_hand, labels, scope: Scope | None = None) -> l
 
 
 def _last_sold(db: Session) -> dict[int, date]:
-    """آخر يوم اتباع فيه كل صنف — من `reporting` عشان الرئيسية والتقرير يقولوا رقم واحد.
-
-    كانت نسخة تانية هنا بقاعدة تانية: بتعد لكل (صنف × مخزن) وبتحسب التحويل حركة.
-    فالرئيسية كانت بتقول ٦٠٩ والتقرير بيقول رقم تالت، واللي بيقارن الاتنين مش لاقي
-    تفسير. القاعدة اتكتبت مرة واحدة في `reporting.last_sold_by_item`.
-    """
     from src.lib.reporting import last_sold_by_item
 
     return last_sold_by_item(db)
@@ -373,29 +236,12 @@ def _last_sold(db: Session) -> dict[int, date]:
 def check_stagnant(db: Session, on_hand, labels, *, days: int = 90,
                    branch_id: int | None = None, scope: Scope | None = None,
                    now: datetime | None = None) -> Issue | None:
-    """بضاعة راكدة — رصيد موجود ومحصلش عليه بيع من كذا شهر.
-
-    **الركود صفة الصنف مش صفة مكانه.** كان بيتعدّ لكل (صنف × مخزن)، فالصنف اللي في
-    خمس مخازن وبيتباع من واحد بيتعدّ أربع مرات راكد. على داتا العميل ده كان بيطلّع
-    ٦٠٩ من ٩٣٣ موقع رصيد — تلتين المخزن «راكد»، ورقم زي ده محدّش بيتصرّف بناءً عليه.
-
-    وبقياس الصنف — اتباع لعميل امتى آخر مرة — الرقم بقى ٢٤٩. والقاعدة نفسها اللي
-    التقرير بيمشي بيها (`reporting.last_sold_by_item`) عشان الرئيسية والتقرير مايقولوش
-    رقمين.
-    """
     now = now or datetime.utcnow()
     cutoff = (now.date() if isinstance(now, datetime) else now) - timedelta(days=days)
     last_sold = _last_sold(db)
 
-    # **وبمخازن الفرع اللي بيبص، زي التقرير بالظبط.**
-    #
-    # `reports/stagnant` بيتفلتر بفرع اللي فاتحه؛ الفحص هنا ماكانش بيتفلتر. فمدير فرع
-    # كان بيقرا «٤٣٣ صنف راكد» على الرئيسية، ويدوس «افتح» فيلاقي الكشف **فاضي** — لأن
-    # الرابط شايل أصناف فروع تانية هو أصلاً مش شايفها، والتقرير بيفلترها. رقمين لنفس
-    # السؤال، والرابط بينهم بيودّي على لا حاجة.
     mine = reporting.branch_warehouse_ids(db, branch_id)
 
-    # الرصيد بيتجمّع على الصنف كله: اللي في خمس مخازن صنف واحد، مش خمسة.
     held: dict[int, Decimal] = {}
     for iid, kind, lid, qty in on_hand:
         if kind != LocationKind.warehouse.value or qty <= ZERO:
@@ -424,17 +270,7 @@ def check_stagnant(db: Session, on_hand, labels, *, days: int = 90,
     )
 
 
-# ---------------------------------------------------------------------------
-# المنتجات — الحقول الناقصة اللي بتخلي أرقام تانية غلط
-# ---------------------------------------------------------------------------
-
 def check_items_without_price(db: Session, scope: Scope | None = None) -> Issue | None:
-    """منتج من غير سعر بيع — لا على الصنف ولا على أي شريحة.
-
-    Not pedantry about a blank field: this is the number the invoice line reaches for. An item with
-    no price anywhere is sold at whatever the salesman types, or at zero, and neither is a price
-    the company set.
-    """
     tiered = {row[0] for row in db.execute(select(ItemPrice.item_id).distinct()).all()}
     rows = [
         {"label": f"{i.code} — {i.name}", "detail": "مفيش سعر لا على الصنف ولا على أي شريحة"}
@@ -455,7 +291,6 @@ def check_items_without_price(db: Session, scope: Scope | None = None) -> Issue 
 
 
 def check_items_without_category(db: Session, scope: Scope | None = None) -> Issue | None:
-    """صنف من غير فئة — بيقع من كل تقرير وفلتر بيتقسّم بالفئة."""
     rows = [
         {"label": f"{i.code} — {i.name}", "detail": "مش تحت أي فئة"}
         for i in db.scalars(
@@ -475,7 +310,6 @@ def check_items_without_category(db: Session, scope: Scope | None = None) -> Iss
 
 
 def check_min_over_max(db: Session, scope: Scope | None = None) -> Issue | None:
-    """حد أدنى أكبر من الحد الأقصى — الصنف تحت وفوق في نفس الوقت."""
     rows = [
         {"label": f"{i.code} — {i.name}",
          "detail": f"الأدنى {to_qty(i.min_stock)} والأقصى {to_qty(i.max_stock)}"}
@@ -495,17 +329,7 @@ def check_min_over_max(db: Session, scope: Scope | None = None) -> Issue | None:
     )
 
 
-# ---------------------------------------------------------------------------
-# فواتير العملاء
-# ---------------------------------------------------------------------------
-
 def check_invoice_lines_without_cost(db: Session, scope: Scope | None = None) -> Issue | None:
-    """بنود اتباعت من غير تكلفة محفوظة — الربح عليها مش معروف.
-
-    Cost is frozen onto the line when the invoice is written (030) so that past profit never moves.
-    A line where it is NULL reports its entire price as profit in any report that subtracts cost,
-    which overstates the margin of the invoice, the customer, the item and the period at once.
-    """
     rows = db.execute(
         select(SalesInvoice.id, SalesInvoice.document_number, func.count(SalesInvoiceLine.id))
         .join(SalesInvoiceLine, SalesInvoiceLine.invoice_id == SalesInvoice.id)
@@ -528,14 +352,6 @@ def check_invoice_lines_without_cost(db: Session, scope: Scope | None = None) ->
 
 
 def check_empty_invoices(db: Session, scope: Scope | None = None) -> Issue | None:
-    """فاتورة من غير بنود — مستند بيقول باع ومش قايل باع إيه.
-
-    **وفاتورة الكوبونات مش منها.** تسليم دفاتر الكوبونات للتاجر بيتكتب فاتورة بضاعتها
-    صفر وكوبوناتها مكتوبة في `sales_invoice_coupon` — ودي مستند سليم، والخدمة نفسها
-    بتقبله صراحةً («لازم يكون فيها صنف **أو** دفتر كوبونات»). الفحص كان بيبلّغ عنه
-    كخطأ عالي الخطورة، والتقرير اللي بيقول «غلط» على حاجة صح بيخلّي اللي بيقراه يبطّل
-    يصدّقه — وساعتها الغلط الحقيقي بيعدّي معاه.
-    """
     from src.models.sales import SalesInvoiceCoupon
 
     with_coupons = select(SalesInvoiceCoupon.invoice_id).distinct().scalar_subquery()
@@ -560,17 +376,11 @@ def check_empty_invoices(db: Session, scope: Scope | None = None) -> Issue | Non
     )
 
 
-# ---------------------------------------------------------------------------
-# الحسابات والفلوس
-# ---------------------------------------------------------------------------
-
 def check_unbalanced_entries(db: Session, scope: Scope | None = None) -> Issue | None:
-    """قيد مدينه مش قد دائنه — القاعدة الوحيدة اللي القيد المزدوج قايم عليها."""
     debit = func.sum(case((LedgerLine.direction == "debit", LedgerLine.amount), else_=0))
     credit = func.sum(case((LedgerLine.direction == "credit", LedgerLine.amount), else_=0))
     rows = db.execute(
         select(LedgerLine.entry_id, debit, credit)
-        # المسودة ناقصة عن قصد — الفحص ده للمرحّل بس، وإلا كل مسودة بتطلع «قيد غير متوازن».
         .join(LedgerEntry, LedgerEntry.id == LedgerLine.entry_id)
         .where(ledger_service.is_posted_sql())
         .where(_branch_sql(LedgerEntry, scope))
@@ -591,19 +401,6 @@ def check_unbalanced_entries(db: Session, scope: Scope | None = None) -> Issue |
 
 
 def check_accounts_without_nature(db: Session, scope: Scope | None = None) -> Issue | None:
-    """حساب عليه رصيد ومالوش طبيعة — بيسقط من الميزانية في صمت.
-
-    الميزانية بتصنّف كل حساب من `nature`، ولو فاضية بتقع على خريطة النوع. والنوع
-    `user_defined` مش في الخريطة — بالتعريف، لأنه الحساب اللي العميل عمله بنفسه.
-    فالحساب اللي جامع الاتنين (نوع `user_defined` وطبيعة فاضية) بيتسقّط من الأصول
-    والالتزامات وحقوق الملكية كلهم، ورصيده بيختفي من الوجهين.
-
-    وساعتها الميزانية مابتوزنش والدفتر موزون — يعني الرقم مش ضايع، هو بس مش متصنّف.
-    حصل فعلاً: أربع حسابات بـ٩٧٬٦٠٠٫٩٦ ج.م خلّوا الميزانية مقفولة بفرق بالمليم.
-
-    والفحص ده هو اللي بيخلّي الحالة دي مسموعة: `balanced=False` جوّه التقرير بيبان
-    لواحد فتح الميزانية، وده بيبان لأي حد بيفتح الرئيسية.
-    """
     signed = func.sum(case(
         (LedgerLine.direction == "debit", LedgerLine.amount), else_=-LedgerLine.amount))
     rows = db.execute(
@@ -611,7 +408,6 @@ def check_accounts_without_nature(db: Session, scope: Scope | None = None) -> Is
         .join(LedgerLine, LedgerLine.account_id == Account.id)
         .where(Account.nature.is_(None),
                Account.account_type == AccountType.user_defined)
-        # كل فرع عنده شجرة حسابات كاملة — فالحساب ده فرعه على الحساب نفسه.
         .where(_branch_sql(Account, scope))
         .group_by(Account.id, Account.code, Account.name)
     ).all()
@@ -627,7 +423,6 @@ def check_accounts_without_nature(db: Session, scope: Scope | None = None) -> Is
         count=len(bad),
         hint=f"رصيدهم {_money(total)} ج.م مش ظاهر لا في الأصول ولا الالتزامات — "
              "الميزانية بتقفل بفرق بسببهم.",
-        # الحسابات دي فرعية (ذمم عملاء وموردين)، فشاشتها «الحسابات الفرعيه».
         link=_with_ids("/sub-accounts", [i for i, _c, _n, _b in bad]),
         ids=[i for i, _c, _n, _b in bad],
         samples=[{"label": f"{c or ''} {n or f'#{i}'}".strip(), "detail": _money(b)}
@@ -636,7 +431,6 @@ def check_accounts_without_nature(db: Session, scope: Scope | None = None) -> Is
 
 
 def check_negative_treasuries(db: Session, scope: Scope | None = None) -> Issue | None:
-    """خزنة برصيد سالب — مفيش خزنة بتطلع أكتر من اللي فيها."""
     signed = case(
         (LedgerLine.direction == Account.normal_side, LedgerLine.amount),
         else_=-LedgerLine.amount,
@@ -670,17 +464,10 @@ def check_negative_treasuries(db: Session, scope: Scope | None = None) -> Issue 
 
 
 def check_duplicate_customers(db: Session, scope: Scope | None = None) -> Issue | None:
-    """عميل واحد في ملفين — «تكنو فلان» و«فلان».
-
-    Two files means two balances, and neither one is what he owes.
-    """
     from src.services import customer_merge_service
 
     plan = customer_merge_service.apply(db, dry_run=True)
     pairs = plan.get("pairs", [])
-    # **الخدمة بتدوّر على الشركة كلها عن قصد** — العميل المكرر ممكن يكون ملفه
-    # الأصلي في فرع والتاني في فرع تاني، والدمج قرار مركزي. اللي بيتفلتر هنا هو
-    # اللي بيتقال للّي بيبصّ: الزوج اللي ولا طرف فيه من فرعه مالوش عنده.
     sc = scope or Scope()
     if not sc.everything:
         mine = {c.id for c in db.scalars(select(Customer)).all() if sc.row(c.branch_id)}
@@ -700,28 +487,11 @@ def check_duplicate_customers(db: Session, scope: Scope | None = None) -> Issue 
     )
 
 
-# ---------------------------------------------------------------------------
-# التشغيل — حاجات فات ميعادها وقاعدة (٨)
-# ---------------------------------------------------------------------------
-#
-# التلاتة دول ليهم تقارير دلوقتي، والتقرير بيتفتح لما حد يفتحه. These are the findings from those
-# reports that nobody would think to go looking for: the point of putting them here is that each is
-# a deadline the company itself set and the data has quietly passed.
-
 def check_overdue_cheques(db: Session, *, scope: Scope | None = None,
                           now: datetime | None = None) -> Issue | None:
-    """شيكات فات استحقاقها وهي لسه تحت التحصيل — فلوس المفروض دخلت وماحدش سأل.
-
-    A cheque past its due date and still `pending` is money the company is owed on a date that has
-    gone by. Either it was collected and nobody wrote that down — in which case the treasury
-    balance is wrong — or it was not, and nobody is chasing it.
-    """
     from src.models.cheque import Cheque, ChequeDirection, ChequeStatus
 
     today = (now or datetime.utcnow()).date()
-    # **الشيك مالوش عمود فرع — فرعه خزنته.** الشيك بيتسجّل على خزنة، والخزنة
-    # بتخصّ فرع. والشيك اللي مالوش خزنة بيفضل ظاهر للكل: نفس قاعدة `branch_id`
-    # الفاضي، ومحدش أولى بيه من حد.
     sc = scope or Scope()
     stmt = (select(Cheque.document_number, Cheque.cheque_number, Cheque.amount,
                    Cheque.due_date, Cheque.direction)
@@ -749,15 +519,9 @@ def check_overdue_cheques(db: Session, *, scope: Scope | None = None,
 
 def check_expired_reservations(db: Session, *, scope: Scope | None = None,
                                now: datetime | None = None) -> Issue | None:
-    """حجوزات سارية فات ميعادها — بضاعة محجوزة لحد محدش بيسأل عنه.
-
-    An expired hold still subtracts from what the sales screen says is available, so the stock is
-    unsellable to anyone else while belonging to nobody.
-    """
     from src.models.reservation import Reservation, ReservationStatus
 
     today = (now or datetime.utcnow()).date()
-    # الحجز بيمسك بضاعة في مكان — فمكانه هو فرعه، زي حركة المخزون بالظبط.
     sc = scope or Scope()
     rows = [r for r in db.execute(
         select(Reservation.document_number, Reservation.quantity, Reservation.expires_on,
@@ -782,7 +546,6 @@ def check_expired_reservations(db: Session, *, scope: Scope | None = None,
 
 def check_late_orders(db: Session, *, scope: Scope | None = None,
                       now: datetime | None = None) -> Issue | None:
-    """طلبات مفتوحة فات ميعاد تسليمها."""
     from src.models.trade_order import OrderStatus, TradeOrder
 
     today = (now or datetime.utcnow()).date()
@@ -808,18 +571,7 @@ def check_late_orders(db: Session, *, scope: Scope | None = None,
     )
 
 
-# ---------------------------------------------------------------------------
-
 def check_reps_without_store(db: Session, scope: Scope | None = None) -> Issue | None:
-    """مندوب مالوش مخزن ولا عهدة — مايقدرش يبيع أصلاً.
-
-    البيع من تطبيق المندوب بيخرج بضاعة من مكانه هو، وبيقيّد الفلوس اللي حصّلها في عهدته.
-    المندوب اللي ناقصه واحد من الاتنين مش «ناقص إعداد»: هو واقف عند العميل والتطبيق بيقوله
-    لأ، وهو مش اللي يقدر يصلّحها.
-
-    ودي حاجة بتتكتشف في أوحش وقت — أول يوم شغل بالتطبيق — لأن مافيش شاشة بتسأل عنها. عشان
-    كده بتتقال هنا، قبل ما مندوب ينزل بيها الشارع.
-    """
     reps = db.scalars(
         select(User).where(User.role_id.in_(
             select(Role.id).where(Role.name == RoleName.sales_rep)),
@@ -846,10 +598,8 @@ def check_reps_without_store(db: Session, scope: Scope | None = None) -> Issue |
         if not has_store and not has_custody:
             missing.append("مافيش مخزن ولا عهدة — مايقدرش يبيع")
         elif not has_custody:
-            # البضاعة ليها مكان، والفلوس لأ — التحصيل هو اللي هيقع.
             missing.append("مافيش عهدة — التحصيل مالوش مكان يتقيّد فيه")
         else:
-            # عنده عهدة وبس: بيبيع منها، بس لو الشركة بتجهّزه بمخزن يبقى ناقص.
             continue
         rows.append({"label": r.username, "detail": " · ".join(missing)})
 
@@ -865,11 +615,9 @@ def check_reps_without_store(db: Session, scope: Scope | None = None) -> Issue |
 
 def run_all(db: Session, *, now: datetime | None = None,
             branch_id: int | None = None) -> dict:
-    """كل الفحوصات — والصفحة الفاضية إجابة برضه."""
     on_hand = _on_hand_by_location(db)
     labels = _item_labels(db)
     places = _location_labels(db)
-    # نطاق واحد بيتبني مرة، وكل فحص بيقرا منه — مش كل فحص بيسأل عن الفرع لوحده.
     sc = _scope(db, branch_id, on_hand)
 
     found: list[Issue | None] = [

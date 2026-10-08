@@ -1,8 +1,3 @@
-"""Customer service (T048–T049): create + reassign.
-
-FR-018a (system code + duplicate-phone flag), FR-021 (auto-create ledger-backed account),
-FR-020a (reassignment preserves account/balance + history attribution).
-"""
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -23,48 +18,21 @@ class CreateResult:
 
 
 def _next_code(db: Session) -> str:
-    """أكبر كود اتصرف + ١ — مش «عدد العملاء + ١» (`numbering.next_document_number`).
-
-    العدد بيقع أول ما عميل يتمسح أو كود يتنقل بره الترتيب: العدد ٣٨٥١ والكود CUST-003852
-    موجود خلاص، فكل عميل جديد كان بيتصادم والحفظ يقع بـ٥٠٠ (٢٠٢٦-١٠-٠١ — «خطأ غير متوقع
-    في الخادم الرئيسي» على «عميل جديد»).
-    """
     return next_document_number(db, Customer, "CUST", column=Customer.code, width=6)
 
 
 class CustomerError(Exception):
-    """Invalid customer data (e.g. a plumber assigned to a non after-sales rep)."""
+    pass
 
 
-# الأنواع اللي مابيتفتحلهاش حساب ذمم. السباك بيرجّع كوبونات ومابيشتريش، فمالوش ذمة.
-#
-# مكتوبة هنا مش في السكربت عشان القاعدة تبقى واحدة: كان السكربت بيستثنيهم
-# و`create_customer` بيفتح لأي حد من غير شرط، فالسباك القديم مالوش حساب والجديد ليه —
-# نفس النوع بيتصرف بشكلين، وسند لواحد بيشتغل وللتاني بيقول «العميل ليس له حساب ذمم».
 NO_RECEIVABLE_TYPES = {"plumber", "سباك"}
 
 
 def _norm_type(value) -> str:
-    """نوع العميل كنص للمقارنة — بيوصل Enum أو نص حسب مين بينده."""
     return getattr(value, "value", value) or ""
 
 
 def open_account(db: Session, customer: Customer, *, family: str | None = None) -> CustomerAccount:
-    """يفتح حساب ذمم للعميل ده ويربطه بيه.
-
-    Receivable account is a normal-debit ledger account (assets increase on debit). It belongs to
-    the customer's branch (024) so per-branch receivables aggregate correctly: his own branch
-    first, then his territory's, then the main branch.
-
-    It is opened with no name and no code **on purpose**. A per-owner account is labelled from the
-    link table at read time (`chart_service.bulk_owner_names`) and homed under «العملاء» by
-    `chart_service.effective_parent_id`, so a name copied in here would drift the first time
-    somebody fixed a spelling on the customer.
-
-    Written once, here, because it used to live inline in `create_customer` — which meant a
-    customer who arrived any other way (an import, a merge, the a5 migration) got no account at
-    all, and every sale, voucher and statement for him refused: «العميل ده مالوش حساب ذمم».
-    """
     from src.models.org import Territory
     from src.services import org_service
 
@@ -91,17 +59,6 @@ def open_account(db: Session, customer: Customer, *, family: str | None = None) 
 
 
 def ensure_account(db: Session, customer: Customer) -> tuple[CustomerAccount | None, bool]:
-    """حساب ذمم العميل — الموجود، أو واحد جديد لو مالوش. الـ`bool` معناه «اتعمل دلوقتي».
-
-    Idempotent by construction, because `ensure_customer_accounts` re-runs it over the whole file
-    and a second run must not open anybody a second account.
-
-    Finding is delegated to `customer_merge_service.receivable_account`, which is where the rule
-    already lives: one account → that one; several with a family-less one → that one; several
-    without → refuse, since there is no honest answer. The refusal is not a problem here — a
-    customer who holds several accounts is precisely one who needs nothing opened — so it comes
-    back as `(None, False)`: nothing created, and «اسأل عن الحساب بالعائلة» for whoever posts.
-    """
     from src.services import customer_merge_service
 
     try:
@@ -114,31 +71,6 @@ def ensure_account(db: Session, customer: Customer) -> tuple[CustomerAccount | N
 
 
 def require_account(db: Session, customer_id: int, *, family: str | None = None) -> CustomerAccount:
-    """حساب الذمم اللي الحركة دي بتترحّل عليه — والعميل اللي مالوش، بيتفتحله دلوقتي.
-
-    كل بيع وكوبون كان بيقف على «العميل ده مالوش حساب ذمم». والمستخدم قال بالنص: «العميل
-    لو ماعندهوش فلوس الفاتورة بتتباع عادي» — يعني الحساب تفصيلة محاسبية، مش شرط على البيع.
-    العميل اللي وصل من استيراد أو من نقل a5 أو من دمج مالوش حساب، والبايع اللي قدامه ورقة
-    فاتورة مايقدرش يعمل حاجة بالرسالة دي غير إنه يسيبها.
-
-    فالحساب بيتفتح في اللحظة اللي محتاجينه فيها. مافيش داتا بتضيع: الحساب المفتوح كده
-    مطابق بالظبط للي `create_customer` بيفتحه — نفس النوع، نفس الفرع، بدون اسم ولا كود.
-
-    **ذرّي مع المستند**: بيتعمل `flush` بس على نفس الـsession بتاعة النداء، من غير `commit`
-    (اللي بيعمله الـendpoint في الآخر). فلو الفاتورة وقعت بعد كده، الحساب بيترجع معاها
-    وماتفضلش فاضية ورا.
-
-    مش idempotent بالغلط: تاني مرة `receivable_account` بترجّع الحساب اللي اتفتح، فمافيش
-    حساب تاني لنفس العميل.
-
-    بيرفض في حالتين بس، وكل واحدة فيهم قرار بني آدم مش تفصيلة:
-
-    * **العميل عنده أكتر من حساب ومافيش واحد مطابق للخط المطلوب** — دي بترجع من
-      `receivable_account` كـ`MergeError`، وبتعدي زي ما هي. فتح حساب تالت هنا بيخفي السؤال.
-    * **نوع مابيتفتحلوش حساب** (السباك — بيرجّع كوبونات ومابيشتريش). لو وصل لنقطة إنه محتاج
-      ذمة، يبقى فيه حاجة تانية غلط قبل كده، والرسالة بتقول كده بالظبط بدل ما تفتحله حساب
-      وتدفن الغلط.
-    """
     from src.services import customer_merge_service
 
     customer = db.get(Customer, customer_id)
@@ -152,23 +84,13 @@ def require_account(db: Session, customer_id: int, *, family: str | None = None)
             f"«{customer.name}» عميل من نوع «سباك» — مابيتفتحلوش حساب ذمم ومابيتباعلوش. "
             "لو المفروض يشتري، غيّر نوع العميل الأول."
         )
-    # بدون `family`: ده حسابه الوحيد، والقايمة اللي فيها حساب واحد `receivable_account`
-    # بترجّعه لأي خط بيتطلب. لو اتكتب عليه خط، أول فاتورة على خط تاني هتلاقي حساب
-    # «مش بتاعها» وتفضل تدوّر على واحد مش موجود.
     return open_account(db, customer)
 
 
-# (v4) Customer types whose responsible rep must be after-sales (customer-service) staff.
 AFTER_SALES_TYPES = {"plumber"}
 
 
 def assert_rep_matches_type(db: Session, *, customer_type: str, rep_id: int | None) -> None:
-    """A plumber's responsible rep must be After-Sales staff (client rule, v4).
-
-    و**فاضي مقبول**: «احنا بنبيع للتجار مش للسباك، لكن بنقدم خدمه عملاء للسباك
-    والمالك». فمندوب البيع على كارت سباك مش ناقص — هو مالوش معنى، وخانته بتفضل
-    فاضية. اللي بيمسك المعلومة الحقيقية هو `service_rep_id`.
-    """
     if customer_type not in AFTER_SALES_TYPES or rep_id is None:
         return
     from src.models.role import Role, RoleName
@@ -192,11 +114,6 @@ def create_customer(
     phone: str | None,
     actor_user_id: int,
 ) -> CreateResult:
-    """Create a customer with a stable code + a ledger-backed receivable account.
-
-    Duplicate phone is flagged (not blocked). No loyalty schema (owned by After-Sales).
-    (v4) A plumber must be owned by an after-sales rep — see `assert_rep_matches_type`.
-    """
     assert_rep_matches_type(db, customer_type=customer_type, rep_id=rep_id)
     dup_ids: list[int] = []
     if phone:
@@ -230,11 +147,6 @@ def create_customer(
 
 
 def delete_customer(db: Session, *, customer: Customer, actor_user_id: int) -> None:
-    """Permanently remove a customer that has never moved — otherwise refuse.
-
-    Deleting a customer with invoices, receipts or ledger movement would orphan posted
-    documents and silently change the books, so that case must stay a deactivation.
-    """
     from src.models.cheque import Cheque
     from src.models.inspection import Inspection
     from src.models.ledger import LedgerLine
@@ -297,7 +209,6 @@ def reassign_customer(
     new_territory_id: int,
     actor_user_id: int,
 ) -> Customer:
-    """Move future ownership only. Account/balance untouched; history stays with old rep."""
     before = {"rep_id": customer.rep_id, "territory_id": customer.territory_id}
     customer.rep_id = new_rep_id
     customer.territory_id = new_territory_id

@@ -19,35 +19,6 @@ import './PartyPickerModal.css';
 import { repOptions } from '../utils/reps';
 import { activeChoices, activeOptions } from '../utils/active';
 
-/**
- * اختيار الطرف — the first step of every sale/purchase document.
- *
- * Two things this solves that a plain dropdown could not: the list is long enough to need real
- * search and a branch filter, and a party that does not exist yet can be created **without
- * leaving the half-filled document** — walking away to the customers screen used to lose the
- * lines already entered.
- *
- * It also carries the document DATE when asked to (`date` + `onDateChange`), because that is how
- * the system this client is migrating from opens a document: one step that asks who it is for and
- * when, and then the invoice is on screen. We used to ask the date in a modal of its own and the
- * party in another — two dialogs to answer two questions that are the same decision, and two
- * things to dismiss before typing the first line.
- */
-
-/**
- * تصنيف الطرف في المنتقي — **زي a5 بالظبط**.
- *
- * a5 بيحطّ على كل حساب فرعي خانة «يظهر في» (`showsin` في الـAPI بتاعه)، وهي اللي
- * بتقرّر الحساب ده يبان في أنهي منتقي. فمنتقي الطرف عنده فيه أكتر من تصنيف —
- * والموظف واحد منهم: الشركة بتبيع لموظفيها وبتستلم منهم مرتجع، والمستند ده حقيقي
- * وله دفتره.
- *
- * `employee` مش دفتر تالت — هو **نفس دفتر العملاء مفلتر على `customer_type`**.
- * الموظف اللي بيشتري كارته كارت عميل (وده منطق a5: حساب تحت «العملاء» لدين
- * البضاعة، وحساب تحت «اجور ومرتبات» للمرتب — حسابين لنفس الراجل بغرضين). فالتصنيف
- * هنا **عدسة على نفس الكشف**، مش جدول تاني — ولو بقى جدول تاني كان الموظف اللي
- * بيشتري هيبقى ليه كارتين ورصيدين.
- */
 export type PartyKind = 'customer' | 'supplier' | 'employee';
 
 export interface Party {
@@ -61,7 +32,6 @@ export interface Party {
 
 const KIND_LABEL: Record<PartyKind, string> = { customer: 'العميل', supplier: 'المورد', employee: 'الموظف' };
 
-/** شرايح السعر — نفس القايمة اللي في `useLookup` عشان الأسماء ما تتفرّقش. */
 const PRICE_TIERS = [
   { value: 'commercial', label: 'تجاري' },
   { value: 'semi_commercial', label: 'نصف تجاري' },
@@ -69,30 +39,19 @@ const PRICE_TIERS = [
   { value: 'semi_wholesale', label: 'نصف جملة' },
   { value: 'consumer', label: 'مستهلك' },
 ];
-/** نفس مقارنة `compareArabic` بالظبط، على أسماء موحَّدة من قبل — أسرع بكتير على آلاف الأسماء. */
 const arCollator = new Intl.Collator('ar', { numeric: true });
 
 const KIND_ENDPOINT: Record<PartyKind, string> = {
   customer: '/api/v1/customers',
   supplier: '/api/v1/suppliers',
-  // الموظف من نفس دفتر العملاء — الفلترة تحت على `customer_type`.
   employee: '/api/v1/customers',
 };
 
-/** التصنيف اللي التبويب ده بيفلتر بيه كشف العملاء. `null` = من غير فلترة. */
 const KIND_CUSTOMER_TYPE: Partial<Record<PartyKind, string>> = { employee: 'employee' };
 
-/** أسماء التبويبات والوحدة اللي بتتعدّ بيها — لشكل الكروت. */
 const KIND_TAB: Record<PartyKind, string> = { customer: 'العملاء', supplier: 'الموردين', employee: 'الموظفين' };
 const KIND_UNIT: Record<PartyKind, string> = { customer: 'عميل', supplier: 'مورد', employee: 'موظف' };
 
-/**
- * حالة المديونية — **من ناحيتنا**: «عليهم» يعني الطرف مديون لنا.
- *
- * رصيد العميل (والموظف، نفس الدفتر) مدين: موجب = عليه لنا، سالب = له عندنا — نفس
- * `filter_by_balance` في السيرفر (debtors > 0، credit < 0). رصيد المورد دائن: موجب =
- * مستحق له، فالإشارة بتتقلب عشان «عليهم» تفضل معناها واحد في كل تبويب.
- */
 type DebtState = 'owes' | 'credit' | 'zero';
 const debtState = (k: PartyKind, balance?: string | null): DebtState => {
   const b = Number(balance || 0) * (k === 'supplier' ? -1 : 1);
@@ -106,50 +65,27 @@ export default function PartyPickerModal({
   variant = 'cards', contextLabel,
 }: {
   open: boolean;
-  /** التصنيف اللي البوباب بيفتح عليه. */
   kind: PartyKind;
   onPick: (party: Party) => void;
   onCancel: () => void;
-  /** Pass both to show the document date here. Omit them and the picker is just a picker — which
-   *  is what it still is when a document that already has a date changes its party. */
   date?: Dayjs;
   onDateChange?: (d: Dayjs) => void;
-  /**
-   * التصنيفات اللي ينفع تتنقّل بينها جوّه البوباب — «العملاء» و«الموردين».
-   *
-   * The system this client is migrating from opens a document with one dialog carrying a تصنيف
-   * list, so the person can look in the other book without closing what they started. Omit it and
-   * the picker stays fixed on `kind`, which is right for a screen that only ever has one answer.
-   */
    kinds?: PartyKind[];
    title?: string;
-   /** تصنيفات عملاء مستبعدة من القايمة — شاشات البيع بتبعت `['plumber']`
-    *  (السباك مالوش بيع). شاشات الكوبونات مابتبعتش حاجة. */
    excludeTypes?: string[];
-   /**
-    * الشكل بس — المنطق واحد. `classic` القايمة القديمة، `cards` كروت بعواميد وفلتر مديونية.
-    * اتعمّم على كل المستندات (٢٠٢٦-١٠-٠١) — `classic` لسه موجود لو شاشة احتاجته.
-    */
    variant?: 'classic' | 'cards';
-   /** شارة جنب العنوان في شكل الكروت — «طلب بيع مباشر» / «فاتورة بونص». */
    contextLabel?: string;
  }) {
   const cards = variant === 'cards';
   const navigate = useNavigate();
-  // التصنيف الحالي — بيبدأ من اللي الشاشة فتحت بيه وبيرجعله كل مرة تتفتح.
   const [activeKind, setActiveKind] = useState<PartyKind>(kind);
   useEffect(() => { if (open) setActiveKind(kind); }, [open, kind]);
   const [parties, setParties] = useState<Party[]>([]);
   const [branches, setBranches] = useState<any[]>([]);
-  // A customer must be assigned to a rep and a territory — they are asked for inline so the
-  // quick-create stays a genuine shortcut rather than a form that fails on submit.
   const [reps, setReps] = useState<any[]>([]);
   const [territories, setTerritories] = useState<any[]>([]);
-  /** تصنيفات العملاء من قايمة الإعدادات — كانت حالة معرّفة ومفيش حاجة بتملاها، فالقايمة
-   *  كانت بتفضل فاضية والفورم بيقع على قايمة مكتوبة في الكود. */
   const { options: customerTypes } = useLookup('customer_type');
   const typeLabels = useMemo(() => labelMap(customerTypes), [customerTypes]);
-  // الملّاك ليهم شاشتهم — مايتخلقوش من منتقي الطرف.
   const pickerTypes = useMemo(
     () => customerTypes.filter((o: any) => o.value !== 'owner'),
     [customerTypes],
@@ -157,10 +93,7 @@ export default function PartyPickerModal({
   const [loading, setLoading] = useState(false);
   const [query, setQuery] = useState('');
   const [branchId, setBranchId] = useState<number | undefined>();
-  /** فلتر «حالة المديونية» — بيظهر في شكل الكروت بس؛ في القديم بيفضل `all` فمابيفلترش. */
   const [debt, setDebt] = useState<'all' | DebtState>('all');
-  // The highlighted row. The list opens with the first one lit so Enter has something to answer
-  // and the arrows have somewhere to move from — the same as «اختر الصنف» a step later.
   const [cursor, setCursor] = useState(0);
   const rowRefs = useRef<Record<number, HTMLDivElement | null>>({});
   const [creating, setCreating] = useState(false);
@@ -175,14 +108,10 @@ export default function PartyPickerModal({
         api.get('/api/v1/branches').catch(() => ({ data: [] })),
         activeKind === 'customer' ? api.get('/api/v1/users').catch(() => ({ data: [] }))
           : Promise.resolve({ data: [] }),
-        // المنطقة بتتعرض على الكارت كمان، فبتتجاب لتبويب الموظفين (نفس دفتر العملاء).
         activeKind !== 'supplier' ? api.get('/api/v1/territories').catch(() => ({ data: [] }))
           : Promise.resolve({ data: [] }),
       ]);
-      // الموقوف من شاشة العملاء/الموردين مايتختارش على مستند جديد. الطرف اللي على
-      // المستند المفتوح بيتعرض من المستند نفسه، مش من هنا.
       setParties(activeChoices(pRes.data || []));
-      // قوايم فورم الإنشاء أبجدي — بتتعرض بترتيبها قبل ما حد يكتب.
       const byName = (r: any) => r.full_name || r.username || r.name;
       setBranches(sortByName(bRes.data || [], byName));
       setReps(sortByName((uRes.data || []).filter((u: any) => u.role === 'sales_rep'), byName));
@@ -193,7 +122,6 @@ export default function PartyPickerModal({
   useEffect(() => { if (open) { load(); setQuery(''); setCreating(false); } }, [open, activeKind]);
   useEffect(() => { if (open) setDebt('all'); }, [open]);
 
-  // الاسم موحَّد مرة واحدة للكشف كله — الترتيب تحت بيقارن آلاف الأسماء مع كل حرف.
   const bareNames = useMemo(
     () => new Map(parties.map((p) => [p.id, normalizeAr(p.name)])), [parties]);
 
@@ -201,28 +129,15 @@ export default function PartyPickerModal({
     const needle = normalizeAr(query);
     const onlyType = KIND_CUSTOMER_TYPE[activeKind];
     const bare = (p: Party) => bareNames.get(p.id) ?? normalizeAr(p.name);
-    /**
-     * **الأقرب فوق، وجوّه كل مرتبة أبجدي** — نفس قاعدة `searchRank` في القوايم المقفولة:
-     *
-     *     ٠  الاسم بيبدأ بالحروف         «محمد حسن»
-     *     ١  كلمة جوّاه بتبدأ بيها        «احمد محمد»
-     *     ٢  جوّه كلمة                    «المحمدي»
-     *     ٣  لقيناه بالتليفون مش بالاسم
-     *
-     * كانت بتطلع بترتيب الكشف (الأحدث الأول)، فاللي بيكتب «محمد» يلاقي «احمد محمد» فوق
-     * «محمد حسن». ومن غير كتابة: أبجدي، عشان اللي بيدوّر بعينه يلاقي الاسم في مكانه.
-     */
     const rank = (p: Party) => {
       if (!needle) return 0;
       const t = bare(p);
       if (t.startsWith(needle)) return 0;
       if (t.includes(` ${needle}`)) return 1;
       if (t.includes(needle)) return 2;
-      return matchesWords(t, needle) ? 2.5 : 3;   // «مح حس» — كلمات متفرّقة
+      return matchesWords(t, needle) ? 2.5 : 3;
     };
     return parties.filter((p) => {
-      // تبويب «الموظفين» بيفرز نفس الكشف — مش بيجيب دفتر تاني. الموظف اللي بيشتري
-      // كارته كارت عميل، ولو كان له كارت لوحده كان هيبقى ليه رصيدين لنفس الراجل.
       if (onlyType && (p as any).customer_type !== onlyType) return false;
       if (excludeTypes?.includes((p as any).customer_type)) return false;
       if (branchId && p.branch_id !== branchId) return false;
@@ -232,7 +147,6 @@ export default function PartyPickerModal({
     }).sort((a, b) => (rank(a) - rank(b)) || arCollator.compare(bare(a), bare(b)));
   }, [parties, bareNames, query, branchId, activeKind, debt]);
 
-  /** عدد كل تبويب بعد فلتر الفرع — للي كشفه متحمّل بس (العملاء والموظفين نفس الكشف). */
   const kindCounts = useMemo(() => {
     const base = parties.filter((p) => !excludeTypes?.includes((p as any).customer_type)
       && (!branchId || p.branch_id === branchId));
@@ -245,37 +159,21 @@ export default function PartyPickerModal({
     return out;
   }, [parties, excludeTypes, branchId, kinds, kind, activeKind]);
 
-  /**
-   * الكروت بتترسم على دفعات — الكشف ممكن يبقى ٣٠٠٠ طرف، والكارت أتقل من سطر القايمة
-   * القديمة. الدفعة اللي بعدها بتنزل لما التمرير يقرّب من الآخر أو المؤشر يوصل لها.
-   */
   const PAGE = 150;
   const [renderLimit, setRenderLimit] = useState(PAGE);
   useEffect(() => { setRenderLimit(PAGE); }, [visible]);
 
-  /**
-   * مين اللي حرّك المؤشر — الكيبورد ولا الماوس.
-   *
-   * في شكل الكروت الماوس بيلوّن الكارت اللي تحته **من غير ما القايمة تتحرك**: لو المؤشر
-   * اللي جه من الماوس اتعمله `keepInView`، كارت نصّه باين تحت الماوس بيشدّ القايمة، والكارت
-   * اللي بعده يدخل تحت الماوس فيشدّها تاني — وده «النطّ لنص الشاشة».
-   */
   const cursorByMouse = useRef(false);
-  /** آخر مكان حقيقي للماوس — المتصفح بيبعت حركة ماوس وهمية بعد التمرير من غير ما الإيد تتحرك. */
   const lastPointer = useRef<{ x: number; y: number } | null>(null);
 
-  // Back to the top when the list changes, and never past its end.
   useEffect(() => { setCursor(0); }, [query, branchId, open, debt]);
   const listRef = useRef<HTMLDivElement | null>(null);
-  // الكروت: تغيير التبويب فلتر زي أي فلتر — المؤشر والتمرير يرجعوا لأول القايمة.
   useEffect(() => {
     if (!cards) return;
     cursorByMouse.current = false;
     setCursor(0);
     if (listRef.current) listRef.current.scrollTop = 0;
   }, [cards, query, branchId, debt, activeKind]);
-  // الدفعة اللي جاية بتترسم **قبل** ما المؤشر يوصل لآخر كارت مترسوم، فالكارت اللي المؤشر
-  // عليه موجود دايماً وقت `keepInView`. والزيادة بتتحط تحت، فالتمرير مابيتحركش.
   useEffect(() => {
     if (cards && cursor >= renderLimit - 10 && renderLimit < visible.length) {
       setRenderLimit((n) => n + PAGE);
@@ -284,13 +182,11 @@ export default function PartyPickerModal({
   useEffect(() => {
     setCursor((c) => Math.min(c, Math.max(visible.length - 1, 0)));
   }, [visible.length]);
-  // القايمة بس هي اللي بتتحرك — شوف `keepInView`.
   useEffect(() => {
     if (cards && cursorByMouse.current) return;
     keepInView(rowRefs.current[cursor], listRef.current);
   }, [cursor, visible.length]);
 
-  /** الماوس في الكروت: حركة حقيقية بس هي اللي بتنقل المؤشر، ومن غير تمرير. */
   const onCardPointer = (i: number) => (e: React.MouseEvent) => {
     const p = lastPointer.current;
     if (p && p.x === e.clientX && p.y === e.clientY) return;
@@ -300,8 +196,6 @@ export default function PartyPickerModal({
     setCursor(i);
   };
 
-  /** ↑↓ to move, Enter to take the highlighted one — the same keys as «اختر الصنف», so the two
-   *  steps of opening a document are driven identically. */
   const onListKey = (e: React.KeyboardEvent) => {
     if (e.key === 'ArrowDown' || e.key === 'ArrowUp') cursorByMouse.current = false;
     if (e.key === 'ArrowDown') {
@@ -311,12 +205,9 @@ export default function PartyPickerModal({
     if (e.key === 'Enter' && visible[cursor]) { e.preventDefault(); onPick(visible[cursor]); }
   };
 
-  /** Create the party inline and hand it straight back — the document keeps everything it had. */
   const handleCreate = async (values: any) => {
     setSaving(true);
     try {
-      // كل الحقول اللي في الفورم بتتبعت. الفاضي بيتبعت `undefined` مش `''` — الفرق إن
-      // «مااتكتبش» بيفضل NULL في الداتا بدل نص فاضي، وده اللي بيخلّي التقارير تعرف تفرّق.
       const payload: any = {
         name: values.name,
         phone: values.phone || undefined,
@@ -327,15 +218,11 @@ export default function PartyPickerModal({
         address: values.address || undefined,
       };
       if (activeKind === 'customer') {
-        // الإنشاء من تبويب «الموظفين» بيتولد موظف على طول — اللي فتح التبويب ده
-        // عارف هو بيضيف مين، وإجباره يختار التصنيف تاني سؤال إجابته قدامه.
         payload.customer_type = values.customer_type
           || KIND_CUSTOMER_TYPE[activeKind] || 'تاجر';
         payload.rep_id = values.rep_id;
         payload.territory_id = values.territory_id;
         payload.default_price_tier = values.default_price_tier || undefined;
-        // فاضي معناه «مافيش اتفاق»، وصفر معناه «فيه اتفاق وهو صفر». التفرقة دي هي سبب إن
-        // العمودين دول بيقبلوا NULL أصلاً.
         payload.discount_pct = values.discount_pct ?? undefined;
         payload.vat_pct = values.vat_pct ?? undefined;
       }
@@ -350,8 +237,6 @@ export default function PartyPickerModal({
     } finally { setSaving(false); }
   };
 
-  /* ---------------------------------------------------------------- شكل الكروت
-   * نفس الحالة والفلترة والكيبورد والإنشاء — الرسم بس اللي مختلف. */
   const creatable = (kinds ?? [kind]).filter((k) => k !== 'employee');
   const kindTotal = kindCounts[activeKind] ?? parties.length;
   const branchName = (id?: number | null) =>
@@ -366,7 +251,6 @@ export default function PartyPickerModal({
       setRenderLimit((n) => n + PAGE);
     }
   };
-  /** كارت الطرف — في شاشته. العملاء والموظفين نفس الكارت. الفاتورة بتفضل مفتوحة ورا. */
   const openCard = (p: Party) => navigate(
     activeKind === 'supplier' ? `/suppliers/${p.id}` : `/customers/${p.id}`);
 
@@ -374,7 +258,6 @@ export default function PartyPickerModal({
     const raw = Number(p.balance || 0);
     const st = debtState(activeKind, p.balance);
     const abs = Math.abs(raw);
-    // «صغير» = فكّة أقل من جنيه — بواقي تقريب مش مديونية حقيقية.
     const small = abs > 0 && abs < 1;
     const tone = small ? 'warn' : st;
     const pill = small ? 'حساب منتظم (خالص)'
@@ -525,8 +408,6 @@ export default function PartyPickerModal({
                     {p.is_cash && <span className="pp-tag">نقدي</span>}
                     {p.active === false && <span className="pp-tag pp-tag--off">غير نشط</span>}
                   </div>
-                  {/* الكود اتشال من تحت الاسم (طلب العميل ٢٠٢٦-١٠-٠٧: «الاسم بس في الاختيار»)؛
-                      البحث بالكود من السيرفر زي ما هو. */}
                   {typeLabel && <div className="pp-sub">{typeLabel}</div>}
                 </div>
               </div>
@@ -566,10 +447,6 @@ export default function PartyPickerModal({
       title={(
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           <span>{title ?? 'انشاء'}</span>
-          {/* زرار إنشاء لكل تصنيف — في الترويسة زي الشاشة اللي العميل شغّال عليها، مش في
-              الفوتر. الضغط بيفتح الفورم على التصنيف بتاعه على طول. */}
-          {/* الموظف مالوش زرار هنا: بيتعمل من شاشة الموظفين. وكان بيتكتب عليه «مورد جديد»
-              لأن أي تصنيف غير العميل كان بيتسمّى مورد — فشاشة البيع كانت بتعرض إنشاء مورد. */}
           {!creating && (kinds ?? [kind]).filter((k) => k !== 'employee').map((k) => (
             <Button key={k} size="small" icon={<PlusOutlined />}
               onClick={() => { setActiveKind(k); setCreating(true); }}>
@@ -581,13 +458,6 @@ export default function PartyPickerModal({
       footer={<Button onClick={onCancel}>إغلاق</Button>}
     >
       <Row gutter={12}>
-        {/*
-          * عمود الفلاتر يمين والنتايج شمال — نفس تقسيم الشاشة اللي العميل شغّال عليها.
-          *
-          * كان الفلاتر شريط فوق والقايمة تحته، فالقايمة بتاخد عرض الشاشة كله وارتفاع أقل.
-          * القايمة هنا هي الشغل، فبتاخد المساحة الطولية، والفلاتر بتقعد جنبها ثابتة بدل ما
-          * تاكل من ارتفاعها.
-          */}
         <Col xs={24} md={8}>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
             <div>
@@ -613,7 +483,6 @@ export default function PartyPickerModal({
                 onKeyDown={onListKey} />
             </div>
 
-            {/* تصنيف — بيتنقّل بين دفتر العملاء ودفتر الموردين من غير ما البوباب يتقفل. */}
             {(kinds?.length ?? 0) > 1 && (
               <div>
                 <div style={{ fontSize: 14, color: '#6b6b6b', marginBottom: 2 }}>تصنيف</div>
@@ -685,16 +554,6 @@ export default function PartyPickerModal({
     </TabModal>
     )}
 
-    {/*
-      * «عميل جديد» بوباب فوق البوباب — مش بديل عنه.
-      *
-      * كان بيحل محل القايمة جوّه نفس النافذة: تدوس «عميل جديد» فالقايمة تختفي، وترجع تلاقي
-      * البحث اللي كنت كاتبه اتمسح. النافذة اللي فوق بتسيب اللي تحتها زي ما هو، فالرجوع بيرجّعك
-      * لنفس المكان بالظبط.
-      *
-      * والفوتر فيه «حفظ واختيار»: الطرف الجديد بيتحفظ وبيترد على المستند على طول، من غير ما
-      * تدوّر عليه في القايمة بعد ما تحفظه.
-      */}
     <TabModal
       open={creating} onCancel={() => setCreating(false)} width={860} centered destroyOnHidden
       title={activeKind === 'customer' ? 'عميل جديد' : 'مورد جديد'}
@@ -708,16 +567,6 @@ export default function PartyPickerModal({
     >
       <Form form={createForm} layout="vertical" onFinish={handleCreate}
         requiredMark={false}>
-        {/*
-          * فورم الإنشاء بنفس حقول وترتيب الشاشة اللي العميل شغّال عليها.
-          *
-          * كان فيه الاسم والهاتف والمندوب وبس. وباقي الحقول — الفرع، الإيميل، الرقم الضريبي،
-          * السجل التجاري، العنوان، السعر الافتراضي، الخصم، ض.م — كانت **موجودة في السيرفر من
-          * زمان** ومفيش طريق يوصلها من هنا: تعمل العميل من جوّه الفاتورة، وبعدين تسيب شغلك
-          * وتفتح شاشة العملاء عشان تكمّل بياناته.
-          *
-          * العميل تلات حقول في الصف والمورد تلاتة كمان — نفس التقسيم اللي في شاشته.
-          */}
         <Row gutter={12}>
           {activeKind === 'customer' ? (
             <>
@@ -788,7 +637,6 @@ export default function PartyPickerModal({
           {activeKind === 'customer' && (
             <>
               <Col xs={24} md={8}>
-                {/* فاضي = مافيش اتفاق؛ صفر = فيه اتفاق وهو صفر. */}
                 <Form.Item name="discount_pct" label="خصم %" style={{ marginBottom: 10 }}>
                   <InputNumber style={{ width: '100%' }} min={0} max={100} step={0.5}
                     placeholder="—" />
@@ -801,8 +649,6 @@ export default function PartyPickerModal({
                 </Form.Item>
               </Col>
               <Col xs={24} md={8}>
-                {/* المنطقة مش في شاشته، بس السيرفر عندنا بيطلبها على العميل — من غيرها
-                    الحفظ بيترفض، فبتتسأل هنا بدل ما الفورم يقع عند الحفظ. */}
                 <Form.Item name="territory_id" label="المنطقة"
                   rules={[{ required: true, message: 'المنطقة مطلوبة' }]}
                   style={{ marginBottom: 10 }}>

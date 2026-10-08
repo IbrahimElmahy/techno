@@ -8,21 +8,6 @@ import { useLookup, labelMap } from '../hooks/useLookup';
 import { num } from '../utils/money';
 import { entryTypeLabel } from './labels';
 
-/**
- * زرار «السجل» فوق كل مستند (٢٠٢٦-١٠-٠٦).
- *
- * «مين غيّر الفاتورة دي وكانت عاملة إزاي قبلها؟» — السؤال ده كان بيتجاوب بالذاكرة. دلوقتي كل
- * حفظ/اعتماد/عكس/حذف بيكتب نسخة كاملة من المستند في السيرفر (`document_versions`)، والزرار ده
- * بيعرضها: القايمة على جنب، ودوسة على أي نسخة بتوري المستند بشكله ساعتها، واللي اتغيّر عن
- * النسخة اللي قبلها متلوّن.
- *
- * **عارض واحد لكل المستندات.** النسخة هي نفس رد `GET` بتاع المستند، فالعارض بيقرا المفاتيح
- * نفسها: الحقول البسيطة رأس، والقوايم (سطور، خامات، منتجات…) جداول. لو اتعمل عارض لكل نوع
- * كان أول حقل جديد على أي مستند هيختفي من السجل لحد ما حد يفتكره.
- */
-
-// ── أسماء الإجراءات ───────────────────────────────────────────────────────────────────────────
-
 const ACTION_LABEL: Record<string, string> = {
   baseline: 'النسخة قبل أول تعديل متسجّل',
   create: 'إنشاء',
@@ -51,8 +36,6 @@ const ACTION_COLOR: Record<string, string> = {
   reverse: 'volcano', approve: 'cyan', 'self-approve': 'cyan', reject: 'red', cancel: 'orange',
   post: 'geekblue', 'reset-to-draft': 'gold', receipts: 'orange',
 };
-
-// ── أسماء الحقول ──────────────────────────────────────────────────────────────────────────────
 
 const FIELD_LABEL: Record<string, string> = {
   document_number: 'رقم المستند',
@@ -87,7 +70,6 @@ const FIELD_LABEL: Record<string, string> = {
   expenses_billed: 'مصاريف على العميل', expenses_operating: 'مصاريف تشغيل',
   coupon_serial_from: 'كوبونات من', coupon_serial_to: 'كوبونات إلى', coupon_count: 'عدد الكوبونات',
   bonus_for_number: 'بونص على فاتورة',
-  // السطور
   item_id: 'الصنف', item_name: 'الصنف', product_id: 'المنتج', material_id: 'الخامة',
   quantity: 'الكمية', unit_price: 'السعر', line_total: 'الإجمالي', unit: 'الوحدة',
   unit_factor: 'معامل الوحدة', unit_cost: 'التكلفة', price_tier: 'فئة السعر',
@@ -96,11 +78,9 @@ const FIELD_LABEL: Record<string, string> = {
   lines: 'السطور', materials: 'الخامات', products: 'المنتجات', receipts: 'الاستلامات',
   payments: 'الدفعات', coupons: 'الكوبونات', resources: 'الموارد', outputs: 'المنتجات',
   inputs: 'الخامات', returned_coupons: 'كوبونات مرتجعة', consumptions: 'الخامات',
-  // القيود
   date: 'التاريخ', number: 'الرقم', entry_type: 'نوع القيد', journal_name: 'اليومية',
   partner_name: 'الطرف', direction: 'الجهة', statement: 'البيان', total_credit: 'إجمالي الدائن',
   balanced: 'متزن؟', move_type: 'نوع المستند',
-  // الإنتاج والجرد
   expense_amount: 'مصروفات', total_cost: 'إجمالي التكلفة', line_cost: 'التكلفة',
   product_quantity: 'كمية الإنتاج', material_cost: 'تكلفة الخامات', resource_cost: 'المصروفات',
   work_order_ref: 'رقم الانتاج', reason: 'السبب', imported_from: 'منقول من', reversed: 'اتعكس؟',
@@ -108,7 +88,6 @@ const FIELD_LABEL: Record<string, string> = {
   line_count: 'عدد السطور', counted_count: 'اتعدّ منها', item_code: 'كود الصنف',
 };
 
-/** قيم بالإنجليزي بتتقري بالعربي — للحقول اللي قيمها من قايمة ثابتة بس، مش الكلام الحر. */
 const ENUM_KEYS = new Set(['status', 'state', 'kind', 'route', 'payment_method', 'payment_state',
   'price_tier', 'customer_type', 'location_kind', 'direction', 'partner_kind']);
 const VALUE_LABEL: Record<string, string> = {
@@ -125,11 +104,8 @@ const VALUE_LABEL: Record<string, string> = {
   employee: 'موظف',
 };
 
-/** مفاتيح داخلية مالهاش معنى عند اللي بيقرا المستند. */
 const NOISY = new Set(['id', 'client_uuid', 'created_at', 'updated_at', 'ledger_entry_id',
   'actor_user_id', 'stock_movement_id', 'entity_id', 'entity_type', 'version']);
-
-// ── تحويل الأرقام لأسماء ─────────────────────────────────────────────────────────────────────
 
 type Kind = 'items' | 'warehouses' | 'custodies' | 'accounts' | 'reps' | 'users' | 'suppliers'
   | 'customers' | 'branches' | 'treasuries' | 'costCenters';
@@ -148,7 +124,6 @@ const SOURCES: Record<Kind, { url: string; params?: Record<string, unknown> }> =
   costCenters: { url: '/api/v1/cost-centers' },
 };
 
-/** الرقم ده بيشاور على إيه؟ `null` = رقم داخلي مالوش اسم يتعرض. */
 function kindOf(key: string, row: Record<string, any>): Kind | null {
   if (/(^|_)item_id$/.test(key) || key === 'product_id' || key === 'material_id') return 'items';
   if (/warehouse_id$/.test(key)) return 'warehouses';
@@ -178,14 +153,11 @@ function rowsOf(data: any): any[] {
 const nameOf = (r: any): string | undefined =>
   r?.name ?? r?.full_name ?? r?.username ?? r?.label ?? r?.title ?? r?.code;
 
-// ── قراية القيم ───────────────────────────────────────────────────────────────────────────────
-
 const isObj = (v: unknown): v is Record<string, any> =>
   !!v && typeof v === 'object' && !Array.isArray(v);
 const isRowList = (v: unknown): v is Record<string, any>[] =>
   Array.isArray(v) && v.length > 0 && v.every(isObj);
 
-/** للمقارنة بس: «10.00» و«10» نفس الرقم، والفاضي والـnull نفس الحاجة. */
 function canon(v: unknown): string {
   if (v === null || v === undefined || v === '') return '';
   if (typeof v === 'object') return JSON.stringify(v);
@@ -193,7 +165,6 @@ function canon(v: unknown): string {
   return String(v);
 }
 
-/** المفاتيح اللي بتتعرض في صف واحد (رأس أو سطر) — بترتيبها، من غير الداخلي والمكرر. */
 function visibleKeys(rows: Record<string, any>[]): string[] {
   const keys: string[] = [];
   const all = new Set<string>();
@@ -203,14 +174,11 @@ function visibleKeys(rows: Record<string, any>[]): string[] {
   const sample = Object.assign({}, ...rows.slice().reverse());
   return keys.filter((k) => {
     if (NOISY.has(k) || k.endsWith('_uuid')) return false;
-    // جدول لوحده — حتى لو في نسخة منهم فاضي (كل السطور اتشالت).
     if (rows.some((r) => isRowList(r?.[k]))
       && rows.every((r) => r?.[k] == null || Array.isArray(r[k]))) return false;
-    // `customer_id` جنبه `customer_name` ⇒ الاسم كفاية.
     if (k.endsWith('_id') && all.has(`${k.slice(0, -3)}_name`)) return false;
-    if (all.has(`${k}_label`)) return false;                          // `payment_state_label`
+    if (all.has(`${k}_label`)) return false;
     if (/location_kind$/.test(k) && all.has(k.replace(/kind$/, 'id'))) return false;
-    // رقم داخلي (ربط بمستند تاني، قيد…) مالوش اسم ⇒ مش للقراية.
     if ((k.endsWith('_id') || k.endsWith('_ids')) && !kindOf(k, sample)) return false;
     return true;
   });
@@ -238,7 +206,6 @@ function useFormatter(names: Names) {
     if (typeof v === 'number') return num(v);
     if (typeof v === 'string') {
       if (/^-?\d+\.\d+$/.test(v)) return num(v);
-      // التاريخ والساعة بالدقيقة — من غير تحويل منطقة زمنية: السيرفر بيكتب بتوقيته.
       if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(v)) return v.slice(0, 16).replace('T', ' ');
       return v;
     }
@@ -252,12 +219,9 @@ function useFormatter(names: Names) {
   };
 }
 
-// ── مطابقة السطور ─────────────────────────────────────────────────────────────────────────────
-
 type RowStatus = 'same' | 'added' | 'removed' | 'changed';
 interface RowDiff { key: string; row: Record<string, any>; old?: Record<string, any>; status: RowStatus }
 
-/** مفتاح السطر: الـid لو موجود، وإلا الصنف + ترتيب ظهوره (تاني سطر لنفس الصنف ≠ أوله). */
 function lineKeys(rows: Record<string, any>[]): string[] {
   const seen: Record<string, number> = {};
   return rows.map((r, i) => {
@@ -294,8 +258,6 @@ const ROW_BG: Record<RowStatus, string | undefined> = {
 };
 const CHANGED_BG = '#fff7e6';
 
-// ── عرض النسخة ────────────────────────────────────────────────────────────────────────────────
-
 interface VersionRow {
   id: number; version_no: number; action: string; actor_user_id: number | null;
   actor_name: string | null; created_at: string; document_number: string | null;
@@ -317,7 +279,6 @@ function OldNew({ now, old }: { now: string; old: string }) {
 
 function SnapshotView({ version, names }: { version: VersionFull; names: Names }) {
   const fmt = useFormatter(names);
-  // نسخة ممكن تبقى قايمة مش كائن (مستند بيرجع مصفوفة) — بنلفّها عشان العارض يبقى واحد.
   const wrap = (s: any) => (s == null ? null : isObj(s) ? s : { lines: Array.isArray(s) ? s : [] });
   const snap: Record<string, any> = wrap(version.snapshot) || {};
   const prev: Record<string, any> | null = wrap(version.previous);
@@ -361,7 +322,6 @@ function SnapshotView({ version, names }: { version: VersionFull; names: Names }
         const cur: Record<string, any>[] = isRowList(snap[lk]) ? snap[lk] : [];
         const old: Record<string, any>[] | null = prev ? (isRowList(prev[lk]) ? prev[lk] : []) : null;
         const cols = visibleKeys([...cur, ...(old || [])]);
-        // الصنف أول عمود — هو اللي العين بتدوّر عليه.
         cols.sort((a, b) => Number(/item_(id|name)$/.test(b)) - Number(/item_(id|name)$/.test(a)));
         const rows = diffRows(cur, old, cols);
         const added = rows.filter((r) => r.status === 'added').length;
@@ -411,8 +371,6 @@ function SnapshotView({ version, names }: { version: VersionFull; names: Names }
   );
 }
 
-// ── الشباك ────────────────────────────────────────────────────────────────────────────────────
-
 function HistoryBody({ entityType, entityId }: { entityType: string; entityId: number }) {
   const [versions, setVersions] = useState<VersionRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -431,7 +389,6 @@ function HistoryBody({ entityType, entityId }: { entityType: string; entityId: n
         if (cancelled) return;
         const rows: VersionRow[] = r.data || [];
         setVersions(rows);
-        // الأحدث مفتوح أول ما الشباك يفتح — ده غالباً اللي حد جاي يسأل عنه.
         if (rows.length) setSelected(rows[rows.length - 1].id);
       })
       .catch((e) => {
@@ -455,7 +412,6 @@ function HistoryBody({ entityType, entityId }: { entityType: string; entityId: n
     return () => { cancelled = true; };
   }, [selected]);
 
-  // الأسماء اللي النسخة دي محتاجاها بس — مش كل القوايم مع كل فتحة.
   useEffect(() => {
     if (!version) return;
     const needed = new Set<Kind>();
@@ -483,7 +439,6 @@ function HistoryBody({ entityType, entityId }: { entityType: string; entityId: n
           });
           setNames((prev) => ({ ...prev, [kind]: map }));
         })
-        // مالوش صلاحية على القايمة دي ⇒ الرقم بيفضل ظاهر بـ#، أحسن من شاشة واقعة.
         .catch(() => setNames((prev) => ({ ...prev, [kind]: prev[kind] || {} })));
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -543,11 +498,6 @@ function HistoryBody({ entityType, entityId }: { entityType: string; entityId: n
   );
 }
 
-/**
- * الزرار نفسه. مابيظهرش على مستند لسه مااتحفظش (مالوش سجل)، ولا لحد مالوش `audit.read`.
- *
- * `iconOnly` للقوايم: أيقونة في عمود الإجراءات بدل زرار بكلمة.
- */
 export function DocumentHistoryButton({ entityType, entityId, documentNumber, iconOnly }: {
   entityType: string;
   entityId: number | null | undefined;
@@ -558,8 +508,6 @@ export function DocumentHistoryButton({ entityType, entityId, documentNumber, ic
   const [open, setOpen] = useState(false);
   if (!entityId || !can('audit.read')) return null;
 
-  // الزرار ساعات بيبقى جوّه صف في جدول بيفتح المستند بالدوسة — والدوسة جوّه الشباك (حتى وهو
-  // في portal) بتطلع لأهل الزرار في شجرة React. فبنوقفها هنا.
   const stop = (e: React.SyntheticEvent) => e.stopPropagation();
   return (
     <span onClick={stop} onDoubleClick={stop} style={{ display: 'inline-flex' }}>

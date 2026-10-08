@@ -1,14 +1,3 @@
-"""تدقيق قيود a5: سطورنا مقابل سطور المصدر الحالية لكل sysfree.
-
-    python -m src.scripts.audit_stale_vouchers --aliaa-dir C:/pgtmp/aliaa --oct-dir C:/pgtmp
-
-قراءة فقط — مابيكتبش حاجة. بيصنّف كل قيد عندنا ليه مرجع a5:
-
-* `stale` — الـsysfree اختفى من a5 (تعديل رجعي مسح القيد): المرشح للمسح.
-* `legs-differ` — نفس الـsysfree لكن السطور مختلفة (تقسيم/تعديل مبلغ): محتاج مراجعة.
-* `match` — مطابق.
-* `no-source` — المرجع مالوش أثر في ملفات التصدير الحالية.
-"""
 from __future__ import annotations
 
 import os
@@ -28,7 +17,6 @@ ZERO = Decimal("0")
 
 
 def _src_vouchers(path: str, prefix: str):
-    """sysfree -> Counter((acc_id, direction, amount)) + عدد السطور."""
     out: dict[str, list] = defaultdict(list)
     if not os.path.exists(path):
         return out
@@ -75,7 +63,6 @@ def run(*, aliaa_dir: str, oct_dir: str) -> None:
             else:
                 stats["legs-differ"] += 1
                 differs.append((e.id, ref, e.entry_type, str(e.entry_date), oplegs, slegs_n))
-        # stale = no-source مع التأكد إن المرجع sysfree-style (a5:AL-123 أو a5:456)
         print(f"قيود بمرجع a5: match={stats['match']} legs-differ={stats['legs-differ']} no-source={stats['no-source']}")
         if differs:
             print(f"\n— legs-differ ({len(differs)}):")

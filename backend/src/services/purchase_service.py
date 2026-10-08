@@ -1,9 +1,3 @@
-"""Purchase service (T022–T023). FR-010–012.
-
-Purchase: raw materials in (stock) + one balanced ledger entry (debit purchases_expense; credit
-cash-location + supplier_payable). Return: partial, money reversed proportionally to the original
-cash/credit split (research R9).
-"""
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -53,12 +47,9 @@ class PurchaseLine:
     item_id: int
     quantity: Decimal
     unit_price: Decimal
-    unit: str | None = None    # (008) unit of measure; None = base unit
-    # (030) receive this line into its own warehouse; None = the document's location
+    unit: str | None = None
     warehouse_id: int | None = None
-    # خصم السطر. None = مفيش خصم متفق عليه — مش صفر.
     discount_pct: Decimal | None = None
-    # نصّيه للعرض بس — الفلوس بتتحسب من `discount_pct` المركّب.
     fixed_discount_pct: Decimal | None = None
     variable_discount_pct: Decimal | None = None
 
@@ -78,9 +69,7 @@ def create_purchase(
     lines: list[PurchaseLine],
     actor_role: RoleName,
     actor_user_id: int,
-    # الخزنة اللي بوباب الحفظ اختارها. فاضية ⇒ تتستنتج من خط المستند/المندوب.
     cash_account_id: int | None = None,
-    # (030) document fields — all optional so pre-030 callers keep working unchanged.
     rep_id: int | None = None,
     expense_account_id: int | None = None,
     external_document_number: str | None = None,
@@ -89,15 +78,9 @@ def create_purchase(
     statement2: str | None = None,
     statement3: str | None = None,
     purchase_date=None,
-    # خصم الفاتورة والضريبة — نفس ترتيب البيع بالظبط.
     variable_discount_pct: Decimal = ZERO,
-    # التعديل الحر — نفس فكرة البيع: الفاتورة تتبني مكان واحدة موجودة بنفس رقمها.
     replace_invoice_id: int | None = None,
-    # مركز التكلفة على المستند — بيتورّث لسطور القيد.
     cost_center_id: int | None = None,
-    # توزيع تحليلي على المستند كله: `{cost_center_id: percent}` ومجموعه ١٠٠.
-    # بيغلب `cost_center_id` — المستند متقسّم فمافيش مركز واحد يتكتب عليه. مالوش
-    # عمود على المستند: سطور قيده شايلاه، والقراءة بترجع منها.
     cost_center_distribution: dict | None = None,
 ) -> PurchaseInvoice:
     if not lines:
@@ -105,13 +88,10 @@ def create_purchase(
     supplier = db.get(Supplier, supplier_id)
     if supplier is None:
         raise PurchaseError("المورد مش موجود.")
-    # الحساب بيتفتح لو مش موجود — زي البيع بالظبط. كان بيرمي المستند كله برسالة
-    # «المورد ده مالوش حساب دائنين»، واللي قدامه فاتورة مايقدرش يعمل بيها حاجة.
     supplier_acc = supplier_service.require_account(db, supplier_id)
 
     fixed = sales_service.fixed_discount_pct(db)
     variable = Decimal(variable_discount_pct)
-    # خصم بعد خصم — نفس قاعدة البيع بالظبط (`src/lib/discounts.py`).
     combined = discounts.combine(fixed, variable)
     if variable < ZERO or variable >= Decimal("100") or fixed < ZERO or fixed >= Decimal("100"):
         raise PurchaseError("كل خصم لازم يكون من صفر لأقل من ١٠٠٪.")
@@ -122,9 +102,8 @@ def create_purchase(
         item = db.get(Item, ln.item_id)
         if item is None:
             raise PurchaseError("الصنف المشترى مش موجود.")
-        # Purchases accept any stocked item — raw materials AND finished products (resale/trading).
         try:
-            factor = uom_service.resolve_factor(db, item, ln.unit)  # (008)
+            factor = uom_service.resolve_factor(db, item, ln.unit)
         except UomError as exc:
             raise PurchaseError(str(exc)) from exc
         line_disc = Decimal(ln.discount_pct) if getattr(ln, "discount_pct", None) is not None             else ZERO
@@ -135,22 +114,9 @@ def create_purchase(
         gross += line_total
         built.append((ln, line_total, factor, line_disc))
     gross = to_money(gross)
-    # The invoice discount comes off the summed lines ONCE — applying it per line instead gives
-    # different money on the same numbers, and the sale settles it this way.
     net = discounts.apply(gross, fixed, variable)
     tax = tax_service.tax_on(net, tax_service.vat_rate(db))
     total = to_money(net + tax)
-    # **الآجل بيتحسب، مايتكتبش** — نفس قاعدة البيع بالحرف (`sales_service`).
-    #
-    # الشرط كان «النقدي + الآجل = الإجمالي بالظبط»، وكان بيرفض فواتير سليمة:
-    #
-    # * الشاشة بتجمع صافي السطور والسيرفر بيحسب الإجمالي = الصافي + الضريبة، فأول
-    #   ما يبقى فيه ضريبة الرقمين بيختلفوا والفاتورة بتترفض من غير ما اللي قدامها يعرف ليه.
-    # * وفاتورة شراء بالكامل على حساب المورد — وهي الحالة الطبيعية — بتتبعت بنقدي صفر
-    #   وآجل صفر، فبتترفض على فاتورة بـ١٥٤ ألف من غير ما يتكتب فيها حرف غلط.
-    #
-    # فالنقدي هو اللي بيتقال، والآجل بيتحسب: `الإجمالي − النقدي`. والسالب مقصود —
-    # دفعنا للمورد زيادة، والقيد تحته بيقيّدها لصالحنا عنده.
     cash_amount = to_money(cash_amount)
     if credit_amount is None:
         credit_amount = total - cash_amount
@@ -159,7 +125,6 @@ def create_purchase(
             f"النقدي + الآجل لازم يساوي إجمالي فاتورة الشراء ({total})."
         )
 
-    # Stock in (raw materials) — one movement per line.
     existing = db.get(PurchaseInvoice, replace_invoice_id) if replace_invoice_id else None
     if replace_invoice_id and existing is None:
         raise PurchaseError("فاتورة الشراء اللي بتتعدّل مش موجودة.")
@@ -176,8 +141,6 @@ def create_purchase(
         rep_id=rep_id, expense_account_id=expense_account_id,
         external_document_number=(external_document_number or None),
         notes=notes, statement1=statement1, statement2=statement2, statement3=statement3,
-        # Defaulted here rather than in the column so a purchase always carries a real day — a
-        # NULL would push every report that groups by day into guessing.
         purchase_date=purchase_date or date.today(),
         cost_center_id=cost_center_id,
     )
@@ -210,8 +173,7 @@ def create_purchase(
         db.add(invoice)
     db.flush()
     for ln, line_total, factor, line_disc in built:
-        base_qty = to_qty(Decimal(ln.quantity) * factor)  # (008) stock in base units
-        # (030) Each line may be received into its own warehouse.
+        base_qty = to_qty(Decimal(ln.quantity) * factor)
         line_kind, line_loc = ((LocationKind.warehouse, ln.warehouse_id)
                                if ln.warehouse_id is not None else (location_kind, location_id))
         stock_service.post_movement(
@@ -228,14 +190,9 @@ def create_purchase(
                                 line_location_kind=line_kind, line_location_id=line_loc)
         )
 
-    # Money: debit purchases_expense T; credit cash-location C + supplier_payable P.
-    # الخزنة المختارة بتغلب الاستنتاج — الشراء بيتدفع من خزنة المكتب مش من صندوق المندوب
-    # غالباً، واللي بيحفظ هو اللي يعرف منين.
     cash_acc = (account_resolver.explicit_treasury(db, cash_account_id)
                 or account_resolver.resolve_cash_account(
                     db, role=actor_role, user_id=actor_user_id, branch_id=invoice.branch_id))
-    # حساب المشتريات **بتاع فرع الفاتورة** (٢٠٢٦-١٠-٠٤) — من غير الفرع كان بيرجع حساب
-    # الفرع الافتراضي (أكتوبر)، فشرا العلياء كان بيتسجّل على أكتوبر.
     expense_acc = account_resolver.purchases_expense_account(db, branch_id=invoice.branch_id)
     entry_lines = [LineInput(expense_acc.id, Direction.debit, total)]
     if to_money(cash_amount) > ZERO:
@@ -243,20 +200,13 @@ def create_purchase(
     if to_money(credit_amount) > ZERO:
         entry_lines.append(LineInput(supplier_acc.account_id, Direction.credit, to_money(credit_amount)))
     elif to_money(credit_amount) < ZERO:
-        # **دفع للمورد أكتر من الفاتورة** (٢٠٢٦-١٠-٠٥ — «ممكن أسدد بالزيادة»): الزيادة دفعة
-        # مقدّمة بتنزل من مديونيته أو بتبقى له رصيد عندنا — زي فاتورة البيع بالظبط. كانت
-        # بتسيب القيد مش متوازن والحفظ بيقع.
         entry_lines.append(LineInput(supplier_acc.account_id, Direction.debit, -to_money(credit_amount)))
-    # فاتورة شرا بصفر (بونص/هدية من المورد): مافيش فلوس تتقيّد، والسطر الصفري كان بيوقّع
-    # الحفظ كله بـ500 («كل سطر لازم يكون مبلغه أكبر من صفر»). البضاعة بتدخل والقيد مابيتعملش.
     entry_lines = [ln for ln in entry_lines if to_money(ln.amount) > ZERO]
     if entry_lines:
         entry = ledger_service.post_entry(
             db, entry_type="purchase", actor_user_id=actor_user_id, lines=entry_lines,
             rep_id=rep_id, branch_id=invoice.branch_id,
             description=entry_text.purchase(invoice.document_number),
-            # (المرحلة ٢) القيد بتاريخ المستند وعلى المورد — كان بتاريخ النهارده وبلا شريك،
-            # فالفاتورة اللي اتسجّلت متأخرة كانت بتقع في شهر غير شهرها.
             entry_date=invoice.purchase_date,
             partner_kind=PartnerKind.supplier, partner_id=invoice.supplier_id,
             cost_center_id=invoice.cost_center_id,
@@ -273,12 +223,6 @@ def create_purchase(
 
 
 def _already_returned(db: Session, invoice_id: int) -> dict[int, Decimal]:
-    """اترجّع كام من كل صنف على الفاتورة دي — **من غير المردودات المعكوسة**.
-
-    المردود المعكوس بضاعته رجعت المخزن وقيده اتعكس، فعدّه هنا كان هيقفل الكمية على مردود
-    مالوش أثر: «اتشرى ١٠ واترجّع ١٠» والعشرة دول رجعوا تاني — فتحاول ترجّع وتترفض من غير
-    سبب باين.
-    """
     rows = db.execute(
         select(PurchaseReturnLine.item_id, func.coalesce(func.sum(PurchaseReturnLine.quantity), 0))
         .join(PurchaseReturn, PurchaseReturn.id == PurchaseReturnLine.return_id)
@@ -293,7 +237,7 @@ def return_purchase(
     db: Session,
     *,
     purchase_invoice_id: int,
-    lines: list[tuple[int, Decimal]],  # (item_id, quantity)
+    lines: list[tuple[int, Decimal]],
     actor_role: RoleName,
     actor_user_id: int,
     return_date: date | None = None,
@@ -302,17 +246,12 @@ def return_purchase(
     inv = db.get(PurchaseInvoice, purchase_invoice_id)
     if inv is None:
         raise PurchaseError("فاتورة الشراء مش موجودة.")
-    # السعر اللي الفاتورة حسبته فعلاً، مش سعر القايمة — نفس علّة مرتجع البيع
-    # بالظبط: المرتجع كان بيخصم من المورد سعر من غير خصومات الفاتورة، فالمردود
-    # بيطلع أكبر من اللي اتشرى وفرق بيفضل على حسابه.
     purchased = {
         ln.item_id: (Decimal(ln.quantity), to_money(ln.unit_price), to_factor(ln.unit_factor),
                      Decimal(ln.discount_pct or 0))
         for ln in inv.lines
     }
     doc_pct = Decimal(getattr(inv, "combined_pct", 0) or 0)
-    # (030) Each received line remembers its warehouse, so the return takes the goods back out of
-    # exactly that one. Lines written before 030 fall back to the invoice's own location.
     received_into = {
         ln.item_id: (ln.line_location_kind or inv.location_kind,
                      ln.line_location_id if ln.line_location_id is not None else inv.location_id)
@@ -332,7 +271,6 @@ def return_purchase(
         value += discounts.apply(qty * purchased[item_id][1], purchased[item_id][3])
     value = discounts.apply(value, doc_pct)
 
-    # Proportional split from the original purchase's cash/credit composition.
     cash_refund = to_money(value * to_money(inv.cash_amount) / to_money(inv.total)) if inv.total else ZERO
     credit_reduction = to_money(value - cash_refund)
 
@@ -340,18 +278,15 @@ def return_purchase(
         document_number=_doc_number(db, PurchaseReturn, "PRET"),
         purchase_invoice_id=purchase_invoice_id, value=value, ledger_entry_id=None,
         actor_user_id=actor_user_id,
-        # المردود بياخد فرع فاتورته: البضاعة راجعة من المكان اللي دخلت فيه.
         branch_id=getattr(inv, "branch_id", None) or branch_for(db, actor_user_id=actor_user_id),
-        # Defaulted here rather than on the column: returns recorded before this existed have no
-        # captured day, and a column default would have invented one for them.
         return_date=return_date or date.today(), notes=notes,
         cost_center_id=getattr(inv, "cost_center_id", None),
     )
     db.add(ret)
     db.flush()
     for item_id, qty in lines:
-        base_qty = to_qty(Decimal(qty) * purchased[item_id][2])  # (008) reverse stock in base units
-        out_kind, out_loc = received_into[item_id]   # (030) out of the warehouse it came into
+        base_qty = to_qty(Decimal(qty) * purchased[item_id][2])
+        out_kind, out_loc = received_into[item_id]
         stock_service.post_movement(
             db, item_id=item_id, location_kind=out_kind, location_id=out_loc,
             movement_type="purchase_return_out", direction=StockDirection.out, quantity=base_qty,
@@ -359,7 +294,6 @@ def return_purchase(
         )
         ret.lines.append(PurchaseReturnLine(item_id=item_id, quantity=Decimal(qty)))
 
-    # Reverse money proportionally: credit purchases_expense V; debit cash Cr + supplier_payable Pr.
     cash_acc = account_resolver.resolve_cash_account(db, role=actor_role, user_id=actor_user_id,
                                                      branch_id=ret.branch_id)
     expense_acc = account_resolver.purchases_expense_account(db, branch_id=ret.branch_id)
@@ -375,8 +309,6 @@ def return_purchase(
         description=entry_text.purchase_return(ret.document_number),
         entry_date=ret.return_date,
         partner_kind=PartnerKind.supplier, partner_id=inv.supplier_id,
-        # المردود بيرجع على نفس مركز الفاتورة — غير كده المصروف بينزل على مركز والرد
-        # بيطلع من «غير موزّع».
         cost_center_id=getattr(inv, "cost_center_id", None),
     )
     ret.ledger_entry_id = entry.id
@@ -393,20 +325,6 @@ def reverse_purchase_return(
     return_id: int,
     actor_user_id: int,
 ) -> PurchaseReturn:
-    """عكس مردود شراء مرحّل — البضاعة ترجع المخزن واللي على الشركة يرجع زي ما كان.
-
-    المردود المرحّل ماينفعش يتعدّل في مكانه، بنفس السبب اللي في الفاتورة: البضاعة اتحركت
-    والقيد اتكتب، والدفتر مابيتمحاش. فالتعديل = عكس كامل وكتابة من جديد.
-
-    العكس بيعمل حاجتين، والاتنين **إضافة** مش مسح:
-
-    * حركة مخزن داخلة لكل سطر، على نفس المخزن اللي خرج منه. `purchase_return_out` طلّع البضاعة
-      من مخزن بعينه — لو رجعت لمخزن تاني يبقى الرصيدين الاتنين غلط.
-    * قيد مضاد عن طريق `ledger_service.reverse_entry` — مش قيد جديد مكتوب بالإيد. لو اتكتب
-      بالإيد هيبقى فيه نسختين من نفس الحسبة، وأول ما حسبة المردود تتغيّر تفضل واحدة منهم قديمة.
-
-    والصف بيفضل موجود بعلامة، مش بيتمسح: رقم المستند اتصرف والقيد المضاد بيشاور عليه.
-    """
     ret = db.get(PurchaseReturn, return_id)
     if ret is None:
         raise PurchaseError("المردود مش موجود.")
@@ -417,11 +335,6 @@ def reverse_purchase_return(
     if ret.purchase_invoice_id and inv is None:
         raise PurchaseError("فاتورة الشراء بتاعت المردود مش موجودة.")
 
-    # البضاعة بترجع للمكان اللي خرجت منه.
-    #
-    # المردود المربوط بفاتورة خرج من مخازن سطورها — كل سطر من مخزنه. والمستقل خرج من مخزن
-    # واحد مكتوب عليه. الحالتين بيرجّعوا لنفس المكان بالظبط: رجوع لمخزن تاني بيخلّي الرصيدين
-    # الاتنين غلط.
     received_into = {
         ln.item_id: (ln.line_location_kind or inv.location_kind,
                      ln.line_location_id if ln.line_location_id is not None else inv.location_id)
@@ -473,28 +386,10 @@ def create_standalone_purchase_return(
     statement1: str | None = None,
     statement2: str | None = None,
     statement3: str | None = None,
-    # التعديل الحر — نفس فكرة الفاتورة: المردود يتبني مكان واحد موجود بنفس رقمه.
     replace_return_id: int | None = None,
     cost_center_id: int | None = None,
-    # توزيع تحليلي على المستند كله: `{cost_center_id: percent}` ومجموعه ١٠٠.
-    # بيغلب `cost_center_id` — المستند متقسّم فمافيش مركز واحد يتكتب عليه. مالوش
-    # عمود على المستند: سطور قيده شايلاه، والقراءة بترجع منها.
     cost_center_distribution: dict | None = None,
 ) -> PurchaseReturn:
-    """مردود شرا مستقل — **نسخة من فاتورة الشرا بالعكس**.
-
-    نفس المستند بالظبط: نفس الترويسة (تاريخ، فرع، حساب، رقم مستند، مورد، ملاحظات، تلات بيانات)،
-    ونفس السطر (مخزن، وحدة، كمية، سعر، خصم سطر)، ونفس سلّم الأرقام (قبل الخصم → خصم المستند →
-    الصافي). اللي بالعكس حاجتين بس، وهما اللي بيخلّوه مردود:
-
-    * **البضاعة بتخرج** من المخزن بدل ما تدخله.
-    * **اللي على الشركة للمورد بينقص** بدل ما يزيد.
-
-    الشركة بترجّع بضاعة لمورد من غير ما تكون عارفة أنهي فاتورة جابتها، فمفيش فاتورة أصل تتقرا
-    منها الأسعار: السعر بيتكتب على السطر زي ما بيتكتب على الفاتورة بالظبط.
-
-    والحد الوحيد على الكمية هو الرصيد — `stock_service` بيرفض اللي مش موجود.
-    """
     if not lines:
         raise PurchaseError("المردود لازم يكون فيه صنف واحد على الأقل.")
     variable = Decimal(variable_discount_pct or 0)
@@ -515,7 +410,6 @@ def create_standalone_purchase_return(
         if qty <= ZERO:
             raise PurchaseError("الكمية لازم تكون أكبر من صفر.")
         unit = ln.get("unit")
-        # نفس الدالة اللي الفاتورة بتستعملها — معامل الوحدة لازم يكون واحد في الاتنين.
         factor = uom_service.resolve_factor(db, item, unit) if unit else Decimal("1")
         price = to_money(ln.get("unit_price") or 0)
         disc = ln.get("discount_pct")
@@ -533,8 +427,6 @@ def create_standalone_purchase_return(
         })
 
     gross = to_money(gross)
-    # الخصم الثابت بينزل هنا كمان — زي فاتورة الشرا بالظبط. المردود الحر كان
-    # بياخد المتغيّر بس، فبيتخصم من المورد أكتر من اللي اتشرى بيه.
     fixed = sales_service.fixed_discount_pct(db)
     value = discounts.apply(gross, fixed, variable)
 
@@ -598,10 +490,6 @@ def create_standalone_purchase_return(
             line_location_kind=b["location_kind"], line_location_id=b["location_id"],
             line_total=b["line_total"]))
 
-    # القيد: حساب المشتريات دائن بالقيمة، وحساب المورد مدين — يعني اللي على الشركة له بينقص.
-    #
-    # مفيش استرداد نقدي على المستند: المردود المستقل مالوش فاتورة يعرف منها اتدفع كام نقدي،
-    # والفلوس الراجعة نقداً بتتسجّل بسند صرف لما تحصل فعلاً.
     expense_acc = (db.get(Account, expense_account_id) if expense_account_id
                    else account_resolver.purchases_expense_account(db, branch_id=ret.branch_id))
     if expense_acc is None:

@@ -13,11 +13,6 @@ double _netOf(double gross, double pct) =>
 
 String _money(double v) => v.toStringAsFixed(2);
 
-/// سعر الوحدة بيتعرض **بتلات خانات زي الفاتورة**، مش خانتين.
-///
-/// التدوير لخانتين كان بيخلّي السطر مايضربش في بعضه: ١٠٦٫٤٢٥ بتتعرض ١٠٦٫٤٢،
-/// والإجمالي محسوب على القيمة الكاملة — فالتاجر اللي بيضرب ٢٠ × ١٠٦٫٤٢ بإيده
-/// بيطلع ٢١٢٨٫٤٠ ويلاقي مكتوب ٢١٢٨٫٥٠. والورقة دي بالذات اللي بيراجع عليها.
 String _unitPrice(double v) =>
     v.toStringAsFixed(3).replaceFirst(RegExp(r'\.?0+$'), '');
 
@@ -31,32 +26,9 @@ String _trim(double v) {
 
 String _blank(double v) => v == 0 ? '' : _trim(v);
 
-/// كشف التسعير — **نفس شاشة فاتورة البيع، من غير عميل ومن غير مديونية**.
-///
-/// المندوب بيسعّر بنفس الحركات اللي بيبيع بيها: يزوّد صنف من نفس المنتقي (فئة ⇐
-/// صنف ⇐ كمية)، ويعدّل السعر والخصم في نفس الخانات، ويشوف الإجمالي في نفس المكان.
-/// شاشة بشكل تاني كانت هتخلّيه يتعلّم واجهة تانية عشان يجاوب سؤال هو بيجاوبه كل يوم.
-///
-/// **واللي اتشال مقصود:**
-///
-/// * **العميل.** التسعير مش لطرف بعينه؛ ربطه بعميل بيخلّيه محتاج اختيار قبل ما
-///   يبدأ، والمندوب بيتسأل عن السعر قبل ما يعرف مين اللي بيسأل أصلاً.
-/// * **المديونية والحساب السابق.** دول أرقام مستند على طرف، ومافيش طرف هنا.
-/// * **النقدي والآجل والكوبونات.** دي طرق سداد لفاتورة، والعرض مابيتسددش.
-/// * **حد الكمية والرصيد.** الفاتورة بتمنع أكتر من اللي في العربية؛ العرض لأ —
-///   التاجر بيسأل «٥٠٠ قطعة بكام» وهو عارف إنها مش معاك دلوقتي.
-///
-/// **وأثره صفر:** مافيش حركة مخزن ولا قيد ولا نقط ولا مديونية، ومافيش حاجة بتترفع
-/// للسيرفر.
-///
-/// **بس بيتحفظ على الجهاز.** كان بيروح مع قفل الشاشة، والمندوب بيبني عرض لتاجر على
-/// عشرين صنف ويرجع تاني يوم يبنيه من أول. الحفظ محلي خالص وفي جدول لوحده
-/// (`price_sheet`) مش مع الفواتير: العرض مش مستند، ومخلوط مع «فواتيري» كان هيخلّي
-/// اللي بيراجع يشوف ورقة شكلها فاتورة ومالهاش قيد.
 class PriceSheetScreen extends StatefulWidget {
   const PriceSheetScreen({super.key, this.existingLocalId});
 
-  /// شيت متحفوظ بيتفتح للتعديل. `null` = شيت جديد.
   final int? existingLocalId;
 
   @override
@@ -70,15 +42,11 @@ class _PriceSheetScreenState extends State<PriceSheetScreen> {
   final Map<int, TextEditingController> _discCtl = {};
   final _titleCtl = TextEditingController();
 
-  /// رقم الشيت على الجهاز بعد أول حفظ. الحفظ التاني بيدوس عليه مش بيعمل نسخة.
   int? _localId;
   bool _saving = false;
 
-  /// اتغيّر حاجة من آخر حفظ؟ — ده اللي بيقرر السؤال وقت الخروج.
   bool _dirty = false;
 
-  /// كتالوج النظام كله — مش عهدة المندوب. ده الفرق اللي بيخلّي الشاشة تنفع:
-  /// بيسعّر صنف مش معاه في العربية.
   List<SaleItem> _catalog = const [];
   bool _loading = true;
 
@@ -103,9 +71,6 @@ class _PriceSheetScreenState extends State<PriceSheetScreen> {
   }
 
   Future<void> _load() async {
-    // الفئات اللي النظام مخبّيها من الشيت بتتشال من المنتقي. السطور المتحفوظة قبل
-    // الإخفاء بتفضل زي ما هي — عرض اتبعت لتاجر مابيتغيّرش من تحته.
-    // بيحدّث القايمة من النظام لو فيه شبكة (مهلة قصيرة)، وإلا اللي متخزّن من آخر مزامنة.
     try {
       await ApiClient.instance
           .refreshPriceSheetHidden(timeout: const Duration(seconds: 4));
@@ -115,9 +80,6 @@ class _PriceSheetScreenState extends State<PriceSheetScreen> {
       for (final it in await LocalDb.instance.catalogItems())
         if (!hidden.contains(it.category?.trim() ?? '')) it
     ];
-    // الشيت المتحفوظ بيتقرا **بعد** الكتالوج: السطور فيها اسم الصنف وسعره زي ما
-    // اتحفظوا، فالشيت بيفتح بأرقامه هو حتى لو سعر القايمة اتغيّر بعد كده. عرض
-    // اتبعت للتاجر بأرقام، ولما يرجع يتفتح لازم يقول نفس الأرقام.
     final head = _localId == null
         ? null
         : await LocalDb.instance.priceSheet(_localId!);
@@ -137,7 +99,6 @@ class _PriceSheetScreenState extends State<PriceSheetScreen> {
     });
   }
 
-  /// اسم الشيت — اللي المندوب كتبه، وإلا وصف بيميّزه في القايمة.
   String get _title {
     final typed = _titleCtl.text.trim();
     if (typed.isNotEmpty) return typed;
@@ -172,10 +133,6 @@ class _PriceSheetScreenState extends State<PriceSheetScreen> {
     }
   }
 
-  /// سؤال الخروج — **بيتسأل بس لو فيه تغيير مش متحفوظ**.
-  ///
-  /// السؤال على شيت متحفوظ ومافيهوش جديد بيخلّي المندوب يتعلّم يدوس «اخرج» من غير ما
-  /// يقرا، وأول مرة يكون فيه شغل فعلاً بيضيع.
   Future<bool> _confirmLeave() async {
     if (!_dirty || _lines.isEmpty) return true;
     final leave = await showDialog<bool>(
@@ -207,12 +164,8 @@ class _PriceSheetScreenState extends State<PriceSheetScreen> {
     return leave ?? false;
   }
 
-  /// الإجمالي قبل أي خصم — مجموع (كمية × سعر).
   double get _gross => _lines.fold(0.0, (t, l) => t + l.gross);
 
-  /// الخصم بالجنيه — **محسوب من الفرق مش من نسبة واحدة**. كل سطر ليه خصمه
-  /// (ثابت الصنف + اللي المندوب زوّده)، فمافيش نسبة واحدة تعبّر عن العرض كله،
-  /// والرقم اللي بيهمّ اللي بيقرا هو «وفّرت كام».
   double get _discount => _gross - _total;
 
   double get _total => _lines.fold(0.0, (t, l) => t + l.net);
@@ -225,16 +178,10 @@ class _PriceSheetScreenState extends State<PriceSheetScreen> {
     await SaleAddItemFlow.show(
       context,
       alreadyOnInvoice: {for (final l in _lines) l.itemId: l.quantity},
-      // مافيش عميل ⇒ مافيش فئة ⇒ السعر الأساسي. المندوب بيعدّله بإيده لو حب.
       priceTier: null,
       source: _catalog,
-      // **مافيش حد ومافيش عرض للرصيد.** الحد كان هيمنع تسعير صنف مش معاه، والرصيد
-      // معلومة مضلّلة هنا: دي أصناف النظام مش عربيته، والرقم اللي هيشوفه مش بتاعه.
       capToAvailable: false,
       showAvailable: false,
-      // **سعر القايمة، مش السعر بعد الخصم.** الخصم هنا بيتكتب بالإيد، فلازم الرقم
-      // اللي قدام المندوب يبقى اللي بيحسب منه. لو اتعرض مخصوم خلاص، الخصم اللي
-      // هيكتبه بيتحط فوق خصم تاني ومحدش شايف إن الاتنين اتجمعوا.
       showNetPrice: false,
       onAdd: (picked, qty) {
         final existing = _lines.indexWhere((l) => l.itemId == picked.itemId);
@@ -248,10 +195,6 @@ class _PriceSheetScreenState extends State<PriceSheetScreen> {
               itemName: picked.name,
               quantity: qty,
               unitPrice: picked.priceFor(null),
-              // **الخصم الثابت مابيتنقلش للشيت.** ده عرض سعر، والتفاوض كله بيتكتب
-              // بالإيد: السطر بيبدأ بسعر القايمة وخصم صفر، واللي بيسعّر بيحطّ نسبته
-              // هو. ونقل الخصم الافتراضي كان بيقفل خانة السعر كمان (قاعدة الفاتورة)
-              // فالمندوب مايقدرش يعدّل الرقمين اللي الشاشة دي موجودة عشانهم.
               fixedDiscountPct: 0,
               variableDiscountPct: 0,
             ));
@@ -273,11 +216,6 @@ class _PriceSheetScreenState extends State<PriceSheetScreen> {
   void _say(String msg) =>
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
 
-  /// يحوّل العرض لفاتورة بسطوره — التاجر قال «تمام هاتهم».
-  ///
-  /// **والفاتورة هي صاحبة الكلمة بعدها.** اختيار التاجر بيعيد تسعير السطور على
-  /// فئته، والمتاح في العربية بيتفحص زي أي فاتورة، والحفظ بيمرّ على نفس الفحوص.
-  /// الكشف بيوفّر إعادة الكتابة — مش بيتخطّى قاعدة.
   Future<void> _toInvoice() async {
     if (_lines.isEmpty) return;
     final go = await showDialog<bool>(
@@ -304,7 +242,6 @@ class _PriceSheetScreenState extends State<PriceSheetScreen> {
     );
   }
 
-  /// نص جاهز يتبعت على واتساب — ده اللي المندوب بيعمله بالورقة.
   void _copy() {
     if (_lines.isEmpty) return;
     final body = _lines
@@ -313,18 +250,12 @@ class _PriceSheetScreenState extends State<PriceSheetScreen> {
             '${_money(_netOf(l.unitPrice, l.discountPct))} = ${_money(l.net)} ج')
         .join('\n');
     Clipboard.setData(ClipboardData(
-      // **بيقول إنه عرض سعر صراحةً.** ورقة فيها أصناف وكميات وإجمالي بتتقرا
-      // فاتورة، والتاجر اللي فهمها كده بيطالب بيها.
       text: 'عرض سعر\n\n$body\n\nالإجمالي: ${_money(_total)} ج\n'
           '(عرض سعر — مش فاتورة، والأسعار قابلة للتغيير)',
     ));
     _say('اتنسخ عرض بـ${_lines.length} صنف');
   }
 
-  /// أي تعديل على العرض بيعلّم إن فيه شغل مش متحفوظ.
-  ///
-  /// ملفوفة حوالين `setState` عشان الحتة اللي بترسم والحتة اللي بتفتكر يفضلوا مع بعض:
-  /// تعديل بيرسم من غير ما يعلّم بيخلّي الخروج يعدّي من غير سؤال وشغل ساعة يروح.
   void _edit(VoidCallback change) {
     setState(() {
       change();
@@ -338,8 +269,6 @@ class _PriceSheetScreenState extends State<PriceSheetScreen> {
       canPop: !_dirty || _lines.isEmpty,
       onPopInvokedWithResult: (didPop, _) async {
         if (didPop) return;
-        // الـNavigator بيتاخد **قبل** الانتظار: بعده الـcontext ممكن يكون اتشال،
-        // وقراءته ساعتها بترمي بدل ما الشاشة تتقفل.
         final nav = Navigator.of(context);
         if (await _confirmLeave()) nav.pop(true);
       },
@@ -405,7 +334,6 @@ class _PriceSheetScreenState extends State<PriceSheetScreen> {
                         )
                       : ListView.builder(
                           padding: const EdgeInsets.only(bottom: 92),
-                          // سطر زيادة في الآخر: كارت الإجماليات.
                           itemCount: _lines.length + 1,
                           itemBuilder: (_, i) =>
                               i < _lines.length ? _lineTile(i) : _totalsCard(),
@@ -428,11 +356,6 @@ class _PriceSheetScreenState extends State<PriceSheetScreen> {
         ),
       );
 
-  /// اسم الشيت — **اختياري**، وده مقصود.
-  ///
-  /// خانة إجبارية فوق الشاشة معناها إن المندوب يقف يفكّر في اسم قبل ما يبدأ يسعّر،
-  /// وهو واقف قدام التاجر. فلو سابها فاضية القايمة بتسمّي الشيت بأول صنف وعدد الباقي
-  /// («بلاعة ٢ ×١٫٥ و٤ غيره») — يعرفه منه، ويقدر يسمّيه بعدين لما يفضى.
   Widget _titleField() => Padding(
         padding: const EdgeInsets.fromLTRB(12, 10, 12, 2),
         child: TextField(
@@ -449,12 +372,6 @@ class _PriceSheetScreenState extends State<PriceSheetScreen> {
         ),
       );
 
-  /// كارت الإجماليات في آخر الشيت — زي الفاتورة بالظبط.
-  ///
-  /// **والشريط اللاصق تحت مش بديل عنه.** الشريط بيوري رقم واحد وانت بتزوّد، وده
-  /// اللي بيلزمك وانت بتشتغل. أما اللي بيراجع العرض قبل ما يبعته فبيقرا من تحت
-  /// لفوق: إجمالي، خصم، صافي — والتفصيلة دي هي اللي بتخلّيه يقدر يقول للتاجر
-  /// «وفّرتلك كذا» بدل رقم واحد مالوش سياق.
   Widget _totalsCard() => Card(
         margin: const EdgeInsets.fromLTRB(8, 10, 8, 8),
         child: Padding(
@@ -528,8 +445,6 @@ class _PriceSheetScreenState extends State<PriceSheetScreen> {
                   onPressed: _copy,
                 ),
                 const SizedBox(width: 4),
-                // **التحويل لفاتورة هو الزرار الأساسي.** المندوب بيسعّر عشان يبيع،
-                // والنسخ للواتساب هو الحالة التانية — فالأوضح بياخد المساحة.
                 FilledButton.icon(
                   style: FilledButton.styleFrom(
                       backgroundColor: Colors.white,
@@ -544,8 +459,6 @@ class _PriceSheetScreenState extends State<PriceSheetScreen> {
         ),
       );
 
-  /// نفس كارت سطر الفاتورة — رقم السطر، الاسم، شارة الخصم الثابت، الصافي، وتحتهم
-  /// الكمية والسعر والخصم. **من غير تحذير المتاح**: مافيش حد هنا.
   Widget _lineTile(int i) {
     final l = _lines[i];
     final ctl = _qtyCtl.putIfAbsent(
@@ -612,9 +525,6 @@ class _PriceSheetScreenState extends State<PriceSheetScreen> {
                     controller: _priceCtl.putIfAbsent(l.itemId,
                         () => TextEditingController(text: _blank(l.unitPrice))),
                     onChanged: (v) => _edit(() => l.unitPrice = v),
-                    // نفس قاعدة الفاتورة: الصنف اللي عليه خصم ثابت سعره سعر
-                    // القايمة ومايتكتبش فوقه — وإلا بيبقى خصمين على بعض. والتفاوض
-                    // بيفضل في مكان واحد: الخصم المتغيّر.
                     readOnly: l.fixedDiscountPct > 0,
                     netPrice: l.fixedDiscountPct > 0
                         ? _netOf(l.unitPrice, l.discountPct)
@@ -657,8 +567,6 @@ class _PriceSheetScreenState extends State<PriceSheetScreen> {
     bool readOnly = false,
     double? netPrice,
   }) {
-    // الخانة اللي بتوري الصافي مش خانة كتابة — بتترسم عرض من غير كنترولر، زي
-    // الفاتورة بالظبط.
     if (netPrice != null) {
       return InputDecorator(
         decoration: InputDecoration(

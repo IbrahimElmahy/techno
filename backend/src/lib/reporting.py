@@ -1,9 +1,3 @@
-"""Reporting engine — isolated, reusable report calculators (014-production-reporting).
-
-Library-First: each report is a function `(session, **params) -> dict` with the query + aggregation
-logic in one place, reused by the `/reports/*` API and CSV export. Date bucketing (week/month/year)
-is done in Python so it is DB-agnostic (identical on SQLite and Postgres). Amounts use Decimal.
-"""
 from __future__ import annotations
 
 from datetime import date, datetime, timedelta
@@ -22,7 +16,6 @@ from src.models.stock import LocationKind, StockDirection, StockDoc, StockMoveme
 from src.models.wastage import WastageDocument
 
 
-# --- helpers ---------------------------------------------------------------
 def _as_date(value) -> date | None:
     if value is None:
         return None
@@ -34,14 +27,13 @@ def _as_date(value) -> date | None:
 
 
 def bucket_key(when: datetime | date, period: str) -> str:
-    """Group a timestamp into a period bucket. period ∈ {week, month, year}."""
     d = _as_date(when)
     if period == "year":
         return f"{d.year:04d}"
     if period == "week":
         iso = d.isocalendar()
         return f"{iso[0]:04d}-W{iso[1]:02d}"
-    return f"{d.year:04d}-{d.month:02d}"  # month (default)
+    return f"{d.year:04d}-{d.month:02d}"
 
 
 def _in_range(when, date_from, date_to) -> bool:
@@ -54,11 +46,6 @@ def _in_range(when, date_from, date_to) -> bool:
 
 
 def branch_warehouse_ids(db: Session, branch_id: int | None) -> set[int] | None:
-    """مخازن الفرع — أو `None` لما مافيش حصر.
-
-    تقارير المخزون بتتجمّع على (صنف × مخزن)، فالفرع بيتحدّد من مخازنه مش من عمود
-    على الحركة: المخزن هو اللي بيخصّ فرع، والحركة بتحصل جوّاه.
-    """
     if branch_id is None:
         return None
     from src.models.warehouse import Warehouse
@@ -71,28 +58,9 @@ def _item_names(db: Session) -> dict[int, str]:
     return {i.id: i.name for i in db.scalars(select(Item)).all()}
 
 
-# --- reports ---------------------------------------------------------------
 def _op_batches(db: Session, product_id: int | None, branch_id: int | None = None):
-    """الإنتاج اللي اتسجّل **عمليات** مش أوامر — مجمّع في دفعات زي ما حصل.
-
-    **مش كل إنتاج بيجي من أمر تصنيع.** النقل من a5 بيسجّل `ManufacturingOp` لكل سطر
-    لأن أمر a5 الواحد بيطلّع كذا منتج وأمرنا منتج واحد؛ تفصيله كان هيتطلّب توزيع
-    الخامات على المنتجات بالتخمين. فالمخزون بيطلع مظبوط، وده التقرير اللي كان
-    بيشوف الأوامر وحدها فبيطلع **فاضي** رغم إن ٣٬٨٠٤ عملية إنتاج واستهلاك متسجّلة.
-
-    **والدفعة بتتلمّ من رقم المستند.** `import_a5_manufacturing` بيكتب
-    `<بادئة>MFG-<رقم أمر a5>-<تسلسل>`، فالجزء اللي قبل آخر شرطة هو أمر التشغيل
-    الأصلي. ده اتفاق مكتوب في المستورد ومقروء هنا — ولو اتغيّر هناك لازم يتغيّر هنا.
-
-    والتاريخ بييجي من حركة المخزون (`movement_date`) مش من وقت كتابة الصف: النقل
-    كتب شغل سنة في يوم واحد، والترتيب بوقت الكتابة بيحطهم كلهم في بُكيت واحد.
-    """
     from src.models.manufacturing import ManufactureOpType, ManufacturingOp
 
-    # **والعملية بتتبع مخزنها.** `ManufacturingOp` مالهاش عمود فرع — هي سطر حركة
-    # مش مستند — فالفرع بييجي من المكان اللي البضاعة اتحرّكت فيه، زي كل تقرير مخزون.
-    # ومن غير ده كان تقرير الإنتاج بيرجّع نفس الـ٢٠٢ دفعة لكل فرع مهما كان فرعه:
-    # الأوامر اتفلترت والدفعات لأ، والدفعات هي كل اللي في الجدول أصلاً.
     stmt = (select(ManufacturingOp, StockMovement.movement_date, StockMovement.created_at)
             .join(StockMovement, StockMovement.id == ManufacturingOp.stock_movement_id)
             .where(ManufacturingOp.reverses_op_id.is_(None)))
@@ -122,11 +90,6 @@ def production_consumption(db: Session, *, date_from=None, date_to=None, period=
                            product_id: int | None = None,
                            branch_id: int | None = None,
                            statement: str | None = None) -> dict:
-    """Actual production vs materials pulled, plus cost breakdown, bucketed by period.
-
-    **وبفرع اللي بيقرا** — الإنتاج كله في المصنع، وتقرير بيوري تكاليفه وكمياته لمدير
-    فرع بيع مش شايف ولا أمر تشغيل منهم في شاشته.
-    """
     names = _item_names(db)
     wanted = report_statement.needle(statement)
     stmt = select(ManufacturingOrder).where(ManufacturingOrder.reverses_order_id.is_(None))
@@ -137,8 +100,6 @@ def production_consumption(db: Session, *, date_from=None, date_to=None, period=
         stmt = stmt.where(ManufacturingOrder.product_id == product_id)
     rows, buckets = [], {}
     for o in db.scalars(stmt.order_by(ManufacturingOrder.id)).all():
-        # **تاريخ الإنتاج قبل وقت الكتابة.** الأمر المستورد اتكتب النهارده وإنتاجه
-        # حصل من شهور؛ الترتيب بـ`created_at` بيحط سنة شغل في بُكيت واحد.
         when = o.production_date or o.created_at
         if not _in_range(when, date_from, date_to):
             continue
@@ -162,10 +123,6 @@ def production_consumption(db: Session, *, date_from=None, date_to=None, period=
         b["consumed"] += consumed
         b["total_cost"] += to_money(o.total_cost)
 
-    # **أوامر التشغيل (`ProductionOrder`)** — الشاشة اللي المصنع شغّال عليها دلوقتي،
-    # والتقرير ماكانش بيقراها خالص: أي أمر اتنفّذ من الشاشة مالوش أثر هنا. المنفّذ
-    # بكميته وتكلفته المجمّدة؛ والشغّال باللي استُلم منه لحد دلوقتي والخامات اللي
-    # اتصرفت فعلاً، عشان التقرير يقول اللي دخل المخزن مش اللي اتخطّط.
     po_refs: set[str] = set()
     po = (select(ProductionOrder)
           .where(ProductionOrder.state.in_([ProductionState.done, ProductionState.in_progress]),
@@ -174,8 +131,6 @@ def production_consumption(db: Session, *, date_from=None, date_to=None, period=
         po = po.where((ProductionOrder.branch_id == branch_id)
                       | (ProductionOrder.branch_id.is_(None)))
     for o in db.scalars(po.order_by(ProductionOrder.id)).all():
-        # الأمر المنقول من a5 هو نفسه دفعة العمليات اللي بنفس الرقم — بيتقرا من هنا
-        # (عليه التكلفة) والدفعة بتتشال تحت، وإلا الإنتاج بيتعدّ مرتين.
         if o.document_number.startswith("WO-A5-"):
             po_refs.add(o.document_number[len("WO-A5-"):])
         if product_id is not None and not any(p.item_id == product_id for p in o.products):
@@ -213,14 +168,10 @@ def production_consumption(db: Session, *, date_from=None, date_to=None, period=
         b["consumed"] += consumed
         b["total_cost"] += total
 
-    # الإنتاج المسجّل عمليات — نفس الصفوف بنفس الشكل، بلا تكلفة لأن العملية
-    # مابتحملش تكلفة (الأمر هو اللي بيحسبها).
-    # الدفعة المنقولة مالهاش بيان خالص (سطر حركة مش مستند)، فأول ما حد يفلتر ببيان
-    # بتقع — مش بتعدّي كأنها مطابقة.
     for batch in ([] if wanted else _op_batches(db, product_id, branch_id)):
         when = batch["when"]
         if batch["document_number"] in po_refs:
-            continue   # اتعدّت فوق كأمر تشغيل
+            continue
         if when is None or not _in_range(when, date_from, date_to):
             continue
         rows.append({
@@ -236,10 +187,9 @@ def production_consumption(db: Session, *, date_from=None, date_to=None, period=
                                {"produced": ZERO, "consumed": ZERO, "total_cost": ZERO})
         b["produced"] += to_qty(batch["produced"])
         b["consumed"] += to_qty(batch["consumed"])
-    rows.sort(key=lambda r: r["created_at"], reverse=True)  # الأحدث فوق (٢٠٢٦-١٠-٠١)
+    rows.sort(key=lambda r: r["created_at"], reverse=True)
     return {
         "rows": rows,
-        # الشاشة بتعرض خانة «البيان» بس لما المستند عنده بيان أصلاً.
         "statement_supported": (report_statement.supported(ManufacturingOrder)
                                 or report_statement.supported(ProductionOrder)),
         "by_period": [{"period": k, "produced_quantity": str(to_qty(v["produced"])),
@@ -251,7 +201,6 @@ def production_consumption(db: Session, *, date_from=None, date_to=None, period=
 
 def inventory(db: Session, *, warehouse_id: int | None = None, item_id: int | None = None,
               branch_id: int | None = None) -> dict:
-    """Current on-hand balance and value per (item × warehouse)."""
     names = _item_names(db)
     prices = {i.id: (to_money(i.purchase_price) if i.purchase_price is not None else ZERO)
               for i in db.scalars(select(Item)).all()}
@@ -286,11 +235,6 @@ def inventory(db: Session, *, warehouse_id: int | None = None, item_id: int | No
 def wastage(db: Session, *, date_from=None, date_to=None, item_id: int | None = None,
             warehouse_id: int | None = None, branch_id: int | None = None,
             statement: str | None = None) -> dict:
-    """Waste from manufacturing orders (per-line waste_quantity) + standalone wastage documents.
-
-    **والهالك بيتبع مخزنه.** السطر بيخصم من مخزن، والمخزن بيخصّ فرع — فده أدق من
-    عمود فرع على الأمر، وبيمشي على المستند المستقل اللي مالوش أمر أصلاً.
-    """
     mine = branch_warehouse_ids(db, branch_id)
     names = _item_names(db)
     prices = {i.id: (to_money(i.purchase_price) if i.purchase_price is not None else ZERO)
@@ -298,7 +242,6 @@ def wastage(db: Session, *, date_from=None, date_to=None, item_id: int | None = 
     wanted = report_statement.needle(statement)
     rows, total_qty, total_cost = [], ZERO, ZERO
 
-    # From manufacturing orders (non-reversal), any consumption line with waste.
     q = (select(ManufacturingOrderConsumption, ManufacturingOrder)
          .join(ManufacturingOrder, ManufacturingOrder.id == ManufacturingOrderConsumption.order_id)
          .where(ManufacturingOrder.reverses_order_id.is_(None)))
@@ -312,7 +255,6 @@ def wastage(db: Session, *, date_from=None, date_to=None, item_id: int | None = 
             continue
         if mine is not None and cons.warehouse_id not in mine:
             continue
-        # تاريخ الإنتاج قبل وقت الكتابة — زي `production_consumption` بالظبط.
         when = order.production_date or order.created_at
         if not _in_range(when, date_from, date_to):
             continue
@@ -327,7 +269,6 @@ def wastage(db: Session, *, date_from=None, date_to=None, item_id: int | None = 
                      "cost": str(cost), "statement": report_statement.text_of(order),
                      "created_at": str(when)})
 
-    # Standalone wastage documents (exclude reversals; reversals net out).
     for d in db.scalars(select(WastageDocument).where(WastageDocument.reverses_id.is_(None))).all():
         if item_id is not None and d.item_id != item_id:
             continue
@@ -339,7 +280,6 @@ def wastage(db: Session, *, date_from=None, date_to=None, item_id: int | None = 
             continue
         if not report_statement.matches_obj(d, wanted):
             continue
-        # Skip if this document has been reversed.
         reversed_ = db.scalar(select(WastageDocument.id).where(WastageDocument.reverses_id == d.id))
         if reversed_ is not None:
             continue
@@ -352,7 +292,7 @@ def wastage(db: Session, *, date_from=None, date_to=None, item_id: int | None = 
                      "statement": report_statement.text_of(d),
                      "created_at": str(d.created_at)})
 
-    rows.sort(key=lambda r: r["created_at"], reverse=True)  # الأحدث فوق
+    rows.sort(key=lambda r: r["created_at"], reverse=True)
     return {"rows": rows, "total_quantity": str(to_qty(total_qty)),
             "total_cost": str(to_money(total_cost)),
             "statement_supported": (report_statement.supported(ManufacturingOrder)
@@ -360,20 +300,6 @@ def wastage(db: Session, *, date_from=None, date_to=None, item_id: int | None = 
 
 
 def last_sold_by_item(db: Session) -> dict[int, date]:
-    """آخر يوم اتباع فيه كل صنف — **لعميل، وبتاريخ الفاتورة**.
-
-    حاجتين كانوا غلط هنا وفي فحص الرئيسية، وكل واحدة لوحدها بتكفي تخلّي التقرير
-    مالوش معنى:
-
-    * **التاريخ كان `created_at`** — وده وقت كتابة السطر في قاعدتنا مش وقت الحركة.
-      نقل a5 كتب ٤٤ ألف حركة في تسع أيام والفواتير وراها من يناير، فكل حركة منقولة
-      كانت مكتوب عليها إنها حصلت الأسبوع اللي فات.
-    * **التحويل كان بيتحسب حركة.** نقل البضاعة من المخزن الرئيسي لعربية المندوب مش
-      بيع — البضاعة لسه عندنا. فالصنف اللي بيتنقل ومابيتباعش كان بيبان متحرّك.
-
-    فالمقياس بقى: **اتباع لعميل امتى آخر مرة**، بتاريخ الفاتورة، ولكل صنف مرة واحدة
-    مهما كان في كام مخزن.
-    """
     when = func.max(SalesInvoice.invoice_date)
     rows = db.execute(
         select(StockMovement.item_id, when)
@@ -387,15 +313,6 @@ def last_sold_by_item(db: Session) -> dict[int, date]:
 
 def stagnant_stock(db: Session, *, days: int = 90, warehouse_id: int | None = None,
                    now: datetime | None = None, branch_id: int | None = None) -> dict:
-    """بضاعة عليها رصيد ومحصلش عليها بيع من `days` يوم — أو ولا مرة.
-
-    **الركود صفة الصنف مش صفة مكانه.** كان بيتحسب لكل (صنف × مخزن)، فالصنف اللي في
-    خمس مخازن وبيتباع من واحد بيتعدّ أربع مرات راكد. على داتا العميل ده كان بيطلّع
-    ٦٠٩ سطر من ٩٣٣ موقع رصيد — تلتين المخزن «راكد»، وتقرير بيقول كده مش تقرير.
-
-    بالقياس الصح — اتباع لعميل امتى — الرقم بقى ٢٤٩ صنف. والسطور بتفضل مفصّلة بالمخزن
-    عشان اللي هيتصرّف يعرف يروح فين، بس **القرار للصنف**.
-    """
     now = now or datetime.utcnow()
     cutoff = _as_date(now) - timedelta(days=days)
     names = _item_names(db)
@@ -423,7 +340,7 @@ def stagnant_stock(db: Session, *, days: int = 90, warehouse_id: int | None = No
             continue
         sold = last_sold.get(iid)
         if sold is not None and sold >= cutoff:
-            continue                      # اتباع قريّب — مش راكد
+            continue
         rows.append({
             "item_id": iid, "item_name": names.get(iid, ""), "warehouse_id": wid,
             "on_hand": str(on_hand), "last_out_date": str(sold) if sold else None,
@@ -431,24 +348,16 @@ def stagnant_stock(db: Session, *, days: int = 90, warehouse_id: int | None = No
         })
     rows.sort(key=lambda r: (r["last_out_date"] or "", r["item_name"]))
     return {"days": days, "as_of": str(_as_date(now)), "rows": rows,
-            # العدد اللي بيتقال للمستخدم — أصناف، مش مواقع رصيد.
             "item_count": len({r["item_id"] for r in rows})}
 
 
 def sales(db: Session, *, date_from=None, date_to=None, period="month",
           branch_id: int | None = None, statement: str | None = None) -> dict:
-    """Sales gross/net bucketed by period (for linking sales volume to production).
-
-    **وبفرع اللي بيقرا.** التقرير ده كان بيرجّع فواتير الشركة كلها — ٩٬٦٢٢ سطر فيهم
-    ٧٦٢ فاتورة مصنع بأسماء عملائها وأسعارها — لمدير فرع مش شايف ولا واحدة منهم في
-    كشف الفواتير بتاعه.
-    """
     from src.models.customer import Customer
 
     rows, buckets = [], {}
     gross_total = net_total = ZERO
     wanted = report_statement.needle(statement)
-    # اسم العميل مش رقمه — العمود كان بيعرض «#1234» (رقم الصف في قاعدتنا).
     customers = dict(db.execute(select(Customer.id, Customer.name)).all())
     stmt = select(SalesInvoice)
     if branch_id is not None:
@@ -470,8 +379,6 @@ def sales(db: Session, *, date_from=None, date_to=None, period="month",
         b = buckets.setdefault(bucket_key(inv.invoice_date or inv.created_at, period), {"gross": ZERO, "net": ZERO})
         b["gross"] += to_money(inv.gross)
         b["net"] += to_money(inv.net)
-    # الترتيب بتاريخ المستند — الاستعلام بالـid، والفواتير المنقولة أرقامها مش بترتيب تواريخها.
-    # والأحدث فوق (طلب العميل ٢٠٢٦-١٠-٠١)، والفترات كمان.
     rows.sort(key=lambda r: (r["created_at"], r["id"]), reverse=True)
     return {
         "rows": rows, "gross_total": str(to_money(gross_total)), "net_total": str(to_money(net_total)),
@@ -481,16 +388,6 @@ def sales(db: Session, *, date_from=None, date_to=None, period="month",
 
 
 def reorder(db: Session, *, branch_id: int | None = None) -> dict:
-    """Items whose total on-hand has drifted outside their advisory min/max limits (011).
-
-    Only items that are actually a planning problem are listed: below the floor (buy more) or above
-    the ceiling (too much cash tied up). An item sitting comfortably in range, or with no limits
-    set at all, is not a problem and would only be noise here.
-
-    **والرصيد بيتجمّع من مخازن الفرع وحدها.** الحد الأدنى رقم واحد للشركة، بس اللي
-    بيقرا التقرير بيشتري لفرعه — وجمع بضاعة فرع تاني معاه بيقول «عندك كفاية» والرف
-    عنده فاضي، وده عكس الغرض من التقرير بالظبط.
-    """
     signed = func.sum(case(
         (StockMovement.direction == StockDirection.in_, StockMovement.quantity),
         else_=-StockMovement.quantity,
@@ -510,7 +407,6 @@ def reorder(db: Session, *, branch_id: int | None = None) -> dict:
     ).all():
         if item.min_stock is None and item.max_stock is None:
             continue
-        # صنف مالوش حركة في مخازن الفرع خالص مش بتاع الفرع ده.
         if mine is not None and item.id not in on_hand:
             continue
         have = on_hand.get(item.id, to_qty(0))
@@ -526,7 +422,6 @@ def reorder(db: Session, *, branch_id: int | None = None) -> dict:
             "on_hand": str(have),
             "min_stock": str(to_qty(item.min_stock)) if item.min_stock is not None else None,
             "max_stock": str(to_qty(item.max_stock)) if item.max_stock is not None else None,
-            # How much to buy to reach the floor — the number the buyer actually acts on.
             "shortfall": str(to_qty(item.min_stock) - have)
                          if flag == "below_min" else None,
             "excess": str(have - to_qty(item.max_stock)) if flag == "above_max" else None,

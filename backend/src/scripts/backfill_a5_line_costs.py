@@ -1,29 +1,3 @@
-"""يملا تكلفة السطر المستوردة من a5 على الفواتير اللي دخلت من غيرها.
-
-    python -m src.scripts.backfill_a5_line_costs --dir /opt/techno/a5factory --prefix FC-
-    python -m src.scripts.backfill_a5_line_costs --dir ... --prefix FC- --yes
-
-بيتعاد تشغيله بأمان: السطر اللي عنده تكلفة مابيتلمسش.
-
----------------------------------------------------------------------------
-**ليه السطور طلعت بلا تكلفة.** `import_a5_docs` بياخد التكلفة من `LastPrc`، وده عمود
-فاضي في **٦٢٨ سطر بيع من ٥٬٠٤٨** عند المصنع. والسطر بلا تكلفة معناه إن ربحه بيتحسب
-وكأن التكلفة صفر — فربح الفاتورة والعميل والصنف والشهر كله بيطلع أعلى من الحقيقة.
-فحص النظام عدّ **٢٣٩ فاتورة** كده.
-
-**و`a_AvPrice` هو العمود اللي شبه مليان** — فاضي في ٢٢ سطر بس. بس هو **إجمالي السطر
-مش سعر الوحدة**: «كوع ٢٥ لحام» كمية ١٠٠٠ بتكلفة وحدة ١٫٨٩ عنده `a_AvPrice = 1885.10`.
-كتابته في خانة سعر الوحدة كانت هتضخّم التكلفة ألف مرة. فالحساب هنا:
-
-    تكلفة الوحدة = a_AvPrice ÷ الكمية   ولو مافيش  →  LastPrc
-
-والترتيب ده مقصود: في السطور اللي العمودين فيها مليانين، القسمة بتطابق `LastPrc` في
-كل الصفوف تقريباً — وفي اللي بيختلفوا `LastPrc` هو الغلط (محبس بسعر بيع ٥٠٨ وتكلفة
-مكتوبة ٠٫٨٧).
-
-**والمطابقة برقم المستند.** النقل بيولّد رقمنا من رقم a5 (`FC-S4269`)، فالسطر بيرجع
-لأصله بـ(نوع المستند، رقمه، كود الصنف) — مفتاح ثابت مايعتمدش على ترتيب السطور.
-"""
 from __future__ import annotations
 
 import argparse
@@ -39,13 +13,8 @@ from src.models.catalog import Item
 from src.models.sales import SalesInvoice, SalesInvoiceLine, SalesReturn, SalesReturnLine
 from src.scripts.import_a5 import _clean, _money, _read
 
-#: أعمدة `a5_cost.tsv`
 (C_TYPE, C_DOC, C_CODE, C_QTY, C_TOTAL, C_UNIT) = range(6)
 
-#: نوع a5 → (حرف رقم المستند، موديل الرأس، موديل السطر، عمود الربط)
-#:
-#: **البيع ومرتجعه بس.** سطر الشرا مالوش `unit_cost` أصلاً — سعر الشرا نفسه هو
-#: التكلفة، فمافيش حاجة تتملّى هناك.
 DOCS = {
     "7": ("S", SalesInvoice, SalesInvoiceLine, "invoice_id"),
     "2": ("SR", SalesReturn, SalesReturnLine, "return_id"),
@@ -53,7 +22,6 @@ DOCS = {
 
 
 def _unit_cost(r: list[str]) -> Decimal:
-    """تكلفة الوحدة: الإجمالي ÷ الكمية، وإلا العمود اللي بالوحدة."""
     qty = _money(r[C_QTY])
     total = _money(r[C_TOTAL])
     if qty and total:
@@ -63,7 +31,6 @@ def _unit_cost(r: list[str]) -> Decimal:
 
 def run(folder: str, *, execute: bool, prefix: str) -> None:
     rows = [r for r in _read(os.path.join(folder, "a5_cost.tsv")) if len(r) >= 6]
-    # (نوع، رقم مستند a5، كود الصنف) → تكلفة الوحدة
     cost_of: dict[tuple[str, str, str], Decimal] = {}
     for r in rows:
         c = _unit_cost(r)

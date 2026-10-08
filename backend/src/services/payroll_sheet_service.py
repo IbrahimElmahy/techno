@@ -1,37 +1,3 @@
-"""شيت المرتبات — المجموعات، وتجهيز الشهر، والتعديل بالخانة، والاعتماد (طلب العميل ٢٠٢٦-١٠-٠٨).
-
-العميل بيعمل المرتبات على إكسل، والشاشة دي بتعمل نفس الورقة: مجموعات لكل فرع، كل مجموعة
-بأعمدتها، وأي خانة تتكتب فوقها. الفرق إن الخانات اللي كانت بتتنقل بالإيد من أوراق تانية
-(العمولة من ورقة العربيات، الغياب من الحضور، السلف من دفتر السلف) بتيجي لوحدها، وكل خانة
-بتقول جت منين.
-
-**مصادر الأعمدة** (`SOURCES`):
-
-    basic        الأساسي — من إعدادات الراتب
-    component    بند من إعدادات الراتب (بدلات، تقييم، منحة غلاء، مكالمات…) — مبلغ ثابت كل شهر
-    commission   من محرك العمولات (عمولة، اشراف، عمولة معاينات، مكافأة الفنيين، خصم 25%)
-    absence      الغياب = (مجموع أعمدة الأساس) ÷ القاسم × أيام الغياب
-    advances     أقساط السلف المستحقة الشهر ده
-    penalties    الجزاءات والاستقطاعات المعتمدة للشهر
-    bonuses      المكافآت والاستحقاقات المعتمدة للشهر
-    insurance    حصة الموظف في التأمينات من الشرايح (أو بند ثابت لو الشرايح مش متعرّفة)
-    manual       بيتكتب كل شهر بالإيد (اضافي)
-
-**الترحيل** بيستعمل `payroll_service.post_run` زي ما هو. عشان كده الشيت بيبني `payroll_line`
-لكل صف بالشكل اللي الترحيل فاهمه، وكل عمود استقطاع له «ترحيل» بيقول يروح فين:
-
-    reduce     بيقلل مصروف المرتبات (الغياب، خصم 25%) — فلوس الشركة ماصرفتهاش أصلاً
-    advance    سلف العاملين — بيقفل السلفة
-    penalty    حصيلة الجزاءات — التزام (قانون العمل: لصندوق رعاية العمال)
-    insurance  تأمينات مستحقة
-
-فالقيد: مدين مصروف = الاستحقاقات − (reduce)، ودائن مرتبات مستحقة = الصافي + الباقي كل واحد
-في حسابه — ومتوازن بالبناء: الصافي = الاستحقاقات − كل الاستقطاعات.
-
-**محرك العمولات** شغل موديول تاني (`commission_service.compute(db, branch_id=, year=, month=)`).
-بيتنده جوّه `try` وجوّه savepoint: لو مش موجود أو وقع، أعمدة العمولة بتفضل صفر/يدوي والشيت
-بيشتغل عادي — والشاشة بتقول إن المحرك ماردّش، بدل ما الشهر كله يقف على موديول تاني.
-"""
 from __future__ import annotations
 
 import re
@@ -69,10 +35,8 @@ ZERO_QTY = Decimal("0.000")
 
 
 class PayrollSheetError(Exception):
-    """الشيت مايتعملش زي ما هو مطلوب."""
+    pass
 
-
-# ------------------------------------------------------------------ الكتالوج
 
 SOURCES: dict[str, dict] = {
     "basic": {"label": "اساسى", "kind": "earning", "hint": "من إعدادات الراتب"},
@@ -90,7 +54,6 @@ SOURCES: dict[str, dict] = {
     "manual": {"label": "يدوي", "kind": None, "hint": "بيتكتب كل شهر بالإيد"},
 }
 
-# مفاتيح محرك العمولات — نفس اللي الموديول التاني بيرجّعها لكل موظف.
 COMMISSION_KEYS: dict[str, tuple[str, str]] = {
     "commission": ("عمولة", "earning"),
     "supervision": ("اشراف", "earning"),
@@ -129,7 +92,6 @@ def _slug(text: str) -> str:
 
 
 def clean_columns(db: Session, columns: list[dict]) -> list[dict]:
-    """بيتأكد من الأعمدة ويكمّل الناقص (المفتاح، النوع، الترحيل)."""
     out: list[dict] = []
     keys: set[str] = set()
     manual_n = 0
@@ -196,9 +158,6 @@ def _clean_absence_base(columns: list[dict], base: list | None) -> list[str]:
     if not picked and "basic" in earning:
         picked = ["basic"]
     return picked
-
-
-# ------------------------------------------------------------------ المجموعات
 
 
 def _group_out(db: Session, g: PayrollGroup, members: list | None = None) -> dict:
@@ -276,7 +235,6 @@ def save_group(
 
 
 def delete_group(db: Session, *, group_id: int, actor_user_id: int) -> str:
-    """بيمسح المجموعة ويفك موظفينها. الشهور اللي اتجهّزت بيها فاضلة بنسختها هي."""
     g = db.get(PayrollGroup, group_id)
     if g is None:
         raise PayrollSheetError("المجموعة غير موجودة.")
@@ -299,7 +257,6 @@ def reorder_groups(db: Session, *, branch_id: int, group_ids: list[int]) -> None
 
 
 def members_of_branch(db: Session, *, branch_id: int) -> list[dict]:
-    """كل موظفي الفرع الشغّالين ومجموعة كل واحد — لشاشة التوزيع."""
     groups = {g.id: g for g in db.scalars(select(PayrollGroup).where(
         PayrollGroup.branch_id == branch_id)).all()}
     emps = db.scalars(select(Employee).where(
@@ -322,7 +279,6 @@ def members_of_branch(db: Session, *, branch_id: int) -> list[dict]:
 
 def assign(db: Session, *, branch_id: int, employee_ids: list[int], group_id: int | None,
            actor_user_id: int) -> int:
-    """توزيع جماعي — `group_id` فاضي = شيلهم من أي مجموعة."""
     group = None
     if group_id is not None:
         group = db.get(PayrollGroup, group_id)
@@ -375,7 +331,6 @@ def ensure_component(db: Session, *, name: str, kind: ComponentKind,
 
 
 def template_groups(db: Session, *, actor_user_id: int) -> list[dict]:
-    """المجموعات التلاتة بأعمدتها بالظبط زي ملف العميل («اكتوبر (2)»)."""
     c = {name: ensure_component(db, name=name, kind=kind, actor_user_id=actor_user_id).id
          for name, kind in (
              ("بدلات", ComponentKind.earning), ("تقييم", ComponentKind.earning),
@@ -424,7 +379,6 @@ def template_groups(db: Session, *, actor_user_id: int) -> list[dict]:
 
 
 def apply_template(db: Session, *, branch_id: int, actor_user_id: int) -> list[PayrollGroup]:
-    """بيعمل مجموعات الملف في الفرع — اللي موجودة بنفس الاسم بتتساب زي ما هي."""
     made = []
     for spec in template_groups(db, actor_user_id=actor_user_id):
         exists = db.scalar(select(PayrollGroup).where(
@@ -439,7 +393,6 @@ def apply_template(db: Session, *, branch_id: int, actor_user_id: int) -> list[P
 
 def copy_groups(db: Session, *, from_branch_id: int, to_branch_id: int,
                 actor_user_id: int) -> list[PayrollGroup]:
-    """نسخ مجموعات فرع لفرع تاني (الأعمدة بس — الموظفين كل فرع بيوزّعهم لوحده)."""
     made = []
     for g in db.scalars(select(PayrollGroup).where(
             PayrollGroup.branch_id == from_branch_id, PayrollGroup.active.is_(True))
@@ -453,20 +406,12 @@ def copy_groups(db: Session, *, from_branch_id: int, to_branch_id: int,
     return made
 
 
-# ------------------------------------------------------------------ مصادر الشهر
-
-
 def _period_end(year: int, month: int) -> date:
     return date(year, month, monthrange(year, month)[1])
 
 
 def _commission_values(db: Session, *, branch_id: int, year: int, month: int,
                        absences: dict | None = None):
-    """محرك العمولات — جوّه try وsavepoint. بيرجّع (قيم لكل موظف، تفاصيل، ملاحظة).
-
-    `absences` = أيام الغياب اللي اتكتبت بالإيد في الشيت، عشان العمولة تتخصم بنفس الرقم اللي
-    قدّام المحاسب مش برقم الحضور.
-    """
     try:
         from src.services import commission_service
     except Exception as exc:  # noqa: BLE001
@@ -480,12 +425,10 @@ def _commission_values(db: Session, *, branch_id: int, year: int, month: int,
             result = fn(db, branch_id=branch_id, year=year, month=month,
                         absences=absences or None)
         except TypeError:
-            # نسخة من المحرك من غير `absences` — نفس الحساب بأيام الحضور.
             result = fn(db, branch_id=branch_id, year=year, month=month)
         nested.commit()
     except Exception as exc:  # noqa: BLE001
         nested.rollback()
-        # التفاصيل للّوج مش للشاشة — المحاسب محتاج يعرف إن العمولة يدوي الشهر ده، مش اسم الاستثناء.
         import logging
         logging.getLogger(__name__).warning("commission engine failed: %r", exc)
         return {}, {}, "محرك العمولات ماردّش على الفرع/الشهر ده — اكتب العمولات بالإيد"
@@ -554,9 +497,6 @@ def _note_commission(details: dict, emp_id: int, ref: str) -> str:
     return "محرك العمولات"
 
 
-# ------------------------------------------------------------------ تجهيز الشهر
-
-
 def _runs_of(db: Session, branch_id: int, year: int, month: int) -> list[PayrollRun]:
     return db.scalars(select(PayrollRun).where(
         PayrollRun.year == year, PayrollRun.month == month,
@@ -569,7 +509,6 @@ def is_sheet(db: Session, run_id: int) -> bool:
 
 
 def current_run(db: Session, *, branch_id: int, year: int, month: int) -> PayrollRun | None:
-    """شيت الشهر الحالي: المسودة/المعتمد/المرحّل — وإلا آخر واحد اتعكس (للعرض)."""
     runs = _runs_of(db, branch_id, year, month)
     for r in runs:
         if r.status != PayrollRunStatus.reversed:
@@ -582,7 +521,6 @@ def _prev_month(year: int, month: int) -> tuple[int, int]:
 
 
 def _carry_values(db: Session, branch_id: int, year: int, month: int) -> dict:
-    """قيم الشهر اللي فات للأعمدة اللي «بتتنقل» — (موظف، مفتاح) → قيمة نهائية."""
     py, pm = _prev_month(year, month)
     prev = current_run(db, branch_id=branch_id, year=py, month=pm)
     if prev is None or prev.status == PayrollRunStatus.reversed:
@@ -627,7 +565,6 @@ def _wipe_lines(db: Session, run_id: int, employee_id: int | None = None) -> Non
 
 def prepare(db: Session, *, branch_id: int, year: int, month: int,
             actor_user_id: int) -> PayrollRun:
-    """«تجهيز الشهر» — بيعمل الشيت أو بيحدّثه. الخانات المكتوبة بالإيد بتفضل زي ما هي."""
     if not 1 <= month <= 12:
         raise PayrollSheetError("الشهر لازم يكون من 1 لـ 12.")
     runs = _runs_of(db, branch_id, year, month)
@@ -649,8 +586,6 @@ def prepare(db: Session, *, branch_id: int, year: int, month: int,
         raise PayrollSheetError(
             "الفرع ده مالوش مجموعات مرتبات — اعملها من «مجموعات المرتبات» الأول.")
 
-    # اللي اتكتب بالإيد — من المسودة نفسها، أو من آخر شيت اتعكس للشهر ده (عشان العكس
-    # وإعادة التجهيز ماتمسحش شغل المراجعة).
     keep_from = live if live is not None else next(
         (r for r in runs if r.status == PayrollRunStatus.reversed and is_sheet(db, r.id)), None)
     overrides: dict[tuple[int, str], Decimal] = {}
@@ -796,7 +731,6 @@ def _build_row(db: Session, *, run, sg, emp, sort_order, year, month, period_end
                 note_txt = f"{note_txt} — {fixed}" if note_txt else fixed
         values[key] = (to_money(value if value is not None else ZERO), note_txt)
 
-    # الأعمدة المحسوبة على غيرها (الغياب والجزاءات بالأيام) بعد ما الخانات المكتوبة تتحط.
     def final_of(k: str) -> Decimal:
         if (emp.id, k) in overrides:
             return to_money(Decimal(str(overrides[(emp.id, k)])))
@@ -849,7 +783,6 @@ def _absence_note(sg, days: Decimal, override, has_att: bool) -> str:
 
 def _recompute_row(db: Session, run: PayrollRun, sg: PayrollSheetGroup,
                    row: PayrollSheetRow, emp: Employee | None = None) -> None:
-    """إجماليات الصف + خانة الغياب (بتعتمد على أعمدة الأساس) + سطر المسير."""
     cells = {c.col_key: c for c in db.scalars(select(PayrollSheetCell).where(
         PayrollSheetCell.row_id == row.id)).all()}
     absence = next((c for c in sg.columns if c["source"] == "absence"), None)
@@ -883,7 +816,6 @@ def _recompute_row(db: Session, run: PayrollRun, sg: PayrollSheetGroup,
 
 
 def _sync_line(db: Session, run, sg, row, cells, emp=None) -> None:
-    """سطر `payroll_line` بالشكل اللي `payroll_service.post_run` فاهمه — شوف أول الملف."""
     from src.services.payroll_service import _cost_center_of
 
     _wipe_lines(db, run.id, row.employee_id)
@@ -964,9 +896,6 @@ def _refresh_run_totals(db: Session, run: PayrollRun) -> None:
     db.flush()
 
 
-# ------------------------------------------------------------------ التعديل
-
-
 def _draft(db: Session, run_id: int) -> PayrollRun:
     run = db.get(PayrollRun, run_id)
     if run is None or not is_sheet(db, run_id):
@@ -988,7 +917,6 @@ def _row_of(db: Session, run_id: int, employee_id: int):
 
 def set_cell(db: Session, *, run_id: int, employee_id: int, col_key: str, value,
              actor_user_id: int) -> PayrollSheetRow:
-    """الكتابة فوق خانة. `value` فاضي = رجّع المحسوب."""
     run = _draft(db, run_id)
     row, sg = _row_of(db, run_id, employee_id)
     col = next((c for c in sg.columns if c["key"] == col_key), None)
@@ -1045,9 +973,6 @@ def set_note(db: Session, *, run_id: int, employee_id: int, notes: str | None) -
     db.flush()
 
 
-# ------------------------------------------------------------------ الحالة
-
-
 def close(db: Session, *, run_id: int, actor_user_id: int) -> PayrollRun:
     run = _draft(db, run_id)
     if not db.scalar(select(func.count()).select_from(PayrollSheetRow).where(
@@ -1075,7 +1000,6 @@ def reopen(db: Session, *, run_id: int, actor_user_id: int) -> PayrollRun:
 
 
 def post(db: Session, *, run_id: int, actor_user_id: int) -> dict:
-    """الترحيل — نفس `payroll_service.post_run` بالظبط، بس من شيت معتمد بس."""
     from src.services import payroll_service
 
     run = db.get(PayrollRun, run_id)
@@ -1110,9 +1034,6 @@ def delete_draft(db: Session, *, run_id: int, actor_user_id: int) -> None:
                          before={"document_number": number})
 
 
-# ------------------------------------------------------------------ القراية
-
-
 def sheet_out(db: Session, run: PayrollRun) -> dict:
     groups = db.scalars(select(PayrollSheetGroup).where(PayrollSheetGroup.run_id == run.id)
                         .order_by(PayrollSheetGroup.sort_order, PayrollSheetGroup.id)).all()
@@ -1125,7 +1046,6 @@ def sheet_out(db: Session, run: PayrollRun) -> dict:
             cells.setdefault(c.row_id, []).append(c)
     emps = {e.id: e for e in db.scalars(select(Employee).where(
         Employee.id.in_([r.employee_id for r in rows] or [0]))).all()}
-    # بنود في إعدادات الراتب مالهاش عمود في المجموعة — فلوس مش هتوصل للموظف من غير ما حد ياخد باله.
     period_end = _period_end(run.year, run.month)
     comp_names = {c.id: c.name for c in db.scalars(select(SalaryComponent)).all()}
 

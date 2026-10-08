@@ -7,45 +7,24 @@ import '../models/models.dart';
 import '../theme.dart';
 import 'item_picker_screen.dart';
 
-/// The inspection entry form — the heart of the app. Saves locally (offline-first);
-/// sync to the server happens later from the sync screen.
 class InspectionFormScreen extends StatefulWidget {
-  final String visitKind; // technician | regular
+  final String visitKind;
   const InspectionFormScreen({super.key, required this.visitKind, this.existing});
 
-  /// معاينة متسجّلة وجاية تتعدّل — من شاشة المراجعة.
-  ///
-  /// Only ever passed for a visit that has NOT synced. Once it is on the server it is a record the
-  /// office may already have acted on, and the phone is no longer the place it is corrected from.
   final Inspection? existing;
 
   @override
   State<InspectionFormScreen> createState() => _InspectionFormScreenState();
 }
 
-/// إشارة «احذف» الراجعة من بوباب التعديل — مش كمية، فمش هتتلخبط مع رقم.
 const Object _kDelete = Object();
 
-
-/// تصنيف العميل اللي خانة المالك بتقترح منه.
-///
-/// **المفتاح مش الاسم.** كارت العميل بيخزّن `owner` مش «الملّاك» — القايمة في الإعدادات
-/// بتربط المفتاح باسم عربي، والاسم ده بيتغيّر من غير ما البيانات تتغيّر. المطابقة على
-/// المفتاح هي اللي بتصمد لما حد يعيد تسمية التصنيف.
-///
-/// ولو التصنيف اتشال من القايمة خالص، الخانة بترجع تقترح من غير فلتر — بتفقد التضييق،
-/// مش بتقع.
 const String kOwnerCustomerType = 'owner';
 
-/// «مرمه» في قايمة التوصيف — والتسمية دي هي اللي في `inspection_description`.
-///
-/// لاحظ الهاء: التوصيف مكتوب «مرمه» ونوع الزيارة مكتوب «مرمة». الاتنين قايمتين
-/// مختلفتين في الإعدادات ومحدش وحّد إملاهم، فالمقارنة بتتطبّع بدل ما تتساوى حرفياً.
 const String kMarmaDescription = 'مرمه';
 const String kMarmaVisitType = 'مرمة';
 const String kPreviewVisitType = 'معاينة';
 
-/// يطبّع للمقارنة بس: تاء مربوطة وألف مقصورة وهمزة ومسافات.
 String _fold(String? s) => (s ?? '')
     .replaceAll(RegExp('[أإآٱ]'), 'ا')
     .replaceAll('ة', 'ه')
@@ -53,14 +32,6 @@ String _fold(String? s) => (s ?? '')
     .replaceAll(RegExp(r'\s+'), '')
     .trim();
 
-// كل خانة بتقلّب في تصنيفها هي بس.
-//
-// الخانات التلاتة كانت بتقلّب في كشف العملاء كله، فـ«محل الشراء» بيرجّع فنيين
-// و«اسم الفني» بيرجّع تجار — والمندوب بيختار غلط والربط بيتحفظ غلط.
-//
-// و«محل الشراء» **مش التجار وبس**: المعرض محل شراء برضه. اتقاس على المعاينات
-// المنقولة — ١٠٬٠٦٨ منها محلها `trader` و**٦٥٧ منها `showroom`**. قصره على
-// `trader` كان هيوقّع الـ٦٥٧ دول من القايمة.
 const List<String> kTechnicianCustomerTypes = ['plumber'];
 const List<String> kShopCustomerTypes = [
   'trader', 'showroom', 'company', 'establishment',
@@ -76,14 +47,12 @@ class _InspectionFormScreenState extends State<InspectionFormScreen> {
   final _technicianName = TextEditingController();
   final _technicianPhone = TextEditingController();
   final _purchaseShop = TextEditingController();
-  /// رقم التاجر اللي اتاختار من القايمة. بيتفضّى لو الاسم اتكتب بالإيد بعد الاختيار،
-  /// عشان مايفضلش رقم راجل والاسم بتاع راجل تاني.
   int? _merchantCustomerId;
   final _purchaseShopPhone = TextEditingController();
   final _visitDetails = TextEditingController();
 
   DateTime _date = DateTime.now();
-  int? _selectedCustomerId; // set when the owner name is picked from an existing customer
+  int? _selectedCustomerId;
   String? _description;
   String? _inspectionType;
   List<LookupOption> _descriptions = [];
@@ -97,7 +66,6 @@ class _InspectionFormScreenState extends State<InspectionFormScreen> {
 
   bool get _isEdit => widget.existing != null;
 
-  /// رقم المعاينة — بيتقفل على القديم لما نكون بنعدّل، فمابيبقاش عندنا نسختين.
   late final String _uuid;
 
   @override
@@ -107,8 +75,6 @@ class _InspectionFormScreenState extends State<InspectionFormScreen> {
     final e = widget.existing;
     _uuid = e?.clientUuid ?? const Uuid().v4();
     if (e == null) return;
-    // Every field the rep typed has to come back exactly as he left it — a half-filled edit form
-    // is worse than no edit at all, because what it silently drops is what he does not retype.
     _date = DateTime.tryParse(e.inspectionDate) ?? _date;
     _ownerName.text = e.ownerName;
     _ownerPhone.text = e.ownerPhone ?? '';
@@ -159,7 +125,6 @@ class _InspectionFormScreenState extends State<InspectionFormScreen> {
   }
 
   Future<void> _addItem() async {
-    // بيفضل مفتوح لحد ما المندوب يقول «تم» — إضافة سبع أصناف بقت سبع ضغطات مش سبع دخلات وخرجات.
     await AddItemFlow.show(context, (line) {
       setState(() {
         final existing = _lines.indexWhere((l) => l.itemName == line.itemName);
@@ -256,7 +221,6 @@ class _InspectionFormScreenState extends State<InspectionFormScreen> {
       customerId: _selectedCustomerId,
       lines: _lines,
     );
-    // نفس الرقم، والصف القديم بيتشال — فمافيش معاينتين لنفس الزيارة.
     if (_isEdit && widget.existing!.localId != null) {
       await LocalDb.instance.deleteInspection(widget.existing!.localId!);
     }
@@ -311,9 +275,6 @@ class _InspectionFormScreenState extends State<InspectionFormScreen> {
               _nameSearch(
                 label: 'اسم صاحب الشقة *',
                 controller: _ownerName,
-                // الاقتراح من تصنيف «الملّاك» بس — دول ناس بيتعمل لهم معاينة، مش تجار
-                // ولا موردين. من غير الفلتر ده الخانة بتقلّب في العملاء كلهم فبتقترح
-                // تاجر اسمه قريب من اسم المالك، والمعاينة بتترّبط بالكارت الغلط.
                 customerTypes: const [kOwnerCustomerType],
                 helper: 'اكتب الاسم — لو مالك مسجّل هيظهر لتختاره وتتملأ بياناته',
                 onPick: (c) {
@@ -321,7 +282,7 @@ class _InspectionFormScreenState extends State<InspectionFormScreen> {
                   if ((c.phone ?? '').isNotEmpty) _ownerPhone.text = c.phone!;
                   if ((c.address ?? '').isNotEmpty) _ownerAddress.text = c.address!;
                 },
-                onType: () => _selectedCustomerId = null, // اسم متكتب بالإيد بيفكّ الربط
+                onType: () => _selectedCustomerId = null,
                 validator: (v) => (v == null || v.trim().isEmpty) ? 'الاسم مطلوب' : null,
               ),
               TextFormField(
@@ -351,13 +312,6 @@ class _InspectionFormScreenState extends State<InspectionFormScreen> {
                   for (final o in _descriptions)
                     DropdownMenuItem(value: o.value, child: Text(o.label)),
                 ],
-                // **نوع الزيارة بيتبع التوصيف.** التوصيف «مرمه» معناه إن دي
-                // زيارة تصليح لشغل سابق مش معاينة أولى — فالخانة بتتظبط لوحدها
-                // بدل ما المندوب يفتكر يغيّرها. اتقاس على الـ١٠٬٧٩٦ معاينة
-                // المنقولة: ٣٬١٤٢ من ٣٬١٨٤ توصيفهم «مرمه» نوعهم مرمة فعلاً.
-                //
-                // وبتفضل قابلة للتغيير بعدها — الـ٤٢ الباقيين في الداتا القديمة
-                // بيقولوا إن الحالة دي بتحصل، وقفلها كان هيمنع تسجيلها.
                 onChanged: (v) => setState(() {
                   _description = v;
                   _visitType = _fold(v) == _fold(kMarmaDescription)
@@ -375,10 +329,6 @@ class _InspectionFormScreenState extends State<InspectionFormScreen> {
                 onChanged: (v) => setState(() => _inspectionType = v),
               ),
               DropdownButtonFormField<String>(
-                // `initialValue` اسمه بيقول كل حاجة: `FormField` بيقراه مرة
-                // واحدة عند أول بناء وبس. لما التوصيف بيظبط النوع لوحده، القيمة
-                // في الحالة بتتغيّر والخانة بتفضل واقفة على القديم. المفتاح
-                // بيخلّي فلاتر يعمل حقل جديد فيبان الاختيار الجديد.
                 key: ValueKey('visit-type-$_visitType'),
                 initialValue: _visitType,
                 decoration: const InputDecoration(labelText: 'نوع الزيارة'),
@@ -409,10 +359,6 @@ class _InspectionFormScreenState extends State<InspectionFormScreen> {
                 ),
               ]),
             _section('معلومات إضافية', Icons.notes, [
-              // محل الشراء = التاجر المتسجّل عندنا.
-              //
-              // Typed free-hand it was a different spelling every visit, and no way back to the
-              // shop. Picking him off the rep's own list brings his phone with him.
               _nameSearch(
                 label: 'محل الشراء',
                 controller: _purchaseShop,
@@ -423,8 +369,6 @@ class _InspectionFormScreenState extends State<InspectionFormScreen> {
                   _merchantCustomerId = c.id;
                   if ((c.phone ?? '').isNotEmpty) _purchaseShopPhone.text = c.phone!;
                 },
-                // الكتابة بالإيد بعد الاختيار بتفكّ الربط: الاسم بقى بتاع حد تاني،
-                // والرقم القديم لو فضل بيوَدّي الخصم لتاجر غلط.
                 onType: () => _merchantCustomerId = null,
               ),
               TextFormField(
@@ -515,13 +459,6 @@ class _InspectionFormScreenState extends State<InspectionFormScreen> {
                   child: const Icon(Icons.delete, color: Colors.white),
                 ),
                 onDismissed: (_) => setState(() => _lines.removeAt(i)),
-                // السطر كله بيفتح التعديل، مش القلم لوحده.
-                //
-                // The pencil was an IconButton inside the ListTile's `trailing`, which gives its
-                // child a bounded box: the button's 48px tap target did not fit next to the total
-                // and the part that stuck out was clipped — it drew fine and swallowed every tap.
-                // A whole-row `onTap` is a bigger target and cannot be clipped out of existence;
-                // the pencil stays as the hint that the row is editable.
                 child: ListTile(
                   contentPadding: EdgeInsets.zero,
                   onTap: () => _editLine(i),
@@ -536,13 +473,6 @@ class _InspectionFormScreenState extends State<InspectionFormScreen> {
                               fontWeight: FontWeight.w700, fontSize: 15)),
                       const SizedBox(width: 8),
                       const Icon(Icons.edit_outlined, size: 18, color: AppColors.primary),
-                      // السلة جنب القلم — الحذف من غير ما تفتح حاجة.
-                      //
-                      // Deliberately NOT a plain `IconButton`: the pencil used to be one, and its
-                      // 48px minimum tap target did not fit beside the total inside the ListTile's
-                      // `trailing` — the overflow was clipped, so it drew perfectly and swallowed
-                      // every tap. Zero padding and tight constraints keep this one inside the box
-                      // it is allowed to occupy.
                       IconButton(
                         icon: const Icon(Icons.delete_outline, size: 18,
                             color: AppColors.danger),
@@ -562,12 +492,6 @@ class _InspectionFormScreenState extends State<InspectionFormScreen> {
     );
   }
 
-  /// حذف سطر — ومعاه تراجع.
-  ///
-  /// No confirm dialog. A line on a form being written is not a document, and a «متأكد؟» on every
-  /// removal is the kind of friction that teaches people to tap Yes without reading. An undo in
-  /// the snackbar costs nothing to ignore and actually restores the line — including its place in
-  /// the list, so an accidental delete does not reorder the visit.
   void _removeLine(int index) {
     final removed = _lines[index];
     setState(() => _lines.removeAt(index));
@@ -582,21 +506,6 @@ class _InspectionFormScreenState extends State<InspectionFormScreen> {
       ));
   }
 
-  /// تعديل السطر — أو حذفه.
-  ///
-  /// الحذف كان بالسحب بس، ومحدش يعرف كده.
-  ///
-  /// The row has been swipe-to-delete since it was written, and nothing on screen said so — no
-  /// hint, no bin icon, nothing. A rep who put a line in by mistake had no way he could find to
-  /// take it out. The bin now sits beside the item's name inside the dialog he is already standing
-  /// in, because he got there by tapping the row he wants gone. The swipe still works for whoever
-  /// knows it.
-  ///
-  /// **مفيش `Spacer` في `actions`.** `AlertDialog` بيرصّ الأزرار في `OverflowBar`, which hands its
-  /// children UNBOUNDED width — and a `Spacer` is an `Expanded`, which needs a bounded axis to
-  /// divide. Put one there and the dialog does not throw: it renders a giant empty grey box where
-  /// the field should be and squashes «تم» and «إلغاء» off the screen entirely. That is why the
-  /// delete is in the title row and not sitting on the left of the buttons.
   Future<void> _editLine(int index) async {
     final line = _lines[index];
     final qty = TextEditingController(text: _fmt(line.quantity));
@@ -674,11 +583,6 @@ class _InspectionFormScreenState extends State<InspectionFormScreen> {
     }
   }
 
-  /// خانة اسم بتبحث في عملاء المندوب — مالك، فني، أو محل شراء.
-  ///
-  /// The three fields are the same interaction with a different label, and they were three copies
-  /// of forty lines. A name that is NOT in the list is still accepted: the rep meets people the
-  /// office has not carded yet, and refusing the visit over that would lose the visit.
   Widget _nameSearch({
     required String label,
     required TextEditingController controller,
@@ -687,8 +591,6 @@ class _InspectionFormScreenState extends State<InspectionFormScreen> {
     String? helper,
     IconData leading = Icons.person_outline,
     String? Function(String?)? validator,
-    /// لما تتحدد، الاقتراح بيتقلّب في التصنيفات دي بس — سباك لخانة الفني، تاجر
-    /// ومعرض لخانة محل الشراء، مالك لخانة المالك.
     List<String>? customerTypes,
   }) {
     return Autocomplete<CustomerRef>(
@@ -704,7 +606,6 @@ class _InspectionFormScreenState extends State<InspectionFormScreen> {
         setState(() {});
       },
       fieldViewBuilder: (context, textCtrl, focusNode, onSubmit) {
-        // Keep our controller in sync so save() and validation see the text.
         textCtrl.text = controller.text;
         textCtrl.selection = TextSelection.collapsed(offset: textCtrl.text.length);
         return TextFormField(

@@ -1,15 +1,3 @@
-"""إذن إضافة / إذن صرف — standalone stock documents (B5).
-
-Adds or removes stock for reasons that are not a trade: a count adjustment, goods back from a
-workshop, a sample out, an internal issue. Posts through `stock_service.post_movement` like every
-other stock write, so No-Negative-Stock (Principle XI) applies here exactly as it does to a sale —
-an administrative document is still not allowed to invent stock.
-
-Costs: a receipt carries the cost the person adding the stock types (only they know what it was
-worth); an issue is costed from the configured costing method, because nobody invents a cost for
-stock going out. Quantity-only as far as the ledger is concerned, like manufacturing and wastage —
-the cost is stored for the stock reports, not posted to the accounts.
-"""
 from __future__ import annotations
 
 from datetime import date
@@ -37,13 +25,11 @@ _PREFIX = {PermitKind.receipt: "ADD", PermitKind.issue: "ISS",
            PermitKind.opening: "OPEN"}
 _MOVEMENT = {PermitKind.receipt: ("permit_in", StockDirection.in_),
              PermitKind.issue: ("permit_out", StockDirection.out),
-             # A distinct movement type so the item card says «أول المدة» rather than passing the
-             # opening off as a receipt that never happened.
              PermitKind.opening: ("opening_in", StockDirection.in_)}
 
 
 class StockPermitError(Exception):
-    """The permit cannot be posted as asked."""
+    pass
 
 
 def _doc_number(db: Session, kind: PermitKind) -> str:
@@ -101,13 +87,9 @@ def _validate_lines(db: Session, permit_kind: PermitKind, warehouse_id: int,
             cost = to_money(raw_cost) if raw_cost not in (None, "") \
                 else costing_service.unit_cost(db, item.id)
         else:
-            # Stock going out is worth what it cost us, not what someone types.
             cost = costing_service.unit_cost(db, item.id)
         if cost < ZERO:
             raise StockPermitError("التكلفة لا تكون بالسالب.")
-        # (011) A perishable item lives in expiry lots, and stock that moves without its lot
-        # moving breaks Σ(batch) == on-hand. Bringing goods IN has to say which lot they are;
-        # sending them out does not, because FEFO picks — earliest expiry first, same as a sale.
         expiry = raw.get("expiry_date")
         if getattr(item, "is_perishable", False)                 and permit_kind in (PermitKind.receipt, PermitKind.opening) and not expiry:
             raise StockPermitError(
@@ -117,7 +99,6 @@ def _validate_lines(db: Session, permit_kind: PermitKind, warehouse_id: int,
 
 
 def _post_lines(db: Session, permit: StockPermit, built: list[tuple], actor_user_id: int) -> None:
-    """سطور الإذن وحركاتها ودفعاتها — للإنشاء وللتعديل في مكانه."""
     permit_kind = permit.kind
     warehouse_id = permit.warehouse_id
     movement_type, direction = _MOVEMENT[permit_kind]
@@ -131,8 +112,6 @@ def _post_lines(db: Session, permit: StockPermit, built: list[tuple], actor_user
         )
         db.add(line)
         db.flush()
-        # Raises StockError if this line would go negative — and because the whole permit is one
-        # transaction, that rolls back the lines already posted with it.
         mv = stock_service.post_movement(
             db, item_id=item.id, location_kind=LocationKind.warehouse, location_id=warehouse_id,
             movement_type=movement_type, direction=direction, quantity=quantity,
@@ -140,7 +119,6 @@ def _post_lines(db: Session, permit: StockPermit, built: list[tuple], actor_user
         )
         line.stock_movement_id = mv.id
 
-        # The lot side of the same movement. Both halves move together or the invariant drifts.
         if getattr(item, "is_perishable", False):
             try:
                 if permit_kind in (PermitKind.receipt, PermitKind.opening):
@@ -150,13 +128,11 @@ def _post_lines(db: Session, permit: StockPermit, built: list[tuple], actor_user
                         document_type=StockDoc.PERMIT, document_id=permit.id,
                         actor_user_id=actor_user_id)
                 else:
-                    # FEFO, and it records every lot it drew from — which is what the reversal reads.
                     taken = batch_service.consume_fefo(
                         db, item_id=item.id, location_kind=LocationKind.warehouse,
                         location_id=warehouse_id, quantity=quantity,
                         document_type=StockDoc.PERMIT, document_id=permit.id,
                         actor_user_id=actor_user_id)
-                    # One line reverses into one lot, so remember the earliest it emptied.
                     if taken:
                         line.expiry_date = min(e for e, _q in taken)
             except batch_service.BatchError as exc:
@@ -166,21 +142,12 @@ def _post_lines(db: Session, permit: StockPermit, built: list[tuple], actor_user
     db.flush()
 
 
-# ---------------------------------------------------------------- تعديل وحذف في المكان
-#
-# (٢٠٢٦-١٠-٠٥، طلب العميل: «العمليات اللي عليهم حذف وابديت تكون مسموحة».) الإذن كان
-# «يتعكس بس» — والتعديل كان يعكس الإذن ويفتح واحد جديد، فالسجل بيفضل فيه تلات أذونات على
-# غلطة واحدة. دلوقتي زي فاتورة البيع: الأثر القديم (الحركات والدفعات والسطور) بيتشال
-# والإذن بيتبني تاني بنفس رقمه، والحذف بيشيل الإذن وأثره. الرصيد مشتق من الحركات، فشيل
-# الحركة بيرجّعه لوحده، والسالب بيتمنع وقت إعادة البناء زي الإنشاء بالظبط.
-
 def _purge(db: Session, permit: StockPermit) -> None:
     from sqlalchemy import delete
 
     from src.services.document_edit_service import _drop_stock, _restore_batches
 
     _restore_batches(db, document_type=StockDoc.PERMIT, document_id=permit.id)
-    # السطور الأول: كل سطر شايل رقم حركته (`stock_movement_id`)، فالحركة مابتتمسحش وهو موجود.
     db.flush()
     db.execute(delete(StockPermitLine).where(StockPermitLine.permit_id == permit.id))
     _drop_stock(db, source_doc_type=StockDoc.PERMIT, source_doc_id=permit.id)
@@ -189,8 +156,6 @@ def _purge(db: Session, permit: StockPermit) -> None:
 
 
 def _assert_not_negative(db: Session, warehouse_id: int, item_ids: set[int]) -> None:
-    """شيل إذن إضافة (أو تقليل كميته) ممكن يخلّي رصيد صنف بالسالب لو البضاعة اتصرفت بعده —
-    نفس قاعدة «مافيش رصيد سالب» اللي على الإنشاء، والعملية كلها بترجع لو اتكسرت."""
     for item_id in item_ids:
         bal = stock_service.on_hand(db, item_id, LocationKind.warehouse, warehouse_id)
         if bal < ZERO:
@@ -239,7 +204,6 @@ def update_permit(
 
 
 def delete_permit(db: Session, *, permit_id: int, actor_user_id: int) -> None:
-    """الإذن وأثره — ولو كان اتعكس، إذن العكس بيروح معاه (مالوش معنى من غيره)."""
     permit = db.get(StockPermit, permit_id)
     if permit is None:
         raise StockPermitError("الإذن غير موجود.")
@@ -247,8 +211,6 @@ def delete_permit(db: Session, *, permit_id: int, actor_user_id: int) -> None:
     rev = _reversal_of(db, permit)
     if rev is not None:
         victims.insert(0, rev)
-    # الاتنين بيتشالوا الأول وبعدين الفحص: شيل إذن العكس لوحده ممكن يبان سالب لحظياً
-    # قبل ما أصله يتشال وراه.
     touched: dict[int, set[int]] = {}
     for p in victims:
         touched.setdefault(p.warehouse_id, set()).update(ln.item_id for ln in p.lines)
@@ -276,8 +238,6 @@ def reverse_permit(db: Session, *, permit_id: int, actor_user_id: int) -> StockP
     if already is not None:
         raise StockPermitError("الإذن اتعكس قبل كده.")
 
-    # An opening reverses as an issue: what went in has to come out, and the reversal is a
-    # correction of the opening, not a second opening.
     mirror_kind = (PermitKind.issue
                    if original.kind in (PermitKind.receipt, PermitKind.opening)
                    else PermitKind.receipt)
@@ -285,8 +245,6 @@ def reverse_permit(db: Session, *, permit_id: int, actor_user_id: int) -> StockP
         document_number=_doc_number(db, mirror_kind), kind=mirror_kind,
         warehouse_id=original.warehouse_id, permit_date=original.permit_date,
         reason=f"عكس {original.document_number}", notes=original.notes,
-        # البيان بيتورّث زي الملاحظات — الإذن وعكسه بيتقروا جنب بعض، والعكس من غير
-        # بيان بيبقى سطر مالوش معنى في كشف المخزن.
         statement1=original.statement1,
         external_document_number=getattr(original, 'external_document_number', None),
         total_cost=original.total_cost, reverses_id=original.id, actor_user_id=actor_user_id,
@@ -306,14 +264,10 @@ def reverse_permit(db: Session, *, permit_id: int, actor_user_id: int) -> StockP
                 db, original_id=line.stock_movement_id, actor_user_id=actor_user_id)
             mirror.stock_movement_id = mv.id
 
-        # (011) The lot follows the stock, on the way back as on the way out. The original line
-        # wrote down which lot it touched precisely so this does not have to guess a date — the
-        # same reason a sale records what FEFO drew from.
         item = db.get(Item, line.item_id)
         if item is not None and getattr(item, "is_perishable", False) and line.expiry_date:
             try:
                 if original.kind in (PermitKind.receipt, PermitKind.opening):
-                    # An addition is undone by taking the goods back OUT of the lot it filled.
                     batch_service.consume_fefo(
                         db, item_id=item.id, location_kind=LocationKind.warehouse,
                         location_id=original.warehouse_id, quantity=line.quantity,
@@ -345,10 +299,6 @@ def list_permits(
         stmt = stmt.where(StockPermit.kind == PermitKind(kind))
     if warehouse_id:
         stmt = stmt.where(StockPermit.warehouse_id == warehouse_id)
-    # **تاريخ الإذن مش وقت كتابته.** الإذن بياخد `permit_date` من اللي بيكتبه —
-    # ممكن يكون إمبارح أو الشهر اللي فات — والفلترة بوقت الكتابة بتخفيه من الفترة
-    # اللي هو فيها فعلاً وتوريه في فترة مالوش فيها. و`COALESCE` عشان الإذن القديم
-    # اللي اتكتب قبل ما العمود يبقى موجود يفضل يتفلتر بوقت كتابته بدل ما يختفي.
     day = func.coalesce(StockPermit.permit_date, func.cast(StockPermit.created_at, Date))
     if date_from:
         stmt = stmt.where(day >= date_from)

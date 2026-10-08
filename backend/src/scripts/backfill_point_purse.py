@@ -1,15 +1,3 @@
-"""يكتب الجيب على سطور الدفتر القديمة.
-
-    python -m src.scripts.backfill_point_purse
-    python -m src.scripts.backfill_point_purse --yes
-
-**تنضيف، مش إصلاح.** القراءة شغالة صح من غيره: السطر اللي `purse` بتاعه NULL بيتحدد
-جيبه من `kind` وقت الحساب. اللي بيكسبه الترحيل إن الفهرس على `purse` يبقى مفيد،
-وإن الشرط في الاستعلام يبقى سطر واحد بدل شرطين.
-
-فالحارس هنا مش «الرصيد اتغيّر ولا لأ» — الرصيد **لازم** مايتغيّرش. السكربت بيقيس
-أرصدة الجيبين لكل عميل قبل وبعد، ولو اتغيّر مليم بيرجع كل حاجة زي ما كانت ويقف.
-"""
 from __future__ import annotations
 
 import sys
@@ -23,7 +11,6 @@ from src.services import points_service
 
 
 def _snapshot(db) -> dict[tuple[int, str], Decimal]:
-    """رصيد كل (عميل × جيب) — ده اللي بيتقارن قبل وبعد."""
     out: dict[tuple[int, str], Decimal] = {}
     for purse in (PointPurse.inspection, PointPurse.coupon):
         for cid, total in points_service.balances(db, purse=purse).items():

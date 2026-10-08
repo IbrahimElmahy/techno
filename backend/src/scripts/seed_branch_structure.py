@@ -1,25 +1,3 @@
-"""يبني التسلسل الطبيعي للفروع: فروع، مناطق، ومستخدم لكل دور في كل فرع.
-
-    المستوى الأول:  admin  ــــ مدير الشركة، بيشوف الفروع كلها
-    المستوى التاني: كل فرع، وفيه ٧ أدوار — مدير فرع، مشتريات، مبيعات، محاسب،
-                    خدمة ما بعد البيع، مندوب، قارئ
-
-الأدوار دي كلها **محبوسة في فرعها**: كل واحد بيفتح النظام يلاقي شغل فرعه بس، والعزل ده
-بيتنفّذ على السيرفر (`branch_scope`) مش في الشاشة. `admin` وحده `branch_id` بتاعه فاضي،
-وده اللي بيخلّيه يشوف الكل.
-
-**الباسورد بيتقرا من البيئة، مش مكتوب هنا ولا متولّد.** من غير `SEED_PASSWORD` السكربت
-بيقف — حسابات بباسورد معروف مسبقاً هي بالظبط الحاجة اللي مالهاش لازمة في نظام فيه فلوس.
-
-بيتعاد تشغيله بأمان: الفرع أو المستخدم الموجود بيتساب زي ما هو، والناقص بس هو اللي بيتعمل.
-باسورد الحساب الموجود مابيتغيّرش.
-
-    # PowerShell
-    $env:SEED_PASSWORD = "..."
-    .venv/Scripts/python.exe -m src.scripts.seed_branch_structure "فرع القاهرة" "فرع الإسكندرية" "فرع أسيوط"
-
-من غير أسماء بياخد اللي موجود ويكمّل بأسماء مؤقتة تقدر تغيّرها من شاشة «الفروع».
-"""
 from __future__ import annotations
 
 import os
@@ -33,7 +11,6 @@ from src.models.org import Branch, Governorate, Territory
 from src.models.role import Role, RoleName
 from src.models.user import User
 
-# الدور، ولقبه، والحرف اللي بيدخل في اسم الدخول.
 ROLES: list[tuple[RoleName, str, str]] = [
     (RoleName.branch_manager, "مدير الفرع", "manager"),
     (RoleName.purchasing_manager, "مدير المشتريات", "purchasing"),
@@ -46,7 +23,6 @@ ROLES: list[tuple[RoleName, str, str]] = [
 
 
 def _branches(db, names: list[str]) -> list[Branch]:
-    """يضمن وجود الفروع المطلوبة — الموجود بيتساب، والناقص بيتعمل."""
     gov = db.scalars(select(Governorate)).first()
     if gov is None:
         gov = Governorate(name="القاهرة")
@@ -67,7 +43,6 @@ def _branches(db, names: list[str]) -> list[Branch]:
 
 
 def _territory(db, branch: Branch) -> Territory:
-    """كل فرع بيحتاج منطقة واحدة على الأقل — المندوب بيتربط بمنطقة مش بفرع."""
     t = db.scalars(select(Territory).where(Territory.branch_id == branch.id)).first()
     if t is None:
         t = Territory(name=f"منطقة {branch.name}", branch_id=branch.id)
@@ -103,7 +78,6 @@ def run(names: list[str], password: str) -> None:
                     password_hash=hash_password(password),
                     role_id=roles[role],
                     branch_id=branch.id,
-                    # المندوب وحده بيتربط بمنطقة: عملاؤه بيوصلوا له عن طريقها.
                     territory_id=terr.id if role == RoleName.sales_rep else None,
                     full_name=f"{title} — {branch.name}",
                     active=True,

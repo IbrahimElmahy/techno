@@ -1,18 +1,3 @@
-/**
- * إطار بوباب السند — قبض / صرف / مصروف (٢٠٢٦-١٠-٠٧).
- *
- * التلات بوبابات كانوا عمود واحد من خانات بعرض ثابت ورا بعض، وزرار «تسجيل السند» مرتين
- * (في الفورم وفي الفوتر). اللي اتاخد من التانيين:
- *
- *   من a5:   شاشة لكل نوع، نفس الخانات (التاريخ · الخزينة · الطرف · المبلغ · البيان ·
- *            رقم المستند)، Enter للخانة اللي بعدها، والطباعة على طول بعد الحفظ.
- *   من Odoo: ترويسة ملوّنة بتقول النوع (داخل/خارج)، رصيد الطرف تحت اختياره، رصيد الخزنة
- *            تحتها وتحذير لو الصرف أكبر منه، معاينة القيد قبل الحفظ، والخانات الثانوية في
- *            «تفاصيل إضافية» مقفولة، و«حفظ» / «حفظ وطباعة» / «حفظ وجديد».
- *
- * **الحفظ نفسه مش هنا.** كل بوباب بيبني الـpayload بتاعه (`buildPayload`) زي ما كان، والإطار
- * بيندَه `submit` اللي الشاشة الأم إدّتهوله — فالعقد مع السيرفر مااتغيّرش حرف.
- */
 import React, { createContext, useContext, useEffect, useRef, useState } from 'react';
 import {
   Alert, Button, Col, Collapse, DatePicker, Form, Input, Row, Space, Tag, theme,
@@ -32,12 +17,6 @@ import { api } from '../../api/client';
 import { money } from '../../utils/money';
 import { loadPostableAccounts } from './PartyKind';
 
-/**
- * توقيع الحفظ اللي الشاشة الأم بتدّيه — نفس القديم، وزيادة عليه:
- *  - بيرجّع السند المحفوظ (أو `null` لو فشل) عشان «حفظ وطباعة».
- *  - `keepOpen` لـ«حفظ وجديد»: الفورم بيتفضّى والبوباب يفضل مفتوح.
- * اللي بيرجّع `void` لسه بيشتغل — بس من غير طباعة ولا «جديد».
- */
 export type VoucherSubmit = (
   url: string, values: any, form: FormInstance, ok: string, opts?: { keepOpen?: boolean },
 ) => void | Promise<any>;
@@ -45,10 +24,8 @@ export type VoucherSubmit = (
 export type ShellKind = 'receipt' | 'payment' | 'expense';
 type SaveMode = 'save' | 'print' | 'new';
 
-/** الطرف التاني في القيد — «العميل — أحمد»، «حساب المصروف — بنزين». */
 export interface Counterpart { label: string; name?: string | null }
 
-/** رصيد مين يتعرض تحت الطرف. `known` = رصيد جاي مع القايمة (الموردين) فمش محتاج طلب. */
 export interface BalanceTarget {
   side: 'customer' | 'supplier' | 'account';
   id?: number | null;
@@ -72,12 +49,10 @@ const META: Record<ShellKind, {
   },
 };
 
-/** اللي خانات الطرف محتاجاه من الإطار عشان «بعد السند». */
 const ShellCtx = createContext<{ kind: ShellKind; amount: number; editing: boolean }>({
   kind: 'receipt', amount: 0, editing: false,
 });
 
-// ── المبلغ: فاصلة آلاف وأرقام إنجليزي (زي a5 والورقة المطبوعة) ──
 const withThousands = (v: any): string => {
   if (v === undefined || v === null || v === '') return '';
   const [i, d] = String(v).split('.');
@@ -85,7 +60,6 @@ const withThousands = (v: any): string => {
 };
 const parseThousands = (v?: string): any => toLatinDigits(String(v ?? '')).replace(/,/g, '');
 
-/** «عليه / له» من رصيد موقّع بجانب الحساب الطبيعي. */
 function describe(netDebit: number, party: boolean): string {
   const abs = money(Math.abs(netDebit));
   if (Math.abs(netDebit) < 0.005) return party ? 'صفر — مفيش رصيد' : money(0);
@@ -93,7 +67,6 @@ function describe(netDebit: number, party: boolean): string {
   return netDebit > 0 ? `${abs} مدين` : `${abs} دائن`;
 }
 
-/** رصيد الطرف — مدين صافي (موجب = عليه). */
 function usePartyNetDebit(t?: BalanceTarget): number | null {
   const [net, setNet] = useState<number | null>(null);
   const side = t?.side;
@@ -105,11 +78,9 @@ function usePartyNetDebit(t?: BalanceTarget): number | null {
     let alive = true;
     const done = (v: number) => { if (alive) setNet(v); };
     if (side === 'customer') {
-      // العميل حساب ذمم مدين — موجب = عليه. الإجمالي على كل خطوطه (أبيض + بولي).
       api.get(`/api/v1/customers/${id}/accounts`)
         .then((r) => done(Number(r.data?.total_balance || 0))).catch(() => {});
     } else if (side === 'supplier') {
-      // المورد دائن — موجب = له، فبيتقلب.
       if (known !== undefined && known !== null) done(-Number(known));
       else {
         api.get(`/api/v1/suppliers/${id}/account`)
@@ -126,12 +97,6 @@ function usePartyNetDebit(t?: BalanceTarget): number | null {
   return net;
 }
 
-/**
- * رصيد الطرف تحت اختياره — «عليه ٥٬٠٠٠ ← بعد السند: عليه ٣٬٥٠٠».
- *
- * بيتحط في `extra` بتاع خانة الطرف. السؤال اللي في دماغ اللي بيكتب سند قبض هو «عليه كام»،
- * وكان لازم يفتح كشف الحساب في شاشة تانية عشان يعرف.
- */
 export function PartyBalance({ target }: { target?: BalanceTarget }) {
   const { kind, amount, editing } = useContext(ShellCtx);
   const { token } = theme.useToken();
@@ -139,12 +104,10 @@ export function PartyBalance({ target }: { target?: BalanceTarget }) {
   if (!target?.id) return null;
   if (net === null) return <span style={{ color: token.colorTextTertiary }}>جاري جلب الرصيد…</span>;
   const party = target.side !== 'account';
-  // القبض بيدخّل الطرف دائن (الصافي المدين يقل)، والصرف مدين (يزيد).
   const after = net + (kind === 'receipt' ? -amount : amount);
   return (
     <span className="vs-hint">
       الرصيد الحالي: <b style={{ color: token.colorText }}>{describe(net, party)}</b>
-      {/* في التعديل الرصيد شايل السند القديم — «بعد» هيبقى غلط فمش بيتعرض. */}
       {amount > 0 && !editing && (
         <> &nbsp;←&nbsp; بعد السند: <b style={{ color: token.colorText }}>{describe(after, party)}</b></>
       )}
@@ -152,7 +115,6 @@ export function PartyBalance({ target }: { target?: BalanceTarget }) {
   );
 }
 
-/** المعاينة: سطرين — مدين ودائن — زي القيد اللي هيتسجّل بالظبط. */
 function JournalPreview({
   kind, amount, treasuryName, counterpart, note,
 }: {
@@ -219,7 +181,6 @@ function JournalPreview({
   );
 }
 
-/** الخانات اللي Enter بيمشي عليها جوّه جسم البوباب — بالترتيب اللي العين بتقرا بيه. */
 function fieldsIn(root: HTMLElement): HTMLElement[] {
   return [...root.querySelectorAll<HTMLElement>(
     'input:not([type=hidden]):not([disabled]), textarea:not([disabled])',
@@ -227,7 +188,6 @@ function fieldsIn(root: HTMLElement): HTMLElement[] {
     .filter((f) => !['radio', 'checkbox'].includes((f as HTMLInputElement).type))
     .filter((f) => !f.closest('.ant-segmented'))
     .filter((f) => !f.hasAttribute('readonly') || f.closest('.ant-select') !== null)
-    // جوّه «تفاصيل إضافية» وهي مقفولة = مش مكان ينزل فيه.
     .filter((f) => ((f.closest('.ant-select') as HTMLElement | null) ?? f).offsetParent !== null);
 }
 
@@ -243,24 +203,18 @@ export default function VoucherShell({
   posting: boolean;
   form: FormInstance;
   submit: VoucherSubmit;
-  /** مسار الـPOST — `/api/v1/vouchers/receipts` … */
   url: string;
   okMsg: string;
-  /** قيم الفورم ← الـpayload. `null` = اتمنع (البوباب بيقول السبب بنفسه). */
   buildPayload: (values: any) => any | null;
-  /** قسم الطرف — نوعه وخانته ورصيده (أو حساب المصروف). */
   party: React.ReactNode;
   counterpart: Counterpart;
   treasuries: any[];
   treasuryOptional?: boolean;
   treasuryPlaceholder?: string;
-  /** خانات «تفاصيل إضافية» — كل عنصر خانة، والإطار بيرصّهم عمودين. */
   details: React.ReactNode[];
   detailsLabel?: string;
   journalNote?: React.ReactNode;
-  /** لاسم طريقة الدفع على الورقة المطبوعة. */
   methodOptions?: { value: string; label: string }[];
-  /** بعد «حفظ وجديد» — البوباب بيصفّر حالته الخاصة (الخط المختار مثلاً). */
   onAfterNew?: () => void;
 }) {
   const { token } = theme.useToken();
@@ -272,7 +226,6 @@ export default function VoucherShell({
   const saveRef = useRef<HTMLButtonElement>(null);
   const [mode, setMode] = useState<SaveMode | null>(null);
   const [detailsOpen, setDetailsOpen] = useState(false);
-  // في التعديل التفاصيل مفتوحة — اللي بيعدّل محتاج يشوف المرجع وطريقة الدفع اللي اتكتبوا.
   useEffect(() => { if (open) setDetailsOpen(editing); }, [open]);
 
   const amount = Number(Form.useWatch('amount', form) || 0);
@@ -280,7 +233,6 @@ export default function VoucherShell({
   const treasury = treasuries.find((t) => t.id === treasuryId);
   const treasuryName = treasury?.name ?? (treasuryOptional && !treasuryId ? 'عهدة المندوب' : null);
 
-  // ── رصيد الخزنة وبعد السند ──
   const tBal = Number(treasury?.balance || 0);
   const outgoing = kind !== 'receipt';
   const tAfter = tBal + (outgoing ? -amount : amount);
@@ -301,7 +253,6 @@ export default function VoucherShell({
     </div>
   ) : treasuryOptional ? 'فاضي = السند يفضل في عهدة المندوب' : undefined;
 
-  // ── الطباعة من رد السيرفر، والأسماء من اللي كان على الشاشة لحظة الحفظ ──
   const docOf = (res: any, payload: any, cp: Counterpart, tName?: string | null): VoucherDoc => {
     const method = res?.payment_method ?? payload.payment_method ?? null;
     return {
@@ -334,7 +285,6 @@ export default function VoucherShell({
     try { v = await form.validateFields(); } catch { return; }
     const payload = buildPayload(v);
     if (!payload) return;
-    // اللي هيتطبع واللي هيفضل لـ«جديد» — قبل ما الحفظ يفضّي الفورم.
     const cp = { ...counterpart };
     const tName = treasuryName;
     const keep = { treasury_id: v.treasury_id, voucher_date: v.voucher_date };
@@ -348,14 +298,12 @@ export default function VoucherShell({
     if (!res) return;
     if (m === 'print') printVoucher(docOf(res, payload, cp, tName));
     if (m === 'new') {
-      // سند ورا سند من نفس الخزنة وبنفس التاريخ — زي دفتر a5.
       form.setFieldsValue({ ...keep, voucher_date: keep.voucher_date ?? dayjs() });
       onAfterNew?.();
       setTimeout(focusFirst, 60);
     }
   };
 
-  /** الخانة اللي بعد `el` — وبعد الأخيرة زرار الحفظ (من غير ما يدوسه). */
   const moveNext = (el: HTMLElement) => {
     const body = wrapRef.current?.querySelector<HTMLElement>('.ant-modal-body');
     if (!body) return;
@@ -371,18 +319,8 @@ export default function VoucherShell({
     } else saveRef.current?.focus();
   };
 
-  /**
-   * الكيبورد — قبل antd (مرحلة الالتقاط):
-   *  - Ctrl+Enter = حفظ، من أي خانة.
-   *  - Enter على قايمة مقفولة **فيها اختيار** = الخانة اللي بعدها. antd بيفتح القايمة تاني
-   *    مع كل Enter، فاللي ماشي بالكيبورد كان بيلف في نفس الخانة.
-   *  - Enter على قايمة مفتوحة = antd بيختار، وبعدها ننزل للي بعدها.
-   *  - Enter على خانة طرف فاضية = يفتح شباك اختيار الطرف.
-   */
   const onKeyDownCapture = (e: React.KeyboardEvent) => {
     const el = e.target as HTMLElement;
-    // شبابيك جوّه البوباب (اختيار الطرف، حساب جديد) بتبعت أحداثها هنا عن طريق React —
-    // مالناش دعوة بيها.
     if (!wrapRef.current?.contains(el) || e.key !== 'Enter') return;
     if (e.ctrlKey || e.metaKey) {
       e.preventDefault();
@@ -412,7 +350,6 @@ export default function VoucherShell({
     }
   };
 
-  /** Enter في خانة كتابة (المبلغ، التاريخ، البيان) — بعد ما الخانة نفسها تاخده. */
   const onKeyDown = (e: React.KeyboardEvent) => {
     const el = e.target as HTMLElement;
     if (!wrapRef.current?.contains(el) || e.key !== 'Enter') return;
@@ -526,7 +463,6 @@ export default function VoucherShell({
               </Form.Item>
             </Col>
             <Col xs={24} md={12}>
-              {/* رقم الورقة اللي في الإيد — بيتحفظ جنب رقم السند عندنا مش بداله. */}
               <Form.Item name="external_document_number" label="رقم المستند">
                 <Input placeholder="رقم السند الورقي" />
               </Form.Item>
@@ -540,7 +476,6 @@ export default function VoucherShell({
             onChange={(k) => setDetailsOpen((Array.isArray(k) ? k : [k]).includes('d'))}
             items={[{
               key: 'd',
-              // متركّبة حتى وهي مقفولة — القيم (في التعديل خصوصاً) لازم تتبعت مع الحفظ.
               forceRender: true,
               label: (
                 <span>

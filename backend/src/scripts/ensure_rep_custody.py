@@ -1,18 +1,3 @@
-"""يعمل عهدة نقدية لكل مندوب بيبيع — من غيرها الفاتورة من التطبيق بتترفض.
-
-    python -m src.scripts.ensure_rep_custody
-    python -m src.scripts.ensure_rep_custody --yes
-
-`sales_service.create_sale` بينده `resolve_cash_account`، ودي للمندوب بترجّع حساب
-عهدته. جدول العهدة كان **فاضي تماماً** — يعني ولا مندوب واحد كان يقدر يعمل فاتورة
-من التطبيق، والرد كان 500 «خطأ في الخادم» فالسبب مايوصلش لحد.
-
-**العهدة غير المخزن.** المخزن بيمسك بضاعته، والعهدة بتمسك **فلوسه**: الحساب اللي
-بيتقيّد فيه اللي حصّله لحد ما يورّده. المندوب اللي بيبيع محتاج الاتنين.
-
-بيتعمل للمناديب اللي **عندهم مخزن** بس: اللي مالوش مخزن مابيبيعش أصلاً، وعمل عهدة
-له بيدّي انطباع إنه جاهز وهو لسه ناقصه المخزن.
-"""
 from __future__ import annotations
 
 import sys
@@ -61,9 +46,6 @@ def run(*, execute: bool) -> None:
             return
 
         for u in need:
-            # الحساب الأول، وبعدين العهدة، وبعدين `owner_ref` بيرجع يشاور عليها —
-            # نفس ترتيب `POST /warehouses/custodies` بالظبط عشان الاتنين يطلّعوا
-            # نفس الشكل، مش شكلين لنفس الحاجة.
             acc = Account(account_type=AccountType.custody, owner_ref=None,
                           normal_side=Direction.debit)
             db.add(acc)

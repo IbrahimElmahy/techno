@@ -1,9 +1,3 @@
-/**
- * سند قبض — اتفصل عن `Vouchers.tsx`، وشكله بقى من `VoucherShell` (٢٠٢٦-١٠-٠٧).
- *
- * الحالة بتفضل في الشاشة الأم — الفورم والقايمات والحفظ بيتبعتوا كمدخلات. البوباب
- * مالوش غير اللي يخصّه هو: نوع الطرف والـpayload. والـpayload هو هو زي ما كان.
- */
 import React from 'react';
 import { Form, Input, Segmented, Select, message } from 'antd';
 import type { FormInstance } from 'antd';
@@ -35,24 +29,17 @@ export default function ReceiptModal({
   setFamilies: React.Dispatch<React.SetStateAction<Record<number, any[]>>>;
   target: string;
   setTarget: (v: string) => void;
-  /** المناديب — لخانة «المندوب» (اختيارية). */
   reps?: UserRecord[];
-  /** بيعدّل سند موجود — العنوان والزرار بيقولوا كده. */
   editing?: boolean;
-  /** السند اللي بيتعدّل في عهدة المندوب — فاضي = يفضل فيها. */
   treasuryOptional?: boolean;
-  /** الموردين — قبض من مورد (رجّع فلوس). */
   suppliers?: Party[];
-  /** نوع الطرف اللي البوباب بيفتح عليه — «تحصيل» من شاشة ذمم الموظفين بيفتح على «موظف». */
   initialKind?: PartyKind;
 }) {
-  // الطرف (المرحلة ١): عميل افتراضياً زي الأول، والباقي اختيار. في التعديل من قيم السند.
   const [kind, setKind] = React.useState<PartyKind>('customer');
   React.useEffect(() => {
     if (!open) return;
     setKind(initialKind);
     if (!editing) return;
-    // القيم بتتحط بعد ما البوباب يتركّب (`useQuickVoucher.edit`) — فبنقراها بعدها.
     const t = setTimeout(() => {
       const k = kindOfValues(form.getFieldsValue(true), customers);
       if (k) setKind(k);
@@ -84,7 +71,6 @@ export default function ReceiptModal({
       .catch(() => setFamilies((prev) => ({ ...prev, [id]: [] })));
   };
 
-  // الطرف التاني في القيد (دائن) — ولرصيده تحت خانته.
   let counterpart: Counterpart;
   let balance: BalanceTarget;
   if (isCustomerKind(kind)) {
@@ -167,14 +153,10 @@ export default function ReceiptModal({
     <Form.Item key="c" name="cost_center_id" label="مركز التكلفة">
       <CostCenterField style={{ width: '100%' }} />
     </Form.Item>,
-    // «بيان» الورقة — غير «البيان» اللي فوق: ده وصف الحركة في القيد، وده الكلام المكتوب
-    // على السند نفسه. الاتنين موجودين في a5.
     <Form.Item key="s" name="statement1" label="بيان السند">
       <Input placeholder="الكلام المكتوب على ورقة السند" />
     </Form.Item>,
   ];
-  // المندوب اللي حصّل — فاضي = مندوب العميل. من غيره السند كان بيتكتب من غير مندوب،
-  // فكشف الحساب وفلتر المندوب مابيشوفوش التحصيل ده.
   if (isCustomerKind(kind)) {
     details.unshift(
       <Form.Item key="rep" name="rep_user_id" label="المندوب" tooltip="فاضي = مندوب العميل">

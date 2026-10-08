@@ -1,4 +1,3 @@
-"""الموارد البشرية — الأقسام ونهاية الخدمة (HR-1)."""
 from __future__ import annotations
 
 from datetime import date
@@ -21,9 +20,6 @@ from src.services import hr_service
 from src.services.hr_service import HrError
 
 router = APIRouter(tags=["hr"], prefix="/hr")
-
-
-# ----------------------------------------------------------------- schemas
 
 
 class DepartmentIn(BaseModel):
@@ -82,12 +78,6 @@ class TerminationOut(BaseModel):
 
 
 def _counts(db: Session, current: CurrentUser | None = None) -> dict[int, int]:
-    """عدد الموظفين النشطين في كل قسم — استعلام واحد مش واحد لكل صف.
-
-    ومتعزل بالفرع زي قايمة الموظفين نفسها: قسم مالوش فرع (المبيعات مثلاً) ظاهر لكل الفروع،
-    ومن غير العزل مدير فرع أكتوبر كان هيشوف «١٢ موظف» ولما يفتح القسم يلاقي ٣ — العدد لازم
-    يطابق اللي هيتعرض لما يضغط عليه.
-    """
     stmt = (
         select(Employee.department_id, func.count())
         .where(Employee.department_id.is_not(None), Employee.active.is_(True))
@@ -99,11 +89,6 @@ def _counts(db: Session, current: CurrentUser | None = None) -> dict[int, int]:
 
 
 def _seen_department(db: Session, department_id: int, current: CurrentUser) -> Department:
-    """القسم لو اللي بيسأل يشوفه — و٤٠٤ لو لأ (نفس قاعدة `_seen_employee`).
-
-    القايمة متعزلة بالفرع، فالرابط المباشر بالرقم لازم يتعزل هو كمان — وإلا مدير فرع
-    بيعدّل أو يقفل أو يمسح قسم فرع تاني بمجرد إنه يعرف رقمه.
-    """
     dept = db.scalar(branch_scope.scope(
         select(Department).where(Department.id == department_id), Department, current))
     if dept is None:
@@ -112,12 +97,6 @@ def _seen_department(db: Session, department_id: int, current: CurrentUser) -> D
 
 
 def _writable_department(db: Session, department_id: int, current: CurrentUser) -> Department:
-    """القسم لو اللي بيسأل يقدر **يغيّره** — مش بس يشوفه.
-
-    قسم فرع تاني: ٤٠٤ (من `_seen_department`). وقسم مالوش فرع (مشترك — زي اللي اتعمل من
-    ترحيل النص القديم): بيظهر لموظف الفرع عشان موظفينه متسجّلين فيه، لكن تعديله أو إقفاله أو
-    مسحه بيأثر على كل الفروع مرة واحدة — فده للّي فوق الفروع بس، مش لموظف فرع واحد.
-    """
     dept = _seen_department(db, department_id, current)
     if dept.branch_id is None and not branch_scope.sees_all_branches(current):
         raise HTTPException(403, {"code": "shared_department",
@@ -126,13 +105,6 @@ def _writable_department(db: Session, department_id: int, current: CurrentUser) 
 
 
 def _scope_fields(db: Session, current: CurrentUser, fields: dict, *, creating: bool) -> None:
-    """الفرع والروابط على مقاس اللي بيكتب — HR متفصّل بين الفروع.
-
-    * موظف الفرع: القسم بياخد فرعه هو، دايماً — إنشاء أو نقل. من غير كده كان يقدر يعمل قسم
-      «لفرع أكتوبر» من حساب العلياء، أو يسيبه فاضي فيبقى مشترك يظهر عند الكل.
-    * القسم الأب والمدير لازم يكونوا ظاهرين له؛ رقم من فرع تاني بيترفض بنفس ٤٠٤ — مايتقالش
-      له إن الرقم ده موجود عند حد تاني.
-    """
     if not branch_scope.sees_all_branches(current) and (creating or "branch_id" in fields):
         fields["branch_id"] = current.branch_id
     if fields.get("parent_id") is not None:
@@ -164,9 +136,6 @@ def _term_out(db: Session, t: EmployeeTermination) -> TerminationOut:
         end_date=t.end_date, last_working_day=t.last_working_day, kind=t.kind,
         reason=t.reason, settlement_amount=t.settlement_amount,
     )
-
-
-# ------------------------------------------------------------- الأقسام
 
 
 @router.get("/departments", response_model=list[DepartmentOut])
@@ -241,11 +210,6 @@ def deactivate_department(
     current: CurrentUser = Depends(require_capability(CAP_HR_WRITE)),
     db: Session = Depends(get_db),
 ) -> None:
-    """بيتقفل، مابيتمسحش (FR-023) — و`hard=true` بيمسحه **بشرط إن مافيش حاجة مربوطة بيه**.
-
-    نفس اتفاق المخازن والعملاء: الإقفال هو الافتراضي والمسح للغلط في الإدخال، والسيرفر بيرفض
-    المسح بالأرقام لو القسم عليه موظف أو قسم فرعي أو مسير.
-    """
     _writable_department(db, department_id, current)
     try:
         if hard:
@@ -266,20 +230,12 @@ def import_departments(
     current: CurrentUser = Depends(require_capability(CAP_HR_WRITE)),
     db: Session = Depends(get_db),
 ) -> dict:
-    """بيحوّل نص «القسم» القديم لأقسام حقيقية — مرة واحدة، وبضغطة من المستخدم.
-
-    للّي فوق الفروع بس: الترحيل بيلف على موظفين **كل** الفروع وبيعمل أقسام مشتركة، وده مش
-    قرار موظف فرع واحد.
-    """
     if not branch_scope.sees_all_branches(current):
         raise HTTPException(403, {"code": "forbidden",
                                   "message": "ترحيل الأقسام القديمة من الإدارة العامة بس."})
     result = hr_service.import_departments_from_employees(db, actor_user_id=current.id)
     db.commit()
     return result
-
-
-# ------------------------------------------------------ نهاية الخدمة
 
 
 @router.get("/terminations", response_model=list[TerminationOut])
@@ -290,7 +246,6 @@ def list_terminations(
     db: Session = Depends(get_db),
 ) -> list[TerminationOut]:
     stmt = select(EmployeeTermination).order_by(EmployeeTermination.end_date.desc())
-    # نهاية الخدمة مالهاش فرع — فرعها فرع الموظف.
     stmt = branch_scope.scope_by_employee(stmt, EmployeeTermination.employee_id, current)
     if date_from:
         stmt = stmt.where(EmployeeTermination.end_date >= date_from)
@@ -327,7 +282,6 @@ def reinstate_employee(
     current: CurrentUser = Depends(require_capability(CAP_HR_WRITE)),
     db: Session = Depends(get_db),
 ) -> None:
-    """بيلغي نهاية خدمة اتسجّلت بالغلط — ده تصحيح إدخال مش حذف بيانات."""
     if not branch_scope.may_touch_employee(db, current, employee_id):
         raise HTTPException(404, {"code": "not_found", "message": "الموظف غير موجود."})
     try:
@@ -337,12 +291,7 @@ def reinstate_employee(
     db.commit()
 
 
-# --------------------------------------------------- ذمم الموظفين (HR-2)
-
-
 class EmployeeReceivableOut(BaseModel):
-    """سطر واحد في كشف ذمم الموظفين."""
-
     employee_id: int | None = None
     employee_code: str | None = None
     employee_name: str | None = None
@@ -364,11 +313,9 @@ class EmployeeReceivablesOut(BaseModel):
     total_debit: Decimal
     total_credit: Decimal
     total_balance: Decimal
-    # موظف مسجّل ومالوش حساب ذمة — مش صفر، «مش متربط».
     unlinked_employees: int
 
 
-# «ذمم الموظفين» في شجرة a5 — مجموعة لكل فرع، وأسماؤها متطابقة.
 _RECEIVABLE_GROUPS = ("A5M-22", "AL-A5M-22")
 
 
@@ -381,15 +328,6 @@ def employee_receivables(
     current: CurrentUser = Depends(require_capability(CAP_HR_READ)),
     db: Session = Depends(get_db),
 ) -> EmployeeReceivablesOut:
-    """كشف «سلفت مين وكام» — الموظف وحسابه ورصيده.
-
-    **الرصيد بيتحسب من الدفتر، مابيتخزّنش.** المخزّن هو `receivable_account_id` —
-    أي حركة تترحّل على الحساب بتبان هنا في نفس اللحظة، ومافيش رقمين لنفس الذمة.
-
-    **والحسابات اللي مالهاش موظف بتبان برضه** (`include_orphans`): «عهدة سيارة
-    الفيوم» و«فرع اكتوبر» دلاء محاسبية عليها فلوس فعلاً، وإخفاؤها بيخلي مجموع
-    الصفحة أقل من مجموع المجموعة في ميزان المراجعة — رقمين مختلفين لنفس الحاجة.
-    """
     agg = (select(LedgerLine.account_id,
                   func.coalesce(func.sum(case(
                       (LedgerLine.direction == Direction.debit, LedgerLine.amount),
@@ -398,7 +336,6 @@ def employee_receivables(
                       (LedgerLine.direction == Direction.credit, LedgerLine.amount),
                       else_=0)), 0),
                   func.count())
-           # المرحّل بس — ذمة الموظف مالهاش دعوة بمسودة لسه ماتّرحّلتش.
            .join(LedgerEntry, LedgerEntry.id == LedgerLine.entry_id)
            .where(ledger_service.is_posted_sql())
            .group_by(LedgerLine.account_id))
@@ -443,7 +380,6 @@ def employee_receivables(
                 balance=Decimal(d) - Decimal(c), lines=n))
 
     if branch_id is not None:
-        # الحساب اللي مالوش موظف مالوش فرع كمان — بيتقاس ببادئة كوده.
         want = _branch_prefix(db, branch_id)
         rows = [r for r in rows
                 if (r.branch_id == branch_id if r.employee_id
@@ -469,7 +405,6 @@ def employee_receivables(
 
 
 def _branch_prefix(db: Session, branch_id: int) -> str:
-    """بادئة كود حسابات الفرع — `AL-` للعلياء وفاضي لأكتوبر."""
     from src.models.org import Branch
 
     b = db.get(Branch, branch_id)

@@ -1,19 +1,4 @@
 # -*- coding: utf-8 -*-
-"""جرد أسماء حركة المخزون — في القاعدة وفي الكود — ومقارنتها بالسجل الموحّد.
-
-    python -m src.scripts.audit_doc_types          # القاعدة + الكود
-    python -m src.scripts.audit_doc_types --code   # الكود بس (من غير قاعدة)
-
-بيعمل حاجتين:
-
-* **يقرا القاعدة** ويعدّ كل قيمة في `source_doc_type` و`movement_type`، ويعلّم اللي
-  مش في `stock_docs` أو اللي لسه باسم قديم.
-* **يقرا الكود** ويطلّع كل نص حرفي بيتكتب في الخانتين دول، ويتأكد إنه مسجّل. ده اللي
-  بيمنع تكرار المشكلة: نوع جديد يتكتب في خدمة ويتنسى من السجل بيطلع هنا، مش بعد سنة
-  في كارت صنف فاضي.
-
-العرض بس — مابيكتبش حاجة في القاعدة.
-"""
 from __future__ import annotations
 
 import argparse
@@ -23,9 +8,7 @@ from pathlib import Path
 
 from src.lib import stock_docs
 
-#: `movement_type="x"` أو `source_doc_type='x'` — النص الحرفي وحده.
 _LITERAL = re.compile(r"""(movement_type|source_doc_type)\s*=\s*["']([a-z0-9_]+)["']""")
-#: مجلدات السكربتات القديمة — بتكتب أسماء نقل قديمة عن قصد، ومش بتعدّي من الباب.
 _SKIP = {"scripts"}
 
 

@@ -27,7 +27,6 @@ interface ItemType {
   active: boolean;
 }
 
-// Points can be fractional (1/6, 1/3 …); trim trailing zeros for display.
 const fmtPoints = (v: string) => {
   const n = Number(v);
   if (Number.isNaN(n)) return v;
@@ -37,7 +36,6 @@ const fmtPoints = (v: string) => {
 const InspectionItems: React.FC = () => {
   const [rows, setRows] = useState<ItemType[]>([]);
   const [loading, setLoading] = useState(false);
-  // الشريحة في الرابط (`?tab=active|all`) — الريفرش بيرجع عليها.
   const [listTab, setListTab] = useQueryTab('active');
   const showInactive = listTab === 'all';
   const [editing, setEditing] = useState<ItemType | null>(null);
@@ -53,7 +51,6 @@ const InspectionItems: React.FC = () => {
       });
       setRows(data);
     } catch {
-      /* interceptor */
     } finally {
       setLoading(false);
     }
@@ -108,7 +105,6 @@ const InspectionItems: React.FC = () => {
       message.success(active ? 'تم التفعيل' : 'تم الإيقاف');
       load();
     } catch {
-      /* interceptor */
     }
   };
 
@@ -118,7 +114,6 @@ const InspectionItems: React.FC = () => {
       message.success('تم إيقاف الصنف — هيختفي من التطبيق');
       load();
     } catch {
-      /* interceptor */
     }
   };
 
@@ -132,7 +127,6 @@ const InspectionItems: React.FC = () => {
     },
   });
 
-  // السطر يفتح التعديل — البيانات الأساسية مافيهاش «عرض» غير الفورم بتاعها نفسه.
   const kb = useTableKeyboard<ItemType>({
     rows: filter.filtered, rowKey: (r) => r.id, onOpen: (r) => openEdit(r),
   });
@@ -189,12 +183,10 @@ const InspectionItems: React.FC = () => {
     },
   ];
 
-  // إخفاء وترتيب الأعمدة — نفس المحرك اللي كل الجداول بتستخدمه.
   const tableCols = useTableColumns('inspection-items', columns, {
     export: { name: 'أصناف المعاينة', rows: filter.filtered },
   });
 
-  // F3 للبحث — كانت جاية من `ListToolbar`، والخانة دلوقتي في سطر الفلاتر.
   const searchRef = useRef<any>(null);
   useScreenShortcuts({ onSearch: () => { searchRef.current?.focus?.(); } });
 
@@ -203,7 +195,6 @@ const InspectionItems: React.FC = () => {
 
   return (
     <>
-      {/* «عرض الموقوفة» كان سويتش — بقى شريحتين، ونفس الحالة `showInactive`. */}
       <ListPage<'active' | 'all'>
         icon={<AppstoreOutlined />}
         title="أصناف المعاينة" muted="(قيمة النقاط)"
@@ -234,7 +225,6 @@ const InspectionItems: React.FC = () => {
             value={filter.query}
             onChange={(e) => filter.setQuery(e.target.value)}
           />
-          {/* أكتر من قيمة = «أي واحدة منهم» — نفس سلوك قوايم `ListToolbar`. */}
           <Select
             mode="multiple" allowClear maxTagCount="responsive" placeholder="الحالة"
             value={filter.values.active}

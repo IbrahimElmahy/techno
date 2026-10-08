@@ -6,10 +6,6 @@ import { PlusOutlined, MinusCircleOutlined } from '@ant-design/icons';
 import { api } from '../api/client';
 import { TabModal } from './TabModal';
 
-/**
- * ONE edit form for a supplier — shared by the suppliers grid and the supplier file.
- */
-
 const ExtraPhonesList = () => (
   <Form.List name="phones">
     {(fields, { add, remove }) => (

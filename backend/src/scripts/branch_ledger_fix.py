@@ -1,25 +1,3 @@
-"""كل فرع على حساباته (٢٠٢٦-١٠-٠٤، بموافقة صاحب النظام).
-
-فواتير السيستم بتاعنا (بيع/مرتجع/شرا/مردود) كانت بتترحّل من غير فرع، والإيراد والمشتريات
-على حسابين نظام مالهمش اسم ومتسجّلين على الفرع الافتراضي (أكتوبر) — فإيراد العلياء كان
-بيبان في أكتوبر. الكود اتصلّح (الفاتورة بتبعت فرعها للترحيل)، والسكربت ده بيصلّح القديم:
-
-1. التوجيه: المبيعات والمشتريات لكل فرع على حسابه من شجرته في a5
-   («مبيعات المركز الرئيسى» و«مشتريات المركز الرئيسى»).
-2. القيود اللي مالهاش فرع: بتاخد فرع مستندها.
-3. سطور الإيراد/المشتريات على حسابَي النظام القديمين بتتنقل لحساب فرع القيد.
-4. فروق التقريب (قرش) في قيود فرع على حساب فرع تاني ⇒ «فروق تقريب» بتاعة فرع القيد.
-5. عملاء من غير فرع ⇒ فرع مندوبهم.
-6. فواتير شرا فرع على كارت «ايجارات» بتاع أكتوبر ⇒ «ايجارات — <الفرع>» (المستند وسطر
-   المورد في القيد).
-
-القيود بتفضل متوازنة: السطر بيتنقل من حساب لحساب بنفس المبلغ والاتجاه.
-
-عرض فقط افتراضياً؛ `--yes` للتنفيذ. بيتعاد من غير ضرر.
-
-    python -m src.scripts.branch_ledger_fix
-    python -m src.scripts.branch_ledger_fix --yes
-"""
 from __future__ import annotations
 
 import argparse
@@ -55,13 +33,10 @@ def main() -> None:
     db = SessionLocal()
     q = lambda sql_, **p: db.execute(text(sql_), p).all()  # noqa: E731
     try:
-        # القيود اللي مش متوازنة **قبل** أي تعديل — فيه قديم من الاستيراد (رصيد افتتاحي
-        # للسادات)، والتحقق في الآخر بيقارن بيه عشان يمسك اللي السكربت ده بس عمله.
         unbalanced_sql = """select count(*) from (select entry_id from ledger_line group by entry_id
             having sum(case when direction='debit' then amount else -amount end) <> 0) x"""
         unbalanced_before = q(unbalanced_sql)[0][0]
 
-        # ---------------------------------------------------------------- ١. التوجيه
         sales, purch = {}, {}
         for b, bname in BRANCHES.items():
             sa, pu = _leaf(db, b, SALES_NAME), _leaf(db, b, PURCH_NAME)
@@ -79,7 +54,6 @@ def main() -> None:
             Account.account_type == AccountType.purchases_expense, Account.code.is_(None))).all()]
         print("حسابات النظام القديمة: مبيعات", old_sales, "مشتريات", old_purch)
 
-        # ---------------------------------------------------------------- ٢. فرع القيد
         for t in DOC_TABLES:
             r = db.execute(text(f"""
                 update ledger_entry e set branch_id = d.branch_id
@@ -89,7 +63,6 @@ def main() -> None:
         left = q("select count(*) from ledger_entry where branch_id is null")[0][0]
         print(f"  فاضل من غير فرع: {left}")
 
-        # ---------------------------------------------------------------- ٣. نقل السطور
         moved = Counter()
         for olds, target, label in ((old_sales, sales, "مبيعات"), (old_purch, purch, "مشتريات")):
             if not olds:
@@ -107,7 +80,6 @@ def main() -> None:
                   o=old_sales + old_purch)[0][0]
         print(f"  سطور فاضلة على حسابات النظام القديمة (قيود من غير فرع): {still}")
 
-        # ---------------------------------------------------------------- ٤. فروق التقريب
         for b in BRANCHES:
             need = q("""select count(*) from ledger_line l join ledger_entry e on e.id=l.entry_id
                 join account a on a.id=l.account_id where e.branch_id=:b and a.name=:nm
@@ -116,7 +88,6 @@ def main() -> None:
                 continue
             acc = _leaf(db, b, ROUND_NAME)
             if acc is None:
-                # الحساب موجود على أكتوبر بس (من استيراد a5) — نسخة لفرع القيد بنفس الشكل.
                 tmpl = db.scalar(select(Account).where(Account.name == ROUND_NAME)
                                  .order_by(Account.id))
                 acc = Account(account_type=tmpl.account_type, owner_ref=None,
@@ -134,13 +105,11 @@ def main() -> None:
             if r.rowcount:
                 print(f"فروق تقريب ⇒ «{acc.name}» {BRANCHES[b]} ({acc.code}): {r.rowcount}")
 
-        # ---------------------------------------------------------------- ٥. العملاء
         r = db.execute(text("""
             update customer c set branch_id = u.branch_id from "user" u
             where u.id = c.rep_id and c.branch_id is null and u.branch_id is not null"""))
         print(f"عملاء خدوا فرع مندوبهم: {r.rowcount}")
 
-        # ---------------------------------------------------------------- ٦. «ايجارات»
         for src_id, src_b in q("select id, branch_id from supplier where name = 'ايجارات'"):
             src_acc = q("select account_id from supplier_account where supplier_id=:s", s=src_id)[0][0]
             for b in BRANCHES:
@@ -163,7 +132,6 @@ def main() -> None:
                                         "and partner_id=:s"), {"d": dst_id, "e": entry_id, "s": src_id})
                     print(f"شرا {num} ({BRANCHES[b]}): «ايجارات» أكتوبر ⇒ «ايجارات — {BRANCHES[b]}»")
 
-        # ---------------------------------------------------------------- تحقق
         unbalanced = q(unbalanced_sql)[0][0] - unbalanced_before
         mixed = q("""select e.entry_type, count(distinct e.id) from ledger_entry e
             join ledger_line l on l.entry_id=e.id join account a on a.id=l.account_id

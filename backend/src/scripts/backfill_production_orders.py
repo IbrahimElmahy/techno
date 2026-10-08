@@ -1,47 +1,3 @@
-"""لمّ حركة التصنيع المنقولة من a5 في أوامر تشغيل (032).
-
-    python -m src.scripts.backfill_production_orders            # عرض فقط
-    python -m src.scripts.backfill_production_orders --yes      # تنفيذ
-
----------------------------------------------------------------------------
-**المشكلة.** `import_a5_manufacturing` سجّل كل سطر تصنيع `ManufacturingOp` لوحده، لأن
-أمر a5 بيطلّع كذا منتج و`ManufacturingOrder` عندنا منتج واحد. النتيجة إن الأرصدة طلعت
-مظبوطة بالظبط، بس اللي بيدوّر على «أمر شغل ٣٥٣٧» مالقيهوش في ولا شاشة: الورقة اتفكّت
-لسطور مالهاش ترويسة.
-
-`ProductionOrder` (032) هو الشكل اللي الورقة دي كانت عليه أصلاً، فالسكربت ده بيرجّعها.
-
----------------------------------------------------------------------------
-تلات قواعد السكربت ماشي عليها:
-
-* **ولا حركة مخزون جديدة، ولا صف بيتمسح.** سطر الأمر بياخد `stock_movement_id` بتاع
-  العملية زي ما هو، وصف `ManufacturingOp` بيفضل مكانه — هو اللي `lib/reporting` و
-  `purge_demo` و`fix_a5_fractional_manufacturing` بيقروا منه. فالرصيد مايتحركش ملّي،
-  والسكربت ده عمره ما بيلمس مخزون.
-
-* **مفتاح اللمّ هو رقم المستند.** `import_a5_manufacturing` بيكتب
-  `<بادئة>MFG-<رقم أمر a5>-<تسلسل>`، فالجزء اللي قبل آخر شرطة هو أمر التشغيل الأصلي —
-  نفس المفتاح اللي `lib/reporting._op_batches` بيقرا بيه، ومكتوب مرة واحدة في
-  `manufacturing_service.work_order_ref`.
-
-* **التكلفة بتفضل صفر والأمر بيتعلّم `imported_from="a5"`.** تصدير a5 (`a5_mfg.tsv`)
-  فيه كمية ومخزن وبس — مافيش عمود تكلفة أصلاً. وحساب «متوسط» النهارده وحطّه على إنتاج
-  حصل من سنة بيبقى رقم يبان صح وتاريخه كداب، وكل تقرير ربح بعده تخمين.
-
-  ولنفس السبب **الخامة مش منسوبة لمنتج** (`product_line_id = NULL`): المصدر مابيقولش
-  أنهي خامة راحت لأنهي منتج، والنسبة بالتخمين بتحط رقم مالوش أصل في تكلفة كل منتج.
-  الأمر اللي بيتكتب عندنا لازم ينسب كل خامة — الخدمة بترفض غير كده.
-
-  و**الكمية المخطّطة بتفضل صفر** لنفس السبب التالت: المصدر فيه اللي اتصرف بس، مافيهوش
-  «المفروض». حطّ المخطّط = المصروف كان هيقول «مافيش فاقد» على ٤٬٣٨٩ سطر محدش عدّهم،
-  والصفر هنا بيقرا على إنه «مافيش خطة متسجّلة» — والشاشة بتقول كده صراحةً.
-
-* **الأمر المنقول بيتفتح `done`.** حركته اترحّلت في نظامهم من زمان؛ فتحه مسودة معناه
-  إن حد يقدر «ينفّذه» فيترحّل تاني ويتخصم المخزون مرتين.
-
-* **بيتعاد بأمان.** أمر الشغل اللي اتعمل قبل كده (`external_document_number` +
-  `imported_from="a5"`) بيتخطى.
-"""
 from __future__ import annotations
 
 import argparse
@@ -81,15 +37,9 @@ def run(*, execute: bool, prefix: str = "") -> None:
             groups[work_order_ref(op.document_number)].append(
                 (op, mv_date or (mv_created.date() if mv_created else None)))
 
-        # **الموجود بيتقاس برقمنا مش برقم الورقة.** كان بيتقاس بـ
-        # `external_document_number`، وده بقى رقم a5 المجرّد (٣٥٣٧) بعد ما اتصلّح —
-        # والمفتاح اللي بنجمّع بيه هنا `FC-MFG-3537`. المقارنة بينهم كانت هتقول
-        # «مافيش حاجة اتعملت» وتكرّر الـ٢٠٢ أمر كلهم. `document_number` مشتق من نفس
-        # المفتاح بالحرف، فهو اللي بيتقاس بيه.
         done = {d for (d,) in db.execute(
             select(ProductionOrder.document_number)
             .where(ProductionOrder.imported_from == SOURCE)).all()}
-        # `--prefix FC-` = فرع واحد بس (السادات)؛ الفروع التانية مابتتلمسش.
         todo = {k: v for k, v in groups.items()
                 if f"WO-{SOURCE.upper()}-{k}"[:24] not in done and k.startswith(prefix)}
 
@@ -118,23 +68,11 @@ def run(*, execute: bool, prefix: str = "") -> None:
             branch = next((wh_branch.get(int(op.location_id)) for op, _ in lines
                            if wh_branch.get(int(op.location_id)) is not None), None)
             order = ProductionOrder(
-                # المنقول بياخد رقم مشتق من رقم a5 مش رقم من التسلسل، وده مقصود:
-                # `numbering` بيقرا `^WO-(\d+)$` بس، فآلاف الأوامر المنقولة مابتاكلش
-                # أرقام الشغل الجديد ولا بتخلّي أول أمر يتكتب بإيد يبدأ من ٣٥٣٨.
                 document_number=f"WO-{SOURCE.upper()}-{ref}"[:24],
                 production_date=when, branch_id=branch,
-                # **الورقة اللي في إيدهم رقمها «٣٥٣٧»، مش «FC-MFG-3537».**
-                #
-                # `external_document_number` معناه «رقم المستند عند صاحبه» — واللي
-                # بيدوّر على أمر شغل بيدوّر بالرقم اللي على الورقة اللي في المصنع.
-                # `FC-MFG-3537` رقم من تلفيقنا إحنا: بادئة فرع وكلمة MFG حطّيناهم
-                # عشان نرقّم العمليات، ومالهمش وجود عندهم. فالمخزّن هنا هو **آخر
-                # مقطع** — رقم أمر التشغيل في a5 (`EntgRef`) زي ما هو.
                 external_document_number=ref.rsplit("-", 1)[-1][:40],
                 imported_from=SOURCE,
                 state=ProductionState.done,
-                # من غير بيان: «بغير تكلفة» كانت بتفضل بعد ما التكلفة تتملي
-                # (`backfill_a5_production_costs`) — شوف `clear_a5_production_statement`.
                 statement1=None,
                 material_cost=ZERO, expense_amount=ZERO, total_cost=ZERO,
                 product_quantity=to_qty(0), material_quantity=to_qty(0),
@@ -152,7 +90,6 @@ def run(*, execute: bool, prefix: str = "") -> None:
                         order_id=order.id, item_id=op.item_id, warehouse_id=wid,
                         planned_quantity=to_qty(0), quantity=to_qty(op.quantity),
                         unit_factor=to_qty(1),
-                        # نفس حركة العملية — مافيش حركة جديدة بتتكتب هنا خالص.
                         stock_movement_id=op.stock_movement_id))
                     p_qty += to_qty(op.quantity)
                 else:

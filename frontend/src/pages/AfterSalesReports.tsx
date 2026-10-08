@@ -17,19 +17,6 @@ import { useCouponLifecycle } from './CouponLifecycle';
 
 import { useCanSeeStats } from '../components/StatsRow';
 import { numeralsLocale } from '../utils/money';
-/**
- * تقارير ما بعد البيع — خمسة من قايمة «تقارير متابعة» في نظامهم القديم.
- *
- * مافيش حاجة جديدة بتتسجّل عشان يتعرضوا: مستند الصرف بيقول الورقة راحت لمين، والاستلام
- * بيقول رجعت من مين، والمعاينة شايلة فنيها ومندوبها ونقاطها.
- *
- * **السباك والموزع ليهم تبويبين مش واحد.** السؤالين مختلفين: الموزع ماسك ورق ولازم يرجّعه،
- * والسباك بيجيب ورق. عمود «المتبقي» على الاتنين بيخلّي واحد منهم يكدب — السباك بيطلع
- * بالسالب لأنه بيرجّع ورق مااتصرفش له، وهو اتصرف للموزع أصلاً.
- *
- * والفترة مشتركة بين التبويبات عن قصد: «رجّع كام الشهر ده» و«عاين كام» بيتسألوا عن نفس
- * الشهر، ومنتقيَي تاريخ ممكن يختلفوا هو اللي بيخلّي حد يقارن مارس بأبريل من غير ما ياخد باله.
- */
 
 interface PartyRow {
   customer_id: number | null;
@@ -118,7 +105,6 @@ export default function AfterSalesReports() {
     { title: 'رجّع', dataIndex: 'received', key: 'received', width: 100,
       sorter: (a: PartyRow, b: PartyRow) => a.received - b.received,
       render: (v: number) => <b>{num(v)}</b> },
-    // الصرف بيظهر لو حد صرف له مباشرة — ودي حالة نادرة بس موجودة.
     { title: 'اتصرف له', dataIndex: 'issued', key: 'issued', width: 100,
       sorter: (a: PartyRow, b: PartyRow) => a.issued - b.issued,
       render: (v: number) => (v ? num(v) : '-') },
@@ -196,15 +182,11 @@ export default function AfterSalesReports() {
     points: reps.reduce((s, r) => s + Number(r.points || 0), 0),
   }), [plumbers, distributors, reps]);
 
-  // الإجماليات دي أرقام الشركة — للمالك وحده. كانت صف فوق التبويبات؛ دلوقتي كل
-  // شريحة بتعرض اللي يخصّها في سطر تحت الجدول.
   const canSeeStats = useCanSeeStats();
 
-  // F3 للبحث — كانت جاية من `ListToolbar`.
   const searchRef = useRef<any>(null);
   useScreenShortcuts({ onSearch: () => { searchRef.current?.focus?.(); } });
 
-  // «حركة الكوبون» ليها فلاترها وترقيمها في السيرفر — بتشارك الصفحة الفترة بس.
   const lifecycle = useCouponLifecycle(range, activeTab === 'lifecycle');
 
   type TabKey = 'plumbers' | 'distributors' | 'technicians' | 'reps' | 'lifecycle';
@@ -253,7 +235,6 @@ export default function AfterSalesReports() {
     </span>
   );
 
-  // الفترة مشتركة بين الشرايح (`range` واحد)، والبحث لكل شريحة لوحدها زي ما كان.
   return (
     <ListPage<TabKey>
       icon={<BarChartOutlined />}

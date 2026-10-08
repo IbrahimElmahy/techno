@@ -1,29 +1,3 @@
-"""يملا `stock_movement.movement_date` من تاريخ المستند اللي الحركة جاية منه.
-
-    python -m src.scripts.backfill_movement_dates            # عرض بس
-    python -m src.scripts.backfill_movement_dates --yes
-    python -m src.scripts.backfill_movement_dates --yes --batch 20000
-
-**ليه:** الحركة ما كانتش شايلة تاريخ — `created_at` وحده، يعني وقت كتابة الصف عندنا.
-النقل من a5 كتب حركة الشركة كلها في يوم واحد، فالنتيجة:
-
-* كارت الصنف بيقول إن بيع يناير حصل يوم النقل.
-* الجرد بأي تاريخ قبل يوم النقل بيرجع **مخزن فاضي**، والبضاعة كلها بتظهر مرة واحدة.
-* الفاتورة اللي تتكتب النهارده بتاريخ قديم، حركتها تتسجّل بتاريخ النهارده.
-
-السكربت بيمشي على الحركات اللي `movement_date` بتاعها فاضي، بيجيب تاريخ ورقتها من
-`stock_docs.date_of`، وبيكتبه.
-
-**والرصيد الافتتاحي ماياخدش يوم النقل.** لو أخده، يبقى البيع بتاريخ يناير حصل قبل ما
-البضاعة تدخل المخزن أصلاً — والرصيد الجاري في كارت الصنف بينزل سالب لحد سبتمبر. الصح
-إنه أول السنة اللي فيها أقدم مستند: ده معنى «أول المدة» عند a5 نفسه (`AznType = 0`).
-
-وباقي اللي مالوش ورقة مؤرَّخة — الهالك والكوبون وأرقام التسلسل — بياخد `created_at`
-بتاعه: أحسن تقدير موجود، وأصدق من إنه يفضل فاضي فيختفي من أي جرد بتاريخ.
-
-**بيتعاد تشغيله بأمان.** بيشتغل على الفاضي بس، فالتشغيلة التانية مابتلمسش اللي اتكتب.
-وبيكتب على دفعات ويعمل commit لكل دفعة عشان جدول بمليون صف مايقفلش المعاملة ساعة.
-"""
 from __future__ import annotations
 
 import argparse
@@ -36,12 +10,10 @@ from src.core.db import SessionLocal
 from src.lib import stock_docs
 from src.models.stock import StockDoc, StockMovement
 
-#: الحركات اللي بتوصف رصيد أول المدة — مالهاش ورقة، وتاريخها أول السنة مش يوم النقل.
 _OPENING = {StockDoc.OPENING, StockDoc.OPENING_FIX, "opening"}
 
 
 def _opening_day(db):
-    """أول يناير من سنة أقدم مستند — التاريخ اللي «أول المدة» بيسبق كل حاجة فيه."""
     from datetime import date as _date
 
     earliest = None
@@ -72,7 +44,6 @@ def run(*, execute: bool, batch: int) -> int:
             return 0
 
         if not execute:
-            # عيّنة بس — الفكرة إن اللي بيشغّل يشوف الفرق قبل ما يوافق عليه.
             sample = db.scalars(
                 select(StockMovement)
                 .where(StockMovement.movement_date.is_(None))
@@ -92,9 +63,9 @@ def run(*, execute: bool, batch: int) -> int:
         print(f"{'تاريخ أول المدة':<26}{opening_day or 'مش معروف — هياخد يوم الكتابة'}")
 
         done = 0
-        moved = 0                      # اتاخد من ورقته
-        opened = 0                     # رصيد أول المدة
-        fallback = 0                   # مالوش ورقة — أخد يوم كتابته
+        moved = 0
+        opened = 0
+        fallback = 0
         kinds: Counter[str] = Counter()
         while True:
             rows = db.scalars(

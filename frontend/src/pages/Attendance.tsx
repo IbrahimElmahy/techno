@@ -22,20 +22,6 @@ import { exportCsv as writeCsv, type CsvColumn } from '../utils/exportCsv';
 import { printReport, type PrintColumn } from '../print/reportSheet';
 import ListPage from '../components/ListPage';
 
-/**
- * الحضور والانصراف.
- *
- * Two ways in, and they are deliberately different acts. Typing a day is one person, one date —
- * used for corrections and for the small office that has no device. Importing is a file off the
- * fingerprint machine, and it arrives in two steps: **معاينة** shows what would happen and writes
- * nothing, then **تنفيذ** commits. That is the same shape as the stocktake cycle these people
- * already use, and it exists because the interesting part of an import is never the rows that
- * worked — it is the three identifiers the file has that the payroll does not.
- *
- * Unmatched rows are shown, never counted-and-forgotten. A row dropped in silence is an employee
- * marked absent for the month, and the first anybody hears of it is payroll.
- */
-
 interface Day {
   id: number;
   employee_id: number;
@@ -62,7 +48,6 @@ const STATUS: Record<string, { label: string; color?: string }> = {
   mission: { label: 'مأمورية', color: 'cyan' },
 };
 
-/** «٩٠ دقيقة» بتتقري أصعب من «١:٣٠». */
 export function minutesLabel(total: number): string {
   if (!total) return '—';
   const h = Math.floor(total / 60);
@@ -70,12 +55,9 @@ export function minutesLabel(total: number): string {
   return h ? `${h}:${String(m).padStart(2, '0')}` : `${m} د`;
 }
 
-/** بيقرا نص CSV لصفوف. بيتعامل مع الفاصلة المنقوطة كمان — إكسل العربي بيصدّر بيها. */
 export function parseCsv(text: string): string[][] {
   const clean = text.replace(/^﻿/, '');
   const lines = clean.split(/\r?\n/).filter((l) => l.trim() !== '');
-  // Excel on an Arabic Windows writes `;` as the separator, not `,`. Guessing from the header is
-  // more reliable than asking somebody which one their Excel used.
   const sep = (lines[0]?.split(';').length ?? 0) > (lines[0]?.split(',').length ?? 0) ? ';' : ',';
   return lines.map((line) => line.split(sep).map((c) => c.trim().replace(/^"|"$/g, '')));
 }
@@ -88,8 +70,6 @@ export default function Attendance() {
   const [range, setRange] = useState<[Dayjs, Dayjs] | null>(null);
   const [employeeId, setEmployeeId] = useState<number | undefined>();
 
-  // إدخال يدوي — بوب أب فوق السجل بدل تبويب لوحده: بيتفتح على يوم جديد أو على سطر من
-  // الكشف، ولما يتحفظ السجل اللي وراه بيتحدّث قدّام عينه من غير تنقّل بين تبويبين.
   const [dayForm] = Form.useForm();
   const [dayOpen, setDayOpen] = useState(false);
   const [editingDay, setEditingDay] = useState<Day | null>(null);
@@ -97,7 +77,6 @@ export default function Attendance() {
   const checkInRef = useRef<any>(null);
   const [saving, setSaving] = useState(false);
 
-  // استيراد
   const [csvRows, setCsvRows] = useState<string[][]>([]);
   const [filename, setFilename] = useState<string>('');
   const [map, setMap] = useState({ employee: 0, date: 1, time: 2 });
@@ -128,7 +107,6 @@ export default function Attendance() {
   const openNewDay = () => {
     setEditingDay(null);
     dayForm.resetFields();
-    // الموظف المختار في فلتر السجل غالباً هو اللي بيتصحّحله — يتملّى بدل ما يتختار تاني.
     dayForm.setFieldsValue({ employee_id: employeeId, work_date: dayjs() });
     setDayOpen(true);
   };
@@ -139,7 +117,6 @@ export default function Attendance() {
       await api.post('/api/v1/hr/attendance/days', {
         employee_id: values.employee_id,
         work_date: (values.work_date || dayjs()).format('YYYY-MM-DD'),
-        // فاضية = «من المواعيد»: السيرفر بيحكم (عطلة/راحة/حاضر/غايب) زي الاستيراد بالظبط.
         status: values.status || null,
         check_in: values.check_in?.trim() || null,
         check_out: values.check_out?.trim() || null,
@@ -150,7 +127,6 @@ export default function Attendance() {
       load();
     } catch (err: any) {
       const detail = err?.response?.data?.detail;
-      // «مقفول» رسالة ليها خطوة تالية، مش رفض مسدود.
       message.error(detail?.message || 'تعذر الحفظ', detail?.code === 'locked' ? 8 : 3);
     } finally { setSaving(false); }
   };
@@ -177,7 +153,7 @@ export default function Attendance() {
       message.success(`اتقرا ${parsed.length} سطر`);
     };
     reader.readAsText(file, 'utf-8');
-    return false; // مفيش رفع للسيرفر — القراية بتحصل هنا
+    return false;
   };
 
   const body = () => ({
@@ -236,7 +212,6 @@ export default function Attendance() {
     export: { name: 'سجل الحضور والانصراف', rows },
   });
 
-  /** السطر بيفتح اليوم للتعديل — «اليوم ده غلط» أول رد فعل على أي كشف حضور. */
   const openDay = (row: Day) => {
     if (row.locked) {
       message.warning('اليوم ده داخل مسير مرحّل — اعكس المسير الأول.');
@@ -255,20 +230,16 @@ export default function Attendance() {
     setDayOpen(true);
   };
 
-  // رابط قديم على `?tab=entry` (كان تبويب) — يفتح البوب أب فوق السجل بدل صفحة فاضية.
   useEffect(() => {
     if (tab === 'entry') { setTab('days'); openNewDay(); }
   }, [tab]);
 
-  // F2 يوم جديد · F9 حفظ · Esc قفل — نفس المفاتيح في كل الشاشات.
   useScreenShortcuts({
     onNew: tab === 'days' && !dayOpen ? openNewDay : undefined,
     onSave: dayOpen ? () => dayForm.submit() : undefined,
     onClose: dayOpen ? () => setDayOpen(false) : undefined,
   });
 
-  // الاختيار من الموظفين الشغّالين بس (القايمة جاية من السيرفر متعزلة بالفرع)؛ والموظف
-  // اللي بيتعدّل يومه بيفضل ظاهر باسمه حتى لو اتوقف بعدين.
   const dayEmployees = useMemo(() => {
     const list = employees.filter((e) => e.active !== false);
     if (editingDay && !list.some((e) => e.id === editingDay.employee_id)) {
@@ -316,7 +287,6 @@ export default function Attendance() {
       columns={cols.columns} dataSource={rows}
       pagination={{
         defaultPageSize: PAGE_SIZE, showSizeChanger: true,
-        // ملخّص المدى تحت الجدول بدل الشرايح اللي كانت فوق.
         showTotal: () => (
           <span className="sl-foot">
             <span>أيام: <b>{rows.length}</b></span>
@@ -463,8 +433,6 @@ export default function Attendance() {
       <TabModal
         open={dayOpen} onCancel={() => setDayOpen(false)} footer={null} destroyOnHidden
         title={editingDay ? 'تعديل يوم حضور' : 'إدخال حضور موظف'} width={560}
-        // `autoFocus` جوه بوب أب بيتفتح بحركة مابيمسكش — المؤشر بيتحط بعد ما يخلص فتح:
-        // على الموظف في يوم جديد، وعلى الحضور في التعديل (الموظف والتاريخ مقفولين).
         afterOpenChange={(o) => {
           if (o) (editingDay ? checkInRef : employeeRef).current?.focus();
         }}
@@ -472,8 +440,6 @@ export default function Attendance() {
         <Form form={dayForm} layout="vertical" onFinish={saveDay} requiredMark={false}>
           <Row gutter={10}>
             <Col span={14}>
-              {/* الموظف والتاريخ هما مفتاح اليوم — تغييرهم في التعديل كان هيعمل يوم تاني
-                  ويسيب القديم زي ما هو، فبيتقفلوا؛ الغلط فيهم = امسح اليوم وسجّله صح. */}
               <Form.Item name="employee_id" label="الموظف"
                 rules={[{ required: true, message: 'اختر الموظف' }]}>
                 <Select
@@ -510,7 +476,6 @@ export default function Attendance() {
             <Col span={24}>
               <Form.Item name="notes" label="ملاحظات"
                 extra="الحالة فاضية والحضور فاضي = غياب، إلا لو اليوم عطلة أو راحة.">
-                {/* آخر خانة: Enter بيحفظ على طول بدل ما يقف على الزرار ويستنى Enter تاني. */}
                 <Input onPressEnter={(e) => { e.preventDefault(); dayForm.submit(); }} />
               </Form.Item>
             </Col>

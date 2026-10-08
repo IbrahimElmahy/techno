@@ -1,7 +1,3 @@
-"""تسوية الفواتير بالدفعات — المرحلة ٣ من إعادة الهيكلة على موديل أودو.
-
-شاشة المطابقة بتقرا من هنا: المفتوح على طرف، وقفله، وفكه، وتاريخ اللي اتقفل قبل كده.
-"""
 from __future__ import annotations
 
 from datetime import date
@@ -46,8 +42,6 @@ class OpenLineOut(BaseModel):
 
 
 class OpenLinesOut(BaseModel):
-    """المفتوح على الطرف ده، ومجاميعه — عشان الشاشة ماتجمعش بإيدها."""
-
     lines: list[OpenLineOut]
     total_debit: Decimal
     total_credit: Decimal
@@ -65,8 +59,6 @@ class AutoReconcileIn(BaseModel):
 
 
 class UnreconcileIn(BaseModel):
-    """فك بالسطور أو برقم المطابقة — الاتنين بيوصلوا لنفس المكان."""
-
     line_ids: list[int] | None = None
     number: str | None = None
 
@@ -108,11 +100,9 @@ def open_items(
     _: CurrentUser = Depends(require_capability(CAP_ACCOUNTING_CHART_READ)),
     db: Session = Depends(get_db),
 ) -> OpenLinesOut:
-    """السطور اللي لسه عليها متبقّي — الفواتير والدفعات اللي مالهاش غطا."""
     rows = reconcile_service.open_lines(
         db, partner_kind=partner_kind, partner_id=partner_id, account_id=account_id)
     names = _account_names(db, [r.account_id for r in rows])
-    # الخدمة بترجّعها الأقدم الأول عشان المطابقة التلقائية؛ الشاشة الأحدث فوق.
     lines = [_to_out(r, names) for r in reversed(rows)]
     debit = sum((r.residual for r in rows if r.residual > ZERO), ZERO)
     credit = sum((-r.residual for r in rows if r.residual < ZERO), ZERO)
@@ -128,7 +118,6 @@ def partners_with_open_items(
     _: CurrentUser = Depends(require_capability(CAP_ACCOUNTING_CHART_READ)),
     db: Session = Depends(get_db),
 ) -> list[dict]:
-    """الأطراف اللي عندهم مفتوح — عشان الشاشة تبدأ من قايمة مش من خانة بحث فاضية."""
     rows = db.execute(
         select(LedgerLine.partner_id, LedgerLine.amount_residual)
         .join(LedgerEntry, LedgerEntry.id == LedgerLine.entry_id)
@@ -173,7 +162,6 @@ def reconcile(
     current: CurrentUser = Depends(require_capability(CAP_ACCOUNTING_JOURNAL_POST)),
     db: Session = Depends(get_db),
 ) -> dict:
-    """يقفل السطور المحددة على بعضها."""
     try:
         result = reconcile_service.reconcile(
             db, line_ids=body.line_ids, actor_user_id=current.id)
@@ -191,7 +179,6 @@ def auto_reconcile(
     current: CurrentUser = Depends(require_capability(CAP_ACCOUNTING_JOURNAL_POST)),
     db: Session = Depends(get_db),
 ) -> dict:
-    """مطابقة تلقائية للطرف ده — الأقدم استحقاقاً يتقفل الأول."""
     try:
         result = reconcile_service.auto_reconcile(
             db, partner_kind=body.partner_kind, partner_id=body.partner_id,
@@ -210,7 +197,6 @@ def unreconcile(
     _: CurrentUser = Depends(require_capability(CAP_ACCOUNTING_JOURNAL_POST)),
     db: Session = Depends(get_db),
 ) -> dict:
-    """يفك المطابقة ويرجّع المتبقّي."""
     try:
         result = reconcile_service.unreconcile(
             db, line_ids=body.line_ids, number=body.number)
@@ -229,7 +215,6 @@ def matched_groups(
     _: CurrentUser = Depends(require_capability(CAP_ACCOUNTING_CHART_READ)),
     db: Session = Depends(get_db),
 ) -> list[MatchedGroupOut]:
-    """المطابقات اللي اتعملت — كل مجموعة برقمها وسطورها، عشان تتراجع وتتفك."""
     stmt = select(FullReconcile).order_by(FullReconcile.id.desc()).limit(limit)
     if partner_kind or partner_id:
         line_stmt = select(LedgerLine.full_reconcile_id).where(
@@ -286,11 +271,6 @@ def entry_matching(
     _: CurrentUser = Depends(require_capability(CAP_ACCOUNTING_CHART_READ)),
     db: Session = Depends(get_db),
 ) -> dict:
-    """«الفاتورة دي اتدفعت بإيه» — المستندات اللي اتقفلت عليها، والمتبقّي عليها.
-
-    ده الرابط اللي بيخلّي الفاتورة تودّي للدفعة والدفعة تودّي للفاتورة، بدل ما
-    الاتنين يفضلوا سطرين على حساب واحد.
-    """
     entry = db.get(LedgerEntry, entry_id)
     if entry is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND,

@@ -1,16 +1,3 @@
-"""مسودّات المستندات — اللي اتكتب ولسه ما اترحّلش.
-
-الشاشة بتحفظ اللي مكتوب فيها وهي شغّالة، فاللي سابها في نصّها بيرجع يلاقيها. والتأكيد
-مالوش علاقة بهنا: بيبعت نفس الحمولة للـAPI العادي (`POST /sales`)، وبعد ما يرجع بنجاح
-المسودّة بتتمسح. يعني **مافيش طريق تاني لكتابة مستند** — التحقق والترحيل والقيد كلهم في
-مكان واحد زي ما كانوا.
-
-⛔ **المسودّة بتاعة صاحبها.** الجلب والحذف مقيّدين بـ`user_id`، ومافيش نداء بيرجّع مسودّة
-حد تاني. مسودّة نص مكتوبة مش معلومة عامة: اللي يفتحها ويأكّدها يبقى رحّل مستند ناقص
-باسم غيره.
-
-والشرح الكامل لقرار «جدول مستقل مش عمود حالة» في `src.models.draft`.
-"""
 from __future__ import annotations
 
 import json
@@ -28,8 +15,6 @@ from src.models.draft import DocumentDraft
 
 router = APIRouter(prefix="/drafts", tags=["drafts"])
 
-# سقف حجم الحمولة. فاتورة بمية سطر أقل من ٥٠ ك.ب بكتير؛ اللي فوق كده مش شاشة، ده حاجة
-# تانية بتتبعت للجدول ده.
 MAX_PAYLOAD = 512 * 1024
 
 
@@ -51,7 +36,6 @@ def _out(d: DocumentDraft) -> DraftOut:
     try:
         payload = json.loads(d.payload)
     except Exception:
-        # حمولة مكسورة مابتوقّعش الكشف — المسودّة بتبان فاضية وتتمسح.
         payload = {}
     return DraftOut(id=d.id, kind=d.kind, title=d.title, payload=payload,
                     updated_at=str(d.updated_at))
@@ -77,11 +61,6 @@ def save_draft(
     current: CurrentUser = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> DraftOut:
-    """بيحفظ مسودّة جديدة، أو بيكتب فوق واحدة موجودة لو `draft_id` اتبعت.
-
-    الكتابة فوق مقصودة: الشاشة بتحفظ كل شوية وهي شغّالة، ومن غير كده كل ضغطة زر كانت
-    هتسيب مسودّة جديدة والكشف يبقى مية نسخة من نفس الفاتورة.
-    """
     raw = json.dumps(body.payload, ensure_ascii=False)
     if len(raw.encode("utf-8")) > MAX_PAYLOAD:
         raise HTTPException(413, {"code": "too_large",

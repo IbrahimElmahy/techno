@@ -1,10 +1,3 @@
-"""Manual journal entries (005, T015/T019).
-
-A journal entry IS a balanced Foundation `ledger_entry` (one ledger; Principle VI). This service
-adds the chart-specific guard — every line must target a postable, active leaf — then delegates
-balancing, immutability, and reverse-once to `ledger_service`, and records audit explicitly
-(post_entry does NOT auto-audit, analysis finding B).
-"""
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -19,7 +12,7 @@ from src.services.ledger_service import LedgerError, LineInput
 
 
 class JournalError(Exception):
-    """Invalid journal entry (non-postable account, unbalanced, inactive cost center, etc.)."""
+    pass
 
 
 @dataclass(frozen=True)
@@ -28,26 +21,16 @@ class JournalLineInput:
     direction: Direction
     amount: Decimal
     statement: str | None = None
-    cost_center_id: int | None = None  # optional analytical dimension (006)
-    # (المرحلة ٢) الشريك على السطر — القيد اللي بيقفل على عميل بعينه بيتقال هنا.
+    cost_center_id: int | None = None
     partner_kind: PartnerKind | str | None = None
     partner_id: int | None = None
-    # توزيع تحليلي على السطر: `{cost_center_id: percent}` ومجموعه ١٠٠.
     cost_center_distribution: dict | None = None
 
 
 def _validate_accounts(db: Session, lines: list[JournalLineInput]) -> None:
-    """كل سطر لازم يشاور على حساب موجود وشغّال، ومركز تكلفة شغّال لو اتحدد."""
     if not lines:
         raise JournalError("قيد اليومية لازم يكون فيه سطر واحد على الأقل.")
     for ln in lines:
-        # «الحساب ده مش حساب فرعي شغال بيقبل الترحيل» اتشالت بطلب العميل: القيد بينزل على
-        # أي حساب متحدد، رئيسي أو فرعي. القاعدة كانت بتقول إن الحساب الرئيسي مجموع أولاده
-        # ومايتكتبش عليه — وده صح محاسبياً وعائق عملياً، لأن اللي بيكتب قيد بيبقى قاصد
-        # الحساب اللي اختاره.
-        #
-        # الحساب المقفول لسه مرفوض: مقفول معناها «مش بيتحرك تاني»، وده قرار المستخدم نفسه
-        # مش قاعدة اتفرضت عليه.
         acc = db.get(Account, ln.account_id)
         if acc is None or not acc.active:
             raise JournalError("الحساب ده مش موجود أو مقفول.")
@@ -90,7 +73,6 @@ def post_entry(
     partner_id: int | None = None,
     invoice_date_due: date | None = None,
 ) -> LedgerEntry:
-    """يكتب قيد يومية بإيد المستخدم. `state="draft"` بيسيبه ناقص ومن غير رقم."""
     _validate_accounts(db, lines)
     try:
         entry = ledger_service.post_entry(
@@ -107,7 +89,7 @@ def post_entry(
             partner_id=partner_id,
             invoice_date_due=invoice_date_due,
         )
-    except LedgerError as exc:  # غير متوازن / مبلغ مش موجب / سطور فاضية
+    except LedgerError as exc:
         raise JournalError(str(exc)) from exc
 
     audit_service.record(
@@ -134,7 +116,6 @@ def create_draft(
     partner_id: int | None = None,
     invoice_date_due: date | None = None,
 ) -> LedgerEntry:
-    """مسودة قيد — مش بتدخل الحسابات ومش لازم تتوازن."""
     return post_entry(
         db, entry_date=entry_date, description=description, branch_id=branch_id,
         lines=lines, actor_user_id=actor_user_id, entry_type=entry_type,
@@ -158,7 +139,6 @@ def update_draft(
     partner_id: int | None = None,
     invoice_date_due: date | None = None,
 ) -> LedgerEntry:
-    """يعدّل مسودة. المرحّل مايوصلش هنا — يترجّع مسودة الأول."""
     entry = db.get(LedgerEntry, entry_id)
     if entry is None:
         raise JournalError("القيد مش موجود.")
@@ -171,8 +151,6 @@ def update_draft(
         entry.partner_id = partner_id
     if invoice_date_due is not None:
         entry.invoice_date_due = invoice_date_due
-    # الشريك بيتظبط قبل السطور مش بعدها: `replace_lines` بيورّث شريك القيد للسطر
-    # اللي ماقالش بتاعه، فلو اتظبط بعدها كانت السطور الجديدة هتورث الشريك القديم.
     if lines is not None:
         _validate_accounts(db, lines)
         try:
@@ -196,7 +174,6 @@ def update_draft(
 
 
 def post_draft(db: Session, *, entry_id: int, actor_user_id: int) -> LedgerEntry:
-    """يرحّل مسودة — هنا بس بيتفرض التوازن، وهنا بس بيتصرف الرقم."""
     try:
         entry = ledger_service.post_draft(db, entry_id=entry_id, actor_user_id=actor_user_id)
     except LedgerError as exc:
@@ -209,7 +186,6 @@ def post_draft(db: Session, *, entry_id: int, actor_user_id: int) -> LedgerEntry
 
 
 def reset_to_draft(db: Session, *, entry_id: int, actor_user_id: int) -> LedgerEntry:
-    """يرجّع قيد مرحّل لمسودة — بيخرج من الحسابات، ورقمه بيفضل محجوز."""
     try:
         entry = ledger_service.reset_to_draft(db, entry_id=entry_id, actor_user_id=actor_user_id)
     except LedgerError as exc:
@@ -222,7 +198,6 @@ def reset_to_draft(db: Session, *, entry_id: int, actor_user_id: int) -> LedgerE
 
 
 def cancel_entry(db: Session, *, entry_id: int, actor_user_id: int) -> LedgerEntry:
-    """يلغي قيد — بيخرج من كل الحسابات وبيفضل موجود برقمه للمراجعة."""
     try:
         entry = ledger_service.cancel_entry(db, entry_id=entry_id, actor_user_id=actor_user_id)
     except LedgerError as exc:
@@ -235,12 +210,11 @@ def cancel_entry(db: Session, *, entry_id: int, actor_user_id: int) -> LedgerEnt
 
 
 def reverse_entry(db: Session, *, entry_id: int, actor_user_id: int) -> LedgerEntry:
-    """Correct a journal entry by posting its linked mirror (reverse-once; never edit/delete)."""
     try:
         reversal = ledger_service.reverse_entry(
             db, original_id=entry_id, actor_user_id=actor_user_id
         )
-    except LedgerError as exc:  # already reversed / not re-reversible / missing
+    except LedgerError as exc:
         raise JournalError(str(exc)) from exc
     audit_service.record(
         db, action="journal.reverse", actor_user_id=actor_user_id, entity_type="ledger_entry",

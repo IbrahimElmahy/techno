@@ -14,17 +14,6 @@ import { useTableColumns } from '../components/ColumnSettings';
 import ListPage from '../components/ListPage';
 import { useQueryTab } from '../components/useQueryTab';
 
-/**
- * المناديب — كل ما يخص المندوب في شاشة واحدة.
- *
- * المندوب مش جدول: هو مستخدم بدور «مندوب مبيعات»، وحواليه أربع حاجات كانت متفرّقة على أربع
- * شاشات — الموظف اللي بيربطه بمخزن عربيته، وعملاؤه، ومنطقته، وعهدته. واللي عايز يعرف
- * «المندوب ده مسؤول عن إيه» كان بيفتح الأربعة ويجمّع في دماغه.
- *
- * والأعمدة التلاتة على اليمين — عملاء وفواتير وأصناف — هي اللي بتفرّق بين مندوب في الشارع
- * وحساب اتعمل ونُسي: صفر في التلاتة يعني الحساب مالوش شغل.
- */
-
 interface Rep {
   user_id: number; username: string; full_name: string; active: boolean;
   branch_id: number | null; branch_name: string | null;
@@ -36,7 +25,6 @@ interface Rep {
   customer_count: number; invoice_count: number; stock_items: number;
 }
 
-/** فورم «مندوب جديد» و«تعديل مندوب» — نفس الخانات، والباسورد إجباري في الجديد بس. */
 interface RepForm {
   full_name: string; username: string; password?: string;
   branch_id?: number; territory_id?: number; warehouse_id?: number; supervisor_id?: number;
@@ -48,14 +36,12 @@ export default function Reps() {
   const [territories, setTerritories] = useState<any[]>([]);
   const [warehouses, setWarehouses] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
-  // الشريحة في الرابط (`?tab=active|all`) — الريفرش بيرجع عليها وبيحمّل بنفس النطاق.
   const [listTab, setListTab] = useQueryTab('active');
   const showInactive = listTab === 'all';
   const [query, setQuery] = useState('');
   const [moveFrom, setMoveFrom] = useState<Rep | null>(null);
   const [moveTo, setMoveTo] = useState<number | null>(null);
   const [supervisors, setSupervisors] = useState<any[]>([]);
-  // `null` = مقفول، `'new'` = مندوب جديد، غير كده = المندوب اللي بيتعدّل.
   const [editing, setEditing] = useState<Rep | 'new' | null>(null);
   const [saving, setSaving] = useState(false);
   const [form] = Form.useForm<RepForm>();
@@ -75,7 +61,6 @@ export default function Reps() {
       setBranches(b.data || []);
       setTerritories(t.data || []);
       setWarehouses(w.data || []);
-      // المشرفين (لخانة «المشرف») — اللي مالوش صلاحية يقرا المستخدمين بيكمّل من غيرها.
       api.get('/api/v1/users').then((u) => setSupervisors(
         (u.data || []).filter((x: any) => x.role === 'rep_supervisor' && x.active),
       )).catch(() => setSupervisors([]));
@@ -86,13 +71,12 @@ export default function Reps() {
 
   useEffect(() => { load(); }, []);
 
-  /** تعديل حقل واحد على مندوب — الشاشة بتتحدّث من رد السيرفر مش من التخمين. */
   const patch = async (rep: Rep, body: Record<string, any>, what: string) => {
     try {
       const res = await api.patch(`/api/v1/reps/${rep.user_id}`, body);
       setRows((prev) => prev.map((x) => (x.user_id === rep.user_id ? res.data : x)));
       message.success(`تم تعديل ${what}`);
-    } catch { /* الرسالة بتيجي من المعترض العام */ }
+    } catch {}
   };
 
   const openNew = () => {
@@ -109,10 +93,6 @@ export default function Reps() {
     setEditing(r);
   };
 
-  /**
-   * الحفظ على مرحلتين: الحساب نفسه من `/users` (الاسم والدخول والباسورد والفرع والمنطقة
-   * والمشرف)، ومخزن البضاعة من `/reps` — هو اللي بيربط المندوب بالموظف وبمخزن عربيته.
-   */
   const save = async () => {
     const v = await form.validateFields();
     setSaving(true);
@@ -143,18 +123,17 @@ export default function Reps() {
       message.success(editing === 'new' ? 'اتعمل المندوب' : 'اتعدّل المندوب');
       setEditing(null);
       load();
-    } catch { /* الرسالة بتيجي من المعترض العام */ } finally {
+    } catch {} finally {
       setSaving(false);
     }
   };
 
-  /** الحذف للحساب اللي ماشتغلش بس — السيرفر بيرفض لو عليه شغل ويقول عليه إيه. */
   const remove = async (r: Rep) => {
     try {
       await api.delete(`/api/v1/users/${r.user_id}`);
       message.success('اتحذف المندوب');
       load();
-    } catch { /* الرسالة بتيجي من المعترض العام */ }
+    } catch {}
   };
 
   const visible = useMemo(() => {
@@ -190,7 +169,6 @@ export default function Reps() {
         <Select showSearch size="small" style={{ width: '100%' }} allowClear placeholder="بلا منطقة"
           value={v ?? undefined}
           onChange={(x) => patch(r, { territory_id: x ?? 0 }, 'المنطقة')}
-          // مناطق فرعه بس: منطقة في فرع تاني معناها مندوب بيزور مكان مش تبعه.
           options={territories
             .filter((t: any) => !r.branch_id || t.branch_id === r.branch_id)
             .map((t: any) => ({
@@ -210,7 +188,6 @@ export default function Reps() {
               .filter((w: any) => !r.branch_id || !w.branch_id || w.branch_id === r.branch_id)
               .map((w: any) => ({ value: w.id, label: w.name }))} filterOption={searchFilter} filterSort={searchRank} />
           {!v && !r.custody_id && (
-            // من غير مكان بضاعة، التطبيق بيرد «مالكش عهدة ولا مخزن» ومابيزامنش أصلاً.
             <span style={{ fontSize: 14, color: '#cf1322' }}>التطبيق مش هيزامن من غير مخزن</span>
           )}
         </Space>
@@ -275,10 +252,6 @@ export default function Reps() {
               </Tooltip>
             </Popconfirm>
           )}
-          {/* إيقاف مش حذف — نفس قاعدة المخازن والموظفين. اسم المندوب مكتوب على فواتير
-              وعُهد ومعاينات، والمسح بيخلّي المستندات القديمة تقول «#١٦» بدل اسمه.
-              المفتاح في عمود «نشط» بيعمل نفس الحاجة؛ الزرار هنا عشان الإجراء يبان
-              في نفس المكان اللي بيتدوّر عليه فيه في باقي الشاشات. */}
           {r.active && (
             <Popconfirm
               title="إيقاف المندوب؟"
@@ -309,7 +282,6 @@ export default function Reps() {
   });
   const others = rows.filter((r) => r.user_id !== moveFrom?.user_id && r.active);
 
-  // مفتاح «يشمل الموقوفين» بقى شريحتين — نفس الطلب للسيرفر.
   type RepTab = 'active' | 'all';
   const repTab: RepTab = showInactive ? 'all' : 'active';
 

@@ -1,71 +1,3 @@
-"""يستورد حركة الكوبونات من نظام ما بعد البيع القديم: الصرف للتاجر والاستلام من الفني.
-
-    python -m src.scripts.import_erp_coupons --dir C:/pgtmp/erp --branch العلياء
-    python -m src.scripts.import_erp_coupons --dir C:/pgtmp/erp --branch العلياء --yes
-
-بيتعاد تشغيله بأمان: المستند اللي مرجعه موجود بيتخطى، والورقة اللي اتسجّلت بتتخطى.
-
-بياخد ملفين، وكل واحد فيهم من مصدر مختلف **لأنه المصدر الوحيد اللي عنده الحقيقة**:
-
-* `coupons.tsv` — الحركة، من `erp.dbo.wh_transDCoupon` مباشرة. القاعدة شغّالة عند العميل
-  دلوقتي، وهي اللي بيتقاس عليها. الأعمدة بالترتيب:
-  `DetailId~NumCoupon~DistributorId~PlumberId~TrandateDelivery~TransdateReceipt~
-   CodeReceipt~valuecoupon~salesrepid~SalesRepIdDelivery~Status~Notes`
-
-* `coupon_parties.tsv` — خريطة أكواد الأطراف. **دي مش موجودة في `erp` خالص**؛ العميل
-  كتبها بإيده في ملف إكسل («كود تاجر A5»، «كود بعد تعديل A5»، «كود جديد» للمندوب).
-  من غيرها مافيش طريق من رقم التاجر عندهم لكارت العميل عندنا. سطر لكل طرف:
-  `D|P|R ~ كود ERP ~ كود عندنا (A5-… / AL-A5-… / EMP-…) ~ الاسم ~ trader|plumber|rep`
-
----------------------------------------------------------------------------
-اللي القراءة الأولى بتغلط فيه — واتقاس على القاعدة الحيّة مش على الملف:
-
-* **`ProgDelete` مش علامة حذف.** الاسم بيقول كده والمحتوى بيقول العكس: `new/138` أو
-  `Edit/1308` — ختم عملية الاستلام ورقمها. ١٢٥٦٧ صف عليهم ختم، وهم بالظبط الصفوف اللي
-  ليها تاريخ استلام. لو اتعاملنا معاه كحذف، الاستلامات كلها تروح.
-
-* **اللي بيتشال فعلاً `Status = 0`.** ١٦٣ صف: مالهمش تاجر ومارجعوش من حد — ورق اتلغى.
-  الباقي (٢٣٧٩٠) شغّال.
-
-* **`DistributorId = 0` يعني الورقة لسه في الدرج.** ٤٠٦٧ صف كمان — اتطبعت ومااتصرفتش.
-  مابتتنسبش لحد. (١٦٣ + ٤٠٦٧ = ٤٢٣٠ صف بره، والباقي ١٩٧٢٣ هو نفسه اللي في ملف العميل.)
-
-* **`MerchantId` عمود ميّت** — صفر على الـ٢٣٩٥٣ صف كلهم. التاجر هو `DistributorId`.
-
-* **`valuecoupon` قيمة الاستلام مش قيمة الصرف.** فاضية على الـ١١٣٨٦ ورقة اللي مارجعتش،
-  ومتحطوطة على الـ١٢٥٦٧ اللي رجعت — ١٣٥ و١٦٥ للذهبي، ٤٥ و٥٥ للفضي. دي اللي اتدفعت
-  للفني ساعة ما سلّم، فمكانها `declared_value` على الاستلام، مش `unit_value` على الصرف.
-
----------------------------------------------------------------------------
-وقرارات النقل:
-
-* **الورقة بتخرج مرتين في حياتها.** بتتصرف لتاجر (`TrandateDelivery`) وبترجع من فني
-  (`TransdateReceipt`). الاتنين مستندين مختلفين عندنا: «صرف كوبونات» و«استلام كوبونات».
-
-* **مستند الاستلام موجود عندهم بالاسم: `CodeReceipt`.** ١٤٧٨ رقم، وكل رقم عليه فني واحد
-  وتاريخ واحد ومندوب واحد. فالتجميع بيتم عليه هو، مش على (فني + يوم): التجميع بالإيد
-  بيطلع ١٤١٦ مجموعة — بيلحّم مستندين ويشرشر واحد.
-
-* **مستند الصرف مالوش رقم يتمسك بيه.** `CodeDelivery` بيتكرر (١٢٢٥ قيمة على ١٦٨٦ تركيبة
-  تاجر×يوم)، فبيتبني من (تاجر + يوم + فئة + مندوب التسليم). المندوب داخل في المفتاح لأن
-  ٣ مجموعات من غيره بتخلط مندوبين، والمستند وقتها بيكدب على واحد فيهم.
-
-* **الفئة جوّه الرقم.** `NumCoupon` = «ذهبى-536000» → فئة ورقم. هوية الكوبون عندنا (الفئة
-  + الرقم) — و«٥ ذهبي» غير «٥ فضي». والفئة بتتطوى (ى→ي) عشان تقع على قايمة `coupon_kind`
-  عندنا: «ذهبى»→«ذهبي». **الطي على الفئة بس** — دي تسمية صنف؛ أسماء الناس مابتتطويش،
-  والهمزة مابتتلمسش أبداً (a5 بيفرّق بيها بين ناس).
-
-* **التاجر بالكود، مستحيل بالاسم.** ERP بيقول «تكنو محمد الجزار» وكارتنا بيقول «محمد
-  الجزار» — نفس الراجل باسمين. الكود `AL-A5-424` هو اللي بيوصّل.
-
-* **الفني في الغالب مالوش كارت.** ٣٩٩ من الـ٤٤١ اللي رجّعوا ورق سباكين مش مسجّلين في a5،
-  و٤١ تجار ليهم كارت. اللي مالوش كارت اسمه وكوده بيتكتبوا في `notes` والمستند بيفضل
-  بغير عميل — اختراع كارت ليه بيدخّل في كشف العملاء ناس صاحب الشغل مادخّلهمش.
-
-* **الإقرار بيتكتب لما الدفعة تتفق.** ٤٦٣ مستند استلام فيهم أكتر من فئة و٢٧١ فيهم أكتر
-  من قيمة. `declared_kind` و`declared_value` إقرار واحد قاله المندوب؛ دفعة مخلوطة مالهاش
-  إقرار واحد، فبيفضلوا فاضيين والسطر هو اللي شايل الفئة.
-"""
 from __future__ import annotations
 
 import os
@@ -86,19 +18,15 @@ from src.models.org import Branch
 from src.models.user import User
 from src.scripts.import_a5 import _clean, _read
 
-# أعمدة `coupons.tsv` — نفس ترتيب التصدير الموصوف فوق.
 (C_ID, C_SERIAL, C_DIST, C_PLUMB, C_DELIV, C_RECV, C_RCODE, C_VALUE,
  C_REP_R, C_REP_D, C_STATUS, C_NOTES) = range(12)
 
-# أعمدة `coupon_parties.tsv`
 (P_KIND, P_ERP, P_CODE, P_NAME, P_TYPE) = range(5)
 
-# صف ملغي عندهم. (مش `ProgDelete` — ده ختم عملية مش علامة حذف.)
 VOID = "0"
 
 
 def _date(v: str) -> date | None:
-    """تاريخ النظام القديم رقم `yyyymmdd`."""
     v = (v or "").strip()
     if len(v) != 8 or not v.isdigit():
         return None
@@ -109,15 +37,10 @@ def _date(v: str) -> date | None:
 
 
 def _kind(raw: str) -> str:
-    """«ذهبى» → «ذهبي». قايمة `coupon_kind` عندنا مكتوبة بالياء، ونظامهم بالألف المقصورة.
-
-    الطي هنا على تسمية فئة مش على اسم إنسان — والهمزة مابتتلمسش في الحالتين.
-    """
     return (raw or "").replace("ى", "ي").strip()
 
 
 def _split(num: str) -> tuple[str, str]:
-    """«ذهبى-536000» → («ذهبي», «536000»). نظامهم كاتب الفئة جوّه الرقم."""
     num = _clean(num)
     kind, _sep, serial = num.partition("-")
     kind, serial = kind.strip(), serial.strip()
@@ -137,19 +60,16 @@ def _money(v: str) -> Decimal | None:
 
 
 def _note(raw: str, kind: str) -> str:
-    """الـNotes عندهم بيكرر الفئة على ١٤٥٣ صف. ده مش ملاحظة، ده ضجيج."""
     n = _clean(raw)
     return "" if not n or _kind(n) == kind else n
 
 
 def _one(values: set) -> object | None:
-    """قيمة الدفعة لو الدفعة متفقة، وإلا لا شيء — الإقرار المخلوط مش إقرار."""
     real = {v for v in values if v not in (None, "")}
     return real.pop() if len(real) == 1 else None
 
 
 def _ensure_kinds(db, kinds: set[str]) -> list[str]:
-    """الفئة اللي مش في القايمة بتتزاد — الشاشة بتقرا منها، والفئة الغايبة بتظهر فاضية."""
     have = {o.value for o in db.scalars(
         select(LookupOption).where(LookupOption.category == "coupon_kind")).all()}
     order = max([o.sort_order for o in db.scalars(
@@ -166,7 +86,6 @@ def _ensure_kinds(db, kinds: set[str]) -> list[str]:
 
 
 def _show_unresolved(unresolved: dict[str, dict[str, int]]) -> None:
-    """اللي مالوش كارت بيتقال بالاسم والعدد — الرقم لوحده مش بيتصلّح."""
     for why in sorted(unresolved):
         who = unresolved[why]
         papers = sum(who.values())
@@ -181,7 +100,6 @@ def run(folder: str, *, execute: bool, branch_name: str = "") -> None:
     rows = [r for r in _read(os.path.join(folder, "coupons.tsv")) if len(r) >= 12]
     party = [r for r in _read(os.path.join(folder, "coupon_parties.tsv")) if len(r) >= 5]
 
-    # الطرف بكوده عندهم → (كودنا، الاسم، النوع). المندوب في قايمة لوحده.
     trade = {r[P_ERP]: r for r in party if r[P_KIND] in ("D", "P") and r[P_ERP]}
     reps = {r[P_ERP]: r[P_CODE] for r in party
             if r[P_KIND] == "R" and r[P_ERP].isdigit() and r[P_CODE].startswith("EMP-")}
@@ -209,7 +127,6 @@ def run(folder: str, *, execute: bool, branch_name: str = "") -> None:
         if _date(r[C_RECV]) is None:
             continue
         if not r[C_RCODE].isdigit() or r[C_RCODE] == "0":
-            # رجعت من غير رقم مستند — مافيش حاجة نجمّعها عليها، والاختراع بيلحّم غرايب.
             dropped["رجعت من غير CodeReceipt"] += 1
             continue
         receipts[r[C_RCODE]].append(r)
@@ -240,7 +157,6 @@ def run(folder: str, *, execute: bool, branch_name: str = "") -> None:
         print("الفرع المستهدف: " + branch.name)
 
         by_code = {c.code: c for c in db.scalars(select(Customer)).all() if c.code}
-        # المندوب عندنا مستخدم، وكود الموظف هو الجسر من رقم المندوب عندهم.
         user_by_emp = {e.code: e.user_id for e in db.scalars(select(Employee)).all()
                        if e.code and e.user_id}
 
@@ -252,7 +168,6 @@ def run(folder: str, *, execute: bool, branch_name: str = "") -> None:
             return user_by_emp.get(reps.get(erp_rep, ""))
 
         def miss(erp_id: str, papers: int) -> None:
-            """ليه الطرف ده مالوش كارت — الفرق بين «الخريطة ساكتة» و«الكود مش عندنا»."""
             row = trade.get(erp_id)
             if row is None:
                 why, who = "مش في خريطة الأطراف أصلاً", f"{erp_id}"
@@ -264,7 +179,6 @@ def run(folder: str, *, execute: bool, branch_name: str = "") -> None:
                 who = f"{erp_id} — {row[P_NAME] or '(بلا اسم)'} → {row[P_CODE]}"
             unresolved[why][who] += papers
 
-        # المطابقة بتتقاس قبل أي كتابة، فالعرض والتنفيذ بيقولوا نفس الأرقام.
         for key, group in issues.items():
             made["أوراق صرف بعميل" if customer(key[0]) else "أوراق صرف بغير عميل"] \
                 += len(group)
@@ -295,14 +209,11 @@ def run(folder: str, *, execute: bool, branch_name: str = "") -> None:
                 CouponIssue.external_ref.is_not(None))).all()}
         taken_receipt = {n for (n,) in db.execute(
             select(CouponReceipt.document_number)).all()}
-        # الورقة بتخرج مرة وبترجع مرة — القيد على (الفئة، الرقم) بيمنع التكرار، والفحص
-        # هنا بيمنع الانفجار قبل ما يوصل للقاعدة.
         received = {(ln.coupon_kind, ln.serial) for ln in
                     db.scalars(select(CouponReceiptLine)).all()}
         issued = {(ln.coupon_kind, ln.serial) for ln in
                   db.scalars(select(CouponIssueLine)).all()}
 
-        # ---------- الصرف ----------
         for (dist_id, day, kind, rep_id), group in sorted(issues.items()):
             ref = f"erp:issue:{dist_id}:{day}:{kind}:{rep_id}"
             if ref in done_issue:
@@ -314,8 +225,6 @@ def run(folder: str, *, execute: bool, branch_name: str = "") -> None:
             owner = customer(dist_id)
             note = _one({_note(g[C_NOTES], kind) for g in group}) or None
             issue = CouponIssue(
-                # رقم المستند من أصغر `DetailId` في المجموعة — ثابت ومالوش تكرار،
-                # وبيرجّع أي سطر عندنا لصفه في نظامهم.
                 document_number=f"CI-ERP-{min(int(g[C_ID]) for g in group)}"[:24],
                 branch_id=branch.id, customer_id=owner.id if owner else None,
                 coupon_kind=kind or None, issue_date=_date(day),
@@ -337,7 +246,6 @@ def run(folder: str, *, execute: bool, branch_name: str = "") -> None:
         issue_by_key = {(ln.coupon_kind, ln.serial): ln.issue_id
                         for ln in db.scalars(select(CouponIssueLine)).all()}
 
-        # ---------- الاستلام ----------
         for code, group in sorted(receipts.items(), key=lambda kv: int(kv[0])):
             number = f"CR-ERP-{code}"[:24]
             if number in taken_receipt:
@@ -349,8 +257,6 @@ def run(folder: str, *, execute: bool, branch_name: str = "") -> None:
             erp_plumb = group[0][C_PLUMB]
             row = trade.get(erp_plumb)
             taker = customer(erp_plumb)
-            # اسم اللي سلّم بيتكتب على المستند حتى لو مالوش كارت — الورقة اتسلّمت من
-            # راجل بعينه، وسطر من غير اسم بيخلّي المستند بلا صاحب.
             who = "" if taker is not None else (
                 f"سلّمها: {row[P_NAME]} (كود {erp_plumb})" if row and row[P_NAME]
                 else f"سلّمها: كود {erp_plumb}")

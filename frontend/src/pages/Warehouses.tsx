@@ -19,14 +19,6 @@ import ListPage from '../components/ListPage';
 import { numeralsLocale } from '../utils/money';
 import { activeOptions } from '../utils/active';
 
-/** المخازن — their `/stores`, its own screen at last.
- *
- * This one carried no missing fields: `Warehouse` already had name, branch and description. What
- * it was missing was a door. It lived as the third tab of `/org`, which meant anyone arriving from
- * their system looked for المخازن in the menu, found a page called «الهيكل التنظيمي», and had to
- * be told where to click. A menu entry is a screen — that is the whole of this change.
- */
-
 interface WarehouseRecord {
   id: number;
   name: string;
@@ -42,9 +34,6 @@ interface EmployeeRecord {
   name: string;
   job_title: string | null;
   warehouse_id: number | null;
-  // NULL means on the payroll with no login. Such a person can hold stock but can own no
-  // customers, because «المندوب» on a customer is a login — so the screen says so rather than
-  // offering a name that silently serves no one.
   user_id: number | null;
 }
 
@@ -71,20 +60,14 @@ export default function Warehouses() {
   const [createOpen, setCreateOpen] = useState(false);
   const [editing, setEditing] = useState<WarehouseRecord | null>(null);
   const [employees, setEmployees] = useState<EmployeeRecord[]>([]);
-  // The store whose reps are being edited, and the ids picked so far. Held as a draft so closing
-  // without saving changes nothing — assigning reps moves them off other stores, which is not a
-  // thing to do one careless click at a time.
   const [repsFor, setRepsFor] = useState<WarehouseRecord | null>(null);
   const [repsDraft, setRepsDraft] = useState<number[]>([]);
-  // The rep whose customers are being edited: his current ones, the search results to pick from,
-  // and the picks not yet saved.
   const [customersFor, setCustomersFor] = useState<EmployeeRecord | null>(null);
   const [repCustomers, setRepCustomers] = useState<CustomerRecord[]>([]);
   const [customerSearch, setCustomerSearch] = useState<CustomerRecord[]>([]);
   const [customerDraft, setCustomerDraft] = useState<number[]>([]);
   const [form] = Form.useForm();
   const [editForm] = Form.useForm();
-  // فرع المخزن اللي بيتعدّل — بيفضل في القايمة حتى لو الفرع اتوقف.
   const editingBranch = Form.useWatch('branch_id', editForm) as number | undefined;
 
   const canWrite = can('warehouse.write');
@@ -95,8 +78,6 @@ export default function Warehouses() {
       const [wh, br, emp] = await Promise.all([
         api.get('/api/v1/warehouses'),
         api.get('/api/v1/branches'),
-        // Reps come from الموظفين, not from logins: the payroll is where who-drives-which-van is
-        // already recorded, and `employee.warehouse_id` has held that answer all along.
         api.get('/api/v1/employees', { params: { active: true } }),
       ]);
       setRows(wh.data);
@@ -112,8 +93,6 @@ export default function Warehouses() {
   const repsOf = (warehouseId: number) =>
     employees.filter((e) => e.warehouse_id === warehouseId);
 
-  // Saving the list is also how somebody comes off it — the endpoint owns the set. Naming an
-  // employee here MOVES him: one person, one store, so whatever store he was on stops being his.
   const saveReps = async () => {
     if (!repsFor) return;
     try {
@@ -131,14 +110,11 @@ export default function Warehouses() {
     setRepsDraft(repsOf(record.id).map((e) => e.id));
   };
 
-  // ---- عملاء المندوب ----------------------------------------------------------------
-  // The third rung of the ladder the whole screen is: store → its reps → their customers.
-
   const openCustomers = async (emp: EmployeeRecord) => {
     setCustomersFor(emp);
     setCustomerDraft([]);
     setCustomerSearch([]);
-    if (!emp.user_id) return;   // no login, no customers — the modal says so instead
+    if (!emp.user_id) return;
     try {
       const res = await api.get('/api/v1/customers', { params: { rep_id: emp.user_id } });
       setRepCustomers(res.data);
@@ -147,8 +123,6 @@ export default function Warehouses() {
     }
   };
 
-  // Searched on the server rather than loading every customer: a rep's own list is short, but the
-  // list he might be given from is the whole book.
   const searchCustomers = async (q: string) => {
     if (!q.trim()) { setCustomerSearch([]); return; }
     try {
@@ -174,8 +148,6 @@ export default function Warehouses() {
 
   useEffect(() => { fetchAll(); }, []);
 
-  // F2 opens the form, F3 jumps to search, Esc closes — the same keys on every screen, so the
-  // habit carries from one to the next instead of being relearned per page.
   useScreenShortcuts({
     onNew: canWrite ? () => setCreateOpen(true) : undefined,
     onSearch: () => searchRef.current?.focus(),
@@ -185,8 +157,6 @@ export default function Warehouses() {
 
   const branchName = (id: number | null) => branches.find((b) => b.id === id)?.name || '-';
 
-  // Search is over the loaded list: a company has tens of stores, not thousands, so a round trip
-  // per keystroke would buy nothing.
   const filtered = rows.filter((w) => {
     const q = search.trim();
     if (!q) return true;
@@ -200,8 +170,6 @@ export default function Warehouses() {
         name: values.name,
         branch_id: values.branch_id ?? null,
         description: values.description || null,
-        // Their form has no type. Ours does, and it drives real behaviour, so it is asked for
-        // rather than guessed — but it sits after their three fields, not among them.
         warehouse_type: values.warehouse_type,
       });
       message.success('تم تسجيل المخزن');
@@ -252,16 +220,6 @@ export default function Warehouses() {
     });
   };
 
-  /**
-   * رجوع المخزن المخفي.
-   *
-   * الإخفاء كان طريق في اتجاه واحد: دوسة غلط على السلة الزرقا بتشيل المخزن من كل
-   * قايمة اختيار، ومافيش في الشاشة حاجة ترجّعه — الصف بيفضل مكتوب عليه «مخفي» وبس.
-   * والباك إند بيقبل `active: true` من الأول، فاللي كان ناقص هو الزرار.
-   *
-   * ومافيش سؤال قبلها عن قصد: الإظهار مابيمسحش حاجة ولا بيحرّك بضاعة — بيرجّع المخزن
-   * للقوايم، وأسوأ نتيجة ليه إنك تخفيه تاني بدوسة.
-   */
   const onActivate = async (record: WarehouseRecord) => {
     try {
       await api.patch(`/api/v1/warehouses/${record.id}`, { active: true });
@@ -272,13 +230,6 @@ export default function Warehouses() {
     }
   };
 
-  /**
-   * حذف المخزن — **للغلط في الإدخال بس، والإخفاء جنبه للباقي.**
-   *
-   * المخزن اللي عليه حركة اسمه على كل إذن تحويل وكل حركة مخزون؛ الباك إند بيعدّ
-   * ويرفض ويقول فيه إيه بالأرقام. الإخفاء بيشيله من قوايم الاختيار ويسيب تاريخه
-   * يتقري — وده اللي المخزن الحقيقي محتاجه لما يقفل.
-   */
   const onDelete = (record: WarehouseRecord) => {
     Modal.confirm({
       title: `حذف المخزن ${record.name}`,
@@ -299,14 +250,12 @@ export default function Warehouses() {
           message.success('اتحذف المخزن');
           fetchAll();
         } catch (err: any) {
-          // ٤٠٩ مش عطل — ده النظام بيقول إن عليه حركة، والرسالة فيها الأرقام.
           message.error(err?.response?.data?.detail?.message ?? 'تعذّر حذف المخزن', 8);
         }
       },
     });
   };
 
-  // Their four columns, in their order: `رقم · الاسم · الفرع · وصف`.
   const columns = [
     {
       title: 'رقم',
@@ -341,7 +290,6 @@ export default function Warehouses() {
       ellipsis: true,
       render: (v: string | null) => v || '-',
     },
-    // Ours: the type genuinely branches logic, so it stays on the row rather than in a fold.
     {
       title: 'النوع',
       dataIndex: 'warehouse_type',
@@ -391,12 +339,10 @@ export default function Warehouses() {
     }] : []),
   ];
 
-  // إخفاء وترتيب الأعمدة — نفس المحرك اللي كل الجداول بتستخدمه.
   const tableCols = useTableColumns('warehouses', columns, {
     export: { name: 'المخازن', rows: filtered },
   });
 
-  // Opening a store shows who works out of it — the answer to «مين بيبيع من المخزن ده».
   const expandedRow = (record: WarehouseRecord) => {
     const mine = repsOf(record.id);
     if (!mine.length) {
@@ -407,15 +353,11 @@ export default function Warehouses() {
         {mine.map((e) => (
           <Button key={e.id} size="small" type={e.user_id ? 'default' : 'text'}
             icon={<TeamOutlined />}
-            // Clicking a rep opens his customers — the third rung of the ladder this screen is:
-            // store → its reps → their customers.
             disabled={!canWrite || !e.user_id}
             onClick={() => openCustomers(e)}
           >
             {e.name}
             {e.job_title ? ` · ${e.job_title}` : ''}
-            {/* No login means no customer can point at him — say it here rather than let
-                somebody wonder why he never appears on an invoice. */}
             {!e.user_id && ' · بدون مستخدم'}
           </Button>
         ))}
@@ -453,7 +395,6 @@ export default function Warehouses() {
     </>
   );
 
-  // السطر يفتح التعديل — البيانات الأساسية مافيهاش «عرض» غير الفورم بتاعها نفسه.
   const kb = useTableKeyboard<WarehouseRecord>({
     rows: filtered, rowKey: (r) => r.id, onOpen: (r) => openEdit(r),
   });
@@ -525,8 +466,6 @@ export default function Warehouses() {
         </Form>
       </TabModal>
 
-      {/* مناديب المخزن — picked from الموظفين. Saving owns the list: whoever is ticked works out
-          of this store, whoever is not comes off it. */}
       <TabModal centered destroyOnHidden width={620}
         title={`مناديب المخزن — ${repsFor?.name ?? ''}`}
         open={!!repsFor}
@@ -547,8 +486,6 @@ export default function Warehouses() {
           onChange={setRepsDraft}
           options={employees.map((e) => ({
             value: e.id,
-            // The current store is on the label so moving somebody is a visible act, not a
-            // surprise discovered later on another screen.
             label: [
               e.name,
               e.job_title || null,
@@ -560,7 +497,6 @@ export default function Warehouses() {
           }))} filterOption={searchFilter} filterSort={searchRank} />
       </TabModal>
 
-      {/* عملاء المندوب — who this rep may work with and sell to. */}
       <TabModal centered destroyOnHidden width={620}
         title={`عملاء المندوب — ${customersFor?.name ?? ''}`}
         open={!!customersFor}
@@ -588,9 +524,6 @@ export default function Warehouses() {
                   )}
               </div>
             </div>
-            {/* A customer always has exactly one rep, so this adds — and adding TAKES the customer
-                from whoever had him. Moving him back is the same act from the other rep's side,
-                which is why there is no «remove» here that would leave a customer with nobody. */}
             <strong>إضافة عملاء</strong>
             <Select
               mode="multiple"
@@ -603,7 +536,6 @@ export default function Warehouses() {
               notFoundContent={null}
               options={customerSearch.map((c) => ({
                 value: c.id,
-                // من غير الكود (طلب العميل ٢٠٢٦-١٠-٠٧)؛ البحث بالكود من السيرفر زي ما هو.
                 label: `${c.name}${c.phone ? ` · ${c.phone}` : ''}`
                   + (c.rep_id === customersFor?.user_id ? ' · عنده بالفعل' : ''),
                 disabled: c.rep_id === customersFor?.user_id,

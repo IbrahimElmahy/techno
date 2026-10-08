@@ -1,12 +1,3 @@
-"""شاشة الصلاحيات — أنهي دور بيقدر يعمل إيه.
-
-الافتراضي مكتوب في `rbac.ROLE_CAPABILITIES`، وده اللي الشركة بتبدأ بيه. الشاشة دي بتكتب
-فوقه في `role_capability`، ولما تكتب لدور بيبقى اللي اتكتب هو كلمة الدور — مش زيادة على
-الافتراضي، بديل كامل. ودور ماحدش لمسه بيفضل على افتراضيه.
-
-مدير النظام مش في الشاشة أصلاً: هو الوحيد اللي بيقدر يفتحها، وتعديل صلاحياته منها معناه
-احتمال قفل الباب على نفسه من جوّه.
-"""
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -23,7 +14,6 @@ from src.services.audit_service import record as audit_record
 
 router = APIRouter(tags=["permissions"])
 
-# أسماء عربية للصلاحيات — القايمة الخام (`sale.edit`) مش لوحة تحكم، دي مرجع مبرمج.
 CAPABILITY_LABELS: dict[str, str] = {
     "user.read": "عرض المستخدمين",
     "user.write": "إضافة وتعديل المستخدمين",
@@ -91,7 +81,6 @@ CAPABILITY_LABELS: dict[str, str] = {
     **rbac.APP_CAPABILITIES,
 }
 
-# القسم اللي الصلاحية بتقع تحته في الشاشة — عشان ٥٨ صلاحية تتقرا، مش تتفحص.
 GROUPS: list[tuple[str, list[str]]] = [
     ("المستخدمين والصلاحيات", ["user.", "audit.", "settings."]),
     ("الهيكل التنظيمي", ["branch.", "governorate.", "territory."]),
@@ -130,11 +119,6 @@ def _group_of(cap: str) -> str:
 
 
 def _admin_only(current: CurrentUser = Depends(get_current_user)) -> CurrentUser:
-    """الصلاحيات نفسها مش صلاحية بتتوزّع — مدير النظام وبس.
-
-    لو بقت صلاحية زي أي حاجة تانية، أول واحد ياخدها يقدر يدّي نفسه الباقي، وساعتها كل
-    القفل ده مالوش لازمة.
-    """
     if not current.is_admin:
         raise HTTPException(status.HTTP_403_FORBIDDEN,
                             {"code": "forbidden", "message": "الصلاحيات لمدير النظام وحده."})
@@ -187,7 +171,6 @@ def read_permissions(
             CapabilityOut(key=c, label=CAPABILITY_LABELS.get(c, c), group=_group_of(c))
             for c in sorted(rbac.ALL_CAPABILITIES)
         ],
-        # «لسه على الافتراضي» بتفرق: الترقية اللي بتضيف صلاحيات بتوصل للأدوار دي، والمضبوطة لأ.
         roles=[_role_out(r, is_default=r not in stored) for r in RoleName],
     )
 
@@ -222,7 +205,6 @@ def set_role_permissions(
                  before={"role": role.value, "capabilities": before},
                  after={"role": role.value, "capabilities": wanted})
     db.commit()
-    # الكاش يتبني من الأول على طول — من غير كده التغيير مايبقاش نافذ غير بعد إعادة تشغيل.
     rbac.refresh_overrides(db)
     return _role_out(role, is_default=False)
 
@@ -233,11 +215,6 @@ def reset_role_permissions(
     current: CurrentUser = Depends(_admin_only),
     db: Session = Depends(get_db),
 ) -> RoleOut:
-    """يرجّع الدور لافتراضيه — بمسح المضبوط، مش بكتابة الافتراضي مكانه.
-
-    الفرق بيبان بعد الترقية: الدور اللي رجع لافتراضيه بياخد الصلاحيات الجديدة، واللي
-    اتكتبله الافتراضي كنسخة بيفضل واقف على صورة قديمة.
-    """
     before = sorted(rbac.effective_capabilities(role))
     db.execute(delete(RoleCapability).where(RoleCapability.role == role))
     db.flush()
@@ -248,14 +225,6 @@ def reset_role_permissions(
     rbac.refresh_overrides(db)
     return _role_out(role, is_default=True)
 
-
-# ======================================================================
-# صلاحيات المستخدمين — فرق كل مستخدم عن دوره (٢٠٢٦-١٠-٠٥)
-# ======================================================================
-#
-# المالك والأدمن بيديروا أي مستخدم. مدير الفرع (أو أي حد معاه `user.write`) بيدير مستخدمين
-# فرعه اللي أدوارهم **تحته** بس، وبيدّي من صلاحياته هو بس — مايقدرش يدّي حد حاجة مش عنده.
-# الشيل مسموح من غير قيد: إنك تقفل على حد أقل مش أكتر.
 
 from src.auth.rbac import CAP_USER_WRITE  # noqa: E402
 from src.models.permission import UserCapability  # noqa: E402
@@ -280,14 +249,12 @@ def _role_name(db: Session, user: User) -> RoleName:
 
 
 def _manageable(db: Session, current: CurrentUser, user: User | None) -> User:
-    """المستخدم ده من حقك تديره؟ — و٤٠٤ لو لأ (مانقولش إنه موجود في فرع تاني)."""
     from src.api.users import BELOW_BRANCH_MANAGER
 
     if user is None:
         raise HTTPException(404, {"code": "not_found", "message": "المستخدم مش موجود."})
     role = _role_name(db, user)
     if current.is_admin:
-        # حساب الأدمن والمالك مايتلمسش إلا من المالك — نفس قاعدة شاشة المستخدمين.
         if role in (RoleName.system_admin, RoleName.owner) and not current.is_owner:
             raise HTTPException(403, {"code": "forbidden",
                                       "message": "صلاحيات مدير النظام أو المالك مابتتعدّلش إلا من المالك."})
@@ -298,7 +265,6 @@ def _manageable(db: Session, current: CurrentUser, user: User | None) -> User:
 
 
 def _assignable(current: CurrentUser) -> set[str]:
-    """الصلاحيات اللي اللي بيدير يقدر يدّيها — كل حاجة للأدمن، وصلاحياته هو لغيره."""
     if current.is_admin:
         return set(rbac.ALL_CAPABILITIES)
     return {c for c in rbac.ALL_CAPABILITIES if current.can(c)}
@@ -322,7 +288,6 @@ class UserPermsOut(BaseModel):
     grants: list[str]
     denies: list[str]
     assignable: list[str]
-    #: صفحات المدير نفسه المخفية عنه — مايقدرش يظهّرها لحد.
     manager_hidden_pages: list[str]
     capabilities: list[CapabilityOut]
 
@@ -428,7 +393,6 @@ def set_user_permissions(
         raise HTTPException(422, {"code": "unknown_capability",
                                   "message": "صلاحيات مش معروفة: " + "، ".join(unknown)})
     if not current.is_admin:
-        # بيدّي من اللي عنده بس — والصفحة اللي مخفية عنه مايظهّرهاش لحد.
         allowed = _assignable(current)
         over = sorted(c for c in grants if not c.startswith(PAGE_PREFIX) and c not in allowed)
         hidden = sorted(c for c in grants if c.startswith(PAGE_PREFIX) and c in current.denies)

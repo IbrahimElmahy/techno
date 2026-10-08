@@ -1,11 +1,3 @@
-"""VAT / ضريبة القيمة المضافة — 021-tax-commissions.
-
-Opt-in by design: the rate ships at 0, and at 0 every posting is exactly what it was before
-VAT existed (no tax line, no change to the cash/credit validation). Turning it on is a
-deliberate settings change, so a live book cannot silently start charging tax.
-
-Output tax (on sales) is a liability; input tax (on purchases) is an asset that offsets it.
-"""
 from __future__ import annotations
 
 from datetime import date
@@ -26,12 +18,11 @@ from src.models.ledger import (
 from src.services import ledger_service
 from src.models.sales import SalesSetting
 
-OUTPUT_TAX_CODE = "2160"  # ضريبة القيمة المضافة المستحقة
-INPUT_TAX_CODE = "1160"   # ضريبة القيمة المضافة على المشتريات
+OUTPUT_TAX_CODE = "2160"
+INPUT_TAX_CODE = "1160"
 
 
 def vat_rate(db: Session) -> Decimal:
-    """The configured VAT percentage (0 = disabled)."""
     setting = db.scalar(select(SalesSetting).limit(1))
     if setting is None or setting.vat_rate_pct is None:
         return Decimal("0")
@@ -39,7 +30,6 @@ def vat_rate(db: Session) -> Decimal:
 
 
 def tax_on(amount, rate: Decimal) -> Decimal:
-    """Tax due on a net amount at a percentage rate. Zero rate ⇒ exactly zero."""
     if rate <= 0:
         return ZERO
     return to_money(to_money(amount) * rate / Decimal("100"))
@@ -72,7 +62,6 @@ def input_tax_account(db: Session) -> Account:
 def vat_return(
     db: Session, *, date_from: date | None = None, date_to: date | None = None
 ) -> dict:
-    """الإقرار الضريبي — ضريبة المبيعات ناقص ضريبة المشتريات خلال الفترة."""
     def _movement(account: Account) -> Decimal:
         rows = db.scalars(
             select(LedgerLine).options(selectinload(LedgerLine.entry))
@@ -96,7 +85,7 @@ def vat_return(
         "date_from": date_from,
         "date_to": date_to,
         "rate_pct": vat_rate(db),
-        "output_tax": output,          # على المبيعات
-        "input_tax": input_,           # على المشتريات
+        "output_tax": output,
+        "input_tax": input_,
         "net_payable": to_money(output - input_),
     }

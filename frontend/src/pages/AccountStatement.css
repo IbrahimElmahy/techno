@@ -1,10 +1,3 @@
-/*
- * ألوان صفوف كشف الحساب — شوف `rowTone` في AccountStatement.tsx.
- *
- * سطور المستند الواحد لون واحد، والمستندات ورا بعض بالتبادل (أبيض / رمادي مزرق فاتح)،
- * والدفعات أخضر فاتح. الـhover أغمق شوية من لون الصف نفسه. المتأخر (`statement-overdue`)
- * والمؤشر (`row-cursor`) بـ`!important` في index.css فبيغلبوا الألوان دي — وده الصح.
- */
 .st-table .ant-table-tbody > tr.ant-table-row.st-doc-a > td {
   background: #ffffff;
 }
@@ -31,14 +24,12 @@
   }
 }
 
-/* الحساب الرئيسي أضيق، والفرعي والمندوب والبيان أعرض — الأسماء ماتتقصّش (٢٠٢٦-١٠-٠٣). */
 .list-page .sl-filters > .sl-f-account:first-child { flex: 1.2 1 170px; }
 .list-page .sl-filters > .sl-f-account + .sl-f-account { flex: 2.2 1 260px; }
 .list-page .sl-filters > .sl-f-rep { flex: 1.6 1 200px; }
 .list-page .sl-filters > .sl-f-stmt { flex: 1.8 1 220px; display: flex; }
 .list-page .sl-filters > .sl-f-stmt > * { flex: 1; min-width: 0; }
 
-/* صف «رصيد أول المدة» جوّه الجدول — نقطة بداية الرصيد الجاري، مش حركة. */
 .st-table .ant-table-tbody > tr.ant-table-row.st-opening > td {
   background: #fff7e6;
   font-weight: 600;

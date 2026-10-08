@@ -1,9 +1,3 @@
-"""Auth dependencies (T029): identity, capability gate, scope predicates.
-
-FR-002 (server-side), FR-004 (request carries role+scope), FR-010 (server is sole authority),
-FR-011 (deny-by-default). Re-checks `active` and current scope on every request so a removed
-branch assignment denies mid-session (spec Edge Case).
-"""
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -28,15 +22,10 @@ class CurrentUser:
     role: RoleName
     branch_id: int | None
     territory_id: int | None
-    #: فروق المستخدم ده عن دوره (`UserCapability`) — بتتحمّل مع كل طلب.
     grants: frozenset = field(default_factory=frozenset)
     denies: frozenset = field(default_factory=frozenset)
 
     def can(self, capability: str) -> bool:
-        """الصلاحية **للمستخدم ده**: المشال منه مشال، والمدّيه متدّيه، والباقي من دوره.
-
-        مدير النظام مابيتقفلش عليه (نفس قاعدة `role_has_capability`) — الشيل منه مابيأثرش.
-        """
         if self.role == RoleName.system_admin:
             return role_has_capability(self.role, capability)
         if capability in self.denies:
@@ -47,23 +36,10 @@ class CurrentUser:
 
     @property
     def is_owner(self) -> bool:
-        """صاحب الشركة — أعلى دور في النظام."""
         return self.role == RoleName.owner
 
     @property
     def is_admin(self) -> bool:
-        """مدير النظام **أو فوقه**.
-
-        **المالك أعلى من الأدمن، فبيعدّي من كل باب بيسأل عن الأدمن.** الاتنين عندهم
-        نفس الـ٥٩ صلاحية بالظبط، لكن عشرين موضع في الكود كانوا بيسألوا عن الدور
-        بالاسم (`role == system_admin`) مش عن الصلاحية — فالمالك كان **أقل** من
-        الأدمن فعلياً: بيترفض على أقفال التواريخ، وإدارة المستخدمين، والفروع،
-        واعتماد تحويل فرع تاني، وهو صاحب المحل.
-
-        التصليح هنا مكان واحد بدل عشرين: أي باب بيسأل `is_admin` بقى بيفتح للاتنين.
-        واللي عايز يفرّق بينهم بيسأل `is_owner` — والفرق الوحيد اللي بنفرضه إن
-        **حساب الأدمن نفسه مايتعدلش إلا من المالك**.
-        """
         return self.role in (RoleName.system_admin, RoleName.owner)
 
     @property
@@ -91,20 +67,11 @@ def get_current_user(
             detail={"code": "unauthorized", "message": "Invalid token"},
         )
     user = db.get(User, int(payload["sub"]))
-    # Re-validate against current DB state every request (active + scope), not just the token.
     if user is None or not user.active:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail={"code": "unauthorized", "message": "Inactive or unknown user"},
         )
-    # جهاز واحد بس لكل حساب.
-    #
-    # التوكن بيحمل `sid` ساعة إصداره، والمخزّن على المستخدم هو الوحيد المقبول. أول ما
-    # الحساب يتفتح على جهاز تاني القيمة بتتغيّر، فالجهاز القديم بيتقفل من أول طلب.
-    # التوكن مستقل بذاته (JWT) فمفيش طريقة تانية تسحبه قبل ما صلاحيته تخلص.
-    #
-    # `session_id` فاضية = مستخدم ما دخلش من بعد الميزة دي (أو عمل Logout). بنسيب توكنه
-    # يعدّي بدل ما نطلّع كل الناس بره ساعة النشر؛ أول تسجيل دخول بيثبّت القفل.
     if user.session_id and payload.get("sid") != user.session_id:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -127,7 +94,6 @@ def get_current_user(
 
 
 def user_overrides(db: Session, user_id: int) -> tuple[frozenset, frozenset]:
-    """(المدّي، المشال) لمستخدم — استعلام صغير واحد لكل طلب، من غير كاش يقدم بين العمال."""
     from sqlalchemy import select
 
     from src.models.permission import UserCapability
@@ -138,8 +104,6 @@ def user_overrides(db: Session, user_id: int) -> tuple[frozenset, frozenset]:
 
 
 def require_capability(capability: str):
-    """Dependency factory: 403 unless the acting role explicitly has the capability."""
-
     def _dep(current: CurrentUser = Depends(get_current_user)) -> CurrentUser:
         if not current.can(capability):
             raise _deny(f"Capability '{capability}' not granted to role '{current.role.value}'.")
@@ -148,18 +112,7 @@ def require_capability(capability: str):
     return _dep
 
 
-# --- Scope predicates (branch isolation + rep isolation) ---
-
 def ensure_branch_access(current: CurrentUser, target_branch_id: int | None) -> None:
-    """Branch-scoped roles may only touch their own branch (FR-007).
-
-    **واللي مالوش فرع بيعدّي** — هو حساب مركزي فوق الفروع، مش حساب فرع تايه. الشرط
-    القديم (`current.branch_id is None or ...`) كان بيرفضه: `None` بتتحسب «برّه الفرع»
-    فالمالك كان بياخد «Out-of-branch access denied» على كل حاجة بتعدّي من هنا.
-
-    دي نفس قاعدة `branch_scope.visible_branch_id` (مدير النظام أو اللي مالوش فرع =
-    بيشوف الكل)، متكتوبة هنا بإيدها لأن `branch_scope` بيستورد من الملف ده.
-    """
     if current.is_admin or current.branch_id is None:
         return
     if current.branch_id != target_branch_id:
@@ -167,6 +120,5 @@ def ensure_branch_access(current: CurrentUser, target_branch_id: int | None) -> 
 
 
 def ensure_rep_access(current: CurrentUser, target_rep_id: int) -> None:
-    """A Sales Rep may only touch their own records (FR-009). Admin/branch handled by caller."""
     if current.role == RoleName.sales_rep and current.id != target_rep_id:
         raise _deny("Rep may access only their own data.")

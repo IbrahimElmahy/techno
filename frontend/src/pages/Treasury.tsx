@@ -4,7 +4,6 @@ import { PAGE_SIZE, PAGE_SIZE_OPTIONS } from '../utils/pagination';
 import {
   Button, Col, Divider, Form, Input, Row, Select, Space, Tag, message,
 } from 'antd';
-// فلتر على كل عمود — شوف `FilterTable`.
 import { FilterTable as Table } from '../components/FilterTable';
 import { InputNumber } from '../components/NumberInput';
 import {
@@ -327,11 +326,9 @@ export default function Treasury() {
       if (a) navigate(`/account-statement?account=${a}`); },
   });
 
-  // F3 — خانة البحث (كانت جوّه `ListToolbar`).
   const searchRef = useRef<any>(null);
   useScreenShortcuts({ onSearch: () => searchRef.current?.focus?.() });
 
-  // قوايم الفلاتر بتقبل أكتر من قيمة — زي ما كانت في `ListToolbar`.
   const multi = (key: string) => ({
     mode: 'multiple' as const,
     maxTagCount: 'responsive' as const,
@@ -387,7 +384,6 @@ export default function Treasury() {
         pagination={{
           defaultPageSize: PAGE_SIZE, showSizeChanger: true, pageSizeOptions: PAGE_SIZE_OPTIONS,
           locale: { items_per_page: '' },
-          // رصيد الخزينة الموحد — كان كارت كبير فوق، دلوقت في سطر الترقيم.
           showTotal: () => (
             <span className="sl-foot">
               <span>رصيد الخزينة الموحد (السيولة المتوفرة): <b className="is-pos">{balance}</b></span>

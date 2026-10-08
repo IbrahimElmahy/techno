@@ -1,7 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { PAGE_SIZE } from '../utils/pagination';
 import { Alert, Button, Switch, Tabs, Tag, message } from 'antd';
-// فلتر على كل عمود — شوف `FilterTable`.
 import { FilterTable as Table } from '../components/FilterTable';
 import {
   DownloadOutlined, FundOutlined, PrinterOutlined, ReloadOutlined,
@@ -54,8 +53,6 @@ export default function Profitability() {
 
   const navigate = useNavigate();
   const [openRow, setOpenRow] = useState<Row | null>(null);
-  // البنود التحليلية — «من أنهي مستندات». التفصيل بالحساب بيقول «من أنهي حسابات»،
-  // والتاني هو اللي بيتراجع عليه لأن المستند ممكن يتفتح ويتصلّح.
   const [items, setItems] = useState<any>(null);
   const [itemsLoading, setItemsLoading] = useState(false);
   const [drillTab, setDrillTab] = useState<'accounts' | 'items'>('accounts');
@@ -178,7 +175,6 @@ export default function Profitability() {
     export: { name: view?.label ?? 'تحليل الربحية', rows },
   });
 
-  // كروت الإجماليات بقت سطر تحت الجدول — ولسه للي عنده `stats.view` بس، زي `StatsRow`.
   const canSeeStats = useCanSeeStats();
 
   return (
@@ -250,7 +246,6 @@ export default function Profitability() {
         open={!!openRow} onCancel={() => setOpenRow(null)} footer={null} width={720}
         title={`تفصيل ${openRow?.label ?? ''}`}
       >
-        {/* تبويبين على نفس الرقم: «من أنهي حسابات» و«من أنهي مستندات». */}
         <Tabs
           activeKey={drillTab}
           onChange={(k) => setDrillTab(k as 'accounts' | 'items')}
@@ -332,7 +327,6 @@ export default function Profitability() {
                       dataIndex: 'share_pct',
                       width: 90,
                       align: 'left' as const,
-                      // النصيب بيبان عشان اللي شايف ٧٥ جنيه من فاتورة بـ١٠٠ يعرف ليه.
                       render: (v: string | null) => (v === null ? '-' : `${money(v)}%`),
                     },
                     {

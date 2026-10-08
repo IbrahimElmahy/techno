@@ -1,7 +1,3 @@
-"""Cash vouchers + account statements router — 018-finance-vouchers.
-
-سند قبض / سند صرف / توريد المندوب، وكشف حساب العميل والمورد والمندوب.
-"""
 from __future__ import annotations
 
 import dataclasses
@@ -44,11 +40,8 @@ router = APIRouter(tags=["vouchers"])
 
 
 class ReceiptIn(BaseModel):
-    # (031) أنهي مديونية بيسدّد. اسم عيلة، أو `on_total` عشان يتوزّع على الكل بالنسبة.
     family: str | None = None
     on_total: bool = False
-    # الطرف (المرحلة ١، ٢٠٢٦-١٠-٠٦): واحد بس من التلاتة. العميل يشمل الموظف والفرع (كروتهم
-    # عملاء بتصنيفهم)، والمورد = رجّع فلوس، والحساب = أي حساب فرعي من الشجرة زي a5.
     customer_id: int | None = None
     supplier_id: int | None = None
     account_id: int | None = None
@@ -58,21 +51,14 @@ class ReceiptIn(BaseModel):
     description: str | None = Field(default=None, max_length=255)
     reference: str | None = Field(default=None, max_length=80)
     payment_method: str | None = Field(default=None, max_length=32)
-    # (033) رقم الجهاز — بيخلّي إعادة الرفع من تطبيق المندوب ترجّع نفس السند بدل ما تقيّد
-    # التحصيل مرتين وتنقص مديونية العميل بالضعف.
     client_uuid: str | None = None
-    # مركز التكلفة — اختياري، وبيتكتب على سطور القيد.
     cost_center_id: int | None = None
-    # البيان — كلام ورقة السند، مش وصف الحركة المحاسبية (`description`). واحدة تكفي
-    # على السندات؛ التلاتة اللي في الفواتير جم من مطابقة a5.
     statement1: str | None = Field(default=None, max_length=200)
     external_document_number: str | None = Field(default=None, max_length=40)
-    # المندوب المحصِّل — اختياري للمكتب. فاضي = مندوب العميل، والمندوب نفسه دايماً هو.
     rep_user_id: int | None = None
 
 
 class PaymentIn(BaseModel):
-    # الطرف — واحد بس: مورد، أو عميل/موظف/فرع (ومعاه الخط لو عنده أبيض وبولي)، أو حساب.
     supplier_id: int | None = None
     customer_id: int | None = None
     account_id: int | None = None
@@ -83,7 +69,6 @@ class PaymentIn(BaseModel):
     description: str | None = Field(default=None, max_length=255)
     reference: str | None = Field(default=None, max_length=80)
     payment_method: str | None = Field(default=None, max_length=32)
-    # مركز التكلفة — اختياري، وبيتكتب على سطور القيد.
     cost_center_id: int | None = None
     statement1: str | None = Field(default=None, max_length=200)
     external_document_number: str | None = Field(default=None, max_length=40)
@@ -92,14 +77,10 @@ class PaymentIn(BaseModel):
 class HandoverIn(BaseModel):
     rep_user_id: int
     amount: Decimal
-    # (009) التوريد من أنهي صندوق — «أبيض» / «بولي». فاضي = العهدة القديمة اللي من
-    # غير خط. من غيره التوريد كان بيدوّر في العهدة القديمة بس ويلاقيها صفر، والفلوس
-    # قاعدة في صندوقي الخط ومافيش طريق يطلّعها منهم.
     family: str | None = None
     voucher_date: date | None = None
     description: str | None = Field(default=None, max_length=255)
     reference: str | None = Field(default=None, max_length=80)
-    # مركز التكلفة — اختياري، وبيتكتب على سطور القيد.
     cost_center_id: int | None = None
     statement1: str | None = Field(default=None, max_length=200)
     external_document_number: str | None = Field(default=None, max_length=40)
@@ -113,9 +94,7 @@ class ExpenseIn(BaseModel):
     description: str | None = Field(default=None, max_length=255)
     reference: str | None = Field(default=None, max_length=80)
     payment_method: str | None = Field(default=None, max_length=32)
-    # مركز التكلفة — اختياري، وبيتكتب على سطور القيد.
     cost_center_id: int | None = None
-    # توزيع تحليلي بدل المركز الواحد — `{"3": 60, "7": 40}` ومجموعه ١٠٠.
     cost_center_distribution: dict[str, Decimal] | None = None
     statement1: str | None = Field(default=None, max_length=200)
     external_document_number: str | None = Field(default=None, max_length=40)
@@ -128,7 +107,6 @@ class CashTransferIn(BaseModel):
     voucher_date: date | None = None
     description: str | None = Field(default=None, max_length=255)
     reference: str | None = Field(default=None, max_length=80)
-    # مركز التكلفة — اختياري، وبيتكتب على سطور القيد.
     cost_center_id: int | None = None
     statement1: str | None = Field(default=None, max_length=200)
     external_document_number: str | None = Field(default=None, max_length=40)
@@ -189,12 +167,8 @@ class VoucherOut(BaseModel):
     payment_method: str | None
     reference: str | None
     description: str | None
-    # (031) أنهي مديونية سدّدها. Returned as well as stored — the screen prints it on the sheet
-    # the customer signs, and a field that goes in and never comes back is a field nobody can use.
     family: str | None = None
     cost_center_id: int | None = None
-    # البيان. **لازم يتعرّف هنا كمان مش على الإدخال بس** — بايدانتيك بيرمي أي حقل مش
-    # معرّف على موديل الرد في صمت، فالخانة تتكتب في القاعدة وترجع فاضية للشاشة.
     statement1: str | None = None
     external_document_number: str | None = None
     ledger_entry_id: int | None
@@ -203,54 +177,39 @@ class VoucherOut(BaseModel):
 
 class StatementLineOut(BaseModel):
     entry_id: int
-    # The document that posted this line, when one did. A manual journal entry has none, and
-    # saying so is more useful than leaving the reader to guess.
     doc_kind: str | None = None
     doc_id: int | None = None
     doc_number: str | None = None
-    # عمود «نوع الفاتورة»: خط المستند (أبيض/بولي) ونوع السند (receipt/payment/…).
     doc_family: str | None = None
     voucher_kind: str | None = None
     entry_date: date
     entry_type: str
     description: str
-    # «البيان» المكتوب على المستند اللي رحّل السطر — غير `description` اللي هو وصف القيد.
     doc_statement: str | None = None
     debit: Decimal
     credit: Decimal
     balance_before: Decimal
     balance: Decimal
-    # Their كشف حساب carries a cost-centre column; the journal line always held it.
     cost_center_id: int | None = None
     cost_center_name: str | None = None
-    # And a مندوب column. The LINE never held one — the document that posted it did.
     rep_user_id: int | None = None
     rep_name: str | None = None
-    # المخزن: مكان البضاعة في البيع والمرتجع، ومخزن المندوب في السند.
     store_name: str | None = None
-    # سطر «مدفوع نقداً مع الفاتورة» — مش سطر في القيد، الكشف بيفصله من سطر الفاتورة.
     cash_on_invoice: bool = False
-    # (a5) في الكشف المجمّع كل سطر بيقول هو بتاع أنهي حساب فرعي.
     account_id: int | None = None
     account_name: str | None = None
-    # ── المطابقة ─────────────────────────────────────────────────────────────
     line_id: int | None = None
-    # المتبقّي المفتوح على السطر. `None` = حساب مابيتقفلش، وده غير صفر (اتقفل خلاص).
     residual: Decimal | None = None
     due_date: date | None = None
     days_overdue: int | None = None
     payment_state: str | None = None
     payment_state_label: str | None = None
-    # المستندات اللي قفلت جزء منه — الدفعة بتقول سدّدت إيه، والفاتورة اتسدّدت بإيه.
     matches: list[dict] = []
-    # رصيد حساب السطر لوحده (غير رصيد الكشف كله) — للتجميع بالحساب الفرعي.
     account_balance_before: Decimal | None = None
     account_balance: Decimal | None = None
 
 
 class AccountSummaryOut(BaseModel):
-    """حساب فرعي في الكشف بأرصدته — قسم في «التجميع بالحساب الفرعي»."""
-
     account_id: int
     account_name: str
     code: str | None = None
@@ -263,34 +222,25 @@ class AccountSummaryOut(BaseModel):
 
 
 class AgingOut(BaseModel):
-    """أعمار المستحق على تاريخ الكشف."""
-
     current: Decimal = Decimal("0")
     d30: Decimal = Decimal("0")
     d60: Decimal = Decimal("0")
     d90: Decimal = Decimal("0")
     older: Decimal = Decimal("0")
     total: Decimal = Decimal("0")
-    # المفتوح مفصول: المطلوب من الطرف، والدفعات اللي لسه ماتخصمتش من فاتورة.
     debit_open: Decimal = Decimal("0")
     credit_open: Decimal = Decimal("0")
 
 
 class FamilyBalanceOut(BaseModel):
-    """عيلة من عيال العميل ورصيدها. `family` is None for a customer who was never split."""
-
     family: str | None = None
     account_id: int
     balance: Decimal
 
 
 class StatementOut(BaseModel):
-    # NULL = العميل لسه مالوش حساب ذمم. مش خطأ — عميل اتسجّل ومااتعاملش معاه مالياً
-    # بعد. الكشف بيرجع فاضي بأصفار، والشاشة تقول «مافيش حركة».
     account_id: int | None = None
     account_name: str = ""
-    # الحساب الرئيسي beside الحساب الفرعي, as their screen names them. Empty for a top-level
-    # account, which is its own book.
     main_account_id: int | None = None
     main_account_name: str | None = None
     opening_balance: Decimal
@@ -298,20 +248,14 @@ class StatementOut(BaseModel):
     total_debit: Decimal
     total_credit: Decimal
     lines: list[StatementLineOut]
-    # (031) Which line this statement is for, and what every line of his stands at. Empty on any
-    # statement that is not a customer's.
     family: str | None = None
     families: list[FamilyBalanceOut] = []
-    # العميل صاحب الحساب لو حساب ذمم عميل — الشاشة بتعرض «كل حسابات العميل» على أساسه.
     customer_id: int | None = None
-    # المستحق على كل السطور المفتوحة لحد تاريخ القفل — مش مجموع الفترة المعروضة.
     total_due: Decimal = Decimal("0")
     total_overdue: Decimal = Decimal("0")
     aging: AgingOut = AgingOut()
     reconcilable: bool = False
-    # ناحية الحساب (debit/credit) — لتقسيم الرصيد على «رصيد مدين / رصيد دائن».
     normal_side: str | None = None
-    # كل حساب فرعي بأول مدته وحركته وآخر مدته — مجموع إقفالاتهم = `closing_balance`.
     account_summaries: list[AccountSummaryOut] = []
 
 
@@ -363,13 +307,6 @@ def _statement_out(s, docs: dict | None = None, reps: dict | None = None,
             cost_center_id=ln.cost_center_id, cost_center_name=ln.cost_center_name,
             account_id=getattr(ln, "account_id", None),
             account_name=getattr(ln, "account_name", None),
-            # المستند الأول، والقيد نفسه لو المستند مش معروف.
-            #
-            # `document_resolver` only maps the document kinds it knows, so an entry it cannot
-            # place came back with no rep at all — and the rep filter on the statement screen is
-            # driven by the names that arrive, so it sat permanently disabled on accounts a rep
-            # had plainly moved. `LedgerEntry.rep_id` is stamped on every entry a rep's round
-            # posted, whatever the document was.
             rep_user_id=((docs.get(ln.entry_id) or {}).get("rep_user_id") or ln.rep_id),
             rep_name=(reps.get((docs.get(ln.entry_id) or {}).get("rep_user_id"))
                       or ln.rep_name),
@@ -397,12 +334,6 @@ def _statement_out(s, docs: dict | None = None, reps: dict | None = None,
 
 
 def _with_docs(db: Session, s) -> StatementOut:
-    """The statement, its documents, and the names of the reps on them.
-
-    One pass for the documents and one for the names. A statement runs to hundreds of lines and a
-    handful of reps, so looking each name up per line would be the same query answered over and
-    over.
-    """
     docs = document_resolver.resolve_many(db, [ln.entry_id for ln in s.lines])
     rep_ids = {d.get("rep_user_id") for d in docs.values() if d.get("rep_user_id")}
     reps: dict[int, str] = {}
@@ -414,12 +345,6 @@ def _with_docs(db: Session, s) -> StatementOut:
 
 
 def _stores_of(db: Session, s, docs: dict) -> dict[int, str]:
-    """اسم المخزن لكل قيد في الكشف.
-
-    البيع والمرتجع: المكان اللي البضاعة خرجت منه/رجعت له على المستند. السند مالوش
-    بضاعة، فمخزنه هو مخزن المندوب اللي حصّله (`rep_store`) — نفس الإجابة اللي البيع
-    بيستعملها لـ«المندوب ده بيبيع منين».
-    """
     from src.models.stock import LocationKind
     from src.models.user import User
     from src.models.warehouse import Custody, Warehouse
@@ -485,8 +410,6 @@ def create_receipt(
     current: CurrentUser = Depends(require_capability(CAP_VOUCHER_WRITE)),
     db: Session = Depends(get_db),
 ) -> VoucherOut:
-    """سند قبض — تحصيل من عميل (المندوب يحصّل في عهدته، المكتب في الخزينة)."""
-    # السند اللي اتكتب خلاص بيرجع زي ما هو — نفس حماية الفاتورة.
     if body.client_uuid:
         seen = db.scalar(select(Voucher).where(Voucher.client_uuid == body.client_uuid))
         if seen is not None:
@@ -515,7 +438,6 @@ def create_payment(
     current: CurrentUser = Depends(require_capability(CAP_VOUCHER_WRITE)),
     db: Session = Depends(get_db),
 ) -> VoucherOut:
-    """سند صرف — دفع لمورد (ممنوع على المناديب)."""
     if current.role == RoleName.sales_rep:
         raise HTTPException(status.HTTP_403_FORBIDDEN,
                             {"code": "forbidden", "message": "الصرف للموردين من المكتب فقط."})
@@ -536,7 +458,6 @@ def create_payment(
 
 def _replace(db: Session, current: CurrentUser, voucher_id: int, kind: VoucherKind,
              fields: dict) -> VoucherOut:
-    """تعديل سند قبض/صرف — نفس الـid والرقم، والقيد بيتكتب من جديد."""
     if current.role == RoleName.sales_rep:
         own = db.get(Voucher, voucher_id)
         if own is not None and current.id not in (own.actor_user_id, own.rep_user_id):
@@ -562,7 +483,6 @@ def update_receipt(
     current: CurrentUser = Depends(require_capability(CAP_VOUCHER_WRITE)),
     db: Session = Depends(get_db),
 ) -> VoucherOut:
-    """تعديل سند قبض — بنفس صلاحية إنشاؤه."""
     return _replace(db, current, voucher_id, VoucherKind.receipt,
                     body.model_dump(exclude={"client_uuid"}))
 
@@ -574,7 +494,6 @@ def update_payment(
     current: CurrentUser = Depends(require_capability(CAP_VOUCHER_WRITE)),
     db: Session = Depends(get_db),
 ) -> VoucherOut:
-    """تعديل سند صرف — ممنوع على المناديب زي إنشاؤه."""
     if current.role == RoleName.sales_rep:
         raise HTTPException(status.HTTP_403_FORBIDDEN,
                             {"code": "forbidden", "message": "الصرف للموردين من المكتب فقط."})
@@ -588,7 +507,6 @@ def create_handover(
     current: CurrentUser = Depends(require_capability(CAP_VOUCHER_WRITE)),
     db: Session = Depends(get_db),
 ) -> VoucherOut:
-    """توريد المندوب — نقل نقدية العهدة لخزينة الشركة (يستلمها المكتب)."""
     if current.role == RoleName.sales_rep:
         raise HTTPException(
             status.HTTP_403_FORBIDDEN,
@@ -612,7 +530,6 @@ def create_expense(
     current: CurrentUser = Depends(require_capability(CAP_VOUCHER_WRITE)),
     db: Session = Depends(get_db),
 ) -> VoucherOut:
-    """سند مصروف — صرف نثريات/إيجار/مرتبات من الخزينة على حساب مصروف."""
     if current.role == RoleName.sales_rep:
         raise HTTPException(status.HTTP_403_FORBIDDEN,
                             {"code": "forbidden", "message": "المصروفات من المكتب فقط."})
@@ -637,7 +554,6 @@ def create_cash_transfer(
     current: CurrentUser = Depends(require_capability(CAP_VOUCHER_WRITE)),
     db: Session = Depends(get_db),
 ) -> VoucherOut:
-    """تحويل نقدية بين خزينتين."""
     if current.role == RoleName.sales_rep:
         raise HTTPException(status.HTTP_403_FORBIDDEN,
                             {"code": "forbidden", "message": "التحويل بين الخزائن من المكتب فقط."})
@@ -659,10 +575,8 @@ def list_treasuries(
     current: CurrentUser = Depends(require_capability(CAP_VOUCHER_READ)),
     db: Session = Depends(get_db),
 ) -> list[TreasuryOut]:
-    treasury_service.default_treasury(db)  # adopt the legacy safe on first call
+    treasury_service.default_treasury(db)
     rows = treasury_service.list_treasuries(db, active_only=active_only)
-    # خزنة لكل فرع (`scripts/branch_treasuries.py`): موظف الفرع بيشوف خزنة فرعه بس، والمالك
-    # والأدمن التلاتة. من غيرها خزن أكتوبر والسادات كانت هتظهر لموظف العلياء أول ما تتعمل.
     bid = branch_scope.visible_branch_id(current)
     if bid is not None:
         rows = [t for t in rows if t.branch_id in (bid, None)]
@@ -672,12 +586,9 @@ def list_treasuries(
 
 
 class CashAccountOut(BaseModel):
-    """صندوق زي ما بوباب الحفظ محتاج يعرضه — رقم الحساب واسمه وخطه."""
     account_id: int
     code: str | None
     name: str | None
-    # الخط جاي من **العهدة المربوطة بالصندوق** مش من قراءة اسمه. الاسم بيتكتب بإيد
-    # وبيتغيّر؛ العهدة جملة صريحة اتكتبت مرة واحدة.
     family: str | None
     rep_id: int | None
     rep_name: str | None
@@ -688,16 +599,6 @@ def list_cash_accounts(
     current: CurrentUser = Depends(require_capability(CAP_VOUCHER_READ)),
     db: Session = Depends(get_db),
 ) -> list[CashAccountOut]:
-    """حسابات الخزن اللي ينفع يترحّل عليها — لبوباب «الفلوس رايحة فين» قبل الحفظ.
-
-    ⚠️ **مش `/accounts`.** البوباب كان بيقرا شجرة الحسابات، ودي محتاجة صلاحية محاسبة
-    مالهاش غير الأدمن والمحاسب — فمدير الفرع (اللي بيعمل الفواتير فعلاً) كان بياخد 403،
-    القايمة تفضل فاضية، والبوباب **يتخطى نفسه في صمت**. اللي بيحفظ فاكر إنه اختار وهو
-    ماتسألش. والشجرة كمان ٣٬٧٦٧ حساب بأرصدتها — تحميل تقيل لسؤال من سطر واحد.
-
-    وصناديق a5 التلتاشر **حسابات** مش صفوف في `treasury` (الجدول ده فيه صف واحد)،
-    فالقايمة بتتقرا من الحسابات نفسها.
-    """
     from src.models.ledger import AccountType
     from src.models.user import User
     from src.models.warehouse import Custody
@@ -712,16 +613,11 @@ def list_cash_accounts(
             Custody.account_id.isnot(None))).all()
     }
     names = {u.id: (u.full_name or u.username) for u in db.scalars(select(User)).all()}
-    # صناديق فرع اللي بيكتب بس (أو اللي فرّعه المالك من الفلتر). كانت بترجع صناديق الفروع
-    # كلها، فموظف العلياء بيشوف ١٣ صندوق من أكتوبر في بوباب «الفلوس رايحة فين».
     bid = branch_scope.visible_branch_id(current)
     if bid is not None:
         accounts = [a for a in accounts if a.branch_id in (bid, None)]
     out: list[CashAccountOut] = []
     for a in accounts:
-        # الحساب اللي مالوش اسم ولا كود مايتعرضش: «خزينة #٣٧٦٧» مش اختيار، دي مطالبة
-        # للي بيحفظ إنه يخمّن. (ده حساب اتعمل أوتوماتيك ومالوش ولا حركة.) السيرفر لسه
-        # بيقدر يستنتجه لو هو الخزنة العامة — الإخفا من القايمة مش من الترحيل.
         if not (a.name or "").strip() and not (a.code or "").strip():
             continue
         c = links.get(a.id)
@@ -782,7 +678,6 @@ def delete_treasury(
     current: CurrentUser = Depends(require_capability(CAP_VOUCHER_WRITE)),
     db: Session = Depends(get_db),
 ) -> None:
-    """حذف خزنة مالهاش ولا حركة — اللي عليها حركة بتتخفي."""
     if current.role == RoleName.sales_rep:
         raise HTTPException(status.HTTP_403_FORBIDDEN,
                             {"code": "forbidden", "message": "إدارة الخزائن من المكتب فقط."})
@@ -798,8 +693,6 @@ def get_period_lock(
     _: CurrentUser = Depends(require_capability(CAP_VOUCHER_READ)),
     db: Session = Depends(get_db),
 ) -> PeriodLockOut:
-    # القيمة الشغّالة بقت في `accounting_setting` (المرحلة ٤)؛ جدول `period_lock`
-    # بقى سجل تاريخي بيقول مين قفل وإمتى وليه — فالملاحظة لسه بتتقرا منه.
     row = lock_date_service.get_settings(db)
     last = treasury_service.current_lock(db)
     db.commit()
@@ -814,7 +707,6 @@ def set_period_lock(
     current: CurrentUser = Depends(require_capability(CAP_VOUCHER_WRITE)),
     db: Session = Depends(get_db),
 ) -> PeriodLockOut:
-    """إقفال الفترة حتى تاريخ — يمنع أي ترحيل بتاريخ أقدم أو مساوٍ (أدمن/محاسب)."""
     if current.role not in (RoleName.system_admin, RoleName.accountant):
         raise HTTPException(
             status.HTTP_403_FORBIDDEN,
@@ -836,7 +728,6 @@ def delete_voucher(
     current: CurrentUser = Depends(require_capability(CAP_VOUCHER_WRITE)),
     db: Session = Depends(get_db),
 ) -> None:
-    """حذف سند — بيروح هو وقيده، مش بيتعكس."""
     try:
         document_edit_service.delete_voucher(
             db, voucher_id=voucher_id, actor_user_id=current.id)
@@ -887,7 +778,6 @@ def list_vouchers(
     current: CurrentUser = Depends(require_capability(CAP_VOUCHER_READ)),
     db: Session = Depends(get_db),
 ):
-    # A rep only ever sees the vouchers tied to his own custody/collections.
     scope_rep = current.id if current.role == RoleName.sales_rep else rep_id
     rows = voucher_service.list_vouchers(
         db, kind=kind, customer_id=customer_id, supplier_id=supplier_id,
@@ -918,7 +808,6 @@ def get_voucher(
     current: CurrentUser = Depends(require_capability(CAP_VOUCHER_READ)),
     db: Session = Depends(get_db),
 ) -> VoucherOut:
-    """سند واحد — لفتحه للتعديل من سجل المبيعات أو المشتريات."""
     v = db.get(Voucher, voucher_id)
     if v is not None and current.role == RoleName.sales_rep \
             and current.id not in (v.actor_user_id, v.rep_user_id):
@@ -938,23 +827,8 @@ def customer_statement(
     _: CurrentUser = Depends(require_capability(CAP_VOUCHER_READ)),
     db: Session = Depends(get_db),
 ) -> StatementOut:
-    """كشف حساب عميل — رصيد أول المدة + الحركة + الرصيد الجاري.
-
-    A customer can hold one receivable account per product line (031), and this used to resolve
-    «his account» the same way a voucher does — which refuses when there is more than one, because
-    posting to the wrong line is untraceable. Reading is not posting, and the refusal made كشف
-    الحساب unopenable for precisely the customers the merge had just joined: «العميل عنده أكتر من
-    حساب (أبيض / بولي) — لازم تحدد النوع», 404, no way forward from the screen.
-
-    Now it answers. No `family` gives every line he has on one running balance — «هو عليه كام»
-    with nothing left out — and the response lists the families with their own balances so the
-    screen can offer the split. `family` narrows it to that line alone.
-    """
     accounts = voucher_service._customer_accounts(db, customer_id)
     if not accounts:
-        # مالوش حساب = مااتعاملش معاه مالياً لسه، مش خطأ. كان بيرمي 404 فالكارت
-        # بيفتح على توست أحمر لـ٢٤١٩ عميل — نفس العطل اللي الفقرة اللي فوق بتحكي عنه،
-        # بس على الحالة الفاضية بدل الحالة المتعددة.
         zero = Decimal("0")
         return StatementOut(
             account_id=None, account_name="", opening_balance=zero, closing_balance=zero,
@@ -979,8 +853,6 @@ def customer_statement(
                             {"code": "not_found", "message": str(exc)}) from exc
 
     out = _with_docs(db, s)
-    # Every line he has, each with its own closing balance — so the screen can show أبيض and بولي
-    # beside the total rather than making the reader open three statements to add them up.
     out.families = [
         FamilyBalanceOut(
             family=a.family, account_id=a.account_id,
@@ -996,27 +868,14 @@ def customer_statement(
 def account_group_statement(
     owner_group: str | None = Query(default=None),
     root_id: int | None = Query(default=None),
-    # كذا جذر بنفس الاسم (شجرة العلياء + شجرة أكتوبر من a5) ومعاهم المجموعة — كشف واحد.
     root_ids: list[int] | None = Query(default=None),
     date_from: date | None = Query(default=None),
     date_to: date | None = Query(default=None),
     current: CurrentUser = Depends(require_capability(CAP_VOUCHER_READ)),
     db: Session = Depends(get_db),
 ) -> StatementOut:
-    """كشف مجمّع — الحساب الرئيسي بكل الفرعيين اللي تحته، زي نظامهم.
-
-    عندهم بتختار «العملاء» بس من غير حساب فرعي، فيطلع كل حركات العملاء كلهم ورا بعض
-    برصيد جاري واحد، وكل سطر بيقول هو بتاع أنهي عميل. عندنا الشاشة كانت بتقف لحد ما
-    تختار حساب واحد — يعني «مين اتحرك النهارده من العملاء كلهم؟» ماكانش ليه إجابة.
-
-    «الحساب الرئيسي» حاجتين في الشجرة دي: جذر مرقّم بشجرة تحته (`root_id`)، أو مجموعة
-    أطراف (`owner_group`) — العملاء والموردين حسابتهم من غير أب خالص. الاتنين بيتحلوا
-    هنا لنفس الحاجة: قايمة حسابات بتتقرا كشف واحد بمحرك الكشف نفسه، اللي أصلاً بيعرف
-    يقرا كذا حساب مع بعض (also_accounts) ويوقّع كل سطر بجانب حسابه هو.
-    """
     accounts = db.scalars(select(Account)).all()
     if root_ids:
-        # الاسم الواحد في القايمة = كل الجذور اللي بالاسم ده + المجموعة لو اتبعتت.
         by_id = {a.id: a for a in accounts}
         roots = set(root_ids)
         def in_any(a: Account) -> bool:
@@ -1031,8 +890,6 @@ def account_group_statement(
             owner_group and chart_service.owner_group_label(a.account_type) == owner_group)]
         title = next((by_id[r].name for r in root_ids if r in by_id and by_id[r].name), owner_group or "")
     elif owner_group:
-        # «owner_group» مش عمود — بيتشتق من نوع الحساب، بنفس الاشتقاق اللي شاشة الشجرة
-        # بتعرضه بيه، فاللي الشاشة بتسميه «العملاء» هو نفسه اللي بيتبعت هنا.
         members = [a for a in accounts
                    if chart_service.owner_group_label(a.account_type) == owner_group]
         title = owner_group
@@ -1056,9 +913,6 @@ def account_group_statement(
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY,
                             {"code": "missing_group",
                              "message": "حدد owner_group أو root_id"})
-    # حسابات فرع اللي بيسأل بس (أو اللي المالك اختاره من فلتر الفروع). «الخزينة والبنوك»
-    # مجموعة بالنوع من التلات فروع، فكشفها في أكتوبر كان بيخلط صناديق العلياء والسادات
-    # (٢٠٢٦-١٠-٠٧). الحساب اللي مالوش فرع بيفضل — إخفاؤه بيخفي حركة شغّالة.
     bid = branch_scope.visible_branch_id(current)
     if bid is not None:
         members = [a for a in members if a.branch_id in (bid, None)]
@@ -1070,7 +924,6 @@ def account_group_statement(
     s = statement_service.account_statement(
         db, account_id=ids[0], also_accounts=ids[1:],
         date_from=date_from, date_to=date_to)
-    # عنوان الكشف هو المجموعة مش أول حساب صودف إنه الأول في القايمة.
     s = replace(s, account_name=title, account_id=(root_id or 0),
                 main_account_id=None, main_account_name=None)
     return _with_docs(db, s)
@@ -1086,15 +939,6 @@ def any_account_statement(
     _: CurrentUser = Depends(require_capability(CAP_VOUCHER_READ)),
     db: Session = Depends(get_db),
 ) -> StatementOut:
-    """كشف حساب لأي حساب في الشجرة — خزينة، بنك، مصروف، مش بس عميل ومورد.
-
-    Same engine as the party statements; a treasury or an expense account has exactly the same
-    question asked of it, and there was no reason only two account types could be read.
-
-    حساب ذمم عميل عنده أكتر من حساب (أبيض/بولي): الكشف بيرجّع حساباته وأرصدتها، و
-    `all_customer_accounts` بيجمعهم برصيد جاري واحد. التحصيل «على الإجمالي» بيتوزّع على
-    الحسابين، فكشف حساب واحد منهم كان بيوري نص السند بس.
-    """
     from src.models.customer import Customer, CustomerAccount
 
     link = db.scalars(
@@ -1134,7 +978,6 @@ def supplier_statement(
     _: CurrentUser = Depends(require_capability(CAP_VOUCHER_READ)),
     db: Session = Depends(get_db),
 ) -> StatementOut:
-    """كشف حساب مورد."""
     try:
         account = voucher_service._supplier_account(db, supplier_id)
         s = statement_service.account_statement(
@@ -1154,7 +997,6 @@ def rep_cash_statement(
     current: CurrentUser = Depends(require_capability(CAP_VOUCHER_READ)),
     db: Session = Depends(get_db),
 ) -> StatementOut:
-    """كشف عهدة المندوب النقدية — تحصيلاته مقابل توريداته."""
     if current.role == RoleName.sales_rep and current.id != rep_user_id:
         raise HTTPException(status.HTTP_403_FORBIDDEN,
                             {"code": "forbidden", "message": "عهدة مندوب آخر."})
@@ -1162,9 +1004,6 @@ def rep_cash_statement(
 
     from src.models.warehouse import Custody
 
-    # المندوب بقى له صندوق لكل خط. `scalar` كان بيرجّع واحد عشوائي، فكشف الحساب يطلع
-    # ناقص من غير ما يقول إنه ناقص. من غير `family` بناخد العهدة القديمة (اللي فيها كل
-    # الحركة اللي قبل التقسيم)، وبـ`family` نجيب صندوق الخط.
     custody = db.scalars(
         select(Custody)
         .where(Custody.rep_id == rep_user_id, *([Custody.family == family] if family else []))

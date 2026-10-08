@@ -1,8 +1,3 @@
-"""عهدة الكوبونات router — صرف دفاتر للمندوب، واسترجاعها، ورصيد كل مندوب.
-
-الكتابة للمكتب بس (`coupon.custody`). المندوب بيقرا رصيده ومستنداته هو — التطبيق بياخد
-نفس الرصيد في `GET /sales/rep-bundle` عشان يشتغل من غير شبكة، والشاشة دي للمكتب.
-"""
 from __future__ import annotations
 
 from datetime import date, datetime
@@ -35,7 +30,6 @@ class CustodyIn(BaseModel):
     rep_user_id: int
     coupon_kind: str
     serial_from: str
-    # فاضي = ورقة واحدة.
     serial_to: str | None = None
     doc_date: date | None = None
     notes: str | None = None
@@ -66,7 +60,6 @@ class BalanceOut(BaseModel):
     rep_user_id: int
     rep_name: str
     coupon_kind: str
-    # المتاح معاه دلوقتي، ونطاقاته مضغوطة: [["1001", "1050"], ["1060", "1060"]].
     available: int
     ranges: list[list[str]]
     given: int
@@ -75,18 +68,12 @@ class BalanceOut(BaseModel):
 
 
 def _reader(current: CurrentUser = Depends(get_current_user)) -> CurrentUser:
-    """المكتب اللي بيدير العهدة، أو المندوب (على نفسه بس — القفل في كل نقطة تحت)."""
     if current.rep_id is not None or current.can(CAP_COUPON_CUSTODY):
         return current
     raise HTTPException(403, {"code": "forbidden", "message": "مالكش صلاحية «عهدة الكوبونات»."})
 
 
 def _balance_reader(current: CurrentUser = Depends(get_current_user)) -> CurrentUser:
-    """الرصيد بيتقري من شاشة الفاتورة كمان — اللي بيكتب فاتورة بيشوف عهدة مندوبها.
-
-    من غير كده مدير المبيعات بيكتب الفاتورة وهو مش عارف أنهي أرقام مع المندوب، ويعرف
-    بس لما السيرفر يرفض.
-    """
     if current.rep_id is not None or any(
             current.can(cap)
             for cap in (CAP_COUPON_CUSTODY, CAP_COUPON_RECEIVE, CAP_SALE_WRITE,
@@ -127,7 +114,6 @@ def list_custody(
     db: Session = Depends(get_db),
 ) -> CustodyPageOut:
     stmt = branch_scope.scope(select(CouponCustody), CouponCustody, current)
-    # المندوب بيشوف مستنداته هو بس، مهما بعت في الفلتر.
     rep = current.rep_id if current.rep_id is not None else rep_user_id
     if rep:
         stmt = stmt.where(CouponCustody.rep_user_id == rep)
@@ -166,7 +152,6 @@ def issue_custody(
     current: CurrentUser = Depends(require_capability(CAP_COUPON_CUSTODY)),
     db: Session = Depends(get_db),
 ) -> CustodyOut:
-    """صرف عهدة لمندوب — النطاق كله أو ولا ورقة."""
     return _post(db, body, current, coupon_custody_service.issue)
 
 
@@ -176,7 +161,6 @@ def return_custody(
     current: CurrentUser = Depends(require_capability(CAP_COUPON_CUSTODY)),
     db: Session = Depends(get_db),
 ) -> CustodyOut:
-    """استرجاع ورق من مندوب — كل ورقة لازم تكون معاه ولسه ماتصرفتش."""
     return _post(db, body, current, coupon_custody_service.return_)
 
 
@@ -187,7 +171,6 @@ def delete_custody(
     db: Session = Depends(get_db),
 ) -> Response:
     doc = db.get(CouponCustody, custody_id)
-    # نطاق الفرع زي الكشف: الرقم لوحده مايفتحش مستند فرع تاني.
     if doc is None or not branch_scope.may_see(current, doc):
         raise HTTPException(404, {"code": "not_found", "message": "مستند العهدة مش موجود."})
     try:
@@ -205,15 +188,12 @@ def custody_balance(
     current: CurrentUser = Depends(_balance_reader),
     db: Session = Depends(get_db),
 ) -> list[BalanceOut]:
-    """لكل مندوب × فئة: المتاح (عدد ونطاقات)، واللي اتصرف لعملاء، واللي رجع."""
     if current.rep_id is not None:
-        # المندوب رصيده هو بس.
         return [BalanceOut(**r) for r in coupon_custody_service.balance(
             db, rep_user_id=current.rep_id)]
     if rep_user_id:
         return [BalanceOut(**r) for r in coupon_custody_service.balance(
             db, rep_user_id=rep_user_id)]
-    # المكتب المحبوس في فرع بيشوف مناديب فرعه — نفس عزل الفروع اللي على المستندات.
     branch_id = branch_scope.visible_branch_id(current)
     rep_ids = None
     if branch_id is not None:

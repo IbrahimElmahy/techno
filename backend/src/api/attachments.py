@@ -1,12 +1,3 @@
-"""رفع وتنزيل مرفقات الزيارات.
-
-The visit syncs first and the pictures follow, each in its own request. That split is deliberate:
-a rep at the edge of coverage gets the RECORD in — the thing the books need — before spending his
-signal on photographs, and a picture that fails to upload does not take the visit down with it.
-
-Idempotent by the attachment's own `client_uuid`, because a retry after a dropped connection is the
-normal case on a phone, not the exception. Sending the same picture twice stores it once.
-"""
 from __future__ import annotations
 
 import re
@@ -29,17 +20,14 @@ from src.models.inspection import Inspection
 
 router = APIRouter(tags=["attachments"], prefix="/inspections")
 
-# جذر التخزين. جنب الكود عشان يمشي في التطوير من غير إعداد، وقابل للتغيير بمتغير بيئة.
 UPLOAD_ROOT = Path(__file__).resolve().parents[2] / "uploads" / "inspections"
 
-# الصور بس. قبول أي امتداد معناه إن التطبيق بقى مكان يتخزن فيه أي ملف من أي حد يقدر يسجّل زيارة.
 ALLOWED = {
     "image/jpeg": ".jpg",
     "image/png": ".png",
     "image/webp": ".webp",
     "image/heic": ".heic",
 }
-# 12 ميجا. صورة الموبايل بعد التصغير أقل من ده بكتير؛ الحد بيمنع رفع بالغلط يملا القرص.
 MAX_BYTES = 12 * 1024 * 1024
 
 
@@ -61,11 +49,6 @@ def _out(a: InspectionAttachment) -> AttachmentOut:
 
 
 def _safe_name(name: str) -> str:
-    """اسم ملف آمن — من غير مسارات ولا محارف غريبة.
-
-    The name arrives from a phone and is used to build a path. Anything with a separator or a `..`
-    in it could otherwise be made to write outside the uploads directory entirely.
-    """
     base = Path(name).name
     cleaned = re.sub(r"[^A-Za-z0-9._؀-ۿ -]", "_", base).strip() or "attachment"
     return cleaned[:120]
@@ -85,7 +68,6 @@ async def upload(
         raise HTTPException(status.HTTP_404_NOT_FOUND,
                             {"code": "not_found", "message": "الزيارة مش موجودة."})
 
-    # A retry of a picture already stored returns the one on file rather than a second copy.
     if client_uuid:
         existing = db.scalar(select(InspectionAttachment).where(
             InspectionAttachment.client_uuid == client_uuid))
@@ -106,8 +88,6 @@ async def upload(
     size = 0
     try:
         with stored.open("wb") as out:
-            # Streamed in chunks and stopped at the limit: reading the whole upload into memory
-            # first would let one oversized file decide how much RAM the server needs.
             while chunk := await file.read(1024 * 1024):
                 size += len(chunk)
                 if size > MAX_BYTES:
@@ -156,8 +136,6 @@ def download(
         raise HTTPException(status.HTTP_404_NOT_FOUND,
                             {"code": "not_found", "message": "المرفق مش موجود."})
     path = (UPLOAD_ROOT / row.stored_path).resolve()
-    # The stored path is ours, but resolving and re-checking costs nothing and means a tampered row
-    # cannot be used to read something else off the disk.
     if not str(path).startswith(str(UPLOAD_ROOT.resolve())) or not path.exists():
         raise HTTPException(status.HTTP_404_NOT_FOUND,
                             {"code": "not_found", "message": "ملف المرفق مش موجود على السيرفر."})

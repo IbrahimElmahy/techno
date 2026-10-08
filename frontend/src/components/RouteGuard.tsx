@@ -13,15 +13,13 @@ export default function RouteGuard({ children, allowedRoles }: RouteGuardProps) 
   const location = useLocation();
 
   if (isAuthenticating) {
-    return null; // The spinner is already displayed at the App/AuthProvider level
+    return null;
   }
 
   if (!isAuthenticated) {
-    // Redirect to login page and remember current location
     return <Navigate to="/login" state={{ from: location }} replace />;
   }
 
-  // Check if role is allowed to access the target route
   if (allowedRoles && user && !allowedRoles.includes(roleForAccess(user.role) as RoleName)) {
     return (
       <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '80vh' }}>

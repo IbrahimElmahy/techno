@@ -9,15 +9,9 @@ import '../widgets/session_drawer.dart';
 import '../widgets/supervisor_widgets.dart';
 import 'rep_activity_screen.dart';
 
-/// **متابعة المناديب** — الرئيسية بتاعة «مشرف مناديب»، وكارت في رئيسية المالك/المدير.
-///
-/// أونلاين بس: الأرقام فوق والكروت تحت جايين من السيرفر كل مرة. مافيش مزامنة ولا حزمة
-/// بيع هنا — المشرف مالوش عربية، والسحب ده كله بيرجع ٤٠٣.
 class SupervisorHomeScreen extends StatefulWidget {
   const SupervisorHomeScreen({super.key, this.isRoot = false});
 
-  /// `true` = دي الرئيسية (المشرف): قايمة جانبية بالتحديث والخروج. `false` = مفتوحة من
-  /// رئيسية المالك: زرار رجوع.
   final bool isRoot;
 
   @override
@@ -32,7 +26,6 @@ class _SupervisorHomeScreenState extends State<SupervisorHomeScreen> {
   String _name = '';
   String? _role;
 
-  /// رقم آخر طلب — رد فترة قديمة وصل متأخر مايغطّيش على الفترة اللي اتختارت بعده.
   int _req = 0;
 
   @override
@@ -41,7 +34,6 @@ class _SupervisorHomeScreenState extends State<SupervisorHomeScreen> {
     _loadUser();
     _load();
     if (widget.isRoot) {
-      // الدور والاسم من السيرفر — المشرف مابيزامنش، فده المكان الوحيد اللي بيتحدّثوا فيه.
       ApiClient.instance.refreshAppCapabilities().then((_) => _loadUser()).catchError((_) {});
     }
   }
@@ -82,7 +74,6 @@ class _SupervisorHomeScreenState extends State<SupervisorHomeScreen> {
   void _setPeriod(SupPeriod p) {
     setState(() {
       _period = p;
-      // أرقام فترة تانية تحت شرايح الفترة الجديدة بتتقرا غلط — تتشال لحد ما الجديدة توصل.
       _data = null;
     });
     _load();
@@ -200,7 +191,6 @@ class _SupervisorHomeScreenState extends State<SupervisorHomeScreen> {
     ];
   }
 
-  /// التحديث فشل والأرقام اللي على الشاشة من آخر مرة — بيتقال، مابيتخبّاش.
   Widget _staleBanner() => Container(
         margin: const EdgeInsets.fromLTRB(16, 10, 16, 0),
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
@@ -293,7 +283,6 @@ class _SupervisorHomeScreenState extends State<SupervisorHomeScreen> {
     );
   }
 
-  /// «3 اشتغلوا النهارده» — اللي ليه حركة النهارده من آخر نشاط.
   String _activeToday(SupOverview d) {
     final n = DateTime.now();
     final active = d.reps.where((r) {
@@ -325,7 +314,6 @@ class _SupervisorHomeScreenState extends State<SupervisorHomeScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  // نفس لوح اللوجو الأبيض اللي في رئيسية المندوب.
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
                     decoration: BoxDecoration(
@@ -415,7 +403,6 @@ class _SupervisorHomeScreenState extends State<SupervisorHomeScreen> {
   }
 }
 
-/// كارت مندوب — اسمه وآخر نشاط فوق، وأربع أرقام تحت.
 class _RepCard extends StatelessWidget {
   const _RepCard({required this.rep, required this.onTap});
 
@@ -427,7 +414,6 @@ class _RepCard extends StatelessWidget {
     final s = rep.stats;
     final t = rep.lastActivityAt;
     final n = DateTime.now();
-    // «شغّال دلوقتي» = حركة في آخر ساعة.
     final fresh = t != null && n.difference(t).inMinutes.abs() < 60;
     return Card(
       child: InkWell(

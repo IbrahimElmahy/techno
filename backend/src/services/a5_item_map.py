@@ -1,14 +1,3 @@
-"""صنف a5 ⇐ صنفنا: جدول الربط الأول، وبعده الكود والاسم زي ما كان (٢٠٢٦-١٠-٠٧).
-
-كل سكربتات المزامنة كانت بتعمل نفس السطر:
-
-    item_by_code.get(f"{prefix}{code}") or item_by_name.get(name)
-
-وده بيقع أول ما التوحيد يغيّر الكود أو الاسم عندنا. هنا نفس السؤال بإجابة واحدة لكل
-السكربتات: `A5ItemLink` الأول (الكود، وبعده الاسم للي مالوش كود)، وبعدين الطريقة القديمة
-للصنف اللي لسه ماتربطش — والصنف اللي اتلقى كده بيتربط (`remember`) فالمرة الجاية
-مابيعتمدش على الاسم.
-"""
 from __future__ import annotations
 
 from sqlalchemy import select
@@ -46,7 +35,6 @@ class A5ItemMap:
         return it
 
     def linked(self, code, name) -> Item | None:
-        """الربط بس — من غير الرجوع للكود والاسم."""
         code, name = _c(code), _c(name)
         iid = self.link_code.get(code) if code else self.link_name.get(name)
         return self._item(iid) if iid else None
@@ -59,7 +47,6 @@ class A5ItemMap:
         return self.by_code.get(f"{self.prefix}{code}") or self.by_name.get(name)
 
     def remember(self, code, name, item: Item, a5_item_id: int | None = None) -> bool:
-        """يربط صنف a5 بصنفنا لو لسه مش مربوط. بيرجّع True لو اتعمل ربط جديد."""
         code, name = _c(code), _c(name)
         if not (code or name) or item is None or item.id is None:
             return False
@@ -82,7 +69,6 @@ class A5ItemMap:
 
 
 def relink(db: Session, *, from_item_id: int, to_item_id: int) -> int:
-    """دمج صنفين عندنا ⇐ ربط a5 بتاع القديم بيتحوّل للموحّد. بيرجّع عدد الروابط."""
     rows = db.scalars(select(A5ItemLink).where(A5ItemLink.item_id == from_item_id)).all()
     for r in rows:
         r.item_id = to_item_id

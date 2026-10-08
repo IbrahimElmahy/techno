@@ -1,4 +1,3 @@
-"""Audit service (T057). FR-031. Append-only; reads are never logged."""
 from __future__ import annotations
 
 from sqlalchemy.orm import Session

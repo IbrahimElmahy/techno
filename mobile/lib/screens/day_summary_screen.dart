@@ -4,11 +4,6 @@ import '../db/local_db.dart';
 import '../theme.dart';
 import '../services/auto_sync.dart';
 
-/// ملخّص اليوم — بعت بكام وحصّلت كام.
-///
-/// السؤال اللي المندوب بيسأله لنفسه آخر اليوم قبل ما يورّد. وبيتحسب **من على الجهاز**
-/// مش من السيرفر، عشان يشتغل وهو في الشارع — وعشان الرقم اللي في إيده يبقى هو نفسه
-/// الرقم اللي كتبه، حتى لو لسه ما اترفعش.
 class DaySummaryScreen extends StatefulWidget {
   const DaySummaryScreen({super.key});
 
@@ -70,8 +65,6 @@ class _DaySummaryScreenState extends State<DaySummaryScreen> {
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : RefreshIndicator(
-              // السحبة بتجيب من السيرفر الأول (الفواتير اللي المكتب عدّلها والأرصدة)، وبعدين
-                          // تقرا من الجهاز — كانت بتقرا الجهاز بس فمافيش جديد يظهر.
                           onRefresh: () async {
                             await AutoSync.instance.maybeRun(force: true);
                             await _load();
@@ -96,8 +89,6 @@ class _DaySummaryScreenState extends State<DaySummaryScreen> {
                                   fontSize: 18, fontWeight: FontWeight.w800)),
                         ),
                         const Divider(height: 1),
-                        // **التحصيل فوق مجموع السطرين دول.** الرقم الكبير لوحده بيتسأل
-                        // عنه «جه منين»، والمندوب بيعدّ الفلوس في إيده مش بيصدّق شاشة.
                         ListTile(
                           leading: const Icon(Icons.payments_outlined),
                           title: const Text('نقدي على الفواتير'),
@@ -116,7 +107,6 @@ class _DaySummaryScreenState extends State<DaySummaryScreen> {
                       ],
                     ),
                   ),
-                  // اللي في إيده فلوس ولسه ما رفعش — ده الرقم اللي بيفرق وقت التوريد.
                   Card(
                     color: pending > 0 ? const Color(0xFFFFF6E5) : null,
                     child: ListTile(

@@ -1,8 +1,3 @@
-"""User model (T025). FR-001, FR-003, FR-004.
-
-Login-ID (username) is admin-assigned, unique, and the account's stable identifier.
-Branch-scoped roles carry branch_id; Sales Rep carries branch_id + territory_id.
-"""
 from __future__ import annotations
 
 from datetime import datetime
@@ -25,16 +20,9 @@ class User(Base):
     territory_id: Mapped[int | None] = mapped_column(ForeignKey("territory.id"), nullable=True)
     full_name: Mapped[str] = mapped_column(String(120), default="", nullable=False)
     active: Mapped[bool] = mapped_column(default=True, nullable=False)
-    # جهاز واحد بس لكل مستخدم.
-    #
-    # التوكن بيحمل `sid`، والقيمة دي هي الوحيدة المقبولة. كل تسجيل دخول بيولّد واحدة
-    # جديدة، فالجهاز اللي كان فاتح قبله توكنه بيبقى مالوش لازمة من أول طلب بعد كده —
-    # مش مستنيين انتهاء صلاحية ولا بنعتمد على الكلاينت إنه يقفل نفسه.
     session_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     session_client: Mapped[str | None] = mapped_column(String(16), nullable=True)
     session_started_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
-    # «مشرف المناديب» اللي المندوب ده تحته — بيشوف شغله من التطبيق (`api/supervisor.py`).
-    # على المندوب مش على المشرف: المندوب ليه مشرف واحد، والمشرف ليه كذا مندوب.
     supervisor_id: Mapped[int | None] = mapped_column(
         ForeignKey("user.id"), nullable=True, index=True)
     created_at: Mapped[datetime] = mapped_column(

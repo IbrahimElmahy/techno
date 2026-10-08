@@ -6,19 +6,6 @@ import { useAuth, User, RoleName } from '../components/AuthProvider';
 import { api } from '../api/client';
 import Logo from '../components/Logo';
 
-/**
- * بيانات الدخول المحفوظة على الجهاز ده.
- *
- * **الباسورد بيتخزّن نص صريح.** مافيش تشفير هنا، ومكانش ينفع يبقى فيه: أي مفتاح الصفحة
- * تقدر تفكّ بيه، الصفحة نفسها بتقدر تفكّ بيه — والنتيجة تشفير شكله أمان وهو مش أمان، وده
- * أسوأ من الوضوح. اللي بيفتح أدوات المطوّر على الجهاز ده بيقرا الباسورد.
- *
- * فالخيار مطفي بالافتراضي، ومكتوب على الشاشة إنه بيحفظ الباسورد كمان — عشان اللي بيعلّمه
- * يبقى عارف هو بيوافق على إيه. وقفله بيمسح المحفوظ في نفس اللحظة، مش بعدين.
- *
- * وده مالوش علاقة بالبقاء مسجّل الدخول: التوكن عايش ٣٠ يوم أصلاً، فالشاشة دي مابتظهرش
- * كل يوم — بتظهر بعد الخروج.
- */
 const REMEMBER_KEY = 'techno.remember_username';
 const REMEMBER_PWD_KEY = 'techno.remember_password';
 
@@ -45,8 +32,7 @@ export default function Login() {
           localStorage.removeItem(REMEMBER_KEY);
           localStorage.removeItem(REMEMBER_PWD_KEY);
         }
-      } catch { /* متصفح مقفّل التخزين — الدخول أهم من التذكّر */ }
-      // 1. Authenticate with backend (consumes POST /auth/login)
+      } catch {}
       const loginRes = await api.post('/api/v1/auth/login', {
         username: values.username,
         password: values.password,
@@ -54,14 +40,11 @@ export default function Login() {
 
       const { access_token } = loginRes.data;
       
-      // Temporarily store token so the subsequent /auth/me request can pick it up
       localStorage.setItem('token', access_token);
 
-      // 2. Fetch current user profiles (consumes GET /auth/me)
       const userRes = await api.get('/api/v1/auth/me');
       const profile = userRes.data;
 
-      // Restrict access to back-office roles only (Sales Rep is out of scope for desktop app)
       if (profile.role === 'sales_rep') {
         localStorage.removeItem('token');
         message.error('عذراً، تطبيق المندوب متاح فقط عبر الهاتف المحمول.');
@@ -74,22 +57,15 @@ export default function Login() {
         role: profile.role as RoleName,
         branch_id: profile.branch_id,
         name: profile.full_name,
-        // What the server says this user may do. Screens ask `can(...)` rather than listing role
-        // names, so a screen and the endpoint behind it always quote the same rule.
         capabilities: profile.capabilities ?? [],
         pages_shown: profile.pages_shown ?? [],
         pages_hidden: profile.pages_hidden ?? [],
       };
 
-      // 3. Confirm login in auth context
       login(access_token, activeUser);
       message.success('تم تسجيل الدخول بنجاح');
-      // **`replace` مش `push`.** الدخول كان بيدفع `/dashboard` فوق `/login`، فشاشة
-      // تسجيل الدخول بتفضل في تاريخ المتصفح تحت كل حاجة — وأول «رجوع» من الرئيسية
-      // بيوديك لها وانت داخل خلاص. الدخول مش صفحة بترجع لها، هو الباب.
       navigate('/dashboard', { replace: true });
     } catch (err) {
-      // Errors are handled by the Axios response interceptor (displays warning toasts)
       localStorage.removeItem('token');
     } finally {
       setLoading(false);
@@ -157,12 +133,11 @@ export default function Login() {
               checked={remember}
               onChange={(e) => {
                 setRemember(e.target.checked);
-                // القفل بيمسح على طول — مش بيستنى الدخول الجاي.
                 if (!e.target.checked) {
                   try {
                     localStorage.removeItem(REMEMBER_KEY);
                     localStorage.removeItem(REMEMBER_PWD_KEY);
-                  } catch { /* لا شيء */ }
+                  } catch {}
                 }
               }}
             >

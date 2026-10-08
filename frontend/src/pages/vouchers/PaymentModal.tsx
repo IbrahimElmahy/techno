@@ -1,9 +1,3 @@
-/**
- * سند صرف — اتفصل عن `Vouchers.tsx`، وشكله بقى من `VoucherShell` (٢٠٢٦-١٠-٠٧).
- *
- * الحالة بتفضل في الشاشة الأم — الفورم والقايمات والحفظ بيتبعتوا كمدخلات. البوباب
- * مالوش غير اللي يخصّه هو: نوع الطرف وخطوط العميل والـpayload (زي ما كان بالظبط).
- */
 import React from 'react';
 import { Form, Input, Segmented, Select, message } from 'antd';
 import type { FormInstance } from 'antd';
@@ -28,16 +22,11 @@ export default function PaymentModal({
   suppliers: Party[];
   treasuries: any[];
   methodOptions: { value: string; label: string }[];
-  /** بيعدّل سند موجود — العنوان والزرار بيقولوا كده. */
   editing?: boolean;
-  /** العملاء (ومعاهم الموظفين والفروع) — صرف لعميل/سلفة موظف/تحويل لفرع. */
   customers?: Party[];
-  /** نوع الطرف اللي البوباب بيفتح عليه — «صرف على الذمة» من شاشة ذمم الموظفين بيفتح على «موظف». */
   initialKind?: PartyKind;
 }) {
-  // الطرف (المرحلة ١): مورد افتراضياً زي الأول، والباقي اختيار. في التعديل من قيم السند.
   const [kind, setKind] = React.useState<PartyKind>('supplier');
-  // خطوط العميل (أبيض/بولي) — لو عنده الاتنين لازم يتحدد الصرف على أنهي واحد.
   const [lines, setLines] = React.useState<any[]>([]);
   const [family, setFamily] = React.useState<string>('');
   React.useEffect(() => {
@@ -62,7 +51,6 @@ export default function PaymentModal({
   const accountId = Form.useWatch('account_id', form);
   const accounts = usePostableAccounts(kind === 'account');
 
-  // الطرف التاني في القيد (مدين) — ولرصيده تحت خانته.
   let counterpart: Counterpart;
   let balance: BalanceTarget;
   if (isCustomerKind(kind)) {
@@ -141,7 +129,6 @@ export default function PaymentModal({
     <Form.Item key="c" name="cost_center_id" label="مركز التكلفة">
       <CostCenterField style={{ width: '100%' }} />
     </Form.Item>,
-    // «بيان السند» كلام الورقة، مش وصف الحركة في القيد.
     <Form.Item key="s" name="statement1" label="بيان السند">
       <Input placeholder="الكلام المكتوب على ورقة السند" />
     </Form.Item>,

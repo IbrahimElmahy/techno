@@ -33,28 +33,11 @@ export default function DateRangeFilter({
   allowClear = true,
   size = 'middle',
 }: DateRangeFilterProps) {
-  /**
-   * **الفترة الناقصة مابتطلعش برّه المكوّن.**
-   *
-   * كان بيبعت `[null, Dayjs]` أو `[Dayjs, null]` والنوع بيقول `[Dayjs, Dayjs]` —
-   * `as Dayjs` بتكدب على المترجم. فكل شاشة بتستقبله اتكتبت وهي مصدّقة إن الطرفين
-   * موجودين: `if (range) { range[0].format(...) }` — وأول ما اللي قدام الشاشة يمسح
-   * طرف واحد ويسيب التاني، `.format` بترمي على `null` **وتفضّي الشاشة**.
-   *
-   * ده كان في **٥٢ موضع في ١٩ شاشة**. إصلاحهم واحد واحد معناه إن الشاشة الجاية
-   * هتتكتب بنفس الافتراض وتقع من تاني — فالمنع هنا: المكوّن بيبعت فترة كاملة أو
-   * `null`، ومابيبعتش نُص فترة أبداً.
-   *
-   * **والنص المكتوب بيفضل ظاهر.** اللي اختار «من» ولسه ما اختارش «إلى» بيشوف
-   * اختياره في الخانة؛ اللي بيتغيّر إن الشاشة ماتفلترش لحد ما الطرفين يكملوا —
-   * وده الصح: نُص فترة مش فترة.
-   */
   const [half, setHalf] = useState<[Dayjs | null, Dayjs | null] | null>(null);
 
   const startVal = half ? half[0] : (value && value[0] ? value[0] : null);
   const endVal = half ? half[1] : (value && value[1] ? value[1] : null);
 
-  /** بيبلّغ الأب بفترة كاملة أو `null`، وبيمسك الناقصة عنده لحد ما تكمل. */
   const settle = (start: Dayjs | null, end: Dayjs | null) => {
     if (start && end) {
       setHalf(null);
@@ -62,7 +45,6 @@ export default function DateRangeFilter({
       return;
     }
     setHalf(start || end ? [start, end] : null);
-    // كانت فترة كاملة وبقت ناقصة ⇒ الفلتر يرفع إيده.
     if (value && value[0] && value[1]) onChange?.(null);
   };
 

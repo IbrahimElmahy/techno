@@ -1,4 +1,3 @@
-"""السلف والجزاءات (HR-5)."""
 from __future__ import annotations
 
 from datetime import date
@@ -76,13 +75,6 @@ class AdjustmentIn(BaseModel):
     reason: str | None = None
 
 
-# ------------------------------------------------------------- عزل الفروع
-#
-# الموارد البشرية متعزلة بالفرع زي المبيعات: موظف الفرع بيشوف موظفين فرعه وسلفهم وبس،
-# والمالك/الأدمن بيشوف الكل أو الفرع اللي اختاره من الشريط فوق. والرابط المباشر بالرقم
-# (إلغاء/تعديل سلفة فرع تاني) بيرجع ٤٠٤ — مش ٤٠٣، عشان مايأكّدش إن الرقم موجود أصلاً.
-
-
 def _not_found(message: str):
     raise HTTPException(404, {"code": "not_found", "message": message})
 
@@ -96,11 +88,6 @@ def _seen_employee(db: Session, employee_id: int, current: CurrentUser) -> Emplo
 
 
 def _advance_scope(stmt, current: CurrentUser):
-    """فرع السلفة هو المختوم عليها، والقديمة اللي مالهاش فرع بتاخد فرع موظفها.
-
-    السلف اللي اتصرفت قبل الختم `branch_id` بتاعها فاضي — بالقاعدة العامة كانت هتبان لكل
-    الفروع، فسلفة موظف أكتوبر تظهر لمدير العلياء.
-    """
     branch_id = branch_scope.visible_branch_id(current)
     stmt = stmt.join(Employee, Employee.id == EmployeeAdvance.employee_id)
     if branch_id is None:
@@ -120,7 +107,6 @@ def _seen_advance(db: Session, advance_id: int, current: CurrentUser) -> Employe
 
 
 def _check_treasury(db: Session, treasury_id: int | None, current: CurrentUser) -> None:
-    """خزنة فرع تاني مش من حق موظف الفرع يصرف منها."""
     if treasury_id is None:
         return
     from src.models.treasury import Treasury
@@ -148,7 +134,6 @@ def _advance_out(db: Session, a: EmployeeAdvance) -> dict:
         "ledger_entry_id": a.ledger_entry_id,
         "treasury_id": a.treasury_id, "branch_id": a.branch_id,
         "cost_center_id": a.cost_center_id,
-        # المتبقي محسوب من الأقساط اللي اتخصمت — مش عمود مخزّن بيفرق أول ما مسير يتعكس.
         "taken": str(advance_service.taken_of(db, a.id)),
         "outstanding": str(advance_service.outstanding_of(db, a)),
         "schedule": [
@@ -170,9 +155,6 @@ def _adjustment_out(db: Session, r: PayrollAdjustment) -> dict:
         "reason": r.reason, "status": r.status.value,
         "applied": r.payroll_line_id is not None,
     }
-
-
-# ------------------------------------------------------------- السلف
 
 
 @router.get("/advances")
@@ -197,11 +179,6 @@ def create_advance(
     current: CurrentUser = Depends(require_capability(CAP_PAYROLL_POST)),
     db: Session = Depends(get_db),
 ) -> dict:
-    """بتتصرف من الخزنة وبتتقيد **أصل** — مدين سلف العاملين / دائن الخزنة.
-
-    **الفرع بيتختم على السلفة**: المكتوب، وإلا فرع الموظف، وإلا فرع اللي بيصرف. من غيره
-    كل السلف كانت `branch_id` فاضي فبتبان لكل الفروع، والقيد بينزل على خزنة مش خزنة الفرع.
-    """
     emp = _seen_employee(db, body.employee_id, current)
     data = body.model_dump()
     visible = branch_scope.visible_branch_id(current)
@@ -224,7 +201,6 @@ def cancel_advance(
     current: CurrentUser = Depends(require_capability(CAP_PAYROLL_POST)),
     db: Session = Depends(get_db),
 ) -> dict:
-    """بيلغي السلفة ويعكس قيدها — لو مااتخصمش منها قسط في مسير مرحّل."""
     _seen_advance(db, advance_id, current)
     try:
         row = advance_service.cancel_advance(
@@ -243,7 +219,6 @@ def update_advance(
     current: CurrentUser = Depends(require_capability(CAP_PAYROLL_POST)),
     db: Session = Depends(get_db),
 ) -> dict:
-    """تعديل سلفة لسه مااتخصمش منها قسط — نفس الرقم ونفس القيد (بيترحّل تاني)."""
     _seen_advance(db, advance_id, current)
     _check_treasury(db, body.treasury_id, current)
     try:
@@ -256,9 +231,6 @@ def update_advance(
     return out
 
 
-# ------------------------------------------------------------- ذمم وسلف الموظفين
-
-
 @router.get("/employee-dues")
 def employee_dues(
     q: str | None = Query(None, description="بحث بالاسم أو الكود"),
@@ -268,14 +240,6 @@ def employee_dues(
     current: CurrentUser = Depends(require_capability(CAP_HR_READ)),
     db: Session = Depends(get_db),
 ) -> dict:
-    """صف لكل موظف: ذمته من الدفتر + سلفه المفتوحة = إجمالي اللي عليه.
-
-    على `hr.read` زي «ذمم الموظفين» القديمة، بس **أرقام السلف لـ`salary.view` بس** — السلفة
-    رقم باسم موظف بيتخصم من مرتبه، ومدير الفرع مالوش يشوف مرتبات. فمن غيرها أعمدة السلف
-    بترجع فاضية و`advances_visible=false`، والشاشة بتخفيها.
-
-    والعزل: موظف الفرع بيشوف فرعه بس؛ و`branch_id` من الشاشة فلتر **جوّه** ده، مش باب حواليه.
-    """
     visible = branch_scope.visible_branch_id(current)
     with_adv = current.can(CAP_SALARY_VIEW)
     if branch_id is not None and visible is not None and branch_id != visible:
@@ -286,7 +250,6 @@ def employee_dues(
         only_open=only_open, include_orphans=include_orphans, with_advances=with_adv)
     rows = [vars(r) for r in res.rows]
     if branch_id is not None:
-        # فلتر الشاشة دقيق: الموظف اللي مالوش فرع مايتحسبش على فرع بعينه.
         rows = [r for r in rows if r["branch_id"] == branch_id]
     return {
         "rows": rows,
@@ -298,9 +261,6 @@ def employee_dues(
     }
 
 
-# ------------------------------------------------------------- الجزاءات
-
-
 @router.get("/adjustments")
 def list_adjustments(
     employee_id: int | None = Query(None),
@@ -310,7 +270,6 @@ def list_adjustments(
     current: CurrentUser = Depends(require_capability(CAP_SALARY_VIEW)),
     db: Session = Depends(get_db),
 ) -> list[dict]:
-    # الجزاء مالوش فرع — فرعه فرع الموظف.
     stmt = branch_scope.scope(
         select(PayrollAdjustment).join(Employee, Employee.id == PayrollAdjustment.employee_id),
         Employee, current,
@@ -333,7 +292,6 @@ def create_adjustment(
     current: CurrentUser = Depends(require_capability(CAP_PAYROLL_POST)),
     db: Session = Depends(get_db),
 ) -> dict:
-    """جزاء أو مكافأة على شهر بعينه — الاتنين نفس الشكل بإشارة عكسية."""
     _seen_employee(db, body.employee_id, current)
     try:
         row = advance_service.create_adjustment(

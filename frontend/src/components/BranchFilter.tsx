@@ -3,13 +3,6 @@ import { Select } from 'antd';
 import { ApartmentOutlined } from '@ant-design/icons';
 import { api, clearApiCache, getViewBranch, setViewBranch } from '../api/client';
 
-/**
- * فلتر الفرع — للمالك والأدمن بس (٢٠٢٦-١٠-٠٤).
- *
- * الافتراضي «كل الفروع». اختيار فرع بيخلّي كل القوايم والتقارير والسجلات تعرض الفرع ده بس
- * (السيرفر بيفلتر — `X-View-Branch`)، والصفحة بتتحمّل من جديد عشان كل شاشة مفتوحة تجيب
- * داتا الفرع من الأول بدل ما تفضل على اللي كانت جايباه.
- */
 export default function BranchFilter() {
   const [branches, setBranches] = useState<{ id: number; name: string }[]>([]);
   const current = getViewBranch();
@@ -42,12 +35,6 @@ export default function BranchFilter() {
   );
 }
 
-/**
- * اسم الفرع اللي الموظف شغّال عليه — جنب زرار العين (طلب العميل ٢٠٢٦-١٠-٠٧).
- *
- * المالك والأدمن شايفينه في فلتر الفرع نفسه؛ موظف الفرع ماكانش فيه حاجة فوق بتقول هو
- * فين، واللي بيتنقّل بين حسابات الفروع كان بيكتب في فرع وهو فاكر إنه في التاني.
- */
 export function BranchBadge({ branchId }: { branchId?: number | null }) {
   const [name, setName] = useState<string>('');
 

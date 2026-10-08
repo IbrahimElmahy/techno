@@ -7,18 +7,6 @@ import 'collect_cash_screen.dart';
 import 'customer_profile_screen.dart';
 import '../services/auto_sync.dart';
 
-/// كشف المديونيات — **مين عليه كام، وعلى أنهي خط**.
-///
-/// المندوب بينزل الصبح ومعاه سؤال واحد: أروح لمين النهاردة. الإجابة كانت بتتجمّع
-/// بفتح كارت عميل ورا التاني، أو في ورقة من المكتب بتبقى بايتة بيوم.
-///
-/// **بيشتغل من غير شبكة.** الأرصدة بالخط بتنزل مع حزمة البيع مع كل مزامنة
-/// (`family_balances` على كارت العميل)، فالشاشة دي بتقرا من الجهاز — نفس الأرقام
-/// اللي شاشة الفاتورة والتحصيل بيقروها، مش نداء تالت بيقول رقم رابع.
-///
-/// **والخط مش تفصيلة.** العميل الواحد ممكن يبقى مديون أبيض ودائن بولي في نفس اللحظة،
-/// ورقم واحد مجمّع بيخفي ده — والفلوس بتتحصّل بالخط، فاللي بيروح يحصّل لازم يعرف
-/// يقبض على أنهي حساب.
 class DebtsScreen extends StatefulWidget {
   const DebtsScreen({super.key});
 
@@ -26,7 +14,6 @@ class DebtsScreen extends StatefulWidget {
   State<DebtsScreen> createState() => _DebtsScreenState();
 }
 
-/// فلتر نوع المديونية.
 enum _Kind { all, white, poly, both, credit }
 
 extension on _Kind {
@@ -42,8 +29,6 @@ extension on _Kind {
 const _kWhite = 'أبيض';
 const _kPoly = 'بولي';
 
-/// أقل من كده مش مديونية — ده فرق تقريب. من غير الحد ده الكشف بيتملى صفوف بـ٠٫٠٠
-/// وقُرش، والحقيقي بيضيع وسطهم.
 const _eps = 0.5;
 
 class _DebtsScreenState extends State<DebtsScreen> {
@@ -65,8 +50,6 @@ class _DebtsScreenState extends State<DebtsScreen> {
   }
 
   Future<void> _load() async {
-    // كل عملاء المندوب مرة واحدة، والفلترة في الذاكرة: الكشف بيتفلتر ويتبحث فيه
-    // كتير، ورحلة على القرص مع كل حرف بتخلّي الكتابة تتقطّع على شاشة تليفون.
     final rows = await LocalDb.instance.customers(limit: 100000);
     if (!mounted) return;
     setState(() {
@@ -78,8 +61,6 @@ class _DebtsScreenState extends State<DebtsScreen> {
   double _white(CustomerRef c) => c.familyBalances[_kWhite] ?? 0;
   double _poly(CustomerRef c) => c.familyBalances[_kPoly] ?? 0;
 
-  /// إجمالي اللي عليه. بيتاخد من الخطين لو نازلين، وإلا من الرقم المجمّع — العميل
-  /// اللي ماتقسمش حسابه لسه ليه رقم واحد وهو صح.
   double _total(CustomerRef c) {
     final f = _white(c) + _poly(c);
     return c.familyBalances.isEmpty ? c.balance : f;
@@ -92,8 +73,6 @@ class _DebtsScreenState extends State<DebtsScreen> {
       _Kind.white => w > _eps,
       _Kind.poly => p > _eps,
       _Kind.both => w > _eps && p > _eps,
-      // الرصيد السالب معناه إحنا اللي علينا: دفع مقدّم، أو مرتجع بعد سداد. بيتقال
-      // بدل ما يتلم مع المديونية ويقلّل الإجمالي في صمت.
       _Kind.credit => t < -_eps,
     };
   }
@@ -104,7 +83,6 @@ class _DebtsScreenState extends State<DebtsScreen> {
       for (final c in _all)
         if (_match(c) && (q.isEmpty || c.name.toLowerCase().contains(q))) c
     ];
-    // الأكبر فوق — اللي بيفتح الكشف بيدوّر على اللي محتاج يتحصّل الأول.
     out.sort((a, b) => _total(b).abs().compareTo(_total(a).abs()));
     return out;
   }
@@ -153,8 +131,6 @@ class _DebtsScreenState extends State<DebtsScreen> {
                   ),
                 ),
                 const SizedBox(height: 8),
-                // الفلتر شرايح أفقية مش منسدلة: خمس خيارات بيتبدّلوا كتير، والمنسدلة
-                // بتخلّي كل تبديل فتحة وقفلة.
                 SizedBox(
                   height: 38,
                   child: ListView(
@@ -189,8 +165,6 @@ class _DebtsScreenState extends State<DebtsScreen> {
                           ),
                         )
                       : RefreshIndicator(
-                          // السحبة بتجيب من السيرفر الأول (الفواتير اللي المكتب عدّلها والأرصدة)، وبعدين
-                          // تقرا من الجهاز — كانت بتقرا الجهاز بس فمافيش جديد يظهر.
                           onRefresh: () async {
                             await AutoSync.instance.maybeRun(force: true);
                             await _load();
@@ -215,8 +189,6 @@ class _DebtsScreenState extends State<DebtsScreen> {
       subtitle: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // الخطين جنب بعض لما يبقى فيه رقم على الاتنين — ده اللي الرقم المجمّع
-          // بيخفيه، والفلوس بتتحصّل بالخط.
           if (c.familyBalances.isNotEmpty)
             Wrap(spacing: 6, runSpacing: 2, children: [
               if (w.abs() > _eps) _pill('أبيض ${_money(w)}', w),
@@ -244,8 +216,6 @@ class _DebtsScreenState extends State<DebtsScreen> {
     );
   }
 
-  /// الضغطة بتفتح الاتنين اللي الواحد بيعملهم من الكشف ده: يشوف كشف حسابه، أو
-  /// يحصّل منه على طول. الكشف من غير الطريق ده بيبقى ورقة بتتقري وبس.
   void _actions(CustomerRef c) {
     showModalBottomSheet<void>(
       context: context,

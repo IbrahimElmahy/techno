@@ -1,12 +1,3 @@
-"""الموظفون والوظائف — B8.
-
-Deliberately separate from `User`. A user is someone who logs in; an employee is someone the
-company employs, and the two are not the same set — a driver, a workshop hand or a storekeeper
-appears on the payroll and in a commission report without ever having a password. Forcing them
-into `user` would mean creating login accounts for people who must never have one.
-
-Where the same person is both, `user_id` links the two rather than duplicating them.
-"""
 from __future__ import annotations
 
 from datetime import date, datetime
@@ -19,8 +10,6 @@ from src.core.money import MONEY, PCT
 
 
 class JobTitle(Base):
-    """الوظيفة — a named job, so «سائق» is one thing everywhere instead of five spellings."""
-
     __tablename__ = "job_title"
 
     id: Mapped[int] = mapped_column(BigIntPK, primary_key=True, autoincrement=True)
@@ -40,12 +29,6 @@ class Employee(Base):
     name: Mapped[str] = mapped_column(String(160), nullable=False, index=True)
     job_title_id: Mapped[int | None] = mapped_column(ForeignKey("job_title.id"), nullable=True,
                                                      index=True)
-    # «القسم» اتنقل لجدول حقيقي (HR-1). النص القديم فاضل، وبيتقرا لحد ما الموظف يتربط.
-    #
-    # Free text is how «المبيعات» and «مبيعات» and «قسم المبيعات» become three departments in a
-    # report nobody can total — and a string cannot carry a manager, a parent, or a cost centre,
-    # so «تكلفة أجور قسم المخازن» had no answer. `department_id` is the truth once set; this
-    # column is the fallback for anyone the import has not mapped yet, so no data is lost.
     department: Mapped[str | None] = mapped_column(String(120), nullable=True)
     department_id: Mapped[int | None] = mapped_column(
         ForeignKey("department.id"), nullable=True, index=True
@@ -55,26 +38,13 @@ class Employee(Base):
     hire_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     salary: Mapped[object | None] = mapped_column(MONEY, nullable=True)
     address: Mapped[str | None] = mapped_column(String(240), nullable=True)
-    # الحضور / انصراف — the shift this employee is expected to work, stored as plain text rather
-    # than a time type on purpose: what gets written here is «٨ ص» or «٨:٣٠-٤» as often as a clean
-    # time, and a column that refuses those makes people stop filling it in at all.
     work_start: Mapped[str | None] = mapped_column(String(20), nullable=True)
     work_end: Mapped[str | None] = mapped_column(String(20), nullable=True)
-    # «عمولة تحصيلات» — the percentage this employee earns on what they collect. Per employee, not
-    # per role: two reps on the same round are routinely on different rates, and one rate for the
-    # role would quietly pay one of them wrong every month.
     collection_commission_pct: Mapped[object | None] = mapped_column(PCT, nullable=True)
     branch_id: Mapped[int | None] = mapped_column(ForeignKey("branch.id"), nullable=True,
                                                   index=True)
-    # The store this employee works out of — a driver's van, a storekeeper's floor. It is how
-    # «who is responsible for this stock» is answered without reading a custody document.
     warehouse_id: Mapped[int | None] = mapped_column(ForeignKey("warehouse.id"), nullable=True)
-    # Set only for the employees who also log in; NULL for everyone else.
     user_id: Mapped[int | None] = mapped_column(ForeignKey("user.id"), nullable=True, unique=True)
-    # حساب ذمة الموظف — «سلفت كام ولسه عليه كام». الرصيد نفسه بيتحسب من الدفتر مش
-    # بيتخزّن هنا؛ اللي بيتخزّن هو **مين حسابه**، لأن المطابقة بالاسم وقت العرض
-    # بتقع على «كامل هلول» و«كامل هلول شخصى» — اتنين حساب لراجل واحد وواحد بس منهم
-    # ذمته. الربط بيتعمل مرة بـ`link_employee_receivables` وبيتراجع بالعين.
     receivable_account_id: Mapped[int | None] = mapped_column(
         ForeignKey("account.id"), nullable=True)
     active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)

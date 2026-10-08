@@ -9,14 +9,6 @@ import { useLookup } from '../hooks/useLookup';
 import { useCategoryTree, categorySelectOptions } from '../hooks/useCategoryTree';
 import { TabModal } from './TabModal';
 
-/**
- * ONE edit form for an item: its data, its five tier prices AND its loyalty point value.
- *
- * These used to live in three separate places (the row's edit modal, a «الأسعار» popup and an
- * inline points cell), so changing an item meant three round trips through three UIs. Saving
- * still hits the three endpoints they belong to — only the screen is unified.
- */
-
 const TIERS: [string, string][] = [
   ['commercial', 'تجاري'],
   ['semi_commercial', 'نصف تجاري'],
@@ -41,8 +33,6 @@ export default function ItemEditModal({
   const [item, setItem] = useState<any>(null);
   const [warehouses, setWarehouses] = useState<any[]>([]);
   const { options: categoryOptions } = useLookup('item_category');
-  // الفئات كشجرة — الرئيسية عنوان مجموعة وفروعها تحتها. (031) القيمة المتخزّنة زي ما
-  // هي، ولو مافيش شجرة القايمة بترجع مسطّحة بنفس الترتيب بالظبط.
   const { tree: categoryTree } = useCategoryTree();
   const categoryTreeOptions = React.useMemo(
     () => categorySelectOptions(categoryTree, categoryOptions),
@@ -69,13 +59,12 @@ export default function ItemEditModal({
           tiers[t.tier] = Number(t.price);
         });
 
-        // Points only exist for products; a raw material simply has none.
         let points: number | undefined;
         if (it.kind === 'product') {
           try {
             const p = await api.get(`/api/v1/products/${itemId}/point-value`);
             points = parseFloat(p.data.point_value) || 0;
-          } catch { /* no point value set yet */ }
+          } catch {}
         }
 
         form.setFieldsValue({
@@ -108,26 +97,21 @@ export default function ItemEditModal({
     if (!itemId || !item) return;
     setSaving(true);
     try {
-      // 1) The item's own fields (price moves get logged server-side).
       await api.patch(`/api/v1/items/${itemId}`, {
         name: v.name,
         code: v.code,
-        // `unit_of_measure` مش متبعوت: السيرفر كان بيرميه، ودلوقتي بيقبل تصليح متر↔قطعة بس —
-        // وده مكانه خانة «القطعة = كام متر؟» في شاشة الأصناف، اللي بتوضّح إن الرصيد مش بيتحوّل.
         category: v.category ?? null,
         sale_price: item.kind === 'product' ? v.sale_price ?? null : null,
         purchase_price: item.kind === 'raw_material' ? v.purchase_price ?? null : null,
         default_discount_pct: v.default_discount_pct ?? 0,
         default_warehouse_id: v.default_warehouse_id ?? null,
         is_serialized: v.is_serialized,
-        // (011) advisory limits + expiry tracking
         is_perishable: v.is_perishable,
         min_stock: v.min_stock ?? null,
         max_stock: v.max_stock ?? null,
         active: v.active,
       });
 
-      // 2) Tier prices — products only, and only the tiers actually filled in.
       if (item.kind === 'product' && canEditPrices) {
         const tiers = TIERS
           .filter(([key]) => v[key] !== undefined && v[key] !== null && v[key] !== '')
@@ -137,7 +121,6 @@ export default function ItemEditModal({
         }
       }
 
-      // 3) Loyalty point value — products only.
       if (item.kind === 'product' && canEditPoints && v.point_value !== undefined
           && v.point_value !== null) {
         await api.put(`/api/v1/products/${itemId}/point-value`,
@@ -221,8 +204,6 @@ export default function ItemEditModal({
                   options={sortByName(warehouses, (w) => w.name).map((w) => ({ value: w.id, label: w.name }))} />
               </Form.Item>
             </Col>
-            {/* (011) Planning limits — advisory only: they drive the reorder report, they never
-                block a sale. */}
             <Col xs={12} md={6}>
               <Form.Item name="min_stock" label="حد إعادة الطلب (الأدنى)"
                 extra="تنبيه فقط — لا يمنع البيع">

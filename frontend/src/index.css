@@ -1,30 +1,5 @@
-/*
- * الخط متحزّم مع البرنامج، مش متحمّل من الإنترنت.
- *
- * كان `@import` من Google Fonts. ده معناه إن تطبيق الديسكتوب من غير نت — أو أول رسمة قبل ما
- * الطلب يرجع — بيقع على خط بديل، والعربي في الخط البديل بيبان رفيع ومشوّه. وده «مش واضح»
- * اللي مش بيتصلّح بزيادة الوزن، لأن الوزن اللي بتطلبه أصلاً مش موجود.
- *
- * `@fontsource-variable` بيحط ملفات الخط جوّه البناء، فبيبقى موجود دايماً وبنفس الوزن اللي
- * الشاشة متصمّمة عليه.
- */
 @import '@fontsource-variable/cairo';
 
-/*
- * وضوح الخط في النظام كله.
- *
- * تلات حاجات كانت بتخلّي الكلام باهت:
- *
- * 1. **وزن ٤٠٠.** Cairo خط عربي رفيع عند الوزن العادي — أرفع من اللاتيني على نفس الرقم.
- *    على شاشة مكتب بتتقرا طول اليوم، ٥٠٠ هو الوزن اللي الحروف بتبان فيه من غير ما تتقل.
- * 2. **لون `#333` على خلفية `#f5f5f5`.** تباين مقبول ومش كويس. `#1f1f1f` بيرفعه من غير ما
- *    يبقى أسود قاسي.
- * 3. **مفيش تنعيم.** من غير `antialiased` الحروف العربية بتطلع مهرّشة على شاشات ويندوز،
- *    وده اللي بيتقري «مش واضح» حتى لما الحجم كفاية.
- *
- * والحجم ١٤ بدل ١٣ الافتراضي بتاع antd. الفرق بيكسل واحد، وهو الفرق بين رقم بتقراه ورقم
- * بتتأكد منه.
- */
 html,
 body,
 #root {
@@ -33,7 +8,6 @@ body,
   width: 100%;
   height: 100%;
   font-family: 'Cairo', sans-serif;
-  /* ١٦ وبولد (طلب العميل ٢٠٢٦-١٠-٠٥، أكتر من مرة: «الخط صغير… كبّره وخليه بولد»). */
   font-size: 16px;
   font-weight: 700;
   direction: rtl;
@@ -45,11 +19,6 @@ body,
   text-rendering: optimizeLegibility;
 }
 
-/*
- * antd بتكتب ألوانها بنفسها — `rgba(0,0,0,0.88)` للنص و`0.45` للثانوي. التانية دي رمادي
- * فاتح على أبيض، وهي اللي بتتحط على عناوين الأعمدة و«مفيش بيانات» وأسماء الحقول. الحاجات
- * دي مش زينة: العمود من غير عنوان مقروء رقم مجهول.
- */
 .ant-table-thead > tr > th,
 .ant-form-item-label > label,
 .ant-descriptions-item-label,
@@ -57,17 +26,6 @@ body,
   color: #303030 !important;
   font-weight: 700;
 }
-/*
- * عنوان العمود مايتلفّش حرف في السطر.
- *
- * الجداول `tableLayout: fixed` ومن غير تمرير أفقي، فلما مجموع عروض الأعمدة يعدّي عرض
- * الشاشة المتصفح بيضغطهم بالنسبة. الضغط لما يوصل لأقل من عرض كلمة، اللف بيحصل **جوّه
- * الكلمة** — والعنوان بيبقى عمود حروف مركّبة فوق بعض، والجدول كله بيبان مكسور.
- *
- * `overflow-wrap: normal` بيمنع الكسر جوّه الكلمة، و`text-overflow: ellipsis` بيقص
- * بنقط بدلها. عنوان مقصوص بنقط بيقول إنه مقصوص؛ عنوان متلفّف حرف حرف بيبان غلطة.
- * الفتحة دي بتتفتح على أي شاشة ضيقة، فمكانها هنا مش في صفحة بعينها.
- */
 .ant-table-thead > tr > th {
   overflow-wrap: normal;
   word-break: keep-all;
@@ -75,29 +33,6 @@ body,
   text-overflow: ellipsis;
 }
 
-/*
- * الجداول مسطّرة زي الإكسل — خط بين الصفوف **وبين الأعمدة**.
- *
- * antd بترسم خط أفقي تحت الصف وخلاص. على جدول عشر أعمدة، العين وهي ماشية على السطر
- * مالهاش حاجة تمسكها فبتنطّ لعمود جنبه — واللي بيقرا كارت صنف أو تقرير بيقارن الرقم
- * بالاسم اللي على يمينه، فالنطّة دي مش مضايقة شكلية، دي رقم اتقرا على السطر الغلط.
- * الخط الرأسي هو اللي بيمنعها، وهو اللي الإكسل بيرسمه.
- *
- * **هنا مرة واحدة، مش شاشة شاشة.** فيه أكتر من ١٧٠ جدول في النظام؛ `bordered` على كل
- * واحد فيهم يبقى ١٧٠ تعديل، وشاشة تتكتب الشهر الجاي وتنساه. ومافيش ولا `<Table bordered>`
- * مكتوب في الريبو دلوقتي (اللي موجود `Descriptions bordered` وليها رسمها) فمافيش خط
- * هيتكرر فوق خط.
- *
- * والخطوط **رفيعة وفاتحة** عن قصد: جدول أربعميت سطر بخطوط تخينة بيبقى شبكة والداتا
- * ضايعة جوّاها. الخط بيدلّ العين، مش بياخد انتباهها.
- *
- * `border-inline-end` مش `border-left`: الشاشة RTL، والحد المنطقي بيقع على الناحية الصح
- * لوحده لو أي مكوّن اتقلب لـLTR. وآخر عمود من غير خط عشان مايتلزقش على حافة الجدول.
- *
- * والسِلِكْتور مبدوء بـ`.ant-table-wrapper` عشان يبقى بنفس قوة سِلِكْتور antd بالظبط —
- * فبيغلبه بالترتيب (ملفنا بيتحقن بعده)، من غير `!important` يكسر حالات زي hover على
- * عمود الترتيب.
- */
 .ant-table-wrapper .ant-table-thead > tr > th,
 .ant-table-wrapper .ant-table-tbody > tr > td,
 .ant-table-wrapper .ant-table-summary > tr > td,
@@ -110,17 +45,9 @@ body,
 .ant-table-wrapper .ant-table-summary > tr > th:last-child {
   border-inline-end: none;
 }
-/* الخط الأفقي: موجود أصلاً بس باهت جداً (`rgba(5,5,5,0.06)`) — بقى بنفس لون الرأسي
-   عشان الشبكة تتقرا شبكة واحدة مش خطين بلونين. */
 .ant-table-wrapper .ant-table-tbody > tr > td {
   border-bottom: 1px solid #e4ebe1;
 }
-/*
- * الرأس مميّز عن الجسم — لونه ولون الخط اللي تحته.
- *
- * نفس لون ترويسة `.entry-grid` بالظبط، عشان جدول العرض وجدول الإدخال يتقروا بنفس
- * الطريقة. والخط تحت الرأس أتقل شوية من خطوط الجسم: هو الحد اللي بيقول «تحت ده داتا».
- */
 .ant-table-wrapper .ant-table-thead > tr > th {
   background: #f2f9f3;
   border-bottom: 1.5px solid #dce8d9;
@@ -130,22 +57,10 @@ body,
 .ant-table-wrapper .ant-table-summary > tr > th {
   border-inline-end-color: #dce8d9;
 }
-/*
- * الصف اللي الماوس عليه — لازم يفضل باين وسط الخطوط.
- *
- * رمادي antd الافتراضي (`#fafafa`) على شبكة فيها خطوط بيختفي: الفرق بينه وبين الأبيض
- * أقل من الفرق بين الخط والخلفية، فالعين بتشوف الخطوط مش الصف. لمسة خضرا فاتحة من لون
- * النظام بتفرق من غير ما تغطي الأرقام.
- *
- * الخطوط بتفضل ظاهرة لأنها على الخلايا نفسها مش على خلفية الصف. و`.row-cursor`
- * و`.row-arrived` بـ`!important` فبيغلبوا الـhover — ودي الصح: «انت واقف فين» أهم من
- * «الماوس فوق إيه».
- */
 .ant-table-wrapper .ant-table-tbody > tr.ant-table-row:hover > td,
 .ant-table-wrapper .ant-table-tbody > tr > td.ant-table-cell-row-hover {
   background: #eef7e9;
 }
-/* الصف المختار — أغمق من الـhover، لأنه قرار اتاخد مش مجرد مرور. */
 .ant-table-wrapper .ant-table-tbody > tr.ant-table-row-selected > td {
   background: #e2f2d5;
 }
@@ -153,18 +68,7 @@ body,
   background: #d8ecc7;
 }
 
-/*
- * الورق كمان.
- *
- * المتصفح بيشيل الخلفيات وقت الطباعة افتراضياً، فالرأس بيطلع أبيض والشبكة اللي فوق
- * مبنية على لون فاتح جداً ممكن تختفي على طابعة ضعيفة. فالخطوط بتتقّل شوية في الطباعة
- * وبس — جدول مطبوع من غير خطوط بيبقى عمود أرقام عايمة، وده بالظبط اللي بنصلّحه.
- * (المستندات اللي بتتطبع من `print/brand.ts` ليها شبكتها الكاملة أصلاً، ودي للشاشات
- * اللي بتتطبع من المتصفح على طول.)
- */
 @media print {
-  /* خطوط غامقة مصمتة (#444) مش الأخضر الرمادي الفاتح — على ليزر أبيض وأسود الفاتح كان
-     بيطلع متقطّع أو مابيطلعش (٢٠٢٦-١٠-٠٦). والكلام كله أسود. */
   .ant-table-wrapper .ant-table-thead > tr > th,
   .ant-table-wrapper .ant-table-tbody > tr > td,
   .ant-table-wrapper .ant-table-summary > tr > td,
@@ -175,9 +79,6 @@ body,
     border: 1px solid #444 !important;
     color: #000 !important;
   }
-  /* الرأس: أسود تقيل على رمادي فاتح ومقفول بخط أسود. أي رأس غامق على الشاشة (زي جدول
-     البيع الكحلي بكلام أبيض) بيتقلب هنا — من غير خلفيات الأبيض على الكحلي بيطلع أبيض
-     على أبيض. */
   .ant-table-wrapper .ant-table-thead > tr > th,
   .entry-grid thead th,
   .sale-grid thead th {
@@ -193,12 +94,6 @@ body,
     border-color: #444 !important;
   }
 }
-/*
- * الخانات والخلايا بتاخد وزنها ولونها بالصريح.
- *
- * antd بتكتب `font-weight: normal` على المدخلات، وده بيلغي الوزن اللي على `body` — فالكلام
- * اللي **بيتكتب** كان بيفضل أرفع من اللي حواليه. وهو أهم كلام على الشاشة.
- */
 .ant-table-tbody > tr > td,
 .ant-input,
 .ant-input-number-input,
@@ -212,18 +107,10 @@ body,
   color: #141414;
   font-weight: 700;
 }
-/* الأرقام في الجداول — دي اللي الغلط في قراءتها بيتكلّف فلوس. */
 .entry-grid,
 .ant-table-tbody > tr > td {
   font-weight: 700;
 }
-/*
- * **الخانة المقفولة مقفولة — مش مخفية.** (طلب العميل ٢٠٢٦-٠٩-٢٩)
- *
- * antd بترسم نص الخانة المقفولة رمادي فاتح جداً، فالفاتورة المحفوظة (بيع، شرا، مردود)
- * الكمية والسعر والخصمين فيها بيبقوا شبه مش ظاهرين — والفاتورة المحفوظة دي بالظبط اللي
- * بتتفتح عشان حد يقراها. الخلفية الرمادي بتفضل هي علامة القفل، والرقم نفسه غامق وبولد.
- */
 .ant-input[disabled],
 .ant-input-disabled,
 .ant-input-affix-wrapper-disabled .ant-input,
@@ -236,7 +123,6 @@ textarea.ant-input[disabled] {
   font-weight: 700;
   opacity: 1;
 }
-/* النص الباهت اللي antd بتحطه على الـplaceholder — لسه باهت عن قصد، بس مقروء. */
 .ant-input::placeholder,
 .ant-input-number-input::placeholder,
 .ant-select-selection-placeholder,
@@ -245,7 +131,6 @@ textarea.ant-input[disabled] {
   -webkit-text-fill-color: #555b65;
 }
 
-/* Custom scrollbar styled for RTL layout */
 ::-webkit-scrollbar {
   width: 6px;
   height: 12px;
@@ -329,7 +214,6 @@ textarea.ant-input[disabled] {
   box-shadow: 0 -2px 6px -4px rgba(15, 23, 42, 0.25);
 }
 
-/* RTL layout fixes */
 .ant-layout {
   font-family: 'Cairo', sans-serif !important;
 }
@@ -352,43 +236,17 @@ textarea.ant-input[disabled] {
   font-family: 'Cairo', sans-serif !important;
 }
 
-/*
- * The row a link just arrived at.
- *
- * A register with no per-document detail view answers «open this one» by showing you where it is
- * on the page — landing on a list of forty rows and leaving the reader to find the number they
- * clicked is the half-link this exists to avoid. It fades after a few seconds because a permanent
- * highlight stops meaning «this one» by the second time.
- */
 .row-arrived > td {
   background: #f6ffed !important;
   box-shadow: inset 2px 0 0 #6AB42D;
   transition: background 0.4s ease;
 }
 
-/*
- * ارتفاع الصف — زي الإكسل، وفي الجداول كلها.
- *
- * Driven by one attribute on <html> (see `RowDensity.tsx`), so all 173 tables in the system obey
- * it — including the ones inside modals and the ones nobody has written yet. Threading a prop
- * through each of them would have been 173 edits and 173 chances to miss one.
- *
- * `!important` is deliberate here, and this is the case it exists for: antd writes the cell padding
- * from each table's own `size`, so without it a screen saying `size="small"` would ignore what the
- * person using it just asked for. A screen's author had an opinion; the reader's opinion outranks
- * it, and a row height that changes depending on which screen you are on is not a preference.
- *
- * Only padding and line-height move. Font size is left alone: shrinking the text to fit more rows
- * is how a dense screen becomes an unreadable one, and somebody counting stock is reading numbers
- * they cannot afford to misread.
- */
 html[data-density='compact'] .ant-table-tbody > tr > td,
 html[data-density='compact'] .ant-table-thead > tr > th {
   padding: 2px 8px !important;
   line-height: 1.35;
 }
-/* Controls inside a cell set the row's real height, so they shrink with it — otherwise a grid of
-   quantity boxes stays tall however tight the padding gets. */
 html[data-density='compact'] .ant-table-tbody .ant-input,
 html[data-density='compact'] .ant-table-tbody .ant-input-number-input,
 html[data-density='compact'] .ant-table-tbody .ant-select-selector,
@@ -408,27 +266,10 @@ html[data-density='comfortable'] .ant-table-thead > tr > th {
   line-height: 1.7;
 }
 
-/*
- * السطر اللي الكيبورد واقف عليه.
- *
- * Distinct from `.row-arrived`, which says «هي دي اللي فتحتها» and fades. This one says «دي اللي
- * هتفتح لو دوست Enter» and stays until the cursor moves, because a cursor that disappears is a
- * cursor you have to find again before every keypress.
- *
- * It only ever appears after somebody presses an arrow key. Showing a mouse user a cursor they
- * never asked for makes them think they have selected something.
- */
 .row-cursor > td {
   background: #e6f4ff !important;
   box-shadow: inset 2px 0 0 #1677ff;
 }
-/*
- * حشو الكروت — أقل، عشان الداتا تاخد المساحة.
- *
- * antd بتدي الكارت ٢٤ بيكسل حشو من كل ناحية. على شاشة كارتها هو الصفحة كلها، ده ٤٨ بيكسل
- * رايحين من العرض و٤٨ من الطول قبل ما أول حرف يترسم. اتنقص للنص تقريباً: لسه بيفصل المحتوى
- * عن حافة الكارت، من غير ما ياكل صف بيانات.
- */
 .ant-card > .ant-card-body {
   padding: 14px 16px;
 }
@@ -437,26 +278,6 @@ html[data-density='comfortable'] .ant-table-thead > tr > th {
   min-height: 46px;
 }
 
-/*
- * شاشة مستند مضغوطة — مساحة أقل وكلام أوضح.
- *
- * الفورم الرأسي بيحط اسم الحقل فوق الخانة، وده بياكل ضعف الارتفاع. على شاشة فيها اتناشر حقل
- * في الترويسة، النتيجة إن السطور — اللي هي الشغل — بتبتدي بعد نص الشاشة.
- *
- * الضغط هنا كله في **المسافات**، مش في حجم الخط: تصغير الخط عشان يدخل صف زيادة هو إزاي شاشة
- * كثيفة بتبقى شاشة مش مقروءة، واللي بيكتب فاتورة بيقرا أرقام مايتحملش يقراها غلط. فالأسماء
- * بقت أصغر شوية **وأغمق** — الوضوح جاي من التباين مش من الحجم — والخانات نفسها فضلت بخطها.
- */
-/*
- * اسم الحقل فوق الخانة، ومضغوط.
- *
- * جُرّب إن الاسم يقف على خط الإطار عشان يوفّر سطر — وطلع بيغطي اللي مكتوب في الخانة، لأن
- * الخانة عندنا مالهاش الحشو العلوي اللي التصميم ده بيعتمد عليه. توفير سطر مايستاهلش إن
- * الرقم اللي بتكتبه يتغطى.
- *
- * فالتوفير رجع لمكانه الصح: الحشو والهوامش. الاسم أصغر شوية وأتقل وأغمق — الوضوح من
- * التباين مش من الحجم — والخانة بحجمها.
- */
 .doc-form .ant-form-item {
   margin-bottom: 8px;
 }
@@ -471,35 +292,19 @@ html[data-density='comfortable'] .ant-table-thead > tr > th {
   height: auto;
   line-height: 1.1;
 }
-/* antd بتحط نقطتين بعد اسم الحقل — مالهمش لازمة والمساحة أهم. */
 .doc-form .ant-form-item-label > label::after {
   display: none;
 }
-/* الخانة نفسها بتفضل مقروءة — الضغط جه من فوقها وتحتها. */
 .doc-form .ant-input,
 .doc-form .ant-input-number-input,
 .doc-form .ant-select-selector,
 .doc-form .ant-picker-input > input {
   font-size: 15px;
 }
-/* الفاصل بين أقسام المستند كان بياخد سطر كامل فاضي من فوقه ومن تحته. */
 .doc-form .ant-divider-horizontal {
   margin: 10px 0;
 }
 
-/*
- * اسم الحقل جنب الخانة، مش فوقها.
- *
- * الاسم فوق الخانة بيكلّف سطر لكل صف حقول. صف الترويسة (تاريخ · عميل · مندوب · مستند)
- * وصف البيانات تحته كانوا بياخدوا أربع سطور، اتنين منهم كلمة واحدة كل واحد. الاسم جنبها
- * بيرجّع نص المساحة دي للسطور نفسها — وده اللي الواحد جاي يشوفه.
- *
- * ده مش تجربة «الاسم على الإطار» اللي اتجرّبت وفشلت: هناك الاسم كان بيقف فوق الكلام
- * المكتوب في الخانة ويغطيه. هنا الاسم بره الخانة تمامًا، على يمينها، وليه عرض ثابت
- * (٥٦ بكسل) عشان الخانات تفضل على خط واحد ومايبقاش كل واحدة بادية من مكان.
- *
- * `nowrap` مقصودة — من غيرها اسم طويل بينزل تحت وبيرجّع السطر اللي شيلناه.
- */
 .doc-form .ant-form-item-row {
   flex-flow: row nowrap;
   align-items: center;
@@ -518,20 +323,9 @@ html[data-density='comfortable'] .ant-table-thead > tr > th {
   max-width: none;
 }
 
-/*
- * جدول إدخال سطور الفاتورة.
- *
- * الشاشة اللي العميل شغّال عليها بتدخّل السطور في جدول مضغوط: عنوان أعمدة مرة واحدة فوق، وكل صنف
- * سطر واحد. اللي كان عندنا كروت متجمّعة بالفئة — كل سطر بياخد مساحة كبيرة، وفاتورة خمستاشر صنف
- * بتبقى صفحتين تمرير، والكميات والأسعار مالهاش عمود تتقارن فيه رأسياً.
- *
- * المقاسات مضبوطة على إن كل خانة صندوق إدخال `size="small"` — الحشو الرأسي صغير عشان يبان أكبر
- * عدد سطور، والأفقي كفاية إن الأعمدة ما تلزقش في بعض.
- */
 .entry-grid {
   width: 100%;
   border-collapse: collapse;
-  /* مقاس مريح ومضغوط عشان يسيع أكبر عدد سطور من غير سكرول */
   font-size: 15px;
   color: #141414;
   table-layout: auto;
@@ -544,7 +338,6 @@ html[data-density='comfortable'] .ant-table-thead > tr > th {
   color: #303030;
   white-space: nowrap;
   border-bottom: 1.5px solid #dce8d9;
-  /* الترويسة بتفضل بانة والفاتورة الطويلة بتتمرّر تحتها — العمود من غير اسمه رقم مجهول. */
   position: sticky;
   top: 0;
   z-index: 2;
@@ -560,8 +353,6 @@ html[data-density='comfortable'] .ant-table-thead > tr > th {
 .entry-grid tbody tr:last-child td {
   border-bottom: none;
 }
-/* وجدول الإدخال مسطّر زي جداول العرض — نفس السبب بالظبط: السطر اللي بتكتب فيه كمية
-   وسعر وخصم ومخزن محتاج يفضل سطر واحد وانت ماشي عليه بالتاب. */
 .entry-grid thead th,
 .entry-grid tbody td,
 .entry-grid tfoot td {
@@ -583,12 +374,10 @@ html[data-density='comfortable'] .ant-table-thead > tr > th {
   line-height: 1.2;
 }
 
-/* السطر اللي المؤشر واقف عليه — نفس منطق `.row-cursor` في جداول العرض. */
 .entry-grid tbody tr:focus-within td {
   background: #f0f7ee;
 }
 
-/* تصغير ارتفاع الخانات جوّه الجدول لتوفير المساحة الرأسية */
 .entry-grid .ant-input-number,
 .entry-grid .ant-select-selector,
 .entry-grid .ant-input {
@@ -619,17 +408,6 @@ html[data-density='comfortable'] .ant-table-thead > tr > th {
   padding: 0 4px !important;
 }
 
-/*
- * السطر الملغي — معروض ومش محسوب.
- *
- * A voided coupon, a rejected inspection, a cancelled order: rows worth keeping on screen, because
- * somebody is looking for why they are gone, and figures worth leaving out of the totals. Fading
- * them says which half is which without a legend — and it must stay readable rather than becoming
- * decoration, so this is muted text, not a strikethrough on a whole row.
- *
- * Deliberately weaker than `.row-cursor`: if the keyboard is sitting on a cancelled row, «where am
- * I» is the more urgent of the two things the row is saying.
- */
 .row-muted > td {
   color: #555b65;
   background: #fafafa;
@@ -638,23 +416,11 @@ html[data-density='comfortable'] .ant-table-thead > tr > th {
   background: #e6f4ff !important;
 }
 
-/* The row takes focus so Enter reaches it, but a browser focus ring on a whole table row reads as
-   a rendering fault rather than a cursor — the background above is the cursor. */
 .ant-table-tbody > tr[tabindex]:focus,
 .ant-table-tbody > tr[tabindex]:focus-visible {
   outline: none;
 }
 
-/*
- * الحد اللي بتسحب منه لتغيير عرض العمود.
- *
- * A drag target nobody can see is a feature nobody finds. The cursor already changes over the
- * edge; this draws the line under it so the affordance is visible before the pointer gets there,
- * which is the whole reason a spreadsheet shows one.
- *
- * On the inline-END edge — the LEFT side in this RTL app. Putting it on the other border would
- * point at the neighbouring column, and the one that moved would not be the one you aimed at.
- */
 .ant-table-thead > tr > th {
   position: relative;
 }
@@ -670,28 +436,10 @@ html[data-density='comfortable'] .ant-table-thead > tr > th {
   cursor: col-resize;
 }
 
-/**
- * بوباب تبويب مش ظاهر — يتخفي على طول.
- *
- * `TabModal` sets `open` to false when its tab goes to the background, but antd only removes a
- * dialog from view once the CLOSE ANIMATION reports that it finished. A window that is not
- * painting never delivers those frames, so the dialog stayed on screen, frozen mid-fade, over a
- * screen it had nothing to do with. This hides it on the same render instead of on a frame that
- * may never come — the dialog is still mounted underneath, so its half-typed form survives.
- */
 .tab-dialog-away {
   display: none !important;
 }
 
-/*
- * ترويسة صف من الخانات — أسامي الأعمدة فوقها، زي جدول السطور بالظبط.
- *
- * الخانات اللي جوّا صف (الكوبونات مثلاً) كانت بتشرح نفسها بالكلام الرمادي اللي جواها،
- * واللي بيختفي أول ما حد يكتب. يبقى بعد ما يملا التالت وهو في الرابع، مافيش على الشاشة
- * حاجة بتقول كل خانة دي كانت بتسأل عن إيه. الاسم فوق الخانة بيفضل مكتوب.
- *
- * نفس شكل ترويسة `.entry-grid` عشان الاتنين يتقروا بنفس الطريقة.
- */
 .mini-head {
   font-size: 15px;
   font-weight: 700;
@@ -701,15 +449,6 @@ html[data-density='comfortable'] .ant-table-thead > tr > th {
   margin-bottom: 6px;
 }
 
-/*
- * خانات سُلّم الإجماليات — استثناء من قاعدة «الاسم جنب الخانة».
- *
- * القاعدة دي بتوفّر سطور لما الصف يكون بعرض الصفحة. عمود السُلّم ضيق، واسم طويل زي
- * «المبلغ المدفوع نقداً» مع خانته على سطر واحد مابيوسعش — فكان الاسم بينزل تحت الخانة
- * ويقع جنب سطر الشرح، والاتنين يتقروا جملة واحدة مالهاش معنى.
- *
- * فهنا الاسم فوق الخانة، وسطر الشرح تحتها، وكل واحد فيهم لوحده.
- */
 .doc-form .ladder-inputs .ant-form-item-row {
   flex-flow: column nowrap;
   align-items: stretch;
@@ -721,7 +460,6 @@ html[data-density='comfortable'] .ant-table-thead > tr > th {
   text-align: start;
   padding-bottom: 2px;
 }
-/* سطر الشرح تحت الخانة — أصغر وأفتح، عشان يبان إنه شرح مش اسم حقل تاني. */
 .doc-form .ladder-inputs .ant-form-item-explain,
 .doc-form .ladder-inputs .ant-form-item-extra {
   font-size: 15px;
@@ -733,11 +471,6 @@ html[data-density='comfortable'] .ant-table-thead > tr > th {
 @keyframes qty-flash-bg { 0%,100% { background: transparent; } 35% { background: #FFF3D6; } }
 .qty-flash td, .qty-flash { animation: qty-flash-bg 0.9s ease-in-out 2; }
 
-/* ==========================================================================
-   Modern DatePicker & RangePicker Styling (RTL Arabic Friendly)
-   ========================================================================== */
-
-/* The Input Box */
 .ant-picker {
   border-radius: 8px !important;
   border: 1px solid #d0d7de !important;
@@ -792,7 +525,6 @@ html[data-density='comfortable'] .ant-table-thead > tr > th {
   margin-inline-start: 6px !important;
 }
 
-/* The Popup Dropdown Container */
 .ant-picker-dropdown {
   border-radius: 12px !important;
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.12), 0 1px 4px rgba(0, 0, 0, 0.08) !important;
@@ -816,7 +548,6 @@ html[data-density='comfortable'] .ant-table-thead > tr > th {
   border: none !important;
 }
 
-/* Header (Month + Year + Arrows) */
 .ant-picker-header {
   border-bottom: 1px solid #f0f0f0 !important;
   padding: 8px 12px !important;
@@ -850,7 +581,6 @@ html[data-density='comfortable'] .ant-table-thead > tr > th {
   color: #6AB42D !important;
 }
 
-/* Weekday Table Headers (Eliminates text overlapping) */
 .ant-picker-content {
   width: 100% !important;
   table-layout: fixed !important;
@@ -870,7 +600,6 @@ html[data-density='comfortable'] .ant-table-thead > tr > th {
   white-space: nowrap !important;
 }
 
-/* Calendar Day Cells */
 .ant-picker-cell {
   padding: 3px 0 !important;
 }
@@ -910,7 +639,6 @@ html[data-density='comfortable'] .ant-table-thead > tr > th {
   background: #eef8e8 !important;
 }
 
-/* Preset Buttons in Sidebar */
 .ant-picker-dropdown .ant-picker-presets {
   border-inline-end: 1px solid #f0f0f0 !important;
   padding: 8px !important;
@@ -933,20 +661,6 @@ html[data-density='comfortable'] .ant-table-thead > tr > th {
   color: #389e0d !important;
 }
 
-
-
-/*
-
-==================================================================
-   المسودّة في السجل — صف بلون مختلف وعلامة.
-   ==========================================================================
-   المسودّة بتقعد جنب المستندات في نفس الكشف عشان اللي سايب فاتورة نص يلاقيها في
-   المكان اللي بيدوّر فيه، مش في شريط فوق الجدول لازم ياخد باله منه. واللون بيفرّقها
-   من بعيد قبل ما العين تقرا العمود: صف ببيض زي الباقي معناه إن اللي بيبص لازم يقرا
-   كل صف عشان يعرف نوعه.
-
-   والشريط الجانبي (`border-inline-start`) مش خلفية بس: اللي عنده صعوبة في تمييز
-   الألوان مابيشوفش فرق بين أصفر فاتح وأبيض، بس بيشوف الخط. */
 .ant-table-row.row-draft > td {
   background: #fffbe6 !important;
 }
@@ -957,8 +671,6 @@ html[data-density='comfortable'] .ant-table-thead > tr > th {
   border-inline-start: 3px solid #faad14;
 }
 
-/* السطر المتأخر في كشف الحساب — نفس فكرة المسودة: خلفية **وشريط جانبي**، لأن اللي
-   عنده صعوبة في تمييز الألوان بيشوف الخط مش الأحمر الفاتح. */
 .ant-table-row.statement-overdue > td {
   background: #fff1f0 !important;
 }
@@ -969,13 +681,6 @@ html[data-density='comfortable'] .ant-table-thead > tr > th {
   border-inline-start: 3px solid #cf1322;
 }
 
-/*
- * شريط الأقسام العلوي — كل الأقسام بتتعرض، وبتلفّ لما المكان يضيق.
- *
- * antd بيرسم القايمة الأفقية صف واحد مايلفّش (`flex-wrap: nowrap`) وبيخبّي الزيادة
- * تحت «…». القسم اللي اتخبى بيبقى موجود ومش باين، واللي بيدوّر عليه بيفتكره مش
- * موجود — فاللفّ أرخص. والارتفاع بيبقى `auto` عشان السطر التاني يلاقي مكان.
- */
 .top-nav.ant-menu-horizontal {
   flex-wrap: wrap;
   height: auto;
@@ -983,27 +688,18 @@ html[data-density='comfortable'] .ant-table-thead > tr > th {
 }
 .top-nav.ant-menu-horizontal > .ant-menu-item,
 .top-nav.ant-menu-horizontal > .ant-menu-submenu {
-  /* الحشو الافتراضي ٢٠ بكسل على كل جنب — كتير لقايمة فيها ١١ قسم بأسماء عربية. */
   padding-inline: 10px;
 
 }
 
-/* ==========================================================================
-   فاتورة البيع — تصميم العميل (٢٠٢٦-١٠-٠١)
-   كروت بيضا على خلفية رمادي، ترويسة جدول كحلي، ومربعات ملخص. كله تحت `.sale-doc`
-   عشان باقي المستندات (الشرا والمرتجعين والتحويل) مايتأثروش.
-   ========================================================================== */
 .sale-doc {
   background: #f3f4f6;
   padding: 10px;
   display: flex;
   flex-direction: column;
   gap: 10px;
-  /* طبقة واحدة ورا الكروت (طلب العميل ٢٠٢٦-١٠-٠١): الرمادي بيغطّي الحاوية البيضا بتاعة
-     الصفحة بحشوها (١٦) بدل ما يبقى رمادي جوّه أبيض جوّه رمادي. */
   margin: -16px;
   border-radius: 8px;
-  /* طول الشاشة على الأقل — عشان الإجمالي والدفع يقعدوا في آخرها حتى لو الفاتورة قصيرة */
   box-sizing: border-box;
   min-height: calc(100% + 32px);
 }
@@ -1020,7 +716,6 @@ html[data-density='comfortable'] .ant-table-thead > tr > th {
   padding: 10px 12px;
 }
 
-/* --- الترويسة --- */
 .sale-doc .sale-head-row {
   display: flex;
   align-items: center;
@@ -1037,7 +732,6 @@ html[data-density='comfortable'] .ant-table-thead > tr > th {
   flex-wrap: wrap;
   align-items: center;
   gap: 6px;
-  /* في نفس سطر العنوان، متزقوق لآخره (الشمال في RTL) */
   margin-inline-start: auto;
 }
 .sale-doc .sale-head .ant-btn {
@@ -1056,19 +750,17 @@ html[data-density='comfortable'] .ant-table-thead > tr > th {
   font-size: 15px;
 }
 
-/* --- الإجمالي والدفع مثبّتين في آخر الشاشة --- */
 .sale-doc .sale-bottom {
   position: sticky;
   bottom: 0;
   z-index: 20;
   background: #f3f4f6;
-  margin: auto -10px -10px;   /* auto فوق = يتزق لآخر الشاشة */
+  margin: auto -10px -10px;
   padding: 8px 10px 10px;
   border-top: 1px solid #e5e7eb;
   box-shadow: 0 -6px 14px -8px rgba(15, 23, 42, 0.25);
   border-radius: 0 0 10px 10px;
 }
-/* كروت الإجمالي تحت — أكبر (طلب العميل ٢٠٢٦-١٠-٠١) */
 .sale-doc .sale-bottom .sale-tiles {
   grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
   gap: 10px;
@@ -1101,7 +793,6 @@ html[data-density='comfortable'] .ant-table-thead > tr > th {
   background: #15803d;
   border-color: #15803d;
 }
-/* العدّاد «‹ ١ / ٣٠٠ ›» في إطار */
 .sale-doc .sale-pager > .ant-space > .ant-space-item:last-child > .ant-space {
   border: 1px solid #e5e7eb;
   border-radius: 6px;
@@ -1112,7 +803,6 @@ html[data-density='comfortable'] .ant-table-thead > tr > th {
   border-radius: 6px !important;
 }
 
-/* --- خانات المستند: الاسم فوق الخانة، صغير وتقيل ورمادي --- */
 .sale-doc .sale-fields .ant-form-item {
   margin-bottom: 8px;
 }
@@ -1157,7 +847,6 @@ html[data-density='comfortable'] .ant-table-thead > tr > th {
 .sale-doc .sale-fields .ant-input-number-input {
   height: 26px;
 }
-/* خانة العميل — المطلوبة الأساسية، بإطار أخضر */
 .sale-doc .sale-party .ant-select .ant-select-selector {
   border: 1.5px solid #22c55e !important;
   background: #fff !important;
@@ -1167,7 +856,6 @@ html[data-density='comfortable'] .ant-table-thead > tr > th {
   color: #16a34a;
 }
 
-/* --- صفوف الكوبونات --- */
 .sale-doc .coupon-grid {
   display: flex;
   flex-direction: column;
@@ -1196,7 +884,6 @@ html[data-density='comfortable'] .ant-table-thead > tr > th {
   color: #3f4a5a;
 }
 
-/* --- شريط الأصناف وجدولها --- */
 .sale-doc .sale-items-bar {
   display: flex;
   justify-content: space-between;
@@ -1327,10 +1014,6 @@ html[data-density='comfortable'] .ant-table-thead > tr > th {
   border-color: #fde4c8 !important;
 }
 
-/* --- شبكات السطور بعروض ثابتة (`useEntryGrid` — طلب العميل ٢٠٢٦-١٠-٠٣) ---
-   `table-layout: fixed` + `<colgroup>`: العمود بياخد العرض اللي اتقال بالظبط. العنوان الطويل
-   بينزل سطرين بدل ما يوسّع العمود، والخلية مابتدلقش على اللي جنبها. */
-/* التمرير الأفقي جوّه إطار الشبكة بس — الصفحة نفسها مابتتمرّرش يمين وشمال. */
 .sale-grid-wrap {
   max-width: 100%;
   overflow-x: auto;
@@ -1352,7 +1035,6 @@ html[data-density='comfortable'] .ant-table-thead > tr > th {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-/* مقبض السحب على حد العمود — `inline-end`، يعني الحد الشمال في RTL. */
 .entry-grid .eg-resize {
   position: absolute;
   top: 0;
@@ -1387,7 +1069,6 @@ body.eg-resizing * {
   cursor: col-resize !important;
   user-select: none !important;
 }
-/* عمود الإجراء لازق في آخر السطر لما الجدول أعرض من الشاشة ويتمرّر أفقي. */
 .entry-grid .eg-sticky-end {
   position: sticky;
   inset-inline-end: 0;
@@ -1400,7 +1081,6 @@ body.eg-resizing * {
   background: #fff;
 }
 
-/* --- مربعات الملخص --- */
 .sale-doc .sale-tiles {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
@@ -1464,7 +1144,6 @@ body.eg-resizing * {
   margin-top: 0 !important;
 }
 
-/* --- الدفع والحفظ --- */
 .sale-doc .sale-pay {
   display: flex;
   flex-direction: column;
@@ -1538,15 +1217,9 @@ body.eg-resizing * {
   flex: 1;
 }
 
-/* ==========================================================================
-   سجل المبيعات — تصميم العميل (٢٠٢٦-١٠-٠١)
-   ترويسة بسطر واحد (العنوان والشرايح والأزرار)، فلاتر بيضا مدوّرة في سطر، جدول مضغوط،
-   وتحته الترقيم شمال والإجماليات يمين. كله تحت `.list-page` — مالوش أثر برّه الشاشة دي.
-   ========================================================================== */
 .list-page {
   background: #f3f4f6;
   padding: 10px;
-  /* طبقة واحدة رمادي ورا الكروت — بتغطّي حاوية الصفحة البيضا (زي `.sale-doc`). */
   margin: -16px;
   border-radius: 8px;
   box-sizing: border-box;
@@ -1563,7 +1236,6 @@ body.eg-resizing * {
   border-radius: 10px;
 }
 
-/* --- الترويسة --- */
 .list-page .sl-head {
   display: flex;
   align-items: center;
@@ -1662,7 +1334,6 @@ body.eg-resizing * {
   background: rgba(255, 255, 255, .25);
   color: #fff;
 }
-/* الأزرار في آخر السطر (الشمال في RTL) */
 .list-page .sl-actions {
   margin-inline-start: auto;
 }
@@ -1675,7 +1346,6 @@ body.eg-resizing * {
   font-weight: 700;
 }
 
-/* --- الفلاتر: سطر واحد، والضيّق بيلفّ --- */
 .list-page .sl-filters {
   display: flex;
   flex-wrap: wrap;
@@ -1691,7 +1361,6 @@ body.eg-resizing * {
 .list-page .sl-filters > .sl-f-customer { flex: 1.6 1 190px; }
 .list-page .sl-filters > .sl-f-dates { flex: 2 1 280px; }
 .list-page .sl-filters > .sl-f-clear { flex: 0 0 auto; }
-/* نفس طول خانات التاريخ (٣٨ في `DateRangeFilter`) وزواياها */
 .list-page .sl-filters .ant-input-affix-wrapper,
 .list-page .sl-filters .ant-select .ant-select-selector,
 .list-page .sl-filters .ant-btn {
@@ -1716,7 +1385,6 @@ body.eg-resizing * {
   border-end-start-radius: 0;
 }
 
-/* --- الجدول: مضغوط، حدود خفيفة، من غير تخطيط --- */
 .list-page .sl-body {
   padding: 4px 8px 0;
 }
@@ -1742,7 +1410,6 @@ body.eg-resizing * {
   height: 28px;
 }
 
-/* --- تحت الجدول: الإجماليات يمين والترقيم شمال في نفس السطر --- */
 .list-page .sl-table .ant-table-pagination.ant-pagination {
   margin: 0;
   padding: 10px 4px;
@@ -1784,19 +1451,13 @@ body.eg-resizing * {
   display: none;
 }
 
-/* جوّه أزرار الكشف الـ`Space` هو اللي بيباعد — مسافة زرار الإكسل الافتراضية بتبقى زيادة. */
 .list-page .sl-actions .ant-btn {
   margin-inline-start: 0 !important;
 }
 
-/* خانات اختيار الحساب في كشف الحساب — أعرض، والقايمة بعرض الأسماء مش بعرض الخانة. */
 .list-page .sl-filters > .sl-f-account { flex: 2 1 240px; }
 .sl-account-popup { min-width: 300px; }
 
-/* ==========================================================================
-   الكلام في نص العمود في كل جداول النظام (طلب العميل ٢٠٢٦-١٠-٠١) — الترويسة والخلايا
-   والإجماليات. `!important` عشان يغلب `align` اللي الأعمدة بتحطه inline.
-   ========================================================================== */
 .ant-table-wrapper .ant-table-thead > tr > th,
 .ant-table-wrapper .ant-table-tbody > tr > td,
 .ant-table-wrapper .ant-table-summary > tr > td,
@@ -1806,18 +1467,15 @@ body.eg-resizing * {
 .entry-grid tfoot td {
   text-align: center !important;
 }
-/* الخانات جوّه الخلية (كمية/سعر/خصم) بتتسنتر هي كمان. */
 .ant-table-wrapper .ant-table-tbody > tr > td .ant-input-number-input,
 .entry-grid tbody td .ant-input-number-input,
 .entry-grid tbody td .ant-input {
   text-align: center;
 }
-/* أعمدة الشجرة (الحسابات/الأقسام) بتفضل جنب السهم — سنترتها بتبعد الاسم عن علامة الفتح. */
 .ant-table-wrapper .ant-table-tbody > tr > td.ant-table-cell-with-append {
   text-align: start !important;
 }
 
-/* وضوح أعلى (طلب العميل ٢٠٢٦-١٠-٠٢): الخلايا والخانات والترويسات أتقل شوية. */
 .ant-table-wrapper .ant-table-tbody > tr > td,
 .ant-table-wrapper .ant-table-thead > tr > th,
 .entry-grid tbody td,
@@ -1830,7 +1488,6 @@ body.eg-resizing * {
   font-weight: 700;
 }
 
-/* --- سطر الإجماليات فوق الكشف (طلب العميل ٢٠٢٦-١٠-٠٣) — بيتأثر بالفلاتر والشريحة --- */
 .list-page .sl-summary {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
@@ -1874,14 +1531,12 @@ body.eg-resizing * {
   .list-page .sl-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
-/* فلتر الفرع وهو شغّال — لازم يبان إن اللي قدامك فرع واحد مش الكل. */
 .branch-filter.is-on .ant-select-selector {
   background: #fff7e6 !important;
   border-color: #fa8c16 !important;
   font-weight: 700;
 }
 
-/* صلاحيات المستخدمين — القايمة على جنب والتفاصيل جنبها. */
 .up-layout { display: flex; gap: 14px; align-items: stretch; min-height: 60vh; }
 .up-users { flex: 0 0 300px; display: flex; flex-direction: column; gap: 8px; }
 .up-users-list { flex: 1; overflow-y: auto; max-height: 70vh; display: flex; flex-direction: column; gap: 4px; }
@@ -1910,11 +1565,9 @@ body.eg-resizing * {
   .up-users { flex: 0 0 auto; }
 }
 
-/* السطر الزيادة في آخر جدول الأصناف — المخزن ثم الصنف (٢٠٢٦-١٠-٠٥). */
 .eg-quick-row td, .eg-quick-div { background: #f7fbf5 !important; border-top: 1px dashed #b7dba0; }
 .eg-quick-div { border: 1px dashed #b7dba0; border-radius: 8px; margin-top: 6px; padding: 2px 6px; }
 
-/* قايمة الاختصارات (زرار «+» تحت) — أكبر وبولد (طلب العميل ٢٠٢٦-١٠-٠٥). */
 .shortcuts-menu .ant-dropdown-menu-item,
 .shortcuts-menu .ant-dropdown-menu-submenu-title,
 .shortcuts-menu.ant-dropdown-menu-sub .ant-dropdown-menu-item,
@@ -1928,12 +1581,6 @@ body.eg-resizing * {
 }
 .shortcuts-menu .anticon, .shortcuts-menu-root .anticon { font-size: 16px !important; }
 
-/*
- * بوباب السند (`pages/vouchers/VoucherShell.tsx`) — قبض / صرف / مصروف.
- *
- * المبلغ هو أهم رقم في السند، فبقى خانة كبيرة بأرقام إنجليزي وفاصلة آلاف (زي الورقة
- * المطبوعة و a5)، وتحته المبلغ بالحروف. الألوان من توكنز antd في الكود — هنا المقاسات بس.
- */
 .vs-amount .ant-input-number-input {
   font-size: 26px;
   font-weight: 800;

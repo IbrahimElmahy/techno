@@ -5,16 +5,7 @@ import Logo, { BRAND } from './Logo';
 import { printDocument } from '../print/brand';
 import { amountToArabicWords } from '../utils/arabicNumberWords';
 import { COMPANY, companyLines } from '../config/company';
-// الورقة كلها أرقام إنجليزي (زي a5) — مش إعداد أرقام الشاشة، وإلا المبالغ بتطلع عربي
-// جنب كميات وتواريخ إنجليزي في نفس الورقة (ملاحظة العميل ٢٠٢٦-١٠-٠٦).
 import { printMoney as n } from '../print/reportSheet';
-
-/**
- * A real cash voucher (سند) — receipt, payment, expense, rep hand-over or treasury transfer.
- *
- * Same data drives the on-screen sheet and the print, and the amount is written out in Arabic
- * words next to the figure, which is what makes a signed voucher hard to alter afterwards.
- */
 
 export type VoucherKind = 'receipt' | 'payment' | 'expense' | 'rep_handover' | 'cash_transfer'
   | 'partner_withdraw' | 'partner_deposit';
@@ -24,7 +15,6 @@ export interface VoucherDoc {
   document_number: string;
   date?: string | null;
   amount: string | number;
-  /** «العميل» / «المورد» / «الحساب» … */
   partyLabel?: string;
   partyName?: string;
   treasury?: string | null;
@@ -32,18 +22,7 @@ export interface VoucherDoc {
   paymentMethod?: string | null;
   reference?: string | null;
   description?: string | null;
-  /**
-   * «بيان السند» (`statement1`) — كلام الورقة اللي بيتمضي عليها، غير «البيان» اللي فوق
-   * (`description`، وصف الحركة في القيد). كان بيتعرض تحت صورة السند على الشاشة بس ومابيتطبعش،
-   * والورقة هي المكان اللي اتكتب عشانه أصلاً.
-   */
   statement?: string | null;
-  /**
-   * (031) أنهي مديونية السند ده سدّدها — «أبيض» / «بولي» / فاضية = على الإجمالي.
-   *
-   * On the printed sheet because the customer signs it: a receipt that does not say which debt it
-   * cleared settles an argument in nobody's favour when one comes up.
-   */
   family?: string | null;
   entryId?: number | null;
   isReversal?: boolean;
@@ -59,7 +38,6 @@ export const VOUCHER_TITLES: Record<VoucherKind, string> = {
   partner_deposit: 'سند إيداع شريك',
 };
 
-/** Who signs which side — a receipt is signed by the payer, a payment by the recipient. */
 const SIGNATURES: Record<VoucherKind, [string, string, string]> = {
   receipt: ['المستلم (أمين الخزينة)', 'الدافع', 'المحاسب'],
   payment: ['المستلم', 'أمين الخزينة', 'المحاسب'],
@@ -87,8 +65,6 @@ function rows(d: VoucherDoc): [string, string][] {
   if (d.treasury) out.push([d.kind === 'cash_transfer' ? 'من خزينة' : 'الخزينة', d.treasury]);
   if (d.toTreasury) out.push(['إلى خزينة', d.toTreasury]);
   if (d.kind === 'receipt') {
-    // Printed even when it is «على الإجمالي», because that is a real answer and its absence would
-    // read as a field somebody forgot rather than a decision somebody made.
     out.push(['على مديونية', d.family || 'الإجمالي (موزّع بالنسبة)']);
   }
   if (d.paymentMethod) out.push(['طريقة الدفع', d.paymentMethod]);
@@ -100,11 +76,8 @@ function rows(d: VoucherDoc): [string, string][] {
   return out;
 }
 
-/** Print this voucher on the shared company letterhead. */
 export function printVoucher(d: VoucherDoc): void {
   const [a, b, c] = SIGNATURES[d.kind];
-  // المبلغ أسود في إطار أسود: الأخضر على ليزر أبيض وأسود بيطلع رمادي باهت، وده أهم رقم
-  // في السند. الشرح عند PRINT_COLORS في print/brand.ts.
   const body = `
     <div style="margin:18px 0;padding:16px 18px;border:2px solid #000;border-radius:10px">
       <div style="font-size:14px;color:#2b2b2b;font-weight:700">المبلغ</div>
@@ -166,7 +139,6 @@ export default function VoucherDocument({ doc }: { doc: VoucherDoc }) {
         </span>
       </div>
 
-      {/* The amount, in figures and in words. */}
       <div style={{
         margin: '14px 0', padding: '14px 16px', border: `2px solid ${BRAND.green}`,
         borderRadius: 10, background: '#f7fbf8',

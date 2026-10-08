@@ -4,14 +4,6 @@ import '../db/local_db.dart';
 import '../models/coupon_custody.dart';
 import '../theme.dart';
 
-/// عهدة الكوبونات — «معايا أنهي دفاتر؟». للقراءة بس.
-///
-/// نفس سؤال «بضاعتي» بس على الكوبونات: المندوب قبل ما يكتب مدى في الفاتورة محتاج يعرف
-/// أنهي سريالات في إيده. من غير الشاشة دي كان بيعرف لما الفاتورة ترفض.
-///
-/// **والأرقام هنا ناقص اللي اتكتب على فواتير لسه على الجهاز** — نفس حساب فاتورة البيع
-/// بالظبط (`LocalDb.couponCustody`)، عشان الشاشتين يقولوا نفس الكلام. والعهدة نفسها
-/// بتتحدّث مع «مزامنة» بس: المكتب لو سلّمه دفتر جديد مابيبانش هنا غير بعدها.
 class CouponCustodyScreen extends StatefulWidget {
   const CouponCustodyScreen({super.key});
 
@@ -83,7 +75,6 @@ class _CouponCustodyScreenState extends State<CouponCustodyScreen> {
   Widget _kindCard(String kind) {
     final free = _custody.availableOf(kind);
     final n = totalCount(free);
-    // المحجوز جوّه العهدة بس — المتاح + المحجوز = العهدة، والرقمين يتجمعوا صح.
     final held = totalCount(intersectRanges(_custody.custodyOf(kind),
         _custody.holdsOf(kind).map((h) => h.range)));
     return Card(
@@ -114,7 +105,6 @@ class _CouponCustodyScreenState extends State<CouponCustodyScreen> {
               ],
             ),
             const SizedBox(height: 8),
-            // المدايات كلها هنا مش أول تلاتة — دي الشاشة اللي بيرجع لها عشان يعرف بالظبط.
             Text(
                 free.isEmpty
                     ? 'مافيش سريالات متاحة في الفئة دي'

@@ -18,14 +18,6 @@ import { TabModal } from './TabModal';
 import VoucherDocument, { VoucherDoc, voucherFooter } from './VoucherDocument';
 import DocumentAttachments from './DocumentAttachments';
 
-/**
- * **شريحة السندات في السجلات** — «سندات القبض» في سجل المبيعات و«سندات الصرف» في سجل
- * المشتريات (طلب العميل ٢٠٢٦-١٠-٠١). لوحة واحدة للاتنين، والفرق كله في `PAYMENTS_LOGS`.
- *
- * صفّين في جدول واحد: النقدي اللي اتدفع مع الفاتورة نفسها («على فاتورة»)، والسندات المستقلة
- * («دفعة») — من النظام أو من التطبيق. الفلاتر الكبيرة (الطرف، المندوب، التاريخ) جاية من الصفحة،
- * والباقي فلاتر الأعمدة.
- */
 export interface PaymentRow {
   key: string;
   kind: 'invoice' | 'voucher';
@@ -40,7 +32,6 @@ export interface PaymentRow {
   amount: string;
   family: 'أبيض' | 'بولي' | null;
   source: 'app' | 'system';
-  // بيانات المستند كاملة — عشان الجدول يغني عن فتح كل سند.
   treasury?: string | null;
   payment_method?: string | null;
   statement?: string | null;
@@ -51,14 +42,12 @@ export interface PaymentRow {
   actor_name?: string | null;
   created_at?: string | null;
   cost_center?: string | null;
-  /** صفوف «على فاتورة» بس: إجمالي الفاتورة واللي اتبقى آجل. */
   invoice_total?: string | null;
   credit_amount?: string | null;
 }
 
 export type PaymentsLogKind = 'receipts' | 'payments';
 
-/** كل اللي بيفرق بين سندات القبض وسندات الصرف — في مكان واحد. */
 const PAYMENTS_LOGS: Record<PaymentsLogKind, {
   endpoint: string; partyParam: string; partyLabel: string; name: string;
   storageKey: string; live: string[]; showRepStore: boolean; voucherName: string;
@@ -75,7 +64,6 @@ const PAYMENTS_LOGS: Record<PaymentsLogKind, {
   },
 };
 
-/** إجماليات اللوحة على كل اللي الفلاتر سابته (من السيرفر، مش من الصفوف المحمّلة). */
 export interface PaymentsLogTotals {
   count: number;
   countOnInvoice: number;
@@ -91,16 +79,11 @@ interface Props {
   repId?: number | null;
   dateFrom?: string | null;
   dateTo?: string | null;
-  /** صف «على فاتورة» — عرض/تعديل/حذف الفاتورة نفسها. الأيقونة بتستخبى لو الشاشة مابعتتش. */
   onOpenInvoice?: (id: number, row: PaymentRow) => void;
   onEditInvoice?: (id: number, row: PaymentRow) => void;
-  /** الحذف الفعلي بس — التأكيد هنا في اللوحة. */
   onDeleteInvoice?: (id: number, row: PaymentRow) => Promise<void> | void;
-  /** صف «دفعة» — الشاشة شايلة بوباب السند (`useQuickVoucher`)، فهي اللي بتفتحه للتعديل. */
   onEditVoucher?: (v: EditableVoucher) => void;
-  /** مكان «تصدير Excel» و«الأعمدة» في ترويسة الشاشة الشايلة — نفس سطر باقي الشرايح. */
   controlSlot?: HTMLElement | null;
-  /** بيتنده بعد كل تحميل — الشاشة بتعرض الأرقام في سطر الإجماليات فوق (`null` = فشل). */
   onTotals?: (t: PaymentsLogTotals | null) => void;
 }
 
@@ -113,11 +96,9 @@ export default function PaymentsLogPanel({
   const canWriteVoucher = can('voucher.write');
   const { options: methodOptions } = useLookup('payment_method');
   const methodLabel = labelMap(methodOptions);
-  // ورقة السند المفتوحة للعرض/الطباعة — نفس `VoucherDocument` بتاع شاشة السندات.
   const [view, setView] = useState<{ row: PaymentRow; v: any } | null>(null);
   const [rows, setRows] = useState<PaymentRow[]>([]);
   const [loading, setLoading] = useState(false);
-  // آخر طلب بس هو اللي يكتب — تغيير فلتر سريع مايخليش رد قديم يغطي على الجديد
   const seq = useRef(0);
 
   const load = async (silent = false) => {
@@ -157,17 +138,16 @@ export default function PaymentsLogPanel({
   const openVoucher = async (r: PaymentRow) => {
     try {
       setView({ row: r, v: await fetchVoucher(r.id) });
-    } catch { /* رسالة الخطأ من `api` */ }
+    } catch {}
   };
 
   const editVoucher = async (r: PaymentRow) => {
     if (!onEditVoucher) return;
     try {
       onEditVoucher(await fetchVoucher(r.id));
-    } catch { /* رسالة الخطأ من `api` */ }
+    } catch {}
   };
 
-  /** الحذف بسؤال — زي حذف الفاتورة من سجل المشتريات. */
   const confirmDelete = (r: PaymentRow) => {
     const isInv = r.kind === 'invoice';
     Modal.confirm({
@@ -188,7 +168,7 @@ export default function PaymentsLogPanel({
             message.success('تم حذف السند');
           }
           load(true);
-        } catch { /* رسالة الخطأ من `api` */ }
+        } catch {}
       },
     });
   };
@@ -308,7 +288,6 @@ export default function PaymentsLogPanel({
 
   const tableCols = useTableColumns(cfg.storageKey, columns, {
     locked: ['document_number'],
-    // الخزنة وطريقة الدفع والبيان والمستند الخارجي ظاهرين؛ الباقي من «الأعمدة».
     defaultHidden: ['reference', 'notes', 'cost_center', 'actor_name', 'created_at',
       'invoice_total', 'credit_amount'],
     export: { name: cfg.name, rows },
@@ -345,7 +324,6 @@ export default function PaymentsLogPanel({
         {view && (
           <>
             <VoucherDocument doc={voucherDoc(view)} />
-            {/* تحت الورقة مش جوّاها — زي شاشة السندات: رقم ورقة الطرف ومين كتبه والمرفقات. */}
             <Descriptions column={2} size="small" bordered style={{ marginTop: 12 }}>
               <Descriptions.Item label="رقم المستند">
                 {view.v.external_document_number || '-'}

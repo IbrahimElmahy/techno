@@ -21,7 +21,6 @@ import StatementFilter, { statementColumn } from '../components/StatementFilter'
 import ListPage from '../components/ListPage';
 import { useCanSeeStats } from '../components/StatsRow';
 import { numeralsLocale } from '../utils/money';
-// --- Shared helpers -----------------------------------------------------------------------
 type Period = 'week' | 'month' | 'year';
 type Range = [Dayjs | null, Dayjs | null] | null;
 
@@ -42,9 +41,6 @@ const dateParams = (range: Range): Record<string, string> => {
   return p;
 };
 
-// --- CSV export (preserved feature) -------------------------------------------------------
-// الفترة (والبيان) اللي على الشاشة بتتبعت مع التصدير — كان بيصدّر كل فواتير الشركة من
-// أول يوم مهما كانت الفترة المختارة فوق الزرار.
 const handleExport = async (reportType: string, extra: Record<string, string> = {}) => {
   try {
     const res = await api.get('/api/v1/reports/export', {
@@ -78,9 +74,7 @@ function ExportButton({ type, label, params }: {
   );
 }
 
-// --- Root ---------------------------------------------------------------------------------
 export default function Reports() {
-  // Four of their report screens are four tabs here, so the entry has to land on its own.
   const [tab, setTab] = useQueryTab('stagnant', 'view');
   const [period, setPeriod] = useState<Period>('month');
   const [range, setRange] = useState<Range>(null);
@@ -92,13 +86,11 @@ export default function Reports() {
     api.get('/api/v1/items').then((r) => setItems(r.data)).catch((err) => console.error(err));
   }, []);
 
-  // التاب اللي اتفتح مرة بيفضل متركّب (زي `Tabs` قبل كده) — فلاتره وداتاه مابتضيعش لما ترجعله.
   const [visited, setVisited] = useState<Set<string>>(() => new Set([tab]));
   useEffect(() => {
     setVisited((v) => (v.has(tab) ? v : new Set(v).add(tab)));
   }, [tab]);
 
-  // فلاتر التاب وأزراره بتترسم في سطر الفلاتر والترويسة بتوع الإطار — بـportal، والحالة جوّه التاب.
   const [filtersSlot, setFiltersSlot] = useState<HTMLElement | null>(null);
   const [actionsSlot, setActionsSlot] = useState<HTMLElement | null>(null);
 
@@ -159,7 +151,6 @@ export default function Reports() {
 
 interface Slots { filters: HTMLElement | null; actions: HTMLElement | null }
 
-/** بيرسم المحتوى في مكانه من الإطار — والتاب المستخبي مالوش فلاتر ظاهرة. */
 function Slot({ to, children }: { to?: HTMLElement | null; children: React.ReactNode }) {
   return to ? createPortal(children, to) : null;
 }
@@ -177,7 +168,6 @@ interface TabProps {
   slots?: Slots;
 }
 
-// --- 1) Production & consumption ----------------------------------------------------------
 interface ProdRow {
   _key?: string;
   document_number: string;
@@ -200,7 +190,6 @@ interface ProdPeriodRow {
 function ProductionTab({ period, range, items, slots }: TabProps) {
   const [productId, setProductId] = useState<number | undefined>();
   const [statement, setStatement] = useState('');
-  // السيرفر بيقول لو المستند ده عليه «بيان» أصلاً — الخانة بتظهر بس لما يكون فيه.
   const [statementOn, setStatementOn] = useState(false);
   const [rows, setRows] = useState<ProdRow[]>([]);
   const [byPeriod, setByPeriod] = useState<ProdPeriodRow[]>([]);
@@ -214,12 +203,10 @@ function ProductionTab({ period, range, items, slots }: TabProps) {
       if (statement) params.statement = statement;
       const res = await api.get('/api/v1/reports/production', { params });
       setStatementOn(!!res.data.statement_supported);
-      // (item_name, warehouse) is not unique — stamp a stable key for React.
       setRows((res.data.rows || []).map((r: any, i: number) => ({ ...r, _key: String(i) })));
       setByPeriod(res.data.by_period || []);
     } catch (err) { console.error(err); } finally { setLoading(false); }
   };
-  // أي فلتر يتغيّر بيحمّل على طول — فلتر بيتغيّر والأرقام مابتتحركش بيتقري كأنه مكسور.
   useEffect(() => { load(); }, [period, range, productId, statement]);
 
   const periodCols = [
@@ -260,8 +247,6 @@ function ProductionTab({ period, range, items, slots }: TabProps) {
         locale={{ emptyText: <Empty description="لا توجد بيانات" /> }} />
 
       <Divider orientation="right">التفاصيل</Divider>
-      {/* `_key` مش رقم المستند: الدفعة المنقولة ممكن رقمها يطابق أمر تصنيع، والمفتاح المكرر
-          بيخلّي الجدول يعيد رسم صف مكان التاني. */}
       <Table className="sl-table" size="small" rowKey="_key" loading={loading} pagination={PAGINATION}
         dataSource={rows} columns={detailCols}
         locale={{ emptyText: <Empty description="لا توجد بيانات" /> }} />
@@ -269,7 +254,6 @@ function ProductionTab({ period, range, items, slots }: TabProps) {
   );
 }
 
-// --- 2) Inventory balances ----------------------------------------------------------------
 interface InvRow {
   item_name: string;
   warehouse_id: number;
@@ -293,11 +277,9 @@ function InventoryTab({ warehouses, items, slots }: TabProps) {
       if (warehouseId) params.warehouse_id = warehouseId;
       if (itemId) params.item_id = itemId;
       const res = await api.get('/api/v1/reports/inventory', { params });
-      // (item_name, warehouse) is not unique — stamp a stable key for React.
       setRows((res.data.rows || []).map((r: any, i: number) => ({ ...r, _key: String(i) })));
     } catch (err) { console.error(err); } finally { setLoading(false); }
   };
-  // أي فلتر يتغيّر بيحمّل على طول — فلتر بيتغيّر والأرقام مابتتحركش بيتقري كأنه مكسور.
   useEffect(() => { load(); }, [warehouseId, itemId]);
 
   const columns = [
@@ -308,7 +290,6 @@ function InventoryTab({ warehouses, items, slots }: TabProps) {
     { title: 'القيمة', dataIndex: 'value', key: 'value', ...numberColumn<any>((r) => r.value), align: 'left' as const, render: (v: string) => <strong>{egp(v)}</strong> },
   ];
 
-  // إخفاء وترتيب الأعمدة — نفس المحرك اللي كل الجداول بتستخدمه.
   const inventoryTabCols = useTableColumns('rep-inventory', columns, {
     export: { name: 'المخازن (الأرصدة)', rows },
   });
@@ -343,7 +324,6 @@ function InventoryTab({ warehouses, items, slots }: TabProps) {
   );
 }
 
-// --- 3) Wastage ---------------------------------------------------------------------------
 interface WasteRow {
   source: 'manufacturing' | 'document';
   statement?: string | null;
@@ -376,13 +356,11 @@ function WastageTab({ range, warehouses, items, slots }: TabProps) {
       if (statement) params.statement = statement;
       const res = await api.get('/api/v1/reports/wastage', { params });
       setStatementOn(!!res.data.statement_supported);
-      // (item_name, warehouse) is not unique — stamp a stable key for React.
       setRows((res.data.rows || []).map((r: any, i: number) => ({ ...r, _key: String(i) })));
       setTotalQty(res.data.total_quantity ?? '0');
       setTotalCost(res.data.total_cost ?? '0');
     } catch (err) { console.error(err); } finally { setLoading(false); }
   };
-  // أي فلتر يتغيّر بيحمّل على طول — فلتر بيتغيّر والأرقام مابتتحركش بيتقري كأنه مكسور.
   useEffect(() => { load(); }, [range, itemId, warehouseId, statement]);
 
   const columns = [
@@ -399,12 +377,10 @@ function WastageTab({ range, warehouses, items, slots }: TabProps) {
     { title: 'التاريخ', dataIndex: 'created_at', key: 'created_at', ...dateColumn<any>((r) => r.created_at), render: (d: string) => d ? dayjs(d).format('YYYY-MM-DD') : '-' },
   ];
 
-  // إخفاء وترتيب الأعمدة — نفس المحرك اللي كل الجداول بتستخدمه.
   const wastageTabCols = useTableColumns('rep-wastage', columns, {
     export: { name: 'الهوالك', rows },
   });
 
-  // كروت الإجماليات بقت سطر تحت الجدول — ولسه للي عنده `stats.view` بس.
   const canSeeStats = useCanSeeStats();
   const footer = canSeeStats ? (
     <span className="sl-foot">
@@ -439,7 +415,6 @@ function WastageTab({ range, warehouses, items, slots }: TabProps) {
   );
 }
 
-// --- 4) Stagnant (critical) ---------------------------------------------------------------
 interface StagnantRow {
   item_name: string;
   warehouse_id: number;
@@ -463,12 +438,10 @@ function StagnantTab({ warehouses, slots }: TabProps) {
       const params: Record<string, any> = { days };
       if (warehouseId) params.warehouse_id = warehouseId;
       const res = await api.get('/api/v1/reports/stagnant', { params });
-      // (item_name, warehouse) is not unique — stamp a stable key for React.
       setRows((res.data.rows || []).map((r: any, i: number) => ({ ...r, _key: String(i) })));
       setAsOf(res.data.as_of || '');
     } catch (err) { console.error(err); } finally { setLoading(false); }
   };
-  // أي فلتر يتغيّر بيحمّل على طول.
   useEffect(() => { load(); }, [days, warehouseId]);
 
   const columns = [
@@ -482,8 +455,6 @@ function StagnantTab({ warehouses, slots }: TabProps) {
     { title: 'القيمة', dataIndex: 'value', key: 'value', ...numberColumn<any>((r) => r.value), align: 'left' as const, render: (v: string) => <strong>{egp(v)}</strong> },
   ];
 
-  // إخفاء وترتيب الأعمدة — نفس المحرك اللي كل الجداول بتستخدمه.
-  // فحص النظام بيبعت أرقام الأصناف الراكدة في الرابط — التقرير بيفتح عليهم هم بس.
   const focus = useFocusedIds();
   const shownRows = focus.filter(rows, (r: any) => r.item_id);
 
@@ -526,7 +497,6 @@ function StagnantTab({ warehouses, slots }: TabProps) {
   );
 }
 
-// --- 5) Sales -----------------------------------------------------------------------------
 interface SalesRow {
   document_number: string;
   customer_id: number | null;
@@ -556,17 +526,14 @@ function SalesTab({ period, range, slots }: TabProps) {
       const params: Record<string, any> = { period, ...dateParams(range) };
       if (statement) params.statement = statement;
       const res = await api.get('/api/v1/reports/sales', { params });
-      // (item_name, warehouse) is not unique — stamp a stable key for React.
       setRows((res.data.rows || []).map((r: any, i: number) => ({ ...r, _key: String(i) })));
       setByPeriod(res.data.by_period || []);
       setGrossTotal(res.data.gross_total ?? '0');
       setNetTotal(res.data.net_total ?? '0');
     } catch (err) { console.error(err); } finally { setLoading(false); }
   };
-  // أي فلتر يتغيّر بيحمّل على طول.
   useEffect(() => { load(); }, [period, range, statement]);
 
-  // كروت الإجماليات بقت سطر تحت الجدول — ولسه للي عنده `stats.view` بس.
   const canSeeStats = useCanSeeStats();
   const footer = canSeeStats ? (
     <span className="sl-foot">
@@ -583,7 +550,6 @@ function SalesTab({ period, range, slots }: TabProps) {
 
   const detailCols = [
     { title: 'رقم المستند', dataIndex: 'document_number', key: 'document_number', ...textColumn(rows, (r: any) => r.document_number), render: (c: string) => <Tag color="blue">{c}</Tag> },
-    // اسم العميل — العمود كان بيعرض «#1234»، رقم الصف في قاعدتنا اللي مالوش معنى عند حد.
     { title: 'العميل', dataIndex: 'customer_name', key: 'customer_name', ...textColumn(rows, (r: any) => r.customer_name), render: (v: string | null) => v || '-' },
     statementColumn(rows),
     { title: 'الإجمالي', dataIndex: 'gross', key: 'gross', ...numberColumn<any>((r) => r.gross), align: 'left' as const, render: egp },

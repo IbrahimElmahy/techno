@@ -1,32 +1,3 @@
-"""المرحلة التانية من استيراد a5: شجرة الحسابات، وربط المناديب بمخازنهم، والأرصدة الافتتاحية.
-
-المرحلة الأولى (`import_a5`) جابت الكيانات — أصناف وعملاء ومناطق ومخازن. دي بتجيب اللي
-بينهم: الحسابات اللي الفلوس بتتقيّد عليها، والمخزن بتاع كل مندوب، والبضاعة اللي كانت
-موجودة أول المدة.
-
-    python -m src.scripts.import_a5_phase2 --dir C:/pgtmp          # يعرض بس
-    python -m src.scripts.import_a5_phase2 --dir C:/pgtmp --yes    # ينفّذ
-
-    # شركة تانية على فرع تاني:
-    python -m src.scripts.import_a5_phase2 --dir C:/aliaa --branch العلياء --prefix AL- --yes
-
-بيتعاد تشغيله بأمان.
-
----------------------------------------------------------------------------
-تلات ترجمات:
-
-* **الشجرة مستويين عندهم، شجرة حقيقية عندنا.** `acc_Main` (٥٩ رئيسي) و`accBrnch` (١٢٩٤
-  فرعي) — جدولين منفصلين والابن شايل رقم أبيه. عندنا جدول واحد بـ`parent_id`، والرئيسي
-  بيبقى «مجموعة» (`is_postable=False`) لأن الترحيل على مجموعة بيخلّي مجموع الأبناء مش
-  مساوي أبوهم.
-
-* **المندوب ومخزنه مربوطين بالاسم جوّه الاسم.** «مخزن عمرو رجب» — اسم المندوب جوّه اسم
-  المخزن، و`Store_Mang` مليان في واحد من ١١. فبنطابق على الاتنين.
-
-* **الرصيد الافتتاحي حركة مخزون مش رقم مخزّن.** الرصيد عندنا مشتق من الحركات، فالافتتاحي
-  بيدخل حركة دخول بمستند `opening` — وبكده كارت الصنف بيبدأ من سطر مفهوم بدل رقم نازل من
-  السما.
-"""
 from __future__ import annotations
 
 import os
@@ -46,13 +17,9 @@ from src.models.warehouse import Warehouse
 from src.scripts.import_a5 import JUNK, _clean, _money, _read
 from src.services import stock_service
 
-# `Type_Nature` في a5 أربع قيم بس (١ مدين، ٢ دائن، ٣ مصروف، ٤ إيراد) — مش ترقيم
-# قياسي ١-٥. الخريطة الغلط القديمة (٣→حقوق ملكية) صفّرت مصروفات قايمة الدخل،
-# واتصلّحت بـ`fix_account_natures`. القاعدة الواحدة عايشة هناك عشان ماتتكررش.
 from src.scripts.fix_account_natures import target_for_group as _target_nature
 
 
-# نوع مستند الرصيد الافتتاحي — واحد لكل الشركات. شوف الحارس تحت.
 OPENING_DOC = "a5_opening"
 
 def run(folder: str, *, execute: bool, branch_name: str = "",
@@ -85,7 +52,6 @@ def run(folder: str, *, execute: bool, branch_name: str = "",
         print("الفرع المستهدف: " + (branch.name if branch else "—")
               + ((" · البادئة: " + prefix) if prefix else "") + "\n")
 
-        # ---------- ١) شجرة الحسابات ----------
         by_code = {a.code: a for a in db.scalars(select(Account)).all() if a.code}
         main_by_a5: dict[str, Account] = {}
 
@@ -102,7 +68,6 @@ def run(folder: str, *, execute: bool, branch_name: str = "",
                 acc = Account(
                     account_type=AccountType.user_defined, name=name, code=code,
                     nature=nature, normal_side=side,
-                    # الرئيسي مجموعة: الترحيل عليه بيخلّي مجموع الأبناء مش مساوي أبوهم.
                     is_postable=False, is_system=False,
                     branch_id=branch.id if branch else None, active=True)
                 db.add(acc)
@@ -131,10 +96,6 @@ def run(folder: str, *, execute: bool, branch_name: str = "",
             made["حسابات"] += 1
         db.flush()
 
-        # ---------- ٢) المندوب ومخزنه ----------
-        #
-        # الربط بالاسم جوّه الاسم: «مخزن عمرو رجب». مش أنضف طريقة، بس دي اللي في الداتا —
-        # والبديل إن كل مندوب يتربط بإيده من الشاشة.
         rep_role = db.scalars(select(Role).where(Role.name == RoleName.sales_rep)).first()
         reps = (db.scalars(select(User).where(User.role_id == rep_role.id,
                                               User.branch_id == branch.id)).all()
@@ -171,8 +132,6 @@ def run(folder: str, *, execute: bool, branch_name: str = "",
             print(f"   {u.username} ← {match.name}")
         db.flush()
 
-        # ---------- ٣) الأرصدة الافتتاحية ----------
-        # الكتالوج بيتقسّم بالبادئة: كود a5 عدّاد جوّه كل شركة، فنفس الكود بيبقى صنفين.
         all_items = db.scalars(select(Item)).all()
         mine = [i for i in all_items if not prefix or (i.code or "").startswith(prefix)]
         item_by_code = {i.code: i for i in mine if i.code}
@@ -183,20 +142,6 @@ def run(folder: str, *, execute: bool, branch_name: str = "",
             select(Warehouse).where(Warehouse.branch_id == branch.id)).all()}
             if branch else {})
 
-        # اتعملت قبل كده؟ الحارس بيشتغل لكل صنف×مخزن لوحده مش للتشغيلة كلها.
-        #
-        # كان بيتخطى كل حاجة لو لقى أي حركة افتتاحية، ومعنى كده إن أي سطر ماكانش دخل
-        # في المرة الأولى مايدخلش أبداً — والسطور السالبة كانت بره فعلاً، فالرصيد كان
-        # ناقص ٣٦ وحدة في أكتوبر. الحارس المفصّل بيمنع التكرار وبيسمح باللي فات.
-        # **`OPENING_DOC` ثابت، مش `f"a5_opening{prefix}"`.**
-        #
-        # كان بيحمل بادئة الشركة، فالافتتاحي بقى في دلوين: `a5_opening` لأكتوبر
-        # و`a5_openingAL-` للعلياء. وده كان بيخلي الحارس بيدوّر في نص التاريخ بس.
-        # والبادئة مالهاش لازمة أصلاً: المفتاح (صنف × مخزن)، والأصناف متقسّمة
-        # بالبادئة في الكود، فأصناف الشركتين مابتتلاقاش.
-        #
-        # والحارس من غير بادئة أقوى مش أضعف: بيقرا كل الافتتاحي أياً كان مين كتبه،
-        # فتشغيلة تانية لأي شركة مش هتزوّد رصيد موجود.
         done = {(m.item_id, m.location_id) for m in db.scalars(
             select(stock_service.StockMovement).where(
                 stock_service.StockMovement.source_doc_type == OPENING_DOC)).all()}
@@ -206,7 +151,6 @@ def run(folder: str, *, execute: bool, branch_name: str = "",
             if len(r) < 7:
                 continue
             code, name = _clean(r[0]), _clean(r[1])
-            # جدول ربط a5 الأول — بعد التوحيد الكود والاسم عندنا مابقوش زي a5.
             it = a5map.find(code, name)
             if it is None:
                 skipped.append(f"رصيد لصنف مش موجود: «{name}» ({code})")
@@ -221,8 +165,6 @@ def run(folder: str, *, execute: bool, branch_name: str = "",
             qty = _money(r[4]) or _money(r[5]) or _money(r[6])
             if qty == 0:
                 continue
-            # a5 عنده أرصدة أول مدة بالسالب — مخزن بدأ بعجز. بتتسجّل حركة خروج مش
-            # بتتخطى: تخطّيها بيدي رصيد أعلى من الحقيقي.
             out = qty < 0
             stock_service.post_movement(
                 db, item_id=it.id, location_kind=LocationKind.warehouse,

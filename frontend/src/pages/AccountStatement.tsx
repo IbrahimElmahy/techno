@@ -5,7 +5,6 @@ import {
   Alert, Button, Checkbox, Descriptions, Empty, Input, Select,
   Space, Spin, Tag, message,
 } from 'antd';
-// فلتر على كل عمود — شوف `FilterTable`.
 import { FilterTable as Table } from '../components/FilterTable';
 import {
   DownloadOutlined, LinkOutlined, PrinterOutlined, ReloadOutlined, SearchOutlined,
@@ -43,51 +42,38 @@ interface StatementLine {
   entry_date: string;
   entry_type: string;
   description: string;
-  /** «البيان» المكتوب على المستند اللي رحّل السطر — غير وصف القيد (`description`). */
   doc_statement?: string | null;
   debit: string;
   credit: string;
   balance_before: string;
   balance: string;
   rep_name?: string | null;
-  /** المخزن: مكان البضاعة في البيع والمرتجع، ومخزن المندوب في السند. */
   store_name?: string | null;
-  /** سطر «مدفوع نقداً مع الفاتورة» — السيرفر بيفصله من سطر الفاتورة، مش سطر في القيد. */
   cash_on_invoice?: boolean;
-  /** خط المستند (أبيض/بولي) ونوع السند — منهم بيتحسب «نوع الفاتورة». */
   doc_family?: string | null;
   voucher_kind?: string | null;
-  /** «نوع الفاتورة» محسوب على الشاشة (`invoiceTypeOf`) — حقل عشان التصدير يقراه. */
   invoice_type?: string;
   cost_center_name?: string | null;
   account_id?: number | null;
   account_name?: string | null;
   raw?: any;
   _serial?: number;
-  // ── المطابقة ──────────────────────────────────────────────────────────────
   line_id?: number | null;
-  /** المتبقّي المفتوح. `null` = حساب لا تُقفل سطوره، وهو غير الصفر (أُقفل بالكامل). */
   residual?: string | null;
   due_date?: string | null;
   days_overdue?: number | null;
   payment_state?: string | null;
   payment_state_label?: string | null;
   matches?: StatementMatch[];
-  /** رصيد حساب السطر لوحده (مش الكشف كله) — للتجميع بالحساب الفرعي. */
   account_balance?: string | null;
   account_balance_before?: string | null;
-  /** الرصيد مقسوم زي ورقة a5: موجب في عمود واحد منهم بس، والتاني فاضي. */
   balance_debit?: string;
   balance_credit?: string;
-  /** صف «رصيد أول المدة» — مش حركة، الجدول بيحطه في طرف الأقدم. */
   _opening?: boolean;
-  /** مفتاح الصف ثابت من السطر الأصلي — في التجميع بالحساب `balance` بيتبدّل برصيد الحساب. */
   _key?: string;
-  /** «تراكمي المعروض» — في التجميع بالحساب بيتحسب جوّه القسم. */
   _running?: number;
 }
 
-/** حساب فرعي في الكشف بأرصدته (`AccountSummary` في السيرفر). */
 interface AccountSummary {
   account_id: number;
   account_name: string;
@@ -112,7 +98,6 @@ interface StatementMatch {
 
 interface Aging {
   current: string; d30: string; d60: string; d90: string; older: string; total: string;
-  /** المفتوح مفصول: المطلوب من الطرف، والدفعات اللي لسه ماتخصمتش من فاتورة. */
   debit_open?: string; credit_open?: string;
 }
 
@@ -125,32 +110,22 @@ interface StatementOut {
   total_debit: string;
   total_credit: string;
   lines: StatementLine[];
-  /** المستحق على كل السطور المفتوحة حتى تاريخ القفل — لا مجموع الفترة المعروضة. */
   total_due?: string;
   total_overdue?: string;
   aging?: Aging;
   reconcilable?: boolean;
-  /** حساب ذمم عميل: حساباته كلها (أبيض/بولي) بأرصدتها — فاضية لو عنده حساب واحد. */
   families?: { family: string | null; account_id: number; balance: string }[];
   customer_id?: number | null;
-  /** ناحية الحساب — منها بيتقسم الرصيد على «رصيد مدين / رصيد دائن». */
   normal_side?: 'debit' | 'credit' | string | null;
-  /** كل حساب فرعي بأول مدته وحركته وآخر مدته — مجموع إقفالاتهم = الرصيد الختامي. */
   account_summaries?: AccountSummary[];
 }
 
-/**
- * الرصيد مقسوم على «رصيد مدين / رصيد دائن» زي ورقة a5. الرصيد جاي موقّع على ناحية الحساب
- * (عميل مدين، مورد دائن)، فبيتقلب لناحية المدين الأول — وإلا رصيد المورد الدائن كان هيتكتب
- * في «رصيد مدين». الصفر بيتكتب في المدين والدائن فاضي، زي الورقة.
- */
 function splitBalance(v: unknown, side?: string | null): [string, string] {
   const d = (side === 'credit' ? -1 : 1) * Number(v || 0);
   if (Math.abs(d) < 0.005) return ['0', ''];
   return d > 0 ? [d.toFixed(2), ''] : ['', (-d).toFixed(2)];
 }
 
-/** نفس الرصيد على ناحية المدين: موجب = مدين، سالب = دائن. */
 const asDebit = (v: unknown, side?: string | null) => (side === 'credit' ? -1 : 1) * Number(v || 0);
 
 const lineKey = (l: StatementLine) => `${l.entry_id}-${l.entry_date}-${l.balance}`;
@@ -162,10 +137,6 @@ const VOUCHER_TYPE: Record<string, string> = {
   partner_withdraw: 'سحب شريك', partner_deposit: 'إيداع شريك',
 };
 
-/**
- * «نوع الفاتورة»: البيع بخطّه (أبيض/بولي)، والشرا بخطّه لو ليه وإلا «شراء»، والمرتجعين
- * «مرتجع»، والسندات ونقدي الفاتورة «دفعة»، والباقي «قيد» أو اسم نوع الحركة.
- */
 function invoiceTypeOf(l: StatementLine): string {
   if (l.cash_on_invoice) return PAYMENT;
   switch (String(l.doc_kind ?? '')) {
@@ -177,7 +148,6 @@ function invoiceTypeOf(l: StatementLine): string {
     default: break;
   }
   if (l.entry_type === 'receipt' || l.entry_type === 'payment') return PAYMENT;
-  // `sales_return` و`sales_invoice` و`purchase_invoice` أسامي a5 للقيود المنقولة.
   if (['sale_return', 'sales_return', 'purchase_return'].includes(l.entry_type)) return 'مرتجع';
   if (l.entry_type === 'sales_invoice') return 'بيع';
   if (l.entry_type === 'purchase_invoice') return 'شراء';
@@ -185,8 +155,6 @@ function invoiceTypeOf(l: StatementLine): string {
   return entryTypeLabel(l.entry_type);
 }
 
-/** أقرب أب بيعمل scroll — صندوق المحتوى في `AppLayout`. */
-/** «البيان» من غير رقم المستند (SINV-000355 وأمثاله) — الرقم ليه عمود لوحده. */
 const SERIAL_RE = /\s*\b(?:[A-Z]{1,4}-)?[A-Z]{1,6}-?\d{3,}\b/g;
 function stripSerial(desc: string | null | undefined, docNumber?: string | null): string {
   let s = String(desc ?? '');
@@ -221,7 +189,6 @@ export default function AccountStatement() {
     st: search.get('st') || '',
     x: search.get('x') === '1',
     z: search.get('z') === '1',
-    // «كل حسابات العميل» شغّالة افتراضياً — `all=0` بس هو اللي بيقفلها.
     all: search.get('all') !== '0',
   };
   const [accounts, setAccounts] = useState<any[]>([]);
@@ -232,26 +199,11 @@ export default function AccountStatement() {
   const [itemId, setItemId] = useState<number | undefined>(u0.item);
   const [warehouses, setWarehouses] = useState<any[]>([]);
   const [warehouseId, setWarehouseId] = useState<number | undefined>(u0.wh);
-  /**
-   * **الفترة ممكن تكون نص فاضية، مش فاضية أو مكتملة وخلاص.**
-   *
-   * `RangePicker` بيرجّع `[null, null]` أو `[Dayjs, null]` لما اللي بيستعمله يمسح طرف
-   * واحد — والنوع المكتوب `[Dayjs, Dayjs] | null` بيخفي ده، فالفحص `if (range)` بيعدّي
-   * والسطر اللي بعده بينده `.isSame` على `null`. النتيجة انهيار غير ملتقط بيفضّي
-   * الشاشة كلها مش بيكسر خانة.
-   *
-   * `fullRange()` هي المكان الوحيد اللي بيقرّر «الفترة دي مكتملة ولا لأ» — وبترجّع
-   * الطرفين أو `null`، فمفيش حتة بتفترض من نفسها.
-   */
   const [range, setRange] = useState<[Dayjs | null, Dayjs | null] | null>(
     u0.from && u0.to ? [dayjs(u0.from), dayjs(u0.to)] : null,
   );
   const [expandedKeys, setExpandedKeys] = useState<readonly React.Key[]>([]);
   const [showStock, setShowStock] = useState(false);
-  // التجميع بالشهر أو بنوع الحركة — كما يفعل أودو. الفكرة أن السطور تُطوى إلى
-  // مجاميع تُقرأ أولاً، ثم تُفتح المجموعة التي تهمّ.
-  // و«بالحساب الفرعي» (زي ورقة a5 ودفتر الأستاذ في أودو): كشف «الخزينة» برصيد جاري واحد
-  // لكل الصناديق صعب يتقري — كل صندوق قسم لوحده بأول مدته ورصيده الجاري وإجماليه.
   const [groupBy, setGroupBy] = useState<'none' | 'month' | 'type' | 'account'>('none');
   const [openSections, setOpenSections] = useState<readonly React.Key[]>([]);
   const [entryCache, setEntryCache] = useState<Record<number, any>>({});
@@ -259,12 +211,7 @@ export default function AccountStatement() {
   const [costCenters, setCostCenters] = useState<any[]>([]);
   const [statement, setStatement] = useState<StatementOut | null>(null);
   const [loading, setLoading] = useState(false);
-  // العميل اللي عنده أكتر من حساب (أبيض/بولي): الكشف بيجمعهم برصيد واحد. التحصيل «على
-  // الإجمالي» بيتوزّع على الحسابين، فحساب واحد لوحده بيوري نص السند بس.
   const [allCustomerAccounts, setAllCustomerAccounts] = useState<boolean>(u0.all);
-  // الكشف المجمّع بيتبني من شجرة الحسابات (`mainGroups`). الصفحة لما بتتفتح من رابط فيه
-  // `main=` كانت بتطلب الكشف قبل ما الشجرة توصل، فالطلب بيروح من غير حسابات → ٤٢٢ «حدد
-  // owner_group أو root_id» والشاشة تفضل فاضية لأن مفيش حاجة بتعيد الطلب بعدها.
   const [accountsReady, setAccountsReady] = useState(false);
 
   useEffect(() => {
@@ -303,10 +250,6 @@ export default function AccountStatement() {
           res = await api.get(`/api/v1/accounts/${accountId}/statement`, { params });
         } else {
           const { roots, group } = rootsOf(mainKey!);
-          // المجموعة («الخزينة والبنوك»، «العهد»…) بتتبعت بحساباتها مش باسمها: `owner_group`
-          // على السيرفر بيجيب النوع من التلات فروع، فكشف «الخزينة والبنوك» في أكتوبر كان
-          // بيخلط صناديق العلياء والسادات معاه. الشجرة هنا متفلترة بالفرع أصلاً، فنفس
-          // الحسابات اللي في قايمة «الحساب الفرعي» هي اللي بتتقرا — والجذر بيجيب اللي تحته.
           const ids = [...new Set([...roots, ...(group
             ? accounts.filter((a: any) => a.owner_group === group).map((a: any) => a.id) : [])])];
           if (!ids.length) { setStatement(null); return; }
@@ -314,7 +257,6 @@ export default function AccountStatement() {
           res = await api.get('/api/v1/accounts-group/statement', {
             params, paramsSerializer: { indexes: null },
           });
-          // مجموعة من غير جذر: السيرفر بيسمّي الكشف بأول حساب فيها — العنوان هو المجموعة.
           if (!roots.length && group) res = { ...res, data: { ...res.data, account_name: group } };
         }
         setStatement(res.data);
@@ -386,12 +328,6 @@ export default function AccountStatement() {
     const named = a.name || a.owner_name || `حساب #${a.id}`;
     return a.code ? `${a.code} — ${named}` : named;
   };
-  /**
-   * **الاسم بس في الاختيار** (طلب العميل ٢٠٢٦-١٠-٠١ ثم ٢٠٢٦-١٠-٠٧): الكود كان قبل الاسم
-   * فبياكل نص الخانة، وبعدين صغير في آخر السطر — والعميل مش عايزه خالص في الاختيارات.
-   * البحث بالكود لسه شغّال من `search` المخفي.
-   */
-  /** فرع الحساب من كوده — الشجر المنقول من a5: `AL-…` العلياء، `FC-…` السادات، `A5…` أكتوبر. */
   const branchOfCode = (code?: string | null) => (!code ? '' : code.startsWith('AL-') ? 'العلياء'
     : code.startsWith('FC-') ? 'السادات' : code.startsWith('A5') ? 'أكتوبر' : '');
   const accountOption = (a: any) => ({
@@ -402,12 +338,6 @@ export default function AccountStatement() {
     <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{o.label}</span>
   );
 
-  /**
-   * **الحساب الرئيسي بالاسم — مرة واحدة** (طلب العميل ٢٠٢٦-١٠-٠٣). الشجرة اتنقلت من a5
-   * لفرعين، فكل حساب رئيسي موجود مرتين بنفس الاسم («A5M-5 العملاء» أكتوبر و«AL-A5M-5
-   * العملاء» العلياء)، وفوقهم مجموعة «العملاء» لحسابات الأطراف. القايمة كانت بتكرّرهم؛
-   * دلوقتي الاسم الواحد = كل الجذور اللي بيه + المجموعة اللي بنفس الاسم، وكشفه مجمّع.
-   */
   const mainGroups = useMemo(() => {
     const map = new Map<string, { roots: number[]; group?: string }>();
     accounts.filter((a: any) => !a.parent_id && a.code).forEach((a: any) => {
@@ -418,7 +348,6 @@ export default function AccountStatement() {
     });
     accounts.filter((a: any) => !a.parent_id && !a.code && a.owner_group).forEach((a: any) => {
       const name = String(a.owner_group).trim();
-      // «الموردين» (مجموعة) و«الموردون» (جذر) نفس المعنى — بيتدمجوا تحت اسم الجذر.
       const alias = name === 'الموردين' && map.has('الموردون') ? 'الموردون' : name;
       const g = map.get(alias) ?? { roots: [] };
       g.group = name;
@@ -431,7 +360,6 @@ export default function AccountStatement() {
       value: `nm:${name}`, label: name, search: '', code: '',
       title: g.roots.length > 1 ? `${name} — ${g.roots.length} فروع` : name,
     })), [mainGroups]);
-  /** الحسابات اللي تحت اختيار «الحساب الرئيسي» — بأي شكل اتكتب في العنوان (nm/acc/grp). */
   const rootsOf = (key: string): { roots: number[]; group?: string } => {
     if (key.startsWith('nm:')) return mainGroups.get(key.slice(3)) ?? { roots: [] };
     if (key.startsWith('grp:')) return { roots: [], group: key.slice(4) };
@@ -454,7 +382,6 @@ export default function AccountStatement() {
     };
     return accounts.filter(inTree);
   }, [accounts, mainKey, mainGroups]); // eslint-disable-line react-hooks/exhaustive-deps
-  /** الأسماء المكررة في الحساب الفرعي بتاخد الفرع جنبها (ولو لسه مكررة، الكود). */
   const subOptions = useMemo(() => {
     const base = visibleAccounts.map(accountOption);
     const count = new Map<string, number>();
@@ -484,16 +411,11 @@ export default function AccountStatement() {
   }, [accountId, accounts, mainKey]);
 
   const lines: StatementLine[] = statement?.lines ?? [];
-  // حسابات العميل (أبيض/بولي) — لو أكتر من واحد بتظهر خانة «كل حسابات العميل».
   const customerFamilies = subject === 'account' && accountId ? (statement?.families ?? []) : [];
-  // الكشف فيه سطور من أكتر من حساب (كل حسابات العميل) — عمود «الحساب الفرعي» بيقول مين.
   const multiAccount = new Set(lines.map((l) => l.account_id).filter(Boolean)).size > 1;
   const summaries: AccountSummary[] = statement?.account_summaries ?? [];
-  // الكشف بيغطي أكتر من حساب (رئيسي، مجموعة، أو كل حسابات العميل) — ساعتها بس التجميع
-  // بالحساب الفرعي ليه معنى. اختياره وبعدين فتح حساب واحد بيرجع للعرض العادي.
   const multiScope = subject === 'account' && (grouped || multiAccount || summaries.length > 1);
   const groupMode = groupBy === 'account' && !multiScope ? 'none' : groupBy;
-  /** ناحية الكشف كله — لتقسيم الرصيد في العرض العادي. */
   const stmtSide = statement?.normal_side ?? 'debit';
 
   const [repFilter, setRepFilter] = useState<string | undefined>(u0.rep);
@@ -501,19 +423,13 @@ export default function AccountStatement() {
   const [typeFilter, setTypeFilter] = useState<string[]>(() => [...new Set(u0.types.map((t: string) => entryTypeLabel(t)))]);
   const [ccFilter, setCcFilter] = useState<string[]>(u0.cc);
   const [docNo, setDocNo] = useState(u0.doc);
-  // «البيان» — بيدوّر في بيان القيد وفي البيان المكتوب على المستند نفسه. فلتر في الشاشة
-  // زي باقي فلاتر الكشف: أول وآخر المدة بيفضلوا للحساب كله، و«تراكمي المعروض» بيمشي مع
-  // السطور المطابقة — فلترة في السيرفر كانت هتخلّي الرصيد الجاري رقم مالوش معنى.
   const [stmtQ, setStmtQ] = useState(u0.st);
   const [exactMatch, setExactMatch] = useState(u0.x);
   const [hideZero, setHideZero] = useState(u0.z);
 
-  // القوايم دي بتتبني من سطور الكشف بترتيب ظهورها (يعني بالتاريخ) — مرتّبة أبجدي عشان
-  // اللي بيدوّر بعينه على مندوب يلاقيه في مكانه.
   const abc = (a: { label: string }, b: { label: string }) => compareArabic(a.label, b.label);
   const repOptions = [...new Set(lines.map((l) => l.rep_name).filter(Boolean))]
     .map((r) => ({ value: r as string, label: r as string })).sort(abc);
-  // بالاسم مش بالكود: نوعين ليهم نفس الاسم (فاتورة بيع عندنا وفاتورة بيع من a5) خيار واحد.
   const typeOptions = [...new Set(lines.filter((l) => l.entry_type).map((l) => entryTypeLabel(l.entry_type)))]
     .map((t) => ({ value: t, label: t })).sort(abc);
   const ccOptions = [...new Set(lines.map((l) => l.cost_center_name).filter(Boolean))]
@@ -533,7 +449,6 @@ export default function AccountStatement() {
     },
     { label: 'السنة دي', get: () => [dayjs().startOf('year'), dayjs()] },
   ];
-  /** الطرفين مع بعض، أو `null` — الفترة النص مالهاش معنى هنا. */
   const fullRange = (): [Dayjs, Dayjs] | null =>
     (range && range[0] && range[1] ? [range[0], range[1]] : null);
 
@@ -544,8 +459,6 @@ export default function AccountStatement() {
     return r[0].isSame(s, 'day') && r[1].isSame(e, 'day');
   };
 
-  // الكشف وهو مخفي (فاتورة مفتوحة منه) مابيكتبش في العنوان: العنوان بتاع التبويب الظاهر،
-  // والكتابة منه كانت بتشدّ المستخدم للكشف. لما يظهر تاني بيكتب حالته عادي.
   const urlShown = useOnScreen();
   useEffect(() => {
     if (!urlShown) return;
@@ -614,24 +527,14 @@ export default function AccountStatement() {
 
   const filtering = !!(repFilter || ccFilter.length || typeFilter.length
     || query.trim() || docNo.trim() || stmtQ.trim() || hideZero);
-  // حساب ذمم؟ أعمدة المطابقة لا معنى لها على حساب إيراد أو خزينة، وعرضها فارغة
-  // يجعل الشاشة تبدو ناقصة بدل أن تبدو غير منطبقة.
   const reconcilable = !!statement?.reconcilable;
   const aging = statement?.aging;
   const totalDue = Number(statement?.total_due || 0);
   const totalOverdue = Number(statement?.total_overdue || 0);
-  // الكشف جاي الأحدث فوق — التراكمي بيتجمع بالترتيب الزمني (الفاتورة قبل نقديها).
   const runningOf = useMemo(() => runningTotals(
     shownLines, (l) => l._key ?? lineKey(l)), [shownLines]);
   const openDoc = useOpenDocument();
 
-  /**
-   * مكان الـscroll بيرجع زي ما كان لما ترجع للكشف من مستند فتحته منه.
-   *
-   * صندوق المحتوى واحد لكل الشاشات، فلما الكشف يستخبى والمستند يظهر الصندوق بيتقص
-   * والمكان بيضيع. بنسجّل المكان والكشف ظاهر بس، وبنرجّعه أول ما يظهر تاني. والتسجيل
-   * بيتشال في `useLayoutEffect` عشان الـscroll اللي بيحصل من الاستخباء نفسه مايتسجّلش.
-   */
   const anchorRef = useRef<HTMLSpanElement>(null);
   const onScreen = useOnScreen();
   const savedScroll = useRef(0);
@@ -661,12 +564,6 @@ export default function AccountStatement() {
 
   const rowKeyOf = (l: StatementLine) => l._key ?? lineKey(l);
 
-  /**
-   * صف «رصيد أول المدة» **جوّه الجدول** (زي ورقة a5 ودفتر أودو) — كان في الترويسة بس، فأقدم
-   * سطر في الجدول رصيده بيبدأ من رقم مش قدّام العين. الصف ده هو اللي الرصيد الجاري بيبدأ منه،
-   * فمكانه في طرف الأقدم: تحت لما الأحدث فوق (الافتراضي)، وفوق لو اترتّب بالتاريخ تصاعدي
-   * (شوف `withOpening`). مش حركة: مالوش مدين ولا دائن ولا مستند، ومابيتفتحش.
-   */
   const openingLine = (opening: unknown, side: string | null | undefined, key: string,
     account?: { id: number; name: string }): StatementLine => {
     const [bd, bc] = splitBalance(opening, side);
@@ -678,20 +575,12 @@ export default function AccountStatement() {
       balance_debit: bd, balance_credit: bc, _opening: true, _key: key,
     };
   };
-  /** بيتعرض لو فيه فترة (أول المدة ليه معنى) أو رصيد قبلها — من أول الحركة وصفر مالوش لازمة. */
   const wantsOpening = (opening: unknown) => !!fullRange() || Math.abs(Number(opening || 0)) >= 0.005;
 
-  /** صفوف الجدول العادي: الحركات (الأحدث فوق) وتحتها رصيد أول المدة. */
   const tableRows = useMemo(() => (statement && wantsOpening(statement.opening_balance)
     ? [...shownLines, openingLine(statement.opening_balance, stmtSide, 'opening')]
     : shownLines), [shownLines, statement, stmtSide, range]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  /**
-   * التجميع بالحساب الفرعي: قسم لكل حساب بأول مدته (من السيرفر — `account_summaries`)،
-   * وسطوره برصيد **الحساب ده** الجاري (`account_balance`) مش رصيد الكشف كله، وإجماليه وآخر
-   * مدته. الحساب اللي ماتحركش وعليه رصيد بيظهر بصف أول المدة لوحده؛ بفلتر على السطور بيظهر
-   * بس اللي ليه سطور مطابقة — قسم فاضي تحت فلتر مندوب مالوش معنى.
-   */
   const sections = useMemo(() => {
     if (groupMode !== 'account' || !statement) return [];
     const byAcct = new Map<number, StatementLine[]>();
@@ -726,15 +615,10 @@ export default function AccountStatement() {
       });
   }, [groupMode, statement, shownLines, summaries, filtering, range]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // أقسام قليلة السطور بتتفتح لوحدها؛ «الخزينة» بآلاف السطور بتفتح مقفولة وكل قسم بإجماليه.
   useEffect(() => {
     setOpenSections(sections.length && shownLines.length <= 400 ? sections.map((s) => s.key) : []);
   }, [groupMode, statement]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  /**
-   * لون كل صف: سطور المستند الواحد لون واحد، والمستندات ورا بعض بالتبادل بين لونين،
-   * والدفعات (السندات ونقدي الفاتورة) لونها لوحدها مهما كان دورها في التبادل.
-   */
   const rowTone = useMemo(() => {
     const m = new Map<string, string>();
     let prev: string | null = null;
@@ -743,15 +627,11 @@ export default function AccountStatement() {
       const doc = l.doc_kind && l.doc_id ? `${l.doc_kind}:${l.doc_id}` : `e:${l.entry_id}`;
       if (prev !== null && doc !== prev) odd = !odd;
       prev = doc;
-      // النقدي اللي نزل مع الفاتورة بياخد لون فاتورته (طلب العميل ٢٠٢٦-١٠-٠٣) — الأخضر
-      // للدفعات المستقلة (سندات القبض والصرف) بس.
       const pay = l.invoice_type === PAYMENT && !l.cash_on_invoice;
       m.set(rowKeyOf(l), pay ? 'st-pay' : odd ? 'st-doc-b' : 'st-doc-a');
     }
     return m;
   }, [shownLines]);
-  // المؤشر بتاع الكيبورد + المتأخر + لون المستند. كان `rowClassName` بتاع المتأخر بيمسح
-  // بتاع الكيبورد لأنه جاي بعده على الجدول.
   const rowClass = (l: StatementLine) => (l._opening ? 'st-opening' : [
     kb.rowClassName(l), l.days_overdue ? 'statement-overdue' : '', rowTone.get(rowKeyOf(l)) ?? '',
   ].filter(Boolean).join(' '));
@@ -767,8 +647,6 @@ export default function AccountStatement() {
     if (showStock) setExpandedKeys(shownLines.map(rowKeyOf));
   }, [showStock, shownLines]);
 
-  // الكيبورد بيمشي على المعروض — كان بيمشي على كل السطور، فالسهم بينزل على سطر مخفي
-  // بالفلتر والمؤشر بيختفي من الجدول.
   const kb = useTableKeyboard<StatementLine>({
     rows: shownLines,
     rowKey: rowKeyOf,
@@ -811,10 +689,7 @@ export default function AccountStatement() {
     }] : []),
     { title: 'البيان', dataIndex: 'description',
       ...textColumn(lines, (l: StatementLine) => stripSerial(l.description, l.doc_number)),
-      // بيان المستند تحت وصف القيد — القيد بيقول «فاتورة بيع …» واللي كتبه المستخدم على
-      // الفاتورة («توريد مشروع كذا») كان مابيبانش في الكشف خالص.
       render: (v: string, l: StatementLine) => {
-        // النقدي المدفوع مع الفاتورة: سطر عرض بس، بلون مختلف عشان مايتقريش كسند قبض.
         const shown = stripSerial(v, l.doc_number);
         const text = l.cash_on_invoice ? <span style={{ color: '#389e0d' }}>{shown}</span> : shown;
         return l.doc_statement && l.doc_statement !== v && !l.cash_on_invoice ? (
@@ -855,15 +730,10 @@ export default function AccountStatement() {
         </span>
       ),
     }] : []),
-    // الرصيد بإشارته — في كشف الحساب مخفي افتراضياً لصالح «رصيد مدين / رصيد دائن» تحت، بس
-    // موجود في «الأعمدة» لمين متعوّد عليه. في كشف الصنف مفتاحه غير عشان إخفاؤه هنا مايخفيش
-    // رصيد الكمية هناك (الاتنين على نفس إعدادات الأعمدة).
     { title: LABELS.after, dataIndex: 'balance', key: isItem ? 'qty_balance' : 'balance', align: 'left',
       ...numberColumn<StatementLine>((l) => l.balance),
       sorter: (a: StatementLine, b: StatementLine) => Number(a.balance) - Number(b.balance),
       render: (v: string) => <b>{num(v)}</b> },
-    // «رصيد مدين / رصيد دائن» زي ورقة a5: الرصيد الدائن بيتكتب موجب في عموده بدل «−٤٠٠»
-    // اللي الإشارة فيه أول حاجة بتضيع في القراية والتصوير.
     ...(!isItem ? [{
       title: 'رصيد مدين', dataIndex: 'balance_debit', align: 'left' as const,
       ...numberColumn<StatementLine>((l) => l.balance_debit),
@@ -880,8 +750,6 @@ export default function AccountStatement() {
       ...numberColumn<StatementLine>((l) => Math.abs(Number(l.residual || 0))),
       sorter: (a: StatementLine, b: StatementLine) =>
         Math.abs(Number(a.residual || 0)) - Math.abs(Number(b.residual || 0)),
-      // الصفر هنا معلومة: السطر أُقفل بالكامل. لذلك «مسدَّد» بدل شَرطة — الشَرطة
-      // تُقرأ «لا ينطبق»، وهي تنطبق تماماً وجوابها صفر.
       render: (_: unknown, l: StatementLine) => {
         const open = Math.abs(Number(l.residual || 0));
         if (l.residual === null || l.residual === undefined) return <span style={{ color: '#8c8c8c' }}>-</span>;
@@ -912,12 +780,6 @@ export default function AccountStatement() {
       ) : <span style={{ color: '#8c8c8c' }}>قيد يدوي</span>) },
   ];
 
-  /**
-   * صف «رصيد أول المدة» جوّه أي عمود: فاضي إلا التاريخ والبيان والرصيد. والفرز بيثبّته في
-   * طرف الأقدم — antd بيقلب نتيجة المقارنة في التنازلي، فـ«−١ لما يكون هو الأول» بتحطه
-   * أول الجدول في التصاعدي وآخره في التنازلي، وده بالظبط مكانه لو الترتيب بالتاريخ.
-   * وفلاتر الأعمدة مابتشيلوش: هو نقطة بداية الرصيد مش حركة تتفلتر.
-   */
   const withOpening = (cols: ColumnsType<StatementLine>): ColumnsType<StatementLine> =>
     cols.map((c: any) => {
       const key = String(c.key ?? c.dataIndex ?? '');
@@ -945,11 +807,9 @@ export default function AccountStatement() {
       };
     });
 
-  // اللي بيتصدّر هو اللي على الشاشة: بصف أول المدة، وفي التجميع بالحساب كل قسم ورا التاني.
   const exportRows = groupMode === 'account' ? sections.flatMap((s) => s.rows)
     : groupMode === 'none' ? tableRows : shownLines;
   const tableCols = useTableColumns('account-statement', withOpening(columns), {
-    // الرصيد بإشارته مخفي افتراضياً — «رصيد مدين / رصيد دائن» مكانه (ورقة a5).
     defaultHidden: ['balance'],
     export: { name: isItem ? 'كشف صنف' : 'كشف حساب', rows: exportRows },
   });
@@ -1014,12 +874,6 @@ export default function AccountStatement() {
     writeCsv(`statement-${statement.account_id}`, cols, exportRows);
   };
 
-  /**
-   * الطباعة بورقة a5 الثابتة (`print/statementSheet`) — مش بالأعمدة الظاهرة على الشاشة.
-   * الأعمدة اللي المستخدم بيختارها للشغل (مندوب، مخزن، الرصيد قبل) كانت بتتطبع كلها
-   * وبتحشر البيان في عمود ضيق — العميل رفض الورقة دي وطلب ورقة a5. التصدير CSV لسه
-   * بالأعمدة الظاهرة: ده للي عايز الداتا، مش للي هيمسك الورقة.
-   */
   const printIt = () => {
     if (!statement) return;
     const r = fullRange();
@@ -1037,7 +891,6 @@ export default function AccountStatement() {
         ? [[exactMatch ? 'بحث (تطابق تام)' : 'بحث', query.trim()] as [string, string]] : []),
       ...(hideZero ? [['عرض', 'بدون الحركات الصفرية'] as [string, string]] : []),
     ];
-    // ناحية الحساب من الشجرة (عميل مدين، مورد دائن) — الورقة بتستنتجها من السطور لو مالقيتهاش.
     const acct = accounts.find((a: any) => a.id === (statement.account_id ?? accountId));
     printStatement({
       title: isItem ? 'كشف صنف' : 'كشف حساب',
@@ -1053,8 +906,6 @@ export default function AccountStatement() {
       filters,
       quantity: isItem,
       showAccount: grouped || multiAccount,
-      // التجميع بالحساب الفرعي بيتطبع زي ما هو على الشاشة: قسم لكل حساب بأول مدته ورصيده
-      // الجاري وإجماليه — زي ورقة a5 لما تطلب الحساب الرئيسي مفرود.
       sections: groupMode === 'account' ? sections.map((s) => ({
         account: s.summary.account_name,
         opening: s.summary.opening,
@@ -1062,8 +913,6 @@ export default function AccountStatement() {
         normalSide: s.summary.normal_side === 'credit' ? 'credit' as const : 'debit' as const,
         lines: s.rows.filter((l) => !l._opening),
       })) : undefined,
-      // الورقة المرسَلة للعميل لازم تقول «عليك كام» و«منها متأخر كام» — الرصيد
-      // الختامي وحده بيسيبه يجمع بنفسه، والمتأخر مابيبانش فيه خالص.
       extra: reconcilable ? [
         ['إجمالي المستحق', money(totalDue)],
         ['منه متأخر', money(totalOverdue)],
@@ -1085,8 +934,6 @@ export default function AccountStatement() {
     return w ? w.name : `مخزن #${id}`;
   };
 
-  /** السطور مقسومة إلى مجموعات بمجاميعها. المفتاح يُشتَق من السطر نفسه لا من
-   *  ترتيبه، فالفرز داخل الجدول لا يفكّ المجموعات. */
   const groups = useMemo(() => {
     if (groupBy !== 'month' && groupBy !== 'type') return [];
     const map = new Map<string, { key: string; label: string; rows: StatementLine[] }>();
@@ -1107,7 +954,6 @@ export default function AccountStatement() {
         credit: g.rows.reduce((t, l) => t + Number(l.credit || 0), 0),
         overdue: g.rows.reduce((t, l) => t + (l.days_overdue ? Math.abs(Number(l.residual || 0)) : 0), 0),
       }))
-      // الشهور الأحدث فوق زي السطور؛ الأنواع بترتيبها الأبجدي.
       .sort((a, b) => (groupBy === 'month' ? b.key.localeCompare(a.key) : a.key.localeCompare(b.key)));
   }, [shownLines, groupBy]);
 
@@ -1128,9 +974,6 @@ export default function AccountStatement() {
     setAccountId(id);
   };
 
-  /** «هذا السطر أُقفل على ماذا» — الدفعة تقول أي فواتير سدّدت، والفاتورة تقول بأي
-   *  دفعات سُدِّدت. الجدول واحد مقروء من الوجهين، وهذا ما يجعل الرقم قابلاً للمراجعة
-   *  بدل أن يكون حصيلة جمع في رأس القارئ. */
   const matchBlock = (l: StatementLine) => {
     const rows = l.matches ?? [];
     if (!rows.length && !Number(l.residual || 0)) return null;
@@ -1264,7 +1107,6 @@ export default function AccountStatement() {
     );
   };
 
-  /** «مسح» بيشيل فلاتر السطور بس — الحساب/الصنف والفترة بيفضلوا زي ما هم. */
   const clearLineFilters = () => {
     setQuery(''); setTypeFilter([]); setRepFilter(undefined); setCcFilter([]);
     setDocNo(''); setStmtQ(''); setExactMatch(false); setHideZero(false);
@@ -1273,10 +1115,6 @@ export default function AccountStatement() {
   const shownDebit = shownLines.reduce((t, l) => t + Number(l.debit || 0), 0);
   const shownCredit = shownLines.reduce((t, l) => t + Number(l.credit || 0), 0);
 
-  /**
-   * سطر إجمالي تحت الجدول، كل رقم تحت عموده — مهما المستخدم خفى أو رتّب الأعمدة. العنوان
-   * بياخد كل اللي قبل أول عمود ليه رقم (ومعاه عمود الفرد اللي antd بيحطه أول الجدول).
-   */
   const colKeyOf = (c: any) => String(c.key ?? c.dataIndex ?? '');
   const totalsRow = (label: React.ReactNode, vals: Record<string, React.ReactNode>) => {
     const keys = (tableCols.columns as any[]).map(colKeyOf);
@@ -1293,7 +1131,6 @@ export default function AccountStatement() {
       </Table.Summary.Row>
     );
   };
-  /** المدين والدائن والرصيد الختامي (بإشارته ومقسوم) — لسطر الإجمالي. */
   const totalsVals = (debit: number, credit: number, closing: unknown, side?: string | null) => {
     const [bd, bc] = splitBalance(closing, side);
     return {
@@ -1301,14 +1138,12 @@ export default function AccountStatement() {
       ...(isItem ? {} : { balance_debit: bd ? num(bd) : '-', balance_credit: bc ? num(bc) : '-' }),
     };
   };
-  /** «١٬٢٣٤٫٠٠ مدين» — الكلمة بدل الإشارة، زي ورقة a5. */
   const worded = (v: unknown, side?: string | null) => {
     const d = asDebit(v, side);
     if (Math.abs(d) < 0.005) return num(0);
     return `${num(Math.abs(d))} ${d > 0 ? 'مدين' : 'دائن'}`;
   };
 
-  // سطر أرصدة مضغوط — كان صف كروت. الأرصدة هي لبّ الكشف، فبيفضل فوق الجدول.
   const summaryLine: React.CSSProperties = {
     display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '6px 18px',
     padding: '8px 4px', borderBottom: '1px solid #f1f5f9',
@@ -1391,8 +1226,6 @@ export default function AccountStatement() {
           showSearch allowClear popupMatchSelectWidth={false}
           placeholder="المندوب" value={repFilter} onChange={setRepFilter}
           options={repOptions}
-          // مقفولة بس لو فاضية: مندوب متختار من كشف حساب تاني ومالوش سطور هنا كان
-          // بيقفل الخانة وهي شايلاه — الكشف فاضي ومافيش أي طريقة تشيله بيها.
           disabled={!repOptions.length && !repFilter} filterOption={searchFilter} filterSort={searchRank}/>
         <Select
           mode="multiple" showSearch
@@ -1407,7 +1240,6 @@ export default function AccountStatement() {
       </>)}
     >
       <span ref={anchorRef} style={{ display: 'none' }} />
-      {/* اختصارات الفترة وخيارات العرض — سطر واحد فوق الكشف. */}
       <div style={{ ...summaryLine, gap: '6px 8px' }}>
         {PRESETS.map((p) => (
           <Button key={p.label} size="small"
@@ -1467,8 +1299,6 @@ export default function AccountStatement() {
             <span className="sl-foot">
               <span>{isItem ? 'رصيد أول المدة' : 'رصيد أول المدة (الحساب كله)'}:{' '}
                 <b>{num(statement.opening_balance)}</b></span>
-              {/* أي فلتر مش المندوب بس — بفلتر نوع أو بيان كان الرقم بيقول إجمالي
-                  الحساب كله والجدول تحته بيعرض جزء منه، والرقمين مابيتقابلوش. */}
               <span>{filtering ? `${LABELS.debit} (المعروض)` : `إجمالي ${LABELS.debit}`}:{' '}
                 <b>{num(filtering ? shownDebit : statement.total_debit)}</b></span>
               <span>{filtering ? `${LABELS.credit} (المعروض)` : `إجمالي ${LABELS.credit}`}:{' '}
@@ -1488,9 +1318,6 @@ export default function AccountStatement() {
                 <span>منه متأخر:{' '}
                   <b className={totalOverdue ? 'is-neg' : 'is-pos'}>{num(totalOverdue)}</b></span>
               </span>
-              {/* أعمار الدين — الشرائح نفسها التي يقرؤها تقرير الأعمار، من نفس
-                  الحساب في السيرفر. رقمان لنفس السؤال في شاشتين يتفقان بالصدفة
-                  لا بالبناء، وأول يوم يختلفان لا أحد يعرف أيهما الصحيح. */}
               <Space size={4} wrap>
                 <span style={{ fontSize: 14, color: '#8c8c8c' }}>أعمار المستحق:</span>
                 {([
@@ -1523,8 +1350,6 @@ export default function AccountStatement() {
 
 
           {groupMode === 'account' ? (
-            /* قسم لكل حساب فرعي: الصف المقفول بيقول أول مدته وحركته وآخر مدته، والفرد
-               بيعرض سطوره بنفس أعمدة الجدول ورصيد الحساب ده الجاري، وتحتها إجماليه. */
             <Table
               className="sl-table"
               size="small" loading={loading} rowKey="key" dataSource={sections}
@@ -1582,8 +1407,6 @@ export default function AccountStatement() {
                 ),
               }}
               summary={() => {
-                // الإجمالي على ناحية المدين: كل قسم بناحيته هو، فالجمع بيبقى صح حتى لو
-                // اتجمع حساب مدين مع حساب دائن. ومن غير فلتر = الرصيد الختامي فوق بالظبط.
                 const open = sections.reduce((t, s) => t + asDebit(s.summary.opening, s.summary.normal_side), 0);
                 const close = sections.reduce((t, s) => t + asDebit(s.summary.closing, s.summary.normal_side), 0);
                 const [cd, cc] = splitBalance(close, 'debit');
@@ -1604,8 +1427,6 @@ export default function AccountStatement() {
               }}
             />
           ) : groupMode !== 'none' ? (
-            /* المجموعة أولاً ومجاميعها، وتُفتح فتُعرض سطورها بنفس أعمدة الجدول
-               وبنفس تفاصيل السطر — لا نسخة ثانية من الشاشة تتأخّر عن الأصل. */
             <Table
               className="sl-table"
               size="small" loading={loading} rowKey="key" dataSource={groups}
@@ -1672,7 +1493,6 @@ export default function AccountStatement() {
             locale={{ emptyText: 'لا توجد حركات في هذه الفترة' }}
             pagination={{
               defaultPageSize: PAGE_SIZE, showSizeChanger: true, locale: { items_per_page: '' },
-              // العدد عدد الحركات — صف أول المدة مش حركة.
               showTotal: () => (
                 <span className="sl-foot">
                   <span>عدد الحركات: <b>{shownLines.length}</b>{filtering ? ` من ${lines.length}` : ''}</span>
@@ -1689,7 +1509,6 @@ export default function AccountStatement() {
               expandedRowRender: rowDetail,
               rowExpandable: (l) => !l._opening,
             }}
-            // الإجمالي تحت عموده، والرصيد الختامي تحت أعمدة الرصيد (زي سطر الإجمالي في ورقة a5).
             summary={() => totalsRow('الإجمالي',
               totalsVals(shownDebit, shownCredit, statement.closing_balance, stmtSide))}
           />

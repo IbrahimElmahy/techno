@@ -6,17 +6,6 @@ import { normalizeAr } from './ListToolbar';
 import { qty as fmtQty } from '../utils/money';
 import { activeChoices, withInactiveTag } from '../utils/active';
 
-/**
- * **السطر الزيادة في آخر جدول الأصناف** (طلب العميل ٢٠٢٦-١٠-٠٥) — في كل مستند: البيع والشرا
- * والمرتجعات والتحويل والأذون.
- *
- * بيختار منه المخزن **الأول** (قبل ما يختار الصنف)، وبعدين الصنف بالبحث على طول — أو يفتح
- * شباك الأصناف على المخزن ده. الصنف بيتضاف سطر جديد على المخزن اللي في السطر ده، والتركيز
- * بيروح على كميته زي أي إضافة. المخزن اللي اتختار هنا بيبقى مخزن المستند للإضافات اللي بعده.
- *
- * الأصناف في البحث: لو `availableFor` متبعتة (بيع أو صرف من مخزن) ⇒ اللي ليه رصيد في المخزن
- * المختار بس — نفس قاعدة شباك الأصناف.
- */
 export interface QuickAddItem { id: number; name: string; code?: string | null; active?: boolean }
 
 export default function QuickAddRow({
@@ -27,14 +16,12 @@ export default function QuickAddRow({
   items: QuickAddItem[];
   onPick: (itemId: number) => void;
   onOpenPicker: () => void;
-  /** من غيرها مافيش خانة مخزن (المستند مخزنه واحد ومتحدد فوق). */
   warehouses?: { id: number; name: string; active?: boolean }[];
   warehouseId?: number | null;
   onWarehouseChange?: (id: number) => void;
   availableFor?: (itemId: number) => number | null;
   disabled?: boolean;
   placeholder?: string;
-  /** تحت جدول مش جوّاه (أذون المخزن جدولها antd) ⇒ `div` بدل سطر جدول. */
   asDiv?: boolean;
 }) {
   const [search, setSearch] = useState('');
@@ -42,7 +29,6 @@ export default function QuickAddRow({
 
   const options = useMemo(() => {
     const needle = normalizeAr(search.trim());
-    // الصنف الموقوف مايتضافش على سطر جديد — نفس شباك الاختيار (`ProductPickerModal`).
     let list = activeChoices(items);
     if (availableFor) {
       list = list.filter((p) => {
@@ -50,11 +36,7 @@ export default function QuickAddRow({
         return av === null || av > 0;
       });
     }
-    // الفلترة والترتيب بالقُرب **قبل** السقف: «ك» ⇒ اللي بيبدأ بالكاف فوق واللي الكاف في
-    // نصّه تحت (`searchByName`). لو السقف قبل الترتيب، الستين اللي بيظهروا كانوا أول ستين
-    // في ترتيب الشاشة — و«كوع» ممكن مايبقاش منهم خالص.
     if (needle) list = searchByName(list, needle, (p) => p.name, (p) => p.code);
-    // سقف عشان القايمة تفتح على طول — اللي بيدوّر بيكمّل كتابة.
     return list.slice(0, 60).map((p) => {
       const av = availableFor ? availableFor(p.id) : null;
       return {

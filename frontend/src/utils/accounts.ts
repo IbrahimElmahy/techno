@@ -1,9 +1,3 @@
-/** Shared vocabulary of the chart of accounts.
- *
- * Lifted out of the general-ledger page when الحسابات الرئيسيه and الحسابات الفرعيه became screens
- * of their own. Three screens naming the same five natures is three places for them to drift, and
- * a chart where «مصروفات» is spelled two ways is a chart nobody trusts to add up.
- */
 import { numeralsLocale } from './money';
 
 export const NATURE_LABEL: Record<string, string> = {
@@ -18,21 +12,12 @@ export const NATURE_COLOR: Record<string, string> = {
   asset: 'green', liability: 'volcano', equity: 'gold', income: 'blue', expense: 'orange',
 };
 
-/**
- * «يظهر في» — which statement the account is presented on. Egyptian practice reads three, not
- * two: المتاجرة carries sales and cost of sales down to gross profit, أرباح وخسائر carries the
- * indirect expenses and other income down to net profit, and الميزانية carries the balances.
- * Merging the first two would lose the gross-profit line, which is the figure a trader looks at
- * before any other.
- */
 export const APPEARS_IN_LABEL: Record<string, string> = {
   trading: 'متاجرة',
   profit_loss: 'أرباح وخسائر',
   balance_sheet: 'ميزانية عمومية',
 };
 
-/** «المستوى الرئيسي» — the standard grouping the account rolls up into. Suggestions, not a
- *  closed list: the field is free text because every chart arranges these differently. */
 export const MAIN_LEVELS = [
   'أصول متداولة', 'أصول ثابتة', 'التزامات متداولة', 'حقوق الملكية',
   'الإيرادات / المبيعات', 'تكلفة الإيرادات / المبيعات',
@@ -54,30 +39,18 @@ export interface ChartAccount {
   active: boolean;
   appears_in: string | null;
   main_level: string | null;
-  /** (المرحلة ٣) سطوره بتتقفل على بعضها في شاشة التسوية — ذمم العملاء والموردين
-   *  بتاخده من نوعها تلقائياً، والباقي بالإيد. */
   reconcilable?: boolean;
   balance: string;
-  /** Set for accounts opened FOR somebody — a customer, a supplier, a safe, a custody holder.
-   *  They have no name of their own; this is derived from the owner on every read, so renaming
-   *  the customer renames his account with him. */
   owner_name?: string | null;
-  /** «العملاء», «الموردين» … — the heading such an account belongs under. */
   owner_group?: string | null;
 }
 
-/** مركز التكلفة — the analytic dimension entries can be tagged with.
- *
- * Shared because three screens need it: its own list, and the journal and trial-balance tabs that
- * tag and filter by it. */
 export interface CostCenter {
   id: number;
   code: string;
   name: string;
   parent_id: number | null;
   active: boolean;
-  /** Depth, computed by the backend from the parent chain, so the number can never disagree with
-   *  the tree it is drawn beside. */
   level?: number;
   children?: CostCenter[] | null;
 }

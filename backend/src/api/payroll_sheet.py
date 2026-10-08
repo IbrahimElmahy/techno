@@ -1,9 +1,3 @@
-"""شيت المرتبات ومجموعات المرتبات — زي ملف الإكسل بتاع العميل (٢٠٢٦-١٠-٠٨).
-
-الصلاحيات نفس «مسير الرواتب»: القراية بمبالغ باسم موظف = `salary.view`، وأي كتابة (مجموعات،
-تجهيز، تعديل خانة، اعتماد، ترحيل) = `payroll.post`. والفرع: موظف الفرع فرعه بس، والمالك/الأدمن
-أي فرع (اللي اختاره، وإلا اللي مفلتر عليه من فوق).
-"""
 from __future__ import annotations
 
 import io
@@ -41,7 +35,6 @@ def _raise(exc: Exception):
 
 
 def _branch(current: CurrentUser, requested: int | None) -> int:
-    """فرع الشيت — المجموعات والشيت دايماً لفرع واحد."""
     if branch_scope.sees_all_branches(current):
         branch = requested if requested is not None else branch_scope.visible_branch_id(current)
         if branch is None:
@@ -69,9 +62,6 @@ def _seen_group(db: Session, group_id: int, current: CurrentUser) -> PayrollGrou
                          or g.branch_id == current.branch_id):
         raise HTTPException(404, {"code": "not_found", "message": "المجموعة غير موجودة."})
     return g
-
-
-# ----------------------------------------------------------------- schemas
 
 
 class GroupIn(BaseModel):
@@ -125,9 +115,6 @@ class DaysIn(BaseModel):
 class NoteIn(BaseModel):
     employee_id: int
     notes: str | None = None
-
-
-# ----------------------------------------------------------------- المجموعات
 
 
 @router.get("/catalog")
@@ -215,7 +202,6 @@ def template(
     current: CurrentUser = Depends(require_capability(CAP_PAYROLL_POST)),
     db: Session = Depends(get_db),
 ) -> dict:
-    """مجموعات ملف العميل (البيع، الإدارية، خدمة العملاء) بأعمدتها — للفرع."""
     try:
         made = sheet.apply_template(db, branch_id=_branch(current, body.branch_id),
                                     actor_user_id=current.id)
@@ -280,9 +266,6 @@ def order_members(
     return {"ok": True}
 
 
-# ----------------------------------------------------------------- الشيت
-
-
 @router.get("/sheets")
 def list_sheets(
     branch_id: int | None = Query(None),
@@ -305,7 +288,6 @@ def get_month(
     current: CurrentUser = Depends(require_capability(CAP_SALARY_VIEW)),
     db: Session = Depends(get_db),
 ) -> dict:
-    """شيت الشهر للفرع — `{"run": null}` لو لسه ماتجهّزش."""
     branch = _branch(current, branch_id)
     run = sheet.current_run(db, branch_id=branch, year=year, month=month)
     if run is None or not sheet.is_sheet(db, run.id):
@@ -329,7 +311,6 @@ def prepare(
     current: CurrentUser = Depends(require_capability(CAP_PAYROLL_POST)),
     db: Session = Depends(get_db),
 ) -> dict:
-    """«تجهيز الشهر» — بيعمل الشيت أو بيحدّث المحسوب ويسيب اللي اتكتب بالإيد."""
     try:
         run = sheet.prepare(db, branch_id=_branch(current, body.branch_id), year=body.year,
                             month=body.month, actor_user_id=current.id)
@@ -341,7 +322,6 @@ def prepare(
 
 
 def _row_out(db: Session, run: PayrollRun, employee_id: int) -> dict:
-    """الصف اللي اتعدّل وإجماليات الشيت — الشاشة بتحدّث الخانة من غير ما تعيد تحميل الكل."""
     data = sheet.sheet_out(db, run)
     for g in data["groups"]:
         for r in g["rows"]:
@@ -421,7 +401,6 @@ def _act(db: Session, run_id: int, current: CurrentUser, fn) -> dict:
 @router.post("/sheet/{run_id}/close")
 def close(run_id: int, current: CurrentUser = Depends(require_capability(CAP_PAYROLL_POST)),
           db: Session = Depends(get_db)) -> dict:
-    """اعتماد — الشيت بيتقفل للتعديل ومستني الترحيل."""
     return _act(db, run_id, current, sheet.close)
 
 
@@ -434,7 +413,6 @@ def reopen(run_id: int, current: CurrentUser = Depends(require_capability(CAP_PA
 @router.post("/sheet/{run_id}/post")
 def post(run_id: int, current: CurrentUser = Depends(require_capability(CAP_PAYROLL_POST)),
          db: Session = Depends(get_db)) -> dict:
-    """ترحيل قيد المرتبات — نفس قيد «مسير الرواتب»."""
     return _act(db, run_id, current, sheet.post)
 
 
@@ -457,19 +435,12 @@ def delete_sheet(run_id: int,
     return {"deleted": run_id}
 
 
-# ----------------------------------------------------------------- إكسل
-
-
 @router.get("/sheet/{run_id}/export")
 def export_xlsx(
     run_id: int,
     current: CurrentUser = Depends(require_capability(CAP_SALARY_VIEW)),
     db: Session = Depends(get_db),
 ):
-    """ملف إكسل بنفس شكل ورقة العميل — مجموعة تحت مجموعة، بمعادلات الإجمالي والصافي.
-
-    بمعادلات مش أرقام: المحاسب بيفتح الملف ويعدّل فيه زي ما متعوّد، والإجمالي يتحسب لوحده.
-    """
     from fastapi.responses import StreamingResponse
 
     from src.models.org import Branch

@@ -36,26 +36,21 @@ const EDIT_TITLES: Record<string, string> = {
 };
 
 export default function Org() {
-  // الفروع and المخازن are two separate entries in the a5 menu the client knows, so each carries
-  // the tab it means rather than landing everyone on branches and asking them to look around.
   const [activeTab, selectTab] = useQueryTab('branches');
   const [loading, setLoading] = useState(false);
   const [modalVisible, setModalVisible] = useState(false);
   const [form] = Form.useForm();
 
-  // Edit state
   const [editVisible, setEditVisible] = useState(false);
   const [editingRecord, setEditingRecord] = useState<any>(null);
   const [editForm] = Form.useForm();
   
-  // Data states
   const [branches, setBranches] = useState<any[]>([]);
   const [warehouses, setWarehouses] = useState<any[]>([]);
   const [custodies, setCustodies] = useState<any[]>([]);
   const [governorates, setGovernorates] = useState<any[]>([]);
   const [reps, setReps] = useState<any[]>([]);
 
-  // Each tab keeps its own search/filter state so switching tabs never carries a stale filter over.
   const holderName = (record: any) =>
     record.holder_type === 'rep'
       ? reps.find((r: any) => r.id === record.rep_id)?.full_name
@@ -92,8 +87,6 @@ export default function Org() {
     },
   });
 
-
-  // كل تبويب هنا قايمة بيانات أساسية: السطر يفتح التعديل بتاعها.
   const govKb = useTableKeyboard<any>({
     rows: govFilter.filtered, rowKey: (r) => r.id, onOpen: (r) => openEdit(r),
   });
@@ -103,8 +96,6 @@ export default function Org() {
   const warehouseKb = useTableKeyboard<any>({
     rows: warehouseFilter.filtered, rowKey: (r) => r.id, onOpen: (r) => openEdit(r),
   });
-  // العهدة مالهاش تعديل: اللي بيتعدّل فيها هو التفعيل بس، وده زرار في السطر أصلاً. فالسطر يودّي
-  // للحائز نفسه — المندوب أو المستودع — اللي هو الحاجة الوحيدة الأخص وراه.
   const custodyKb = useTableKeyboard<any>({
     rows: custodyFilter.filtered, rowKey: (r) => r.id,
     onOpen: (r) => navigate(r.holder_type === 'rep' && r.rep_id
@@ -250,7 +241,6 @@ export default function Org() {
     });
   };
 
-  // Columns definition
   const branchColumns = [
     { title: 'كود الفرع', dataIndex: 'id', key: 'id' },
     { title: 'اسم الفرع', dataIndex: 'name', key: 'name' },
@@ -293,7 +283,6 @@ export default function Org() {
     },
   ];
 
-  // إخفاء وترتيب الأعمدة — نفس المحرك اللي كل الجداول بتستخدمه.
   const branchCols = useTableColumns('org-branches', branchColumns, {
     export: { name: 'الفروع والمكاتب', rows: branchFilter.filtered },
   });
@@ -341,7 +330,6 @@ export default function Org() {
     },
   ];
 
-  // إخفاء وترتيب الأعمدة — نفس المحرك اللي كل الجداول بتستخدمه.
   const whCols = useTableColumns('org-warehouses', warehouseColumns, {
     export: { name: 'المستودعات والمخازن', rows: warehouseFilter.filtered },
   });
@@ -362,7 +350,6 @@ export default function Org() {
     },
   ];
 
-  // إخفاء وترتيب الأعمدة — نفس المحرك اللي كل الجداول بتستخدمه.
   const govCols = useTableColumns('org-governorates', governorateColumns, {
     export: { name: 'المحافظات', rows: govFilter.filtered },
   });
@@ -406,7 +393,6 @@ export default function Org() {
     },
   ];
 
-  // إخفاء وترتيب الأعمدة — نفس المحرك اللي كل الجداول بتستخدمه.
   const custodyCols = useTableColumns('org-custodies', custodyColumns, {
     export: { name: 'العهد المالية والعينية', rows: custodyFilter.filtered },
   });

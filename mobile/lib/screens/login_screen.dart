@@ -14,11 +14,6 @@ class LoginScreen extends StatefulWidget {
 }
 
 class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStateMixin {
-  /// دخول الشاشة — اللوجو الأول والفورمة وراه.
-  ///
-  /// The screen arrived fully formed in one frame, right after the splash faded. Letting it settle
-  /// in the same direction the splash was moving makes the two read as one opening rather than two
-  /// separate screens.
   late final AnimationController _enter = AnimationController(
     vsync: this,
     duration: const Duration(milliseconds: 750),
@@ -33,9 +28,6 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
   final _username = TextEditingController();
   final _password = TextEditingController();
   final _server = TextEditingController();
-  /// خانة السيرفر مقفولة افتراضياً — سؤال مالوش لازمة في الاستعمال العادي.
-  /// بتتفتح لما العنوان محتاج يتغيّر، وده بيحصل: النشر بيتنقل والدومين بيموت،
-  /// والخانة كانت جوّه التطبيق بعد الدخول — يعني ورا نفس الباب اللي هي بتفتحه.
   bool _showServer = false;
   bool _busy = false;
   bool _hide = true;
@@ -52,26 +44,18 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
     });
     try {
       await ApiClient.instance.login(_username.text.trim(), _password.text);
-      // **المشرف مابيسحبش حاجة.** مالوش عربية ولا عملاء — السحب كله بيرجع ٤٠٣، وشاشته
-      // أونلاين أصلاً. بيروح على متابعة المناديب على طول.
       if (await ApiClient.instance.isSupervisor()) {
         if (!mounted) return;
         Navigator.of(context).pushReplacement(MaterialPageRoute(
             builder: (_) => const SupervisorHomeScreen(isRoot: true)));
         return;
       }
-      // أول سحب بعد الدخول عشان المندوب يشتغل من غير شبكة على طول.
-      //
-      // **وحزمة البيع معاه.** `pullReferenceData` بتجيب الكتالوج والقوايم — مش أصناف
-      // العربية. المندوب اللي بيدخل لأول مرة وبيفتح فاتورة كان بيلاقيها فاضية، لأن
-      // اللي بيملا `sale_item` هو `pullSalesBundle` وهو مانداش غير من شاشة المزامنة.
-      // الدخول لازم يخلّيه جاهز يبيع، مش يسيبه يدوّر على شاشة تانية.
       try {
         await ApiClient.instance.pullReferenceData();
-      } catch (_) {/* offline pull can happen later from settings */}
+      } catch (_) {}
       try {
         await ApiClient.instance.pullSalesBundle();
-      } catch (_) {/* مش مندوب، أو مالوش مخزن — شاشة المزامنة بتقول السبب */}
+      } catch (_) {}
       if (!mounted) return;
       final home = await postLoginHome();
       if (!mounted) return;
@@ -108,19 +92,12 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
                   child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  // اللوجو الحقيقي بدل أيقونة مواسير عامة.
-                  //
-                  // The logo is dark green and orange on a transparent background, so it needs to
-                  // sit on white to read at all — on the blue it would disappear.
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
                     decoration: BoxDecoration(
                       color: Colors.white,
                       borderRadius: BorderRadius.circular(20),
                     ),
-                    // ضغطة طويلة على اللوجو بتفتح خانة عنوان السيرفر — للدعم مش
-                    // للمندوب. الزرار الظاهر كان بيتداس بالفضول والعنوان يتغيّر
-                    // بالغلط، والتطبيق كله يقف بصمت.
                     child: GestureDetector(
                       onLongPress: () async {
                         if (!_showServer) {
@@ -132,8 +109,6 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
                         'assets/images/technotherm_logo.png',
                         height: 72,
                         fit: BoxFit.contain,
-                        // A missing asset otherwise throws a red box over the login screen; the
-                        // old icon is a poor logo but a working screen.
                         errorBuilder: (_, __, ___) =>
                             const Icon(Icons.plumbing, size: 64, color: AppColors.primary),
                       ),
@@ -187,8 +162,6 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
                               autocorrect: false,
                               decoration: const InputDecoration(
                                 labelText: 'عنوان السيرفر',
-                                // السحابة — هي التشغيلي. كان مكتوب هنا العنوان المحلي
-                                // القديم، فاللي بيفتح الخانة بيلاقي اقتراح بسيرفر واقف.
                                 helperText: ApiClient.defaultBase,
                                 prefixIcon: Icon(Icons.link),
                               ),

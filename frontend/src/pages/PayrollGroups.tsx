@@ -22,21 +22,6 @@ import { printReport } from '../print/reportSheet';
 import { exportExcel } from '../utils/exportExcel';
 import { matchesWords, normalizeAr, searchFilter, searchRank } from '../utils/arabicSort';
 
-/**
- * مجموعات المرتبات — شكل ورقة المرتبات لكل فرع، ومين في أنهي مجموعة.
- *
- * ورقة العميل فيها تلات جداول (البيع، الإدارية، خدمة العملاء) وكل جدول بأعمدته: البيع فيه
- * «عمولة» و«مكالمات»، وخدمة العملاء فيه «اشراف» و«عمولة معاينات» و«تأمينات». المجموعة هنا هي
- * الجدول ده: اسمه، وأعمدته بالترتيب، وكل عمود جاي منين (إعدادات الراتب، محرك العمولات، الحضور،
- * السلف، الجزاءات، أو يدوي)، والغياب بيتحسب على أنهي أعمدة.
- *
- * «مجموعات الملف» بتعمل التلاتة زي الورقة بالظبط في أي فرع، و«نسخ من فرع» بتنقل مجموعات فرع
- * لفرع — المرتبات للفروع كلها مش لفرع واحد.
- *
- * شريحة «توزيع الموظفين»: كل موظفي الفرع، وكل واحد في أنهي مجموعة — توزيع جماعي، وترتيب الصف
- * جوّه المجموعة (الورقة مترتّبة بإيد المحاسب، والمطبوع لازم يطلع بنفس الترتيب).
- */
-
 interface Col {
   key?: string; label: string; source: string; ref?: any; kind?: 'earning' | 'deduction' | null;
   posting?: string | null; carry?: boolean; fallback_component_id?: number | null;
@@ -68,7 +53,6 @@ const fail = (err: any, fallback: string) => {
   message.error((typeof detail === 'string' ? detail : detail?.message) || fallback, 6);
 };
 
-/** المفتاح زي ما السيرفر بيحسبه — عشان «أساس الغياب» يتختار قبل الحفظ. */
 const keyOf = (c: Col, i: number) => {
   if (c.key) return c.key;
   if (c.source === 'component') return `component:${c.ref}`;
@@ -97,7 +81,6 @@ export default function PayrollGroups() {
   const searchRef = useRef<any>(null);
   useScreenShortcuts({ onSearch: () => { searchRef.current?.focus?.(); } });
 
-  // مودال المجموعة
   const [editing, setEditing] = useState<Partial<Group> | null>(null);
   const [cols, setCols] = useState<Col[]>([]);
   const [saving, setSaving] = useState(false);
@@ -128,8 +111,6 @@ export default function PayrollGroups() {
 
   const branchName = (id: number | null | undefined) => branches.find((b) => b.id === id)?.name || '';
   const compName = (id: any) => catalog?.components.find((c) => c.id === Number(id))?.name;
-
-  // ------------------------------------------------------------ عمليات المجموعات
 
   const applyTemplate = async () => {
     try {
@@ -205,7 +186,6 @@ export default function PayrollGroups() {
       next.label = meta && !['component', 'commission', 'manual'].includes(patch.source) ? meta.label : '';
       next.kind = (meta?.kind as any) ?? (patch.source === 'manual' ? 'earning' : null);
       next.posting = undefined;
-      // اليدوي محتاج مفتاح ثابت من دلوقتي — عشان «الغياب بيتحسب على» يقدر يشاور عليه قبل الحفظ.
       if (patch.source === 'manual') next.ref = `m${Date.now().toString(36)}`;
     }
     if (patch.ref !== undefined && patch.ref !== c.ref) {
@@ -257,8 +237,6 @@ export default function PayrollGroups() {
     } catch (err: any) { fail(err, 'تعذر الحفظ'); } finally { setSaving(false); }
   };
 
-  // ------------------------------------------------------------ التوزيع
-
   const assign = async (ids: number[], groupId: number | null) => {
     if (!ids.length) return;
     try {
@@ -299,8 +277,6 @@ export default function PayrollGroups() {
   const shownGroups = groups.filter((g) => !query.trim()
     || matchesWords(normalizeAr(`${g.name} ${g.columns.map((c) => c.label).join(' ')}`), normalizeAr(query.trim())));
 
-  // ------------------------------------------------------------ طباعة وتصدير
-
   const colsText = (g: Group) => g.columns.map((c) => c.label).join(' · ');
   const absenceText = (g: Group) => `(${g.columns.filter((c) => g.absence_base.includes(c.key || ''))
     .map((c) => c.label).join(' + ') || '—'}) ÷ ${g.absence_divisor} × الأيام`;
@@ -337,8 +313,6 @@ export default function PayrollGroups() {
       ], shownGroups);
     }
   };
-
-  // ------------------------------------------------------------ الجداول
 
   const groupColumns: ColumnsType<Group> = [
     { title: '', key: 'order', width: 70,

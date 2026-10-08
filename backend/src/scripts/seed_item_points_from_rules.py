@@ -1,21 +1,3 @@
-"""يملا الكروت اللي **مالهاش** قيمة نقطة في `product_point_value` من جدول قواعد العميل.
-
-    python -m src.scripts.seed_item_points_from_rules            # عرض فقط
-    python -m src.scripts.seed_item_points_from_rules --yes
-    python -m src.scripts.seed_item_points_from_rules --audit    # يقارن باللي محطوط
-
-**مابيلمسش قيمة العميل أبداً.** الـ٤١٠ كارت اللي فيها قيم دلوقتي جايين من ملف
-`points.tsv` اللي العميل كتبه بإيده، وفيه أحكام مش مشتقّة من الجدول: «جلبة اصلاح 4"»
-بنقطتين مع إن قطعة الصرف ٤ بوصة نقطة واحدة. المحرك بيتفق مع الملف في ٩٠٪ من الكروت،
-والـ١٠٪ الباقية هي بالظبط الأحكام دي — فلو كتبنا فوقها نكون مسحنا قرار العميل بحساب
-آلي. `--overwrite` موجودة للحالة اللي هو يطلبها بنفسه، ومش الافتراضي.
-
-اللي بيتكتب هو `sale_points`: نقط **وحدة البيع** مش المتر. جدول العميل بالمتر،
-والفاتورة بتعدّ لفف — فالماسورة بتتضرب في طول لفتها (٤ متر للبولى، ٦ للصرف). التأكيد
-من ملف العميل نفسه: ماسورة ٦٣ بولى ١٦ نقطة = ٤ × ٤، وماسورة صرف ٦ بوصة ١٣ = ١٣/٦ × ٦.
-
-الكارت اللي مالوش قاعدة بيتعرض في «محتاج قرار» ومابيتكتبش — الصفر قرار، وغياب الصف سؤال.
-"""
 from __future__ import annotations
 
 import sys
@@ -31,7 +13,6 @@ from src.models.loyalty import ProductPointValue
 
 
 def _audit(items: list[Item], existing: dict[int, ProductPointValue]) -> None:
-    """يقيس المحرك على قيم العميل: كام كارت يتفق، وكام يختلف وبكام."""
     same = diff = silent = 0
     rows: list[tuple[Decimal, Decimal, str, str]] = []
     for item in items:

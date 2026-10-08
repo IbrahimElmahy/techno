@@ -1,34 +1,3 @@
-"""المرحلة الرابعة من استيراد a5: الحركة — بيع وشرا ومردودات وتحويلات وأذون.
-
-المراحل اللي فاتت جابت الكيانات وأول المدة. دي بتجيب اللي حصل بعد كده: ٨ شهور شغل.
-
-    python -m src.scripts.import_a5_docs --dir C:/pgtmp/aliaa --branch العلياء --prefix AL-
-    python -m src.scripts.import_a5_docs --dir C:/pgtmp/aliaa --branch العلياء --prefix AL- --yes
-
-بيتعاد تشغيله بأمان: المستند اللي رقمه موجود بيتخطى.
-
----------------------------------------------------------------------------
-خمس قرارات:
-
-* **المخزون بيتحسب مش بيتنقل.** رصيد a5 الحالي رقم مخزّن عندهم؛ عندنا الرصيد مشتق من
-  الحركة. فبنعيد تشغيل الحركة بالترتيب الزمني من أول المدة، والرصيد بيطلع لوحده — وكارت
-  الصنف بيبقى فيه الحكاية كلها مش رقم أخير.
-
-* **السالب مسموح هنا وبس.** `post_movement` بيرفض صرف بيوصّل الرصيد تحت الصفر، وده صح في
-  الشغل اليومي. بس دي حركة حصلت خلاص، وa5 سمح بـ١٣ سطر سالب — والرفض معناه إن النقل
-  يقف عند أول واحدة فيهم.
-
-* **الكمية `n_count_unit` والقيمة `a_price`.** الأعمدة `b*` و`a*` أرصدة قبل وبعد مش
-  كميات — جمعها بيدي أرقام مالهاش معنى. و`a_price` إجمالي السطر بعد الخصم مش سعر الوحدة.
-  اتأكدنا: مجموع `a_price` = `emali_aftax` في الـ٦١٦٣ فاتورة كلهم.
-
-* **`Bons` بونص عيني مش خصم نسبة.** المعادلة عندهم: إجمالي السطور − بونص + ضريبة =
-  المستحق = نقدي + آجل، واتأكدت على الـ٦١٦٣. البونص بيتحوّل لنسبة عشان ده شكل الخصم عندنا.
-
-* **رقم المستند من الـid مش من الرقم المطبوع.** فيه ١٧ فاتورة بنفس `Ord_No` — الرقم
-  المطبوع مش فريد عندهم وعندنا لازم يكون. فبيتحط في «رقم المستند الخارجي»، ورقمنا بيتولّد
-  من الـid المضمون فريد.
-"""
 from __future__ import annotations
 
 import os
@@ -70,7 +39,6 @@ from src.services.customer_merge_service import FAMILY_POLY, FAMILY_WHITE
 
 ZERO = Decimal("0")
 
-# نوع المستند في a5 → (اسمنا، حرف رقم المستند، جدول الرأس المصدَّر)
 KIND = {
     "7": ("فواتير بيع", "S", "SALE"),
     "2": ("مردود مبيعات", "SR", "SRET"),
@@ -81,15 +49,11 @@ KIND = {
     "8": ("أذون صرف", "IS", None),
 }
 
-# أعمدة السطر في الملف المصدّر
 (L_TYPE, L_AZN, L_DATE, L_ORD, L_ORDBK, L_POORD, L_POBK, L_CODE, L_NAME,
  L_IN, L_OUT, L_QTY, L_PRICE, L_TOTAL, L_MEMO, L_JUST, L_COST) = range(17)
 
-# أعمدة الرأس
 (H_KIND, H_ID, H_NO, H_DATE, H_PARTY, H_REP, H_GROSS, H_BONS, H_TAX,
  H_NET, H_CASH, H_CREDIT, H_PTYPE, H_MEMO, H_USER) = range(15)
-# ١٦ (اختياري): رقم الطرف عند a5 — `Cust_id` للبيع ومردوده، `Mourd_id` للشراء ومردوده.
-# التصدير القديم كان ١٥ عمود وبيفضل يتقرا؛ الجديد بيضيف الرقم والمطابقة بتبقى بيه.
 H_PARTY_ID = 15
 
 
@@ -105,7 +69,6 @@ def _date(v: str) -> date | None:
 
 
 def _doc_key(r: list[str]) -> str:
-    """مفتاح المستند اللي السطر تابع له. التحويلات والأذون مالهاش رأس، فبتتجمّع بـAzn_id."""
     t = r[L_TYPE]
     if t == "7":
         return r[L_ORD]
@@ -119,15 +82,12 @@ def _doc_key(r: list[str]) -> str:
 
 
 def _pct(part: Decimal, whole: Decimal) -> Decimal:
-    """البونص عندهم مبلغ والخصم عندنا نسبة. صفر على صفر = صفر مش قسمة على صفر."""
     if whole <= ZERO or part <= ZERO:
         return ZERO
     return to_money(part * 100 / whole)
 
 
 class Ctx:
-    """كل اللي السكربت محتاجه من القاعدة، متجاب مرة واحدة بدل استعلام لكل سطر."""
-
     def __init__(self, db, branch: Branch, prefix: str) -> None:
         self.db = db
         self.branch = branch
@@ -138,39 +98,27 @@ class Ctx:
         my_items = mine(db.scalars(select(Item)).all(), prefix)
         self.item_by_code = {i.code: i for i in my_items if i.code}
         self.item_by_name = {i.name: i for i in my_items}
-        # جدول ربط a5 الأول — بعد التوحيد الكود والاسم عندنا مابقوش زي a5 (`a5_item_map`).
         from src.services.a5_item_map import A5ItemMap
         self.a5map = A5ItemMap(db, prefix, my_items)
 
         self.wh = {w.name: w for w in db.scalars(
             select(Warehouse).where(Warehouse.branch_id == branch.id)).all()}
-        # الطرف بالكود الأول (`{prefix}A5-{Cust_id}`) وبعده بالاسم. الكود من رقم a5
-        # اللي مابيتغيّرش؛ الاسم على الفاتورة بيختلف عن الكشف بمسافة فيتخترع كارت.
         branch_custs = db.scalars(
             select(Customer).where(Customer.branch_id == branch.id)).all()
         self.cust_by_code = {c.code: c for c in branch_custs if c.code}
         self.cust = {c.name: c for c in branch_custs if c.active}
-        # **الكارت المدموج بيتبع دمجه.** «تكنو فلان» اتقفل واتعلّم «(مدموج في #N)» وحسابه
-        # بقى «بولي» عند «فلان» — بس كوده `AL-A5-<Cust_id>` لسه عليه. كانت كل فاتورة بولي
-        # جديدة من التزامن الليلي بتنزل على الكارت المقفول: الفلوس صح (القيد على الحساب)،
-        # والفاتورة باسم «تكنو فلان (مدموج …)» برّه صفحة العميل. ٧٦ كارت على الإنتاج.
         everyone = db.scalars(select(Customer)).all()
         targets = customer_merge_service.final_targets(everyone)
         by_id = {c.id: c for c in everyone}
         self.merged_into: dict[int, Customer] = {
             cid: by_id[t] for cid, t in targets.items() if t in by_id}
-        # أكتوبر بالعكس من العلياء: «فلان وايت» (الأبيض) اللي اتلمّ في «فلان» (البولي) —
-        # `merge_october_white_twins`. فالباقي هنا بولي مش أبيض.
         self.poly_keeps: set[int] = {
             t.id for cid, t in self.merged_into.items() if "وايت" in (by_id[cid].name or "")}
-        # العميل اللي اتلمّ من كارتين عنده حساب لكل خط — فالفاتورة لازم تقول على أنهي خط.
         split_ids = {cid for (cid,) in db.execute(
             select(CustomerAccount.customer_id).where(CustomerAccount.family.is_not(None)))}
         self.split: set[int] = split_ids
         supps = db.scalars(select(Supplier)).all()
         self.supp_by_code = {s.code: s for s in supps if s.code}
-        # بالاسم من موردين الفرع ده (أو المشتركين) بس — مورد العلياء أو السادات بنفس
-        # الاسم مايتاخدش لفاتورة أكتوبر.
         self.supp = {s.name: s for s in supps if s.branch_id in (branch.id, None)}
 
         role = db.scalars(select(Role).where(Role.name == RoleName.sales_rep)).first()
@@ -181,17 +129,14 @@ class Ctx:
                 if (u.full_name or "").strip():
                     self.rep[u.full_name.strip()] = u
 
-        # أرقام المستندات الموجودة — عشان الإعادة تتخطى بدل ما تقع على قيد التفرّد.
         self.taken: set[str] = set()
         for model in (SalesInvoice, SalesReturn, PurchaseInvoice, PurchaseReturn,
                       StockTransfer, StockPermit):
             self.taken |= {n for (n,) in db.execute(select(model.document_number)).all()}
 
-        # الطرف اللي هيتعمل من الفاتورة محتاج مندوب ومنطقة — إجباريين عندنا.
         self.fallback_rep = next(iter(self.rep.values()), None) or self.admin
         self.fallback_terr = db.scalars(select(Territory).where(
             Territory.branch_id == branch.id).order_by(Territory.id)).first()
-        # الأكواد الموجودة — عشان تشغيلة تانية ماتقعش على قيد التفرّد.
         self.codes = {c for (c,) in db.execute(select(Customer.code)).all()}
         self.codes |= {c for (c,) in db.execute(select(Supplier.code)).all()}
         self.serial = 0
@@ -203,18 +148,6 @@ class Ctx:
         return f"{self.prefix}{tag}{a5_id}"
 
     def party(self, name: str, party_id: str = "0", *, supplier: bool):
-        """الطرف اللي على الفاتورة: بالرقم، وإلا بالاسم، وإلا بيتعمل.
-
-        **بالرقم الأول.** الرأس بيحمل `Cust_id`/`Mourd_id`، والكود عندنا
-        `{prefix}A5-{id}` — مطابقة مابتغلطش. المطابقة بالاسم لوحدها اخترعت ٧٥ كارت
-        `A5X` في النقل الأول، ٤١ منهم «تكنو X» لراجل موجود بمسافة مختلفة في اسمه.
-
-        فيه فواتير طرفها مش في `Cust` ولا `Mourd` فعلاً: «تكنووو ثيرم» و«فرع اكتوبر»
-        (الشركة الشقيقة) وأسماء موظفين (بيع بالعهدة). عندهم دول حسابات في شجرة
-        الحسابات مش عملاء، وعندنا الفاتورة لازم يكون ليها طرف — دول بس اللي بيتعملوا.
-
-        وتخطّيها مش خيار: البضاعة خرجت من المخزن فعلاً، فتخطّي الفاتورة معناه رصيد غلط.
-        """
         name = _clean(name)
         pid = _clean(party_id)
         if pid and pid != "0":
@@ -251,11 +184,6 @@ class Ctx:
         return row
 
     def family_of(self, party_id: str) -> str | None:
-        """الخط (أبيض/بولي) اللي فاتورة a5 دي عليه — من كارت a5 نفسه.
-
-        كارت «تكنو فلان» المدموج هو خط البولي (حسابه اتنقل «بولي»)، وكارت «فلان» اللي
-        اتلمّ فيه هو الأبيض. العميل اللي عمره ما اتقسم مالوش سؤال — بيفضل فاضي زي الأول.
-        """
         pid = _clean(party_id)
         if not pid or pid == "0":
             return None
@@ -269,7 +197,6 @@ class Ctx:
         if card.id in self.poly_keeps:
             return FAMILY_POLY
         if card.id in self.split:
-            # نفس قاعدة `set_a5_families`: البادئة على اسم الكارت هي الخط، والمجرد أبيض.
             key = customer_merge_service.match_key(card.name)
             return FAMILY_POLY if key.startswith(("تكنو", "بولي")) else FAMILY_WHITE
         return None
@@ -290,7 +217,6 @@ class Ctx:
 
 
 def _lines_of(c: Ctx, rows: list[list[str]], store_col: int, label: str):
-    """يحوّل سطور a5 لصفوف جاهزة: (الصنف، المخزن، الكمية، السعر، الإجمالي، التكلفة)."""
     out = []
     for r in rows:
         it = c.item(r)
@@ -307,11 +233,6 @@ def _lines_of(c: Ctx, rows: list[list[str]], store_col: int, label: str):
         out.append((it, wh, qty, to_money(_money(r[L_PRICE])),
                     to_money(_money(r[L_TOTAL])), to_money(_money(r[L_COST]))))
     return out
-
-
-# `_line_pct` اتشالت من هنا: كانت بتحسب نفس اللي `discounts.implied_pct` بيحسبه
-# بالحرف. نسختين من نفس القاعدة معناها إن واحدة تتعدّل والتانية تفضل، والرقم اللي على
-# السطر يختلف عن الرقم اللي في الشاشة — والمحرك موجود عشان ده مايحصلش.
 
 
 def _sale(c: Ctx, h: list[str], rows: list[list[str]]) -> None:
@@ -344,11 +265,6 @@ def _sale(c: Ctx, h: list[str], rows: list[list[str]]) -> None:
         cash_account_id=c.treasury.id, actor_user_id=c.admin.id)
     c.db.add(inv)
     c.db.flush()
-    # **الخصم بيتحسب من السطر، مش بيتساب صفر.**
-    #
-    # a5 بيكتب سعر الوحدة الخام وإجمالي السطر بعد الخصم، والنسبة اللي بينهم مش في
-    # عمود بنقراه. كانت بتتساب صفر، فالسطر المنقول بيقول «٢٥ × ٢٠٨ = ٤٬١٦٠» والضرب
-    # مابيطلعش — وكشف المبيعات بيقول خصم صفر على فاتورة خصمها ٢٠٪.
     for it, wh, qty, price, total, cost in ls:
         c.db.add(SalesInvoiceLine(
             invoice_id=inv.id, item_id=it.id, quantity=qty, unit_price=price,
@@ -455,8 +371,6 @@ def _purchase_return(c: Ctx, h: list[str], rows: list[list[str]]) -> None:
         supplier_id=supp.id if supp else None,
         origin_location_kind=LocationKind.warehouse, origin_location_id=ls[0][1].id,
         return_date=_date(h[H_DATE]), notes=_clean(h[H_MEMO])[:500] or None,
-        # مردود الشرا عندنا مافيهوش نقدي/آجل: قيمته بتتقيّد على المورد وخلاص. اللي في
-        # a5 مقسوم نقدي وآجل بيروح في «بيان» عشان مايضيعش.
         gross=gross, variable_discount_pct=_pct(bons, gross),
         combined_pct=_pct(bons, gross), value=to_money(gross - bons),
         statement1=f"نقدي {_money(h[H_CASH])} · آجل {_money(h[H_CREDIT])}"[:200],
@@ -475,12 +389,6 @@ def _purchase_return(c: Ctx, h: list[str], rows: list[list[str]]) -> None:
 
 
 def _transfer(c: Ctx, azn: str, rows: list[list[str]]) -> None:
-    """التحويل عندهم سطر شايل المخزنين. عندنا مستند بمصدر ووجهة وسطور.
-
-    a5 بيكتب كل سطر تحويل **مرتين** (صف الخروج + صف الدخول، والاتنين بنفس
-    الصنف والكمية والمخزنين و`just_id` متتالي) — فالزوج المتطابق بيدخل سطر
-    واحد. المفرد (يتيم a5) بيدخل سطر لوحده وبيتقال.
-    """
     num = c.number("T", azn)
     if num in c.taken:
         return
@@ -570,7 +478,6 @@ def _report(c: Ctx) -> None:
         print(f"{k:<18}{v:>8}")
     if not c.skipped:
         return
-    # الأسباب بتتجمّع: «صنف مش موجود ×٤٠٠» أنفع من ٤٠٠ سطر بنفس الكلام.
     seen: dict[str, int] = defaultdict(int)
     for s in c.skipped:
         seen[s] += 1
@@ -615,7 +522,6 @@ def run(folder: str, *, execute: bool, branch_name: str = "", prefix: str = "") 
         c = Ctx(db, branch, prefix)
         hdr = {(r[H_KIND], r[H_ID]): r for r in hdrs if len(r) >= 15}
 
-        # الترتيب الزمني هو كل الحكاية: الرصيد مشتق من الحركة، فالحركة لازم تتعاد بترتيبها.
         ordered = sorted(docs.items(),
                          key=lambda kv: (kv[1][0][L_DATE], int(kv[1][0][L_JUST] or 0)))
         for done, ((t, key), rows) in enumerate(ordered, 1):

@@ -1,7 +1,3 @@
-/*
- * منتقي الأصناف — شكل الكروت (`variant="cards"`).
- * كله تحت `.ppk-cards` (الـrootClassName بتاع الشباك)، فالشكل القديم مابيتلمسش.
- */
 .ppk-cards {
   --ppk-green: #16a34a;
   --ppk-brand: #6AB42D;
@@ -29,7 +25,6 @@
 .ppk-cards .ant-modal-close { top: 18px; inset-inline-end: 16px; }
 .ppk-cards .ant-modal-body { padding: 0; }
 
-/* ── الرأس ── */
 .ppk-cards .ppk-head { display: flex; align-items: center; gap: 12px; padding-inline-end: 36px; }
 .ppk-cards .ppk-head-icon {
   width: 42px; height: 42px; border-radius: 10px; flex: 0 0 auto;
@@ -56,7 +51,6 @@
   background: var(--ppk-green); margin-inline-end: 6px; vertical-align: middle;
 }
 
-/* ── الجسم: ارتفاع ثابت، والجنب والقايمة بيتمرّروا كل واحد لوحده ── */
 .ppk-cards .ppk-body {
   display: flex; flex-direction: column; gap: 12px;
   height: min(76vh, 760px); padding: 14px 20px 12px;
@@ -68,7 +62,6 @@
   border-bottom-width: 2px; border-radius: 5px; padding: 0 6px; font-family: inherit;
 }
 
-/* ── سطر البحث ── */
 .ppk-cards .ppk-search-row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
 .ppk-cards .ppk-search { flex: 1 1 320px; min-width: 240px; border-radius: 10px; }
 .ppk-cards .ppk-search-icon { color: var(--ppk-muted); }
@@ -85,7 +78,6 @@
 .ppk-cards .ppk-sort { min-width: 190px; }
 .ppk-cards .ppk-sort .ant-select-selector { border-radius: 10px !important; }
 
-/* ── التقسيمة ── */
 .ppk-cards .ppk-split { flex: 1; min-height: 0; display: flex; gap: 14px; }
 
 .ppk-cards .ppk-side-cats {
@@ -142,14 +134,11 @@
 .ppk-cards .ppk-lg.ok { background: var(--ppk-green); }
 .ppk-cards .ppk-lg.low { background: var(--ppk-amber); }
 
-/* `overflow-anchor: none`: المتصفح مايصحّحش التمرير لوحده لما الكروت تترسم من تاني —
-   الحركة الوحيدة هي `keepInView`. ومافيش `scroll-behavior: smooth` يتأخّر وراها. */
 .ppk-cards .ppk-list {
   flex: 1; min-height: 0; overflow-y: auto; padding-inline-end: 2px;
   overflow-anchor: none; scroll-behavior: auto;
 }
 
-/* ── الكارت ── */
 .ppk-cards .ppk-card {
   display: flex; align-items: center; gap: 12px;
   padding: 10px 14px; margin-bottom: 8px; border-radius: 12px; cursor: pointer;
@@ -184,7 +173,6 @@
 .ppk-cards .ppk-meta > span + span::before { content: '·'; margin: 0 7px; color: #cbd5e1; }
 
 .ppk-cards .ppk-figs { display: flex; align-items: center; gap: 8px; flex: 0 0 auto; }
-/* الكلمة جنب رقمها في سطر واحد (طلب العميل ٢٠٢٦-١٠-٠٣) — الكارت بقى سطر واحد. */
 .ppk-cards .ppk-box {
   display: inline-flex; align-items: baseline; gap: 6px; white-space: nowrap;
   min-width: 0; padding: 5px 10px; border-radius: 9px; line-height: 1.3;
@@ -208,9 +196,7 @@
 }
 .ppk-cards .ppk-add.ant-btn-primary:not(:disabled):hover,
 .ppk-cards .ppk-done.ant-btn-primary:not(:disabled):hover { background: #15803d; border-color: #15803d; }
-/* عرض ثابت: «إضافة ↵» و«+ إضافة» مايغيّروش مقاس الكارت لما المؤشر يعدّي. */
 .ppk-cards .ppk-add { width: 96px; border-radius: 9px; }
-/* الكمية على الكارت — فاضية لحد ما تتكتب. */
 .ppk-cards .ppk-qty-wrap { display: inline-flex; cursor: default; }
 .ppk-cards .ppk-qty { width: 82px; border-radius: 9px; }
 .ppk-cards .ppk-qty input { text-align: center; }
@@ -220,7 +206,6 @@
   color: var(--ppk-green); font: inherit; font-size: 15px; font-weight: 700;
 }
 
-/* ── الشريط اللي تحت ── */
 .ppk-cards .ppk-foot {
   display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap;
   margin: 0 -20px -12px; padding: 10px 20px; border-top: 1px solid var(--ppk-line);
@@ -242,11 +227,8 @@
   .ppk-cards .ppk-hints { display: none; }
 }
 
-
-/* ══ الشكل المضغوط (٢٠٢٦-١٠-٠٥) — سطر رفيع لكل صنف وأعمدة ثابتة، والشباك في النص ══ */
 .ppk-compact .ppk-body { height: min(86vh, 920px); }
 
-/* الفئات: عمود رأسي على اليمين (طلب العميل ٢٠٢٦-١٠-٠٥) — ضيّق، والأصناف جنبه. */
 .ppk-compact .ppk-split { flex-direction: row; gap: 10px; }
 .ppk-compact .ppk-side-cats { flex: 0 0 170px; border-radius: 10px; }
 .ppk-compact .ppk-cats-head { padding: 7px 10px; font-size: 14px; }
@@ -257,7 +239,6 @@
 .ppk-compact .ppk-main-head { margin-bottom: 4px; }
 .ppk-compact .ppk-legend { display: none; }
 
-/* رؤوس الأعمدة + السطور بنفس العروض */
 .ppk-cards .ppk-cols { display: none; }
 .ppk-compact .ppk-cols {
   display: flex; align-items: center; gap: 6px; padding: 4px 8px;
@@ -296,9 +277,6 @@
 .ppk-compact .ppk-add { height: 28px; padding: 0; }
 .ppk-compact .ppk-unit, .ppk-compact .ppk-tag { font-size: 13px; }
 
-
-
-/* ── عناصر السطر الخفيفة (٢٠٢٦-١٠-٠٥): بدل Checkbox/InputNumber/Button بتوع antd ── */
 .ppk-cards .ppk-check-lite {
   flex: 0 0 18px; width: 18px; height: 18px; border-radius: 4px; border: 1.5px solid #c4cdd5;
   display: inline-flex; align-items: center; justify-content: center; font-size: 12px; color: #fff;
@@ -320,8 +298,6 @@
 .ppk-cards .ppk-add-lite:disabled { background: #d9d9d9; cursor: not-allowed; }
 .ppk-compact .ppk-add-lite { width: 40px; flex: 0 0 40px; }
 
-
-/* الخانة اللي بتكتب فيها بالكيبورد — السطر اللي واقف عليه بالأسهم (٢٠٢٦-١٠-٠٥). */
 .ppk-cards .ppk-qty-lite.is-active {
   border: 2px solid var(--ppk-green); background: #f0fdf4;
   box-shadow: 0 0 0 3px rgba(22,163,74,.18);

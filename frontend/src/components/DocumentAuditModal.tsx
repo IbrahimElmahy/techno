@@ -6,19 +6,6 @@ import {
 import { api } from '../api/client';
 import { TabModal } from './TabModal';
 
-/**
- * سجل عمليات المستند — مين عمل إيه وإمتى بالدقيقة.
- *
- * The person who raised a transfer reads this to find out why what arrived is not what he asked
- * for. «الكمية اتغيّرت» with no name and no minute on it is not an answer.
- *
- * Reads `GET /api/v1/audit`, which has recorded actor, action and timestamp since the audit log
- * was built — it simply could not be asked about ONE document until `entity_id` became a filter.
- *
- * Written against `entityType`/`entityId` rather than against transfers, so an invoice or a
- * voucher gets its history by passing different strings.
- */
-
 const ACTION_LABELS: Record<string, string> = {
   'transfer.initiate': 'إنشاء الإذن',
   'transfer.line_add': 'إضافة صنف',
@@ -29,7 +16,6 @@ const ACTION_LABELS: Record<string, string> = {
   'transfer.reverse': 'عكس',
 };
 
-/** «الكمية: 5 ← 9» — what actually changed, rather than two JSON blobs to compare by eye. */
 function describe(before: any, after: any): React.ReactNode {
   const b = before || {};
   const a = after || {};
@@ -56,7 +42,6 @@ export default function DocumentAuditModal({
   entityType: string;
   entityId: number | null;
   title?: string;
-  /** id → name, so the trail says who rather than «#7». */
   userNames?: Record<number, string>;
   onClose: () => void;
 }) {
@@ -85,8 +70,6 @@ export default function DocumentAuditModal({
           pagination={{ defaultPageSize: PAGE_SIZE }}
           scroll={{ x: 'max-content' }}
           columns={[
-            // To the minute, as asked. A date alone cannot separate two edits made the same
-            // afternoon, which is exactly when a disagreement about one of them comes up.
             { title: 'التاريخ والساعة', dataIndex: 'created_at', width: 165,
               render: (v: string) => (v ? String(v).slice(0, 16).replace('T', ' ') : '-') },
             { title: 'الإجراء', dataIndex: 'action', width: 130,

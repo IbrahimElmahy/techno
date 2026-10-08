@@ -3,13 +3,6 @@ import { Spin } from 'antd';
 import { api } from '../api/client';
 import { money } from '../utils/money';
 
-/**
- * The customer's overall outstanding balance — just the ONE total of what he owes. The figure is
- * the authoritative receivable from the ledger, so it already nets out every payment and return
- * (any amount paid is deducted from the total automatically). Shown below a sale/return document
- * and inside the create forms once a customer is picked.
- */
-
 export default function CustomerAccountPanel({
   customerId, variant = 'block',
 }: {

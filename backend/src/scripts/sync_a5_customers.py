@@ -1,45 +1,3 @@
-"""يزامن كشف العملاء مع a5 — بيرجّع اللي اتمسح غلط وبيمشّي اللي اتغيّر عندهم.
-
-    python -m src.scripts.sync_a5_customers --dir C:/pgtmp/a5cust          # يعرض بس
-    python -m src.scripts.sync_a5_customers --dir C:/pgtmp/a5cust --yes    # ينفّذ
-
-بيتعاد تشغيله بأمان: المطابقة بالكود، والموجود بيتحدّث والناقص بيتعمل. **مافيش حذف
-ولا تعطيل** — السكربت ده بيضيف ويصحّح وبس.
-
----------------------------------------------------------------------------
-**ليه أصلاً:** التزامن اليومي (`deploy/a5_sync.ps1`) بيصدّر المستندات والقيود بس —
-مافيش `Cust` فيه. فكشف العملاء وقف عند لقطة ٢٩ أغسطس، وa5 كمّل شغل عليها.
-
-**والأهم: ٤٩٩ كارت اتعملوا واتمسحوا.** اتقاس بمحاكاة المستورد على اللقطة الأصلية:
-كان هيعمل ١٬٣٠٦ كارت في العلياء، والموجود عندنا ٨٠٧. السبب سلسلة من خطوتين:
-
-* `import_erp_parties` كان بيغيّر تصنيف الكارت لو صف في ERP اسمه بيطابقه —
-  فتاجر عند a5 اسمه زي مالك عند ERP بقى «مالك».
-* `split_owners --purge` بيمسح كل «مالك» مالوش أثر مالي، من غير ما يبص على الكود.
-  وكتير من تجار a5 مالهمش فواتير.
-
-البصمة إن ١٣ منهم نجوا في جدول `owner` وهُمّ لسه شايلين `AL-A5-…`. الحارسين
-اتحطوا في السكربتين، والسكربت ده بيرجّع اللي راح.
-
-**a5 مصدر الحقيقة لتلات حاجات وبس:** الوجود (الكارت موجود ولا لأ)، والمندوب
-(`ph1`)، وإن الكارت **تاجر**. الباقي — الاسم اللي اتظبط عندنا، والتصنيفات اللي
-اتاخدت بقرار (موظف، داخلي، معرض) — مابيتلمسش، وبيتقال في التقرير لو اختلف.
-
-**`ph1` مش تليفون، هو اسم المندوب.** a5 عنده عمود مخصص (`Emp_Bos`) وهو فاضي في
-الـ١٬٩٥٨ كارت كلهم، واللي بيدخّل بيكتب اسم المندوب في خانة التليفون. اتفحصت
-القيم: كلها أسماء («مندوب السياره ( ب )»، «عمرو رجب»…)، ولا واحدة رقم.
-
-**⚠️ الكارت المدموج مابيترجعش.** a5 بيدّي التاجر الواحد كارتين لأن نظامهم بيدّي
-حساب ذمم واحد بس: «فلان» للأبيض و«تكنو فلان» للبولي. عندنا اتلمّوا في عميل واحد
-بحسابين (`customer_merge_service`)، والكارت البولي اتعطّل. تشغيلة أولى للسكربت ده
-رجّعت **٤٨٣ كارت بولي** كعملاء مستقلين وفكّت الدمج — اتقاس: ٤٧٨ من الكروت الباقية
-عندها حسابين فعلاً. فالحارس بيقارن بالاسم قبل الإنشاء: «تكنو X» واسمه مطروح منه
-البادئة موجود شغّال في نفس الفرع = ده الخط البولي بتاع عميل مدموج، والكارت
-مابيتعملش.
-
-**التليفون الحقيقي في `ph3`** — ده العمود اللي فيه الموبايل، ومااتصدّرش خالص في
-النقل الأصلي. بيتملا هنا **لو الخانة عندنا فاضية** بس.
-"""
 from __future__ import annotations
 
 import csv
@@ -57,18 +15,14 @@ from src.models.role import Role, RoleName
 from src.models.user import User
 from src.services.customer_merge_service import match_key
 
-# ملف التصدير → (اسم الفرع عندنا، بادئة الأكواد)
 SOURCES = {
     "a5cust_aliaa2026.tsv": ("العلياء", "AL-"),
     "a5cust_Techno2026.tsv": ("أكتوبر", ""),
 }
 
 TRADER = "trader"
-# البادئة اللي a5 بيعلّم بيها الكارت التاني للراجل الواحد — خط البولي.
 TECHNO_PREFIX = "تكنو "
-# التصنيفات اللي اتاخدت بقرار في شغل سابق ومابتترجعش لـ«تاجر» أوتوماتيك.
 KEEP_TYPES = {"employee", "internal", "showroom", "company", "establishment", "other"}
-# دول اللي a5 بيناقضهم صراحةً: هو بيقول تاجر، وإحنا حاطينهم مالك أو سباك.
 WRONG_TYPES = {"owner", "plumber"}
 
 PHONE = re.compile(r"^[0-9+()\-\s]{5,}$")
@@ -80,7 +34,6 @@ def _clean(v: str) -> str:
 
 
 def _norm_rep(s: str) -> str:
-    """تطبيع أسماء المناديب بس — الهمزة والمسافات جوّه القوسين مختلفة بين المصدرين."""
     s = re.sub(r"[أإآٱ]", "ا", s or "").replace("\xa0", " ")
     return re.sub(r"\s+", "", s).strip()
 
@@ -107,15 +60,11 @@ def run(folder: str, *, execute: bool) -> None:
 
         all_customers = db.scalars(select(Customer)).all()
         by_code = {c.code: c for c in all_customers if c.code}
-        # الاسم جوّه الفرع → الكارت الشغّال. ده اللي بيكشف الخط البولي بتاع عميل
-        # مدموج: «تكنو فلان» عند a5 و«فلان» عندنا.
         by_name: dict[tuple[int, str], Customer] = {}
         for c in all_customers:
             if c.active and c.branch_id is not None:
-                # بالمفتاح المطبّع: «تكنو اسامة» عند a5 و«اسامه» عندنا نفس الراجل.
                 by_name.setdefault((c.branch_id, match_key(c.name)), c)
         poly: list[tuple[str, str, Customer]] = []
-        # الكروت اللي عليها حركة — الحارس اللي بيمنع قفل صف شايل تاريخ.
         busy: set[int] = set()
         for sql in ("SELECT DISTINCT customer_id FROM customer_account",
                     "SELECT DISTINCT customer_id FROM sales_invoice",
@@ -157,17 +106,10 @@ def run(folder: str, *, execute: bool) -> None:
                 if name.startswith(TECHNO_PREFIX):
                     twin = by_name.get((branch.id, match_key(name[len(TECHNO_PREFIX):])))
                     if twin is not None and (c is None or c.id != twin.id):
-                        # الكارت ده الخط البولي بتاع عميل مدموج. مافيش كارت
-                        # بيتعمل — ولو تشغيلة قديمة عملته، بيتقفل هنا بنفس علامة
-                        # `customer_merge_service` بدل ما يتمسح: المستندات
-                        # بتسمّي الصف، والحذف بيحوّلها لرقم محدش يعرف يحلّه.
                         poly.append((code, name, twin))
                         if c is None:
                             notes["الخط البولي لعميل مدموج — مااتعملش كارت"] += 1
                         elif c.active and c.id in busy:
-                            # عليه حساب أو مستند — الدمج ده شغل
-                            # `customer_merge_service`، مش قفل صف. القفل هنا كان
-                            # هيخفي فواتيره من غير ما يحرّك حسابه.
                             problems.append(
                                 f"{code} «{c.name}»: خط بولي عليه حركة — محتاج دمج حقيقي")
                         elif c.active:
@@ -197,7 +139,6 @@ def run(folder: str, *, execute: bool) -> None:
                         by_code[code] = c
                     continue
 
-                # موجود — a5 بيحكم في المندوب والتصنيف وبس.
                 ctype = getattr(c.customer_type, "value", c.customer_type)
                 if ctype in WRONG_TYPES:
                     updates.append((c, "customer_type", ctype, TRADER))

@@ -1,4 +1,3 @@
-"""Auth router (T030): POST /auth/login, GET /auth/me. FR-001."""
 from __future__ import annotations
 
 import uuid
@@ -24,7 +23,7 @@ router = APIRouter(tags=["auth"])
 class LoginRequest(BaseModel):
     username: str
     password: str
-    client: str | None = None  # "mobile" -> long-lived token (field reps sync offline work)
+    client: str | None = None
 
 
 class TokenResponse(BaseModel):
@@ -41,23 +40,8 @@ class UserOut(BaseModel):
     branch_id: int | None
     territory_id: int | None
     active: bool
-    # مشرف المناديب اللي المندوب ده تحته (`user.supervisor_id`) — فاضي لغير المندوب.
     supervisor_id: int | None = None
-    # (031) What this user may DO, not just what they are called.
-    #
-    # Every screen was deciding what to show by hard-coding a list of role names, which is the
-    # server's capability map copied into the client by hand — and copies drift. The catalogue was
-    # already wrong that way: it let system_admin and purchasing_manager create and edit items,
-    # while the endpoints ask for `catalog.write`, which branch_manager also holds. He saw no
-    # «إضافة صنف» button on a screen that would have accepted him.
-    #
-    # Sent, not derived: the map lives in `rbac.py` and this is a reading of it. A screen that
-    # asks `can('product_points.write')` cannot fall out of step with the endpoint that enforces
-    # the same string. This is disclosure of the user's OWN permissions, never a substitute for
-    # the server-side gate — every endpoint still checks for itself.
     capabilities: list[str] = []
-    # (٢٠٢٦-١٠-٠٥) صفحات اتظهرت أو اتخبّت للمستخدم ده بعينه — مسار الصفحة (`/invoices`).
-    # الصفحة اللي مش هنا بتبان حسب دوره زي ما كانت.
     pages_shown: list[str] = []
     pages_hidden: list[str] = []
 
@@ -67,9 +51,6 @@ def login(body: LoginRequest, request: Request,
           db: Session = Depends(get_db)) -> TokenResponse:
     from src.core.config import settings
 
-    # **التخمين بيتبطّأ.** خمس محاولات فاشلة على نفس (المستخدم، العنوان) بتقفل خمس
-    # دقايق. من غير ده، `admin` — واسمه معروف — كان قابل لتخمين بلا عدد من جهاز واحد،
-    # والسجل بيكتب `login.fail` ويتفرّج. الشرح كامل في `core/login_guard`.
     ip = login_guard.client_ip(request)
     wait = login_guard.seconds_locked(body.username, ip)
     if wait:
@@ -103,12 +84,6 @@ def login(body: LoginRequest, request: Request,
     login_guard.record_success(body.username, ip)
     role = db.get(Role, user.role_id)
     ttl = settings.mobile_token_ttl if body.client == "mobile" else settings.access_token_ttl
-    # جهاز واحد بس: الدخول الجديد بيسحب الجلسة من اللي كان فاتح.
-    #
-    # التوكن بقى فيه `sid`، و`get_current_user` بيقارنه باللي مخزّن على المستخدم. لمّا
-    # الحساب يتفتح على جهاز تاني، القيمة بتتغيّر، فتوكن الجهاز الأول بيتقفل من أول طلب
-    # — من غير ما نستنى صلاحيته تخلص. اخترنا «الأحدث يكسب» مش «الأول يمنع» عشان جهاز
-    # اتسرق أو اتكسر ما يقفلش الحساب على صاحبه لحد ما التوكن ينتهي.
     previous_sid = user.session_id
     sid = uuid.uuid4().hex
     user.session_id = sid
@@ -140,11 +115,6 @@ def login(body: LoginRequest, request: Request,
 def logout(
     current: CurrentUser = Depends(get_current_user), db: Session = Depends(get_db)
 ) -> dict[str, bool]:
-    """Release the device slot so the next login anywhere starts clean.
-
-    Not the security boundary — a new login supersedes the old session on its own. This is so a
-    user who signs out properly does not leave a session hanging on the account.
-    """
     user = db.get(User, current.id)
     if user is not None:
         user.session_id = None
@@ -161,11 +131,6 @@ def logout(
 def refresh(
     current: CurrentUser = Depends(get_current_user), db: Session = Depends(get_db)
 ) -> TokenResponse:
-    """Re-issue a full-length token for the caller — a sliding session.
-
-    The client calls this on load and periodically, so someone who keeps using the system is
-    never logged out, while a token that stops being used still expires by itself.
-    """
     from src.core.config import settings
 
     user = db.get(User, current.id)
@@ -176,8 +141,6 @@ def refresh(
         )
     role = db.get(Role, user.role_id)
     ttl = settings.access_token_ttl
-    # نفس الجلسة بتتجدّد — ماتتبدّلش. لو ولّدنا `sid` جديدة هنا، التجديد الدوري نفسه
-    # كان هيبقى «دخول من جهاز تاني» في عين الجهاز اللي فاتح تاني تاب.
     token = create_access_token(
         {
             "sub": str(user.id),
@@ -203,10 +166,6 @@ def me(current: CurrentUser = Depends(get_current_user), db: Session = Depends(g
         territory_id=user.territory_id,
         active=user.active,
         supervisor_id=user.supervisor_id,
-        # **اللي الدور ده بيقدر عليه فعلاً** — نفس `role_has_capability` اللي السيرفر بيحكم
-        # بيه. كان بيرجّع الافتراضي، فأي تعديل من شاشة الصلاحيات كان بيتطبّق في السيرفر
-        # ومابيوصلش للشاشة: زرار يبان لحد اتمنع منه، أو يختفي عن حد اتدّاله.
-        # ودلوقتي **بفروق المستخدم نفسه** كمان (`UserCapability`) — نفس `current.can`.
         capabilities=sorted(ALL_CAPABILITIES if current.role == RoleName.system_admin
                             else (set(effective_capabilities(current.role)) | {
                                 c for c in current.grants if not c.startswith("page:")})

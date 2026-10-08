@@ -1,34 +1,3 @@
-"""القيد اللي اتعدّل في a5 بعد ما نقلناه — يتشال من عندنا ويترجع بسطوره الجديدة.
-
-    python -m src.scripts.rebuild_a5_ledger --dir C:/pgtmp --branch أكتوبر
-    python -m src.scripts.rebuild_a5_ledger --dir C:/pgtmp/aliaa --branch العلياء --prefix AL- --yes
-
-**درايَ-رن بالافتراضي.** من غير `--yes` بيقول هيعمل إيه وبيقف.
-
----------------------------------------------------------------------------
-**المشكلة اللي بيحلها.** `import_a5_ledger` بيتخطّى القيد اللي `external_ref` بتاعه موجود،
-وده اللي بيخلّيه آمن يتعاد كل ليلة. بس العميل بيعدّل مستنداته في a5 بعد ما ننقلها والقيد
-بيتغيّر معاها — والتخطّي بيخلّي نسختنا مجمّدة على اللي كان.
-
-**والنتيجة إن الفاتورة بتقول رقم وكشف الحساب بيقول رقم تاني.** `rebuild_a5_docs` بيعيد
-بناء المستند لما يتعدّل فالفاتورة بتتصلّح، ومافيش حاجة كانت بتعيد بناء قيدها. اتقاس على
-الإنتاج: `AL-P16398` الفاتورة ٥٩٬٧٣٨٫٧٨ (زي a5 بالحرف) والقيد ٥٩٬٥٢٢٫٦٣ — واللي بيفتح
-الفاتورة بيلاقيها مظبوطة وبيفتح كشف الحساب يلاقي رقم تاني، ومالوش أي طريق يعرف مين
-الصح. الفرق على الفرعين وقت القياس: ١٧ قيد بـ٣٧٨ ألف جنيه.
-
-**بيتصلّح بالهدم وإعادة البناء، مش بالتصحيح.** التصحيح معناه إننا نقرّر أنهي سطر يتظبط
-وبكام، والمصدر قال خلاص: القيد هو ده. فبنشيل نسختنا بالكامل — سطورها — وبنسيب
-`import_a5_ledger` يبنيها من أول وجديد. هو نفس الكود اللي بنى الباقي، فمافيش طريق تاني
-للبيانات يتصان لوحده.
-
-**والربط بالفاتورة بيتفك قبل الحذف.** `sales_invoice.ledger_entry_id` مفتاح خارجي حقيقي؛
-حذف القيد وهو لسه مرتبط = خرق مفتاح. الترتيب هنا هو الإصلاح نفسه مش تنظيم — نفس الغلطة
-اللي كانت بتطلّع 500 على حذف إذن التحويل. والتشغيلة اللي بعدها بتربطه تاني (المستورد
-مكتوب بيربط اللي `None`)، فسلسلة `a5_sync.ps1` بترتيبها بتصلّح ده لوحدها.
-
-⛔ **ومابيلمسش قيد إحنا عملناه.** بيشتغل على اللي `external_ref` بتاعه بيبدأ بـ`a5:` وبس —
-يعني قيد اتنقل من عندهم وموجود في التصدير. سند اتكتب في نظامنا عمره ما يدخل القايمة.
-"""
 from __future__ import annotations
 
 import sys
@@ -45,7 +14,6 @@ from src.scripts.audit_a5_ledger_drift import TOL, theirs
 
 ZERO = Decimal("0")
 
-# المستندات اللي بتشاور على قيد — لازم الإشارة تتفك قبل الحذف.
 LINKED = (SalesInvoice, SalesReturn, PurchaseInvoice, PurchaseReturn)
 
 
@@ -65,8 +33,6 @@ def run(folder: str, *, branch_name: str, prefix: str, execute: bool,
             ref = str(e.external_ref or "")
             if ref.startswith(tag):
                 key = ref[len(tag):]
-                # البادئة الفاضية بتطابق الفرعين — الفرق إن مفتاح العلياء بيبدأ بـ`AL-`.
-                # وقيود السادات (`FC-`) كمان — أي مفتاح أكتوبر رقم بس.
                 if not prefix and not key.isdigit():
                     continue
                 mine[key] = e
@@ -82,20 +48,7 @@ def run(folder: str, *, branch_name: str, prefix: str, execute: bool,
                        if l.direction == Direction.debit), ZERO)
             got_cr = sum((Decimal(str(l.amount or 0)) for l in lines
                           if l.direction == Direction.credit), ZERO)
-            # **الطرفين وعدد السطور — مش المدين وحده.**
-            #
-            # النسخة الأولى كانت بتقارن المدين بس، فالقيد اللي مدينه صح ودائنه ناقص كان
-            # بيعدّي على إنه مطابق. واتقاس: `a5:AL-119625` مدينه ١٤٥٬٠٥٠ زي a5 بالحرف
-            # وطرفه الدائن مش موجود — حساب «تكنو بايت» ماكانش متعمل وقت الاستيراد فالسطر
-            # اترفض، والحساب اتعمل بعدها، والقيد اتجمّد للأبد لأن `external_ref` بتاعه
-            # موجود. قيد بطرف واحد كسر في الميزان مش فرق في رقم، والمقارنة اللي بتشوف
-            # طرف واحد عمياها عنه.
-            #
-            # وعدد السطور بيمسك اللي المبلغين بيخبّوه: سطر اتشال وسطر تاني اتزاد بنفس
-            # المبلغ على حساب تاني خالص.
             if amounts_only:
-                # قيمة القيد بس (أكبر الطرفين). القيد اللي a5 كاتبه مش متوازن وإحنا
-                # وزنّاه بسطر (الافتتاح) دائنه مختلف عن a5 بالقصد — مش فرق.
                 drift = abs(max(got, got_cr) - max(want["amount"], want["credit"])) > TOL
             else:
                 drift = (abs(got - want["amount"]) > TOL
@@ -122,7 +75,6 @@ def run(folder: str, *, branch_name: str, prefix: str, execute: bool,
             return 0
 
         ids = [e.id for _k, e, _w, _g in drifted]
-        # ١) فكّ الإشارات — المفتاح الخارجي بيرفض الحذف وهي قايمة.
         unlinked = 0
         for cls in LINKED:
             res = db.execute(sa_update(cls)
@@ -130,20 +82,15 @@ def run(folder: str, *, branch_name: str, prefix: str, execute: bool,
                              .values(ledger_entry_id=None))
             unlinked += res.rowcount or 0
         db.flush()
-        # السندات اللي اتعملت على القيود دي من a5 (`a5_entries_to_vouchers`) بتتشال معاها وبترجع
-        # بعد الاستيراد؛ وسند نظامنا اللي خد رقم a5 (`adopt_native_vouchers`) بيتفك من قيده.
         db.execute(text("delete from voucher where ledger_entry_id = any(:i) and client_uuid like 'a5:%'"),
                    {"i": ids})
         db.execute(text("update voucher set ledger_entry_id = null where ledger_entry_id = any(:i)"),
                    {"i": ids})
-        # ٢) التسويات (قيد على فاتورة اتسدد) والتوزيع بيشاوروا على السطر — بيتشالوا الأول.
-        #    التسوية بتتحسب تاني من القيد الجديد؛ سيبها والحذف بيقع.
         db.execute(text("""delete from partial_reconcile where debit_line_id in
             (select id from ledger_line where entry_id = any(:i)) or credit_line_id in
             (select id from ledger_line where entry_id = any(:i))"""), {"i": ids})
         db.execute(text("""delete from ledger_line_distribution where line_id in
             (select id from ledger_line where entry_id = any(:i))"""), {"i": ids})
-        # ٣) السطور وبعدها الرأس.
         db.execute(sa_delete(LedgerLine).where(LedgerLine.entry_id.in_(ids)))
         db.execute(sa_delete(LedgerEntry).where(LedgerEntry.id.in_(ids)))
         db.commit()
@@ -159,8 +106,5 @@ if __name__ == "__main__":
     folder = args[args.index("--dir") + 1] if "--dir" in args else "C:/pgtmp"
     prefix = args[args.index("--prefix") + 1] if "--prefix" in args else ""
     branch = args[args.index("--branch") + 1] if "--branch" in args else ""
-    # `--amounts-only`: القيد اللي مدينه ودائنه مطابقين وعندنا سطر زيادة بس اتساب.
-    # السطر الزيادة ده تصحيح قروش أو موازنة عملناها إحنا (قيد الافتتاح في أكتوبر
-    # ٢٦٦ سطر قدام ٢٦٥ بنفس المجموع)، وإعادة البناء كانت هتشيله.
     sys.exit(run(folder, branch_name=branch, prefix=prefix, execute="--yes" in args,
                  amounts_only="--amounts-only" in args))

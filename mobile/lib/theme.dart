@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 
-/// Techno Therm brand — deep petrol blue with a warm amber accent.
 class AppColors {
   static const primary = Color(0xFF0E4C6D);
   static const primaryDark = Color(0xFF08344C);
@@ -35,9 +34,6 @@ ThemeData buildTheme() {
       centerTitle: true,
       titleTextStyle: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: Colors.white),
     ),
-    // `CardThemeData`, not `CardTheme`. Flutter split the two: the *Theme classes are now the
-    // inherited widgets and the *ThemeData classes are the value objects that ThemeData holds.
-    // Same fields, same values — only the type this slot accepts changed.
     cardTheme: CardThemeData(
       elevation: 1.5,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
@@ -65,8 +61,6 @@ ThemeData buildTheme() {
       style: FilledButton.styleFrom(
         backgroundColor: AppColors.primary,
         foregroundColor: Colors.white,
-        // NOT Size.fromHeight: that implies infinite min-width, which crashes the layout
-        // inside width-unbounded parents (e.g. a Row) and silently drops the subtree.
         minimumSize: const Size(64, 50),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
         textStyle: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700),

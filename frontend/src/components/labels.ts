@@ -1,20 +1,5 @@
-/**
- * أسماء عربية للقيم اللي الباك إند بيبعتها بالإنجليزي.
- *
- * A ledger entry is stored under a machine name — `sale_return`, `cheque_bounce` — because that is
- * what code branches on. The screen is not code: somebody reading كشف حساب should see «مرتجع بيع»,
- * not `sale_return`, and «قيد» not `journal`.
- *
- * **One map, not one per screen.** حركة الخزينة already had an Arabic map of its own and كشف
- * الحساب had none, so the same movement read as «سند قبض» on one screen and `receipt` on the
- * other. A second copy is also a second thing to forget: that private map covered eleven of the
- * nineteen types the backend actually writes, and the other eight showed through raw.
- */
-
 export const ENTRY_TYPE_LABEL: Record<string, string> = {
   opening_balance: 'رصيد افتتاحي',
-  // «فاتورة بيع» زي a5 وزي حركات a5 المنقولة (`sales_invoice`) — كان «طلب بيع»، فالبيع
-  // كان بيظهر بنوعين في فلتر كشف الحساب (المالك ٢٠٢٦-١٠-٠٦).
   sale: 'فاتورة بيع',
   sale_return: 'مرتجع بيع',
   purchase: 'فاتورة شراء',
@@ -25,7 +10,6 @@ export const ENTRY_TYPE_LABEL: Record<string, string> = {
   journal: 'قيد يومية',
   reversal: 'عكس قيد',
   coupon_redeem: 'استبدال كوبون',
-  // The eight that were showing through in English.
   coupon_redeem_reverse: 'إلغاء استبدال كوبون',
   cash_transfer: 'تحويل نقدي',
   partner_withdraw: 'سحب شريك',
@@ -37,29 +21,18 @@ export const ENTRY_TYPE_LABEL: Record<string, string> = {
   netting: 'مقاصة',
   depreciation: 'إهلاك',
   asset_disposal: 'استبعاد أصل',
-  // الموارد البشرية — السلفة أصل على الموظف، مش مصروف على الشركة.
   employee_advance: 'سلفة موظف',
   payroll_accrual: 'استحقاق مرتبات',
   payroll_payment: 'صرف مرتبات',
   payroll_remittance: 'سداد تأمينات/ضرايب',
-  // القيود المنقولة من a5 (`scripts/import_a5_ledger.py`) بأسامي مستنداتها هناك — كانت
-  // بتظهر في كشف الحساب «sales_invoice» بالإنجليزي، وهي أغلب حركات العملاء القديمة.
   sales_invoice: 'فاتورة بيع',
   sales_return: 'مرتجع بيع',
   purchase_invoice: 'فاتورة شراء',
 };
 
-/**
- * The Arabic name, or the raw value when there is none.
- *
- * Falling back to the raw string rather than to «غير معروف»: a type nobody has named yet is still
- * information — «cheque_bounce» tells a reader something, and «غير معروف» tells them nothing and
- * hides which row needs the fix.
- */
 export const entryTypeLabel = (value: string | null | undefined): string =>
   (value ? ENTRY_TYPE_LABEL[value] || value : '-');
 
-/** أسماء المستندات اللي `DocumentLink` بيفتحها. */
 export const DOC_KIND_LABEL: Record<string, string> = {
   invoice: 'طلب بيع',
   return: 'مرتجع بيع',

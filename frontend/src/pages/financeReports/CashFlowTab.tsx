@@ -1,14 +1,6 @@
-/**
- * التدفق النقدي — اتفصل عن `FinanceReports.tsx`.
- *
- * التبويب ده بيقرا الدفتر كله، فبيجيب داتاه بنفسه أول ما يتفتح بدل ما يتحمّل مع
- * كل فتحة للصفحة زي التقارير اللي قبله. عشان كده هو مكوّن مستقل بحالته، والأب
- * بيديله الفترة وبس.
- */
 import React, { useCallback, useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Alert, Button, Space, Tag } from 'antd';
-// فلتر على كل عمود — شوف `FilterTable`.
 import { FilterTable as Table } from '../../components/FilterTable';
 import { ReloadOutlined } from '@ant-design/icons';
 import { api } from '../../api/client';
@@ -37,7 +29,6 @@ export default function CashFlowTab({ params, slots }: {
 
   useEffect(() => { loadCash(); }, [loadCash]);
 
-  // كروت الإجماليات بقت سطر — ولسه للي عنده `stats.view` بس.
   const canSeeStats = useCanSeeStats();
 
   return (

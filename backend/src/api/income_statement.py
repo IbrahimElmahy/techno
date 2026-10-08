@@ -1,10 +1,3 @@
-"""قائمة الدخل بشكل ورقة العميل — لفرع ولفترة، بإعداداتها.
-
-الفرع: المالك/الأدمن بيختار (أو «كل الفروع» بـ`branch_id=0`)، وموظف الفرع مقفول على فرعه
-مهما بعت — نفس قاعدة `branch_scope` في باقي التقارير المالية.
-
-الفترة **إجبارية**: قائمة دخل من غير فترة مالهاش معنى، والنظام مابيختارش فترة من عنده.
-"""
 from __future__ import annotations
 
 from datetime import date
@@ -32,7 +25,6 @@ def _bad(message: str) -> HTTPException:
 
 
 def _branch(current: CurrentUser, branch_id: int | None) -> int | None:
-    """الفرع اللي التقرير هيتعمل عليه. `0` = كل الفروع (للي يشوف الكل بس)."""
     if not branch_scope.sees_all_branches(current):
         return current.branch_id
     if branch_id is None:
@@ -71,7 +63,6 @@ def sales_detail(
     current: CurrentUser = Depends(require_capability(CAP_VOUCHER_READ)),
     db: Session = Depends(get_db),
 ) -> dict:
-    """تفصيل فئة مبيعات بالعميل وبفئة الصنف — الدوسة على رقم «بولي» مثلاً."""
     d_from, d_to = _period(date_from, date_to)
     return svc.sales_breakdown(db, branch_id=_branch(current, branch_id), date_from=d_from,
                                date_to=d_to, category_key=category)
@@ -84,7 +75,6 @@ def inventory_at(
     current: CurrentUser = Depends(require_capability(CAP_VOUCHER_READ)),
     db: Session = Depends(get_db),
 ) -> dict:
-    """قيمة المخزون في تاريخ صنف صنف — تفصيل مخزون أول/آخر المدة بنفس إعدادات القائمة."""
     return svc.inventory_at(db, branch_id=_branch(current, branch_id), as_of=as_of).as_dict()
 
 
@@ -100,7 +90,6 @@ def get_settings(
     if branch is not None:
         customers_q = customers_q.where(Customer.branch_id == branch)
     customers = [{"id": i, "name": n, "type": t} for i, n, t in db.execute(customers_q).all()]
-    # مين بيتمسك فعلاً بكل قاعدة عملاء — عشان «ثيرم / فرع» تبان بالأسامي مش بالكلمات بس.
     resolved: dict[str, list[dict]] = {}
     for rule in cfg["sales"]["categories"]:
         ids = {int(x) for x in rule.get("customer_ids") or []}
@@ -138,7 +127,6 @@ def put_settings(
     current: CurrentUser = Depends(require_capability(CAP_ACCOUNTING_CHART_WRITE)),
     db: Session = Depends(get_db),
 ) -> dict:
-    """بيحفظ إعدادات الفرع كلها (من غير مدخلات الفترات — ليها مسارها)."""
     branch = _branch(current, branch_id)
     _office(current, branch)
     config = payload.get("config") if isinstance(payload.get("config"), dict) else payload
@@ -149,7 +137,6 @@ def put_settings(
     for acc_id, role in ((allowed.get("accounts") or {}).get("roles") or {}).items():
         if role not in svc.ROLES:
             raise _bad(f"دور مش معروف للحساب {acc_id}: {role}")
-    # مدخلات الفترات بتاعة الصف ده بس بتفضل زي ما هي — ليها مسارها (`/period`).
     own = svc._row(db, branch)
     allowed["periods"] = ((own.config or {}).get("periods") if own else None) or {}
     out = svc.save_config(db, branch, allowed, actor_user_id=current.id)
@@ -175,10 +162,6 @@ def put_period_inputs(
     current: CurrentUser = Depends(require_capability(CAP_ACCOUNTING_CHART_WRITE)),
     db: Session = Depends(get_db),
 ) -> dict:
-    """مدخلات الفترة اليدوية: الجرد الفعلي أول/آخر المدة، كوبونات البيع الفعلي، وبنود «زيادة».
-
-    بتتحفظ على مفتاح الفترة بالظبط — رقم جرد ٣٠-٦ مالوش دعوة بربع تاني.
-    """
     branch = _branch(current, branch_id)
     _office(current, branch)
     d_from, d_to = _period(date_from, date_to)

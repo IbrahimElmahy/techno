@@ -1,25 +1,3 @@
-"""يصنّف العملاء والموردين المنقولين من a5، ويحطّ كل طرف على فرعه.
-
-    python -m src.scripts.classify_a5_parties          # يعرض بس
-    python -m src.scripts.classify_a5_parties --yes    # ينفّذ
-
-بيتعاد تشغيله بأمان: اللي متصنّف بإيد حد مابيتغيّرش.
-
----------------------------------------------------------------------------
-تلات قرارات:
-
-* **a5 مافيهوش خانة تصنيف للعميل.** دوّرنا: `Cust_Comp` طلع رقم تليفون (١٠٥ قيمة كلها
-  `01xxxxxxxxx`)، و`Cmm` نسبة عمولة ثابتة على ١٣٠٥ عميل، وحسابات العملاء كلها تحت مجموعة
-  واحدة اسمها «العملاء». التصنيف الوحيد الموجود فعلاً هو **اللي مكتوب في الاسم**: «معرض
-  فادى»، «شركة مريم»، «مصنع الرواد». ٤٤٨ من ٦٥٠ عميل في أكتوبر اسمهم بيبدأ بـ«معرض».
-
-* **بيتقرا من الاسم ومابيتحطش في الاسم.** الكلمة بتفضل في الاسم زي ما هي — «معرض فادى»
-  اسمه كده على الورق. اللي بيتزود هو التصنيف كخانة، عشان الفلترة والتقارير تشتغل.
-
-* **الطرف بيتحط على فرعه من بادئة كوده.** المورد مالوش فرع دلوقتي، يعني كل فرع بيشوف
-  موردين التاني — والعزل مبني على `branch_id`. البادئة `AL-` بتقول العلياء و`A5-` بتقول
-  أكتوبر، وهي اللي الاستيراد كتبها.
-"""
 from __future__ import annotations
 
 import re
@@ -33,7 +11,6 @@ from src.models.lookup import LookupOption
 from src.models.org import Branch
 from src.models.supplier import Supplier
 
-# الكلمة اللي في الاسم → التصنيف. الترتيب مهم: «شركة أكواتيك بولى» شركة مش حاجة تانية.
 CUSTOMER_RULES: list[tuple[str, str, str]] = [
     (r"^\s*معرض\b", "showroom", "معرض"),
     (r"^\s*(شرك[ةه]|الشرك[ةه])\b", "company", "شركة"),
@@ -48,7 +25,6 @@ SUPPLIER_RULES: list[tuple[str, str, str]] = [
     (r"مورد\s*نقدى|مورد\s*نقدي", "cash", "مورد نقدي"),
 ]
 
-# البادئة اللي الاستيراد كتبها على الكود → الفرع.
 PREFIX_BRANCH = [("AL-", "العلياء"), ("A5-", "أكتوبر"), ("A5X", "أكتوبر")]
 
 DEFAULT_CUSTOMER = ("trader", "تاجر")
@@ -63,7 +39,6 @@ def _match(name: str, rules: list[tuple[str, str, str]]) -> tuple[str, str] | No
 
 
 def _ensure_options(db, category: str, wanted: dict[str, str]) -> None:
-    """القيمة الجديدة لازم تبقى في القايمة، وإلا الشاشة بتعرض كود بدل اسم."""
     have = {o.value for o in db.scalars(
         select(LookupOption).where(LookupOption.category == category)).all()}
     order = db.scalar(select(LookupOption.sort_order).where(
@@ -98,7 +73,6 @@ def run(*, execute: bool) -> None:
         branch_plan = 0
 
         for c in customers:
-            # اللي حد صنّفه بإيده مابيتلمسش — التصنيف الافتراضي بس هو اللي بيتراجع.
             if c.customer_type not in ("", None, DEFAULT_CUSTOMER[0]):
                 continue
             hit = _match(c.name, CUSTOMER_RULES)

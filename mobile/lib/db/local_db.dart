@@ -7,8 +7,6 @@ import 'package:sqflite/sqflite.dart';
 import '../models/coupon_custody.dart';
 import '../models/models.dart';
 
-/// Offline store: inspections recorded in the field live here first (synced=0),
-/// then get flushed to the server in batches. Catalog + lookups are cached for offline entry.
 class LocalDb {
   LocalDb._();
   static final LocalDb instance = LocalDb._();
@@ -17,31 +15,16 @@ class LocalDb {
   Future<Database> get db async {
     if (_db != null) return _db!;
     final path = p.join(await getDatabasesPath(), 'techno_inspections.db');
-    // **نسخة ٢٧ بتعدّي على ترقيات الفرعين مع بعض.**
-    //
-    // الفرعين اشتغلوا بالتوازي وكل واحد صرف أرقام نسخ لحاجات مختلفة: `dev` خد ٢٢ و٢٤،
-    // و`main` خد ٢٢ و٢٥ و٢٦ — فالأجهزة اللي في الشارع دلوقتي كل واحد ناقصه ترقيات
-    // التاني. الرقم ده أعلى من الاتنين وبيعمل **كل** اللي فاتهم، وكل واحدة محميّة
-    // بـ`try`: اللي اتعمل قبل كده بيرمي وبيتتجاهل.
     _db = await openDatabase(path, version: 33, onUpgrade: (d, from, to) async {
       if (from < 33) {
-        // حساب العميل ساعة التحصيل — ورقة سند القبض بتقول «الباقي بعد الدفعة» بالرقم اللي
-        // المندوب شافه وهو واقف، مش من الكاش اللي بيتغيّر بعد أي مزامنة. السندات القديمة
-        // فاضية والورقة بتطلع من غير الصندوق ده.
         for (final col in ['prev_balance REAL', 'prev_balances TEXT']) {
           try { await d.execute('ALTER TABLE sale_receipt ADD COLUMN $col'); } catch (_) {}
         }
       }
       if (from < 32) {
-        // أقل سعر بيع للصنف (تكلفته) — للتحذير بس. بيتملى من أول مزامنة؛ لحد ساعتها فاضي
-        // ومافيش تحذير (السيرفر لسه بيرفض).
         try { await d.execute('ALTER TABLE sale_item ADD COLUMN min_price REAL'); } catch (_) {}
       }
       if (from < 31) {
-        // فاتورة البونص — بضاعة هدية على فاتورة بيع لنفس العميل. الربط بيتخزّن بالاتنين:
-        // رقم السيرفر لو الفاتورة اتاخدت من النظام، و`client_uuid` لو اتكتبت على الجهاز
-        // (ممكن تكون لسه في الطابور ومالهاش رقم سيرفر أصلاً). الفواتير القديمة كلها
-        // بيع عادي، فالافتراضي صفر مش تخمين.
         for (final col in [
           'is_bonus INTEGER NOT NULL DEFAULT 0',
           'bonus_for_invoice_id INTEGER',
@@ -52,14 +35,10 @@ class LocalDb {
         }
       }
       if (from < 30) {
-        // شيتات التسعير بتتخزّن على الجهاز. الجهاز القديم بياخد الجدولين فاضيين،
-        // والشيتات اللي كانت مفتوحة قبل الترقية ماكانتش بتتحفظ أصلاً فمافيش داتا تضيع.
         try { await d.execute(_priceSheetTable); } catch (_) {}
         try { await d.execute(_priceSheetLineTable); } catch (_) {}
       }
       if (from < 29) {
-        // أسعار الكتالوج — كشف التسعير بيقراها. الجهاز القديم بيزوّد الأعمدة وبتتملى
-        // من أول مزامنة؛ لحد ساعتها الكشف بيعرض الأصناف من غير سعر بدل ما يقع.
         for (final col in [
           'base_price REAL',
           'default_discount_pct REAL NOT NULL DEFAULT 0',
@@ -71,15 +50,6 @@ class LocalDb {
         }
       }
       if (from < 28) {
-        // **الجهاز اللي محفوظ عليه السيرفر المحلي بيتنقل للسحابة مرة واحدة.**
-        //
-        // السحابة بقت التشغيلي، والمحلي وقف. المندوب اللي عنده العنوان القديم
-        // محفوظ في `api_base` مكانش هيتأثر بتغيير `defaultBase` — وكان هيفضل
-        // يكتب فواتيره على قاعدة مش تشغيلية وهو فاكر إنه بيزامن. ده مش إعداد
-        // بايظ، ده **ضياع مستندات في صمت**.
-        //
-        // والنقل مقصور على العنوان القديم بالاسم: اللي حاطط عنوان تاني بإيده
-        // (اختبار، أو سيرفر تاني) بيفضل عليه — مابنمسحش اختياره.
         try {
           await d.update('kv', {'value': 'https://app.technothermeg.com'},
               where: 'key = ? AND value = ?',
@@ -87,69 +57,44 @@ class LocalDb {
         } catch (_) {}
       }
       if (from < 27) {
-        // ── اللي جه من dev ──
-        // أصناف كل مخزن: منتقي إذن التحويل كان بيعرض عهدة المندوب، والإذن أصلاً
-        // بيتكتب عشان يطلب حاجة **مش** معاه.
         try { await d.execute(_warehouseItemTable); } catch (_) {}
-        // المحجوز على إذن تحويل معلّق. من غيره الجهاز بيعتبر البضاعة اللي المندوب
-        // طلب يرجّعها لسه متاحة للبيع، والإذن بيقع على المسؤول عند الاعتماد.
         try {
           await d.execute(
               'ALTER TABLE sale_item ADD COLUMN pending_out REAL NOT NULL DEFAULT 0');
         } catch (_) {}
 
-        // ── اللي جه من main ──
-        // كتالوج الفرع. **الاسم `branch_catalog_item` مش `catalog_item`**: الاسم
-        // التاني محجوز من v1 لأصناف المعاينة، ومحاولة إعادة استعماله وقعت في صمت
-        // (الـ`CREATE` بيرمي والـ`catch` بيبلع) — وكانت هتمسح كتالوج المعاينات.
         try { await d.execute(_branchCatalogTable); } catch (_) {}
-        // أرصدة الخطين ساعة الحفظ — الورقة بتقول «ح سابق أبيض» و«بولى» كل واحد
-        // لوحده، بالرقم اللي المندوب قاله للعميل وهو واقف قدامه.
         try {
           await d.execute('ALTER TABLE sale_invoice ADD COLUMN prev_balances TEXT');
         } catch (_) {}
-        // تاريخ طلب التحويل — المندوب بيكتبه، ومن غيره السيرفر بيحط تاريخ اليوم
-        // والطلب اللي على بضاعة خرجت امبارح بيتقيّد على اليوم الغلط.
         try {
           await d.execute('ALTER TABLE stock_transfer ADD COLUMN transfer_date TEXT');
         } catch (_) {}
       }
       if (from < 23) {
-        // v23: حساب العميل قبل الفاتورة — الورقة بتقول للعميل حسابه كامل، مش رقم
-        // الفاتورة لوحده. بيتخزّن ساعة الحفظ لأنه الرقم اللي المندوب قاله له وهو
-        // واقف قدامه؛ قراءته وقت الطباعة من الكاش بترجّع رقم تاني بعد أي مزامنة.
         try {
           await d.execute('ALTER TABLE sale_invoice ADD COLUMN prev_balance REAL');
         } catch (_) {}
       }
       if (from < 18) {
-        // v18: صناديق المندوب — واحد لكل خط. الصندوق بيتحدد من نوع الفاتورة لوحده،
-        // والجهاز لازم يكون شايله عشان يعرضه وهو في الشارع من غير شبكة.
         try { await d.execute(_treasuryTable); } catch (_) {}
       }
       if (from < 17) {
-        // v17: فئة الصنف جنب الصنف — منتقي البيع بقى خطوتين (فئة، وبعدها أصنافها).
-        // من غير الترقية دي الجهاز اللي عليه نسخة قديمة بيقع أول ما يقرا العمود.
         try {
           await d.execute('ALTER TABLE sale_item ADD COLUMN category TEXT');
         } catch (_) {}
       }
       if (from < 2) {
-        // v2: the rep's custody quantity per item (NULL/0 for admins or unissued reps).
         await d.execute('ALTER TABLE catalog_item ADD COLUMN my_stock REAL');
       }
       if (from < 3) {
-        // v3: cached customers + the regular visit's customer link.
         await d.execute('CREATE TABLE customer(id INTEGER PRIMARY KEY, name TEXT)');
         await d.execute('ALTER TABLE inspection ADD COLUMN customer_id INTEGER');
       }
       if (from < 5) {
-        // v5: coupons taken back from customers on the round. Queued like an inspection —
-        // the rep is at a door with no signal far more often than not.
         await d.execute(_couponReceiptTable);
       }
       if (from < 13) {
-        // v13: نوع الزيارة (معاينة/مرمة) بيتختار في الشاشة وبيتبعت مع المزامنة.
         try {
           await d.execute('ALTER TABLE inspection ADD COLUMN visit_type TEXT');
         } catch (_) {}
@@ -158,35 +103,29 @@ class LocalDb {
         try { await d.execute(_attachmentTable); } catch (_) {}
       }
       if (from < 12) {
-        // v12: الخصم اتقسم — ثابت (من الصنف) ومتغيّر (من المندوب).
         for (final col in ['fixed_discount_pct REAL', 'variable_discount_pct REAL']) {
           try { await d.execute('ALTER TABLE sale_invoice_line ADD COLUMN $col'); } catch (_) {}
         }
       }
       if (from < 11) {
-        // v11: التحصيل من العربية — سند قبض بيتكتب في الشارع ويترفع بعدين.
         try { await d.execute(_receiptTable); } catch (_) {}
       }
       if (from < 10) {
-        // v10: البيع من العربية — أصناف العهدة بأسعارها، وطابور الفواتير وسطورها.
         for (final ddl in [_saleItemTable, _saleInvoiceTable, _saleLineTable]) {
           try { await d.execute(ddl); } catch (_) {}
         }
         try { await d.execute('ALTER TABLE customer ADD COLUMN price_tier TEXT'); } catch (_) {}
       }
       if (from < 9) {
-        // v16: رقم التاجر مع اسمه. الاسم لوحده مابيوصّلش لطرف، والخصم بيحتاج الطرف.
         if (from < 16) {
           await d.execute(
               'ALTER TABLE inspection ADD COLUMN merchant_customer_id INTEGER');
         }
-        // v9: تليفون محل الشراء — «محل الشراء» بقى تاجر مختار من قايمة المندوب.
         try {
           await d.execute('ALTER TABLE inspection ADD COLUMN purchase_shop_phone TEXT');
         } catch (_) {}
       }
       if (from < 7) {
-        // v7: تاريخ الاستلام ونوع الكوبون وقيمته ونوع العميل.
         for (final col in [
           'received_date TEXT',
           'coupon_kind TEXT',
@@ -197,33 +136,22 @@ class LocalDb {
         }
       }
       if (from < 21) {
-        // v21: الكوبونات المصروفة مع الفاتورة — صف لكل فئة (عادي/فضي/ذهبي) بمداه.
-        // JSON في عمود واحد مش جدول: دي صفوف طابور بتترفع مع الفاتورة وبتتمسح معاها،
-        // مالهاش استعلام لوحدها ولا بتتربط بحاجة تانية.
         try { await d.execute('ALTER TABLE sale_invoice ADD COLUMN coupons TEXT'); } catch (_) {}
       }
       if (from < 26) {
-        // تاريخ الطلب — المندوب بيكتبه، ومن غيره السيرفر بيحط تاريخ اليوم. والطلب اللي
-        // اتكتب النهاردة على بضاعة خرجت امبارح بيتقيّد على اليوم الغلط.
         try {
           await d.execute('ALTER TABLE stock_transfer ADD COLUMN transfer_date TEXT');
         } catch (_) {}
       }
       if (from < 20) {
-        // v20: التحصيل بقى بالخط — «المدفوع ده أبيض ولا بولي» — لأن الفلوس بتنزل في
-        // صندوق الخط والمديونية اللي بتتخصم مديونية الخط.
         try { await d.execute('ALTER TABLE sale_receipt ADD COLUMN family TEXT'); } catch (_) {}
       }
       if (from < 19) {
-        // v19: أرصدة العميل بالخط. المندوب واقف قدام العميل وبيقول له عليك كام —
-        // ورقم واحد مجمّع مابيردّش على «الأبيض بكام؟»، والفلوس بتتحصّل بالخط.
         for (final col in ['family_balances TEXT', 'balance REAL']) {
           try { await d.execute('ALTER TABLE customer ADD COLUMN $col'); } catch (_) {}
         }
       }
       if (from < 15) {
-        // v15: تصنيف العميل وخطوط منتجاته — «أبيض» و«بولي» بينزلوا مع الحزمة عشان
-        // الفاتورة تقول على أنهي مديونية، وعشان حقل المالك في المعاينة يتفلتر بالتصنيف.
         for (final col in ['customer_type TEXT', 'families TEXT']) {
           try { await d.execute('ALTER TABLE customer ADD COLUMN $col'); } catch (_) {}
         }
@@ -232,13 +160,11 @@ class LocalDb {
         } catch (_) {}
       }
       if (from < 14) {
-        // v14: المخازن، وإذن التحويل اللي المندوب بيكتبه على الجهاز.
         for (final ddl in [_warehouseTable, _transferTable, _transferLineTable]) {
           try { await d.execute(ddl); } catch (_) {}
         }
       }
       if (from < 4) {
-        // v4: the inspection point-items catalog + customer contact fields for autofill.
         await d.execute('CREATE TABLE insp_item_type('
             'id INTEGER PRIMARY KEY, name TEXT, points REAL)');
         await d.execute('ALTER TABLE customer ADD COLUMN phone TEXT');
@@ -300,7 +226,6 @@ class LocalDb {
     return _db!;
   }
 
-  // --- key/value (token, api base, last sync...) ---
   Future<String?> getKv(String key) async {
     final rows = await (await db).query('kv', where: 'key = ?', whereArgs: [key]);
     return rows.isEmpty ? null : rows.first['value'] as String?;
@@ -311,7 +236,6 @@ class LocalDb {
         conflictAlgorithm: ConflictAlgorithm.replace);
   }
 
-  // --- catalog & lookups cache ---
   Future<void> replaceCatalog(List<CatalogItem> items) async {
     final d = await db;
     await d.transaction((tx) async {
@@ -350,7 +274,6 @@ class LocalDb {
     return rows.map(LookupOption.fromRow).toList();
   }
 
-  // --- customers cache (for the regular visit picker + owner autofill, offline) ---
   Future<void> replaceCustomers(List<CustomerRef> customers) async {
     final d = await db;
     await d.transaction((tx) async {
@@ -361,10 +284,7 @@ class LocalDb {
           'id': c.id, 'name': c.name, 'phone': c.phone, 'address': c.address,
           'price_tier': c.priceTier,
           'customer_type': c.customerType,
-          // مفصولة بفاصلة: قايمة قصيرة (خط أو اتنين) ومحدش بيبحث جوّاها، فجدول تاني
-          // ليها هيبقى تكلفة من غير مقابل.
           'families': c.families.join(','),
-          // «أبيض=123.45|بولي=0» — قايمة من خطين، فجدول تاني ليها تكلفة من غير مقابل.
           'family_balances':
               c.familyBalances.entries.map((e) => '${e.key}=${e.value}').join('|'),
           'balance': c.balance,
@@ -374,15 +294,6 @@ class LocalDb {
     });
   }
 
-  /// عملاء الجهاز — بفلتر اسم، وبفلتر تصنيف اختياري.
-  ///
-  /// `customerTypes` بيخدم خانات المعاينة: كل خانة بتقلّب في التصنيف بتاعها بس —
-  /// «المالك» في الملّاك، «الفني» في السباكين، «محل الشراء» في التجار والمعارض. من
-  /// غير الفلتر ده الخانات التلاتة بتقلّب في نفس الكشف، فالمندوب بيلاقي فني في خانة
-  /// محل الشراء وتاجر في خانة الفني — واللي بيتحفظ بعد كده غلط في الاتجاهين.
-  ///
-  /// والاقتراح بيفضل اقتراح — الاسم اللي مش في القايمة بيتكتب زي ما هو، لأن المندوب
-  /// بيقابل ناس لسه ماعملّهمش كارت، ورفض الزيارة عشان كده معناه خسارة الزيارة.
   Future<List<CustomerRef>> customers({
     String query = '',
     int limit = 40,
@@ -398,32 +309,15 @@ class LocalDb {
       where.add('customer_type IN (${List.filled(types.length, '?').join(',')})');
       args.addAll(types);
     }
-    // **البحث بالاسم بيحصل في دارت وحده — مافيش `LIKE` على الاسم الخام.**
-    //
-    // كان `name LIKE '%q%'` في الاستعلام وبعده ترشيح بالاسم الموحَّد في دارت.
-    // والترتيب ده بيلغي الترشيح التاني قبل ما يشتغل: `LIKE` بتاعة sqlite بتقارن
-    // الحروف زي ما هي، فـ«احمد» مابتلاقيش «أحمد» و«محمود» مابتلاقيش «فنى محمود
-    // ناصر» لو الاسم متكتب بشكل تاني — الصف بيتشال من النتيجة **قبل** ما `bare`
-    // تشوفه. و`limit * 5` كانت بتوسّع العيّنة بس، مابتصلّحش القاعدة.
-    //
-    // الجدول ده كاش محلي لعملاء مندوب واحد (مئات، مش ملايين)، فقراءته كاملة
-    // والترشيح فوقه أرخص من عمود موحَّد بمهاجرة — وبيخلّي قاعدة البحث في مكان واحد
-    // هو نفسه اللي بيرتّب (`bare`)، زي الخادم والويب بالظبط.
     final rows = await d.query('customer',
         where: where.isEmpty ? null : where.join(' AND '),
         whereArgs: where.isEmpty ? null : args,
         orderBy: 'name', limit: query.isEmpty ? limit : null);
     var out = rows.map(_customerFromRow).toList();
     if (query.isNotEmpty) {
-      // **«احمد» لازم تلاقي «أحمد»، و«محمود» تلاقي «فنى محمود ناصر».**
-      //
-      // `LIKE '%q%'` بتقارن الحروف زي ما هي، فالاسم المكتوب بهمزة مابيظهرش لمن
-      // كتبه من غيرها — ونفس القاعدة موجودة في الخادم وفي الويب (`bare`).
       final n = bare(query);
       out = out.where((c) => bare(c.name).contains(n)).toList();
     }
-    // القُرب قبل الأبجدي: اللي بيبدأ بالحروف فوق اللي فيها في آخره — نفس ترتيب
-    // `arabic.match_order` في الخادم.
     if (query.isNotEmpty) {
       final n = bare(query);
       int rank(CustomerRef c) {
@@ -461,7 +355,6 @@ class LocalDb {
         balance: (r['balance'] as num?)?.toDouble() ?? 0,
       );
 
-  // --- inspection point-items catalog (أصناف المعاينة) ---
   Future<void> replaceItemTypes(List<CatalogItem> types) async {
     final d = await db;
     await d.transaction((tx) async {
@@ -488,7 +381,6 @@ class LocalDb {
         .toList();
   }
 
-  // --- inspections ---
   Future<int> saveInspection(Inspection insp) async {
     final d = await db;
     return d.transaction((tx) async {
@@ -529,7 +421,6 @@ class LocalDb {
     });
   }
 
-  /// الزيارات المسجّلة على الجهاز. [from]/[to] بصيغة yyyy-MM-dd وشاملين الطرفين.
   Future<List<Inspection>> listInspections(
       {String? date, String? from, String? to, String? visitKind, bool? synced}) async {
     final d = await db;
@@ -539,8 +430,6 @@ class LocalDb {
       where.add('inspection_date = ?');
       args.add(date);
     }
-    // Dates are stored as yyyy-MM-dd text, which sorts and compares the same way it reads — so a
-    // plain BETWEEN is correct without parsing anything.
     if (from != null) {
       where.add('inspection_date >= ?');
       args.add(from);
@@ -629,12 +518,6 @@ class LocalDb {
     });
   }
 
-  // ------------------------------------------------------------ coupon receipts
-
-  /// Queue a handover taken at the door. `client_uuid` is what makes a retry safe: the server
-  /// keys on it, so a receipt sent twice after a dropped connection lands once.
-  // --- المرفقات ---
-
   Future<int> addAttachment({
     required String inspectionUuid,
     required String path,
@@ -717,9 +600,6 @@ class LocalDb {
     await (await db).delete('coupon_receipt', where: 'local_id = ?', whereArgs: [localId]);
   }
 
-  // --- البيع من العربية ---------------------------------------------------------------
-
-  /// بتحطّ أصناف العهدة مكان اللي قبلها. الرصيد صورة من لحظة السحب، فبيتبدّل كله مش يتجمّع.
   Future<void> replaceSaleItems(List<SaleItem> items) async {
     final d = await db;
     await d.transaction((tx) async {
@@ -732,7 +612,6 @@ class LocalDb {
     });
   }
 
-  /// شغل لسه ما اترفعش، مقسوم بنوعه — عشان تبديل المستخدم مايمسحش حاجة لحد.
   Future<Map<String, int>> pendingByKind() async {
     final d = await db;
     const tables = {
@@ -752,10 +631,6 @@ class LocalDb {
     return out;
   }
 
-  /// الجداول اللي بتتمسح لما يدخل مستخدم تاني.
-  ///
-  /// **الجداول المشتركة مش منها** — الكتالوج والقوايم والمخازن مش بتاعة حد، ومسحها
-  /// معناه إن اللي بيدخل يستنى سحب كامل قبل ما يشتغل.
   static const _userTables = [
     'inspection_line', 'inspection', 'attachment',
     'sale_invoice_line', 'sale_invoice', 'sale_receipt',
@@ -764,7 +639,6 @@ class LocalDb {
     'sale_item', 'customer', 'rep_treasury',
   ];
 
-  /// كام صف لسه موجود في جداول المستخدم — للتأكيد بعد المسح.
   Future<Map<String, int>> userDataCounts() async {
     final d = await db;
     final out = <String, int>{};
@@ -774,31 +648,19 @@ class LocalDb {
                 await d.rawQuery('SELECT COUNT(*) FROM $t')) ??
             0;
         if (n > 0) out[t] = n;
-      } catch (_) {/* جدول لسه ماتعملش على نسخة قديمة */}
+      } catch (_) {}
     }
     return out;
   }
 
   Future<bool> hasUserData() async => (await userDataCounts()).isNotEmpty;
 
-  /// بيمسح داتا المستخدم من الجهاز — بتتنده لما يدخل حد تاني.
-  ///
-  /// **الجهاز واحد والمستخدم ممكن يتغيّر.** الخروج بيمسح التوكن بس، فالمندوب التاني
-  /// بيدخل ويلاقي فواتير الأول في «فواتيري» وبضاعته في «بضاعتي». دي مش تفصيلة عرض:
-  /// بيانات حد تاني على شاشة مش بتاعته.
-  ///
-  /// **كل جدول بجملة لوحده، مش معاملة واحدة.** الجملة اللي بتفشل جوّه معاملة في
-  /// sqflite بتخلّي اللي بعدها يفشل كمان وبترجّع كل حاجة — فجدول واحد ناقص على نسخة
-  /// قديمة كان بيلغي المسح كله في صمت، والشاشة تفتح على داتا حد تاني.
-  ///
-  /// ⚠️ بيتنده **بعد** ما `pendingByKind()` ترجع فاضية. مافيش حاجة مرفوعة بتتمسح هنا،
-  /// والمنع بيحصل في `login` مش هنا.
   Future<void> wipeUserData() async {
     final d = await db;
     for (final t in _userTables) {
       try {
         await d.delete(t);
-      } catch (_) {/* جدول لسه ماتعملش — التأكيد فوق هو اللي بيحكم */}
+      } catch (_) {}
     }
     for (final k in ['store_id', 'store_kind', 'last_sync', 'last_pull']) {
       try {
@@ -828,8 +690,6 @@ class LocalDb {
     });
   }
 
-  /// كتالوج الفرع. لو لسه مانزلش (جهاز مازامنش بعد v25)، بيرجّع أصناف العربية — أحسن
-  /// من شاشة فاضية، والمزامنة الجاية بتوسّعها.
   Future<List<SaleItem>> catalogItems() async {
     final d = await db;
     final rows = await d.query('branch_catalog_item', orderBy: 'name');
@@ -837,7 +697,6 @@ class LocalDb {
     return [for (final r in rows) SaleItem.fromRow(r)];
   }
 
-  /// فئات مايظهرش أصنافها في شيت التسعير — بتيجي من النظام مع حزمة المندوب.
   Future<Set<String>> priceSheetHiddenCategories() async {
     final raw = await getKv('price_sheet_hidden_categories');
     if (raw == null || raw.isEmpty) return const {};
@@ -857,14 +716,6 @@ class LocalDb {
     return [for (final r in rows) SaleItem.fromRow(r)];
   }
 
-  /// الرصيد المتاح للصنف ده دلوقتي = اللي في الكاش **ناقص** اللي اتباع لسه ما اترفعش.
-  ///
-  /// من غير الطرح ده، مندوب معاه خمسة يقدر يكتب تلات فواتير بخمسة كل واحدة وهو من غير
-  /// شبكة، ويكتشف عند المزامنة إن اتنين منهم اترفضوا — بعد ما يكون سلّم البضاعة وقال
-  /// للعملاء إن الفواتير اتعملت. الحساب اللي في إيده لازم يبقى صادق وهو في الشارع.
-  /// `exceptInvoiceLocalId` = فاتورة بتتعدّل دلوقتي: سطورها القديمة **مش** بتتخصم من
-  /// المتاح، لأن اللي بيتكتب دلوقتي بياخد مكانها مش بيتزاد عليها. من غير الاستثناء ده
-  /// فاتورة بخمسة بتقيس نفسها على متاح صفر وماتقدرش تتعدّل ولا ترجع لكميتها.
   Future<double> availableForSale(int itemId, {int? exceptInvoiceLocalId}) async {
     final d = await db;
     final cached = await d.query('sale_item',
@@ -883,11 +734,6 @@ class LocalDb {
     return onHand - ((sold.first['q'] as num?)?.toDouble() ?? 0);
   }
 
-  /// نفس حساب [availableForSale] بس **لكل الأصناف في استعلامين** بدل استعلامين للصنف.
-  ///
-  /// المنتقي فيه ٣٢٦ صنف؛ نداء للصنف الواحد كان يبقى ٦٥٢ استعلام على القرص قبل ما
-  /// أول سطر يبان على شاشة تليفون. الحساب نفسه ماتغيّرش — الكاش ناقص اللي اتباع ولسه
-  /// ما اترفعش.
   Future<Map<int, double>> availableForSaleAll({int? exceptInvoiceLocalId}) async {
     final d = await db;
     final onHand =
@@ -906,17 +752,11 @@ class LocalDb {
     return {
       for (final r in onHand)
         r['item_id'] as int: ((r['on_hand'] as num?)?.toDouble() ?? 0)
-            // المحجوز على إذن تحويل معلّق مش متاح للبيع — الإذن هيصرفه عند الاعتماد.
             - ((r['pending_out'] as num?)?.toDouble() ?? 0)
             - (pending[r['item_id'] as int] ?? 0)
     };
   }
 
-  /// البضاعة المحجوزة على فواتير **تانية** لسه على الجهاز — لكل صنف: الفاتورة وكميتها.
-  ///
-  /// المتاح صفر مش دايماً معناه إن الصنف خلص من العربية. مندوب كتب نفس البضاعة على
-  /// فاتورتين لنفس العميل، ولما جه يعدّل التانية لقى «خلص من العربية» على ست أصناف
-  /// هي معاه فعلاً — محجوزة على الأولى. الرسالة لازم تقول هي فين عشان يعرف يصلّح إيه.
   Future<Map<int, List<PendingHold>>> pendingHolds(
       {int? exceptInvoiceLocalId}) async {
     final d = await db;
@@ -941,13 +781,6 @@ class LocalDb {
     return out;
   }
 
-  /// عهدة الكوبونات من الحزمة — **بتتبدّل كلها مع كل سحب**، مش بتتزاد.
-  ///
-  /// المفتاحين بيتخزّنوا مع بعض في صف kv واحد: العهدة من غير قايمة الفئات مالهاش
-  /// معنى (المنع على الفئات اللي في القايمة بس)، والعكس برضه.
-  ///
-  /// سيرفر قديم مابيبعتش الاتنين ⇒ الصف بيتمسح، والجهاز بيرجع «مش عارف» — مافيش منع.
-  /// كاش قديم من سيرفر أحدث مايفضلش يمنع على عهدة ماحدش بيحدّثها.
   Future<void> replaceCouponCustody(Object? custody, Object? kinds) async {
     final d = await db;
     if (custody == null && kinds == null) {
@@ -958,12 +791,6 @@ class LocalDb {
         jsonEncode({'custody': custody ?? const [], 'kinds': kinds ?? const []}));
   }
 
-  /// عهدة الكوبونات زي ما المندوب يقدر يكتب منها دلوقتي = الكاش ناقص الطابور.
-  ///
-  /// الطرح على الكوبونات اللي في فواتير لسه على الجهاز (`synced = 0`) — نفس حساب
-  /// [availableForSaleAll] بالظبط بس على السريالات. `exceptInvoiceLocalId` = فاتورة
-  /// بتتعدّل: صفوفها القديمة مابتحجزش حاجة، اللي بيتكتب دلوقتي بياخد مكانها. من غيره
-  /// الفاتورة كانت هتقول على دفترها هي «اتكتب على فاتورة تانية».
   Future<CouponCustody> couponCustody({int? exceptInvoiceLocalId}) async {
     final raw = await getKv('coupon_custody');
     if (raw == null || raw.isEmpty) return CouponCustody.none;
@@ -976,7 +803,6 @@ class LocalDb {
     return CouponCustody.build(raw, queued);
   }
 
-  /// بتحفظ فاتورة وسطورها في معاملة واحدة — فاتورة من غير سطور مش فاتورة.
   Future<int> saveSaleInvoice({
     required String clientUuid,
     required int customerId,
@@ -986,17 +812,10 @@ class LocalDb {
     required double creditAmount,
     required double total,
     String? notes,
-    /// خط المنتجات اللي الفاتورة دي عليه — «أبيض» أو «بولي». `null` = على المديونية كلها.
     String? family,
-    /// الكوبونات المصروفة مع الفاتورة، JSON — صف لكل فئة بمداه. `null` = مافيش.
     String? couponsJson,
-    /// حساب العميل **قبل** الفاتورة دي — بيتخزّن مش بيتحسب وقت الطباعة.
     double? prevBalance,
-    /// رصيد كل خط قبل الطلب ده، JSON — «أبيض» و«بولى» كل واحد لوحده. `null` = العميل
-    /// حسابه مش مقسوم، والورقة ساعتها بتقول سطر واحد زي ما كانت.
     String? prevBalancesJson,
-    /// فاتورة بونص — بضاعة هدية بقيمة صفر. لازم تبقى مربوطة بفاتورة بيع لنفس العميل:
-    /// برقم السيرفر لو معروف، أو بـ`client_uuid` لو الفاتورة اتكتبت على الجهاز.
     bool isBonus = false,
     int? bonusForInvoiceId,
     String? bonusForClientUuid,
@@ -1034,17 +853,6 @@ class LocalDb {
     });
   }
 
-  /// بتعدّل فاتورة **لسه في الطابور** — الترويسة والسطور مع بعض.
-  ///
-  /// **اللي اترفعت مابتتعدّلش من هنا.** اللي وصل السيرفر بقى مستند بقيد ومخزون اتحرّك؛
-  /// تعديله على الجهاز بيخلّي الورقة اللي في إيد العميل تقول حاجة والدفتر يقول غيرها.
-  /// الشرط `synced = 0` في الجملة نفسها مش قبلها بسطر — بين الفحص والكتابة ممكن تكون
-  /// المزامنة رفعتها.
-  ///
-  /// `client_uuid` مابيتغيّرش: هو اللي بيخلّي السيرفر يعرف إنها نفس الفاتورة لو الرفع
-  /// اتعاد بعد انقطاع.
-  ///
-  /// بترجّع `true` لو اتعدّلت فعلاً، و`false` لو كانت اترفعت في الوقت ده.
   Future<bool> updateQueuedSaleInvoice({
     required int localId,
     required int customerId,
@@ -1057,11 +865,7 @@ class LocalDb {
     String? family,
     String? couponsJson,
     double? prevBalance,
-    /// رصيد كل خط قبل الطلب ده، JSON — «أبيض» و«بولى» كل واحد لوحده. `null` = العميل
-    /// حسابه مش مقسوم، والورقة ساعتها بتقول سطر واحد زي ما كانت.
     String? prevBalancesJson,
-    /// فاتورة بونص — بضاعة هدية بقيمة صفر. لازم تبقى مربوطة بفاتورة بيع لنفس العميل:
-    /// برقم السيرفر لو معروف، أو بـ`client_uuid` لو الفاتورة اتكتبت على الجهاز.
     bool isBonus = false,
     int? bonusForInvoiceId,
     String? bonusForClientUuid,
@@ -1084,8 +888,6 @@ class LocalDb {
           'coupons': couponsJson,
           'prev_balance': prevBalance,
           'prev_balances': prevBalancesJson,
-          // الفاتورة ممكن تتحوّل من بيع لبونص أو العكس وهي في الطابور — فالربط بيتكتب
-          // من جديد، والبيع العادي بيتمسح ربطه بدل ما يفضل شايل ربط قديم مالوش معنى.
           'is_bonus': isBonus ? 1 : 0,
           'bonus_for_invoice_id': isBonus ? bonusForInvoiceId : null,
           'bonus_for_client_uuid': isBonus ? bonusForClientUuid : null,
@@ -1114,10 +916,6 @@ class LocalDb {
         orderBy: 'local_id DESC');
   }
 
-  /// فواتير البيع (مش البونص) اللي على الجهاز لعميل بعينه — اللي في الطابور واللي
-  /// اترفعت. دي اللي البونص ممكن يتربط بيها وهو من غير شبكة.
-  ///
-  /// `exceptLocalId` = الفاتورة اللي بتتعدّل دلوقتي: مابتتربطش بنفسها.
   Future<List<Map<String, Object?>>> saleInvoicesForBonus(int customerId,
       {int? exceptLocalId}) async {
     final d = await db;
@@ -1129,8 +927,6 @@ class LocalDb {
         limit: 100);
   }
 
-  /// فاتورة على الجهاز بـ`client_uuid` بتاعها — عشان البونص يقول رقم الفاتورة اللي هو
-  /// عليها **دلوقتي**: لو كانت في الطابور ساعة الربط، رقمها بيتعرف بعد ما تترفع.
   Future<Map<String, Object?>?> saleInvoiceByUuid(String clientUuid) async {
     final d = await db;
     final rows = await d.query('sale_invoice',
@@ -1138,11 +934,6 @@ class LocalDb {
     return rows.isEmpty ? null : rows.first;
   }
 
-  /// عدد فواتير البونص اللي في الطابور ومربوطة بالفاتورة دي.
-  ///
-  /// الفاتورة اللي عليها بونص لسه ما اترفعش مابتتغيّرش لعميل تاني ولا بتتحوّل لبونص:
-  /// السيرفر بيرفض البونص لو الفاتورة اللي هو عليها مش لنفس العميل، والطابور بيقف
-  /// عند أول رفض — فكل اللي بعده بيفضل على الجهاز.
   Future<int> queuedBonusesOn(String clientUuid) async {
     final d = await db;
     final r = await d.rawQuery(
@@ -1159,12 +950,6 @@ class LocalDb {
     return [for (final r in rows) SaleDraftLine.fromRow(r)];
   }
 
-  // ------------------------------------------------------------- شيتات التسعير
-
-  /// بيحفظ شيت جديد وبيرجّع رقمه المحلي.
-  ///
-  /// السطور بتتكتب مع الترويسة في نفس المعاملة: شيت ترويسته اتكتبت وسطوره لأ بيبان في
-  /// القايمة بإجمالي مالهوش سطور تحته، واللي بيفتحه بيلاقيه فاضي ومش فاهم.
   Future<int> savePriceSheet({
     required String title,
     required String sheetDate,
@@ -1193,13 +978,6 @@ class LocalDb {
     });
   }
 
-  /// بتعدّل شيت متحفوظ — الترويسة والسطور مع بعض.
-  ///
-  /// **السطور بتتمسح وتتكتب من أول**، مش بتتقارن سطر سطر. الشيت بيتعدّل بالجملة (صنف
-  /// يتشال، خصم يتغيّر، كمية تزيد) والمقارنة هنا شغل زيادة بيغلط: سطر اتشال وسطر
-  /// اتزوّد بنفس الصنف بيبقوا تعديل واحد، والمزامنة مالهاش دعوة بالشيت أصلاً.
-  ///
-  /// `created_at` مابيتغيّرش — تاريخ إنشاء الورقة حاجة، وآخر تعديل حاجة تانية.
   Future<void> updatePriceSheet({
     required int localId,
     required String title,
@@ -1233,10 +1011,6 @@ class LocalDb {
     });
   }
 
-  /// الشيتات المتحفوظة — الأحدث تعديلاً الأول.
-  ///
-  /// الترتيب بآخر تعديل مش بالإنشاء: اللي بيفتح القايمة بيدوّر على الورقة اللي كان
-  /// شغّال عليها، مش على أقدم ورقة كتبها.
   Future<List<Map<String, Object?>>> priceSheets() async {
     final d = await db;
     return d.query('price_sheet', orderBy: 'updated_at DESC, local_id DESC');
@@ -1265,10 +1039,6 @@ class LocalDb {
     });
   }
 
-  /// نفس أعمدة سطر الفاتورة بالظبط، بس المفتاح `sheet_local_id`.
-  ///
-  /// `SaleDraftLine.toRow` بتكتب `invoice_local_id` لأنها اتعملت للفاتورة، و
-  /// `fromRow` مابتقراش المفتاح أصلاً — فالقراءة مشتركة والكتابة هي اللي بتتبدّل.
   Map<String, Object?> _priceSheetLineRow(int sheetId, SaleDraftLine l) {
     final row = Map<String, Object?>.from(l.toRow(sheetId));
     row.remove('invoice_local_id');
@@ -1281,8 +1051,6 @@ class LocalDb {
     final r = await d.rawQuery('SELECT COUNT(*) AS c FROM sale_invoice WHERE synced = 0');
     return (r.first['c'] as int?) ?? 0;
   }
-
-  // ------------------------------------------------------------- المخازن والتحويل
 
   Future<void> replaceWarehouses(List<Map<String, Object?>> rows) async {
     final d = await db;
@@ -1301,10 +1069,6 @@ class LocalDb {
     return d.query('warehouse', orderBy: 'name');
   }
 
-  /// أصناف كل مخزن — بتنزل مع الحزمة عشان إذن التحويل يتكتب من غير شبكة.
-  ///
-  /// كاش مش دفتر: بتتحط كلها مكان اللي قبلها، لأن اللي بيقول «إيه اللي في المخزن»
-  /// هو السيرفر وقت السحب.
   Future<void> replaceWarehouseItems(List<Map<String, Object?>> rows) async {
     final d = await db;
     await d.transaction((tx) async {
@@ -1318,10 +1082,6 @@ class LocalDb {
     });
   }
 
-  /// أصناف مخزن واحد كـ[SaleItem] عشان منتقي الأصناف يتعامل مع نوع واحد.
-  ///
-  /// الرصيد والسعر بيرجعوا صفر عن قصد — إذن التحويل مافيهوش فلوس، والطلب بيتكتب
-  /// بالاحتياج مش بالرصيد، فالأرقام دي مش نازلة من السيرفر أصلاً.
   Future<List<SaleItem>> warehouseItems(int warehouseId) async {
     final d = await db;
     final rows = await d.query('warehouse_item',
@@ -1338,10 +1098,6 @@ class LocalDb {
     ];
   }
 
-  // ------------------------------------------------------------------ صناديق المندوب
-
-  /// بتحطّ صناديق المندوب مكان اللي قبلها — كاش مش دفتر، زي الأصناف والمخازن بالظبط.
-  /// اللي بيقرّر مين صندوق مين هو السيرفر، والجهاز بيشيل آخر إجابة قالها.
   Future<void> replaceTreasuries(List<RepTreasury> rows) async {
     final d = await db;
     await d.transaction((tx) async {
@@ -1354,7 +1110,6 @@ class LocalDb {
     });
   }
 
-  /// صناديقه هو بس. المقسومة بالخط الأول، والقديمة (من غير خط) وراهم.
   Future<List<RepTreasury>> treasuries() async {
     final d = await db;
     final rows =
@@ -1362,7 +1117,6 @@ class LocalDb {
     return [for (final r in rows) RepTreasury.fromRow(r)];
   }
 
-  /// بتحفظ إذن تحويل وسطوره في معاملة واحدة — إذن من غير سطور مش إذن.
   Future<int> saveTransfer({
     required String clientUuid,
     required String sourceKind,
@@ -1395,15 +1149,6 @@ class LocalDb {
     });
   }
 
-  /// بتعدّل إذن تحويل **لسه في الطابور** وبتستبدل سطوره. بترجّع `false` لو الإذن
-  /// اترفع وهو بيتعدّل — والشرط `synced = 0` جوّه الـ`UPDATE` هو اللي بيضمن ده.
-  ///
-  /// **الشرط في الاستعلام مش في الشاشة عن قصد.** المزامنة ممكن تخلص واللي بيعدّل لسه
-  /// ماقفلش الشاشة، فالفحص قبل الكتابة بيبقى قديم بجزء من الثانية. والقاعدة هي اللي
-  /// تقرر: صف اترفع مابيتكتبش عليه، والرد `false` بيقول للشاشة تقول للراجل.
-  ///
-  /// والسطور بتتمسح وتتكتب من أول وجديد — الإذن المعدّل سطوره هي اللي على الشاشة،
-  /// ومحاولة مطابقة سطر بسطر بتسيب سطر اتشال في القاعدة.
   Future<bool> updateQueuedTransfer({
     required int localId,
     required String sourceKind,
@@ -1441,7 +1186,6 @@ class LocalDb {
     });
   }
 
-  /// بتشيل إذن لسه في الطابور. اللي اترفع مابيتشالش من هنا — بقى مستند عند المكتب.
   Future<bool> deleteQueuedTransfer(int localId) async {
     final d = await db;
     return d.transaction<bool>((tx) async {
@@ -1464,7 +1208,6 @@ class LocalDb {
 
   Future<List<Map<String, Object?>>> transferLines(int transferLocalId) async {
     final d = await db;
-    // بترتيب ما اتكتبت — زي `saleInvoiceLines`؛ الطلب بيتعرف من أول صنف فيه.
     return d.query('stock_transfer_line',
         where: 'transfer_local_id = ?', whereArgs: [transferLocalId],
         orderBy: 'local_id');
@@ -1483,13 +1226,6 @@ class LocalDb {
     return (r.first['c'] as int?) ?? 0;
   }
 
-  /// **الفواتير المرفوعة بتتحدّث من السيرفر** (٢٠٢٦-٠٩-٣٠).
-  ///
-  /// المندوب بيرفع الفاتورة وبعدين المكتب ممكن يعدّلها من النظام — المدفوع اتكتب غلط،
-  /// أو الكمية. الجهاز كان بيفضل على نسخته: كشف الفواتير والطباعة ونقدية اليوم بالرقم
-  /// القديم. هنا كل سحب للحزمة بيحط نسخة السيرفر مكان النسخة المرفوعة (`synced = 1`)
-  /// بنفس `client_uuid`. **اللي لسه في الطابور مابيتلمسش** — ده شغل المندوب اللي لسه
-  /// ماوصلش السيرفر أصلاً.
   Future<int> applyServerInvoices(List<dynamic> invoices) async {
     if (invoices.isEmpty) return 0;
     final d = await db;
@@ -1520,7 +1256,6 @@ class LocalDb {
             whereArgs: [localId]);
         final lines = inv['lines'] as List?;
         if (lines != null) {
-          // الاسم من السطر القديم لو موجود، وإلا من أصناف العهدة — السيرفر بيبعت الرقم بس.
           final old = await tx.query('sale_invoice_line',
               columns: ['item_id', 'item_name'],
               where: 'invoice_local_id = ?',
@@ -1564,14 +1299,11 @@ class LocalDb {
         {
           'synced': 1,
           'document_number': documentNumber,
-          // رقم فاتورة البيع اللي البونص عليها زي ما السيرفر حلّه — الورقة بتقوله.
           if (bonusForNumber != null) 'bonus_for_number': bonusForNumber,
         },
         where: 'client_uuid = ?',
         whereArgs: [clientUuid]);
   }
-
-  // --- التحصيل ------------------------------------------------------------------------
 
   Future<int> saveReceipt({
     required String clientUuid,
@@ -1632,10 +1364,6 @@ class LocalDb {
     await d.delete('sale_receipt', where: 'local_id = ? AND synced = 0', whereArgs: [localId]);
   }
 
-  /// ملخّص اليوم من على الجهاز — بيع وتحصيل وعدد الفواتير.
-  ///
-  /// بيتحسب من اللي على الجهاز مش من السيرفر، عشان يشتغل في الشارع. ودي هي الإجابة على
-  /// السؤال اللي المندوب بيسأله لنفسه آخر اليوم قبل ما يورّد.
   Future<Map<String, double>> dayTotals(String isoDate) async {
     final d = await db;
     final sold = await d.rawQuery(
@@ -1654,16 +1382,10 @@ class LocalDb {
       'invoices': ((sold.first['c'] as int?) ?? 0).toDouble(),
       'cash_on_invoices': onInvoices,
       'receipts': receipts,
-      // **التحصيل هو الاتنين مع بعض.**
-      //
-      // كان الدفعات العامة وحدها، ونقدي الفاتورة مستبعد — والفلوس اللي العميل دفعها مع
-      // البيع نفسه فلوس اتحصّلت زي أي فلوس. المندوب اللي باع بألف مدفوعين كاش كان
-      // بيلاقي «تحصيل اليوم صفر» وهو ماسك الألف، فالرقم اللي بيورّد بيه مش في الشاشة.
       'collected': onInvoices + receipts,
     };
   }
 
-  /// بتشيل فاتورة لسه ما اترفعتش — اللي اترفعت مابتتشالش من هنا، دي بقت في الدفاتر.
   Future<void> deleteUnsyncedSale(int localId) async {
     final d = await db;
     await d.transaction((tx) async {
@@ -1710,12 +1432,6 @@ const _couponReceiptTable = '''
     created_at TEXT NOT NULL
   )''';
 
-// ------------------------------------------------------------------ البيع من العربية
-
-/// أصناف العهدة — كاش مش دفتر.
-///
-/// الرصيد اللي فيها صورة من لحظة السحب، والحقيقة في السيرفر. عشان كده مافيش `synced`
-/// عليها: مافيش حاجة اتكتبت هنا عشان تروح لحد.
 const _saleItemTable = '''
 CREATE TABLE sale_item(
   item_id INTEGER PRIMARY KEY,
@@ -1730,11 +1446,6 @@ CREATE TABLE sale_item(
   min_price REAL
 )''';
 
-/// كتالوج أصناف الفرع — لإذن التحويل **ولكشف التسعير**.
-///
-/// **بالسعر من غير رصيد.** الفرق مقصود: المندوب بيتسأل في الشارع عن أصناف مش معاه
-/// في العربية، فالسعر لازم يكون على الجهاز عشان يجاوب من غير شبكة. أما الرصيد
-/// فبيفضل برّه — الصنف ده مش معاه، وعرض رصيد مخزن جنبه بيغرّي ببيع مالوش غطاء.
 const _branchCatalogTable = '''
 CREATE TABLE branch_catalog_item(
   item_id INTEGER PRIMARY KEY,
@@ -1746,11 +1457,6 @@ CREATE TABLE branch_catalog_item(
   tier_prices TEXT
 )''';
 
-/// فاتورة اتكتبت على الجهاز.
-///
-/// `client_uuid` بيتولد مرة واحدة وقت الحفظ ومابيتغيّرش مهما اتعادت المزامنة — هو اللي
-/// بيخلّي السيرفر يعرف إن دي نفس الفاتورة مش واحدة جديدة، فالمندوب اللي شبكته قطعت في نص
-/// الرفع يقدر يعيد من غير ما العميل يتباعله مرتين.
 const _saleInvoiceTable = '''
 CREATE TABLE sale_invoice(
   local_id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1792,10 +1498,6 @@ CREATE TABLE sale_invoice_line(
   line_total REAL NOT NULL DEFAULT 0
 )''';
 
-/// تحصيل من عميل اتكتب على الجهاز.
-///
-/// `client_uuid` هنا مش رفاهية: لو الاتصال قطع بعد ما السند اتكتب على السيرفر وقبل ما
-/// الرد يوصل، إعادة الرفع كانت هتقيّد التحصيل مرتين — ومديونية العميل تنقص بالضعف.
 const _receiptTable = '''
 CREATE TABLE sale_receipt(
   local_id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1813,8 +1515,6 @@ CREATE TABLE sale_receipt(
   prev_balances TEXT
 )''';
 
-
-/// المخازن — بتنزل مع حزمة المندوب عشان الإذن يتكتب offline.
 const _warehouseTable = '''
 CREATE TABLE warehouse(
   id INTEGER PRIMARY KEY,
@@ -1822,11 +1522,6 @@ CREATE TABLE warehouse(
   kind TEXT
 )''';
 
-/// أصناف كل مخزن — اللي إذن التحويل بيطلب منها.
-///
-/// المفتاح مركّب (مخزن + صنف) لأن نفس الصنف بيبقى في أكتر من مخزن، والسؤال دايماً
-/// «إيه اللي في المخزن ده» مش «الصنف ده فين». مافيش كميات هنا عن قصد — الطلب
-/// بيتكتب بالاحتياج، والرصيد قرار اللي بيراجع.
 const _warehouseItemTable = '''
 CREATE TABLE warehouse_item(
   warehouse_id INTEGER NOT NULL,
@@ -1837,12 +1532,6 @@ CREATE TABLE warehouse_item(
   PRIMARY KEY(warehouse_id, item_id)
 )''';
 
-/// صناديق المندوب — بتنزل مع حزمته عشان الشاشة تعرض الصندوق وهو من غير شبكة.
-///
-/// كل مندوب له صندوق لكل خط («صندوق أبيض السياره (ب)» و«صندوق بولي السياره (ب)»)، والفلوس
-/// بتتفصل بالخط زي المديونية. والجدول ده للعرض بس: اللي بيرحّل الفلوس هو السيرفر، وهو اللي
-/// بيختار الصندوق من خط الفاتورة — الجهاز مابيبعتش صندوق عشان مايبقاش فيه مصدرين لحقيقة
-/// واحدة، ولا يبقى فيه جهاز شايل صورة قديمة بيرحّل عليها.
 const _treasuryTable = '''
 CREATE TABLE rep_treasury(
   custody_id INTEGER PRIMARY KEY,
@@ -1852,11 +1541,6 @@ CREATE TABLE rep_treasury(
   code TEXT
 )''';
 
-/// إذن تحويل اتكتب على الجهاز.
-///
-/// بيتخزّن زي الفاتورة بالظبط: `client_uuid` عشان إعادة الرفع تبقى آمنة، و`synced`
-/// عشان اللي لسه ماوصلش يفضل باين. والإذن بيوصل السيرفر **معلّق** — المندوب بيطلب،
-/// والمسؤول بيراجع ويعتمد أو يرفض.
 const _transferTable = '''
 CREATE TABLE stock_transfer(
   local_id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1882,14 +1566,6 @@ CREATE TABLE stock_transfer_line(
   quantity REAL NOT NULL
 )''';
 
-/// شيت تسعير متحفوظ على الجهاز.
-///
-/// **عرض سعر، مش مستند** — مافيش `client_uuid` ولا `synced`: الشيت مابيترفعش للسيرفر
-/// ومابيقيّدش حاجة. هو ورقة المندوب: بيبنيها عند التاجر، بيبعتها، وبيرجع يعدّلها لما
-/// الكلام يتغيّر. فالحفظ محلي خالص، والتعديل بيدوس على نفس الصف.
-///
-/// `title` هو اللي بيميّزه في القايمة — «مخزن العبور»، «عرض رمضان». مافيش عميل على
-/// الشيت عن قصد (الشاشة كلها اتعملت من غير عميل ولا مديونية)، فالاسم هو كل الهوية.
 const _priceSheetTable = '''
 CREATE TABLE price_sheet(
   local_id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1917,7 +1593,6 @@ CREATE TABLE price_sheet_line(
   line_total REAL NOT NULL DEFAULT 0
 )''';
 
-/// كمية صنف محجوزة على فاتورة لسه على الجهاز — شوف [LocalDb.pendingHolds].
 class PendingHold {
   const PendingHold({
     required this.localId,

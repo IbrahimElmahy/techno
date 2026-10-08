@@ -4,17 +4,6 @@ import { api } from '../api/client';
 import type { DocKind } from './DocumentLink';
 import { numeralsLocale } from '../utils/money';
 
-/**
- * حركة المستند المخزنية — أصناف الفاتورة تحت سطر الكشف.
- *
- * نظامهم عنده علامة «حركة مخزنية» في كشف الحساب: بتفرد تحت كل سطر أصناف المستند نفسه —
- * المخزن والصنف والكمية والسعر والإجمالي. ودي الإجابة الحقيقية على «السطر ده إيه؟» لما
- * وراه فاتورة: اللي بيراجع كشف عميل مش بيسأل «القيد اتقفل على أنهي حساب» — بيسأل «العميل
- * ده خد إيه». سطور القيد إجابة محاسب؛ الأصناف إجابة صاحب الشغل.
- *
- * المستند بيتجاب أول ما اللوحة تتفتح مش مع الكشف، ومرة واحدة لكل مستند — الفتح والقفل
- * مابيعيدوش الطلب لأن antd بيسيب الصف المفتوح راكب.
- */
 interface Props {
   kind: DocKind;
   id: number;
@@ -23,7 +12,6 @@ interface Props {
   money: (v: any) => string;
 }
 
-/** المستندات اللي ليها سطور أصناف، وعنوان تفاصيل كل واحد. */
 const DETAIL_API: Partial<Record<DocKind, (id: number) => string>> = {
   invoice: (id) => `/api/v1/sales/${id}`,
   return: (id) => `/api/v1/sales/returns/${id}`,
@@ -59,8 +47,6 @@ export default function DocumentItemLines({ kind, id, itemName, warehouseName, m
       .then((r) => {
         if (!alive) return;
         const d = r.data || {};
-        // المشتريات بتسجل المخزن على المستند؛ البيع ومردوده بيسجلوه على السطر (030).
-        // السطر الأول، والمستند لو السطر ساكت.
         const docWh = d.location_id ?? null;
         setLines((d.lines || []).map((ln: any, i: number) => ({
           _k: i,
@@ -99,7 +85,6 @@ export default function DocumentItemLines({ kind, id, itemName, warehouseName, m
         { title: 'المخزن', key: 'wh', width: 160,
           render: (_: unknown, l: Line) => warehouseName(l.warehouse_id) || dash },
         { title: 'الكمية', key: 'qty', align: 'left' as const, width: 120,
-          // الوحدة اللي اتباع بيها جنب الرقم — «٥ كرتونة» مش «٥» وخمن.
           render: (_: unknown, l: Line) => (l.unit ? `${qty(l.quantity)} ${l.unit}` : qty(l.quantity)) },
         { title: 'السعر', key: 'price', align: 'left' as const, width: 120,
           render: (_: unknown, l: Line) => (l.unit_price != null ? money(l.unit_price) : dash) },

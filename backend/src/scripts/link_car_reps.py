@@ -1,33 +1,3 @@
-"""يربط كل «سيارة» بالراجل اللي بيسوقها — الموظف الحقيقي وراء حساب المندوب.
-
-    python -m src.scripts.link_car_reps          # يعرض بس
-    python -m src.scripts.link_car_reps --yes    # ينفّذ
-
-بيتعاد تشغيله بأمان: الربط الموجود صح مابيتلمسش.
-
----------------------------------------------------------------------------
-**المشكلة:** a5 بيسمّي المندوب باسم عربيته مش باسمه — «مندوب السياره ( ب )»،
-و`Cust.ph1` على ١٬٣٠٨ عميل مكتوب فيه الاسم ده. فحساب الدخول عندنا اسمه العربية،
-وde صح ومايتغيّرش (هو المفتاح اللي العملاء اتربطوا بيه).
-
-لكن **مين الراجل؟** `import_a5_emp` ربط كل حساب مندوب بموظف اسمه نفس اسم العربية
-(a5 مسجّل العربيات نفسها في جدول `Emp`) — يعني الربط بيقول «مندوب السياره ( ب ) هو
-مندوب السياره ( ب )»، وده مايقولش حاجة.
-
-**الأسماء الحقيقية من المستخدم، وa5 بيأكدها:** الخمسة كلهم في كشف «ذمم الموظفين»
-عند a5 ووظيفتهم مكتوبة «مندوب تسويق» — حذيفه (حساب ٣٠٨، ٨ فواتير)، ابراهيم حسونه
-(٤٠٠)، محمد مكرم (٩٥٠، ٥ فواتير)، احمد صبرى (١٩٨، ١٣ فاتورة)، حسام موسي (٢١٦٦).
-
-**اللي بيحصل:** الموظف البديل بيتفك من حساب المندوب، والحقيقي بياخد مكانه ومعاه
-**المخزن** — `rep_store_service.rep_store` بيقرا `employee.warehouse_id`، فلو المخزن
-مااتنقلش المندوب مايقدرش يبيع.
-
-**حذيفه مالوش صف في `Emp`** عند a5 — موجود في شجرة الحسابات وكشف الموظفين بس. فبيتعمل
-له صف موظف من كارته (`AL-A5E-308`)، بنفس كود الكارت عشان الاتنين يفضلوا مربوطين.
-
-**الاسم المكرر بيتحسم بالفرع:** «احمد صبرى» موجود في الفرعين، و«حسام موسي» ليه صفين
-(واحد «فون كاش»). الاختيار هنا بكود الحساب من a5 مش بالاسم — الكود رقم مايتكررش.
-"""
 from __future__ import annotations
 
 import sys
@@ -40,10 +10,6 @@ from src.models.employee import Employee
 from src.models.user import User
 from src.models.warehouse import Warehouse
 
-# username المندوب → (اسم الراجل، كود كارته/حسابه عند a5)
-#
-# الكود هو الفيصل مش الاسم: `AL-A5E-<AccBrnch_id>` رقم الحساب في «ذمم الموظفين»،
-# وهو اللي بيفرّق «احمد صبرى» بتاع العلياء عن اللي في أكتوبر.
 PAIRS: dict[str, tuple[str, str]] = {
     "car.a":       ("حذيفه زين عبد الفتاح", "AL-A5E-308"),
     "car.b":       ("ابراهيم حسونه", "AL-A5E-400"),
@@ -54,7 +20,6 @@ PAIRS: dict[str, tuple[str, str]] = {
 
 
 def _find_employee(db, name: str, code: str, branch_id: int | None) -> Employee | None:
-    """الموظف بالكود، وإلا بالاسم جوّه الفرع — واللي بيطلّع أكتر من واحد بيرجع None."""
     emp = db.scalar(select(Employee).where(Employee.code == code))
     if emp is not None:
         return emp
@@ -79,7 +44,6 @@ def run(*, execute: bool) -> None:
             old = db.scalar(select(Employee).where(Employee.user_id == user.id))
             new = _find_employee(db, person, code, user.branch_id)
             if new is None:
-                # كارت الموظف موجود في كشف العملاء بس مالوش صف موظف — بيتعمل.
                 card = db.scalar(select(Customer).where(Customer.code == code))
                 if card is None:
                     problems.append(f"{username}: مالقيتش «{person}» لا موظف ولا كارت ({code})")
@@ -115,7 +79,6 @@ def run(*, execute: bool) -> None:
         for user, old, new, person, code in plan:
             wh_id = old.warehouse_id if old else None
             if old is not None and (new is None or old.id != new.id):
-                # الاسم بيفضل، بس مابقاش مربوط بحساب دخول ولا ماسك مخزن.
                 old.user_id = None
                 old.warehouse_id = None
                 db.flush()

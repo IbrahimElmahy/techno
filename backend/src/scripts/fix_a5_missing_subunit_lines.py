@@ -1,45 +1,4 @@
 # -*- coding: utf-8 -*-
-"""السطر اللي كميته أقل من وحدة — دخل صفر فاتشال، والمستند كله فضل غلط.
-
-    python -m src.scripts.fix_a5_missing_subunit_lines --dir /tmp/a5fix --prefix FC-
-    python -m src.scripts.fix_a5_missing_subunit_lines --dir ... --prefix FC- --yes
-
----------------------------------------------------------------------------
-**ليه السكربت ده موجود، و`fix_a5_fractional_quantities` ماكفاش.**
-
-التصدير القديم كان بياخد `n_count_unit` وحده فالكسر بيضيع. والسطر اللي كميته **أقل
-من وحدة** (٠٫٩ لفة، ٠٫٥٥ كيس) وحداته **صفر**، والاستيراد بيتخطّى أي سطر بصفر — يعني
-السطر ده مادخلش أصلاً.
-
-و`fix_a5_fractional_quantities` بيطابق **بالترتيب جوّه المستند**، وبيسيب أي مستند
-عدد سطوره مش زي a5 — عن قصد، لأن التخمين ساعتها بيحطّ كمية صنف على صنف تاني. لكن
-المستند اللي فيه سطر ناقص **عدده مختلف بالتعريف**، فبيتخطّى كله: لا السطر الناقص
-بيتكتب، **ولا باقي سطوره بتتصلّح**. فاتورة فيها ٠٫٩ لفة ناقصة بيفضل فيها كمان «خام
-بولى بروبلين ٤٩» وهو ٤٩٫٦٥.
-
-المقاس: **١٥ مستند** (١٤ فاتورة بيع وإذن إضافة) فيهم **١٨ سطر ناقص**، وفروقهم
-كانت آخر ٧ أصناف مختلفة عن a5 بعد لحاق التصنيع.
-
----------------------------------------------------------------------------
-**والمطابقة هنا بكود الصنف مش بالترتيب** — ودي الحاجة الوحيدة اللي بتخلّي المستند
-الناقص قابل للإصلاح أصلاً. وبشروط، أي واحد فيهم يسقط يخلّي المستند يتساب:
-
-* الكود مايتكررش في سطور a5 ولا في سطورنا — التكرار معناه إن الكود مش مفتاح.
-* سطورنا **جزء من** سطور a5. سطر عندنا مش عند a5 معناه إن حاجة تانية حصلت، والسكربت
-  ده مالوش دعوة بيها.
-* السطر الناقص كميته **أقل من واحد صحيح** — ده سبب غيابه. أي كمية أكبر معناها إن
-  الاستيراد سابه لسبب تاني (صنف أو مخزن مش موجود) والكتابة ساعتها بتخفي المشكلة.
-* الفرق على السطر الموجود **أقل من وحدة** — نفس حارس السكربت الأصلي: أكبر من كده
-  يبقى المطابقة وقعت على سطر تاني.
-
-**ورأس المستند مابيتلمسش.** الإجمالي والخصم والضريبة بتتقرا من رأس a5 وقت النقل، مش
-من مجموع السطور — يعني الرقم في الفاتورة كان مظبوط من الأول، اللي كان ناقص هو السطر
-وحركته. وإذن الإضافة وحده ليه `total_cost` مجموع سطوره، فبيتزوّد بتكلفة السطر الجديد.
-
-**والأنواع اللي ليها بنّاء هنا نوعين بس** — فاتورة البيع وإذن المخزن — لأن دول اللي
-الداتا فيهم. أي نوع تاني بيظهر في الكشف على إنه **محتاج بنّاء**، مابيتخمّنش: سطر
-مردود أو شرا له أعمدته وحركته، وكتابته بالقياس بتحط رقم في مكان غلط بصمت.
-"""
 from __future__ import annotations
 
 import argparse
@@ -65,7 +24,6 @@ ZERO = Decimal("0")
 
 
 def _add_sale_line(db, head, item, wh, qty, price, total, cost, actor_id):
-    """سطر فاتورة بيع + حركته — نفس اللي `import_a5_docs._sale` بيكتبه بالحرف."""
     from src.models.sales import SalesInvoiceLine
     from src.services import stock_service
 
@@ -83,7 +41,6 @@ def _add_sale_line(db, head, item, wh, qty, price, total, cost, actor_id):
 
 
 def _add_permit_line(db, head, item, wh, qty, price, total, cost, actor_id):
-    """سطر إذن مخزن + حركته. الاتجاه من نوع الإذن نفسه مش من الملف."""
     from src.models.stock_permit import PermitKind, StockPermitLine
     from src.services import stock_service
 
@@ -96,16 +53,12 @@ def _add_permit_line(db, head, item, wh, qty, price, total, cost, actor_id):
         actor_user_id=actor_id, allow_negative=True)
     db.add(StockPermitLine(permit_id=head.id, item_id=item.id, quantity=qty,
                            line_cost=total, stock_movement_id=mv.id))
-    # الإذن وحده إجماليه مجموع سطوره — مش جاي من رأس a5 زي الفاتورة.
     head.total_cost = to_money(Decimal(str(head.total_cost or 0)) + total)
     return mv
 
 
-#: نوع المستند عندنا → بنّاء السطر الناقص.
 BUILDERS = {"sales_invoice": _add_sale_line, "stock_permit": _add_permit_line}
 
-#: نوع a5 → العمود اللي فيه المخزن. نفس اللي `import_a5_docs` ماشي عليه: البضاعة
-#: الخارجة بتتقرا من `StoreOut` والداخلة من `StoreIn`.
 STORE_COL = {"7": L_OUT, "2": L_IN, "1": L_IN, "11": L_OUT, "6": L_OUT}
 
 
@@ -152,9 +105,8 @@ def main() -> None:
             ours = db.scalars(select(LineM).where(fk == head.id)
                               .order_by(LineM.id)).all()
             if len(wanted) == len(ours):
-                continue          # ده شغل `fix_a5_fractional_quantities`
+                continue
 
-            # --- الشروط اللي بتخلّي المطابقة بالكود مسموحة -------------------
             a5_by_item: dict[int, list[list[str]]] = defaultdict(list)
             unknown = False
             for r in wanted:
@@ -183,7 +135,6 @@ def main() -> None:
                 continue
             store_col = STORE_COL.get(t, L_IN)
 
-            # --- (١) الموجود: الكسر بيرجع، (٢) الناقص: بيتكتب ----------------
             moves: dict[int, list[StockMovement]] = defaultdict(list)
             for mv in db.scalars(select(StockMovement)
                                  .where(StockMovement.source_doc_type == doc_type,
@@ -207,7 +158,6 @@ def main() -> None:
                         break
                     plan_fix.append((mine[0], old_qty, new_qty))
                 else:
-                    # غيابه سببه إن وحداته صفر. أي كمية ≥ ١ يبقى السبب تاني.
                     if new_qty >= 1:
                         bad = True
                         break
@@ -227,7 +177,6 @@ def main() -> None:
                 if hasattr(ln, "discount_pct") and getattr(ln, "unit_price", None) is not None:
                     gross = to_money(new_qty * Decimal(str(ln.unit_price)))
                     ln.discount_pct = discounts.implied_pct(gross, ln.line_total)
-                # الرصيد مشتق من الحركة، مش من السطر — فالاتنين بيتحرّكوا مع بعض.
                 ids = [getattr(ln, f, None) for f in
                        ("out_movement_id", "in_movement_id", "stock_movement_id")]
                 ids = [i for i in ids if i]
@@ -258,8 +207,6 @@ def main() -> None:
                     db, head, it, w, qty, to_money(_money(r[L_PRICE])),
                     to_money(_money(r[L_TOTAL])), to_money(_money(r[L_COST])),
                     actor.id)
-                # زي `import_a5_manufacturing`: من غير السطر ده شغل سنة بيتحط في
-                # يوم النهارده، وكل تقرير بيقرا التاريخ بيغلط.
                 mv.movement_date = _date(r[L_DATE]) or mv.movement_date
 
         print(f"{'سطور كانت ناقصة خالص':<40}{len(created):>8,}")

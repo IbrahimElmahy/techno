@@ -1,14 +1,3 @@
-"""استلام الكوبونات من العملاء — B-coupons.
-
-A coupon handed back at the door is a piece of paper with a number on it. On its own that number
-proves nothing: anyone can write one. What makes it real is that it falls inside the serial range
-issued on an actual sales invoice, to an actual customer — which is why the invoice stores that
-range, and why receiving one is a lookup rather than a data-entry field.
-
-The receipt is a document, not a flag on the coupon, because a rep collects a handful at once and
-the company needs to know who took them in and when. And a serial can only be on one receipt: the
-unique constraint is what stops the same coupon being handed in twice at two branches.
-"""
 from __future__ import annotations
 
 from datetime import date, datetime
@@ -32,10 +21,6 @@ from src.core.money import MONEY
 class CouponReceipt(Base):
     __tablename__ = "coupon_receipt"
 
-    # (037) الفرع اللي المستند ده بتاعه — عزل بيانات الفروع.
-    #
-    # بيتاخد من مخزن السطر لو المستند بيحرّك بضاعة، وإلا من فرع اللي كتبه. NULL = مستند
-    # اتكتب قبل العزل، وبيتشاف من كل الفروع لحد ما يتعبّى.
     branch_id: Mapped[int | None] = mapped_column(ForeignKey("branch.id"), nullable=True,
                                                   index=True)
 
@@ -43,23 +28,14 @@ class CouponReceipt(Base):
     document_number: Mapped[str] = mapped_column(String(24), unique=True, nullable=False)
     customer_id: Mapped[int | None] = mapped_column(ForeignKey("customer.id"), nullable=True,
                                                     index=True)
-    # The rep who physically took the coupons; the actor is whoever posted the document.
     rep_user_id: Mapped[int | None] = mapped_column(ForeignKey("user.id"), nullable=True,
                                                     index=True)
     received_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     coupon_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     notes: Mapped[str | None] = mapped_column(String(500), nullable=True)
-    # نوع الكوبون وقيمته زي ما المندوب قالهم على الجهاز.
-    #
-    # The true kind is derivable from each serial's issued range, and the receipt's lines carry the
-    # invoice that proves it. This is what the REP declared, kept because he declares it with no
-    # signal and the customer is handed a total on the spot — a later reconciliation that disagrees
-    # is a finding, and it can only be a finding if what he said was written down.
     declared_kind: Mapped[str | None] = mapped_column(String(24), nullable=True)
     declared_value: Mapped[object | None] = mapped_column(MONEY, nullable=True)
     customer_type: Mapped[str | None] = mapped_column(String(16), nullable=True)
-    # Idempotency key from the mobile app: the same queued receipt retried after a dropped
-    # connection must land once, not twice.
     client_uuid: Mapped[str | None] = mapped_column(String(64), unique=True, nullable=True,
                                                     index=True)
     actor_user_id: Mapped[int] = mapped_column(ForeignKey("user.id"), nullable=False)
@@ -67,56 +43,26 @@ class CouponReceipt(Base):
         DateTime, server_default=func.now(), nullable=False
     )
 
-    # حالة الاستلام — زي طلب تحويل المخازن: pending / approved / rejected.
-    #
-    # اللي جاي من التطبيق بيستنى المكتب يراجعه: المندوب بيكتب الأرقام في الشارع والغلط في
-    # رقم وارد، والمكتب هو اللي ماسك الورق ويقدر يقارن. اللي المكتب بيكتبه بإيده بيتعتمد
-    # على طول — هو نفسه المراجِع.
-    #
-    # **NULL = معتمد.** كل الاستلامات اللي قبل العمود ده (١٬٤٧٨ على الإنتاج) اتعملت ومحدش
-    # راجعها، وكانت بتتحسب في التقارير — لو NULL بقى «معلّق» كانت هتختفي كلها مرة واحدة.
     status: Mapped[str | None] = mapped_column(String(16), nullable=True)
-    # مين اعتمد/رفض وإمتى — نفس خانتين إذن التحويل، بيتملوا في الحالتين.
     approved_by: Mapped[int | None] = mapped_column(ForeignKey("user.id"), nullable=True)
     approved_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
-    # ليه اترفض — على المستند نفسه مش في اليومية بس: المندوب بيقرا الشاشة دي.
     reject_reason: Mapped[str | None] = mapped_column(String(240), nullable=True)
-    # الأرقام اللي كانت على الاستلام المرفوض.
-    #
-    # الرفض بيشيل السطور عشان الأرقام ترجع تتستلم تاني (قيد `(فئة، رقم)` هو صف السطر
-    # نفسه، فلو فضل الرقم يفضل مقفول). من غير الخانة دي المستند المرفوض يبقى فاضي ومحدش
-    # يعرف المندوب كان كاتب إيه.
     rejected_serials: Mapped[str | None] = mapped_column(Text, nullable=True)
-    # جه منين: `app` (تطبيق المندوب) أو `web`. `client_uuid` مايفرقش — الشاشة بتبعته كمان.
     source: Mapped[str | None] = mapped_column(String(8), nullable=True)
 
-    lines: Mapped[list["CouponReceiptLine"]] = relationship(  # noqa: UP037 — SQLAlchemy ref
+    lines: Mapped[list["CouponReceiptLine"]] = relationship(  # noqa: UP037
         back_populates="receipt", cascade="all, delete-orphan",
-        order_by="CouponReceiptLine.id",  # ترتيب الإدخال
+        order_by="CouponReceiptLine.id",
     )
 
 
 def receipt_counted():
-    """شرط «الاستلام ده بيتحسب» للتقارير: معتمد، أو قديم من قبل الاعتماد (NULL).
-
-    المعلّق لسه المكتب ماراجعهوش والمرفوض اتقال عليه لأ — الاتنين مش ورق اتستلم فعلاً،
-    فمايدخلوش «اتستلم كام» ولا «لسه برّه كام». هنا في الموديل عشان التقارير (`lib/` و
-    `api/`) تاخده من غير ما تستورد خدمة.
-    """
     return CouponReceipt.status.is_(None) | (CouponReceipt.status == "approved")
 
 
 class CouponReceiptLine(Base):
-    """One coupon serial, and the invoice whose range it came from."""
-
     __tablename__ = "coupon_receipt_line"
     __table_args__ = (
-        # A coupon is a bearer document — it can be handed in exactly once.
-        # التفرّد على (الفئة، السريال) مش على السريال لوحده.
-        #
-        # دفتر الذهبي مرقّم ١..٥٠ ودفتر الفضي مرقّم ١..٥٠ — رقمين مختلفين على ورقتين
-        # مختلفتين. القيد القديم كان بيخلّيهم كوبون واحد: أول ما «٥» فضي يتستلم، «٥»
-        # ذهبي يبقى «مستلم قبل كده» وميقدرش يرجع أبداً.
         UniqueConstraint("coupon_kind", "serial", name="uq_coupon_receipt_kind_serial"),
     )
 
@@ -124,19 +70,7 @@ class CouponReceiptLine(Base):
     receipt_id: Mapped[int] = mapped_column(ForeignKey("coupon_receipt.id"), nullable=False,
                                             index=True)
     serial: Mapped[str] = mapped_column(String(24), nullable=False, index=True)
-    # فئة الورقة — عادي / فضي / ذهبي / ماسي، قيمة من قائمة `coupon_kind`.
-    #
-    # مش `coupon_type`: ده كتالوج استبدال النقاط («١٠٠ نقطة → ٥٠ ج»)، حاجة تانية خالص.
-    # الورقة اللي في إيد السباك ليها فئة ورقم، والاتنين مع بعض هما هويتها — زي ما نظامهم
-    # القديم كاتبها في رقم واحد: «ذهبى-536000».
-    #
-    # نص مش مفتاح: الفئات قايمة بيديرها صاحب الشغل من الإعدادات، وربطها بجدول معناه إن
-    # إضافة فئة تبقى تعديل في الكود.
     coupon_kind: Mapped[str | None] = mapped_column(String(24), nullable=True, index=True)
-    # الورقة طلعت من فاتورة بيع ولا من مستند صرف لموزع. واحد منهم بيتملى.
-    #
-    # كان إجباري إنها من فاتورة، والشركة بتصرف دفاتر لموزعين من غير بيع — فالورقة دي
-    # مكانش ليها طريق ترجع بيه غير إن حد يخترع لها فاتورة.
     sales_invoice_id: Mapped[int | None] = mapped_column(
         ForeignKey("sales_invoice.id"), nullable=True
     )

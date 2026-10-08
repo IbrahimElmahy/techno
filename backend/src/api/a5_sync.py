@@ -1,24 +1,4 @@
 # -*- coding: utf-8 -*-
-"""استقبال تصدير a5 من فرع بعيد — ورفعه بيشغّل الاستيراد.
-
-**ليه الرفع مش السحب.** العلياء وأكتوبر قاعدتهم على نفس سيرفر الباك إند القديم، فسحبهم
-سكربت محلي (`deploy/a5_sync.ps1`). المصنع سيرفر تاني خالص: ويندوز ٢٠١٢ قديم، مافيهوش
-`ssh` ولا `scp` ولا `curl`، والـSSH بتاعه مقفول ورا نفق كلاودفلير — فسيرفرنا مايقدرش
-يوصله. قِسنا الاتجاه التاني فطلع مفتوح: **المصنع بيوصل لـ`app.technothermeg.com` على
-٤٤٣** (محتاج `Tls12` بالإيد لأن الويندوز ده افتراضيه `Ssl3, Tls`).
-
-فالمصنع هو اللي بيصدّر ويرفع، وإحنا بنستورد. وكده **مافيش مفتاح SSH على سيرفر المصنع
-ولا منفذ بيتفتح** — توكن محدود وخلاص.
-
-**والنتيجة اللي خلّت ده لازم:** المصنع كان بيتصدّر بالإيد، وآخر استيراد كان أقدم من
-آخر تصدير — فـ٢٦ إذن تحويل و٤ فواتير بيع فضلوا بره النظام، والمخزن عندنا قال بضاعة في
-مكان وهي اتنقلت من أسبوع. الفرق بينا وبين a5 كان ٦١ زوج (صنف × مخزن)، ونزل ٣٧ بعد ما
-اتلحقوا.
-
-**الرفع بيكتب الملف وبيشغّل الاستيراد في نفس النداء.** فصلهم معناه إن حد لازم يفتكر
-يشغّل التاني، وده بالظبط اللي فشل قبل كده. والمستوردين بيتخطوا الموجود (المستند برقمه)،
-فإعادة الرفع مابتكرّرش حاجة.
-"""
 from __future__ import annotations
 
 import os
@@ -37,41 +17,27 @@ router = APIRouter(tags=["a5-sync"], prefix="/a5-sync")
 
 
 def _require_admin(current: CurrentUser = Depends(get_current_user)) -> CurrentUser:
-    """مدير النظام وحده — الرفع بيكتب على قرص السيرفر وبيشغّل استيراد بيكتب مستندات."""
     if current.role != RoleName.system_admin:
         raise HTTPException(status.HTTP_403_FORBIDDEN,
                             {"code": "forbidden", "message": "لمدير النظام وحده."})
     return current
 
-#: الفروع اللي بتقدر ترفع، وكل واحد بمجلده وبادئته. القايمة صريحة مش مشتقّة من الطلب:
-#: الرفع بيكتب على القرص وبيشغّل استيراد، فاسم المجلد لازم يكون من عندنا مش من الشبكة.
 def _factory_folder() -> str:
-    """مجلد تصدير المصنع — بيتحدد من مكان الكود، مش مكتوب ثابت.
-
-    الإنتاج في `/opt/techno` والتجريب في `/opt/techno-staging`، والاتنين بيشغّلوا نفس
-    الملف. مسار ثابت معناه إن الرفع على التجريب بيكتب فوق ملفات الإنتاج — والاستيراد
-    اللي بعده يقرا حاجة مالهاش دعوة بيه.
-    """
     return str(Path(__file__).resolve().parents[2].parent / "a5factory")
 
 
 BRANCHES: dict[str, tuple[str, str]] = {
-    # وسم الفرع → (مجلد التصدير، بادئة أكواد الفرع)
     "factory": (_factory_folder(), "FC-"),
 }
 
-#: اسم الفرع عندنا لكل وسم — بيتبعت للمستورد.
 BRANCH_NAME: dict[str, str] = {"factory": "السادات"}
 
-#: الملفات المقبولة. أي اسم تاني بيترفض: الاسم جاي من الشبكة، والكتابة على القرص.
 ALLOWED_FILES = {
     "a5_lines.tsv", "a5_hdr.tsv", "a5_items.tsv", "a5_cats.tsv",
     "a5_misc.tsv", "a5_cust.tsv", "a5_bal.tsv", "a5_bal_store.tsv",
     "a5_open.tsv", "a5_acc.tsv", "a5_emp.tsv",
 }
 
-#: سقف حجم الملف. `a5_lines.tsv` بتاع المصنع ٣٫٦ ميجا؛ الستين دول مساحة نمو واسعة،
-#: واللي فوقها مش تصدير — دي حاجة تانية بتتبعت للمسار ده.
 MAX_BYTES = 60 * 1024 * 1024
 
 
@@ -82,12 +48,6 @@ async def upload_export(
     filename: str = Form(...),
     _: CurrentUser = Depends(_require_admin),
 ) -> dict:
-    """بيستقبل ملف تصدير واحد ويكتبه في مجلد الفرع.
-
-    **الاسم بيتقارن بقايمة، مابيتنضّفش.** التنضيف بيسيب مجال لحالة ماحدش فكّر فيها
-    (`..%2f`, رموز يونيكود شبيهة)، والقايمة بتقفل الباب: اسم مش فيها بيترفض، والمسار
-    بيتبني من ثابت عندنا مش من اللي اتبعت.
-    """
     if branch_tag not in BRANCHES:
         raise HTTPException(422, {"code": "validation", "message": "فرع مش معروف."})
     if filename not in ALLOWED_FILES:
@@ -97,8 +57,6 @@ async def upload_export(
     if not folder.is_dir():
         raise HTTPException(500, {"code": "no_folder", "message": f"مجلد {folder} مش موجود."})
 
-    # الكتابة في ملف مؤقت جنب الوجهة وبعدين `replace` — عشان استيراد بيقرا في نفس
-    # اللحظة مايشوفش ملف نص مكتوب. و`replace` ذرّية على نفس نظام الملفات.
     size = 0
     tmp_path = None
     try:
@@ -125,11 +83,6 @@ def run_import(
     _: CurrentUser = Depends(_require_admin),
     db: Session = Depends(get_db),
 ) -> dict:
-    """بيشغّل استيراد المستندات من الملفات اللي اترفعت.
-
-    بيتعاد بأمان: المستورد بيتخطّى المستند اللي رقمه موجود، فالرفع المتكرر مابيكرّرش
-    حاجة — بيلقّط الجديد بس، ومعاه **التعديل الرجعي** (فاتورة اتظبطت بتاريخ قديم).
-    """
     if branch_tag not in BRANCHES:
         raise HTTPException(422, {"code": "validation", "message": "فرع مش معروف."})
     folder, prefix = BRANCHES[branch_tag]
@@ -137,8 +90,6 @@ def run_import(
 
     from src.scripts import import_a5_docs
 
-    # `run` بتطبع تقريرها وبترجّع `None` — فالعدّ بيتقاس من القاعدة قبل وبعد، وده
-    # أصدق من رقم بيرجع من دالة: بيعدّ اللي اتكتب فعلاً مش اللي الدالة فاكرة إنها كتبته.
     from sqlalchemy import func, select
 
     from src.models.transfer import StockTransfer
@@ -163,10 +114,6 @@ def sync_status(
     branch_tag: str,
     _: CurrentUser = Depends(_require_admin),
 ) -> dict:
-    """آخر مرة وصل فيها كل ملف — عشان «السحب واقف من امتى» يبقى سؤال ليه إجابة.
-
-    غياب الإجابة دي هو اللي خلّى المصنع يفضل أسبوع ورا a5 وماحدش واخد باله.
-    """
     if branch_tag not in BRANCHES:
         raise HTTPException(422, {"code": "validation", "message": "فرع مش معروف."})
     folder = Path(BRANCHES[branch_tag][0])

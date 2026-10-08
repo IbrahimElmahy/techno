@@ -1,13 +1,3 @@
-/**
- * سند توريد مندوب — اتفصل عن `Vouchers.tsx`.
- *
- * الشاشة كانت مكوّن واحد ١٤٧٨ سطر فيه ستة بوبابات فوق بعض. كل بوباب بقى ملف
- * بمدخلاته مكتوبة: اللي بيعدّل سند المصروف مابيفتحش سند القبض قدامه، واللي بيقرا
- * بيشوف الفورم ده محتاج إيه بالظبط بدل ما يدوّر في حالة الشاشة كلها.
- *
- * الحالة بتفضل في الشاشة الأم — الفورم والقايمات والحفظ بيتبعتوا كمدخلات. البوباب
- * مالوش حالة خاصة بيه غير اللي يخصّه هو.
- */
 import React from 'react';
 import { searchFilter, searchRank } from '../../utils/arabicSort';
 import {
@@ -59,8 +49,6 @@ export default function HandoverModal({
                       placeholder="اختر المندوب"
                       options={repOptions(reps)} filterOption={searchFilter} filterSort={searchRank}/>
                   </Form.Item>
-                  {/* (009) المندوب بقى له صندوق لكل خط، والتوريد بيسحب من واحد محدد.
-                      فاضي = العهدة القديمة اللي من غير خط — اللي شايلة حركة ما قبل التقسيم. */}
                   <Form.Item name="family" label="من صندوق خط"
                     extra="سيبها فاضية للعهدة القديمة اللي قبل تقسيم الصناديق">
                     <Select
@@ -88,11 +76,9 @@ export default function HandoverModal({
                   <Form.Item name="description" label="البيان">
                     <Input placeholder="اختياري" style={{ width: 180 }} />
                   </Form.Item>
-                  {/* «بيان السند» كلام الورقة، مش وصف الحركة في القيد اللي فوق. */}
                   <Form.Item name="statement1" label="بيان السند">
                     <Input placeholder="الكلام المكتوب على ورقة السند" style={{ width: 220 }} />
                   </Form.Item>
-                  {/* رقم الورقة اللي في إيد المندوب — جنب رقم السند عندنا مش بداله. */}
                   <Form.Item name="external_document_number" label="رقم المستند">
                     <Input placeholder="رقم السند الورقي" style={{ width: 160 }} />
                   </Form.Item>

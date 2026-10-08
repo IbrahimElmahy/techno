@@ -1,7 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Button } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
-// فلتر على كل عمود — شوف `FilterTable`.
 import { FilterTable as Table } from '../components/FilterTable';
 import { GiftOutlined, PrinterOutlined, ReloadOutlined } from '@ant-design/icons';
 import dayjs, { Dayjs } from 'dayjs';
@@ -13,19 +12,12 @@ import ExportExcelButton from '../components/ExportExcelButton';
 import { printReport } from '../print/reportSheet';
 import { useQueryTab } from '../components/useQueryTab';
 
-/**
- * **تقرير البونص** — البضاعة اللي خرجت هدية، بسعر بيعها وبتكلفتها.
- *
- * البونص كان فاتورة بيع بخصم ١٠٠٪: تقارير المبيعات شايفاه صفر، والتكلفة بتاعته مش
- * باينة في أي حتة — ٣٧٨ ألف في ٣ شهور. هنا بيتجمّع لكل عميل أو مندوب أو شهر.
- */
 type Group = 'customer' | 'rep' | 'month';
 interface Row { key: string | number | null; name: string; invoices: number; value: string; cost: string }
 
 const GROUP_LABEL: Record<Group, string> = { customer: 'العميل', rep: 'المندوب', month: 'الشهر' };
 
 export default function BonusReport() {
-  // التجميع في الرابط (`?tab=`) — الريفرش بيرجع على نفس الشريحة.
   const [groupRaw, setGroup] = useQueryTab('customer');
   const group: Group = ['customer', 'rep', 'month'].includes(groupRaw) ? groupRaw as Group : 'customer';
   const [range, setRange] = useState<[Dayjs, Dayjs] | null>(null);
@@ -86,7 +78,6 @@ export default function BonusReport() {
       defaultSortOrder: 'descend' },
   ];
 
-  // كروت الإجماليات اللي كانت فوق بقت سطر تحت الجدول.
   const footer = (
     <span className="sl-foot">
       <span>فواتير البونص: <b>{Number(totals.invoices || 0).toLocaleString(numeralsLocale())}</b></span>

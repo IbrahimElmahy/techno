@@ -36,14 +36,9 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   String _username = '';
   int _pending = 0;
-  /// فواتير لسه على الجهاز — بتبان في نفس مكان المعاينات المستنية.
   int _pendingSales = 0;
-  /// وسندات القبض اللي لسه في الطابور — نفس الحكاية.
   int _pendingReceipts = 0;
-  /// الدور المتخزّن — تحت الاسم في القايمة («مندوب»، «المالك»…).
   String? _role;
-  /// كروت التطبيق المسموحة للمستخدم ده (`app.*` من السيرفر). `null` = لسه ماتجابتش ⇒
-  /// كله بيبان زي الأول، عشان أول تشغيل من غير نت مايخبّيش حاجة.
   Set<String>? _appCaps;
 
   bool _can(String cap) => _appCaps == null || _appCaps!.contains(cap);
@@ -56,17 +51,13 @@ class _HomeScreenState extends State<HomeScreen> {
     _boot();
   }
 
-  /// **المشرف مالوش الشاشة دي.** اللي دخل على نسخة قبل 0.3.18 دوره ماتحفظش، فالتطبيق
-  /// بعد التحديث كان بيفتح له رئيسية المندوب ويزامن معاينات مالوش صلاحية عليها
-  /// («inspection.read not granted to rep_supervisor»). فالدور بيتسأل من السيرفر الأول،
-  /// والمشرف بيتحوّل لشاشته من غير ما يخرج ويدخل.
   Future<void> _boot() async {
     var supervisor = await ApiClient.instance.isSupervisor();
     if (!supervisor) {
       try {
         await ApiClient.instance.refreshAppCapabilities();
         supervisor = await ApiClient.instance.isSupervisor();
-      } catch (_) {/* من غير نت: نكمّل كمندوب زي الأول */}
+      } catch (_) {}
     }
     if (!mounted) return;
     if (supervisor) {
@@ -77,16 +68,12 @@ class _HomeScreenState extends State<HomeScreen> {
       );
       return;
     }
-    // **المزامنة بتحصل لوحدها أول ما الشاشة تفتح** — لو فيه نت وآخر واحدة بقى لها
-    // شوية. المندوب ماكانش لازم يفتكر: اللي بينسى بيفتح الفاتورة ويلاقيها ناقصة.
-    // مافيش `await`: الشاشة بتترسم على طول والعلامة فوق بتقول إنها شغالة.
     AutoSync.instance.maybeRun();
   }
 
   void _onSync() {
     if (!mounted) return;
     setState(() {});
-    // خلص؟ يبقى الأرقام اللي على الشاشة (المستنّي في الطابور) اتغيّرت.
     if (AutoSync.instance.state == AutoSyncState.done) _refresh();
   }
 
@@ -131,8 +118,6 @@ class _HomeScreenState extends State<HomeScreen> {
     return Scaffold(
       drawer: _buildDrawer(),
       body: RefreshIndicator(
-        // السحب لتحت بيزامن كمان، مش بيعيد رسم الأرقام بس — ده اللي أي حد بيتوقعه
-        // من الحركة دي، وبيدّي المندوب طريقة يجبر بيها التحديث من غير ما يدخل شاشة.
         onRefresh: () async {
           await AutoSync.instance.maybeRun(force: true);
           await _refresh();
@@ -152,12 +137,6 @@ class _HomeScreenState extends State<HomeScreen> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          // اللوجو نفسه، مش اسم مكتوب.
-                          //
-                          // The mark is green and orange on transparency, and its «GERMAN
-                          // TECHNOLOGY» line is near-black — dropped straight onto the blue it
-                          // reads as a smudge. Same white plate the splash uses, so the two
-                          // screens carry the brand identically.
                           Container(
                             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
                             decoration: BoxDecoration(
@@ -190,16 +169,10 @@ class _HomeScreenState extends State<HomeScreen> {
                     ),
                   ),
                 ),
-                // أبيض صريح: العنوان بياخد لون النص الافتراضي (غامق)، وهو قاعد على تدرّج
-                // أزرق — فكان بيتقرا بالعافية.
                 title: const Text('المعاينات',
                     style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700)),
               ),
             ),
-            // شريط المزامنة — بيلف طول ما شغّالة، وبيقول النتيجة بعدها.
-            //
-            // المزامنة الصامتة أوحش من مافيش مزامنة: الواحد مايعرفش لو اللي شايفه
-            // جديد ولا بايت من امبارح. الشريط ده هو الفرق.
             SliverToBoxAdapter(child: _SyncBanner(onRetry: () {
               AutoSync.instance.run();
             })),
@@ -224,8 +197,6 @@ class _HomeScreenState extends State<HomeScreen> {
                       ),
                     ),
                   const SizedBox(height: 8),
-                  // **متابعة المناديب للمالك والمدير** — بالصلاحية صراحةً، مش «كله بيبان لو
-                  // الصلاحيات ماتجابتش» زي باقي الكروت: دي أرقام الشركة كلها مش شغل المندوب.
                   if (_appCaps?.contains('app.supervisor') ?? false) ...[
                     _BigAction(
                       icon: Icons.groups_2_outlined,
@@ -237,7 +208,6 @@ class _HomeScreenState extends State<HomeScreen> {
                     ),
                     const SizedBox(height: 14),
                   ],
-                  // البيع فوق: ده اللي بيتعمل كل يوم، والمعاينة بتحصل لما تحصل.
                   if (_can('app.sale'))
                   _BigAction(
                     icon: Icons.receipt_long_outlined,
@@ -251,8 +221,6 @@ class _HomeScreenState extends State<HomeScreen> {
                     },
                   ),
                   const SizedBox(height: 14),
-                  // **البونص صفحة لوحده جنب البيع** — بطلب العميل. كان زرار جوّه فاتورة
-                  // البيع، فاللي عايز يدّي هدية كان بيفتح بيع ويقلبه؛ دلوقتي الطريق باسمه.
                   if (_can('app.bonus'))
                   _BigAction(
                     icon: Icons.card_giftcard_outlined,
@@ -294,12 +262,6 @@ class _HomeScreenState extends State<HomeScreen> {
                     },
                   ),
                   const SizedBox(height: 14),
-                  // **«تحصيلاتي» جنب «تحصيل من عميل»، زي «فواتيري» جنب الفاتورة.**
-                  //
-                  // السند بيتكتب عند العميل وبيترفع لما الشبكة ترجع، ومحدش كان
-                  // بيشوف الطابور: سند يقعد يومين على الجهاز والعميل في الدفاتر
-                  // لسه عليه فلوس هو دفعها. والمندوب نفسه ماكانش عنده حتة تقول له
-                  // «حصّلت كام النهارده».
                   if (_can('app.my_collections'))
                   _BigAction(
                     icon: Icons.receipt_long_outlined,
@@ -325,17 +287,12 @@ class _HomeScreenState extends State<HomeScreen> {
                         MaterialPageRoute(builder: (_) => const MyStockScreen())),
                   ),
                   const SizedBox(height: 14),
-                  // جنب «بضاعتي» مش جنب الفاتورة: الاتنين بيجاوبوا «إيه المتاح وبكام»،
-                  // والفرق إن ده بيغطي أصناف النظام كلها مش اللي في العربية.
                   if (_can('app.price_sheet'))
                   _BigAction(
                     icon: Icons.request_quote_outlined,
                     color: AppColors.primary,
                     title: 'كشف تسعير',
                     subtitle: 'سعّر أي صنف — والشيت بيفضل محفوظ ترجعله',
-                    // **بتفتح على قايمة الشيتات مش على شيت فاضي** — زي طلبات التحويل.
-                    // العرض بقى بيتحفظ، وشاشة بتفتح فاضية كل مرة معناها إن اللي اتحفظ
-                    // مالوش طريق يتفتح منه. وزرار «شيت جديد» في القايمة نفسها.
                     onTap: () async {
                       await Navigator.push(context,
                           MaterialPageRoute(builder: (_) => const PriceSheetsScreen()));
@@ -349,12 +306,6 @@ class _HomeScreenState extends State<HomeScreen> {
                     color: AppColors.accent,
                     title: 'طلبات التحويل',
                     subtitle: 'اطلب بضاعة أو رجّعها — وشوف اللي طلبته وعدّله',
-                    // **بتفتح على القايمة مش على طلب فاضي.**
-                    //
-                    // كانت بتفتح شاشة الطلب على طول، فاللي كتب طلب ماكانش عنده أي طريق
-                    // يشوفه تاني ولا يعدّله — ولا حتى يعرف إذا كان اترفع ولا لسه.
-                    // والقايمة فيها زرار «طلب جديد» فالطريق للطلب الجديد ضغطة واحدة زي
-                    // ما كان.
                     onTap: () async {
                       await Navigator.push(context, MaterialPageRoute(
                           builder: (_) => const TransfersReviewScreen()));
@@ -362,9 +313,6 @@ class _HomeScreenState extends State<HomeScreen> {
                     },
                   ),
                   const SizedBox(height: 14),
-                  // كشف المديونيات قبل «حساب عميل»: الأول بيجاوب «أروح لمين»،
-                  // والتاني بيجاوب «الراجل ده عليه إيه» — والسؤال الأول بيتسأل
-                  // الصبح والتاني وهو واقف قدامه.
                   if (_can('app.debts'))
                   _BigAction(
                     icon: Icons.receipt_long_outlined,
@@ -461,9 +409,6 @@ class _HomeScreenState extends State<HomeScreen> {
         padding: EdgeInsets.zero,
         children: [
           SessionDrawerHeader(name: _username, role: _role),
-          // **التلاتة اللي بتكلّم السيرفر فوق، وكل واحدة بتبان في الشريط اللي تحت** —
-          // «بيرفع الفواتير ٣/٧»، «بيجيب الملّاك…»، «بينزّل التحديث ٤٥٪». قبل كده كانوا
-          // بيشتغلوا من غير أي علامة لحد ما يخلصوا (أو يقعوا)، فالمندوب كان بيفتكرهم بايظين.
           ListTile(
             leading: const Icon(Icons.sync),
             title: const Text('مزامنة الآن'),
@@ -479,8 +424,6 @@ class _HomeScreenState extends State<HomeScreen> {
           ListTile(
             leading: const Icon(Icons.download_outlined),
             title: const Text('تحديث الأصناف والقوائم'),
-            // **كل** اللي بينزل: أصناف المعاينة والقوائم والعملاء والملّاك، وحزمة البيع
-            // (أصناف العربية وأسعارها وأقل سعر وعملاءك وأرصدتهم والمخازن والكوبونات).
             onTap: () async {
               Navigator.pop(context);
               await AutoSync.instance.refreshLists();
@@ -500,7 +443,6 @@ class _HomeScreenState extends State<HomeScreen> {
               _refresh();
             },
           ),
-          // عهدة الكوبونات — للقراءة: أنهي سريالات في إيده قبل ما يكتب مدى في فاتورة.
           ListTile(
             leading: const Icon(Icons.confirmation_number_outlined),
             title: const Text('عهدة الكوبونات'),
@@ -581,10 +523,6 @@ class _BigAction extends StatelessWidget {
   }
 }
 
-/// شريط حالة المزامنة اللي بتحصل لوحدها.
-///
-/// بيلف طول ما شغّالة، وبيقول اتحدّث إيه لما تخلص، وبيدّي «حاول تاني» لو فشلت. بيختفي
-/// لوحده بعد النجاح — الرسالة اتقرت، ومافيش داعي تفضل واخدة مكان.
 class _SyncBanner extends StatefulWidget {
   const _SyncBanner({required this.onRetry});
   final VoidCallback onRetry;
@@ -610,7 +548,6 @@ class _SyncBannerState extends State<_SyncBanner> {
     if (!mounted) return;
     setState(() {});
     if (AutoSync.instance.state == AutoSyncState.done && !_hasWarning) {
-      // الرسالة الناجحة بتقعد أربع ثواني وتمشي. الفشل بيفضل — ده اللي محتاج قرار.
       Future.delayed(const Duration(seconds: 4), () {
         if (mounted && AutoSync.instance.state == AutoSyncState.done) {
           AutoSync.instance.clear();
@@ -624,8 +561,6 @@ class _SyncBannerState extends State<_SyncBanner> {
   @override
   Widget build(BuildContext context) {
     final sync = AutoSync.instance;
-    // «شغّالة» و«تمت» بتبان في الشريط اللي تحت (`TaskBarHost`) على كل الشاشات. هنا بيفضل
-    // اللي محتاج قرار بس: الفشل بزرار «حاول تاني»، والتحذير (فاتورة اترفضت) لحد المزامنة الجاية.
     if (sync.state == AutoSyncState.idle ||
         sync.state == AutoSyncState.running ||
         (sync.state == AutoSyncState.done && !_hasWarning)) {

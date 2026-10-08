@@ -62,9 +62,7 @@ import { QTY_DATA_ATTR, flashExistingItem } from '../utils/duplicateItem';
 
 import { useLiveRefresh } from '../utils/live';
 
-// مردود شراء جديد من نفس السجل — الشاشة نفسها متركّبة هنا (`PurchaseReturns embedded`).
 const PurchaseReturnsScreen = React.lazy(() => import('./PurchaseReturns'));
-/** الاسم القديم في الشاشة دي — نفس الدالة. */
 const fmtMoney = money;
 
 interface Supplier {
@@ -93,35 +91,17 @@ interface RawMaterial {
 interface PurchaseItem {
   key: string;
   item_id: number | null;
-  /** null = «not typed yet». A box that opens at 1 turns «5» into «15» for anybody who types
-   *  without clearing it first, and the document is out by ten with nothing looking wrong. */
   quantity: number | null;
   unit_price: number;
   unit: string | null;
-  /** خصم السطر. null = مفيش خصم متفق عليه — مش صفر.
-   *  Stored on the line rather than taken off the price, so «اتفقنا على عشرة في المية» can be read
-   *  back off the document instead of being inferred from a number that looks odd. */
-  /** الخصم المتغيّر — اللي اتفق عليه في الصفقة دي. */
   discount_pct: number | null;
-  /** والثابت — اللي عليه اتفاق دايم مع المورد. الاتنين بيتجمعوا وقت الإرسال، زي البيع. */
   fixed_discount_pct: number | null;
-  /** المخزن اللي السطر ده بيتستلم فيه. null = مخزن المستند.
-   *  One purchase can be split across stores — the server has carried this since 030 and the
-   *  screen simply never offered it. */
   warehouse_id: number | null;
 }
 
 interface ItemUnit { name: string; factor: number; is_base: boolean; }
 
 interface PurchaseRecord {
-  /**
-   * فاتورة ولا مرتجع.
-   *
-   * السجل بقى لكل عمليات الشرا. المرتجع مستند أنحف من الفاتورة — مفيهوش خصم ولا ضرايب ولا
-   * سداد نقدي: البضاعة بترجع للمورد واللي عليه بينقص بقيمتها. فأعمدة الفاتورة اللي مالهاش
-   * معنى عنده بتفضل **فاضية** مش أصفار: صفر معناه «اتحسبت وطلعت صفر»، والفراغ معناه «السؤال
-   * ده مالوش لازمة على المستند ده».
-   */
   kind: 'purchase' | 'return';
   id: number;
   document_number: string;
@@ -131,8 +111,6 @@ interface PurchaseRecord {
   cash_amount: string | null;
   credit_amount: string | null;
   created_at: string;
-  // الأعمدة اللي السجل بيعرضها. أربعة منهم (`gross` و`combined_pct` و`net` و`tax_amount`) كانوا
-  // في عقد السيرفر من زمان وبيرجعوا أصفار — الـendpoint مكانش بيمرّرهم.
   purchase_date: string | null;
   external_document_number: string | null;
   notes: string | null;
@@ -140,7 +118,6 @@ interface PurchaseRecord {
   branch_name: string | null;
   expense_account_id: number | null;
   expense_account_name: string | null;
-  /** المستند اللي المرتجع طالع منه — بيفتحه لما السطر يتضغط. */
   parent_id?: number;
   parent_document_number?: string | null;
   gross: string | null;
@@ -149,7 +126,6 @@ interface PurchaseRecord {
   tax_amount: string | null;
   tax_pct: string | null;
   net: string | null;
-  /** البيان — تلات خانات زي a5، والبحث والفلتر بيدوّروا فيهم التلاتة. */
   statement1?: string | null;
   statement2?: string | null;
   statement3?: string | null;
@@ -177,8 +153,6 @@ interface PurchaseDetail extends PurchaseRecord {
   returns: PurchaseDetailReturn[];
 }
 
-
-// التاريخ من غير ساعة (طلب العميل ٢٠٢٦-١٠-٠١) — `YYYY-MM-DD` زي باقي الكشوف.
 const fmtDate = (v: string) => (v ? String(v).slice(0, 10) : '-');
 
 export default function Purchases() {
@@ -187,55 +161,17 @@ export default function Purchases() {
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
 
-  /**
-   * آخر مخزن اتختار على سطر — بيتورّث للسطور اللي بعده.
-   *
-   * The document used to carry its own «مستودع الاستلام» at the top and every line could override
-   * it, which meant answering the same question in two places for the ordinary shipment that all
-   * goes to one store. The top field is gone: the FIRST line's warehouse is the document's, and
-   * every line after it starts on the same one — so the common case is one choice for the whole
-   * invoice, and a line that genuinely landed somewhere else is still one dropdown away.
-   *
-   * Changing it applies to the lines added AFTER, not to the ones already typed. Rewriting a line
-   * somebody has already entered because a later line went elsewhere is the kind of silent change
-   * that gets found out at the stocktake.
-   */
   const [stickyWarehouseId, setStickyWarehouseId] = useState<number | null>(null);
   const [availability, setAvailability] = useState<Record<number, Record<number, number>>>({});
-  /**
-   * الأصناف المستنية المخزن — نفس بوباب فاتورة البيع والمرتجع.
-   *
-   * السؤال هنا «البضاعة دي داخلة أنهي مخزن»، ولازم يتسأل: الشرا بيدخّل بضاعة على مخزن
-   * بعينه، والسطر اللي نزل من غير مخزن بيبقى شحنة داخلة مكان محدش قاله. كان بيتحل بإن
-   * الواحد يفتح قايمة المخزن في كل سطر — دلوقتي سؤال واحد بيثبت لكل الشحنة.
-   *
-   * وبيتجمّعوا في طابور لأن «اختار كذا صنف مرة واحدة» بينده الإضافة لكل صنف: لو كل واحد
-   * مسح اللي قبله كان هينزل صنف واحد والباقي يضيع في السكوت.
-   */
   const [pendingItems, setPendingItems] = useState<number[]>([]);
   const [pendingWarehouse, setPendingWarehouse] = useState<number | null>(null);
   const [items, setItems] = useState<RawMaterial[]>([]);
   const [loading, setLoading] = useState(false);
   const [submitLoading, setSubmitLoading] = useState(false);
-  // The item the side stock panel is showing — a buyer about to reorder wants to see what the
-  // branches are already sitting on before committing to a quantity.
-  /** الصنف اللي بوباب الاختيار واقف عليه — بيغذّي لوحة الرصيد اللي جوّه البوباب نفسه.
-   *  لوحة الرصيد اللي كانت تحت الفاتورة اتشالت: كانت فاضية وواخدة تلت العرض. */
   const [panelItemId, setPanelItemId] = useState<number | null>(null);
-  // العقد نفسه بتاع شاشة البيع: رابط من مكان تاني بيسمّي مستند، والشاشة بتفتحه —
-  // وبقى في `useDocRoute` تحت بدل ما يتقرا هنا بالإيد.
-  /**
-   * خانة البحث في السجل — عشان زرار «بحث» يوصلها.
-   *
-   * الزرار كان بيقفل المعاينة وبس. ده بيوصّل للسجل فعلاً، بس الزرار مكتوب عليه «بحث»
-   * ومعاه F3، واللي بيدوسه بيستنى خانة تستنى كتابة — فبيلاقي نفسه في قايمة والمؤشر مش
-   * في حتة.
-   */
   const listSearchRef = useRef<any>(null);
 
-  // Form state
   const [form] = Form.useForm();
-  // المورد المختار — لخانة تليفونه في الترويسة.
   const watchedSupplierId = Form.useWatch('supplier_id', form);
   const [purchaseItems, setPurchaseItems] = useState<PurchaseItem[]>([
     { key: '1', item_id: null, quantity: null, unit_price: 0, unit: null,
@@ -243,71 +179,30 @@ export default function Purchases() {
   ]);
   const [unitsCache, setUnitsCache] = useState<Record<number, ItemUnit[]>>({});
 
-  // Payment splits
-  /** خصم الفاتورة المتغيّر. الثابت بيتقرا من الإعدادات على السيرفر زي البيع. */
   const [variableDiscount, setVariableDiscount] = useState<number>(0);
   const [cashAmount, setCashAmount] = useState<number>(0);
   const [creditAmount, setCreditAmount] = useState<number>(0);
-  // بوباب الخزنة قبل الحفظ (أمر ٠٠٩ بند ٤). الشرا من المكتب، فمافيش استثناء للمندوب.
   const { ask: askTreasury, gateProps: treasuryGate } = useTreasuryGate();
 
-  // Document creation result
   const [docResult, setDocResult] = useState<any>(null);
 
-  // Active tab + purchases history list
-  /**
-   * السجل هو الصفحة، والكتابة بتحل محله — نفس تركيب شاشة البيع بالظبط.
-   *
-   * It was a two-tab screen: «فاتورة جديدة» and «سجل المشتريات» side by side, so the record was a
-   * place you switched to and the blank form was what the screen opened on. The sale is the other
-   * way round and it is the right way round: what somebody opens a documents screen for is almost
-   * always to look something up, and writing a new one is a deliberate act that starts with a
-   * button. Two screens for the same job that disagree about which is the front door cost the
-   * person a pause every time they switch.
-   */
   const [createVisible, setCreateVisible] = useState(false);
-  // مردود شراء جديد شغّال جوّه السجل (من شريحة المردودات).
   const [embeddedReturn, setEmbeddedReturn] = useState(false);
-  // شريحة «سندات الصرف»: النقدي المدفوع مع فواتير الشرا + سندات الصرف للموردين.
-  // الشريحة في الرابط (`?tab=`) — الريلود بيرجّع لنفس الشريحة (طلب العميل ٢٠٢٦-١٠-٠١).
   const [listTab, setListTab] = useQueryTab('all');
   const paymentsTab = listTab === 'payments';
   const [paymentsKey, setPaymentsKey] = useState(0);
   const [paymentsSlot, setPaymentsSlot] = useState<HTMLSpanElement | null>(null);
-  // إجماليات شريحة «سندات الصرف» — `PaymentsLogPanel` بيبلّغ بيها بعد كل تحميل (من السيرفر).
   const [paymentsTotals, setPaymentsTotals] = useState<PaymentsLogTotals | null>(null);
-  // سند صرف جديد من هنا — نفس فتح وحفظ شاشة السندات (`useQuickVoucher`).
   const payment = useQuickVoucher(() => setPaymentsKey((k) => k + 1));
-  /** عدّاد بيتزوّد مع كل تغيير في حقول `Form` — حقول antd مش state، فالـ`useMemo`
-   *  اللي بيبني حمولة المسودّة مايشوفش تغيّرها من غيره: المورد يتغيّر والمسودّة تفضل
-   *  على اللي قبله. */
   const [formTick, setFormTick] = useState(0);
   const [purchases, setPurchases] = useState<PurchaseRecord[]>([]);
   const [printOpts, setPrintOpts] = useState<PrintOptions>(loadPrintOptions);
-  /** The row whose item box should take the caret next — the purchase's version of the sale's
-   *  «pick, type a quantity, Enter, pick again». There is no picker window here, so Enter on a
-   *  quantity opens the NEXT LINE and lands on its item box. */
   const [focusRowKey, setFocusRowKey] = useState<string | null>(null);
-  // The sale opens as a run of doors — التاريخ, then the party, then the page. The purchase is the
-  // same document from the other side, so it opens the same way. No coupons and no points: those
-  // are things a SALE hands out, and a purchase has neither to give.
   const [newStep, setNewStep] = useState<null | 'party' | 'warehouse'>(null);
   const [purchaseDate, setPurchaseDate] = useState<Dayjs>(dayjs());
   const [partyPickerOpen, setPartyPickerOpen] = useState(false);
-  // The picker window, so a line is added by typing rather than by hunting a dropdown — the same
-  // round trip the sale and the return use.
   const [pickerOpen, setPickerOpen] = useState(false);
 
-  /**
-   * رصيد المخزن المختار — بيتجاب من جديد كل ما الشباك يتفتح.
-   *
-   * كان فيه حارس `if (availability[wh]) return;` بيمنع الجلب لو المخزن اتقرا قبل كده.
-   * والنتيجة إن الأرقام بتتجمّد أول مرة وتفضل كده طول الجلسة: تكتب فاتورة تطلّع خمسة،
-   * تفتح الشباك تاني، يقولك الرقم القديم — والشباك ده اتعمل عشان يقول المتاح دلوقتي.
-   *
-   * والنداء بيتعمل لما الشباك يتفتح بس (الـ`useEffect` معلّق على `pickerOpen`)، فمرة
-   * لكل فتحة مش مع كل حرف بيتكتب.
-   */
   const loadWarehouseStock = async (warehouseId: number) => {
     if (!warehouseId) return;
     try {
@@ -327,13 +222,10 @@ export default function Purchases() {
   }, [stickyWarehouseId, pickerOpen]);
   const qtyRefs = useRef<Record<string, any>>({});
   const [focusLineKey, setFocusLineKey] = useState<string | null>(null);
-  /** السطر اللي آخر صنف نزل فيه — بيتكتب جوّا تحديث الحالة عشان يعرف مين السطر فعلاً. */
   const landedRef = useRef<string>('');
   const [activeCategory, setActiveCategory] = useState<string | null>(null);
   const { options: categoryOptions } = useLookup('item_category');
   const categoryLabels = labelMap(categoryOptions);
-  // antd's Select will not take focus through its inner input reliably — it exposes `focus()` on
-  // its own ref, and that is the only handle that works.
   const itemRefs = useRef<Record<string, any>>({});
   const [listLoading, setListLoading] = useState(false);
 
@@ -342,45 +234,14 @@ export default function Purchases() {
   const [viewOnly, setViewOnly] = useState(false);
   const [viewPurchase, setViewPurchase] = useState<PurchaseDetail | null>(null);
   const [loadPeriodOpen, setLoadPeriodOpen] = useState(false);
-  /**
-   * الفاتورة اللي بتتعدّل دلوقتي — لسه مرحّلة، والعكس هيحصل وقت الحفظ.
-   *
-   * `null` معناها «فاتورة جديدة». الرقم معناه «دي فاتورة موجودة اتفتحت للتعديل»، واللي
-   * بيفرّق بينهم هو إن الحفظ بيعكس القديمة الأول.
-   */
   const [editingId, setEditingId] = useState<number | null>(null);
-  // بصمة الفاتورة لحظة ما اتفتحت للتعديل — مرجع «اتغيّر ولا لأ؟». `null` = مستند جديد.
   const [openedFingerprint, setOpenedFingerprint] = useState<string | null>(null);
   const [printing, setPrinting] = useState(false);
-  /** الفاتورة اللي معروضة في بوباب الطباعة — معاينة، مش صفحة. */
   const [preview, setPreview] = useState<PurchaseDetail | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
 
-  /**
-   * فلاتر السجل — نفس اللي في الشاشة اللي العميل شغّال عليها.
-   *
-   * التاريخ · مستند رقم · الفاتورة رقم · الفرع · المورد · ملاحظات. كان فيه خانة بحث واحدة
-   * والمورد وبس، فـ«هات الفاتورة اللي رقمها عند المورد كذا» مكانش ليها طريق غير التقليب.
-   *
-   * الفلترة بتحصل في المتصفح على قايمة محمّلة — يعني بتتحرّك مع كل حرف، من غير زرار «عرض» ولا
-   * رحلة للسيرفر. ده اللي طلبه: الفلتر يتغيّر والبيانات تتعرض على طول.
-   *
-   * `dateOf` بقى `purchase_date` — يوم ما البضاعة وصلت — و`created_at` بيقع عليه بس لما تكون
-   * الفاتورة قديمة ومالهاش تاريخ مسجّل. فلتر بيقيس يوم الكتابة بيرمي فاتورة أول الشهر اتسجّلت
-   * آخره، واللي بيدوّر عليها بيفتكرها مش موجودة.
-   */
-  // الفروع — فلتر في السجل وحقل في الفاتورة. بتتحمّل مرة مع باقي القوايم.
   const [branches, setBranches] = useState<any[]>([]);
-  /** المورد المختار بتفاصيله — العنوان والتليفون والرصيد بيتعرضوا في الترويسة. */
   const [party, setParty] = useState<Party | null>(null);
-  /**
-   * فرع الترويسة — بيضيّق مخازن السطور، مابيتحفظش على المستند.
-   *
-   * السيرفر مافيهوش عمود فرع على فاتورة الشرا: الفرع بيتعرف من المخزن اللي البضاعة نزلت فيه.
-   * فبدل ما تبقى خانة بتتكتب وتروح في اللا حاجة، بتعمل الحاجة الوحيدة اللي ليها معنى — تقصر
-   * قايمة المخازن على بتاعة الفرع ده، فاللي شغّال على فرع مابيشوفش مخازن غيره.
-   */
-  // خانة الفرع اتشالت من الترويسة، فقايمة مخازن السطر بقت كل المخازن.
   const lineWarehouses = warehouses;
   useEffect(() => {
     api.get('/api/v1/branches').then((r) => setBranches(r.data || [])).catch(console.error);
@@ -397,7 +258,6 @@ export default function Purchases() {
       external_document_number: (p, v) => (p.external_document_number || '')
         .toLowerCase().includes(String(v).toLowerCase()),
       notes: (p, v) => (p.notes || '').toLowerCase().includes(String(v).toLowerCase()),
-      // البيان — أي خانة من التلاتة، وبنفس توحيد الهمزات اللي في البحث.
       statement: (p, v) => matchesStatement(p, v),
     },
     dateOf: (p) => p.purchase_date || p.created_at,
@@ -409,18 +269,7 @@ export default function Purchases() {
     return (id: number) => m.get(id)?.name ?? `صنف #${id}`;
   }, [items]);
 
-  /**
-   * السجل بيقرا **كل عمليات الشرا** — الفواتير والمرتجعات في قايمة واحدة.
-   *
-   * كانوا شاشتين. و«المورد ده اتعامل معاه إيه الشهر ده» سؤال بيتجاوب من الاتنين مع بعض: فاتورة
-   * بعشرة آلاف ومرتجع بألفين معناهم تمنية، واللي شايف الفاتورة بس شايف رقم مش صح.
-   *
-   * المرتجع بيتسطّح لنفس شكل الصف: أعمدة الفاتورة اللي مالهاش معنى عنده بتفضل `null` — فاضية
-   * في العرض — بدل أصفار. صفر معناه «اتحسبت وطلعت صفر»؛ الفراغ معناه «السؤال ده مالوش لازمة
-   * على المستند ده»، وده الفرق اللي بيمنع حد يجمع عمود ويطلعله رقم مالوش أصل.
-   */
   const fetchPurchases = async (opts?: { silent?: boolean }) => {
-    // الهادي (التحديث الحي): من غير سبينر على الجدول ولا رسالة لو فشل.
     const silent = !!opts?.silent;
     if (!silent) setListLoading(true);
     try {
@@ -468,10 +317,8 @@ export default function Purchases() {
       if (!silent) setListLoading(false);
     }
   };
-  // فاتورة شراء أو مردود اتعمل من مكان تاني ⇒ السجل يتحدّث. المردودات تحت `/purchases`.
   useLiveRefresh(['purchases'], () => fetchPurchases({ silent: true }));
 
-  // Live summary for Purchases, Returns, and Net Purchases
   const purchasesSummary = useMemo(() => {
     const invoicesList = (purchases || []).filter((p) => p.kind === 'purchase');
     const returnsList = (purchases || []).filter((p) => p.kind === 'return');
@@ -491,48 +338,18 @@ export default function Purchases() {
     };
   }, [purchases]);
 
-  /**
-   * `?doc=` بيفتح للعرض، و`?edit=` بيفتح للتعديل.
-   *
-   * الشاشة دي عندها تعديل فعلاً (`editPosted`)، بس الروابط اللي جاية من كشف الحساب
-   * والتقارير كانت بتفتحها للعرض بس — فاللي بيدوس على رقم فاتورة عشان يصلّحها كان
-   * بيوصل لشاشة بتفرّجه عليها. الفرق بين الاتنين هو نية اللي ضغط، والرابط هو اللي
-   * بيقولها.
-   */
-  /**
-   * والمستند المفتوح بيفضل في العنوان دلوقتي — مش بيتمسح بعد الفتح.
-   *
-   * قبل كده البارامتر كان بيتشال أول ما الفاتورة تتفتح، فالعنوان بيرجع «كشف المشتريات»
-   * والفاتورة مفتوحة قدامك — يعني «رجوع» بيطلّعك من الشاشة كلها، وتحديث الصفحة بيوديك
-   * للكشف. الشرح الكامل في `useDocRoute`.
-   *
-   * ⚠️ **الكشف فيه فواتير ومردودات بنفس الـid** (التعليق على `useTableKeyboard` تحت بيقول
-   * كده صراحةً)، والبحث بالرقم لوحده ممكن يطلّع المردود بدل الفاتورة — واللي كان هيودّي
-   * لشاشة تانية خالص. فالصفوف اللي الخُطّاف بيدوّر فيها **فواتير الشرا بس**، وده برضه
-   * معنى `?doc=` على الشاشة دي من الأول: المردود ليه شاشته ورابطه.
-   */
   const routeRows = useMemo(
     () => purchases.filter((p) => p.kind === 'purchase'), [purchases]);
 
   const { markOpen, markClosed, opening: docOpening } = useDocRoute<PurchaseRecord>({
     rows: routeRows,
-    // الفاتورة المحفوظة بس هي اللي ليها عنوان — المستند الجديد لسه مالوش رقم يتكتب.
     openId: createVisible && editingId != null ? editingId : null,
     open: (row, mode) => { void openDetail(row, mode); },
     close: () => closeCreate(),
     loading: listLoading,
-    // `openDetail` بيجيب الفاتورة كاملة بالرقم بنفسه، فالصف المبدئي كفاية — وبيتولد
-    // بـ`kind: 'purchase'` زي ما كان بالظبط.
     fetchOne: async (id) => ({ id, kind: 'purchase' } as PurchaseRecord),
   });
 
-  /**
-   * فتح فاتورة شراء — على نفس الصفحة اللي بتتكتب فيها.
-   *
-   * It used to open in a modal over the list: a second shape for the same document, so looking at
-   * yesterday's invoice landed somewhere that looked nothing like where it was typed.
-   */
-  /** بيجيب المستند من السيرفر — الطريق الوحيد لتفاصيل فاتورة. */
   const loadDocument = async (id: number): Promise<PurchaseDetail | null> => {
     try {
       const res = await api.get(`/api/v1/purchases/${id}`);
@@ -544,11 +361,6 @@ export default function Purchases() {
     }
   };
 
-  /**
-   * `mode` بيتمرّر عشان العنوان يفضل زي ما اللي ضغط كتبه — `?doc=` أو `?edit=`.
-   * وبيتوقّف عند العنوان: الشاشة بتفتح الفاتورة **للقراية** في الحالتين زي ما كانت،
-   * وفتح حقول مستند مرحّل لسه محتاج ضغطة «تعديل» صريحة.
-   */
   const openDetail = async (record: PurchaseRecord, mode: DocMode = 'view') => {
     markOpen(record.id, mode);
     try {
@@ -585,8 +397,6 @@ export default function Purchases() {
       setCashAmount(Number(det.cash_amount) || 0);
       setCreditAmount(Number(det.credit_amount) || 0);
       setVariableDiscount(Number((det as any).variable_discount_pct) || 0);
-      // البصمة بتتاخد حتى والشاشة للقراية: اللي هيدوس «تعديل» بعد كده محتاج مرجع
-      // يتقارن عليه، وإلا أي خروج بعد الفتح هيسأل من غير ما يتغيّر حاجة.
       setOpenedFingerprint(fingerprintOf({
         items: loadedItems,
         variableDiscount: Number((det as any).variable_discount_pct) || 0,
@@ -613,16 +423,11 @@ export default function Purchases() {
     }
   };
 
-  // السطر يفتح الفاتورة — بالماوس وبالكيبورد، ونفس الدالة للاتنين.
   const listKb = useTableKeyboard<PurchaseRecord>({
-    // نفس وجهة زرار «عرض» — الكيبورد والماوس مايوصلوش لمكانين مختلفين من نفس السطر.
-    // والمفتاح شايل النوع: فاتورة ومرتجع ممكن يكون ليهم نفس الـid.
-    // `openRow` معرّفة تحت — بتتنادى داخل دالة عشان الترتيب مايفرقش.
     rows: purchasesFilter.filtered, rowKey: (r) => `${r.kind}-${r.id}`,
     onOpen: (r) => openRow(r),
   });
 
-  // Same document shape as the sales invoice — one look, one print path for both sides.
   const purchaseDoc = (p: PurchaseDetail | null): InvoiceDoc | null => {
     if (!p) return null;
     const supplier = suppliers.find((s) => s.id === p.supplier_id);
@@ -634,8 +439,7 @@ export default function Purchases() {
       partyName: p.supplier_name || supplier?.name || `#${p.supplier_id}`,
       partyPhone: (supplier as any)?.phone ?? null,
       gross: p.total,
-      net: p.total,           // purchases carry no invoice-level discount today
-      // المستند المطبوع دايماً فاتورة — الأعمدة اللي بتفضل فاضية على المرتجع بتتقرا صفر هنا.
+      net: p.total,
       cash: p.cash_amount ?? 0,
       credit: p.credit_amount ?? 0,
       lines: (p.lines || []).map((l) => ({
@@ -647,7 +451,6 @@ export default function Purchases() {
       })),
       extraMeta: [['موقع الاستلام',
         `${p.location_kind === 'warehouse' ? 'مستودع' : p.location_kind} #${p.location_id}`],
-        // البيان بيتطبع على الورقة — `extraMeta` هو المدخل اللي الورقة المشتركة بتسيبه لكل مستند.
         ...statementMeta(p)],
     };
   };
@@ -655,14 +458,12 @@ export default function Purchases() {
   const loadLookups = async () => {
     setLoading(true);
     try {
-      // مفيش استعلام مستخدمين — كان بس عشان قايمة المناديب، والمندوب اتشال من الشرا.
       const [supRes, whRes, itemsRes] = await Promise.all([
         api.get('/api/v1/suppliers'),
         api.get('/api/v1/warehouses'),
-        api.get('/api/v1/items'),  // purchases accept raw materials AND products (resale)
+        api.get('/api/v1/items'),
       ]);
       setSuppliers(supRes.data);
-      // Filter out central/branch warehouses
       setWarehouses(whRes.data);
       setItems(itemsRes.data.filter((i: any) => i.active !== false));
     } catch (err: any) {
@@ -678,9 +479,6 @@ export default function Purchases() {
     fetchPurchases();
   }, []);
 
-  // Keep asking until the caret lands in the new line's quantity. One attempt lands in whatever
-  // the browser is doing that frame, and antd's ref cannot answer «did it arrive?» — so the box is
-  // found by attribute and checked against document.activeElement.
   useEffect(() => {
     if (!focusLineKey || pickerOpen) return undefined;
     let frames = 0;
@@ -697,24 +495,18 @@ export default function Purchases() {
     return () => cancelAnimationFrame(raf);
   }, [focusLineKey, pickerOpen, purchaseItems]);
 
-  // العين تروح للسطر اللي الصنف نزل فيه — بعد ما السطور تستقر، لأن مين هو السطر ده مايتقررش غير
-  // جوّا التحديث نفسه (سطر فاضي اتعبّى؟ صنف مكرر زادت كميته؟ سطر جديد اتضاف؟).
   useEffect(() => {
     if (!landedRef.current) return;
     setFocusLineKey(landedRef.current);
     landedRef.current = '';
   }, [purchaseItems]);
 
-  /** The categories the picker groups by — taken from what is actually in the list, so a heading
-   *  never appears for a category with nothing under it. */
   const itemCategories = useMemo(() => {
     const set = new Set<string>();
     items.forEach((p: any) => { if (p.category) set.add(p.category); });
     return [...set].sort((a, b) => a.localeCompare(b, 'ar'));
   }, [items]);
 
-  // **من غير تجميع بالفئة** (طلب العميل ٢٠٢٦-١٠-٠٥): الأصناف تحت بعض بترتيب إدخالها في
-  // عرض المستند. الفئات لسه في شباك اختيار الصنف — الاختيار بالفئة، والعرض مش متقسّم.
   const linesByCategory = useMemo(
     () => (purchaseItems.length ? [{ category: null as string | null, items: purchaseItems as PurchaseItem[] }] : []),
     [purchaseItems]);
@@ -729,15 +521,11 @@ export default function Purchases() {
     if (focusIt) setFocusRowKey(newKey);
   };
 
-  // Keep asking for the caret until it arrives — one attempt lands in whatever the browser is
-  // doing that frame. Found by attribute because antd's Select ref cannot answer «did it land?».
   useEffect(() => {
     if (!focusRowKey) return undefined;
     let frames = 0;
     let raf = 0;
     const tryFocus = () => {
-      // Asked through the component's own ref, and CHECKED against the DOM: the wrapper carries
-      // the row key, so «did the caret land inside this row's box?» is answerable.
       const inside = document.activeElement?.closest?.(`[data-item-key="${focusRowKey}"]`);
       if (inside) { setFocusRowKey(null); return; }
       itemRefs.current[focusRowKey]?.focus?.();
@@ -748,25 +536,8 @@ export default function Purchases() {
     return () => cancelAnimationFrame(raf);
   }, [focusRowKey, purchaseItems.length]);
 
-  /**
-   * خيارات الوحدة لصنف — وفيها **دايماً** خيار الوحدة الأساسية.
-   *
-   * `__base__` قيمة داخلية معناها «الوحدة الأساسية بتاعة الصنف»، بتتخزّن `null` على السطر.
-   * وantd لما تلاقي قيمة مالهاش خيار مطابق بتعرض القيمة نفسها — فكانت بتكتب `__base__`
-   * بالإنجليزي في خانة عربية.
-   *
-   * وده كان بيحصل كل ما قايمة وحدات الصنف ماتكونش وصلت لسه: فاتورة بتتفتح للتعديل بتملا
-   * سطورها فوراً، والوحدات بتيجي بعدها بنداء تاني. فالخيار الوحيد بقى مضمون إنه موجود من
-   * غير انتظار، واسمه اسم الوحدة الحقيقي لما تعرف، و«الأساسية» لغاية ما تعرف.
-   */
   const unitOptions = (itemId: number | null) => unitSelectOptions(unitsCache[itemId || 0]);
 
-  /**
-   * **خصم الشرا الثابت لكل خط** (طلب العميل ٢٠٢٦-٠٩-٣٠): بولي ٥٢٫٥، وأبيض وجوان ٣٤٫٥.
-   *
-   * الصنف بينزل على الفاتورة وخصمه الثابت مكتوب لوحده حسب فئته. واللي يغيّره من السطر
-   * بيبقى هو الافتراضي من بعدها — على السيرفر، فكل الأجهزة بتاخد الرقم الجديد.
-   */
   const [purchaseDisc, setPurchaseDisc] = useState<{
     poly_pct: number; white_pct: number; groups: Record<string, string>;
   } | null>(null);
@@ -776,7 +547,7 @@ export default function Purchases() {
         poly_pct: Number(r.data.poly_pct), white_pct: Number(r.data.white_pct),
         groups: r.data.groups || {},
       }))
-      .catch(() => { /* من غير صلاحية أو السيرفر قديم — السطر بينزل من غير خصم زي الأول */ });
+      .catch(() => {});
   }, []);
   const discGroupOf = (itemId: number | null) => {
     const cat = items.find((i) => i.id === itemId)?.category;
@@ -787,7 +558,6 @@ export default function Purchases() {
     if (!g || !purchaseDisc) return null;
     return g === 'poly' ? purchaseDisc.poly_pct : purchaseDisc.white_pct;
   };
-  /** الخصم اتغيّر من السطر ⇒ بقى الافتراضي بتاع خطه («يفضل متثبت ع التغيير الجديد»). */
   const rememberFixedDisc = (itemId: number | null, pct: number | null) => {
     const g = discGroupOf(itemId);
     if (!g || pct == null || !purchaseDisc) return;
@@ -796,7 +566,7 @@ export default function Purchases() {
     setPurchaseDisc({ ...purchaseDisc, [g === 'poly' ? 'poly_pct' : 'white_pct']: pct });
     api.put('/api/v1/settings/purchase-discounts', { group: g, pct })
       .then(() => message.success(`خصم ${g === 'poly' ? 'البولي' : 'الأبيض والجوان'} بقى ${pct}% للفواتير الجاية`))
-      .catch(() => { /* الفاتورة دي شايلة الرقم؛ الافتراضي بيفضل القديم */ });
+      .catch(() => {});
   };
 
   const fetchUnits = async (itemId: number) => {
@@ -809,7 +579,6 @@ export default function Purchases() {
   };
 
   const handleRemoveItem = (key: string) => {
-    // من `prev` زي الباقي — الحذف اللي بيبني من نسخة قديمة بيرمي أي سطر اتضاف بعد آخر رندر.
     setPurchaseItems((prev) => {
       if (prev.length === 1) {
         message.warning('يجب إضافة صنف واحد على الأقل للفاتورة');
@@ -819,15 +588,10 @@ export default function Purchases() {
     });
   };
 
-  // بتحدّث من الحالة الحالية (`prev`) مش من النسخة اللي الدالة اتقفلت عليها.
-  //
-  // القراءة من `purchaseItems` هنا كانت بتكتب فوق أي سطر اتضاف بعد آخر رندر وتشيله — وده كان
-  // بيخلّي الفاتورة مش بتقبل أكتر من صنف. تفاصيل السيناريو فوق `addProductById`.
   const handleItemChange = (key: string, field: keyof PurchaseItem, value: any) => {
     setPurchaseItems((prev) => prev.map((item) => {
       if (item.key === key) {
         let updatedItem = { ...item, [field]: value };
-        // Auto-fill price if item changes
         if (field === 'item_id') {
           const selected = items.find((i) => i.id === value);
           let p = selected?.purchase_price ? parseFloat(selected.purchase_price) : 0;
@@ -838,8 +602,6 @@ export default function Purchases() {
           updatedItem.warehouse_id = updatedItem.warehouse_id ?? stickyWarehouseId ?? lineWarehouses[0]?.id ?? null;
           if (value) fetchUnits(value);
         } else if (field === 'unit' && item.item_id) {
-          // السعر بيتحوّل مع الوحدة: سعر المتر ١٠ ⇒ القطعة (٣ متر) ٣٠. من غيره اختيار «قطعة»
-          // كان بيسيب سعر المتر على سطر بالقطع، والإجمالي يطلع تلت الحقيقي.
           const units = unitsCache[item.item_id];
           updatedItem.unit_price = convertUnitPrice(item.unit_price || 0,
             factorOf(units, item.unit), factorOf(units, value));
@@ -850,10 +612,6 @@ export default function Purchases() {
     }));
   };
 
-  // نفس ترتيب فاتورة البيع: خصم السطر ينزل على سطره، السطور تتجمع، وخصم الفاتورة ينزل على
-  // المجموع مرة واحدة. الشاشة بتحسبه محلياً عشان المشتري يشوف الرقم وهو بيكتب — والسيرفر هو
-  // اللي بيحسبه الحسبة النهائية، فلو اختلفوا الفاتورة بتترفض بدل ما تعدّي بالرقم الغلط.
-  // خصم بعد خصم: المتغيّر بيتحسب على الباقي بعد الثابت، مش على السعر الأصلي.
   const lineTotal = (it: PurchaseItem) =>
     applyPct(Number(it.quantity || 0) * (it.unit_price || 0),
              it.fixed_discount_pct, it.discount_pct);
@@ -862,7 +620,6 @@ export default function Purchases() {
   const invoiceTotal = grossTotal * (1 - (variableDiscount || 0) / 100);
 
   const handleSplitBalance = () => {
-    // Automatically fill credit with remaining total
     const cash = parseFloat(cashAmount.toString()) || 0;
     const credit = Math.max(0, invoiceTotal - cash);
     setCreditAmount(parseFloat(credit.toFixed(2)));
@@ -872,8 +629,6 @@ export default function Purchases() {
     handleSplitBalance();
   }, [cashAmount, invoiceTotal]);
 
-  /** شريط أدوات المستند — wired to what a purchase actually has. The rest keep their positions
-   *  greyed rather than vanishing, so the row does not shift under a practised hand. */
   const purchaseToolbar = (): ToolbarAction[] => {
     const typed = purchaseItems.filter((i) => i.item_id !== null).length;
     const invoicesInList = purchasesFilter.filtered.filter((r) => r.kind === 'purchase');
@@ -922,12 +677,6 @@ export default function Purchases() {
         key: 'undo',
         label: 'تراجع',
         icon: <UndoOutlined />,
-        // «تراجع» بيرجّع المستند، مش بيقفل الحقول وبس.
-        //
-        // كان بيعمل `setViewOnly(true)` على طول: الحقول تتقفل واللي اتكتب ومااتحفظش يفضل
-        // ظاهر — مقفول ومقروء، يعني بنفس شكل المحفوظ بالظبط. فاللي غيّر كمية من ١٠ لـ٣
-        // وضغط تراجع بيفضل قدامه ٣ وإجمالي مالوش وجود، ومافيش حاجة على الشاشة بتقول إن ده
-        // مش اللي في القاعدة. إعادة تحميل المستند هي الحاجة الوحيدة اللي بترجّع الأرقام.
         onClick: () => {
           if (!viewOnly && editingId) {
             openDetail({ id: editingId } as PurchaseRecord);
@@ -1038,10 +787,6 @@ export default function Purchases() {
         key: 'reload',
         label: 'تحميل',
         icon: <ReloadOutlined />,
-        // **«تحميل» بقى بيعمل حاجة تبان.** كان بيعيد تحميل المستند المفتوح أو
-        // القوايم — يعني بيشتغل من غير ما يحصل حاجة، وده شكل الزرار المكسور.
-        // دلوقتي بيحمّل فترة ويفتح أحدث فاتورة فيها على طول، و«السابق»/«التالى» بيمشوا
-        // جوّه الفترة دي (`openNewest` + `onLoaded`). الشرح في `components/LoadPeriodModal`.
         onClick: () => setLoadPeriodOpen(true),
       },
     ];
@@ -1053,19 +798,6 @@ export default function Purchases() {
     { title: 'التاريخ', dataIndex: 'created_at', key: 'created_at', render: (v: string) => fmtDate(v) },
   ];
 
-  /**
-   * فتح فاتورة مرحّلة للتعديل — **من غير ما يتغيّر أي حاجة لحد ما تحفظ**.
-   *
-   * كانت بتتعكس أول ما تتفتح. والعكس بيطلّع البضاعة من المخزن، فلو الأصناف اتباعت أو اتحوّلت
-   * بعد الشرا، الرصيد مايكفيش والعكس بيقع — فالنتيجة إنك **مش قادر تفتح الفاتورة أصلاً**،
-   * ومش عشان فيها غلط، عشان مجرد الفتح كان بيحاول يحرّك مخزون.
-   *
-   * دلوقتي الفتح قراية بس: الشاشة بتتملّى بمحتوى الفاتورة وخلاص. والعكس بيحصل **لما تدوس
-   * حفظ** — وهي اللحظة اللي فعلاً محتاجة تبديل: الفاتورة القديمة تتعكس والجديدة تترحّل.
-   *
-   * يعني لو فتحت وغيّرت رأيك وقفلت، مافيش حاجة اتحركت. ولو الرصيد فعلاً مايكفيش، الرسالة
-   * بتيجي وانت بتحفظ — وهي وقتها بتقول حاجة صح: التبديل ده مش ممكن دلوقتي.
-   */
   const editPosted = async (det: PurchaseDetail) => {
     setEditingId(det.id);
     form.setFieldsValue({
@@ -1095,8 +827,6 @@ export default function Purchases() {
     setCashAmount(Number(det.cash_amount) || 0);
     setCreditAmount(Number(det.credit_amount) || 0);
     setDetail(null);
-    // البصمة من القيم اللي لسه اتبنت فوق مش من الحالة: الـsetters مابيتنفّذوش في نفس
-    // اللفّة، فقراية الحالة هنا بترجّع اللي كان قبل الفتح.
     setOpenedFingerprint(fingerprintOf({
       items: loadedItems,
       variableDiscount: Number((det as any).variable_discount_pct) || 0,
@@ -1131,17 +861,6 @@ export default function Purchases() {
   };
 
   const handleSubmit = async (values: any) => {
-    // **مافيش فحص «النقدي + الآجل = الإجمالي» هنا.**
-    //
-    // الآجل مش بيتكتب أصلاً — «الباقي» رقم محسوب من النقدي، فالفحص كان بيقارن الرقم
-    // بنفسه. ولمّا يفشل بيبقى لأن **إجمالي الشاشة غير إجمالي السيرفر**: الشاشة
-    // بتجمع السطور ناقص خصم الفاتورة، والسيرفر بيحسب الصافي + الضريبة وخصم
-    // الإعدادات الثابت. فالفرق بينهم كان بيقفل الحفظ على فاتورة ١٥٤ ألف من غير ما
-    // يتكتب فيها حرف غلط — والرسالة بتقول لللي قدامها يظبط رقم هو مش بيكتبه.
-    //
-    // الإجمالي بيتحسب في مكان واحد: السيرفر. وهو بيستنتج الآجل = الإجمالي − النقدي
-    // (نفس قاعدة البيع)، فالشاشة بتبعت النقدي وبس.
-
     const validLines = purchaseItems.filter((i) => i.item_id !== null);
     if (validLines.length === 0) {
       message.error('يرجى إضافة صنف واحد صالح على الأقل!');
@@ -1152,8 +871,6 @@ export default function Purchases() {
       message.error(`«${itemName(homeless.item_id as number)}»: اختار مخزن الاستلام.`);
       return;
     }
-    // The quantity box starts empty on purpose, so «forgot to type it» is a real state and has to
-    // be caught rather than posted as whatever the default happened to be.
     const noQty = validLines.find((l) => !Number(l.quantity));
     if (noQty) {
       const name = items.find((i) => i.id === noQty.item_id)?.name ?? 'الصنف';
@@ -1161,11 +878,6 @@ export default function Purchases() {
       return;
     }
 
-    // بوباب الخزنة (أمر ٠٠٩ بند ٤): فاتورة الشرا **بتخصم** من الخزنة. الحفظ بيتم بعد
-    // الاختيار، والرجوع مابيحفظش. كله آجل (نقدي بصفر) ⇒ مافيش فلوس بتتحرّك، فمافيش سؤال.
-    //
-    // والسؤال قبل `setSubmitLoading(true)` عن قصد: لو اتفتح البوباب واترجع، الزرار كان
-    // هيفضل بيلف على الفاضي.
     askTreasury(
       {
         amount: Number(cashAmount) || 0,
@@ -1175,39 +887,20 @@ export default function Purchases() {
       async (cashAccountId) => {
         setSubmitLoading(true);
         try {
-          // الفاتورة اللي اتفتحت للتعديل بتتعكس **دلوقتي** — مش وقت الفتح.
-          //
-          // العكس بيطلّع البضاعة من المخزن. لو حصل وقت الفتح، أي فاتورة أصنافها اتباعت بقت مش
-          // قابلة للفتح أصلاً: الرصيد مايكفي فالعكس بيقع، ومجرد إنك عايز تبص عليها كان بيفشل.
-          //
-          // هنا هو في مكانه: التبديل بيحصل مرة واحدة — القديمة تتعكس والجديدة تترحّل. ولو الرصيد
-          // فعلاً مايكفيش، الرسالة بتيجي وهي بتقول حاجة صح، والفاتورة القديمة بتفضل زي ما هي.
-          //
-          // **والفاتورة اللي اترجّعت بالكامل بتعدّي.** لو المردودات أكلت قيمتها كلها، مفيش
           const payload = {
             supplier_id: values.supplier_id,
-            // مخزن المستند بقى مخزن أول سطر. السيرفر لسه محتاج مكان على المستند (٠٣٠)، والسطر
-            // اللي نزل مخزن تاني شايل مخزنه بنفسه — فالاتنين متسقين من غير ما حد يتسأل مرتين.
             location: {
               location_kind: 'warehouse',
               location_id: validLines[0].warehouse_id,
             },
             cash_amount: cashAmount,
-            // `null` = «الباقي على حساب المورد» — السيرفر بيحسبه من إجماليه هو،
-            // مش من إجمالي الشاشة اللي مابيعرفش الضريبة وخصم الإعدادات.
             credit_amount: null,
-            // (٠٠٩) الخزنة اللي البوباب سأل عنها — الشرا **بيخصم** منها. `undefined` =
-            // مااتسألش (نقدي بصفر أو مافيش صناديق) والسيرفر بيقرر زي ما هو بيعمل دلوقتي.
             cash_account_id: cashAccountId ?? undefined,
             variable_discount_pct: variableDiscount || 0,
             external_document_number: values.external_document_number || null,
             cost_center_id: values.cost_center_id ?? null,
             cost_center_distribution: values.cost_center_distribution ?? null,
-            // «الحساب» — الحساب اللي القيد بينزل عليه. الحقل كان موجود في السيرفر من ٠٣٠ والشاشة
-            // مكانتش بتبعته خالص، فكل فاتورة كانت بتترحّل على الافتراضي مهما كان قصد الكاتب.
-            // خانة «الحساب» اتشالت من الترويسة — القيد بينزل على حساب المشتريات الافتراضي.
             expense_account_id: null,
-            // `branch_id` مش في العقد عن قصد — مفيش عمود ليه على المستند، والفرع بيتعرف من المخزن.
             notes: values.notes || null,
             statement1: values.statement1 || null,
             statement2: values.statement2 || null,
@@ -1217,25 +910,17 @@ export default function Purchases() {
               quantity: Number(l.quantity || 0),
               unit_price: l.unit_price,
               unit: l.unit,
-              // الاتنين ورا بعض — ده اللي بيتحسب بيه، زي البيع بالظبط.
               discount_pct: combinePct(l.fixed_discount_pct, l.discount_pct) || null,
-              // ...والنصّين، عشان الفاتورة لما تتفتح تاني كل خصم يرجع خانته.
               fixed_discount_pct: l.fixed_discount_pct ?? null,
               variable_discount_pct: l.discount_pct ?? null,
               warehouse_id: l.warehouse_id,
             })),
-            // The day the goods were received, taken from the first door — not the day this row was
-            // typed, which is what `created_at` would have recorded.
             purchase_date: purchaseDate.format('YYYY-MM-DD'),
           };
 
-          // التعديل بيروح للفاتورة نفسها — بنفس رقمها، من غير مردود ولا قيد عكسي.
           const res = editingId !== null
             ? await api.put(`/api/v1/purchases/${editingId}`, payload)
             : await api.post('/api/v1/purchases', payload);
-          // **بعد الحفظ على سجل فواتير الشرا على طول — زي البيع** (طلب العميل ٢٠٢٦-٠٩-٣٠).
-          // كانت بتقف على شاشة «تم التسجيل» بزرار «فاتورة جديدة» بس، واللي عايز يشوف
-          // الفاتورة في السجل مالوش طريق غير إنه يخرج ويدخل من القايمة.
           message.success(editingId !== null
             ? `تم حفظ الفاتورة ${res.data?.document_number ?? ''}`
             : `تم تسجيل فاتورة الشراء ${res.data?.document_number ?? ''} بنجاح`);
@@ -1251,7 +936,6 @@ export default function Purchases() {
             discount_pct: null, fixed_discount_pct: null, warehouse_id: null }]);
           setCashAmount(0);
           setCreditAmount(0);
-          // بعد ما السيرفر يرد بنجاح وبس — الفاتورة اللي اترفضت بتفضل مسودّة.
           discardDraft();
           fetchPurchases();
         } catch (err: any) {
@@ -1264,8 +948,6 @@ export default function Purchases() {
     );
   };
 
-  /** الباب التاني: المورد. Mid-document this only swaps the party; during the opening run it is
-   *  the second door and hands over to the warehouse door — the same order the sale opens in. */
   const handlePartyPicked = (picked: Party) => {
     setPartyPickerOpen(false);
     setParty(picked);
@@ -1277,28 +959,16 @@ export default function Purchases() {
     }
   };
 
-  /** A picked product becomes a line, and the caret lands in its quantity. */
   const addProductById = async (itemId: number, qty: number | null = null) => {
     if (!itemId) return;
     addProducts([itemId], qty ? { [itemId]: qty } : undefined);
   };
 
-  /** كذا صنف من الشباك مرة واحدة — ومعاهم الكميات اللي اتكتبت على الكروت لو فيه. */
   const addProducts = (ids: number[], qtys?: Record<number, number>) => {
     const wh = stickyWarehouseId ?? lineWarehouses[0]?.id;
     if (wh && ids.length) addProductsWith(ids, wh, qtys);
   };
 
-  /**
-   * نفس الإضافة بمخزن **صريح**.
-   *
-   * `setStickyWarehouseId` مابيغيّرش القيمة في نفس اللفّة، فالندهة اللي بعده على طول
-   * بتقرا `null` وتنزّل السطر من غير مخزن — وهي المشكلة اللي البوباب اتعمل عشانها.
-   *
-   * **الأصناف كلها في تحديث واحد، واحد ورا التاني جوّاه**: كل صنف بيشوف السطور اللي
-   * الصنف اللي قبله نزّلها (السطر الفاضي اللي اتعبّى مايتعبّاش تاني). والمؤشر بيروح لأول
-   * سطر جديد كميته فاضية — لو كله اتكتبت كميته مافيش حاجة تتمسك.
-   */
   const addProductsWith = (ids: number[], warehouseId: number, qtys?: Record<number, number>) => {
     const priceOf = (itemId: number) => {
       const selected = items.find((i) => i.id === itemId);
@@ -1310,7 +980,6 @@ export default function Purchases() {
       ? `«${itemName(id)}» موجود بالفعل — اتزوّدت كميته`
       : `«${itemName(id)}» موجود بالفعل — عدّل الكمية من السطر`));
     const fresh = ids.filter((id) => !dups.includes(id));
-    // مافيش ولا سطر جديد ⇒ زي الأول: بنعلّم السطر الموجود (ولو له كمية بتتزوّد تحت).
     if (!fresh.length && dups.length) flashExistingItem(dups[0]);
     if (!fresh.length && !dups.some((id) => qtys?.[id])) return;
 
@@ -1321,14 +990,12 @@ export default function Purchases() {
         const q = qtys?.[itemId] ?? null;
         const existing = next.find((l) => l.item_id === itemId);
         if (existing) {
-          // الشرا مالوش سقف رصيد — الكمية بتتزوّد زي ما اتكتبت.
           if (q) {
             next = next.map((l) => (l.key === existing.key
               ? { ...l, quantity: Number(l.quantity || 0) + q } : l));
           }
           return;
         }
-        // Reuse a blank row rather than leaving an empty line above the real one.
         const blank = next.find((l) => l.item_id === null);
         if (blank) {
           next = next.map((l) => (l.key === blank.key
@@ -1344,7 +1011,6 @@ export default function Purchases() {
         next = [...next, {
           key, item_id: itemId, quantity: q, unit_price: priceOf(itemId), unit: null,
           fixed_discount_pct: defaultFixedDisc(itemId),
-          // بيرث المخزن اللي اتسأل عنه — الشحنة العادية كلها بتنزل مخزن واحد.
           discount_pct: null, warehouse_id: warehouseId,
         }];
       });
@@ -1361,12 +1027,6 @@ export default function Purchases() {
     addProductById(item.id);
   };
 
-  /**
-   * Enter معناها «السطر ده خلص» — ننتقل للسطر اللي بعده، وآخر سطر بيفتح بوباب الأصناف.
-   *
-   * الإيد مابتسيبش الكيبورد: اكتب الكمية، Enter، اكتب اللي بعدها، Enter… ولما تخلص السطور
-   * البوباب بيفتح لصنف جديد. من غير كده كل سطر محتاج ماوس عشان توصل للخانة اللي بعدها.
-   */
   const advanceFrom = (key: string) => {
     const idx = purchaseItems.findIndex((l) => l.key === key);
     const next = idx >= 0 ? purchaseItems[idx + 1] : undefined;
@@ -1374,9 +1034,6 @@ export default function Purchases() {
     setPickerOpen(true);
   };
 
-
-
-  /** بصمة الفاتورة من حقولها اللي بتتعدّل — `key` بتاع السطر بره لأنه متولّد بالوقت. */
   const fingerprintOf = (v: {
     items: PurchaseItem[]; variableDiscount: any; cashAmount: any; creditAmount: any;
     purchaseDate: any; form: any;
@@ -1399,7 +1056,6 @@ export default function Purchases() {
       notes: v.form?.notes,
       cost_center_id: v.form?.cost_center_id,
       cost_center_distribution: v.form?.cost_center_distribution,
-      // البيان جزء من المستند — تعديله لوحده لازم يخلّي الشاشة تسأل قبل ما تقفل.
       statement1: v.form?.statement1 || '',
       statement2: v.form?.statement2 || '',
       statement3: v.form?.statement3 || '',
@@ -1411,18 +1067,6 @@ export default function Purchases() {
     form: form.getFieldsValue(),
   });
 
-  /**
-   * **المسودّة — الفاتورة اللي اتكتبت ولسه ما اترحّلتش.**
-   *
-   * الشاشة دي كانت الوحيدة في مجموعة المستندات من غير مسودّات: المرتجعات والتحويلات
-   * وأذونات المخزن كلهم بيحفظوا لوحدهم، وفاتورة الشرا — أطول مستند في النظام، بتتكتب
-   * سطر سطر — يا بتترحّل يا بتضيع. فاتورة بأربعتاشر صنف بتضيع بضغطة رجوع أو بقطع كهربا،
-   * واللي كتبها بيبتدي من الأول.
-   *
-   * الحمولة هي **نفس بصمة الفاتورة** اللي الشاشة بتقيس بيها «فيه شغل مش محفوظ؟»
-   * (`fingerprintOf`) — نفس الحقول بالظبط. لو اتفرّقوا، الشاشة هتقول «اتغيّرت» على حاجة
-   * المسودّة مش شايلاها، أو تحفظ حاجة مش محسوبة في السؤال.
-   */
   const draftPayload = useMemo(() => ({
     lines: purchaseItems
       .filter((l) => l.item_id !== null)
@@ -1444,14 +1088,12 @@ export default function Purchases() {
   } = useDraft({
     kind: 'purchase',
     payload: draftPayload,
-    // الفاتورة المفتوحة للتعديل مستند، مش مسودّة.
     paused: Boolean(viewOnly || editingId),
     isEmpty: (x: any) => !x?.form?.supplier_id
       && !(x?.lines || []).some((l: any) => l.item_id != null),
     title: (x: any) => `فاتورة شرا — ${(x?.lines || []).length} صنف`,
   });
 
-  /** بيفتح مسودّة في الشاشة — نفس حالة الشاشة اللي اتحفظت. */
   const resumeDraft = (d: any) => {
     const x = d.payload || {};
     adoptDraft(d.id);
@@ -1479,22 +1121,6 @@ export default function Purchases() {
     setCreateVisible(true);
   };
 
-  /**
-   * رجوع للسجل — وبيسأل الأول لو الخروج هيضيّع شغل.
-   *
-   * كان بيقفل على طول من غير أي سؤال: فاتورة شرا اتكتبت سطر سطر بتضيع بضغطة غلط على
-   * زرار في ركن الشاشة، ومافيش مسوّدة بتتحفظ لوحدها. وشاشة البيع كانت في الاتجاه
-   * التاني — بتسأل حتى على فاتورة محفوظة ماتغيّرش فيها حاجة. القاعدة واحدة دلوقتي
-   * (`utils/unsavedWork`): السؤال بيظهر لما الخروج **يكلّف** حاجة، وبس.
-   */
-  /**
-   * `keepUrl` لـ«التالى»/«السابق» بس: الحركة دي بتقفل مستند وتفتح اللي بعده على طول،
-   * فتنضيف العنوان في النص كان هيرجّع للشاشة اللي الفاتورة اتفتحت منها (`ret`) — يعني
-   * تطلع من الشاشة بدل ما تتنقّل جوّاها. و`stay` للقفل اللي بيفضل في الشاشة (F3 بحث).
-   *
-   * وبياخد **كائن** مش `boolean` عن قصد: `onClick={closeCreate}` بيمرّر حدث الماوس،
-   * واللي كان هيبقى `true` لو البارامتر منطقي.
-   */
   const closeCreate = (opts?: { keepUrl?: boolean; stay?: boolean }) => {
     const keepUrl = opts?.keepUrl === true;
     const leave = () => {
@@ -1503,8 +1129,6 @@ export default function Purchases() {
       setDetail(null);
       setDocResult(null);
       setNewStep(null);
-      // الرجوع من غير حفظ مابيغيّرش حاجة — الفاتورة اللي كانت مفتوحة للتعديل فاضلة زي ما هي،
-      // لأن العكس بيحصل وقت الحفظ. تصفير الحالة هنا بيمنع إن أول حفظ بعد كده يعكسها بالغلط.
       setEditingId(null);
       setOpenedFingerprint(null);
     };
@@ -1531,20 +1155,10 @@ export default function Purchases() {
       okButtonProps: { danger: true },
       cancelText: verdict === 'confirm-edit' ? 'أرجع أكمّل' : 'أكمّل المستند',
       onOk: leave,
-      // اللي قال «أرجع أكمّل» بعد ما داس «رجوع» بتاع المتصفح لازم العنوان يرجع للمستند
-      // كمان — وإلا الشاشة فاتحة مستند والعنوان بيقول كشف، وتاني ضغطة رجوع بتطلّعه.
       onCancel: () => { if (!keepUrl && editingId != null) markOpen(editingId); },
     });
   };
 
-  /**
-   * أعمدة شبكة سطور الفاتورة كبيانات — عشان تتخفي وتترتّب.
-   *
-   * كانت `<thead>` والخلايا و`<tfoot>` مكتوبين بالإيد في نفس الترتيب. ده معناه إن الأعمدة
-   * مالهاش وجود كقايمة، فمافيش حاجة تخفي عمود ولا تحرّكه — وصف الإجماليات كان معلّق على
-   * `colSpan={4}` بتعليق بيحذّر إن الرقم ده لازم يتغيّر مع أي عمود بيتزوّد أو بيتشال.
-   * دلوقتي كل عمود شايل خليته وإجماليه، فالاتنين بيتحركوا معاه.
-   */
   const lineColumns: EntryColumn<PurchaseItem>[] = [
     { key: 'idx', title: '#', width: 32, locked: true,
       cellStyle: { color: '#6b6b6b', textAlign: 'center' }, cell: (_l, i) => i + 1 },
@@ -1665,9 +1279,6 @@ export default function Purchases() {
       </Card>
     </div>
   ) : (
-    // **شكل فاتورة البيع الجديد** (تصميم العميل ٢٠٢٦-١٠-٠١): كروت بيضا على خلفية رمادي —
-    // ترويسة وأدوات، خانات المستند، الأصناف، وتحت الدفع والملخص. الشكل بس اللي اتغيّر:
-    // نفس الخانات ونفس الحالة ونفس الأوامر والمفاتيح.
     <div className="sale-doc">
       <div className="sale-card sale-head">
         <div className="sale-head-row">
@@ -1709,7 +1320,6 @@ export default function Purchases() {
               )}
             />
           </span>
-          {/* الأدوات و«الأعمدة» في نفس سطر العنوان على الشمال، وأكبر — زي فاتورة البيع. */}
           <div className="sale-toolbar-row">
             <DocumentToolbar actions={purchaseToolbar()} variant="buttons" />
             <DocumentHistoryButton entityType="purchase_invoice"
@@ -1724,8 +1334,6 @@ export default function Purchases() {
       <Form form={form} layout="vertical" size="small" className="doc-form sale-form"
         onValuesChange={() => setFormTick((n) => n + 1)}
         onFinish={handleSubmit} requiredMark={false}>
-          {/* الترتيب زي فاتورة البيع (٢٠٢٦-١٠-٠١): رقم المستند ← المورد وتليفونه ← المخزن.
-              التاريخ مش هنا — هو في سطر العنوان فوق بنفس القيمة، كان مكتوب مرتين. */}
           <div className="sale-card sale-fields">
           <Row gutter={12}>
             <Col xs={12} md={4}>
@@ -1796,7 +1404,6 @@ export default function Purchases() {
           </div>
 
           <div className="sale-card sale-lines">
-          {/* شريط الأصناف: عدد البنود يمين، وزرار الإضافة شمال. */}
           <div className="sale-items-bar">
             <div className="sale-items-info">
               <span>
@@ -1848,7 +1455,6 @@ export default function Purchases() {
                       ))}
                     </React.Fragment>
                   ))}
-                  {/* السطر الزيادة: المخزن الأول وبعدين الصنف (٢٠٢٦-١٠-٠٥). */}
                   <QuickAddRow
                     colSpan={lineGrid.count} disabled={viewOnly} items={items as any}
                     warehouses={lineWarehouses} warehouseId={stickyWarehouseId}
@@ -1925,9 +1531,6 @@ export default function Purchases() {
           </div>
       </Form>
 
-      {/* المكوّن مشترك مع البيع والمرتجعين — الشرح في `components/LoadPeriodModal`.
-          بيفتح أحدث فاتورة في الفترة على طول، و`onLoaded` بيحط الفترة في كشف الشاشة،
-          فـ«السابق» و«التالى» يمشوا جوّه اللي اتحمّل مش جوّه السجل كله. */}
       <LoadPeriodModal
         open={loadPeriodOpen} onCancel={() => setLoadPeriodOpen(false)}
         title="تحميل فواتير شراء فترة" endpoint="/api/v1/purchases"
@@ -1943,28 +1546,14 @@ export default function Purchases() {
     </div>
   );
 
-  /**
-   * «عرض» بيفتح الفاتورة للتعديل على طول — صفحة واحدة مش اتنين.
-   *
-   * كان بيفتح صفحة عرض مقفولة، وفيها زرار «تعديل الفاتورة» بيفتح صفحة تانية. اللي بيضغط على
-   * سطر في السجل تسعة من عشرة بيكون عايز يعدّل، فالصفحة اللي في النص كانت خطوة بتتعدّى.
-   *
-   * التأكيد اللي جوّه `editPosted` فاضل، وده مش صفحة تالتة: الفاتورة المرحّلة ماتتعدلش في
-   * مكانها — بيتعمل لها عكس كامل وتتفتح من جديد. حاجة بتغيّر المخزون والدفاتر لازم حد يقول
-   * «أيوة» قبلها، والسطر اللي اتضغط بالغلط في قايمة مايعكسش مستند في صمت.
-   *
-   * والمرتجع مالوش شاشة تعديل هنا، فبيفتح **معاينة** فاتورته بدل ما يودّي لمكان مايعملش حاجة.
-   */
   const openRow = async (row: PurchaseRecord) => {
     if (row.kind === 'return') {
-      // `ret` عشان «رجوع» يرجّع لكشف المشتريات، مش لكشف المردودات.
       openDoc('purchase_return', row.id);
       return;
     }
     openDetail(row);
   };
 
-  /** بوباب بيعرض الفاتورة زي ما هتتطبع — ومنه الطباعة. */
   const openPrint = async (row: PurchaseRecord) => {
     setPreviewLoading(true);
     const doc = await loadDocument(row.id);
@@ -1972,23 +1561,6 @@ export default function Purchases() {
     if (doc) setPreview(doc);
   };
 
-  /**
-   * أعمدة السجل — نفس اللي في الشاشة اللي العميل شغّال عليها، وكل واحد بيتفلتر ويتترتب.
-   *
-   * كان فيه ستة أعمدة، والفلترة كلها من شريط فوق الجدول. شريط الفلاتر بيجاوب «هات فواتير المورد
-   * ده» كويس، ومابيجاوبش «هات اللي الباقي عليها فوق الألف» ولا «رتّبهم بالأكبر خصماً» — ودول
-   * أسئلة بتتسأل على السجل كل يوم.
-   *
-   * فالفلترة نزلت على الأعمدة نفسها: `textColumn` بيدّي قايمة بالقيم الموجودة، `numberColumn`
-   * بيدّي مدى من/إلى، و`dateColumn` بيدّي مدى تواريخ — وكلهم بيترتبوا. والفلاتر بتتجمّع: تقدر
-   * تضيّق على فرع وحساب ومدى مبلغ في نفس الوقت.
-   *
-   * خيارات الفلتر بتتبني من `purchases` كلها مش من المعروض، عشان القايمة ما تضيقش تحت إيد اللي
-   * بيفلتر وتخليه يفتكر إن القيمة مش موجودة أصلاً.
-   *
-   * والترتيب الافتراضي **من الأحدث**: السجل بيتفتح عشان تشوف آخر اللي اتسجّل، مش أول فاتورة
-   * اتكتبت في النظام.
-   */
   const listColumns = [
     {
       title: 'نوع المستند',
@@ -2009,7 +1581,6 @@ export default function Purchases() {
       ...textColumn(purchases, (r: PurchaseRecord) => r.document_number),
       render: (doc: string, r: any) => (
         <Space direction="vertical" size={0}>
-          {/* المسودّة مالهاش رقم — الرقم بيتحجز وقت الترحيل مش قبله. */}
           {r.__isDraft
             ? <DraftTag onDelete={() => removeDraft(r.__draft.id)} />
             : <Tag color={r.kind === 'purchase' ? 'blue' : 'orange'}>{doc}</Tag>}
@@ -2087,10 +1658,6 @@ export default function Purchases() {
       key: 'actions',
       width: 130,
       render: (_: any, record: PurchaseRecord) => ((record as any).__isDraft ? (
-        // **سطر المسودّة مالوش أزرار مستند.** الكشف فيه نوعين سطور، والمسودّة مالهاش
-        // رقم ولا أثر — رقمها في الجدول سالب عشان يفضل فريد وسط أرقام حقيقية. فزرار
-        // الحذف كان بينده السيرفر برقم مش موجود ويرجّع «المستند مش موجود»، وزرار
-        // الطباعة بيجيب ورقة مافيش. الفعل الوحيد اللي ليه معنى هنا: امسح المسودّة.
         <Space size={2} onClick={(e) => e.stopPropagation()}>
           <Tooltip title="مسح المسودّة">
             <Button type="text" danger icon={<DeleteOutlined />}
@@ -2149,29 +1716,14 @@ export default function Purchases() {
     },
   ];
 
-  // إخفاء وترتيب الأعمدة — نفس المحرك اللي كل الجداول بتستخدمه.
-  /** الأعمدة الثانوية مخفية افتراضياً — متاحة كلها من زرار «الأعمدة».
-   *
-   *  الجدول `tableLayout: fixed` ومن غير تمرير أفقي عن قصد، فمجموع عروض الأعمدة لما
-   *  يعدّي عرض الشاشة المتصفح بيضغطهم بالنسبة — والضغط بيوصل لحد إن العنوان العربي
-   *  يتلف حرف في السطر ويبقى عمود من حروف مركّبة فوق بعض. ١٧ عمود × متوسط ١٢٠px
-   *  بيعدّوا ٢٠٠٠px، والشاشة العادية أقل من كده.
-   *
-   *  المخفي هنا نسب ومشتقات (الخصم % والضريبة % والإجمالي قبل الخصم) — بتتحسب من
-   *  أعمدة معروضة أصلاً، فاللي محتاجها بيفتحها واللي مش محتاجها بيقرا جدول مقروء. */
   const listCols = useTableColumns('purchase-list', listColumns, {
     defaultHidden: ['gross', 'combined_pct', 'tax_pct', 'expense_account_name', 'notes',
       'statement1'],
-    // التصدير زرار لوحده في ترويسة الكشف (`ExportExcelButton` تحت) — بنفس الأعمدة المعروضة.
   });
   const [showMoreFilters, setShowMoreFilters] = useState(false);
-  // F3 لخانة البحث — كانت جاية من `ListToolbar`، والخانة بقت في سطر فلاتر `ListPage`.
   useScreenShortcuts({ onSearch: () => { listSearchRef.current?.focus?.(); } }, !createVisible && !embeddedReturn);
 
-  // الشريحة المختارة — نفس فلتر «النوع» اللي كان في الشريط، بقى شرايح فوق.
   const kindTab = (purchasesFilter.values.kind || 'all') as 'all' | 'purchase' | 'return';
-  // الرابط ← فلتر النوع مرة واحدة عند الفتح، وبعدها الفلتر ← الرابط (زي «مسح»).
-  // آخر نوع اتكتب في الرابط — بيكتب لما النوع يتغيّر فعلاً بس (StrictMode بيشغّل التأثير مرتين).
   const lastKind = useRef(kindTab);
   useEffect(() => {
     if (listTab === 'purchase' || listTab === 'return') purchasesFilter.setValue('kind', listTab);
@@ -2191,7 +1743,6 @@ export default function Purchases() {
       count: purchasesSummary.totalReturnsCount },
     { key: 'payments' as const, label: 'سندات الصرف', dot: '#cf1322' },
   ];
-  // الفلاتر النصية تحت «فلاتر أكثر» — والطيّة بتفتح لوحدها لو فيها قيمة شغّالة.
   const moreActive = ['document_number', 'external_document_number', 'notes', 'statement']
     .some((k) => !!purchasesFilter.values[k]);
   const moreOpen = showMoreFilters || moreActive;
@@ -2201,7 +1752,6 @@ export default function Purchases() {
       onChange={(e) => purchasesFilter.setValue(key, e.target.value || undefined)} />
   );
   const shownCount = purchasesFilter.filtered.length;
-  // الفلوس في سطر الإجماليات فوق — الذيل بيعدّ بس.
   const listFooter = (
     <span className="sl-foot">
       <span>
@@ -2211,9 +1761,6 @@ export default function Purchases() {
     </span>
   );
 
-  // ── سطر الإجماليات فوق (طلب العميل ٢٠٢٦-١٠-٠٣) ──
-  // السجل بيحمّل كل الفواتير والمردودات، فالجمع على `filtered` هو الكشف كله بعد الفلاتر
-  // (المورد، الفرع، الفترة، البحث، الفلاتر النصية) — مش صفحة منه.
   const fmtCount = (n: number) => n.toLocaleString(numeralsLocale());
   const shownInv = purchasesFilter.filtered.filter((r) => r.kind === 'purchase');
   const shownRet = purchasesFilter.filtered.filter((r) => r.kind === 'return');
@@ -2225,7 +1772,6 @@ export default function Purchases() {
   const invCredit = sumOf(shownInv, (r) => r.credit_amount);
   const pt = paymentsTotals;
   const listSummary = paymentsTab ? (<>
-    {/* شريحة السندات بتفلتر بالمورد (لو واحد) والفترة بس — زي جدولها. */}
     <ListStat label="عدد السندات" value={pt ? fmtCount(pt.count) : '…'} />
     <ListStat label="مدفوع على الفواتير" value={pt ? money(pt.onInvoice) : '…'} />
     <ListStat label="دفعات مستقلة" value={pt ? money(pt.payments) : '…'} />
@@ -2263,7 +1809,6 @@ export default function Purchases() {
         if (k !== 'payments') purchasesFilter.setValue('kind', k === 'all' ? undefined : k);
       }}
       actions={(<>
-        {/* الزرار بيتغيّر مع الشريحة: شريحة المردودات ⇒ مردود شراء جديد في نفس الصفحة. */}
         {paymentsTab ? (
           <Button type="primary" icon={<PlusOutlined />} className="sl-create"
             onClick={payment.show}>
@@ -2286,12 +1831,10 @@ export default function Purchases() {
             setEditingId(null);
             setNewStep('party');
           }}>
-          {/* الاسم ده بالظبط — «اختصارات الإنشاء» بتدوّر على الزرار بنصّه. */}
           تسجيل فاتورة شراء
         </Button>
         )}
         <PrintOptionsMenu value={printOpts} onChange={setPrintOpts} />
-        {/* شريحة السندات ليها جدولها وتصديره وأعمدته — بيترسموا هنا في نفس المكان. */}
         {paymentsTab ? <span ref={setPaymentsSlot} className="sl-slot" /> : (<>
           <ExportExcelButton name="المشتريات" rows={purchasesFilter.filtered}
             tableColumns={listCols.columns as any} style={{ marginInlineStart: 0 }} />
@@ -2359,7 +1902,6 @@ export default function Purchases() {
       ) : (
       <Table
         {...listKb.tableProps}
-        // الضغط على مسودّة بيستكملها؛ الباقي بيفتح مستنده زي ما هو.
         onRow={(r: any) => {
           const base = (listKb.tableProps.onRow?.(r) ?? {}) as any;
           if (!r.__isDraft) return base;
@@ -2372,8 +1914,6 @@ export default function Purchases() {
         rowClassName={(r: any) => (r.__isDraft ? 'row-draft' : '')}
         className="sl-table"
         size="small"
-        // المسودّات فوق، وبرّه `purchasesFilter.filtered` عن قصد: الإجماليات في ذيل
-        // الجدول بتتبني منه، والمسودّة مش مستند — مايصحّش تتحسب في «إجمالي المشتريات».
         dataSource={[
           ...(drafts || []).map((d: any) => {
             const x = d.payload || {};
@@ -2390,18 +1930,9 @@ export default function Purchases() {
           ...purchasesFilter.filtered,
         ]}
         columns={listCols.columns}
-        // فاتورة ومرتجع ممكن يكون ليهم نفس الـid — المفتاح لازم يشيل النوع كمان.
         rowKey={(r: PurchaseRecord) => `${r.kind}-${r.id}`}
         loading={listLoading}
-        // نفس قاعدة باقي السجلات: كل عمود بمقاسه، والزيادة بتتمرّر — مش بتتوزّع على
-        // عمود واحد فتطلع فراغ في نص الجدول.
         tableLayout="fixed"
-        // من غير `scroll` أفقي — الشاشة مالهاش يمين وشمال.
-        //
-        // مع `tableLayout: fixed` وكل عمود له عرض، المتصفح بيوزّع الفرق على الأعمدة كلها
-        // بالنسبة: زادت تتفرد شوية، قلّت تتضغط شوية. اللي كان بيكسّر الشكل هو عمود من غير
-        // عرض — الفاضي كله كان بينزل عليه لوحده فيطلع شريط أبيض في نص الجدول.
-        // الترقيم شمال، والإجماليات يمين في نفس السطر — زي سجل المبيعات.
         pagination={{
           defaultPageSize: PAGE_SIZE, showSizeChanger: true, pageSizeOptions: PAGE_SIZE_OPTIONS,
           locale: { items_per_page: '' },
@@ -2409,22 +1940,10 @@ export default function Purchases() {
         }}
         locale={{ emptyText: 'لا يوجد عمليات شراء بعد' }}
         summary={(rows) => {
-          /*
-           * إجمالي المعروض — على اللي الفلاتر سابته، مش على كل السجل.
-           *
-           * «الشهر ده اشترينا بكام» سؤال بيتسأل **بعد** ما تحط فلتر، وإجمالي بيوصف السجل كله
-           * بيبان كأنه إجابة السؤال وهو مش هو.
-           *
-           * الخلايا بتتبني من الأعمدة **المعروضة** مش من ترتيب ثابت: `useTableColumns` بيخلّي
-           * الواحد يخفي عمود ويرتّب الباقي، فصف إجماليات بمواضع محفوظة كان هيحط مجموع «الباقي»
-           * تحت عنوان «الضرائب» أول ما حد يخفي عمود — رقم صح تحت اسم غلط، وده أوحش من مفيش رقم.
-           */
           const list = rows as readonly PurchaseRecord[];
           if (!list.length) return null;
           const sum = (get: (r: PurchaseRecord) => any) =>
             list.reduce((n, r) => n + Number(get(r) || 0), 0);
-          // القيمة نفسها `| undefined`: من غير كده الفهرسة بترجّع دالة مؤكدة، والشرط تحت
-          // بيبان دايماً صح مهما كان المفتاح مش موجود.
           const MONEY: Record<string, ((r: PurchaseRecord) => any) | undefined> = {
             gross: (r) => r.gross,
             discount_amount: (r) => r.discount_amount,
@@ -2465,21 +1984,8 @@ export default function Purchases() {
     { title: 'الإجمالي', dataIndex: 'line_total', key: 'line_total', render: (v: string) => `${fmtMoney(v)}` },
   ];
 
-
-  /** The opening run — التاريخ then المورد — and the product window. No coupons and no points:
-   *  those are what a SALE hands out, and a purchase has neither to give. Everything else is the
-   *  sale's flow, because a person who has learned one of these screens has learned both. */
   const doors = (
     <>
-      {/*
-        * باب واحد بيفتح الفاتورة — الفرع والتاريخ والتصنيف والبحث والقايمة، كلهم في بوباب واحد.
-        *
-        * كان خطوتين: بوباب بيسأل التاريخ وبعده بوباب بيسأل المورد. سؤالين هما نفس القرار —
-        * «الفاتورة دي لمين وامتى» — واتنين لازم تقفلهم قبل ما تكتب أول سطر.
-        *
-        * `kinds` بيدّي تصنيف جوّه البوباب، فاللي بيدوّر على اسم ومش لاقيه في الموردين يبص في
-        * العملاء من غير ما يقفل ويفتح تاني.
-        */}
       <PartyPickerModal contextLabel="فاتورة شراء"
         open={partyPickerOpen || newStep === 'party'} kind="supplier"
         kinds={['supplier', 'customer']}
@@ -2487,13 +1993,6 @@ export default function Purchases() {
         onPick={handlePartyPicked}
         onCancel={() => { setPartyPickerOpen(false); setNewStep(null); }} />
 
-      {/*
-        * معاينة الفاتورة قبل الطباعة — في بوباب، مش صفحة.
-        *
-        * زرار الطباعة كان بيفتح صفحة العرض وسايب اللي بيطبع يدوّر على زرار الطباعة جوّاها،
-        * وبعدين يرجع للسجل. الورقة اللي هتطلع بتتشاف هنا، والطباعة من نفس المكان، والسجل
-        * فاضل تحت البوباب زي ما هو.
-        */}
       <TabModal
         open={!!preview} onCancel={() => setPreview(null)} width={900} centered
         destroyOnHidden
@@ -2517,11 +2016,6 @@ export default function Purchases() {
 
       <TreasuryGate {...treasuryGate} />
 
-      {/*
-        * الباب التالت: **المخزن**.
-        *
-        * بيختار المخزن الافتراضي للسطور الجديدة.
-        */}
       <WarehouseGate
         open={newStep === 'warehouse' && !viewOnly && editingId === null}
         title="الشحنة دي داخلة أنهي مخزن؟"
@@ -2551,23 +2045,12 @@ export default function Purchases() {
         }}
         onPickMany={(ids, qtys) => {
           setPickerOpen(false);
-          // بالترتيب جوّه تحديث واحد: كل إضافة بتشوف السطور اللي قبلها (`addProductsWith`).
           addProducts(ids, qtys);
         }} />
 
     </>
   );
 
-  /**
-   * **البوابات بتتركّب مرة واحدة، بره التفرّع.**
-   *
-   * لمّا `{doors}` بتتكتب في فرعين و`return` منفصلين، React بيشوفهم شجرتين مختلفتين:
-   * أول ما الفرع يتبدّل البوابة بتتفكّ من مكان وتتركّب في التاني، واللي اتفكّت بتسيب
-   * `portal` بتاع antd واقف في نص أنيميشن القفل ومابيتشالش — قناع ميّت فوق الشاشة،
-   * كل حاجة مغمّقة ومافيش حاجة بتترد. المخرج الواحد بيمنع الفكّ من أصله.
-   */
-  // `height` عشان `.sale-doc` (min-height:100%) يقعد بطول الشاشة والإجمالي يتزق لآخرها.
-  // مستند جاي من شاشة تانية ولسه بيفتح ⇒ مكان الكشف فاضي (الشرح في `useDocRoute.opening`).
   if (docOpening) return <DocOpening />;
   return (
     <div style={createVisible || embeddedReturn ? { height: '100%' } : undefined}>

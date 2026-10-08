@@ -3,7 +3,6 @@ import { PAGE_SIZE } from '../utils/pagination';
 import { compareArabic, searchFilter, searchRank } from '../utils/arabicSort';
 import { customerFitsRep, customersOfRep } from '../utils/repScope';
 import { Alert, Button, Select, Tag, message } from 'antd';
-// فلتر على كل عمود — شوف `FilterTable`.
 import { FilterTable as Table } from '../components/FilterTable';
 import {
   DownloadOutlined, FileSearchOutlined, PrinterOutlined, ReloadOutlined,
@@ -22,22 +21,6 @@ import { printReport, type PrintColumn, type PrintTotal } from '../print/reportS
 import ListPage from '../components/ListPage';
 import { useCanSeeStats } from '../components/StatsRow';
 import { money, numeralsLocale, qty as num } from '../utils/money';
-/**
- * تقارير التشغيل — النقاط والكوبونات والمعاينات والشيكات والطلبات والحجوزات.
- *
- * سبع مواضيع كان عندها شاشة عرض وبس. You could page through five thousand point records and not
- * ask «مين أعلى عملاء في النقاط»، ولا «المعاينات اتوزّعت إزاي على المندوبين»، ولا «إيه اللي
- * بيستحق الأسبوع الجاي».
- *
- * الحاجات اللي الشاشة دي لازم تقولها صح:
- *
- * * **الملغي بيتعرض ومابيتحسبش.** A voided coupon and a rejected inspection are rows worth seeing
- *   — somebody is looking for why they are gone — and figures worth excluding. The row is greyed
- *   and the totals card says how many were left out, so neither half of that is silent.
- * * **الشيكات محفظة مش حركة.** The date filter runs on the DUE date; «اللي بيستحق خلال ٣٠ يوم» is
- *   a button rather than a date range somebody has to work out.
- * * **الإجماليات جاية من السيرفر** — ده تقرير مقسّم، وجمع الصفحة المعروضة بيبان كإجابة وهو مش.
- */
 
 type Subject = 'points' | 'coupons' | 'coupon_receipts' | 'inspections' | 'cheques'
   | 'orders' | 'reservations';
@@ -55,7 +38,6 @@ const SUBJECT_LABELS: Record<Subject, string> = {
   reservations: 'الحجوزات',
 };
 
-/** المواضيع اللي «العدد» فيها نقاط مش قطع — العمود بيسمّي نفسه صح. */
 const POINT_SUBJECTS: Subject[] = ['points', 'inspections'];
 
 interface Totals {
@@ -68,36 +50,27 @@ export interface OpsReportView {
   subject: Subject;
   level: Level;
   groupBy: GroupBy;
-  /** «بيستحق خلال كام يوم» — بيتحط جاهز في التقارير اللي دي هي فكرتها. */
   dueWithinDays?: number;
-  /** يفتح على اللي لسه مفتوح بس. */
   onlyOpen?: boolean;
 }
 
 export const REPORT_VIEWS: Record<string, OpsReportView> = {
-  // النقاط
   'points-movement': { label: 'حركة النقاط', subject: 'points', level: 'detail', groupBy: 'none' },
   'points-by-customer': { label: 'النقاط بالعميل', subject: 'points', level: 'summary', groupBy: 'customer' },
   'points-by-kind': { label: 'النقاط بنوع الحركة', subject: 'points', level: 'summary', groupBy: 'kind' },
-  // الكوبونات
   'coupons-list': { label: 'كشف الكوبونات', subject: 'coupons', level: 'detail', groupBy: 'none' },
   'coupons-by-status': { label: 'الكوبونات بالحالة', subject: 'coupons', level: 'summary', groupBy: 'status' },
   'coupons-by-customer': { label: 'الكوبونات بالعميل', subject: 'coupons', level: 'summary', groupBy: 'customer' },
-  // «تقرير …» عن قصد — «استلام الكوبونات» اسم شاشة شغل موجودة، واسم واحد بيودّي لمكانين بيخلّي
-  // اللي بيدوّر في القايمة يفتح الغلط.
   'coupon-receipts': { label: 'تقرير استلام الكوبونات', subject: 'coupon_receipts', level: 'detail', groupBy: 'none' },
   'coupon-receipts-by-rep': { label: 'استلام الكوبونات بالمندوب', subject: 'coupon_receipts', level: 'summary', groupBy: 'rep' },
-  // المعاينات
   'inspections-list': { label: 'كشف المعاينات', subject: 'inspections', level: 'detail', groupBy: 'none' },
   'inspections-by-rep': { label: 'المعاينات بالمندوب', subject: 'inspections', level: 'summary', groupBy: 'rep' },
   'inspections-by-kind': { label: 'المعاينات بالنوع', subject: 'inspections', level: 'summary', groupBy: 'kind' },
   'inspections-by-shop': { label: 'المعاينات بمحل الشراء', subject: 'inspections', level: 'summary', groupBy: 'shop' },
   'inspections-by-month': { label: 'المعاينات شهر بشهر', subject: 'inspections', level: 'summary', groupBy: 'month' },
-  // الشيكات
   'cheque-wallet': { label: 'محفظة الشيكات', subject: 'cheques', level: 'detail', groupBy: 'none' },
   'cheques-due-soon': { label: 'شيكات تستحق قريباً', subject: 'cheques', level: 'detail', groupBy: 'none', dueWithinDays: 30 },
   'cheques-by-status': { label: 'الشيكات بالحالة', subject: 'cheques', level: 'summary', groupBy: 'status' },
-  // الطلبات والحجوزات
   'orders-list': { label: 'كشف الطلبات', subject: 'orders', level: 'detail', groupBy: 'none' },
   'orders-open': { label: 'الطلبات المعلقة', subject: 'orders', level: 'detail', groupBy: 'none', onlyOpen: true },
   'reservations-open': { label: 'الحجوزات المفتوحة', subject: 'reservations', level: 'detail', groupBy: 'none', onlyOpen: true },
@@ -116,8 +89,6 @@ export default function OpsReports() {
   const [dueWithin, setDueWithin] = useState<number | undefined>(view?.dueWithinDays);
   const [onlyOpen, setOnlyOpen] = useState(!!view?.onlyOpen);
   const [statement, setStatement] = useState('');
-  // الموضوع ده عليه «بيان» أصلاً؟ السيرفر هو اللي بيقول (الشيكات آه، النقاط لأ) — والخانة
-  // بتختفي بدل ما تبقى فلتر بيرجّع فاضي على طول.
   const [statementOn, setStatementOn] = useState(false);
 
   const [rows, setRows] = useState<any[]>([]);
@@ -135,8 +106,6 @@ export default function OpsReports() {
       .catch(console.error);
   }, []);
 
-  // القوايم مرتّبة أبجدياً من غير بحث — والبحث بيرتّبها بالقُرب (`searchRank`).
-  // المناديب بس — القايمة كانت بتعرض كل مستخدمي النظام (محاسبين وأمناء مخازن…).
   const repOptions = useMemo(() => users
     .filter((u: any) => u.role === 'sales_rep' && (u.active !== false || u.id === repId))
     .map((u) => ({ value: u.id, label: String(u.full_name || u.username || `#${u.id}`) }))
@@ -152,7 +121,6 @@ export default function OpsReports() {
     setStatement('');
   }, [viewKey]);
 
-  // البيان مكتوب على مستند من نوع معيّن — موضوع تاني مالوش نفس البيان.
   useEffect(() => { setStatement(''); }, [subject]);
 
   const offPreset = !!view && (subject !== view.subject || level !== view.level
@@ -164,7 +132,6 @@ export default function OpsReports() {
 
   const params = useMemo(() => {
     const p: any = { subject, level, group_by: groupBy };
-    // «بيستحق خلال ٣٠ يوم» بيلغي مدى التواريخ — الاتنين نفس الفلتر، وبعتهم مع بعض بيضيّق مرتين.
     if (dueWithin) p.due_within_days = dueWithin;
     else if (range) {
       p.date_from = range[0].format('YYYY-MM-DD');
@@ -174,8 +141,6 @@ export default function OpsReports() {
     if (repId) p.rep_id = repId;
     if (onlyOpen) p.only_open = true;
     if (statement) p.statement = statement;
-    // السيرفر بيقسّم على ٥٠٠ سطر لو ماطلبناش — والشاشة مابتعرفش تطلب الصفحة اللي بعدها،
-    // فكان باقي السطور بيبقى بعيد عن اللي بيقرا. الحد الأقصى بتاع السيرفر، والجدول بيقسّم.
     p.limit = 5000;
     return p;
   }, [subject, level, groupBy, range, customerId, repId, dueWithin, onlyOpen, statement]);
@@ -218,7 +183,6 @@ export default function OpsReports() {
         <span style={{ color: r.overdue ? '#cf1322' : undefined, fontWeight: r.overdue ? 600 : 400 }}>
           {v}
         </span>) },
-    // «فاضل كام يوم» هو السبب اللي حد بيفتح محفظة الشيكات عشانه.
     { title: 'باقي (يوم)', dataIndex: 'days_to_due', align: 'left' as const,
       ...numberColumn<any>((r) => r.days_to_due),
       render: (v: number, r: any) => (r.overdue
@@ -294,7 +258,6 @@ export default function OpsReports() {
           {v}
         </Tag>) },
   ] : [
-    // reservations
     { title: 'المستند', dataIndex: 'document_number',
       ...textColumn(rows, (r: any) => r.document_number), render: (v: string) => <Tag>{v}</Tag> },
     { title: 'ينتهي في', dataIndex: 'expires_on', ...dateColumn<any>((r) => r.expires_on),
@@ -315,7 +278,6 @@ export default function OpsReports() {
         render: (v: string) => <b>{v}</b> },
       { title: 'عدد السطور', dataIndex: 'rows', align: 'left' as const,
         ...numberColumn<any>((r) => r.rows),
-        // الفرق بين «كام سطر» و«كام اتحسب» هو اللي ملغي.
         render: (v: number, r: any) => (r.counted === v
           ? v
           : <span>{v} <Tag color="orange">{v - r.counted} ملغي</Tag></span>) },
@@ -336,7 +298,6 @@ export default function OpsReports() {
     ? `g-${r.key}`
     : `${r.document_number ?? r.serial ?? r.cheque_number ?? ''}-${r.date ?? ''}-${i}`);
 
-  /** السطر بيضيّق التقرير على اللي اتضغط — نفس منطق تقارير الموارد البشرية. */
   const drillInto = (r: any) => {
     if (grouped) {
       if (groupBy === 'customer' || groupBy === 'supplier') setCustomerId(r.key ?? undefined);
@@ -397,12 +358,10 @@ export default function OpsReports() {
     writeCsv(`ops-${subject}-${level}-${groupBy}`, columnsFromTable(columns as any[]), rows);
   };
 
-  // اسم الملف بيتغيّر مع التقرير المعروض — نفس العنوان اللي بيتطبع في ترويسة الطباعة.
   const tableCols = useTableColumns(`ops-reports-${grouped ? 'grouped' : subject}`, columns, {
     export: { name: view?.label ?? SUBJECT_LABELS[subject], rows },
   });
 
-  // كروت الإجماليات بقت سطر تحت الجدول — ولسه للي عنده `stats.view` بس، زي `StatsRow`.
   const canSeeStats = useCanSeeStats();
   const footer = totals && canSeeStats ? (
     <span className="sl-foot">
@@ -465,14 +424,11 @@ export default function OpsReports() {
             ]}
           />
         )}
-        {/* المندوب قبل العميل: اختيار المندوب بيضيّق قايمة العملاء اللي بعده. */}
         <Select
           allowClear showSearch
           placeholder="كل المندوبين" value={repId}
           onChange={(v) => {
             setRepId(v);
-            // عميل مش بتاع المندوب الجديد بيتشال في نفس الضغطة — لو فضل، الكشف بيطلع فاضي
-            // والعميل نفسه مش ظاهر في القايمة عشان حد يفهم ليه. والتحديثين مع بعض = طلب واحد.
             if (!customerFitsRep(customers, customerId, v)) setCustomerId(undefined);
           }}
           options={repOptions} filterOption={searchFilter} filterSort={searchRank}/>
@@ -503,7 +459,6 @@ export default function OpsReports() {
         />
       )}
 
-      {/* الملغي بيتعرض ومابيتحسبش — والسطر ده بيقول الاتنين، عشان مايبقاش فيه نص ساكت. */}
       {!!totals?.excluded && (
         <Alert
           type="info" showIcon style={{ margin: '6px 0 8px' }}
@@ -525,8 +480,6 @@ export default function OpsReports() {
         className="sl-table"
         rowKey={rowKeyOf}
         size="small" loading={loading} dataSource={rows} columns={tableCols.columns}
-        // الملغي باهت — بيتقري، ومابيتقروش كأنه شغّال. ولازم يتلمّ مع كلاس مؤشر الكيبورد، لأن
-        // `rowClassName` هنا بيحل محل اللي جاي من `kb.tableProps` مش بيتضاف عليه.
         rowClassName={(r: any) => [
           r.counts === false ? 'row-muted' : '', kb.rowClassName(r),
         ].filter(Boolean).join(' ')}

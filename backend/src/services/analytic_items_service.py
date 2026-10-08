@@ -1,19 +1,3 @@
-"""البنود التحليلية — كل حصة مركز تكلفة كسطر، زي `account.analytic.line` في أودو.
-
-تقرير «أرباح مراكز التكلفة» بيقول إن المركز ده اتحمّل ٣٢٥ جنيه. السؤال اللي بيتسأل
-بعده على طول هو **«من إيه؟»** — وده رقم مجمّع، والإجابة قايمة. من غيرها اللي شايف
-رقم مش مقتنع بيه مالوش طريق يراجعه غير إنه يفتح القيود واحد واحد ويدوّر على اللي
-عليه المركز.
-
-**بنشتقّها مش بنخزّنها.** أودو بيكتب صف تحليلي جنب كل سطر قيد، فبيبقى عنده جدولين
-لازم يفضلوا متفقين. عندنا الحصة في `ledger_line_distribution` والسطر الواحد على
-`ledger_line.cost_center_id`، والاتنين بيتقروا من `analytic_service.shares_of` —
-نفس الباب اللي التقارير بتعدّي منه. فالقايمة دي **هي نفسها** الأرقام اللي في تقرير
-الربحية، مش جدول تاني ممكن يختلف معاه.
-
-السطر اللي حسابه مش إيراد ولا مصروف بيتشال: ده تقرير تحليلي، وحركة الأصول مش ربح
-ولا خسارة. نفس شرط تقرير الربحية بالظبط عشان الرقمين مايختلفوش.
-"""
 from __future__ import annotations
 
 from datetime import date
@@ -37,11 +21,6 @@ def analytic_items(
     date_to: date | None = None,
     include_unassigned: bool = False,
 ) -> dict:
-    """كل حصة في الفترة كسطر، ومعاها مجموعها.
-
-    `cost_center_id` بيضيّق على مركز واحد — ده الاستعمال الأساسي: جاي من صف في
-    تقرير الربحية بيسأل «الرقم ده جه منين».
-    """
     rows_in = list(_pnl_lines(db, date_from=date_from, date_to=date_to))
     dists = analytic_service.distributions_for(db, [ln.id for ln, _n, _s in rows_in])
     names = {c.id: c.name for c in db.scalars(select(CostCenter)).all()}
@@ -71,9 +50,7 @@ def analytic_items(
                 "nature": nature.value,
                 "cost_center_id": key,
                 "cost_center_name": names.get(key) if key else "— غير موزّع —",
-                # حصة السطر بإشارة طبيعته: الإيراد موجب والمصروف موجب، زي تقرير الربحية.
                 "amount": str(to_money(part)),
-                # نصيب المركز من السطر — ١٠٠٪ لما يكون السطر كله عليه.
                 "share_pct": str(to_money(
                     Decimal(str(part)) / Decimal(str(signed)) * 100)) if signed else None,
             })

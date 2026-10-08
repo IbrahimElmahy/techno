@@ -1,22 +1,3 @@
-"""يمسح قيود استيراد a5 لبادئة واحدة — لإعادة النقل بمفتاح تجميع صحيح.
-
-    python -m src.scripts.purge_a5_ledger --prefix FC-          # عرض بس
-    python -m src.scripts.purge_a5_ledger --prefix FC- --yes
-
----------------------------------------------------------------------------
-**ليه سكربت مسح أصلاً.** `import_a5_ledger` كان بيجمّع سطور القيد بـ`MMStnd`، وده رقم
-المستند في يومية a5 مش مفتاح القيد: بيتقسم على القيد الواحد وبيتشارك بين قيود مختلفة.
-النتيجة على مصنع السادات كانت **٢٬٧٩٠ قيد غير متوازن من ٢٬٨٠٨** — الميزانية مابتقفلش
-وأي تقرير مالي بيقرا الأرقام دي بيطلع غلط. والإصلاح في `--key doc`، بس القيود اللي
-اتكتبت غلط مابتتصلّحش في مكانها: لازم تتشال وتتكتب من الأول.
-
-**والمسح على `external_ref` بالبادئة.** كل قيد مستورد بيشيل `a5:<بادئة><مفتاح>`،
-فالبادئة بتحدّد النقلة بالظبط — `FC-` بتمسح المصنع وحده ومابتلمسش `AL-` ولا أكتوبر.
-والقيد اللي اتكتب من الشاشة مالوش `external_ref` أصلاً فمابيدخلش في الحساب.
-
-**بيرفض يمشي لو القيد متربط بمستند.** القيد اللي فاتورة بتشاور عليه مش قيد استيراد
-حر — مسحه بيسيب فاتورة بتشاور على لا حاجة. بيتعدّ وبيتقال، والمسح بيقف.
-"""
 from __future__ import annotations
 
 import argparse
@@ -29,7 +10,6 @@ from src.models.ledger import LedgerEntry, LedgerLine
 
 
 def _referencing_models() -> list:
-    """كل موديل فيه `ledger_entry_id` — اللي لازم يتفك ربطه قبل مسح القيد."""
     from src.models.fixed_asset import DepreciationRecord
     from src.models.hr_advance import EmployeeAdvance
     from src.models.hr_payroll_run import PayrollRemittance
@@ -64,10 +44,6 @@ def run(*, prefix: str, execute: bool, unlink: bool = False) -> int:
         for b, n in branches:
             print(f"   فرع {str(b):<16}{n:>8,}")
 
-        # **كل اللي بيشاور على قيد، مش الفواتير بس.** أول نسخة كانت بتفحص فواتير البيع
-        # وحدها، والمسح وقع على `purchase_invoice` بمفتاح أجنبي — بعد ما فكّ ربط
-        # الفواتير. القايمة دي كل موديل فيه `ledger_entry_id`، متجابة من الموديلات
-        # نفسها عشان اللي يضيف واحد جديد يلاقي نفسه هنا.
         linked_by: dict[str, int] = {}
         if ids:
             for model in _referencing_models():
@@ -91,9 +67,6 @@ def run(*, prefix: str, execute: bool, unlink: bool = False) -> int:
             return 0
 
         if linked:
-            # **الربط بيتفك مش بيتمسح.** المستند بيفضل زي ما هو، وبس بيبطّل يشاور على
-            # قيد هيختفي. و`import_a5_ledger` بيعيد الربط في نفس الخطوة اللي بيعمل فيها
-            # القيد الجديد، فالمستند بيرجع مربوط بقيده الصح.
             from sqlalchemy import update
 
             for model in _referencing_models():

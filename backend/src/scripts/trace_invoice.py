@@ -1,18 +1,3 @@
-"""يمشي دورة فاتورة البيع كاملة ويقول كل رقم طلع منين. قراءة بس.
-
-    python -m src.scripts.trace_invoice SINV-000036
-    python -m src.scripts.trace_invoice AL-S68689 --customer
-
-الفاتورة ← بنودها ← حركتها المخزنية ← قيدها ← أثرها على كشف حساب التاجر ←
-نقاطها في الجيبين ← كوبوناتها. وكل قسم بيتحقق من نفسه: مجموع السطور يساوي الصافي،
-القيد متوازن، النقاط المحسوبة تساوي المسجّلة.
-
-**الغرض إن الرقم يتشاف وهو بيتبني، مش وهو خلاص.** التقرير اللي بيقول «الرصيد كذا»
-مابيبنيش ثقة؛ اللي بيبنيها إنك تشوف الرقم اتجمّع من أنهي سطور وبأي قاعدة، وتلاقي
-الحاصل بيطابق المخزّن. واللي مايطابقش بيتقال بـ✗ جنبه.
-
-`--customer` بتزوّد كشف التاجر كله: أرصدته، مديونيته المفتوحة، نقاطه، ومرتجعاته.
-"""
 from __future__ import annotations
 
 import sys
@@ -74,7 +59,6 @@ def trace(number: str, *, with_customer: bool) -> int:
         print(f"   نقدي/آجل    : {to_money(inv.cash_amount):,.2f} / "
               f"{to_money(inv.credit_amount):,.2f}")
 
-        # ── البنود ───────────────────────────────────────────────────────────
         _head("البنود — والربح على كل سطر")
         lines = db.scalars(select(SalesInvoiceLine).where(
             SalesInvoiceLine.invoice_id == inv.id)).all()
@@ -97,10 +81,8 @@ def trace(number: str, *, with_customer: bool) -> int:
         print(f"   {'المجموع':<30}{'':>9}{'':>11}{total_lines:>13,.2f}"
               f"{total_cost:>12,.2f}{total_lines - total_cost:>12,.2f}")
         print()
-        # الخصم بيتحسب على مجموع السطور، فالصافي المخزّن لازم يطابق.
         failures += 0 if _check("مجموع السطور = صافي الفاتورة", total_lines, inv.net) else 1
 
-        # ── المخزن ───────────────────────────────────────────────────────────
         _head("الحركة المخزنية — كل سطر خرج من فين")
         moves = db.scalars(select(StockMovement).where(
             StockMovement.source_doc_type == "sales_invoice",
@@ -127,7 +109,6 @@ def trace(number: str, *, with_customer: bool) -> int:
         if moves:
             print(f"   ✔ كل بند اتحرّك بكميته ({len(lines)} بند)")
 
-        # ── القيد ────────────────────────────────────────────────────────────
         _head("القيد — الطرفين والتوازن")
         if inv.ledger_entry_id is None:
             print("   مافيش قيد. " + ("صافي الفاتورة صفر، فمافيش فلوس تتقيّد — ده صح."
@@ -155,18 +136,11 @@ def trace(number: str, *, with_customer: bool) -> int:
                       f"{0 if is_debit else amount:>14,.2f}")
             print()
             failures += 0 if _check("مدين = دائن", debit, credit) else 1
-            # **المستحق = المقبوض + الآجل، مش = طرف القيد.**
-            #
-            # التاجر اللي دفع زيادة بيقيّد الفرق لصالحه: فاتورة ٨٬١٤٨٫٥٠ ودفع
-            # ٨٬١٥٠ بتنزل ٨٬١٥٠ على الخزنة و١٫٥٠ دائن على حسابه — فطرف القيد
-            # ٨٬١٥٠ وهو أكبر من الفاتورة، وده صح. القاعدة اللي بتمسك الحالتين
-            # هي دي: المقبوض + الآجل = الصافي + الضريبة.
             failures += 0 if _check(
                 "المقبوض + الآجل = الصافي + الضريبة",
                 to_money(inv.cash_amount) + to_money(inv.credit_amount),
                 to_money(inv.net) + to_money(inv.tax_amount)) else 1
 
-        # ── النقاط ───────────────────────────────────────────────────────────
         _head("النقاط — المحسوب مقابل المسجّل")
         values = {p.item_id: Decimal(str(p.point_value)) for p in db.scalars(
             select(ProductPointValue).where(
@@ -193,7 +167,6 @@ def trace(number: str, *, with_customer: bool) -> int:
             print(f"   رصيد التاجر: معاينات {purses['inspection']:,.3f} · "
                   f"كوبونات {purses['coupon']:,.3f}")
 
-        # ── الكوبونات ────────────────────────────────────────────────────────
         _head("الكوبونات المصروفة مع الفاتورة")
         coupons = db.scalars(select(SalesInvoiceCoupon).where(
             SalesInvoiceCoupon.invoice_id == inv.id)).all()
@@ -203,7 +176,6 @@ def trace(number: str, *, with_customer: bool) -> int:
             print(f"   {c.coupon_kind or '—':<14}من {c.serial_from or '—'} "
                   f"إلى {c.serial_to or '—'}   العدد {c.count or '—'}")
 
-        # ── كشف التاجر ───────────────────────────────────────────────────────
         if with_customer and cust:
             _head(f"كشف حساب {cust.name}")
             accs = db.scalars(select(CustomerAccount).where(

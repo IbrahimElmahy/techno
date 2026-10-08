@@ -5,16 +5,6 @@ import { InputNumber } from './NumberInput';
 import { DeleteOutlined, PlusOutlined, PartitionOutlined } from '@ant-design/icons';
 import { useCostCenters, costCenterOption } from './CostCenterField';
 
-/**
- * توزيع تحليلي — سطر واحد على أكتر من مركز تكلفة بنِسَب.
- *
- * إيجار المخزن بيخدم المعرض والمشروع مع بعض. اللي كان بيعرف يكتب ده كان بيكتب
- * سطرين بنص المبلغ، فالمستند بيبقى فيه سطور مالهاش وجود في الورقة اللي في إيده.
- *
- * الشرط الوحيد هنا هو نفس شرط السيرفر: المجموع **١٠٠٪ بالظبط**. الزرار بيفضل
- * مقفول لحد ما يتظبط، والفرق مكتوب قدام المستخدم بدل ما الحفظ يرفض ويقوله رقم.
- */
-
 export type Split = Record<string, number>;
 
 const sum = (rows: Row[]) => rows.reduce((t, r) => t + (Number(r.percent) || 0), 0);
@@ -65,7 +55,6 @@ export default function CostCenterSplit({
 
   const clear = () => { onChange?.(null); setOpen(false); };
 
-  // «اقسمها بالتساوي» — أكتر تقسيمة بتتكتب، وكتابتها بإيد على تلاتة بتدّي ٩٩٫٩٩.
   const even = () => {
     const n = rows.length;
     if (!n) return;

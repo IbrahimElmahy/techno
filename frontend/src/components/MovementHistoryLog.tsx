@@ -6,7 +6,6 @@ import { FilterTable } from './FilterTable';
 import { CloseOutlined } from '@ant-design/icons';
 import dayjs, { Dayjs } from 'dayjs';
 
-/** فترات السجل الجاهزة. `custom` بتفتح خانتين تاريخ، و`all` بتشيل الفلتر. */
 type Preset = 'all' | 'm1' | 'm3' | 'm12' | 'custom';
 const PRESET_MONTHS: Record<'m1' | 'm3' | 'm12', number> = { m1: 1, m3: 3, m12: 12 };
 import { api } from '../api/client';
@@ -14,36 +13,9 @@ import { useMovementLabels } from '../lib/movementTypes';
 import { DocRef, docKindOf } from './DocumentLink';
 import { qty } from '../utils/money';
 
-/**
- * سجل عمليات الصنف — قايمة منسدلة، وتفاصيل اللي تختاره تحته.
- *
- * The question behind every stocktake difference: «الفرق ده جه منين». A number on its own accuses
- * somebody; the movements behind it explain — a sale on Tuesday, a transfer on Thursday, and the
- * shortfall is the one nobody wrote down.
- *
- * It opened as a modal over the sheet first, then as a panel at the FOOT of the page. Both were
- * the wrong shape, and for the same reason twice: the number being explained is on a row, and the
- * explanation has to sit with it. The modal covered the row; the foot panel put the answer three
- * screens below the question, and holding one item at a time meant «الصنف ده ناقص خمسة والتاني
- * زايد خمسة، هما نفس الحاجة؟» could not be asked at all.
- *
- * It renders as the EXPANDED ROW under its own item now, and several rows stay open together —
- * which is what reading a stocktake actually is. One collapsible row per movement, and the full
- * detail of whichever one is opened directly underneath it.
- *
- * One component, five screens (الجرد · جرد المخازن · دورة الجرد · رصيد الصنف · ملف الصنف). They
- * all render it the same way, so this shape change reached all five without touching any of them.
- *
- * **Reads the item card, not a new endpoint.** `GET /api/v1/items/{id}/card` has returned
- * `balance_before`, `balance_after`, the date, the movement type, the party and the document
- * number since كارت الصنف was built. Writing a second history beside it would be two answers to
- * one question, and they would disagree the first time either changed.
- */
-
 export interface MovementHistoryTarget {
   itemId: number;
   itemName?: string | null;
-  /** Narrow to one store when the caller is looking at one. */
   locationKind?: string | null;
   locationId?: number | null;
   dateFrom?: string | null;
@@ -56,38 +28,15 @@ export default function MovementHistoryLog({
 }: {
   target: MovementHistoryTarget | null;
   onClose: () => void;
-  /**
-   * يوري فلتر الفترة جوّه السجل.
-   *
-   * بيتقفل في الشاشات اللي عندها فلتر فترة **للورقة كلها** (الجرد وكشوفه): هناك
-   * الفترة بتتحدّد مرة فوق وبتتطبّق على كل الأصناف، وفلتر جوّه كل صنف معناه إن
-   * الواحد يظبط نفس التاريخ عشرين مرة — ويقارن أرقام مالهاش نفس الفترة من غير
-   * ما ياخد باله.
-   */
   periodFilter?: boolean;
 }) {
   const moveLabels = useMovementLabels();
   const [rows, setRows] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
-  /**
-   * الفترة — بتبدأ باللي الشاشة اللي نادت طالباه، وبعدين بقت في إيد اللي بيقرا.
-   *
-   * A stocktake opens this with its own from→to so the log answers «إيه اللي حصل في الفترة دي».
-   * From that point the range belongs to the reader: «فين الفرق» is very often answered by widening
-   * past the period being counted, and forcing them back to the sheet to change it there would
-   * make the log a dead end.
-   */
   const [range, setRange] = useState<[Dayjs | null, Dayjs | null] | null>(null);
-  /** الزرار المختار. بيبتدي «كل الحركات» لأن السجل بيتفتح على كل اللي حصل. */
   const [preset, setPreset] = useState<Preset>('all');
   const box = useRef<HTMLDivElement>(null);
 
-  /**
-   * **الهدف بقيمته مش بهويته.** الشاشات بتبني `target` جوّه الرندر (`{ itemId, ... }`)،
-   * فكل رندر للشاشة اللي فوق — حد كتب عدد فعلي في الجرد — كان بيعمل كائن جديد، والسجل
-   * يعيد الجلب ويرجّع الفترة لأولها ويعمل سكرول، في كل سطر مفتوح. المفتاح ده بيتغيّر بس
-   * لما السؤال نفسه يتغيّر.
-   */
   const targetKey = target ? JSON.stringify([
     target.itemId, target.locationKind ?? null, target.locationId ?? null,
     target.dateFrom ?? null, target.dateTo ?? null,
@@ -95,8 +44,6 @@ export default function MovementHistoryLog({
   const targetRef = useRef(target);
   targetRef.current = target;
 
-  // A new target resets the range to whatever that caller asked for — carrying the previous
-  // item's dates over would silently answer a different question than the one just clicked.
   useEffect(() => {
     const target = targetRef.current;
     if (!target) return;
@@ -105,8 +52,6 @@ export default function MovementHistoryLog({
       target.dateFrom ? dayjs(target.dateFrom) : null,
       target.dateTo ? dayjs(target.dateTo) : null,
     ] : null);
-    // والزرار بيتحط على «مخصص» لما الشاشة اللي نادت بتقول فترة بعينها — من غير كده كان
-    // هيفضل واقف على «كل الحركات» والقايمة متفلترة، والزرار يكدب على اللي تحته.
     setPreset(asked ? 'custom' : 'all');
   }, [targetKey]);
 
@@ -115,7 +60,6 @@ export default function MovementHistoryLog({
     if (!target) { setRows([]); return; }
     setLoading(true);
     const params: any = {};
-    // الاتنين مع بعض أو ولا واحد — الكارت بيرفض نوع من غير رقم.
     if (target.locationKind && target.locationId) {
       params.location_kind = target.locationKind;
       params.location_id = target.locationId;
@@ -128,20 +72,10 @@ export default function MovementHistoryLog({
       .finally(() => setLoading(false));
   }, [targetKey, range]);
 
-  // Harmless where the caller expands a row (antd has already brought it into view) and still
-  // needed on the screens that render this on its own — رصيد الصنف and ملف الصنف.
   useEffect(() => {
     if (targetRef.current) box.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   }, [targetKey]);
 
-  /**
-   * **السجل جدول — عمود لكل حاجة، وفلتر على كل عمود، والأحدث فوق.** (طلب العميل ٢٠٢٦-٠٩-٣٠)
-   *
-   * كان قايمة بتتفتح سطر سطر: التاريخ والنوع والكمية في العنوان، والمستند والطرف والموقع
-   * جوّه لما تدوس. فاللي بيدوّر على «فين راحت الخمس قطع» كان بيفتح عشرين سطر. دلوقتي كله
-   * ظاهر في أعمدة، وكل عمود بيتفلتر (`FilterTable`). والسيرفر بيحسب «الرصيد بعدها» بالترتيب
-   * الزمني وبيبعت الحركات مقلوبة خلاص (الأحدث فوق) — مابنقلبهاش تاني هنا.
-   */
   const tableRows = useMemo(() => rows.map((r: any, i: number) => ({
     key: String(r.movement_id ?? i),
     date: r.date ? String(r.date).slice(0, 10) : '',
@@ -162,13 +96,6 @@ export default function MovementHistoryLog({
     { title: 'التاريخ', dataIndex: 'date', width: 110 },
     { title: 'نوع الحركة', dataIndex: 'kind',
       render: (v: string, r: any) => <Tag color={r.direction === 'وارد' ? 'green' : 'red'}>{v}</Tag> },
-    /**
-     * رقم المستند بيفتح المستند نفسه في شاشته (طلب العميل ٢٠٢٦-١٠-٠٢).
-     *
-     * كان نص وبس: اللي لاقى العجز في فاتورة بيع أو تحويل كان بيقف عند الرقم، ويروح يدوّر
-     * عليه بنفسه في شاشة الفواتير. دلوقتي بيفتح للعرض، ومن هناك «تعديل» لو عنده صلاحية.
-     * الأنواع اللي مالهاش شاشة مستند (أول المدة، الهالك، المعاينة) بتفضل نص.
-     */
     { title: 'المستند', dataIndex: 'document_number',
       render: (v: string, r: any) => (r.doc_kind && r.doc_id
         ? <DocRef kind={r.doc_kind} id={r.doc_id} label={v || `#${r.doc_id}`} />
@@ -193,13 +120,6 @@ export default function MovementHistoryLog({
         title={`سجل عمليات — ${target.itemName || `صنف #${target.itemId}`}`}
         extra={<Button type="text" icon={<CloseOutlined />} onClick={onClose}>إغلاق</Button>}
       >
-        {/*
-          * الفترة.
-          *
-          * لما الشاشة اللي فوق عندها فلتر فترة للورقة كلها، السجل مابيعرضش واحد تاني —
-          * بيعرض اللي هي قالته وخلاص. فلتر لكل صنف معناه إن الواحد يظبط نفس التاريخ في
-          * كل صنف يفتحه، ويقارن أرقام مالهاش نفس الفترة من غير ما ياخد باله.
-          */}
         <div style={{
           display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap',
           marginBottom: 12, padding: '6px 10px', borderRadius: 8,
@@ -244,7 +164,6 @@ export default function MovementHistoryLog({
               )}
             </>
           ) : (
-            // الفترة بتتقال، مابتتسألش: اللي بيقرا لازم يعرف الأرقام دي بتاعة إمتى.
             <span style={{ fontSize: 14, color: '#4a4a4a' }}>
               الفترة:{' '}
               <b>
@@ -260,10 +179,6 @@ export default function MovementHistoryLog({
             {rows.length} حركة
           </span>
         </div>
-
-        {/* سطر «اضغط على أي حركة تشوف تفاصيلها تحتها» اتشال بطلب صاحب النظام.
-            كان بيشرح حاجة السجل نفسه بيقولها: الصفوف بتتفتح لما تتضغط، واللي بيفتحها
-            مرة عمره ما هيحتاج يتقاله تاني. */}
 
         {loading ? <Spin /> : tableRows.length
           ? <FilterTable size="small" rowKey="key" dataSource={tableRows} columns={columns as any}

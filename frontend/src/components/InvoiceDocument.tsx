@@ -5,20 +5,11 @@ import Logo, { BRAND } from './Logo';
 import { printDocument } from '../print/brand';
 import { PrintOptions, loadPrintOptions } from '../print/printOptions';
 import { COMPANY, companyLines } from '../config/company';
-// الورقة كلها أرقام إنجليزي (زي a5) — مش إعداد أرقام الشاشة، وإلا المبالغ بتطلع عربي
-// جنب كميات وتواريخ إنجليزي في نفس الورقة (ملاحظة العميل ٢٠٢٦-١٠-٠٦).
 import { printMoney as n } from '../print/reportSheet';
-
-/**
- * A real-looking invoice — used for BOTH sales and purchase invoices, on screen and in print.
- *
- * The same data builds the on-screen sheet and the printed page, so what the user reviews is
- * what comes out of the printer. Before this, the "invoice" was a bare label/value grid.
- */
 
 export interface InvoiceLine {
   name: string;
-  itemId?: number | null;   // set → the product name links to its file
+  itemId?: number | null;
   quantity: string | number;
   unit?: string | null;
   unit_price: string | number;
@@ -26,14 +17,13 @@ export interface InvoiceLine {
   points?: string | number;
   line_total: string | number;
   tier?: string | null;
-  warehouse?: string | null;   // (030) which warehouse this line moved through
+  warehouse?: string | null;
 }
 
 export interface InvoiceDoc {
   kind: 'sale' | 'purchase' | 'sale_return';
   document_number: string;
   date?: string | null;
-  /** Customer (sale) or supplier (purchase). */
   partyLabel: string;
   partyName: string;
   partyPhone?: string | null;
@@ -46,41 +36,19 @@ export interface InvoiceDoc {
   cash: string | number;
   credit: string | number;
   entryId?: number | null;
-  partyId?: number | null;   // set → the party name links to its profile
+  partyId?: number | null;
   totalPoints?: string | number;
   extraMeta?: [string, string][];
-  /** «الفرع» and «مندوب» on the printed head, when the switches ask for them. */
   branchName?: string | null;
   repName?: string | null;
-  /** «حساب العميل» — the party's ledger account, for the file copy. */
   partyAccount?: string | null;
-  /**
-   * حساب العميل **قبل** المستند ده، زي ما كان ساعة الترحيل (`prior_balance`).
-   *
-   * بيتقرا من المستند مش بيتحسب دلوقتي: رصيد العميل بيتغيّر مع كل حركة، ولو الورقة
-   * حسبته وقت الطباعة يبقى نفس المستند بيطلع برقمين في تاريخين. `null`/undefined =
-   * مستند أقدم من العمود، والسطر ساعتها مابيتعرضش بدل ما يخترع صفر.
-   */
   priorBalance?: string | number | null;
-  /** نوع الفاتورة (أبيض/بولي) — بيتكتب جنب «الحساب السابق» عشان يبان إنه حساب الخط ده. */
   family?: string | null;
-  /**
-   * **مديونية النوع التاني** وقت الترحيل — لو الفاتورة أبيض فده رصيد البولي.
-   * بتتطبع تحت «الباقي» عشان العميل يعرف الاتنين من غير ما يتخلطوا في رقم واحد.
-   */
   otherFamily?: string | null;
-  /** فاتورة بونص — بضاعة هدية بقيمة صفر. الفوتر بيقول قيمتها بسعر البيع بدل الحساب. */
   isBonus?: boolean;
   otherFamilyBalance?: string | number | null;
 }
 
-
-// **«طلب بيع» مش «فاتورة مبيعات».**
-//
-// الورقة اللي بتتسلّم للعميل بتتطبع ساعة البيع، وكلمة «فاتورة» عليها بتخلّيها تقرا
-// كمستند ضريبي وهي مش كده. الفاتورة الرسمية بتطلع من المحاسبة بعد الترحيل. الورقة دي
-// بتقول اتفقنا على إيه واستلم إيه — مش بتقوم مقام ورق قانوني.
-// (المشتريات والمرتجع زي ما هما: التسمية دي بتاعة اللي بيتسلّم للعميل.)
 const titleOf = (d: InvoiceDoc) => (
   d.isBonus ? 'فاتورة بونص'
   : d.kind === 'sale' ? 'طلب بيع'
@@ -89,8 +57,6 @@ const titleOf = (d: InvoiceDoc) => (
 
 const payable = (d: InvoiceDoc) => Number(d.net || 0) + Number(d.tax || 0);
 
-// A sale-return is the reverse of a sale: money flows back to the customer, so the cash line reads
-// "المسترد نقداً" and the "credit" line is a reduction of what the customer owes.
 const cashLabel = (d: InvoiceDoc) => (
   d.kind === 'sale' ? 'المدفوع نقداً'
     : d.kind === 'sale_return' ? 'المسترد نقداً'
@@ -106,12 +72,6 @@ const NOTE: Record<InvoiceDoc['kind'], string> = {
   sale_return: 'تم استرجاع الأصناف المذكورة أعلاه إلى المخزن وتسوية قيمتها لحساب العميل.',
 };
 
-/** The head cells, filtered by مفاتيح الطباعة.
- *
- * The party's NAME always prints — a document that does not say who it is for is not a document.
- * «بيانات العميل» governs the detail beside it: the phone and address a file copy wants and a
- * receipt handed across a counter does not.
- */
 function headMeta(d: InvoiceDoc, o: PrintOptions): [string, string][] {
   const rows: [string, string][] = [[d.partyLabel, d.partyName]];
   if (o.customerDetails) {
@@ -124,31 +84,11 @@ function headMeta(d: InvoiceDoc, o: PrintOptions): [string, string][] {
   rows.push(['التاريخ',
     d.date ? String(d.date).slice(0, 10) : new Date().toLocaleDateString('ar-EG')]);
   if (o.paidAndRemaining) {
-    // البونص مالوش سداد — «نقدي» عليه كانت بتقول إن العميل دفع.
     if (!d.isBonus) rows.push(['طريقة السداد', Number(d.credit || 0) > 0 ? 'آجل / جزئي' : 'نقدي']);
   }
   return [...rows, ...(d.extraMeta || [])];
 }
 
-/**
- * **الفوتر على تلات أعمدة — زي دفتر الفواتير اللي في إيد المكتب.**
- *
- *     ┌ الخصم ─────────┐ ┌ الحساب ─────────────────────┐ ┌ السداد ───────┐
- *     │ قبل الخصم       │ │ إجمالي الفاتورة               │ │ المدفوع        │
- *     │ الخصم           │ │ يضاف إليه الحساب السابق (أبيض) │ │ الباقي         │
- *     │ الضريبة         │ │ الإجمالي                      │ │ مديونية البولي │
- *     └────────────────┘ └──────────────────────────────┘ └───────────────┘
- *
- * كان جدول إجماليات واحد نازل تسع صفوف، وفيه «الإجمالي المستحق» و«الرصيد بعد الطلب»
- * — والأخير بيجمع الأبيض على البولي في رقم مالوش حساب يتسدّ فيه.
- *
- * **والحساب السابق بتاع نوع الفاتورة بس.** العميل اللي عنده خطّين بيتحصّل منه كل خط
- * لوحده، فالورقة بتجمع الفاتورة على حساب خطها، و**مديونية الخط التاني بتتكتب لوحدها
- * تحت الباقي** — يعرف الاتنين من غير ما يتخلطوا.
- *
- * عمود الخصم بيختفي لو مافيش خصم ولا ضريبة، والتاني بيبقى «إجمالي الفاتورة» بس لما
- * مايكونش فيه حساب سابق (المشتريات والمرتجعات).
- */
 function footerColumns(
   d: InvoiceDoc, o: PrintOptions, dPrior: number | null, discount: number,
   pts: (v: any) => string,
@@ -176,7 +116,6 @@ function footerColumns(
   if (o.paidAndRemaining) {
     const paid = Number(d.cash || 0);
     col3.push(row(cashLabel(d), cur(paid)));
-    // الباقي من «الإجمالي» لما فيه حساب سابق — ده اللي على العميل بعد الورقة دي.
     const left = dPrior != null ? dPrior + due - paid : Number(d.credit || 0);
     col3.push(row('الباقي', cur(left), true));
   }
@@ -188,8 +127,6 @@ function footerColumns(
   }
 
   const col = (rows: string[]) => (rows.length ? `<div class="f-col">${rows.join('')}</div>` : '');
-  // **البونص مالوش حساب.** قيمته صفر ومابيلمسش رصيد العميل، فسطور «الحساب السابق»
-  // و«الباقي» هتقول أرقام مالهاش علاقة بالورقة. اللي يهم فيها: خرج بكام بسعر البيع.
   if (d.isBonus) {
     return `
     <div class="f-cols">${col([row('قيمة البونص بسعر البيع', cur(d.gross)),
@@ -209,14 +146,10 @@ function footerColumns(
     </div>`;
 }
 
-/** Print this invoice on the shared company letterhead, honouring مفاتيح الطباعة. */
 export function printInvoice(d: InvoiceDoc, opts?: PrintOptions): void {
   const o = opts ?? loadPrintOptions();
-  // Only show a column when at least one line actually uses it.
   const anyDisc = d.lines.some((l) => Number(l.discount_pct || 0) > 0);
   const anyPts = d.lines.some((l) => Number(l.points || 0) > 0);
-  // (030) Only worth a column when the document actually spans more than one warehouse —
-  // printing the same name on every row would be noise.
   const warehouses = new Set(d.lines.map((l) => l.warehouse).filter(Boolean));
   const anyWh = warehouses.size > 1;
   const cols = 6 + (anyWh ? 1 : 0) + (anyDisc ? 1 : 0) + (anyPts ? 1 : 0);
@@ -229,8 +162,6 @@ export function printInvoice(d: InvoiceDoc, opts?: PrintOptions): void {
     ${anyPts ? `<td>${pts(l.points)}</td>` : ''}
     <td>${n(l.line_total)}</td></tr>`).join('');
   const discount = Number(d.gross || 0) - Number(d.net || 0);
-  // نفس حساب النسخة اللي على الشاشة بالحرف — الورقة المطبوعة والمعروضة لازم يقولوا
-  // نفس الأرقام، وده المكان اللي بيفترقوا فيه لو كل واحد حسب لوحده.
   const dPrior = d.priorBalance == null || d.kind !== 'sale' ? null : Number(d.priorBalance);
   const body = `
     <table class="grid">
@@ -241,26 +172,13 @@ export function printInvoice(d: InvoiceDoc, opts?: PrintOptions): void {
     ${footerColumns(d, o, dPrior, discount, pts)}`;
   printDocument(
     {
-      // **نوع الفاتورة في العنوان نفسه** — «طلب بيع — أبيض». أول حاجة العين
-      // بتقراها في الورقة، والمكتب بيفرز بيها قبل أي رقم.
       title: d.family ? `${titleOf(d)} — ${d.family}` : titleOf(d),
       number: d.document_number,
-      // الـPDF بيتحفظ باسم العميل مش برقم الفاتورة (طلب العميل ٢٠٢٦-١٠-٠٣).
       fileName: d.partyName || undefined,
-      // **الشكل المضغوط** — الشرح عند `DocMeta.compact`. الترويسة والذيل كانوا
-      // بياخدوا تلت الصفحة، فطلب بعشرين صنف كان بيطلع في صفحتين.
       compact: true,
       meta: headMeta(d, o),
       note: NOTE[d.kind],
       hide: {
-        // **ورقة البيع بتطلع من غير هوية الشركة — بقرار، مش بمفتاح.**
-        //
-        // دي مش مستند ضريبي: الفاتورة الرسمية بتطلع من المحاسبة بعد الترحيل. ورقة
-        // بشعار الشركة واسمها وعنوانها بتقرا كفاتورة مهما كان المكتوب عليها، واللي
-        // بيستلمها مش هيفرّق. فالهوية بتتشال من الأصل بدل ما تتسّاب لمفتاح ينساه حد.
-        //
-        // ومفتاحَي «شعار الشركة» و«اسم الشركة» لسه بيشتغلوا على المشتريات والمرتجعات —
-        // ودول بيتخفوا من قايمة المفاتيح على شاشة البيع عشان مايبقوش وعد كداب.
         logo: d.kind === 'sale' || !o.logo,
         companyName: d.kind === 'sale' || !o.companyName,
         companyFooter: d.kind === 'sale',
@@ -299,17 +217,9 @@ export default function InvoiceDocument({
   const discount = Number(doc.gross || 0) - Number(doc.net || 0);
   const anyLineDiscount = doc.lines.some((l) => Number(l.discount_pct || 0) > 0);
   const anyLinePoints = doc.lines.some((l) => Number(l.points || 0) > 0);
-  // (030) Show the warehouse column only when the document spans more than one.
   const anyLineWarehouse =
     new Set(doc.lines.map((l) => l.warehouse).filter(Boolean)).size > 1;
   const pts = (v: any) => Number(v || 0).toLocaleString('en-US', { maximumFractionDigits: 3 });
-  // **الحساب كامل، مش رقم الورقة لوحدها.**
-  //
-  // العميل اللي عليه حساب من قبل بيقرا «الإجمالي المستحق» على إنه كل اللي عليه، فبيدفع
-  // على أساسه ويتفاجئ بعدين. فالورقة بقت بتقول اللي البائع بيقوله بلسانه: كان عليك كذا،
-  // والطلب ده بكذا، ودفعت كذا، فالباقي كذا.
-  //
-  // الرقم جاي من المستند (`prior_balance` المتقفّل وقت الترحيل) — مش بيتحسب دلوقتي.
   const prior = doc.priorBalance == null ? null : Number(doc.priorBalance);
   const totals: [string, string, boolean?][] = [
     ...(prior != null && doc.kind === 'sale'
@@ -336,14 +246,10 @@ export default function InvoiceDocument({
       : []),
   ];
 
-  // المعاينة على الشاشة لازم تبقى هي هي الورقة اللي هتطلع من الطابعة. ورقة البيع
-  // بتتطبع من غير هوية الشركة، فالمعاينة مالهاش تعرضها — وإلا اللي بيراجع قبل ما يطبع
-  // بيوافق على ورقة غير اللي العميل هياخدها.
   const plain = doc.kind === 'sale';
 
   return (
     <div style={{ background: '#fff' }}>
-      {/* Letterhead */}
       {!plain && (
       <div style={{
         display: 'flex', alignItems: 'center', justifyContent: 'space-between',
@@ -360,7 +266,6 @@ export default function InvoiceDocument({
       )}
       {!plain && <div style={{ height: 4, background: BRAND.orange, marginTop: 3 }} />}
 
-      {/* Title + number */}
       <div style={{
         display: 'flex', alignItems: 'center', justifyContent: 'space-between',
         gap: 12, margin: '16px 0 10px', flexWrap: 'wrap',
@@ -374,7 +279,6 @@ export default function InvoiceDocument({
         </span>
       </div>
 
-      {/* Party + terms */}
       <div style={{ display: 'grid', gridTemplateColumns: '120px 1fr 120px 1fr', marginBottom: 14 }}>
         <MetaRow label={doc.partyLabel} value={
           onPartyClick && doc.partyId
@@ -390,7 +294,6 @@ export default function InvoiceDocument({
         {(doc.extraMeta || []).map(([k, v]) => <MetaRow key={k} label={k} value={v} />)}
       </div>
 
-      {/* Lines */}
       <div style={{ overflowX: 'auto' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse' }}>
           <thead>
@@ -430,7 +333,6 @@ export default function InvoiceDocument({
         </table>
       </div>
 
-      {/* Totals */}
       <table style={{ marginTop: 14, marginInlineStart: 'auto', width: 320 }}>
         <tbody>
           {totals.map(([k, v, strong], i) => (
@@ -457,7 +359,6 @@ export default function InvoiceDocument({
   );
 }
 
-/** A ready-made footer for the modal that shows an invoice. */
 export function invoiceFooter(doc: InvoiceDoc | null, onClose: () => void) {
   return (
     <Space>

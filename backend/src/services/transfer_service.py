@@ -1,8 +1,3 @@
-"""Transfer service (T040–T041). FR-022–024.
-
-Pending→approved; approval by the SOURCE location's branch manager (central source ⇒ admin/central
-authority); atomic out+in under locks; reverse-transfer mirror pair.
-"""
 from __future__ import annotations
 
 from datetime import datetime
@@ -26,11 +21,6 @@ from src.services import (
     audit_service, batch_service, serial_service, stock_service,
 )
 
-# نوع مستند حركة المخزون بتاعة إذن التحويل — من `StockDoc` عشان يفضل واحد.
-#
-# كان مكتوب هنا `"transfer"` بينما نقل a5 كتب `"stock_transfer"`، فالإلغاء والحذف
-# كانوا بيدوّروا على اسم عليه ٤٦ حركة بس ويسيبوا الـ٦٤ ألف التانيين. الشرح الكامل
-# لكل الأنواع في `StockDoc`.
 MOVEMENT_DOC = StockDoc.TRANSFER
 
 _ROUTE_KINDS = {
@@ -54,7 +44,6 @@ def _doc_number(db: Session) -> str:
 
 
 def _location_branch(db: Session, kind: LocationKind, location_id: int) -> int | None:
-    """Branch that owns a location; None for the central warehouse (head-office authority)."""
     if kind == LocationKind.warehouse:
         wh = db.get(Warehouse, location_id)
         return wh.branch_id if wh else None
@@ -81,22 +70,6 @@ def initiate(db, *, item_id, quantity, route: TransferRoute, source_kind, source
         raise TransferError("كمية التحويل لازم تكون أكبر من صفر.")
     if source_kind == dest_kind and source_id == dest_id:
         raise TransferError("المصدر والوجهة لازم يكونوا مكانين مختلفين.")
-    # **الطلب بيتقبل حتى لو المصدر ماعندوش الكمية.** ده طلب، مش صرف.
-    #
-    # كان فيه فحص مبكر بيرفض `qty > available` — ومعناه إن المندوب اللي محتاج ١٠٠
-    # والمخزن فيه ٦٠ **مايقدرش يطلب المية أصلاً**. فبيطلب ٦٠، والمكتب مايعرفش إن فيه
-    # نقص ٤٠: الرقم اللي وصله مش الاحتياج، ده الرصيد. الطلب اللي بيتفصّل على المتاح
-    # بيخبّي المعلومة الوحيدة اللي المكتب محتاجها عشان يشتري.
-    #
-    # واللي بيشتري بيقرر من مكان تاني خالص: عنده المخزن كله، والطلبات التانية، والوارد
-    # اللي في السكة. فالطلب بيوصل بالكامل، وهو بيعدّله أو يرفضه.
-    #
-    # **والحارس الحقيقي مكانه الاعتماد مش الطلب.** `stock_service.post_movement`
-    # بيرفض أي حركة خروج بترمي الرصيد تحت الصفر (`allow_negative=False` وهو
-    # الافتراضي)، وهي اللي بتتنفّذ ساعة الاعتماد. الفحص هنا كان راحة مش صحة — والرصيد
-    # ممكن يتغيّر بين الطلب والاعتماد، فهو ماكانش بيضمن حاجة أصلاً.
-    #
-    # (031) المحجوز لعملاء برضه بيتحمى هناك، في نفس اللحظة اللي البضاعة بتتحرّك فيها.
     transfer = StockTransfer(
         document_number=_doc_number(db), item_id=item_id, quantity=Decimal(quantity), route=route,
         source_location_kind=source_kind, source_location_id=source_id,
@@ -121,22 +94,17 @@ def approve(db, *, transfer_id: int, approver_role: RoleName, approver_branch_id
         raise TransferError("الإذن اللي اتعتمد أو اترفض مايتعتمدش تاني.")
 
     src_branch = _location_branch(db, transfer.source_location_kind, transfer.source_location_id)
-    # Source-branch authority: central source (None) ⇒ admin/central; else the source-branch manager.
     if src_branch is None:
         if not is_admin:
             raise TransferDenied("التحويل من مخزن مركزي محتاج صلاحية الإدارة.")
     elif not (is_admin or (approver_role == RoleName.branch_manager and approver_branch_id == src_branch)):
         raise TransferDenied("الاعتماد لمدير فرع المصدر بس.")
 
-    # (031) Every line the document carries. A transfer written before lines existed has none, so
-    # its own `item_id`/`quantity` stand in — which is what lets old documents approve unchanged.
     lines = db.scalars(select(StockTransferLine).where(
         StockTransferLine.transfer_id == transfer.id)).all()
     moving = ([(ln, ln.item_id, ln.quantity) for ln in lines] if lines
               else [(None, transfer.item_id, transfer.quantity)])
     if not moving:
-        # Every line was taken off. Approving an empty request would post nothing and call it done;
-        # the honest end for a request nobody wants is a rejection.
         raise TransferError("الإذن مفيهوش أصناف — ارفضه بدل ما تعتمده.")
 
     first_out = first_in = None
@@ -159,9 +127,6 @@ def approve(db, *, transfer_id: int, approver_role: RoleName, approver_branch_id
         if first_out is None:
             first_out, first_in = out_mv, in_mv
 
-        # The quantity has moved; the things that describe *which* units moved have to follow it.
-        # Leaving them behind is the drift the serial/batch integrity checks exist to catch — and
-        # did catch, which is how this was found.
         item = db.get(Item, item_id)
         if item is not None:
             if getattr(item, "is_serialized", False):
@@ -183,9 +148,6 @@ def approve(db, *, transfer_id: int, approver_role: RoleName, approver_branch_id
 
     transfer.status = TransferStatus.approved
     transfer.approved_by = approver_user_id
-    # ساعة حقيقية. كان `datetime(2026, 1, 1)` والتعليق بيقول إن اللي بينادي بيظبطه في
-    # الإنتاج — ومحدّش بيظبطه: `api/transfers.py` مابيلمسش الحقل. فكل إذن اتعتمد من
-    # الشاشة مكتوب عليه إنه اتعتمد أول يناير. `reject` جنبه بيستخدم `utcnow` من الأول.
     transfer.approved_at = datetime.utcnow()
     transfer.out_movement_id = out_mv.id
     transfer.in_movement_id = in_mv.id
@@ -196,19 +158,6 @@ def approve(db, *, transfer_id: int, approver_role: RoleName, approver_branch_id
 
 
 def _drop_movements(db, transfer, lines) -> None:
-    """حركات الإذن بتتشال — بعد ما اللي بيشاور عليها يسيبها.
-
-    الرصيد مشتق من الحركات، فشيل الحركة بيرجّع الرصيد لوحده. بس الإذن نفسه وسطوره
-    بيمسكوا `out_movement_id`/`in_movement_id`، والمفتاح الأجنبي في بوستجرس بيتفحص
-    **على طول** مش آخر المعاملة. فالحذف الأول كان بيقع:
-
-        ForeignKeyViolation: update or delete on table "stock_movement" violates
-        foreign key constraint "stock_transfer_out_movement_id_fkey"
-
-    يعني «إلغاء الإذن» كان بيرجّع 500 لكل إذن معتمد، والبضاعة بتفضل في المخزن الغلط.
-    الترتيب هنا مقصود: تفضية المشاورات، `flush` عشان الـUPDATE يوصل للقاعدة قبل الحذف،
-    وبعدين الحذف.
-    """
     from src.models.stock import StockMovement
 
     for ln in lines:
@@ -224,15 +173,6 @@ def _drop_movements(db, transfer, lines) -> None:
 
 
 def delete(db, *, transfer_id: int, actor_user_id: int) -> None:
-    """حذف إذن التحويل — بيروح هو وحركته، مش بيتعكس.
-
-    كان `reverse`: بيكتب حركتين مضادين لكل سطر ويعلّم الإذن «معكوس»، فالإذن الغلط بيفضل
-    في السجل ومعاه حركتين زيادة في كارت كل صنف. ده أسلوب دفتر أستاذ، والشركة مش بتشتغل
-    بيه — الإذن اللي اتكتب غلط بيتمسح.
-
-    المعتمد بترجع بضاعته لمصدرها الأول: الحركة بتتشال (الرصيد مشتق منها فبيرجع لوحده)،
-    والسيريالات والدفعات بترجع مكانها. المعلّق مالوش أثر أصلاً فبيتشال على طول.
-    """
     transfer = db.get(StockTransfer, transfer_id)
     if transfer is None:
         raise TransferError("إذن التحويل مش موجود.")
@@ -241,8 +181,6 @@ def delete(db, *, transfer_id: int, actor_user_id: int) -> None:
         StockTransferLine.transfer_id == transfer.id)).all()
 
     if transfer.status == TransferStatus.approved:
-        # اللي بيقول **أنهي** وحدات اتحركت لازم يرجع الأول، والرصيد لسه شايل الحركة —
-        # عكس ترتيب الاعتماد بالظبط.
         for ln in lines:
             item = db.get(Item, ln.item_id)
             if item is None:
@@ -273,17 +211,6 @@ def delete(db, *, transfer_id: int, actor_user_id: int) -> None:
 
 
 def _refuse_if_dest_goes_negative(db, transfer, lines) -> None:
-    """الإلغاء اللي هيخلّي الوجهة تحت الصفر بيتمنع — واللي بيتمنع بيتسمّى بالاسم.
-
-    الإلغاء بيقول «البضاعة دي ماوصلتش». لكن لو الوجهة باعت منها خلاص، فهي وصلت وراحت،
-    والإلغاء ساعتها بيكتب رصيد سالب — يعني كمية مش موجودة فيزيائياً بتدخل في التكلفة
-    والجرد والمتاح، وده بالظبط الخلل اللي «فحص النظام» بيصرّخ منه.
-
-    حصل فعلاً: إذن TRF-000004 اتلغى فبقى صنفين في «مخزن السياره ( د )» بـ`-1` و`-2`.
-
-    والرسالة بتقول الأصناف بأسمائها وبكام هتنزل، عشان اللي قدامه يعرف إنه محتاج جردة
-    أو إذن رجوع بالفرق، مش «مايتلغاش» وخلاص.
-    """
     from src.models.stock import LocationKind as _LK
 
     if transfer.dest_location_kind != _LK.warehouse:
@@ -306,11 +233,6 @@ def _refuse_if_dest_goes_negative(db, transfer, lines) -> None:
 
 def cancel(db, *, transfer_id: int, actor_user_id: int,
            reason: str | None = None) -> StockTransfer:
-    """إلغاء إذن معتمد — البضاعة ترجع لمصدرها والإذن يفضل في السجل «ملغي».
-
-    الفرق بينه وبين الحذف إن ده بيسيب أثر: الإذن يفضل مقروء ومكتوب عليه إنه اتلغى وليه.
-    اللي بيتلغي بعد ما البضاعة اتحركت غالباً ليه سبب حد تاني محتاج يقراه.
-    """
     transfer = db.get(StockTransfer, transfer_id)
     if transfer is None:
         raise TransferError("إذن التحويل مش موجود.")
@@ -339,14 +261,6 @@ def cancel(db, *, transfer_id: int, actor_user_id: int,
 
     _drop_movements(db, transfer, lines)
 
-    # **«ملغي» مش «مرفوض».**
-    #
-    # الاتنين كانوا بيتكتبوا `rejected`، والسجل بقى بيقول عن إذن راحت بضاعته ورجعت إنه
-    # «مرفوض» — والشاشة مكتوب فيها تحت المرفوض «الإذن المرفوض لم تتحرك فيه أي بضاعة».
-    # يعني المستند بيكدب على اللي بيقراه بعد شهر.
-    #
-    # والفرق حقيقي: المرفوض حد بصّ على طلب ومشّاهوش، والملغي راح ورجع. `reversed`
-    # موجودة في الموديل من الأول والشاشة بتسمّيها «ملغي» — بس محدّش كان بيكتبها.
     transfer.status = TransferStatus.reversed
     transfer.reject_reason = (reason or "اتلغى بعد الاعتماد")[:240]
     db.flush()
@@ -356,17 +270,7 @@ def cancel(db, *, transfer_id: int, actor_user_id: int,
     return transfer
 
 
-# ---------------------------------------------------------------------------
-# (031) The pending document: what may still be changed, and what may not.
-# ---------------------------------------------------------------------------
-
 def _pending(db, transfer_id: int) -> StockTransfer:
-    """The transfer, if it is still open to change.
-
-    Everything below refuses once the document has moved stock. An approved transfer has posted
-    movements against two locations; editing its quantity afterwards would leave the balances
-    describing a document that no longer says what happened.
-    """
     transfer = db.get(StockTransfer, transfer_id)
     if transfer is None:
         raise TransferError("إذن التحويل غير موجود.")
@@ -384,9 +288,6 @@ def add_line(db, *, transfer_id: int, item_id: int, quantity,
     line = StockTransferLine(transfer_id=transfer.id, item_id=item_id, quantity=qty)
     db.add(line)
     db.flush()
-    # (031) Every change to a pending request is recorded. The person who raised it reads the
-    # history to find out why what arrived is not what he asked for, and «الكمية اتغيّرت» with no
-    # name and no minute on it is not an answer.
     audit_service.record(
         db, action="transfer.line_add", actor_user_id=actor_user_id,
         entity_type="stock_transfer", entity_id=transfer.id,
@@ -402,8 +303,6 @@ def set_line_quantity(db, *, line_id: int, quantity,
     _pending(db, line.transfer_id)
     qty = to_qty(quantity)
     if qty <= 0:
-        # Zero is not a way to remove a line: a line that moves nothing still says the item was
-        # considered, and «امسح السطر» is its own decision with its own button.
         raise TransferError("الكمية لازم تكون أكبر من صفر — لو مش عايزه، امسح السطر.")
     was = str(line.quantity)
     line.quantity = qty
@@ -421,14 +320,6 @@ _TEXT_FIELDS = ("statement1", "external_document_number", "notes")
 
 def set_texts(db, *, transfer_id: int, values: dict,
               actor_user_id: int | None = None) -> StockTransfer:
-    """تعديل سطور الكلام على الإذن — البيان ورقم الورقة والملاحظات — وهو لسه تحت الاعتماد.
-
-    كانت بتتكتب مرة وقت الإنشاء ومالهاش أي طريق تتعدّل بيه، فغلطة في البيان كانت بتفضل على
-    الورقة. الكلام مابيحرّكش بضاعة، بس بيتقفل مع الإذن زي الكميات: الإذن المعتمد اتطبع
-    واتمضى عليه، وتصحيحه بيبقى بإلغاء وطلب جديد (اللي بيشيل الكلام معاه).
-
-    `values` فيها بس الخانات اللي اتبعتت — اللي مااتبعتش بتفضل زي ما هي.
-    """
     transfer = _pending(db, transfer_id)
     before, after = {}, {}
     for field in _TEXT_FIELDS:
@@ -450,12 +341,6 @@ def set_texts(db, *, transfer_id: int, values: dict,
 
 
 def remove_line(db, *, line_id: int, actor_user_id: int | None = None) -> None:
-    """حذف صنف من الإذن — مش حذف الإذن.
-
-    The request itself is never deleted: somebody asked for it, somebody may have to answer for it,
-    and a document that can vanish is a decision with no record. Taking every line off leaves an
-    empty request that can only be REJECTED, which is the honest way to say «مش هيتم».
-    """
     line = db.get(StockTransferLine, line_id)
     if line is None:
         raise TransferError("السطر غير موجود.")
@@ -469,22 +354,11 @@ def remove_line(db, *, line_id: int, actor_user_id: int | None = None) -> None:
 
 
 def reject(db, *, transfer_id: int, actor_user_id: int, reason: str | None = None) -> StockTransfer:
-    """رفض إذن التحويل.
-
-    `TransferStatus.rejected` has existed since the transfer was written and **nothing ever set
-    it** — so a request that was not going to happen had only two ways out: approve it anyway, or
-    leave it pending forever. A queue that only grows is a queue nobody reads.
-
-    Rejecting moves no stock. That is the whole point of rejecting rather than approving-then-
-    reversing: nothing left the shelf, so nothing has to come back to it.
-    """
     transfer = _pending(db, transfer_id)
     transfer.status = TransferStatus.rejected
     transfer.approved_by = actor_user_id
     transfer.approved_at = datetime.utcnow()
     if reason:
-        # Kept on the document rather than in an audit line alone: the person who asked for the
-        # transfer reads THIS screen, not the audit log.
         transfer.reject_reason = reason[:240]
     db.flush()
     audit_service.record(

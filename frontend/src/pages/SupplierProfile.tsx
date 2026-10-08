@@ -35,10 +35,6 @@ import { printStatement } from '../print/statementSheet';
 import StatsRow from '../components/StatsRow';
 import { money } from '../utils/money';
 import { runningTotals } from '../utils/statementOrder';
-/**
- * ملف المورد (Supplier 360) — the mirror of the customer file: balance, account statement,
- * purchase invoices, returns, payment vouchers and cheques, each row opening in a popup.
- */
 
 interface DocRow {
   id: number;
@@ -67,7 +63,6 @@ interface StatementLine {
   raw?: any;
   _serial?: number;
   _key?: string;
-  // ── المطابقة (نفس حقول كشف الحساب — المصدر واحد) ──────────────────────────
   residual?: string | null;
   due_date?: string | null;
   days_overdue?: number | null;
@@ -121,7 +116,6 @@ const LINKABLE: Record<string, 'invoice' | 'return' | 'purchase' | 'purchase_ret
 export default function SupplierProfile() {
   const { supplierId } = useParams();
   const navigate = useNavigate();
-  /** «رجوع» للمكان اللي جيت منه؛ الكشف خطة بديلة. */
   const goBack = useBackTo('/suppliers');
   const [data, setData] = useState<ProfileData | null>(null);
   const [loading, setLoading] = useState(false);
@@ -243,7 +237,6 @@ export default function SupplierProfile() {
 
   const statementLines: StatementLine[] = statement?.lines ?? [];
 
-  // مرتّبة أبجدي — السطور جاية بالتاريخ، فالقايمة كانت بترتيب أول ظهور.
   const abc = (a: { label: string }, b: { label: string }) => compareArabic(a.label, b.label);
   const repOptions = useMemo(() => [...new Set(statementLines.map((l: any) => l.rep_name).filter(Boolean))]
     .map((r) => ({ value: r as string, label: r as string })).sort(abc), [statementLines]);
@@ -305,7 +298,6 @@ export default function SupplierProfile() {
   const filtering = !!(repFilter || ccFilter.length || typeFilter.length
     || query.trim() || docNo.trim() || hideZero);
 
-  // الكشف جاي الأحدث فوق — التراكمي بيتجمع بالترتيب الزمني (الفاتورة قبل نقديها).
   const runningOf = useMemo(() => runningTotals(
     shownLines, (l) => `${l.entry_id}-${l.entry_date}-${l.balance}`), [shownLines]);
 
@@ -458,7 +450,6 @@ export default function SupplierProfile() {
     writeCsv(`supplier-${supplierId}-statement`, cols, shownLines);
   };
 
-  // ورقة a5 الثابتة — الشرح عند `print/statementSheet` (نفس ورقة كشف الحساب).
   const printIt = () => {
     if (!statement) return;
     const filters: [string, string][] = [
@@ -980,15 +971,12 @@ export default function SupplierProfile() {
         )}
       </Card>
 
-      {/* One popup for every document kind. */}
       <TabModal
         open={record !== null}
         title={record?.title || 'تفاصيل المستند'}
         onCancel={() => setRecord(null)}
         footer={(
           <Space style={{ width: '100%', justifyContent: 'space-between' }}>
-            {/* The row is no longer a dead end: from here the document opens in the screen that
-                owns it, where editing and reversing already live. */}
             <span>
               {recordRef && LINKABLE[recordRef.kind] && (
                 <DocumentLink

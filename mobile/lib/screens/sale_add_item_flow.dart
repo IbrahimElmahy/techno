@@ -5,70 +5,27 @@ import '../models/arabic_sort.dart';
 import '../models/models.dart';
 import '../theme.dart';
 
-/// إضافة أصناف لفاتورة البيع — **بوبابات ورا بعض**، زي أصناف المعاينة بالظبط.
-///
-/// كانت شاشة كاملة: تفتحها، تختار فئة، تختار صنف، ترجع للفاتورة، والسطر بيتضاف بكمية
-/// «١» وتعدّلها. المندوب اللي بيحط تمن أصناف كان بيعمل تمن دخلات وخرجات من شاشة، وتمن
-/// تعديلات كمية بعدهم. دلوقتي: الفئة، الصنف، الكمية — و«التالي» بيرجّعه للأصناف على طول.
-///
-/// **خانة الكمية بتبتدي فاضية عن قصد.** كانت بتبتدي «١»، والرقم اللي مكتوب في خانة انت
-/// جاي تكتب فيها هو رقم مستنّي نصّه يتمسح: «١» ومعاها «٢» بتطلع ١٢ أو ٢١ حسب مكان
-/// المؤشر. نفس القاعدة اتطبّقت في أصناف المعاينة لما المندوب طلبها، ودي نفس الغلطة في
-/// نفس الإيد على شاشة تانية.
-///
-/// **المتاح هنا مش رصيد العهدة**: ده الرصيد ناقص اللي اتحط على الفاتورة اللي بيكتبها
-/// دلوقتي — من غير الطرح ده بيحط نفس الخمسة على تلات سطور وهو مطمّن.
 class SaleAddItemFlow {
   const SaleAddItemFlow._();
 
-  /// بيفضل يفتح البوبابات لحد ما المستخدم يقفل. `onAdd` بتتنادى لكل صنف يتضاف،
-  /// وبترجّع الكمية اللي بقت على الفاتورة عشان المتاح يتحدّث للّي بعده.
   static Future<void> show(
     BuildContext context, {
     required Map<int, double> alreadyOnInvoice,
     required String? priceTier,
     required void Function(SaleItem item, double quantity) onAdd,
-    // البيع بيتحد بالمتاح في العربية؛ طلب التحويل **من المخزن** لأ — المندوب بيطلب
-    // حاجة مش معاه أصلاً، والمتاح عنده معلومة مش حد. المسؤول هو اللي بيراجع الكميات.
     bool capToAvailable = true,
-    // **وهل يشوف المتاح أصلاً.** الحد والعرض حاجتين: على طلب التحويل المندوب بيطلب
-    // احتياجه، والرصيد الحالي مش بس مش حد — عرضه بيخلّيه يكتب الرصيد مكان احتياجه،
-    // فالمكتب يستلم رقم مش اللي هو عايزه.
     bool showAvailable = true,
-    // السعر على إذن تحويل زحمة — مافيش فلوس في المستند ده.
     bool showPrice = true,
-    // **السعر المعروض: بعد الخصم ولا قبله.**
-    //
-    // في الفاتورة بيتعرض بعد الخصم، لأن ده الرقم اللي هيتحسب وهيتكتب على الورقة.
-    // في كشف التسعير لأ: هناك الخصم بيتكتب بالإيد، والمندوب محتاج يشوف سعر القايمة
-    // عشان يحسب منه. لو اتعرض بعد خصم افتراضي، الخصم اللي هيكتبه بيتحط على سعر
-    // مخصوم خلاص — خصمين على بعض ومحدش شايف.
     bool showNetPrice = true,
-    // **الأصناف اللي بتتعرض.** الافتراضي عهدة المندوب — ودي اللي البيع بيتم منها.
-    // إذن التحويل بيبعت أصناف المخزن اللي هو مختاره: الإذن أصلاً بيتكتب عشان يطلب
-    // حاجة مش معاه، فقايمة عربيته مالهاش معنى هناك.
     List<SaleItem>? source,
-    // **الفاتورة اللي بتتعدّل مابتتخصمش من متاحها.** سطورها لسه في الطابور، فلولا
-    // الاستثناء ده بتتحسب مرتين: مخصومة من الرصيد ومقيسة عليه — والمندوب بيضيف صنف
-    // على فاتورة قديمة فيلاقيه «خلص من عربيتك» وهي هي البضاعة اللي واخداها.
     int? exceptInvoiceLocalId,
   }) async {
     final items = source ?? await LocalDb.instance.saleItems();
-    // **الترتيب أبجدي، مرة واحدة هنا.** القايمة جاية من مصدرين (أصناف المخزن اللي
-    // اتبعتت، وعهدة المندوب من الجهاز) وكل واحد بترتيبه، فالمندوب كان بيلاقي نفس
-    // الشاشة مرتّبة بشكل مختلف على حسب من فين فتحها. والترتيب في `arabic_sort` عشان
-    // الهمزة والتاء المربوطة مايفرّقوش الاسم الواحد.
     sortByName<SaleItem>(items, (i) => i.name);
     final free = await LocalDb.instance
         .availableForSaleAll(exceptInvoiceLocalId: exceptInvoiceLocalId);
     if (!context.mounted) return;
 
-    // **مافيش ولا صنف على الجهاز = مشكلة مزامنة، مش عربية فاضية.**
-    //
-    // من غير الفرق ده كان بيفتح بوباب «بدون فئة» فاضي مكتوب فيه «مفيش أصناف هنا» —
-    // والمندوب يقفله ويفتحه تاني ويفضل مستني. الرسالة دي بتقول له اللي حصل فعلاً
-    // وبتوديه للمكان اللي بيصلّحه. العربية الفاضية فعلاً بتبان في «مخزني» بأصنافها
-    // على صفر، مش ببوباب صامت.
     if (items.isEmpty) {
       await showDialog<void>(
         context: context,
@@ -76,10 +33,6 @@ class SaleAddItemFlow {
           textDirection: TextDirection.rtl,
           child: AlertDialog(
             title: const Text('الأصناف لسه ما نزلتش على الجهاز'),
-            // القايمة الجاية من بره (أصناف مخزن) فاضية معناها حاجة تانية خالص —
-            // المخزن ده مافيهوش رصيد، أو الحزمة قديمة ونزلت قبل ما أصناف المخازن
-            // تبقى فيها. الرسالة بتقول اللي حصل فعلاً بدل ما تبعت المندوب يزامن
-            // عشان عهدته وهو أصلاً بيسأل عن مخزن.
             content: Text(source == null
                 ? 'افتح «مزامنة البيانات» من القايمة واعمل مزامنة — الأصناف بتنزل معاها '
                     'بأرصدة عربيتك وأسعارها.'
@@ -101,23 +54,14 @@ class SaleAddItemFlow {
       return;
     }
 
-    // نسخة شغّالة بتتظبط مع كل صنف يتضاف — البوباب اللي بعده بيقول المتاح الصح.
     final onInvoice = Map<int, double>.from(alreadyOnInvoice);
 
-    // فئة واحدة (أو ولا واحدة) = مافيش مستوى فئات أصلاً — والرجوع من الأصناف
-    // ساعتها لازم يقفل، مش يرجع لسؤال بيتجاوب لوحده. من غير الفرق ده البوباب كان
-    // بيرجع يفتح نفسه للأبد: X ← فئات ← فئة واحدة بتتعدى أوتوماتيك ← نفس البوباب.
-    // (اتصادت بالتجربة على جهاز أصنافه لسه ماتزامنتش.)
     final hasCategoryLevel = _categoriesOf(items).length > 1;
 
     var keepGoing = true;
     String? category;
-    // البحث ومكان التمرير بيفضلوا بين صنف والتاني: اللي بيحط تلات أصناف من نفس المكان
-    // في القايمة كان بيرجع لأولها ويكتب البحث تاني كل مرة.
     final pickerMemory = _PickerMemory();
     while (keepGoing && context.mounted) {
-      // الفئة بتفضل زي ما هي بين الصنف والتاني: اللي بيحط تلات سخانات ورا بعض
-      // مايرجعش لقايمة الفئات تلات مرات.
       category ??= await _pickCategory(context, items);
       if (category == null) return;
 
@@ -127,7 +71,6 @@ class SaleAddItemFlow {
         capToAvailable: capToAvailable, showAvailable: showAvailable,
         showPrice: showPrice, showNetPrice: showNetPrice, memory: pickerMemory);
       if (picked == null) {
-        // رجوع من الأصناف بيرجّع للفئات — لو فيه فئات يترجع لها أصلاً.
         if (!hasCategoryLevel) return;
         category = null;
         pickerMemory.reset();
@@ -140,7 +83,7 @@ class SaleAddItemFlow {
           capToAvailable: capToAvailable, showAvailable: showAvailable,
           showPrice: showPrice, showNetPrice: showNetPrice);
       if (!context.mounted) return;
-      if (answer == null) continue; // رجع يختار صنف تاني من نفس الفئة
+      if (answer == null) continue;
 
       onAdd(picked, answer.quantity);
       onInvoice.update(picked.itemId, (q) => q + answer.quantity,
@@ -150,15 +93,12 @@ class SaleAddItemFlow {
   }
 }
 
-/// نتيجة بوباب الكمية: الكمية، وهل هو عايز يضيف صنف تاني.
 class _QtyAnswer {
   const _QtyAnswer(this.quantity, {required this.another});
   final double quantity;
   final bool another;
 }
 
-/// اللمّة اللي بتتحط فيها الأصناف اللي مالهاش فئة — **مابتختفيش**: صنف ناقصة عنه
-/// بيانات على السيرفر مش صنف مش موجود في العربية.
 const _noCategory = 'بدون فئة';
 
 String _categoryOf(SaleItem it) {
@@ -189,7 +129,6 @@ List<MapEntry<String, int>> _categoriesOf(List<SaleItem> items) {
 
 Future<String?> _pickCategory(BuildContext context, List<SaleItem> items) {
   final cats = _categoriesOf(items);
-  // فئة واحدة مش سؤال — بتتعدّى على طول لقايمة الأصناف.
   if (cats.length <= 1) {
     return Future.value(cats.isEmpty ? _noCategory : cats.first.key);
   }
@@ -234,7 +173,6 @@ Future<SaleItem?> _pickItem(
       ),
     );
 
-/// اللي بوباب الصنف بيفتكره بين فتحة والتانية في نفس الجولة.
 class _PickerMemory {
   String query = '';
   double scrollOffset = 0;
@@ -266,7 +204,6 @@ Future<_QtyAnswer?> _askQuantity(
       ),
     );
 
-/// بوباب الفئة — الفئات اللي معاه أصناف فيها فعلاً بس، ومعاها العدد.
 class _CategoryDialog extends StatelessWidget {
   const _CategoryDialog({required this.categories});
   final List<MapEntry<String, int>> categories;
@@ -318,14 +255,6 @@ class _CategoryDialog extends StatelessWidget {
   }
 }
 
-/// بوباب الصنف — أصناف الفئة، والبحث جوّه الفئة اللي هو فاتحها.
-///
-/// كان بيدوّر في كل الأصناف، فالفئة اللي المندوب اختارها بتتلغي أول ما يكتب حرف. اللي
-/// بيختار فئة قال بيدوّر فين، والكتابة بعدها تضييق للنطاق ده مش إلغاء له.
-///
-/// **بس البحث مايكدبش.** الخوف القديم كان في محلّه: «مفيش نتيجة» على صنف موجود في
-/// عربيته تحت فئة تانية أوحش من قايمة طويلة. فلو فيه نتايج برّه الفئة، البوباب بيقول
-/// عددها وبيدّي زرار يوسّع البحث — مابيخفيهاش ومابيفرضهاش.
 class _SaleItemDialog extends StatefulWidget {
   const _SaleItemDialog({
     required this.items,
@@ -359,14 +288,11 @@ class _SaleItemDialogState extends State<_SaleItemDialog> {
   late final _search = TextEditingController(text: widget.memory.query);
   late final _scroll = ScrollController(initialScrollOffset: widget.memory.scrollOffset);
 
-  /// وسّع البحث لكل الأصناف — بيتفتح بإيد المستخدم، وبيتقفل أول ما يمسح اللي كتبه.
   late bool _searchAll = widget.memory.searchAll;
 
   @override
   void initState() {
     super.initState();
-    // مكان التمرير بيتسجّل مع كل حركة: وقت `dispose` القايمة بتكون اتفكّت خلاص
-    // (`hasClients` = false) فمافيش رقم يتقرا منها ساعتها.
     _scroll.addListener(() {
       if (_scroll.hasClients) widget.memory.scrollOffset = _scroll.offset;
     });
@@ -374,11 +300,6 @@ class _SaleItemDialogState extends State<_SaleItemDialog> {
 
   @override
   void dispose() {
-    // بيتفكر عشان الفتحة الجايّة ترجع لنفس المكان.
-    //
-    // **إلا لو الصنف اتاخد من البحث** (طلب العميل ٢٠٢٦-٠٩-٣٠): اللي لقى اللي بيدوّر
-    // عليه خلص من الكلمة دي، فالفتحة الجاية بخانة بحث فاضية وعلى فئته من أولها — مكان
-    // التمرير القديم كان على قايمة نتايج مش موجودة.
     if (_pickedFromSearch) {
       widget.memory.reset();
     } else {
@@ -394,12 +315,8 @@ class _SaleItemDialogState extends State<_SaleItemDialog> {
   double _availableOf(SaleItem it) =>
       (widget.free[it.itemId] ?? 0) - (widget.onInvoice[it.itemId] ?? 0);
 
-  /// البحث بيوحّد العربي (`bare`): «جلبه» بتلاقي «جلبة»، و«كوع ٢» بتلاقي «كوع 2» — ومن أي
-  /// مكان في الاسم، مش من أوله.
   String get _query => bare(_search.text);
 
-  /// كل كلمة مكتوبة لوحدها ولو حتة منها وبأي ترتيب — «كو نح» بتلاقي «كوع ١/٢ نحاس».
-  /// نفس بحث النظام (`matchesWords`).
   bool _matches(SaleItem it) {
     final name = bare(it.name);
     return _query.split(' ').where((w) => w.isNotEmpty).every(name.contains);
@@ -422,7 +339,6 @@ class _SaleItemDialogState extends State<_SaleItemDialog> {
     ];
   }
 
-  /// النتايج اللي برّه الفئة — الرقم ده هو اللي بيمنع البحث من إنه يكدب.
   int get _elsewhere {
     if (_query.isEmpty || _searchAll) return 0;
     var n = 0;
@@ -433,7 +349,6 @@ class _SaleItemDialogState extends State<_SaleItemDialog> {
   }
 
   void _onSearchChanged() {
-    // مسح اللي مكتوب بيرجّع البوباب لفئته — التوسيع كان جواب على بحث، والبحث خلص.
     if (_query.isEmpty) _searchAll = false;
     setState(() {});
   }
@@ -513,7 +428,6 @@ class _SaleItemDialogState extends State<_SaleItemDialog> {
                       itemBuilder: (c, i) {
                         final it = rows[i];
                         final avail = _availableOf(it);
-                        // من غير حد بالمتاح، «خلص» مابتقفلش الصنف — بتتقال وخلاص.
                         final out = widget.capToAvailable && avail <= 0;
                         final parts = <String>[
                           if (widget.showAvailable)
@@ -533,7 +447,6 @@ class _SaleItemDialogState extends State<_SaleItemDialog> {
                         return ListTile(
                           enabled: !out,
                           title: Text(it.name),
-                          // السعر والمتاح — الاتنين بيتسألوا وهو واقف، فبيتقالوا هنا.
                           subtitle: Text(
                             parts.join(' · '),
                             style: TextStyle(
@@ -550,8 +463,6 @@ class _SaleItemDialogState extends State<_SaleItemDialog> {
                       },
                     ),
             ),
-            // الصنف اللي في عربيته تحت فئة تانية لازم يعرف إنه موجود — من غير السطر ده
-            // «مفيش صنف بالاسم ده» بتبقى كدبة، وهو اللي يقرّر يوسّع ولا لأ.
             if (elsewhere > 0)
               Padding(
                 padding: const EdgeInsets.only(top: 4, bottom: 4),
@@ -576,7 +487,6 @@ class _SaleItemDialogState extends State<_SaleItemDialog> {
   }
 }
 
-/// بوباب الكمية — ومنه «التالي» أو «تم». الخانة **فاضية**.
 class _SaleQuantityDialog extends StatefulWidget {
   const _SaleQuantityDialog({
     required this.item,
@@ -618,8 +528,6 @@ class _SaleQuantityDialogState extends State<_SaleQuantityDialog> {
       setState(() => _error = 'اكتب الكمية');
       return;
     }
-    // المتاح بيتقاس هنا كمان مش وقت الحفظ بس: أحسن يعرف وهو بيكتب الرقم من إن
-    // الفاتورة تترفض بعد ما يكون سلّم البضاعة. (طلب التحويل من المخزن مالوش الحد ده.)
     if (widget.capToAvailable && q > widget.available + 0.0001) {
       setState(() => _error = 'المتاح ${_fmt(widget.available)} بس');
       return;
@@ -629,8 +537,6 @@ class _SaleQuantityDialogState extends State<_SaleQuantityDialog> {
 
   @override
   Widget build(BuildContext context) {
-    // الصافي مش الخام — نفس الرقم اللي اتعرض في قايمة الأصناف، ونفس اللي الفاتورة
-    // هتحسبه. تلات شاشات بتقول رقمين مختلفين لنفس الصنف كانت هي المشكلة.
     final price = widget.item.netPriceFor(widget.priceTier);
     final total = _typed * price;
     return AlertDialog(
@@ -640,8 +546,6 @@ class _SaleQuantityDialogState extends State<_SaleQuantityDialog> {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // على طلب التحويل مافيش سعر ومافيش متاح — السطر ده بيبقى الوحدة بس، ولو
-          // مافيش وحدة بيختفي خالص. سطر فاضي على راس بوباب بياخد مساحة ومايقولش حاجة.
           if (widget.showPrice || widget.showAvailable ||
               widget.item.unit != null)
             Text(

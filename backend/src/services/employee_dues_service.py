@@ -1,20 +1,3 @@
-"""ذمم وسلف الموظفين — «الراجل ده عليه كام، ومنين».
-
-الشاشتين القديمتين («ذمم الموظفين» و«سلف العاملين») كانوا بيجاوبوا على نفس السؤال من
-مكانين، وكل واحدة شايفة نص الحقيقة:
-
-* **الذمة** = رصيد حساب الموظف تحت «ذمم الموظفين» في شجرة a5 (`employee.receivable_account_id`).
-  ده اللي اتنقل من a5 + أي سند قبض/صرف اتعمل على الموظف بعد كده.
-* **السلفة** = مستند HR بجدول أقساط بيتخصم من المرتب، وقيدها على «سلف العاملين» (1.02.010)
-  — حساب واحد للكل، **مش** حساب ذمة الموظف.
-
-فالموظف الواحد ممكن يكون عليه رصيدين في حسابين مختلفين، والإجمالي هنا هو مجموعهم. ولو في
-يوم السلفة اتقيدت على حساب الذمة نفسه، السلفة دي **مابتتجمعش تاني** (شوف `_in_receivable`) —
-وإلا نفس الجنيه هيتعد مرتين.
-
-الأرصدة كلها **مشتقة** — من الدفتر (المرحّل بس) ومن الأقساط اللي لسه ماتخصمتش. مافيش رقم
-متخزّن يفضل يفرق مع الوقت.
-"""
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -31,8 +14,6 @@ from src.models.hr_advance import AdvanceStatus, EmployeeAdvance, EmployeeAdvanc
 from src.models.ledger import Account, Direction, LedgerEntry, LedgerLine
 from src.services import ledger_service
 
-# «ذمم الموظفين» في شجرة a5 — مجموعة لكل فرع بنفس الاسم: أكتوبر، العلياء، السادات.
-# السادات (`FC-`) كانت ناقصة من الشاشة القديمة، فذمم فرع كامل ماكانتش بتبان.
 RECEIVABLE_GROUPS = ("A5M-22", "AL-A5M-22", "FC-A5M-22")
 
 
@@ -48,7 +29,6 @@ class DueRow:
     account_id: int | None = None
     account_code: str | None = None
     account_name: str | None = None
-    # كارت «موظف» في العملاء اللي على نفس الحساب — سند القبض/الصرف بيتعمل عليه.
     customer_id: int | None = None
     ledger_debit: Decimal = ZERO
     ledger_credit: Decimal = ZERO
@@ -73,7 +53,6 @@ class DuesResult:
 
 
 def _leaves(db: Session) -> tuple[dict[int, Account], dict[int, int | None]]:
-    """حسابات الذمم الفرعية — ومعاها فرع كل حساب (من الحساب نفسه، وإلا من مجموعته)."""
     groups = db.scalars(select(Account).where(Account.code.in_(RECEIVABLE_GROUPS))).all()
     if not groups:
         return {}, {}
@@ -85,7 +64,6 @@ def _leaves(db: Session) -> tuple[dict[int, Account], dict[int, int | None]]:
 
 
 def _ledger_stats(db: Session, account_ids: list[int]) -> dict[int, tuple]:
-    """مدين/دائن/عدد/آخر تاريخ لكل حساب — المرحّل بس، المسودة مالهاش دعوة بالذمة."""
     if not account_ids:
         return {}
     stmt = (select(
@@ -104,11 +82,6 @@ def _ledger_stats(db: Session, account_ids: list[int]) -> dict[int, tuple]:
 
 def _in_receivable(db: Session, advances: list[EmployeeAdvance],
                    receivable_of: dict[int, int | None]) -> set[int]:
-    """السلف اللي قيدها نازل على حساب ذمة الموظف نفسه — رصيدها جوّه الذمة خلاص.
-
-    النهارده السلفة بتتقيد على «سلف العاملين» فالمجموعة دي فاضية. لو القيد اتغيّر في يوم
-    (شوف سؤال المحاسبة في التقرير)، الشاشة تفضل صح من غير ما حد يفتكرها.
-    """
     pairs = {(a.ledger_entry_id, receivable_of.get(a.employee_id)): a.id for a in advances
              if a.ledger_entry_id and receivable_of.get(a.employee_id)}
     if not pairs:
@@ -122,12 +95,6 @@ def employee_dues(
     db: Session, *, branch_id: int | None, q: str | None = None,
     only_open: bool = True, include_orphans: bool = True, with_advances: bool = True,
 ) -> DuesResult:
-    """صف لكل موظف: ذمته من الدفتر + سلفه المفتوحة = إجمالي اللي عليه.
-
-    `branch_id` هو الفرع اللي اللي بيسأل يشوفه (`branch_scope.visible_branch_id`) — None =
-    الكل. نفس قاعدة العزل: الموظف اللي مالوش فرع بيبان للكل.
-    `with_advances=False` لمين مالوش `salary.view` — السلفة رقم باسم موظف.
-    """
     leaves, leaf_branch = _leaves(db)
 
     emp_stmt = select(Employee)
@@ -138,7 +105,6 @@ def employee_dues(
     emp_ids = [e.id for e in emps]
     receivable_of = {e.id: e.receivable_account_id for e in emps}
 
-    # الحسابات اللي هتتقري: حسابات الموظفين الظاهرين + الحسابات اليتيمة في فرعه.
     claimed = {e.receivable_account_id for e in emps if e.receivable_account_id}
     all_claimed = set(db.scalars(select(Employee.receivable_account_id).where(
         Employee.receivable_account_id.is_not(None))).all())
@@ -153,7 +119,6 @@ def employee_dues(
             select(Account).where(Account.id.in_(extra_ids))).all()})
     stats = _ledger_stats(db, list(claimed) + [a.id for a in orphans])
 
-    # كارت «موظف» في العملاء لكل حساب — للسند. لو أكتر من كارت على نفس الحساب، أول واحد.
     cards: dict[int, int] = {}
     acc_ids = list(claimed) + [a.id for a in orphans]
     if acc_ids:
@@ -165,7 +130,6 @@ def employee_dues(
                 .order_by(Customer.id)).all():
             cards.setdefault(acc_id, cust_id)
 
-    # السلف: المفتوح منها بأقساطه اللي لسه، وآخر تاريخ سلفة (غير الملغية).
     open_by_emp: dict[int, list[EmployeeAdvance]] = {}
     last_adv: dict[int, date] = {}
     pending: dict[int, list[EmployeeAdvanceInstalment]] = {}
@@ -231,8 +195,6 @@ def employee_dues(
         row.last_movement = max(dates) if dates else None
         rows.append(row)
 
-    # الحسابات اللي مالهاش موظف («عهدة سيارة الفيوم»…) — دلاء عليها فلوس فعلاً، وإخفاؤها
-    # بيخلّي مجموع الشاشة أقل من «ذمم الموظفين» في ميزان المراجعة.
     for a in orphans:
         row = DueRow(branch_id=leaf_branch.get(a.id))
         fill_ledger(row, a)
@@ -248,8 +210,6 @@ def employee_dues(
         rows = [r for r in rows if r.total_due != 0 or r.ledger_balance != 0
                 or (r.open_advances or 0) > 0]
     else:
-        # «الكل»: الموظف اللي مالوش حساب ولا سلفة خالص بيبان برضه — عشان تصرفله أول سلفة
-        # من هنا. بس الحساب اليتيم الصفري اللي ماتحركش مالوش لازمة.
         rows = [r for r in rows if r.employee_id is not None or r.ledger_lines]
 
     rows.sort(key=lambda r: (abs(r.total_due), r.employee_name or ""), reverse=True)

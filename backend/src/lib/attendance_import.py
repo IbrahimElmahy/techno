@@ -1,19 +1,3 @@
-"""قراية ملف جهاز البصمة — دوال نقية، من غير قاعدة بيانات (HR-2).
-
-A fingerprint device exports a table: some identifier for the person, a date, and one or more
-times. There is no standard for the columns, so the mapping is given by the caller and remembered
-in settings rather than guessed here.
-
-Two rules shape the whole thing:
-
-**Rows that cannot be matched are RETURNED, never dropped.** A file with three unrecognised
-identifiers must say so; silently importing the other forty-seven marks three people absent for
-the month and nobody finds out until payroll.
-
-**A day is built from the earliest and latest punch of that day**, not from the first two rows.
-People punch in, out for lunch, back in, and out again — taking rows one and two makes a full day
-look like ninety minutes.
-"""
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -21,17 +5,11 @@ from datetime import date, datetime
 
 
 class ImportError_(Exception):
-    """الملف أو التعيين مش مفهومين."""
+    pass
 
 
 @dataclass
 class ColumnMap:
-    """أي عمود بيقابل إيه. الأرقام صفرية.
-
-    `employee` may hold the employee code, the national id, or the name — matching tries all three,
-    because which one a device prints depends on how it was set up years ago and nobody remembers.
-    """
-
     employee: int
     day: int
     time: int | None = None
@@ -51,7 +29,6 @@ class Punch:
 @dataclass
 class ParsedFile:
     punches: list[Punch] = field(default_factory=list)
-    #  (رقم السطر، السبب) — بيرجعوا للمستخدم، مابيتشالوش.
     rejected: list[tuple[int, str]] = field(default_factory=list)
 
 
@@ -61,17 +38,10 @@ _DATE_FORMATS = (
 
 
 def _digits(text: str) -> str:
-    """الأرقام العربية الهندية بتيجي من أجهزة وإكسلات كتير."""
     return text.translate(str.maketrans("٠١٢٣٤٥٦٧٨٩", "0123456789"))
 
 
 def parse_day(value: str) -> date:
-    """بيقرا التاريخ بأي شكل شايع.
-
-    `%d/%m/%Y` is tried before `%m/%d/%Y` on purpose: both parse «03/04/2026» and only one of them
-    is what an Egyptian device meant. Ordering is the whole guard — there is nothing in the string
-    to tell them apart.
-    """
     text = _digits(str(value).strip())
     if not text:
         raise ImportError_("تاريخ فاضي")
@@ -84,7 +54,6 @@ def parse_day(value: str) -> date:
 
 
 def parse(rows: list[list[str]], mapping: ColumnMap, *, skip_header: bool = True) -> ParsedFile:
-    """بيحوّل صفوف الملف لبصمات. مابيلمسش قاعدة بيانات ومابيرميش صف."""
     out = ParsedFile()
     for index, raw in enumerate(rows):
         if skip_header and index == 0:
@@ -124,15 +93,6 @@ def parse(rows: list[list[str]], mapping: ColumnMap, *, skip_header: bool = True
 
 
 def fold_days(punches: list[Punch]) -> dict[tuple[str, date], dict]:
-    """بيجمّع البصمات ليوم واحد لكل موظف — أول بصمة حضور وآخر واحدة انصراف.
-
-    NOT the first two rows. People punch out for lunch and back in again, and a day built from rows
-    one and two turns eight hours into ninety minutes — on the report, in the payroll, and in the
-    argument with the employee that follows.
-
-    A single punch on a day gives a check-in and no check-out, which is the honest reading: he was
-    here, and when he left is not recorded.
-    """
     from src.lib.attendance_calc import format_hhmm, parse_hhmm
 
     days: dict[tuple[str, date], dict] = {}
@@ -155,7 +115,6 @@ def fold_days(punches: list[Punch]) -> dict[tuple[str, date], dict]:
                 slot["check_in"] = format_hhmm(value)
             if current_out is None or value > current_out:
                 slot["check_out"] = format_hhmm(value)
-    # يوم فيه بصمة واحدة: حضور من غير انصراف، مش حضور وانصراف في نفس اللحظة.
     for slot in days.values():
         if slot["check_in"] == slot["check_out"]:
             slot["check_out"] = None

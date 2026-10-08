@@ -1,33 +1,3 @@
-"""يستورد معاينات نظام ما بعد البيع القديم: الأصناف وأنواعها والمعاينات وبنودها.
-
-    python -m src.scripts.import_erp_visits --dir C:/pgtmp/erp --branch العلياء
-    python -m src.scripts.import_erp_visits --dir C:/pgtmp/erp --branch العلياء --yes
-
-بيتعاد تشغيله بأمان: المعاينة اللي رقمها موجود بتتخطى.
-
----------------------------------------------------------------------------
-أربع قرارات:
-
-* **الطرف بيتلاقى بالكود مش بالاسم.** المعاينة بتشاور على `CustomerID` و`PlumberID`
-  بأرقام النظام القديم، ونقل الأطراف حفظها في `ERP-C-{id}` و`ERP-P-{id}`. الاسم بيتغيّر
-  والرقم لأ.
-
-* **المالك اسم على المستند مش مجرد رابط.** `owner_name` إجباري عندنا، وبيتاخد من اسم
-  العميل وقت النقل. المعاينة ورقة بتتطبع وبتتسلّم، والاسم اللي عليها لازم يفضل حتى لو
-  كارت العميل اتغيّر بعدين.
-
-* **المعاينة اللي عميلها مش موجود مابتتخطاش.** ١٧٤ معاينة من ١٠٩٢٢ بتشاور على عميل
-  مش في الكشف — بتدخل باسم «عميل غير معروف» على المستند، لأن الزيارة حصلت والنقاط
-  اتصرفت، والحذف بيخفي شغل حصل.
-
-* **المندوب من الزيارة مش افتراضي.** `SalesRepId` على الزيارة بيقول مين نزل. من غيره
-  الـ١٠٩٢٢ معاينة بيقعدوا على مندوب واحد، وتقرير «زيارات المناديب» بيرجّع صف واحد.
-  المناديب دول اتعملوا في نقل الأطراف بأسماء `svc.{id}`.
-
-* **النقاط بتتقرا مابتتحسبش.** `TotalPoint` على البند و مجموعها على المعاينة. حسابها من
-  الكمية × النقطة بيدي رقم تاني لو النظام القديم عدّلها بإيده، والورقة المطبوعة عند
-  العميل شايلة رقمهم.
-"""
 from __future__ import annotations
 
 import os
@@ -48,14 +18,12 @@ from src.models.role import Role, RoleName
 from src.models.user import User
 from src.scripts.import_a5 import JUNK, _clean, _money, _read
 
-# أعمدة الملف المصدَّر
 (V_KIND, V_A, V_B, V_C, V_D, V_E, V_F, V_G, V_H, V_I, V_J) = range(11)
 
 UNKNOWN_OWNER = "عميل غير معروف"
 
 
 def _date(v: str) -> date | None:
-    """تاريخ النظام القديم رقم `yyyymmdd`."""
     v = (v or "").strip()
     if len(v) != 8 or not v.isdigit():
         return None
@@ -119,11 +87,9 @@ def run(folder: str, *, execute: bool, branch_name: str = "") -> None:
             .order_by(User.id)).first() if role else None
         if rep is None:
             rep = db.scalars(select(User).order_by(User.id)).first()
-        # مناديب الخدمة اللي نقل الأطراف عملهم — اسم الدخول `svc.{رقمه في نظامهم}`.
         svc_reps = {u.username[4:]: u for u in db.scalars(
             select(User).where(User.username.like("svc.%"))).all()}
 
-        # ---------- الأصناف والقوايم ----------
         have_types = {t.name for t in db.scalars(select(InspectionItemType)).all()}
         order = max([t.sort_order for t in db.scalars(
             select(InspectionItemType)).all()] or [0])
@@ -145,7 +111,6 @@ def run(folder: str, *, execute: bool, branch_name: str = "") -> None:
             db, "visit_type", ["معاينة", "مرمة"])
         db.flush()
 
-        # ---------- المعاينات ----------
         by_code = {c.code: c for c in db.scalars(select(Customer)).all() if c.code}
         taken = {n for (n,) in db.execute(select(Inspection.document_number)).all()}
         type_ids = {t.name: t.id for t in db.scalars(select(InspectionItemType)).all()}
@@ -154,7 +119,6 @@ def run(folder: str, *, execute: bool, branch_name: str = "") -> None:
         for r in by_kind["VISIT"]:
             number = f"ERP-V-{r[V_A]}"
             if number in taken:
-                # موجودة — بس ممكن تكون دخلت على المندوب الافتراضي قبل ما المناديب يتنقلوا.
                 old_row = by_number.get(number)
                 svc = svc_reps.get(r[V_D])
                 if old_row is not None and svc is not None and old_row.rep_user_id != svc.id:
@@ -171,13 +135,9 @@ def run(folder: str, *, execute: bool, branch_name: str = "") -> None:
                 branch_id=branch.id, document_number=number,
                 inspection_date=when,
                 customer_id=customer.id if customer else None,
-                # الاسم بيتكتب على المستند: الورقة بتتطبع وبتتسلّم، والاسم اللي عليها
-                # لازم يفضل حتى لو كارت العميل اتغيّر بعدين.
                 owner_name=(customer.name if customer else UNKNOWN_OWNER)[:160],
                 owner_phone=((customer.phone or '')[:32] or None) if customer else None,
                 owner_address=_clean(r[V_I])[:240] or None,
-                # كل نص بيتقص على حد عموده. «الدور» عندنا ١٦ حرف وعندهم النص حر —
-                # «الدور الثاني شقه 2» بيوقّف النقل كله عند أول واحد زيه.
                 floor_number=_clean(r[V_H])[:16] or None,
                 inspection_type=_clean(r[V_F])[:80] or None,
                 description=_clean(r[V_G])[:80] or None,

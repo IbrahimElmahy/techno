@@ -1,30 +1,3 @@
-"""يلمّ «فلان وايت» في «فلان» — كروت أكتوبر الأبيض في كارت البولي (٢٠٢٦-١٠-٠٦).
-
-    python -m src.scripts.merge_october_white_twins            # يعرض بس
-    python -m src.scripts.merge_october_white_twins --yes      # ينفّذ
-
-نفس دمج العلياء (`merge_techno_duplicates`) بس **بالاتجاه العكسي**، لأن أكتوبر مسمّي خطوطه
-بالعكس:
-
-* العلياء: «فلان» = الأبيض، «تكنو فلان» = البولي ⇒ «تكنو فلان» بيتلمّ في «فلان».
-* أكتوبر:  «فلان» = البولي، «فلان وايت» = الأبيض ⇒ «فلان وايت» بيتلمّ في «فلان».
-
-الدليل من الفواتير نفسها: نقدية فواتير الكارت المجرد بتنزل في صناديق البولي («صندوق
-اكتوبر بولى» ١٩٥، «صندوق الفيوم بولى» ١٦٥…)، ونقدية كروت «وايت» في صناديق الأبيض
-(«صندوق الفيوم» ٢٧٤، «صندوق اكتوبر» ١٥٤…). فتشغيل دمج العلياء على أكتوبر كان هيسمّي
-البولي أبيض.
-
-**اللي بيحصل لكل زوج:** حساب «فلان» بيبقى «بولي»، وحساب «فلان وايت» بيتنقل لـ«فلان» كـ«أبيض»
-بتاريخه كله. الكارت «وايت» بيتقفل ويتعلّم «(مدموج في #N)» — ولا صف بيتمسح ولا قيد بيتلمس.
-ومستنداته بتتنقل (`customer_merge_service._move_documents`)، والنوع على الفواتير والمرتجعات
-والسندات بيتظبط: اللي كان على «وايت» أبيض، واللي على «فلان» بولي. أكتوبر كان شايل «أبيض» على
-فواتير كروت البولي من غير ما يكون فيه تقسيم أصلاً، فده بيتصحّح للزوج بس.
-
-**بيتخطّى ويقول:** أكتر من «فلان» بنفس الاسم، تليفونين مختلفين، كارت عنده أكتر من حساب أو
-حساب متعلّم بنوع خلاص.
-
-**بيقف لو الفلوس اتحركت:** مجموع أرصدة حسابات العملاء قبل وبعد لازم يطلع نفس الرقم.
-"""
 from __future__ import annotations
 
 import sys
@@ -44,7 +17,6 @@ WHITE_SUFFIXES = ("وايت",)
 
 
 def _base_of(name: str) -> str | None:
-    """«معرض الاشراف وايت» ⇒ «معرض الاشراف». مش «وايت» ⇒ None."""
     words = cms._normalise(name).split()
     if len(words) >= 2 and words[-1] in WHITE_SUFFIXES:
         return " ".join(words[:-1])
@@ -69,7 +41,7 @@ def run(*, execute: bool) -> int:
         for a in db.scalars(select(CustomerAccount)).all():
             accounts[a.customer_id].append(a)
 
-        pairs: list[tuple[Customer, Customer]] = []   # (يفضل «فلان»، يتقفل «فلان وايت»)
+        pairs: list[tuple[Customer, Customer]] = []
         skipped: list[tuple[str, str]] = []
         phones: list[str] = []
         alone: list[str] = []
@@ -85,9 +57,6 @@ def run(*, execute: bool) -> int:
                 skipped.append((c.name, f"«{base}» متكرر {len(cands)} مرات"))
                 continue
             keep = cands[0]
-            # التليفون مابيوقفش هنا (عكس العلياء): «وايت» لاحقة a5 بيحطها على كارت الخط التاني
-            # لنفس العميل عن قصد، والفرق في التليفون غالباً رقم ناقص أو رقم المندوب
-            # (01155910402 على ٦ كروت). بيتقال بس، والكارت الباقي بيحتفظ بتليفونه.
             pk, pd = cms._digits(keep.phone), cms._digits(c.phone)
             if pk and pd and pk != pd:
                 phones.append(f"«{c.name}»: {keep.phone} / {c.phone}")
@@ -129,7 +98,6 @@ def run(*, execute: bool) -> int:
                                  "name": f"{dupe.name} {MERGED_MARK}{keep.id})"})
             moved[dupe.id] = keep.id
 
-        # النوع قبل النقل: بعده مايبقاش فيه طريقة تعرف الفاتورة كانت على أنهي كارت.
         tagged = defaultdict(int)
         for t in ("sales_invoice", "sales_return", "voucher"):
             tagged[t] += db.execute(text(

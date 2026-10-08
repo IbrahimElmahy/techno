@@ -18,24 +18,6 @@ import { printReport, type PrintColumn, type PrintTotal } from '../print/reportS
 import ListPage from '../components/ListPage';
 import { useCanSeeStats } from '../components/StatsRow';
 import { money, numeralsLocale, qty as num } from '../utils/money';
-/**
- * تقارير الموارد البشرية — تسعتاشر اسم من محرك واحد.
- *
- * Same shape as `TradeReports.tsx`, for the same reason: «كشف حضور تفصيلي» and «ملخص الحضور
- * بالقسم» and «غياب الشهر بالفرع» are not three reports. They are one set of rows crossed with a
- * grain and a grouping, and building them as nineteen screens means the absence rule gets fixed in
- * four of them and stays wrong in the rest.
- *
- * Two things this screen must not get wrong:
- *
- * * **الإجماليات جاية من السيرفر.** Attendance is employees × days — a year of two hundred people
- *   is seventy-odd thousand rows, so the server paginates. Adding up the visible page here would
- *   put a number under «إجمالي المبلغ» that is the answer for the first five hundred rows and
- *   nothing on screen would say so. The card reads `totals`, never `rows`.
- * * **التقرير اللي فيه مبالغ ممكن يترفض.** One endpoint answers both «مين غايب» and «مين بياخد
- *   كام»; the second needs `salary.view`. A 403 here is a normal answer, not a broken screen, so
- *   it says so in Arabic instead of «تعذر تحميل التقرير».
- */
 
 type Subject = 'headcount' | 'attendance' | 'leave' | 'payroll' | 'cost' | 'advance'
   | 'adjustment' | 'leave_balance';
@@ -54,19 +36,11 @@ const SUBJECT_LABELS: Record<Subject, string> = {
   leave_balance: 'أرصدة الأجازات',
 };
 
-/** المواضيع اللي بترجّع مبالغ باسم موظف — الباك إند بيطلب `salary.view` عليها. */
 const MONEY_SUBJECTS: Subject[] = ['payroll', 'cost', 'advance', 'adjustment'];
 
 interface Totals { rows: number; quantity: string; amount: string }
 interface Page { limit: number | null; offset: number; total_rows: number; truncated: boolean }
 
-/**
- * الأسماء اللي بتظهر في القايمة — كل واحد بيفتح في تبويب باسمه والمفاتيح جاهزة.
- *
- * Nobody wants a screen with three switches and a note saying their report is combination
- * eleven. They want «كشف حضور» and «تحليل تكلفة الأجور بالقسم». The switches stay live once
- * here, so the whole engine is one click away rather than a report nobody ever built.
- */
 export interface HrReportView {
   label: string;
   subject: Subject;
@@ -75,30 +49,23 @@ export interface HrReportView {
 }
 
 export const REPORT_VIEWS: Record<string, HrReportView> = {
-  // الموظفين والهيكل
-  // الأسماء دي «كشف …» عن قصد: «الموظفين» و«أرصدة الأجازات» و«الجزاءات والمكافآت» أسماء شاشات
-  // شغل موجودة، واسم واحد بيودّي لمكانين بيخلّي اللي بيدوّر في القايمة يفتح الغلط.
   'staff-list': { label: 'كشف الموظفين', subject: 'headcount', level: 'detail', groupBy: 'none' },
   'staff-by-department': { label: 'الموظفين بالقسم', subject: 'headcount', level: 'summary', groupBy: 'department' },
   'staff-by-branch': { label: 'الموظفين بالفرع', subject: 'headcount', level: 'summary', groupBy: 'branch' },
   'staff-by-title': { label: 'الموظفين بالوظيفة', subject: 'headcount', level: 'summary', groupBy: 'job_title' },
   'staff-movement': { label: 'الداخلين والخارجين', subject: 'headcount', level: 'summary', groupBy: 'status' },
-  // الحضور
   'attendance-sheet': { label: 'كشف حضور وانصراف', subject: 'attendance', level: 'detail', groupBy: 'none' },
   'attendance-by-employee': { label: 'ملخص الحضور بالموظف', subject: 'attendance', level: 'summary', groupBy: 'employee' },
   'attendance-by-department': { label: 'ملخص الحضور بالقسم', subject: 'attendance', level: 'summary', groupBy: 'department' },
   'attendance-by-status': { label: 'الغياب والتأخير', subject: 'attendance', level: 'summary', groupBy: 'status' },
-  // الأجازات
   'leave-movement': { label: 'حركة الأجازات', subject: 'leave', level: 'detail', groupBy: 'none' },
   'leave-by-type': { label: 'الأجازات بالنوع', subject: 'leave', level: 'summary', groupBy: 'status' },
   'leave-balances': { label: 'كشف أرصدة الأجازات', subject: 'leave_balance', level: 'detail', groupBy: 'none' },
-  // المرتبات
   'payroll-sheet': { label: 'مسير المرتبات', subject: 'payroll', level: 'detail', groupBy: 'none' },
   'payroll-by-month': { label: 'المرتبات شهر بشهر', subject: 'payroll', level: 'summary', groupBy: 'month' },
   'cost-by-component': { label: 'تكلفة الأجور بالبند', subject: 'cost', level: 'summary', groupBy: 'component' },
   'cost-by-department': { label: 'تكلفة الأجور بالقسم', subject: 'cost', level: 'summary', groupBy: 'department' },
   'cost-by-branch': { label: 'تكلفة الأجور بالفرع', subject: 'cost', level: 'summary', groupBy: 'branch' },
-  // السلف والجزاءات
   'advances-outstanding': { label: 'السلف وأرصدتها', subject: 'advance', level: 'detail', groupBy: 'none' },
   'penalties-bonuses': { label: 'كشف الجزاءات والمكافآت', subject: 'adjustment', level: 'detail', groupBy: 'none' },
 };
@@ -136,8 +103,6 @@ export default function HrReports() {
     }).catch(console.error);
   }, []);
 
-  // التبويبات بتفضل مركّبة، فالتقرير المسمّى لازم يفرض مفاتيحه تاني لما المسار يتغيّر — من غير
-  // ده بيرث حالة آخر تقرير اتفتح ويعرض حاجة تانية تحت اسمه.
   useEffect(() => {
     if (!view) return;
     setSubject(view.subject); setLevel(view.level); setGroupBy(view.groupBy);
@@ -146,20 +111,16 @@ export default function HrReports() {
   const offPreset = !!view && (subject !== view.subject || level !== view.level
     || groupBy !== view.groupBy);
 
-  /** المواضيع دي بتتفلتر بشهر، والباقي بمدى تواريخ — فالفلتر بيتبدّل مش بيتكدّس. */
   const byPeriod = subject === 'payroll' || subject === 'cost' || subject === 'adjustment';
   const isBalances = subject === 'leave_balance';
   const grouped = groupBy !== 'none';
 
-  // نفس قاعدة «المندوب ⇒ عملاءه»: قسم أو فرع مختار ⇒ قايمة الموظفين موظفينه هو بس.
-  // في أرصدة الإجازات الفلترين دول مقفولين ومابيتبعتوش، فمابيضيّقوش.
   const fitsScope = (e: any, dept?: number, branch?: number) => isBalances
     || ((!dept || e.department_id === dept) && (!branch || e.branch_id === branch));
   const employeeOptions = useMemo(() => sortByName(
     employees.filter((e) => fitsScope(e, departmentId, branchId)), (e: any) => e.name)
     .map((e: any) => ({ value: e.id, label: String(e.name ?? '') })),
   [employees, departmentId, branchId, isBalances]);
-  /** الموظف المختار مش من القسم/الفرع الجديد ⇒ يتفضّى في نفس التحديث (طلب واحد). */
   const dropEmployeeUnlessFits = (dept?: number, branch?: number) => {
     const e = employees.find((x) => x.id === employeeId);
     if (e && !fitsScope(e, dept, branch)) setEmployeeId(undefined);
@@ -194,7 +155,6 @@ export default function HrReports() {
       setTotals(res.data.totals || null);
       setPage(res.data.page || null);
     } catch (err: any) {
-      // ٤٠٣ هنا إجابة عادية مش شاشة مكسورة — التقرير ده فيه مبالغ باسم موظف.
       if (err?.response?.status === 403) {
         setDenied(true); setRows([]); setTotals(null); setPage(null);
       } else {
@@ -203,7 +163,6 @@ export default function HrReports() {
     } finally { setLoading(false); }
   };
 
-  // التحميل المباشر — أي فلتر يتغيّر التقرير بيتقرا، من غير زرار «عرض».
   useEffect(() => { load(); }, [params]);
 
   const groupHeading = groupBy === 'employee' ? 'الموظف'
@@ -213,7 +172,6 @@ export default function HrReports() {
           : groupBy === 'month' ? 'الشهر'
             : groupBy === 'component' ? 'البند' : 'الحالة';
 
-  /** الأعمدة المخصوصة لكل موضوع — الشكل الموحّد فيه المشترك، ودي اللي بتفرّق التقارير. */
   const detailColumns: any[] = subject === 'attendance' ? [
     { title: 'اليوم', dataIndex: 'work_date', ...dateColumn<any>((r) => r.work_date) },
     { title: 'حضور', dataIndex: 'check_in', ...textColumn(rows, (r: any) => r.check_in),
@@ -237,7 +195,6 @@ export default function HrReports() {
           <Tag color={r.status === 'absent' ? 'red' : r.status === 'present' ? 'green' : undefined}>
             {v}
           </Tag>
-          {/* يوم جوّه مسير مرحّل مقفول — والعلامة دي بتفسّر ليه التعديل مرفوض. */}
           {r.locked ? <Tag color="gold">مقفول</Tag> : null}
         </>
       ) },
@@ -323,7 +280,6 @@ export default function HrReports() {
       ...numberColumn<any>((r) => r.instalments) },
     { title: 'المخصوم', dataIndex: 'taken', align: 'left' as const,
       ...numberColumn<any>((r) => r.taken), render: (v: string) => money(v) },
-    // المتبقي هو الرقم اللي أي حد بيسأل عن سلفة بيقصده — فهو الغامق.
     { title: 'المتبقي', dataIndex: 'outstanding', align: 'left' as const,
       ...numberColumn<any>((r) => r.outstanding),
       render: (v: string) => <b style={{ color: '#0B5CA8' }}>{money(v)}</b> },
@@ -346,7 +302,6 @@ export default function HrReports() {
       render: (_: any, r: any) => (r.applied
         ? <Tag color="green">اتخصم</Tag> : <Tag>لسه</Tag>) },
   ] : [
-    // headcount
     { title: 'الكود', dataIndex: 'code', ...textColumn(rows, (r: any) => r.code) },
     { title: 'التعيين', dataIndex: 'hire_date', ...dateColumn<any>((r) => r.hire_date) },
     { title: 'الوظيفة', dataIndex: 'job_title', ...textColumn(rows, (r: any) => r.job_title) },
@@ -393,7 +348,6 @@ export default function HrReports() {
     if (branchId) {
       pairs.push(['الفرع', branches.find((b: any) => b.id === branchId)?.name ?? '']);
     }
-    // الصفحة المطبوعة لازم تقول إنها مقصوصة — ورقة أرقام ناقصة من غير ما تقول أوحش من ورقة فاضية.
     if (page?.truncated) {
       pairs.push(['ملحوظة', `معروض ${rows.length} من ${page.total_rows} سطر`]);
     }
@@ -427,15 +381,6 @@ export default function HrReports() {
     ? `g-${r.key}`
     : `${r.employee_id}-${r.period}-${r.document_number ?? r.work_date ?? r.label ?? i}`);
 
-  /**
-   * السطر بيفتح على تفاصيله — المجموعة بتتفكّ لسطورها، والسطر بيضيّق على صاحبه.
-   *
-   * «القسم ده كلّفنا ٤٠ ألف» is never the end of the question; the next one is always «مين فيهم».
-   * There is no document screen behind an attendance day or a grouped total to link to, so the
-   * answer this screen can honestly give is the drill-down: the same report, narrowed to the row
-   * that was clicked. Grouping by حالة or بند or وظيفة has no matching filter, so those rows say
-   * so by doing nothing rather than jumping somewhere unrelated.
-   */
   const drillInto = (r: any) => {
     if (grouped) {
       if (groupBy === 'employee') setEmployeeId(r.key ?? undefined);
@@ -455,12 +400,10 @@ export default function HrReports() {
 
   const kb = useTableKeyboard<any>({ rows, rowKey: rowKeyOf, onOpen: drillInto });
 
-  // اسم الملف بيتغيّر مع التقرير المعروض — نفس العنوان اللي بيتطبع في ترويسة الطباعة.
   const tableCols = useTableColumns(`hr-reports-${grouped ? 'grouped' : subject}`, columns, {
     export: { name: view?.label ?? SUBJECT_LABELS[subject], rows },
   });
 
-  // كروت الإجماليات بقت سطر تحت الجدول — ولسه للي عنده `stats.view` بس، زي `StatsRow`.
   const canSeeStats = useCanSeeStats();
   const footer = totals && canSeeStats ? (
     <span className="sl-foot">
@@ -495,7 +438,6 @@ export default function HrReports() {
           value={groupBy} disabled={isBalances}
           onChange={(v) => {
             setGroupBy(v);
-            // «ملخّص» من غير تجميع الباك إند بيرفضه — فالشاشة بتمنع الحالة دي أصلاً.
             if (v === 'none') setLevel('detail');
             else setLevel('summary');
           }}
@@ -556,7 +498,6 @@ export default function HrReports() {
         )}
       </>)}
     >
-      {/* ٤٠٣ هنا إجابة، مش عطل. */}
       {denied && (
         <Alert
           type="warning" showIcon style={{ margin: '6px 0 8px' }}
@@ -565,8 +506,6 @@ export default function HrReports() {
         />
       )}
 
-      {/* الإجماليات تحت الجدول محسوبة على كل الصفوف؛ الجدول بيعرض صفحة. من غير السطر ده حد ممكن
-          يجمع العمود بإيده ويلاقيه مش مطابق ويفتكر إن فيه غلط. */}
       {page?.truncated && (
         <Alert
           type="info" showIcon style={{ margin: '6px 0 8px' }}
@@ -592,5 +531,4 @@ export default function HrReports() {
   );
 }
 
-/** بتتستخدم في الاختبار — التقرير اللي فيه مبالغ لازم يبقى معروف قبل ما يتبعت. */
 export const MONEY_SUBJECT_KEYS = MONEY_SUBJECTS;

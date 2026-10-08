@@ -2,7 +2,6 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { PAGE_SIZE } from '../utils/pagination';
 import { searchFilter, searchRank, compareArabic } from '../utils/arabicSort';
 import { Button, Input, Select, Tag, message } from 'antd';
-// فلتر على كل عمود — شوف `FilterTable`.
 import { FilterTable as Table } from '../components/FilterTable';
 import {
   ClearOutlined, ReloadOutlined, SearchOutlined, TeamOutlined,
@@ -21,17 +20,6 @@ import { textColumn, numberColumn } from '../components/gridColumns';
 
 import { useCanSeeStats } from '../components/StatsRow';
 import { money, numeralsLocale, qty } from '../utils/money';
-/**
- * تقارير مندوبين — three of their four report screens; the fourth (عمولة تحصيلات مندوبين) already
- * lives on the finance screen and its menu entry points there.
- *
- * Nothing new is recorded to produce these. A receipt has always carried who took it and from whom,
- * and an invoice has always carried its rep — what was missing was reading it that way round.
- *
- * The period is shared across the three tabs on purpose: «how much did he collect» and «what did he
- * sell» are asked about the same month, and two pickers that can disagree is how somebody compares
- * March against April without noticing.
- */
 
 interface CollectionRow {
   rep_user_id: number; rep_name: string; receipts: number; collected: string;
@@ -49,8 +37,6 @@ export default function RepReports() {
   const [tab, setTab] = useQueryTab('collections', 'view');
   const [range, setRange] = useState<[Dayjs, Dayjs] | null>(null);
   const [repId, setRepId] = useState<number | undefined>();
-  // البيان على السند (التحصيلات) أو على الفاتورة (مبيعات الأصناف) — نفس الخانة للتلات
-  // تابات زي الفترة بالظبط، عشان الأرقام اللي جنب بعض تبقى عن نفس المستندات.
   const [statement, setStatement] = useState('');
 
   const [collections, setCollections] = useState<CollectionRow[]>([]);
@@ -82,15 +68,7 @@ export default function RepReports() {
 
   useEffect(() => { load(); }, [load]);
 
-  // The rep list comes from the figures themselves rather than from a users call: these screens are
-  // about who actually collected or sold, and a rep with nothing in the period has nothing to show.
-  //
-  // **بس الأرقام بعد اختيار مندوب بتبقى أرقامه هو بس** — فالقايمة كانت بتنكمش لاسمه لوحده،
-  // واللي عايز يبدّل لمندوب تاني لازم يمسح الأول. فالأسماء بتتجمّع: اللي ظهر مرة في الشاشة
-  // بيفضل في القايمة. مندوب مالوش حاجة في الفترة الحالية بيطلع جدول فاضي — أهون من قايمة
-  // بتختفي منها الأسامي.
   const [repNames, setRepNames] = useState<Map<number, string>>(new Map());
-  // وكل المناديب من الأول — مندوب مالوش حركة في الشاشة الحالية كان مابيتختارش أصلاً.
   useEffect(() => {
     api.get('/api/v1/users').then((res) => {
       const reps = (res.data || []).filter((u: any) => u.role === 'sales_rep');
@@ -99,7 +77,7 @@ export default function RepReports() {
         reps.forEach((u: any) => { if (!next.has(u.id)) next.set(u.id, u.full_name || u.username); });
         return next;
       });
-    }).catch(() => { /* من غير صلاحية المستخدمين — القايمة بتتبني من الأرقام زي الأول */ });
+    }).catch(() => {});
   }, []);
   useEffect(() => {
     setRepNames((prev) => {
@@ -128,8 +106,6 @@ export default function RepReports() {
     filters: { rep_user_id: (r, v) => r.rep_user_id === v },
   });
 
-  // كل سطر هنا بيتكلم عن حد أو حاجة ليها ملف: المندوب، العميل، الصنف. فالسطر بيروح للملف ده،
-  // بدل ما الاسم بس يكون لينك واللي بيقرا الأرقام على الشمال ما يوصلش لحاجة.
   const collectionKb = useTableKeyboard<CollectionRow>({
     rows: collectionFilter.filtered, rowKey: (r) => r.rep_user_id,
     onOpen: (r) => navigate(`/employees?rep=${r.rep_user_id}`),
@@ -155,14 +131,11 @@ export default function RepReports() {
     { title: 'الكمية', dataIndex: 'quantity', width: 120,
       ...numberColumn<RepItemRow>((r) => r.quantity),
       render: (v: string) => qty(v) },
-    // Net of the document's discount, so these add up to the invoices rather than
-    // showing a rep selling more than the customer was billed.
     { title: 'الصافي', dataIndex: 'net', width: 165, align: 'left' as const,
       ...numberColumn<RepItemRow>((r) => r.net),
       render: (v: string) => <b>{money(v)}</b> },
   ];
 
-  // إخفاء وترتيب الأعمدة — نفس المحرك اللي كل الجداول بتستخدمه.
   const repItemsCols = useTableColumns('rep-item-sales', repItemsColumns, {
     export: { name: 'مبيعات اصناف مندوبين', rows: itemFilter.filtered },
   });
@@ -173,8 +146,6 @@ export default function RepReports() {
       render: (v: string) => <b>{v}</b> },
     { title: 'العميل', dataIndex: 'customer_name',
       ...textColumn(byCustomer, (r: ByCustomerRow) => r.customer_name),
-      // Money with no customer on it is still money the rep collected; dropping the
-      // row would make this screen's total disagree with the one beside it.
       render: (v: string | null, r: ByCustomerRow) => (v && r.customer_id
         ? <a onClick={() => navigate(`/customers/${r.customer_id}`)}>{v}</a>
         : <Tag>بدون عميل</Tag>) },
@@ -186,7 +157,6 @@ export default function RepReports() {
       render: (v: string) => <b>{money(v)}</b> },
   ];
 
-  // إخفاء وترتيب الأعمدة — نفس المحرك اللي كل الجداول بتستخدمه.
   const repCustomersCols = useTableColumns('rep-collections-by-customer', repCustomersColumns, {
     export: { name: 'تحصيلات المندوبين عملاء', rows: customerFilter.filtered },
   });
@@ -205,14 +175,12 @@ export default function RepReports() {
       ) },
   ];
 
-  // إخفاء وترتيب الأعمدة — نفس المحرك اللي كل الجداول بتستخدمه.
   const repCollectionsCols = useTableColumns('rep-collections', repCollectionsColumns, {
     export: { name: 'تحصيلات المندوبين', rows: collectionFilter.filtered },
   });
 
   const canSeeStats = useCanSeeStats();
 
-  // شريط الفلاتر واحد للتلات تابات — البحث وفلتر المندوب بتوع التاب المفتوح.
   const TAB_META: Record<string, {
     label: string; search: string; total: number; byRep: boolean;
     filter: { query: string; setQuery: (v: string) => void; values: Record<string, any>;
@@ -234,11 +202,9 @@ export default function RepReports() {
   };
   const cur = TAB_META[tab];
 
-  // F3 للبحث — كانت جاية من `ListToolbar`.
   const searchRef = useRef<any>(null);
   useScreenShortcuts({ onSearch: () => { searchRef.current?.focus?.(); } });
 
-  // الفلتر بالمندوب جوّه التاب بيقبل أكتر من واحد — زي ما كان في `ListToolbar`.
   const repFilterValue = (() => {
     const v = cur?.filter.values.rep_user_id;
     if (v === undefined || v === null || v === '') return undefined;

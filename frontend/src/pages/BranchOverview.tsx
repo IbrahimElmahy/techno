@@ -9,16 +9,6 @@ import { useTableColumns } from '../components/ColumnSettings';
 
 import StatsRow from '../components/StatsRow';
 import { money, numeralsLocale } from '../utils/money';
-/**
- * نظرة مدير الشركة على الفروع.
- *
- * كل شاشة تانية في النظام بتوريك فرعك — وده صح، بس بيسيب اللي فوق الفروع من غير مكان
- * يقارن فيه: هو شايف مجموع الشركة كرقم واحد، وهو عايز يعرف الفرع اللي واقف والفرع اللي
- * ماشي. الشاشة دي هي المكان ده، وهي الوحيدة في النظام اللي بتكسر عزل الفروع عن قصد.
- *
- * أرقام مجمّعة بس، مافيش مستندات. اللي عايز يفتح فاتورة بيروح لشاشتها — نسخة تانية من سجل
- * المبيعات هنا معناها مكان تاني ممكن يتعدّل منه، وده اللي العزل موجود عشانه.
- */
 
 interface Row {
   branch_id: number | null;
@@ -62,7 +52,6 @@ export default function BranchOverview() {
     receipts: t.receipts + Number(r.receipts_total || 0),
   }), { sales: 0, salesCount: 0, returns: 0, purchases: 0, receipts: 0 }), [rows]);
 
-  // «صافي المبيعات» هو الصافي ناقص المرتجع — الرقم اللي بيتقارن بيه فرع بفرع.
   const netOf = (r: Row) => Number(r.sales_net || 0) - Number(r.returns_value || 0);
   const best = rows.length
     ? rows.reduce((a, b) => (netOf(b) > netOf(a) ? b : a)) : null;

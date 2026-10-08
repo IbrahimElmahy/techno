@@ -1,28 +1,3 @@
-"""قيود سندات a5 ⇒ سندات حقيقية في شاشة السندات (٢٠٢٦-١٠-٠٧).
-
-    python -m src.scripts.a5_entries_to_vouchers --branch السادات --prefix FC-          # يعرض بس
-    python -m src.scripts.a5_entries_to_vouchers --branch السادات --prefix FC- --yes
-    python -m src.scripts.a5_entries_to_vouchers --branch أكتوبر --prefix "" --yes
-
-النقل حط سندات a5 (قبض، صرف، مصروف…) **قيود** في الدفتر — الأرصدة صح، بس جدول السندات
-فاضي من تاريخ a5، فشاشة «سند قبض / صرف / مصروف» بتقول «لا توجد» والفرع شغّال عليها من سنين.
-
-**السند بيتعمل على نفس القيد** (`ledger_entry_id`) — مافيش قيد جديد ولا رقم بيتحرك. بيتصنّف
-من سطري القيد:
-
-* سطر على خزنة (`account_type = treasury`) والتاني مش خزنة:
-  الخزنة مدين ⇒ قبض (أو إيداع شريك لو الطرف تحت جاري/رأس مال)،
-  الخزنة دائن ⇒ صرف (أو مصروف لو الطرف حساب مصروفات، أو سحب شريك).
-* الاتنين خزن ⇒ تحويل نقدي.
-* غير كده (قيد بأكتر من سطرين، أو من غير خزنة) ⇒ قيد حر، بيفضل قيد.
-
-الطرف: كارت العميل/المورد اللي الحساب بتاعه (والخط أبيض/بولي من الكارت)، وإلا الحساب نفسه.
-الخزنة: صف جدول الخزن اللي على الحساب ده، والصندوق اللي في عهدة مندوب بيدّي المندوب.
-
-**مُعلَّم:** `client_uuid = external_ref` (`a5:FC-33978`) ورقمه `<بادئة><نوع>-A5-<مفتاح>` — فبيتعرف إنه
-من a5، والتشغيلة التانية بتتخطّاه، و`rebuild_a5_ledger`/`prune_a5_deleted_entries` بيشيلوه مع
-قيده لما القيد يتعاد أو يتمسح (وبعدها السكربت ده بيرجّعه).
-"""
 from __future__ import annotations
 
 import sys
@@ -46,9 +21,7 @@ PREFIX = {VoucherKind.receipt: "RCV", VoucherKind.payment: "PAY", VoucherKind.ex
           VoucherKind.cash_transfer: "TRF", VoucherKind.partner_withdraw: "PWD",
           VoucherKind.partner_deposit: "PDP"}
 PARTNER_WORDS = ("جار", "رأس المال", "راس المال", "استثمار")
-# مجموعات المصروفات بالاسم — شجرة السادات حساباتها من غير «طبيعة» فـ`effective_nature` مابيعرفهاش.
 EXPENSE_WORDS = ("مصروف", "مصاريف", "اجور", "أجور", "مرتبات", "تكاليف", "اهلاك", "إهلاك", "ايجار")
-# القيود المربوطة بمستند (فاتورة/مرتجع) — دول مش سندات.
 DOC_LINKS = (("sales_invoice", "ledger_entry_id"), ("sales_return", "ledger_entry_id"),
              ("sales_return", "reversal_entry_id"), ("purchase_invoice", "ledger_entry_id"),
              ("purchase_return", "ledger_entry_id"), ("purchase_return", "reversal_entry_id"))
@@ -61,7 +34,6 @@ def run(*, branch_name: str, prefix: str, execute: bool) -> int:
         tag = f"a5:{prefix}"
         entries = db.scalars(select(LedgerEntry).where(
             LedgerEntry.branch_id == bid, LedgerEntry.external_ref.like(tag + "%"))).all()
-        # من غير بادئة (أكتوبر): المفتاح رقم بس — `a5:AL-…` و`a5:FC-…` مش بتوعنا.
         entries = [e for e in entries if prefix or e.external_ref[len(tag):].isdigit()]
         linked = {r for (r,) in db.execute(select(Voucher.ledger_entry_id)) if r}
         for t, c in DOC_LINKS:
@@ -88,8 +60,6 @@ def run(*, branch_name: str, prefix: str, execute: bool) -> int:
         new: list[Voucher] = []
         for e in entries:
             ls = lines.get(e.id, [])
-            # الطرفين ممكن يفرقوا قروش — تصحيح القروش التراكمي (`fix_a5_rounding_balances`)
-            # بيعدّل السطر الكسري بس. المبلغ بيتاخد من سطر الخزنة.
             if len(ls) != 2 or abs(ls[0].amount - ls[1].amount) > Decimal("0.05"):
                 skipped["قيد بأكتر من سطرين"] += 1
                 continue

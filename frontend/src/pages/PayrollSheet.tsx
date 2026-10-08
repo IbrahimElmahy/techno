@@ -23,21 +23,6 @@ import { esc, printMoney, printPayslip } from '../print/reportSheet';
 import { matchesWords, normalizeAr, searchFilter, searchRank } from '../utils/arabicSort';
 import { money } from '../utils/money';
 
-/**
- * شيت المرتبات — نفس ورقة الإكسل اللي العميل بيعمل عليها المرتبات (طلب ٢٠٢٦-١٠-٠٨).
- *
- * الورقة: جدول لكل مجموعة (البيع، الإدارية، خدمة العملاء) بأعمدتها هي، وإجمالي تحت كل جدول،
- * وفي الآخر صافي كل مجموعة والإجمالي العام. الشاشة بتعرضها بالظبط كده — الاستحقاقات، وبعدها
- * «الاجمالي»، والاستقطاعات، وبعدها «الصافي» — عشان المحاسب يقرا الورقة اللي متعوّد عليها.
- *
- * **كل خانة تتكتب فوقها.** الرقم المحسوب (من إعدادات الراتب، محرك العمولات، الحضور، السلف،
- * الجزاءات) بيظهر عادي، والمكتوب بالإيد بيظهر بخلفية ملوّنة — والماوس عليه بيقول المحسوب كان
- * كام وجه منين، وفيه «رجّع المحسوب». و«تحديث من المصادر» بيعيد المحسوب بس ومايلمسش المكتوب.
- *
- * **المراحل:** مسودة (تعديل) ← معتمد (مقفول، بيتطبع ويتمضي) ← مرحّل (قيد المرتبات في الأستاذ).
- * الترحيل زرار لوحده، والعكس بيرجّع الشهر وتجهيزه تاني بيحتفظ بكل اللي اتكتب بالإيد.
- */
-
 interface Col {
   key: string; label: string; source: string; ref: any; kind: 'earning' | 'deduction';
   posting: string | null;
@@ -84,12 +69,10 @@ const fail = (err: any, fallback: string) => {
   message.error((typeof detail === 'string' ? detail : detail?.message) || fallback, 6);
 };
 
-/** الأعمدة بترتيب الورقة: الاستحقاقات، الاجمالي، الاستقطاعات، الصافي. */
 function ordered(cols: Col[]) {
   return { earn: cols.filter((c) => c.kind === 'earning'), ded: cols.filter((c) => c.kind !== 'earning') };
 }
 
-/** خانة فلوس — عرض، ولما تتضغط في المسودة بتبقى خانة كتابة. */
 function MoneyCell({ cell, editable, onSave, strong }: {
   cell: Cell; editable: boolean; strong?: boolean; onSave: (v: number | null) => Promise<void>;
 }) {
@@ -154,7 +137,6 @@ function MoneyCell({ cell, editable, onSave, strong }: {
   );
 }
 
-/** أيام الغياب — من الحضور، أو مكتوبة بالإيد. */
 function DaysCell({ row, editable, onSave }: {
   row: Row; editable: boolean; onSave: (v: number | null) => Promise<void>;
 }) {
@@ -286,7 +268,6 @@ export default function PayrollSheet() {
     return null;
   }, 'المسودة اتمسحت');
 
-  /** الخانة اللي اتعدّلت بترجع بصفها وإجماليات مجموعتها والشيت — من غير تحميل الكل. */
   const applyRow = (res: any) => {
     setData((prev) => {
       if (!prev || !res?.row) return prev;
@@ -332,8 +313,6 @@ export default function PayrollSheet() {
     if (!q) return true;
     return matchesWords(normalizeAr(`${r.code} ${r.name}`), normalizeAr(q));
   };
-
-  // ------------------------------------------------------------ أعمدة جدول المجموعة
 
   const columnsFor = (g: Group): ColumnsType<Row> => {
     const { earn, ded } = ordered(g.columns);
@@ -419,8 +398,6 @@ export default function PayrollSheet() {
     );
   };
 
-  // ------------------------------------------------------------ الطباعة (A4 بالعرض زي الإكسل)
-
   const print = () => {
     if (!data || !run) return;
     const title = `مرتبات شهر ${MONTHS[run.month - 1]} ${run.year}`;
@@ -485,8 +462,6 @@ export default function PayrollSheet() {
   const overrides = useMemo(() => (data?.groups || []).reduce((t, g) => t + g.rows.reduce(
     (s, r) => s + Object.values(r.cells).filter((c) => c.override !== null).length
       + (r.absent_days_override !== null ? 1 : 0), 0), 0), [data]);
-
-  // ------------------------------------------------------------ الشاشة
 
   const actions = (
     <>

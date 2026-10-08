@@ -1,31 +1,3 @@
-"""مسير الرواتب — الحساب والترحيل والصرف والعكس (HR-6).
-
-Same shape as `fixed_asset_service.run_depreciation`, with one deliberate difference: that one
-DELETES its period markers on reversal, which is right for a marker and wrong for a document. A
-payroll run has a printed number and an employee is holding a payslip quoting it, so reversing
-bumps `reversal_seq` and keeps the row.
-
-**الحساب في مسودة، والترحيل فعل تاني.** A draft can be recomputed all day and touches nothing
-financial. Posting is the act that writes to the ledger, and from that moment nothing on it can be
-edited — the attendance days it read get locked, the advance instalments get consumed, and the tax
-version it used gets frozen.
-
-**والقيد:**
-
-    مدين   ٥٫١٠٫٠٠٢  مصروف أجور ومرتبات      = المستحق (إجمالي − غياب − جزاءات)
-    مدين   ٥٫١٠٫٠٠٥  حصة الشركة في التأمينات = حصة الشركة
-           دائن  ٢٫٠٢٫٠٠١  مرتبات مستحقة            = الصافي
-           دائن  ٢٫٠٢٫٠٠٢  تأمينات مستحقة            = حصة الموظف + حصة الشركة
-           دائن  ٢٫٠٢٫٠٠٣  ضريبة كسب عمل مستحقة     = الضريبة
-           دائن  ٢٫٠٢٫٠٠٤  حصيلة الجزاءات            = الجزاءات
-           دائن  ١٫٠٢٫٠١٠  سلف العاملين              = أقساط السلف
-
-الجزاء بيقفل على **التزام** مش إيراد: قانون العمل بيقول حصيلة الجزاءات تروح لصندوق رعاية العمال،
-مش ربح للشركة. وبيتشال من المصروف كمان، لأن تكلفة الأجور الحقيقية للشركة أقل فعلاً.
-
-الصرف: مدين مرتبات مستحقة / دائن الخزنة. `voucher_service.create_expense` مابتعرفش تعمله — هي
-بتخصم على حساب مصروف وبترفض أي طبيعة تانية.
-"""
 from __future__ import annotations
 
 from calendar import monthrange
@@ -64,10 +36,8 @@ from src.services.ledger_service import LineInput
 
 ZERO_QTY = Decimal("0.000")
 
-# حسابات المسير — بتتعمل عند أول ترحيل، بالكود، زي الأصول الثابتة.
 _LIABILITY_GROUP = ("2.02", "التزامات العاملين", AccountNature.liability, None, "2")
 _ACCOUNTS = {
-    # حساب الرواتب موجود أصلاً في الشجرة القياسية — عمل تاني معناه سطرين في قائمة الدخل.
     "salary_expense": ("5.10.002", "رواتب", AccountNature.expense, Direction.debit, "5"),
     "employer_insurance": ("5.10.005", "حصة الشركة في التأمينات الاجتماعية",
                            AccountNature.expense, Direction.debit, "5"),
@@ -83,7 +53,7 @@ _ACCOUNTS = {
 
 
 class PayrollError(Exception):
-    """المسير مايتعملش زي ما هو مطلوب."""
+    pass
 
 
 def _account(db: Session, code, name, nature, side, parent_code):
@@ -105,7 +75,6 @@ def _account(db: Session, code, name, nature, side, parent_code):
 
 
 def accounts(db: Session) -> dict:
-    """حسابات المسير، بتتعمل عند أول استعمال."""
     _account(db, *_LIABILITY_GROUP)
     return {key: _account(db, *spec) for key, spec in _ACCOUNTS.items()}
 
@@ -114,17 +83,9 @@ def _period_end(year: int, month: int) -> date:
     return date(year, month, monthrange(year, month)[1])
 
 
-# ------------------------------------------------------------------ الحساب
-
-
 def compute_run(
     db: Session, *, year: int, month: int, actor_user_id: int, branch_id: int | None = None,
 ) -> PayrollRun:
-    """بيعمل أو بيعيد حساب مسودة الشهر. مابيلمسش الأستاذ.
-
-    Recomputing wipes the draft's lines and rebuilds them — a draft is uncommitted working state,
-    not a document. The moment it is POSTED that stops being true.
-    """
     if not 1 <= month <= 12:
         raise PayrollError("الشهر لازم يكون من 1 لـ 12.")
     period_end = _period_end(year, month)
@@ -139,8 +100,6 @@ def compute_run(
             f"الشهر ده مرحّل بالفعل في المسير {posted.document_number} — اعكسه الأول."
         )
 
-    # الشهر اللي متجهّز من «شيت المرتبات» سطوره مبنية من خانات الشيت — إعادة حسابه من هنا
-    # كانت هتمسح شغل المراجعة كله وتحط مكانه حساب بأعمدة تانية.
     from src.services.payroll_sheet_service import is_sheet
 
     for other in db.scalars(select(PayrollRun).where(
@@ -174,8 +133,6 @@ def compute_run(
             for detail in db.scalars(select(PayrollLineDetail).where(
                     PayrollLineDetail.line_id == line.id)).all():
                 db.delete(detail)
-            # فلاش قبل مسح السطر: مافيش `relationship` بين السطر وتفاصيله، فالـORM ممكن يبعت
-            # مسح السطر الأول ويقع على المفتاح الأجنبي — وإعادة حساب المسودة كانت بتطلع ٥٠٠.
             db.flush()
             db.delete(line)
         db.flush()
@@ -213,7 +170,6 @@ def compute_run(
     return run
 
 
-# اسم الحقل على السطر اللي بيغذّي كل إجمالي على المسير.
 _RUN_FIELD = {
     "earnings": "gross", "absence_deduction": "absence_deduction",
     "overtime": "overtime_amount", "bonuses": "bonus_amount",
@@ -231,8 +187,6 @@ def _compute_line(
 ) -> PayrollLine | None:
     salary = setup.salary_on(db, employee.id, period_end)
     if salary is None:
-        # مافيش هيكل راتب ساري — الموظف اتعيّن بعد الشهر ده، أو محدش حطّله راتب.
-        # سطر بصفر أوحش من مفيش سطر: بيقرا كإن الراجل مستحق صفر.
         return None
 
     breakdown = setup.salary_breakdown(db, salary)
@@ -269,7 +223,6 @@ def _compute_line(
             min_base=ins_version.min_base, max_base=ins_version.max_base,
         )
 
-    # وعاء الضريبة بعد التأمينات — حصة الموظف مخصومة قانوناً قبل الضريبة.
     taxable_monthly = to_money(
         Decimal(breakdown["taxable_base"]) + overtime_amount + bonus
         - absence_amount - penalty - ins_employee)
@@ -291,7 +244,6 @@ def _compute_line(
 
     line = PayrollLine(
         run_id=run.id, employee_id=employee.id,
-        # متجمّدين وقت الحساب — نقل الموظف بعدين مايغيّرش تكلفة الشهر ده على قسمه.
         department_id=employee.department_id, job_title_id=employee.job_title_id,
         cost_center_id=_cost_center_of(db, employee),
         basic=basic, allowances=to_money(gross_structure - basic),
@@ -327,7 +279,6 @@ def _cost_center_of(db: Session, employee: Employee) -> int | None:
 
 
 def _attendance_of(db: Session, employee_id: int, year: int, month: int) -> dict:
-    """أيام الشهر مجمّعة. مفيش أي يوم = «محدش رفع الملف»، مش «غايب الشهر كله»."""
     first, last = date(year, month, 1), _period_end(year, month)
     rows = db.scalars(select(AttendanceDay).where(
         AttendanceDay.employee_id == employee_id,
@@ -348,7 +299,6 @@ def _attendance_of(db: Session, employee_id: int, year: int, month: int) -> dict
 
 
 def _adjustments_of(db: Session, employee_id: int, year: int, month: int, daily, hourly):
-    """بيحوّل الجزاءات والمكافآت لفلوس — الأيام بأجر يوم الشهر ده."""
     rows = advance_service.adjustments_in(db, employee_id=employee_id, year=year, month=month)
     bonus = penalty = ZERO
     resolved = []
@@ -370,7 +320,6 @@ def _adjustments_of(db: Session, employee_id: int, year: int, month: int, daily,
 
 def _write_details(db, line, breakdown, overtime_amount, days, absence_amount,
                    adjustments, instalments, ins_employee, tax_amount) -> None:
-    """بند بند — قسيمة الراتب وكل تقارير المرتبات بتتقرا من هنا."""
     add = lambda **kw: db.add(PayrollLineDetail(line_id=line.id, **kw))  # noqa: E731
 
     add(source=DetailSource.component, label="الأساسي", kind=DetailKind.earning,
@@ -403,16 +352,7 @@ def _write_details(db, line, breakdown, overtime_amount, days, absence_amount,
     db.flush()
 
 
-# ------------------------------------------------------------------ الترحيل
-
-
 def post_run(db: Session, *, run_id: int, actor_user_id: int) -> dict:
-    """بيرحّل المسودة للأستاذ. ضغطة تانية مابتعملش حاجة.
-
-    Returns `{"skipped": True}` rather than raising on a second press — the house pattern from
-    `fixed_asset_service.run_depreciation`. A button somebody can click twice must be safe to click
-    twice, and an error message for «it already worked» teaches people to distrust the screen.
-    """
     run = db.get(PayrollRun, run_id)
     if run is None:
         raise PayrollError("المسير غير موجود.")
@@ -430,8 +370,6 @@ def post_run(db: Session, *, run_id: int, actor_user_id: int) -> dict:
     period_end = _period_end(run.year, run.month)
     entry_lines: list[LineInput] = []
 
-    # المصروف بيتقسّم على مراكز التكلفة — ده اللي بيخلّي أجور القسم تظهر في أرباح وخسائر
-    # مركز التكلفة من غير تقرير مخصوص.
     by_centre: dict[int | None, Decimal] = {}
     for line in lines:
         earned = to_money(Decimal(str(line.gross)))
@@ -467,7 +405,6 @@ def post_run(db: Session, *, run_id: int, actor_user_id: int) -> dict:
         entry_lines.append(LineInput(acc["tax_payable"].id, Direction.credit, tax,
                                      statement="ضريبة كسب عمل"))
     if penalties:
-        # التزام مش إيراد: قانون العمل بيقول حصيلة الجزاءات لصندوق رعاية العمال.
         entry_lines.append(LineInput(acc["penalties_fund"].id, Direction.credit, penalties,
                                      statement="حصيلة الجزاءات"))
     if advances:
@@ -502,7 +439,6 @@ def post_run(db: Session, *, run_id: int, actor_user_id: int) -> dict:
 
 
 def _consume(db: Session, run: PayrollRun, lines) -> None:
-    """بيربط الأقساط والجزاءات بسطورها — عشان مايتخصموش تاني الشهر الجاي."""
     from src.models.hr_advance import EmployeeAdvanceInstalment, PayrollAdjustment
 
     for line in lines:
@@ -514,17 +450,15 @@ def _consume(db: Session, run: PayrollRun, lines) -> None:
             row.payroll_line_id = line.id
     db.flush()
 
-    # سلفة اتسدّدت بالكامل بتتقفل.
     for advance in db.scalars(select(EmployeeAdvance).where(
             EmployeeAdvance.status == AdvanceStatus.active)).all():
         if advance_service.outstanding_of(db, advance) <= ZERO:
             advance.status = AdvanceStatus.settled
     db.flush()
-    _ = PayrollAdjustment, EmployeeAdvanceInstalment  # للقراية
+    _ = PayrollAdjustment, EmployeeAdvanceInstalment
 
 
 def _lock_attendance(db: Session, run: PayrollRun) -> None:
-    """أيام الشهر بتتقفل — القيد مابيتعدّلش، فمصدره مايتحركش من تحته."""
     first, last = date(run.year, run.month, 1), _period_end(run.year, run.month)
     employee_ids = [line.employee_id for line in
                     db.scalars(select(PayrollLine).where(PayrollLine.run_id == run.id)).all()]
@@ -538,7 +472,6 @@ def _lock_attendance(db: Session, run: PayrollRun) -> None:
 
 
 def reverse_run(db: Session, *, run_id: int, actor_user_id: int) -> dict:
-    """بيعكس المسير ويفتح الشهر تاني — والمستند بيفضل بترقيمه."""
     run = db.get(PayrollRun, run_id)
     if run is None:
         raise PayrollError("المسير غير موجود.")
@@ -555,7 +488,6 @@ def reverse_run(db: Session, *, run_id: int, actor_user_id: int) -> dict:
     run.reversal_entry_id = reversal.id
     run.status = PayrollRunStatus.reversed
 
-    # الأقساط والجزاءات بترجع مفتوحة، وأيام الحضور بتتفك.
     for line in db.scalars(select(PayrollLine).where(PayrollLine.run_id == run.id)).all():
         _release(db, line.id)
     for day in db.scalars(select(AttendanceDay).where(
@@ -585,14 +517,10 @@ def _release(db: Session, line_id: int) -> None:
         row.payroll_line_id = None
 
 
-# ------------------------------------------------------------------ الصرف
-
-
 def pay_run(
     db: Session, *, run_id: int, actor_user_id: int, treasury_id: int | None = None,
     pay_date: date | None = None,
 ) -> dict:
-    """صرف المرتبات — مدين مرتبات مستحقة / دائن الخزنة."""
     run = db.get(PayrollRun, run_id)
     if run is None:
         raise PayrollError("المسير غير موجود.")
@@ -640,11 +568,6 @@ def remit(
     db: Session, *, kind: str, amount, remit_date: date, actor_user_id: int,
     branch_id: int | None = None, notes: str | None = None,
 ) -> PayrollRemittance:
-    """سداد التأمينات أو الضريبة — بيقفل الالتزام من الخزنة.
-
-    Without it those liability accounts only ever grow: the payroll credits them every month and
-    nobody ever debits them, so the balance sheet carries a debt that was actually paid.
-    """
     if kind not in ("insurance", "tax"):
         raise PayrollError("النوع لازم يكون insurance أو tax.")
     value = to_money(Decimal(str(amount or 0)))

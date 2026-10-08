@@ -1,7 +1,3 @@
-"""Treasury & ledger router (Phase 3/6 endpoints). FR-024, FR-026, FR-027.
-
-Singleton consolidated treasury account; balanced ledger posting; mirror reversal.
-"""
 from __future__ import annotations
 
 from decimal import Decimal
@@ -137,13 +133,9 @@ def list_ledger_entries(
     current: CurrentUser = Depends(require_capability(CAP_LEDGER_READ)),
     db: Session = Depends(get_db),
 ) -> list[LedgerEntryOut]:
-    # الدفتر بيتفلتر بالفرع — و`branch_id` اللي في المدخلات بيضيّق جوّه اللي
-    # الشخص شايفه أصلاً، مابيوسّعش. من غير كده كان الرابط ده باب خلفي حوالين
-    # الفلترة اللي على `/journal-entries`.
     stmt = branch_scope.scope(select(LedgerEntry), LedgerEntry, current)
     if branch_id is not None:
         stmt = stmt.where(LedgerEntry.branch_id == branch_id)
-    # الأحدث فوق بتاريخ القيد (طلب العميل ٢٠٢٦-١٠-٠١).
     entries = db.scalars(stmt.order_by(*newest_first(LedgerEntry, LedgerEntry.entry_date))).all()
     return [_entry_out(e) for e in entries]
 
@@ -153,8 +145,6 @@ def list_accounts(
     current: CurrentUser = Depends(require_capability(CAP_LEDGER_READ)),
     db: Session = Depends(get_db),
 ) -> list[AccountOut]:
-    # كل فرع له شجرته — نفس فلترة `/accounts` بالظبط، والاتنين لازم يقولوا نفس
-    # الحاجة وإلا الرابط الأقل شهرة بيبقى الباب الخلفي.
     return [
         AccountOut(
             id=a.id,
@@ -180,7 +170,6 @@ def reverse_ledger_entry(
     try:
         reversal = ledger_service.reverse_entry(db, original_id=entry_id, actor_user_id=current.id)
     except LedgerError as exc:
-        # Already-reversed / not re-reversible -> conflict.
         raise HTTPException(status.HTTP_409_CONFLICT, {"code": "ledger_conflict", "message": str(exc)})
     audit_service.record(
         db, action="ledger.reverse", actor_user_id=current.id, entity_type="ledger_entry",

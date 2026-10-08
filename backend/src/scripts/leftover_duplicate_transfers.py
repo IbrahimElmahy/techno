@@ -1,23 +1,4 @@
 # -*- coding: utf-8 -*-
-"""الأوراق اللي فضلت من تكرار التحويلات — وكل سطر فيها بكميته اللي لسه موجودة.
-
-    python -m src.scripts.leftover_duplicate_transfers
-    python -m src.scripts.leftover_duplicate_transfers --csv /tmp/leftover.csv
-
-`find_duplicate_transfers --reverse` ألغى ١١ ورقة مكررة. خمسة فضلوا ومااتلمسوش:
-
-* **تلاتة رفضهم الحارس** — البضاعة وصلت الوجهة **واتباعت منها**، فالإلغاء كان
-  هينزّل الرصيد سالب. مش ممكن نقول إن شحنة ماوصلتش وهي اتباعت.
-* **واتنين مغطّيين جزئياً** — فيهم سطور مالهاش توأم في a5، يعني فيهم شغل حقيقي؛
-  إلغاؤهم كان هيضيّع اللي فيهم.
-
-الكشف ده بيدّي لكل سطر أربع حقايق: الكمية اللي اتحوّلت، هل ليها توأم في a5،
-الرصيد الحالي في الوجهة، **والكمية اللي لسه ينفع ترجع** — وهي الأقل بين
-الكمية المكررة والرصيد الموجود دلوقتي. الباقي اتباع خلاص ومحتاج تسوية جرد لا
-إذن رجوع.
-
-مافيش كتابة هنا خالص — عرض وتصدير بس.
-"""
 from __future__ import annotations
 
 import argparse
@@ -35,7 +16,6 @@ from src.models.transfer import StockTransfer, StockTransferLine, TransferStatus
 from src.models.warehouse import Warehouse
 from src.services.stock_service import on_hand
 
-#: الأوراق اللي فضلت — اللي رفضها الحارس واللي مغطّاة جزئياً.
 LEFTOVER = ["TRF-000012", "TRF-000013", "TRF-000014", "TRF-000004", "TRF-000022"]
 
 
@@ -54,7 +34,6 @@ def main() -> None:
 
     db = SessionLocal()
     try:
-        # فهرس سطور a5 عشان نعرف أنهي سطر له توأم.
         twins: dict[tuple, list[str]] = defaultdict(list)
         for t in db.scalars(select(StockTransfer)).all():
             if t.status == TransferStatus.rejected:
@@ -88,7 +67,6 @@ def main() -> None:
                        t.dest_location_id, item_id, str(qty))
                 dup = bool(twins.get(key))
                 bal = on_hand(db, item_id, LocationKind.warehouse, t.dest_location_id)
-                # اللي ينفع يرجع = الأقل بين المكرر واللي لسه موجود.
                 can = min(qty, bal) if dup else Decimal("0")
                 gone = (qty - can) if dup else Decimal("0")
                 print(f"{name:<42}{float(qty):>9,.0f}{('نعم' if dup else 'لأ'):>8}"

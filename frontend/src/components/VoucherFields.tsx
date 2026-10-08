@@ -9,24 +9,9 @@ import { api } from '../api/client';
 import { TabModal } from './TabModal';
 import { money } from '../utils/money';
 
-/**
- * الخزنة وحساب المصروف — الحقلين اللي بيتحدد بيهم الفلوس بتتحرك منين وعلى إيه.
- *
- * Both were dropdowns showing a bare name, on a screen whose entire job is deciding where money
- * goes. Everything needed to choose properly was already coming back from the API and being thrown
- * away: the account's code and how much has been spent on it, and the treasury's kind and how much
- * cash is actually in it.
- *
- * The treasury one was worse than thin. It offered a placeholder «الافتراضية» and no selection, so
- * the person recording an expense could not see which safe it would come out of — the server picked
- * one and told nobody. «اتحكم بالخزنة اللي مربوط بيها أي حاجة» is exactly that complaint: not a
- * missing field, a hidden decision.
- */
-
 export interface Treasury {
   id: number; name: string; kind?: string; balance?: string | number;
   is_default?: boolean; active?: boolean; bank_name?: string | null;
-  /** حساب الخزنة في الشجرة — بيه بنعرف إن الحساب ده خزنة، ومين. */
   account_id?: number;
 }
 
@@ -34,23 +19,11 @@ export interface ExpenseAccount {
   id: number; code?: string | null; name?: string | null; balance?: string | number;
 }
 
-/**
- * الخزنة — باسمها ورصيدها ونوعها، ومختارة من الأول.
- *
- * The default is PRE-SELECTED rather than implied. A blank box labelled «الافتراضية» means the
- * money leaves a safe the person never named, and they find out which one from the ledger
- * afterwards — if they think to look.
- *
- * The balance is shown beside each because the question behind picking a safe is «فيها كام». An
- * amount larger than what is in it is flagged as it is typed rather than refused at save.
- */
 export function TreasuryField({
   treasuries, amount, width = 260, optional = false, placeholder, extra,
 }: {
   treasuries: Treasury[]; amount?: number | null; width?: number | string;
-  /** تعديل سند في عهدة مندوب — فاضي = يفضل في العهدة. */
   optional?: boolean; placeholder?: string;
-  /** سطر تحت الخانة — رصيد الخزنة وبعد السند (`VoucherShell`). */
   extra?: React.ReactNode;
 }) {
   const live = treasuries.filter((t) => t.active !== false);
@@ -59,7 +32,6 @@ export function TreasuryField({
     const bal = Number(t.balance || 0);
     return {
       value: t.id,
-      // `label` is what the closed box shows and what the search matches, so it stays plain text.
       label: `${t.name}${t.is_default ? ' (الافتراضية)' : ''}`,
       title: `${t.name} — ${money(bal)}`,
       short: t.name,
@@ -74,8 +46,6 @@ export function TreasuryField({
       name="treasury_id"
       label="الخزينة"
       extra={extra}
-      // Required, deliberately. The old form allowed «no answer» and resolved it server-side, which
-      // is the same as answering for them.
       rules={optional ? [] : [{ required: true, message: 'اختر الخزينة التي ستتحرك منها الأموال' }]}
     >
       <Select
@@ -97,7 +67,6 @@ export function TreasuryField({
                 {o.kind === 'bank' && <Tag style={{ marginInlineStart: 6 }}>بنك</Tag>}
                 {o.isDefault && <Tag color="green" style={{ marginInlineStart: 6 }}>الافتراضية</Tag>}
               </span>
-              {/* «فيها كام» — the question behind choosing a safe, answered before the choice. */}
               <span style={{ color: short ? '#cf1322' : '#6AB42D', fontSize: 14 }}>
                 {money(o.balance)}
               </span>
@@ -108,31 +77,16 @@ export function TreasuryField({
   );
 }
 
-/** The id of the treasury a form should open on — the default, or the only one there is. */
 export function defaultTreasuryId(treasuries: Treasury[]): number | undefined {
   const live = treasuries.filter((t) => t.active !== false);
   return (live.find((t) => t.is_default) ?? live[0])?.id;
 }
 
-/**
- * حساب المصروف — بالاسم واللي اتصرف عليه، ومنه تضيف حساب جديد (الكود بيتبحث بيه بس مابيظهرش).
- *
- * It listed `name || code`: never both, so two accounts called «مصروفات إدارية» under different
- * codes were the same line twice. And it showed nothing about the account, though the API returns
- * the balance — «إحنا صرفنا على البنزين كام الشهر ده» is the question somebody has in mind at the
- * exact moment they are choosing it.
- *
- * Adding one is here too. Needing a new expense account mid-voucher meant abandoning the form,
- * going to the chart of accounts, and starting again — which is how people end up posting rent to
- * «مصروفات أخرى».
- */
 export function ExpenseAccountField({
   accounts, onCreated, width = 300, groups = [], extra,
 }: {
   accounts: ExpenseAccount[]; onCreated: () => void; width?: number | string;
-  /** المجموعات الرئيسية للمصروفات — الحساب الجديد لازم يقع تحت واحدة منها. */
   groups?: ExpenseAccount[];
-  /** سطر تحت الخانة — اللي اتصرف على الحساب لحد دلوقتي. */
   extra?: React.ReactNode;
 }) {
   const [adding, setAdding] = useState(false);
@@ -141,12 +95,8 @@ export function ExpenseAccountField({
 
   const options = useMemo(() => sortByName(accounts, (a) => a.name).map((a) => ({
     value: a.id,
-    // **الاسم هو اللي بيتبحث فيه ويترتّب بيه، والكود في `search` المخفي.** لو الكود في أول
-    // `label` كل اسم بيبقى «كلمة في النص» مش «بيبدأ بـ»، فترتيب القُرب بيقع ويبقى بالكود.
     label: a.name ?? a.code ?? '',
     search: a.code ?? '',
-    // الاسم بس — طلب العميل (٢٠٢٦-١٠-٠٧): «مش عايز الكود يظهر في الاختيارات». البحث بالكود
-    // لسه شغّال من `search`.
     full: a.name ?? a.code ?? '',
     spent: Number(a.balance || 0),
   })), [accounts]);
@@ -156,8 +106,6 @@ export function ExpenseAccountField({
     try {
       await api.post('/api/v1/accounts', {
         code: v.code, name: v.name, nature: 'expense', is_postable: true,
-        // Under a heading, not loose. An account with no parent is postable but belongs to no
-        // group, so it vanishes from دليل الحسابات and from every report that walks the tree.
         parent_id: v.parent_id ?? null,
       });
       message.success('اتضاف حساب المصروف');

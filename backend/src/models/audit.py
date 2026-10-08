@@ -1,8 +1,3 @@
-"""Audit log model (T055). FR-031.
-
-Append-only record of write/security actions with actor, timestamp, and before/after state.
-Reads are not logged.
-"""
 from __future__ import annotations
 
 from datetime import datetime
@@ -18,7 +13,6 @@ class AuditLogEntry(Base):
     __tablename__ = "audit_log_entry"
 
     id: Mapped[int] = mapped_column(BigIntPK, primary_key=True, autoincrement=True)
-    # NULL allowed for failed login (unknown/invalid user).
     actor_user_id: Mapped[int | None] = mapped_column(ForeignKey("user.id"), nullable=True)
     action: Mapped[str] = mapped_column(String(60), nullable=False, index=True)
     entity_type: Mapped[str | None] = mapped_column(String(40), nullable=True)

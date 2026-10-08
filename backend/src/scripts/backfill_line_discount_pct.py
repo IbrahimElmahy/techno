@@ -1,29 +1,4 @@
 # -*- coding: utf-8 -*-
-"""نسبة خصم السطر اللي الخصم نازل في فلوسها ومش مكتوب فيها.
-
-`line_total` على السطر = الكمية × السعر × (١ − الخصم). ونقل a5 بياخد الإجمالي من
-عنده (`a_price` = إجمالي السطر **بعد** الخصم) وبيكتب `discount_pct=ZERO` بالثابت.
-فالسطر بيطلع صح في الفلوس وأخرس في السبب: العميل شايف ٢٠٨ × ١٠٠ والإجمالي ١٨٬٧٢٠
-ومافيش خانة بتقول ليه.
-
-معظم السطور اتصلّحت قبل كده — ٣٧٬٨٨٢ من ٣٨٬١٢١ سطر مخصوم عندهم النسبة. الباقي
-٢٣٩ سطر بيع و٧ سطور شرا على ٥١ فاتورة، كلهم منقولين من a5.
-
-## الرقم مش بيتخترع
-
-النسبة بتتحسب من رقمين **محفوظين خلاص** على نفس السطر: `1 − line_total ÷ (كمية × سعر)`.
-والتوزيع بيثبت إنه استرجاع مش تخمين — ١٠٪ و١٤٫٥٪ (يعني ١٠ وبعدها ٥) و٢٠٪ و١٥٪، مش
-كسور عشوائية.
-
-**و`line_total` مابيتلمسش.** الفلوس هي المرجع والقيد مترحّل عليها؛ اللي بيتزوّد هو
-الشرح بس. السكريبت بيتأكد بنفسه إن مجموع الإجماليات ما اتغيّرش.
-
-بيسيب السطر اللي إجماليه **أكبر** من الكمية × السعر (زيادة مش خصم — ٤ سطور) وبيقول
-عليهم: نسبة سالبة معناها حاجة تانية خالص، وتسجيلها كخصم بيخفي السؤال.
-
-    python -m src.scripts.backfill_line_discount_pct            # عرض بس
-    python -m src.scripts.backfill_line_discount_pct --apply    # بيكتب
-"""
 from __future__ import annotations
 
 import argparse
@@ -46,12 +21,11 @@ TABLES = [
 
 
 def _implied(row) -> Decimal | None:
-    """النسبة اللي الأرقام نفسها بتقولها — أو `None` لو مافيش خصم ولا ينفع يتحسب."""
     raw = Decimal(str(row.quantity)) * Decimal(str(row.unit_price))
     if raw <= 0:
         return None
     total = Decimal(str(row.line_total))
-    if total >= raw - CENT:          # مافيش خصم (أو زيادة — بتتساب)
+    if total >= raw - CENT:
         return None
     pct = (Decimal("100") * (Decimal("1") - total / raw)).quantize(CENT, ROUND_HALF_UP)
     return pct if Decimal("0") < pct < Decimal("100") else None
@@ -95,7 +69,6 @@ def main() -> None:
             print("عرض بس — للكتابة زوّد --apply")
             return
 
-        # الفلوس هي المرجع: مجموع الإجماليات لازم يفضل حرف بحرف.
         sums_before = {}
         for label, model in TABLES:
             sums_before[label] = db.scalar(select(func.sum(model.line_total)))

@@ -2,28 +2,10 @@ import React, { useMemo, useState } from 'react';
 import { Collapse, Table, Tag } from 'antd';
 import type { TableProps } from 'antd';
 
-/**
- * جدول مجمّع — زي «Group By» في أودو.
- *
- * الفلتر بيشيل صفوف؛ التجميع بيسيبها كلها ويرتّبها. السؤال اللي بيتسأل بعد «وريني
- * فواتير الشهر» على طول هو «مقسومة على مين»، والإجابة قبل كده كانت: صدّر الجدول
- * واعمل PivotTable بره النظام.
- *
- * **المجموعة بتقول عددها ومجموعها في عنوانها.** المجموعة اللي عنوانها اسم بس
- * بتخلّي اللي عايز الإجمالي يفتحها ويجمع بعينه — وده بالظبط الشغل اللي التجميع
- * المفروض يوفّره.
- *
- * والمجموعات بتتفتح كلها لما يكونوا قليّلين ومقفولة لما يكونوا كتير: عشرين مجموعة
- * مفتوحة صفحة أطول من الجدول اللي مش مجمّع، وواحدة مقفولة إخفاء لحاجة انت عارف
- * إنها جوّه.
- */
-
 export interface GroupDef<T> {
   value: string;
   label: string;
-  /** مفتاح المجموعة اللي الصف بيقع فيها، واسمها. `null` = «بدون». */
   of: (row: T) => { key: string; label: string } | null;
-  /** رقم بيتجمع في عنوان المجموعة — الإجمالي غالباً. */
   sum?: (row: T) => number;
 }
 
@@ -36,7 +18,6 @@ export default function GroupedTable<T extends object>({
   groups: GroupDef<T>[];
   dataSource: T[];
   rowKey: string | ((row: T) => React.Key);
-  /** تنسيق المجموع في العنوان. الافتراضي رقم بعلامتين عشريتين. */
   money?: (v: number) => string;
 } & Omit<TableProps<T>, 'dataSource' | 'rowKey'>) {
   const def = groups.find((g) => g.value === groupBy);
@@ -58,8 +39,6 @@ export default function GroupedTable<T extends object>({
   const fmt = money || ((v: number) =>
     v.toLocaleString('en-EG', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
 
-  // المفاتيح المفتوحة بتتحسب مرة وقت أول عرض: لو اتحسبت في كل رندر، قفل مجموعة
-  // بإيد كان هيترجع مفتوح تاني أول ما أي حاجة في الصفحة تتغيّر.
   const [openKeys, setOpenKeys] = useState<string[] | null>(null);
   const defaultOpen = buckets.length <= 6 ? buckets.map(([k]) => k) : [];
 

@@ -36,19 +36,11 @@ interface TreasuryRecord {
 
 const KIND_LABELS: Record<string, string> = { cash: 'خزينة', bank: 'بنك' };
 
-/**
- * صندوق مندوب — عهدة واحدة بخطها وحسابها ورصيدها.
- *
- * a5 بيدّي كل مندوب صندوقين — أبيض وبولي — والفلوس بتتفصل بالخط زي المديونية. الشاشة دي
- * كانت بتعرض سجلات `Treasury` بتاعتنا وبس، فالـ١٣ صندوق اللي اتنقلوا من شجرة a5 مكانوش
- * بيبانوا هنا خالص: المكتب مش شايف الصناديق اللي الفلوس بتنزل فيها فعلاً.
- */
 interface RepSafe {
   custody_id: number;
   account_id: number | null;
   name: string;
   code: string;
-  /** الخط زي ما هو مكتوب على العهدة — مش مستنتج من الاسم. */
   family: string | null;
   rep_id: number | null;
   rep_name: string;
@@ -68,12 +60,9 @@ export default function Treasuries() {
   const [safes, setSafes] = useState<RepSafe[]>([]);
   const [safesLoading, setSafesLoading] = useState(false);
   const [familyFilter, setFamilyFilter] = useState<string>('الكل');
-  // الجدولين (الخزائن · صناديق المناديب) بقوا شريحتين في الترويسة.
-  // الشريحة في الرابط (`?tab=`) — الريفرش بيرجع عليها.
   const [viewRaw, setView] = useQueryTab('treasuries');
   const view = (viewRaw === 'safes' ? 'safes' : 'treasuries') as 'treasuries' | 'safes';
   const [createOpen, setCreateOpen] = useState(false);
-  /** صندوق مندوب بيتعدّل — `'new'` = صندوق جديد. */
   const [safeEditing, setSafeEditing] = useState<RepSafe | 'new' | null>(null);
   const [safeForm] = Form.useForm();
   const [repList, setRepList] = useState<{ id: number; name: string; active: boolean }[]>([]);
@@ -99,16 +88,6 @@ export default function Treasuries() {
     }
   };
 
-  /**
-   * صناديق المناديب — العهدة بخطها ومندوبها وحسابها.
-   *
-   * تلات مصادر لأن مافيش واحد فيهم بيقول القصة كلها: `/custodies` بترجّع الخط والمندوب من
-   * غير `account_id`، و`/custodies/{id}/balance` هي اللي بتقول الحساب والرصيد، والاسم
-   * والكود («صندوق بولي السياره (ب)» / `A5S-…`) على الحساب في الشجرة.
-   *
-   * وطلبة الرصيد بتتنده لكل عهدة لوحدها — عشرين عهدة يعني عشرين طلبة على شاشة إعدادات
-   * بتتفتح مرة في اليوم. اللي يستاهل تجميع هو السيرفر لما `/custodies` ترجّع `account_id`.
-   */
   const loadSafes = async () => {
     setSafesLoading(true);
     try {
@@ -133,16 +112,11 @@ export default function Treasuries() {
         return {
           custody_id: c.id,
           account_id: link ? link.account_id : null,
-          // العهدة القديمة اللي اتعملت من الشاشة حسابها من غير اسم — بيتقال إنه من غير اسم،
-          // مايتألّفش لها اسم من الخط.
           name: (a && a.name) || '',
           code: (a && a.code) || '',
           family: c.family ?? null,
           rep_id: c.rep_id ?? null,
           rep_name: (c.rep_id && repName[c.rep_id]) || '',
-          // الطلب اللي وقع بيرجّع `null` مش صفر. صفر معناه «الخزنة فاضية» — جملة عن
-          // الفلوس؛ والطلب اللي مارجعش معناه «مش عارفين». الاتنين كانوا بيتكتبوا صفر،
-          // فخزنة فيها فلوس تبان فاضية ومحدش يعرف إن السطر ده مقروش أصلاً.
           balance: link ? String(link.balance) : null,
           active: c.active !== false,
         } as RepSafe;
@@ -170,7 +144,6 @@ export default function Treasuries() {
       t.bank_name || '', t.account_number || ''].some((v) => v.includes(q));
   });
 
-  /** الصناديق بعد البحث والخط. «بدون خط» عهدة من قبل التقسيم، مش نوع تالت. */
   const filteredSafes = safes.filter((s) => {
     if (familyFilter === 'أبيض' || familyFilter === 'بولي') {
       if (s.family !== familyFilter) return false;
@@ -232,7 +205,6 @@ export default function Treasuries() {
     },
   ];
 
-  /** رسالة السيرفر زي ما هي — «عليه حركة… استعمل إخفاء» أوضح من «تعذر». */
   const errText = (err: any, fallback: string) =>
     err?.response?.data?.detail?.message || err?.response?.data?.message || fallback;
 
@@ -610,13 +582,6 @@ export default function Treasuries() {
             ) }}
         />
       ) : (
-        /*
-         * صناديق المناديب — جدول تاني عن قصد، مش أعمدة زيادة على الأول.
-         *
-         * الاتنين مش نفس الحاجة: الخزائن سجلات `Treasury` اللي بتتعمل من الشاشة وليها تعديل
-         * وإخفاء، والصناديق عهد المناديب اللي بتتعمل مع المندوب وبتتقفل معاه. جدول واحد كان
-         * هيبقى نصّه أزرار مالهاش معنى في نص الصفوف.
-         */
         <Table
           className="sl-table"
           dataSource={filteredSafes}

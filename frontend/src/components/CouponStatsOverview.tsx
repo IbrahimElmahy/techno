@@ -76,7 +76,6 @@ export default function CouponStatsOverview({
                 <Tag color="cyan" style={{ borderRadius: 4 }}>النوع الحالي: {currentKind}</Tag>
               )}
             </div>
-            {/* الحقول المصغرة: كل نوع وتحته العدد بتاعه */}
             <Row gutter={[8, 8]}>
               {kinds.map((k) => (
                 <Col key={k.key} xs={12} sm={6} md={6} style={{ flex: '1 1 0' }}>

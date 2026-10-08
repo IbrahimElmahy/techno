@@ -25,10 +25,6 @@ import { dualQty, isMeterUnit, lengthUnits } from '../utils/units';
 
 import ListPage from '../components/ListPage';
 import { useQueryTab } from '../components/useQueryTab';
-// The five negotiated tiers plus the published list price, in the order and wording their form
-// uses. Order is not cosmetic: whoever fills this in reads down a column on paper, and a different
-// order means checking every line instead of typing six numbers. The labels are theirs too — «نص
-// تجاري» is what the salesmen say, and renaming it to «نصف تجاري» makes them stop to translate.
 const PRICE_TIERS: { key: string; label: string }[] = [
   { key: 'consumer', label: 'مستهلك' },
   { key: 'commercial', label: 'تجاري' },
@@ -38,7 +34,6 @@ const PRICE_TIERS: { key: string; label: string }[] = [
   { key: 'list_price', label: 'سعر اللسنة' },
 ];
 
-// Modal editor for an item's five sale price tiers (007).
 const PriceTiersButton = ({ itemId, canEdit }: { itemId: number; canEdit: boolean }) => {
   const [open, setOpen] = useState(false);
   const [vals, setVals] = useState<Record<string, number | null>>({});
@@ -101,53 +96,33 @@ interface ItemRecord {
   default_warehouse_id: number | null;
   category: string | null;
   consumer_price: string | null;
-  /** كل شرائح البيع. الشريحة الغائبة معناها «لا يُباع بها» — لا صفر. */
   tier_prices?: Record<string, string>;
   piece_name: string | null;
   pieces_per_unit: string | null;
-  // On the API since 011/027 and never read by this screen, which is why they could be typed on
-  // creation and then never corrected.
   default_discount_pct: string | null;
   min_stock: string | null;
   max_stock: string | null;
   is_perishable: boolean;
   description: string | null;
-  /** «القطعة = N متر» — من `item_unit` على السيرفر؛ null لو مش متسجّل. */
   meters_per_piece?: string | null;
 }
 
-/**
- * صف وحدة بديلة هو نفسه «القطعة = N متر»؟ — نفس `uom_service._is_length_row`: أساسه متر ⇒
- * صف «قطعة»، أي أساس تاني ⇒ صف «متر». الصف ده بيتعرض في خانة الطول مش في قايمة الوحدات،
- * عشان مايتكتبش مرتين ويتحفظ بقيمتين.
- */
 const isLengthRow = (base: string, name: string): boolean => (
   isMeterUnit(base) ? ['قطعة', 'قطعه'].includes((name || '').trim()) : isMeterUnit(name)
 );
 
-/**
- * خانة سعر/خصم بتتعدّل من جوّه الجدول (وضع «تعديل الأسعار والخصم»).
- *
- * بتحفظ لوحدها لما تسيبها (blur أو Enter) — Enter بينزل لنفس العمود في الصف اللي بعده عن
- * طريق `data-grid-col` في `components/keyboard.tsx`، فالنزول نفسه هو اللي بيحفظ. لو السيرفر
- * رفض، الرسالة بتطلع من `api/client.ts` والخانة بترجع لقيمتها.
- *
- * معرّفة برّه الصفحة عن قصد: لو اتعرّفت جوّاها كانت هتتبني من الأول مع كل رندر والمؤشر يطير.
- */
 const InlineNumberCell = ({
   value, min, max, emptyAs, gridCol, onCommit,
 }: {
   value: number | null;
   min: number;
   max?: number;
-  /** الخانة الفاضية بتتحفظ كده (الخصم ⇐ ٠). من غيرها الفاضي بيرجع للقيمة القديمة. */
   emptyAs?: number;
   gridCol: string;
   onCommit: (v: number) => Promise<void>;
 }) => {
   const [draft, setDraft] = useState<number | null>(value);
   const [status, setStatus] = useState<'idle' | 'saving' | 'saved'>('idle');
-  // آخر قيمة اتبعتت — Enter وبعده blur على نفس الخانة مايبعتوش مرتين.
   const committed = useRef<number | null>(value);
   const timer = useRef<number | undefined>(undefined);
 
@@ -208,8 +183,6 @@ const InlineNumberCell = ({
           if (e.key === 'Enter') commit();
           if (e.key === 'Escape') setDraft(committed.current);
         }}
-        // الأيقونة دايماً موجودة (حتى فاضية): تغيير `suffix` من لا حاجة لحاجة بيعيد بناء
-        // الخانة والمؤشر يطير منها.
         suffix={(
           <span style={{ width: 12, display: 'inline-flex', justifyContent: 'center' }}>
             {status === 'saving' && <LoadingOutlined style={{ fontSize: 14 }} />}
@@ -226,7 +199,6 @@ const KIND_LABELS: Record<string, string> = {
   product: 'منتج تام الصنع',
 };
 
-// Sub-component to load and edit product point values inline (thin client with auth constraints)
 const ProductPoints = ({
   itemId,
   isEditable,
@@ -241,7 +213,6 @@ const ProductPoints = ({
   const fetchPoints = () => {
     api.get(`/api/v1/products/${itemId}/point-value`)
       .then((res) => {
-        // Points are fractional (v4) and come back as a decimal string, e.g. "0.167".
         const v = parseFloat(res.data.point_value) || 0;
         setPoints(v);
         setInputVal(v);
@@ -281,7 +252,6 @@ const ProductPoints = ({
           step={0.001}
           style={{ width: 100 }}
           value={inputVal}
-          // Fractional point values (v4): e.g. 6 pieces = 1 point -> 0.167.
           onChange={(v) => setInputVal(Number(v) || 0)}
         />
         <Button size="small" type="primary" onClick={handleSave}>
@@ -306,7 +276,6 @@ const ProductPoints = ({
   );
 };
 
-// Modal editor for an item's alternate units of measure + conversion factor (008).
 const ItemUnitsButton = ({ itemId, canEdit }: { itemId: number; canEdit: boolean }) => {
   const [open, setOpen] = useState(false);
   const [base, setBase] = useState<string>('');
@@ -364,7 +333,6 @@ const ItemUnitsButton = ({ itemId, canEdit }: { itemId: number; canEdit: boolean
   );
 };
 
-// Modal to receive serial numbers into stock + list in-stock serials (009).
 const SerialsButton = ({ itemId, canEdit }: { itemId: number; canEdit: boolean }) => {
   const [open, setOpen] = useState(false);
   const [warehouses, setWarehouses] = useState<any[]>([]);
@@ -423,13 +391,6 @@ export default function Catalog() {
   const { options: kindOptions } = useLookup('item_kind');
   const { options: uomOptions } = useLookup('unit_of_measure');
   const { options: categoryOptions } = useLookup('item_category');
-  /**
-   * الفئات كشجرة — الرئيسية عنوان مجموعة وفروعها تحتها. (031)
-   *
-   * القيمة المتخزّنة ما اتغيّرتش: الاختيار لسه نص `value` زي ما كان، والصنف القديم
-   * بيفضل على فئته بالحرف. ولو مافيش شجرة `categorySelectOptions` بترجّع نفس القايمة
-   * المسطّحة اللي دخلت — فالفرع اللي ما عملش شجرة بيشوف نفس المنسدلة.
-   */
   const { tree: categoryTree } = useCategoryTree();
   const categoryTreeOptions = useMemo(
     () => categorySelectOptions(categoryTree, categoryOptions),
@@ -443,18 +404,8 @@ export default function Catalog() {
   const [warehouses, setWarehouses] = useState<{ id: number; name: string }[]>([]);
   const [loading, setLoading] = useState(false);
   const [drawerVisible, setDrawerVisible] = useState(false);
-  // The same modal writes and edits. `editingItem` is the ONLY difference between the two, which
-  // is what makes «نسخة طبق الأصل» true by construction rather than by somebody remembering to
-  // add each new field twice.
   const [editingItem, setEditingItem] = useState<ItemRecord | null>(null);
-  // Two things an item carries that do not live on its own row — its point value and its
-  // alternate units. They were reachable only AFTER the item existed, so creating one meant
-  // going back for them.
   const [unitRows, setUnitRows] = useState<{ name: string; factor: number | null }[]>([]);
-  /**
-   * اختيار «الرصيد متسجّل بإيه» جنب طول القطعة: متر أو اسم القطعة الحالي. القطعة بتفضل
-   * باسمها لو مش «متر» («قطعه»، «ماسورة») — التصليح بيغيّر اللي غلط بس.
-   */
   const lengthBaseChoices = (record: ItemRecord | null) => {
     const current = (record?.unit_of_measure ?? '').trim();
     const meter = isMeterUnit(current) ? current : 'متر';
@@ -462,40 +413,28 @@ export default function Catalog() {
     const looksMeter = isMeterUnit(current) || (record?.name ?? '').trim().startsWith('متر');
     return { meter, piece, suggested: looksMeter ? meter : piece };
   };
-  // طريقة العرض في الرابط (`?tab=`) عشان الريفرش يفتح على نفس الشريحة.
   const [viewRaw, setView] = useQueryTab('grouped');
   const view = (viewRaw === 'table' ? 'table' : 'grouped') as 'grouped' | 'table';
   const [form] = Form.useForm();
   const [editForm] = Form.useForm();
   const { can } = useAuth();
 
-  // Asked of the server's own capability map rather than by listing role names. The three lists
-  // that used to be here were a hand copy of `rbac.py`, and one of them was already wrong:
-  // `canManageItems` was system_admin + purchasing_manager, while creating and editing items asks
-  // for `catalog.write` — which branch_manager also holds. He saw no «إضافة صنف» button and no
-  // edit icon on a screen whose endpoints would have accepted him.
   const canEditPoints = can('product_points.write');
   const canEditPrices = can('catalog.write');
   const canManageItems = can('catalog.write');
 
-  // **تعديل الأسعار والخصم من برّه** — في «جدول واحد» بس، من غير ما يفتح ملف الصنف.
-  // كل خانة بتتحفظ لوحدها على نفس الـendpoints اللي شاشة تعديل الصنف بتستعملها.
   const [priceEditRaw, setPriceEdit] = useState(false);
   const priceEdit = priceEditRaw && view === 'table' && canEditPrices;
-  // اللي بيكتب وداس على الزرار أو التاب: الـblur بيحفظ اللي اتكتب قبل ما الخانات تختفي.
   const leavePriceEdit = () => {
     (document.activeElement as HTMLElement | null)?.blur?.();
     setPriceEdit(false);
   };
   const switchView = (k: 'grouped' | 'table') => { leavePriceEdit(); setView(k); };
-  // والتاب لو اتغيّر من الرابط برضه بيقفل الوضع، عشان الرجوع للجدول مايفتحش عليه.
   useEffect(() => { if (view !== 'table') setPriceEdit(false); }, [view]);
 
   const patchRow = (id: number, patch: (r: ItemRecord) => Partial<ItemRecord>) =>
     setItems((prev) => prev.map((r) => (r.id === id ? { ...r, ...patch(r) } : r)));
 
-  // نفس اللي `onSaveItem` بيعمله: الشريحة على `/prices` (الشرايح التانية ماتتلمسش)،
-  // و«مستهلك» هو كمان `sale_price` المرجعي اللي باقي النظام بيقراه.
   const saveTierPrice = async (r: ItemRecord, tier: string, price: number) => {
     const s = price.toFixed(2);
     await api.put(`/api/v1/items/${r.id}/prices`, { tiers: [{ tier, price: s }] });
@@ -512,7 +451,6 @@ export default function Catalog() {
     patchRow(r.id, () => ({ default_discount_pct: s }));
   };
 
-  // Filtering happens on the server so it covers ALL items, not just the loaded page.
   const fetchItems = async (override?: Record<string, any>) => {
     const active = override ?? filters;
     setLoading(true);
@@ -544,7 +482,6 @@ export default function Catalog() {
     fetchItems({});
   };
 
-  // Live summary of whatever the current filter returned.
   const summary = useMemo(() => {
     const inStock = items.filter((i: any) => Number(i.on_hand || 0) > 0).length;
     const out = items.filter((i: any) => Number(i.on_hand || 0) === 0).length;
@@ -558,14 +495,6 @@ export default function Catalog() {
       .catch((err) => console.error(err));
   }, []);
 
-  /**
-   * Save — whichever of the two the modal is doing.
-   *
-   * One handler for both, because a field added to a create form and forgotten on the edit form
-   * is exactly how the two drifted apart in the first place. Everything an item can hold goes
-   * through here: its own row, its price tiers, its alternate units and — for a product — its
-   * point value.
-   */
   const onSaveItem = async (values: any) => {
     try {
       const tiers = Object.entries(values.prices || {})
@@ -575,8 +504,6 @@ export default function Catalog() {
           discount_pct: row?.discount_pct ?? 0,
           vat_pct: row?.vat_pct ?? 0,
         }))
-        // A tier left blank is a tier the item is not sold at, not a tier priced at zero — sending
-        // it as zero would let it be sold for nothing.
         .filter((t) => Number(t.price) > 0);
 
       const core = {
@@ -590,44 +517,24 @@ export default function Catalog() {
         max_stock: values.max_stock ?? null,
         is_serialized: !!values.is_serialized,
         is_perishable: !!values.is_perishable,
-        // Always a number: the item's rate is 0 when it gives no discount. «Nothing agreed» is a
-        // state of the CUSTOMER's card, whose column is the nullable one, and his rate replaces
-        // this rather than stacking on it.
         default_discount_pct: values.default_discount_pct ?? 0,
-        // A raw material is bought, so it has a purchase price; a product is made, and the API
-        // refuses one on it. Sending it regardless is how a valid form gets rejected.
         purchase_price: values.kind === 'raw_material' ? (values.purchase_price ?? null) : null,
-        // The consumer price doubles as the reference sale price the rest of the system reads.
         sale_price: values.prices?.consumer?.price ?? null,
       };
 
-      // PUT replaces the whole alternate set, so sending it on every save is what makes removing
-      // a unit possible at all. Nine places, like the column: a «متر» row on a piece-based item
-      // is 1÷N, and three places of it is half a piece lost on every 150 metres sold.
       const units = unitRows.filter((r) => r.name && r.factor && r.factor > 0)
         .map((r) => ({ name: r.name, factor: Number(r.factor).toFixed(9) }));
-      // «القطعة = N متر» — فاضي/صفر بيشيله. بيتبعت لوحده (مش صف في `units`) لأن اتجاهه
-      // بيتحدد من الوحدة الأساسية على السيرفر (`uom_service.length_unit`).
       const length = values.meters_per_piece && Number(values.meters_per_piece) > 0
         ? Number(values.meters_per_piece) : null;
-      // Points belong to a product, and only to somebody allowed to price loyalty.
       const points = values.kind === 'product' && canEditPoints
         && values.point_value !== undefined && values.point_value !== null
         ? values.point_value : undefined;
 
       if (editingItem) {
-        // An existing item is edited in place. Each call is idempotent and the item already
-        // exists, so a failure cannot leave a half-made record — only a half-applied edit, which
-        // the reload below then shows truthfully.
-        // الوحدات قبل الصنف: الـPUT بيبدّل المجموعة كلها، فلو الصنف (ومعاه الطول) اتحفظ
-        // الأول كان الـPUT هيمسح صف الطول اللي لسه متكتب.
         await api.put(`/api/v1/items/${editingItem.id}/units`, { units });
-        // تصليح اسم الوحدة الأساسية (متر/قطعة) بيتبعت بس لما يتغيّر فعلاً — اسم مش تحويل.
         const relabel = length && values.length_base
           && values.length_base !== editingItem.unit_of_measure
           ? { unit_of_measure: values.length_base } : {};
-        // الطول فاضي واللي بيكتب حاطط «متر»/«قطعة» بإيده في الوحدات البديلة ⇒ مانبعتش
-        // الطول خالص، وإلا السيرفر يشيل الصف اللي لسه متحفظ بالـPUT فوق.
         const manualLength = !length && unitRows.some((r) => r.name
           && isLengthRow(editingItem.unit_of_measure, r.name));
         await api.patch(`/api/v1/items/${editingItem.id}`, {
@@ -640,9 +547,6 @@ export default function Catalog() {
             { point_value: points });
         }
       } else {
-        // ONE call. The item, its tiers, its units and its points are written in a single
-        // transaction, so a rejected tier leaves no item behind — as four calls it left a created
-        // item, a failed second call, and a success message on screen.
         const created = await api.post('/api/v1/items', {
           ...core,
           kind: values.kind,
@@ -652,7 +556,6 @@ export default function Catalog() {
           meters_per_piece: length ?? undefined,
           point_value: points,
         });
-        // «مخفي» is a state an item is put into, not one it is born in, so it is a separate edit.
         if (created.data?.id && values.hidden) {
           await api.patch(`/api/v1/items/${created.data.id}`, { active: false });
         }
@@ -668,14 +571,7 @@ export default function Catalog() {
     }
   };
 
-
-
-  // Permanent delete. The server refuses when the item has any movement, invoice line or
-  // recipe reference, and tells the user to deactivate instead.
   const deleteItem = async (record: ItemRecord) => {
-    // بينفّذ من غير سؤال — التأكيدات اتشالت بطلب صاحب النظام. السيرفر لسه بيرفض
-    // حذف الصنف اللي عليه حركة وبيقول استعمل «إلغاء التفعيل»، فالحارس مكانه
-    // وهو شغّال؛ اللي اتشال هو السؤال.
     try {
       await api.delete(`/api/v1/items/${record.id}?hard=true`);
       message.success('تم حذف الصنف');
@@ -701,11 +597,8 @@ export default function Catalog() {
     });
   };
 
-  // Client-side category filter over the already-loaded items.
-  const filteredItems = items;   // filtering now happens on the server
+  const filteredItems = items;
 
-  // Items grouped by category for the accordion view. Items with no category land in a
-  // «بدون فئة» group instead of disappearing.
   const grouped = useMemo(() => {
     const map = new Map<string, ItemRecord[]>();
     items.forEach((i) => {
@@ -723,7 +616,6 @@ export default function Catalog() {
       }));
   }, [items, categoryLabels]);
 
-  // «إضافة صنف» from inside a category pre-fills that category.
   const openCreateForCategory = (category?: string) => {
     form.resetFields();
     setEditingItem(null);
@@ -732,13 +624,6 @@ export default function Catalog() {
     setDrawerVisible(true);
   };
 
-  /**
-   * «تعديل بيانات الصنف» — the same form, filled in.
-   *
-   * An item's own data could be CREATED and never changed: prices, units, points and «مخفي» had
-   * editors and everything else — the purchase price, the discount, the packing, the reorder
-   * levels, the description — had none. A typo in a name was permanent.
-   */
   const openEditItem = async (record: ItemRecord) => {
     form.resetFields();
     setEditingItem(record);
@@ -764,14 +649,9 @@ export default function Catalog() {
       default_warehouse_id: record.default_warehouse_id ?? undefined,
       description: record.description ?? undefined,
       meters_per_piece: record.meters_per_piece ? Number(record.meters_per_piece) : undefined,
-      // اقتراح الأساس: الاسم أو الكارت بيقول «متر» ⇒ متر. كروت «متر مواسير» في المصنع جاية من
-      // a5 مكتوب عليها «قطعة» وكمياتها أمتار — فالاسم بيكسب هنا، والمستخدم شايف الاختيار.
       length_base: lengthBaseChoices(record).suggested,
     });
 
-    // The three that live elsewhere. Fetched rather than assumed, and each failure left as the
-    // empty it already was — a form that refuses to open because one optional section is
-    // unavailable is worse than one that opens with that section blank.
     try {
       const prices = await api.get(`/api/v1/items/${record.id}/prices`);
       const byTier: any = {};
@@ -787,7 +667,6 @@ export default function Catalog() {
 
     try {
       const units = await api.get(`/api/v1/items/${record.id}/units`);
-      // صف «القطعة = N متر» ليه خانته فوق — مابيتكررش هنا.
       setUnitRows((units.data?.units || [])
         .filter((u: any) => !u.is_base && !isLengthRow(record.unit_of_measure, u.name))
         .map((u: any) => ({ name: u.name, factor: parseFloat(u.factor) })));
@@ -801,19 +680,7 @@ export default function Catalog() {
     }
   };
 
-  // Their columns, in their order, less باركود — the client asked for barcodes out of the system,
-  // so its absence here is a decision rather than a column still to be added.
-  // `رقم · الفئه · الاسم · الوحدة · عدد القطع ·
-  // القطعة · مستهلك` — and then ours after them. Somebody scanning this list for a price reads
-  // along a row they already know the shape of; reordering it is the difference between reading
-  // and searching. What we have and they don't keeps its place at the end rather than being
-  // dropped — تصنيف، سعر الشراء and نقاط المنتج moved into the expanded row, «مخفي» became a tag
-  // on the name, and the actions became icons. All eight of theirs stay on screen and the table
-  // fits without dragging sideways, which is the only way the price is ever beside the name you
-  // looked it up by.
   const columns = [
-    // عمود «رقم» (كود الصنف) اتشال: بياخد عرض من كل كشف ومحدش بيقراه، والكود
-    // موجود في ملف الصنف نفسه وبيتبحث بيه من أي قايمة. الشرح في `utils/itemLabel`.
     {
       title: 'الفئه',
       dataIndex: 'category',
@@ -854,15 +721,6 @@ export default function Catalog() {
       width: 80,
       render: (v: string | null) => v || '-',
     },
-    // **شرائح البيع الستة جنب بعض** — كانت صفحة «كشف تسعير» منفصلة، واتضمّت هنا.
-    //
-    // فصلها كان بيخلّي اللي بيسعّر يفتح شاشتين ويقارن بينهم بعينه: الأصناف فيها
-    // الصنف وفئته ورصيده، والتسعير فيه أسعاره — ونفس الصنف في الاتنين. الجدول
-    // الواحد بيجاوب السؤالين مرة واحدة.
-    //
-    // «مستهلك» أول واحد لأنه الأكتر استعمالاً، وبيرجع لـ`sale_price` لو الصنف
-    // مالوش صف شريحة — قاعدة ٠٠٧ نفسها، والخانة الفاضية هنا كانت هتدّعي إن الصنف
-    // مايتباعش لزبون عادي وهو بيتباع.
     ...PRICE_TIERS.map((t) => ({
       title: t.label,
       key: `tier_${t.key}`,
@@ -871,7 +729,6 @@ export default function Catalog() {
       render: (_: any, r: ItemRecord) => {
         const price = (r.tier_prices ?? {})[t.key]
           ?? (t.key === 'consumer' ? (r.consumer_price ?? r.sale_price) : undefined);
-        // الخامة مالهاش أسعار بيع (السيرفر بيرفضها)، فبتفضل للقراية بس.
         if (priceEdit && r.kind === 'product') {
           return (
             <InlineNumberCell
@@ -880,22 +737,12 @@ export default function Catalog() {
               onCommit={(v) => saveTierPrice(r, t.key, v)} />
           );
         }
-        // الخانة الفاضية معناها «مش بيتباع بالشريحة دي»، والصفر معناه «ببلاش» —
-        // والفرق بيتقرا على ورقة التسعير، فالفاضي بيفضل فاضي.
         return price === undefined || price === null
           ? <span style={{ color: '#d9d9d9' }}>—</span>
           : <b>{money(price)}</b>;
       },
     })),
     {
-      // **الخصم الثابت على الصنف** — جنب السعر مش في شاشة تانية.
-      //
-      // الرقم ده بيتطبّق لوحده على كل سطر بيع للصنف ده (`fixed_discount_pct`)، فاللي
-      // بيراجع سعر القايمة لازم يشوف جنبه الخصم اللي بيمشي معاه — وإلا بيقارن ١٦٦٫٢٥
-      // بفاتورة كاتبة ١٤٩٫٦٣ ويدوّر على فرق مالوش تفسير في الشاشة اللي قدامه.
-      //
-      // والصافي مكتوب تحته: مصدره `default_discount_pct` واللي جنبه، فمافيش حساب في
-      // دماغ حد.
       title: 'خصم ثابت',
       key: 'default_discount_pct',
       width: 120,
@@ -928,14 +775,12 @@ export default function Catalog() {
         );
       },
     },
-    // ---- ours, kept after theirs ----
     {
       title: 'الرصيد',
       dataIndex: 'on_hand',
       key: 'on_hand',
       width: 90,
       align: 'left' as const,
-      // The unit is already its own column two along, so repeating it here only bought width.
       render: (v: string | null, r: ItemRecord) => {
         const n = Number(v || 0);
         const b = (
@@ -943,7 +788,6 @@ export default function Catalog() {
             {n.toLocaleString(numeralsLocale(), { maximumFractionDigits: 3 })}
           </b>
         );
-        // صنف ليه «القطعة = N متر»: الرصيد بالوحدتين في التلميح («١٥٠ متر = ٥٠ قطعة»).
         return r.meters_per_piece && Number(r.meters_per_piece) > 0
           ? <Tooltip title={dualQty(n, lengthUnits(r.unit_of_measure, r.meters_per_piece))}>{b}</Tooltip>
           : b;
@@ -974,14 +818,10 @@ export default function Catalog() {
     }] : []),
   ];
 
-  // إخفاء وترتيب الأعمدة — نفس المحرك اللي كل الجداول بتستخدمه.
   const tableCols = useTableColumns('catalog-items', columns, {
     export: { name: 'الأصناف', rows: filteredItems },
   });
 
-  // Ours that used to be columns. «نقاط المنتج» in particular belongs here rather than in the
-  // grid: it fetched once per visible row, so a page of 200 items fired 200 requests to fill a
-  // column most people never read. Expanded, it is fetched for the one row actually opened.
   const expandedRow = (record: ItemRecord) => (
     <Space size={32} wrap style={{ paddingInlineStart: 8 }}>
       <span>
@@ -1017,7 +857,7 @@ export default function Catalog() {
       a.click();
       a.remove();
       URL.revokeObjectURL(url);
-    } catch { /* interceptor */ }
+    } catch {}
   };
   const onImportFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0];
@@ -1051,7 +891,6 @@ export default function Catalog() {
     } finally { setImporting(false); }
   };
 
-  // ملخّص اللي الفلتر رجّعه — كان كروت فوق، بقى سطر تحت الكشف.
   const footer = (
     <span className="sl-foot">
       <span>عدد الأصناف الظاهرة: <b>{summary.count.toLocaleString(numeralsLocale())}</b></span>
@@ -1097,7 +936,6 @@ export default function Catalog() {
           )}
           {tableCols.control}
         </>)}
-        // الفلاتر على السيرفر، فبتغطّي كل الأصناف مش الصفحة اللي اتحمّلت بس.
         filters={(<>
           <Input.Search
             className="sl-f-search"
@@ -1116,8 +954,6 @@ export default function Catalog() {
               { value: 'product', label: 'منتج تام' },
               { value: 'raw_material', label: 'مادة خام' },
             ]} />
-          {/* اختيار فئة رئيسية بيجيب فروعها معاها — التوسعة بتحصل على السيرفر
-              (`with_children`)، عشان الكشف مترقّم والفلترة عليه مش محلية. */}
           <Select allowClear showSearch placeholder="الفئة"
             value={filters.category}
             onChange={(v) => setFilter('category', v)}
@@ -1157,7 +993,6 @@ export default function Catalog() {
               locale: { items_per_page: '' },
               showTotal: () => footer,
             }}
-            // The whole row opens the product file — إلا وإحنا بنعدّل الأسعار.
             onRow={(record) => (priceEdit ? {} : {
               onClick: () => navigate(`/catalog/${record.id}`),
               style: { cursor: 'pointer' },
@@ -1186,13 +1021,11 @@ export default function Catalog() {
                   size="small"
                   type="link"
                   icon={<PlusOutlined />}
-                  // Don't let the click toggle the panel open/closed.
                   onClick={(e) => { e.stopPropagation(); openCreateForCategory(g.key); }}
                 >
                   إضافة صنف لهذه الفئة
                 </Button>
               ) : null,
-              // نفس القايمة مجمّعة بالفئة — فبتترتّب وتتخفي بنفس الاختيار.
               children: (
                 <Table
                   className="sl-table"
@@ -1215,14 +1048,10 @@ export default function Catalog() {
               ),
             }))}
           />
-          {/* المجمّع مالوش ترقيم واحد يشيل الإجماليات — فبتنزل في سطر لوحدها. */}
           <div style={{ padding: '10px 4px', borderTop: '1px solid #f1f5f9' }}>{footer}</div>
         </>)}
       </ListPage>
 
-      {/* صنف جديد — laid out field for field against their الأصناف form: the same groups in the
-          same order, because someone entering a hundred items a week does it by muscle memory, and
-          a reordered form makes every one of them slower. */}
       <TabModal footer={null} centered
         title={editingItem ? `تعديل بيانات الصنف — ${editingItem.name}` : 'صنف جديد'}
         width={860}
@@ -1248,15 +1077,8 @@ export default function Catalog() {
             </Col>
           </Row>
 
-          {/* اسم الوحدة · عدد القطع · اسم القطعة — the packing, their triple, in their order. */}
           <Row gutter={12}>
             <Col span={8}>
-              {/* Locked once the item exists, and NOT sent on edit. Every quantity ever recorded
-                  for this item is counted in its base unit; renaming «قطعة» to «كرتونة» would
-                  silently reinterpret its whole stock history rather than convert it. The one
-                  exception is the متر/قطعة correction next to «القطعة = كام متر؟» below: a5
-                  labelled the factory's metre-counted pipes «قطعة», and there the label is what
-                  is wrong, not the quantities — so that switch renames, it never converts. */}
               <Form.Item name="unit_of_measure" label="اسم الوحدة"
                 rules={[{ required: true, message: 'اختر الوحدة' }]}>
                 <Select showSearch placeholder="وحده" disabled={!!editingItem}
@@ -1276,9 +1098,6 @@ export default function Catalog() {
             </Col>
           </Row>
 
-          {/* «القطعة = N متر» — المواسير بتتباع بالقطعة وبالمتر، والفرع هو اللي بيختار. الخانة
-              بتعمل وحدة بديلة على الصنف، والفاتورة بتختار منها على السطر؛ المخزن بيتخصم صح
-              بالوحدتين (٥٠ قطعة × ٣ = ١٥٠ متر). اختيارية لأي صنف بيتقاس بالطول. */}
           <Row gutter={12} align="bottom">
             <Col span={8}>
               <Form.Item name="meters_per_piece" label="القطعة = كام متر؟"
@@ -1292,7 +1111,6 @@ export default function Catalog() {
               {({ getFieldValue }) => {
                 const n = Number(getFieldValue('meters_per_piece') || 0);
                 if (!(n > 0)) return null;
-                // صنف جديد: الأساس هو اللي في «اسم الوحدة» فوق، مافيش حاجة تتصلّح.
                 if (!editingItem) {
                   const base = getFieldValue('unit_of_measure') || '';
                   return (
@@ -1327,18 +1145,11 @@ export default function Catalog() {
 
           <Row gutter={12}>
             <Col span={8}>
-              {/* Locked once the item exists: `kind` decides whether it is bought or made, which
-                  side of the books it posts to and whether it has a purchase price at all.
-                  Changing it under a stock history would leave the movements behind it
-                  describing something the item no longer is. */}
               <Form.Item name="kind" label="تصنيف" rules={[{ required: true }]}>
                 <Select disabled={!!editingItem}
                   options={kindOptions.map((o) => ({ value: o.value, label: o.label }))} />
               </Form.Item>
             </Col>
-            {/* Restored. It was on this form before the rebuild against their screen and was
-                dropped with it — leaving a raw material that could be created with no idea what
-                it costs, which every margin and valuation then reads as zero. */}
             <Form.Item noStyle shouldUpdate={(a, b) => a.kind !== b.kind}>
               {({ getFieldValue }) => (getFieldValue('kind') === 'raw_material' ? (
                 <Col span={8}>
@@ -1356,9 +1167,6 @@ export default function Catalog() {
               ) : null)}
             </Form.Item>
             <Col span={8}>
-              {/* The item's own rate. It is always a number — 0 is «no discount», a complete
-                  answer — and the CUSTOMER's rate replaces it when he has one. «Nothing agreed»
-                  is a state that belongs to the customer's card, not here. */}
               <Form.Item name="default_discount_pct" label="خصم الصنف %"
                 tooltip="الخصم الثابت على الصنف. وإن كان للعميل خصم محدد في كارت العميل فإنه يحل محل هذا الخصم ولا يُجمع معه.">
                 <InputNumber min={0} max={99.99} step={0.01} style={{ width: '100%' }}
@@ -1379,9 +1187,6 @@ export default function Catalog() {
             </Form.Item>
           </Space>
 
-          {/* Six tiers down, four columns across, in their order. «السعر الصافي» is computed and
-              read-only: it is the price after its own discount and VAT — the number actually quoted
-              — and letting it be typed is how it stops agreeing with the three fields beside it. */}
           <Divider orientation="right" style={{ margin: '8px 0' }}>الأسعار</Divider>
           <Row gutter={8} style={{ marginBottom: 4, color: '#888' }}>
             <Col span={4} />
@@ -1425,9 +1230,6 @@ export default function Catalog() {
             </Row>
           ))}
 
-          {/* وحدات القياس البديلة — reachable only after the item existed, so an item sold by
-              the carton had to be created, saved, found again and reopened before it could be
-              told what a carton is. */}
           <Divider orientation="right" style={{ margin: '12px 0 8px' }}>
             وحدات القياس البديلة
           </Divider>
@@ -1465,7 +1267,6 @@ export default function Catalog() {
               </Form.Item>
             </Col>
             <Col span={6}>
-              {/* 011 added both thresholds; only the lower one ever reached this form. */}
               <Form.Item name="max_stock" label="الحد الأقصى">
                 <InputNumber min={0} style={{ width: '100%' }} />
               </Form.Item>

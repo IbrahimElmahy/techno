@@ -1,8 +1,3 @@
-"""After-Sales Loyalty models (T009/T011/T018/T022/T027).
-
-Append-only point ledger (balance derived, may go negative), per-product point values, a runtime
-coupon-type catalog, coupons (unique serial, snapshot), and redemptions. Additive to 001/002.
-"""
 from __future__ import annotations
 
 import enum
@@ -25,27 +20,20 @@ from src.core.db import Base, BigIntPK
 from src.core.money import MONEY
 from src.models.stock import LocationKind
 
-# Points are fractional (v4): a product can be worth e.g. 1/6 of a point. 3dp is enough for
-# "6 pieces = 1 point" style rules and keeps balances exact under Decimal arithmetic.
 POINTS = Numeric(18, 3)
 
-
-# --- Per-product point value (additive; 002 item untouched) ---
 
 class ProductPointValue(Base):
     __tablename__ = "product_point_value"
 
     id: Mapped[int] = mapped_column(BigIntPK, primary_key=True, autoincrement=True)
     item_id: Mapped[int] = mapped_column(ForeignKey("item.id"), unique=True, nullable=False)
-    # (v4) fractional: a product may be worth a fraction of a point (e.g. 6 pieces = 1 point).
-    point_value: Mapped[object] = mapped_column(POINTS, default=0, nullable=False)  # >= 0
+    point_value: Mapped[object] = mapped_column(POINTS, default=0, nullable=False)
     updated_by: Mapped[int | None] = mapped_column(ForeignKey("user.id"), nullable=True)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, server_default=func.now(), nullable=False
     )
 
-
-# --- Point ledger (immutable; balance = Σ delta, may be negative) ---
 
 class PointKind(str, enum.Enum):
     earn = "earn"
@@ -53,36 +41,16 @@ class PointKind(str, enum.Enum):
     converted = "converted"
     void_reclaim = "void_reclaim"
     adjustment = "adjustment"
-    # المعاينة بتخصم من رصيد التاجر، والرفض بيرجّع الخصم بسطر جديد موجب — الأصلي بيفضل
-    # مكانه عشان الدفتر يفضل قايل الحقيقة: اتخصم، وبعدين اترجع.
-    #
-    # ⚠️ الاتنين دول اتضافوا بعد الإصدار، و`kind` متخزّن ENUM أصلي في Postgres. من غير
-    # تسجيلهم في `_WIDENED_COLUMNS` في `src/main.py` القاعدة بترفض القيمة الجديدة وهي
-    # واصلة، وقبول المعاينة بيقع بـ500 على السيرفر بس — محلياً على SQLite بيعدي عادي.
     inspection = "inspection"
     inspection_reverse = "inspection_reverse"
 
 
 class PointPurse(str, enum.Enum):
-    """الجيب اللي السطر بيتحرّك فيه.
-
-    النقطة الواحدة بتتكسب مرتين: مرة كرصيد معاينات ومرة كرصيد كوبونات. التاجر اللي
-    اشترى ٥٠ قطعة بقى عنده ٥٠ نقطة معاينة **و**٥٠ نقطة كوبونات — مش ٥٠ يتقسموا.
-
-    فالكسب بيتسجّل سطر واحد بـ`both`، والصرف بس هو اللي بيتخصّص: المعاينة بتاكل من
-    جيب المعاينات، وصرف الكوبونات من جيب الكوبونات. ورصيد أي جيب = مجموع سطور `both`
-    ناقص مجموع سطور الجيب ده.
-
-    الشكل ده مقصود بدل سطرين كسب: المرتجع بيرجّع من الجيبين بسطر واحد، والتاريخ
-    (٣٠٬٥٢٠ سطر) بيتحوّل بعمود واحد من غير ما نضاعف ولا سطر.
-    """
-
-    both = "both"              # كسب / مرتجع / تسوية — بيمس الجيبين مع بعض
-    inspection = "inspection"  # خصم معاينة
-    coupon = "coupon"          # صرف كوبونات
+    both = "both"
+    inspection = "inspection"
+    coupon = "coupon"
 
 
-# الجيب المشتق من نوع الحركة — ده اللي بيتكتب في العمود، وبيملا التاريخ كمان.
 PURSE_BY_KIND: dict[str, PointPurse] = {
     "earn": PointPurse.both,
     "reverse": PointPurse.both,
@@ -100,18 +68,14 @@ class PointRecord(Base):
     id: Mapped[int] = mapped_column(BigIntPK, primary_key=True, autoincrement=True)
     customer_id: Mapped[int] = mapped_column(ForeignKey("customer.id"), nullable=False, index=True)
     kind: Mapped[PointKind] = mapped_column(Enum(PointKind), nullable=False)
-    # NULL = سطر اتكتب قبل الفصل؛ القراءة بتعامله بجيبه المشتق من `kind`، فالأرصدة
-    # القديمة مابتتغيّرش وهي مستنية السكربت.
     purse: Mapped[PointPurse | None] = mapped_column(
         Enum(PointPurse, native_enum=False, length=16), nullable=True, index=True)
-    delta: Mapped[object] = mapped_column(POINTS, nullable=False)  # signed; fractional (v4)
+    delta: Mapped[object] = mapped_column(POINTS, nullable=False)
     sales_invoice_id: Mapped[int | None] = mapped_column(ForeignKey("sales_invoice.id"), nullable=True)
     sales_return_id: Mapped[int | None] = mapped_column(ForeignKey("sales_return.id"), nullable=True)
     origin_earn_id: Mapped[int | None] = mapped_column(ForeignKey("point_record.id"), nullable=True)
     conversion_id: Mapped[int | None] = mapped_column(ForeignKey("point_conversion.id"), nullable=True)
     coupon_id: Mapped[int | None] = mapped_column(ForeignKey("coupon.id"), nullable=True)
-    # المعاينة اللي خصمت النقط (أو اللي الرفض رجّعها). index عشان الفحص «اتخصم قبل كده؟»
-    # بيتنفّذ مع كل قبول معاينة.
     inspection_id: Mapped[int | None] = mapped_column(
         ForeignKey("inspection.id"), nullable=True, index=True)
     actor_user_id: Mapped[int | None] = mapped_column(ForeignKey("user.id"), nullable=True)
@@ -119,8 +83,6 @@ class PointRecord(Base):
         DateTime, server_default=func.now(), nullable=False
     )
 
-
-# --- Coupon-type catalog (runtime settings) ---
 
 class CouponKind(str, enum.Enum):
     money = "money"
@@ -133,12 +95,10 @@ class CouponType(Base):
     id: Mapped[int] = mapped_column(BigIntPK, primary_key=True, autoincrement=True)
     name: Mapped[str] = mapped_column(String(60), nullable=False)
     kind: Mapped[CouponKind] = mapped_column(Enum(CouponKind), nullable=False)
-    point_cost: Mapped[int] = mapped_column(BigInteger, nullable=False)  # > 0
+    point_cost: Mapped[int] = mapped_column(BigInteger, nullable=False)
     value: Mapped[object] = mapped_column(MONEY, nullable=False)
     active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
 
-
-# --- Conversion + coupons ---
 
 class PointConversion(Base):
     __tablename__ = "point_conversion"
@@ -164,9 +124,9 @@ class Coupon(Base):
     serial: Mapped[str] = mapped_column(String(24), unique=True, nullable=False, index=True)
     customer_id: Mapped[int] = mapped_column(ForeignKey("customer.id"), nullable=False, index=True)
     coupon_type_id: Mapped[int] = mapped_column(ForeignKey("coupon_type.id"), nullable=False)
-    kind: Mapped[CouponKind] = mapped_column(Enum(CouponKind), nullable=False)  # snapshot
-    value: Mapped[object] = mapped_column(MONEY, nullable=False)               # snapshot
-    points_consumed: Mapped[int] = mapped_column(BigInteger, nullable=False)   # snapshot
+    kind: Mapped[CouponKind] = mapped_column(Enum(CouponKind), nullable=False)
+    value: Mapped[object] = mapped_column(MONEY, nullable=False)
+    points_consumed: Mapped[int] = mapped_column(BigInteger, nullable=False)
     status: Mapped[CouponStatus] = mapped_column(
         Enum(CouponStatus), default=CouponStatus.issued, nullable=False
     )
@@ -175,8 +135,6 @@ class Coupon(Base):
         DateTime, server_default=func.now(), nullable=False
     )
 
-
-# --- Redemption ---
 
 class RedemptionMode(str, enum.Enum):
     money = "money"
@@ -208,10 +166,8 @@ class CouponRedemption(Base):
     )
 
 
-# --- Immutability guard for the point ledger (mirrors ledger/stock_movement) ---
-
 class PointRecordImmutableError(Exception):
-    """Raised when code attempts to mutate or delete a posted point record."""
+    pass
 
 
 def _block_mutation(mapper, connection, target):  # noqa: ANN001
@@ -220,5 +176,4 @@ def _block_mutation(mapper, connection, target):  # noqa: ANN001
     )
 
 
-# اتشال — الفاتورة اللي بتتمسح بتاخد نقاطها معاها.
 _ = _block_mutation

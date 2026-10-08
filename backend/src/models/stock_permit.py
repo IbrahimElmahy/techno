@@ -1,13 +1,3 @@
-"""إذن إضافة / إذن صرف — stock in and out without a trade (B5).
-
-Not every movement of goods is a purchase or a sale. Stock is found in a count, comes back from a
-workshop, goes out as a sample or a workshop issue. Recording those as invoices would put movements
-that were never traded into the sales figures and the profit; a permit is the honest document for
-them: quantity and a cost for the stock reports, nothing on the sales ledger.
-
-Multi-line on purpose — a storekeeper issues a list, not one item at a time — and reversed rather
-than edited, once, like every other posted document.
-"""
 from __future__ import annotations
 
 import enum
@@ -21,13 +11,8 @@ from src.core.money import MONEY, QTY
 
 
 class PermitKind(str, enum.Enum):
-    receipt = "receipt"  # إذن إضافة — stock in
-    issue = "issue"      # إذن صرف — stock out
-    # بضاعة أول المدة — the stock the company already had on the day it started using the system.
-    # Mechanically a receipt: same direction, same typed cost. It is a kind of its own because the
-    # label is the whole point — «إمتى بدأنا؟» has to be answerable, a stock-as-of-date report for a
-    # day before go-live must not show goods the system was not yet keeping, and opening stock must
-    # never be read as a movement that happened.
+    receipt = "receipt"
+    issue = "issue"
     opening = "opening"
 
 
@@ -39,22 +24,9 @@ class StockPermit(Base):
     kind: Mapped[PermitKind] = mapped_column(Enum(PermitKind), nullable=False, index=True)
     warehouse_id: Mapped[int] = mapped_column(ForeignKey("warehouse.id"), nullable=False,
                                               index=True)
-    # The day it happened, which is not always the day it was typed.
     permit_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     reason: Mapped[str | None] = mapped_column(String(240), nullable=True)
     notes: Mapped[str | None] = mapped_column(String(500), nullable=True)
-    # البيان — السطر اللي بيتطبع على الورقة نفسها، غير `reason` وغير `notes`.
-    #
-    # `reason` بيتكتب من النظام كمان (العكس بيحط «عكس EP-…» فيه) فمش مكان لكلام
-    # المستخدم، و`notes` ملاحظة داخلية. البيان هو اللي بيبان في كشف الحساب وعلى الإذن
-    # المطبوع زي ما بيبان على الفاتورة بالظبط — وخانة واحدة تكفي هنا.
-    # **رقم الورقة اللي في إيده** — بيتحفظ **جنب** رقمنا، مش بداله.
-    #
-    # المستند عندنا رقمه بيتولّد بالتسلسل (`TRF-000050`)، والورقة اللي بيمضي عليها أمين
-    # المخزن عليها رقم تاني من دفتره. واللي بيدوّر بعد شهر بيدوّر برقم الورقة اللي في
-    # إيده — ومن غير الخانة دي مافيش طريق من الورقة للشاشة غير التاريخ والاسم.
-    #
-    # موجودة على الفواتير الأربعة من (030)؛ التحويل والأذون والسندات كانوا ناقصينها.
     external_document_number: Mapped[str | None] = mapped_column(
         String(40), nullable=True, index=True)
     statement1: Mapped[str | None] = mapped_column(String(200), nullable=True)
@@ -67,9 +39,9 @@ class StockPermit(Base):
         DateTime, server_default=func.now(), nullable=False
     )
 
-    lines: Mapped[list["StockPermitLine"]] = relationship(  # noqa: UP037 (SQLAlchemy needs the forward ref)
+    lines: Mapped[list["StockPermitLine"]] = relationship(  # noqa: UP037
         back_populates="permit", cascade="all, delete-orphan",
-        order_by="StockPermitLine.id",  # ترتيب الإدخال — زي سطور الفاتورة
+        order_by="StockPermitLine.id",
     )
 
 
@@ -81,19 +53,11 @@ class StockPermitLine(Base):
                                            index=True)
     item_id: Mapped[int] = mapped_column(ForeignKey("item.id"), nullable=False, index=True)
     quantity: Mapped[object] = mapped_column(QTY, nullable=False)
-    # Typed on a receipt (only the person adding the stock knows what it cost); derived from the
-    # costing method on an issue, because nobody invents a cost for stock going out.
     unit_cost: Mapped[object] = mapped_column(MONEY, nullable=False, default=0)
     line_cost: Mapped[object] = mapped_column(MONEY, nullable=False, default=0)
     stock_movement_id: Mapped[int | None] = mapped_column(
         ForeignKey("stock_movement.id"), nullable=True
     )
-    # (011) الدفعة اللي السطر ده حطّ فيها أو خد منها — للأصناف اللي ليها صلاحية بس.
-    #
-    # A permit moved stock and left the expiry lots untouched, which breaks the invariant the
-    # whole perishable feature rests on: Σ(batch quantity) == derived on-hand at every location.
-    # Recording the lot here is what lets the REVERSAL undo the same lot instead of guessing a
-    # date — the same reason a sale writes down which lots FEFO drew from.
     expiry_date: Mapped[date | None] = mapped_column(Date, nullable=True)
 
     permit: Mapped[StockPermit] = relationship(back_populates="lines")

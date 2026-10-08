@@ -1,16 +1,3 @@
-"""إحصائيات الشركة المجمّعة — شاشة المالك.
-
-كروت الإجماليات اتشالت من ٣٢ شاشة وبقت مقصورة على `stats.view`. الشاشة دي هي المكان
-اللي اتلمّت فيه: الأرقام اللي كانت متفرّقة فوق كل شاشة، مجمّعة في صفحة واحدة.
-
-**بتنده الخدمات الموجودة، مابتحسبش من جديد.** قائمة الدخل والميزانية والمديونيات
-والركود والنقاط كلهم ليهم دوال شغّالة والتقارير بتقراها. لو كتبنا هنا حساب تاني
-للربح، الشاشتين هيقولوا رقمين مختلفين بعد أول تعديل على أي واحد فيهم، ومحدش هيعرف
-مين الصح — وده أسوأ من مافيش شاشة.
-
-**ومقفولة على `stats.view`**، نفس الصلاحية اللي بتخفي الكروت — فمافيش باب خلفي:
-اللي مامسموحلوش يشوف الرقم فوق الشاشة مش هيشوفه هنا مجمّعاً.
-"""
 from __future__ import annotations
 
 from datetime import date
@@ -52,7 +39,7 @@ class MoneyBlock(BaseModel):
 class SalesBlock(BaseModel):
     invoices: MoneyBlock = MoneyBlock()
     returns: MoneyBlock = MoneyBlock()
-    net: Decimal = ZERO          # المبيعات ناقص المرتجعات
+    net: Decimal = ZERO
 
 
 class ReceivablesBlock(BaseModel):
@@ -80,39 +67,32 @@ class StatsOut(BaseModel):
     sales: SalesBlock = SalesBlock()
     purchases: SalesBlock = SalesBlock()
 
-    # قائمة الدخل للفترة — نفس أرقام شاشة التقارير المالية.
     income: Decimal = ZERO
     expenses: Decimal = ZERO
     net_profit: Decimal = ZERO
 
-    # الميزانية على تاريخ القفل.
     total_assets: Decimal = ZERO
     total_liabilities: Decimal = ZERO
     total_equity: Decimal = ZERO
     balanced: bool = True
 
-    # الفلوس
     treasuries: list[TreasuryRow] = []
     treasury_total: Decimal = ZERO
-    receipts: Decimal = ZERO     # تحصيل في الفترة
-    payments: Decimal = ZERO     # صرف في الفترة
+    receipts: Decimal = ZERO
+    payments: Decimal = ZERO
 
-    # المديونيات
     receivables: ReceivablesBlock = ReceivablesBlock()
     payables: ReceivablesBlock = ReceivablesBlock()
 
-    # المخزون
     stagnant_items: int = 0
     stagnant_value: Decimal = ZERO
     below_min: int = 0
     above_max: int = 0
 
-    # الولاء
     points_inspection: Decimal = ZERO
     points_coupon: Decimal = ZERO
     merchants_with_points: int = 0
 
-    # الناس
     customers: int = 0
     suppliers: int = 0
 
@@ -156,11 +136,6 @@ def overview(
     _: CurrentUser = Depends(require_capability(CAP_STATS_VIEW)),
     db: Session = Depends(get_db),
 ) -> StatsOut:
-    """كل أرقام الشركة في نداء واحد.
-
-    نداء واحد مش عشرة: الشاشة دي أول حاجة المالك بيفتحها، وعشر رحلات متوازية بتخلّي
-    الكروت تنطّ واحد ورا التاني وكأن الصفحة بتتحمّل تلات مرات.
-    """
     out = StatsOut(date_from=date_from, date_to=date_to)
 
     out.sales = SalesBlock(
@@ -205,8 +180,6 @@ def overview(
         select(CustomerAccount.account_id)).all() if a]
     supplier_accounts = [a for (a,) in db.execute(
         select(SupplierAccount.account_id)).all() if a]
-    # الحسابات اللي اتعلّمت «قابلة للتسوية» بس — غير كده المتبقّي NULL والحساب بيرجع صفر
-    # وكأن مافيش مديونية، وهو ده بالظبط اللي بيخلّي الرقم يكدب من غير ما يبان.
     live = {a.id for a in db.scalars(
         select(Account).where(Account.reconcilable.is_(True))).all()}
     out.receivables = _party_block(db, [a for a in customer_accounts if a in live], date_to)
@@ -214,8 +187,6 @@ def overview(
 
     stagnant = reporting.stagnant_stock(db)
     out.stagnant_items = int(stagnant.get("item_count") or 0)
-    # التقرير بيرجّع القيمة على السطر مش في الرأس — والسطور بالمخزن، فالمجموع هو قيمة
-    # البضاعة الراكدة كلها مهما كانت موزّعة على كام مخزن.
     out.stagnant_value = to_money(
         sum((Decimal(str(r.get("value") or 0)) for r in (stagnant.get("rows") or [])),
             Decimal("0")))

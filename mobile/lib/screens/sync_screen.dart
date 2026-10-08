@@ -5,7 +5,6 @@ import '../db/local_db.dart';
 import '../services/auto_sync.dart';
 import '../theme.dart';
 
-/// «مزامنة البيانات» — push pending inspections up, pull catalog + lookups down.
 class SyncScreen extends StatefulWidget {
   const SyncScreen({super.key});
 
@@ -14,11 +13,6 @@ class SyncScreen extends StatefulWidget {
 }
 
 class _SyncScreenState extends State<SyncScreen> {
-  /// إعدادات السيرفر مستخبية عن المندوب — بتظهر بضغطة طويلة على أيقونة السحابة.
-  ///
-  /// مش محذوفة: العنوان ده هو اللي أنقذ الدخول يوم ما الدومين القديم مات، وحذفه
-  /// معناه إن أي مشكلة زيّها بكرة تحتاج نسخة تطبيق جديدة. بس المندوب مالوش دعوة
-  /// بيه، وخانة URL قدام كل مستخدم بتتغيّر بالغلط — والتطبيق كله يقف بصمت.
   bool _showServer = false;
 
   int _pending = 0;
@@ -37,7 +31,6 @@ class _SyncScreenState extends State<SyncScreen> {
   }
 
   Future<void> _refresh() async {
-    // Both queues are "work waiting to go up" as far as the rep is concerned.
     final p = await LocalDb.instance.pendingCount() +
         await LocalDb.instance.pendingCouponReceiptCount() +
         await LocalDb.instance.pendingSalesCount() +
@@ -54,11 +47,6 @@ class _SyncScreenState extends State<SyncScreen> {
     }
   }
 
-  /// نص العدّاد — **«مستند» مش «معاينة».**
-  ///
-  /// العدّاد بيجمع المعاينات والفواتير وسندات القبض واستلامات الكوبونات مع بعض، وكان
-  /// بيسمّيهم كلهم «معاينة». المندوب اللي عنده فاتورة واقفة كان بيقرا «في ١ معاينة
-  /// مستنية الرفع» فيدوّر على معاينة مالهاش وجود ويسيب الفاتورة.
   static String _pendingLabel(int n) => switch (n) {
         1 => 'في مستند واحد مستني الرفع',
         2 => 'في مستندين مستنيين الرفع',
@@ -66,13 +54,6 @@ class _SyncScreenState extends State<SyncScreen> {
         _ => 'في $n مستند مستني الرفع',
       };
 
-
-  /// **نفس الكود بتاع المزامنة اللي بتحصل لوحدها**، مش نسخة تانية منه.
-  ///
-  /// كان فيه تنفيذين لنفس العملية — واحد هنا وواحد في الأوتوماتيك. نسختين من قاعدة
-  /// واحدة هما إزاي واحدة منهم تفضل قديمة من غير ما حد ياخد باله: أي مستند جديد
-  /// يتضاف للطابور ويتنسى في واحدة، فالمندوب اللي بيزامن من الشاشة يرفعه واللي
-  /// بيعتمد على الأوتوماتيك لأ.
   Future<void> _syncNow() async {
     setState(() {
       _busy = true;

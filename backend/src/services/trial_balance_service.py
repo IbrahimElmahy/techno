@@ -1,12 +1,3 @@
-"""Trial balance (005, T025).
-
-Fully derived from `ledger_line`/`ledger_entry` (Principle IX) — never stored. Per postable account:
-opening (signed Σ before `from`), period debit/credit (in range), and closing (opening + movement
-on the normal side). Group nodes roll up descendant leaves. Grand-total debit == grand-total credit.
-
-Dates filter by the entry's **accounting date** (`entry_date`), falling back to `created_at::date`
-for legacy 001/002/003 posts that predate the column (finding A). DB-agnostic (SQLite + MySQL).
-"""
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -29,7 +20,7 @@ class _Bucket:
 
     @property
     def closing(self) -> Decimal:
-        return self.opening + self.period_debit - self.period_credit  # in debit-positive terms
+        return self.opening + self.period_debit - self.period_credit
 
 
 @dataclass
@@ -42,9 +33,6 @@ class TrialBalanceRow:
     period_debit: Decimal
     period_credit: Decimal
     closing: Decimal
-    # (031) Which of the four books a row belongs in — أصول · خصوم · مصروفات · ايرادات. Their
-    # دفتر الإستاذ is four tables on one screen, and without this the caller would have to fetch
-    # every account again just to sort the rows it already has.
     nature: str | None = None
 
 
@@ -67,7 +55,6 @@ def _effective_date(entry: LedgerEntry) -> date:
 
 
 def _account_label(db: Session, acc: Account) -> str | None:
-    """Per-owner system accounts have no name/code — label them by type+owner for the report."""
     if acc.name:
         return acc.name
     if acc.owner_ref is not None:
@@ -84,17 +71,14 @@ def trial_balance(
     include_groups: bool = True,
     cost_center_id: int | None = None,
 ) -> TrialBalanceResult:
-    # Pull lines joined to their entry once; bucket in Python (DB-agnostic date handling).
     stmt = (
         select(LedgerLine, LedgerEntry)
         .join(LedgerEntry, LedgerLine.entry_id == LedgerEntry.id)
-        .where(ledger_service.is_posted_sql())  # المسودة والملغي مش في الميزان
+        .where(ledger_service.is_posted_sql())
     )
     if branch_id is not None:
         stmt = stmt.where(LedgerEntry.branch_id == branch_id)
-    if cost_center_id is not None:  # optional analytical scope (006)
-        # السطر المتقسّم مالوش `cost_center_id`، وحصته في جدول التوزيع — فالتصفية
-        # لازم تشوف الاتنين، وإلا الميزان المفلتر بمركز بيرمي كل السطور المقسّمة.
+    if cost_center_id is not None:
         from src.models.analytic import LedgerLineDistribution
 
         stmt = stmt.where(
@@ -113,7 +97,6 @@ def trial_balance(
         b = buckets.setdefault(line.account_id, _Bucket())
         amount = to_money(line.amount)
         if eff < from_date:
-            # opening accumulates in debit-positive terms (debit +, credit −)
             b.opening += amount if line.direction == Direction.debit else -amount
         else:
             if line.direction == Direction.debit:
@@ -123,13 +106,11 @@ def trial_balance(
 
     result = TrialBalanceResult(from_date=from_date, to_date=to_date, branch_id=branch_id)
 
-    # Leaf rows (postable accounts that have any activity in or before the range).
     leaf_rows: dict[int, TrialBalanceRow] = {}
     for account_id, b in buckets.items():
         acc = db.get(Account, account_id)
         if acc is None or not acc.is_postable:
             continue
-        # Sign opening/closing to the account's normal side for display.
         sign = 1 if acc.normal_side == Direction.debit else -1
         row = TrialBalanceRow(
             account_id=account_id,
@@ -160,7 +141,6 @@ def trial_balance(
 
 
 def _group_rows(db: Session, buckets: dict[int, _Bucket]) -> list[TrialBalanceRow]:
-    """Roll each leaf's movement up to every ancestor group via effective parent links."""
     group_acc: dict[int, _Bucket] = {}
     for account_id, b in buckets.items():
         acc = db.get(Account, account_id)

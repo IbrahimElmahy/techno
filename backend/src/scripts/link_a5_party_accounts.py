@@ -1,27 +1,3 @@
-"""يربط كل عميل ومورد منقول من a5 بحسابه في شجرة الحسابات.
-
-من غير الربط ده الشاشة بتقول إن العميل مايدنش حاجة: رصيده وكشف حسابه بيتقروا من الحساب
-المربوط بيه، والفلوس كانت قاعدة على حسابات a5 اللي مافيش حاجة بتشاور عليها — ١٩٦٦ حساب
-تحت «العملاء» و٣٩ تحت «الموردون»، وصفر عميل ليه حساب.
-
-    python -m src.scripts.link_a5_party_accounts          # يعرض بس
-    python -m src.scripts.link_a5_party_accounts --yes    # ينفّذ
-
-بيتعاد تشغيله بأمان: اللي متربط بيتساب.
-
----------------------------------------------------------------------------
-تلات قرارات:
-
-* **الربط بالاسم لأن ده اللي في الداتا.** a5 مابيربطش العميل بحسابه بمفتاح — الحساب اسمه
-  اسم العميل وخلاص. فالمطابقة على الاسم بعد تطبيع ة/ه وأ/ا وى/ي والمسافات.
-
-* **الملتبس بيتساب مش بيتخمّن.** لو اسمين عملاء بيطابقوا نفس الحساب، أو عميل بيطابق
-  حسابين، مافيش ربط — ربط غلط معناه إن مديونية واحد بتظهر على واحد تاني، وده غلط
-  مابيتكشفش غير لما حد يطالب بفلوسه.
-
-* **الحساب لازم يكون تحت المجموعة الصح.** «تكنو ثيرم» ممكن يكون عميل ومورد في نفس الوقت،
-  والاسم لوحده مابيفرّقش. فالبحث بيتقيّد بأبناء «العملاء» للعملاء و«الموردون» للموردين.
-"""
 from __future__ import annotations
 
 import re
@@ -47,7 +23,6 @@ def _norm(s: str) -> str:
 
 
 def _accounts_under(db, groups: tuple[str, ...]) -> dict[int | None, dict[str, list[Account]]]:
-    """حسابات a5 تحت المجموعات دي، مرتبة بالفرع وبالاسم المتطبّع."""
     parents = {a.id for a in db.scalars(select(Account)).all()
                if (a.name or "").strip() in groups and not a.is_postable}
     out: dict[int | None, dict[str, list[Account]]] = defaultdict(lambda: defaultdict(list))
@@ -73,7 +48,6 @@ def run(*, execute: bool) -> None:
         unmatched: dict[str, list[str]] = defaultdict(list)
 
         def resolve(kind, rows, book, already, name_of):
-            # نعدّ كام طرف بيطابق كل حساب — الملتبس مابيتربطش من الناحيتين.
             by_key: dict[tuple[int | None, str], int] = defaultdict(int)
             for r in rows:
                 by_key[(r.branch_id, _norm(name_of(r)))] += 1

@@ -10,31 +10,18 @@ import type { PaymentRow } from '../../components/PaymentsLogPanel';
 import { deleteVoucher, fetchVoucher, type EditableVoucher } from '../vouchers/useQuickVoucher';
 import { InvoiceFilters, PAGE_SIZE } from './types';
 
-/**
- * **سندات القبض المستقلة في شريحة «الكل»** (طلب العميل ٢٠٢٦-١٠-٠٣).
- *
- * التحصيل من عميل (من النظام أو التطبيق) بيظهر وسط الفواتير والمرتجعات كصف `doc_type: 'receipt'`.
- * النقدي اللي اندفع مع الفاتورة **مش هنا** — هو أصلاً جزء من صف الفاتورة.
- *
- * السيرفر بيفلتر بكل فلاتر الشريحة (عميل، مندوب، تاريخ، نوع الفاتورة، البيان، البحث)، وبيرجّع
- * عدد السندات وإجماليها على الكشف كله — مش على الصفوف المحمّلة — لسطر الإجماليات فوق.
- * و«طريقة السداد» أو فلتر فحص النظام ⇒ مافيش سندات (مالهمش معنى على السند).
- */
 export function useRegisterReceipts(opts: {
   enabled: boolean;
   filters: InvoiceFilters;
-  /** بيتزوّد بعد حفظ سند من البوباب ⇒ الصفوف تتجاب تاني. */
   reloadKey: number;
 }) {
   const { enabled, filters: f } = opts;
   const skip = !enabled || !!f.payment;
   const [raw, setRaw] = useState<PaymentRow[]>([]);
-  // عدد وإجمالي السندات المستقلة على كل اللي الفلاتر سابته (من السيرفر).
   const [totals, setTotals] = useState<{ count: number; total: number }>({ count: 0, total: 0 });
   const [view, setView] = useState<{ row: any; v: EditableVoucher & Record<string, any> } | null>(null);
   const { options: methodOptions } = useLookup('payment_method');
   const methodLabel = labelMap(methodOptions);
-  // آخر طلب بس هو اللي يكتب.
   const seq = useRef(0);
 
   const load = async () => {
@@ -68,7 +55,6 @@ export function useRegisterReceipts(opts: {
       opts.reloadKey]);
   useLiveRefresh(['sales', 'vouchers'], () => { if (!skip) load(); }, { enabled: !skip });
 
-  // الفلترة كلها في السيرفر — فالصفوف والإجمالي اللي فوق من نفس الكشف.
   const rows = skip ? [] : raw
     .map((r) => {
       const amount = Number(r.amount || 0);
@@ -103,14 +89,12 @@ export function useRegisterReceipts(opts: {
       };
     });
 
-  /** ورقة السند — نفس `VoucherDocument` اللي في شريحة «سندات القبض». */
   const openView = async (row: any) => {
     try {
       setView({ row: row.raw ?? row, v: await fetchVoucher(row.id) as any });
-    } catch { /* رسالة الخطأ من `api` */ }
+    } catch {}
   };
 
-  /** الحذف الفعلي — التأكيد في عمود الإجراءات. */
   const remove = async (row: any) => {
     await deleteVoucher(row.id);
     message.success('تم حذف السند');

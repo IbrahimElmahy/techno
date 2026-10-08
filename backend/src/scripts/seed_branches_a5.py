@@ -1,14 +1,3 @@
-"""يعمل الفروع اللي بتقابل قواعد a5، ويسمّي الفرع اللي الداتا قاعدة عليه صح.
-
-a5 عنده قاعدة بيانات لكل شركة لكل سنة: `Techno2026` و`aliaa2026`. عندنا فرع واحد اسمه
-«الفرع الرئيسي» وكل داتا `Techno2026` قاعدة عليه بالفعل — فبدل ما ننقل ٢٠٠٠ صف من فرع
-لفرع، الفرع بيتسمّى «أكتوبر» وخلاص. الاسم بيتغيّر، والمفاتيح مابتتلمسش.
-
-    python -m src.scripts.seed_branches_a5              # يعرض بس
-    python -m src.scripts.seed_branches_a5 --yes        # ينفّذ
-
-بيتعاد تشغيله بأمان.
-"""
 from __future__ import annotations
 
 import sys
@@ -18,10 +7,8 @@ from sqlalchemy import select
 from src.core.db import SessionLocal
 from src.models.org import Branch, Governorate
 
-# الفرع القديم → اسمه الجديد. «الفرع الرئيسي» هو اللي داتا Techno2026 قاعدة عليه.
 RENAME = {"الفرع الرئيسي": "أكتوبر"}
 
-# الفروع اللي لازم تبقى موجودة، وكل واحد ومحافظته.
 BRANCHES = [("أكتوبر", "الجيزة"), ("العلياء", "الجيزة"), ("السادات", "المنوفية")]
 
 
@@ -30,8 +17,6 @@ def run(*, execute: bool) -> None:
     try:
         existing = {b.name: b for b in db.scalars(select(Branch)).all()}
         plan: list[str] = []
-        # الملخّص بيتحسب على الحالة **بعد** التسمية، مش قبلها — وإلا بيقول إنه هيعمل فرع
-        # «أكتوبر» وهو أصلاً الفرع اللي اتسمّى.
         after = set(existing)
         for old, new in RENAME.items():
             if old in after and new not in after:
@@ -64,7 +49,6 @@ def run(*, execute: bool) -> None:
                 govs[name] = g
             return g.id
 
-        # التسمية الأول: الفرع القديم بيبقى «أكتوبر»، فاللي بعده مايعملوش واحد تاني بنفس الاسم.
         for old, new in RENAME.items():
             b = existing.get(old)
             if b is not None and new not in existing:

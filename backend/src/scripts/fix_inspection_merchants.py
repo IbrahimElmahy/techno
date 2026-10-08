@@ -1,15 +1,3 @@
-"""يصلح حقول المعاينة الناقصة من نظام ما بعد البيع القديم:
-التاجر (مفتاح خارجي واسم وتليفون) + نوع الزيارة (مرمة/معاينة) + حالة الطباعة.
-
-    python -m src.scripts.fix_inspection_merchants --dir C:/pgtmp/erp
-    python -m src.scripts.fix_inspection_merchants --dir C:/pgtmp/erp --yes
-
-Idempotent: يمكن إعادة تشغيله بأمان في أي وقت.
-
-التاجر بيتحل من جسر `customer_external_ref` (مفتاح `ERP-M-{id}`) — مش من الكود
-ومش من الاسم. المطابقة بالاسم اتشالت عمداً: الهمزة بتفرّق بين راجلين عند a5،
-والجسر كود-لكود هو المرجع الوحيد.
-"""
 from __future__ import annotations
 
 import os
@@ -39,13 +27,11 @@ def run(folder: str, *, execute: bool) -> None:
 
     db = SessionLocal()
     try:
-        # ---------- 1. خريطة التجار من الجسر ----------
         customers = {c.id: c for c in db.scalars(select(Customer)).all()}
         bridge = {x.ref: x.customer_id
                   for x in db.scalars(select(CustomerExternalRef)).all()
                   if x.ref.startswith("ERP-M-")}
 
-        # mid -> (target_customer | None, name, phone, match_kind)
         resolved_merchants: dict[str, tuple[Customer | None, str, str, str]] = {}
         m_counts = Counter()
 
@@ -72,7 +58,6 @@ def run(folder: str, *, execute: bool) -> None:
         print(f"مالهمش تاجر مربوط          : {m_counts['مالهمش تاجر مربوط']:>6}")
         print("-" * 45)
 
-        # ---------- 2. خيارات نوع الزيارة (مرمة / معاينة) ----------
         have_options = {
             o.value
             for o in db.scalars(
@@ -103,7 +88,6 @@ def run(folder: str, *, execute: bool) -> None:
                 )
                 have_options.add(opt)
 
-        # ---------- 3. تحديث المعاينات ----------
         inspections = db.scalars(select(Inspection)).all()
         by_doc = {i.document_number: i for i in inspections}
 
@@ -130,21 +114,18 @@ def run(folder: str, *, execute: bool) -> None:
             m_name = res[1] if res else ""
             m_phone = res[2] if res else ""
 
-            # التاجر: مفتاح خارجي + اسم نصي وتليفون احتياطي
             if target_cust is not None:
                 insp.merchant_customer_id = target_cust.id
                 v_counts["معاينات اتربطت بتاجر (FK)"] += 1
             else:
                 v_counts["معاينات بدون تاجر مربوط"] += 1
 
-            # اسم وتليفون محل الشراء النصي
             shop_name = store_text or m_name or None
             if shop_name:
                 insp.purchase_shop = shop_name[:160]
             if m_phone:
                 insp.purchase_shop_phone = m_phone[:40]
 
-            # نوع الزيارة
             if is_marma in ("مرمة", "1"):
                 insp.visit_type = "مرمة"
                 v_counts["معاينات نوعها مرمة"] += 1
@@ -152,7 +133,6 @@ def run(folder: str, *, execute: bool) -> None:
                 insp.visit_type = "معاينة"
                 v_counts["معاينات نوعها معاينة"] += 1
 
-            # حالة الطباعة
             is_prt = False
             try:
                 is_prt = int(count_print) > 0

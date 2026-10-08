@@ -1,22 +1,3 @@
-"""نسخة من المستند مع كل عملية عليه — لزرار «السجل» (٢٠٢٦-١٠-٠٦).
-
-طلب المالك: «مين عمل إيه، إمتى، والمستند كان شكله إيه قبلها» — في كل المستندات وكل العمليات.
-
-**ليه طبقة واحدة مش سطر في كل خدمة.** `audit_service.record` بالإيد ناقص دايماً (تقرير
-السجل: تحويل جديد واعتماده الذاتي وأصناف وموردين من غير ولا سطر)، وكان بيحفظ رقم المستند
-وإجماليه بس. هنا كل طلب بيغيّر مستند معروف (الجدول تحت) بيتمسك في مكان واحد:
-
-1. قبل الطلب: المستند بيتقري بنفس الـGET بتاعه — لو مالوش نسخة قبل كده، الشكل ده بيتحفظ
-   `baseline` (المستندات اللي اتعملت قبل الطبقة دي).
-2. الطلب بيعدّي زي ما هو.
-3. لو نجح: المستند بيتقري تاني ويتحفظ نسخة بالعملية (`update`، `reverse`، `approve`…). الإنشاء
-   رقمه من رد الطلب. والمسح بيتحفظ بآخر شكل قبل المسح.
-
-**الشكل = رد الـGET بالحرف** — نفس الـJSON اللي الشاشة بتعرضه، فالنسخة القديمة بتتقري بنفس
-المنطق، والـGET بيتعمل بنفس ترويسات المستخدم (صلاحياته وفرعه).
-
-مابتوقّعش الطلب أبداً: أي غلطة هنا بتتسجّل في اللوج والطلب بيكمّل. وبتكتب في جلسة لوحدها.
-"""
 from __future__ import annotations
 
 import json
@@ -31,7 +12,6 @@ from src.models.document_version import DocumentVersion
 
 log = logging.getLogger(__name__)
 
-# نوع المستند ← مسار قرايته.
 GET_PATH = {
     "sales_invoice": "/api/v1/sales/{id}",
     "sales_return": "/api/v1/sales/returns/{id}",
@@ -47,8 +27,6 @@ GET_PATH = {
     "stock_count": "/api/v1/stock-counts/{id}",
 }
 
-# (الطرق، المسار بعد /api/v1، نوع المستند، رقم الجروب اللي فيه رقم المستند أو None للإنشاء،
-#  العملية أو None = من الطريقة/آخر المسار). الترتيب مهم: «sales/returns» قبل «sales/{id}».
 _RULES: list[tuple[frozenset, re.Pattern, str, int | None, str | None]] = []
 
 
@@ -71,7 +49,7 @@ _r("PUT", r"/vouchers/(?:receipts|payments)/(\d+)", "voucher", 1, "update")
 _r("DELETE", r"/vouchers/(\d+)", "voucher", 1)
 _r("POST", r"/vouchers/(\d+)/reverse", "voucher", 1, "reverse")
 _r("POST", r"/transfers", "stock_transfer", None, "create")
-_r("PATCH,DELETE", r"/transfers/lines/(\d+)", "stock_transfer", 1, "lines")   # رقم السطر ⇐ الإذن
+_r("PATCH,DELETE", r"/transfers/lines/(\d+)", "stock_transfer", 1, "lines")
 _r("PATCH,DELETE", r"/transfers/(\d+)", "stock_transfer", 1)
 _r("POST", r"/transfers/(\d+)/(?:approve|cancel|lines|reject|self-approve)", "stock_transfer", 1)
 _r("POST", r"/stock/permits", "stock_permit", None, "create")
@@ -97,7 +75,6 @@ _VERB = {"PUT": "update", "PATCH": "update", "DELETE": "delete", "POST": "create
 
 
 def match(method: str, path: str):
-    """(نوع المستند، رقمه أو None، العملية) — أو None لو الطلب مش على مستند متابَع."""
     if not path.startswith("/api/v1/"):
         return None
     rest = path[len("/api/v1"):].rstrip("/")
@@ -127,13 +104,10 @@ def _transfer_of_line(line_id: int) -> int | None:
 
 
 class DocumentVersionMiddleware:
-    """ASGI خام وجوّه كل الطبقات — الـGET الداخلي بيروح للراوتر على طول."""
-
     def __init__(self, app):
         self.app = app
 
     async def _get(self, scope, path: str):
-        """يقرا المستند بنفس ترويسات المستخدم. None لو مش موجود أو ممنوع."""
         headers = [(k, v) for k, v in scope.get("headers", ())
                    if k not in (b"content-length", b"content-type", b"accept-encoding")]
         sub = dict(scope)
@@ -204,14 +178,13 @@ class DocumentVersionMiddleware:
                     doc_id = payload["id"]
                 else:
                     return
-            # المسح: آخر شكل قبله هو النسخة. غير كده (حتى مسح سطر أو استلام): الشكل بعدها.
             after = None if action == "delete" else await self._get(
                 scope, GET_PATH[entity].format(id=doc_id))
             snap = after if after is not None else before
             if snap is None:
                 return
             self._write(scope, entity, doc_id, action, before, snap)
-        except Exception:  # noqa: BLE001 — السجل مايوقعش الطلب
+        except Exception:  # noqa: BLE001
             log.warning("document_versions: تعذّر حفظ نسخة %s", scope.get("path"), exc_info=True)
 
     def _write(self, scope, entity: str, doc_id: int, action: str, before, snap) -> None:

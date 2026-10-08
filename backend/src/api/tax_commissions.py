@@ -1,4 +1,3 @@
-"""VAT return + rep commissions router — 021-tax-commissions."""
 from __future__ import annotations
 
 from datetime import date
@@ -28,7 +27,7 @@ class VatReturnOut(BaseModel):
 
 
 class CommissionRuleIn(BaseModel):
-    rep_user_id: int | None = None  # None = القاعدة الافتراضية لكل المناديب
+    rep_user_id: int | None = None
     rate_pct: Decimal
     basis: CommissionBasis = CommissionBasis.collection
 
@@ -56,7 +55,6 @@ def vat_return(
     _: CurrentUser = Depends(require_capability(CAP_VOUCHER_READ)),
     db: Session = Depends(get_db),
 ) -> VatReturnOut:
-    """الإقرار الضريبي — ضريبة المبيعات ناقص ضريبة المشتريات."""
     r = tax_service.vat_return(db, date_from=date_from, date_to=date_to)
     return VatReturnOut(**r)
 
@@ -77,7 +75,6 @@ def set_commission_rule(
     current: CurrentUser = Depends(require_capability(CAP_VOUCHER_WRITE)),
     db: Session = Depends(get_db),
 ) -> CommissionRuleOut:
-    """نسبة عمولة لمندوب (أو الافتراضية للكل) — على المبيعات أو على التحصيل."""
     if current.role == RoleName.sales_rep:
         raise HTTPException(status.HTTP_403_FORBIDDEN,
                             {"code": "forbidden", "message": "تحديد العمولات من الإدارة فقط."})
@@ -101,7 +98,6 @@ def commissions_report(
     current: CurrentUser = Depends(require_capability(CAP_VOUCHER_READ)),
     db: Session = Depends(get_db),
 ) -> list[CommissionRowOut]:
-    """كشف عمولات المناديب — المندوب يرى عمولته هو فقط."""
     scope = current.id if current.role == RoleName.sales_rep else rep_id
     rows = commission_service.compute(db, date_from=date_from, date_to=date_to,
                                       rep_user_id=scope)

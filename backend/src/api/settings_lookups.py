@@ -1,8 +1,3 @@
-"""Settings → configurable dropdown lists (lookups) router — 013-settings-lookups.
-
-Reads are open to any authenticated user (dropdowns everywhere need them); writes require
-`settings.write` (System Admin / Branch Manager).
-"""
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
@@ -28,10 +23,7 @@ class OptionOut(BaseModel):
     active: bool
     is_system: bool
     description: str | None = None
-    # قيمة الفئة الأب — `None` يعني رئيسية. (031) بتنزل مع كل قايمة، والشاشات اللي
-    # مش عاملة شجرة بتلاقيها `None` في كل صف فبتتصرف زي ما هي.
     parent_value: str | None = None
-    # فئات الأصناف بس: مخفية من شيت التسعير في التطبيق.
     hidden_in_price_sheet: bool = False
 
 
@@ -49,10 +41,7 @@ class OptionUpdate(BaseModel):
     sort_order: int | None = None
     active: bool | None = None
     description: str | None = None
-    # `null`/غايب = ماتلمسش الأب · `""` = خلّيها رئيسية. لازم تتفرّق الحالتين، وإلا
-    # أي تعديل اسم من شاشة قديمة مابتبعتش الحقل كان بيفكّ الشجرة في صمت.
     parent_value: str | None = None
-    # غايب = ماتلمسش.
     hidden_in_price_sheet: bool | None = None
 
 
@@ -79,15 +68,10 @@ def list_options(
     _: CurrentUser = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> list[OptionOut]:
-    # التطبيق بيسحب القوايم (وصف المعاينة، نوعها، فئات الكوبونات) من غير `active_only`،
-    # فالاختيار المخفي كان بيفضل في القايمة على الجهاز. شوف `client_app`.
-    #
-    # فئات الأصناف لأ: التطبيق بيقرا منها `hidden_in_price_sheet` بس، وفيه فئات موقوفة
-    # ومخفية من الشيت في نفس الوقت — لو اتشالت من الرد، الجهاز يفتكرها ظاهرة.
     if is_mobile_app(request) and category != lookup_service.ITEM_CATEGORY:
         active_only = True
     opts = lookup_service.list_options(db, category, active_only=active_only)
-    db.commit()  # persist any lazy-seeded defaults
+    db.commit()
     return [_out(o) for o in opts]
 
 

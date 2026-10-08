@@ -1,20 +1,3 @@
-"""يدمج الكروت المكررة اللي بتفرقها بادئة الدور بس — «فنى فلان» و«تكنو فلان» و«فلان».
-
-    python -m src.scripts.merge_prefixed_dupes
-    python -m src.scripts.merge_prefixed_dupes --yes
-
-نظامهم القديم كان بيعلّم الدور في أول الاسم: «فنى» للفني، و«تكنو» للتاجر/الموزع.
-والراجل الواحد اللي بيشتري وبيعاين وبيرجّع كوبونات كان بيتسجّل مرة لكل دور، فوصل
-عندنا تلات كروت لشخص واحد — والبحث بيوريهم كلهم.
-
-**بيتدمج اللي مافيش فيه شك بس.** المجموعة اللي أكتر من كارت فيها عليه حركة بتتخطى:
-تشابه الاسم مش دليل — «احمد متولي» أربع كروت وكلهم عليهم شغل، ودول غالباً أربع ناس
-مش راجل واحد. دمجهم بيخلط حسابات ناس مالهمش دعوة ببعض، وده أصعب في التصحيح من
-التكرار نفسه.
-
-**والمكرر بيتقفل مايتمسحش** (`active=False`) — يختفي من القوايم، وأي مرجع فاتنا
-يفضل يلاقي صفه بدل ما يقع.
-"""
 from __future__ import annotations
 
 import re
@@ -33,7 +16,6 @@ from src.models.sales import SalesInvoice
 from src.services.customer_merge_service import _move_documents
 
 AR = str.maketrans({"أ": "ا", "إ": "ا", "آ": "ا", "ٱ": "ا", "ى": "ي", "ة": "ه", "ـ": ""})
-# بادئات الدور في نظامهم — مش جزء من الاسم.
 PREFIX = re.compile(r"^\s*(فنى|فني|تكنو|معرض|السباك|سباك|الاستاذ|أ/|م/)\s+")
 
 
@@ -80,10 +62,8 @@ def run(*, execute: bool) -> None:
             if len(live) > 1:
                 skipped_busy += 1
                 continue
-            # الباقي اللي عليه الشغل، وإلا أقدم كارت (أصغر id) — ده اللي أغلب المراجع عليه.
             keep = live[0] if live else min(rows, key=lambda c: c.id)
             dupes = [c for c in rows if c.id != keep.id]
-            # كارت فاضي من الحركة بس عليه حساب في الدفاتر مش فاضي فعلاً.
             if any(accounts.get(c.id) for c in dupes):
                 skipped_acc += 1
                 continue
@@ -107,7 +87,6 @@ def run(*, execute: bool) -> None:
 
         moved = {d.id: keep.id for keep, dupes in safe for d in dupes}
         stats = _move_documents(db, moved)
-        # `merchant_customer_id` مش في `DOCUMENT_TABLES` — عمود تاني على نفس الجدول.
         n = 0
         for dupe_id, keep_id in moved.items():
             n += db.execute(text(
@@ -115,7 +94,6 @@ def run(*, execute: bool) -> None:
                 "WHERE merchant_customer_id = :d"), {"k": keep_id, "d": dupe_id}).rowcount or 0
         if n:
             stats["inspection.merchant_customer_id"] = n
-        # ومندوب الخدمة ممكن يكون مشاور على كارت اتقفل.
         for dupe_id, keep_id in moved.items():
             db.execute(text("UPDATE customer SET service_rep_id = NULL "
                             "WHERE id = :d"), {"d": dupe_id})

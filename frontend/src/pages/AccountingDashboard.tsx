@@ -9,22 +9,6 @@ import { useNavigate } from 'react-router-dom';
 import { api } from '../api/client';
 
 import StatsRow from '../components/StatsRow';
-/**
- * لوحة المحاسبة — كارت لكل دفتر، زي أول شاشة في محاسبة أودو.
- *
- * المحاسبة عندنا كانت بتبدأ من قايمة: تفتح الشجرة، تختار «قيد حر»، تفتح السجل،
- * تدوّر. القايمة بتسأل «انت رايح فين» وبتفترض إنك عارف. الكارت بيقول «ده اللي
- * ناقص»: مسودتين في دفتر المبيعات، وألف جنيه مفتوحة على المشتريات، وآخر فاتورة
- * كانت امبارح — والزرار اللي بيعمل المستند على نفس الكارت.
- *
- * **كل رقم على الكارت بيودّي لمكان.** الرقم اللي مالوش ضغطة شكوى مش معلومة: عدد
- * المسودات بيفتح السجل مفلتر على المسودات بتاعة الدفتر ده بالظبط، والمفتوح بيفتح
- * شاشة التسوية. من غير كده كنا هنبقى عملنا حيطة أرقام تانية على الشاشة اللي
- * بيفتحها الكل الأول.
- *
- * الخزن كروت لوحدها برصيدها — ده كارت البنك بتاع أودو. الرصيد مشتق من الدفتر زي
- * أي رصيد في النظام، فهو نفس رقم كشف الحساب مش رقم تاني جنبه.
- */
 
 interface JournalCard {
   id: number;
@@ -57,7 +41,6 @@ const KIND_COLOR: Record<string, string> = {
   sale: 'green', purchase: 'orange', cash: 'gold', bank: 'blue', general: 'purple',
 };
 
-/** الزرار اللي بيعمل مستند الدفتر ده — أسرع طريق من الكارت للشغل. */
 function primaryAction(card: JournalCard): { label: string; to: string } {
   switch (card.kind) {
     case 'sale': return { label: 'فاتورة بيع', to: '/invoices?new=1' };
@@ -150,7 +133,6 @@ export default function AccountingDashboard() {
                     </Row>
 
                     <Space wrap size={6} style={{ marginTop: 10 }}>
-                      {/* الرقم اللي مالوش ضغطة شكوى مش معلومة — فكل رقم هنا بيودّي لمكانه. */}
                       <Badge count={j.draft_count} offset={[-6, 2]}>
                         <Button size="small" type={j.draft_count ? 'default' : 'text'}
                           disabled={!j.draft_count}

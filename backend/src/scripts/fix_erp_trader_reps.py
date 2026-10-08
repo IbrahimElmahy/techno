@@ -1,20 +1,3 @@
-"""يصلّح مندوب البيع لتجار ERP الجدد — من الكارت الأصلي اللي الجسر بيشاور عليه.
-
-    python -m src.scripts.fix_erp_trader_reps --dir C:/pgtmp/erp          # يعرض بس
-    python -m src.scripts.fix_erp_trader_reps --dir C:/pgtmp/erp --yes    # ينفّذ
-
-**اللي اتقاس:** نقل الأطراف حط كل كروت ERP الجديدة على أول مندوب في الفرع
-(`car.b`) كحل مؤقت — فـ2367 طرف على راجل واحد. والتاجر ده له كارت a5 أصلي
-(الجسر: مفتاح ERP ← كود a5)، وكارت a5 مندوبه سليم ومتحقق عليه (`fix_customer_reps`:
-1427 صح و0 يتغيّر). فمندوب التاجر الجديد = مندوب كارت a5 بتاعه. نفس التاجر،
-نفس المندوب — مش تخمين.
-
-**اللي بره النطاق عمداً:** السباكين (ERP-P) مالهمش مندوب بيع عند a5 أصلاً —
-مندوبهم هو مندوب الخدمة (`service_rep_id`، متربط لـ2222). والـ15 تاجر اللي
-مالهمش كود a5 في الورقة بيتقالوا ومابيتلمسوش.
-
-بيتعاد تشغيله بأمان.
-"""
 from __future__ import annotations
 
 import os
@@ -27,7 +10,6 @@ from src.core.db import SessionLocal
 from src.models.customer import Customer
 
 FILENAME = "merchant_bridge.tsv"
-# أعمدة الملف: code · dist_id · merch_id · a5_code · ...
 (B_CODE, B_DIST, B_MERCH, B_A5) = range(4)
 
 
@@ -42,7 +24,6 @@ def run(folder: str, *, execute: bool) -> None:
                 continue
             rows.append([c.strip() for c in line.rstrip("\n").split("\t")])
 
-    # مفتاح ERP (ERP-M-id / ERP-D-id) ← كود a5
     key_to_a5: dict[str, str] = {}
     for r in rows:
         if len(r) < 4:

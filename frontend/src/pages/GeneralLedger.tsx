@@ -1,11 +1,3 @@
-/**
- * الأستاذ العام — القشرة بس: تبويبات وبتفتح أنهي شاشة.
- *
- * الملف ده كان ١٤٠٠ سطر وخمس تبويبات في بعض: دليل الحسابات والقيود وميزان
- * المراجعة والدفاتر وسلامتها. كل تبويب بقى ملف لوحده تحت `ledger/`،
- * **والمسار والتبويبات زي ما هما بالظبط** — `?tab=journal` لسه بيفتح نفس الشاشة،
- * والقايمة والروابط القديمة ماتلمستش.
- */
 import React, { useEffect, useState } from 'react';
 import {
   BookOutlined, FileAddOutlined, BankOutlined, ProfileOutlined,
@@ -31,8 +23,6 @@ const TABS = [
 export default function GeneralLedger() {
   const [activeTab, selectTab] = useQueryTab('chart');
 
-  // زي `Tabs` بتاعة antd: التبويب بيتبني أول ما يتفتح ويفضل عايش لما تسيبه —
-  // القيد اللي بتكتبه مايضيعش لو بصّيت على الميزان ورجعت.
   const [visited, setVisited] = useState<string[]>([activeTab]);
   useEffect(() => {
     setVisited((v) => (v.includes(activeTab) ? v : [...v, activeTab]));

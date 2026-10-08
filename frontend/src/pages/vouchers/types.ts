@@ -1,6 +1,3 @@
-/**
- * أنواع شاشة السندات وتسمياتها — مشتركة بين الشاشة وبوباباتها.
- */
 export interface VoucherRecord {
   id: number;
   document_number: string;
@@ -14,11 +11,6 @@ export interface VoucherRecord {
   payment_method: string | null;
   reference: string | null;
   description: string | null;
-  /**
-   * «بيان» ورقة السند — غير `description` اللي هو وصف الحركة المحاسبية.
-   * و«رقم المستند» رقم السند الورقي اللي في إيد العميل، بيتحفظ **جنب** رقمنا.
-   * الاتنين اختياريين لأن السندات القديمة مالهاش ولا واحد فيهم.
-   */
   statement1?: string | null;
   external_document_number?: string | null;
   family?: string | null;
@@ -47,9 +39,7 @@ export interface StatementData {
 export interface Party {
   id: number;
   name: string;
-  /** تصنيف كارت العميل — «employee» موظف و«internal» فرع (اختيار طرف السند). */
   customer_type?: string;
-  /** رصيد الكارت لو القايمة جايباه (قايمة الموردين بتجيبه) — لتلميح «له/عليه» في السند. */
   balance?: string | number | null;
 }
 export interface UserRecord {

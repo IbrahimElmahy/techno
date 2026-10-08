@@ -28,11 +28,10 @@ interface SupplierRecord {
   address: string | null;
   phones: string[] | null;
   active: boolean;
-  balance?: string | null;   // payable balance, sent with the list (one grouped query)
+  balance?: string | null;
   branch_id: number | null;
   governorate_id: number | null;
   markaz: string | null;
-  // Card fields read off their الموردين form (031).
   supplier_type: string | null;
   email: string | null;
   tax_number: string | null;
@@ -46,7 +45,6 @@ interface Filters {
   balance_filter?: string;
 }
 
-// Dynamic list of EXTRA phone numbers (the primary `phone` field stays separate).
 const ExtraPhonesList = () => (
   <Form.List name="phones">
     {(fields, { add, remove }) => (
@@ -70,8 +68,6 @@ const ExtraPhonesList = () => (
   </Form.List>
 );
 
-// The list endpoint now carries each supplier's balance (one grouped query on the server),
-// so the grid no longer fires a request per row.
 const SupplierBalance = ({ value }: { value?: string | null }) => {
   const n = Number(value || 0);
   const color = n > 0 ? '#cf1322' : n < 0 ? '#1677ff' : undefined;
@@ -91,7 +87,6 @@ export default function Suppliers() {
   const [search, setSearch] = useState('');
   const navigate = useNavigate();
 
-  // Filtering happens on the server so it covers ALL suppliers, not just the loaded page.
   const fetchSuppliers = async (override?: Filters) => {
     const active = override ?? filters;
     setLoading(true);
@@ -123,14 +118,12 @@ export default function Suppliers() {
     fetchSuppliers({});
   };
 
-  // Live summary of whatever the current filter returned.
   const summary = useMemo(() => {
     const total = suppliers.reduce((s, x) => s + Number(x.balance || 0), 0);
     const due = suppliers.filter((x) => Number(x.balance || 0) > 0).length;
     return { count: suppliers.length, total, due };
   }, [suppliers]);
 
-  // الفرع and محافظه are columns on their list, so the names have to be on hand to render it.
   const fetchLookups = async () => {
     try {
       const [branchesRes, governoratesRes] = await Promise.all([
@@ -149,7 +142,6 @@ export default function Suppliers() {
     fetchLookups();
   }, []);
 
-  // Form.List rows can be blank/undefined; only send real numbers.
   const cleanPhones = (phones: any): string[] =>
     (phones || []).map((p: any) => (p || '').trim()).filter(Boolean);
 
@@ -162,7 +154,6 @@ export default function Suppliers() {
         is_cash: !!values.is_cash,
         phones: cleanPhones(values.phones),
       });
-      // «مخفي» is a state a supplier is put into, not one he is born in, so it is a separate edit.
       if (hidden && created.data?.id) {
         await api.patch(`/api/v1/suppliers/${created.data.id}`, { active: false });
       }
@@ -193,11 +184,7 @@ export default function Suppliers() {
     });
   };
 
-  // Permanent delete. The server refuses when the supplier has any movement.
   const onDelete = async (record: SupplierRecord) => {
-    // بينفّذ من غير سؤال — التأكيدات اتشالت بطلب صاحب النظام. السيرفر لسه بيرفض
-    // حذف المورد اللي عليه حركة وبيقول استعمل «إلغاء التفعيل»، فالحارس مكانه
-    // وهو شغّال؛ اللي اتشال هو السؤال.
     try {
       await api.delete(`/api/v1/suppliers/${record.id}?hard=true`);
       message.success('تم حذف المورد');
@@ -207,11 +194,6 @@ export default function Suppliers() {
     }
   };
 
-  // Their six columns, in their order — `رقم · الفرع · الاسم · الهاتف · محافظه · مدينة` — plus
-  // the balance, and that is the whole table. Same shape as their العملاء list minus the rep,
-  // which a supplier has no equivalent of, and it fits the screen for the same reason that one
-  // does: تصنيف and العنوان moved into the expanded row, «مخفي» is a tag on the name, and the
-  // actions are the three icons their own rows use.
   const columns = [
     {
       title: 'رقم',
@@ -288,7 +270,6 @@ export default function Suppliers() {
       title: '',
       key: 'actions',
       width: 110,
-      // Row clicks open the supplier file, so the buttons must not bubble up to it.
       render: (_: any, record: SupplierRecord) => (
         <Space size={2} onClick={(e) => e.stopPropagation()}>
           <Tooltip title="عرض الملف">
@@ -309,11 +290,8 @@ export default function Suppliers() {
     },
   ];
 
-  // إخفاء وترتيب الأعمدة — نفس المحرك اللي كل الجداول بتستخدمه.
-  // التصدير زرار لوحده في ترويسة الكشف — بنفس الأعمدة المعروضة.
   const tableCols = useTableColumns('suppliers', columns);
 
-  // Ours, given back in full one click away rather than made narrower for everyone.
   const expandedRow = (record: SupplierRecord) => (
     <Space size={32} wrap style={{ paddingInlineStart: 8 }}>
       <span>
@@ -349,7 +327,6 @@ export default function Suppliers() {
         title="الموردين" muted="(دليل الموردين وأرصدتهم)"
         subtitle="بيانات الموردين والرصيد الدائن لكل مورد — اضغط على السطر لفتح ملفه"
         actions={(<>
-          {/* الاسم ده بالظبط — «اختصارات الإنشاء» بتدوّر على الزرار بنصّه. */}
           <Button data-shortcut="F2" type="primary" icon={<PlusOutlined />} className="sl-create"
             onClick={() => setDrawerVisible(true)}>
             إضافة مورد
@@ -358,7 +335,6 @@ export default function Suppliers() {
             tableColumns={tableCols.columns as any} style={{ marginInlineStart: 0 }} />
           {tableCols.control}
         </>)}
-        // البحث والفلاتر على السيرفر — بتغطّي كل الموردين.
         filters={(<>
           <Input
             className="sl-f-search"
@@ -395,13 +371,11 @@ export default function Suppliers() {
           size="small"
           tableLayout="fixed"
           expandable={{ expandedRowRender: expandedRow }}
-          // الترقيم شمال، والإجماليات يمين في نفس السطر — زي سجل المبيعات.
           pagination={{
             defaultPageSize: PAGE_SIZE, showSizeChanger: true, pageSizeOptions: PAGE_SIZE_OPTIONS,
             locale: { items_per_page: '' },
             showTotal: () => footer,
           }}
-          // The whole row opens the supplier file.
           onRow={(record) => ({
             onClick: () => navigate(`/suppliers/${record.id}`),
             style: { cursor: 'pointer' },
@@ -409,10 +383,6 @@ export default function Suppliers() {
         />
       </ListPage>
 
-      {/* مورد جديد — laid out field for field against their الموردين form: the same groups, three
-          to a row, in their order. Note what their form does NOT have — no خصم, no ض.م, no default
-          price tier, all three of which their customer form does. That asymmetry is theirs, and
-          adding the three here would invent a negotiation this relationship is not run on. */}
       <TabModal footer={null} centered
         title="مورد جديد"
         width={860}
@@ -500,7 +470,6 @@ export default function Suppliers() {
             </Col>
           </Row>
 
-          {/* Ours, kept after theirs: their form has no room for a second number. */}
           <Divider orientation="right" style={{ margin: '8px 0' }}>إضافات تكنو ثيرم</Divider>
           <ExtraPhonesList />
 

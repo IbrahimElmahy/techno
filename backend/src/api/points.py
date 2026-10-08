@@ -1,8 +1,3 @@
-"""Points router (T024): derived balance + conversion. FR-007.
-
-وكمان الدفتر نفسه: حركة العميل الواحد برصيد جاري (تبويب «النقاط» في ملف العميل)، والكشف
-العام على كل الحركات (شاشة «سجل النقاط»).
-"""
 from __future__ import annotations
 
 from datetime import date
@@ -20,18 +15,12 @@ from src.services.point_service import PointError
 
 router = APIRouter(tags=["points"], prefix="/customers")
 
-# راوتر تاني في نفس الملف: الكشف العام مش تحت عميل، فمايصحّش يقعد تحت `/customers`.
-# مسجّل جنب `router` في `src/main.py` — لو اتنسي، الشاشة بترجع 404 وهي سليمة.
 ledger_router = APIRouter(tags=["points"], prefix="/points")
 
 
 class PointBalanceOut(BaseModel):
     customer_id: int
-    # مجموع الدفتر كله — **مش رصيد أي جيب**. سايبينه عشان اللي بيقراه دلوقتي مايقعش،
-    # والشاشة بتعرض الجيبين تحت.
     balance: Decimal
-    # رصيد المعاينات ورصيد الكوبونات. النقطة المكسوبة بتدخل الاتنين، والصرف بيخصم من
-    # جيبه وحده — فالتاجر اللي خصمت منه معاينة لسه كوبوناته كاملة.
     inspection_balance: Decimal
     coupon_balance: Decimal
     derived: bool = True
@@ -88,8 +77,6 @@ def convert(
     ]
 
 
-# --- الدفتر ---
-
 class PointLedgerRow(BaseModel):
     id: int
     customer_id: int
@@ -98,7 +85,6 @@ class PointLedgerRow(BaseModel):
     date: str | None = None
     kind: str
     kind_label: str
-    # الجيب اللي السطر خصم منه أو غذّاه: معاينات · كوبونات · الجيبين.
     purse: str | None = None
     purse_label: str | None = None
     delta: str
@@ -107,19 +93,19 @@ class PointLedgerRow(BaseModel):
     doc_kind: str | None = None
     doc_id: int | None = None
     doc_number: str | None = None
-    running: str | None = None      # الرصيد الجاري — لعميل واحد بس
+    running: str | None = None
 
 
 class PointLedgerOut(BaseModel):
     rows: list[PointLedgerRow] = []
-    count: int = 0                  # عدد الحركات كلها، مش المعروض
+    count: int = 0
     opening: str = "0.000"
     earned: str = "0.000"
     spent: str = "0.000"
     net: str = "0.000"
     balance: str | None = None
-    kinds: dict[str, str] = {}      # القيمة → الاسم العربي، عشان الفلتر يتبني من السيرفر
-    purses: dict[str, str] = {}     # نفس الفكرة لأسماء الجيوب
+    kinds: dict[str, str] = {}
+    purses: dict[str, str] = {}
 
 
 @router.get("/{customer_id}/points/ledger", response_model=PointLedgerOut)
@@ -133,7 +119,6 @@ def customer_ledger(
     _: CurrentUser = Depends(require_capability(CAP_LOYALTY_READ)),
     db: Session = Depends(get_db),
 ) -> PointLedgerOut:
-    """حركة نقاط عميل واحد برصيد جاري — تبويب «النقاط» في ملف العميل."""
     data = points_service.ledger(
         db, customer_id=customer_id, kinds=kind, date_from=date_from, date_to=date_to,
         limit=limit, offset=offset)
@@ -152,12 +137,6 @@ def points_ledger(
     _: CurrentUser = Depends(require_capability(CAP_LOYALTY_READ)),
     db: Session = Depends(get_db),
 ) -> PointLedgerOut:
-    """سجل النقاط — كل الحركات، بفلتر عميل/نوع/فترة.
-
-    `limit` مسقوف: الدفتر فيه عشرات الآلاف من السطور بعد الترحيل الرجعي، وردّ بيحملهم
-    كلهم مرة واحدة بيقفل الشاشة. الإجماليات فوق بتتحسب في القاعدة على الحركة كلها فبتفضل
-    صح مهما كانت الصفحة.
-    """
     data = points_service.ledger(
         db, customer_id=customer_id, kinds=kind, date_from=date_from, date_to=date_to,
         limit=limit, offset=offset)

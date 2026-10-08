@@ -1,9 +1,3 @@
-"""حجز عملاء — 031-a5-restructure.
-
-The only thing a reservation does is make stock unavailable to somebody else, so the whole feature
-lives or dies on `held_against`. A reservations screen that did not feed the availability check
-would be a list of promises with nothing keeping them.
-"""
 from __future__ import annotations
 
 from datetime import date
@@ -33,11 +27,6 @@ def _doc_number(db: Session) -> str:
 
 
 def _holding(as_of: date | None = None):
-    """The filter for «is this reservation holding stock right now».
-
-    Expiry is a comparison, not a status: a nightly sweeper would leave every screen wrong for as
-    long as it was late, and «active» would mean «active, probably» everywhere it was read.
-    """
     today = as_of or date.today()
     return (Reservation.status == ReservationStatus.active, Reservation.expires_on >= today)
 
@@ -46,12 +35,6 @@ def held_against(
     db: Session, *, item_id: int, location_kind: LocationKind, location_id: int,
     except_customer_id: int | None = None, as_of: date | None = None,
 ) -> Decimal:
-    """How much of this item at this place is spoken for.
-
-    `except_customer_id` is the point of the whole function: the customer a reservation was made
-    FOR must be able to buy it. Without that exclusion the reservation would block the one sale it
-    exists to guarantee.
-    """
     stmt = select(Reservation).where(
         Reservation.item_id == item_id,
         Reservation.location_kind == location_kind,
@@ -68,7 +51,6 @@ def available(
     db: Session, *, item_id: int, location_kind: LocationKind, location_id: int,
     for_customer_id: int | None = None, as_of: date | None = None,
 ) -> Decimal:
-    """On-hand less what is held for anybody else. Never negative."""
     on_hand = stock_service.on_hand(db, item_id, location_kind, location_id)
     held = held_against(db, item_id=item_id, location_kind=location_kind,
                         location_id=location_id, except_customer_id=for_customer_id, as_of=as_of)
@@ -81,11 +63,6 @@ def create(
     location_id: int, quantity, expires_on: date, actor_user_id: int,
     notes: str | None = None,
 ) -> Reservation:
-    """Hold stock for a customer until a date.
-
-    Refused if the goods are not there to hold. Reserving what does not exist is how a counter ends
-    up with two promises over one unit — and the second person finds out at the door.
-    """
     qty = to_qty(quantity)
     if qty <= ZERO:
         raise ReservationError("الكمية المحجوزة لازم تكون أكبر من صفر.")
@@ -120,7 +97,6 @@ def create(
 
 
 def cancel(db: Session, *, reservation_id: int, actor_user_id: int) -> Reservation:
-    """Release a hold by hand. A converted one is not cancellable — the sale already happened."""
     row = db.get(Reservation, reservation_id)
     if row is None:
         raise ReservationError("الحجز غير موجود.")
@@ -137,7 +113,6 @@ def cancel(db: Session, *, reservation_id: int, actor_user_id: int) -> Reservati
 
 
 def mark_converted(db: Session, *, reservation_id: int, invoice_id: int) -> Reservation:
-    """Stamp the invoice a reservation turned into, so it stops holding and can be traced."""
     row = db.get(Reservation, reservation_id)
     if row is None:
         raise ReservationError("الحجز غير موجود.")

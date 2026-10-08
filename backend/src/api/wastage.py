@@ -1,4 +1,3 @@
-"""Wastage / scrap documents router (014-production-reporting)."""
 from __future__ import annotations
 
 from decimal import Decimal
@@ -22,7 +21,7 @@ class WastageIn(BaseModel):
     warehouse_id: int
     quantity: Decimal
     reason: str | None = None
-    statement1: str | None = Field(default=None, max_length=200)  # البيان
+    statement1: str | None = Field(default=None, max_length=200)
 
 
 class WastageOut(BaseModel):

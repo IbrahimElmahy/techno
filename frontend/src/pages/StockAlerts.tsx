@@ -1,7 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { PAGE_SIZE } from '../utils/pagination';
 import { Button, Input, Tag } from 'antd';
-// كل جدول هنا بفلتر على كل عمود — شوف `FilterTable`.
 import { FilterTable as Table } from '../components/FilterTable';
 import { AlertOutlined, ClearOutlined, ReloadOutlined, SearchOutlined } from '@ant-design/icons';
 import ListPage from '../components/ListPage';
@@ -15,13 +14,6 @@ import { useNavigate } from 'react-router-dom';
 
 import { qty, numeralsLocale } from '../utils/money';
 import { STOCK_TOPICS, useLiveRefresh } from '../utils/live';
-/**
- * تنبيهات المخزون — the two questions a stock manager asks that a balance list cannot answer:
- * what do I need to buy (below the reorder level), and what is about to go bad.
- *
- * Both are planning views. The limits behind the first are advisory by design: they warn, they
- * never block a sale — only running out of stock does that.
- */
 
 interface ReorderRow {
   item_id: number;
@@ -36,23 +28,12 @@ interface ReorderRow {
   flag: 'below_min' | 'above_max';
 }
 
-/**
- * حد إعادة الطلب — كام لازم نشتري.
- *
- * The screen used to carry two more tabs, «كميات انتهاء الصلاحية» and «حركات انتهاء الصلاحية».
- * Both were removed at the client's request: the company does not work with expiry dates on what
- * it sells, so the screens were answering a question nobody here asks.
- *
- * الصلاحية نفسها لسه شغالة تحت — البيع لسه بيصرف بالأقرب انتهاءً، والمرتجع لسه بيرجّع لتشغيلته.
- * The tracking is untouched; only the two screens that displayed it are gone.
- */
 export default function StockAlerts() {
   const [reorder, setReorder] = useState<ReorderRow[]>([]);
   const [summary, setSummary] = useState({ below_min: 0, above_max: 0 });
   const [loading, setLoading] = useState(false);
 
   const loadReorder = async (opts?: { silent?: boolean }) => {
-    // الهادي (التحديث الحي) مابيلفّش الجدول بسبينر.
     const silent = !!opts?.silent;
     if (!silent) setLoading(true);
     try {
@@ -63,15 +44,12 @@ export default function StockAlerts() {
   };
 
   useEffect(() => { loadReorder(); }, []);
-  // الرصيد اتحرّك ⇒ «تحت الحد / فوق الحد» يتحسب من جديد.
   useLiveRefresh(STOCK_TOPICS, () => loadReorder({ silent: true }));
 
   const reorderFilter = useListFilter(reorder, {
     search: (r) => [r.code, r.name],
     filters: { flag: (r, v) => r.flag === v },
   });
-  // «الصنف ده تحت الأدنى» — الخطوة اللي بعدها دايماً هي فتح ملف الصنف عشان تشوف حركته وتقرّر
-  // تشتري كام، فالسطر بيوصّلك هناك على طول.
   const navigate = useNavigate();
   const reorderKb = useTableKeyboard<ReorderRow>({
     rows: reorderFilter.filtered, rowKey: (r) => r.item_id,
@@ -80,7 +58,6 @@ export default function StockAlerts() {
 
 
   const columns = [
-    // عمود الكود اتشال من الكشف — بيفضل في التصدير.
     { title: 'الصنف', dataIndex: 'name', ...textColumn(reorder, (r: ReorderRow) => r.name),
       render: (n: string) => <b>{n}</b> },
     { title: 'الرصيد الحالي', dataIndex: 'on_hand',
@@ -115,20 +92,16 @@ export default function StockAlerts() {
         : <Tag color="orange">فوق الأقصى</Tag>) },
   ];
 
-  // إخفاء وترتيب الأعمدة — نفس المحرك اللي كل الجداول بتستخدمه.
   const tableCols = useTableColumns('stock-alerts', columns, {
     export: { name: 'تنبيهات المخزون', rows: reorderFilter.filtered },
   });
 
-  // F3 للبحث — كانت جاية من `ListToolbar`.
   const searchRef = useRef<any>(null);
   useScreenShortcuts({ onSearch: () => { searchRef.current?.focus?.(); } });
 
-  // فلتر «الحالة» بقى شرايح — نفس القيمة الواحدة في `reorderFilter.values.flag`.
   type FlagTab = 'all' | 'below_min' | 'above_max';
   const flagValue = reorderFilter.values.flag;
   const activeFlag: FlagTab = flagValue === 'below_min' || flagValue === 'above_max' ? flagValue : 'all';
-  // الشريحة في الرابط (`?tab=`): الرابط ← الفلتر مرة واحدة عند الفتح، وبعدها الفلتر ← الرابط (زي «مسح»).
   const [listTab, setListTab] = useQueryTab('all');
   const lastTab = useRef(activeFlag);
   useEffect(() => {
@@ -156,8 +129,6 @@ export default function StockAlerts() {
     </span>
   );
 
-  // تبويب واحد بس فضل، فمافيش شريط تبويبات. «قرب انتهاء الصلاحية» و«حركات انتهاء
-  // الصلاحية» اتشالوا بطلب العميل — الشركة مابتستعملهمش.
   return (
     <ListPage<FlagTab>
       icon={<AlertOutlined />}

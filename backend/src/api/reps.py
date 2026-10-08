@@ -1,15 +1,3 @@
-"""المناديب — كل ما يخص المندوب في مكان واحد.
-
-المندوب مش جدول عندنا: هو **مستخدم** بدور `sales_rep`، وحواليه أربع حاجات متفرّقة على أربع
-شاشات — الموظف اللي بيربطه بمخزن عربيته، والعملاء المسنودين له، ومنطقته، وعهدته المالية.
-واللي عايز يعرف «المندوب ده مسؤول عن إيه» كان بيفتح الأربعة ويجمّع في دماغه.
-
-النظام القديم مالوش شاشة مناديب أصلاً — عنده شاشة موظفين بتتفلتر بالوظيفة، والعميل بيتربط
-بمندوبه **بالاسم** في عمود نصّي (`Cust.Emp_Bos`). ولقيناه فاضي في الـ٦٥٠ عميل كلهم: الميزة
-مبنية ومحدش بيستعملها، لأن اللي بيربط بالاسم بيفضل يتكسر لما الاسم يتغيّر.
-
-المسار ده بيجمع الصورة كلها في نداء واحد، والربط كله بمفاتيح.
-"""
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -43,28 +31,22 @@ class RepOut(BaseModel):
     branch_name: str | None
     territory_id: int | None
     territory_name: str | None
-    # مكان بضاعته — مخزن العربية، أو عهدة لو الشركة ماشية بعهد.
     employee_id: int | None
     warehouse_id: int | None
     warehouse_name: str | None
     custody_id: int | None
-    # «مشرف المناديب» اللي المندوب تحته (`user.supervisor_id`).
     supervisor_id: int | None = None
     supervisor_name: str | None = None
-    # الأرقام اللي بتقول هو شغّال ولا اسم على ورق
     customer_count: int
     invoice_count: int
     stock_items: int
 
 
 class RepUpdate(BaseModel):
-    """اللي الشاشة بتغيّره. الفاضي = ماتلمسوش."""
-
     full_name: str | None = None
     active: bool | None = None
     branch_id: int | None = None
     territory_id: int | None = None
-    # مخزن بضاعة المندوب. بيتكتب على سجل الموظف — وبيتعمل موظف لو مالوش.
     warehouse_id: int | None = None
 
 
@@ -74,7 +56,6 @@ def _rep_role_id(db: Session) -> int | None:
 
 
 def _build(db: Session, users: list[User]) -> list[RepOut]:
-    """الصورة الكاملة لكل مندوب — بستة استعلامات مجمّعة، مش ستة لكل مندوب."""
     ids = [u.id for u in users]
     if not ids:
         return []
@@ -92,10 +73,6 @@ def _build(db: Session, users: list[User]) -> list[RepOut]:
         select(SalesInvoice.rep_id, func.count())
         .where(SalesInvoice.rep_id.in_(ids)).group_by(SalesInvoice.rep_id)).all())
 
-    # كام صنف فعلاً في مكان بضاعته — الرقم اللي بيفرّق بين مندوب في الشارع وحساب فاضي.
-    # استعلام واحد لكل الأماكن (كان واحد لكل مندوب: ٢٠ مسح لجدول الحركات = ~٤٠٠ms).
-    # العدّ نفسه زي ما هو: صف لكل صنف اتحرّك في المكان. (العهدة كانت مكتوبة
-    # `LocationKind.rep` — قيمة مش موجودة، فمندوب بعهدة ومن غير مخزن كان بيوقّع الشاشة.)
     user_loc: dict[int, tuple] = {}
     for u in users:
         emp = emps.get(u.id)
@@ -192,9 +169,6 @@ def update_rep(
         u.territory_id = body.territory_id or None
 
     if body.warehouse_id is not None:
-        # المخزن بيتكتب على سجل الموظف لأن ده اللي `rep_store` بتقرا منه. والمندوب اللي
-        # مالوش سجل موظف بيتعمله واحد هنا — بدل ما اللي قدامه يروح شاشة تانية يعمله
-        # بإيده عشان يقدر يربط مخزن.
         emp = db.scalars(select(Employee).where(Employee.user_id == u.id)).first()
         if emp is None:
             n = db.scalar(select(func.count()).select_from(Employee)) or 0
@@ -206,7 +180,6 @@ def update_rep(
                            user_id=u.id, branch_id=u.branch_id, active=True)
             db.add(emp)
             db.flush()
-        # مخزن واحد لمندوب واحد: مخزنين على نفس المكان معناهم رصيد واحد بيتحسب مرتين.
         if body.warehouse_id:
             clash = db.scalars(select(Employee).where(
                 Employee.warehouse_id == body.warehouse_id,
@@ -240,13 +213,6 @@ def reassign_customers(
     current: CurrentUser = Depends(require_capability(CAP_USER_WRITE)),
     db: Session = Depends(get_db),
 ) -> dict:
-    """ينقل عملاء من مندوب لمندوب.
-
-    المندوب بيمشي وعملاؤه بيفضلوا، فالنقل عملية بتحصل فعلاً — والنظام القديم كان بيعملها
-    بتغيير نص الاسم على كل عميل، وده بيسيب فواتير قديمة بتشاور على مندوب مالوش وجود.
-    هنا الفواتير بتفضل على `rep_id` القديم (اللي باع هو اللي باع)، والعميل وحده هو اللي
-    بيتحرّك.
-    """
     target = db.get(User, body.to_rep_id)
     if target is None or target.role_id != _rep_role_id(db):
         raise HTTPException(404, {"code": "not_found", "message": "المندوب المنقول له غير موجود."})

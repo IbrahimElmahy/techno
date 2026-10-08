@@ -1,16 +1,3 @@
-"""يربط كل مندوب بمخزنه — وبيعمل المخزن ده لو مش موجود.
-
-بضاعة المندوب بتقعد في مكان، و`rep_store_service.rep_store` بتلاقي المكان ده من
-`employee.warehouse_id`. من غير الربط ده التطبيق بيرد «مالكش عهدة ولا مخزن مسجّل» ومايزامنش،
-والمندوب مايقدرش يبيع.
-
-وكل فرع بياخد مخزن رئيسي لو مالوش — الفرع من غير مخزن مايقدرش يستقبل شرا ولا يصرف بيع،
-فبيفضل موجود على الورق وواقف في الشغل.
-
-بيتعاد تشغيله بأمان: الموجود بيتساب زي ما هو، والناقص بس هو اللي بيتعمل.
-
-    python -m src.scripts.seed_rep_stores
-"""
 from __future__ import annotations
 
 from sqlalchemy import func, select
@@ -62,7 +49,6 @@ def run() -> None:
                 print(f"  = {u.username}: مربوط بمخزن {emp.warehouse_id}")
                 continue
 
-            # مخزن العربية: الموجود اللي مالوش صاحب الأول، وإلا واحد جديد باسم المندوب.
             taken = {e.warehouse_id for e in db.scalars(select(Employee)).all()
                      if e.warehouse_id}
             free = db.scalars(select(Warehouse).where(

@@ -8,16 +8,6 @@ import { TabModal } from './TabModal';
 import { useScreenShortcuts } from './keyboard';
 import { useAuth } from './AuthProvider';
 
-/**
- * فورم الموظف — واحد، بتستعمله شاشة الموظفين وشاشة الأقسام.
- *
- * كان جوّه شاشة الموظفين بس، فشاشة الأقسام لما احتاجت «موظف جديد في القسم ده» و«عدّل الموظف ده»
- * كان قدامها يا تنسخه يا تبعت المستخدم لشاشة تانية. والنسخة التانية من فورم بتبعد عن الأولى من أول
- * خانة تتضاف لواحدة وتتنسي في التانية — فبقى مكون واحد، والشاشتين بيفتحوه.
- *
- * بيحمّل قوايم الاختيار بنفسه (أول مرة يتفتح بس)، عشان اللي بيفتحه مايبقاش لازم يعرف هو محتاج إيه.
- */
-
 export interface Employee {
   id: number; code: string; name: string;
   job_title_id: number | null; job_title: string | null;
@@ -40,8 +30,6 @@ interface Lookups {
 
 const EMPTY: Lookups = { titles: [], branches: [], warehouses: [], users: [], departments: [] };
 
-// الخانات اللي الفورم بيبعتها. القايمة صريحة عشان «امسح الفرع» يتبعت `null` — `undefined`
-// بيتشال من الـJSON فالسيرفر كان بيفهمه «ماتغيّرش» والخانة بترجع زي ما كانت بعد الحفظ.
 const FIELDS = [
   'name', 'branch_id', 'job_title_id', 'department_id', 'phone', 'address', 'national_id',
   'work_start', 'work_end', 'salary', 'collection_commission_pct', 'warehouse_id', 'user_id', 'notes',
@@ -51,9 +39,7 @@ export default function EmployeeFormModal({
   open, employee, defaults, onClose, onSaved,
 }: {
   open: boolean;
-  /** الموظف اللي بيتعدّل — `null` يعني موظف جديد. */
   employee: Employee | null;
-  /** قيم مبدئية للموظف الجديد — شاشة الأقسام بتبعت القسم وفرعه. */
   defaults?: Partial<Record<(typeof FIELDS)[number], any>>;
   onClose: () => void;
   onSaved?: (e: Employee) => void;
@@ -63,8 +49,6 @@ export default function EmployeeFormModal({
   const [form, setForm] = useState<any>({});
   const [hireDate, setHireDate] = useState<any>(null);
   const [saving, setSaving] = useState(false);
-  // موظف الفرع بيسجّل على فرعه هو — السيرفر بيختمه كده مهما اتبعت، فالخانة بتتملّى وتتقفل
-  // بدل ما تعرض اختيار هيترفض. المالك/الأدمن (أو حساب مالوش فرع) بيختار.
   const { user } = useAuth();
   const ownBranch = user && user.role !== 'owner' && user.role !== 'system_admin'
     ? (user.branch_id ?? null) : null;
@@ -72,7 +56,6 @@ export default function EmployeeFormModal({
   useEffect(() => {
     if (!open || loaded) return;
     setLoaded(true);
-    // كل قايمة لوحدها بـ`catch` — مستخدم مالوش صلاحية الأقسام مثلاً لازم يقدر يسجّل موظف برضه.
     const get = (url: string) => api.get(url).then((r) => r.data || []).catch(() => []);
     Promise.all([
       get('/api/v1/job-titles'), get('/api/v1/branches'), get('/api/v1/warehouses'),
@@ -101,7 +84,6 @@ export default function EmployeeFormModal({
       setForm({ ...(ownBranch ? { branch_id: ownBranch } : {}), ...(defaults || {}) });
       setHireDate(null);
     }
-    // `defaults` بيتبني جديد مع كل رندر عند اللي بيفتح — الفتح هو اللحظة الوحيدة اللي تهمّ.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, employee]);
 
@@ -122,10 +104,9 @@ export default function EmployeeFormModal({
       message.success(employee ? 'تم حفظ التعديل' : 'تم تسجيل الموظف');
       onClose();
       onSaved?.(res.data);
-    } catch { /* الرسالة بيطلّعها الـinterceptor */ } finally { setSaving(false); }
+    } catch {} finally { setSaving(false); }
   };
 
-  // F9 حفظ — زي باقي الفورمات. مسجّل وهو مفتوح بس، فمابياخدش المفتاح من الشاشة اللي تحته.
   useScreenShortcuts({ onSave: save }, open);
 
   const { titles, branches, warehouses, users, departments } = lookups;
@@ -136,9 +117,6 @@ export default function EmployeeFormModal({
       title={employee ? `تعديل ${employee.name}` : 'موظف جديد'}
       okText="حفظ" cancelText="إلغاء" destroyOnHidden width={720}
     >
-      {/* Their موظف جديد form, group for group: name/branch/job, then contact, then the
-          working details, then the commission. Ordered as theirs because whoever fills this in
-          has the employee's paper in front of them in that order. */}
       <Row gutter={[8, 8]}>
         <Col xs={24} md={8}>
           <Input placeholder="الاسم" value={form.name} autoFocus
@@ -159,8 +137,6 @@ export default function EmployeeFormModal({
         </Col>
 
         <Col xs={24} md={8}>
-          {/* النقل بين الأقسام من هنا. المقفول مش معروض — السيرفر بيرفض النقل ليه — إلا لو
-              الموظف أصلاً فيه، عشان الخانة ماتظهرش رقم من غير اسم. */}
           <Select showSearch allowClear style={{ width: '100%' }} placeholder="القسم"
             value={form.department_id}
             onChange={(v) => setForm({ ...form, department_id: v })}
@@ -182,8 +158,6 @@ export default function EmployeeFormModal({
             placeholder="يوم بداية العمل" />
         </Col>
         <Col xs={24} md={6}>
-          {/* Free text, not a time picker: what gets written is «٨ ص» as often as a clean time,
-              and a field that refuses that is a field nobody fills. */}
           <Input placeholder="الحضور" value={form.work_start}
             onChange={(e) => setForm({ ...form, work_start: e.target.value })} />
         </Col>
@@ -218,11 +192,6 @@ export default function EmployeeFormModal({
   );
 }
 
-/* ----------------------------------------------------------- أفعال على موظف واحد
- * نفس الأفعال في الشاشتين، فمكانها هنا. كلها بترجع `true` لو نجحت؛ الفشل رسالته بيطلّعها
- * الـinterceptor (والمسح المرفوض رسالته فيها الأرقام وبتقول «استعمل إيقاف»).
- */
-
 export async function deactivateEmployee(e: Employee): Promise<boolean> {
   try {
     await api.delete(`/api/v1/employees/${e.id}`);
@@ -239,7 +208,6 @@ export async function reactivateEmployee(e: Employee): Promise<boolean> {
   } catch { return false; }
 }
 
-/** مسح نهائي — السيرفر بيرفضه لو الموظف له أي تاريخ. */
 export async function deleteEmployee(e: Employee): Promise<boolean> {
   try {
     await api.delete(`/api/v1/employees/${e.id}`, { params: { hard: true } });

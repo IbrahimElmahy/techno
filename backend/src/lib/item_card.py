@@ -1,18 +1,3 @@
-"""كارت الصنف — one item's movement history with a running balance (B3).
-
-A movement list says what happened; a stock card says what you had. The difference is the pair of
-figures on every row: the balance before the movement and the balance after it. That is what lets
-a storekeeper put a finger on any line and read the quantity as it stood that day, and what lets a
-disputed count be traced back to the movement that caused it.
-
-Two rules keep the card honest, and both are tested:
-
-* A balance is only meaningful somewhere. Ask for a location and you get that location's card;
-  ask for none and you get the item's whole position across every warehouse and custody.
-* Filters hide rows, they never rewrite balances. Showing only sales must not pretend the
-  purchases never happened — so the running balance is computed over ALL movements first, and
-  the filter is applied afterwards, carrying each surviving row's true before/after with it.
-"""
 from __future__ import annotations
 
 from datetime import date, datetime
@@ -34,18 +19,13 @@ ZERO_MONEY = Decimal("0.00")
 
 
 class ItemCardError(Exception):
-    """The item does not exist, or the location asked for is not a real kind."""
+    pass
 
 
 ZERO_D = Decimal("0")
 
 
 def _share(total: Decimal, part: Decimal, whole: Decimal) -> Decimal:
-    """`total` split in the proportion `part` bears to `whole`, rounded to money.
-
-    Guarded rather than trusted: a document whose gross is zero (fully discounted, or a
-    correction) would divide by nothing, and a report is not the place to raise.
-    """
     if not whole:
         return ZERO_D
     return (total * part / whole).quantize(Decimal("0.01"))
@@ -98,14 +78,6 @@ def card(
     day_to = _parse_day(date_to)
 
     stmt = select(StockMovement).where(StockMovement.item_id == item_id)
-    # **عزل الفروع — الكارت بيقول حركة فرع اللي بيقراه.**
-    #
-    # الكتالوج مشترك بين الفرعين (`Item` مالوش `branch_id`)، فمستخدم العلياء كان بيفتح
-    # كارت صنف ويلاقي قدامه «مخزن اكتوبر» و«مخزن الفيوم» بأرصدتهم. الحركة هي اللي
-    # بتحمل الفرع (`StockMovement.branch_id` بيتاخد من مكانها)، فالفلترة عليها.
-    #
-    # و`NULL` داخل مع الفرع — نفس قاعدة `branch_scope.scope` بالحرف: الحركة المكتوبة
-    # قبل العزل مالهاش فرع، وإخفاؤها بيفضّي الكارت بدل ما يعزله.
     if branch_id is not None:
         stmt = stmt.where(or_(StockMovement.branch_id == branch_id,
                               StockMovement.branch_id.is_(None)))
@@ -114,12 +86,6 @@ def card(
             StockMovement.location_kind == kind,
             StockMovement.location_id == location_id,
         )
-    # Oldest first: a card is read downwards, and the running balance only makes sense that way.
-    # **الترتيب بتاريخ الورقة، والرقم بيفصل التعادل.**
-    #
-    # كان بالرقم وحده — وهو ترتيب الكتابة عندنا. بعد ما بقى لكل حركة تاريخ ورقتها،
-    # الرقم وحده بيدّي رصيد جاري بيمشي عكس التواريخ: سطر يناير بيطلع برصيد اتحسب بعد
-    # سطر سبتمبر. والتعادل بيتفصل بالرقم عشان حركات اليوم الواحد تفضل بترتيب كتابتها.
     movements = db.scalars(stmt.order_by(
         func.coalesce(StockMovement.movement_date,
                       func.cast(StockMovement.created_at, Date)),
@@ -138,17 +104,12 @@ def card(
         before = balance
         balance = _qty(balance + signed)
 
-        # تاريخ الورقة أولاً، و`created_at` بديل للقديم اللي لسه ما اتعبّاش.
         when = mv.movement_date or _day(mv.created_at)
-        # Everything before the window is carried in rather than shown — the balance the period
-        # opens with. It is the same number the previous period closed on.
         if day_from is not None and when is not None and when < day_from:
             opening = balance
             continue
         if day_to is not None and when is not None and when > day_to:
             continue
-        # الفلتر بيقارن بالاسم الموحّد مش بالنص: «بيع» متخزّنة `sale` في ٤٥٬٥٥٥ صف
-        # و`sale_out` في ١١٥، والمقارنة الحرفية كانت بتخفي واحدة من التنين.
         if movement_type and (stock_docs.canonical(mv.movement_type, kind="movement")
                               != stock_docs.canonical(movement_type, kind="movement")):
             continue
@@ -167,8 +128,6 @@ def card(
             "date": str(when) if when else None,
             "movement_type": stock_docs.canonical(mv.movement_type, kind="movement")
                              or mv.movement_type,
-            # الاسم العربي بييجي من السجل مش من الشاشة — كانت تلات نسخ منه في
-            # ملفات `.tsx` وكل واحدة ناسية نوع.
             "movement_label": stock_docs.movement_label(mv.movement_type, mv.source_doc_type),
             "direction": mv.direction.value,
             "quantity_in": str(quantity if is_in else ZERO_QTY),
@@ -184,8 +143,6 @@ def card(
         })
 
     _document_detail(db, item_id, rows, names)
-    # **الأحدث فوق** (طلب العميل ٢٠٢٦-١٠-٠١). الرصيد اتحسب فوق من الأقدم للأحدث، فكل سطر
-    # شايل رصيده قبل وبعد صح — القلب للعرض بس.
     rows.reverse()
 
     return {
@@ -197,7 +154,6 @@ def card(
         "location_id": location_id if kind else None,
         "location": (names.get((kind.value, location_id), f"#{location_id}") if kind
                      else "كل المواقع"),
-        # The closing balance is the item's real position, whatever the filters hid.
         "opening_balance": str(opening),
         "closing_balance": str(balance),
         "total_in": str(total_in),
@@ -208,43 +164,8 @@ def card(
 
 def _document_detail(db: Session, item_id: int, rows: list[dict],
                      names: dict[tuple[str, int], str]) -> None:
-    """Fill each row with the party, the document number and the money off its source document.
-
-    Their كارت الصنف carries twenty-six columns; ours carried eight. The missing ones were never
-    missing DATA — a sale line has always known its price, its customer and its invoice number.
-    They were one join away and the card did not make it, so a storekeeper reading «منصرف ٥» had to
-    open the sales screen to find out who took them and for how much.
-
-    Done in bulk per document type: a card can run to hundreds of rows and a query per row turns a
-    report into a wait.
-
-    **والنوع بيتسوّى قبل ما يتدوّر عليه.** الحركة المكتوبة من الخدمة الحيّة بتقول `sale`، واللي
-    اتنقلت من a5 بتقول `sales_invoice` — نفس الجدول ونفس الـid، اسمين. الكود ده كان بيدوّر على
-    الاسم الأول وحده، فالكارت المنقول كله — البيع والشراء والمردود — كان بيطلع بأعمدة فاضية:
-    ٦٤٦ سطر في كارت «كوع ٢ باب» مافيهاش ولا اسم عميل ولا سعر واحد. و`stock_docs.names` هو
-    المكان الوحيد اللي بيعرف الاسمين، فالتسوية بتنده عليه بدل ما تكتب القايمة تاني هنا.
-
-    Four more of theirs, added after a second reading:
-
-    **الوحده / القطعه.** The card counts in base units — pieces — because that is what stock is
-    kept in. The line was SOLD in whatever unit the customer buys by, and «منصرف ٤٨» against a
-    document that says «٤ كراتين» is the same fact told two ways with nothing on screen to connect
-    them. Both are shown, with the unit named.
-
-    **خصم.** The line discount, which the line has always carried.
-
-    **ض.م.** The document's VAT is charged on the net, and the net moves with the gross, so a
-    line's share of the tax is its share of the gross. That is not an estimate — it is the same
-    proportional rule `create_return` already uses to decide how much tax to refund, which is a
-    money decision the system has been making for some time.
-
-    **والتحويل والإذن ليهم جهة كمان.** التحويل مالوش عميل، بس ليه طرف تاني: السطر الوارد جاي
-    **من** مخزن، والمنصرف رايح **إلى** مخزن — والاتنين على نفس الورقة، فالجهة بتتحدد من اتجاه
-    الحركة نفسها مش من الورقة. والإذن جهته سببه، وسعره التكلفة المكتوبة على سطره.
-    """
     by_type: dict[str, set[int]] = {}
     for r in rows:
-        # `sale` و`sales_invoice` نفس المستند — التسوية قبل التجميع عشان الاتنين يتقروا مرة.
         kind = stock_docs.canonical(r["source_doc_type"])
         r["_kind"] = kind
         if kind and r["source_doc_id"]:
@@ -257,7 +178,6 @@ def _document_detail(db: Session, item_id: int, rows: list[dict],
     customers = {c.id: c.name for c in db.scalars(select(Customer)).all()}
     suppliers = {s.id: s.name for s in db.scalars(select(Supplier)).all()}
 
-    # (doc_kind, doc_id) -> {party, document_number, unit_price, line_total}
     detail: dict[tuple[str, int], dict] = {}
 
     sale_ids = by_type.get(StockDoc.SALE, set())
@@ -281,13 +201,9 @@ def _document_detail(db: Session, item_id: int, rows: list[dict],
                 "unit": ln.unit if ln else None,
                 "unit_factor": str(ln.unit_factor) if ln else None,
                 "discount_pct": str(ln.discount_pct) if ln else None,
-                # The line's share of the gross is its share of the tax, because the net the tax
-                # is charged on moves with the gross. A document with no VAT gives every line zero.
                 "tax_amount": str(_share(doc_tax, line_total, gross)) if ln else None,
             }
 
-    # A return carries its own customer; the invoice it came off is the fallback for the rows
-    # written before that column existed.
     ret_ids = by_type.get(StockDoc.SALE_RETURN, set())
     if ret_ids:
         from src.models.sales import SalesReturnLine
@@ -309,7 +225,6 @@ def _document_detail(db: Session, item_id: int, rows: list[dict],
                 "party": customers.get(customer_id),
                 "document_number": ret.document_number,
                 "unit_price": str(ln.unit_price) if ln and ln.unit_price is not None else None,
-                # A return with no line for this item still has a value — the document's own.
                 "line_total": (str(ln.line_total) if ln and ln.line_total is not None
                                else str(ret.value)),
                 "unit": ln.unit if ln else None,
@@ -335,8 +250,6 @@ def _document_detail(db: Session, item_id: int, rows: list[dict],
                 "line_total": str(ln.line_total) if ln else None,
                 "unit": ln.unit if ln else None,
                 "unit_factor": str(ln.unit_factor) if ln else None,
-                # A purchase line carries neither a discount nor its own tax. Empty says so;
-                # zero would claim a discount of nothing was agreed.
                 "discount_pct": None, "tax_amount": None,
             }
 
@@ -363,8 +276,6 @@ def _document_detail(db: Session, item_id: int, rows: list[dict],
                 "tax_amount": None,
             }
 
-    # **التحويل: الطرف التاني بيتقرا من اتجاه السطر.** الورقة الواحدة بتكتب حركتين — واحدة
-    # منصرفة من المصدر وواحدة واردة للوجهة — فمافيش جهة واحدة تنفع للورقة كلها.
     trf_ids = by_type.get(StockDoc.TRANSFER, set())
     if trf_ids:
         from src.models.transfer import StockTransfer
@@ -392,7 +303,6 @@ def _document_detail(db: Session, item_id: int, rows: list[dict],
         for pm in db.scalars(select(StockPermit).where(StockPermit.id.in_(permit_ids))).all():
             ln = line_of.get(pm.id)
             entry = {
-                # الإذن مالوش طرف تجاري — سببه هو اللي بيفسّره، وده اللي بيتعرض مكانه.
                 "party": pm.reason or None,
                 "document_number": pm.document_number,
                 "unit_price": str(ln.unit_cost) if ln else None,
@@ -402,13 +312,11 @@ def _document_detail(db: Session, item_id: int, rows: list[dict],
             }
             detail[(StockDoc.PERMIT, pm.id)] = entry
 
-    # Expiry: the lot a sale drew from is on the batch trail, keyed by the document that moved it.
     expiry_of: dict[tuple[str, int], str] = {}
     for m in db.scalars(select(StockBatchMovement).where(
             StockBatchMovement.item_id == item_id)).all():
         if m.document_type and m.document_id:
             key = (stock_docs.canonical(m.document_type), m.document_id)
-            # Several lots on one document: the soonest is the one worth showing.
             prev = expiry_of.get(key)
             if prev is None or str(m.expiry_date) < prev:
                 expiry_of[key] = str(m.expiry_date)
@@ -416,7 +324,6 @@ def _document_detail(db: Session, item_id: int, rows: list[dict],
     for r in rows:
         key = (r.pop("_kind", None), r["source_doc_id"])
         d = detail.get(key, {})
-        # التحويل بيدّي جهتين، والسطر بياخد اللي على ناحيته.
         if "party_in" in d:
             r["party"] = d["party_in"] if r["direction"] == "in" else d["party_out"]
         else:
@@ -427,23 +334,17 @@ def _document_detail(db: Session, item_id: int, rows: list[dict],
         r["expiry_date"] = expiry_of.get(key)
         r["discount_pct"] = d.get("discount_pct")
         r["tax_amount"] = d.get("tax_amount")
-        # The quantity in the unit it was traded in, beside the pieces the card counts in. Only
-        # when the two differ — repeating «٥ قطعة / ٥» on every loose-sold line is noise.
         r["unit"] = d.get("unit")
         factor = d.get("unit_factor")
         r["quantity_in_unit"] = None
         if factor:
             f = Decimal(str(factor))
             if f and f != Decimal("1"):
-                # The row's own movement, whichever side it is on. There is no `quantity` key —
-                # a card row is `quantity_in` OR `quantity_out`, and reading a key that does not
-                # exist would have raised on the first line ever sold by the carton.
                 moved = _qty(r["quantity_in"]) + _qty(r["quantity_out"])
                 r["quantity_in_unit"] = str(moved / f)
 
 
 def _location_names(db: Session) -> dict[tuple[str, int], str]:
-    """Human labels for (kind, id) so a row reads «مخزن الخامات» not «warehouse #9»."""
     from src.models.user import User
     from src.models.warehouse import Custody, Warehouse
 

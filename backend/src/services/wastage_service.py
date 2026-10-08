@@ -1,8 +1,3 @@
-"""Standalone wastage / scrap documents (014-production-reporting).
-
-Writes off stock outside a manufacturing order (damage/expiry/spoilage): posts one `waste_out`
-movement (no-negative enforced) and stores a costed document. Reversible once, like other docs.
-"""
 from __future__ import annotations
 
 from sqlalchemy import func, select
@@ -74,7 +69,6 @@ def reverse_wastage(db: Session, *, wastage_id: int, actor_user_id: int) -> Wast
         document_number=_doc_number(db), item_id=original.item_id,
         warehouse_id=original.warehouse_id, quantity=original.quantity, unit_cost=original.unit_cost,
         total_cost=original.total_cost, reason=original.reason, stock_movement_id=mirror.id,
-        # العكسي بيشيل بيان أصله — اللي بيدوّر بالبيان يلاقي الاتنين جنب بعض.
         statement1=getattr(original, "statement1", None),
         reverses_id=wastage_id, actor_user_id=actor_user_id,
     )

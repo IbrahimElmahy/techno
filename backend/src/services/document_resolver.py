@@ -1,15 +1,3 @@
-"""Which document produced this ledger entry?
-
-A statement line says «بيع 1,559.70» and, until now, that was the end of the trail: the reader
-could see the amount and not the invoice. The entry does not name its document — documents name
-their entry — so the answer is found by asking each document type which one claims it.
-
-That is deliberately a lookup rather than a column on the entry. The ledger is append-only and
-shared by every module; adding a polymorphic document reference to it would mean every new
-document type had to teach the ledger about itself, and a wrong value there would be unfixable.
-Asking the documents instead keeps the ledger ignorant of them, which is why it has survived
-eight modules without a schema change.
-"""
 from __future__ import annotations
 
 from sqlalchemy import select
@@ -17,7 +5,6 @@ from sqlalchemy.orm import Session
 
 from src.lib import report_statement
 
-# (kind, model, screen) — the kind is what the UI's DocumentLink understands.
 _SOURCES: list[tuple[str, str, str]] = [
     ("invoice", "src.models.sales:SalesInvoice", "/invoices"),
     ("return", "src.models.sales:SalesReturn", "/returns"),
@@ -33,28 +20,16 @@ def _model(path: str):
 
 
 def _rep_of(doc) -> int | None:
-    """Who the document was written by or for, whichever it records.
-
-    The sale calls it `rep_id`, the voucher `rep_user_id` — the same fact under two names because
-    the two modules were written months apart. Reading both here keeps that history out of every
-    caller, and a document with neither answers None rather than borrowing.
-    """
     return getattr(doc, "rep_id", None) or getattr(doc, "rep_user_id", None)
 
 
 def _kind_value(k) -> str | None:
-    """قيمة الـenum كنص — `VoucherKind.receipt` ⇒ «receipt»."""
     if k is None:
         return None
     return str(getattr(k, "value", k))
 
 
 def resolve_entry(db: Session, entry_id: int) -> dict | None:
-    """The document that posted this entry, or None for a hand-written journal entry.
-
-    None is a real answer, not a failure: a manual journal entry has no document behind it, and
-    saying so is more useful than an empty result the reader has to interpret.
-    """
     for kind, path, screen in _SOURCES:
         model = _model(path)
         column = getattr(model, "ledger_entry_id", None)
@@ -73,11 +48,6 @@ def resolve_entry(db: Session, entry_id: int) -> dict | None:
 
 
 def resolve_many(db: Session, entry_ids: list[int]) -> dict[int, dict]:
-    """Resolve a whole statement in one pass per document type rather than one per line.
-
-    A statement can run to hundreds of lines; asking five questions per line would make opening
-    it slower than reading it.
-    """
     wanted = {int(i) for i in entry_ids if i}
     if not wanted:
         return {}
@@ -96,17 +66,10 @@ def resolve_many(db: Session, entry_ids: list[int]) -> dict[int, dict]:
                 "id": doc.id,
                 "document_number": getattr(doc, "document_number", None),
                 "screen": screen,
-                # (031) Their كشف حساب carries a مندوب column. The line never held one, but the
-                # document that posted it always did — one join away, same as the item card.
                 "rep_user_id": _rep_of(doc),
-                # «البيان» اللي اتكتب على المستند نفسه (`statement1..3`). القيد مابيشيلوش —
-                # وصفه بيتولّد («فاتورة بيع …») — فكشف الحساب من غيره مايعرفش يتفلتر بالبيان
-                # اللي المستخدم كتبه بإيده على الفاتورة.
                 "statement": report_statement.text_of(doc),
-                # مكان البضاعة على المستند (البيع والمرتجع) — عمود «المخزن» في الكشف.
                 "origin_kind": getattr(doc, "origin_location_kind", None),
                 "origin_id": getattr(doc, "origin_location_id", None),
-                # عمود «نوع الفاتورة» في الكشف: خط الفاتورة (أبيض/بولي)، ونوع السند (قبض/صرف/…).
                 "family": getattr(doc, "family", None),
                 "voucher_kind": (_kind_value(getattr(doc, "kind", None))
                                  if kind == "voucher" else None),

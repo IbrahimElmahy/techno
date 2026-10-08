@@ -1,59 +1,20 @@
 import React from 'react';
 import ColumnSettings, { orderKeys, useHiddenColumns } from './ColumnSettings';
 
-/**
- * شبكة سطور المستند — بأعمدة بتتخفي وبتتترتّب.
- *
- * شبكات إدخال السطور (فاتورة البيع، الشرا، المرتجعين، التسعير، التحويل) كلها جداول HTML
- * مكتوبة بالإيد: `<thead>` فيه العناوين بترتيبها، والخلايا مكتوبة في نفس الترتيب جوّه
- * `<tr>`. ده أسرع من جدول antd في الإدخال — الخلية فيها `InputNumber` والتركيز بيتنقل
- * بالكيبورد بينهم — بس معناه إن الأعمدة مالهاش وجود كـ**بيانات**، فمافيش حاجة تقدر تخفي
- * عمود أو تحرّكه.
- *
- * الشاشة اللي كانت بتقدّم إخفاء كانت بتعمله بـ`showCol(key)` قبل كل خلية: تشتغل، بس
- * الترتيب مستحيل — الخلية مكانها في الـJSX، مش في قايمة. وده بالظبط اللي فاتورة البيع
- * كانت بتقوله في تعليق: «مافيش أسهم ترتيب هنا لأن الخلايا محطوطة بالإيد».
- *
- * الملف ده بيحوّل الأعمدة لبيانات: كل عمود `{key, title, cell}`، والجدول بيترسم من
- * القايمة بعد ما تتفلتر وتترتّب. الإخفاء والترتيب بقوا بيشتغلوا على أي شبكة بنفس السطر،
- * والتفضيلات بتتخزّن لكل شاشة لوحدها.
- */
 export interface EntryColumn<T> {
   key: string;
   title: React.ReactNode;
-  /** العنوان في قايمة الإخفاء — لما `title` مايكونش نص (زي عمود الأزرار). */
   label?: string;
-  /** العرض الافتراضي بالبكسل — المستخدم يقدر يسحبه، واللي سحبه بيتحفظ. */
   width?: number | string;
-  /** أقل عرض يتسحب له العمود (الافتراضي ٥٠ أو العرض الافتراضي لو أصغر). */
   minWidth?: number;
-  /** الاسم الكامل كتلميح على العنوان — لما العنوان متختصر. */
   tip?: string;
-  /** ستايل الخلية — بيتحط على `<td>`. */
   cellStyle?: React.CSSProperties;
-  /** خصائص زيادة على `<td>` — زي `data-` بتاعة التنقل بالكيبورد. */
   cellProps?: (row: T, index: number) => React.HTMLAttributes<HTMLTableCellElement>;
   cell: (row: T, index: number) => React.ReactNode;
-  /** عمود مايتخفيش — الصنف والإجمالي عادةً. */
   locked?: boolean;
-  /**
-   * خلية العمود ده في صف الإجماليات، لو ليه واحدة.
-   *
-   * صف الإجماليات كان بيتكتب بـ`colSpan` ثابت («أربعة: الرقم والمخزن والصنف والوحدة»)،
-   * وده بيتكسر أول ما حد يخفي عمود أو يحرّكه — الإجمالي بيزحلق ويقع تحت عنوان تاني، رقم
-   * صح تحت اسم غلط. لما الخلية بتبقى بتاعة العمود نفسه، هي بتتحرك معاه.
-   */
   footer?: (rows: T[]) => React.ReactNode;
-  /**
-   * عرض العمود لما الشبكة متبنية بـ`Row`/`Col` مش `<table>` (شاشة المرتجع).
-   *
-   * المرتجع بيجمّع سطوره تحت رؤوس فئات، فمينفعش يبقى جدول واحد؛ بس رأسه وخلاياه لسه
-   * متقابلين بالموضع بالظبط زي `thead`/`tbody`، فنفس القايمة بترسمهم الاتنين.
-   */
   span?: number;
-  /** العرض على الموبايل — `xs` بتاعة antd. */
   xs?: number;
-  /** محاذاة الخلية والعنوان. */
   align?: 'right' | 'center' | 'left';
 }
 
@@ -68,21 +29,13 @@ function loadWidths(key: string): Record<string, number> {
   }
 }
 function saveWidths(key: string, w: Record<string, number>) {
-  try { localStorage.setItem(key, JSON.stringify(w)); } catch { /* من غير تخزين: العرض بيرجع افتراضي */ }
+  try { localStorage.setItem(key, JSON.stringify(w)); } catch {}
 }
 
 export function useEntryGrid<T>(storageKey: string, columns: EntryColumn<T>[]) {
   const prefs = useHiddenColumns(storageKey);
   const allKeys = columns.map((c) => c.key);
 
-  /**
-   * عرض الأعمدة — بيتسحب من حد العنوان (طلب العميل ٢٠٢٦-١٠-٠٣).
-   *
-   * الجدول `table-layout: fixed` بعروض في `<colgroup>`، فالعرض اللي اتقال بيتنفّذ بالظبط.
-   * عرضه ١٠٠٪ وأقلّه مجموع الأعمدة: لو الشاشة أوسع الفرق بيتوزّع بالنسبة، ولو أضيق
-   * التمرير الأفقي جوّه `.sale-grid-wrap` بس، وعمود الإجراء لازق في آخر السطر.
-   * المحفوظ بيتخزّن جنب الإخفاء والترتيب (`cols:<key>:widths`)، ومفاتيح أعمدة اتشالت بتتجاهل.
-   */
   const widthsKey = `cols:${storageKey}:widths`;
   const [widths, setWidths] = React.useState<Record<string, number>>(() => loadWidths(widthsKey));
   const defWidth = (c: EntryColumn<T>) => (typeof c.width === 'number' ? c.width : (c.minWidth ?? 100));
@@ -105,15 +58,12 @@ export function useEntryGrid<T>(storageKey: string, columns: EntryColumn<T>[]) {
     return next;
   });
 
-  // نفس ترتيب جداول antd بالحرف — `orderKeys` هي اللي بتعرف القاعدة: اللي اتحفظ الأول،
-  // وأي عمود جديد اتضاف بعد كده بيتحط في آخر القايمة بدل ما يختفي.
   const ordered = React.useMemo(() => {
     const byKey = new Map(columns.map((c) => [c.key, c]));
     return orderKeys(allKeys, prefs.order).map((k) => byKey.get(k)!).filter(Boolean);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [columns, prefs.order]);
 
-  // كل عمود بيتخفي — حتى «المقفول» (طلب العميل ٢٠٢٦-١٠-٠١). شوف `ColumnSettings`.
   const shown = ordered.filter((c) => !prefs.hidden.includes(c.key));
 
   const control = (
@@ -132,14 +82,9 @@ export function useEntryGrid<T>(storageKey: string, columns: EntryColumn<T>[]) {
   );
 
   const total = shown.reduce((n, c) => n + widthOf(c), 0);
-  // عمود الإجراء بيلزق في آخر السطر لو فيه تمرير — بس لو هو فعلاً آخر عمود.
   const stickyKey = shown.length && shown[shown.length - 1].key === 'actions' ? 'actions' : null;
   const stickyCls = (key: string) => (key === stickyKey ? 'eg-sticky-end' : undefined);
 
-  /**
-   * السحب: بنحرّك الـDOM مباشرةً وإحنا بنسحب (من غير ريندر لكل السطور)، ونحفظ مرة لما الماوس يتساب.
-   * في RTL حد العمود اللي بيتسحب هو الشمال، فالسحب لشمال بيوسّع.
-   */
   const startResize = (c: EntryColumn<T>) => (e: React.PointerEvent<HTMLSpanElement>) => {
     if (e.button !== 0) return;
     e.preventDefault();
@@ -161,8 +106,6 @@ export function useEntryGrid<T>(storageKey: string, columns: EntryColumn<T>[]) {
       const dx = ev.clientX - startX;
       if (!moved && Math.abs(dx) < 2) return;
       moved = true;
-      // العرض اللي المفروض يبان. لو الجدول متمدّد لعرض الشاشة، المتصفح بيوزّع الفاضي
-      // بالنسبة — فبنحسب العرض المحفوظ اللي يطلّع العرض ده بعد التوزيع.
       const r = Math.max(min, startRendered + (rtl ? -dx : dx));
       const base = r + others >= room ? r : (r * others) / (room - r);
       next = Math.max(min, Math.round(base));
@@ -183,7 +126,6 @@ export function useEntryGrid<T>(storageKey: string, columns: EntryColumn<T>[]) {
     window.addEventListener('pointercancel', onUp);
   };
 
-  /** `<colgroup>` — بيتحط قبل `<thead>`. */
   const cols = (
     <colgroup>
       {shown.map((c) => <col key={c.key} data-eg-col={c.key} style={{ width: widthOf(c) }} />)}
@@ -209,12 +151,6 @@ export function useEntryGrid<T>(storageKey: string, columns: EntryColumn<T>[]) {
     </tr>
   );
 
-  /**
-   * صف الإجماليات — بيتبني من الأعمدة المعروضة.
-   *
-   * الأعمدة اللي قبل أول عمود له إجمالي بتتلم في خلية واحدة مكتوب فيها «الإجمالي»، وباقي
-   * الأعمدة كل واحد بخليته أو فاضي. يعني إخفاء عمود أو تحريكه بيحرّك إجماليه معاه.
-   */
   const foot = (rows: T[], label: React.ReactNode = 'الإجمالي') => {
     const first = shown.findIndex((c) => c.footer);
     if (first < 0) return null;
@@ -238,12 +174,10 @@ export function useEntryGrid<T>(storageKey: string, columns: EntryColumn<T>[]) {
     </td>
   ));
 
-  /** رأس شبكة `Row`/`Col` — نفس الأعمدة المعروضة بترتيبها. */
   const colHead = shown.map((c) => ({
     key: c.key, span: c.span ?? 2, xs: c.xs, align: c.align, title: c.title,
   }));
 
-  /** خلايا سطر في شبكة `Row`/`Col`. */
   const colRow = (item: T, index: number) => shown.map((c) => ({
     key: c.key, span: c.span ?? 2, xs: c.xs, align: c.align,
     node: c.cell(item, index),

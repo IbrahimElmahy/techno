@@ -1,7 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState, useMemo } from 'react';
 import { PAGE_SIZE } from '../utils/pagination';
 import { Select, Button, Tag, Alert, Input } from 'antd';
-// فلتر على كل عمود — شوف `FilterTable`.
 import { FilterTable as Table } from '../components/FilterTable';
 import {
   AccountBookOutlined, ClearOutlined, LinkOutlined, PrinterOutlined, ReloadOutlined, SearchOutlined,
@@ -29,7 +28,6 @@ import {
   BUCKETS, money,
 } from './financeReports/types';
 
-/** سطر الإجماليات تحت الجداول اللي من غير ترقيم. */
 const FOOT_LINE: React.CSSProperties = { padding: '10px 4px', borderTop: '1px solid #f1f5f9' };
 
 const FinanceReports: React.FC = () => {
@@ -45,7 +43,6 @@ const FinanceReports: React.FC = () => {
   const [vat, setVat] = useState<VatReturn | null>(null);
   const [commissions, setCommissions] = useState<CommissionRow[]>([]);
   const [loading, setLoading] = useState(false);
-  // خيارات التقارير المشتركة — «كل القيود» والمقارنة، زي أودو.
   const [opts, setOpts] = useState<RptOptions>(DEFAULT_REPORT_OPTIONS);
 
   const agingFilter = useListFilter(aging, { search: (r) => [r.party_name] });
@@ -100,8 +97,6 @@ const FinanceReports: React.FC = () => {
     );
   };
 
-  // `grid` = شبكة الورق المشتركة (خطوط غامقة ورأس أسود). من غيرها الجدول كان بيطلع أرقام
-  // عايمة من غير ولا خط — على الطابعة الأبيض والأسود مابتبانش فين السطر بيخلص.
   const linesTable = (rows: ReportLine[]) =>
     `<table class="grid"><thead><tr><th>الحساب</th><th>القيمة</th></tr></thead><tbody>${
       rows.map((r) => `<tr><td>${r.name || r.code || r.account_id}</td><td class="num">${money(r.amount)}</td></tr>`).join('') ||
@@ -121,13 +116,6 @@ const FinanceReports: React.FC = () => {
     ...numberColumn<ReportLine>((r) => r.amount),
     render: (v: string) => money(v),
   };
-  /**
-   * أعمدة المقارنة — بتظهر لما تتطلب بس.
-   *
-   * الحساب بيتلاقى في الفترة التانية بـ`account_id`، مش بترتيبه: الحساب اللي
-   * ماتحرّكش السنة اللي فاتت مش موجود في قايمتها أصلاً، والمطابقة بالترتيب كانت
-   * هتزحلق الأرقام سطر.
-   */
   const priorOf = (rows: ReportLine[] | undefined, id: number) =>
     rows?.find((r) => r.account_id === id)?.amount ?? '0';
 
@@ -169,9 +157,6 @@ const FinanceReports: React.FC = () => {
       ? `/customers/${r.party_id}` : `/suppliers/${r.party_id}`),
   });
 
-  // أعمار الديون هو الجدول الوحيد هنا اللي أعمدته تستاهل إخفاء وترتيب — الشرايح بتوصل
-  // لسبعة أعمدة. القوايم التانية في الصفحة عمودين (اسم ومبلغ)، وإخفاء عمود المبلغ في
-  // ميزانية مش خيار، هو الورقة نفسها.
   const agingColumns = useMemo(() => ([
     { title: agingParty === 'customers' ? 'العميل' : 'المورد', dataIndex: 'party_name', key: 'party_name',
       ...textColumn(aging, (r: AgingRow) => r.party_name) },
@@ -193,8 +178,6 @@ const FinanceReports: React.FC = () => {
       ...numberColumn<AgingRow>((r) => r.total),
       render: (v: string) => <b>{money(v)}</b>,
     },
-    // الرقم في التقرير ده مجموع فواتير بعينها — والزرار ده بيوصّل لها. من غيره
-    // اللي شايف «٤٠ ألف فوق ٩٠ يوم» لازم يفتح شاشة تانية ويدوّر على الطرف بإيده.
     {
       title: '',
       key: 'reconcile',
@@ -218,18 +201,14 @@ const FinanceReports: React.FC = () => {
 
   const canSeeStats = useCanSeeStats();
 
-  // F3 للبحث — كانت جاية من `ListToolbar`.
   const searchRef = useRef<any>(null);
   useScreenShortcuts({ onSearch: () => { searchRef.current?.focus?.(); } },
     tab === 'aging' || tab === 'commissions');
 
-  // دفتر الشريك والتدفق النقدي بيجيبوا داتاهم بنفسهم — اللي اتفتح منهم مرة بيفضل متركّب
-  // (زي `Tabs` قبل كده)، فاختياراته مابتضيعش لما ترجعله.
   const [visited, setVisited] = useState<Set<string>>(() => new Set([tab]));
   useEffect(() => {
     setVisited((v) => (v.has(tab) ? v : new Set(v).add(tab)));
   }, [tab]);
-  // فلاتر وأزرار التابين دول بتترسم في سطر الفلاتر والترويسة — بـportal، والحالة جوّه التاب.
   const [filtersSlot, setFiltersSlot] = useState<HTMLElement | null>(null);
   const [actionsSlot, setActionsSlot] = useState<HTMLElement | null>(null);
   const slotsFor = (key: string) => (tab === key
@@ -291,7 +270,6 @@ const FinanceReports: React.FC = () => {
         )}
         {tab === 'aging' && agingCols.control}
         <span ref={setActionsSlot} className="sl-slot" />
-        {/* دفتر الشريك والتدفق النقدي ليهم «تحديث» بتاعهم — جاي في الـslot فوق. */}
         {!ownLoader && (
           <Button icon={<ReloadOutlined />} onClick={loadAll} loading={loading}>
             تحديث
@@ -300,8 +278,6 @@ const FinanceReports: React.FC = () => {
       </>)}
       filters={(<>
         <DateRangeFilter className="sl-f-dates" value={range as any} onChange={(v) => setRange(v as any)} />
-        {/* الخيارات في سطر الفلاتر مش جوّه كل تبويب: هي على التقرير المعروض أياً كان، وده
-            اللي بيخلّي اللي اتعلّمها في واحد يلاقيها في التاني. */}
         <div style={{ flex: '0 0 auto' }}>
           <ReportOptionsBar value={opts} onChange={setOpts} />
         </div>
@@ -355,7 +331,6 @@ const FinanceReports: React.FC = () => {
             dataSource={income.expenses}
             columns={[nameCol, amountCol, ...compareCols(income.comparison?.expenses, false)]}
           />
-          {/* كروت الإجماليات بقت سطر — ولسه للي عنده `stats.view` بس. */}
           {canSeeStats && (
             <div style={FOOT_LINE}>
               <span className="sl-foot">

@@ -1,26 +1,3 @@
-"""قائمة الدخل بشكل ورقة العميل — لأي فرع ولأي فترة.
-
-العميل بيقفل كل ربع بورقة إكسل («قائمة الدخل لفرع العلياء 30-6-2026»)، والشاشة دي بتعمل
-نفس الورقة من الدفاتر بدل ما حد يجمّعها بإيده:
-
-    صافي المبيعات (مقسوم على فئات: بولي / قطعي / الفروع / صرف، بنسبة كل فئة وبونصها)
-  − تكلفة المبيعات = مخزون أول المدة + صافي المشتريات − مخزون آخر المدة (+ أجور وتكاليف صناعية)
-  = مجمل الربح
-  − مصاريف عمومية وإدارية (حسابات المصروفات مجمّعة في بنود الورقة)
-  − مصاريف البيع والتسويق (نموذج البوانص والكوبونات بتاع الورقة — أو الفعلي)
-  = صافي الربح التشغيلي ± إيرادات/خسائر أخرى = صافي الربح
-
-**المبيعات والمشتريات من المستندات مش من الحسابات.** التقسيم لفئات محتاج يعرف الصنف
-والعميل في كل سطر، والقيد مابيعرفش الاتنين. والحسابات بتتعرض جنبها في «مطابقة مع
-الدفاتر» عشان أي فرق يبان بدل ما يستخبّى.
-
-**فواتير البونص بره صافي المبيعات.** البضاعة دي خرجت هدية؛ قيدها القديم (من a5) بيدخلها
-مبيعات وبيقفلها بـ«خصم مسموح به» بنفس القيمة — يعني صافيها صفر. بس تكلفتها جوّه تكلفة
-المبيعات لوحدها: المخزون نقص بيها.
-
-الإعدادات (`IncomeStatementSetting`) هي اللي بتقول «بولي» يعني إيه و«الفروع» مين — الافتراضي
-تحت مكتوب من ورقة العلياء، والسبب جنب كل قاعدة.
-"""
 from __future__ import annotations
 
 import copy
@@ -49,9 +26,7 @@ from src.models.sales import SalesInvoice, SalesInvoiceLine, SalesReturn, SalesR
 from src.services import inventory_valuation_service, ledger_service
 from src.services.financial_reports_service import effective_nature
 
-# ------------------------------------------------------------------ الأدوار
 
-#: دور كل حساب إيرادات/مصروفات في القائمة.
 ROLES: dict[str, str] = {
     "ga": "مصاريف عمومية وإدارية",
     "marketing": "مصاريف بيع وتسويق (فعلي)",
@@ -61,7 +36,6 @@ ROLES: dict[str, str] = {
     "indirect_materials": "مواد غير مباشرة",
     "indirect_labor": "أجور غير مباشرة",
     "other_mfg": "مصاريف صناعية أخرى",
-    # الخمسة دول محسوبين من المستندات — الحساب بيتعرض في المطابقة بس، مابيتطرحش تاني.
     "sales": "مبيعات (من الفواتير)",
     "sales_returns": "مردودات مبيعات (من المستندات)",
     "sales_discount": "خصم مسموح به / بونص",
@@ -72,50 +46,33 @@ ROLES: dict[str, str] = {
 DOC_ROLES = ("sales", "sales_returns", "sales_discount", "purchases", "purchase_returns")
 MFG_ROLES = ("direct_labor", "indirect_materials", "indirect_labor", "other_mfg")
 
-#: أقسام البنود اليدوية (مصروفات «زيادة» في ورقة العميل).
 ADJ_SECTIONS = ("ga", "marketing", "other_income", "other_loss", "cost")
 
-# ------------------------------------------------------------------ الافتراضي
 
-#: فئات أصناف مش بضاعة للبيع: عِدد خدمة العملاء وأدوات المكتب والكوبونات الورق والعربية.
-#: ورقة الجرد بتاعة العميل مافيهاش ولا واحدة منهم، وفاتورة «عدد خدمة العملاء» (٨٩٬٥٣٠) هي
-#: اللي بتفرق صافي مشترياتنا عن رقم الورقة. وبتتشال من المخزون ومن المشتريات بنفس القايمة.
 DEFAULT_EXCLUDED_CATEGORIES = ["خدمة العملاء", "ادوات مكتبية", "كوبونات", "سياره جديده"]
 
 DEFAULT_CONFIG: dict = {
     "sales": {
         "include_bonus": False,
-        # **أول قاعدة تنطبق على السطر بتاخده.** الترتيب جزء من المعنى: «الفروع» الأول عشان
-        # بيع البولي لفرع أكتوبر يتحسب فروع مش بولي — كده التقسيم بيقفل على إجمالي الورقة.
         "categories": [
-            # عملاء هم فروع الشركة نفسها («تكنو ثيرم فرع اكتوبر»، «تكنووو ثيرم»). كلمة كاملة
-            # مش جزء كلمة: «معرض الفرعونية» مش فرع.
             {"key": "branches", "name": "الفروع", "customer_ids": [],
              "customer_name_words": ["ثيرم", "فرع"], "bonus_pct": 0},
-            # البولي = خط تكنو ثيرم (PPR) بأي فاتورة: ورقة الجرد بتسمّيه «تكنوبولى» و«تكنو معزول».
             {"key": "poly", "name": "بولي",
              "item_categories": ["تكنو ثيرم", "تكنو ثيرم معزول"], "bonus_pct": 15},
-            # اللي مش تاجر (معارض، شركات ومقاولين، موظفين، سباكين) — مابياخدوش كوبونات بونص.
             {"key": "retail", "name": "قطعي",
              "customer_types": ["showroom", "company", "employee", "establishment",
                                 "plumber", "other"], "bonus_pct": 0},
-            # الباقي = بيع الأبيض للتجار — عليه بونص ٣٪.
             {"key": "drain", "name": "صرف", "bonus_pct": 3},
         ],
     },
     "inventory": {
         "cost_basis": "average",
         "exclude_categories": DEFAULT_EXCLUDED_CATEGORIES,
-        # نسب «الصافي» من أصل اللستة — من ورق جرد العلياء ٣٠-٦-٢٠٢٦ (بولى ومعزول ×٤٠٪،
-        # ابيض ١١٤ و١١٠ والجوان ×٦٠٪). بتستعمل بس لو طريقة التقييم «list_factor».
         "list_factors": {"تكنو ثيرم": 40, "تكنو ثيرم معزول": 40, "ابيض تكنوو": 60,
                          "ابيض تكنوو 110": 60, "تكنو جوان": 60},
     },
     "accounts": {
-        # account_id (نص) ⇒ دور. الحساب اللي مش هنا بياخد دوره من القواعد في `default_role`.
         "roles": {},
-        # بنود الورقة: الحساب بيدخل أول بند اسمه فيه كلمة من كلماته (أو رقمه في account_ids).
-        # الترتيب مقصود: «صيانه وسولار المولد» صيانة مش سولار، و«مرتبات خدمه العملاء» أجور.
         "groups": [
             {"name": "اجور و مرتبات", "keywords": ["مرتبات", "اجور", "رواتب"], "account_ids": []},
             {"name": "قطع غيار وصيانة", "keywords": ["صيانه", "قطع غيار"], "account_ids": []},
@@ -138,36 +95,19 @@ DEFAULT_CONFIG: dict = {
         ],
     },
     "marketing": {
-        # model = نموذج البوانص بتاع الورقة؛ ledger = حسابات «بيع وتسويق» الفعلية؛
-        # coupons = الكوبونات المصروفة في الفترة × قيمتها.
         "source": "model",
-        # F11:F15 في الورقة بالحرف:
-        #   قيمة البوانص = Σ(مبيعات الفئة × نسبة بونصها)          (H9)
-        #   قيمة الكوبون = 73.4 × 90%                             (E11)
-        #   كوبونات البوانص = قيمة البوانص ÷ قيمة الكوبون          (F11)
-        #   × 2 ÷ 30                                               (F12)
-        #   + كوبونات البيع الفعلي (4,900 في الورقة)               (F13)
-        #   × 180 = مصاريف البيع والتسويق                          (F15)
         "coupon_base": 73.4, "coupon_base_pct": 90,
         "ratio_num": 2, "ratio_den": 30,
         "coupon_cost": 180,
-        # كوبونات البيع الفعلي: issued = المصروف للعملاء في الفترة، received = المستلم،
-        # manual = الرقم تحت (والفترة ممكن يكون ليها رقمها في `periods`).
         "sales_coupons_source": "issued", "sales_coupons_manual": 0,
-        # قيمة الورقة لكل فئة كوبون (عادي/فضي/ذهبي/ماسي) للمقارنة بالفعلي — الفاضي = coupon_cost.
         "kind_values": {},
     },
-    # "من|إلى" ⇒ {opening_inventory, closing_inventory, sales_coupons, adjustments: [...]}
     "periods": {},
 }
 
-# قواعد الدور الافتراضي — بتتجرّب على اسم الحساب الأول وبعدين على آبائه بالترتيب.
 _OWN_ROLE_RULES: list[tuple[tuple[str, ...], str]] = [
-    # سلف على المرتبات — فلوس هترجع من الراتب مش مصروف (ورقة العلياء مش حاسباها).
     (("تحت راتب", "تحت ح راتب"), "excluded"),
-    # «المهمات» عِدد بتتشال من المصروفات في ورقة العلياء (١٦٬٤٩٠ مش في الإجمالي).
     (("المهمات",), "excluded"),
-    # النقاط والكوبونات وعهدة خدمة العملاء = تكلفة البيع الفعلية؛ الورقة بتحطّ مكانها النموذج.
     (("نقاط", "كوبون", "عهده خدمه العملاء"), "marketing"),
 ]
 _TREE_ROLE_RULES: list[tuple[tuple[str, ...], str]] = [
@@ -191,7 +131,6 @@ _AR_NORM = str.maketrans({"ة": "ه", "أ": "ا", "إ": "ا", "آ": "ا", "ى": 
 
 
 def norm(text: str | None) -> str:
-    """توحيد الكتابة قبل المقارنة: «صيانة/صيانه»، «أ/ا»، «ى/ي»، والتطويل."""
     return re.sub(r"\s+", " ", (text or "").translate(_AR_NORM)).strip()
 
 
@@ -202,11 +141,8 @@ def _has_word(name: str, word: str) -> bool:
 def D(value) -> Decimal:
     try:
         return Decimal(str(value)) if value not in (None, "") else ZERO
-    except Exception:  # noqa: BLE001 — رقم مكتوب غلط في الإعدادات = صفر مش انهيار
+    except Exception:  # noqa: BLE001
         return ZERO
-
-
-# ------------------------------------------------------------------ الإعدادات
 
 
 def _merge(base: dict, saved: dict | None) -> dict:
@@ -227,7 +163,6 @@ def _row(db: Session, branch_id: int | None) -> IncomeStatementSetting | None:
 
 
 def get_config(db: Session, branch_id: int | None) -> dict:
-    """إعدادات الفرع، فوق إعدادات الشركة، فوق الافتراضي."""
     company = _row(db, None)
     cfg = _merge(DEFAULT_CONFIG, company.config if company else None)
     if branch_id is not None:
@@ -252,15 +187,8 @@ def period_key(date_from: date, date_to: date) -> str:
     return f"{date_from.isoformat()}|{date_to.isoformat()}"
 
 
-# ------------------------------------------------------------------ المبيعات
-
-
 def _sales_rows(db: Session, *, branch_id: int | None, date_from: date, date_to: date,
                 include_bonus: bool) -> list[dict]:
-    """سطور البيع ناقص المرتجع، مجمّعة على (عميل × فئة صنف × نوع الفاتورة × مخزن).
-
-    القيمة = إجمالي السطر بعد خصم السطر (`line_total`) × (١ − خصم المستند). من غير ضريبة.
-    """
     out: list[dict] = []
 
     def run(stmt, sign: int):
@@ -309,7 +237,6 @@ def _sales_rows(db: Session, *, branch_id: int | None, date_from: date, date_to:
 
 
 def _matches(rule: dict, row: dict) -> bool:
-    """القاعدة بتنطبق لو **كل** شرط مكتوب فيها اتحقق (وجوّه الشرط الواحد: أي قيمة)."""
     ids = {int(x) for x in rule.get("customer_ids") or [] if str(x).strip().lstrip("-").isdigit()}
     words = [w for w in rule.get("customer_name_words") or [] if str(w).strip()]
     if ids or words:
@@ -347,7 +274,6 @@ def classify_sales(rows: list[dict],
 
 def sales_breakdown(db: Session, *, branch_id: int | None, date_from: date, date_to: date,
                     category_key: str, config: dict | None = None) -> dict:
-    """تفصيل فئة مبيعات — بالعميل وبفئة الصنف. للدوسة على رقم الفئة."""
     cfg = config or get_config(db, branch_id)
     rows = _sales_rows(db, branch_id=branch_id, date_from=date_from, date_to=date_to,
                        include_bonus=bool(cfg["sales"].get("include_bonus")))
@@ -370,11 +296,6 @@ def sales_breakdown(db: Session, *, branch_id: int | None, date_from: date, date
 
 
 def inventory_at(db: Session, *, branch_id: int | None, as_of: date, with_rows: bool = True):
-    """قيمة المخزون في تاريخ **بإعدادات قائمة الدخل للفرع** (طريقة التقييم والفئات المستبعدة).
-
-    حزمة إقفال الربع والميزانية بينادوا دي بدل `inventory_valuation_service.value_at` مباشرةً،
-    عشان «مخزون آخر المدة» في القائمة وفي الميزانية يطلعوا نفس الرقم.
-    """
     inv = get_config(db, branch_id)["inventory"]
     return inventory_valuation_service.value_at(
         db, branch_id=branch_id, as_of=as_of, cost_basis=inv.get("cost_basis", "average"),
@@ -382,12 +303,8 @@ def inventory_at(db: Session, *, branch_id: int | None, as_of: date, with_rows: 
         list_factors=inv.get("list_factors"), with_rows=with_rows)
 
 
-# ------------------------------------------------------------------ المشتريات
-
-
 def net_purchases(db: Session, *, branch_id: int | None, date_from: date, date_to: date,
                   exclude_categories) -> dict:
-    """صافي المشتريات في الفترة من المستندات — بنفس الفئات المستبعدة من المخزون."""
     excluded = list(exclude_categories or [])
     after = 1 - func.coalesce(PurchaseInvoice.combined_pct, 0) / 100
     p_date = func.coalesce(PurchaseInvoice.purchase_date, cast(PurchaseInvoice.created_at, Date))
@@ -400,8 +317,6 @@ def net_purchases(db: Session, *, branch_id: int | None, date_from: date, date_t
         stmt = stmt.where(PurchaseInvoice.branch_id == branch_id)
     gross_by_cat = {c or "بدون فئة": D(v) for c, v in db.execute(stmt).all()}
 
-    # المرتجع بقيمة مستنده (`value` بعد الخصم) موزّعة على سطوره بنسبة إجماليها — السطر
-    # نفسه مالوش خصم المستند.
     r_date = func.coalesce(PurchaseReturn.return_date, cast(PurchaseReturn.created_at, Date))
     rstmt = (select(PurchaseReturn.id, PurchaseReturn.value, PurchaseReturn.gross,
                     Item.category, func.sum(PurchaseReturnLine.line_total))
@@ -430,13 +345,8 @@ def net_purchases(db: Session, *, branch_id: int | None, date_from: date, date_t
     }
 
 
-# ------------------------------------------------------------------ الحسابات
-
-
 def _account_movements(db: Session, *, branch_id: int | None, date_from: date, date_to: date,
                        posted_only: bool) -> dict[int, Decimal]:
-    """حساب ⇒ حركته في الفترة بطبيعته — نفس قاعدة `financial_reports_service._movements`
-    (القيد اللي مالوش فرع بيدخل مع الكل) بس مجمّعة في القاعدة."""
     when = func.coalesce(LedgerEntry.entry_date, cast(LedgerEntry.created_at, Date))
     stmt = (
         select(LedgerLine.account_id, LedgerLine.direction, Account.normal_side,
@@ -456,7 +366,6 @@ def _account_movements(db: Session, *, branch_id: int | None, date_from: date, d
 
 
 def default_role(acc: Account, chain_names: list[str]) -> str:
-    """دور الحساب لما الإعدادات ماتقولش: من اسمه، وبعدين من آبائه، وبعدين من طبيعته."""
     if acc.account_type in _ROLE_BY_TYPE:
         return _ROLE_BY_TYPE[acc.account_type]
     own = norm(acc.name)
@@ -468,8 +377,6 @@ def default_role(acc: Account, chain_names: list[str]) -> str:
     for name in [acc.name, *chain_names]:
         n = norm(name)
         for words, role in _TREE_ROLE_RULES:
-            # الدور لازم يوافق طبيعة الحساب: «اداره مبيعات» تحت «اجور ومرتبات إدارية» حساب
-            # مرتبات (مصروف) — كلمة «مبيعات» في اسمه مش معناها إنه إيراد مبيعات.
             if role in _INCOME_ROLES and not is_income or role in _EXPENSE_ROLES and is_income:
                 continue
             if any(norm(w) in n for w in words):
@@ -496,7 +403,6 @@ def _chain(acc: Account, index: dict[int, Account]) -> list[str]:
 
 
 def account_roles(db: Session, *, branch_id: int | None, config: dict) -> list[dict]:
-    """كل حسابات الإيرادات والمصروفات بدورها — للإعدادات (والدور الافتراضي جنبه)."""
     index = _accounts_index(db, branch_id)
     saved = {str(k): v for k, v in (config["accounts"].get("roles") or {}).items()}
     out = []
@@ -518,8 +424,6 @@ def account_roles(db: Session, *, branch_id: int | None, config: dict) -> list[d
 
 
 def _group_of(acc: Account, groups: list[dict], chain: list[str] = ()) -> str | None:
-    """بند الحساب: رقمه مكتوب في بند، وإلا كلمة من اسمه، وإلا من اسم أبوه — حساب «سعد راشد»
-    تحت «اجور ومرتبات إدارية» مرتبات حتى لو اسمه اسم موظف."""
     for g in groups:
         if acc.id in {int(x) for x in g.get("account_ids") or []}:
             return g.get("name")
@@ -533,7 +437,6 @@ def _group_of(acc: Account, groups: list[dict], chain: list[str] = ()) -> str | 
 
 def _section_lines(items: list[tuple[Account, Decimal]], groups: list[dict],
                    index: dict[int, Account] | None = None) -> list[dict]:
-    """حسابات قسم ⇒ بنود الورقة: كل بند مجموع حساباته، والحساب اللي مالوش بند سطر لوحده."""
     by_group: dict[str, dict] = {}
     singles: list[dict] = []
     order = {g.get("name"): i for i, g in enumerate(groups)}
@@ -554,12 +457,8 @@ def _section_lines(items: list[tuple[Account, Decimal]], groups: list[dict],
     return lines
 
 
-# ------------------------------------------------------------------ الكوبونات
-
-
 def coupons_in_period(db: Session, *, branch_id: int | None, date_from: date,
                       date_to: date) -> dict:
-    """الكوبونات المصروفة للعملاء والمستلمة في الفترة — بالفئة."""
     issued_stmt = (select(CouponIssue.coupon_kind, func.coalesce(func.sum(CouponIssue.count), 0))
                    .where(CouponIssue.active.is_(True), CouponIssue.issue_date >= date_from,
                           CouponIssue.issue_date <= date_to)
@@ -578,9 +477,6 @@ def coupons_in_period(db: Session, *, branch_id: int | None, date_from: date,
             "issued_total": sum(issued.values()), "received_total": sum(received.values())}
 
 
-# ------------------------------------------------------------------ القائمة
-
-
 def _pct(part: Decimal, whole: Decimal) -> str | None:
     return str((part / whole * 100).quantize(Decimal("0.01"))) if whole else None
 
@@ -591,7 +487,6 @@ def build(db: Session, *, branch_id: int | None, date_from: date, date_to: date,
     period = cfg.get("periods", {}).get(period_key(date_from, date_to)) or {}
     excluded_cats = cfg["inventory"].get("exclude_categories") or []
 
-    # --- المبيعات
     rows = _sales_rows(db, branch_id=branch_id, date_from=date_from, date_to=date_to,
                        include_bonus=bool(cfg["sales"].get("include_bonus")))
     cats = cfg["sales"]["categories"]
@@ -614,11 +509,10 @@ def build(db: Session, *, branch_id: int | None, date_from: date, date_to: date,
                             "pct": _pct(unmatched_total, sales_total),
                             "bonus_pct": "0", "bonus_value": "0.00"})
 
-    # --- الحسابات
     moves = _account_movements(db, branch_id=branch_id, date_from=date_from, date_to=date_to,
                                posted_only=posted_only)
     index = _accounts_index(db, branch_id)
-    for acc_id in moves:  # حساب من فرع تاني اتقيّد عليه قيد الفرع (نادر) — مايتوهش
+    for acc_id in moves:
         if acc_id not in index:
             acc = db.get(Account, acc_id)
             if acc is not None:
@@ -655,7 +549,6 @@ def build(db: Session, *, branch_id: int | None, date_from: date, date_to: date,
             ln["amount"] = str(to_money(ln["amount"]))
         return {"lines": lines, "total": str(to_money(total)), "_total": total}
 
-    # --- تكلفة المبيعات
     inv_cfg = cfg["inventory"]
     opening_day = date_from - timedelta(days=1)
     opening_val = inventory_valuation_service.value_at(
@@ -689,14 +582,11 @@ def build(db: Session, *, branch_id: int | None, date_from: date, date_to: date,
     cost_of_sales = direct_materials + sum(mfg.values(), ZERO) + cost_manual_total
     gross_profit = sales_total - cost_of_sales
 
-    # --- المصروفات
     ga = section("ga", "ga")
     other_income = section("other_income", "other_income")
     other_loss = section("other_loss", "other_loss")
-    # من غير بنود: «مصاريف عهده خدمة العملاء» كانت هتتلمّ تحت «م خدمة العملاء» وهي حاجة تانية.
     marketing_ledger = section("marketing", grouped=False)
 
-    # --- البيع والتسويق
     m = cfg["marketing"]
     coupons = coupons_in_period(db, branch_id=branch_id, date_from=date_from, date_to=date_to)
     coupon_unit = D(m.get("coupon_base")) * D(m.get("coupon_base_pct")) / 100
@@ -730,7 +620,6 @@ def build(db: Session, *, branch_id: int | None, date_from: date, date_to: date,
     operating_profit = gross_profit - ga["_total"] - marketing_total
     net_profit = operating_profit + other_income["_total"] - other_loss["_total"]
 
-    # --- المطابقة مع الدفاتر
     recon = {
         "ledger_sales": str(to_money(role_total("sales"))),
         "ledger_sales_returns": str(to_money(role_total("sales_returns"))),

@@ -1,21 +1,3 @@
-"""رفع وعرض مرفقات أي مستند — صور وPDF على الفاتورة والإذن والسند.
-
-نسخة معمّمة من `api/attachments.py` (اللي متسمّرة في المعاينة). **منسوخة مش معاد
-استعمالها** عن قصد: راوتر المعاينات شغّال عند العميل دلوقتي وبيخدم التطبيق، وأي إعادة
-تشكيل فيه عشان يخدم الاتنين كانت هتلمسه — والنسخ هنا أرخص من كسر مسار قايم. نفس
-الحراسات بالظبط والسبب في كل واحدة فيهم مكتوب هناك وهنا: سقف الحجم، الأنواع المسموحة،
-تنضيف اسم الملف، وفحص المسار قبل القراءة.
-
-الشرح الكامل لقرار «جدول واحد بمفتاح (نوع، رقم)» في `src.models.document_attachment`.
-
----------------------------------------------------------------------------
-**والصورة بتتقبل على المستند المرحّل.**
-
-باقي النظام بيقفل الورقة بعد الترحيل — مافيش تعديل، بس عكس — لأن الرقم اللي اتقيّد
-واتخصم من المخزن لازم يفضل زي ما هو. والمرفق **خارج القاعدة دي**: مابيغيّرش كمية ولا
-قيد ولا رصيد، وأصلاً الورق بيتصوّر بعد ما يتوقّع ويترحّل مش قبله. قفله كان هيخلّي
-الميزة مالهاش لازمة.
-"""
 from __future__ import annotations
 
 import importlib
@@ -48,11 +30,8 @@ from src.models.document_attachment import DocumentAttachment
 
 router = APIRouter(tags=["attachments"], prefix="/documents")
 
-# جذر التخزين. جنب الكود عشان يمشي في التطوير من غير إعداد، وجنب مجلد المعاينات بالظبط.
 UPLOAD_ROOT = Path(__file__).resolve().parents[2] / "uploads" / "documents"
 
-# صور + PDF. قبول أي امتداد معناه إن النظام بقى مكان يتخزّن فيه أي ملف من أي حد عنده
-# صلاحية يفتح فاتورة.
 ALLOWED = {
     "image/jpeg": ".jpg",
     "image/png": ".png",
@@ -60,38 +39,20 @@ ALLOWED = {
     "image/heic": ".heic",
     "application/pdf": ".pdf",
 }
-# 12 ميجا — نفس سقف المعاينات. صورة الموبايل بعد التصغير أقل من ده بكتير؛ الحد بيمنع
-# رفع بالغلط يملا القرص.
 MAX_BYTES = 12 * 1024 * 1024
 
 
-#: **القايمة المقبولة — مكان واحد، وهو هنا.**
-#:
-#: المفتاح: اسم المستند الموحّد. أسماء أوراق المخزون مكتوبة بثوابت `StockDoc` مش بنصوص
-#: حرّة — عشان `"stock_permt"` تقع في السطر اللي كاتبها مش في طلب المستخدم.
-#: القيمة: (الموديول، الكلاس، صلاحية **قراءة نفس المستند** زي ما راوتره بيحرسها).
-#:
-#: **وليه القايمة هنا مش في `lib/stock_docs`؟** السجل ده بيمرّ عليه كل حركة مخزون في
-#: النظام وهو شغّال على تلات فروع بيكتبوا فواتير دلوقتي، و`canonical()` هو حارس
-#: `post_movement`: أي اسم بيتضاف هناك بيبقى `source_doc_type` مقبول على صف حركة.
-#: سند القبض واستلام الكوبونات مابيحركوش بضاعة، فإضافتهم هناك كانت هتوسّع حارس حيّ
-#: عشان ميزة مالهاش علاقة بيه. فالسجل بيتقرا منه (`canonical` للأسماء القديمة،
-#: و`StockDoc` للثوابت) **ومابيتكتبش فيه**.
 ATTACHABLE: dict[str, tuple[str, str, str]] = {
     StockDoc.SALE: ("src.models.sales", "SalesInvoice", CAP_SALES_READ),
     StockDoc.SALE_RETURN: ("src.models.sales", "SalesReturn", CAP_SALES_READ),
     StockDoc.PURCHASE: ("src.models.purchasing", "PurchaseInvoice", CAP_STOCK_READ),
     StockDoc.PURCHASE_RETURN: ("src.models.purchasing", "PurchaseReturn", CAP_STOCK_READ),
-    # التحويل بيتقرا بـ`transfer.initiate` — مش `stock.read`. الحارس هنا بيتبع الراوتر
-    # بتاعه مهما كان غريب، عشان المرفق مايفتحش باب المستند ما بيفتحوش.
     StockDoc.TRANSFER: ("src.models.transfer", "StockTransfer", CAP_TRANSFER_INITIATE),
     StockDoc.PERMIT: ("src.models.stock_permit", "StockPermit", CAP_STOCK_READ),
     StockDoc.COUNT: ("src.models.stock_count", "StockCount", CAP_STOCK_READ),
     StockDoc.MANUFACTURING: ("src.models.manufacturing", "ManufacturingOrder",
                              CAP_MANUFACTURE_READ),
     StockDoc.INSPECTION: ("src.models.inspection", "Inspection", CAP_INSPECTION_READ),
-    # ورق مالي مالوش حركة مخزون، فمالوش ثابت في `StockDoc` — الأسماء دي بتتولد هنا
-    # لأول مرة، وده المكان الوحيد اللي بيعرفها.
     "voucher": ("src.models.voucher", "Voucher", CAP_VOUCHER_READ),
     "coupon_receipt": ("src.models.coupon_receipt", "CouponReceipt", CAP_COUPON_RECEIVE),
     "coupon_issue": ("src.models.coupon_issue", "CouponIssue", CAP_COUPON_RECEIVE),
@@ -121,24 +82,12 @@ def _out(a: DocumentAttachment) -> AttachmentOut:
 
 
 def _safe_name(name: str) -> str:
-    """اسم ملف آمن — من غير مسارات ولا محارف غريبة.
-
-    الاسم جاي من المتصفح وبيتحط في مسار. أي فاصل مسار أو `..` جوّاه كان ينفع يخلّي
-    الرفعة تكتب برّه مجلد الرفع خالص.
-    """
     base = Path(name).name
     cleaned = re.sub(r"[^A-Za-z0-9._؀-ۿ -]", "_", base).strip() or "attachment"
     return cleaned[:120]
 
 
 def _resolve(doc_type: str, doc_id: int, current: CurrentUser, db: Session) -> str:
-    """بيرجّع الاسم الموحّد للمستند بعد ما يتأكد إنه مسجّل وموجود وإن اللي طالبه يشوفه.
-
-    تلات فحوص في دالة واحدة عن قصد: الأربع نقاط كلها محتاجاهم بنفس الترتيب، ونسيان
-    واحد فيهم في نقطة واحدة هو بالظبط الثغرة اللي «جدول لكل نوع» كان بيوزّعها.
-    """
-    # الاسم القديم بيتوحّد الأول: الشاشة ممكن تبعت `sale` والداتا كلها على
-    # `sales_invoice`، ومن غير التوحيد ده المرفق بيتكتب على اسم ومايتقراش بالتاني.
     name = stock_docs.canonical(doc_type) or doc_type
     spec = ATTACHABLE.get(name)
     if spec is None:
@@ -151,8 +100,6 @@ def _resolve(doc_type: str, doc_id: int, current: CurrentUser, db: Session) -> s
         raise HTTPException(status.HTTP_403_FORBIDDEN, {
             "code": "forbidden", "message": "مالكش صلاحية على المستند ده."})
 
-    # المستند لازم يكون موجود فعلاً — وإلا الجدول بيتملي صور معلّقة في الهوا على أرقام
-    # محدش هيفتحها. الاستيراد متأخّر عشان الراوتر ما يجرّش تلتاشر موديل وقت الإقلاع.
     model = getattr(importlib.import_module(module_name), class_name)
     if db.get(model, doc_id) is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, {
@@ -172,7 +119,6 @@ async def upload(
 ) -> AttachmentOut:
     name = _resolve(doc_type, doc_id, current, db)
 
-    # إعادة رفع صورة اتخزّنت خلاص بترجّع اللي على الملف بدل نسخة تانية.
     if client_uuid:
         existing = db.scalar(select(DocumentAttachment).where(
             DocumentAttachment.client_uuid == client_uuid))
@@ -192,8 +138,6 @@ async def upload(
     size = 0
     try:
         with stored.open("wb") as out:
-            # بيتقرا على دفعات وبيقف عند الحد: قراءة الرفعة كاملة في الذاكرة الأول
-            # كانت هتخلّي ملف واحد كبير هو اللي بيقرر السيرفر محتاج كام رام.
             while chunk := await file.read(1024 * 1024):
                 size += len(chunk)
                 if size > MAX_BYTES:
@@ -245,13 +189,9 @@ def download(
     if row is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND,
                             {"code": "not_found", "message": "المرفق مش موجود."})
-    # نفس حارس الصلاحية بتاع القايمة: الرابط ده بيتشاف في الـHTML، فلو مااتحرسش كان
-    # أي حد مسجّل دخول يقدر يعدّ الأرقام ويشوف ورق مش بتاعه.
     _resolve(row.doc_type, row.doc_id, current, db)
 
     path = (UPLOAD_ROOT / row.stored_path).resolve()
-    # المسار بتاعنا إحنا، بس الفحص مابيكلّفش حاجة ومعناه إن صف اتعبث فيه مايقدرش
-    # يتقرا بيه ملف تاني من على القرص.
     if not str(path).startswith(str(UPLOAD_ROOT.resolve())) or not path.exists():
         raise HTTPException(status.HTTP_404_NOT_FOUND,
                             {"code": "not_found", "message": "ملف المرفق مش موجود على السيرفر."})
@@ -265,12 +205,6 @@ def remove(
     current: CurrentUser = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> dict:
-    """المسح لصاحب الصورة أو الأدمن — مش لكل حد بيشوف المستند.
-
-    الرفع والقراءة لأي حد بيفتح الورقة، لأن الصورة جزء منها. المسح لأ: اللي حطّ الصورة
-    يقدر يشيلها لو غلط فيها، وغير كده بيبقى قرار مسؤول — وإلا كان أي واحد بيمر على
-    الفاتورة يقدر يمسح إثبات حد تاني.
-    """
     row = db.get(DocumentAttachment, attachment_id)
     if row is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND,

@@ -8,16 +8,6 @@ import 'package:path_provider/path_provider.dart';
 
 import '../theme.dart';
 
-/// مرفقات الزيارة — صورة من الكاميرا أو من المعرض.
-///
-/// Two doors: he photographs the meter on the spot, or picks a shot he already took while walking
-/// back to the car. Attaching an arbitrary FILE is not here yet — the package that does it pulls
-/// androidx versions that need a newer Android build toolchain than this project is on.
-///
-/// **الملف بيتنسخ جوّه التطبيق أول ما يتختار.** What the picker hands back is a path into a cache
-/// the phone is free to empty — a photo taken from the camera often lives in a temporary directory
-/// that is gone by the time the visit syncs. Copying it into the app's own storage means the
-/// attachment is still there tomorrow, which is the whole point of an offline app.
 class AttachmentsField extends StatelessWidget {
   const AttachmentsField({
     super.key,
@@ -26,7 +16,6 @@ class AttachmentsField extends StatelessWidget {
     required this.onRemove,
   });
 
-  /// المرفقات الحالية: كل واحد فيه المسار والاسم.
   final List<AttachmentRef> items;
   final void Function(AttachmentRef added) onAdd;
   final void Function(AttachmentRef removed) onRemove;
@@ -51,9 +40,6 @@ class AttachmentsField extends StatelessWidget {
       case _Source.gallery:
         final shot = await ImagePicker().pickImage(
           source: source == _Source.camera ? ImageSource.camera : ImageSource.gallery,
-          // Full-resolution photos are many megabytes each and every one of them has to travel
-          // over a phone connection later. This is still far more detail than a meter reading or a
-          // damaged fitting needs.
           maxWidth: 1600,
           imageQuality: 80,
         );
@@ -62,15 +48,11 @@ class AttachmentsField extends StatelessWidget {
     }
   }
 
-  /// بينسخ الملف لمخزن التطبيق عشان مايضيعش.
   Future<AttachmentRef> _keep(AttachmentRef picked) async {
-    // On the web there is no file system to copy into; the path the picker returns is a blob URL
-    // that stays valid for the session, which is all the browser can offer anyway.
     if (kIsWeb) return picked;
 
     final dir = Directory(p.join((await getApplicationDocumentsDirectory()).path, 'attachments'));
     if (!dir.existsSync()) dir.createSync(recursive: true);
-    // Stamped so two photos taken in the same minute cannot overwrite each other.
     final stamp = DateTime.now().microsecondsSinceEpoch;
     final target = p.join(dir.path, '$stamp-${p.basename(picked.path)}');
     final copy = await File(picked.path).copy(target);
@@ -130,7 +112,6 @@ class AttachmentsField extends StatelessWidget {
 
 enum _Source { camera, gallery }
 
-/// مرفق واحد.
 class AttachmentRef {
   const AttachmentRef({
     required this.path,
@@ -145,7 +126,6 @@ class AttachmentRef {
   final String? kind;
   final int? bytes;
 
-  /// رقمه في قاعدة البيانات المحلية — بيتحط بعد الحفظ.
   final int? localId;
 
   bool get isImage => kind == 'image';
@@ -199,8 +179,6 @@ class _Thumb extends StatelessWidget {
               ? Image.file(
                   File(item.path),
                   fit: BoxFit.cover,
-                  // A file the phone cleaned up behind us shows as a broken tile rather than
-                  // taking the form down with it.
                   errorBuilder: (_, __, ___) => const _FileTile(),
                 )
               : const _FileTile(),

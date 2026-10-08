@@ -1,20 +1,3 @@
-/*
- * «ألوان واضحة / خط أكبر» — كل اللي تحت ده شغّال بس لما `<html class="theme-hc">`.
- *
- * المفتاح والسبب في `components/ContrastTheme.tsx`. الملف ده بيتحمّل بعد `index.css`
- * (شوف `main.tsx`)، وكل سِلِكْتور مبدوء بـ`html.theme-hc` — فبيغلب قواعد `index.css`
- * وملفات الشاشات بالقوة مش بالترتيب، من غير ما نلمس ولا قاعدة في الشكل العادي.
- *
- * تلات حاجات بيغيّرها، بالترتيب ده في الأهمية:
- * 1. **الشبكة.** كل خانة في أي جدول ليها حد مصمت غامق من كل ناحية — زي الإكسل بالظبط.
- *    الخط الفاتح بتاع الشكل العادي معمول عشان مايشدّش العين؛ هنا العكس: العين محتاجة
- *    حاجة تمسكها.
- * 2. **الكلام.** أسود على أبيض، والرمادي الفاتح والأخضر الفاتح والبرتقالي (اللي تباينهم
- *    على الأبيض ٢ : ١) اتغمّقوا لحد ما بقوا بيتقروا.
- * 3. **الحجم.** خط ١٨ للنظام و١٧ للجداول، وصف أطول، وخانات أعلى.
- */
-
-/* ---------------------------------------------------------------- الأساس */
 html.theme-hc,
 html.theme-hc body,
 html.theme-hc #root {
@@ -23,7 +6,6 @@ html.theme-hc #root {
   background-color: #eceeec;
 }
 
-/* عناوين الحقول والإحصائيات — كانت #303030، هنا أسود. */
 html.theme-hc .ant-form-item-label > label,
 html.theme-hc .ant-descriptions-item-label,
 html.theme-hc .ant-statistic-title,
@@ -32,11 +14,6 @@ html.theme-hc .ant-typography.ant-typography-secondary {
   color: #1a1a1a !important;
 }
 
-/* ---------------------------------------------------------------- جداول antd */
-/*
- * الحدود: كل خانة خط تحتها وخط على نهايتها — **ومن غير استثنا لآخر عمود**؛ والحاوية
- * بتقفل فوق وعلى أول ناحية. كده كل خانة مقفولة من الأربع جهات بخط واحد مش خطين.
- */
 html.theme-hc .ant-table-wrapper .ant-table-container {
   border-top: 1px solid #595959;
   border-inline-start: 1px solid #595959;
@@ -55,11 +32,6 @@ html.theme-hc .ant-table-wrapper .ant-table-summary > tr > th {
   border-bottom: 1px solid #737373 !important;
   color: #000;
 }
-/*
- * الرأس: رمادي مخضّر أغمق من الجسم، كلام أسود تقيل، وخط أسود تحته. `!important` عشان
- * يغلب `color: #303030 !important` بتاع `index.css` والرأس الكحلي بتاع جداول المستندات —
- * في الشكل ده كل الرؤوس شكل واحد، فاللي بيتنقّل بين الشاشات مايتلخبطش.
- */
 html.theme-hc .ant-table-wrapper .ant-table-thead > tr > th {
   background: #d6dfd2 !important;
   color: #000 !important;
@@ -84,7 +56,6 @@ html.theme-hc .ant-table-wrapper .ant-table-summary > tr > th {
   border-top: 2px solid #1a1a1a;
 }
 
-/* الصف تحت الماوس والصف المختار — فرق واضح عن الأبيض، والمختار بخط على أوله. */
 html.theme-hc .ant-table-wrapper .ant-table-tbody > tr.ant-table-row:hover > td,
 html.theme-hc .ant-table-wrapper .ant-table-tbody > tr > td.ant-table-cell-row-hover {
   background: #e3efdb;
@@ -98,8 +69,6 @@ html.theme-hc .ant-table-wrapper .ant-table-tbody > tr.ant-table-row-selected > 
 html.theme-hc .ant-table-wrapper .ant-table-tbody > tr.ant-table-row-selected:hover > td {
   background: #bcdca2;
 }
-/* السطر اللي الكيبورد واقف عليه: أزرق أغمق وشريط أعرض — «انت هنا» لازم يتشاف من بعيد. */
-/* خط فوق وتحت على كل خانات السطر (مش شريط على جنب كل خانة) — بيرسم إطار حوالين السطر كله. */
 html.theme-hc .row-cursor > td {
   background: #cfe2ff !important;
   box-shadow: inset 0 2px 0 #0b4fd6, inset 0 -2px 0 #0b4fd6;
@@ -112,7 +81,6 @@ html.theme-hc .row-muted > td {
   color: #333 !important;
 }
 
-/* ارتفاع الصف أكبر في الثلاث درجات — الخط كبر، فالحشو يكبر معاه عشان السطور ماتلزقش. */
 html.theme-hc[data-density='compact'] .ant-table-tbody > tr > td,
 html.theme-hc[data-density='compact'] .ant-table-thead > tr > th {
   padding: 4px 8px !important;
@@ -126,8 +94,6 @@ html.theme-hc[data-density='comfortable'] .ant-table-thead > tr > th {
   padding: 16px 12px !important;
 }
 
-/* ---------------------------------------------------------------- جداول الإدخال */
-/* `.entry-grid` (سطور المستندات) و`.sale-grid` (فاتورة البيع) — نفس الشبكة ونفس الرأس. */
 html.theme-hc .entry-grid {
   font-size: 17px;
   color: #000;
@@ -167,14 +133,12 @@ html.theme-hc .entry-grid tbody tr:focus-within td,
 html.theme-hc .sale-doc .sale-grid tbody tr:focus-within td {
   background: #dcecff;
 }
-/* سطر الفئة جوّه الفاتورة — خط أخضر غامق تخين بدل الفاتح، والكلام أسود. */
 html.theme-hc .sale-doc .sale-grid .sale-group-row td {
   background: #e9eee6;
   border-top: 2px solid #356F18 !important;
   color: #000;
   font-weight: 800;
 }
-/* الخانات جوّه الجدول — أطول وخطها أكبر (كانت ٣٠ بيكسل و١٥). */
 html.theme-hc .entry-grid .ant-input-number,
 html.theme-hc .entry-grid .ant-select-selector,
 html.theme-hc .entry-grid .ant-input {
@@ -198,7 +162,6 @@ html.theme-hc .entry-grid .ant-btn {
   line-height: 34px !important;
 }
 
-/* ---------------------------------------------------------------- قوايم الشاشات */
 html.theme-hc .list-page .sl-table .ant-table-thead > tr > th {
   font-size: 17px;
 }
@@ -214,7 +177,6 @@ html.theme-hc .list-page .sl-title-muted {
   color: #1a1a1a !important;
 }
 
-/* ---------------------------------------------------------------- الخانات والأزرار */
 html.theme-hc .ant-input,
 html.theme-hc .ant-input-affix-wrapper,
 html.theme-hc .ant-input-number,
@@ -222,11 +184,9 @@ html.theme-hc .ant-picker,
 html.theme-hc .ant-select:not(.ant-select-customize-input) .ant-select-selector {
   border-color: #595959;
 }
-/* خانة التاريخ ليها حد فاتح بـ`!important` في `index.css`، فلازم `!important` يغلبه. */
 html.theme-hc .ant-picker {
   border-color: #595959 !important;
 }
-/* المقفول لسه بيتقري — بيقول «مش هتقدر تغيّره»، مش «مافيش حاجة هنا». */
 html.theme-hc .ant-input[disabled],
 html.theme-hc .ant-input-disabled,
 html.theme-hc .ant-input-affix-wrapper-disabled .ant-input,
@@ -243,7 +203,6 @@ html.theme-hc .ant-picker-input > input::placeholder,
 html.theme-hc .ant-select-selection-placeholder {
   color: #595959 !important;
 }
-/* التركيز من الكيبورد — إطار أزرق عريض مايتوهش. */
 html.theme-hc .ant-btn:focus-visible,
 html.theme-hc a:focus-visible,
 html.theme-hc .list-page .sl-tab:focus-visible,
@@ -252,20 +211,11 @@ html.theme-hc .ant-menu-item:focus-visible {
   outline-offset: 2px;
 }
 
-/* التاجات: الكلام أسود والحدّ أغمق؛ لون الخلفية بتاع الحالة فاضل يقول «اتعمل / مستني / ملغي». */
 html.theme-hc .ant-tag:not(.ant-tag-has-color) {
   color: #000 !important;
   border-color: rgba(0, 0, 0, 0.5) !important;
 }
 
-/* ---------------------------------------------------------------- ألوان مكتوبة جوّه الشاشات */
-/*
- * فيه مئات `style={{ color: '#888' }}` وأخواتها في الشاشات (٧٣ مرة #888 لوحدها) — ملاحظات
- * صغيرة وأرقام ثانوية وعناوين فرعية. React بيكتبها في الـattribute كـ`rgb(...)`، فبنمسكها
- * من هنا بدل ما نعدّل ٣٠٠ مكان: الرمادي الفاتح يبقى غامق، والأخضر/البرتقالي/الأحمر
- * الفاتحين يبقوا الدرجة الغامقة من نفس اللون (المعنى فاضل، والتباين فوق ٤٫٥ : ١).
- * `^=` و`; color` بدل `*=` عشان مانمسكش `background-color` ولا `border-color`.
- */
 html.theme-hc [style^="color: rgb(136, 136, 136)"], html.theme-hc [style*="; color: rgb(136, 136, 136)"],
 html.theme-hc [style^="color: rgb(107, 107, 107)"], html.theme-hc [style*="; color: rgb(107, 107, 107)"],
 html.theme-hc [style^="color: rgb(140, 140, 140)"], html.theme-hc [style*="; color: rgb(140, 140, 140)"],

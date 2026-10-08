@@ -1,15 +1,3 @@
-"""يظبط باسورد يوزر موجود — للحساب اللي اتنسي باسورده ومافيش أدمن تاني يدخل يغيّرها.
-
-    python -m src.scripts.reset_user_password admin            # عرض فقط
-    python -m src.scripts.reset_user_password admin --yes
-
-**الباسورد مش مكتوبة هنا ولا بتتاخد من سطر الأوامر.** السكربت بيولّد واحدة عشوائية
-ويطبعها مرة واحدة، واللي بيشغّله ينقلها ويغيّرها من شاشة المستخدمين. باسورد ثابتة في
-سكربت معناها إن أي حد فتح المستودع بقى عنده الحساب، وباسورد في سطر الأوامر بتفضل في
-`~/.bash_history` على السيرفر.
-
-والتغيير بيتسجّل في الـaudit زي أي تغيير على حساب — مين غيّرها وإمتى.
-"""
 from __future__ import annotations
 
 import argparse
@@ -24,8 +12,6 @@ from src.core.security import hash_password
 from src.models.role import Role
 from src.models.user import User
 
-# حروف وأرقام بس — بتتكتب بالإيد مرة واحدة، والرموز اللي شكلها بيختلف بين الكيبوردات
-# بتضيّع الوقت من غير ما تزوّد أمان يُذكر.
 _ALPHABET = string.ascii_letters + string.digits
 
 

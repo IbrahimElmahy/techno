@@ -6,7 +6,6 @@ import '../theme.dart';
 import '../utils/format.dart';
 import '../widgets/supervisor_widgets.dart';
 
-/// مستند مندوب بسطوره — فاتورة، مرتجع، أو تحويل. للقراءة بس.
 class RepDocumentScreen extends StatefulWidget {
   const RepDocumentScreen({
     super.key,
@@ -20,7 +19,6 @@ class RepDocumentScreen extends StatefulWidget {
   final ActivityKind kind;
   final int id;
 
-  /// الكارت اللي اتضغط عليه — بيترسم فوراً لحد ما السطور توصل.
   final SupActivity? preview;
 
   @override
@@ -260,8 +258,6 @@ class _RepDocumentScreenState extends State<RepDocumentScreen> {
     final priced = d.lines.where((l) => l.lineTotal != null).toList();
     final sum = priced.fold<double>(0, (a, l) => a + (l.lineTotal ?? 0));
     final amount = d.header.amount;
-    // الفرق بين مجموع السطور وإجمالي المستند = خصم على الفاتورة كلها. بيتقال صريح
-    // عشان المشرف مايحسبش ويلاقي رقمين مختلفين من غير تفسير.
     final diff = amount == null || priced.isEmpty ? 0.0 : sum - amount;
     Widget line(String label, String value, {Color? color, bool big = false}) => Padding(
           padding: const EdgeInsets.symmetric(vertical: 4),

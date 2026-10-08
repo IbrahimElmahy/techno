@@ -1,7 +1,3 @@
-"""Owners router (015-aftersales-owners) — الملّاك (أصحاب البيوت).
-
-ملّاك المعاينات منفصلون عن العملاء الماليين؛ الشركة لا تبيع لهم ولا تحاسبهم.
-"""
 from __future__ import annotations
 
 from datetime import date, datetime
@@ -27,8 +23,6 @@ router = APIRouter(tags=["owners"], prefix="/owners")
 class OwnerIn(BaseModel):
     name: str = Field(min_length=1, max_length=160)
     phone: str | None = Field(default=None, max_length=32)
-    # الرقم التاني — **بيترجع زي الأول.** كان متخزّن ومش بيترجع خالص، فالخانة اللي
-    # اتعملت عشان «خدمة العملاء ماتفضلش ترنّ على رقم واحد لو مردّش» ماكانش حد شايفها.
     phone2: str | None = Field(default=None, max_length=32)
     national_id: str | None = Field(default=None, max_length=32)
     address: str | None = Field(default=None, max_length=255)
@@ -92,15 +86,6 @@ class OwnerDetail(OwnerListItem):
 
 
 def _seen_owner(db: Session, owner_id: int, current: CurrentUser) -> Owner:
-    """المالك لو اللي بيسأل يشوفه — و**٤٠٤ لو لأ**.
-
-    `branch_id` على المسار ده كان **فلتر بيبعته اللي بينده**، مش عزل: مالوش أي علاقة
-    بفرع اللي بيقرا. والتطبيق بيسحب `/owners` كامل على الجهاز، يعني مندوب أي فرع
-    بيحمّل ملاك الشركة كلهم بأسمائهم وتليفوناتهم وعناوينهم.
-
-    كل الملاك دلوقتي فرع واحد (العلياء بتعمل المعاينات لوحدها)، فمافيش تسريب واقع
-    النهارده — بس المسار مفتوح، وأول معاينة في فرع تاني بتفتحه.
-    """
     owner = db.scalar(branch_scope.scope(
         select(Owner).where(Owner.id == owner_id), Owner, current))
     if owner is None:
@@ -122,7 +107,6 @@ def list_owners(
     current: CurrentUser = Depends(require_capability(CAP_INSPECTION_READ)),
     db: Session = Depends(get_db),
 ) -> list[OwnerListItem]:
-    # Aggregated query for inspection count and last inspection date
     insp_subq = (
         select(
             Inspection.owner_id.label("owner_id"),
@@ -142,7 +126,6 @@ def list_owners(
         )
         .outerjoin(insp_subq, Owner.id == insp_subq.c.owner_id)
     )
-    # `branch_id` تحت فلتر بيبعته اللي بينده؛ ده العزل.
     stmt = branch_scope.scope(stmt, Owner, current)
 
     if search:
@@ -156,8 +139,6 @@ def list_owners(
                 Owner.address.ilike(q),
             )
         )
-    # التطبيق بيسحب الملّاك كلهم لخانة المالك في المعاينة — الموقوف مايتعرضش هناك.
-    # شاشة الملّاك في الويب بتفضل شايفاه عشان ترجّعه. شوف `client_app`.
     if is_mobile_app(request):
         stmt = stmt.where(Owner.active.is_(True))
     if territory_id is not None:
@@ -268,7 +249,6 @@ def create_owner(
         floor_number=body.floor_number.strip() if body.floor_number else None,
         notes=body.notes.strip() if body.notes else None,
         territory_id=body.territory_id,
-        # فرع اللي بيكتب — من غير كده المالك بيتكتب من غير فرع ويبان لكل الفروع.
         branch_id=(body.branch_id
                    if branch_scope.visible_branch_id(current) is None
                    else branch_scope.visible_branch_id(current)),

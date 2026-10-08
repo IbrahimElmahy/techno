@@ -1,7 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useIsFactoryBranch } from '../components/useFactoryBranch';
-// **باسم مستعار عن قصد.** الملف ده عنده `PAGE_SIZE` بمعنى تاني خالص —
-// حد الجلب من الـAPI، مش عدد صفوف الجدول.
 import { PAGE_SIZE as TABLE_PAGE_SIZE, PAGE_SIZE_OPTIONS }
   from '../utils/pagination';
 import { searchFilter, searchRank, sortByName } from '../utils/arabicSort';
@@ -10,7 +8,6 @@ import {
   Alert, Button, Card, Col, DatePicker, Descriptions, Divider, Empty, Form, Input, Modal, Result, Row, Segmented, Select, Space, Spin, Tag,
   Tooltip, Typography, message,
 } from 'antd';
-// فلتر على كل عمود — شوف `FilterTable`.
 import { FilterTable as Table } from '../components/FilterTable';
 import { InputNumber } from '../components/NumberInput';
 import { Popconfirm } from '../components/noConfirm';
@@ -65,7 +62,6 @@ import { applyPct, combinePct } from '../utils/discounts';
 import { QTY_DATA_ATTR } from '../utils/duplicateItem';
 import { addPickedSequentially, type PickResult } from '../utils/pickMany';
 
-// الأنواع والثوابت وبنّائي الأعمدة اتفصلوا — الشاشة كانت ٣١٢٠ سطر.
 import {
   CAP_NOTICE_MS, PAGE_SIZE, FAMILY_OPTIONS, TIER_LABELS, couponCount, blankCoupon,
   InvoiceRecord, ItemPrices, Customer, RepEmployee, Product, Warehouse, SaleLineItem,
@@ -73,7 +69,6 @@ import {
 } from './invoices/types';
 import { afterFixedOf, buildLineColumns } from './invoices/lineColumns';
 import { buildRegisterColumns } from './invoices/registerColumns';
-// سند القبض بيتعمل من شريحة «سندات القبض» هنا — نفس بوباب شاشة السندات، مش نسخة منه.
 import ReceiptModal from './vouchers/ReceiptModal';
 import { useQuickVoucher, fetchVoucher, type EditableVoucher } from './vouchers/useQuickVoucher';
 import { useRegisterReceipts } from './invoices/useRegisterReceipts';
@@ -82,8 +77,6 @@ import ListPage, { ListStat } from '../components/ListPage';
 import { useQueryTab } from '../components/useQueryTab';
 import { repOptions } from '../utils/reps';
 import { activeOptions } from '../utils/active';
-/** رقم فريد للمستند (`client_uuid`). `randomUUID` مش موجود خارج https، فالبديل عشوائي كفاية. */
-// المرتجع الجديد بيتفتح جوّه السجل (`embedded`) — كسول عشان مايتحمّلش مع كل فاتورة.
 const ReturnsScreen = React.lazy(() => import('./Returns'));
 
 const newUuid = (): string =>
@@ -92,30 +85,13 @@ const newUuid = (): string =>
 
 export default function Invoices() {
   const { options: categoryOptions } = useLookup('item_category');
-  // فئات الورق اللي بيتسلّم للعميل. مصدر واحد: قائمة «فئات الكوبونات» في الإعدادات.
   const { options: couponKindOptions } = useLookup('coupon_kind');
-  /**
-   * **فرع المصنع مافيهوش كوبونات ولا نقاط ولا خط.**
-   *
-   * الكوبونات والنقاط والخط (أبيض/بولي) أدوات بيع التجزئة للتجار. المصنع بيبيع خام
-   * وتشغيل لجهات، فالخانات دي بتفضل فاضية على كل ورقة — بتاخد مكان وبتخلّي اللي
-   * بيكتب يعدّي عليها كل مرة عشان يتأكد إنها مش مطلوبة. الشرح في `useFactoryBranch`.
-   */
   const isFactory = useIsFactoryBranch();
   const categoryLabels = labelMap(categoryOptions);
   const navigate = useNavigate();
   const [filters, setFilters] = useState<InvoiceFilters>({});
   const [search, setSearch] = useState('');
-  // خانة «البيان» — بيتبعت للسيرفر مع Enter بس، مش مع كل حرف.
   const [stmtText, setStmtText] = useState('');
-  /**
-   * خانة البحث في السجل — عشان زرار «بحث» يوصلها.
-   *
-   * الزرار في شريط المستند المعروض كان بيقفل المعاينة وبس. ده بيوصّلك للسجل فعلاً، بس
-   * الزرار مكتوب عليه «بحث» ومعاه F3، واللي بيدوسه بيستنى خانة تستنى كتابة — فبيلاقي
-   * نفسه في قايمة والمؤشر مش في حتة. القفل بيفضل جزء من الحركة، والفرق إن المؤشر
-   * بينتهي في الخانة.
-   */
   const listSearchRef = useRef<any>(null);
   const [invoices, setInvoices] = useState<InvoiceRecord[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
@@ -123,144 +99,62 @@ export default function Invoices() {
   const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
   const [employees, setEmployees] = useState<RepEmployee[]>([]);
   const [reps, setReps] = useState<{ id: number; full_name: string }[]>([]);
-  // Only to put a NAME on «الحساب الفرعي» in the list — the id alone tells a reader nothing.
   const [postingAccounts, setPostingAccounts] = useState<any[]>([]);
-  // مفاتيح الطباعة — read once from the browser they are saved in, and passed to every print
-  // from this screen so the switches and the paper never disagree.
   const [printOpts, setPrintOpts] = useState<PrintOptions>(loadPrintOptions);
-  // Only to NAME the branch on the printed head — the customer carries its id.
   const [branches, setBranches] = useState<{ id: number; name: string }[]>([]);
   const [pointValues, setPointValues] = useState<Record<number, number>>({});
   const [loading, setLoading] = useState(false);
 
-  // Drawers
   const [createVisible, setCreateVisible] = useState(false);
-  /** فاتورة بتتجاب عشان تتفتح — مكان الكشف بيفضل فاضي لحد ما توصل (`DocOpening`). */
   const [docOpening, setDocOpening] = useState(false);
   const [viewOnly, setViewOnly] = useState(false);
-  /** عدّاد بيتزوّد مع كل تغيير في حقول `Form` — حقول antd مش state، فالـ`useMemo`
-   *  اللي بيبني حمولة المسودّة مايشوفش تغيّرها من غيره: العميل يتغيّر والمسودّة تفضل
-   *  على اللي قبله. */
   const [formTick, setFormTick] = useState(0);
-  /**
-   * **بوباب «تحميل»: فترة، والأسهم بتمشي جوّاها.**
-   *
-   * الزرار كان بيعمل حاجة واحدة — يعيد تحميل المستند المفتوح. واللي بيراجع شهر
-   * كامل مالوش طريقة يقول «وَرّيني فواتير سبتمبر وأنا أعدّي عليها»: لازم يرجع
-   * للكشف، يظبّط الفلتر، يفتح أول واحدة، وكل مرة يرجع تاني.
-   *
-   * دلوقت بيسأل عن فترة، بيحمّلها في نفس القايمة اللي «السابق» و«التالى»
-   * بيمشوا عليها (`invoices`)، وبيفتح أول فاتورة فيها — فالتنقل بيبقى جوّه
-   * الفترة اللي اتطلبت.
-   */
   const [loadRangeOpen, setLoadRangeOpen] = useState(false);
-  /**
-   * **نتيجة «تحميل» بتفضل قدامك ككشف، مش بتفتح أول فاتورة وتختفي.**
-   *
-   * كانت بتقفل الشباك وتفتح أول فاتورة في الفترة، واللي بيدوّر على فاتورة بعينها
-   * بيلاقي نفسه جوّه واحدة تانية ولازم يضرب «التالى» عشرين مرة. الكشف ده هو
-   * اللي هو سأل عنه: فواتير الفترة، بيدوس على اللي عايزه.
-   */
   const [periodRows, setPeriodRows] = useState<any[] | null>(null);
 
-  // Standalone invoice detail/view (separate from the return wizard)
-  // Each user hides the columns they never read; the choice is theirs alone and per screen.
-  // All of their columns exist; these start hidden. A sales list is read for «who, when, how much,
-  // how much is still owed» — the paper trail and the two expense figures are there when a question
-  // needs them, and «حدد الأعمدة» turns any of them on for good.
-  // الافتراضي على تصميم العميل (٢٠٢٦-١٠-٠١): رقم · مستند رقم · إجمالي قبل · خصم% ظاهرين؛
-  // الحساب الفرعي وقيمة الخصم والكوبونات والتحصيل والملاحظات من «الأعمدة» لما تتطلب.
-  // (اللي ظبط أعمدته قبل كده اختياره المحفوظ هو اللي بيمشي.)
   const invoiceCols = useHiddenColumns('invoices-list', [
     'revenue_account_id', 'discount_value', 'coupons', 'payment_state', 'notes',
   ]);
   const [viewInvoice, setViewInvoice] = useState<any>(null);
   const [viewReturns, setViewReturns] = useState<any[]>([]);
   const [editingInvoice, setEditingInvoice] = useState<{ id: number; voided: boolean } | null>(null);
-  // بصمة المستند لحظة ما اتفتح للتعديل — المرجع اللي «اتغيّر ولا لأ؟» بيتقاس عليه.
   const [openedFingerprint, setOpenedFingerprint] = useState<string | null>(null);
-  // الخزنة المكتوبة على الفاتورة اللي اتفتحت للتعديل — بتتحط جاهزة في بوباب الخزنة
-  // بدل ما يسأل من الأول. `null` للفاتورة الجديدة.
   const [docCashAccountId, setDocCashAccountId] = useState<number | null>(null);
 
-  // Forms
   const [createForm] = Form.useForm();
 
-  // Create invoice dynamic lines
   const blankLine = (key: string, tier: string | null = null): SaleLineItem => ({
     key, category: null, item_id: null, quantity: null, unit_price: 0, tier, unit: null,
     serials: '', fixed_discount: 0, variable_discount: null, warehouse_id: null,
   });
   const [lines, setLines] = useState<SaleLineItem[]>([]);
-  // Cache of each item's tier prices, so the line price follows the chosen tier (matches backend).
-  /**
-   * أسعار الصنف — وخصوماته كمان.
-   *
-   * `discounts` مش زيادة: خصم الصنف في النظام ده متسجّل **لكل فئة سعر** (شاشة الأصناف
-   * فيها عمود خصم جنب كل فئة). الكاش كان بياخد السعر ويرمي الخصم، فالخصم اللي حد قعد
-   * كتبه في الشاشة دي مكانش بيوصل الفاتورة لا عرضاً ولا حساباً.
-   */
   const [pricesCache, setPricesCache] = useState<Record<number, ItemPrices>>({});
   const [unitsCache, setUnitsCache] = useState<Record<number, ItemUnit[]>>({});
   const [customerTier, setCustomerTier] = useState<string | null>(null);
   const [selectedCustomerId, setSelectedCustomerId] = useState<number | null>(null);
   const [customerBalance, setCustomerBalance] = useState<number | null>(null);
-  /**
-   * حسابات العميل — واحد لكل خط منتجات.
-   *
-   * A customer the client sells both lines to holds two receivable accounts at two commissions.
-   * The invoice has to say which one it is on, because that is the balance it moves.
-   */
   const [familyAccounts, setFamilyAccounts] = useState<
     { family: string | null; balance: string }[]>([]);
   const [invoiceFamily, setInvoiceFamily] = useState<string | null>(null);
-  // الخطين دايماً بيتعرضوا — مش الموجود بس.
-  //
-  // العميل اللي عنده حساب «بولي» بس كان بيتعرض بسطر عام «حساب سابق على العميل»، فالرقم
-  // بيبان من غير ما يقول هو على أنهي خط؛ واللي بيبص بيسأل «طب دي مديونية إيه؟». والخط
-  // اللي مالوش حساب رصيده **صفر** — ودي جملة صحيحة عن الفلوس، مش سطر ناقص.
   const FAMILIES = ['أبيض', 'بولي'];
   const families = FAMILIES.map((f) => ({
     family: f,
     balance: familyAccounts.find((a) => a.family === f)?.balance ?? '0',
   })).concat(familyAccounts.filter(
     (a) => a.family && !FAMILIES.includes(a.family)) as { family: string; balance: string }[]);
-  // Coupons already issued to this customer and not yet redeemed — the counter reads out their
-  // serial range when handing them over.
   const [customerCoupons, setCustomerCoupons] = useState<any[]>([]);
-  // The item the side stock panel is showing. Follows whatever the user last touched — the
-  // product they picked, or a line they clicked — so the panel answers the question they are
-  // asking right now without them having to ask it twice.
   const [panelItemId, setPanelItemId] = useState<number | null>(null);
 
-  /**
-   * اعدادات الأعمدة لسطور الفاتورة.
-   *
-   * The grid has to serve a salesman who only wants «الصنف · الكمية · السعر» and a manager who
-   * wants the discounts and the points. Rather than argue about which columns are the right ones,
-   * each person turns off the ones they never read — the same per-browser preference the registers
-   * already use.
-   *
-   * الصنف · الكمية · الإجمالي are locked: a line without them is not a line you can check.
-   */
-  // Asked of the server's capability list, not of a role name copied into this file. Reopening
-  // and voiding a posted invoice are separate rights from writing one, and the endpoint enforces
-  // exactly these two strings — so the button and the gate cannot come to disagree.
   const { can, user } = useAuth();
   const canEditInvoice = can('sale.edit');
   const canBonus = can('sale.bonus');
-  // زرار «مرتجع بيع جديد» في السجل — نفس الصلاحية اللي شاشة المرتجعات بتسألها.
   const canWriteReturn = can('return.write');
-  // بوباب الخزنة قبل الحفظ. المندوب مابيتسألش — صندوق خطه بيتحدد لوحده (أمر ٠٠٩ بند ٥)،
-  // والسؤال هنا للمكتب اللي قدامه أكتر من صندوق.
   const { ask: askTreasury, gateProps: treasuryGate } = useTreasuryGate(
     user?.role !== 'sales_rep');
   const canDeleteInvoice = can('sale.delete');
 
 
   const [couponRows, setCouponRows] = useState<CouponRow[]>(() => [blankCoupon()]);
-  // عهدة الكوبونات بتاعة مندوب الفاتورة — **تلميح بس**. السيرفر هو اللي بيرفض أرقام مش
-  // في عهدته؛ ده عشان اللي بيكتب يشوف الأرقام المتاحة قبل ما يحفظ ويترفض، مش بعدها.
   const invoiceRepId = Form.useWatch('rep_id', createForm) as number | undefined;
   const [repCustody, setRepCustody] = useState<
     { coupon_kind: string; available: number; ranges: string[][] }[]>([]);
@@ -272,72 +166,25 @@ export default function Invoices() {
       .catch(() => { if (alive) setRepCustody([]); });
     return () => { alive = false; };
   }, [invoiceRepId]);
-  // The day the sale happened, asked for before the form opens. It is not always today — a rep
-  // comes back from a round, a branch catches up on a backlog — and it dates the ledger entry
-  // as well as the document, so it has to be settled before anything is typed rather than
-  // remembered at the end.
-  // Keyboard path for a fast counter: pick product -> land in its quantity -> Enter -> back to
-  // the product picker for the next one. Without it the salesman reaches for the mouse between
-  // every single line, which is most of what makes entering a twenty-line invoice slow.
   const qtyRefs = useRef<Record<string, any>>({});
   const [pickerOpen, setPickerOpen] = useState(false);
-  // A document arriving from somewhere else — a customer's file, an item's history, a report.
-  // The link carries only the intent; the acting lives here, where it already is and where it is
-  // already guarded, so no second screen learns how to reverse an invoice.
   const [searchParams, setSearchParams] = useSearchParams();
-  // بارامترات **التبويب ده** — مش `window.location` اللي بتاع التبويب الظاهر. والشاشة
-  // المخفية مابتكتبش في العنوان خالص: `setSearchParams` منها بيشدّ المستخدم لهنا.
   const paramsRef = useRef(searchParams);
   paramsRef.current = searchParams;
   const onScreen = useOnScreen();
   const onScreenRef = useRef(onScreen);
   onScreenRef.current = onScreen;
-  // الفاتورة جاية من شاشة تانية (`ret`) ⇒ «رجوع» يرجّع لها. الشرح في `docReturn.ts`.
   const docReturn = useDocReturn();
   const openDoc = useOpenDocument();
   const [focusLineKey, setFocusLineKey] = useState<string | null>(null);
 
   const [invoiceDate, setInvoiceDate] = useState<any>(dayjs());
-  // On-hand per WAREHOUSE per item: `{ [warehouseId]: { [itemId]: qty } }`. Since 030 each line may
-  // be served from a different warehouse, so a single item-keyed map would answer the wrong
-  // question. Stock can never go negative, so the form shows what is available and caps the
-  // quantity rather than letting the user build a basket the server will refuse.
   const [availability, setAvailability] = useState<Record<number, Record<number, number>>>({});
-  /** رقم الفاتورة المفتوحة للتعديل — بضاعتها بترجع للرصيد وقت العرض. الشرح في
-   *  `loadWarehouseStock`. `ref` مش `state` عشان الدالة بتتنده في نفس اللفّة اللي
-   *  بتتفتح فيها الفاتورة، قبل ما أي `setState` توصل. */
   const excludeDocRef = useRef<number | null>(null);
-  // (030) the party picker + what it filled into the document header
   const [partyPickerOpen, setPartyPickerOpen] = useState(false);
-  /**
-   * Opening a sale is a sequence of doors, one question behind each: التاريخ، then العميل، and
-   * then the invoice itself.
-   *
-   * The store used to be a third door and is not any more: it follows from the customer — his rep,
-   * and the rep's van — so asking was asking a question whose answer was already on screen. It is
-   * still a field on the document, changeable when the goods really do leave from somewhere else.
-   *
-   * Asked one at a time rather than on one crowded dialog because that is how the person doing it
-   * thinks — each answer is settled and gone before the next is put. It also means every step can
-   * be answered with Enter and nothing else, which is the point of the whole keyboard pass: from
-   * the button to the first product without touching the mouse.
-   */
-  /**
-   * وبعد العميل بابين كمان: **المخزن** وبعده **نوع الفاتورة**.
-   *
-   * الاتنين كانوا خانتين في الترويسة بيتعدّى عليهم اللي مستعجل من غير ما يملاهم — والمخزن
-   * من غير إجابة معناه إن كل سطر بيقرا متاح صفر، ونوع الفاتورة من غير إجابة معناه فاتورة
-   * مش على خط. فبقوا سؤالين لازم يتقفلوا قبل أول سطر، زي التاريخ والعميل بالظبط.
-   *
-   * الخانتين في الترويسة زي ما هما وبيتغيّروا في أي وقت بعد كده — الباب بيسأل مرة، مش بيقفل
-   * على حد. و«رجوع» في كل باب بيرجّع للسؤال اللي قبله، فاللي جاوب غلط مايبقاش محبوس.
-   */
   const [newStep, setNewStep] = useState<null | 'date' | 'party' | 'warehouse' | 'family'>(null);
   const [party, setParty] = useState<Party | null>(null);
-  // The document's warehouse — the default every line falls back to when it has none of its own.
   const [docWarehouseId, setDocWarehouseId] = useState<number | null>(null);
-  // أقل سعر بيع للوحدة الأساسية = تكلفة الصنف (متوسط الشرا) — للتحذير بس، الرقم مابيتعرضش.
-  // التكلفة واحدة في كل المخازن، وبتتجدد مع تغيير المخزن (طلب رخيص). السيرفر هو الحكم.
   const [minPrices, setMinPrices] = useState<Record<number, number>>({});
   const [canSellBelowCost, setCanSellBelowCost] = useState(false);
   useEffect(() => {
@@ -348,101 +195,53 @@ export default function Invoices() {
       Object.entries(r.data?.min_prices || {}).forEach(([k, v]) => { out[Number(k)] = Number(v); });
       setMinPrices(out);
       setCanSellBelowCost(!!r.data?.can_sell_below_cost);
-    }).catch(() => { /* من غيرها مافيش تحذير — السيرفر لسه بيرفض */ });
+    }).catch(() => {});
     return () => { alive = false; };
   }, [docWarehouseId]);
-  /**
-   * نفس القيمة، بس مقروءة في نفس اللحظة.
-   *
-   * الـEnter اللي بيختار المخزن من القايمة بيطلع لحارس الباب في **نفس** الحدث — قبل أي رندر —
-   * فالحارس لو قرا الـstate هيلاقيها لسه فاضية ويسيب المستخدم يدوس Enter مرتين على غير لزوم.
-   * الـref بتتكتب جوّه `onChange` نفسه، فالحارس بيقرا اللي المستخدم لسه مختاره.
-   */
   const doorWarehouseRef = useRef<number | null>(null);
-  // **الحفظ مرة واحدة.** ضغطتين على الزرار أو F9 مرتين كانوا بيبعتوا طلبين وبيطلعوا
-  // فاتورتين. القفل ref (مش state بس) عشان الضغطة التانية بتيجي قبل ما React يرسم.
   const savingRef = useRef(false);
   const [saving, setSaving] = useState(false);
-  // ورقم للمستند الجديد بيتبعت `client_uuid` — لو طلبين وصلوا برضه، السيرفر بيرجّع
-  // نفس الفاتورة للتاني بدل ما يكتب واحدة جديدة (زي التطبيق بالظبط).
   const clientUuidRef = useRef<string | null>(null);
   doorWarehouseRef.current = docWarehouseId;
-  /**
-   * الصنف اللي مستني المخزن يتحدّد قبل ما ينزل السطر.
-   *
-   * كل سطر بيقيس المتاح على مخزنه، ومن غير مخزن الإجابة بتطلع صفر — «مافيش حاجة متاحة من
-   * مكان مش محدّد» صح كحسبة وغلط كجملة. النتيجة إن الفاتورة كانت بتفتح وكل الكميات صفر
-   * والبضاعة موجودة، والواحد يفضل يبص على أرقام مالهاش معنى.
-   *
-   * فالمخزن بيتسأل **مرة واحدة**، أول صنف، وبيثبت لباقي سطور الفاتورة. اللي عايز يوزّع
-   * الفاتورة على أكتر من مخزن بيغيّر مخزن السطر من عموده زي ما هو.
-   */
   const [pendingItems, setPendingItems] = useState<number[]>([]);
   const [pendingWarehouse, setPendingWarehouse] = useState<number | null>(null);
-  /** الكميات اللي اتكتبت في الشباك للأصناف اللي مستنية سؤال المخزن. */
   const pendingQtys = useRef<Record<number, number>>({});
   const lineSeq = useRef(0);
   const [cashAmount, setCashAmount] = useState<number>(0);
-  // **فاتورة بونص** — بضاعة هدية على فاتورة بيع لنفس العميل. قيمتها صفر ومابتلمسش رصيده.
-  // الربط بالفاتورة إجباري (قرار العميل)، والقايمة بتتجاب لما العميل يتحدد.
   const [isBonus, setIsBonus] = useState(false);
   const [bonusForId, setBonusForId] = useState<number | null>(null);
-  // رقم الفاتورة المربوطة لما تتفتح فاتورة بونص قديمة — لو أقدم من آخر ١٠٠ مش هتبقى في
-  // القايمة، والخانة كانت هتعرض رقم داخلي بدل رقم الفاتورة.
   const bonusLinkedRef = useRef<{ id: number; number: string } | null>(null);
   const [bonusTargets, setBonusTargets] = useState<
     { id: number; document_number: string; invoice_date?: string | null; net: string }[]>([]);
   const [creditAmount, setCreditAmount] = useState<number>(0);
   const [discountPct, setDiscountPct] = useState<number>(0);
-  // The category products are picked from — chosen once, stays until changed.
   const [activeCategory, setActiveCategory] = useState<string | null>(null);
 
-  // Sales returns list for the unified sales register
   const [salesReturns, setSalesReturns] = useState<any[]>([]);
-  // إجماليات الكشف كله زي ما السيرفر حسبها — مش مجموع الصفحة اللي ظاهرة.
   const [serverSummary, setServerSummary] = useState<any>(null);
-  // الشريحة في الرابط (`?tab=`) — الريلود بيرجّع لنفس الشريحة (طلب العميل ٢٠٢٦-١٠-٠١).
   const [docKindRaw, setDocKindFilter] = useQueryTab('all');
   const docKindFilter = docKindRaw as 'all' | 'sale' | 'return' | 'bonus' | 'receipts';
-  // صفوف السجل المتعلّمة — العدد بس اللي بيظهر تحت («المحدد»).
   const [selectedKeys, setSelectedKeys] = useState<React.Key[]>([]);
-  // مكان أزرار جدول سندات القبض (تصدير/أعمدة) في الترويسة — `PaymentsLogPanel` بيرسمها هنا.
   const [receiptsSlot, setReceiptsSlot] = useState<HTMLSpanElement | null>(null);
-  // إجماليات شريحة «سندات القبض» — `PaymentsLogPanel` بيبلّغ بيها بعد كل تحميل (من السيرفر).
   const [receiptsTotals, setReceiptsTotals] = useState<PaymentsLogTotals | null>(null);
-  // سند قبض من شريحة «سندات القبض» — البوباب نفسه من `vouchers/ReceiptModal`، والحالة
-  // اللي محتاجها هنا. الخزن بتتجاب أول مرة يتفتح بس.
   const [receiptFamilies, setReceiptFamilies] = useState<Record<number, any[]>>({});
   const [receiptTarget, setReceiptTarget] = useState('');
-  // بيتزوّد بعد كل سند ⇒ لوحة السندات تتعاد من الأول وتجيبه.
   const [receiptsKey, setReceiptsKey] = useState(0);
-  // سند قبض جديد من هنا — نفس فتح وحفظ شاشة السندات (`useQuickVoucher`).
   const receipt = useQuickVoucher(() => setReceiptsKey((k) => k + 1));
-  // مرتجع بيع جديد جوّه السجل نفسه (`Returns` بـ`embedded`). لما يخرج، المرتجعات تتجاب
-  // تاني عشان الجديد يظهر — من تأثير، عشان `fetchInvoices` يقرا الفلاتر اللي دلوقتي.
   const [embeddedReturn, setEmbeddedReturn] = useState(false);
   const [returnsReload, setReturnsReload] = useState(0);
   const exitEmbeddedReturn = useCallback(() => {
     setEmbeddedReturn(false);
     setReturnsReload((n) => n + 1);
   }, []);
-  // **فواتير البونص في قايمة لوحدها، مش وسط فواتير البيع.** الكشف كان بيجيب الاتنين في
-  // صفحة واحدة، فشريحة «فواتير المبيعات» كانت فيها فواتير بصفر مش بيع، وكل بونص بياخد
-  // مكان فاتورة بيع من الـ٦٠٠ صف. كل نوع ليه صفحته من السيرفر (`kind=`).
   const [bonusInvoices, setBonusInvoices] = useState<InvoiceRecord[]>([]);
 
-  // فحص النظام بيبعت أرقام الفواتير اللي فيها الخلل في الرابط. من غير ده الزرار
-  // بيوديك على الكشف كله وتدوّر انت على الأربعة اللي هو عارفهم. `FocusedRows` بيشرح.
   const focus = useFocusedIds();
-  // `fetchInvoices` مش معمولة بـ`useCallback`، فالمرجع أضمن من المتغيّر: بيتقرا وقت
-  // النداء مش وقت التعريف.
   const focusRef = useRef<string | null>(null);
   focusRef.current = focus.ids ? Array.from(focus.ids).join(',') : null;
 
-  // Filtering happens on the server so it covers ALL invoices, not just the loaded page.
   const fetchInvoices = async (override?: InvoiceFilters, opts?: { silent?: boolean }) => {
     const active = override ?? filters;
-    // الهادي (التحديث الحي) مابيلفّش الجدول بسبينر ومابيطلّعش رسالة — الجديد بيظهر وخلاص.
     const silent = !!opts?.silent;
     if (!silent) setLoading(true);
     try {
@@ -450,28 +249,17 @@ export default function Invoices() {
       Object.entries(active).forEach(([k, v]) => {
         if (v !== undefined && v !== null && v !== '') params[k] = v;
       });
-      // صفحة واحدة مش الكشف كله: 6163 فاتورة = 2.9 ميجا و47 ثانية على الشبكة، والمهلة
-      // 30 ثانية — فالشاشة كانت بتفصل وتقول «فشل الاتصال». الإجماليات جاية من السيرفر
-      // عشان تفضل على الكشف كله مش على الصفحة.
-      // أرقام فحص النظام بتتبعت للسيرفر مش بتتفلتر هنا: الشاشة بتحمّل صفحة، والفلترة
-      // المحلية كانت بتعرض اللي من الأربعة في الصفحة دي بس — واحدة، والتلاتة مختفيين.
       const focusIds = focusRef.current;
       const [salesRes, bonusRes, returnsRes, sumRes] = await Promise.all([
         api.get('/api/v1/sales', {
           params: { ...params, kind: 'sale', limit: PAGE_SIZE, ...(focusIds ? { ids: focusIds } : {}) },
         }),
-        // نفس الفلاتر بالظبط (عميل، مندوب، تاريخ، بحث، بيان) — البونص شريحة من نفس الكشف.
         api.get('/api/v1/sales', {
           params: { ...params, kind: 'bonus', limit: PAGE_SIZE, ...(focusIds ? { ids: focusIds } : {}) },
         }).catch(() => ({ data: [] })),
-        // **المرتجعات بنفس فلاتر الفواتير** (عميل، مندوب، تاريخ، رقم، نوع، بيان). كانت
-        // بتاخد «البيان» بس، فاختيار عميل كان بيعرض فواتيره هو ومرتجعات العملاء كلهم
-        // في نفس الجدول — والملخّص فوق (من السيرفر) بيقول رقم تاني. «طريقة السداد»
-        // مالهاش معنى على المرتجع، والملخّص نفسه مش بيطبّقها عليه.
         api.get('/api/v1/sales/returns', {
           params: { ...params, payment: undefined, limit: PAGE_SIZE } })
           .catch(() => ({ data: [] })),
-        // نفس فلاتر الكشف بالظبط — وأرقام فحص النظام كمان، عشان الإجماليات فوق توصف اللي تحت.
         api.get('/api/v1/sales/summary', {
           params: { ...params, ...(focusIds ? { ids: focusIds } : {}) },
         }).catch(() => ({ data: null })),
@@ -487,13 +275,10 @@ export default function Invoices() {
       if (!silent) setLoading(false);
     }
   };
-  // فاتورة أو مرتجع اتعمل من مكان تاني (التطبيق، جهاز تاني) ⇒ الكشف يتحدّث بنفس الفلاتر.
   useLiveRefresh(['sales'], () => fetchInvoices(undefined, { silent: true }));
 
   const setFilter = (key: keyof InvoiceFilters, value: any) => {
     const next = { ...filters, [key]: value };
-    // مندوب اتختار والعميل المختار مش بتاعه ⇒ العميل يتفضّى في نفس التحديث (جلب واحد
-    // مش اتنين). من غيرها الكشف بيطلع فاضي والعميل مش باين في القايمة عشان يتشال.
     if (key === 'rep_id' && !customerFitsRep(customers, next.customer_id, next.rep_id)) {
       next.customer_id = undefined;
     }
@@ -501,15 +286,12 @@ export default function Invoices() {
     fetchInvoices(next);
   };
 
-  // قايمة فلتر «العميل»: مندوب مختار ⇒ عملاءه هو بس (`repScope`)، وأبجدي قبل الكتابة.
-  // محفوظة: ٣٣٠٠ اسم بيتعاد ترتيبهم مع كل رندر للشاشة (وهي بتترندر مع كل حرف في الفاتورة).
   const filterCustomerOptions = useMemo(
     () => sortByName(customersOfRep(customers, filters.rep_id), (c) => c.name)
       .map((c) => ({ value: c.id, label: c.name })),
     [customers, filters.rep_id],
   );
 
-  // الخروج من الخانة من غير تعديل كان بيعيد الكشف كله (٤ طلبات) كل مرة.
   const applySearch = () => {
     const q = search.trim() || undefined;
     if (q !== filters.q) setFilter('q', q);
@@ -522,12 +304,6 @@ export default function Invoices() {
     fetchInvoices({});
   };
 
-  // Unified list merging sales and sales returns
-  // فحص النظام بيبعت أرقام الفواتير اللي فيها الخلل في الرابط. من غير ده الزرار
-  // بيوديك على الكشف كله وتدوّر انت على الأربعة اللي هو عارفهم. `FocusedRows` بيشرح.
-
-  // سندات القبض المستقلة في «الكل» بس — النقدي مع الفاتورة جزء من صفها. فلتر فحص النظام
-  // (أرقام فواتير بعينها) ⇒ مافيش سندات.
   const registerReceipts = useRegisterReceipts({
     enabled: docKindFilter === 'all' && !focus.ids, filters, reloadKey: receiptsKey,
   });
@@ -535,9 +311,6 @@ export default function Invoices() {
 
   const unifiedRecords = useMemo(() => {
     const toSaleRow = (s: any) => {
-      // **البونص بقيمته قبل خصم الـ١٠٠٪.** `gross` المخزّن بعد خصم السطور، وسطر البونص
-      // خصمه ١٠٠٪ فبيطلع صفر — والعميل عايز يشوف البضاعة اللي خرجت بكام. الكمية × السعر
-      // جاية جاهزة من السيرفر (`gross_before_line_discount`)، والخصم يبقى القيمة كلها.
       const bonusGross = s.is_bonus ? Number(s.gross_before_line_discount || 0) : null;
       const gross = bonusGross ?? Number(s.gross || 0);
       return {
@@ -552,9 +325,6 @@ export default function Invoices() {
       date: String(s.invoice_date || s.created_at || '').slice(0, 10),
       customer_id: s.customer_id,
       rep_id: s.rep_id,
-      // الأسماء والتصنيف جايين مع الصف من السيرفر. الصف الموحّد بينسخ الحقول
-      // بالاسم، فاللي مش مكتوب هنا بيوصل للجدول فاضي مهما كان الرد كامل — وده
-      // اللي كان بيخلّي «النوع» فاضي والأسماء تستنى كشف العملاء يتحمّل.
       customer_name: s.customer_name,
       rep_name: s.rep_name,
       customer_type: s.customer_type,
@@ -565,18 +335,11 @@ export default function Invoices() {
       bonus_for_invoice_id: s.bonus_for_invoice_id ?? null,
       gross,
       combined_pct: Number(s.combined_pct || 0),
-      // الفرق نفسه، مش النسبة × الإجمالي: النسبة المجمّعة مقرّبة لمنزلتين، والطرح
-      // بيدّي القرش الصح مهما كانت الخصومات. وبيشمل خصم السطور تلقائياً لأن `net`
-      // محسوب بعدها — وده اللي كان بيخلّي الكشف يقول «خصم ٠» على فاتورة خصمها ٢٠٪.
       discount_value: gross - Number(s.net || 0),
-      // الأساس اللي النسبة بتتقاس عليه في عمود «خصم%» — الإجمالي **قبل** خصم السطور،
-      // وإلا ٢٠٪ بتطلع ٢٥٪.
       discount_base: bonusGross ?? (Number(s.gross_before_line_discount || 0) || Number(s.gross || 0)),
       net: Number(s.net || 0),
       cash_amount: Number(s.cash_amount || 0),
       credit_amount: Number(s.credit_amount || 0),
-      // (المرحلة ٣) الصف الموحّد بينسخ بالاسم، فاللي مش مكتوب هنا بيوصل فاضي مهما
-      // كان الرد كامل — والتحصيل من دول.
       payment_state: s.payment_state ?? null,
       payment_state_label: s.payment_state_label ?? null,
       residual: s.residual ?? null,
@@ -584,7 +347,6 @@ export default function Invoices() {
       raw: s,
       };
     };
-    // احتياط: لو السيرفر رجّع بونص في قايمة البيع، مايتحسبش بيع.
     const saleRows = (invoices || []).filter((s: any) => !s.is_bonus).map(toSaleRow);
     const bonusRows = (bonusInvoices || []).map(toSaleRow);
 
@@ -624,7 +386,7 @@ export default function Invoices() {
     } else if (docKindFilter === 'bonus') {
       combined = bonusRows;
     } else if (docKindFilter === 'receipts') {
-      combined = [];   // سندات القبض ليها جدولها — `PaymentsLogPanel`
+      combined = [];
     } else {
       combined = returnRows;
     }
@@ -632,11 +394,8 @@ export default function Invoices() {
     return combined.sort((a, b) => (b.date || '').localeCompare(a.date || '') || b.id - a.id);
   }, [invoices, bonusInvoices, salesReturns, receiptRows, docKindFilter]);
 
-  /** الكشف بعد فلتر «ودّيني على اللي فيه المشكلة» — أو هو زي ما هو لو مافيش فلتر. */
-  // الأرقام اتغيّرت (دوس «اعرض الكل» أو جه من الرئيسية) ⇒ الكشف يتجاب من جديد.
   const focusKey = focusRef.current ?? '';
   useEffect(() => { fetchInvoices(); /* eslint-disable-next-line */ }, [focusKey]);
-  // رجع من مرتجع جديد اتعمل هنا ⇒ الكشف يتجاب بنفس الفلاتر.
   useEffect(() => { if (returnsReload) fetchInvoices(); /* eslint-disable-next-line */ }, [returnsReload]);
 
   const focusedRecords = useMemo(
@@ -644,7 +403,6 @@ export default function Invoices() {
     [focus, unifiedRecords],
   );
 
-  // Live summary of sales, returns, and net sales
   const summary = useMemo(() => {
     const totalSalesCount = (invoices || []).length;
     const totalReturnsCount = (salesReturns || []).length;
@@ -660,10 +418,8 @@ export default function Invoices() {
       (list || []).reduce((t: number, x: any) => t + Number(get(x) || 0), 0);
     const localGross = sumOf(invoices, (i) => i.gross_before_line_discount || i.gross);
 
-    // السيرفر بيحسب على الكشف كله؛ الجمع المحلي فاضل كخطة بديلة لو النداء وقع.
     const s = serverSummary;
     return {
-      // البونص بره «المبيعات» و«الصافي» — مش بيع. رقمه لشريحته بس.
       totalBonusCount: s?.bonus_count != null ? Number(s.bonus_count) : (bonusInvoices || []).length,
       totalBonusGross: s?.bonus_gross != null ? Number(s.bonus_gross) : bonusGross,
       totalSalesCount: s ? Number(s.sales_count) : totalSalesCount,
@@ -672,7 +428,6 @@ export default function Invoices() {
       totalReturnsNet: s ? Number(s.returns_net) : totalReturnsNet,
       netSales: s ? Number(s.net_sales) : netSales,
       totalCredit: s ? Number(s.credit_outstanding) : totalCredit,
-      // تفصيل الشرايح لسطر الإجماليات فوق — السيرفر على الكشف كله، والمحلي احتياط.
       salesGross: s?.sales_gross != null ? Number(s.sales_gross) : localGross,
       salesDiscount: s?.sales_discount != null ? Number(s.sales_discount) : localGross - totalSalesNet,
       salesCash: s?.sales_cash != null ? Number(s.sales_cash) : sumOf(invoices, (i) => i.cash_amount),
@@ -680,7 +435,6 @@ export default function Invoices() {
       returnsCash: s?.returns_cash != null ? Number(s.returns_cash) : sumOf(salesReturns, (r) => r.cash_refund),
       returnsCredit: s?.returns_credit != null ? Number(s.returns_credit)
         : sumOf(salesReturns, (r) => r.credit_reduction),
-      // من غير السيرفر الأرقام دي من الصفحة المحمّلة بس.
       partial: !s,
       filteredCount: unifiedRecords.length,
     };
@@ -694,8 +448,6 @@ export default function Invoices() {
         api.get('/api/v1/items?kind=product'),
         api.get('/api/v1/warehouses'),
         api.get('/api/v1/products/point-values'),
-        // من غير فلتر «نشط»: الكشف ده عشان مخزن المندوب بس، وكارت الموظف بتاع مناديب أكتوبر
-        // متسجّل غير نشط في الموارد البشرية — فالمخزن ماكانش بيتملى (٢٠٢٦-١٠-٠٧).
         api.get('/api/v1/employees'),
         api.get('/api/v1/users'),
         api.get('/api/v1/accounts?postable_only=true').catch(() => ({ data: [] })),
@@ -717,96 +469,46 @@ export default function Invoices() {
     }
   };
 
-  /**
-   * **الكشف بيتجاب من مكان واحد.** كان فيه `fetchInvoices()` هنا و`fetchInvoices()`
-   * تاني في تأثير `focusKey` فوق — والاتنين بيشتغلوا عند الفتح، فكل دخلة على الشاشة
-   * كانت بتنادي الكشف والمرتجعات والملخّص **مرتين**: ستة طلبات مكان تلاتة، وأبطأهم
-   * (`sales/summary`) قِيس بأربع ثواني ونص. الجلب سايب لتأثير `focusKey` وحده.
-   */
   useEffect(() => {
     loadLookups();
   }, []);
 
-  // Product categories (of sellable products) for the category picker.
   const productCategories = React.useMemo(() => {
     const set = new Set<string>();
     products.forEach((p) => { if (p.category) set.add(p.category); });
     return [...set].sort((a, b) => a.localeCompare(b, 'ar'));
   }, [products]);
 
-  // **من غير تجميع بالفئة** (طلب العميل ٢٠٢٦-١٠-٠٥): الأصناف تحت بعض بترتيب إدخالها في
-  // عرض المستند. الفئات لسه في شباك اختيار الصنف — الاختيار بالفئة، والعرض مش متقسّم.
   const linesByCategory = React.useMemo(
     () => (lines.length ? [{ category: null as string | null, items: lines as SaleLineItem[] }] : []),
     [lines]);
 
-  /**
-   * خصم السطر كنسبة واحدة — الثابت بتاع الصنف زائد اللي اتكتب، بحد ٩٩٫٩٩.
-   *
-   * الجدول بيعرض النسبة دي وقيمتها بالجنيه في عمودين، زي فاتورة الشرا: «١٠٪» مابتقولش
-   * كام اتخصم، والمراجعة بتحصل بالجنيه.
-   */
-  /**
-   * الخصم الثابت اللي السطر بيفتح عليه.
-   *
-   * **خصم العميل بيسبق خصم الصنف** — ودي مش تفضيلة، دي نفس الأولوية اللي السيرفر
-   * بيحسب بيها لما السطر ييجي من غير خصم (`sales_service`):
-   *
-   *     خصم السطر  ←  خصم العميل  ←  خصم الصنف
-   *
-   * والشاشة كانت بتاخد خصم الصنف على طول وتتجاهل خصم العميل. وعشان الشاشة **بتبعت**
-   * الخصم صريح في كل سطر، السيرفر مكانش بيوصله دوره أصلاً — فالعميل اللي متسجّل عليه
-   * خصم خاص كان بياخد خصم الصنف وخلاص، والخصم اللي حد قعد سجّله عليه مابيتحسبش ولا مرة.
-   */
   const defaultFixedDiscount = (itemId: number | null, fresh?: ItemPrices): number => {
-    // ١) خصم العميل نفسه — اتسجّل على الشخص، فهو أخص من أي حاجة على الصنف.
     const cust = customers.find((c) => c.id === selectedCustomerId);
     if (cust?.discount_pct != null && cust.discount_pct !== '') {
       return parseFloat(cust.discount_pct) || 0;
     }
-    // ٢) خصم فئة السعر بتاعته — «تاجر» مابياخدش زي «مستهلك»، وده مكتوب جنب سعر الفئة.
     const tier = customerTier;
     const cached = fresh ?? (itemId ? pricesCache[itemId] : undefined);
     if (tier && cached?.discounts?.[tier]) return cached.discounts[tier];
-    // ٣) وأخيراً خصم الصنف العام.
     const prod = products.find((p) => p.id === itemId);
     return prod?.default_discount_pct ? parseFloat(prod.default_discount_pct) : 0;
   };
 
-  // خصم بعد خصم: المتغيّر على الباقي بعد خصم الصنف، مش مجموع النسبتين.
   const lineDiscountPct = (l: SaleLineItem) =>
     Math.min(99.99, combinePct(l.fixed_discount, l.variable_discount));
 
-  /**
-   * الكمية بعد ما الحارس يقيسها على المتاح.
-   *
-   * مكتوبة مرة عشان الخروج من الخانة وEnter يقيسوا نفس القياس. لو اتكتبت مرتين، أول تعديل
-   * على واحدة منهم بيخلّي الطريقين بيقيسوا حاجتين مختلفتين — واللي بيكمّل بالكيبورد مش
-   * بيخرج من الخانة أصلاً، فطريقه هو اللي كان هيفضل من غير حراسة.
-   */
   const checkedQuantity = (l: SaleLineItem) => guardQuantity({
     value: l.quantity,
-    // من غير مخزن مافيش «متاح» — والحارس بيفرّق بين «مش معروف» وصفر.
     available: l.warehouse_id
       ? availableFor(l.item_id, l.unit, l.warehouse_id) : undefined,
     itemName: l.item_id ? productName(l.item_id) : null,
   }, null);
 
-  /** صافي السطر — نفس `lineTotal`، باسم بيقول إنه اللي بيتعرض في العمود الأخير. */
   const saleLineNet = (l: SaleLineItem) => lineTotal(l);
 
-  /**
-   * خيارات الوحدة — وفيها **دايماً** خيار الوحدة الأساسية.
-   */
   const saleUnitOptions = (itemId: number | null) => unitSelectOptions(unitsCache[itemId || 0]);
 
-  /**
-   * المتاح بكل وحدات الصنف تحت خانة الوحدة: «المتاح ١٥٠ متر = ٥٠ قطعة».
-   *
-   * بيظهر للصنف اللي ليه وحدة بديلة بس (المواسير اللي اتكتب عليها «القطعة = N متر») —
-   * اللي بيبيع بالقطعة من صنف بيتعدّ بالمتر لازم يشوف الرقمين عشان يعرف هو بيطلب كام فعلاً.
-   * الصنف العادي مالوش سطر زيادة، ومن غير مخزن مافيش «متاح» أصلاً.
-   */
   const availabilityHint = (l: SaleLineItem): string | null => {
     if (!l.item_id) return null;
     const units = unitsCache[l.item_id];
@@ -816,9 +518,6 @@ export default function Invoices() {
     return `المتاح ${dualQty(availability[wh][l.item_id] ?? 0, units)}`;
   };
 
-  /**
-   * Enter معناها «السطر ده خلص» — ننتقل للسطر اللي بعده، وآخر سطر بيفتح بوباب الأصناف.
-   */
   const advanceFrom = (key: string) => {
     const idx = lines.findIndex((l) => l.key === key);
     const next = idx >= 0 ? lines[idx + 1] : undefined;
@@ -826,64 +525,28 @@ export default function Invoices() {
     setPickerOpen(true);
   };
 
-  // A line's amount AFTER its own discounts — the variable one comes off what the
-  // fixed one left, not off the list price.
-  //
-  // والبونص: الـ١٠٠٪ على إجمالي الفاتورة تحت، والسطر بقيمته **بعد خصم اللسته** (الثابت)
-  // من غير المتغيّر — نفس «قيمة البضاعة قبل الخصم» اللي السيرفر بيحسبها (٢٠٢٦-١٠-٠١).
   const lineTotal = (l: SaleLineItem) => (isBonus
     ? applyPct(Number(l.quantity || 0) * l.unit_price, l.fixed_discount)
     : applyPct(Number(l.quantity || 0) * l.unit_price, l.fixed_discount, l.variable_discount));
 
-  // Loyalty points a line earns = the product's point value × quantity.
   const linePoints = (l: SaleLineItem) =>
     (l.item_id ? (pointValues[l.item_id] || 0) : 0) * (l.quantity || 0);
 
-  // Invoice computations: per-line discounts first, then the invoice-total discount.
   const grossTotal = lines.reduce((sum, line) => sum + lineTotal(line), 0);
-  // مجموع عمود «الإجمالي بعد الخصم الثابت» — نفس الدالة اللي العمود بيعرض بيها.
   const afterFixedTotal = lines.reduce((sum, line) => sum + afterFixedOf(line), 0);
-  // البونص قيمته صفر — «إجمالي الأصناف» فوق بيفضل يقول قيمتها بسعر البيع.
   const netTotal = isBonus ? 0 : netOf(grossTotal, discountPct);
-
-  /**
-   * أعمدة شبكة سطور الفاتورة كبيانات — بأبعاد متناسقة ومساحات مريحة.
-   */
 
   const totalPoints = lines.reduce((sum, line) => sum + linePoints(line), 0);
 
-  // credit = net − cash, SIGNED: positive → the remainder is added to the customer's account;
-  // negative → the customer overpaid and the surplus settles his prior balance (028).
   useEffect(() => {
     const cash = parseFloat(cashAmount.toString()) || 0;
     setCreditAmount(parseFloat((netTotal - cash).toFixed(2)));
   }, [cashAmount, netTotal, discountPct]);
 
-  /**
-   * تفضية **كل** اللي بيخص مستند واحد — المكان الوحيد اللي بيحصل فيه ده.
-   *
-   * الحالة كانت بتتفضّى في تلات أماكن مختلفة (القفل، «جديد»، وبعد الحفظ) وكل واحد فيهم
-   * بينسى حاجة غير التاني: الحفظ كان بيفضّي السطور وينسى **صفوف الكوبونات**، وزرار «تسجيل
-   * فاتورة بيع» في الشاشة الرئيسية مكانش بيفضّي أي حاجة أصلاً. النتيجة اللي شافها المستخدم:
-   * يقفل فاتورة ويفتح واحدة جديدة فيلاقي كوبونات اللي قبلها مكتوبة قدامه — ويحفظها وهو مش
-   * واخد باله إنها مش بتاعته.
-   *
-   * فبقت دالة واحدة، وكل مدخل «مستند جديد» بيعدّي عليها. أي حالة جديدة تخص المستند تتحط
-   * هنا وبس — كده مافيش مدخل بينساها.
-   *
-   * ⚠️ الدالة دي **مش** للمستند القديم اللي بيتفتح للعرض أو التعديل: `openDetail` بيملا
-   * الحالة من المستند نفسه.
-   *
-   * بتسيب `newStep` على `null` وبتقفل المناتق — اللي بيفتح مستند جديد بيبدأ دورة الأبواب
-   * من أول خطوة بنفسه بعد النداء.
-   */
   const resetDocument = (opts?: { keepUrl?: boolean }) => {
     clientUuidRef.current = null;
     setViewOnly(false);
     setViewInvoice(null);
-    // العنوان بيرجع للكشف مع قفل المستند — `replace` مش `push` عشان «رجوع» مايعيدش
-    // فتح اللي انت قافله لسه. `keepUrl`: الراجع لشاشة تانية — `docReturn.leave` هو اللي
-    // بيكتب لتبويبنا كشفه، فإحنا مانلمسش العنوان.
     if (opts?.keepUrl) { closedDocRef.current = docInUrl.current; docInUrl.current = null; }
     else clearDocParam();
     setViewReturns([]);
@@ -922,13 +585,6 @@ export default function Invoices() {
     createForm.resetFields();
   };
 
-  /**
-   * بصمة المستند من حقوله اللي بتتعدّل — مش كل الحالة.
-   *
-   * `key` بتاع السطر متولّد من `Date.now()` فبيتغيّر مع كل إعادة بناء، والرصيد والأسعار
-   * المحمّلة بتتحدّث من السيرفر لوحدها. الحاجات دي لو دخلت البصمة، كل فاتورة محفوظة
-   * هتبان متغيّرة أول ما تتفتح — وهي دي المشكلة اللي بنحلها.
-   */
   const fingerprintOf = (v: {
     lines: SaleLineItem[]; discountPct: any; cashAmount: any; invoiceDate: any;
     family: any; couponRows: any[]; form: any;
@@ -961,14 +617,6 @@ export default function Invoices() {
     couponRows, form: createForm.getFieldsValue(),
   });
 
-  /**
-   * **المسودّة — الفاتورة اللي اتكتبت ولسه ما اترحّلتش.**
-   *
-   * الحمولة هي **نفس بصمة الفاتورة** اللي الشاشة بتقيس بيها «فيه شغل مش محفوظ؟»
-   * (`fingerprintOf`) — نفس الحقول بالظبط، بما فيها الكوبونات وعيلة الفاتورة. لو
-   * اتفرّقوا، الشاشة هتسأل على تغيير المسودّة مش شايلاه، أو تحفظ حاجة مش محسوبة
-   * في السؤال.
-   */
   const draftPayload = useMemo(() => ({
     lines: lines.map((l) => ({
       item_id: l.item_id, quantity: l.quantity, unit_price: l.unit_price,
@@ -989,7 +637,6 @@ export default function Invoices() {
   } = useDraft({
     kind: 'sale',
     payload: draftPayload,
-    // الفاتورة المفتوحة للعرض أو للتعديل مستند، مش مسودّة.
     paused: Boolean(viewOnly || editingInvoice),
     isEmpty: (x: any) => !x?.form?.customer_id
       && !(x?.lines || []).some((l: any) => l.item_id != null),
@@ -999,7 +646,6 @@ export default function Invoices() {
     },
   });
 
-  /** بيفتح مسودّة في الشاشة — نفس حالة الشاشة اللي اتحفظت. */
   const resumeDraft = (d: any) => {
     const x = d.payload || {};
     adoptDraft(d.id);
@@ -1015,20 +661,6 @@ export default function Invoices() {
     setCreateVisible(true);
   };
 
-  // Close the create page and clear it, so reopening starts fresh.
-  /**
-   * «رجوع» بيسأل قبل ما الشغل يضيع.
-   *
-   * كان بيخرج على طول، وزرار الرجوع في ركن الشاشة جنب زراير بتتضغط كتير — والفاتورة
-   * اللي اتكتبت سطر سطر بتروح بضغطة غلط من غير ولا سؤال، ومافيش مسوّدة بتتحفظ لوحدها.
-   *
-   * والمستند اللي بيتعرض للقراية بس (`viewOnly`) بيقفل من غير سؤال: مافيش حاجة تضيع،
-   * والسؤال ساعتها عقبة مالهاش سبب.
-   */
-  /**
-   * المستند بيتقفل: جاي من شاشة تانية (`ret` في عنوان التبويب) ⇒ يرجع لها، غير كده
-   * لكشف الفواتير. `stay` للقفل اللي مش خروج (قبل فتح مستند تاني).
-   */
   const finishClose = (stay = false) => {
     if (!stay && docReturn.origin()) {
       resetDocument({ keepUrl: true });
@@ -1040,7 +672,6 @@ export default function Invoices() {
     setCreateVisible(false);
   };
 
-  /** كائن مش `boolean` عشان `onClick={closeCreate}` بيبعت حدث الماوس — فالأزرار بتنده `() => closeCreate()`. */
   const closeCreate = (opts?: { stay?: boolean }) => {
     const leave = () => finishClose(opts?.stay === true);
     const verdict = verdictOnLeave({
@@ -1054,9 +685,6 @@ export default function Invoices() {
     Modal.confirm({
       title: verdict === 'confirm-edit' ? 'تسيب التعديل؟' : 'تسيب المستند؟',
       icon: <ExclamationCircleOutlined style={{ color: '#faad14' }} />,
-      // الفاتورة المحفوظة مش بتضيع — اللي بيضيع هو التعديل اللي مااتحفظش. والجملة
-      // القديمة («فيه ٥ صنف هيروحوا ومش هيرجعوا») كانت بتقول العكس على مستند موجود
-      // على السيرفر، فاللي بيقراها بيفتكر إنه بيمسح فاتورة.
       content: verdict === 'confirm-edit'
         ? 'التعديلات اللي عملتها مااتحفظتش. الفاتورة نفسها هتفضل زي ما هي.'
         : lines.length
@@ -1069,27 +697,12 @@ export default function Invoices() {
     });
   };
 
-  // Type a product name → it's added to the invoice immediately (POS-style, fastest path).
-  /**
-   * نفس `addProductById` بمخزن **صريح**.
-   *
-   * ضروري لأن `setDocWarehouseId` مابيغيّرش القيمة في نفس اللفّة — لو ندهنا الدالة العادية
-   * بعده على طول، هتقرا `docWarehouseId` القديمة (null) وتنزل السطر من غير مخزن، وهي دي
-   * المشكلة اللي بنحلها أصلاً.
-   */
-  /**
-   * أنهي مخزن ينزل عليه السطر: المخزن المختار، وبس.
-   *
-   * مافيش تدوير أوتوماتيكي على مخزن تاني فيه الصنف. اللي عايز يصرف من مخزن غير ده بيغيّره
-   * من عمود «المخزن» على السطر، واللي بعده بينزل على اللي هو اختاره.
-   */
   const addProductByIdWith = async (
     itemId: number, warehouseId: number, qty: number | null = null,
   ): Promise<PickResult> => {
     const fresh = await fetchPrices(itemId);
     const existing = lines.find((x) => x.item_id === itemId);
     if (existing) {
-      // مكرر + كمية من الشباك ⇒ بتتزوّد على السطر الموجود، بنفس القص بتاع الخانة.
       if (qty) {
         const wh = lineWarehouse(existing);
         const total = pickedQty(existing.key, itemId, existing.unit, wh,
@@ -1103,9 +716,7 @@ export default function Invoices() {
     }
     const prod = products.find((p) => p.id === itemId);
     const tier = customerTier || 'consumer';
-    // عدّاد مع الوقت: الإضافة المجمّعة بتنزّل كذا سطر في نفس المللي ثانية.
     const l = blankLine(`${Date.now()}-${++lineSeq.current}`, tier);
-    // يثبت على المخزن المختار فقط ولا يتم تغييره تلقائياً
     l.warehouse_id = warehouseId;
     l.category = prod?.category ?? null;
     l.item_id = itemId;
@@ -1127,10 +738,6 @@ export default function Invoices() {
     return addProductByIdWith(itemId, docWarehouseId, qty);
   };
 
-  /**
-   * كمية جاية من الشباك — بتتقصّ على المتاح زي الكتابة في الخانة بالظبط (`handleLineChange`).
-   * أرصدة المخزن لسه ماوصلتش ⇒ بتنزل زي ما هي، والحفظ والسيرفر بيقيسوا.
-   */
   const pickedQty = (key: string, itemId: number, unit: string | null,
                      wh: number | null, q: number): number | null => {
     if (!wh || !availability[wh]) return q;
@@ -1148,25 +755,18 @@ export default function Invoices() {
   const unitFactor = (itemId: number, unit: string | null): number => (
     factorOf(unitsCache[itemId], unit));
 
-  /**
-   * السطر صافيه (بعد خصم السطر، من غير خصم الفاتورة) أقل من تكلفة الوحدة؟ — نفس قاعدة
-   * `sales_service._assert_not_below_cost`. البونص والصنف اللي ماتشراش معفيين.
-   */
   const belowCost = (l: SaleLineItem): boolean => {
     if (isBonus || !l.item_id) return false;
     const base = minPrices[l.item_id];
     if (!base) return false;
-    // وحدة مش متحمّلة معاملها لسه ⇒ مانحكمش (السيرفر بيحكم).
     if (l.unit && !(unitsCache[l.item_id] || []).some((u) => u.name === l.unit)) return false;
     const min = Math.round(base * unitFactor(l.item_id, l.unit) * 100) / 100;
     const net = Math.round(netOf(l.unit_price || 0, lineDiscountPct(l)) * 100) / 100;
     return net < min - 0.0001;
   };
 
-  // Resolve a line's price = base-tier price × unit factor (matches the backend, 007+008).
   const resolvePrice = (itemId: number, tier: string | null, unit: string | null,
                         fresh?: ItemPrices): number => {
-    // `fresh` هي اللي لسه راجعة من السيرفر — بتكسب الكاش لأن الكاش لسه ما اتحدّثش.
     const c = fresh ?? pricesCache[itemId];
     let base: number;
     if (!c) {
@@ -1175,19 +775,9 @@ export default function Invoices() {
     } else {
       base = (tier && c.tiers[tier] != null) ? c.tiers[tier] : (c.base ?? 0);
     }
-    // لقرشين زي `to_money` على السيرفر: سعر القطعة ٣٠ × معامل المتر ٠٫٣٣٣٣٣٣٣٣٣ لازم يبقى ١٠.
     return Math.round(base * unitFactor(itemId, unit) * 100) / 100;
   };
 
-  /**
-   * بتجيب أسعار الصنف **وبترجّعها**.
-   *
-   * الرجوع ده مش رفاهية: `setPricesCache` مابيغيّرش الكاش في نفس اللفّة، واللي بينده
-   * `fetchPrices` محتاج الأسعار **حالاً** عشان يسعّر السطر اللي بيضيفه. فأول إضافة لصنف
-   * كانت بتقرا كاش فاضي — السعر بيرجع لسعر الصنف الأساسي بدل سعر فئة العميل، والخصم
-   * بيطلع صفر. وبيتظبطوا لوحدهم لو الصنف اتضاف تاني، وده اللي بيخلّي المشكلة تبان
-   * «بتحصل أحياناً».
-   */
   const fetchPrices = async (itemId: number): Promise<ItemPrices | undefined> => {
     let fresh: ItemPrices | undefined = pricesCache[itemId];
     if (!pricesCache[itemId]) {
@@ -1212,7 +802,6 @@ export default function Invoices() {
     return fresh;
   };
 
-  /** الطلبات اللي طلعت ولسه مارجعتش — عشان الـeffect تحت مايبعتش نفس الطلب مع كل رسمة. */
   const unitsRequestedRef = useRef<Set<number>>(new Set());
   const fetchUnits = async (itemId: number) => {
     if (unitsCache[itemId] || unitsRequestedRef.current.has(itemId)) return;
@@ -1225,27 +814,11 @@ export default function Invoices() {
       console.error(err);
     }
   };
-  // فاتورة مفتوحة للعرض أو التعديل بتتملي سطورها من غير ما تعدّي على `fetchPrices`، فوحدات
-  // أصنافها ماكانتش بتتحمّل: خانة الوحدة بتبان من غير اسم الأساسية، وتغيير الوحدة كان بيحسب
-  // السعر بمعامل ١ لأن المعامل مش معروف.
   useEffect(() => {
     lines.forEach((l) => { if (l.item_id) fetchUnits(l.item_id); });
   }, [lines]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  /**
-   * تحذير القص — مرة واحدة لكل محاولة، مش لكل ضغطة زرار.
-   *
-   * القص بيحصل على كل `onChange`: اللي بيكتب «١٠٠» بيعدّي على «١» و«١٠» و«١٠٠»، واللي
-   * ماسك سهم الزيادة بيبعت عشرات التغييرات في تانية واحدة. رسالة على كل واحدة فيهم
-   * بتبني برج إشعارات فوق الفاتورة، والنتيجة إن محدش بيقرا ولا واحدة — وهي بالظبط
-   * الرسالة اللي كان لازم تتقرا.
-   *
-   * فالبصمة (سطر × مخزن × رصيد) بتتقال مرة، وأي محاولة تانية بنفس البصمة جوّه النافذة
-   * بتجدّد الوقت من غير ما تطلّع رسالة. يعني ضغط متواصل = رسالة واحدة، ووقفة وبعدها
-   * محاولة جديدة = رسالة جديدة، لأنها بقت خبر تاني مش تكرار.
-   */
   const capNoticeRef = useRef<Record<string, number>>({});
-  /** شبّاك واحد في المرة — من غيره الضغط المتواصل بيكوّم شبابيك فوق بعض. */
   const capModalOpenRef = useRef(false);
 
   const announceQuantityCap = (
@@ -1260,14 +833,7 @@ export default function Invoices() {
     if (repeated) return;
     const u = unit ? ` ${unit}` : '';
     const n = stock.toLocaleString(numeralsLocale(), { maximumFractionDigits: 3 });
-    // شبّاك بيتقفل بضغطة، مش رسالة بتعدّي لوحدها.
-    //
-    // القص بيغيّر رقم اللي بيكتب تحت إيده. التوست بيروح بعد تلات ثواني — واللي بيكتب
-    // بسرعة بيلاقي الرقم اتغيّر ومايعرفش ليه، وده كان البلاغ الأصلي. الشبّاك بيوقّف
-    // الإيد لحظة ويخلّي الرقم الجديد قرار متشاف مش مفاجأة.
-    //
-    // الاسم والمخزن جوّه النص عن قصد: الفاتورة فيها سطور كتير.
-    if (capModalOpenRef.current) return;   // واحد بس في المرة — مايتكوّمش
+    if (capModalOpenRef.current) return;
     capModalOpenRef.current = true;
     Modal.warning({
       title: stock > 0 ? 'الكمية أكبر من المتاح' : 'مفيش رصيد',
@@ -1295,26 +861,10 @@ export default function Invoices() {
 
   const handleLineChange = async (key: string, field: keyof SaleLineItem, value: any) => {
     const fresh = field === 'item_id' && value ? await fetchPrices(value) : undefined;
-    // (030) A line moved to another warehouse needs THAT warehouse's stock to cap against.
     if (field === 'warehouse_id' && value) await loadWarehouseStock(value);
 
-    // A quantity bigger than the store holds is refused AS IT IS TYPED, not at save.
-    //
-    // The check already existed on submit, and the server enforces it too — but by then the
-    // invoice is written and the person is told a basket they spent five minutes on cannot be
-    // posted. Saying it at the box, on the line, while the wrong number is still under the
-    // cursor, is the difference between a correction and a rewrite.
-    //
-    // It caps rather than reverts: typing 40 against a stock of 12 means «all of it», and putting
-    // 12 there is what the person would have typed had they known. Reverting to the old value
-    // would leave them guessing what the ceiling is.
     if (field === 'quantity' && value != null) {
       const line = lines.find((l) => l.key === key);
-      // Only when a store is actually chosen. «No store picked yet» reads as zero on hand, and
-      // capping against that would refuse every quantity on the invoice while telling the person
-      // the goods are out of stock — which is a different sentence from «you have not said where
-      // they leave from», and sends them looking in the wrong place. The store is required at
-      // save, and that is where its absence gets named.
       if (line?.item_id && lineWarehouse(line)) {
         const stock = availableFor(line.item_id, line.unit, lineWarehouse(line));
         if (Number(value) > stock) {
@@ -1331,22 +881,17 @@ export default function Invoices() {
         if (l.key !== key) return l;
         const updated = { ...l, [field]: value };
         if (field === 'category') {
-          // New category → clear the chosen item so the list re-filters.
           updated.item_id = null;
           updated.unit = null;
           updated.unit_price = 0;
           updated.fixed_discount = 0;
         } else if (field === 'item_id') {
           updated.tier = l.tier || customerTier || 'consumer';
-          updated.unit = null;  // default to base
+          updated.unit = null;
           updated.unit_price = resolvePrice(value, updated.tier, null);
-          // The item's own fixed discount is applied automatically.
           const prod = products.find((p) => p.id === value);
           updated.fixed_discount = defaultFixedDiscount(value as number, fresh);
         } else if (field === 'unit' && l.item_id) {
-          // **السعر بيتحوّل مع الوحدة، مش بيرجع لسعر الشريحة.** سعر المتر ١٠ ⇒ القطعة (٣
-          // متر) ٣٠ — ولو البياع كان كاتب سعر بإيده بيفضل نفس السعر محسوب بالوحدة الجديدة
-          // بدل ما يتمسح. والإجمالي = الكمية × السعر بالوحدة اللي اتختارت.
           updated.unit_price = convertUnitPrice(l.unit_price || 0,
             unitFactor(l.item_id, l.unit), unitFactor(l.item_id, updated.unit));
         } else if (field === 'tier' && l.item_id) {
@@ -1357,14 +902,6 @@ export default function Invoices() {
     );
   };
 
-  /**
-   * On the open invoice, Enter opens the product picker.
-   *
-   * The last door of the sequence leaves you on the document with nothing selected, and the next
-   * thing anybody does is add a line — so Enter does that instead of nothing. It stays out of the
-   * way while you are inside a field, where Enter already means «next field», and while any other
-   * dialog is open, where it means whatever that dialog says.
-   */
   useEffect(() => {
     if (!createVisible) return undefined;
     const onKey = (e: KeyboardEvent) => {
@@ -1382,57 +919,23 @@ export default function Invoices() {
     return () => window.removeEventListener('keydown', onKey);
   }, [createVisible, pickerOpen, partyPickerOpen, newStep]);
 
-  /**
-   * العميل اللي حساباته وصلت متأخرة: الخيارات بتتبدّل تحت إيد اللي بيختار.
-   *
-   * الباب بيفتح دايماً — «نوع الفاتورة» سؤال عن خط المنتجات، وله معنى حتى للعميل
-   * اللي عنده حساب واحد. اللي بيتغيّر لما الحسابات توصل هو **مصدر الخيارات**:
-   * حسابات العميل لو مقسوم، وأبيض/بولي لو لأ (`familyChoices`).
-   *
-   * وكان هنا حارس بيقفل الباب لما الحسابات تبقى واحد أو أقل. ده اتحط عشان السيرفر
-   * كان بيرفض خط مالوش حساب مطابق، والرفض بقى مرفوع من `receivable_account`:
-   * الخط بيتقبل كلافتة على المستند لما يكون فيه حساب واحد بس. الحارس فضل مكانه
-   * بعد التصليح فكان بيقفل الباب على أغلب العملاء — ده اللي خلّى البوباب يختفي.
-   */
   useEffect(() => {
-    // الاختيار اللي بقى مش موجود في الخيارات الجديدة بيتفضّى — مايتسابش مشاور على
-    // حساب مش بتاع العميل ده.
     if (newStep !== 'family' || !invoiceFamily) return;
     const allowed = familyChoices().map((o) => o.value);
     if (!allowed.includes(invoiceFamily)) setInvoiceFamily(null);
   }, [newStep, families.length]);
 
-  /** Chosen from the picker (existing or just-created) — fills the form and the header strip. */
   const handlePartyPicked = (picked: Party) => {
     setParty(picked);
     setPartyPickerOpen(false);
-    // Mid-invoice this only swaps the party — nothing restarts. During the opening sequence it is
-    // the second door, so it hands over to the third rather than opening the document.
-    // The customer is the last question. His rep fills in المندوب and the rep's store fills in
-    // المستودع, so the document opens knowing all three.
-    //
-    // الصفحة بتتفتح ورا الباب مش بعده: الاختيار بينزل في الترويسة قدام اللي بيختار وهو
-    // لسه في الدورة، فيشوف اللي قاله بدل ما يستنى لحد ما تخلص عشان يتأكد.
     if (newStep === 'party') { setNewStep('warehouse'); setCreateVisible(true); }
     createForm.setFieldsValue({ customer_id: picked.id });
-    // A brand-new customer isn't in the loaded list yet; add it so the field renders its name.
     setCustomers((prev) => (prev.some((c) => c.id === picked.id) ? prev : [
       ...prev, { id: picked.id, name: picked.name, default_price_tier: null } as Customer,
     ]));
     onCustomerChange(picked.id);
   };
 
-  /** Load and cache what one warehouse holds. Called for the document's warehouse and for any
-   *  warehouse a line is switched to, so each line can be capped against the right stock.
-   *
-   *  **والفاتورة المفتوحة للتعديل مابتتحاسبش على نفسها.** بضاعتها اتخصمت من الرصيد يوم ما
-   *  اترحّلت، فالرقم اللي بيرجع من غير `exclude_doc_*` هو الرصيد **بعد** خصمها — والشاشة
-   *  بتقيس الكميات المكتوبة عليه، يعني بتعامل الخمسة اللي اتباعوا على إنهم خمسة جداد
-   *  محتاجين يتوفروا كمان. فاللي باع آخر خمسة مايقدرش يفتح فاتورته يصلّح سعر: الحارس
-   *  بيقول «مفيش رصيد» ويقصّ الكمية لصفر، عن بضاعة الفاتورة دي نفسها هي اللي واخداها.
-   *
-   *  والسيرفر وقت الحفظ بيعمل نفس الحاجة بترتيب تاني — بيشيل أثر الفاتورة القديمة الأول
-   *  وبعدين يقيس — فالاتنين بيقيسوا على نفس الرقم. */
   const loadWarehouseStock = async (warehouseId: number, force = false) => {
     if (!warehouseId) return;
     if (!force && availability[warehouseId]) return;
@@ -1452,56 +955,28 @@ export default function Invoices() {
 
   const onWarehouseChange = async (warehouseId: number) => {
     setDocWarehouseId(warehouseId);
-    // Lines still pointing at no warehouse of their own follow the document.
     await loadWarehouseStock(warehouseId);
   };
 
-  /**
-   * الباب اللي بعد المخزن — ولا ولا حاجة.
-   *
-   * «نوع الفاتورة» سؤال عن حساب العميل، فمابيتسألش غير لما يكون عنده أكتر من حساب فعلاً.
-   * العميل العادي عنده واحد بس، والدورة بتخلص عند المخزن وتفتح المستند على طول.
-   */
-  // وباب «نوع الفاتورة» مابيتفتحش في المصنع: الخط أداة تجزئة، والمستند هناك مالوش
-  // خط. سؤال إجابته الوحيدة «مش مهم» بيتشال، مابيتسألش وبيتعدّى عليه.
   const afterWarehouseStep = (): null | 'family' => (isFactory ? null : 'family');
 
-  /** خيارات باب «نوع الفاتورة».
-   *
-   *  العميل المقسوم (أكتر من حساب) بيتسأل عن حساباته هو — الاختيار بيحدد الرصيد اللي
-   *  هيتحرّك. والعميل العادي بيتسأل عن خط المنتجات (أبيض/بولي) وده بيتكتب على المستند
-   *  بس: حسابه واحد ومافيش رصيد تاني يروح له. الفرق ده هو اللي بيخلّي السؤال ينفع
-   *  يتسأل للاتنين من غير ما فاتورة تترفض بعد ما تتكتب. */
   const familyChoices = (): { value: string; label: string }[] => (
     families.length > 1
       ? families.map((a) => ({ value: a.family as string, label: a.family as string }))
       : FAMILY_OPTIONS
   );
 
-  /** The warehouse a line actually draws from: its own, else the document's. */
   const lineWarehouse = (l: SaleLineItem): number | null => l.warehouse_id ?? docWarehouseId;
 
-  /** On-hand for an item in a given warehouse, expressed in the line's unit (0 when unknown). */
   const availableFor = (itemId: number | null, unit: string | null,
                         warehouseId: number | null): number => {
     if (!itemId || !warehouseId) return 0;
     const base = availability[warehouseId]?.[itemId] ?? 0;
     const f = unitFactor(itemId, unit) || 1;
     if (f === 1) return base;
-    // لتحت لـ٣ منازل (زي عمود الكمية): ٥٠ قطعة ÷ معامل المتر ٠٫٣٣٣٣٣٣٣٣٣ = ١٥٠٫٠٠٠٠٠٠١٥،
-    // والرقم ده لو اتحط في الخانة بيبان كسر غريب. الـ1e-6 عشان ١٥٠ مايبقاش ١٤٩٫٩٩٩.
     return Math.floor((base / f) * 1000 + 1e-6) / 1000;
   };
 
-  /**
-   * اللي الحارس بيتأكد منه على سطر البيع.
-   *
-   * The availability is passed as `undefined` — «not known» — until the line has a warehouse.
-   * `availableFor` answers 0 for a line with no store, which is true as arithmetic and false as a
-   * statement: nothing is available from nowhere. Handing that to the guard made it refuse every
-   * quantity typed before a store was picked, and tell the person «المتاح ٠» about an item sitting
-   * on a shelf. The save still checks, and so does the server.
-   */
   const lineQuantityCheck = (line: SaleLineItem) => {
     const wh = lineWarehouse(line);
     return {
@@ -1512,12 +987,6 @@ export default function Invoices() {
     };
   };
 
-  /** The store a rep sells out of, found through his employee record.
-   *
-   *  customer → rep (a login) → employee (by `user_id`) → store. The store lives on the employee
-   *  and nowhere else, so this walk is the only honest way to it; copying it onto the user would
-   *  give two answers that eventually disagree.
-   */
   const storeOfRep = (repId: number | null | undefined): number | null => {
     if (!repId) return null;
     return employees.find((e) => e.user_id === repId)?.warehouse_id ?? null;
@@ -1527,16 +996,8 @@ export default function Invoices() {
     const c = customers.find((x) => x.id === customerId);
     const tier = c?.default_price_tier ?? null;
     setCustomerTier(tier);
-    // Choosing the customer fills in his rep, and the rep fills in his store. Both are DEFAULTS,
-    // not locks: a rep on leave and a van that ran out are ordinary days, and a field that
-    // refuses them is a field people work around by putting the sale on the wrong customer.
-    //
-    // Only filled when empty, so re-picking a customer never silently undoes a store somebody
-    // chose on purpose.
     if (c?.rep_id) {
       createForm.setFieldsValue({ rep_id: c.rep_id });
-      // مخزن المندوب بقى المخزن الافتراضي للسطور — الترويسة مافيهاش خانة مخزن، والسطر
-      // بيبدأ عليه ويتغيّر لو حبيت.
       const store = storeOfRep(c.rep_id);
       if (store && !docWarehouseId) {
         setDocWarehouseId(store);
@@ -1546,19 +1007,12 @@ export default function Invoices() {
     setSelectedCustomerId(customerId);
     setCustomerBalance(null);
     setCustomerCoupons([]);
-    // `/accounts` answers for both kinds of customer: one row for somebody who was never split,
-    // one per line for somebody who was. `/account` refuses outright for the second, which is
-    // correct of it and useless here.
     api.get(`/api/v1/customers/${customerId}/accounts`)
       .then((res) => {
         const rows = res.data?.accounts || [];
         setFamilyAccounts(rows);
         setCustomerBalance(Number(res.data?.total_balance || 0));
-        // Pre-picked only when there is nothing to pick: one line means no question to ask. With
-        // two, it stays empty on purpose — choosing for him is choosing which balance moves.
         const named = rows.filter((a: any) => a.family);
-        // مابيكتبش على اختيار المستخدم. الطلب ده بيتبعت في نفس اللحظة اللي باب
-        // «نوع الفاتورة» بيتفتح فيها، فالرد المتأخر كان بيمسح اللي اختاره لسه.
         setInvoiceFamily((prev) => prev ?? (named.length === 1 ? named[0].family : null));
       })
       .catch((err) => { console.error(err); setFamilyAccounts([]); setCustomerBalance(null); });
@@ -1571,24 +1025,12 @@ export default function Invoices() {
   };
 
   const handleCreateSubmit = async (values: any) => {
-    // مافيش فحص على «النقدي + الآجل = الصافي» هنا.
-    //
-    // الشاشة بتعرف صافي السطور بس؛ المستحق الحقيقي فيه الضريبة ومصروفات العميل، وده
-    // السيرفر اللي بيحسبه. فالفحص هنا كان بيقارن رقمين مختلفين ويرفض فواتير سليمة —
-    // وأول ما تتحط ضريبة أو مصروف على العميل تقع الفاتورة من غير سبب مفهوم.
-    //
-    // الآجل بيتبعت للسيرفر، وهو بيتأكد منه — ولو اتساب فاضي بيحسبه من المستحق ناقص النقدي.
-
     const validLines = lines.filter((l) => l.item_id !== null);
     const validCoupons = couponRows.filter(couponRowHasContent);
     if (validLines.length === 0 && validCoupons.length === 0) {
       message.error('يرجى إضافة منتج أو تسجيل كوبونات لحفظ الفاتورة!');
       return;
     }
-    // **الربط بفاتورة بيع اختياري** (قرار العميل ٢٠٢٦-٠٩-٢٨): العميل ممكن يجمّع تلات أربع
-    // فواتير وياخد بونص واحد عليهم كلهم — فمافيش فاتورة واحدة يتربط بيها.
-    // The quantity box starts empty on purpose, so «forgot to type it» is a real state and has
-    // to be caught here rather than posted as a zero-quantity line nobody meant to write.
     const noQty = validLines.find((l) => !Number(l.quantity));
     if (noQty) {
       message.error(`«${productName(noQty.item_id as number)}»: اكتب الكمية.`);
@@ -1596,9 +1038,6 @@ export default function Invoices() {
       return;
     }
 
-    // Never sell more than a warehouse holds. Checked on the SUM per (item × warehouse), because
-    // two lines of 3 against a stock of 5 each look affordable alone — the server applies the
-    // same rule, this just says so before the basket is lost.
     const wanted = new Map<string, number>();
     validLines.forEach((l) => {
       const key = `${lineWarehouse(l)}:${l.item_id}`;
@@ -1620,7 +1059,6 @@ export default function Invoices() {
       return;
     }
 
-    // Serialized lines: serial count must equal the quantity.
     const parseSerials = (s: string) => s.split(/[\s,\n]+/).map((x) => x.trim()).filter(Boolean);
     for (const l of validLines) {
       const prod = products.find((p) => p.id === l.item_id);
@@ -1633,8 +1071,6 @@ export default function Invoices() {
       }
     }
 
-    // سعر البيع أقل من سعر الشراء ⇒ ممنوع من غير صلاحية «البيع تحت سعر التكلفة».
-    // الأصناف كلها في رسالة واحدة، ومن غير ما نروح للسيرفر.
     const underCost = validLines.filter(belowCost);
     if (underCost.length && !canSellBelowCost) {
       Modal.error({
@@ -1655,9 +1091,6 @@ export default function Invoices() {
       return;
     }
 
-    // بوباب الخزنة (أمر ٠٠٩ بند ٤): فاتورة البيع **بتضيف** للخزنة، والاقتراح صندوق خط
-    // الفاتورة. الحفظ بيتم بعد الاختيار — والرجوع مابيحفظش. نقدي بصفر (كله آجل) يعني
-    // مافيش فلوس بتتحرّك، فالبوباب مابيظهرش والحفظ بيعدّي على طول.
     askTreasury(
       {
         amount: Number(cashAmount) || 0,
@@ -1671,9 +1104,6 @@ export default function Invoices() {
         savingRef.current = true;
         setSaving(true);
         try {
-          // التعديل بيروح للفاتورة نفسها. كان بيعكسها الأول وبعدين يكتب واحدة جديدة، فتصليح
-          // سعر كان بيسيب وراه مرتجع محدش رجّعه ورقم فاتورة جديد على الورقة اللي في إيد
-          // العميل. دلوقتي الفاتورة بتتحفظ في مكانها زي أي شاشة تعديل.
           const editingId = editingInvoice?.id;
           const send = editingId
             ? (b: any) => api.put(`/api/v1/sales/${editingId}`, b)
@@ -1682,8 +1112,6 @@ export default function Invoices() {
           await send({
             client_uuid: editingId ? undefined : clientUuidRef.current,
             customer_id: values.customer_id,
-            // Who sold it. Recorded on the document so a commission report and a rep's own list of
-            // invoices do not have to re-derive it from whoever owns the customer today.
             rep_id: values.rep_id ?? null,
             origin: {
               location_kind: 'warehouse',
@@ -1693,8 +1121,6 @@ export default function Invoices() {
             cash_amount: isBonus ? 0 : cashAmount,
             is_bonus: isBonus,
             bonus_for_invoice_id: isBonus ? bonusForId : null,
-            // مش متبعوت عن قصد: السيرفر بيحسبه من المستحق (اللي فيه الضريبة والمصروفات)
-            // ناقص النقدي. اللي على الشاشة تقدير للعرض، والحقيقة عند اللي بيرحّل.
             credit_amount: undefined,
             lines: validLines.map((l) => {
               const prod = products.find((p) => p.id === l.item_id);
@@ -1704,34 +1130,21 @@ export default function Invoices() {
                 tier: l.tier,
                 unit: l.unit,
                 unit_price: l.unit_price.toFixed(2),
-                // Combined per-line discount: the typed variable applied to what the
-                // item's fixed discount left — one effective rate for the server.
                 discount_pct: combinePct(l.fixed_discount, l.variable_discount).toFixed(2),
-                // ...والنصّين، عشان الفاتورة اللي بتتقرا تاني تفضل عارفة القسمة. من غيرهم
-                // الشاشة بتحطّ الخصم كله في «خصم ثابت» وتقول «متغيّر ٠» — يعني بتنسب
-                // للشركة خصم ماعملتهوش. والقاعدة بقى فيها العمودين.
-                // البونص: الثابت (خصم اللسته) بيفضل، والمتغيّر صفر — الـ١٠٠٪ على الإجمالي.
                 fixed_discount_pct: Number(l.fixed_discount || 0).toFixed(2),
                 variable_discount_pct: (isBonus ? 0 : Number(l.variable_discount || 0)).toFixed(2),
                 serials: prod?.is_serialized ? parseSerials(l.serials) : null,
-                // (030) Only sent when it differs from the document's, so the server keeps its
-                // "fall back to the document" behaviour for everything else.
                 warehouse_id: l.warehouse_id ?? undefined,
               };
             }),
-            // (030) document fields
             external_document_number: values.external_document_number || undefined,
             cost_center_id: values.cost_center_id ?? null,
             cost_center_distribution: values.cost_center_distribution ?? null,
             invoice_date: (invoiceDate || dayjs()).format('YYYY-MM-DD'),
-            // Coupons handed over with this invoice, as the serial range off the book. Kept on the
-            // invoice because that is what proves which coupons were his when they come back in.
             coupons: couponRows
               .filter(couponRowHasContent)
               .map((r) => ({
                 coupon_kind: r.coupon_kind ?? null,
-                // Sent as the range implies it. Sending a separately-typed number was how an invoice
-                // came to claim a book size its serials do not support.
                 count: couponCount(r.serial_from, r.serial_to),
                 serial_from: r.serial_from || null,
                 serial_to: r.serial_to || null,
@@ -1740,24 +1153,13 @@ export default function Invoices() {
             statement1: values.statement1 || undefined,
             statement2: values.statement2 || undefined,
             statement3: values.statement3 || undefined,
-            // Which of his accounts this invoice posts to. Null for a customer who has only one.
             family: invoiceFamily,
-            // (٠٠٩) الخزنة اللي البوباب سأل عنها. `undefined` = مااتسألش أصلاً — نقدي بصفر
-            // أو مافيش صناديق — والسيرفر بيقرر زي ما هو بيعمل دلوقتي.
             cash_account_id: cashAccountId ?? undefined,
           });
 
           message.success(editingInvoice
             ? 'اتعدّلت الفاتورة واترحّلت من جديد' : 'تم تسجيل فاتورة البيع بنجاح');
-          // تفضية كاملة بعد الحفظ. كانت تفضية بالإيد بتشيل السطور والخصم والنقدي وتسيب
-          // **صفوف الكوبونات** والعميل والمخزن ونوع الفاتورة مكانهم — فأول فاتورة بعدها
-          // بتفتح وفيها كوبونات فاتورة غيرها.
-          // بعد ما السيرفر يرد بنجاح وبس — الفاتورة اللي اترفضت بتفضل مسودّة.
           discardDraft();
-          // **قفل من غير سؤال.** `closeCreate` بيقارن اللي على الشاشة باللي اتفتح، والفاتورة
-          // لسه مليانة بسطورها — فكان بيسأل «تسيب المستند؟ … هيروحوا ومش هيرجعوا» عن
-          // فاتورة اتحفظت حالاً، واللي يدوس «أكمّل» يلاقيها قدامه ويحفظها تاني.
-          // جاية من شاشة تانية ⇒ الحفظ بيرجّع لها، زي «رجوع».
           finishClose();
           fetchInvoices();
         } catch (err: any) {
@@ -1771,14 +1173,6 @@ export default function Invoices() {
     );
   };
 
-  /**
-   * حذف الفاتورة — بتتمسح هي وأثرها.
-   *
-   * كانت بتتعكس: يتكتب مرتجع بأصنافها وقيد مضاد بمبلغها، وتفضل في السجل ومعاها مستند
-   * تاني بيشرح إنها اتلغت. ده أسلوب دفتر أستاذ محاسبي، والشركة مش بتشتغل بيه — الفاتورة
-   * الغلط بتتمسح، وخلاص. السيرفر بيشيل الحركة المخزنية والقيد والنقاط ويرجّع السيريالات
-   * والدفعات (شوف `document_edit_service`).
-   */
   const handleDeleteInvoice = async (record: InvoiceRecord) => {
     try {
       await api.delete(`/api/v1/sales/${record.id}`);
@@ -1799,12 +1193,6 @@ export default function Invoices() {
     }
   };
 
-  /**
-   * تعديل فاتورة مرحّلة — بتتفتح في المحرّر بمحتواها، من غير أي حركة على الدفاتر.
-   *
-   * المستند المرحّل مابيتعدلش في مكانه، فالحفظ هو اللي بيعكس القديمة ويرحّل الجديدة مكانها —
-   * وبسؤال صريح قبل العكس. اللي فتح وغيّر رأيه وقفل، سيب المخزون والقيد زي ما هم.
-   */
   const handleEditInvoice = async (record: InvoiceRecord) => {
     await openDetail(record);
     if (!canEditInvoice) {
@@ -1815,52 +1203,13 @@ export default function Invoices() {
     message.info(`الفاتورة ${record.document_number} مفتوحة الآن للتعديل`);
   };
 
-  // A deep link (`?doc=5` / `?edit=5`) is captured into a ref the moment it is seen, and acted on
-  // as soon as the list can satisfy it. One effect on both dependencies, because the two arrive in
-  // either order: on a cold open the parameter is there before the list has loaded, and on a repeat
-  // click the list is already loaded and only the parameter changes. Splitting them into an effect
-  // per dependency broke the second case — the list never changed, so nothing ever fired, and
-  // clicking the same statement line a second time did nothing.
-  /**
-   * الرابط الجاي من بره بيفتح الفاتورة — مرة واحدة، والبارامتر بيتمسح بعدها.
-   *
-   * ⚠️ **وده مش `useDocRoute`.** جرّبت أربط الشاشة دي بيه (عشان «رجوع» يقفل الفاتورة
-   * ويرجّع للكشف) ومعاه المسودّات، والشاشة طلعت **بيضا** عند العميل. الاتنين اتشالوا من
-   * هنا لحد ما يبان الخطأ الحقيقي في الكونسول — شاشة مابتفتحش مش مقايضة مع أي تحسين.
-   */
-  /**
-   * كتابة المستند في العنوان وشيله — الحتة الوحيدة اللي بتلمس `?doc=` بعد التحميل.
-   *
-   * `docInUrl` بيمسك آخر رقم كتبناه إحنا، وبيمنع اللفّة: الكتابة بتغيّر `searchParams`،
-   * والتأثير اللي تحت بيصحى عليها، ولولا الحارس ده كان هيعتبرها طلب فتح جديد ويفتح
-   * المستند تاني ويمسح البارامتر اللي لسه كاتبينه.
-   */
   const docInUrl = useRef<number | null>(null);
-  /**
-   * آخر فاتورة اتقفلت والعنوان لسه مالحقش يتنضّف (التنقّل متأجّل لفّة) — عشان الرسمة دي
-   * ماتتقريش «رابط لفاتورة جديدة» وتعرض `DocOpening` مكان الكشف.
-   */
   const closedDocRef = useRef<number | null>(null);
-  /**
-   * قفل المستند لما «رجوع» بتاع المتصفح يشيله من العنوان.
-   *
-   * **مش `resetDocument` وحدها** — دي بتفضّي حالة المستند وبس، والشاشة بتفضل على صفحة
-   * المستند فاضية. `setCreateVisible(false)` هو اللي بيرجّع للكشف، وده اللي `closeCreate`
-   * بيعمله. غياب السطر ده خلّى الرجوع يشيل العنوان ويسيب الشاشة مكانها.
-   *
-   * ومافيش سؤال «تسيب المستند؟» هنا زي `closeCreate`: اللي داس رجوع خرج خلاص، والسؤال
-   * بعد الخروج بيبقى متأخر. واللي اتكتب مش بيضيع — `useDraft` بيحفظه لوحده.
-   *
-   * والمرجع بدل الدالة عشان التأثير مايعتمدش على حاجة بتتبني كل رندر.
-   */
   const closeOnBackRef = useRef<(() => void) | null>(null);
   const writeDocParam = useCallback((id: number) => {
     docInUrl.current = id;
     if (!onScreenRef.current) return;
     const next = new URLSearchParams(paramsRef.current);
-    // العنوان شايل المستند ده خلاص (جاي من رابط) ⇒ استبدال مش خطوة جديدة. من غيرها
-    // التاريخ بيبقى فيه نفس الفاتورة مرتين، و«رجوع» أول مرة يبان إنه مابيعملش حاجة.
-    // و`ret` بيفضل: التالي/السابق مابيضيّعش الشاشة اللي الفاتورة اتفتحت منها.
     const already = next.get('doc') === String(id);
     next.set('doc', String(id));
     next.delete('edit'); next.delete('id'); next.delete('back');
@@ -1873,7 +1222,6 @@ export default function Invoices() {
     if (!onScreenRef.current) return;
     const next = new URLSearchParams(paramsRef.current);
     if (!next.has('doc') && !next.has('edit') && !next.has('id') && !next.has('ret')) return;
-    // القفل هنا بيفضل في الشاشة («جديد»، أو قفل من غير أصل) ⇒ الأصل بيتشال معاه.
     next.delete('doc'); next.delete('edit'); next.delete('id'); next.delete('back');
     next.delete('ret');
     setSearchParams(next, { replace: true });
@@ -1888,15 +1236,7 @@ export default function Invoices() {
     const edit = searchParams.get('edit');
     const id = searchParams.get('id');
     if (!doc && !edit && !id) closedDocRef.current = null;
-    // البارامتر اللي إحنا كاتبينه لما فتحنا المستند مش طلب فتح — تخطّيه.
-    // (رابط من شاشة تانية لنفس الفاتورة المفتوحة بيجيب `ret` جديد في العنوان — و«رجوع»
-    // بيقراه من العنوان وقت الضغط، فمافيش حاجة تتلقط هنا.)
     if (doc && Number(doc) === docInUrl.current) return;
-    // **«رجوع» بتاع المتصفح بيقفل المستند.**
-    //
-    // البارامتر راح وإحنا لسه فاتحين — يبقى اللي شاله هو زرار الرجوع مش إحنا
-    // (`clearDocParam` بيصفّر `docInUrl` قبل ما يلمس العنوان). من غير السطر ده العنوان
-    // بيرجع للكشف والشاشة تفضل على المستند: الاتنين بيفرقوا، واللي بعده بيبقى عشوائي.
     if (!doc && !edit && !id && docInUrl.current !== null) {
       docInUrl.current = null;
       closeOnBackRef.current?.();
@@ -1904,13 +1244,7 @@ export default function Invoices() {
     }
     if (doc || edit || id) {
       pendingIntent.current = { id: Number(doc || edit || id), mode: edit ? 'edit' : 'view' };
-      // **الطلب ده اتاخد.** المسح اللي تحت بيغيّر العنوان والتأثير بيصحى تاني — ومن غير
-      // العلامة دي كان بيعتبر `?doc=` نفسه طلب جديد ويفتح الفاتورة مرتين. `edit` مالوش
-      // علامة: المسح بيشيله من العنوان خالص.
       if (doc && !edit && !id) docInUrl.current = Number(doc);
-      // `edit`/`id`/`back` بيتمسحوا عشان مايتعادوش عند إعادة التحميل. و`doc` و`ret`
-      // **بيفضلوا**: التحديث يرجّعك لنفس المستند، و«رجوع» بعده لنفس الشاشة اللي جيت منها.
-      // ومن بارامترات التبويب نفسه، والمخفي مابيكتبش (الشرح عند `paramsRef`).
       if ((edit || id || searchParams.has('back')) && onScreenRef.current) {
         const next = new URLSearchParams(searchParams);
         next.delete('edit'); next.delete('id'); next.delete('back');
@@ -1925,31 +1259,14 @@ export default function Invoices() {
     else handleEditInvoice(target);
   }, [searchParams, invoices]);
 
-  /** The invoice `step` places away in the list as currently filtered, or null at the ends. */
-  /** بيحمّل فواتير الفترة في نفس قايمة التنقل، وبيفتح أولها. */
-
   const neighbour = (step: number) => {
     if (!viewInvoice) return null;
-    // The list itself is the order — the server already returns it filtered and sorted, and the
-    // table renders it unchanged, so the arrows walk exactly what the user is looking at.
-    // فاتورة البونص بتمشي وسط البونص — مش في قايمة البيع اللي هي مش فيها أصلاً.
-    // فترة اتحمّلت («تحميل») ⇒ التنقّل جوّه الفترة دي بس، بيع وبونص مع بعض. من غيرها فاتورة
-    // البونص كانت بتمشي في قايمة البونص كلها — فالسابق/التالى بيجيب بونص بس.
     const rows = periodRows ?? (viewInvoice.is_bonus ? bonusInvoices : invoices);
     const at = rows.findIndex((r: any) => r.id === viewInvoice.id);
     if (at < 0) return null;
     return rows[at + step] ?? null;
   };
 
-  /** Extra header lines on the printed invoice: the paper number, and the coupon books the sale
-   *  issued — the customer's own proof of which serials are his.
-   *
-   *  **السطر لكل فئة، مش سطر واحد للكل.** الكوبونات بتتسجّل صف لكل فئة دفتر بمداه (وده
-   *  اللي التطبيق والويب الاتنين بيبعتوه)، والورقة كانت بتقرا الشكل القديم وحده —
-   *  `coupon_serial_from` على رأس الفاتورة. فاللي بيسلّم مية دهبي وخمسين فضي كانت ورقته
-   *  بتطلع من غير ولا كوبون، والعميل ماسك دفاتر مالهاش إثبات إنها اتسلّمت.
-   *
-   *  والشكل القديم سايب تحته: فواتير اتكتبت قبل الصفوف لسه بتتطبع صح. */
   const printMeta = (inv: any): [string, string][] | undefined => {
     const meta: [string, string][] = [];
     if (inv.external_document_number) meta.push(['رقم المستند', inv.external_document_number]);
@@ -1976,9 +1293,6 @@ export default function Invoices() {
 
   const productName = (id: number) => products.find((p) => p.id === id)?.name ?? `صنف #${id}`;
 
-  // الأعمدة بتتبني هنا مش فوق: `buildLineColumns` بتنادى وقت التعريف، فلازم كل اللي
-  // بتاخده يكون اتعرّف قبلها. اللي كان فوق كان بيقرا الدوال دي جوّه closures، فماكانش
-  // بيلمسها غير وقت الرسم.
   const lineColumns = buildLineColumns({
     viewOnly, warehouses, totalPoints, pointValues, productName, saleUnitOptions,
     availabilityHint,
@@ -1989,28 +1303,12 @@ export default function Invoices() {
   });
   const lineGrid = useEntryGrid('invoice-lines-grid', lineColumns);
 
-  // The row does not exist until React has painted it, so the caret is moved on the next tick
-  // rather than inside the handler that created it.
   useEffect(() => {
     if (!focusLineKey) return undefined;
-    // Wait for the picker to be GONE before reaching for the caret. An open modal traps focus by
-    // design, so a `focus()` fired while it is still closing is not lost to a race — it is refused
-    // outright. Waiting is the difference between «usually works» and «works».
     if (pickerOpen) return undefined;
-    // Keep asking for the caret until it actually arrives.
-    //
-    // One attempt is not enough: the picker is still closing when the line appears, its own
-    // search box still holds focus, and a single `focus()` fired into that moment is simply
-    // overwritten. Rather than guess a delay long enough to be safe — which is a delay long
-    // enough to be felt — this retries each frame and stops the moment the box has it. In
-    // practice that is one or two frames; the cap is only there so a line that never renders
-    // cannot leave a loop running.
     let frames = 0;
     let raf = 0;
     const tryFocus = () => {
-      // Found by a data attribute rather than through the component ref: antd's InputNumber ref
-      // hands back a wrapper, so there is no way to ASK whether the caret arrived — and without
-      // that question this loop cannot know when to stop.
       const el = document.querySelector<HTMLInputElement>(
         `input[data-qty-key="${focusLineKey}"]`
       );
@@ -2024,8 +1322,6 @@ export default function Invoices() {
     return () => cancelAnimationFrame(raf);
   }, [focusLineKey, lines.length, pickerOpen]);
 
-  /** إجمالي كوبونات الفاتورة — من صفوف الفئات، وإلا من المدى القديم اللي على الرأس.
- *  العدد المكتوب أولاً، والمحسوب من المدى لو مش متكتوب. */
 function couponsTotal(inv: any): number {
   const rows: any[] = inv?.coupons ?? [];
   if (rows.length) {
@@ -2035,24 +1331,16 @@ function couponsTotal(inv: any): number {
   return inv?.coupon_count ?? couponCount(inv?.coupon_serial_from, inv?.coupon_serial_to) ?? 0;
 }
 
-/** How many coupons this invoice hands over — derived only when both serials are plain
-   *  numbers, since a lettered book cannot be subtracted into a count anyone could check. */
-  // Only the billed ones move money the customer owes; the operating ones are ours to bear.
-
-
-  /** First and last serial of the customer's outstanding coupons, sorted so the range is real. */
   const couponRange = (() => {
     const serials = customerCoupons.map((c) => c.serial).filter(Boolean).sort();
     return { from: serials[0] ?? '—', to: serials[serials.length - 1] ?? '—' };
   })();
 
-  /** The category the item belongs to, labelled the way the settings list labels it. */
   const lineCategory = (l: SaleLineItem): string => {
     const raw = products.find((p) => p.id === l.item_id)?.category;
     return raw ? (categoryLabels[raw] || raw) : '';
   };
 
-  // Open a read-only detail view inside the full document page: invoice header + lines + its returns.
   const openDetail = async (record: InvoiceRecord) => {
     try {
       setLoading(true);
@@ -2068,21 +1356,11 @@ function couponsTotal(inv: any): number {
 
       const loadedInvoice = { ...record, ...det };
       setViewInvoice(loadedInvoice);
-      // **المستند المفتوح بيبقى في العنوان.**
-      //
-      // كان بيتفتح كحالة جوّه الشاشة والعنوان يفضل `/invoices` — فتحديث الصفحة بيضيّع
-      // اللي انت فاتحه، والرابط مايتبعتش لحد، وتاريخ المتصفح فيه الأقسام بس.
-      //
-      // ⚠️ **والكتابة في اتجاه واحد عن قصد.** فيه محاولة قبل كده تربط الشاشة دي
-      // بـ`useDocRoute` (اللي بيخلّي العنوان **يقود** الشاشة) و**طلعت شاشة بيضا عند
-      // العميل** فاتشالت — الشرح تحت عند `pendingIntent`. فالشاشة هنا بتكتب العنوان
-      // وبس، والعنوان مابيقودش غير عند التحميل الأول. كده الفايدة اتاخدت والخطر لأ.
       writeDocParam(record.id);
       setViewReturns(rets);
       setEditingInvoice({ id: record.id, voided: alreadyVoid });
       setViewOnly(true);
 
-      // Refill lines
       const refilled: SaleLineItem[] = (det.lines || []).map((l: any, idx: number) => {
         const product = products.find((p) => p.id === l.item_id);
         return {
@@ -2094,10 +1372,6 @@ function couponsTotal(inv: any): number {
           quantity: Number(l.quantity) || 1,
           unit_price: Number(l.unit_price) || 0,
           serials: '',
-          // القسمة اللي اتسجّلت مع السطر. `null` معناها سطر مش عارف قسمته (اتكتب قبل
-          // العمود، أو اتنقل من a5) — وساعتها المجموع بيتعرض كله «ثابت» زي ما كان، لأن
-          // ده اللي كان معروف عنه وقتها. التخمين إنه متغيّر بيقول على المندوب حاجة
-          // ماعملهاش، والعكس بيقول على الشركة حاجة ماقالتهاش.
           fixed_discount: l.fixed_discount_pct != null
             ? Number(l.fixed_discount_pct)
             : Number(l.discount_pct) || 0,
@@ -2111,12 +1385,6 @@ function couponsTotal(inv: any): number {
       setLines(refilled);
       const first = (det.lines || [])[0];
 
-      // رصيد المخازن اللي الفاتورة دي بتصرف منها — **وهي مطروحة من الحساب**.
-      //
-      // الشاشة كانت بتفتح الفاتورة من غير ما تجيب رصيد أي مخزن أصلاً، فالحارس بيقرا
-      // «غير معروف» على إنه صفر: كل سطر بيتقصّ على صفر وبيطلع «مفيش رصيد» — عن بضاعة
-      // مكتوبة قدامه في الفاتورة. والجلب من غير `excludeDocRef` كان هيحسّن الرسالة مش
-      // أكتر، لأن الرصيد ساعتها بعد خصم الفاتورة دي نفسها.
       excludeDocRef.current = record.id;
       setAvailability({});
       const stores = new Set<number>(
@@ -2147,12 +1415,6 @@ function couponsTotal(inv: any): number {
       setDocCashAccountId(det.cash_account_id ?? null);
       setSelectedCustomerId(det.customer_id);
 
-      // **العميل اللي بره القايمة بيتضاف للقايمة.**
-      //
-      // خانة العميل بتلاقي اسمها من `customers`، وهي محدودة بألفين. العميل اللي
-      // ترتيبه بعد كده كانت خانته بتعرض `1706` — الرقم الخام اللي `Select` بتعرضه
-      // لما مالاقيش الخيار. المستند بقى بيجيب اسمه معاه، فالاسم بيتحط في القايمة
-      // أول ما المستند يتفتح. ونفس الحكاية للمندوب.
       const cName = (det as any).customer_name;
       if (det.customer_id && cName) {
         setCustomers((prev) => (prev.some((c) => c.id === det.customer_id)
@@ -2175,19 +1437,7 @@ function couponsTotal(inv: any): number {
           .catch(() => {});
       }
 
-      // Coupons
-      //
-      // **الحقل اسمه `coupons` مش `coupon_rows`.** السيرفر بيرجّعه كده من الأول
-      // (`SalesInvoiceDetail.coupons`)، والشاشة كانت بتقرا اسم مالوش وجود — فبيطلع
-      // `undefined` على طول، وبتقع على الشكل القديم (`coupon_serial_from`) وهو فاضي
-      // في أي فاتورة اتكتبت بصفوف، وتنتهي بصف فاضي.
-      //
-      // والأثر مش شكلي: اللي بيفتح الفاتورة للتعديل بيشوف الكوبونات مش موجودة، فلو
-      // حفظ التعديل بيمسحها من المستند — والدفتر اللي في إيد العميل يبقى ملوش أثر،
-      // فالورقة الراجعة بعد شهر بتترفض. `coupon_rows` سايبة كمان عشان لو رد قديم
-      // متكاش في مكان تاني.
       const couponSrc = det.coupons ?? det.coupon_rows;
-      // بيتبني في متغيّر الأول عشان البصمة تاخد نفس الصفوف اللي الشاشة اتعبّت بيها.
       const loadedCoupons = (couponSrc && couponSrc.length)
         ? couponSrc.map((cr: any) => ({
           key: cr.id || String(Math.random()),
@@ -2207,8 +1457,6 @@ function couponsTotal(inv: any): number {
           : [blankCoupon()];
       setCouponRows(loadedCoupons);
 
-      // البصمة بتتاخد من القيم اللي لسه اتبنت فوق، مش من الحالة: `setLines` وإخواته
-      // مابيتنفّذوش في نفس اللفّة، فقراية الحالة هنا بترجّع اللي كان قبل الفتح.
       setOpenedFingerprint(fingerprintOf({
         lines: refilled,
         discountPct: Number(det.variable_discount_pct ?? det.discount_pct ?? 0),
@@ -2233,8 +1481,6 @@ function couponsTotal(inv: any): number {
     } catch (err: any) {
       console.error(err);
       message.error(err?.response?.data?.detail?.message || 'تعذر فتح الفاتورة');
-      // الفتح فشل ⇒ العنوان مايفضلش شايل رقم مش معروض، وإلا الضغطة الجاية على نفس
-      // الرابط بتتفسّر «مفتوح خلاص» ومابتعملش حاجة.
       if (docInUrl.current === record.id) clearDocParam();
     } finally {
       setLoading(false);
@@ -2242,9 +1488,6 @@ function couponsTotal(inv: any): number {
     }
   };
 
-  // Map a loaded invoice onto the shared invoice document (same shape drives screen + print).
-  // فواتير العميل اللي ينفع البونص يبقى عليها — بتتجاب لما «فاتورة بونص» تتختار وعميلها
-  // معروف. آخر ١٠٠ فاتورة بيع (من غير بونص)، والمربوطة حالياً بتتضاف لو أقدم منهم.
   useEffect(() => {
     if (!isBonus || !selectedCustomerId) { setBonusTargets([]); return; }
     let alive = true;
@@ -2270,7 +1513,6 @@ function couponsTotal(inv: any): number {
   const invoiceDoc = (inv: any): InvoiceDoc | null => {
     if (!inv) return null;
     const customer = customers.find((c) => c.id === inv.customer_id);
-    // البونص سطوره بصفر، فقيمته بسعر البيع بتتحسب من الكمية × السعر.
     const bonusValue = inv.is_bonus
       ? (inv.lines || []).reduce((s: number, l: any) =>
         s + Number(l.quantity || 0) * Number(l.unit_price || 0), 0)
@@ -2279,15 +1521,12 @@ function couponsTotal(inv: any): number {
       kind: 'sale',
       isBonus: Boolean(inv.is_bonus),
       document_number: inv.document_number,
-      // تاريخ الفاتورة مش يوم إدخالها — الفاتورة بأثر رجعي كانت بتتطبع بتاريخ النهارده.
       date: (inv as any).invoice_date ?? (inv as any).created_at ?? null,
       partyLabel: 'العميل',
       partyName: customer?.name ?? `#${inv.customer_id}`,
       partyPhone: (customer as any)?.phone ?? null,
       partyAddress: (customer as any)?.address ?? null,
       partyId: inv.customer_id ?? null,
-      // Only meaningful when the matching switch is on; the document carries them either way so
-      // flipping a switch does not need the invoice reloaded.
       branchName: branches.find((b) => b.id === (customer as any)?.branch_id)?.name ?? null,
       repName: reps.find((r) => r.id === inv.rep_id)?.full_name ?? null,
       partyAccount: (() => {
@@ -2298,22 +1537,15 @@ function couponsTotal(inv: any): number {
       discountPct: inv.combined_pct,
       net: inv.net,
       tax: (inv as any).tax_amount ?? 0,
-      // On an overpaid invoice the surplus settles prior debt (a payment on account), so on THIS
-      // document show only what applied to it: cash ≤ payable and never a negative "remaining".
       cash: Math.min(Number(inv.cash_amount || 0), Number(inv.net || 0) + Number(inv.tax_amount || 0)),
       credit: Math.max(0, Number(inv.credit_amount || 0)),
       entryId: (inv as any).ledger_entry_id ?? null,
-      // حساب العميل قبل الفاتورة، متقفّل وقت الترحيل. بيتقرا من المستند مش من رصيد
-      // العميل دلوقتي — الرصيد بيتغيّر مع كل حركة، ونفس الورقة كانت هتطلع برقمين.
       priorBalance: (inv as any).prior_balance ?? null,
-      // نوع الفاتورة والخط التاني — الشرح عند `footerColumns`.
       family: (inv as any).family ?? null,
       otherFamily: (inv as any).other_family ?? null,
       otherFamilyBalance: (inv as any).other_family_balance ?? null,
       totalPoints: (inv.lines || []).reduce(
         (s: number, l: any) => s + (pointValues[l.item_id] || 0) * Number(l.quantity || 0), 0),
-      // (030) The paper number belongs on the printed document — it is how the customer's own
-      // filing refers to this sale.
       extraMeta: [
         ...(inv.is_bonus && inv.bonus_for_number
           ? [['على طلب بيع', inv.bonus_for_number] as [string, string]] : []),
@@ -2323,8 +1555,6 @@ function couponsTotal(inv: any): number {
         name: productName(l.item_id),
         itemId: l.item_id,
         quantity: l.quantity,
-        // السطر اللي اتباع بالأساسية وحدته null — والورقة بتطبع اسمها («متر»/«قطعة») بدل
-        // شرطة، عشان العميل يعرف الكمية دي بإيه.
         unit: l.unit || unitsCache[l.item_id]?.find((u) => u.is_base)?.name
           || products.find((p) => p.id === l.item_id)?.unit_of_measure || null,
         unit_price: l.unit_price,
@@ -2336,51 +1566,20 @@ function couponsTotal(inv: any): number {
     };
   };
 
-  // Their invoice list, in their order:
-  //   `رقم · التاريخ · نوع · مستند رقم · الفاتورة رقم · الحساب الفرعي · جهه التعامل · مندوب ·
-  //    اجمالي قبل · خصم · خصم% · ض.م · ض.م % · الاجمالي · الصافى · تم السداد · الباقى ·
-  //    ملاحظات · مراكز التكلفة`
-  //    Their «مصروفات» and «مصروفات تشغيل» are deliberately absent: the section that fed them was
-  //    removed at the client's request, so those columns could only ever read 0.00.
-  //
-  // Twenty-one columns is more than any screen shows at once, and theirs does not show them all
-  // either — it has «حدد الأعمدة» for exactly this. So all of them exist here, in their order and
-  // under their names, and the ones a sales list is not usually read for start hidden. Turning one
-  // on is a click, and the choice is remembered.
-  //
-  // Three of theirs have no honest source here and are left out rather than faked:
-  //   **نوع** — theirs mixes sales and returns in one list; ours are separate screens, so every
-  //   row here would read «فاتورة بيع» and the column would carry no information.
-  //   **ض.م · ض.م %** — VAT is held per price tier on the item, not as a figure on the document.
-  //   **مراكز التكلفة** — the cost centre is a dimension on ledger entries, not on the invoice.
-  // الأعمدة اتفصلت لملفها — تعريف بلا حالة مالوش لازمة يقعد في نص الشاشة.
   const columns = buildRegisterColumns({
     customers, reps, postingAccounts, filters, printOpts, navigate, openDetail,
     openReturn: (rid: number) => openDoc('return', rid),
     invoiceDoc, canEditInvoice, canDeleteInvoice, handleEditInvoice, handleDeleteInvoice,
     handleDeleteReturn,
     onDeleteDraft: (id: number) => removeDraft(id),
-    // صفوف سند القبض في «الكل».
     canWriteVoucher: can('voucher.write'),
     onViewReceipt: registerReceipts.view,
     onEditReceipt: (r: any) => { fetchVoucher(r.id).then((v) => editReceipt(v)).catch(() => {}); },
     onDeleteReceipt: registerReceipts.remove,
   });
 
-  // الأعمدة بعد الإخفاء والترتيب، محسوبة مرة واحدة: الجدول بيرسمها والتصدير بيكتبها، ولازم
-  // يبقوا نفس القايمة — لو كل واحد نادى `apply` لوحده، ملف بيطلع بأعمدة غير اللي على الشاشة
-  // يبقى مسألة وقت.
   const visibleColumns = invoiceCols.apply(columns);
 
-  /**
-   * **أعمدة شريحة البونص — ثابتة، ومش من «حدد الأعمدة».**
-   *
-   * «اجمالي قبل» مخفي افتراضياً في الكشف، وهو الرقم الوحيد اللي البونص بيتقري عشانه —
-   * الصافي صفر دايماً. والتحصيل والباقي والكوبونات مالهمش معنى على بضاعة هدية. فالشريحة
-   * بتعرض اللي العميل طلبه بالاسم: الرقم، التاريخ، العميل، المندوب، الفاتورة اللي البونص
-   * عليها، والقيمة قبل خصم الـ١٠٠٪ — والجدول والتصدير نفس القايمة.
-   */
-  // من غير `useMemo`: `columns` نفسها بتتبني من جديد كل رسمة، فالحفظ مالوش لازمة.
   const bonusColumns = (() => {
     const pick = (key: string) => columns.find((c: any) => c.key === key);
     const linked = {
@@ -2389,7 +1588,6 @@ function couponsTotal(inv: any): number {
       key: 'bonus_for_number',
       width: 130,
       render: (num: string | null, r: any) => (num && r.bonus_for_invoice_id
-        // بيفتح فاتورة البيع هنا في نفس الشاشة، زي ضغطة صفها بالظبط.
         ? <a onClick={(e) => { e.stopPropagation(); openDetail({ id: r.bonus_for_invoice_id } as InvoiceRecord); }}>
             <Tag color="blue" style={{ cursor: 'pointer' }}>{num}</Tag>
           </a>
@@ -2405,40 +1603,21 @@ function couponsTotal(inv: any): number {
   })();
   const tableColumns = docKindFilter === 'bonus' ? bonusColumns : visibleColumns;
 
-  // The create form is a full inner page (not a modal) — a big invoice form reads better on a
-  // full page than boxed inside a scrolling modal.
-  /**
-   * Walking into the register from an unsaved draft.
-   *
-   * Their system is always ON a document and steps between them; ours can be on one that does not
-   * exist yet, and there is no «next» from a thing with no place in the order. So these open the
-   * newest saved invoice — and ASK first when the draft has lines on it, because stepping away is
-   * one key and losing an hour of typing to it is not a trade anybody agreed to.
-   */
   const stepFromDraft = (index: number) => {
     const target = invoices[index];
     if (!target) return;
-    // بيمشي على طول — التأكيدات اتشالت من النظام بطلب صاحبه، ودي منهم.
-    //
-    // كانت بتسأل لما يكون في المستند سطور اتكتبت ولسه ماتحفظتش. اللي بيدوس «التالي» أو
-    // «السابق» وهو في نص كتابة بيسيب اللي كتبه، وده بقى قراره من غير وقفة.
     closeCreate({ stay: true });
     openDetail(target);
   };
 
   const startNew = (opts?: { bonus?: boolean }) => {
-    // التفضية الأول، وبعدين أول باب في الدورة.
     const go = () => {
       resetDocument();
-      // «فاتورة بونص جديدة» من شريحة البونص — نفس التحويل اللي خانة «نوع المستند»
-      // و«خصم ١٠٠٪» بيعملوه، بس من أول الدورة.
       if (opts?.bonus) { setIsBonus(true); setBonusForId(null); setCashAmount(0); }
       setCreateVisible(true);
       setNewStep('party');
       setPartyPickerOpen(true);
     };
-    // **«جديد» مابيمسحش شغل من غير سؤال** — نفس حكم «رجوع»: فاتورة لسه بتتكتب أو
-    // تعديل مااتحفظش بيسأل الأول، والمستند المتفرّج عليه بيعدّي على طول.
     const verdict = verdictOnLeave({
       readOnly: viewOnly,
       savedDocument: editingInvoice != null,
@@ -2457,14 +1636,6 @@ function couponsTotal(inv: any): number {
     });
   };
 
-  /**
-   * The toolbar over the document — the row of verbs their old system puts there.
-   *
-   * Every entry is wired to something that already exists on this screen, and the ones that have
-   * no meaning yet on the open document are shown DISABLED rather than dropped, so the positions
-   * stay where the hand expects them. Each carries its F-key, because the toolbar and the keyboard
-   * are the same commands and neither should teach a different set.
-   */
   const docToolbar = (): ToolbarAction[] => {
     const isSaved = Boolean(viewInvoice || editingInvoice);
     const lineCount = lines.filter((l) => l.item_id !== null).length;
@@ -2493,15 +1664,9 @@ function couponsTotal(inv: any): number {
         key: 'undo',
         label: 'تراجع',
         icon: <UndoOutlined />,
-        // «تراجع» بيرجّع المستند، مش بيقفل الحقول وبس.
-        //
-        // كان بيعمل `setViewOnly(true)` على طول: الحقول تتقفل واللي اتكتب ومااتحفظش يفضل
-        // ظاهر — مقفول ومقروء، يعني بنفس شكل المحفوظ بالظبط. فاللي غيّر كمية من ١٠ لـ٣
-        // وضغط تراجع بيفضل قدامه ٣ وإجمالي مالوش وجود، ومافيش حاجة على الشاشة بتقول إن ده
-        // مش اللي في القاعدة. إعادة تحميل المستند هي الحاجة الوحيدة اللي بترجّع الأرقام.
         onClick: () => {
           if (!viewOnly && viewInvoice) {
-            openDetail(viewInvoice);   // بيقرا من السيرفر وبيقفل على المحفوظ
+            openDetail(viewInvoice);
           } else {
             closeCreate();
           }
@@ -2527,8 +1692,6 @@ function couponsTotal(inv: any): number {
         key: 'prev',
         label: 'السابق',
         icon: <ArrowRightOutlined />,
-        // القايمة الأحدث الأول: «السابق» = الأقدم (اللي بعده في القايمة)، ومن مستند جديد
-        // = آخر فاتورة اتحفظت. و«التالى» = الأحدث، ومستند جديد مالوش تالى.
         disabled: !isSaved ? invoices.length === 0 : !neighbour(1),
         onClick: () => {
           if (isSaved) {
@@ -2597,19 +1760,11 @@ function couponsTotal(inv: any): number {
         key: 'reload',
         label: 'تحميل',
         icon: <ReloadOutlined />,
-        // فترة ← أحدث فاتورة فيها بتتفتح، والتنقّل بـ«السابق»/«التالى» جوّه الفترة —
-        // من غير كشف (طلب العميل ٢٠٢٦-١٠-٠١).
         onClick: () => setLoadRangeOpen(true),
       },
     ];
   };
 
-  // **شباك واحد، بيترسم في الحالتين.** كان فيه نسختين (جوّه الكارت وتحت) فالدوسة بتفتح
-  // شباكين فوق بعض؛ اتشالت اللي جوّه — فبقى الشباك مترسوم في الكشف بس، وجوّه الفاتورة
-  // «رجوع» من المخزن ودوسة خانة العميل و«جديد» كانوا بيفتحوا شباك مش موجود. دلوقتي نفس
-  // العنصر بيتحط في الاتنين، ومافيش غير واحد على الشاشة في أي لحظة.
-  //
-  // ومن غير «الموردين»: الاختيار بيتكتب في `customer_id`، فرقم المورد كان بيروح رقم عميل.
   const partyPicker = (
     <PartyPickerModal
       open={partyPickerOpen || newStep === 'party'} kind="customer"
@@ -2619,8 +1774,6 @@ function couponsTotal(inv: any): number {
       onPick={handlePartyPicked}
       onCancel={() => {
         setPartyPickerOpen(false);
-        // في أول الدورة: من غير عميل الإلغاء بيلغي الفاتورة؛ وبعميل (رجع من باب المخزن)
-        // بيرجّعه لباب المخزن تاني بدل ما يسيبه في فاتورة من غير مخزن. وفي النص بيقفل بس.
         if (newStep === 'party') {
           if (createForm.getFieldValue('customer_id')) { setNewStep('warehouse'); return; }
           setCreateVisible(false);
@@ -2629,11 +1782,6 @@ function couponsTotal(inv: any): number {
       }} />
   );
 
-  /*
-   * **فاتورة جاية من شاشة تانية بتفتح على طول — من غير ما سجل المبيعات يبان قبلها.**
-   * (٢٠٢٦-١٠-٠٤) العنوان بيوصل بـ`?doc=` والكشف كان بيترسم لحد ما الفاتورة تتجاب. الرسمة
-   * الأولى (قبل ما التأثير يمسك الطلب) بتتعرف من العنوان نفسه، والباقي من `docOpening`.
-   */
   const urlDocWanted = Number(searchParams.get('doc') || searchParams.get('edit')
     || searchParams.get('id')) || null;
   const urlDocFresh = urlDocWanted != null && urlDocWanted !== docInUrl.current
@@ -2641,13 +1789,9 @@ function couponsTotal(inv: any): number {
   if (!createVisible && (docOpening || urlDocFresh)) return <DocOpening />;
 
   if (createVisible) {
-    // الكوبونات مش في المصنع، ومابتظهرش في فاتورة محفوظة مافيهاش كوبونات.
     const showCouponBlock = !isFactory
       && !(viewOnly && !couponRows.some((r) => r.serial_from || r.coupon_kind));
     return (
-      // **شكل فاتورة البيع الجديد** (تصميم العميل ٢٠٢٦-١٠-٠١): كروت بيضا على خلفية رمادي —
-      // ترويسة وأدوات، خانات المستند، الأصناف، وتحت الدفع والملخص. الشكل بس اللي اتغيّر:
-      // نفس الخانات ونفس الحالة ونفس الأوامر والمفاتيح.
       <div className="sale-doc">
       {partyPicker}
       <div className="sale-card sale-head">
@@ -2660,9 +1804,6 @@ function couponsTotal(inv: any): number {
                 ? `تعديل ${isBonus ? 'فاتورة بونص' : 'طلب بيع'} #${editingInvoice.id}`
                 : isBonus ? 'تسجيل فاتورة بونص جديدة' : 'تسجيل طلب بيع جديد'}
           </span>
-          {/* **نوع الفاتورة فوق، جنب رقمها.** كان متحدّد في باب «الفاتورة على
-              أنهي حساب؟» وبعدها مايبانش في أي حتة — فاللي فاتح فاتورة من الكشف
-              مايعرفش هي أبيض ولا بولي غير لما يفتكر أو يسأل. */}
           {((viewInvoice as any)?.family || invoiceFamily) && (
             <Tag color={((viewInvoice as any)?.family || invoiceFamily) === 'أبيض'
               ? 'default' : 'blue'}
@@ -2710,8 +1851,6 @@ function couponsTotal(inv: any): number {
               )}
             />
           </span>
-          {/* الأدوات (جديد/تعديل/…) و«الأعمدة» في نفس سطر «طلب بيع» على الشمال، وأكبر
-              شوية (طلب العميل ٢٠٢٦-١٠-٠١). */}
           <div className="sale-toolbar-row">
             <DocumentToolbar actions={docToolbar()} variant="buttons" />
             <DocumentHistoryButton entityType="sales_invoice"
@@ -2725,14 +1864,10 @@ function couponsTotal(inv: any): number {
         <Form form={createForm} layout="vertical" size="small" className="doc-form sale-form"
           onValuesChange={() => setFormTick((n) => n + 1)}
           onFinish={handleCreateSubmit} requiredMark={false}>
-          {/* الترتيب (طلب العميل ٢٠٢٦-١٠-٠١): نوع المستند ← رقم المستند ← العميل وتليفونه ←
-              المخزن ← المندوب، وتحتهم مركز التكلفة والبيان والملاحظات والكوبونات. */}
           <div className="sale-card sale-fields">
           <Row gutter={12}>
             <Col xs={12} md={4}>
               <Form.Item label="نوع المستند">
-                {/* «فاتورة بونص» بتظهر للي معاه صلاحيتها بس. التبديل بيمسح الفاتورة المربوطة:
-                    الرجوع لطلب بيع مايسيبش ربط مالوش معنى. */}
                 <Select value={isBonus ? 'bonus' : 'sale'} disabled={viewOnly || (!canBonus && !isBonus)}
                   onChange={(v) => {
                     setIsBonus(v === 'bonus'); setBonusForId(null);
@@ -2766,10 +1901,7 @@ function couponsTotal(inv: any): number {
                 </Form.Item>
               </Col>
             )}
-            {/* التاريخ مش هنا: هو في سطر العنوان فوق (نفس القيمة) — كان مكتوب مرتين. */}
             <Col xs={24} md={6} className="sale-party">
-              {/* Picked from a searchable modal that can also create the customer on the spot,
-                  so a new walk-in never costs the half-entered invoice. */}
               <Form.Item
                 name="customer_id"
                 label={<>اسم العميل <span style={{ color: '#ef4444' }}>*</span></>}
@@ -2785,7 +1917,6 @@ function couponsTotal(inv: any): number {
                   }))} filterOption={searchFilter} filterSort={searchRank}/>
               </Form.Item>
             </Col>
-            {/* تليفون العميل — للقراية، من كارته (طلب العميل ٢٠٢٦-١٠-٠١). */}
             <Col xs={12} md={4}>
               <Form.Item label="الهاتف">
                 <Input readOnly disabled dir="ltr" placeholder="-"
@@ -2800,30 +1931,21 @@ function couponsTotal(inv: any): number {
                   placeholder="اختر المخزن للبيع منه"
                   disabled={viewOnly}
                   value={docWarehouseId ?? undefined}
-                  // `onWarehouseChange` مش `setDocWarehouseId` لوحدها: الرصيد بتاع المخزن
-                  // بيتجاب من السيرفر أول ما يتقال. من غيرها المخزن بيتغيّر والرصيد بيفضل
-                  // فاضي، فكل صنف بيقرا صفر — والشباك بيقفل الأصناف كلها ويقول «غير متوفر»
-                  // عن مخزن مليان.
                   onChange={(v) => onWarehouseChange(v as number)}
                   options={activeOptions(warehouses, docWarehouseId)} filterOption={searchFilter} filterSort={searchRank}/>
               </Form.Item>
             </Col>
             <Col xs={12} md={3}>
-              {/* Filled from the customer, and changeable. A rep on leave is an ordinary day. */}
               <Form.Item name="rep_id" label="المندوب">
                 <Select allowClear showSearch placeholder="من العميل"
                   disabled={viewOnly}
                   onChange={(v) => {
                     const store = storeOfRep(v as number);
-                    // أرصدة العربية لازم تيجي معاها — من غيرها منتقي الأصناف مابيعرفش
-                    // إيه اللي فيها، فبيعرض الكتالوج كله بكل فئاته.
                     if (store) onWarehouseChange(store);
                   }}
                   options={repOptions(reps, invoiceRepId)} filterOption={searchFilter} filterSort={searchRank}/>
               </Form.Item>
             </Col>
-            {/* الخط أداة تجزئة — مش في المصنع. الشرح فوق عند `isFactory`. */}
-            {/* الخط هنا بس لو مافيش شريط «أبيض/بولي» فوق الأصناف (عميل بحساب واحد). */}
             {!isFactory && families.length <= 1 && (
             <Col xs={12} md={4}>
               <Form.Item label="الخط">
@@ -2853,8 +1975,6 @@ function couponsTotal(inv: any): number {
                 </Space.Compact>
               </Form.Item>
             </Col>
-            {/* **البيان** — كان بيتبعت للسيرفر (`statement1`) ومالوش خانة على الشاشة، فعمر ما
-                حد كتبه. بقى جنب الملاحظات، وبيتطبع، وبيتفلتر بيه في الكشف والتقارير. */}
             <Col xs={24} md={showCouponBlock ? 6 : 11}>
               <Form.Item name="statement1" label="البيان">
                 <Input placeholder="اختياري — بيتطبع على الفاتورة وبيتدوّر بيه" disabled={viewOnly} />
@@ -2866,7 +1986,6 @@ function couponsTotal(inv: any): number {
               </Form.Item>
             </Col>
 
-            {/* الكوبونات المصروفة — مش في المصنع، ومابتظهرش في فاتورة محفوظة مافيهاش كوبونات. */}
             {showCouponBlock && (
             <Col xs={24} md={9}>
               <div className="coupon-grid">
@@ -2928,7 +2047,6 @@ function couponsTotal(inv: any): number {
           </div>
 
           <div className="sale-card sale-lines">
-          {/* شريط الأصناف: «أبيض/بولي» بأرصدتهم وعدد البنود يمين، وزرار الإضافة شمال. */}
           <div className="sale-items-bar">
             <div className="sale-items-info">
               {!isFactory && families.length > 1 && (
@@ -2965,12 +2083,6 @@ function couponsTotal(inv: any): number {
             )}
           </div>
 
-          {/*
-            * «الفاتورة دي من أنهي مخزن؟» — سؤال واحد، أول صنف، وبيثبت بعده.
-            *
-            * مش خانة في الترويسة عن قصد: الترويسة اتشالت منها خانة المخزن بطلب صاحب النظام،
-            * والسؤال هنا بيتسأل في اللحظة اللي محتاجينه فيها فعلاً — أول ما حد يضيف صنف.
-            */}
           <TabModal
             open={pendingItems.length > 0}
             title={pendingItems.length > 1
@@ -2988,8 +2100,6 @@ function couponsTotal(inv: any): number {
               setPendingItems([]);
               setDocWarehouseId(wh);
               await loadWarehouseStock(wh);
-              // واحد ورا التاني: كل إضافة بتقرا السطور اللي بتضيف عليها، فلو اتنفّذوا مع بعض
-              // كل واحد فيهم هيشوف القايمة زي ما كانت قبل أي إضافة.
               await addPickedSequentially(items, typed,
                 (id, q) => addProductByIdWith(id, wh, q), setFocusLineKey);
             }}
@@ -3027,20 +2137,11 @@ function couponsTotal(inv: any): number {
             }}
             onPickMany={async (ids, qtys) => {
               setPickerOpen(false);
-              // Sequentially: each add reads the lines it is appending to, so firing them at once
-              // would have every one of them see the list as it was before any were added.
               await addPickedSequentially(ids, qtys, addProductById, setFocusLineKey);
               if (ids.length) setPanelItemId(ids[ids.length - 1]);
             }}
           />
 
-          {/*
-            * سطور الفاتورة كجدول مضغوط — نفس أعمدة فاتورة الشرا، بترويسة كحلي (تصميم العميل).
-            *
-            * كانت كروت متجمّعة بالفئة: كل سطر بياخد مساحة كبيرة، وترويسة فئة فوق كل مجموعة،
-            * وفاتورة خمستاشر صنف بتبقى صفحتين تمرير. وأهم من المساحة إن الكميات والأسعار
-            * مكانش ليها عمود تتقارن فيه رأسياً — واللي بيراجع فاتورة طويلة بيقارن رأسياً.
-            */}
           {lines.length === 0 && viewOnly ? (
             <Empty description="اختر الفئة ثم المنتجات لإضافتها للفاتورة"
               style={{ margin: '12px 0' }} />
@@ -3074,7 +2175,6 @@ function couponsTotal(inv: any): number {
                       ))}
                     </React.Fragment>
                   ))}
-                  {/* السطر الزيادة: المخزن الأول وبعدين الصنف (٢٠٢٦-١٠-٠٥). */}
                   <QuickAddRow
                     colSpan={lineGrid.count} disabled={viewOnly}
                     items={products}
@@ -3097,11 +2197,6 @@ function couponsTotal(inv: any): number {
             </div>
           )}
           </div>
-
-          {/*
-            * لوحة «رصيد الصنف في المخازن» اتشالت بطلب صاحب النظام — زي ما اتشالت من فاتورة الشرا.
-            * رصيد الصنف بيتشاف جوّه بوباب اختيار الصنف — وهو المكان اللي السؤال بيتسأل فيه.
-            */}
 
           {viewReturns.length > 0 && (
             <div className="sale-card">
@@ -3227,20 +2322,8 @@ function couponsTotal(inv: any): number {
 
         </Form>
 
-        {/* **منتقي الطرف واحد في الشاشة، مش اتنين.**
-            كان فيه نسخة هنا ونسخة تحت، والاتنين بيسمعوا `partyPickerOpen` — فالدوسة
-            الواحدة كانت بتفتح **شباكين فوق بعض**. تختار في اللي فوق فيقفل ويفضل اللي
-            تحته مفتوح، فاللي قدام الشاشة بيقرا «اختر العميل» تاني وهو لسه مختاره —
-            «بيعدّيني من بوباب لبوباب من غير ما أختار».
-
-            وطبعاً النسختين اتفرّقوا مع الوقت: دي كانت على العملاء وحدهم واللي تحت على
-            العملاء والموظفين والموردين. واحدة عشان السلوك واحد. */}
-
         <TreasuryGate {...treasuryGate} />
 
-        {/* المكوّن مشترك مع الشرا والمرتجعين — الشرح في `components/LoadPeriodModal`.
-            و`onLoaded` بيحط الفترة في كشف الشاشة كمان، فأسهم «السابق» و«التالى»
-            تمشي جوّه اللي اتحمّل مش جوّه آخر صفحة كانت مفتوحة. */}
         <LoadPeriodModal
           open={loadRangeOpen} onCancel={() => setLoadRangeOpen(false)}
           title="تحميل فواتير فترة" endpoint="/api/v1/sales"
@@ -3254,17 +2337,6 @@ function couponsTotal(inv: any): number {
           openNewest dateKey="invoice_date"
           onPick={(r) => openDetail(r)} />
 
-        {/*
-          * الباب التالت: **المخزن**.
-          *
-          * بيختار المخزن **الافتراضي للسطور الجديدة** — مش مخزن المستند. المخزن على السطر
-          * (سبيك ٠٣٠) وبيفضل كده: الفاتورة الواحدة ممكن تتصرف من أكتر من مخزن، واللي عايز
-          * كده بيغيّر مخزن أي سطر من عموده بعدين. الباب بيجاوب على «أغلب السطور من فين».
-          *
-          * القيمة مربوطة بنفس خانة الترويسة، فاللي بيتقال هنا بيبان هناك على طول، والعكس.
-          * و`onWarehouseChange` مش `setDocWarehouseId` لوحدها عشان رصيد المخزن يتجاب معاه —
-          * من غيره كل صنف بيقرا صفر والمنتقي بيقفل بضاعة موجودة.
-          */}
         <WarehouseGate
           open={newStep === 'warehouse' && !viewOnly && !editingInvoice}
           title="الفاتورة دي هتتصرف من أنهي مخزن؟"
@@ -3275,19 +2347,6 @@ function couponsTotal(inv: any): number {
           onOk={() => setNewStep(afterWarehouseStep())}
         />
 
-        {/*
-          * الباب الرابع: **نوع الفاتورة** — الخط اللي الفاتورة عليه.
-          *
-          * القايمة جاية من **حسابات العميل نفسه** (`families`)، مش من `FAMILY_OPTIONS`.
-          * الفرق ده مش تجميل: السؤال الحقيقي هو «الفاتورة هتتحرّك على أنهي حساب»، و«أبيض»
-          * و«بولي» موجودين كحسابات بس للعملا اللي `customer_merge_service` قسمهم. العميل
-          * العادي عنده حساب واحد بـ`family = null` — فلو الباب عرض عليه «أبيض» واختارها،
-          * السيرفر بيرد `العميل مالوش حساب لـ«أبيض»` بعد ما البايع كتب الفاتورة كلها.
-          *
-          * وعشان كده الباب مابيظهرش أصلاً إلا لما يكون فيه أكتر من حساب (`afterWarehouseStep`،
-          * والحارس اللي بيقفله لو الحسابات وصلت متأخرة) — وحساب واحد باسم بيتحطّ لوحده في
-          * `onCustomerChange`. سؤال مالوش غير إجابة واحدة مش سؤال.
-          */}
         <TabModal
           open={newStep === 'family' && !viewOnly && !editingInvoice}
           title="الفاتورة على أنهي حساب؟"
@@ -3296,12 +2355,6 @@ function couponsTotal(inv: any): number {
           onCancel={() => setNewStep('warehouse')}
           onOk={() => setNewStep(null)}
         >
-          {/*
-            * زي باب المخزن: الشباك بياخد الكيبورد أول ما يفتح (`tabIndex` + تركيز)، ←→/↑↓
-            * بيلفّوا على الحسابات، وEnter بيأكّد. الأسهم متعملة بإيدنا مش مسيبة لـ`Segmented`
-            * عشان تنقّل الراديو بالأسهم بيعتمد على تفاصيل جوّه antd، والدورة دي مالهاش بديل
-            * بالماوس في نص الفاتورة.
-            */}
           <div
             tabIndex={-1}
             ref={(el) => { el?.focus(); }}
@@ -3328,9 +2381,6 @@ function couponsTotal(inv: any): number {
               value={invoiceFamily ?? ''}
               onChange={(v: string | number) => setInvoiceFamily(String(v) || null)}
               options={familyChoices().map((o) => {
-                // الرصيد بيظهر جنب الاسم للعميل المقسوم بس — عنده حساب لكل خط ورصيده
-                // بيفرق. العميل العادي حسابه واحد، فرصيده جنب الخيارين هيبقى نفس
-                // الرقم مرتين وبيوحي إن الاختيار بيحرّك حاجة وهو مش بيحركها.
                 const acc = families.find((a) => a.family === o.value);
                 return {
                   value: o.value,
@@ -3357,8 +2407,6 @@ function couponsTotal(inv: any): number {
     );
   }
 
-
-  // مرتجع بيع جديد شغّال جوّه السجل ⇒ شاشته مكان الكشف لحد ما تقفل (`onExit`).
   if (embeddedReturn) {
     return (
       <React.Suspense fallback={<div style={{ textAlign: 'center', padding: 48 }}><Spin /></div>}>
@@ -3367,16 +2415,10 @@ function couponsTotal(inv: any): number {
     );
   }
 
-  // ── سجل المبيعات (تصميم العميل ٢٠٢٦-١٠-٠١) ──
   type DocKind = typeof docKindFilter;
 
-  /** سند قبض جديد هنا في نفس الشاشة — نفس فتح شاشة السندات: فورم فاضي على الخزنة الافتراضية. */
   const openReceipt = () => { setReceiptTarget(''); receipt.show(); };
 
-  /**
-   * تعديل سند قبض من الشريحة — نفس البوباب مليان بالسند. خطوط العميل بتتجاب عشان سؤال
-   * «على أنهي مديونية» يظهر بإجابة السند: خطه، أو «على الإجمالي» لو مالوش خط.
-   */
   const editReceipt = (v: EditableVoucher) => {
     const cid = v.customer_id;
     setReceiptTarget(v.family || '__total__');
@@ -3392,20 +2434,16 @@ function couponsTotal(inv: any): number {
 
   const startNewReturn = () => setEmbeddedReturn(true);
 
-  // الشرايح وعدّاداتها — نفس أرقام الملخّص اللي من السيرفر.
   const kindTabs: { key: DocKind; label: string; dot?: string; count?: number }[] = [
     { key: 'all', label: 'الكل',
-      // + سندات القبض المعروضة (بتتجاب على «الكل» بس).
       count: summary.totalSalesCount + summary.totalReturnsCount + summary.totalBonusCount
         + registerReceipts.totals.count },
     { key: 'sale', label: 'فواتير المبيعات', dot: '#52c41a', count: summary.totalSalesCount },
     { key: 'return', label: 'مرتجعات المبيعات', dot: '#eb2f96', count: summary.totalReturnsCount },
     { key: 'bonus', label: 'فواتير البونص', dot: '#fa8c16', count: summary.totalBonusCount },
-    // النقدي اللي اتدفع مع الفاتورة + سندات القبض المستقلة (من النظام والتطبيق).
     { key: 'receipts', label: 'سندات القبض', dot: '#1677ff' },
   ];
 
-  // زرار الإنشاء بيمشي مع الشريحة — تعريف واحد هنا، والزرار فوق بيقرا منه.
   const newSale = { label: 'تسجيل طلب بيع جديد', icon: <PlusOutlined />, onCreate: () => startNew(), visible: true };
   const createByKind: Record<DocKind, { label: string; icon: React.ReactNode; onCreate: () => void; visible: boolean }> = {
     all: newSale,
@@ -3418,12 +2456,9 @@ function couponsTotal(inv: any): number {
   };
   const create = createByKind[docKindFilter];
 
-  // سطر الإجماليات تحت الجدول. «إجمالي السجلات» عدد الشريحة كلها من السيرفر — الجدول
-  // شايل صفحة منها بس — إلا لو الكشف متفلتر على أرقام بعينها (فحص النظام).
   const tabCount = focus.ids
     ? focusedRecords.length
     : (kindTabs.find((t) => t.key === docKindFilter)?.count ?? focusedRecords.length);
-  // الفلوس في سطر الإجماليات فوق — الذيل بيعدّ بس، عشان نفس الرقم مايتكتبش مرتين.
   const footer = (
     <span className="sl-foot">
       <span>إجمالي السجلات: <b>{tabCount.toLocaleString(numeralsLocale())}</b> مستند</span>
@@ -3431,9 +2466,6 @@ function couponsTotal(inv: any): number {
     </span>
   );
 
-  // ── سطر الإجماليات فوق (طلب العميل ٢٠٢٦-١٠-٠٣) ──
-  // كله من `/sales/summary` بنفس فلاتر الكشف — على الكشف كله مش على الـ٣٠٠ صف المحمّلين.
-  // التحصيلات في «الكل» من `receipts-log` بنفس الفلاتر، وشريحة السندات من لوحتها.
   const fmtCount = (n: number) => n.toLocaleString(numeralsLocale());
   const partialHint = summary.partial ? '(المعروض)' : undefined;
   const showCollections = !focus.ids && !filters.payment;
@@ -3467,7 +2499,6 @@ function couponsTotal(inv: any): number {
       <ListStat label="عدد فواتير البونص" value={fmtCount(summary.totalBonusCount)} />
       <ListStat label="إجمالي البونص قبل الخصم" value={money(summary.totalBonusGross)} tone="warn" hint={partialHint} />
     </>),
-    // شريحة السندات بتفلتر بالعميل والمندوب والتاريخ بس (زي جدولها).
     receipts: (<>
       <ListStat label="عدد السندات" value={rt ? fmtCount(rt.count) : '…'} />
       <ListStat label="مقبوض على الفواتير" value={rt ? money(rt.onInvoice) : '…'} />
@@ -3478,7 +2509,6 @@ function couponsTotal(inv: any): number {
 
   return (
     <>
-    {/* الإطار والشكل في `ListPage` — مشترك مع باقي الكشوف. */}
     <ListPage<DocKind>
       icon={<ShoppingCartOutlined />}
       title="المبيعات" muted="(سجل الفواتير والمرتجعات)"
@@ -3494,10 +2524,8 @@ function couponsTotal(inv: any): number {
           )}
           <PrintOptionsMenu value={printOpts} onChange={setPrintOpts}
                 hideKeys={['logo', 'companyName']} />
-          {/* شريحة السندات ليها جدولها وتصديره وأعمدته — بيترسموا هنا في نفس المكان. */}
           {docKindFilter === 'receipts' && <span ref={setReceiptsSlot} className="sl-slot" />}
           {docKindFilter !== 'receipts' && (<>
-            {/* جوّه `Space`، فالمسافة الافتراضية بتتشال — الـ`Space` بيباعد لوحده. */}
             <ExportExcelButton
               name={docKindFilter === 'bonus' ? 'فواتير البونص' : 'سجل الفواتير والمرتجعات'}
               rows={unifiedRecords}
@@ -3544,7 +2572,6 @@ function couponsTotal(inv: any): number {
           value={filters.family}
           onChange={(v) => setFilter('family', v)}
           options={FAMILY_OPTIONS} />
-        {/* البيان — بيتدوّر عليه في السيرفر (جزء من الكلام)، على الفواتير والمرتجعات. */}
         <Input.Search className="sl-f-statement" allowClear placeholder="البيان..." value={stmtText}
           onChange={(e) => { setStmtText(e.target.value); if (!e.target.value) setFilter('statement', undefined); }}
           onSearch={(v) => setFilter('statement', v.trim() || undefined)} />
@@ -3590,8 +2617,6 @@ function couponsTotal(inv: any): number {
                            shown={focusedRecords.length} />
         <Table
           className="sl-table"
-          // المسودّات فوق، وبرّه `focusedRecords` عن قصد: ملخّص المبيعات فوق بيتبني
-          // من المستندات، والمسودّة مش مستند — مايصحّش تتحسب في «صافي المبيعات».
           dataSource={[
             ...(drafts || []).map((d: any) => {
               const x = d.payload || {};
@@ -3612,14 +2637,8 @@ function couponsTotal(inv: any): number {
           columns={tableColumns}
           size="small"
           tableLayout="fixed"
-          // من غير `scroll` أفقي — الشاشة مالهاش يمين وشمال.
-          //
-          // مع `tableLayout: fixed` وكل عمود له عرض، المتصفح بيوزّع الفرق على الأعمدة كلها
-          // بالنسبة: زادت تتفرد شوية، قلّت تتضغط شوية. اللي كان بيكسّر الشكل هو عمود من غير
-          // عرض — الفاضي كله كان بينزل عليه لوحده فيطلع شريط أبيض في نص الجدول.
           rowKey="rowKey"
           rowClassName={(r: any) => (r.__isDraft ? 'row-draft' : '')}
-          // المسودّة مش مستند — مالهاش علامة.
           rowSelection={{
             selectedRowKeys: selectedKeys,
             onChange: (keys) => setSelectedKeys(keys),
@@ -3627,7 +2646,6 @@ function couponsTotal(inv: any): number {
             columnWidth: 36,
           }}
           loading={loading}
-          // الترقيم شمال، والإجماليات يمين في نفس السطر (`showTotal` + CSS تحت `.list-page`).
           pagination={{
             defaultPageSize: TABLE_PAGE_SIZE, showSizeChanger: true, pageSizeOptions: PAGE_SIZE_OPTIONS,
             locale: { items_per_page: '' },
@@ -3635,16 +2653,13 @@ function couponsTotal(inv: any): number {
           }}
           onRow={(record: any) => ({
             onClick: (e) => {
-              // العلامة مش فتح — الضغطة على خانتها بتعلّم وبس.
               if ((e.target as HTMLElement).closest?.('.ant-table-selection-column')) return;
-              // المسودّة مالهاش مستند يتفتح — الضغط بيستكملها.
               if (record.__isDraft) { resumeDraft(record.__draft); return; }
               if (record.doc_type === 'sale') {
                 openDetail(record.raw);
               } else if (record.doc_type === 'receipt') {
                 registerReceipts.view(record);
               } else {
-                // شاشة المرتجعات بتقرا `?doc=` — `?id=` كان بيوصّل للكشف بس.
                 openDoc('return', record.id);
               }
             },
@@ -3663,19 +2678,8 @@ function couponsTotal(inv: any): number {
         reps={reps as any}
         editing={receipt.editing} treasuryOptional={receipt.custodyEdit}
       />
-      {/* ورقة سند القبض من صفه في «الكل». */}
       {registerReceipts.modal}
 
-      {/*
-        * باب واحد بيفتح الفاتورة — الفرع والتاريخ والتصنيف والبحث والقايمة في نافذة واحدة.
-        *
-        * كان خطوتين: نافذة بتسأل التاريخ وبعدها نافذة بتسأل العميل. سؤالين هما نفس القرار —
-        * «الفاتورة دي لمين وامتى» — واتنين لازم تقفلهم قبل ما تكتب أول سطر.
-        *
-        * نفس اللي اتعمل في فاتورة الشرا، عشان اللي اتعلّم إيده على واحدة مايتعلّمش من الأول
-        * على التانية. و`kinds` بيدّي تصنيف جوّه الباب، فاللي بيدوّر على اسم ومش لاقيه في
-        * العملاء بيبص في الموردين من غير ما يقفل ويفتح تاني.
-        */}
       {partyPicker}
 
     </>

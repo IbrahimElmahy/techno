@@ -1,8 +1,3 @@
-"""Cost Centers router (006).
-
-CRUD for the analytical-dimension master. Reuses the 005 `accounting.chart.*` capabilities
-(Accountant + System Admin) — a cost center is chart-adjacent master data, no new role.
-"""
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -26,9 +21,6 @@ class CostCenterOut(BaseModel):
     name: str
     parent_id: int | None
     active: bool
-    # «مستوي مركز التكلفة» — 1 for a root, 2 for its child, and so on. Derived from the parent
-    # chain rather than stored: a stored level can disagree with the tree it describes, and then
-    # the report grouped by level and the tree on screen tell two different stories.
     level: int = 1
     children: list[CostCenterOut] | None = None
 
@@ -45,7 +37,6 @@ class CostCenterUpdate(BaseModel):
 
 
 def _level(db: Session, cc: CostCenter) -> int:
-    """Depth of this centre, 1-based. Walks up; the guard is for a cycle that should not exist."""
     level, seen, node = 1, {cc.id}, cc
     while node.parent_id is not None and node.parent_id not in seen:
         seen.add(node.parent_id)

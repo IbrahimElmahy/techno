@@ -1,21 +1,3 @@
-"""مندوب سندات القبض القديمة — تتشغّل مرة باليد.
-
-`create_receipt` ماكانش بيكتب مندوب على السند خالص، ولا على قيده. النتيجة إن كشف الحساب
-بيعرض التحصيل من غير مندوب، وفلتر المندوب مابيلاقيش تحصيلاته، وعمود «المخزن» مالوش
-مندوب يجيب مخزنه منه. السكربت ده بيعبّي اللي فاضي بنفس قاعدة الكود الجديد:
-
-1. اللي كتب السند مندوب → هو المحصِّل.
-2. السند جاي من التطبيق (`client_uuid`) → اللي كتبه برضه (التطبيق مابيكتبش غير المندوب).
-3. غير كده → مندوب العميل.
-
-والقيد المربوط بالسند بياخد نفس المندوب لو فاضي، وفرع السند لو فرعه فاضي. السند العكسي
-بياخد مندوب أصله، ولو مش مربوط بقيده بيتربط بقيد العكس بتاع قيد الأصل.
-
-بيمسّ قاعدتنا بس (`DATABASE_URL`) — ومابيلمسش غير الخانات الفاضية، فإعادة التشغيل آمنة.
-
-    python -m src.scripts.fix_receipt_reps          # عرض بس
-    python -m src.scripts.fix_receipt_reps --yes    # تنفيذ
-"""
 from __future__ import annotations
 
 import sys
@@ -53,7 +35,6 @@ def run(execute: bool = False) -> None:
         mirrors_copied = mirrors_linked = 0
         entry_rep = entry_branch = 0
 
-        # ١) الأصول الأول — العكسي بياخد من أصله بعد ما يتعبّى.
         for v in receipts:
             if v.reverses_id is not None or v.rep_user_id is not None:
                 continue
@@ -69,7 +50,6 @@ def run(execute: bool = False) -> None:
             else:
                 no_rep += 1
 
-        # ٢) السندات العكسية.
         for v in receipts:
             if v.reverses_id is None:
                 continue
@@ -85,7 +65,6 @@ def run(execute: bool = False) -> None:
                     mirrors_linked += 1
         db.flush()
 
-        # ٣) القيد بياخد مندوب سنده وفرعه لو فاضيين.
         entry_ids = [v.ledger_entry_id for v in receipts if v.ledger_entry_id]
         entries = {}
         for i in range(0, len(entry_ids), 1000):

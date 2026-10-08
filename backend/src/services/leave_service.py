@@ -1,12 +1,3 @@
-"""الأجازات — الطلبات والأرصدة (HR-3).
-
-Approving a request WRITES `attendance_day` rows with `status=leave`, so payroll and every
-attendance report read one truth. Cancelling takes them back — unless a day has since been locked
-by a posted payroll run, in which case the cancellation is refused rather than half-applied.
-
-The balance is derived, never stored: `taken()` sums the approved requests. See the note in
-`models/hr_leave.py` for why.
-"""
 from __future__ import annotations
 
 from datetime import date, timedelta
@@ -26,10 +17,7 @@ ZERO_QTY = Decimal("0.000")
 
 
 class LeaveError(Exception):
-    """الطلب مايتعملش زي ما هو مكتوب."""
-
-
-# ------------------------------------------------------------------ الأنواع
+    pass
 
 
 def create_type(
@@ -60,19 +48,9 @@ def create_type(
     return row
 
 
-# ------------------------------------------------------------------ الأيام
-
-
 def working_days(
     db: Session, *, employee_id: int, date_from: date, date_to: date, counts_weekend: bool,
 ) -> Decimal:
-    """عدد الأيام اللي الأجازة بتاكلها فعلاً.
-
-    «أسبوع أجازة» and «خمس أيام أجازة» are different requests over the same dates, and which one
-    was meant is a property of the leave TYPE, not of the person asking. Public holidays never
-    count against a leave balance — the company was closed anyway, and charging somebody for it is
-    the kind of thing that gets noticed once and remembered for years.
-    """
     if date_to < date_from:
         raise LeaveError("تاريخ النهاية قبل البداية.")
     employee = db.get(Employee, employee_id)
@@ -97,11 +75,7 @@ def working_days(
     return to_qty(Decimal(total))
 
 
-# ------------------------------------------------------------------ الرصيد
-
-
 def taken(db: Session, *, employee_id: int, leave_type_id: int, year: int) -> Decimal:
-    """المستهلك — مجموع الطلبات المعتمدة، محسوب مش مخزّن."""
     total = db.scalar(
         select(func.coalesce(func.sum(LeaveRequest.days), 0))
         .where(LeaveRequest.employee_id == employee_id,
@@ -114,15 +88,12 @@ def taken(db: Session, *, employee_id: int, leave_type_id: int, year: int) -> De
 
 
 def balance(db: Session, *, employee_id: int, leave_type_id: int, year: int) -> dict:
-    """الرصيد كامل: المرحّل + المستحق + التسوية − المستهلك."""
     row = db.scalar(select(LeaveEntitlement).where(
         LeaveEntitlement.employee_id == employee_id,
         LeaveEntitlement.leave_type_id == leave_type_id,
         LeaveEntitlement.year == year))
     kind = db.get(LeaveType, leave_type_id)
     opening = to_qty(Decimal(str(row.opening))) if row else ZERO_QTY
-    # مافيش صف مستحق؟ يبقى الرصيد الافتراضي للنوع — الموظف الجديد مايبقاش رصيده صفر
-    # لمجرد إن محدش فتحله صف.
     entitled = (to_qty(Decimal(str(row.entitled))) if row
                 else to_qty(Decimal(str(kind.annual_quota))) if kind else ZERO_QTY)
     adjustment = to_qty(Decimal(str(row.adjustment))) if row else ZERO_QTY
@@ -162,9 +133,6 @@ def set_entitlement(
         after={"year": year, "type": leave_type_id, "entitled": str(row.entitled)},
     )
     return row
-
-
-# ------------------------------------------------------------------ الطلبات
 
 
 def request(
@@ -211,12 +179,10 @@ def request(
 
 
 def approve(db: Session, *, request_id: int, actor_user_id: int) -> LeaveRequest:
-    """بيعتمد الطلب وبيكتب أيام الحضور — مصدر واحد للحقيقة."""
     row = db.get(LeaveRequest, request_id)
     if row is None:
         raise LeaveError("الطلب غير موجود.")
     if row.status == LeaveStatus.approved:
-        # اعتماد تاني من شاشة تانية: مابيرميش خطأ ومابيخصمش تاني.
         return row
     if row.status in (LeaveStatus.rejected, LeaveStatus.cancelled):
         raise LeaveError("الطلب ده متقفل — اعمل طلب جديد.")
@@ -243,7 +209,6 @@ def approve(db: Session, *, request_id: int, actor_user_id: int) -> LeaveRequest
 
 
 def _write_days(db: Session, row: LeaveRequest, *, actor_user_id: int) -> None:
-    """بيحط أيام الحضور بحالة «أجازة» — عشان المسير يقرا حاجة واحدة."""
     kind = db.get(LeaveType, row.leave_type_id)
     employee = db.get(Employee, row.employee_id)
     shift = attendance_service.shift_for(db, row.employee_id, row.date_from)
@@ -260,8 +225,6 @@ def _write_days(db: Session, row: LeaveRequest, *, actor_user_id: int) -> None:
         if not skip:
             existing = db.scalar(select(AttendanceDay).where(
                 AttendanceDay.employee_id == row.employee_id, AttendanceDay.work_date == day))
-            # يوم مقفول بمسير مرحّل بيتسكت عنه بدل ما الاعتماد كله يقع: باقي الأيام أولى
-            # بالتسجيل، والشهر المقفول مش هيتغيّر من ورا المحاسب.
             if existing is None or existing.locked_by_payroll_run_id is None:
                 attendance_service.record_day(
                     db, employee_id=row.employee_id, work_date=day,
@@ -290,12 +253,6 @@ def reject(db: Session, *, request_id: int, actor_user_id: int, reason: str | No
 
 
 def cancel(db: Session, *, request_id: int, actor_user_id: int) -> LeaveRequest:
-    """بيلغي الطلب وبيشيل أيام الحضور اللي اتكتبت منه.
-
-    Refused outright when any of its days has been locked by a posted payroll run: cancelling then
-    would leave the balance saying the leave was never taken while the payroll it fed is already in
-    the ledger saying it was.
-    """
     row = db.get(LeaveRequest, request_id)
     if row is None:
         raise LeaveError("الطلب غير موجود.")

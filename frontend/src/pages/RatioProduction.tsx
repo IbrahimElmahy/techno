@@ -20,20 +20,6 @@ import { money, numeralsLocale, qty as fmtQty } from '../utils/money';
 import { PAGE_SIZE, PAGE_SIZE_OPTIONS } from '../utils/pagination';
 import { activeOptions } from '../utils/active';
 
-/**
- * **انتاج حسب النسب — زي a5 بالظبط** (طلب السادات ٢٠٢٦-١٠-٠٦).
- *
- * المصنع مكانش مرتاح لأمر التشغيل بمراحله (مسودة ← اعتماد ← صرف ← استلام ← إقفال). في a5
- * الإنتاج ورقة واحدة: المنتجات وكمياتها، والخامات بتنزل لوحدها من النسب — كل خامة من مخزنها
- * ومكتوب جنبها المنتج اللي اتصرفت عليه — والحفظ بيصرف ويدخّل الإنتاج في نفس اللحظة.
- *
- * الورقة بتتحفظ أمر تشغيل `execute=true`: نفس المستند والتكلفة (متوسط تكلفة الخامة) والتراجع
- * والتقارير اللي الأوامر التانية ماشية عليهم — مافيش نوع إنتاج تالت.
- *
- * الخامات بتتحسب من السيرفر (`/manufacturing/recipe-plan`) — نفس الحساب اللي بيترحّل، فاللي
- * على الشاشة هو اللي بيتصرف. وتتعدّل من الشاشة لو اللي اتصرف فعلاً غير النسبة.
- */
-
 interface Item { id: number; name: string; unit_of_measure?: string | null; purchase_price?: string | null; active: boolean }
 interface Wh { id: number; name: string; branch_id?: number | null }
 interface MatLine { key: number; item_id: number; quantity: number | null; warehouse_id?: number }
@@ -50,7 +36,6 @@ interface PO {
   reversed: boolean; is_reversal: boolean; products: POProduct[]; materials: POMaterial[];
 }
 
-/** «225 كجم 422 جم» زي a5 — الكيلو والجرام منفصلين. الوحدات التانية بالكسر عادي. */
 function unitText(q: number | null | undefined, unit?: string | null): string {
   if (q == null) return '';
   const u = (unit || '').trim();
@@ -78,7 +63,6 @@ export default function RatioProduction() {
   const [lines, setLines] = useState<ProdLine[]>([]);
   const seq = useRef(0);
   const nextKey = () => { seq.current += 1; return seq.current; };
-  // رصيد الخامة في كل مخزن — بيتجاب مرة لكل مخزن ويتخزّن.
   const [stock, setStock] = useState<Record<number, Record<number, number>>>({});
 
   const load = async () => {
@@ -108,7 +92,6 @@ export default function RatioProduction() {
   const itemOf = (id?: number) => items.find((x) => x.id === id);
   const whName = (id?: number | null) => warehouses.find((x) => x.id === id)?.name ?? '-';
   const products = useMemo(() => items.filter((x) => x.active && recipeProducts.has(x.id)), [items, recipeProducts]);
-  // المخزن الموقوف مايتختارش لورقة جديدة — إلا اللي متسجّل عليها.
   const whOptions = useMemo(() => activeOptions(sortByName(warehouses, (w) => w.name),
     [outWh, ...lines.flatMap((l) => [l.warehouse_id, ...l.materials.map((m) => m.warehouse_id)])]),
   [warehouses, outWh, lines]);
@@ -121,10 +104,9 @@ export default function RatioProduction() {
       const m: Record<number, number> = {};
       (r.data || []).forEach((row: { item_id: number; on_hand: string }) => { m[row.item_id] = Number(row.on_hand); });
       setStock((p) => ({ ...p, [whId]: m }));
-    } catch { /* الرصيد معلومة مساعدة — غيابه مايوقفش الورقة */ }
+    } catch {}
   };
 
-  /** الخامات من النسب للمنتج بالكمية — والمخزن اللي اختاره المستخدم لخامة بيفضل. */
   const plan = async (key: number, productId?: number, quantity?: number | null) => {
     if (!productId || !quantity || quantity <= 0) {
       setLines((p) => p.map((l) => (l.key === key ? { ...l, materials: [], noRecipe: false } : l)));
@@ -160,7 +142,6 @@ export default function RatioProduction() {
   const reset = () => { setLines([{ key: nextKey(), quantity: null, materials: [] }]); setDocNo(''); setStatement(''); };
   const openEntry = () => { reset(); setDate(dayjs()); setEntryOpen(true); };
 
-  // كل الخامات في جدول واحد زي a5 — كل سطر عليه المنتج اللي اتصرف عليه.
   const matRows = lines.flatMap((l) => l.materials.map((m) => ({ ...m, lineKey: l.key, product_id: l.product_id })));
   const estCost = matRows.reduce((s, m) => s + (m.quantity || 0) * Number(itemOf(m.item_id)?.purchase_price || 0), 0);
 
@@ -232,7 +213,6 @@ export default function RatioProduction() {
     { title: 'رقم الانتاج', dataIndex: 'external_document_number', key: 'x', width: 100, render: (v: string | null) => v || '-' },
     { title: 'المنتجات', key: 'p', ellipsis: true,
       render: (_: unknown, r: PO) => r.products.map((p) => `${itemOf(p.item_id)?.name ?? p.item_id} (${fmtQty(Number(p.quantity))})`).join(' · ') },
-    // أعمدة سجل a5 بأساميها: اجمالي خامات · مصروفات · اجمالي منتجات · ملاحظات.
     { title: 'اجمالي خامات', key: 'm', width: 120, align: 'left' as const,
       render: (_: unknown, r: PO) => money(r.materials.reduce((t, m) => t + Number(m.line_cost || 0), 0)) },
     { title: 'مصروفات', dataIndex: 'expense_amount', key: 'e', width: 100, align: 'left' as const, render: (v: string) => money(v || 0) },
@@ -249,8 +229,6 @@ export default function RatioProduction() {
         </Space>
       ) },
   ];
-  // إظهار وإخفاء الأعمدة — نفس المحرك اللي كل السجلات ماشية عليه؛ «رقم الانتاج» (رقم الورقة
-  // اللي اتكتب في «امر تشغيل») ظاهر، واللي مش محتاجه يخفيه من «الأعمدة».
   const listCols = useTableColumns('ratio-production-list', listColumns);
 
   if (entryOpen) {

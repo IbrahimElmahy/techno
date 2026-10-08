@@ -1,11 +1,3 @@
-"""يتتبّع فروق المخزون (صنف × مخزن) بين a5 وعندنا لحد نوع الحركة — قراءة بس (٢٠٢٦-١٠-٠٦).
-
-    python -m src.scripts.trace_a5_stock_diff --dir /opt/techno/a5factory --prefix FC-
-
-`verify_a5_stock_by_store` بيقول «فيه فرق» بس. ده بياخد كل زوج مختلف ويحط جنب بعض:
-حركات a5 مقسومة بالنوع (افتتاحي، بيع، شرا، تحويل، إذن…) ومجموعها، وحركاتنا مقسومة
-بمصدرها (`source_doc_type`) ومجموعها — فالفرق بيبان جاي من أنهي نوع.
-"""
 from __future__ import annotations
 
 import os

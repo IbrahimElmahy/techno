@@ -1,4 +1,3 @@
-"""Purchases router (T024). FR-009–012."""
 from __future__ import annotations
 
 from datetime import date
@@ -41,35 +40,26 @@ class PurchaseLineIn(BaseModel):
     item_id: int
     quantity: Decimal
     unit_price: Decimal
-    unit: str | None = None    # (008) unit of measure; None = base
-    warehouse_id: int | None = None   # (030) receive this line into its own warehouse
-    discount_pct: Decimal | None = None   # خصم السطر؛ None = مفيش خصم متفق عليه
-    # نصّي الخصم — للعرض لما الفاتورة تتفتح تاني. `discount_pct` هو اللي بيتحسب بيه.
+    unit: str | None = None
+    warehouse_id: int | None = None
+    discount_pct: Decimal | None = None
     fixed_discount_pct: Decimal | None = None
     variable_discount_pct: Decimal | None = None
 
 
 class PurchaseCreate(BaseModel):
     supplier_id: int
-    # خصم الفاتورة المتغيّر. الثابت بيتقرا من الإعدادات زي البيع.
     variable_discount_pct: Decimal = Decimal("0")
     location: LocationIn
     cash_amount: Decimal
-    # **فاضي ⇒ الباقي كله على حساب المورد.** الشاشة بتبعت النقدي وبس في الحالة
-    # الطبيعية؛ الرقم ده بيتكتب صراحةً لما اللي قدامها يقسّم بإيده، والسيرفر ساعتها
-    # بيتأكد إن القسمة بتظبط مع الإجمالي.
     credit_amount: Decimal | None = None
     lines: list[PurchaseLineIn]
-    # الخزنة اللي بوباب الحفظ اختارها. فاضية ⇒ السيرفر يستنتجها (تطبيق المندوب).
     cash_account_id: int | None = None
-    # (030) document fields — the supplier's own invoice number and free text.
     rep_id: int | None = None
     expense_account_id: int | None = None
     external_document_number: str | None = None
     notes: str | None = None
-    # مركز التكلفة — اختياري، وبيتورّث لسطور القيد.
     cost_center_id: int | None = None
-    # التوزيع التحليلي على المستند كله — بيغلب `cost_center_id` لما يتحط.
     cost_center_distribution: dict[str, Decimal] | None = None
     statement1: str | None = None
     statement2: str | None = None
@@ -84,8 +74,6 @@ class ReturnLineIn(BaseModel):
 
 class ReturnCreate(BaseModel):
     lines: list[ReturnLineIn]
-    # The day the goods went back, and why. Both were columns the payload could not reach — the
-    # third document in a row to be found in that state.
     return_date: date | None = None
     notes: str | None = None
 
@@ -94,8 +82,6 @@ class DocOut(BaseModel):
     id: int
     document_number: str
     ledger_entry_id: int | None = None
-    # نفس اللي فاتورة البيع بترجّعه ساعة الإنشاء: الشاشة محتاجة ترسم إجمالي المشتري يقدر يراجعه،
-    # ونداء تاني عشان تقراه معناه لحظة الفاتورة فيها فيه رقم على الشاشة ورقم في الدفاتر.
     gross: Decimal = Decimal("0")
     combined_pct: Decimal = Decimal("0")
     net: Decimal = Decimal("0")
@@ -118,29 +104,17 @@ class PurchaseListOut(BaseModel):
     cash_amount: Decimal
     credit_amount: Decimal
     created_at: str
-    # (031) The day the goods arrived. `created_at` is when the row was typed, which is a different
-    # question and the one nobody was asking.
     purchase_date: str | None = None
     external_document_number: str | None = None
     notes: str | None = None
-    # مركز التكلفة — اختياري، وبيتورّث لسطور القيد.
     cost_center_id: int | None = None
-    # التوزيع التحليلي على المستند كله — بيغلب `cost_center_id` لما يتحط.
     cost_center_distribution: dict[str, Decimal] | None = None
-    # (٨) الأعمدة اللي سجل الشرا عند العميل بيعرضها والسجل عندنا مكانش بيرجّعها.
-    #
-    # `gross` و`combined_pct` و`net` و`tax_amount` كانوا **معرّفين فوق من الأول وماكانوش
-    # بيتعبّوا** — الـendpoint مكانش بيمرّرهم، فالـdefault كان بيخلّيهم أصفار في كل صف. يعني
-    # العقد بيوعد بأربع أرقام والسجل بيرجّعهم صفر من غير ما حاجة تزعق.
     branch_id: int | None = None
     branch_name: str | None = None
     expense_account_id: int | None = None
     expense_account_name: str | None = None
-    #  قيمة الخصم بالجنيه — النسبة لوحدها مابتقولش كام اتخصم.
     discount_amount: Decimal = Decimal("0")
     tax_pct: Decimal = Decimal("0")
-    # البيان — كان بيتكتب ويتحفظ ومابيرجعش، ففتح الفاتورة للتعديل كان بيلاقيه فاضي والحفظ
-    # بعدها بيمسحه. نفس التلات خانات اللي على المردود.
     statement1: str | None = None
     statement2: str | None = None
     statement3: str | None = None
@@ -172,28 +146,17 @@ class PurchaseDetailOut(PurchaseListOut):
 
 
 class PurchaseReturnListOut(BaseModel):
-    """صف المردود في السجل — **بنفس أعمدة الفاتورة**.
-
-    كان مستند أنحف: قيمة وفاتورة أصل وخلاص. بقى نسخة من الفاتورة بالعكس، فبيشيل نفس الحقول —
-    رقم إشعار المورد، حساب الترحيل، قبل الخصم ونسبته، والبيانات التلاتة — عشان السجل يعرضهم
-    بنفس الأسماء والتقارير تلاقيهم مليانين زي أي مستند تاني.
-    """
     id: int
     document_number: str
-    # اختياري: المردود المستقل مالوش فاتورة.
     purchase_invoice_id: int | None = None
     purchase_document_number: str | None = None
     supplier_id: int | None
     supplier_name: str | None
     value: Decimal
     created_at: str
-    # Stored and returned in the same change. The sales return and the purchase were each found
-    # storing a date that came back from nothing, so the screen could write it and never see it.
     return_date: date | None = None
     notes: str | None = None
-    # مركز التكلفة — اختياري، وبيتورّث لسطور القيد.
     cost_center_id: int | None = None
-    # التوزيع التحليلي على المستند كله — بيغلب `cost_center_id` لما يتحط.
     cost_center_distribution: dict[str, Decimal] | None = None
     external_document_number: str | None = None
     expense_account_id: int | None = None
@@ -215,10 +178,6 @@ class PaginatedPurchasesOut(BaseModel):
 def list_purchases(
     response: Response,
     supplier_id: int | None = Query(None),
-    # **فلتر الفترة** — كان ناقص خالص، فالكشف بيرجّع آخر الصفوف مهما كان المطلوب.
-    # و«تحميل فترة» في الشاشة كان بيبعت التاريخين وبيترميوا في السكات، فالنتيجة
-    # فواتير من شهور تانية — اللي بيقراها بيفتكر إن الفلتر مش شغال، وهو صح.
-    # نفس اسم الوسيطين اللي في المبيعات بالحرف، عشان الشاشة تكلّم الاتنين بنفس اللغة.
     date_from: date | None = Query(None),
     date_to: date | None = Query(None),
     limit: int | None = Query(None),
@@ -244,7 +203,6 @@ def list_purchases(
     rows = list(db.scalars(stmt).all())
     names = {s.id: s.name for s in db.scalars(select(Supplier)).all()}
 
-    # الفرع مش على الفاتورة — هو على المخزن اللي البضاعة نزلت فيه، فبيتجاب منه.
     from src.models.org import Branch
     from src.models.warehouse import Warehouse
 
@@ -274,9 +232,7 @@ def list_purchases(
             branch_id=branch_id, branch_name=branches.get(branch_id) if branch_id else None,
             expense_account_id=p.expense_account_id,
             expense_account_name=accounts.get(p.expense_account_id),
-            # الخصم بالجنيه = قبل الخصم ناقص بعده. مشتق مش محفوظ، فمافيش رقمين يختلفوا.
             discount_amount=to_money(gross - net),
-            # الضريبة كنسبة من الصافي — الصافي صفر يعني مفيش نسبة، مش قسمة على صفر.
             tax_pct=(to_money(to_money(p.tax_amount or 0) / net * 100) if net else Decimal("0")),
             statement1=p.statement1, statement2=p.statement2, statement3=p.statement3,
         ))
@@ -288,8 +244,6 @@ def list_purchases(
     return model_json(out, headers={"X-Total-Count": str(total)})
 
 
-# Declared BEFORE `/{purchase_id}` on purpose: FastAPI matches in declaration order, and a later
-# `/returns` would be swallowed by the id route and fail parsing "returns" as an int.
 @router.get("/payments-log", response_model=dict)
 def payments_log(
     supplier_id: int | None = Query(None),
@@ -299,13 +253,6 @@ def payments_log(
     current: CurrentUser = Depends(require_capability(CAP_STOCK_READ)),
     db: Session = Depends(get_db),
 ) -> dict:
-    """**سندات الصرف في سجل المشتريات** (طلب العميل ٢٠٢٦-١٠-٠١) — نفس شكل `/sales/receipts-log`:
-
-    * **على فاتورة** — النقدي اللي اتدفع مع فاتورة الشرا نفسها (`cash_amount`).
-    * **دفعة** — سند صرف لوحده لمورد.
-
-    الصفوف بنفس الأسماء اللي في سندات القبض (`party_*`)، فالشاشة بتعرض الاتنين بنفس اللوحة.
-    """
     from sqlalchemy import func
     from src.models.user import User
     from src.models.voucher import Voucher, VoucherKind
@@ -329,7 +276,6 @@ def payments_log(
         inv_stmt = inv_stmt.where(inv_day <= date_to)
         v_stmt = v_stmt.where(Voucher.voucher_date <= date_to)
 
-    # الإجماليات على كل اللي الفلاتر سابته — مش على الصفوف المحمّلة (`limit`).
     def _agg(stmt, col):
         sub = stmt.subquery()
         n, total = db.execute(select(func.count(), func.coalesce(func.sum(sub.c[col]), 0))
@@ -345,10 +291,8 @@ def payments_log(
     sup_ids = {r.supplier_id for r in invs} | {v.supplier_id for v in vouchers}
     sups = dict(db.execute(select(Supplier.id, Supplier.name)
                            .where(Supplier.id.in_(sup_ids))).all()) if sup_ids else {}
-    # بيانات المستند كاملة في الجدول — الخزنة ومركز التكلفة بأسماءهم، كله بقواميس.
     from src.models.cost_center import CostCenter
     from src.services.voucher_service import cash_labeler, invoice_cash_accounts
-    # فاتورة الشرا مابتحفظش الخزنة — بتتقرا من قيدها (السطر الدائن بمبلغ النقدي).
     inv_cash = invoice_cash_accounts(db, invs, direction="credit")
     cash_label = cash_labeler(db, treasury_ids={v.treasury_id for v in vouchers},
                               account_ids=set(inv_cash.values()) | {v.cash_account_id for v in vouchers})
@@ -408,19 +352,11 @@ def payments_log(
 @router.get("/returns", response_model=list[PurchaseReturnListOut])
 def list_purchase_returns(
     supplier_id: int | None = None,
-    # الفترة — زي `list_purchases` بالظبط، والشرح هناك.
     date_from: date | None = None,
     date_to: date | None = None,
     current: CurrentUser = Depends(require_capability(CAP_STOCK_READ)),
     db: Session = Depends(get_db),
 ) -> list[PurchaseReturnListOut]:
-    """Every purchase return, newest first — the register their «مردودات شراء» opens on.
-
-    The returns have always been recorded; they could only be seen by opening the purchase they
-    came off, which answers «what came back off THIS invoice» and never «what went back to
-    suppliers this month».
-    """
-    # المعكوس مابيظهرش: بضاعته رجعت وقيده اتعكس، فهو مستند في الدفتر ومش حركة في السجل.
     _q = (branch_scope.scope(select(PurchaseReturn), PurchaseReturn, current)
           .where(PurchaseReturn.reversed_at.is_(None)))
     if date_from:
@@ -443,7 +379,6 @@ def list_purchase_returns(
     out = []
     for r in rows:
         inv = invoices.get(r.purchase_invoice_id) if r.purchase_invoice_id else None
-        # المردود المستقل شايل مورده بنفسه؛ المربوط بياخده من فاتورته.
         sup_id = r.supplier_id if r.supplier_id else (inv.supplier_id if inv else None)
         if supplier_id is not None and sup_id != supplier_id:
             continue
@@ -467,11 +402,8 @@ class PurchaseReturnLineOut(BaseModel):
     item_id: int
     item_name: str | None
     quantity: Decimal
-    # المردود المستقل بيتكتب فيه السعر؛ المربوط بياخده من سطر فاتورته. الاتنين بيرجّعوه
-    # عشان الورقة المطبوعة تعرف تحط قيمة على السطر بدل كمية بلا سعر.
     unit_price: Decimal = Decimal("0")
     line_total: Decimal = Decimal("0")
-    # نفس ما على سطر الفاتورة — الشاشة بتعيد بناء السطر منهم لما المردود يتفتح للتعديل.
     discount_pct: Decimal | None = None
     fixed_discount_pct: Decimal | None = None
     variable_discount_pct: Decimal | None = None
@@ -483,29 +415,18 @@ class PurchaseReturnDetailOut(PurchaseReturnListOut):
     lines: list[PurchaseReturnLineOut]
 
 
-# Also before `/{purchase_id}`, and two segments deep so it cannot collide with it.
 @router.get("/returns/{return_id}", response_model=PurchaseReturnDetailOut)
 def get_purchase_return(
     return_id: int,
-    # `current` مش `_`: الجسم بيقرا الاسم ده في حارس الفرع تحت. اتساب `_` من قبل ما
-    # الحارس يتضاف، فكل فتحة لمردود شرا كانت بتطلّع **500** — `NameError` مش خطأ
-    # منطق، يعني الشاشة كانت بتقع قبل ما تقرا أول حقل.
     current: CurrentUser = Depends(require_capability(CAP_STOCK_READ)),
     db: Session = Depends(get_db),
 ) -> PurchaseReturnDetailOut:
-    """المردود بسطوره — «رجّعنا إيه بالظبط».
-
-    `purchase_return_line` has stored what went back since returns were built, and nothing has ever
-    read it: the register could show the value of a return and never the items in it, so «رجعنا
-    عشرة ولا اتنين» was answerable only from paper. The lines were there the whole time.
-    """
     r = db.get(PurchaseReturn, return_id)
     if r is None:
         raise HTTPException(404, {"code": "not_found", "message": "Purchase return not found"})
     if not branch_scope.may_see(current, r):
         raise HTTPException(404, {"code": "not_found", "message": "المردود مش موجود"})
     inv = db.get(PurchaseInvoice, r.purchase_invoice_id) if r.purchase_invoice_id else None
-    # المردود المستقل شايل مورده بنفسه؛ المربوط بياخده من فاتورته.
     sup_id = r.supplier_id if r.supplier_id else (inv.supplier_id if inv else None)
     supplier = db.get(Supplier, sup_id) if sup_id else None
     names = {
@@ -542,8 +463,6 @@ def get_purchase_return(
 @router.get("/{purchase_id}", response_model=PurchaseDetailOut)
 def get_purchase(
     purchase_id: int,
-    # كان اسمه `_` والجسم بينادي `current` — يعني فتح أي فاتورة شرا كان بيرمي ٥٠٠
-    # على طول. الاسم هو كل الإصلاح.
     current: CurrentUser = Depends(require_capability(CAP_STOCK_READ)),
     db: Session = Depends(get_db),
 ) -> PurchaseDetailOut:
@@ -593,10 +512,6 @@ def update_purchase(
     current: CurrentUser = Depends(require_capability(CAP_PURCHASE_WRITE)),
     db: Session = Depends(get_db),
 ) -> DocOut:
-    """تعديل فاتورة شراء — بتتحفظ مكان القديمة، من غير مردود ولا قيد عكسي.
-
-    نفس فكرة فاتورة البيع بالظبط: الأثر القديم بيتشال والفاتورة بتتبني تاني بنفس رقمها.
-    """
     inv = db.get(PurchaseInvoice, purchase_id)
     if inv is None:
         raise HTTPException(404, {"code": "not_found", "message": "فاتورة الشراء غير موجودة"})
@@ -628,8 +543,6 @@ def update_purchase(
             replace_invoice_id=purchase_id,
         )
     except (PurchaseError, StockError, AccountResolutionError, LedgerError) as exc:
-        # خزنة مختارة غلط أو مندوب مالوش عهدة = إعداد ناقص، مش عطل سيرفر. من غير السطر ده
-        # كانت بتطلع 500 والرسالة العربية اللي بتقول الناقص إيه تضيع في اللوج.
         raise HTTPException(status.HTTP_409_CONFLICT,
                             {"code": "purchase_invalid", "message": str(exc)})
     db.commit()
@@ -642,7 +555,6 @@ def delete_purchase(
     current: CurrentUser = Depends(require_capability(CAP_PURCHASE_WRITE)),
     db: Session = Depends(get_db),
 ) -> None:
-    """حذف فاتورة شراء — بتروح هي وأثرها، مش بتتعكس."""
     try:
         document_edit_service.delete_purchase(
             db, purchase_id=purchase_id, actor_user_id=current.id)
@@ -702,38 +614,27 @@ def return_purchase(
     return DocOut(id=ret.id, document_number=ret.document_number, ledger_entry_id=ret.ledger_entry_id)
 
 class ReverseIn(BaseModel):
-    """«تعديل» ولا «حذف» — الحركة واحدة والنية مختلفة."""
-
     reason: str = "edit"
 
 
 class StandaloneReturnLineIn(BaseModel):
-    """سطر المردود = سطر الفاتورة بالظبط."""
-
     item_id: int
     quantity: Decimal
     unit_price: Decimal = Decimal("0")
     discount_pct: Decimal | None = None
-    # نصّي الخصم — للعرض لما الفاتورة تتفتح تاني. `discount_pct` هو اللي بيتحسب بيه.
     fixed_discount_pct: Decimal | None = None
     variable_discount_pct: Decimal | None = None
     unit: str | None = None
-    # مخزن السطر. فاضي يعني مخزن المستند — الفاتورة الواحدة ممكن تتوزّع على أكتر من مخزن،
-    # والمردود اللي بيرجّعها لازم يقدر يطلّع كل صنف من مخزنه.
     warehouse_id: int | None = None
 
 
 class StandaloneReturnIn(BaseModel):
-    """ترويسة المردود = ترويسة الفاتورة بالظبط."""
-
     supplier_id: int
     location: LocationIn
     lines: list[StandaloneReturnLineIn]
     return_date: date | None = None
     notes: str | None = None
-    # مركز التكلفة — اختياري، وبيتورّث لسطور القيد.
     cost_center_id: int | None = None
-    # التوزيع التحليلي على المستند كله — بيغلب `cost_center_id` لما يتحط.
     cost_center_distribution: dict[str, Decimal] | None = None
     expense_account_id: int | None = None
     variable_discount_pct: Decimal = Decimal("0")
@@ -749,14 +650,6 @@ def create_standalone_purchase_return(
     current: CurrentUser = Depends(require_capability(CAP_RETURN_WRITE)),
     db: Session = Depends(get_db),
 ) -> DocOut:
-    """مردود شرا مستقل — أصناف راجعة لمورد من غير فاتورة.
-
-    Declared BEFORE `/{purchase_id}/returns` so the id route does not swallow it.
-
-    المردود المربوط بفاتورة لسه موجود على `/{purchase_id}/returns`: هو اللي بيتقيّد بكميات
-    الفاتورة، وهو الصح لما تكون البضاعة راجعة من شحنة بعينها. ده للحالة التانية — بضاعة
-    اتجمّعت أو الفاتورة مش مهمة.
-    """
     try:
         ret = purchase_service.create_standalone_purchase_return(
             db, supplier_id=body.supplier_id,
@@ -794,7 +687,6 @@ def update_purchase_return(
     current: CurrentUser = Depends(require_capability(CAP_RETURN_WRITE)),
     db: Session = Depends(get_db),
 ) -> DocOut:
-    """تعديل مردود شراء — بيتحفظ مكان القديم بنفس رقمه، من غير قيد عكسي."""
     ret = db.get(PurchaseReturn, return_id)
     if ret is None:
         raise HTTPException(404, {"code": "not_found", "message": "المردود غير موجود"})
@@ -842,7 +734,6 @@ def delete_purchase_return(
     current: CurrentUser = Depends(require_capability(CAP_RETURN_WRITE)),
     db: Session = Depends(get_db),
 ) -> None:
-    """حذف مردود شراء — بيروح هو وأثره، مش بيتعكس."""
     try:
         document_edit_service.delete_purchase_return(
             db, return_id=return_id, actor_user_id=current.id)

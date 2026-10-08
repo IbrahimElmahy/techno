@@ -7,7 +7,6 @@ import {
   Tabs, Descriptions, Row, Col, Card, Tag, Spin, Space, Button, Empty, Typography,
   Segmented, Checkbox, Input, Select, message, Alert
 } from 'antd';
-// فلتر على كل عمود — شوف `FilterTable`.
 import { FilterTable as Table } from '../components/FilterTable';
 import { Statistic } from '../components/Statistic';
 import {
@@ -39,16 +38,7 @@ import CouponStatsOverview from '../components/CouponStatsOverview';
 import StatsRow from '../components/StatsRow';
 import { money, qty as pointsNum, numeralsLocale } from '../utils/money';
 import { runningTotals } from '../utils/statementOrder';
-/**
- * ملف العميل (Customer 360) — a full inner page (not a side drawer) reached by clicking a
- * customer, with a back arrow. Shows everything tied to him: balance, account statement,
- * invoices, returns, receipts, cheques, visits and loyalty points.
- */
 
-/** النقط كسور (صنف ممكن يساوي ١/٦ نقطة) — الحد الأدنى صفر خانات عشان الأرقام الصحيحة
- *  تفضل نظيفة، والأقصى ٣ عشان الكسر مايتقرّبش لصفر ويختفي. */
-
-/** One receivable account — a customer holds one per product family. */
 interface AccountRow {
   id: number;
   account_id: number;
@@ -84,7 +74,6 @@ interface StatementLine {
   raw?: any;
   _serial?: number;
   _key?: string;
-  // ── المطابقة (نفس حقول كشف الحساب — المصدر واحد) ──────────────────────────
   residual?: string | null;
   due_date?: string | null;
   days_overdue?: number | null;
@@ -113,8 +102,6 @@ interface ProfileData {
   coupons: any[];
 }
 
-/** سطر في دفتر النقاط. `running` الرصيد بعد السطر ده — بيجي محسوب من السيرفر عشان
- *  الترتيب اللي اتحسب عليه هو نفسه الترتيب اللي اتعرض. */
 interface PointRow {
   id: number;
   date: string | null;
@@ -139,7 +126,6 @@ interface PointsLedgerData {
   kinds: Record<string, string>;
 }
 
-/** سقف الـendpoint نفسه (`le=5000`) — أكبر صفحة ينفع نطلبها في مرة. */
 const POINTS_PAGE_SIZE = 5000;
 
 const STATUS_LABELS: Record<string, string> = {
@@ -147,7 +133,6 @@ const STATUS_LABELS: Record<string, string> = {
   issued: 'صادر', redeemed: 'مستخدم', draft: 'مسودة', approved: 'معتمد', rejected: 'مرفوض',
 };
 
-/** Only the statuses the rows actually carry are offered, labelled in Arabic. */
 const statusOptions = (rows: any[]) =>
   Array.from(new Set((rows || []).map((r) => r.status).filter(Boolean)))
     .map((s: any) => ({ value: s, label: STATUS_LABELS[s] || String(s) }));
@@ -165,8 +150,6 @@ const docColumns = (amountTitle: string) => [
   { title: 'تفاصيل', dataIndex: 'detail', key: 'detail' },
 ];
 
-/** Which screen owns each row kind in this file. Rows the owning screen cannot act on are
- *  simply not linked, rather than linked to somewhere that would refuse them. */
 const LINKABLE: Record<string, 'invoice' | 'return' | 'purchase' | 'purchase_return'> = {
   invoice: 'invoice',
   return: 'return',
@@ -177,7 +160,6 @@ const LINKABLE: Record<string, 'invoice' | 'return' | 'purchase' | 'purchase_ret
 export default function CustomerProfile() {
   const { customerId } = useParams();
   const navigate = useNavigate();
-  /** «رجوع» للمكان اللي جيت منه؛ الكشف خطة بديلة. */
   const goBack = useBackTo('/customers');
   const { options: typeOptionsLookup } = useLookup('customer_type');
   const typeLabels = labelMap(typeOptionsLookup);
@@ -185,14 +167,13 @@ export default function CustomerProfile() {
   const [loading, setLoading] = useState(false);
   const [statement, setStatement] = useState<any>(null);
   const [range, setRange] = useState<[Dayjs, Dayjs] | null>(null);
-  const [record, setRecord] = useState<any>(null);          // the record popup
+  const [record, setRecord] = useState<any>(null);
   const [recordLoading, setRecordLoading] = useState(false);
   const [recordRef, setRecordRef] = useState<{ kind: string; id: number } | null>(null);
   const [editOpen, setEditOpen] = useState(false);
   const [points, setPoints] = useState<PointsLedgerData | null>(null);
   const [pointsMoreLoading, setPointsMoreLoading] = useState(false);
 
-  // Statement advanced filters state (Matching AccountStatement.tsx)
   const [repFilter, setRepFilter] = useState<string | undefined>(undefined);
   const [query, setQuery] = useState('');
   const [typeFilter, setTypeFilter] = useState<string[]>([]);
@@ -203,7 +184,6 @@ export default function CustomerProfile() {
   const [showStock, setShowStock] = useState(false);
   const [expandedKeys, setExpandedKeys] = useState<readonly React.Key[]>([]);
 
-  // Lookups and caches for row expansion and printing
   const [items, setItems] = useState<any[]>([]);
   const [warehouses, setWarehouses] = useState<any[]>([]);
   const [costCenters, setCostCenters] = useState<any[]>([]);
@@ -267,7 +247,6 @@ export default function CustomerProfile() {
   const loadStatement = async (reset = false, family?: string) => {
     if (!customerId) return;
     const params: any = {};
-    // حزام أمان: المكوّن بقى مايبعتش نُص فترة، والفحص هنا بيغطّي أي نداء قديم.
     if (range && range[0] && range[1] && !reset) {
       params.date_from = range[0].format('YYYY-MM-DD');
       params.date_to = range[1].format('YYYY-MM-DD');
@@ -291,13 +270,6 @@ export default function CustomerProfile() {
     }
   };
 
-  /** الدفتر بيتحمّل لوحده مش مع الملف: التاجر الكبير عنده آلاف السطور، وتحميلها مع كل
-   *  فتحة كارت بيبطّأ الشاشة كلها عشان تبويب ممكن محدش يفتحه.
-   *
-   *  والصفحة الواحدة سقفها ٥٠٠٠ (سقف الـendpoint نفسه) — التاجر اللي عدّاها كان بياخد
-   *  أقدم ٥٠٠٠ حركة وبس، من غير ولا رسالة، وآخر «رصيد جاري» في الجدول بيخالف كارت
-   *  «الرصيد». دلوقتي بنكمّل بـ`offset`: السيرفر بيحسب رصيد افتتاحي للصفحة الجديدة من
-   *  اللي فاتها، فالسطور بتتلزق ورا بعض والرصيد الجاري بيفضل متصل. */
   const [pointsFailed, setPointsFailed] = useState(false);
 
   const loadPoints = async (offset = 0) => {
@@ -312,9 +284,6 @@ export default function CustomerProfile() {
         ? { ...res.data, rows: [...prev.rows, ...(res.data.rows || [])] }
         : res.data));
     } catch (err: any) {
-      // «مافيش حركة» و«مااتحمّلتش» حالتين مختلفتين. الـcatch الفاضية كانت بتخلّي
-      // الاتنين شكلهم واحد: التبويب يقول «النقاط (٠)» والعطل يعدّي — وده بالظبط
-      // العطل اللي التبويب اتعمل عشانه («الرصيد بيقول صفر دايماً»).
       console.error(err);
       message.error(err?.response?.data?.detail?.message || 'تعذر تحميل دفتر النقاط');
       if (!offset) setPoints(null);
@@ -328,14 +297,11 @@ export default function CustomerProfile() {
   useEffect(() => { setPointsMoreLoading(false); loadPoints(); }, [customerId]);
   useEffect(() => { loadStatement(); }, [customerId, range, statementFamily]);
 
-  /** الأنواع جاية من السيرفر مع الدفتر، فاسم عربي جديد بيظهر في الفلتر من غير نشر فرونت. */
   const pointKindOptions = useMemo(
     () => Object.entries(points?.kinds || {}).map(([value, label]) => ({ value, label })),
     [points?.kinds],
   );
 
-  /** الفاتورة والمرتجع ليهم شاشة بتفتح بـ`?doc=` فبيبقوا لينك. المعاينة والكوبون مالهمش،
-   *  فبيفضلوا نص — لينك بيوديك لكشف تدوّر فيه بنفسك أسوأ من مافيش لينك. */
   const renderPointDoc = (r: PointRow) => {
     if (!r.doc_number) return <span style={{ color: '#8c8c8c' }}>-</span>;
     if (r.doc_kind === 'invoice' || r.doc_kind === 'return') {
@@ -346,7 +312,6 @@ export default function CustomerProfile() {
 
   const c = data?.customer;
   const balance = Number(data?.balance || 0);
-  // الدفتر لما يكون محمّل هو الأدق (نفس الحساب بالظبط)، والملف بيغطي اللحظة اللي قبل ما يوصل.
   const pointsBalance = Number(points?.balance ?? data?.points_balance ?? 0);
   const [accounts, setAccounts] = useState<AccountRow[]>([]);
   const families = accounts.filter((a) => a.family);
@@ -377,7 +342,6 @@ export default function CustomerProfile() {
 
   const statementLines: StatementLine[] = statement?.lines ?? [];
 
-  // مرتّبة أبجدي — السطور جاية بالتاريخ، فالقايمة كانت بترتيب أول ظهور.
   const abc = (a: { label: string }, b: { label: string }) => compareArabic(a.label, b.label);
   const repOptions = useMemo(() => [...new Set(statementLines.map((l: any) => l.rep_name).filter(Boolean))]
     .map((r) => ({ value: r as string, label: r as string })).sort(abc), [statementLines]);
@@ -439,7 +403,6 @@ export default function CustomerProfile() {
   const filtering = !!(repFilter || ccFilter.length || typeFilter.length
     || query.trim() || docNo.trim() || hideZero);
 
-  // الكشف جاي الأحدث فوق — التراكمي بيتجمع بالترتيب الزمني (الفاتورة قبل نقديها).
   const runningOf = useMemo(() => runningTotals(
     shownLines, (l) => `${l.entry_id}-${l.entry_date}-${l.balance}`), [shownLines]);
 
@@ -607,7 +570,6 @@ export default function CustomerProfile() {
     writeCsv(`customer-${customerId}-statement`, cols, shownLines);
   };
 
-  // ورقة a5 الثابتة — الشرح عند `print/statementSheet` (نفس ورقة كشف الحساب).
   const printIt = () => {
     if (!statement) return;
     const filters: [string, string][] = [
@@ -707,7 +669,6 @@ export default function CustomerProfile() {
       ) : <span style={{ color: '#8c8c8c' }}>قيد يدوي</span>) },
   ];
 
-  // إخفاء وترتيب الأعمدة — نفس المحرك اللي كل الجداول بتستخدمه.
   const tableCols = useTableColumns('customer-ledger-v2', columns, {
     export: { name: 'كشف حساب عميل', rows: shownLines },
   });
@@ -750,7 +711,6 @@ export default function CustomerProfile() {
           <Empty description="لا توجد بيانات" />
         ) : (
           <>
-            {/* فروع الحساب — one line per product family, then the total. */}
             {families.length > 1 && (
               <Card size="small" style={{ marginBottom: 16 }} title="فروع الحساب">
                 <Table
@@ -811,8 +771,6 @@ export default function CustomerProfile() {
               </Col>
               <Col xs={12} md={6}>
                 <Card size="small">
-                  {/* الرصيد جاي من مجموع الدفتر — مافيش عمود رصيد محفوظ يتأخّر عنه.
-                      النقط كسور (١/٦ نقطة)، فالتنسيق بيسمح بـ٣ خانات بدل ما يقرّبها لصفر. */}
                   <Statistic
                     title="رصيد النقاط"
                     value={pointsBalance.toLocaleString(numeralsLocale(), { maximumFractionDigits: 3 })}
@@ -1258,8 +1216,6 @@ export default function CustomerProfile() {
                   label: `النقاط (${points?.count ?? 0})`,
                   children: (
                     <>
-                      {/* الإجماليات جاية من السيرفر على الحركة كلها، مش مجموعة من الصفوف
-                          المعروضة — كشف مفلتر بيفضل يقول رصيد العميل الحقيقي. */}
                       <StatsRow gutter={[12, 12]} style={{ marginBottom: 16 }}>
                         <Col xs={12} md={6}>
                           <Card size="small">
@@ -1321,8 +1277,6 @@ export default function CustomerProfile() {
                               render: (v: string | null) => <b>{pointsNum(v)}</b> },
                           ]} />
                       )}
-                      {/* القص لازم يبان: الدفتر الأحدث فوق، فالمعروض أحدث صفحة وبس،
-                          و«عدد الحركات» بيقول رقم أكبر من اللي في الجدول من غير تفسير. */}
                       {points && points.count > points.rows.length && (
                         <Alert
                           style={{ marginTop: 12 }}
@@ -1346,15 +1300,12 @@ export default function CustomerProfile() {
         )}
       </Card>
 
-      {/* One popup for every document kind — the server returns fields + optional lines. */}
       <TabModal
         open={record !== null}
         title={record?.title || 'تفاصيل المستند'}
         onCancel={() => setRecord(null)}
         footer={(
           <Space style={{ width: '100%', justifyContent: 'space-between' }}>
-            {/* The row is no longer a dead end: from here the document opens in the screen that
-                owns it, where editing and reversing already live. */}
             <span>
               {recordRef && LINKABLE[recordRef.kind] && (
                 <DocumentLink
@@ -1381,7 +1332,6 @@ export default function CustomerProfile() {
         {recordLoading ? (
           <div style={{ textAlign: 'center', padding: 40 }}><Spin /></div>
         ) : !record ? null : record.doc ? (
-          // Invoices and vouchers get their real branded sheet; the rest the generic layout.
           <InvoiceDocument doc={record.doc} />
         ) : record.voucher ? (
           <VoucherDocument doc={record.voucher} />

@@ -1,39 +1,4 @@
 # -*- coding: utf-8 -*-
-"""مسح أمر تشغيل بالكامل — لورق التجربة اللي مالوش لازمة يفضل في الكشف.
-
-    python -m src.scripts.delete_production_orders WO-000001 WO-000002
-    python -m src.scripts.delete_production_orders WO-000001 WO-000002 --yes
-
----------------------------------------------------------------------------
-**ليه سكربت مش زرار.** الشاشة بتمسح **المسودة** بس، وده مقصود: الأمر اللي اتنفّذ
-حرّك مخزون، ومسحه من الشاشة معناه إن رصيد اتغيّر ومافيش ورقة بتقول ليه. الورقة
-الغلط بتتعكس، مابتتمسحش.
-
-اللي هنا حالة تانية: **ورق تجربة**. اتعمل واتعكس، فأثره على المخزون صفر، ومحدش
-محتاج يقرا تاريخه — بس بيفضل في الكشف ويلخبط اللي بيعد.
-
-## الشرط اللي بيحمي ده من إنه يبقى «امسح اللي مش عاجبك»
-
-**صافي حركة الأمر لازم يكون صفر لكل (صنف، مخزن).** يعني اتعكس فعلاً. لو خامة خرجت
-وماترجعتش، المسح بيرفع رصيد من غير مستند — والسكربت بيقف ويقول الصنف والمخزن
-والفرق، ومابيمسحش حاجة خالص.
-
-**والأمر المنقول من a5 مابيتمسّش** مهما كان: حركته مش بتاعتنا أصلاً، وهي متقاسمة مع
-صفوف `manufacturing_op`.
-
-**وبيمسح الأمر ومرآته مع بعض.** لو واحد فيهم بس اتطلب، التاني بيدخل معاه — مافيش
-معنى لعكس بيشاور على ورقة اتمسحت.
-
-## اللي بيتمسح
-
-    production_order              الورقة نفسها
-    production_order_product      سطور المنتج
-    production_order_material     سطور الخامة
-    stock_movement                الحركة ومرآتها (الصافي صفر، فالرصيد مايتغيّرش)
-    audit_log_entry               سجل اللي حصل على الورقة
-
-ومحدش تاني: مافيش قيود دفترية ولا مرفقات ولا دفعات على أوامر التشغيل (اتفحصت).
-"""
 from __future__ import annotations
 
 import argparse
@@ -72,7 +37,6 @@ def main() -> None:
             if n not in found:
                 raise SystemExit(f"مالقيتش أمر رقمه {n}.")
 
-        # الأمر ومرآته بيمشوا مع بعض — الشرح فوق.
         ids = {o.id for o in orders}
         for extra in db.scalars(select(ProductionOrder).where(
                 ProductionOrder.reverses_id.in_(ids)
@@ -89,7 +53,6 @@ def main() -> None:
             StockMovement.source_doc_type == DOC_TYPE,
             StockMovement.source_doc_id.in_(ids))).all()
 
-        # الشرط: الصافي صفر لكل (صنف، مخزن).
         net: dict[tuple[int, int], Decimal] = defaultdict(lambda: ZERO)
         for mv in moves:
             q = Decimal(str(mv.quantity))
@@ -128,14 +91,11 @@ def main() -> None:
             print("\n[عرض فقط] مافيش حاجة اتمسحت. ضيف --yes للتنفيذ.")
             return
 
-        # **سطور الأمر الأول، بعدين الحركة.** سطر الخامة بيمسك `stock_movement_id`
-        # (مفتاح أجنبي)، فمسح الحركة وهي لسه متشاور عليها بيترفض من القاعدة.
         db.execute(delete(ProductionOrderMaterial).where(
             ProductionOrderMaterial.order_id.in_(ids)))
         db.execute(delete(ProductionOrderProduct).where(
             ProductionOrderProduct.order_id.in_(ids)))
         db.flush()
-        # وبعدين المرآة قبل الأصل: `reverses_movement_id` بيشاور عليه.
         mirror_ids = [m.id for m in moves if m.reverses_movement_id is not None]
         if mirror_ids:
             db.execute(delete(StockMovement).where(StockMovement.id.in_(mirror_ids)))
@@ -146,7 +106,6 @@ def main() -> None:
         db.execute(delete(AuditLogEntry).where(
             AuditLogEntry.entity_type == "production_order",
             AuditLogEntry.entity_id.in_(ids)))
-        # المرآة بتشاور على الأصل بـ`reverses_id` — بتتمسح الأول.
         db.execute(delete(ProductionOrder).where(ProductionOrder.reverses_id.in_(ids)))
         db.execute(delete(ProductionOrder).where(ProductionOrder.id.in_(ids)))
         db.commit()

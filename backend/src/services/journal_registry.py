@@ -1,12 +1,3 @@
-"""توجيه القيود لدفاترها، وصرف أرقامها.
-
-المصدر الوحيد اللي بيقول «قيد نوعه كذا بيروح لأنهي دفتر». الخريطة مكتوبة هنا مرة
-واحدة بدل ما كل موديول يختار دفتره — عشان الموديول اللي بينسى يختار مايبقاش قيده
-بره كل الدفاتر.
-
-الدفاتر بتتزرع لوحدها أول ما حد يحتاج واحد منها (`ensure_seeded`)، فالقاعدة الفاضية
-والقاعدة الشغّالة بيوصلوا لنفس الحالة من غير خطوة يدوية.
-"""
 from __future__ import annotations
 
 from datetime import date
@@ -16,9 +7,7 @@ from sqlalchemy.orm import Session
 
 from src.models.journal import Journal, JournalKind, JournalSequence
 
-# --- تعريف الدفاتر القياسية -------------------------------------------------------------
 
-# (كود، اسم، نوع، ترتيب)
 _JOURNALS: list[tuple[str, str, JournalKind, int]] = [
     ("OPN", "الأرصدة الافتتاحية", JournalKind.general, 10),
     ("INV", "المبيعات", JournalKind.sale, 20),
@@ -31,8 +20,6 @@ _JOURNALS: list[tuple[str, str, JournalKind, int]] = [
     ("MISC", "قيود متنوعة", JournalKind.general, 90),
 ]
 
-# نوع القيد → كود الدفتر. الأنواع دي هي الـ٢٣ اللي بيكتبها الكود دلوقتي؛ أي نوع جديد
-# مش هنا بيقع على `MISC`، وده أحسن من إنه يقع بره الدفاتر خالص.
 _ROUTING: dict[str, str] = {
     "opening_balance": "OPN",
     "sale": "INV",
@@ -63,17 +50,14 @@ FALLBACK_CODE = "MISC"
 
 
 def journal_code_for(entry_type: str) -> str:
-    """كود الدفتر اللي نوع القيد ده بيروح له."""
     return _ROUTING.get(entry_type, FALLBACK_CODE)
 
 
 def is_known_type(entry_type: str) -> bool:
-    """نوع القيد ده في الخريطة ولا وقع على MISC؟ — سكربت النقل بيعدّ اللي وقع."""
     return entry_type in _ROUTING
 
 
 def ensure_seeded(db: Session) -> None:
-    """يعمل الدفاتر القياسية لو مش موجودة. Idempotent — بيتنادى قبل أي توجيه."""
     have = {j.code for j in db.scalars(select(Journal)).all()}
     missing = [j for j in _JOURNALS if j[0] not in have]
     if not missing:
@@ -93,18 +77,15 @@ def get_by_code(db: Session, code: str) -> Journal | None:
 
 
 def resolve(db: Session, entry_type: str) -> Journal:
-    """الدفتر بتاع نوع القيد ده — بيتزرع لو القاعدة لسه فاضية."""
     ensure_seeded(db)
     code = journal_code_for(entry_type)
     journal = get_by_code(db, code)
-    if journal is None:  # حد مسح دفتر نظام بالإيد — MISC بيستقبل بدل ما القيد يقع
+    if journal is None:
         journal = get_by_code(db, FALLBACK_CODE)
-    if journal is None:  # pragma: no cover — ensure_seeded لسه عاملهم
+    if journal is None:  # pragma: no cover
         raise RuntimeError("مافيش دفاتر يومية في القاعدة.")
     return journal
 
-
-# --- الترقيم ----------------------------------------------------------------------------
 
 NUMBER_WIDTH = 5
 
@@ -114,11 +95,6 @@ def format_number(code: str, year: int, seq: int) -> str:
 
 
 def next_number(db: Session, *, journal: Journal, when: date) -> str:
-    """يصرف الرقم اللي بعده في دفتر السنة دي، ويقفل الصف لحد ما المعاملة تخلص.
-
-    القفل (`with_for_update`) هو اللي بيمنع قيدين اتّرحّلوا في نفس اللحظة من إنهم
-    ياخدوا نفس الرقم؛ من غيره الاتنين بيقروا نفس `last_number` وبيكتبوا نفس القيمة.
-    """
     year = when.year
     row = db.scalar(
         select(JournalSequence)

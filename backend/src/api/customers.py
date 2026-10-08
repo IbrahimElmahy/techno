@@ -1,4 +1,3 @@
-"""Customers router (T050). FR-018–021, FR-020a. No loyalty schema (After-Sales owns it)."""
 from __future__ import annotations
 
 from datetime import date
@@ -16,9 +15,6 @@ from src.core.client_app import is_mobile_app
 from src.core.db import get_db
 from src.core.fast_json import model_json
 from src.core.money import to_money
-# **باسم تاني عن قصد.** الاسم `phones` محجوز في الملف ده لقايمة أرقام العميل
-# الإضافية (`_out(..., phones=...)` و`bulk_phone_values`)، فاستيراد الموديول
-# بنفس الاسم بيتحجب جوّه الدالة و`phones.display` بتتنادى على `dict` وترمي.
 from src.lib import arabic
 from src.lib import phones as phone_fmt
 from src.models.catalog import PriceTier
@@ -38,16 +34,11 @@ from src.services.customer_service import CustomerError
 router = APIRouter(tags=["customers"], prefix="/customers")
 
 
-# The card fields read off their العملاء form (031). Shared by create and update so the two can
-# never drift apart — a field you can set on creation and not afterwards is a field that quietly
-# becomes uneditable.
 class _CustomerCard(BaseModel):
     branch_id: int | None = None
     email: str | None = None
     tax_number: str | None = None
     commercial_register: str | None = None
-    # NULL is «nothing agreed»; 0 is «agreed, and it is zero». Keeping them distinct is the whole
-    # point of leaving these nullable.
     discount_pct: Decimal | None = None
     vat_pct: Decimal | None = None
     is_cash: bool | None = None
@@ -55,15 +46,15 @@ class _CustomerCard(BaseModel):
 
 class CustomerCreate(_CustomerCard):
     name: str
-    customer_type: str  # free string (013) — validated against the lookup list, not an enum
+    customer_type: str
     rep_id: int
     territory_id: int
     phone: str | None = None
     default_price_tier: PriceTier | None = None
-    governorate_id: int | None = None     # (v4) detailed address
+    governorate_id: int | None = None
     markaz: str | None = None
     address: str | None = None
-    phones: list[str] | None = None       # (v4) extra numbers
+    phones: list[str] | None = None
 
 
 class CustomerUpdate(_CustomerCard):
@@ -84,15 +75,8 @@ class CustomerOut(BaseModel):
     name: str
     customer_type: str
     phone: str | None
-    # فاضي مقصود: السباك والمالك مالهمش مندوب بيع — إحنا بنبيع للتجار بس.
     rep_id: int | None
-    # مندوب خدمة العملاء — غير مندوب البيع. الاتنين بيزوروا نفس العميل ومش نفس
-    # الراجل: واحد بيبيع له والتاني بيعاين عنده وياخد منه الكوبونات. عمود واحد
-    # كان بيخلّي تقرير المناديب يجمّع الاتنين في رقم واحد.
     service_rep_id: int | None = None
-    # **نفس الطرف عندنا في الموردين.** الراجل اللي بنشتري منه وبنبيع له كارتين عندنا
-    # وكارت واحد عند a5. الرابط بيخلّي الشاشة توصّل بينهم، والاسم معاه عشان الكارت
-    # يقول «ده كمان مورد: فلان» من غير نداء تاني. الشرح في `models/customer.py`.
     supplier_id: int | None = None
     supplier_name: str | None = None
     territory_id: int
@@ -102,7 +86,6 @@ class CustomerOut(BaseModel):
     markaz: str | None = None
     address: str | None = None
     phones: list[str] = []
-    # Card fields (031) — their العملاء form.
     branch_id: int | None = None
     email: str | None = None
     tax_number: str | None = None
@@ -110,9 +93,7 @@ class CustomerOut(BaseModel):
     discount_pct: Decimal | None = None
     vat_pct: Decimal | None = None
     is_cash: bool = False
-    # (031) المخزن اللي مرتجعاته بترجع فيه — متعلّم من أول مرتجع، عشان الشاشة تفتح عليه.
     default_return_warehouse_id: int | None = None
-    # Receivable balance — filled on the list endpoint (one grouped query, not per row).
     balance: Decimal | None = None
 
 
@@ -121,45 +102,27 @@ class CustomerCreated(CustomerOut):
 
 
 class CustomerReassign(BaseModel):
-    # فاضي = المندوب زي ما هو (تغيير المنطقة لوحدها من الجدول، والسباك مالوش مندوب بيع).
     new_rep_id: int | None = None
     new_territory_id: int
 
 
 class CustomerAccountOut(BaseModel):
-    # NULL على العميل اللي لسه مافتحلوش حساب ذمم — رصيده صفر، وده مش خطأ.
-    #
-    # A customer who has never moved money has no receivable account, and the honest answer to
-    # «what does he owe» is «لا شيء», not a 404. NULL here says «مافيش حساب مفتوح» while the
-    # balance still reads 0, so the panel prints a zero instead of a red toast.
     id: int | None = None
     customer_id: int
     account_id: int | None = None
     balance: Decimal
     balance_derived: bool = True
-    # (031) Which product line this account is for. NULL on a customer who has only ever had one.
     family: str | None = None
     commission_pct: Decimal | None = None
 
 
 class CustomerAccountsOut(BaseModel):
-    """كل حسابات العميل والإجمالي.
-
-    The client sells two lines at two commissions, and until now that meant opening the customer
-    twice. One customer, one account per line, and the sum — which is the number that could not be
-    asked for at all while the two halves were two different people.
-    """
     customer_id: int
     accounts: list[CustomerAccountOut]
     total_balance: Decimal
 
 
 def _supplier_name(db, supplier_id: int | None) -> str | None:
-    """اسم كارت المورد المربوط — أو `None`.
-
-    قراءة بالمفتاح الأساسي، و`db.get` بيجيب من الـsession لو الصف متحمّل خلاص —
-    فالكشف اللي فيه خمستاشر كارت مربوط بيقرا خمستاشر مرة مش أكتر.
-    """
     if not supplier_id:
         return None
     from src.models.supplier import Supplier
@@ -177,8 +140,6 @@ def _out(c: Customer, db: Session | None = None,
                  if db is not None else [])
     return CustomerOut(
         id=c.id, code=c.code, name=c.name, customer_type=c.customer_type,
-        # السباك بيتخزّن رقمه من غير الصفر الأول (`1008796013`) — ١٬٣٠٤ من ١٬٦٨٦.
-        # التطبيع عند العرض بيخلّي الرقم يبان صح من غير ما نستنى إصلاح الداتا.
         phone=phone_fmt.display(c.phone) or None,
         rep_id=c.rep_id, service_rep_id=c.service_rep_id,
         supplier_id=getattr(c, "supplier_id", None),
@@ -195,13 +156,6 @@ def _out(c: Customer, db: Session | None = None,
 
 
 def _apply_card(c: Customer, body: _CustomerCard) -> None:
-    """Copy the العملاء card fields onto the customer, skipping the ones not sent.
-
-    Omitted stays omitted: a PATCH that names only the phone must not blank the tax number. That
-    does mean these fields cannot be cleared back to NULL through this route — clearing a
-    negotiated discount is a different act from not mentioning it, and it deserves its own
-    deliberate call rather than being a side effect of leaving a box empty.
-    """
     for field in ("branch_id", "email", "tax_number", "commercial_register",
                   "discount_pct", "vat_pct", "is_cash"):
         val = getattr(body, field)
@@ -212,21 +166,16 @@ def _apply_card(c: Customer, body: _CustomerCard) -> None:
 def _scope_filter(stmt, current: CurrentUser, *, view_filter: bool = True):
     branch_id = current.branch_id
     if current.is_admin:
-        # المالك/الأدمن: الكل، إلا لو مختار فرع من فلتر الفرع (القوايم بس — فتح كارت بالرقم
-        # من كشف أو رابط مابيتقفلش بالفلتر: `view_filter=False` من `_seen`).
         branch_id = branch_scope.visible_branch_id(current) if view_filter else None
         if branch_id is None:
             return stmt
-    elif current.rep_id is not None:  # Sales Rep -> only own customers (FR-009)
+    elif current.rep_id is not None:
         return stmt.where(Customer.rep_id == current.rep_id)
-    if branch_id is not None:  # branch-scoped -> own branch
+    if branch_id is not None:
         from sqlalchemy import and_, or_
 
         from src.models.org import Territory
 
-        # **فرع الكارت الأول، والمنطقة لو الكارت مالوش فرع** (٢٠٢٦-١٠-٠١). كانت بالمنطقة
-        # بس — وموظفين العلياء (٥٦ كارت، فرعهم العلياء) متسجّلين على «منطقة وسط» بتاعة
-        # أكتوبر، فتبويب «الموظفين» في فاتورة بيع العلياء كان فاضي وأكتوبر شايفهم.
         branch_territories = select(Territory.id).where(Territory.branch_id == branch_id)
         return stmt.where(or_(
             Customer.branch_id == branch_id,
@@ -236,19 +185,6 @@ def _scope_filter(stmt, current: CurrentUser, *, view_filter: bool = True):
 
 
 def _seen(db: Session, customer_id: int, current: CurrentUser) -> Customer:
-    """العميل لو اللي بيسأل يشوفه — و**٤٠٤ لو لأ**.
-
-    **اللي كشفه.** `GET /customers/{id}` و`/profile` و`/account` كانوا بيفحصوا المندوب
-    وبس. فمدير فرع العلياء كان بيفتح كارت عميل المصنع بالرقم — وكشف حسابه وفواتيره
-    معاه — رغم إن الكشف نفسه مابيوريهوش. الفلترة اللي على القايمة وحدها مش عزل: هي
-    بتخبّي الصف، والرابط المباشر بيجيبه.
-
-    **وبيعيد استعمال `_scope_filter` نفسها مش قاعدة تانية.** لو الاتنين اتكتبوا على
-    حدة، أول تعديل على واحدة بيخلّي عميل بيبان في الكشف وبيرفض يتفتح — أو العكس،
-    وده أسوأ.
-
-    و٤٠٤ مش ٤٠٣: ٤٠٣ بيقول «موجود بس مش بتاعك»، ودي معلومة عن فرع تاني لوحدها.
-    """
     c = db.scalar(_scope_filter(select(Customer).where(Customer.id == customer_id), current,
                                 view_filter=False))
     if c is None:
@@ -270,11 +206,6 @@ class CustomersSummaryOut(BaseModel):
 
 
 def _party_group_filter(stmt, party_group: str | None):
-    """العملاء / الموظفين / الفروع — الكارت واحد في الجدول، والتصنيف هو اللي بيفرّق.
-
-    الموظف «employee» (حسابه تحت ذمم الموظفين)، والفرع أو الشركة التابعة «internal»،
-    والباقي عملاء. من غيره قايمة العملاء كانت فيها الفروع والموظفين وسط التجار.
-    """
     if party_group == "employees":
         return stmt.where(Customer.customer_type == "employee")
     if party_group == "branches":
@@ -309,8 +240,6 @@ def customers_summary(
         service_rep_id=service_rep_id, territory_id=territory_id,
         governorate_id=governorate_id, active=active,
     )
-    # الملّاك مش عملاء — ليهم جدولهم وشاشتهم (`owner` ← «الملّاك» في ما بعد البيع).
-    # الاستبعاد هنا عشان أي صف شارد مايظهرش في الكشف ولا في إجمالياته.
     base_stmt = base_stmt.where(Customer.customer_type != "owner")
     if hide_employees and customer_type != "employee":
         base_stmt = base_stmt.where(Customer.customer_type != "employee")
@@ -322,7 +251,6 @@ def customers_summary(
     bal_subq = (
         select(CustomerAccount.customer_id, func.coalesce(func.sum(signed), 0).label("balance"))
         .join(Account, Account.id == CustomerAccount.account_id)
-        # المرحّل بس؛ الشرط في ON عشان العميل اللي ماتحركش يفضل في الكشف بصفر.
         .join(
             LedgerLine,
             (LedgerLine.account_id == Account.id) & ledger_service.posted_line_cond(),
@@ -361,14 +289,6 @@ def customers_summary(
 
 
 class CustomerOptionOut(BaseModel):
-    """العميل زي ما منتقي الاسم محتاجه — مش كارته كله.
-
-    الشاشات اللي فيها اختيار عميل (فاتورة بيع، مردود، أذون، استلام كوبونات) كانت
-    بتنده `/customers` من غير ترقيم عشان تملا القايمة: ١٫٦٩ ميجا و٢ ثانية على السيرفر
-    نفسه، وأضعافها عبر النفق — كل ده عشان اسم في قايمة منسدلة. الشاشة بتستعمل خمس
-    حقول من الكارت، والباقي بيتنقل ويترمي.
-    """
-
     id: int
     code: str
     name: str
@@ -383,14 +303,10 @@ class CustomerOptionOut(BaseModel):
 def customer_options(
     q: str | None = Query(default=None, description="بحث بالاسم أو الكود أو التليفون"),
     customer_type: str | None = Query(default=None),
-    # الحد الأعلى أكبر من عدد العملاء كله: الفلاتر بتحمّل القايمة مرة وتدوّر فيها في
-    # الشاشة، وحد ٢٠٠٠ مع ٣٢٠٠+ عميل كان بيخلّي تلت العملاء مايظهروش في أي فلتر خالص.
     limit: int = Query(default=500, ge=1, le=20000),
     current: CurrentUser = Depends(require_capability(CAP_CUSTOMER_READ)),
     db: Session = Depends(get_db),
 ) -> list[CustomerOptionOut]:
-    """قايمة مختصرة للاختيار — الأعمدة اللي المنتقي بيعرضها وبس."""
-    # نفس عزل الفروع بتاع القايمة الكاملة — المنتقي مايوريش عملاء الفرع التاني.
     stmt = _scope_filter(
         select(Customer.id, Customer.code, Customer.name, Customer.phone,
                Customer.customer_type, Customer.rep_id,
@@ -400,13 +316,10 @@ def customer_options(
     if customer_type:
         stmt = stmt.where(Customer.customer_type == customer_type)
     if q:
-        # المقارنة على الاسم الموحَّد: «احمد» تلاقي «أحمد»، و«٢» تلاقي «2».
         like = f"%{arabic.bare(q)}%"
         stmt = stmt.where(or_(arabic.sort_key(Customer.name).like(like),
                               arabic.sort_key(Customer.code).like(like),
                               Customer.phone.ilike(f"%{q.strip()}%")))
-    # **القُرب قبل الأبجدي.** الأبجدي وحده بيطلّع العميل اللي الحروف في آخر اسمه فوق
-    # اللي بيبدأ بيها — واللي بيكتب «محمد» عايز «محمد حسن» قبل «حسن أبو محمد».
     rows = db.execute(
         stmt.order_by(*arabic.match_order(q, Customer.name, Customer.code),
                       arabic.sort_key(Customer.name), Customer.name)
@@ -421,9 +334,6 @@ def customer_options(
             discount_pct=r.discount_pct)
         for r in rows
     ]
-
-
-# ----------------------------------------------------------------- مديونيات العملاء
 
 
 class CustomerDebtRow(BaseModel):
@@ -442,7 +352,6 @@ class CustomerDebtRow(BaseModel):
     markaz: str | None = None
     rep_id: int | None = None
     rep_name: str | None = None
-    # موجب = عليه لينا (مدين)، سالب = له عندنا (دائن).
     balance_white: Decimal
     balance_poly: Decimal
     balance_other: Decimal
@@ -455,18 +364,15 @@ class CustomerDebtsSummary(BaseModel):
     sum_white: Decimal
     sum_poly: Decimal
     sum_other: Decimal
-    # الصافي (مدين − دائن)، ومعاه كل طرف لوحده عشان «الكل» مايخبّيش ده في ده.
     sum_total: Decimal
     sum_debit: Decimal
     sum_credit: Decimal
     debtors_count: int
     creditors_count: int
-    # عدد اللي عندهم رصيد على حساب من غير عيلة — صفر يعني عمود «أخرى» ملوش لازمة.
     other_count: int
 
 
 class CustomerDebtsCounts(BaseModel):
-    """عدّادات الشرايح — على نفس الفلاتر من غير فلتر الحالة."""
     debtors: int
     creditors: int
     nonzero: int
@@ -507,11 +413,6 @@ def customer_debts(
     current: CurrentUser = Depends(require_capability(CAP_CUSTOMER_READ)),
     db: Session = Depends(get_db),
 ):
-    """مديونيات العملاء — صف لكل عميل برصيده على أبيض وبولي والإجمالي.
-
-    كله استعلام مجمّع واحد للأرصدة (`family_balances_subquery`)، والإجماليات على كل
-    الصفوف المفلترة مش الصفحة. العزل بنفس `_scope_filter` بتاعة كشف العملاء.
-    """
     from sqlalchemy import and_, case, func
 
     from src.models.org import Branch, Governorate, Territory
@@ -523,21 +424,17 @@ def customer_debts(
         governorate_id=governorate_id, active=active,
     ).where(Customer.customer_type != "owner")
     if branch_id is not None:
-        # فرع الكارت الأول، والمنطقة لو الكارت مالوش فرع — نفس قاعدة العزل.
         branch_terr = select(Territory.id).where(Territory.branch_id == branch_id)
         base = base.where(or_(
             Customer.branch_id == branch_id,
             and_(Customer.branch_id.is_(None), Customer.territory_id.in_(branch_terr)),
         ))
     if q and q.strip():
-        # **كل كلمة لوحدها، وبأي ترتيب** (طلب العميل ٢٠٢٦-١٠-٠٥ — «لازم أكتب الاسم بالكامل»):
-        # «محمد حسن» بتلاقي «محمد ابراهيم حسن». كانت الجملة كلها لازم تيجي ورا بعض في الاسم.
         for word in q.split():
             like = f"%{arabic.bare(word)}%"
             conds = [arabic.sort_key(Customer.name).like(like),
                      arabic.sort_key(Customer.code).like(like),
                      Customer.phone.ilike(f"%{word.strip()}%")]
-            # التليفون متخزّن أحياناً من غير الصفر الأول — «0100…» لازم تلاقي «100…».
             digits = (arabic.western_digits(word) or "").strip()
             if digits.isdigit() and digits.lstrip("0"):
                 conds.append(Customer.phone.like(f"%{digits.lstrip('0')}%"))
@@ -568,7 +465,6 @@ def customer_debts(
     if max_total is not None:
         joined = joined.where(total <= max_total)
 
-    # عدّادات الشرايح قبل فلتر الحالة.
     pre = joined.subquery("pre")
     c_row = db.execute(select(
         func.count(),
@@ -606,7 +502,6 @@ def customer_debts(
         debtors_count=int(s[7] or 0), creditors_count=int(s[8] or 0),
         other_count=int(s[9] or 0))
 
-    # الصفحة نفسها — بأسماء الفرع والمنطقة والمحافظة والمندوب في نفس الاستعلام.
     sort_key = sort if sort in _DEBT_SORTS else "total"
     sort_col = {
         "total": flt.c.total, "white": flt.c.white, "poly": flt.c.poly,
@@ -616,7 +511,6 @@ def customer_debts(
         "branch": Branch.name, "territory": Territory.name, "rep": User.full_name,
         "governorate": Governorate.name, "markaz": Customer.markaz,
     }[sort_key]
-    # الفاضي (عميل من غير حركة) آخر الكشف في الاتجاهين — من غير NULLS LAST عشان MySQL.
     ordered = [sort_col.is_(None), sort_col.asc() if order == "asc" else sort_col.desc()]
     page_stmt = (
         select(
@@ -665,21 +559,14 @@ def list_customers(
     customer_type: str | None = Query(None),
     governorate_id: int | None = Query(None),
     active: bool | None = Query(None),
-    balance_filter: str | None = Query(None),  # all | debtors | settled | credit
-    # شاشة «العملاء» بتبعته: كروت الموظفين (ذمم الموظفين) مش عملاء — ليهم «مديونيات
-    # الموظفين». القوايم التانية (اختيار طرف الفاتورة) مابتبعتوش، فالبيع بالعهدة لموظف شغّال.
-    # واختيار «موظف» من فلتر التصنيف بيعرضهم.
+    balance_filter: str | None = Query(None),
     hide_employees: bool = Query(False),
-    # شاشة «العملاء» فيها اختيار: العملاء / الموظفين / الفروع — كل واحد في مكانه.
     party_group: str | None = Query(None, pattern="^(customers|employees|branches)$"),
     limit: int | None = Query(None),
     offset: int = Query(0),
     current: CurrentUser = Depends(require_capability(CAP_CUSTOMER_READ)),
     db: Session = Depends(get_db),
 ):
-    """List customers with search + filters, each carrying its receivable balance."""
-    # التطبيق بيسحب الكشف ده كله لمنتقي الزيارة من غير `active` — فالعميل الموقوف
-    # (٧٥٣ على الإنتاج) كان بيتعرض للمندوب. شوف `client_app`.
     if active is None and is_mobile_app(request):
         active = True
     stmt = customer_profile_service.apply_filters(
@@ -687,13 +574,12 @@ def list_customers(
         q=q, customer_type=customer_type, rep_id=rep_id,
         service_rep_id=service_rep_id, territory_id=territory_id,
         governorate_id=governorate_id, active=active,
-    ).where(Customer.customer_type != "owner")  # الملّاك في شاشتهم، مش هنا
+    ).where(Customer.customer_type != "owner")
     if hide_employees and customer_type != "employee":
         stmt = stmt.where(Customer.customer_type != "employee")
     stmt = _party_group_filter(stmt, party_group)
 
     if balance_filter and balance_filter != "all":
-        # Need balances before slicing
         all_rows = list(db.scalars(stmt.order_by(Customer.id.desc())).all())
         balances = customer_profile_service.bulk_balances(db, [c.id for c in all_rows])
         filtered_rows = customer_profile_service.filter_by_balance(all_rows, balances, balance_filter)
@@ -713,7 +599,6 @@ def list_customers(
         rows = list(db.scalars(p_stmt).all())
         balances = customer_profile_service.bulk_balances(db, [c.id for c in rows])
 
-    # الأرقام الإضافية للصفحة فقط
     phones = contact_service.bulk_phone_values(
         db, PhoneOwner.customer, [c.id for c in rows])
     out = []
@@ -751,9 +636,8 @@ def create_customer(
     except CustomerError as exc:
         raise HTTPException(422, {"code": "validation", "message": str(exc)}) from exc
     c = result.customer
-    if body.default_price_tier is not None:  # (007)
+    if body.default_price_tier is not None:
         c.default_price_tier = body.default_price_tier
-    # (v4) detailed address + extra phone numbers
     c.governorate_id = body.governorate_id
     c.markaz = body.markaz
     c.address = body.address
@@ -777,27 +661,26 @@ def update_customer(
     if body.name is not None:
         c.name = body.name
     if body.phone is not None:
-        # الخانة الفاضية بتمسح الرقم (تعديل الجدول) — NULL مش نص فاضي.
         c.phone = body.phone.strip() or None
     if body.customer_type is not None:
         if body.customer_type == "owner":
             raise HTTPException(422, {"code": "validation",
                                       "message": "الملّاك في شاشة «الملّاك» — ماينفعش يتحوّل لكارت عميل"})
-        try:  # (v4) plumber must stay with an after-sales rep
+        try:
             customer_service.assert_rep_matches_type(
                 db, customer_type=body.customer_type, rep_id=c.rep_id)
         except CustomerError as exc:
             raise HTTPException(422, {"code": "validation", "message": str(exc)}) from exc
         c.customer_type = body.customer_type
-    if body.default_price_tier is not None:  # (007) set the customer's default sale tier
+    if body.default_price_tier is not None:
         c.default_price_tier = body.default_price_tier
     if body.active is not None:
         c.active = body.active
-    for field in ("governorate_id", "markaz", "address"):  # (v4)
+    for field in ("governorate_id", "markaz", "address"):
         val = getattr(body, field)
         if isinstance(val, str):
             val = val.strip() or None
-            setattr(c, field, val)  # النص الفاضي = مسح
+            setattr(c, field, val)
         elif val is not None:
             setattr(c, field, val)
     _apply_card(c, body)
@@ -816,7 +699,6 @@ def deactivate_customer(
     current: CurrentUser = Depends(require_capability(CAP_CUSTOMER_WRITE)),
     db: Session = Depends(get_db),
 ) -> None:
-    """Deactivate the customer; `hard=true` deletes him outright — but only if he never moved."""
     c = _seen(db, customer_id, current)
     if hard:
         try:
@@ -849,8 +731,6 @@ def reassign_customer(
     current: CurrentUser = Depends(require_capability(CAP_CUSTOMER_REASSIGN)),
     db: Session = Depends(get_db),
 ) -> CustomerOut:
-    # نقل العميل لمندوب تاني بيغيّر مين بيشوفه ومين بياخد عمولته — فاللي مايشوفوش
-    # أصلاً مايقدرش ينقله.
     c = _seen(db, customer_id, current)
     customer_service.reassign_customer(
         db, customer=c,
@@ -862,13 +742,8 @@ def reassign_customer(
 
 
 class CustomerBulkAssign(BaseModel):
-    """Assign a batch of customers to one rep — «عملاء المندوب» from the rep's side."""
-
     rep_id: int
     customer_ids: list[int]
-    # Left out, each customer keeps the territory he already had. A rep's round is not the same
-    # thing as a customer's area, and moving a hundred customers onto the rep's territory as a
-    # side effect of naming their rep would quietly rewrite the sales geography.
     territory_id: int | None = None
 
 
@@ -878,13 +753,6 @@ def assign_customers_to_rep(
     current: CurrentUser = Depends(require_capability(CAP_CUSTOMER_REASSIGN)),
     db: Session = Depends(get_db),
 ) -> list[CustomerOut]:
-    """Point several customers at one rep in a single call.
-
-    All or nothing. Assigning ninety of a hundred customers and failing on the ninety-first
-    leaves nobody able to say which ninety moved — so an unknown id, a user who is not a sales
-    rep, or a customer type the rep may not hold rejects the whole batch before anything is
-    written.
-    """
     rep = db.get(User, body.rep_id)
     if rep is None:
         raise HTTPException(404, {"code": "not_found", "message": "Rep not found"})
@@ -899,7 +767,6 @@ def assign_customers_to_rep(
         raise HTTPException(404, {"code": "not_found",
                                   "message": f"Customers not found: {missing}"})
 
-    # (v4) a plumber must stay with an after-sales rep — checked for every customer up front.
     for c in customers:
         try:
             customer_service.assert_rep_matches_type(
@@ -927,8 +794,6 @@ class ProfileDocOut(BaseModel):
 
 
 class CustomerProfileOut(BaseModel):
-    """ملف العميل — every movement tied to one customer, in one call."""
-
     customer: CustomerOut
     account_id: int | None
     balance: Decimal
@@ -957,7 +822,6 @@ def customer_profile(
     current: CurrentUser = Depends(require_capability(CAP_CUSTOMER_READ)),
     db: Session = Depends(get_db),
 ) -> CustomerProfileOut:
-    """The customer's full file: balance, invoices, returns, receipts, cheques, visits, points."""
     c = _seen(db, customer_id, current)
     p = customer_profile_service.profile(db, customer_id)
     base = _out(c, db)
@@ -983,8 +847,6 @@ def customer_record_detail(
     current: CurrentUser = Depends(require_capability(CAP_CUSTOMER_READ)),
     db: Session = Depends(get_db),
 ) -> dict:
-    """Full detail of one row in the customer's file — invoice, return, receipt, cheque,
-    inspection, coupon or ledger entry — in a uniform shape the UI renders generically."""
     c = _seen(db, customer_id, current)
     try:
         return customer_profile_service.record_detail(db, customer_id, kind, record_id)
@@ -998,11 +860,6 @@ def customer_accounts(
     current: CurrentUser = Depends(require_capability(CAP_CUSTOMER_READ)),
     db: Session = Depends(get_db),
 ) -> CustomerAccountsOut:
-    """حسابات العميل — فرع لكل عيلة منتجات، وبعدهم الإجمالي."""
-    # 404 لغاية دلوقتي كانت بتتقال على حالتين مختلفتين: «العميل ده مش موجود» و«العميل موجود
-    # بس لسه ماتعاملش مالياً». التانية دي حالة عادية — ٢٬٤١٩ عميل من ٣٬٨٨٤ — وكانت بتطلّع
-    # «Account not found» أحمر فوق كارت عميل سليم تماماً. فبقى: العميل المش موجود بس هو اللي
-    # بياخد 404، واللي مالوش حساب بياخد قايمة فاضية وإجمالي صفر، والشاشة تقول «مافيش حركة».
     _seen(db, customer_id, current)
     rows = db.scalars(select(CustomerAccount).where(
         CustomerAccount.customer_id == customer_id)).all()
@@ -1010,8 +867,6 @@ def customer_accounts(
         id=a.id, customer_id=a.customer_id, account_id=a.account_id,
         balance=ledger_service.balance_of(db, a.account_id),
         family=a.family, commission_pct=a.commission_pct) for a in rows]
-    # Sorted so the screen reads the same way every time: named families first, alphabetically,
-    # and the family-less legacy account last.
     out.sort(key=lambda a: (a.family is None, a.family or ""))
     return CustomerAccountsOut(
         customer_id=customer_id, accounts=out,
@@ -1024,23 +879,16 @@ def customer_account(
     current: CurrentUser = Depends(require_capability(CAP_CUSTOMER_READ)),
     db: Session = Depends(get_db),
 ) -> CustomerAccountOut:
-    # The customer's original, family-less account. Scoped rather than «whichever comes first»:
-    # once a customer holds two, an unscoped query answers with an arbitrary one of them.
     _seen(db, customer_id, current)
     acc = db.scalar(select(CustomerAccount).where(
         CustomerAccount.customer_id == customer_id,
         CustomerAccount.family.is_(None)))
     if acc is None:
-        # A merged customer has no family-less account any more. Sending him back the first of his
-        # family accounts would be answering a different question than the one asked, so this says
-        # where the answer moved to instead.
         if db.scalar(select(CustomerAccount).where(
                 CustomerAccount.customer_id == customer_id)) is not None:
             raise HTTPException(409, {
                 "code": "multiple_accounts",
                 "message": "العميل ده عنده حساب لكل عيلة — استخدم /accounts"})
-        # عميل موجود ومالوش حساب ذمم = ماتعاملش مالياً لسه = رصيده صفر. الـpanel اللي تحت
-        # الفاتورة بيقرا `balance` بس، وكان بياخد 404 فيطلّع توست أحمر على عميل سليم.
         return CustomerAccountOut(
             id=None, customer_id=customer_id, account_id=None, balance=Decimal("0"))
     return CustomerAccountOut(

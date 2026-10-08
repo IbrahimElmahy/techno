@@ -1,28 +1,3 @@
-"""يجهّز مندوب اختبار كامل: يوزر + مخزن + عهدة + عميل + بضاعة.
-
-    python -m src.scripts.create_test_rep              # عرض فقط
-    python -m src.scripts.create_test_rep --yes
-    python -m src.scripts.create_test_rep --yes --items 12
-
-**التطبيق بيرفض المندوب الناقص، ومابيقولش ناقصه إيه.** `/sales/rep-bundle` بيرجع 404
-«مالكش عهدة ولا مخزن مسجّل» لو المخزن مش متسجّل، و`create_sale` بيرجع 500 لو العهدة
-مش موجودة. فالمندوب اللي اتعمل بنص طقم بيبان شغّال لحد ما يجرّب يبيع.
-
-الطقم:
-
-1. **مخزن اختبار** لوحده — مش مخزن حقيقي. البيع من مخزن الشركة بيخصم بضاعة فعلية،
-   والتجربة اللي بتغيّر أرقام الجرد مش تجربة.
-2. **يوزر** بدور مندوب، و**كارت موظف** مربوط بيه وبالمخزن — ده اللي `rep_store`
-   بتقرا منه.
-3. **عهدة** — دي فلوسه مش بضاعته، والاتنين لازمين.
-4. **عميل اختبار** مربوط بيه. المندوب بيبيع لعملاءه هو بس، واللي مالوش عميل بيفتح
-   الشاشة فيلاقيها فاضية.
-5. **بضاعة** — بتيجي **تحويل** من المخزن الرئيسي مش افتتاحي. الافتتاحي بيخلق كمية
-   من العدم فبيزوّد مخزون الشركة؛ التحويل بينقلها، فالإجمالي مايتغيّرش.
-
-كله موسوم بـ«اختبار» في الاسم عشان يتعرف ويتشال. Idempotent: بيعيد استعمال اللي
-موجود مش بيعمل نسخة تانية.
-"""
 from __future__ import annotations
 
 import secrets
@@ -50,7 +25,6 @@ FULL_NAME = "مندوب اختبار"
 WAREHOUSE = "مخزن اختبار"
 CUSTOMER = "عميل اختبار"
 EMP_CODE = "TEST-REP"
-# خطوط المنتجات اللي الفاتورة بتتقسّم عليها — كل واحد له عهدته.
 FAMILIES = ("أبيض", "بولي")
 CUST_CODE = "TEST-CUST"
 QTY = Decimal("50")
@@ -86,9 +60,6 @@ def run(*, execute: bool, item_count: int) -> None:
             print("✗ مافيش دور «مندوب مبيعات» — شغّل seed_branch_structure الأول.")
             return
 
-        # المخزن اللي البضاعة هتتنقل منه: **اللي فيه أكتر أصناف**، مش اللي نوعه
-        # «مركزي». الكتالوج كله اتنقل من a5 بنوع `branch` — مافيش ولا مخزن مركزي
-        # واحد — فالاختيار بالنوع كان بيرجع فاضي ويقف السكربت على شرط شكلي.
         source_id = db.execute(
             select(StockMovement.location_id,
                    func.count(func.distinct(StockMovement.item_id)).label("n"))
@@ -116,7 +87,6 @@ def run(*, execute: bool, item_count: int) -> None:
         print(f"{'كارت الموظف':<28}{'موجود' if emp else 'هيتعمل'}")
         print(f"{'العميل':<28}{'موجود' if cust else 'هيتعمل'}  ({CUSTOMER})")
 
-        # الأصناف اللي فيها رصيد في المخزن المصدر — دي اللي ينفع تتنقل.
         rows = db.execute(
             select(StockMovement.item_id)
             .where(StockMovement.location_kind == LocationKind.warehouse,
@@ -167,15 +137,6 @@ def run(*, execute: bool, item_count: int) -> None:
             emp.warehouse_id = wh.id
         db.flush()
 
-        # العهدة بتمسك فلوسه — **وواحدة مش كفاية.**
-        #
-        # `resolve_cash_account` بيدوّر على عهدة **بنفس خط الفاتورة**، ومابيقعش على غيرها
-        # عن قصد: فلوس نزلت في صندوق غلط مافيش حاجة بتقولها بعدين. وشاشة الفاتورة في
-        # التطبيق **بتفرض** الخط قبل الحفظ. فالمندوب اللي معاه عهدة `family = NULL` بس
-        # بيكتب فواتير على الجهاز، وتقف كلها عند المزامنة برسالة «مالوش صندوق لخط
-        # أبيض» — مندوب اختبار مابيقدرش يرحّل ولا فاتورة واحدة.
-        #
-        # فبتتعمل واحدة لكل خط، والمحايدة معاهم للشراء والسندات واللي مالوش خط.
         for family in (None, *FAMILIES):
             existing = db.scalar(select(Custody).where(
                 Custody.rep_id == user.id,
@@ -186,8 +147,6 @@ def run(*, execute: bool, item_count: int) -> None:
         db.flush()
 
         if cust is None:
-            # «تاجر» عشان يكسب نقط زي أي تاجر حقيقي — التجربة على نوع العميل اللي
-            # التطبيق اتعمل عشانه، مش على نوع تاني بقواعد تانية.
             territory = db.scalars(select(Territory).order_by(Territory.id)).first()
             cust = Customer(code=CUST_CODE, name=CUSTOMER, rep_id=user.id,
                             customer_type=CustomerType.trader.value,
@@ -199,12 +158,6 @@ def run(*, execute: bool, item_count: int) -> None:
             cust.active = True
         db.flush()
 
-        # **البضاعة بتتنقل بإذن تحويل حقيقي، مش بحركات مكتوبة بالإيد.**
-        #
-        # الحركة اللي `source_doc_id` بتاعها صفر حركة يتيمة: مالهاش مستند يتفتح، ولا
-        # تتلغي، ولا تظهر في أي كشف بيسأل «البضاعة دي جت منين». والإذن بيعمل نفس
-        # الحركتين وبيسيب وراه مستند مرقّم ينفع يتراجع ويتلغي — ولإن التجربة دي
-        # هدفها نثق في النظام، ماينفعش نجهّزها بحاجة النظام نفسه بيعتبرها غلط.
         moved = 0
         needed = [i for i in candidates
                   if _on_hand(db, i, LocationKind.warehouse, wh.id) < QTY]

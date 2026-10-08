@@ -1,16 +1,3 @@
-"""دفتر نقاط التجار — القراءة والكتابة في مكان واحد.
-
-**الرصيد مشتق، مش مخزّن.** مافيش عمود `points_balance` على العميل ولا هيبقى فيه: الرصيد
-هو `SUM(delta)` على دفتره وخلاص. مصدرين للحقيقة معناه إن أول سطر يتكتب من غير ما العمود
-يتحدّث، الاتنين يفضلوا يقولوا كلامين مختلفين ومحدش يعرف مين الصح.
-
-`post()` هو الطريق الوحيد للكتابة هنا. الدفتر append-only: التصحيح سطر جديد مربوط
-بالأصلي، مش تعديل ولا مسح.
-
-ملحوظة: `point_service.py` (بالمفرد) بيمسك كسب البيع والتحويل لكوبونات من أيام 003.
-الملف ده هو طبقة القراءة (رصيد/دفتر/إجماليات) وكتابة نقط المعاينات. الاتنين بيكتبوا في
-نفس الجدول بنفس الشكل.
-"""
 from __future__ import annotations
 
 import logging
@@ -34,8 +21,6 @@ log = logging.getLogger("uvicorn.error")
 
 ZERO = Decimal("0.000")
 
-# أسماء الحركات بالعربي — الشاشتين (تبويب العميل وسجل النقاط) بيقروا من هنا، فالاسم
-# بيتغيّر في مكان واحد.
 KIND_LABELS: dict[str, str] = {
     "earn": "كسب من فاتورة",
     "reverse": "خصم مرتجع",
@@ -47,7 +32,6 @@ KIND_LABELS: dict[str, str] = {
 }
 
 
-# أسماء الجيوب بالعربي — نفس سبب `KIND_LABELS`: الاسم في مكان واحد.
 PURSE_LABELS: dict[str, str] = {
     "both": "الجيبين",
     "inspection": "معاينات",
@@ -56,19 +40,10 @@ PURSE_LABELS: dict[str, str] = {
 
 
 def _points(value) -> Decimal:
-    """النقط كسور (١/٦ نقطة مثلاً) — التقريب على ٣ خانات زي عمود القاعدة."""
     return Decimal(str(value if value is not None else 0)).quantize(Decimal("0.001"))
 
 
-# --- القراءة ---
-
 def purse_filter(purse: PointPurse):
-    """شرط السطور اللي بتخصّ جيب معيّن: سطوره هو + سطور `both` المشتركة.
-
-    السطر القديم `purse` بتاعه NULL، فبيتحدد من `kind` — ودي مش حالة مؤقتة تستنى
-    سكربت: نوع الحركة هو اللي بيقرر الجيب أصلاً، والعمود موجود عشان **التسوية اليدوية**
-    اللي ممكن تتصوّب على جيب واحد. فالقراءة شغالة صح قبل الترحيل وبعده.
-    """
     wanted = (PointPurse.both, purse)
     legacy_kinds = [k for k, p in PURSE_BY_KIND.items() if p in wanted]
     return or_(
@@ -78,12 +53,6 @@ def purse_filter(purse: PointPurse):
 
 
 def balance(db: Session, customer_id: int, purse: PointPurse | None = None) -> Decimal:
-    """رصيد العميل في جيب. `purse=None` بترجع مجموع الدفتر كله.
-
-    **والمجموع ده مش رصيد أي جيب.** هو الكسب ناقص صرف الجيبين مع بعض، ومالوش معنى
-    قدام التاجر — موجود للتوافق مع نداء قديم واحد ولتشخيص الدفتر. اللي بيعرض رقم
-    للتاجر بيطلب جيب صراحةً.
-    """
     stmt = select(func.coalesce(func.sum(PointRecord.delta), 0)).where(
         PointRecord.customer_id == customer_id)
     if purse is not None:
@@ -92,7 +61,6 @@ def balance(db: Session, customer_id: int, purse: PointPurse | None = None) -> D
 
 
 def purse_balances(db: Session, customer_id: int) -> dict[str, Decimal]:
-    """الجيبين مع بعض — ده اللي الشاشة بتعرضه للتاجر."""
     return {
         "inspection": balance(db, customer_id, PointPurse.inspection),
         "coupon": balance(db, customer_id, PointPurse.coupon),
@@ -101,11 +69,6 @@ def purse_balances(db: Session, customer_id: int) -> dict[str, Decimal]:
 
 def balances(db: Session, customer_ids: list[int] | None = None,
              purse: PointPurse | None = None) -> dict[int, Decimal]:
-    """أرصدة مجموعة عملاء في استعلام واحد.
-
-    موجودة عشان الكشوف: `balance()` جوّه حلقة على ٢٨١ عميل = ٢٨١ رحلة للقاعدة. العميل
-    اللي مالوش ولا سطر مابيرجعش في النتيجة — القارئ بيستخدم `.get(id, ZERO)`.
-    """
     stmt = select(PointRecord.customer_id, func.coalesce(func.sum(PointRecord.delta), 0))
     if customer_ids:
         stmt = stmt.where(PointRecord.customer_id.in_(customer_ids))
@@ -116,11 +79,6 @@ def balances(db: Session, customer_ids: list[int] | None = None,
 
 
 def _doc_numbers(db: Session, records: list[PointRecord]) -> dict[tuple[str, int], str]:
-    """أرقام المستندات المربوطة، مجمّعة — أربع استعلامات مهما كان عدد السطور.
-
-    مجمّعة عن قصد ومتنادية مرة واحدة برّه حلقة الصفوف: استعلام لكل سطر × ٢٨٧٩٠ سطر =
-    كشف مابيفتحش.
-    """
     from src.models.inspection import Inspection
     from src.models.sales import SalesInvoice, SalesReturn
 
@@ -143,7 +101,6 @@ def _doc_numbers(db: Session, records: list[PointRecord]) -> dict[tuple[str, int
 
 
 def _doc_ref(record: PointRecord) -> tuple[str | None, int | None]:
-    """المستند اللي السطر جاي منه — نوعه ورقمه الداخلي."""
     if record.sales_invoice_id is not None:
         return "invoice", record.sales_invoice_id
     if record.sales_return_id is not None:
@@ -179,22 +136,9 @@ def ledger(
     limit: int = 500,
     offset: int = 0,
 ) -> dict:
-    """حركة الدفتر + الإجماليات.
-
-    الرصيد الجاري بيتحسب لعميل واحد بس — «رصيد جاري» على كشف فيه عملاء مخلوطين رقم
-    مالوش معنى. ولما فيه فلتر تاريخ بيبدأ من رصيد ما قبل الفترة (opening) مش من صفر،
-    وإلا آخر سطر في الكشف يقول رقم غير رصيد العميل الحقيقي.
-
-    الإجماليات بتتحسب في القاعدة على الحركة كلها — مش على الصفحة المعروضة. إجمالي
-    بيتجمع من ٥٠٠ سطر معروضين بيقول رقم غلط وهو واثق.
-    """
-    # نوع مجهول بيرجّع فاضي — مش بيلغي الفلتر. `or None` كانت بتشيل الشرط كله،
-    # فالشاشة تقول إنها معروضة على فلتر وهي معروضة على كل حاجة.
     asked = list(kinds or [])
     kinds = [k for k in asked if k in KIND_LABELS]
     if asked and not kinds:
-        # قيمة مستحيلة تبقى نوع — النتيجة بترجع فاضية زي ما اتطلب. `or None` كانت
-        # بتشيل الشرط كله، فالشاشة تقول إنها معروضة على فلتر وهي معروضة على كل حاجة.
         kinds = ["__no_such_kind__"]
     kinds = kinds or None
 
@@ -220,9 +164,6 @@ def ledger(
         ))
     stmt = _filtered(select(PointRecord), customer_id=customer_id, kinds=kinds,
                      date_from=date_from, date_to=date_to)
-    # **الأحدث فوق** في الدفترين (طلب العميل ٢٠٢٦-١٠-٠١). الرصيد الجاري لسه بيتحسب
-    # بالترتيب الزمني: بنبدأ من رصيد آخر الفترة ونرجع لورا — سطر فوق التاني بيقول رصيده
-    # بعد حركته بالظبط زي ما كان، والصفحة التانية (الأقدم) بتكمّل من تحت الأولى.
     stmt = stmt.order_by(PointRecord.created_at.desc(), PointRecord.id.desc())
     records = list(db.scalars(stmt.limit(limit).offset(offset)).all())
 
@@ -234,7 +175,6 @@ def ledger(
         )))
         running = _points(opening + window_sum)
         if offset:
-            # الصفحات اللي فوق (الأحدث) اتعرضت خلاص — رصيد أول سطر هنا هو اللي قبلها.
             newer = db.scalars(_filtered(
                 select(PointRecord.delta), customer_id=customer_id, kinds=kinds,
                 date_from=date_from, date_to=date_to,
@@ -264,8 +204,6 @@ def ledger(
             "date": r.created_at.date().isoformat() if r.created_at else None,
             "kind": kind,
             "kind_label": KIND_LABELS.get(kind, kind),
-            # الجيب اللي السطر مسّه — مشتقّ من النوع للسطور القديمة اللي العمود
-            # فيها لسه فاضي، فالكشف بيقول نفس الكلام قبل الترحيل وبعده.
             "purse": (r.purse.value if hasattr(r.purse, "value")
                       else r.purse) or PURSE_BY_KIND.get(kind, PointPurse.both).value,
             "purse_label": PURSE_LABELS.get(
@@ -289,13 +227,11 @@ def ledger(
         "count": count,
         "opening": str(opening),
         "earned": str(earned),
-        "spent": str(-spent),          # المنصرف بيتعرض موجب
+        "spent": str(-spent),
         "net": str(_points(earned + spent)),
         "balance": str(balance(db, customer_id)) if customer_id is not None else None,
     }
 
-
-# --- الكتابة ---
 
 def post(
     db: Session,
@@ -314,20 +250,9 @@ def post(
     purse: PointPurse | None = None,
     flush: bool = True,
 ) -> PointRecord:
-    """السطر الوحيد اللي بيكتب في الدفتر.
-
-    `created_at` بيتمرّر صراحةً في الترحيل الرجعي: نقط فاتورة ٢٠٢٣ لازم تقع في ٢٠٢٣،
-    مش في يوم تشغيل السكربت — وإلا أي كشف بفترة بيقول إن الشركة وزّعت نص مليون نقطة
-    في يوم واحد.
-
-    `flush=False` للترحيل الجَملي بس: flush لكل سطر معناه ٢٨٧٩٠ رحلة للقاعدة على الشبكة.
-    اللي بيستعملها لازم يعمل flush بنفسه على دفعات، وماياخدش `record.id` قبلها.
-    """
     record = PointRecord(
         customer_id=customer_id,
         kind=kind,
-        # الجيب مشتق من نوع الحركة إلا لو اللي بينده حدّده — والاستثناء الوحيد المقصود
-        # هو التسوية اليدوية على جيب واحد.
         purse=purse or PURSE_BY_KIND.get(
             kind.value if hasattr(kind, "value") else str(kind), PointPurse.both),
         delta=_points(delta),

@@ -1,24 +1,4 @@
 # -*- coding: utf-8 -*-
-"""توحيد أنواع مستندات حركة المخزون على `StockDoc`.
-
-الخدمات كانت بتكتب اسم ونقل a5 كتب اسم تاني لنفس النوع:
-
-    sales_invoice    44,798 حركة  ←  sale            32
-    purchase_invoice  3,824 حركة  ←  purchase         0
-    sales_return      1,901 حركة  ←  sale_return      2
-    stock_transfer   64,598 حركة  ←  transfer        46
-
-والكود اللي بيشيل حركات المستند وقت التعديل أو الحذف كان بيدوّر على واحد بس، فتعديل
-أي مستند منقول من a5 كان بيسيب حركته القديمة ويكتب جديدة فوقها — الصنف بينخصم مرتين.
-الشرح الكامل في `StockDoc`. الكود اتصلّح الأول؛ ده بينضّف اللي اتكتب قبله.
-
-مافيش غير الاسم بيتغيّر — لا كمية ولا اتجاه ولا صنف ولا مكان — فالرصيد مايتحركش،
-والسكريبت بيتأكد بنفسه: بيقيس الرصيد لكل (صنف × مكان) قبل وبعد وبيعمل rollback لو
-اتغيّر أي رقم.
-
-    python -m src.scripts.normalize_stock_doc_types            # عرض بس
-    python -m src.scripts.normalize_stock_doc_types --apply    # بيكتب
-"""
 from __future__ import annotations
 
 import argparse
@@ -29,7 +9,6 @@ from sqlalchemy.orm import Session
 from src.core.db import SessionLocal
 from src.models.stock import StockDirection, StockDoc, StockMovement
 
-# الاسم القديم ← الاسم الموحّد.
 RENAMES = {
     "sale": StockDoc.SALE,
     "sale_return": StockDoc.SALE_RETURN,

@@ -1,4 +1,3 @@
-"""جرد المخازن — 031-a5-restructure."""
 from __future__ import annotations
 
 from datetime import date, datetime
@@ -32,11 +31,6 @@ def _doc_number(db: Session) -> str:
 
 
 def _last_counted(db: Session) -> dict[tuple[int, int], date]:
-    """آخر مرة اتعدّ فيها كل (صنف، مخزن) — من الأوراق المرحّلة بس.
-
-    A draft sheet is a count in progress, not a count that happened; letting it count would push an
-    item to the back of the rotation because somebody opened a sheet and walked away.
-    """
     rows = db.execute(
         select(StockCountLine.item_id, StockCountLine.warehouse_id,
                func.max(StockCount.count_date))
@@ -53,28 +47,9 @@ def open_sheet(
     kind: StockCountKind = StockCountKind.full, batch_size: int | None = None,
     statement1: str | None = None,
 ) -> StockCount:
-    """Open a sheet with a line per item to be counted.
-
-    **The three kinds differ in exactly one thing: which items land on the sheet.** After that they
-    are the same document — count, difference, post — which is why they are one code path and not
-    three screens that would each drift.
-
-    * `full` — everything the warehouse holds. The shelves are closed and the whole store is done.
-    * `cycle` — a batch, oldest-counted first, so the rotation covers everything over time without
-      ever stopping the shop. An item never counted sorts first: it has waited longest by
-      definition.
-    * `spot` — exactly the items named, whether or not they are believed to be there. That is the
-      whole point of a spot check: «هو ده فعلاً خلص؟» is a question about an item the books say is
-      gone.
-
-    Items with **no** stock are skipped except on a spot check, for the same reason a general sheet
-    listing the whole catalogue is a sheet nobody finishes.
-    """
     if kind == StockCountKind.spot and not item_ids:
         raise StockCountError("جرد العينة لازم تحدد فيه الأصناف.")
     if kind == StockCountKind.cycle and not batch_size:
-        # Defaulted rather than refused: «دفعة» without a size is a reasonable thing to ask for,
-        # and twenty lines is a batch one person finishes in a morning.
         batch_size = 20
     warehouses = (
         [db.get(Warehouse, warehouse_id)] if warehouse_id is not None
@@ -101,10 +76,6 @@ def open_sheet(
     db.add(sheet)
     db.flush()
 
-    # Every (item, warehouse) this sheet could cover, with the book quantity frozen NOW. Frozen at
-    # opening rather than read at posting: a sale during the count is not a counting error, and
-    # comparing the counter against a number that moved under him is how a good count produces a
-    # false difference.
     candidates: list[tuple[Item, int, object]] = []
     for wh in warehouses:
         for item in items:
@@ -114,9 +85,6 @@ def open_sheet(
             candidates.append((item, wh.id, on_hand))
 
     if kind == StockCountKind.cycle:
-        # Oldest first, never-counted before that. `date.min` is not a real date on any line — it
-        # is «has waited since before records», which is exactly the rotation's answer for an item
-        # nobody has ever reached.
         seen = _last_counted(db)
         candidates.sort(key=lambda c: (seen.get((c[0].id, c[1]), date.min), c[0].id))
         candidates = candidates[:batch_size]
@@ -143,11 +111,6 @@ def enter_counts(
     db: Session, *, count_id: int, counts: dict[int, Decimal | None], actor_user_id: int,
     statement1=_UNSET,
 ) -> StockCount:
-    """Write what was found, keyed by LINE id. Only a draft sheet accepts numbers.
-
-    البيان بيتحفظ مع العدّ في نفس الضغطة («حفظ العدّ») وبنفس الشرط: الكشف لسه مفتوح. `_UNSET`
-    معناه «مااتبعتش» — غير `None` اللي معناه «امسحه».
-    """
     sheet = db.get(StockCount, count_id)
     if sheet is None:
         raise StockCountError("الجرد غير موجود.")
@@ -173,16 +136,6 @@ def enter_counts(
 
 
 def post(db: Session, *, count_id: int, actor_user_id: int) -> StockCount:
-    """Settle every counted difference into stock, then close the sheet.
-
-    The adjustment is computed against stock **as it stands now**, not against the snapshot on the
-    line: goods that moved legitimately during the count already changed the balance, and adjusting
-    by the old difference would apply that movement a second time. The result is that on-hand ends
-    up equal to what was counted, which is the only thing a count is for.
-
-    **Uncounted lines are left alone.** A blank is «nobody reached this shelf», and treating it as
-    zero would write off stock that was never looked at.
-    """
     sheet = db.get(StockCount, count_id)
     if sheet is None:
         raise StockCountError("الجرد غير موجود.")
@@ -191,9 +144,6 @@ def post(db: Session, *, count_id: int, actor_user_id: int) -> StockCount:
     if not any(ln.counted_quantity is not None for ln in sheet.lines):
         raise StockCountError("مفيش أي سطر متعدود — مفيش حاجة تترحّل.")
 
-    # Serialized and perishable stock is reconciled by unit and by lot; a bare quantity adjustment
-    # would move on-hand while leaving the serials and batches behind, which is exactly the drift
-    # the integrity check exists to catch. Refused as a whole so nothing posts half-right.
     blocked = []
     for line in sheet.lines:
         if line.counted_quantity is None:

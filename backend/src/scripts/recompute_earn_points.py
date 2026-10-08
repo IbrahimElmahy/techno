@@ -1,26 +1,3 @@
-"""يصحّح كسب الفواتير القديمة بعد ما قيم النقط اتغيّرت — بسطر فرق، مش بإعادة كتابة.
-
-    python -m src.scripts.recompute_earn_points          # عرض فقط
-    python -m src.scripts.recompute_earn_points --yes
-
-`earn_points_backfill` بيتخطّى أي فاتورة عليها سطر كسب — وده صح وقت الترحيل الأول
-ومصيدة بعده: ٢٬١٨٢ كارت خدوا قيمة نقطة النهاردة، ومنهم ٣٠٣ كارت عليهم بيع فعلى
-لسه كسبهم متحسب بصفر. إعادة تشغيل الترحيل مش هتلمسهم، والتاجر هيفضل ناقص نقط
-مالوش طريقة يعرفها.
-
-**الدفتر append-only، فالتصحيح سطر جديد.** بيتحسب اللي **المفروض** يكون مكسوب من
-قيم النهاردة، ويتطرح منه اللي **متسجّل** فعلاً، والفرق بيتكتب سطر `adjustment`
-مربوط بنفس الفاتورة. مسح سطر الكسب القديم وكتابته تاني كان هيخلّي الرصيد صح
-وتاريخه كدّاب — والسؤال «إمتى النقط دي اتغيّرت وليه» مالوش إجابة بعدها.
-
-**وتاريخ السطر تاريخ المستند مش تاريخ التشغيل.** من غير كده أي كشف نقاط بفترة
-بيقول إن الشركة وزّعت الفرق كله في اليوم اللي شغّلنا فيه السكربت.
-
-بيشتغل على فواتير البيع (كسب) والمرتجعات (خصم) مع بعض: الاتنين بيتحسبوا من نفس
-قيم النقط، فلو الفاتورة اتصحّحت والمرتجع لأ يبقى التاجر كسب على بضاعة رجّعها.
-
-Idempotent: تشغيلة تانية ورا التنفيذ مش هتلاقي فرق فمش هتكتب حاجة.
-"""
 from __future__ import annotations
 
 import sys
@@ -42,7 +19,6 @@ def _points(value) -> Decimal:
 
 
 def _should_earn(db, line_model, doc_key) -> dict[int, Decimal]:
-    """اللي المفروض يتكسب لكل مستند من قيم النقط الحالية — استعلام واحد."""
     rows = db.execute(
         select(doc_key, func.sum(ProductPointValue.point_value * line_model.quantity))
         .join(ProductPointValue, ProductPointValue.item_id == line_model.item_id)
@@ -52,7 +28,6 @@ def _should_earn(db, line_model, doc_key) -> dict[int, Decimal]:
 
 
 def _recorded(db, column, kinds) -> dict[int, Decimal]:
-    """اللي متسجّل فعلاً على كل مستند — الكسب/الخصم وأي تصحيح سابق."""
     rows = db.execute(
         select(column, func.sum(PointRecord.delta))
         .where(column.isnot(None), PointRecord.kind.in_(kinds))
@@ -64,7 +39,6 @@ def _recorded(db, column, kinds) -> dict[int, Decimal]:
 def run(*, execute: bool) -> None:
     db = SessionLocal()
     try:
-        # --- فواتير البيع: الكسب موجب ---
         should_inv = _should_earn(db, SalesInvoiceLine, SalesInvoiceLine.invoice_id)
         have_inv = _recorded(db, PointRecord.sales_invoice_id,
                              [PointKind.earn, PointKind.adjustment])
@@ -72,7 +46,6 @@ def run(*, execute: bool) -> None:
             select(SalesInvoice).where(
                 SalesInvoice.id.in_(set(should_inv) | set(have_inv)))).all()}
 
-        # --- المرتجعات: نفس الحساب بإشارة سالبة ---
         should_ret = _should_earn(db, SalesReturnLine, SalesReturnLine.return_id)
         have_ret = _recorded(db, PointRecord.sales_return_id,
                              [PointKind.reverse, PointKind.adjustment])
@@ -87,7 +60,7 @@ def run(*, execute: bool) -> None:
             if want != have:
                 fixes.append(("invoice", doc_id, have, want, _points(want - have)))
         for doc_id, doc in returns.items():
-            want = -should_ret.get(doc_id, ZERO)     # المرتجع بيخصم
+            want = -should_ret.get(doc_id, ZERO)
             have = have_ret.get(doc_id, ZERO)
             if want != have:
                 fixes.append(("return", doc_id, have, want, _points(want - have)))
@@ -134,7 +107,6 @@ def run(*, execute: bool) -> None:
                 delta=delta,
                 sales_invoice_id=doc_id if kind == "invoice" else None,
                 sales_return_id=doc_id if kind == "return" else None,
-                # تاريخ المستند مش تاريخ التشغيل — الكشف بفترة لازم يفضل صادق.
                 created_at=datetime.combine(when, time.min) if when else None,
                 flush=False,
             )

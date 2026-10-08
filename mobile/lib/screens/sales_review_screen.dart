@@ -15,11 +15,6 @@ import '../services/app_updater.dart';
 import '../services/auto_sync.dart';
 import '../services/task_progress.dart';
 
-/// فواتير الجهاز — اللي راحت واللي لسه.
-///
-/// المندوب لازم يشوف بعينه إن اللي كتبه وصل. الطابور اللي محدش بيبص عليه هو اللي بيخلّي
-/// فاتورة تفضل يومين على الجهاز ومحدش واخد باله — فالسطر بيقول حالته صريح، والمرفوعة
-/// بترقمها اللي في الدفاتر.
 class SalesReviewScreen extends StatefulWidget {
   const SalesReviewScreen({super.key});
 
@@ -32,13 +27,10 @@ class _SalesReviewScreenState extends State<SalesReviewScreen> {
   bool _loading = true;
   bool _pushing = false;
 
-  /// البحث والفلترة — في الذاكرة: القايمة كلها على الجهاز أصلاً، مافيش داعي لسيرفر.
   final _search = TextEditingController();
   DateTime? _from;
   DateTime? _to;
 
-  /// همزة وألف وياء بيتوحّدوا — «أحمد» و«احمد» نفس الاسم، والمندوب مش فاكر
-  /// الكارت اتكتب بأنهي واحدة فيهم.
   String _bare(String x) => x
       .replaceAll(RegExp('[أإآ]'), 'ا')
       .replaceAll('ة', 'ه')
@@ -81,8 +73,6 @@ class _SalesReviewScreenState extends State<SalesReviewScreen> {
     setState(() {
       if (from) {
         _from = d;
-        // «من» بعد «إلى» مالوش معنى — الحد التاني بيتظبط بدل ما النتيجة تطلع فاضية
-        // ومحدش فاهم ليه.
         if (_to != null && _to!.isBefore(d)) _to = d;
       } else {
         _to = d;
@@ -112,7 +102,6 @@ class _SalesReviewScreenState extends State<SalesReviewScreen> {
 
   Future<void> _push() async {
     setState(() => _pushing = true);
-    // التقدّم والنتيجة في الشريط اللي تحت — «بيرفع الفواتير ٣/٧»، والرفض بسببه.
     final tr = TaskTracker.instance;
     tr.start(BgTask.upload, 'بيرفع الفواتير…');
     try {
@@ -121,8 +110,6 @@ class _SalesReviewScreenState extends State<SalesReviewScreen> {
               BgTask.upload, 'بيرفع الفواتير ${done + 1}/$total',
               progress: total == 0 ? null : done / total));
       tr.finish(BgTask.upload, n == 0 ? 'مافيش فواتير مستنية' : 'اترفعت $n فاتورة ✔');
-      // **ده الطريق اللي المناديب بيرفعوا منه فعلاً** — ومكانش بيسأل عن تحديث خالص،
-      // فالأجهزة الشغّالة ماكانتش بتعرف إن فيه نسخة جديدة. متقنّن جوّه `check`.
       unawaited(AppUpdater.instance.check());
     } catch (e) {
       tr.finish(BgTask.upload, '$e', error: true, hold: const Duration(seconds: 12));
@@ -154,7 +141,6 @@ class _SalesReviewScreenState extends State<SalesReviewScreen> {
           ? const Center(child: CircularProgressIndicator())
           : Column(
               children: [
-                // البحث والفترة — فوق القايمة، مش جوّه منيو مستخبية.
                 Padding(
                   padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
                   child: TextField(
@@ -208,8 +194,6 @@ class _SalesReviewScreenState extends State<SalesReviewScreen> {
                 ),
                 Expanded(
                   child: RefreshIndicator(
-                    // السحبة بتجيب من السيرفر الأول (الفواتير اللي المكتب عدّلها والأرصدة)، وبعدين
-                          // تقرا من الجهاز — كانت بتقرا الجهاز بس فمافيش جديد يظهر.
                           onRefresh: () async {
                             await AutoSync.instance.maybeRun(force: true);
                             await _load();
@@ -248,8 +232,6 @@ class _SalesReviewScreenState extends State<SalesReviewScreen> {
     );
   }
 
-  /// صفوف الكوبونات المخزّنة على الفاتورة (JSON). الفاضي أو المكسور بيرجّع قايمة فاضية —
-  /// كارت من غير كوبونات أحسن من كارت بيقول «خطأ».
   List<Map<String, Object?>> _couponRows(Map<String, Object?> r) {
     final raw = r['coupons'] as String?;
     if (raw == null || raw.trim().isEmpty) return const [];
@@ -262,8 +244,6 @@ class _SalesReviewScreenState extends State<SalesReviewScreen> {
     }
   }
 
-  /// عدد الصف — المكتوب، وإلا محسوب من المدى. `couponCount` هي نفسها اللي الشاشة
-  /// بتكتب بيها، فالرقم هنا مابيخالفش اللي اتحفظ.
   int _countOf(Map<String, Object?> c) =>
       (c['count'] as int?) ??
       couponCount(c['serial_from'] as String?, c['serial_to'] as String?) ??
@@ -272,8 +252,6 @@ class _SalesReviewScreenState extends State<SalesReviewScreen> {
   int _couponTotal(Map<String, Object?> r) =>
       _couponRows(r).fold(0, (t, c) => t + _countOf(c));
 
-  /// رقم فاتورة البيع اللي البونص عليها. لو كانت على الجهاز، رقمها بيتقري من صفها
-  /// دلوقتي — ممكن تكون اترفعت بعد ما البونص اتكتب.
   String? _bonusForNumber(Map<String, Object?> r) {
     final uuid = r['bonus_for_client_uuid'] as String?;
     if (uuid != null) {
@@ -288,8 +266,6 @@ class _SalesReviewScreenState extends State<SalesReviewScreen> {
 
   Widget _invoiceCard(Map<String, Object?> r) {
     final synced = (r['synced'] as int?) == 1;
-    // **البونص بيبان إنه بونص من القايمة.** إجماليه صفر، ومن غير العلامة بيتقري كفاتورة
-    // فاضية أو غلطانة — والمندوب بيراجع آخر اليوم بضاعة خرجت بكام وعلى مين.
     final isBonus = (r['is_bonus'] as int? ?? 0) == 1;
     final bonusFor = isBonus ? _bonusForNumber(r) : null;
     return Card(
@@ -327,8 +303,6 @@ class _SalesReviewScreenState extends State<SalesReviewScreen> {
           r['invoice_date'] as String? ?? '',
           '${(r['total'] as num?)?.toStringAsFixed(2) ?? '0.00'}',
           if (bonusFor != null) 'على $bonusFor',
-          // العدد على السطر المقفول كمان — فاتورة كوبونات بس إجماليها صفر، وكانت
-          // بتبان في القايمة كأنها ورقة فاضية ماحصلش فيها حاجة.
           if (_couponTotal(r) > 0) '${_couponTotal(r)} كوبون',
           if (synced) r['document_number'] as String? ?? '' else 'لسه على الجهاز',
         ].where((s) => s.isNotEmpty).join(' · ')),
@@ -354,15 +328,6 @@ class _SalesReviewScreenState extends State<SalesReviewScreen> {
                       trailing: Text('${l.net.toStringAsFixed(2)}',
                           style: const TextStyle(fontWeight: FontWeight.w700)),
                     ),
-                  // الكوبونات المسلّمة — زي ما هي على الورقة المطبوعة بالظبط.
-                  //
-                  // كانت الشاشة بتعرض سطور الأصناف وبس، فالدفاتر اللي اتسلّمت للعميل
-                  // مابتبانش في أي مكان في التطبيق بعد الحفظ: المندوب اللي عايز يراجع
-                  // سلّم أنهي أرقام لازم يفتح الورقة. وفاتورة كوبونات بس (من غير أصناف)
-                  // كانت بتتفتح على كارت فاضي خالص.
-                  //
-                  // **والمدى هو المهم مش العدد**: يوم ما العميل يرجّع ورقة، اللي بيستلم
-                  // بيراجع رقمها على المدى ده عشان يعرف إنها اتصرفت في تسليمة حصلت فعلاً.
                   for (final c in _couponRows(r))
                     ListTile(
                       dense: true,
@@ -379,17 +344,6 @@ class _SalesReviewScreenState extends State<SalesReviewScreen> {
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        // **اللي في الطابور بيتعدّل ومابيتطبعش. واللي وصل بيتطبع
-                        // ومابيتعدّلش.**
-                        //
-                        // الورقة اللي بتتطبع من مسودّة بتدّعي فاتورة مالهاش وجود عند
-                        // المكتب: الفاتورة ممكن تترفض عند الرفع (رصيد مايكفيش مثلاً)
-                        // أو تتعدّل قبل ما ترفع، والورقة اللي في إيد العميل ساعتها
-                        // بتقول حاجة تانية خالص.
-                        //
-                        // وأول ما توصل السيرفر بقت مستند بقيد ومخزون اتحرّك — تعديلها
-                        // على الجهاز بعد كده بيخلّي الورقة والدفتر يقولوا رقمين. التصحيح
-                        // ساعتها بمرتجع من المكتب، والاتنين بيبانوا.
                         if (synced)
                           TextButton.icon(
                             onPressed: () => Navigator.push(
@@ -405,9 +359,6 @@ class _SalesReviewScreenState extends State<SalesReviewScreen> {
                             onPressed: () async {
                               final changed = await Navigator.push<bool>(
                                 context,
-                                // البونص بيتعدّل في صفحته هو — نفس الشكل اللي اتكتب بيه،
-                                // بخصم وسعر مقفولين. (الشاشة بتعرف لوحدها من `is_bonus`
-                                // كمان، بس الاسم هنا بيقول اللي بيحصل.)
                                 MaterialPageRoute(
                                     builder: (_) => isBonus
                                         ? BonusInvoiceScreen(existing: r)
@@ -425,13 +376,6 @@ class _SalesReviewScreenState extends State<SalesReviewScreen> {
                                 style: TextStyle(
                                     fontSize: 11, color: Colors.black45)),
                           ),
-                        // **مافيش «امسح».** الفاتورة اللي لسه على الجهاز مستند اتكتب
-                        // فعلاً: العميل استلم بضاعة وورقة، والرصيد اتحسب عليها في
-                        // التطبيق. مسحها بتشيل الأثر الوحيد اللي بيقول إنها حصلت —
-                        // ومحدش في المكتب هيعرف إنها كانت موجودة أصلاً.
-                        //
-                        // والغلط بيتصلّح بمستند مش بمسح: ترفع وتتعمل مرتجع، والاتنين
-                        // بيبانوا. اللي عايز يلغي فاتورة قبل ما ترفع بيكلّم المكتب.
                       ],
                     ),
                   ),

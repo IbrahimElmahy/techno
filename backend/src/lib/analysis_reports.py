@@ -1,20 +1,3 @@
-"""تحليل الربحية — بمركز التكلفة وبالفرع.
-
-النظام بيعرف يقول «الشركة كسبت كام». مابيعرفش يقول «الفرع ده كسب كام» ولا «المشروع ده كلّف كام»،
-مع إن الداتا اللي بتجاوب على الاتنين مترحّلة في الدفاتر من زمان: `LedgerLine.cost_center_id`
-و`LedgerEntry.branch_id` موجودين وبيتكتبوا، ومحدش بيقراهم مجمّعين.
-
-**بيتقرا من الدفتر مش من المستندات.** Re-summing invoices and vouchers would give a second set of
-figures that disagrees with the income statement the moment anything is posted by hand — and the
-person holding two numbers has no way to tell which is the company's. The ledger is what was
-posted; a reversal and its reversed entry both sit in it and net to zero on their own.
-
-**فرق مقصود بين الاتنين، وهو مش تفصيلة:** مركز التكلفة على **السطر**، والفرع على **القيد**. قيد
-واحد ينفع يوزّع مصروف على تلات مراكز تكلفة، ومابينفعش يتقسّم على فرعين. So a cost-centre report
-splits inside a document and a branch report never does — and a line with no cost centre is «غير
-موزّع», a real bucket that has to appear rather than a rounding difference that makes the parts
-not add up to the whole.
-"""
 from __future__ import annotations
 
 from datetime import date
@@ -36,21 +19,16 @@ UNASSIGNED = "— غير موزّع —"
 
 
 class AnalysisReportError(ValueError):
-    """طلب تقرير مالوش معنى — بيترد ٤٢٢."""
+    pass
 
 
 def _pnl_lines(db: Session, *, date_from: date | None, date_to: date | None,
                branch_id: int | None = None):
-    """كل سطر إيراد أو مصروف في الفترة، ومعاه القيد بتاعه.
-
-    Only income and expense lines: this is profitability, and an asset movement is neither. The
-    balance sheet is a different report and stays one.
-    """
     stmt = (
         select(LedgerLine).options(
             selectinload(LedgerLine.entry), selectinload(LedgerLine.account))
         .join(LedgerEntry, LedgerEntry.id == LedgerLine.entry_id)
-        .where(ledger_service.is_posted_sql())  # المسودة مش ربح ولا خسارة
+        .where(ledger_service.is_posted_sql())
     )
     if branch_id is not None:
         stmt = stmt.where(
@@ -66,7 +44,6 @@ def _pnl_lines(db: Session, *, date_from: date | None, date_to: date | None,
         if date_to is not None and when > date_to:
             continue
         amount = to_money(line.amount)
-        # موجب في الاتجاه الطبيعي للحساب — الإيراد دائن والمصروف مدين.
         signed = amount if line.direction == line.account.normal_side else -amount
         yield line, nature, signed
 
@@ -80,7 +57,6 @@ def profitability(
     include_unassigned: bool = True,
     branch_id: int | None = None,
 ) -> dict:
-    """أرباح وخسائر لكل مركز تكلفة (أو لكل فرع) في فترة."""
     if dimension not in DIMENSIONS:
         raise AnalysisReportError(f"بُعد مش معروف: {dimension}")
 
@@ -89,14 +65,11 @@ def profitability(
              else {b.id: b.name for b in db.scalars(select(Branch)).all()})
 
     rows_in = list(_pnl_lines(db, date_from=date_from, date_to=date_to, branch_id=branch_id))
-    # الحصص بتتجاب لكل السطور مرة واحدة — استعلام لكل سطر كان بيبقى ألف استعلام.
     dists = (analytic_service.distributions_for(db, [ln.id for ln, _n, _s in rows_in])
              if dimension == "cost_center" else {})
 
     buckets: dict = {}
     for line, nature, signed in rows_in:
-        # السطر المتقسّم بيدخل كذا دلو بحصته — ده كل الفرق بين التوزيع التحليلي
-        # والمركز الواحد، والباقي تحت زي ما هو.
         parts = (analytic_service.shares_of(line, signed, dists.get(line.id))
                  if dimension == "cost_center"
                  else [(line.entry.branch_id, signed)])
@@ -139,8 +112,6 @@ def profitability(
             "margin_pct": str(to_money(
                 (total_income - total_expenses) / total_income * 100))
             if total_income else None,
-            # اللي ماتوزّعش لازم يبان كرقم، مش كفرق بين المجاميع. Somebody comparing the branch
-            # report to the income statement has to be able to see where the gap went.
             "unassigned_lines": sum(r["lines"] for r in rows if r["unassigned"]),
         },
     }
@@ -150,11 +121,6 @@ def account_breakdown(
     db: Session, *, dimension: str = "cost_center", key: int | None = None,
     date_from=None, date_to=None,
 ) -> dict:
-    """تفصيل مركز واحد (أو فرع واحد) بالحساب — «الرقم ده جه منين».
-
-    A profitability row without this is a figure nobody can check. The first question after «هذا
-    المركز خسر ٢٠ ألف» is always «في إيه», and the answer is the accounts underneath it.
-    """
     if dimension not in DIMENSIONS:
         raise AnalysisReportError(f"بُعد مش معروف: {dimension}")
 

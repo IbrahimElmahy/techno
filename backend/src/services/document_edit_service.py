@@ -1,32 +1,3 @@
-"""تعديل المستندات وحذفها — حر، من غير قيود عكسية ولا مرتجعات.
-
-النظام كان بيتعامل مع كل مستند مرحّل على إنه حقيقة تاريخية مايتغيّرش: تعديل فاتورة كان
-بيتعمل بإنها **تتعكس** — يتكتب مرتجع بأصنافها وقيد مضاد بمبلغها — وبعدين تتكتب فاتورة
-جديدة. النتيجة إن تصليح غلطة في سعر بيسيب وراه ورق: مرتجع محدش رجّعه، وقيدين زياة في
-كشف الحساب، ورصيد عميل بيعدّي بتلات مراحل عشان رقم اتغيّر.
-
-ده أسلوب دفتر أستاذ محاسبي، وهو صح للنظام اللي بيتقفل بميزانية مدققة. الشركة دي مش
-بتشتغل كده — عايزة الفاتورة تتفتح وتتعدّل وتتقفل، زي أي شاشة تانية.
-
-فالتعديل هنا بيشتغل بطريقتين: **بيمسح أثر المستند القديم بالكامل**، وبعدين بيعيد إنشاءه
-بالبيانات الجديدة **بنفس رقمه ونفس الـid**. اللي بيبص على النظام بعد التعديل بيلاقي
-مستند واحد صح، مش تلاتة بيشرحوا بعض.
-
-## ليه المسح مش تعويض
-
-الحركة المخزنية والقيد ممنوع تعديلهم على مستوى الـORM (حراس `before_update`/`before_delete`
-على `StockMovement` و`LedgerEntry` و`PointRecord`). الحراس دول بيمنعوا **التعديل بالغلط** —
-كود بيعدّل صف كان المفروض يكتب صف جديد. المسح المتعمد هنا بيعدّي عن طريق `delete()` على
-مستوى الـCore، اللي مابيشغّلش مابرات الـORM. وده مقصود: الفرق بين «الكود مايعدّلش حركة
-مرحّلة وهو بيشتغل» و«المستخدم بيصلّح غلطة في المستند» فرق حقيقي، والتاني ليه طريق واحد
-معروف — الملف ده.
-
-## ترتيب المسح مهم
-
-الأثر بيتشال بالعكس بالظبط: النقاط، فالسيريالات، فالدفعات، فالحركة المخزنية، فالقيد.
-السيريالات والدفعات بيرجعوا لحالتهم الأولى **قبل** ما الحركة تتشال، عشان الحسابات اللي
-بتعتمد على الرصيد (زي `on_hand`) تفضل متسقة أثناء العملية نفسها.
-"""
 from __future__ import annotations
 
 from decimal import Decimal
@@ -69,18 +40,11 @@ ZERO_QTY = to_qty(0)
 
 
 class DocumentEditError(Exception):
-    """المستند مش موجود، أو فيه حاجة متعلّقة بيه بتمنع تعديله."""
+    pass
 
-
-# ---------------------------------------------------------------- شيل الأثر
 
 def _drop_points(db: Session, *, sales_invoice_id: int | None = None,
                  sales_return_id: int | None = None) -> None:
-    """النقاط اللي المستند ده طلّعها أو شالها — وأي سطر مربوط بيها.
-
-    سطر «العكس» بيشاور على سطر «الكسب» بـ`origin_earn_id`، فمسح الكسب لوحده بيسيب سطر
-    يتيم بيشاور على حاجة مش موجودة.
-    """
     if sales_invoice_id is not None:
         earns = db.scalars(select(PointRecord.id).where(
             PointRecord.sales_invoice_id == sales_invoice_id)).all()
@@ -96,11 +60,6 @@ def _drop_points(db: Session, *, sales_invoice_id: int | None = None,
 def _restore_serials(db: Session, *, sold_invoice_id: int | None = None,
                      document_type: str | None = None,
                      document_id: int | None = None) -> None:
-    """السيريالات ترجع مخزن، وسجل حركتها على المستند ده يتشال.
-
-    السيريال بيتخزّن بحالته الحالية (مش بسجل حركات بيتجمع)، فرجوعه معناه إن الصف نفسه
-    يرجع `in_stock` وينفصل عن الفاتورة.
-    """
     if sold_invoice_id is not None:
         rows = db.scalars(select(ItemSerial).where(
             ItemSerial.sold_invoice_id == sold_invoice_id)).all()
@@ -114,13 +73,6 @@ def _restore_serials(db: Session, *, sold_invoice_id: int | None = None,
 
 
 def _restore_batches(db: Session, *, document_type: str, document_id: int) -> None:
-    """الدفعات ترجع لكميتها قبل المستند، وسطور حركتها تتشال.
-
-    كل سطر بيقول اتاخد كام من دفعة إمتى، فالرجوع هو عكس كل سطر على دفعته: المستهلك
-    بيترد، والمستلم بيتخصم. الدفعة اللي المستند ده هو اللي أنشأها بتفضل بصفر بدل ما
-    تتمسح — الأصناف اللي ليها صلاحية بيتقاس عليها بتاريخها، ومسح صف الدفعة بيضيّع التاريخ
-    ده من على أي حركة تانية اتعلّقت بيه.
-    """
     rows = db.scalars(select(StockBatchMovement).where(
         StockBatchMovement.document_type == document_type,
         StockBatchMovement.document_id == document_id)).all()
@@ -143,30 +95,14 @@ def _restore_batches(db: Session, *, document_type: str, document_id: int) -> No
 
 
 def _drop_stock(db: Session, *, source_doc_type: str, source_doc_id: int) -> None:
-    """حركات المخزون بتاعة المستند — بتتشال خالص، **بكل أسمائها**.
-
-    الرصيد مشتق من الحركات (مافيش رصيد مخزّن)، فشيل الحركة بيرجّع الرصيد لوحده. وده
-    السبب اللي بيخلي الطريقة دي ممكنة أصلاً — وهو كمان السبب اللي بيخلّي الحركة
-    الناجية أخطر من الصف اللي فضل: الرصيد بيفضل غلط ومافيش حاجة تقول ليه.
-
-    والأسماء بتتجاب من [stock_docs.names] — المستند الواحد ليه اسمين على الحركة (الخدمة
-    الحيّة بتكتب `sale` والمستورد بيكتب `sales_invoice`)، والشرح هناك.
-    """
     db.execute(delete(StockMovement).where(
         StockMovement.source_doc_type.in_(stock_docs.names(source_doc_type)),
         StockMovement.source_doc_id == source_doc_id))
 
 
 def _drop_entry(db: Session, entry_id: int | None) -> None:
-    """القيد وسطوره — وأي قيد اتكتب عشان يعكسه.
-
-    لو المستند كان اتعكس قبل كده، القيد المضاد لازم يروح معاه؛ سيبانه بيخلّي الحساب
-    ناقص بمبلغ عملية مالهاش وجود.
-    """
     if entry_id is None:
         return
-    # (المرحلة ٤) القيد في دفتر متجزّأ مايتحذفش: حذفه بيكسر سلسلة كل اللي بعده.
-    # التعديل والحذف في النظام ده بيمرّوا كلهم من هنا، فالحارس مكانه هنا.
     from src.services import secure_hash_service
 
     entry = db.get(LedgerEntry, entry_id)
@@ -180,18 +116,8 @@ def _drop_entry(db: Session, entry_id: int | None) -> None:
         LedgerEntry.reverses_entry_id == entry_id)).all()
     ids = [entry_id, *reversals]
 
-    # **المطابقة تتفك قبل الحذف.** من ساعة ما طبقة المطابقة اشتغلت، سطر الدفتر على حساب
-    # الذمم ممكن يكون مقفول على سطر تاني في `partial_reconcile` — والمفتاح الأجنبي
-    # بيرفض حذفه، فتعديل أو حذف أي فاتورة مسدّدة كان بيقع بـ500.
-    #
-    # والفك مش مجرد مسح للربط: `unreconcile` بيرجّع المتبقّي للسطر **التاني** كمان.
-    # لو مسحنا صفوف `partial_reconcile` على طول، الدفعة اللي كانت مقفولة على الفاتورة
-    # دي تفضل متقفلة وهي مش مقفولة على حاجة — ورصيد العميل يقول إنه دفع وحسابه مقفول
-    # بينما الفاتورة راحت.
     from src.services import reconcile_service
 
-    # و`unreconcile` بيرمي لو مالقاش مطابقة، فالسؤال بيتسأل الأول: أغلب الفواتير
-    # مش مقفولة على حاجة، وفاتورة عادية مالهاش تقع في استثناء اتكتب لحالة تانية.
     from src.models.reconcile import PartialReconcile
 
     line_ids = [i for (i,) in db.execute(
@@ -208,22 +134,7 @@ def _drop_entry(db: Session, entry_id: int | None) -> None:
     db.execute(delete(LedgerEntry).where(LedgerEntry.id.in_(ids)))
 
 
-# ---------------------------------------------------------------- فاتورة البيع
-
 def frozen_costs(db: Session, invoice: SalesInvoice) -> dict[int, Decimal]:
-    """تكلفة الوحدة **الأساسية** لكل صنف على الفاتورة، قبل ما سطورها تتشال.
-
-    التعديل بيمسح السطور ويبنيها من جديد، والبناء بيجمّد التكلفة من متوسط **النهارده**.
-    يعني تصليح رقم تليفون في فاتورة من أربع شهور كان بيعيد كتابة تكلفة بضاعتها بسعر
-    النهارده — والتعليق جنب السطر نفسه بيقول العكس: «هذه الفاتورة هامشها لازم يفضل زي
-    ما كان يوم البيع».
-
-    والفرق مش بسيط: على داتا العميل متوسط التكلفة اتحرك بين ٦٪ و٥٢٪ على أكتر الأصناف
-    مبيعاً. يعني أي تعديل على فاتورة قديمة كان بيغيّر ربحها وربح عميلها وشهرها.
-
-    بتترجّع **مقسومة على `unit_factor`** — يعني تكلفة الوحدة الأساسية. السطر الجديد
-    ممكن يتكتب بوحدة تانية، فالتخزين بالوحدة الأساسية بيخلّي الرقم يتعاد ضربه صح.
-    """
     out: dict[int, Decimal] = {}
     for ln in invoice.lines:
         if ln.unit_cost is None:
@@ -234,19 +145,6 @@ def frozen_costs(db: Session, invoice: SalesInvoice) -> dict[int, Decimal]:
 
 
 def purge_sale(db: Session, invoice: SalesInvoice, *, dropping: bool = False) -> None:
-    """بيشيل كل أثر فاتورة بيع من النظام — من غير ما يمس الفاتورة نفسها.
-
-    بيتنادى من التعديل (وبعده الفاتورة بتتبني من جديد) ومن الحذف (وبعده الصف نفسه
-    بيتشال).
-
-    `dropping` بيفرّق بين الاتنين، وده مش تفصيلة: فيه مستندات **تانية** بتشاور على الفاتورة
-    دي — سطور استلام الكوبونات، واستهلاك النقاط، والحجوزات. الصف بتاع الفاتورة بيروح في
-    الحذف بس، فالربط ده لازم يتفك في الحذف بس. فكّه في التعديل معناه إن تصليح سعر في فاتورة
-    بيمسح سطور مستند استلام كوبونات محدش فتحه — والمستند بيفضل مكتوب عليه عدد كوبونات
-    مالهاش سطور، والقيد الفريد على رقم الكوبون بيتفك فالكوبون يتسلّم تاني.
-    """
-    # ورق الكوبونات اللي الفاتورة صرفته من عهدة المندوب بيرجع العهدة — **قبل** ما صفوف
-    # الكوبونات تتمسح تحت، لأن الإرجاع بيحفظ شكلها عشان التعديل مايتقفلش على فاتورة قديمة.
     from src.services import coupon_custody_service
 
     coupon_custody_service.release_for_invoice(db, invoice)
@@ -264,9 +162,6 @@ def purge_sale(db: Session, invoice: SalesInvoice, *, dropping: bool = False) ->
     db.execute(delete(SalesInvoiceCoupon).where(
         SalesInvoiceCoupon.invoice_id == invoice.id))
     if dropping:
-        # الصف بيروح، فأي مستند تاني بيشاور عليه لازم يفك الربط — وإلا المفتاح الأجنبي
-        # بيرفض الحذف. سطر الاستلام `sales_invoice_id` بتاعه مش بيقبل NULL، فبيتمسح؛
-        # والباقي بيتفك وبيفضل في مكانه.
         db.execute(delete(CouponReceiptLine).where(
             CouponReceiptLine.sales_invoice_id == invoice.id))
         db.execute(update(CouponRedemption).where(
@@ -278,12 +173,6 @@ def purge_sale(db: Session, invoice: SalesInvoice, *, dropping: bool = False) ->
 
 
 def assert_sale_editable(db: Session, invoice: SalesInvoice) -> None:
-    """مرتجع حقيقي متعلّق بالفاتورة بيمنع تعديلها.
-
-    ده مش شرط محاسبي — ده اتساق: المرتجع بيقول «رجع منها ٥»، فتعديلها لـ٣ بيخلّي مستند
-    موجود بيتكلم عن كمية مالهاش وجود. اللي عايز يعدّل بيمسح المرتجع الأول، وده بقى ممكن
-    زي أي حاجة تانية.
-    """
     returns = db.scalars(select(SalesReturn).where(
         SalesReturn.sales_invoice_id == invoice.id)).all()
     if returns:
@@ -293,16 +182,12 @@ def assert_sale_editable(db: Session, invoice: SalesInvoice) -> None:
 
 
 def delete_sale(db: Session, *, invoice_id: int, actor_user_id: int) -> None:
-    """حذف فاتورة بيع بالكامل وكل ما يتعلق بها من مرتجعات."""
     invoice = db.get(SalesInvoice, invoice_id)
     if invoice is None:
         raise DocumentEditError("فاتورة البيع مش موجودة.")
     returns = db.scalars(select(SalesReturn).where(
         SalesReturn.sales_invoice_id == invoice.id)).all()
     for ret in returns:
-        # كل مرتجع بيتمسح باسمه في السجل. حذف الفاتورة بيجرّ مستندات تانية معاه، واللي
-        # بيتشال في الضهر لازم يبقى مكتوب — وإلا سند مرتجع بيختفي وأول واحد يدوّر عليه
-        # مايلاقيش حاجة بتقول راح فين.
         ret_doc = ret.document_number
         purge_sales_return(db, ret)
         db.delete(ret)
@@ -320,15 +205,7 @@ def delete_sale(db: Session, *, invoice_id: int, actor_user_id: int) -> None:
                  before={"doc": doc})
 
 
-# ---------------------------------------------------------------- السندات
-
 def delete_voucher(db: Session, *, voucher_id: int, actor_user_id: int) -> None:
-    """حذف سند — بيروح هو وقيده، مش بيتعكس.
-
-    العكس كان بيكتب سند تاني «عكس SR-000012» جنب الأصلي، فالخزينة بتوري عمليتين على غلطة
-    واحدة. السند اللي اتكتب غلط بيتمسح، والسند العكسي اللي كان اتكتب عليه قبل كده بيروح
-    معاه — لأنه مالوش معنى من غيره.
-    """
     from src.models.voucher import Voucher
 
     voucher = db.get(Voucher, voucher_id)
@@ -355,20 +232,8 @@ def delete_voucher(db: Session, *, voucher_id: int, actor_user_id: int) -> None:
                  entity_type="voucher", entity_id=voucher_id, before={"doc": doc})
 
 
-# ---------------------------------------------------------------- مرتجع المبيعات
-
 def _resell_serials(db: Session, *, document_type: str, document_id: int,
                     invoice_id: int | None) -> None:
-    """السيريالات اللي رجعت على المستند ده — ترجع «مبيعة» تاني.
-
-    المرتجع بيرجّع السيريال للمخزن، فمسح المرتجع لازم يرجّعه لحالته قبله. السيريالات
-    نفسها متعرفة من سجل حركتها على المستند — وده السبب اللي بيخلّي السجل ده يستاهل: حالة
-    السيريال بتتخزّن كحالة واحدة، مافيش تاريخ فيها يتقرا بالعكس.
-
-    الفاتورة اللي كان مبيع عليها بترجع كمان لما المرتجع كان مربوط بفاتورة. المرتجع الحر
-    (٠٢٨) مالوش فاتورة، فالسيريال بيرجع «مبيع» من غير ربط — وهي الحالة اللي كان فيها
-    قبل المرتجع بالظبط.
-    """
     rows = db.scalars(select(ItemSerialMovement).where(
         ItemSerialMovement.document_type == document_type,
         ItemSerialMovement.document_id == document_id)).all()
@@ -384,7 +249,6 @@ def _resell_serials(db: Session, *, document_type: str, document_id: int,
 
 
 def purge_sales_return(db: Session, ret: SalesReturn) -> None:
-    """بيشيل كل أثر مرتجع مبيعات — البضاعة تخرج تاني والفلوس ترجع زي ما كانت."""
     _drop_points(db, sales_return_id=ret.id)
     _resell_serials(db, document_type=StockDoc.SALE_RETURN, document_id=ret.id,
                     invoice_id=ret.sales_invoice_id)
@@ -409,8 +273,6 @@ def delete_sales_return(db: Session, *, return_id: int, actor_user_id: int) -> N
                  entity_type="sales_return", entity_id=return_id, before={"doc": doc})
 
 
-# ---------------------------------------------------------------- مردود الشراء
-
 def purge_purchase_return(db: Session, ret: PurchaseReturn) -> None:
     _restore_batches(db, document_type=StockDoc.PURCHASE_RETURN, document_id=ret.id)
     _drop_stock(db, source_doc_type=StockDoc.PURCHASE_RETURN, source_doc_id=ret.id)
@@ -432,8 +294,6 @@ def delete_purchase_return(db: Session, *, return_id: int, actor_user_id: int) -
     audit_record(db, action="purchase_return.delete", actor_user_id=actor_user_id,
                  entity_type="purchase_return", entity_id=return_id, before={"doc": doc})
 
-
-# ---------------------------------------------------------------- فاتورة الشراء
 
 def purge_purchase(db: Session, invoice: PurchaseInvoice) -> None:
     _restore_serials(db, document_type=StockDoc.PURCHASE, document_id=invoice.id)

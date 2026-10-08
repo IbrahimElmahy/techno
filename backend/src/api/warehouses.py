@@ -1,4 +1,3 @@
-"""Warehouses & custodies router (T042). FR-015, FR-025, FR-026."""
 from __future__ import annotations
 
 from decimal import Decimal
@@ -29,7 +28,6 @@ class WarehouseCreate(BaseModel):
     name: str
     warehouse_type: WarehouseType
     branch_id: int | None = None
-    # «مخزن السيارة أ» explains itself; «مخزن ٣» does not.
     description: str | None = None
 
 
@@ -37,20 +35,14 @@ class WarehouseUpdate(BaseModel):
     name: str | None = None
     active: bool | None = None
     description: str | None = None
-    # A store does move between branches, and its type does get corrected after the fact. Leaving
-    # these out of the update meant the only way to fix either was to make a second store and
-    # retire the first — which splits its movement history across two records for a typo.
     branch_id: int | None = None
     warehouse_type: WarehouseType | None = None
 
 
 class CustodyUpdate(BaseModel):
     active: bool | None = None
-    # اسم الصندوق (اسم حسابه في الشجرة) والمندوب اللي ماسكه — من شاشة الخزن والبنوك.
     name: str | None = None
     rep_id: int | None = None
-    # الخط بيتصحّح، مابيتعادش عمله. صندوق اتفتح على «أبيض» وهو بولي كان لازم يتقفل
-    # ويتعمل واحد جديد — والرصيد بيتقسم على صفّين عشان غلطة في قايمة.
     family: str | None = None
 
 
@@ -66,13 +58,8 @@ class WarehouseOut(BaseModel):
 class CustodyCreate(BaseModel):
     holder_type: HolderType
     rep_id: int | None = None
-    # (009) الخط اللي الصندوق ده بتاعه — «أبيض» / «بولي». المندوب له صندوق لكل خط،
-    # فالتفرّد بقى على (المندوب، الخط) مش على المندوب لوحده.
     family: str | None = None
     warehouse_id: int | None = None
-    # اسم الصندوق. لو اتبعت، الحساب بيتعمل **خزنة** باسمه تحت نفس مجموعة صناديق الفرع —
-    # زي صناديق a5 — فيظهر في «الفلوس رايحة فين» وفي كشف الصندوق. من غيره الحساب بيتعمل
-    # عهدة من غير اسم زي ما كان.
     name: str | None = None
 
 
@@ -96,12 +83,8 @@ def list_warehouses(
     db: Session = Depends(get_db),
 ) -> list[WarehouseOut]:
     stmt = select(Warehouse)
-    # **اللي مالوش فرع بيشوف كل المخازن** — هي نفس قاعدة `branch_scope`، والسطر ده كان
-    # كاتبها بإيده وناسي الحالة دي: `branch_id == NULL` مابيساويش أي صف في SQL، فحساب
-    # مركزي (المالك مثلاً) كان بياخد قايمة فاضية — ومن غير مخزن مافيش فاتورة بيع أصلاً.
     scoped_branch = branch_scope.visible_branch_id(current)
     if scoped_branch is not None:
-        # Branch warehouses of own branch + the shared central warehouse.
         stmt = stmt.where(
             (Warehouse.branch_id == scoped_branch)
             | (Warehouse.warehouse_type == WarehouseType.central)
@@ -170,21 +153,10 @@ def deactivate_warehouse(
     current: CurrentUser = Depends(require_capability(CAP_WAREHOUSE_WRITE)),
     db: Session = Depends(get_db),
 ) -> None:
-    """يخفي المخزن؛ و`hard=true` بيمسحه **بشرط إنه مادخلش ولا خرج منه حاجة**.
-
-    الإخفاء هو الصح في الغالب: المخزن اللي عليه حركة اسمه على كل إذن وكل حركة
-    مخزون، ومسحه بيسيب مستندات بتشاور على مكان مش موجود. الإخفاء بيشيله من
-    قوايم الاختيار ويسيب تاريخه يتقري.
-
-    والمسح للغلط في الإدخال: مخزن اتعمل باسم مكرر أو بالخطأ ومحدش استعمله. أي
-    حاجة غير كده بيرد ٤٠٩ ويقول فيه إيه بالأرقام.
-    """
     wh = db.get(Warehouse, warehouse_id)
     if wh is None:
         raise HTTPException(404, {"code": "not_found", "message": "المخزن مش موجود"})
     if hard:
-        # كل جدول بيشاور على المخزن — بيتقري من القاعدة نفسها مش من الموديلز، عشان
-        # جدول اتضاف ونسيوا يحدّثوا القايمة مايعديش من غير ما يتعدّ.
         from sqlalchemy import inspect as sa_inspect
         from sqlalchemy import text
 
@@ -201,7 +173,6 @@ def deactivate_warehouse(
                                {"i": wh.id}).scalar() or 0
                 if n:
                     blockers.append(f"{table}.{col}: {n}")
-        # وحركة المخزون مش رابطة بـFK — بتخزّن المكان بنوعه ورقمه.
         n_mov = db.execute(text(
             "SELECT count(*) FROM stock_movement "
             "WHERE location_kind = 'warehouse' AND location_id = :i"),
@@ -233,11 +204,6 @@ def list_custodies(
     current: CurrentUser = Depends(require_capability(CAP_CUSTODY_READ)),
     db: Session = Depends(get_db),
 ) -> list[CustodyOut]:
-    # العهدة بتقعد في مخزن، والمخازن مفلترة بالفرع — فالعهدة لازم تتفلتر معاها.
-    # من غير كده مدير الفرع بيشوف عهد مناديب فرع تاني في كل قايمة اختيار.
-    # العهدة بتبقى على مندوب (٢٥ من ٢٥) أو على مخزن. فالفلترة على الاتنين:
-    # مخزن الفرع، أو مندوب من الفرع. العهدة اللي مالهاش الاتنين بتفضل ظاهرة —
-    # إخفاء اللي مش متأكدين منه بيخفي شغل شغّال.
     from src.models.user import User
 
     branch_id = branch_scope.visible_branch_id(current)
@@ -245,8 +211,6 @@ def list_custodies(
     if branch_id is not None:
         whs = {w.id for w in db.scalars(
             branch_scope.scope(select(Warehouse), Warehouse, current)).all()}
-        # `custody.rep_id` بيشاور على `user.id` بتاع المندوب (شوف `CurrentUser.rep_id`)،
-        # مش على جدول مناديب لوحده — فالمقارنة بالمستخدمين بتوع الفرع.
         reps = {u.id for u in db.scalars(
             select(User).where(User.branch_id == branch_id)).all()}
         rows = [c for c in rows
@@ -267,12 +231,9 @@ def create_custody(
     _: CurrentUser = Depends(require_capability(CAP_CUSTODY_WRITE)),
     db: Session = Depends(get_db),
 ) -> CustodyOut:
-    # Enforce exactly one custody per holder (FR-025).
     if body.holder_type == HolderType.rep:
         if body.rep_id is None:
             raise HTTPException(422, {"code": "validation", "message": "rep custody needs rep_id"})
-        # التفرّد على (المندوب، الخط): نفس المندوب ياخد صندوق أبيض وصندوق بولي، ومايخدش
-        # صندوقين لنفس الخط.
         exists = db.scalar(select(Custody).where(
             Custody.rep_id == body.rep_id,
             Custody.family == body.family if body.family else Custody.family.is_(None)))
@@ -292,7 +253,6 @@ def create_custody(
 
         rep = db.get(User, body.rep_id) if body.rep_id else None
         branch_id = rep.branch_id if rep is not None else None
-        # المجموعة: أب صندوق مندوب تاني في نفس الفرع، عشان الجديد يقعد جنب إخواته في الشجرة.
         sibling = db.scalar(
             select(Account).join(Custody, Custody.account_id == Account.id)
             .where(Account.account_type == AccountType.treasury,
@@ -365,7 +325,6 @@ def deactivate_custody(
     if c is None:
         raise HTTPException(404, {"code": "not_found", "message": "Custody not found"})
     if hard:
-        # حذف فعلي — بس للصندوق اللي اتعمل غلط ومالوش ولا حركة فلوس ولا بضاعة.
         from sqlalchemy import text as _text
         from sqlalchemy.exc import IntegrityError
 
@@ -429,9 +388,6 @@ class WarehouseRepOut(BaseModel):
     code: str
     name: str
     job_title: str | None = None
-    # The login this employee signs in with. NULL means the person is on the payroll but has no
-    # account — they can hold stock, but no customer can be assigned to them, because «مندوب» on
-    # a customer is a login.
     user_id: int | None = None
     active: bool
 
@@ -450,11 +406,6 @@ def list_warehouse_reps(
     _: CurrentUser = Depends(require_capability(CAP_WAREHOUSE_READ)),
     db: Session = Depends(get_db),
 ) -> list[WarehouseRepOut]:
-    """The employees who work out of this store.
-
-    Reps are picked from الموظفين, not from logins: the payroll is where the client already
-    records who drives which van, and `employee.warehouse_id` has held that answer all along.
-    """
     if db.get(Warehouse, warehouse_id) is None:
         raise HTTPException(404, {"code": "not_found", "message": "Warehouse not found"})
     rows = db.scalars(
@@ -470,17 +421,6 @@ def set_warehouse_reps(
     current: CurrentUser = Depends(require_capability(CAP_WAREHOUSE_WRITE)),
     db: Session = Depends(get_db),
 ) -> list[WarehouseRepOut]:
-    """Replace the set of employees working out of this store.
-
-    This endpoint OWNS the set rather than adding to it, because the alternative — a PATCH per
-    employee — has no way to say «and nobody else». Taking somebody off a store means clearing
-    their `warehouse_id`, and a PATCH that reads a missing field as «leave alone» cannot tell an
-    omitted store from a cleared one. Owning the set makes removal an ordinary part of saving
-    instead of a separate verb nobody remembers to call.
-
-    An employee has one store, so naming him here MOVES him: whatever store he was on stops being
-    his. That is the intended meaning — «مندوب السيارة أ» drives one car.
-    """
     if db.get(Warehouse, warehouse_id) is None:
         raise HTTPException(404, {"code": "not_found", "message": "Warehouse not found"})
 
@@ -491,7 +431,6 @@ def set_warehouse_reps(
         raise HTTPException(404, {"code": "not_found",
                                   "message": f"Employees not found: {missing}"})
 
-    # Anyone currently on this store and not in the new list comes off it.
     for e in db.scalars(select(Employee).where(Employee.warehouse_id == warehouse_id)).all():
         if e.id not in found:
             e.warehouse_id = None

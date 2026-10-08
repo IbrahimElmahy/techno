@@ -1,28 +1,3 @@
-"""قيمة المخزون في تاريخ — لفرع (أو للشركة كلها).
-
-ليه ملف لوحده؟ لأن «المخزون كان بكام يوم ٣١-٣» سؤال بتسأله أكتر من شاشة: قائمة الدخل
-(مخزون أول وآخر المدة في تكلفة المبيعات)، وحزمة إقفال الربع (المخزون بخط الإنتاج،
-والميزانية). لو كل واحدة حسبته بطريقتها، الرقمين اللي المفروض يبقوا واحد هيختلفوا
-والعميل هيسأل أنهي فيهم الصح.
-
-**الكمية**: صافي حركات المخزون (`stock_movement`) في مخازن الفرع لحد التاريخ ده —
-تاريخ الحركة الفعلي (`movement_date`)، وإلا يوم ما اتسجّلت. نفس تعريف تقرير الأرصدة
-(`lib.reporting.inventory`) بس متقطوع عند تاريخ.
-
-**التكلفة** — طريقتين، والاختيار للمحاسب:
-
-* ``average`` (الافتراضي): متوسط سعر الشرا المرجّح **لحد التاريخ ده** من فواتير شرا
-  الفرع، بعد خصم السطر وخصم المستند، وناقص المرتجع بنفس سعر دخوله — نفس معادلة
-  `costing_service.average_cost` بس مقفولة على تاريخ وفرع. الصنف اللي مالوش شرا قبل
-  التاريخ بياخد سعر الشرا المكتوب على الكارت، وإلا صفر ويتعلّم «من غير تكلفة».
-* ``list_factor``: زي ورق جرد العميل بالظبط — «أصل اللستة» (سعر البيع على الكارت) ×
-  نسبة صافي لكل فئة (البولي والمعزول ٤٠٪، الأبيض والجوان ٦٠٪ في جرد العلياء ٣٠-٦-٢٠٢٦).
-  الفئة اللي مالهاش نسبة بترجع للمتوسط.
-
-**الفئات المستبعدة**: أصناف مش بضاعة للبيع (عِدد خدمة العملاء، أدوات مكتبية، كوبونات)
-بتتشال من القيمة ومن صافي المشتريات بنفس القايمة — عشان معادلة تكلفة المبيعات
-(أول + مشتريات − آخر) تبقى على نفس الأصناف من الطرفين.
-"""
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -52,13 +27,9 @@ class Valuation:
     branch_id: int | None
     cost_basis: str
     total: Decimal = ZERO
-    #: فئة الصنف ⇒ القيمة. ده اللي بيتقارن بصفحة «قيمة المخازن» في ورق الجرد.
     by_category: dict[str, Decimal] = field(default_factory=dict)
-    #: صف لكل (صنف × مخزن) رصيده مش صفر.
     rows: list[dict] = field(default_factory=list)
-    #: أصناف ليها رصيد ومالهاش أي تكلفة — قيمتها صفر في الإجمالي، فلازم تبان.
     missing_cost: int = 0
-    #: أصناف رصيدها بالسالب — الدفتر بيقول «خرج أكتر من اللي دخل»، والقيمة بتنقص بيها.
     negative_rows: int = 0
     excluded_value: Decimal = ZERO
 
@@ -84,7 +55,6 @@ def branch_warehouse_ids(db: Session, branch_id: int | None) -> list[int] | None
 
 def quantities_at(db: Session, *, branch_id: int | None,
                   as_of: date) -> dict[tuple[int, int], Decimal]:
-    """(صنف، مخزن) ⇒ الرصيد آخر يوم `as_of`."""
     when = func.coalesce(StockMovement.movement_date, cast(StockMovement.created_at, Date))
     signed = func.sum(case(
         (StockMovement.direction == StockDirection.in_, StockMovement.quantity),
@@ -106,12 +76,6 @@ def quantities_at(db: Session, *, branch_id: int | None,
 
 def average_cost_at(db: Session, item_ids, *, as_of: date,
                     branch_id: int | None) -> dict[int, Decimal]:
-    """متوسط تكلفة الوحدة الأساسية لكل صنف من الشرا لحد `as_of` — بنفس معادلة
-    `costing_service.average_cost_bulk` (خصم السطر جوّه `line_total`، وخصم المستند بيتضرب،
-    والمرتجع بيتشال بسعر دخوله) بس مقفولة على تاريخ وفرع.
-
-    التاريخ مهم: متوسط «النهارده» بيقيّم مخزون ٣١-٣ بأسعار شحنات لسه ماوصلتش ساعتها.
-    """
     ids = list({int(i) for i in item_ids})
     if not ids:
         return {}
@@ -169,11 +133,6 @@ def value_at(
     exclude_categories=(), list_factors: dict[str, Decimal | float | str] | None = None,
     with_rows: bool = True,
 ) -> Valuation:
-    """قيمة مخزون الفرع آخر يوم `as_of` — الإجمالي، وبالفئة، وصف لكل صنف × مخزن.
-
-    دي الدالة اللي أي شاشة بتحتاج «المخزون بكام في تاريخ» بتناديها؛ قائمة الدخل
-    بتناديها مرتين (أول المدة = اليوم اللي قبل البداية، وآخر المدة = النهاية).
-    """
     if cost_basis not in COST_BASES:
         cost_basis = "average"
     excluded = {str(c) for c in (exclude_categories or ())}

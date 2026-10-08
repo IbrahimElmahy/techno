@@ -1,19 +1,6 @@
 import { printDocument } from '../print/brand';
 import { qty } from '../utils/money';
 
-/**
- * طباعة إذن التحويل — الورقة اللي بتمشي مع البضاعة.
- *
- * A transfer permit is not read on a screen at the moment it matters: the goods leave one store
- * and arrive at another, and the paper travels with them so the person receiving can check what
- * was sent against what turned up, and both sign for it. That is the entire reason this exists —
- * an approved transfer with no printout is two storekeepers trusting each other's memory.
- *
- * Built on `printDocument`, the same engine the invoice and the voucher print through, so the
- * letterhead, the fonts, the page rules and the signature styling are defined once. Nothing about
- * printing is written twice here — this file only says what a TRANSFER puts on the page.
- */
-
 export interface TransferPrintLine {
   name: string;
   quantity: number | string;
@@ -28,12 +15,10 @@ export interface TransferDoc {
   dest: string;
   date?: string | null;
   approvedBy?: string | null;
-  /** البيان — بيتطبع في الترويسة لو مكتوب. */
   statement1?: string | null;
   lines: TransferPrintLine[];
 }
 
-/** البيان كلام حر بيكتبه المستخدم — والترويسة بتتبني HTML، فلازم يتهرّب قبل ما يتحط فيها. */
 function esc(v: unknown): string {
   if (v === null || v === undefined) return '';
   return String(v).replace(/&/g, '&amp;').replace(/</g, '&lt;')
@@ -55,9 +40,6 @@ export function printTransfer(d: TransferDoc): void {
 
   const total = d.lines.reduce((t, l) => t + Number(l.quantity || 0), 0);
 
-  // The «الكمية المستلمة» column is deliberately blank on paper: the point of walking this sheet
-  // to the other store is that somebody counts what arrived and writes it there by hand, and a
-  // pre-filled number is a number nobody checks.
   const body = `
     <table class="grid">
       <thead><tr>

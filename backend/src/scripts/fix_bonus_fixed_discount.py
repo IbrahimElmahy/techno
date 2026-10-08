@@ -1,20 +1,3 @@
-"""خصم اللسته (الثابت) على سطور فواتير البونص — بيرجع.
-
-    python -m src.scripts.fix_bonus_fixed_discount
-    python -m src.scripts.fix_bonus_fixed_discount --yes
-
----------------------------------------------------------------------------
-البونص ١٠٠٪ على إجمالي الفاتورة، والإجمالي ده **بعد خصم اللسته** (العميل ٢٠٢٦-١٠-٠١) —
-زي فاتورة البيع: صنف بـ١٦٦٫٢٥ عليه ١٠٪ قيمته في البونص ١٤٩٫٦٣ مش ١٦٦٫٢٥.
-
-`fix_bonus_line_discounts` (٢٠٢٦-٠٩-٢٩) صفّر الثابت والمتغيّر الاتنين على سطور البونص،
-والسيرفر كان بيصفّرهم على أي بونص جديد — فالقيمة بقت بتطلع بالسعر كامل. السكربت ده بيرجّع
-الثابت بنفس قاعدة الشاشة: خصم العميل لو متسجّل عليه، وإلا خصم الصنف.
-
-**فواتير النظام الجديد بس** (`BNS-…`/`SINV-…` — المنقول من a5 أرقامه `AL-…` و`S…`): المنقول من a5 ماكانش عليه قسمة أصلاً،
-وقيمته زي ما a5 سجّلها. بيلمس السطور اللي ثابتها صفر أو فاضي — اللي اتسجّل بخصم مابيتغيّرش.
-الفلوس والقيود مابتتلمسش: سطر البونص قيمته صفر في الحالتين؛ ده رقم العرض بس.
-"""
 from __future__ import annotations
 
 import argparse
@@ -41,7 +24,6 @@ def main() -> None:
             .join(Customer, Customer.id == SalesInvoice.customer_id)
             .join(Item, Item.id == SalesInvoiceLine.item_id)
             .where(SalesInvoice.is_bonus.is_(True),
-                   # أرقام النظام الجديد بس — المنقول من a5 أرقامه `AL-…` و`S…`.
                    or_(SalesInvoice.document_number.like("BNS-%"),
                        SalesInvoice.document_number.like("SINV-%")),
                    or_(SalesInvoiceLine.fixed_discount_pct.is_(None),

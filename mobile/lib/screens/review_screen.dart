@@ -8,7 +8,6 @@ import '../models/models.dart';
 import '../theme.dart';
 import 'inspection_form_screen.dart';
 
-/// «مراجعة الزيارات» — inspections recorded on this device, filtered by date.
 class ReviewScreen extends StatefulWidget {
   const ReviewScreen({super.key});
 
@@ -17,16 +16,10 @@ class ReviewScreen extends StatefulWidget {
 }
 
 class _ReviewScreenState extends State<ReviewScreen> {
-  // «من – إلى» بدل يوم واحد: المندوب بيراجع أسبوعه، والفلتر بيوم واحد كان بيخليه يفتح
-  // الشاشة سبع مرات عشان يشوف أسبوع.
-  //
-  // وبيفتحوا على تاريخ النهاردة مكتوب، مش فاضيين: «الكل» كانت بتحمّل كل زيارة اتسجلت من أول
-  // يوم، والمندوب اللي فاتح الشاشة بيدور على شغل النهاردة. مكتوب قدامه يبقى يعدّله بضغطة،
-  // و«كل التواريخ» جنبه لو عايز يرجّع الفلتر مفتوح.
   DateTime? _from = DateUtils.dateOnly(DateTime.now());
   DateTime? _to = DateUtils.dateOnly(DateTime.now());
-  String? _kind; // null = الكل | technician | regular
-  bool? _synced; // null = الكل | true متزامنة | false معلقة
+  String? _kind;
+  bool? _synced;
   List<Inspection> _rows = [];
   bool _loading = true;
 
@@ -57,12 +50,6 @@ class _ReviewScreenState extends State<ReviewScreen> {
   static String _fmt(double v) =>
       v == v.roundToDouble() ? v.toInt().toString() : v.toString();
 
-  /// خانة تاريخ واحدة — «من» أو «إلى». فاضية معناها مفيش حد من الناحية دي.
-  ///
-  /// The box is deliberately spare — label, date, and nothing else. It used to carry a calendar
-  /// icon on one side and a clear button on the other, which on a phone left «2026/08/14» about
-  /// forty pixels to sit in and it wrapped mid-date («2026/0» over «8/14»). Tapping opens the
-  /// picker, and «كل التواريخ» next to the pair clears both.
   Widget _dateBox(String label, DateTime? value, void Function(DateTime?) set) {
     return InkWell(
       onTap: () async {
@@ -74,8 +61,6 @@ class _ReviewScreenState extends State<ReviewScreen> {
         );
         if (picked == null) return;
         set(picked);
-        // A range typed backwards would silently show nothing; nudging the other end keeps the
-        // filter meaning what it says.
         if (_from != null && _to != null && _to!.isBefore(_from!)) {
           setState(() => label == 'من' ? _to = picked : _from = picked);
         }
@@ -252,12 +237,6 @@ class _ReviewScreenState extends State<ReviewScreen> {
                         style: const TextStyle(
                             fontSize: 20, fontWeight: FontWeight.w800)),
                   ),
-                  // التعديل طول ما هي متزامنتش.
-                  //
-                  // A visit that has not reached the server exists on this phone and nowhere else,
-                  // so correcting it is just correcting a form. Once it HAS synced it is a record
-                  // the office may already have acted on, and the phone is no longer where it gets
-                  // corrected — hence the badge instead of a disabled button nobody can explain.
                   if (!insp.synced)
                     IconButton(
                       tooltip: 'تعديل',
@@ -329,11 +308,6 @@ class _ReviewScreenState extends State<ReviewScreen> {
               _kv('تليفون الفني', insp.technicianPhone),
               _kv('محل الشراء', insp.purchaseShop),
               _kv('تفاصيل الزيارة', insp.visitDetails),
-              // الأصناف والنقاط بيظهروا لو فيه أصناف بس.
-              //
-              // A «زيارة عادية» has no items by design, and the section still printed its heading
-              // and «الإجمالي ٠ نقطة» under every one of them — a heading over nothing, and a
-              // zero that reads like the rep forgot to record something.
               if (insp.lines.isNotEmpty) ...[
                 const Divider(height: 24),
                 const Text('الأصناف',
@@ -361,11 +335,6 @@ class _ReviewScreenState extends State<ReviewScreen> {
                   ],
                 ),
               ],
-              // المرفقات — الصور اللي المندوب صوّرها في الزيارة.
-              //
-              // They were saved and synced but had nowhere to be seen: the sheet is the only place
-              // a recorded visit can be read back, and it showed everything about the visit except
-              // the photographs of it.
               _AttachmentsPreview(inspectionUuid: insp.clientUuid),
             ],
           ),
@@ -392,10 +361,6 @@ class _ReviewScreenState extends State<ReviewScreen> {
   }
 }
 
-/// صور الزيارة — بتتقرا من قاعدة الجهاز لما التفاصيل تتفتح.
-///
-/// Loaded here rather than with the visit list: a hundred rows would each hit the attachment
-/// table for photographs nobody has asked to see yet.
 class _AttachmentsPreview extends StatefulWidget {
   const _AttachmentsPreview({required this.inspectionUuid});
   final String inspectionUuid;
@@ -441,9 +406,6 @@ class _AttachmentsPreviewState extends State<_AttachmentsPreview> {
                   borderRadius: BorderRadius.circular(10),
                   child: file.existsSync()
                       ? Image.file(file, width: 110, height: 110, fit: BoxFit.cover)
-                      // The row is kept even when the file is gone — deleted from the gallery,
-                      // or restored onto a different phone. Silently dropping it would say the
-                      // visit had no photographs, which is a different and wronger claim.
                       : Container(
                           width: 110,
                           height: 110,

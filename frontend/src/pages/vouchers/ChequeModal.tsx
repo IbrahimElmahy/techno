@@ -1,13 +1,3 @@
-/**
- * ورقة قبض / دفع — اتفصل عن `Vouchers.tsx`.
- *
- * الشاشة كانت مكوّن واحد ١٤٧٨ سطر فيه ستة بوبابات فوق بعض. كل بوباب بقى ملف
- * بمدخلاته مكتوبة: اللي بيعدّل سند المصروف مابيفتحش سند القبض قدامه، واللي بيقرا
- * بيشوف الفورم ده محتاج إيه بالظبط بدل ما يدوّر في حالة الشاشة كلها.
- *
- * الحالة بتفضل في الشاشة الأم — الفورم والقايمات والحفظ بيتبعتوا كمدخلات. البوباب
- * مالوش حالة خاصة بيه غير اللي يخصّه هو.
- */
 import React from 'react';
 import {
   Button, Col, DatePicker, Form, Input, Row, Segmented, Select, Space, message,
@@ -35,7 +25,6 @@ export default function ChequeModal({
   customers: Party[];
   suppliers: Party[];
   onSaved: () => void;
-  /** الاتجاه اللي الشاشة اتفتحت عليه من القايمة (`?direction=`). */
   defaultDirection?: string;
 }) {
   return (
@@ -124,7 +113,6 @@ export default function ChequeModal({
               </Form.Item>
             </Col>
           </Row>
-          {/* البيان — كلام الورقة («شيك عن فاتورة ٤٥١»). بيظهر في سجل الشيكات وبيتدوّر فيه. */}
           <Form.Item name="statement1" label="البيان">
             <Input placeholder="اختياري" maxLength={200} />
           </Form.Item>

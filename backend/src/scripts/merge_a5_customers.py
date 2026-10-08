@@ -1,11 +1,3 @@
-"""يشغّل دمج «تكنو فلان» مع «فلان» — عرض أولاً، وتنفيذ بـ--yes.
-
-المنطق كله في `customer_merge_service`؛ ده بس اللي بينده عليه ويطبع النتيجة، عشان الدمج
-يتعمل من سطر الأوامر زي باقي خطوات النقل بدل ما يتنده من الشاشة.
-
-    python -m src.scripts.merge_a5_customers          # يعرض الخطة بس
-    python -m src.scripts.merge_a5_customers --yes    # ينفّذ
-"""
 from __future__ import annotations
 
 import sys
@@ -26,8 +18,6 @@ def run(*, execute: bool) -> None:
             for pair in p.pairs[:8]:
                 same = "نفس المندوب" if pair.same_rep else "مندوب مختلف"
                 print(f"   «{pair.merge_name}» ← «{pair.keep_name}»  ({same})")
-        # اللي اتخطّى بيتطبع **كله** — دي قايمة «محتاج قرار» اللي المستخدم بيراجعها،
-        # وقصّها على ١٠ كان بيخبّي القرارات نفسها.
         if p.skipped:
             print(f"\nاتخطّى — محتاج قرار ({len(p.skipped)}):")
             for name, why in p.skipped:

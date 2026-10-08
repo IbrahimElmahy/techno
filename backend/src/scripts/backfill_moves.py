@@ -1,31 +1,3 @@
-"""نقل القيود القديمة لموديل المستند — المرحلة ٢ من إعادة الهيكلة على موديل أودو.
-
-    python -m src.scripts.backfill_moves            # عرض بس، مابيكتبش حاجة
-    python -m src.scripts.backfill_moves --yes      # التنفيذ
-
-**المشكلة:** القيد بقى بيحمل نوعه وشريكه وتاريخ استحقاقه، بس ده للقيود الجديدة بس.
-القديم كله `move_type` و`partner_id` فيه NULL — يعني «كل حركة العميل ده» و«فواتيره
-المفتوحة» لسه بيتحسبوا من جدول المستندات مش من الدفتر، والتسوية في المرحلة ٣ مش
-هتلاقي فواتير تتقفل عليها.
-
-**اللي بيحصل هنا:**
-
-١. `move_type` بياخد قيمته من `entry_type` — الخريطة في `move_registry`. اللي مش
-   فاتورة ولا مردود بياخد `entry` (سند، شيك، راتب، إهلاك — زي أودو بالظبط).
-٢. الشريك بيتقرا من **المستند نفسه**، مش من الحسابات اللي القيد لمسها: الفاتورة
-   بتقول عميلها، والسند بيقول عميله أو مورده، والشيك بيقول صاحبه، والسلفة بتقول
-   موظفها. حساب واحد ممكن يخدم أكتر من طرف (سلف العاملين حساب واحد للكل)، فالاستنتاج
-   من الحساب كان هيدّي شريك غلط.
-٣. تاريخ الاستحقاق: تاريخ القيد نفسه — «مستحق يوم ما حصل». الاستثناء الشيك: استحقاقه
-   مكتوب عليه، فبياخده. من غير شروط دفع مافيش مصدر تاني نستنتج منه.
-٤. سطور القيد بتاخد شريك قيدها وتاريخ استحقاقه، زي التوريث اللي بيحصل وقت الكتابة.
-
-**بيتعاد بأمان:** القيد اللي معاه `move_type` خلاص بيتسكّت عنه. والقيد اللي مالوش
-مستند (قيد يومية بإيد، افتتاحي، إهلاك) بياخد نوعه وبيفضل بلا شريك — وده صح مش نقص.
-
-**بيقيس:** بيعدّ الفواتير اللي مالقاش لها مستند وبيقول أنواعها، عشان لو فيه مستند
-مربوط بطريقة تانية يبان هنا بدل ما يتكشف من تقرير أعمار ناقص.
-"""
 from __future__ import annotations
 
 import sys
@@ -46,11 +18,6 @@ from src.services import move_registry
 
 
 def _partner_map(db) -> dict[int, tuple[str, int]]:
-    """قيد → (نوع الشريك، رقمه)، مقروء من جداول المستندات.
-
-    الترتيب مقصود: اللي بيتقرا بعدين بيغلب. مافيش قيد المفروض يبقى في أكتر من جدول،
-    فالتعارض ده مايحصلش — والترتيب مكتوب عشان لو حصل يبقى محسوم مش عشوائي.
-    """
     out: dict[int, tuple[str, int]] = {}
 
     def take(rows, kind: PartnerKind) -> None:
@@ -76,7 +43,6 @@ def _partner_map(db) -> dict[int, tuple[str, int]]:
          PartnerKind.employee)
     take(db.execute(select(EmployeeAdvance.reversal_entry_id, EmployeeAdvance.employee_id)).all(),
          PartnerKind.employee)
-    # السند والشيك بيحملوا طرف واحد من الاتنين، فبيتقروا صف صف.
     for entry_id, customer_id, supplier_id in db.execute(
         select(Voucher.ledger_entry_id, Voucher.customer_id, Voucher.supplier_id)
     ).all():
@@ -103,7 +69,6 @@ def _partner_map(db) -> dict[int, tuple[str, int]]:
 
 
 def _due_map(db) -> dict[int, object]:
-    """قيد → تاريخ استحقاق من المستند. الشيك بس — هو الوحيد اللي بيقول استحقاقه."""
     out: dict[int, object] = {}
     for reg, settle, due in db.execute(
         select(Cheque.register_entry_id, Cheque.settle_entry_id, Cheque.due_date)
@@ -146,7 +111,6 @@ def run(*, execute: bool) -> None:
             if pair:
                 by_partner[pair[0]] += 1
             elif move_registry.is_invoice(move_type):
-                # فاتورة من غير مستند — دي اللي تستاهل تتقال: التسوية مش هتلاقيها.
                 orphan_types[entry.entry_type] += 1
             if execute:
                 entry.move_type = move_type

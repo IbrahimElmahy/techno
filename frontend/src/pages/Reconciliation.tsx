@@ -4,7 +4,6 @@ import {
   Alert, Button, Card, Col, Empty, Input, Row, Select, Space, Tag,
   Tooltip, message,
 } from 'antd';
-// فلتر على كل عمود — شوف `FilterTable`.
 import { FilterTable as Table } from '../components/FilterTable';
 import {
   LinkOutlined, DisconnectOutlined, ReloadOutlined, ThunderboltOutlined, SearchOutlined,
@@ -18,20 +17,6 @@ import { normalizeAr } from '../components/ListToolbar';
 import { useQueryTab } from '../components/useQueryTab';
 
 import { useCanSeeStats } from '../components/StatsRow';
-/**
- * تسوية الحسابات — «الفاتورة دي اتدفعت بإيه، وفاضل عليه إيه».
- *
- * الشاشة اللي المرحلة ٣ كلها بتخدمها. قبلها كان رصيد العميل رقم واحد، والسؤال
- * «الرقم ده من إيه» إجابته إن حد يقعد يطرح بإيده من كشف الحساب.
- *
- * **المفتوح مش الحركات.** الجدول بيوري السطور اللي لسه عليها متبقّي بس — فاتورة
- * ماتدفعتش، أو دفعة ملهاش فاتورة. اللي اتقفل بيختفي من هنا ويبان في تبويب
- * «المطابقات» برقمه، وينفع يتفك من هناك لو طلع غلط.
- *
- * **المطابقة التلقائية بتكتب اللي كان مفهوم ضمناً.** «الأقدم يتدفع الأول» هو نفس
- * الافتراض اللي تقرير الأعمار شغّال بيه من زمان من غير ما يكون مكتوب في أي مكان —
- * هنا بيتكتب، بيبقى ليه رقم، وينفع يتفك.
- */
 
 interface OpenLine {
   line_id: number;
@@ -140,12 +125,6 @@ export default function Reconciliation() {
   const debits = useMemo(() => lines.filter((l) => Number(l.residual) > 0), [lines]);
   const credits = useMemo(() => lines.filter((l) => Number(l.residual) < 0), [lines]);
 
-  /** المحدد بيتحسب عشان الزرار يقول هيقفل كام قبل ما حد يضغط.
-   *
-   *  وبيعدّ الحسابات كمان: السيرفر بيرفض مطابقة سطور من حسابات مختلفة، والرفض بعد
-   *  الضغط أسوأ من زرار مقفول بيقول السبب — خصوصاً إن الفرق (أبيض/بولي) مش باين في
-   *  اسم الطرف.
-   */
   const selectedTotals = useMemo(() => {
     let d = 0; let c = 0;
     const accounts = new Set<number>();
@@ -225,8 +204,6 @@ export default function Reconciliation() {
         return late ? <Tag color="red">{d}</Tag> : d;
       } },
     { title: 'البيان', dataIndex: 'description', key: 'description', ellipsis: true },
-    // العميل ممكن يبقى ليه أكتر من حساب (أبيض/بولي)، والمطابقة بتبقى جوّه الحساب
-    // الواحد — فالعمود ده هو اللي بيقول ليه سطرين مايتقفلوش على بعض.
     { title: 'الحساب', dataIndex: 'account_name', key: 'account_name', width: 150,
       ellipsis: true, render: (v: string | null) => v || '-' },
     { title: 'القيمة', dataIndex: 'amount', key: 'amount', width: 120,
@@ -352,7 +329,6 @@ export default function Reconciliation() {
                 message="اختار طرف من القايمة عشان تشوف المفتوح عليه" />
             ) : (
               <>
-                {/* الأرقام التلاتة كانت كروت — سطر واحد فوق الجدولين. */}
                 {canSeeStats && (
                   <div style={{ marginBottom: 10 }}>
                     <span className="sl-foot">

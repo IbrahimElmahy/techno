@@ -27,14 +27,6 @@ import { useLiveRefresh } from '../utils/live';
 import { printReport, type PrintColumn } from '../print/reportSheet';
 import { repOptions } from '../utils/reps';
 
-/**
- * مديونيات العملاء (طلب العميل ٢٠٢٦-١٠-٠٣) — صف لكل عميل: أبيض وبولي والإجمالي.
- *
- * الأرصدة والإجماليات محسوبة على السيرفر (`GET /customers/debts`) على كل الصفوف المفلترة،
- * والضغط على العميل بيفتح سجل عملياته (كشف حسابه بكل الحسابات) في درج جنب الكشف.
- * الإشارة: موجب = عليه لينا (مدين)، سالب = له عندنا (دائن).
- */
-
 const WHITE = 'أبيض';
 const POLY = 'بولي';
 
@@ -97,13 +89,11 @@ const TYPE_LABELS: Record<string, string> = {
   trader: 'تاجر / موزع', plumber: 'فني سباكة', employee: 'موظف', other: 'آخر',
 };
 
-// الدائنين ترتيبهم تصاعدي عشان الأكبر (الأكتر سالب) ييجي الأول.
 const defaultSort = (tab: DebtTab): Sort =>
   ({ field: 'total', order: tab === 'creditors' ? 'asc' : 'desc' });
 
 const n = (v: unknown) => Number(v || 0);
 
-/** خانة فلوس في الكشف: الصفر شرطة باهتة عشان العين تقع على اللي ليه قيمة. */
 const Amount = ({ v, strong }: { v: unknown; strong?: boolean }) => {
   const x = n(v);
   if (!x) return <span style={{ color: '#bfbfbf' }}>-</span>;
@@ -123,7 +113,6 @@ export default function CustomerDebts() {
 
   const [filters, setFilters] = useState<Filters>({});
   const [search, setSearch] = useState('');
-  // البحث بيشتغل وانت بتكتب (بعد وقفة صغيرة) — مش لازم Enter (٢٠٢٦-١٠-٠٥).
   useEffect(() => {
     const t = window.setTimeout(() => {
       const q = search.trim() || undefined;
@@ -162,7 +151,6 @@ export default function CustomerDebts() {
     return p;
   };
 
-  // الطلب الأحدث بس هو اللي بيكتب — فلترين ورا بعض مايتلخبطوش.
   const seq = useRef(0);
   const load = async (opts: {
     f?: Filters; t?: DebtTab; s?: Sort; pg?: number; ps?: number; silent?: boolean;
@@ -208,7 +196,6 @@ export default function CustomerDebts() {
     });
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // فاتورة أو سند غيّر رصيد حد ⇒ الصفحة والإجماليات يتحدّثوا من غير سبينر.
   useLiveRefresh(['customers', 'sales', 'vouchers', 'cheques'], () => load({ silent: true }));
 
   const setFilter = (key: keyof Filters, value: any) => {
@@ -233,7 +220,6 @@ export default function CustomerDebts() {
     load({ f: next, pg: 1 });
   };
 
-  // الشريحة من الرابط (`?tab=`) — الضغط عليها أو رابط من القايمة، الاتنين بيعدّوا من هنا.
   const changeTab = (k: DebtTab) => setTabRaw(k);
   const loadedTab = useRef(tab);
   useEffect(() => {
@@ -245,7 +231,6 @@ export default function CustomerDebts() {
     load({ t: tab, s, pg: 1 });
   }, [tab]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // تغيير «إظهار الصفري» بيتقرا في `statusOf` — فالتحميل بعد ما الحالة تتحدّث.
   const firstZero = useRef(true);
   useEffect(() => {
     if (firstZero.current) { firstZero.current = false; return; }
@@ -287,7 +272,6 @@ export default function CustomerDebts() {
 
   const showOther = (summary?.other_count ?? 0) > 0;
 
-  // الترتيب على السيرفر — العمود بيقول بس هو مترتّب ولا لأ.
   const srv = (key: string) => ({
     key,
     sorter: true,
@@ -334,7 +318,6 @@ export default function CustomerDebts() {
       render: (v: string | null) => (v ? String(v).slice(0, 10) : '-') },
   ];
 
-  // التصدير بالأسماء والأرقام مش بالقيم الخام («trader» و«123.00» كنص).
   const exportRows = useMemo(() => rows.map((r) => ({
     ...r,
     customer_type: typeLabel(r.customer_type),
@@ -350,7 +333,6 @@ export default function CustomerDebts() {
     export: { name: 'مديونيات العملاء', rows: exportRows },
   });
 
-  /** الطباعة على كل الصفوف المفلترة مش الصفحة المعروضة (لحد ٥٠٠٠). */
   const print = async () => {
     setPrinting(true);
     try {
@@ -409,7 +391,6 @@ export default function CustomerDebts() {
     { key: 'all', label: 'الكل', count: counts ? (showZero ? counts.all : counts.nonzero) : undefined },
   ];
 
-  // في «الدائنين» الأرقام سالبة — بتتعرض بقيمتها المطلقة وباسم «دائن».
   const shown = (v: unknown) => money(tab === 'creditors' ? Math.abs(n(v)) : n(v));
   const word = tab === 'creditors' ? 'دائن' : tab === 'all' ? 'صافي' : 'مديونية';
   const summaryRow = summary && (
@@ -452,7 +433,6 @@ export default function CustomerDebts() {
             prefix={<SearchOutlined />}
             onChange={(e) => {
               setSearch(e.target.value);
-              // زرار المسح (×) بيرجّع الكشف على طول.
               if (!e.target.value && filters.q) setFilter('q', undefined);
             }}
             style={{ minWidth: 240 }}
@@ -460,7 +440,6 @@ export default function CustomerDebts() {
             onBlur={applySearch}
           />
           <Select allowClear showSearch placeholder="المندوب" value={filters.rep_id}
-            // أعرض — أسامي المناديب كانت بتتقص (طلب العميل ٢٠٢٦-١٠-٠٥).
             style={{ minWidth: 240 }} popupMatchSelectWidth={false}
             onChange={(v) => setFilter('rep_id', v)}
             filterOption={searchFilter} filterSort={searchRank}
@@ -546,8 +525,6 @@ export default function CustomerDebts() {
   );
 }
 
-// ------------------------------------------------------------------ سجل عمليات العميل
-
 interface StatementLine {
   entry_id: number;
   entry_date: string;
@@ -594,8 +571,6 @@ function CustomerOpsDrawer({ row, asOf, onClose, onOpenStatement, onOpenCard }: 
   const [families, setFamilies] = useState<FamilyBalance[]>([]);
   const [loading, setLoading] = useState(false);
 
-  // عميل جديد ⇒ الفلاتر من الأول. لو الكشف «حتى تاريخ»، الدرج بيفتح لحد نفس اليوم
-  // عشان الرصيد الأخير يطابق الصف اللي اتضغط.
   useEffect(() => {
     if (!row) return;
     setFamily('');

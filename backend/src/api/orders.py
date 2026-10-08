@@ -1,9 +1,3 @@
-"""طلبات البيع والشراء router (B9).
-
-An order is pre-trade paperwork: it moves no stock, owes no money and reserves nothing. It exists
-so a quotation or a supply request can be written, found again and turned into the invoice it was
-always meant to become — exactly once.
-"""
 from __future__ import annotations
 
 from datetime import date, datetime
@@ -27,10 +21,6 @@ from src.models.trade_order import OrderKind, OrderStatus, TradeOrder, TradeOrde
 from src.auth import branch_scope
 from src.services import sales_service
 
-# Guarded by the read capability on purpose: an order posts nothing — no stock, no ledger, no
-# debt — so it carries none of the risk the write capabilities exist to gate. The real gate is on
-# the invoice it becomes, which goes through the normal sales/purchase endpoint and their checks.
-# It also means a purchasing manager can raise a purchase order without being granted sale.write.
 router = APIRouter(tags=["orders"], prefix="/orders")
 
 _PREFIX = {OrderKind.sale: "SO", OrderKind.purchase: "PO"}
@@ -40,26 +30,23 @@ class OrderLineIn(BaseModel):
     item_id: int
     quantity: Decimal
     unit_price: Decimal = Decimal("0")
-    # (008) الوحدة اللي السعر متقال بيها — `None` يعني الأساسية، زي سطر الفاتورة بالظبط.
     unit: str | None = None
     unit_factor: Decimal | None = None
-    # (027) خصم السطر بالمية. الورقة اللي العميل شافها بخصوماتها، مش من غيرها.
     discount_pct: Decimal | None = None
     notes: str | None = None
 
 
 class OrderIn(BaseModel):
-    kind: str  # sale | purchase
+    kind: str
     customer_id: int | None = None
     supplier_id: int | None = None
     order_date: date | None = None
     due_date: date | None = None
     warehouse_id: int | None = None
     branch_id: int | None = None
-    # خصم على إجمالي الورقة، زيادة على خصم كل سطر — نفس الفاتورة.
     variable_discount_pct: Decimal = Decimal("0")
     notes: str | None = None
-    statement1: str | None = Field(default=None, max_length=200)  # البيان
+    statement1: str | None = Field(default=None, max_length=200)
     lines: list[OrderLineIn]
 
 
@@ -82,8 +69,6 @@ class OrderOut(BaseModel):
     kind: str
     status: str
     customer_id: int | None
-    # اسم الطرف مع الصف — الشاشة كانت بتحوّل الـid لاسم من كشف بتحمّله لوحدها، والكشف بقى
-    # 1327 عميل بعد نقل داتا a5 فبيقع، والجدول بيعرض الكود.
     customer_name: str | None = None
     supplier_id: int | None
     supplier_name: str | None = None
@@ -106,7 +91,6 @@ class ConvertIn(BaseModel):
 
 
 def _party_names(db: Session, orders: list[TradeOrder]) -> tuple[dict, dict]:
-    """أسماء العملاء والموردين لصفوف الصفحة — نداءين مجمّعين مش نداء لكل صف."""
     cids = {o.customer_id for o in orders if o.customer_id}
     sids = {o.supplier_id for o in orders if o.supplier_id}
     custs = dict(db.execute(select(Customer.id, Customer.name)
@@ -145,7 +129,6 @@ def create_order(
     current: CurrentUser = Depends(require_capability(CAP_SALES_READ)),
     db: Session = Depends(get_db),
 ) -> OrderOut:
-    """طلب بيع أو طلب شراء — no stock moves and nothing is reserved; this is paperwork."""
     try:
         kind = OrderKind(body.kind)
     except ValueError as exc:
@@ -153,14 +136,6 @@ def create_order(
                                   "message": "نوع الطلب غير صحيح."}) from exc
     if not body.lines:
         raise HTTPException(422, {"code": "validation", "message": "لازم سطر واحد على الأقل."})
-    # الطرف مش مطلوب — بطلب صاحب النظام.
-    #
-    # ده شيت تسعير: حد بيسعّر أصناف عشان يعرض السعر أو يراجعه، من غير ما يبقى عارف
-    # لسه هيعرضه على مين. لما البيع يتأكد، الفاتورة هي اللي بتتكتب على العميل وبتتربط
-    # بالورقة دي. إجبار طرف كان بيخلّي اللي عايز يسعّر يخترع عميل عشان يعدّي الشاشة —
-    # وده بيدخل داتا غلط أوحش من إنها ناقصة.
-    #
-    # الأعمدة nullable من الأصل، والفاتورة نفسها لسه بتطلب عميل زي ما هي.
 
     n = db.scalar(select(func.count()).select_from(TradeOrder).where(
         TradeOrder.kind == kind)) or 0
@@ -176,11 +151,6 @@ def create_order(
     db.add(order)
     db.flush()
 
-    # نفس حساب الفاتورة بالحرف: خصم السطر على سطره، وخصم الورقة على المجموع بعده.
-    #
-    # ضرب النسبتين في بعض (بدل ما تتجمعوا) هو اللي بيخلّي «١٠٪ على السطر و٥٪ على الورقة»
-    # تطلع نفس الرقم اللي الفاتورة هتطلعه لما الورقة دي تتحوّل — ولو الرقمين اختلفوا،
-    # العميل بيبقى شاف سعر والفاتورة جاتله بسعر تاني.
     doc_pct = to_money(body.variable_discount_pct or 0)
     if doc_pct < ZERO or doc_pct >= to_money(100):
         raise HTTPException(422, {"code": "validation",
@@ -208,8 +178,6 @@ def create_order(
             unit_factor=to_factor(raw.unit_factor) if raw.unit_factor is not None else None,
             discount_pct=line_pct, line_total=line_total, notes=raw.notes))
     order.gross = gross
-    # وخصم المحل الثابت معاهم — الورقة لازم تقول الرقم اللي الفاتورة هتقوله، والفاتورة
-    # بتنزّله على كل مستند. من غيره الورقة بتوعد بسعر والفاتورة بتطلع بسعر تاني.
     order.total = discounts.apply(net, sales_service.fixed_discount_pct(db), doc_pct)
     db.flush()
     out = _out(db, order)
@@ -265,13 +233,6 @@ def mark_converted(
     current: CurrentUser = Depends(require_capability(CAP_SALES_READ)),
     db: Session = Depends(get_db),
 ) -> OrderOut:
-    """Record which invoice this order became — a one-way door.
-
-    The invoice itself is created through the normal sales/purchase endpoint, so it goes through
-    every check a real invoice goes through (availability, costing, the ledger). This only stamps
-    the link, and refuses to stamp it twice: an order that could be converted again would quietly
-    double the sale.
-    """
     order = db.scalar(select(TradeOrder).options(selectinload(TradeOrder.lines))
                       .where(TradeOrder.id == order_id))
     if order is None or not branch_scope.may_see(current, order):
@@ -296,7 +257,6 @@ def cancel_order(
     current: CurrentUser = Depends(require_capability(CAP_SALES_READ)),
     db: Session = Depends(get_db),
 ) -> OrderOut:
-    """An order that was never invoiced can simply be cancelled — nothing was posted."""
     order = db.scalar(select(TradeOrder).options(selectinload(TradeOrder.lines))
                       .where(TradeOrder.id == order_id))
     if order is None or not branch_scope.may_see(current, order):

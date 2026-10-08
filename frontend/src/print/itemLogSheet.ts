@@ -3,22 +3,6 @@ import { type DocMeta, printDocument } from './brand';
 import { reportTableHtml, type PrintColumn } from './reportSheet';
 import { type CsvColumn, exportCsv } from '../utils/exportCsv';
 
-/**
- * الصنف **وسجله** — طباعة وتصدير.
- *
- * ورقة الجرد بتقول «الصنف ده رصيده كذا». والسؤال اللي بيتسأل بعدها على طول هو «طب ليه
- * كذا؟»، وإجابته في الحركات. فالورقة اللي بتطلع من غير السجل بتخلّي اللي بيراجع يرجع
- * للشاشة لكل صنف — وهو غالباً قاعد بيراجع ورق مطبوع بعيد عن الشاشة أصلاً.
- *
- * عشان كده الطباعة والتصدير بيجيبوا الحركات مع كل صنف: قسم لكل صنف فيه رصيده وتحته
- * حركاته في الفترة.
- *
- * **والحد الأقصى مقصود.** كل صنف = نداء على السيرفر؛ ورقة بأربعميت صنف معناها أربعميت
- * نداء وانتظار دقايق على حاجة اتطلبت بضغطة. فاللي عايز السجل بيحدّد الأصناف اللي
- * بيراجعها، واللي بيطبع الورقة كلها بياخدها من غير سجل — والفرق بيتقال، مابيحصلش في
- * السكوت.
- */
-
 export const LOG_LIMIT = 60;
 
 export interface ItemLogTarget {
@@ -40,8 +24,6 @@ export interface LogRow {
   balance_after?: string | number | null;
 }
 
-/** بيجيب حركات صنف واحد في الفترة. بيرجّع فاضي لو النداء وقع — صنف من غير حركات أحسن
- *  من ورقة مابتطلعش. */
 export async function fetchLog(
   t: ItemLogTarget,
   from?: string | null,
@@ -73,12 +55,6 @@ const LOG_COLUMNS: PrintColumn<LogRow>[] = [
 const esc = (v: unknown) => String(v ?? '')
   .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
-/**
- * بيطبع كل صنف في قسم لوحده: سطره من الورقة، وتحته حركاته.
- *
- * `labels` بتوصف سطر الصنف نفسه بأعمدة الورقة اللي طالع منها، عشان المطبوع يقول نفس
- * اللي الشاشة بتقوله — مش نسخة تانية من نفس الأرقام بأسماء تانية.
- */
 export function printItemsWithLogs<T>(
   meta: DocMeta,
   itemColumns: PrintColumn<T>[],
@@ -98,12 +74,6 @@ export function printItemsWithLogs<T>(
   );
 }
 
-/**
- * بيصدّر الصنف وسجله في ملف واحد.
- *
- * عمود «النوع» أول عمود عن قصد: الملف فيه نوعين صفوف، واللي بيفتحه في إكسل لازم يفرّق
- * بينهم من غير ما يعدّ الأعمدة. وبعدين هو اللي بيخلّي الفرز والتصفية شغّالين.
- */
 export function exportItemsWithLogs<T>(
   filename: string,
   itemColumns: CsvColumn<T>[],

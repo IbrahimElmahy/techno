@@ -1,16 +1,3 @@
-"""One engine behind the sales and purchase reports — B4.
-
-The system we are replacing ships roughly sixteen of these: sales by invoice, sales by invoice
-grouped, sales by item, sales by item grouped, the same four for purchases, both sets of returns,
-plus invoice profit, item profit, and margin by warehouse and by customer. They are not sixteen
-reports — they are two levels of detail crossed with a handful of groupings, over four document
-kinds. Writing them as one parameterised engine keeps a single definition of "revenue" and "cost";
-sixteen hand-written queries would drift apart the first time a discount rule changed.
-
-Profit only appears on sales, and only because the cost of goods was frozen onto the line at the
-moment it sold (030). Deriving cost at report time would let next month's purchase price quietly
-rewrite last month's margin.
-"""
 from __future__ import annotations
 
 from datetime import date, datetime
@@ -39,11 +26,8 @@ ZERO_QTY = Decimal("0.000")
 
 DOC_TYPES = ("sale", "sale_return", "purchase", "purchase_return")
 LEVELS = ("document", "line")
-# (031) `category` = فئة الصنف زي ما هي · `main_category` = الفئة الرئيسية اللي فوقها.
-# الاتنين اتزادوا زيادة: اللي بيطلب تجميع قديم بياخد نفس الصفوف بالحرف.
 GROUPS = ("none", "party", "item", "warehouse", "category", "main_category")
 
-# Profit is only meaningful where we sold something and captured what it cost us.
 _PROFIT_DOCS = ("sale", "sale_return")
 
 
@@ -73,11 +57,8 @@ def _in_range(when, date_from: date | None, date_to: date | None) -> bool:
 
 
 def _names(db: Session) -> tuple[dict, dict, dict, dict, dict]:
-    # الكتالوج بيتقرا **مرة** والخريطتين بيتبنوا من نفس اللفّة — لفّة تانية على ٢٬٦٤٠
-    # صنف عشان عمود واحد بتتدفع في كل تقرير حتى اللي مش بيجمّع بالفئة أصلاً.
     all_items = db.scalars(select(Item)).all()
     items = {i.id: (i.code, i.name, i.unit_of_measure) for i in all_items}
-    # (031) فئة كل صنف — بتتقرا هنا، مش باستعلام لكل سطر وقت التجميع.
     item_cats = {i.id: i.category for i in all_items}
     customers = {c.id: c.name for c in db.scalars(select(Customer)).all()}
     suppliers = {s.id: s.name for s in db.scalars(select(Supplier)).all()}
@@ -87,18 +68,6 @@ def _names(db: Session) -> tuple[dict, dict, dict, dict, dict]:
 
 def _collect(db: Session, doc_type: str, date_from, date_to, party_id, item_id, warehouse_id,
              branch_id=None, statement: str | None = None):
-    """Flatten one document kind into a common row shape the rest of the engine works on.
-
-    Every document kind ends up as: (document, party_id, line-ish facts). Doing the flattening
-    once here is what lets the grouping and totalling code below be written a single time.
-
-    The row's `date` is the document's own date — `invoice_date` / `purchase_date` /
-    `return_date` — and never `created_at`, which only records when the row was written here.
-    The two are far apart for everything migrated from a5: 8,014 invoices spanning January to
-    August all carry a `created_at` of the two days the migration ran, so reading `created_at`
-    put every one of them outside every real reporting period. `created_at` stays as the
-    fallback for a document saved without a date of its own.
-    """
     rows: list[dict] = []
 
     if doc_type == "sale":
@@ -117,7 +86,6 @@ def _collect(db: Session, doc_type: str, date_from, date_to, party_id, item_id, 
                 "item_id": ln.item_id, "warehouse_id": ln.location_id or doc.origin_location_id,
                 "quantity": to_qty(ln.quantity),
                 "amount": to_money(ln.line_total),
-                # Frozen at sale time; NULL on invoices written before 030.
                 "cost": (to_money(Decimal(str(ln.unit_cost)) * Decimal(str(ln.quantity)))
                          if ln.unit_cost is not None else None),
                 "doc_net": to_money(doc.net),
@@ -130,8 +98,6 @@ def _collect(db: Session, doc_type: str, date_from, date_to, party_id, item_id, 
             .order_by(SalesReturn.id)
         ).all()
         for ln, doc in pairs:
-            # An invoice-bound return carries no price of its own — its value came from the
-            # original invoice — so fall back to the document's value share.
             amount = to_money(ln.line_total) if ln.line_total is not None else ZERO
             rows.append({
                 "doc_id": doc.id, "document_number": doc.document_number,
@@ -195,8 +161,6 @@ def _collect(db: Session, doc_type: str, date_from, date_to, party_id, item_id, 
     else:
         raise TradeReportError(f"Unknown document type '{doc_type}'.")
 
-    # البيان على المستند — كل سطور الفاتورة بتاخد بيان فاتورتها، فالفلتر على مستوى السطر
-    # والمستند والتجميع بيطلّع نفس المستندات.
     wanted = report_statement.needle(statement)
     kept = [
         r for r in rows
@@ -205,15 +169,8 @@ def _collect(db: Session, doc_type: str, date_from, date_to, party_id, item_id, 
         and (party_id is None or r["party_id"] == party_id)
         and (item_id is None or r["item_id"] == item_id)
         and (warehouse_id is None or r["warehouse_id"] == warehouse_id)
-        # فرع المستند. الصف اللي مستنده مالوش فرع بيعدّي مع الكل — دي مستندات
-        # اتكتبت قبل العزل، وإخفاؤها بيخلّي التقرير ينقص من غير سبب ظاهر.
         and (branch_id is None or r["branch_id"] in (branch_id, None))
     ]
-    # الترتيب بتاريخ المستند. الاستعلام بيرتّب بالـid، وده كان بيوافق التاريخ صدفةً
-    # لما التاريخ كان `created_at` (بيزيد مع الـid). بعد ما بقى تاريخ المستند الحقيقي،
-    # العمود بيعرض حاجة والترتيب بيقول حاجة تانية — والكشف بيبان مبعثر.
-    # `date` ممكن تكون None لو المستند مالوش تاريخ، فبتتاخر للآخر بدل ما توقّع المقارنة.
-    # **الأحدث فوق** (طلب العميل ٢٠٢٦-١٠-٠١)؛ وسطور المستند الواحد بترتيبها (الفرز ثابت).
     kept.sort(key=lambda r: (r["date"] is not None, r["date"] or date.min, r["doc_id"]),
               reverse=True)
     return kept
@@ -233,12 +190,6 @@ def trade(
     branch_id: int | None = None,
     statement: str | None = None,
 ) -> dict:
-    """Sales/purchase figures at the requested level and grouping, with totals.
-
-    `level` picks the grain: one row per document, or one per line. `group_by` then merges those
-    rows by party, item or warehouse — which is how the same engine answers "sales by customer"
-    and "margin by warehouse" without a second query being written.
-    """
     if doc_type not in DOC_TYPES:
         raise TradeReportError(f"doc_type must be one of {DOC_TYPES}.")
     if level not in LEVELS:
@@ -260,18 +211,6 @@ def trade(
     def item_label(iid):
         return items.get(iid, (None, f"#{iid}", None))[1]
 
-    # **التجميع بالفئة — والرئيسية.** (031)
-    #
-    # القايمة كلها بتتقرا في استعلامين قبل اللفّة (عشرات الصفوف)، وكل سطر بعد كده
-    # بيتحوّل لفئته بقراءة من قاموس. الشكل التاني — استعلام على `lookup_option` لكل
-    # سطر عشان نعرف أبوه — بيبقى آلاف الرحلات على تقرير شهر واحد.
-    #
-    # والاسم المعروض من القايمة مش من `Item.category`: الصنف ماسك **القيمة** المتولّدة
-    # وقت الإنشاء (`مواسير_PVC`)، والشاشات كلها بتعرض الليبل. تقرير يقول اسم تاني عن
-    # باقي النظام بيخلّي اللي بيقارن يفتكر إنهم فئتين.
-    #
-    # والاستعلامين مابيتعملوش غير للتجميعتين دول: تقرير بيجمّع بالعميل مالوش دعوة
-    # بقايمة الفئات، ومافيش سبب يدفع تمنها.
     cat_parents: dict[str, str] = {}
     cat_labels: dict[str, str] = {}
     if group_by in ("category", "main_category"):
@@ -281,16 +220,11 @@ def trade(
             .where(LookupOption.category == lookup_service.ITEM_CATEGORY)).all())
 
     def cat_label(value):
-        # الصنف من غير فئة بيتجمّع تحت دلو باسمه بدل ما يقع من التقرير — الرقم اللي
-        # ناقص من الكشف أوحش من سطر مكتوب عليه «بدون فئة».
         return "بدون فئة" if value is None else (cat_labels.get(value) or value)
 
-    # --- totals are summed from the flat lines, so every shape agrees with every other ---
     total_amount = to_money(sum((r["amount"] for r in flat), ZERO))
     total_qty = to_qty(sum((r["quantity"] for r in flat), ZERO_QTY))
     total_cost = to_money(sum((r["cost"] for r in flat if r["cost"] is not None), ZERO))
-    # A line with no captured cost cannot contribute a margin; counting it as zero cost would
-    # overstate profit, so it is reported separately instead of silently folded in.
     without_cost = sum(1 for r in flat if wants_profit and r["cost"] is None)
 
     rows: list[dict] = []
@@ -299,7 +233,6 @@ def trade(
         seen: dict[int, dict] = {}
         for r in flat:
             d = seen.setdefault(r["doc_id"], {
-                # Carried through so a report row can lead back to the document behind it.
                 "doc_id": r["doc_id"],
                 "document_number": r["document_number"], "date": str(r["date"]),
                 "party": party_label(r["party_id"]), "party_id": r["party_id"],
@@ -337,8 +270,6 @@ def trade(
                                     warehouses.get(r["warehouse_id"], f"#{r['warehouse_id']}")),
             "category": lambda r: (item_cats.get(r["item_id"]),
                                    cat_label(item_cats.get(r["item_id"]))),
-            # خطوة واحدة لفوق: الفرعية بتترد لأبوها، والرئيسية بتفضل هي هي — فالفرع
-            # اللي مش عامل شجرة بيطلع نفس صفوف «الفئة» بالظبط.
             "main_category": lambda r: (
                 lookup_service.root_of(cat_parents, item_cats.get(r["item_id"])),
                 cat_label(lookup_service.root_of(cat_parents, item_cats.get(r["item_id"])))),
@@ -378,22 +309,17 @@ def trade(
 
 
 def _finish(row: dict, wants_profit: bool) -> dict:
-    """Turn the accumulated Decimals into strings and add the profit columns where they apply."""
     amount = to_money(row.get("amount", ZERO))
     cost = to_money(row.get("cost", ZERO))
     has_cost = row.pop("has_cost", False)
     out = {k: (str(v) if isinstance(v, Decimal) else v) for k, v in row.items()}
     out["amount"] = str(amount)
-    # The same figure under the three names the reader may look for: `amount` on a line,
-    # `net` on a document, `revenue` on a sale. Keeping all three means rows and totals
-    # can be read with one set of column keys whatever shape was asked for.
     out["net"] = str(amount)
     out["revenue"] = str(amount)
     if wants_profit:
         out["cost"] = str(cost)
         out["profit"] = str(to_money(amount - cost))
         out["margin_pct"] = str(to_money((amount - cost) / amount * 100)) if amount else "0.00"
-        # Flagged so the reader knows a margin is based on partially-captured cost.
         out["cost_complete"] = has_cost
     else:
         out["cost"] = None

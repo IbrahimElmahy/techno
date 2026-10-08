@@ -17,18 +17,6 @@ import { useCanSeeStats } from '../components/StatsRow';
 import { qty as num } from '../utils/money';
 const { Text } = Typography;
 
-/**
- * سجل النقاط — كل حركة في دفتر نقاط التجار، مش كارت عميل واحد.
- *
- * الفلترة كلها على السيرفر عن قصد. الدفتر فيه عشرات الآلاف من السطور بعد الكسب الرجعي،
- * وتحميلهم كلهم عشان نفلترهم في المتصفح بيقفل الشاشة. وكمان: الإجماليات فوق بتتحسب في
- * القاعدة على الحركة كلها، مش بتتجمّع من الصفحة المعروضة — إجمالي بيتجمع من ٥٠٠ سطر
- * معروضين بيقول رقم غلط وهو واثق.
- *
- * «رصيد جاري» مش موجود هنا وده مقصود: رصيد جاري على كشف فيه ٢٨١ عميل مخلوطين رقم
- * مالوش معنى. الرصيد الجاري بيبان في تبويب «النقاط» في ملف العميل، حيث بيبقى ليه معنى.
- */
-
 interface PointRow {
   id: number;
   customer_id: number;
@@ -90,18 +78,13 @@ export default function PointsLedger() {
     api.get('/api/v1/customers/options', { params: { limit: 20000 } }).then((r) => setCustomers(r.data || [])).catch(() => {});
   }, []);
 
-  // تغيير أي فلتر بيرجّع لأول صفحة: الصفحة ٧ من نتيجة قديمة على فلتر جديد بتطلع فاضية،
-  // والمستخدم بيفتكر إن مافيش حركة.
-  //
-  // والاتنين في تأثير واحد: كانوا تأثيرين، فتغيير فلتر وانت في الصفحة ٧ كان بيجيب الصفحة ٧
-  // بالفلتر الجديد وبعدين الصفحة ١ — طلبين، واللي يرجع الأخر هو اللي يتعرض.
   const filterKey = JSON.stringify([
     customerId ?? null, kinds, range ? range.map((d) => d.format('YYYY-MM-DD')) : null]);
   const lastFilterKey = useRef(filterKey);
   useEffect(() => {
     if (lastFilterKey.current !== filterKey) {
       lastFilterKey.current = filterKey;
-      if (page !== 1) { setPage(1); return; }   // تغيير الصفحة هيجيب الكشف
+      if (page !== 1) { setPage(1); return; }
     }
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -131,8 +114,6 @@ export default function PointsLedger() {
     { title: 'المستند', key: 'doc', width: 170,
       render: (_: any, r: PointRow) => {
         if (!r.doc_number) return <Text type="secondary">-</Text>;
-        // الفاتورة والمرتجع ليهم شاشة بتفتح بـ`?doc=`. المعاينة والكوبون مالهمش، فبيفضلوا
-        // نص — لينك بيوديك لكشف تدوّر فيه بنفسك أسوأ من مافيش لينك.
         if (r.doc_kind === 'invoice' || r.doc_kind === 'return') {
           return <DocRef kind={r.doc_kind as DocKind} id={r.doc_id} label={r.doc_number} />;
         }
@@ -147,7 +128,6 @@ export default function PointsLedger() {
   ];
 
   const { columns, control: columnSettings } = useTableColumns('points-ledger', rawColumns, {
-    // الصفحة المعروضة بس — الفلترة والترقيم على السيرفر، فاللي في الإيد هو اللي في الملف.
     export: { name: 'سجل النقاط', rows: data?.rows || [] },
   });
 
@@ -167,9 +147,6 @@ export default function PointsLedger() {
   const shown = data?.rows.length || 0;
   const total = data?.count || 0;
 
-  // الإجماليات محسوبة في القاعدة على الحركة المفلترة كلها — مش على الصفحة المعروضة.
-  // كانت كروت فوق؛ دلوقتي سطر تحت الجدول جنب الترقيم. والأرقام دي للي معاه
-  // `stats.view` بس — نفس شرط `StatsRow` اللي كانت فيه.
   const canSeeStats = useCanSeeStats();
   const footer = (
     <span className="sl-foot">

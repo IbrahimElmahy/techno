@@ -1,12 +1,3 @@
-"""Remove the demo dataset seeded by `demo_seed` — leaving real company data untouched (v4).
-
-Targets ONLY the records `demo_seed` creates, matched by their exact seeded names, plus every
-document that references them (purchases, sales, manufacturing orders, wastage) and the stock
-movements / ledger entries those documents posted.
-
-This is a genuine hard delete: the app is otherwise append-only, so this exists purely to clear
-sample data out of a production database before go-live. It never touches rows it did not seed.
-"""
 from __future__ import annotations
 
 from sqlalchemy import delete, select, update
@@ -50,7 +41,6 @@ DEMO_WAREHOUSES = ["مخزن الخامات", "مخزن المنتجات الت�
 
 
 def purge_demo(db: Session) -> dict:
-    """Delete the demo dataset. Returns a per-entity count of what was removed."""
     item_ids = [i for (i,) in db.execute(select(Item.id).where(Item.name.in_(DEMO_ITEMS))).all()]
     supplier_ids = [i for (i,) in
                     db.execute(select(Supplier.id).where(Supplier.name.in_(DEMO_SUPPLIERS))).all()]
@@ -69,7 +59,6 @@ def purge_demo(db: Session) -> dict:
         if entry_id:
             ledger_entry_ids.add(entry_id)
 
-    # --- Sales (+ returns) for demo customers ---
     sale_ids = [i for (i,) in db.execute(
         select(SalesInvoice.id).where(SalesInvoice.customer_id.in_(customer_ids or [-1]))).all()]
     for s in db.scalars(select(SalesInvoice).where(SalesInvoice.id.in_(sale_ids or [-1]))).all():
@@ -83,7 +72,6 @@ def purge_demo(db: Session) -> dict:
         delete(SalesReturn).where(SalesReturn.id.in_(ret_ids or [-1]))).rowcount or 0
     db.execute(delete(SalesInvoiceLine).where(SalesInvoiceLine.invoice_id.in_(sale_ids or [-1])))
 
-    # --- Purchases (+ returns) from demo suppliers ---
     pur_ids = [i for (i,) in db.execute(
         select(PurchaseInvoice.id).where(
             PurchaseInvoice.supplier_id.in_(supplier_ids or [-1]))).all()]
@@ -100,7 +88,6 @@ def purge_demo(db: Session) -> dict:
     db.execute(delete(PurchaseInvoiceLine).where(
         PurchaseInvoiceLine.invoice_id.in_(pur_ids or [-1])))
 
-    # --- Loyalty tied to demo customers ---
     coupon_ids = [i for (i,) in db.execute(
         select(Coupon.id).where(Coupon.customer_id.in_(customer_ids or [-1]))).all()]
     db.execute(delete(CouponRedemption).where(CouponRedemption.coupon_id.in_(coupon_ids or [-1])))
@@ -110,7 +97,6 @@ def purge_demo(db: Session) -> dict:
     db.execute(delete(PointConversion).where(
         PointConversion.customer_id.in_(customer_ids or [-1])))
 
-    # --- Manufacturing (orders reference demo items) ---
     order_ids = [i for (i,) in db.execute(
         select(ManufacturingOrder.id).where(
             ManufacturingOrder.product_id.in_(item_ids or [-1]))).all()]
@@ -122,7 +108,6 @@ def purge_demo(db: Session) -> dict:
         ManufacturingOrderConsumption.order_id.in_(order_ids or [-1])))
     db.execute(delete(ManufacturingOrderResource).where(
         ManufacturingOrderResource.order_id.in_(order_ids or [-1])))
-    # reversal orders point at originals — clear the link before deleting
     db.execute(update(ManufacturingOrder).where(ManufacturingOrder.id.in_(order_ids or [-1]))
                .values(reverses_order_id=None))
     removed["manufacturing_orders"] = db.execute(
@@ -135,14 +120,12 @@ def purge_demo(db: Session) -> dict:
     removed["manufacturing_ops"] = db.execute(
         delete(ManufacturingOp).where(ManufacturingOp.id.in_(op_ids or [-1]))).rowcount or 0
 
-    # --- BOMs for demo products ---
     bom_ids = [i for (i,) in db.execute(
         select(Bom.id).where(Bom.product_id.in_(item_ids or [-1]))).all()]
     db.execute(delete(BomComponent).where(BomComponent.bom_id.in_(bom_ids or [-1])))
     db.execute(delete(BomResource).where(BomResource.bom_id.in_(bom_ids or [-1])))
     removed["boms"] = db.execute(delete(Bom).where(Bom.id.in_(bom_ids or [-1]))).rowcount or 0
 
-    # --- Wastage on demo items ---
     waste_ids = [i for (i,) in db.execute(
         select(WastageDocument.id).where(WastageDocument.item_id.in_(item_ids or [-1]))).all()]
     db.execute(update(WastageDocument).where(WastageDocument.id.in_(waste_ids or [-1]))
@@ -155,27 +138,21 @@ def purge_demo(db: Session) -> dict:
     removed["purchases"] = db.execute(
         delete(PurchaseInvoice).where(PurchaseInvoice.id.in_(pur_ids or [-1]))).rowcount or 0
 
-    # --- Stock movements for demo items (clear reversal links first) ---
-    # Core-level UPDATE: an ORM attribute set would trip stock_movement's immutability guard,
-    # which is exactly right for normal code — this purge is the deliberate exception.
     db.execute(update(StockMovement).where(StockMovement.item_id.in_(item_ids or [-1]))
                .values(reverses_movement_id=None))
     removed["stock_movements"] = db.execute(
         delete(StockMovement).where(StockMovement.item_id.in_(item_ids or [-1]))).rowcount or 0
     db.execute(delete(StockLocator).where(StockLocator.item_id.in_(item_ids or [-1])))
 
-    # --- Item children, then the items ---
     for model in (ProductPointValue, ItemPrice, ItemUnit, ItemSerial):
         db.execute(delete(model).where(model.item_id.in_(item_ids or [-1])))
     removed["items"] = db.execute(delete(Item).where(Item.id.in_(item_ids or [-1]))).rowcount or 0
 
-    # --- Ledger entries posted by the deleted documents ---
     if ledger_entry_ids:
         db.execute(delete(LedgerLine).where(LedgerLine.entry_id.in_(ledger_entry_ids)))
         removed["ledger_entries"] = db.execute(
             delete(LedgerEntry).where(LedgerEntry.id.in_(ledger_entry_ids))).rowcount or 0
 
-    # --- Suppliers / customers (+ their ledger accounts) ---
     sup_acc_ids = [a for (a,) in db.execute(
         select(SupplierAccount.account_id).where(
             SupplierAccount.supplier_id.in_(supplier_ids or [-1]))).all()]
@@ -190,12 +167,10 @@ def purge_demo(db: Session) -> dict:
     removed["customers"] = db.execute(
         delete(Customer).where(Customer.id.in_(customer_ids or [-1]))).rowcount or 0
 
-    # Only drop accounts that no longer carry any ledger line.
     for acc_id in set(sup_acc_ids + cust_acc_ids):
         if db.scalar(select(LedgerLine.id).where(LedgerLine.account_id == acc_id).limit(1)) is None:
             db.execute(delete(Account).where(Account.id == acc_id))
 
-    # --- Demo warehouses (only if nothing references them any more) ---
     from src.models.warehouse import Warehouse
     for wh in db.scalars(select(Warehouse).where(Warehouse.name.in_(DEMO_WAREHOUSES))).all():
         still_used = db.scalar(

@@ -1,9 +1,3 @@
-"""Serial number registry service (009).
-
-Owns the in_stock ↔ sold transitions for serialized items. Every transition is paired with a 002
-quantity movement (caller posts it) so the in-stock serial count at a location equals on-hand. Serials
-are unique per item.
-"""
 from __future__ import annotations
 
 from decimal import Decimal
@@ -20,7 +14,7 @@ from src.services import stock_service
 
 
 class SerialError(Exception):
-    """Invalid serial operation (not serialized, duplicate, not-in-stock, not-on-invoice, count)."""
+    pass
 
 
 def _get(db: Session, item_id: int, serial: str) -> ItemSerial | None:
@@ -40,11 +34,6 @@ def _log(
     document_id: int | None = None,
     actor_user_id: int | None = None,
 ) -> None:
-    """Write where a serial ended up and on what document.
-
-    Called at each of the four points a serial moves. Deriving this later from stock movements is
-    not possible: those carry quantities, and a quantity does not name which unit moved.
-    """
     db.add(ItemSerialMovement(
         serial_id=row.id, item_id=row.item_id, serial=row.serial, kind=kind,
         location_kind=location_kind, location_id=location_id,
@@ -61,7 +50,6 @@ def receive(
     serials: list[str],
     actor_user_id: int,
 ) -> list[ItemSerial]:
-    """Register N new serials in_stock at a location and post a +N stock-in (FR-003)."""
     if not item.is_serialized:
         raise SerialError("الصنف ده مش متتبّع بسيريال.")
     if not serials:
@@ -95,7 +83,6 @@ def receive(
 def assert_sale_serials(
     item: Item, *, quantity: Decimal, unit_factor: Decimal, serials: list[str] | None
 ) -> None:
-    """Validate the count/base-unit/serialized↔serials consistency for a sale line (FR-004)."""
     has_serials = bool(serials)
     if not item.is_serialized:
         if has_serials:
@@ -123,19 +110,6 @@ def relocate(
     transfer_id: int | None = None,
     actor_user_id: int | None = None,
 ) -> list[ItemSerial]:
-    """Move N in-stock serials from one location to another, oldest first.
-
-    A transfer moves the goods; the serials describe *which* goods, so they have to move with them.
-    Without this the serials stay behind: the destination cannot sell what it physically holds
-    (the serial is not there), and the source shows serials for units that have left.
-
-    No stock movement is posted here — the transfer posts its own out/in pair, and posting again
-    would double the quantity. The two sides move together, which is the invariant the integrity
-    check for serials verifies.
-
-    Oldest first is arbitrary but has to be *something* deterministic: two runs of the same transfer
-    must move the same serials, or a reversal could not put them back where they came from.
-    """
     if not item.is_serialized:
         return []
     count = int(Decimal(str(quantity)))
@@ -173,7 +147,6 @@ def mark_sold(
     invoice_id: int,
     actor_user_id: int | None = None,
 ) -> None:
-    """Each serial must be in_stock at the origin; set sold + link the invoice (FR-004)."""
     for s in serials:
         row = _get(db, item.id, s)
         if row is None or row.status != SerialStatus.in_stock:
@@ -184,8 +157,6 @@ def mark_sold(
         row.location_kind = None
         row.location_id = None
         row.sold_invoice_id = invoice_id
-        # No location: the unit left. Recording the origin here would keep sold units in a
-        # store's list of what it holds.
         _log(db, row, SerialMovementKind.sold, document_type=StockDoc.SALE,
              document_id=invoice_id, actor_user_id=actor_user_id)
     db.flush()
@@ -201,11 +172,6 @@ def restore_free(
     document_id: int | None = None,
     actor_user_id: int | None = None,
 ) -> None:
-    """المرتجع الحر — السيريال بيرجع مخزن من أي بيعة، من غير ربط بفاتورة معينة.
-
-    الحارس الوحيد: الرقم لازم يكون موجود ومبيع فعلاً — اللي مش موجود بيرفع خطأ واضح،
-    والمرتجع كله بيفشل قبل ما يتحرك أي حاجة.
-    """
     for s_no in serials:
         row = _get(db, item.id, s_no)
         if row is None or row.status != SerialStatus.sold:
@@ -229,7 +195,6 @@ def restore_for_return(
     serials: list[str],
     actor_user_id: int | None = None,
 ) -> None:
-    """Each serial must have been sold on this invoice; restore to in_stock@origin (FR-005)."""
     for s in serials:
         row = _get(db, item.id, s)
         if row is None or row.status != SerialStatus.sold or row.sold_invoice_id != invoice_id:

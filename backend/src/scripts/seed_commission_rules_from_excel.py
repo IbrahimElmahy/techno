@@ -1,34 +1,3 @@
-"""يبني إعدادات العمولات لفرع من ملف مرتبات العميل — عشان يبدأ من نفس الشكل اللي شغّال بيه.
-
-    python -m src.scripts.seed_commission_rules_from_excel --xlsx "<ملف>.xlsx"           # يعرض بس
-    python -m src.scripts.seed_commission_rules_from_excel --xlsx "<ملف>.xlsx" --yes     # ينفّذ
-    ... --branch "العلياء" --sheet "اكتوبر (2)"
-
-⛔ **مايتشغّلش بـ`--yes` على الإنتاج** من غير مراجعة الخطة اللي بيطبعها مع المحاسب.
-
----------------------------------------------------------------------------
-**«اكتوبر (2)» اسم الشهر مش الفرع.** أول خلية في الصفحة «مرتبات شهر اكتوبر»، والناس اللي
-فيها (حذيفه = مندوب السيارة أ، حسونه = ب، مكرم = ج، صبرى = د، حسام موسي = الشرقية، والفنيين)
-كلهم موظفين **العلياء** — فالافتراضي `--branch العلياء`.
-
-**الأرقام من الملف، والشكل من الخريطة اللي تحت.** المعادلات في الملف بتشاور على خلايا
-(`E8 = J99`، `M6 = I38`)، فمين في أنهي سيارة ومين بيتخصم منه متقري من المعادلات دي مرة واحدة
-ومكتوب هنا بأرقام الصفوف. النسب والائتمان والمعاملات والحدود الدنيا وقيمة النقطة بتتقري من
-الخلايا وقت التشغيل — لو العميل غيّر رقم في الملف، السكربت بياخد الجديد.
-
-**قرارات في قراية الملف** (ومكتوبة في تقرير التشغيل كمان):
-
-* «استثناء خصم ال 25 %» = اللي **بيتخصم منهم** نصيبهم (`I = H/2`) — المرتبط عموده M بخلية في
-  القايمة دي. اللي M بتاعه فاضي في سيارته (وائل، محمد عسران، ابراهيم حمود) معفي.
-  خانة `M10` (احمد الشحات) بتشاور على نصيب احمد صبري — شكلها غلطة صف، فصبري اتسجّل هو
-  اللي بيتخصم منه.
-* ائتمان السيارة ب مش في الملف (بلوكها باسم «احمد عبدة» القديم ٢٥٠٬٠٠٠) — اتاخد منه.
-* إشراف حذيفة (`O48`) محسوب في الملف ومش داخل مرتبه (`E8 = J99` بس) — اتسجّل **موقوف**.
-* «اسكندرية» و«الضبعة» أرقام مكتوبة بالإيد — اتعملوا سيارات من غير أفراد، وتحصيلهم بيتكتب
-  في «تحصيل يدوي» كل شهر لحد ما يتربطوا بحسابات مناديب.
-* نسبة التحصيل اللي من غير عيلة (حساب العميل القديم) مش في الملف — اتحطت زي نسبة الأبيض.
-* مسؤول الفنيين (محمد هلال): عمولته على مجموع كوبونات ومعاينات الفنيين (`J173 = SUM`).
-"""
 from __future__ import annotations
 
 import argparse
@@ -54,26 +23,17 @@ DEFAULT_XLSX = (r"C:\Users\Ibrahim Elmahy\.claude\uploads\2cb30e42-91df-46f3-899
 DEFAULT_SHEET = "اكتوبر (2)"
 DEFAULT_BRANCH = "العلياء"
 
-# ---------------------------------------------------------------- خريطة الملف
-#
-# السيارة: (الاسم، خلية نسبة البولي، خلية نسبة الأبيض، صفوف المرتبات بتاعة أفرادها،
-#           تتقسم بالتساوي؟، خلية الائتمان أو None، خصم ٢٥٪؟)
-# الصفوف دي من عمود E (`E8 = J99` → حذيفة في سيارة أ...).
 TEAMS = (
     ("سيارة أ", "G94", "J94", (8, 17), True, "C66", True),
     ("سيارة ب", "G131", "J131", (11, 12), True, "C55", True),
     ("سيارة ج", "G112", "J112", (7, 6), True, "G66", True),
     ("سيارة د", "G150", "J150", (15, 16), True, "G55", True),
-    # الشرقية: `K79 = I80 + F80` وكل فرد `F82 = K79` — كاملة مش متقسمة.
     ("الشرقية", "F80", "I80", (14, 13), False, None, False),
     ("اسكندرية", None, None, (), True, None, False),
     ("الضبعة", None, None, (), True, None, False),
 )
-# اللي بيتخصم منهم خصم ٢٥٪ (القايمة F36:F39 + M6 = I38). الباقي من الأفراد معفي.
 PENALIZED_ROWS = {8, 11, 7, 6, 15}
 
-# المشرفين: (صف المرتب، وصف، نسبة البولي، نسبة الأبيض، السيارات، الفترة، خصم غياب، نشط،
-#            نسبة الخصم من زيادة الـ٢٥٪)
 SUPERVISORS = (
     (4, "اشراف عام", "Q11", "Q11",
      ("سيارة أ", "سيارة ب", "سيارة ج", "سيارة د", "الشرقية", "اسكندرية", "الضبعة"),
@@ -83,14 +43,12 @@ SUPERVISORS = (
     (10, "١٪ من اسكندرية", "E10", "E10", ("اسكندرية",), 1, False, True, None),
 )
 
-TECH_ROWS = range(167, 174)       # الفنيين: B اسم، F معامل، K حد أدنى، N سعر المعاينة
-TECH_BONUS_ROWS = range(191, 197)  # E اسم، J سعر السباك
-TECH_ALL_ROW = 173                 # مسؤول الفنيين (`J173 = SUM(J167:J172)`)
+TECH_ROWS = range(167, 174)
+TECH_BONUS_ROWS = range(191, 197)
+TECH_ALL_ROW = 173
 
 _NUM = re.compile(r"(\d+(?:\.\d+)?)(%?)")
 
-
-# ---------------------------------------------------------------- قراية الملف
 
 def _load(path: str, sheet: str):
     try:
@@ -105,8 +63,6 @@ def _load(path: str, sheet: str):
 
 
 def _pct(wf, wv, ref: str | None) -> Decimal:
-    """نسبة مئوية من خلية: رقم (0.025 → 2.5)، أو معادلة («=F79*1.25%» → 1.25، «=0.7/100» → 0.7،
-    «=Q15*1%» → 1)."""
     if ref is None:
         return Decimal("0")
     raw = wf[ref].value
@@ -133,25 +89,21 @@ def _num(wf, wv, ref: str) -> Decimal:
         v = wf[ref].value
     try:
         return Decimal(str(v)) if v not in (None, "") else Decimal("0")
-    except Exception:  # noqa: BLE001 — خلية نص
+    except Exception:  # noqa: BLE001
         return Decimal("0")
 
 
 def _const_after(wf, ref: str, op: str) -> Decimal | None:
-    """الرقم اللي بعد عملية في معادلة: («=D167*52.35», "*") → 52.35."""
     text = str(wf[ref].value or "")
     m = re.search(re.escape(op) + r"\s*(\d+(?:\.\d+)?)", text)
     return Decimal(m.group(1)) if m else None
 
-
-# ---------------------------------------------------------------- مطابقة الأسماء
 
 _FOLD = str.maketrans({"أ": "ا", "إ": "ا", "آ": "ا", "ٱ": "ا", "ى": "ي", "ة": "ه", "ـ": "",
                        "\xa0": " ", ".": " ", "،": " ", "-": " ", "(": " ", ")": " "})
 
 
 def name_key(name: str) -> str:
-    """مفتاح مقارنة: همزات وتاء مربوطة وألف مقصورة ومسافات ونقط، و«يي» = «ي» (محيي/محى)."""
     s = unicodedata.normalize("NFKC", str(name or "")).translate(_FOLD)
     s = "".join(c for c in s if not ("\u064b" <= c <= "\u0652"))
     s = re.sub(r"ي{2,}", "ي", s)
@@ -159,10 +111,6 @@ def name_key(name: str) -> str:
 
 
 def match_employee(name: str, employees: list[Employee]) -> tuple[Employee | None, str]:
-    """أقرب موظف للاسم — بالترتيب: مطابق، مطابق من غير مسافات، الاسم أوله، كلماته جوّاه.
-
-    لو أكتر من واحد في نفس الدرجة: النشط قبل الموقوف، وإلا «ملتبس».
-    """
     key = name_key(name)
     if not key:
         return None, "اسم فاضي"
@@ -185,8 +133,6 @@ def match_employee(name: str, employees: list[Employee]) -> tuple[Employee | Non
     return None, "مالوش موظف"
 
 
-# ---------------------------------------------------------------- التنفيذ
-
 def build_plan(wf, wv, employees: list[Employee], picks: dict[str, int] | None = None) -> dict:
     report: list[str] = []
     unmatched: list[str] = []
@@ -194,7 +140,6 @@ def build_plan(wf, wv, employees: list[Employee], picks: dict[str, int] | None =
     picks = {name_key(k): v for k, v in (picks or {}).items()}
 
     def emp(name: str, where: str) -> Employee | None:
-        # `--pick` بيحسم الاسم الملتبس بإيد اللي بيشغّل (موظفين بنفس الاسم وكلهم نشطين).
         if name_key(name) in picks:
             e = by_id.get(picks[name_key(name)])
             if e is None:
@@ -220,8 +165,6 @@ def build_plan(wf, wv, employees: list[Employee], picks: dict[str, int] | None =
         "penalty_sales_pct": _pct(wf, wv, "C53") if wf["C53"].value else Decimal("25"),
         "penalty_per_thousand": _const_after(wf, "C58", "*") or Decimal("20"),
         "attribute_by_customer_rep": True,
-        # الملف: «عمولة معاينات» في المرتب = O (المعاينات) بس، وH (الكوبونات) مش داخلة؛
-        # و«خصم المعاينات» (M) فاضي.
         "pay_coupon_commission": False,
         "apply_min_inspections": False,
     }
@@ -382,7 +325,7 @@ def main(argv: list[str] | None = None) -> None:
     try:
         from src.core.db import Base, engine
 
-        Base.metadata.create_all(engine)  # جداول العمولات لو السيرفر لسه ماقامش بعد التحديث
+        Base.metadata.create_all(engine)
         branch = db.scalar(select(Branch).where(Branch.name == args.branch))
         if branch is None:
             raise SystemExit(f"مافيش فرع اسمه «{args.branch}».")

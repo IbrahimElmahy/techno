@@ -1,8 +1,3 @@
-"""Seed script (T061): Egyptian governorates + first System Admin.
-
-Idempotent: safe to re-run. Run after `alembic upgrade head`.
-Usage: python -m src.seed
-"""
 from __future__ import annotations
 
 from sqlalchemy import select
@@ -13,7 +8,6 @@ from src.models.org import Governorate
 from src.models.role import Role, RoleName
 from src.models.user import User
 
-# A representative subset; extend as needed.
 GOVERNORATES = [
     "Cairo", "Giza", "Alexandria", "Qalyubia", "Sharqia", "Dakahlia",
     "Beheira", "Gharbia", "Monufia", "Kafr El Sheikh", "Damietta", "Port Said",
@@ -23,7 +17,7 @@ GOVERNORATES = [
 ]
 
 ADMIN_USERNAME = "admin"
-ADMIN_PASSWORD = "password123"  # change immediately after first login
+ADMIN_PASSWORD = "password123"
 
 
 def seed() -> None:

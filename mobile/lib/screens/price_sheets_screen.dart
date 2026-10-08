@@ -6,16 +6,6 @@ import 'price_sheet_screen.dart';
 
 String _money(double v) => v.toStringAsFixed(2);
 
-/// شيتات التسعير المتحفوظة على الجهاز.
-///
-/// العروض بتتبنى عند التاجر وبتترجع لها بعدين: «الأسعار اللي إديتهالي الأسبوع اللي
-/// فات» سؤال بيتسأل كتير، وقبل الحفظ كانت الإجابة الوحيدة إن المندوب يبني العرض من
-/// أول. القايمة دي هي الرجوع.
-///
-/// **مفصولة عن «فواتيري» عن قصد.** الشيت مش مستند: مافيش رقم ولا قيد ولا مخزون
-/// اتحرّك، وخلطه مع الفواتير كان هيخلّي اللي بيراجع يعدّ ورقة مالهاش وجود في الدفاتر.
-///
-/// الترتيب بآخر تعديل: اللي بيفتح القايمة بيدوّر على اللي كان شغّال عليه.
 class PriceSheetsScreen extends StatefulWidget {
   const PriceSheetsScreen({super.key});
 
@@ -48,8 +38,6 @@ class _PriceSheetsScreenState extends State<PriceSheetsScreen> {
       MaterialPageRoute(
           builder: (_) => PriceSheetScreen(existingLocalId: localId)),
     );
-    // **الإعادة بتتعمل دايماً، مش على الرد بس.** الشيت بيتحفظ من جوّه بزرار الحفظ،
-    // والشاشة ممكن ترجع من غير أي رد لما المندوب يحفظ ويخرج بزرار الجهاز.
     await _load();
   }
 
@@ -81,7 +69,6 @@ class _PriceSheetsScreenState extends State<PriceSheetsScreen> {
     }
   }
 
-  /// «النهارده» و«امبارح» بدل التاريخ — ده اللي بيميّز الورقة في القايمة فعلاً.
   String _when(String? iso) {
     if (iso == null || iso.isEmpty) return '';
     final t = DateTime.tryParse(iso);

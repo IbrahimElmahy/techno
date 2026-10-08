@@ -1,14 +1,3 @@
-/**
- * «قائمة الدخل» بشكل ورقة العميل — لأي فرع ولأي فترة.
- *
- * العميل بيقفل كل ربع بورقة إكسل: المبيعات مقسومة على فئات (بولي / قطعي / الفروع / صرف)
- * بنسبها وبونصها، وتكلفة المبيعات من الجرد والمشتريات، والمصروفات بنود، ومصاريف البيع
- * بنموذج الكوبونات. الشاشة دي بتطلّع نفس الورقة من الدفاتر — والقواعد اللي بتقسّم (أنهي
- * صنف «بولي»، مين «الفروع»، أنهي حساب تحت أنهي بند) في تبويب الإعدادات، مش في الكود.
- *
- * **الفترة إجبارية ومافيش افتراضي** — قاعدة النظام: محدش بيختار فترة من عند الشاشة.
- * أزرار «الشهر / الربع / السنة» موجودة عشان الاختيار يبقى دوسة.
- */
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Alert, Button, Card, Col, Empty, Input, InputNumber, Modal, Radio, Row, Select, Space, Spin,
@@ -47,7 +36,6 @@ const CUSTOMER_TYPE_LABELS: Record<string, string> = {
 const pct = (v: string | null | undefined) => (v == null ? '—' : `${num(v, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%`);
 const iso = (d: Dayjs) => d.format('YYYY-MM-DD');
 
-/** أزرار الفترة السريعة — الربع ربع سنة ميلادي (العميل بيقفل ٣١-٣ و٣٠-٦ …). */
 function quickRanges(): { label: string; value: [Dayjs, Dayjs] }[] {
   const now = dayjs();
   const qStart = now.month(Math.floor(now.month() / 3) * 3).startOf('month');
@@ -110,8 +98,6 @@ const IncomeSheet: React.FC = () => {
   const branchName = data?.branch_name
     || branches.find((b) => b.id === branchId)?.name || '';
   const periodLabel = range ? `من ${range[0].format('D-M-YYYY')} إلى ${range[1].format('D-M-YYYY')}` : '';
-
-  // ------------------------------------------------------------- الدوسات
 
   const openAccount = (accountId: number) => {
     if (!range) return;
@@ -261,9 +247,6 @@ const IncomeSheet: React.FC = () => {
     });
   };
 
-  // ------------------------------------------------------------- الطباعة والتصدير
-
-  /** القائمة كصفوف مسطّحة — نفس اللي بيتطبع وبيتصدّر. */
   const flatRows = useMemo(() => {
     if (!data) return [] as { section: string; label: string; amount: string; note?: string }[];
     const rows: { section: string; label: string; amount: string; note?: string }[] = [];
@@ -365,8 +348,6 @@ const IncomeSheet: React.FC = () => {
       + table('قائمة التكاليف الصناعية (تكلفة المبيعات)', cost)
       + table('مصاريف عمومية وإدارية', ga) + table('مصاريف البيع والتسويق (البوانص)', mk));
   };
-
-  // ------------------------------------------------------------- العرض
 
   const Amount: React.FC<{ v: any; onClick?: () => void; strong?: boolean }> = ({ v, onClick, strong }) => (
     <span onClick={onClick}
@@ -615,12 +596,6 @@ const IncomeSheet: React.FC = () => {
   );
 };
 
-// ================================================================ مدخلات الفترة
-
-/**
- * اللي العميل بيكتبه بإيده كل ربع: الجرد الفعلي أول وآخر المدة (ورق الجرد مش رصيد الدفتر)،
- * كوبونات البيع الفعلي، ومصروفات «زيادة» مالهاش قيد. بيتحفظوا على الفترة بالظبط.
- */
 const PeriodInputs: React.FC<{
   data: any; range: Range; branchId?: number; canEdit: boolean; onSaved: () => void;
 }> = ({ data, range, branchId, canEdit, onSaved }) => {
@@ -710,8 +685,6 @@ const PeriodInputs: React.FC<{
     </Card>
   );
 };
-
-// ================================================================ الإعدادات
 
 const SettingsTab: React.FC<{ branchId?: number; canEdit: boolean; onSaved: () => void }> = ({ branchId, canEdit, onSaved }) => {
   const [meta, setMeta] = useState<any | null>(null);

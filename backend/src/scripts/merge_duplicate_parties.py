@@ -1,50 +1,3 @@
-"""يلمّ الشخص الواحد المتسجّل كارتين — كارت a5 وكارت ما بعد البيع.
-
-    python -m src.scripts.merge_duplicate_parties --dir C:/pgtmp/erp/wb          # يعرض بس
-    python -m src.scripts.merge_duplicate_parties --dir C:/pgtmp/erp/wb --yes    # ينفّذ
-
-بيتعاد تشغيله بأمان: اللي اتدمج قبل كده بيتعدّى، والقياس بيتعمل من جديد كل مرة.
-
----------------------------------------------------------------------------
-**الشخص كارت واحد — والدور مش طرف.**
-
-التاجر ممكن يشتري سخّان ويركّبه في بيته، فيبقى هو نفسه اللي محتاج الدعم الفني.
-ده **مايعملش طرف تاني**: `inspection` عندها تلات خانات مختلفة للتلات أدوار —
-`merchant_customer_id` (اشترى منه)، و`customer_id` (اللي اتزار)، و`owner_id`
-(صاحب البيت). فنفس الكارت بيظهر تاجر على معاينات زباينه، وعميل على معاينة بيته،
-في نفس اللحظة. والتصنيف بيفضل «تاجر» لأنه العلاقة التجارية؛ كونه مالك جهاز
-حقيقة خدمة مش هوية تانية.
-
-اللي عندنا مش الحالة دي. النقل عمل **كارتين لنفس الراجل** لأنه قرا من قاعدتين
-من غير جسر: كارت `AL-A5-…` من a5 شايل الفواتير والدفتر، وكارت `ERP-P-…` من
-ما بعد البيع. والجسر بينهم موجود في ملف العميل — عمود «كود A5» في صفحة «سباك»،
-اللي العميل ملاه بإيده على ٤١ صف.
-
-**ليه ده مش شغل `customer_merge_service`:** الخدمة دي مبنية لشكل تاني — «تكنو
-فلان» و«فلان»، راجل واحد بحسابين ذمم (أبيض وبولي)، وشغلها إنها تحطّ الحسابين
-تحت كارت واحد. هنا الكارت التاني **مالوش حساب أصلاً**، فتشغيلها بيدوّر على
-حاجة مش موجودة.
-
-**اللي اتقاس على الـ٣٤ زوج، جدول جدول:**
-
-    sales_invoice        ERP-P = ٠      AL-A5 = ١٬٠١٨
-    sales_return         ERP-P = ٠      AL-A5 =    ٣٢
-    customer_account     ERP-P = ٠      AL-A5 =    ٨٠
-    inspection           ERP-P = ٠      AL-A5 = ١٬٢٣٣
-    coupon / voucher / cheque / trade_order / reservation / points … كلها صفر
-
-يعني **الكارت الزيادة فاضي تماماً**. مافيش صف واحد بيشاور عليه. فالدمج هنا مش
-نقل داتا — هو تسجيل هوية وقفل كارت. بس السكربت بيعدّ الصفوف على الناحيتين قبل
-ما يعمل أي حاجة، ولو لقى الكارت الزيادة شايل حاجة **بينقلها بالاسم** جدول جدول
-بدل ما يفترض إنه فاضي — عشان يفضل صح لما نيجي ندمج `ERP-M`/`ERP-D` بعدين.
-
-**الكود بيتسجّل مش بيتمسح.** `ERP-P-<n>` بيتحط في `customer_external_ref`،
-فأي استيراد جاي للمعاينات أو الكوبونات بيدوّر بالكود القديم بيلاقي الكارت
-الصح بدل ما يعمل واحد جديد ونرجع لنفس المشكلة.
-
-**والكارت الزيادة بيتعطّل مش بيتمسح.** لو فضلت أي إشارة قديمة عليه في أي مكان،
-تلاقي اسم — مش رقم ضايع.
-"""
 from __future__ import annotations
 
 import csv
@@ -61,8 +14,6 @@ from src.models.customer import Customer
 F_PLUMBERS = "wb_plumbers.tsv"
 F_BRIDGE = "wb_bridge.tsv"
 
-# كل خانة بتشاور على عميل، بالاسم. مافيش `cascade` هنا عن قصد: النقل بيتكتب
-# صريح عشان أي جدول جديد يظهر في التقرير كـ«مش متعامل معاه» بدل ما يتنقل بالصدفة.
 REFS: tuple[tuple[str, str], ...] = (
     ("sales_invoice", "customer_id"),
     ("sales_return", "customer_id"),
@@ -93,17 +44,12 @@ def _read(path: str) -> list[dict[str, str]]:
 
 def run(folder: str, *, execute: bool) -> None:
     rows = _read(os.path.join(folder, F_PLUMBERS))
-    # (كود الكارت الزيادة، كود الكارت الباقي، الاسم زي ما هو في الشيت)
     pairs: dict[str, tuple[str, str]] = {}
     for r in rows:
         if r.get("kind") == "تاجر" and r.get("a5_code", "").startswith(("A5-", "AL-A5-")):
             pairs[f"ERP-P-{r['code']}"] = (r["a5_code"], r["name"])
     n_plumb = len(pairs)
 
-    # الجسر التاني، مبني من نفس الملف: صفحة «كوبونات» فيها «كود تاجر» جنب «كود
-    # تاجر A5» على ١٩٬٦٣٥ صف، وصفحة «معاينات» فيها `MerchantsID` جنب «كود تاجر»
-    # على ١٠٬٧٢٦. يعني العميل كاتب الترجمة بإيده جوّه الحركة نفسها — أقوى من أي
-    # مطابقة أسماء، والصفحات المرقّمة (`0`/`1`/`2`) مالهاش لزوم.
     for r in _read(os.path.join(folder, F_BRIDGE)):
         pairs.setdefault(r["erp_code"], (r["a5_code"], ""))
     print(f"صفحة «سباك»: {len(rows)} صف · منهم «تاجر» بكود a5: {n_plumb}")
@@ -147,8 +93,6 @@ def run(folder: str, *, execute: bool) -> None:
                 if n:
                     counts[f"{t}.{col}"] = n
 
-            # الحارس: الاتنين عليهم فواتير يبقى ده مش كارت زيادة — ده احتمال
-            # راجلين مختلفين اتلموا بالغلط. الحالة دي بتتقال ومابتتنفذش.
             keep_inv = db.execute(text(
                 "SELECT count(*) FROM sales_invoice WHERE customer_id = :i"),
                 {"i": keep.id}).scalar() or 0
@@ -196,7 +140,6 @@ def run(folder: str, *, execute: bool) -> None:
                     continue
                 db.execute(text(f"UPDATE {t} SET {col} = :k WHERE {col} = :d"),
                            {"k": keep.id, "d": dup.id})
-            # الكود القديم بيتسجّل عشان أي استيراد جاي يلاقي الكارت الصح.
             exists = db.execute(text(
                 "SELECT count(*) FROM customer_external_ref WHERE ref = :r"),
                 {"r": dup.code}).scalar()
@@ -205,7 +148,6 @@ def run(folder: str, *, execute: bool) -> None:
                     "INSERT INTO customer_external_ref (system, ref, customer_id, source_name)"
                     " VALUES ('erp', :r, :c, :n)"),
                     {"r": dup.code, "c": keep.id, "n": dup.name})
-            # التاجر بياخد خدمة برضه — مندوب الخدمة بينتقل لو الباقي فاضي.
             if keep.service_rep_id is None and dup.service_rep_id is not None:
                 keep.service_rep_id = dup.service_rep_id
             if not keep.phone and dup.phone:

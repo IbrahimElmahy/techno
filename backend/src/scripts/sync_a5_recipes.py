@@ -1,23 +1,3 @@
-"""وصفات فرع (نسب الإنتاج) = وصفات a5 بالظبط — اللي اتعدّل هناك بيتعدّل هنا (٢٠٢٦-١٠-٠٦).
-
-    python -m src.scripts.sync_a5_recipes --file /opt/techno/a5factory/a5_recipes.txt --branch السادات --prefix FC-
-    python -m src.scripts.sync_a5_recipes ... --yes
-
-`import_a5_boms` بيتخطّى المنتج اللي له وصفة، فالوصفة اللي اتعدّلت في a5 بعد النقل بتفضل عندنا
-بالقديم: «جلبة ٢ بوصة» عندنا ٥١ جرام خام pph وعند a5 ٦٣ (اتعدّلت ٢٠٢٦-١٠-٠٤). وشاشة
-«انتاج حسب النسب» بتحسب الخامات من الوصفة — فوصفة قديمة يعني صرف غلط.
-
-**الملف** `SELECT` بس على قاعدة a5:
-
-    SELECT 'H', item_id, Item_cod, Item_n, NUnits FROM Nsb_entag
-    SELECT 'L', d.item_id, d.Item_cod, d.Kham_item_n, d.Nsb_units, d.Nsb_Single, d.units
-      FROM Nsb_EntagDt d
-
-(`Item_cod` في السطر = كود **الخامة**.) الكمية = `Nsb_units + Nsb_Single ÷ units` — نفس قاعدة
-`import_a5_boms`. الوصفة اللي اتغيّرت خاماتها بتتكتب خاماتها من جديد على نفس الوصفة (أوامر
-التشغيل القديمة مابتتأثرش — الأمر بينسخ الكميات وقت ما بيتفتح). والمنتج اللي مالوش وصفة
-عندنا بتتعملّه. مقفول على أصناف الفرع (البادئة).
-"""
 from __future__ import annotations
 
 import sys

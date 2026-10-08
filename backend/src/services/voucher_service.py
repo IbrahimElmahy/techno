@@ -1,12 +1,3 @@
-"""Cash vouchers — 018-finance-vouchers.
-
-Each voucher posts ONE balanced ledger entry (append-only, reverse-once) and is what finally
-closes the money cycle: a credit invoice raises a receivable, a receipt settles it.
-
-    receipt      debit  cash location        / credit customer receivable
-    payment      debit  supplier payable     / credit cash location
-    rep_handover debit  treasury             / credit the rep's custody
-"""
 from __future__ import annotations
 
 from datetime import date
@@ -48,7 +39,6 @@ class VoucherError(Exception):
 
 
 def _doc_number(db: Session, kind: VoucherKind) -> str:
-    # Highest issued + 1, not a row count — see `numbering` for the deletion that breaks counting.
     return numbering.next_document_number(
         db, Voucher, _PREFIX[kind], where=Voucher.kind == kind)
 
@@ -61,12 +51,6 @@ def _positive(amount) -> Decimal:
 
 
 def _customer_account(db: Session, customer_id: int, family: str | None = None) -> CustomerAccount:
-    """حساب العميل اللي السند ده بيتحرّك عليه.
-
-    A customer may hold one receivable account per product line (031). This used to take whichever
-    row came back first, which for a merged customer is an ARBITRARY one of them — a collection
-    credited to «أبيض» that was paid against «بولي», silently.
-    """
     if db.get(Customer, customer_id) is None:
         raise VoucherError("العميل غير موجود.")
     try:
@@ -84,34 +68,10 @@ def _customer_accounts(db: Session, customer_id: int) -> list[CustomerAccount]:
 
 
 def _split_across_lines(db: Session, accounts: list[CustomerAccount], amount: Decimal):
-    """توزيع سند «على إجمالي المديونية» على الحسابات.
-
-    Asked for a receipt that can be against أبيض, against بولي, **or against the whole debt**. The
-    third one still has to land on real accounts — a ledger has no «total» to credit — so the money
-    is split in the proportion each line owes.
-
-    Proportional rather than oldest-first or largest-first, because it is the rule this system
-    already uses for the same shape of question: the tax on a partial return and the cash/credit
-    split on a refund are both apportioned by share. One rule the whole system follows beats three
-    that each look reasonable alone.
-
-    Rounding is settled on the LAST line so the parts add back to the amount exactly. A split that
-    loses a piastre would post an unbalanced entry, and the ledger would refuse it.
-
-    Only lines that actually OWE take a share. A line sitting in credit — the customer overpaid it
-    once — is owed money, not owing it, and letting it into the proportion made the other lines'
-    shares add up to MORE than the amount; the negative part that should have cancelled it was then
-    dropped by the `> ZERO` filter below, and the voucher was refused as «القيد مش متوازن». That is
-    an ordinary customer with one overpaid line, and «على إجمالي المديونية» simply would not post
-    for him.
-    """
     owing = [(a, to_money(ledger_service.balance_of(db, a.account_id))) for a in accounts]
     balances = [(a, b) for a, b in owing if b > ZERO]
     total = sum((b for _, b in balances), ZERO)
     if total <= ZERO:
-        # مافيش مديونية على أي خط ⇒ الفلوس كلها **دفعة تحت الحساب** على حسابه الأساسي (أول حساب
-        # اتعمل له). (٢٠٢٦-١٠-٠٥ — «عميل يدفع فلوس تحت حسابه وماعليهوش حاجة».) كانت بترفض
-        # وتطلب النوع، واللي قدامها مش عارف يختار إيه لفلوس مش على حاجة.
         main = sorted(accounts, key=lambda a: a.id)[0]
         return [(main, to_money(amount))]
     out = []
@@ -142,23 +102,12 @@ def _create(
     rep_user_id: int | None = None, reverses_id: int | None = None,
     treasury_id: int | None = None, to_treasury_id: int | None = None,
     family: str | None = None,
-    # (031) When the party side is split across several of his accounts — a receipt «على إجمالي
-    # المديونية» credits every line in proportion. One entry, several credit lines: the collection
-    # happened once and the ledger should show it once.
     credit_split: list[tuple[int, Decimal]] | None = None,
-    # (033) رقم الجهاز — بيتخزّن زي ما هو، والـUNIQUE عليه هي اللي بتمنع التكرار.
     client_uuid: str | None = None,
-    # مركز التكلفة — بيتحط على **كل** سطور القيد مش على سطر المصروف بس. تقرير الربحية
-    # بيقرا سطور الإيراد والمصروف وبس، فتعليم سطر الخزينة مابيغيّرش رقم فيه؛ بس كشف
-    # الحساب بيعرض العمود على أي سطر، فتعليم الطرفين بيخلّي الكشف متسق مع نفسه.
     cost_center_id: int | None = None,
-    # وتوزيع تحليلي بدل المركز الواحد — إيجار بيتقسّم على فرعين مثلاً.
     cost_center_distribution: dict | None = None,
-    # البيان — بتاع ورقة السند نفسها، مش وصف الحركة المحاسبية. `description` هو اللي
-    # بيروح لسطور القيد وبيتقرا في كشف الحساب؛ ده بيفضل على المستند وبس.
     statement1: str | None = None,
     external_document_number: str | None = None,
-    # تعديل سند: نفس الـid والرقم وتاريخ الإنشاء والفرع — السند بيتكتب من جديد في مكانه.
     replacing: dict | None = None,
 ) -> Voucher:
     voucher = Voucher(
@@ -173,7 +122,6 @@ def _create(
         reverses_id=reverses_id, actor_user_id=actor_user_id, family=family,
         statement1=statement1,
         external_document_number=external_document_number,
-        # السند مالوش مخزن، ففرعه فرع اللي كتبه.
         branch_id=branch_for(db, actor_user_id=actor_user_id),
         client_uuid=client_uuid,
     )
@@ -184,21 +132,16 @@ def _create(
         voucher.branch_id = replacing["branch_id"]
     db.add(voucher)
     db.flush()
-    # (المرحلة ٢) السند على مين. ده اللي بيخلّي التسوية في المرحلة ٣ تعرف تقفل
-    # التحصيل ده على فواتير العميل ده بالذات بدل ما تشوف حركة على حساب.
     if customer_id is not None:
         v_partner_kind, v_partner_id = PartnerKind.customer, customer_id
     elif supplier_id is not None:
         v_partner_kind, v_partner_id = PartnerKind.supplier, supplier_id
     else:
-        # تحويل بين خزنتين أو مصروف — مالوش شريك، وده صح مش نقص.
         v_partner_kind, v_partner_id = None, None
     entry = ledger_service.post_entry(
         db, entry_type=entry_type, actor_user_id=actor_user_id,
         description=description or statement,
         entry_date=voucher.voucher_date,
-        # المندوب والفرع على القيد نفسه — كشف الحساب بيقرا المندوب من القيد لما المستند
-        # مايقولش، والقيد من غيرهم كان بيطلع في الكشف من غير مندوب ولا فرع.
         rep_id=rep_user_id, branch_id=voucher.branch_id,
         partner_kind=v_partner_kind, partner_id=v_partner_id,
         cost_center_id=cost_center_id,
@@ -216,7 +159,7 @@ def _create(
     voucher.ledger_entry_id = entry.id
     db.flush()
     if replacing is not None:
-        return voucher      # التعديل بيكتب سطر `voucher.update` بتاعه
+        return voucher
     audit_service.record(
         db, action=f"voucher.{kind.value}", actor_user_id=actor_user_id,
         entity_type="voucher", entity_id=voucher.id,
@@ -229,20 +172,10 @@ def _cash_side(
     db: Session, *, actor_role: RoleName, actor_user_id: int, treasury_id: int | None,
     family: str | None = None,
 ) -> tuple[int, int | None]:
-    """Which ledger account holds the cash, and the treasury it belongs to.
-
-    A rep always moves cash through his own custody; office users use the named safe (or the
-    default one), which is what makes per-branch and bank safes work.
-    """
     if actor_role == RoleName.sales_rep:
-        # الخط لازم يعدّي. من غيره التحصيل بينزل في الصندوق اللي `resolve` بيلاقيه أول
-        # واحد، فالمندوب يحصّل على فاتورة أبيض والفلوس تقعد في صندوق بولي — والقيد
-        # متوازن، والفرق مايبانش غير في جرد بعد شهر.
         return account_resolver.resolve_cash_account(
             db, role=actor_role, user_id=actor_user_id, family=family).id, None
     if treasury_id is None:
-        # من غير خزنة مختارة: خزنة فرع اللي بيكتب (خزنة لكل فرع — ٢٠٢٦-١٠-٠٤). الافتراضية
-        # العامة كانت هتنزّل سند موظف أكتوبر في خزنة العلياء.
         from src.models.treasury import Treasury
         from src.models.user import User
 
@@ -261,12 +194,6 @@ def _receipt_rep(
     db: Session, *, customer_id: int, actor_user_id: int, actor_role: RoleName,
     rep_user_id: int | None,
 ) -> int | None:
-    """مندوب سند القبض.
-
-    المندوب اللي كتب السند بنفسه هو المحصِّل — مافيش سؤال. المكتب يقدر يقول مين حصّل،
-    ولو ماقالش يبقى مندوب العميل. من غير ده السند كان بيتكتب من غير مندوب خالص، فكشف
-    الحساب وفلتر المندوب مابيشوفوش تحصيلاته.
-    """
     if actor_role == RoleName.sales_rep:
         return actor_user_id
     if rep_user_id is not None:
@@ -289,20 +216,10 @@ def create_receipt(
     rep_user_id: int | None = None,
     replacing: dict | None = None,
 ) -> Voucher:
-    """سند قبض — تحصيل من عميل. النقدية تدخل الخزينة المختارة أو عهدة المندوب المحصِّل.
-
-    (031) The customer may owe on more than one product line, so the receipt says which debt it
-    settles: a named `family`, or `on_total` to put it against the whole thing — which credits
-    every line in the proportion it owes, because a ledger has no «total» to credit.
-
-    Neither given, and the customer holds several accounts → refused rather than guessed at. A
-    collection landing on the wrong line is money the next statement cannot explain.
-    """
     value = _positive(amount)
     if len([x for x in (customer_id, supplier_id, account_id) if x]) != 1:
         raise VoucherError("اختار طرف واحد للسند: عميل أو مورد أو حساب.")
     if customer_id is None:
-        # (المرحلة ١، ٢٠٢٦-١٠-٠٦) قبض من مورد (رجّع فلوس) أو من أي حساب — زي a5.
         return _party_voucher(
             db, receipt=True, value=value, supplier_id=supplier_id, account_id=account_id,
             actor_user_id=actor_user_id, actor_role=actor_role, treasury_id=treasury_id,
@@ -312,7 +229,6 @@ def create_receipt(
             replacing=replacing)
     rep_id = _receipt_rep(db, customer_id=customer_id, actor_user_id=actor_user_id,
                           actor_role=actor_role, rep_user_id=rep_user_id)
-    # نفس خط الفاتورة يروح للطرفين: حساب المديونية اللي بيتخصم، والصندوق اللي بينزل فيه.
     cash_account_id, safe_id = _cash_side(
         db, actor_role=actor_role, actor_user_id=actor_user_id, treasury_id=treasury_id,
         family=family)
@@ -322,8 +238,6 @@ def create_receipt(
         parts = _split_across_lines(db, accounts, value)
         return _create(
             db, kind=VoucherKind.receipt, amount=value, cash_account_id=cash_account_id,
-            # The voucher still names ONE party account for the registers that read it — the
-            # largest share, which is the line the collection is mostly about.
             party_account_id=max(parts, key=lambda p: p[1])[0].account_id,
             debit_account_id=cash_account_id,
             credit_account_id=parts[0][0].account_id, actor_user_id=actor_user_id,
@@ -332,9 +246,8 @@ def create_receipt(
             statement="تحصيل من عميل — على إجمالي المديونية",
             customer_id=customer_id, treasury_id=safe_id,
             credit_split=[(a.account_id, v) for a, v in parts],
-            family=None,        # None on the voucher means «على الإجمالي», same as the argument
+            family=None,
             client_uuid=client_uuid, statement1=statement1, external_document_number=external_document_number,
-            # مركز التكلفة كان بيقع هنا بس — نفس السند على خط واحد كان بيشيله.
             cost_center_id=cost_center_id, rep_user_id=rep_id, replacing=replacing,
         )
 
@@ -353,7 +266,6 @@ def create_receipt(
     )
 
 
-# الصفة اللي بتتكتب على السند للعميل حسب تصنيفه — «صرف لموظف» مش «صرف لعميل».
 _CUSTOMER_ROLE = {"employee": "موظف", "internal": "فرع", "owner": "مالك"}
 
 
@@ -367,20 +279,6 @@ def _party_voucher(
     statement1: str | None = None, external_document_number: str | None = None,
     replacing: dict | None = None,
 ) -> Voucher:
-    """سند قبض/صرف على أي طرف — المرحلة ١ (٢٠٢٦-١٠-٠٦).
-
-    a5 بيعمل السند على أي حساب في الشجرة: يصرف لعميل (رد فلوس)، يقبض من مورد (رجّع دفعة)،
-    يصرف سلفة لموظف، يحوّل لفرع. عندنا كان القبض من عميل بس والصرف لمورد بس، فالحاجات دي
-    كانت بتتعمل قيد حر أو ماتتعملش. هنا الطرف واحد من:
-
-    * عميل (ومعاه الموظف والفرع — كروتهم عملاء بتصنيف «موظف»/«فرع») ⇒ حساب ذممه، بالخط لو
-      عنده أبيض وبولي.
-    * مورد ⇒ حساب ذممه.
-    * حساب من الشجرة ⇒ هو نفسه (فرعي ونشط ومش خزنة — نقل الخزن «تحويل»).
-
-    القبض: مدين الخزنة ودائن الطرف. الصرف: مدين الطرف ودائن الخزنة، بعد ما نتأكد إن الخزنة
-    فيها المبلغ.
-    """
     given = [x for x in (customer_id, supplier_id, account_id) if x]
     if len(given) != 1:
         raise VoucherError("اختار طرف واحد للسند: عميل أو مورد أو حساب.")
@@ -418,8 +316,6 @@ def _party_voucher(
         party_account_id=party_account,
         debit_account_id=cash_account_id if receipt else party_account,
         credit_account_id=party_account if receipt else cash_account_id,
-        # من غير عميل ولا مورد على السند، القايمة مالهاش اسم تعرضه — فالبيان الفاضي بياخد
-        # الطرف («صرف إلى موظف فلان»/«قبض من حساب كذا»).
         actor_user_id=actor_user_id, voucher_date=voucher_date,
         description=description or f"{'قبض من' if receipt else 'صرف إلى'} {party_name}".strip(),
         reference=reference, payment_method=payment_method,
@@ -451,7 +347,6 @@ def create_payment(
     external_document_number: str | None = None,
     replacing: dict | None = None,
 ) -> Voucher:
-    """سند صرف — دفع لمورد من الخزينة، أو (المرحلة ١) لعميل/موظف/فرع أو أي حساب."""
     value = _positive(amount)
     if len([x for x in (customer_id, supplier_id, account_id) if x]) != 1:
         raise VoucherError("اختار طرف واحد للسند: عميل أو مورد أو حساب.")
@@ -486,18 +381,12 @@ def create_expense(
     treasury_id: int | None = None,
     cost_center_id: int | None = None,
     cost_center_distribution: dict | None = None, statement1: str | None = None,
-    # «رقم المستند» (رقم السند الورقي) — الشاشة بتبعته، وكان ناقص هنا لوحده من بين السندات
-    # فسند المصروف كله كان بيقع بـ500 (٢٠٢٦-١٠-٠٦).
     external_document_number: str | None = None,
 ) -> Voucher:
-    """سند مصروف — إيجار/مرتبات/بنزين… مدين حساب المصروف ودائن الخزينة."""
     value = _positive(amount)
     account = db.get(Account, expense_account_id)
     if account is None or not account.active:
         raise VoucherError("حساب المصروف غير موجود.")
-    # الطبيعة الفعلية مش العمود: حسابات النظام (المشتريات، الإيراد…) `nature` بتاعها
-    # بيفضل NULL لحد ما الشجرة القياسية تتزرع، فالمقارنة على العمود كانت بترفض سند
-    # المصروف على حساب المصروفات نفسه في أي قاعدة الشجرة ماتزرعتش فيها.
     from src.services.financial_reports_service import effective_nature
 
     if effective_nature(account) != AccountNature.expense:
@@ -527,12 +416,6 @@ def create_partner_movement(
     description: str | None = None, statement1: str | None = None,
     external_document_number: str | None = None,
 ) -> Voucher:
-    """«الجاري» — سحب شريك من الخزنة أو إيداعه/مردوده فيها، زي سند a5 بالظبط.
-
-    a5 بيكتبها سند نقدي بين «خزينة المركز الرئيسى» وحساب الشريك تحت «جارى الشركاء»
-    (أو سنته): السحب «الى حـ خزينة …» مدين الجاري، والمردود «من حـ خزينة …» دائنه.
-    الحساب لازم يكون تحت مجموعة جاري/رأس مال/استثمار — مش أي حساب في الشجرة.
-    """
     value = _positive(amount)
     acc = db.get(Account, account_id)
     parent = db.get(Account, acc.parent_id) if acc is not None and acc.parent_id else None
@@ -557,7 +440,6 @@ def create_partner_movement(
         treasury_id=safe_id, statement1=statement1,
         external_document_number=external_document_number,
     )
-    # الفرع فرع حساب الشريك (السادات مثلاً) مش فرع اللي كتب — المالك مالوش فرع.
     if v.branch_id is None and acc.branch_id is not None:
         v.branch_id = acc.branch_id
         entry = db.get(LedgerEntry, v.ledger_entry_id)
@@ -574,7 +456,6 @@ def create_cash_transfer(
     cost_center_id: int | None = None, statement1: str | None = None,
     external_document_number: str | None = None,
 ) -> Voucher:
-    """تحويل بين الخزائن — مدين الخزينة المستقبِلة ودائن المرسِلة."""
     value = _positive(amount)
     if from_treasury_id == to_treasury_id:
         raise VoucherError("لا يمكن التحويل لنفس الخزينة.")
@@ -600,16 +481,9 @@ def create_handover(
     cost_center_id: int | None = None, statement1: str | None = None,
     external_document_number: str | None = None,
 ) -> Voucher:
-    """توريد المندوب — نقل النقدية من عهدة المندوب لخزينة الشركة.
-
-    مقيّد برصيد العهدة: المندوب ما يقدرش يورّد أكتر مما تحصّله فعلاً.
-    """
     value = _positive(amount)
     if db.get(User, rep_user_id) is None:
         raise VoucherError("المندوب غير موجود.")
-    # المندوب بقى له صندوق لكل خط. التوريد لازم يقول بيورّد من أنهي صندوق — `scalar`
-    # كان بياخد صف عشوائي، فالرصيد اللي بيتفحص ممكن يكون بتاع صندوق تاني خالص، والقيد
-    # يخصم من صندوق واللي في إيده فلوس صندوق غيره.
     try:
         custody_acc = account_resolver.resolve_cash_account(
             db, role=RoleName.sales_rep, user_id=rep_user_id, family=family)
@@ -619,7 +493,6 @@ def create_handover(
     held = ledger_service.balance_of(db, custody.account_id)
     if value > held:
         raise VoucherError(f"رصيد عهدة المندوب {held} — لا يمكن توريد {value}.")
-    # التوريد لخزنة فرع المندوب — مش الافتراضية (أكتوبر) لمندوب العلياء.
     from src.models.user import User
 
     rep_user = db.get(User, rep_user_id)
@@ -637,12 +510,6 @@ def create_handover(
 
 
 def invoice_cash_accounts(db: Session, invoices, *, direction: str) -> dict[int, int]:
-    """حساب النقدية اللي النقدي بتاع كل فاتورة دخل منه/خرج فيه — من قيدها.
-
-    الفاتورة مابتحفظش الخزنة (الشرا خالص، والبيع ساعات): القيد هو اللي فيه. السطر اللي
-    في الاتجاه المطلوب (`debit` للبيع — النقدية داخلة، `credit` للشرا — خارجة) وبمبلغ
-    النقدي بالظبط هو سطر الخزنة/العهدة. استعلام واحد لكل الفواتير.
-    """
     from src.models.ledger import Direction, LedgerLine
 
     by_entry = {i.ledger_entry_id: i for i in invoices if i.ledger_entry_id}
@@ -659,11 +526,6 @@ def invoice_cash_accounts(db: Session, invoices, *, direction: str) -> dict[int,
 
 
 def cash_labeler(db: Session, *, treasury_ids, account_ids):
-    """اسم الخزنة/الصندوق لصفوف السجلات — باستعلامين بس مهما كان عدد الصفوف.
-
-    بالخزنة لو السند سمّاها، وإلا بحساب النقدية: خزنة مربوطة بيه، أو اسم الحساب نفسه
-    (صندوق عهدة المندوب مالوش خزنة).
-    """
     from sqlalchemy import or_
     from src.models.treasury import Treasury
 
@@ -695,21 +557,12 @@ def replace_voucher(
     db: Session, *, voucher_id: int, kind: VoucherKind, editor_user_id: int,
     editor_role: RoleName, fields: dict,
 ) -> Voucher:
-    """تعديل سند قبض/صرف — بيتمسح هو وقيده ويتكتب من جديد **في مكانه**.
-
-    نفس الـid والرقم ورقم الجهاز وتاريخ الإنشاء والفرع، ونفس اللي كتبه بصلاحيته — فتحصيل
-    المندوب من التطبيق بيفضل في عهدته إلا لو التعديل سمّى خزنة. المسح بنفس طريقة
-    `document_edit_service.delete_voucher` (السند وقيده، والمطابقة بتتفك)، والكل في
-    ترانزاكشن واحدة: لو الكتابة الجديدة وقعت، الاتنين بيرجعوا.
-    """
     from src.models.role import Role
     from src.services.document_edit_service import DocumentEditError, _drop_entry
 
     original = db.get(Voucher, voucher_id)
     if original is None:
         raise VoucherNotFound("السند مش موجود.")
-    # السند اللي جاي من a5 بيتعدّل في a5 — المزامنة بتجيب التعديل. تعديله هنا كان هيعمل سند
-    # جديد من غير رقم a5، والمزامنة الجاية تجيب الأصلي تاني فيبقوا اتنين.
     if (original.client_uuid or "").startswith("a5:"):
         raise VoucherError("السند ده منقول من a5 — عدّله في a5 والمزامنة هتجيب التعديل.")
     if original.kind != kind:
@@ -729,7 +582,6 @@ def replace_voucher(
     actor = db.get(User, actor_id)
     role = db.get(Role, actor.role_id) if actor is not None else None
     actor_role = role.name if role is not None else editor_role
-    # تحصيل المندوب بيفضل في عهدته — إلا لو المكتب سمّى خزنة صريحة.
     if (actor_role == RoleName.sales_rep and fields.get("treasury_id") is not None
             and editor_role != RoleName.sales_rep):
         actor_role = editor_role
@@ -761,7 +613,6 @@ def replace_voucher(
 
 
 def reverse_voucher(db: Session, *, voucher_id: int, actor_user_id: int) -> Voucher:
-    """عكس السند (مرة واحدة) — يعكس القيد ويسجل سندًا عكسيًا."""
     original = db.get(Voucher, voucher_id)
     if original is None:
         raise VoucherError("السند غير موجود.")
@@ -779,14 +630,10 @@ def reverse_voucher(db: Session, *, voucher_id: int, actor_user_id: int) -> Vouc
         treasury_id=original.treasury_id, to_treasury_id=original.to_treasury_id,
         voucher_date=date.today(), payment_method=original.payment_method,
         reference=original.reference, description=f"عكس {original.document_number}",
-        # البيان بيتورّث: العكس بيتعرض جنب أصله، ومن غير بيان بيبقى سطر بمبلغ مالوش سبب.
         statement1=getattr(original, "statement1", None),
-        # السند العكسي مربوط بقيده — من غيره الكشف مابيعرفش يوصّل سطر العكس بمستنده،
-        # وبيطلع «قيد يدوي» من غير مندوب.
         ledger_entry_id=counter.id, reverses_id=voucher_id, actor_user_id=actor_user_id,
         family=getattr(original, "family", None),
         cost_center_id=getattr(original, "cost_center_id", None),
-        # القيد المضاد بيقعد في فرع السند اللي بيعكسه، مش فرع اللي عكسه.
         branch_id=getattr(original, "branch_id", None),
     )
     db.add(mirror)

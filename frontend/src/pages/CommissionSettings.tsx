@@ -17,17 +17,6 @@ import { roleForAccess, useAuth } from '../components/AuthProvider';
 import { money, num } from '../utils/money';
 import { searchFilter } from '../utils/arabicSort';
 
-/**
- * إعدادات العمولات ومعاينة الشهر — بديل بلوكات ملف «مرتبات شهر اكتوبر».
- *
- * الملف كان فيه بلوك لكل سيارة وبلوك لكل مشرف وبلوك «خصم ٢٥٪» وجدول للفنيين، والأسماء والنسب
- * جوّه المعادلات. هنا كل حاجة من دول صف بيتعدّل من الشاشة (السيارات، المشرفين، الفنيين، وأرقام
- * الفرع)، و«معاينة الشهر» بتحسب من بيانات النظام وبتعرض نفس البلوكات بنفس ترتيبها — عشان
- * المحاسب يقارن رقم برقم مع اللي اتعوّد عليه قبل ما يعتمد الشيت.
- *
- * الشيت نفسه (شيت المرتبات) بيقرا نفس الحساب من السيرفر — الشاشة دي مابتكتبش في المرتبات.
- */
-
 type Fam = { poly: number | string; white: number | string; other: number | string };
 
 interface TeamRow {
@@ -68,7 +57,6 @@ interface Setup {
 const pct = (v: unknown) => `${num(v, { maximumFractionDigits: 4 })}٪`;
 const errText = (err: any, fallback: string) => err?.response?.data?.detail?.message || fallback;
 
-/** خانة بعنوان فوقها — نفس شكل فورمات شاشات المرتبات. */
 function Field({ label, children, span = 8, hint }: {
   label: React.ReactNode; children: React.ReactNode; span?: number; hint?: React.ReactNode;
 }) {
@@ -143,7 +131,6 @@ export default function CommissionSettings() {
   const teamOptions = useMemo(() => (setup?.teams || [])
     .map((t) => ({ value: t.id, label: t.name })), [setup]);
 
-  // ------------------------------------------------------------ السيارات
   const [teamOpen, setTeamOpen] = useState(false);
   const [teamEditing, setTeamEditing] = useState<TeamRow | null>(null);
   const [teamForm, setTeamForm] = useState({ ...emptyTeam });
@@ -217,7 +204,6 @@ export default function CommissionSettings() {
       ) },
   ];
 
-  // ------------------------------------------------------------ المشرفين
   const [supOpen, setSupOpen] = useState(false);
   const [supEditing, setSupEditing] = useState<SupRow | null>(null);
   const [supForm, setSupForm] = useState({ ...emptySup });
@@ -271,7 +257,6 @@ export default function CommissionSettings() {
       ) },
   ];
 
-  // ------------------------------------------------------------ الفنيين
   const [techOpen, setTechOpen] = useState(false);
   const [techEditing, setTechEditing] = useState<TechRow | null>(null);
   const [techForm, setTechForm] = useState({ ...emptyTech });
@@ -322,7 +307,6 @@ export default function CommissionSettings() {
       ) },
   ];
 
-  // ------------------------------------------------------------ أرقام الفرع
   const [settingsForm, setSettingsForm] = useState<Settings | null>(null);
   useEffect(() => { setSettingsForm(setup ? { ...setup.settings } : null); }, [setup]);
 
@@ -338,7 +322,6 @@ export default function CommissionSettings() {
     } finally { setSaving(false); }
   };
 
-  // ------------------------------------------------------------ معاينة الشهر
   const [period, setPeriod] = useState<Dayjs>(dayjs().startOf('month'));
   const [preview, setPreview] = useState<any | null>(null);
   const [previewing, setPreviewing] = useState(false);
@@ -357,7 +340,6 @@ export default function CommissionSettings() {
   };
   useEffect(() => { if (tab === 'preview' && setup) runPreview(); }, [tab, period, setup?.branch.id]);
 
-  // تحصيل يدوي لسيارة في الشهر (اسكندرية / الضبعة في الملف).
   const [manualTeam, setManualTeam] = useState<any | null>(null);
   const [manualForm, setManualForm] = useState({ poly: 0, white: 0, other: 0, notes: '' });
   const openManual = (team: any) => {
@@ -405,7 +387,6 @@ export default function CommissionSettings() {
       render: (_, r) => <b>{money(Number(r.earnings) - Number(r.deductions))}</b> },
   ];
 
-  /** جدول صغير على شكل بلوك الملف: صفوف بعنوان وعمود لكل عيلة. */
   const famTable = (rows: { label: React.ReactNode; vals: Fam & { total?: any }; fmt?: (v: any) => React.ReactNode }[]) => (
     <table className="comm-block">
       <thead>
@@ -588,7 +569,6 @@ export default function CommissionSettings() {
     );
   };
 
-  // ------------------------------------------------------------ الصفحة
   const tabs = [
     { key: 'teams', label: 'السيارات', count: setup?.teams.length ?? null },
     { key: 'supervisors', label: 'المشرفين', count: setup?.supervisors.length ?? null },
@@ -709,7 +689,6 @@ export default function CommissionSettings() {
         ) : renderPreview()}
       </ListPage>
 
-      {/* ---------------- مودال السيارة */}
       <TabModal open={teamOpen} width={820} destroyOnClose
         title={teamEditing ? `تعديل «${teamEditing.name}»` : 'سيارة جديدة'}
         onCancel={() => setTeamOpen(false)} onOk={saveTeam} okText="حفظ" cancelText="إلغاء"
@@ -793,7 +772,6 @@ export default function CommissionSettings() {
         </Row>
       </TabModal>
 
-      {/* ---------------- مودال المشرف */}
       <TabModal open={supOpen} width={760} destroyOnClose
         title={supEditing ? `تعديل إشراف «${supEditing.employee_name}»` : 'مشرف جديد'}
         onCancel={() => setSupOpen(false)} onOk={saveSup} okText="حفظ" cancelText="إلغاء"
@@ -852,7 +830,6 @@ export default function CommissionSettings() {
         </Row>
       </TabModal>
 
-      {/* ---------------- مودال الفني */}
       <TabModal open={techOpen} width={720} destroyOnClose
         title={techEditing ? `تعديل «${techEditing.employee_name}»` : 'فني جديد'}
         onCancel={() => setTechOpen(false)} onOk={saveTech} okText="حفظ" cancelText="إلغاء"
@@ -900,7 +877,6 @@ export default function CommissionSettings() {
         </Row>
       </TabModal>
 
-      {/* ---------------- تحصيل يدوي */}
       <TabModal open={!!manualTeam} width={560} destroyOnClose
         title={manualTeam ? `تحصيل يدوي — ${manualTeam.name} — ${period.format('YYYY/MM')}` : ''}
         onCancel={() => setManualTeam(null)} onOk={saveManual} okText="حفظ" cancelText="إلغاء"

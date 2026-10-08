@@ -56,24 +56,6 @@ import { addPickedSequentially, type PickResult } from '../utils/pickMany';
 import { useLiveRefresh } from '../utils/live';
 import { activeChoices, activeOptions, withInactiveTag } from '../utils/active';
 
-/**
- * مردودات شراء — goods going back to the supplier, as a register of its own.
- *
- * The returns themselves have worked for a long time, but only from inside a purchase: open the
- * invoice, return off it. That answers «what came back off THIS invoice» and never «what went back
- * to suppliers this month», which is the question a register exists for — and their menu has it as
- * its own screen (`/purchasesreturns/create`), so ours was one entry short of the map.
- *
- * A purchase return is a leaner document than a sales return: no discount, no tax, no cash
- * settlement. Goods go back and what we owe the supplier drops by their value. The columns say
- * exactly that and nothing more, rather than borrowing the sales return's shape.
- *
- * **A return is always against a purchase.** There is no standalone purchase return, and this
- * screen does not invent one — creating starts by choosing the invoice, so what goes back can only
- * be what came in, at the price it came in at. A return with no purchase behind it would be stock
- * appearing from nowhere at a price nobody agreed.
- */
-
 interface ReturnRow {
   return_date?: string | null;
   notes?: string | null;
@@ -85,11 +67,9 @@ interface ReturnRow {
   supplier_name: string | null;
   value: string;
   created_at: string;
-  /** البيان — السيرفر بيرجّعه في السجل، فالبحث والفلتر بيدوّروا فيه من غير فتح المردود. */
   statement1?: string | null;
   statement2?: string | null;
   statement3?: string | null;
-  /** رقم إشعار المورد الورقي — بيتعرض عمود في السجل عشان الورقة تتلاقي من غير فتح المردود. */
   external_document_number?: string | null;
 }
 
@@ -97,73 +77,42 @@ interface PurchaseLine {
   item_id: number; quantity: string; unit_price: string; line_total: string; unit: string | null;
 }
 
-/**
- * **`embedded`: مردود شراء جديد جوّه سجل المشتريات** (طلب العميل ٢٠٢٦-١٠-٠١) — نفس فكرة
- * `Returns embedded`: نفس الشاشة بمنطقها، بتبدأ بباب المورد، مابترسمش كشف المردودات
- * ومابتلمسش العنوان، ولما المستند يتقفل أو الباب يتلغي بتنده `onExit`.
- */
 export default function PurchaseReturns({ embedded }: { embedded?: { onExit: () => void } } = {}) {
   const navigate = useNavigate();
   const { can } = useAuth();
   const canWriteReturn = can('return.write');
   const [rows, setRows] = useState<ReturnRow[]>([]);
-  // A purchase return is now a document with a screen, so a link to one has somewhere to land.
   const [searchParams, setSearchParams] = useSearchParams();
   const [highlight, setHighlight] = useState<number | null>(null);
   const pendingDoc = useRef<number | null>(null);
-  /** الرابط طالب تعديل مش عرض — بيتقرا مع `pendingDoc` في نفس اللحظة. */
   const pendingEdit = useRef(false);
   const [loading, setLoading] = useState(false);
   const [items, setItems] = useState<any[]>([]);
   const [purchases, setPurchases] = useState<any[]>([]);
 
   const [creating, setCreating] = useState(false);
-  // The date is asked first, the way the sale and the sales return ask it — the day the goods
-  // went back is a fact about the goods, not about when somebody got to the screen.
   const [newStep, setNewStep] = useState<null | 'party'>(embedded ? 'party' : null);
-  /** حقول المستند — نفس اللي على فاتورة الشرا بالظبط.
-   *
-   * الفرع وحساب الترحيل اتشالوا مع خاناتهم: الفرع بيتعرف من المخزن، وحساب المشتريات بياخد
-   * الافتراضي من السيرفر. وقايمتين كانوا بيتجابوا من السيرفر مع كل فتحة شاشة عشان خانتين
-   * محدش كان بيغيّرهم — القايمتين اتشالوا معاهم. */
   const [externalNumber, setExternalNumber] = useState('');
   const [statements, setStatements] = useState<string[]>(['', '', '']);
   const [variableDiscount, setVariableDiscount] = useState(0);
   const [partyPickerOpen, setPartyPickerOpen] = useState(false);
 
-  /** المورد اللي المردود راجع له. */
   const [supplierFilter, setSupplierFilter] = useState<number | null>(null);
-  /** المخزن اللي البضاعة بتخرج منه — مفيش فاتورة تقول منين، فالمستند بيتسأل. */
   const [warehouseId, setWarehouseId] = useState<number | null>(null);
-  /** الأصناف المستنية المخزن — نفس بوباب البيع والشرا والمرتجع. السؤال هنا «البضاعة
-   *  خارجة من أنهي مخزن»، والسطر اللي نزل من غير مخزن بيبقى بضاعة خارجة من مكان محدش
-   *  قاله. وبيتجمّعوا في طابور عشان اختيار كذا صنف مرة واحدة مايضيّعش غير الأخير. */
-  /**
-   * السطر اللي المؤشر رايح لخانة كميته.
-   *
-   * الشاشة دي كانت الوحيدة اللي مالهاش الحركة دي خالص: تختار صنف، والمؤشر يفضل مكانه،
-   * فالإيد بتروح للماوس عشان تدوس على خانة الكمية — في كل سطر. باقي شاشات المستندات
-   * بتحط المؤشر في الكمية على طول.
-   */
   const [focusLineKey, setFocusLineKey] = useState<string | null>(null);
   const [pendingItems, setPendingItems] = useState<number[]>([]);
   const [pendingWarehouse, setPendingWarehouse] = useState<number | null>(null);
-  /** الكميات اللي اتكتبت في الشباك للأصناف اللي مستنية سؤال المخزن. */
   const pendingQtys = useRef<Record<number, number>>({});
   const [warehouses, setWarehouses] = useState<any[]>([]);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [activeCategory, setActiveCategory] = useState<string | null>(null);
 
-  /** سطور المردود — أصناف بكمياتها وأسعارها، زي سطور الفاتورة. */
   interface ReturnLineDraft {
     key: string;
     item_id: number;
     quantity: number | null;
     unit_price: number;
-    // نفس ما على سطر الفاتورة.
-    /** الخصم المتغيّر — بتاع المستند ده. */
     discount_pct: number | null;
-    /** والثابت — الاتفاق الدايم. الاتنين بيتحسبوا ورا بعض وقت الإرسال، زي البيع والشرا. */
     fixed_discount_pct: number | null;
     unit: string | null;
     warehouse_id: number | null;
@@ -174,7 +123,6 @@ export default function PurchaseReturns({ embedded }: { embedded?: { onExit: () 
   const [purchaseId, setPurchaseId] = useState<number | undefined>();
   const [viewOnly, setViewOnly] = useState(false);
   const [detail, setDetail] = useState<any>(null);
-  // المردود اللي مفتوح للعرض
   const [viewing, setViewing] = useState<any>(null);
   const [loadPeriodOpen, setLoadPeriodOpen] = useState(false);
   const [viewLoading, setViewLoading] = useState(false);
@@ -199,30 +147,24 @@ export default function PurchaseReturns({ embedded }: { embedded?: { onExit: () 
 
   useEffect(() => { load(); }, []);
 
-  // مردود أو فاتورة شراء اتعملت من مكان تاني ⇒ القايمتين بس يتجابوا بهدوء. الأصناف
-  // والمخازن مش بتتلمس: دي قوايم الفورم، وتغييرها تحت فورم مفتوح مالوش لازمة.
   useLiveRefresh(['purchases'], () => {
     Promise.all([api.get('/api/v1/purchases/returns'), api.get('/api/v1/purchases')])
       .then(([r, p]) => { setRows(r.data || []); setPurchases(p.data || []); })
       .catch(() => {});
   });
 
-  // اتنقل فوق `useDocRoute`: الخُطّاف بيقرا `editingId` عشان يعرف إيه المفتوح.
   const [editingId, setEditingId] = useState<number | null>(null);
 
-  // المردود المفتوح جزء من العنوان، فالـ«رجوع» بيقفله ويرجّع للكشف — الشرح في `useDocRoute`.
   const { markOpen, markClosed, opening: docOpening } = useDocRoute<ReturnRow>({
     rows,
     openId: editingId,
     open: (row, mode) => { if (mode === 'edit') editPosted(row); else openReturn(row); },
     close: () => closeDoc(),
     loading,
-    // `openReturn` بيجيب المستند بالرقم بنفسه، فالصف المبدئي كفاية.
     fetchOne: async (id) => ({ id } as ReturnRow),
     enabled: !embedded,
   });
 
-  /** المسودّة — نفس قاعدة طلب البيع. الشرح في `useDraft`. */
   const draftPayload = useMemo(() => ({
     supplier_id: supplierFilter,
     return_date: returnDate ? dayjs(returnDate).format('YYYY-MM-DD') : null,
@@ -250,7 +192,6 @@ export default function PurchaseReturns({ embedded }: { embedded?: { onExit: () 
     },
   });
 
-  /** بيفتح مسودّة في الشاشة — نفس حالة الشاشة اللي اتحفظت. */
   const resumeDraft = (d: any) => {
     const x = d.payload || {};
     adoptDraft(d.id);
@@ -269,7 +210,6 @@ export default function PurchaseReturns({ embedded }: { embedded?: { onExit: () 
     setVariableDiscount(Number(x.variableDiscount) || 0);
   };
 
-  /** الرجوع للكشف — مكان واحد بدل تلات نسخ متفرّقة في الأزرار. */
   const closeDoc = () => {
     setCreating(false);
     setEditingId(null);
@@ -334,7 +274,6 @@ export default function PurchaseReturns({ embedded }: { embedded?: { onExit: () 
     setPurchaseId(undefined); setDetail(null); setQty({});
     setReturnDate(dayjs()); setNotes(''); setCreating(false); setNewStep('party');
     setEditingId(null); setSupplierFilter(null); setViewing(null); setViewOnly(false);
-    // «جديد» مش خروج — الشغل بقى شغل الشاشة دي، فمايرجعش للأصل.
     markClosed({ stay: true });
     setReturnLines([]); setWarehouseId(null);
     setExternalNumber(''); setStatements(['', '', '']);
@@ -387,12 +326,6 @@ export default function PurchaseReturns({ embedded }: { embedded?: { onExit: () 
         key: 'undo',
         label: 'تراجع',
         icon: <UndoOutlined />,
-        // «تراجع» بيرجّع المستند، مش بيقفل الحقول وبس.
-        //
-        // كان بيعمل `setViewOnly(true)` على طول: الحقول تتقفل واللي اتكتب ومااتحفظش يفضل
-        // ظاهر — مقفول ومقروء، يعني بنفس شكل المحفوظ بالظبط. فاللي غيّر كمية من ١٠ لـ٣
-        // وضغط تراجع بيفضل قدامه ٣ وإجمالي مالوش وجود، ومافيش حاجة على الشاشة بتقول إن ده
-        // مش اللي في القاعدة. إعادة تحميل المستند هي الحاجة الوحيدة اللي بترجّع الأرقام.
         onClick: () => {
           if (!viewOnly && editingId) {
             openReturn({ id: editingId } as ReturnRow);
@@ -505,14 +438,11 @@ export default function PurchaseReturns({ embedded }: { embedded?: { onExit: () 
         key: 'reload',
         label: 'تحميل',
         icon: <ReloadOutlined />,
-        // بيفتح أحدث مردود في الفترة على طول، و«السابق»/«التالى» بيمشوا جوّاها —
-        // الشرح في `components/LoadPeriodModal`.
         onClick: () => setLoadPeriodOpen(true),
       },
     ];
   };
 
-  /** وحدات الأصناف — نفس المحرك اللي في الفاتورة. */
   const [unitsCache, setUnitsCache] = useState<Record<number, any[]>>({});
   const unitsRequestedRef = useRef<Set<number>>(new Set());
   const fetchUnits = async (itemId: number) => {
@@ -524,57 +454,27 @@ export default function PurchaseReturns({ embedded }: { embedded?: { onExit: () 
         name: u.name, factor: parseFloat(u.factor), is_base: u.is_base })) }));
     } catch {
       unitsRequestedRef.current.delete(itemId);
-      /* الوحدات مش معروفة — الخيار الأساسي لوحده كفاية */
     }
   };
-  // المردود المتفتح من جديد بيتملي من غير ما يعدّي على الإضافة، فوحداته ماكانتش بتتجاب —
-  // وتغيير الوحدة كان بيحوّل السعر بمعامل ١.
   useEffect(() => {
     returnLines.forEach((l) => { if (l.item_id) fetchUnits(l.item_id); });
   }, [returnLines]); // eslint-disable-line react-hooks/exhaustive-deps
-  /** فيها **دايماً** خيار الوحدة الأساسية — من غيره antd بتعرض المفتاح الداخلي للمستخدم. */
   const unitOptions = (itemId: number | null) => unitSelectOptions(unitsCache[itemId || 0]);
 
-  /**
-   * صافي السطر — نفس ترتيب الفاتورة: خصم السطر بينزل على سطره، والسطور بتتجمع، وخصم
-   * المستند بينزل على المجموع مرة واحدة.
-   */
   const lineNet = (l: ReturnLineDraft) =>
     applyPct(Number(l.quantity || 0) * (l.unit_price || 0),
              l.fixed_discount_pct, l.discount_pct);
   const grossTotal = returnLines.reduce((n, l) => n + lineNet(l), 0);
 
-  /** قيمة المردود — من السطور اللي اتكتبت، مش من فاتورة. */
-  /**
-   * رصيد كل صنف في المخزن المختار — عشان الكمية تتحرس قبل ما السيرفر يرفضها.
-   *
-   * المردود المستقل مالوش فاتورة تقول «اتشرى كام»، فالحد الوحيد هو اللي موجود فعلاً. السيرفر
-   * بيرفض الزيادة برضه، بس الرفض هناك بييجي بعد ما الواحد كتب المستند كله — والحارس هنا
-   * بيقولها عند الخانة.
-   */
   const [onHand, setOnHand] = useState<Record<number, number>>({});
   const [availability, setAvailability] = useState<Record<number, Record<number, number>>>({});
 
-  /**
-   * رصيد المخزن المختار — بيتجاب من جديد كل ما الشباك يتفتح.
-   *
-   * كان فيه حارس `if (availability[wh]) return;` بيمنع الجلب لو المخزن اتقرا قبل كده.
-   * والنتيجة إن الأرقام بتتجمّد أول مرة وتفضل كده طول الجلسة: تكتب فاتورة تطلّع خمسة،
-   * تفتح الشباك تاني، يقولك الرقم القديم — والشباك ده اتعمل عشان يقول المتاح دلوقتي.
-   *
-   * والنداء بيتعمل لما الشباك يتفتح بس (الـ`useEffect` معلّق على `pickerOpen`)، فمرة
-   * لكل فتحة مش مع كل حرف بيتكتب.
-   */
   const loadWarehouseStock = async (wh: number) => {
     if (!wh) return;
     try {
       const res = await api.get('/api/v1/stock/by-location', {
         params: {
           location_kind: 'warehouse', location_id: wh, only_available: false,
-          // المردود المفتوح للتعديل مابيتحاسبش على نفسه: بضاعته طلعت من المخزن يوم ما
-          // اترحّل، فالرصيد من غير الاستثناء ده **بعده** — والحارس بيقيس الكميات
-          // المكتوبة عليه، يعني بيعامل اللي رجع للمورد على إنه كمية تانية لازم تتوفر.
-          // اللي ردّ آخر خمسة مايقدرش يفتح مردوده يصلّح سعر فيه.
           ...(editingId ? { exclude_doc_type: 'purchase_return', exclude_doc_id: editingId } : {}),
         },
       });
@@ -589,8 +489,6 @@ export default function PurchaseReturns({ embedded }: { embedded?: { onExit: () 
     if (wh) await loadWarehouseStock(wh);
   };
 
-  // و`editingId` في العدّة كمان: فتح مردود للتعديل مابيغيّرش المخزن (هو نفسه مخزن
-  // المردود)، فمن غيرها الرصيد بيفضل اللي اتجاب قبل الفتح — يعني من غير الاستثناء.
   useEffect(() => {
     if (warehouseId) {
       loadWarehouseStock(warehouseId);
@@ -600,28 +498,18 @@ export default function PurchaseReturns({ embedded }: { embedded?: { onExit: () 
   const { options: categoryOptions } = useLookup('item_category');
   const categoryLabels = labelMap(categoryOptions);
 
-  /** فئات الأصناف اللي البوباب بيجمّع بيها — من اللي في القايمة فعلاً. */
   const itemCategories = useMemo(() => {
     const set = new Set<string>();
     items.forEach((i: any) => { if (i.category) set.add(i.category); });
     return [...set].sort((a, b) => a.localeCompare(b, 'ar'));
   }, [items]);
 
-  // **من غير تجميع بالفئة** (طلب العميل ٢٠٢٦-١٠-٠٥): الأصناف تحت بعض بترتيب إدخالها في
-  // عرض المستند. الفئات لسه في شباك اختيار الصنف — الاختيار بالفئة، والعرض مش متقسّم.
   const linesByCategory = useMemo(
     () => (returnLines.length ? [{ category: null as string | null, items: returnLines as ReturnLineDraft[] }] : []),
     [returnLines]);
 
-  /**
-   * إضافة صنف للمردود — الصنف اللي موجود بتزيد كميته بدل ما يتكرّر سطر.
-   *
-   * كل التحديث من `prev`: اللي بيختار عشر أصناف مرة واحدة بيعمل عشر إضافات ورا بعض، ولو
-   * واحدة قرت نسخة قديمة من السطور بتكتب فوق اللي قبلها.
-   */
   const addReturnLine = async (itemId: number, qty: number | null = null): Promise<PickResult> => {
     if (!itemId) return null;
-    // مافيش مخزن للمردود لسه؟ نسأل مرة واحدة قبل ما السطر ينزل.
     if (warehouseId === null) {
       if (qty) pendingQtys.current[itemId] = qty;
       setPendingItems((prev) => (prev.includes(itemId) ? prev : [...prev, itemId]));
@@ -631,10 +519,6 @@ export default function PurchaseReturns({ embedded }: { embedded?: { onExit: () 
     return addReturnLineWith(itemId, warehouseId, qty);
   };
 
-  /**
-   * كمية جاية من الشباك — نفس حارس الخانة لما تسيبها (`guardQuantity` على رصيد المخزن):
-   * أكتر من المتاح بتترفض بتحذير وترجع للي كانت.
-   */
   const pickedQty = (itemId: number, wh: number, q: number, previous: number | null) =>
     guardQuantity({
       value: q,
@@ -643,17 +527,8 @@ export default function PurchaseReturns({ embedded }: { embedded?: { onExit: () 
     }, previous);
 
   useQtyFocus(focusLineKey, setFocusLineKey, pickerOpen, returnLines);
-  /** Enter بينقل للسطر اللي بعده، وآخر سطر بيفتح شباك الأصناف. */
   const advance = advanceFrom(returnLines, setFocusLineKey, () => setPickerOpen(true));
 
-  /**
-   * نفس الإضافة بمخزن **صريح** — `setWarehouseId` مابيغيّرش القيمة في نفس اللفّة.
-   *
-   * السعر والخصم بيتملّوا من السيرفر: **آخر سعر شراء** للصنف، ولو عمره ما اتشرى فسعره
-   * الحالي. `purchase_price` اللي على الكتالوج هو سعر إرشادي بيتكتب مرة وبيقدم؛ آخر سعر
-   * شراء هو اللي البضاعة دي دخلت بيه فعلاً، وهو الرقم اللي بيخلّي المخزون والحساب يقفلوا
-   * على نفس المبلغ لما ترجع.
-   */
   const addReturnLineWith = async (
     itemId: number, wh: number, qty: number | null = null,
   ): Promise<PickResult> => {
@@ -664,10 +539,9 @@ export default function PurchaseReturns({ embedded }: { embedded?: { onExit: () 
       const r = await api.get(`/api/v1/items/${itemId}/return-price`);
       if (Number(r.data?.unit_price) > 0) price = Number(r.data.unit_price);
       if (Number(r.data?.discount_pct) > 0) disc = Number(r.data.discount_pct);
-    } catch { /* الكتالوج بيفضل الاحتياطي */ }
+    } catch {}
     const dup = returnLines.find((l) => l.item_id === itemId);
     if (dup) {
-      // مكرر + كمية من الشباك ⇒ بتتزوّد على السطر الموجود، بنفس الحارس.
       if (qty) {
         const lineWh = dup.warehouse_id ?? wh;
         const total = pickedQty(itemId, lineWh, Number(dup.quantity || 0) + qty, dup.quantity);
@@ -678,8 +552,6 @@ export default function PurchaseReturns({ embedded }: { embedded?: { onExit: () 
       }
       return { dup: itemId };
     }
-    // المفتاح بيتحسب هنا مش جوّه `setState` — عشان التركيز يروح للسطر ده بالظبط.
-    // لو اتحسب جوّه، الكود اللي بره مايعرفوش، والمؤشر بيدوّر على سطر مالوش وجود.
     const key = `${Date.now()}-${itemId}`;
     const quantity = qty ? pickedQty(itemId, wh, qty, null) : null;
     let landed = true;
@@ -700,13 +572,6 @@ export default function PurchaseReturns({ embedded }: { embedded?: { onExit: () 
     return landed && quantity == null ? { needsQty: key } : null;
   };
 
-  /**
-   * أعمدة شبكة السطور كبيانات — عشان تتخفي وتترتّب.
-   *
-   * كانت مكتوبة بالإيد في `<thead>` و`<tbody>` و`<tfoot>`، وصف الإجماليات معلّق على
-   * `colSpan={4}` بتعليق بيحذّر إنه لازم يتغيّر مع أي عمود بيتزوّد قبله. دلوقتي كل عمود
-   * شايل خليته وإجماليه، فالاتنين بيتحركوا معاه.
-   */
   const lineColumns: EntryColumn<ReturnLineDraft>[] = [
     { key: 'idx', title: '#', width: 32, locked: true,
       cellStyle: { color: '#6b6b6b', textAlign: 'center' }, cell: (_l, i) => i + 1 },
@@ -739,7 +604,6 @@ export default function PurchaseReturns({ embedded }: { embedded?: { onExit: () 
           onChange={(v) => setReturnLines((prev) => prev.map((l) => {
             if (l.key !== line.key) return l;
             const unit = v === '__base__' ? null : v;
-            // السعر بيتحوّل مع الوحدة (سعر المتر × طول القطعة = سعر القطعة) — نفس الشرا.
             const units = unitsCache[l.item_id || 0];
             return { ...l, unit, unit_price: convertUnitPrice(l.unit_price || 0,
               factorOf(units, l.unit), factorOf(units, unit)) };
@@ -824,9 +688,7 @@ export default function PurchaseReturns({ embedded }: { embedded?: { onExit: () 
         item_id: l.item_id,
         quantity: String(l.quantity),
         unit_price: String(l.unit_price || 0),
-        // الاتنين ورا بعض — ده اللي بيتحسب بيه.
         discount_pct: combinePct(l.fixed_discount_pct, l.discount_pct) || null,
-        // ...والنصّين، عشان المردود لما يتفتح تاني كل خصم يرجع خانته.
         fixed_discount_pct: l.fixed_discount_pct ?? null,
         variable_discount_pct: l.discount_pct ?? null,
         unit: l.unit,
@@ -835,17 +697,12 @@ export default function PurchaseReturns({ embedded }: { embedded?: { onExit: () 
     if (!lines.length) { message.warning('اكتب الكمية المرتجعة على صنف واحد على الأقل'); return; }
     setSaving(true);
     try {
-      // التعديل بيروح للمردود نفسه بنفس رقمه. كان بيتعكس الأول ويتكتب مردود جديد، فتصليح
-      // كمية كان بيسيب وراه قيد مضاد في كشف المورد ورقم سند جديد على ورق قديم.
       const body = {
         supplier_id: supplierFilter,
         location: { location_kind: 'warehouse', location_id: warehouseId },
         lines,
         return_date: returnDate.format('YYYY-MM-DD'),
         notes: notes || null,
-        // نفس حقول مستند الفاتورة.
-        // الافتراضي بتاع السيرفر — نفس فاتورة الشرا. الخانة اتشالت من الترويسة، ومحدش
-        // كان بيغيّرها في المية مرة اللي بتتكتب في اليوم.
         expense_account_id: null,
         variable_discount_pct: variableDiscount || 0,
         external_document_number: externalNumber || null,
@@ -856,7 +713,6 @@ export default function PurchaseReturns({ embedded }: { embedded?: { onExit: () 
       if (editingId !== null) await api.put(`/api/v1/purchases/returns/${editingId}`, body);
       else await api.post('/api/v1/purchases/returns', body);
       message.success(editingId !== null ? 'تم حفظ المردود' : 'تم تسجيل مردود الشراء');
-      // بعد ما السيرفر رد بنجاح وبس — المرفوض بيفضل مسودّة.
       discardDraft();
       setEditingId(null);
       setReturnLines([]);
@@ -867,14 +723,6 @@ export default function PurchaseReturns({ embedded }: { embedded?: { onExit: () 
     } finally { setSaving(false); }
   };
 
-  /**
-   * أعمدة السجل — كل واحد بيتفلتر ويتترتب، زي سجل الشرا بالظبط.
-   *
-   * الفلترة كانت من شريط فوق الجدول: بحث والمورد وبس. «هات المردودات اللي قيمتها فوق الألف»
-   * و«رتّبهم بالأكبر» أسئلة بتتسأل على عمود، مش على المستند كله.
-   *
-   * والترتيب الافتراضي من الأحدث — اللي بيفتح السجل عايز يشوف آخر اللي رجع.
-   */
   const columns = [
     {
       title: 'رقم', dataIndex: 'id', key: 'id', width: 80,
@@ -882,8 +730,6 @@ export default function PurchaseReturns({ embedded }: { embedded?: { onExit: () 
       render: (id: number) => <span style={{ color: '#6b6b6b' }}>{id}</span>,
     },
     {
-      // The day the goods went back, falling back to when the row was typed for returns recorded
-      // before the document had a date of its own. Not silently: those rows say so.
       title: 'التاريخ', dataIndex: 'return_date', key: 'return_date', width: 130,
       ...dateColumn<ReturnRow>((r) => r.return_date || r.created_at),
       defaultSortOrder: 'descend' as const,
@@ -896,7 +742,6 @@ export default function PurchaseReturns({ embedded }: { embedded?: { onExit: () 
     {
       title: 'رقم السند', dataIndex: 'document_number', key: 'document_number', ellipsis: true, width: 140,
       ...textColumn(rows, (r: ReturnRow) => r.document_number),
-      // المسودّة مالهاش رقم — الرقم بيتحجز وقت الترحيل مش قبله.
       render: (d: string, r: any) => (r.__isDraft
         ? <DraftTag onDelete={() => removeDraft(r.__draft.id)} />
         : <Tag color="volcano">{d}</Tag>),
@@ -911,8 +756,6 @@ export default function PurchaseReturns({ embedded }: { embedded?: { onExit: () 
       title: 'الفاتورة رقم', dataIndex: 'purchase_document_number', key: 'purchase_document_number',
       width: 140,
       ...textColumn(rows, (r: ReturnRow) => r.purchase_document_number),
-      // The purchase this came off, opened in the purchases screen — the register exists to answer
-      // «which invoice?», and stopping at the number would leave the trip half made.
       render: (v: string | null, r: ReturnRow) => (
         <DocRef kind="purchase" id={r.purchase_invoice_id} label={v} />
       ),
@@ -940,10 +783,6 @@ export default function PurchaseReturns({ embedded }: { embedded?: { onExit: () 
     {
       title: 'الإجراءات', key: 'actions', width: 140,
       render: (_: any, record: ReturnRow) => ((record as any).__isDraft ? (
-        // **سطر المسودّة مالوش أزرار مستند.** الكشف فيه نوعين سطور، والمسودّة مالهاش
-        // رقم ولا أثر — رقمها في الجدول سالب عشان يفضل فريد وسط أرقام حقيقية. فزرار
-        // الحذف كان بينده السيرفر برقم مش موجود ويرجّع «المستند مش موجود»، وزرار
-        // الطباعة بيجيب ورقة مافيش. الفعل الوحيد اللي ليه معنى هنا: امسح المسودّة.
         <Space size={2} onClick={(e) => e.stopPropagation()}>
           <Tooltip title="مسح المسودّة">
             <Button type="text" danger icon={<DeleteOutlined />}
@@ -999,16 +838,6 @@ export default function PurchaseReturns({ embedded }: { embedded?: { onExit: () 
     },
   ];
 
-  /**
-   * المرتجع بشكل المستند المطبوع — نفس قالب الفاتورة.
-   *
-   * كان مالوش ورقة: اللي عايز يبعت للمورد كشف باللي رجعله كان بيصوّر الشاشة. القالب واحد
-   * للاتنين عشان الورقتين يطلعوا من نفس المطبعة — ترويسة الشركة والتذييل والخطوط مايفرقوش
-   * بين مستند وتاني.
-   *
-   * المرتجع مافيهوش خصم ولا ضرايب، فالإجمالي والصافي واحد. و«نقدي/آجل» أصفار: المرتجع
-   * بيقلّل اللي على الشركة، مش بيتقبض ولا بيتصرف على الورقة دي.
-   */
   const returnDoc = (r: any): InvoiceDoc | null => {
     if (!r) return null;
     return {
@@ -1031,7 +860,6 @@ export default function PurchaseReturns({ embedded }: { embedded?: { onExit: () 
       extraMeta: [
         ['فاتورة الشراء', r.purchase_document_number || '-'],
         ...(r.notes ? ([['ملاحظات', r.notes]] as [string, string][]) : []),
-        // البيان بيتطبع على الورقة زي فاتورة الشرا بالظبط.
         ...statementMeta(r),
       ],
     };
@@ -1051,15 +879,10 @@ export default function PurchaseReturns({ embedded }: { embedded?: { onExit: () 
       notes: (r, v) => (r.notes || '').toLowerCase().includes(String(v).toLowerCase()),
       statement: (r, v) => matchesStatement(r, v),
     },
-    // يوم ما البضاعة رجعت، مش يوم ما الصف اتكتب — مردود أول الشهر اتسجّل آخره كان بيقع برّه
-    // المدى واللي بيدوّر عليه بيفتكره مش موجود.
     dateOf: (r) => r.return_date || r.created_at,
   });
 
-  // اسم آخر مورد اتختار من النافذة. قايمة `suppliers` مبنية من المردودات اللي في الكشف،
-  // فمورد أول مرة يترجّع له كان بيظهر في خانة «المورد» كرقم مش كاسم.
   const [pickedSupplier, setPickedSupplier] = useState<{ value: number; label: string } | null>(null);
-  // تليفون المورد المختار — لخانته في الترويسة (٢٠٢٦-١٠-٠١).
   const [supplierPhone, setSupplierPhone] = useState('');
   useEffect(() => {
     if (!supplierFilter) { setSupplierPhone(''); return; }
@@ -1080,21 +903,12 @@ export default function PurchaseReturns({ embedded }: { embedded?: { onExit: () 
     rows: filter.filtered, rowKey: (r) => r.id, onOpen: openReturn,
   });
 
-  // خانة بحث الكشف — F3 كانت جاية من `ListToolbar`، والخانة بقت في سطر فلاتر `ListPage`.
   const listSearchRef = useRef<any>(null);
   const [showMoreFilters, setShowMoreFilters] = useState(false);
   useScreenShortcuts({ onSearch: () => { listSearchRef.current?.focus?.(); } }, !creating);
 
-  /**
-   * صفحة المستند — واحدة، سواء بتكتب مردود أو بتقرا واحد اتّرحّل.
-   *
-   * It used to be two Modals over the list: one to write a return, another to look at one. Two
-   * shapes for the same paper, so opening yesterday's return landed nowhere near where it was
-   * typed. The list simply steps aside while a document is open.
-   */
   const docOpen = creating;
 
-  /** جيران المردود المفتوح في نفس الكشف اللي «السابق»/«التالى» بيمشوا فيه — لأسهم العدّاد. */
   const neighbourReturn = (step: number) => {
     if (!viewing) return null;
     const at = filter.filtered.findIndex((r) => r.id === viewing.id);
@@ -1104,7 +918,6 @@ export default function PurchaseReturns({ embedded }: { embedded?: { onExit: () 
   const prevReturn = neighbourReturn(-1);
   const nextReturn = neighbourReturn(1);
 
-  // الفلاتر النصية تحت «فلاتر أكثر» — والطيّة بتفتح لوحدها لو فيها قيمة شغّالة.
   const moreActive = ['document_number', 'purchase_document_number', 'notes', 'statement']
     .some((k) => !!filter.values[k]);
   const moreOpen = showMoreFilters || moreActive;
@@ -1125,16 +938,13 @@ export default function PurchaseReturns({ embedded }: { embedded?: { onExit: () 
     </span>
   );
 
-  // جوّه سجل المشتريات: مافيش كشف نرجعله — اتقفل المستند أو اتلغى الباب ⇒ نخرج.
   const onExit = embedded?.onExit;
   useEffect(() => {
     if (onExit && !creating && !newStep) onExit();
   }, [onExit, creating, newStep]);
 
-  // مستند جاي من شاشة تانية ولسه بيفتح ⇒ مكان الكشف فاضي (الشرح في `useDocRoute.opening`).
   if (docOpening) return <DocOpening />;
   return (
-    // المستند المفتوح بياخد خلفية فاتورة البيع الرمادي (`sale-doc`) — والكشف زي ما هو.
     <div className={docOpen ? 'sale-doc' : undefined}>
       {!docOpen && !embedded && (
       <ListPage
@@ -1142,7 +952,6 @@ export default function PurchaseReturns({ embedded }: { embedded?: { onExit: () 
         title="مردودات الشراء" muted="(سجل المردودات للموردين)"
         subtitle="البضاعة الراجعة للموردين — بتقلّل المستحق عليهم بقيمتها"
         actions={(<>
-          {/* الاسم ده بالظبط — «اختصارات الإنشاء» بتدوّر على الزرار بنصّه. */}
           <Button data-shortcut="F2" type="primary" icon={<PlusOutlined />} className="sl-create"
             onClick={openCreate}>
             تسجيل مردود شراء
@@ -1198,7 +1007,6 @@ export default function PurchaseReturns({ embedded }: { embedded?: { onExit: () 
       >
         <Table
           {...kb.tableProps}
-          // المسودّات فوق، وبرّه `filter.filtered` عن قصد: الإجمالي بيتبني منه والمسودّة مش مردود.
           dataSource={[
             ...(drafts || []).map((d: any) => {
               const x = d.payload || {};
@@ -1217,18 +1025,11 @@ export default function PurchaseReturns({ embedded }: { embedded?: { onExit: () 
             ...filter.filtered,
           ]}
           columns={visibleColumns} rowKey="id" loading={loading}
-          // من غير `scroll` أفقي — الشاشة مالهاش يمين وشمال.
-          //
-          // مع `tableLayout: fixed` وكل عمود له عرض، المتصفح بيوزّع الفرق على الأعمدة كلها
-          // بالنسبة: زادت تتفرد شوية، قلّت تتضغط شوية. اللي كان بيكسّر الشكل هو عمود من غير
-          // عرض — الفاضي كله كان بينزل عليه لوحده فيطلع شريط أبيض في نص الجدول.
           className="sl-table" size="small" tableLayout="fixed"
           rowClassName={(r: any) => [
             r.__isDraft ? 'row-draft' : '',
             r.id === highlight ? 'row-arrived' : '', kb.rowClassName(r),
           ].filter(Boolean).join(' ')}
-          // بيتركّب فوق بتاع لوحة المفاتيح مش بيدهسه — `kb.tableProps.onRow` هو اللي
-          // بيفتح المستند بالضغط وبالكيبورد.
           onRow={(r: any) => {
             const base = (kb.tableProps.onRow?.(r) ?? {}) as any;
             if (!r.__isDraft) return base;
@@ -1259,7 +1060,6 @@ export default function PurchaseReturns({ embedded }: { embedded?: { onExit: () 
               </Table.Summary>
             );
           }}
-          // الترقيم شمال، والإجماليات يمين في نفس السطر — زي سجل المبيعات.
           pagination={{
             defaultPageSize: PAGE_SIZE, showSizeChanger: true, pageSizeOptions: PAGE_SIZE_OPTIONS,
             locale: { items_per_page: '' },
@@ -1319,7 +1119,6 @@ export default function PurchaseReturns({ embedded }: { embedded?: { onExit: () 
         }}
         onPickMany={(ids, qtys) => {
           setPickerOpen(false);
-          // واحد ورا التاني — كل إضافة بتستنى سعرها من السيرفر قبل اللي بعدها.
           addPickedSequentially(ids, qtys, addReturnLine, setFocusLineKey);
         }} />
 
@@ -1336,9 +1135,6 @@ export default function PurchaseReturns({ embedded }: { embedded?: { onExit: () 
         }}
         onCancel={() => { setNewStep(null); setPartyPickerOpen(false); }} />
 
-      {/* المكوّن مشترك مع البيع والشرا والمرتجع — الشرح في `components/LoadPeriodModal`.
-          `openNewest` بيفتح أحدث مردود في الفترة من غير كشف، و`onLoaded` بيحط الفترة في
-          كشف الشاشة (والفلاتر بتتصفّر) — فـ«السابق» و«التالى» يمشوا جوّه اللي اتحمّل. */}
       <LoadPeriodModal
         open={loadPeriodOpen} onCancel={() => setLoadPeriodOpen(false)}
         title="تحميل مردودات شراء فترة" endpoint="/api/v1/purchases/returns"
@@ -1354,8 +1150,6 @@ export default function PurchaseReturns({ embedded }: { embedded?: { onExit: () 
 
       {creating && (
       <>
-      {/* **شكل فاتورة البيع الجديد** (تصميم العميل ٢٠٢٦-١٠-٠١): كروت بيضا على خلفية رمادي —
-          الشكل بس اللي اتغيّر: نفس الخانات ونفس الحالة ونفس الأوامر والمفاتيح. */}
       <div className="sale-card sale-head">
         <div className="sale-head-row">
           <Button size="small" icon={<ArrowRightOutlined />}
@@ -1394,7 +1188,6 @@ export default function PurchaseReturns({ embedded }: { embedded?: { onExit: () 
               )}
             />
           </span>
-          {/* الأدوات و«الأعمدة» وخيارات الطباعة في نفس سطر العنوان على الشمال — زي فاتورة البيع. */}
           <div className="sale-toolbar-row">
             <DocumentToolbar actions={returnToolbar()} variant="buttons" />
             <DocumentHistoryButton entityType="purchase_return"
@@ -1407,8 +1200,6 @@ export default function PurchaseReturns({ embedded }: { embedded?: { onExit: () 
       </div>
 
         <Form layout="vertical" size="small" className="doc-form sale-form" requiredMark={false}>
-          {/* الترتيب زي فاتورة البيع (٢٠٢٦-١٠-٠١): رقم المستند ← المورد وتليفونه ← الملاحظات،
-              وتحتهم البيانات. التاريخ مش هنا: هو في سطر العنوان فوق. */}
           <div className="sale-card sale-fields">
           <Row gutter={12}>
             <Col xs={12} md={4}>
@@ -1454,7 +1245,6 @@ export default function PurchaseReturns({ embedded }: { embedded?: { onExit: () 
           </div>
 
           <div className="sale-card sale-lines">
-          {/* شريط الأصناف: عدد البنود يمين، وزرار الإضافة شمال. */}
           <div className="sale-items-bar">
             <div className="sale-items-info">
               <span>
@@ -1505,7 +1295,6 @@ export default function PurchaseReturns({ embedded }: { embedded?: { onExit: () 
                       ))}
                     </React.Fragment>
                   ))}
-                  {/* السطر الزيادة: المخزن الأول وبعدين الصنف (٢٠٢٦-١٠-٠٥). */}
                   <QuickAddRow
                     colSpan={lineGrid.count} disabled={viewOnly} items={items as any}
                     warehouses={warehouses} warehouseId={warehouseId}

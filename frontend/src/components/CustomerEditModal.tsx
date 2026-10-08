@@ -10,15 +10,6 @@ import { TabModal } from './TabModal';
 import { repOptions } from '../utils/reps';
 import { activeOptions } from '../utils/active';
 
-/**
- * ONE edit form for a customer — data, address, phones, responsible rep/territory and price
- * tier — shared by the customers grid and the customer file, so both screens edit the same
- * fields the same way.
- *
- * Rep/territory still go through the reassign endpoint (it preserves the account balance and
- * keeps past movement attributed to the previous rep); everything else is a plain PATCH.
- */
-
 const TIER_LABELS: Record<string, string> = {
   commercial: 'تجاري',
   semi_commercial: 'نصف تجاري',
@@ -53,7 +44,6 @@ const ExtraPhonesList = () => (
 export default function CustomerEditModal({
   customer, customerId, open, onClose, onSaved,
 }: {
-  /** Pass the loaded record when you already have it; otherwise pass just the id. */
   customer?: any;
   customerId?: number | null;
   open: boolean;
@@ -70,7 +60,6 @@ export default function CustomerEditModal({
   const [territories, setTerritories] = useState<any[]>([]);
   const [governorates, setGovernorates] = useState<any[]>([]);
   const { options: typeOptions } = useLookup('customer_type');
-  // الملّاك ليهم شاشتهم — التصنيف ده مايظهرش هنا.
   const editTypeOptions = useMemo(
     () => typeOptions.filter((o) => o.value !== 'owner'),
     [typeOptions],
@@ -93,7 +82,6 @@ export default function CustomerEditModal({
         if (cancelled) return;
         const rec = c.data;
         setRecord(rec);
-        // أبجدي — القوايم بتتعرض بترتيبها قبل ما حد يكتب.
         const byName = (r: any) => r.full_name || r.username || r.name;
         setReps(sortByName(users.data.filter((u: any) => u.role === 'sales_rep'), byName));
         setTerritories(sortByName(terr.data || [], byName));

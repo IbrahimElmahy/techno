@@ -1,13 +1,3 @@
-"""Cash vouchers — 018-finance-vouchers (سندات القبض والصرف وتوريد المندوب).
-
-Closes the money cycle the system was missing: a credit invoice created a receivable that
-could never be settled except through a raw journal entry. Each voucher posts exactly one
-balanced ledger entry and is reversible once, like every other document here.
-
-    receipt      سند قبض        debit cash location  / credit customer receivable
-    payment      سند صرف        debit supplier payable / credit cash location
-    rep_handover توريد مندوب    debit treasury        / credit the rep's custody
-"""
 from __future__ import annotations
 
 import enum
@@ -21,12 +11,11 @@ from src.core.money import MONEY
 
 
 class VoucherKind(str, enum.Enum):
-    receipt = "receipt"              # تحصيل من عميل
-    payment = "payment"              # دفع لمورد
-    rep_handover = "rep_handover"    # توريد المندوب لخزينة الشركة
-    expense = "expense"              # سند مصروف (إيجار، مرتبات، بنزين…)
-    cash_transfer = "cash_transfer"  # تحويل بين الخزائن
-    # «الجاري» في a5 (٢٠٢٦-١٠-٠٦): سحب الشريك من الخزنة (مدين جاريه) وإيداعه/مردوده (دائن).
+    receipt = "receipt"
+    payment = "payment"
+    rep_handover = "rep_handover"
+    expense = "expense"
+    cash_transfer = "cash_transfer"
     partner_withdraw = "partner_withdraw"
     partner_deposit = "partner_deposit"
 
@@ -34,72 +23,42 @@ class VoucherKind(str, enum.Enum):
 class Voucher(Base):
     __tablename__ = "voucher"
 
-    # (037) الفرع اللي المستند ده بتاعه — عزل بيانات الفروع.
-    #
-    # بيتاخد من مخزن السطر لو المستند بيحرّك بضاعة، وإلا من فرع اللي كتبه. NULL = مستند
-    # اتكتب قبل العزل، وبيتشاف من كل الفروع لحد ما يتعبّى.
     branch_id: Mapped[int | None] = mapped_column(ForeignKey("branch.id"), nullable=True,
                                                   index=True)
 
     id: Mapped[int] = mapped_column(BigIntPK, primary_key=True, autoincrement=True)
-    # مركز التكلفة — «السند ده بتاع أنهي نشاط». اختياري زي كل مكان تاني، وبيتكتب على
-    # سطور القيد كلها عشان كشف الحساب يعرض عمود متسق. أهم حالة هي سند المصروف: من
-    # غيره المصروف بينزل في «غير موزّع» وتقرير أرباح المراكز بيبقى فاضي من المصروفات.
     cost_center_id: Mapped[int | None] = mapped_column(
         ForeignKey("cost_center.id"), nullable=True, index=True
     )
     document_number: Mapped[str] = mapped_column(String(24), unique=True, nullable=False)
-    # (033) رقم الجهاز — نفس فكرة الفاتورة بالظبط: المندوب بيحصّل وهو من غير شبكة، ولو
-    # الاتصال قطع بعد ما السند اتكتب وقبل ما الرد يوصل، إعادة الرفع كانت هتقيّد التحصيل
-    # مرتين وتنقص مديونية العميل بالضعف. الرقم بيتولد على الجهاز مرة، والـUNIQUE بيمنع التاني.
     client_uuid: Mapped[str | None] = mapped_column(String(64), nullable=True, unique=True,
                                                     index=True)
     kind: Mapped[VoucherKind] = mapped_column(
         Enum(VoucherKind, native_enum=False, length=16), nullable=False, index=True
     )
     amount: Mapped[object] = mapped_column(MONEY, nullable=False)
-    # The party this voucher settles with — exactly one is set per kind.
     customer_id: Mapped[int | None] = mapped_column(ForeignKey("customer.id"), nullable=True,
                                                     index=True)
-    # (031) أنهي مديونية السند ده بيسدّدها — «أبيض» / «بولي» / فاضية = على الإجمالي (اتوزّع
-    # بالنسبة على كل خط). Stored so a statement can say what the collection was for.
     family: Mapped[str | None] = mapped_column(String(40), nullable=True)
     supplier_id: Mapped[int | None] = mapped_column(ForeignKey("supplier.id"), nullable=True,
                                                     index=True)
     rep_user_id: Mapped[int | None] = mapped_column(ForeignKey("user.id"), nullable=True,
                                                     index=True)
-    # Both sides of the posting, snapshotted for the voucher list/report. For an expense the
-    # party side is the expense account; for a transfer it is the destination treasury.
     cash_account_id: Mapped[int] = mapped_column(ForeignKey("account.id"), nullable=False)
     party_account_id: Mapped[int] = mapped_column(ForeignKey("account.id"), nullable=False)
-    # Which named safe the cash moved through (019); NULL for legacy rows / rep custody.
     treasury_id: Mapped[int | None] = mapped_column(ForeignKey("treasury.id"), nullable=True,
                                                     index=True)
     to_treasury_id: Mapped[int | None] = mapped_column(ForeignKey("treasury.id"),
                                                        nullable=True)
 
     voucher_date: Mapped[date] = mapped_column(Date, nullable=False)
-    payment_method: Mapped[str | None] = mapped_column(String(32), nullable=True)  # نقدي/آجل...
-    reference: Mapped[str | None] = mapped_column(String(80), nullable=True)  # رقم الإيصال/الشيك
+    payment_method: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    reference: Mapped[str | None] = mapped_column(String(80), nullable=True)
     description: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    # البيان — نفس خانة الفاتورة، وبخانة واحدة بس على السندات.
-    #
-    # `description` بيروح لسطور القيد وبيتقرا في كشف الحساب، فهو وصف الحركة المحاسبية.
-    # البيان ده بتاع الورقة اللي العميل بيمضي عليها: «دفعة أولى عن أمر التوريد ١٢٠٣».
-    # اتخلطوا قبل كده فالموظف كان بيكتب كلام الورقة في `description` وييجي في كشف
-    # الحساب مكان وصف الحركة.
-    # **رقم الورقة اللي في إيده** — بيتحفظ **جنب** رقمنا، مش بداله.
-    #
-    # المستند عندنا رقمه بيتولّد بالتسلسل (`TRF-000050`)، والورقة اللي بيمضي عليها أمين
-    # المخزن عليها رقم تاني من دفتره. واللي بيدوّر بعد شهر بيدوّر برقم الورقة اللي في
-    # إيده — ومن غير الخانة دي مافيش طريق من الورقة للشاشة غير التاريخ والاسم.
-    #
-    # موجودة على الفواتير الأربعة من (030)؛ التحويل والأذون والسندات كانوا ناقصينها.
     external_document_number: Mapped[str | None] = mapped_column(
         String(40), nullable=True, index=True)
     statement1: Mapped[str | None] = mapped_column(String(200), nullable=True)
 
-    # Nullable so the voucher row can exist before its entry (Postgres enforces FKs immediately).
     ledger_entry_id: Mapped[int | None] = mapped_column(ForeignKey("ledger_entry.id"),
                                                         nullable=True)
     reverses_id: Mapped[int | None] = mapped_column(

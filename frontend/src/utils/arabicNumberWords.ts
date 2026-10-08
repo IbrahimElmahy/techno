@@ -1,10 +1,3 @@
-/**
- * Money amount → Arabic words («فقط ألف ومائتان وخمسون جنيهًا وخمسون قرشًا لا غير»).
- *
- * Vouchers in Egypt are written out in words next to the figure — it is what makes a receipt
- * hard to alter after signing, so it belongs on every printed سند.
- */
-
 const ONES = ['', 'واحد', 'اثنان', 'ثلاثة', 'أربعة', 'خمسة', 'ستة', 'سبعة', 'ثمانية', 'تسعة',
   'عشرة', 'أحد عشر', 'اثنا عشر', 'ثلاثة عشر', 'أربعة عشر', 'خمسة عشر', 'ستة عشر',
   'سبعة عشر', 'ثمانية عشر', 'تسعة عشر'];
@@ -12,7 +5,6 @@ const TENS = ['', '', 'عشرون', 'ثلاثون', 'أربعون', 'خمسون'
 const HUNDREDS = ['', 'مائة', 'مائتان', 'ثلاثمائة', 'أربعمائة', 'خمسمائة', 'ستمائة',
   'سبعمائة', 'ثمانمائة', 'تسعمائة'];
 
-/** Scale names in the (singular, dual, plural) forms Arabic needs. */
 const SCALES: [string, string, string][] = [
   ['', '', ''],
   ['ألف', 'ألفان', 'آلاف'],
@@ -45,7 +37,6 @@ function scaled(count: number, level: number): string {
   return `${under1000(count)} ${one}`;
 }
 
-/** Whole number → Arabic words. */
 export function integerToArabicWords(value: number): string {
   let n = Math.floor(Math.abs(value));
   if (n === 0) return 'صفر';
@@ -61,10 +52,7 @@ export function integerToArabicWords(value: number): string {
   return parts.join(' و');
 }
 
-/** Money amount → the full «فقط … لا غير» sentence used on vouchers. */
 export function amountToArabicWords(amount: number | string, currency = 'جنيه مصري'): string {
-  // The uninflected «جنيه مصري / قرش» is what Egyptian cheques and vouchers use; chasing full
-  // tamyeez agreement would read wrong more often than it reads right.
   const value = Number(amount || 0);
   const pounds = Math.floor(Math.abs(value));
   const piastres = Math.round((Math.abs(value) - pounds) * 100);

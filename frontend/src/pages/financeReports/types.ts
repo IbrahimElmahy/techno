@@ -1,6 +1,3 @@
-/**
- * أنواع التقارير المالية المشتركة + تنسيق المبلغ.
- */
 export interface ReportLine {
   account_id: number;
   code: string | null;
@@ -14,7 +11,6 @@ export interface IncomeStatement {
   total_income: string;
   total_expenses: string;
   net_profit: string;
-  // الخيارات المشتركة — بتيجي مع التقرير نفسه عشان اللي بيقراه يعرف اتبنى إزاي.
   posted_only?: boolean;
   comparison_label?: string | null;
   comparison?: IncomeStatement | null;

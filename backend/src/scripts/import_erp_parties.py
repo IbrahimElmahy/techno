@@ -1,34 +1,3 @@
-"""يستورد أطراف نظام ما بعد البيع القديم (قاعدة `erp`): سباكين وملّاك وتجار.
-
-    python -m src.scripts.import_erp_parties --dir C:/pgtmp/erp --branch العلياء
-    python -m src.scripts.import_erp_parties --dir C:/pgtmp/erp --branch العلياء --yes
-
-بيتعاد تشغيله بأمان: المطابقة بالكود، والموجود بيتحدّث والناقص بيتعمل.
-
----------------------------------------------------------------------------
-أربع قرارات:
-
-* **التصنيف بيتقرا من الداتا مش من جدول.** `CustomerCategoryId` و`CustomerGroupID` و
-  `CustomerTypeId` كلهم صفر على الـ٩٤٥٦ صف. اللي بيفرّق فعلاً حاجتين: البادئة «فنى» على
-  الاسم، ووجود الكود في جدول الموزعين/التجار. الباقي مالك — وده اللي بيتطابق مع إن ٧٩٥٦
-  من الـ٩٤٥٦ عليهم معاينة، والمعاينة بتحصل في بيت المالك.
-
-* **`wh_Customers` مش عملاء بس.** فيه ١٦٤٥ سباك و١١٥ تاجر مسجّلين جواه كمان — نفس الناس
-  اللي في `wh_Plumbers` و`wh_Distributors`، متسجّلين مرة تانية عشان النظام كان محتاجهم
-  «عميل» عشان يعمل عليهم حركة. فالمطابقة بالاسم بتمنع تكرارهم عندنا.
-
-* **الفرع العلياء.** ٣٤٩ من عملاء العلياء أسماؤهم في النظام ده مقابل ٩ من أكتوبر،
-  والمناطق كلها البحيرة والغربية والمنوفية. الفرع بيتحدد من `--branch` برضه — الرقم ده
-  دليل مش قاعدة.
-
-* **مندوب خدمة العملاء غير مندوب المبيعات.** `SalesRepId` هنا مندوب الخدمة — اللي بيعاين
-  عند العميل وبياخد منه الكوبونات. مندوب المبيعات جاي من a5 وبيفضل مكانه. لو الاتنين
-  اتحطوا في خانة واحدة، تقرير المناديب بيجمّع ناس على شغل مش بتاعهم.
-
-* **الكود بيتحفظ عشان المعاينات تلاقي ناسها.** المعاينة بتشاور على `CustomerID` و
-  `PlumberID` بأرقام النظام القديم، فالكود عندنا بيبقى `ERP-C-{id}` و`ERP-P-{id}` —
-  ومن غير كده الخطوة الجاية مالهاش طريق ترجع بيه.
-"""
 from __future__ import annotations
 
 import os
@@ -46,19 +15,16 @@ from src.models.role import Role, RoleName
 from src.models.user import User
 from src.scripts.import_a5 import JUNK, _clean, _read
 
-# «فنى فلان» — البادئة اللي نظامهم بيعلّم بيها الفني.
 TECH = re.compile(r"^\s*(فنى|فني|السباك|سباك)\b")
 
 PLUMBER, OWNER, TRADER = "plumber", "owner", "trader"
 
-# كود من a5 — الرقم اللي جوّاه هو `Cust_id` عندهم، وهو الهوية اللي مابتتغيّرش.
 A5_CODE = re.compile(r"^(AL-)?A5[A-Z]*-?\d+$")
 
 
 def _is_a5(code: str | None) -> bool:
     return bool(code and A5_CODE.match(code))
 
-# نوع الصف في الملف المصدَّر → بادئة الكود عندنا.
 CODE_PREFIX = {"PLUMBER": "ERP-P", "CUSTOMER": "ERP-C",
                "DIST": "ERP-D", "MERCHANT": "ERP-M"}
 
@@ -95,7 +61,6 @@ def run(folder: str, *, execute: bool, branch_name: str = "") -> None:
                         ("DIST", "موزعين"), ("MERCHANT", "تجار"), ("REP", "مناديب")):
         print(f"   {label:<10}{len(by_kind.get(kind, [])):>7}")
 
-    # كل صف هيتحوّل لإيه. السباك من جدوله سباك، والعميل بيتصنّف.
     plan: list[tuple[list[str], str]] = []
     for r in by_kind.get("PLUMBER", []):
         plan.append((r, PLUMBER))
@@ -137,10 +102,6 @@ def run(folder: str, *, execute: bool, branch_name: str = "") -> None:
         if terr is None:
             raise SystemExit("الفرع مالوش منطقة واحدة على الأقل.")
 
-        # ---------- مناديب الخدمة ----------
-        #
-        # الـ16 مندوب بتوع نظام ما بعد البيع. من غيرهم كل معاينة وكل عميل بيقعد على
-        # مندوب واحد افتراضي، وتقرير «زيارات المناديب» بيرجّع صف واحد فيه الـ10922.
         service_reps: dict[str, User] = {}
         by_full = {(u.full_name or "").strip(): u for u in db.scalars(select(User)).all()
                    if (u.full_name or "").strip()}
@@ -171,8 +132,6 @@ def run(folder: str, *, execute: bool, branch_name: str = "") -> None:
 
         existing = db.scalars(select(Customer)).all()
         by_code = {c.code: c for c in existing if c.code}
-        # المطابقة بالاسم جوّه الفرع: نفس الشخص متسجّل في النظامين، وتكراره عندنا معناه
-        # رصيدين لواحد. الاسم متطبّع عشان «عبد» و«عبدالـ» ما يبقوش اتنين.
         by_name = {_norm(c.name): c for c in existing if c.branch_id == branch.id}
 
         for row, kind in plan:
@@ -200,22 +159,11 @@ def run(folder: str, *, execute: bool, branch_name: str = "") -> None:
                 made[f"جديد: {kind}"] += 1
                 continue
 
-            # موجود — بنكمّل الناقص وبنصحّح التصنيف، ومابنمسحش حاجة مكتوبة.
             made[f"موجود: {kind}"] += 1
             if not target.phone and phone:
                 target.phone = phone
             if not target.address and address:
                 target.address = address
-            # التصنيف بيتحدّث بس لو الموجود «تاجر» (الافتراضي بتاع نقل a5) والجديد أدق.
-            #
-            # ⚠️ **إلا لو الكارت كوده كود a5.** الشرط ده كان بيدهس تصنيف كروت a5:
-            # صف مالك في ERP اسمه بيطابق تاجر عند a5 كان بيحوّل كارت التاجر لـ«مالك»،
-            # وبعدين `split_owners --purge` بيمسح كل مالك مالوش أثر مالي — وكتير من
-            # تجار a5 مالهمش فواتير. النتيجة اتقاست: **٤٩٩ كارت من ١٬٣٠٦ في العلياء
-            # اتعملوا واتمسحوا**، و١٣ نجوا في جدول `owner` وهُمّ لسه شايلين `AL-A5-…`.
-            #
-            # a5 هو مصدر الحقيقة للتصنيف. مطابقة اسم في نظام تاني مش سبب كافي إننا
-            # نغيّر كلامه.
             if _is_a5(target.code) and kind != TRADER:
                 skipped.append(
                     f"{target.code} «{target.name}»: كارت a5 — التصنيف مابيتغيّرش لـ{kind}")

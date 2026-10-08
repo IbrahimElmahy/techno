@@ -1,34 +1,3 @@
-"""تركيبات الإنتاج (الوصفات) من a5 — `Nsb_entag` و`Nsb_EntagDt`.
-
-    python -m src.scripts.import_a5_boms --dir /opt/techno/a5factory --branch السادات --prefix FC-
-    python -m src.scripts.import_a5_boms --dir ... --branch ... --prefix ... --yes
-
-بيتعاد تشغيله بأمان: المنتج اللي له وصفة فعّالة عندنا بيتخطى.
-
----------------------------------------------------------------------------
-**دي للشغل الجاي مش للأرصدة.** الأرصدة ظبطت من `import_a5_manufacturing` اللي بيعيد
-تشغيل الحركة الفعلية. الوصفة بتقول «المنتج ده بيتعمل من إيه» — يعني اللي بيعمل أمر
-تصنيع جديد يلاقي الخامات جاهزة بدل ما يكتبها بإيده كل مرة.
-
-تلات قرارات:
-
-* **الكمية = `Nsb_units + Nsb_Single ÷ units`.** a5 بيمسك الكمية على جزئين: وحدات
-  كاملة وأجزاء، و`units` هو المقام (١٠٠٠ جرام في الكيلو). سطر «٧٢ من ١٠٠٠ كجم» معناه
-  ٠٫٠٧٢ كجم — واللي يقرا `Nsb_units` وحده بيلاقي صفر ويفتكر السطر فاضي. و٩٤٪ من
-  السطور شكلها كده.
-
-* **السطور بتتكتب مباشرةً، مش عن طريق `create_bom`.** التحقق بيطلب إن كل مكوّن
-  `raw_material` وكل ناتج `product`؛ ونقل a5 عمل **كل** الأصناف `product` لأن a5
-  مافيهوش التفرقة دي أصلاً. النداء على `create_bom` كان هيرفض الـ٤١٠ وصفة كلهم.
-  والحل التاني — إننا نقلب المكوّنات لـ`raw_material` — أسوأ: «تشغيل كوع ٢٥» بيتنتج
-  وبيتستهلك، فتسميته خامة بتمنع إنتاجه. فالوصفة بتتكتب زي ما هي، والتفرقة تتعمل
-  بعدين لما يتقرر مين خامة ومين منتج فعلاً.
-
-* **تكاليف a5 بتتنقل كموارد.** `Agor` أجور و`Khrba` كهربا و`Meah` مياه و`Wkod` وقود —
-  أربعتهم أرقام على رأس الوصفة. بتتكتب `BomResource` من نوع `labor` للأجور
-  و`overhead` للباقي، بكمية ١ وسعر = المبلغ. الصفر مابيتكتبش: مورد بصفر بيزوّد سطر
-  في الشاشة مابيقولش حاجة.
-"""
 from __future__ import annotations
 
 import argparse
@@ -45,12 +14,9 @@ from src.models.bom import Bom, BomComponent, BomResource, ResourceKind
 from src.models.catalog import Item
 from src.scripts.import_a5 import _clean, _money, _read
 
-#: أعمدة `a5_bom.tsv` — رأس الوصفة
 (B_JID, B_ITEM, B_CODE, B_NAME, B_OUT, B_AGOR, B_KHRBA, B_MEAH, B_WKOD, B_WK) = range(10)
-#: أعمدة `a5_bomline.tsv` — سطر خامة
 (L_ITEM, L_PNAME, L_RAWID, L_RAWNAME, L_RAWCODE, L_UNITS, L_SINGLE, L_DIV, L_UNITN) = range(9)
 
-#: تكاليف a5 → نوع المورد عندنا واسمه العربي.
 COSTS = ((B_AGOR, ResourceKind.labor, "أجور"),
          (B_KHRBA, ResourceKind.overhead, "كهرباء"),
          (B_MEAH, ResourceKind.overhead, "مياه"),
@@ -58,7 +24,6 @@ COSTS = ((B_AGOR, ResourceKind.labor, "أجور"),
 
 
 def _qty_of(r: list[str]) -> Decimal:
-    """كمية الخامة لكل وحدة ناتج: الوحدات الكاملة + الأجزاء على المقام."""
     whole = _money(r[L_UNITS])
     part = _money(r[L_SINGLE])
     div = _money(r[L_DIV]) or Decimal(1)
@@ -92,7 +57,6 @@ def run(folder: str, *, execute: bool, prefix: str) -> None:
         a5map = A5ItemMap(db, prefix, [])
 
         def find(code: str, name: str) -> Item | None:
-            # جدول ربط a5 الأول — بعد التوحيد الكود والاسم عندنا مابقوش زي a5.
             return (a5map.linked(code, name)
                     or by_code.get(f"{prefix}{_clean(code)}") or by_name.get(_clean(name)))
 
@@ -119,12 +83,11 @@ def run(folder: str, *, execute: bool, prefix: str) -> None:
             for r in rows:
                 qty = _qty_of(r)
                 if qty <= 0:
-                    continue          # مكوّن مكتوب وكميته صفر — بيتساب
+                    continue
                 raw = find(r[L_RAWCODE], r[L_RAWNAME])
                 if raw is None:
                     skipped.append(f"خامة مش موجودة: «{_clean(r[L_RAWNAME])}»")
                     continue
-                # a5 بيكرّر نفس الخامة في وصفة واحدة؛ عندنا سطر واحد بالمجموع.
                 comps[raw.id] = comps.get(raw.id, Decimal(0)) + qty
             if not comps:
                 skipped.append(f"وصفة كل خاماتها بصفر: «{_clean(h[B_NAME])}»")
@@ -166,7 +129,7 @@ def run(folder: str, *, execute: bool, prefix: str) -> None:
 def main() -> None:
     ap = argparse.ArgumentParser(description="استيراد وصفات الإنتاج من a5")
     ap.add_argument("--dir", required=True)
-    ap.add_argument("--branch", default="")      # مقبول للاتساق، الوصفة مالهاش فرع
+    ap.add_argument("--branch", default="")
     ap.add_argument("--prefix", default="")
     ap.add_argument("--yes", action="store_true")
     a = ap.parse_args()

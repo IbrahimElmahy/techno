@@ -1,4 +1,3 @@
-"""Coupons router (T030/T034): list, redeem (mode dispatch), reverse. FR-011–014."""
 from __future__ import annotations
 
 from decimal import Decimal
@@ -66,7 +65,6 @@ def list_coupons(
         stmt = stmt.where(Coupon.customer_id == customer_id)
     if status_filter is not None:
         stmt = stmt.where(Coupon.status == status_filter)
-    # الأحدث فوق (طلب العميل ٢٠٢٦-١٠-٠١).
     return [_c_out(c) for c in db.scalars(stmt.order_by(Coupon.created_at.desc(), Coupon.id.desc())).all()]
 
 
@@ -87,7 +85,7 @@ def redeem(
         elif body.mode == RedemptionMode.gift_money_off:
             red = coupon_service.redeem_gift_money_off(
                 db, coupon=coupon, sales_invoice_id=body.sales_invoice_id, actor_user_id=current.id)
-        else:  # gift_product
+        else:
             if body.item_id is None or body.location_kind is None or body.location_id is None or body.quantity is None:
                 raise CouponError("كوبون الهدية محتاج الصنف والمكان والكمية.")
             red = coupon_service.redeem_gift_product(

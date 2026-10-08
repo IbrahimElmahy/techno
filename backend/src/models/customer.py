@@ -1,9 +1,3 @@
-"""Customer & CustomerAccount models (T045–T046).
-
-FR-018/018a/019/020/020a/021/023. Stable system-generated `code` identity; phone captured
-but not unique. Owned by exactly one rep + one territory at a time (reassignable). No loyalty
-column/table — loyalty is owned by the After-Sales spec (FR-022, constitution v1.1.2).
-"""
 from __future__ import annotations
 
 import enum
@@ -18,9 +12,6 @@ from src.models.catalog import PriceTier
 
 
 class CustomerType(str, enum.Enum):
-    """Default customer types. The column is a free string (013) so admins can add their own
-    types from Settings; these are only the seeded defaults. No business logic branches on it."""
-
     trader = "trader"
     plumber = "plumber"
     owner = "owner"
@@ -34,100 +25,38 @@ class Customer(Base):
     id: Mapped[int] = mapped_column(BigIntPK, primary_key=True, autoincrement=True)
     code: Mapped[str] = mapped_column(String(24), unique=True, nullable=False, index=True)
     name: Mapped[str] = mapped_column(String(160), nullable=False)
-    # Free string (was Enum) — admin-configurable via lookups; not tied to any logic.
     customer_type: Mapped[str] = mapped_column(String(32), nullable=False)
-    phone: Mapped[str | None] = mapped_column(String(32), nullable=True)  # not unique (FR-018a)
-    # (v4) detailed address: governorate + markaz/district + free text. Extra phone numbers live in
-    # `contact_phone` (owner_type='customer'). `territory_id` stays the rep's sales territory.
+    phone: Mapped[str | None] = mapped_column(String(32), nullable=True)
     governorate_id: Mapped[int | None] = mapped_column(ForeignKey("governorate.id"), nullable=True)
     markaz: Mapped[str | None] = mapped_column(String(120), nullable=True)
     address: Mapped[str | None] = mapped_column(String(240), nullable=True)
-    # الموظف اللي الكارت ده بتاعه — لما يكون الطرف موظف عندنا بيشتري لنفسه.
-    #
-    # a5 مافيهوش تمييز خالص: الموظف اللي بيشتري بياخد كارت عميل عادي، فمشترياته بتعدّي
-    # في تقارير التجار والعمولات على إنها بيع لتاجر. ١٩ اسم عندنا في الجدولين، ١٧ منهم
-    # عليهم فواتير فعلاً — فمش غلطة نقل، دي حالة شغل حقيقية النظام القديم مابيشوفهاش.
-    #
-    # **ربط مش تسمية.** التصنيف نص بيتعدّل من الشاشة وممكن يضيع؛ المفتاح ده بيقول
-    # الكارت ده بتاع مين بالظبط، فالرصيد اللي عليه ينفع يتقاصّ من مرتبه، والتقرير ينفع
-    # يستثني مشتريات الموظفين من مبيعات التجار من غير ما يعتمد على كلمة مكتوبة.
     employee_id: Mapped[int | None] = mapped_column(
         ForeignKey("employee.id"), nullable=True)
-    # مندوب البيع — **بيفضل فاضي للسباك والمالك عن قصد**.
-    #
-    # إحنا بنبيع للتجار. السباك والمالك بياخدوا خدمة عملاء وخلاص، فمندوب البيع على
-    # كارتهم معلومة مخترعة مش ناقصة. ولما نقل ما بعد البيع حطّ الـ٢٬١٨١ كارت الجديد
-    # كلهم على مندوب واحد (`import_erp_parties` كان بيكتب مندوب افتراضي ثابت)، دفتر
-    # «مندوب السياره ( ب )» طلع ٢٬٥٧٩ عميل وa5 بيقول ٤٩٥ — والفرق كله ناس هو عمره ما
-    # باع لهم. فاضي بيقول الحقيقة، والصفر بيتحسب في تقرير المناديب.
-    #
-    # قراءات المندوب كلها `rep_id == <رقم>`، والفاضي مابيطابقش — فالسباك مابيظهرش في
-    # قايمة أي مندوب من غير أي تغيير تاني.
     rep_id: Mapped[int | None] = mapped_column(ForeignKey("user.id"), nullable=True)
     territory_id: Mapped[int] = mapped_column(ForeignKey("territory.id"), nullable=False)
-    # Default sale price tier (007); NULL resolves to the consumer tier.
     default_price_tier: Mapped[PriceTier | None] = mapped_column(Enum(PriceTier), nullable=True)
-    # ---- card fields read off their العملاء form (031) ----
-    # The branch the customer belongs to. Nullable: it is the first column on their list, but an
-    # existing customer recorded before the field existed is not invalid for lacking one.
-    # مندوب خدمة العملاء — غير مندوب المبيعات.
-    #
-    # الاتنين بيزوروا نفس العميل ومش نفس الراجل: واحد بيبيع له، والتاني بيعاين عنده
-    # وبياخد منه الكوبونات. النظام القديم كان بيمسك الاتنين في قاعدتين مختلفتين، فلما
-    # اتجمّعوا في كارت واحد كان لازم يبقى فيه خانتين — وإلا واحد منهم بيدهس التاني وكل
-    # تقرير مناديب بيبقى بيجمّع ناس على شغل مش بتاعهم.
     service_rep_id: Mapped[int | None] = mapped_column(ForeignKey("user.id"), nullable=True)
-    # **نفس الطرف عندنا في الموردين كمان.**
-    #
-    # الراجل اللي بنشتري منه وبنبيع له مش طرفين. عند a5 هو كارت واحد في `Mourd`،
-    # وفاتورة البيع له بتتكتب بـ`Cust_id = 0` — اسمه على الورقة والقيد على حسابه هو.
-    # عندنا الفاتورة **لازم** يكون ليها عميل، فالنقل اخترع كارت عميل بكود `A5X` لكل
-    # واحد فيهم: عشر كروت في فرع المصنع، لواحد هو أصلاً في كشف الموردين.
-    #
-    # والنتيجة إن «هو عليه كام؟» ليها إجابتين مالهمش طريق يتجمعوا: مديونيته على كارت
-    # والدين اللي لينا عليه على كارت تاني، والاتنين عمرهم ما بيتقاصّوا.
-    #
-    # الرابط ده بيقول إنهم واحد. **مافيش كارت بيتمسح**: الفواتير متعلّقة بكارت العميل
-    # ومسحه بيضيّعها، والمشتريات على كارت المورد. اللي بيتغيّر إن الشاشة بقت تعرف
-    # وتوصّل، والتقارير بطّلت تعدّه اتنين.
     supplier_id: Mapped[int | None] = mapped_column(ForeignKey("supplier.id"), nullable=True)
     branch_id: Mapped[int | None] = mapped_column(ForeignKey("branch.id"), nullable=True)
     email: Mapped[str | None] = mapped_column(String(160), nullable=True)
     tax_number: Mapped[str | None] = mapped_column(String(40), nullable=True)
     commercial_register: Mapped[str | None] = mapped_column(String(40), nullable=True)
-    # A standing allowance and VAT rate for this customer. NULL is not 0: NULL means "nothing
-    # agreed, use whatever the line/item says", while 0 means "agreed, and it is zero" — and a
-    # customer who negotiated 0% is a different fact from one nobody has negotiated with.
     discount_pct: Mapped[object | None] = mapped_column(PCT, nullable=True)
     vat_pct: Mapped[object | None] = mapped_column(PCT, nullable=True)
-    # (031) المخزن اللي مرتجعات العميل ده بترجع فيه.
-    #
-    # Learned, not configured: the first return written for him remembers the store it went into,
-    # and every later one opens on it. A customer's goods come back to the same place — the branch
-    # that serves him — and making somebody pick it every time is asking a question whose answer
-    # has not changed since the last return.
-    #
-    # NULL means «he has never had one», which is a different thing from «he has no preference».
     default_return_warehouse_id: Mapped[int | None] = mapped_column(
         ForeignKey("warehouse.id"), nullable=True)
-    # نقدي — a walk-in who pays on the spot rather than running an account.
     is_cash: Mapped[bool] = mapped_column(default=False, nullable=False)
     active: Mapped[bool] = mapped_column(default=True, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime, server_default=func.now(), nullable=False
     )
 
-    # The customer's ORIGINAL, family-less account. Deliberately scoped to `family IS NULL` rather
-    # than «whichever row comes first»: every existing caller means «this customer's account», and
-    # once a customer holds two, an unscoped `uselist=False` would answer with an arbitrary one of
-    # them — silently, and differently between runs.
     account: Mapped[CustomerAccount] = relationship(
         back_populates="customer", uselist=False,
         primaryjoin="and_(Customer.id == CustomerAccount.customer_id, "
                     "CustomerAccount.family.is_(None))",
         viewonly=True,
     )
-    # Every account this customer holds, family ones included. New code asks for this.
     accounts: Mapped[list[CustomerAccount]] = relationship(
         back_populates="customer",
         primaryjoin="Customer.id == CustomerAccount.customer_id",
@@ -136,28 +65,8 @@ class Customer(Base):
 
 
 class CustomerAccount(Base):
-    """Receivables / ذمم. Balance is derived from the linked ledger account (FR-021/026).
-
-    (031) A customer may hold MORE THAN ONE of these — one per product family.
-
-    The client sells two lines, «أبيض» and «بولي», at different commissions, and their old system
-    modelled that by opening the same person twice: «محمد عامر» and «تكنو محمد عامر». Two customers
-    for one man means his address is entered twice, his phone is entered twice, and «هو مديون
-    بكام؟» has two answers and no way to add them up.
-
-    So the person is ONE customer and the split moves down here, where it belongs: a receivable
-    account per family, each with its own commission, and the customer's balance is their sum.
-
-    `family` is NULL on an account that predates the split, and NULL is a real value here — it
-    means «this customer's one account», which is what every customer had until now. That is what
-    keeps `primary_account()` and every existing query answering exactly as before.
-    """
-
     __tablename__ = "customer_account"
     __table_args__ = (
-        # One account per family per customer. Replaces the old UNIQUE on `customer_id` alone —
-        # that constraint WAS the reason the client had to open a second customer to get a second
-        # account. NULL is not compared by UNIQUE in SQL, so legacy rows are unaffected.
         UniqueConstraint("customer_id", "family", name="uq_customer_account_family"),
     )
 
@@ -166,13 +75,7 @@ class CustomerAccount(Base):
         ForeignKey("customer.id"), nullable=False, index=True
     )
     account_id: Mapped[int] = mapped_column(ForeignKey("account.id"), nullable=False)
-    # Which product line this account is for — a value from the `customer_account_family` lookup,
-    # NOT an enum: the client may open a third line, and that should be an admin adding a row
-    # rather than a migration.
     family: Mapped[str | None] = mapped_column(String(40), nullable=True)
-    # (031) The commission earned on this family. Nullable and left empty on purpose: NULL is
-    # «no rate agreed for this line» and 0 is «agreed, and it is nothing» — the same distinction
-    # the customer's discount makes, and for the same reason.
     commission_pct: Mapped[object | None] = mapped_column(PCT, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime, server_default=func.now(), nullable=False
@@ -186,49 +89,17 @@ class CustomerAccount(Base):
     account: Mapped[object] = relationship("Account")
 
 
-# علامة الكارت المدموج: `«فلان» (مدموج في #123)`.
-#
-# a5 بيدّي التاجر الواحد كارتين لأن نظامهم بيدّي حساب ذمم واحد بس — «فلان» للأبيض
-# و«تكنو فلان» للبولي. عندنا بيتلمّوا في كارت واحد بحسابين، والصف التاني بيتقفل
-# بالعلامة دي بدل ما يتمسح: المستندات بتسمّي الصف، والحذف بيحوّلها لرقم محدش يحلّه.
-#
-# محطوطة هنا عشان اللي بيكتبها (`customer_merge_service`) واللي بيستبعدها من
-# الكشوف (`customer_profile_service`) مايبقاش عندهم نسختين من نفس النص.
 MERGED_MARK = "(مدموج في #"
 
 
 class CustomerExternalRef(Base):
-    """هوية العميل في نظام قديم — صف لكل مفتاح، مش عمود على الكارت.
-
-    التجار عندهم رقمين في نظام ما بعد البيع، مش رقم واحد: `wh_Merchants.ID` اللي
-    المعاينة بتشاور بيه (١٠٬٨١٤ زيارة)، و`wh_Distributors.ID` اللي الكوبون بيشاور بيه
-    (١٩٬٧٢٣ ورقة). ونطاق الرقمين متداخل — ٧٤ رقم موجود في الجدولين لناس مختلفة — فاللي
-    بيفصلهم هو البادئة في `ref`، مش قيمة الرقم.
-
-    **وليه جدول مش عمود على `customer`:** الجسر اللي المكتب عمله بيدهم كتير-لواحد. ٤٤٧
-    كارت تاجر في النظام القديم بيقعوا على ٤٣٤ كارت عندنا — اتناشر كارت بيلمّوا كارتين
-    أو تلاتة (زي «عبده السنوسى» و«عبده السنوسى 2»، ورقم كل واحد فيهم شايل مستندات:
-    ١٩١ كوبون على الأول وواحد على التاني). عمود واحد على الكارت بيشيل مفتاح واحد، وسبعة
-    من الاتناشر دول عليهم مستندات على أكتر من رقم — يعني ١١ و٧٩ و١١٣ مستند كانوا هيقعوا
-    برّه الكارت بتاعهم في صمت. الصف بيتكرر، والعمود لأ.
-
-    `ref` فريد: الرقم القديم بتاع طرف واحد. لو صفّان طلبوه، ده يا تكرار في المصدر يا
-    غلطة في الجسر — والاتنين محتاجين قرار من المكتب مش تخمين من سكربت.
-    """
-
     __tablename__ = "customer_external_ref"
 
     id: Mapped[int] = mapped_column(BigIntPK, primary_key=True, autoincrement=True)
-    # النظام اللي الرقم ده جاي منه. نص مش enum: النظام القديم التاني (a5) ممكن يحتاج
-    # نفس الجدول بكرة، وإضافة نظام مايستاهلش migration.
     system: Mapped[str] = mapped_column(String(16), nullable=False, default="erp")
-    # المفتاح كامل بالبادئة: «ERP-M-1001536» تاجر، «ERP-D-10096» موزع. البادئة جزء من
-    # القيمة عشان الرقم العاري مايتلخبطش بين الجدولين.
     ref: Mapped[str] = mapped_column(String(60), unique=True, nullable=False, index=True)
     customer_id: Mapped[int] = mapped_column(
         ForeignKey("customer.id"), nullable=False, index=True)
-    # ملاحظة للمكتب: الاسم اللي كان على الكارت القديم وقت الربط. الاسم عندنا بيتعدّل من
-    # الشاشة، وده بيفضل قايل الربط ده اتعمل على مين.
     source_name: Mapped[str | None] = mapped_column(String(160), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime, server_default=func.now(), nullable=False

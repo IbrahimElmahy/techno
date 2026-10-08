@@ -6,7 +6,6 @@ export interface LookupOption {
   label: string;
 }
 
-// Hardcoded fallbacks so dropdowns keep working even if the lookups API is unavailable.
 const FALLBACKS: Record<string, LookupOption[]> = {
   item_kind: [
     { value: 'raw_material', label: 'مادة خام' },
@@ -33,10 +32,6 @@ const FALLBACKS: Record<string, LookupOption[]> = {
   ],
 };
 
-/**
- * Fetch a configurable dropdown's active options from the settings/lookups API.
- * Falls back to a hardcoded default set on error so forms never break.
- */
 export function useLookup(category: string): { options: LookupOption[]; loading: boolean } {
   const [options, setOptions] = useState<LookupOption[]>(FALLBACKS[category] || []);
   const [loading, setLoading] = useState(false);
@@ -52,7 +47,6 @@ export function useLookup(category: string): { options: LookupOption[]; loading:
         if (opts.length) setOptions(opts);
       })
       .catch(() => {
-        /* keep fallback */
       })
       .finally(() => !cancelled && setLoading(false));
     return () => {
@@ -63,7 +57,6 @@ export function useLookup(category: string): { options: LookupOption[]; loading:
   return { options, loading };
 }
 
-/** Build a value→label map from options (for rendering stored codes as Arabic labels). */
 export function labelMap(options: LookupOption[]): Record<string, string> {
   return options.reduce((m, o) => ({ ...m, [o.value]: o.label }), {} as Record<string, string>);
 }

@@ -13,17 +13,6 @@ import '../models/models.dart';
 import '../theme.dart';
 import '../utils/pdf_share.dart';
 
-/// طباعة الفاتورة من الموبايل — ورقة للعميل، أو PDF يتبعت واتساب.
-///
-/// المندوب بيسيب ورقة عند العميل. من غير الشاشة دي كان بيكتبها بإيده، أو العميل بيستنى
-/// لحد ما المكتب يطبعها ويبعتها — والفاتورة اللي بتوصل بعد أسبوع مش إيصال، دي تذكير.
-///
-/// **الورقة بتتبني من اللي على الجهاز، مش من السيرفر.** يعني بتشتغل والفاتورة لسه في
-/// الطابور. ولو اترفعت، رقم المستند الحقيقي بيتكتب عليها؛ ولو لسه، بتقول «مسودّة — لسه
-/// ما اترفعتش» بدل ما تدّعي رقم مالوش وجود.
-///
-/// والخط: `printing` بيرسم PDF بخطوطه هو، واللي فيها مافيهاش عربي — فالحروف بتطلع مربعات.
-/// عشان كده الخط بيتحمّل من ملفات التطبيق نفسه (نفس Cairo اللي الشاشة بتستعمله).
 class InvoicePrintScreen extends StatefulWidget {
   final Map<String, Object?> invoice;
 
@@ -39,7 +28,6 @@ class _InvoicePrintScreenState extends State<InvoicePrintScreen> {
   String? _phone;
   bool _loading = true;
 
-  /// رقم فاتورة البيع اللي البونص عليها — `null` للبيع العادي أو لو مش معروف.
   String? _bonusFor;
 
   @override
@@ -51,9 +39,6 @@ class _InvoicePrintScreenState extends State<InvoicePrintScreen> {
   Future<void> _load() async {
     final lines = await LocalDb.instance.saleInvoiceLines(widget.invoice['local_id'] as int);
     final rep = await LocalDb.instance.getKv('username') ?? '';
-    // تليفون العميل — الفاتورة المحفوظة شايلة اسمه ورقمه بس، والتليفون في كارته.
-    // الورقة اللي بتروح واتساب من غير تليفون بتخلّي اللي بيراجع يقلّب على العميل
-    // بالاسم، والأسماء بتتكرر.
     String? phone;
     final cid = widget.invoice['customer_id'] as int?;
     if (cid != null) {
@@ -62,9 +47,6 @@ class _InvoicePrintScreenState extends State<InvoicePrintScreen> {
         if (c.id == cid) { phone = c.phone; break; }
       }
     }
-    // **رقم الفاتورة اللي البونص عليها بيتقري دلوقتي، مش ساعة الحفظ.** لو كانت لسه في
-    // الطابور ساعة ما البونص اتكتب، ماكانش ليها رقم؛ اترفعت قبله فرقمها بقى على صفها.
-    // والرقم اللي السيرفر ردّ بيه مع البونص احتياطي لو صفها مش على الجهاز ده.
     String? bonusFor;
     if ((widget.invoice['is_bonus'] as int? ?? 0) == 1) {
       final uuid = widget.invoice['bonus_for_client_uuid'] as String?;
@@ -90,14 +72,8 @@ class _InvoicePrintScreenState extends State<InvoicePrintScreen> {
     final inv = widget.invoice;
     final synced = (inv['synced'] as int?) == 1;
     final title = synced ? (inv['document_number'] as String? ?? 'طلب بيع') : 'طلب بيع';
-    // اسم الملف = «العميل - النوع - التاريخ» (طلب العميل ٢٠٢٦-١٠-٠٣ و٢٠٢٦-١٠-٠٦) — مش
-    // رقم المستند. العميل بيستلم كذا ورقة في نفس الشات، واسم العميل لوحده بيطلع نفس الاسم
-    // لكل الورق؛ النوع (أبيض/بولي) والتاريخ هما اللي بيفرّقوا الورقة عن اللي قبلها من
-    // غير ما يفتحها. فاتورة من غير نوع → «العميل - التاريخ». الحروف اللي مابتنفعش في اسم
-    // ملف بتتشال. العنوان فوق بيفضل رقم المستند.
     final customer = safeFileName('${inv['customer_name'] ?? ''}');
     final family = safeFileName('${inv['family'] ?? ''}');
-    // التاريخ YYYY-MM-DD بس — لو جه من السيرفر بوقت (`…T…`) الوقت بيتشال.
     final date = safeFileName('${inv['invoice_date'] ?? ''}'.split('T').first);
     final fileTitle = [
       customer.isNotEmpty ? customer : title,
@@ -113,9 +89,6 @@ class _InvoicePrintScreenState extends State<InvoicePrintScreen> {
               canChangeOrientation: false,
               canChangePageFormat: false,
               canDebug: false,
-              // أيقونات الشريط الافتراضية اتشالت — الطباعة والإرسال بقوا زرارين
-              // بأسمائهم تحت. أيقونة من غير اسم بتتلمس بالتجربة، وده مش وقتها:
-              // المندوب واقف والعميل مستني الورقة.
               useActions: false,
               pdfFileName: '$fileTitle.pdf',
             ),
@@ -127,15 +100,6 @@ class _InvoicePrintScreenState extends State<InvoicePrintScreen> {
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    // **الورقة مابتخرجش قبل ما الفاتورة توصل النظام.**
-                    //
-                    // الورقة المطبوعة من مسودّة بتدّعي فاتورة مالهاش وجود عند المكتب:
-                    // العميل بيمسك ورق، والفاتورة لسه ممكن تتعدّل أو السيرفر يرفضها —
-                    // والورقة اللي في إيده ساعتها بتقول حاجة تانية خالص.
-                    //
-                    // والزرار **بيتقفل ومعاه السبب**، مش بيختفي: اللي مش لاقي «طباعة»
-                    // بيفتكر البرنامج بايظ، واللي شايفها مقفولة وجنبها السطر ده بيعرف
-                    // يعمل إيه — والحل دوسة واحدة في الشاشة الرئيسية.
                     if (!synced)
                       Container(
                         width: double.infinity,
@@ -193,11 +157,6 @@ class _InvoicePrintScreenState extends State<InvoicePrintScreen> {
     );
   }
 
-  /// «إرسال» — الـPDF على شات العميل في واتساب على طول (طلب العميل ٢٠٢٦-١٠-٠٣).
-  ///
-  /// شاشة المشاركة كانت بتفتح قايمة واتساب كلها والمندوب بيدوّر على العميل بالاسم —
-  /// والأسماء بتتكرر، فالورقة ممكن تروح لحد غلط. الرقم اللي على كارت العميل بيحسم.
-  /// الإرسال نفسه والرجوع للمشاركة في `sendPdfToWhatsApp`.
   Future<void> _send(String fileTitle) async {
     final inv = widget.invoice;
     final bytes = await _buildPdf(PdfPageFormat.a4);
@@ -221,10 +180,6 @@ class _InvoicePrintScreenState extends State<InvoicePrintScreen> {
     final synced = (inv['synced'] as int?) == 1;
     final doc = pw.Document();
 
-    // الخط العربي من ملفات التطبيق. لو مش موجود لأي سبب، بنكمّل بخط `printing` الافتراضي
-    // بدل ما الطباعة تقع — ورقة بحروف وحشة أحسن من مفيش ورقة خالص.
-    // ملف واحد (`Cairo.ttf`) هو اللي في التطبيق، فهو الأساسي والتقيل مع بعض: التقيل
-    // بيتعمل بالسُمك اللي في نفس الملف. والاحتياطي بيحمّل من الشبكة لو الملف ضاع لأي سبب.
     pw.Font arabic;
     try {
       arabic = pw.Font.ttf(await rootBundle.load('assets/fonts/Cairo.ttf'));
@@ -232,58 +187,25 @@ class _InvoicePrintScreenState extends State<InvoicePrintScreen> {
       arabic = await PdfGoogleFonts.cairoRegular();
     }
 
-    // **الورقة دي بتطلع من غير شعار ولا اسم شركة — بقرار.**
-    //
-    // كانت بتحمل اللوجو وتكتب «تكنو ثيرم» لو الملف ضاع، عشان اللي بيمسكها يعرف بتاعت
-    // مين. بس دي مش فاتورة: الفاتورة الرسمية بتطلع من المكتب بعد الترحيل. وورقة عليها
-    // شعار الشركة واسمها بتقرا كفاتورة مهما كان المكتوب عليها، واللي بيستلمها مش
-    // هيفرّق — فالهوية بتتشال من الأصل. اللون بيفضل، فهو بيميّز الورقة من غير ما
-    // يدّعي إنها مستند رسمي.
-    //
-    // نفس القرار على النظام: `InvoiceDocument` بيخفي الترويسة والذيل لما النوع بيع.
-
     final theme = pw.ThemeData.withFont(base: arabic, bold: arabic);
     final total = (inv['total'] as num?)?.toDouble() ?? 0;
     final cash = (inv['cash_amount'] as num?)?.toDouble() ?? 0;
     final credit = (inv['credit_amount'] as num?)?.toDouble() ?? 0;
-    // حساب العميل قبل الطلب ده. `null` = مستند اتكتب قبل ما العمود ده يوجد —
-    // الورقة ساعتها بتقول اللي كانت بتقوله زي ما هي، مش بتخترع صفر.
     final prev = (inv['prev_balance'] as num?)?.toDouble();
-    // رصيد كل خط قبل الطلب — «أبيض» و«بولى». اتخزّن مع الطلب ساعة الحفظ، فالورقة
-    // اللي بتتطبع تاني بعد شهر بتقول نفس اللي قالته أول مرة.
-    //
-    // فاضي = عميل حسابه مش مقسوم على خطوط، والورقة بتقول «الحساب السابق» سطر واحد
-    // زي ما كانت. سطرين بأصفار على عميل مالوش غير حساب واحد بيسألوا سؤال مالوش لازمة.
     final prevByFamily = _familyBalances(inv['prev_balances'] as String?);
     final family = inv['family'] as String?;
-    // فاتورة بونص — بضاعة هدية على فاتورة بيع. قيمتها صفر، والورقة بتقول قيمتها بسعر
-    // البيع بدل الحساب.
     final isBonus = (inv['is_bonus'] as int? ?? 0) == 1;
     final bonusValue = _lines.fold<double>(0, (t, l) => t + l.gross);
-    // الكوبونات المصروفة مع الفاتورة. من غيرها الفاتورة اللي كوبونات بس بتطلع ورقة
-    // فاضية بإجمالي صفر — والعميل ماخد دفتر في إيده والورقة مش قايلة حاجة عنه.
     final coupons = _coupons(inv['coupons'] as String?);
     final now = DateTime.now().toIso8601String();
     final printedAt = '${now.substring(0, 10)} ${now.substring(11, 16)}';
 
-    // **`MultiPage` مش `Page` — الورقة بتتقسّم لما تكبر.**
-    //
-    // `pw.Page` صفحة واحدة مابتتقسّمش: اللي مايخشّش فيها **بيتقصّ ويروح**. فالفاتورة
-    // اللي فيها عشرين صنف كانت بتطلع PDF ناقص — والمندوب والعميل الاتنين بيبصوا على
-    // ورقة مقطوعة ومحدش فيهم يعرف إن فيه سطور مش موجودة، لأن مافيش حاجة بتقول.
-    //
-    // `MultiPage` بتكمّل على صفحة تانية، وجدول الأصناف بيتقسّم بينهم لوحده. ومن الصفحة
-    // التانية بتطلع ترويسة خفيفة بالاسم والرقم عشان اللي ماسك الورقة يعرف بتاعت مين.
     doc.addPage(
       pw.MultiPage(
         pageFormat: format,
         theme: theme,
         textDirection: pw.TextDirection.rtl,
-        // هامش أصغر — نفس اللي اتعمل في طباعة النظام: الأبيض ده كان بياكل سطور.
         margin: const pw.EdgeInsets.all(14),
-        // **ترويسة خفيفة من الصفحة التانية وطايلع.** الورقة اللي بتتفصل عن أختها
-        // بتبقى ورق سادة فيه أرقام: مين العميل وأنهي فاتورة؟ الترويسة الكاملة بلونها
-        // مالهاش لزوم تتكرر — الرقم والاسم كفاية عشان الورقة تعرّف نفسها.
         header: (ctx) => ctx.pageNumber == 1
             ? pw.SizedBox()
             : pw.Container(
@@ -305,7 +227,6 @@ class _InvoicePrintScreenState extends State<InvoicePrintScreen> {
                   ],
                 ),
               ),
-        // رقم الصفحة — من غيره اللي بياخد ورقة مالوش أي طريق يعرف إن وراها كمان.
         footer: (ctx) => pw.Container(
           alignment: pw.Alignment.center,
           margin: const pw.EdgeInsets.only(top: 6),
@@ -313,8 +234,6 @@ class _InvoicePrintScreenState extends State<InvoicePrintScreen> {
               style: const pw.TextStyle(fontSize: 9, color: PdfColors.grey600)),
         ),
         build: (ctx) => [
-            // ترويسة بلون النظام — الورقة اللي بتوصل واتساب لازم تتعرف من أول نظرة
-            // إنها بتاعت مين، مش سطر أسود على أبيض زي أي إيصال.
             pw.Container(
               padding: const pw.EdgeInsets.symmetric(horizontal: 12, vertical: 6),
               decoration: pw.BoxDecoration(
@@ -330,29 +249,11 @@ class _InvoicePrintScreenState extends State<InvoicePrintScreen> {
                     crossAxisAlignment: pw.CrossAxisAlignment.start,
                     children: [
                       pw.Text(
-                          // **«طلب بيع» مش «فاتورة بيع».**
-                          //
-                          // الورقة دي بتتكتب في الشارع وبتتطبع من تليفون المندوب.
-                          // كلمة «فاتورة» عليها بتخلّيها تقرا كمستند ضريبي، وهي
-                          // مش كده: الفاتورة الرسمية بتطلع من المكتب بعد ما المستند
-                          // يترحّل. الورقة اللي في إيد العميل بتقول اتفقنا على إيه،
-                          // مش بتقوم مقام ورق قانوني.
-                          //
-                          // والورقة اللي مالهاش أصناف بتقول إنها كوبونات — كلمة
-                          // «بيع» عليها بتخلي اللي بيمسكها يدوّر على بضاعة مافيش.
-                          // **ونوع الطلب في العنوان** — «طلب بيع — أبيض»، زي طباعة
-                          // النظام: أول حاجة العين بتقراها في الورقة.
-                          //
-                          // **والبونص بيقول إنه بونص** — «فاتورة بونص — أبيض»، نفس اسمه
-                          // على النظام. اللي ماسك ورقة أصنافها بأصفار لازم يعرف من أول
-                          // سطر إنها هدية مش غلطة في الأسعار.
                           isBonus
                               ? (family == null ? 'فاتورة بونص' : 'فاتورة بونص — $family')
                               : _lines.isEmpty && coupons.isNotEmpty
                                   ? 'إذن تسليم كوبونات'
                                   : (family == null ? 'طلب بيع' : 'طلب بيع — $family'),
-                          // كان ١١ وهو تحت اسم الشركة؛ بقى هو الوحيد في الترويسة،
-                          // فمينفعش يفضل بحجم سطر تابع.
                           style: const pw.TextStyle(
                               fontSize: 17,
                               fontWeight: pw.FontWeight.bold,
@@ -377,8 +278,6 @@ class _InvoicePrintScreenState extends State<InvoicePrintScreen> {
               ),
             ),
             pw.SizedBox(height: 8),
-            // المسودّة بتقول عن نفسها إنها مسودّة. الورقة اللي بتدّعي رقم مستند مالوش وجود
-            // بتبقى مشكلة يوم ما حد يدوّر عليه.
             if (!synced)
               pw.Container(
                 margin: const pw.EdgeInsets.only(bottom: 8),
@@ -391,16 +290,12 @@ class _InvoicePrintScreenState extends State<InvoicePrintScreen> {
                     textAlign: pw.TextAlign.center,
                     style: const pw.TextStyle(fontSize: 11)),
               ),
-            // بيانات الفاتورة في صندوق واحد — عمودين، زي ترويسة الفاتورة على النظام.
             pw.Container(
               padding: const pw.EdgeInsets.symmetric(horizontal: 8, vertical: 4),
               decoration: pw.BoxDecoration(
                 border: pw.Border.all(width: 0.6, color: PdfColors.grey500),
                 borderRadius: pw.BorderRadius.circular(4),
               ),
-              // **تلات أعمدة زي طباعة النظام** — نفس البيانات في سطرين بدل تلاتة.
-              // التليفون على الورقة: اللي بيراجع فاتورة راجعة من واتساب بيدوّر على
-              // العميل بالاسم، والأسماء بتتكرر — والرقم بيحسم.
               child: pw.Column(children: [
                 pw.Row(children: [
                   pw.Expanded(flex: 3, child: _row('العميل', '${inv['customer_name']}')),
@@ -413,8 +308,6 @@ class _InvoicePrintScreenState extends State<InvoicePrintScreen> {
                   pw.Expanded(flex: 2, child: _row('نوع الطلب', family ?? '—')),
                   pw.Expanded(flex: 2, child: pw.SizedBox()),
                 ]),
-                // البونص على أنهي بيعة — ده اللي بيربط الهدية بسببها. من غيره الورقة
-                // بتقول «بضاعة ببلاش» ومحدش يعرف على إيه.
                 if (isBonus)
                   pw.Padding(
                     padding: const pw.EdgeInsets.symmetric(vertical: 1.5),
@@ -426,15 +319,6 @@ class _InvoicePrintScreenState extends State<InvoicePrintScreen> {
               ]),
             ),
             pw.SizedBox(height: 10),
-            // **الأعمدة من اليمين للشمال.** `pw.Table` مابيقلبش أعمدته مع اتجاه
-            // الصفحة — بيرسمها بترتيب القايمة زي ما هي. فالورقة كانت بتطلع «#» على
-            // الشمال و«الإجمالي» على اليمين: ورقة عربية بترتيب إنجليزي، والعين بتبدأ
-            // من الناحية الغلط. الترتيب هنا مقلوب بإيدنا عشان يقرا صح.
-            //
-            // **وعمودي الخصم اتشالوا.** كانوا بيقولوا «خصم ثابت ١٠٪» و«خصم إضافي ٥٪»
-            // والعميل بيحسب في دماغه ويسأل. دلوقتي «السعر بعد الخصم» هو **صافي سعر
-            // الوحدة بعد الخصمين** — الرقم اللي بيتضرب في الكمية فعلاً — والنسبة
-            // بتتقال تحته بخط صغير عشان اللي عايز يعرف الخصم راح فين يلاقيه.
             if (_lines.isNotEmpty) pw.Table(
               border: const pw.TableBorder(
                 horizontalInside: pw.BorderSide(width: 0.4, color: PdfColors.grey400),
@@ -451,8 +335,6 @@ class _InvoicePrintScreenState extends State<InvoicePrintScreen> {
                 pw.TableRow(
                   decoration: const pw.BoxDecoration(color: _brand),
                   children: [
-                    // البونص سطوره بصفر — الأعمدة بتقول القيمة بسعر البيع، وهي اللي
-                    // بتتجمع تحت في «قيمة البونص بسعر البيع».
                     _cell(isBonus ? 'القيمة بسعر البيع' : 'الإجمالي',
                         bold: true, white: true, center: true),
                     _cell(isBonus ? 'سعر البيع' : 'السعر بعد الخصم',
@@ -464,7 +346,6 @@ class _InvoicePrintScreenState extends State<InvoicePrintScreen> {
                 ),
                 for (var i = 0; i < _lines.length; i++)
                   pw.TableRow(
-                    // تظليل خفيف صف ورا صف — عين بتمشي على سطر من غير ما تتوه في اللي جنبه.
                     decoration: pw.BoxDecoration(
                         color: i.isOdd ? PdfColors.grey100 : PdfColors.white),
                     children: [
@@ -480,10 +361,6 @@ class _InvoicePrintScreenState extends State<InvoicePrintScreen> {
                   ),
               ],
             ),
-            // الكوبونات المسلّمة — جدول زي الأصناف، لأن دي هي البضاعة في الورقة دي.
-            //
-            // المدى هو المهم مش العدد: يوم ما العميل يرجّع ورقة، اللي بيستلم بيراجع
-            // رقمها على المدى ده عشان يعرف إنها اتصرفت في تسليمة حصلت فعلاً.
             if (coupons.isNotEmpty) ...[
               if (_lines.isNotEmpty) pw.SizedBox(height: 12),
               pw.Text('الكوبونات المسلّمة',
@@ -504,7 +381,6 @@ class _InvoicePrintScreenState extends State<InvoicePrintScreen> {
                   4: const pw.FlexColumnWidth(0.6),
                 },
                 children: [
-                  // نفس القلب زي جدول الأصناف — الورقة واحدة والعين بتمشي بنفس الاتجاه.
                   pw.TableRow(
                     decoration: const pw.BoxDecoration(color: _brand),
                     children: [
@@ -538,21 +414,6 @@ class _InvoicePrintScreenState extends State<InvoicePrintScreen> {
                       fontSize: 11, fontWeight: pw.FontWeight.bold)),
             ],
             pw.SizedBox(height: 12),
-            // **الفوتر على عمودين — زي دفتر الفواتير ونفس طباعة النظام.**
-            //
-            //   ┌ الحساب ──────────────────────────┐ ┌ السداد ───────────┐
-            //   │ إجمالي الطلب                      │ │ المدفوع نقداً      │
-            //   │ يضاف إليه الحساب السابق (أبيض)    │ │ الباقي             │
-            //   │ الإجمالي                          │ │ مديونية بولي       │
-            //   └──────────────────────────────────┘ └───────────────────┘
-            //
-            // **والحساب السابق بتاع نوع الطلب بس.** كان بيكتب كل خط لوحده وتحتهم
-            // «إجمالي المستحق» بيجمع الأبيض على البولي — رقم مالوش حساب يتسدّ فيه،
-            // والمكتب بيحصّل كل خط لوحده. دلوقتي الطلب بيتجمع على حساب خطه، ومديونية
-            // الخط التاني بتتكتب لوحدها تحت الباقي.
-            //
-            // العميل اللي حسابه مش مقسوم (`prevByFamily` فاضي) بيفضل زي ما كان:
-            // `prev` هو حسابه كله.
             ...(() {
               final mine = (family != null && prevByFamily.containsKey(family))
                   ? prevByFamily[family]
@@ -572,9 +433,6 @@ class _InvoicePrintScreenState extends State<InvoicePrintScreen> {
                       child: pw.Column(children: rows),
                     ),
                   );
-              // **البونص مالوش حساب.** قيمته صفر ومابيلمسش رصيد العميل، فالحساب
-              // السابق والباقي هيقولوا أرقام مالهاش علاقة بالورقة دي. اللي يهم: خرج
-              // بكام بسعر البيع، والمطلوب من العميل صفر. نفس فوتر طباعة النظام.
               if (isBonus) {
                 return [
                   pw.SizedBox(height: 8),
@@ -610,9 +468,6 @@ class _InvoicePrintScreenState extends State<InvoicePrintScreen> {
               pw.SizedBox(height: 10),
               pw.Text('ملاحظات: ${inv['notes']}', style: const pw.TextStyle(fontSize: 10)),
             ],
-            // **من غير `Spacer`.** كانت بتدفع التوقيعات لآخر الصفحة الواحدة؛ وفي مستند
-            // بيتقسّم مالهاش ارتفاع تنتهي عنده فبترمي استثناء. التوقيعات بتيجي بعد آخر
-            // سطر — وده مكانها الصح على ورقة من صفحتين.
             pw.SizedBox(height: 10),
             pw.Divider(color: PdfColors.grey400),
             pw.Row(
@@ -633,23 +488,13 @@ class _InvoicePrintScreenState extends State<InvoicePrintScreen> {
   }
 }
 
-/// **صافي سعر الوحدة** — بعد الخصمين، لوحده.
-///
-/// الرقم ده هو اللي بيتضرب في الكمية ويطلع الإجمالي، فالعميل يراجع الورقة بضربة
-/// واحدة. سعر القايمة والنسبة كانوا بيتكتبوا تحته بخط صغير واتشالوا بطلب صاحب
-/// الشغل — الورقة اللي بتروح للعميل بتقول اللي هيدفعه، والمقارنة بسعر القايمة شغل
-/// جوّه مش على الفاتورة.
 pw.Widget _netPriceCell(SaleDraftLine l) {
   final net = l.discountPct > 0
       ? netOf(l.unitPrice, l.discountPct)
       : l.unitPrice;
-  // نفس `_cell` اللي باقي خلايا الجدول بتتبني بيه — الحشو والخط في مكان واحد،
-  // وإلا خلية واحدة بتفضل بشكل مختلف عن جيرانها أول ما حد يعدّل المساعد.
   return _cell(_money(net), center: true);
 }
 
-/// بيفك عمود الكوبونات (JSON) لصفوف. الفاضي أو المكسور بيرجّع قايمة فاضية — ورقة
-/// من غير جدول كوبونات أحسن من ورقة بتقول «خطأ» في وش العميل.
 List<Map<String, Object?>> _coupons(String? raw) {
   if (raw == null || raw.trim().isEmpty) return const [];
   try {
@@ -674,8 +519,6 @@ pw.Widget _row(String label, String value) => pw.Padding(
       ]),
     );
 
-/// لون النظام نفسه (`AppColors.primary`) — الورقة والشاشة بنفس الهوية.
-/// أرصدة الخطوط المتخزّنة مع الطلب. الصفر بيتشال — خط رصيده صفر مش معلومة.
 Map<String, double> _familyBalances(String? raw) {
   if (raw == null || raw.trim().isEmpty) return const {};
   try {
@@ -687,7 +530,6 @@ Map<String, double> _familyBalances(String? raw) {
     }
     return out;
   } catch (_) {
-    // الصف القديم ممكن يكون فاضي أو بشكل تاني — الورقة بتطلع بسطر واحد، مابتقعش.
     return const {};
   }
 }
@@ -696,7 +538,6 @@ const _brand = PdfColor.fromInt(0xFF0E4C6D);
 
 pw.Widget _cell(String text, {bool bold = false, bool white = false, bool center = false}) =>
     pw.Padding(
-      // حشو أصغر — سطور أكتر في الصفحة، زي طباعة النظام.
       padding: const pw.EdgeInsets.symmetric(horizontal: 4, vertical: 3),
       child: pw.Text(text,
           textAlign: center ? pw.TextAlign.center : pw.TextAlign.right,

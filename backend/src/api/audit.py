@@ -1,4 +1,3 @@
-"""Audit router (T059): GET /audit. FR-031."""
 from __future__ import annotations
 
 from datetime import date, datetime, time
@@ -32,14 +31,9 @@ def list_audit(
     actor_user_id: int | None = None,
     action: str | None = None,
     entity_type: str | None = None,
-    # (031) «سجل عمليات المستند ده» — the question the trail exists to answer, and the one filter
-    # it did not have. Without it a screen can ask for every transfer edit ever made and then throw
-    # away all but one document's worth, which is a list nobody should be sending over the wire.
     entity_id: int | None = None,
     date_from: date | None = None,
     date_to: date | None = None,
-    # السجل بيكبر ومابيتشالش. الطلب كان بيرجّع الجدول كله وبيقلبه على الشاشة، وده بيشتغل
-    # على قاعدة عندها ألف صف وبيقع على اللي عندها مليون. الأحدث الأول، وبعدد مطلوب.
     limit: int = 500,
     offset: int = 0,
     _: CurrentUser = Depends(require_capability(CAP_AUDIT_READ)),

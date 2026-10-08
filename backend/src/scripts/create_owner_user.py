@@ -1,16 +1,3 @@
-"""يعمل دور «المالك» ويوزره — الدور اللي بيشوف كروت الإحصائيات وحده.
-
-    python -m src.scripts.create_owner_user                     # عرض فقط
-    python -m src.scripts.create_owner_user --yes
-    python -m src.scripts.create_owner_user --yes --username malek
-
-**الباسورد مابيتكتبش هنا ولا في أي ملف.** السكربت بيولّد واحدة عشوائية ويطبعها مرة
-واحدة في الترمنال، واللي بيشغّله ينقلها ويغيّرها من شاشة المستخدمين. باسورد ثابتة في
-سكربت معناها إن أي حد فتح المستودع بقى عنده حساب المالك — وهو الحساب الوحيد اللي
-بيشوف أرقام الشركة كلها.
-
-اليوزر الموجود بنفس الاسم مابيتغيّرش باسورده — بيتنقل للدور بس لو كان على دور تاني.
-"""
 from __future__ import annotations
 
 import secrets
@@ -28,8 +15,6 @@ from src.models.user import User
 DEFAULT_USERNAME = "owner"
 DEFAULT_FULL_NAME = "المالك"
 
-# حروف وأرقام بس — الباسورد دي بتتقري من الشاشة وتتكتب بالإيد مرة واحدة، والرموز
-# اللي شكلها بيختلف بين الكيبوردات بتضيّع الوقت من غير ما تزوّد أمان يُذكر.
 _ALPHABET = string.ascii_letters + string.digits
 
 
@@ -65,7 +50,6 @@ def run(*, execute: bool, username: str) -> None:
 
         password = None
         if user is None:
-            # الفرع الرئيسي لو موجود — والمالك أصلاً بيشوف الفروع كلها، فده مجرد انتماء.
             head = db.scalar(select(Branch).where(Branch.is_head_office.is_(True)))
             password = _fresh_password()
             user = User(

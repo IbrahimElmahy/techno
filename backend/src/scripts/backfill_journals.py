@@ -1,30 +1,3 @@
-"""نقل القيود القديمة لدفاترها وترقيمها — المرحلة ١ من إعادة الهيكلة على موديل أودو.
-
-    python -m src.scripts.backfill_journals            # عرض بس، مابيكتبش حاجة
-    python -m src.scripts.backfill_journals --yes      # التنفيذ
-
-**المشكلة:** كل قيد في الدفتر اتكتب قبل ما فكرة «الدفتر» توجد، فأعمدة `journal_id`
-و`state` و`number` بتبقى NULL على كل الصفوف القديمة. النظام شغّال كده (الكود بيعامل
-`state IS NULL` على إنها «مرحّل»)، بس شاشة «دفتر المبيعات» بتطلع فاضية والقيد مالوش
-رقم يتقال في التليفون.
-
-**اللي بيحصل هنا:**
-
-١. الدفاتر القياسية بتتزرع لو لسه مش موجودة (`journal_registry.ensure_seeded`).
-٢. كل قيد بياخد دفتره من `entry_type` — الخريطة في `journal_registry._ROUTING`.
-   النوع اللي مش في الخريطة بيروح «قيود متنوعة» (MISC) بدل ما يفضل بره الدفاتر.
-٣. كل قيد بياخد رقمه في دفتره: الترتيب بتاريخ القيد ثم الـid، والترقيم بيتصفّر مع
-   كل سنة — `INV/2025/00001`. الترتيب بالتاريخ مش بالـid عشان الأرقام تطلع بنفس
-   ترتيب الورق؛ القيد اللي اتسجّل متأخر بتاريخ قديم بياخد رقمه في مكانه الصح.
-٤. `state` بيتملى `posted` على كل القديم. المسودة مالهاش وجود قبل المرحلة دي.
-
-**بيقيس ومابيصلّحش:** القيود غير المتوازنة بتتعدّ وبتتعرض (لحد ٢٠ منها) ومابيتعملهاش
-حاجة. القاعدة الجديدة بترفض ترحيل قيد مش متوازن، بس القديم اتكتب أيام ما القاعدة دي
-كانت مشالة — وتصحيحه قرار محاسبي مش قرار سكربت.
-
-**بيتعاد بأمان:** القيد اللي معاه رقم خلاص بيتسكّت عنه، فالتشغيل التاني مابيغيّرش حاجة.
-عدّاد الدفتر بيتظبط على أعلى رقم اتصرف، فالقيد الجديد بيكمّل من بعده مش من الأول.
-"""
 from __future__ import annotations
 
 import sys
@@ -45,7 +18,6 @@ SAMPLE = 20
 
 
 def _effective_date(entry: LedgerEntry) -> date:
-    """تاريخ القيد المحاسبي — `entry_date`، ووقت الإنشاء للقديم اللي مالوش واحد."""
     return entry.entry_date or entry.created_at.date()
 
 
@@ -78,7 +50,6 @@ def run(*, execute: bool) -> None:
             print("مافيش قيود — مافيش حاجة تتنقل.")
             return
 
-        # العدّاد بيبدأ من أعلى رقم اتصرف فعلاً، عشان الإعادة ماتديش رقم اتاخد قبل كده.
         counters: dict[tuple[int, int], int] = defaultdict(int)
         for row in db.scalars(select(JournalSequence)).all():
             counters[(row.journal_id, row.year)] = int(row.last_number or 0)
@@ -87,7 +58,6 @@ def run(*, execute: bool) -> None:
         todo = [e for e in entries if not e.number]
         print(f"معاها رقم خلاص: {already} — محتاجة ترقيم: {len(todo)}")
 
-        # الترتيب بالتاريخ ثم الـid: القيد المتأخر بتاريخ قديم بياخد رقمه في مكانه.
         todo.sort(key=lambda e: (_effective_date(e), e.id))
 
         per_journal: dict[str, int] = defaultdict(int)
@@ -120,7 +90,6 @@ def run(*, execute: bool) -> None:
                 if entry.posted_at is None:
                     entry.posted_at = entry.created_at
 
-        # القيود اللي معاها رقم بس حالتها لسه NULL — بتتظبط من غير ما ترقيمها يتلمس.
         state_only = [e for e in entries if e.number and not e.state]
         if execute:
             for entry in state_only:
@@ -153,7 +122,6 @@ def run(*, execute: bool) -> None:
             print("\n(عرض بس — ضيف --yes للتنفيذ)")
             return
 
-        # العدّادات بتتكتب بعد ما كل الأرقام اتصرفت، عشان القيد الجديد يكمّل من بعدها.
         existing = {
             (r.journal_id, r.year): r for r in db.scalars(select(JournalSequence)).all()
         }

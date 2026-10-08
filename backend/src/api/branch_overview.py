@@ -1,14 +1,3 @@
-"""نظرة مدير الشركة على الفروع — كل فرع بأرقامه، جنب بعض.
-
-الشاشات كلها بتتفلتر بفرع اللي بيسأل، وده صح: مدير الفرع بيشوف فرعه. لكنه بيخلّي مدير
-الشركة من غير أي مكان يقارن فيه — عنده كل الصلاحيات فبيشوف مجموع الشركة كرقم واحد، وهو
-عايز يعرف الفرع اللي واقف والفرع اللي ماشي.
-
-فده المسار الوحيد في النظام اللي **بيكسر العزل عن قصد**: بيرجّع الفروع كلها كصفوف، مش
-مجموعها. ومقفول على مدير النظام وحده — لو أي دور تاني وصله، العزل كله بيبقى شكل.
-
-مافيش تفاصيل مستندات هنا، أرقام مجمّعة بس. اللي عايز يفتح فاتورة بيروح لشاشتها.
-"""
 from __future__ import annotations
 
 from datetime import date
@@ -43,23 +32,18 @@ def _admin_only(current: CurrentUser = Depends(get_current_user)) -> CurrentUser
 class BranchRow(BaseModel):
     branch_id: int | None
     branch_name: str
-    # المبيعات
     sales_count: int
     sales_net: str
     sales_cash: str
     sales_credit: str
-    # المرتجعات
     returns_count: int
     returns_value: str
-    # المشتريات
     purchases_count: int
     purchases_net: str
     purchase_returns_count: int
-    # الحركة
     transfers_count: int
     receipts_total: str
     payments_total: str
-    # الناس
     users_count: int
     reps_count: int
     customers_count: int
@@ -128,14 +112,12 @@ def branch_overview(
     users = _count_by_branch(db, User, User.active.is_(True))
     customers = _count_by_branch(db, Customer)
 
-    # عدد المندوبين — استعلام لوحده لأنه بيمرّ بجدول الأدوار.
     rep_role = db.scalars(select(Role).where(Role.name == RoleName.sales_rep)).first()
     reps = dict(db.execute(
         select(User.branch_id, func.count())
         .where(User.role_id == rep_role.id, User.active.is_(True))
         .group_by(User.branch_id)).all()) if rep_role else {}
 
-    # كل فرع + سطر لـ«بلا فرع» لو فيه مستندات قديمة ماتعبّتش.
     keys: list[int | None] = list(branches.keys())
     seen_null = any(None in d for d in (sales, rets, purch, transfers, users, customers))
     if seen_null:

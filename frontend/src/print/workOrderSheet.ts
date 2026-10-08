@@ -1,27 +1,5 @@
 import { printDocument } from './brand';
 
-/**
- * **ورقة إذن الصرف** — اللي بتتطبع وتتدّي للورشة أو للتعبئة.
- *
- * مش صورة من الشاشة: الشاشة بتقول التكلفة والحالة والقيمة، والورشة مش محتاجة ولا
- * واحدة فيهم. اللي على الورقة هو اللي حد هيمشي بيه — **يصرف إيه من فين، ويعمل إيه** —
- * ومعاه خانات فاضية يكتب فيها اللي حصل فعلاً بالقلم، عشان الرقم اللي هيتدخّل النظام
- * بعدين يكون مكتوب من ساعتها مش مستنتج آخر اليوم.
- *
- * والتكلفة مش على الورقة **عن قصد**: ورقة بتروح الورشة وفيها سعر الخامة بتتحوّل من
- * تعليمات شغل لورقة أسعار بتتنقل.
- *
- * ---------------------------------------------------------------------------
- * **التوزيع: المنتج على اليمين، خاماته على الشمال.**
- *
- * الشكل الأول كان بيكرّر ترويسة كاملة لكل منتج وتحتها جدول — فالمنتج الواحد كان
- * بياخد ثلث صفحة، وأمر بأربع منتجات بيطلع في صفحتين ونص. والراجل اللي ماسك الورقة
- * بيقلّب عشان يشوف الخامة دي بتاعة أنهي منتج.
- *
- * دلوقتي كل منتج **صف واحد** في جدول واحد: خانة اليمين فيها المنتج وكميته ومخزنه
- * وخانة «اللي طلع»، وخانة الشمال فيها خاماته كجدول صغير. العين بتقرا الاتنين مع
- * بعض في سطر واحد، والصفحة بتشيل أربع أو خمس منتجات بدل واحد.
- */
 export interface WorkOrderMaterial {
   item_id: number;
   warehouse_id: number | null;
@@ -29,7 +7,6 @@ export interface WorkOrderMaterial {
   stage?: string | null;
 }
 
-/** مرحلة الصرف اللي الورقة دي بتتطبع عنها. */
 export type WorkOrderStage = 'production' | 'quality';
 
 const STAGE_SHEET: Record<WorkOrderStage, { title: string; note: string; who: string }> = {
@@ -78,14 +55,12 @@ function esc(v: unknown): string {
     .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
-/** رقم بيتقرا: ٣ مش ٣٫٠٠٠، و١٫١٥ بتفضل ١٫١٥. */
 function qty(v: string | number): string {
   const n = Number(v || 0);
   if (!Number.isFinite(n)) return String(v ?? '');
   return n.toLocaleString('en-US', { maximumFractionDigits: 3 });
 }
 
-/** ستايل الورقة — أصغر وأكتف من الافتراضي، عشان الصفحة تشيل شغل يوم مش منتج. */
 const SHEET_CSS = `
 <style>
   table.wo { width: 100%; border-collapse: collapse; margin-top: 6px; }
@@ -137,8 +112,6 @@ export function printWorkOrder(
     (m.stage === 'quality' ? 'quality' : 'production') === stage;
 
   const rows = doc.products.map((p, i) => {
-    // خامات السطر ده. واللي مش منسوب لمنتج (product_line_id فاضي) بيتحط تحت أول
-    // منتج بدل ما يختفي — ورقة ناقصة خامة أسوأ من ورقة ترتيبها مش مظبوط.
     const mine = doc.materials.filter((m) => inStage(m)
       && (m.product_line_id === p.id || (i === 0 && m.product_line_id === null)));
     const mats = mine.length

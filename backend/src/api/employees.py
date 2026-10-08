@@ -1,9 +1,3 @@
-"""الموظفون والوظائف router (B8).
-
-Master data, so it is edited and deactivated directly — unlike a posted document, an employee
-record has no ledger consequence to preserve. Deactivating rather than deleting keeps the name
-readable on whatever already references it.
-"""
 from __future__ import annotations
 
 from datetime import date
@@ -41,7 +35,6 @@ class JobTitleOut(BaseModel):
 class EmployeeIn(BaseModel):
     name: str
     job_title_id: int | None = None
-    # `department` النص الحر فاضل مقبول عشان أي مستهلك قديم مايتكسرش؛ `department_id` هو الحقيقة.
     department: str | None = None
     department_id: int | None = None
     phone: str | None = None
@@ -106,8 +99,6 @@ def _out(db: Session, e: Employee) -> EmployeeOut:
     return EmployeeOut(
         id=e.id, code=e.code, name=e.name, job_title_id=e.job_title_id,
         job_title=title.name if title else None,
-        # الاسم اللي بيرجع هو اسم القسم المربوط لو موجود، وإلا النص القديم — فالشاشات والتطبيق
-        # مش محتاجين يتغيّروا عشان الترحيل.
         department=(dept.name if (dept := (db.get(Department, e.department_id)
                                           if e.department_id else None)) else e.department),
         department_id=e.department_id, phone=e.phone,
@@ -118,9 +109,6 @@ def _out(db: Session, e: Employee) -> EmployeeOut:
         branch_id=e.branch_id, warehouse_id=e.warehouse_id,
         user_id=e.user_id, active=e.active, notes=e.notes,
     )
-
-
-# ----------------------------------------------------------------- job titles
 
 
 @router.get("/job-titles", response_model=list[JobTitleOut])
@@ -164,15 +152,11 @@ def deactivate_job_title(
     db.commit()
 
 
-# ------------------------------------------------------------------ employees
-
-
 @router.get("/employees", response_model=list[EmployeeOut])
 def list_employees(
     active: bool | None = Query(None),
     branch_id: int | None = Query(None),
     job_title_id: int | None = Query(None),
-    # شاشة الأقسام بتفتح موظفين قسم واحد — فلتر على السيرفر بدل ما تنزّل الكل وتفلتر عندها.
     department_id: int | None = Query(None),
     current: CurrentUser = Depends(require_capability(CAP_USER_READ)),
     db: Session = Depends(get_db),
@@ -187,20 +171,12 @@ def list_employees(
     if department_id:
         stmt = stmt.where(Employee.department_id == department_id)
     rows = db.scalars(stmt.order_by(Employee.name)).all()
-    # المسميات تتحمّل مرة وتفضل ماسكينها — من غيرها `db.get` في `_out` بيسأل عن نفس
-    # المسمى مع كل موظف (خريطة الهوية ضعيفة): ٩٥ استعلام للقايمة.
-    _titles = db.scalars(select(JobTitle)).all()  # noqa: F841 — المرجع هو اللي بيمسكهم
+    _titles = db.scalars(select(JobTitle)).all()  # noqa: F841
     _depts = db.scalars(select(Department)).all()  # noqa: F841
     return [_out(db, e) for e in rows]
 
 
 def _check_department(db: Session, department_id: int | None, current_id: int | None = None) -> None:
-    """القسم المختار لازم يكون موجود وشغّال.
-
-    من غيره رقم غلط بيوقع الحفظ بخطأ قاعدة بيانات (٥٠٠) مالوش معنى عند اللي بيكتب، والنقل
-    لقسم مقفول بيحط الموظف في قسم مخفي من كل القوايم والتقارير. الموظف اللي **أصلاً** في قسم
-    اتقفل بعدين بيتحفظ عادي — تعديل تليفونه مايستاهلش يترفض عشان قسمه.
-    """
     if department_id is None or department_id == current_id:
         return
     dept = db.get(Department, department_id)
@@ -224,9 +200,6 @@ def create_employee(
         raise HTTPException(409, {"code": "duplicate",
                                   "message": "المستخدم ده مربوط بموظف تاني."})
     _check_department(db, body.department_id)
-    # كان بيعدّ الصفوف — وده بالظبط الغلط اللي `numbering` اتكتبت عشانه: امسح موظف واحد من
-    # تلاتة، العدد يقول اتنين، فالتالي بياخد `EMP-0003` وهو موجود على التالت. والعمود unique،
-    # فالحفظ بيفشل — وبيفضل فاشل، لأن العدد عالق ورا واحد للأبد.
     emp = Employee(
         code=numbering.next_document_number(db, Employee, "EMP", column=Employee.code, width=4),
         name=name, job_title_id=body.job_title_id,
@@ -244,21 +217,12 @@ def create_employee(
 
 
 def _new_employee_branch(current: CurrentUser, requested: int | None) -> int | None:
-    """فرع الموظف الجديد: موظف الفرع → فرعه هو، مهما اتبعت؛ المالك/الأدمن → اللي اختاره.
-
-    الأدمن لو ماختارش ووهو مفلتر على فرع من الشريط، الموظف بياخد الفرع ده — هو شايف شاشة
-    الفرع ده، وموظف من غير فرع بيظهر في الفروع التلاتة.
-    """
     if not branch_scope.sees_all_branches(current):
         return current.branch_id
     return requested if requested is not None else branch_scope.visible_branch_id(current)
 
 
 def _check_branch_move(current: CurrentUser, emp: Employee, changes: dict) -> None:
-    """موظف الفرع مايقدرش ينقل موظف لفرع تاني — النقل بين الفروع من الإدارة.
-
-    الموظف اللي مالوش فرع ينفع يتربط بفرعه هو (تسكين بيانات قديمة)، غير كده ٤٠٣.
-    """
     if "branch_id" not in changes or branch_scope.sees_all_branches(current):
         return
     target = changes["branch_id"]
@@ -270,11 +234,6 @@ def _check_branch_move(current: CurrentUser, emp: Employee, changes: dict) -> No
 
 
 def _seen_employee(db: Session, employee_id: int, current: CurrentUser) -> Employee:
-    """الموظف لو اللي بيسأل يشوفه — و**٤٠٤ لو لأ**.
-
-    الكشف متعزل بالفرع والرابط المباشر ماكانش، فمدير فرع كان بيفتح بطاقة موظف فرع
-    تاني بالرقم — **ويعدّلها ويوقفها** كمان، لأن نفس الغياب كان على `PATCH` و`DELETE`.
-    """
     emp = db.scalar(branch_scope.scope(
         select(Employee).where(Employee.id == employee_id), Employee, current))
     if emp is None:
@@ -317,11 +276,6 @@ def deactivate_employee(
     current: CurrentUser = Depends(require_capability(CAP_USER_WRITE)),
     db: Session = Depends(get_db),
 ) -> None:
-    """Deactivated, not deleted — the name must stay readable wherever it is already referenced.
-
-    `hard=true` بيمسحه نهائياً **بشرط إن مالوش أي تاريخ** (مسير، سلفة، حضور، أجازة، حساب دخول،
-    حساب ذمة…) — للكارت اللي اتعمل بالغلط. غير كده ٤٠٩ بالأرقام، والصح «إيقاف».
-    """
     emp = _seen_employee(db, employee_id, current)
     if hard:
         try:

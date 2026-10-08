@@ -4,7 +4,6 @@ import { searchFilter, searchRank, sortByName } from '../utils/arabicSort';
 import {
   Form, Select, Input, Button, Space, Tag, message, Descriptions, Alert, Empty,
 } from 'antd';
-// فلتر على كل عمود — شوف `FilterTable`.
 import { FilterTable as Table } from '../components/FilterTable';
 import { Popconfirm } from '../components/noConfirm';
 import {
@@ -42,7 +41,6 @@ import { TabModal } from '../components/TabModal';
 import DocumentAttachments from '../components/DocumentAttachments';
 import DocumentHistoryButton from '../components/DocumentHistory';
 import { money, numeralsLocale } from '../utils/money';
-// البوبابات اتفصلت لملفاتها — الشاشة كانت ١٤٧٨ سطر فيها ستة فوق بعض.
 import ReceiptModal from './vouchers/ReceiptModal';
 import PaymentModal from './vouchers/PaymentModal';
 import HandoverModal from './vouchers/HandoverModal';
@@ -50,18 +48,12 @@ import ExpenseModal from './vouchers/ExpenseModal';
 import TransferModal from './vouchers/TransferModal';
 import ChequeModal from './vouchers/ChequeModal';
 
-// الأنواع والتسميات راحت `vouchers/types.ts` — الشاشة وبوباباتها بيقروا من نسخة واحدة،
-// عشان نوع يتغيّر في مكان ويفضل قديم في التاني يبقى مستحيل.
 import {
   VoucherRecord, StatementLine, StatementData, Party, UserRecord, KIND_LABEL, KIND_COLOR,
 } from './vouchers/types';
 import { useLiveRefresh } from '../utils/live';
 import { repOptions } from '../utils/reps';
 
-/**
- * حركة الخزينة — الخزينة والفترة بقوا في سطر فلاتر الصفحة، فبيتبعتوا من برّه
- * (`Vouchers`) عشان يفضلوا محفوظين لما تتنقل بين الشرايح.
- */
 const TreasuryMovementTab: React.FC<{ treasuries: any[]; treasuryId?: number; range: any }> = ({
   treasuries, treasuryId, range,
 }) => {
@@ -102,7 +94,6 @@ const TreasuryMovementTab: React.FC<{ treasuries: any[]; treasuryId?: number; ra
       locale={{ emptyText: 'لا توجد حركة في هذه الفترة' }}
       pagination={{
         defaultPageSize: PAGE_SIZE, showSizeChanger: true, locale: { items_per_page: '' },
-        // الأرصدة هي لبّ الكشف — في سطر الترقيم بدل كروت فوق.
         showTotal: () => (
           <span className="sl-foot">
             <span>رصيد أول المدة: <b>{fmt(statement.opening_balance)}</b></span>
@@ -132,18 +123,11 @@ const TreasuryMovementTab: React.FC<{ treasuries: any[]; treasuryId?: number; ra
   );
 };
 
-/**
- * الشريحة ← نوع السند اللي بتتطلب بيه من السيرفر.
- *
- * بقت هنا (مش في `VOUCHER_TABS`) لأن التحميل محتاجها قبل ما الشرايح تتبني — التحميل بقى
- * صفحة صفحة لنوع واحد بدل «كل السندات في الفترة» وتتفلتر على الشاشة.
- */
 const TAB_KIND: Record<string, string> = {
   receipt: 'receipt', payment: 'payment', handover: 'rep_handover',
   expense: 'expense', transfer: 'cash_transfer',
 };
 
-/** الأحدث فوق — بالتاريخ وبعده الرقم. السيرفر بيرتّب كده، والترتيب هنا ضمان مش تكرار. */
 const newestFirst = (a: VoucherRecord, b: VoucherRecord) =>
   (b.voucher_date || '').localeCompare(a.voucher_date || '') || b.id - a.id;
 
@@ -171,32 +155,14 @@ const Vouchers: React.FC = () => {
   const [expenseGroups, setExpenseGroups] = useState<any[]>([]);
   const [cheques, setCheques] = useState<any[]>([]);
   const [voucherView, setVoucherView] = useState<VoucherRecord | null>(null);
-  /** الكشف اتحمّل مرة على الأقل — من غيرها أول رندر بيقول «السند مش موجود» والكشف
-   *  لسه ما اتطلبش أصلاً. */
   const [listLoaded, setListLoaded] = useState(false);
 
-  /**
-   * السند المفتوح جزء من العنوان — الشرح في `useDocRoute`.
-   *
-   * **والنوع مش في العنوان، ولا لازم يكون.** البوبابات الخمسة (قبض · صرف · توريد ·
-   * مصروف · تحويل) دي **شبابيك كتابة**، مش مستند مفتوح؛ المستند المفتوح هنا واحد —
-   * ورقة العرض والطباعة. والسندات كلها في جدول واحد فالـ`id` مميّز بينهم، يعني
-   * `?doc=12` لوحده بيحدّد سند واحد بالظبط، والنوع مكتوب على السند نفسه. وزيادة على
-   * كده التبويب موجود في العنوان خلاص (`?tab=`) عن طريق `useQueryTab`، فنوع تاني في
-   * نفس العنوان كان هيبقى مصدرين لنفس الحقيقة — واللي بينهم بيفرقوا أول ما يفرقوا.
-   *
-   * ⚠️ الكشف بيتحمّل بفترة (آخر ٣٠ يوم افتراضياً) ومافيش نقطة نهاية تجيب سند واحد
-   * بالرقم، فاللي برّه الفترة المحمّلة مابيتفتحش — بيقول كده بدل ما يفتح ورقة نص
-   * فاضية. `VoucherDocument` بيقرا `kind` و`document_number` والمبلغ من الصف، وصف
-   * ناقص فيه كان هيفضي الشاشة.
-   */
   const { markOpen, markClosed, opening: docOpening } = useDocRoute<VoucherRecord>({
     rows: vouchers,
     openId: voucherView?.id ?? null,
     open: (v) => openView(v),
     close: () => closeView(),
     loading: loading || !listLoaded,
-    // سند برّه الفترة المعروضة (جاي من كشف حساب مثلاً) بيتجاب بالرقم.
     fetchOne: async (id) => {
       try {
         return (await api.get<VoucherRecord>(`/api/v1/vouchers/${id}`)).data;
@@ -207,10 +173,8 @@ const Vouchers: React.FC = () => {
     },
   });
 
-  /** بيفتح ورقة السند — ومعاها العنوان، عشان «رجوع» يقفلها بدل ما يطلّعك من الشاشة. */
   const openView = (v: VoucherRecord) => { setVoucherView(v); markOpen(v.id); };
 
-  /** بيقفل الورقة ويرجّع للكشف — والعنوان بيتنضّف معاها. */
   const closeView = () => { setVoucherView(null); markClosed(); };
 
   const keyWorld = useMemo<RunnerWorld>(() => ({
@@ -227,10 +191,8 @@ const Vouchers: React.FC = () => {
   const [treasuryForm] = Form.useForm();
   const [chequeForm] = Form.useForm();
   const [chequeOpen, setChequeOpen] = useState(false);
-  // حركة الخزينة — الخزينة والفترة في سطر الفلاتر، فمكانهم هنا مش جوّه الشريحة.
   const [tmTreasuryId, setTmTreasuryId] = useState<number | undefined>();
   const [tmRange, setTmRange] = useState<any>(null);
-  // F3 — خانة البحث في الشريحة المفتوحة (كانت جوّه `ListToolbar` في الشيكات).
   const searchRef = useRef<any>(null);
   const [receiptOpen, setReceiptOpen] = useState(false);
   const [paymentOpen, setPaymentOpen] = useState(false);
@@ -253,13 +215,6 @@ const Vouchers: React.FC = () => {
     onSearch: () => searchRef.current?.focus?.(),
   });
 
-  /**
-   * **صفحة صفحة من السيرفر** (٢٠٢٦-١٠-٠٧). بعد نقل سندات a5 القديمة (~١٥ ألف) «كل
-   * سندات النوع في الفترة» بقت آلاف الصفوف في طلب واحد. دلوقتي الشريحة بتطلب نوعها
-   * بـ`limit`/`offset` وبترجع `{rows, total}`، والجدول بيقلّب على السيرفر.
-   *
-   * ⚠️ البحث وفلاتر الأعمدة والتصدير بيشتغلوا على الصفحة المعروضة بس.
-   */
   const listKind = TAB_KIND[tab] ?? (tab === 'log' ? kindFilter : undefined);
   const listActive = tab in TAB_KIND || tab === 'log';
   const [vPage, setVPage] = useState(1);
@@ -269,7 +224,6 @@ const Vouchers: React.FC = () => {
 
   const loadVouchers = useCallback(async (opts?: { silent?: boolean }) => {
     if (!listActive) { setListLoaded(true); return; }
-    // الهادي (التحديث الحي) مابيلفّش الجدول بسبينر.
     const silent = !!opts?.silent;
     const seq = ++loadSeq.current;
     if (!silent) setLoading(true);
@@ -281,9 +235,7 @@ const Vouchers: React.FC = () => {
       if (range?.[0]) params.date_from = range[0].format('YYYY-MM-DD');
       if (range?.[1]) params.date_to = range[1].format('YYYY-MM-DD');
       const { data } = await api.get<any>('/api/v1/vouchers', { params });
-      // طلب أحدث اتبعت وإحنا مستنيين — الرد ده قديم ومايكتبش فوقه.
       if (seq !== loadSeq.current) return;
-      // ردّ قديم من غير صفحات (مصفوفة) بيتقبل برضه.
       const rows: VoucherRecord[] = Array.isArray(data) ? data : (data?.rows ?? []);
       setVouchers([...rows].sort(newestFirst));
       setVTotal(Array.isArray(data) ? data.length : Number(data?.total ?? rows.length));
@@ -296,7 +248,6 @@ const Vouchers: React.FC = () => {
     }
   }, [listActive, listKind, range, vPage, vPageSize]);
 
-  // النوع أو الفترة اتغيّروا ⇒ نرجع للصفحة الأولى قبل ما نحمّل (مش الصفحة ٥ من نوع تاني).
   const queryKey = [listActive, listKind ?? '', range?.[0]?.format('YYYY-MM-DD') ?? '',
     range?.[1]?.format('YYYY-MM-DD') ?? ''].join('|');
   const lastQueryKey = useRef(queryKey);
@@ -308,7 +259,6 @@ const Vouchers: React.FC = () => {
     loadVouchers();
   }, [loadVouchers]);
 
-  /** ترقيم الجدول على السيرفر — نفس الشكل في الشرايح والسجل. */
   const serverPagination = (foot: (total: number) => React.ReactNode) => ({
     current: vPage, pageSize: vPageSize, total: vTotal,
     showSizeChanger: true, pageSizeOptions: PAGE_SIZE_OPTIONS,
@@ -358,9 +308,6 @@ const Vouchers: React.FC = () => {
     loadExpenseAccounts();
       }, [loadTreasuries, loadCheques]);
 
-  // سند أو شيك اتعمل من مكان تاني (المندوب من التطبيق، خزنة فرع تاني) ⇒ السندات والشيكات
-  // وأرصدة الخزن تتحدّث بهدوء بنفس الفلتر. المودال المفتوح مابيتلمسش — فورمه في `Form`
-  // مش في القوايم دي.
   useLiveRefresh(['vouchers', 'cheques', 'treasuries'], () => {
     loadVouchers({ silent: true });
     loadCheques();
@@ -384,8 +331,6 @@ const Vouchers: React.FC = () => {
       const u = reps.find((r) => r.id === v.rep_user_id);
       return u ? u.full_name || u.username : `#${v.rep_user_id}`;
     }
-    // سندات a5 المنقولة كتير منها على حساب عادي من الشجرة (مش عميل ولا مورد) — بيانها
-    // هو اللي بيقول اتعمل لمين، فبيتعرض مكان الطرف بدل «—».
     return v.description || v.statement1 || '—';
   };
 
@@ -440,10 +385,6 @@ const Vouchers: React.FC = () => {
     };
   };
 
-  /**
-   * الحفظ المشترك للبوبابات. **بيرجّع السند اللي اتعمل** (أو `null` لو فشل) — «حفظ
-   * وطباعة» بيطبعه من الرد. و`keepOpen` لـ«حفظ وجديد»: الفورم بيتفضّى والبوباب يفضل مفتوح.
-   */
   const submit = async (
     path: string, values: any, form: any, okMsg: string, opts?: { keepOpen?: boolean },
   ): Promise<any | null> => {
@@ -463,7 +404,6 @@ const Vouchers: React.FC = () => {
       }
       loadVouchers();
       loadTreasuries();
-      // رصيد المورد جاي من قايمة الموردين — بتتحدّث عشان تلميح «له/عليه» يفضل صح.
       if (payload.supplier_id) {
         api.get<Party[]>('/api/v1/suppliers').then((r) => setSuppliers(r.data)).catch(() => {});
       }
@@ -476,12 +416,6 @@ const Vouchers: React.FC = () => {
     }
   };
 
-  /**
-   * حذف السند — بيروح هو وقيده.
-   *
-   * كان بيتعكس: يتكتب سند تاني «عكس SR-000012» جنب الأصلي، فالخزينة بتوري عمليتين على
-   * غلطة واحدة. السند اللي اتكتب غلط بيتمسح وخلاص.
-   */
   const deleteVoucher = async (id: number) => {
     try {
       await api.delete(`/api/v1/vouchers/${id}`);
@@ -517,7 +451,6 @@ const Vouchers: React.FC = () => {
     }
   };
 
-  // أبجدي قبل الكتابة — الكشف جاي من السيرفر بالأحدث الأول.
   const stPartyOptions = sortByName(
     stKind === 'customer'
       ? customers.map((c) => ({ value: c.id, label: c.name }))
@@ -583,7 +516,6 @@ const Vouchers: React.FC = () => {
     },
     { title: 'طريقة الدفع', dataIndex: 'payment_method', width: 110 },
     { title: 'المرجع', dataIndex: 'reference', width: 120 },
-    // رقم السند الورقي اللي في إيد العميل — عمود عشان الورقة تتلاقي من السجل؛ واللي مش محتاجه يخفيه من «الأعمدة».
     { title: 'رقم المستند الورقي', dataIndex: 'external_document_number', width: 130, ellipsis: true,
       render: (v: string | null) => v || '-' },
     { title: 'البيان', dataIndex: 'description' },
@@ -618,7 +550,6 @@ const Vouchers: React.FC = () => {
     },
   ];
 
-  // التصدير بقى زرار لكل شريحة في الترويسة بصفوفها هي — فمش محتاجينه هنا.
   const voucherCols = useTableColumns('vouchers', voucherColumns);
 
   const totals = {
@@ -630,7 +561,6 @@ const Vouchers: React.FC = () => {
       .reduce((s, v) => s + Number(v.amount), 0),
   };
 
-  /** شرايح السندات — كل واحدة نفس الجدول على نوع واحد. */
   const VOUCHER_TABS: Record<string, {
     kind: string; label: string; subtitle: string; empty: string; file: string;
     kb: { tableProps: any }; create: string; onCreate: () => void;
@@ -662,7 +592,6 @@ const Vouchers: React.FC = () => {
 
   const tabs: ListTab[] = [
     ...Object.entries(VOUCHER_TABS).map(([key, t]) => ({
-      // العدد من السيرفر للشريحة المفتوحة بس — التانية مش متحمّلة.
       key, label: t.label, count: key === tab ? vTotal : undefined,
     })),
     { key: 'treasury-movement', label: 'حركة الخزينة' },
@@ -671,7 +600,6 @@ const Vouchers: React.FC = () => {
     { key: 'log', label: 'سجل السندات', count: tab === 'log' ? vTotal : undefined },
   ];
 
-  /** مجموع السندات المعروضة (من غير العكسية) — نفس قاعدة الإجماليات. */
   const voucherFoot = (rows: VoucherRecord[]) => (
     <span className="sl-foot">
       <span>عدد: <b>{vTotal}</b></span>
@@ -791,11 +719,9 @@ const Vouchers: React.FC = () => {
     },
   ];
 
-  // قوايم الشيكات بتقبل أكتر من قيمة — زي ما كانت في `ListToolbar`.
   const multiValue = (v: any) => (v === undefined || v === null || v === ''
     ? undefined : Array.isArray(v) ? v : [v]);
 
-  // ── الترويسة: الأزرار بتتغيّر مع الشريحة ──
   const actions = (
     <>
       {vTab && (<>
@@ -828,7 +754,6 @@ const Vouchers: React.FC = () => {
     </>
   );
 
-  // ── سطر الفلاتر ──
   const voucherSearch = (
     <Input
       className="sl-f-search"
@@ -869,7 +794,6 @@ const Vouchers: React.FC = () => {
       <Select
         className="sl-f-customer" placeholder="اختر الخزينة" showSearch
         value={tmTreasuryId} onChange={setTmTreasuryId}
-        // صندوق لكل خط لكل مندوب — القايمة طويلة، فبتتبحث وبتترتّب زي أي قايمة أسماء.
         options={sortByName(treasuries, (t) => t.name)
           .map((t) => ({ value: t.id, label: `${t.name} (${money(t.balance)})` }))}
         filterOption={searchFilter} filterSort={searchRank}
@@ -943,7 +867,6 @@ const Vouchers: React.FC = () => {
     </>);
   }
 
-  // ── الجسم ──
   const voucherTable = (rows: VoucherRecord[], kbProps: any, empty: string) => (
     <Table<VoucherRecord>
       {...kbProps}
@@ -1057,7 +980,6 @@ const Vouchers: React.FC = () => {
         pagination={{
           defaultPageSize: PAGE_SIZE, showSizeChanger: true, pageSizeOptions: PAGE_SIZE_OPTIONS,
           locale: { items_per_page: '' },
-          // المعروض من الإجمالي — عشان القايمة المفلترة ماتتقريش على إنها الكل.
           showTotal: () => (
             <span className="sl-foot">
               <span>المعروض: <b>{chequeFilter.filtered.length}</b> من {cheques.length}</span>
@@ -1138,7 +1060,6 @@ const Vouchers: React.FC = () => {
         dataSource={shownVouchers}
         columns={voucherCols.columns}
         pagination={serverPagination((t) => (
-          // كروت الإجماليات اللي كانت فوق الشاشة — في سطر الترقيم، وبقت للصفحة المعروضة.
           <span className="sl-foot">
             <span>عدد: <b>{t}</b></span>
             <span>تحصيل الصفحة: <b className="is-pos">{money(totals.receipts)}</b></span>
@@ -1151,11 +1072,9 @@ const Vouchers: React.FC = () => {
     );
   }
 
-  // مستند جاي من شاشة تانية ولسه بيفتح ⇒ مكان الكشف فاضي (الشرح في `useDocRoute.opening`).
   if (docOpening) return <DocOpening />;
   return (
     <>
-    {/* الإطار والشكل في `ListPage` — والشرايح هي نفس `?tab=` اللي القايمة بتفتح بيه. */}
     <ListPage
       icon={<WalletOutlined />}
       title="سندات القبض والصرف"
@@ -1165,9 +1084,6 @@ const Vouchers: React.FC = () => {
       actions={actions}
       filters={filters}
     >
-      {/* لافتة «الفترة مقفلة حتى كذا — أي سند بتاريخ أقدم هيترفض» اتشالت مع القفل نفسه.
-          الترحيل بقى مسموح بأي تاريخ، ولافتة بتحذّر من رفض مش بيحصل بتخلّي اللي بيقراها
-          يبعد عن حاجة مالهاش داعي. */}
       <div style={{ paddingTop: 6 }}>
         <VoucherKeyStrip world={keyWorld}
           onPosted={() => { loadVouchers(); loadTreasuries(); }} />
@@ -1191,9 +1107,6 @@ const Vouchers: React.FC = () => {
         destroyOnHidden
       >
         {voucherView && <VoucherDocument doc={voucherDoc(voucherView)!} />}
-        {/* تحت صورة السند مش جوّاها — `VoucherDocument` هي ورقة الطباعة، والزيادة
-            عليها بتتطبع. وده كلام الشاشة: رقم الورقة عند العميل، وصورها. «بيان السند»
-            اتنقل جوّه الورقة نفسها لأنه بيتطبع. */}
         {voucherView && (
           <>
             <Descriptions column={2} size="small" bordered style={{ marginTop: 12 }}>

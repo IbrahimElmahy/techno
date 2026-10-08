@@ -1,14 +1,3 @@
-/**
- * الطرف في سند القبض/الصرف — المرحلة ١ (٢٠٢٦-١٠-٠٦).
- *
- * a5 بيعمل السند على أي حساب: يصرف لعميل (رد فلوس)، يقبض من مورد (رجّع دفعة)، يصرف سلفة
- * لموظف، يحوّل لفرع. عندنا كان القبض من عميل بس والصرف لمورد بس. الطرف هنا واحد من خمسة،
- * والسيرفر بيقيّد على حسابه هو (`voucher_service._party_voucher`):
- *
- *   عميل / موظف / فرع ⇒ `customer_id` (الموظف والفرع كروت عملاء بتصنيفهم)
- *   مورد              ⇒ `supplier_id`
- *   حساب              ⇒ `account_id` — أي حساب فرعي في الشجرة غير الخزن
- */
 import React, { useEffect, useMemo, useState } from 'react';
 import { Form, Segmented, Select } from 'antd';
 import { api } from '../../api/client';
@@ -27,17 +16,10 @@ export const PARTY_KIND_OPTIONS: { value: PartyKind; label: string }[] = [
   { value: 'account', label: 'حساب' },
 ];
 
-/** اسم الطرف على ورقة السند وفي معاينة القيد — «العميل» مش «عميل». */
 export const PARTY_DOC_LABEL: Record<PartyKind, string> = {
   customer: 'العميل', supplier: 'المورد', employee: 'الموظف', branch: 'الفرع', account: 'الحساب',
 };
 
-/**
- * نوع الطرف من قيم سند محفوظ — لفتحه للتعديل على النوع الصح.
- *
- * من غيرها سند صرف لعميل كان بيتفتح على «مورد» (الافتراضي) فالعميل بيضيع من الفورم،
- * وسند قبض من مورد بيتفتح على «عميل» فاضي ومايتحفظش.
- */
 export function kindOfValues(v: any, customers: Party[]): PartyKind | null {
   if (v?.supplier_id) return 'supplier';
   if (v?.customer_id) {
@@ -48,22 +30,14 @@ export function kindOfValues(v: any, customers: Party[]): PartyKind | null {
   return null;
 }
 
-/** الأنواع اللي بتتقيّد على كارت عميل. */
 export const isCustomerKind = (k: PartyKind) => k === 'customer' || k === 'employee' || k === 'branch';
 
-/** كروت العملاء حسب النوع — الموظف «employee» والفرع «internal»، والباقي عملاء. */
 export function customersOfKind(customers: Party[], kind: PartyKind): Party[] {
   if (kind === 'employee') return customers.filter((c) => c.customer_type === 'employee');
   if (kind === 'branch') return customers.filter((c) => c.customer_type === 'internal');
   return customers.filter((c) => c.customer_type !== 'employee' && c.customer_type !== 'internal');
 }
 
-/**
- * الحسابات الفرعية من الشجرة (غير الخزن) — بتتحمّل أول ما «حساب» يتختار.
- *
- * **مرة واحدة للشاشة كلها.** خانة الطرف وتلميح رصيده وكارت القيد التلاتة محتاجين نفس
- * القايمة؛ لو كل واحد جابها لوحده كانت هتتطلب تلات مرات مع كل اختيار «حساب».
- */
 let accountsPromise: Promise<any[]> | null = null;
 export function loadPostableAccounts(): Promise<any[]> {
   if (!accountsPromise) {
@@ -95,20 +69,16 @@ export function PartyKindSwitch({ value, onChange }: {
   );
 }
 
-/** خانة الطرف للنوع المختار — عميل/موظف/فرع أو مورد أو حساب. */
 export function PartyKindField({
   kind, customers, suppliers, onCustomerChange, extra,
 }: {
   kind: PartyKind;
   customers: Party[];
   suppliers: Party[];
-  /** للعميل: الشاشة بتجيب خطوطه (أبيض/بولي). */
   onCustomerChange?: (id: number) => void;
-  /** سطر تحت الخانة — رصيد الطرف (`PartyBalance`). */
   extra?: React.ReactNode;
 }) {
   const accounts = usePostableAccounts(kind === 'account');
-  // الحساب الموقوف من «الحسابات الفرعيه» مايتختارش لسند جديد — إلا لو هو اللي على السند المفتوح.
   const currentAccount = Form.useWatch('account_id') as number | undefined;
   const custs = useMemo(() => customersOfKind(customers, kind), [customers, kind]);
   const label = PARTY_KIND_OPTIONS.find((o) => o.value === kind)?.label || 'الطرف';
@@ -139,7 +109,6 @@ export function PartyKindField({
       <Select
         showSearch allowClear placeholder="اكتب اسم الحساب أو كوده"
         options={activeChoices(accounts, currentAccount).map((a: any) => ({
-          // الاسم بس في القايمة (طلب العميل ٢٠٢٦-١٠-٠٧)؛ الكود في `search` المخفي فالبحث بيه لسه شغّال.
           value: a.id, label: withInactiveTag(a.name ?? '', a), search: a.code ?? '',
         }))}
         filterOption={searchFilter} filterSort={searchRank}

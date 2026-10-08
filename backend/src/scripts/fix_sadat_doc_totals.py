@@ -1,26 +1,3 @@
-"""إجماليات رؤوس مستندات السادات اللي اتنقلت بصفر — بتتملا من a5 (٢٠٢٦-١٠-٠٥).
-
-    python -m src.scripts.fix_sadat_doc_totals --file /opt/techno/a5factory/a5_doc_totals.txt
-    python -m src.scripts.fix_sadat_doc_totals --file ... --yes
-
-**اللي اتكشف:** في السادات ٧٤٧ فاتورة بيع و٧٧ مرتجع بيع و٢٣ مرتجع شرا رأسهم صفر (الإجمالي
-والصافي)، والسطور والقيود سليمة. تقرير المبيعات بيقرا `net`، فمبيعات السادات كانت طالعة
-٢٫٧ مليون بدل ~٢٨.
-
-**السبب:** قاعدة المصنع بتسيب `Emali_Bfr` (الإجمالي قبل الخصم) صفر في `Ord` و`OrdBK`
-و`PoordBK` كلهم — والاستيراد بياخد الإجمالي منه. الإجمالي الحقيقي في `emali_aftax`،
-والصافي في `Emali_aftr`، والخصم في `Bons`. في الشرا (`PoOrd`) `Emali_Bfr` متملي، فهو سليم.
-
-**الملف** تصدير `SELECT` بس من قاعدة a5 (`factory Pro2026`) — سطر لكل مستند:
-`نوع~رقم~Emali_Bfr~Bons~Emali_aftr~emali_aftax~totalstax~Mny_pay~Baki`، والنوع
-S / SR / P / PR (نفس حرف رقم المستند عندنا: `FC-S<Ord_id>`).
-
-**بيتملا بنفس شكل العلياء:** `gross` = الإجمالي، `net`/`value` = الصافي، ونسبة الخصم
-`variable_discount_pct = combined_pct` = الخصم ÷ الإجمالي. الكاش والآجل والسطور والقيود
-مابيتلمسوش.
-
-مقفول على السادات (`branch_id` الفرع + بادئة `FC-`)، وعلى الرؤوس اللي إجماليها صفر بس.
-"""
 from __future__ import annotations
 
 import argparse

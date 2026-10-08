@@ -1,13 +1,7 @@
-/**
- * جزء من شاشة الأستاذ العام — اتفصل عن `GeneralLedger.tsx` لما الملف وصل ١٤٠٠ سطر
- * وخمس تبويبات. الشاشة والمسار زي ما هما بالظبط؛ اللي اتغيّر هو إن كل تبويب بقى
- * ملف لوحده، فالتعديل في «الدفاتر» مابيفتحش «ميزان المراجعة» قدامك.
- */
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   Button, Card, Col, DatePicker, Divider, Empty, Form, Input, Row, Select, Space, Switch, Tabs, Tag, Tooltip, message, Radio,
 } from 'antd';
-// فلتر على كل عمود — شوف `FilterTable`.
 import { FilterTable as Table } from '../../components/FilterTable';
 import { Statistic } from '../../components/Statistic';
 import { InputNumber } from '../../components/NumberInput';
@@ -82,8 +76,6 @@ export default function JournalsTab() {
     } catch (err) { console.error(err); }
   };
 
-  // التشغيل قرار مالوش رجعة: أول ما يتجزّأ قيد في الدفتر، السلسلة موجودة في القاعدة
-  // والسيرفر بيرفض إطفاءها — عشان ماتفضلش موجودة وبلا حارس.
   const toggleHash = async (j: Journal) => {
     try {
       await api.patch(`/api/v1/journals/${j.id}`, { restrict_mode_hash: !j.restrict_mode_hash });
@@ -121,7 +113,6 @@ export default function JournalsTab() {
       render: (_: any, r: Journal) => (
         <Space size={0}>
           <Button type="link" icon={<EditOutlined />} onClick={() => openEdit(r)}>تعديل</Button>
-          {/* دفتر النظام مايتقفلش — فيه كود بيوجّه قيود عليه. */}
           {!r.is_system && (
             <Button type="link" danger={r.active} onClick={() => toggleActive(r)}>
               {r.active ? 'قفل' : 'فتح'}

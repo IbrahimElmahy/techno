@@ -1,18 +1,3 @@
-"""الحضور والانصراف — الورديات والعطلات وسجل اليوم (HR-2).
-
-The service decides WHICH rows to write; every figure on them comes from `lib/attendance_calc.py`,
-and every row read out of a file comes from `lib/attendance_import.py`. Neither of those touches a
-session, so the arithmetic and the parsing are testable without a database and this file stays
-about persistence and rules.
-
-Two rules are load-bearing:
-
-* **يوم داخل مسير مرحّل مابيتعدّلش.** The ledger entry the payroll posted cannot be edited — that
-  is the whole design — so a day that could still move underneath it would leave the books resting
-  on a figure with no source. The refusal names the run so the answer («اعكس المرتب الأول») is on
-  the screen rather than in somebody's head.
-* **الاستيراد بيرجّع اللي مااتطابقش.** A file with three unrecognised identifiers must say so.
-"""
 from __future__ import annotations
 
 from datetime import date
@@ -36,14 +21,11 @@ from src.services import audit_service, numbering
 
 
 class AttendanceError(Exception):
-    """اليوم أو الوردية مايتسجّلوش زي ما مكتوب."""
+    pass
 
 
 class AttendanceLocked(AttendanceError):
-    """اليوم داخل مسير مرحّل — لازم المسير يتعكس الأول."""
-
-
-# ------------------------------------------------------------------ الورديات
+    pass
 
 
 def create_shift(
@@ -79,7 +61,6 @@ def create_shift(
 
 
 def _clear_default(db: Session) -> None:
-    """وردية افتراضية واحدة بس — اتنين معناهم إن اللي بيتشال منهم عشوائي."""
     for other in db.scalars(select(WorkShift).where(WorkShift.is_default.is_(True))).all():
         other.is_default = False
 
@@ -113,11 +94,6 @@ def assign_shift(
 
 
 def shift_for(db: Session, employee_id: int, day: date) -> WorkShift | None:
-    """وردية الموظف في اليوم ده — آخر تخصيص ساري، وإلا الافتراضية.
-
-    Resolved per day rather than per employee, because a shift change in March must not re-judge
-    February. The day row then freezes whatever this returned.
-    """
     assignment = db.scalar(
         select(EmployeeShiftAssignment)
         .where(EmployeeShiftAssignment.employee_id == employee_id,
@@ -130,9 +106,6 @@ def shift_for(db: Session, employee_id: int, day: date) -> WorkShift | None:
         WorkShift.is_default.is_(True), WorkShift.active.is_(True)))
 
 
-# ------------------------------------------------------------------ العطلات
-
-
 def add_holiday(
     db: Session, *, name: str, holiday_date: date, actor_user_id: int,
     paid: bool = True, branch_id: int | None = None,
@@ -142,7 +115,6 @@ def add_holiday(
         raise AttendanceError("اسم العطلة مطلوب.")
     clash = db.scalar(select(Holiday).where(
         Holiday.holiday_date == holiday_date,
-        # `IS 2` مش SQL صالح على بوستجرس — كانت أي عطلة لفرع بعينه بتوقع بـ٥٠٠.
         Holiday.branch_id.is_(None) if branch_id is None else Holiday.branch_id == branch_id,
         Holiday.active.is_(True)))
     if clash is not None:
@@ -159,7 +131,6 @@ def add_holiday(
 
 
 def is_holiday(db: Session, day: date, branch_id: int | None = None) -> Holiday | None:
-    """عطلة الفرع الأول، وإلا العطلة العامة."""
     rows = db.scalars(select(Holiday).where(
         Holiday.holiday_date == day, Holiday.active.is_(True))).all()
     for row in rows:
@@ -169,9 +140,6 @@ def is_holiday(db: Session, day: date, branch_id: int | None = None) -> Holiday 
         if row.branch_id is None:
             return row
     return None
-
-
-# ------------------------------------------------------------------ اليوم
 
 
 def _assert_open(day: AttendanceDay | None) -> None:
@@ -195,7 +163,6 @@ def record_day(
     source: AttendanceSource = AttendanceSource.manual,
     import_batch_id: int | None = None,
 ) -> AttendanceDay:
-    """بيسجّل يوم أو بيعدّله. مفتاح (موظف، يوم) هو اللي بيخلّي الاستيراد آمن يتعاد."""
     employee = db.get(Employee, employee_id)
     if employee is None:
         raise AttendanceError("الموظف غير موجود.")
@@ -244,7 +211,6 @@ def record_day(
 def _derive_status(
     db: Session, employee: Employee, day: date, shift: WorkShift | None, check_in: str | None,
 ) -> AttendanceStatus:
-    """الحالة لما محدش يقولها: عطلة ← راحة ← حاضر/غايب."""
     if is_holiday(db, day, employee.branch_id) is not None:
         return AttendanceStatus.holiday
     if shift is not None and calc.is_weekend(day, shift.weekend_days):
@@ -266,18 +232,7 @@ def delete_day(db: Session, *, day_id: int, actor_user_id: int) -> None:
     db.flush()
 
 
-# ------------------------------------------------------------------ الاستيراد
-
-
 def _match_employees(db: Session, branch_id: int | None = None) -> dict[str, int]:
-    """مفتاح الملف → رقم الموظف. الكود والرقم القومي والاسم، بالترتيب ده.
-
-    Which one a device prints depends on how it was set up years ago and nobody remembers, so all
-    three are accepted rather than making somebody re-key ninety rows.
-
-    `branch_id`: موظفين الفرع ده (واللي مالهمش فرع) بس — موظف الفرع بيستورد على فرعه، واسم
-    في الملف بيطابق موظف فرع تاني بيطلع «مش متطابق» بدل ما يتكتب عليه حضور في صمت.
-    """
     stmt = select(Employee)
     if branch_id is not None:
         stmt = stmt.where(or_(Employee.branch_id == branch_id, Employee.branch_id.is_(None)))
@@ -291,7 +246,6 @@ def _match_employees(db: Session, branch_id: int | None = None) -> dict[str, int
 
 def preview_import(db: Session, *, rows: list[list[str]], mapping: importer.ColumnMap,
                    branch_id: int | None = None) -> dict:
-    """بيقرا الملف ومابيكتبش حاجة — عشان حد يبص قبل ما يلتزم."""
     return _plan(db, rows=rows, mapping=mapping, branch_id=branch_id)
 
 
@@ -305,7 +259,6 @@ def _plan(db: Session, *, rows: list[list[str]], mapping: importer.ColumnMap,
     for (key, day), slot in sorted(folded.items(), key=lambda kv: (kv[0][1], kv[0][0])):
         employee_id = keys.get(key)
         if employee_id is None:
-            # مابيتشالش — بيرجع للمستخدم. صف مرمي في صمت = موظف غايب شهر ومحدش عارف.
             unmatched.append({"employee_key": key, "date": str(day)})
             continue
         existing = db.scalar(select(AttendanceDay).where(
@@ -336,7 +289,6 @@ def apply_import(
     db: Session, *, rows: list[list[str]], mapping: importer.ColumnMap, actor_user_id: int,
     filename: str | None = None, branch_id: int | None = None,
 ) -> dict:
-    """بينفّذ الاستيراد. آمن يتعاد: نفس الملف تاني بيعدّل الأيام مش بيكرّرها."""
     plan = _plan(db, rows=rows, mapping=mapping, branch_id=branch_id)
     batch = AttendanceImport(
         document_number=numbering.next_document_number(db, AttendanceImport, "ATT"),

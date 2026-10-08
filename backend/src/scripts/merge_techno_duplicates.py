@@ -1,30 +1,3 @@
-"""يلمّ «تكنو فلان» في «فلان» — الأزواج اللي فاتت، وبواقي الدمج اللي اتعمل قبل كده.
-
-    python -m src.scripts.merge_techno_duplicates            # يعرض بس (الافتراضي)
-    python -m src.scripts.merge_techno_duplicates --yes      # ينفّذ
-    python -m src.scripts.merge_techno_duplicates --yes --actor admin
-
-بيتعاد تشغيله بأمان: الكارت اللي اتدمج بيتقفل، ومستنداته بتتنقل — التشغيلة التانية مابتلاقيش
-حاجة. **ولا صف بيتمسح**، ولا قيد بيتلمس: الدمج بينقل مؤشرات (`customer_id`، وحساب الذمم
-بيتسمّى «بولي» عند الباقي)، والفلوس في مكانها.
-
----------------------------------------------------------------------------
-**اللي بيعمله، بالترتيب:**
-
-1. **أزواج جديدة** — «تكنو X» شغّال وفي نفس الفرع «X» شغّال واحد بس، بالاسم المطبّع
-   (أ/ا، ة/ه، ى/ي). المطابقة القديمة كانت بالمسافات بس، فسابت «تكنو اسامة ترابيس» جنب
-   «اسامه ترابيس». الدمج نفسه هو `customer_merge_service.apply`.
-2. **بواقي** — كروت متعلّمة «(مدموج في #N)» ولسه عليها فواتير ونقاط. الدمج نقل اللي كان
-   موجود ساعتها، وبعده التزامن الليلي مع a5 فضل ينزّل فواتير البولي على الكارت المقفول
-   (بالكود `AL-A5-<Cust_id>`). بتتنقل للكارت الشغّال، وبتاخد نوع «بولي» لو مالهاش نوع.
-
-**اللي بيتخطّاه ويقوله** (محتاج قرار من حد يعرف العميل): أكتر من مرشّح بنفس الاسم، تليفونين
-مختلفين، الباقي عنده حساب بولي بالفعل، المكرر شايل أكتر من حساب، هدف دمج مش موجود أو في فرع
-تاني أو سلسلة مقفولة، و«تكنو ثيرم …» (اسم الشركة نفسها، مش خط بولي لعميل).
-
-**بيقف لو الفلوس اتحركت:** إجمالي أرصدة كل حسابات العملاء قبل وبعد لازم يطلعوا نفس الرقم
-بالمليم، وإلا الـtransaction كلها بترجع.
-"""
 from __future__ import annotations
 
 import sys
@@ -39,7 +12,6 @@ from src.models.user import User
 from src.services import customer_merge_service as cms
 from src.services import ledger_service
 
-# أسماء بتبدأ بـ«تكنو» ومش خط بولي لعميل: اسم الشركة («تكنو ثيرم»، «تكنووو ثيرم»).
 COMPANY_PREFIXES = ("تكنو ثيرم", "تكنوثيرم", "تكنو ثرم", "تكنووو")
 
 
@@ -85,7 +57,6 @@ def run(*, execute: bool, actor: str | None) -> int:
     db = SessionLocal()
     try:
         if not execute:
-            # العرض مايكتبش حاجة — والقاعدة نفسها بتضمن ده.
             db.execute(text("SET TRANSACTION READ ONLY"))
 
         customers = db.scalars(select(Customer)).all()
@@ -94,7 +65,6 @@ def run(*, execute: bool, actor: str | None) -> int:
         for acc in db.scalars(select(CustomerAccount)).all():
             accounts[acc.customer_id].append(acc)
 
-        # ---------------------------------------------------------------- 1) أزواج جديدة
         plan = cms.plan(db)
         ids = {i for p in plan.pairs for i in (p.keep_customer_id, p.merge_customer_id)}
         refs = cms.count_refs(db, ids)
@@ -124,7 +94,6 @@ def run(*, execute: bool, actor: str | None) -> int:
             print("      بعد: " + " | ".join(f"«{keep.name}»/{k}={v}" for k, v in after.items())
                   + f"   (المجموع {sum(before.values())} → {sum(after.values())})")
 
-        # ---------------------------------------------------------------- 2) بواقي
         leftovers = cms.plan_leftovers(db)
         ok = [x for x in leftovers if x.problem is None]
         moving = Counter()
@@ -149,14 +118,12 @@ def run(*, execute: bool, actor: str | None) -> int:
             print(f"  • #{x.dupe_id} «{x.dupe_name}» → #{x.keep_id} «{x.keep_name}»: "
                   f"{_fmt_refs(x.refs)}")
 
-        # ---------------------------------------------------------------- 3) محتاج قرار
         review: list[str] = []
         for name, why in plan.skipped:
             review.append(f"«{name}»: {why}")
         for x in leftovers:
             if x.problem:
                 review.append(f"#{x.dupe_id} «{x.dupe_name}»: {x.problem} ({_fmt_refs(x.refs)})")
-        # «تكنو» من غير أصل في فرعه: بيتقال لو ليه شبيه في فرع تاني أو بصيغة الشركة.
         keyed: dict[str, list[Customer]] = defaultdict(list)
         for c in customers:
             if c.active:
@@ -215,7 +182,7 @@ def run(*, execute: bool, actor: str | None) -> int:
               f"نوع اتحط: {r2.get('families_tagged') or {}}")
         print(f"  كروت مدموجة لسه عليها فواتير بعد التنفيذ: {left}\n")
         return 0
-    except Exception as exc:  # noqa: BLE001 — آخر خط قبل المستخدم
+    except Exception as exc:  # noqa: BLE001
         db.rollback()
         print(f"\n✗ وقف من غير ما ينفّذ حاجة: {exc}\n")
         raise

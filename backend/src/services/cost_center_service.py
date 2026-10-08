@@ -1,9 +1,3 @@
-"""Cost Center master service (006, T007).
-
-Hierarchical master for the analytical dimension. Mirrors `chart_service` rules: unique code,
-child-under-existing-parent, deactivate-not-delete (a center with tagged lines or active children is
-never hard-deleted). A cost center is not a ledger account — it only labels ledger lines.
-"""
 from __future__ import annotations
 
 from sqlalchemy import select
@@ -13,7 +7,7 @@ from src.models.cost_center import CostCenter
 
 
 class CostCenterError(Exception):
-    """Invalid cost-center operation (duplicate code, unknown parent, delete-with-history)."""
+    pass
 
 
 def create(db: Session, *, code: str, name: str, parent_id: int | None = None) -> CostCenter:

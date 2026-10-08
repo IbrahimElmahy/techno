@@ -12,17 +12,6 @@ import {
   EXTRA_SECTIONS, HOME_SCREEN, NAVIGATION, isGroup, type NavGroup, type NavScreen,
 } from '../components/navigation';
 
-/**
- * صلاحيات المستخدمين — كل مستخدم لوحده (٢٠٢٦-١٠-٠٥).
- *
- * الدور بيدّي الافتراضي (شاشة «صلاحيات الأدوار»)، والشاشة دي بتكتب **فرق** المستخدم عنه:
- * صفحة تبان له أو تتخبّى، عملية يقدر عليها أو تتقفل، وكروت التطبيق. اللي ماتلمسش بيفضل
- * ماشي على دوره، فلما الدور يتغيّر بيتحرّك معاه.
- *
- * المالك والأدمن بيديروا الكل. مدير الفرع بيشوف مستخدمين فرعه اللي تحته بس، وبيدّي من
- * صلاحياته هو بس — اللي مش عنده بيبان مقفول. والسيرفر بيفحص نفس القاعدة.
- */
-
 interface UserRow {
   id: number; username: string; full_name: string | null; role: string; role_label: string;
   branch_id: number | null; branch_name: string | null; active: boolean; overrides: number;
@@ -40,7 +29,6 @@ interface Perms {
 
 const PAGE = 'page:';
 
-/** الحالة المعروضة: الافتراضي + الفرق. `on` = الفعلي بعد الفرق. */
 type Tri = { def: boolean; on: boolean };
 
 export default function UserPermissions() {
@@ -55,7 +43,6 @@ export default function UserPermissions() {
   const [perms, setPerms] = useState<Perms | null>(null);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
-  /** الفرق اللي على الشاشة قبل الحفظ: مفتاح ⇒ true مدّي / false مشال. */
   const [diff, setDiff] = useState<Record<string, boolean>>({});
 
   const loadUsers = async () => {
@@ -90,7 +77,6 @@ export default function UserPermissions() {
     return users.filter((u) => `${u.full_name || ''} ${u.username} ${u.role_label} ${u.branch_name || ''}`.includes(t));
   }, [users, q]);
 
-  // ------------------------------------------------------------------ منطق الفرق
   const targetRole = perms ? (perms.user.role === 'owner' ? 'system_admin' : perms.user.role) : '';
   const roleCaps = useMemo(() => new Set(perms?.role_capabilities || []), [perms]);
   const assignable = useMemo(() => new Set(perms?.assignable || []), [perms]);
@@ -106,7 +92,6 @@ export default function UserPermissions() {
     });
   };
 
-  /** المدير يقدر يفتح الصفحة دي لغيره؟ — لازم يكون شايفها هو نفسه. */
   const managerSeesPage = (s: NavScreen) => isAdmin || (
     !perms?.manager_hidden_pages.includes(s.key)
     && (s.roles.includes(meRole) || !!me?.pages_shown?.includes(s.key)));
@@ -130,7 +115,6 @@ export default function UserPermissions() {
     !== JSON.stringify([...perms.grants.map((c) => [c, true]), ...perms.denies.map((c) => [c, false])]
       .sort((a, b) => String(a[0]).localeCompare(String(b[0]))));
 
-  // ------------------------------------------------------------------ العرض
   const mark = (t: Tri) => (t.on !== t.def
     ? <Tag color={t.on ? 'green' : 'red'} style={{ marginInlineStart: 6 }}>{t.on ? 'مدّاة له' : 'مقفولة عليه'}</Tag>
     : null);

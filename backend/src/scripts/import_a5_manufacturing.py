@@ -1,39 +1,3 @@
-"""حركة التصنيع من a5 — النوعين اللي `import_a5_docs` مابيعرفهمش.
-
-    python -m src.scripts.import_a5_manufacturing --dir /opt/techno/a5factory --branch السادات --prefix FC-
-    python -m src.scripts.import_a5_manufacturing --dir ... --branch ... --prefix ... --yes
-
----------------------------------------------------------------------------
-**ليه السكربت ده موجود.** `import_a5_docs` بيعرف سبع أنواع (بيع، شرا، مردوداتهم،
-تحويل، أذون) وبيفلتر أي حاجة تانية بصمت. وفي مصنع السادات ده بيرمي **٤٬٣٨٩ سطر**:
-
-    AznType 9   ٣٬٣٢٦ سطر   صرف خامات    خارج من الجودة/سحب المواسير/الجيوان
-    AznType 4   ١٬٠٦٣ سطر   إنتاج تام     داخل مخزن الانتاج التام
-
-والنتيجة مقاسة مش نظرية: بعد النقل من غيرهم طلع **٦٧٠ زوج (صنف×مخزن)** مختلف عن a5
-بفرق ٦٣٠٬٣٧٩ وحدة — مخزن الانتاج التام بالسالب عندنا لأنه بيتباع منه من غير ما يتنتج
-فيه، والخامات أعلى لأنها بتتشترى ومابتتستهلكش. نص المعادلة كان ناقص.
-
-**أمر التشغيل عندهم `EntgRef`.** كل السطور اللي بنفس الرقم مستند واحد: الاستهلاك
-والإنتاج مع بعض. والأمر الواحد بيطلّع أكتر من منتج — شفنا أربعة في أمر.
-
----------------------------------------------------------------------------
-تلات قرارات:
-
-* **بتتسجّل عمليات مش أوامر.** `ManufacturingOrder` عندنا منتج واحد لكل أمر، وأمر a5
-  بيطلّع كذا منتج. تفصيل أمر واحد لكذا أمر معناه إننا نوزّع الخامات على المنتجات
-  بالتخمين — والوصفة مش دايماً موجودة. فبتتسجّل `ManufacturingOp` لكل سطر: ده اللي
-  حصل فعلاً، والرصيد بيطلع مظبوط، والوصفات بتتنقل لوحدها في `import_a5_boms`.
-
-* **رقم المستند مشتق من `EntgRef`** (`FC-MFG-3336-001`). يعني السكربت بيتعاد بأمان —
-  السطر اللي اتسجّل بيتخطى — والسطر عندنا بيرجع لأصله في a5 بالرقم.
-
-* **السالب مسموح، والفحص على نوع الصنف بيتخطى.** `manufacturing_service.consume`
-  بيطلب `kind == raw_material` و`produce` بيطلب `product`، ونقل a5 عمل كل الأصناف
-  `product` — فالنداء عليهم بيرفض ٣٬٣٢٦ سطر. ودي حركة حصلت خلاص من سنة، مش أمر
-  بيتعمل دلوقتي: الرفض معناه إن الرصيد يفضل غلط. نفس منطق `allow_negative` في
-  `import_a5_docs`.
-"""
 from __future__ import annotations
 
 import argparse
@@ -55,7 +19,6 @@ from src.models.warehouse import Warehouse
 from src.scripts.import_a5 import _clean, _money, _read
 from src.services import stock_service
 
-#: أعمدة `a5_mfg.tsv`
 (M_TYPE, M_REF, M_DATE, M_CODE, M_NAME, M_QTY, M_IN, M_OUT, M_AZN) = range(9)
 
 PRODUCE, CONSUME = "4", "9"
@@ -111,7 +74,7 @@ def run(folder: str, *, execute: bool, branch_name: str, prefix: str) -> None:
                     continue
                 qty = _money(r[M_QTY])
                 if qty <= 0:
-                    continue          # a5 بيكتب سطور بصفر — مكوّن مش مستهلك المرة دي
+                    continue
                 code, name = _clean(r[M_CODE]), _clean(r[M_NAME])
                 item = by_code.get(f"{prefix}{code}") or by_name.get(name)
                 if item is None:
@@ -137,9 +100,6 @@ def run(folder: str, *, execute: bool, branch_name: str, prefix: str) -> None:
                     direction=StockDirection.in_ if produce else StockDirection.out,
                     quantity=Decimal(str(qty)), actor_user_id=actor.id,
                     source_doc_type="manufacturing", source_doc_id=op.id, allow_negative=True)
-                # **التاريخ بيتحط بالإيد.** `post_movement` بيستنتجه من ورقة المستند،
-                # و`ManufacturingOp` مالهاش عمود تاريخ — فكان هياخد تاريخ النهارده
-                # ويحط شغل سنة كاملة في يوم واحد.
                 mv.movement_date = _date(r[M_DATE]) or mv.movement_date
                 op.stock_movement_id = mv.id
                 seen.add(doc)

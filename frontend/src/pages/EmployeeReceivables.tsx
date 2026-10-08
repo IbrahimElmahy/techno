@@ -29,27 +29,6 @@ import { useQuickVoucher } from './vouchers/useQuickVoucher';
 import type { PartyKind } from './vouchers/PartyKind';
 import type { Party } from './vouchers/types';
 
-/**
- * ذمم وسلف الموظفين — «الراجل ده عليه كام، ومنين، وهيسدّد إزاي».
- *
- * **كانوا شاشتين بيجاوبوا على نفس السؤال** (طلب العميل ٢٠٢٦-١٠-٠٨): «ذمم الموظفين» بتقرا
- * رصيد حساب الموظف من الدفتر (اللي اتنقل من a5 + السندات)، و«سلف العاملين» بتعرض مستندات
- * السلف اللي بتتخصم من المرتب. اللي بيسأل «فلان عليه كام» كان لازم يفتح الاتنين ويجمع بإيده.
- * دلوقتي صف واحد لكل موظف: ذمته + سلفه المفتوحة = الإجمالي، والعمليات كلها من نفس الصف.
- *
- * **الرقمين في حسابين مختلفين** — السلفة بتتقيد على «سلف العاملين» (حساب واحد للكل) مش على
- * حساب ذمة الموظف، فالإجمالي مجموعهم ومافيش تكرار. والسيرفر بيتأكد (`employee_dues_service`):
- * لو سلفة في يوم اتقيدت على حساب الذمة نفسه مابتتجمعش تاني.
- *
- * **«تحصيل» بينزل على الذمة، والسلفة بتتسدّد من المرتب.** سند القبض بيتقيّد على حساب الموظف؛
- * قسط السلفة بيتخصم في المسير. عشان كده زرار التحصيل بيقول كده صراحةً.
- *
- * **والحسابات اللي مالهاش موظف بتبان برضه.** «عهدة سيارة الفيوم» و«فرع اكتوبر» دلاء محاسبية
- * عليها فلوس فعلاً — إخفاؤها كان هيخلّي مجموع الشاشة أقل من «ذمم الموظفين» في ميزان المراجعة.
- *
- * **والعزل بالفرع من السيرفر**: موظف الفرع بيشوف موظفين فرعه وسلفهم بس.
- */
-
 interface DueRow {
   employee_id: number | null;
   employee_code: string | null;
@@ -144,22 +123,18 @@ const KIND: Record<string, { label: string; color: string; sign: number }> = {
 const period = (y: number | null, m: number | null) =>
   (y && m ? `${y}/${String(m).padStart(2, '0')}` : '');
 
-/** «٣ أقساط × ١٠٠٠٫٠٠» — الجملة اللي بتتقال بالفم. */
 export function instalmentLabel(count: number, each: string): string {
   return count <= 1 ? 'قسط واحد' : `${count} أقساط × ${money(each)}`;
 }
 
-/** الجزاء بالأيام مالوش مبلغ لحد ما المسير يحسبه — والشاشة لازم تقول كده مش تقول صفر. */
 export function adjustmentValue(row: Adjustment): string {
   if (row.basis === 'days') return `${Number(row.quantity)} يوم`;
   if (row.basis === 'hours') return `${Number(row.quantity)} ساعة`;
   return money(row.amount);
 }
 
-/** المتبقي من سلفة ملغية صفر — السيرفر بيحسبه «المبلغ − المخصوم» من غير ما يبص على الحالة. */
 const remaining = (a: Advance) => (a.status === 'cancelled' ? 0 : Number(a.outstanding || 0));
 
-/** السلفة تتعدّل أو تتلغي لحد أول قسط يتخصم في مسير — بعدها القسيمة اتطبعت على رقمها. */
 const editable = (a: Advance) => a.status === 'active' && Number(a.taken) === 0;
 
 const emptyAdvance = () => ({
@@ -177,7 +152,6 @@ const emptyAdvance = () => ({
 export default function EmployeeReceivables() {
   const navigate = useNavigate();
   const [tabRaw, setTab] = useQueryTab('open');
-  // `nonzero` كان اسم الشريحة في «ذمم الموظفين» القديمة — الروابط المحفوظة بتفتح صح.
   const tab: TabKey = tabRaw === 'nonzero' ? 'open'
     : (TAB_KEYS.includes(tabRaw as TabKey) ? tabRaw as TabKey : 'open');
   const onDues = tab === 'open' || tab === 'all';
@@ -194,9 +168,7 @@ export default function EmployeeReceivables() {
   const [adjustments, setAdjustments] = useState<Adjustment[]>([]);
   const [employeeId, setEmployeeId] = useState<number | undefined>();
   const [advStatus, setAdvStatus] = useState<string | undefined>();
-  // سلف كل موظف لما صفّه يتفتح — بتتجاب مرة وبتتمسح مع أي تحديث.
   const [byEmployee, setByEmployee] = useState<Record<number, Advance[]>>({});
-  // الصفوف المفتوحة — بعد أي تحديث سلفها بتتجاب تاني، مش بتفضل فاضية.
   const [expanded, setExpanded] = useState<React.Key[]>([]);
 
   const [advOpen, setAdvOpen] = useState(false);
@@ -208,8 +180,6 @@ export default function EmployeeReceivables() {
   });
   const [saving, setSaving] = useState(false);
 
-  // ------------------------------------------------------------------ التحميل
-
   const loadDues = useCallback(async () => {
     setLoading(true);
     try {
@@ -217,7 +187,7 @@ export default function EmployeeReceivables() {
         params: { q: q || undefined, branch_id: branchId, only_open: tab !== 'all' },
       });
       setDues(res.data);
-    } catch { /* الرسالة من `api` */ } finally { setLoading(false); }
+    } catch {} finally { setLoading(false); }
   }, [q, branchId, tab === 'all']);
 
   const advancesVisible = dues?.advances_visible ?? false;
@@ -233,7 +203,7 @@ export default function EmployeeReceivables() {
       ]);
       setAdvances(a.data || []);
       setAdjustments(j.data || []);
-    } catch { /* الرسالة من `api` */ } finally { setLoading(false); }
+    } catch {} finally { setLoading(false); }
   }, [advancesVisible, employeeId, advStatus]);
 
   useEffect(() => { loadDues(); }, [loadDues]);
@@ -246,7 +216,6 @@ export default function EmployeeReceivables() {
   const reloadAll = () => { loadDues(); if (!onDues) loadAdvances(); };
 
   useEffect(() => {
-    // كل تحميل للذمم بيعيد سلف الصفوف المفتوحة — تعديل أو إلغاء من جوّه الصف يبان فيه.
     setByEmployee({});
     expanded.forEach((k) => {
       const id = Number(String(k).replace(/^e/, ''));
@@ -258,7 +227,7 @@ export default function EmployeeReceivables() {
     try {
       const r = await api.get('/api/v1/hr/advances', { params: { employee_id: id } });
       setByEmployee((m) => ({ ...m, [id]: r.data || [] }));
-    } catch { /* الرسالة من `api` */ }
+    } catch {}
   };
 
   const ensureTreasuries = async () => {
@@ -267,8 +236,6 @@ export default function EmployeeReceivables() {
     setTreasuries(list);
     return list;
   };
-
-  // ------------------------------------------------------------------ السلف
 
   const openAdvance = async (employee?: number, edit?: Advance) => {
     await ensureTreasuries();
@@ -311,7 +278,7 @@ export default function EmployeeReceivables() {
       }
       setAdvOpen(false);
       reloadAll();
-    } catch { /* الرسالة من `api` */ } finally { setSaving(false); }
+    } catch {} finally { setSaving(false); }
   };
 
   const cancel = async (what: 'advances' | 'adjustments', id: number) => {
@@ -319,7 +286,7 @@ export default function EmployeeReceivables() {
       await api.post(`/api/v1/hr/${what}/${id}/cancel`);
       message.success('تم الإلغاء');
       reloadAll();
-    } catch { /* الرسالة من `api` */ }
+    } catch {}
   };
 
   const saveAdjustment = async () => {
@@ -339,13 +306,8 @@ export default function EmployeeReceivables() {
       message.success('تم التسجيل');
       setAdjOpen(false);
       reloadAll();
-    } catch { /* الرسالة من `api` */ } finally { setSaving(false); }
+    } catch {} finally { setSaving(false); }
   };
-
-  // ------------------------------------------------------------------ السندات
-  //
-  // نفس بوبابات شاشة السندات (`useQuickVoucher`) — مش نسخة. الطرف «موظف» على كارته في العملاء
-  // (اللي على نفس حساب الذمة)، والحساب اللي مالوش كارت بيتعمل عليه السند كـ«حساب» مباشرة.
 
   const receipt = useQuickVoucher(() => reloadAll());
   const payment = useQuickVoucher(() => reloadAll());
@@ -373,11 +335,8 @@ export default function EmployeeReceivables() {
     const values: any = kind === 'employee'
       ? { customer_id: r.customer_id } : { account_id: r.account_id };
     values.description = which === 'receipt' ? `تحصيل من ذمة ${name}` : `صرف على ذمة ${name}`;
-    // البوباب بيتركّب مع الفتح — القيم بتتحط بعد التركيب (نفس `useQuickVoucher.edit`).
     setTimeout(() => v.form.setFieldsValue(values), 0);
   };
-
-  // ------------------------------------------------------------------ الأعمدة
 
   const branchName = useMemo(
     () => Object.fromEntries(branches.map((b) => [b.id, b.name])), [branches]);
@@ -432,7 +391,6 @@ export default function EmployeeReceivables() {
           {r.active === false ? <Tag style={{ marginInlineStart: 6 }}>معطّل</Tag> : null}
         </span>
       ) : (
-        // الحساب اللي مالوش موظف — بيتقال إنه كده صراحةً بدل شرطة بتوحي إن فيه ناقص.
         <span>{r.account_name} <Tag color="default">حساب بلا موظف</Tag></span>
       )),
     },
@@ -461,7 +419,6 @@ export default function EmployeeReceivables() {
       },
       {
         title: 'الأقساط', key: 'instalments', width: 190,
-        // «هيتخصم منه كام الشهر الجاي» — السؤال اللي بييجي بعد «عليه كام».
         render: (_: any, r: DueRow) => (r.remaining_instalments ? (
           <span>
             باقي {r.remaining_instalments} {r.remaining_instalments === 1 ? 'قسط' : 'أقساط'}
@@ -476,8 +433,6 @@ export default function EmployeeReceivables() {
       title: 'الإجمالي', dataIndex: 'total_due', key: 'total_due', width: 140, align: 'left',
       defaultSortOrder: 'descend',
       sorter: (a, b) => Math.abs(Number(a.total_due)) - Math.abs(Number(b.total_due)),
-      // السالب معناه إن الشركة هي اللي عليها للراجل مش العكس — لون مختلف لأن الإشارة
-      // لوحدها بتتقرا غلط في عمود مليان أرقام.
       render: (v: string) => <b style={{ color: Number(v) < 0 ? '#cf1322' : undefined }}>{money(v)}</b>,
     },
     { title: 'آخر حركة', dataIndex: 'last_movement', key: 'last_movement', width: 110,
@@ -499,7 +454,6 @@ export default function EmployeeReceivables() {
       render: (_: any, r: Advance) => instalmentLabel(r.instalments, r.instalment_amount) },
     { title: 'اتخصم', dataIndex: 'taken', key: 'taken', width: 110,
       render: (v: string) => money(v) },
-    // المتبقي هو الرقم اللي أي حد بيسأل عن سلفة بيقصده.
     { title: 'المتبقي', dataIndex: 'outstanding', key: 'outstanding', width: 120,
       render: (_: string, r: Advance) => (r.status === 'cancelled' ? '—'
         : <b style={{ color: remaining(r) ? '#cf1322' : '#6AB42D' }}>{money(r.outstanding)}</b>) },
@@ -521,7 +475,6 @@ export default function EmployeeReceivables() {
           </Popconfirm>
         </span>
       ) : r.status === 'active' ? (
-        // اتخصم منها قسط — التعديل والإلغاء بيبدأوا بعكس المسير. بيتقال بدل زرار بيترفض.
         <Tooltip title="اتخصم منها قسط في مسير مرحّل — اعكس المسير الأول عشان تعدّلها أو تلغيها">
           <Tag>مقفولة للتعديل</Tag>
         </Tooltip>
@@ -529,8 +482,6 @@ export default function EmployeeReceivables() {
     ) },
   ];
 
-  // جدول الأقساط تحت السلفة — «هيتخصم مني كام الشهر الجاي» سؤال بيتسأل ساعة الاستلاف،
-  // والإجابة مكانها هنا مش في شاشة تانية.
   const scheduleTable = (r: Advance) => (
     <Table
       size="small" pagination={false} rowKey={(p) => `${p.year}-${p.month}`}
@@ -585,8 +536,6 @@ export default function EmployeeReceivables() {
   const rowKey = (r: DueRow) => (r.employee_id ? `e${r.employee_id}` : `a${r.account_id}`);
   const kb = useTableKeyboard<DueRow>({ rows, rowKey });
   const advKb = useTableKeyboard({ rows: advances, rowKey: (r: Advance) => r.id, onOpen: () => undefined });
-
-  // ------------------------------------------------------------------ طباعة وتصدير
 
   const dueCsv: CsvColumn<DueRow>[] = [
     { title: 'الموظف', value: (r) => r.employee_name ?? `(حساب بلا موظف) ${r.account_name ?? ''}` },
@@ -666,8 +615,6 @@ export default function EmployeeReceivables() {
   const employeeOptions = employees.map((e) => ({ value: e.id, label: e.name }));
   const totalDue = Number(dues?.total_due ?? 0);
 
-  // ------------------------------------------------------------------ الشاشة
-
   return (
     <>
     <ListPage<TabKey>
@@ -677,7 +624,6 @@ export default function EmployeeReceivables() {
       tabs={[
         { key: 'open', label: 'اللي عليهم حاجة' },
         { key: 'all', label: 'كل الموظفين' },
-        // السلف والجزاءات أرقام باسم موظف بتتخصم من مرتبه — لمين عنده `salary.view` بس.
         ...(advancesVisible ? [
           { key: 'advances' as TabKey, label: 'السلف', count: tab === 'advances' ? advances.length : null },
           { key: 'adjustments' as TabKey, label: 'الجزاءات والمكافآت',
@@ -750,7 +696,6 @@ export default function EmployeeReceivables() {
               </span>
             ),
           }}
-          // سلف الموظف تحت صفّه — بجدول أقساطها وتعديلها وإلغاؤها، من غير ما يسيب الشاشة.
           expandable={advancesVisible ? {
             rowExpandable: (r) => !!r.employee_id && !!r.last_advance_date,
             expandedRowKeys: expanded,
@@ -833,7 +778,6 @@ export default function EmployeeReceivables() {
             <div style={{ marginBottom: 4 }}>التاريخ</div>
             <DatePicker style={{ width: '100%' }} format="YYYY/MM/DD" allowClear={false}
               value={advForm.advance_date}
-              // أول قسط بيمشي مع التاريخ لحد ما حد يغيّره بإيده.
               onChange={(v) => setAdvForm({ ...advForm, advance_date: v || dayjs(), start: v || dayjs() })} />
           </Col>
           <Col span={12}>

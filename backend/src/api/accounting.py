@@ -1,13 +1,7 @@
-"""General Ledger & Chart of Accounts router (005).
-
-Chart tree CRUD, manual journal entries (+reverse), opening balances, and the derived trial
-balance. All gated by the `accounting.*` capabilities (Accountant + System Admin). Journals are
-branch-tagged; branch-scoped users post/read only their own branch.
-"""
 from __future__ import annotations
 
 from datetime import date
-from datetime import date as DateType  # الحقل اسمه `date` وبيحجب النوع جوه الكلاس
+from datetime import date as DateType
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -63,8 +57,6 @@ router = APIRouter(tags=["accounting"])
 
 
 def _ensure_accounting_branch(current: CurrentUser, target_branch_id: int | None) -> None:
-    """Accounting branch scope: System Admin and a company-wide accountant (no branch assigned)
-    may act on any branch; a branch-scoped accountant only on their own (FR-016)."""
     if current.is_admin or current.branch_id is None:
         return
     if current.branch_id != target_branch_id:
@@ -74,15 +66,11 @@ def _ensure_accounting_branch(current: CurrentUser, target_branch_id: int | None
         )
 
 
-# --- Schemas ---------------------------------------------------------------------------------
-
 class AccountOut(BaseModel):
     id: int
     code: str | None
     name: str | None
     parent_id: int | None
-    # What the account IS to the system — «حساب عميل», «خزينة», «حساب أنشأه المستخدم». The screens
-    # group by this (the chart has no real «العملاء» row), so it has to travel with the row.
     account_type: str | None = None
     nature: AccountNature | None
     normal_side: Direction
@@ -91,14 +79,9 @@ class AccountOut(BaseModel):
     active: bool
     appears_in: str | None = None
     main_level: str | None = None
-    # (المرحلة ٣) سطوره بتتقفل على بعضها في شاشة التسوية — ذمم العملاء والموردين
-    # بتاخده من نوعها، والباقي بالإيد.
     reconcilable: bool = False
     balance: Decimal
     children: list[AccountOut] | None = None
-    # An account opened FOR somebody — a customer, a supplier, a safe, a rep's custody — carries
-    # `owner_ref` and no name of its own. These two say who it belongs to and under which heading,
-    # derived on read so renaming the customer renames his account with him.
     owner_name: str | None = None
     owner_group: str | None = None
 
@@ -109,7 +92,6 @@ class AccountCreate(BaseModel):
     parent_id: int | None = None
     nature: AccountNature
     is_postable: bool
-    # trading | profit_loss | balance_sheet — omit to let the account's nature decide.
     appears_in: str | None = None
     main_level: str | None = None
 
@@ -117,9 +99,7 @@ class AccountCreate(BaseModel):
 class AccountUpdate(BaseModel):
     name: str | None = None
     active: bool | None = None
-    # (المرحلة ٣) سطور الحساب ده بتتقفل على بعضها في شاشة التسوية.
     reconcilable: bool | None = None
-    # «يظهر في» — trading | profit_loss | balance_sheet | none, or "" to follow the nature.
     appears_in: str | None = None
     main_level: str | None = None
 
@@ -130,10 +110,7 @@ class JournalLineIn(BaseModel):
     amount: Decimal
     statement: str | None = None
     cost_center_id: int | None = None
-    # التوزيع التحليلي: `{"3": 60, "7": 40}` ومجموعه ١٠٠. لما يتحط بيغلب
-    # `cost_center_id` — السطر متقسّم فمافيش مركز واحد يتكتب عليه.
     cost_center_distribution: dict[str, Decimal] | None = None
-    # (المرحلة ٢) شريك السطر. مالوش قيمة ⇒ بياخد شريك القيد.
     partner_kind: str | None = None
     partner_id: int | None = None
 
@@ -141,32 +118,16 @@ class JournalLineIn(BaseModel):
 class JournalEntryCreate(BaseModel):
     date: date
     description: str = ""
-    # **الفرع اختياري — بيتاخد من اللي بيكتب لو ما اتبعتش.**
-    #
-    # كان مطلوباً، و«قيد حر» من مفاتيح السندات مابيبعتوش: المفتاح مالوش خانة فرع،
-    # والشاشة كانت بترد «خطأ في عملية التحقق — Field required» من غير ما تقول على
-    # أنهي خانة. يعني كل مفتاح نوعه «قيد حر» كان ميّت من يوم ما اتعمل.
-    #
-    # والفراغ مش نقص: القيد اللي بيكتبه حساب مركزي (أدمن أو مالك) مالوش فرع بطبعه،
-    # والدفتر شايل قيود كتير كده من النقل — و`branch_scope` بيعتبرها مرئية للكل.
     branch_id: int | None = None
-    # الدفتر. مالوش قيمة ⇒ بيتحدد من نوع القيد («قيود متنوعة» للقيد اليدوي).
     journal_id: int | None = None
-    # "posted" يرحّل على طول (السلوك القديم)، "draft" بيسيبه مسودة ناقصة.
     state: str = EntryState.posted.value
-    # (المرحلة ٢) القيد على مين، وامتى مستحق. الاتنين اختياريين: القيد اللي مالوش
-    # شريك (إقفال، تسوية بين حسابات) بيفضل من غير — وده صح مش نقص.
     partner_kind: str | None = None
     partner_id: int | None = None
     due_date: DateType | None = None
-    # سطر واحد كفاية للمسودة. المرحّل بيتفرض عليه التوازن في `ledger_service`، وده شرط
-    # أقوى من «سطرين»: قيد بسطرين مش متوازنين كان بيعدّي من هنا قبل كده.
     lines: list[JournalLineIn] = Field(min_length=1)
 
 
 class JournalEntryUpdate(BaseModel):
-    """تعديل مسودة. المرحّل مايتعدلش — يترجّع مسودة الأول."""
-
     date: DateType | None = None
     description: str | None = None
     branch_id: int | None = None
@@ -214,7 +175,6 @@ class JournalLineOut(BaseModel):
     partner_id: int | None = None
     date_maturity: date | None = None
     cost_center_distribution: dict[str, Decimal] | None = None
-    # `None` = السطر ده مش على حساب بيتقفل؛ صفر = اتقفل بالكامل.
     amount_residual: Decimal | None = None
     full_reconcile_id: int | None = None
 
@@ -229,24 +189,19 @@ class JournalEntryOut(BaseModel):
     reverses_entry_id: int | None
     lines: list[JournalLineOut]
     total: Decimal
-    # المرحلة ١ — الدفتر والحالة والرقم.
     journal_id: int | None = None
     journal_code: str | None = None
     journal_name: str | None = None
     state: str = EntryState.posted.value
     number: str | None = None
-    # مجموع الدائن كمان، عشان الواجهة توري الفرق من غير ما تحسبه من السطور.
     total_credit: Decimal = Decimal("0.00")
     balanced: bool = True
-    # المرحلة ٢ — نوع المستند والشريك والاستحقاق.
     move_type: str | None = None
     move_type_label: str | None = None
     partner_kind: str | None = None
     partner_id: int | None = None
-    # الاسم بيتجاب مع القايمة في استعلام واحد — الرقم لوحده مابيقولش حاجة للي بيقرا.
     partner_name: str | None = None
     due_date: date | None = None
-    # المرحلة ٣ — حالة الدفع والمتبقّي، محسوبين من مطابقة السطور.
     payment_state: str | None = None
     payment_state_label: str | None = None
     residual: Decimal | None = None
@@ -272,7 +227,6 @@ class TrialBalanceRowOut(BaseModel):
     period_debit: Decimal
     period_credit: Decimal
     closing: Decimal
-    # asset | liability | equity | income | expense — which of the four books the row belongs in.
     nature: str | None = None
 
 
@@ -287,8 +241,6 @@ class TrialBalanceOut(BaseModel):
 
     model_config = {"populate_by_name": True}
 
-
-# --- Serialization helpers -------------------------------------------------------------------
 
 def _account_out(db: Session, acc: Account, *, with_children: bool = False,
                  owner_names: dict[int, str] | None = None,
@@ -320,11 +272,6 @@ def _account_out(db: Session, acc: Account, *, with_children: bool = False,
 
 
 def _partner_names(db: Session, entries) -> dict[tuple[str, int], str]:
-    """أسماء الشركاء اللي على القيود دي — استعلام واحد لكل نوع.
-
-    الرقم لوحده مابيقولش حاجة للي بيقرا الشاشة، وجلب الاسم لكل قيد على حدة بيحوّل
-    قايمة من ٥٠٠ قيد لـ٥٠٠ رحلة للقاعدة.
-    """
     wanted: dict[str, set[int]] = {}
     for entry in entries:
         if entry.partner_kind and entry.partner_id:
@@ -397,8 +344,6 @@ def _entry_out(entry: LedgerEntry, partner_names: dict | None = None) -> Journal
     )
 
 
-# --- Chart of accounts -----------------------------------------------------------------------
-
 @router.get("/accounts", response_model=list[AccountOut])
 def list_accounts(
     tree: bool = False,
@@ -407,8 +352,6 @@ def list_accounts(
     current: CurrentUser = Depends(require_capability(CAP_ACCOUNTING_CHART_READ)),
     db: Session = Depends(get_db),
 ) -> list[AccountOut]:
-    # كل فرع له شجرته: ١٬٣٧٠ حساب في أكتوبر و٢٬٤٠٨ في العلياء. من غير الفلترة دي
-    # مدير الفرع كان بيفتح دليل الحسابات ويلاقي شجرة الفرع التاني معاه.
     stmt = branch_scope.scope(select(Account), Account, current)
     if tree:
         stmt = stmt.where(Account.parent_id.is_(None))
@@ -417,15 +360,8 @@ def list_accounts(
     if active is not None:
         stmt = stmt.where(Account.active.is_(active))
     accounts = list(db.scalars(stmt.order_by(Account.code)).all())
-    # Resolved for the whole page at once rather than per row: a chart has one account per
-    # customer, so per-row lookups would be a query per customer on every load.
     scope = accounts if not tree else list(db.scalars(select(Account)).all())
     owner_names = chart_service.bulk_owner_names(db, scope)
-    # الأرصدة والأبناء بيتجابوا للشجرة كلها مرة واحدة.
-    #
-    # كانت بتتحسب لكل حساب لوحده، وكل حساب بيقرا سطوره من الدفتر صف صف. شجرة فيها حساب
-    # لكل عميل بقت ٣٧٦٧ حساب و٤٨ ألف سطر — يعني الشاشة كانت بتاخد ١٠.٧ ثانية على السيرفر
-    # نفسه قبل ما الشبكة تشوف حاجة.
     balances = chart_service.bulk_balances(db)
     kids_by_parent: dict[int, list[Account]] | None = None
     if tree:
@@ -500,8 +436,6 @@ def deactivate_account(
     db.commit()
 
 
-# --- Journal entries -------------------------------------------------------------------------
-
 @router.get("/journal-entries", response_model=list[JournalEntryOut])
 def list_journal_entries(
     from_: date | None = Query(default=None, alias="from"),
@@ -512,20 +446,10 @@ def list_journal_entries(
     state: str | None = None,
     partner_kind: str | None = None,
     partner_id: int | None = None,
-    # **آخر كام قيد** — `None` يعني الكل.
-    #
-    # الكشف كان بيتحمّل كامل: ١١٬٨٢٢ قيد بسطورهم في نداء واحد، حوالي نص دقيقة والشاشة
-    # مكتوب عليها «لا توجد بيانات» طول المدة دي. والرقم بيكبر كل شهر.
-    #
-    # والقص بياخد **الأحدث**، مش الأقدم: اللي بيفتح دفتر اليومية بيدوّر على شغل
-    # الأيام اللي فاتت، والقص من الأول كان هيوريه يناير ويخفي النهارده.
     limit: int | None = None,
     current: CurrentUser = Depends(require_capability(CAP_ACCOUNTING_CHART_READ)),
     db: Session = Depends(get_db),
 ) -> list[JournalEntryOut]:
-    # **دفتر اليومية بيتفلتر بالفرع.** كان مدير فرع أكتوبر بيفتح القيود ويلاقي
-    # الـ٢٠٬٥٣٠ كلهم — دفتر الشركة كامل بكل فروعها. و`branch_id` اللي في المدخلات
-    # بيضيّق جوّه اللي هو شايفه أصلاً، مابيوسّعش.
     stmt = branch_scope.scope(
         select(LedgerEntry).where(
             LedgerEntry.entry_type.in_(["journal", "opening_balance", "reversal"])
@@ -535,7 +459,6 @@ def list_journal_entries(
     if journal_id is not None:
         stmt = stmt.where(LedgerEntry.journal_id == journal_id)
     if state == EntryState.posted.value:
-        # NULL = مرحّل — القيود اللي اتكتبت قبل ما العمود يتولد.
         stmt = stmt.where(
             LedgerEntry.state.is_(None) | (LedgerEntry.state == EntryState.posted.value)
         )
@@ -547,8 +470,7 @@ def list_journal_entries(
         stmt = stmt.where(LedgerEntry.entry_date >= from_)
     if to is not None:
         stmt = stmt.where(LedgerEntry.entry_date <= to)
-    if cost_center_id is not None:  # entries that touch this cost center on any line (006)
-        # والسطر المتقسّم كمان — حصته في جدول التوزيع و`cost_center_id` بتاعه فاضي.
+    if cost_center_id is not None:
         from src.models.analytic import LedgerLineDistribution
 
         stmt = stmt.where(
@@ -564,7 +486,6 @@ def list_journal_entries(
         stmt = stmt.where(LedgerEntry.partner_kind == partner_kind)
     if partner_id is not None:
         stmt = stmt.where(LedgerEntry.partner_id == partner_id)
-    # الأحدث فوق بتاريخ القيد (طلب العميل ٢٠٢٦-١٠-٠١) — والحد بياخد أحدث `limit` قيد.
     stmt = stmt.order_by(*newest_first(LedgerEntry, LedgerEntry.entry_date))
     if limit is not None and limit > 0:
         stmt = stmt.limit(limit)
@@ -591,10 +512,8 @@ def post_journal_entry(
     current: CurrentUser = Depends(require_capability(CAP_ACCOUNTING_JOURNAL_POST)),
     db: Session = Depends(get_db),
 ) -> JournalEntryOut:
-    # الفرع: اللي اتبعت، وإلا فرع اللي بيكتب. والفحص بيتعمل على الناتج مش على المدخل —
-    # لو اتعمل على `None` كان محاسب الفرع هيترفض على قيد فرعه هو.
     branch_id = body.branch_id if body.branch_id is not None else current.branch_id
-    _ensure_accounting_branch(current, branch_id)  # branch-scoped users post only their branch
+    _ensure_accounting_branch(current, branch_id)
     try:
         entry = journal_service.post_entry(
             db,
@@ -628,7 +547,6 @@ def update_journal_entry(
     current: CurrentUser = Depends(require_capability(CAP_ACCOUNTING_JOURNAL_POST)),
     db: Session = Depends(get_db),
 ) -> JournalEntryOut:
-    """يعدّل مسودة. المرحّل بيترفض — لازم يترجّع مسودة الأول."""
     existing = db.get(LedgerEntry, entry_id)
     if existing is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND,
@@ -661,7 +579,6 @@ def post_draft_entry(
     current: CurrentUser = Depends(require_capability(CAP_ACCOUNTING_JOURNAL_POST)),
     db: Session = Depends(get_db),
 ) -> JournalEntryOut:
-    """يرحّل مسودة — هنا بيتفرض التوازن وبيتصرف رقم الدفتر."""
     existing = db.get(LedgerEntry, entry_id)
     if existing is not None:
         _ensure_accounting_branch(current, existing.branch_id)
@@ -680,7 +597,6 @@ def reset_entry_to_draft(
     current: CurrentUser = Depends(require_capability(CAP_ACCOUNTING_JOURNAL_REVERSE)),
     db: Session = Depends(get_db),
 ) -> JournalEntryOut:
-    """يرجّع قيد مرحّل لمسودة — بيخرج من الحسابات ورقمه بيفضل محجوز."""
     existing = db.get(LedgerEntry, entry_id)
     if existing is not None:
         _ensure_accounting_branch(current, existing.branch_id)
@@ -699,7 +615,6 @@ def cancel_journal_entry(
     current: CurrentUser = Depends(require_capability(CAP_ACCOUNTING_JOURNAL_REVERSE)),
     db: Session = Depends(get_db),
 ) -> JournalEntryOut:
-    """يلغي قيد — بيخرج من الحسابات وبيفضل موجود برقمه للمراجعة."""
     existing = db.get(LedgerEntry, entry_id)
     if existing is not None:
         _ensure_accounting_branch(current, existing.branch_id)
@@ -710,9 +625,6 @@ def cancel_journal_entry(
                             {"code": "journal_conflict", "message": str(exc)})
     db.commit()
     return _entry_out(entry, _partner_names(db, [entry]))
-
-
-# --- دفاتر اليومية ---------------------------------------------------------------------------
 
 
 def _journal_out(j: Journal) -> JournalOut:
@@ -781,8 +693,6 @@ def update_journal(
     if body.sort_order is not None:
         journal.sort_order = body.sort_order
     if body.restrict_mode_hash is not None:
-        # الإطفاء ممنوع بعد ما يتجزّأ قيد: السلسلة موجودة في القاعدة، وإطفاء الخانة
-        # كان هيسيبها موجودة وبلا حارس — وده أسوأ من إنها ماتشتغلش أصلاً.
         if not body.restrict_mode_hash and db.scalar(
             select(LedgerEntry.id).where(
                 LedgerEntry.journal_id == journal.id,
@@ -795,7 +705,6 @@ def update_journal(
                  "message": "الدفتر ده فيه قيود متجزّأة — السلسلة مابتتقفلش بعد ما تبدأ."})
         journal.restrict_mode_hash = body.restrict_mode_hash
     if body.active is not None:
-        # دفتر النظام مايتقفلش: فيه كود بيوجّه قيود عليه، وقفله معناه قيود من غير دفتر.
         if journal.is_system and not body.active:
             raise HTTPException(
                 status.HTTP_409_CONFLICT,
@@ -824,8 +733,6 @@ def reverse_journal_entry(
     return _entry_out(reversal, _partner_names(db, [reversal]))
 
 
-# --- Opening balances ------------------------------------------------------------------------
-
 @router.post("/opening-balances", response_model=JournalEntryOut, status_code=status.HTTP_201_CREATED)
 def post_opening_balances(
     body: OpeningBalancesCreate,
@@ -849,12 +756,8 @@ def post_opening_balances(
     return _entry_out(entry, _partner_names(db, [entry]))
 
 
-# --- Trial balance ---------------------------------------------------------------------------
-
 @router.get("/trial-balance", response_model=TrialBalanceOut)
 def get_trial_balance(
-    # الفترة اختيارية (٢٠٢٦-١٠-٠٧ — «الفلتر يفتح فاضي»): من غير «من» = من أول الحركة،
-    # ومن غير «إلى» = لحد النهارده.
     from_: date | None = Query(None, alias="from"),
     to: date | None = Query(None),
     branch_id: int | None = None,
@@ -863,8 +766,6 @@ def get_trial_balance(
     current: CurrentUser = Depends(require_capability(CAP_ACCOUNTING_TRIAL_BALANCE_READ)),
     db: Session = Depends(get_db),
 ) -> TrialBalanceOut:
-    # A branch-scoped accountant sees only their own branch; System Admin and a company-wide
-    # accountant (no branch assigned) may pass any branch_id or omit it for all branches.
     if not current.is_admin and current.branch_id is not None:
         branch_id = current.branch_id
     if from_ is None:
@@ -893,27 +794,18 @@ def get_trial_balance(
     )
 
 
-# ---------------------------------------------------------------------------
-# التوجيه المحاسبي — which account each posting role uses.
-# ---------------------------------------------------------------------------
 class RoutingOut(BaseModel):
     role: str
     label: str
     account_id: int
-    # حساب اتعمل من الشاشة (خزنة جديدة مثلاً) ممكن يبقى من غير كود ولا اسم — كان بيوقّع
-    # الشاشة كلها بـ500 (٢٠٢٦-١٠-٠٦).
     account_code: str | None = None
     account_name: str | None = None
-    # "default" = the account this system seeded; "configured" = one an admin pointed it at. The
-    # two are indistinguishable once posted, and an admin chasing a wrong statement needs to know
-    # whether somebody changed this or nobody ever did.
     source: str
     nature_warning: str | None = None
 
 
 class RoutingIn(BaseModel):
     role: str
-    # None restores the default — the way back when a role is pointed somewhere wrong.
     account_id: int | None = None
 
 
@@ -923,9 +815,8 @@ def read_account_routing(
     _: CurrentUser = Depends(require_capability(CAP_ACCOUNTING_CHART_READ)),
     db: Session = Depends(get_db),
 ) -> list[RoutingOut]:
-    """كل دور محاسبي والحساب اللي بيترحّل عليه فعلاً."""
     rows = account_routing_service.current_routing(db, branch_id=branch_id)
-    db.commit()  # get-or-create may have seeded a default account on first read
+    db.commit()
     return [RoutingOut(**r) for r in rows]
 
 
@@ -936,11 +827,6 @@ def set_account_routing(
     _: CurrentUser = Depends(require_capability(CAP_ACCOUNTING_CHART_WRITE)),
     db: Session = Depends(get_db),
 ) -> list[RoutingOut]:
-    """وجّه دور لحساب، أو ابعت account_id فاضي للرجوع للافتراضي.
-
-    Returns the full routing rather than the one row, so the caller never has to guess whether the
-    rest still says what it said before the change.
-    """
     try:
         account_routing_service.set_routing(
             db, body.role, account_id=body.account_id, branch_id=branch_id)
@@ -952,22 +838,15 @@ def set_account_routing(
     return [RoutingOut(**r) for r in rows]
 
 
-# --------------------------------------------------------------- أقفال التواريخ (المرحلة ٤)
-
-
 class LockDatesOut(BaseModel):
     fiscalyear_lock_date: DateType | None = None
     period_lock_date: DateType | None = None
-    # مهلة السداد بالأيام — الفاتورة اللي مالهاش استحقاق مكتوب بتستحق بعدها.
     payment_terms_days: int = 0
 
 
 class LockDatesIn(BaseModel):
-    # `None` في الاتنين معناه «ارفع القفل» — نفس الشاشة بتحط وبترفع.
     fiscalyear_lock_date: DateType | None = None
     period_lock_date: DateType | None = None
-    # `None` هنا معناه «سيبها زي ما هي» مش «صفّرها»: الشاشة اللي بتحط قفل تاريخ
-    # مالهاش دعوة بالمهلة، ولو اعتبرنا غيابها صفر كانت هتصفّرها من غير ما حد يقصد.
     payment_terms_days: int | None = None
     note: str | None = None
 
@@ -978,7 +857,7 @@ def get_lock_dates(
     db: Session = Depends(get_db),
 ) -> LockDatesOut:
     row = lock_date_service.get_settings(db)
-    db.commit()  # الصف بيتعمل أول مرة يتقرا
+    db.commit()
     return LockDatesOut(fiscalyear_lock_date=row.fiscalyear_lock_date,
                         period_lock_date=row.period_lock_date,
                         payment_terms_days=int(row.payment_terms_days or 0))
@@ -990,13 +869,7 @@ def set_lock_dates(
     current: CurrentUser = Depends(require_capability(CAP_ACCOUNTING_CHART_WRITE)),
     db: Session = Depends(get_db),
 ) -> LockDatesOut:
-    """يحط تاريخي القفل. للأدمن والمالك بس — دي حاجة بتقفل على الكل حتى المحاسب.
-
-    المالك داخل معاهم لأنه صاحب الشركة وهو اللي بيقرر الشهر يتقفل إمتى. من غيره كان
-    الإقفال محبوس في حساب `admin` وحده، والمالك بيدخل بحسابه هو — فالقرار بتاعه كان
-    محتاج حساب تاني عشان يتنفّذ.
-    """
-    if not current.is_admin:  # `is_admin` بقت «الأدمن أو فوقه» — المالك جوّاها
+    if not current.is_admin:
         raise HTTPException(
             status.HTTP_403_FORBIDDEN,
             {"code": "forbidden", "message": "أقفال التواريخ للأدمن والمالك بس."})
@@ -1016,9 +889,6 @@ def set_lock_dates(
     return LockDatesOut(fiscalyear_lock_date=row.fiscalyear_lock_date,
                         period_lock_date=row.period_lock_date,
                         payment_terms_days=int(row.payment_terms_days or 0))
-
-
-# ------------------------------------------- سلامة الدفاتر (المرحلة ٤ — سلسلة التجزئة)
 
 
 class JournalIntegrityOut(BaseModel):
@@ -1042,11 +912,7 @@ def check_integrity(
     _: CurrentUser = Depends(require_capability(CAP_ACCOUNTING_TRIAL_BALANCE_READ)),
     db: Session = Depends(get_db),
 ) -> list[JournalIntegrityOut]:
-    """تقرير سلامة الدفاتر — بيعيد حساب سلسلة كل دفتر وبيوقف على أول قيد اتلمس."""
     return [JournalIntegrityOut(**vars(r)) for r in secure_hash_service.check_all(db)]
-
-
-# --------------------------------------------- لوحة المحاسبة (كروت الدفاتر — شكل أودو)
 
 
 @router.get("/accounting/dashboard", response_model=dict)
@@ -1054,5 +920,4 @@ def accounting_dashboard(
     _: CurrentUser = Depends(require_capability(CAP_ACCOUNTING_CHART_READ)),
     db: Session = Depends(get_db),
 ) -> dict:
-    """كارت لكل دفتر وكل خزنة — الأرقام اللي بتقول «فيه حاجة مستنياك هنا»."""
     return accounting_dashboard_service.dashboard(db)

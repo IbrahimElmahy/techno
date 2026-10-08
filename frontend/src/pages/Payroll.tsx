@@ -24,20 +24,6 @@ import { printReport, printPayslip } from '../print/reportSheet';
 import { money } from '../utils/money';
 import ListPage from '../components/ListPage';
 
-/**
- * مسير الرواتب.
- *
- * The month is computed as a DRAFT first, which touches nothing and can be recomputed all day.
- * «ترحيل» is the separate, deliberate act that writes to the ledger — and from that moment the
- * attendance it read is locked, the advance instalments are consumed, and the tax version it used
- * is frozen. Correcting a posted month is a REVERSAL, never an edit, because the entry underneath
- * it cannot be edited either.
- *
- * «موظفين من غير سجل حضور» is shown, not hidden. They were paid in full — «nobody uploaded the
- * file» is not «absent all month», and the difference is a full salary. But somebody has to know
- * it happened, so it sits on the screen as a number rather than in a log.
- */
-
 interface Run {
   id: number;
   document_number: string;
@@ -78,7 +64,6 @@ interface RunDetail extends Run {
   net: string;
   employees: number;
   without_attendance: number;
-  /** موظفين على رأس العمل مادخلوش المسودة لأن مالهمش إعدادات راتب — للمسودة بس. */
   without_salary?: { id: number; code: string; name: string }[];
   paid: number;
   accrual_entry_id: number | null;
@@ -91,7 +76,6 @@ const STATUS: Record<string, { label: string; color?: string }> = {
   reversed: { label: 'متعكس', color: 'red' },
 };
 
-/** «٢٠٢٦/٠٨» — الشهر زي ما بيتقال. */
 export function periodLabel(year: number, month: number): string {
   return `${year}/${String(month).padStart(2, '0')}`;
 }
@@ -243,8 +227,6 @@ export default function Payroll() {
     export: { name: 'مسير الرواتب', rows: detail?.lines ?? [] },
   });
 
-  // السطر في القايمة بيفتح المسير، والسطر جوّه المسير بيفتح قسيمة صاحبه — الخطوة اللي
-  // بعد قراية أي سطر مرتب هي «طب ده جه منين».
   const runKb = useTableKeyboard<Run>({
     rows: runs, rowKey: (r) => r.id, onOpen: (r) => openRun(r.id),
   });
@@ -362,8 +344,6 @@ export default function Payroll() {
         />
       ) : (
         <>
-          {/* المسير بيعدّي الموظف اللي مالوش إعدادات راتب (سطر بصفر كان هيتقري «مستحق صفر») —
-              بس العدّية دي كانت صامتة، فالشهر يطلع ناقص ناس ومحدش ياخد باله قبل الترحيل. */}
           {detail.without_salary?.length ? (
             <Alert
               type="error" showIcon style={{ margin: '6px 0 8px' }}
@@ -395,7 +375,6 @@ export default function Payroll() {
             columns={lineTable.columns} dataSource={detail.lines}
             pagination={{
               defaultPageSize: PAGE_SIZE, showSizeChanger: true,
-              // إجماليات المسير — كانت كروت فوق الجدول.
               showTotal: () => (
                 <span className="sl-foot">
                   <span>الموظفين: <b>{detail.employees}</b></span>

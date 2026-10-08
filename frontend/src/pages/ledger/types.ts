@@ -1,6 +1,3 @@
-/**
- * أنواع الأستاذ العام المشتركة بين تبويباته.
- */
 export interface Account {
   id: number;
   code: string | null;
@@ -54,14 +51,12 @@ export interface JournalEntry {
   number: string | null;
   total_credit: string;
   balanced: boolean;
-  // (المرحلة ٢) القيد كمستند: نوعه، وعلى مين، وامتى مستحق.
   move_type: string | null;
   move_type_label: string | null;
   partner_kind: 'customer' | 'supplier' | 'employee' | null;
   partner_id: number | null;
   partner_name: string | null;
   due_date: string | null;
-  // (المرحلة ٣) حالة الدفع والمتبقّي — محسوبين من مطابقة السطور.
   payment_state: 'not_paid' | 'partial' | 'paid' | null;
   payment_state_label: string | null;
   residual: string | null;

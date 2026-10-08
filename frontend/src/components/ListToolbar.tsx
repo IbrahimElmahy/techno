@@ -7,81 +7,26 @@ import dayjs, { Dayjs } from 'dayjs';
 import { useScreenShortcuts } from './keyboard';
 import DateRangeFilter from './DateRangeFilter';
 
-/**
- * One search-and-filter bar for every list in the system.
- *
- * Typing is matched against a normalised form of the text, so Arabic searches are forgiving:
- * "مؤسسه" finds "مؤسسة", "احمد" finds "أحمد", and ٢٠٢٦ finds 2026. Without that, a user who
- * spells a hamza differently to whoever entered the record simply gets no results.
- */
-
-/** Fold the spelling variants Arabic users type interchangeably into one comparable form. */
-// اتنقلت لـ`utils/arabicSort` — نفس التوحيد بيستعمله الترتيب كمان، ونسختين منه معناها
-// إن البحث يلاقي صنف والترتيب يحطّه في مكان تاني. بتتصدّر من هنا كمان فاللي بيستوردها
-// من هنا مابيتلمسش.
 export { normalizeAr } from '../utils/arabicSort';
 import { normalizeAr, searchFilter, searchRank } from '../utils/arabicSort';
 
 export interface FilterDef {
   key: string;
   placeholder: string;
-  /** Choices for a `select` filter. Ignored — and unnecessary — when `kind` is `text`. */
   options?: { value: any; label: string }[];
-  /**
-   * `select` (الافتراضي) بيدّي قايمة، و`text` بيدّي خانة كتابة.
-   *
-   * A register is filtered by two different kinds of thing. «الفرع» and «المورد» are a closed set
-   * somebody picks from. «مستند رقم» and «رقم الفاتورة» and «ملاحظات» are open text nobody can
-   * enumerate — the document numbers are unbounded and the notes are free prose. Forcing those
-   * into a dropdown would mean building a list of every value in the table, which grows without
-   * limit and still cannot answer «اللي فيه كلمة كذا».
-   */
   kind?: 'select' | 'text';
-  /**
-   * **اختيار أكتر من قيمة لنفس الفلتر** — الافتراضي لقوايم الاختيار.
-   *
-   * السؤال الحقيقي نادراً بيبقى «الفرع ده»؛ غالباً «الفرعين دول» أو «الأنواع
-   * التلاتة دي». والقايمة الواحدة كانت بتفرض إنك تعمل الكشف تلات مرات وتجمع
-   * بعينك — أو تسيب الفلتر وتدوّر في الكل.
-   *
-   * **والمعنى «أي واحدة منهم»**: الشرط بيتنفّذ على كل قيمة والنتايج بتتجمع.
-   * وعشان كده الشروط المكتوبة في الشاشات مااتلمستش ولا واحد: `(row, v) => row.x
-   * === v` لسه بتتنده بقيمة واحدة في المرة. اللي اتغيّر هو اللي بينده.
-   *
-   * `multi: false` بيرجّعه لقيمة واحدة — للفلتر اللي جمع قيمتين فيه مالوش معنى.
-   */
   multi?: boolean;
-  /**
-   * فلتر بيتخبى تحت «المزيد من الفلاتر».
-   *
-   * الشريط بيتحمّل بسرعة: بحث وتاريخ وتلات قوايم وزرار مسح وعدّاد بيبقوا تمن عناصر، وتمنية
-   * مايركبوش صف واحد على شاشة عادية من غير ما الواحد منهم يبقى ضيّق لدرجة إنه مايتقريش.
-   *
-   * فاللي بيتسأل كل يوم بيفضل بارز، واللي بيتسأل كل شوية بينزل تحت طيّة — نفس اللي في الشاشة
-   * اللي العميل شغّال عليها. الفلتر المخبي لسه شغّال: لو ليه قيمة، الطيّة بتفتح لوحدها عشان
-   * مايبقاش فيه فلتر بيضيّق النتايج وهو مش باين.
-   */
   advanced?: boolean;
-  /** Bootstrap-style column span out of 24 (defaults to 5). */
   span?: number;
 }
 
 export interface UseListFilterOptions<T> {
-  /** Values each row is searched by — anything falsy is skipped. */
   search?: (row: T) => any[];
-  /** Named predicates; each runs only when its filter has a value. */
   filters?: Record<string, (row: T, value: any) => boolean>;
-  /** Row date used by the date-range filter. */
   dateOf?: (row: T) => string | null | undefined;
-  /**
-   * Filter values the list opens with. A menu entry naming one slice of a list — «أوراق قبض» is
-   * the incoming half of الشيكات — has to arrive with that slice chosen, not with the whole list
-   * and a hint. The person can still clear it; it is a starting point, not a lock.
-   */
   initialValues?: Record<string, any>;
 }
 
-/** Client-side search + filtering for a loaded list. */
 export function useListFilter<T>(rows: T[], options: UseListFilterOptions<T> = {}) {
   const [query, setQuery] = useState('');
   const [values, setValues] = useState<Record<string, any>>(options.initialValues ?? {});
@@ -104,9 +49,6 @@ export function useListFilter<T>(rows: T[], options: UseListFilterOptions<T> = {
       for (const [key, predicate] of Object.entries(options.filters || {})) {
         const v = values[key];
         if (v === undefined || v === null || v === '') continue;
-        // **القايمة معناها «أي واحدة منهم».** الشرط بيتنده لكل قيمة لوحدها
-        // والنتايج بتتجمع بـOR — فالشروط المكتوبة في التلاتين شاشة مااتلمستش:
-        // كل واحد فيهم لسه شايف قيمة مفردة زي ما اتكتب.
         if (Array.isArray(v)) {
           if (!v.length) continue;
           if (!v.some((one) => predicate(row, one))) return false;
@@ -122,7 +64,6 @@ export function useListFilter<T>(rows: T[], options: UseListFilterOptions<T> = {
     });
   }, [rows, query, values, range, options]);
 
-  // القايمة الفاضية مش فلتر شغّال — زي `undefined` بالظبط.
   const active = !!query
     || Object.values(values).some((v) => v !== undefined && v !== null && v !== ''
                                          && !(Array.isArray(v) && !v.length))
@@ -146,65 +87,28 @@ export default function ListToolbar({
   range?: [Dayjs, Dayjs] | null;
   onRangeChange?: (v: [Dayjs, Dayjs] | null) => void;
   onReset?: () => void;
-  /** Row counts — shown as "المعروض من الإجمالي" so a filtered view is never mistaken for all. */
   total?: number;
   shown?: number;
   searchSpan?: number;
-  /**
-   * «تجميع بـ» — زي أودو: نفس الصفوف، مقسومة على المفتاح اللي اخترته.
-   *
-   * الفلتر بيشيل صفوف؛ التجميع بيسيبها كلها ويرتّبها. الاتنين بيتسألوا مع بعض («وريني
-   * فواتير الشهر ده مجمّعة بالعميل»)، فمكانهم واحد.
-   */
   groupBy?: string | null;
   groupOptions?: { value: string; label: string }[];
   onGroupByChange?: (v: string | null) => void;
-  /**
-   * حاجة الشاشة عايزة تحطها جنب مربع البحث.
-   *
-   * الفلاتر العامة بتتعرّف بـ`filters` وبتتبني هنا؛ ودي للحاجات اللي مش «فلتر على عمود» —
-   * زي فترة سجل الحركات في كشوف الجرد، اللي بتتحدّد للورقة كلها. كانت فوق في ترويسة
-   * الكارت، بعيد عن الفلاتر اللي شغّالة معاها.
-   */
   extra?: React.ReactNode;
-  /**
-   * مقبض على خانة البحث — عشان الشاشة تقدر تركّز عليها من برّه الشريط.
-   *
-   * F3 معرّفة هنا وبتشتغل لوحدها؛ الخاصية دي للحالة اللي الشاشة بتقفل فيها حاجة الأول
-   * (معاينة مستند مثلاً) وعايزة المؤشر ينتهي في الخانة بعد ما القايمة ترجع.
-   */
   searchRef?: React.MutableRefObject<any>;
 }) {
   const ownSearchRef = useRef<any>(null);
   const searchRef = externalSearchRef ?? ownSearchRef;
-  // F3 belongs to the search box, and the search box lives here — so declaring it once here gives
-  // every list in the system the key, instead of thirty screens each remembering to ask for it.
-  // It costs nothing where a screen has its own idea of F3: the stack hands the key to whoever
-  // registered nearer the top, and this bar is always underneath the screen it sits in.
   useScreenShortcuts({ onSearch: () => { searchRef.current?.focus?.(); } });
 
-  /**
-   * الشريط صف واحد، واللي مابيتسألش كل يوم تحت طيّة.
-   *
-   * بحث + تاريخ + تلات قوايم + مسح + عدّاد = تمن عناصر، وتمنية مايركبوش صف واحد من غير ما كل
-   * واحد فيهم يبقى ضيّق لدرجة إنه مايتقريش — خصوصاً مدى التواريخ، اللي محتاج ضعف عرض القايمة.
-   *
-   * فاللي بيتفلتر بيه كل يوم فاضل بارز، والباقي تحت «المزيد من الفلاتر». والفلتر المخبي لو ليه
-   * قيمة الطيّة بتفتح لوحدها: فلتر بيضيّق النتايج وهو مش باين بيخلّي الواحد يبص على قايمة ناقصة
-   * ويفتكرها كاملة.
-   */
   const primary = filters.filter((f) => !f.advanced);
   const advanced = filters.filter((f) => f.advanced);
   const [showMore, setShowMore] = useState(false);
-  // القايمة الفاضية مش فلتر شغّال — نفس قاعدة `active` والشرايح تحت.
   const hiddenActive = advanced.some((f) => values[f.key] !== undefined
     && values[f.key] !== null && values[f.key] !== ''
     && !(Array.isArray(values[f.key]) && !values[f.key].length));
   const expanded = showMore || hiddenActive;
 
   const control = (f: FilterDef) => (f.kind === 'text' ? (
-    /* خانة كتابة — بتفلتر وانت بتكتب، من غير Enter ولا زرار.
-       `undefined` مش `''` عشان antd تعرض الـplaceholder بدل خانة فاضية بلا اسم. */
     <Input
       allowClear
       style={{ width: '100%' }}
@@ -216,15 +120,10 @@ export default function ListToolbar({
     <Select
       allowClear
       showSearch
-      // **أكتر من قيمة لنفس الفلتر** — الشرح عند `FilterDef.multi`.
-      // و`maxTagCount="responsive"` عشان اختيار عشرة مايكبّرش الخانة ويكسر الصف:
-      // بتوري اللي يركب و«+٧».
       mode={(f.multi ?? true) ? 'multiple' : undefined}
       maxTagCount="responsive"
       style={{ width: '100%' }}
       placeholder={f.placeholder}
-      // القيمة المفردة بتتلفّ في قايمة للودجت. الشاشة اللي بتفتح على فلتر جاهز
-      // (`initialValues`) بتحطّه رقم، وantd في وضع المتعدد بيستنى مصفوفة.
       value={(() => {
         const v = values[f.key];
         if (v === undefined || v === null || v === '') return undefined;
@@ -233,8 +132,6 @@ export default function ListToolbar({
       })()}
       onChange={(v) => onValueChange?.(
         f.key, Array.isArray(v) && !v.length ? undefined : v)}
-      // `undefined` مش قايمة فاضية: فلتر من غير خيارات كان بيوصل rc-select خام،
-      // وأول ما الترشيح يشتغل عليه بيقع على `.length` — والشاشة بتفضل فاضية.
       options={f.options || []} filterOption={searchFilter} filterSort={searchRank}/>
   ));
 
@@ -248,7 +145,6 @@ export default function ListToolbar({
     if (Array.isArray(v) && !v.length) continue;
     const nameOf = (one: any) =>
       f.options?.find((o) => o.value === one)?.label ?? String(one);
-    // الشريحة بتسمّي أول قيمتين وبتعدّ الباقي — «الفرع: السادات، العلياء +٣».
     const label = Array.isArray(v)
       ? `${v.slice(0, 2).map(nameOf).join('، ')}${v.length > 2 ? ` +${v.length - 2}` : ''}`
       : nameOf(v);
@@ -268,22 +164,10 @@ export default function ListToolbar({
 
   return (
     <>
-      {/*
-        * الشريط صف مرن، مش أعمدة بمقاسات ثابتة.
-        *
-        * كان `Row`/`Col` بأنصبة من ٢٤: البحث ٦، وكل فلتر ٥، والمسح ٢… والمجموع بيعدّي
-        * الـ٢٤ أول ما شاشة تزوّد فلتر أو تحطّ حاجة جنب البحث، فالعناصر بتتلفّ لسطر تاني
-        * وتالت وتبقى عامودين فوق بعض بدل صف واحد.
-        *
-        * الـflex بيحلّها من غير حسابات: كل عنصر بياخد قدّه، والبحث بيمطّ على الفاضي،
-        * واللف بيحصل لما مايبقاش فيه مكان فعلاً — مش لما رقم يعدّي ٢٤.
-        */}
       <div style={{
         display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap',
         marginBottom: expanded ? 8 : 12,
       }}>
-        {/* البحث بيمطّ، وباقي العناصر بتاخد قدّها. `searchSpan` بقى أقل عرض بدل نصيب
-            من ٢٤ — الشاشات اللي بتبعته بتقول «سيبله مساحة أكبر»، وده اللي بيحصل. */}
         <div style={{ flex: `1 1 ${Math.max(200, (searchSpan ?? 6) * 26)}px`, minWidth: 180 }}>
           <Input
             allowClear
@@ -342,13 +226,6 @@ export default function ListToolbar({
         )}
       </div>
 
-      {/*
-        * الشرايح — «إيه اللي شغّال دلوقتي» مكتوب، مش مستنتج.
-        *
-        * الفلتر لما بيبقى قايمة مختارة فوق، اللي بيبص على قايمة ناقصة لازم يرجع بعينه على
-        * كل خانة عشان يعرف ليه ناقصة. الشريحة بتقول السبب بالاسم، وضغطة على × بتشيله —
-        * وده اللي بيخلّي «امسح الكل» مش الطريقة الوحيدة للرجوع.
-        */}
       {facets.length > 0 && (
         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 10 }}>
           {facets.map((f) => (

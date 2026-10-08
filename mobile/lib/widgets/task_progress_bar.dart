@@ -3,14 +3,6 @@ import 'package:flutter/material.dart';
 import '../services/task_progress.dart';
 import '../theme.dart';
 
-/// بيحط شريط الشغل ([TaskTracker]) تحت الشاشة كلها — فوق زراير النظام وتحت أي شاشة مفتوحة.
-///
-/// **تحت المحتوى مش فوقه.** الشريط لو اترسم فوق الشاشة كان هيغطي زرار «حفظ» اللي في آخر
-/// الفاتورة طول ما المزامنة شغّالة. فالشاشة بتقصر بارتفاعه وهو باين، وبترجع لما يختفي.
-/// ومع الكيبورد مفتوح بيستخبى — المندوب بيكتب، والمساحة دي بتاعته.
-///
-/// **شكل الشجرة ثابت.** `MediaQuery` بيلف المحتوى دايماً والبيانات بس هي اللي بتتغيّر —
-/// لو اللفافة اتشالت واترجعت، الـNavigator كله (بكل الشاشات المفتوحة) كان هيتبني من الأول.
 class TaskBarHost extends StatelessWidget {
   const TaskBarHost({super.key, required this.child});
   final Widget child;
@@ -27,7 +19,6 @@ class TaskBarHost extends StatelessWidget {
           children: [
             Expanded(
               child: MediaQuery(
-                // الشريط واخد مكان شريط النظام اللي تحت، فالشاشة ماتحسبهوش تاني.
                 data: show ? mq.removePadding(removeBottom: true) : mq,
                 child: child,
               ),
@@ -64,7 +55,6 @@ class _TaskBar extends StatelessWidget {
       color: bg,
       elevation: 8,
       child: InkWell(
-        // دوسة على النتيجة بتقفلها. الشغّالة مابتتقفلش من هنا.
         onTap: running ? null : () => TaskTracker.instance.dismiss(task.kind),
         child: Padding(
           padding: EdgeInsets.only(bottom: bottomInset),

@@ -4,7 +4,6 @@ import { searchFilter, searchRank, sortByName } from '../utils/arabicSort';
 import {
   Button, DatePicker, Form, Input, Segmented, Select, Space, Tag, message,
 } from 'antd';
-// كل جدول هنا بفلتر على كل عمود — شوف `FilterTable`.
 import { FilterTable as Table } from '../components/FilterTable';
 import { InputNumber } from '../components/NumberInput';
 import { Popconfirm } from '../components/noConfirm';
@@ -32,23 +31,12 @@ import { useTableColumns } from '../components/ColumnSettings';
 import { useCanSeeStats } from '../components/StatsRow';
 import { qty, money, numeralsLocale } from '../utils/money';
 import { activeOptions } from '../utils/active';
-/**
- * جرد المخازن و جرد عام — the counting cycle.
- *
- * «جرد حتى تاريخ» already answered what the books said on a day. That is one half of one stocktake;
- * this is the half the warehouse actually does — open a sheet, walk the shelves, write what is
- * there, settle the difference.
- *
- * The two entries are one screen: a general count is the same document with no warehouse named, and
- * building it as a second screen would mean two of everything to keep in step.
- */
 
 interface Line {
   id: number; item_id: number; item_name: string | null;
   warehouse_id: number; warehouse_name: string | null;
   book_quantity: string; counted_quantity: string | null; difference: string | null;
   stock_movement_id: number | null;
-  // (031) الفئة للفلتر، والتكلفة عشان الفرق يبان بالفلوس مش بالكمية بس.
   category?: string | null;
   unit_cost?: string | null;
 }
@@ -57,8 +45,6 @@ interface Sheet {
   id: number; document_number: string;
   warehouse_id: number | null; warehouse_name: string | null;
   count_date: string; status: 'draft' | 'posted' | 'cancelled';
-  // (031) نوع الجرد. Rendered through `dataIndex` since the three types were added and never
-  // declared, so nothing typed could read it — including a column filter.
   kind?: 'full' | 'cycle' | 'spot' | null;
   notes: string | null; created_at: string; posted_at: string | null;
   line_count: number; counted_count: number; lines?: Line[];
@@ -68,10 +54,6 @@ interface Sheet {
 export default function StockCounts() {
   const canSeeStats = useCanSeeStats();
   const navigate = useNavigate();
-  // Their «جرد المخازن» and «جرد عام» turned out to be filtered stock listings, not counting
-  // sheets, so those two entries open رصيد صنف instead. This screen is the counting cycle itself,
-  // which theirs has no counterpart for — and one sheet or all warehouses is a choice made in the
-  // dialog rather than by arriving through a different menu entry.
 
   const [sheets, setSheets] = useState<Sheet[]>([]);
   const [warehouses, setWarehouses] = useState<any[]>([]);
@@ -83,17 +65,7 @@ export default function StockCounts() {
   const [countDate, setCountDate] = useState<Dayjs>(dayjs());
   const [notes, setNotes] = useState('');
   const [statement1, setStatement1] = useState('');
-  /**
-   * البيان على الكشف المفتوح — بيتكتب هنا وبيتحفظ مع «حفظ العدّ» في نفس الضغطة.
-   * منفصل عن `statement1` بتاع شباك الفتح عشان فتح كشف جديد مايمسحش اللي بيتكتب هنا.
-   */
   const [sheetStatement, setSheetStatement] = useState('');
-  /**
-   * نوع الجرد — والفرق بينهم حاجة واحدة: مين اللي بيدخل ورقة العد.
-   *
-   * One document, three ways of filling it. After the sheet exists they behave identically, which
-   * is why this is a choice on the open dialog rather than three screens that would drift.
-   */
   const [kind, setKind] = useState<'full' | 'cycle' | 'spot'>('full');
   const [batchSize, setBatchSize] = useState<number>(20);
   const [spotItems, setSpotItems] = useState<number[]>([]);
@@ -104,9 +76,6 @@ export default function StockCounts() {
 
   const [sheet, setSheet] = useState<Sheet | null>(null);
   const [detailVisible, setDetailVisible] = useState(false);
-  // Typed counts, keyed by line. Empty until somebody writes a number — a blank line means «nobody
-  // reached this shelf», and pre-filling it with the book figure would turn not-counted into
-  // counted-and-agrees on every line nobody touched.
   const [entered, setEntered] = useState<Record<number, number | null>>({});
   const [busy, setBusy] = useState(false);
 
@@ -129,14 +98,11 @@ export default function StockCounts() {
     setOpening(true);
     try {
       const res = await api.post('/api/v1/stock-counts', {
-        // Empty means every active warehouse — the general count, chosen here rather than by route.
         warehouse_id: warehouseId ?? null,
         count_date: countDate.format('YYYY-MM-DD'),
         notes: notes || null,
         statement1: statement1 || null,
         kind,
-        // Sent only where they mean something: a batch size on a spot check, or a list of items on
-        // a full count, would be a value the server has to decide to ignore.
         batch_size: kind === 'cycle' ? batchSize : undefined,
         item_ids: kind === 'spot' ? spotItems : undefined,
       });
@@ -168,19 +134,15 @@ export default function StockCounts() {
     }
   };
 
-  // الكشف المفتوح جزء من العنوان، فالـ«رجوع» بيقفله ويرجّع للكشوف — الشرح في `useDocRoute`.
   const { markOpen, markClosed, opening: docOpening } = useDocRoute<Sheet>({
     rows: sheets,
-    // `sheet` بيفضل محطوط بعد القفل، فالمعوّل عليه إن الصفحة نفسها مفتوحة.
     openId: detailVisible && sheet ? sheet.id : null,
     open: (row) => { void openDetail(row); },
     close: () => closeDoc(),
     loading,
-    // `openDetail` بيجيب الكشف كامل بالرقم بنفسه، فالصف المبدئي كفاية.
     fetchOne: async (id) => ({ id } as Sheet),
   });
 
-  /** بيسيب الكشف المفتوح ويرجّع للقايمة — والعنوان بيتنضّف معاه. */
   const closeDoc = () => { setDetailVisible(false); markClosed(); };
 
   const saveCounts = async () => {
@@ -232,8 +194,6 @@ export default function StockCounts() {
       statement: (s, v) => matchesStatement(s, v),
       status: (s, v) => s.status === v,
       kind: (s, v) => (s as any).kind === v,
-      // «اللي فيه فرق بس» and «اللي لسه ماتعدش», asked for by name. Both read the counts the list
-      // already carries, so neither costs a request.
       progress: (s, v) => (v === 'incomplete'
         ? s.counted_count < s.line_count
         : v === 'complete' ? s.counted_count >= s.line_count : true),
@@ -241,16 +201,7 @@ export default function StockCounts() {
     dateOf: (s) => s.count_date,
   });
 
-  /**
-   * فلاتر جوه الورقة.
-   *
-   * A full count of a real warehouse is hundreds of lines. «وريني اللي فيه فرق بس» and «وريني اللي
-   * لسه ماتعدش» are the two questions somebody asks every few minutes while counting, and paging
-   * through everything to answer them is how lines get missed.
-   */
   const [lineView, setLineView] = useState<'all' | 'differing' | 'uncounted'>('all');
-  /** سجل عمليات الصنف — نفس السطح اللي جرد حتى تاريخ بيستعمله. */
-  // نفس منطق شاشات الجرد التانية: السجل تحت سطره، وأكتر من سطر مفتوح مع بعض.
   const [openLines, setOpenLines] = useState<React.Key[]>([]);
   const toggleLine = (key: React.Key) =>
     setOpenLines((prev) => (prev.includes(key)
@@ -259,15 +210,11 @@ export default function StockCounts() {
 
   const allLines = sheet?.lines ?? [];
   const isDraft = sheet?.status === 'draft';
-  // Computed live from what is typed rather than from the saved line, so the person sees the
-  // difference as they enter it instead of after a round trip.
   const diffOf = (ln: Line) => {
     const v = entered[ln.id];
     if (v === null || v === undefined) return null;
     return v - Number(ln.book_quantity);
   };
-  /** What the sheet shows right now. The counts and totals below stay on ALL lines — a filter is
-   *  a way of looking, not a way of changing what the document says. */
   const draftLines = allLines.filter((ln) => {
     if (lineCategory && (ln.category ?? null) !== lineCategory) return false;
     if (lineView === 'all') return true;
@@ -279,8 +226,6 @@ export default function StockCounts() {
     return d !== null && d !== 0;
   });
 
-  /** قيمة الفرق بالفلوس. «ناقص ٣ قطع» و«ناقص ٤٥٠» مش نفس المعلومة، والتانية هي اللي المدير
-   *  بياخد عليها قرار — تلات مسامير وتلات طلمبات بيتقروا زي بعض من غيرها. */
   const diffValue = (ln: Line) => {
     const d = isDraft ? diffOf(ln)
       : (ln.difference === null ? null : Number(ln.difference));
@@ -306,15 +251,11 @@ export default function StockCounts() {
   }).length;
 
   const columns = [
-    // The register filters per column too — «جرد دوري على مخزن الفرع لسه ماخلصش» is
-    // three columns, and the strip above can only hold so many boxes before it is a form.
     { title: 'التاريخ', dataIndex: 'count_date', width: 110,
       ...numberColumn((r: Sheet) => Date.parse(r.count_date) || 0) },
     { title: 'رقم الكشف', dataIndex: 'document_number', width: 130,
       ...textColumn(sheets, (r: Sheet) => r.document_number),
       render: (v: string) => <Tag color="cyan">{v}</Tag> },
-    // On the list because a cycle count that looks like a failed full count is how people
-    // stop trusting the numbers: «ليه ٢٠ صنف بس؟» has an answer, and it belongs here.
     { title: 'النوع', dataIndex: 'kind', width: 90,
       ...choiceColumn<Sheet>(
         [{ text: 'كلي', value: 'full' }, { text: 'دوري', value: 'cycle' },
@@ -347,21 +288,17 @@ export default function StockCounts() {
         : v === 'cancelled' ? <Tag>ملغي</Tag> : <Tag color="blue">مفتوح</Tag>) },
   ];
 
-  // إخفاء وترتيب الأعمدة — نفس المحرك اللي كل الجداول بتستخدمه.
   const tableCols = useTableColumns('stock-counts', columns, {
     export: { name: 'كشوف الجرد', rows: filter.filtered },
   });
 
-  // F3 للبحث — كانت جاية من `ListToolbar`؛ بتشتغل على القايمة بس.
   const searchRef = useRef<any>(null);
   useScreenShortcuts({ onSearch: () => { searchRef.current?.focus?.(); } }, !(detailVisible && sheet));
 
-  // فلتر «الحالة» بقى شرايح — نفس القيمة في `filter.values.status`.
   type StatusTab = 'all' | Sheet['status'];
   const statusValue = filter.values.status;
   const activeStatus: StatusTab = statusValue === 'draft' || statusValue === 'posted'
     || statusValue === 'cancelled' ? statusValue : 'all';
-  // الشريحة في الرابط (`?tab=`، جنب `?doc=`): الرابط ← الفلتر مرة واحدة عند الفتح، وبعدها الفلتر ← الرابط.
   const [listTab, setListTab] = useQueryTab('all');
   const lastTab = useRef(activeStatus);
   useEffect(() => {
@@ -387,19 +324,13 @@ export default function StockCounts() {
     </span>
   );
 
-  // مستند جاي من شاشة تانية ولسه بيفتح ⇒ مكان الكشف فاضي (الشرح في `useDocRoute.opening`).
   if (docOpening) return <DocOpening />;
   return (
     <>
-      {/* Mounted at the root so it survives the sheet dialog closing under it. */}
-      {/* صفحة واحدة في المرة: يا القايمة يا الكشف. الكشف كان بيتفتح في نافذة عرضها ٨٨٠ بكسل
-          و١٢ سطر في الصفحة — وجرد كلي بيبقى مئات السطور، فاللي بيعدّ كان بيعدّ من خرم إبرة.
-          دلوقتي بياخد الصفحة كلها. */}
       {!(detailVisible && sheet) && (
       <ListPage<StatusTab>
         icon={<AuditOutlined />}
         title="دورة الجرد" muted="(عدّ وتسوية)"
-        // كان تنبيه فوق الجدول — بقى سطر تحت العنوان.
         subtitle="الجرد بيسوّي الفرق لحد ما الرصيد يساوي المعدود — على الرصيد الحالي، فحركة حصلت أثناء العدّ ماتتحسبش مرتين"
         tabs={statusTabs} activeTab={activeStatus}
         onTabChange={(k) => filter.setValue('status', k === 'all' ? undefined : k)}
@@ -457,7 +388,6 @@ export default function StockCounts() {
         destroyOnHidden
       >
         <Form layout="vertical">
-          {/* النوع الأول — لأنه بيحدد باقي الأسئلة. */}
           <Form.Item label="نوع الجرد">
             <Segmented
               block value={kind}
@@ -475,8 +405,6 @@ export default function StockCounts() {
             </div>
           </Form.Item>
 
-          {/* Each kind is asked only for what it needs. A batch size on a spot check is a field
-              the server would have to decide to ignore. */}
           {kind === 'cycle' && (
             <Form.Item label="عدد الأصناف في الدفعة">
               <InputNumber min={1} max={500} style={{ width: '100%' }}
@@ -515,7 +443,6 @@ export default function StockCounts() {
       </TabModal>
 
       {detailVisible && sheet && (
-      // شكل المستند الجديد (زي إذن التحويل): كروت بيضا على رمادي. الشكل بس.
       <div className="sale-doc">
         <div className="sale-card sale-head">
           <div className="sale-head-row">
@@ -559,7 +486,6 @@ export default function StockCounts() {
                   {differing}
                 </div>
               </div>
-              {/* العجز والزيادة بالفلوس — الرقم اللي بيتاخد عليه قرار. */}
               <div className="sale-tile">
                 <div className="sale-tile-label">قيمة العجز</div>
                 <div className="sale-tile-value"
@@ -578,7 +504,6 @@ export default function StockCounts() {
           )}
 
           <div className="sale-card">
-            {/* البيان — بيتعدّل والكشف مفتوح وبيتحفظ مع «حفظ العدّ»؛ بعد الترحيل للقراية بس. */}
             <div style={{ marginBottom: 10, maxWidth: 520 }}>
               <div style={{ marginBottom: 4, fontWeight: 600 }}>البيان</div>
               <Input value={sheetStatement} maxLength={200} placeholder="اختياري"
@@ -586,9 +511,6 @@ export default function StockCounts() {
                 onChange={(e) => setSheetStatement(e.target.value)} />
             </div>
 
-            {/* فلاتر جوه الورقة. A full count is hundreds of lines, and «وريني اللي فيه فرق بس»
-                is asked every few minutes while counting. The counts above stay on ALL lines —
-                a filter is a way of looking, not a way of changing what the document says. */}
             <Space wrap style={{ marginBottom: 10 }}>
               <Segmented
                 value={lineView}
@@ -625,7 +547,6 @@ export default function StockCounts() {
                       dateTo: sheet?.count_date ?? null,
                     }}
                     onClose={() => toggleLine(r.id)}
-                    // الفترة بتتحدّد فوق الورقة مرة واحدة — مش في كل صنف.
                     periodFilter={false}
             />
                 ),
@@ -636,14 +557,8 @@ export default function StockCounts() {
                 pageSizeOptions: PAGE_SIZE_OPTIONS,
                 showTotal: (t) => `الإجمالي: ${t} سطر` }}
               columns={[
-                // Each column narrows on its own and the narrowings combine — «فئة الخامات، مخزن
-                // الفرع، اللي فيه فرق» is three at once, which the strip above cannot express.
                 { title: 'الصنف', dataIndex: 'item_name', ellipsis: true,
                   ...textColumn(allLines, (l: Line) => l.item_name),
-                  // A difference on a line is the moment somebody wants the item's history.
-                  // Opens the movement log rather than the item's catalogue page. On a counting
-                  // sheet the question behind a name is «الفرق ده جه منين», and the answer is the
-                  // movements — not the item's price and unit.
                   render: (v: string | null, r: Line) => (
                     <a onClick={() => toggleLine(r.id)}>
                       {v ?? `صنف #${r.item_id}`}
@@ -653,11 +568,6 @@ export default function StockCounts() {
                   title: 'المخزن', dataIndex: 'warehouse_name', width: 150,
                   ...textColumn(allLines, (l: Line) => l.warehouse_name),
                 }] : []),
-                // The category was not on the line at all before this work, so filtering a count
-                // by it was not possible from the client.
-                // Shown always, not only when the sheet spans more than one category. A column
-                // that appears and disappears depending on the data is one people cannot learn:
-                // the reader who filtered by فئة yesterday looks for it today and it is gone.
                 {
                   title: 'الفئة', dataIndex: 'category', width: 130,
                   ...textColumn(allLines, (l: Line) => l.category),
@@ -675,8 +585,6 @@ export default function StockCounts() {
                       data-count-line={ln.id}
                       style={{ width: '100%' }} min={0} placeholder="—"
                       value={entered[ln.id] ?? null}
-                      // Enter is «done, next» — the whole rhythm of counting a shelf. The arrows
-                      // already walk the column; this is the hand that never leaves the keypad.
                       onPressEnter={(e) => {
                         e.preventDefault();
                         const idx = draftLines.findIndex((x) => x.id === ln.id);
@@ -693,8 +601,6 @@ export default function StockCounts() {
                     : qty(ln.counted_quantity))),
                 },
                 {
-                  // The number a manager acts on. Three missing screws and three missing pumps
-                  // read identically in the quantity column beside this one.
                   title: 'قيمة الفرق', width: 130, align: 'left' as const,
                   ...numberColumn<Line>((ln) => diffValue(ln)),
                   render: (_: any, ln: Line) => {

@@ -1,13 +1,3 @@
-"""Full demo dataset for the company — for testing every module end-to-end.
-
-Idempotent: does nothing if the demo catalog already exists. Builds on top of `scripts.bootstrap`
-(org, warehouses, users, chart). Uses the real services so every ledger entry, stock movement and
-cost is correct — the seeded data exercises purchases → manufacturing (recipes + resources + routing
-+ waste) → wastage → sales.
-
-Run locally:  python -m scripts.demo_seed   (after bootstrap)
-Or via API:   POST /api/v1/admin/demo-seed  (system admin)
-"""
 from __future__ import annotations
 
 from decimal import Decimal
@@ -32,7 +22,7 @@ from src.services import (
 from src.services.purchase_service import PurchaseLine
 from src.services.sales_service import SaleLine
 
-MARKER = "كوع PVC ½ بوصة"  # presence of this product means the demo is already seeded
+MARKER = "كوع PVC ½ بوصة"
 
 
 def already_seeded(db: Session) -> bool:
@@ -49,7 +39,6 @@ def _warehouse(db: Session, name: str) -> Warehouse:
 
 
 def _ensure_after_sales_user(db: Session) -> User:
-    """Create the after-sales rep the demo's plumber customers must belong to."""
     from src.core.security import hash_password
     from src.models.role import Role
 
@@ -90,7 +79,6 @@ def _item(db: Session, *, name, kind, uom, warehouse_id, purchase=None, sale=Non
 
 
 def seed_demo(db: Session) -> dict:
-    """Create the full demo dataset. Returns a summary; safe to call more than once."""
     if already_seeded(db):
         return {"status": "already_seeded"}
 
@@ -98,8 +86,6 @@ def seed_demo(db: Session) -> dict:
     rep = db.scalar(select(User).where(User.username == "rep"))
     after_sales = db.scalar(select(User).where(User.username == "aftersales"))
     if after_sales is None:
-        # A plumber customer must be owned by after-sales staff; on a database that only ran
-        # the base seed that user does not exist yet, and the whole demo seed used to abort.
         after_sales = _ensure_after_sales_user(db)
     territory = db.scalar(select(Territory))
     actor = admin.id
@@ -107,7 +93,6 @@ def seed_demo(db: Session) -> dict:
     raw_wh = _warehouse(db, "مخزن الخامات")
     prod_wh = _warehouse(db, "مخزن المنتجات التامة")
 
-    # --- Raw materials (routed to the raw warehouse) ---
     pvc = _item(db, name="حبيبات PVC", kind=ItemKind.raw_material, uom="كجم",
                 warehouse_id=raw_wh.id, purchase="18")
     stabilizer = _item(db, name="مثبّت حراري", kind=ItemKind.raw_material, uom="كجم",
@@ -116,11 +101,9 @@ def seed_demo(db: Session) -> dict:
                     warehouse_id=raw_wh.id, purchase="60")
     carton = _item(db, name="كرتون تغليف", kind=ItemKind.raw_material, uom="قطعة",
                    warehouse_id=raw_wh.id, purchase="3")
-    # A raw material purchased but never used — appears in the stagnant (رواكد) report.
     old_stock = _item(db, name="خامة قديمة (راكدة)", kind=ItemKind.raw_material, uom="كجم",
                       warehouse_id=raw_wh.id, purchase="25")
 
-    # --- Products (routed to the finished-goods warehouse) ---
     elbow = _item(db, name=MARKER, kind=ItemKind.product, uom="قطعة",
                   warehouse_id=prod_wh.id, sale="7")
     tee = _item(db, name="تيه PVC ½ بوصة", kind=ItemKind.product, uom="قطعة",
@@ -128,11 +111,9 @@ def seed_demo(db: Session) -> dict:
     pipe = _item(db, name="ماسورة PVC 4 متر", kind=ItemKind.product, uom="قطعة",
                  warehouse_id=prod_wh.id, sale="35")
 
-    # --- Suppliers ---
     sup_a = _supplier(db, "الشركة المصرية للبتروكيماويات", "01000000001")
     sup_b = _supplier(db, "موّرد الإضافات والصبغات", "01000000002")
 
-    # --- Purchases: stock the raw materials into the raw warehouse ---
     def purchase(supplier, lines_spec, cash_ratio=Decimal("1")):
         lines = [PurchaseLine(it.id, Decimal(q), Decimal(p)) for it, q, p in lines_spec]
         total = sum((Decimal(q) * Decimal(p) for _, q, p in lines_spec), Decimal("0"))
@@ -146,7 +127,6 @@ def seed_demo(db: Session) -> dict:
     purchase(sup_b, [(stabilizer, "200", "45"), (pigment, "100", "60"),
                      (old_stock, "80", "25")], Decimal("1"))
 
-    # --- Recipes (BOM) with material components + production resources ---
     def bom(product, components, resources):
         return manufacturing_service.create_bom(
             db, product_id=product.id, name=f"وصفة {product.name}", output_quantity=Decimal("100"),
@@ -161,7 +141,6 @@ def seed_demo(db: Session) -> dict:
     bom(pipe, [(pvc, "120"), (stabilizer, "5"), (carton, "5")],
         [("labor", "عمالة بثق", "8", "25"), ("machine", "تشغيل خط البثق", "6", "55")])
 
-    # --- Manufacturing orders (auto-route + cost + some waste) ---
     manufacturing_service.create_order(
         db, product_id=elbow.id, quantity=Decimal("500"), location_kind="warehouse",
         location_id=prod_wh.id, actor_user_id=actor,
@@ -173,14 +152,11 @@ def seed_demo(db: Session) -> dict:
         db, product_id=pipe.id, quantity=Decimal("100"), location_kind="warehouse",
         location_id=prod_wh.id, actor_user_id=actor)
 
-    # --- Wastage document (damaged raw material) ---
     wastage_service.create_wastage(
         db, item_id=carton.id, warehouse_id=raw_wh.id, quantity=Decimal("15"),
         reason="كرتون تالف بسبب الرطوبة", actor_user_id=actor)
 
-    # --- Customers (owned by the seeded rep + territory) ---
     def customer(name, ctype, phone):
-        # (v4) a plumber's responsible rep must be after-sales staff.
         owner = after_sales if (ctype == "plumber" and after_sales) else rep
         return customer_service.create_customer(
             db, name=name, customer_type=ctype, rep_id=owner.id, territory_id=territory.id,
@@ -190,7 +166,6 @@ def seed_demo(db: Session) -> dict:
     c2 = customer("سباك - أحمد عبد الله", "plumber", "01222222222")
     customer("معرض المستقبل", "trader", "01333333333")
 
-    # --- Sales (from the finished-goods warehouse; mix of cash/credit) ---
     def sale(cust, lines_spec, cash_ratio=Decimal("1")):
         lines = [SaleLine(it.id, Decimal(q)) for it, q in lines_spec]
         net = sum((Decimal(q) * Decimal(it.sale_price) for it, q in lines_spec), Decimal("0"))

@@ -5,7 +5,6 @@ import {
   Button, Checkbox, Col, Divider, Form, Input, Modal, Row, Segmented, Select, Space, Tag, Tooltip,
   message,
 } from 'antd';
-// فلتر على كل عمود — شوف `FilterTable`.
 import { FilterTable as Table } from '../components/FilterTable';
 import { InputNumber } from '../components/NumberInput';
 import {
@@ -30,7 +29,7 @@ interface CustomerRecord {
   id: number;
   code: string;
   name: string;
-  customer_type: string; // admin-configurable via Settings (013)
+  customer_type: string;
   phone: string | null;
   phones: string[] | null;
   governorate_id: number | null;
@@ -43,8 +42,7 @@ interface CustomerRecord {
   territory_id: number;
   default_price_tier: string | null;
   active: boolean;
-  balance?: string | null;   // receivable balance, sent with the list (one grouped query)
-  // Card fields read off their العملاء form (031).
+  balance?: string | null;
   branch_id: number | null;
   email: string | null;
   tax_number: string | null;
@@ -84,7 +82,6 @@ const TIER_LABELS: Record<string, string> = {
   consumer: 'مستهلك',
 };
 
-// Dynamic list of EXTRA phone numbers (the primary `phone` field stays separate).
 const ExtraPhonesList = () => (
   <Form.List name="phones">
     {(fields, { add, remove }) => (
@@ -108,9 +105,6 @@ const ExtraPhonesList = () => (
   </Form.List>
 );
 
-// ---- تعديل بيانات العملاء من الجدول (نفس فكرة «تعديل الأسعار والخصم» في الأصناف) ----
-// كل خانة بتحفظ لوحدها لما تسيبها؛ لو السيرفر رفض الرسالة بتطلع من `api/client.ts`
-// والخانة بترجع لقيمتها. معرّفين برّه الصفحة عشان المؤشر مايطيرش مع كل رندر.
 type CellStatus = 'idle' | 'saving' | 'saved';
 
 const CellStatusIcon = ({ status }: { status: CellStatus }) => (
@@ -139,7 +133,6 @@ const useCellStatus = () => {
   return { status, run };
 };
 
-// تليفون مصري بشكل متساهل: أرقام بس (و+ في الأول)، والموبايل اللي بيبدأ بـ01 لازم ١١ رقم.
 const phoneError = (digits: string): string | null => {
   if (!digits) return null;
   if (!/^\+?\d{6,15}$/.test(digits)) return 'رقم التليفون أرقام بس (من ٦ لـ١٥ رقم)';
@@ -159,7 +152,6 @@ const InlineTextCell = ({
 }) => {
   const [draft, setDraft] = useState(value ?? '');
   const { status, run } = useCellStatus();
-  // آخر قيمة اتبعتت — Enter وبعده blur على نفس الخانة مايبعتوش مرتين.
   const committed = useRef(value ?? '');
 
   useEffect(() => {
@@ -201,14 +193,12 @@ const InlineTextCell = ({
           if (e.key === 'Enter') commit();
           if (e.key === 'Escape') setDraft(committed.current);
         }}
-        // الأيقونة دايماً موجودة: تغيير `suffix` من لا حاجة لحاجة بيعيد بناء الخانة.
         suffix={<CellStatusIcon status={status} />}
       />
     </div>
   );
 };
 
-// القايمة بتحفظ أول ما تختار — مافيش «سيب الخانة».
 const InlineSelectCell = <V extends number | string>({
   value, options, onCommit,
 }: {
@@ -253,8 +243,6 @@ const InlineSelectCell = <V extends number | string>({
   );
 };
 
-// The list endpoint now carries each customer's balance (one grouped query on the server),
-// so the grid no longer fires a request per row.
 const CustomerBalance = ({ value }: { value?: string | null }) => {
   const n = Number(value || 0);
   const color = n > 0 ? '#cf1322' : n < 0 ? '#1677ff' : undefined;
@@ -264,8 +252,6 @@ const CustomerBalance = ({ value }: { value?: string | null }) => {
 export default function Customers() {
   const { options: typeOptions } = useLookup('customer_type');
   const typeLabels = labelMap(typeOptions);
-  // الملّاك ليهم شاشتهم («الملّاك» في ما بعد البيع) — التصنيف ده مايظهرش هنا
-  // لا في الفلتر ولا في فورم الإنشاء/التعديل.
   const customerTypeOptions = useMemo(
     () => typeOptions.filter((o) => o.value !== 'owner'),
     [typeOptions],
@@ -284,13 +270,7 @@ export default function Customers() {
   const [branches, setBranches] = useState<{ id: number; name: string }[]>([]);
   const [loading, setLoading] = useState(false);
   const [drawerVisible, setDrawerVisible] = useState(false);
-  // بيفتح على «نشط»: الكشف فيه ٦٢٣ كارت معطّل — خط بولي مدموج وأطراف ما بعد البيع
-  // اللي مالهاش ولا حركة — وعرضهم افتراضياً بيدّي نفس الراجل مرتين ويغرّق الكشف.
-  // الفلتر فوق لسه فيه «معطل» و«الكل» لمن يحتاجهم.
-  // شريحة الحالة في الرابط (`?tab=`): الفلتر بيبدأ منها عند الفتح عشان الريفرش يرجع عليها.
   const [listTab, setListTab] = useQueryTab('active');
-  // العملاء / الموظفين / الفروع (`?group=`) — الكارت واحد والتصنيف هو اللي بيفرّق:
-  // الموظف «employee» والفرع/الشركة التابعة «internal». كانوا كلهم وسط العملاء.
   const [urlParams, setUrlParams] = useSearchParams();
   const partyGroup = (['employees', 'branches'].includes(urlParams.get('group') || '')
     ? urlParams.get('group') : 'customers') as 'customers' | 'employees' | 'branches';
@@ -302,7 +282,7 @@ export default function Customers() {
   const [filters, setFilters] = useState<Filters>(() => ({
     active: listTab === 'all' ? undefined : listTab !== 'inactive',
   }));
-  const [search, setSearch] = useState('');           // typed text, applied on Enter/button
+  const [search, setSearch] = useState('');
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
   const [totalCount, setTotalCount] = useState(0);
@@ -316,29 +296,23 @@ export default function Customers() {
   const [form] = Form.useForm();
   const { user: currentUser, can } = useAuth();
 
-  // «تعديل بيانات العملاء» — نفس صلاحية فورم التعديل. المنطقة بتتغيّر من مسار النقل
-  // (`/reassign`) فليها صلاحيتها.
   const canEditCustomers = can('customer.write');
   const canEditTerritory = can('customer.reassign');
   const [editModeRaw, setEditMode] = useState(false);
   const editMode = editModeRaw && canEditCustomers;
-  // الـblur الأول بيحفظ اللي اتكتب قبل ما الخانات تختفي.
   const leaveEditMode = () => {
     (document.activeElement as HTMLElement | null)?.blur?.();
     setEditMode(false);
   };
   const mergeRow = (id: number, data: Partial<CustomerRecord>) =>
     setCustomers((prev) => prev.map((c) => (c.id === id ? { ...c, ...data } : c)));
-  // PATCH جزئي: اللي مااتبعتش مابيتلمسش (الأرقام الإضافية والخصم والمندوب…).
   const saveField = async (r: CustomerRecord, body: Partial<CustomerRecord>) => {
     const res = await api.patch(`/api/v1/customers/${r.id}`, body);
-    // الرد فيه الكارت كله — الاسم والتصنيف والعنوان بيتحدّثوا في السطر من غير إعادة تحميل.
     mergeRow(r.id, {
       name: res.data.name, customer_type: res.data.customer_type, address: res.data.address,
       phone: res.data.phone, governorate_id: res.data.governorate_id, markaz: res.data.markaz,
     });
   };
-  // المنطقة من غير مندوب جديد — السيرفر بيسيب المندوب زي ما هو.
   const saveTerritory = async (r: CustomerRecord, territoryId: number) => {
     const res = await api.post(`/api/v1/customers/${r.id}/reassign`, {
       new_territory_id: territoryId,
@@ -346,7 +320,6 @@ export default function Customers() {
     mergeRow(r.id, { territory_id: res.data.territory_id, rep_id: res.data.rep_id });
   };
 
-  // المندوب بيتغيّر من مسار النقل (`/reassign`) زي المنطقة — المنطقة بتفضل زي ما هي.
   const saveRep = async (r: CustomerRecord, repId: number) => {
     const res = await api.post(`/api/v1/customers/${r.id}/reassign`, {
       new_rep_id: repId, new_territory_id: r.territory_id,
@@ -356,7 +329,6 @@ export default function Customers() {
 
   const loadSummary = async (activeFilters = filters) => {
     try {
-      // كروت الموظفين مش عملاء — ليهم «مديونيات الموظفين». فلتر «موظف» بيعرضهم.
       const params: any = { party_group: partyGroup };
       Object.entries(activeFilters).forEach(([k, v]) => {
         if (v !== undefined && v !== null && v !== '') params[k] = v;
@@ -372,12 +344,10 @@ export default function Customers() {
     }
   };
 
-  // Filtering happens on the server so it covers ALL customers, not just the loaded page.
   const fetchCustomers = async (
     override?: Filters, targetPage = page, targetPageSize = pageSize, opts?: { silent?: boolean },
   ) => {
     const active = override ?? filters;
-    // الهادي (التحديث الحي): نفس الفلاتر ونفس الصفحة، من غير سبينر.
     const silent = !!opts?.silent;
     if (!silent) setLoading(true);
     try {
@@ -404,8 +374,6 @@ export default function Customers() {
       if (!silent) setLoading(false);
     }
   };
-  // عميل اتضاف من التطبيق، أو فاتورة/سند غيّر مديونيته ⇒ الصفحة الحالية والإجماليات
-  // يتحدّثوا. مودال التعديل فورمه لوحده فمابيتلمسش.
   useLiveRefresh(['customers', 'sales', 'vouchers', 'cheques'], () => {
     fetchCustomers(undefined, page, pageSize, { silent: true });
     loadSummary();
@@ -419,14 +387,11 @@ export default function Customers() {
     loadSummary(next);
   };
 
-  // الخروج من الخانة من غير تعديل كان بيعيد الكشف والإجماليات كل مرة.
   const applySearch = () => {
     const q = search.trim() || undefined;
     if (q !== filters.q) setFilter('q', q);
   };
 
-  // المسح بيرجّع الشاشة زي ما بتفتح (على «نشط») — كان بيفضّي كل حاجة فبيطلع المعطلين
-  // الـ٦٢٣ اللي الفتح الافتراضي قاصد يخبيهم، وفلتر «الحالة» فوق فاضي كأنه مش مفلتر.
   const resetFilters = () => {
     const initial: Filters = { active: true };
     setSearch('');
@@ -453,10 +418,8 @@ export default function Customers() {
         api.get('/api/v1/governorates'),
         api.get('/api/v1/branches'),
       ]);
-      // القوايم مرتّبة أبجدي من الأول — القايمة المقفولة بتعرض بترتيبها قبل ما حد يكتب.
       const byName = (r: any) => r.full_name || r.name;
       setReps(sortByName(usersRes.data.filter((u: any) => u.role === 'sales_rep'), byName));
-      // مندوب الخدمة دوره `after_sales_staff` مش `sales_rep` — قايمة تانية خالص.
       setServiceReps(sortByName(
         usersRes.data.filter((u: any) => u.role === 'after_sales_staff'), byName));
       setTerritories(sortByName(territoriesRes.data || [], byName));
@@ -473,7 +436,6 @@ export default function Customers() {
     fetchLookups();
   }, []);
 
-  // تغيير العملاء/الموظفين/الفروع بيرجّع لأول صفحة بنفس الفلاتر.
   const firstGroup = useRef(true);
   useEffect(() => {
     if (firstGroup.current) { firstGroup.current = false; return; }
@@ -482,7 +444,6 @@ export default function Customers() {
     loadSummary();
   }, [partyGroup]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Form.List rows can be blank/undefined; only send real numbers.
   const cleanPhones = (phones: any): string[] =>
     (phones || []).map((p: any) => (p || '').trim()).filter(Boolean);
 
@@ -494,14 +455,11 @@ export default function Customers() {
         governorate_id: values.governorate_id ?? null,
         markaz: values.markaz ?? null,
         address: values.address ?? null,
-        // Left blank stays blank, not zero: «مفيش اتفاق» and «الاتفاق صفر» are different facts,
-        // and the server keeps them apart only if the screen does too.
         discount_pct: values.discount_pct ?? null,
         vat_pct: values.vat_pct ?? null,
         is_cash: !!values.is_cash,
         phones: cleanPhones(values.phones),
       });
-      // «مخفي» is a state a customer is put into, not one he is born in, so it is a separate edit.
       if (hidden && created.data?.id) {
         await api.patch(`/api/v1/customers/${created.data.id}`, { active: false });
       }
@@ -532,12 +490,7 @@ export default function Customers() {
     });
   };
 
-  // Permanent delete. The server refuses when the customer has any movement (invoices,
-  // receipts, ledger lines…) and tells the user to deactivate instead.
   const onDelete = async (record: CustomerRecord) => {
-    // بينفّذ من غير سؤال — التأكيدات اتشالت بطلب صاحب النظام. السيرفر لسه بيرفض
-    // حذف العميل اللي عليه حركة وبيقول استعمل «إلغاء التفعيل»، فالحارس مكانه
-    // وهو شغّال؛ اللي اتشال هو السؤال.
     try {
       await api.delete(`/api/v1/customers/${record.id}?hard=true`);
       message.success('تم حذف العميل');
@@ -547,14 +500,6 @@ export default function Customers() {
     }
   };
 
-  // Their seven columns, in their order — `رقم · الفرع · الاسم · الهاتف · مندوب · محافظه ·
-  // مدينة` — plus the balance, and that is the whole table. It fits the screen, which is the
-  // point: a list you have to drag sideways to read is one where the number you came for is
-  // never on screen beside the name you looked it up by.
-  //
-  // What we have and they do not has NOT been dropped — تصنيف، المنطقة and الفئة السعرية moved
-  // into the expanded row, «مخفي» is a tag on the name, and the actions became the three icons
-  // their own rows use. Nothing left the screen; it stopped costing a column.
   const columns = [
     {
       title: 'رقم',
@@ -578,7 +523,6 @@ export default function Customers() {
       dataIndex: 'name',
       key: 'name',
       ellipsis: true,
-      // الاسم بيتعدّل من هنا كمان (توحيد أسامي التلات فروع، ٢٠٢٦-١٠-٠٦).
       render: (name: string, record: CustomerRecord) => (editMode
         ? <InlineTextCell gridCol="name" value={name}
             validate={(v) => (v ? null : 'الاسم مايبقاش فاضي')}
@@ -591,9 +535,6 @@ export default function Customers() {
         )),
     },
     {
-      // «النوع» كان مدفون في السطر المتوسّع. النوع بيحدد الشغل نفسه — مين بيشتري
-      // ومين الكوبون بيرجع منه — فمكانه عمود. (المالك خرج من الكشف خالص:
-      // شاشة «الملّاك» في ما بعد البيع.)
       title: 'النوع',
       dataIndex: 'customer_type',
       key: 'customer_type',
@@ -630,8 +571,6 @@ export default function Customers() {
       dataIndex: 'rep_id',
       key: 'rep_id',
       ellipsis: true,
-      // فاضي مقصود: السباك والمالك مالهمش مندوب بيع — إحنا بنبيع للتجار بس.
-      // شرطة بتقول «مافيش»؛ «مندوب #null» كانت بتقول إن فيه مندوب واحنا مش لاقينه.
       render: (repId: number | null, row: CustomerRecord) => {
         if (editMode && canEditTerritory) {
           return (
@@ -646,16 +585,6 @@ export default function Customers() {
       },
     },
     {
-      /**
-       * **الطرف ده مورد كمان.**
-       *
-       * الراجل اللي بنشتري منه وبنبيع له كارتين عندنا وكارت واحد عند a5 — والنتيجة إن
-       * «هو عليه كام؟» ليها إجابتين مالهمش طريق يتجمعوا. العمود ده بيقول الحقيقة على
-       * السطر: الكارت ده مربوط بكارت مورد، وده اسمه.
-       *
-       * مخفي افتراضياً زي أي عمود مالوش قيمة لأغلب الصفوف — بيتفتح من «الأعمدة» لما
-       * اللي بيراجع يبقى بيدوّر عليه.
-       */
       title: 'مورد كمان',
       dataIndex: 'supplier_name',
       key: 'supplier_name',
@@ -663,9 +592,6 @@ export default function Customers() {
       render: (v: string | null) => (v ? <Tag color="blue">{v}</Tag> : '—'),
     },
     {
-      // عمود تاني مش نفس العمود: الاتنين بيزوروا نفس العميل ومش نفس الراجل —
-      // واحد بيبيع له والتاني بيعاين عنده وياخد منه الكوبونات. جمعهم في خانة
-      // واحدة بيخلّي تقرير المناديب يحسب الاتنين على نفس الشغل.
       title: 'مندوب الخدمة',
       dataIndex: 'service_rep_id',
       key: 'service_rep_id',
@@ -682,7 +608,6 @@ export default function Customers() {
       key: 'governorate_id',
       ellipsis: true,
       render: (gId: number | null, r: CustomerRecord) => {
-        // مافيش «مسح» للمحافظة: الـPATCH بيعتبر الفاضي «من غير تغيير».
         if (editMode) {
           return (
             <InlineSelectCell value={gId} options={governorateOptions}
@@ -716,8 +641,6 @@ export default function Customers() {
       title: '',
       key: 'actions',
       width: 110,
-      // Icons, like their rows use — three of them in the width two words used to take. Row
-      // clicks open the customer file, so the buttons must not bubble up to it.
       render: (_: any, record: CustomerRecord) => (
         <Space size={2} onClick={(e) => e.stopPropagation()}>
           <Tooltip title="عرض الملف">
@@ -738,12 +661,10 @@ export default function Customers() {
     },
   ];
 
-  // إخفاء وترتيب الأعمدة — نفس المحرك اللي كل الجداول بتستخدمه.
   const tableCols = useTableColumns('customers', columns, {
     export: { name: 'العملاء', rows: customers },
   });
 
-  // المنطقة مكانها السطر المتوسّع؛ بتبقى عمود في وضع التعديل بس (بعد المدينة).
   const territoryColumn = {
     title: 'المنطقة',
     dataIndex: 'territory_id',
@@ -754,7 +675,6 @@ export default function Customers() {
           onCommit={(v) => saveTerritory(r, v)} />
       : territories.find((t) => t.id === tId)?.name || '-'),
   };
-  // العنوان مكانه السطر المتوسّع؛ في وضع التعديل بيبقى عمود عشان يتكتب.
   const addressColumn = {
     title: 'العنوان',
     dataIndex: 'address',
@@ -765,8 +685,6 @@ export default function Customers() {
         onCommit={(val) => saveField(r, { address: val })} />
     ),
   };
-  // في وضع التعديل الخانات اللي بتتعدّل لازم تبان حتى لو مخفية من «الأعمدة» —
-  // من غير ما نلمس الإعداد المحفوظ، فبترجع زي ما كانت لما التعديل يخلص.
   let tableColumns: any[] = tableCols.columns;
   if (editMode) {
     const authored: any[] = [...columns];
@@ -776,7 +694,6 @@ export default function Customers() {
       'territory_id', 'address']) {
       if (out.some((c) => c.key === key)) continue;
       const idx = authored.findIndex((c) => c.key === key);
-      // جنب أقرب عمود ظاهر قبله في الترتيب الأصلي.
       let at = 0;
       for (let i = idx - 1; i >= 0; i -= 1) {
         const pos = out.findIndex((c) => c.key === authored[i].key);
@@ -787,8 +704,6 @@ export default function Customers() {
     tableColumns = out;
   }
 
-  // The three of ours that used to be columns. Opening a row costs one click and gives them back
-  // in full, rather than making every row narrower for everyone who never looks at them.
   const expandedRow = (record: CustomerRecord) => (
     <Space size={32} wrap style={{ paddingInlineStart: 8 }}>
       <span>
@@ -814,18 +729,15 @@ export default function Customers() {
     </Space>
   );
 
-  // «الحالة» بقت شرايح — نفس فلتر `active` اللي بيروح للسيرفر.
   type StatusTab = 'active' | 'inactive' | 'all';
   const statusTab: StatusTab = filters.active === true ? 'active'
     : filters.active === false ? 'inactive' : 'all';
-  // الفلتر ← الرابط (الشرايح و«مسح») — بس لما الشريحة تتغيّر فعلاً، عشان أول رندر مايكتبش فوق اللي في الرابط.
   const lastTab = useRef(statusTab);
   useEffect(() => {
     if (lastTab.current === statusTab) return;
     lastTab.current = statusTab;
     if (statusTab !== listTab) setListTab(statusTab);
   }, [statusTab]); // eslint-disable-line react-hooks/exhaustive-deps
-  // العدد من الملخّص — بيتحسب على الفلاتر الحالية، فبيتكتب على الشريحة المفتوحة بس.
   const countIf = (k: StatusTab) => (k === statusTab ? summaryData.total_count : undefined);
   const statusTabs: ListTab<StatusTab>[] = [
     { key: 'active', label: 'نشط', dot: '#52c41a', count: countIf('active') },
@@ -833,7 +745,6 @@ export default function Customers() {
     { key: 'all', label: 'الكل', count: countIf('all') },
   ];
 
-  // كروت الإجماليات اللي كانت فوق بقت سطر تحت الجدول.
   const footer = (
     <span className="sl-foot">
       <span>عدد العملاء: <b>{summaryData.total_count.toLocaleString(numeralsLocale())}</b></span>
@@ -880,7 +791,6 @@ export default function Customers() {
               { value: 'branches', label: 'الفروع' },
             ]}
           />
-          {/* الفلاتر على السيرفر، فبتغطّي كل العملاء مش الصفحة المحمّلة بس. */}
           <Input
             className="sl-f-search"
             allowClear
@@ -945,7 +855,6 @@ export default function Customers() {
             onChange: handlePageChange,
             showTotal: () => footer,
           }}
-          // The whole row opens the customer file — إلا وإحنا بنعدّل.
           onRow={(record) => (editMode ? {} : {
             onClick: () => navigate(`/customers/${record.id}`),
             style: { cursor: 'pointer' },
@@ -953,9 +862,6 @@ export default function Customers() {
         />
       </ListPage>
 
-      {/* عميل جديد — laid out field for field against their العملاء form: the same groups, three
-          to a row, in their order. Whoever registers customers off a paper application reads down
-          it in that order, and a form that asks in a different one turns typing into searching. */}
       <TabModal footer={null} centered
         title="عميل جديد"
         width={860}
@@ -1049,14 +955,8 @@ export default function Customers() {
             </Col>
           </Row>
 
-          {/* خصم and ض.م are left EMPTY by default, not zero: empty means nothing was agreed and
-              the item's own rate applies, zero means an agreed rate of nothing. Pre-filling them
-              with 0 would silently turn every customer into one who negotiated a zero rate. */}
           <Row gutter={12}>
             <Col span={4}>
-              {/* His rate REPLACES the item's rather than adding to it: a dealer on 20% against
-                  an item that gives 10% is on twenty, not twenty-eight. Empty is what makes that
-                  readable — «مفيش اتفاق» and «اتفقنا على صفر» are different instructions. */}
               <Form.Item name="discount_pct" label="خصم %"
                 tooltip="إن حُدِّد فإنه يحل محل خصم الصنف ولا يُضاف إليه. اتركه فارغاً ليأخذ الصنف خصمه."
                 extra="فارغ = لا يوجد اتفاق">
@@ -1080,8 +980,6 @@ export default function Customers() {
             </Col>
           </Row>
 
-          {/* Ours, kept after theirs: their form has no territory and no room for a second
-              number, and dropping either would lose data we already hold. */}
           <Divider orientation="right" style={{ margin: '8px 0' }}>إضافات تكنو ثيرم</Divider>
           <Row gutter={12}>
             <Col span={8}>

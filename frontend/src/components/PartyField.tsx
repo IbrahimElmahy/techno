@@ -3,33 +3,13 @@ import { searchFilter, searchRank } from '../utils/arabicSort';
 import { Select } from 'antd';
 import PartyPickerModal, { Party, PartyKind } from './PartyPickerModal';
 
-/**
- * خانة «مين» — a form field that answers the party question through the party WINDOW.
- *
- * The documents ask who they are for in a window: a searchable list with the balance, the phone
- * and a way to create somebody who is not there yet. The vouchers asked the same question with a
- * bare dropdown — same question, two different answers depending on which screen you were on, and
- * only one of them could reach a customer who had never been entered.
- *
- * It takes the `value` / `onChange` pair antd's `Form.Item` supplies, so it drops into an existing
- * form without the form knowing anything changed. The visible control stays a `Select` — it shows
- * the chosen name and stays consistent with the fields beside it — but its own dropdown is held
- * shut (`open={false}`) so there is exactly one way in.
- */
 export default function PartyField({
   kind, value, onChange, onPicked, options, placeholder, style, disabled,
 }: {
   kind: PartyKind;
   value?: number;
   onChange?: (id: number) => void;
-  /**
-   * الطرف اللي اتختار كامل، مش رقمه بس.
-   *
-   * الشاشة اللي عندها الكشف كله محمّل بتلاقي الاسم من `options`؛ اللي مش محمّلاه —
-   * وتحميل آلاف الصفوف عشان اسم واحد مش مبرر — بتاخده من هنا وتعرضه.
-   */
   onPicked?: (party: Party) => void;
-  /** Names for the ids, so the chosen party reads as a name rather than a number. */
   options: { value: number; label: string }[];
   placeholder?: string;
   style?: React.CSSProperties;
@@ -44,8 +24,6 @@ export default function PartyField({
         placeholder={placeholder ?? (kind === 'customer' ? 'اختر العميل' : 'اختر المورد')}
         value={value}
         disabled={disabled}
-        // Held shut on purpose: the window is the way in, and a dropdown that also opened would be
-        // a second answer to the same question that cannot create a party.
         open={false}
         onClick={() => { if (!disabled) setOpen(true); }}
         options={options} filterOption={searchFilter} filterSort={searchRank}/>

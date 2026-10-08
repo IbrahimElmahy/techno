@@ -1,44 +1,3 @@
-"""يفضّي القاعدة كلها إلا الدخول والهيكل والإعدادات — عشان سحب a5 يبتدي من صفحة بيضا.
-
-    python -m src.scripts.reset_all              # يعرض بس
-    python -m src.scripts.reset_all --yes        # ينفّذ
-
-**الفرق بينه وبين `reset_transactions`:** التاني بيمسح الحركات ويسيب الأطراف والأصناف
-وشجرة الحسابات. ده بيمسح **الأطراف والشجرة والمخازن كمان** — وهي بالظبط اللي
-اتلخبطت: عملاء a5 وأطراف ERP قعدوا في جدول واحد، والدمج بالاسم خلط اللي مالوش علاقة
-باللي له، فالكروت المدموجة بقت مالهاش أصل واضح ولا طريقة تتفك بيها صف صف.
-
-**اللي بيفضل** — أقل حاجة تخلّي النظام يقوم ويتسجّل عليه دخول، وكل إعداد اتظبط
-بالإيد ومش موجود في تصدير a5:
-
-    user · role · role_capability · branch · governorate · head_office · territory
-    lookup_option · sales_setting · stock_setting · payroll_setting · alembic_version
-    department · job_title · cost_center · voucher_key · salary_component
-    work_shift · leave_type · holiday · coupon_type · inspection_item_type
-    payroll_scheme_version · payroll_scheme_bracket
-
-`governorate` و`territory` بيفضلوا لأن `branch.governorate_id` و`user.territory_id`
-بيشاوروا عليهم — والمناطق نفسها `import_a5` بيعيد بناءها بالاسم فوق الموجود.
-
-**اللي بيتمسح:** كل الباقي. الأرصدة كلها مشتقّة من الحركات، فالمسح بيصفّرها لوحده.
-
----------------------------------------------------------------------------
-**ليه مش `TRUNCATE ... CASCADE` زي النسخة الأولى:** `CASCADE` في Postgres **مش**
-فحص — هو توسعة: بيمسح كل جدول عنده مفتاح أجنبي على اللي بتمسحه. `user.territory_id`
-بيشاور على `territory`، فمسح `territory` بـ`CASCADE` كان هيمسح المستخدمين، والسكربت
-اللي اتكتب عشان تفضل تعرف تدخل كان هيقفلك بره. من غير `CASCADE` أي مفتاح من جدول
-محفوظ لجدول متمسوح بيرمي خطأ صريح — وده الفحص اللي عايزينه.
-
-**وليه جدولين بيتمسحوا بـ`DELETE` مش `TRUNCATE`:** Postgres بيرفض `TRUNCATE` لجدول
-عليه مفتاح أجنبي من جدول بره القايمة **حتى لو كل القيم NULL**. `salary_component`
-و`voucher_key` (محفوظين) بيشاوروا على `account`، و`department` بيشاور على `employee`.
-فالاتنين دول بيتفضّوا بـ`DELETE` والعدّاد بيترجع بإيدنا — نفس النتيجة، بس بالباب
-اللي Postgres بيفتحه. الأعمدة دي بتتصفّر الأول عشان الـ`DELETE` نفسه مايقعش.
-
-⚠️ **حذف نهائي.** خُد `pg_dump` قبله، ووقّف خدمة `TechnoApi`: أول قيد على قاعدة فاضية
-بيخلّي `account_resolver` يخترع خزينة وحسابات افتراضية — وده ازدواج الخزينتين اللي
-اتصلّح مرة قبل كده. والسكربت بيرفض يشتغل لو التخزين مش Postgres.
-"""
 from __future__ import annotations
 
 import sys
@@ -46,48 +5,30 @@ import sys
 from sqlalchemy import inspect as sa_inspect
 from sqlalchemy import text
 
-import src.models  # noqa: F401 — بيملا الـmetadata بكل الجداول
+import src.models  # noqa: F401
 from src.core.db import SessionLocal, engine
 
-# اللي بيفضل. القايمة صغيرة عن قصد: أي جدول مش هنا بيتمسح، فالجدول الجديد اللي حد يضيفه
-# بكرة بيتمسح افتراضياً — وده الاتجاه الآمن. الجدول اللي المفروض يفضل بيتحط هنا بالاسم.
 KEEP: set[str] = {
-    # الدخول والصلاحيات — من غيرهم مافيش حد يقدر يدخل يشغّل السحب أصلاً
     "user", "role", "role_capability",
-    # الهيكل الإداري: الفروع بتتنده بالاسم في سكربتات السحب («العلياء»، «أكتوبر»)،
-    # والمحافظة والمنطقة مفاتيح على الفرع والمستخدم
     "branch", "governorate", "head_office", "territory",
-    # الإعدادات والقوايم المنسدلة — اتظبطت بالإيد ومش موجودة في تصدير a5
     "lookup_option", "sales_setting", "stock_setting", "payroll_setting",
-    # إعدادات الموارد البشرية والمحاسبة — تهيئة مش حركة
     "department", "job_title", "cost_center", "voucher_key", "salary_component",
     "work_shift", "leave_type", "holiday", "payroll_scheme_version",
     "payroll_scheme_bracket",
-    # قوايم مرجعية لما بعد البيع — الإدخال اليدوي محتاجها
     "coupon_type", "inspection_item_type",
-    # جداول الترحيلات/النسخ لو موجودة
     "alembic_version",
 }
 
-# أعمدة في جداول محفوظة بتشاور على جداول بتتمسح. بتتصفّر قبل الحذف.
 UNLINK = (
     "UPDATE salary_component SET account_id = NULL",
     "UPDATE voucher_key SET debit_account_id = NULL, credit_account_id = NULL",
     "UPDATE department SET manager_employee_id = NULL, cost_center_id = NULL",
-    # دوائر ذاتية: `DELETE` بيقع عليها، و`TRUNCATE` لأ. بتتصفّر قبل الحذف.
     "UPDATE account SET parent_id = NULL",
     "UPDATE employee SET warehouse_id = NULL, department_id = NULL",
 )
 
 
 def _all_tables() -> list[str]:
-    """أسماء الجداول من **القاعدة نفسها** مش من الموديلز.
-
-    `Base.metadata` بيشيل اللي اتعمل له import بس، و`src/models/__init__.py` ناقصه
-    موديلات (اتكشف على `stock_count_line`: موجود في القاعدة ومش في الميتاداتا، فوقع
-    الـTRUNCATE بمفتاح أجنبي من جدول مش في القايمة). القاعدة هي الحقيقة الوحيدة
-    الكاملة هنا، والقراءة منها معناها إن أي جدول اتعمل بعدين بيتحسب لوحده.
-    """
     return sa_inspect(engine).get_table_names()
 
 
@@ -96,19 +37,6 @@ def _targets() -> list[str]:
 
 
 def _delete_group() -> list[str]:
-    """الجداول اللي لازم تتفضّى بـ`DELETE` — مرتّبة: الابن قبل الأب.
-
-    Postgres بيرفض `TRUNCATE` لجدول عليه مفتاح أجنبي من جدول **بره الجملة**، وده
-    بيتحقق على القيد نفسه مش على الصفوف: جدول فاضي بيمنع برضه. فالمجموعة دي إغلاق
-    مش مستوى واحد:
-
-    * `salary_component`/`voucher_key` (محفوظين) بيشاوروا على `account` → `account`.
-    * `department` (محفوظ) بيشاور على `employee` → `employee`.
-    * و`employee` نفسه بيشاور على `warehouse` → `warehouse` بيدخل معاهم.
-
-    اتكشفت الحلقة دي بالتجربة: أول محاولة وقعت على `stock_count_line`، والتانية على
-    «employee references warehouse». الإغلاق بيمسك الحالة دي كلها لوحده.
-    """
     insp = sa_inspect(engine)
     tables = set(_all_tables())
     group: set[str] = set()
@@ -125,8 +53,6 @@ def _delete_group() -> list[str]:
                 group.add(ref)
                 frontier.append(ref)
 
-    # ترتيب الحذف: **اللي محدش بيشاور عليه الأول**. `employee` بيشاور على `warehouse`،
-    # فـ`employee` بيتمسح قبله — العكس بيقع على المفتاح.
     refs = {t: {fk.get("referred_table") for fk in insp.get_foreign_keys(t)} - {t}
             for t in group}
     order: list[str] = []
@@ -134,7 +60,7 @@ def _delete_group() -> list[str]:
     while remaining:
         free = [t for t in sorted(remaining)
                 if not any(t in refs[o] for o in remaining if o != t)]
-        if not free:                       # دايرة — بنمشي بالترتيب الأبجدي
+        if not free:
             free = sorted(remaining)
         order.extend(free)
         remaining -= set(free)
@@ -180,9 +106,6 @@ def run(*, execute: bool) -> None:
         for sql in UNLINK:
             db.execute(text(sql))
 
-        # جملة واحدة لكل الجداول: `TRUNCATE` بيقبل قايمة، والمفاتيح الأجنبية اللي بين
-        # الجداول دي (والدوائر الذاتية زي `account.parent_id`) مابتعترضش طالما كلهم
-        # في نفس الجملة. من غير CASCADE عن قصد — شوف الدوكسترنج.
         quoted = ", ".join(f'"{t}"' for t in by_truncate)
         db.execute(text(f"TRUNCATE {quoted} RESTART IDENTITY"))
         for t in by_delete:

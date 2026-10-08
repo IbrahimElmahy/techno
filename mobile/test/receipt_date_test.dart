@@ -1,12 +1,3 @@
-// فلتر التاريخ في مراجعة الكوبونات — استلام من غير `received_date` مايتشالش.
-//
-// `received_date` came in with v7 of the phone database; every receipt saved before it has NULL.
-// The filter dropped those rows the moment any date was set, so the screen went blank on a filter
-// that should have narrowed it — and the only way to see anything at all was to clear the dates.
-// The screen defaults to today's date, so on a phone holding older receipts it opened empty.
-//
-// The fallback is not a guess: `created_at` is an ISO timestamp whose first ten characters are the
-// day the row was written, in the same format the filter compares.
 import 'package:flutter_test/flutter_test.dart';
 import 'package:techno_inspections/screens/coupon_review_screen.dart';
 

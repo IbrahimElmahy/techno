@@ -1,13 +1,7 @@
-/**
- * جزء من شاشة الأستاذ العام — اتفصل عن `GeneralLedger.tsx` لما الملف وصل ١٤٠٠ سطر
- * وخمس تبويبات. الشاشة والمسار زي ما هما بالظبط؛ اللي اتغيّر هو إن كل تبويب بقى
- * ملف لوحده، فالتعديل في «الدفاتر» مابيفتحش «ميزان المراجعة» قدامك.
- */
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   Button, Card, Col, DatePicker, Divider, Empty, Form, Input, Row, Select, Space, Switch, Tabs, Tag, Tooltip, message, Radio,
 } from 'antd';
-// فلتر على كل عمود — شوف `FilterTable`.
 import { FilterTable as Table } from '../../components/FilterTable';
 import { Statistic } from '../../components/Statistic';
 import { InputNumber } from '../../components/NumberInput';
@@ -53,13 +47,6 @@ interface JournalIntegrity {
   problems: string[];
 }
 
-/**
- * تبويب سلامة الدفاتر — بيعيد حساب سلسلة التجزئة من أولها وبيقارن.
- *
- * التقرير ده مالوش لازمة غير على الدفتر اللي السلسلة شغّالة عليه؛ الباقي بيتعرض
- * عشان اللي بيقرا يشوف إيه اللي متغطّى وإيه اللي لأ — «مافيش تقرير» مش نفس
- * «كله سليم».
- */
 export default function IntegrityTab() {
   const [rows, setRows] = useState<JournalIntegrity[]>([]);
   const [loading, setLoading] = useState(false);

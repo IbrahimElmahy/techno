@@ -1,23 +1,3 @@
-"""لوحة المحاسبة — الأرقام اللي بتخلّي الشغل يبدأ من ضغطة مش من قايمة.
-
-أودو بيفتح المحاسبة على كروت، مش على سجل: كارت لكل دفتر عليه الرقم اللي بيقول
-«فيه حاجة مستنياك هنا»، وزرار بيعمل المستند على طول. الفرق مش شكلي — القايمة
-بتسأل «انت رايح فين»، والكارت بيقول «ده اللي ناقص».
-
-**الأرقام اللي على الكارت اتختارت عشان حد ياخد قرار عليها:**
-
-* **المسودات** — قيود مكتوبة ومش مرحّلة. ده الرقم الوحيد اللي بيقول «فيه شغل
-  واقف»، وعشان كده هو الأول.
-* **حركة الشهر** — عدد القيود ومجموع المدين في الشهر الجاري. بيجاوب «الدفتر ده
-  شغّال ولا ساكت» من غير ما تفتحه.
-* **المفتوح** — متبقّي سطور الدفتر اللي لسه ماتقفلتش. على دفتر المبيعات ده
-  «لسه لينا»، وعلى المشتريات «لسه علينا».
-* **آخر قيد** — رقمه وتاريخه، عشان اللي بيدوّر على «آخر فاتورة اتكتبت» مايفتحش
-  السجل ويرتّبه.
-
-والخزن كروت لوحدها برصيدها الحقيقي — ده كارت البنك بتاع أودو، والرصيد مشتق من
-الدفتر زي أي رصيد تاني في النظام، مش مخزّن.
-"""
 from __future__ import annotations
 
 from datetime import date
@@ -40,12 +20,10 @@ def _month_bounds(today: date | None = None) -> tuple[date, date]:
 
 
 def _effective_date_col():
-    """تاريخ القيد، ولو فاضي فتاريخ كتابته — نفس القاعدة اللي التقارير بتقرا بيها."""
     return func.coalesce(LedgerEntry.entry_date, func.date(LedgerEntry.created_at))
 
 
 def journal_cards(db: Session, *, as_of: date | None = None) -> list[dict]:
-    """كارت لكل دفتر شغّال."""
     first, day = _month_bounds(as_of)
     journals = db.scalars(
         select(Journal).where(Journal.active.is_(True))
@@ -78,8 +56,6 @@ def journal_cards(db: Session, *, as_of: date | None = None) -> list[dict]:
         ).all()
     }
 
-    # المفتوح: مجموع المتبقّي المطلق. المطلق عن قصد — الدفتر فيه مدين ودائن،
-    # وجمعهم بإشارتهم بيدّي صفر تقريباً ويخفي إن فيه فواتير مفتوحة أصلاً.
     open_residual = dict(db.execute(
         select(LedgerEntry.journal_id, func.coalesce(func.sum(func.abs(
             LedgerLine.amount_residual)), 0))
@@ -122,23 +98,17 @@ def journal_cards(db: Session, *, as_of: date | None = None) -> list[dict]:
 
 
 def _last_per_journal_portable(db: Session) -> dict:
-    """`DISTINCT ON` بوستجرسي بحت — ودي نفس النتيجة على أي قاعدة تانية.
-
-    القاعدة محلياً ممكن تكون MySQL وعلى السيرفر بوستجرس، والشاشة لازم تشتغل على
-    الاتنين — فالمسار التاني موجود مش احتياطاً نظرياً.
-    """
     out: dict = {}
     for jid, number, when in db.execute(
         select(LedgerEntry.journal_id, LedgerEntry.number, _effective_date_col())
         .where(ledger_service.is_posted_sql(), LedgerEntry.number.is_not(None))
         .order_by(LedgerEntry.id)
     ).all():
-        out[jid] = (number, when)  # الأحدث بيغلب لأن الترتيب تصاعدي
+        out[jid] = (number, when)
     return out
 
 
 def treasury_cards(db: Session) -> list[dict]:
-    """كارت لكل خزنة/بنك برصيده — الرصيد مشتق من الدفتر مش مخزّن."""
     rows = db.scalars(
         select(Treasury).where(Treasury.active.is_(True)).order_by(Treasury.id)
     ).all()

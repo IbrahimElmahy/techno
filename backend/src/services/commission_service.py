@@ -1,15 +1,3 @@
-"""Rep commissions — 021-tax-commissions (عمولات المناديب).
-
-A commission rule is a percentage for one rep (or a company-wide default when `rep_user_id`
-is NULL). The report computes each rep's commission over a period from what he actually
-brought in, on either basis:
-
-    sales      — على المبيعات: the net of his invoices (earned when sold)
-    collection — على التحصيل: his receipts (earned only when the money arrives)
-
-Nothing is posted automatically: the manager reviews the report and pays with an expense
-voucher, which keeps the ledger honest about when the obligation was accepted.
-"""
 from __future__ import annotations
 
 import enum
@@ -44,7 +32,7 @@ class CommissionRow:
     rep_name: str
     basis: CommissionBasis
     rate_pct: Decimal
-    base_amount: Decimal   # مبيعات أو تحصيل الفترة
+    base_amount: Decimal
     commission: Decimal
 
 
@@ -52,7 +40,6 @@ def set_rule(
     db: Session, *, rate_pct, actor_user_id: int, rep_user_id: int | None = None,
     basis: CommissionBasis = CommissionBasis.collection,
 ) -> CommissionRule:
-    """Set (or replace) the rule for one rep, or the company default when rep is None."""
     rate = Decimal(str(rate_pct))
     if rate < 0 or rate > 100:
         raise CommissionError("نسبة العمولة لازم تكون بين 0 و 100.")
@@ -101,13 +88,6 @@ def compute(
     branch_id: int | None = None, year: int | None = None, month: int | None = None,
     absences: dict | None = None,
 ):
-    """كشف عمولات المناديب للفترة.
-
-    **ولو اتنده بـ`branch_id` + `year` + `month`** فده محرك عمولات المرتبات الشهري
-    (`hr_commission_service.compute`) — السيارات والمشرفين وخصم ٢٥٪ والفنيين، بالشكل المشروح
-    هناك. الاسمين بيعيشوا في نفس الدالة عشان شيت المرتبات بينده `commission_service.compute`
-    والتقرير القديم (عمولات المناديب في شاشة المالية) بيندهها بالفترة — ومافيش واحد منهم يتكسر.
-    """
     if year is not None or month is not None or branch_id is not None:
         from src.services import hr_commission_service
 
@@ -142,15 +122,11 @@ def compute(
             for inv in invoices:
                 if inv.actor_user_id != rep.id:
                     continue
-                # **تاريخ الفاتورة مش وقت كتابتها.** الفاتورة اللي بتتكتب النهارده
-                # بتاريخ الشهر اللي فات عمولتها للشهر اللي فات — واللي بيتحسب بوقت
-                # الكتابة بيحطها في شهر مش بتاعها. ومع النقل من a5 الفرق شهور: سنة
-                # مبيعات اتكتبت في يوم، فعمولة السنة كلها كانت هتقع على شهر النقل.
                 if not _in_window(inv.invoice_date or inv.created_at.date(),
                                   date_from, date_to):
                     continue
                 base += to_money(inv.net)
-            for ret in returns:  # returns claw the commission back
+            for ret in returns:
                 inv = invoice_by_id.get(ret.sales_invoice_id)
                 if inv is None or inv.actor_user_id != rep.id:
                     continue
@@ -164,7 +140,6 @@ def compute(
                     continue
                 if not _in_window(voucher.voucher_date, date_from, date_to):
                     continue
-                # A reversal row mirrors the original, so subtract it back out.
                 base += (-to_money(voucher.amount) if voucher.reverses_id is not None
                          else to_money(voucher.amount))
 

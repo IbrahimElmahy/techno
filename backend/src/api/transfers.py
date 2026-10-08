@@ -1,4 +1,3 @@
-"""Transfers router (T042). FR-022–024, FR-027."""
 from __future__ import annotations
 
 import logging
@@ -44,21 +43,9 @@ class TransferCreate(BaseModel):
     route: TransferRoute
     source: LocationIn
     dest: LocationIn
-    # (036) اليوم اللي البضاعة اتحركت فيه. مابيتبعتش ⇒ المستند بيقرا بتاريخ تسجيله.
     transfer_date: date | None = None
-    # (038) المستند كامل في نداء واحد — الترويسة وسطورها مع بعض.
-    #
-    # التطبيق كان بيكتب الترويسة وبعدين يبعت نداء لكل صنف. طلب فيه أربعين صنف = واحد
-    # وأربعين نداء، وأي واحد فيهم يقع على شبكة ضعيفة بيسيب على السيرفر **مستند ناقص**
-    # والطلب على الجهاز لسه مش متزامن — فالمزامنة اللي بعدها بتعمل مستند تاني ناقص.
-    # ده اللي المندوب شافه: الطلب مش واصل كامل، والاعتماد بيحرّك اللي وصل بس.
-    #
-    # فاضل مقبول إنها تكون فاضية: شاشة الويب بتعمل الترويسة الأول وبتضيف السطور من
-    # الشاشة، والنسخ القديمة من التطبيق برضه.
     lines: list["LineIn"] = []
-    # رقم الجهاز. الإعادة بترجّع نفس المستند بدل ما تعمل واحد جديد.
     client_uuid: str | None = None
-    # البيان والملاحظات — «الإذن ده ليه». الشرح في `models/transfer.py`.
     statement1: str | None = Field(default=None, max_length=200)
     external_document_number: str | None = Field(default=None, max_length=40)
     notes: str | None = Field(default=None, max_length=500)
@@ -70,7 +57,6 @@ class TransferOut(BaseModel):
     status: str
     route: str
     approved_by: int | None = None
-    # What actually moved, so the list reads without a lookup per row.
     item_id: int | None = None
     quantity: Decimal | None = None
     source_location_kind: str | None = None
@@ -79,11 +65,7 @@ class TransferOut(BaseModel):
     dest_location_id: int | None = None
     transfer_date: str | None = None
     created_at: str | None = None
-    # (031) ليه اترفض، والأصناف اللي عليه.
     reject_reason: str | None = None
-    # البيان والملاحظات. **لازم يبقوا هنا كمان مش على الإدخال بس** — بايدانتيك بيرمي أي
-    # حقل مش معرّف على موديل الرد في صمت، فالخانة تتكتب في القاعدة وترجع فاضية للشاشة،
-    # واللي بيجرّب بيفتكر إن الحفظ نفسه هو اللي مش شغال.
     statement1: str | None = None
     external_document_number: str | None = None
     notes: str | None = None
@@ -106,22 +88,16 @@ class LineQtyIn(BaseModel):
 
 
 class TextsIn(BaseModel):
-    """سطور الكلام على الإذن — اللي مااتبعتش مابيتلمسش (`exclude_unset`)."""
     statement1: str | None = Field(default=None, max_length=200)
     external_document_number: str | None = Field(default=None, max_length=40)
     notes: str | None = Field(default=None, max_length=500)
 
 
 class RejectIn(BaseModel):
-    # Optional but asked for: «اترفض ليه» is the first question the person who requested it has.
     reason: str | None = None
 
 
 def _out(t) -> TransferOut:
-    # `item_id`/`quantity` on the row are what the document was CREATED with, back when a transfer
-    # moved one thing. Once it carries lines, they are what actually moves — approval reads the
-    # lines and ignores the header — so the summary has to be read off them too. Reporting the
-    # stale header here is how a list ends up printing «٢» beside a document that says «١».
     lines = list(getattr(t, "lines", []))
     head_item = lines[0].item_id if len(lines) == 1 else (None if lines else t.item_id)
     head_qty = (sum((ln.quantity for ln in lines), to_qty(0)) if lines else t.quantity)
@@ -139,8 +115,6 @@ def _out(t) -> TransferOut:
         statement1=getattr(t, "statement1", None),
         external_document_number=getattr(t, "external_document_number", None),
         notes=getattr(t, "notes", None),
-        # The lines the approver acts on. An old document has none and keeps answering through
-        # its own item/quantity above, so nothing already posted has to be migrated.
         lines=[TransferLineOut(id=ln.id, item_id=ln.item_id, quantity=ln.quantity)
                for ln in getattr(t, "lines", [])],
     )
@@ -148,21 +122,15 @@ def _out(t) -> TransferOut:
 
 @router.get("", response_model=list[TransferOut])
 def list_transfers(
-    status_filter: str | None = None,   # pending | approved | rejected | reversed
+    status_filter: str | None = None,
     item_id: int | None = None,
     limit: int | None = None,
     offset: int = 0,
-    # «تحميل» فترة في شاشة الإذن (٢٠٢٦-١٠-٠٥) — بتاريخ الإذن، وإلا يوم إنشائه.
     date_from: date | None = None,
     date_to: date | None = None,
     current: CurrentUser = Depends(require_capability(CAP_TRANSFER_INITIATE)),
     db: Session = Depends(get_db),
 ) -> list[TransferOut]:
-    """Transfer documents, newest first, optionally narrowed by status or item.
-
-    السطور بتتجاب مع المستندات في نداء واحد. من غير كده كل مستند بيقرا سطوره لوحده —
-    ١٤٣٧ تحويل يعني ١٤٣٧ نداء، وde كان بياخد ٧.٧ ثانية على السيرفر نفسه.
-    """
     stmt = branch_scope.scope(select(StockTransfer), StockTransfer, current)
     if status_filter:
         stmt = stmt.where(StockTransfer.status == status_filter)
@@ -189,9 +157,6 @@ def create_transfer(
     current: CurrentUser = Depends(require_capability(CAP_TRANSFER_INITIATE)),
     db: Session = Depends(get_db),
 ) -> TransferOut:
-    # (038) نفس الطلب اتبعت تاني ⇒ نفس المستند يرجع. الاتصال بيقطع بعد ما السيرفر
-    # يكتب وقبل ما الرد يوصل، والتطبيق بيعيد — من غير الفحص ده الإعادة بتعمل مستند
-    # تاني بنفس البضاعة، والاعتماد بيحرّكها مرتين.
     if body.client_uuid:
         seen = db.scalar(select(StockTransfer)
                          .where(StockTransfer.client_uuid == body.client_uuid)
@@ -207,15 +172,10 @@ def create_transfer(
             client_uuid=body.client_uuid,
             statement1=body.statement1, notes=body.notes,
             external_document_number=body.external_document_number)
-        # السطور جوّه نفس المعاملة: المستند بيوصل كامل أو مايوصلش. سطر واحد غلط
-        # بيرجّع المستند كله، والتطبيق بيفضل شايل الطلب ويعيد — بدل ما يسيب نُص طلب
-        # على السيرفر ويعتبر نفسه خلص.
         for ln in body.lines:
             transfer_service.add_line(db, transfer_id=t.id, item_id=ln.item_id,
                                       quantity=ln.quantity, actor_user_id=current.id)
     except TransferError as exc:
-        # Covers an illegal route, a non-positive quantity, same source/destination, and asking
-        # for more than the source holds.
         db.rollback()
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY,
                             {"code": "transfer_invalid", "message": str(exc)})
@@ -225,21 +185,10 @@ def create_transfer(
 
 
 def _may_approve_now(db: Session, current: CurrentUser, t) -> bool:
-    """هل اللي كاتب الإذن هو نفسه اللي بيعتمده؟
-
-    الإذن بيتكتب «معلّق» وبيستنى اعتماد، والاعتماد هو اللي بيحرّك البضاعة. ده صح لما
-    الطالب حاجة والمعتمد حاجة تانية — أمين مخزن بيطلب ومدير بيوافق.
-
-    وهو عبث لما يكونوا نفس الشخص. الأدمن بيكتب إذن تحويل بين مخزنين، الشاشة بتقول
-    «اتسجّل طلب التحويل»، وهو بيروح يبص على المخزن يلاقي مافيش حاجة اتحركت — لأنه مستني
-    موافقة نفسه على ورقة كتبها بنفسه. ده كان أكبر سبب إن «التحويل مش بيخصم ولا بيزود».
-    """
     if not current.can(CAP_TRANSFER_APPROVE):
         return False
     src_branch = transfer_service._location_branch(
         db, t.source_location_kind, t.source_location_id)
-    # نفس قاعدة `approve_transfer`: اللي بيشوف الفروع كلها بيعتمد لأي فرع. `is_admin`
-    # لوحدها معناها `system_admin` وبس، والمالك مالوش فرع فكان بيقع بين الاتنين.
     sees_all = branch_scope.sees_all_branches(current)
     if src_branch is None:
         return sees_all
@@ -253,26 +202,11 @@ def self_approve(
     current: CurrentUser = Depends(require_capability(CAP_TRANSFER_INITIATE)),
     db: Session = Depends(get_db),
 ) -> TransferOut:
-    """بيعتمد الإذن لو اللي طلبه هو نفسه اللي بيقدر يعتمده — وإلا بيسيبه معلّق.
-
-    مش نفس `/approve`: ده بيرجع الإذن زي ما هو من غير خطأ لو الشخص مالوش صلاحية، عشان
-    الشاشة تقدر تناديه بعد الإنشاء على طول من غير ما تعرف مين واقف قدامها.
-    """
     t = db.get(StockTransfer, transfer_id)
     if t is None:
         raise HTTPException(404, {"code": "not_found", "message": "إذن التحويل مش موجود"})
     if t.status != TransferStatus.pending or not _may_approve_now(db, current, t):
         return _out(t)
-    # **«بيشوف الفروع كلها» = بيعتمد لأي فرع.**
-    #
-    # `is_admin` معناها `system_admin` وبس، فالمالك — اللي عنده كل الصلاحيات ومالوش
-    # فرع — كان بيترفض بـ«الاعتماد لمدير فرع المصدر بس» وهو مش مدير أي فرع ولا
-    # المفروض يكون. `visible_branch_id` هي نفس القاعدة اللي القوايم بتتفلتر بيها:
-    # `None` يعني بيشوف كل الفروع، وساعتها الاعتماد لأي فرع بتاعه.
-    #
-    # (٢٠٢٦-٠٩-٣٠) السطر ده كان متزق جوّه الـ`if` اللي فوق بعد `return` — عمره ما اتنفّذ،
-    # فكل اعتماد تلقائي كان بيقع بـ`UnboundLocalError`، والـ`except` تحت كان بيداريه
-    # ويرجّع الإذن «معلّق». ده اللي خلّى الإذن من السيستم مايتعتمدش لوحده.
     sees_all = branch_scope.sees_all_branches(current)
     try:
         t = transfer_service.approve(
@@ -284,9 +218,6 @@ def self_approve(
         raise HTTPException(status.HTTP_409_CONFLICT,
                             {"code": "transfer_conflict", "message": str(exc)})
     except Exception:  # noqa: BLE001
-        # **الاعتماد التلقائي مايوقعش الإنشاء.** الإذن اتكتب خلاص؛ لو الاعتماد وقع لأي
-        # سبب (٢٠٢٦-٠٩-٢٩: ٥٠٠ على إذنين من المكتب) بيرجع «معلّق» والمكتب يعتمده بإيده —
-        # بدل رسالة «تعذّر» على مستند اتحفظ فعلاً. السبب بيتسجّل في اللوج.
         db.rollback()
         log.exception("self-approve %s وقع — الإذن اتساب معلّق", transfer_id)
         t = db.get(StockTransfer, transfer_id)
@@ -323,11 +254,6 @@ def cancel_transfer(
     current: CurrentUser = Depends(require_capability(CAP_TRANSFER_APPROVE)),
     db: Session = Depends(get_db),
 ) -> TransferOut:
-    """إلغاء إذن معتمد — البضاعة ترجع لمصدرها والإذن يفضل في السجل «ملغي».
-
-    كان `/reverse`: بيكتب حركتين مضادين لكل سطر ويسيب الإذن ومعاه عكسه. دلوقتي الحركة
-    بتتشال والرصيد بيرجع لوحده، والإذن بيفضل مقروء ومكتوب عليه سبب الإلغاء.
-    """
     try:
         t = transfer_service.cancel(
             db, transfer_id=transfer_id, actor_user_id=current.id, reason=body.reason)
@@ -344,16 +270,6 @@ def get_transfer(
     current: CurrentUser = Depends(require_capability(CAP_TRANSFER_INITIATE)),
     db: Session = Depends(get_db),
 ) -> TransferOut:
-    """إذن تحويل واحد بالرقم.
-
-    **ليه لازم يكون موجود:** الشاشة كانت بتدوّر على الإذن في القايمة المحمّلة عندها، فأي
-    رابط لإذن بره الصفحة دي — من كارت الصنف أو كشف الحساب أو رابط متبعوت — كان بيقول
-    «مش في القائمة المعروضة» وهو موجود في القاعدة. الرابط لازم يفتح المستند، مش يعتمد
-    على إنه صادف إنه محمّل.
-
-    والعزل هنا مش أقل من عزل القايمة: `may_see` بتمنع فرع من إنه يفتح إذن فرع تاني
-    بالرقم المباشر — وإلا الرابط بيبقى باب خلفي حوالين الفلترة.
-    """
     t = db.get(StockTransfer, transfer_id)
     if t is None or not branch_scope.may_see(current, t):
         raise HTTPException(404, {"code": "not_found", "message": "إذن التحويل مش موجود."})
@@ -366,7 +282,6 @@ def delete_transfer(
     current: CurrentUser = Depends(require_capability(CAP_TRANSFER_APPROVE)),
     db: Session = Depends(get_db),
 ) -> None:
-    """حذف إذن التحويل — بيروح هو وحركته."""
     try:
         transfer_service.delete(db, transfer_id=transfer_id, actor_user_id=current.id)
     except (TransferError, StockError) as exc:
@@ -382,12 +297,6 @@ def reject_transfer(
     current: CurrentUser = Depends(require_capability(CAP_TRANSFER_APPROVE)),
     db: Session = Depends(get_db),
 ) -> TransferOut:
-    """رفض إذن التحويل — مافيش بضاعة بتتحرك.
-
-    `rejected` has been a status since the transfer was written and nothing ever set it, so a
-    request that was not going to happen had two ways out: approve it anyway, or leave it pending
-    for good.
-    """
     try:
         t = transfer_service.reject(
             db, transfer_id=transfer_id, actor_user_id=current.id, reason=body.reason)
@@ -405,7 +314,6 @@ def update_transfer_texts(
     current: CurrentUser = Depends(require_capability(CAP_TRANSFER_INITIATE)),
     db: Session = Depends(get_db),
 ) -> TransferOut:
-    """تعديل البيان ورقم الورقة والملاحظات على إذن لسه تحت الاعتماد. الشرح في `set_texts`."""
     t = db.get(StockTransfer, transfer_id)
     if t is None or not branch_scope.may_see(current, t):
         raise HTTPException(404, {"code": "not_found", "message": "إذن التحويل مش موجود."})
@@ -446,7 +354,6 @@ def set_transfer_line_quantity(
     current: CurrentUser = Depends(require_capability(CAP_TRANSFER_APPROVE)),
     db: Session = Depends(get_db),
 ) -> TransferOut:
-    """تعديل كمية صنف — والإذن لسه تحت الاعتماد."""
     try:
         line = transfer_service.set_line_quantity(
             db, line_id=line_id, quantity=body.quantity, actor_user_id=current.id)
@@ -464,12 +371,6 @@ def remove_transfer_line(
     current: CurrentUser = Depends(require_capability(CAP_TRANSFER_APPROVE)),
     db: Session = Depends(get_db),
 ) -> TransferOut:
-    """حذف صنف من الإذن — **مش** حذف الإذن.
-
-    There is deliberately no endpoint that deletes a transfer request. Somebody asked for it and
-    somebody may have to answer for it; a document that can vanish is a decision with no record.
-    Emptying it leaves a request that can only be rejected, which is how you say «مش هيتم».
-    """
     line = db.get(StockTransferLine, line_id)
     transfer_id = line.transfer_id if line else None
     try:

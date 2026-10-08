@@ -1,9 +1,3 @@
-"""Supplier search + the 360° supplier file — 026-supplier-360.
-
-The mirror image of `customer_profile_service`: one grouped query for every supplier's payable
-balance, one call that gathers his whole file (purchases, returns, payments, cheques), and one
-uniform record-detail endpoint so the UI can open any row of that file in a popup.
-"""
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -23,14 +17,10 @@ from src.models.voucher import Voucher, VoucherKind
 
 
 class SupplierProfileError(Exception):
-    """The supplier (or the requested document) does not exist."""
-
-
-# --------------------------------------------------------------------------- balances
+    pass
 
 
 def bulk_balances(db: Session, supplier_ids: list[int] | None = None) -> dict[int, Decimal]:
-    """Payable balance per supplier, signed by the account's normal side (credit = we owe)."""
     signed = case(
         (LedgerLine.direction == Account.normal_side, LedgerLine.amount),
         else_=-LedgerLine.amount,
@@ -38,7 +28,6 @@ def bulk_balances(db: Session, supplier_ids: list[int] | None = None) -> dict[in
     stmt = (
         select(SupplierAccount.supplier_id, func.coalesce(func.sum(signed), 0))
         .join(Account, Account.id == SupplierAccount.account_id)
-        # المرحّل بس، والشرط في ON مش في WHERE عشان الطرف اللي ماتحركش يفضل بصفر.
         .join(
             LedgerLine,
             (LedgerLine.account_id == Account.id) & ledger_service.posted_line_cond(),
@@ -53,13 +42,9 @@ def bulk_balances(db: Session, supplier_ids: list[int] | None = None) -> dict[in
     return {sid: to_money(total or 0) for sid, total in db.execute(stmt).all()}
 
 
-# ----------------------------------------------------------------------------- search
-
-
 def apply_filters(
     stmt: Select, *, q: str | None = None, active: bool | None = None,
 ) -> Select:
-    """`q` matches code, name, phone or address (partial, any part)."""
     if q:
         needle = f"%{q.strip()}%"
         stmt = stmt.where(
@@ -78,7 +63,6 @@ def apply_filters(
 def filter_by_balance(
     rows: list[Supplier], balances: dict[int, Decimal], balance_filter: str | None
 ) -> list[Supplier]:
-    """`due` = we owe him, `settled` = zero, `advance` = he owes us (we paid ahead)."""
     if not balance_filter or balance_filter == "all":
         return rows
     def keep(s: Supplier) -> bool:
@@ -91,9 +75,6 @@ def filter_by_balance(
             return bal < 0
         return True
     return [s for s in rows if keep(s)]
-
-
-# ---------------------------------------------------------------------------- profile
 
 
 @dataclass(frozen=True)
@@ -214,15 +195,11 @@ def _cheques(db: Session, supplier_id: int, limit: int) -> list[dict]:
     ]
 
 
-# ---------------------------------------------------------------------- record detail
-
-
 def _money(v) -> str:
     return f"{to_money(v or 0):.2f}"
 
 
 def record_detail(db: Session, supplier_id: int, kind: str, record_id: int) -> dict:
-    """Full detail of one row of the supplier's file, scoped to THIS supplier."""
     handler = {
         "purchase": _purchase_detail,
         "return": _return_detail,

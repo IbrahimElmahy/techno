@@ -8,31 +8,6 @@ import { useNavigate } from 'react-router-dom';
 import { api } from '../api/client';
 import { STOCK_TOPICS, useLiveRefresh } from '../utils/live';
 
-/**
- * الصفحة الرئيسية — فيه إيه غلط، من غير ما تسأل.
- *
- * The home screen was a placeholder, and what filled that space in most systems is a wall of
- * totals: sales this month, customer count, a chart. Numbers nobody acts on, on the one screen
- * everybody opens first.
- *
- * This asks the only question worth putting there. Every problem it shows was already visible on
- * some screen — the reorder report knows what is below its minimum, the balance list knows what is
- * negative, the invoice knows its cost was never captured. Finding them meant opening fourteen
- * screens every morning, so nobody found them, and an item priced at nothing kept being sold at
- * nothing.
- *
- * Three rules the layout follows:
- *
- * * **Worst first, always.** A wrong number outranks a missing one, and both outrank a threshold
- *   somebody chose. Sorting by count would put four hundred uncategorised items above one ledger
- *   entry that does not balance.
- * * **Every finding goes somewhere.** A count with nowhere to click is a complaint. Each card
- *   carries the screen that fixes it.
- * * **Clean is a real answer.** An empty page has to say «لا يوجد خطأ» in as many words —
- *   otherwise a healthy system and a broken endpoint look identical, and the healthy day is the
- *   common one.
- */
-
 interface Sample { label: string; detail: string }
 
 interface Issue {
@@ -53,7 +28,6 @@ interface Health {
   issues: Issue[];
 }
 
-/** Severity is about consequence, not about how many rows matched. */
 const SEVERITY: Record<Issue['severity'], {
   label: string; color: string; icon: React.ReactNode; note: string;
 }> = {
@@ -84,8 +58,6 @@ export default function Dashboard() {
   const [failed, setFailed] = useState(false);
 
   const load = useCallback(async (opts?: { silent?: boolean }) => {
-    // الهادي (التحديث الحي): النتيجة القديمة بتفضل معروضة لحد ما الجديدة توصل، ولو الطلب
-    // الهادي فشل مابنقلبش الشاشة لـ«فشل» — آخر فحص ناجح أصدق من شاشة فاضية.
     const silent = !!opts?.silent;
     if (!silent) {
       setLoading(true);
@@ -96,8 +68,6 @@ export default function Dashboard() {
       setData(res.data);
       setFailed(false);
     } catch (err) {
-      // A failure has to look different from a clean system. Rendering «كله تمام» because the
-      // request died is the worst thing this screen could do.
       if (!silent) setFailed(true);
     } finally {
       if (!silent) setLoading(false);
@@ -105,7 +75,6 @@ export default function Dashboard() {
   }, []);
 
   useEffect(() => { load(); }, [load]);
-  // الفحص بيبص على المستندات والأرصدة والحسابات، فأي حركة من دول بتعيده — وهو ظاهر بس.
   useLiveRefresh(
     [...STOCK_TOPICS, 'vouchers', 'cheques', 'customers', 'journal-entries', 'coupon-receipts', 'inspections'],
     () => load({ silent: true }),
@@ -166,7 +135,6 @@ export default function Dashboard() {
     <div>
       {header}
 
-      {/* The count per severity, said in words. «٣ خطر» means nothing without «فيه رقم بقى غلط». */}
       <Row gutter={[12, 12]} style={{ marginBottom: 16 }}>
         {(['high', 'medium', 'low'] as const).map((sev) => {
           const s = SEVERITY[sev];
@@ -217,7 +185,6 @@ export default function Dashboard() {
                   </Tooltip>
                 }
               >
-                {/* What it costs to leave alone — the sentence that turns a count into a reason. */}
                 <div style={{ marginBottom: 8 }}>{issue.hint}</div>
 
                 {issue.samples.length > 0 && (
@@ -236,7 +203,6 @@ export default function Dashboard() {
                 )}
                 {issue.count > issue.samples.length && (
                   <div style={{ color: '#6b6b6b', fontSize: 14, marginTop: 4 }}>
-                    {/* Never let a truncated list read as the whole list. */}
                     و{issue.count - issue.samples.length} غيرهم — افتح الصفحة تشوفهم كلهم
                   </div>
                 )}

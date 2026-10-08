@@ -1,21 +1,3 @@
-"""سلسلة التجزئة (Inalterable Hash Chain) — المرحلة ٤ من إعادة الهيكلة على موديل أودو.
-
-السؤال: **«إزاي أعرف إن حد ماغيّرش في قيد مرحّل من ورا النظام؟»** — الإجابة إن كل
-قيد بياخد بصمة محسوبة من محتواه **ومن بصمة القيد اللي قبله في نفس الدفتر**. فتغيير
-مليم في قيد من سنة بيكسر بصمته وبصمة كل اللي بعده، وتقرير السلامة بيوقف على أول
-قيد اتلمس بالظبط.
-
-**اختياري لكل دفتر** زي `restrict_mode_hash_table` في أودو بالظبط، و**مقفول
-افتراضياً**. ده مش تشدد زيادة: الدفتر اللي عليه السلسلة بيقفل على نفسه — القيد
-المتجزّأ مايرجعش مسودة ومايتلغيش ومايتحذفش ومستنده مايتعدّلش. والنظام ده بني على
-إن التعديل بيمسح أثر المستند ويعيد بناءه (`document_edit_service`)، فتشغيل السلسلة
-على كل الدفاتر كان هيوقف نص الشغل اليومي. اللي بيشغّلها بيشغّلها على دفتر المبيعات
-لما الفواتير تبقى متسلّمة للمصلحة، مش على دفتر التسويات.
-
-**البصمة بتتحسب من اللي المفروض مايتغيّرش**: رقم القيد وتاريخه ونوعه وشريكه، وكل
-سطر بحسابه واتجاهه ومبلغه. البيان والملاحظات بره — دول بيتصححوا إملائياً وماحدش
-بيسرق بيهم فلوس.
-"""
 from __future__ import annotations
 
 import hashlib
@@ -30,7 +12,7 @@ from src.models.ledger import EntryState, LedgerEntry, LedgerLine
 
 
 class HashChainError(Exception):
-    """محاولة تغيير قيد متجزّأ."""
+    pass
 
 
 def journal_is_restricted(db: Session, journal_id: int | None) -> bool:
@@ -44,7 +26,6 @@ def is_hashed(entry: LedgerEntry) -> bool:
 
 
 def assert_alterable(entry: LedgerEntry) -> None:
-    """بيرمي لو القيد متجزّأ — الرجوع لمسودة والإلغاء والحذف كلهم بيعدّوا من هنا."""
     if is_hashed(entry):
         raise HashChainError(
             f"القيد {entry.number or entry.id} في دفتر متجزّأ — مايتغيّرش ولا يتحذف. "
@@ -53,11 +34,6 @@ def assert_alterable(entry: LedgerEntry) -> None:
 
 
 def canonical_string(entry: LedgerEntry) -> str:
-    """نص ثابت بيمثّل القيد — نفس القيد بيدّي نفس النص على أي جهاز وأي نسخة.
-
-    السطور بترتيب `id` عشان ترتيب الاستعلام مايغيّرش البصمة، والمبالغ بنصّها كما هي
-    في القاعدة (`DECIMAL`) عشان التقريب العائم مايدخلش في الحسبة أصلاً.
-    """
     parts = [
         f"n={entry.number or ''}",
         f"d={entry.entry_date.isoformat() if entry.entry_date else ''}",
@@ -77,12 +53,6 @@ def _digest(previous_hash: str | None, entry: LedgerEntry) -> str:
 
 
 def _previous(db: Session, entry: LedgerEntry) -> LedgerEntry | None:
-    """القيد المتجزّأ اللي قبله في نفس الدفتر — بترتيب رقم السلسلة، مش بالتاريخ.
-
-    الترتيب بالرقم مقصود: القيد اللي بيتكتب النهارده بتاريخ الشهر اللي فات بياخد
-    مكانه في آخر السلسلة، فالسلسلة بتمثّل **ترتيب الكتابة** مش ترتيب التاريخ — وده
-    اللي بيخلّيها قابلة للتحقق أصلاً.
-    """
     if entry.secure_sequence_number is None:
         return None
     return db.scalar(
@@ -99,7 +69,6 @@ def _previous(db: Session, entry: LedgerEntry) -> LedgerEntry | None:
 
 
 def stamp(db: Session, entry: LedgerEntry) -> None:
-    """يحط رقم السلسلة والبصمة على قيد اتّرحّل في دفتر متجزّأ. غير كده بيسيبه."""
     if entry.inalterable_hash:
         return
     if not journal_is_restricted(db, entry.journal_id):
@@ -109,7 +78,7 @@ def stamp(db: Session, entry: LedgerEntry) -> None:
         .where(LedgerEntry.journal_id == entry.journal_id)
     )
     entry.secure_sequence_number = int(last or 0) + 1
-    db.flush()  # السطور لازم تاخد `id` قبل ما تدخل البصمة
+    db.flush()
     previous = _previous(db, entry)
     entry.inalterable_hash = _digest(previous.inalterable_hash if previous else None, entry)
 
@@ -126,14 +95,12 @@ class JournalIntegrity:
     first_date: date | None = None
     last_date: date | None = None
     intact: bool = True
-    #: أول قيد بصمته مش مطابقة — `None` لو السلسلة سليمة.
     broken_entry_id: int | None = None
     broken_number: str | None = None
     problems: list[str] = field(default_factory=list)
 
 
 def check_journal(db: Session, journal: Journal) -> JournalIntegrity:
-    """بيعيد حساب سلسلة دفتر من أولها وبيقارن — وبيوقف على أول قيد اتلمس."""
     report = JournalIntegrity(
         journal_id=journal.id, journal_code=journal.code, journal_name=journal.name,
         restricted=bool(journal.restrict_mode_hash),
@@ -181,7 +148,6 @@ def check_journal(db: Session, journal: Journal) -> JournalIntegrity:
 
 
 def check_all(db: Session) -> list[JournalIntegrity]:
-    """تقرير السلامة لكل الدفاتر — اللي عليه سلسلة الأول."""
     journals = db.scalars(select(Journal).order_by(Journal.sort_order, Journal.code)).all()
     reports = [check_journal(db, j) for j in journals]
     reports.sort(key=lambda r: (not r.restricted, r.journal_code))

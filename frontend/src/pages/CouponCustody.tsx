@@ -19,14 +19,6 @@ import { useQueryTab } from '../components/useQueryTab';
 import { numeralsLocale } from '../utils/money';
 import { repOptions as repPickerOptions } from '../utils/reps';
 
-/**
- * عهدة الكوبونات — دفاتر مرقّمة في إيد المندوب، زي عهدة البضاعة.
- *
- * المكتب بيصرف للمندوب «٥٠ فضي من ١٠٠١ لـ١٠٥٠»، والمندوب مايقدرش يكتب على فاتورة أرقام
- * مش معاه. القفل نفسه في السيرفر (الفاتورة بتترفض)؛ الشاشة دي بتسجّل الصرف والاسترجاع
- * وبتوري كل مندوب معاه إيه دلوقتي.
- */
-
 interface CustodyDoc {
   id: number;
   document_number: string;
@@ -52,12 +44,10 @@ interface BalanceRow {
   issued: number;
 }
 
-/** «1001–1050، 1060» — نفس شكل رسايل السيرفر. */
 export function rangesText(ranges: [string, string][] | string[][]): string {
   return (ranges || []).map(([a, b]) => (a === b ? a : `${a}–${b}`)).join('، ');
 }
 
-/** الأرقام الهندية بتتحوّل إنجليزي — الكيبورد العربي بيكتبها كده، والورقة هي هي. */
 const asciiDigits = (v: string) => String(v ?? '').trim()
   .replace(/[٠-٩]/g, (d) => String(d.charCodeAt(0) - 0x0660))
   .replace(/[۰-۹]/g, (d) => String(d.charCodeAt(0) - 0x06F0));
@@ -81,7 +71,6 @@ export default function CouponCustody() {
     () => repPickerOptions(sortByName(reps, (r) => r.full_name || r.username || ''), repId),
     [reps, repId]);
 
-  // الفلاتر
   const [kind, setKind] = useState<string | undefined>();
   const [direction, setDirection] = useState<'out' | 'in' | undefined>();
   const [range, setRange] = useState<[Dayjs, Dayjs] | null>(null);
@@ -93,12 +82,9 @@ export default function CouponCustody() {
   const [loading, setLoading] = useState(false);
   const [balance, setBalance] = useState<BalanceRow[]>([]);
   const [balanceLoading, setBalanceLoading] = useState(false);
-  // الشريحة المفتوحة — كانت `Tabs` من غير حالة، والمستندات هي الافتراضية.
-  // الشريحة في الرابط (`?tab=`) — الريفرش بيرجع عليها.
   const [tabRaw, setTab] = useQueryTab('docs');
   const tab = (tabRaw === 'balance' ? 'balance' : 'docs') as 'docs' | 'balance';
 
-  // مودال الصرف/الاسترجاع — نفس الفورم للاتنين، الفرق في الاتجاه.
   const [modal, setModal] = useState<'out' | 'in' | null>(null);
   const [saving, setSaving] = useState(false);
   const [form] = Form.useForm();
@@ -128,7 +114,6 @@ export default function CouponCustody() {
       setDocs(res.data?.rows || []);
       setTotal(Number(res.data?.total || 0));
     } catch {
-      // الرسالة بتطلع من `api/client`.
     } finally {
       if (!opts?.silent) setLoading(false);
     }
@@ -150,7 +135,6 @@ export default function CouponCustody() {
   useEffect(() => { setPage(1); loadDocs(1, pageSize); }, [repId, kind, direction, range]);
   useEffect(() => { loadBalance(); }, [repId]);
 
-  // صرف من شاشة تانية، أو فاتورة اتحفظت وخدت ورق من العهدة ⇒ الكشف والرصيد يتحدّثوا بهدوء.
   useLiveRefresh(['coupon-custody', 'sales'], () => {
     loadDocs(undefined, undefined, { silent: true });
     loadBalance({ silent: true });
@@ -181,7 +165,6 @@ export default function CouponCustody() {
       setPage(1);
       loadBalance();
     } catch {
-      // رسالة السيرفر بتقول الأرقام اللي عليها المشكلة — بتطلع من `api/client`.
     } finally {
       setSaving(false);
     }
@@ -194,13 +177,9 @@ export default function CouponCustody() {
       loadDocs();
       loadBalance();
     } catch {
-      // مستند ورقه اتحرّك مابيتمسحش — والسبب في الرسالة.
     }
   };
 
-  // المتاح مع المندوب المختار في المودال — عشان اللي بيسترجع يشوف الأرقام اللي معاه،
-  // واللي بيصرف يشوف هو ماسك إيه قبل ما يزوّده. بيتجاب لوحده لأن رصيد الشاشة ممكن
-  // يكون متفلتر على مندوب تاني.
   const [modalRepBalance, setModalRepBalance] = useState<BalanceRow[]>([]);
   useEffect(() => {
     if (!modal || !watchRep) { setModalRepBalance([]); return; }
@@ -251,7 +230,6 @@ export default function CouponCustody() {
     { title: 'إجمالي المصروف', dataIndex: 'issued', width: 110 },
   ];
 
-  // الفلاتر في سطر واحد تحت الترويسة — نفس المعنى، الرصيد بيتفلتر بالمندوب والفئة بس.
   const filters = (<>
     <Select className="sl-f-customer" allowClear showSearch placeholder="كل المناديب"
       value={repId} onChange={setRepId} options={repOptions}

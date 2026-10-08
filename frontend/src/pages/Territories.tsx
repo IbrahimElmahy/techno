@@ -9,17 +9,6 @@ import { useTableColumns } from '../components/ColumnSettings';
 import ListPage from '../components/ListPage';
 import { activeOptions } from '../utils/active';
 
-/**
- * المناطق — مستويين: منطقة رئيسية وتحتها فرعية.
- *
- * «٦ اكتوبر» فوق «الحى الأول» و«الفردوس» و«المستقبل». النظام القديم بيعمل المستويين
- * **بالاسم**: كل عميل شايل نص منطقته ونص أبوها، فتغيير اسم منطقة بيسيب عملاءها على الاسم
- * القديم. وهنا الأب مفتاح — الاسم بيتغيّر والربط بيفضل.
- *
- * وعمود «عملاء» هو الحارس: منطقة بصفر عملاء يا إما جديدة يا إما اسم اتكتب ونُسي. النظام
- * القديم عنده مناطق اسمها «.» و«0» و«@@@» دخلت من غير ما حد يلاحظ.
- */
-
 interface Territory {
   id: number; name: string; branch_id: number;
   parent_id: number | null; parent_name: string | null;
@@ -54,13 +43,11 @@ export default function Territories() {
       await api.patch(`/api/v1/territories/${r.id}`, body);
       message.success(`تم تعديل ${what}`);
       load();
-    } catch { /* الرسالة من المعترض العام */ }
+    } catch {}
   };
 
   const branchName = (id: number) => branches.find((b: any) => b.id === id)?.name || '—';
 
-  // المنطقة الرئيسية = اللي مالهاش أب. والفرعية ماينفعش تبقى أب لواحدة تانية — مستويين وبس،
-  // زي النظام القديم، لأن التلاتة بتخلّي التقارير تسأل «أجمّع على أنهي مستوى؟».
   const parents = useMemo(() => rows.filter((r) => !r.parent_id), [rows]);
 
   const visible = useMemo(() => {
@@ -69,7 +56,6 @@ export default function Territories() {
       ? rows.filter((r) => [r.name, r.parent_name, branchName(r.branch_id)]
           .some((x) => (x || '').includes(q)))
       : rows;
-    // الأب وتحته أولاده — الترتيب ده بيخلّي الشجرة مقروءة في جدول مسطّح.
     const out: Territory[] = [];
     list.filter((r) => !r.parent_id).forEach((p) => {
       out.push(p);
@@ -150,7 +136,6 @@ export default function Territories() {
     <ListPage
       icon={<AimOutlined />}
       title="المناطق"
-      // الشرح اللي كان في التنبيه فوق الجدول — سطر واحد هنا، وتلميح الحذف بيكمّل الباقي.
       subtitle="المنطقة الرئيسية تجمع تحتها مناطق فرعية، والمنطقة التي عليها عملاء لا تُحذف — أوقفها بدلاً من ذلك"
       actions={(<>
         <Button type="primary" className="sl-create" icon={<PlusOutlined />} onClick={() => {

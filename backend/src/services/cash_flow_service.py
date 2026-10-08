@@ -1,21 +1,3 @@
-"""التدفق النقدي (Cash Flow) — المرحلة ٤ من إعادة الهيكلة على موديل أودو.
-
-قائمة الدخل بتقول ربحنا كام، والتقرير ده بيقول **الفلوس اتحركت إزاي** — والاتنين
-بيختلفوا كتير: شركة بتبيع أجل ممكن تكون رابحة ومافيش في درجها جنيه.
-
-الطريقة نفس أودو بالظبط: بنمسك حركات **حسابات السيولة** (الخزن والبنوك)، وكل حركة
-بتتنسب لـ**الحساب المقابل** في نفس القيد — لأن المقابل هو اللي بيقول الفلوس دي جت
-منين أو راحت فين. الفاتورة اللي اتدفعت بتطلع على ذمة العميل، والمرتب على المصروف،
-وشرا سيارة على الأصول.
-
-**ليه المقابل مش مجموع نسبي؟** لأن القيد متوازن: مجموع السطور غير السيولة بإشارتها
-مقلوبة بيساوي حركة السيولة بالظبط. فكل سطر مقابل بياخد `-(مدين − دائن)` بتاعه
-والمجموع بيقفل لوحده — من غير أي توزيع تقريبي. والقيد اللي مش متوازن (النظام بيسمح
-بيه) بيبان فرقه في سطر «غير موزّع» بدل ما يتلبّس على حساب مالوش ذنب.
-
-**التحويل بين خزنتين مش تدفق.** بيتحسب لوحده وبيطلع صفر في الصافي — الفلوس اتنقلت
-من درج لدرج، الشركة ما دخلهاش ولا خرج منها مليم.
-"""
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -38,7 +20,6 @@ from src.models.treasury import Treasury
 from src.services import ledger_service
 from src.services.financial_reports_service import effective_nature
 
-#: أقسام التقرير بترتيب العرض.
 SECTIONS = ("operating", "investing", "financing", "transfer", "unallocated")
 
 SECTION_LABEL: dict[str, str] = {
@@ -76,16 +57,10 @@ class CashFlow:
     closing: Decimal
     net_change: Decimal
     sections: list[CashFlowSection]
-    #: هل أول المدة + الصافي = آخر المدة؟ لو لأ يبقى فيه قيد مش متوازن في الفترة.
     consistent: bool
 
 
 def liquidity_account_ids(db: Session) -> set[int]:
-    """حسابات السيولة — حساب كل خزنة/بنك، وحساب الخزينة القديم الواحد.
-
-    الخزن بتملك حساباتها (`Treasury.account_id`)، والنوع `treasury` باقي من قبل ما
-    الخزن تتعدّد. الاتنين مع بعض عشان القاعدة القديمة والجديدة يقروا نفس الحاجة.
-    """
     ids = {int(i) for i in db.scalars(select(Treasury.account_id)).all()}
     ids |= {
         int(i) for i in db.scalars(
@@ -96,7 +71,6 @@ def liquidity_account_ids(db: Session) -> set[int]:
 
 
 def _section_of(acc: Account, liquidity: set[int]) -> str:
-    """القسم اللي الحساب المقابل بيوقع فيه."""
     if acc.id in liquidity:
         return "transfer"
     if acc.account_type in (AccountType.customer_receivable, AccountType.supplier_payable):
@@ -107,10 +81,8 @@ def _section_of(acc: Account, liquidity: set[int]) -> str:
     if nature == AccountNature.equity:
         return "financing"
     if nature == AccountNature.asset:
-        # أصل مش سيولة ومش ذمم — أصل ثابت أو سلفة. شرا وبيع الأصول استثمار.
         return "investing"
     if nature == AccountNature.liability:
-        # التزام مش دائنين تجاريين — قرض أو تسهيل. دخوله وخروجه تمويل.
         return "financing"
     return "operating"
 
@@ -128,14 +100,12 @@ def cash_flow(
     db: Session, *, date_from: date | None = None, date_to: date | None = None,
     branch_id: int | None = None,
 ) -> CashFlow:
-    """التدفق النقدي في الفترة، مقسوم على تشغيل/استثمار/تمويل."""
     liquidity = liquidity_account_ids(db)
     empty = CashFlow(date_from=date_from, date_to=date_to, opening=ZERO, closing=ZERO,
                      net_change=ZERO, sections=[], consistent=True)
     if not liquidity:
         return empty
 
-    # القيود اللي فيها حركة سيولة بس — القيد اللي مالوش علاقة بالفلوس مش شغلنا.
     entry_ids = {
         int(i) for i in db.scalars(
             select(LedgerLine.entry_id).where(LedgerLine.account_id.in_(list(liquidity)))
@@ -150,7 +120,6 @@ def cash_flow(
         .join(LedgerEntry, LedgerEntry.id == LedgerLine.entry_id)
         .where(LedgerLine.entry_id.in_(list(entry_ids)), ledger_service.is_posted_sql())
     )
-    # التدفق النقدي بتاع الفرع — خزنة الفرع وحركتها، مش خزن الشركة كلها.
     if branch_id is not None:
         stmt = stmt.where(
             (LedgerEntry.branch_id == branch_id) | LedgerEntry.branch_id.is_(None))
@@ -177,9 +146,6 @@ def cash_flow(
             continue
         cash_in_window = to_money(cash_in_window + cash_delta)
 
-        # القيد اللي كله سيولة هو تحويل خزنة ← خزنة: مافيش فيه «مقابل» غير الخزنة
-        # التانية، فالطرفين الاتنين بيتحسبوا ومجموعهم صفر — التحويل بيبان من غير ما
-        # يزوّد ولا ينقّص الصافي.
         all_liquidity = all(ln.account_id in liquidity for ln in entry_lines)
 
         attributed = ZERO

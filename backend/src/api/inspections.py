@@ -1,9 +1,3 @@
-"""Site inspections router (015-inspections-mobile) — معاينات.
-
-Serves the rep mobile app: create/list/detail plus a batch `sync` endpoint that is idempotent by
-device-generated `client_uuid` (safe to retry after a dropped connection). Sales reps are scoped to
-their own inspections; managers see everything.
-"""
 from __future__ import annotations
 
 from datetime import date
@@ -43,7 +37,6 @@ class InspectionLineIn(BaseModel):
 class InspectionIn(BaseModel):
     visit_kind: VisitKind = VisitKind.technician
     inspection_date: date
-    # Optional: a regular visit fills it from the chosen customer. Validated in the service.
     owner_name: str | None = Field(default=None, max_length=160)
     customer_id: int | None = None
     owner_id: int | None = None
@@ -51,17 +44,13 @@ class InspectionIn(BaseModel):
     national_id: str | None = None
     owner_address: str | None = None
     floor_number: str | None = None
-    description: str | None = None       # توصيف المعاينة (lookup)
-    inspection_type: str | None = None   # نوع المعاينة (lookup)
-    # نوع الزيارة (معاينة/مرمة) — بيتختار على الموبايل بدل ما يفضل افتراضي على المراجع.
+    description: str | None = None
+    inspection_type: str | None = None
     visit_type: str | None = Field(default=None, max_length=40)
     technician_name: str | None = None
     technician_phone: str | None = None
     purchase_shop: str | None = None
     purchase_shop_phone: str | None = None
-    # التاجر اللي العميل اشترى منه — هو اللي بتتخصم منه نقط المعاينة عند القبول.
-    # كان مكتوب في `InspectionOut` بس، فالحقل كان بيتقري ومابيتكتبش: كل معاينة جديدة
-    # تدخل بـNULL، والخصم يفضل كود ميت بيسجّل تحذير في اللوج والشاشة تقول اتسجّلت عادي.
     merchant_customer_id: int | None = None
     visit_details: str | None = None
     client_uuid: str | None = Field(default=None, max_length=40)
@@ -158,23 +147,15 @@ def _out(i, merchant_name: str | None = None,
         visit_kind=i.visit_kind, inspection_date=i.inspection_date, customer_id=i.customer_id,
         owner_id=i.owner_id,
         owner_name=i.owner_name,
-        # التليفونات كلها بتتعرض بالشكل اللي بيترنّ — الشيت بيشيل الصفر الأول،
-        # وقيم نائبة زي `1` كانت بتتخزّن كأنها رقم.
-        # **ورقم المالك بيرجع لكارته زي رقم التاجر.** المعاينة بتشيل لقطة الرقم وقت
-        # الزيارة، والمندوب بيسيبها فاضية في أغلب الأحوال — والرقم موجود على الكارت.
         owner_phone=(phones.display(i.owner_phone)
                      or phones.display(owner_phone) or None),
         national_id=i.national_id, owner_address=i.owner_address,
         floor_number=i.floor_number, description=i.description,
         inspection_type=i.inspection_type, technician_name=i.technician_name,
-        # تليفون الفني بيتعرض بالشكل اللي بيترنّ — الشيت بيشيل الصفر الأول.
         technician_phone=phones.display(i.technician_phone) or None,
         merchant_customer_id=i.merchant_customer_id,
         merchant_name=merchant_name or i.purchase_shop,
         purchase_shop=i.purchase_shop,
-        # **رقم التاجر بيرجع لكارت العميل لو المعاينة مكتوبة من غيره.** المندوب
-        # بيكتب اسم المحل وبيسيب الرقم كتير، والرقم موجود أصلاً على كارت التاجر —
-        # وخدمة العملاء محتاجة ترنّ من الكشف مش تروح تدوّر عليه في شاشة تانية.
         purchase_shop_phone=(phones.display(i.purchase_shop_phone)
                              or phones.display(merchant_phone) or None),
         visit_details=i.visit_details, total_points=i.total_points, rep_user_id=i.rep_user_id,
@@ -240,7 +221,6 @@ def sync_inspections(
     current: CurrentUser = Depends(require_capability(CAP_INSPECTION_WRITE)),
     db: Session = Depends(get_db),
 ) -> list[SyncResultOut]:
-    """Batch upload from the mobile app. Idempotent by client_uuid — retries are no-ops."""
     results: list[SyncResultOut] = []
     for record in body.inspections:
         try:
@@ -262,12 +242,8 @@ def list_item_types(
     _: CurrentUser = Depends(require_capability(CAP_INSPECTION_READ)),
     db: Session = Depends(get_db),
 ) -> list[ItemTypeOut]:
-    """أصناف المعاينة (حساب النقاط) — القائمة اللي بتظهر في التطبيق، منفصلة عن منتجات النظام.
-
-    include_inactive=true للإدارة (تعرض الموقوفة كمان)؛ التطبيق يجيب النشطة فقط.
-    """
     rows = inspection_service.list_item_types(db, include_inactive=include_inactive)
-    db.commit()  # persist the lazy seed
+    db.commit()
     return [_type_out(t) for t in rows]
 
 
@@ -277,7 +253,6 @@ def create_item_type(
     current: CurrentUser = Depends(require_capability(CAP_SETTINGS_WRITE)),
     db: Session = Depends(get_db),
 ) -> ItemTypeOut:
-    """إضافة صنف معاينة جديد بنقاطه (إدارة)."""
     try:
         t = inspection_service.create_item_type(
             db, name=body.name, points=body.points, sort_order=body.sort_order,
@@ -296,7 +271,6 @@ def update_item_type(
     current: CurrentUser = Depends(require_capability(CAP_SETTINGS_WRITE)),
     db: Session = Depends(get_db),
 ) -> ItemTypeOut:
-    """تعديل اسم/نقاط/تفعيل صنف معاينة (إدارة)."""
     try:
         t = inspection_service.update_item_type(
             db, item_type_id=item_type_id, name=body.name, points=body.points,
@@ -314,7 +288,6 @@ def deactivate_item_type(
     current: CurrentUser = Depends(require_capability(CAP_SETTINGS_WRITE)),
     db: Session = Depends(get_db),
 ) -> ItemTypeOut:
-    """إيقاف صنف معاينة — يختفي من التطبيق، والمعاينات القديمة تفضل زي ما هي (إدارة)."""
     try:
         t = inspection_service.deactivate_item_type(
             db, item_type_id=item_type_id, actor_user_id=current.id)
@@ -330,11 +303,6 @@ def my_stock(
     current: CurrentUser = Depends(require_capability(CAP_INSPECTION_READ)),
     db: Session = Depends(get_db),
 ) -> list[MyStockOut]:
-    """What the current rep carries in his custody — drives the mobile item picker.
-
-    Empty list ⇒ no active custody (admins, or reps not yet issued one): the app then shows the
-    full catalog and the server posts no stock movements for their inspections.
-    """
     loc = inspection_service.rep_stock_location(db, current.id)
     if loc is None:
         return []
@@ -397,15 +365,11 @@ def list_inspections(
     technician: str | None = Query(default=None),
     trader: str | None = Query(default=None),
     q: str | None = Query(default=None),
-    # **سقف افتراضي.** النداء من غير `limit` كان بيرجّع ١٠٬٨٠١ معاينة بكل قطعها —
-    # ١٧ ميجا في رد واحد. الشاشة بتطلب صفحة صفحة، فالسقف مايأثرش عليها؛ اللي بيأثر
-    # عليه هو النداء المباشر، وهو نفسه اللي ينفع يستهلك السيرفر بالتكرار.
     limit: int | None = Query(default=200, le=500),
     offset: int = Query(default=0, ge=0),
     current: CurrentUser = Depends(require_capability(CAP_INSPECTION_READ)),
     db: Session = Depends(get_db),
 ):
-    # Reps only ever see their own inspections; managers may filter by rep.
     scope_rep = current.id if current.role == RoleName.sales_rep else rep_id
     rows, total = inspection_service.list_inspections(
         db, visit_kind=visit_kind, rep_user_id=scope_rep, date_from=date_from, date_to=date_to,
@@ -418,7 +382,6 @@ def list_inspections(
     m_map = {c.id: c.name for c in m_rows}
     m_phone = {c.id: c.phone for c in m_rows}
 
-    # أرقام الملاك للصفحة كلها في استعلام واحد — مش استعلام لكل صف.
     from src.models.owner import Owner
     o_ids = {i.owner_id for i in rows if i.owner_id is not None}
     o_phone = {o.id: (o.phone or o.phone2) for o in db.scalars(
@@ -441,11 +404,10 @@ def list_inspections(
 
 
 class InspectionPatch(BaseModel):
-    visit_type: str | None = Field(default=None, max_length=40)  # معاينة / مرمة
+    visit_type: str | None = Field(default=None, max_length=40)
 
 
 def _reviewer(current: CurrentUser) -> None:
-    """Review actions (reclassify/reject/print) are back-office — not for field reps."""
     if current.role == RoleName.sales_rep:
         raise HTTPException(
             status.HTTP_403_FORBIDDEN,
@@ -481,7 +443,6 @@ def reject_inspection(
     current: CurrentUser = Depends(require_capability(CAP_INSPECTION_WRITE)),
     db: Session = Depends(get_db),
 ) -> InspectionOut:
-    """رفض المعاينة — بديل الحذف: يعلّم الشهادة مرفوضة ويرجّع البضاعة لعهدة المندوب."""
     _reviewer(current)
     insp = _get_or_404(db, inspection_id)
     try:
@@ -499,11 +460,6 @@ def accept_inspection(
     current: CurrentUser = Depends(require_capability(CAP_INSPECTION_WRITE)),
     db: Session = Depends(get_db),
 ) -> InspectionOut:
-    """قبول معاينة مرفوضة — الرجوع عن الرفض، وبيخصم نقطها من التاجر تاني.
-
-    الرفض كان طريق باتجاه واحد: اللي رفض بالغلط ماكانش قدامه غير الحذف — يمسح شغل
-    حصل عشان يصحّح قرار.
-    """
     _reviewer(current)
     insp = _get_or_404(db, inspection_id)
     try:
@@ -537,8 +493,6 @@ def delete_inspection(
     current: CurrentUser = Depends(require_capability(CAP_INSPECTION_WRITE)),
     db: Session = Depends(get_db),
 ) -> None:
-    """Hard-delete an inspection (admins only). Safe: inspections are informational —
-    no stock movements or ledger entries reference them."""
     if current.role != RoleName.system_admin:
         raise HTTPException(status.HTTP_403_FORBIDDEN,
                             {"code": "forbidden", "message": "System admin only."})
@@ -563,7 +517,6 @@ def get_inspection(
     if current.role == RoleName.sales_rep and insp.rep_user_id != current.id:
         raise HTTPException(status.HTTP_403_FORBIDDEN,
                             {"code": "forbidden", "message": "Not your inspection."})
-    # والمدير بفرعه — العزل بالمندوب مابيمسّهوش، هو مالوش `rep_id` أصلاً.
     if not branch_scope.may_see(current, insp):
         raise HTTPException(status.HTTP_404_NOT_FOUND,
                             {"code": "not_found", "message": "Inspection not found."})

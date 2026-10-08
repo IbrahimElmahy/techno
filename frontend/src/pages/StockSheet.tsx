@@ -1,7 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { PAGE_SIZE, PAGE_SIZE_OPTIONS } from '../utils/pagination';
 import { Button, DatePicker, Input, Select, Space, Tag, message } from 'antd';
-// كل جدول هنا بفلتر على كل عمود — شوف `FilterTable`.
 import { FilterTable as Table } from '../components/FilterTable';
 import dayjs, { Dayjs } from 'dayjs';
 import { InputNumber } from '../components/NumberInput';
@@ -25,34 +24,6 @@ import {
 import { qty, money, numeralsLocale } from '../utils/money';
 import { STOCK_TOPICS, useLiveRefresh } from '../utils/live';
 
-/**
- * جرد المخازن · جرد عام المخازن — صفوف وأعمدة، وخلاص.
- *
- * Both entries used to land on رصيد صنف, which is a three-pane picker: choose a category, then an
- * item, then read that ONE item's balances. That answers «الصنف ده عندي منه كام» — a good screen,
- * and not the one these two menu items name. A جرد is a **sheet**: every line you hold, one row
- * each, that you scan down and filter and print and count against. You cannot count a warehouse by
- * clicking items one at a time.
- *
- * So this is a table and nothing else, carrying the same columns as جرد حتى تاريخ so the three
- * stocktake screens read as one family. Every column filters and sorts, and the filters combine,
- * because the question a count sheet is read for is usually two or three conditions at once:
- * «خامات مخزن الفرع اللي فيها عجز».
- *
- * **The two views differ in one thing only: whether a warehouse is a column or is summed away.**
- *
- * * `جرد المخازن` — a row per صنف × مخزن. What is in each store.
- * * `جرد عام المخازن` — a row per صنف, the stores added together. What the company holds.
- *
- * That is the whole distinction, and it is the distinction their own two screens draw. Building it
- * as one screen with two shapes rather than two screens keeps the columns, the filters, the export
- * and the totals identical between them — which matters, because the two numbers get compared.
- *
- * Reads `GET /reports/stock-as-of` with no date: the same derivation جرد حتى تاريخ uses, asked
- * about today. One definition of «الرصيد» for every stocktake screen, rather than a second query
- * that agrees with it until one of them changes.
- */
-
 interface SheetRow {
   item_id: number;
   code: string | null;
@@ -67,7 +38,6 @@ interface SheetRow {
   value: string;
 }
 
-/** A صنف with its stores added together — the «عام» shape. */
 interface TotalRow {
   item_id: number;
   code: string | null;
@@ -76,11 +46,9 @@ interface TotalRow {
   unit_of_measure: string | null;
   quantity: number;
   value: number;
-  /** How many stores it sits in — «متفرّق في كام مخزن» is the first thing asked of a total. */
   locations: number;
 }
 
-/** Same labels as جرد حتى تاريخ, because it is the same setting being reported. */
 const METHOD_LABELS: Record<string, string> = {
   average: 'المتوسط المرجح',
   last_purchase: 'آخر سعر شراء',
@@ -91,26 +59,20 @@ const TITLES: Record<string, string> = {
   general: 'جرد عام المخازن',
 };
 
-/** فترات سجل الحركات الجاهزة — واحدة للورقة كلها. */
 type LogPreset = 'all' | 'm1' | 'm3' | 'm12' | 'custom';
 const LOG_MONTHS: Record<'m1' | 'm3' | 'm12', number> = { m1: 1, m3: 3, m12: 12 };
 
 export default function StockSheet() {
   const [search] = useSearchParams();
-  // Defaults to the per-warehouse sheet: it is the more detailed of the two, and a total can be
-  // read off it by eye where the reverse is not true.
   const view = search.get('view') === 'general' ? 'general' : 'count';
   const general = view === 'general';
 
   const [rows, setRows] = useState<SheetRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [costingMethod, setCostingMethod] = useState<string | null>(null);
-  // نفس منطق «جرد حتى تاريخ»: السجل تحت سطره، وأكتر من واحد مفتوح مع بعض — قراية الجرد
-  // مقارنة، والمقارنة مابتحصلش واحد واحد.
   const [openRows, setOpenRows] = useState<React.Key[]>([]);
 
   const load = async (opts?: { silent?: boolean }) => {
-    // الهادي (التحديث الحي): من غير سبينر ولا رسالة — والسطور المفتوحة (`openRows`) بتفضل.
     const silent = !!opts?.silent;
     if (!silent) setLoading(true);
     try {
@@ -123,16 +85,8 @@ export default function StockSheet() {
   };
 
   useEffect(() => { load(); }, []);
-  // أي حركة بتحرّك رصيد ⇒ الجرد يتجاب تاني وهو ظاهر بس (الهوك بيأجّل المخبي).
   useLiveRefresh(STOCK_TOPICS, () => load({ silent: true }));
 
-  /**
-   * The stores added together, for the «عام» view.
-   *
-   * The value is summed rather than recomputed from a quantity and a cost: the total has to equal
-   * what the detailed sheet adds up to, or the two screens disagree about what the stock is worth
-   * and nobody can say which is right.
-   */
   const totals = useMemo<TotalRow[]>(() => {
     const byItem = new Map<number, TotalRow>();
     rows.forEach((r) => {
@@ -165,49 +119,20 @@ export default function StockSheet() {
   const rowKey = (r: any) => (general
     ? `i${r.item_id}` : `${r.item_id}-${r.location_kind}-${r.location_id}`);
 
-  /**
-   * العدد الفعلي — بيتكتب هنا، وبيفضل على الشاشة، ومابيترحّلش.
-   *
-   * The same as جرد حتى تاريخ, and for the same reason: this is a sheet you read and count
-   * against, not a document. Posting the difference has an owner — دورة الجرد — which has a
-   * document number, a frozen book balance and a posting step, and two screens that both adjust
-   * stock is two screens that can adjust it twice.
-   *
-   * The notice under the toolbar says so in as many words, because a hundred counts typed into a
-   * screen that keeps none of them is a morning lost.
-   */
   const [actual, setActual] = useState<Record<string, number | null>>({});
 
-  /** موجب = العجز. النظام بيقول أكتر من اللي اتعدّ. */
   const diffOf = (r: any): number | null => {
     const a = actual[rowKey(r)];
     if (a === null || a === undefined) return null;
     return Number(Number(r.quantity || 0) - a);
   };
 
-  /** بيفتح أو بيقفل سجل سطر — من غير ما يلمس الباقي. */
   const toggleRow = (key: React.Key) =>
     setOpenRows((prev) => (prev.includes(key)
       ? prev.filter((k) => k !== key) : [...prev, key]));
 
   const openHistory = (r: any) => toggleRow(rowKey(r));
 
-  /**
-   * فترة السجل — **واحدة للورقة كلها**.
-   *
-   * كل صنف كان بيفتح سجله بفلتر فترة خاص بيه. يعني اللي بيراجع عشرين صنف بيظبط نفس
-   * التاريخ عشرين مرة، والأخطر إنه يقارن صنف على آخر شهر بصنف على السنة كلها من غير ما
-   * ياخد باله — الأرقام جنب بعض والفترة مختلفة.
-   *
-   * فبقت فوق مرة واحدة، والسجلات كلها بتتبعها.
-   */
-  /**
-   * الصفوف المحدّدة — للتصدير والطباعة.
-   *
-   * الورقة بتتقرا على مرات: الواحد بيفلتر، وبيلاقي عشرين صنف محتاجين مراجعة، وعايز
-   * يطبعهم هما بس. من غير تحديد كان لازم يفلتر تاني بحاجة بتجمعهم — ودي حاجة مش
-   * موجودة دايماً؛ «العشرين اللي شكّيت فيهم» مش فلتر.
-   */
   const [picked, setPicked] = useState<React.Key[]>([]);
   const [logPreset, setLogPreset] = useState<LogPreset>('all');
   const [logFrom, setLogFrom] = useState<Dayjs | null>(null);
@@ -217,29 +142,11 @@ export default function StockSheet() {
     dateFrom: logFrom ? logFrom.format('YYYY-MM-DD') : null,
     dateTo: logTo ? logTo.format('YYYY-MM-DD') : null,
     itemId: r.item_id, itemName: r.name,
-    // Scoped to the store when the sheet is showing stores, and to the item as a whole when it is
-    // summing them — the log has to answer the question the row was asking.
     locationKind: general ? null : r.location_kind,
     locationId: general ? null : r.location_id,
   });
 
-  /**
-   * نفس أعمدة «جرد حتى تاريخ»، بالظبط.
-   *
-   * The three stocktake screens are read side by side and their numbers get compared, so they are
-   * laid out the same way: الكود · الصنف · الفئة · الوحدة · الموقع · الكمية · العدد الفعلي ·
-   * الفرق. A column that appears on one and not another makes the reader check whether they are
-   * looking at the same thing.
-   *
-   * **No cost column.** A count sheet is about how many, not how much — the person holding it is
-   * counting boxes on a shelf, and a unit cost beside every line is a number they cannot check and
-   * did not ask for. The stock's value is still on the summary line and the cards above, which is
-   * where a manager reads it.
-   *
-   * الفئة is shown, and جرد حتى تاريخ grew the same column so the three still match.
-   */
   const columns = [
-    // عمود الكود اتشال من الكشف — بيفضل في التصدير وبيتبحث بيه.
     { title: 'الصنف', dataIndex: 'name', key: 'name', ellipsis: true,
       ...textColumn(source, (r: any) => r.name),
       render: (v: string) => <b>{v}</b> },
@@ -249,9 +156,6 @@ export default function StockSheet() {
     { title: 'الوحدة', dataIndex: 'unit_of_measure', key: 'unit', width: 100,
       ...textColumn(source, (r: any) => r.unit_of_measure),
       render: (v: string | null) => v || '-' },
-    // The one column the two views differ on. Summing the stores away leaves «الموقع» with nothing
-    // to say, so it becomes how many stores the item is spread across — the question a summed
-    // quantity immediately raises.
     ...(general ? [{
       title: 'موجود في', dataIndex: 'locations', key: 'locations', width: 120,
       ...numberColumn((r: any) => r.locations),
@@ -264,12 +168,8 @@ export default function StockSheet() {
       ...numberColumn((r: any) => r.quantity),
       render: (v: any) => <b>{qty(v)}</b> },
     { title: 'العدد الفعلي', key: 'actual', align: 'left' as const, width: 140,
-      // فلتر على اللي اتعدّ نفسه، مش على الفرق: «وريني اللي عدّيته فوق المية» سؤال
-      // بيتسأل وانت واقف بتعدّ، ومالهوش عمود تاني يجاوبه.
       ...numberColumn<any>((r) => actual[rowKey(r)]),
       render: (_: any, r: any) => (
-        // `data-grid-col` is what gives the column its keyboard: ↑↓ walk it and Enter drops to the
-        // box below, which is the rhythm of counting a shelf without looking up.
         <InputNumber
           size="small" min={0} placeholder="—" style={{ width: '100%' }}
           data-grid-col="actual" keyboard={false}
@@ -288,15 +188,12 @@ export default function StockSheet() {
           if (v === 'none') return d === null;
           if (d === null) return false;
           if (v === 'match') return d === 0;
-          // «عجز» = النظام بيقول أكتر من اللي لقيناه.
           return v === 'short' ? d > 0 : d < 0;
         }),
       render: (_: any, r: any) => {
         const d = diffOf(r);
         if (d === null) return <span style={{ color: '#8c8c8c' }}>—</span>;
         if (d === 0) return <Tag color="green">مطابق</Tag>;
-        // Only a real difference is a link, the same rule جرد حتى تاريخ uses: a link that opens an
-        // empty log teaches people the link is broken, and then they stop using the one that works.
         return (
           <a onClick={(e) => { e.stopPropagation(); openHistory(r); }}>
             <b style={{ color: d > 0 ? '#cf1322' : '#6AB42D' }}>
@@ -312,23 +209,9 @@ export default function StockSheet() {
 
   const kb = useTableKeyboard<any>({
     rows: shown, rowKey,
-    // «الرقم ده جه منين» — the movements behind the quantity.
     onOpen: openHistory,
   });
 
-  /** Exported straight from what is on screen — filters, order and all. */
-  /**
-   * اللي بيتصدّر أو بيتطبع: **المحدّد لو فيه تحديد، وإلا اللي الفلتر مطلّعه**.
-   *
-   * الترتيب ده مش اختيار: التحديد أخص من الفلتر — اللي وقف وحدّد صفوف بإيده قال حاجة
-   * أوضح من اللي كتبه في خانة البحث. وتجاهله ساعتها معناه ورقة فيها صفوف محدّش طلبها.
-   */
-  /**
-   * قيمة خانة في التصدير والطباعة.
-   *
-   * «العدد الفعلي» و«الفرق» محسوبين ومالهمش `dataIndex` يتقرا منه — ولولا ده كانوا
-   * هيطلعوا عمودين فاضيين بعناوين، وهي أسوأ من إنهم مايطلعوش.
-   */
   const cell = (c: any, r: any) => {
     if (c.key === 'actual') return actual[rowKey(r)] ?? '';
     if (c.key === 'diff') {
@@ -342,13 +225,6 @@ export default function StockSheet() {
     ? shown.filter((r: any) => picked.includes(rowKey(r)))
     : shown);
 
-  /**
-   * بيجيب سجل كل صنف في اللي هيطلع — أو بيرجّع `null` لو العدد أكبر من الحد.
-   *
-   * كل صنف = نداء على السيرفر. ورقة بأربعميت صنف معناها أربعميت نداء ودقايق انتظار على
-   * حاجة اتطلبت بضغطة، فاللي عايز السجل بيحدّد الأصناف — والفرق بيتقال، مابيحصلش في
-   * السكوت.
-   */
   const withLogs = async (data: any[]) => {
     if (data.length > LOG_LIMIT) {
       message.info(`يُستخرج السجل لما لا يزيد عن ${LOG_LIMIT} صنف — حدّد الأصناف المطلوب سجلها.`);
@@ -380,21 +256,11 @@ export default function StockSheet() {
       value: (r: any) => cell(c, r),
     }));
     const name = view === 'general' ? 'general-stock' : 'stock-sheet';
-    // الصنف وسجله في ملف واحد. ولو العدد كبير، الملف بيطلع بالورقة وحدها — والسبب اتقال.
     const entries = await withLogs(data);
     if (entries) exportItemsWithLogs(name, csvCols, entries);
     else writeCsv(name, csvCols, data);
   };
 
-  /**
-   * طباعة الورقة — **الصنف وسجله**، قسم لكل صنف فيه رصيده وتحته حركاته في الفترة.
-   *
-   * زرار واحد مش اتنين: الورقة اللي بتقول «رصيده كذا» من غير «وليه كذا» بترجّع اللي
-   * بيراجع للشاشة لكل صنف — وهو غالباً قاعد بيراجع ورق بعيد عنها أصلاً.
-   *
-   * واللي بيتطبع هو **المحدّد لو فيه تحديد، وإلا اللي الفلتر مطلّعه** — نفس قاعدة
-   * التصدير. ولو العدد أكبر من الحد، بتطلع الورقة من غير سجل والسبب بيتقال.
-   */
   const printIt = async () => {
     const data = forOutput();
     if (!data.length) { message.info('لا توجد صفوف للطباعة'); return; }
@@ -406,7 +272,6 @@ export default function StockSheet() {
     }));
     const entries = await withLogs(data);
     if (!entries) {
-      // العدد أكبر من الحد — الورقة بتطلع من غير سجل بدل ما الطباعة تقف.
       printReport(
         {
           title: TITLES[view],
@@ -434,11 +299,9 @@ export default function StockSheet() {
     );
   };
 
-  // F3 للبحث — كانت جاية من `ListToolbar`، والخانة بقت في سطر الفلاتر.
   const searchRef = useRef<any>(null);
   useScreenShortcuts({ onSearch: () => { searchRef.current?.focus?.(); } });
 
-  // سطر الإجماليات تحت الجدول — مكان كروت الأرقام اللي كانت فوق.
   const footer = (
     <span className="sl-foot">
       <span>المعروض: <b>{shown.length.toLocaleString(numeralsLocale())}</b>
@@ -463,8 +326,6 @@ export default function StockSheet() {
           <Button icon={<DownloadOutlined />} onClick={exportCsv}>
             {picked.length ? `تصدير (${picked.length})` : 'تصدير'}
           </Button>
-          {/* التصدير والطباعة القديمين بيمشوا على المحدّد لو فيه تحديد. ملف الإكسل بياخد
-              اللي على الشاشة زي ما هو — نفس قاعدة الزرار في كل الشاشات. */}
           <ExportExcelButton
             name={TITLES[view]}
             rows={shown}
@@ -488,7 +349,6 @@ export default function StockSheet() {
           placeholder="بحث بالكود أو الاسم أو الفئة أو الموقع"
           value={filter.query} onChange={(e) => filter.setQuery(e.target.value)}
         />
-        {/* فترة سجل الحركات — بتتحدّد هنا مرة وبتتطبّق على كل صنف يتفتح تحته. */}
         <Select
           value={logPreset}
           onChange={(v) => {
@@ -522,26 +382,19 @@ export default function StockSheet() {
         <Button className="sl-f-clear" icon={<ClearOutlined />} onClick={filter.reset}>مسح</Button>
       </>)}
     >
-      {/* التنبيه اللي كان هنا اتشال بطلب صاحب النظام.
-          كان بيقول إن الورقة للعدّ والمراجعة وإن التسوية بتتعمل من «دورة الجرد» —
-          تلات سطور فوق ورقة بتتقرا كل يوم، بتتقال مرة وتتقرا مية. */}
       <Table
-        // السجل بيتفتح تحت السطر بتاعه، وأكتر من سطر مع بعض.
         expandable={{
           expandedRowKeys: openRows,
           onExpandedRowsChange: (keys) => setOpenRows([...keys]),
           expandedRowRender: (r: any) => (
             <MovementHistoryLog
               target={historyTarget(r)}
-              // الفترة بتتحدّد فوق الورقة مرة واحدة — مش في كل صنف.
               periodFilter={false}
               onClose={() => toggleRow(rowKey(r))}
             />
           ),
         }}
         {...kb.tableProps}
-        // التحديد للتصدير والطباعة — والعدد بيبان على الزرارين فوق عشان اللي حدّد
-        // يعرف إنه هيطبع المحدّد مش الكل.
         rowSelection={{
           selectedRowKeys: picked,
           onChange: (keys) => setPicked(keys),
@@ -563,17 +416,6 @@ export default function StockSheet() {
           showTotal: () => footer,
         }}
         summary={(pageRows) => {
-          /*
-           * One cell per VISIBLE column, filled by key rather than by counting.
-           *
-           * A summary written as «span the first five, then three cells» is right until somebody
-           * hides a column from الأعمدة, and then the totals sit under the wrong headings — which
-           * is worse than no totals, because they are still read.
-           *
-           * The counted total is of what is ON SCREEN, the same as the quantity beside it: a
-           * «counted» figure that included rows the filter took away would say the count is
-           * further along than it is.
-           */
           const list = [...pageRows] as any[];
           const countedQty = list.reduce((t, r) => {
             const a = actual[rowKey(r)];

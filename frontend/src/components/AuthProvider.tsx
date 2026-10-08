@@ -3,23 +3,10 @@ import { Spin } from 'antd';
 import { api, clearApiCache, getApiBaseURL } from '../api/client';
 import { startLive, stopLive } from '../utils/live';
 
-// A session that never interrupts work: the token is long-lived on the server, and we
-// re-issue it on every app load and every few hours while the tab stays open. So anyone
-// who keeps using the system stays signed in indefinitely.
 const REFRESH_EVERY_MS = 6 * 60 * 60 * 1000;
 
-// `owner` — صاحب الشركة، أعلى من `system_admin`. كان ناقص من النوع فالشاشات اللي
-// بتقارن بالاسم ما كانتش بتعرفه، ولا TypeScript كان بينبّه عليها.
-// `rep_supervisor` — «مشرف مناديب»: بيتابع مناديبه من التطبيق، ومالوش شاشات في النظام.
 export type RoleName = 'owner' | 'system_admin' | 'branch_manager' | 'purchasing_manager' | 'sales_manager' | 'after_sales_staff' | 'sales_rep' | 'accountant' | 'viewer' | 'rep_supervisor';
 
-/**
- * **الدور اللي بتتقارن بيه قوايم الأدوار** — المالك بيتعامل كمدير نظام.
- *
- * القوايم في `navigation.ts` والحراس مكتوب فيها `system_admin` ومحدش فيهم فيه `owner`،
- * فالمالك كان بيفتح النظام على شريط أقسام فاضي وكل شاشة بترد ٤٠٣ — وهو أعلى دور. السيرفر
- * بيدّيه كل الصلاحيات أصلاً (`rbac.py`)، فالمقارنة هنا بتلحقه بيه بدل ما نكتبه في ميت قايمة.
- */
 export function roleForAccess(role: RoleName | string | undefined | null): string {
   return role === 'owner' ? 'system_admin' : (role || '');
 }
@@ -29,20 +16,7 @@ export interface User {
   role: RoleName;
   branch_id?: number | null;
   name: string;
-  /**
-   * What this user may DO, as the server computes it.
-   *
-   * Screens used to decide what to show by listing role names — the server's capability map,
-   * copied into the client by hand. Copies drift, and one already had: the catalogue let
-   * system_admin and purchasing_manager create and edit items, while the endpoints ask for
-   * `catalog.write`, which branch_manager also holds. He saw no «إضافة صنف» button on a screen
-   * that would have accepted him.
-   *
-   * Optional because a session stored before this existed has none; `can()` then answers false
-   * and the screen hides an action rather than offering one that would be refused.
-   */
   capabilities?: string[];
-  /** صفحات اتظهرت/اتخبّت للمستخدم ده بعينه (شاشة صلاحيات المستخدمين) — مسار الصفحة. */
   pages_shown?: string[];
   pages_hidden?: string[];
 }
@@ -54,14 +28,6 @@ interface AuthContextType {
   token: string | null;
   login: (token: string, user: User) => void;
   logout: () => void;
-  /**
-   * May this user do `capability`?
-   *
-   * This hides and shows things. It is NEVER the security boundary — every endpoint checks the
-   * same capability for itself, and a client that lied about this would simply be refused by the
-   * server. What it buys is that the screen and the endpoint quote the SAME string, so they
-   * cannot come to disagree about who is allowed what.
-   */
   can: (capability: string) => boolean;
 }
 
@@ -74,7 +40,6 @@ export function AuthProvider({ children, apiUrl }: { children: React.ReactNode; 
   const [token, setToken] = useState<string | null>(null);
 
   useEffect(() => {
-    // Check local storage for existing session
     const storedToken = localStorage.getItem('token');
     const storedUser = localStorage.getItem('user');
 
@@ -91,15 +56,12 @@ export function AuthProvider({ children, apiUrl }: { children: React.ReactNode; 
     }
     setIsAuthenticating(false);
 
-    // Global listener for 401/403 auto-logout events (from Axios interceptor)
     const handleUnauthorized = () => {
       logout(false);
     };
 
     window.addEventListener('api-unauthorized', handleUnauthorized);
 
-    // Slide the session forward: once now (so a tab reopened after days gets a fresh token)
-    // and then on a timer while the app stays open.
     const renew = async () => {
       if (!localStorage.getItem('token')) return;
       try {
@@ -108,8 +70,6 @@ export function AuthProvider({ children, apiUrl }: { children: React.ReactNode; 
           localStorage.setItem('token', res.data.access_token);
           setToken(res.data.access_token);
         }
-        // **والصلاحيات بتتحدّث معاه.** كانت بتتحفظ ساعة الدخول وبس، فصلاحية جديدة (زي
-        // «فاتورة بونص») أو تعديل من شاشة الصلاحيات مابيبانش غير لما الواحد يخرج ويدخل.
         const me = await api.get('/api/v1/auth/me');
         if (me.data?.capabilities) {
           setUser((prev) => {
@@ -123,8 +83,6 @@ export function AuthProvider({ children, apiUrl }: { children: React.ReactNode; 
           });
         }
       } catch {
-        // A failed renewal is not a logout — the current token may still be valid, and the
-        // 401 interceptor already handles the case where it isn't.
       }
     };
     renew();
@@ -136,8 +94,6 @@ export function AuthProvider({ children, apiUrl }: { children: React.ReactNode; 
     };
   }, []);
 
-  // قناة التحديث الحي بتتفتح مع الجلسة وبتتقفل معاها. التجديد بيغيّر التوكن بس الاتصال
-  // المفتوح بيكمّل — هو بيقرا التوكن الجديد من التخزين في أول إعادة اتصال. `utils/live.ts`.
   useEffect(() => {
     if (token) startLive();
     else stopLive();
@@ -145,11 +101,6 @@ export function AuthProvider({ children, apiUrl }: { children: React.ReactNode; 
   useEffect(() => () => stopLive(), []);
 
   const login = (newToken: string, newUser: User) => {
-    // كاش الطلبات بيتفضّى مع تغيير المستخدم.
-    //
-    // القوايم المخزّنة مقيّدة بمين طالبها: المندوب بيشوف عملاءه هو بس. فيوزر بيخرج
-    // وتاني بيدخل من غير تفضية كان بيلاقي قايمة اللي قبله لسه معروضة — داتا بتعدّي
-    // من جلسة لجلسة.
     clearApiCache();
     localStorage.setItem('token', newToken);
     localStorage.setItem('user', JSON.stringify(newUser));
@@ -159,12 +110,6 @@ export function AuthProvider({ children, apiUrl }: { children: React.ReactNode; 
   };
 
   const logout = (releaseDevice = true) => {
-    // نسيب مكان الجهاز فاضي على السيرفر.
-    //
-    // بـ`fetch` مش بـ`api` عن قصد: الـinterceptor بيرمي `api-unauthorized` على أي 401،
-    // واللي بينده `logout` هو نفسه الـinterceptor — فطلب بيرجع 401 هنا كان هيدخلنا في
-    // لفة لا نهائية. و`releaseDevice` بتبقى false لما الخروج أصلاً سببه إن السيرفر قفل
-    // الجلسة، فمفيش حاجة تتفضّى.
     const t = localStorage.getItem('token');
     if (releaseDevice && t) {
       fetch(`${getApiBaseURL()}/api/v1/auth/logout`, {
@@ -179,7 +124,6 @@ export function AuthProvider({ children, apiUrl }: { children: React.ReactNode; 
     setToken(null);
     setUser(null);
     setIsAuthenticated(false);
-    // Force redirect to login page via router navigation or window hash redirect
     window.location.hash = '/login';
   };
 

@@ -5,21 +5,6 @@ import '../models/arabic_sort.dart';
 import '../models/models.dart';
 import '../theme.dart';
 
-/// بضاعتي — اللي في العربية دلوقتي، **مقسّمة بالفئات**.
-///
-/// السؤال اللي المندوب بيسأله قبل ما ينزل وبعد كل بيعة: «معايا كام؟». وقبل الشاشة دي
-/// الإجابة كانت في دماغه أو في ورقة.
-///
-/// **الفئة الأول والصنف جوّاها** — ٣٢٦ صنف في قايمة واحدة مش قايمة، دي كومة. المندوب
-/// اللي بيدوّر على سخان بيعرف فئته وهو بيدوّر، فالمستوى ده بيقصّر الطريق بدل ما يفضل
-/// ينزّل. نفس القسمة اللي في منتقي الأصناف بالظبط، عشان الشاشتين يقولوا نفس الحاجة.
-///
-/// **والبحث بيدوّر في الكل** — لو كتب اسم، الفئات بتتشال والنتايج بتنزل مسطّحة. اللي
-/// بيكتب اسم صنف عايز يلاقيه، مش عايز يفتكر هو تحت أنهي فئة.
-///
-/// **والمتاح هنا ناقص اللي اتباع ولسه ما اترفعش** — نفس القاعدة اللي في شاشة اختيار
-/// الصنف. الرقمين بيبانوا مع بعض لما يختلفوا، عشان المندوب يعرف إن فيه بضاعة اتحجزت
-/// لفواتير لسه في الطابور، مش إن رصيده نقص من غير سبب.
 class MyStockScreen extends StatefulWidget {
   const MyStockScreen({super.key});
 
@@ -27,8 +12,6 @@ class MyStockScreen extends StatefulWidget {
   State<MyStockScreen> createState() => _MyStockScreenState();
 }
 
-/// اللمّة اللي بتتحط فيها الأصناف اللي مالهاش فئة — **مابتختفيش**: صنف ناقصة عنه
-/// بيانات على السيرفر مش صنف مش موجود في العربية.
 const _noCategory = 'بدون فئة';
 
 class _MyStockScreenState extends State<MyStockScreen> {
@@ -38,8 +21,6 @@ class _MyStockScreenState extends State<MyStockScreen> {
   bool _loading = true;
   String? _lastPull;
 
-  /// الفئات المفتوحة. الشاشة بتفتح والكل مقفول — نظرة واحدة بتوريه فئاته وعدد كل
-  /// واحدة، وهو بيفتح اللي عايزه.
   final Set<String> _open = {};
 
   @override
@@ -56,8 +37,6 @@ class _MyStockScreenState extends State<MyStockScreen> {
 
   Future<void> _load() async {
     final items = await LocalDb.instance.saleItems(query: _search.text);
-    // استعلامين لكل الأصناف بدل اتنين لكل صنف — ٣٢٦ صنف كانوا ٦٥٢ استعلام على القرص
-    // قبل ما أول سطر يبان على شاشة تليفون.
     final free = await LocalDb.instance.availableForSaleAll();
     final pull = await LocalDb.instance.getKv('last_sales_pull');
     if (!mounted) return;
@@ -74,14 +53,11 @@ class _MyStockScreenState extends State<MyStockScreen> {
     return c.isEmpty ? _noCategory : c;
   }
 
-  /// الفئات ومعاها أصنافها، مرتبة — و«بدون فئة» في الآخر دايماً.
   List<MapEntry<String, List<SaleItem>>> get _byCategory {
     final m = <String, List<SaleItem>>{};
     for (final it in _items) {
       m.putIfAbsent(_categoryOf(it), () => []).add(it);
     }
-    // الفئات أبجدياً، و«بدون فئة» في الآخر دايماً — مش اسم، دي بقية القايمة.
-    // والأصناف جوّه كل فئة أبجدياً كمان: القايمة اللي المندوب بيدوّر فيها بعينه.
     for (final e in m.entries) {
       sortByName<SaleItem>(e.value, (i) => i.name);
     }
@@ -106,10 +82,6 @@ class _MyStockScreenState extends State<MyStockScreen> {
           ? const Center(child: CircularProgressIndicator())
           : Column(
               children: [
-                // **«قيمة البضاعة» اتشالت** بطلب صاحب النظام. الرقم كان بيتحسب من
-                // سعر القايمة × المتاح، وده مش قيمة العربية: البيع بيمشي بخصم، وفيه
-                // أصناف سعرها صفر لسه ماتسعّرتش. رقم كبير على راس الشاشة بيتقري كأنه
-                // حقيقة، والمندوب مالوش دعوة بقيمة بضاعته أصلاً — عنده الكميات.
                 Card(
                   color: const Color(0xFFF3F8FB),
                   child: Padding(
@@ -171,8 +143,6 @@ class _MyStockScreenState extends State<MyStockScreen> {
                         )
                       : RefreshIndicator(
                           onRefresh: _load,
-                          // البحث بيسطّح القايمة: اللي بيكتب اسم صنف عايز يلاقيه، مش
-                          // عايز يفتكر هو تحت أنهي فئة.
                           child: searching
                               ? ListView.separated(
                                   itemCount: _items.length,
@@ -194,11 +164,8 @@ class _MyStockScreenState extends State<MyStockScreen> {
     );
   }
 
-  /// الفئة: اسمها، وعدد أصنافها، ومجموع الكميات اللي فيها. بتتفتح بضغطة.
   Widget _categoryTile(String name, List<SaleItem> items) {
     final open = _open.contains(name);
-    // مجموع الكميات مش قيمة — كام قطعة في الفئة دي. ده الرقم اللي بيفيد المندوب وهو
-    // بيبص على العربية، والوحدات بتختلف من صنف لصنف فمافيش وحدة واحدة تتكتب جنبه.
     final qty = items.fold<double>(0, (t, it) => t + _freeOf(it));
     final out = items.where((it) => _freeOf(it) <= 0).length;
     return Column(
@@ -241,8 +208,6 @@ class _MyStockScreenState extends State<MyStockScreen> {
 
   Widget _itemTile(SaleItem it, {bool inset = false}) {
     final free = _freeOf(it);
-    // الفرق بين اللي في العربية واللي متاح = بضاعة محجوزة لفواتير في الطابور.
-    // بتتقال بدل ما الرقم ينقص في صمت.
     final held = it.onHand - free;
     return ListTile(
       contentPadding: EdgeInsetsDirectional.only(

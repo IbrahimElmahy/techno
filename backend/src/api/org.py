@@ -1,4 +1,3 @@
-"""Organization router (T035): governorates, branches, territories. FR-012, FR-014."""
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -31,9 +30,7 @@ class BranchCreate(BaseModel):
     name: str
     governorate_id: int
     is_head_office: bool = False
-    # الفرع ده مصنع — بيشغّل قسم الإنتاج ويطفّي الكوبونات والنقاط والخط.
     is_factory: bool = False
-    # «بيان ١» و«بيان ٢» — two free note lines off their الفروع form (031).
     note1: str | None = None
     note2: str | None = None
 
@@ -67,7 +64,6 @@ class BranchOut(BaseModel):
 class TerritoryCreate(BaseModel):
     name: str
     branch_id: int
-    # فاضي = منطقة رئيسية. المعبّى = تحت المنطقة دي.
     parent_id: int | None = None
 
 
@@ -77,7 +73,6 @@ class TerritoryOut(BaseModel):
     branch_id: int
     parent_id: int | None = None
     parent_name: str | None = None
-    # عدد العملاء تحتها — الرقم اللي بيقول هل المنطقة دي حيّة ولا اسم على ورق.
     customer_count: int = 0
     active: bool
 
@@ -92,7 +87,6 @@ def create_governorate(
     current: CurrentUser = Depends(require_capability(CAP_BRANCH_WRITE)),
     db: Session = Depends(get_db),
 ) -> GovernorateOut:
-    """(v4) Add a governorate — previously only seeded, so new areas couldn't be entered."""
     if db.scalar(select(Governorate).where(Governorate.name == body.name)) is not None:
         raise HTTPException(status.HTTP_409_CONFLICT,
                             {"code": "duplicate", "message": "Governorate already exists"})
@@ -132,8 +126,6 @@ def list_governorates(
 
 
 def _branch_out(b: Branch) -> BranchOut:
-    """One place builds a BranchOut. Three hand-written copies is how a new field ends up
-    returned by the list and missing from the create response."""
     return BranchOut(
         id=b.id, name=b.name, governorate_id=b.governorate_id,
         is_head_office=b.is_head_office,
@@ -148,8 +140,6 @@ def list_branches(
     db: Session = Depends(get_db),
 ) -> list[BranchOut]:
     stmt = select(Branch)
-    # مافيش فرع ⇒ بيشوف الفروع كلها؛ `Branch.id == NULL` كان بيرجّع قايمة فاضية.
-    # والمالك/الأدمن بيشوف التلاتة حتى وهو مفلتر — فلتر الفرع نفسه بيقرا القايمة دي.
     scoped_branch = None if branch_scope.sees_all_branches(current) else current.branch_id
     if scoped_branch is not None:
         stmt = stmt.where(Branch.id == scoped_branch)
@@ -195,7 +185,6 @@ def update_branch(
         b.active = body.active
     if body.is_factory is not None:
         b.is_factory = body.is_factory
-    # Omitted stays omitted: renaming a branch must not blank a note somebody left on it.
     for field in ("note1", "note2"):
         val = getattr(body, field)
         if val is not None:
@@ -287,7 +276,6 @@ def update_territory(
     if body.active is not None:
         t.active = body.active
     if body.parent_id is not None:
-        # منطقة تحت نفسها بتعمل حلقة — أي شاشة بتمشي الشجرة بعدها بتلف للأبد.
         if body.parent_id == t.id:
             raise HTTPException(422, {"code": "validation",
                                       "message": "المنطقة ماينفعش تكون تحت نفسها."})

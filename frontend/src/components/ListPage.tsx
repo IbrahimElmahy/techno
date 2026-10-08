@@ -2,34 +2,17 @@ import React from 'react';
 import { Space } from 'antd';
 import { numeralsLocale } from '../utils/money';
 
-/**
- * **إطار صفحات الكشوف** — تصميم سجل المبيعات (طلب العميل ٢٠٢٦-١٠-٠١) في مكان واحد.
- *
- * طبقة رمادي واحدة ورا كروت بيضا: الترويسة (أيقونة · عنوان · شرايح بعدّادات · أزرار)،
- * الفلاتر في سطر، وجسم الكشف. الشكل كله في `index.css` تحت `.list-page`، فالصفحة
- * بتدّي المحتوى بس — مش بتعيد رسم الترويسة ولا الـCSS بتاعها.
- *
- * الجدول جوّه `children`: يدّي الـ`Table` الـclass `sl-table` عشان ياخد شكل الكشف
- * (ترويسة رمادي فاتح، سطور مضغوطة، ترقيم شمال). والإجماليات تحت الجدول بـ`sl-foot`.
- */
 export interface ListTab<K extends string = string> {
   key: K;
   label: React.ReactNode;
-  /** العدد في الشريحة — `null`/`undefined` = من غير عدّاد. */
   count?: number | null;
-  /** لون النقطة قبل الاسم. */
   dot?: string;
 }
 
-/**
- * مربع رقم صغير في سطر الإجماليات فوق الكشف (`summary`) — العنوان رمادي صغير فوق والرقم تقيل.
- * `tone` بيلوّن الرقم: مبيعات أخضر، مرتجعات أحمر، تحصيلات أزرق، بونص برتقاني.
- */
 export function ListStat({ label, value, tone, hint }: {
   label: React.ReactNode;
   value: React.ReactNode;
   tone?: 'pos' | 'neg' | 'info' | 'warn' | 'strong';
-  /** سطر باهت تحت الرقم — «(المعروض)» مثلاً. */
   hint?: React.ReactNode;
 }) {
   return (
@@ -46,17 +29,13 @@ export default function ListPage<K extends string = string>({
 }: {
   icon?: React.ReactNode;
   title: React.ReactNode;
-  /** جنب العنوان بلون باهت — «(سجل الفواتير والمرتجعات)». */
   muted?: React.ReactNode;
   subtitle?: React.ReactNode;
   tabs?: ListTab<K>[];
   activeTab?: K;
   onTabChange?: (key: K) => void;
-  /** الأزرار على الشمال: الإنشاء، الطباعة، التصدير، الأعمدة. */
   actions?: React.ReactNode;
-  /** عناصر سطر الفلاتر — كل عنصر بياخد عرض بالنسبة (`.sl-filters > *`). */
   filters?: React.ReactNode;
-  /** سطر الإجماليات بين الترويسة والفلاتر — مربعات `ListStat` (طلب العميل ٢٠٢٦-١٠-٠٣). */
   summary?: React.ReactNode;
   children: React.ReactNode;
 }) {

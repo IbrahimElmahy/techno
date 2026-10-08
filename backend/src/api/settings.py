@@ -1,4 +1,3 @@
-"""Sales settings router (T044). FR-029. Fixed discount % at runtime; snapshot-on-invoice."""
 from __future__ import annotations
 
 from decimal import Decimal
@@ -21,10 +20,7 @@ router = APIRouter(tags=["settings"], prefix="/settings")
 
 class SalesSettingsBody(BaseModel):
     fixed_discount_pct: Decimal
-    # VAT % (021). 0 = off, which keeps invoice posting exactly as it was before VAT existed.
     vat_rate_pct: Decimal = Decimal("0")
-    # «قفل تعديل المستندات (أيام)» — after N days from a document's date, only an admin may reverse
-    # it. None/0 = off.
     edit_lock_days: int | None = None
 
 
@@ -73,11 +69,6 @@ def update_sales_settings(
                              edit_lock_days=getattr(s, "edit_lock_days", None))
 
 
-# ---------------------------------------------------------------- خصم الشرا الثابت لكل خط
-#
-# بولي = تكنو ثيرم ومعزوله، وأبيض وجوان = الصرف (تكنو وايت/ابيض تكنوو/تكنو جوان). نفس
-# تصنيف العيال اللي النقاط ماشية بيه (`item_points.family_of`) — مش قايمة تانية بتتكتب بإيد
-# وتختلف عنها أول ما فئة تتضاف.
 _POLY = {item_points.PPR, item_points.PPR_INS}
 _WHITE = {item_points.DRAIN}
 
@@ -85,7 +76,6 @@ _WHITE = {item_points.DRAIN}
 class PurchaseDiscountsBody(BaseModel):
     poly_pct: Decimal
     white_pct: Decimal
-    # فئة الصنف ← «poly» أو «white». الفئة اللي مش فيهم مالهاش خصم افتراضي.
     groups: dict[str, str] = {}
 
 
@@ -116,7 +106,7 @@ def get_purchase_discounts(
 
 
 class PurchaseDiscountIn(BaseModel):
-    group: str          # «poly» أو «white»
+    group: str
     pct: Decimal
 
 
@@ -126,8 +116,6 @@ def set_purchase_discount(
     current: CurrentUser = Depends(require_capability(CAP_PURCHASE_WRITE)),
     db: Session = Depends(get_db),
 ) -> PurchaseDiscountsBody:
-    """اللي بيغيّر خصم الخط من سطر الفاتورة بيغيّر الافتراضي — ده اللي العميل طلبه بالظبط،
-    فالصلاحية هي صلاحية كتابة فاتورة الشرا نفسها، مش الإعدادات."""
     if body.group not in ("poly", "white"):
         raise HTTPException(422, {"code": "validation", "message": "الخط لازم يكون بولي أو أبيض."})
     if body.pct < 0 or body.pct >= 100:
@@ -144,8 +132,6 @@ def set_purchase_discount(
 
 
 class StockSettingsBody(BaseModel):
-    """نوع التكلفة — how a unit of stock is valued when a new cost is derived."""
-
     costing_method: str = CostingMethod.average.value
 
 
@@ -174,8 +160,6 @@ def update_stock_settings(
     current: CurrentUser = Depends(require_capability(CAP_SETTINGS_WRITE)),
     db: Session = Depends(get_db),
 ) -> StockSettingsBody:
-    """Changing the method changes how NEW costs are derived; costs already frozen onto past
-    documents stay exactly as they were — that is the whole reason they were frozen."""
     try:
         method = CostingMethod(body.costing_method)
     except ValueError as exc:

@@ -1,13 +1,3 @@
-"""Full-database backup and restore.
-
-The whole ledger lives in one MySQL database with no dump mechanism anywhere — one bad
-deploy and the books are gone. This service is the answer: every table serialized to one
-gzipped JSON file (portable across SQLite dev / MySQL prod), and a restore that swaps the
-contents back inside a single transaction.
-
-Restore writes a safety snapshot of the CURRENT state to disk first (best-effort), so even
-a restore-done-wrong has an undo.
-"""
 from __future__ import annotations
 
 import gzip
@@ -36,7 +26,6 @@ def _json_default(v):
 
 
 def export_all(db: Session) -> dict:
-    """Every table → {table: [row, …]} in dependency order (parents first)."""
     data: dict = {
         "_meta": {
             "app": "techno",
@@ -65,10 +54,6 @@ def from_gzip(raw: bytes) -> dict:
 
 
 def restore_all(db: Session, data: dict) -> dict[str, int]:
-    """Wipe every table (children first) then reload (parents first), one transaction.
-
-    The caller owns commit/rollback; counts per table are returned for the summary.
-    """
     known = {t.name for t in Base.metadata.sorted_tables}
     missing = [name for name in data if name != "_meta" and name not in known]
     if missing:
@@ -90,7 +75,6 @@ def restore_all(db: Session, data: dict) -> dict[str, int]:
 
 
 def save_safety_snapshot(data: dict) -> str | None:
-    """Pre-restore copy of the CURRENT database, on disk. Best-effort — never blocks."""
     try:
         directory = Path(__file__).resolve().parents[2] / "uploads" / "backups"
         directory.mkdir(parents=True, exist_ok=True)
@@ -98,6 +82,6 @@ def save_safety_snapshot(data: dict) -> str | None:
         path = directory / f"pre-restore-{stamp}.json.gz"
         path.write_bytes(to_gzip(data))
         return str(path)
-    except Exception as exc:  # pragma: no cover — disk issues must not block a restore
+    except Exception as exc:  # pragma: no cover
         log.info("safety snapshot skipped: %s", exc)
         return None

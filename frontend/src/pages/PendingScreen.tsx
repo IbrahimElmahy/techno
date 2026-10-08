@@ -3,48 +3,20 @@ import { Button, Card, Empty, Tag, Typography } from 'antd';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { allScreens } from '../components/navigation';
 
-/**
- * What each unbuilt screen will do, and the nearest thing that exists today.
- *
- * «لسه بتتبني» alone leaves the person with nothing to do next. Half of these have data already in
- * the system reachable from another screen — the serials are on the documents, the expiry lots are
- * in the alerts — so saying only «not yet» sends somebody away from an answer they could have had.
- * The other half genuinely have nothing standing in for them, and say so rather than pointing at
- * something that would waste the trip.
- */
 interface Pending {
-  /** What the screen will do, in one sentence. */
   what: string;
-  /** Where its data can be reached today, where anywhere can. */
   insteadLabel?: string;
   insteadPath?: string;
-  /** Why it is not built, where there is a reason worth stating. */
   note?: string;
 }
 
 const PENDING: Record<string, Pending> = {
 };
 
-/**
- * What a menu entry shows before its screen exists.
- *
- * The menu was rebuilt to the shape of the system the client is migrating from, all fifty-seven
- * screens of it, because a half-copied menu teaches the wrong map — someone learns that «السرايل»
- * is missing, and keeps believing it after we add it.
- *
- * So every entry is present and every entry tells the truth. A dead link that silently does nothing
- * is the worst of the options: the person clicking cannot tell it apart from a broken system, and
- * they report it as a bug. This says plainly that the screen is still being built, and names the
- * screen it will mirror so it can be checked against the original when it arrives.
- */
 export default function PendingScreen() {
   const { pathname, search } = useLocation();
   const navigate = useNavigate();
   const here = pathname + (search || '');
-  // Exact match first, across the WHOLE list, before falling back to the path alone. Two entries
-  // can share a path and differ only by query — «السرايل» and «حركات سرايل» are both `/serials` —
-  // and a single find() with an `||` lets whichever comes first in the menu answer for both, so
-  // «حركات سرايل» opened under the title «السرايل».
   const screens = allScreens();
   const screen = screens.find((s) => s.key === here)
     ?? screens.find((s) => s.key.split('?')[0] === pathname);

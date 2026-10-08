@@ -1,8 +1,3 @@
-"""Manufacturing service (T028–T029). FR-013–016.
-
-Two independent stock ops (no linkage, no BOM, no money). Each reversible via an explicit reverse
-that posts a mirror stock movement (reverse-once).
-"""
 from __future__ import annotations
 
 from datetime import date
@@ -81,7 +76,6 @@ def produce(db, *, item_id, location_kind, location_id, quantity, actor_user_id)
 
 
 def reverse_op(db, *, op_id: int, actor_user_id: int) -> ManufacturingOp:
-    """Reverse a consume/produce: mirror stock movement + a linked reversal op (reverse-once)."""
     original = db.get(ManufacturingOp, op_id)
     if original is None:
         raise ManufacturingError("عملية التصنيع مش موجودة.")
@@ -89,12 +83,8 @@ def reverse_op(db, *, op_id: int, actor_user_id: int) -> ManufacturingOp:
         raise ManufacturingError("العملية العكسية نفسها مايتعملهاش عكس.")
     if db.scalar(select(ManufacturingOp).where(ManufacturingOp.reverses_op_id == op_id)) is not None:
         raise ManufacturingError("العملية دي اتعكست قبل كده.")
-    # Mirror the underlying movement (consume↔return-to-stock, produce↔remove); no-negative applies.
     mirror = stock_service.reverse_movement(
         db, original_id=original.stock_movement_id, actor_user_id=actor_user_id,
-        # الاسم بيتشتق من الحركة الأصلية نفسها (`reverse_consumption_out`) مش من نوع
-        # العملية (`reverse_consume`) — الاتنين نفس الحاجة باسمين، وده بالظبط اللي
-        # `stock_docs` اتعمل عشان يمنعه. `reverse_movement` بيعمل الاشتقاق لوحده.
         movement_type=None,
     )
     rev = ManufacturingOp(
@@ -111,18 +101,7 @@ def reverse_op(db, *, op_id: int, actor_user_id: int) -> ManufacturingOp:
     return rev
 
 
-# ---------------------------------------------------------------------------
-# Bill of materials (recipes) — 012-manufacturing-bom.
-# ---------------------------------------------------------------------------
 def _component_rows(components):
-    """Normalise recipe components to (item_id, quantity, unit, stage).
-
-    Callers written before units existed pass `(item_id, quantity)` and mean the base unit; both
-    shapes are accepted so no existing caller has to be touched to keep meaning what it meant.
-
-    والمرحلة رابع عنصر، والناقصة معناها «تصنيع» — نفس السبب: كل وصفة اتكتبت قبل
-    العمود ده خاماتها كلها كانت بتتصرف مرة واحدة عند البدء.
-    """
     rows = []
     for comp in components or []:
         item_id, qty = comp[0], comp[1]
@@ -149,24 +128,10 @@ def _validate_recipe(db: Session, *, product_id: int, output_quantity, component
         comp = db.get(Item, item_id)
         if comp is None:
             raise ManufacturingError("مكوّن مش موجود في الكتالوج.")
-        # **المكوّن أي صنف، مش «خامة» بس.**
-        #
-        # الشرط القديم كان `kind == raw_material`، وهو منطقي في كتالوج متقسّم —
-        # وكتالوج العميل مش متقسّم: **٢٬٧٤١ صنف كلهم `product`**، لأن نقل a5 نقلهم
-        # كده وa5 مافيهوش التقسيمة دي أصلاً. يعني الشرط كان بيرفض كل وصفة تتكتب من
-        # الشاشة، والـ٤١٠ وصفة الموجودة دخلت بسكربت عدّى من جنبه.
-        #
-        # وهو مش شرط صح أصلاً في مصنع: نص المنتج بيدخل في المنتج التام — بوشة
-        # بتتصنّع وبعدين بتتركّب. منع ده معناه إن اللي بيعمل التركيب مايقدرش يكتب
-        # وصفته.
-        #
-        # اللي بيتمنع هو الحاجة الوحيدة اللي غلط فعلاً: **الصنف يكون مكوّن نفسه**.
         if comp.id == product_id:
             raise ManufacturingError("الصنف مايكونش مكوّن في وصفة نفسه.")
         if to_qty(qty) <= to_qty(0):
             raise ManufacturingError("كمية كل مكوّن لازم تكون أكبر من صفر.")
-        # Rejected here rather than at order time: a recipe saved with a unit the item does not
-        # have would fail every order made from it, long after whoever typed it has moved on.
         if unit:
             try:
                 uom_service.resolve_factor(db, comp, unit)
@@ -199,7 +164,6 @@ def create_bom(
     db: Session, *, product_id: int, name: str, output_quantity, components, actor_user_id: int,
     resources=None,
 ) -> Bom:
-    """Create a recipe. Deactivates any prior active recipe for the same product (one active each)."""
     _validate_recipe(db, product_id=product_id, output_quantity=output_quantity,
                      components=components, resources=resources)
     for prior in db.scalars(
@@ -219,7 +183,6 @@ def update_bom(
     db: Session, *, bom_id: int, name: str, output_quantity, components, actor_user_id: int,
     resources=None,
 ) -> Bom:
-    """Replace a recipe's name/output/components/resources in place (recipes are editable)."""
     bom = db.get(Bom, bom_id)
     if bom is None:
         raise ManufacturingError("التركيبة مش موجودة.")
@@ -266,9 +229,6 @@ def active_bom_for(db: Session, product_id: int) -> Bom | None:
     return db.scalar(select(Bom).where(Bom.product_id == product_id, Bom.active.is_(True)))
 
 
-# ---------------------------------------------------------------------------
-# Manufacturing orders — recipe-driven, linked consume + produce (reverse-once).
-# ---------------------------------------------------------------------------
 def create_order(
     db: Session,
     *,
@@ -278,32 +238,15 @@ def create_order(
     location_id: int,
     bom_id: int | None = None,
     actor_user_id: int,
-    components=None,         # (031) explicit [(item_id, quantity)] for انتاج حر; None = use recipe
-    resources=None,          # (014) override list of (kind, name, quantity, rate); None = use recipe
-    wastes=None,             # (014) {component_item_id: waste_quantity} recorded per line
-    production_date=None,    # the day production happened; defaults to today
+    components=None,
+    resources=None,
+    wastes=None,
+    production_date=None,
     branch_id: int | None = None,
-    work_order_ref: str | None = None,   # «امر تشغيل» — the shop-floor docket, free text
+    work_order_ref: str | None = None,
     notes: str | None = None,
-    statement1: str | None = None,       # البيان
+    statement1: str | None = None,
 ) -> ManufacturingOrder:
-    """Consume components and produce the product in one document.
-
-    Components come from the product's recipe, scaled to the quantity produced — unless the caller
-    passes `components`, which is **انتاج حر**: production that happened without a stored recipe, so
-    the person states what actually went in. Same document, same reversal, `bom_id` left NULL
-    because there was no recipe; a fabricated one would be a recipe nobody wrote and everyone
-    would later find in the recipe list.
-
-    Free production is one call on purpose. Consuming raw materials through several requests and
-    producing through another leaves stock spent with nothing made if any of them fails, and that
-    half-state is exactly what a document boundary exists to prevent.
-
-    Inventory routing (014): each component is pulled from its own default warehouse and the product
-    is produced into its default warehouse (falling back to the order's location). Cost = materials
-    (Σ consumed × purchase_price) + resources (labor/machine/overhead: Σ qty × rate). No-negative
-    stock is enforced on every consumption; if any component is short the whole order fails.
-    """
     qty = to_qty(quantity)
     if qty <= to_qty(0):
         raise ManufacturingError("الكمية المنتجة لازم تكون أكبر من صفر.")
@@ -313,8 +256,6 @@ def create_order(
     free = components is not None
     if free:
         bom = None
-        # Stated quantities are what actually went in, so there is nothing to scale — scaling a
-        # figure somebody measured would silently change it.
         scale = None
         comp_rows = [(int(iid), to_qty(q)) for iid, q in components]
         if not comp_rows:
@@ -322,8 +263,6 @@ def create_order(
         if any(q <= to_qty(0) for _, q in comp_rows):
             raise ManufacturingError("كمية المكوّن لازم تكون أكبر من صفر.")
         if len({iid for iid, _ in comp_rows}) != len(comp_rows):
-            # Two rows for one item would each post their own movement and each be reversed, so
-            # the total is right by luck and every per-line reading of it is wrong.
             raise ManufacturingError("الصنف مايتكررش في أمر الإنتاج الحر.")
     else:
         bom = db.get(Bom, bom_id) if bom_id is not None else active_bom_for(db, product_id)
@@ -342,16 +281,12 @@ def create_order(
 
     wastes = wastes or {}
 
-    # الإنتاج في فرع المصنع بس — نفس قيد أوامر التشغيل، والشرح في
-    # `org_service.production_branch_problem`.
     branch_id, problem = org_service.production_branch_problem(
         db, branch_id,
         [location_id] if location_kind == LocationKind.warehouse else [])
     if problem:
         raise ManufacturingError(problem)
 
-    # Defaulted here rather than in the column so an order always carries a real production day —
-    # a NULL would push every report that groups by day into guessing.
     production_date = production_date or date.today()
     order = ManufacturingOrder(
         document_number=_order_doc_number(db), product_id=product_id,
@@ -366,7 +301,6 @@ def create_order(
     db.add(order)
     db.flush()
 
-    # --- Materials: route each component to its own warehouse, consume, cost ---
     material_cost = ZERO
     for comp_item_id, consumed in comp_rows:
         raw = db.get(Item, comp_item_id)
@@ -394,10 +328,7 @@ def create_order(
             )
         )
 
-    # --- Resources: recipe standard (scaled) unless the caller overrides per order ---
     if resources is None:
-        # Free production has no recipe to read a standard off, so an order that states no labour
-        # or machine time costs materials only rather than borrowing another product's figures.
         res_lines = [] if bom is None else [
             (r.kind.value, r.name, to_qty(Decimal(r.quantity) * scale), to_money(r.rate))
             for r in bom.resources
@@ -411,7 +342,6 @@ def create_order(
         order.resources.append(ManufacturingOrderResource(
             kind=kind, name=name, quantity=res_qty, rate=rate, cost=cost))
 
-    # --- Product: produce into its own default warehouse ---
     pk, pid = production.resolve_warehouse(product.default_warehouse_id, location_kind, location_id)
     produced = stock_service.post_movement(
         db, item_id=product_id, location_kind=pk, location_id=pid,
@@ -432,7 +362,7 @@ def create_order(
 
 def list_orders(db: Session):
     return db.scalars(select(ManufacturingOrder).order_by(
-        *newest_first(ManufacturingOrder, ManufacturingOrder.production_date))).all()  # الأحدث فوق
+        *newest_first(ManufacturingOrder, ManufacturingOrder.production_date))).all()
 
 
 def get_order(db: Session, order_id: int) -> ManufacturingOrder | None:
@@ -440,11 +370,6 @@ def get_order(db: Session, order_id: int) -> ManufacturingOrder | None:
 
 
 def reverse_order(db: Session, *, order_id: int, actor_user_id: int) -> ManufacturingOrder:
-    """Mirror every movement of an order (return components to stock, remove product); reverse-once.
-
-    Removing the produced product obeys no-negative-stock — if it was already sold/consumed the
-    reversal fails rather than driving stock negative.
-    """
     original = db.get(ManufacturingOrder, order_id)
     if original is None:
         raise ManufacturingError("أمر التصنيع مش موجود.")
@@ -465,13 +390,11 @@ def reverse_order(db: Session, *, order_id: int, actor_user_id: int) -> Manufact
     )
     db.add(rev)
     db.flush()
-    # Remove the produced product first (fails early if it is no longer in stock).
     product_mirror = stock_service.reverse_movement(
         db, original_id=original.stock_movement_id, actor_user_id=actor_user_id,
         movement_type="reverse_production_in",
     )
     rev.stock_movement_id = product_mirror.id
-    # Return each consumed component to stock.
     for cons in original.consumptions:
         mv = stock_service.reverse_movement(
             db, original_id=cons.stock_movement_id, actor_user_id=actor_user_id,
@@ -490,37 +413,13 @@ def reverse_order(db: Session, *, order_id: int, actor_user_id: int) -> Manufact
     return rev
 
 
-# ---------------------------------------------------------------------------
-# أوامر الشغل المنقولة من a5 — قراءة فقط.
-# ---------------------------------------------------------------------------
-# **٤٬٣٨٩ سطر تصنيع منقولين من مصنع السادات مش باينين في ولا شاشة.** تبويب «أوامر
-# التصنيع» بيقرا `ManufacturingOrder` وحده، والمنقول اتسجّل `ManufacturingOp` لأن أمر a5
-# بيطلّع كذا منتج وأمرنا منتج واحد (الشرح في `scripts/import_a5_manufacturing`). النتيجة
-# إن الرصيد مظبوط بس اللي بيدوّر على أمر شغل رقم ٣٥٣٧ مالقيهوش.
-#
-# الدالة دي بتلمّ السطور دي في شكلها الأصلي — مستند واحد بسطور منتجات وسطور خامات —
-# **من غير ما تكتب صف واحد**. هي المنظر اللي المستند الجديد هيحلّ محلّه، وفي نفس الوقت
-# إثبات إن مفتاح التجميع سليم قبل ما تتنقل الداتا عليه.
 def work_order_ref(document_number: str | None) -> str:
-    """«FC-MFG-3336-001» ← أمر الشغل «FC-MFG-3336» اللي السطر ده جزء منه.
-
-    نفس الاتفاق اللي `import_a5_manufacturing` بيكتب بيه و`lib/reporting._op_batches`
-    بيقراه. مكتوب هنا كدالة عشان اللي هيغيّر المستورد يلاقي القرّاء كلهم بالاسم.
-    """
     num = document_number or ""
     return num.rsplit("-", 1)[0] if "-" in num else num
 
 
 def list_work_orders(db: Session, *, search: str | None = None,
                      date_from=None, date_to=None) -> list[dict]:
-    """أوامر الشغل المنقولة، الأحدث أولاً: ترويسة + سطور منتجات + سطور خامات.
-
-    **مافيش فلوس في الرد.** تصدير a5 (`a5_mfg.tsv`) فيه كمية ومخزن وبس — مافيش عمود
-    تكلفة أصلاً. وحساب «متوسط» النهارده وعرضه على إنتاج حصل من سنة بيبقى رقم يبان صح
-    وتاريخه كداب، فالخانة بترجع فاضية بدل ما تتخمّن.
-
-    والتاريخ من `movement_date` مش من `created_at`: النقل كتب شغل سنة كاملة في يوم واحد.
-    """
     from src.models.stock import StockMovement
     from src.models.warehouse import Warehouse
 
@@ -542,8 +441,6 @@ def list_work_orders(db: Session, *, search: str | None = None,
             "products": [], "materials": [],
             "product_quantity": ZERO, "material_quantity": ZERO,
         })
-        # أقدم تاريخ في المجموعة هو تاريخ الأمر — السطور كلها نفس اليوم في العادي،
-        # والأقدم بيحمي من سطر اتصلّح بعدين فاخد تاريخ تاني.
         if when and (o["date"] is None or when < o["date"]):
             o["date"] = when
         wid = int(op.location_id)

@@ -1,8 +1,3 @@
-"""Point service (T010, +T014/T015/T023/T036 added per phase).
-
-The point ledger is append-only; the customer balance is DERIVED as Σ delta and MAY be negative
-(owed points). All writes go through `_post_record`; corrections are new linked records (Principle IV).
-"""
 from __future__ import annotations
 
 from decimal import Decimal
@@ -28,16 +23,10 @@ class PointError(Exception):
 
 
 def _points(value) -> Decimal:
-    """Points are fractional (v4) — normalise to 3dp Decimal."""
     return Decimal(str(value or 0)).quantize(Decimal("0.001"))
 
 
 def balance(db: Session, customer_id: int, purse: PointPurse | None = None) -> Decimal:
-    """رصيد جيب. `purse=None` مجموع الدفتر كله — مش رصيد أي جيب لوحده.
-
-    مندوبة لـ`points_service` عشان شرط الجيب يفضل مكتوب مرة واحدة: نسختين من نفس
-    الشرط هي بالظبط الطريقة اللي الشاشة بتقول بيها رقم والكشف يقول غيره.
-    """
     from src.services import points_service
 
     return points_service.balance(db, customer_id, purse)
@@ -59,8 +48,6 @@ def _post_record(
     rec = PointRecord(
         customer_id=customer_id,
         kind=kind,
-        # الكسب بيغذّي الجيبين (`both`)، والصرف بيتخصّص — والاشتقاق من النوع عشان
-        # مايبقاش فيه نداء ينسى يحطّ الجيب فيقع السطر في جيب غلط من غير ما حد يشوف.
         purse=PURSE_BY_KIND.get(
             kind.value if hasattr(kind, "value") else str(kind), PointPurse.both),
         delta=_points(delta),
@@ -77,15 +64,11 @@ def _post_record(
 
 
 def _point_value(db: Session, item_id: int) -> Decimal:
-    """Current per-unit point value for a product; 0 if none set (G1 — graceful). Fractional (v4)."""
     ppv = db.scalar(select(ProductPointValue).where(ProductPointValue.item_id == item_id))
     return _points(ppv.point_value) if ppv else _points(0)
 
 
-# --- Earning / reversal (T014/T015), driven by the 002 sale hooks ---
-
 def earn_for_invoice(db: Session, invoice) -> PointRecord | None:
-    """Earn Σ(point value × qty) for a sales invoice. No-op (returns None) if total is 0 (G1)."""
     total = _points(0)
     for line in invoice.lines:
         total += _point_value(db, line.item_id) * Decimal(str(line.quantity))
@@ -107,7 +90,6 @@ def _earn_record_for_invoice(db: Session, invoice_id: int) -> PointRecord | None
 
 
 def reverse_for_return(db: Session, sales_return, invoice) -> PointRecord | None:
-    """Reverse points for the returned quantity (linked to the original earn). FR-004 base path."""
     r = _points(0)
     for line in sales_return.lines:
         r += _point_value(db, line.item_id) * Decimal(str(line.quantity))
@@ -122,9 +104,6 @@ def reverse_for_return(db: Session, sales_return, invoice) -> PointRecord | None
 
 
 def reverse_for_standalone_return(db: Session, sales_return) -> PointRecord | None:
-    """Deduct points for a standalone return (028) — one that has no originating invoice, so there
-    is no earn record to link back to. Mirrors `reverse_for_return` but keyed to the return's own
-    customer + priced lines."""
     r = _points(0)
     for line in sales_return.lines:
         r += _point_value(db, line.item_id) * Decimal(str(line.quantity))
@@ -138,9 +117,6 @@ def reverse_for_standalone_return(db: Session, sales_return) -> PointRecord | No
 
 
 def reconcile_return(db: Session, customer_id: int, sales_return_id: int) -> None:
-    """Q3 hybrid (T036): if the reversal drove the balance negative because points were already
-    consumed, void unredeemed coupons to reclaim points. Any residual negative is owed points from
-    already-redeemed coupons and stands (settled against future earnings). Never blocks the return."""
     if balance(db, customer_id) >= 0:
         return
     issued = db.scalars(
@@ -160,20 +136,14 @@ def reconcile_return(db: Session, customer_id: int, sales_return_id: int) -> Non
         )
 
 
-# --- Conversion (T023): whole coupons only ---
-
 def _next_serial(db: Session) -> str:
     n = db.scalar(select(func.count()).select_from(Coupon)) or 0
     return f"CPN-{n + 1:08d}"
 
 
 def convert(db: Session, *, customer_id: int, coupon_type_ids: list[int], actor_user_id: int) -> list[Coupon]:
-    """Convert points into coupons (one per listed type). Whole coupons only; reject if a type's
-    point cost exceeds the remaining available balance (FR-007/008)."""
     if not coupon_type_ids:
         raise PointError("اختار نوع كوبون واحد على الأقل.")
-    # **من جيب الكوبونات وحده.** رصيد المعاينات بتاع نفس التاجر مش مصروف هنا،
-    # ولو حسبناه معاه يبقى التاجر بياخد كوبونات بنقط اتخصمت أصلاً في معاينة.
     available = balance(db, customer_id, PointPurse.coupon)
     conversion = PointConversion(customer_id=customer_id, actor_user_id=actor_user_id)
     db.add(conversion)

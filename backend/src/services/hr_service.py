@@ -1,7 +1,3 @@
-"""الأقسام ونهاية الخدمة — خدمة الموارد البشرية (HR-1).
-
-Plain module functions, `db.flush()` only — the router commits. Every write is audited.
-"""
 from __future__ import annotations
 
 from datetime import date
@@ -16,19 +12,10 @@ from src.services import audit_service, numbering
 
 
 class HrError(Exception):
-    """الطلب مايتعملش زي ما هو مكتوب."""
-
-
-# ------------------------------------------------------------------ الأقسام
+    pass
 
 
 def _assert_no_cycle(db: Session, *, department_id: int, parent_id: int | None) -> None:
-    """قسم مايبقاش تحت نفسه.
-
-    A department pointed at its own descendant makes the tree a ring, and every walk over it —
-    the org chart, the cost roll-up, the report grouping — runs forever. Cheaper to refuse here
-    than to discover it when a report hangs.
-    """
     seen = {department_id}
     cursor = parent_id
     while cursor is not None:
@@ -127,12 +114,6 @@ def update_department(db: Session, *, department_id: int, actor_user_id: int, **
 
 
 def deactivate_department(db: Session, *, department_id: int, actor_user_id: int) -> Department:
-    """بيتقفل، مابيتمسحش — الاسم لازم يفضل مقروء على كل موظف مربوط بيه.
-
-    A department with people still in it stays refused rather than quietly orphaning them: an
-    employee whose department is deactivated under him disappears from every grouped report at once
-    and nobody is told why.
-    """
     dept = db.get(Department, department_id)
     if dept is None:
         raise HrError("القسم غير موجود.")
@@ -155,12 +136,6 @@ def deactivate_department(db: Session, *, department_id: int, actor_user_id: int
 
 
 def import_departments_from_employees(db: Session, *, actor_user_id: int) -> dict:
-    """بيحوّل نص «القسم» القديم لأقسام حقيقية ويربط الموظفين بيها.
-
-    An explicit endpoint somebody runs and reads the result of — NOT startup magic. The startup
-    hooks in `main.py` swallow their failures at info level, and a half-applied mapping of the
-    whole payroll is exactly the kind of thing that must not fail quietly.
-    """
     rows = db.scalars(select(Employee)).all()
     existing = {d.name: d for d in db.scalars(select(Department)).all()}
     created, linked = 0, 0
@@ -186,11 +161,6 @@ def import_departments_from_employees(db: Session, *, actor_user_id: int) -> dic
     return {"created": created, "linked": linked, "employees": len(rows)}
 
 
-# ------------------------------------------------------------- الحذف النهائي
-
-#: أسامي الجداول اللي بتشاور على موظف أو قسم، بالعربي — الرسالة بتتقري من مدير الموارد البشرية
-#: مش من المبرمج، و«payroll_line.employee_id: 12» مالهاش معنى عنده. أي جدول مش هنا بيظهر
-#: باسمه الخام بدل ما يتنسي — الأمان قبل الشكل.
 _REF_LABELS: dict[tuple[str, str], str] = {
     ("employee", "department_id"): "موظف",
     ("department", "parent_id"): "قسم فرعي",
@@ -210,11 +180,6 @@ _REF_LABELS: dict[tuple[str, str], str] = {
 
 
 def _blockers(db: Session, referred_table: str, row_id: int) -> list[str]:
-    """كل صف في القاعدة بيشاور على الصف ده، معدود ومتسمّي.
-
-    بيتقري من القاعدة نفسها (زي مسح المستخدم والمخزن) مش من قايمة مكتوبة بالإيد — جدول يتضاف
-    بكرة ويشاور على الموظف لازم يمنع المسح من غير ما حد يفتكر يحدّث القايمة.
-    """
     from sqlalchemy import inspect as sa_inspect
     from sqlalchemy import text
 
@@ -233,12 +198,6 @@ def _blockers(db: Session, referred_table: str, row_id: int) -> list[str]:
 
 
 def delete_department(db: Session, *, department_id: int, actor_user_id: int) -> None:
-    """مسح نهائي — **للغلط في الإدخال بس**: قسم اتعمل بالخطأ أو مكرر ومحدش اتربط بيه.
-
-    أي موظف (حتى الموقوف)، أو قسم فرعي، أو سطر مسير اتحسب على القسم — بيمنع المسح. الموظف
-    الموقوف لسه اسمه على مسيرات قديمة وتقاريرها بتتجمّع بقسمه؛ مسح القسم من تحته بيخلّي التقرير
-    يقول «بدون قسم» عن ناس كانوا في قسم. والصح ساعتها «إقفال»: بيشيله من القوايم ويسيب التاريخ.
-    """
     dept = db.get(Department, department_id)
     if dept is None:
         raise HrError("القسم غير موجود.")
@@ -256,18 +215,9 @@ def delete_department(db: Session, *, department_id: int, actor_user_id: int) ->
 
 
 def delete_employee(db: Session, *, employee: Employee, actor_user_id: int) -> None:
-    """مسح نهائي للموظف — **للغلط في الإدخال بس**: كارت مكرر أو اتعمل بالخطأ ومالوش تاريخ.
-
-    موظف عليه مسير أو سلفة أو حضور أو أجازة اسمه جزء من دفاتر الشركة؛ مسحه بيسيب قسايم
-    مرتبات بتشاور على حد مش موجود. ولو مربوط بحساب دخول فهو مندوب أو مستخدم شغّال، وحساب
-    الذمة بتاعه عليه قيود. كل ده بيرفض بالأرقام، والصح ساعتها «إيقاف».
-    """
     found = _blockers(db, "employee", employee.id)
     if employee.user_id is not None:
         found.insert(0, "حساب دخول (مستخدم أو مندوب)")
-    # حساب الذمة **بيمنع بس لو عليه حركة.** موظفين a5 كلهم ليهم حساب ذمة اتعمل مع النقل حتى لو
-    # عمره ما اتقيد عليه حاجة، فكان المسح بيترفض لكل موظف منقول (٢٠٢٦-١٠-٠٨). الحساب الفاضي
-    # بيتفك من الموظف ويفضل في الشجرة — مزامنة a5 بتشاور عليه بكوده.
     if employee.receivable_account_id is not None:
         from sqlalchemy import func as _f
         from sqlalchemy import select as _sel
@@ -290,9 +240,6 @@ def delete_employee(db: Session, *, employee: Employee, actor_user_id: int) -> N
     db.flush()
 
 
-# ----------------------------------------------------------- نهاية الخدمة
-
-
 def terminate(
     db: Session,
     *,
@@ -304,11 +251,6 @@ def terminate(
     reason: str | None = None,
     settlement_amount=None,
 ) -> EmployeeTermination:
-    """بيسجّل نهاية الخدمة وبيوقف الموظف.
-
-    Two things, one act. Recording the leaving date without deactivating leaves someone on next
-    month's payroll; deactivating without the date leaves «مين مشي الشهر ده» unanswerable.
-    """
     emp = db.get(Employee, employee_id)
     if emp is None:
         raise HrError("الموظف غير موجود.")
@@ -337,7 +279,6 @@ def terminate(
 
 
 def reinstate(db: Session, *, employee_id: int, actor_user_id: int) -> Employee:
-    """بيلغي نهاية خدمة اتسجّلت بالغلط ويرجّع الموظف نشط."""
     emp = db.get(Employee, employee_id)
     if emp is None:
         raise HrError("الموظف غير موجود.")

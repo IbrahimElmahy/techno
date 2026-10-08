@@ -1,14 +1,3 @@
-"""زرار «السجل» على المستند — كل اللي حصل عليه ونسخته في كل مرة (٢٠٢٦-١٠-٠٦).
-
-النسخ بتتكتب من `core/document_versions.py`. هنا القراية بس:
-
-* `GET /document-versions?entity_type&entity_id` — القايمة من الأقدم للأحدث، من غير الشكل نفسه
-  (الشكل ممكن يبقى كبير، والقايمة بتتعرض كلها مرة واحدة).
-* `GET /document-versions/{id}` — نسخة واحدة بشكلها، ومعاها النسخة اللي قبلها عشان الشاشة تلوّن
-  اللي اتغيّر.
-
-الصلاحية `audit.read` — نفس شاشة سجل النظام.
-"""
 from __future__ import annotations
 
 from datetime import datetime

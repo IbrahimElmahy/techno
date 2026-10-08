@@ -1,14 +1,8 @@
-/**
- * جزء من شاشة الأستاذ العام — اتفصل عن `GeneralLedger.tsx` لما الملف وصل ١٤٠٠ سطر
- * وخمس تبويبات. الشاشة والمسار زي ما هما بالظبط؛ اللي اتغيّر هو إن كل تبويب بقى
- * ملف لوحده، فالتعديل في «الدفاتر» مابيفتحش «ميزان المراجعة» قدامك.
- */
 import React, { useEffect, useMemo, useState } from 'react';
 import { searchFilter, searchRank } from '../../utils/arabicSort';
 import {
   Button, Card, Col, DatePicker, Divider, Empty, Form, Input, Row, Select, Space, Switch, Tabs, Tag, Tooltip, message, Radio,
 } from 'antd';
-// فلتر على كل عمود — شوف `FilterTable`.
 import { FilterTable as Table } from '../../components/FilterTable';
 import { Statistic } from '../../components/Statistic';
 import { InputNumber } from '../../components/NumberInput';
@@ -119,8 +113,6 @@ export default function ChartTab() {
       render: (b: string) => <strong>{egp(b)}</strong> },
   ];
 
-  // الجدول شجرة، فـ`filter.filtered` فيه الجذور بس والفروع جوّاها — الملف لازم ينزل كل الحسابات
-  // اللي الفلتر سابها زي ما الـCSV بينزّلها.
   const chartTabCols = useTableColumns('gl-chart', columns, {
     export: { name: 'دليل الحسابات', rows: filter.filtered.flatMap(flatten) },
   });

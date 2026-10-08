@@ -1,32 +1,23 @@
-"""Model package — import all models so metadata is fully populated."""
 from src.models.audit import AuditLogEntry
-from src.models.a5_link import A5ItemLink  # noqa: E402 — ربط أصناف a5 قبل التوحيد
-from src.models.document_version import DocumentVersion  # noqa: E402 — نسخ المستندات لزرار «السجل»
+from src.models.a5_link import A5ItemLink  # noqa: E402
+from src.models.document_version import DocumentVersion  # noqa: E402
 from src.models.bom import Bom, BomComponent, BomResource  # noqa: E402
 from src.models.catalog import Item, ItemPrice, ItemSerial, ItemUnit
 from src.models.contact import ContactPhone  # noqa: E402
 
-# Cost Centers (006) — analytical dimension.
 from src.models.cost_center import CostCenter  # noqa: E402
 from src.models.customer import Customer, CustomerAccount, CustomerExternalRef
 
-# Site inspections / معاينات (015-inspections-mobile).
 from src.models.inspection import Inspection, InspectionItem  # noqa: E402
 from src.models.inspection_item_type import InspectionItemType  # noqa: E402
-# التوزيع التحليلي — السطر على أكتر من مركز تكلفة.
 from src.models.analytic import LedgerLineDistribution  # noqa: E402
-# إعدادات المحاسبة — أقفال التواريخ (المرحلة ٤ — موديل أودو).
 from src.models.accounting_setting import AccountingSetting  # noqa: E402
-# إعدادات قائمة الدخل بشكل ورقة العميل (فئات المبيعات، بنود المصروفات، نموذج الكوبونات).
-from src.models import income_statement_setting  # noqa: E402,F401 — create_all
-# دفاتر اليومية (المرحلة ١ — موديل أودو).
+from src.models import income_statement_setting  # noqa: E402,F401
 from src.models.journal import Journal, JournalSequence  # noqa: E402
 from src.models.ledger import Account, LedgerEntry, LedgerLine
 
-# Settings → configurable dropdown lists (013).
 from src.models.lookup import LookupOption  # noqa: E402
 
-# After-Sales Loyalty (003) models.
 from src.models.loyalty import (  # noqa: E402
     Coupon,
     CouponRedemption,
@@ -41,7 +32,6 @@ from src.models.manufacturing import (  # noqa: E402
     ManufacturingOrderConsumption,
     ManufacturingOrderResource,
 )
-# التسوية (المرحلة ٣ — موديل أودو).
 from src.models.reconcile import FullReconcile, PartialReconcile  # noqa: E402
 from src.models.org import Branch, Governorate, HeadOffice, Territory
 from src.models.purchasing import (  # noqa: E402
@@ -62,9 +52,8 @@ from src.models.sales_expense import SalesInvoiceExpense  # noqa: E402
 from src.models.stock import StockLocator, StockMovement, StockSetting  # noqa: E402
 from src.models.stock_permit import StockPermit, StockPermitLine  # noqa: E402
 from src.models.voucher_key import VoucherKey  # noqa: E402
-from src.models.party_link import PartyGroup, PartyGroupMember  # noqa: E402,F401 — الأطراف المرتبطة
+from src.models.party_link import PartyGroup, PartyGroupMember  # noqa: E402,F401
 
-# Sales & Inventory (002) models — imported for metadata; added per phase.
 from src.models.supplier import Supplier, SupplierAccount  # noqa: E402
 from src.models.trade_order import TradeOrder, TradeOrderLine  # noqa: E402
 from src.models.transfer import StockTransfer  # noqa: E402
@@ -75,7 +64,6 @@ from src.models.commission import CommissionRule  # noqa: E402
 from src.models.treasury import PeriodLock, Treasury  # noqa: E402
 from src.models.voucher import Voucher  # noqa: E402
 from src.models.coupon_receipt import CouponReceipt, CouponReceiptLine  # noqa: E402
-# عهدة الكوبونات — دفاتر مرقّمة في إيد المندوب.
 from src.models.coupon_custody import CouponCustody, CouponCustodySerial  # noqa: E402
 from src.models.permission import RoleCapability  # noqa: E402
 from src.models.account_routing import AccountRouting  # noqa: E402
@@ -83,14 +71,13 @@ from src.models.employee import Employee, JobTitle  # noqa: E402
 from src.models.fixed_asset import DepreciationRecord, FixedAsset  # noqa: E402
 from src.models.wastage import WastageDocument  # noqa: E402
 from src.models.attachment import InspectionAttachment  # noqa: E402
-# مرفقات أي مستند — جدول واحد بمفتاح (نوع، رقم).
 from src.models.document_attachment import DocumentAttachment  # noqa: E402
 from src.models.hr_org import Department, EmployeeTermination  # noqa: E402
 from src.models.hr_leave import LeaveEntitlement, LeaveRequest, LeaveType  # noqa: E402
 from src.models.hr_payroll_run import (  # noqa: E402
     PayrollLine, PayrollLineDetail, PayrollRemittance, PayrollRun,
 )
-from src.models import hr_payroll_sheet  # noqa: E402,F401 — شيت ومجموعات المرتبات (create_all)
+from src.models import hr_payroll_sheet  # noqa: E402,F401
 from src.models.hr_advance import (  # noqa: E402
     EmployeeAdvance, EmployeeAdvanceInstalment, PayrollAdjustment,
 )
@@ -104,7 +91,7 @@ from src.models.hr_attendance import (  # noqa: E402
 from src.models.owner import Owner  # noqa: E402
 from src.models.draft import DocumentDraft  # noqa: E402
 from src.models import fleet  # noqa: E402,F401
-from src.models import hr_commission  # noqa: E402,F401 — جداول إعدادات العمولات (create_all)
+from src.models import hr_commission  # noqa: E402,F401
 from src.models import period_closing  # noqa: E402,F401
 
 __all__ = [

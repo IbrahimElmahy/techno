@@ -1,15 +1,3 @@
-"""طلبات البيع والشراء — B9.
-
-An order is what exists *before* the trade: a customer asks for goods, or the company asks a
-supplier for them. Nothing has happened yet — no stock has moved, no money is owed, nothing is
-reserved. That is the whole point of keeping it separate from the invoice: an order can be
-written for stock that has not arrived, and quoted for a customer who may never confirm, without
-any of it touching the balances.
-
-The one thing it must not do is turn into two invoices. `converted_invoice_id` is what makes the
-conversion a one-way door: once an order names its invoice, a second attempt is refused rather
-than quietly doubling the sale.
-"""
 from __future__ import annotations
 
 import enum
@@ -23,14 +11,14 @@ from src.core.money import FACTOR, MONEY, QTY
 
 
 class OrderKind(str, enum.Enum):
-    sale = "sale"          # طلب بيع (عرض سعر / أمر عميل)
-    purchase = "purchase"  # طلب شراء (أمر توريد)
+    sale = "sale"
+    purchase = "purchase"
 
 
 class OrderStatus(str, enum.Enum):
-    open = "open"            # مفتوح
-    converted = "converted"  # اتحوّل لفاتورة
-    cancelled = "cancelled"  # ملغي
+    open = "open"
+    converted = "converted"
+    cancelled = "cancelled"
 
 
 class TradeOrder(Base):
@@ -47,21 +35,15 @@ class TradeOrder(Base):
     supplier_id: Mapped[int | None] = mapped_column(ForeignKey("supplier.id"), nullable=True,
                                                     index=True)
     order_date: Mapped[date | None] = mapped_column(Date, nullable=True)
-    # When the customer expects it / when the supplier promised it.
     due_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     warehouse_id: Mapped[int | None] = mapped_column(ForeignKey("warehouse.id"), nullable=True)
     branch_id: Mapped[int | None] = mapped_column(ForeignKey("branch.id"), nullable=True)
-    # الإجمالي قبل خصم المستند — عشان الورقة تقدر تعرض السُلّم كامل زي الفاتورة، مش الصافي بس.
     gross: Mapped[object] = mapped_column(MONEY, nullable=False, default=0)
-    # خصم على إجمالي الورقة، زيادة على خصم كل سطر. نفس اسم الحقل اللي على الفاتورة والمردود.
     variable_discount_pct: Mapped[object] = mapped_column(MONEY, nullable=False, default=0)
     total: Mapped[object] = mapped_column(MONEY, nullable=False, default=0)
     notes: Mapped[str | None] = mapped_column(String(500), nullable=True)
-    # البيان — الكلام اللي بيتطبع على الورقة ويتدوّر بيه في السجل. غير `notes` الداخلية،
-    # ونفس الخانة اللي على الفواتير وباقي المستندات.
     statement1: Mapped[str | None] = mapped_column(String(200), nullable=True)
 
-    # The invoice this order became. Set once; a second conversion is refused.
     converted_invoice_id: Mapped[int | None] = mapped_column(nullable=True)
     converted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
@@ -70,9 +52,9 @@ class TradeOrder(Base):
         DateTime, server_default=func.now(), nullable=False
     )
 
-    lines: Mapped[list["TradeOrderLine"]] = relationship(  # noqa: UP037 — SQLAlchemy forward ref
+    lines: Mapped[list["TradeOrderLine"]] = relationship(  # noqa: UP037
         back_populates="order", cascade="all, delete-orphan",
-        order_by="TradeOrderLine.id",  # ترتيب الإدخال — زي سطور الفاتورة
+        order_by="TradeOrderLine.id",
     )
 
 
@@ -85,11 +67,8 @@ class TradeOrderLine(Base):
     item_id: Mapped[int] = mapped_column(ForeignKey("item.id"), nullable=False, index=True)
     quantity: Mapped[object] = mapped_column(QTY, nullable=False)
     unit_price: Mapped[object] = mapped_column(MONEY, nullable=False, default=0)
-    # (008) الوحدة اللي السعر متقال بيها — نفس سطر الفاتورة بالظبط. `None` = الوحدة الأساسية.
     unit: Mapped[str | None] = mapped_column(String(16), nullable=True)
     unit_factor: Mapped[object | None] = mapped_column(FACTOR, nullable=True)
-    # (027) خصم السطر. الورقة اللي بتتسعّر عليها بتتسعّر بخصوماتها، وإلا الرقم اللي اتعرض
-    # على العميل مش هو الرقم اللي في الورقة.
     discount_pct: Mapped[object | None] = mapped_column(MONEY, nullable=True)
     line_total: Mapped[object] = mapped_column(MONEY, nullable=False, default=0)
     notes: Mapped[str | None] = mapped_column(String(240), nullable=True)

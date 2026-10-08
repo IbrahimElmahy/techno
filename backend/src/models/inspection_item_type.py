@@ -1,9 +1,3 @@
-"""Inspection point-items (أصناف المعاينة) — 023.
-
-The fitting types a rep records during a معاينة to compute loyalty points (from «حساب نقاط»),
-distinct from the sellable products in the catalog. Points are stored at 4 decimals so the
-fractional sixths (1/6, 1/3, …) total cleanly.
-"""
 from __future__ import annotations
 
 from sqlalchemy import Boolean, Integer, Numeric, String

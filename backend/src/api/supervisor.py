@@ -1,26 +1,3 @@
-"""«مشرف المناديب» — متابعة شغل مجموعة مناديب من التطبيق (٢٠٢٦-١٠-٠٦).
-
-المشرف مابيبيعش ومابيحصّلش — بيتفرّج. الشاشة بتاعته في التطبيق بتسأل تلات أسئلة:
-
-* **المناديب بتوعي عملوا إيه في الفترة دي؟** (`/overview`) — مبيعات ومرتجعات وتحصيلات
-  ومديونية عملاء كل مندوب، بأرقام مجمّعة في القاعدة (استعلام لكل رقم، مش لكل مندوب).
-* **المندوب ده عمل إيه بالظبط؟** (`/reps/{id}/activity`) — كل مستنداته في قايمة واحدة.
-* **المستند ده فيه إيه؟** (`/reps/{id}/documents/{kind}/{doc_id}`) — السطور.
-
-**مين يشوف مين:** مشرف المناديب بيشوف المناديب اللي `supervisor_id` بتاعهم = هو، وبس —
-مهما كان فرعه. مدير النظام والمالك ومدير المبيعات ومدير الفرع بيشوفوا كل المناديب
-النشطين في نطاق فروعهم المعتاد. أي مندوب بره النطاق = ٤٠٤ (مش ٤٠٣: «موجود بس مش ليك»
-بتقول إن الرقم ده لمندوب، وده نفسه معلومة).
-
-**التعريفات مش جديدة** — كل رقم هنا نفس رقم الشاشة اللي بتجاوب نفس السؤال:
-
-* المبيعات = `/sales/summary` (فواتير البيع من `_sales_list_stmt` بتاريخ الفاتورة، والبونص بره).
-* المرتجعات = `/sales/summary` (اللي ليها عميل ومش ملغية، بساعة التسجيل).
-* التحصيلات = `/sales/receipts-log` (النقدي على الفاتورة + سندات القبض من العملاء).
-* مديونية العملاء = `/customers/debts` لمندوب (المدينين بس، الرصيد الحالي مش رصيد الفترة).
-
-قراءة بس — مافيش ولا كتابة في الملف ده.
-"""
 from __future__ import annotations
 
 from datetime import date, datetime
@@ -51,7 +28,6 @@ from src.services.rep_store_service import rep_store
 
 router = APIRouter(tags=["supervisor"], prefix="/supervisor")
 
-#: الأدوار اللي بتشوف كل مناديب نطاقها من غير ما يتسجّلوا مشرفين عليهم.
 _MANAGER_ROLES = {RoleName.sales_manager, RoleName.branch_manager}
 
 KINDS = ("sales", "returns", "collections", "transfers", "coupons", "inspections")
@@ -73,12 +49,6 @@ def _not_found(message: str = "المندوب غير موجود.") -> HTTPExcept
 
 
 def _gate(current: CurrentUser = Depends(get_current_user)) -> CurrentUser:
-    """مين يفتح مسارات المشرف أصلاً.
-
-    مشرف المناديب بصلاحية `app.supervisor` (اللي ممكن تتشال منه من شاشة الصلاحيات).
-    والمديرين بـ`sales.read` — بيشوفوا المبيعات كلها من الشاشات التانية أصلاً، فالمسار ده
-    مابيوسّعش عليهم حاجة. أي دور تاني (المندوب نفسه، المحاسب...) مالوش شاشة مشرف.
-    """
     if current.role == RoleName.rep_supervisor:
         if current.can(CAP_APP_SUPERVISOR):
             return current
@@ -90,11 +60,6 @@ def _gate(current: CurrentUser = Depends(get_current_user)) -> CurrentUser:
 
 
 def _doc_view(current: CurrentUser) -> CurrentUser:
-    """الهوية اللي المستندات بتتفلتر بيها.
-
-    المشرف للفرع بتاعه بس (٢٠٢٦-١٠-٠٦): مناديبه من فرعه، ومستنداتهم بتتفلتر بفرعه زي
-    المديرين — فمستند في فرع تاني مابيبانش له حتى لو المندوب نفسه.
-    """
     return current
 
 
@@ -106,14 +71,12 @@ def _reps_stmt(db: Session, current: CurrentUser, *, include_inactive: bool = Fa
     if not include_inactive:
         stmt = stmt.where(User.active.is_(True))
     if current.role == RoleName.rep_supervisor:
-        # مناديبه **في فرعه** بس (٢٠٢٦-١٠-٠٦) — ومشرف من غير فرع مابيشوفش حد.
         return stmt.where(User.supervisor_id == current.id,
                           User.branch_id == current.branch_id)
     return branch_scope.scope(stmt, User, current)
 
 
 def _rep_or_404(db: Session, current: CurrentUser, rep_id: int) -> User:
-    # المعطّل بيتفتح هنا (مش في الملخّص): مندوب اتوقف النهارده شغله لسه بيتراجع.
     stmt = _reps_stmt(db, current, include_inactive=True)
     rep = db.scalar(stmt.where(User.id == rep_id)) if stmt is not None else None
     if rep is None:
@@ -145,15 +108,9 @@ def _range(date_from: date | None, date_to: date | None) -> tuple[date, date]:
 
 
 def _voucher_rep():
-    """مندوب سند القبض — نفس قاعدة `/sales/receipts-log`: `rep_user_id`، ولو فاضي والسند
-    جاي من التطبيق (`client_uuid`) فاللي كتبه هو المندوب."""
     return func.coalesce(Voucher.rep_user_id,
                          case((Voucher.client_uuid.is_not(None), Voucher.actor_user_id)))
 
-
-# ======================================================================
-# المرشحات — مكان واحد للملخّص وللسجل، عشان العدّ في الاتنين يبقى واحد
-# ======================================================================
 
 def _sales_stmt(view: CurrentUser, d1: date, d2: date, *, kind: str | None):
     from src.api.sales import _sales_list_stmt
@@ -162,7 +119,6 @@ def _sales_stmt(view: CurrentUser, d1: date, d2: date, *, kind: str | None):
 
 
 def _returns_stmt(view: CurrentUser, d1: date, d2: date, *, all_states: bool = False):
-    """نفس مرتجعات `/sales/summary`: بساعة التسجيل، واللي ليها عميل ومش ملغية."""
     stmt = branch_scope.scope(select(SalesReturn), SalesReturn, view).where(
         SalesReturn.created_at >= clock.day_start_utc(d1),
         SalesReturn.created_at < clock.day_end_utc(d2))
@@ -176,7 +132,6 @@ def _inv_day():
 
 
 def _cash_invoices_stmt(view: CurrentUser, d1: date, d2: date):
-    """النقدي اللي اندفع مع الفاتورة — نفس `/sales/receipts-log`."""
     day = _inv_day()
     return branch_scope.scope(select(SalesInvoice), SalesInvoice, view).where(
         SalesInvoice.cash_amount > 0,
@@ -185,7 +140,6 @@ def _cash_invoices_stmt(view: CurrentUser, d1: date, d2: date):
 
 
 def _receipts_stmt(view: CurrentUser, d1: date, d2: date):
-    """سندات القبض من العملاء — نفس `/sales/receipts-log`."""
     return branch_scope.scope(select(Voucher), Voucher, view).where(
         Voucher.kind == VoucherKind.receipt, Voucher.customer_id.is_not(None),
         Voucher.voucher_date >= d1, Voucher.voucher_date <= d2)
@@ -196,7 +150,6 @@ def _transfer_day():
 
 
 def _transfers_stmt(db: Session, view: CurrentUser, rep_id: int, d1: date, d2: date):
-    """تحويلات المندوب: اللي طلبها، أو اللي خرجت من مكان بضاعته أو دخلته."""
     conds = [StockTransfer.initiated_by == rep_id]
     store = rep_store(db, rep_id)
     if store is not None:
@@ -214,10 +167,6 @@ def _coupon_day():
     return func.coalesce(CouponReceipt.received_date, cast(CouponReceipt.created_at, Date))
 
 
-# ======================================================================
-# الملخّص
-# ======================================================================
-
 @router.get("/overview", response_model=dict)
 def overview(
     date_from: date | None = Query(None),
@@ -225,7 +174,6 @@ def overview(
     current: CurrentUser = Depends(_gate),
     db: Session = Depends(get_db),
 ) -> dict:
-    """أرقام كل مندوب في الفترة — كل رقم باستعلام مجمّع واحد لكل المناديب."""
     from src.api.customers import _scope_filter
     from src.services import customer_profile_service
 
@@ -244,7 +192,6 @@ def overview(
     last: dict[int, datetime] = {}
 
     if ids:
-        # المبيعات — بونص بره زي `/sales/summary`.
         s = _sales_stmt(view, d1, d2, kind="sale").where(SalesInvoice.rep_id.in_(ids)).subquery()
         for rid, n, total in db.execute(
                 select(s.c.rep_id, func.count(), func.coalesce(func.sum(s.c.net), 0))
@@ -272,7 +219,6 @@ def overview(
             coll_n[rid] = coll_n.get(rid, 0) + int(n or 0)
             coll_s[rid] = coll_s.get(rid, zero) + Decimal(str(total or 0))
 
-        # مديونية العملاء — نفس `/customers/debts` (المدينين بس، والمالك بره، والمدموج بره).
         base = customer_profile_service.apply_filters(
             _scope_filter(select(Customer.id, Customer.rep_id), view)
         ).where(Customer.customer_type != "owner", Customer.rep_id.in_(ids)).subquery()
@@ -285,7 +231,6 @@ def overview(
                 .group_by(base.c.rep_id)).all():
             cust[rid] = (int(n or 0), Decimal(str(debt or 0)))
 
-        # آخر حركة — من غير فترة: «المندوب ده آخر مرة اشتغل امتى».
         for col, created in (
             (SalesInvoice.rep_id, SalesInvoice.created_at),
             (SalesReturn.rep_id, SalesReturn.created_at),
@@ -323,7 +268,6 @@ def overview(
             "customers_count": cn, "customers_debt": _money(cd),
             "last_activity_at": _iso(last.get(rep.id)),
         })
-    # الأكتر شغلاً فوق، والمتساويين بالاسم.
     out_reps.sort(key=lambda x: (-Decimal(x["net"]), x["full_name"]))
 
     return {
@@ -340,10 +284,6 @@ def overview(
         "reps": out_reps,
     }
 
-
-# ======================================================================
-# سجل المندوب
-# ======================================================================
 
 def _item(kind: str, *, id: int, document_number: str | None, date_: str | None,
           created_at: datetime | None, party_name: str | None = None,
@@ -380,8 +320,6 @@ def _join(*parts) -> str | None:
 
 
 class _Location:
-    """اسم المكان: المخزن باسمه، والعهدة باسم المندوب اللي شايلها."""
-
     def __init__(self, db: Session):
         self.db = db
         self._wh: dict[int, str] | None = None
@@ -481,7 +419,6 @@ def _transfer_items(db: Session, rows: list[StockTransfer]) -> list[dict]:
         note=_join(f"من {loc(t.source_location_kind, t.source_location_id) or '—'} "
                    f"إلى {loc(t.dest_location_kind, t.dest_location_id) or '—'}",
                    t.statement1, t.reject_reason),
-        # الإذن القديم صنف واحد على المستند نفسه من غير سطور.
         lines_count=lines.get(t.id) or (1 if t.item_id else 0),
     ) for t in rows]
 
@@ -498,7 +435,6 @@ def _coupon_items(db: Session, rows: list[CouponReceipt]) -> list[dict]:
             note=_join(f"{r.coupon_count or 0} كوبون", r.declared_kind, r.notes),
             lines_count=lines.get(r.id, 0),
         )
-        # الكوبونات عدد مش فلوس — بيترجع رقم صحيح من غير كسور.
         item["amount"] = str(int(r.coupon_count or 0))
         out.append(item)
     return out
@@ -519,18 +455,14 @@ def _inspection_items(db: Session, rows: list[Inspection]) -> list[dict]:
                        r.purchase_shop),
             lines_count=lines.get(r.id, 0),
         )
-        # النقط مش فلوس — بتترجع زي ما هي (ممكن كسور: «٦ قطع = نقطة»).
         item["amount"] = str(r.total_points if r.total_points is not None else 0)
         out.append(item)
     return out
 
 
 def _sources(db: Session, view: CurrentUser, rep_id: int, d1: date, d2: date, kinds):
-    """(الاستعلام، ترتيبه، المحوّل) لكل مصدر — التحصيلات مصدرين (فاتورة + سند)."""
     out = []
     if "sales" in kinds:
-        # البونص جوّه السجل (بعلامة «بونص») — المشرف بيشوف كل اللي المندوب عمله، والملخّص
-        # بس هو اللي بيستبعده من رقم المبيعات.
         out.append((_sales_stmt(view, d1, d2, kind=None).where(SalesInvoice.rep_id == rep_id),
                     (_inv_day().desc(), SalesInvoice.created_at.desc(), SalesInvoice.id.desc()),
                     _sales_items))
@@ -580,7 +512,6 @@ def rep_activity(
     current: CurrentUser = Depends(_gate),
     db: Session = Depends(get_db),
 ) -> dict:
-    """كل مستندات المندوب في الفترة — نوع واحد أو الكل مدموجين، الأحدث فوق."""
     if kind != "all" and kind not in KINDS:
         raise HTTPException(422, {"code": "validation",
                                   "message": f"النوع لازم يبقى all أو واحد من: {', '.join(KINDS)}"})
@@ -589,8 +520,6 @@ def rep_activity(
     view = _doc_view(current)
     kinds = KINDS if kind == "all" else (kind,)
 
-    # كل مصدر بيتعدّ لوحده، وبيتجاب منه أول (offset+limit) بس — الدمج والقص بعدها.
-    # الصفحة رقم ن من الكل لازم تبقى جوّه أول (offset+limit) من كل مصدر، فده كفاية وصح.
     total = 0
     items: list[dict] = []
     want = offset + limit
@@ -607,10 +536,6 @@ def rep_activity(
         "items": items[offset:offset + limit],
     }
 
-
-# ======================================================================
-# تفاصيل مستند
-# ======================================================================
 
 def _item_info(db: Session, ids) -> dict[int, tuple[str, str]]:
     ids = {i for i in ids if i}
@@ -640,7 +565,6 @@ def rep_document(
     current: CurrentUser = Depends(_gate),
     db: Session = Depends(get_db),
 ) -> dict:
-    """سطور مستند واحد للمندوب — ٤٠٤ لو المستند مش بتاعه أو بره نطاق اللي بيسأل."""
     if kind not in DETAIL_KINDS:
         raise _not_found("التفاصيل للمبيعات والمرتجعات والتحويلات بس.")
     rep = _rep_or_404(db, current, rep_id)
@@ -665,7 +589,7 @@ def rep_document(
         info = _item_info(db, (ln.item_id for ln in rows))
         lines = [_line(info, ln.item_id, ln.quantity, ln.unit, ln.unit_price, ln.line_total)
                  for ln in rows]
-    else:  # transfers
+    else:
         doc = db.get(StockTransfer, doc_id)
         if doc is None or not branch_scope.may_see(view, doc):
             raise missing

@@ -1,19 +1,3 @@
-"""محرك تقارير الموارد البشرية — واحد بيخدم أربعين اسم (HR-7).
-
-Same shape as `lib/trade_reports.py`, and for the same reason: «كشف حضور تفصيلي» and «ملخص الحضور
-بالقسم» and «غياب الشهر بالفرع» are not three reports, they are one set of rows crossed with a
-grain and a grouping. Written as forty queries they drift apart the first time an absence rule
-changes; written once they cannot.
-
-`_collect` flattens every subject into ONE row shape — `{employee_id, department_id, branch_id,
-job_title_id, period, label, quantity, amount, …}` — so the grouping and totalling code below it is
-written exactly once.
-
-**الترقيم في السيرفر.** Attendance is employees × days: two hundred people over a year is 73,000
-rows, and returning all of them kills the tab. `limit`/`offset` with `truncated` on the envelope,
-and — the trap — **the totals are computed over the WHOLE filtered set, never over the page**. A
-total that describes the visible page is worse than no total, because it looks like an answer.
-"""
 from __future__ import annotations
 
 from datetime import date, datetime
@@ -67,7 +51,6 @@ def _lookups(db: Session) -> dict:
 
 def _row(look: dict, employee, *, period: str = "", label: str = "",
          quantity=ZERO_QTY, amount=ZERO, status: str = "", extra: dict | None = None) -> dict:
-    """الشكل الموحّد اللي كل موضوع بيتسطّح ليه."""
     return {
         "employee_id": employee.id if employee else None,
         "employee_name": employee.name if employee else None,
@@ -87,9 +70,6 @@ def _row(look: dict, employee, *, period: str = "", label: str = "",
     }
 
 
-# ------------------------------------------------------------------ التجميع
-
-
 def _collect(db: Session, subject: str, filters: dict) -> list[dict]:
     look = _lookups(db)
     date_from = _as_date(filters.get("date_from"))
@@ -97,8 +77,6 @@ def _collect(db: Session, subject: str, filters: dict) -> list[dict]:
     employee_id = filters.get("employee_id")
     department_id = filters.get("department_id")
     branch_id = filters.get("branch_id")
-    # فرع اللي بيسأل (من `branch_scope.visible_branch_id`) — مش فلتر اختياري زي `branch_id`:
-    # كل موضوع هنا بيعدّي على `keep`، فالعزل في السطر ده بيغطي الأربعين تقرير مرة واحدة.
     scope_branch = filters.get("scope_branch_id")
 
     def keep(employee: Employee) -> bool:
@@ -130,7 +108,6 @@ def _collect(db: Session, subject: str, filters: dict) -> list[dict]:
 
 
 def _collect_headcount(db, look, keep, date_from, date_to) -> list[dict]:
-    """كشف الموظفين — والداخلين والخارجين لو اتحدد مدى."""
     terminations = {t.employee_id: t for t in db.scalars(select(EmployeeTermination)).all()}
     rows = []
     for employee in look["employees"].values():
@@ -138,7 +115,6 @@ def _collect_headcount(db, look, keep, date_from, date_to) -> list[dict]:
             continue
         left = terminations.get(employee.id)
         if date_from or date_to:
-            # المدى بيسأل عن حركة: اتعيّن أو مشي جوّه الفترة.
             hired_in = employee.hire_date and (
                 (not date_from or employee.hire_date >= date_from)
                 and (not date_to or employee.hire_date <= date_to))
@@ -168,9 +144,7 @@ _ATTENDANCE_LABEL = {
 
 
 def _collect_attendance(db, look, keep, date_from, date_to) -> list[dict]:
-    # الأحدث فوق في كل تقارير الموارد البشرية (طلب العميل ٢٠٢٦-١٠-٠١).
     stmt = select(AttendanceDay).order_by(AttendanceDay.work_date.desc(), AttendanceDay.employee_id)
-    # الفلترة في SQL مش في بايثون — الجدول ده موظفين × أيام.
     if date_from:
         stmt = stmt.where(AttendanceDay.work_date >= date_from)
     if date_to:
@@ -228,7 +202,6 @@ def _collect_leave(db, look, keep, date_from, date_to) -> list[dict]:
 
 
 def _collect_payroll(db, look, keep, filters, *, by_component: bool) -> list[dict]:
-    """سطور المسير — أو بنودها لما التقرير يبقى عن التكلفة بالبند."""
     runs = {r.id: r for r in db.scalars(select(PayrollRun)).all()}
     year, month = filters.get("year"), filters.get("month")
     run_ids = [r.id for r in runs.values()
@@ -268,7 +241,7 @@ def _collect_payroll(db, look, keep, filters, *, by_component: bool) -> list[dic
                     "has_attendance": line.has_attendance, "paid": line.paid,
                 },
             ))
-        rows.sort(key=lambda r: r["period"], reverse=True)  # الشهر الأحدث فوق
+        rows.sort(key=lambda r: r["period"], reverse=True)
         return rows
 
     by_line = {line.id: line for line in lines}
@@ -289,7 +262,7 @@ def _collect_payroll(db, look, keep, filters, *, by_component: bool) -> list[dic
             extra={"source": detail.source.value, "component_id": detail.component_id,
                    "run_id": run.id},
         ))
-    rows.sort(key=lambda r: r["period"], reverse=True)  # الشهر الأحدث فوق
+    rows.sort(key=lambda r: r["period"], reverse=True)
     return rows
 
 
@@ -316,7 +289,6 @@ def _collect_advances(db, look, keep, date_from, date_to) -> list[dict]:
                 "advance_date": str(advance.advance_date),
                 "instalments": advance.instalments,
                 "taken": str(advance_service.taken_of(db, advance.id)),
-                # المتبقي هو الرقم اللي أي حد بيسأل عن سلفة بيقصده.
                 "outstanding": str(advance_service.outstanding_of(db, advance)),
             },
         ))
@@ -348,9 +320,6 @@ def _collect_adjustments(db, look, keep, filters) -> list[dict]:
     return rows
 
 
-# ------------------------------------------------------------------ التجميع
-
-
 _GROUP_KEY = {
     "employee": ("employee_id", "employee_name"),
     "department": ("department_id", "department"),
@@ -379,7 +348,6 @@ def _group(rows: list[dict], group_by: str) -> list[dict]:
         "quantity": str(to_qty(b["quantity"])), "amount": str(to_money(b["amount"])),
     } for b in buckets.values()]
     if group_by == "month":
-        # التجميع بالشهر محوره التاريخ — الأحدث فوق زي التفاصيل.
         out.sort(key=lambda r: str(r["key"] or ""), reverse=True)
     else:
         out.sort(key=lambda r: Decimal(r["amount"]), reverse=True)
@@ -387,11 +355,6 @@ def _group(rows: list[dict], group_by: str) -> list[dict]:
 
 
 def _totals(rows: list[dict]) -> dict:
-    """محسوبة على كل الصفوف المفلترة، **مش** على الصفحة المعروضة.
-
-    A total that describes the visible page is worse than no total: it looks like an answer to
-    «الشهر ده كلّفنا كام» and it is the answer for the first five hundred rows only.
-    """
     return {
         "rows": len(rows),
         "quantity": str(to_qty(sum((Decimal(r["quantity"]) for r in rows), ZERO_QTY))),
@@ -418,10 +381,6 @@ def hr(
     offset: int = 0,
     scope_branch_id: int | None = None,
 ) -> dict:
-    """محرك واحد. `subject` × `level` × `group_by` = أربعين تقرير.
-
-    `scope_branch_id`: فرع اللي بيسأل — موظفين الفرع ده (واللي مالهمش فرع) بس.
-    """
     if subject not in SUBJECTS:
         raise HrReportError(f"موضوع مش معروف: {subject}")
     if level not in LEVELS:
@@ -444,7 +403,6 @@ def hr(
 
     if level == "summary" or group_by != "none":
         grouped = _group(rows, group_by)
-        # المجمّع صغير بطبعه — مافيش ترقيم عليه.
         return {"subject": subject, "level": level, "group_by": group_by,
                 "rows": grouped, "totals": totals,
                 "page": {"limit": None, "offset": 0, "total_rows": len(grouped),
@@ -463,7 +421,6 @@ def hr(
 
 def leave_balances(db: Session, *, year: int, employee_id: int | None = None,
                    scope_branch_id: int | None = None) -> dict:
-    """أرصدة الأجازات — بتقعد جنب المحرك لأن الرصيد مشتق مش صف في جدول."""
     types = db.scalars(select(LeaveType).where(LeaveType.active.is_(True))).all()
     stmt = select(Employee).where(Employee.active.is_(True))
     if employee_id:

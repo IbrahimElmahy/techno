@@ -1,30 +1,3 @@
-"""يحطّ تاريخ a5 الحقيقي على `created_at` بتاع المستندات المنقولة.
-
-    python -m src.scripts.backdate_a5_documents          # يعرض بس
-    python -m src.scripts.backdate_a5_documents --yes    # ينفّذ
-
-بيتعاد تشغيله بأمان: اللي تاريخه مظبوط خلاص مابيتلمسش.
-
----------------------------------------------------------------------------
-**المشكلة:** الاستيراد بيملا عمود التاريخ الخاص بكل مستند صح (`invoice_date`،
-`purchase_date`، `transfer_date`…) — اتقاس: ٨٬٢٧٨ فاتورة كلها من ١ يناير لـ٥ سبتمبر.
-لكن `created_at` بياخد `server_default=now()`، فكل المستندات المنقولة تاريخها **يوم
-النقل**.
-
-وده مش تفصيلة عرض: **الفلترة بالتاريخ في الـAPI شغّالة على `created_at`** —
-`sales.py:731,733` (كشف الفواتير)، `:792-796` (ملخص المبيعات)، `:903,905` (المرتجعات).
-يعني «فواتير يناير» بترجع صفر، و«مبيعات النهاردة» بترجع الـ٨٬٢٧٨ كلهم.
-
-**ليه نعدّل الداتا مش الـ٨ استعلامات:** `created_at` معناه «امتى اتعمل الصف»، وللمستند
-المنقول ده **تاريخ المستند عند a5** — الصف مالوش وجود قبله. تعديل الاستعلامات كان
-هيسيب العمود بيكدب، وأي شاشة أو تقرير جديد بيقرا منه بيغلط من تاني.
-
-**الوقت اللي بيتحط:** التاريخ + ١٢ ظهراً. الأعمدة دي `date` مش `datetime`، والساعة
-مش موجودة عند a5 أصلاً؛ منتصف اليوم بيخلّي أي تحويل منطقة زمنية يفضل جوّه نفس اليوم
-(نص الليل بيقع لليوم اللي قبله في `day_start_utc`).
-
-**الحارس:** الصف اللي عموده الأصلي فاضي مابيتلمسش — مافيش تاريخ نخترعه.
-"""
 from __future__ import annotations
 
 import sys
@@ -37,7 +10,6 @@ from src.models.sales import SalesInvoice, SalesReturn
 from src.models.stock_permit import StockPermit
 from src.models.transfer import StockTransfer
 
-# (الموديل، العمود اللي فيه تاريخ a5، الاسم للعرض)
 DOCS = (
     (SalesInvoice, "invoice_date", "فواتير بيع"),
     (SalesReturn, "return_date", "مردود بيع"),
@@ -59,7 +31,6 @@ def run(*, execute: bool) -> None:
             total = db.scalar(select(func.count()).select_from(model)) or 0
             blank = db.scalar(select(func.count()).select_from(model)
                               .where(src.is_(None))) or 0
-            # اللي تاريخ `created_at` بتاعه مش مطابق لتاريخ المستند
             need = db.scalar(
                 select(func.count()).select_from(model)
                 .where(src.is_not(None), func.date(model.created_at) != src)) or 0

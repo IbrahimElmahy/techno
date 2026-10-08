@@ -17,30 +17,20 @@ import '../db/local_db.dart';
 import '../theme.dart';
 import 'task_progress.dart';
 
-/// النسخة اللي متثبّتة على الموبايل.
 class InstalledVersion {
   const InstalledVersion(this.name, this.rawCode);
 
   final String name;
 
-  /// الرقم زي ما أندرويد شايفه — `2006` لو المتثبّت ملف arm64، `6` لو العام.
   final int rawCode;
 
-  /// **الرقم الأساسي** — اللي في `pubspec.yaml` وفي `latest.json`.
-  ///
-  /// `flutter build apk --split-per-abi` بيحط كود المعمارية قدّام الرقم (`كود × ١٠٠٠ + الرقم`)
-  /// عشان كل ملف ياخد رقم مختلف. من غير القسمة دي، التليفون اللي عليه 2005 كان هيشوف
-  /// النسخة 6 على السيرفر «أقدم» منه ومايتحدّثش أبداً.
   int get code => rawCode % 1000;
 
-  /// كود المعمارية اللي متثبّتة — `0` للعام، `1` armeabi-v7a، `2` arm64، `4` x86_64.
   int get abiCode => rawCode ~/ 1000;
 
-  /// «0.3.3 (6)» — اللي بيتقال للدعم في التليفون.
   String get label => '$name ($code)';
 }
 
-/// اللي السيرفر بيقوله في `/app-update/latest`.
 class AppRelease {
   AppRelease._(this.code, this.name, this.notes, this.force, this.urls, this.files,
       this.sha256, this.size);
@@ -73,83 +63,44 @@ class AppRelease {
       );
 }
 
-/// بتقول السؤال للسيرفر وقع ليه — بالعربي، للشريط اللي تحت.
 class _FetchError implements Exception {
   _FetchError(this.message);
   final String message;
 }
 
-/// الفحص واقف فين — عشان نعرف «مشغول» حقيقي ولا عالق.
 enum _Phase { idle, fetching, dialog, downloading }
 
-/// **التطبيق بيحدّث نفسه من السيرفر** — «التطبيق يتحدث مباشر، مش كل شوية نبعت update».
-///
-/// التطبيق مش على المتجر، فكل نسخة كانت بتتبعت APK لكل مندوب في الشارع. دلوقتي بيسأل
-/// السيرفر (`backend/src/api/app_update.py`)، ولو فيه أحدث بينزّله ويفتح شاشة التثبيت.
-/// دوسة «تثبيت» بتاعة أندرويد مالهاش حل — التطبيق مش مالك الجهاز — وكل اللي قبلها
-/// بيحصل لوحده.
-///
-/// **الشغل اللي على الجهاز مابيضيعش.** التثبيت فوق نفس الباكدج بنفس مفتاح التوقيع بيحتفظ
-/// بداتا التطبيق (القاعدة المحلية والطابور كله). والمفتاح هو مفتاح الـdebug على جهاز
-/// البناء — لو اتغيّر، أندرويد هيرفض التحديث ويطلب مسح التطبيق، وده اللي بيضيّع الطابور.
-/// فالتوقيع مايتلمسش.
-///
-/// **إمتى بيسأل.** أول ما التطبيق يفتح، وكل ما يرجع من الخلفية (مرة كل نص ساعة بالكتير)،
-/// وبعد أي مزامنة أو رفع نجح. ودوسة «تحديث التطبيق» في القايمة بتسأل **دايماً** —
-/// من غير تقنين ولا تأجيل — وبتقول النتيجة في الشريط اللي تحت أياً كانت.
-///
-/// قبل كده كان بيسأل عند الفتح من الصفر وبعد المزامنة التلقائية بس. أندرويد بيسيب
-/// التطبيق شغّال في الخلفية أيام، والمندوب بيرفع فواتيره من «فواتيري» مش من المزامنة —
-/// فالأجهزة الشغّالة ماكانتش بتسأل خالص (سجل السيرفر من ١ أكتوبر: ولا نداء).
-///
-/// **ومابيوقفش حد.** مافيش نت؟ السيرفر واقع؟ الفحص التلقائي بيفشل في صمت والمندوب
-/// بيكمّل شغله.
 class AppUpdater with WidgetsBindingObserver {
   AppUpdater._();
   static final AppUpdater instance = AppUpdater._();
 
-  /// مفتاح الـNavigator بتاع التطبيق — الفحص بيتنادى من خدمات مالهاش `BuildContext`
-  /// (المزامنة مثلاً)، والرسالة لازم تطلع فوق أي شاشة مفتوحة.
   static final navigatorKey = GlobalKey<NavigatorState>();
 
-  /// قناة `MainActivity.kt` — إذن «التثبيت من مصادر غير معروفة» وفتح إعداداته.
   static const _installer = MethodChannel('techno/installer');
 
   static const _snoozeCodeKey = 'app_update_snooze_code';
   static const _snoozeAtKey = 'app_update_snooze_ms';
 
-  /// **«بعدين» بتأجّل النسخة دي ٦ ساعات — مش الفحص.** المندوب بيفتح التطبيق ويقفله عشرات
-  /// المرات في اليوم، ورسالة كل مرة بتتقفل من غير ما تتقري. بس التأجيل على الفحص نفسه كان
-  /// بيخبّي نسخة اتنشرت بعد فحص لقى «مافيش جديد» — المندوب يستنى ٦ ساعات من غير سبب.
-  /// فالسؤال للسيرفر بيحصل، والتأجيل بس للي المندوب قال عليه «بعدين».
   static const _snooze = Duration(hours: 6);
 
-  /// أقل مدة بين فحصين تلقائيين (الرجوع من الخلفية وبعد المزامنة). الدوسة مش متقنّنة.
   static const _autoEvery = Duration(minutes: 30);
 
-  /// كود المعمارية اللي Flutter بيحطه قدّام رقم النسخة (`FlutterPluginConstants.ABI_VERSION`).
   static const _abiCodes = {'armeabi-v7a': 1, 'arm64-v8a': 2, 'x86_64': 4};
 
-  /// النسخة الأحدث اللي السيرفر قال عليها — القايمة بتعرض «متاح X» منها. `null` = مافيش.
   final available = ValueNotifier<AppRelease?>(null);
 
   _Phase _phase = _Phase.idle;
 
-  /// الفحص الشغّال ده بيقول نتيجته؟ (اتبدأ بدوسة، أو اتداس عليه وهو شغّال)
   bool _manual = false;
   DateTime? _phaseSince;
 
-  /// آخر فحص تلقائي وصل للسيرفر — للتقنين.
   DateTime? _lastAutoCheck;
 
-  /// مستنيين المندوب يرجع من إعدادات «السماح بالتثبيت».
   Completer<void>? _resumeWaiter;
   bool _attached = false;
 
-  /// المتصفح (نسخة التجربة) مالوش APK يتثبّت.
   static bool get supported => !kIsWeb && Platform.isAndroid;
 
-  /// بيسمع رجوع التطبيق من الخلفية. بيتنادى مرة من `main()`.
   void attach() {
     if (_attached) return;
     _attached = true;
@@ -162,7 +113,6 @@ class AppUpdater with WidgetsBindingObserver {
     final w = _resumeWaiter;
     _resumeWaiter = null;
     if (w != null && !w.isCompleted) w.complete();
-    // متقنّن جوّه `check` — مرة كل نص ساعة بالكتير.
     unawaited(check(resume: true));
   }
 
@@ -173,9 +123,6 @@ class AppUpdater with WidgetsBindingObserver {
 
   bool get _busy {
     if (_phase == _Phase.idle) return false;
-    // **السؤال للسيرفر مالوش إنه يطوّل** (مهلته ١٥ ثانية). لو الحالة لسه «بيسأل» بعد
-    // دقيقتين يبقى حاجة وقعت من غير ما ترجّع الحالة — والفحص كان بيفضل «مشغول» للأبد
-    // وكل دوسة بعدها بتتبلع. الحوار والتنزيل ليهم حالتهم ومابيتحسبوش عالقين.
     if (_phase == _Phase.fetching &&
         _phaseSince != null &&
         DateTime.now().difference(_phaseSince!) > const Duration(minutes: 2)) {
@@ -190,14 +137,6 @@ class AppUpdater with WidgetsBindingObserver {
     _phaseSince = DateTime.now();
   }
 
-  /// فيه نسخة أحدث؟ ولو فيه، اعرضها.
-  ///
-  /// [manual] = المندوب داس «تحديث التطبيق»: بيسأل السيرفر دايماً (مافيش تقنين ولا تأجيل)،
-  /// والنتيجة بتتقال في الشريط اللي تحت أياً كانت.
-  ///
-  /// [atStart] = أول ما التطبيق يفتح — بيسأل دايماً، وبيسكت لو مافيش جديد.
-  ///
-  /// [resume] = التطبيق رجع من الخلفية. هو والفحص اللي بعد المزامنة متقنّنين بـ[_autoEvery].
   Future<void> check({bool manual = false, bool atStart = false, bool resume = false}) async {
     final tr = TaskTracker.instance;
     if (!supported) {
@@ -205,8 +144,6 @@ class AppUpdater with WidgetsBindingObserver {
       return;
     }
     if (_busy) {
-      // التنزيل باين في الشريط أصلاً. البحث بيخلص في ثواني.
-      // ولو لسه بيسأل، الدوسة بتتحسب: النتيجة هتتقال في الشريط زي ما تكون هي اللي بدأته.
       if (manual && _phase == _Phase.fetching) {
         _manual = true;
         tr.update(BgTask.update, 'بيدوّر على تحديث…');
@@ -261,16 +198,12 @@ class AppUpdater with WidgetsBindingObserver {
         }
       }
     } catch (e) {
-      // الفحص التلقائي بيتنادى من غير `await` — خطأ هنا مالوش حد يمسكه، ومالوش لازمة
-      // يوقّف المندوب في نص شغله. اليدوي بيقول.
       if (_manual || tr.isRunning(BgTask.update)) {
         tr.finish(BgTask.update, 'التحديث مانفعش — جرّب تاني',
             error: true, action: TaskAction('جرّب تاني', () => check(manual: true)));
       }
     } finally {
-      // **دايماً**، في كل طريق — «مشغول» اللي مابيرجعش كان بيبلع كل دوسة بعده.
       _setPhase(_Phase.idle);
-      // لو الشريط لسه بيقول «بيدوّر»/«فيه نسخة جديدة» (المندوب قفل الحوار)، يتقفل.
       if (tr.isRunning(BgTask.update)) tr.clear(BgTask.update);
     }
   }
@@ -281,7 +214,6 @@ class AppUpdater with WidgetsBindingObserver {
     try {
       r = await http.get(
         Uri.parse('$base/api/v1/app-update/latest'),
-        // أي proxy في السكة مايرجّعش رد قديم — النسخة الجديدة لازم تبان أول ما تتنشر.
         headers: const {'Cache-Control': 'no-cache'},
       ).timeout(const Duration(seconds: 15));
     } on TimeoutException {
@@ -301,14 +233,6 @@ class AppUpdater with WidgetsBindingObserver {
     }
   }
 
-  /// أنهي ملف ينزل للموبايل ده.
-  ///
-  /// **أول معمارية الموبايل بيفضّلها** (`supportedAbis` مترتبة) ومنشورة — ملف arm64 حوالي
-  /// ٢٨ ميجا والعام ٧٣، والفرق ده على نت موبايل في الشارع.
-  ///
-  /// **بس مش أي ملف ينفع.** رقم ملف المعمارية فيه كودها (arm64 = 2006، armeabi-v7a = 1006)
-  /// وأندرويد بيرفض أي تثبيت برقم أقل من المتثبّت. فاللي عليه arm64 (2005) مايقدرش ياخد
-  /// armeabi-v7a (1006) ولا العام (6). العام بينفع بس لو المتثبّت هو العام.
   String? _pickAbi(AppRelease r, InstalledVersion me, List<String> deviceAbis) {
     for (final abi in deviceAbis) {
       final code = _abiCodes[abi];
@@ -320,7 +244,6 @@ class AppUpdater with WidgetsBindingObserver {
     return null;
   }
 
-  /// بترجع `true` لو المندوب داس «بعدين» — الفحص بيأجّل النسخة دي بيها.
   Future<bool> _offer(AppRelease r, InstalledVersion me, {required bool manual}) async {
     final tr = TaskTracker.instance;
     final ctx = navigatorKey.currentContext;
@@ -329,7 +252,6 @@ class AppUpdater with WidgetsBindingObserver {
     final android = await DeviceInfoPlugin().androidInfo;
     final abi = _pickAbi(r, me, android.supportedAbis);
     if (abi == null) {
-      // مابيحصلش غير لو النسخة اتنشرت ناقصة. التلقائي بيسكت — المندوب مايقدرش يعمل حاجة.
       if (manual || r.force) {
         tr.finish(BgTask.update,
             'فيه نسخة جديدة (${r.name}) بس مش منشورة لنوع موبايلك — كلّم الإدارة',
@@ -367,8 +289,6 @@ class AppUpdater with WidgetsBindingObserver {
                   ].join(' · '),
                   style: TextStyle(color: Colors.blueGrey.shade600, fontSize: 13),
                 ),
-                // **تنبيه مش منع.** التحديث مابيمسحش الطابور، بس المندوب اللي شايف رقم
-                // فواتير مستنية هيقلق — فبنقوله إنها محفوظة، والأحسن يزامن الأول.
                 if (pending.isNotEmpty) ...[
                   const SizedBox(height: 10),
                   Container(
@@ -410,12 +330,10 @@ class AppUpdater with WidgetsBindingObserver {
     return go == false;
   }
 
-  /// أندرويد سامح للتطبيق ده يثبّت تحديثاته؟ (إعداد «السماح من هذا المصدر»)
   Future<bool> _canInstall() async {
     try {
       return await _installer.invokeMethod<bool>('canInstall') ?? true;
     } catch (_) {
-      // القناة مش موجودة (نسخة قديمة من الكود الأصلي) — نسيب أندرويد يسأل بنفسه.
       return true;
     }
   }
@@ -428,9 +346,6 @@ class AppUpdater with WidgetsBindingObserver {
     }
   }
 
-  /// **الإذن قبل التنزيل، مش بعده.** من غيره المندوب كان بينزّل ٢٨ ميجا، وأندرويد يقوله
-  /// «غير مسموح بالتثبيت من المصدر ده»، يروح الإعدادات ويرجع يلاقي التحديث ضاع ويبدأ من
-  /// الأول. دلوقتي بنسأل الأول، بنفتح له الإعداد بنفسنا، ولما يرجع للتطبيق بنكمّل لوحدنا.
   Future<bool> _ensureInstallPermission() async {
     if (await _canInstall()) return true;
     while (true) {
@@ -461,7 +376,6 @@ class AppUpdater with WidgetsBindingObserver {
       final back = Completer<void>();
       _resumeWaiter = back;
       if (!await _openInstallSettings()) {
-        // الإعداد مافتحش (موبايل غريب) — نكمّل وأندرويد هيسأل بنفسه وقت التثبيت.
         _resumeWaiter = null;
         return true;
       }
@@ -470,10 +384,6 @@ class AppUpdater with WidgetsBindingObserver {
     }
   }
 
-  /// بينزّل الملف ويسلّمه لشاشة التثبيت. بيرجع لما شاشة التثبيت تفتح أو التنزيل يقع.
-  ///
-  /// **التنزيل في الشريط اللي تحت مش في حوار قافل الشاشة** — المندوب يقدر يكمّل شغله
-  /// وهو بينزل، و«إلغاء» جنب النسبة.
   Future<void> _download(AppRelease r, String abi) async {
     final tr = TaskTracker.instance;
     if (!await _ensureInstallPermission()) {
@@ -485,7 +395,6 @@ class AppUpdater with WidgetsBindingObserver {
 
     final base = await ApiClient.instance.baseUrl();
     final url = '$base${r.urls[abi]}';
-    // الاسم بيتحط في `files/ota_update/`؛ المكتبة بترفض أي `/` فيه.
     final filename = (r.files[abi] ?? 'techno-${r.code}-$abi.apk').split('/').last;
     final checksum = r.sha256[abi];
 
@@ -494,11 +403,8 @@ class AppUpdater with WidgetsBindingObserver {
     final cancel = TaskAction('إلغاء', () => unawaited(ota.cancel()));
     tr.start(BgTask.update, 'بينزّل التحديث ${r.name}…', action: cancel);
 
-    // آخر حالة — تثبيت اتفتح، أو خطأ، أو إلغاء. `null` = القناة اتقفلت من غير ما تقول.
     final done = Completer<OtaEvent?>();
     StreamSubscription<OtaEvent>? sub;
-    // **حارس السكوت:** لو التنزيل بدأ وبعدين وقف يبعت أي حاجة دقيقتين، بنلغيه ونقول.
-    // من غيره «مشغول» كان ممكن يفضل للأبد لو القناة سكتت (الموبايل نام في نص التنزيل).
     Timer? watchdog;
     void arm() {
       watchdog?.cancel();
@@ -536,8 +442,6 @@ class AppUpdater with WidgetsBindingObserver {
     watchdog?.cancel();
     await sub?.cancel();
 
-    // ⚠ ota_update 7.1.0 مرقّم حالتين بالعكس بين جافا ودارت (INSTALLATION_ERROR و
-    // ALREADY_RUNNING_ERROR) — فبنفرّقهم بالرسالة اللي جاية من جافا مش بالرقم.
     final value = result?.value ?? '';
     final alreadyRunning = value.toLowerCase().contains('already running');
     final String? error = switch (result?.status) {
@@ -557,7 +461,6 @@ class AppUpdater with WidgetsBindingObserver {
       if (result?.status == OtaStatus.CANCELED) {
         tr.finish(BgTask.update, 'اتلغى تنزيل التحديث — تقدر تبدأه تاني من القايمة');
       } else {
-        // شاشة التثبيت بتاعة أندرويد اتفتحت (أو هتفتح دلوقتي).
         tr.finish(BgTask.update, 'جاهز للتثبيت — دوس «تثبيت» في الشاشة اللي طلعت ✔',
             hold: const Duration(seconds: 8));
       }
@@ -592,20 +495,15 @@ class AppUpdater with WidgetsBindingObserver {
         ],
       ),
     );
-    // **حتى الإجباري بيتقفل هنا.** المندوب اللي نته ضعيف مايتحبسش على شاشة تنزيل بيفشل —
-    // الرسالة بترجع أول ما يفتح التطبيق تاني.
     if (retry == true) await _download(r, abi);
   }
 
-  /// الملف اللي بصمته مش مطابقة بيتمسح — نزل ناقص أو اتغيّر في السكة، ومايتثبّتش.
   Future<String> _dropCorrupt(String filename) async {
     try {
-      // `getApplicationSupportDirectory` على أندرويد = `filesDir`، ونفس المجلد اللي
-      // ota_update بينزّل فيه (`dataDir/files/ota_update`).
       final dir = await getApplicationSupportDirectory();
       final f = File('${dir.path}/ota_update/$filename');
       if (await f.exists()) await f.delete();
-    } catch (_) {/* المكتبة بتمسحه قبل التنزيل الجاي على أي حال */}
+    } catch (_) {}
     return 'الملف نزل ناقص أو متغيّر فاتمسح. جرّب تاني.';
   }
 }

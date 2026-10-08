@@ -5,11 +5,6 @@ import '../db/local_db.dart';
 import '../models/models.dart';
 import '../theme.dart';
 
-/// ملف العميل — رصيده وحركته.
-///
-/// **الشاشة دي محتاجة شبكة، عن قصد.** الرصيد بيتغيّر من المكتب ومن مناديب تانيين وبقبض
-/// مالوش علاقة بالجهاز ده؛ ورقم قديم متخزّن هنا أوحش من «مافيش شبكة»، لأن الواحد بيصدّقه
-/// ويروح يطالب عميل بفلوس دفعها امبارح.
 class CustomerProfileScreen extends StatefulWidget {
   const CustomerProfileScreen({super.key});
 
@@ -21,23 +16,14 @@ class _CustomerProfileScreenState extends State<CustomerProfileScreen> {
   List<CustomerRef> _customers = [];
   CustomerRef? _picked;
   Map<String, dynamic>? _profile;
-  /// حسابات الخطوط — بتيجي مع البروفايل في نفس الفتحة. فاضية = لسه، أو العميل
-  /// مالوش حسابات (ورصيده صفر — ودي مش حالة خطأ).
   List<Map<String, dynamic>> _accounts = const [];
   bool _loading = false;
   String? _error;
 
-  /// بحث القايمة وفترة الحركة — نفس فلتر «فواتيري» بالحرف.
   final _search = TextEditingController();
   DateTime? _from;
   DateTime? _to;
 
-  // نسخة التوحيد المحلية اتشالت — `LocalDb.customers` بقت بتوحّد بنفسها
-  // بـ`bare` من `models/arabic_sort.dart`، وهي أكمل (بتشيل التشكيل والهمزة على
-  // السطر والأرقام العربية كمان). نسختين من نفس القاعدة معناها إن البحث يلاقي
-  // اسم والترتيب يحطّه في مكان تاني.
-
-  /// القاعدة رشّحت ورتّبت خلاص — الشاشة بتعرض اللي جه.
   List<CustomerRef> get _visibleCustomers => _customers;
 
   bool _inRange(Object? d) {
@@ -70,7 +56,6 @@ class _CustomerProfileScreenState extends State<CustomerProfileScreen> {
     setState(() {
       if (from) {
         _from = d;
-        // «من» بعد «إلى» مالوش معنى — الحد التاني بيتظبط بدل ما القايمة تفضى بصمت.
         if (_to != null && _to!.isBefore(d)) _to = d;
       } else {
         _to = d;
@@ -93,9 +78,6 @@ class _CustomerProfileScreenState extends State<CustomerProfileScreen> {
     _reload('');
   }
 
-  /// **البحث بيسأل القاعدة.** كانت بتجيب أول ٣٠٠ عميل وتدوّر جوّاهم في الذاكرة،
-  /// فاللي بعد ٣٠٠ ما كانش بيظهر لا في القايمة ولا في البحث. نفس العطل اللي كان
-  /// في شاشة الدفعات.
   int _seq = 0;
   Future<void> _reload(String q) async {
     final mine = ++_seq;
@@ -113,7 +95,6 @@ class _CustomerProfileScreenState extends State<CustomerProfileScreen> {
     });
     try {
       final p = await ApiClient.instance.customerProfile(c.id);
-      // الحسابات بالخط — لو وقعت لوحدها الشاشة بتكمل من غير السطرين، مش بتقع كلها.
       var accounts = const <Map<String, dynamic>>[];
       try {
         accounts = await ApiClient.instance.customerAccounts(c.id);
@@ -191,7 +172,6 @@ class _CustomerProfileScreenState extends State<CustomerProfileScreen> {
             children: [
               const Icon(Icons.wifi_off, size: 48, color: Colors.black26),
               const SizedBox(height: 12),
-              // الرسالة بتقول السبب صريح: مش «حصل خطأ»، ده رقم لازم ييجي من السيرفر.
               const Text('الحساب محتاج شبكة — الرصيد بيتغيّر من المكتب كمان.',
                   textAlign: TextAlign.center),
               const SizedBox(height: 6),
@@ -230,7 +210,6 @@ class _CustomerProfileScreenState extends State<CustomerProfileScreen> {
                   Text('${_num(p['balance'])}',
                       style: const TextStyle(
                           fontSize: 30, fontWeight: FontWeight.w800, color: AppColors.primary)),
-                  // المديونية بالخط — نفس السطرين اللي في الفاتورة والتحصيل.
                   if (_accounts.any((a) => a['family'] != null)) ...[
                     const SizedBox(height: 6),
                     Row(
@@ -264,7 +243,6 @@ class _CustomerProfileScreenState extends State<CustomerProfileScreen> {
               ),
             ),
           ),
-          // فترة الحركة — بتفلتر الفواتير والتحصيلات اللي تحت مع بعض.
           Padding(
             padding: const EdgeInsets.fromLTRB(12, 4, 12, 0),
             child: Row(
@@ -336,8 +314,6 @@ class _CustomerProfileScreenState extends State<CustomerProfileScreen> {
         for (final r in rows.take(15))
           ListTile(
             dense: true,
-            // فاتورة البونص رقمها `BNS-` وقيمتها صفر — العلامة بتقول إنها هدية مش
-            // فاتورة فاضية.
             title: Text('${r['document_number'] ?? ''}'
                 '${'${r['document_number'] ?? ''}'.startsWith('BNS-') ? ' · بونص' : ''}'),
             subtitle: Text('${r['date'] ?? r['created_at'] ?? ''}'.split('T').first),

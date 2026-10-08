@@ -1,10 +1,3 @@
-"""Cost Center model (006).
-
-An optional analytical dimension attached to ledger lines — "which activity/project/department" did
-money belong to, independently of the account. Hierarchical (parent_id), unbounded depth, like the
-chart of accounts but a SEPARATE table: a cost center is not a ledger account and never bears a balance
-(Principle VI). Cost-center figures are derived by filtering `ledger_line.cost_center_id`.
-"""
 from __future__ import annotations
 
 from sqlalchemy import ForeignKey, String

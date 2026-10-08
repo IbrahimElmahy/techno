@@ -7,23 +7,6 @@ import dayjs from 'dayjs';
 import { normalizeAr } from './ListToolbar';
 import DateRangeFilter from './DateRangeFilter';
 
-/**
- * أعمدة بتتفلتر وبتتترتب — الأساس اللي جداول الجرد قايمة عليه.
- *
- * A search box above a table answers one question: «فين الصنف ده». It cannot answer «وريني خامات
- * مخزن الفرع اللي قيمتها فوق الألف», which is the question a stocktake is actually read for — and
- * which needs **three columns filtered at once**.
- *
- * So the filtering moves onto the columns, where each one narrows the rows independently and the
- * narrowings combine. Written once here rather than per screen: five stocktake grids each growing
- * their own filter logic is five places for «lower-case matching» or «Arabic hamza» to be got
- * subtly differently.
- *
- * Arabic matching goes through `normalizeAr`, the same fold the search boxes use, so «مؤسسه» finds
- * «مؤسسة» in a column filter exactly as it does in a search box.
- */
-
-/** Every distinct value in a column, as antd's filter list. */
 function distinct<T>(rows: T[], get: (row: T) => any): { text: string; value: string }[] {
   const seen = new Map<string, string>();
   rows.forEach((r) => {
@@ -36,12 +19,6 @@ function distinct<T>(rows: T[], get: (row: T) => any): { text: string; value: st
     .map(([value, text]) => ({ text, value }));
 }
 
-/**
- * A categorical column: pick one or several values, with a search box once the list is long.
- *
- * `(فاضي)` is offered as a value of its own. A blank category is a real answer — «الأصناف اللي
- * محدش صنّفها» is a list somebody needs — and dropping it would make those rows unreachable.
- */
 export function textColumn<T>(rows: T[], get: (row: T) => any) {
   return {
     filters: distinct(rows, get),
@@ -56,7 +33,6 @@ export function textColumn<T>(rows: T[], get: (row: T) => any) {
   };
 }
 
-/** A numeric column: sorted, and filterable by a range. */
 export function numberColumn<T>(get: (row: T) => any) {
   return {
     sorter: (a: T, b: T) => Number(get(a) || 0) - Number(get(b) || 0),
@@ -84,7 +60,6 @@ export function numberColumn<T>(get: (row: T) => any) {
     onFilter: (value: any, row: T) => {
       const [min, max] = (value as (number | null)[]) ?? [null, null];
       const n = Number(get(row) || 0);
-      // A bound left empty is «no bound», not zero — «إلى ١٠٠» must not silently become «من ٠».
       if (min !== null && min !== undefined && n < min) return false;
       if (max !== null && max !== undefined && n > max) return false;
       return true;
@@ -92,17 +67,6 @@ export function numberColumn<T>(get: (row: T) => any) {
   };
 }
 
-/**
- * A date column: sorted, and filterable by a period.
- *
- * A date is not a number and not a name. Offering its distinct values as a checklist gives one
- * entry per day — useless past a week of data — and a min/max number box asks somebody to type a
- * timestamp. What is actually wanted is «من ١ لـ ١٥», so that is what it asks for.
- *
- * Values are compared as `YYYY-MM-DD` strings rather than as parsed dates. Every date on these
- * screens arrives as ISO text, string comparison on that format sorts and ranges correctly, and it
- * cannot drift by a timezone the way `new Date(...)` does on a bare date.
- */
 export function dateColumn<T>(get: (row: T) => any) {
   const day = (row: T): string => String(get(row) ?? '').slice(0, 10);
   return {
@@ -135,8 +99,6 @@ export function dateColumn<T>(get: (row: T) => any) {
     onFilter: (value: any, row: T) => {
       const [from, to] = (value as (string | null)[]) ?? [null, null];
       const d = day(row);
-      // A row with no date is excluded once a period is asked for: «إيه اللي حصل في يناير» is not
-      // answered by a row that never said when it happened.
       if (!d) return false;
       if (from && d < from) return false;
       if (to && d > to) return false;
@@ -145,13 +107,6 @@ export function dateColumn<T>(get: (row: T) => any) {
   };
 }
 
-/**
- * A column of a few fixed states — counted / not counted, matching / differing.
- *
- * Separate from `textColumn` because the options are known in advance and should appear even when
- * no row currently has that state: a filter list that changes shape as rows come and go is one
- * people stop trusting.
- */
 export function choiceColumn<T>(
   choices: { text: string; value: string }[], match: (row: T, value: string) => boolean,
 ) {
@@ -161,20 +116,6 @@ export function choiceColumn<T>(
   };
 }
 
-/**
- * **فلتر على كل عمود — لوحده.** (طلب العميل ٢٠٢٦-٠٩-٣٠: «فلتر بكل أنواع الأعمدة في صفحات
- * إدارة المخازن»)
- *
- * بدل ما كل شاشة تكتب فلتر لكل عمود بإيدها (والعمود اللي اتنسي يفضل من غير فلتر)، الدالة دي
- * بتلف على الأعمدة وبتدّي كل واحد مالوش فلتر النوع اللي يناسب داتاه:
- *
- *   • أرقام ⇐ `numberColumn` — من/إلى.
- *   • تواريخ (`YYYY-MM-DD…`) ⇐ `dateColumn` — فترة.
- *   • نص ⇐ `textColumn` — قايمة القيم بتاعته ومعاها بحث.
- *
- * العمود اللي عنده فلتر خلاص مابيتلمسش، وكذلك اللي مالوش `dataIndex` (الإجراءات، الترقيم).
- * والعمود اللي قيمته محسوبة يقدر يقول هو بيتفلتر على إيه بـ`filterValue: (row) => …`.
- */
 export function autoColumnFilters<T>(columns: any[] | undefined, rows: readonly T[] | undefined): any[] {
   const data = (rows || []) as T[];
   const valueOf = (col: any) => (row: any): any => {
@@ -206,7 +147,6 @@ export function autoColumnFilters<T>(columns: any[] | undefined, rows: readonly 
     const extra = kind === 'number' ? numberColumn(get as any)
       : kind === 'date' ? dateColumn(get as any)
         : textColumn(data, get as any);
-    // الترتيب اللي الشاشة حاطّاه بيفضل — الفلتر بس اللي بيتضاف.
     return { ...extra, ...col, ...(col.sorter ? {} : { sorter: extra.sorter }),
       filters: (extra as any).filters, filterSearch: (extra as any).filterSearch,
       filterDropdown: (extra as any).filterDropdown, onFilter: extra.onFilter };

@@ -1,4 +1,3 @@
-"""Stock router (T018): derived on-hand. FR-007."""
 from __future__ import annotations
 
 from datetime import date, datetime
@@ -36,42 +35,21 @@ class OnHandOut(BaseModel):
 
 
 class LocationStockRow(BaseModel):
-    """One item held at a location, with the quantity actually available there."""
-
     item_id: int
     code: str | None = None
     name: str
     category: str | None = None
     unit_of_measure: str | None = None
     on_hand: Decimal
-    # المحجوز على أذونات تحويل **معلّقة** طالعة من نفس المكان.
-    #
-    # الإذن مابيحرّكش مخزون لحد الاعتماد، فالرصيد بيفضل قايل إن البضاعة موجودة — واللي
-    # بيكتب إذن تاني (أو بيبيع) بيلاقيها متاحة وهي متعهّدة خلاص. الاتنين بيعدّوا، وواحد
-    # منهم بيقع على اللي بيعتمد بعدين، وهو مش صاحب الغلطة.
     pending_out: Decimal = Decimal("0")
 
     @property
     def free(self) -> Decimal:
-        """اللي ينفع يتحرّك دلوقتي — الرصيد ناقص المتعهّد عليه."""
         v = self.on_hand - self.pending_out
         return v if v > 0 else Decimal("0")
 
 
 def _assert_readable(db: Session, current: CurrentUser, kind: LocationKind, location_id: int) -> None:
-    """المندوب بيقرا مكانه هو، **ومخازن فرعه** — وعهدة حد تاني لأ.
-
-    كانت مكانه هو وبس. والمندوب بيطلب بضاعة من المخزن الرئيسي، وشاشة الطلب بتوريه أصناف
-    المصدر عشان مايطلبش حاجة مش موجودة — فكانت بتترفض بـ403 وهو واقف قدام المخزن.
-    والرسالة اللي كانت بتوصله «اتأكد من النت»، وهي مش نت.
-
-    **الفرق بين المخزن والعهدة مقصود.** المخزن مكان الشركة: كام قطعة فيه معلومة لأي حد
-    بيشتغل في الفرع، والمندوب شايف الكتالوج والأسعار أصلاً. **العهدة بضاعة راجل بعينه**
-    — رصيدها بيقول باع كام ولسه معاه كام، وده شغل المكتب مش شغل زميله. فالتوسعة على
-    المخازن وحدها، والعهدة فضلت مقفولة زي ما كانت.
-
-    وبفرعه: مندوب العلياء مايقراش مخازن أكتوبر. المخزن اللي مالوش فرع (مشترك) مفتوح للكل.
-    """
     if current.rep_id is None:
         return
     if rep_store_service.is_own_store(db, current.rep_id, kind, location_id):
@@ -99,7 +77,6 @@ def receive_batch(
     current: CurrentUser = Depends(require_capability(CAP_PURCHASE_WRITE)),
     db: Session = Depends(get_db),
 ) -> dict:
-    """Take a lot of a perishable item into stock with its expiry date (011)."""
     try:
         batch = batch_service.receive(
             db, item_id=body.item_id, location_kind=body.location_kind,
@@ -119,13 +96,6 @@ def receive_batch(
 def movement_types(
     _: CurrentUser = Depends(require_capability(CAP_STOCK_READ)),
 ) -> list[dict]:
-    """أنواع الحركة بأسمائها العربية — للفلتر ولعمود «نوع الحركة».
-
-    القايمة كانت متكتوبة بالإيد في `ItemCard.tsx` و`ItemProfile.tsx`
-    و`MovementHistoryLog.tsx`، وكل نسخة ناقصة نوع أو اتنين: `permit` (٣٦٣ حركة)
-    ما كانش ليه اسم عربي في ولا واحدة، فكان بيتعرض خام. بقت نسخة واحدة من
-    `stock_docs.MOVES`.
-    """
     return stock_docs.movement_types()
 
 
@@ -138,7 +108,6 @@ def expiring_batches(
     _: CurrentUser = Depends(require_capability(CAP_STOCK_READ)),
     db: Session = Depends(get_db),
 ) -> list[dict]:
-    """كميات انتهاء الصلاحية — lots at or before a cutoff that still hold stock, soonest first."""
     return batch_service.expiring(db, before=before, item_id=item_id,
                                   location_kind=location_kind, location_id=location_id)
 
@@ -153,13 +122,6 @@ def batch_movements(
     _: CurrentUser = Depends(require_capability(CAP_STOCK_READ)),
     db: Session = Depends(get_db),
 ) -> list[dict]:
-    """حركات انتهاء الصلاحية — every draw on every lot, newest first.
-
-    `StockBatch` holds what REMAINS of a lot, which answers «how much of the March batch is left»
-    and never «where did the rest of it go» — the question asked the day a lot is recalled and each
-    unit has to be traced to the invoice that sold it. FEFO picks the lot at the moment of sale; if
-    that choice is not written down then it is gone.
-    """
     stmt = select(StockBatchMovement)
     if item_id is not None:
         stmt = stmt.where(StockBatchMovement.item_id == item_id)
@@ -176,7 +138,6 @@ def batch_movements(
     items = {i: it.name for i, it in all_items.items()}
     warehouses = {w.id: w.name for w in db.scalars(select(Warehouse)).all()}
     rows = db.scalars(stmt.order_by(StockBatchMovement.id.desc()).limit(1000)).all()
-    # Their حركات انتهاء الصلاحية carries the unit and the customer beside the lot.
     invoice_ids = {m.document_id for m in rows
                    if m.document_type == "sales_invoice" and m.document_id}
     customer_of: dict[int, tuple[int | None, str | None]] = {}
@@ -226,32 +187,12 @@ def stock_by_location(
     location_kind: LocationKind,
     location_id: int,
     only_available: bool = True,
-    # الإذن اللي بيتعدّل دلوقتي — سطوره متحسوبة في `pending_out` وهي بتاعته هو، فلو
-    # اتخصمت عليه كمان يبقى بيتحاسب مرتين على نفس البضاعة ومايقدرش يحفظ نفسه زي ما هو.
     exclude_transfer_id: int | None = None,
     exclude_doc_type: str | None = None,
     exclude_doc_id: int | None = None,
     current: CurrentUser = Depends(require_capability(CAP_STOCK_READ)),
     db: Session = Depends(get_db),
 ) -> list[LocationStockRow]:
-    """Everything held at ONE location with its derived on-hand, in a single grouped query.
-
-    Drives pickers that must only offer what is actually there (transfers, custody handovers):
-    with `only_available` the caller never even sees an item it cannot move out.
-
-    ## `exclude_doc_type` + `exclude_doc_id` — المستند اللي بيتعدّل مايتحاسبش على نفسه
-
-    فاتورة مرحّلة خصمت بضاعتها خلاص، فالرصيد اللي بيرجع من غير الاستثناء ده **بعد**
-    خصمها. الشاشة اللي بتفتحها للتعديل بتقيس الكميات المكتوبة على الرقم ده، يعني بتعامل
-    الخمسة اللي اتباعوا على إنهم خمسة جداد لازم يتوفروا كمان — فاللي باع آخر خمسة في
-    المخزن مايقدرش يفتح فاتورته يصلّح سعر فيها: الشاشة بتقول «المتاح ٠» عن بضاعة
-    الفاتورة دي نفسها هي اللي واخداها.
-
-    والاستثناء بيرجّع حركة المستند ده للرصيد وقت العرض بس — مافيش حاجة بتتكتب. والسيرفر
-    وقت الحفظ بيعمل نفس الحاجة بترتيب تاني: `document_edit_service.purge_*` بتشيل الأثر
-    القديم فعلاً، وبعدها `_assert_lines_available` بتقيس على الرصيد بعد الشيل. فالشاشة
-    والسيرفر بيقيسوا على نفس الرقم بدل ما الشاشة تمنع حاجة السيرفر بيقبلها.
-    """
     _assert_readable(db, current, location_kind, location_id)
     signed = case(
         (StockMovement.direction == StockDirection.in_, StockMovement.quantity),
@@ -269,9 +210,6 @@ def stock_by_location(
         )
     )
     if exclude_doc_type and exclude_doc_id:
-        # بكل أسماء المستند — المستورد من a5 بيكتب اسم تاني لنفس الحاجة، والشرح في
-        # `lib/stock_docs`. الاستثناء باسم واحد بيسيب نص الحركة محسوبة وهو أسوأ من
-        # ما يتعملش: الرقم بيبقى غلط من غير ما حد يعرف ليه.
         q = q.where(~and_(
             StockMovement.source_doc_type.in_(stock_docs.names(exclude_doc_type)),
             StockMovement.source_doc_id == exclude_doc_id,
@@ -287,20 +225,11 @@ def stock_by_location(
                          pending_out=pending.get(r[0], Decimal("0")))
         for r in rows
     ]
-    # `only_available` معناها «اللي ينفع يتحرّك»، مش «اللي الرصيد بيقوله». صنف كل رصيده
-    # متعهّد على إذن معلّق مابينفعش يتحوّل، فمابيتعرضش أصلاً — نفس السبب اللي بيخلّي
-    # الصنف اللي رصيده صفر مش في القايمة.
     return [r for r in out if r.free > 0] if only_available else out
 
 
 def _pending_out(db: Session, kind: LocationKind, location_id: int,
                  exclude_transfer_id: int | None = None) -> dict[int, Decimal]:
-    """الكمية المتعهّد عليها لكل صنف على أذونات تحويل معلّقة طالعة من المكان ده.
-
-    نفس قاعدة `transfer_service.approve` بالحرف: الإذن اللي له سطور بيتحرّك بسطوره،
-    والإذن القديم اللي مالوش سطور بيتحرّك برأسه. أي قاعدة تانية هنا معناها إن اللي
-    اتحجز مش هو اللي هيتصرف.
-    """
     from src.models.transfer import StockTransfer, StockTransferLine, TransferStatus
 
     q = select(StockTransfer.id, StockTransfer.item_id, StockTransfer.quantity).where(
@@ -329,8 +258,6 @@ def _pending_out(db: Session, kind: LocationKind, location_id: int,
 
 
 class ItemLocationRow(BaseModel):
-    """رصيد صنف واحد في مخزن واحد — صف من كشف «الصنف ده موجود فين»."""
-
     item_id: int
     location_id: int
     on_hand: Decimal
@@ -342,27 +269,12 @@ def stock_by_item(
     current: CurrentUser = Depends(require_capability(CAP_STOCK_READ)),
     db: Session = Depends(get_db),
 ) -> list[ItemLocationRow]:
-    """أرصدة مجموعة أصناف في **كل** المخازن المسموح بيها — عكس `/by-location` بالظبط.
-
-    `/by-location` بيجاوب «المخزن ده فيه إيه» وده كفاية لإذن تحويل: المخزن متحدّد
-    والسؤال عن محتواه. لكن ورقة التصنيع بتسأل السؤال المقلوب: **الخامة دي موجودة
-    فين؟** — وعشان تجاوبه بالقديم لازم تنده على كل مخزن على حدة وتلمّ، وشاشة الأمر
-    كانت بتتجنّبه فبتحط خامات الوصفة كلها في مخزن المنتج.
-
-    وده اللي كسر أمر ٢٠٦: المنتج مخزنه «مخزن الخامات»، فالخامات الخمسة كلها راحت هناك
-    — وواحدة بس منهم اللي فيه فعلاً، والباقي في «حقن قطع الصرف» و«الجودة». الورقة
-    اتكتبت وتأكدت واتضغط «ابدأ»، وساعتها بس الصرف وقع على رصيد صفر.
-
-    **وبيرجّع الموجب بس**، لأن السؤال «أصرف من فين» والمخزن اللي رصيده صفر مش إجابة.
-    والمقاس على الفروع زي أي مكان تاني: مخازن فرعك والمشترك، مش مخازن غيرك.
-    """
     try:
         ids = [int(x) for x in item_ids.split(",") if x.strip()]
     except ValueError:
         raise HTTPException(422, {"code": "bad_item_ids", "message": "أرقام أصناف غير صالحة"})
     if not ids:
         return []
-    # سقف عشان نداء واحد مايجرّش كل الكتالوج. الشاشة بتبعت خامات ورقة واحدة.
     ids = ids[:1000]
 
     branch_id = branch_scope.visible_branch_id(current)
@@ -391,27 +303,19 @@ def stock_by_item(
                   key=lambda r: (r.item_id, -r.on_hand))
 
 
-# ----------------------------------------------------- إذن إضافة / إذن صرف (B5)
-
-
 class PermitLineIn(BaseModel):
     item_id: int
     quantity: Decimal
-    # Only meaningful on a receipt; an issue is costed from the costing method.
     unit_cost: Decimal | None = None
-    # (011) Required for a perishable item on an ADDITION — goods coming in belong to a lot, and
-    # stock that moves without its lot moving breaks Σ(batch) == on-hand. An issue needs none:
-    # FEFO picks the earliest expiry, exactly as a sale does.
     expiry_date: date | None = None
 
 
 class PermitIn(BaseModel):
-    kind: str  # receipt | issue | opening (بضاعة أول المدة)
+    kind: str
     warehouse_id: int
     lines: list[PermitLineIn]
     reason: str | None = None
     notes: str | None = None
-    # البيان — سطر الكلام اللي بيتطبع على الإذن نفسه. الشرح في `models/stock_permit.py`.
     statement1: str | None = Field(default=None, max_length=200)
     external_document_number: str | None = Field(default=None, max_length=40)
     permit_date: date | None = None
@@ -435,8 +339,6 @@ class PermitOut(BaseModel):
     permit_date: date | None = None
     reason: str | None = None
     notes: str | None = None
-    # **لازم يبقى هنا كمان مش على الإدخال بس** — بايدانتيك بيرمي أي حقل مش معرّف على
-    # موديل الرد في صمت، فالبيان يتكتب في القاعدة ويرجع فاضي للشاشة.
     statement1: str | None = None
     external_document_number: str | None = None
     total_cost: Decimal
@@ -447,7 +349,6 @@ class PermitOut(BaseModel):
 
 
 def _permit_out(db: Session, p, pre: dict | None = None) -> PermitOut:
-    """`pre` من `_permit_prefetch` — للقايمة: نفس الرد من غير ٣ استعلامات لكل إذن."""
     from src.models.stock_permit import StockPermit as _P
     from src.models.warehouse import Warehouse as _W
 
@@ -478,11 +379,6 @@ def _permit_out(db: Session, p, pre: dict | None = None) -> PermitOut:
 
 
 def _permit_prefetch(db: Session, permits: list) -> dict:
-    """أسامي الأصناف والمخازن والإذن العاكس لكل الأذونات مرة واحدة.
-
-    `_permit_out` كان بيسأل ٣ أسئلة لكل إذن، فشاشة الأذونات (٢٤٠ إذن) كانت ٧٣٠ استعلام
-    و~نص ثانية. هنا ٣ استعلامات للقايمة كلها.
-    """
     from src.models.stock_permit import StockPermit as _P
     from src.models.warehouse import Warehouse as _W
 
@@ -510,11 +406,6 @@ def create_permit(
     current: CurrentUser = Depends(require_capability(CAP_TRANSFER_INITIATE)),
     db: Session = Depends(get_db),
 ) -> PermitOut:
-    """إذن إضافة أو إذن صرف — stock in or out for a reason that is not a trade.
-
-    No-Negative-Stock applies here exactly as it does to a sale: an administrative document is
-    still not allowed to invent stock.
-    """
     try:
         permit = stock_permit_service.create_permit(
             db, kind=body.kind, warehouse_id=body.warehouse_id,
@@ -553,7 +444,6 @@ def list_permits(
 ):
     rows = stock_permit_service.list_permits(
         db, kind=kind, warehouse_id=warehouse_id, date_from=date_from, date_to=date_to)
-    # الإذن بيتحرك على مخزن، والمخازن مفلترة — فاللي مخزنه مش بتاعي مش بيبان.
     if branch_scope.visible_branch_id(current) is not None:
         mine = {w.id for w in db.scalars(
             branch_scope.scope(select(Warehouse), Warehouse, current)).all()}
@@ -578,12 +468,6 @@ def list_permits(
 
 
 def _seen_permit(db: Session, permit_id: int, current: CurrentUser):
-    """الإذن لو مخزنه من فرع اللي بيسأل — و**٤٠٤ لو لأ**.
-
-    الكشف كان بيفلتر بالمخزن والرابط المباشر ماكانش، فمدير فرع كان بيفتح إذن صرف
-    المصنع بالرقم (`FC-IS1`) — **ويعكسه** كمان، لأن `reverse` كان بيتنده على الرقم
-    من غير أي فحص، والعكس بيحرّك مخزون فعلاً.
-    """
     try:
         permit = stock_permit_service.get_permit(db, permit_id)
     except stock_permit_service.StockPermitError as exc:
@@ -613,7 +497,6 @@ def update_permit(
     current: CurrentUser = Depends(require_capability(CAP_TRANSFER_INITIATE)),
     db: Session = Depends(get_db),
 ) -> PermitOut:
-    """تعديل الإذن في مكانه — نفس رقمه، والأثر القديم بيتشال ويتبني من جديد (٢٠٢٦-١٠-٠٥)."""
     _seen_permit(db, permit_id, current)
     try:
         permit = stock_permit_service.update_permit(
@@ -638,7 +521,6 @@ def delete_permit(
     current: CurrentUser = Depends(require_capability(CAP_TRANSFER_INITIATE)),
     db: Session = Depends(get_db),
 ) -> None:
-    """حذف الإذن وأثره على المخزن (ولو اتعكس، إذن العكس معاه)."""
     _seen_permit(db, permit_id, current)
     try:
         stock_permit_service.delete_permit(db, permit_id=permit_id, actor_user_id=current.id)
@@ -655,7 +537,6 @@ def reverse_permit(
     current: CurrentUser = Depends(require_capability(CAP_TRANSFER_INITIATE)),
     db: Session = Depends(get_db),
 ) -> PermitOut:
-    """Posted documents are reversed, never edited or deleted — and only once."""
     _seen_permit(db, permit_id, current)
     try:
         reversal = stock_permit_service.reverse_permit(

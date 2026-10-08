@@ -1,11 +1,3 @@
-/**
- * ترتيب كشف الحساب.
- *
- * الكشف جاي من السيرفر **الأحدث فوق**، بس الفاتورة وسطر «مدفوع نقداً مع الفاتورة» بتوعها
- * كتلة واحدة بترتيبها: الفاتورة فوق والدفعة تحتها (`statement_service._newest_first`).
- * فالقلب البسيط لصفوف الشاشة مابقاش هو الترتيب الزمني — الكتلة لازم ترجع لترتيبها.
- */
-
 interface StatementRow {
   entry_id: number;
   account_id?: number | null;
@@ -14,7 +6,6 @@ interface StatementRow {
   credit?: string | number | null;
 }
 
-/** الصفوف بالترتيب الزمني (الأقدم الأول) — الفاتورة قبل نقديها. */
 export function chronological<T extends StatementRow>(rows: T[]): T[] {
   const out = [...rows].reverse();
   for (let i = 0; i + 1 < out.length; i += 1) {
@@ -30,7 +21,6 @@ export function chronological<T extends StatementRow>(rows: T[]): T[] {
   return out;
 }
 
-/** «تراكمي المعروض» لكل صف: مجموع (مدين − دائن) لحد الصف ده بالترتيب الزمني. */
 export function runningTotals<T extends StatementRow>(
   rows: T[], keyOf: (r: T) => string,
 ): Map<string, number> {

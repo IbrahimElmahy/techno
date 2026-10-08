@@ -26,21 +26,16 @@ import { useLookup } from '../hooks/useLookup';
 import CouponStatsOverview from '../components/CouponStatsOverview';
 import { useLiveRefresh } from '../utils/live';
 
-// `wrong_kind` = الرقم متصرّف فعلاً، بس تحت فئة تانية. مش «مش موجود»، والفرق ده
-// هو اللي بيخلّي اللي بيدخل يبص على الورقة تاني بدل ما يفتكر إنها مزوّرة.
 type Status = 'valid' | 'unknown' | 'received' | 'checking' | 'pending'
   | 'wrong_kind' | 'ambiguous';
 
 interface Entry {
   serial: string;
   status: Status;
-  // الطرف اللي **اتصرفت له** الورقة — التاجر غالباً. مش اللي بيسلّمها دلوقتي.
   issuedToId?: number | null;
   issuedToName?: string | null;
   documentNumber?: string | null;
-  // الفئة اللي الرقم اتفحص تحتها (اللي المستخدم اختارها).
   couponKind?: string | null;
-  // الفئات اللي الرقم متصرّف تحتها فعلاً — بتتقال في رسالة الرفض.
   kinds?: string[];
 }
 
@@ -62,7 +57,6 @@ interface Receipt {
   declared_kind?: string | null;
   declared_value?: string | number | null;
   customer_type?: string | null;
-  // pending = جاي من التطبيق وبيستنى المكتب؛ القديم كله approved.
   status?: ReceiptStatus;
   source?: string | null;
   reject_reason?: string | null;
@@ -73,14 +67,12 @@ interface Receipt {
 
 type ReceiptStatus = 'pending' | 'approved' | 'rejected';
 
-// نفس كلمات وألوان طلب تحويل المخازن — المستخدم بيقرا الحالتين بنفس العين.
 const RECEIPT_STATUS: Record<ReceiptStatus, { color: string; text: string; dot: string }> = {
   pending: { color: 'warning', text: 'بانتظار الاعتماد', dot: '#F5A11D' },
   approved: { color: 'success', text: 'تم الاعتماد', dot: '#6AB42D' },
   rejected: { color: 'error', text: 'مرفوض', dot: '#f5222d' },
 };
 
-/** «من» و«إلى» → أول وآخر رقم. خانة واحدة متملية = كوبون واحد، مش غلط. */
 const rangeOf = (from: number | null, to: number | null): [number, number] | null => {
   const a = from ?? to;
   const b = to ?? from;
@@ -111,25 +103,13 @@ export default function CouponReceipts() {
   const [customerType, setCustomerType] = useState<string>('plumber');
 
   const { options: kindLookup } = useLookup('coupon_kind');
-  // أنواع العملاء زي ما الأدمن ظابطها — مش مكتوبة في الكود، عشان النوع المضاف من
-  // الإعدادات يبان باسمه في قايمة «بستلم من مين».
   const { options: customerTypeLookup } = useLookup('customer_type');
 
-  // مصدر واحد لفئات الورق: قائمة «فئات الكوبونات» في الإعدادات.
-  //
-  // كانت بتتاخد من كتالوج استبدال النقاط الأول والقائمة دي بديل — وده اللي خلّى فيه
-  // مكانين بيتحكموا في نفس الحاجة وهما مش نفس الحاجة أصلاً.
   const kindOptions = useMemo(
     () => (kindLookup || []).map((o) => ({
       value: o.value, label: o.label, defaultValue: 0,
     })),
     [kindLookup]);
-
-  // ⛔ مافيش فئة افتراضية بتتحط لوحدها.
-  //
-  // الفئة مكتوبة على الورقة اللي في إيد اللي بيستلم، والنظام مايعرفهاش. لما كانت
-  // بتتحط على أول فئة في القايمة، أول رقم يتدخّل كان بيتفحص تحت «عادي» وهو ذهبي —
-  // والورقة تتحسب على دفتر مش بتاعها ومحدش ياخد باله. الفاضي هنا سؤال مقصود.
 
   const handleKindChange = (newKind: string) => {
     setKind(newKind);
@@ -150,10 +130,7 @@ export default function CouponReceipts() {
   }
 
   const { can } = useAuth();
-  // اعتماد/رفض/تعديل/حذف = صلاحية المكتب اللي ماسك الورق (نفس اللي السيرفر بيطلبها).
-  // المندوب عنده «استلام» بس — ماينفعش يعتمد شغله بنفسه.
   const canManage = can('coupon.custody');
-  // شريحة الحالة في السجل — «الكل» افتراضياً.
   const [statusFilter, setStatusFilter] = useState<'all' | ReceiptStatus>('all');
   const statusRef = useRef(statusFilter);
   statusRef.current = statusFilter;
@@ -188,14 +165,12 @@ export default function CouponReceipts() {
         status_counts: res.data.status_counts || {},
       });
     } catch {
-      // ignore
     }
   }, [searchQuery]);
 
   const loadReceipts = useCallback(async (
     targetPage = page, targetPageSize = pageSize, q = searchQuery, opts?: { silent?: boolean },
   ) => {
-    // الهادي (التحديث الحي): نفس الصفحة ونفس البحث، من غير سبينر.
     const silent = !!opts?.silent;
     if (!silent) setLoading(true);
     try {
@@ -221,8 +196,6 @@ export default function CouponReceipts() {
     }
   }, [page, pageSize, searchQuery]);
 
-  // المندوب سلّم كوبونات من التطبيق ⇒ القايمة والإجماليات يتحدّثوا. فورم الاستلام
-  // اللي بيتكتب هنا حالته لوحدها فمابيتلمسش.
   useLiveRefresh(['coupon-receipts'], () => {
     loadReceipts(undefined, undefined, undefined, { silent: true });
     loadSummary();
@@ -254,7 +227,6 @@ export default function CouponReceipts() {
     }
     setEntries((prev) => [{ serial, status: 'checking', couponKind: kind }, ...prev]);
     try {
-      // الفئة بتتبعت مع كل رقم: البحث بيتضيّق عليها، فـ«٥ فضي» مابيلاقيش دفتر الذهبي.
       const res = await api.get('/api/v1/coupon-receipts/check',
         { params: { serial, coupon_kind: kind } });
       const d = res.data;
@@ -268,15 +240,11 @@ export default function CouponReceipts() {
         couponKind: d.coupon_kind || kind,
         kinds: (d.kinds || []) as string[],
       } : e)));
-      // لسه في شنطة المندوب ⇒ السيرفر بيرجّعها «unknown» (مااتصرفتش لعميل)، بس السبب
-      // مختلف: الورقة حقيقية ولسه ماخرجتش. `in_custody` بيقول كده بالاسم.
       if (d.in_custody) {
         message.error(`الكوبون ${serial} لسه في عهدة المندوب ${d.custody_rep_name || ''} — ماتصرفش لعميل`);
       } else if (st === 'unknown') message.warning(`الكوبون ${serial} مش متصرّف من النظام`);
       if (st === 'received') message.warning(`الكوبون ${serial} مُستلَم من قبل`);
       if (st === 'wrong_kind') {
-        // ❌ الرفض مقصود، والتصحيح الأوتوماتيكي ممنوع: لو غيّرنا الفئة لوحدنا
-        // رجعنا لنفس المشكلة — ورقة بتتحسب على دفتر مش بتاعها ومحدش واخد باله.
         const where = ((d.kinds || []) as string[]).map(kindLabel).join(' + ');
         message.error(
           `الكوبون ${serial} مش متصرّف تحت فئة ${kindLabel(kind)}`
@@ -293,7 +261,6 @@ export default function CouponReceipts() {
 
   const addRange = async () => {
     if (!kind) { message.warning('اختر فئة الكوبون الأول'); return; }
-    // كوبون واحد = «من» بس (أو «إلى» بس) — مش لازم يتكتب نفس الرقم مرتين.
     const range = rangeOf(rangeFrom, rangeTo);
     if (!range) { message.warning('اكتب رقم الكوبون في «من رقم»'); return; }
     const [from, to] = range;
@@ -310,12 +277,6 @@ export default function CouponReceipts() {
     || e.status === 'wrong_kind' || e.status === 'ambiguous');
   const offline = entries.filter((e) => e.status === 'pending' || e.status === 'checking');
   const counted = [...good, ...offline];
-  // ⛔ مافيش تحقّق «كوبونات متصرّفة لعميل تاني» هنا، وده مقصود.
-  //
-  // الدورة: الشركة بتصرف للتاجر ← التاجر بيدّي الفني ← الفني بيرجّع لينا. يبقى
-  // الاستلام من سباك لورقة اتصرفت لتاجر هو **الحالة الطبيعية** مش خطأ. التحقق اللي
-  // كان هنا كان بيرفض أكتر استلام بيحصل فعلاً، وبيجبر اللي بيدخل يحط اسم التاجر
-  // مكان اللي واقف قدامه.
   const issuedToNames = Array.from(
     new Set(counted.map((e) => e.issuedToName).filter(Boolean) as string[]));
   const issuedToText = issuedToNames.length === 0 ? ''
@@ -323,12 +284,6 @@ export default function CouponReceipts() {
       : `أكتر من تاجر (${issuedToNames.length})`;
   const totalValue = (value ?? 0) * counted.length;
 
-  // «بستلم منه» **مابيتفلترش** — النوع المختار بيرتّب بس.
-  //
-  // `customer_type` قايمة حرة يديرها الأدمن (فيها `owner` و`other` ونوع أي حد يضيفه)،
-  // وفلترة القايمة على نوعين كانت بتخفي كل عميل غير كده — يعني الاستلام منه يبقى
-  // مستحيل خالص وهو واقف بالورق. اللي بيتصرف هنا الترتيب: النوع المختار فوق،
-  // والباقي تحته، والنوع مكتوب جنب الاسم عشان اللي بيدخل يفرّق.
   const receiverTypes = customerType === 'plumber' ? ['plumber'] : ['trader', 'merchant'];
   const customerTypeLabel = (t: unknown) => {
     const key = String(t ?? '');
@@ -353,7 +308,6 @@ export default function CouponReceipts() {
     if (!entries.length) { message.warning('لا توجد كوبونات'); return; }
     if (rejects.length) { message.warning('شيل الكوبونات المرفوضة الأول'); return; }
     if (!kind) { message.warning('اختر فئة الكوبون الأول'); return; }
-    // اللي بنستلم منه لازم يتقال. مش استنتاج — هو الواقف قدام اللي بيدخل دلوقتي.
     if (!customerId) { message.warning('حدد بتستلم من مين'); return; }
     setSaving(true);
     try {
@@ -364,19 +318,11 @@ export default function CouponReceipts() {
         client_uuid: clientUuid.current,
         received_date: receivedDate.format('YYYY-MM-DD'),
         declared_kind: kind,
-        // الفئة دي هوية الورقة مش تصريح وخلاص — من غيرها بتتخزن السطور بفئة فاضية
-        // وقيد التفرّد (فئة، رقم) بيرجع يشتغل على الرقم لوحده.
         coupon_kind: kind,
         declared_value: value,
         customer_type: customerType,
       });
       message.success('تم تسجيل الاستلام ورفعه إلى الخادم');
-      // ⛔ والفئة بترجع فاضية زي كل حاجة تانية.
-      //
-      // المستند الواحد دفتر واحد، والمستند اللي بعده قرار جديد. لو سابناها، المندوب
-      // اللي خلّص ٥٠ ذهبي وبدأ على طول في دفتر فضي بيلاقي الحقل مفتوح وفيه «ذهبي»،
-      // وأول رقم يتفحص تحت الدفتر الغلط. الفاضي هنا سؤال مقصود — بيرجّع تحذير
-      // «اختر فئة الكوبون الأول» ويقفل حقول النطاق لحد ما يتقرر.
       setEntries([]); setNotes(''); setCustomerId(undefined); setKind('');
       setValue(null); setCustomerType('plumber');
       setReceivedDate(dayjs());
@@ -387,9 +333,6 @@ export default function CouponReceipts() {
     } finally { setSaving(false); }
   };
 
-  // ---------------------------------------------------------- عمليات السجل
-  // زي طلب تحويل المخازن: اللي جاي من التطبيق بيستنى المكتب يعتمده أو يرفضه، وأي
-  // استلام يتعدّل (تصحيح رقم اتكتب غلط) أو يتحذف.
   const [acting, setActing] = useState<number | null>(null);
   const [rejecting, setRejecting] = useState<Receipt | null>(null);
   const [rejectReason, setRejectReason] = useState('');
@@ -444,8 +387,6 @@ export default function CouponReceipts() {
     } finally { setActing(null); }
   };
 
-  // التعديل — أساساً تصحيح رقم كوبون اتكتب غلط. السيرفر بيفحص الأرقام من جديد زي
-  // الإضافة بالظبط، والمستند يا يتعدّل كله يا يفضل زي ما هو.
   const [editing, setEditing] = useState<Receipt | null>(null);
   const [editSerials, setEditSerials] = useState<string[]>([]);
   const [editKind, setEditKind] = useState<string>('');
@@ -469,7 +410,6 @@ export default function CouponReceipts() {
   };
 
   const addEditRange = () => {
-    // نفس قاعدة شاشة الاستلام: خانة واحدة = كوبون واحد.
     const range = rangeOf(editFrom, editTo);
     if (!range) { message.warning('اكتب رقم الكوبون في «من رقم»'); return; }
     const [from, to] = range;
@@ -513,7 +453,6 @@ export default function CouponReceipts() {
     );
   };
 
-  /** أزرار السطر — نفس ترتيب إذن التحويل: اعتماد · رفض (المعلّق بس) · تعديل · حذف. */
   const rowActions = (r: Receipt) => {
     if (!canManage) return null;
     const st = r.status || 'approved';
@@ -593,21 +532,12 @@ export default function CouponReceipts() {
   ];
 
   const listCols = useTableColumns('coupon-receipts', listColumns, {
-    // الصفحة المعروضة بس مش السجل كله — الاستلامات بتتجاب مقسّمة صفحات من السيرفر،
-    // فمفيش نسخة كاملة في الشاشة تتصدّر.
     export: { name: 'سجل الاستلامات', rows: receipts },
   });
 
-  // كان «للقراءة بس عن قصد». العميل طلب تعديل وحذف (٢٠٢٦-١٠-٠٨): الرقم اللي اتكتب غلط
-  // كان بيقفل الورقة الصح للأبد. التعديل بيعدّي على نفس فحص الإضافة في السيرفر، فالرقم
-  // المصحّح مابيدخلش من غير ما يتسأل «متصرّف؟ رجع قبل كده؟».
-
-  // الشريحة المفتوحة — كانت `Tabs` من غير حالة، وأول شريحة هي الافتراضية.
-  // الشريحة في الرابط (`?tab=`) — الريفرش بيرجع عليها.
   const [tabRaw, setTab] = useQueryTab('receive');
   const tab = (tabRaw === 'history' ? 'history' : 'receive') as 'receive' | 'history';
 
-  // زرار «تفريغ» و«تسجيل الاستلام» بقوا في الترويسة، على شمال الشرايح.
   const receiveActions = (
     <>
       <Button type="primary" className="sl-create" icon={<SaveOutlined />} loading={saving}
@@ -618,8 +548,6 @@ export default function CouponReceipts() {
       <Button
         icon={<ReloadOutlined />}
         onClick={() => {
-          // «تفريغ» بيفضّي الفئة كمان: الشاشة بترجع لسؤالها الأول بدل ما تفضل
-          // محطوط عليها دفتر المستند اللي فات.
           setEntries([]); setNotes(''); setCustomerId(undefined); setKind('');
           setValue(null);
         }}
@@ -641,10 +569,6 @@ export default function CouponReceipts() {
           />
         </Col>
         <Col xs={12} md={5}>
-          {/* ✏️ اختيار — المستخدم هو اللي بيقول الفئة.
-              «٥ ذهبي» و«٥ فضي» ورقتين مختلفتين، والرقم لوحده مش هوية. المكتوب على
-              الورقة مايعرفوش غير اللي ماسكها، فالحقل ده سؤال ليه مش عرض عليه.
-              وبيتقفل بعد أول كوبون: المستند الواحد دفتر واحد. */}
           <Select
             style={{ width: '100%' }} showSearch
             placeholder="فئة الكوبون — اختر قبل الإدخال"
@@ -659,9 +583,6 @@ export default function CouponReceipts() {
           />
         </Col>
         <Col xs={24} md={10}>
-          {/* 👁️ عرض فقط — استنتاج مش إدخال.
-              ده الطرف اللي الشركة صرفت له الورقة (التاجر). غير اللي بيسلّمها دلوقتي
-              (السباك غالباً)، والاتنين بيتعرضوا مع بعض عشان اللي بيدخل يشوف الفرق. */}
           <Input
             style={{ width: '100%' }} readOnly addonBefore="اتصرف له"
             placeholder="التاجر اللي اتصرف له — بيظهر بعد أول كوبون سليم"
@@ -683,9 +604,6 @@ export default function CouponReceipts() {
           />
         </Col>
         <Col xs={24} md={16}>
-          {/* ✏️ اختيار — ده اللي واقف قدامي بيسلّم الورق دلوقتي.
-              كان بيتكتب لوحده من أول كوبون سليم، يعني اسم التاجر اللي اتصرف له —
-              وده طرف تاني خالص. الملء الأوتوماتيكي اتشال عن قصد. */}
           <Select
             allowClear showSearch style={{ width: '100%' }}
             placeholder="بستلم من مين"
@@ -777,8 +695,6 @@ export default function CouponReceipts() {
       />
 
       <div style={{ marginTop: 16 }}>
-        {/* المستند الواحد دفتر واحد: الفئة اللي فوق هي فئة كل الأرقام اللي تحت،
-            لأن أي رقم مش متصرّف تحتها بيترفض ومابيدخلش أصلاً. */}
         <CouponStatsOverview
           totalCount={counted.length}
           totalValue={totalValue}
@@ -889,9 +805,6 @@ export default function CouponReceipts() {
     </>
   ) : (
     <>
-      {/* شرايح الحالة — زي «بانتظار الاعتماد / تم الاعتماد / مرفوض» في إذن التحويل.
-          الإجماليات تحت بتتبع الشريحة؛ و«الكل» بيعدّ المعتمد بس، لأن المعلّق والمرفوض
-          مش ورق اتستلم فعلاً. */}
       <Segmented
         style={{ marginBottom: 12 }}
         value={statusFilter}
@@ -951,7 +864,6 @@ export default function CouponReceipts() {
     </>
   );
 
-  // F3 للبحث — كانت جاية من `ListToolbar`، والخانة دلوقتي في سطر الفلاتر.
   const searchRef = useRef<any>(null);
   const listShown = tab === 'history' && !detail;
   useScreenShortcuts({ onSearch: () => { searchRef.current?.focus?.(); } }, listShown);
@@ -964,7 +876,6 @@ export default function CouponReceipts() {
       tabs={[
         { key: 'receive', label: 'استلام كوبونات' },
         { key: 'history',
-          // اللي مستني اعتماد بيبان من غير ما حد يفتح السجل.
           label: (summaryData.status_counts?.pending ?? 0) > 0 ? (
             <span>السجل <Tag color="warning" style={{ marginInlineStart: 4 }}>
               {summaryData.status_counts?.pending} بانتظار الاعتماد</Tag></span>
@@ -976,14 +887,11 @@ export default function CouponReceipts() {
       actions={(<>
         {tab === 'receive' && receiveActions}
         {listShown && (<>
-          {/* «إضافة» من السجل — بيفتح شريحة الاستلام نفسها، مش فورم تاني. */}
           <Button type="primary" className="sl-create" icon={<PlusOutlined />}
             onClick={() => setTab('receive')}>
             استلام جديد
           </Button>
           {listCols.control}
-          {/* `onClick` بيبعت حدث الماوس كأول باراميتر — و`loadReceipts` أول باراميتر
-              عنده رقم الصفحة، فالزرار كان بيطلب صفحة اسمها MouseEvent. */}
           <Button icon={<ReloadOutlined />} onClick={() => loadReceipts()}>تحديث</Button>
         </>)}
         <Button icon={<SettingOutlined />} onClick={() => navigate('/loyalty?tab=kinds')}>
@@ -1054,7 +962,6 @@ export default function CouponReceipts() {
               options={receiverOptions} filterOption={searchFilter} filterSort={searchRank} />
           </Col>
           <Col xs={24}>
-            {/* أرقام الكوبونات — امسح الرقم الغلط (×) واكتب الصح وEnter. */}
             <Typography.Text type="secondary">أرقام الكوبونات ({editSerials.length})</Typography.Text>
             <Select mode="tags" style={{ width: '100%' }} open={false}
               placeholder="اكتب رقم الكوبون واضغط Enter"

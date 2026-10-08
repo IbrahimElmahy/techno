@@ -1,77 +1,3 @@
-"""محرك عمولات المرتبات — بيحسب عمولة وجزاء كل موظف في شهر من بيانات النظام.
-
-ده نفس اللي العميل بيعمله بإيده في ملف «مرتبات شهر اكتوبر»، بالقواعد متعمّمة لأي فرع
-والأسماء والنسب كلها إعدادات (`models/hr_commission.py`)، مش مكتوبة في الكود.
-
-الواجهة (بيستخدمها شيت المرتبات)
-=================================
-
-``compute(db, *, branch_id, year, month, absences=None) -> dict``
-
-بيرجّع dict مفاتيحه **رقم الموظف** (`int`) ومعاهم مفتاح واحد نصّي ``"details"``::
-
-    {
-      <employee_id>: {
-        "name": str,
-        "commission": Decimal,              # نصيبه من عمولة السيارة بعد خصم الغياب
-        "supervision": Decimal,             # عمولة الإشراف بعد خصم الغياب (لو مفعّل)
-        "penalty_25": Decimal,              # خصم ٢٥٪ (نصيبه من السيارة + جزء المشرف) — استقطاع
-        "inspection_commission": Decimal,   # المعاينات × سعر المعاينة
-        "technician_bonus": Decimal,        # «عمولة التعامل مع الفنيين»: السباكين × سعرهم
-        "coupon_commission": Decimal,       # عمولة الكوبونات المحسوبة (للعرض دايماً)
-        "min_inspection_deduction": Decimal,# خصم الحد الأدنى للمعاينات المحسوب (للعرض)
-        "coupon_commission_payable": Decimal,  # اللي بيتصرف فعلاً منها حسب إعدادات الفرع
-        "absent_days": Decimal,             # أيام الغياب اللي اتخصمت بيها العمولة
-        "earnings": Decimal,                # commission + supervision + inspection_commission
-                                            #   + technician_bonus + coupon_commission_payable
-        "deductions": Decimal,              # penalty_25
-      },
-      ...,
-      "details": {
-        "branch_id", "year", "month", "period": {"from", "to"},
-        "settings": {...},
-        "teams": [...], "supervisors": [...], "technicians": [...],
-        "warnings": [str, ...],
-      },
-    }
-
-``absences`` اختياري: ``{employee_id: أيام}`` — لو الشيت اتعدّل فيه الغياب بإيده، بيتبعت هنا
-فالعمولة تتخصم بنفس الرقم اللي في الشيت. من غيره الغياب من الحضور (`absent_days`).
-
-القواعد
-=======
-
-* **السيارة** — تحصيل الشهر مقسوم بالعيلة (بولي/تكنو، أبيض، ومن غير عيلة) × نسبة كل عيلة.
-  بتتقسم على الأفراد بالتساوي (أو كل فرد ياخدها كاملة — «الشرقية» في الملف)، وكل فرد بيتخصم
-  منه نصيبه / ٣٠ × أيام غيابه.
-* **المشرف** — نسبة كل عيلة × مجموع تحصيل السيارات اللي تحته، من نفس الشهر أو الشهر اللي فات
-  (`period_offset`)، وناقص الغياب لو مفعّل. وممكن ياخد ٪ من «زيادة» خصم الـ٢٥٪ بتاعة سياراته
-  كجزاء (حسن رمضان: ٠٫٥٪ من زيادة ب + د).
-* **خصم ٢٥٪** — للسيارة: الزيادة = (مديونية عملاء مناديبها آخر الشهر − الائتمان) − ٢٥٪ من بيع
-  الشهر. لو موجبة: الخصم = الزيادة / ١٠٠٠ × ٢٠، ونصيب كل فرد = الخصم / عدد الأفراد. المعفي
-  نصيبه مابيتخصمش (ومابيتنقلش لزميله).
-* **الفني** — كوبونات × نقاط الكوبون × قيمة النقطة × (المعامل / ٦٠٠)؛ معاينات × سعر المعاينة؛
-  سباكين اتعامل معاهم × سعر السباك. مسؤول الفنيين (`scope = all`) حسابه على مجموع الفنيين.
-  الحد الأدنى: نصيب المعاينة = عمولة الكوبون / الحد، والخصم = النصيب × اللي ناقص عن الحد.
-
-مصادر الأرقام
-=============
-
-* **التحصيل** = النقدي على فواتير البيع + سندات القبض من العملاء (نفس «متابعة المناديب»
-  و`/sales/receipts-log`). مندوب السند = `rep_user_id`، ولو فاضي فاللي كتبه لو هو مندوب السيارة،
-  ولو لسه فاضي (السندات المنقولة من a5) فمندوب العميل — لو `attribute_by_customer_rep`.
-  العيلة: من السند لو مكتوبة، وإلا من سطور قيده على حسابات العميل (السند «على الإجمالي»
-  بيتوزّع على العيلتين)، والحساب القديم اللي من غير عيلة بيروح «من غير عيلة».
-* **البيع** = صافي فواتير البيع (من غير البونص) ناقص المرتجعات غير الملغية، بتاريخ المستند.
-* **المديونية** = مجموع الأرصدة المدينة لعملاء مناديب السيارة في آخر يوم في الشهر (نفس
-  `/customers/debts`: المالك بره والكارت المدموج بره).
-* **الكوبونات** = استلامات معتمدة (`status` NULL أو approved) اللي `rep_user_id` بتاعها حساب
-  الفني. **المعاينات** = زيارات الفنيين المقبولة اللي كتبها. **السباكين** = اللي اتعامل معاهم
-  في الاتنين من غير تكرار (بالتليفون، وإلا بالاسم).
-* **الغياب** = أيام `absent` في الحضور.
-
-المستندات مابتتفلترش بالفرع: السيارة متعرّفة بحسابات مناديبها، وده بيحدد أرقامها.
-"""
 from __future__ import annotations
 
 import calendar
@@ -111,7 +37,6 @@ HUNDRED = Decimal("100")
 THOUSAND = Decimal("1000")
 FAMILIES = ("poly", "white", "other")
 
-#: المفاتيح اللي كل موظف بيرجع بيها — الشيت بيقرا دول.
 AMOUNT_KEYS = (
     "commission", "supervision", "penalty_25", "inspection_commission", "technician_bonus",
     "coupon_commission", "min_inspection_deduction", "coupon_commission_payable",
@@ -122,10 +47,6 @@ AMOUNT_KEYS = (
 class CommissionSetupError(Exception):
     pass
 
-
-# ======================================================================
-# أدوات صغيرة
-# ======================================================================
 
 def _d(v) -> Decimal:
     return Decimal(str(v if v is not None else 0))
@@ -139,19 +60,17 @@ def month_bounds(year: int, month: int) -> tuple[date, date]:
 
 
 def shift_month(year: int, month: int, back: int) -> tuple[int, int]:
-    """الشهر اللي قبل ده بـ`back` شهور."""
     idx = int(year) * 12 + (int(month) - 1) - int(back)
     return idx // 12, idx % 12 + 1
 
 
 def family_key(name: str | None) -> str:
-    """«بولي» و«تكنو» عيلة واحدة (البولي اسمه التجاري تكنو)؛ «أبيض»؛ والباقي من غير عيلة."""
     text = (name or "").strip()
     if not text:
         return "other"
     if "بولي" in text or "بولى" in text or "تكنو" in text:
         return "poly"
-    if "بيض" in text:  # أبيض / ابيض
+    if "بيض" in text:
         return "white"
     return "other"
 
@@ -179,12 +98,7 @@ def _user_names(db: Session, ids) -> dict[int, str]:
             for u in db.scalars(select(User).where(User.id.in_(ids))).all()}
 
 
-# ======================================================================
-# الغياب — الشيت بيستخدمه كمان
-# ======================================================================
-
 def absent_days(db: Session, employee_ids, year: int, month: int) -> dict[int, Decimal]:
-    """أيام الغياب (`absent`) لكل موظف في الشهر. اللي مالوش غياب مش في الـdict."""
     ids = [i for i in set(employee_ids or []) if i]
     if not ids:
         return {}
@@ -199,12 +113,7 @@ def absent_days(db: Session, employee_ids, year: int, month: int) -> dict[int, D
     return {eid: Decimal(int(n or 0)) for eid, n in rows if n}
 
 
-# ======================================================================
-# الإعدادات
-# ======================================================================
-
 def get_settings(db: Session, branch_id: int) -> HrCommissionSetting:
-    """صف الفرع — ولو لسه ماتعملش، صف بالقيم الافتراضية مش محفوظ."""
     row = db.scalar(select(HrCommissionSetting).where(HrCommissionSetting.branch_id == branch_id))
     if row is not None:
         return row
@@ -284,8 +193,6 @@ def _check_rate(value, label: str) -> Decimal:
         raise CommissionSetupError(f"{label} لازم تكون بين 0 و 100.")
     return v
 
-
-# ---------------------------------------------------------------- السيارات
 
 def team_out(db: Session, t: HrCommissionTeam) -> dict:
     users = db.scalars(select(HrCommissionTeamUser).where(HrCommissionTeamUser.team_id == t.id)
@@ -383,7 +290,6 @@ def delete_team(db: Session, *, branch_id: int, team_id: int, actor_user_id: int
         raise CommissionSetupError("السيارة غير موجودة.")
     snapshot = _jsonable({k: v for k, v in team_out(db, team).items()
                           if k not in ("users", "members")})
-    # الأبناء بيتمسحوا بإيدنا — `ondelete=CASCADE` مابيشتغلش على SQLite من غير PRAGMA.
     for model in (HrCommissionTeamUser, HrCommissionTeamMember, HrCommissionSupervisorTeam,
                   HrCommissionManualCollection):
         db.execute(delete(model).where(model.team_id == team_id))
@@ -422,8 +328,6 @@ def set_manual_collection(db: Session, *, branch_id: int, team_id: int, year: in
                          entity_id=team_id, before=before,
                          after={"year": year, "month": month} | _jsonable(vals))
 
-
-# ---------------------------------------------------------------- المشرفين
 
 def supervisor_out(db: Session, s: HrCommissionSupervisor) -> dict:
     links = db.scalars(select(HrCommissionSupervisorTeam)
@@ -506,8 +410,6 @@ def delete_supervisor(db: Session, *, branch_id: int, supervisor_id: int,
                          entity_id=supervisor_id, before=snapshot)
 
 
-# ---------------------------------------------------------------- الفنيين
-
 def technician_out(db: Session, t: HrCommissionTechnician) -> dict:
     emp = db.get(Employee, t.employee_id)
     return {
@@ -580,7 +482,6 @@ def delete_technician(db: Session, *, branch_id: int, technician_id: int,
 
 
 def setup_payload(db: Session, branch_id: int) -> dict:
-    """كل إعدادات الفرع مع قوايم الاختيار (الموظفين وحسابات المناديب والفنيين)."""
     branch = _branch_or_error(db, branch_id)
     teams = db.scalars(select(HrCommissionTeam).where(HrCommissionTeam.branch_id == branch_id)
                        .order_by(HrCommissionTeam.sort_order, HrCommissionTeam.id)).all()
@@ -617,12 +518,7 @@ def setup_payload(db: Session, branch_id: int) -> dict:
     }
 
 
-# ======================================================================
-# جمع الأرقام
-# ======================================================================
-
 def _team_users(db: Session, teams: list[HrCommissionTeam]) -> dict[int, list[int]]:
-    """حسابات كل سيارة — ولو مالهاش حسابات متسجّلة، حسابات أفرادها (`employee.user_id`)."""
     ids = [t.id for t in teams] or [-1]
     out: dict[int, list[int]] = defaultdict(list)
     for tu in db.scalars(select(HrCommissionTeamUser)
@@ -641,7 +537,6 @@ def _team_users(db: Session, teams: list[HrCommissionTeam]) -> dict[int, list[in
 
 
 def _voucher_families(db: Session, entry_ids: list[int]) -> dict[int, dict[str, Decimal]]:
-    """توزيع قيد كل سند على عيال حسابات العميل — السند «على الإجمالي» بيتوزّع كده."""
     out: dict[int, dict[str, Decimal]] = {}
     ids = [i for i in entry_ids if i]
     for start in range(0, len(ids), 2000):
@@ -660,11 +555,6 @@ def _voucher_families(db: Session, entry_ids: list[int]) -> dict[int, dict[str, 
 
 def collections_by_user(db: Session, user_ids, d1: date, d2: date, *,
                         attribute_by_customer_rep: bool = True) -> dict[int, dict]:
-    """تحصيل كل حساب مندوب في الفترة، مقسوم بالعيلة، ومعاه منين جه.
-
-    ``{user_id: {"poly", "white", "other", "invoice_cash", "receipts", "via_customer",
-    "receipt_count"}}``
-    """
     users = set(u for u in user_ids if u)
     out: dict[int, dict] = {}
     if not users:
@@ -674,7 +564,6 @@ def collections_by_user(db: Session, user_ids, d1: date, d2: date, *,
         return out.setdefault(uid, _fam() | {"invoice_cash": ZERO, "receipts": ZERO,
                                              "via_customer": ZERO, "receipt_count": 0})
 
-    # ١) النقدي على فواتير البيع — نفس `/sales/receipts-log` (البونص بره).
     day = func.coalesce(SalesInvoice.invoice_date, cast(SalesInvoice.created_at, Date))
     rep_cond = SalesInvoice.rep_id.in_(users)
     if attribute_by_customer_rep:
@@ -697,7 +586,6 @@ def collections_by_user(db: Session, user_ids, d1: date, d2: date, *,
         if inv_rep is None:
             s["via_customer"] += amount
 
-    # ٢) سندات القبض من العملاء.
     vcond = or_(Voucher.rep_user_id.in_(users),
                 and_(Voucher.rep_user_id.is_(None), Voucher.actor_user_id.in_(users)))
     if attribute_by_customer_rep:
@@ -720,7 +608,6 @@ def collections_by_user(db: Session, user_ids, d1: date, d2: date, *,
             uid, via_customer = cust_rep, True
         if uid not in users:
             continue
-        # القيد العكسي بيطرح — نفس `rep_reports._signed`.
         value = -_d(amount) if reverses_id is not None else _d(amount)
         s = slot(uid)
         if fam:
@@ -742,7 +629,6 @@ def collections_by_user(db: Session, user_ids, d1: date, d2: date, *,
 
 def sales_by_user(db: Session, user_ids, d1: date, d2: date, *,
                   attribute_by_customer_rep: bool = True) -> dict[int, Decimal]:
-    """صافي بيع الفترة لكل حساب مندوب (البونص بره، والمرتجعات غير الملغية بتتطرح)."""
     users = set(u for u in user_ids if u)
     out: dict[int, Decimal] = defaultdict(lambda: ZERO)
     if not users:
@@ -776,7 +662,6 @@ def sales_by_user(db: Session, user_ids, d1: date, d2: date, *,
 
 
 def debt_by_user(db: Session, user_ids, as_of: date) -> dict[int, Decimal]:
-    """مجموع الأرصدة المدينة لعملاء كل مندوب في يوم — نفس `/customers/debts`."""
     from src.services import customer_profile_service
 
     users = [u for u in set(user_ids) if u]
@@ -809,7 +694,6 @@ def _plumber_key(phone, name) -> str | None:
 
 
 def technician_stats(db: Session, user_ids, d1: date, d2: date) -> dict[int, dict]:
-    """كوبونات ومعاينات وسباكين كل حساب فني في الفترة."""
     users = set(u for u in user_ids if u)
     out: dict[int, dict] = {u: {"coupons": 0, "inspections": 0, "plumbers": set()}
                             for u in users}
@@ -829,7 +713,6 @@ def technician_stats(db: Session, user_ids, d1: date, d2: date) -> dict[int, dic
         if cust_id is not None and (cust_type or "") == "plumber":
             key = _plumber_key(cust_phone, cust_name)
         elif cust_id is None and notes and "الفني:" in notes:
-            # السباك اللي مالوش كارت بيتكتب اسمه في الملاحظات (`import_wb_coupons`).
             key = _plumber_key(None, notes.split("الفني:", 1)[1].split("\n")[0])
         if key:
             o["plumbers"].add(key)
@@ -857,13 +740,8 @@ def _manual(db: Session, team_ids, year: int, month: int) -> dict[int, dict[str,
                         "notes": r.notes} for r in rows}
 
 
-# ======================================================================
-# الحساب
-# ======================================================================
-
 def compute(db: Session, *, branch_id: int, year: int, month: int,
             absences: dict | None = None) -> dict:
-    """عمولات وجزاءات كل موظف في الفرع للشهر — الشكل في أول الملف."""
     _branch_or_error(db, branch_id)
     year, month = int(year), int(month)
     d1, d2 = month_bounds(year, month)
@@ -913,7 +791,6 @@ def compute(db: Session, *, branch_id: int, year: int, month: int,
                 warnings.append(f"«{e.name}» موظف موقوف ولسه في إعدادات العمولات.")
         return result[eid]
 
-    # --- تحصيل السيارات لكل فترة محتاجينها (الشهر ده، واللي فات للمشرفين)
     all_users = {u for us in team_users.values() for u in us}
     coll_cache: dict[tuple[int, int], dict[int, dict]] = {}
 
@@ -942,7 +819,6 @@ def compute(db: Session, *, branch_id: int, year: int, month: int,
 
     current = team_collections((year, month))
 
-    # --- السيارات
     team_details = []
     for t in teams:
         c = current[t.id]
@@ -980,7 +856,6 @@ def compute(db: Session, *, branch_id: int, year: int, month: int,
             "share_per_member": to_money(share), "members": mrows,
         })
 
-    # --- خصم ٢٥٪
     pen_users = {u for t in teams if t.penalty_enabled for u in team_users.get(t.id, [])}
     sales = sales_by_user(db, pen_users, d1, d2, attribute_by_customer_rep=attr)
     debts = debt_by_user(db, pen_users, d2)
@@ -1016,7 +891,6 @@ def compute(db: Session, *, branch_id: int, year: int, month: int,
             "share_per_member": to_money(each), "members": mrows,
         }
 
-    # --- المشرفين
     sup_details = []
     for s in sups:
         period = shift_month(year, month, int(s.period_offset or 0))
@@ -1040,7 +914,6 @@ def compute(db: Session, *, branch_id: int, year: int, month: int,
         net = gross - ded
         row = emp_row(s.employee_id)
         row["supervision"] += net
-        # جزء من زيادة خصم الـ٢٥٪ بتاعة سياراته (الزيادة الموجبة بس) — بيتحسب على الشهر نفسه.
         pen_base = sum((max(excess_by_team.get(tid, ZERO), ZERO) for tid in tids), ZERO)
         pen = pen_base * _d(s.penalty_rate) / HUNDRED
         row["penalty_25"] += pen
@@ -1058,7 +931,6 @@ def compute(db: Session, *, branch_id: int, year: int, month: int,
             "penalty": to_money(pen),
         })
 
-    # --- الفنيين
     tech_users = {}
     for t in techs:
         e = emps.get(t.employee_id)
@@ -1117,7 +989,6 @@ def compute(db: Session, *, branch_id: int, year: int, month: int,
             "total": to_money(payable + insp_comm + bonus),
         })
 
-    # --- الإجماليات لكل موظف
     for row in result.values():
         row["earnings"] = (row["commission"] + row["supervision"] + row["inspection_commission"]
                            + row["technician_bonus"] + row["coupon_commission_payable"])

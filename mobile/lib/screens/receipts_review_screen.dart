@@ -9,18 +9,6 @@ import '../services/task_progress.dart';
 import '../theme.dart';
 import 'receipt_print_screen.dart';
 
-/// تحصيلات الجهاز — اللي راحت واللي لسه.
-///
-/// نفس فكرة «فواتيري** بالظبط، وللسبب نفسه: التحصيل بيتكتب عند العميل وبيترفع لما
-/// الشبكة ترجع، والطابور اللي محدش بيبص عليه هو اللي بيخلّي سند قبض يفضل يومين على
-/// الجهاز ومحدش واخد باله — والعميل في الدفاتر لسه عليه فلوس هو دفعها.
-///
-/// وكانت مافيش شاشة تقول له إيه اللي حصّله النهارده أصلاً: بيكتب السند ويخرج،
-/// وبعدين يتسأل «العميل ده دفع؟» فمايردش إلا من ورقته.
-///
-/// **والشاشة دي عرض مش تعديل.** التحصيل اللي اترفع بقى قيد في الدفتر، واللي لسه في
-/// الطابور بيتشال من شاشة التحصيل نفسها. اللي هنا: تشوف، تدوّر، تفلتر بالفترة،
-/// وتضغط السحابة عشان ترفع اللي مستني.
 class ReceiptsReviewScreen extends StatefulWidget {
   const ReceiptsReviewScreen({super.key});
 
@@ -37,8 +25,6 @@ class _ReceiptsReviewScreenState extends State<ReceiptsReviewScreen> {
   DateTime? _from;
   DateTime? _to;
 
-  /// همزة وألف وياء بيتوحّدوا — «أحمد» و«احمد» نفس الاسم، والمندوب مش فاكر
-  /// الكارت اتكتب بأنهي واحدة فيهم. نفس القاعدة اللي في «فواتيري».
   String _bare(String x) => x
       .replaceAll(RegExp('[أإآ]'), 'ا')
       .replaceAll('ة', 'ه')
@@ -81,7 +67,6 @@ class _ReceiptsReviewScreenState extends State<ReceiptsReviewScreen> {
     setState(() {
       if (from) {
         _from = d;
-        // «من» بعد «إلى» مالوش معنى — الحد التاني بيتظبط بدل ما النتيجة تطلع فاضية.
         if (_to != null && _to!.isBefore(d)) _to = d;
       } else {
         _to = d;
@@ -125,7 +110,6 @@ class _ReceiptsReviewScreenState extends State<ReceiptsReviewScreen> {
 
   Future<void> _push() async {
     setState(() => _pushing = true);
-    // التقدّم والنتيجة في الشريط اللي تحت، زي «فواتيري».
     final tr = TaskTracker.instance;
     tr.start(BgTask.upload, 'بيرفع التحصيلات…');
     try {
@@ -147,8 +131,6 @@ class _ReceiptsReviewScreenState extends State<ReceiptsReviewScreen> {
   Widget build(BuildContext context) {
     final rows = _visible;
     final pending = _rows.where((r) => (r['synced'] as int?) != 1).length;
-    // إجمالي اللي على الشاشة دلوقتي — بعد البحث والفترة. الرقم ده هو اللي المندوب
-    // بيتسأل عنه: «حصّلت كام النهارده؟»، فبيتحسب على اللي مفلتر مش على الكل.
     final total = rows.fold<double>(
         0, (a, r) => a + ((r['amount'] as num?)?.toDouble() ?? 0));
 
@@ -223,7 +205,6 @@ class _ReceiptsReviewScreenState extends State<ReceiptsReviewScreen> {
                     ],
                   ),
                 ),
-                // الإجمالي والعدد — سطر واحد فوق القايمة.
                 Container(
                   width: double.infinity,
                   padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),

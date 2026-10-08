@@ -1,21 +1,3 @@
-"""يعمل حسابات مستخدمين للمناديب الموجودين في بيانات a5.
-
-عملاء a5 بيشاوروا على مندوبهم **بالاسم** — والاسم مكتوب في خانة التليفون (`ph1`)، لأن
-العمود المخصص للمندوب فاضي في الـ٦٥٠ عميل كلهم. فعشان الاستيراد يقدر يوزّع العملاء، لازم
-يبقى فيه حساب باسم كل مندوب.
-
-بيقرا الأسماء من ملف العملاء المصدّر — مش من قائمة مكتوبة هنا. القائمة المكتوبة بتقدم:
-مندوب جديد بيدخل a5 والسكربت مايعرفوش.
-
-اسم الدخول بيتولّد لاتيني من الاسم العربي (`عمرو رجب` ← `rep.amr.rjb`)، لأن اسم الدخول
-بيتكتب على كيبورد وبيتقال في التليفون.
-
-    $env:SEED_PASSWORD = "..."
-    python -m src.scripts.seed_a5_reps --dir C:/pgtmp --yes
-
-    # شركة تانية على فرع تاني:
-    python -m src.scripts.seed_a5_reps --dir C:/aliaa --branch العلياء --yes
-"""
 from __future__ import annotations
 
 import os
@@ -31,7 +13,6 @@ from src.models.role import Role, RoleName
 from src.models.user import User
 from src.scripts.import_a5 import JUNK, PHONE, _clean, _read
 
-# نقحرة عربي ← لاتيني. تقريبية عن قصد: الغرض اسم دخول يتكتب، مش نقل صوتي دقيق.
 AR2LAT = {
     "ا": "a", "أ": "a", "إ": "a", "آ": "a", "ب": "b", "ت": "t", "ث": "th", "ج": "g",
     "ح": "h", "خ": "kh", "د": "d", "ذ": "z", "ر": "r", "ز": "z", "س": "s", "ش": "sh",
@@ -54,7 +35,6 @@ def _slug(name: str) -> str:
 
 def run(folder: str, password: str, *, execute: bool, branch_name: str = "") -> None:
     custs = _read(os.path.join(folder, "a5_cust.tsv"))
-    # الأسماء بتتقرا من الداتا نفسها — قائمة مكتوبة هنا بتقدم أول ما مندوب يتضاف هناك.
     names: dict[str, int] = {}
     for r in custs:
         if len(r) < 5 or not r[0].isdigit():
@@ -87,7 +67,6 @@ def run(folder: str, password: str, *, execute: bool, branch_name: str = "") -> 
         terr = db.scalars(select(Territory).where(Territory.branch_id == branch.id)
                           .order_by(Territory.id)).first()
 
-        # الدورة جوّه الفرع: «اداره مبيعات» موجود في الفرعين، وكل فرع عايز حسابه.
         existing_names = {(u.full_name or "").strip(): u
                           for u in db.scalars(select(User).where(
                               User.branch_id == branch.id)).all()}

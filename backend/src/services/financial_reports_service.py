@@ -1,14 +1,3 @@
-"""Income statement, balance sheet and receivables aging — 020-finance-reports.
-
-All three read the same ledger the trial balance reads; nothing is stored. Accounts are
-classified by their `nature`, so a user-defined chart account lands in the right statement
-without any extra bookkeeping.
-
-Aging reads the **residual** left on each line after reconciliation (المرحلة ٣) and buckets
-it by the line's own due date. The line that has no residual yet — written before the phase-3
-backfill ran — falls back to the old rule: apply credits against debits oldest-first per
-party. الاتنين بيشتغلوا جنب بعض في نفس التقرير عشان النقل مايحتاجش وقفة.
-"""
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -53,7 +42,7 @@ class BalanceSheet:
     total_assets: Decimal
     total_liabilities: Decimal
     total_equity: Decimal
-    net_profit: Decimal          # current-period result, folded into equity
+    net_profit: Decimal
     balanced: bool
 
 
@@ -73,12 +62,6 @@ def _effective_date(entry: LedgerEntry) -> date:
 
 
 def effective_nature(acc: Account) -> AccountNature | None:
-    """The account's classification.
-
-    System accounts (treasury, receivables, revenue, …) only carry an explicit `nature` once
-    the standard chart has been seeded; before that it is NULL. Falling back to the type map
-    keeps the statements correct on any database instead of silently dropping those balances.
-    """
     if acc.nature is not None:
         return acc.nature
     from src.services.chart_service import _NATURE_BY_TYPE
@@ -98,20 +81,10 @@ def _movements(
     db: Session, *, date_from: date | None, date_to: date | None,
     posted_only: bool = True, branch_id: int | None = None,
 ) -> dict[int, Decimal]:
-    """account_id -> signed movement (by the account's normal side) within the window.
-
-    `branch_id` بيحصر القراءة على فرع واحد. ده قلب التقارير المالية كلها — قائمة
-    الدخل والميزانية وميزان المراجعة بيعدّوا من هنا — فالفلترة هنا بتقفل التلاتة
-    مرة واحدة بدل ما تتكرر في كل تقرير.
-
-    القيد اللي مالوش فرع (`NULL`) بيدخل مع الكل: دي قيود اتكتبت قبل ما العزل
-    يتعمل، وإخفاؤها بيخلّي الميزانية تنقص من غير سبب ظاهر.
-    """
     stmt = (
         select(LedgerLine).options(selectinload(LedgerLine.entry),
                                    selectinload(LedgerLine.account))
         .join(LedgerEntry, LedgerEntry.id == LedgerLine.entry_id)
-        # «المرحّل بس» افتراضياً؛ «كل القيود» بتضم المسودة. الملغي بره في الحالتين.
         .where(ledger_service.in_books_sql(posted_only))
     )
     if branch_id is not None:
@@ -152,7 +125,6 @@ def income_statement(
     db: Session, *, date_from: date | None = None, date_to: date | None = None,
     posted_only: bool = True, branch_id: int | None = None,
 ) -> IncomeStatement:
-    """قائمة الدخل — الإيرادات ناقص المصروفات خلال الفترة."""
     totals = _movements(db, date_from=date_from, date_to=date_to,
                         posted_only=posted_only, branch_id=branch_id)
     income, total_income = _by_nature(db, totals, AccountNature.income)
@@ -166,7 +138,6 @@ def income_statement(
 
 def balance_sheet(db: Session, *, as_of: date | None = None,
                   posted_only: bool = True, branch_id: int | None = None) -> BalanceSheet:
-    """الميزانية — الأصول = الالتزامات + حقوق الملكية (متضمنة أرباح الفترة)."""
     totals = _movements(db, date_from=None, date_to=as_of, posted_only=posted_only,
                         branch_id=branch_id)
     assets, total_assets = _by_nature(db, totals, AccountNature.asset)
@@ -187,7 +158,6 @@ def _aging_for_accounts(
     db: Session, *, account_by_party: dict[int, int], names: dict[int, str], as_of: date,
     branch_id: int | None = None,
 ) -> list[AgingRow]:
-    """FIFO-apply credits against debits per party, then bucket what is left by age."""
     wanted = {account_id: party_id for party_id, account_id in account_by_party.items()}
     if not wanted:
         return []
@@ -202,8 +172,6 @@ def _aging_for_accounts(
             (LedgerEntry.branch_id == branch_id) | LedgerEntry.branch_id.is_(None))
     rows = db.scalars(stmt).all()
 
-    # السطر اللي ليه متبقّي بيتقرا من متبقّيه بتاريخ استحقاقه؛ واللي لسه NULL (قبل ما
-    # سكربت النقل يعدّي) بياخد الطريقة القديمة. الفصل ده مؤقت بطبعه وبيفضى لوحده.
     per_party: dict[int, list[tuple[date, Decimal, bool]]] = {}
     tracked: dict[int, list[tuple[date, Decimal]]] = {}
     for line in rows:
@@ -214,14 +182,12 @@ def _aging_for_accounts(
         if line.amount_residual is not None:
             residual = to_money(line.amount_residual)
             if residual == ZERO:
-                continue  # اتقفل — مش مستحق ولا بيقدّم عمر
-            # الإشارة: مدين موجب. للدائنين (الحساب دائن بطبعه) بنقلبها عشان «المستحق»
-            # يطلع موجب في التقريرين.
+                continue
             signed = residual if line.account.normal_side == Direction.debit else -residual
             due = line.date_maturity or when
             tracked.setdefault(party_id, []).append((due, signed))
             continue
-        is_charge = line.direction == line.account.normal_side  # debit for AR, credit for AP
+        is_charge = line.direction == line.account.normal_side
         per_party.setdefault(party_id, []).append(
             (when, to_money(line.amount), is_charge))
 
@@ -250,14 +216,13 @@ def _aging_for_accounts(
 
     for party_id, movements in per_party.items():
         movements.sort(key=lambda m: m[0])
-        charges: list[list] = []  # [date, remaining]
+        charges: list[list] = []
         credit_pool = ZERO
         for when, amount, is_charge in movements:
             if is_charge:
                 charges.append([when, amount])
             else:
                 credit_pool += amount
-        # Oldest charge is settled first.
         for charge in charges:
             if credit_pool <= ZERO:
                 break
@@ -278,19 +243,6 @@ def _aging_for_accounts(
     return result
 
 
-# --------------------------------------------------------- كاش قصير لأعمار الديون
-#
-# **الحساب ده تقيل، وبيتنده من شاشتين مع بعض.**
-#
-# `_aging_for_accounts` بتحمّل كل سطور الدفتر على حسابات العملاء وبتقاصّها واحد واحد.
-# قِيس: أربع ثواني ونص. وكارت «المتبقي آجل على العملاء» في سجل الفواتير بينده عليها
-# كمان — يعني كل دخلة على أكتر شاشة بتتفتح في النظام بتدفع التمن ده.
-#
-# الكاش زمنه **دقيقة واحدة**: طويل كفاية إن الشاشتين اللي بيفتحوا ورا بعض يدفعوا الحساب
-# مرة، وقصير كفاية إن التحصيل اللي اتسجّل دلوقتي يبان في الكارت وانت لسه واقف.
-#
-# ومتقفل على المفتاح كامل (النوع والتاريخ والفرع): مدير فرع ومدير تاني بيشوفوا أرقام
-# مختلفة، ولو المفتاح ماخدش الفرع كان واحد فيهم هيقرا رقم التاني.
 _AGING_TTL_SECONDS = 60.0
 _aging_cache: dict[tuple, tuple[float, list]] = {}
 
@@ -304,7 +256,6 @@ def _cached_aging(key: tuple, build):
         return hit[1]
     value = build()
     _aging_cache[key] = (now, value)
-    # الكاش مايكبرش: مفاتيح قديمة بتتشال مع كل بناء جديد.
     for k, (stamp, _v) in list(_aging_cache.items()):
         if now - stamp >= _AGING_TTL_SECONDS:
             _aging_cache.pop(k, None)
@@ -313,7 +264,6 @@ def _cached_aging(key: tuple, build):
 
 def receivables_aging(db: Session, *, as_of: date | None = None,
                       branch_id: int | None = None) -> list[AgingRow]:
-    """أعمار ديون العملاء."""
     when = as_of or date.today()
 
     def build() -> list[AgingRow]:
@@ -330,7 +280,6 @@ def receivables_aging(db: Session, *, as_of: date | None = None,
 
 def payables_aging(db: Session, *, as_of: date | None = None,
                    branch_id: int | None = None) -> list[AgingRow]:
-    """أعمار مستحقات الموردين."""
     when = as_of or date.today()
 
     def build() -> list[AgingRow]:
@@ -345,16 +294,7 @@ def payables_aging(db: Session, *, as_of: date | None = None,
     return _cached_aging(("payables", when, branch_id), build)
 
 
-# --------------------------------------------------- المقارنة (سلوك تقارير أودو المشترك)
-
-
 def income_statement_compared(db: Session, options, *, branch_id: int | None = None) -> dict:
-    """قائمة الدخل ومعاها نفس التقرير لفترة المقارنة — ونسبة الفرق.
-
-    الرقم لوحده مابيقولش «كويس ولا وحش»؛ اللي بيقول هو اللي جنبه. الفرق بيتحسب
-    على مستوى الحساب مش الإجمالي بس، عشان اللي شايف مصروف زاد ٢٠٪ يعرف أنهي حساب
-    فيه زوّد.
-    """
     from src.services import report_options as ro
 
     current = income_statement(db, date_from=options.date_from, date_to=options.date_to,
@@ -370,7 +310,6 @@ def income_statement_compared(db: Session, options, *, branch_id: int | None = N
 
 
 def balance_sheet_compared(db: Session, options, *, branch_id: int | None = None) -> dict:
-    """الميزانية ومعاها نفس التقرير على تاريخ المقارنة."""
     from src.services import report_options as ro
 
     current = balance_sheet(db, as_of=options.date_to, posted_only=options.posted_only,
@@ -386,7 +325,6 @@ def balance_sheet_compared(db: Session, options, *, branch_id: int | None = None
 
 
 def delta(now, before) -> dict:
-    """الفرق ونسبته. النسبة `None` لما اللي قبله صفر — القسمة على صفر مش «زيادة ١٠٠٪»."""
     now, before = to_money(now or 0), to_money(before or 0)
     diff = to_money(now - before)
     return {

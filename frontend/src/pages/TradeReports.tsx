@@ -2,7 +2,6 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { PAGE_SIZE } from '../utils/pagination';
 import { searchFilter, searchRank, sortByName } from '../utils/arabicSort';
 import { Alert, Button, Select, Tag, message } from 'antd';
-// فلتر على كل عمود — شوف `FilterTable`.
 import { FilterTable as Table } from '../components/FilterTable';
 import { BarChartOutlined, DownloadOutlined, PrinterOutlined, ReloadOutlined } from '@ant-design/icons';
 import dayjs, { Dayjs } from 'dayjs';
@@ -20,31 +19,14 @@ import { printReport, type PrintColumn, type PrintTotal } from '../print/reportS
 import ListPage from '../components/ListPage';
 import { useCanSeeStats } from '../components/StatsRow';
 import { money, numeralsLocale, qty } from '../utils/money';
-// Only the kinds that have a screen able to show them; a purchase return has no screen of its
-// own yet, so its rows stay unlinked rather than pointing somewhere that cannot open them.
 const DOC_SCREEN: Partial<Record<DocType, DocKind>> = {
   sale: 'invoice',
   sale_return: 'return',
   purchase: 'purchase',
 };
 
-/**
- * تقارير المبيعات والمشتريات — one screen instead of the sixteen the client has today.
- *
- * Their current system spreads these over separate menu items (مبيعات بالفاتورة، مبيعات بالعميل،
- * مبيعات بالصنف، أرباح الفواتير، مشتريات بالمورد …) but they are the same question asked three
- * ways: which document type, at what level of detail, grouped by what. So the screen is those
- * three switches over one endpoint, and every combination is a report.
- *
- * Profit shows only on sales, and only because the cost was frozen onto the line when it sold —
- * a later purchase at a different price must never rewrite a margin already earned.
- */
-
 type DocType = 'sale' | 'sale_return' | 'purchase' | 'purchase_return';
 type Level = 'document' | 'line';
-// (031) الفئة والفئة الرئيسية — تجميعتين زيادة على نفس المحرك، مش تقرير جديد.
-// «بالفئة» بيجمّع على فئة الصنف زي ما هي، و«بالفئة الرئيسية» بيرد كل فرعية لأبوها.
-// الفرع اللي ما عملش شجرة بياخد من الاتنين نفس الصفوف — الفئة اللي مالهاش أب هي جذرها.
 type GroupBy = 'none' | 'party' | 'item' | 'warehouse' | 'category' | 'main_category';
 
 const DOC_LABELS: Record<DocType, string> = {
@@ -60,48 +42,28 @@ interface Totals {
   lines_without_cost: number | null; document_count: number;
 }
 
-
-/**
- * The fifteen reports their menu lists, each as (which documents · what grain · grouped by what).
- *
- * Their system has fifteen separate report screens; ours has one engine that answers all of them,
- * which was the right way to BUILD it and the wrong way to SHIP it. Somebody who has run «ارباح
- * اصناف» every Sunday for six years does not want a screen with three switches and a note saying
- * their report is combination four — they want «ارباح اصناف». So the menu carries their fifteen
- * names, each opens in its own tab under that name, and the switches arrive already set.
- *
- * The switches stay live. Once here, the whole engine is still reachable — a question their system
- * could not ask is one switch away instead of a report nobody ever built. Moving one just says so
- * beside the title, so the person knows they are no longer looking at the report they opened.
- */
 export interface ReportView {
   label: string;
   docType: DocType;
   level: Level;
   groupBy: GroupBy;
-  /** Their route, kept so this stays auditable against the map. */
   a5: string;
 }
 
 export const REPORT_VIEWS: Record<string, ReportView> = {
-  // تقارير مبيعات
   'sales-invoices': { label: 'مبيعات فواتير', docType: 'sale', level: 'document', groupBy: 'none', a5: '/sales/invoice-search' },
   'sales-invoices-grouped': { label: 'مجمع مبيعات فواتير', docType: 'sale', level: 'document', groupBy: 'party', a5: '/sales/invoice-grouped' },
   'sales-items': { label: 'مبيعات اصناف', docType: 'sale', level: 'line', groupBy: 'none', a5: '/sales/itemsearch' },
   'sales-items-grouped': { label: 'مبيعات اصناف مجمعة', docType: 'sale', level: 'line', groupBy: 'item', a5: '/sales/item-grouped' },
   'invoice-profits': { label: 'ارباح فواتير', docType: 'sale', level: 'document', groupBy: 'none', a5: '/invoicesprofits' },
   'item-profits': { label: 'ارباح اصناف', docType: 'sale', level: 'line', groupBy: 'item', a5: '/sales/itemprofits' },
-  // تقارير مردود مبيعات
   'sales-return-items': { label: 'مرتجعات أصناف المبيعات', docType: 'sale_return', level: 'line', groupBy: 'item', a5: '/salesreturns/itemsearch' },
-  // هامش مبيعات — the same lines, gathered by the thing being judged.
   'margin-by-store': { label: 'هامش مبيعات مخازن', docType: 'sale', level: 'line', groupBy: 'warehouse', a5: '/sales/reports/store-margin' },
   'margin-by-customer': { label: 'هامش مبيعات عملاء', docType: 'sale', level: 'line', groupBy: 'party', a5: '/sales/reports/customer-margin' },
-  // تقارير مشتريات
   'purchase-invoices': { label: 'مشتريات فواتير', docType: 'purchase', level: 'document', groupBy: 'none', a5: '/purchases/invoice-search' },
   'purchase-invoices-grouped': { label: 'مجمع مشتريات فواتير', docType: 'purchase', level: 'document', groupBy: 'party', a5: '/purchases/invoice-grouped' },
   'purchase-items': { label: 'مشتريات اصناف', docType: 'purchase', level: 'line', groupBy: 'none', a5: '/purchases/itemsearch' },
   'purchase-items-grouped': { label: 'مشتريات اصناف مجمعة', docType: 'purchase', level: 'line', groupBy: 'item', a5: '/purchases/item-grouped' },
-  // تقارير مردود مشتريات
   'purchase-return-items': { label: 'مرتجعات أصناف المشتريات', docType: 'purchase_return', level: 'line', groupBy: 'item', a5: '/purchasesreturns/itemsearch' },
 };
 
@@ -113,9 +75,6 @@ export default function TradeReports() {
   const [level, setLevel] = useState<Level>(view?.level ?? 'document');
   const [groupBy, setGroupBy] = useState<GroupBy>(view?.groupBy ?? 'none');
   const [range, setRange] = useState<[Dayjs, Dayjs] | null>(null);
-  // الطرف محفوظ ومعاه نوعه (عميل ولا مورد): رقم عميل مابينفعش يتبعت كرقم مورد. كان فيه
-  // effect بيفضّيه بعد تغيير نوع المستند — بس بعد ما الطلب يكون راح برقم العميل على
-  // المشتريات، فالتقرير كان بيتجاب مرتين وأول مرة غلط.
   const [party, setParty] = useState<{ id: number; sale: boolean } | undefined>();
   const [itemId, setItemId] = useState<number | undefined>();
   const [warehouseId, setWarehouseId] = useState<number | undefined>();
@@ -134,7 +93,6 @@ export default function TradeReports() {
   const parties = isSale ? customers : suppliers;
   const partyId = party && party.sale === isSale ? party.id : undefined;
   const setPartyId = (id?: number) => setParty(id ? { id, sale: isSale } : undefined);
-  // الموردين جايين بترتيب الإضافة — القايمة أبجدي قبل الكتابة، والكتابة بترتّب بالقُرب.
   const partyOptions = useMemo(() => sortByName(parties, (p: any) => p.name)
     .map((p: any) => ({ value: p.id, label: String(p.name ?? '') })), [parties]);
 
@@ -148,12 +106,6 @@ export default function TradeReports() {
     }).catch(console.error);
   }, []);
 
-  // The named report reasserts itself when the route changes — the tab workspace keeps every open
-  // screen mounted, so arriving at a different report must reset the switches rather than inherit
-  // whatever the last one left behind.
-  //
-  // والفلاتر كمان: «ارباح اصناف» اللي اتفتح بعد «مبيعات فواتير» كان بيورث الصنف والمخزن
-  // والبيان من التقرير اللي قبله، فبيطلع ناقص من غير ما حد يعرف ليه.
   useEffect(() => {
     if (!view) return;
     setDocType(view.docType); setLevel(view.level); setGroupBy(view.groupBy);
@@ -163,9 +115,6 @@ export default function TradeReports() {
   const offPreset = !!view && (docType !== view.docType || level !== view.level
     || groupBy !== view.groupBy);
 
-  // Switching between customers and suppliers drops a party filter that no longer applies.
-  // `partyId` above already reads nothing in the same render (so one fetch, not two); this only
-  // forgets it, so going back to sales doesn't bring an old customer back.
   useEffect(() => { setParty((p) => (p && p.sale !== isSale ? undefined : p)); }, [isSale]);
 
   const params = useMemo(() => {
@@ -251,17 +200,12 @@ export default function TradeReports() {
         ...numberColumn<any>((r) => r.net),
         render: (v: string) => <b>{money(v)}</b> },
       ...profitColumns,
-      // A figure in a report is only useful if you can get to the document behind it.
       { title: '', key: 'link', width: 140,
         render: (_: any, r: any) => (r.doc_id && DOC_SCREEN[docType]
           ? <DocumentLink kind={DOC_SCREEN[docType]} id={r.doc_id} size="small" />
           : null) },
     ];
 
-  /** الفلاتر اللي التقرير اتقرا بيها — بتطلع في ترويسة الصفحة المطبوعة.
-   *
-   * A printed report with no dates on it is a page of numbers nobody can date, and it gets read
-   * six months later as if it were current. */
   const printMeta = (): [string, string][] => {
     const pairs: [string, string][] = [
       ['من', range ? range[0].format('YYYY/MM/DD') : 'كل التواريخ'],
@@ -287,8 +231,6 @@ export default function TradeReports() {
       ? [
           { label: 'عدد المستندات', value: totals.document_count },
           { label: 'إجمالي الكمية', value: qty(totals.quantity) },
-          // Profit only exists on sales — printing «الربح: ٠» on a purchase report would be a
-          // stated figure that is not a fact.
           ...(totals.profit !== null
             ? [{ label: 'التكلفة', value: money(totals.cost) },
                { label: 'الربح', value: money(totals.profit) }]
@@ -302,16 +244,11 @@ export default function TradeReports() {
     );
   };
 
-  /** Exported straight from what is on screen, so the file always matches the report read. */
   const exportCsv = () => {
     if (!rows.length) { message.info('لا توجد بيانات للتصدير'); return; }
-    // `columnsFromTable` drops the action column — it has no data behind it, and exporting it
-    // would add a blank column carrying a heading.
     writeCsv(`${docType}-${level}-${groupBy}`, columnsFromTable(columns as any[]), rows);
   };
 
-  // رقم في تقرير مالوش قيمة من غير ما توصل للمستند اللي وراه. الزرار موجود في آخر السطر؛ ده
-  // بيخلّي السطر كله يوصل لنفس المكان.
   const openDoc = useOpenDocument();
   const rowKeyOf = (r: any) => (r.line_id ? `l-${r.line_id}`
     : r.doc_id && !grouped ? `d-${r.doc_id}` : `g-${r.key ?? 'none'}`);
@@ -320,13 +257,10 @@ export default function TradeReports() {
     onOpen: (r) => { if (r.doc_id && DOC_SCREEN[docType]) openDoc(DOC_SCREEN[docType], r.doc_id); },
   });
 
-  // إخفاء وترتيب الأعمدة — نفس المحرك اللي كل الجداول بتستخدمه.
-  // اسم الملف بيتغيّر مع التقرير المفتوح — الشاشة واحدة بس بتقدّم عشرين تقرير مختلف.
   const tableCols = useTableColumns('trade-reports', columns, {
     export: { name: view ? view.label : 'تقارير المبيعات والمشتريات', rows },
   });
 
-  // كروت الإجماليات بقت سطر تحت الجدول — ولسه للي عنده `stats.view` بس، زي `StatsRow`.
   const canSeeStats = useCanSeeStats();
   const footer = totals && canSeeStats ? (
     <span className="sl-foot">

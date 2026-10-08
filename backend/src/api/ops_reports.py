@@ -1,4 +1,3 @@
-"""تقارير التشغيل والتحليل — محرك واحد بأسماء كتير (٨)."""
 from __future__ import annotations
 
 from datetime import date
@@ -24,12 +23,6 @@ from src.services import analytic_items_service
 
 router = APIRouter(tags=["ops-reports"], prefix="/reports")
 
-# كل موضوع بيتقفل على صلاحية الموديول اللي بيقرا منه، مش على صلاحية «تقارير» عامة.
-#
-# One endpoint answering seven subjects must not become a way around seven separate gates. A
-# capability called `reports.read` would be exactly that: whoever holds it reads the cheque
-# register, the loyalty ledger and every customer's inspection history, whatever their job. So the
-# check happens per request against the subject actually asked for.
 _SUBJECT_CAPABILITY = {
     "points": CAP_LOYALTY_READ,
     "coupons": CAP_LOYALTY_READ,
@@ -70,7 +63,6 @@ def ops_report(
     current: CurrentUser = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> dict:
-    """النقاط والكوبونات والمعاينات والشيكات والطلبات والحجوزات — كلهم من دالة واحدة."""
     _require_subject(current, subject)
     try:
         return ops_reports.ops(
@@ -110,13 +102,10 @@ def profitability(
     current: CurrentUser = Depends(require_capability(CAP_ACCOUNTING_TRIAL_BALANCE_READ)),
     db: Session = Depends(get_db),
 ) -> dict:
-    """أرباح وخسائر لكل مركز تكلفة أو لكل فرع — بتتقرا من الدفتر مش من المستندات."""
     try:
         return analysis_reports.profitability(
             db, dimension=dimension, date_from=date_from, date_to=date_to,
             include_unassigned=include_unassigned,
-            # مدير الفرع بيشوف ربحية فرعه. و«مقارنة الفروع» بتفضل للأدمن — هو
-            # الوحيد اللي `branch_id` بتاعه `None` فبيشوف الفروع كلها جنب بعض.
             branch_id=branch_scope.visible_branch_id(current))
     except AnalysisReportError as exc:
         raise HTTPException(422, {"code": "report_invalid", "message": str(exc)}) from exc
@@ -131,7 +120,6 @@ def profitability_breakdown(
     _: CurrentUser = Depends(require_capability(CAP_ACCOUNTING_TRIAL_BALANCE_READ)),
     db: Session = Depends(get_db),
 ) -> dict:
-    """«الرقم ده جه منين» — تفصيل المركز الواحد بالحساب."""
     try:
         return analysis_reports.account_breakdown(
             db, dimension=dimension, key=key, date_from=date_from, date_to=date_to)
@@ -148,11 +136,6 @@ def analytic_items(
     _: CurrentUser = Depends(require_capability(CAP_ACCOUNTING_TRIAL_BALANCE_READ)),
     db: Session = Depends(get_db),
 ) -> dict:
-    """البنود التحليلية — كل حصة مركز تكلفة كسطر بمستندها وحسابها ومبلغها.
-
-    التفصيل بالحساب بيقول «الرقم ده من أنهي حسابات»، وده بيقول «من أنهي مستندات» —
-    والتاني هو اللي بيتراجع عليه، لأن المستند هو اللي ممكن يتفتح ويتصلّح.
-    """
     return analytic_items_service.analytic_items(
         db, cost_center_id=cost_center_id, date_from=date_from, date_to=date_to,
         include_unassigned=include_unassigned)

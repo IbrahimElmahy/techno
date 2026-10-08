@@ -4,7 +4,6 @@ import {
   Alert, Button, Card, Col, DatePicker, Empty, Form, Input, Row, Select,
   Space, Tag, message,
 } from 'antd';
-// فلتر على كل عمود — شوف `FilterTable`.
 import { FilterTable as Table } from '../components/FilterTable';
 import { InputNumber } from '../components/NumberInput';
 import { Popconfirm } from '../components/noConfirm';
@@ -42,17 +41,6 @@ import { money, numeralsLocale, qty } from '../utils/money';
 import { unitSelectOptions } from '../utils/units';
 import './docs.extra.css';
 
-/**
- * طلبات البيع والشراء — شيت تسعير، مش مستند حركة.
- *
- * Renamed on request to say plainly what it already was: a pricing sheet. It moves no stock, owes
- * no money and checks no shelf — the quantity typed here is never compared against what is
- * actually available, on purpose, because the whole point is to price something before it is
- * committed to. It can be written for goods that have not arrived yet, quoted at any quantity a
- * customer asks about, and it becomes a real invoice at most once — converting a second time would
- * double the sale, so the screen stamps the link and then refuses.
- */
-
 type Kind = 'sale' | 'purchase';
 
 interface OrderLine {
@@ -72,13 +60,11 @@ interface Order {
   created_at: string | null; lines: OrderLine[];
 }
 
-/** سطر في الشيت — نفس سطر فاتورة البيع: وحدة، وكمية، وسعر، وخصم بالمية عليه. */
 interface DraftLine {
   key: number;
   item_id?: number;
   quantity?: number;
   unit_price?: number;
-  /** `null` يعني الوحدة الأساسية — نفس ما الفاتورة بتبعت. */
   unit?: string | null;
   discount_pct?: number;
 }
@@ -98,21 +84,15 @@ export default function Orders() {
   const [detail, setDetail] = useState<Order | null>(null);
 
   const [creating, setCreating] = useState(false);
-  // «طلب بيع» and «طلب شراء» are two entries in their menu and one screen here.
   const [kind, setKind] = useQueryTab('sale', 'kind') as unknown as [Kind, (k: Kind) => void];
-  /** يوم كتابة الورقة. كان بيتاخد ضمنياً «النهارده» وقت الحفظ — واللي بيكتب تسعيرة عن
-   *  مكالمة إمبارح كان مالوش طريقة يقول كده. */
   const [sheetDate, setSheetDate] = useState<Dayjs>(dayjs());
   const [dueDate, setDueDate] = useState<Dayjs | null>(null);
-  /** خصم على إجمالي الورقة — زيادة على خصم كل سطر، نفس الفاتورة. */
   const [discountPct, setDiscountPct] = useState(0);
-  /** وحدات كل صنف، بتتجاب أول ما الصنف يتضاف — نفس كاش فاتورة البيع. */
   const [unitsCache, setUnitsCache] = useState<Record<number,
     { name: string; factor: number; is_base: boolean }[]>>({});
   const [notes, setNotes] = useState('');
   const [statement1, setStatement1] = useState('');
   const [lines, setLines] = useState<DraftLine[]>([]);
-  // The doors, in the order the paper form asks: which kind of order, then who, then what.
   const [pickerOpen, setPickerOpen] = useState(false);
   const [focusLineKey, setFocusLineKey] = useState<number | null>(null);
   const keySeq = useRef(0);
@@ -134,18 +114,14 @@ export default function Orders() {
     } finally { setLoading(false); }
   };
 
-  /** الطلب بيتفتح على نفس الصفحة — ومعاه العنوان، عشان «رجوع» يقفله بدل ما يطلّعك من الشاشة. */
   const openOrder = (o: Order) => { setCreating(false); setDetail(o); markOpen(o.id); };
 
-  // الطلب المفتوح جزء من العنوان — الشرح في `useDocRoute`.
   const { markOpen, markClosed, opening: docOpening } = useDocRoute<Order>({
     rows: orders,
     openId: detail?.id ?? null,
     open: (o) => openOrder(o),
     close: () => closeDoc(),
     loading,
-    // **مش في الكشف ≠ مش موجود** — الرابط ممكن ييجي من بره لطلب برّه الصفحة المحمّلة،
-    // وبنجيبه كامل بسطوره عشان صفحة المستند مالهاش صف ناقص تقرا منه.
     fetchOne: async (id) => {
       try {
         return (await api.get(`/api/v1/orders/${id}`)).data as Order;
@@ -156,7 +132,6 @@ export default function Orders() {
     },
   });
 
-  /** بيسيب الطلب المفتوح ويرجّع للكشف — والعنوان بيتنضّف معاه. */
   const closeDoc = () => { setDetail(null); markClosed(); };
 
   useEffect(() => {
@@ -173,73 +148,39 @@ export default function Orders() {
     });
   }, []);
 
-  /**
-   * الشاشة مخصّصة لنوع واحد — بيع أو شرا — واللي بيحدّده هو المدخل اللي اتفتحت منه.
-   *
-   * كانت شاشة واحدة بزرارين وقايمة فيها الاتنين ومبدّل نوع جوّه المستند. النتيجة إن اللي
-   * داخل من «شيت تسعير بيع» يقدر يعمل تسعيرة شرا من غير ما ياخد باله، ويشوف في السجل
-   * أوراق مالهاش علاقة باللي هو فيه. المدخلين في القايمة مختلفين أصلاً، فالشاشة تبقى
-   * مختلفة معاهم.
-   *
-   * `kind` جاي من `?kind=` بتاع التبويب، يعني تبويبين مفتوحين في نفس الوقت كل واحد على
-   * نوعه من غير ما يبوّظوا على بعض.
-   */
   const kindLabel = kind === 'sale' ? 'بيع' : 'شرا';
   const sheetName = `تسعيرة ${kindLabel}`;
 
-  // قبل `useListFilter`: البحث بيناديها وهو بيتحسب جوّه الهوك نفسه.
   const partyName = (o: Order) => (o.kind === 'sale'
     ? (o as any).customer_name || customers.find((c) => c.id === o.customer_id)?.name
     : suppliers.find((s) => s.id === o.supplier_id)?.name) || '-';
 
   const filter = useListFilter(orders, {
-    // «طلب بيع» and «طلب شراء» are two screens in their menu. The kind belongs on the list, not
-    // only inside the create dialog — an entry that shows both kinds is not the screen it names.
     initialValues: { kind },
-    // اسم العميل/المورد من ضمن البحث — العمود ظاهر في الجدول، والبحث بيه كان بيرجّع فاضي.
     search: (o) => [o.document_number, partyName(o), o.notes, o.statement1],
     filters: {
       statement: (o, v) => matchesStatement(o, v),
       kind: (o, v) => o.kind === v,
       status: (o, v) => o.status === v,
     },
-    // تاريخ الطلب هو اللي في العمود، مش وقت كتابة الصف.
     dateOf: (o) => o.order_date || o.created_at,
   });
 
-  /**
-   * سعر الصنف المخزّن — سعر البيع للتسعيرة البيع، وسعر الشرا لتسعيرة الشرا.
-   *
-   * الحقل اسمه `sale_price`، وكان مكتوب هنا `sale_price_1` — اسم مالوش وجود لا في الـAPI
-   * ولا في أي شاشة تانية. يعني سطر تسعيرة البيع كان بيفتح بسعر فاضي **من أول يوم**، وكل
-   * واحد بيكتب السعر بإيده وهو متخزّن على الصنف أصلاً.
-   */
   const storedPrice = (itemId?: number) => {
     const it = items.find((i) => i.id === itemId);
     const raw = kind === 'sale' ? it?.sale_price : it?.purchase_price;
     return Number(raw) || 0;
   };
 
-  /** الخصم المخزّن على الصنف — نفس اللي فاتورة البيع بتفتح بيه السطر. */
   const storedDiscount = (itemId?: number) => {
     const it = items.find((i) => i.id === itemId);
     return Number(it?.default_discount_pct) || 0;
   };
 
-  /** إجمالي السطر قبل خصمه — الرقم اللي المراجعة بتبص عليه. */
   const lineGross = (l: DraftLine) => Number(l.quantity || 0) * Number(l.unit_price || 0);
-  /** وبعد خصمه. خصم الورقة بيتحسب على المجموع، مش هنا. */
   const lineNet = (l: DraftLine) => lineGross(l)
     * (1 - Math.min(MAX_DISCOUNT_PCT, Number(l.discount_pct || 0)) / 100);
 
-  /** قبل خصم الورقة، وبعده — نفس سُلّم الفاتورة. */
-  /**
-   * أعمدة شبكة السطور كبيانات — عشان تتخفي وتترتّب.
-   *
-   * كانت `<thead>` وخلايا `<tr>` مكتوبين بالإيد في نفس الترتيب، يعني الأعمدة مالهاش وجود
-   * كقايمة، فمافيش حاجة تقدر تخفي عمود ولا تحرّكه. `useEntryGrid` بيرسم الاتنين من
-   * القايمة دي، فالإخفاء والترتيب بيشتغلوا لوحدهم.
-   */
   const lineColumns: EntryColumn<DraftLine>[] = [
     { key: 'idx', title: '#', width: 34, locked: true,
       cellStyle: { color: '#6b6b6b' },
@@ -256,11 +197,8 @@ export default function Orders() {
           onChange={(v) => setLines((prev) => prev.map((l) => {
             if (l.key !== line.key) return l;
             const unit = v === '__base__' ? null : v;
-            // السعر بيتضرب في معامل الوحدة — نفس حساب الفاتورة (٠٠٧+٠٠٨). من غير كده
-            // اختيار «كرتونة» بيسيب سعر القطعة، والورقة تطلع بسعر مالوش علاقة باللي جنبه.
             const factor = (unitsCache[l.item_id || 0] || [])
               .find((u) => u.name === unit)?.factor ?? 1;
-            // لقرشين: سعر القطعة × معامل المتر (١÷٣) بيطلع ٩٫٩٩٩٩٩٩٩٩ من غير تقريب.
             return { ...l, unit, unit_price: Math.round(storedPrice(l.item_id) * factor * 100) / 100 };
           }))}
           options={unitOptions(line.item_id)} />
@@ -269,8 +207,6 @@ export default function Orders() {
       cellProps: (line) => (line.item_id != null
         ? { [QTY_DATA_ATTR]: line.item_id } as any : {}),
       cell: (line) => (
-        /* مفيش `max` على الكمية عن قصد: الورقة دي بتسعّر حاجة ممكن ماتكونش في المخزن
-           أصلاً — لسه ماوصلتش، أو العميل بيسأل عن كمية كبيرة. */
         <InputNumber size="small" min={0} style={{ width: '100%' }}
           data-qty-key={line.key} data-grid-col="qty" keyboard={false}
           placeholder="الكمية" value={line.quantity}
@@ -292,7 +228,6 @@ export default function Orders() {
       cell: (line) => money(lineGross(line)) },
     { key: 'disc_value', title: 'خصم', width: 95,
       cellStyle: { whiteSpace: 'nowrap' },
-      // «١٠٪» مابتقولش كام اتخصم — واللي بيراجع بيراجع بالجنيه.
       cell: (line) => money(lineGross(line) - lineNet(line)) },
     { key: 'disc_pct', title: 'خصم %', width: 70,
       cell: (line) => (
@@ -318,15 +253,10 @@ export default function Orders() {
   const netBeforeDoc = lines.reduce((sum, l) => sum + lineNet(l), 0);
   const draftTotal = netOf(netBeforeDoc, Math.min(MAX_DISCOUNT_PCT, discountPct));
 
-  /** One way in — the list buttons and F2 both come through here.
-   *
-   * بيفتح الشيت على طول. كان بيسأل «مين العميل؟» الأول ويقف مستني، وده سؤال الشيت ده
-   * مالوش إجابة عنه: حد بيسعّر أصناف عشان يعرض السعر، ولسه مش عارف هيعرضه على مين. */
   const startNew = (k: Kind) => {
     setKind(k); setLines([]); setCreating(true);
   };
 
-  /** وحدات الصنف — بتتجاب مرة واحدة لكل صنف وتتحفظ، زي فاتورة البيع. */
   const fetchUnits = async (itemId: number) => {
     if (unitsCache[itemId]) return;
     try {
@@ -342,7 +272,6 @@ export default function Orders() {
     ? (unitsCache[l.item_id || 0] || []).find((u) => u.name === l.unit)?.factor ?? 1
     : 1);
 
-  /** Enter بينقل للسطر اللي بعده، وآخر سطر بيفتح شباك الأصناف — نفس فاتورة البيع. */
   const advanceFrom = (key: number) => {
     const idx = lines.findIndex((l) => l.key === key);
     const next = idx >= 0 ? lines[idx + 1] : undefined;
@@ -350,7 +279,6 @@ export default function Orders() {
     setPickerOpen(true);
   };
 
-  /** نفس الحداشر فعل في نفس الحداشر مكان زي فاتورة البيع — الإيد ماتتعلّمش الشاشة من الأول. */
   const sheetToolbar = (): ToolbarAction[] => {
     const typed = lines.filter((l) => l.item_id).length;
     const clear = () => {
@@ -475,7 +403,6 @@ export default function Orders() {
     const existing = lines.find((l) => l.item_id === itemId);
     if (existing) {
       const name = items.find((i) => i.id === itemId)?.name ?? `صنف #${itemId}`;
-      // مكرر + كمية من الشباك ⇒ بتتزوّد على السطر (الشيت مالوش سقف رصيد).
       if (qty) {
         setLines((prev) => prev.map((l) => (l.key === existing.key
           ? { ...l, quantity: Number(l.quantity || 0) + qty } : l)));
@@ -485,11 +412,8 @@ export default function Orders() {
       }
       return { dup: itemId };
     }
-    // العدّاد عشان الإضافة المجمّعة: كل الأصناف بتقرا نفس `lines` فكانت هتاخد نفس المفتاح.
     const key = Math.max(lines[lines.length - 1]?.key ?? 0, keySeq.current) + 1;
     keySeq.current = key;
-    // An order is a price quoted in advance, so the line opens on the item's own price rather
-    // than empty — the person is confirming a number, not inventing one. والخصم كمان.
     setLines((prev) => [...prev, { key, item_id: itemId,
       ...(qty ? { quantity: qty } : {}),
       unit_price: storedPrice(itemId),
@@ -529,8 +453,6 @@ export default function Orders() {
     try {
       await api.post('/api/v1/orders', {
         kind,
-        // من غير طرف ولا مخزن — ورقة تسعير مش مستند حركة. الفاتورة هي اللي بتتكتب على
-        // عميل وبتخرج من مخزن، وهي اللي بتتربط بالورقة دي لما البيع يتأكد.
         customer_id: null,
         supplier_id: null,
         warehouse_id: null,
@@ -569,20 +491,11 @@ export default function Orders() {
     }
   };
 
-  /**
-   * صفحة المستند — واحدة، سواء بتكتب طلب أو بتقرا واحد.
-   *
-   * The order used to be written in a Modal and read in a Drawer: two shapes for one document, so
-   * opening yesterday's order landed nowhere near where it was typed. The list steps aside while
-   * a document is open.
-   */
   const docOpen = creating || !!detail;
 
   const columns: ColumnsType<Order> = [
     { title: 'رقم الطلب', dataIndex: 'document_number',
       render: (v: string) => <Tag>{v}</Tag> },
-    // عمود «النوع» اتشال — كل سطر في القايمة دي نفس النوع، فالعمود كان بيكرّر اسم الشاشة
-    // في كل صف من غير ما يقول حاجة جديدة.
     { title: 'الطرف', render: (_: any, r: Order) => partyName(r) },
     { title: 'التاريخ', dataIndex: 'order_date',
       render: (d: string, r) => (d || r.created_at || '').slice(0, 10) },
@@ -606,15 +519,11 @@ export default function Orders() {
       ) },
   ];
 
-  // إخفاء وترتيب الأعمدة — نفس المحرك اللي كل الجداول بتستخدمه.
-  // التصدير زرار لوحده في ترويسة الكشف — بنفس الأعمدة المعروضة.
   const tableCols = useTableColumns('orders', columns);
 
-  // خانة بحث الكشف — F3 كانت جاية من `ListToolbar`، والخانة بقت في سطر فلاتر `ListPage`.
   const listSearchRef = useRef<any>(null);
   useScreenShortcuts({ onSearch: () => { listSearchRef.current?.focus?.(); } }, !docOpen);
 
-  // من غير الطرف (عمود «الطرف» مابيتجمعش) — العدد وإجمالي المعروض.
   const shownTotal = filter.filtered.reduce((n, o) => n + Number(o.total || 0), 0);
   const listFooter = (
     <span className="sl-foot">
@@ -623,7 +532,6 @@ export default function Orders() {
     </span>
   );
 
-  // مستند جاي من شاشة تانية ولسه بيفتح ⇒ مكان الكشف فاضي (الشرح في `useDocRoute.opening`).
   if (docOpening) return <DocOpening />;
   return (
     <>
@@ -631,12 +539,8 @@ export default function Orders() {
     <ListPage
       icon={<FileTextOutlined />}
       title={`شيت تسعير ${kindLabel}`} muted={`(سجل طلبات ال${kind === 'sale' ? 'بيع' : 'شراء'})`}
-      // كان تنبيه كبير فوق الكشف — نفس الكلام في سطر تحت العنوان.
       subtitle="ورقة تسعير — لا تحرّك مخزوناً ولا خزينة. اكتب أي كمية بغض النظر عن المتاح، وعند تأكيد البيع أنشئ الفاتورة واربطها بالطلب."
       actions={(<>
-        {/* زرار واحد بنوع الشاشة. من غير `data-shortcut` هنا: F2 على «إضافة صنف» جوّه
-            الشيت، ونفس المفتاح على زرارين في شاشة واحدة معناه إن اللي بيضغطه مش عارف
-            هيحصل إيه — نفس ترتيب فاتورة البيع بالظبط. */}
         <Button type="primary" icon={<PlusOutlined />} className="sl-create"
           onClick={() => startNew(kind)}>{sheetName}</Button>
         <Button icon={<ReloadOutlined />} onClick={load}>تحديث</Button>
@@ -654,7 +558,6 @@ export default function Orders() {
           prefix={<SearchOutlined />}
           onChange={(e) => filter.setQuery(e.target.value)}
         />
-        {/* فلتر «النوع» اتشال: القايمة كلها نوع واحد أصلاً. */}
         <Select allowClear showSearch mode="multiple" maxTagCount="responsive"
           placeholder="الحالة"
           value={filter.values.status ?? undefined}
@@ -677,7 +580,6 @@ export default function Orders() {
         rowKey="id" size="small" loading={loading} dataSource={filter.filtered}
         onRow={(r) => ({ onClick: () => openOrder(r), style: { cursor: 'pointer' } })}
         locale={{ emptyText: 'لا توجد طلبات' }}
-        // الترقيم شمال، والإجماليات يمين في نفس السطر — زي سجل المبيعات.
         pagination={{
           defaultPageSize: PAGE_SIZE, showSizeChanger: true,
           locale: { items_per_page: '' },
@@ -689,7 +591,6 @@ export default function Orders() {
     </ListPage>
     )}
 
-      {/* باب «مين العميل؟» اتشال — الشيت ده مش بيتكتب على حد. */}
       <ProductPickerModal
         open={pickerOpen}
         title={kind === 'sale' ? 'اختر الصنف المطلوب' : 'اختر الصنف المطلوب شراؤه'}
@@ -710,38 +611,21 @@ export default function Orders() {
         }} />
 
       {creating && (
-      // **شكل فاتورة البيع الجديد** (٢٠٢٦-١٠-٠١): كروت بيضا على رمادي — الترويسة والأدوات،
-      // خانات الورقة، الأصناف، وتحت الملخص والحفظ مثبّتين. الشكل بس: نفس الخانات والحساب.
       <div className="sale-doc">
         <div className="sale-card sale-head">
           <div className="sale-head-row">
             <Button size="small" icon={<ArrowRightOutlined />}
               onClick={() => setCreating(false)}>رجوع</Button>
             <span className="sale-title">{sheetName}</span>
-            {/* الأدوات و«الأعمدة» في نفس سطر العنوان على الشمال — زي فاتورة البيع. */}
             <div className="sale-toolbar-row">
               <DocumentToolbar actions={sheetToolbar()} variant="buttons" />
               {lineGrid.control}
             </div>
           </div>
         </div>
-        {/*
-          * الشيت من جوه نسخة من فاتورة البيع بالظبط، بطلب صاحب النظام.
-          *
-          * نفس شريط الأفعال الحداشر، نفس الترويسة، نفس جدول السطور (`entry-grid`) بترويسته
-          * اللاصقة، ونفس مربعات الملخص. اللي بيسعّر النهارده هو اللي بيفوتر بكرة، والشاشتين
-          * المفروض ماتختلفوش في حاجة غير اللي الورقتين مختلفتين فيه فعلاً.
-          *
-          * الفرق الحقيقي: مفيش طرف، ومفيش مخزن، ومفيش دفع — دي حاجات المستند اللي بيرحّل
-          * بيسألها، والورقة دي مابترحّلش.
-          */}
 
         <Form layout="vertical" size="small" className="doc-form sale-form" requiredMark={false}>
-          {/* مبدّل «بيع / شرا» اتشال من هنا: الورقة بتتفتح من مدخل نوعه معروف، وتغييره
-            في نص الكتابة كان بيفضّي السطور اللي اتكتبت — تراجع كامل من غير ما حد يطلبه. */}
 
-          {/* ترويسة الورقة: التاريخ ← السعر ساري لحد ← ملاحظات. مفيش عميل ولا مخزن — الورقة
-              دي مش بتتكتب على حد ولا بتخرج من مكان. */}
           <div className="sale-card sale-fields">
           <Row gutter={12}>
             <Col xs={12} md={4}>
@@ -772,7 +656,6 @@ export default function Orders() {
           </div>
 
           <div className="sale-card sale-lines">
-            {/* عدد البنود يمين، وزرار الإضافة شمال — زرار واحد وشباك واحد، نفس فاتورة البيع. */}
             <div className="sale-items-bar">
               <div className="sale-items-info">
                 <span>
@@ -807,8 +690,6 @@ export default function Orders() {
             )}
           </div>
 
-          {/* الملخص والحفظ مثبّتين في آخر الشاشة — نفس أرقام سُلّم الإجماليات القديم، في
-              مربعات. مفيش «المدفوع نقداً» ولا «المستحق»: الورقة دي مابتقبضش فلوس. */}
           <div className="sale-bottom">
             <Row gutter={[10, 10]}>
               <Col xs={24} lg={16}>
@@ -850,8 +731,6 @@ export default function Orders() {
       </div>
       )}
 
-      {/* الطلب مفتوح — نفس الصفحة، بنفس شكل فاتورة البيع. An order is a promise, not a
-          posting: nothing has moved, so the only decision on it is whether it still stands. */}
       {detail && (
       <div className="sale-doc">
         <div className="sale-card sale-head">
@@ -861,7 +740,6 @@ export default function Orders() {
               {detail.kind === 'sale' ? 'تسعيرة بيع' : 'تسعيرة شراء'} رقم:{' '}
               <b dir="ltr">{detail.document_number}</b>
             </span>
-            {/* الحالة جنب الرقم — كانت سطر في جدول البيانات. */}
             <Tag color={STATUS_LABELS[detail.status]?.color} style={{ marginInlineEnd: 0 }}>
               {STATUS_LABELS[detail.status]?.text}
             </Tag>
@@ -881,8 +759,6 @@ export default function Orders() {
         </div>
 
         <div className="sale-form">
-          {/* بيانات الطلب — للقراية بس، بنفس شكل خانات الفاتورة (الاسم فوق الخانة).
-              أرقام الإجمالي تحت في المربعات. */}
           <Form layout="vertical" size="small" component={false}>
           <div className="sale-card sale-fields">
             <Row gutter={12}>
@@ -969,14 +845,12 @@ export default function Orders() {
                 size="small" allowEdit onNavigate={() => setDetail(null)} />} />
           )}
 
-          {/* صور الورقة — التسعيرة الممضية أو طلب العميل بخطّ إيده. */}
           <div className="sale-card sale-notes">
             <div className="sale-attach">
               <DocumentAttachments docType="trade_order" docId={detail.id} title="مرفقات" />
             </div>
           </div>
 
-          {/* الإجمالي مثبّت في آخر الشاشة — نفس أرقام جدول البيانات القديم. */}
           <div className="sale-bottom">
             <Row gutter={[10, 10]}>
               <Col xs={24} lg={16}>

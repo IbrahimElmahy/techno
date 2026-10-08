@@ -1,4 +1,3 @@
-"""الحضور والانصراف — الورديات والعطلات وسجل اليوم (HR-2)."""
 from __future__ import annotations
 
 from datetime import date
@@ -30,11 +29,6 @@ router = APIRouter(tags=["attendance"], prefix="/hr/attendance")
 
 
 def _raise(exc: AttendanceError):
-    """`locked` كود مستقل عن قصد.
-
-    The frontend uses it to offer «اعكس المسير» instead of a dead-end toast — a generic 422 would
-    leave the person staring at a refusal with no next step.
-    """
     if isinstance(exc, AttendanceLocked):
         raise HTTPException(409, {"code": "locked", "message": str(exc)}) from exc
     if "غير موجود" in str(exc) or "غير موجودة" in str(exc):
@@ -43,25 +37,12 @@ def _raise(exc: AttendanceError):
 
 
 def _own_employee(db: Session, current: CurrentUser, employee_id: int) -> None:
-    """٤٠٤ لو الموظف من فرع تاني — نفس رد `_seen_employee` في كارت الموظف.
-
-    القوايم متعزلة، بس تسجيل يوم أو وردية بياخد رقم موظف من الطلب نفسه؛ من غير الفحص ده
-    موظف فرع بيكتب حضور موظف فرع تاني بمجرد إنه يعرف رقمه.
-    """
     if not branch_scope.may_touch_employee(db, current, employee_id):
         raise HTTPException(404, {"code": "not_found", "message": "الموظف غير موجود."})
 
 
 def _import_branch(current: CurrentUser) -> int | None:
-    """الفرع اللي ملف البصمة بيتطابق على موظفينه — None = كل الموظفين.
-
-    جهاز البصمة بتاع فرع، بس الملف ممكن يبقى فيه كود موظف فرع تاني (نفس الكود أو اسم
-    متشابه): من غير التقييد ده الاستيراد بيكتب أيام على موظف فرع تاني في صمت.
-    """
     return None if branch_scope.sees_all_branches(current) else current.branch_id
-
-
-# ----------------------------------------------------------------- schemas
 
 
 class ShiftIn(BaseModel):
@@ -135,12 +116,6 @@ class DayOut(BaseModel):
 
 
 class ImportIn(BaseModel):
-    """صفوف الملف كما هي — الواجهة بتقرا الـCSV وبتبعت جدول.
-
-    Parsed on the client so no file upload, no encoding negotiation, and no `xlsx` dependency on
-    either side. Every fingerprint device of this class exports CSV.
-    """
-
     rows: list[list[str]]
     employee_column: int = 0
     date_column: int = 1
@@ -170,9 +145,6 @@ def _day_out(db: Session, row: AttendanceDay, names: dict[int, str] | None = Non
         source=row.source.value, locked=row.locked_by_payroll_run_id is not None,
         notes=row.notes,
     )
-
-
-# ------------------------------------------------------------- الورديات
 
 
 @router.get("/shifts", response_model=list[ShiftOut])
@@ -215,17 +187,13 @@ def assign_shift(
     return result
 
 
-# ------------------------------------------------------------- العطلات
-
-
 @router.get("/holidays", response_model=list[HolidayOut])
 def list_holidays(
     year: int | None = Query(None),
     current: CurrentUser = Depends(require_capability(CAP_HR_READ)),
     db: Session = Depends(get_db),
 ) -> list[HolidayOut]:
-    stmt = select(Holiday).order_by(Holiday.holiday_date.desc(), Holiday.id.desc())  # الأحدث فوق
-    # عطلة فرعه + العطلات العامة (branch_id فاضي = كل الفروع) — وده بالظبط شرط `scope`.
+    stmt = select(Holiday).order_by(Holiday.holiday_date.desc(), Holiday.id.desc())
     stmt = branch_scope.scope(stmt, Holiday, current)
     if year:
         stmt = stmt.where(Holiday.holiday_date >= date(year, 1, 1),
@@ -241,8 +209,6 @@ def add_holiday(
 ) -> HolidayOut:
     data = body.model_dump()
     if not branch_scope.sees_all_branches(current):
-        # موظف الفرع بيقفل فرعه بس: عطلة عامة منه كانت هتعلّم الفروع التانية «عطلة» في
-        # يوم شغل عندهم، وفرع تاني معناه إنه بيكتب في دفتر مش بتاعه.
         data["branch_id"] = current.branch_id
     try:
         row = attendance_service.add_holiday(db, actor_user_id=current.id, **data)
@@ -263,14 +229,10 @@ def deactivate_holiday(
     if row is None or not branch_scope.may_see(current, row):
         raise HTTPException(404, {"code": "not_found", "message": "العطلة غير موجودة."})
     if row.branch_id is None and not branch_scope.sees_all_branches(current):
-        # العطلة العامة ظاهرة لكل فرع، بس إلغاؤها بيرجّع اليوم يوم شغل في الفروع كلها.
         raise HTTPException(403, {"code": "forbidden",
                                   "message": "العطلة دي عامة لكل الفروع — إلغاؤها من الإدارة."})
     row.active = False
     db.commit()
-
-
-# ------------------------------------------------------------- الأيام
 
 
 @router.get("/days", response_model=list[DayOut])
@@ -295,7 +257,6 @@ def list_days(
         stmt = stmt.where(AttendanceDay.employee_id.in_(
             select(Employee.id).where(Employee.department_id == department_id)))
     rows = db.scalars(stmt).all()
-    # اسم واحد لكل موظف بدل استعلام لكل صف — الشهر بيرجّع مئات السطور.
     names = {e.id: e.name for e in db.scalars(select(Employee)).all()}
     return [_day_out(db, r, names) for r in rows]
 
@@ -306,7 +267,6 @@ def record_day(
     current: CurrentUser = Depends(require_capability(CAP_HR_WRITE)),
     db: Session = Depends(get_db),
 ) -> DayOut:
-    """بيسجّل يوم أو بيعدّله — مفتاح (موظف، يوم) واحد، فالإرسال تاني بيعدّل مش بيكرّر."""
     _own_employee(db, current, body.employee_id)
     try:
         row = attendance_service.record_day(db, actor_user_id=current.id, **body.model_dump())
@@ -333,16 +293,12 @@ def delete_day(
     db.commit()
 
 
-# ------------------------------------------------------------- الاستيراد
-
-
 @router.post("/import/preview")
 def preview_import(
     body: ImportIn,
     current: CurrentUser = Depends(require_capability(CAP_HR_READ)),
     db: Session = Depends(get_db),
 ) -> dict:
-    """بيقرا الملف ومابيكتبش حاجة — خطوة «بص قبل ما تلتزم»، زي دورة الجرد."""
     return attendance_service.preview_import(db, rows=body.rows, mapping=body.mapping(),
                                              branch_id=_import_branch(current))
 
@@ -367,11 +323,6 @@ def list_imports(
     current: CurrentUser = Depends(require_capability(CAP_HR_READ)),
     db: Session = Depends(get_db),
 ) -> list[dict]:
-    """«الملف ده عمل إيه» — سؤال بيتسأل بعد الاستيراد بأسبوع.
-
-    الدفعة مالهاش عمود فرع؛ فرعها فرع اللي استوردها. اللي استورده حساب مركزي (مالوش فرع)
-    ظاهر للكل — نفس قاعدة المستند اللي مالوش فرع في `scope`.
-    """
     stmt = select(AttendanceImport).order_by(AttendanceImport.id.desc())
     branch_id = branch_scope.visible_branch_id(current)
     if branch_id is not None:

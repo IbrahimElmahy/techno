@@ -1,4 +1,3 @@
-"""Password hashing and JWT issue/verify (T027). Research R5."""
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
@@ -11,7 +10,6 @@ from src.core.config import settings
 
 
 def hash_password(plain: str) -> str:
-    # bcrypt caps input at 72 bytes; truncate deterministically.
     return bcrypt.hashpw(plain.encode("utf-8")[:72], bcrypt.gensalt()).decode("utf-8")
 
 

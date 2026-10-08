@@ -1,4 +1,3 @@
-"""Suppliers router (T021). FR-009."""
 from __future__ import annotations
 
 from decimal import Decimal
@@ -26,9 +25,6 @@ from src.services import (
 router = APIRouter(tags=["suppliers"], prefix="/suppliers")
 
 
-# The card fields read off their الموردين form (031). Shared by create and update so the two can
-# never drift apart. No discount, VAT or price tier: their supplier form carries none of the
-# three, unlike their customer form, and that difference is theirs to make.
 class _SupplierCard(BaseModel):
     supplier_type: str | None = None
     email: str | None = None
@@ -40,12 +36,11 @@ class _SupplierCard(BaseModel):
 class SupplierCreate(_SupplierCard):
     name: str
     phone: str | None = None
-    address: str | None = None            # (v4)
-    # Where he is and who deals with him — the customer has carried these since 001.
+    address: str | None = None
     branch_id: int | None = None
     governorate_id: int | None = None
     markaz: str | None = None
-    phones: list[str] | None = None       # (v4) extra numbers
+    phones: list[str] | None = None
 
 
 class SupplierUpdate(_SupplierCard):
@@ -70,13 +65,11 @@ class SupplierOut(BaseModel):
     governorate_id: int | None = None
     markaz: str | None = None
     phones: list[str] = []
-    # Card fields (031) — their الموردين form.
     supplier_type: str | None = None
     email: str | None = None
     tax_number: str | None = None
     commercial_register: str | None = None
     is_cash: bool = False
-    # Payable balance — filled on the list endpoint (one grouped query, not per row).
     balance: Decimal | None = None
 
 
@@ -91,11 +84,6 @@ def _sup_out(s: Supplier, db: Session | None = None) -> SupplierOut:
 
 
 def _apply_card(s: Supplier, body: _SupplierCard) -> None:
-    """Copy the الموردين card fields onto the supplier, skipping the ones not sent.
-
-    Omitted stays omitted, same as the customer's: a PATCH that names only the phone must not
-    blank the tax number somebody entered off a paper invoice months ago.
-    """
     for field in ("supplier_type", "email", "tax_number", "commercial_register", "is_cash"):
         val = getattr(body, field)
         if val is not None:
@@ -103,11 +91,6 @@ def _apply_card(s: Supplier, body: _SupplierCard) -> None:
 
 
 def _delete_supplier(db: Session, s: Supplier, actor_user_id: int) -> None:
-    """Permanently remove a supplier that never moved — otherwise refuse.
-
-    Deleting one with purchases, payments or ledger movement would orphan posted documents
-    and silently change the books, so that case stays a deactivation.
-    """
     from src.models.cheque import Cheque
     from src.models.ledger import LedgerLine
     from src.models.purchasing import PurchaseInvoice
@@ -162,11 +145,10 @@ class AccountBalanceOut(BaseModel):
 def list_suppliers(
     q: str | None = None,
     active: bool | None = None,
-    balance_filter: str | None = None,  # all | due | settled | advance
+    balance_filter: str | None = None,
     current: CurrentUser = Depends(require_capability(CAP_SUPPLIER_READ)),
     db: Session = Depends(get_db),
 ) -> list[SupplierOut]:
-    """List suppliers with search + filters, each carrying its payable balance."""
     stmt = supplier_profile_service.apply_filters(
         branch_scope.scope(select(Supplier), Supplier, current), q=q, active=active)
     rows = list(db.scalars(stmt.order_by(Supplier.id.desc())).all())
@@ -186,7 +168,6 @@ def create_supplier(
     _: CurrentUser = Depends(require_capability(CAP_SUPPLIER_WRITE)),
     db: Session = Depends(get_db),
 ) -> SupplierOut:
-    # أكبر كود + ١ مش العدد + ١ — نفس عيب العملاء (٢٠٢٦-١٠-٠١). شوف `numbering`.
     code = next_document_number(db, Supplier, "SUP", column=Supplier.code, width=5)
     acc = Account(account_type=AccountType.supplier_payable, normal_side=Direction.credit)
     db.add(acc)
@@ -207,12 +188,6 @@ def create_supplier(
 
 
 def _seen(db: Session, supplier_id: int, current: CurrentUser) -> Supplier:
-    """المورد لو اللي بيسأل يشوفه — و**٤٠٤ لو لأ**.
-
-    الكشف كان متعزل (`branch_scope.scope`) والرابط المباشر لأ، فمدير فرع كان بيفتح
-    بطاقة مورد فرع تاني بالرقم ومعاها كشف حسابه وفواتير الشرا. الفلترة على القايمة
-    وحدها بتخبّي الصف، والرابط بيجيبه.
-    """
     s = db.scalar(branch_scope.scope(
         select(Supplier).where(Supplier.id == supplier_id), Supplier, current))
     if s is None:
@@ -268,8 +243,6 @@ class ProfileDocOut(BaseModel):
 
 
 class SupplierProfileOut(BaseModel):
-    """ملف المورد — every movement tied to one supplier, in one call."""
-
     supplier: SupplierOut
     account_id: int | None
     balance: Decimal
@@ -296,7 +269,6 @@ def supplier_profile(
     current: CurrentUser = Depends(require_capability(CAP_SUPPLIER_READ)),
     db: Session = Depends(get_db),
 ) -> SupplierProfileOut:
-    """The supplier's full file: balance, purchases, returns, payments, cheques."""
     s = _seen(db, supplier_id, current)
     p = supplier_profile_service.profile(db, supplier_id)
     base = _sup_out(s, db)
@@ -321,7 +293,6 @@ def supplier_record_detail(
     current: CurrentUser = Depends(require_capability(CAP_SUPPLIER_READ)),
     db: Session = Depends(get_db),
 ) -> dict:
-    """Full detail of one row in the supplier's file — purchase, return, payment, cheque, entry."""
     _seen(db, supplier_id, current)
     try:
         return supplier_profile_service.record_detail(db, supplier_id, kind, record_id)
@@ -336,7 +307,6 @@ def deactivate_supplier(
     current: CurrentUser = Depends(require_capability(CAP_SUPPLIER_WRITE)),
     db: Session = Depends(get_db),
 ) -> None:
-    """Deactivate the supplier; `hard=true` deletes him outright — only if he never moved."""
     s = _seen(db, supplier_id, current)
     if hard:
         try:

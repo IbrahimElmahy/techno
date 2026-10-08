@@ -1,9 +1,3 @@
-/**
- * سند مصروف — اتفصل عن `Vouchers.tsx`، وشكله بقى من `VoucherShell` (٢٠٢٦-١٠-٠٧).
- *
- * الطرف هنا حساب المصروف (من الشجرة، وبيتضاف من نفس الخانة)، والقيد: مدين المصروف /
- * دائن الخزينة. الـpayload هو هو زي ما كان.
- */
 import React from 'react';
 import { Form, Input, Space } from 'antd';
 import type { FormInstance } from 'antd';
@@ -34,15 +28,12 @@ export default function ExpenseModal({
   const party = (
     <ExpenseAccountField accounts={expenseAccounts} groups={expenseGroups}
       onCreated={loadExpenseAccounts} width="100%"
-      // «صرفنا على البنزين كام لحد دلوقتي» — السؤال اللي في الدماغ وهو بيختار الحساب.
       extra={account ? (
         <span className="vs-hint">اتصرف عليه لحد دلوقتي: <b>{money(account.balance)}</b></span>
       ) : undefined} />
   );
 
   const details: React.ReactNode[] = [
-    // المصروف هو السند الوحيد اللي بيلمس حساب نتيجة، فهو الوحيد اللي التوزيع بيفرق
-    // فيه — إيجار بيتقسّم على فرعين مثلاً.
     <Form.Item key="c" label="مركز التكلفة">
       <Space align="start" wrap>
         <Form.Item name="cost_center_id" noStyle>
@@ -53,7 +44,6 @@ export default function ExpenseModal({
         </Form.Item>
       </Space>
     </Form.Item>,
-    // «بيان السند» كلام الورقة، مش وصف الحركة في القيد.
     <Form.Item key="s" name="statement1" label="بيان السند">
       <Input placeholder="الكلام المكتوب على ورقة السند" />
     </Form.Item>,

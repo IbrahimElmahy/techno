@@ -1,18 +1,3 @@
-"""مصروفات الفاتورة — an expense carried on a sales invoice.
-
-Two kinds, and the difference is the whole reason this is not one field:
-
-* **billed** (مصروفات) — charged TO the customer. Freight he pays for, loading, delivery. It adds
-  to what he owes, so it belongs inside the invoice total and the customer's receivable.
-* **operating** (مصروفات تشغيل) — borne BY us on this sale. It does not change what the customer
-  pays; it reduces the profit the sale earned.
-
-Folding them into one number would make either the customer's balance or the profit wrong, and
-which one is wrong would depend on who typed the invoice.
-
-The account comes from the chart, so a company can post freight, commission and loading to
-whichever accounts its accountant already uses rather than to one bucket we invented.
-"""
 from __future__ import annotations
 
 import enum
@@ -25,8 +10,8 @@ from src.core.money import MONEY
 
 
 class ExpenseKind(str, enum.Enum):
-    billed = "billed"        # مصروفات — على العميل، بتزيد الصافي
-    operating = "operating"  # مصروفات تشغيل — على الشركة، بتقلّل الربح
+    billed = "billed"
+    operating = "operating"
 
 
 class SalesInvoiceExpense(Base):

@@ -1,16 +1,3 @@
-"""هيكل الرواتب والشرايح — الإعداد قبل أي مسير (HR-4).
-
-The running of the payroll is HR-6; this is everything that has to be true before it can run.
-
-**قاعدة التجميد.** A `payroll_scheme_version` that has been used by a posted payroll run cannot be
-edited — not its dates, not its brackets. New rates are a new version with a new `effective_from`,
-always. Without that rule, correcting a typo in a rate silently rewrites every month already
-posted, and the ledger entries underneath them cannot be edited to match. The books would then
-disagree with the payslips and neither would be recoverable.
-
-The freeze is checked here rather than in the router because the run is what sets it, and the two
-have to agree about what «used» means.
-"""
 from __future__ import annotations
 
 from datetime import date
@@ -37,10 +24,7 @@ from src.services import audit_service, numbering
 
 
 class PayrollSetupError(Exception):
-    """الإعداد مايتعملش زي ما هو مكتوب."""
-
-
-# ------------------------------------------------------------------ البنود
+    pass
 
 
 def create_component(
@@ -70,15 +54,11 @@ def create_component(
     return row
 
 
-# ------------------------------------------------------------------ الهيكل
-
-
 def set_salary(
     db: Session, *, employee_id: int, effective_from: date, basic, actor_user_id: int,
     insurance_base=None, lines: list[dict] | None = None, notes: str | None = None,
     payment_method=None, bank_name: str | None = None, bank_account: str | None = None,
 ) -> EmployeeSalary:
-    """بيحط هيكل راتب من تاريخ. الزيادة صف جديد بتاريخ جديد، مش تعديل للقديم."""
     employee = db.get(Employee, employee_id)
     if employee is None:
         raise PayrollSetupError("الموظف غير موجود.")
@@ -89,8 +69,6 @@ def set_salary(
         EmployeeSalary.employee_id == employee_id,
         EmployeeSalary.effective_from == effective_from))
     if row is not None and used_by_posted_run(db, row):
-        # نفس قاعدة الشرايح: الهيكل اللي اتحسب عليه شهر مرحّل اتقفل. تعديله بنفس التاريخ
-        # بيخلّي الهيكل يقول رقم والقسيمة المرحّلة تقول رقم تاني، ومحدش يعرف أنهي الصح.
         raise PayrollSetupError(
             f"هيكل الراتب الساري من {effective_from} اتحسب عليه مسير مرحّل — "
             "أي تغيير يتعمل بتاريخ سريان جديد (زيادة)، مش تعديل للقديم.")
@@ -125,8 +103,6 @@ def set_salary(
             ))
         db.flush()
 
-    # `Employee.salary` بقى مرآة في اتجاه واحد للأساسي الحالي، عشان عمود المرتب في شاشة
-    # الموظفين يفضل صادق. الهيكل هو الحقيقة، والحقل ده عرض.
     current = salary_on(db, employee_id, date.today())
     if current is not None and current.id == row.id:
         employee.salary = row.basic
@@ -140,7 +116,6 @@ def set_salary(
 
 
 def salary_on(db: Session, employee_id: int, day: date) -> EmployeeSalary | None:
-    """هيكل الراتب الساري في اليوم ده — آخر واحد بدأ قبله أو فيه."""
     return db.scalar(
         select(EmployeeSalary)
         .where(EmployeeSalary.employee_id == employee_id,
@@ -150,7 +125,6 @@ def salary_on(db: Session, employee_id: int, day: date) -> EmployeeSalary | None
 
 
 def salary_breakdown(db: Session, salary: EmployeeSalary) -> dict:
-    """الأساسي والبنود محسوبة — النسبة بتتحوّل مبلغ هنا مرة واحدة."""
     basic = to_money(Decimal(str(salary.basic or 0)))
     earnings, deductions = [], []
     insurable = basic
@@ -183,7 +157,6 @@ def salary_breakdown(db: Session, salary: EmployeeSalary) -> dict:
         "earnings": earnings,
         "deductions": deductions,
         "gross": str(to_money(earned)),
-        # الأجر التأميني المتفق عليه بيغلب الحساب — دي حاجة بتتفق مع التأمينات مش بتتحسب.
         "insurance_base": str(to_money(Decimal(str(salary.insurance_base)))
                               if salary.insurance_base is not None else insurable),
         "taxable_base": str(to_money(taxable)),
@@ -191,11 +164,6 @@ def salary_breakdown(db: Session, salary: EmployeeSalary) -> dict:
 
 
 def used_by_posted_run(db: Session, salary: EmployeeSalary) -> bool:
-    """هل فيه شهر مرحّل اتحسب على الهيكل ده بالذات؟
-
-    «بالذات» يعني: الموظف له سطر في مسير مرحّل، وآخر يوم في الشهر ده الهيكل الساري فيه كان
-    الصف ده (مش نسخة قبله ولا بعده). المسودة مابتحسبش — بتتعاد براحتها.
-    """
     from src.models.hr_payroll_run import PayrollLine, PayrollRun, PayrollRunStatus
 
     months = db.execute(
@@ -213,12 +181,6 @@ def used_by_posted_run(db: Session, salary: EmployeeSalary) -> bool:
 
 
 def delete_salary(db: Session, *, salary_id: int, actor_user_id: int) -> int:
-    """بيمسح نسخة من هيكل راتب — للغلط في الإدخال أو «مسح الإعدادات».
-
-    النسخة اللي قبلها بترجع ساريّة لوحدها (`salary_on` بياخد آخر واحد بدأ). النسخة اللي اتحسب
-    عليها شهر مرحّل مابتتمسحش: الهيكل هو الإجابة على «القسيمة دي جت منين».
-    بيرجّع رقم الموظف.
-    """
     row = db.get(EmployeeSalary, salary_id)
     if row is None:
         raise PayrollSetupError("هيكل الراتب غير موجود.")
@@ -231,14 +193,10 @@ def delete_salary(db: Session, *, salary_id: int, actor_user_id: int) -> int:
     for line in db.scalars(select(EmployeeSalaryLine).where(
             EmployeeSalaryLine.salary_id == row.id)).all():
         db.delete(line)
-    # فلاش بين الاتنين: مافيش `relationship` بينهم، فالـORM مش عارف إن السطور لازم تتمسح
-    # الأول — ومن غيره ممكن يبعت مسح الهيكل قبلها ويقع على المفتاح الأجنبي.
     db.flush()
     db.delete(row)
     db.flush()
 
-    # المرآة على كارت الموظف بتتبع الساري الجديد. لو مافضلش هيكل خالص بنسيب الكارت زي ما
-    # هو: الرقم ده ممكن يكون اتكتب بالإيد في شاشة الموظفين قبل أي هيكل.
     employee = db.get(Employee, employee_id)
     current = salary_on(db, employee_id, date.today())
     if employee is not None and current is not None:
@@ -252,11 +210,6 @@ def delete_salary(db: Session, *, salary_id: int, actor_user_id: int) -> int:
 
 
 def salary_roster(db: Session, employees: list[Employee], day: date) -> dict[int, dict]:
-    """ملخص الراتب الساري لكل موظف في القايمة — بعدد ثابت من الاستعلامات مش استعلام لكل موظف.
-
-    شاشة «رواتب الموظفين» بتعرض كل الموظفين (١٣٧ على الإنتاج) ومش ناقصها ٤٠٠ استعلام.
-    الموظف اللي مالوش هيكل ساري مش في القاموس — الشاشة بتكتب «مالوش إعدادات».
-    """
     ids = [e.id for e in employees]
     if not ids:
         return {}
@@ -271,7 +224,6 @@ def salary_roster(db: Session, employees: list[Employee], day: date) -> dict[int
     picked: dict[int, tuple[EmployeeSalary, EmployeeSalary | None, int]] = {}
     for emp_id, rows in versions.items():
         cur = next((r for r in rows if r.effective_from <= day), None)
-        # زيادة متسجّلة لسه مابدأتش — بتبان جنب الساري عشان محدش يكتبها تاني.
         upcoming = next((r for r in reversed(rows) if r.effective_from > day), None)
         picked[emp_id] = (cur, upcoming, len(rows))
         if cur is not None:
@@ -313,9 +265,6 @@ def salary_roster(db: Session, employees: list[Employee], day: date) -> dict[int
             }
         out[emp_id] = entry
     return out
-
-
-# ------------------------------------------------------------------ الشرايح
 
 
 def create_version(
@@ -360,8 +309,6 @@ def _replace_brackets(db: Session, version: PayrollSchemeVersion, brackets: list
     for index, band in enumerate(ordered, start=1):
         lower = Decimal(str(band.get("from_amount") or 0))
         upper = band.get("to_amount")
-        # فجوة أو تداخل بين الشرايح معناه دخل بيتحاسب مرتين أو مابيتحاسبش خالص — والاتنين
-        # بيطلعوا رقم ضريبة غلط من غير ما حاجة تشتكي.
         if previous_top is not None and lower != previous_top:
             raise PayrollSetupError(
                 f"الشريحة رقم {index} بتبدأ من {lower} والسابقة انتهت عند {previous_top} — "
@@ -379,7 +326,6 @@ def _replace_brackets(db: Session, version: PayrollSchemeVersion, brackets: list
 
 
 def assert_editable(db: Session, version: PayrollSchemeVersion) -> None:
-    """إصدار استعمله مسير مرحّل مابيتعدّلش."""
     if version.locked:
         raise PayrollSetupError(
             "الشرايح دي استُخدمت في مرتب مرحّل — اعمل إصدار جديد بتاريخ سريان جديد."
@@ -408,11 +354,6 @@ def update_version(
 
 
 def version_on(db: Session, scheme: SchemeKind, day: date) -> PayrollSchemeVersion | None:
-    """الإصدار الساري في اليوم ده — بالفترة، مش بالنهاردة.
-
-    Resolved by the PAYROLL PERIOD so recomputing March reads March's rates. The run then stamps
-    the id it resolved, which is the second half of the same guarantee.
-    """
     return db.scalar(
         select(PayrollSchemeVersion)
         .where(PayrollSchemeVersion.scheme == scheme,
@@ -440,7 +381,6 @@ def brackets_of(db: Session, version_id: int) -> list[Bracket]:
 
 
 def lock_version(db: Session, version_id: int | None) -> None:
-    """بيتقفل أول ما مسير مرحّل يستعمله."""
     if version_id is None:
         return
     version = db.get(PayrollSchemeVersion, version_id)
@@ -449,11 +389,7 @@ def lock_version(db: Session, version_id: int | None) -> None:
         db.flush()
 
 
-# ------------------------------------------------------------------ الإعدادات
-
-
 def settings(db: Session) -> PayrollSetting:
-    """آخر صف هو الساري — ولو مافيش، بيتعمل واحد بالافتراضيات."""
     row = db.scalar(select(PayrollSetting).order_by(PayrollSetting.id.desc()))
     if row is None:
         row = PayrollSetting()

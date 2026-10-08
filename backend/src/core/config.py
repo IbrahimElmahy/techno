@@ -1,4 +1,3 @@
-"""Application settings (T004)."""
 from __future__ import annotations
 
 from pydantic import field_validator
@@ -8,27 +7,16 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
-    # SQLite default keeps dev/tests runnable without a live MySQL server.
-    # Production overrides via env DATABASE_URL:
-    #   MySQL:    mysql+pymysql://user:pass@host:3306/ubms?charset=utf8mb4
-    #   Postgres: postgresql+psycopg2://user:pass@host:5432/ubms   (Render/Neon/Supabase)
     database_url: str = "sqlite+pysqlite:///./ubms_dev.sqlite"
     jwt_secret: str = "dev-secret-change-me"
     jwt_algorithm: str = "HS256"
-    # Office staff work all day in the system; a 30-minute token logged them out mid-invoice.
-    # The token is long-lived AND the client silently renews it (POST /auth/refresh), so an
-    # active user is never kicked out, while a stolen token still ages out on its own.
-    access_token_ttl: int = 30 * 24 * 3600  # seconds
-    # Field reps work offline for long stretches; forcing a re-login at sync time loses momentum.
-    # The mobile app requests this TTL by sending client="mobile" at login (30 days).
-    mobile_token_ttl: int = 30 * 24 * 3600  # seconds
-    # Comma-separated allowed browser origins for CORS (the deployed frontend).
+    access_token_ttl: int = 30 * 24 * 3600
+    mobile_token_ttl: int = 30 * 24 * 3600
     frontend_origins: str = ""
 
     @field_validator("database_url")
     @classmethod
     def _normalize_db_url(cls, v: str) -> str:
-        # Render/Heroku hand out `postgres://…`; SQLAlchemy 2.x needs the driver-qualified scheme.
         if v.startswith("postgres://"):
             v = "postgresql+psycopg2://" + v[len("postgres://"):]
         elif v.startswith("postgresql://") and "+psycopg" not in v:

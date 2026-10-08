@@ -1,4 +1,3 @@
-/// Plain models shared by the local DB, API client, and screens.
 library;
 
 import 'discount.dart';
@@ -7,8 +6,8 @@ class CatalogItem {
   final int id;
   final String name;
   final String? category;
-  final double points; // point value per unit (fractional)
-  final double? myStock; // what the rep carries in his custody (null = no custody info)
+  final double points;
+  final double? myStock;
 
   const CatalogItem(
       {required this.id, required this.name, this.category, this.points = 0, this.myStock});
@@ -30,27 +29,14 @@ class CustomerRef {
   final String name;
   final String? phone;
   final String? address;
-  /// فئة سعر العميل — هي اللي بتقرّر بكام الصنف يتباع له، فبتنزل معاه في حزمة البيع.
   final String? priceTier;
 
-  /// تصنيف العميل («تاجر»، «الملّاك»، …). قائمة حرة في النظام، فبينزل نص زي ما هو.
   final String? customerType;
 
-  /// خطوط المنتجات اللي للعميل حساب عليها — «أبيض»، «بولي».
-  ///
-  /// العميل الواحد ممكن يبقى مديون على الخطين بحسابين منفصلين، والفاتورة لازم تقول على
-  /// أنهي واحد فيهم. من غير القايمة دي التطبيق مش هيعرف يسأل، والفاتورة بتنزل على
-  /// المديونية الغلط — وده اللي بيخلّي كشف حساب العميل يطلع مالوش معنى.
   final List<String> families;
 
-  /// رصيد كل خط لوحده — «أبيض» و«بولي» — زي ما شاشة الفاتورة على النظام بتوريه.
-  ///
-  /// المندوب واقف قدام العميل وبيقول له عليك كام. رقم واحد مجمّع مابيردّش على السؤال
-  /// ده: العميل بيسأل «الأبيض بكام؟» لأن الفلوس بتتحصّل بالخط والصناديق مقسومة بالخط.
   final Map<String, double> familyBalances;
 
-  /// إجمالي المديونية — مجموع الخطوط. بينزل من السيرفر مش بيتجمع هنا: العميل ممكن
-  /// يكون له حساب مالوش خط (كارت قديم قبل التقسيم) وده مابيبانش في القايمة فوق.
   final double balance;
 
   const CustomerRef({
@@ -98,28 +84,23 @@ class InspectionLine {
 class Inspection {
   final int? localId;
   final String clientUuid;
-  final String visitKind; // technician | regular
-  String inspectionDate; // yyyy-MM-dd
+  final String visitKind;
+  String inspectionDate;
   String ownerName;
   String? ownerPhone;
   String? nationalId;
   String? ownerAddress;
   String? floorNumber;
-  String? description; // توصيف المعاينة
-  String? inspectionType; // نوع المعاينة
-  String? visitType; // نوع الزيارة — معاينة/مرمة
+  String? description;
+  String? inspectionType;
+  String? visitType;
   String? technicianName;
   String? technicianPhone;
   String? purchaseShop;
   String? purchaseShopPhone;
-  /// التاجر اللي «محل الشراء» بيشاور عليه — رقمه عندنا مش اسمه.
-  ///
-  /// الاسم كان بيتبعت لوحده، فالمعاينة توصل السيرفر ومعاها نص مالوش طرف. ومن غير
-  /// الطرف ده مافيش حد تتخصم منه نقط المعاينة وقت القبول: الخصم بيدوّر على
-  /// `merchant_customer_id` ويلاقيه فاضي ويعدّي بتحذير في اللوج.
   int? merchantCustomerId;
   String? visitDetails;
-  int? customerId; // الزيارة العادية مرتبطة بعميل
+  int? customerId;
   List<InspectionLine> lines;
   final bool synced;
   final String? documentNumber;
@@ -154,7 +135,6 @@ class Inspection {
   double get totalPoints =>
       double.parse(lines.fold<double>(0, (s, l) => s + l.total).toStringAsFixed(3));
 
-  /// Payload for POST /inspections/sync.
   Map<String, Object?> toApi() => {
         'client_uuid': clientUuid,
         'visit_kind': visitKind,
@@ -173,8 +153,6 @@ class Inspection {
         'merchant_customer_id': merchantCustomerId,
         'purchase_shop_phone': purchaseShopPhone,
         'visit_details': visitDetails,
-        // المالك بيتخزّن محلياً برقم سالب عشان يتميّز عن العميل في نفس الكاش،
-        // وبيتبعت في خانته الصح: `owner_id` موجب. الموجب عميل حقيقي.
         'customer_id': (customerId != null && customerId! > 0) ? customerId : null,
         'owner_id': (customerId != null && customerId! < 0) ? -customerId! : null,
         'items': [
@@ -189,32 +167,16 @@ class Inspection {
       };
 }
 
-// ------------------------------------------------------------------ البيع من العربية
-
-/// صنف في عهدة المندوب — بسعره ورصيده، زي ما نزلوا في حزمة البيع.
-///
-/// الأسعار نازلة بالفئات لأن السعر بيتحدّد بفئة العميل، والجهاز لازم يحسب **نفس** الرقم
-/// اللي السيرفر هيحسبه: الورقة اللي في إيد العميل والقيد في الدفتر مايختلفوش.
 class SaleItem {
   final int itemId;
   final String name;
   final String? unit;
 
-  /// فئة الصنف زي ما هي في الأصناف على السيرفر — ممكن تكون فاضية.
-  ///
-  /// موجودة عشان منتقي الأصناف يبقى خطوتين: ٣٢٦ صنف في قايمة واحدة على شاشة تليفون
-  /// كومة مش قايمة. الفئة هنا **عرض بس** — مالهاش أي دخل بالسعر ولا بالرصيد.
   final String? category;
   final double onHand;
 
-  /// الكمية المحجوزة على إذن تحويل **معلّق** طالع من عربيته.
-  ///
-  /// الإذن مابيحرّكش مخزون لحد الاعتماد، فالعهدة بتفضل قايلة إن البضاعة معاه. من غير
-  /// الرقم ده المندوب اللي طلب يرجّع ٥ للمخزن يبيعهم وهو مستني الاعتماد، والإذن بيقع
-  /// على المسؤول بعدين — والغلطة بتظهر عند حد تالت بعد ساعات.
   final double pendingOut;
 
-  /// اللي ينفع يتباع فعلاً = اللي في العربية ناقص المحجوز على إذن معلّق.
   double get sellable {
     final v = onHand - pendingOut;
     return v > 0 ? v : 0;
@@ -223,8 +185,6 @@ class SaleItem {
   final double defaultDiscountPct;
   final Map<String, double> tierPrices;
 
-  /// أقل سعر بيع للوحدة = تكلفة الصنف (متوسط الشرا). **للتحذير بس — مابيتعرضش.**
-  /// فاضي = الصنف ماتشراش أو سيرفر قديم ⇒ مافيش حد.
   final double? minPrice;
 
   const SaleItem({
@@ -240,18 +200,9 @@ class SaleItem {
     this.minPrice,
   });
 
-  /// سعر الصنف لعميل فئته دي — وبيرجع للسعر الأساسي لو الفئة مالهاش سعر خاص.
-  ///
-  /// **ده السعر الخام قبل الخصم الثابت.** سطر الفاتورة بيشيل الاتنين منفصلين (السعر
-  /// في خانة والخصم في خانة) عشان الورقة تقول للعميل خصم بكام — فالسطر لازم ياخد ده.
   double priceFor(String? tier) =>
       (tier != null ? tierPrices[tier] : null) ?? basePrice ?? 0;
 
-  /// السعر اللي العميل هيدفعه فعلاً — بعد الخصم الثابت بتاع الصنف.
-  ///
-  /// ده اللي بيتعرض وقت اختيار الصنف. اللي بيختار بيقارن بالرقم اللي بيقوله للعميل،
-  /// وعرض الخام بيخلّيه يقول رقم والفاتورة تطلع برقم أقل — فيرجع يشرح، أو أوحش: يحسب
-  /// إجمالي اليوم غلط في دماغه. الخصم مابيتخفيش، بيتحسب.
   double netPriceFor(String? tier) =>
       priceFor(tier) * (1 - defaultDiscountPct.clamp(0, 99.99) / 100);
 
@@ -264,8 +215,6 @@ class SaleItem {
         'pending_out': pendingOut,
         'base_price': basePrice,
         'default_discount_pct': defaultDiscountPct,
-        // الفئات بتتخزّن نص «فئة=سعر» مفصولين بفاصلة — عمود واحد بدل جدول تاني لحاجة
-        // بتتقرا كلها مع الصنف ومابتتسألش لوحدها أبداً.
         'tier_prices': tierPrices.entries.map((e) => '${e.key}=${e.value}').join(','),
         'min_price': minPrice,
       };
@@ -287,16 +236,6 @@ class SaleItem {
       );
 }
 
-/// سطر في فاتورة على الجهاز.
-///
-/// **الخصم اتنين مش واحد**، زي الشاشة الكبيرة بالظبط:
-///
-/// * **الثابت** — بتاع الصنف نفسه، نازل معاه من النظام. ده سعر الشركة، والمندوب بيشوفه
-///   مش بيخترعه.
-/// * **المتغيّر** — اللي المندوب بيزوّده عند العميل. ده اللي بيتفاوض عليه.
-///
-/// خلطهم في رقم واحد بيخلّي اللي بيراجع الفاتورة مايعرفش الشركة خصمت كام والمندوب زوّد
-/// كام — وده بالظبط السؤال اللي بيتسأل لما رقم يبان كبير.
 class SaleDraftLine {
   final int itemId;
   final String itemName;
@@ -314,27 +253,10 @@ class SaleDraftLine {
     this.variableDiscountPct = 0,
   });
 
-  /// الاتنين ورا بعض — **خصم بعد خصم**، مش جمع: المتغيّر بيتحسب على الباقي بعد
-  /// الثابت. ١٠٪ ثم ٥٪ = ١٤٫٥٪ مش ١٥٪. نفس قاعدة `backend/src/lib/discounts.py`
-  /// و`frontend/src/utils/discounts.ts` — التلاتة لازم يطلعوا نفس الرقم وإلا المندوب
-  /// بيشوف إجمالي في إيده والسيرفر بيسجّل غيره.
-  ///
-  /// وده اللي بيروح للسيرفر، لأن سطر الفاتورة عنده بيشيل خصم واحد.
-  ///
-  /// **والحساب في `discount.dart` مش هنا.** الصيغة مكتوبة مرة واحدة في اللغة دي، وإلا
-  /// القاعدة بتتعدّل في مكان وتفضل قديمة في التاني — والسقف (٩٩٫٩٩) جوّه المحرك كمان.
-  ///
-  /// **إلا خصم ١٠٠٪ — ده بونص، وبيفضل ١٠٠ مش ٩٩٫٩٩.** المحرك بيقصّ عند ٩٩٫٩٩ عشان
-  /// السطر العادي مايبقاش بصفر، بس سطر البونص صفر فعلاً: البضاعة هدية (قرار العميل
-  /// ٢٠٢٦-٠٩-٢٦). من غير الاستثناء ده سطر بونص بعشرة آلاف كان هيطلع بجنيه، والشاشة
-  /// تقول «المطلوب ١» على فاتورة المفروض قيمتها صفر. والشاشة هي اللي بتمنع ١٠٠٪ على
-  /// سطر لوحده في فاتورة بيع — البونص الفاتورة كلها أو مفيش.
   double get discountPct => isFull
       ? 100
       : combineDiscounts([fixedDiscountPct, variableDiscountPct]);
 
-  /// السطر ده ببلاش؟ — خصم ١٠٠٪ في أي خانة من الاتنين. نفس سؤال السيرفر
-  /// (`_is_full_discount` في `api/sales.py`).
   bool get isFull => fixedDiscountPct >= 100 || variableDiscountPct >= 100;
 
   double get gross => quantity * unitPrice;
@@ -346,7 +268,6 @@ class SaleDraftLine {
         'item_name': itemName,
         'quantity': quantity,
         'unit_price': unitPrice,
-        // المجموع بيتخزّن كمان عشان أي قراءة قديمة تفضل شغالة.
         'discount_pct': discountPct,
         'fixed_discount_pct': fixedDiscountPct,
         'variable_discount_pct': variableDiscountPct,
@@ -361,31 +282,17 @@ class SaleDraftLine {
       itemName: r['item_name'] as String,
       quantity: (r['quantity'] as num?)?.toDouble() ?? 0,
       unitPrice: (r['unit_price'] as num?)?.toDouble() ?? 0,
-      // السطور اللي اتكتبت قبل ما الخصم ينقسم بيتقروا كأن كله ثابت — ده اللي كان
-      // معروف عنه وقتها، والتخمين إنه متغيّر كان هيقول على الشركة حاجة ماقالتهاش.
       fixedDiscountPct: fixed ?? (r['discount_pct'] as num?)?.toDouble() ?? 0,
       variableDiscountPct: variable ?? 0,
     );
   }
 }
 
-// ------------------------------------------------------------------ صناديق المندوب
-
-/// صندوق المندوب لخط منتجات — زي ما نزل في حزمة البيع.
-///
-/// a5 بيدّي كل مندوب صندوقين، «صندوق أبيض السيارة (أ)» و«صندوق بولي السيارة (أ)»،
-/// والفلوس بتتفصل بالخط زي المديونية بالظبط. فالصندوق مش سؤال على الشاشة: نوع الفاتورة
-/// بيحدّده لوحده، والمندوب بيشوفه عشان يعرف فلوسه رايحة فين — مش عشان يختار.
-///
-/// `family` بـ`null` = عهدة قديمة من قبل ما الصناديق تتقسم. نازلة زي ما هي عشان المندوب
-/// اللي لسه ماتقسمش يفضل شغّال، والشاشة مابتقعش عليها لما الفاتورة قايلة خطها: صندوق خط
-/// تاني أوحش من مافيش صندوق — التاني بيشتكي، والأول بيسكت والفلوس بتروح مكان غلط.
 class RepTreasury {
   final int custodyId;
   final int accountId;
   final String? family;
 
-  /// اسم الصندوق زي ما هو في شجرة حسابات a5 — ده اللي المكتب بينده بيه في التليفون.
   final String name;
   final String code;
 
@@ -397,7 +304,6 @@ class RepTreasury {
     this.code = '',
   });
 
-  /// اللي بيتعرض. الصندوق القديم اللي مالوش اسم بيتسمّى بخطه، واللي مالوش خط «عهدتك».
   String get label => name.trim().isNotEmpty
       ? name.trim()
       : (family == null ? 'عهدتك' : 'صندوق $family');

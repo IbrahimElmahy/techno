@@ -1,13 +1,3 @@
-"""الأصول الثابتة والإهلاك — register, monthly run, disposal (B6).
-
-The depreciation run is a button, not a schedule: nobody wants a serverless cron quietly posting
-into their books, and an accountant closing a month wants to choose when it happens. That makes
-idempotency the load-bearing property — `DepreciationRecord` has a unique (asset, year, month), so
-a second click finds the row already there and does nothing rather than doubling the expense.
-
-Everything posts through `ledger_service.post_entry`, so the double entry, the balance check and
-the append-only guarantee are the same ones the rest of the system uses.
-"""
 from __future__ import annotations
 
 import calendar
@@ -30,9 +20,6 @@ from src.models.ledger import Account, AccountNature, Direction
 from src.services import audit_service, ledger_service
 from src.services.ledger_service import LineInput
 
-# The three chart accounts a fixed asset posts to, created once on demand under the standard
-# chart. Accumulated depreciation is a contra-asset: asset by nature, credit by normal side —
-# which is exactly what makes it net off against the cost it sits beside.
 _ASSET_GROUP = ("1.03", "الأصول الثابتة", AccountNature.asset, "1")
 _DEFAULTS = {
     "asset": ("1.03.001", "الأصول الثابتة", AccountNature.asset, Direction.debit),
@@ -43,7 +30,7 @@ _DEFAULTS = {
 
 
 class FixedAssetError(Exception):
-    """The asset or the run cannot be processed as asked."""
+    pass
 
 
 def _get_or_create_account(
@@ -68,7 +55,6 @@ def _get_or_create_account(
 
 
 def default_accounts(db: Session) -> dict[str, Account]:
-    """The chart nodes fixed assets post to, created the first time one is registered."""
     code, name, nature, parent = _ASSET_GROUP
     group = db.scalar(select(Account).where(Account.code == code))
     if group is None:
@@ -83,7 +69,6 @@ def default_accounts(db: Session) -> dict[str, Account]:
 
 
 def _code(db: Session) -> str:
-    # أكبر كود + ١ مش العدد + ١ — شوف `numbering` (٢٠٢٦-١٠-٠١).
     return next_document_number(db, FixedAsset, "FA", column=FixedAsset.code, width=5)
 
 
@@ -133,7 +118,6 @@ def create_asset(
 
 
 def accumulated_of(db: Session, asset_id: int) -> Decimal:
-    """What has actually been booked against the asset."""
     total = db.scalar(
         select(func.coalesce(func.sum(DepreciationRecord.amount), 0)).where(
             DepreciationRecord.asset_id == asset_id,
@@ -153,12 +137,6 @@ def _period_end(year: int, month: int) -> date:
 def run_depreciation(
     db: Session, *, year: int, month: int, actor_user_id: int,
 ) -> dict:
-    """Book one month of depreciation for every active asset that owes it.
-
-    Idempotent by construction: an asset already recorded for this period is skipped, so running
-    the same month again posts nothing. That is the difference between a safe button and a way to
-    double a year's expense without noticing.
-    """
     if not 1 <= month <= 12:
         raise FixedAssetError("الشهر لازم يكون من 1 لـ 12.")
     period_end = _period_end(year, month)
@@ -225,7 +203,6 @@ def run_depreciation(
 
 
 def reverse_depreciation(db: Session, *, year: int, month: int, actor_user_id: int) -> dict:
-    """Undo a month posted by mistake: reverse its entry and free the period to be run again."""
     records = db.scalars(
         select(DepreciationRecord).where(
             DepreciationRecord.year == year, DepreciationRecord.month == month,
@@ -239,8 +216,6 @@ def reverse_depreciation(db: Session, *, year: int, month: int, actor_user_id: i
     for entry_id in entry_ids:
         reversals.append(ledger_service.reverse_entry(
             db, original_id=entry_id, actor_user_id=actor_user_id).id)
-    # Delete the markers rather than flagging them: the month is genuinely un-booked, and the
-    # audit trail lives where it cannot be edited — the ledger keeps the entry AND its reversal.
     for record in records:
         db.delete(record)
     db.flush()
@@ -257,12 +232,6 @@ def dispose_asset(
     db: Session, *, asset_id: int, disposal_date: date, proceeds, actor_user_id: int,
     cash_account_id: int | None = None,
 ) -> FixedAsset:
-    """Take the asset off the books and book whatever the sale gained or lost.
-
-    Clearing it takes three moves at once: the accumulated depreciation comes off, the original
-    cost comes off, and the cash comes in. Whatever those three do not balance to IS the gain or
-    the loss — it is not a separate calculation, it is the remainder.
-    """
     from src.services import account_resolver
 
     asset = db.get(FixedAsset, asset_id)
@@ -344,5 +313,5 @@ def schedule_of(db: Session, asset_id: int) -> list[DepreciationRecord]:
     return list(db.scalars(
         select(DepreciationRecord)
         .where(DepreciationRecord.asset_id == asset_id)
-        .order_by(DepreciationRecord.year.desc(), DepreciationRecord.month.desc())  # الأحدث فوق
+        .order_by(DepreciationRecord.year.desc(), DepreciationRecord.month.desc())
     ).all())

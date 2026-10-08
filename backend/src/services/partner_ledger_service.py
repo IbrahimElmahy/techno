@@ -1,21 +1,3 @@
-"""دفتر الشريك (Partner Ledger) — المرحلة ٤ من إعادة الهيكلة على موديل أودو.
-
-السؤال اللي التقرير ده بيجاوبه: **«العميل ده عمل إيه معانا من أول السنة، وفاضل
-عليه كام؟»** — الفواتير والدفعات والمردودات في كشف واحد مرتّب بالتاريخ، برصيد
-جاري، وجنب كل سطر متبقّيه ورقم المطابقة اللي قفلته.
-
-الفرق بينه وبين «كشف الحساب» الموجود: الكشف بيمشي على **حساب** واحد، وده بيمشي
-على **شريك** — فالعميل اللي ليه حسابين (أبيض وبولي، شوف دمج العملاء) بيطلع في
-كشف واحد، والمورد اللي هو كمان عميل بيتقرا من الناحيتين.
-
-**الشريك بيتحدّد من السطر الأول** (`ledger_line.partner_kind/partner_id`، المرحلة
-٢)، ولو فاضي بيترجع لخريطة الحساب ← الطرف. السطر القديم اللي `backfill_moves`
-ماعدّاش عليه بيفضل بيطلع صح كده، فالتقرير مايحتاجش وقفة نقل.
-
-**الحسابات اللي بتتقرا** هي اللي بتتقفل بس (`Account.reconcilable`) وحسابات الذمم
-والدائنين. لو قرينا كل سطر عليه شريك كنا هنعد الفاتورة مرتين — مرة على ذمة العميل
-ومرة على الإيراد.
-"""
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -41,7 +23,6 @@ from src.models.reconcile import FullReconcile
 from src.models.supplier import Supplier, SupplierAccount
 from src.services import ledger_service, move_registry
 
-#: حسابات الطرف — اللي بتتقفل، وذمم العملاء والموردين مهما كان إعدادها.
 PARTNER_ACCOUNT_TYPES = (AccountType.customer_receivable, AccountType.supplier_payable)
 
 
@@ -62,8 +43,8 @@ class PartnerLedgerLine:
     statement: str | None
     debit: Decimal
     credit: Decimal
-    balance: Decimal          # الرصيد الجاري بعد السطر ده
-    residual: Decimal | None  # `None` = الحساب ده مابيتقفلش
+    balance: Decimal
+    residual: Decimal | None
     reconcile_number: str | None
 
 
@@ -85,7 +66,6 @@ def _effective_date(entry: LedgerEntry) -> date:
 
 
 def _account_party_map(db: Session) -> dict[int, tuple[str, int]]:
-    """account_id ← (نوع الطرف، رقمه) — للسطر اللي شريكه لسه فاضي."""
     out: dict[int, tuple[str, int]] = {}
     for acc in db.scalars(select(CustomerAccount)).all():
         out[acc.account_id] = (PartnerKind.customer.value, acc.customer_id)
@@ -95,7 +75,6 @@ def _account_party_map(db: Session) -> dict[int, tuple[str, int]]:
 
 
 def _partner_names(db: Session, wanted: set[tuple[str, int]]) -> dict[tuple[str, int], str]:
-    """أسماء الأطراف في استعلام لكل نوع، مش استعلام لكل طرف."""
     models = {
         PartnerKind.customer.value: Customer,
         PartnerKind.supplier.value: Supplier,
@@ -123,18 +102,6 @@ def partner_ledger(
     only_open: bool = False,
     branch_id: int | None = None,
 ) -> list[PartnerLedgerRow]:
-    """كشف كل شريك في الفترة — رصيد أول المدة، الحركات، ورصيد آخر المدة.
-
-    `only_open=True` بيرجّع الأطراف اللي لسه عليهم متبقّي بس — ده اللي بيتسأل في
-    آخر الشهر: مين لسه عليه فلوس، مش مين اتعامل معانا.
-
-    **الإشارة مدين موجب** زي أودو: رصيد العميل الموجب يعني عليه، ورصيد المورد
-    السالب يعني ليه.
-
-    الفلترة بالشريك بتحصل في بايثون مش في الاستعلام عن قصد: السطر القديم شريكه
-    فاضي وبيتحدّد من حسابه، فشرط على العمود كان هيرمي بالظبط الصفوف اللي التقرير
-    موجود عشانها.
-    """
     accounts = {
         acc.id: acc
         for acc in db.scalars(
@@ -153,8 +120,6 @@ def partner_ledger(
         .join(LedgerEntry, LedgerEntry.id == LedgerLine.entry_id)
         .where(LedgerLine.account_id.in_(list(accounts)), ledger_service.is_posted_sql())
     )
-    # دفتر الشريك بتاع الفرع — نفس الشريك ممكن يتعامل مع الفرعين، وكل فرع بيشوف
-    # حركته هو. غير كده مدير الفرع بيقرا مديونية اتعملت في فرع تاني.
     if branch_id is not None:
         stmt = stmt.where(
             (LedgerEntry.branch_id == branch_id) | LedgerEntry.branch_id.is_(None))
@@ -176,7 +141,7 @@ def partner_ledger(
         else:
             key = fallback.get(line.account_id)
         if key is None:
-            continue  # سطر على حساب بيتقفل مالوش طرف (شيكات تحت التحصيل مثلاً)
+            continue
         if partner_kind is not None and key[0] != partner_kind:
             continue
         if partner_id is not None and key[1] != partner_id:
@@ -233,7 +198,6 @@ def partner_ledger(
                 reconcile_number=recon_numbers.get(line.full_reconcile_id or -1),
             ))
         row.closing = running
-        # الأحدث فوق — الرصيد الجاري اتحسب بالترتيب الزمني فوق، القلب للعرض بس.
         row.lines.reverse()
 
     out = [r for r in rows.values() if r.lines or r.opening != ZERO]

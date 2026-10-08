@@ -1,16 +1,3 @@
-"""Cheques — 020-finance-reports (الشيكات).
-
-A cheque is money promised, not money moved: it sits «تحت التحصيل» (incoming) or «تحت الدفع»
-(outgoing) until it clears. Each stage posts its own ledger entry, so the books always show
-where the value is — never a cheque silently treated as cash.
-
-    incoming  استلام:  debit cheques-under-collection / credit customer receivable
-              تحصيل:   debit treasury                 / credit cheques-under-collection
-              ارتداد:  reverse the receipt (the customer owes again)
-
-    outgoing  تحرير:   debit supplier payable         / credit cheques-payable
-              صرف:     debit cheques-payable          / credit treasury
-"""
 from __future__ import annotations
 
 import enum
@@ -24,14 +11,14 @@ from src.core.money import MONEY
 
 
 class ChequeDirection(str, enum.Enum):
-    incoming = "incoming"  # وارد من عميل (تحت التحصيل)
-    outgoing = "outgoing"  # صادر لمورد (تحت الدفع)
+    incoming = "incoming"
+    outgoing = "outgoing"
 
 
 class ChequeStatus(str, enum.Enum):
-    pending = "pending"    # تحت التحصيل / تحت الدفع
-    settled = "settled"    # حُصِّل أو صُرف
-    bounced = "bounced"    # ارتد
+    pending = "pending"
+    settled = "settled"
+    bounced = "bounced"
     cancelled = "cancelled"
 
 
@@ -47,25 +34,20 @@ class Cheque(Base):
         Enum(ChequeStatus, native_enum=False, length=10), nullable=False,
         default=ChequeStatus.pending, index=True,
     )
-    cheque_number: Mapped[str] = mapped_column(String(40), nullable=False)  # رقم الشيك
+    cheque_number: Mapped[str] = mapped_column(String(40), nullable=False)
     bank_name: Mapped[str | None] = mapped_column(String(120), nullable=True)
     amount: Mapped[object] = mapped_column(MONEY, nullable=False)
     issue_date: Mapped[date] = mapped_column(Date, nullable=False)
-    due_date: Mapped[date] = mapped_column(Date, nullable=False, index=True)  # الاستحقاق
+    due_date: Mapped[date] = mapped_column(Date, nullable=False, index=True)
 
     customer_id: Mapped[int | None] = mapped_column(ForeignKey("customer.id"), nullable=True,
                                                     index=True)
     supplier_id: Mapped[int | None] = mapped_column(ForeignKey("supplier.id"), nullable=True,
                                                     index=True)
-    # Where the money lands (incoming) or leaves from (outgoing) once it clears.
     treasury_id: Mapped[int | None] = mapped_column(ForeignKey("treasury.id"), nullable=True)
 
     description: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    # البيان — كلام الورقة، غير `description` اللي بيتكتب وصف لسطر القيد. نفس الفصل اللي
-    # على السند (`models/voucher.py`): اللي بيكتب «شيك عن فاتورة ٤٥١» مايلاقيهوش مكتوب مكان
-    # وصف الحركة في كشف الحساب.
     statement1: Mapped[str | None] = mapped_column(String(200), nullable=True)
-    # The entry raised on registration, and the one raised on settlement/bounce.
     register_entry_id: Mapped[int | None] = mapped_column(ForeignKey("ledger_entry.id"),
                                                           nullable=True)
     settle_entry_id: Mapped[int | None] = mapped_column(ForeignKey("ledger_entry.id"),

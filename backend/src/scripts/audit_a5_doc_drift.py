@@ -1,18 +1,3 @@
-"""المستندات اللي اتعدّلت في a5 بعد ما نقلناها — قراءة بس، مابيكتبش حاجة.
-
-    python -m src.scripts.audit_a5_doc_drift --dir C:/pgtmp
-    python -m src.scripts.audit_a5_doc_drift --dir C:/pgtmp/aliaa --prefix AL-
-
-**ليه أصلاً.** `import_a5_docs` بيتخطّى المستند اللي رقمه موجود (`if num in c.taken`)، وده
-اللي بيخلّيه آمن يتعاد تشغيله. بس معناه كمان إن المستند اللي **اتعدّل** في a5 بعد ما نقلناه
-بيفضل عندنا بسطوره القديمة للأبد: سطر اتزاد، أو كميته اتغيّرت، أو صنفه اتبدّل — ومحدش
-بيعرف. التعليق على رأس `a5_sync.ps1` بيقول إن التصدير الكامل بيلقّط ده، ومابيلقّطهوش.
-
-بيتقاس بالمقارنة سطر-بسطر: مجموع الكمية لكل (صنف) في مستند a5 مقابل نفس المستند عندنا.
-بالكمية بس — القيم مالهاش لازمة هنا لأن السؤال عن الرصيد.
-
-الخرج: كل مستند مختلف، بنوعه ورقمه وتاريخه، والفرق لكل صنف.
-"""
 from __future__ import annotations
 
 import os
@@ -47,7 +32,6 @@ from src.scripts.verify_a5_stock_by_store import _fold_transfers
 
 ZERO = Decimal("0")
 
-# نوع a5 → (رأس المستند، سطوره، اسم المفتاح الخارجي على السطر)
 TABLES = {
     "7": (SalesInvoice, SalesInvoiceLine, "invoice_id"),
     "2": (SalesReturn, SalesReturnLine, "return_id"),
@@ -55,15 +39,11 @@ TABLES = {
     "11": (PurchaseReturn, PurchaseReturnLine, "return_id"),
     "6": (StockTransfer, StockTransferLine, "transfer_id"),
     "3": (StockPermit, StockPermitLine, "permit_id"),
-    # أذون الصرف كانت ناقصة هنا، فالإذن اللي اتعدّل في a5 ماكانش بيتكشف (FC-IS28
-    # في السادات: سطرين اتشالوا عندهم وفضلوا عندنا، ٢٠٢٦-١٠-٠٥).
     "8": (StockPermit, StockPermitLine, "permit_id"),
 }
 
 
 class Drift:
-    """مستند عندنا سطوره مش زي a5 — اللي `rebuild_a5_docs` بيشتغل عليه."""
-
     def __init__(self, a5_type: str, label: str, number: str, doc_date: str,
                  theirs: dict[int, Decimal], ours: dict[int, Decimal]) -> None:
         self.a5_type = a5_type
@@ -75,7 +55,6 @@ class Drift:
 
 
 def _ours(db, t: str, number: str) -> tuple[object | None, dict[int, Decimal]]:
-    """رأس المستند عندنا ومجموع كمياته لكل صنف."""
     head_cls, line_cls, fk = TABLES[t]
     head = db.scalar(select(head_cls).where(head_cls.document_number == number))
     if head is None:
@@ -83,20 +62,12 @@ def _ours(db, t: str, number: str) -> tuple[object | None, dict[int, Decimal]]:
     qty: dict[int, Decimal] = defaultdict(Decimal)
     for ln in db.scalars(select(line_cls).where(getattr(line_cls, fk) == head.id)).all():
         qty[ln.item_id] += Decimal(str(ln.quantity))
-    # التحويل القديم ساعات بيبقى صنف على الرأس نفسه من غير سطور.
     if t == "6" and not qty and getattr(head, "item_id", None):
         qty[head.item_id] = Decimal(str(head.quantity or 0))
     return head, dict(qty)
 
 
 def collect(db, folder: str, prefix: str) -> tuple[list["Drift"], list[tuple[str, str, str]], int]:
-    """(المختلف، اللي مش عندنا خالص، عدد سطور a5 اللي مالهاش صنف).
-
-    مفصولة عن الطباعة عشان `rebuild_a5_docs` يبني عليها — اللي بيتصلّح هو نفسه اللي
-    اتقاس، مش قايمة تانية اتكتبت بإيد.
-    """
-    # نفس محلّل الصنف اللي الاستيراد استعمله بالحرف — الكود الأول وبعده الاسم،
-    # وبنفس قصر الكتالوج على الفرع. أي ترتيب تاني بيقارن صنف بصنف تاني.
     my_items = mine(db.scalars(select(Item)).all(), prefix)
     by_code = {i.code: i for i in my_items if i.code}
     by_name = {i.name: i for i in my_items}
@@ -108,11 +79,6 @@ def collect(db, folder: str, prefix: str) -> tuple[list["Drift"], list[tuple[str
     lines = [r for r in _read(os.path.join(folder, "a5_lines.tsv"))
              if len(r) > L_QTY]
 
-    # مفتاح المستند من المستورد نفسه: البيع بـ`Ord` والشرا بـ`PoOrd`، والتحويل
-    # والإذن بـ`Azn_id`. المفتاح الغلط بيقارن مستند بمستند تاني.
-    #
-    # والتحويل بيتطوى قبل العد — a5 بيكتب سطره مرتين، فالمقارنة من غير طيّ بتقول
-    # إن كل تحويل في الشركة «مختلف» وضعف الكمية، وده ٢٤٧٧ مستند وهم.
     rows_by_type = defaultdict(list)
     for r in lines:
         rows_by_type[r[L_TYPE].strip()].append(r)

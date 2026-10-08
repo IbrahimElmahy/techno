@@ -4,20 +4,6 @@ import { ReloadOutlined, SaveOutlined, UndoOutlined, SearchOutlined } from '@ant
 import { api } from '../api/client';
 import { useTableColumns } from '../components/ColumnSettings';
 
-/**
- * الصلاحيات — أنهي دور بيقدر يعمل إيه.
- *
- * جدول واحد: الصلاحية في السطر، والدور في العمود، والمربّع بينهم. الشكل ده مقصود — السؤال
- * اللي الشاشة موجودة عشانه هو «مين بيقدر يمسح فاتورة؟»، وده سطر واحد بتقراه بالعرض. شاشة
- * بتفتح دور وتوريك قايمته لوحدها بتخلّي نفس السؤال ثمانية فتحات ومقارنة في الدماغ.
- *
- * مدير النظام عمود مقفول: هو الوحيد اللي بيفتح الشاشة، وشيل صلاحية منه معناه احتمال قفل
- * الباب على نفسه — والشاشة اللي بترجّعها هي اللي اتقفلت.
- *
- * والحفظ لكل دور لوحده، مش زرار واحد للجدول: تغيير صلاحيات دور عملية قائمة بذاتها وليها
- * سطر في سجل العمليات باسم اللي عملها.
- */
-
 interface Capability { key: string; label: string; group: string }
 interface Role {
   role: string; label: string; capabilities: string[];
@@ -48,7 +34,6 @@ export default function Permissions() {
 
   useEffect(() => { load(); }, []);
 
-  /** فيه تغيير مش متحفوظ على الدور ده؟ */
   const dirty = (role: Role) => {
     const now = draft[role.role];
     if (!now) return false;
@@ -64,7 +49,6 @@ export default function Permissions() {
     });
   };
 
-  /** كل صلاحيات القسم للدور ده — بضغطة واحدة على رأس المجموعة. */
   const toggleGroup = (roleKey: string, group: string, on: boolean) => {
     setDraft((prev) => {
       const next = new Set(prev[roleKey] || []);
@@ -99,7 +83,6 @@ export default function Permissions() {
 
   const editable = roles.filter((r) => r.editable);
 
-  // الصلاحيات مجمّعة بالقسم، والبحث بيقلّل السطور من غير ما يفكّ التجميع.
   const rows = useMemo(() => {
     const needle = query.trim();
     const shown = needle

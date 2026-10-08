@@ -1,18 +1,3 @@
-"""تقارير مندوبين — three of their report screens — 031-a5-restructure.
-
-Their menu lists four: تحصيلات المندوبين · تحصيلات المندوبين عملاء · مبيعات اصناف مندوبين ·
-عمولة تحصيلات مندوبين. The fourth already existed (عمولات المناديب, on the finance screen). These
-are the other three.
-
-Nothing new is recorded to build them — a receipt voucher has always carried who took it and from
-whom, and an invoice has always carried its rep. What was missing was reading it that way round.
-
-**The rep on an invoice, not the user who typed it.** `rep_id` is the salesman the sale belongs to;
-`actor_user_id` is whoever was at the keyboard. Commission has always been computed off the actor,
-and for a rep entering their own sales those are the same person — but an office clerk entering a
-rep's paperwork makes them different, and a sales report must follow the salesman. Where an invoice
-carries no rep, its customer's rep answers for it, because that is who the account belongs to.
-"""
 from __future__ import annotations
 
 from datetime import date
@@ -83,22 +68,17 @@ def _in_window(when: date | None, date_from: date | None, date_to: date | None) 
 
 
 def _scope(current: CurrentUser, rep_id: int | None) -> int | None:
-    """A rep sees their own figures and nobody else's — the same rule the commission report uses."""
     return current.id if current.role == RoleName.sales_rep else rep_id
 
 
 def _receipts(db: Session, current: CurrentUser, date_from, date_to, rep_id: int | None,
               statement: str | None = None) -> list[Voucher]:
-    # **سندات فرع اللي بيقرا بس.** «مبيعات اصناف مندوبين» جنبها متفلترة بالفرع من الأول،
-    # والتحصيلات كانت بتجمّع سندات الشركة كلها — فمدير الفرع بيشوف تحصيل مناديب فروع تانية.
     stmt = branch_scope.scope(
         select(Voucher).where(Voucher.kind == VoucherKind.receipt), Voucher, current)
     wanted = report_statement.needle(statement)
     rows = db.scalars(stmt).all()
     out = []
     for v in rows:
-        # السند عليه بيانين: «البيان» (`description`) و«بيان السند» (`statement1`) —
-        # الشاشة بتسمّي الاتنين بيان، فالفلتر بيدوّر في الاتنين.
         if not report_statement.matches_obj(v, wanted, ("description",)):
             continue
         if rep_id is not None and v.actor_user_id != rep_id:
@@ -110,7 +90,6 @@ def _receipts(db: Session, current: CurrentUser, date_from, date_to, rep_id: int
 
 
 def _signed(v: Voucher) -> Decimal:
-    """A reversal mirrors its original, so it subtracts rather than adding a second time."""
     amount = to_money(v.amount)
     return -amount if v.reverses_id is not None else amount
 
@@ -124,7 +103,6 @@ def collections(
     current: CurrentUser = Depends(require_capability(CAP_VOUCHER_READ)),
     db: Session = Depends(get_db),
 ) -> list[CollectionRow]:
-    """تحصيلات المندوبين — what each rep brought in over a period, and how many receipts."""
     reps = _reps(db)
     scope = _scope(current, rep_id)
 
@@ -152,12 +130,6 @@ def collections_by_customer(
     current: CurrentUser = Depends(require_capability(CAP_VOUCHER_READ)),
     db: Session = Depends(get_db),
 ) -> list[CollectionByCustomerRow]:
-    """تحصيلات المندوبين عملاء — the same money, broken down by who it came from.
-
-    A receipt with no customer keeps its row rather than being dropped: it is money the rep really
-    collected, and a total that quietly disagrees with تحصيلات المندوبين is worse than a row
-    labelled «بدون عميل».
-    """
     reps = _reps(db)
     scope = _scope(current, rep_id)
     names = {c.id: c.name for c in db.scalars(select(Customer)).all()}
@@ -191,12 +163,6 @@ def rep_items(
     current: CurrentUser = Depends(require_capability(CAP_VOUCHER_READ)),
     db: Session = Depends(get_db),
 ) -> list[RepItemRow]:
-    """مبيعات اصناف مندوبين — what each rep sold, item by item.
-
-    Line value is taken net of the invoice's discount so the totals here can be compared with the
-    invoice ones. Using the gross line would make a rep's «sales» exceed what the customer was
-    actually billed.
-    """
     reps = _reps(db)
     scope = _scope(current, rep_id)
     items = {i.id: i.name for i in db.scalars(select(Item)).all()}
@@ -208,7 +174,6 @@ def rep_items(
 
     totals: dict[tuple[int, int], tuple[Decimal, Decimal]] = {}
     for inv in invoices:
-        # The salesman the sale belongs to, falling back to whoever owns the account.
         rid = inv.rep_id or customer_rep.get(inv.customer_id)
         if rid is None or rid not in reps:
             continue
@@ -216,16 +181,12 @@ def rep_items(
             continue
         if not report_statement.matches_obj(inv, wanted):
             continue
-        # **تاريخ الفاتورة، مش وقت كتابتها.** الفواتير المنقولة من a5 `created_at` بتاعها
-        # يومين النقل، فمبيعات أي شهر حقيقي كانت بتطلع صفر، وشهر النقل بيلمّ سنة كاملة.
-        # والتحصيلات جنبها ماشية بتاريخ السند من الأول — فالتابين كانوا بيتكلموا عن فترتين.
         when = inv.invoice_date or (inv.created_at.date() if inv.created_at else None)
         if not _in_window(when, date_from, date_to):
             continue
 
         gross = to_money(inv.gross or 0)
         net = to_money(inv.net or 0)
-        # One ratio for the whole invoice: the discount is agreed on the document, not per line.
         ratio = (net / gross) if gross > ZERO else Decimal("1")
 
         for ln in inv.lines:

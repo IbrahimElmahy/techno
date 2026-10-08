@@ -1,6 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Button, Col, Empty, Input, Row, Spin, Tag } from 'antd';
-// كل جدول هنا بفلتر على كل عمود — شوف `FilterTable`.
 import { FilterTable as Table } from '../components/FilterTable';
 import { ClearOutlined, DatabaseOutlined, SearchOutlined } from '@ant-design/icons';
 import ListPage from '../components/ListPage';
@@ -13,15 +12,6 @@ import MovementHistoryLog, { MovementHistoryTarget } from '../components/Movemen
 import { useTableKeyboard } from '../components/keyboard';
 import { qty, numeralsLocale } from '../utils/money';
 import { STOCK_TOPICS, useLiveRefresh } from '../utils/live';
-
-/**
- * رصيد صنف — the storekeeper's enquiry screen: pick a category, pick an item, and every price and
- * every warehouse's quantity is on screen at once.
- *
- * Built for flicking, not for reading: the three panes stay put, and choosing an item only swaps
- * the right-hand numbers. Locations holding nothing are still listed with a zero, because "none in
- * that warehouse" is the answer the user came for just as often as a quantity.
- */
 
 interface Product {
   id: number;
@@ -62,13 +52,7 @@ const money = (v: any) =>
     : Number(v).toLocaleString(numeralsLocale(), { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 export default function StockBalance() {
-  /** سجل عمليات الصنف في المخزن ده — نفس السطح اللي الجرد بيستعمله. */
   const [history, setHistory] = useState<MovementHistoryTarget | null>(null);
-  // Three of their menu entries land here: «رصيد صنف» (/storelog), «جرد المخازن» (/inventorycount)
-  // and «جرد عام المخازن» (/generalinventorycount). Reading their screens showed the last two are
-  // filtered stock listings, not counting sheets — the same question this screen already answers,
-  // asked over one store or over all of them. Building two more screens for it would have been two
-  // more of everything to keep in step.
   const [view] = useQueryTab('balance', 'view');
   const TITLES: Record<string, string> = {
     balance: 'رصيد صنف',
@@ -87,17 +71,10 @@ export default function StockBalance() {
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [balance, setBalance] = useState<Balance | null>(null);
   const [balanceLoading, setBalanceLoading] = useState(false);
-  // "رصيد فقط" hides items that are not physically there; "الكل" shows the whole catalogue.
-  // A stocktake entry opens on «رصيد فقط», which is what their own screen defaults to — a count
-  // is about what is there, and a page of zero rows is a page nobody reads.
-  // «له حركة» is their third option and a different question from «رصيد فقط»: an item sold down
-  // to zero has moved and is worth looking at; one created and never touched is catalogue noise.
   const [stockScope, setStockScope] = useState<'all' | 'in_stock' | 'moved'>(
     view === 'balance' ? 'all' : 'in_stock');
   const [moved, setMoved] = useState<Set<number>>(new Set());
 
-  // Fetched once and only when asked for: it is a grouped query over every movement, and the
-  // answer does not change while somebody types in a search box.
   useEffect(() => {
     if (stockScope !== 'moved' || moved.size) return;
     api.get('/api/v1/items?kind=product&stock_filter=moved')
@@ -113,7 +90,6 @@ export default function StockBalance() {
       .finally(() => { if (!silent) setLoading(false); });
   };
   useEffect(() => { loadProducts(); }, []);
-  // أي حركة بتحرّك رصيد ⇒ الأرصدة تتجاب تاني بهدوء، والبحث والفلاتر زي ما هي.
   useLiveRefresh(STOCK_TOPICS, () => loadProducts(true));
 
   const categories = useMemo(() => {
@@ -160,8 +136,6 @@ export default function StockBalance() {
     </div>
   );
 
-  // السطر كله يفتح حركات المخزن ده — مش اسم المخزن لوحده. اللي بيقرا رقم في عمود الكمية
-  // بيدوس على الرقم، وكان مايحصلش حاجة.
   const locKb = useTableKeyboard<any>({
     rows: balance?.locations ?? [], rowKey: (r) => `${r.kind}-${r.id}`,
     onOpen: (r) => balance && setHistory({
@@ -170,11 +144,7 @@ export default function StockBalance() {
     }),
   });
 
-  // أعمدة جدول المخازن. جوّه useMemo لأنها بتقرا من `balance` وهو ممكن يكون null قبل ما
-  // الصنف يتحمّل — والهوك لازم يتنادى في كل رندر، يعني مايقدرش يستنى وراه.
   const locationColumns = useMemo(() => (balance ? [
-      // The store's name opens what happened in it. A balance is the end of a story,
-      // and «ليه الرقم ده؟» is answered by the movements, not by the number.
       { title: 'المخزن', dataIndex: 'name',
         render: (n: string, r: any) => (
           <a onClick={() => setHistory({
@@ -194,12 +164,10 @@ export default function StockBalance() {
       },
   ] : []), [balance]);
 
-  // إخفاء وترتيب الأعمدة — نفس المحرك اللي كل الجداول بتستخدمه.
   const locCols = useTableColumns('stock-balance-locations', locationColumns, {
     export: { name: TITLES[view] ?? TITLES.balance, rows: balance?.locations ?? [] },
   });
 
-  // شرايح النطاق — «له حركة» عدّاده بييجي بعد أول طلب بس.
   const scopeTabs: { key: 'all' | 'in_stock' | 'moved'; label: string; count?: number | null }[] = [
     { key: 'all', label: 'كل الأصناف', count: products.length },
     { key: 'in_stock', label: 'رصيد فقط',
@@ -229,7 +197,6 @@ export default function StockBalance() {
     >
       <div style={{ padding: '8px 4px 12px' }}>
       <Row gutter={12}>
-        {/* 1) Category */}
         <Col xs={24} md={5}>
           <Input allowClear prefix={<SearchOutlined />} placeholder="البحث عن الفئة"
             value={categoryQuery} onChange={(e) => setCategoryQuery(e.target.value)} />
@@ -260,7 +227,6 @@ export default function StockBalance() {
           </div>
         </Col>
 
-        {/* 2) Item — by name or by code */}
         <Col xs={24} md={10}>
           <div style={{ maxHeight: 500, overflowY: 'auto',
                         border: '1px solid #f0f0f0', borderRadius: 8 }}>
@@ -286,7 +252,6 @@ export default function StockBalance() {
           </div>
         </Col>
 
-        {/* 3) The numbers */}
         <Col xs={24} md={9}>
           {balanceLoading ? (
             <div style={{ textAlign: 'center', padding: 40 }}><Spin /></div>

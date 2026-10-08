@@ -5,26 +5,11 @@ import {
   DEFAULT_PRINT_OPTIONS, PRINT_OPTION_LABELS, PrintOptions, savePrintOptions,
 } from '../print/printOptions';
 
-/**
- * مفاتيح الطباعة — the nine switches their فاتوره بيع carries across its header, deciding what
- * lands on the printed page.
- *
- * A dropdown rather than a row of checkboxes on the document: theirs has the room for a strip of
- * them, ours does not, and nine boxes competing with the fields somebody is actually filling in
- * would cost more attention than they are worth. They are set once for a printer and then left
- * alone — so they live one click away, with the count of what is off shown on the button so
- * «why is the logo missing?» has an answer in view.
- */
 export default function PrintOptionsMenu({
   value, onChange, hideKeys,
 }: {
   value: PrintOptions;
   onChange: (next: PrintOptions) => void;
-  /** مفاتيح مالهاش أثر على المستند ده — بتختفي بدل ما تتعرض وهي مش شغالة.
-   *
-   *  ورقة «طلب بيع» بتطلع من غير شعار ولا اسم شركة بقرار، مش بمفتاح. فمفتاح مكتوب
-   *  عليه «شعار الشركة» على شاشة البيع بيبقى وعد كداب: تفتحه ومايظهرش حاجة، وتقعد
-   *  تدوّر على العطل في الطابعة. والمفتاحين لسه شغالين على المشتريات والمرتجعات. */
   hideKeys?: (keyof PrintOptions)[];
 }) {
   const set = (next: PrintOptions) => { savePrintOptions(next); onChange(next); };

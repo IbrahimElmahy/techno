@@ -1,4 +1,3 @@
-"""Catalog router (T008). FR-001–005. System-generated editable code; kind/price validation."""
 from __future__ import annotations
 
 from decimal import Decimal
@@ -52,27 +51,15 @@ class ItemCreate(BaseModel):
     default_warehouse_id: int | None = None
     category: str | None = None
     default_discount_pct: Decimal | None = None
-    # (011) advisory planning thresholds + expiry-batch tracking
     min_stock: Decimal | None = None
     max_stock: Decimal | None = None
     is_perishable: bool = False
-    # التعبئة + a free note (a5 parity).
     piece_name: str | None = None
     pieces_per_unit: Decimal | None = None
     description: str | None = None
-    # (031) The three things an item carries that do not live on its own row. They used to be
-    # three more HTTP calls the screen made AFTER the item existed, which meant a failure on any
-    # of them left an item created and half-configured while the screen said «اتسجّل الصنف».
-    # Taken here, they are written inside the SAME transaction: the item and everything about it
-    # either exist together or not at all.
-    #
-    # Typed as `list[dict] | None` at this point in the file because `TierPrice` and `UnitIn` are
-    # declared below; `_apply_*` validates them through those models before anything is written.
     tiers: list[dict] | None = None
     units: list[dict] | None = None
     point_value: Decimal | None = None
-    # «القطعة = N متر» — بيتكتب كوحدة بديلة في `item_unit` (`uom_service.apply_length`)،
-    # مش عمود على الصنف: البيع والشرا بيحوّلوا بالوحدات أصلاً.
     meters_per_piece: Decimal | None = None
 
 
@@ -86,17 +73,13 @@ class ItemUpdate(BaseModel):
     default_warehouse_id: int | None = None
     category: str | None = None
     default_discount_pct: Decimal | None = None
-    min_stock: Decimal | None = None          # (011)
+    min_stock: Decimal | None = None
     max_stock: Decimal | None = None
     is_perishable: bool | None = None
     piece_name: str | None = None
     pieces_per_unit: Decimal | None = None
     description: str | None = None
-    # **تصليح اسم الوحدة الأساسية — اسم بس، مش تحويل.** كروت «متر مواسير» في المصنع جاية
-    # من a5 مكتوب عليها «قطعة» وكمياتها فعلاً أمتار؛ الاسم الغلط بيقلب اتجاه «القطعة = N
-    # متر». تغيير الاسم مابيلمسش ولا كمية ولا حركة — اللي عايز يحوّل رصيد يعمل تسوية.
     unit_of_measure: str | None = None
-    # «القطعة = N متر»؛ null/0 بيشيله. مش مبعوت ⇒ زي ما هو.
     meters_per_piece: Decimal | None = None
 
 
@@ -113,24 +96,15 @@ class ItemOut(BaseModel):
     default_warehouse_id: int | None = None
     category: str | None = None
     default_discount_pct: Decimal | None = None
-    # (011) advisory planning thresholds + expiry-batch tracking
     min_stock: Decimal | None = None
     max_stock: Decimal | None = None
     is_perishable: bool = False
-    # التعبئة + a free note (a5 parity).
     piece_name: str | None = None
     pieces_per_unit: Decimal | None = None
     description: str | None = None
-    # «القطعة = N متر» لو متسجّل (من `item_unit`)، عشان الكارت والشباك يعرضوا الرصيد بالاتنين.
     meters_per_piece: Decimal | None = None
-    # Total on-hand across all locations — filled on the list endpoint (one grouped query).
     on_hand: Decimal | None = None
-    # Their list carries the مستهلك price as a column; it lives in its own table, so the list
-    # endpoint fills it in bulk rather than making the screen ask per row.
     consumer_price: Decimal | None = None
-    # كل شرايح البيع — الشاشة بقت بتعرضهم جنب بعض بدل صفحة تسعير منفصلة. الشريحة
-    # اللي مالهاش صف بتغيب: الخانة الفاضية معناها «مش بيتباع بالشريحة دي»، والصفر
-    # معناه «ببلاش».
     tier_prices: dict[str, Decimal] = {}
 
 
@@ -160,29 +134,13 @@ def list_items(
     q: str | None = None,
     active: bool | None = None,
     warehouse_id: int | None = None,
-    # **فرع مطلوب صراحةً — للّي بيشوف الفروع كلها.**
-    #
-    # العزل تحت بيشتغل على اللي محبوس في فرع وبس؛ الأدمن والمالك بيشوفوا الكتالوجين
-    # مع بعض، والفرعين فيهم ١٢٧ اسم مكرر حرفياً (كارت العلياء وكارت أكتوبر لنفس
-    # الحاجة). فاللي بيكتب إذن في العلياء بيلاقي الاسم مرتين، وياخد كارت أكتوبر،
-    # ويقرا رصيده صفر في مخزن العلياء ويقول «الكمية غلط». الخانة دي بتخلّي الشاشة
-    # تقول «أنا شغّال في الفرع ده» فيرجع كتالوج الفرع ده وحده.
     branch_id: int | None = None,
-    stock_filter: str | None = None,  # all | in_stock | out_of_stock | negative | moved
+    stock_filter: str | None = None,
     limit: int | None = None,
     offset: int = 0,
     current: CurrentUser = Depends(require_capability(CAP_CATALOG_READ)),
     db: Session = Depends(get_db),
 ) -> list[ItemOut]:
-    """List items with search + filters; each row carries its total on-hand quantity.
-
-    On-hand comes from ONE grouped query over the movements, so filtering by stock costs the
-    same as listing.
-    """
-    # **الفئة الرئيسية بتجرّ فروعها.** (031) الفئات بقت شجرة مستويين، والصنف بيتعلّق
-    # بالورقة (الفرعية) — فالفلترة على رئيسية من غير فروعها بترجّع كشف فاضي واللي
-    # قدامه يقول «الفئة دي مافيهاش حاجة». الفئة اللي مالهاش فروع بترجع لوحدها،
-    # فالفلترة في الفرع اللي مش عامل شجرة هي هي بالحرف.
     cats: str | list[str] | None = category
     if category:
         cats = lookup_service.with_children(db, lookup_service.ITEM_CATEGORY, category)
@@ -190,23 +148,6 @@ def list_items(
         select(Item), q=q, kind=kind.value if kind else None, category=cats,
         active=active, warehouse_id=warehouse_id,
     )
-    # **عزل الفروع — الكتالوج مشترك والصنف مالوش عمود فرع.**
-    #
-    # `Item` مافيهوش `branch_id`: الفرعين بيتشاركوا الجدول، والنقل بيفرّق بينهم ببادئة
-    # الكود (`AL-`) — وهي قاعدة عايشة في سكربتات الاستيراد مش في الموديل. فمستخدم
-    # العلياء كان بيفتح كشف الأصناف ويلاقي أصناف أكتوبر معاه، ويفتح كارت واحد منهم
-    # فيلاقي مخازن فرع تاني.
-    #
-    # **والفرع بيتحدد بالحركة مش بالكود:** الحركة بتحمل `branch_id` من مكانها، فـ«الصنف
-    # اللي اتحرّك في الفرع ده» حقيقة مكتوبة في الداتا. نفس القاعدة اللي حزمة المندوب
-    # بتستعملها في `sales.rep_bundle`، فمافيش تعريفين للفرع بيفرقوا مع الوقت.
-    #
-    # ⚠️ **والصنف اللي مااتحركش خالص بيفضل ظاهر للكل.** اتقاس: ١٬٥٣٢ صنف من ٢٬٦٤٠ مالهمش
-    # ولا حركة. الفلترة بالحركة لوحدها كانت هتخفيهم من الفرعين — والصنف الجديد اللي
-    # لسه متسجّل ومااتباعش يختفي من الكشف معناه إن محدش يقدر يبيعه أصلاً. الفرع بيخفي
-    # شغل الفرع التاني، مش الكتالوج الساكن.
-    # الفرع المطلوب من الشاشة بياخد الأولوية، والعزل بيفضل فوقه: اللي محبوس في فرع
-    # مايقدرش يطلب فرع تاني — بيفضل شايف فرعه هو.
     scoped = branch_scope.visible_branch_id(current)
     wanted = scoped if scoped is not None else branch_id
     if wanted is not None:
@@ -217,17 +158,8 @@ def list_items(
         moved_anywhere = select(StockMovement.item_id).distinct()
         stmt = stmt.where(or_(Item.id.in_(moved_here),
                               Item.id.not_in(moved_anywhere)))
-    # **الترتيب أبجدي عربي، ومحسوب في SQL.** الكشف كان راجع بترتيب القاعدة — يعني
-    # بترتيب الإدخال فعلياً — واللي بيدوّر على اسم في ٢٬٦٤٠ صنف مالوش طريق غير الفلتر.
-    # والتوحيد في `src.lib.arabic` عشان الهمزة والتاء المربوطة مايفرّقوش الاسم الواحد.
-    #
-    # **ولما يكون فيه بحث، القُرب قبل الأبجدي.** الأبجدي وحده بيحط الصنف اللي الحروف
-    # في آخر اسمه فوق اللي بيبدأ بيها — واللي بيكتب «كوع» عايز «كوع ٢ باب» مش
-    # «جلبة وصل كوع». `match_rank` بيرتّب: بيبدأ بيها، كلمة فيه بتبدأ بيها، ثم جوّه كلمة.
     stmt = stmt.order_by(*arabic.match_order(q, Item.name, Item.code),
                          arabic.sort_key(Item.name), Item.name)
-    # فلتر المخزون بيشتغل على الصفوف بعد ما تتحمّل، فالتقطيع بيتم بعده مش قبله — وإلا
-    # «الأصناف اللي رصيدها صفر» بترجع أقل من اللي فيه فعلاً.
     if limit is not None and not stock_filter:
         stmt = stmt.limit(limit).offset(offset)
     rows = list(db.scalars(stmt).all())
@@ -237,10 +169,8 @@ def list_items(
     rows = item_profile_service.filter_by_stock(rows, on_hand, stock_filter, moved)
     if limit is not None and stock_filter:
         rows = rows[offset:offset + limit]
-    # Looked up after the stock filter, so the extra two queries only cover rows that survive it.
     ids = [i.id for i in rows]
     consumer = item_profile_service.bulk_tier_price(db, ids, PriceTier.consumer)
-    # كل الشرايح في استعلام واحد — بدل واحد لكل شريحة، وبدل صفحة تانية بتجيبهم.
     tiers: dict[int, dict[str, Decimal]] = {}
     if ids:
         for item_id, tier, price in db.execute(
@@ -249,7 +179,6 @@ def list_items(
         ).all():
             key = tier.value if hasattr(tier, "value") else str(tier)
             tiers.setdefault(item_id, {})[key] = Decimal(str(price))
-    # طول القطعة لكل الأصناف في استعلام واحد — الجدول شبه فاضي، فده تقريباً ببلاش.
     units_by_item: dict[int, list[ItemUnit]] = {}
     if ids:
         for u in db.scalars(select(ItemUnit).where(ItemUnit.item_id.in_(ids))).all():
@@ -279,8 +208,6 @@ def _apply_length(db: Session, item: Item, length: Decimal | None) -> None:
 
 
 def _apply_tiers(db: Session, item: Item, tiers: list["TierPrice"], *, actor_user_id: int) -> None:
-    """Write the sale-price tiers. Shared by `POST /items` and `PUT /items/{id}/prices` so the
-    validation and the price-change log cannot come to differ between creating and editing."""
     if item.kind != ItemKind.product:
         raise HTTPException(422, {"code": "validation", "message": "only products have sale prices"})
     for tp in tiers:
@@ -290,7 +217,6 @@ def _apply_tiers(db: Session, item: Item, tiers: list["TierPrice"], *, actor_use
         row = db.scalar(
             select(ItemPrice).where(ItemPrice.item_id == item.id, ItemPrice.tier == tp.tier)
         )
-        # Log the move BEFORE writing it, so the history keeps the previous price (027).
         item_profile_service.record_price_change(
             db, item_id=item.id, field_name=tp.tier.value,
             old_value=row.price if row is not None else None,
@@ -304,7 +230,6 @@ def _apply_tiers(db: Session, item: Item, tiers: list["TierPrice"], *, actor_use
 
 
 def _apply_units(db: Session, item: Item, units: list["UnitIn"]) -> None:
-    """Replace the whole alternate-unit set — which is what makes removing one possible."""
     seen = {item.unit_of_measure}
     for u in units:
         u.name = (u.name or "").strip()
@@ -316,13 +241,11 @@ def _apply_units(db: Session, item: Item, units: list["UnitIn"]) -> None:
         seen.add(u.name)
     db.execute(delete(ItemUnit).where(ItemUnit.item_id == item.id))
     for u in units:
-        # `to_factor` (٩ منازل): «متر» على صنف أساسه قطعة معامله ١÷N — `to_qty` كان بيقصّه.
         db.add(ItemUnit(item_id=item.id, name=u.name, factor=to_factor(u.factor)))
     db.flush()
 
 
 def _apply_point_value(db: Session, item: Item, value, *, actor_user_id: int) -> None:
-    """Loyalty points per piece. Products only — a raw material has none to give."""
     from src.models.loyalty import ProductPointValue
 
     if item.kind != ItemKind.product:
@@ -338,10 +261,6 @@ def _apply_point_value(db: Session, item: Item, value, *, actor_user_id: int) ->
         ppv.updated_by = actor_user_id
     db.flush()
 
-
-
-
-# --- استيراد الأصناف من إكسل -------------------------------------------------------
 
 _IMPORT_HEADERS = [
     "الاسم", "الفئة", "الوحدة",
@@ -365,12 +284,6 @@ def item_min_prices(
     current: CurrentUser = Depends(require_capability(CAP_SALES_READ)),
     db: Session = Depends(get_db),
 ) -> dict:
-    """أقل سعر بيع لكل صنف (للوحدة الأساسية) = تكلفته — متوسط سعر الشراء الفعلي.
-
-    شاشة البيع بتحذّر بيه على السطر اللي صافيه أقل منه، ومابتعرضش الرقم. التكلفة واحدة
-    للصنف في كل المخازن (`costing_service.average_cost`)، فمافيش فلتر بالمخزن. الصنف اللي
-    ماتشراش (تكلفته صفر) مش في القايمة. والسيرفر هو الحكم وقت الحفظ (`sales_service`).
-    """
     from src.services import costing_service
 
     ids = db.scalars(select(Item.id).where(
@@ -386,7 +299,6 @@ def item_min_prices(
 def items_import_template(
     _: CurrentUser = Depends(require_capability(CAP_CATALOG_READ)),
 ):
-    """قالب الاستيراد — نفس الأعمدة اللي المستورد بيقراها، بسطرين مثال."""
     import io as _io
 
     import openpyxl
@@ -424,11 +336,6 @@ async def import_items_excel(
     current: CurrentUser = Depends(require_capability(CAP_CATALOG_WRITE)),
     db: Session = Depends(get_db),
 ) -> dict:
-    """استيراد أصناف من ملف إكسل بأعمدة القالب.
-
-    كل صف بيتحفظ في معاملة مستقلة (savepoint): الصنفي اللي بيغلطوا مايوقفوش الباقي،
-    واللي اتكرر بالاسم بيتعّد «تم تخطيه» بدل ما يتكرر.
-    """
     import io as _io
 
     import openpyxl
@@ -537,7 +444,7 @@ def create_item(
         is_serialized=body.is_serialized,
         default_warehouse_id=body.default_warehouse_id, category=body.category,
         default_discount_pct=body.default_discount_pct or 0,
-        min_stock=body.min_stock, max_stock=body.max_stock,   # (011) advisory
+        min_stock=body.min_stock, max_stock=body.max_stock,
         is_perishable=body.is_perishable,
         piece_name=body.piece_name, pieces_per_unit=body.pieces_per_unit,
         description=body.description,
@@ -545,20 +452,13 @@ def create_item(
     db.add(item)
     db.flush()
 
-    # Everything else the form sends, in this transaction. Each helper raises on bad input, and
-    # because nothing has been committed yet the item goes with it.
     if body.tiers:
         _apply_tiers(db, item, [TierPrice(**t) for t in body.tiers], actor_user_id=current.id)
     if body.units:
         _apply_units(db, item, [UnitIn(**u) for u in body.units])
-    # بعد الوحدات مش قبلها: `_apply_units` بيبدّل المجموعة كلها، فلو الطول اتكتب الأول كان اتمسح.
     if body.meters_per_piece:
         _apply_length(db, item, body.meters_per_piece)
     if body.point_value is not None:
-        # Checked here rather than trusted: point values are a different capability from the
-        # catalogue, and a purchasing manager may create items without being allowed to price
-        # loyalty. Refusing BEFORE the commit is what keeps «اتسجّل الصنف» honest — the older
-        # shape created the item, got a 403 on a second call, and reported success anyway.
         if not current.can(CAP_PRODUCT_POINTS_WRITE):
             raise HTTPException(403, {"code": "forbidden",
                                       "message": "لا تملك صلاحية تحديد نقاط المنتج"})
@@ -573,7 +473,6 @@ def create_item(
 class TierPrice(BaseModel):
     tier: PriceTier
     price: Decimal
-    # Each tier carries its own allowance: a wholesaler and a walk-in do not get the same one.
     discount_pct: Decimal = Decimal("0")
     vat_pct: Decimal = Decimal("0")
 
@@ -614,7 +513,7 @@ class ReturnPriceOut(BaseModel):
     item_id: int
     unit_price: Decimal
     discount_pct: Decimal
-    source: str   # «last_purchase» أو «item_price» أو «none»
+    source: str
 
 
 @router.get("/{item_id}/return-price", response_model=ReturnPriceOut)
@@ -623,17 +522,6 @@ def get_return_price(
     _: CurrentUser = Depends(require_capability(CAP_CATALOG_READ)),
     db: Session = Depends(get_db),
 ) -> ReturnPriceOut:
-    """السعر اللي سطر المرتجع بيتملّى بيه — آخر سعر شراء، وإلا سعر الصنف الحالي.
-
-    المرتجع كان بيفتح بسعر فاضي، فاللي بيكتبه بيروح يدوّر على فاتورة الشراء أو يكتب رقم
-    من دماغه. وآخر سعر شراء هو الرقم الصح للمرتجع: البضاعة دي دخلت بالسعر ده، فرجوعها
-    بنفسه هو اللي بيخلّي المخزون والحساب يقفلوا على نفس المبلغ.
-
-    ولو الصنف عمره ما اتشرى (اتصنّع، أو رصيد افتتاحي)، بيرجع سعر البيع الحالي — رقم ليه
-    معنى أحسن من خانة فاضية، واللي مش عاجبه بيغيّره.
-
-    الخصم بيتبع نفس الترتيب: خصم الصنف المسجّل عليه، وصفر لو مفيش.
-    """
     item = db.get(Item, item_id)
     if item is None:
         raise HTTPException(404, {"code": "not_found", "message": "الصنف مش موجود"})
@@ -648,8 +536,6 @@ def get_return_price(
     else:
         price, source = Decimal("0"), "none"
 
-    # الخصم بيتسجّل على شريحة السعر مش على الصنف — `item_price.discount_pct`. أول شريحة
-    # ليها خصم هي اللي بتتاخد: الصنف اللي ليه خصم متفق عليه بيبقى نفس النسبة على شرايحه.
     row = db.scalar(
         select(ItemPrice.discount_pct)
         .where(ItemPrice.item_id == item_id, ItemPrice.discount_pct.isnot(None))
@@ -670,8 +556,6 @@ def set_item_prices(
     item = db.get(Item, item_id)
     if item is None:
         raise HTTPException(404, {"code": "not_found", "message": "Item not found"})
-    # Upsert each provided tier (omitted tiers are left unchanged) — the same writer the create
-    # endpoint uses, so the two cannot validate or log differently.
     _apply_tiers(db, item, body.tiers, actor_user_id=current.id)
     db.commit()
     return _prices_out(db, item)
@@ -797,8 +681,6 @@ def receive_serials(
 
 
 class ItemProfileOut(BaseModel):
-    """ملف الصنف — stock, sales, purchases, movements and price history in one call."""
-
     item: ItemOut
     on_hand: Decimal
     stock_by_location: list[dict] = []
@@ -821,7 +703,6 @@ def item_balance(
     current: CurrentUser = Depends(require_capability(CAP_CATALOG_READ)),
     db: Session = Depends(get_db),
 ) -> dict:
-    """Prices + the quantity in every stock location — the stock-enquiry screen (رصيد صنف)."""
     try:
         return item_profile_service.balance(
             db, item_id, branch_id=branch_scope.visible_branch_id(current))
@@ -841,11 +722,6 @@ def item_card(
     current: CurrentUser = Depends(require_capability(CAP_STOCK_READ)),
     db: Session = Depends(get_db),
 ) -> dict:
-    """كارت الصنف — every movement with the balance before and after it.
-
-    Without a location this is the item's whole position; with one it is that store's card.
-    Filters hide rows but never rewrite balances — see `src/lib/item_card.py`.
-    """
     try:
         return item_card_lib.card(
             db, item_id=item_id, location_kind=location_kind, location_id=location_id,
@@ -863,7 +739,6 @@ def item_profile(
     current: CurrentUser = Depends(require_capability(CAP_CATALOG_READ)),
     db: Session = Depends(get_db),
 ) -> ItemProfileOut:
-    """Everything the system knows about one item — the product file."""
     item = db.get(Item, item_id)
     if item is None:
         raise HTTPException(404, {"code": "not_found", "message": "Item not found"})
@@ -891,7 +766,6 @@ def get_item(
     _: CurrentUser = Depends(require_capability(CAP_CATALOG_READ)),
     db: Session = Depends(get_db),
 ) -> ItemOut:
-    """One item's card — everything stored about it, without the 360 file's history."""
     item = db.get(Item, item_id)
     if item is None:
         raise HTTPException(404, {"code": "not_found", "message": "Item not found"})
@@ -911,24 +785,7 @@ def update_item(
     item = db.get(Item, item_id)
     if item is None:
         raise HTTPException(404, {"code": "not_found", "message": "Item not found"})
-    # Editing reference prices never rewrites prices already snapshotted on posted documents.
-    # Price moves are logged (027) so «why did this get cheaper?» has an answer.
     PRICE_FIELDS = {"purchase_price", "sale_price", "default_discount_pct"}
-    # (031) «مش مبعوت» و«مبعوت فاضي» حاجتين مختلفتين.
-    #
-    # This loop used to skip every None, which made a nullable field one-way: a discount, a
-    # reorder level or a default warehouse could be set and then never removed. That is not a
-    # small gap for `default_discount_pct` in particular — NULL means «no fixed discount on this
-    # item» and 0 means «its discount is nothing», and the sale reads the two differently, so a
-    # rate typed once could be changed but never withdrawn.
-    #
-    # Pydantic already knows which keys the caller actually sent. A field left out is untouched;
-    # a field sent as null is CLEARED, but only where the column allows it — `name` and `active`
-    # are not nullable, and a null there is a malformed request, not an instruction.
-    # Exactly the columns that are nullable. `default_discount_pct` is deliberately NOT among
-    # them: an item ALWAYS has a rate and 0 is «no discount», which is a complete answer. The
-    # NULL-versus-zero distinction lives on the CUSTOMER, whose column is nullable — there, NULL
-    # means «nothing agreed with him» and the sale falls back to the item's rate.
     CLEARABLE = {"purchase_price", "sale_price", "default_warehouse_id", "category",
                  "min_stock", "max_stock",
                  "piece_name", "pieces_per_unit", "description"}
@@ -936,7 +793,7 @@ def update_item(
     for field in ("code", "name", "purchase_price", "sale_price", "is_serialized", "active",
                   "default_warehouse_id", "category",
                   "default_discount_pct",
-                  "min_stock", "max_stock", "is_perishable",   # (011)
+                  "min_stock", "max_stock", "is_perishable",
                   "piece_name", "pieces_per_unit", "description"):
         if field not in sent:
             continue
@@ -950,7 +807,6 @@ def update_item(
         setattr(item, field, val)
     db.flush()
 
-    # الوحدة الأساسية + طول القطعة — مع بعض، لأن اتجاه صف الطول بيتحدد من الأساس.
     old_length = _length_of(db, item)
     relabelled = False
     if "unit_of_measure" in sent and body.unit_of_measure is not None:
@@ -958,9 +814,6 @@ def update_item(
         if not label:
             raise HTTPException(422, {"code": "validation", "message": "اسم الوحدة مايبقاش فاضي"})
         if label != item.unit_of_measure:
-            # التصليح الوحيد المسموح: متر ↔ وحدة عدّ (قطعة/ماسورة…) — اللي بيحصل لما a5 يكتب
-            # «قطعة» على كارت بيتعدّ بالمتر. «قطعة» → «كرتونة» مش تصليح اسم، دي إعادة تفسير
-            # لكل رصيد الصنف وتاريخه، وده لسه مقفول زي ما كان.
             if uom_service.is_meter_unit(label) == uom_service.is_meter_unit(item.unit_of_measure):
                 raise HTTPException(422, {"code": "validation", "message":
                     "الوحدة الأساسية بتتصلّح بين «متر» و«قطعة» بس — أي تغيير تاني بيغيّر معنى "
@@ -974,8 +827,6 @@ def update_item(
     if "meters_per_piece" in sent or relabelled:
         _apply_length(db, item,
                       body.meters_per_piece if "meters_per_piece" in sent else old_length)
-    # اسم الأساس الجديد مايتكررش مع وحدة بديلة تانية (كرتونة…) — كانت هتبقى وحدتين بنفس الاسم
-    # والسطر مايعرفش يختار أنهي.
     if relabelled and db.scalar(select(ItemUnit.id).where(
             ItemUnit.item_id == item.id, ItemUnit.name == item.unit_of_measure)):
         raise HTTPException(422, {"code": "validation",
@@ -987,11 +838,6 @@ def update_item(
 
 
 def _delete_item(db: Session, item: Item, actor_user_id: int) -> None:
-    """Permanently remove an item that never moved — otherwise refuse.
-
-    Deleting an item that appears on a posted invoice, a stock movement or a recipe would
-    orphan those documents, so that case must stay a deactivation.
-    """
     from src.models.bom import BomComponent
     from src.models.manufacturing import ManufacturingOrder
     from src.models.purchasing import PurchaseInvoiceLine
@@ -1030,18 +876,14 @@ def _delete_item(db: Session, item: Item, actor_user_id: int) -> None:
     audit_service.record(db, action="item.delete", actor_user_id=actor_user_id,
                          entity_type="item", entity_id=item.id,
                          before={"code": item.code, "name": item.name})
-    # Owned rows carry no history of their own once the item is gone.
     for model in (ItemPrice, ItemUnit, ItemSerial, ItemPriceHistory,
                   ProductPointValue):
         db.execute(delete(model).where(model.item_id == item.id))
-    # مكان الصنف على الرف (`stock_locator`) إعداد بتاعه مش تاريخ — كان بيوقّع الحذف بـ500
-    # («violates foreign key stock_locator_item_id_fkey»، ٢٠٢٦-١٠-٠٦).
     db.execute(_text("DELETE FROM stock_locator WHERE item_id = :i"), {"i": item.id})
     db.delete(item)
     try:
         db.flush()
     except IntegrityError as exc:
-        # جدول تاني بيشاور على الصنف ومش في القايمة فوق — الرفض برسالة بدل ٥٠٠.
         db.rollback()
         where = str(getattr(exc.orig, "diag", None) and exc.orig.diag.table_name or "مستند")
         raise ValueError(
@@ -1057,7 +899,6 @@ def deactivate_item(
     current: CurrentUser = Depends(require_capability(CAP_CATALOG_WRITE)),
     db: Session = Depends(get_db),
 ) -> None:
-    """Deactivate the item; `hard=true` deletes it outright — only if it never moved."""
     item = db.get(Item, item_id)
     if item is None:
         raise HTTPException(404, {"code": "not_found", "message": "Item not found"})
@@ -1068,6 +909,6 @@ def deactivate_item(
             raise HTTPException(409, {"code": "has_history", "message": str(exc)}) from exc
         db.commit()
         return
-    item.active = False  # soft-delete: never hard-delete an item referenced by posted documents
+    item.active = False
     db.flush()
     db.commit()

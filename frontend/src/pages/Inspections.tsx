@@ -92,17 +92,6 @@ interface InspectionSummary {
   accepted_points: number;
 }
 
-/**
- * **صفحة واحدة، ونوعين زيارة — كل واحد على مساره.**
- *
- * الزيارة العادية والمعاينة الفنية مستندين مختلفين: الفنية فيها فني وأصناف ونقاط،
- * والعادية متابعة أو زيارة عميل من غير فني. وخلطهم في كشف واحد كان بيخلّي اللي بيراجع
- * النقاط يعدّ صفوف مالهاش نقاط، واللي بيتابع الزيارات يدوّر فيها بين المعاينات.
- *
- * والفصل بالمسار مش بنسخة تانية من الملف: الكشف والفلاتر والتفاصيل والتصدير كلهم نفس
- * الشغل، ونسخة تانية معناها إن أي تصليح يتعمل مرة ويتنسى مرة.
- */
-/** القيمة بعد ما الكتابة تهدى — خانات النص في الفلتر كانت بتجيب الكشف مع كل حرف. */
 function useSettled<T>(value: T, ms = 400): T {
   const [settled, setSettled] = useState(value);
   useEffect(() => {
@@ -130,7 +119,6 @@ const Inspections: React.FC<{ fixedKind?: 'technician' | 'regular' }> = ({ fixed
 
   const [range, setRange] = useState<[Dayjs | null, Dayjs | null] | null>(null);
   const [kindFilter, setKindFilter] = useState<string | undefined>(undefined);
-  // المسار بيحدد النوع؛ والفلتر بيشتغل بس على الصفحة اللي مالهاش نوع ثابت.
   const kind = fixedKind ?? kindFilter;
   const [repId, setRepId] = useState<number | undefined>(undefined);
   const [statusF, setStatusF] = useState<string | undefined>(undefined);
@@ -143,9 +131,6 @@ const Inspections: React.FC<{ fixedKind?: 'technician' | 'regular' }> = ({ fixed
   const [visitTypeEdit, setVisitTypeEdit] = useState<string>('معاينة');
   const [saving, setSaving] = useState(false);
   const { options: visitTypeOptions } = useLookup('visit_type');
-  // خانات الكتابة (رقم الشهادة والمالك والفني والتاجر) كانت في تبعيات الجلب مباشرةً: كل
-  // حرف = طلبين (الكشف والإجماليات)، والرد اللي يوصل الأخر هو اللي بيتعرض — مش لازم
-  // يكون بتاع آخر حرف. دلوقتي بتتبعت لما الكتابة تهدى.
   const certNoQ = useSettled(certNo);
   const ownerQ = useSettled(ownerF);
   const technicianQ = useSettled(technicianF);
@@ -178,14 +163,12 @@ const Inspections: React.FC<{ fixedKind?: 'technician' | 'regular' }> = ({ fixed
         accepted_points: Number(res.data.accepted_points || 0),
       });
     } catch {
-      // summary failure shouldn't block table
     }
   }, [buildParams]);
 
   const load = useCallback(async (
     targetPage = page, targetPageSize = pageSize, opts?: { silent?: boolean },
   ) => {
-    // الهادي (التحديث الحي): نفس الفلاتر ونفس الصفحة، من غير سبينر ولا رسالة.
     const silent = !!opts?.silent;
     if (!silent) setLoading(true);
     try {
@@ -210,21 +193,17 @@ const Inspections: React.FC<{ fixedKind?: 'technician' | 'regular' }> = ({ fixed
     }
   }, [buildParams, page, pageSize]);
 
-  // معاينة أو زيارة اتزامنت من التطبيق، أو اتقبلت/اترفضت من جهاز تاني ⇒ الصفحة
-  // الحالية والإجماليات يتحدّثوا بنفس الفلاتر.
   useLiveRefresh(['inspections'], () => {
     load(undefined, undefined, { silent: true });
     loadSummary();
   });
 
-  // Load summary and reset page on filter change
   useEffect(() => {
     setPage(1);
     load(1, pageSize);
     loadSummary();
   }, [range, kind, repId, statusF, printedF, visitTypeF, certNoQ, ownerQ, technicianQ, traderQ]);
 
-  // Reload when page changes without changing filters
   const handlePageChange = (newPage: number, newPageSize: number) => {
     setPage(newPage);
     setPageSize(newPageSize);
@@ -234,7 +213,6 @@ const Inspections: React.FC<{ fixedKind?: 'technician' | 'regular' }> = ({ fixed
   useEffect(() => {
     api
       .get<UserRecord[]>('/api/v1/users')
-      // أبجدي من الأول — قايمة «المندوب» بتتعرض بترتيبها قبل ما حد يكتب.
       .then((r) => setUsers(sortByName(r.data || [], (u) => u.full_name || u.username)))
       .catch(() => setUsers([]));
   }, []);
@@ -281,10 +259,6 @@ const Inspections: React.FC<{ fixedKind?: 'technician' | 'regular' }> = ({ fixed
     }
   };
 
-  /** قبول معاينة مرفوضة — الرجوع عن الرفض. الرفض كان طريق باتجاه واحد، فاللي رفض
-   *  بالغلط ماكانش قدامه غير الحذف: يمسح شغل حصل عشان يصحّح قرار.
-   *
-   *  القبول بيخصم نقط المعاينة من التاجر تاني، فبيتقال قبل التأكيد بكام هيتخصم. */
   const acceptInspection = async () => {
     if (!detail) return;
     try {
@@ -296,7 +270,6 @@ const Inspections: React.FC<{ fixedKind?: 'technician' | 'regular' }> = ({ fixed
     }
   };
 
-  // شهادة الضمان — نافذة طباعة (الطباعة أو الحفظ PDF من نفس النافذة).
   const printCertificate = async () => {
     if (!detail) return;
     const d = detail;
@@ -343,7 +316,6 @@ const Inspections: React.FC<{ fixedKind?: 'technician' | 'regular' }> = ({ fixed
       const { data } = await api.post<InspectionRecord>(`/api/v1/inspections/${detail.id}/mark-printed`);
       patchDetail(data);
     } catch {
-      /* الطباعة نفسها تمت — تحديث الحالة فشل فقط */
     }
   };
 
@@ -376,9 +348,6 @@ const Inspections: React.FC<{ fixedKind?: 'technician' | 'regular' }> = ({ fixed
       },
     },
     {
-      // **رقم المالك — الأول والتاني.** خدمة العملاء بتفتح الكشف ده عشان ترنّ،
-      // وكان لازم تفتح كل معاينة لوحدها عشان تشوف الرقم. والرقم بيتعرض بالشكل اللي
-      // بيترنّ (`phones` في السيرفر) — الشيت كان شايل الصفر الأول.
       title: 'تليفون المالك',
       dataIndex: 'owner_phone',
       width: 135,
@@ -419,7 +388,6 @@ const Inspections: React.FC<{ fixedKind?: 'technician' | 'regular' }> = ({ fixed
       },
     },
     {
-      // رقم التاجر جنب اسمه — نفس السبب: المتابعة بتحصل من الكشف مش من جوّه المستند.
       title: 'تليفون التاجر',
       dataIndex: 'purchase_shop_phone',
       width: 135,
@@ -442,11 +410,8 @@ const Inspections: React.FC<{ fixedKind?: 'technician' | 'regular' }> = ({ fixed
     },
   ];
 
-  // إخفاء وترتيب الأعمدة — نفس المحرك اللي كل الجداول بتستخدمه.
   const tableCols = useTableColumns('inspections', columns);
 
-  // كروت الإجماليات اللي كانت فوق بقت سطر تحت الجدول — وبنفس شرطها: `stats.view` بس.
-  // العدد نفسه كان باين للكل في الترقيم، فبيفضل باين.
   const canSeeStats = useCanSeeStats();
   const loc = numeralsLocale();
   const isVisits = fixedKind === 'regular';
@@ -473,7 +438,6 @@ const Inspections: React.FC<{ fixedKind?: 'technician' | 'regular' }> = ({ fixed
           : 'معاينات الفنيين من التطبيق — القبول والرفض وطباعة شهادة الضمان'}
         actions={(<>
           {tableCols.control}
-          {/* الزرار هنا مش جوّه «الأعمدة» — `useTableColumns` هنا من غير تصدير. */}
           <ExportExcelButton
             name={isVisits ? 'الزيارات العادية' : 'المعاينات'}
             rows={rows}
@@ -594,7 +558,6 @@ const Inspections: React.FC<{ fixedKind?: 'technician' | 'regular' }> = ({ fixed
           </Space>
         )}
         extra={
-          // «الأعمدة» اتنقلت لترويسة الكشف — مكانها هنا كان غلط (التفاصيل مالهاش جدول بيها).
           <Space>
             {detail.status === 'rejected' ? (
               <Tag color="red">مرفوضة</Tag>

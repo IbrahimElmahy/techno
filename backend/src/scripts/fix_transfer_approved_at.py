@@ -1,30 +1,4 @@
 # -*- coding: utf-8 -*-
-"""تاريخ اعتماد أذون التحويل اللي اتكتب ثابت.
-
-`transfer_service.approve` كان بيحط `datetime(2026, 1, 1)` والتعليق بيقول إن اللي
-بينادي بيظبطه في الإنتاج — و`api/transfers.py` مابيلمسش الحقل. فكل إذن اتعتمد من
-الشاشة من ساعة التشغيل مكتوب عليه إنه اتعتمد أول يناير. الكود اتصلّح؛ ده بيصلّح اللي
-اتكتب قبله.
-
-## التاريخ بيتقرا من الحركة نفسها
-
-الاعتماد هو اللي بيكتب الحركات، فأقدم حركة على المستند هي لحظة اعتماده — مش تقدير،
-ده الأثر اللي الاعتماد سابه. وبتطلع منطقية: TRF-000001 اتعمل 14:05:02 وأقدم حركة
-14:06:02، يعني دقيقة بين الكتابة والاعتماد.
-
-## والحركة اللي اتكتبت تاني مابتتصدّقش
-
-الإذن اللي اتلغى ورجع (`restore_transfer`) حركاته اتكتبت من جديد، فتاريخها هو تاريخ
-الرجوع مش الاعتماد الأصلي. فالسكريبت بيرفض أي مستند الفرق فيه بين إنشاءه وأقدم حركة
-أكتر من يوم، وبيطلب القيمة صريحة بـ`--set`:
-
-    --set 2504=2026-09-10T17:33:57
-
-الرقم ده بيتقرا من نسخة احتياطية اتاخدت قبل الرجوع — أثر حقيقي برضه، بس من مكان تاني.
-
-    python -m src.scripts.fix_transfer_approved_at
-    python -m src.scripts.fix_transfer_approved_at --set 2504=2026-09-10T17:33:57 --apply
-"""
 from __future__ import annotations
 
 import argparse
@@ -38,9 +12,7 @@ from src.models.stock import StockMovement
 from src.models.transfer import StockTransfer
 from src.services import transfer_service
 
-# التاريخ الثابت اللي الكود كان بيحطه.
 STUCK = datetime(2026, 1, 1)
-# فرق أكبر من كده بين إنشاء المستند وأقدم حركة معناه إن الحركة اتكتبت تاني.
 SANE_GAP = timedelta(days=1)
 
 
@@ -64,8 +36,6 @@ def main() -> None:
             .join(StockMovement,
                   (StockMovement.source_doc_type == transfer_service.MOVEMENT_DOC)
                   & (StockMovement.source_doc_id == StockTransfer.id), isouter=True)
-            # المستندات اللي اتنقلت من a5 اتعملت أول يناير فعلاً، فتاريخ اعتمادها
-            # صح. اللي بيتصلّح هو اللي اتكتب بعد كده وتاريخ اعتماده فضل أول يناير.
             .where(StockTransfer.approved_at == STUCK,
                    StockTransfer.created_at > STUCK)
             .group_by(StockTransfer.id, StockTransfer.document_number,

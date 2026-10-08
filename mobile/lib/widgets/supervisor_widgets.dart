@@ -9,7 +9,6 @@ import '../theme.dart';
 import '../utils/format.dart';
 import 'session_drawer.dart';
 
-/// الفترة اللي المشرف بيبص عليها — اليوم، أمس، الأسبوع، الشهر، أو من/إلى.
 enum PeriodPreset {
   today('اليوم'),
   yesterday('أمس'),
@@ -28,7 +27,6 @@ class SupPeriod {
 
   const SupPeriod._(this.preset, this.from, this.to);
 
-  /// [range] للفترة المخصوصة بس.
   factory SupPeriod.of(PeriodPreset p, {DateTimeRange? range, DateTime? now}) {
     final n = now ?? DateTime.now();
     final today = DateTime(n.year, n.month, n.day);
@@ -39,7 +37,6 @@ class SupPeriod {
         final y = today.subtract(const Duration(days: 1));
         return SupPeriod._(p, y, y);
       case PeriodPreset.week:
-        // **الأسبوع بيبدأ السبت** — أسبوع الشغل في مصر، مش الاتنين.
         final sinceSat = (today.weekday + 1) % 7;
         return SupPeriod._(p, today.subtract(Duration(days: sinceSat)), today);
       case PeriodPreset.month:
@@ -54,14 +51,12 @@ class SupPeriod {
   String get fromIso => isoDate(from);
   String get toIso => isoDate(to);
 
-  /// بيتغيّر لما الفترة تتغيّر — مفتاح للقوايم عشان تتحمّل من الأول.
   String get key => '$fromIso|$toIso';
 
   String get rangeText =>
       from == to ? fmtDate(from) : 'من ${fmtDate(from)} إلى ${fmtDate(to)}';
 }
 
-/// شرايح الفترة. «فترة» بتفتح اختيار من/إلى، والضغط عليها تاني بيفتحه تاني.
 class PeriodChips extends StatelessWidget {
   const PeriodChips({super.key, required this.period, required this.onChanged});
 
@@ -135,7 +130,6 @@ class PeriodChips extends StatelessWidget {
   }
 }
 
-/// الخطأ بكلام مفهوم — «مافيش نت» مش `SocketException: Failed host lookup`.
 bool isOfflineError(Object e) =>
     e is SocketException || e is TimeoutException || e is http.ClientException;
 
@@ -145,7 +139,6 @@ String friendlyError(Object e) {
   return 'حصل خطأ: $e';
 }
 
-/// مكان الداتا لما ماجتش — بزرار «حاول تاني»، و«سجّل الدخول» لو الجلسة خلصت.
 class OnlineErrorView extends StatelessWidget {
   const OnlineErrorView({super.key, required this.error, required this.onRetry});
 
@@ -204,7 +197,6 @@ class OnlineErrorView extends StatelessWidget {
   }
 }
 
-/// مربع رقم — العنوان فوق، الرقم كبير، وسطر صغير تحته.
 class StatTile extends StatelessWidget {
   const StatTile({
     super.key,
@@ -271,7 +263,6 @@ class StatTile extends StatelessWidget {
   }
 }
 
-/// رقم صغير بعنوانه — جوّه كارت المندوب وفي الشريط اللي فوق حركته.
 class MiniStat extends StatelessWidget {
   const MiniStat({super.key, required this.label, required this.value, this.color});
 

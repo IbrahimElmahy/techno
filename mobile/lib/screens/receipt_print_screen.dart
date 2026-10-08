@@ -12,13 +12,6 @@ import '../theme.dart';
 import '../utils/arabic_number_words.dart';
 import '../utils/pdf_share.dart';
 
-/// طباعة سند القبض من الموبايل — ورقة للعميل إن المندوب استلم منه، أو PDF على واتساب.
-///
-/// **بتطلع حتى لو السند لسه على الجهاز** — بعكس الفاتورة. الفاتورة بتتقفل لأن المسودّة
-/// بتتعدّل والسيرفر ممكن يرفضها على المخزون، فالورقة تبقى بتقول حاجة غير اللي اتقيّدت.
-/// التحصيل مابيتعدّلش من الجهاز أصلاً، والورقة هنا هي إثبات المندوب إنه استلم الفلوس
-/// وهو واقف — وده وقتها مش بعد المزامنة. فالورقة بتطلع ومكتوب عليها «غير مرحّل بعد»
-/// من غير رقم مستند لحد ما يترفع.
 class ReceiptPrintScreen extends StatefulWidget {
   final Map<String, Object?> receipt;
 
@@ -33,7 +26,6 @@ class _ReceiptPrintScreenState extends State<ReceiptPrintScreen> {
   String? _phone;
   bool _loading = true;
 
-  /// السند كان ورقة A5 في الدفتر — نص صفحة كفاية لسطر مبلغ.
   static const _format = PdfPageFormat.a5;
 
   @override
@@ -44,7 +36,6 @@ class _ReceiptPrintScreenState extends State<ReceiptPrintScreen> {
 
   Future<void> _load() async {
     final rep = await LocalDb.instance.getKv('username') ?? '';
-    // التليفون من كارت العميل — السند شايل اسمه بس.
     String? phone;
     final cid = widget.receipt['customer_id'] as int?;
     if (cid != null) {
@@ -93,7 +84,6 @@ class _ReceiptPrintScreenState extends State<ReceiptPrintScreen> {
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    // تنبيه بس، مش قفل — الورقة نفسها بتقول إنها غير مرحّلة.
                     if (!_synced)
                       Container(
                         width: double.infinity,
@@ -171,7 +161,6 @@ class _ReceiptPrintScreenState extends State<ReceiptPrintScreen> {
     final synced = _synced;
     final doc = pw.Document();
 
-    // نفس خط الفاتورة — Cairo من ملفات التطبيق، والشبكة احتياطي.
     pw.Font arabic;
     try {
       arabic = pw.Font.ttf(await rootBundle.load('assets/fonts/Cairo.ttf'));
@@ -189,8 +178,6 @@ class _ReceiptPrintScreenState extends State<ReceiptPrintScreen> {
     final now = DateTime.now().toIso8601String();
     final printedAt = '${now.substring(0, 10)} ${now.substring(11, 16)}';
 
-    // الحساب ساعة التحصيل — متخزّن مع السند. السند القديم (قبل العمود) مالوش، والصندوق
-    // بيتشال بدل ما يخترع صفر.
     final prev = (r['prev_balance'] as num?)?.toDouble();
     final byFamily = _familyBalances(r['prev_balances'] as String?);
     final mine = hasFamily ? byFamily[family] : null;
@@ -226,7 +213,6 @@ class _ReceiptPrintScreenState extends State<ReceiptPrintScreen> {
         build: (ctx) => pw.Column(
           crossAxisAlignment: pw.CrossAxisAlignment.stretch,
           children: [
-            // ترويسة بلون النظام من غير شعار ولا اسم شركة — نفس قرار ورقة الفاتورة.
             pw.Container(
               padding: const pw.EdgeInsets.symmetric(horizontal: 12, vertical: 6),
               decoration: pw.BoxDecoration(
@@ -290,7 +276,6 @@ class _ReceiptPrintScreenState extends State<ReceiptPrintScreen> {
               ]),
             ),
             pw.SizedBox(height: 10),
-            // المبلغ بالرقم وبالحروف — الحروف هي اللي بتصعّب تعديل الرقم بعد التوقيع.
             pw.Container(
               padding: const pw.EdgeInsets.symmetric(horizontal: 10, vertical: 8),
               decoration: pw.BoxDecoration(
@@ -363,7 +348,6 @@ class _ReceiptPrintScreenState extends State<ReceiptPrintScreen> {
   }
 }
 
-/// أرصدة الخطوط المتخزّنة مع السند. الصفر بيفضل — خط رصيده صفر ودفع عليه بيبقى مقدّم.
 Map<String, double> _familyBalances(String? raw) {
   if (raw == null || raw.trim().isEmpty) return const {};
   try {

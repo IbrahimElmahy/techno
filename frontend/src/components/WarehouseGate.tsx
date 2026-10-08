@@ -9,7 +9,6 @@ export interface WarehouseOption {
   name?: string;
   label?: string;
   active?: boolean;
-  /** مجموعة مش خيار — الشاشة اللي بتخلط مخازن وعهد بتبعت `{label, options:[...]}`. */
   options?: WarehouseOption[];
 }
 
@@ -25,7 +24,6 @@ export interface WarehouseGateProps {
   okText?: string;
   cancelText?: string;
   placeholder?: string;
-  /** Whether to automatically skip gate if only 1 warehouse is available (default: true) */
   autoAdvanceIfSingle?: boolean;
 }
 
@@ -46,14 +44,11 @@ export default function WarehouseGate({
   const selectedRef = useRef<number | string | null>(value ?? null);
   selectedRef.current = value ?? null;
 
-  /** الخيار المسطّح. المجموعة بتفضل مجموعة — `Select` بتاعة antd بتفهم `options` جوّه
-   *  الخيار كـ`OptGroup`، ولو سطّحناها العنوان نفسه بيبقى صف من غير `value` فمايتختارش. */
   const normalizedOptions = useMemo(() => {
     const leaf = (w: WarehouseOption) => ({
       value: w.value !== undefined ? w.value : w.id,
       label: w.label !== undefined ? w.label : w.name,
     });
-    // المخزن الموقوف مايتختارش لمستند جديد — إلا لو هو اللي متحدد دلوقتي (مستند قديم عليه).
     const live = (w: WarehouseOption) => w.active !== false
       || (value != null && String(w.value !== undefined ? w.value : w.id) === String(value));
     return warehouses.filter((w) => w.options || live(w)).map((w) =>
@@ -63,7 +58,6 @@ export default function WarehouseGate({
     );
   }, [warehouses, value]);
 
-  /** الخيارات اللي ينفع تتختار فعلاً — عناوين المجموعات مش منها. */
   const selectableOptions = useMemo(
     () =>
       normalizedOptions.flatMap((o: any) =>
@@ -72,15 +66,8 @@ export default function WarehouseGate({
     [normalizedOptions],
   );
 
-  /** بصمة الخيارات كنص — الاعتماد على المصفوفة نفسها بيعمل حلقة.
-   *
-   *  فيه نداء بيمرّر `locationOptions.filter(...)` (وجهة التحويل، اللي بتستبعد المصدر)،
-   *  ودي مصفوفة جديدة كل رندر. الـ`useMemo` بيعيد الحساب معاها، فالـeffect يشوف
-   *  اعتماد اتغيّر ويشتغل تاني — ولو الخيار واحد بينده `onChange` و`onOk` كل رندر،
-   *  يعني رندر لا نهائي. البصمة بتتغيّر لما المحتوى يتغيّر فعلاً بس. */
   const optionsKey = selectableOptions.map((o) => String(o.value)).join('|');
 
-  // لو المستخدم عنده مخزن واحد بس متاح، ما نسألوش — نحطّه ونعدّي على طول
   useEffect(() => {
     if (open && autoAdvanceIfSingle && selectableOptions.length === 1) {
       const singleVal = selectableOptions[0].value;

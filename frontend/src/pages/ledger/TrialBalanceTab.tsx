@@ -1,14 +1,8 @@
-/**
- * جزء من شاشة الأستاذ العام — اتفصل عن `GeneralLedger.tsx` لما الملف وصل ١٤٠٠ سطر
- * وخمس تبويبات. الشاشة والمسار زي ما هما بالظبط؛ اللي اتغيّر هو إن كل تبويب بقى
- * ملف لوحده، فالتعديل في «الدفاتر» مابيفتحش «ميزان المراجعة» قدامك.
- */
 import React, { useEffect, useMemo, useState } from 'react';
 import { searchFilter, searchRank } from '../../utils/arabicSort';
 import {
   Button, Card, Col, DatePicker, Divider, Empty, Form, Input, Row, Select, Space, Switch, Tabs, Tag, Tooltip, message, Radio,
 } from 'antd';
-// فلتر على كل عمود — شوف `FilterTable`.
 import { FilterTable as Table } from '../../components/FilterTable';
 import { Statistic } from '../../components/Statistic';
 import { InputNumber } from '../../components/NumberInput';
@@ -50,7 +44,6 @@ const BOOKS: { nature: TrialRow['nature']; label: string }[] = [
 
 export default function TrialBalanceTab() {
   const navigate = useNavigate();
-  // فاضي لما الشاشة تفتح — من غير فترة الميزان بيبقى من أول الحركة لحد النهارده.
   const [range, setRange] = useState<[dayjs.Dayjs, dayjs.Dayjs] | null>(null);
   const [branchId, setBranchId] = useState<number | undefined>();
   const [costCenterId, setCostCenterId] = useState<number | undefined>();
@@ -108,7 +101,6 @@ export default function TrialBalanceTab() {
       render: (v: string) => <strong>{egp(v)}</strong> },
   ];
 
-  // في العرض المقسّم الجدول بينقسم لجداول بالطبيعة، والملف بيجمعهم كلهم زي الميزان المسطّح.
   const trialBalanceTabCols = useTableColumns('gl-trial-balance', columns, {
     export: { name: 'ميزان المراجعة', rows: shownRows },
   });
@@ -189,8 +181,6 @@ export default function TrialBalanceTab() {
                 key={nature ?? 'none'} rowKey="account_id" dataSource={book} columns={trialBalanceTabCols.columns}
                 loading={loading} pagination={false} size="small"
                 expandable={{
-                  // الفرد بيفتح بنود الحساب في نفس الفترة — ده «دفتر الأستاذ
-                  // العام» بتاع أودو: الرقم في الميزان بيفرد على القيود اللي وراه.
                   expandedRowRender: (r: any) => (
                     <AccountItems
                       accountId={r.account_id}
@@ -222,8 +212,6 @@ export default function TrialBalanceTab() {
               rowKey="account_id" columns={trialBalanceTabCols.columns} pagination={false} size="small"
               dataSource={shownRows.filter((r) => !r.nature)}
               expandable={{
-                // الفرد بيفتح بنود الحساب في نفس الفترة — ده «دفتر الأستاذ
-                // العام» بتاع أودو: الرقم في الميزان بيفرد على القيود اللي وراه.
                 expandedRowRender: (r: any) => (
                   <AccountItems
                     accountId={r.account_id}

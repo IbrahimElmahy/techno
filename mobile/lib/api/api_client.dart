@@ -7,7 +7,6 @@ import 'package:http_parser/http_parser.dart';
 import '../db/local_db.dart';
 import '../models/models.dart';
 
-/// «خلص كام من كام» — للشريط اللي تحت (`services/task_progress.dart`).
 typedef CountProgress = void Function(int done, int total);
 
 class ApiException implements Exception {
@@ -18,27 +17,10 @@ class ApiException implements Exception {
   String toString() => message;
 }
 
-/// Thin client over the ERP API. The token and base URL live in the local DB so the
-/// app keeps working offline and after restarts.
 class ApiClient {
   ApiClient._();
   static final ApiClient instance = ApiClient._();
 
-  /// العنوان اللي التطبيق بينده عليه لو محدش غيّره.
-  ///
-  /// **السحابة هي التشغيلي من ١٨ سبتمبر ٢٠٢٦.** كان `local.technothermeg.com`
-  /// (السيرفر المحلي في الشركة)، وقبله `api.technothermeg.com` — نشر سحابي قديم
-  /// اتوقف والدومين مابقاش بيتحل أصلاً، فالتطبيق كان بيقف على شاشة الدخول ومافيش
-  /// طريقة تعديه.
-  ///
-  /// **والمندوب بيشتغل من برّه الشركة.** ده السبب اللي بيخلّي العنوان السحابي مش
-  /// مجرد تفضيل: السيرفر المحلي مش موصول للنت، فالتطبيق كان لازم يبقى على شبكة
-  /// الشركة عشان يزامن — والمندوب في السوق مش عليها.
-  ///
-  /// اللي عنده عنوان متحفوظ في `api_base` بيفضل عليه لحد ما يغيّره من شاشة الدخول
-  /// أو المزامنة — مابنمسحش اختياره من تحته.
-  /// `--dart-define=API_BASE=...` للتجربة المحلية بس (سيرفر الديف) — النسخة اللي بتتنشر
-  /// مابتتبنيش بيه فبتفضل على السحابة.
   static const defaultBase = String.fromEnvironment('API_BASE',
       defaultValue: 'https://app.technothermeg.com');
 
@@ -66,10 +48,6 @@ class ApiClient {
     return 'خطأ من الخادم (${r.statusCode})';
   }
 
-  /// نص من JSON، والفاضي بيبقى `null`.
-  ///
-  /// `'' ` و`null` نفس المعنى للي بيقرا — ومن غير التوحيد ده الفئة الفاضية بتبقى فئة
-  /// اسمها فراغ في المنتقي، جنب «بدون فئة» اللي المفروض تكون فيها.
   static String? _text(Object? v) {
     final s = v?.toString().trim() ?? '';
     return s.isEmpty ? null : s;
@@ -79,26 +57,12 @@ class ApiClient {
     final r = await http
         .post(await _uri('/auth/login'),
             headers: {'Content-Type': 'application/json'},
-            // client=mobile -> the server issues a long-lived token (reps sync offline work).
             body: jsonEncode(
                 {'username': username, 'password': password, 'client': 'mobile'}))
         .timeout(const Duration(seconds: 20));
     if (r.statusCode != 200) throw ApiException(r.statusCode, _error(r));
     final body = jsonDecode(utf8.decode(r.bodyBytes));
 
-    // **مستخدم تاني على نفس الجهاز = داتا الأول لازم تمشي.**
-    //
-    // الخروج بيمسح التوكن وبس، فاللي بيدخل بعده كان بيلاقي «فواتيري» مليانة فواتير
-    // مندوب تاني و«بضاعتي» بعربيته. دي بيانات حد على شاشة مش بتاعته.
-    //
-    // **وماتتمسحش وفيها شغل ما اترفعش.** المسح ساعتها بيضيّع فاتورة العميل ماسك
-    // ورقتها. فالتبديل بيتمنع ويتقال السبب بالعدد، والحل إنه يرجع بحسابه ويزامن.
-    // **صاحب الداتا اللي على الجهاز** — مش اسم آخر واحد دخل.
-    //
-    // الفرق مهم: `username` كان بيتكتب عند الدخول وبس، فجهاز اتسطّب عليه نسخة قديمة
-    // أو اتمسح منه المفتاح بيبقى صاحبه «مجهول» — والمقارنة بتعدّي وداتا اللي فات
-    // بتفضل. `data_owner` بيتكتب مع كل دخول ومع كل سحب، والمجهول بيتعامل كأنه حد
-    // تاني: الجهاز فيه داتا مش معروف بتاعة مين، فمابتفضلش.
     final owner = (await LocalDb.instance.getKv('data_owner') ??
             await LocalDb.instance.getKv('username'))
         ?.trim()
@@ -107,7 +71,6 @@ class ApiClient {
     final hasData = await LocalDb.instance.hasUserData();
 
     if (hasData && owner != me) {
-      // **الشغل اللي ما اترفعش بيمنع المسح** — بيضيّع فاتورة العميل ماسك ورقتها.
       final pending = await LocalDb.instance.pendingByKind();
       if (pending.isNotEmpty) {
         final what = pending.entries.map((e) => '${e.value} ${e.key}').join(' · ');
@@ -119,8 +82,6 @@ class ApiClient {
       }
       await LocalDb.instance.wipeUserData();
 
-      // **والتأكيد جزء من العملية مش زيادة.** المسح اللي بيفشل في صمت أوحش من إنه
-      // مايتعملش: الشاشة بتفتح على داتا حد تاني واللي بيبص عليها فاكرها بتاعته.
       final left = await LocalDb.instance.userDataCounts();
       if (left.isNotEmpty) {
         final what = left.entries.map((e) => '${e.value} ${e.key}').join(' · ');
@@ -133,28 +94,19 @@ class ApiClient {
     await LocalDb.instance.setKv('token', body['access_token'] as String);
     await LocalDb.instance.setKv('username', username);
     await LocalDb.instance.setKv('data_owner', me);
-    // **الدور بيتكتب مع كل دخول** — هو اللي بيقرر الشاشة الرئيسية (مندوب ولا مشرف).
-    // الفاضي مش «زي اللي قبله»: المستخدم اللي قبله ممكن يكون مشرف، والمندوب اللي داخل
-    // بعده لازم يفتح على شاشته هو. `/auth/me` تحت بيأكده.
     await LocalDb.instance.setKv('role', _roleOf(body) ?? '');
     await LocalDb.instance.setKv('full_name', '');
-    // صلاحيات التطبيق — الكروت اللي بتبان في الشاشة الرئيسية. فشلها مايوقفش الدخول.
     try {
       await refreshAppCapabilities();
     } catch (_) {}
   }
 
-  /// **صلاحيات التطبيق** (`app.*`) من `/auth/me` — بتتخزّن على الجهاز عشان الكروت تتخبّى
-  /// من غير نت كمان. بتتنده مع الدخول ومع كل مزامنة. لو عمرها ماتجابت (`app_caps` فاضي)
-  /// الشاشة بتعرض كله زي الأول.
   Future<void> refreshAppCapabilities() async {
     final r = await http
         .get(await _uri('/auth/me'), headers: await _headers())
         .timeout(const Duration(seconds: 20));
     if (r.statusCode != 200) return;
     final me = jsonDecode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
-    // الدور والاسم مع الصلاحيات — الدور اتغيّر من المكتب (مندوب بقى مشرف) بيبان من
-    // الفتحة الجاية من غير ما يخرج ويدخل.
     final role = _text(me['role']);
     if (role != null) await LocalDb.instance.setKv('role', role);
     final fullName = _text(me['full_name']);
@@ -166,7 +118,6 @@ class ApiClient {
     await LocalDb.instance.setKv('app_caps', jsonEncode(caps));
   }
 
-  /// الدور من رد الدخول — ولو الرد مافيهوش، من التوكن نفسه (فيه `role` في الـpayload).
   static String? _roleOf(Object? body) {
     if (body is Map) {
       final r = _text(body['role']);
@@ -186,18 +137,11 @@ class ApiClient {
     return null;
   }
 
-  /// «مشرف مناديب» — بيفتح على شاشة المتابعة بدل شاشة المندوب، ومابيزامنش حاجة.
   static const supervisorRole = 'rep_supervisor';
 
-  /// الدور المتخزّن على الجهاز (`null` لو عمره ماتجاب).
   Future<String?> role() async => _text(await LocalDb.instance.getKv('role'));
 
   Future<bool> isSupervisor() async => await role() == supervisorRole;
-
-  // ---------------------------------------------------------------------------------
-  // متابعة المناديب — **أونلاين بس**. مابيتخزّنش حاجة: الأرقام بتتغيّر كل دقيقة، والمشرف
-  // اللي بيشوف رقم قديم بيصدّقه.
-  // ---------------------------------------------------------------------------------
 
   Future<Map<String, dynamic>> _getJson(String path, [Map<String, String>? q]) async {
     final r = await http
@@ -211,11 +155,9 @@ class ApiClient {
     return jsonDecode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
   }
 
-  /// الإجمالي فوق + كارت لكل مندوب، للفترة دي. التواريخ `YYYY-MM-DD`.
   Future<Map<String, dynamic>> supervisorOverview(String dateFrom, String dateTo) =>
       _getJson('/supervisor/overview', {'date_from': dateFrom, 'date_to': dateTo});
 
-  /// حركة مندوب — [kind] واحد من `sales|returns|collections|transfers|coupons|inspections|all`.
   Future<Map<String, dynamic>> supervisorRepActivity(
     int repId, {
     String kind = 'all',
@@ -232,17 +174,12 @@ class ApiClient {
         'offset': '$offset',
       });
 
-  /// مستند بسطوره — [kind] واحد من `sales|returns|transfers`.
   Future<Map<String, dynamic>> supervisorDocument(int repId, String kind, int id) =>
       _getJson('/supervisor/reps/$repId/documents/$kind/$id');
 
-  /// Pull the inspection point-items + lookups + customers into the offline cache.
-  ///
-  /// [onStep] = اسم الخطوة اللي شغّالة دلوقتي — للشريط اللي تحت.
   Future<void> pullReferenceData({void Function(String step)? onStep}) async {
     final headers = await _headers();
     onStep?.call('بيجيب أصناف المعاينة…');
-    // أصناف المعاينة (حساب النقاط) — the list shown in the app, separate from system products.
     final typesR = await http
         .get(await _uri('/inspections/item-types'), headers: headers)
         .timeout(const Duration(seconds: 60));
@@ -276,19 +213,10 @@ class ApiClient {
       ]);
     }
     await refreshPriceSheetHidden();
-    // Customers for the regular-visit picker (cached so it works offline).
     onStep?.call('بيجيب العملاء…');
     final custR = await http
         .get(await _uri('/customers'), headers: headers)
         .timeout(const Duration(seconds: 60));
-    // والملّاك من جدولهم، مش من العملاء.
-    //
-    // صاحب البيت كان متسجّل كعميل بتصنيف «الملّاك»، فخانة المالك في المعاينة كانت
-    // بتقلّب في العملاء وتفلتر بالتصنيف. الملّاك اتنقلوا لجدول لوحدهم (٧٠٤٥ صف)،
-    // فالتصنيف ده بقى صفر في العملاء — والخانة فضلت بتدوّر في مكان فاضي ومالقيتش حد.
-    //
-    // الاتنين بينزلوا في نفس الكاش المحلي عشان الخانة تفضل بتشتغل offline بنفس
-    // الطريقة، والمالك بيتعلّم بتصنيفه فالفلتر بيمسكه.
     List<CustomerRef> parties = [];
     if (custR.statusCode == 200) {
       final rows = jsonDecode(utf8.decode(custR.bodyBytes)) as List;
@@ -303,14 +231,6 @@ class ApiClient {
           )
       ]);
     }
-    // **الملّاك بينزلوا على صفحات.** السيرفر سقفه ٢٬٠٠٠ في الطلب الواحد
-    // (`limit: le=2000`)، والطلب القديم كان بيبعت `20000` — يعني ٤٢٢ على طول،
-    // والـ`catch` تحت كانت بتبلعه. النتيجة إن الملّاك **مانزلوش على الجهاز خالص**
-    // من يوم ما السقف اتحط، والكاش اللي على الأجهزة فضل من قبل إعادة بناء القاعدة.
-    //
-    // وده كان بيطلّع «المالك غير موجود» وقت الحفظ: المندوب بيختار مالك من الكاش
-    // القديم، والرقم اللي متخزّن جنبه بقى بيشاور على حد تاني — أو على لا حاجة —
-    // بعد ما الجدول اتبنى من الصفر بأرقام ١..٧٬٨٦٠.
     var ownersFailed = false;
     try {
       const page = 1000;
@@ -329,22 +249,18 @@ class ApiClient {
         parties.addAll([
           for (final o in rows)
             CustomerRef(
-              id: -(o['id'] as int),   // سالب: مفتاح المالك غير مفتاح العميل
+              id: -(o['id'] as int),
               name: o['name'] as String,
               phone: o['phone'] as String?,
               address: o['address'] as String?,
               customerType: 'owner',
             )
         ]);
-        // صفحة ناقصة = آخر صفحة. الفاضية بتقف كمان، فالحلقة بتنتهي دايماً.
         if (rows.length < page) break;
       }
     } catch (_) {
       ownersFailed = true;
     }
-    // **الفشل بيتقال مش بيتبلع.** الكاش القديم بيفضل شغّال (أحسن من قايمة فاضية
-    // في الشارع)، بس المندوب لازم يعرف إن الأسماء اللي قدامه ممكن تكون قديمة —
-    // لأن اللي بعده هو اللي هيقف على «المالك غير موجود» وهو مش فاهم ليه.
     if (ownersFailed && parties.every((p) => p.customerType != 'owner')) {
       throw ApiException(0, 'تعذّر تحديث كشف الملّاك — جرّب المزامنة تاني');
     }
@@ -355,7 +271,6 @@ class ApiClient {
     await LocalDb.instance.setKv('last_pull', DateTime.now().toIso8601String());
   }
 
-  /// Push every unsynced inspection; marks each one synced on success. Returns how many went up.
   Future<int> pushInspections() async {
     final pending = await LocalDb.instance.pendingSync();
     if (pending.isEmpty) return 0;
@@ -371,23 +286,17 @@ class ApiClient {
       final uuid = res['client_uuid'] as String?;
       if (uuid == null) continue;
       await LocalDb.instance.markSynced(uuid, res['document_number'] as String);
-      // الصور بعد ما الزيارة نفسها تدخل.
-      //
-      // A separate request per picture, on purpose: the RECORD is what the books need, and a rep
-      // at the edge of coverage should get it in before spending his signal on photographs. A
-      // photo that fails to upload leaves the visit synced and tries again next time.
       final id = res['id'];
       if (id is int) {
         try {
           await pushAttachments(uuid, id);
-        } catch (_) {/* the visit is in; pictures retry on the next sync */}
+        } catch (_) {}
       }
     }
     await LocalDb.instance.setKv('last_sync', DateTime.now().toIso8601String());
     return results.length;
   }
 
-  /// بيرفع صور زيارة اتزامنت. بيرجّع عدد اللي اترفع.
   Future<int> pushAttachments(String inspectionUuid, int inspectionId) async {
     final rows = await LocalDb.instance.attachments(inspectionUuid);
     var sent = 0;
@@ -395,7 +304,6 @@ class ApiClient {
       if ((row['synced'] as int?) == 1) continue;
       final path = row['path'] as String;
       final file = File(path);
-      // A picture the phone cleaned up behind us is marked done rather than retried forever.
       if (!file.existsSync()) {
         await LocalDb.instance.markAttachmentSynced(row['local_id'] as int);
         continue;
@@ -405,14 +313,12 @@ class ApiClient {
         await _uri('/inspections/$inspectionId/attachments'),
       )
         ..headers.addAll(await _headers())
-        // Its own uuid so a retry after a dropped connection stores one copy, not three.
         ..fields['client_uuid'] = 'att-$inspectionUuid-${row['local_id']}'
         ..files.add(await http.MultipartFile.fromPath(
           'file',
           path,
           contentType: MediaType('image', _ext(path)),
         ));
-      // Content-Type is set per part by MultipartRequest; a JSON one from _headers would break it.
       req.headers.remove('Content-Type');
 
       final res = await http.Response.fromStream(
@@ -433,15 +339,8 @@ class ApiClient {
         ?? 'jpeg';
   }
 
-  // ------------------------------------------------------------ البيع من العربية
-
-  /// الفئات المخفية من شيت التسعير ⇐ `kv`. بتتنده مع المزامنة، ومن الشيت نفسه وهو
-  /// بيفتح (بمهلة قصيرة) — فالإخفاء من النظام بيبان من غير ما يستنى مزامنة.
   Future<void> refreshPriceSheetHidden(
       {Duration timeout = const Duration(seconds: 30)}) async {
-    // الفئات المخفية من شيت التسعير — هنا كمان مش في حزمة المندوب بس: الشيت بيفتحه
-    // المدير والمشرف كمان، وحزمتهم بترجع ٤٠٣ فالإخفاء ماكانش بيوصلهم (٢٠٢٦-١٠-٠٧).
-    // الرئيسية المخفية بتخفي فروعها — نفس قاعدة السيرفر.
     try {
       final r = await http
           .get(await _uri('/settings/lookups', {'category': 'item_category'}),
@@ -460,14 +359,9 @@ class ApiClient {
               '${c['label'] ?? c['value']}'
         ]));
       }
-    } catch (_) {/* الإخفاء مايوقفش المزامنة — بيفضل اللي متخزّن */}
+    } catch (_) {}
   }
 
-  /// بتسحب كل اللي المندوب محتاجه عشان يبيع من غير شبكة — نداء واحد.
-  ///
-  /// عملاءه، واللي في عربيته بأرصدته وأسعاره. نداء واحد مش تلاتة عن قصد: المندوب اللي
-  /// شبكته بتقطع كان هيقف في نص السحب ويفضل بنص بيانات — عملاء من غير أصناف، أو أصناف
-  /// من غير أرصدة. يا يوصل كله يا ما يتغيّرش حاجة.
   Future<void> pullSalesBundle() async {
     final r = await http
         .get(await _uri('/sales/rep-bundle'), headers: await _headers())
@@ -478,27 +372,15 @@ class ApiClient {
     if (r.statusCode != 200) throw ApiException(r.statusCode, _error(r));
     final body = jsonDecode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
 
-    // نوع المكان ورقمه. المندوب ممكن يكون على عهدة أو على مخزن متسجّل عليه، والاتنين
-    // بيتبعتوا مختلفين وقت الترحيل — فالجهاز بيحفظ اللي السيرفر قاله مش بيفترض.
     await LocalDb.instance.setKv('store_kind', '${body['store_kind'] ?? 'custody'}');
     await LocalDb.instance.setKv('store_id', '${body['store_id']}');
-    // فئات مخفية من شيت التسعير — التحكم من شاشة الفئات في النظام. سيرفر قديم
-    // مابيبعتهاش ⇒ مابنلمسش اللي متخزّن.
     final hiddenCats = body['price_sheet_hidden_categories'];
     if (hiddenCats is List) {
       await LocalDb.instance.setKv(
           'price_sheet_hidden_categories', jsonEncode([for (final c in hiddenCats) '$c']));
     }
-    // **البيع تحت سعر الشريحة — مسموح ولا لأ.**
-    //
-    // الجهاز ماكانش يعرف، فكان بيسيب المندوب يكتب الفاتورة بسعر أقل وتقعد في الطابور
-    // والسيرفر يرفضها كل مزامنة: «مالكش الصلاحية دي» — بعد ما البضاعة اتسلّمت والعميل
-    // واخد ورقته. المنع لازم يحصل وهو عند العميل.
-    //
-    // سيرفر قديم مابيرجّعهاش ⇒ `true`، والسلوك زي ما كان.
     await LocalDb.instance.setKv(
         'can_sell_below_price', (body['can_sell_below_price'] ?? true) == true ? '1' : '0');
-    // «البيع تحت سعر التكلفة». سيرفر قديم مابيرجّعهاش ⇒ مسموح (ومافيش min_price أصلاً).
     await LocalDb.instance.setKv(
         'can_sell_below_cost', (body['can_sell_below_cost'] ?? true) == true ? '1' : '0');
     await LocalDb.instance.replaceCustomers([
@@ -513,7 +395,6 @@ class ApiClient {
           families: [
             for (final f in ((c['families'] as List?) ?? const [])) f as String
           ],
-          // الأرصدة بتنزل مع الحزمة عشان تشتغل من غير شبكة — المندوب في الشارع.
           familyBalances: {
             for (final e in ((c['family_balances'] as Map?) ?? const {}).entries)
               e.key as String: double.tryParse('${e.value}') ?? 0,
@@ -521,8 +402,6 @@ class ApiClient {
           balance: double.tryParse('${c['balance'] ?? 0}') ?? 0,
         )
     ]);
-    // الفواتير اللي المكتب عدّلها بعد الرفع — بتتحدّث على الجهاز. شوف `applyServerInvoices`.
-    // سيرفر قديم مابيبعتهاش ⇒ قايمة فاضية ومافيش حاجة بتتغيّر.
     await LocalDb.instance
         .applyServerInvoices((body['recent_invoices'] as List?) ?? const []);
     await LocalDb.instance.replaceSaleItems([
@@ -531,11 +410,8 @@ class ApiClient {
           itemId: i['item_id'] as int,
           name: i['name'] as String,
           unit: i['unit'] as String?,
-          // الفئة بتتخزّن مع الصنف عشان المنتقي يقدر يقسّم من غير شبكة. الصنف اللي
-          // فئته فاضية بيتخزّن بـnull، والشاشة بتلمّه تحت «بدون فئة» — مابيتخفيش.
           category: _text(i['category']),
           onHand: double.tryParse('${i['on_hand']}') ?? 0,
-          // محجوز على إذن تحويل معلّق. سيرفر قديم مابيرجّعهاش ⇒ صفر، والسلوك زي ما كان.
           pendingOut: double.tryParse('${i['pending_out'] ?? 0}') ?? 0,
           basePrice: double.tryParse('${i['base_price']}'),
           defaultDiscountPct: double.tryParse('${i['default_discount_pct']}') ?? 0,
@@ -543,12 +419,9 @@ class ApiClient {
             for (final e in ((i['tier_prices'] as Map?) ?? {}).entries)
               e.key.toString(): double.tryParse('${e.value}') ?? 0
           },
-          // تكلفة الوحدة الأساسية — للتحذير بس.
           minPrice: i['min_price'] == null ? null : double.tryParse('${i['min_price']}'),
         )
     ]);
-    // كتالوج الفرع — أصناف إذن التحويل. سيرفر قديم مابيرجّعهوش ⇒ الجدول بيفضل زي ما
-    // هو، و`catalogItems()` بترجع لأصناف العربية: أضيق من اللازم بس مش شاشة فاضية.
     final catalog = body['catalog'] as List?;
     if (catalog != null) {
       await LocalDb.instance.replaceCatalogItems([
@@ -558,8 +431,6 @@ class ApiClient {
             name: i['name'] as String,
             unit: i['unit'] as String?,
             category: _text(i['category']),
-            // السعر والخصم والشرايح — كشف التسعير بيقراهم من غير شبكة. سيرفر قديم
-            // مابيرجّعهمش ⇒ بيفضلوا فاضيين والكشف بيقول «مافيش سعر» بدل ما يقع.
             basePrice: double.tryParse('${i['base_price']}'),
             defaultDiscountPct:
                 double.tryParse('${i['default_discount_pct']}') ?? 0,
@@ -570,16 +441,10 @@ class ApiClient {
           )
       ]);
     }
-    // المخازن — عشان إذن التحويل يتكتب والجهاز من غير شبكة.
     await LocalDb.instance.replaceWarehouses([
       for (final w in ((body['warehouses'] as List?) ?? []))
         {'id': w['id'], 'name': '${w['name']}', 'kind': w['kind'] as String?}
     ]);
-    // وأصناف كل مخزن معاها — إذن التحويل بيطلب من المخزن، فالقايمة اللي بتتعرض
-    // لازم تكون أصنافه هو مش أصناف عربية المندوب.
-    //
-    // المفتاح راجع نص من JSON، فبيترجع رقم هنا — الجدول بيخزّنه INTEGER عشان
-    // الاستعلام يقارن رقم برقم.
     final whItems = (body['warehouse_items'] as Map?) ?? const {};
     await LocalDb.instance.replaceWarehouseItems([
       for (final e in whItems.entries)
@@ -592,13 +457,6 @@ class ApiClient {
             'category': _text(i['category']),
           }
     ]);
-    // صناديقه هو بس — واحد لكل خط، باسمه اللي على الصندوق في المكتب.
-    //
-    // بينزلوا مع الحزمة مش وقت الحفظ، لأن المندوب بيكتب في الشارع من غير شبكة. الصندوق
-    // بيتحدد من نوع الفاتورة لوحده، والشاشة بتعرضه عشان المندوب يشوف فلوسه رايحة فين.
-    //
-    // السيرفر القديم مابيرجّعش المفتاح ده — القايمة بتبقى فاضية، والشاشة ساعتها مابتمنعش
-    // الحفظ: «مش عارف» مش زي «مالوش صندوق»، واللي بيرحّل هو السيرفر وهو اللي بيرفض.
     await LocalDb.instance.replaceTreasuries([
       for (final t in ((body['treasuries'] as List?) ?? const []))
         RepTreasury(
@@ -609,38 +467,12 @@ class ApiClient {
           code: _text(t['code']) ?? '',
         )
     ]);
-    // **عهدة الكوبونات** — السريالات اللي في إيده لسه ما اتصرفتش، مدايات، والفئات اللي
-    // عليها منع. بتنزل مع الحزمة عشان فاتورة البيع تمنعه من سريال مش بتاعه وهو عند
-    // العميل من غير شبكة، مش السيرفر يرفض بعد ما الدفتر اتسلّم.
-    //
-    // سيرفر قديم مابيبعتهمش ⇒ الكاش بيتمسح ومافيش منع — الفئات بتمشي زي ما كانت.
     await LocalDb.instance.replaceCouponCustody(
         body['coupon_custody'], body['coupon_custody_kinds']);
     await LocalDb.instance.setKv('last_sales_pull', DateTime.now().toIso8601String());
   }
 
-  /// بترفع الفواتير اللي على الجهاز. بترجّع عدد اللي طلع.
-  ///
-  /// كل فاتورة بتروح بـ`client_uuid` بتاعها، فالفاتورة اللي وصلت قبل ما الاتصال يقطع
-  /// بيعرفها السيرفر ويرجّعها زي ما هي بدل ما يكتبها تاني. يعني إعادة الرفع آمنة.
-  ///
-  /// وواحدة واحدة مش دفعة: الفاتورة اللي بتترفض (البضاعة مش موجودة، العميل اتنقل لمندوب
-  /// تاني) لازم تتقال لصاحبها بسببها، ودفعة واحدة كانت هتوقّف الباقي معاها.
-  /// [refreshStock] = بعد ما الفاتورة تترفع، اسحب رصيد العربية من السيرفر.
-  ///
-  /// **من غيره الرصيد بيرجع للرقم اللي قبل البيع.** الجهاز بيطرح فواتير الطابور من
-  /// المتاح (`availableForSaleAll`)، والرصيد المخزّن (`sale_item.on_hand`) لقطة من آخر
-  /// سحب. أول ما الفاتورة تترفع بتخرج من الطابور فالطرح بيقف — والرقم المخزّن لسه من
-  /// قبل البيع، فالعربية بتقول أكتر من اللي فيها وبتخالف النظام لحد أول مزامنة كاملة.
-  ///
-  /// `false` في المزامنة الشاملة بس، لأنها بتسحب الحزمة بنفسها بعد الرفع على طول.
   Future<int> pushSaleInvoices({bool refreshStock = true, CountProgress? onProgress}) async {
-    // **البونص بيترفع بعد فواتير البيع.**
-    //
-    // القايمة جاية من الأحدث للأقدم، والبونص بيتكتب بعد الفاتورة اللي هو عليها — فكان
-    // هيطلع الأول، والسيرفر يدوّر على فاتورته بالـ`client_uuid` مايلاقيهاش لأنها لسه
-    // على الجهاز، ويرفضه. والرفض بيوقّف الطابور كله، فالفاتورة الأصلية نفسها ماكانتش
-    // هتترفع. ترتيب البيع جوّه نفسه زي ما هو بالظبط.
     final all = await LocalDb.instance.saleInvoices(synced: false);
     final pending = [
       for (final r in all) if ((r['is_bonus'] as int? ?? 0) != 1) r,
@@ -662,38 +494,16 @@ class ApiClient {
               headers: await _headers(),
               body: jsonEncode({
                 'customer_id': inv['customer_id'],
-                // خط المنتجات — بيقرّر الفاتورة دي على أنهي مديونية بتنزل.
                 'family': inv['family'],
                 'origin': {'location_kind': storeKind, 'location_id': storeId},
                 'variable_discount_pct': '0',
                 'cash_amount': '${inv['cash_amount']}',
-                // **الآجل مابيتبعتش — السيرفر بيحسبه.**
-                //
-                // اللي بيتقال هو المقبوض، والباقي = المستحق − المقبوض. لو بعتناه
-                // من هنا الفاتورة بتترفض في حالتين والاتنين سليمين:
-                //
-                // * **فيه ضريبة أو مصروف على العميل.** الشاشة بتجمع صافي السطور،
-                //   والسيرفر بيحسب المستحق = الصافي + الضريبة + مصروفات العميل.
-                //   الرقمين بيختلفوا والفاتورة بتترفض من غير سبب مفهوم.
-                // * **العميل دفع زيادة.** الشاشة بتقصّ الآجل عند صفر
-                //   (`max(0, total - cash)`)، فمقبوض ١٬٠٠٠ على فاتورة ٢٥٠ بيبعت
-                //   آجل صفر — والمجموع بيبقى ١٬٠٠٠ مش ٢٥٠. والسيرفر بيقبل السالب
-                //   عن قصد: الزيادة بتتقيّد لصالح العميل.
-                //
-                // ده اللي كان بيطلّع «النقدي + الآجل لازم يساوي المستحق».
                 'invoice_date': inv['invoice_date'],
                 'notes': inv['notes'],
-                // الكوبونات المصروفة — صف لكل فئة بمداه، زي ما الويب بيبعتها. متخزّنة
-                // JSON على صف الفاتورة، فبتتفك هنا وبتتبعت زي ما هي.
                 'coupons': inv['coupons'] == null
                     ? const []
                     : jsonDecode(inv['coupons'] as String),
                 'client_uuid': inv['client_uuid'],
-                // **فاتورة بونص** — هدية على فاتورة بيع لنفس العميل. الربط برقم السيرفر
-                // لو معروف، وإلا بـ`client_uuid` بتاع الفاتورة اللي اتكتبت على الجهاز:
-                // السيرفر بيحلّه، وهي بتترفع قبل البونص (الترتيب فوق).
-                //
-                // المفاتيح دي مابتتبعتش مع البيع العادي خالص — جسمه زي ما كان بالحرف.
                 if (isBonus) ...{
                   'is_bonus': true,
                   'bonus_for_invoice_id': inv['bonus_for_invoice_id'],
@@ -705,11 +515,7 @@ class ApiClient {
                       'item_id': l.itemId,
                       'quantity': '${l.quantity}',
                       'unit_price': '${l.unitPrice}',
-                      // المجموع المركّب — للسيرفر القديم اللي مايعرفش القسمة.
                       'discount_pct': '${l.discountPct}',
-                      // ...والنصّين، عشان الفاتورة تفضل عارفة الشركة خصمت كام والمندوب
-                      // زوّد كام. من غيرهم الشاشة الكبيرة كانت بتحطّ الخصم كله في خانة
-                      // «خصم ثابت» وتقول «متغيّر ٠» — يعني بتنسب للشركة خصم ماعملتهوش.
                       'fixed_discount_pct': '${l.fixedDiscountPct}',
                       'variable_discount_pct': '${l.variableDiscountPct}',
                     }
@@ -725,13 +531,10 @@ class ApiClient {
         sent++;
         continue;
       }
-      // فاتورة اترفضت مالهاش لازمة تفضل تحاول لوحدها في الخلفية — السبب لازم يوصل للمندوب.
       throw ApiException(r.statusCode,
           'فاتورة ${inv['customer_name']}: ${_error(r)}');
     }
     if (sent > 0 && refreshStock) {
-      // فشله مش فشل للرفع: الفاتورة وصلت خلاص، وده تحديث للشاشة. المزامنة الجاية
-      // بتجيبه، فالوقوع هنا بيأخّر رقم مش بيضيّع مستند.
       try {
         await pullSalesBundle();
       } catch (_) {}
@@ -739,21 +542,6 @@ class ApiClient {
     return sent;
   }
 
-  /// بترفع أذون التحويل اللي المندوب كتبها على الجهاز.
-  ///
-  /// الإذن بيوصل السيرفر **معلّق** — المندوب بيطلب والمسؤول بيراجع ويعتمد أو يرفض. ده مش
-  /// تفصيلة: المندوب مالوش صلاحية الاعتماد عن قصد، والسيرفر هو اللي بيمنعها مش الشاشة.
-  ///
-  /// **الطلب كله في نداء واحد.** كان بيتكتب على مراحل: الترويسة الأول وبعدين نداء
-  /// لكل صنف. طلب فيه أربعين صنف = واحد وأربعين نداء على شبكة عربية، وأي نداء فيهم
-  /// يقع بيرمي العملية قبل `markTransferSynced` — فبيفضل على السيرفر **مستند ناقص**،
-  /// والطلب على الجهاز لسه مش متزامن، والمزامنة اللي بعدها بتعمل مستند تاني ناقص.
-  /// ده اللي المندوب شافه: الطلب مش واصل كامل، والاعتماد بيحرّك اللي وصل بس.
-  ///
-  /// دلوقتي الترويسة وسطورها بيتبعتوا مع بعض، والسيرفر بيكتبهم في معاملة واحدة —
-  /// المستند بيوصل كامل أو مايوصلش. و`client_uuid` بيخلّي الإعادة ترجّع نفس المستند
-  /// بدل ما تعمل واحد جديد: الاتصال اللي بيقطع بعد ما السيرفر يكتب وقبل ما الرد يوصل
-  /// كان بيعمل نسختين من نفس البضاعة.
   Future<int> pushTransfers({CountProgress? onProgress}) async {
     final pending = await LocalDb.instance.transfers(synced: false);
     var sent = 0;
@@ -767,8 +555,6 @@ class ApiClient {
           .post(await _uri('/transfers'),
               headers: await _headers(),
               body: jsonEncode({
-                // الترويسة لسه شايلة أول صنف عشان النسخ القديمة من السيرفر —
-                // والسطور هي اللي الاعتماد بيمشي عليها.
                 'item_id': first['item_id'],
                 'quantity': '${first['quantity']}',
                 'route': _routeFor(
@@ -781,7 +567,6 @@ class ApiClient {
                   'location_kind': t['dest_kind'],
                   'location_id': t['dest_id'],
                 },
-                // تاريخ الطلب زي ما المندوب كتبه. فاضي ⇒ السيرفر بيحط تاريخ اليوم.
                 'transfer_date': t['transfer_date'],
                 'client_uuid': t['client_uuid'],
                 'lines': [
@@ -797,9 +582,6 @@ class ApiClient {
       final body = jsonDecode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
       final serverId = body['id'] as int;
 
-      // **الفحص بيقارن اللي رجع باللي اتبعت.** المستند اللي رجع ناقص سطور معناه إن
-      // حاجة غلط، والسكوت عليه بيقفل الطلب على الجهاز وهو ناقص — وده بالظبط اللي كان
-      // بيحصل. الاستثناء بيخلّي الطلب في الطابور لحد ما يوصل كامل.
       final got = (body['lines'] as List?)?.length ?? 0;
       if (got != lines.length) {
         throw ApiException(
@@ -813,7 +595,6 @@ class ApiClient {
     return sent;
   }
 
-  /// الاتجاه لوحده بيحدّد المسار — نفس خريطة شاشة الويب بالحرف.
   static String _routeFor(String src, String dst) {
     if (src == 'warehouse' && dst == 'warehouse') return 'central_to_branch';
     if (src == 'warehouse' && dst == 'custody') return 'central_to_rep';
@@ -821,10 +602,6 @@ class ApiClient {
     return 'rep_to_central';
   }
 
-  /// بترفع التحصيلات اللي على الجهاز.
-  ///
-  /// كل واحد بـ`client_uuid` بتاعه — التحصيل اللي وصل قبل ما الاتصال يقطع بيرجع زي ما هو
-  /// بدل ما يتقيّد تاني وينقّص مديونية العميل بالضعف.
   Future<int> pushReceipts({CountProgress? onProgress}) async {
     final pending = await LocalDb.instance.receipts(synced: false);
     var sent = 0;
@@ -838,10 +615,6 @@ class ApiClient {
                 'amount': '${row['amount']}',
                 'voucher_date': row['receipt_date'],
                 'description': row['notes'],
-                // التحصيل بقى بالخط: المندوب بيتسأل «المدفوع ده أبيض ولا بولي» وقت
-                // الكتابة، لأن الفلوس بتنزل في صندوق الخط والمديونية اللي بتتخصم
-                // مديونية الخط. التحصيلات القديمة اللي لسه في الطابور من قبل السؤال
-                // مالهاش خط — دي بتتوزّع على الإجمالي بالنسبة زي الأول.
                 if ((row['family'] as String?) != null)
                   'family': row['family']
                 else
@@ -862,8 +635,6 @@ class ApiClient {
     return sent;
   }
 
-  /// ملف العميل — رصيده وحركته. ده **بيحتاج شبكة**: الحركة بتتغيّر من المكتب ومن مناديب
-  /// تانيين، ورقم قديم متخزّن على الجهاز أوحش من «مافيش شبكة» لأن الواحد بيصدّقه.
   Future<Map<String, dynamic>> customerProfile(int customerId) async {
     final r = await http
         .get(await _uri('/customers/$customerId/profile'), headers: await _headers())
@@ -873,11 +644,6 @@ class ApiClient {
     return jsonDecode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
   }
 
-  /// فواتير البيع بتاعة العميل على السيرفر — اللي البونص ممكن يتربط بيها.
-  ///
-  /// `kind=sale` بيشيل البونص نفسه (بونص على بونص مالوش معنى)، والسيرفر بيقصرها على
-  /// عملاء المندوب. **السقف قصير عن قصد**: المندوب واقف عند العميل، والقايمة دي إضافة
-  /// على اللي على الجهاز — الشبكة الوحشة ترجّع اللي على الجهاز بس، مش توقّفه.
   Future<List<Map<String, dynamic>>> customerSaleInvoices(int customerId) async {
     final r = await http
         .get(
@@ -897,19 +663,6 @@ class ApiClient {
     ];
   }
 
-  /// حسابات العميل بالخط — «أبيض» و«بولي» كل واحد برصيده، حي من السيرفر.
-  ///
-  /// مش من كاش المزامنة عن قصد: الشاشة دي أصلاً محتاجة شبكة (الرصيد بيتغيّر من
-  /// المكتب كمان)، ورقم من الكاش جنب رقم حي بيطلعوا مختلفين ومحدش عارف مين الصح.
-  /// اللي في مكان واحد بالظبط — أصناف المخزن اللي المندوب اختاره في إذن التحويل.
-  ///
-  /// **لأن الطلب من مخزن مش من كتالوج.** المندوب بيطلب من «المخزن الرئيسى»، والصنف
-  /// اللي مش موجود هناك مايتطلبش منه — عرضه بيخلّي المكتب يستلم طلب مايقدرش ينفّذه.
-  /// وكتالوج الفرع كله أوسع من اللازم: بيعرض أصناف مخازن تانية وأصناف اتوقفت.
-  ///
-  /// **نداء وقت الاختيار، مش مع الحزمة.** أرصدة كل مخازن الفرع مع بعض حاجة كبيرة تتحمّل
-  /// على تليفون كل مزامنة وتبوظ أول ما حد يبيع. والمندوب وهو بيطلب من مخزن بيبقى
-  /// غالباً في مكان فيه شبكة. ولو مافيش، الشاشة بترجع لكتالوج الفرع بدل ما تقف.
   Future<List<SaleItem>> stockAtLocation(String kind, int id) async {
     final r = await http
         .get(
@@ -949,14 +702,6 @@ class ApiClient {
     ];
   }
 
-  // ------------------------------------------------------------ coupon receipts
-
-  /// Check one coupon before it is accepted, so the rep learns it is bad while the customer is
-  /// still standing there rather than after the handover is posted.
-  ///
-  /// **والفئة بتتبعت مع الرقم.** الرقم لوحده مش هوية كوبون: كل دفتر مرقّم ١..٥٠، فـ«٥
-  /// ذهبي» و«٥ فضي» ورقتين. من غير الفئة السيرفر بيدوّر على أول فاتورة فيها الرقم ده
-  /// مهما كانت فئتها، فبيقول «سليم» على ورقة اتصرفت في دفتر تاني.
   Future<Map<String, dynamic>> checkCoupon(String serial, {String? couponKind}) async {
     final r = await http
         .get(
@@ -972,8 +717,6 @@ class ApiClient {
     return jsonDecode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
   }
 
-  /// Push every queued handover. Each carries its client_uuid, so a receipt that went up before
-  /// the connection dropped is recognised by the server instead of being posted twice.
   Future<int> pushCouponReceipts({CountProgress? onProgress}) async {
     final pending = await LocalDb.instance.couponReceipts(synced: false);
     var sent = 0;
@@ -991,19 +734,7 @@ class ApiClient {
                 'customer_id': row['customer_id'],
                 'notes': row['notes'],
                 'client_uuid': row['client_uuid'],
-                // اللي المندوب قاله على الجهاز — بيوصل زي ما هو، والسيرفر بيفضل يتحقق من السريالات.
                 'received_date': row['received_date'],
-                // **`coupon_kind` غير `declared_kind`.**
-                //
-                // `declared_kind` توثيق: اللي المندوب قاله، بيتخزّن على المستند عشان لو
-                // المراجعة خالفته يبقى فيه حاجة تتقارن بيها. و`coupon_kind` هو **هوية
-                // الورقة** اللي السيرفر بيدوّر ويرفض بيها.
-                //
-                // كان بيتبعت الأول بس، والنتيجة إن كل استلام من التطبيق بيتكتب بفئة
-                // فاضية: «رجع قبل كده» بقى بيتسأل بالرقم لوحده، فأول «٥» يرجع بيقفل
-                // «٥» في كل دفتر تاني للأبد — وهي بالظبط الحالة اللي القيد
-                // `(coupon_kind, serial)` اتعمل عشانها. وفحص الفئة الغلط مكانش بيشتغل
-                // من التطبيق أصلاً.
                 'coupon_kind': row['coupon_kind'],
                 'declared_kind': row['coupon_kind'],
                 'declared_value': row['coupon_value'],
@@ -1018,8 +749,6 @@ class ApiClient {
         sent++;
         continue;
       }
-      // A rejected handover must not sit in the queue retrying forever — the coupons were
-      // refused for a reason the rep needs to hear, so surface it and stop.
       throw ApiException(r.statusCode, _error(r));
     }
     return sent;

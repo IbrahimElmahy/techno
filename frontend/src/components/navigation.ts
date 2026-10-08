@@ -1,29 +1,7 @@
-/**
- * The system's navigation tree, arranged the way the client's people already work.
- *
- * It mirrors the a5 menu they are migrating from — same seven sections, same order, same names,
- * same nesting — because the cost of a rearranged menu is not aesthetic: a storekeeper who knows
- * «اذن تحويل مخازن» lives under «اداره المخازن» finds it without being taught, and if we put it
- * somewhere more logical to us, he asks someone. Every screen relocated is a question asked.
- *
- * What is ours and stays ours: the colours, the typography, the components. This file decides
- * arrangement, not appearance.
- *
- * Two levels of nesting on purpose. Theirs has section → group → screen (تقارير مبيعات ▾ holds six
- * reports), and flattening it would put sixteen report names directly under المبيعات, which is the
- * flat-list problem the previous grouping was built to escape.
- *
- * `roles` is declared per SCREEN, never per group: a group is a heading, not a permission. A group
- * left with no permitted screen disappears rather than showing an empty heading, which reads as
- * something broken.
- */
-
 export interface NavScreen {
-  /** The route. `?` query included where a screen is a preset view of a shared one. */
   key: string;
   label: string;
   roles: string[];
-  /** Their path, kept so the mapping stays auditable against `specs/031-a5-restructure/ia-map.md`. */
   a5?: string;
 }
 
@@ -31,12 +9,6 @@ export interface NavGroup {
   key: string;
   label: string;
   children: (NavScreen | NavGroup)[];
-  /**
-   * القسم ده بيبان في فرع التصنيع وحده (وللإدارة اللي مالهاش فرع).
-   *
-   * أوامر التشغيل والوصفات والهوالك مالهمش معنى في فرع بيستلم بضاعة تامّة ويبيعها،
-   * وظهورها في قايمة العلياء بيخلّي اللي يفتحها يلاقي شاشة فاضية ويسأل.
-   */
   factoryOnly?: boolean;
 }
 
@@ -44,41 +16,20 @@ export function isGroup(node: NavScreen | NavGroup): node is NavGroup {
   return (node as NavGroup).children !== undefined;
 }
 
-// --- role shorthands ------------------------------------------------------------------------
-// Written out per screen below, but composed from these so a change to "who sees the books" is one
-// edit rather than twenty.
 const ADMIN = ['system_admin'];
 const OFFICE = ['system_admin', 'branch_manager'];
 const SALES = ['system_admin', 'branch_manager', 'sales_manager'];
 const BUYING = ['system_admin', 'branch_manager', 'purchasing_manager'];
 const STOCK = ['system_admin', 'branch_manager', 'purchasing_manager', 'sales_manager'];
 const BOOKS = ['system_admin', 'branch_manager', 'accountant'];
-/** Read-only roles are added to a screen only when the screen is genuinely just for looking. */
 const R = (base: string[]) => [...base, 'viewer'];
-/** الموارد البشرية. Kept as one shorthand so it cannot drift from the `hr.*` capabilities
- *  the backend gates on — the two vocabularies are separate and nothing enforces they agree. */
 const HR = ['system_admin', 'branch_manager', 'accountant'];
-/** مين بيقرا النقاط والكوبونات — نسخة من حاملي `loyalty.read`. مدير الفرع واخدها من
- *  «كل حاجة ما عدا» في `rbac.py`، بس القايمة كانت ناسياه فتقارير الكوبونات ماكانتش بتبانله
- *  (طلب العميل ٢٠٢٦-١٠-٠٨). */
 const LOYALTY = ['system_admin', 'branch_manager', 'after_sales_staff', 'viewer'];
-/** مين بيشوف مبلغ باسم موظف. Deliberately narrower than `HR` and narrower than `BOOKS`: the
- *  backend grants `salary.view` to system_admin and accountant only, and a menu entry that opens
- *  onto a 403 is worse than no entry — it reads as a broken screen. Mirrors `rbac.py:_PAYROLL_ALL`. */
 const SALARY = ['system_admin', 'accountant'];
 const FLEET = ['system_admin', 'branch_manager', 'accountant', 'viewer'];
 
-/**
- * الشريط الجانبي بيقبل شاشة مستقلة، مش أقسام وبس.
- *
- * «مفاتيح خاصة» كانت جوّه «اداره الحسابات ← سندات»: دوستين قبل ما تشوفها، وهي حاجة
- * بتتفتح كل يوم. الشاشة اللي بتتفتح كل يوم مالهاش لازمة تكون جوّه قايمة.
- */
 export const NAVIGATION: (NavGroup | NavScreen)[] = [
   { key: '/voucher-keys', label: 'مفاتيح خاصة', roles: R(BOOKS) },
-  // ١) اداره الانشاءات — master data. Theirs lists all twelve as separate screens; ours had four of
-  // them buried inside two combined screens, which is why someone arriving from a5 could not find
-  // «المخازن» or «الحسابات الفرعيه» at all.
   {
     key: 'grp-setup',
     label: 'اداره الانشاءات',
@@ -87,15 +38,11 @@ export const NAVIGATION: (NavGroup | NavScreen)[] = [
       { key: '/catalog', label: 'الأصناف', roles: R(STOCK), a5: '/items' },
       { key: '/customers', label: 'العملاء', roles: R([...SALES, 'after_sales_staff']), a5: '/clients' },
       { key: '/suppliers', label: 'الموردين', roles: R(BUYING), a5: '/suppliers' },
-      // عميل ومورد (أو موظف/فرع) نفس الشخص — أرصدته مع بعض والمقاصة (المرحلة ٢، ٢٠٢٦-١٠-٠٦).
       { key: '/party-links', label: 'الأطراف المرتبطة', roles: R([...SALES, ...BUYING]) },
       { key: '/warehouses', label: 'المخازن', roles: R(STOCK), a5: '/stores' },
-      // الهيكل من فوق لتحت: محافظة ← فرع ← منطقة. التلاتة كانوا متفرّقين — المحافظات
-      // مدفونة في تبويب مش في القائمة، والمناطق مالهاش شاشة أصلاً.
       { key: '/governorates', label: 'المحافظات', roles: OFFICE },
       { key: '/branches', label: 'الفروع', roles: OFFICE, a5: '/branches' },
       { key: '/territories', label: 'المناطق', roles: R(SALES) },
-      // المندوب مستخدم بدور، وكل ما يخصه كان متفرّق على أربع شاشات.
       { key: '/reps', label: 'المناديب', roles: R(SALES) },
       { key: '/treasuries', label: 'الخزينه و البنوك', roles: R(BOOKS), a5: '/payment-methods' },
       { key: '/main-accounts', label: 'الحسابات الرئيسيه', roles: R(BOOKS), a5: '/mainaccounts' },
@@ -106,14 +53,12 @@ export const NAVIGATION: (NavGroup | NavScreen)[] = [
     ],
   },
 
-  // ٢) اداره المبيعات
   {
     key: 'grp-sales',
     label: 'اداره المبيعات',
     children: [
       { key: '/invoices', label: 'فاتوره بيع', roles: R(SALES), a5: '/sales/create' },
       { key: '/returns', label: 'مردود مبيعات', roles: R(SALES), a5: '/salesreturns/create' },
-      // كاشير مباشر is deliberately absent — excluded at the client's request.
       {
         key: 'grp-sales-reports',
         label: 'تقارير مبيعات',
@@ -124,12 +69,10 @@ export const NAVIGATION: (NavGroup | NavScreen)[] = [
           { key: '/trade-reports?view=sales-items-grouped', label: 'مبيعات اصناف مجمعة', roles: R(SALES), a5: '/sales/item-grouped' },
           { key: '/trade-reports?view=invoice-profits', label: 'ارباح فواتير', roles: OFFICE, a5: '/invoicesprofits' },
           { key: '/trade-reports?view=item-profits', label: 'ارباح اصناف', roles: OFFICE, a5: '/sales/itemprofits' },
-          // البونص — البضاعة اللي خرجت هدية بسعرها وتكلفتها. مالوش شاشة في a5.
           { key: '/bonus-report', label: 'تقرير البونص', roles: R(SALES) },
         ],
       },
       { key: '/trade-reports?view=sales-return-items', label: 'تقارير مردود مبيعات', roles: R(SALES), a5: '/salesreturns/itemsearch' },
-      // رصيد كل عميل على أبيض وبولي والإجمالي، وسجل عملياته بضغطة (٢٠٢٦-١٠-٠٣).
       { key: '/customer-debts', label: 'مديونيات العملاء', roles: R(SALES) },
       { key: '/orders?kind=sale', label: 'شيت تسعير بيع', roles: R(SALES), a5: '/saleorders/create' },
       {
@@ -162,7 +105,6 @@ export const NAVIGATION: (NavGroup | NavScreen)[] = [
     ],
   },
 
-  // ٣) اداره المشتريات
   {
     key: 'grp-purchasing',
     label: 'اداره المشتريات',
@@ -184,7 +126,6 @@ export const NAVIGATION: (NavGroup | NavScreen)[] = [
     ],
   },
 
-  // ٤) اداره المخازن
   {
     key: 'grp-stock',
     label: 'اداره المخازن',
@@ -195,15 +136,7 @@ export const NAVIGATION: (NavGroup | NavScreen)[] = [
         key: 'grp-count',
         label: 'جرد',
         children: [
-          // صفوف وأعمدة. These used to land on رصيد صنف, which is a three-pane picker — you choose
-          // a category, then one item, then read that item's balances. That answers «الصنف ده عندي
-          // منه كام» and is a good screen for it, but a جرد is a SHEET: every line you hold, one
-          // row each, filtered and printed and counted against. You cannot count a warehouse by
-          // clicking items one at a time. The two differ only in whether the store is a column or
-          // is summed away.
           { key: '/stock-sheet?view=count', label: 'جرد المخازن', roles: R(STOCK), a5: '/inventorycount' },
-          // Ours, with no counterpart in theirs: the sheet → counted → difference → adjustment
-          // cycle. Kept because it is the half of a stocktake their screens do not do.
           { key: '/stock-counts', label: 'دورة الجرد (عدّ وتسوية)', roles: STOCK },
           { key: '/stocktake', label: 'جرد حتى تاريخ', roles: R(STOCK), a5: '/inventory/period-inventory' },
         ],
@@ -217,40 +150,20 @@ export const NAVIGATION: (NavGroup | NavScreen)[] = [
         children: [
           { key: '/stock-alerts', label: 'حد اعادة الطلب', roles: R(STOCK), a5: '/inventory/restock-alert' },
           { key: '/reports?view=stagnant', label: 'اصناف راكدة', roles: R(STOCK), a5: '/stagnant-items' },
-          // «السرايل» و«حركات سرايل» و«حركات/كميات انتهاء الصلاحية» و«شاشة معلومات المنتج»
-          // اتشالوا بطلب العميل — الشركة مابتستعملهمش. زي الباركود، ده اختلاف مقصود عن a5
-          // مش نقص، فمتترجعش لمجرد إنها موجودة عندهم.
-          // ملحوظة: السرايل وتواريخ الصلاحية لسه شغالين تحت — الفاتورة لسه بتاخد سيريال،
-          // والبيع لسه بيصرف بالأقرب انتهاءً. اللي اتشال الشاشات اللي بتتفرّج عليهم.
         ],
       },
     ],
   },
 
-  // ٥) اداره الحسابات
   {
     key: 'grp-accounts',
     label: 'اداره الحسابات',
     children: [
-      /**
-       * لوحة المحاسبة — أول حاجة في القايمة عشان هي أول حاجة تتفتح.
-       *
-       * مالهاش مقابل في a5 (نظامهم بيبدأ من سجل)، فمافيش مكان محفوظ بتتزحزح منه.
-       * الكارت بيقول «فيه مسودتين هنا وألف مفتوحة هناك» قبل ما حد يفتح شاشة.
-       */
       { key: '/accounting', label: 'لوحة المحاسبة', roles: R(BOOKS) },
       { key: '/account-statement', label: 'كشف حساب', roles: R(BOOKS), a5: '/entriesreport' },
       { key: '/general-ledger?tab=journal', label: 'قيد حر', roles: BOOKS, a5: '/entries' },
       { key: '/treasury', label: 'حركة خزينه', roles: R(BOOKS), a5: '/draweraction' },
-      // «الجاري» في a5 — حسابات الشركاء ورأس المال والاستثمار بأرصدتها (٢٠٢٦-١٠-٠٦).
       { key: '/partners-current', label: 'جاري الشركاء', roles: R(BOOKS) },
-      // تسوية الحسابات — «الفاتورة دي اتدفعت بإيه». مالهاش شاشة عندهم لأن نظامهم
-      // مابيقفلش دفعة على فاتورة أصلاً؛ دي الحاجة اللي أودو بيعملها وهما لأ.
-      //
-      // **التبويبين الاتنين في القايمة، مش واحد.** الشاشة بتفتح على «المفتوح»
-      // و«المطابَق» جوّاها تبويب. اللي بيدوّر على «إيه اللي اتطابق الشهر ده» مالوش
-      // طريق يوصله من القايمة — لازم يفتح شاشة تانية ويدوس تبويب. المدخل اللي في
-      // القايمة لازم يوصّل للشاشة اللي المستخدم عايزها، مش للشاشة اللي جنبها.
       { key: '/reconciliation?tab=open', label: 'تسوية — المفتوح', roles: BOOKS },
       { key: '/reconciliation?tab=matched', label: 'تسوية — المطابَق', roles: BOOKS },
       {
@@ -263,14 +176,6 @@ export const NAVIGATION: (NavGroup | NavScreen)[] = [
         ],
       },
       {
-        /**
-         * السندات — كانت مبنية ومفيش حاجة في القايمة بتوصّلها.
-         *
-         * The vouchers screen has six tabs. The menu reached exactly one of them (الشيكات), so
-         * سند قبض and سند صرف — the two documents a cashier uses every day — could only be got to
-         * by opening the cheques screen and clicking sideways along the tab bar. A screen you can
-         * only reach by knowing it is there is a screen most people never find.
-         */
         key: 'grp-vouchers',
         label: 'سندات',
         children: [
@@ -279,8 +184,6 @@ export const NAVIGATION: (NavGroup | NavScreen)[] = [
           { key: '/vouchers?tab=handover', label: 'توريد مندوب', roles: R(BOOKS) },
           { key: '/vouchers?tab=expense', label: 'سند مصروف', roles: R(BOOKS) },
           { key: '/vouchers?tab=transfer', label: 'تحويل بين الخزن', roles: R(BOOKS) },
-          // تبويبين مبنيين ومفيش حاجة في القايمة بتوصّلهم — اللي عايزهم كان لازم
-          // يفتح السندات ويدوّر عليهم بين ستة تبويبات.
           { key: '/vouchers?tab=treasury-movement', label: 'حركة الخزينة', roles: R(BOOKS) },
           { key: '/vouchers?tab=statement', label: 'كشف حساب السندات', roles: R(BOOKS) },
         ],
@@ -291,18 +194,11 @@ export const NAVIGATION: (NavGroup | NavScreen)[] = [
         children: [
           { key: '/vouchers?tab=cheques&direction=incoming', label: 'أوراق قبض', roles: R(BOOKS), a5: '/notes-receivable' },
           { key: '/vouchers?tab=cheques&direction=outgoing', label: 'أوراق دفع', roles: R(BOOKS), a5: '/notes-payable' },
-          // محفظة الشيكات — «إيه اللي عندي وإيه اللي بيستحق»، مش «إيه اللي اتسجّل».
           { key: '/ops-reports?view=cheque-wallet', label: 'محفظة الشيكات', roles: R(BOOKS) },
           { key: '/ops-reports?view=cheques-due-soon', label: 'شيكات تستحق قريباً', roles: R(BOOKS) },
           { key: '/ops-reports?view=cheques-by-status', label: 'الشيكات بالحالة', roles: R(BOOKS) },
         ],
       },
-      /**
-       * دفاتر اليومية وسلامتها — الاتنين مالهمش مقابل في a5، فمكانهم قرارنا إحنا.
-       *
-       * تحت «اداره الحسابات» جنب القيد الحر: الدفتر هو بيت القيد ومصدر رقمه، واللي
-       * بيكتب قيد هو اللي بيسأل «القيد ده نزل في أنهي دفتر».
-       */
       {
         key: 'grp-journals',
         label: 'دفاتر اليومية',
@@ -316,23 +212,15 @@ export const NAVIGATION: (NavGroup | NavScreen)[] = [
         label: 'تقارير المحاسبية',
         children: [
           { key: '/general-ledger?tab=trial', label: 'دفتر الإستاذ', roles: R(BOOKS), a5: '/ledger' },
-          // دفتر الشريك جنب دفتر الأستاذ عن قصد: الأول بيمشي على حساب والتاني على
-          // طرف، واللي بيدوّر على واحد فيهم بيبقى بيسأل نفس السؤال من ناحية تانية.
           { key: '/finance-reports?tab=partner', label: 'دفتر الشريك', roles: R(BOOKS) },
           { key: '/finance-reports?tab=sheet', label: 'ميزانية ختامية', roles: R(BOOKS), a5: '/finalbalancesheet' },
           { key: '/finance-reports?tab=sheet&period=1', label: 'ميزانية خلال فترة', roles: R(BOOKS), a5: '/period-balancesheet' },
           { key: '/finance-reports?tab=income', label: 'مركز مالي وقائمة الدخل', roles: R(BOOKS), a5: '/financialposition' },
           { key: '/finance-reports?tab=income&period=1', label: 'مركز مالي وقائمة الدخل خلال فترة', roles: R(BOOKS), a5: '/period-financialposition' },
-          // قائمة الدخل بشكل ورقة العميل: المبيعات بالفئة، تكلفة المبيعات من الجرد، والبوانص.
           { key: '/income-sheet', label: 'قائمة الدخل (فئات وتكاليف)', roles: R(BOOKS) },
-          // نفس أرقام قائمة الدخل، مقسومة — فمكانها جنبها.
-          // التدفق النقدي جنب قائمة الدخل: الأولى بتقول كسبنا كام والتانية بتقول
-          // الفلوس اتحركت إزاي، والفرق بينهم هو السؤال اللي بيتسأل.
           { key: '/finance-reports?tab=cashflow', label: 'التدفق النقدي', roles: R(BOOKS) },
           { key: '/profitability?view=cost-centers', label: 'أرباح مراكز التكلفة', roles: R(BOOKS) },
           { key: '/profitability?view=branches', label: 'مقارنة الفروع', roles: R(BOOKS) },
-          // الإقرار الضريبي — تبويب مبني من زمان ومفيش حاجة في القايمة بتوصّله.
-          // اللي محتاجه كان لازم يعرف إنه جوّه «التقارير المالية» ويدوس تبويب.
           { key: '/finance-reports?tab=vat', label: 'الإقرار الضريبي', roles: R(BOOKS) },
         ],
       },
@@ -351,7 +239,6 @@ export const NAVIGATION: (NavGroup | NavScreen)[] = [
     ],
   },
 
-  // ٦) ادارة انتاج
   {
     key: 'grp-production',
     label: 'ادارة انتاج',
@@ -359,14 +246,11 @@ export const NAVIGATION: (NavGroup | NavScreen)[] = [
     children: [
       { key: '/manufacturing?tab=recipes', label: 'نسب انتاج', roles: BUYING, a5: '/production-proportions' },
       { key: '/free-production', label: 'انتاج حر', roles: BUYING, a5: '/productions/free' },
-      // ورقة واحدة زي a5 (٢٠٢٦-١٠-٠٦) — أوامر التشغيل بمراحلها لسه على `/manufacturing?tab=orders`.
       { key: '/ratio-production', label: 'انتاج حسب النسب', roles: BUYING, a5: '/productions/proportion' },
       { key: '/reports?view=production', label: 'تقرير الانتاج', roles: R(BUYING), a5: '/productions/report' },
     ],
   },
 
-  // اداره الموارد البشرية — قسم جديد. مش في قايمة a5 أصلاً: نظامهم عنده «الموظفين» كبيانات
-  // أساسية وبس، فالترتيب هنا بتاعنا مش مطابق لحاجة.
   {
     key: 'grp-hr',
     label: 'اداره الموارد البشرية',
@@ -379,30 +263,16 @@ export const NAVIGATION: (NavGroup | NavScreen)[] = [
       { key: '/leave', label: 'الأجازات', roles: HR },
       { key: '/leave?tab=balances', label: 'أرصدة الأجازات', roles: HR },
       { key: '/leave?tab=types', label: 'أنواع الأجازات', roles: HR },
-      // إعدادات الراتب لكل موظف — القايمة جاية من الموظفين نفسهم، والمسير بيحسب منها. على
-      // `SALARY` مش `BOOKS`: كل سطر فيها مبلغ باسم موظف، ومدير الفرع مالوش `salary.view`.
       { key: '/employee-salaries', label: 'رواتب الموظفين', roles: SALARY },
-      // المرتبات على شكل ملف إكسل العميل (٢٠٢٦-١٠-٠٨): المجموعات وأعمدتها لكل فرع، وبعدها الشيت
-      // الشهري — بالترتيب ده لأن الشيت بيتجهّز من الاتنين اللي قبله.
       { key: '/payroll-groups', label: 'مجموعات المرتبات', roles: SALARY },
       { key: '/payroll-sheet', label: 'شيت المرتبات', roles: SALARY },
       { key: '/payroll-settings', label: 'شرايح الضريبة والتأمينات', roles: BOOKS },
       { key: '/payroll-settings?tab=components', label: 'بنود الراتب', roles: BOOKS },
       { key: '/payroll-settings?tab=rules', label: 'أرقام المسير', roles: BOOKS },
-      // «ذمم الموظفين» و«سلف العاملين» بقوا شاشة واحدة (٢٠٢٦-١٠-٠٨): صف لكل موظف بذمته من
-      // الدفتر وسلفه المفتوحة وإجماليهم، والسلف كلها شريحة جوّاها. `/advances` بيحوّل عليها.
       { key: '/employee-receivables', label: 'ذمم وسلف الموظفين', roles: BOOKS },
-      // الجزاءات أرقام باسم موظف بتتخصم من مرتبه — `SALARY` زي السلف، مش `BOOKS`.
       { key: '/employee-receivables?tab=adjustments', label: 'الجزاءات والمكافآت', roles: SALARY },
-      // «مسير الرواتب» اتشال من القايمة بطلب العميل (٢٠٢٦-١٠-٠٨) — المرتبات هتتعمل على شكل
-      // ملفه هو. الشاشة والمسار لسه موجودين لحد ما الشكل الجديد يتبني.
-      // إعدادات العمولات — بلوكات السيارات والمشرفين وخصم ٢٥٪ والفنيين من ملفه، و«معاينة
-      // الشهر» بتحسبها من النظام. جنب شيت المرتبات لأن الشيت بيقرا منها. `SALARY`: كلها مبالغ
-      // ونسب باسم موظف.
       { key: '/commission-settings', label: 'إعدادات العمولات', roles: SALARY },
       { key: '/commission-settings?tab=preview', label: 'معاينة العمولات', roles: SALARY },
-      // تقارير الموارد البشرية — تسعتاشر اسم على محرك واحد (`pages/HrReports.tsx`). التقارير
-      // اللي فيها مبالغ باسم موظف بتتقفل على `SALARY` مش `HR`.
       {
         key: 'grp-hr-reports',
         label: 'تقارير الموارد البشرية',
@@ -431,7 +301,6 @@ export const NAVIGATION: (NavGroup | NavScreen)[] = [
     ],
   },
 
-  // ٧) الاعدادات
   {
     key: 'grp-settings',
     label: 'الاعدادات',
@@ -439,27 +308,14 @@ export const NAVIGATION: (NavGroup | NavScreen)[] = [
       { key: '/users', label: 'المستخدمين', roles: OFFICE, a5: '/userscontroller' },
       { key: '/stock-permits?kind=opening', label: 'أول المدة', roles: OFFICE, a5: '/beginning' },
       { key: '/settings', label: 'اعدادات القاعدة', roles: OFFICE, a5: '/database/settings' },
-      // «الصلاحيات» مكان «أدوات خاصة».
-      //
-      // اللي كان هنا فحص سلامة بيانات — شاشة تشخيص بتتفتح مرة في السنة. ومين بيقدر يعمل
-      // إيه سؤال بيتسأل كل ما حد جديد يدخل الشركة، وماكانش ليه شاشة أصلاً: الصلاحيات
-      // كانت مكتوبة في الكود، وتغييرها كان يعني نسخة جديدة من البرنامج.
       { key: '/permissions', label: 'صلاحيات الأدوار', roles: ADMIN },
-      // صلاحيات كل مستخدم لوحده — الصفحات والعمليات والتطبيق (٢٠٢٦-١٠-٠٥). مدير الفرع بيدير
-      // مستخدمين فرعه اللي تحته، ويدّي من صلاحياته هو بس.
       { key: '/user-permissions', label: 'صلاحيات المستخدمين', roles: OFFICE },
-      // الشاشة الوحيدة اللي بتكسر عزل الفروع عن قصد — الفروع كصفوف جنب بعض، مش مجموعهم
-      // في رقم واحد. مدير الفرع بيشوف فرعه من كل شاشة تانية، ومدير الشركة كان مالوش مكان
-      // يقارن فيه.
       { key: '/branch-overview', label: 'نظرة على الفروع', roles: ADMIN },
-      // بيتابع النظام كله — مين عمل إيه وإمتى، ناجح كان أو مرفوض. مكانه جنب المستخدمين
-      // والصلاحيات، مش جوّه قسم شغل زي خدمات ما بعد البيع.
       { key: '/audit', label: 'سجل العمليات', roles: OFFICE },
     ],
   },
 ];
 
-/** Screens outside the tree: where everyone lands, not a section to open. */
 export const HOME_SCREEN: NavScreen = {
   key: '/dashboard',
   label: 'الرئيسية',
@@ -467,22 +323,14 @@ export const HOME_SCREEN: NavScreen = {
     'after_sales_staff', 'accountant', 'viewer'],
 };
 
-/**
- * Screens we keep that theirs has no equivalent for. They live at the end so the mirrored part of
- * the menu reads exactly like the system people are coming from, and the extra sits after it rather
- * than interrupting it.
- */
 export const EXTRA_SECTIONS: NavGroup[] = [
   {
     key: 'grp-extra',
     label: 'خدمات ما بعد البيع',
     children: [
       { key: '/coupon-receipts', label: 'استلام الكوبونات', roles: [...SALES, 'after_sales_staff'] },
-      // دفاتر الكوبونات اللي في إيد المناديب — نفس اللي بيسلّموا الورق ويستلموه.
       { key: '/coupon-custody', label: 'عهدة الكوبونات', roles: [...SALES, 'after_sales_staff'] },
       { key: '/inspections', label: 'المعاينات', roles: R([...SALES, 'after_sales_staff']) },
-      // الزيارة العادية مستند تاني: مافيهاش فني ولا أصناف ولا نقاط. كانت بتتخلط مع
-      // المعاينات في كشف واحد، فاللي بيراجع النقاط بيعدّ صفوف مالهاش نقاط.
       { key: '/visits', label: 'الزيارات العادية', roles: R([...SALES, 'after_sales_staff']) },
       { key: '/owners', label: 'الملّاك', roles: R([...SALES, 'after_sales_staff']) },
       { key: '/inspection-items', label: 'أصناف المعاينة', roles: OFFICE },
@@ -502,14 +350,11 @@ export const EXTRA_SECTIONS: NavGroup[] = [
         ],
       },
       {
-        // «تقارير متابعة» عندهم — بتسأل عن الناس مش عن المستندات: الموزع ماسك كام،
-        // الفني رجّع كام، ومين نزل كام معاينة.
         key: 'grp-followup-reports',
         label: 'تقارير المتابعة',
         children: [
           { key: '/after-sales-reports?tab=distributors', label: 'كوبونات الموزعين', roles: LOYALTY },
           { key: '/after-sales-reports?tab=plumbers', label: 'كوبونات السباكين', roles: LOYALTY },
-          // ورقة ورقة: العهدة ← التسليم لتاجر ← الاستلام من سباك (زي «كل الكوبونات» في نظامهم القديم).
           { key: '/after-sales-reports?tab=lifecycle', label: 'حركة الكوبون', roles: LOYALTY },
           { key: '/after-sales-reports?tab=technicians', label: 'زيارات الفنيين بالنقاط', roles: R([...SALES, 'after_sales_staff']) },
           { key: '/after-sales-reports?tab=reps', label: 'زيارات المناديب', roles: R([...SALES, 'after_sales_staff']) },
@@ -546,7 +391,6 @@ export const EXTRA_SECTIONS: NavGroup[] = [
   },
 ];
 
-/** Every screen in the tree, flattened — used to check a role may open a route at all. */
 export function allScreens(nodes: (NavScreen | NavGroup)[] = [...NAVIGATION, ...EXTRA_SECTIONS]): NavScreen[] {
   return nodes.flatMap((n) => (isGroup(n) ? allScreens(n.children) : [n]));
 }

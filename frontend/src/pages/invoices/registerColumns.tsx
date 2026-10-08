@@ -1,9 +1,3 @@
-/**
- * أعمدة سجل الفواتير — اتفصلت عن `Invoices.tsx`.
- *
- * ٢٩٠ سطر من تعريف أعمدة مافيش فيها حالة، كانت قاعدة في نص شاشة ٣١٢٠ سطر. بقت دالة
- * بتاخد اللي محتاجاه وبترجّع الأعمدة.
- */
 import React from 'react';
 import DraftTag from '../../components/DraftTag';
 import { Button, Modal, Space, Tag, Tooltip } from 'antd';
@@ -19,14 +13,12 @@ import { InvoiceRecord, Customer, InvoiceFilters } from './types';
 
 export interface RegisterColumnsCtx {
   customers: Customer[];
-  /** مناديب السجل — الاسم بس، مش كارت المندوب الكامل. */
   reps: { id: number; full_name: string }[];
   postingAccounts: any[];
   filters: InvoiceFilters;
   printOpts: any;
   navigate: (to: string) => void;
   openDetail: (r: InvoiceRecord) => void;
-  /** فتح مرتجع في شاشته — ومعاه `ret` عشان «رجوع» يرجّع للسجل. */
   openReturn?: (id: number) => void;
   invoiceDoc: (inv: any) => any;
   canEditInvoice: boolean;
@@ -34,17 +26,13 @@ export interface RegisterColumnsCtx {
   handleEditInvoice: (r: InvoiceRecord) => void;
   handleDeleteInvoice: (r: InvoiceRecord) => void;
   handleDeleteReturn: (r: any) => void;
-  /** مسح مسودّة من الكشف. اختياري عشان اللي بينده من غيرها مايتكسرش. */
   onDeleteDraft?: (id: number) => void;
-  /** صفوف سند القبض في «الكل» (`doc_type: 'receipt'`) — عرض/تعديل/حذف السند. */
   onViewReceipt?: (r: any) => void;
   onEditReceipt?: (r: any) => void;
-  /** الحذف الفعلي بس — التأكيد هنا. */
   onDeleteReceipt?: (r: any) => Promise<void> | void;
   canWriteVoucher?: boolean;
 }
 
-// سند القبض مالوش إجمالي ولا خصم ولا باقي — «—» بدل صفر يوهم.
 const DASH = '—';
 
 export function buildRegisterColumns({
@@ -56,8 +44,6 @@ export function buildRegisterColumns({
   return [
     {
       title: 'نوع المستند',
-      // التصدير بياخد القيمة الخام من `dataIndex` — `doc_type` كان بينزل في الإكسل «sale»
-      // على الفاتورة والبونص الاتنين. الاسم المكتوب بيتصدّر، والرسم بيقرا النوع من الصف.
       dataIndex: 'doc_type_label',
       key: 'doc_type',
       width: 100,
@@ -65,7 +51,6 @@ export function buildRegisterColumns({
         ? <Tag color="blue" style={{ fontWeight: 600 }}>سند قبض</Tag>
         : r.doc_type === 'sale'
         ? (r.is_bonus
-          // البونص نوع لوحده — قيمته صفر، واللي بيقرا الكشف لازم يعرفه من غير ما يفتحه.
           ? <Tag color="orange" style={{ fontWeight: 600 }}>فاتورة بونص</Tag>
           : <Tag color="green" style={{ fontWeight: 600 }}>فاتورة بيع</Tag>)
         : <Tag color="magenta" style={{ fontWeight: 600 }}>مرتجع بيع</Tag>,
@@ -108,10 +93,8 @@ export function buildRegisterColumns({
       sorter: (a: any, b: any) => (a.document_number || '').localeCompare(b.document_number || ''),
       render: (doc: string, r: any) => (
         <Space direction="vertical" size={0}>
-          {/* المسودّة مالهاش رقم — الرقم بيتحجز وقت الترحيل مش قبله. */}
           {r.__isDraft
             ? <DraftTag onDelete={() => onDeleteDraft?.(r.__draft.id)} />
-            // بإطار بلون نوع المستند — بيع أخضر، مرتجع وردي، بونص برتقالي.
             : <Tag bordered className="sl-docno"
                 color={isRcv(r) ? 'blue' : r.doc_type !== 'sale' ? 'magenta' : r.is_bonus ? 'orange' : 'green'}>{doc}</Tag>}
           {r.original_invoice_number && (
@@ -142,13 +125,10 @@ export function buildRegisterColumns({
       sorter: (a: any, b: any) => {
         const cA = a.customer_name || customers.find((c) => c.id === a.customer_id)?.name || '';
         const cB = b.customer_name || customers.find((c) => c.id === b.customer_id)?.name || '';
-        // موحَّد: «أحمد» و«احمد» جنب بعض، مش في طرفين الجدول.
         return compareArabic(cA, cB);
       },
       render: (cId: number, row: any) => {
-        // الاسم جاي مع الصف؛ الكشف المحلي فاضل كخطة بديلة للصفوف القديمة.
         const name = row.customer_name || customers.find((cust) => cust.id === cId)?.name;
-        // مسودّة لسه ما اتحطّ فيها عميل — «—» أصدق من «عميل #null» ورابط مايفتحش.
         if (cId == null) return <span style={{ color: '#555b65' }}>—</span>;
         return (
           <a onClick={(e) => { e.stopPropagation(); navigate(`/customers/${cId}`); }}>
@@ -158,8 +138,6 @@ export function buildRegisterColumns({
       },
     },
     {
-      // عائلة الفاتورة — أبيض ولا بولي. عمود لوحده جنب «النوع» لأنهم بيجاوبوا سؤالين:
-      // ده بيقول الفاتورة على أنهي خط، و«النوع» بيقول العميل ده إيه.
       title: 'نوع الفاتورة',
       dataIndex: 'family',
       key: 'family',
@@ -170,7 +148,6 @@ export function buildRegisterColumns({
           : isRcv(r) ? 'على الإجمالي' : '-',
     },
     {
-      // «النوع» = تصنيف العميل (تاجر/سباك/معرض)، مش عائلة الفاتورة.
       title: 'النوع',
       dataIndex: 'customer_type',
       key: 'customer_type',
@@ -207,14 +184,6 @@ export function buildRegisterColumns({
       render: (val: number, r: any) => (isRcv(r) ? DASH : `${money(val)}`),
     },
     {
-      // **النسبة من الفرق الحقيقي، مش من `combined_pct`.**
-      //
-      // `combined_pct` خصم المستند وحده، وهو صفر على كل فاتورة تقريباً — والخصم
-      // الحقيقي عايش على السطر. فالكشف كان بيقول «خصم ٠٪» على فاتورة خصمها ٢٠٪،
-      // والفاتورة نفسها لما تتفتح بتقول الرقم الصح. الكشف هو اللي بيتبص عليه.
-      //
-      // والأساس هو الإجمالي **قبل** خصم السطور (`discount_base`) — القسمة على الإجمالي
-      // بعد الخصم بتطلّع ٢٥٪ مكان ٢٠٪.
       title: 'خصم%',
       dataIndex: 'discount_value',
       key: 'combined_pct',
@@ -229,9 +198,6 @@ export function buildRegisterColumns({
       },
     },
     {
-      // دفاتر الكوبونات اللي اتسلّمت مع الفاتورة. عمود في الكشف لأن السؤال «سلّمنا
-      // الراجل كام كوبون» بيتسأل على القايمة، مش جوّه الفاتورة — وقبل كده الإجابة
-      // ماكانتش موجودة إلا لو فتحتها للتعديل.
       title: 'كوبونات',
       dataIndex: 'coupons',
       key: 'coupons',
@@ -242,7 +208,6 @@ export function buildRegisterColumns({
         const named = rows.filter(
           (c) => c.coupon_kind || c.coupon_type_name || c.serial_from || c.serial_to);
         if (!named.length) {
-          // الشكل القديم — مدى واحد على رأس الفاتورة، من غير فئة.
           if (!row.coupon_serial_from) return '-';
           return (
             <Tooltip title={`من ${row.coupon_serial_from} إلى ${row.coupon_serial_to}`}>
@@ -278,7 +243,6 @@ export function buildRegisterColumns({
       align: 'left' as const,
       sorter: (a: any, b: any) => a.net - b.net,
       render: (val: number, r: any) => (isRcv(r)
-        // تحصيل مش بيع — بلون وكلمة تفرّقه عن صافي الفاتورة.
         ? <Tooltip title="تحصيل من عميل — مش داخل في صافي المبيعات">
             <strong style={{ color: '#389e0d' }}>
               <span style={{ fontSize: 14, fontWeight: 500 }}>تحصيل </span>{money(val)}
@@ -291,11 +255,6 @@ export function buildRegisterColumns({
       )),
     },
     {
-      // **اللي اتحصّل فعلاً، مش نقدي يوم البيع.**
-      //
-      // كان بيعرض `cash_amount` — الفلوس اللي اتاخدت مع الفاتورة نفسها — فالفاتورة
-      // اللي اتباعت آجل واتحصّلت بعدها بسند كانت تفضل مكتوب جنبها «تم السداد ٠٫٠٠»
-      // وحالتها «مدفوعة». الرقم الحي هو الصافي ناقص المتبقّي.
       title: 'تم السداد',
       dataIndex: 'residual',
       key: 'cash_amount',
@@ -303,7 +262,6 @@ export function buildRegisterColumns({
       align: 'left' as const,
       sorter: (a: any, b: any) =>
         (a.net - (a.residual ?? a.credit_amount)) - (b.net - (b.residual ?? b.credit_amount)),
-      // اللون من الخلية مش من الرسم — الرسم بيفضل نص عشان التصدير بيقراه.
       onCell: () => ({ style: { color: '#389e0d' } }),
       render: (_v: any, row: any) => {
         if (isRcv(row)) return `${money(row.amount)}`;
@@ -312,8 +270,6 @@ export function buildRegisterColumns({
       },
     },
     {
-      // المتبقّي الحي كمان — وبيبقى **سالب** لو العميل دفع أكتر من الفاتورة، وده
-      // رصيد له مش عليه، فبيتلوّن أخضر مش أحمر.
       title: 'الباقي',
       dataIndex: 'residual',
       key: 'credit_amount',
@@ -329,7 +285,6 @@ export function buildRegisterColumns({
       },
     },
     {
-      // «الباقي» اللي فوق رقم يوم البيع ومابيتحركش؛ ده بيتحرك مع كل تحصيل.
       title: 'التحصيل',
       dataIndex: 'payment_state',
       key: 'payment_state',
@@ -370,17 +325,11 @@ export function buildRegisterColumns({
       render: (v: string | null) => v || '-',
     },
     {
-      // العمود كان بلا اسم وبلا تثبيت، وسط جدول أعمدته مامتقاسّهاش الفاضي كله. النتيجة
-      // كانت شريط أبيض في نص السجل والأيقونات سايبة فيه — نفس السجلات التانية بتسمّيه
-      // وبتثبّته على الحافة، فالإيد بتلاقيه في نفس المكان في كل شاشة.
       title: 'الإجراءات',
       key: 'actions',
       width: 130,
-      // Icons, like the row icons on their own lists. Four words apiece cost more width than
-      // «الصافى» and «الباقى» together — and those are the two numbers the list exists for.
       render: (_: any, record: any) => {
         const isSale = record.doc_type === 'sale';
-        // سند القبض: عرض الورقة، تعديل في بوباب السند، وحذف بسؤال — زي شريحة «سندات القبض».
         if (isRcv(record)) {
           return (
             <Space size={2} onClick={(e) => e.stopPropagation()}>
@@ -406,7 +355,7 @@ export function buildRegisterColumns({
                       okType: 'danger',
                       cancelText: 'إلغاء',
                       onOk: async () => {
-                        try { await onDeleteReceipt(record); } catch { /* رسالة الخطأ من `api` */ }
+                        try { await onDeleteReceipt(record); } catch {}
                       },
                     })}
                   />
@@ -415,15 +364,6 @@ export function buildRegisterColumns({
             </Space>
           );
         }
-        // **سطر المسودّة مالوش أزرار مستند.**
-        //
-        // الكشف فيه نوعين سطور: مستندات ومسودّات. والمسودّة مالهاش رقم ولا أثر — رقمها
-        // في الجدول سالب عشان يفضل فريد وسط أرقام حقيقية. فزرار «حذف» كان بينده
-        // `DELETE /sales/-37` والسيرفر يرد «فاتورة البيع مش موجودة»، وزرار «طباعة»
-        // كان بيجيب مستند مش موجود. الأربع أزرار مالهمش معنى هنا، والموجود منهم
-        // بيوعد بحاجة مش قادر يعملها.
-        //
-        // والمسودّة ليها فعلين: تستكملها (ضغطة على السطر) أو تمسحها — وده اللي هنا.
         if (record.__isDraft) {
           return (
             <Space size={2} onClick={(e) => e.stopPropagation()}>
@@ -446,7 +386,6 @@ export function buildRegisterColumns({
                   if (isSale) {
                     openDetail(record.raw || record);
                   } else {
-                    // الشاشة بتقرا `?doc=` — `?id=` كان بيوصّل للكشف بس.
                     if (openReturn) openReturn(record.id);
                     else navigate(`/returns?doc=${record.id}`);
                   }

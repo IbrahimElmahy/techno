@@ -1,32 +1,3 @@
-"""ينقل صناديق a5 (الحسابات تحت «الخزينة») ويربط كل صندوق بمندوبه وخطه.
-
-    python -m src.scripts.import_a5_treasuries --file C:/pgtmp/aliaa/a5_acc.tsv --prefix AL-
-    python -m src.scripts.import_a5_treasuries --file C:/pgtmp/aliaa/a5_acc.tsv --prefix AL- --yes
-    python -m src.scripts.import_a5_treasuries --file C:/pgtmp/a5_acc.tsv --prefix "" --yes
-
-المصدر تصدير شجرة a5: UTF-16LE بفاصل `~`، والسطر اللي بيبدأ بـ`B` هو حساب فرعي.
-اللي `AccMain_id = 1` هما الصناديق — ١٣ صندوق.
-
----------------------------------------------------------------------------
-تلات قرارات، كل واحد فيهم كان ممكن يتاخد بالعكس:
-
-* **الصندوق بيتبنّى، مابيتعملش من جديد.** الـ١٣ حساب دول موجودين خلاص في شجرتنا من نقل
-  الشجرة (`AL-A5S-<AccBrnch_id>`) وشايلين حركتهم من a5 — ٦٨٢١ سطر على المركز الرئيسي
-  لوحده. حساب جديد بنفس الاسم معناه رصيدين لصندوق واحد: القديم فيه التاريخ والجديد فيه
-  النهارده، ومحدش هيعرف أنهي واحد الصح.
-
-* **«تكنو» بتتحوّل «بولي».** المستخدم قالها بالنص: «تكنو هو بولي». الاسم المنقول يتوحّد
-  هنا، مايتسابش خطين بتسميتين — لأن الفاتورة بتدوّر على صندوقها بقيمة الخط، و«تكنو»
-  مش هتلاقي «بولي».
-
-* **الربط بالمندوب بالاسم، واللي مايتطابقش يتقال.** صندوق مربوط بالراجل الغلط أسوأ من
-  صندوق مش مربوط: التاني بيشتكي أول فاتورة، والأول بيسكت والفلوس بتروح مكان تاني.
-
-**كود a5 (`Brnch_Cod`) مش مفتاح.** `00100010` مكتوب على صندوقين — «تكنو سيارة الشرقية»
-و«أبيض السيارة (د)». فالكود بيتعرض في التقرير بس، والهوية `AccBrnch_id`.
-
-⚠️ **مافيش أرصدة افتتاحية.** الرصيد بيتحسب من الحركة. رصيد أول مدة قرار منفصل بمستند.
-"""
 from __future__ import annotations
 
 import re
@@ -42,31 +13,22 @@ from src.models.user import User
 from src.models.warehouse import Custody, HolderType
 from src.services.customer_merge_service import FAMILY_POLY, FAMILY_WHITE
 
-# الحساب الرئيسي «الخزينة» في a5 — الصناديق كلها تحته.
 TREASURY_MAIN_ID = "1"
 
-# «تكنو» عندهم = «بولي» عندنا. البادئة على اسم الصندوق هي الخط، زي ما هي على اسم العميل.
 FAMILY_WORDS: list[tuple[re.Pattern[str], str]] = [
     (re.compile(r"تكنو"), FAMILY_POLY),
     (re.compile(r"بول[يى]"), FAMILY_POLY),
     (re.compile(r"[اأ]بيض"), FAMILY_WHITE),
 ]
 
-# اسم الخزنة العامة في a5. دي اللي بتبقى `treasury_account` للفرع.
 MAIN_SAFE = "خزينة المركز الرئيسى"
 
 _DIACRITICS = re.compile(r"[\u064b-\u0652\u0670\u0640]")
 _NOT_ARABIC = re.compile(r"[^\u0621-\u064a]")
-# كلمات مالهاش لازمة في المطابقة: «صندوق أبيض السيارة (أ)» و«مندوب السياره ( أ )» نفس
-# الراجل، والفرق كله في الكلام اللي حواليه.
 _NOISE = ("صندوق", "خزينه", "مندوب", "ابيض", "بولي", "تكنو")
 
 
 def _norm(text: str) -> str:
-    """يشيل التشكيل والمسافات والأقواس، ويوحّد أ/إ/آ و ة/ه و ى/ي.
-
-    من غير ده «السياره ( أ )» و«السياره (أ)» اسمين مختلفين، وهما نفس العربية.
-    """
     s = _DIACRITICS.sub("", text or "")
     for a, b in (("أ", "ا"), ("إ", "ا"), ("آ", "ا"), ("ة", "ه"),
                  ("ى", "ي"), ("ؤ", "و"), ("ئ", "ي")):
@@ -75,7 +37,6 @@ def _norm(text: str) -> str:
 
 
 def match_key(name: str) -> str:
-    """المفتاح اللي بيربط الصندوق بمندوبه: العربية المجرّدة من غير كلام الزينة."""
     k = _norm(name)
     changed = True
     while changed:
@@ -90,7 +51,6 @@ def match_key(name: str) -> str:
 
 
 def family_of(name: str) -> str | None:
-    """خط الصندوق من اسمه، أو None لصندوق مالوش خط (بونص، بيع عدد وأدوات، الخزنة العامة)."""
     for rx, family in FAMILY_WORDS:
         if rx.search(name):
             return family
@@ -98,21 +58,10 @@ def family_of(name: str) -> str | None:
 
 
 def canonical_name(name: str) -> str:
-    """اسم الصندوق بعد توحيد التسمية — «تكنو» بتبقى «بولي»، وبس."""
     return re.sub(r"تكنو", FAMILY_POLY, name).strip()
 
 
 def read_boxes(path: str) -> list[tuple[int, str, str]]:
-    """(AccBrnch_id, الاسم زي ما هو في a5, '') لكل صندوق تحت «الخزينة».
-
-    بيقرا `a5_acc.tsv` — نفس ملف الشجرة اللي `import_a5_phase2` بيقراه، بنفس القارئ
-    (`import_a5._read`: UTF-16 لو فيه BOM وإلا UTF-8، فاصل `~`). القراءة القديمة كانت
-    بتفرض UTF-16LE على ملف `chart_AL.tsv` مستقل، والتزامن اليومي بيكتب UTF-8 — فكانت
-    بتقرا هراء من غير ما ترمي خطأ.
-
-    الحارس: الحساب الرئيسي رقم ١ لازم يكون اسمه فيه «خزين» — وإلا الشجرة دي مش اللي
-    السكربت بيفترضها، والصناديق اللي هيطلّعها حسابات تانية خالص.
-    """
     from src.scripts.import_a5 import _read
 
     rows = _read(path)
@@ -124,7 +73,6 @@ def read_boxes(path: str) -> list[tuple[int, str, str]]:
             f"الملف {path} مش شجرة الفرع المتوقعة.")
     out: list[tuple[int, str, str]] = []
     for r in rows:
-        # SUB ~ AccBrnch_id ~ AccBrnch_N ~ AccMain_id ~ ''
         if len(r) < 4 or r[0] != "SUB" or r[3].strip() != TREASURY_MAIN_ID:
             continue
         if not r[1].strip().isdigit():
@@ -134,19 +82,12 @@ def read_boxes(path: str) -> list[tuple[int, str, str]]:
 
 
 def _rep_index(db, branch_id: int | None) -> tuple[dict[str, User], set[str]]:
-    """مناديب المبيعات النشطين مفهرسين بمفتاح المطابقة، ومعاهم المفاتيح المكرّرة.
-
-    المكرّر مابيتربطش: مندوبين اسمهم بيطابق نفس الصندوق = تخمين، والتخمين هنا بيوقّع
-    فلوس في جيب حد تاني.
-    """
     rep_role = db.scalars(select(Role).where(Role.name == RoleName.sales_rep)).first()
     if rep_role is None:
         return {}, set()
     reps = db.scalars(select(User).where(User.role_id == rep_role.id,
                                          User.active.is_(True))).all()
     if branch_id is not None:
-        # الفرع بيضيّق البحث. مندوب في فرع تاني ماينفعش يتربط بصندوق شجرة الفرع ده حتى لو
-        # الاسم بيطابق — الاسم بيتكرر بين الفروع، والحساب لأ.
         emp_branch = {
             e.user_id: e.branch_id
             for e in db.scalars(select(Employee).where(Employee.user_id.is_not(None))).all()
@@ -175,8 +116,6 @@ def run(*, path: str, prefix: str, execute: bool) -> None:
         if not boxes:
             raise SystemExit(f"مالقيتش ولا صندوق في {path} — الملف اتغيّر شكله؟")
 
-        # الفرع بيتاخد من الحساب الرئيسي «الخزينة» بتاع نفس الشجرة، مش بيتخمّن: الشجرة
-        # اتنقلت مرة بالبادئة دي، وأبوها عارف هو تبع أنهي فرع.
         parent = db.scalar(select(Account).where(Account.code == f"{prefix}A5M-1"))
         branch_id = parent.branch_id if parent is not None else None
 
@@ -224,12 +163,10 @@ def run(*, path: str, prefix: str, execute: bool) -> None:
             for a5_id, name in missing_accounts:
                 print(f"   {prefix}A5S-{a5_id:<10}{name}")
         if unlinked:
-            # بالاسم، مش بالعدد. «٣ صناديق مااتربطتش» مش معلومة يتصرف بيها حد.
             print("\n🔶 صناديق ليها خط ومااتربطتش بمندوب — الاسم مايطابقش حد:")
             for name in unlinked:
                 print(f"   {name}")
 
-        # العهد اللي هتتعمل — (مندوب، خط) اللي لسه مالوش صف.
         existing = db.scalars(select(Custody).where(Custody.rep_id.is_not(None))).all()
         have = {(c.rep_id, c.family) for c in existing}
         to_create = [(p[3].id, p[2]) for p in plan
@@ -261,9 +198,6 @@ def run(*, path: str, prefix: str, execute: bool) -> None:
                 retyped += 1
             acc.nature = AccountNature.asset
             acc.is_postable = True
-            # الخزنة العامة للفرع. `is_system` هي اللي بتفرّقها عن صندوق البونص لما
-            # `get_or_create_singleton` تدوّر على خزنة الفرع — الاتنين نوعهم `treasury`
-            # و`owner_ref` بتاعهم NULL.
             if name == MAIN_SAFE:
                 acc.is_system = True
             db.flush()
@@ -280,7 +214,6 @@ def run(*, path: str, prefix: str, execute: bool) -> None:
                 made_custodies += 1
             else:
                 custody.account_id = acc.id
-            # `owner_ref` بتشاور على العهدة — ودي كمان بتخرّج الصندوق من بحث الخزنة العامة.
             acc.owner_ref = custody.id
             db.flush()
 
@@ -296,9 +229,6 @@ def run(*, path: str, prefix: str, execute: bool) -> None:
 if __name__ == "__main__":
     args = sys.argv[1:]
     file_path = args[args.index("--file") + 1] if "--file" in args else "C:/pgtmp/aliaa/a5_acc.tsv"
-    # `--prefix ""` بيضيع في تمرير الأوامر عبر PowerShell/bash فبتتقرا القيمة اللي
-    # بعدها (`--yes`) كبادئة — واتعملت ١٣ حساب كودها `--yesA5S-…` قبل ما ده يتصلّح.
-    # فأي قيمة بتبدأ بـ`--` معناها «مافيش بادئة».
     code_prefix = "AL-"
     if "--prefix" in args:
         i = args.index("--prefix") + 1

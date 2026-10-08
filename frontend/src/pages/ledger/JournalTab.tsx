@@ -1,15 +1,9 @@
-/**
- * جزء من شاشة الأستاذ العام — اتفصل عن `GeneralLedger.tsx` لما الملف وصل ١٤٠٠ سطر
- * وخمس تبويبات. الشاشة والمسار زي ما هما بالظبط؛ اللي اتغيّر هو إن كل تبويب بقى
- * ملف لوحده، فالتعديل في «الدفاتر» مابيفتحش «ميزان المراجعة» قدامك.
- */
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { PAGE_SIZE, PAGE_SIZE_OPTIONS } from '../../utils/pagination';
 import { searchFilter, searchRank } from '../../utils/arabicSort';
 import {
   Button, Card, Col, DatePicker, Divider, Empty, Form, Input, Row, Select, Space, Switch, Tabs, Tag, Tooltip, message, Radio,
 } from 'antd';
-// فلتر على كل عمود — شوف `FilterTable`.
 import { FilterTable as Table } from '../../components/FilterTable';
 import { Statistic } from '../../components/Statistic';
 import { InputNumber } from '../../components/NumberInput';
@@ -43,16 +37,10 @@ import { printReport } from '../../print/reportSheet';
 import { Account, Journal, JournalEntry, JournalLine, LineDraft, flatten } from './types';
 
 import StatsRow from '../../components/StatsRow';
-/** لون تاج الشريك — العميل والمورد والموظف بيتفرقوا بالعين قبل القراية. */
 const PARTNER_COLOR: Record<string, string> = {
   customer: 'green', supplier: 'orange', employee: 'blue',
 };
 
-/** الأنواع اللي القيد اليدوي ينفع يتكتب عليها.
- *
- *  الموظف مش فيها عن قصد: نافذة الأطراف بتجيب «الموظف» من كشف العملاء (عميل نوعه
- *  موظف)، والشريك `employee` في الدفتر بيشاور على جدول الموظفين بتاع المرتبات —
- *  رقمين مختلفين لنفس الكلمة. القيود على الموظفين بتتكتب من شاشة السلف والمرتبات. */
 const PARTNER_KINDS = [
   { value: 'customer', label: 'عميل' },
   { value: 'supplier', label: 'مورد' },
@@ -62,14 +50,12 @@ export default function JournalTab() {
   const navigate = useNavigate();
   const [entries, setEntries] = useState<JournalEntry[]>([]);
   const [journals, setJournals] = useState<Journal[]>([]);
-  // القيد اللي الشاشة فاتحاه للتعديل — مسودة بس. `null` معناها قيد جديد.
   const [editing, setEditing] = useState<JournalEntry | null>(null);
   const [leaves, setLeaves] = useState<Account[]>([]);
   const [branches, setBranches] = useState<any[]>([]);
   const [costCenters, setCostCenters] = useState<CostCenter[]>([]);
   const [loading, setLoading] = useState(false);
   const [drawer, setDrawer] = useState(false);
-  // اسم الشريك اللي اتختار — عشان الخانة تعرضه من غير ما الشاشة تحمّل كشف العملاء كله.
   const [partnerName, setPartnerName] = useState<string>('');
   const [openingDrawer, setOpeningDrawer] = useState(false);
   const [form] = Form.useForm();
@@ -82,19 +68,8 @@ export default function JournalTab() {
     { key: '1', account_id: null, direction: 'debit', amount: 0, statement: '' },
   ]);
 
-  /**
-   * **الكشف بيتحمّل بآخر ٥٠٠ قيد، مش بالكشف كله.**
-   *
-   * كان بيجيب ١١٬٨٢٢ قيد بسطورهم في نداء واحد — قِيس: حوالي نص دقيقة، والشاشة مكتوب
-   * عليها «لا توجد بيانات» طول المدة دي من غير ما تقول إنها بتحمّل. والرقم بيزيد كل شهر.
-   *
-   * والقص بياخد الأحدث لأن اللي بيفتح دفتر اليومية بيدوّر على شغل الأيام اللي فاتت.
-   * واللي عايز أقدم من كده بيدوس «حمّل الكل» — والزرار بيقول العدد، فمافيش كشف ناقص
-   * من غير ما حد يعرف.
-   */
   const PAGE = 500;
   const [full, setFull] = useState(false);
-  /** رقم القيد اللي الرابط طالبه — بيتقرا جوّه `load` من غير ما يبقى اعتماد عليه. */
   const wantedRef = useRef<string | null>(null);
 
   const load = async (all = false) => {
@@ -110,16 +85,12 @@ export default function JournalTab() {
       setEntries(e.data); setLeaves(a.data); setBranches(b.data); setCostCenters(cc.data);
       setJournals(j.data);
       setFull(all);
-      // **القيد اللي الرابط طالبه بيتجاب لوحده لو مش في الصفحة المحمّلة.**
-      //
-      // بيتعمل هنا مش في `useEffect` مستقل: الجلب المستقل بيخلص قبل الكشف (طلب صغير
-      // مقابل خمسمية قيد)، و`setEntries` بتاعة الكشف كانت بتمسحه بعد ما يتضاف.
       const asked = Number(wantedRef.current);
       if (asked && !(e.data as JournalEntry[]).some((x) => x.id === asked)) {
         try {
           const one = await api.get(`/api/v1/journal-entries/${asked}`);
           setEntries((prev) => (prev.some((x) => x.id === asked) ? prev : [...prev, one.data]));
-        } catch { /* مش موجود أو مش من حقه — الكشف بيفضل زي ما هو */ }
+        } catch {}
       }
     } catch (err) { console.error(err); } finally { setLoading(false); }
   };
@@ -144,7 +115,6 @@ export default function JournalTab() {
   const addLine = () =>
     setLines([...lines, { key: String(Date.now()), account_id: null, direction: 'debit', amount: 0, statement: '' }]);
   const removeLine = (k: string) => {
-    // سطر واحد كفاية: المسودة بتتساب ناقصة عن قصد، والتوازن بيتفرض عند الترحيل بس.
     if (lines.length <= 1) { message.warning('القيد يحتاج سطراً واحداً على الأقل'); return; }
     setLines(lines.filter((l) => l.key !== k));
   };
@@ -187,7 +157,6 @@ export default function JournalTab() {
     setDrawer(true);
   };
 
-  /** الحفظ. `asDraft` بيسيب القيد ناقص بلا رقم؛ الترحيل بيطلب التوازن. */
   const submit = async (asDraft: boolean) => {
     let v: any;
     try { v = await form.validateFields(); } catch { return; }
@@ -298,7 +267,6 @@ export default function JournalTab() {
   const TYPE_LABEL = (t: string) => ({ t: entryTypeLabel(t), c: TYPE_COLOR[t] || 'default' });
 
   const STATE_META = (s: string | null | undefined) => (
-    // NULL = مرحّل؛ القيود اللي اتكتبت قبل ما الحالة توجد.
     s === 'draft' ? { t: 'مسودة', c: 'orange' }
       : s === 'cancelled' ? { t: 'ملغي', c: 'default' }
         : { t: 'مرحّل', c: 'green' }
@@ -307,8 +275,6 @@ export default function JournalTab() {
   const branchName = (id: number | null) =>
     id ? (branches.find((b) => b.id === id)?.name ?? `فرع #${id}`) : 'عام';
 
-  // الوصول من لوحة المحاسبة: الكارت بيقول «مسودتين في دفتر المبيعات» والضغطة
-  // لازم تفتح الاتنين دول بالظبط، مش السجل كله وبعدين المستخدم يفلتر بإيده.
   const [searchParams] = useSearchParams();
   const initialValues = React.useMemo(() => {
     const out: Record<string, any> = {};
@@ -319,7 +285,6 @@ export default function JournalTab() {
     return out;
   }, [searchParams]);
 
-  // «تجميع بـ» — نفس الصفوف مقسومة، مش صفوف أقل. الفلتر بيشيل والتجميع بيرتّب.
   const [groupBy, setGroupBy] = useState<string | null>(null);
 
   const filter = useListFilter(entries, {
@@ -335,23 +300,11 @@ export default function JournalTab() {
       branch_id: (e, v) => (v === 0 ? e.branch_id === null : e.branch_id === v),
       journal_id: (e, v) => e.journal_id === v,
       state: (e, v) => (e.state ?? 'posted') === v,
-      // القيد الجاي من رابط تقرير — مطابقة بالرقم بالظبط. الشرح تحت.
       entry_id: (e, v) => e.id === Number(v),
     },
     dateOf: (e) => e.date,
   });
 
-  /**
-   * **`?doc=` و`?entry=` كانوا بيوصلوا هنا ومحدش بيقراهم.**
-   *
-   * خمس شاشات بتبعت القيد لهنا — «سلامة الدفاتر»، وحركة الحساب، ودفتر الشريك،
-   * والربحية، والمطابقة — كلهم بيكتبوا `/general-ledger?doc=<id>` والتاب ده كان
-   * بيقرا `journal` و`state` وبس. فالرابط بينقلك للسجل كله، وتدوّر بنفسك على قيد
-   * انت كنت واقف عليه قبل الضغطة بثانية.
-   *
-   * والفلترة بالرقم بالظبط، مش بخانة البحث: البحث بيدوّر في الرقم والبيان والمبالغ،
-   * فـ«٤» كانت بتطابق ٢٤٢ قيد. «مسح» بيرجّع الكشف كله.
-   */
   const wantedEntry = searchParams.get('doc') || searchParams.get('entry');
   const { setValue } = filter;
   wantedRef.current = wantedEntry;
@@ -416,7 +369,6 @@ export default function JournalTab() {
               </span>
               {acctLabel(l.account_id)}: <strong>{egp(l.amount)}</strong>
               {ccLabel(l.cost_center_id) && <Tag style={{ marginInlineStart: 6 }} color="geekblue">{ccLabel(l.cost_center_id)}</Tag>}
-              {/* السطر المتقسّم مالوش مركز واحد يتكتب — فبيتكتب توزيعه بالنِسَب. */}
               {l.cost_center_distribution && Object.entries(l.cost_center_distribution).map(([cc, pct]) => (
                 <Tag key={cc} style={{ marginInlineStart: 6 }} color="purple">
                   {ccLabel(Number(cc))} {Number(pct)}٪
@@ -432,7 +384,6 @@ export default function JournalTab() {
     { title: '', key: 'actions', width: 260,
       render: (_: any, r: JournalEntry) => {
         const state = r.state ?? 'posted';
-        // «السجل» أول أيقونة في كل حالة — حتى الملغي، اللي بيتسأل عنه «اتلغى إمتى ومين لغاه؟».
         const history = (
           <DocumentHistoryButton iconOnly entityType="journal_entry" entityId={r.id}
             documentNumber={r.number} />
@@ -527,7 +478,6 @@ export default function JournalTab() {
       title="قيود اليومية (دفتر الأستاذ الموحد)"
       extra={
         <Space>
-          {/* الكشف مقصوص ⇒ الزرار بيقول كده وبيفتحه. مخفي بعد ما يتحمّل كامل. */}
           {!full && (
             <Button icon={<ReloadOutlined />} loading={loading} onClick={() => load(true)}>
               حمّل كل القيود (المعروض آخر {PAGE})
@@ -655,8 +605,6 @@ export default function JournalTab() {
                         kind={kind === 'supplier' ? 'supplier' : 'customer'}
                         disabled={!kind}
                         style={{ width: '100%' }}
-                        // الاسم بييجي من الاختيار نفسه، فالشاشة مابتحمّلش كشف
-                        // العملاء كله عشان تعرض اسم واحد.
                         options={(() => {
                           const id = getFieldValue('partner_id');
                           return id && partnerName ? [{ value: id, label: partnerName }] : [];
@@ -682,7 +630,6 @@ export default function JournalTab() {
               <Col span={9}>
                 <Select placeholder="الحساب" style={{ width: '100%' }} showSearch
                   value={l.account_id} onChange={(v) => setLine(l.key, 'account_id', v)}
-                  // الاسم بس في الاختيار (طلب العميل ٢٠٢٦-١٠-٠٧)؛ الكود في `search` فالبحث بيه شغّال.
                   options={leaves.map((a) => ({ value: a.id, label: String(a.name ?? a.id), search: a.code ?? '' }))} filterOption={searchFilter} filterSort={searchRank}/>
               </Col>
               <Col span={5}>
@@ -710,7 +657,6 @@ export default function JournalTab() {
                   options={costCenters.map((c) => ({ value: c.id, label: c.name, search: c.code || '' }))} filterOption={searchFilter} filterSort={searchRank}/>
               </Col>
               <Col span={3} style={{ marginTop: 4 }}>
-                {/* السطر المتقسّم مالوش مركز واحد — فالقايمة بتتقفل والتوزيع هو اللي بيتكتب. */}
                 <CostCenterSplit
                   value={l.cost_center_distribution}
                   onChange={(v) => {
@@ -734,7 +680,6 @@ export default function JournalTab() {
           <Divider />
           <Row gutter={8}>
             <Col span={12}>
-              {/* المسودة مش محتاجة توازن — دي نقطتها. */}
               <Button block onClick={() => submit(true)}>حفظ كمسودة</Button>
             </Col>
             <Col span={12}>

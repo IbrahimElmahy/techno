@@ -23,17 +23,6 @@ import { exportCsv as writeCsv, type CsvColumn } from '../utils/exportCsv';
 import { printReport, type PrintColumn } from '../print/reportSheet';
 import ListPage from '../components/ListPage';
 
-/**
- * الأجازات — الطلبات والأرصدة والأنواع.
- *
- * The balance column is computed on the server by summing approved requests; there is no `used`
- * field anywhere, here or in the database. That is why the numbers on this screen and the requests
- * underneath them cannot disagree.
- *
- * «معلّقة» opens first on purpose. Everything else on this screen is a record of what already
- * happened; the pending list is the only part that is somebody waiting.
- */
-
 interface LeaveRequestRow {
   id: number;
   document_number: string;
@@ -70,7 +59,6 @@ const STATUS: Record<string, { label: string; color?: string }> = {
   cancelled: { label: 'ملغية' },
 };
 
-/** الرصيد المتبقي بيتلوّن — الصفر والسالب مش نفس الحاجة. */
 export function remainingTone(remaining: string): string | undefined {
   const n = Number(remaining || 0);
   if (n < 0) return 'red';
@@ -125,7 +113,6 @@ export default function Leave() {
 
   const fail = (err: any, fallback: string) => {
     const detail = err?.response?.data?.detail;
-    // «مقفول» ليها خطوة تالية — تستاهل وقت أطول على الشاشة.
     message.error(detail?.message || fallback, detail?.code === 'locked' ? 8 : 4);
   };
 

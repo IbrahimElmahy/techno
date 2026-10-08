@@ -3,23 +3,8 @@ import { Dropdown, Input, Modal, message } from 'antd';
 import type { MenuProps } from 'antd';
 import { CloseOutlined, LinkOutlined, PlusOutlined, StarFilled } from '@ant-design/icons';
 
-/**
- * **الاختصارات — زرار «+» تحت على الشمال، لإنشاء المستندات.** (طلب العميل ٢٠٢٦-٠٩-٣٠)
- *
- * مش صفحات — التنقّل بين الصفحات من القايمة. الاختصار هنا **إنشاء**: «تسجيل طلب بيع»،
- * «فاتورة شراء»، «مرتجع»، «سند قبض»… الماوس على «+» بيفتح اختصاراتك، والضغط على واحد
- * بيفتح شاشته ويدوس زرار الإنشاء بتاعها. و«إضافة اختصار» (بالماوس برضو) بتفتح قايمة
- * الإنشاءات متقسّمة بالأقسام، والضغط على واحد بيضيفه. والـ× جنب الاختصار بيشيله.
- *
- * **الإنشاء بيدوس الزرار نفسه اللي في الشاشة** — مش نسخة تانية من فتح النموذج. فأي حاجة
- * الشاشة بتعملها قبل الفتح (سؤال العميل، المخزن، المسودّة) بتحصل زي ما هي.
- *
- * الإنشاء اللي شاشته مش مسموح له بيها مابيظهرش في القايمة أصلاً. والاختصارات بتتحفظ في
- * المتصفح لكل مستخدم لوحده (`create-shortcuts.<id>`).
- */
 type Action = { id: string; group: string; label: string; route: string; button: string };
 
-/** الإنشاءات — الشاشة، ونص زرار الإنشاء فيها بالظبط. */
 export const CREATE_ACTIONS: Action[] = [
   { id: 'sale', group: 'المبيعات', label: 'تسجيل طلب بيع', route: '/invoices', button: 'تسجيل طلب بيع' },
   { id: 'sale-return', group: 'المبيعات', label: 'مرتجع بيع', route: '/returns', button: 'تسجيل مرتجع بيع' },
@@ -27,7 +12,6 @@ export const CREATE_ACTIONS: Action[] = [
   { id: 'purchase', group: 'المشتريات', label: 'تسجيل فاتورة شراء', route: '/purchases', button: 'تسجيل فاتورة شراء' },
   { id: 'purchase-return', group: 'المشتريات', label: 'مردود شراء', route: '/purchase-returns', button: 'تسجيل مردود شراء' },
   { id: 'supplier', group: 'المشتريات', label: 'مورد جديد', route: '/suppliers', button: 'إضافة مورد' },
-  // كل أنواع السندات (طلب العميل ٢٠٢٦-٠٩-٣٠).
   { id: 'receipt', group: 'السندات', label: 'سند قبض', route: '/vouchers?tab=receipt', button: 'سند قبض جديد' },
   { id: 'payment', group: 'السندات', label: 'سند صرف', route: '/vouchers?tab=payment', button: 'سند صرف جديد' },
   { id: 'handover', group: 'السندات', label: 'توريد مندوب', route: '/vouchers?tab=handover', button: 'توريد جديد' },
@@ -36,13 +20,11 @@ export const CREATE_ACTIONS: Action[] = [
   { id: 'cheque-in', group: 'السندات', label: 'ورقة قبض', route: '/vouchers?tab=cheques&direction=incoming', button: 'ورقة جديدة' },
   { id: 'cheque-out', group: 'السندات', label: 'ورقة دفع', route: '/vouchers?tab=cheques&direction=outgoing', button: 'ورقة جديدة' },
   { id: 'transfer', group: 'المخازن', label: 'طلب تحويل مخزني', route: '/transfers', button: 'طلب تحويل مخزني' },
-  // شاشة مش إنشاء (طلب العميل ٢٠٢٦-١٠-٠٢) — `button` فاضي = بيفتح الشاشة بس.
   { id: 'account-statement', group: 'الحسابات', label: 'كشف حساب', route: '/account-statement', button: '' },
 ];
 
 interface Props {
   userId: number | string | null | undefined;
-  /** شجرة القايمة بعد فلترة الصلاحيات — الإنشاء اللي شاشته مش فيها مابيظهرش. */
   tree: any[];
   openTab: (key: string) => void;
 }
@@ -58,13 +40,11 @@ function load(id: Props['userId']): string[] {
   }
 }
 
-/** بيستنى زرار الإنشاء يظهر في الشاشة اللي اتفتحت ويدوسه. */
 function pressWhenReady(text: string, onMissing: () => void) {
   const started = Date.now();
   const tick = () => {
     const btn = [...document.querySelectorAll<HTMLElement>('button')].find((b) =>
       b.offsetParent !== null && !b.hasAttribute('disabled')
-      // بيبدأ بالاسم، مش بيساويه: الزرار ممكن يكون «تسجيل طلب بيع جديد» أو عليه اختصار.
       && (b.textContent || '').replace(/\s+/g, ' ').trim().startsWith(text));
     if (btn) { btn.click(); return; }
     if (Date.now() - started > 6000) { onMissing(); return; }
@@ -73,10 +53,6 @@ function pressWhenReady(text: string, onMissing: () => void) {
   window.setTimeout(tick, 100);
 }
 
-/**
- * **اختصار بلينك** — اسم بيكتبه المستخدم ولينك بيلزقه (طلب العميل ٢٠٢٦-٠٩-٣٠).
- * لينك جوّه النظام بيتفتح في تبويب زي أي شاشة؛ لينك برّه النظام بيتفتح في تبويب متصفح جديد.
- */
 type LinkShortcut = { id: string; label: string; url: string };
 const linksKey = (id: Props['userId']) => `create-shortcut-links.${id ?? 'anon'}`;
 function loadLinks(id: Props['userId']): LinkShortcut[] {
@@ -88,7 +64,6 @@ function loadLinks(id: Props['userId']): LinkShortcut[] {
   }
 }
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, '');
-/** اللينك ده صفحة في النظام؟ ⇐ مسارها من غير البادئة (`/staging`)، وإلا `null`. */
 function internalRoute(url: string): string | null {
   try {
     const u = new URL(url.trim(), window.location.origin);
@@ -110,14 +85,13 @@ export default function ShortcutsDock({ userId, tree, openTab }: Props) {
   useEffect(() => { setIds(load(userId)); setLinks(loadLinks(userId)); }, [userId]);
   const save = (next: string[]) => {
     setIds(next);
-    try { localStorage.setItem(storeKey(userId), JSON.stringify(next)); } catch { /* متصفح مقفول */ }
+    try { localStorage.setItem(storeKey(userId), JSON.stringify(next)); } catch {}
   };
   const saveLinks = (next: LinkShortcut[]) => {
     setLinks(next);
-    try { localStorage.setItem(linksKey(userId), JSON.stringify(next)); } catch { /* متصفح مقفول */ }
+    try { localStorage.setItem(linksKey(userId), JSON.stringify(next)); } catch {}
   };
 
-  // الشاشات المسموحة — نفس اللي القايمة بترسمه.
   const allowed = useMemo(() => {
     const out = new Set<string>();
     const walk = (nodes: any[]) => nodes.forEach((n) => {
@@ -152,8 +126,6 @@ export default function ShortcutsDock({ userId, tree, openTab }: Props) {
     {
       key: 'grp:add', icon: <PlusOutlined />, label: 'إضافة اختصار',
       popupClassName: 'shortcuts-menu',
-      // مستويين بس: «+» ← «إضافة اختصار» ← الإنشاءات تحت عناوين الأقسام. تلات مستويات
-      // بالماوس بتقفل من أقل ميلة وهو ماشي من قايمة للي جنبها.
       children: [
         ...groups.map((g) => ({
           key: `grp:${g}`, type: 'group' as const, label: g,
@@ -203,7 +175,6 @@ export default function ShortcutsDock({ userId, tree, openTab }: Props) {
     const label = linkName.trim();
     let url = linkUrl.trim();
     if (!label || !url) { message.warning('اكتب اسم الاختصار واللينك'); return; }
-    // «app.technothermeg.com/...» من غير http — بيتكمّل بدل ما يترفض.
     if (!/^https?:\/\//i.test(url) && !url.startsWith('/')) url = `https://${url}`;
     saveLinks([...links, { id: String(Date.now()), label, url }]);
     setLinkOpen(false);
@@ -212,7 +183,6 @@ export default function ShortcutsDock({ userId, tree, openTab }: Props) {
 
   return (
     <div style={{ position: 'fixed', left: 20, bottom: 20, zIndex: 1000 }}>
-      {/* خط أكبر وبولد (طلب العميل ٢٠٢٦-١٠-٠٥) — `shortcuts-menu` في index.css. */}
       <Dropdown menu={{ items: menu, onClick, className: 'shortcuts-menu' }} trigger={['hover']}
         rootClassName="shortcuts-menu-root" placement="topLeft"
         mouseLeaveDelay={0.3}>

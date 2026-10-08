@@ -1,8 +1,3 @@
-"""Warehouse & Custody models (T038–T039). FR-015, FR-016, FR-017, FR-025.
-
-Warehouses reference the shared catalog only conceptually (no stock rows here).
-Exactly one custody per holder (rep or warehouse); cash + goods tracked via the ledger.
-"""
 from __future__ import annotations
 
 import enum
@@ -30,28 +25,13 @@ class Warehouse(Base):
     name: Mapped[str] = mapped_column(String(120), nullable=False)
     warehouse_type: Mapped[WarehouseType] = mapped_column(Enum(WarehouseType), nullable=False)
     branch_id: Mapped[int | None] = mapped_column(ForeignKey("branch.id"), nullable=True)
-    # A note on what the store holds or where it is — «مخزن السيارة أ» explains itself, «مخزن ٣»
-    # does not.
     description: Mapped[str | None] = mapped_column(String(300), nullable=True)
     active: Mapped[bool] = mapped_column(default=True, nullable=False)
 
 
 class Custody(Base):
-    """One custody per holder — and for a rep, one per **product line** (FR-025, 009).
-
-    a5 gives every car rep two safes, «صندوق أبيض السيارة (أ)» و«صندوق بولي السيارة (أ)»،
-    and the cash splits by line exactly the way the debt does. So the holder of a rep custody
-    is not the rep alone, it is (rep × line).
-    """
-
     __tablename__ = "custody"
     __table_args__ = (
-        # واحدة لكل (مندوب × خط)، مش واحدة للمندوب. القيد القديم على `rep_id` لوحده كان
-        # بيمنع الصندوق التاني من إنه يتعمل أصلاً.
-        #
-        # ⚠️ `NULL` مابيتقارنش في UNIQUE عند Postgres: عهدتين بـ`family = NULL` لنفس المندوب
-        # هيعدّوا من القيد ده. مقبول للقديم اللي قبل التقسيم — والسكربت هو اللي مسؤول إنه
-        # مايكررش.
         UniqueConstraint("rep_id", "family", name="uq_custody_rep_family"),
         UniqueConstraint("warehouse_id", name="uq_custody_warehouse"),
     )
@@ -59,12 +39,8 @@ class Custody(Base):
     id: Mapped[int] = mapped_column(BigIntPK, primary_key=True, autoincrement=True)
     holder_type: Mapped[HolderType] = mapped_column(Enum(HolderType), nullable=False)
     rep_id: Mapped[int | None] = mapped_column(ForeignKey("user.id"), nullable=True)
-    # الخط اللي الصندوق ده بتاعه — «أبيض» أو «بولي». نفس القيمة اللي بتختار حساب مديونية
-    # العميل بالظبط، عشان الفاتورة الواحدة ماتتفصلش على خطين: المديونية على خط والكاش على
-    # خط تاني. NULL = عهدة قديمة من قبل التقسيم، والفواتير اللي اتكتبت عليها بتفضل عليها.
     family: Mapped[str | None] = mapped_column(String(24), nullable=True)
     warehouse_id: Mapped[int | None] = mapped_column(ForeignKey("warehouse.id"), nullable=True)
-    # The ledger account holding this custody's cash + goods positions (FR-026).
     account_id: Mapped[int | None] = mapped_column(ForeignKey("account.id"), nullable=True)
     active: Mapped[bool] = mapped_column(default=True, nullable=False)
 

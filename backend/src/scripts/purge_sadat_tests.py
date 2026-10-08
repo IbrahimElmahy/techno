@@ -1,37 +1,3 @@
-"""تنضيف شغل التجريب من فرع (السادات افتراضياً) — وكل اللي من a5 بيفضل زي ما هو.
-
-    python -m src.scripts.purge_sadat_tests                       # عرض بس — مابيكتبش حاجة
-    python -m src.scripts.purge_sadat_tests --yes                 # ينفّذ
-    python -m src.scripts.purge_sadat_tests --branch السادات --prefix FC- --yes
-
----------------------------------------------------------------------------
-**ليه.** المستخدم جرّب أوامر التشغيل على داتا السادات الحقيقية (حساب `manager3` ومدير
-النظام): خامات اتصرفت من مخازن المصنع وتام دخل، والأرصدة بقت مختلفة عن a5. التجريب
-مكانه التجريبي — والورق ده لازم يتشال قبل المزامنة الجاية.
-
-**الفرز بالأصل مش بالتاريخ.** كل اللي جه من a5 عليه علامة: رقم المستند ببادئة الفرع
-(`FC-S…`, `FC-T…`, `FC-RC…`) أو `imported_from = 'a5'` على أمر التشغيل. أي حاجة في
-الفرع **من غير** العلامة دي اتكتبت في نظامنا — ودي اللي بتتعرض هنا. المسح بالتاريخ
-كان هيشيل أي حاجة حقيقية اتكتبت في نفس الفترة، والعرض الأول موجود عشان ده يبان.
-
-**المسح من الخدمات، مش SQL خام:**
-
-    أمر التشغيل     manufacturing_production_service.purge_order
-    فاتورة بيع      document_edit_service.delete_sale        (بمرتجعاتها)
-    مرتجع بيع       document_edit_service.delete_sales_return
-    فاتورة شراء     document_edit_service.delete_purchase    (بعد مردوداتها)
-    مردود شراء      document_edit_service.delete_purchase_return
-    إذن تحويل       transfer_service.delete
-    سند             document_edit_service.delete_voucher
-    مسودة           صف `document_draft` (مالهاش أثر — نفس `DELETE /drafts/{id}`)
-
-الأذون والجرد والهالك والقيود اليدوية **مالهاش مسح حقيقي في الخدمات** (عكس بس). لو
-لقى منهم حاجة من غير علامة a5، بيعرضها وبيرفض التنفيذ كله — القرار فيها مايتاخدش في
-الضهر.
-
-⛔ **مابيلمسش a5 خالص** (لا قواعده ولا ملفاته) — بيقرا ويكتب على Postgres بتاعنا بس.
-وكل حاجة في ترانزاكشن واحدة: أي غلطة في النص بترجّع الكل.
-"""
 from __future__ import annotations
 
 import argparse
@@ -101,7 +67,6 @@ def collect(db, branch: Branch, prefix: str) -> dict[str, list]:
         Voucher.branch_id == branch.id, _not_a5(Voucher.document_number, prefix))).all()
     found["drafts"] = db.scalars(select(DocumentDraft).where(
         DocumentDraft.branch_id == branch.id)).all()
-    # من غير مسح في الخدمات — بتتعرض وبتوقف التنفيذ لو فيه منها.
     found["BLOCK_permits"] = db.scalars(select(StockPermit).where(
         StockPermit.warehouse_id.in_(whs), _not_a5(StockPermit.document_number, prefix))).all()
     found["BLOCK_stock_counts"] = db.scalars(select(StockCount).where(
@@ -160,7 +125,6 @@ def run(*, branch_name: str, prefix: str, execute: bool) -> None:
 
         actor = admin.id
         done: list[str] = []
-        # الأوامر العكسية الأول، وبعدين أصولها — الاتنين في القايمة (قرار المستخدم ٢٠٢٦-١٠-٠٤).
         ids = {po.id for po in found["production_orders"]}
         for po in found["production_orders"]:
             if po.reverses_id is not None and po.reverses_id not in ids:
@@ -199,7 +163,6 @@ def run(*, branch_name: str, prefix: str, execute: bool) -> None:
             db.delete(d)
         db.flush()
 
-        # التحقق قبل الـcommit: نفس الفرز لازم يرجع فاضي.
         again = collect(db, branch, prefix)
         left = {k: len(v) for k, v in again.items() if v}
         if left:

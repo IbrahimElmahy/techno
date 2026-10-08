@@ -1,14 +1,3 @@
-"""Customer search + the 360° customer file — 025-customer-360.
-
-Two jobs, both pure functions over a session so the API layer stays thin:
-
-* `bulk_balances` derives every customer's receivable balance in ONE grouped query instead
-  of the per-row round-trip the customers grid used to make (N+1 over hundreds of rows).
-* `profile` collects everything the company knows about one customer — his account
-  statement totals, invoices, returns, receipts, cheques and loyalty points — so the UI can
-  open a single «ملف العميل» instead of hunting across five screens. Inspections are NOT
-  here on purpose: they belong to the end owner of the product, not to a trading partner.
-"""
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -28,17 +17,10 @@ from src.models.voucher import Voucher, VoucherKind
 
 
 class CustomerProfileError(Exception):
-    """The customer (or his ledger account) does not exist."""
-
-
-# --------------------------------------------------------------------------- balances
+    pass
 
 
 def bulk_balances(db: Session, customer_ids: list[int] | None = None) -> dict[int, Decimal]:
-    """Receivable balance per customer, signed by the account's normal side (debit = owes us).
-
-    One grouped query for the whole page — the grid used to fire a request per row.
-    """
     signed = case(
         (LedgerLine.direction == Account.normal_side, LedgerLine.amount),
         else_=-LedgerLine.amount,
@@ -46,7 +28,6 @@ def bulk_balances(db: Session, customer_ids: list[int] | None = None) -> dict[in
     stmt = (
         select(CustomerAccount.customer_id, func.coalesce(func.sum(signed), 0))
         .join(Account, Account.id == CustomerAccount.account_id)
-        # المرحّل بس، والشرط في ON مش في WHERE عشان الطرف اللي ماتحركش يفضل بصفر.
         .join(
             LedgerLine,
             (LedgerLine.account_id == Account.id) & ledger_service.posted_line_cond(),
@@ -62,14 +43,6 @@ def bulk_balances(db: Session, customer_ids: list[int] | None = None) -> dict[in
 
 
 def family_balances_subquery(as_of: date | None = None):
-    """رصيد كل عميل مقسوم على العيلة (أبيض / بولي / غيرهم) — استعلام واحد مجمّع.
-
-    نفس حساب `bulk_balances` (المدين = عليه لينا) بس بعمود لكل عيلة، ومعاه تاريخ آخر
-    حركة. `as_of` بيقطع على تاريخ القيد الفعلي (`entry_date` ولو فاضي يوم الإنشاء) —
-    نفس التاريخ اللي كشف الحساب بيرتّب عليه، فالرصيد هنا = رصيد الكشف في اليوم ده.
-
-    العميل اللي مالوش ولا سطر مرحّل مش هيطلع هنا — اللي بيعمل join يحط له صفر.
-    """
     from src.models.ledger import LedgerEntry
     from src.services.customer_merge_service import FAMILY_POLY, FAMILY_WHITE
 
@@ -86,7 +59,6 @@ def family_balances_subquery(as_of: date | None = None):
             .label("white"),
             func.sum(case((CustomerAccount.family == FAMILY_POLY, signed), else_=zero))
             .label("poly"),
-            # أي عيلة تانية أو الحساب القديم اللي من غير عيلة.
             func.sum(case(
                 (CustomerAccount.family.in_((FAMILY_WHITE, FAMILY_POLY)), zero),
                 else_=signed)).label("other"),
@@ -104,9 +76,6 @@ def family_balances_subquery(as_of: date | None = None):
     return stmt.subquery("fam_bal")
 
 
-# ----------------------------------------------------------------------------- search
-
-
 def apply_filters(
     stmt: Select,
     *,
@@ -119,7 +88,6 @@ def apply_filters(
     active: bool | None = None,
     include_merged: bool = False,
 ) -> Select:
-    """Narrow a customer SELECT. `q` matches code, name, phone or address (partial, any part)."""
     if q:
         needle = f"%{q.strip()}%"
         stmt = stmt.where(
@@ -144,14 +112,6 @@ def apply_filters(
     if active is not None:
         stmt = stmt.where(Customer.active.is_(active))
     elif not include_merged:
-        # الكارت المدموج مش عميل — هو **اسم تاني لعميل موجود**. a5 بيدّي التاجر
-        # الواحد كارتين عشان نظامهم بيدّي حساب ذمم واحد («فلان» للأبيض و«تكنو
-        # فلان» للبولي)، وعندنا اتلمّوا في كارت واحد بحسابين والصف التاني اتقفل
-        # بالعلامة دي. عرضه في الكشف بيدّي نفس الراجل مرتين — مرة برصيده ومرة
-        # بصفر — و٦٢٠ صف زيّه بيغرّقوا الكشف.
-        #
-        # الاستبعاد هنا مش إخفاء: اللي يفلتر على «مخفي» صراحةً (`active=False`)
-        # بيلاقيهم زي ما هُمّ، ورصيدهم أصلاً على الكارت الباقي.
         stmt = stmt.where(Customer.name.not_like(f"%{MERGED_MARK}%"))
     return stmt
 
@@ -159,7 +119,6 @@ def apply_filters(
 def filter_by_balance(
     rows: list[Customer], balances: dict[int, Decimal], balance_filter: str | None
 ) -> list[Customer]:
-    """`debtors` = owes us, `settled` = exactly zero, `credit` = we owe him (negative)."""
     if not balance_filter or balance_filter == "all":
         return rows
     def keep(c: Customer) -> bool:
@@ -172,9 +131,6 @@ def filter_by_balance(
             return bal < 0
         return True
     return [c for c in rows if keep(c)]
-
-
-# ---------------------------------------------------------------------------- profile
 
 
 @dataclass(frozen=True)
@@ -202,9 +158,6 @@ class Profile:
     receipts: list[DocRow] = field(default_factory=list)
     cheques: list[dict] = field(default_factory=list)
     coupons: list[dict] = field(default_factory=list)
-    # NOTE: inspections are deliberately NOT part of this file. A «عميل» here is a trading
-    # partner we buy from / sell to; an inspection belongs to the END OWNER who bought the
-    # product and gets a technical-support visit. Two different populations.
 
 
 def _as_date(value: date | datetime | None) -> date | None:
@@ -214,7 +167,6 @@ def _as_date(value: date | datetime | None) -> date | None:
 
 
 def profile(db: Session, customer_id: int, *, limit: int = 200) -> Profile:
-    """Everything the system knows about one customer, ready for «ملف العميل»."""
     customer = db.get(Customer, customer_id)
     if customer is None:
         raise CustomerProfileError("العميل غير موجود.")
@@ -239,7 +191,6 @@ def profile(db: Session, customer_id: int, *, limit: int = 200) -> Profile:
         )
         for i in invoices
     ]
-    # Totals cover the whole history, not just the page of rows above.
     total_sales = to_money(
         db.scalar(
             select(func.coalesce(func.sum(SalesInvoice.net + SalesInvoice.tax_amount), 0))
@@ -315,20 +266,11 @@ def profile(db: Session, customer_id: int, *, limit: int = 200) -> Profile:
     )
 
 
-# ---------------------------------------------------------------------- record detail
-
-
 def _money(v) -> str:
     return f"{to_money(v or 0):.2f}"
 
 
 def record_detail(db: Session, customer_id: int, kind: str, record_id: int) -> dict:
-    """Full detail of one record from the customer's file, in a uniform render-ready shape.
-
-    One endpoint for every kind (invoice / return / receipt / cheque / inspection / coupon /
-    ledger entry) keeps the UI generic, and every lookup is re-checked against THIS customer
-    so a record id from another customer can never be opened through his file.
-    """
     handler = {
         "invoice": _invoice_detail,
         "return": _return_detail,
@@ -360,8 +302,6 @@ def _invoice_detail(db: Session, customer_id: int, record_id: int) -> dict:
     return {
         "kind": "invoice",
         "title": f"فاتورة بيع {inv.document_number}",
-        # Structured payload so the UI can render the real branded invoice sheet (with the
-        # logo and totals block) instead of a generic label/value grid.
         "doc": {
             "kind": "sale",
             "document_number": inv.document_number,
@@ -447,7 +387,6 @@ def _voucher_detail(db: Session, customer_id: int, record_id: int) -> dict:
     return {
         "kind": "receipt",
         "title": f"سند قبض {v.document_number}",
-        # Structured payload so the UI renders the real branded voucher sheet.
         "voucher": {
             "kind": getattr(v.kind, "value", str(v.kind)),
             "document_number": v.document_number,
@@ -527,7 +466,6 @@ def _coupon_detail(db: Session, customer_id: int, record_id: int) -> dict:
 
 
 def _entry_detail(db: Session, customer_id: int, record_id: int) -> dict:
-    """A ledger entry opened from the statement — shown with both legs and their accounts."""
     from src.models.ledger import LedgerEntry
 
     entry = db.get(LedgerEntry, record_id)
@@ -539,7 +477,6 @@ def _entry_detail(db: Session, customer_id: int, record_id: int) -> dict:
     accounts = {a.id: a for a in db.scalars(
         select(Account).where(Account.id.in_([ln.account_id for ln in entry.lines]))).all()}
 
-    # System accounts carry no user-facing name, so fall back to an Arabic label per type.
     type_labels = {
         "treasury": "الخزينة", "custody": "عهدة المندوب",
         "customer_receivable": "ذمم العملاء", "supplier_payable": "ذمم الموردين",
@@ -580,7 +517,7 @@ def _points_balance(db: Session, customer_id: int) -> Decimal:
 
     try:
         return Decimal(str(point_service.balance(db, customer_id)))
-    except Exception:  # loyalty is optional per install — never break the file over it
+    except Exception:
         return ZERO
 
 

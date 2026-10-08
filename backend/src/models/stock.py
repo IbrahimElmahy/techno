@@ -1,9 +1,3 @@
-"""Stock as an append-only movement model (T013–T014).
-
-On-hand per (item × location) is DERIVED from immutable movements (no stored balance, SC-002).
-Movements are quantity-only (no monetary value — Q4 boundary, FR-008a) and reversible (FR-007/025).
-`StockLocator` is a lock anchor for the No-Negative-Stock write check (research R3).
-"""
 from __future__ import annotations
 
 import enum
@@ -37,23 +31,12 @@ class StockDirection(str, enum.Enum):
     out = "out"
 
 
-#: أنواع المستندات — **السجل نفسه**، مش نسخة تانية منه.
-#:
-#: كانت القايمة متكتوبة هنا وتاني في `src/lib/stock_docs.py`، والاتنين بيتوسّعوا
-#: كل واحدة لوحدها: `stock_count` و`inspection` كانوا في واحدة وناقصين من التانية.
-#: قايمتين لنفس الحاجة هي بالظبط المرض اللي الملف ده اتعمل عشانه، فبقت واحدة.
-from src.lib.stock_docs import StockDoc  # noqa: E402,F401  (إعادة تصدير عن قصد)
+from src.lib.stock_docs import StockDoc  # noqa: E402,F401
 
 
 class StockMovement(Base):
-    """Immutable quantity change for an (item × location). On-hand = Σ(in − out)."""
-
     __tablename__ = "stock_movement"
 
-    # (037) الفرع اللي المستند ده بتاعه — عزل بيانات الفروع.
-    #
-    # بيتاخد من مخزن السطر لو المستند بيحرّك بضاعة، وإلا من فرع اللي كتبه. NULL = مستند
-    # اتكتب قبل العزل، وبيتشاف من كل الفروع لحد ما يتعبّى.
     branch_id: Mapped[int | None] = mapped_column(ForeignKey("branch.id"), nullable=True,
                                                   index=True)
     __table_args__ = (CheckConstraint("quantity > 0", name="ck_stock_movement_qty_positive"),)
@@ -64,7 +47,7 @@ class StockMovement(Base):
     location_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
     movement_type: Mapped[str] = mapped_column(String(32), nullable=False)
     direction: Mapped[StockDirection] = mapped_column(Enum(StockDirection), nullable=False)
-    quantity: Mapped[object] = mapped_column(QTY, nullable=False)  # quantity-only, no money
+    quantity: Mapped[object] = mapped_column(QTY, nullable=False)
     source_doc_type: Mapped[str | None] = mapped_column(String(24), nullable=True)
     source_doc_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     reverses_movement_id: Mapped[int | None] = mapped_column(
@@ -74,21 +57,10 @@ class StockMovement(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime, server_default=func.now(), nullable=False
     )
-    # **تاريخ الحركة — تاريخ ورقتها، مش وقت كتابة الصف.**
-    #
-    # `created_at` كان هو الاتنين، والفرق بينهم مش نظري: النقل من a5 كتب كل حركة
-    # الشركة في يوم واحد، فالجرد بأي تاريخ قبل يوم النقل كان بيرجع مخزن فاضي، وكارت
-    # الصنف بيقول إن بيع يناير حصل في سبتمبر.
-    #
-    # بيتملي في `post_movement` من `stock_docs.date_of` — مكان واحد بيعرف تاريخ كل
-    # نوع مستند. و`NULL` بتفضل للقديم لغاية ما `backfill_movement_dates` تعدّي،
-    # والقراءة بتعمل `COALESCE(movement_date, created_at)` فمافيش لحظة بيغيب فيها رقم.
     movement_date: Mapped[date | None] = mapped_column(Date, nullable=True, index=True)
 
 
 class StockLocator(Base):
-    """Lock anchor per (item × location) for No-Negative-Stock serialization. Stores no quantity."""
-
     __tablename__ = "stock_locator"
     __table_args__ = (
         UniqueConstraint("item_id", "location_kind", "location_id", name="uq_stock_locator"),
@@ -101,21 +73,11 @@ class StockLocator(Base):
 
 
 class CostingMethod(str, enum.Enum):
-    """How a unit of stock is valued (نوع التكلفة، B5).
-
-    `average` is the shipped default and what every existing cost on a document was computed
-    with — changing the setting must never rewrite those, only how new valuations are derived.
-    FIFO is deliberately absent: it needs per-receipt cost layers, which is a data change, not a
-    setting.
-    """
-
-    average = "average"              # المتوسط المرجح
-    last_purchase = "last_purchase"  # آخر سعر شراء
+    average = "average"
+    last_purchase = "last_purchase"
 
 
 class StockSetting(Base):
-    """Singleton stock settings — currently just the costing method."""
-
     __tablename__ = "stock_setting"
 
     id: Mapped[int] = mapped_column(BigIntPK, primary_key=True, autoincrement=True)
@@ -129,7 +91,7 @@ class StockSetting(Base):
 
 
 class StockImmutableError(Exception):
-    """Raised when code attempts to mutate or delete a posted stock movement."""
+    pass
 
 
 def _block_mutation(mapper, connection, target):  # noqa: ANN001
@@ -138,6 +100,4 @@ def _block_mutation(mapper, connection, target):  # noqa: ANN001
     )
 
 
-# ORM-level immutability guard (DB-agnostic; MySQL trigger enforces the same in production).
-# اتشال — نفس سبب قيد الدفتر: تعديل المستند بيشيل حركته القديمة ويكتب واحدة جديدة.
 _ = _block_mutation

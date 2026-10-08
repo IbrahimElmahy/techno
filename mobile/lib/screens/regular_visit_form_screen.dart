@@ -8,11 +8,6 @@ import '../db/local_db.dart';
 import '../models/models.dart';
 import '../theme.dart';
 
-/// «الزيارة العادية» — تسجيل زيارة، مش حدث نقاط.
-///
-/// Date, customer, what happened, and photographs. No items and no points: those belong to
-/// «معاينة فنيين», and having them on both screens meant a rep could record the same points twice
-/// under two different kinds of visit.
 class RegularVisitFormScreen extends StatefulWidget {
   const RegularVisitFormScreen({super.key});
 
@@ -21,17 +16,13 @@ class RegularVisitFormScreen extends StatefulWidget {
 }
 
 class _RegularVisitFormScreenState extends State<RegularVisitFormScreen> {
-  /// رقم الزيارة اتحدد من أول ما الشاشة فتحت.
-  ///
-  /// The attachments are keyed by it, and they are picked BEFORE the visit is saved — so the name
-  /// has to exist from the start rather than being minted at save time.
   final String _uuid = const Uuid().v4();
   final List<AttachmentRef> _attachments = [];
 
   final _visitDetails = TextEditingController();
-  final _customerName = TextEditingController(); // free text: pick an existing one OR type a new
+  final _customerName = TextEditingController();
   DateTime _date = DateTime.now();
-  int? _customerId; // set only when an existing customer is picked
+  int? _customerId;
   bool _saving = false;
   String? _visitType = 'معاينة';
   List<LookupOption> _visitTypes = [];
@@ -78,10 +69,9 @@ class _RegularVisitFormScreenState extends State<RegularVisitFormScreen> {
       visitKind: 'regular',
       inspectionDate: intl.DateFormat('yyyy-MM-dd').format(_date),
       ownerName: name,
-      customerId: _customerId, // null for a new name typed freely
+      customerId: _customerId,
       visitDetails: _visitDetails.text.trim().isEmpty ? null : _visitDetails.text.trim(),
       visitType: _visitType,
-      // زيارة عادية مالهاش أصناف ولا نقاط — دي معاينة الفنيين.
       lines: const [],
     );
     await LocalDb.instance.saveInspection(insp);
@@ -163,8 +153,6 @@ class _RegularVisitFormScreenState extends State<RegularVisitFormScreen> {
                     child: Row(
                       children: [
                         Expanded(
-                          // Type the customer: existing ones appear as suggestions; a new name
-                          // is typed freely and just saved on the visit (no system record).
                           child: Autocomplete<CustomerRef>(
                             displayStringForOption: (c) => c.name,
                             optionsBuilder: (value) async {
@@ -189,7 +177,7 @@ class _RegularVisitFormScreenState extends State<RegularVisitFormScreen> {
                                 textAlign: TextAlign.right,
                                 onChanged: (v) {
                                   _customerName.text = v;
-                                  _customerId = null; // typing a new/edited name unlinks
+                                  _customerId = null;
                                 },
                                 decoration: const InputDecoration(
                                   isDense: true,
@@ -263,8 +251,6 @@ class _RegularVisitFormScreenState extends State<RegularVisitFormScreen> {
               ),
             ),
           ),
-          // قسم الأصناف اتشال: «زيارة عادية» تسجيل زيارة مش حدث نقاط. الأصناف والنقاط مكانها
-          // «معاينة فنيين».
           const SizedBox(height: 90),
         ],
       ),

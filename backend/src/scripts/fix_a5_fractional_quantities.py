@@ -1,33 +1,4 @@
 # -*- coding: utf-8 -*-
-"""الكمية الكسرية اللي ضاعت في النقل — بترجع من a5.
-
-    python -m src.scripts.fix_a5_fractional_quantities --dir /opt/techno/a5factory --prefix FC-
-    python -m src.scripts.fix_a5_fractional_quantities --dir ... --prefix FC- --yes
-
-**المشكلة.** a5 بيكتب الكمية في عمودين: `n_count_unit` الوحدات الصحيحة،
-`n_count_single` الباقي بالوحدة الصغيرة، و`item_units` معامل التحويل بينهم. الصنف
-اللي بالكيلو ومعامله ١٠٠٠ بيتكتب «١٩ و٢٥٠» يعني **١٩٫٢٥ كيلو**.
-
-واستعلام التصدير كان بياخد `n_count_unit` وحده. فالكسر اتشال من كل سطر فيه كسر، ومن
-غير ما حد ياخد باله: إجمالي السطر (`a_price`) بييجي من a5 صح، فالفاتورة بتقول رقم
-مظبوط وكميتها ناقصة. فاتورة `FC-S10780` دخلت عندنا ١٩ بينما إجماليها ٢٬٠٩٨٫٢٥ =
-١٩٫٢٥ × ١٠٩.
-
-**وفرع المصنع (السادات) وحده هو المتأثر** — ٣٬٠٥٣ سطر فيهم كسر. العلياء وأكتوبر صفر،
-بيبيعوا بالقطعة.
-
-**الإصلاح على Postgres بتاعنا وحده.** a5 مصدر بنقرا منه، والتصدير اتصلّح في
-`deploy/a5_sql/exp_lines.sql` عشان اللي جاي يدخل صح. السكربت ده بيصلّح اللي دخل غلط.
-
-**والمطابقة بالترتيب جوّه المستند.** الاستيراد بيقرا سطور a5 مرتّبة بـ`just_id` وبيكتبها
-بنفس الترتيب، فسطرنا رقم ٣ هو سطر a5 رقم ٣. والمستند اللي عدد سطوره مش متساوي
-مابيتلمسش وبيتقال في الكشف — أي تخمين هنا بيحطّ كمية صنف على صنف تاني.
-
-وكل تعديل بيمشي على تلات حتت مع بعض: كمية السطر، ونسبة الخصم المستنتجة منها
-(`implied_pct` بتقارن الكمية × السعر بالإجمالي، والكمية الغلط كانت بتطلّع نسبة غلط)،
-**وحركة المخزن** — الرصيد مشتق منها، فسطر يتصلّح وحركته لأ يعني فاتورة بتقول حاجة
-والمخزن بيقول حاجة تانية.
-"""
 from __future__ import annotations
 
 import argparse
@@ -47,7 +18,6 @@ from src.scripts.import_a5_docs import (
 
 ZERO = Decimal("0")
 
-#: نوع a5 → (بادئة رقم المستند عندنا، موديل الرأس، موديل السطر، عمود الربط)
 SPECS: dict[str, tuple] = {}
 
 
@@ -74,12 +44,6 @@ def _load_specs() -> None:
 
 
 def _fold_transfer(rows: list[list[str]]) -> list[list[str]]:
-    """a5 بيكتب سطر التحويل مرتين — صف خروج وصف دخول — والاستيراد بيطويهم لسطر واحد.
-
-    نفس الخوارزم بالحرف من `import_a5_docs._transfer`: الصفّين المتتاليين اللي
-    بنفس الصنف والكمية والمخزنين بيبقوا سطر، والمفرد بياخد سطره. من غير الطيّ ده
-    عدد سطور a5 بيطلع ضعف عدد سطورنا وكل إذن تحويل بيتخطّى.
-    """
     ordered = sorted(rows, key=lambda r: int(r[L_JUST] or 0))
     out: list[list[str]] = []
     i = 0
@@ -112,7 +76,6 @@ def main() -> None:
 
     _load_specs()
 
-    # سطور a5 متجمّعة بمستندها، بنفس ترتيب الملف (التصدير بيرتّب بـjust_id).
     by_doc: dict[tuple[str, str], list[list[str]]] = defaultdict(list)
     for r in rows:
         t = _clean(r[L_TYPE])
@@ -136,8 +99,6 @@ def main() -> None:
                 skipped["مستند مش موجود عندنا"] += 1
                 continue
 
-            # سطور a5 اللي الاستيراد بيتخطّاها (كمية صفر) مابتوصلش عندنا أصلاً،
-            # والتحويل بيتطوي زي ما الاستيراد طواه.
             src_rows = _fold_transfer(a5_rows) if t == "6" else sorted(
                 a5_rows, key=lambda r: int(r[L_JUST] or 0))
             wanted = [r for r in src_rows if to_qty(_money(r[L_QTY])) > ZERO]
@@ -147,21 +108,12 @@ def main() -> None:
                 skipped[f"عدد السطور مختلف ({doc_type})"] += 1
                 continue
 
-            # **والترتيب لازم يطابق الصنف، مش العدد بس.**
-            #
-            # `fix_a5_missing_subunit_lines` بيكتب السطر اللي كان ناقص، وبياخد **آخر
-            # رقم** في المستند مهما كان مكانه عند a5. فالمستند اللي كان ناقص سطر بقى
-            # عدده مظبوط وترتيبه مش مظبوط — والمزاوجة بالترتيب ساعتها بتحطّ كمية
-            # صنف على صنف تاني. والحارس القديم (فرق أقل من وحدة) مابيمسكهاش لما
-            # الصنفين كميتهم قريبة.
             if any(_clean(r[L_CODE]) and ln.item_id != by_code_id.get(
                        f"{args.prefix}{_clean(r[L_CODE])}")
                    for r, ln in zip(wanted, ours)):
                 skipped[f"ترتيب السطور مش زي a5 ({doc_type})"] += 1
                 continue
 
-            # حركات المخزن بتاعة المستند، مجمّعة بالصنف وبترتيب كتابتها — نفس ترتيب
-            # السطور، فالسطر التاني من صنف مكرر بيلاقي حركته التانية.
             moves: dict[int, list[StockMovement]] = defaultdict(list)
             for mv in db.scalars(select(StockMovement)
                                  .where(StockMovement.source_doc_type == doc_type,
@@ -179,8 +131,6 @@ def main() -> None:
                 if new_qty == old_qty:
                     continue
 
-                # حارس: الكمية الجديدة لازم تكون نفس القديمة + كسر. أي فرق أكبر من
-                # واحد صحيح معناه إن المطابقة وقعت على سطر تاني — ساعتها نسيب.
                 if abs(new_qty - old_qty) >= 1:
                     skipped["فرق أكبر من وحدة — مطابقة مشكوك فيها"] += 1
                     continue
@@ -191,16 +141,9 @@ def main() -> None:
                     continue
 
                 ln.quantity = new_qty
-                # الخصم المستنتج بيتحسب من الكمية — الكمية الغلط كانت بتطلّع نسبة غلط.
                 if hasattr(ln, "discount_pct") and getattr(ln, "unit_price", None) is not None:
                     gross = to_money(new_qty * Decimal(str(ln.unit_price)))
                     ln.discount_pct = discounts.implied_pct(gross, ln.line_total)
-                # الرصيد مشتق من الحركة، مش من السطر.
-                #
-                # والسطر اللي ماسك حركته برقمها (`out_movement_id` في التحويل،
-                # `stock_movement_id` في الإذن) بيتصلّح بيه — ده رابط صريح، أدقّ من
-                # أي ترتيب. والتحويل ليه **حركتين**: خروج من المصدر ودخول للوجهة،
-                # والاتنين لازم يتحرّكوا مع بعض وإلا الرصيد بينط في مخزن من غير التاني.
                 ids = [getattr(ln, f, None) for f in
                        ("out_movement_id", "in_movement_id", "stock_movement_id")]
                 ids = [i for i in ids if i]
@@ -212,7 +155,6 @@ def main() -> None:
                         else:
                             skipped["الحركة المكتوبة على السطر مش موجودة"] += 1
                 else:
-                    # فاتورة ومردود: حركة واحدة لكل سطر، والمطابقة بالترتيب جوّه الصنف.
                     mv_list = moves.get(ln.item_id, [])
                     if seat < len(mv_list):
                         mv_list[seat].quantity = new_qty

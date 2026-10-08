@@ -1,10 +1,3 @@
-"""Inspection point-items (أصناف المعاينة) — auto-extracted from «حساب نقاط».xlsx.
-
-These are the fitting types the rep records during a معاينة to earn loyalty points —
-distinct from the sellable products in the catalog. Points at 4 decimals so the
-fractional sixths (1/6, 1/3 …) total cleanly. (name, points).
-"""
-
 INSPECTION_ITEM_TYPES: list[tuple[str, str]] = [
     ('قطعه بسن 20" او 25"', "2.0000"),
     ('قطعه بسن 32"', "4.0000"),

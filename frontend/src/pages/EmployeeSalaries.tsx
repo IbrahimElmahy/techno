@@ -22,24 +22,6 @@ import { PAGE_SIZE } from '../utils/pagination';
 import { searchFilter, searchRank } from '../utils/arabicSort';
 import { money, numeralsLocale } from '../utils/money';
 
-/**
- * رواتب الموظفين — إعدادات الراتب لكل موظف، والقايمة جاية من الموظفين نفسهم.
- *
- * قبلها كان فيه «بنود الراتب» و«الشرايح» و«مسير الرواتب»، والحلقة اللي بينهم — مين بياخد كام —
- * مالهاش شاشة. الهيكل متخزّن بـ`employee_id` من الأول، بس مافيش مكان يتكتب فيه، فالمسير كان
- * بيعدّي على ١٣٧ موظف على رأس العمل ويلاقي صفر هياكل ويطلع فاضي. والخانة «المرتب» في كارت
- * الموظف مابتدخلش المسير خالص (عرض بس) — فكتابتها هناك كانت بتدّي إحساس إن المرتب اتسجّل.
- *
- * فالشاشة بتبتدي من **الموظف**: كل موظف شغّال بيظهر، بإعداداته أو «مالوش إعدادات»، والموظف
- * الجديد بيظهر لوحده من غير ما حد يضيفه هنا. والمسير بيقرا نفس الهيكل ده بالظبط.
- *
- * **الزيادة نسخة جديدة مش تعديل.** «زيادة» بتعمل هيكل بتاريخ سريان جديد، والقديم بيفضل للشهور
- * اللي قبله — عشان قسيمة مايو ماتتغيّرش لما المرتب يزيد في يونيو. والنسخة اللي اتحسب عليها
- * مسير مرحّل متقفلة: لا بتتعدّل ولا بتتمسح.
- *
- * المبالغ هنا محتاجة `salary.view` (مدير النظام والمحاسب) — نفس `SALARY` في القايمة.
- */
-
 interface Current {
   id: number; effective_from: string; basic: string; allowances: string; deductions: string;
   gross: string; net_structure: string; payment_method: string;
@@ -70,7 +52,6 @@ export default function EmployeeSalaries() {
   const [loading, setLoading] = useState(false);
   const [showInactive, setShowInactive] = useState(false);
 
-  // مودال الإعدادات
   const [target, setTarget] = useState<Row | null>(null);
   const [mode, setMode] = useState<'edit' | 'raise'>('edit');
   const [history, setHistory] = useState<{ id: number; effective_from: string; basic: string; locked: boolean }[]>([]);
@@ -78,7 +59,6 @@ export default function EmployeeSalaries() {
   const [lines, setLines] = useState<FormLine[]>([]);
   const [saving, setSaving] = useState(false);
 
-  // فتح كارت الموظف من هنا — نفس فورم شاشة الموظفين.
   const [empOpen, setEmpOpen] = useState(false);
   const [employee, setEmployee] = useState<Employee | null>(null);
 
@@ -116,8 +96,6 @@ export default function EmployeeSalaries() {
   const searchRef = useRef<any>(null);
   useScreenShortcuts({ onSearch: () => { searchRef.current?.focus?.(); } });
 
-  // ------------------------------------------------------------ المودال
-
   const openSettings = async (row: Row, how: 'edit' | 'raise') => {
     setTarget(row);
     setMode(how);
@@ -131,7 +109,6 @@ export default function EmployeeSalaries() {
 
     if (cur) {
       setForm({
-        // «تعديل» بيكتب على نفس النسخة (نفس التاريخ)، «زيادة» بتبدأ نسخة من أول الشهر الجاي.
         effective_from: how === 'edit' ? dayjs(cur.effective_from)
           : dayjs().add(1, 'month').startOf('month'),
         basic: n(cur.basic),
@@ -144,8 +121,6 @@ export default function EmployeeSalaries() {
         ? { component_id: l.component_id, mode: 'pct', value: n(l.pct) }
         : { component_id: l.component_id, mode: 'amount', value: n(l.amount) })));
     } else {
-      // أول إعدادات: من تاريخ التعيين لو بعد أول الشهر، وإلا من أول الشهر — والأساسي من
-      // الرقم المكتوب على كارت الموظف لو موجود، عشان محدش يكتبه مرتين.
       const monthStart = dayjs().startOf('month');
       const hired = row.hire_date ? dayjs(row.hire_date) : null;
       setForm({
@@ -163,7 +138,6 @@ export default function EmployeeSalaries() {
   const usable = components.filter((c) => c.active);
   const compOf = (id?: number) => components.find((c) => c.id === id);
 
-  // معاينة بس — الرقم اللي بيوصل القسيمة بيتحسب على السيرفر من نفس الهيكل.
   const preview = useMemo(() => {
     const basic = n(form.basic);
     let earn = 0; let ded = 0;
@@ -223,8 +197,6 @@ export default function EmployeeSalaries() {
       setEmpOpen(true);
     } catch (err: any) { fail(err, 'تعذر فتح الموظف'); }
   };
-
-  // ------------------------------------------------------------ الجدول
 
   const columns: ColumnsType<Row> = [
     { title: 'رقم', dataIndex: 'code', key: 'code', width: 100, render: (v: string) => <Tag>{v}</Tag> },

@@ -1,15 +1,7 @@
-/**
- * دفتر الشريك — اتفصل عن `FinanceReports.tsx`.
- *
- * التبويب ده بيقرا الدفتر كله، فبيجيب داتاه بنفسه أول ما يتفتح بدل ما يتحمّل مع
- * كل فتحة للصفحة زي التقارير اللي قبله. عشان كده هو مكوّن مستقل بحالته، والأب
- * بيديله الفترة وبس.
- */
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { PAGE_SIZE } from '../../utils/pagination';
 import { Alert, Button, Select, Tag } from 'antd';
-// فلتر على كل عمود — شوف `FilterTable`.
 import { FilterTable as Table } from '../../components/FilterTable';
 import { ReloadOutlined, LinkOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
@@ -18,7 +10,6 @@ import { useQueryTab } from '../../components/useQueryTab';
 import StatementFilter, { statementMatches } from '../../components/StatementFilter';
 import { money, PartnerLedgerRow, PartnerLedgerLine } from './types';
 
-/** أماكن الفلاتر والأزرار في إطار الصفحة (`ListPage`) — التاب المستخبي بيستلم `undefined`. */
 export interface TabSlots { filters: HTMLElement | null; actions: HTMLElement | null }
 
 export default function PartnerLedgerTab({ params, slots }: {
@@ -48,13 +39,6 @@ export default function PartnerLedgerTab({ params, slots }: {
 
   useEffect(() => { loadPartner(); }, [loadPartner]);
 
-  /**
-   * فلتر «البيان» — على سطور كل طرف، في الشاشة.
-   *
-   * الطرف اللي مالوش ولا سطر مطابق بيختفي، والمدين والدائن بيتحسبوا من السطور المطابقة
-   * بس عشان يقابلوا اللي في الجدول المفتوح تحته. أول وآخر المدة بيفضلوا للطرف كله —
-   * دول رصيده، مش مجموع كلام مكتوب.
-   */
   const shownRows = useMemo(() => {
     if (!stmtQ) return partnerRows;
     return partnerRows
@@ -72,7 +56,6 @@ export default function PartnerLedgerTab({ params, slots }: {
 
   return (
     <div>
-      {/* الفلاتر في سطر فلاتر الصفحة، و«تحديث» في الترويسة — والحالة هنا زي ما هي. */}
       {slots?.filters && createPortal(
         <>
           <Select

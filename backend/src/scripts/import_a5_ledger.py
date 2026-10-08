@@ -1,35 +1,3 @@
-"""المرحلة الخامسة من استيراد a5: دفتر الأستاذ — كل قيد حصل خلال السنة.
-
-المستندات دخلت في المرحلة الرابعة **من غير قيود** عن قصد: خدماتنا بتولّد قيد لكل فاتورة،
-ولو خلّيناها تولّده كنا هنقيّد نفس البيع مرتين — مرة من الفاتورة ومرة من دفتر a5. فالدفتر
-بيتنقل كامل من مصدره، والفواتير بتتربط بقيودها بعد ما تدخل.
-
-    python -m src.scripts.import_a5_ledger --dir C:/pgtmp/aliaa --branch العلياء --prefix AL-
-    python -m src.scripts.import_a5_ledger --dir C:/pgtmp/aliaa --branch العلياء --prefix AL- --yes
-
-بيتعاد تشغيله بأمان: القيد اللي `external_ref` بتاعه موجود بيتخطى.
-
----------------------------------------------------------------------------
-أربع قرارات:
-
-* **القيد بيتجمّع بـ`sysfree` مش بـ`MMStnd`.** الاسم مضلّل: `MMStnd` رقم بيتصرف لكل **صف**
-  لوحده — الطرف المدين والطرف الدائن لنفس العملية بياخدوا ١ و٢. التجميع بيه بيدي ٦٢٣٢
-  «سند» ٦٢٢٦ منهم غير متوازن. `sysfree` هو رقم العملية: ١٤٣١١ مجموعة، **صفر** منها بتخلط
-  مستندين أو تاريخين، وواحدة بس غير متوازنة (وهي الأرصدة الافتتاحية، وطرف واحد بطبيعتها).
-
-* **`acc` سجل حركة حساب مش يومية.** كل صف فيه رصيد قبل وبعد ومبلغ في `AccIn` أو `AccOut`،
-  وواحد منهم بس بيبقى مليان. بيتحوّل لسطر قيد: مدين لو `AccIn`، دائن لو `AccOut`.
-
-* **الحساب بالكود مش بالاسم.** `AccBrnch_id` بيقابل `A5S-{id}` اللي المرحلة التانية عملته.
-  الاسم في `AccBrnch_n` لقطة وقت القيد وممكن يكون اتغيّر بعدها.
-
-* **الفاتورة بتتربط بقيدها.** لما المجموعة تكون تابعة لمستند، رقم القيد بيتكتب على
-  الفاتورة — فالضغط على الفاتورة بيوصّل لقيدها، وده اللي كان بيحصل لو الخدمة رحّلتها.
-
-  والعمود اللي بيقول أنهي مستند هو `ord` / `OrdBk` / `poord` / `PoordBk` حسب النوع، مش
-  `AznID`. الاسم مغري، بس `AznID` بيطابق رقم الفاتورة في ١٧٢٦ صف من ٢٠١٥٨ — هو رقم مستند
-  المخزون مش رقم الفاتورة. الأربعة دول بيطابقوا في الـ٢٠١٥٨ كلهم.
-"""
 from __future__ import annotations
 
 import os
@@ -51,11 +19,9 @@ from src.scripts.import_a5 import _clean, _money, _read
 
 ZERO = Decimal("0")
 
-# أعمدة الملف المصدَّر
 (A_KEY, A_DATE, A_ACC, A_ACCNAME, A_IN, A_OUT, A_DESC, A_TYPE, A_DOC,
  A_VOUCHER, A_CAT, A_ID) = range(12)
 
-# نوع مستند a5 → (حرف رقم المستند عندنا، الموديل، نوع القيد)
 DOCS = {
     "7": ("S", SalesInvoice, "sales_invoice"),
     "2": ("SR", SalesReturn, "sales_return"),
@@ -72,52 +38,20 @@ def _date(v: str) -> date | None:
 
 
 def _group_key(r: list[str], mode: str) -> str:
-    """مفتاح القيد اللي السطر تابع له.
-
-    **`MMStnd` مش مفتاح قيد.** هو رقم المستند في يومية a5، وبيتقسم على القيد الواحد
-    وبيتشارك بين قيود مختلفة. قيس على مصنع السادات: التجميع بيه أدّى لـ**٢٬٧٩٠ قيد
-    غير متوازن من ٢٬٨٠٨** — يعني كل الدفتر تقريباً، والميزانية مابتقفلش.
-
-    و`doc` بيجمّع بـ(نوع المستند، رقمه) وده اللي بيوازن فعلاً: نفس الداتا بقت
-    **٢٬٠١٣ قيد، ٨٢ بس غير متوازنين**. والـ٨٢ دول كلهم أرصدة أول المدة، وفرقهم
-    ٥٣٬٤٩٨٫٧٧ — وهو نفس الفرق الموجود في دفتر a5 نفسه لما بتجمع أول المدة عندهم.
-    يعني عيب في دفترهم بيتنقل زي ما هو بدل ما يتخبّى.
-
-    والافتراضي فضل `MMStnd` عن قصد: نقل العلياء اتعمل بيه وقيوده متوازنة، وتغيير
-    الافتراضي بيخلّي إعادة التشغيل عندهم تعمل قيود جديدة جنب القديمة.
-    """
     if mode == "doc":
         return f"{_clean(r[A_TYPE])}/{_clean(r[A_DOC])}"
     return r[A_KEY]
 
 
-#: أقصى فرق بيتعامل معاه على إنه تقريب. أكبر من كده مش تقريب — ده نقص حقيقي في
-#: الداتا ولازم يفضل باين.
 ROUNDING_TOLERANCE = Decimal("1.00")
 
 
 def _absorb_rounding(lines: list[LedgerLine]) -> Decimal:
-    """يبلع فرق التقريب في أكبر سطر على الناحية الناقصة، ويرجّع الفرق اللي اتعدّل.
-
-    **a5 بيمسك أربع خانات عشرية وإحنا بنمسك اتنين.** تقريب كل سطر لوحده بيزحلق
-    المجموع: قيد متوازن عندهم بالدقة الكاملة بيطلع عندنا مدين ٦٬٩٩٣٫١٤ ودائن
-    ٦٬٩٩٣٫١٥. مقيس على مصنع السادات — **١٨٩ قيد من ٢٢٣** اتكسروا من التقريب وحده،
-    وكلهم فرقهم بين قرش وأربع قروش.
-
-    والفرق بيتحط على **أكبر سطر** مش بيتوزّع: توزيعه بيغيّر أرقام كتير بحاجة تافهة،
-    وحطّه على الأكبر بيخلّي الأثر النسبي أصغر ما يمكن. وسطر جديد «فروق تقريب» كان
-    هيخترع حساب مالوش أصل في دفترهم.
-
-    **واللي فرقه أكبر من قرش أو اتنين مابيتلمسش.** فرق ٥٣ ألف مش تقريب — ده أرصدة
-    أول مدة ناقصة عند a5 نفسه، وبلعه معناه إننا نخترع قيد تسوية من دماغنا ونخبّي
-    عيب في دفترهم. بيفضل باين، وفحص النظام بيشاور عليه.
-    """
     debit = sum((ln.amount for ln in lines if ln.direction == Direction.debit), ZERO)
     credit = sum((ln.amount for ln in lines if ln.direction == Direction.credit), ZERO)
     diff = debit - credit
     if diff == ZERO or abs(diff) > ROUNDING_TOLERANCE:
         return ZERO
-    # الناقص هو الناحية الأقل — الفرق بيتزوّد عليها.
     side = Direction.credit if diff > ZERO else Direction.debit
     target = max((ln for ln in lines if ln.direction == side),
                  key=lambda ln: ln.amount, default=None)
@@ -170,13 +104,11 @@ def run(folder: str, *, execute: bool, branch_name: str = "", prefix: str = "",
             select(LedgerEntry.external_ref).where(
                 LedgerEntry.external_ref.is_not(None))).all()}
 
-        # أرقام المستندات → صفوفها، عشان القيد يتربط بفاتورته.
         doc_rows: dict[str, object] = {}
         for _tag, model, _kind in DOCS.values():
             for row in db.scalars(select(model).where(model.branch_id == branch.id)).all():
                 doc_rows[row.document_number] = row
 
-        # القيود اللي دخلت قبل كده، عشان الربط يتصلّح من غير ما تتعمل تاني.
         by_ref = {e.external_ref: e for e in db.scalars(
             select(LedgerEntry).where(LedgerEntry.external_ref.is_not(None))).all()}
 
@@ -188,13 +120,10 @@ def run(folder: str, *, execute: bool, branch_name: str = "", prefix: str = "",
                 row.ledger_entry_id = entry.id
                 made["فواتير اتربطت بقيدها"] += 1
 
-        # الترتيب بالتاريخ، والمفتاح بيفصل التعادل. **المفتاح نصّي مش رقم**: مع
-        # `--key doc` بقى `نوع/رقم` (زي `0/0`)، و`int()` عليه كانت بترمي.
         for key in sorted(groups, key=lambda k: (groups[k][0][A_DATE], str(k))):
             g = groups[key]
             ref = f"a5:{prefix}{key}"
             if ref in done:
-                # موجود — بس الربط ممكن يكون فشل في تشغيلة قبل كده.
                 entry = by_ref.get(ref)
                 if entry is not None:
                     link(g[0][A_TYPE], g[0][A_DOC], entry)
@@ -210,8 +139,6 @@ def run(folder: str, *, execute: bool, branch_name: str = "", prefix: str = "",
                 debit, credit = to_money(_money(r[A_IN])), to_money(_money(r[A_OUT]))
                 if debit == ZERO and credit == ZERO:
                     continue
-                # الصف بيحمل جنب واحد. لو الاتنين مليانين — مابيحصلش في الداتا دي —
-                # الأكبر هو الحركة والتاني بيتاخد على إنه صفر.
                 out = credit > debit
                 lines.append(LedgerLine(
                     account_id=acc.id,
@@ -264,6 +191,5 @@ if __name__ == "__main__":
     folder = args[args.index("--dir") + 1] if "--dir" in args else "C:/pgtmp"
     target = args[args.index("--branch") + 1] if "--branch" in args else ""
     pref = args[args.index("--prefix") + 1] if "--prefix" in args else ""
-    # `--key doc` بيجمّع بنوع المستند ورقمه بدل `MMStnd`. الشرح في `_group_key`.
     mode = args[args.index("--key") + 1] if "--key" in args else "mmstnd"
     run(folder, execute="--yes" in args, branch_name=target, prefix=pref, key_mode=mode)

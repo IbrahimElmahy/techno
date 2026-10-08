@@ -14,21 +14,6 @@ import { TabModal } from '../components/TabModal';
 import { money } from '../utils/money';
 import ListPage from '../components/ListPage';
 
-/**
- * إعدادات المرتبات — البنود، والشرايح، وأرقام المسير.
- *
- * **الشرايح بتشحن فاضية.** No Egyptian rate is written into this system: the first set is entered
- * by the client's accountant and confirmed by them. Numbers invented by the software would travel
- * into a payroll that posts to the ledger, and that is not a responsibility it can carry.
- *
- * The live calculator below the brackets exists so the person entering them can check their work
- * before anything is posted — type a salary, see the tax, compare it to the table in front of you.
- *
- * A version that a posted payroll has used is FROZEN and says so. Correcting a rate afterwards
- * would silently rewrite every month behind it, and the ledger entries underneath cannot be edited
- * to match.
- */
-
 interface Bracket {
   sequence: number;
   from_amount: string;
@@ -53,12 +38,6 @@ interface Version {
   brackets: Bracket[];
 }
 
-/**
- * نفس حساب الضريبة اللي على السيرفر — للمعاينة الحيّة بس.
- *
- * Deliberately a mirror, not the authority: it lets somebody check the brackets they just typed
- * without saving anything. Every figure that reaches a payslip is computed server-side.
- */
 export function previewTax(taxable: number, brackets: Bracket[], exemption = 0): number {
   const base = taxable - exemption;
   if (base <= 0 || !brackets.length) return 0;
@@ -75,7 +54,6 @@ export function previewTax(taxable: number, brackets: Bracket[], exemption = 0):
   return Math.round(total * 100) / 100;
 }
 
-/** بيتأكد إن الشرايح متصلة قبل ما تتبعت — نفس قاعدة السيرفر، بس بتقولها بدري. */
 export function bracketGap(brackets: Bracket[]): string | null {
   const ordered = [...brackets].sort((a, b) => Number(a.from_amount) - Number(b.from_amount));
   let top: number | null = null;
@@ -224,7 +202,6 @@ export default function PayrollSettings() {
 
   const noSchemes = !versions.length;
 
-  // جدولين، فمفتاحين — «الشرايح» و«البنود» بيحفظوا ترتيبهم كل واحد لوحده.
   const schemeColumns = [
     { title: 'النوع', dataIndex: 'scheme', key: 'scheme', width: 150,
       render: (v: string) => (v === 'income_tax'

@@ -1,26 +1,4 @@
 # -*- coding: utf-8 -*-
-"""الحساب اللي مالوش طبيعة بيسقط من الميزانية في صمت.
-
-الميزانية بتصنّف كل حساب من `nature`، ولو مالوش بتقع على خريطة النوع
-(`_NATURE_BY_TYPE`). والنوع `user_defined` **مش في الخريطة** — لأنه بالتعريف حساب
-العميل عمله بنفسه. فالحساب اللي نوعه `user_defined` و`nature` بتاعته فاضية بيتسقّط
-من الأصول والالتزامات وحقوق الملكية كلهم، ورصيده بيختفي من الوجهين.
-
-وساعتها الميزانية مابتوزنش — والدفتر موزون. اتقاس على قاعدة العميل:
-
-    الأصول  23,518,754.80
-    الالتزامات 1,803,502.65 + حقوق 20,274,595.65 + ربح 1,538,257.46 = 23,616,355.76
-    الفرق 97,600.96 = مجموع أربع حسابات مالهمش طبيعة، بالمليم
-
-## الطبيعة بتتاخد من مكان الحساب مش بالتخمين
-
-الأربعة دول حسابات ذمم عملاء (مربوطين في `customer_account`)، فطبيعتهم **أصل**.
-والسكريبت بيمشي بنفس المنطق لكل حساب: مربوط بعميل ⇒ أصل، بمورد ⇒ التزام. واللي مش
-مربوط بحاجة بيتساب ويتقال عليه — تصنيفه قرار محاسبي مش استنتاج.
-
-    python -m src.scripts.fix_account_nature            # عرض بس
-    python -m src.scripts.fix_account_nature --apply    # بيكتب
-"""
 from __future__ import annotations
 
 import argparse
@@ -52,15 +30,9 @@ def main() -> None:
             select(LedgerLine.account_id, signed).group_by(LedgerLine.account_id)).all())
         cust = {a for (a,) in db.execute(select(CustomerAccount.account_id)).all()}
         sup = {a for (a,) in db.execute(select(SupplierAccount.account_id)).all()}
-        # الحساب اللي مش مربوط بجدول الربط لكن اسمه اسم عميل موجود — ده حساب ذمم
-        # اتعمل بره الشاشة (سكريبت استرجاع من a5) ومحدّش ربطه. الاسم المطابق دليل
-        # كافي على الطبيعة (**أصل**)، مش كافي على الربط — الربط قرار تاني.
         cust_names = {n for (n,) in db.execute(select(Customer.name)).all() if n}
         sup_names = {n for (n,) in db.execute(select(Supplier.name)).all() if n}
 
-        # التصنيف الصريح — للحساب اللي مش مربوط بحاجة وتصنيفه قرار.
-        # اتقرا من a5 نفسه: حساب «كارته السياره الجديده» أبوه «مصروفات عمومية»
-        # وشجرته «مصروفات غير مباشرة»، فهو مصروف. مش تخمين — ده كلامهم.
         forced: dict[int, AccountNature] = {}
         for pair in args.set:
             aid, _, nat = pair.partition("=")

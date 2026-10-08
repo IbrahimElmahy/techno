@@ -1,36 +1,3 @@
-"""كشف حساب كل حساب في فرع = كشف a5 بالقرش، سطر بسطر (٢٠٢٦-١٠-٠٦).
-
-    python -m src.scripts.fix_a5_rounding_balances --rows /opt/techno/a5factory/a5_acc_rows4.txt --branch السادات --prefix FC-
-    python -m src.scripts.fix_a5_rounding_balances ... --yes
-
-**منين القروش.** a5 بيمسك أربع خانات عشرية وإحنا اتنين. وقت النقل كل سطر اتقرّب لوحده،
-و`import_a5_ledger._absorb_rounding` وزن كل قيد ببلع فرق التقريب في أكبر سطر فيه. القيد
-بيتوزن، بس السطر الكبير بيطلع بقروش زيادة (٤٦١٬٦٩٢٫٣٠٦٢ عند a5 ⇐ ٤٦١٬٦٩٢٫٣٤ عندنا)،
-والقروش بتتراكم على الحساب.
-
-النسخة الأولى من السكربت ده (٢٠٢٦-١٠-٠٥) كانت بتحط فرق الحساب كله على آخر سطر. الرصيد
-النهائي طلع مظبوط، بس السطر نفسه بقى غلط: تحصيل ١٠٠٬٠٠٠ عند a5 طلع ١٠٠٬٠٠٠٫٨٢ في كشف
-«فرع اكتوبر»، ورصيد أول المدة اتغيّر (نرمين، ٢٠٢٦-١٠-٠٦).
-
-**الإصلاح: تقريب تراكمي على كل حساب.** المبلغ الدقيق لكل سطر بيتاخد من a5 بالأربع خانات،
-والسطور بتترتّب زي الكشف (التاريخ ثم القيد ثم السطر). السطر بيتكتب = (الرصيد الدقيق بعده
-مقرّب لقرش) − (الرصيد الدقيق قبله مقرّب لقرش). النتيجة:
-
-* الرصيد بعد كل سطر = رصيد a5 مقرّب لقرش — فرصيد أول المدة والختامي لأي فترة زي a5.
-* كل مبلغ = مبلغ a5 مقرّب، أو بفرق قرش واحد بالكتير.
-
-القيد بيبقى بين مدينه ودائنه فرق قروش — زي ما هو عند a5 نفسه لما يتقرّب لخانتين. القيود
-دي a5 (مرجعها `a5:`)، ومافيش في السادات تسويات سداد عليها.
-
-**`--rows`:** ملف `SELECT` بس على `acc` (محدود بآخر `acc_id` في التصدير):
-
-    SELECT 'R', acc_id, sysfree, AccBrnch_id, AccIn, AccOut FROM acc WHERE acc_id <= <آخر acc_id>
-
-السطر عندنا بيتقابل مع صف a5 جوّه نفس القيد (`sysfree`) ونفس الحساب ونفس الناحية،
-بالترتيب بالمبلغ — التقريب بيغيّر قروش، مابيغيّرش الترتيب.
-
-مقفول على الفرع والبادئة. بيتعاد بأمان، وشغّله بعد أي `rebuild_a5_ledger` / `import_a5_ledger`.
-"""
 from __future__ import annotations
 
 import sys
@@ -50,7 +17,6 @@ def _r2(x: Decimal) -> Decimal:
 
 
 def run(rows_file: str, *, branch_name: str, prefix: str, execute: bool) -> int:
-    # صفوف a5: (sysfree, حساب, ناحية) ← [المبلغ الدقيق]
     a5: dict[tuple[str, str, str], list[Decimal]] = defaultdict(list)
     for ln in open(rows_file, encoding="utf-8"):
         p = ln.rstrip("\n").split("~")
@@ -60,7 +26,7 @@ def run(rows_file: str, *, branch_name: str, prefix: str, execute: bool) -> int:
         a_in, a_out = Decimal(p[4] or "0"), Decimal(p[5] or "0")
         d2, c2 = _r2(a_in), _r2(a_out)
         if d2 == ZERO and c2 == ZERO:
-            continue                      # نفس تخطّي `import_a5_ledger`
+            continue
         out = c2 > d2
         a5[(sysfree, f"{prefix}A5S-{acc}", "credit" if out else "debit")].append(
             a_out if out else a_in)
@@ -75,7 +41,6 @@ def run(rows_file: str, *, branch_name: str, prefix: str, execute: bool) -> int:
             where a.branch_id = :b and a.code like :p"""),
             {"b": bid, "p": f"{prefix}A5S-%"}).all()
 
-        # المبلغ الدقيق لكل سطر عندنا.
         ours: dict[tuple[str, str, str], list] = defaultdict(list)
         exact: dict[int, Decimal] = {}
         ref_p = f"a5:{prefix}"
@@ -83,7 +48,7 @@ def run(rows_file: str, *, branch_name: str, prefix: str, execute: bool) -> int:
             if ref and ref.startswith(ref_p):
                 ours[(ref[len(ref_p):], code, dirn)].append((Decimal(str(amt)), lid))
             else:
-                exact[lid] = Decimal(str(amt))     # سطر مش من a5 — زي ما هو
+                exact[lid] = Decimal(str(amt))
         mismatch = 0
         for key, mine in ours.items():
             theirs = a5.get(key, [])
@@ -99,7 +64,6 @@ def run(rows_file: str, *, branch_name: str, prefix: str, execute: bool) -> int:
             for (amt, lid), t in zip(sorted(mine), sorted(theirs)):
                 exact[lid] = t
 
-        # التقريب التراكمي بترتيب الكشف.
         by_acc: dict[str, list] = defaultdict(list)
         for lid, code, dirn, amt, _ref, d, eid in lines:
             by_acc[code].append((d, eid, lid, dirn, Decimal(str(amt))))
@@ -109,16 +73,12 @@ def run(rows_file: str, *, branch_name: str, prefix: str, execute: bool) -> int:
             rows.sort(key=lambda r: (str(r[0] or ''), r[1], r[2]))
             cum4 = ZERO
             prev2 = ZERO
-            out: list[list] = []          # [السطر، الناحية الأصلية، المبلغ القديم، الموقّع الجديد، فيه كسور؟]
+            out: list[list] = []
             for _d, _e, lid, dirn, amt in rows:
                 sign = 1 if dirn == "debit" else -1
                 cum4 += exact[lid] * sign
                 frac = exact[lid] != _r2(exact[lid])
                 if not frac:
-                    # **المبلغ اللي اتكتب بالقرش بيفضل زي ما اتكتب.** تحصيل ١٠٬٠٠٠ عند a5
-                    # كان بيطلع ١٠٬٠٠٠٫٠٣ لأن القرش بيقع على أول سطر بيعدّي الحد (نرمين
-                    # ٢٠٢٦-١٠-٠٦). المبلغ الصحيح مابيغيّرش تقريب الرصيد، فالرصيد بعده
-                    # بيفضل = رصيد a5 مقرّب — والقروش بتقع على السطور اللي فيها كسور أصلاً.
                     signed = exact[lid] * sign
                     prev2 += signed
                 else:
@@ -126,8 +86,6 @@ def run(rows_file: str, *, branch_name: str, prefix: str, execute: bool) -> int:
                     signed = now2 - prev2
                     prev2 = now2
                 out.append([lid, dirn, amt, signed, frac])
-            # نص القرش وهو بيعدّي من موجب لسالب (التقريب بعيد عن الصفر) ممكن يسيب قرش في
-            # الآخر — بيتحط على آخر سطر فيه كسور، مش على مبلغ مكتوب بالقرش.
             gap = _r2(cum4) - prev2
             if gap:
                 for o in reversed(out):

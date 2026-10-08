@@ -1,4 +1,3 @@
-"""تقارير الموارد البشرية — محرك واحد بأسماء كتير (HR-7)."""
 from __future__ import annotations
 
 from datetime import date
@@ -15,7 +14,6 @@ from src.lib.hr_reports import HrReportError
 
 router = APIRouter(tags=["hr-reports"], prefix="/hr/reports")
 
-# المواضيع اللي بترجّع مبالغ باسم موظف — محتاجة `salary.view` مش `hr.read`.
 _MONEY_SUBJECTS = {"payroll", "cost", "advance", "adjustment"}
 
 
@@ -38,12 +36,6 @@ def hr_report(
     current: CurrentUser = Depends(require_capability(CAP_HR_READ)),
     db: Session = Depends(get_db),
 ) -> dict:
-    """`subject` × `level` × `group_by` — أربعين تقرير من دالة واحدة.
-
-    The money subjects are gated a second time inside rather than on the route: one endpoint that
-    answers both «مين غايب» and «مين بياخد كام» has to check per request, and `hr.read` is the
-    right bar for the first and much too low for the second.
-    """
     if subject in _MONEY_SUBJECTS:
         from src.auth.rbac import role_has_capability
 
@@ -56,8 +48,6 @@ def hr_report(
             date_from=date_from, date_to=date_to, year=year, month=month,
             employee_id=employee_id, department_id=department_id, branch_id=branch_id,
             status=status, include_drafts=include_drafts, limit=limit, offset=offset,
-            # مدير الفرع كان بيشوف «الموظفين بالفرع» و«تكلفة الأجور بالفرع» بالتلات فروع —
-            # العزل بفرع الموظف، والفلتر الاختياري `branch_id` بيضيّق جواه بس.
             scope_branch_id=branch_scope.visible_branch_id(current),
         )
     except HrReportError as exc:
@@ -71,6 +61,5 @@ def leave_balances(
     current: CurrentUser = Depends(require_capability(CAP_HR_READ)),
     db: Session = Depends(get_db),
 ) -> dict:
-    """أرصدة الأجازات — أيام مش فلوس، فـ`hr.read` كفاية."""
     return hr_reports.leave_balances(db, year=year, employee_id=employee_id,
                                      scope_branch_id=branch_scope.visible_branch_id(current))

@@ -1,15 +1,3 @@
-"""يملأ جدول ربط أصناف a5 (`a5_item_link`) مرة واحدة — **قبل** توحيد الأصناف (٢٠٢٦-١٠-٠٧).
-
-    python -m src.scripts.seed_a5_item_links --dir /opt/techno/a5october_20261006 --prefix ""   # عرض بس
-    python -m src.scripts.seed_a5_item_links --dir /opt/techno/a5factory --prefix FC- --yes
-
-بيقرا أصناف a5 (`a5_items.tsv`) وأكواد سطور المستندات (`a5_lines.tsv` لو موجود — صنف
-اتمسح من a5 وعليه مستندات قديمة لسه محتاج ربط)، ويلاقي صنفنا بنفس الطريقة اللي المزامنة
-بتستخدمها النهارده (الكود ثم الاسم). اللي اتلقى بيتربط؛ اللي مااتلقاش بيتقال ومابيتعملش له
-صنف هنا — ده شغل المزامنة.
-
-التشغيل مرتين آمن: اللي اتربط قبل كده بيتساب.
-"""
 from __future__ import annotations
 
 import os
@@ -23,7 +11,6 @@ from src.models.catalog import Item
 from src.scripts.import_a5 import _clean, _read, mine
 from src.services.a5_item_map import A5ItemMap
 
-# أعمدة a5_lines.tsv — زي import_a5_docs.
 L_CODE, L_NAME = 7, 8
 
 

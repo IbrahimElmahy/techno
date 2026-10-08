@@ -7,38 +7,22 @@ import 'package:flutter/services.dart'
 import 'package:path_provider/path_provider.dart';
 import 'package:printing/printing.dart';
 
-/// المشترك بين ورق التطبيق اللي بيتبعت (الفاتورة وسند القبض): رقم واتساب، اسم الملف،
-/// والإرسال على شات العميل مع الرجوع لشاشة المشاركة لو مانفعش.
-
 const _whatsapp = MethodChannel('techno/whatsapp');
 
-/// رقم العميل بالصيغة الدولية اللي واتساب عايزها — أرقام بس، من غير `+`.
-///
-/// الكروت متسجل عليها `01xxxxxxxxx` (مصري محلي) غالباً، وواتساب مابيعرفش الرقم ده
-/// غير بكود الدولة: `201xxxxxxxxx`. `null` = مافيش رقم يتبعت عليه.
 String? whatsappNumber(String? raw) {
   var d = (raw ?? '').replaceAll(RegExp(r'\D'), '');
-  if (d.startsWith('00')) d = d.substring(2); // 0020… = +20…
+  if (d.startsWith('00')) d = d.substring(2);
   if (d.length == 11 && d.startsWith('01')) return '2$d';
-  if (d.length == 10 && d.startsWith('1')) return '20$d'; // الصفر اللي في الأول ضاع
+  if (d.length == 10 && d.startsWith('1')) return '20$d';
   if (d.startsWith('20') && d.length >= 12) return d;
   return d.length >= 10 ? d : null;
 }
 
-/// اسم ملف من اسم العميل — الحروف اللي مابتنفعش في اسم ملف بتتشال.
-///
-/// والمسافات المتكررة بتبقى مسافة واحدة: الحرف اللي اتشال بيسيب مسافة مكانه، واسم
-/// الكارت نفسه ساعات متكتب بمسافتين — والاسم ده هو اللي العميل بيشوفه على الملف في واتساب.
-/// والـ`\` بقت بتتشال هي كمان — كانت فايتة، وهي فاصل مجلدات زي `/`.
 String safeFileName(String raw) => raw
     .replaceAll(RegExp(r'[\\/:*?"<>|]'), ' ')
     .replaceAll(RegExp(r'\s+'), ' ')
     .trim();
 
-/// «إرسال» — الـPDF على شات العميل في واتساب على طول.
-///
-/// **ولو مانفعش، الإرسال مابيقعش:** مافيش رقم، أو واتساب مش متثبت، أو أي خطأ →
-/// شاشة المشاركة العادية، ومعاها سطر بيقول ليه.
 Future<void> sendPdfToWhatsApp(
   BuildContext context, {
   required Uint8List bytes,
@@ -62,7 +46,6 @@ Future<void> sendPdfToWhatsApp(
     return fallback('العميل مالوش رقم متسجل — اختار من المشاركة');
   }
   try {
-    // الكاش (`getTemporaryDirectory`) هو المجلد اللي provider المشاركة بيدّي منه رابط.
     final dir = Directory('${(await getTemporaryDirectory()).path}/$subdir');
     await dir.create(recursive: true);
     final file = File('${dir.path}/$fileTitle.pdf');

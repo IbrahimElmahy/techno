@@ -1,9 +1,3 @@
-"""Treasuries + period lock — 019-finance-treasuries.
-
-Each treasury owns one ledger account, so its balance is derived, never stored. The legacy
-singleton treasury account is adopted as the default safe on first use, which keeps every
-existing document posting exactly where it used to.
-"""
 from __future__ import annotations
 
 from datetime import date
@@ -22,7 +16,6 @@ class TreasuryError(Exception):
 
 
 def default_treasury(db: Session) -> Treasury:
-    """The safe used when a document names none — adopts the legacy singleton account."""
     existing = db.scalar(
         select(Treasury).where(Treasury.is_default.is_(True), Treasury.active.is_(True))
     )
@@ -111,9 +104,6 @@ def update_treasury(
         treasury.bank_name = bank_name
     if account_number is not None:
         treasury.account_number = account_number
-    # A safe does get reassigned between branches. Leaving it out of the update meant the only
-    # fix was a second safe and retiring the first — which splits its cash history over two
-    # ledger accounts because of a wrong pick on the day it was opened.
     if branch_id is not None:
         treasury.branch_id = branch_id
     if is_default:
@@ -136,7 +126,6 @@ def update_treasury(
 
 
 def account_in_use(db: Session, account_id: int) -> int:
-    """عدد سطور القيود على الحساب — الحساب اللي عليه حركة مايتمسحش."""
     from sqlalchemy import func
 
     from src.models.ledger import LedgerLine
@@ -145,11 +134,6 @@ def account_in_use(db: Session, account_id: int) -> int:
 
 
 def delete_treasury(db: Session, *, treasury_id: int, actor_user_id: int) -> None:
-    """حذف خزنة اتعملت غلط — **بس لو مالهاش ولا حركة** (٢٠٢٦-١٠-٠٧).
-
-    اللي عليها قيد أو سند أو شيك بتتخفي مش بتتمسح: تاريخ الفلوس مايضيعش. والحساب بتاعها
-    بيتمسح معاها لأنه اتعمل ليها هي.
-    """
     from sqlalchemy.exc import IntegrityError
 
     treasury = db.get(Treasury, treasury_id)
@@ -175,8 +159,6 @@ def delete_treasury(db: Session, *, treasury_id: int, actor_user_id: int) -> Non
                          entity_type="treasury", entity_id=treasury_id, before=before)
 
 
-# --------------------------------------------------------------------------- period lock
-
 def current_lock(db: Session) -> PeriodLock | None:
     return db.scalar(select(PeriodLock).order_by(PeriodLock.id.desc()).limit(1))
 
@@ -188,7 +170,6 @@ def locked_through(db: Session) -> date | None:
 
 def set_lock(db: Session, *, through: date, actor_user_id: int,
              note: str | None = None) -> PeriodLock:
-    """Close the books through a date (or reopen by moving the date back)."""
     lock = PeriodLock(locked_through=through, note=note, actor_user_id=actor_user_id)
     db.add(lock)
     db.flush()

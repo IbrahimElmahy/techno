@@ -3,40 +3,14 @@ import { Button, Checkbox, Dropdown, Space } from 'antd';
 import { SettingOutlined, HolderOutlined } from '@ant-design/icons';
 import ExportExcelButton, { type ExcelExport } from './ExportExcelButton';
 
-/**
- * اعدادات الأعمدة — إظهار / إخفاء وترتيب، في مكان واحد.
- *
- * A document table that has to serve a salesman, a storekeeper and an accountant ends up with
- * every column all three of them might want, and then none of them can read it — one person's
- * five columns are buried among another's twenty. Rather than argue about "the right columns" or
- * "the right order", each person tunes both for themselves.
- *
- * One engine, used everywhere a table needs this — `useHiddenColumns` and `<ColumnSettings>` are
- * the whole thing. A screen adopts them by calling the hook and rendering the component; nothing
- * about hiding or reordering is ever written twice. This file used to do only hiding — order was
- * added here, in the same hook and the same dropdown, rather than as a second mechanism a page
- * would have to wire up separately.
- *
- * The choice is per screen and per browser (localStorage), deliberately: it is a preference about
- * reading, not data about the business, and putting it on the server would mean a migration and a
- * settings screen for something a click already solves. It also means one user's tidy-up never
- * changes what a colleague sees.
- */
-
 export interface ColumnChoice {
   key: string;
   title: string;
-  /** Columns the table cannot be read without — offered but never hideable, and not reorderable:
-   *  a locked column anchors the table (usually the row's own identity), and letting it wander
-   *  would make «الصف ده» mean a different column depending on who is looking. */
   locked?: boolean;
 }
 
 interface StoredPrefs {
   hidden: string[];
-  /** Keys in the order the user wants them shown. Missing entirely on anything saved before
-   *  reordering existed, and partial on a screen that later grew a column nobody has ranked yet —
-   *  both read as "unranked, keep the author's order" rather than as an error. */
   order?: string[];
 }
 
@@ -45,9 +19,6 @@ function load(key: string, defaultHidden: string[]): StoredPrefs {
     const saved = localStorage.getItem(key);
     if (saved === null) return { hidden: defaultHidden, order: undefined };
     const parsed = JSON.parse(saved);
-    // Before reordering existed, the stored value WAS the hidden array — `["notes", "rep_id"]`,
-    // not `{hidden: [...]}`. Reading that shape as `{hidden: undefined}` would silently show every
-    // column again for everybody who had already tuned a screen.
     if (Array.isArray(parsed)) return { hidden: parsed, order: undefined };
     return { hidden: parsed.hidden ?? defaultHidden, order: parsed.order };
   } catch {
@@ -55,14 +26,6 @@ function load(key: string, defaultHidden: string[]): StoredPrefs {
   }
 }
 
-/**
- * تفضيلات جدول واحد — الأعمدة المخفية وترتيبها، محفوظين مع بعض.
- *
- * `apply(columns)` does both in one pass: drops what is hidden, then places what remains in the
- * saved order — unranked columns (new ones, or prefs saved before ordering existed) keep the
- * author's original order and sort AFTER anything the user has explicitly ranked, so a column
- * added later does not jump to the front of a table someone already arranged.
- */
 export function useHiddenColumns(storageKey: string, defaultHidden: string[] = []) {
   const full = `cols:${storageKey}`;
   const [prefs, setPrefs] = React.useState<StoredPrefs>(() => load(full, defaultHidden));
@@ -71,7 +34,6 @@ export function useHiddenColumns(storageKey: string, defaultHidden: string[] = [
     try {
       localStorage.setItem(full, JSON.stringify(next));
     } catch {
-      /* a browser with storage disabled just loses the preference, not the table */
     }
     return next;
   };
@@ -80,25 +42,13 @@ export function useHiddenColumns(storageKey: string, defaultHidden: string[] = [
     setPrefs(persist(next));
   };
 
-  /**
-   * زي `save` بس بيبني الجديد من اللي قبله — للضغطات المتتالية.
-   *
-   * Clicking the arrow three times quickly moved the column ONE step: React batches the three
-   * renders, so all three handlers read the same `prefs` from their closure and each computed the
-   * same single move from the same starting order. Reading the previous value inside the updater
-   * makes each click build on the one before it, which is what somebody holding the button means.
-   */
   const update = (fn: (prev: StoredPrefs) => StoredPrefs) => {
     setPrefs((prev) => persist(fn(prev)));
   };
 
   const setHidden = (hidden: string[]) => save({ ...prefs, hidden });
 
-  /** حرّك عمود خطوة لفوق أو لتحت — من جوّه النافذة، فيسه ما اللي مرتّبه. */
   const move = (key: string, direction: -1 | 1, allKeys: string[]) => update((prev) => {
-    // The working order is the CURRENT rendered order — saved ranks first, then the unranked
-    // tail in the author's order — never a bare `prev.order`, which for an untouched table is
-    // empty and would make the very first drag jump the column to one end.
     const current = orderKeys(allKeys, prev.order);
     const i = current.indexOf(key);
     const j = i + direction;
@@ -121,7 +71,6 @@ export function useHiddenColumns(storageKey: string, defaultHidden: string[] = [
   return { hidden: prefs.hidden, order: prefs.order, setHidden, move, reset, apply };
 }
 
-/** الترتيب الفعلي: اللي اتصنّف الأول بالترتيب اللي اتحفظ، وبعده الباقي بترتيبهم الأصلي. */
 export function orderKeys(allKeys: string[], saved: string[] | undefined): string[] {
   if (!saved || !saved.length) return [...allKeys];
   const known = new Set(allKeys);
@@ -135,11 +84,9 @@ interface Props {
   choices: ColumnChoice[];
   hidden: string[];
   onChange: (hidden: string[]) => void;
-  /** بيفعّل قسم الترتيب. سيبها فاضية على أي جدول لسه بس بيخفي/يظهر. */
   order?: string[];
   onMove?: (key: string, direction: -1 | 1) => void;
   onResetOrder?: () => void;
-  /** شبكات السطور: يرجّع عرض الأعمدة للافتراضي. */
   onResetWidths?: () => void;
 }
 
@@ -148,12 +95,6 @@ export default function ColumnSettings({
 }: Props) {
   const toggle = (key: string, show: boolean) =>
     onChange(show ? hidden.filter((k) => k !== key) : [...hidden, key]);
-  /**
-   * **السحب والإفلات** (طلب العميل ٢٠٢٦-١٠-٠١) — بدل أسهم فوق/تحت سطر سطر.
-   *
-   * العمود بيتمسك من المقبض ويتساب مكانه. الحركة بتتنفّذ بنفس `onMove` خطوة خطوة، فكل
-   * الشاشات اللي بتستعمل الأداة اشتغلت من غير ما تتغيّر.
-   */
   const [dragKey, setDragKey] = React.useState<string | null>(null);
   const [overKey, setOverKey] = React.useState<string | null>(null);
   const dropOn = (targetKey: string) => {
@@ -165,8 +106,6 @@ export default function ColumnSettings({
     for (let n = 0; n < Math.abs(to - from); n += 1) onMove(dragKey, dir);
   };
 
-  // Rendered rank order, same rule the hook applies to the table itself — so the list in the
-  // dropdown reads top-to-bottom exactly like the columns read right-to-left.
   const ranked = onMove ? orderKeys(choices.map((c) => c.key), order) : choices.map((c) => c.key);
   const byKey = new Map(choices.map((c) => [c.key, c]));
   const rows = ranked.map((k) => byKey.get(k)).filter((c): c is ColumnChoice => !!c);
@@ -184,9 +123,6 @@ export default function ColumnSettings({
             الأعمدة الظاهرة{onMove ? ' وترتيبها' : ''}
           </div>
           <Space direction="vertical" style={{ width: '100%' }}>
-            {/* **كل الأعمدة بتتخفي وبتتحرك** (طلب العميل ٢٠٢٦-١٠-٠١) — كان فيه أعمدة مقفولة
-                (الصنف، الكمية، الإجمالي…) مابتتشالش ولا بتتنقل. «إظهار الكل» تحت بيرجّع أي
-                عمود اتشال بالغلط. */}
             {rows.map((c) => (
               <div key={c.key}
                 draggable={!!onMove}
@@ -231,22 +167,11 @@ export default function ColumnSettings({
         </div>
       )}
     >
-      {/* Never shrink. It sits beside headings and toolbars that take `flex: 1`, and a squeezed
-          button loses its label first and then itself — which is how it ended up half off-screen
-          with only the gear showing. */}
       <Button icon={<SettingOutlined />} style={{ flexShrink: 0 }}>الأعمدة</Button>
     </Dropdown>
   );
 }
 
-/**
- * سطر واحد بيدّي الجدول أعمدته والزرار بتاعه.
- *
- * ولما الشاشة تبعت `export`، نفس الزرار بيجيب معاه «تصدير Excel». التصدير محطوط هنا مش في كل
- * شاشة لوحدها لسببين: الأول إنه محتاج بالظبط اللي الهوك ده بيحسبه — الأعمدة بعد الإخفاء
- * والترتيب — فأي مكان تاني كان هيقرا الأعمدة الأصلية ويطلّع ملف مش شبه الشاشة. والتاني إن مكانه
- * بيبقى واحد في البرنامج كله من غير ما حد يفتكر يحطّه صح.
- */
 export function useTableColumns<T extends { key?: React.Key; dataIndex?: any; title?: any }>(
   storageKey: string,
   columns: T[],

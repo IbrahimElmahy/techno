@@ -1,20 +1,3 @@
-"""رصيد الصنف **في كل مخزن** عندنا مقابل a5 — قراءة بس.
-
-    python -m src.scripts.verify_a5_stock_by_store --dir C:/pgtmp
-    python -m src.scripts.verify_a5_stock_by_store --dir C:/pgtmp/aliaa --prefix AL-
-
-`verify_a5_stock.py` بيقارن رصيد الصنف **في الشركة كلها**. ده بيقارن توزيعه: نفس
-الإجمالي ممكن يتوزّع غلط على المخازن، والرقم الكلي يفضل مظبوط ومحدش ياخد باله — لحد
-ما حد يدوّر على بضاعة في مخزن مكتوب إنها فيه.
-
-**رصيد a5 لكل مخزن مشتق زي الكلي**: كل صف في `AzonDt` بيدخل لمخزن `StoreIn_name`
-وبيخرج من `StoreOut_name`. الافتتاحي (`AznType = 0`) في `a5_open.tsv` والباقي في
-`a5_lines.tsv`.
-
-**والتحويل بيتعدّ مرة واحدة.** a5 بيكتب سطر التحويل مرتين (صف خروج وصف دخول بنفس
-الصنف والكمية والمخزنين) — `import_a5_docs._transfer` بيطوي الزوج لسطر واحد، والمقارنة
-لازم تطوي بنفس القاعدة وإلا كل تحويل بيتحسب بالضعف والفرق كله يبقى وهم.
-"""
 from __future__ import annotations
 
 import os
@@ -44,7 +27,6 @@ ZERO = Decimal("0")
 
 
 def _fold_transfers(rows: list[list[str]]) -> list[list[str]]:
-    """نفس طيّ `_transfer`: الزوج المتطابق المتتالي جوّه الإذن الواحد بيتعدّ مرة."""
     by_doc: dict[str, list[list[str]]] = defaultdict(list)
     for r in rows:
         by_doc[r[L_AZN].strip()].append(r)
@@ -81,7 +63,6 @@ def run(folder: str, prefix: str) -> int:
         wh = {w.name.strip(): w for w in db.scalars(select(Warehouse)).all()}
         wh_name = {w.id: w.name for w in wh.values()}
 
-        # --- رصيد a5 لكل (صنف، مخزن) -----------------------------------------------
         theirs: dict[tuple[int, int], Decimal] = defaultdict(Decimal)
         unknown_store: dict[str, int] = defaultdict(int)
         unresolved = 0
@@ -108,7 +89,6 @@ def run(folder: str, prefix: str) -> int:
                     continue
                 theirs[(it.id, w.id)] += q * sign
 
-        # الافتتاحي: أعمدته غير — ٢/٣ المخزن، و٤/٥/٦ الكمية (أول قيمة مش صفر).
         for r in _read(os.path.join(folder, "a5_open.tsv")):
             if len(r) < 7:
                 continue
@@ -130,7 +110,6 @@ def run(folder: str, prefix: str) -> int:
                     continue
                 theirs[(it.id, w.id)] += q * sign
 
-        # --- رصيدنا لكل (صنف، مخزن) ------------------------------------------------
         signed = func.sum(func.coalesce(StockMovement.quantity, 0))
         ours: dict[tuple[int, int], Decimal] = defaultdict(Decimal)
         for item_id, loc_id, direction, qty in db.execute(

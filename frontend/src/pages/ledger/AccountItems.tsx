@@ -1,21 +1,9 @@
 import React, { useEffect, useState } from 'react';
 import { PAGE_SIZE } from '../../utils/pagination';
 import { Button, Empty, Skeleton, Tag } from 'antd';
-// فلتر على كل عمود — شوف `FilterTable`.
 import { FilterTable as Table } from '../../components/FilterTable';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../../api/client';
-
-/**
- * بنود حساب واحد في فترة — اللي بيتفتح لما تفرد صف في ميزان المراجعة.
- *
- * ده «دفتر الأستاذ العام» بتاع أودو: الميزان بيقول إن الحساب اتحرّك ١٤٥٠ مدين،
- * والفرد بيقول **من أنهي قيود**. قبل كده كان لازم تسيب الميزان، تفتح كشف حساب،
- * تختار الحساب تاني، وتكتب نفس الفترة تاني — أربع خطوات عشان تشوف اللي كان قدامك.
- *
- * **بيتحمّل لما يتفرد بس.** ميزان فيه مية حساب معناه مية نداء لو حمّلنا الكل مقدماً،
- * و٩٥ منهم محدش هيفتحهم.
- */
 
 interface Line {
   entry_id: number;
@@ -69,8 +57,6 @@ export default function AccountItems({
       size="small"
       dataSource={lines}
       pagination={lines.length > 20 ? { defaultPageSize: PAGE_SIZE } : false}
-      // الأحدث فوق: رصيد آخر المدة فوق الجدول، وأول المدة تحت مع أقدم حركة. من السيرفر مش
-      // من أول سطر: الفاتورة ونقديها كتلة (الفاتورة فوق)، فأول سطر ممكن يبقى رصيد قبل الدفعة.
       title={() => <span style={{ color: '#888' }}>رصيد آخر المدة: {money(closing ?? lines[0]?.balance ?? opening)}</span>}
       columns={[
         { title: 'التاريخ', dataIndex: 'entry_date', width: 105 },

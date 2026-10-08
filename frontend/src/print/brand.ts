@@ -1,79 +1,30 @@
 import { BRAND, LOGO_DATA_URI, logoSvg } from '../components/Logo';
 
-
-/**
- * One branded letterhead for every printed document (invoices, vouchers, certificates,
- * financial statements). Keeping the shell here means a change to the company's look —
- * colours, header, footer, paper size — happens once instead of in six page files.
- */
-
 export interface DocMeta {
-  /** e.g. «فاتورة مبيعات» — the big title under the letterhead. */
   title: string;
-  /** e.g. «SINV-000123» — printed as the document number chip. */
   number?: string;
-  /** اسم الملف لما الورقة تتحفظ PDF (عنوان الصفحة) — من غيره العنوان والرقم. */
   fileName?: string;
   date?: string;
-  /** Extra header cells: [label, value] pairs (customer, rep, payment terms…). */
   meta?: [string, string][];
-  /** Small note under the footer rule, e.g. terms. */
   note?: string;
-  /** Parts of the head to leave OFF this print. Omitted = print everything.
-   *
-   *  A company printing onto pre-printed letterhead already has its logo and name on the paper;
-   *  printing them again puts two of each on the page. The person at the counter is the only one
-   *  who knows what is in the printer, so it is their switch to throw. */
-  /**
-   * **ورقة مضغوطة** — ترويسة سطر واحد، وبيانات في شبكة، وجدول أكثف.
-   *
-   * الترويسة العادية بتاخد تلت الصفحة: شعار كبير، وعنوان في سطر لوحده، وجدول
-   * بيانات بصف لكل حقة (عميل، تليفون، عنوان، فرع، مندوب، تاريخ، سداد — سبع صفوف).
-   * والذيل بياخد حتة تانية. فطلب بيع بعشرين صنف كان بيطلع في صفحتين، والصفحة
-   * التانية فيها سطرين وإجماليات.
-   *
-   * المضغوط بيدّي نفس المعلومة بالظبط — مافيش حقل اتشال — في ربع المساحة، والباقي
-   * للأصناف. والفواتير بس اللي بتستعمله: التقارير والسندات فاضل ترتيبها زي ما هو.
-   */
   compact?: boolean;
   hide?: {
     logo?: boolean;
     companyName?: boolean;
     invoiceNumber?: boolean;
     invoiceTitle?: boolean;
-    /** بيانات الشركة في الذيل — العنوان والتليفونات.
-     *
-     *  كانت بتتطبع دايماً من غير مفتاح، فالورقة اللي شعارها متشال كان اسم الشركة
-     *  وعنوانها لسه في رجلها. إخفاء النص وسيبان المصدر مش إخفاء. */
     companyFooter?: boolean;
   };
 }
 
 import { COMPANY, companyLines } from '../config/company';
 
-/**
- * **ألوان الورق — أبيض وأسود الأول، والأخضر لمسة.**
- *
- * أغلب طابعات المكاتب ليزر أبيض وأسود، والمتصفح بيطبع **من غير خلفيات** افتراضياً.
- * فأي كلام شايله لون الخلفية لوحده بيضيع: الأبيض على الأخضر بيطلع أبيض على أبيض،
- * والخط الأخضر الفاتح بين الخانات بيطلع رمادي باهت أو مابيطلعش خالص — وده بالظبط
- * اللي في الورق اللي العميل بعته (٢٠٢٦-١٠-٠٦): صف العناوين فاضي والشبكة مش باينة.
- *
- * القاعدة: كل كلام أسود (أو قريب جداً منه) على أبيض، وكل حدّ خط غامق مصمت. الخلفية
- * الفاتحة مسموحة كزيادة — لو اتطبعت كويس، ولو ماتطبعتش الخط الغامق اللي حوالين الصف
- * لسه بيقول «ده صف عناوين». والأخضر بتاع الشركة فاضل في خط الترويسة والذيل بس.
- */
 export const PRINT_COLORS = {
   text: '#000',
-  /** الكلام الثانوي (اسم الحقل، العنوان تحت الشركة) — غامق برضه، مش رمادي باهت. */
   muted: '#2b2b2b',
-  /** خطوط الشبكة — غامقة كفاية تطلع على أضعف ليزر. */
   line: '#444',
-  /** الخط اللي بيقفل رأس الجدول وإجماليه. */
   strong: '#000',
-  /** فواصل جوّه بلوك (منقّطة/متقطّعة) — أفتح من الشبكة بس لسه بتبان. */
   soft: '#777',
-  /** خلفية الرأس والإجمالي — رمادي فاتح محايد، مش أخضر: الأخضر الفاتح بيطلع بقع. */
   fill: '#e6e6e6',
 };
 const P = PRINT_COLORS;
@@ -232,14 +183,11 @@ export const printStyles = `
   }
 `;
 
-/** The letterhead + document title + meta table, ready to prepend to a document body. */
 export function letterhead(meta: DocMeta): string {
   const metaRows = (meta.meta || [])
     .map(([k, v]) => `<tr><td class="k">${k}</td><td>${v ?? '-'}</td></tr>`)
     .join('');
   const h = meta.hide || {};
-  // The whole strip goes only when BOTH halves are off — one of the two alone still needs the
-  // rule under it to separate the head from the document.
   const head = (h.logo && h.companyName) ? '' : `
   <div class="letterhead">
     ${h.companyName ? '' : `<div class="who">
@@ -258,10 +206,6 @@ export function letterhead(meta: DocMeta): string {
   ${metaRows ? `<table class="meta">${metaRows}</table>` : ''}`;
 }
 
-/**
- * ترويسة المضغوط: سطر واحد — الشركة على اليمين والمستند على الشمال — وتحته
- * البيانات في شبكة ٣ أعمدة. الشرح عند `DocMeta.compact`.
- */
 export function compactHead(meta: DocMeta): string {
   const h = meta.hide || {};
   const brand = (h.logo && h.companyName) ? '<div></div>' : `
@@ -277,15 +221,11 @@ export function compactHead(meta: DocMeta): string {
     </div>`;
   const cells = (meta.meta || [])
     .map(([k, v]) => `<div><b>${k}:</b>${v ?? '-'}</div>`).join('');
-  // **سطرين: العنوان ورقمه فوق، والبيانات تحتهم بعرض الصفحة.** اتجرّب شريط واحد
-  // (العنوان جنب البيانات) واترفض — الرقم والعنوان لازم يبقوا لوحدهم وواضحين.
   return `<div class="c-head">${brand}${doc}</div>`
     + (cells ? `<div class="c-meta">${cells}</div>` : '');
 }
 
 export function footer(note?: string, hideCompany = false): string {
-  // الجملة الافتراضية نفسها بتسمّي الشركة، فالورقة اللي بتتشال منها الهوية بتسكت
-  // خالص بدل ما تقول «صادر آلياً من نظام تكنو ثيرم».
   const left = note || (hideCompany ? '' : 'هذا المستند صادر آلياً من نظام تكنو ثيرم.');
   const right = hideCompany
     ? '' : `${COMPANY.address} — ت: ${COMPANY.phones.join(' / ')}`;
@@ -293,28 +233,16 @@ export function footer(note?: string, hideCompany = false): string {
   return `<div class="foot"><span>${left}</span><span>${right}</span></div>`;
 }
 
-/**
- * **أرقام إنجليزي على الورق كله** (0-9) زي a5 — مهما كان إعداد أرقام الشاشة.
- * `printDocument` بيعدّي الورقة كلها عليها، فكل نوع مستند (فاتورة، سند، إذن، تحويل، معاينة،
- * تقرير، كشف) بيطلع بنفس الأرقام من غير ما كل ملف يفتكر (المالك ٢٠٢٦-١٠-٠٦).
- */
 export function latinDigits(text: string): string {
   return text
     .replace(/[\u0660-\u0669]/g, (d) => String(d.charCodeAt(0) - 0x0660))
     .replace(/[\u06F0-\u06F9]/g, (d) => String(d.charCodeAt(0) - 0x06F0))
     .replace(/\u066C/g, ',')
     .replace(/\u066B/g, '.')
-    // علامة اتجاه الحروف اللي `ar-EG` بيحطها قبل السالب.
     .replace(/\u061C/g, '');
 }
 
-/** Wrap a document body in the branded shell and open the browser's print dialog. */
 export function printDocument(meta: DocMeta, bodyHtml: string): void {
-  // المضغوط بيصغّر هامش الصفحة كمان: ١٢ مم من كل ناحية = ٢٤ مم من عرض A4
-  // (١٤٪) رايحين أبيض.
-  // **المضغوط بقى الافتراضي لكل ورقة**، مش الفواتير بس — السندات والتحويلات
-  // والأذون وأوامر الشغل والتقارير كلهم كانوا بيبدأوا بترويسة بتاكل تلت الصفحة.
-  // `compact: false` بيرجّع الشكل القديم لورقة محتاجاه.
   const compact = meta.compact ?? true;
   const page = compact ? '<style>@page { size: A4; margin: 7mm; }</style>' : '';
   const head = compact ? compactHead(meta) : letterhead(meta);

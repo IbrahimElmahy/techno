@@ -1,18 +1,4 @@
 # -*- coding: utf-8 -*-
-"""الكمية الكسرية في الرصيد الافتتاحي — بترجع من a5.
-
-    python -m src.scripts.fix_a5_fractional_opening --dir /tmp/a5fix --prefix FC-
-    python -m src.scripts.fix_a5_fractional_opening --dir ... --prefix FC- --yes
-
-آخر حتة من نفس العلّة: التصدير كان بياخد `n_count_unit` وحده وبيسيب الكسر اللي في
-`n_count_single`. الشرح الكامل في `fix_a5_fractional_quantities`.
-
-الافتتاحي أبسط من غيره — **حركة واحدة لكل (صنف × مخزن)** بنوع مستند `a5_opening`،
-فالمطابقة عليهم مباشرةً من غير أي ترقيم ولا ترتيب. والسكربت بيعيد نفس قراءة
-`import_a5_phase2`: أول قيمة مش صفر من التلات أعمدة، والسالب حركة خروج.
-
-بيتشغّل على `a5_open.tsv` **المعاد تصديره بالاستعلام المصحّح**.
-"""
 from __future__ import annotations
 
 import argparse
@@ -54,7 +40,6 @@ def main() -> None:
             by_name.setdefault(i.name, i)
         wh_by_name = {w.name: w for w in db.scalars(select(Warehouse)).all()}
 
-        # حركة الافتتاحي لكل (صنف × مخزن) — دي اللي بتتصلّح.
         moves: dict[tuple[int, int], StockMovement] = {}
         for mv in db.scalars(select(StockMovement)
                              .where(StockMovement.source_doc_type == OPENING_DOC)
@@ -78,7 +63,6 @@ def main() -> None:
                 skipped["مخزن مش موجود"] += 1
                 continue
             if (it.id, wh.id) in seen:
-                # نفس قاعدة الاستيراد: أول سطر للزوج هو اللي دخل، والباقي اتخطّى.
                 continue
             qty = _money(r[4]) or _money(r[5]) or _money(r[6])
             if qty == 0:

@@ -1,18 +1,3 @@
-"""Import the company's real master data from the client's Excel workbook (v4).
-
-Source: "داتا الاصناف.xlsx"
-- Sheet «الاصناف و الفئات»: 7 side-by-side category blocks, each
-  (الصنف | العدد | سعر اللسته | نسبه الخصم | قيمه النقطه). A row that has a name but no quantity
-  and no price is an INLINE sub-category header for the rows beneath it.
-- Sheet «المناديب»: reps + their cash boxes, the warehouse list, and customer account balances
-  (مدين; may be negative).
-
-Maps to: Item (name/category/sale_price/default_discount_pct/point value), opening stock in the main
-warehouse, Warehouse, sales-rep users, Customer + opening receivable balances.
-
-Idempotent: existing items/warehouses/customers are matched by name and skipped, so re-running only
-adds what is missing. Run:  python -m src.scripts.import_company_data <path-to-xlsx>
-"""
 from __future__ import annotations
 
 import sys
@@ -48,7 +33,6 @@ DEFAULT_UOM = "قطعة"
 
 
 def _num(v) -> Decimal | None:
-    """Excel cells arrive as int/float/str; return a Decimal or None when not a number."""
     if v is None or (isinstance(v, str) and not v.strip()):
         return None
     try:
@@ -58,7 +42,6 @@ def _num(v) -> Decimal | None:
 
 
 def parse_items(ws) -> list[dict]:
-    """Flatten the side-by-side category blocks into item dicts."""
     rows = list(ws.iter_rows(values_only=True))
 
     def cell(r, c):
@@ -73,18 +56,16 @@ def parse_items(ws) -> list[dict]:
                 continue
             name = str(raw_name).strip()
             qty, price = cell(r, start + 1), cell(r, start + 2)
-            # name only, no numbers -> inline sub-category header for the rows below
             if _num(qty) is None and _num(price) is None:
                 category = name
                 continue
-            if name == "0":  # junk row in the source file
+            if name == "0":
                 continue
             items.append({
                 "name": name,
                 "category": category,
                 "quantity": _num(qty) or Decimal("0"),
                 "price": _num(price),
-                # source stores a fraction (0.1) — the system stores a percentage (10.00)
                 "discount_pct": (_num(cell(r, start + 3)) or Decimal("0")) * 100,
                 "points": _num(cell(r, start + 4)) or Decimal("0"),
             })
@@ -129,7 +110,6 @@ def import_workbook(db: Session, path: str) -> dict:
                "warehouses_created": 0, "reps_created": 0, "customers_created": 0,
                "customers_skipped": 0, "opening_balance_total": "0", "categories": 0}
 
-    # --- Warehouses (from the sheet; main one first) ---
     wh_names = meta["warehouses"] or [MAIN_WAREHOUSE]
     wh_by_name: dict[str, Warehouse] = {}
     for name in wh_names:
@@ -142,7 +122,6 @@ def import_workbook(db: Session, path: str) -> dict:
         wh_by_name[name] = wh
     main_wh = wh_by_name.get(MAIN_WAREHOUSE) or next(iter(wh_by_name.values()))
 
-    # --- Item categories -> the configurable `item_category` lookup ---
     categories = sorted({i["category"] for i in items if i["category"]})
     existing_cats = {o.value for o in lookup_service.list_options(db, "item_category")}
     for cat in categories:
@@ -150,10 +129,9 @@ def import_workbook(db: Session, path: str) -> dict:
             try:
                 lookup_service.create_option(db, category="item_category", value=cat, label=cat)
                 summary["categories"] += 1
-            except Exception:  # pragma: no cover - duplicate/racy, harmless
+            except Exception:  # pragma: no cover
                 pass
 
-    # --- Items (products) + point values + opening stock ---
     existing_items = {i.name: i for i in db.scalars(select(Item)).all()}
     n_products = db.query(Item).filter(Item.kind == ItemKind.product).count()
     for row in items:
@@ -173,10 +151,10 @@ def import_workbook(db: Session, path: str) -> dict:
         existing_items[item.name] = item
         summary["items_created"] += 1
 
-        if row["points"] and row["points"] > 0:  # fractional point values (v4)
+        if row["points"] and row["points"] > 0:
             db.add(ProductPointValue(item_id=item.id, point_value=row["points"], updated_by=actor))
 
-        if row["quantity"] and row["quantity"] > 0:  # opening stock into the main warehouse
+        if row["quantity"] and row["quantity"] > 0:
             stock_service.post_movement(
                 db, item_id=item.id, location_kind=LocationKind.warehouse, location_id=main_wh.id,
                 movement_type="opening_stock", direction=StockDirection.in_,
@@ -186,7 +164,6 @@ def import_workbook(db: Session, path: str) -> dict:
             summary["stock_posted"] += 1
     db.flush()
 
-    # --- Sales reps from the sheet ---
     territory = db.scalar(select(Territory))
     rep_role = db.scalar(select(Role).where(Role.name == RoleName.sales_rep))
     if rep_role is None:
@@ -210,7 +187,6 @@ def import_workbook(db: Session, path: str) -> dict:
     if rep_user is None:
         rep_user = db.scalar(select(User).join(Role).where(Role.name == RoleName.sales_rep)) or admin
 
-    # --- Customers + opening receivable balances ---
     existing_customers = {c.name for c in db.scalars(select(Customer)).all()}
     total_open = Decimal("0")
     opening_lines: list[LineInput] = []
@@ -226,14 +202,12 @@ def import_workbook(db: Session, path: str) -> dict:
         summary["customers_created"] += 1
         bal = acc["balance"]
         if bal and bal != 0:
-            # مدين (positive) = the customer owes us -> debit their receivable account.
             ca = db.scalar(select(CustomerAccount).where(CustomerAccount.customer_id == cust.id))
             direction = Direction.debit if bal > 0 else Direction.credit
             opening_lines.append(LineInput(ca.account_id, direction, abs(bal)))
             total_open += bal
 
     if opening_lines:
-        # Balance the customer receivables against opening equity in ONE entry.
         equity = account_resolver.opening_balance_equity_account(db)
         net = sum((ln.amount if ln.direction == Direction.debit else -ln.amount)
                   for ln in opening_lines)

@@ -1,13 +1,3 @@
-"""السرايل و حركات سرايل — the two serial screens their menu lists — 031-a5-restructure.
-
-Serials were reachable only one item at a time (`/items/{id}/serials`), which answers «what units
-of THIS item exist» and never «where is serial 4471-B?» — the question somebody actually has, from
-a customer holding a unit and a name for it and nothing else.
-
-Two registers, both read-only. Serials are created and moved by the documents that handle the
-goods; a screen that let somebody edit one directly would put the serial and the stock quantity out
-of step, which is the invariant the integrity check exists to defend.
-"""
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, Query
@@ -46,8 +36,6 @@ class MovementRow(BaseModel):
     item_name: str | None
     serial: str
     kind: str
-    # Who ended up with it. Their حركات سرايل shows the customer rather than the document, which
-    # answers «who has this unit» without a second lookup — so both are here.
     customer_id: int | None
     customer_name: str | None
     location_kind: str | None
@@ -65,7 +53,6 @@ def _names(db: Session) -> tuple[dict[int, str], dict[int, str]]:
 
 
 def _invoice_customers(db: Session, invoice_ids: set[int]) -> dict[int, tuple[int, str | None]]:
-    """Invoice → (customer id, name), in two queries rather than one per row."""
     if not invoice_ids:
         return {}
     invoices = db.scalars(
@@ -76,7 +63,6 @@ def _invoice_customers(db: Session, invoice_ids: set[int]) -> dict[int, tuple[in
 
 
 def _place(kind, loc_id, warehouses) -> str | None:
-    """Only a warehouse has a name to give; a custody is a person's van, named by its rep."""
     if kind is None or loc_id is None:
         return None
     if kind == LocationKind.warehouse:
@@ -93,7 +79,6 @@ def list_serials(
     _: CurrentUser = Depends(require_capability(CAP_STOCK_READ)),
     db: Session = Depends(get_db),
 ) -> list[SerialRow]:
-    """Every registered serial across every item, with where it is and what sold it."""
     stmt = select(ItemSerial)
     if item_id is not None:
         stmt = stmt.where(ItemSerial.item_id == item_id)
@@ -130,12 +115,6 @@ def list_movements(
     _: CurrentUser = Depends(require_capability(CAP_STOCK_READ)),
     db: Session = Depends(get_db),
 ) -> list[MovementRow]:
-    """Where each serial has been and on which document, newest first.
-
-    Filtering by `serial` rather than by id on purpose: somebody chasing a unit has the number
-    printed on it, not our row id — and the number still resolves after the serial row itself has
-    been removed from a mis-keyed receipt.
-    """
     stmt = select(ItemSerialMovement)
     if serial:
         stmt = stmt.where(ItemSerialMovement.serial == serial)
@@ -146,7 +125,6 @@ def list_movements(
 
     items, warehouses = _names(db)
     rows = db.scalars(stmt.order_by(ItemSerialMovement.id.desc()).limit(1000)).all()
-    # A unit only has a customer when it left on an invoice; every other movement is internal.
     customers = _invoice_customers(db, {
         m.document_id for m in rows
         if m.document_type == "sales_invoice" and m.document_id

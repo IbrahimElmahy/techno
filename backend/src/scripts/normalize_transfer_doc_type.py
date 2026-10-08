@@ -1,19 +1,4 @@
 # -*- coding: utf-8 -*-
-"""توحيد نوع حركة إذن التحويل — `transfer` بيبقى `stock_transfer`.
-
-كان اسمين لنفس الحاجة: الخدمة بتكتب `"transfer"` ونقل a5 كتب `"stock_transfer"`.
-والإلغاء والحذف بيدوّروا على `"transfer"` بس، فإلغاء أي إذن منقول من a5 كان **بينجح
-من غير ما يرجّع بضاعة** — الحالة تبقى «ملغي» والحركات مكانها.
-
-الاسم الموحّد هو اسم الجدول (`stock_transfer`) لأنه اللي الداتا عليه: ٦٤٬٥٩٨ حركة
-مقابل ٤٦. والخدمة اتغيّرت الأول (`MOVEMENT_DOC`) وبعدين بيتنضّف اللي اتكتب قبل كده.
-
-مافيش غير النوع بيتغيّر، والسكريبت بيتأكد بنفسه: بيقيس الرصيد لكل (صنف × مكان) قبل
-وبعد وبيعمل rollback لو اتغيّر أي رقم.
-
-    python -m src.scripts.normalize_transfer_doc_type            # عرض بس
-    python -m src.scripts.normalize_transfer_doc_type --apply    # بيكتب
-"""
 from __future__ import annotations
 
 import argparse
