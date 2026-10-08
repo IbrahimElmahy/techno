@@ -410,32 +410,41 @@ const IncomeSheet: React.FC = () => {
   );
 
   const sheet = data && (
-    <Row gutter={[16, 16]}>
-      <Col xs={24} xl={12}>
-        <Card size="small" title={`قائمة الدخل لفرع ${data.branch_name} — ${periodLabel}`}>
-          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-            <tbody>
-              <StatementRow label="صافي المبيعات" amount={data.sales.total} strong />
-              <StatementRow sign="يطرح" label="تكلفة المبيعات" amount={data.cost.total} />
-              <StatementRow label="مجمل الربح" amount={data.gross_profit} strong
-                note={`نسبة مجمل الربح للمبيعات ${pct(data.gross_margin_pct)}`} />
-              <StatementRow sign="يطرح" label="مصاريف عمومية وإدارية" amount={data.ga.total} />
-              <StatementRow sign="يطرح" label="مصاريف البيع والتسويق" amount={data.marketing.amount}
-                note={{ model: 'نموذج البوانص', ledger: 'الحسابات الفعلية', coupons: 'الكوبونات المصروفة' }[data.marketing.source as string]} />
-              <StatementRow label="صافي الربح التشغيلي" amount={data.operating_profit} strong />
-              <StatementRow sign="يضاف" label="الإيرادات الأخرى" amount={data.other_income.total} />
-              <StatementRow sign="يطرح" label="الخسائر الأخرى" amount={data.other_losses.total} />
-              <StatementRow label="صافي الربح" amount={data.net_profit} strong
-                note={`نسبة صافي الربح للمبيعات ${pct(data.net_margin_pct)}`} />
-            </tbody>
-          </table>
-          <div style={{ marginTop: 8, color: '#64748b' }}>
-            المصروفات للمبيعات: <b>{pct(data.expenses_to_sales_pct)}</b>
-            {!data.posted_only && <Tag color="orange" style={{ marginInlineStart: 8 }}>شامل المسودات</Tag>}
+    <Tabs type="card" defaultActiveKey="sales" items={[
+      {
+        key: 'sales', label: 'المبيعات بالفئة',
+        children: (
+          <div style={{ maxWidth: 1100 }}>
+          <Table size="small" pagination={false} rowKey="key" dataSource={data.sales.lines}
+            columns={[
+              { title: 'الفئة', dataIndex: 'name', render: (n: string, r: any) =>
+                r.key === '_unmatched' ? <Tag color="red">{n}</Tag> : n },
+              { title: 'البيع خلال الفترة', dataIndex: 'amount', align: 'left',
+                render: (v: string, r: any) => <Amount v={v} onClick={() => openSales(r.key, r.name)} /> },
+              { title: 'النسبة', dataIndex: 'pct', align: 'left', render: pct },
+              { title: 'البونص', dataIndex: 'bonus_pct', align: 'left', render: (v: string) => (Number(v) ? `${v}%` : '—') },
+              { title: 'قيمة البونص', dataIndex: 'bonus_value', align: 'left', render: (v: string) => (Number(v) ? money(v) : '—') },
+            ]}
+            summary={() => (
+              <Table.Summary.Row style={{ fontWeight: 700 }}>
+                <Table.Summary.Cell index={0}>الإجمالي</Table.Summary.Cell>
+                <Table.Summary.Cell index={1} align="left">{money(data.sales.total)}</Table.Summary.Cell>
+                <Table.Summary.Cell index={2} align="left">100%</Table.Summary.Cell>
+                <Table.Summary.Cell index={3} />
+                <Table.Summary.Cell index={4} align="left">{money(data.sales.bonus_value)}</Table.Summary.Cell>
+              </Table.Summary.Row>
+            )} />
+          <div style={{ color: '#64748b', fontSize: 12, marginTop: 6 }}>
+            من فواتير البيع مطروحاً منها المرتجعات، بعد الخصم ودون ضريبة
+            {data.sales.include_bonus ? '، شاملةً فواتير البونص' : '، دون فواتير البونص (هدية — قيمتها ضمن الخصم المسموح به)'}.
           </div>
-        </Card>
-
-        <Card size="small" style={{ marginTop: 16 }} title="قائمة التكاليف الصناعية (تكلفة المبيعات)">
+                  </div>
+        ),
+      },
+      {
+        key: 'cost', label: 'تكلفة المبيعات',
+        children: (
+          <div style={{ maxWidth: 1100 }}>
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <tbody>
               <StatementRow label={`المخزون أول المدة ${data.cost.opening_inventory.as_of}`}
@@ -467,9 +476,13 @@ const IncomeSheet: React.FC = () => {
             <Alert type="warning" showIcon style={{ marginTop: 8 }}
               message="توجد أصناف لها رصيد دون تكلفة — قيمتها صفر في المخزون الدفتري. اضغط على رقم المخزون لعرض التفصيل." />
           )}
-        </Card>
-
-        <Card size="small" style={{ marginTop: 16 }} title={`مصاريف عمومية وإدارية — ${money(data.ga.total)}`}>
+                  </div>
+        ),
+      },
+      {
+        key: 'ga', label: 'المصروفات العمومية والإدارية',
+        children: (
+          <div style={{ maxWidth: 1100 }}>
           <Table size="small" pagination={false} rowKey={(r: any) => r.name} dataSource={data.ga.lines}
             onRow={(r: any) => ({ onClick: () => openLine(r), style: { cursor: r.manual ? undefined : 'pointer' } })}
             columns={[
@@ -478,37 +491,13 @@ const IncomeSheet: React.FC = () => {
                   {!r.manual && r.accounts.length > 1 && <span style={{ color: '#94a3b8' }}> ({r.accounts.length} حساب)</span>}</span>) },
               { title: 'المبلغ', dataIndex: 'amount', align: 'left', render: money },
             ]} />
-        </Card>
-      </Col>
-
-      <Col xs={24} xl={12}>
-        <Card size="small" title="صافي المبيعات بالفئة">
-          <Table size="small" pagination={false} rowKey="key" dataSource={data.sales.lines}
-            columns={[
-              { title: 'الفئة', dataIndex: 'name', render: (n: string, r: any) =>
-                r.key === '_unmatched' ? <Tag color="red">{n}</Tag> : n },
-              { title: 'البيع خلال الفترة', dataIndex: 'amount', align: 'left',
-                render: (v: string, r: any) => <Amount v={v} onClick={() => openSales(r.key, r.name)} /> },
-              { title: 'النسبة', dataIndex: 'pct', align: 'left', render: pct },
-              { title: 'البونص', dataIndex: 'bonus_pct', align: 'left', render: (v: string) => (Number(v) ? `${v}%` : '—') },
-              { title: 'قيمة البونص', dataIndex: 'bonus_value', align: 'left', render: (v: string) => (Number(v) ? money(v) : '—') },
-            ]}
-            summary={() => (
-              <Table.Summary.Row style={{ fontWeight: 700 }}>
-                <Table.Summary.Cell index={0}>الإجمالي</Table.Summary.Cell>
-                <Table.Summary.Cell index={1} align="left">{money(data.sales.total)}</Table.Summary.Cell>
-                <Table.Summary.Cell index={2} align="left">100%</Table.Summary.Cell>
-                <Table.Summary.Cell index={3} />
-                <Table.Summary.Cell index={4} align="left">{money(data.sales.bonus_value)}</Table.Summary.Cell>
-              </Table.Summary.Row>
-            )} />
-          <div style={{ color: '#64748b', fontSize: 12, marginTop: 6 }}>
-            من فواتير البيع مطروحاً منها المرتجعات، بعد الخصم ودون ضريبة
-            {data.sales.include_bonus ? '، شاملةً فواتير البونص' : '، دون فواتير البونص (هدية — قيمتها ضمن الخصم المسموح به)'}.
-          </div>
-        </Card>
-
-        <Card size="small" style={{ marginTop: 16 }} title={`مصاريف البيع والتسويق — ${money(data.marketing.amount)}`}>
+                  </div>
+        ),
+      },
+      {
+        key: 'marketing', label: 'البيع والتسويق',
+        children: (
+          <div style={{ maxWidth: 1100 }}>
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <tbody>
               <StatementRow label="قيمة البوانص (بيع الفئة × نسبة بونصها)" amount={data.marketing.model.bonus_value} />
@@ -547,9 +536,13 @@ const IncomeSheet: React.FC = () => {
                 ))}
               </div>
             )} />
-        </Card>
-
-        <Card size="small" style={{ marginTop: 16 }} title="الإيرادات والخسائر الأخرى">
+                  </div>
+        ),
+      },
+      {
+        key: 'other', label: 'الإيرادات والخسائر الأخرى',
+        children: (
+          <div style={{ maxWidth: 1100 }}>
           <Table size="small" pagination={false} rowKey={(r: any) => `${r.kind}-${r.name}`}
             dataSource={[
               ...data.other_income.lines.map((l: any) => ({ ...l, kind: 'إيراد' })),
@@ -562,9 +555,13 @@ const IncomeSheet: React.FC = () => {
               { title: 'البند', dataIndex: 'name' },
               { title: 'المبلغ', dataIndex: 'amount', align: 'left', render: money },
             ]} />
-        </Card>
-
-        <Card size="small" style={{ marginTop: 16 }} title="مطابقة مع الدفاتر">
+                  </div>
+        ),
+      },
+      {
+        key: 'recon', label: 'المطابقة مع الدفاتر',
+        children: (
+          <div style={{ maxWidth: 1100 }}>
           <table style={{ width: '100%' }}>
             <tbody>
               <StatementRow label="صافي المبيعات من الحسابات (مبيعات − مردودات − خصم مسموح/بونص)"
@@ -584,9 +581,10 @@ const IncomeSheet: React.FC = () => {
               ))}
             </div>
           )}
-        </Card>
-      </Col>
-    </Row>
+                  </div>
+        ),
+      },
+    ]} />
   );
 
   const empty = <Empty description="اختر الفترة من الفلاتر فوق" />;
