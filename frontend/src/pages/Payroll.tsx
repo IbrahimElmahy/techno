@@ -404,10 +404,16 @@ export default function Payroll() {
   const leavesTab = useLeavesTab({
     active: tab === 'leaves', branchId, period, employees: pickable, onChanged: () => loadMonth(),
   });
-  const adjustmentsTab = useAdjustmentsTab({
-    active: tab === 'adjustments', branchId, period, employees: pickable, onChanged: () => loadMonth(),
+  const penaltiesTab = useAdjustmentsTab({
+    mode: 'penalty', active: tab === 'penalties', branchId, period, employees: pickable,
+    onChanged: () => loadMonth(),
   });
-  const extra = tab === 'leaves' ? leavesTab : tab === 'adjustments' ? adjustmentsTab : null;
+  const bonusesTab = useAdjustmentsTab({
+    mode: 'bonus', active: tab === 'bonuses', branchId, period, employees: pickable,
+    onChanged: () => loadMonth(),
+  });
+  const extra = tab === 'leaves' ? leavesTab : tab === 'penalties' ? penaltiesTab
+    : tab === 'bonuses' ? bonusesTab : null;
 
   const branchSelect = branches.length > 1 ? (
     <Select showSearch placeholder="الفرع" style={{ minWidth: 160 }} value={branchId}
@@ -424,7 +430,8 @@ export default function Payroll() {
         tabs={[
           { key: 'month', label: 'مرتبات الشهر', count: data?.lines.length ?? null },
           { key: 'leaves', label: 'الإجازات' },
-          { key: 'adjustments', label: 'الجزاءات والخصومات' },
+          { key: 'penalties', label: 'الجزاءات' },
+          { key: 'bonuses', label: 'المكافآت' },
           { key: 'employees', label: 'كروت المرتبات', count: emps.length },
           { key: 'remittances', label: 'سداد التأمينات', count: remits.length },
         ]}
@@ -475,7 +482,7 @@ export default function Payroll() {
             onClick={() => openRemit()}>سداد جديد</Button>
           <Button icon={<ReloadOutlined />} onClick={loadRemits}>تحديث</Button>
         </>)}
-        filters={tab === 'leaves' || tab === 'adjustments' ? (<>
+        filters={extra ? (<>
           {branchSelect}
           <DatePicker picker="month" allowClear={false} value={period} format="YYYY/MM"
             onChange={(v) => { if (v) { setPeriod(v); loadMonth(branchId, v); } }} />

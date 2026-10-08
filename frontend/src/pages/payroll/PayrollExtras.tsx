@@ -164,23 +164,37 @@ interface Adjustment {
   year: number; month: number; reason: string | null; applied: boolean;
 }
 
-const KINDS = [
-  { value: 'penalty', label: 'جزاء', color: 'red' },
-  { value: 'other_deduction', label: 'خصم', color: 'orange' },
-  { value: 'bonus', label: 'مكافأة', color: 'green' },
-  { value: 'other_earning', label: 'إضافة', color: 'blue' },
+const MODES = {
+  penalty: {
+    kind: 'penalty', kinds: ['penalty', 'other_deduction'], one: 'جزاء', many: 'الجزاءات',
+    create: 'جزاء جديد', empty: 'لا توجد جزاءات في هذا الشهر', color: 'red', tone: 'neg' as const,
+  },
+  bonus: {
+    kind: 'bonus', kinds: ['bonus', 'other_earning'], one: 'مكافأة', many: 'المكافآت',
+    create: 'مكافأة جديدة', empty: 'لا توجد مكافآت في هذا الشهر', color: 'green', tone: 'pos' as const,
+  },
+};
+
+const DAY_PRESETS = [
+  { value: 0.25, label: 'ربع يوم' },
+  { value: 0.5, label: 'نص يوم' },
+  { value: 1, label: 'يوم' },
+  { value: 2, label: 'يومين' },
+  { value: 3, label: '3 أيام' },
 ];
 
-export function useAdjustmentsTab({ active, branchId, period, employees, onChanged }: {
+export function useAdjustmentsTab({ mode, active, branchId, period, employees, onChanged }: {
+  mode: 'penalty' | 'bonus';
   active: boolean; branchId?: number; period: Dayjs; employees: PickEmployee[]; onChanged: () => void;
 }): TabParts {
+  const m = MODES[mode];
   const [rows, setRows] = useState<Adjustment[]>([]);
   const [loading, setLoading] = useState(false);
   const [open, setOpen] = useState<number | 'new' | null>(null);
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState<{
     employee_id?: number; kind: string; basis: string; value?: number; month: Dayjs; reason: string;
-  }>({ kind: 'penalty', basis: 'amount', month: period, reason: '' });
+  }>({ kind: m.kind, basis: 'days', month: period, reason: '' });
 
   const load = async () => {
     setLoading(true);
@@ -188,18 +202,18 @@ export function useAdjustmentsTab({ active, branchId, period, employees, onChang
       const res = await api.get('/api/v1/hr/salary/adjustments', {
         params: { branch_id: branchId, year: period.year(), month: period.month() + 1 },
       });
-      setRows(res.data || []);
-    } catch (err: any) { fail(err, 'تعذر تحميل الجزاءات والخصومات'); } finally { setLoading(false); }
+      setRows((res.data || []).filter((r: Adjustment) => m.kinds.includes(r.kind)));
+    } catch (err: any) { fail(err, `تعذر تحميل ${m.many}`); } finally { setLoading(false); }
   };
 
   useEffect(() => { if (active) load(); }, [active, branchId, period.format('YYYY-MM')]);
 
   const edit = (r?: Adjustment) => {
     setForm(r ? {
-      employee_id: r.employee_id, kind: r.kind, basis: r.basis,
+      employee_id: r.employee_id, kind: r.kind, basis: r.basis === 'amount' ? 'amount' : 'days',
       value: Number(r.basis === 'amount' ? r.amount : r.quantity),
       month: dayjs(`${r.year}-${String(r.month).padStart(2, '0')}-01`), reason: r.reason || '',
-    } : { kind: 'penalty', basis: 'amount', month: period, reason: '' });
+    } : { kind: m.kind, basis: 'days', value: 1, month: period, reason: '' });
     setOpen(r ? r.id : 'new');
   };
 
@@ -232,36 +246,34 @@ export function useAdjustmentsTab({ active, branchId, period, employees, onChang
     } catch (err: any) { fail(err, 'تعذر الحذف'); }
   };
 
-  const total = (kinds: string[]) => rows.filter((r) => kinds.includes(r.kind) && r.basis === 'amount')
-    .reduce((t, r) => t + Number(r.amount || 0), 0);
+  const amountTotal = rows.filter((r) => r.basis === 'amount').reduce((t, r) => t + Number(r.amount || 0), 0);
+  const daysTotal = rows.filter((r) => r.basis !== 'amount').reduce((t, r) => t + Number(r.quantity || 0), 0);
+  const dayText = (v: number) => DAY_PRESETS.find((p) => p.value === v)?.label ?? `${v} يوم`;
 
   return {
     actions: (
       <Button type="primary" className="sl-create" icon={<PlusOutlined />} onClick={() => edit()}>
-        جزاء أو خصم جديد
+        {m.create}
       </Button>
     ),
     summary: (<>
-      <ListStat label="عدد الحركات" value={rows.length} />
-      <ListStat label="الجزاءات والخصومات" value={money(total(['penalty', 'other_deduction']))} tone="neg" />
-      <ListStat label="المكافآت والإضافات" value={money(total(['bonus', 'other_earning']))} tone="pos" />
+      <ListStat label={`عدد ${m.many}`} value={rows.length} />
+      <ListStat label="بالأيام" value={`${daysTotal} يوم`} tone={m.tone} />
+      <ListStat label="بالمبلغ" value={money(amountTotal)} tone={m.tone} />
     </>),
     body: (<>
       <Table<Adjustment>
         className="sl-table" rowKey="id" size="small" loading={loading} dataSource={rows}
-        locale={{ emptyText: 'لا توجد جزاءات أو خصومات في هذا الشهر' }}
+        locale={{ emptyText: m.empty }}
         pagination={{ defaultPageSize: PAGE_SIZE, showSizeChanger: true }}
         scroll={{ x: 'max-content' }}
         columns={[
           { title: 'رقم', dataIndex: 'document_number', key: 'document_number', width: 120 },
           { title: 'الموظف', dataIndex: 'name', key: 'name', render: (v: string) => <b>{v}</b> },
-          { title: 'النوع', dataIndex: 'kind', key: 'kind', width: 100,
-            render: (v: string, r: Adjustment) => (
-              <Tag color={KINDS.find((k) => k.value === v)?.color}>{r.kind_label}</Tag>
-            ) },
-          { title: 'القيمة', key: 'value', align: 'left',
-            render: (_: any, r: Adjustment) => (r.basis === 'amount' ? money(r.amount)
-              : `${Number(r.quantity)} ${r.basis === 'days' ? 'يوم' : 'ساعة'}`) },
+          { title: m.one, key: 'value', align: 'left',
+            render: (_: any, r: Adjustment) => (r.basis === 'amount'
+              ? <Tag color={m.color}>{money(r.amount)}</Tag>
+              : <Tag color={m.color}>{dayText(Number(r.quantity))}</Tag>) },
           { title: 'الشهر', key: 'm', width: 90, render: (_: any, r: Adjustment) => `${r.year}/${String(r.month).padStart(2, '0')}` },
           { title: 'السبب', dataIndex: 'reason', key: 'reason', render: (v: string | null) => v || '' },
           { title: 'الحالة', dataIndex: 'applied', key: 'applied', width: 90,
@@ -278,7 +290,7 @@ export function useAdjustmentsTab({ active, branchId, period, employees, onChang
         ]}
       />
       <TabModal
-        open={open !== null} title={open === 'new' ? 'جزاء أو خصم جديد' : 'تعديل'} destroyOnClose
+        open={open !== null} title={open === 'new' ? m.create : `تعديل ${m.one}`} destroyOnClose
         onCancel={() => setOpen(null)} onOk={save} okText="حفظ" cancelText="إلغاء"
         okButtonProps={{ loading: saving }}
       >
@@ -291,24 +303,29 @@ export function useAdjustmentsTab({ active, branchId, period, employees, onChang
               options={employees.map((e) => ({ value: e.employee_id, label: e.name }))} />
           </Col>
           <Col span={24}>
-            <Radio.Group value={form.kind} onChange={(e) => setForm({ ...form, kind: e.target.value })}
-              optionType="button" buttonStyle="solid"
-              options={KINDS.map((k) => ({ value: k.value, label: k.label }))} />
+            <Radio.Group value={form.basis} optionType="button" buttonStyle="solid"
+              onChange={(e) => setForm({ ...form, basis: e.target.value, value: e.target.value === 'days' ? 1 : undefined })}
+              options={[{ value: 'days', label: 'بالأيام' }, { value: 'amount', label: 'بمبلغ' }]} />
           </Col>
-          <Col span={12}>
-            <div style={{ marginBottom: 4 }}>بالـ</div>
-            <Select style={{ width: '100%' }} value={form.basis} onChange={(v) => setForm({ ...form, basis: v })}
-              options={[
-                { value: 'amount', label: 'مبلغ' },
-                { value: 'days', label: 'أيام من المرتب' },
-                { value: 'hours', label: 'ساعات من المرتب' },
-              ]} />
-          </Col>
-          <Col span={12}>
-            <div style={{ marginBottom: 4 }}>{form.basis === 'amount' ? 'المبلغ *' : form.basis === 'days' ? 'عدد الأيام *' : 'عدد الساعات *'}</div>
-            <InputNumber style={{ width: '100%' }} min={0} value={form.value}
-              onChange={(v) => setForm({ ...form, value: v ?? undefined })} />
-          </Col>
+          {form.basis === 'days' ? (
+            <Col span={24}>
+              <div style={{ marginBottom: 4 }}>عدد الأيام *</div>
+              <Space wrap>
+                {DAY_PRESETS.map((p) => (
+                  <Button key={p.value} type={form.value === p.value ? 'primary' : 'default'}
+                    onClick={() => setForm({ ...form, value: p.value })}>{p.label}</Button>
+                ))}
+                <InputNumber style={{ width: 110 }} min={0} step={0.25} precision={2} value={form.value}
+                  onChange={(v) => setForm({ ...form, value: v ?? undefined })} />
+              </Space>
+            </Col>
+          ) : (
+            <Col span={12}>
+              <div style={{ marginBottom: 4 }}>المبلغ *</div>
+              <InputNumber style={{ width: '100%' }} min={0} value={form.value}
+                onChange={(v) => setForm({ ...form, value: v ?? undefined })} />
+            </Col>
+          )}
           <Col span={12}>
             <div style={{ marginBottom: 4 }}>شهر المرتب</div>
             <DatePicker picker="month" style={{ width: '100%' }} format="YYYY/MM" allowClear={false}
