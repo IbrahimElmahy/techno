@@ -335,6 +335,18 @@ export const NAVIGATION: (NavGroup | NavScreen)[] = [
           { key: '/finance-reports?tab=vat', label: 'الإقرار الضريبي', roles: R(BOOKS) },
         ],
       },
+      {
+        key: 'grp-period-closing',
+        label: 'إقفال الفترة',
+        children: [
+          { key: '/period-closing?view=package', label: 'حزمة الإقفال', roles: R(BOOKS) },
+          { key: '/period-closing?view=inventory', label: 'تقييم المخزون', roles: R(BOOKS) },
+          { key: '/period-closing?view=balances', label: 'ملخص الأرصدة', roles: R(BOOKS) },
+          { key: '/period-closing?view=balance-sheet', label: 'الميزانية العمومية الإدارية', roles: R(BOOKS) },
+          { key: '/period-closing?view=settlement', label: 'تسوية فرع / منطقة', roles: R(BOOKS) },
+          { key: '/period-closing?view=advances', label: 'سلف الموظفين في تاريخ', roles: R(BOOKS) },
+        ],
+      },
     ],
   },
 

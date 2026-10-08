@@ -275,6 +275,8 @@ def create_app() -> FastAPI:
     app.include_router(live.router, prefix=prefix)
     # تحديث التطبيق — من غير دخول، عشان يشتغل من شاشة الدخول كمان
     app.include_router(app_update.router, prefix=prefix)
+    from src.api import period_closing as _period_closing
+    app.include_router(_period_closing.router, prefix=prefix)
 
     @app.get("/health")
     def health() -> dict:

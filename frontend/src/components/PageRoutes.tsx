@@ -95,6 +95,7 @@ const Vouchers = lazy(() => import('../pages/Vouchers'));
 const VoucherKeys = lazy(() => import('../pages/VoucherKeys'));
 const FinanceReports = lazy(() => import('../pages/FinanceReports'));
 const IncomeSheet = lazy(() => import('../pages/IncomeSheet'));
+const PeriodClosing = lazy(() => import('../pages/PeriodClosing'));
 
 /**
  * **كل الشاشات بتتحمّل في الخلفية بعد ما البرنامج يفتح** (٢٠٢٦-٠٩-٣٠ — «الحركة بطيئة»).
@@ -199,6 +200,7 @@ export default function PageRoutes({ location }: { location?: string }) {
       <Route path="/voucher-keys" element={<VoucherKeys />} />
       <Route path="/finance-reports" element={<FinanceReports />} />
       <Route path="/income-sheet" element={<IncomeSheet />} />
+      <Route path="/period-closing" element={<PeriodClosing />} />
       <Route path="/general-ledger" element={<GeneralLedger />} />
       <Route path="/accounting" element={<AccountingDashboard />} />
       <Route path="/loyalty" element={<Loyalty />} />
