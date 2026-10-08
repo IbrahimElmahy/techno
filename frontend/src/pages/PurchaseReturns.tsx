@@ -1521,48 +1521,34 @@ export default function PurchaseReturns({ embedded }: { embedded?: { onExit: () 
           )}
           </div>
 
-          {/* صور الورقة — إشعار المورد وإذن الخروج. `editingId` بيفضل `null` على المردود
-              الجديد، والمكوّن بيختفي لحد ما يترحّل وياخد رقم يتعلّق عليه. فوق الجزء المثبّت
-              عشان مايطوّلوش. */}
           <div className="sale-card sale-notes">
             <div className="sale-attach">
               <DocumentAttachments docType="purchase_return" docId={editingId} title="مرفقات" />
             </div>
           </div>
 
-          {/* **الإجمالي والدفع مثبّتين في آخر الشاشة** — نفس أرقام سُلّم الإجماليات القديم بالظبط،
-              في مربعات زي فاتورة البيع. */}
           <div className="sale-bottom">
           <Row gutter={[10, 10]}>
             <Col xs={24} lg={16}>
               <div className="sale-tiles">
-                <SummaryTile label="اجمالي قبل" value={money(grossTotal)} />
+                <SummaryTile label="الإجمالي قبل الخصم" value={money(grossTotal)} />
                 {variableDiscount > 0.001 && (
                   <SummaryTile label={`خصم المردود (${variableDiscount}%)`}
                     value={`− ${money(grossTotal - draftValue)}`} color="#dc2626" />
                 )}
-                <SummaryTile label="قيمة المردود" value={money(draftValue)} color="#16a34a"
-                  sub="بتنزل من حساب المورد" />
+                <SummaryTile label="قيمة المردود" value={money(draftValue)} color="#16a34a" />
               </div>
             </Col>
 
             <Col xs={24} lg={8}>
               <div className="sale-card sale-pay">
                 <div className="sale-pay-inputs">
-                  <Form.Item label="خصم على المردود %" style={{ gridColumn: '1 / -1' }}
-                    help="يُطبَّق على مجموع السطور بعد خصم كل سطر — كفاتورة الشراء">
+                  <Form.Item label="خصم على المردود %" style={{ gridColumn: '1 / -1' }}>
                     <InputNumber style={{ width: '100%' }} min={0} max={99.99} step={0.5}
                       disabled={viewOnly}
                       addonAfter="%" value={variableDiscount}
                       onChange={(v) => setVariableDiscount((v as number) || 0)} />
                   </Form.Item>
-                </div>
-                <div className="sale-due is-clear">
-                  <div>
-                    <div className="sale-due-label">قيمة المردود</div>
-                    <div className="sale-due-sub">بتنزل من اللي علينا للمورد</div>
-                  </div>
-                  <div className="sale-due-value">{money(draftValue)}</div>
                 </div>
                 {!viewOnly && (
                   <div className="sale-pay-actions">

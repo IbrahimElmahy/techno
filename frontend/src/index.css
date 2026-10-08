@@ -248,7 +248,7 @@ textarea.ant-input[disabled] {
 /* Custom scrollbar styled for RTL layout */
 ::-webkit-scrollbar {
   width: 6px;
-  height: 6px;
+  height: 12px;
 }
 
 ::-webkit-scrollbar-track {
@@ -262,6 +262,71 @@ textarea.ant-input[disabled] {
 
 ::-webkit-scrollbar-thumb:hover {
   background: #aaa;
+}
+::-webkit-scrollbar-thumb:horizontal {
+  background: #a3abb5;
+  border-radius: 6px;
+}
+::-webkit-scrollbar-thumb:horizontal:hover {
+  background: #6b7280;
+}
+
+.ant-table-wrapper .ant-table-sticky-scroll {
+  height: 12px !important;
+  opacity: 1;
+  background: #f1f1f1;
+  border-top: 1px solid #e5e7eb;
+}
+.ant-table-wrapper .ant-table-sticky-scroll-bar {
+  height: 12px;
+  background-color: #a3abb5;
+  border-radius: 6px;
+}
+.ant-table-wrapper .ant-table-sticky-scroll-bar:hover,
+.ant-table-wrapper .ant-table-sticky-scroll-bar-active {
+  background-color: #6b7280;
+}
+
+.app-scroll .ant-table-header.ant-table-sticky-holder {
+  top: -16px !important;
+}
+.app-scroll .ant-table-wrapper .ant-table-sticky-scroll {
+  bottom: -16px !important;
+}
+.app-scroll .ant-table-summary.ant-table-sticky-holder {
+  bottom: -4px !important;
+}
+.app-scroll .ant-table-container:not(:has(> .ant-table-sticky-scroll)) > .ant-table-summary.ant-table-sticky-holder {
+  bottom: -16px !important;
+}
+
+@media print {
+  .ant-table-wrapper .ant-table-sticky-scroll,
+  ::-webkit-scrollbar {
+    display: none !important;
+  }
+  .ant-table-wrapper .ant-table-content,
+  .ant-table-wrapper .ant-table-body,
+  .ant-table-wrapper .ant-table-header,
+  .sale-grid-wrap {
+    overflow: visible !important;
+  }
+  .ant-table-wrapper .ant-table-sticky-holder {
+    position: static !important;
+  }
+  .hscroll-dock {
+    display: none !important;
+  }
+}
+.ant-table-wrapper .ant-table-summary .auto-total > td {
+  font-weight: 800;
+  background: #f3f8ef;
+  white-space: nowrap;
+}
+.hscroll-dock {
+  background: #f1f1f1;
+  border-top: 1px solid #e5e7eb;
+  box-shadow: 0 -2px 6px -4px rgba(15, 23, 42, 0.25);
 }
 
 /* RTL layout fixes */
@@ -1023,7 +1088,7 @@ html[data-density='comfortable'] .ant-table-thead > tr > th {
 }
 .sale-doc .sale-pay-inputs {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
   gap: 8px;
 }
 .doc-toolbar-buttons .doc-tb-primary.ant-btn-primary:not(:disabled),
@@ -1110,7 +1175,7 @@ html[data-density='comfortable'] .ant-table-thead > tr > th {
 }
 .sale-doc .coupon-row {
   display: grid;
-  grid-template-columns: 2fr 1fr 1.2fr 1.2fr 62px;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) minmax(0, 1.2fr) minmax(0, 1.2fr) 62px;
   gap: 6px;
   align-items: center;
 }
@@ -1457,11 +1522,15 @@ body.eg-resizing * {
 }
 .sale-doc .sale-pay-actions {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
   margin-top: auto;
 }
 .sale-doc .sale-pay-actions .ant-btn {
-  height: 38px;
+  height: auto;
+  min-height: 38px;
+  max-width: 100%;
+  white-space: normal;
   border-radius: 8px;
   font-weight: 700;
 }

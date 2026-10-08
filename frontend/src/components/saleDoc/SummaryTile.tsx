@@ -1,19 +1,12 @@
 import React from 'react';
+import './saleBottom.css';
 
-/**
- * مربع رقم واحد في ملخص فاتورة البيع (تصميم العميل ٢٠٢٦-١٠-٠١).
- *
- * الأرقام نفسها هي اللي كانت في سُلّم الإجماليات — المربع شكل بس، الحساب في الشاشة.
- */
 export default function SummaryTile({ label, value, sub, tone, color, active }: {
   label: React.ReactNode;
   value: React.ReactNode;
   sub?: React.ReactNode;
-  /** خلفية المربع: أصفر للمديونية، أخضر فاتح للمدفوع. */
-  tone?: 'yellow' | 'mint';
-  /** لون الرقم. */
+  tone?: 'yellow' | 'mint' | 'rose';
   color?: string;
-  /** الخط اللي الفاتورة عليه — بإطار أخضر. */
   active?: boolean;
 }) {
   const cls = ['sale-tile', tone ? `tone-${tone}` : '', active ? 'is-active' : '']

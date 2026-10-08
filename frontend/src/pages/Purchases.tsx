@@ -1862,23 +1862,18 @@ export default function Purchases() {
           )}
           </div>
 
-          {/* الملاحظات والمرفقات فوق — برّه الجزء المثبّت عشان مايطولوش. */}
           <div className="sale-card sale-notes">
             {creditAmount > 0.001 && (
               <div className="sale-notes-line">
-                <span>آجل على الفاتورة دي:{' '}
+                <span>آجل على هذه الفاتورة:{' '}
                   <b style={{ color: '#dc2626' }}>{money(creditAmount)}</b></span>
               </div>
             )}
-            {/* صور الورقة — فاتورة المورد وإذن الاستلام. `viewPurchase` بيفضل `null` على
-                الفاتورة الجديدة، والمكوّن بيختفي لحد ما تترحّل وتاخد رقم يتعلّق عليه. */}
             <div className="sale-attach">
               <DocumentAttachments docType="purchase_invoice" docId={viewPurchase?.id} title="مرفقات" />
             </div>
           </div>
 
-          {/* **الإجمالي والدفع مثبّتين في آخر الشاشة** — نفس أرقام سُلّم الإجماليات القديم
-              بالظبط، في مربعات (تصميم فاتورة البيع ٢٠٢٦-١٠-٠١). */}
           <div className="sale-bottom">
           <Row gutter={[10, 10]}>
             <Col xs={24} lg={16}>
@@ -1888,11 +1883,13 @@ export default function Purchases() {
                   <SummaryTile label={`خصم الفاتورة (${variableDiscount}%)`}
                     value={`− ${money(grossTotal - invoiceTotal)}`} color="#dc2626" />
                 )}
-                <SummaryTile label="صافي الفاتورة" value={money(invoiceTotal)} color="#16a34a"
-                  sub="مستحق للمورد" />
-                {cashAmount > 0.001 && (
-                  <SummaryTile label="المدفوع نقداً" tone="mint" value={`− ${money(cashAmount)}`}
-                    color="#16a34a" sub="اتدفع للمورد" />
+                <SummaryTile label="صافي الفاتورة" value={money(invoiceTotal)} color="#16a34a" />
+                {(Number(cashAmount) || 0) - invoiceTotal > 0.001 ? (
+                  <SummaryTile label="دفعة مقدّمة للمورد" tone="mint" color="#15803d"
+                    value={money((Number(cashAmount) || 0) - invoiceTotal)} />
+                ) : (
+                  <SummaryTile label="الباقي للمورد" tone={creditAmount > 0.001 ? 'rose' : 'mint'}
+                    value={money(creditAmount)} color={creditAmount > 0.001 ? '#dc2626' : '#15803d'} />
                 )}
               </div>
             </Col>
@@ -1900,33 +1897,18 @@ export default function Purchases() {
             <Col xs={24} lg={8}>
               <div className="sale-card sale-pay">
                 <div className="sale-pay-inputs">
-                <Form.Item label="خصم على الفاتورة %"
-                  tooltip="يُطبَّق على مجموع السطور بعد خصم كل سطر — كفاتورة البيع">
+                <Form.Item label="خصم على الفاتورة %">
                   <InputNumber style={{ width: '100%' }} min={0} max={99.99} step={0.5}
                     disabled={viewOnly}
                     addonAfter="%" value={variableDiscount}
                     onChange={(val) => setVariableDiscount(val || 0)} />
                 </Form.Item>
-                <Form.Item label="المبلغ المدفوع نقداً"
-                  tooltip="الباقي بيتسجّل آجل على حساب المورد">
+                <Form.Item label="المبلغ المدفوع نقداً">
                   <InputNumber style={{ width: '100%' }} min={0}
                     className="sale-cash-input"
                     disabled={viewOnly}
                     value={cashAmount} onChange={(val) => setCashAmount(val || 0)} />
                 </Form.Item>
-                </div>
-                <div className={`sale-due ${creditAmount > 0.001 ? 'is-due' : 'is-clear'}`}>
-                  <div>
-                    <div className="sale-due-label">الباقي للمورد</div>
-                    <div className="sale-due-sub">
-                      {creditAmount > 0.001 ? 'بيتسجّل آجل على حسابه'
-                        // الدفع بالزيادة مسموح (٢٠٢٦-١٠-٠٥): الفرق دفعة مقدّمة على حساب المورد.
-                        : (Number(cashAmount) || 0) - invoiceTotal > 0.001
-                          ? `دفعت زيادة ${money((Number(cashAmount) || 0) - invoiceTotal)} — بتنزل على حساب المورد كدفعة مقدّمة`
-                          : 'مافيش باقي له'}
-                    </div>
-                  </div>
-                  <div className="sale-due-value">{money(creditAmount)}</div>
                 </div>
                 {!viewOnly && (
                   <div className="sale-pay-actions">

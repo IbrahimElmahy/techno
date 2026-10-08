@@ -29,6 +29,7 @@ import {
   NAVIGATION, EXTRA_SECTIONS, HOME_SCREEN, isGroup, NavGroup, NavScreen,
 } from './navigation';
 import ShortcutsDock from './ShortcutsDock';
+import HScrollDock from './HScrollDock';
 import { useAuth, RoleName, roleForAccess } from './AuthProvider';
 import RowDensityControl from './RowDensity';
 import NumeralsControl from './Numerals';
@@ -39,6 +40,7 @@ import Logo from './Logo';
 import BranchFilter, { BranchBadge } from './BranchFilter';
 import { useTabs } from './TabsContext';
 import TabWorkspace from './TabWorkspace';
+import { APP_SCROLL_CLASS } from './tableDefaults';
 
 const { Header, Sider, Content } = Layout;
 
@@ -477,6 +479,7 @@ export default function AppLayout() {
           minHeight: 0, overflow: 'hidden',
         }}>
           <div
+            className={APP_SCROLL_CLASS}
             style={{
               padding: 16,
               background: colorBgContainer,
@@ -491,6 +494,7 @@ export default function AppLayout() {
           </div>
         </Content>
       </Layout>
+      <HScrollDock />
       {/* الاختصارات — «+» تحت على الشمال. نفس الشجرة المفلترة بتاعة القايمة، فالشاشة
           اللي مالوش صلاحية عليها مابتظهرش في «إضافة اختصار» كمان. */}
       <ShortcutsDock userId={(user as any)?.id} tree={buildItems([...NAVIGATION, ...EXTRA_SECTIONS])}

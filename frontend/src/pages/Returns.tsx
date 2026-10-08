@@ -17,7 +17,7 @@ import {
   PlusOutlined, DeleteOutlined, SearchOutlined, ClearOutlined, HistoryOutlined,
   FileAddOutlined, EditOutlined, EyeOutlined, UndoOutlined, SaveOutlined, PrinterOutlined,
   ArrowLeftOutlined, ArrowRightOutlined, BankOutlined, ReloadOutlined,
-  ExclamationCircleOutlined, CheckOutlined, ShoppingCartOutlined, PhoneOutlined, InfoCircleOutlined,
+  ExclamationCircleOutlined, CheckOutlined, ShoppingCartOutlined, PhoneOutlined,
   RollbackOutlined,
 } from '@ant-design/icons';
 import { useNavigate, useSearchParams } from 'react-router-dom';
@@ -1690,7 +1690,6 @@ export default function Returns({ embedded }: { embedded?: { onExit: () => void 
             )}
           </div>
 
-          {/* الدفع والملخص: نفس أرقام سُلّم الإجماليات القديم بالظبط، في مربعات (تصميم العميل). */}
           {(() => {
             const returnDiscount = grossTotal - netTotal;
             const hasParty = !!customerId && customerBalance !== null;
@@ -1698,25 +1697,15 @@ export default function Returns({ embedded }: { embedded?: { onExit: () => void 
             const after = balance - creditReduction;
             return (
               <>
-              {/* الملاحظات والمرفقات فوق — برّه الجزء المثبّت عشان مايطولوش. */}
               <div className="sale-card sale-notes">
                 <div className="sale-notes-line">
-                  <span className="sale-hint">
-                    <InfoCircleOutlined /> الباقي بعد المسترد نقداً بيتخصم من حساب العميل
-                  </span>
                   <span>نقاط تُخصم من العميل: <b style={{ color: '#F5A11D' }}>
                     {totalPoints.toLocaleString(numeralsLocale(), { maximumFractionDigits: 3 })}</b></span>
-                  {cashRefund > 0.001 && (
-                    <span>مسترد نقداً: <b style={{ color: '#cf4b1a' }}>{money(cashRefund)}</b></span>
-                  )}
                 </div>
-                {/* صور الورقة — سند المردود الموقّع عليه. `viewReturn` بيفضل `null` على
-                    السند الجديد، والمكوّن بيختفي لحد ما يترحّل وياخد رقم يتعلّق عليه. */}
                 <div className="sale-attach">
                   <DocumentAttachments docType="sales_return" docId={viewReturn?.id} title="مرفقات" />
                 </div>
               </div>
-              {/* **الإجمالي والاسترداد مثبّتين في آخر الشاشة** زي فاتورة البيع. */}
               <div className="sale-bottom">
               <Row gutter={[10, 10]}>
                 <Col xs={24} lg={16}>
@@ -1727,8 +1716,7 @@ export default function Returns({ embedded }: { embedded?: { onExit: () => void 
                       <SummaryTile label={`خصم المرتجع (${discountPct}%)`}
                         value={`− ${money(returnDiscount)}`} color="#dc2626" />
                     )}
-                    <SummaryTile label="صافي المرتجع" value={money(netTotal)} color="#cf4b1a"
-                      sub="بيرجع للعميل" />
+                    <SummaryTile label="صافي المرتجع" value={money(netTotal)} color="#cf4b1a" />
                     {totalReturnPoints > 0 && (
                       <SummaryTile label="النقاط المستردّة" color="#b26a00"
                         value={totalReturnPoints.toLocaleString(numeralsLocale(), { maximumFractionDigits: 3 })} />
@@ -1738,21 +1726,24 @@ export default function Returns({ embedded }: { embedded?: { onExit: () => void 
                       return (
                         <SummaryTile key={a.family} label={`مديونية ${a.family}`}
                           value={money(b)} color={b > 0 ? '#dc2626' : '#16a34a'}
-                          active={a.family === returnFamily}
-                          sub={b > 0.001 ? 'مستحق عليه' : 'لا يوجد متأخرات'} />
+                          active={a.family === returnFamily} />
                       );
                     })}
                     {hasParty && families.length > 1 && (
                       <SummaryTile label="إجمالي المديونية" tone="yellow" value={money(balance)}
-                        color={balance > 0 ? '#dc2626' : '#16a34a'} sub="قبل المرتجع ده" />
+                        color={balance > 0 ? '#dc2626' : '#16a34a'} />
                     )}
                     {hasParty && families.length <= 1 && Math.abs(balance) > 0.001 && (
                       <SummaryTile label="حساب سابق على العميل" tone="yellow" value={money(balance)}
-                        color={balance > 0 ? '#dc2626' : '#16a34a'} sub="قبل المرتجع ده" />
+                        color={balance > 0 ? '#dc2626' : '#16a34a'} />
                     )}
                     {hasParty && creditReduction > 0.001 && (
                       <SummaryTile label="يُخصم من حسابه (آجل)" tone="mint"
                         value={`− ${money(creditReduction)}`} color="#16a34a" />
+                    )}
+                    {hasParty && (
+                      <SummaryTile label="الباقي على العميل" tone={after > 0.001 ? 'rose' : 'mint'}
+                        value={money(after)} color={after > 0.001 ? '#dc2626' : '#15803d'} />
                     )}
                   </div>
                 </Col>
@@ -1772,17 +1763,6 @@ export default function Returns({ embedded }: { embedded?: { onExit: () => void 
                           value={cashRefund} onChange={(val) => setCashRefund(val || 0)} />
                       </Form.Item>
                     </div>
-                    {hasParty && (
-                      <div className={`sale-due ${after > 0.001 ? 'is-due' : 'is-clear'}`}>
-                        <div>
-                          <div className="sale-due-label">الباقي على العميل</div>
-                          <div className="sale-due-sub">
-                            {after > 0.001 ? 'بعد خصم المرتجع من حسابه' : 'مافيش باقي عليه'}
-                          </div>
-                        </div>
-                        <div className="sale-due-value">{money(after)}</div>
-                      </div>
-                    )}
                     {!viewOnly && (
                       <div className="sale-pay-actions">
                         <Button type="primary" htmlType="submit"
