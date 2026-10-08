@@ -7,11 +7,11 @@ import {
 } from 'antd';
 import {
   PlusOutlined, EditOutlined, StopOutlined, SearchOutlined, ReloadOutlined, CheckOutlined,
-  BankOutlined, ClearOutlined, DeleteOutlined,
+  BankOutlined, ClearOutlined, DeleteOutlined, SwapOutlined,
 } from '@ant-design/icons';
 import { Popconfirm } from '../components/noConfirm';
 import ListPage from '../components/ListPage';
-import { useQueryTab } from '../components/useQueryTab';
+import TransferModal from './vouchers/TransferModal';
 import { api } from '../api/client';
 import { useTableKeyboard } from '../components/keyboard';
 import { useScreenShortcuts } from '../components/keyboard';
@@ -50,6 +50,19 @@ interface RepSafe {
 
 const FAMILY_FILTER = ['الكل', 'أبيض', 'بولي', 'بدون خط'] as const;
 
+interface BoxRow {
+  key: string;
+  kind: 'cash' | 'bank' | 'safe';
+  name: string;
+  owner: string;
+  family: string | null;
+  balance: string | null;
+  active: boolean;
+  is_default: boolean;
+  t?: TreasuryRecord;
+  s?: RepSafe;
+}
+
 export default function Treasuries() {
   const { user, can } = useAuth();
   const [rows, setRows] = useState<TreasuryRecord[]>([]);
@@ -60,8 +73,11 @@ export default function Treasuries() {
   const [safes, setSafes] = useState<RepSafe[]>([]);
   const [safesLoading, setSafesLoading] = useState(false);
   const [familyFilter, setFamilyFilter] = useState<string>('الكل');
-  const [viewRaw, setView] = useQueryTab('treasuries');
-  const view = (viewRaw === 'safes' ? 'safes' : 'treasuries') as 'treasuries' | 'safes';
+  const [kindFilter, setKindFilter] = useState<string | undefined>();
+  const [transferOpen, setTransferOpen] = useState(false);
+  const [transferFrom, setTransferFrom] = useState<string | undefined>();
+  const [transferForm] = Form.useForm();
+  const [posting, setPosting] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
   const [safeEditing, setSafeEditing] = useState<RepSafe | 'new' | null>(null);
   const [safeForm] = Form.useForm();
@@ -443,8 +459,123 @@ export default function Treasuries() {
     }] : []),
   ];
 
-  const tableCols = useTableColumns('treasuries', columns, {
-    export: { name: 'الخزينه و البنوك', rows: filtered },
+  const boxRows: BoxRow[] = [
+    ...rows.map((t) => ({
+      key: `t-${t.id}`, kind: t.kind, name: t.name, owner: branchName(t.branch_id), family: null,
+      balance: t.balance, active: t.active, is_default: t.is_default, t,
+    } as BoxRow)),
+    ...safes.map((sf) => ({
+      key: `c-${sf.custody_id}`, kind: 'safe', name: sf.name || sf.rep_name || 'صندوق', owner: sf.rep_name,
+      family: sf.family, balance: sf.balance, active: sf.active, is_default: false, s: sf,
+    } as BoxRow)),
+  ];
+
+  const shownBoxes = boxRows.filter((b) => {
+    if (kindFilter && b.kind !== kindFilter) return false;
+    if (familyFilter === 'أبيض' || familyFilter === 'بولي') {
+      if (b.family !== familyFilter) return false;
+    } else if (familyFilter === 'بدون خط' && b.family) {
+      return false;
+    }
+    const q = search.trim();
+    if (!q) return true;
+    return [b.name, b.owner, b.family || '', b.s?.code || '', b.t?.bank_name || '',
+      b.t?.account_number || ''].some((v) => v.includes(q));
+  });
+
+  const openTransfer = (from?: string) => {
+    transferForm.resetFields();
+    setTransferFrom(from);
+    setTransferOpen(true);
+  };
+
+  const submitTransfer = async (path: string, values: any, f: any, okMsg: string) => {
+    setPosting(true);
+    try {
+      const payload: any = { ...values, amount: String(values.amount) };
+      if (values.voucher_date) payload.voucher_date = values.voucher_date.format('YYYY-MM-DD');
+      await api.post(path, payload);
+      message.success(okMsg);
+      f.resetFields();
+      setTransferOpen(false);
+      load();
+      loadSafes();
+    } catch (err: any) {
+      message.error(errText(err, 'تعذر التحويل'));
+    } finally {
+      setPosting(false);
+    }
+  };
+
+  const boxColumns = [
+    {
+      title: 'الاسم', dataIndex: 'name', key: 'name', ellipsis: true,
+      render: (name: string, r: BoxRow) => (
+        <Space size={4}>
+          <span style={{ fontWeight: 600 }}>{name}</span>
+          {r.is_default && <Tag color="gold">الافتراضية</Tag>}
+          {!r.active && <Tag color="red">مخفي</Tag>}
+        </Space>
+      ),
+    },
+    {
+      title: 'النوع', dataIndex: 'kind', key: 'kind', width: 130,
+      render: (k: string) => (
+        <Tag color={k === 'bank' ? 'blue' : k === 'safe' ? 'purple' : 'default'}>
+          {k === 'safe' ? 'صندوق مندوب' : KIND_LABELS[k] || k}
+        </Tag>
+      ),
+    },
+    { title: 'الفرع / المندوب', dataIndex: 'owner', key: 'owner', ellipsis: true,
+      render: (v: string) => v || '—' },
+    {
+      title: 'الخط', dataIndex: 'family', key: 'family', width: 100,
+      render: (f: string | null, r: BoxRow) => (r.kind !== 'safe' ? '' : f
+        ? <Tag color={f === 'أبيض' ? 'default' : 'blue'}>{f}</Tag> : 'بدون خط'),
+    },
+    {
+      title: 'الرصيد', dataIndex: 'balance', key: 'balance', width: 150, align: 'left' as const,
+      render: (b: string | null) => (b === null ? '—' : <strong>{egp(b)}</strong>),
+      sorter: (a: BoxRow, b: BoxRow) => Number(a.balance || 0) - Number(b.balance || 0),
+    },
+    ...(canWrite ? [{
+      title: '', key: 'actions', width: 170, total: false,
+      render: (_: any, r: BoxRow) => (
+        <Space size={2}>
+          <Tooltip title="تحويل منه">
+            <Button type="text" icon={<SwapOutlined />} onClick={() => openTransfer(r.key)} />
+          </Tooltip>
+          <Tooltip title="تعديل">
+            <Button type="text" icon={<EditOutlined />}
+              onClick={() => (r.t ? openEdit(r.t) : r.s && openSafe(r.s))} />
+          </Tooltip>
+          {r.active ? (
+            <Tooltip title="إخفاء">
+              <Button type="text" icon={<StopOutlined />}
+                onClick={() => (r.t ? onDeactivate(r.t) : r.s && setSafeActive(r.s, false))} />
+            </Tooltip>
+          ) : (
+            <Tooltip title="إظهار">
+              <Button type="text" icon={<CheckOutlined />}
+                onClick={() => (r.t ? onReactivate(r.t) : r.s && setSafeActive(r.s, true))} />
+            </Tooltip>
+          )}
+          {!r.is_default && (
+            <Popconfirm title="حذف؟" description="يُحذف فقط إذا لم تكن له أي حركة."
+              okText="حذف" cancelText="لا"
+              onConfirm={() => (r.t ? deleteTreasury(r.t) : r.s && deleteSafe(r.s))}>
+              <Tooltip title="حذف">
+                <Button type="text" danger icon={<DeleteOutlined />} />
+              </Tooltip>
+            </Popconfirm>
+          )}
+        </Space>
+      ),
+    }] : []),
+  ];
+
+  const tableCols = useTableColumns('cash-boxes', boxColumns as any, {
+    export: { name: 'الخزائن والبنوك والصناديق', rows: shownBoxes },
   });
 
   const expandedRow = (r: TreasuryRecord) => (
@@ -510,98 +641,84 @@ export default function Treasuries() {
     </>
   );
 
-  const kb = useTableKeyboard<TreasuryRecord>({
-    rows: filtered, rowKey: (r) => r.id, onOpen: (r) => openEdit(r),
+  const kb = useTableKeyboard<BoxRow>({
+    rows: shownBoxes, rowKey: (r) => r.key,
+    onOpen: (r) => (r.t ? openEdit(r.t) : r.s && openSafe(r.s)),
   });
 
   return (
     <>
-    <ListPage<'treasuries' | 'safes'>
+    <ListPage
       icon={<BankOutlined />}
-      title="الخزينه و البنوك"
-      tabs={[
-        { key: 'treasuries', label: 'الخزائن والبنوك', count: rows.length },
-        { key: 'safes', label: 'صناديق المناديب', count: safes.length },
-      ]}
-      activeTab={view} onTabChange={setView}
-      actions={view === 'treasuries' ? (<>
+      title="الخزائن والبنوك والصناديق"
+      actions={(<>
         {canWrite && (
           <Button data-shortcut="F2" type="primary" className="sl-create" icon={<PlusOutlined />}
             onClick={() => setCreateOpen(true)}>
             خزينة جديدة
           </Button>
         )}
-        {tableCols.control}
-        <Button icon={<ReloadOutlined />} onClick={load}>إعادة تحميل</Button>
-      </>) : (<>
         {canWrite && (
-          <Button type="primary" className="sl-create" icon={<PlusOutlined />}
-            onClick={() => openSafe('new')}>
-            صندوق جديد
-          </Button>
+          <Button icon={<PlusOutlined />} onClick={() => openSafe('new')}>صندوق مندوب جديد</Button>
         )}
-        <Button icon={<ReloadOutlined />} onClick={loadSafes}>إعادة تحميل</Button>
+        {canWrite && (
+          <Button icon={<SwapOutlined />} onClick={() => openTransfer()}>تحويل نقدي</Button>
+        )}
+        {tableCols.control}
+        <Button icon={<ReloadOutlined />} onClick={() => { load(); loadSafes(); }}>إعادة تحميل</Button>
       </>)}
       filters={(<>
         <Input className="sl-f-search" allowClear value={search}
-          placeholder={view === 'treasuries' ? 'بحث بالاسم أو الفرع أو البنك'
-            : 'بحث بالصندوق أو الكود أو المندوب'}
+          placeholder="بحث بالاسم أو الفرع أو المندوب"
           ref={searchRef}
           prefix={<SearchOutlined />} onChange={(e) => setSearch(e.target.value)} />
-        {view === 'safes' && (
-          <Select
-            value={familyFilter}
-            onChange={(v) => setFamilyFilter(String(v))}
-            options={FAMILY_FILTER.map((f) => ({ value: f, label: f === 'الكل' ? 'كل الخطوط' : f }))}
-          />
-        )}
+        <Select allowClear placeholder="النوع" style={{ minWidth: 150 }} value={kindFilter}
+          onChange={setKindFilter}
+          options={[
+            { value: 'cash', label: 'الخزائن' },
+            { value: 'bank', label: 'البنوك' },
+            { value: 'safe', label: 'صناديق المناديب' },
+          ]} />
+        <Select
+          value={familyFilter}
+          onChange={(v) => setFamilyFilter(String(v))}
+          options={FAMILY_FILTER.map((f) => ({ value: f, label: f === 'الكل' ? 'كل الخطوط' : f }))}
+        />
         <Button className="sl-f-clear" icon={<ClearOutlined />}
-          onClick={() => { setSearch(''); setFamilyFilter('الكل'); }}>مسح</Button>
+          onClick={() => { setSearch(''); setFamilyFilter('الكل'); setKindFilter(undefined); }}>مسح</Button>
       </>)}
     >
-      {view === 'treasuries' ? (
-        <Table
-          {...kb.tableProps}
-          className="sl-table"
-          dataSource={filtered}
-          columns={tableCols.columns}
-          rowKey="id"
-          loading={loading}
-          size="small"
-          tableLayout="fixed"
-          expandable={{ expandedRowRender: expandedRow }}
-          pagination={{ defaultPageSize: PAGE_SIZE, showSizeChanger: true,
-            locale: { items_per_page: '' },
-            showTotal: (t) => (
-              <span className="sl-foot">
-                <span>عدد: <b>{t}</b></span>
-                <span>إجمالي الأرصدة: <b>{egp(filtered
-                  .reduce((s, r) => s + Number(r.balance || 0), 0))}</b></span>
-              </span>
-            ) }}
-        />
-      ) : (
-        <Table
-          className="sl-table"
-          dataSource={filteredSafes}
-          columns={[...safeColumns, ...safeActionsColumn]}
-          rowKey="custody_id"
-          loading={safesLoading}
-          size="small"
-          tableLayout="fixed"
-          locale={{ emptyText: 'لا توجد صناديق للمناديب' }}
-          pagination={{ defaultPageSize: PAGE_SIZE, showSizeChanger: true,
-            locale: { items_per_page: '' },
-            showTotal: (t) => (
-              <span className="sl-foot">
-                <span>عدد: <b>{t}</b></span>
-                <span>إجمالي الأرصدة: <b>{egp(filteredSafes
-                  .reduce((s, r) => s + Number(r.balance || 0), 0))}</b></span>
-              </span>
-            ) }}
-        />
-      )}
+      <Table
+        {...kb.tableProps}
+        className="sl-table"
+        dataSource={shownBoxes}
+        columns={tableCols.columns}
+        rowKey="key"
+        loading={loading || safesLoading}
+        size="small"
+        tableLayout="fixed"
+        expandable={{
+          expandedRowRender: (r: BoxRow) => (r.t ? expandedRow(r.t) : (
+            <Space size={32} style={{ paddingInlineStart: 8 }}>
+              <span><span style={{ color: '#888' }}>الكود: </span>{r.s?.code || '—'}</span>
+              <span><span style={{ color: '#888' }}>المندوب: </span>{r.s?.rep_name || '—'}</span>
+            </Space>
+          )),
+        }}
+        pagination={{ defaultPageSize: PAGE_SIZE, showSizeChanger: true,
+          locale: { items_per_page: '' },
+          showTotal: (t) => (
+            <span className="sl-foot">
+              <span>عدد: <b>{t}</b></span>
+              <span>إجمالي الأرصدة: <b>{egp(shownBoxes
+                .reduce((sum, r) => sum + Number(r.balance || 0), 0))}</b></span>
+            </span>
+          ) }}
+      />
     </ListPage>
+
+      <TransferModal open={transferOpen} onCancel={() => setTransferOpen(false)}
+        form={transferForm} posting={posting} submit={submitTransfer} presetFrom={transferFrom} />
 
       <TabModal footer={null} centered title="خزينة جديدة" width={720} destroyOnHidden
         open={createOpen} onCancel={() => setCreateOpen(false)}>

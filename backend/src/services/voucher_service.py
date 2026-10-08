@@ -450,17 +450,30 @@ def create_partner_movement(
 
 
 def create_cash_transfer(
-    db: Session, *, from_treasury_id: int, to_treasury_id: int, amount, actor_user_id: int,
+    db: Session, *, amount, actor_user_id: int,
+    from_treasury_id: int | None = None, to_treasury_id: int | None = None,
+    from_key: str | None = None, to_key: str | None = None,
     voucher_date: date | None = None, description: str | None = None,
     reference: str | None = None,
     cost_center_id: int | None = None, statement1: str | None = None,
     external_document_number: str | None = None,
 ) -> Voucher:
+    from src.services import cash_box_service
+
     value = _positive(amount)
-    if from_treasury_id == to_treasury_id:
+    from_key = from_key or (f"t-{from_treasury_id}" if from_treasury_id else None)
+    to_key = to_key or (f"t-{to_treasury_id}" if to_treasury_id else None)
+    if not from_key or not to_key:
+        raise VoucherError("اختر الخزينة المحوَّل منها والمحوَّل إليها.")
+    if from_key == to_key:
         raise VoucherError("لا يمكن التحويل لنفس الخزينة.")
-    source = treasury_service.get_treasury(db, from_treasury_id)
-    dest = treasury_service.get_treasury(db, to_treasury_id)
+    try:
+        source = cash_box_service.resolve(db, from_key)
+        dest = cash_box_service.resolve(db, to_key)
+    except cash_box_service.CashBoxError as exc:
+        raise VoucherError(str(exc)) from exc
+    if not dest.active:
+        raise VoucherError(f"«{dest.name}» موقوفة — أظهرها أولاً.")
     _assert_cash_available(db, source.account_id, value)
     return _create(
         db, kind=VoucherKind.cash_transfer, amount=value, cash_account_id=source.account_id,
@@ -469,8 +482,9 @@ def create_cash_transfer(
         voucher_date=voucher_date, description=description, reference=reference,
         payment_method=None, entry_type="cash_transfer",
         statement=f"تحويل من {source.name} إلى {dest.name}",
-        treasury_id=source.id, to_treasury_id=dest.id,
-        cost_center_id=cost_center_id, statement1=statement1, external_document_number=external_document_number,
+        treasury_id=source.treasury_id, to_treasury_id=dest.treasury_id,
+        cost_center_id=cost_center_id, statement1=statement1 or f"من {source.name} إلى {dest.name}",
+        external_document_number=external_document_number,
     )
 
 

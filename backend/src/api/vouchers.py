@@ -101,8 +101,10 @@ class ExpenseIn(BaseModel):
 
 
 class CashTransferIn(BaseModel):
-    from_treasury_id: int
-    to_treasury_id: int
+    from_treasury_id: int | None = None
+    to_treasury_id: int | None = None
+    from_key: str | None = None
+    to_key: str | None = None
     amount: Decimal
     voucher_date: date | None = None
     description: str | None = Field(default=None, max_length=255)
@@ -560,7 +562,7 @@ def create_cash_transfer(
     try:
         v = voucher_service.create_cash_transfer(
             db, from_treasury_id=body.from_treasury_id, to_treasury_id=body.to_treasury_id,
-            amount=body.amount, actor_user_id=current.id, voucher_date=body.voucher_date,
+            from_key=body.from_key, to_key=body.to_key, amount=body.amount, actor_user_id=current.id, voucher_date=body.voucher_date,
             description=body.description, reference=body.reference,
             cost_center_id=body.cost_center_id, statement1=body.statement1, external_document_number=body.external_document_number)
     except (VoucherError, TreasuryError, LedgerError) as exc:
@@ -581,6 +583,22 @@ def list_treasuries(
     if bid is not None:
         rows = [t for t in rows if t.branch_id in (bid, None)]
     out = [_treasury_out(db, t) for t in rows]
+    db.commit()
+    return out
+
+
+@router.get("/cash-boxes")
+def list_cash_boxes(
+    active_only: bool = Query(default=False),
+    current: CurrentUser = Depends(require_capability(CAP_VOUCHER_READ)),
+    db: Session = Depends(get_db),
+) -> list[dict]:
+    from src.services import cash_box_service
+
+    treasury_service.default_treasury(db)
+    rows = cash_box_service.boxes(db, branch_id=branch_scope.visible_branch_id(current),
+                                  active_only=active_only)
+    out = [cash_box_service.box_out(db, b) for b in rows]
     db.commit()
     return out
 
