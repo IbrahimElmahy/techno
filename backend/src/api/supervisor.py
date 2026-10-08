@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -167,30 +167,12 @@ def _coupon_day():
     return func.coalesce(CouponReceipt.received_date, cast(CouponReceipt.created_at, Date))
 
 
-@router.get("/overview", response_model=dict)
-def overview(
-    date_from: date | None = Query(None),
-    date_to: date | None = Query(None),
-    current: CurrentUser = Depends(_gate),
-    db: Session = Depends(get_db),
-) -> dict:
-    from src.api.customers import _scope_filter
-    from src.services import customer_profile_service
-
-    d1, d2 = _range(date_from, date_to)
-    view = _doc_view(current)
-    stmt = _reps_stmt(db, current)
-    reps = list(db.scalars(stmt).all()) if stmt is not None else []
-    ids = [r.id for r in reps]
-
+def _period_figures(db: Session, view: CurrentUser, ids: list[int], d1: date, d2: date):
     zero = Decimal("0")
     sales: dict[int, tuple[int, Decimal]] = {}
     returns: dict[int, tuple[int, Decimal]] = {}
     coll_n: dict[int, int] = {}
     coll_s: dict[int, Decimal] = {}
-    cust: dict[int, tuple[int, Decimal]] = {}
-    last: dict[int, datetime] = {}
-
     if ids:
         s = _sales_stmt(view, d1, d2, kind="sale").where(SalesInvoice.rep_id.in_(ids)).subquery()
         for rid, n, total in db.execute(
@@ -218,7 +200,62 @@ def overview(
                 .group_by(cv.c.rep)).all():
             coll_n[rid] = coll_n.get(rid, 0) + int(n or 0)
             coll_s[rid] = coll_s.get(rid, zero) + Decimal(str(total or 0))
+    return sales, returns, coll_n, coll_s
 
+
+def _figures_out(rid: int, figs) -> dict:
+    zero = Decimal("0")
+    sales, returns, coll_n, coll_s = figs
+    sn, sv = sales.get(rid, (0, zero))
+    rn, rv = returns.get(rid, (0, zero))
+    return {"sales": sv, "sales_count": sn, "returns": rv, "returns_count": rn,
+            "collections": coll_s.get(rid, zero), "collections_count": coll_n.get(rid, 0)}
+
+
+def _figures_json(f: dict) -> dict:
+    return {
+        "sales": _money(f["sales"]), "sales_count": f["sales_count"],
+        "returns": _money(f["returns"]), "returns_count": f["returns_count"],
+        "collections": _money(f["collections"]), "collections_count": f["collections_count"],
+        "net": _money(f["sales"] - f["returns"]),
+    }
+
+
+def _previous_range(d1: date, d2: date, prev_from: date | None,
+                    prev_to: date | None) -> tuple[date, date]:
+    if prev_from is not None or prev_to is not None:
+        return _range(prev_from, prev_to)
+    span = (d2 - d1).days + 1
+    return d1 - timedelta(days=span), d2 - timedelta(days=span)
+
+
+@router.get("/overview", response_model=dict)
+def overview(
+    date_from: date | None = Query(None),
+    date_to: date | None = Query(None),
+    prev_from: date | None = Query(None),
+    prev_to: date | None = Query(None),
+    current: CurrentUser = Depends(_gate),
+    db: Session = Depends(get_db),
+) -> dict:
+    from src.api.customers import _scope_filter
+    from src.services import customer_profile_service
+
+    d1, d2 = _range(date_from, date_to)
+    p1, p2 = _previous_range(d1, d2, prev_from, prev_to)
+    view = _doc_view(current)
+    stmt = _reps_stmt(db, current)
+    reps = list(db.scalars(stmt).all()) if stmt is not None else []
+    ids = [r.id for r in reps]
+
+    zero = Decimal("0")
+    cur_figs = _period_figures(db, view, ids, d1, d2)
+    prev_figs = _period_figures(db, view, ids, p1, p2)
+    cust: dict[int, tuple[int, Decimal]] = {}
+    last: dict[int, datetime] = {}
+
+    if ids:
+        vrep = _voucher_rep()
         base = customer_profile_service.apply_filters(
             _scope_filter(select(Customer.id, Customer.rep_id), view)
         ).where(Customer.customer_type != "owner", Customer.rep_id.in_(ids)).subquery()
@@ -245,41 +282,36 @@ def overview(
                     last[rid] = at
 
     out_reps = []
-    tot = {"sales": zero, "sales_count": 0, "returns": zero, "returns_count": 0,
-           "collections": zero, "collections_count": 0, "customers_debt": zero}
+    keys = ("sales", "sales_count", "returns", "returns_count",
+            "collections", "collections_count")
+    tot = {k: (0 if k.endswith("_count") else zero) for k in keys}
+    prev_tot = dict(tot)
+    debt_total = zero
     for rep in reps:
-        sn, sv = sales.get(rep.id, (0, zero))
-        rn, rv = returns.get(rep.id, (0, zero))
         cn, cd = cust.get(rep.id, (0, zero))
-        coln, colv = coll_n.get(rep.id, 0), coll_s.get(rep.id, zero)
-        tot["sales"] += sv
-        tot["sales_count"] += sn
-        tot["returns"] += rv
-        tot["returns_count"] += rn
-        tot["collections"] += colv
-        tot["collections_count"] += coln
-        tot["customers_debt"] += cd
+        cur = _figures_out(rep.id, cur_figs)
+        prev = _figures_out(rep.id, prev_figs)
+        for k in keys:
+            tot[k] += cur[k]
+            prev_tot[k] += prev[k]
+        debt_total += cd
         out_reps.append({
             "id": rep.id, "full_name": rep.full_name or rep.username, "username": rep.username,
-            "sales": _money(sv), "sales_count": sn,
-            "returns": _money(rv), "returns_count": rn,
-            "collections": _money(colv), "collections_count": coln,
-            "net": _money(sv - rv),
+            **_figures_json(cur),
             "customers_count": cn, "customers_debt": _money(cd),
             "last_activity_at": _iso(last.get(rep.id)),
+            "previous": _figures_json(prev),
         })
     out_reps.sort(key=lambda x: (-Decimal(x["net"]), x["full_name"]))
 
     return {
         "date_from": str(d1), "date_to": str(d2),
+        "prev_from": str(p1), "prev_to": str(p2),
         "totals": {
-            "sales": _money(tot["sales"]), "sales_count": tot["sales_count"],
-            "returns": _money(tot["returns"]), "returns_count": tot["returns_count"],
-            "collections": _money(tot["collections"]),
-            "collections_count": tot["collections_count"],
-            "net": _money(tot["sales"] - tot["returns"]),
-            "customers_debt": _money(tot["customers_debt"]),
+            **_figures_json(tot),
+            "customers_debt": _money(debt_total),
             "reps_count": len(reps),
+            "previous": _figures_json(prev_tot),
         },
         "reps": out_reps,
     }

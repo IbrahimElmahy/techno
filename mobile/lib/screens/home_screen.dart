@@ -38,6 +38,7 @@ class _HomeScreenState extends State<HomeScreen> {
   int _pending = 0;
   int _pendingSales = 0;
   int _pendingReceipts = 0;
+  int _drafts = 0;
   String? _role;
   Set<String>? _appCaps;
 
@@ -88,6 +89,7 @@ class _HomeScreenState extends State<HomeScreen> {
     final p = await LocalDb.instance.pendingCount();
     final ps = await LocalDb.instance.pendingSalesCount();
     final pr = await LocalDb.instance.pendingReceiptsCount();
+    final dr = await LocalDb.instance.inspectionDraftsCount();
     final role = await LocalDb.instance.getKv('role');
     final capsRaw = await LocalDb.instance.getKv('app_caps');
     Set<String>? caps;
@@ -104,6 +106,7 @@ class _HomeScreenState extends State<HomeScreen> {
         _pending = p;
         _pendingSales = ps;
         _pendingReceipts = pr;
+        _drafts = dr;
       });
     }
   }
@@ -340,6 +343,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     icon: Icons.assignment_add,
                     color: AppColors.primary,
                     title: 'الزيارات',
+                    subtitle: _drafts > 0 ? '$_drafts مسودة معاينة لم تُحفظ' : null,
                     onTap: () async {
                       await Navigator.push(context,
                           MaterialPageRoute(builder: (_) => const VisitsMenuScreen()));

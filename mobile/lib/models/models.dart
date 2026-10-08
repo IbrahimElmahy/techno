@@ -135,6 +135,82 @@ class Inspection {
   double get totalPoints =>
       double.parse(lines.fold<double>(0, (s, l) => s + l.total).toStringAsFixed(3));
 
+  Map<String, Object?> toDraft() => {
+        'client_uuid': clientUuid,
+        'visit_kind': visitKind,
+        'inspection_date': inspectionDate,
+        'owner_name': ownerName,
+        'owner_phone': ownerPhone,
+        'national_id': nationalId,
+        'owner_address': ownerAddress,
+        'floor_number': floorNumber,
+        'description': description,
+        'inspection_type': inspectionType,
+        'visit_type': visitType,
+        'technician_name': technicianName,
+        'technician_phone': technicianPhone,
+        'purchase_shop': purchaseShop,
+        'merchant_customer_id': merchantCustomerId,
+        'purchase_shop_phone': purchaseShopPhone,
+        'visit_details': visitDetails,
+        'customer_id': customerId,
+        'lines': [
+          for (final l in lines)
+            {
+              'item_id': l.itemId,
+              'item_name': l.itemName,
+              'quantity': l.quantity,
+              'points': l.points,
+            }
+        ],
+      };
+
+  static Inspection fromDraft(Map<String, Object?> m) {
+    String? s(String k) {
+      final v = m[k];
+      return v == null ? null : '$v';
+    }
+
+    int? i(String k) {
+      final v = m[k];
+      return v is int ? v : int.tryParse('${v ?? ''}');
+    }
+
+    double d(Object? v) => v is num ? v.toDouble() : double.tryParse('${v ?? ''}') ?? 0;
+
+    return Inspection(
+      clientUuid: s('client_uuid') ?? '',
+      visitKind: s('visit_kind') ?? 'technician',
+      inspectionDate: s('inspection_date') ?? '',
+      ownerName: s('owner_name') ?? '',
+      ownerPhone: s('owner_phone'),
+      nationalId: s('national_id'),
+      ownerAddress: s('owner_address'),
+      floorNumber: s('floor_number'),
+      description: s('description'),
+      inspectionType: s('inspection_type'),
+      visitType: s('visit_type'),
+      technicianName: s('technician_name'),
+      technicianPhone: s('technician_phone'),
+      purchaseShop: s('purchase_shop'),
+      merchantCustomerId: i('merchant_customer_id'),
+      purchaseShopPhone: s('purchase_shop_phone'),
+      visitDetails: s('visit_details'),
+      customerId: i('customer_id'),
+      lines: [
+        for (final l in (m['lines'] as List? ?? const []))
+          if (l is Map)
+            InspectionLine(
+              itemId: l['item_id'] is int ? l['item_id'] as int : null,
+              itemName: '${l['item_name'] ?? ''}',
+              quantity: d(l['quantity']),
+              points: d(l['points']),
+            )
+      ],
+      createdAt: s('updated_at'),
+    );
+  }
+
   Map<String, Object?> toApi() => {
         'client_uuid': clientUuid,
         'visit_kind': visitKind,

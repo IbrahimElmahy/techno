@@ -42,8 +42,12 @@ class TechnoInspectionsApp extends StatelessWidget {
         GlobalWidgetsLocalizations.delegate,
         GlobalCupertinoLocalizations.delegate,
       ],
-      builder: (context, child) => Directionality(
-          textDirection: TextDirection.rtl, child: TaskBarHost(child: child!)),
+      builder: (context, child) => GestureDetector(
+        behavior: HitTestBehavior.translucent,
+        onTap: () => FocusManager.instance.primaryFocus?.unfocus(),
+        child: Directionality(
+            textDirection: TextDirection.rtl, child: TaskBarHost(child: child!)),
+      ),
       home: home ?? const _Gate(),
     );
   }

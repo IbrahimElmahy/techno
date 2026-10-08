@@ -546,6 +546,46 @@ def rep_bundle(
     }
 
 
+
+@router.get("/price-catalog", response_model=dict)
+def price_catalog(
+    _: CurrentUser = Depends(require_capability("app.price_sheet")),
+    db: Session = Depends(get_db),
+) -> dict:
+    cat_rows = db.execute(
+        select(LookupOption.value, LookupOption.label, LookupOption.parent_value,
+               LookupOption.hidden_in_price_sheet)
+        .where(LookupOption.category == "item_category")).all()
+    cat_label = {r[0]: r[1] for r in cat_rows}
+    hidden_vals = {r[0] for r in cat_rows if r[3]}
+    hidden = sorted(r[1] for r in cat_rows if r[0] in hidden_vals or r[2] in hidden_vals)
+    catalog = db.execute(
+        select(Item.id, Item.name, Item.unit_of_measure, Item.category,
+               Item.sale_price, Item.default_discount_pct)
+        .where(Item.active.is_(True))
+        .order_by(arabic.sort_key(Item.name), Item.name)
+    ).all()
+    tiers: dict[int, dict[str, str]] = {}
+    for item_id, tier, price in db.execute(
+        select(ItemPrice.item_id, ItemPrice.tier, ItemPrice.price)
+        .join(Item, Item.id == ItemPrice.item_id)
+        .where(Item.active.is_(True))
+    ).all():
+        tiers.setdefault(item_id, {})[getattr(tier, "value", tier)] = str(price)
+    return {
+        "catalog": [
+            {
+                "item_id": c[0], "name": c[1], "unit": c[2],
+                "category": cat_label.get(c[3], c[3]),
+                "base_price": str(c[4]) if c[4] is not None else None,
+                "default_discount_pct": str(c[5]) if c[5] is not None else None,
+                "tier_prices": tiers.get(c[0], {}),
+            }
+            for c in catalog
+        ],
+        "price_sheet_hidden_categories": hidden,
+    }
+
 def _rep_recent_invoices(db: Session, rep_id: int) -> list[dict]:
     since = date.today() - timedelta(days=60)
     rows = db.scalars(

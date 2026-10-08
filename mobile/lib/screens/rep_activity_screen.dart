@@ -33,7 +33,8 @@ class _RepActivityScreenState extends State<RepActivityScreen> {
     });
     SupStats? s;
     try {
-      final j = await ApiClient.instance.supervisorOverview(_period.fromIso, _period.toIso);
+      final j = await ApiClient.instance.supervisorOverview(_period.fromIso, _period.toIso,
+          prevFrom: _period.previousFromIso, prevTo: _period.previousToIso);
       final o = SupOverview.fromJson(j);
       for (final r in o.reps) {
         if (r.id == widget.rep.id) s = r.stats;
@@ -131,6 +132,12 @@ class _RepActivityScreenState extends State<RepActivityScreen> {
   Widget _summaryStrip() {
     final s = _stats;
     String v(double Function(SupStats) f) => s == null ? '—' : fmtMoney(f(s));
+    Widget? t(double Function(SupStats) f, {bool higherIsBetter = true}) {
+      final p = s?.previous;
+      if (s == null || p == null) return null;
+      return TrendBadge(
+          current: f(s), previous: f(p), higherIsBetter: higherIsBetter, compact: true);
+    }
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 12),
       padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
@@ -152,22 +159,26 @@ class _RepActivityScreenState extends State<RepActivityScreen> {
                     child: MiniStat(
                         label: s == null ? 'مبيعات' : 'مبيعات (${s.salesCount})',
                         value: v((s) => s.sales),
-                        color: AppColors.primary)),
+                        color: AppColors.primary,
+                        trend: t((s) => s.sales))),
                 Expanded(
                     child: MiniStat(
                         label: 'تحصيل',
                         value: v((s) => s.collections),
-                        color: AppColors.success)),
+                        color: AppColors.success,
+                        trend: t((s) => s.collections))),
                 Expanded(
                     child: MiniStat(
                         label: 'مرتجعات',
                         value: v((s) => s.returns),
-                        color: AppColors.danger)),
+                        color: AppColors.danger,
+                        trend: t((s) => s.returns, higherIsBetter: false))),
                 Expanded(
                     child: MiniStat(
                         label: 'الصافي',
                         value: v((s) => s.net),
-                        color: AppColors.primaryDark)),
+                        color: AppColors.primaryDark,
+                        trend: t((s) => s.net))),
               ],
             ),
     );

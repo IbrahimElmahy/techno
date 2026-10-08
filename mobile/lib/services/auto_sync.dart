@@ -204,6 +204,12 @@ class AutoSync extends ChangeNotifier {
       anyOk = true;
     } on ApiException catch (e) {
       if (e.statusCode == 401) rethrow;
+      if (e.statusCode == 404 || e.statusCode == 403) {
+        try {
+          await ApiClient.instance.pullPriceCatalog();
+          anyOk = true;
+        } catch (_) {}
+      }
       if (e.statusCode == 404) {
         note = 'ليس لديك مخزن أو عهدة مسجّلة';
       } else if (e.statusCode != 403) {

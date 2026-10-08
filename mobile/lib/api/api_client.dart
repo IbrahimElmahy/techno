@@ -155,8 +155,14 @@ class ApiClient {
     return jsonDecode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
   }
 
-  Future<Map<String, dynamic>> supervisorOverview(String dateFrom, String dateTo) =>
-      _getJson('/supervisor/overview', {'date_from': dateFrom, 'date_to': dateTo});
+  Future<Map<String, dynamic>> supervisorOverview(String dateFrom, String dateTo,
+          {String? prevFrom, String? prevTo}) =>
+      _getJson('/supervisor/overview', {
+        'date_from': dateFrom,
+        'date_to': dateTo,
+        if (prevFrom != null) 'prev_from': prevFrom,
+        if (prevTo != null) 'prev_to': prevTo,
+      });
 
   Future<Map<String, dynamic>> supervisorRepActivity(
     int repId, {
@@ -360,6 +366,37 @@ class ApiClient {
         ]));
       }
     } catch (_) {}
+  }
+
+  Future<int> pullPriceCatalog({Duration timeout = const Duration(seconds: 60)}) async {
+    final r = await http
+        .get(await _uri('/sales/price-catalog'), headers: await _headers())
+        .timeout(timeout);
+    if (r.statusCode == 401) throw ApiException(401, 'انتهت الجلسة — سجّل الدخول مرة أخرى');
+    if (r.statusCode != 200) throw ApiException(r.statusCode, _error(r));
+    final body = jsonDecode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
+    final hiddenCats = body['price_sheet_hidden_categories'];
+    if (hiddenCats is List) {
+      await LocalDb.instance.setKv(
+          'price_sheet_hidden_categories', jsonEncode([for (final c in hiddenCats) '$c']));
+    }
+    final catalog = (body['catalog'] as List?) ?? const [];
+    await LocalDb.instance.replaceCatalogItems([
+      for (final i in catalog)
+        SaleItem(
+          itemId: i['item_id'] as int,
+          name: i['name'] as String,
+          unit: i['unit'] as String?,
+          category: _text(i['category']),
+          basePrice: double.tryParse('${i['base_price']}'),
+          defaultDiscountPct: double.tryParse('${i['default_discount_pct']}') ?? 0,
+          tierPrices: {
+            for (final e in ((i['tier_prices'] as Map?) ?? {}).entries)
+              e.key.toString(): double.tryParse('${e.value}') ?? 0
+          },
+        )
+    ]);
+    return catalog.length;
   }
 
   Future<void> pullSalesBundle() async {

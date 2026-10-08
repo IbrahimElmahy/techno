@@ -518,6 +518,36 @@ class LocalDb {
     });
   }
 
+  static const _draftPrefix = 'insp_draft:';
+
+  Future<void> saveInspectionDraft(String clientUuid, Map<String, Object?> draft) =>
+      setKv('$_draftPrefix$clientUuid',
+          jsonEncode({...draft, 'updated_at': DateTime.now().toIso8601String()}));
+
+  Future<void> deleteInspectionDraft(String clientUuid) async {
+    await (await db).delete('kv', where: 'key = ?', whereArgs: ['$_draftPrefix$clientUuid']);
+  }
+
+  Future<List<Map<String, Object?>>> inspectionDrafts() async {
+    final rows = await (await db)
+        .query('kv', where: 'key LIKE ?', whereArgs: ['$_draftPrefix%']);
+    final out = <Map<String, Object?>>[];
+    for (final r in rows) {
+      try {
+        final m = (jsonDecode(r['value'] as String) as Map).cast<String, Object?>();
+        out.add(m);
+      } catch (_) {}
+    }
+    out.sort((a, b) => '${b['updated_at'] ?? ''}'.compareTo('${a['updated_at'] ?? ''}'));
+    return out;
+  }
+
+  Future<int> inspectionDraftsCount() async {
+    final rows = await (await db).rawQuery(
+        'SELECT COUNT(*) AS c FROM kv WHERE key LIKE ?', ['$_draftPrefix%']);
+    return (rows.first['c'] as int?) ?? 0;
+  }
+
   Future<int> addAttachment({
     required String inspectionUuid,
     required String path,
@@ -667,6 +697,9 @@ class LocalDb {
         await d.delete('kv', where: 'key = ?', whereArgs: [k]);
       } catch (_) {}
     }
+    try {
+      await d.delete('kv', where: 'key LIKE ?', whereArgs: ['$_draftPrefix%']);
+    } catch (_) {}
   }
 
   Future<void> replaceCatalogItems(List<SaleItem> items) async {

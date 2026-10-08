@@ -28,7 +28,10 @@ class SupStats {
     this.collectionsCount = 0,
     this.net = 0,
     this.customersDebt = 0,
+    this.previous,
   });
+
+  final SupStats? previous;
 
   factory SupStats.fromJson(Map<String, dynamic> j) => SupStats(
         sales: parseMoney(j['sales']) ?? 0,
@@ -39,6 +42,9 @@ class SupStats {
         collectionsCount: _int(j['collections_count']),
         net: parseMoney(j['net']) ?? 0,
         customersDebt: parseMoney(j['customers_debt']) ?? 0,
+        previous: j['previous'] is Map
+            ? SupStats.fromJson((j['previous'] as Map).cast<String, dynamic>())
+            : null,
       );
 }
 

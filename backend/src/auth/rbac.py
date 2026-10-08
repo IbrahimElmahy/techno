@@ -301,6 +301,11 @@ ROLE_CAPABILITIES[RoleName.rep_supervisor] = {CAP_APP_SUPERVISOR, CAP_SALES_READ
 
 _OVERRIDES: dict[RoleName, set[str]] = {}
 
+_ALWAYS_GRANTED: dict[RoleName, set[str]] = {
+    RoleName.after_sales_staff: {"app.price_sheet"},
+}
+ROLE_CAPABILITIES.setdefault(RoleName.after_sales_staff, set()).add("app.price_sheet")
+
 
 def refresh_overrides(db) -> None:
     from src.models.permission import RoleCapability
@@ -309,6 +314,9 @@ def refresh_overrides(db) -> None:
     fresh: dict[RoleName, set[str]] = {}
     for role, cap in rows:
         fresh.setdefault(role, set()).add(cap)
+    for role, caps in _ALWAYS_GRANTED.items():
+        if role in fresh:
+            fresh[role] |= caps
     _OVERRIDES.clear()
     _OVERRIDES.update(fresh)
 

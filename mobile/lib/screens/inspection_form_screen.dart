@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart' as intl;
 import 'package:uuid/uuid.dart';
@@ -9,9 +11,12 @@ import 'item_picker_screen.dart';
 
 class InspectionFormScreen extends StatefulWidget {
   final String visitKind;
-  const InspectionFormScreen({super.key, required this.visitKind, this.existing});
+  const InspectionFormScreen(
+      {super.key, required this.visitKind, this.existing, this.draft});
 
   final Inspection? existing;
+
+  final Inspection? draft;
 
   @override
   State<InspectionFormScreen> createState() => _InspectionFormScreenState();
@@ -37,7 +42,8 @@ const List<String> kShopCustomerTypes = [
   'trader', 'showroom', 'company', 'establishment',
 ];
 
-class _InspectionFormScreenState extends State<InspectionFormScreen> {
+class _InspectionFormScreenState extends State<InspectionFormScreen>
+    with WidgetsBindingObserver {
   final _formKey = GlobalKey<FormState>();
   final _ownerName = TextEditingController();
   final _ownerPhone = TextEditingController();
@@ -68,12 +74,120 @@ class _InspectionFormScreenState extends State<InspectionFormScreen> {
 
   late final String _uuid;
 
+  bool get _draftable => !_isEdit;
+
+  bool _submitted = false;
+  bool _ready = false;
+  Timer? _draftTimer;
+  ScaffoldMessengerState? _messenger;
+
+  List<TextEditingController> get _controllers => [
+        _ownerName, _ownerPhone, _nationalId, _ownerAddress, _floorNumber,
+        _technicianName, _technicianPhone, _purchaseShop, _purchaseShopPhone,
+        _visitDetails,
+      ];
+
   @override
   void initState() {
     super.initState();
     _loadLookups();
-    final e = widget.existing;
-    _uuid = e?.clientUuid ?? const Uuid().v4();
+    final e = widget.existing ?? widget.draft;
+    _uuid = e?.clientUuid.isNotEmpty == true ? e!.clientUuid : const Uuid().v4();
+    _prefill(e);
+    for (final c in _controllers) {
+      c.addListener(_scheduleDraft);
+    }
+    WidgetsBinding.instance.addObserver(this);
+    _ready = true;
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _messenger = ScaffoldMessenger.maybeOf(context);
+  }
+
+  @override
+  void setState(VoidCallback fn) {
+    super.setState(fn);
+    _scheduleDraft();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.inactive ||
+        state == AppLifecycleState.detached) {
+      _flushDraft();
+    }
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _draftTimer?.cancel();
+    final kept = _flushDraft();
+    final messenger = _messenger;
+    if (kept && messenger != null) {
+      Future(() => messenger.showSnackBar(const SnackBar(
+          content: Text('حُفظت المعاينة مسودةً، ويمكنك استكمالها من «مسودات المعاينات».'))));
+    }
+    for (final c in _controllers) {
+      c.dispose();
+    }
+    super.dispose();
+  }
+
+  bool get _hasContent =>
+      _controllers.any((c) => c.text.trim().isNotEmpty) ||
+      _lines.isNotEmpty ||
+      _description != null ||
+      _inspectionType != null;
+
+  void _scheduleDraft() {
+    if (!_ready || !_draftable || _submitted) return;
+    _draftTimer?.cancel();
+    _draftTimer = Timer(const Duration(milliseconds: 700), _flushDraft);
+  }
+
+  bool _flushDraft() {
+    _draftTimer?.cancel();
+    if (!_draftable || _submitted) return false;
+    if (!_hasContent) {
+      LocalDb.instance.deleteInspectionDraft(_uuid);
+      return false;
+    }
+    LocalDb.instance.saveInspectionDraft(_uuid, _current().toDraft());
+    return true;
+  }
+
+  Future<void> _discardDraft() async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (c) => Directionality(
+        textDirection: TextDirection.rtl,
+        child: AlertDialog(
+          title: const Text('حذف المسودة'),
+          content: const Text('هل تريد حذف هذه المعاينة نهائياً دون حفظ؟'),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('إلغاء')),
+            FilledButton(
+              style: FilledButton.styleFrom(backgroundColor: AppColors.danger),
+              onPressed: () => Navigator.pop(c, true),
+              child: const Text('حذف'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (ok != true || !mounted) return;
+    _submitted = true;
+    _draftTimer?.cancel();
+    await LocalDb.instance.deleteInspectionDraft(_uuid);
+    if (mounted) Navigator.pop(context);
+  }
+
+  void _prefill(Inspection? e) {
     if (e == null) return;
     _date = DateTime.tryParse(e.inspectionDate) ?? _date;
     _ownerName.text = e.ownerName;
@@ -125,7 +239,11 @@ class _InspectionFormScreenState extends State<InspectionFormScreen> {
   }
 
   Future<void> _addItem() async {
-    await AddItemFlow.show(context, (line) {
+    final already = <String, double>{};
+    for (final l in _lines) {
+      already.update(l.itemName, (q) => q + l.quantity, ifAbsent: () => l.quantity);
+    }
+    await AddItemFlow.show(context, alreadyAdded: already, (line) {
       setState(() {
         final existing = _lines.indexWhere((l) => l.itemName == line.itemName);
         if (existing >= 0) {
@@ -197,10 +315,7 @@ class _InspectionFormScreenState extends State<InspectionFormScreen> {
     );
   }
 
-  Future<void> _save() async {
-    if (!_formKey.currentState!.validate()) return;
-    setState(() => _saving = true);
-    final insp = Inspection(
+  Inspection _current() => Inspection(
       clientUuid: _uuid,
       visitKind: widget.visitKind,
       inspectionDate: intl.DateFormat('yyyy-MM-dd').format(_date),
@@ -221,10 +336,18 @@ class _InspectionFormScreenState extends State<InspectionFormScreen> {
       customerId: _selectedCustomerId,
       lines: _lines,
     );
+
+  Future<void> _save() async {
+    if (!_formKey.currentState!.validate()) return;
+    setState(() => _saving = true);
+    final insp = _current();
     if (_isEdit && widget.existing!.localId != null) {
       await LocalDb.instance.deleteInspection(widget.existing!.localId!);
     }
     await LocalDb.instance.saveInspection(insp);
+    _submitted = true;
+    _draftTimer?.cancel();
+    await LocalDb.instance.deleteInspectionDraft(_uuid);
     if (!mounted) return;
     setState(() => _saving = false);
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(
@@ -246,6 +369,12 @@ class _InspectionFormScreenState extends State<InspectionFormScreen> {
       appBar: AppBar(
         title: Text('${_isEdit ? 'تعديل ' : ''}${_isTechnician ? 'معاينة فنيين' : 'زيارة عادية'}'),
         actions: [
+          if (_draftable && widget.draft != null)
+            IconButton(
+              tooltip: 'حذف المسودة',
+              onPressed: _discardDraft,
+              icon: const Icon(Icons.delete_outline),
+            ),
           IconButton(
             onPressed: _showCart,
             icon: Badge(

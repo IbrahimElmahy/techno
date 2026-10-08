@@ -10,14 +10,13 @@ import '../utils/format.dart';
 import 'session_drawer.dart';
 
 enum PeriodPreset {
-  today('اليوم'),
-  yesterday('أمس'),
-  week('الأسبوع'),
-  month('الشهر'),
-  custom('فترة');
+  today('اليوم', 'أمس'),
+  yesterday('أمس', 'أول أمس'),
+  week('الأسبوع', 'الأسبوع الماضي');
 
-  const PeriodPreset(this.label);
+  const PeriodPreset(this.label, this.previousLabel);
   final String label;
+  final String previousLabel;
 }
 
 class SupPeriod {
@@ -27,7 +26,7 @@ class SupPeriod {
 
   const SupPeriod._(this.preset, this.from, this.to);
 
-  factory SupPeriod.of(PeriodPreset p, {DateTimeRange? range, DateTime? now}) {
+  factory SupPeriod.of(PeriodPreset p, {DateTime? now}) {
     final n = now ?? DateTime.now();
     final today = DateTime(n.year, n.month, n.day);
     switch (p) {
@@ -39,17 +38,19 @@ class SupPeriod {
       case PeriodPreset.week:
         final sinceSat = (today.weekday + 1) % 7;
         return SupPeriod._(p, today.subtract(Duration(days: sinceSat)), today);
-      case PeriodPreset.month:
-        return SupPeriod._(p, DateTime(today.year, today.month, 1), today);
-      case PeriodPreset.custom:
-        final r = range ?? DateTimeRange(start: today, end: today);
-        return SupPeriod._(p, DateTime(r.start.year, r.start.month, r.start.day),
-            DateTime(r.end.year, r.end.month, r.end.day));
     }
   }
 
   String get fromIso => isoDate(from);
   String get toIso => isoDate(to);
+
+  int get _shiftDays => preset == PeriodPreset.week ? 7 : to.difference(from).inDays + 1;
+
+  DateTime get previousFrom => from.subtract(Duration(days: _shiftDays));
+  DateTime get previousTo => to.subtract(Duration(days: _shiftDays));
+
+  String get previousFromIso => isoDate(previousFrom);
+  String get previousToIso => isoDate(previousTo);
 
   String get key => '$fromIso|$toIso';
 
@@ -63,21 +64,8 @@ class PeriodChips extends StatelessWidget {
   final SupPeriod period;
   final ValueChanged<SupPeriod> onChanged;
 
-  Future<void> _pick(BuildContext context, PeriodPreset p) async {
-    if (p != PeriodPreset.custom) {
-      if (p != period.preset) onChanged(SupPeriod.of(p));
-      return;
-    }
-    final now = DateTime.now();
-    final r = await showDateRangePicker(
-      context: context,
-      firstDate: DateTime(2020),
-      lastDate: DateTime(now.year, now.month, now.day),
-      initialDateRange: DateTimeRange(start: period.from, end: period.to),
-      helpText: 'اختر الفترة',
-      saveText: 'تم',
-    );
-    if (r != null) onChanged(SupPeriod.of(PeriodPreset.custom, range: r));
+  void _pick(PeriodPreset p) {
+    if (p != period.preset) onChanged(SupPeriod.of(p));
   }
 
   @override
@@ -95,9 +83,6 @@ class PeriodChips extends StatelessWidget {
                   padding: const EdgeInsetsDirectional.only(end: 8),
                   child: ChoiceChip(
                     label: Text(p.label),
-                    avatar: p == PeriodPreset.custom
-                        ? const Icon(Icons.date_range_outlined, size: 18)
-                        : null,
                     selected: period.preset == p,
                     showCheckmark: false,
                     selectedColor: AppColors.primary,
@@ -108,7 +93,7 @@ class PeriodChips extends StatelessWidget {
                     backgroundColor: Colors.white,
                     side: BorderSide(color: AppColors.primary.withValues(alpha: 0.25)),
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-                    onSelected: (_) => _pick(context, p),
+                    onSelected: (_) => _pick(p),
                   ),
                 ),
             ],
@@ -205,6 +190,7 @@ class StatTile extends StatelessWidget {
     required this.icon,
     required this.color,
     this.sub,
+    this.trend,
   });
 
   final String label;
@@ -212,6 +198,7 @@ class StatTile extends StatelessWidget {
   final String? sub;
   final IconData icon;
   final Color color;
+  final Widget? trend;
 
   @override
   Widget build(BuildContext context) {
@@ -256,6 +243,10 @@ class StatTile extends StatelessWidget {
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(fontSize: 12, color: Colors.grey.shade600)),
             ],
+            if (trend != null) ...[
+              const SizedBox(height: 6),
+              trend!,
+            ],
           ],
         ),
       ),
@@ -263,12 +254,90 @@ class StatTile extends StatelessWidget {
   }
 }
 
+class TrendBadge extends StatelessWidget {
+  const TrendBadge({
+    super.key,
+    required this.current,
+    required this.previous,
+    this.previousLabel,
+    this.higherIsBetter = true,
+    this.compact = false,
+  });
+
+  final double current;
+  final double previous;
+  final String? previousLabel;
+  final bool higherIsBetter;
+  final bool compact;
+
+  static const _up = Color(0xFF1E9E5A);
+  static const _down = Color(0xFFD64545);
+
+  @override
+  Widget build(BuildContext context) {
+    final diff = current - previous;
+    final flat = diff.abs() < 0.005;
+    final rising = diff > 0;
+    final good = rising == higherIsBetter;
+    final color = flat ? Colors.grey.shade600 : (good ? _up : _down);
+    final icon = flat
+        ? Icons.trending_flat
+        : (rising ? Icons.arrow_upward_rounded : Icons.arrow_downward_rounded);
+    String text;
+    if (flat) {
+      text = 'بلا تغيير';
+    } else if (previous.abs() < 0.005) {
+      text = '';
+    } else {
+      final pct = (diff / previous.abs() * 100).abs();
+      final shown = pct >= 100 ? pct.toStringAsFixed(0) : pct.toStringAsFixed(1);
+      text = '${shown.replaceFirst(RegExp(r'\.0$'), '')}%';
+    }
+    final badge = Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: compact ? 13 : 15, color: color),
+          if (text.isNotEmpty) ...[
+            const SizedBox(width: 2),
+            Text(text,
+                style: TextStyle(
+                    fontSize: compact ? 11 : 12,
+                    fontWeight: FontWeight.w800,
+                    color: color)),
+          ],
+        ],
+      ),
+    );
+    if (compact || previousLabel == null) return badge;
+    return Row(
+      children: [
+        badge,
+        const SizedBox(width: 6),
+        Flexible(
+          child: Text('${previousLabel!}: ${fmtMoney(previous)}',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(fontSize: 11, color: Colors.grey.shade600)),
+        ),
+      ],
+    );
+  }
+}
+
 class MiniStat extends StatelessWidget {
-  const MiniStat({super.key, required this.label, required this.value, this.color});
+  const MiniStat(
+      {super.key, required this.label, required this.value, this.color, this.trend});
 
   final String label;
   final String value;
   final Color? color;
+  final Widget? trend;
 
   @override
   Widget build(BuildContext context) {
@@ -287,6 +356,10 @@ class MiniStat extends StatelessWidget {
                   fontWeight: FontWeight.w800,
                   color: color ?? Colors.black87)),
         ),
+        if (trend != null) ...[
+          const SizedBox(height: 3),
+          trend!,
+        ],
       ],
     );
   }

@@ -75,6 +75,12 @@ class _PriceSheetScreenState extends State<PriceSheetScreen> {
       await ApiClient.instance
           .refreshPriceSheetHidden(timeout: const Duration(seconds: 4));
     } catch (_) {}
+    if ((await LocalDb.instance.catalogItems()).isEmpty) {
+      try {
+        await ApiClient.instance
+            .pullPriceCatalog(timeout: const Duration(seconds: 20));
+      } catch (_) {}
+    }
     final hidden = await LocalDb.instance.priceSheetHiddenCategories();
     final items = [
       for (final it in await LocalDb.instance.catalogItems())

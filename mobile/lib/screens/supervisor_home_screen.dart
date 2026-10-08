@@ -56,7 +56,8 @@ class _SupervisorHomeScreenState extends State<SupervisorHomeScreen> {
       _error = null;
     });
     try {
-      final j = await ApiClient.instance.supervisorOverview(_period.fromIso, _period.toIso);
+      final j = await ApiClient.instance.supervisorOverview(_period.fromIso, _period.toIso,
+          prevFrom: _period.previousFromIso, prevTo: _period.previousToIso);
       if (!mounted || my != _req) return;
       setState(() {
         _data = SupOverview.fromJson(j);
@@ -215,6 +216,17 @@ class _SupervisorHomeScreenState extends State<SupervisorHomeScreen> {
         ),
       );
 
+  Widget? _trend(double Function(SupStats) f, {bool higherIsBetter = true}) {
+    final p = _data?.totals.previous;
+    if (p == null) return null;
+    return TrendBadge(
+      current: f(_data!.totals),
+      previous: f(p),
+      previousLabel: _period.preset.previousLabel,
+      higherIsBetter: higherIsBetter,
+    );
+  }
+
   Widget _statsGrid(SupOverview d) {
     final t = d.totals;
     final tiles = <Widget>[
@@ -224,6 +236,7 @@ class _SupervisorHomeScreenState extends State<SupervisorHomeScreen> {
         sub: '${t.salesCount} فاتورة',
         icon: Icons.receipt_long_outlined,
         color: AppColors.primary,
+        trend: _trend((s) => s.sales),
       ),
       StatTile(
         label: 'التحصيل',
@@ -231,6 +244,7 @@ class _SupervisorHomeScreenState extends State<SupervisorHomeScreen> {
         sub: '${t.collectionsCount} سند قبض',
         icon: Icons.payments_outlined,
         color: AppColors.success,
+        trend: _trend((s) => s.collections),
       ),
       StatTile(
         label: 'المرتجعات',
@@ -238,12 +252,14 @@ class _SupervisorHomeScreenState extends State<SupervisorHomeScreen> {
         sub: '${t.returnsCount} مرتجع',
         icon: Icons.assignment_return_outlined,
         color: AppColors.danger,
+        trend: _trend((s) => s.returns, higherIsBetter: false),
       ),
       StatTile(
         label: 'الصافي',
         value: fmtMoney(t.net),
         icon: Icons.trending_up,
         color: AppColors.primaryDark,
+        trend: _trend((s) => s.net),
       ),
       StatTile(
         label: 'مديونية العملاء',
