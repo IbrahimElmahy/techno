@@ -589,7 +589,6 @@ const Vouchers: React.FC = () => {
       key, label: t.label, count: key === tab ? vTotal : undefined,
     })),
     { key: 'treasury-movement', label: 'حركة الخزينة' },
-    { key: 'cheques', label: 'الشيكات', count: cheques.length },
     { key: 'statement', label: 'كشف حساب' },
     { key: 'log', label: 'سجل السندات', count: tab === 'log' ? vTotal : undefined },
   ];

@@ -1112,38 +1112,6 @@ export default function CustomerProfile() {
                   ),
                 },
                 {
-                  key: 'cheques',
-                  label: `الشيكات (${data.cheques.length})`,
-                  children: (
-                    <>
-                      <ListToolbar
-                        searchPlaceholder="بحث برقم الشيك أو البنك"
-                        searchSpan={8} showDateRange
-                        query={chequesFilter.query} onQueryChange={chequesFilter.setQuery}
-                        values={chequesFilter.values} onValueChange={chequesFilter.setValue}
-                        range={chequesFilter.range} onRangeChange={chequesFilter.setRange}
-                        onReset={chequesFilter.reset}
-                        total={data.cheques.length} shown={chequesFilter.filtered.length}
-                        filters={[
-                          { key: 'status', placeholder: 'الحالة', options: statusOptions(data.cheques) },
-                        ]}
-                      />
-                      <Table size="small" rowKey="id" dataSource={chequesFilter.filtered} onRow={rowProps('cheque')}
-                        pagination={{ defaultPageSize: PAGE_SIZE, showSizeChanger: true, pageSizeOptions: PAGE_SIZE_OPTIONS }} scroll={{ x: true }}
-                        columns={[
-                        { title: 'رقم الشيك', dataIndex: 'cheque_number', key: 'n' },
-                        { title: 'البنك', dataIndex: 'bank_name', key: 'b',
-                          render: (v: string) => v || '-' },
-                        { title: 'القيمة', dataIndex: 'amount', key: 'a',
-                          render: (v: string) => <b>{money(v)}</b> },
-                        { title: 'الاستحقاق', dataIndex: 'due_date', key: 'd' },
-                        { title: 'الحالة', dataIndex: 'status', key: 's',
-                          render: (s: string) => <Tag>{STATUS_LABELS[s] || s}</Tag> },
-                      ]} />
-                    </>
-                  ),
-                },
-                {
                   key: 'coupons',
                   label: `الكوبونات (${data.coupons.length})`,
                   children: (

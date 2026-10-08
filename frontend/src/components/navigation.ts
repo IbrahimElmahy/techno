@@ -191,22 +191,9 @@ export const NAVIGATION: (NavGroup | NavScreen)[] = [
         ],
       },
       {
-        key: 'grp-notes',
-        label: 'أوراق قبض ودفع',
-        children: [
-          { key: '/vouchers?tab=cheques&direction=incoming', label: 'أوراق قبض', roles: R(BOOKS), a5: '/notes-receivable' },
-          { key: '/vouchers?tab=cheques&direction=outgoing', label: 'أوراق دفع', roles: R(BOOKS), a5: '/notes-payable' },
-          { key: '/ops-reports?view=cheque-wallet', label: 'محفظة الشيكات', roles: R(BOOKS) },
-          { key: '/ops-reports?view=cheques-due-soon', label: 'شيكات تستحق قريباً', roles: R(BOOKS) },
-          { key: '/ops-reports?view=cheques-by-status', label: 'الشيكات بالحالة', roles: R(BOOKS) },
-        ],
-      },
-      {
         key: 'grp-journals',
-        label: 'الدفاتر والتسوية',
+        label: 'التسوية وجاري الشركاء',
         children: [
-          { key: '/general-ledger?tab=journals', label: 'الدفاتر', roles: R(BOOKS) },
-          { key: '/general-ledger?tab=integrity', label: 'سلامة الدفاتر', roles: R(BOOKS) },
           { key: '/reconciliation?tab=open', label: 'تسوية — المفتوح', roles: BOOKS },
           { key: '/reconciliation?tab=matched', label: 'تسوية — المطابَق', roles: BOOKS },
           { key: '/partners-current', label: 'جاري الشركاء', roles: R(BOOKS) },

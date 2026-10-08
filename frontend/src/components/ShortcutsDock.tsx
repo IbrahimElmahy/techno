@@ -17,8 +17,6 @@ export const CREATE_ACTIONS: Action[] = [
   { id: 'handover', group: 'السندات', label: 'توريد مندوب', route: '/vouchers?tab=handover', button: 'توريد جديد' },
   { id: 'expense', group: 'السندات', label: 'سند مصروف', route: '/vouchers?tab=expense', button: 'مصروف جديد' },
   { id: 'treasury-transfer', group: 'السندات', label: 'تحويل بين الخزن', route: '/vouchers?tab=transfer', button: 'تحويل جديد' },
-  { id: 'cheque-in', group: 'السندات', label: 'ورقة قبض', route: '/vouchers?tab=cheques&direction=incoming', button: 'ورقة جديدة' },
-  { id: 'cheque-out', group: 'السندات', label: 'ورقة دفع', route: '/vouchers?tab=cheques&direction=outgoing', button: 'ورقة جديدة' },
   { id: 'transfer', group: 'المخازن', label: 'طلب تحويل مخزني', route: '/transfers', button: 'طلب تحويل مخزني' },
   { id: 'account-statement', group: 'الحسابات', label: 'كشف حساب', route: '/account-statement', button: '' },
 ];
