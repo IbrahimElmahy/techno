@@ -16,6 +16,7 @@ import { useQueryTab } from '../components/useQueryTab';
 import { money, num } from '../utils/money';
 import { printDocument } from '../print/brand';
 import { exportExcel } from '../utils/exportExcel';
+import StatementView, { buildStatement, KpiCards } from './incomeSheet/StatementView';
 
 type Range = [Dayjs, Dayjs] | null;
 
@@ -35,6 +36,19 @@ const CUSTOMER_TYPE_LABELS: Record<string, string> = {
 
 const pct = (v: string | null | undefined) => (v == null ? '—' : `${num(v, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%`);
 const iso = (d: Dayjs) => d.format('YYYY-MM-DD');
+
+function compareRange(range: Range, mode: 'none' | 'prev' | 'year'): Range {
+  if (!range || mode === 'none') return null;
+  if (mode === 'year') return [range[0].subtract(1, 'year'), range[1].subtract(1, 'year')];
+  const startOfMonth = range[0].date() === 1 && range[1].isSame(range[1].endOf('month'), 'day');
+  if (startOfMonth) {
+    const months = range[1].diff(range[0], 'month') + 1;
+    const from = range[0].subtract(months, 'month');
+    return [from, from.add(months - 1, 'month').endOf('month')];
+  }
+  const days = range[1].diff(range[0], 'day') + 1;
+  return [range[0].subtract(days, 'day'), range[0].subtract(1, 'day')];
+}
 
 function quickRanges(): { label: string; value: [Dayjs, Dayjs] }[] {
   const now = dayjs();
@@ -61,6 +75,8 @@ const IncomeSheet: React.FC = () => {
   const [range, setRange] = useState<Range>(null);
   const [postedOnly, setPostedOnly] = useState(true);
   const [data, setData] = useState<any | null>(null);
+  const [compare, setCompare] = useState<'none' | 'prev' | 'year'>('none');
+  const [cmpData, setCmpData] = useState<any | null>(null);
   const [loading, setLoading] = useState(false);
   const [drill, setDrill] = useState<{ title: string; body: React.ReactNode } | null>(null);
 
@@ -84,14 +100,21 @@ const IncomeSheet: React.FC = () => {
     if (!range) { setData(null); return; }
     setLoading(true);
     try {
-      const r = await api.get('/api/v1/reports/income-sheet', { params: params() });
+      const cmpRange = compareRange(range, compare);
+      const [r, c] = await Promise.all([
+        api.get('/api/v1/reports/income-sheet', { params: params() }),
+        cmpRange ? api.get('/api/v1/reports/income-sheet', {
+          params: { ...params(), date_from: iso(cmpRange[0]), date_to: iso(cmpRange[1]) },
+        }).catch(() => null) : Promise.resolve(null),
+      ]);
       setData(r.data);
+      setCmpData(c ? c.data : null);
     } catch (e: any) {
       message.error(e?.response?.data?.detail?.message || 'تعذّر تحميل قائمة الدخل');
     } finally {
       setLoading(false);
     }
-  }, [params, range]);
+  }, [params, range, compare]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -370,6 +393,21 @@ const IncomeSheet: React.FC = () => {
     </tr>
   );
 
+  const handlers = { openSales, openInventory, openPurchases, openAccount };
+  const statementRows = useMemo(() => buildStatement(data, handlers), [data]);
+  const compareRows = useMemo(() => (cmpData ? buildStatement(cmpData, {}) : null), [cmpData]);
+  const cmpRange = compareRange(range, compare);
+  const compareLabel = cmpRange ? `${cmpRange[0].format('D-M-YYYY')} — ${cmpRange[1].format('D-M-YYYY')}` : '';
+
+  const statement = data && (
+    <>
+      <div className="sl-summary" style={{ marginBottom: 12 }}><KpiCards data={data} /></div>
+      <StatementView rows={statementRows} compare={compareRows} compareLabel={compareLabel}
+        salesTotal={Number(data.sales.total)} compareSalesTotal={cmpData ? Number(cmpData.sales.total) : 0}
+        loading={loading} />
+    </>
+  );
+
   const sheet = data && (
     <Row gutter={[16, 16]}>
       <Col xs={24} xl={12}>
@@ -562,6 +600,12 @@ const IncomeSheet: React.FC = () => {
         {quickRanges().map((q) => (
           <Button key={q.label} size="small" onClick={() => setRange(q.value)}>{q.label}</Button>
         ))}
+        <Select size="small" style={{ minWidth: 170 }} value={compare} onChange={setCompare}
+          options={[
+            { value: 'none', label: 'بدون مقارنة' },
+            { value: 'prev', label: 'مقارنة بالفترة السابقة' },
+            { value: 'year', label: 'مقارنة بنفس الفترة العام الماضي' },
+          ]} />
         <Radio.Group size="small" value={postedOnly} onChange={(e) => setPostedOnly(e.target.value)}>
           <Radio.Button value>المرحّل</Radio.Button>
           <Radio.Button value={false}>كل القيود</Radio.Button>
@@ -574,6 +618,11 @@ const IncomeSheet: React.FC = () => {
       <Tabs activeKey={tab} onChange={setTab} items={[
         {
           key: 'sheet', label: 'القائمة',
+          children: !range ? <Empty description="اختر الفترة (من / إلى)" />
+            : loading && !data ? <Spin /> : (data ? statement : null),
+        },
+        {
+          key: 'details', label: 'التفاصيل',
           children: !range ? <Empty description="اختر الفترة (من / إلى)" />
             : loading && !data ? <Spin /> : (data ? <Spin spinning={loading}>{sheet}</Spin> : null),
         },
