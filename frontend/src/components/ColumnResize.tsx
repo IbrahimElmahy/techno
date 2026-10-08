@@ -13,6 +13,21 @@ function save(w: Widths) {
   try { localStorage.setItem(STORAGE_KEY, JSON.stringify(w)); } catch {}
 }
 
+export const WIDTHS_EVENT = 'techno:col-widths';
+let shared: Widths = load();
+let raf = 0;
+function emit() {
+  if (raf) return;
+  raf = requestAnimationFrame(() => {
+    raf = 0;
+    window.dispatchEvent(new Event(WIDTHS_EVENT));
+  });
+}
+
+export function storedWidth(heading: string): number | undefined {
+  return shared[`${scopeOf()}|${heading.trim().slice(0, 40)}`];
+}
+
 function headingOf(th: HTMLElement): string {
   return (th.textContent || '').trim().slice(0, 40);
 }
@@ -62,7 +77,7 @@ function applyStored(widths: Widths) {
 
 export default function ColumnResizeProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
-    let widths = load();
+    let widths = shared;
     let drag: { th: HTMLElement; table: HTMLElement; index: number; startX: number;
       startWidth: number; key: string } | null = null;
 
@@ -77,6 +92,7 @@ export default function ColumnResizeProvider({ children }: { children: React.Rea
       const next = Math.max(MIN_WIDTH, Math.round(drag.startWidth + delta));
       colsAt(drag.table, drag.index).forEach((col) => { col.style.width = `${next}px`; });
       widths[drag.key] = next;
+      emit();
       e.preventDefault();
     };
 
@@ -118,6 +134,7 @@ export default function ColumnResizeProvider({ children }: { children: React.Rea
       delete widths[keyFor(th)];
       colsAt(table, index).forEach((col) => { col.style.width = ''; });
       save(widths);
+      emit();
       e.preventDefault();
       e.stopPropagation();
     };

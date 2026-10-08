@@ -1,6 +1,7 @@
 import React from 'react';
 import { Table } from 'antd';
 import { buildSummary, filteredRows, leavesOf } from './tableTotals';
+import { WIDTHS_EVENT, storedWidth } from './ColumnResize';
 
 export const APP_SCROLL_CLASS = 'app-scroll';
 export const STICKY_BAR = 12;
@@ -179,6 +180,26 @@ function computeAutoFilter(c: any, rows: any[], get: (r: any) => any): any {
   };
 }
 
+function withStoredWidths(cols: any[] | undefined): any[] | undefined {
+  if (!Array.isArray(cols)) return cols;
+  let changed = false;
+  const out = cols.map((c) => {
+    if (!c || typeof c !== 'object') return c;
+    if (Array.isArray(c.children) && c.children.length) {
+      const kids = withStoredWidths(c.children);
+      if (kids !== c.children) { changed = true; return { ...c, children: kids }; }
+      return c;
+    }
+    const heading = textOf(typeof c.title === 'function' ? '' : c.title);
+    if (!heading) return c;
+    const w = storedWidth(heading);
+    if (!w || w === c.width) return c;
+    changed = true;
+    return { ...c, width: w };
+  });
+  return changed ? out : cols;
+}
+
 function withFilters(cols: any[] | undefined, rows: any[], onOpen?: () => void): any[] | undefined {
   if (!Array.isArray(cols)) return cols;
   let changed = false;
@@ -216,7 +237,7 @@ function withDefaults(
   let next = props;
   const rowsForFilters = filterRows
     ?? (Array.isArray(props.dataSource) && !nested ? props.dataSource : []);
-  const cols = withFilters(props.columns, rowsForFilters, onOpen);
+  const cols = withStoredWidths(withFilters(props.columns, rowsForFilters, onOpen));
   if (cols !== props.columns) next = { ...next, columns: cols };
 
   if (props.scroll === undefined) {
@@ -260,6 +281,12 @@ if (typeof T.render === 'function') {
     const nested = React.useContext(InsideTable);
     const [filters, setFilters] = React.useState<Filters>(null);
     const [full, setFull] = React.useState<any[] | null>(null);
+    const [, setWidthTick] = React.useState(0);
+    React.useEffect(() => {
+      const bump = () => setWidthTick((t) => t + 1);
+      window.addEventListener(WIDTHS_EVENT, bump);
+      return () => window.removeEventListener(WIDTHS_EVENT, bump);
+    }, []);
     const loading = React.useRef(false);
     const { fetchAllRows, partialRows, ...props } = rawProps;
     const shown = Array.isArray(props.dataSource) ? props.dataSource.length : 0;
