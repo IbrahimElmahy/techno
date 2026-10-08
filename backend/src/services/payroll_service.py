@@ -338,6 +338,8 @@ def update_remittance(
     row = db.get(PayrollRemittance, remittance_id)
     if row is None:
         raise PayrollError("السداد غير موجود.")
+    if row.payment_entry_id is not None:
+        raise PayrollError("هذا السداد مسجّل تلقائياً مع صرف المرتبات — عدّله بإلغاء الصرف.")
     value = to_money(Decimal(str(amount if amount not in (None, "") else row.amount)))
     if value <= ZERO:
         raise PayrollError("يجب أن يكون المبلغ أكبر من صفر.")
@@ -373,10 +375,13 @@ def update_remittance(
     return row
 
 
-def delete_remittance(db: Session, *, remittance_id: int, actor_user_id: int) -> None:
+def delete_remittance(db: Session, *, remittance_id: int, actor_user_id: int,
+                      force: bool = False) -> None:
     row = db.get(PayrollRemittance, remittance_id)
     if row is None:
         raise PayrollError("السداد غير موجود.")
+    if row.payment_entry_id is not None and not force:
+        raise PayrollError("هذا السداد مسجّل تلقائياً مع صرف المرتبات — احذفه بإلغاء الصرف.")
     if row.ledger_entry_id:
         ledger_service.reverse_entry(db, original_id=row.ledger_entry_id,
                                      actor_user_id=actor_user_id)

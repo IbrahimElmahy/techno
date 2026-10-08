@@ -333,6 +333,7 @@ _ADDED_COLUMNS: list[tuple[str, str, str]] = [
     ("payroll_line", "extra_deduction", "DECIMAL(18,2)"),
     ("payroll_line", "notes", "VARCHAR(300)"),
     ("payroll_run", "excluded_employees", "VARCHAR(2000)"),
+    ("payroll_remittance", "payment_entry_id", "BIGINT"),
     ("bom_component", "stage", "VARCHAR(16)"),
     ("production_order_material", "stage", "VARCHAR(16)"),
     ("production_order_product", "received_quantity", "DECIMAL(18,3) NOT NULL DEFAULT 0"),

@@ -57,7 +57,7 @@ interface MonthData {
 
 interface Remittance {
   id: number; document_number: string; amount: string; remit_date: string;
-  branch_id: number | null; treasury_id: number | null; notes: string | null;
+  branch_id: number | null; treasury_id: number | null; notes: string | null; auto?: boolean;
 }
 
 interface Item { name: string; kind: 'earning' | 'deduction'; amount?: number }
@@ -567,15 +567,17 @@ export default function Payroll() {
               { title: 'الفرع', dataIndex: 'branch_id', key: 'branch_id', render: (v: number | null) => branchName(v) },
               { title: 'الخزنة', dataIndex: 'treasury_id', key: 'treasury_id', render: (v: number | null) => treasuryName(v) },
               { title: 'ملاحظات', dataIndex: 'notes', key: 'notes', render: (v: string | null) => v || '' },
+              { title: 'المصدر', dataIndex: 'auto', key: 'auto', width: 130,
+                render: (v: boolean) => (v ? <Tag color="blue">من صرف المرتبات</Tag> : <Tag>يدوي</Tag>) },
               { title: '', key: 'x', width: 90,
-                render: (_: any, r: Remittance) => (
+                render: (_: any, r: Remittance) => (r.auto ? null : (
                   <Space size={0}>
                     <Button type="text" icon={<EditOutlined />} title="تعديل" onClick={() => openRemit(r)} />
                     <Popconfirm title="حذف السداد وعكس قيده؟" onConfirm={() => deleteRemit(r.id)}>
                       <Button type="text" danger icon={<DeleteOutlined />} title="حذف" />
                     </Popconfirm>
                   </Space>
-                ) },
+                )) },
             ]}
           />
         )}
@@ -606,9 +608,14 @@ export default function Payroll() {
       >
         <Row gutter={[10, 10]}>
           <Col span={24}>
-            المبلغ: <b>{money(payOpen?.ids
+            صافي المرتبات: <b>{money(payOpen?.ids
               ? unpaid.filter((l) => payOpen.ids!.includes(l.employee_id)).reduce((t, l) => t + n(l.net), 0)
               : unpaidNet)}</b>
+            <span style={{ marginInlineStart: 16 }}>
+              التأمينات المسددة معها: <b>{money((payOpen?.ids
+                ? unpaid.filter((l) => payOpen.ids!.includes(l.employee_id)) : unpaid)
+                .reduce((t, l) => t + n(l.insurance), 0))}</b>
+            </span>
           </Col>
           <Col span={12}>
             <div style={{ marginBottom: 4 }}>التاريخ</div>

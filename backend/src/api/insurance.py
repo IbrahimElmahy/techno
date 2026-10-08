@@ -164,6 +164,7 @@ def list_remittances(
         "id": r.id, "document_number": r.document_number, "amount": str(r.amount),
         "remit_date": r.remit_date, "branch_id": r.branch_id, "treasury_id": r.treasury_id,
         "notes": r.notes, "ledger_entry_id": r.ledger_entry_id,
+        "auto": r.payment_entry_id is not None,
     } for r in db.scalars(stmt).all()]
 
 

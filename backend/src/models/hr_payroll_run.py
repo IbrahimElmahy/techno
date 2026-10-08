@@ -175,6 +175,7 @@ class PayrollRemittance(Base):
     kind: Mapped[str] = mapped_column(String(16), nullable=False)
     amount: Mapped[object] = mapped_column(MONEY, nullable=False)
     remit_date: Mapped[date] = mapped_column(Date, nullable=False, index=True)
+    payment_entry_id: Mapped[int | None] = mapped_column(BigIntPK, nullable=True, index=True)
     treasury_id: Mapped[int | None] = mapped_column(ForeignKey("treasury.id"), nullable=True)
     branch_id: Mapped[int | None] = mapped_column(ForeignKey("branch.id"), nullable=True)
     ledger_entry_id: Mapped[int | None] = mapped_column(

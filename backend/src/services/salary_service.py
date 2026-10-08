@@ -726,7 +726,16 @@ def pay(db: Session, *, run_id: int, actor_user_id: int, treasury_id: int | None
                          entity_type="payroll_run", entity_id=run.id,
                          after={"paid": len(lines), "total": str(total),
                                 "ledger_entry_id": entry.id})
-    return {"paid": len(lines), "total": str(total), "ledger_entry_id": entry.id}
+    insurance = to_money(sum((_d(x.insurance_employee) for x in lines), ZERO))
+    if insurance > ZERO:
+        remit = payroll_service.remit(
+            db, kind="insurance", amount=insurance, remit_date=pay_date or date.today(),
+            actor_user_id=actor_user_id, branch_id=run.branch_id, treasury_id=treasury_id,
+            notes=f"تأمينات مرتبات {run.year}-{run.month:02d}")
+        remit.payment_entry_id = entry.id
+        db.flush()
+    return {"paid": len(lines), "total": str(total), "ledger_entry_id": entry.id,
+            "insurance": str(insurance)}
 
 
 def unpay(db: Session, *, run_id: int, employee_id: int, actor_user_id: int) -> int:
@@ -737,6 +746,12 @@ def unpay(db: Session, *, run_id: int, employee_id: int, actor_user_id: int) -> 
     if not line.paid or line.payment_entry_id is None:
         raise SalaryError("مرتب هذا الموظف غير مصروف.")
     entry_id = line.payment_entry_id
+    from src.models.hr_payroll_run import PayrollRemittance
+
+    for remit in db.scalars(select(PayrollRemittance).where(
+            PayrollRemittance.payment_entry_id == entry_id)).all():
+        payroll_service.delete_remittance(db, remittance_id=remit.id,
+                                          actor_user_id=actor_user_id, force=True)
     reversal = ledger_service.reverse_entry(db, original_id=entry_id, actor_user_id=actor_user_id)
     affected = db.scalars(select(PayrollLine).where(
         PayrollLine.payment_entry_id == entry_id)).all()
