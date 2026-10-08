@@ -263,6 +263,18 @@ def income_statement(
     )
 
 
+@router.get("/reports/balance-sheet-tree")
+def balance_sheet_tree(
+    as_of: date | None = Query(default=None),
+    posted_only: bool = Query(default=True),
+    current: CurrentUser = Depends(require_capability(CAP_VOUCHER_READ)),
+    db: Session = Depends(get_db),
+) -> dict:
+    return financial_reports_service.balance_sheet_tree(
+        db, as_of=as_of, posted_only=posted_only,
+        branch_id=branch_scope.visible_branch_id(current))
+
+
 @router.get("/reports/balance-sheet", response_model=BalanceSheetOut)
 def balance_sheet(
     as_of: date | None = Query(default=None),

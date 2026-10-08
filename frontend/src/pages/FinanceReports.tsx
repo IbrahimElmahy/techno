@@ -17,7 +17,7 @@ import DateRangeFilter from '../components/DateRangeFilter';
 import { useScreenShortcuts, useTableKeyboard } from '../components/keyboard';
 import { textColumn, numberColumn, choiceColumn } from '../components/gridColumns';
 import PartnerLedgerTab from './financeReports/PartnerLedgerTab';
-import CashFlowTab from './financeReports/CashFlowTab';
+import AccountTree from '../components/AccountTree';
 import { useCanSeeStats } from '../components/StatsRow';
 import { numeralsLocale } from '../utils/money';
 import ReportOptionsBar, {
@@ -33,7 +33,11 @@ const FOOT_LINE: React.CSSProperties = { padding: '10px 4px', borderTop: '1px so
 const FinanceReports: React.FC = () => {
   const navigate = useNavigate();
   const [tab, setTab] = useQueryTab('sheet');
-  useEffect(() => { if (tab === 'income') navigate('/income-sheet', { replace: true }); }, [tab]);
+  useEffect(() => {
+    if (tab === 'income') navigate('/income-sheet', { replace: true });
+    else if (['cashflow', 'vat', 'commissions'].includes(tab)) setTab('sheet');
+  }, [tab]);
+  const [tree, setTree] = useState<any | null>(null);
   const [period] = useQueryTab('', 'period');
   const [range, setRange] = useState<[Dayjs | null, Dayjs | null] | null>(null);
   const [income, setIncome] = useState<IncomeStatement | null>(null);
@@ -60,21 +64,18 @@ const FinanceReports: React.FC = () => {
     setLoading(true);
     try {
       const p = params();
-      const [i, b, a, v, c] = await Promise.all([
-        api.get<IncomeStatement>('/api/v1/reports/income-statement',
-          { params: { ...p, ...reportParams(opts) } }),
+      const [b, t, a] = await Promise.all([
         api.get<BalanceSheet>('/api/v1/reports/balance-sheet', {
           params: { ...(p.date_to ? { as_of: p.date_to } : {}), ...reportParams(opts) },
         }),
+        api.get('/api/v1/reports/balance-sheet-tree', {
+          params: { ...(p.date_to ? { as_of: p.date_to } : {}), posted_only: opts.postedOnly },
+        }),
         api.get<AgingRow[]>('/api/v1/reports/aging', { params: { party: agingParty } }),
-        api.get<VatReturn>('/api/v1/reports/vat-return', { params: p }),
-        api.get<CommissionRow[]>('/api/v1/reports/commissions', { params: p }),
       ]);
-      setIncome(i.data);
       setSheet(b.data);
+      setTree(t.data);
       setAging(a.data);
-      setVat(v.data);
-      setCommissions(c.data);
     } catch {
     } finally {
       setLoading(false);
@@ -220,9 +221,6 @@ const FinanceReports: React.FC = () => {
     { key: 'sheet', label: 'الميزانية', title: 'المركز المالي (الميزانية)' },
     { key: 'aging', label: 'أعمار الديون', title: 'أعمار الديون' },
     { key: 'partner', label: 'دفتر الشريك', title: 'دفتر الشريك' },
-    { key: 'cashflow', label: 'التدفق النقدي', title: 'التدفق النقدي' },
-    { key: 'vat', label: 'الإقرار الضريبي', title: 'الإقرار الضريبي' },
-    { key: 'commissions', label: 'عمولات المناديب', title: 'عمولات المناديب' },
   ];
   const cur = TABS.find((t) => t.key === tab);
 
@@ -340,27 +338,28 @@ const FinanceReports: React.FC = () => {
         </>
       )}
 
-      {tab === 'sheet' && sheet && (
+      {tab === 'sheet' && tree && (
         <>
-          {!sheet.balanced && (
-            <Alert
-              type="warning"
-              showIcon
-              style={{ margin: '6px 0 8px' }}
-              message="الميزانية غير متوازنة — راجع القيود اليدوية."
-            />
+          {!tree.balanced && (
+            <Alert type="warning" showIcon style={{ margin: '6px 0 8px' }}
+              message="الميزانية غير متوازنة — راجع القيود اليدوية." />
           )}
-          <Table {...acctKb.tableProps} className="sl-table" rowKey="account_id" size="small" pagination={false} title={() => 'الأصول'} dataSource={sheet.assets} columns={[nameCol, amountCol, ...compareCols(sheet.comparison?.assets, true)]} />
-          <Table {...acctKb.tableProps} className="sl-table" rowKey="account_id" size="small" pagination={false} style={{ marginTop: 12 }} title={() => 'الالتزامات'} dataSource={sheet.liabilities} columns={[nameCol, amountCol, ...compareCols(sheet.comparison?.liabilities, false)]} />
-          <Table {...acctKb.tableProps} className="sl-table" rowKey="account_id" size="small" pagination={false} style={{ marginTop: 12 }} title={() => 'حقوق الملكية'} dataSource={sheet.equity} columns={[nameCol, amountCol, ...compareCols(sheet.comparison?.equity, true)]} />
-          <div style={FOOT_LINE}>
-            <span className="sl-foot">
-              <span>الأصول: <b>{money(sheet.total_assets)}</b></span>
-              <span>الالتزامات: <b>{money(sheet.total_liabilities)}</b></span>
-              <span>حقوق الملكية: <b>{money(sheet.total_equity)}</b></span>
-              <span>أرباح الفترة: <b>{money(sheet.net_profit)}</b></span>
-            </span>
-          </div>
+          <AccountTree
+            onOpenAccount={(id) => navigate(`/account-statement?account=${id}${range?.[1] ? `&to=${range[1].format('YYYY-MM-DD')}` : ''}`)}
+            sections={[
+              { key: 'a', label: 'الأصول', total: tree.total_assets, nodes: tree.assets },
+              { key: 'l', label: 'الالتزامات', total: tree.total_liabilities, nodes: tree.liabilities },
+              {
+                key: 'e', label: 'حقوق الملكية',
+                total: String(Number(tree.total_equity) + Number(tree.net_profit)), nodes: tree.equity,
+                extra: [{ label: 'أرباح الفترة الحالية', amount: tree.net_profit }],
+              },
+            ]}
+            footer={[
+              { label: 'إجمالي الالتزامات وحقوق الملكية',
+                amount: String(Number(tree.total_liabilities) + Number(tree.total_equity) + Number(tree.net_profit)) },
+            ]}
+          />
         </>
       )}
 
@@ -399,11 +398,6 @@ const FinanceReports: React.FC = () => {
       {visited.has('partner') && (
         <div style={{ display: tab === 'partner' ? undefined : 'none' }}>
           <PartnerLedgerTab params={params} slots={slotsFor('partner')} />
-        </div>
-      )}
-      {visited.has('cashflow') && (
-        <div style={{ display: tab === 'cashflow' ? undefined : 'none' }}>
-          <CashFlowTab params={params} slots={slotsFor('cashflow')} />
         </div>
       )}
 

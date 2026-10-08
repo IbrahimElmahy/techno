@@ -155,10 +155,10 @@ def balance_sheet(db: Session, *, as_of: date | None = None,
 
 
 def _aging_for_accounts(
-    db: Session, *, account_by_party: dict[int, int], names: dict[int, str], as_of: date,
+    db: Session, *, party_by_account: dict[int, int], names: dict[int, str], as_of: date,
     branch_id: int | None = None,
 ) -> list[AgingRow]:
-    wanted = {account_id: party_id for party_id, account_id in account_by_party.items()}
+    wanted = dict(party_by_account)
     if not wanted:
         return []
     stmt = (
@@ -267,12 +267,12 @@ def receivables_aging(db: Session, *, as_of: date | None = None,
     when = as_of or date.today()
 
     def build() -> list[AgingRow]:
-        account_by_party = {
-            acc.customer_id: acc.account_id
+        party_by_account = {
+            acc.account_id: acc.customer_id
             for acc in db.scalars(select(CustomerAccount)).all()
         }
         names = {c.id: c.name for c in db.scalars(select(Customer)).all()}
-        return _aging_for_accounts(db, account_by_party=account_by_party, names=names,
+        return _aging_for_accounts(db, party_by_account=party_by_account, names=names,
                                    as_of=when, branch_id=branch_id)
 
     return _cached_aging(("receivables", when, branch_id), build)
@@ -283,12 +283,12 @@ def payables_aging(db: Session, *, as_of: date | None = None,
     when = as_of or date.today()
 
     def build() -> list[AgingRow]:
-        account_by_party = {
-            acc.supplier_id: acc.account_id
+        party_by_account = {
+            acc.account_id: acc.supplier_id
             for acc in db.scalars(select(SupplierAccount)).all()
         }
         names = {s.id: s.name for s in db.scalars(select(Supplier)).all()}
-        return _aging_for_accounts(db, account_by_party=account_by_party, names=names,
+        return _aging_for_accounts(db, party_by_account=party_by_account, names=names,
                                    as_of=when, branch_id=branch_id)
 
     return _cached_aging(("payables", when, branch_id), build)
@@ -330,4 +330,83 @@ def delta(now, before) -> dict:
     return {
         "amount": str(diff),
         "pct": str(to_money(diff / before * 100)) if before else None,
+    }
+
+
+def _tree_nodes(db: Session, totals: dict[int, Decimal], natures: set) -> list[dict]:
+    accounts = {a.id: a for a in db.scalars(select(Account)).all()}
+    nodes: dict[int, dict] = {}
+
+    def node(acc: Account) -> dict:
+        n = nodes.get(acc.id)
+        if n is None:
+            code, name = _label(acc)
+            n = {"account_id": acc.id, "code": code, "name": name, "amount": ZERO,
+                 "children": [], "_kids": {}, "parent_id": acc.parent_id}
+            nodes[acc.id] = n
+        return n
+
+    roots: dict[int, dict] = {}
+    for account_id, amount in totals.items():
+        acc = accounts.get(account_id)
+        if acc is None or amount == ZERO:
+            continue
+        nature = effective_nature(acc)
+        if nature not in natures:
+            continue
+        leaf = node(acc)
+        leaf["amount"] += amount
+        cur, child, seen = acc, leaf, {acc.id}
+        while cur.parent_id and cur.parent_id not in seen and cur.parent_id in accounts:
+            seen.add(cur.parent_id)
+            parent_acc = accounts[cur.parent_id]
+            parent = node(parent_acc)
+            parent["amount"] += amount
+            parent["_kids"][child["account_id"]] = child
+            cur, child = parent_acc, parent
+        roots[child["account_id"]] = child
+
+    def finish(n: dict) -> dict:
+        kids = [finish(k) for k in n["_kids"].values() if k["amount"] != ZERO]
+        kids.sort(key=lambda k: (k["code"] or "", k["name"] or ""))
+        own = n["amount"] - sum((k["amount"] for k in kids), ZERO)
+        if kids and own != ZERO:
+            kids.insert(0, {"account_id": n["account_id"], "code": n["code"],
+                            "name": f"{n['name']} (مباشر)", "amount": str(to_money(own)),
+                            "children": []})
+        return {"account_id": n["account_id"], "code": n["code"], "name": n["name"],
+                "amount": str(to_money(n["amount"])), "children": kids}
+
+    out = [finish(r) for r in roots.values() if r["amount"] != ZERO]
+    out.sort(key=lambda k: (k["code"] or "", k["name"] or ""))
+    return out
+
+
+def balance_sheet_tree(db: Session, *, as_of: date | None = None, posted_only: bool = True,
+                       branch_id: int | None = None) -> dict:
+    totals = _movements(db, date_from=None, date_to=as_of, posted_only=posted_only,
+                        branch_id=branch_id)
+    assets = _tree_nodes(db, totals, {AccountNature.asset})
+    liabilities = _tree_nodes(db, totals, {AccountNature.liability})
+    equity = _tree_nodes(db, totals, {AccountNature.equity})
+
+    def total(rows: list[dict]) -> Decimal:
+        return to_money(sum((Decimal(r["amount"]) for r in rows), ZERO))
+
+    accounts = {a.id: a for a in db.scalars(select(Account)).all()}
+    income = expense = ZERO
+    for account_id, amount in totals.items():
+        acc = accounts.get(account_id)
+        nature = effective_nature(acc) if acc else None
+        if nature == AccountNature.income:
+            income += amount
+        elif nature == AccountNature.expense:
+            expense += amount
+    net = to_money(income - expense)
+    ta, tl, te = total(assets), total(liabilities), total(equity)
+    return {
+        "as_of": as_of.isoformat() if as_of else None,
+        "assets": assets, "liabilities": liabilities, "equity": equity,
+        "total_assets": str(ta), "total_liabilities": str(tl), "total_equity": str(te),
+        "net_profit": str(net), "balanced": ta == to_money(tl + te + net),
     }
