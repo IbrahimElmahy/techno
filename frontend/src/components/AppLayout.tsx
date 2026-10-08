@@ -348,6 +348,8 @@ export default function AppLayout() {
           }}>
             {(user?.role === 'owner' || user?.role === 'system_admin')
               ? <BranchFilter /> : <BranchBadge branchId={user?.branch_id} />}
+            <ShortcutsDock userId={(user as any)?.id} tree={buildItems([...NAVIGATION, ...EXTRA_SECTIONS])}
+              openTab={openTab} />
             <ContrastHeaderButton />
             <Dropdown menu={{ items: userDropdownItems }} placement="bottomLeft">
               <Tooltip title={user?.name}>
@@ -365,7 +367,7 @@ export default function AppLayout() {
           <div
             className={APP_SCROLL_CLASS}
             style={{
-              padding: '16px 16px 88px',
+              padding: 16,
               background: colorBgContainer,
               borderRadius: borderRadiusLG,
               flex: 1,
@@ -375,12 +377,11 @@ export default function AppLayout() {
             }}
           >
             <TabWorkspace />
+            <div aria-hidden style={{ height: 64 }} />
           </div>
         </Content>
       </Layout>
       <HScrollDock />
-      <ShortcutsDock userId={(user as any)?.id} tree={buildItems([...NAVIGATION, ...EXTRA_SECTIONS])}
-        openTab={openTab} />
     </Layout>
   );
 }

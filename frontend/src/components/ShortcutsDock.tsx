@@ -180,14 +180,14 @@ export default function ShortcutsDock({ userId, tree, openTab }: Props) {
   };
 
   return (
-    <div style={{ position: 'fixed', left: 20, bottom: 20, zIndex: 1000 }}>
+    <div style={{ display: 'flex', alignItems: 'center' }}>
       <Dropdown menu={{ items: menu, onClick, className: 'shortcuts-menu' }} trigger={['hover']}
-        rootClassName="shortcuts-menu-root" placement="topLeft"
+        rootClassName="shortcuts-menu-root" placement="bottomLeft"
         mouseLeaveDelay={0.3}>
         <button type="button" aria-label="اختصارات الإنشاء" title="اختصارات الإنشاء" style={{
-          width: 48, height: 48, borderRadius: '50%', border: 'none', cursor: 'pointer',
-          background: '#6AB42D', color: '#fff', fontSize: 22, display: 'flex',
-          alignItems: 'center', justifyContent: 'center', boxShadow: '0 3px 10px rgba(0,0,0,.25)',
+          width: 30, height: 30, borderRadius: '50%', border: 'none', cursor: 'pointer',
+          background: '#6AB42D', color: '#fff', fontSize: 16, display: 'flex',
+          alignItems: 'center', justifyContent: 'center', boxShadow: '0 1px 4px rgba(0,0,0,.2)',
         }}>
           <PlusOutlined />
         </button>
