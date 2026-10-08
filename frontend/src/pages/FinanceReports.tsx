@@ -32,7 +32,8 @@ const FOOT_LINE: React.CSSProperties = { padding: '10px 4px', borderTop: '1px so
 
 const FinanceReports: React.FC = () => {
   const navigate = useNavigate();
-  const [tab, setTab] = useQueryTab('income');
+  const [tab, setTab] = useQueryTab('sheet');
+  useEffect(() => { if (tab === 'income') navigate('/income-sheet', { replace: true }); }, [tab]);
   const [period] = useQueryTab('', 'period');
   const [range, setRange] = useState<[Dayjs | null, Dayjs | null] | null>(null);
   const [income, setIncome] = useState<IncomeStatement | null>(null);
@@ -216,7 +217,6 @@ const FinanceReports: React.FC = () => {
   const ownLoader = tab === 'partner' || tab === 'cashflow';
 
   const TABS: { key: string; label: string; title: string }[] = [
-    { key: 'income', label: 'قائمة الدخل', title: 'قائمة الدخل' },
     { key: 'sheet', label: 'الميزانية', title: 'المركز المالي (الميزانية)' },
     { key: 'aging', label: 'أعمار الديون', title: 'أعمار الديون' },
     { key: 'partner', label: 'دفتر الشريك', title: 'دفتر الشريك' },

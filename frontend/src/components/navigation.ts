@@ -215,8 +215,6 @@ export const NAVIGATION: (NavGroup | NavScreen)[] = [
           { key: '/finance-reports?tab=partner', label: 'دفتر الشريك', roles: R(BOOKS) },
           { key: '/finance-reports?tab=sheet', label: 'ميزانية ختامية', roles: R(BOOKS), a5: '/finalbalancesheet' },
           { key: '/finance-reports?tab=sheet&period=1', label: 'ميزانية خلال فترة', roles: R(BOOKS), a5: '/period-balancesheet' },
-          { key: '/finance-reports?tab=income', label: 'مركز مالي وقائمة الدخل', roles: R(BOOKS), a5: '/financialposition' },
-          { key: '/finance-reports?tab=income&period=1', label: 'مركز مالي وقائمة الدخل خلال فترة', roles: R(BOOKS), a5: '/period-financialposition' },
           { key: '/income-sheet', label: 'قائمة الدخل', roles: R(BOOKS) },
           { key: '/finance-reports?tab=cashflow', label: 'التدفق النقدي', roles: R(BOOKS) },
           { key: '/profitability?view=cost-centers', label: 'أرباح مراكز التكلفة', roles: R(BOOKS) },

@@ -4,7 +4,7 @@ import {
   Table, Tabs, Tag, Tooltip, message,
 } from 'antd';
 import {
-  ArrowDownOutlined, ArrowUpOutlined, DeleteOutlined, FileExcelOutlined, PlusOutlined,
+  ArrowDownOutlined, ArrowUpOutlined, DeleteOutlined, FileExcelOutlined, FundOutlined, PlusOutlined,
   PrinterOutlined, ReloadOutlined, SaveOutlined,
 } from '@ant-design/icons';
 import dayjs, { Dayjs } from 'dayjs';
@@ -17,6 +17,7 @@ import { money, num } from '../utils/money';
 import { printDocument } from '../print/brand';
 import { exportExcel } from '../utils/exportExcel';
 import StatementView, { buildStatement, KpiCards } from './incomeSheet/StatementView';
+import ListPage from '../components/ListPage';
 
 type Range = [Dayjs, Dayjs] | null;
 
@@ -400,12 +401,12 @@ const IncomeSheet: React.FC = () => {
   const compareLabel = cmpRange ? `${cmpRange[0].format('D-M-YYYY')} — ${cmpRange[1].format('D-M-YYYY')}` : '';
 
   const statement = data && (
-    <>
-      <div className="sl-summary" style={{ marginBottom: 12 }}><KpiCards data={data} /></div>
-      <StatementView rows={statementRows} compare={compareRows} compareLabel={compareLabel}
-        salesTotal={Number(data.sales.total)} compareSalesTotal={cmpData ? Number(cmpData.sales.total) : 0}
-        loading={loading} />
-    </>
+    <Spin spinning={loading}>
+      <StatementView rows={statementRows} compare={compareRows}
+        label={range ? `${range[0].format('D-M-YYYY')} — ${range[1].format('D-M-YYYY')}` : ''}
+        compareLabel={compareLabel}
+        salesTotal={Number(data.sales.total)} compareSalesTotal={cmpData ? Number(cmpData.sales.total) : 0} />
+    </Spin>
   );
 
   const sheet = data && (
@@ -588,60 +589,60 @@ const IncomeSheet: React.FC = () => {
     </Row>
   );
 
-  return (
-    <div style={{ padding: 16 }}>
-      <Space wrap style={{ marginBottom: 12 }}>
-        <h2 style={{ margin: 0 }}>قائمة الدخل</h2>
-        {seesAll ? (
-          <Select style={{ minWidth: 180 }} value={branchId} onChange={setBranchId} placeholder="الفرع"
-            options={[...branches.map((b) => ({ value: b.id, label: b.name })), { value: 0, label: 'كل الفروع' }]} />
-        ) : <Tag>{branchName || 'فرعك'}</Tag>}
-        <DateRangeFilter value={range} onChange={setRange} />
-        {quickRanges().map((q) => (
-          <Button key={q.label} size="small" onClick={() => setRange(q.value)}>{q.label}</Button>
-        ))}
-        <Select size="small" style={{ minWidth: 170 }} value={compare} onChange={setCompare}
-          options={[
-            { value: 'none', label: 'بدون مقارنة' },
-            { value: 'prev', label: 'مقارنة بالفترة السابقة' },
-            { value: 'year', label: 'مقارنة بنفس الفترة العام الماضي' },
-          ]} />
-        <Radio.Group size="small" value={postedOnly} onChange={(e) => setPostedOnly(e.target.value)}>
-          <Radio.Button value>المرحّل</Radio.Button>
-          <Radio.Button value={false}>كل القيود</Radio.Button>
-        </Radio.Group>
-        <Button icon={<ReloadOutlined />} onClick={load} disabled={!range}>تحديث</Button>
-        <Button icon={<PrinterOutlined />} onClick={doPrint} disabled={!data}>طباعة</Button>
-        <Button icon={<FileExcelOutlined />} onClick={doExport} disabled={!data}>Excel</Button>
-      </Space>
+  const empty = <Empty description="اختر الفترة" />;
+  const quick = quickRanges();
 
-      <Tabs activeKey={tab} onChange={setTab} items={[
-        {
-          key: 'sheet', label: 'القائمة',
-          children: !range ? <Empty description="اختر الفترة (من / إلى)" />
-            : loading && !data ? <Spin /> : (data ? statement : null),
-        },
-        {
-          key: 'details', label: 'التفاصيل',
-          children: !range ? <Empty description="اختر الفترة (من / إلى)" />
-            : loading && !data ? <Spin /> : (data ? <Spin spinning={loading}>{sheet}</Spin> : null),
-        },
-        {
-          key: 'period', label: 'مدخلات الفترة',
-          children: (
+  return (
+    <>
+      <ListPage
+        icon={<FundOutlined />}
+        title="قائمة الدخل"
+        muted={data ? `${branchName}${periodLabel ? ` · ${periodLabel}` : ''}` : undefined}
+        tabs={[
+          { key: 'sheet', label: 'القائمة' },
+          { key: 'details', label: 'التفاصيل' },
+          { key: 'period', label: 'مدخلات الفترة' },
+          { key: 'settings', label: 'الإعدادات' },
+        ]}
+        activeTab={tab as any}
+        onTabChange={(k) => setTab(k)}
+        actions={(<>
+          <Button icon={<PrinterOutlined />} onClick={doPrint} disabled={!data}>طباعة</Button>
+          <Button icon={<FileExcelOutlined />} onClick={doExport} disabled={!data}>إكسل</Button>
+          <Button icon={<ReloadOutlined />} onClick={load} disabled={!range}>تحديث</Button>
+        </>)}
+        filters={(<>
+          {seesAll ? (
+            <Select style={{ minWidth: 160 }} value={branchId} onChange={setBranchId} placeholder="الفرع"
+              options={[...branches.map((b) => ({ value: b.id, label: b.name })), { value: 0, label: 'كل الفروع' }]} />
+          ) : null}
+          <DateRangeFilter value={range} onChange={setRange} />
+          <Select style={{ minWidth: 150 }} placeholder="فترة جاهزة" value={null as any}
+            onChange={(i: number) => setRange(quick[i].value)}
+            options={quick.map((q, i) => ({ value: i, label: q.label }))} />
+          <Select style={{ minWidth: 200 }} value={compare} onChange={setCompare}
+            options={[
+              { value: 'none', label: 'بدون مقارنة' },
+              { value: 'prev', label: 'مقارنة بالفترة السابقة' },
+              { value: 'year', label: 'مقارنة بنفس الفترة العام الماضي' },
+            ]} />
+          <Select style={{ minWidth: 130 }} value={postedOnly} onChange={setPostedOnly}
+            options={[{ value: true, label: 'المرحّل' }, { value: false, label: 'كل القيود' }]} />
+        </>)}
+        summary={tab === 'sheet' && data ? <KpiCards data={data} /> : undefined}
+      >
+        {tab === 'sheet' ? (!range ? empty : loading && !data ? <Spin /> : statement)
+          : tab === 'details' ? (!range ? empty : loading && !data ? <Spin />
+            : (data ? <Spin spinning={loading}>{sheet}</Spin> : null))
+          : tab === 'period' ? (
             <PeriodInputs data={data} range={range} branchId={branchId} canEdit={canEdit} onSaved={load} />
-          ),
-        },
-        {
-          key: 'settings', label: 'الإعدادات',
-          children: <SettingsTab branchId={branchId} canEdit={canEdit} onSaved={load} />,
-        },
-      ]} />
+          ) : <SettingsTab branchId={branchId} canEdit={canEdit} onSaved={load} />}
+      </ListPage>
 
       <Modal open={!!drill} onCancel={() => setDrill(null)} footer={null} width={900} title={drill?.title} destroyOnClose>
         {drill?.body}
       </Modal>
-    </div>
+    </>
   );
 };
 

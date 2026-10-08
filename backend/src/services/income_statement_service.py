@@ -436,7 +436,8 @@ def _group_of(acc: Account, groups: list[dict], chain: list[str] = ()) -> str | 
 
 
 def _section_lines(items: list[tuple[Account, Decimal]], groups: list[dict],
-                   index: dict[int, Account] | None = None) -> list[dict]:
+                   index: dict[int, Account] | None = None,
+                   by_parent: bool = False) -> list[dict]:
     by_group: dict[str, dict] = {}
     singles: list[dict] = []
     order = {g.get("name"): i for i, g in enumerate(groups)}
@@ -444,7 +445,10 @@ def _section_lines(items: list[tuple[Account, Decimal]], groups: list[dict],
         label = acc.name or acc.account_type.value
         entry = {"account_id": acc.id, "code": acc.code, "name": label,
                  "amount": str(to_money(amount))}
-        g = _group_of(acc, groups, _chain(acc, index) if index else [])
+        chain = _chain(acc, index) if index else []
+        g = _group_of(acc, groups, chain)
+        if g is None and by_parent and chain and chain[0]:
+            g = chain[0]
         if g is None:
             singles.append({"name": label, "amount": amount, "accounts": [entry],
                             "manual": False})
@@ -540,8 +544,10 @@ def build(db: Session, *, branch_id: int | None, date_from: date, date_to: date,
                  "accounts": [], "manual": True, "note": a.get("note") or "زيادة"}
                 for a in adjustments if a.get("section") == section]
 
-    def section(role: str, manual_section: str | None = None, grouped: bool = True) -> dict:
-        lines = _section_lines(by_role.get(role, []), groups if grouped else [], index)
+    def section(role: str, manual_section: str | None = None, grouped: bool = True,
+                by_parent: bool = False) -> dict:
+        lines = _section_lines(by_role.get(role, []), groups if grouped else [], index,
+                               by_parent=by_parent)
         if manual_section:
             lines += adj_lines(manual_section)
         total = sum((ln["amount"] for ln in lines), ZERO)
@@ -583,8 +589,8 @@ def build(db: Session, *, branch_id: int | None, date_from: date, date_to: date,
     gross_profit = sales_total - cost_of_sales
 
     ga = section("ga", "ga")
-    other_income = section("other_income", "other_income")
-    other_loss = section("other_loss", "other_loss")
+    other_income = section("other_income", "other_income", grouped=False, by_parent=True)
+    other_loss = section("other_loss", "other_loss", grouped=False, by_parent=True)
     marketing_ledger = section("marketing", grouped=False)
 
     m = cfg["marketing"]
