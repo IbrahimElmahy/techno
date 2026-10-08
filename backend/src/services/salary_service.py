@@ -11,8 +11,14 @@ from sqlalchemy.orm import Session
 from src.core.money import ZERO, to_money, to_qty
 from src.models.customer import Customer
 from src.models.employee import Employee
-from src.models.hr_advance import AdjustmentBasis, AdjustmentKind
+from src.models.hr_advance import (
+    AdjustmentBasis,
+    AdjustmentKind,
+    AdjustmentStatus,
+    PayrollAdjustment,
+)
 from src.models.hr_attendance import AttendanceDay, AttendanceStatus
+from src.models.hr_leave import LeaveRequest, LeaveStatus, LeaveType
 from src.models.hr_payroll import (
     AbsenceBasis,
     ComponentKind,
@@ -393,6 +399,12 @@ def _build_line(db: Session, run: PayrollRun, emp: Employee, manual: dict) -> Pa
     if absence:
         details.append(dict(source=DetailSource.absence, label="غياب", kind=DetailKind.deduction,
                             quantity=days, amount=absence))
+    unpaid_days = unpaid_leave_days(db, emp.id, run.year, run.month)
+    unpaid = to_money(daily * unpaid_days)
+    if unpaid:
+        details.append(dict(source=DetailSource.absence, label="إجازة بدون أجر",
+                            kind=DetailKind.deduction, quantity=unpaid_days, amount=unpaid))
+        absence = to_money(absence + unpaid)
 
     preview = commission_preview(db, emp, run.year, run.month)
     computed = to_money(sum((_d(p["amount"]) for p in preview), ZERO))
@@ -828,3 +840,264 @@ def payslip(db: Session, *, run_id: int, employee_id: int) -> dict:
                     "month": run.month, "status": run.status.value,
                     "status_label": STATUS_LABELS[run.status]},
             "line": _line_out(line, emp, details)}
+
+
+PAID_LEAVE = ("LV-PAID", "إجازة مدفوعة")
+UNPAID_LEAVE = ("LV-UNPAID", "إجازة بدون أجر")
+
+ADJ_LABELS = {
+    AdjustmentKind.penalty: "جزاء",
+    AdjustmentKind.other_deduction: "خصم",
+    AdjustmentKind.bonus: "مكافأة",
+    AdjustmentKind.other_earning: "إضافة",
+}
+
+
+def _months_between(d1: date, d2: date) -> list[tuple[int, int]]:
+    out, y, m = [], d1.year, d1.month
+    while (y, m) <= (d2.year, d2.month):
+        out.append((y, m))
+        y, m = (y + 1, 1) if m == 12 else (y, m + 1)
+    return out
+
+
+def _check_open(db: Session, emp: Employee, months: list[tuple[int, int]]) -> None:
+    for year, month in months:
+        run = current_run(db, branch_id=emp.branch_id, year=year, month=month) \
+            if emp.branch_id else None
+        if run is not None and run.status == PayrollRunStatus.posted:
+            raise SalaryError(
+                f"مرتبات {year}-{month:02d} مُرحّلة — ألغِ الترحيل أولاً ثم عدّل.")
+
+
+def _refresh_employee(db: Session, emp: Employee, months: list[tuple[int, int]]) -> None:
+    for year, month in months:
+        run = current_run(db, branch_id=emp.branch_id, year=year, month=month) \
+            if emp.branch_id else None
+        if run is None or run.status not in (PayrollRunStatus.draft, PayrollRunStatus.closed):
+            continue
+        line = db.scalar(select(PayrollLine).where(
+            PayrollLine.run_id == run.id, PayrollLine.employee_id == emp.id))
+        if line is None:
+            continue
+        manual = _manual_of(line)
+        _wipe_line(db, line)
+        _build_line(db, run, emp, manual)
+        _refresh_totals(db, run)
+
+
+def _adj_out(db: Session, r: PayrollAdjustment, emp: Employee | None = None) -> dict:
+    emp = emp or db.get(Employee, r.employee_id)
+    return {
+        "id": r.id, "document_number": r.document_number, "employee_id": r.employee_id,
+        "name": emp.name if emp else None, "branch_id": emp.branch_id if emp else None,
+        "kind": r.kind.value, "kind_label": ADJ_LABELS[r.kind], "basis": r.basis.value,
+        "quantity": str(r.quantity) if r.quantity is not None else None,
+        "amount": str(r.amount), "year": r.year, "month": r.month, "reason": r.reason,
+        "applied": r.payroll_line_id is not None, "created_at": r.created_at,
+    }
+
+
+def list_adjustments(db: Session, *, employee_ids: list[int], year: int | None,
+                     month: int | None) -> list[dict]:
+    stmt = select(PayrollAdjustment).where(
+        PayrollAdjustment.employee_id.in_(employee_ids or [-1]),
+        PayrollAdjustment.status != AdjustmentStatus.cancelled)
+    if year:
+        stmt = stmt.where(PayrollAdjustment.year == year)
+    if month:
+        stmt = stmt.where(PayrollAdjustment.month == month)
+    rows = db.scalars(stmt.order_by(PayrollAdjustment.id.desc())).all()
+    emps = {e.id: e for e in db.scalars(select(Employee).where(
+        Employee.id.in_([r.employee_id for r in rows] or [-1]))).all()}
+    return [_adj_out(db, r, emps.get(r.employee_id)) for r in rows]
+
+
+def _adj_values(data: dict) -> dict:
+    try:
+        kind = AdjustmentKind(data.get("kind") or "penalty")
+        basis = AdjustmentBasis(data.get("basis") or "amount")
+    except ValueError as exc:
+        raise SalaryError("نوع الحركة غير صحيح.") from exc
+    year, month = int(data.get("year") or 0), int(data.get("month") or 0)
+    _check_month(year, month)
+    amount = to_money(_d(data.get("amount")))
+    qty = _d(data.get("quantity"))
+    if basis == AdjustmentBasis.amount and amount <= 0:
+        raise SalaryError("أدخل المبلغ.")
+    if basis != AdjustmentBasis.amount and qty <= 0:
+        raise SalaryError("أدخل عدد الأيام أو الساعات.")
+    return {"kind": kind, "basis": basis, "year": year, "month": month,
+            "amount": amount if basis == AdjustmentBasis.amount else ZERO,
+            "quantity": qty if basis != AdjustmentBasis.amount else None,
+            "reason": (data.get("reason") or "").strip()[:300] or None}
+
+
+def save_adjustment(db: Session, *, emp: Employee, data: dict, actor_user_id: int,
+                    adjustment_id: int | None = None) -> dict:
+    v = _adj_values(data)
+    months = [(v["year"], v["month"])]
+    row = None
+    old_emp = None
+    if adjustment_id is not None:
+        row = db.get(PayrollAdjustment, adjustment_id)
+        if row is None or row.status == AdjustmentStatus.cancelled:
+            raise SalaryError("الحركة غير موجودة.")
+        if row.payroll_line_id is not None:
+            raise SalaryError("هذه الحركة مُرحّلة في مرتبات الشهر — ألغِ الترحيل أولاً.")
+        months.append((row.year, row.month))
+        if row.employee_id != emp.id:
+            old_emp = db.get(Employee, row.employee_id)
+            if old_emp is not None:
+                _check_open(db, old_emp, [(row.year, row.month)])
+    _check_open(db, emp, months)
+    if row is None:
+        row = PayrollAdjustment(
+            document_number=numbering.next_document_number(db, PayrollAdjustment, "ADJ"),
+            employee_id=emp.id, actor_user_id=actor_user_id,
+            approved_by_user_id=actor_user_id, status=AdjustmentStatus.approved, **v)
+        db.add(row)
+    else:
+        row.employee_id = emp.id
+        for k, val in v.items():
+            setattr(row, k, val)
+    db.flush()
+    _refresh_employee(db, emp, months)
+    if old_emp is not None:
+        _refresh_employee(db, old_emp, months)
+    audit_service.record(db, action="adjustment.save", actor_user_id=actor_user_id,
+                         entity_type="payroll_adjustment", entity_id=row.id,
+                         after={"employee_id": emp.id, "kind": v["kind"].value,
+                                "amount": str(v["amount"]), "quantity": str(v["quantity"]),
+                                "period": f"{v['year']}-{v['month']:02d}"})
+    return _adj_out(db, row, emp)
+
+
+def delete_adjustment(db: Session, *, adjustment_id: int, actor_user_id: int) -> None:
+    row = db.get(PayrollAdjustment, adjustment_id)
+    if row is None or row.status == AdjustmentStatus.cancelled:
+        raise SalaryError("الحركة غير موجودة.")
+    if row.payroll_line_id is not None:
+        raise SalaryError("هذه الحركة مُرحّلة في مرتبات الشهر — ألغِ الترحيل أولاً.")
+    emp = db.get(Employee, row.employee_id)
+    _check_open(db, emp, [(row.year, row.month)])
+    row.status = AdjustmentStatus.cancelled
+    db.flush()
+    _refresh_employee(db, emp, [(row.year, row.month)])
+    audit_service.record(db, action="adjustment.cancel", actor_user_id=actor_user_id,
+                         entity_type="payroll_adjustment", entity_id=row.id,
+                         after={"status": "cancelled"})
+
+
+def _leave_type(db: Session, paid: bool) -> LeaveType:
+    code, name = PAID_LEAVE if paid else UNPAID_LEAVE
+    kind = db.scalar(select(LeaveType).where(LeaveType.code == code))
+    if kind is None:
+        kind = db.scalar(select(LeaveType).where(LeaveType.name == name))
+    if kind is None:
+        kind = LeaveType(code=code, name=name)
+        db.add(kind)
+    kind.paid = paid
+    kind.deducts_salary = not paid
+    kind.affects_balance = False
+    kind.requires_approval = False
+    kind.counts_weekend = False
+    kind.active = True
+    db.flush()
+    return kind
+
+
+def unpaid_leave_days(db: Session, employee_id: int, year: int, month: int) -> Decimal:
+    from src.services import leave_service
+
+    first, last = date(year, month, 1), _month_end(year, month)
+    total = ZERO
+    for req, kind in db.execute(
+        select(LeaveRequest, LeaveType)
+        .join(LeaveType, LeaveType.id == LeaveRequest.leave_type_id)
+        .where(LeaveRequest.employee_id == employee_id,
+               LeaveRequest.status == LeaveStatus.approved,
+               LeaveType.deducts_salary.is_(True),
+               LeaveRequest.date_from <= last, LeaveRequest.date_to >= first)
+    ).all():
+        try:
+            total += leave_service.working_days(
+                db, employee_id=employee_id, date_from=max(req.date_from, first),
+                date_to=min(req.date_to, last), counts_weekend=kind.counts_weekend)
+        except leave_service.LeaveError:
+            continue
+    return to_qty(total)
+
+
+def _leave_out(req: LeaveRequest, kind: LeaveType | None, emp: Employee | None) -> dict:
+    return {
+        "id": req.id, "document_number": req.document_number, "employee_id": req.employee_id,
+        "name": emp.name if emp else None, "branch_id": emp.branch_id if emp else None,
+        "paid": not (kind.deducts_salary if kind else False),
+        "type_name": kind.name if kind else None,
+        "date_from": str(req.date_from), "date_to": str(req.date_to), "days": str(req.days),
+        "reason": req.reason, "status": req.status.value,
+    }
+
+
+def list_leaves(db: Session, *, employee_ids: list[int], year: int | None,
+                month: int | None) -> list[dict]:
+    stmt = (select(LeaveRequest, LeaveType)
+            .outerjoin(LeaveType, LeaveType.id == LeaveRequest.leave_type_id)
+            .where(LeaveRequest.employee_id.in_(employee_ids or [-1]),
+                   LeaveRequest.status.in_([LeaveStatus.approved, LeaveStatus.submitted])))
+    if year and month:
+        stmt = stmt.where(LeaveRequest.date_from <= _month_end(year, month),
+                          LeaveRequest.date_to >= date(year, month, 1))
+    rows = db.execute(stmt.order_by(LeaveRequest.date_from.desc())).all()
+    emps = {e.id: e for e in db.scalars(select(Employee).where(
+        Employee.id.in_([r.employee_id for r, _ in rows] or [-1]))).all()}
+    return [_leave_out(r, k, emps.get(r.employee_id)) for r, k in rows]
+
+
+def save_leave(db: Session, *, emp: Employee, paid: bool, date_from: date, date_to: date,
+               reason: str | None, actor_user_id: int, leave_id: int | None = None) -> dict:
+    from src.services import leave_service
+
+    if date_to < date_from:
+        raise SalaryError("تاريخ النهاية قبل البداية.")
+    months = _months_between(date_from, date_to)
+    old = old_emp = None
+    old_months: list[tuple[int, int]] = []
+    if leave_id is not None:
+        old = db.get(LeaveRequest, leave_id)
+        if old is None or old.status in (LeaveStatus.cancelled, LeaveStatus.rejected):
+            raise SalaryError("الإجازة غير موجودة.")
+        old_emp = db.get(Employee, old.employee_id)
+        old_months = _months_between(old.date_from, old.date_to)
+        _check_open(db, old_emp, old_months)
+    _check_open(db, emp, months)
+    try:
+        if old is not None:
+            leave_service.cancel(db, request_id=old.id, actor_user_id=actor_user_id)
+        row = leave_service.request(
+            db, employee_id=emp.id, leave_type_id=_leave_type(db, paid).id,
+            date_from=date_from, date_to=date_to, actor_user_id=actor_user_id,
+            reason=(reason or "").strip()[:300] or None)
+    except leave_service.LeaveError as exc:
+        raise SalaryError(str(exc)) from exc
+    _refresh_employee(db, emp, months)
+    if old_emp is not None:
+        _refresh_employee(db, old_emp, old_months)
+    return _leave_out(row, db.get(LeaveType, row.leave_type_id), emp)
+
+
+def delete_leave(db: Session, *, leave_id: int, actor_user_id: int) -> None:
+    from src.services import leave_service
+
+    row = db.get(LeaveRequest, leave_id)
+    if row is None or row.status in (LeaveStatus.cancelled, LeaveStatus.rejected):
+        raise SalaryError("الإجازة غير موجودة.")
+    emp = db.get(Employee, row.employee_id)
+    months = _months_between(row.date_from, row.date_to)
+    _check_open(db, emp, months)
+    try:
+        leave_service.cancel(db, request_id=row.id, actor_user_id=actor_user_id)
+    except leave_service.LeaveError as exc:
+        raise SalaryError(str(exc)) from exc
+    _refresh_employee(db, emp, months)

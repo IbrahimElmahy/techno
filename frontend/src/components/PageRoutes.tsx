@@ -41,7 +41,6 @@ const FixedAssets = lazy(() => import('../pages/FixedAssets'));
 const Employees = lazy(() => import('../pages/Employees'));
 const Departments = lazy(() => import('../pages/Departments'));
 const Attendance = lazy(() => import('../pages/Attendance'));
-const Leave = lazy(() => import('../pages/Leave'));
 const Advances = lazy(() => import('../pages/Advances'));
 const EmployeeReceivables = lazy(() => import('../pages/EmployeeReceivables'));
 const Payroll = lazy(() => import('../pages/Payroll'));
@@ -154,7 +153,7 @@ export default function PageRoutes({ location }: { location?: string }) {
       <Route path="/employees" element={<Employees />} />
       <Route path="/departments" element={<Departments />} />
       <Route path="/attendance" element={<Attendance />} />
-      <Route path="/leave" element={<Leave />} />
+      <Route path="/leave" element={<Navigate to="/payroll?tab=leaves" replace />} />
       <Route path="/employee-salaries" element={<Navigate to="/payroll?tab=employees" replace />} />
       <Route path="/commission-settings" element={<Navigate to="/payroll?tab=employees" replace />} />
       <Route path="/advances" element={<Advances />} />

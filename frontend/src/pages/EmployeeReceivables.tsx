@@ -358,7 +358,6 @@ export default function EmployeeReceivables() {
       items.push({ key: 'advances', label: 'كل سلفه' });
     }
     if (advancesVisible && r.employee_id) {
-      items.push({ key: 'adjustment', label: 'جزاء أو مكافأة' });
     }
     const onClick = ({ key }: { key: string }) => {
       if (key === 'advance') openAdvance(r.employee_id!);
@@ -625,8 +624,6 @@ export default function EmployeeReceivables() {
         { key: 'all', label: 'كل الموظفين' },
         ...(advancesVisible ? [
           { key: 'advances' as TabKey, label: 'السلف', count: tab === 'advances' ? advances.length : null },
-          { key: 'adjustments' as TabKey, label: 'الجزاءات والمكافآت',
-            count: tab === 'adjustments' ? adjustments.length : null },
         ] : []),
       ]}
       activeTab={tab} onTabChange={setTab}

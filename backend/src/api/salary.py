@@ -308,3 +308,155 @@ def payslip(run_id: int, employee_id: int,
         return svc.payslip(db, run_id=run_id, employee_id=employee_id)
     except SalaryError as exc:
         _raise(exc)
+
+
+def _scoped_employee_ids(db: Session, current: CurrentUser, branch_id: int | None) -> list[int]:
+    stmt = branch_scope.scope(select(Employee.id), Employee, current)
+    if branch_id:
+        stmt = stmt.where(Employee.branch_id == branch_id)
+    return list(db.scalars(stmt).all())
+
+
+@router.get("/adjustments")
+def list_adjustments(
+    branch_id: int | None = Query(None),
+    year: int | None = Query(None),
+    month: int | None = Query(None),
+    current: CurrentUser = Depends(require_capability(CAP_SALARY_VIEW)),
+    db: Session = Depends(get_db),
+) -> list[dict]:
+    return svc.list_adjustments(db, employee_ids=_scoped_employee_ids(db, current, branch_id),
+                                year=year, month=month)
+
+
+class AdjustmentIn(BaseModel):
+    employee_id: int
+    kind: str
+    basis: str = "amount"
+    amount: float | str | None = None
+    quantity: float | str | None = None
+    year: int
+    month: int
+    reason: str | None = None
+
+
+@router.post("/adjustments")
+def create_adjustment(body: AdjustmentIn,
+                      current: CurrentUser = Depends(require_capability(CAP_PAYROLL_POST)),
+                      db: Session = Depends(get_db)) -> dict:
+    emp = _employee(db, body.employee_id, current)
+    try:
+        out = svc.save_adjustment(db, emp=emp, data=body.model_dump(), actor_user_id=current.id)
+    except SalaryError as exc:
+        _raise(exc)
+    db.commit()
+    return out
+
+
+@router.put("/adjustments/{adjustment_id}")
+def update_adjustment(adjustment_id: int, body: AdjustmentIn,
+                      current: CurrentUser = Depends(require_capability(CAP_PAYROLL_POST)),
+                      db: Session = Depends(get_db)) -> dict:
+    emp = _employee(db, body.employee_id, current)
+    _adjustment_seen(db, adjustment_id, current)
+    try:
+        out = svc.save_adjustment(db, emp=emp, data=body.model_dump(), actor_user_id=current.id,
+                                  adjustment_id=adjustment_id)
+    except SalaryError as exc:
+        _raise(exc)
+    db.commit()
+    return out
+
+
+def _adjustment_seen(db: Session, adjustment_id: int, current: CurrentUser) -> None:
+    from src.models.hr_advance import PayrollAdjustment
+
+    row = db.get(PayrollAdjustment, adjustment_id)
+    if row is None:
+        raise HTTPException(404, {"code": "not_found", "message": "الحركة غير موجودة."})
+    _employee(db, row.employee_id, current)
+
+
+@router.delete("/adjustments/{adjustment_id}")
+def delete_adjustment(adjustment_id: int,
+                      current: CurrentUser = Depends(require_capability(CAP_PAYROLL_POST)),
+                      db: Session = Depends(get_db)) -> dict:
+    _adjustment_seen(db, adjustment_id, current)
+    try:
+        svc.delete_adjustment(db, adjustment_id=adjustment_id, actor_user_id=current.id)
+    except SalaryError as exc:
+        _raise(exc)
+    db.commit()
+    return {"deleted": adjustment_id}
+
+
+@router.get("/leaves")
+def list_leaves(
+    branch_id: int | None = Query(None),
+    year: int | None = Query(None),
+    month: int | None = Query(None),
+    current: CurrentUser = Depends(require_capability(CAP_SALARY_VIEW)),
+    db: Session = Depends(get_db),
+) -> list[dict]:
+    return svc.list_leaves(db, employee_ids=_scoped_employee_ids(db, current, branch_id),
+                           year=year, month=month)
+
+
+class LeaveIn(BaseModel):
+    employee_id: int
+    paid: bool = True
+    date_from: date
+    date_to: date
+    reason: str | None = None
+
+
+def _leave_seen(db: Session, leave_id: int, current: CurrentUser) -> None:
+    from src.models.hr_leave import LeaveRequest
+
+    row = db.get(LeaveRequest, leave_id)
+    if row is None:
+        raise HTTPException(404, {"code": "not_found", "message": "الإجازة غير موجودة."})
+    _employee(db, row.employee_id, current)
+
+
+@router.post("/leaves")
+def create_leave(body: LeaveIn,
+                 current: CurrentUser = Depends(require_capability(CAP_PAYROLL_POST)),
+                 db: Session = Depends(get_db)) -> dict:
+    emp = _employee(db, body.employee_id, current)
+    try:
+        out = svc.save_leave(db, emp=emp, paid=body.paid, date_from=body.date_from,
+                             date_to=body.date_to, reason=body.reason, actor_user_id=current.id)
+    except SalaryError as exc:
+        _raise(exc)
+    db.commit()
+    return out
+
+
+@router.put("/leaves/{leave_id}")
+def update_leave(leave_id: int, body: LeaveIn,
+                 current: CurrentUser = Depends(require_capability(CAP_PAYROLL_POST)),
+                 db: Session = Depends(get_db)) -> dict:
+    emp = _employee(db, body.employee_id, current)
+    _leave_seen(db, leave_id, current)
+    try:
+        out = svc.save_leave(db, emp=emp, paid=body.paid, date_from=body.date_from,
+                             date_to=body.date_to, reason=body.reason, actor_user_id=current.id,
+                             leave_id=leave_id)
+    except SalaryError as exc:
+        _raise(exc)
+    db.commit()
+    return out
+
+
+@router.delete("/leaves/{leave_id}")
+def delete_leave(leave_id: int,
+                 current: CurrentUser = Depends(require_capability(CAP_PAYROLL_POST)),
+                 db: Session = Depends(get_db)) -> dict:
+    _leave_seen(db, leave_id, current)
+    try:
+        svc.delete_leave(db, leave_id=leave_id, actor_user_id=current.id)
+    except SalaryError as exc:
+        _raise(exc)
+    db.commit()
+    return {"deleted": leave_id}
