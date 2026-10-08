@@ -71,7 +71,7 @@ def trial_balance(
     include_groups: bool = True,
     cost_center_id: int | None = None,
 ) -> TrialBalanceResult:
-    db.scalars(select(Account)).all()
+    _accounts = db.scalars(select(Account)).all()
     eff = func.coalesce(LedgerEntry.entry_date, cast(LedgerEntry.created_at, Date))
     debit = case((LedgerLine.direction == Direction.debit, LedgerLine.amount), else_=0)
     credit = case((LedgerLine.direction == Direction.debit, 0), else_=LedgerLine.amount)
@@ -140,16 +140,24 @@ def trial_balance(
 
     rows.sort(key=lambda r: (r.code or "~", r.account_id))
     result.rows = rows
+    del _accounts
     return result
 
 
 def _group_rows(db: Session, buckets: dict[int, _Bucket]) -> list[TrialBalanceRow]:
     group_acc: dict[int, _Bucket] = {}
+    by_code = {a.code: a.id for a in db.scalars(select(Account)).all() if a.code}
+
+    def parent_of(acc: Account) -> int | None:
+        if acc.parent_id is not None:
+            return acc.parent_id
+        return by_code.get(chart_service._GROUP_CODE_BY_TYPE.get(acc.account_type))
+
     for account_id, b in buckets.items():
         acc = db.get(Account, account_id)
         if acc is None or not acc.is_postable:
             continue
-        parent_id = chart_service.effective_parent_id(db, acc)
+        parent_id = parent_of(acc)
         guard = 0
         while parent_id is not None and guard < 64:
             gb = group_acc.setdefault(parent_id, _Bucket())
