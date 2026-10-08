@@ -10,10 +10,10 @@ from sqlalchemy import Date, cast, func, select
 from sqlalchemy.orm import Session
 
 from src.auth.dependencies import CurrentUser, require_capability
-from src.auth.rbac import CAP_SALES_READ, CAP_STOCK_READ
+from src.auth.rbac import CAP_ACCOUNTING_TRIAL_BALANCE_READ, CAP_SALES_READ, CAP_STOCK_READ
 from src.core.db import get_db
-from src.lib import (health, report_statement, reporting, stock_analysis, stocktake,
-                     trade_analysis, trade_reports)
+from src.lib import (health, ledger_analysis, report_statement, reporting, stock_analysis,
+                     stocktake, trade_analysis, trade_reports)
 from src.models.customer import Customer
 from src.models.ledger import Account, AccountType
 from src.models.purchasing import PurchaseInvoice
@@ -146,6 +146,31 @@ def stock_analysis_report(
             warehouse_id=warehouse_id, item_id=item_id, category=category,
             include_custody=include_custody, hide_zero=hide_zero)
     except stock_analysis.StockAnalysisError as exc:
+        raise HTTPException(422, {"code": "report_invalid", "message": str(exc)}) from exc
+
+
+@router.get("/ledger-analysis")
+def ledger_analysis_report(
+    dims: str | None = Query(None),
+    date_from: date | None = Query(None), date_to: date | None = Query(None),
+    branch_id: int | None = Query(None), account_id: int | None = Query(None),
+    account_type: str | None = Query(None), party_kind: str | None = Query(None),
+    party_id: int | None = Query(None), territory_id: int | None = Query(None),
+    rep_id: int | None = Query(None), cost_center_id: int | None = Query(None),
+    nonzero: bool = Query(True), posted_only: bool = Query(True),
+    current: CurrentUser = Depends(require_capability(CAP_ACCOUNTING_TRIAL_BALANCE_READ)),
+    db: Session = Depends(get_db),
+):
+    scoped = branch_scope.visible_branch_id(current)
+    try:
+        return ledger_analysis.analyse(
+            db, dims=[d.strip() for d in (dims or "").split(",") if d.strip()],
+            date_from=date_from, date_to=date_to,
+            branch_id=scoped if scoped is not None else branch_id,
+            account_id=account_id, account_type=account_type, party_kind=party_kind,
+            party_id=party_id, territory_id=territory_id, rep_id=rep_id,
+            cost_center_id=cost_center_id, nonzero=nonzero, posted_only=posted_only)
+    except ledger_analysis.LedgerAnalysisError as exc:
         raise HTTPException(422, {"code": "report_invalid", "message": str(exc)}) from exc
 
 

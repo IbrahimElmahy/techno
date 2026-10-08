@@ -28,6 +28,7 @@ const BASE_TITLES: Record<string, string> = {
   '/sales-reports': 'تقارير المبيعات',
   '/purchase-reports': 'تقارير المشتريات',
   '/stock-reports': 'تقارير المخازن',
+  '/ledger-reports': 'تقارير الحسابات',
   '/item-card': 'كارت الصنف',
   '/stock-permits': 'أذونات المخزن',
   '/stocktake': 'جرد حتى تاريخ',

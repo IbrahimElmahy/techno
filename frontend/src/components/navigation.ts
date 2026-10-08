@@ -1,5 +1,6 @@
 import { SALES_PRESETS, PURCHASE_PRESETS, type Preset } from '../pages/tradeAnalysisPresets';
 import { STOCK_PRESETS } from '../pages/stockAnalysisPresets';
+import { LEDGER_PRESETS } from '../pages/ledgerAnalysisPresets';
 
 export interface NavScreen {
   key: string;
@@ -186,6 +187,12 @@ export const NAVIGATION: (NavGroup | NavScreen)[] = [
           { key: '/profitability?view=branches', label: 'مقارنة الفروع', roles: R(BOOKS) },
         ],
       },
+      ...[...new Set(LEDGER_PRESETS.map((p) => p.group))].map((g) => ({
+        key: `grp-ledger-${g}`,
+        label: g,
+        children: LEDGER_PRESETS.filter((p) => p.group === g).map((p) => ({
+          key: `/ledger-reports?preset=${p.key}`, label: p.label, roles: R(BOOKS) })),
+      })),
       { key: '/partners-current', label: 'جاري الشركاء', roles: R(BOOKS) },
       {
         key: 'grp-period-closing',
