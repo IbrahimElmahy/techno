@@ -1,3 +1,5 @@
+import { SALES_PRESETS, PURCHASE_PRESETS, type Preset } from '../pages/tradeAnalysisPresets';
+
 export interface NavScreen {
   key: string;
   label: string;
@@ -27,6 +29,27 @@ const HR = ['system_admin', 'branch_manager', 'accountant'];
 const LOYALTY = ['system_admin', 'branch_manager', 'after_sales_staff', 'viewer'];
 const SALARY = ['system_admin', 'accountant'];
 const FLEET = ['system_admin', 'branch_manager', 'accountant', 'viewer'];
+
+const PROFIT_GROUPS = new Set(['تقارير ارباح فواتير', 'حجم مبيعات = هامش']);
+
+function analysisGroups(side: 'sales' | 'purchases', presets: Preset[]): NavGroup[] {
+  const route = side === 'sales' ? '/sales-reports' : '/purchase-reports';
+  const order: string[] = [];
+  const by: Record<string, Preset[]> = {};
+  presets.forEach((p) => {
+    if (!by[p.group]) { by[p.group] = []; order.push(p.group); }
+    by[p.group].push(p);
+  });
+  return order.map((g) => ({
+    key: `grp-${side}-${g}`,
+    label: g,
+    children: by[g].map((p) => ({
+      key: `${route}?preset=${p.key}`,
+      label: p.label,
+      roles: side === 'purchases' ? R(BUYING) : PROFIT_GROUPS.has(g) ? OFFICE : R(SALES),
+    })),
+  }));
+}
 
 export const NAVIGATION: (NavGroup | NavScreen)[] = [
   { key: '/voucher-keys', label: 'مفاتيح خاصة', roles: R(BOOKS) },
@@ -59,20 +82,8 @@ export const NAVIGATION: (NavGroup | NavScreen)[] = [
     children: [
       { key: '/invoices', label: 'فاتوره بيع', roles: R(SALES), a5: '/sales/create' },
       { key: '/returns', label: 'مردود مبيعات', roles: R(SALES), a5: '/salesreturns/create' },
-      {
-        key: 'grp-sales-reports',
-        label: 'تقارير مبيعات',
-        children: [
-          { key: '/trade-reports?view=sales-invoices', label: 'مبيعات فواتير', roles: R(SALES), a5: '/sales/invoice-search' },
-          { key: '/trade-reports?view=sales-invoices-grouped', label: 'مجمع مبيعات فواتير', roles: R(SALES), a5: '/sales/invoice-grouped' },
-          { key: '/trade-reports?view=sales-items', label: 'مبيعات اصناف', roles: R(SALES), a5: '/sales/itemsearch' },
-          { key: '/trade-reports?view=sales-items-grouped', label: 'مبيعات اصناف مجمعة', roles: R(SALES), a5: '/sales/item-grouped' },
-          { key: '/trade-reports?view=invoice-profits', label: 'ارباح فواتير', roles: OFFICE, a5: '/invoicesprofits' },
-          { key: '/trade-reports?view=item-profits', label: 'ارباح اصناف', roles: OFFICE, a5: '/sales/itemprofits' },
-          { key: '/bonus-report', label: 'تقرير البونص', roles: R(SALES) },
-        ],
-      },
-      { key: '/trade-reports?view=sales-return-items', label: 'تقارير مردود مبيعات', roles: R(SALES), a5: '/salesreturns/itemsearch' },
+      ...analysisGroups('sales', SALES_PRESETS),
+      { key: '/bonus-report', label: 'تقرير البونص', roles: R(SALES) },
       { key: '/customer-debts', label: 'مديونيات العملاء', roles: R(SALES) },
       { key: '/orders?kind=sale', label: 'شيت تسعير بيع', roles: R(SALES), a5: '/saleorders/create' },
       {
@@ -86,19 +97,10 @@ export const NAVIGATION: (NavGroup | NavScreen)[] = [
       },
       {
         key: 'grp-rep-reports',
-        label: 'تقارير مندوبين',
+        label: 'تحصيلات المندوبين',
         children: [
           { key: '/rep-reports?view=collections', label: 'تحصيلات المندوبين', roles: R(SALES), a5: '/salesagentscollections' },
           { key: '/rep-reports?view=collections-by-customer', label: 'تحصيلات المندوبين عملاء', roles: R(SALES), a5: '/salesagentsclients' },
-          { key: '/rep-reports?view=items', label: 'مبيعات اصناف مندوبين', roles: R(SALES), a5: '/salesagentsitems' },
-        ],
-      },
-      {
-        key: 'grp-margin',
-        label: 'هامش مبيعات',
-        children: [
-          { key: '/trade-reports?view=margin-by-store', label: 'هامش مبيعات مخازن', roles: OFFICE, a5: '/sales/reports/store-margin' },
-          { key: '/trade-reports?view=margin-by-customer', label: 'هامش مبيعات عملاء', roles: OFFICE, a5: '/sales/reports/customer-margin' },
         ],
       },
     ],
@@ -110,17 +112,7 @@ export const NAVIGATION: (NavGroup | NavScreen)[] = [
     children: [
       { key: '/purchases', label: 'فاتوره شراء', roles: R(BUYING), a5: '/purchases/create' },
       { key: '/purchase-returns', label: 'مردودات شراء', roles: R(BUYING), a5: '/purchasesreturns/create' },
-      {
-        key: 'grp-purchase-reports',
-        label: 'تقارير مشتريات',
-        children: [
-          { key: '/trade-reports?view=purchase-invoices', label: 'مشتريات فواتير', roles: R(BUYING), a5: '/purchases/invoice-search' },
-          { key: '/trade-reports?view=purchase-invoices-grouped', label: 'مجمع مشتريات فواتير', roles: R(BUYING), a5: '/purchases/invoice-grouped' },
-          { key: '/trade-reports?view=purchase-items', label: 'مشتريات اصناف', roles: R(BUYING), a5: '/purchases/itemsearch' },
-          { key: '/trade-reports?view=purchase-items-grouped', label: 'مشتريات اصناف مجمعة', roles: R(BUYING), a5: '/purchases/item-grouped' },
-        ],
-      },
-      { key: '/trade-reports?view=purchase-return-items', label: 'تقارير مردود مشتريات', roles: R(BUYING), a5: '/purchasesreturns/itemsearch' },
+      ...analysisGroups('purchases', PURCHASE_PRESETS),
       { key: '/orders?kind=purchase', label: 'شيت تسعير شراء', roles: R(BUYING), a5: '/purchaseorders/create' },
     ],
   },

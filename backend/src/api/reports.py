@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 from src.auth.dependencies import CurrentUser, require_capability
 from src.auth.rbac import CAP_SALES_READ, CAP_STOCK_READ
 from src.core.db import get_db
-from src.lib import health, report_statement, reporting, stocktake, trade_reports
+from src.lib import health, report_statement, reporting, stocktake, trade_analysis, trade_reports
 from src.models.customer import Customer
 from src.models.ledger import Account, AccountType
 from src.models.purchasing import PurchaseInvoice
@@ -94,6 +94,35 @@ def trade_report(
             branch_id=branch_scope.visible_branch_id(current),
         )
     except trade_reports.TradeReportError as exc:
+        raise HTTPException(422, {"code": "report_invalid", "message": str(exc)}) from exc
+
+
+@router.get("/analysis")
+def trade_analysis_report(
+    side: str = Query("sales", description="sales | purchases"),
+    dims: str | None = Query(None, description="أبعاد التجميع مفصولة بفاصلة"),
+    date_from: date | None = Query(None), date_to: date | None = Query(None),
+    branch_id: int | None = Query(None), warehouse_id: int | None = Query(None),
+    party_id: int | None = Query(None), party_type: str | None = Query(None),
+    rep_id: int | None = Query(None), territory_id: int | None = Query(None),
+    governorate_id: int | None = Query(None), item_id: int | None = Query(None),
+    category: str | None = Query(None), price_tier: str | None = Query(None),
+    kind: str | None = Query(None, description="sale | return"),
+    include_bonus: bool = Query(True),
+    current: CurrentUser = Depends(require_capability(CAP_SALES_READ)),
+    db: Session = Depends(get_db),
+):
+    scoped = branch_scope.visible_branch_id(current)
+    try:
+        return trade_analysis.analyse(
+            db, side=side, dims=[d.strip() for d in (dims or "").split(",") if d.strip()],
+            date_from=date_from, date_to=date_to,
+            branch_id=scoped if scoped is not None else branch_id,
+            warehouse_id=warehouse_id, party_id=party_id, party_type=party_type,
+            rep_id=rep_id, territory_id=territory_id, governorate_id=governorate_id,
+            item_id=item_id, category=category, price_tier=price_tier, kind=kind,
+            include_bonus=include_bonus)
+    except trade_analysis.TradeAnalysisError as exc:
         raise HTTPException(422, {"code": "report_invalid", "message": str(exc)}) from exc
 
 
