@@ -17,6 +17,8 @@ from src.models.inspection_item_type import InspectionItemType  # noqa: E402
 from src.models.analytic import LedgerLineDistribution  # noqa: E402
 # إعدادات المحاسبة — أقفال التواريخ (المرحلة ٤ — موديل أودو).
 from src.models.accounting_setting import AccountingSetting  # noqa: E402
+# إعدادات قائمة الدخل بشكل ورقة العميل (فئات المبيعات، بنود المصروفات، نموذج الكوبونات).
+from src.models import income_statement_setting  # noqa: E402,F401 — create_all
 # دفاتر اليومية (المرحلة ١ — موديل أودو).
 from src.models.journal import Journal, JournalSequence  # noqa: E402
 from src.models.ledger import Account, LedgerEntry, LedgerLine
@@ -88,6 +90,7 @@ from src.models.hr_leave import LeaveEntitlement, LeaveRequest, LeaveType  # noq
 from src.models.hr_payroll_run import (  # noqa: E402
     PayrollLine, PayrollLineDetail, PayrollRemittance, PayrollRun,
 )
+from src.models import hr_payroll_sheet  # noqa: E402,F401 — شيت ومجموعات المرتبات (create_all)
 from src.models.hr_advance import (  # noqa: E402
     EmployeeAdvance, EmployeeAdvanceInstalment, PayrollAdjustment,
 )
@@ -100,6 +103,7 @@ from src.models.hr_attendance import (  # noqa: E402
 )
 from src.models.owner import Owner  # noqa: E402
 from src.models.draft import DocumentDraft  # noqa: E402
+from src.models import hr_commission  # noqa: E402,F401 — جداول إعدادات العمولات (create_all)
 
 __all__ = [
     "AccountRouting",

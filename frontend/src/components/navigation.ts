@@ -322,6 +322,8 @@ export const NAVIGATION: (NavGroup | NavScreen)[] = [
           { key: '/finance-reports?tab=sheet&period=1', label: 'ميزانية خلال فترة', roles: R(BOOKS), a5: '/period-balancesheet' },
           { key: '/finance-reports?tab=income', label: 'مركز مالي وقائمة الدخل', roles: R(BOOKS), a5: '/financialposition' },
           { key: '/finance-reports?tab=income&period=1', label: 'مركز مالي وقائمة الدخل خلال فترة', roles: R(BOOKS), a5: '/period-financialposition' },
+          // قائمة الدخل بشكل ورقة العميل: المبيعات بالفئة، تكلفة المبيعات من الجرد، والبوانص.
+          { key: '/income-sheet', label: 'قائمة الدخل (فئات وتكاليف)', roles: R(BOOKS) },
           // نفس أرقام قائمة الدخل، مقسومة — فمكانها جنبها.
           // التدفق النقدي جنب قائمة الدخل: الأولى بتقول كسبنا كام والتانية بتقول
           // الفلوس اتحركت إزاي، والفرق بينهم هو السؤال اللي بيتسأل.
@@ -367,6 +369,10 @@ export const NAVIGATION: (NavGroup | NavScreen)[] = [
       // إعدادات الراتب لكل موظف — القايمة جاية من الموظفين نفسهم، والمسير بيحسب منها. على
       // `SALARY` مش `BOOKS`: كل سطر فيها مبلغ باسم موظف، ومدير الفرع مالوش `salary.view`.
       { key: '/employee-salaries', label: 'رواتب الموظفين', roles: SALARY },
+      // المرتبات على شكل ملف إكسل العميل (٢٠٢٦-١٠-٠٨): المجموعات وأعمدتها لكل فرع، وبعدها الشيت
+      // الشهري — بالترتيب ده لأن الشيت بيتجهّز من الاتنين اللي قبله.
+      { key: '/payroll-groups', label: 'مجموعات المرتبات', roles: SALARY },
+      { key: '/payroll-sheet', label: 'شيت المرتبات', roles: SALARY },
       { key: '/payroll-settings', label: 'شرايح الضريبة والتأمينات', roles: BOOKS },
       { key: '/payroll-settings?tab=components', label: 'بنود الراتب', roles: BOOKS },
       { key: '/payroll-settings?tab=rules', label: 'أرقام المسير', roles: BOOKS },
@@ -377,6 +383,11 @@ export const NAVIGATION: (NavGroup | NavScreen)[] = [
       { key: '/employee-receivables?tab=adjustments', label: 'الجزاءات والمكافآت', roles: SALARY },
       // «مسير الرواتب» اتشال من القايمة بطلب العميل (٢٠٢٦-١٠-٠٨) — المرتبات هتتعمل على شكل
       // ملفه هو. الشاشة والمسار لسه موجودين لحد ما الشكل الجديد يتبني.
+      // إعدادات العمولات — بلوكات السيارات والمشرفين وخصم ٢٥٪ والفنيين من ملفه، و«معاينة
+      // الشهر» بتحسبها من النظام. جنب شيت المرتبات لأن الشيت بيقرا منها. `SALARY`: كلها مبالغ
+      // ونسب باسم موظف.
+      { key: '/commission-settings', label: 'إعدادات العمولات', roles: SALARY },
+      { key: '/commission-settings?tab=preview', label: 'معاينة العمولات', roles: SALARY },
       // تقارير الموارد البشرية — تسعتاشر اسم على محرك واحد (`pages/HrReports.tsx`). التقارير
       // اللي فيها مبالغ باسم موظف بتتقفل على `SALARY` مش `HR`.
       {

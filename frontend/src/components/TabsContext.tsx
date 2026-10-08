@@ -62,6 +62,7 @@ const BASE_TITLES: Record<string, string> = {
   '/hr-reports': 'تقارير الموارد البشرية',
   '/ops-reports': 'تقارير التشغيل',
   '/profitability': 'تحليل الربحية',
+  '/income-sheet': 'قائمة الدخل',
   '/settings': 'إعدادات القوائم',
   '/permissions': 'الصلاحيات',
   '/branch-overview': 'نظرة على الفروع',

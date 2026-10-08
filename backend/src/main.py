@@ -24,6 +24,7 @@ from src.api import (  # Sales & Inventory (002
     owner_stats,
     catalog,
     cheques,  # Cheques + financial statements + aging (020)
+    income_statement,  # قائمة الدخل بشكل ورقة العميل (فئات، تكلفة، كوبونات)
     cost_centers,  # Cost Centers (006)
     coupon_custody,  # عهدة الكوبونات — دفاتر مرقّمة في إيد المندوب
     coupon_receipts,  # استلام الكوبونات من العملاء
@@ -44,6 +45,7 @@ from src.api import (  # Sales & Inventory (002
     owners,
     payroll,  # مسير الرواتب (HR-6)
     payroll_setup,  # هيكل الرواتب والشرايح (HR-4)
+    payroll_sheet,  # شيت ومجموعات المرتبات — زي ملف العميل
     permissions,
     points,
     price_display,  # شاشة معلومات المنتج (031)
@@ -231,6 +233,7 @@ def create_app() -> FastAPI:
     app.include_router(vouchers.router, prefix=prefix)
     # Cheques + income statement / balance sheet / aging (020)
     app.include_router(cheques.router, prefix=prefix)
+    app.include_router(income_statement.router, prefix=prefix)
     # VAT return + rep commissions (021)
     app.include_router(tax_commissions.router, prefix=prefix)
     # Fixed assets + depreciation (B6)
@@ -249,8 +252,13 @@ def create_app() -> FastAPI:
     app.include_router(advances.router, prefix=prefix)
     # مسير الرواتب (HR-6)
     app.include_router(payroll.router, prefix=prefix)
+    # شيت المرتبات ومجموعاته — شكل ملف إكسل العميل
+    app.include_router(payroll_sheet.router, prefix=prefix)
     # تقارير الموارد البشرية (HR-7)
     app.include_router(hr_reports.router, prefix=prefix)
+    # إعدادات العمولات ومعاينة الشهر (محرك عمولات المرتبات)
+    from src.api import hr_commissions as _hr_commissions
+    app.include_router(_hr_commissions.router, prefix=prefix)
     app.include_router(ops_reports.router, prefix=prefix)
     # Sales / purchase orders (B9)
     app.include_router(orders.router, prefix=prefix)

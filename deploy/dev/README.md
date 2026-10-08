@@ -85,3 +85,5 @@ Remove-Item D:\techno-dev\pgdata\postmaster.pid -Force
 على قاعدة الديف بس: `admin.test` / `adm-7da94fdf`.
 
 مندوب تجريبي محلي (قاعدة الديف بس): `car.b` / `rep-30bb9982`.
+
+محاسب تجريبي محلي لفرع العلياء (قاعدة الديف بس — شاشة «إعدادات العمولات»): `acc.test` / `acc-4b43f19b`.

@@ -41,6 +41,9 @@ from src.core.money import MONEY, QTY
 
 class PayrollRunStatus(str, enum.Enum):
     draft = "draft"        # محسوب ومش مرحّل — بيتعاد حسابه براحتك
+    # «معتمد» — شيت المرتبات اتقفل للتعديل ومستني الترحيل. خطوة لوحدها لأن اللي بيراجع الشيت
+    # ويعتمده مش بالضرورة اللي بيرحّل، وبين الاتنين الورق بيتطبع ويتمضي.
+    closed = "closed"
     posted = "posted"      # اترحّل للأستاذ
     reversed = "reversed"  # اتعكس، والشهر رجع مفتوح
 

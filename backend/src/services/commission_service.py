@@ -98,8 +98,23 @@ def _in_window(when: date, date_from: date | None, date_to: date | None) -> bool
 def compute(
     db: Session, *, date_from: date | None = None, date_to: date | None = None,
     rep_user_id: int | None = None,
-) -> list[CommissionRow]:
-    """كشف عمولات المناديب للفترة."""
+    branch_id: int | None = None, year: int | None = None, month: int | None = None,
+    absences: dict | None = None,
+):
+    """كشف عمولات المناديب للفترة.
+
+    **ولو اتنده بـ`branch_id` + `year` + `month`** فده محرك عمولات المرتبات الشهري
+    (`hr_commission_service.compute`) — السيارات والمشرفين وخصم ٢٥٪ والفنيين، بالشكل المشروح
+    هناك. الاسمين بيعيشوا في نفس الدالة عشان شيت المرتبات بينده `commission_service.compute`
+    والتقرير القديم (عمولات المناديب في شاشة المالية) بيندهها بالفترة — ومافيش واحد منهم يتكسر.
+    """
+    if year is not None or month is not None or branch_id is not None:
+        from src.services import hr_commission_service
+
+        if branch_id is None or year is None or month is None:
+            raise CommissionError("عمولات المرتبات محتاجة الفرع والسنة والشهر.")
+        return hr_commission_service.compute(db, branch_id=branch_id, year=year, month=month,
+                                             absences=absences)
     reps = db.scalars(
         select(User).join(Role, User.role_id == Role.id)
         .where(Role.name == RoleName.sales_rep)

@@ -139,6 +139,19 @@ def compute_run(
             f"الشهر ده مرحّل بالفعل في المسير {posted.document_number} — اعكسه الأول."
         )
 
+    # الشهر اللي متجهّز من «شيت المرتبات» سطوره مبنية من خانات الشيت — إعادة حسابه من هنا
+    # كانت هتمسح شغل المراجعة كله وتحط مكانه حساب بأعمدة تانية.
+    from src.services.payroll_sheet_service import is_sheet
+
+    for other in db.scalars(select(PayrollRun).where(
+            PayrollRun.year == year, PayrollRun.month == month,
+            PayrollRun.branch_id.is_(branch_id) if branch_id is None
+            else PayrollRun.branch_id == branch_id,
+            PayrollRun.status.in_((PayrollRunStatus.draft, PayrollRunStatus.closed)))).all():
+        if other.status == PayrollRunStatus.closed or is_sheet(db, other.id):
+            raise PayrollError(
+                f"الشهر ده متجهّز من «شيت المرتبات» ({other.document_number}) — عدّله من هناك.")
+
     run = db.scalar(select(PayrollRun).where(
         PayrollRun.year == year, PayrollRun.month == month,
         PayrollRun.branch_id.is_(branch_id) if branch_id is None

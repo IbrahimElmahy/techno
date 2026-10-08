@@ -55,9 +55,12 @@ const Attendance = lazy(() => import('../pages/Attendance'));
 const Leave = lazy(() => import('../pages/Leave'));
 const PayrollSettings = lazy(() => import('../pages/PayrollSettings'));
 const EmployeeSalaries = lazy(() => import('../pages/EmployeeSalaries'));
+const CommissionSettings = lazy(() => import('../pages/CommissionSettings'));
 const Advances = lazy(() => import('../pages/Advances'));
 const EmployeeReceivables = lazy(() => import('../pages/EmployeeReceivables'));
 const Payroll = lazy(() => import('../pages/Payroll'));
+const PayrollSheet = lazy(() => import('../pages/PayrollSheet'));
+const PayrollGroups = lazy(() => import('../pages/PayrollGroups'));
 const HrReports = lazy(() => import('../pages/HrReports'));
 const OpsReports = lazy(() => import('../pages/OpsReports'));
 const Profitability = lazy(() => import('../pages/Profitability'));
@@ -91,6 +94,7 @@ const InspectionItems = lazy(() => import('../pages/InspectionItems'));
 const Vouchers = lazy(() => import('../pages/Vouchers'));
 const VoucherKeys = lazy(() => import('../pages/VoucherKeys'));
 const FinanceReports = lazy(() => import('../pages/FinanceReports'));
+const IncomeSheet = lazy(() => import('../pages/IncomeSheet'));
 
 /**
  * **كل الشاشات بتتحمّل في الخلفية بعد ما البرنامج يفتح** (٢٠٢٦-٠٩-٣٠ — «الحركة بطيئة»).
@@ -176,9 +180,12 @@ export default function PageRoutes({ location }: { location?: string }) {
       <Route path="/leave" element={<Leave />} />
       <Route path="/payroll-settings" element={<PayrollSettings />} />
       <Route path="/employee-salaries" element={<EmployeeSalaries />} />
+      <Route path="/commission-settings" element={<CommissionSettings />} />
       <Route path="/advances" element={<Advances />} />
       <Route path="/employee-receivables" element={<EmployeeReceivables />} />
       <Route path="/payroll" element={<Payroll />} />
+      <Route path="/payroll-sheet" element={<PayrollSheet />} />
+      <Route path="/payroll-groups" element={<PayrollGroups />} />
       <Route path="/hr-reports" element={<HrReports />} />
       <Route path="/ops-reports" element={<OpsReports />} />
       <Route path="/profitability" element={<Profitability />} />
@@ -191,6 +198,7 @@ export default function PageRoutes({ location }: { location?: string }) {
       <Route path="/vouchers" element={<Vouchers />} />
       <Route path="/voucher-keys" element={<VoucherKeys />} />
       <Route path="/finance-reports" element={<FinanceReports />} />
+      <Route path="/income-sheet" element={<IncomeSheet />} />
       <Route path="/general-ledger" element={<GeneralLedger />} />
       <Route path="/accounting" element={<AccountingDashboard />} />
       <Route path="/loyalty" element={<Loyalty />} />
