@@ -2,10 +2,11 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert, Button, DatePicker, Empty, Input, Popover, Select, Space, Spin, Table, Tag, Tooltip, message,
 } from 'antd';
+import { TabModal } from '../components/TabModal';
 import {
   AppstoreOutlined, CheckCircleOutlined, ClearOutlined, DeleteOutlined, FileExcelOutlined,
   FileTextOutlined, PrinterOutlined, ReloadOutlined, RollbackOutlined, SearchOutlined,
-  SendOutlined, TableOutlined, UnlockOutlined, WarningOutlined,
+  SendOutlined, TableOutlined, UnlockOutlined, WalletOutlined, WarningOutlined,
 } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
 import dayjs, { Dayjs } from 'dayjs';
@@ -42,7 +43,7 @@ interface RunInfo {
   id: number; document_number: string; year: number; month: number; branch_id: number;
   status: 'draft' | 'closed' | 'posted' | 'reversed'; reversal_seq: number; net: string;
   accrual_entry_id: number | null; reversal_entry_id: number | null; posted_at: string | null;
-  commission_note: string | null;
+  commission_note: string | null; paid: number; lines: number; paid_total: string;
 }
 interface Sheet {
   run: RunInfo | null; groups: Group[]; summary: { name: string; net: string }[];
@@ -203,6 +204,10 @@ export default function PayrollSheet() {
   const [tab, setTab] = useQueryTab('sheet');
   const [history, setHistory] = useState<SheetListRow[]>([]);
   const [histYear, setHistYear] = useState<number | null>(null);
+  const [payOpen, setPayOpen] = useState(false);
+  const [payDate, setPayDate] = useState<Dayjs>(dayjs());
+  const [payTreasury, setPayTreasury] = useState<number | undefined>(undefined);
+  const [treasuries, setTreasuries] = useState<any[]>([]);
   const searchRef = useRef<any>(null);
   useScreenShortcuts({ onSearch: () => { searchRef.current?.focus?.(); } });
 
@@ -257,6 +262,23 @@ export default function PayrollSheet() {
   const runAction = (path: string, ok: string) => act(path,
     () => api.post(`/api/v1/hr/payroll-sheet/sheet/${run!.id}/${path}`), ok);
 
+  const openPay = async () => {
+    setPayDate(dayjs());
+    setPayOpen(true);
+    if (!treasuries.length) {
+      const list = (await api.get('/api/v1/treasuries').catch(() => ({ data: [] }))).data || [];
+      setTreasuries(list);
+    }
+  };
+
+  const pay = () => act('pay', async () => {
+    const res = await api.post(`/api/v1/hr/payroll-sheet/sheet/${run!.id}/pay`, {
+      treasury_id: payTreasury ?? null, pay_date: payDate.format('YYYY-MM-DD'),
+    });
+    setPayOpen(false);
+    return res;
+  }, 'تم صرف المرتبات');
+
   const removeDraft = () => act('delete', async () => {
     await api.delete(`/api/v1/hr/payroll-sheet/sheet/${run!.id}`);
     return null;
@@ -297,7 +319,7 @@ export default function PayrollSheet() {
 
   const payslip = async (row: Row) => {
     try {
-      const res = await api.get(`/api/v1/hr/payroll/runs/${run!.id}/payslip/${row.employee_id}`);
+      const res = await api.get(`/api/v1/hr/payroll-sheet/sheet/${run!.id}/payslip/${row.employee_id}`);
       printPayslip({ ...res.data, employee_name: row.name });
     } catch (err: any) { fail(err, 'تعذر طباعة القسيمة'); }
   };
@@ -476,6 +498,10 @@ export default function PayrollSheet() {
           <Button type="primary" icon={<SendOutlined />} loading={acting === 'post'}>ترحيل</Button>
         </Popconfirm>
       </>) : null}
+      {tab === 'sheet' && run?.status === 'posted' && run.paid < run.lines ? (
+        <Button type="primary" icon={<WalletOutlined />} loading={acting === 'pay'}
+          onClick={openPay}>صرف المرتبات</Button>
+      ) : null}
       {tab === 'sheet' && run?.status === 'posted' ? (
         <Popconfirm onConfirm={() => runAction('reverse', 'تم عكس الترحيل وأُعيد فتح الشهر')}>
           <Button danger icon={<RollbackOutlined />} loading={acting === 'reverse'}>عكس الترحيل</Button>
@@ -536,6 +562,10 @@ export default function PayrollSheet() {
         <ListStat label="الاستقطاعات" value={money(data?.totals.deductions)} tone="neg" />
         <ListStat label="الصافي" value={money(data?.totals.net)} tone="strong" />
         <ListStat label="خانات مُدخلة يدوياً" value={overrides} tone={overrides ? 'warn' : undefined} />
+        {run.status === 'posted' ? (
+          <ListStat label="المصروف" value={money(run.paid_total)}
+            tone={run.paid < run.lines ? 'warn' : 'pos'} />
+        ) : null}
       </>) : undefined}
     >
       {tab === 'months' ? (
@@ -636,6 +666,23 @@ export default function PayrollSheet() {
           )}
         </Spin>
       )}
+      <TabModal
+        open={payOpen} title="صرف المرتبات" destroyOnClose
+        onCancel={() => setPayOpen(false)} onOk={pay} okText="صرف" cancelText="إلغاء"
+        okButtonProps={{ loading: acting === 'pay' }}
+      >
+        <Space direction="vertical" style={{ width: '100%' }}>
+          <span>صافي المرتبات: <b>{money(data?.totals.net)}</b></span>
+          <div>التاريخ</div>
+          <DatePicker style={{ width: '100%' }} format="YYYY/MM/DD" allowClear={false}
+            value={payDate} onChange={(v) => v && setPayDate(v)} />
+          <div>الخزنة</div>
+          <Select allowClear style={{ width: '100%' }} placeholder="خزنة الفرع"
+            value={payTreasury} onChange={setPayTreasury}
+            options={treasuries.filter((t: any) => t.active !== false)
+              .map((t: any) => ({ value: t.id, label: `${t.name} — ${money(t.balance)}` }))} />
+        </Space>
+      </TabModal>
     </ListPage>
   );
 }

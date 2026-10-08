@@ -74,7 +74,6 @@ class EmployeeSalary(Base):
     )
     effective_from: Mapped[date] = mapped_column(Date, nullable=False, index=True)
     basic: Mapped[object] = mapped_column(MONEY, default=0, nullable=False)
-    insurance_base: Mapped[object | None] = mapped_column(MONEY, nullable=True)
     payment_method: Mapped[PayMethod] = mapped_column(
         Enum(PayMethod, native_enum=False, length=12), default=PayMethod.cash, nullable=False
     )
@@ -139,51 +138,20 @@ class PayrollSetting(Base):
     )
 
 
-class SchemeKind(str, enum.Enum):
-    income_tax = "income_tax"
-    social_insurance = "social_insurance"
-
-
-class PayrollSchemeVersion(Base):
-    __tablename__ = "payroll_scheme_version"
+class EmployeeInsurance(Base):
+    __tablename__ = "employee_insurance"
     __table_args__ = (
-        UniqueConstraint("scheme", "effective_from", name="uq_scheme_version_period"),
+        UniqueConstraint("employee_id", "effective_from", name="uq_employee_insurance_period"),
     )
 
     id: Mapped[int] = mapped_column(BigIntPK, primary_key=True, autoincrement=True)
-    scheme: Mapped[SchemeKind] = mapped_column(
-        Enum(SchemeKind, native_enum=False, length=20), nullable=False, index=True
+    employee_id: Mapped[int] = mapped_column(
+        ForeignKey("employee.id"), nullable=False, index=True
     )
-    name: Mapped[str] = mapped_column(String(120), nullable=False)
     effective_from: Mapped[date] = mapped_column(Date, nullable=False, index=True)
-    effective_to: Mapped[date | None] = mapped_column(Date, nullable=True)
-    annual_exemption: Mapped[object | None] = mapped_column(MONEY, nullable=True)
-    annualise: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
-    employee_pct: Mapped[object | None] = mapped_column(PCT, nullable=True)
-    employer_pct: Mapped[object | None] = mapped_column(PCT, nullable=True)
-    min_base: Mapped[object | None] = mapped_column(MONEY, nullable=True)
-    max_base: Mapped[object | None] = mapped_column(MONEY, nullable=True)
-    locked: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
-    active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    amount: Mapped[object] = mapped_column(MONEY, default=0, nullable=False)
     notes: Mapped[str | None] = mapped_column(String(300), nullable=True)
     actor_user_id: Mapped[int | None] = mapped_column(ForeignKey("user.id"), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime, server_default=func.now(), nullable=False
     )
-
-
-class PayrollSchemeBracket(Base):
-    __tablename__ = "payroll_scheme_bracket"
-    __table_args__ = (
-        UniqueConstraint("version_id", "sequence", name="uq_scheme_bracket_order"),
-    )
-
-    id: Mapped[int] = mapped_column(BigIntPK, primary_key=True, autoincrement=True)
-    version_id: Mapped[int] = mapped_column(
-        ForeignKey("payroll_scheme_version.id"), nullable=False, index=True
-    )
-    sequence: Mapped[int] = mapped_column(Integer, nullable=False)
-    from_amount: Mapped[object] = mapped_column(MONEY, default=0, nullable=False)
-    to_amount: Mapped[object | None] = mapped_column(MONEY, nullable=True)
-    rate_pct: Mapped[object] = mapped_column(PCT, default=0, nullable=False)
-    fixed_amount: Mapped[object] = mapped_column(MONEY, default=0, nullable=False)

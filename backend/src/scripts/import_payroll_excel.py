@@ -14,7 +14,7 @@ from src.models.employee import Employee
 from src.models.hr_payroll import ComponentKind, EmployeeSalaryLine, SalaryComponent
 from src.models.hr_payroll_sheet import PayrollGroup, PayrollGroupMember
 from src.models.org import Branch
-from src.services import numbering
+from src.services import insurance_service, numbering
 from src.services import payroll_setup_service as setup
 from src.services import payroll_sheet_service as sheet
 
@@ -223,6 +223,7 @@ def run(args) -> None:
                 stats["assigned"] += 1
 
                 basic = None
+                insurance = None
                 lines: dict[int, Decimal] = {}
                 month_vals = []
                 for c, (label, target) in col_plan.items():
@@ -236,14 +237,19 @@ def run(args) -> None:
                         continue
                     if target == "__basic__":
                         basic = num
+                    elif target == "تأمينات":
+                        insurance = num
                     elif num:
                         comp = comps.get(target) or sheet.ensure_component(
-                            db, name=target, kind=ComponentKind.deduction if target == "تأمينات"
-                            else ComponentKind.earning, actor_user_id=actor)
+                            db, name=target, kind=ComponentKind.earning, actor_user_id=actor)
                         comps[target] = comp
                         lines[comp.id] = num
                 if month_vals:
                     monthly.append(f"{emp.name}: " + "، ".join(month_vals))
+                if insurance is not None:
+                    insurance_service.set_amount(
+                        db, employee_id=emp.id, effective_from=eff, amount=insurance,
+                        actor_user_id=actor, notes="من ورقة المرتبات (إكسل)")
                 if basic is None and not lines:
                     print(f"  {tag}  {name}{extra} — مافيش أرقام ثابتة في الملف")
                     continue
@@ -261,7 +267,6 @@ def run(args) -> None:
                 setup.set_salary(
                     db, employee_id=emp.id, effective_from=eff, basic=final_basic,
                     actor_user_id=actor,
-                    insurance_base=current.insurance_base if current is not None else None,
                     lines=list(merged.values()),
                     notes="من ورقة المرتبات (إكسل)")
                 stats["salary"] += 1

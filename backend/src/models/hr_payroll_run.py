@@ -44,12 +44,6 @@ class PayrollRun(Base):
         Enum(PayrollRunStatus, native_enum=False, length=12),
         default=PayrollRunStatus.draft, nullable=False, index=True,
     )
-    tax_version_id: Mapped[int | None] = mapped_column(
-        ForeignKey("payroll_scheme_version.id"), nullable=True
-    )
-    insurance_version_id: Mapped[int | None] = mapped_column(
-        ForeignKey("payroll_scheme_version.id"), nullable=True
-    )
     earnings: Mapped[object] = mapped_column(MONEY, default=0, nullable=False)
     absence_deduction: Mapped[object] = mapped_column(MONEY, default=0, nullable=False)
     overtime: Mapped[object] = mapped_column(MONEY, default=0, nullable=False)

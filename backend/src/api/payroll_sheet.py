@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+from datetime import date
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -211,6 +212,21 @@ def template(
     return {"created": [g.name for g in made]}
 
 
+@router.post("/groups/template-all")
+def template_all(
+    current: CurrentUser = Depends(require_capability(CAP_PAYROLL_POST)),
+    db: Session = Depends(get_db),
+) -> dict:
+    if not branch_scope.sees_all_branches(current):
+        raise HTTPException(403, {"code": "forbidden", "message": "ليس لديك صلاحية على كل الفروع."})
+    try:
+        made = sheet.apply_template_all(db, actor_user_id=current.id)
+    except _ERRORS as exc:
+        _raise(exc)
+    db.commit()
+    return {"created": made}
+
+
 @router.post("/groups/copy")
 def copy_groups(
     body: CopyIn,
@@ -396,6 +412,32 @@ def _act(db: Session, run_id: int, current: CurrentUser, fn) -> dict:
         _raise(exc)
     db.commit()
     return out
+
+
+class PayIn(BaseModel):
+    treasury_id: int | None = None
+    pay_date: date | None = None
+
+
+@router.post("/sheet/{run_id}/pay")
+def pay(run_id: int, body: PayIn,
+        current: CurrentUser = Depends(require_capability(CAP_PAYROLL_POST)),
+        db: Session = Depends(get_db)) -> dict:
+    def fn(db, *, run_id, actor_user_id):
+        return sheet.pay(db, run_id=run_id, actor_user_id=actor_user_id,
+                         treasury_id=body.treasury_id, pay_date=body.pay_date)
+    return _act(db, run_id, current, fn)
+
+
+@router.get("/sheet/{run_id}/payslip/{employee_id}")
+def payslip(run_id: int, employee_id: int,
+            current: CurrentUser = Depends(require_capability(CAP_SALARY_VIEW)),
+            db: Session = Depends(get_db)) -> dict:
+    _seen_run(db, run_id, current)
+    try:
+        return sheet.payslip(db, run_id=run_id, employee_id=employee_id)
+    except _ERRORS as exc:
+        _raise(exc)
 
 
 @router.post("/sheet/{run_id}/close")

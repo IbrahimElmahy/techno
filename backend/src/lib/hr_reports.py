@@ -233,8 +233,6 @@ def _collect_payroll(db, look, keep, filters, *, by_component: bool) -> list[dic
                     "penalty_amount": str(line.penalty_amount),
                     "bonus_amount": str(line.bonus_amount),
                     "insurance_employee": str(line.insurance_employee),
-                    "insurance_employer": str(line.insurance_employer),
-                    "tax_amount": str(line.tax_amount),
                     "advance_deduction": str(line.advance_deduction),
                     "total_deductions": str(line.total_deductions),
                     "days_absent": str(line.days_absent),

@@ -20,10 +20,9 @@ from src.models.hr_payroll import (
     EmployeeSalary,
     EmployeeSalaryLine,
     PayMethod,
-    PayrollSchemeVersion,
     SalaryComponent,
-    SchemeKind,
 )
+from src.services import insurance_service
 from src.services import payroll_setup_service as setup
 from src.services.payroll_setup_service import PayrollSetupError
 
@@ -34,7 +33,7 @@ def _raise(exc: PayrollSetupError):
     text = str(exc)
     if "غير موجود" in text or "غير موجودة" in text:
         raise HTTPException(404, {"code": "not_found", "message": text}) from exc
-    if "استُخدمت في مرتب مرحّل" in text or "اتحسب عليه مسير مرحّل" in text or "احتُسب عليه مسير مرحّل" in text:
+    if "اتحسب عليه مسير مرحّل" in text or "احتُسب عليه مسير مرحّل" in text:
         raise HTTPException(409, {"code": "locked", "message": text}) from exc
     raise HTTPException(422, {"code": "validation", "message": text}) from exc
 
@@ -44,8 +43,6 @@ class ComponentIn(BaseModel):
     kind: ComponentKind
     code: str | None = None
     calc: ComponentCalc = ComponentCalc.fixed
-    taxable: bool = True
-    insurable: bool = False
     account_id: int | None = None
     sort_order: int = 0
     notes: str | None = None
@@ -57,8 +54,6 @@ class ComponentOut(BaseModel):
     name: str
     kind: ComponentKind
     calc: ComponentCalc
-    taxable: bool
-    insurable: bool
     account_id: int | None
     active: bool
 
@@ -74,7 +69,6 @@ class SalaryIn(BaseModel):
     employee_id: int
     effective_from: date
     basic: Decimal
-    insurance_base: Decimal | None = None
     payment_method: PayMethod | None = None
     bank_name: str | None = None
     bank_account: str | None = None
@@ -82,63 +76,9 @@ class SalaryIn(BaseModel):
     notes: str | None = None
 
 
-class BracketIn(BaseModel):
-    from_amount: Decimal = Decimal("0")
-    to_amount: Decimal | None = None
-    rate_pct: Decimal = Decimal("0")
-    fixed_amount: Decimal = Decimal("0")
-
-
-class VersionIn(BaseModel):
-    scheme: SchemeKind
-    name: str
-    effective_from: date
-    brackets: list[BracketIn] | None = None
-    annual_exemption: Decimal | None = None
-    annualise: bool = True
-    employee_pct: Decimal | None = None
-    employer_pct: Decimal | None = None
-    min_base: Decimal | None = None
-    max_base: Decimal | None = None
-    notes: str | None = None
-
-
-class VersionPatch(BaseModel):
-    name: str | None = None
-    effective_to: date | None = None
-    brackets: list[BracketIn] | None = None
-    annual_exemption: Decimal | None = None
-    employee_pct: Decimal | None = None
-    employer_pct: Decimal | None = None
-    min_base: Decimal | None = None
-    max_base: Decimal | None = None
-    notes: str | None = None
-
-
 class SettingsIn(BaseModel):
     days_per_month: int | None = None
     hours_per_day: Decimal | None = None
-    overtime_normal_pct: Decimal | None = None
-    overtime_holiday_pct: Decimal | None = None
-    include_commission: bool | None = None
-    late_grace_minutes: int | None = None
-
-
-def _version_out(db: Session, v: PayrollSchemeVersion) -> dict:
-    return {
-        "id": v.id, "scheme": v.scheme.value, "name": v.name,
-        "effective_from": v.effective_from, "effective_to": v.effective_to,
-        "annual_exemption": v.annual_exemption, "annualise": v.annualise,
-        "employee_pct": v.employee_pct, "employer_pct": v.employer_pct,
-        "min_base": v.min_base, "max_base": v.max_base,
-        "locked": v.locked, "active": v.active, "notes": v.notes,
-        "brackets": [
-            {"sequence": i + 1, "from_amount": str(b.from_amount),
-             "to_amount": str(b.to_amount) if b.to_amount is not None else None,
-             "rate_pct": str(b.rate_pct), "fixed_amount": str(b.fixed_amount)}
-            for i, b in enumerate(setup.brackets_of(db, v.id))
-        ],
-    }
 
 
 @router.get("/components", response_model=list[ComponentOut])
@@ -194,6 +134,7 @@ def list_salaries(
     titles = {t.id: t.name for t in db.scalars(select(JobTitle)).all()}
     depts = {d.id: d.name for d in db.scalars(select(Department)).all()}
     roster = setup.salary_roster(db, list(employees), date.today())
+    insurance = insurance_service.roster(db, list(employees), date.today())
     out = []
     for e in employees:
         entry = roster.get(e.id) or {"versions": 0, "current": None, "upcoming": None}
@@ -204,6 +145,7 @@ def list_salaries(
             "job_title": titles.get(e.job_title_id) if e.job_title_id else None,
             "hire_date": str(e.hire_date) if e.hire_date else None,
             "card_salary": str(e.salary) if e.salary is not None else None,
+            "insurance": (insurance.get(e.id) or {}).get("amount"),
             **entry,
         })
     return out
@@ -237,8 +179,6 @@ def employee_salary(
         "current": (setup.salary_breakdown(db, active) | {
             "id": active.id, "effective_from": str(active.effective_from),
             "payment_method": active.payment_method.value,
-            "insurance_base_set": (str(active.insurance_base)
-                                   if active.insurance_base is not None else None),
             "bank_name": active.bank_name, "bank_account": active.bank_account,
             "notes": active.notes,
             "lines": [{"component_id": x.component_id, "amount": str(x.amount),
@@ -290,75 +230,9 @@ def set_salary(
     return out
 
 
-@router.get("/schemes")
-def list_versions(
-    scheme: SchemeKind | None = Query(None),
-    _: CurrentUser = Depends(require_capability(CAP_HR_READ)),
-    db: Session = Depends(get_db),
-) -> list[dict]:
-    stmt = select(PayrollSchemeVersion).order_by(
-        PayrollSchemeVersion.scheme, PayrollSchemeVersion.effective_from.desc())
-    if scheme:
-        stmt = stmt.where(PayrollSchemeVersion.scheme == scheme)
-    return [_version_out(db, v) for v in db.scalars(stmt).all()]
-
-
-@router.post("/schemes", status_code=status.HTTP_201_CREATED)
-def create_version(
-    body: VersionIn,
-    current: CurrentUser = Depends(require_capability(CAP_PAYROLL_POST)),
-    db: Session = Depends(get_db),
-) -> dict:
-    payload = body.model_dump()
-    payload["brackets"] = [b for b in (payload.get("brackets") or [])]
-    try:
-        row = setup.create_version(db, actor_user_id=current.id, **payload)
-    except PayrollSetupError as exc:
-        _raise(exc)
-    out = _version_out(db, row)
-    db.commit()
-    return out
-
-
-@router.patch("/schemes/{version_id}")
-def update_version(
-    version_id: int,
-    body: VersionPatch,
-    current: CurrentUser = Depends(require_capability(CAP_PAYROLL_POST)),
-    db: Session = Depends(get_db),
-) -> dict:
-    payload = body.model_dump(exclude_unset=True)
-    brackets = payload.pop("brackets", None)
-    try:
-        row = setup.update_version(
-            db, version_id=version_id, actor_user_id=current.id,
-            brackets=brackets, **payload)
-    except PayrollSetupError as exc:
-        _raise(exc)
-    out = _version_out(db, row)
-    db.commit()
-    return out
-
-
-@router.get("/schemes/effective")
-def effective_version(
-    scheme: SchemeKind = Query(...),
-    on: date = Query(...),
-    _: CurrentUser = Depends(require_capability(CAP_HR_READ)),
-    db: Session = Depends(get_db),
-) -> dict | None:
-    row = setup.version_on(db, scheme, on)
-    return _version_out(db, row) if row else None
-
-
 def _settings_out(row) -> dict:
     return {
         "days_per_month": row.days_per_month, "hours_per_day": str(row.hours_per_day),
-        "overtime_normal_pct": str(row.overtime_normal_pct),
-        "overtime_holiday_pct": str(row.overtime_holiday_pct),
-        "absence_basis": row.absence_basis.value, "late_policy": row.late_policy.value,
-        "late_grace_minutes": row.late_grace_minutes,
-        "include_commission": row.include_commission,
     }
 
 

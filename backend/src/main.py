@@ -42,7 +42,7 @@ from src.api import (
     orders,
     org,
     owners,
-    payroll,
+    insurance,
     payroll_setup,
     payroll_sheet,
     permissions,
@@ -209,7 +209,7 @@ def create_app() -> FastAPI:
     app.include_router(leave.router, prefix=prefix)
     app.include_router(payroll_setup.router, prefix=prefix)
     app.include_router(advances.router, prefix=prefix)
-    app.include_router(payroll.router, prefix=prefix)
+    app.include_router(insurance.router, prefix=prefix)
     app.include_router(payroll_sheet.router, prefix=prefix)
     app.include_router(hr_reports.router, prefix=prefix)
     from src.api import hr_commissions as _hr_commissions
@@ -258,6 +258,7 @@ def create_app() -> FastAPI:
         _ensure_coupon_kind_tiers(engine)
         _seed_journals(engine)
         _mark_reconcilable_accounts(engine)
+        _move_insurance_component(engine)
         _load_permission_overrides()
     except Exception as exc:  # pragma: no cover
         import logging
@@ -1042,6 +1043,24 @@ def _ensure_coupon_kind_tiers(engine) -> None:
         logging.getLogger("uvicorn.error").info(
             "coupon_kind tiers fixup skipped: %s", exc
         )
+
+
+def _move_insurance_component(engine) -> None:
+    import logging
+
+    from sqlalchemy.orm import Session
+
+    from src.services import insurance_service
+
+    try:
+        with Session(engine) as db:
+            moved = insurance_service.move_legacy_component(db)
+            db.commit()
+        if moved:
+            logging.getLogger("uvicorn.error").info(
+                "moved %s insurance amounts from salary cards", moved)
+    except Exception as exc:  # pragma: no cover
+        logging.getLogger("uvicorn.error").info("insurance move skipped: %s", exc)
 
 
 app = create_app()

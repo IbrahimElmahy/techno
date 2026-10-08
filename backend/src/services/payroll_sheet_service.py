@@ -12,7 +12,7 @@ from src.core.money import ZERO, to_money, to_qty
 from src.models.employee import Employee
 from src.models.hr_advance import AdjustmentBasis, AdjustmentKind
 from src.models.hr_attendance import AttendanceDay, AttendanceStatus
-from src.models.hr_payroll import ComponentKind, EmployeeSalaryLine, SalaryComponent, SchemeKind
+from src.models.hr_payroll import ComponentKind, EmployeeSalaryLine, SalaryComponent
 from src.models.hr_payroll_run import (
     DetailKind,
     DetailSource,
@@ -28,7 +28,7 @@ from src.models.hr_payroll_sheet import (
     PayrollSheetGroup,
     PayrollSheetRow,
 )
-from src.services import advance_service, audit_service, numbering
+from src.services import advance_service, audit_service, insurance_service, numbering
 from src.services import payroll_setup_service as setup
 
 ZERO_QTY = Decimal("0.000")
@@ -50,7 +50,7 @@ SOURCES: dict[str, dict] = {
                   "hint": "الجزاءات المعتمدة للشهر"},
     "bonuses": {"label": "مكافأة", "kind": "earning", "hint": "المكافآت المعتمدة للشهر"},
     "insurance": {"label": "تأمينات", "kind": "deduction", "posting": "insurance",
-                  "hint": "حصة الموظف من شرائح التأمينات"},
+                  "hint": "مبلغ التأمينات الثابت المسجّل للموظف"},
     "manual": {"label": "يدوي", "kind": None, "hint": "يُدخل يدوياً كل شهر"},
 }
 
@@ -335,8 +335,7 @@ def template_groups(db: Session, *, actor_user_id: int) -> list[dict]:
          for name, kind in (
              ("بدلات", ComponentKind.earning), ("تقييم", ComponentKind.earning),
              ("منحة غلاء", ComponentKind.earning), ("مكالمات", ComponentKind.earning),
-             ("بدلات اضافية", ComponentKind.earning), ("اشراف", ComponentKind.earning),
-             ("تأمينات", ComponentKind.deduction))}
+             ("بدلات اضافية", ComponentKind.earning), ("اشراف", ComponentKind.earning))}
     comp = lambda name, label=None: {"source": "component", "ref": c[name],  # noqa: E731
                                       "label": label or name}
     return [
@@ -373,7 +372,7 @@ def template_groups(db: Session, *, actor_user_id: int) -> list[dict]:
              {"source": "bonuses", "label": "مكافأة"},
              {"source": "absence", "label": "غياب"}, {"source": "advances", "label": "سلف"},
              {"source": "penalties", "label": "جزاءات"},
-             {"source": "insurance", "label": "تأمينات", "fallback_component_id": c["تأمينات"]},
+             {"source": "insurance", "label": "تأمينات"},
          ]},
     ]
 
@@ -403,6 +402,25 @@ def copy_groups(db: Session, *, from_branch_id: int, to_branch_id: int,
         made.append(save_group(db, branch_id=to_branch_id, name=g.name, columns=g.columns,
                                absence_base=g.absence_base, absence_divisor=g.absence_divisor,
                                actor_user_id=actor_user_id))
+    return made
+
+
+def _active_groups(db: Session, branch_id: int) -> list[PayrollGroup]:
+    return list(db.scalars(select(PayrollGroup).where(
+        PayrollGroup.branch_id == branch_id, PayrollGroup.active.is_(True))
+        .order_by(PayrollGroup.sort_order, PayrollGroup.id)).all())
+
+
+def apply_template_all(db: Session, *, actor_user_id: int) -> dict:
+    from src.models.org import Branch
+
+    made: dict[str, int] = {}
+    for b in db.scalars(select(Branch).order_by(Branch.id)).all():
+        if getattr(b, "active", True) is False:
+            continue
+        rows = apply_template(db, branch_id=b.id, actor_user_id=actor_user_id)
+        if rows:
+            made[b.name] = len(rows)
     return made
 
 
@@ -473,10 +491,7 @@ def _salary_info(db: Session, employee_id: int, period_end: date) -> dict | None
             comps[line.component_id] = to_money(basic * Decimal(str(line.pct)) / 100)
         else:
             comps[line.component_id] = to_money(Decimal(str(line.amount or 0)))
-    breakdown = setup.salary_breakdown(db, salary)
-    return {"basic": basic, "components": comps,
-            "insurance_base": Decimal(breakdown["insurance_base"]),
-            "effective_from": salary.effective_from}
+    return {"basic": basic, "components": comps, "effective_from": salary.effective_from}
 
 
 def _absent_days(db: Session, employee_id: int, year: int, month: int) -> tuple[Decimal, bool]:
@@ -574,14 +589,12 @@ def prepare(db: Session, *, branch_id: int, year: int, month: int,
             f"هذا الشهر مُرحّل في {live.document_number} — اعكس الترحيل أولاً إن أردت التعديل.")
     if live is not None and live.status == PayrollRunStatus.closed:
         raise PayrollSheetError("هذا الشهر معتمد — ألغِ الاعتماد أولاً لإعادة التجهيز.")
-    if live is not None and not is_sheet(db, live.id) and db.scalar(
-            select(func.count()).select_from(PayrollLine).where(PayrollLine.run_id == live.id)):
-        raise PayrollSheetError(
-            f"لهذا الشهر مسودة في «مسير الرواتب» القديم ({live.document_number}).")
 
-    groups = db.scalars(select(PayrollGroup).where(
-        PayrollGroup.branch_id == branch_id, PayrollGroup.active.is_(True))
-        .order_by(PayrollGroup.sort_order, PayrollGroup.id)).all()
+    groups = _active_groups(db, branch_id)
+    if not groups and not db.scalar(select(func.count()).select_from(PayrollGroup).where(
+            PayrollGroup.branch_id == branch_id)):
+        apply_template(db, branch_id=branch_id, actor_user_id=actor_user_id)
+        groups = _active_groups(db, branch_id)
     if not groups:
         raise PayrollSheetError(
             "لا توجد مجموعات مرتبات لهذا الفرع — أنشئها أولاً من «مجموعات المرتبات».")
@@ -623,9 +636,6 @@ def prepare(db: Session, *, branch_id: int, year: int, month: int,
         _wipe_sheet(db, run.id)
 
     period_end = _period_end(year, month)
-    ins_version = setup.version_on(db, SchemeKind.social_insurance, period_end)
-    run.insurance_version_id = ins_version.id if ins_version else None
-    run.tax_version_id = None
     comm, comm_details, comm_note = _commission_values(
         db, branch_id=branch_id, year=year, month=month,
         absences={k: Decimal(str(v)) for k, v in day_overrides.items()})
@@ -648,8 +658,8 @@ def prepare(db: Session, *, branch_id: int, year: int, month: int,
             .order_by(PayrollGroupMember.sort_order, Employee.name)).all()
         for m, emp in members:
             _build_row(db, run=run, sg=sg, emp=emp, sort_order=m.sort_order,
-                       year=year, month=month, period_end=period_end,
-                       ins_version=ins_version, comm=comm, comm_details=comm_details,
+                       year=year, month=month, period_end=period_end, comm=comm,
+                       comm_details=comm_details,
                        comm_ok=comm_note is None, carry=carry, hours=hours,
                        overrides=overrides, day_override=day_overrides.get(emp.id),
                        note=notes.get(emp.id))
@@ -662,10 +672,8 @@ def prepare(db: Session, *, branch_id: int, year: int, month: int,
     return run
 
 
-def _build_row(db: Session, *, run, sg, emp, sort_order, year, month, period_end, ins_version,
+def _build_row(db: Session, *, run, sg, emp, sort_order, year, month, period_end,
                comm, comm_details, comm_ok, carry, hours, overrides, day_override, note) -> None:
-    from src.lib import payroll_calc as calc
-
     info = _salary_info(db, emp.id, period_end)
     days, has_att = _absent_days(db, emp.id, year, month)
     row = PayrollSheetRow(run_id=run.id, sheet_group_id=sg.id, employee_id=emp.id,
@@ -703,15 +711,13 @@ def _build_row(db: Session, *, run, sg, emp, sort_order, year, month, period_end
             value = to_money(sum((Decimal(str(p.amount)) for p in parts), ZERO))
             note_txt = (f"أقساط سلف الشهر ({len(parts)})" if parts else "لا توجد أقساط هذا الشهر")
         elif src == "insurance":
-            if ins_version is not None and info is not None:
-                emp_share, _ = calc.insurance_for(
-                    info["insurance_base"], employee_pct=ins_version.employee_pct or 0,
-                    employer_pct=ins_version.employer_pct or 0,
-                    min_base=ins_version.min_base, max_base=ins_version.max_base)
-                value = to_money(emp_share)
-                note_txt = f"شرائح التأمينات «{ins_version.name}»"
+            ins = insurance_service.amount_on(db, emp.id, period_end)
+            if ins is not None:
+                value = to_money(Decimal(str(ins.amount or 0)))
+                note_txt = f"التأمينات الثابتة (سارية من {ins.effective_from})"
             else:
-                note_txt = "شرائح التأمينات غير معرّفة — أدخل الرقم يدوياً"
+                value = ZERO
+                note_txt = "لا يوجد مبلغ تأمينات مسجّل للموظف"
         elif src == "manual":
             prev = carry.get((emp.id, key)) if col.get("carry") else None
             if prev is not None:
@@ -1022,6 +1028,49 @@ def reverse(db: Session, *, run_id: int, actor_user_id: int) -> dict:
     return payroll_service.reverse_run(db, run_id=run_id, actor_user_id=actor_user_id)
 
 
+def pay(db: Session, *, run_id: int, actor_user_id: int, treasury_id: int | None = None,
+        pay_date: date | None = None) -> dict:
+    from src.services import payroll_service
+
+    if not is_sheet(db, run_id):
+        raise PayrollSheetError("الشيت غير موجود.")
+    return payroll_service.pay_run(db, run_id=run_id, actor_user_id=actor_user_id,
+                                   treasury_id=treasury_id, pay_date=pay_date)
+
+
+def payslip(db: Session, *, run_id: int, employee_id: int) -> dict:
+    run = db.get(PayrollRun, run_id)
+    if run is None or not is_sheet(db, run_id):
+        raise PayrollSheetError("الشيت غير موجود.")
+    row, sg = _row_of(db, run_id, employee_id)
+    emp = db.get(Employee, employee_id)
+    cells = {c.col_key: c for c in db.scalars(select(PayrollSheetCell).where(
+        PayrollSheetCell.row_id == row.id)).all()}
+    days = Decimal(str(row.absent_days_override if row.absent_days_override is not None
+                       else row.absent_days or 0))
+    details = []
+    for col in sg.columns:
+        c = cells.get(col["key"])
+        v = _final(c) if c is not None else ZERO
+        if not v:
+            continue
+        details.append({
+            "label": col["label"], "kind": col["kind"], "amount": str(v),
+            "quantity": str(days.normalize()) if col["source"] == "absence" else None,
+        })
+    paid = db.scalar(select(PayrollLine.paid).where(
+        PayrollLine.run_id == run_id, PayrollLine.employee_id == employee_id))
+    return {
+        "run": {"document_number": run.document_number, "year": run.year,
+                "month": run.month, "status": run.status.value},
+        "employee": {"id": employee_id, "code": emp.code if emp else None,
+                     "name": emp.name if emp else None, "group": sg.name},
+        "line": {"gross": str(row.earnings), "total_deductions": str(row.deductions),
+                 "net": str(row.net), "paid": bool(paid)},
+        "details": details,
+    }
+
+
 def delete_draft(db: Session, *, run_id: int, actor_user_id: int) -> None:
     run = _draft(db, run_id)
     number = run.document_number
@@ -1112,8 +1161,12 @@ def sheet_out(db: Session, run: PayrollRun) -> dict:
             if e.id not in in_sheet:
                 unassigned.append({"id": e.id, "code": e.code, "name": e.name})
 
+    lines = db.scalars(select(PayrollLine).where(PayrollLine.run_id == run.id)).all()
+    paid_lines = [x for x in lines if x.paid]
     return {
         "run": {
+            "paid": len(paid_lines), "lines": len(lines),
+            "paid_total": str(to_money(sum((Decimal(str(x.net)) for x in paid_lines), ZERO))),
             "id": run.id, "document_number": run.document_number, "year": run.year,
             "month": run.month, "branch_id": run.branch_id, "status": run.status.value,
             "reversal_seq": run.reversal_seq, "net": str(run.net),

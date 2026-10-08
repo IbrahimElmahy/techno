@@ -4,7 +4,7 @@ import {
 } from 'antd';
 import {
   ClearOutlined, DeleteOutlined, EditOutlined, PlusOutlined, ReloadOutlined, RiseOutlined,
-  SearchOutlined, UserOutlined, WalletOutlined,
+  SafetyOutlined, SearchOutlined, UserOutlined, WalletOutlined,
 } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
 import dayjs, { Dayjs } from 'dayjs';
@@ -18,6 +18,7 @@ import { Popconfirm } from '../components/noConfirm';
 import { InputNumber } from '../components/NumberInput';
 import { TabModal } from '../components/TabModal';
 import EmployeeFormModal, { type Employee } from '../components/EmployeeFormModal';
+import InsurancePanel from '../components/InsurancePanel';
 import { PAGE_SIZE } from '../utils/pagination';
 import { searchFilter, searchRank } from '../utils/arabicSort';
 import { money, numeralsLocale } from '../utils/money';
@@ -30,7 +31,7 @@ interface Current {
 interface Row {
   employee_id: number; code: string; name: string; active: boolean;
   branch_id: number | null; department: string | null; job_title: string | null;
-  hire_date: string | null; card_salary: string | null;
+  hire_date: string | null; card_salary: string | null; insurance: string | null;
   versions: number; current: Current | null;
   upcoming: { id: number; effective_from: string; basic: string } | null;
 }
@@ -59,6 +60,7 @@ export default function EmployeeSalaries() {
   const [lines, setLines] = useState<FormLine[]>([]);
   const [saving, setSaving] = useState(false);
 
+  const [insTarget, setInsTarget] = useState<Row | null>(null);
   const [empOpen, setEmpOpen] = useState(false);
   const [employee, setEmployee] = useState<Employee | null>(null);
 
@@ -112,7 +114,6 @@ export default function EmployeeSalaries() {
         effective_from: how === 'edit' ? dayjs(cur.effective_from)
           : dayjs().add(1, 'month').startOf('month'),
         basic: n(cur.basic),
-        insurance_base: cur.insurance_base_set === null ? undefined : n(cur.insurance_base_set),
         payment_method: cur.payment_method || 'cash',
         bank_name: cur.bank_name || '', bank_account: cur.bank_account || '',
         notes: how === 'edit' ? (cur.notes || '') : '',
@@ -126,7 +127,7 @@ export default function EmployeeSalaries() {
       setForm({
         effective_from: hired && hired.isAfter(monthStart) ? hired : monthStart,
         basic: row.card_salary ? n(row.card_salary) : undefined,
-        insurance_base: undefined, payment_method: 'cash',
+        payment_method: 'cash',
         bank_name: '', bank_account: '', notes: '',
       });
       setLines([]);
@@ -165,8 +166,6 @@ export default function EmployeeSalaries() {
         employee_id: target.employee_id,
         effective_from: (form.effective_from as Dayjs).format('YYYY-MM-DD'),
         basic: String(form.basic),
-        insurance_base: form.insurance_base === undefined || form.insurance_base === null
-          ? null : String(form.insurance_base),
         payment_method: form.payment_method,
         bank_name: form.payment_method === 'bank' ? (form.bank_name || null) : null,
         bank_account: form.payment_method === 'bank' ? (form.bank_account || null) : null,
@@ -229,6 +228,11 @@ export default function EmployeeSalaries() {
         ? <span style={{ color: '#cf1322' }}>{money(r.current.deductions)}</span> : '—') },
     { title: 'الإجمالي', key: 'gross', align: 'left',
       render: (_: any, r) => (r.current ? <b>{money(r.current.gross)}</b> : '—') },
+    { title: 'التأمينات', key: 'insurance', align: 'left',
+      render: (_: any, r) => (
+        <a onClick={() => setInsTarget(r)}>{r.insurance !== null && r.insurance !== undefined
+          ? money(r.insurance) : '—'}</a>
+      ) },
     { title: 'ساري من', key: 'effective_from', width: 110,
       render: (_: any, r) => (
         <Space size={2} direction="vertical">
@@ -258,6 +262,8 @@ export default function EmployeeSalaries() {
                 title="حذف الإعدادات السارية" />
             </Popconfirm>
           ) : null}
+          <Button type="text" icon={<SafetyOutlined />} title="التأمينات"
+            onClick={() => setInsTarget(r)} />
           <Button type="text" icon={<UserOutlined />} title="فتح كارت الموظف"
             onClick={() => openEmployee(r)} />
         </Space>
@@ -273,6 +279,7 @@ export default function EmployeeSalaries() {
         department: r.department, job_title: r.job_title,
         basic: r.current?.basic ?? 'بلا إعدادات', allowances: r.current?.allowances ?? '',
         deductions: r.current?.deductions ?? '', gross: r.current?.gross ?? '',
+        insurance: r.insurance ?? '',
         effective_from: r.current?.effective_from ?? '',
         payment_method: r.current ? PAY[r.current.payment_method] : '',
       })),
@@ -286,6 +293,7 @@ export default function EmployeeSalaries() {
   const shown = filter.filtered;
   const withSetup = shown.filter((r) => r.current);
   const totalGross = withSetup.reduce((t, r) => t + n(r.current!.gross), 0);
+  const totalInsurance = shown.reduce((t, r) => t + n(r.insurance), 0);
   const fmt = (v: number) => v.toLocaleString(numeralsLocale());
 
   return (
@@ -327,6 +335,7 @@ export default function EmployeeSalaries() {
         <ListStat label="بلا إعدادات" value={fmt(shown.length - withSetup.length)}
           tone={shown.length - withSetup.length ? 'warn' : undefined} />
         <ListStat label="إجمالي الرواتب الشهرية" value={money(totalGross)} tone="strong" />
+        <ListStat label="إجمالي التأمينات الشهرية" value={money(totalInsurance)} />
       </>)}
     >
       {rows.length && !rows.some((r) => r.current) ? (
@@ -362,12 +371,6 @@ export default function EmployeeSalaries() {
             <div style={{ marginBottom: 4 }}>الأساسي *</div>
             <InputNumber style={{ width: '100%' }} min={0} value={form.basic}
               onChange={(v) => setForm({ ...form, basic: v })} />
-          </Col>
-          <Col span={8}>
-            <div style={{ marginBottom: 4 }}>الأجر التأميني</div>
-            <InputNumber style={{ width: '100%' }} min={0} value={form.insurance_base}
-              placeholder="يُحتسب من البنود"
-              onChange={(v) => setForm({ ...form, insurance_base: v ?? undefined })} />
           </Col>
           <Col span={8}>
             <div style={{ marginBottom: 4 }}>طريقة الصرف</div>
@@ -458,6 +461,11 @@ export default function EmployeeSalaries() {
             <Input value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} />
           </Col>
 
+          <Col span={24}>
+            <Divider style={{ margin: '4px 0' }}>التأمينات</Divider>
+            <InsurancePanel employeeId={target.employee_id} onChanged={() => load()} />
+          </Col>
+
           {history.length ? (
             <Col span={24}>
               <Divider style={{ margin: '4px 0' }}>النسخ السابقة</Divider>
@@ -483,6 +491,14 @@ export default function EmployeeSalaries() {
           ) : null}
         </Row>
       ) : null}
+    </TabModal>
+
+    <TabModal
+      open={!!insTarget} width={820} destroyOnClose footer={null}
+      title={insTarget ? `التأمينات — ${insTarget.name}` : ''}
+      onCancel={() => setInsTarget(null)}
+    >
+      {insTarget ? <InsurancePanel employeeId={insTarget.employee_id} onChanged={() => load()} /> : null}
     </TabModal>
 
     <EmployeeFormModal

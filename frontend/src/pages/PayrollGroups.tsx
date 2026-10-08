@@ -14,6 +14,7 @@ import { useAuth } from '../components/AuthProvider';
 import ListPage, { ListStat } from '../components/ListPage';
 import { Popconfirm } from '../components/noConfirm';
 import { InputNumber } from '../components/NumberInput';
+import SalaryComponentsPanel from '../components/SalaryComponentsPanel';
 import { TabModal } from '../components/TabModal';
 import { useTabsOptional } from '../components/TabsContext';
 import { useQueryTab } from '../components/useQueryTab';
@@ -117,6 +118,18 @@ export default function PayrollGroups() {
       const res = await api.post('/api/v1/hr/payroll-sheet/groups/template', { branch_id: branchId });
       const made = res.data.created || [];
       message.success(made.length ? `تم إنشاء: ${made.join('، ')}` : 'مجموعات الملف موجودة بالفعل');
+      load();
+      api.get('/api/v1/hr/payroll-sheet/catalog').then((r) => setCatalog(r.data)).catch(() => {});
+    } catch (err: any) { fail(err, 'تعذر التنفيذ'); }
+  };
+
+  const applyTemplateAll = async () => {
+    try {
+      const res = await api.post('/api/v1/hr/payroll-sheet/groups/template-all');
+      const made = Object.entries(res.data.created || {});
+      message.success(made.length
+        ? `تم إنشاء المجموعات في: ${made.map(([b]) => b).join('، ')}`
+        : 'مجموعات الملف موجودة في كل الفروع');
       load();
       api.get('/api/v1/hr/payroll-sheet/catalog').then((r) => setCatalog(r.data)).catch(() => {});
     } catch (err: any) { fail(err, 'تعذر التنفيذ'); }
@@ -398,6 +411,7 @@ export default function PayrollGroups() {
         tabs={[
           { key: 'groups', label: 'المجموعات', count: groups.length },
           { key: 'members', label: 'توزيع الموظفين', count: members.length },
+          { key: 'components', label: 'بنود الراتب' },
         ]}
         activeTab={tab as any}
         onTabChange={(k) => setTab(k)}
@@ -406,6 +420,11 @@ export default function PayrollGroups() {
             <Button type="primary" icon={<PlusOutlined />} disabled={!branchId}
               onClick={() => openEditor()}>مجموعة</Button>
             <Button icon={<TableOutlined />} disabled={!branchId} onClick={applyTemplate}>مجموعات الملف</Button>
+            {seesAll && branches.length > 1 ? (
+              <Popconfirm onConfirm={applyTemplateAll}>
+                <Button icon={<TableOutlined />}>مجموعات الملف لكل الفروع</Button>
+              </Popconfirm>
+            ) : null}
           </>) : null}
           <Button icon={<PrinterOutlined />} onClick={printList}>طباعة</Button>
           <Button icon={<FileExcelOutlined />} onClick={exportList}>إكسل</Button>
@@ -441,7 +460,11 @@ export default function PayrollGroups() {
             hint="لن يدخلوا الشيت" />
         </>)}
       >
-        {!branchId ? <Empty description="اختر الفرع" /> : tab === 'groups' ? (
+        {tab === 'components' ? (
+          <SalaryComponentsPanel onChanged={() => {
+            api.get('/api/v1/hr/payroll-sheet/catalog').then((r) => setCatalog(r.data)).catch(() => {});
+          }} />
+        ) : !branchId ? <Empty description="اختر الفرع" /> : tab === 'groups' ? (
           <>
             {!loading && !groups.length ? (
               <Alert type="info" showIcon style={{ margin: '6px 0 8px' }}

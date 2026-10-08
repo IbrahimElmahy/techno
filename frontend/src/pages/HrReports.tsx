@@ -246,8 +246,6 @@ export default function HrReports() {
       ...numberColumn<any>((r) => r.penalty_amount), render: (v: string) => money(v) },
     { title: 'تأمينات', dataIndex: 'insurance_employee', align: 'left' as const,
       ...numberColumn<any>((r) => r.insurance_employee), render: (v: string) => money(v) },
-    { title: 'ضريبة', dataIndex: 'tax_amount', align: 'left' as const,
-      ...numberColumn<any>((r) => r.tax_amount), render: (v: string) => money(v) },
     { title: 'قسط سلفة', dataIndex: 'advance_deduction', align: 'left' as const,
       ...numberColumn<any>((r) => r.advance_deduction), render: (v: string) => money(v) },
     { title: 'الصافي', dataIndex: 'amount', align: 'left' as const,

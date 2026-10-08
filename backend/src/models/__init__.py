@@ -82,8 +82,7 @@ from src.models.hr_advance import (  # noqa: E402
     EmployeeAdvance, EmployeeAdvanceInstalment, PayrollAdjustment,
 )
 from src.models.hr_payroll import (  # noqa: E402
-    EmployeeSalary, EmployeeSalaryLine, PayrollSchemeBracket, PayrollSchemeVersion,
-    PayrollSetting, SalaryComponent,
+    EmployeeInsurance, EmployeeSalary, EmployeeSalaryLine, PayrollSetting, SalaryComponent,
 )
 from src.models.hr_attendance import (  # noqa: E402
     AttendanceDay, AttendanceImport, EmployeeShiftAssignment, Holiday, WorkShift,
@@ -114,7 +113,7 @@ __all__ = [
     "WorkShift", "EmployeeShiftAssignment", "Holiday", "AttendanceDay", "AttendanceImport",
     "LeaveType", "LeaveEntitlement", "LeaveRequest",
     "SalaryComponent", "EmployeeSalary", "EmployeeSalaryLine", "PayrollSetting",
-    "PayrollSchemeVersion", "PayrollSchemeBracket",
+    "EmployeeInsurance",
     "EmployeeAdvance", "EmployeeAdvanceInstalment", "PayrollAdjustment",
     "PayrollRun", "PayrollLine", "PayrollLineDetail", "PayrollRemittance",
     "Owner",

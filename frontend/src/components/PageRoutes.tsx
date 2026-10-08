@@ -42,12 +42,11 @@ const Employees = lazy(() => import('../pages/Employees'));
 const Departments = lazy(() => import('../pages/Departments'));
 const Attendance = lazy(() => import('../pages/Attendance'));
 const Leave = lazy(() => import('../pages/Leave'));
-const PayrollSettings = lazy(() => import('../pages/PayrollSettings'));
 const EmployeeSalaries = lazy(() => import('../pages/EmployeeSalaries'));
 const CommissionSettings = lazy(() => import('../pages/CommissionSettings'));
 const Advances = lazy(() => import('../pages/Advances'));
 const EmployeeReceivables = lazy(() => import('../pages/EmployeeReceivables'));
-const Payroll = lazy(() => import('../pages/Payroll'));
+const Insurance = lazy(() => import('../pages/Insurance'));
 const PayrollSheet = lazy(() => import('../pages/PayrollSheet'));
 const PayrollGroups = lazy(() => import('../pages/PayrollGroups'));
 const HrReports = lazy(() => import('../pages/HrReports'));
@@ -160,12 +159,11 @@ export default function PageRoutes({ location }: { location?: string }) {
       <Route path="/departments" element={<Departments />} />
       <Route path="/attendance" element={<Attendance />} />
       <Route path="/leave" element={<Leave />} />
-      <Route path="/payroll-settings" element={<PayrollSettings />} />
       <Route path="/employee-salaries" element={<EmployeeSalaries />} />
       <Route path="/commission-settings" element={<CommissionSettings />} />
       <Route path="/advances" element={<Advances />} />
       <Route path="/employee-receivables" element={<EmployeeReceivables />} />
-      <Route path="/payroll" element={<Payroll />} />
+      <Route path="/insurance" element={<Insurance />} />
       <Route path="/payroll-sheet" element={<PayrollSheet />} />
       <Route path="/payroll-groups" element={<PayrollGroups />} />
       <Route path="/hr-reports" element={<HrReports />} />
