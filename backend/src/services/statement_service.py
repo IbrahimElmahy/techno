@@ -69,6 +69,32 @@ class StatementLine:
     matches: tuple = ()
     # سطر «مدفوع نقداً مع الفاتورة» — مش سطر في القيد، الكشف بيفصله (شوف `_cash_on_invoices`).
     cash_on_invoice: bool = False
+    # رصيد **حساب السطر لوحده** قبل وبعد الحركة — غير `balance` اللي هو رصيد الكشف كله.
+    # في كشف «الخزينة» الرصيد الجاري الواحد بيجمع كل الصناديق، فاللي عايز يقرا صندوق
+    # صندوق (التجميع بالحساب الفرعي في الشاشة، زي ورقة a5) محتاج رصيد كل صندوق لوحده.
+    # بيتحسب في نفس اللفّة، فمافيش استعلام زيادة. في كشف الحساب الواحد هو نفس `balance`.
+    account_balance_before: Decimal | None = None
+    account_balance: Decimal | None = None
+
+
+@dataclass(frozen=True)
+class AccountSummary:
+    """حساب فرعي في الكشف: رصيده أول المدة، حركته في الفترة، ورصيده آخرها.
+
+    الحساب اللي مالوش حركة في الفترة **بس عليه رصيد** بيتعرض (رصيد أول المدة لوحده) —
+    صندوق ماتحركش الشهر ده وفيه فلوس لسه جزء من رصيد الخزينة، وإخفاؤه بيخلّي مجموع
+    الأقسام مايطلعش الرصيد الكلي. اللي صفر وماتحركش بيتشال: سطر أصفار مابيقولش حاجة.
+    """
+
+    account_id: int
+    account_name: str
+    code: str | None
+    normal_side: str
+    opening: Decimal
+    debit: Decimal
+    credit: Decimal
+    closing: Decimal
+    lines: int
 
 
 @dataclass(frozen=True)
@@ -113,6 +139,11 @@ class Statement:
     total_overdue: Decimal = ZERO
     aging: AgingBuckets = AgingBuckets()
     reconcilable: bool = False   # حساب ذمم؟ لو لأ، أعمدة المطابقة مالهاش معنى
+    # ناحية الحساب الطبيعية (debit/credit) — الشاشة بتقسم الرصيد على «رصيد مدين / رصيد دائن»
+    # زي ورقة a5، ومن غيرها الرصيد الدائن لمورد كان هيتكتب «مدين».
+    normal_side: str | None = None
+    # كل حساب فرعي بأرصدته (شوف `AccountSummary`) — مجموع إقفالاتهم = `closing_balance`.
+    account_summaries: tuple[AccountSummary, ...] = ()
 
 
 def _effective_date(entry: LedgerEntry) -> date:
@@ -526,10 +557,15 @@ def account_statement(
     )
 
     opening = ZERO
+    # أول المدة لكل حساب فرعي في نفس اللفّة — كشف «الخزينة» فيه ١٥ ألف سطر، وطلب لكل
+    # صندوق كان هيبقى N رحلة للقاعدة على نفس السطور اللي في إيدنا أصلاً.
+    openings: dict[int, Decimal] = {}
     window: list[tuple[date, LedgerLine]] = []
     for when, line in dated:
         if date_from is not None and when < date_from:
-            opening += signed(line)
+            moved = signed(line)
+            opening += moved
+            openings[line.account_id] = openings.get(line.account_id, ZERO) + moved
             continue
         if date_to is not None and when > date_to:
             continue
@@ -538,6 +574,11 @@ def account_statement(
     balance = to_money(opening)
     total_debit = total_credit = ZERO
     lines: list[StatementLine] = []
+    # الرصيد الجاري لكل حساب لوحده، ومدينه ودائنه في الفترة (شوف `AccountSummary`).
+    acct_balance: dict[int, Decimal] = {aid: to_money(v) for aid, v in openings.items()}
+    acct_debit: dict[int, Decimal] = {}
+    acct_credit: dict[int, Decimal] = {}
+    acct_lines: dict[int, int] = {}
     # المطابقة بتتجاب مرة واحدة لكل سطور الشباك — الاستعلام جوّه الحلقة كان هيخلّي
     # الكشف بيفتح في تانية.
     matches = _matches_by_line(db, [line.id for _when, line in window])
@@ -559,6 +600,12 @@ def account_statement(
         side = accounts[account_id].normal_side
         moved = (debit - credit) if side == Direction.debit else (credit - debit)
         balance = to_money(balance + moved)
+        acct_before = acct_balance.get(account_id, ZERO)
+        acct_after = to_money(acct_before + moved)
+        acct_balance[account_id] = acct_after
+        acct_debit[account_id] = acct_debit.get(account_id, ZERO) + debit
+        acct_credit[account_id] = acct_credit.get(account_id, ZERO) + credit
+        acct_lines[account_id] = acct_lines.get(account_id, 0) + 1
         lines.append(StatementLine(
             entry_id=entry.id, entry_date=when, entry_type=entry.entry_type,
             description=description,
@@ -584,6 +631,8 @@ def account_statement(
                 entry.payment_state or ""),
             matches=tuple(matches.get(line.id, ())) if line is not None else (),
             cash_on_invoice=cash_row,
+            account_balance_before=acct_before,
+            account_balance=acct_after,
         ))
 
     # السطور والفواتير النقدية بالكامل (اللي مالهاش سطر على الحساب) في ترتيب واحد.
@@ -648,6 +697,26 @@ def account_statement(
     if reconcilable:
         total_due, total_overdue, aging = due_summary(db, account_ids=ids, as_of=date_to)
 
+    # الحسابات الفرعية بأرصدتها، بالكود ثم الاسم — نفس ترتيب الشجرة اللي المحاسب متعوّد عليه.
+    # اللي صفر في أول المدة ومالوش ولا سطر في الفترة بيتشال (صندوق مقفول من سنين).
+    summaries = []
+    for aid in ids:
+        acc = accounts.get(aid)
+        if acc is None:
+            continue
+        first = to_money(openings.get(aid, ZERO))
+        count = acct_lines.get(aid, 0)
+        if not count and first == ZERO:
+            continue
+        summaries.append(AccountSummary(
+            account_id=aid, account_name=name_of(aid), code=acc.code,
+            normal_side=acc.normal_side.value, opening=first,
+            debit=to_money(acct_debit.get(aid, ZERO)),
+            credit=to_money(acct_credit.get(aid, ZERO)),
+            closing=to_money(acct_balance.get(aid, first)), lines=count,
+        ))
+    summaries.sort(key=lambda s: (s.code or "", s.account_name))
+
     parent = db.get(Account, account.parent_id) if account.parent_id else None
     # A customer's or supplier's account carries no `name` — the party's name lives on the party,
     # and the chart resolves it as `owner_name`. Reading only `name` made every party statement
@@ -662,4 +731,6 @@ def account_statement(
         total_debit=to_money(total_debit), total_credit=to_money(total_credit), lines=lines,
         total_due=total_due, total_overdue=total_overdue, aging=aging,
         reconcilable=reconcilable,
+        normal_side=account.normal_side.value,
+        account_summaries=tuple(summaries),
     )

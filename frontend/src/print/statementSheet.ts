@@ -58,6 +58,20 @@ export interface StatementSheet {
   quantity?: boolean;
   /** الكشف فيه أكتر من حساب — اسم الحساب بيتكتب أول البيان. */
   showAccount?: boolean;
+  /**
+   * التجميع بالحساب الفرعي: قسم لكل حساب بأول مدته وسطوره **برصيده هو** وإجماليه — زي
+   * ورقة a5 للحساب الرئيسي مفرود. لو موجودة الجدول بيتبني منها، و`lines` بيفضل للإجمالي.
+   */
+  sections?: StatementSheetSection[];
+}
+
+export interface StatementSheetSection {
+  account: string;
+  opening: string | number | null | undefined;
+  closing: string | number | null | undefined;
+  normalSide?: 'debit' | 'credit';
+  /** السطور برصيد الحساب ده الجاري (مش رصيد الكشف كله). */
+  lines: StatementSheetLine[];
 }
 
 const n = (v: unknown) => Number(v || 0);
@@ -104,17 +118,17 @@ export function statementSheetHtml(s: StatementSheet): string {
   // مدين/دائن الصفر خانة فاضية زي a5 — «٠٫٠٠» في كل سطر بيغرّق الرقم الحقيقي.
   const blankZero = (v: number) => (Math.abs(v) < 0.005 ? '' : fmt(v));
   const sign = sideOf(s) === 'credit' ? -1 : 1;
-  /** الرصيد على ناحية المدين: موجب = مدين، سالب = دائن. */
-  const asDebit = (v: unknown) => sign * n(v);
-  const split = (v: unknown): [string, string] => {
-    const d = asDebit(v);
+  /** الرصيد على ناحية المدين: موجب = مدين، سالب = دائن. `sg` لقسم ناحيته غير ناحية الكشف. */
+  const asDebit = (v: unknown, sg = sign) => sg * n(v);
+  const split = (v: unknown, sg = sign): [string, string] => {
+    const d = asDebit(v, sg);
     if (Math.abs(d) < 0.005) return [fmt(0), ''];
     return d > 0 ? [fmt(d), ''] : ['', fmt(-d)];
   };
   /** «١٬٢٣٤٫٠٠ مدين» — الكلمة بدل الإشارة. */
-  const worded = (v: unknown) => {
+  const worded = (v: unknown, sg = sign) => {
     if (isQty) return fmt(n(v));
-    const d = asDebit(v);
+    const d = asDebit(v, sg);
     if (Math.abs(d) < 0.005) return fmt(0);
     return `${fmt(Math.abs(d))} ${d > 0 ? 'مدين' : 'دائن'}`;
   };
@@ -128,31 +142,55 @@ export function statementSheetHtml(s: StatementSheet): string {
   const balanceHeads = isQty
     ? '<th class="n">الرصيد</th>'
     : '<th class="n">رصيد مدين</th><th class="n">رصيد دائن</th>';
-  const balanceCells = (v: unknown) => {
+  const balanceCells = (v: unknown, sg = sign) => {
     if (isQty) return `<td class="n">${fmt(n(v))}</td>`;
-    const [d, c] = split(v);
+    const [d, c] = split(v, sg);
     return `<td class="n">${d}</td><td class="n">${c}</td>`;
   };
   const cols = isQty ? 6 : 7;
 
   // سطر رصيد أول المدة — الرصيد الجاري بيبدأ منه، فمن غيره أول سطر في الجدول رقم مالوش أصل.
-  const showOpening = !!s.from || Math.abs(n(s.opening)) >= 0.005;
-  const openingRow = showOpening
-    ? `<tr class="open"><td class="n"></td><td class="d">${esc(s.from ?? '')}</td>`
-      + '<td class="n"></td><td class="n"></td>'
-      + `${balanceCells(s.opening)}<td class="b">رصيد أول المدة</td></tr>`
-    : '';
+  const openingRowOf = (opening: unknown, sg = sign, force = false) => (
+    force || !!s.from || Math.abs(n(opening)) >= 0.005
+      ? `<tr class="open"><td class="n"></td><td class="d">${esc(s.from ?? '')}</td>`
+        + '<td class="n"></td><td class="n"></td>'
+        + `${balanceCells(opening, sg)}<td class="b">رصيد أول المدة</td></tr>`
+      : '');
 
-  const body = rows.map((l, i) => `<tr>`
-    + `<td class="n s">${i + 1}</td>`
-    + `<td class="d">${esc(String(l.entry_date || '').slice(0, 10))}</td>`
-    + `<td class="n">${blankZero(n(l.debit))}</td>`
-    + `<td class="n">${blankZero(n(l.credit))}</td>`
-    + balanceCells(l.balance)
-    + `<td class="b">${esc(bianOf(l, !!s.showAccount))}</td>`
-    + '</tr>').join('');
+  const lineRows = (list: StatementSheetLine[], sg = sign, withAccount = !!s.showAccount) => list
+    .map((l, i) => `<tr>`
+      + `<td class="n s">${i + 1}</td>`
+      + `<td class="d">${esc(String(l.entry_date || '').slice(0, 10))}</td>`
+      + `<td class="n">${blankZero(n(l.debit))}</td>`
+      + `<td class="n">${blankZero(n(l.credit))}</td>`
+      + balanceCells(l.balance, sg)
+      + `<td class="b">${esc(bianOf(l, withAccount))}</td>`
+      + '</tr>').join('');
 
-  const empty = rows.length
+  let openingRow = '';
+  let body = '';
+  const sections = !isQty ? (s.sections ?? []) : [];
+  if (sections.length) {
+    // قسم لكل حساب: اسمه، أول مدته، سطوره برصيده الجاري، وإجماليه بآخر مدته. اسم الحساب
+    // في رأس القسم، فمش محتاج يتكرر أول كل بيان.
+    body = sections.map((sec) => {
+      const sg = sec.normalSide === 'credit' ? -1 : 1;
+      const list = oldestFirst(sec.lines);
+      const d = list.reduce((t, l) => t + n(l.debit), 0);
+      const c = list.reduce((t, l) => t + n(l.credit), 0);
+      return `<tr class="sec"><td colspan="${cols}" class="b">${esc(sec.account)}</td></tr>`
+        + openingRowOf(sec.opening, sg, !list.length)
+        + lineRows(list, sg, false)
+        + `<tr class="sub"><td colspan="2" class="b">إجمالي ${esc(sec.account)}</td>`
+        + `<td class="n">${fmt(d)}</td><td class="n">${fmt(c)}</td>`
+        + `${balanceCells(sec.closing, sg)}<td class="b">رصيد آخر المدة: ${esc(worded(sec.closing, sg))}</td></tr>`;
+    }).join('');
+  } else {
+    openingRow = openingRowOf(s.opening);
+    body = lineRows(rows);
+  }
+
+  const empty = rows.length || sections.length
     ? '' : `<tr><td colspan="${cols}" class="b">مفيش حركة في الفترة دي</td></tr>`;
 
   // سطر الإجمالي آخر الجدول (مش tfoot — ده بيتكرر تحت كل صفحة، وإجمالي في نص الكشف غلط).
@@ -234,6 +272,10 @@ const STATEMENT_CSS = `
   table.grid.stmt tr.total td {
     font-weight: 800; border-top: 2px solid #000; background: #e6e6e6;
   }
+  table.grid.stmt tr.sec td {
+    font-weight: 800; font-size: 13.5px; background: #d4d4d4; border-top: 2px solid #000;
+  }
+  table.grid.stmt tr.sub td { font-weight: 800; border-top: 1.5px solid #000; }
   .st-sum {
     display: flex; gap: 0; margin-top: 8px; border: 1px solid #444; border-radius: 4px;
   }
@@ -247,7 +289,7 @@ const STATEMENT_CSS = `
   .st-sum .close b { font-size: 14px; }
   .st-extra { margin-top: 5px; }
   @media print {
-    table.grid.stmt tr.open td, table.grid.stmt tr.total td, .st-sum {
+    table.grid.stmt tr.open td, table.grid.stmt tr.total td, table.grid.stmt tr.sec td, .st-sum {
       -webkit-print-color-adjust: exact; print-color-adjust: exact;
     }
   }

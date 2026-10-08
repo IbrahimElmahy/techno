@@ -37,3 +37,11 @@
 .list-page .sl-filters > .sl-f-rep { flex: 1.6 1 200px; }
 .list-page .sl-filters > .sl-f-stmt { flex: 1.8 1 220px; display: flex; }
 .list-page .sl-filters > .sl-f-stmt > * { flex: 1; min-width: 0; }
+
+/* صف «رصيد أول المدة» جوّه الجدول — نقطة بداية الرصيد الجاري، مش حركة. */
+.st-table .ant-table-tbody > tr.ant-table-row.st-opening > td {
+  background: #fff7e6;
+  font-weight: 600;
+  border-top: 1px solid #ffd591;
+  border-bottom: 1px solid #ffd591;
+}

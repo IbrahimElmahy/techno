@@ -243,6 +243,23 @@ class StatementLineOut(BaseModel):
     payment_state_label: str | None = None
     # المستندات اللي قفلت جزء منه — الدفعة بتقول سدّدت إيه، والفاتورة اتسدّدت بإيه.
     matches: list[dict] = []
+    # رصيد حساب السطر لوحده (غير رصيد الكشف كله) — للتجميع بالحساب الفرعي.
+    account_balance_before: Decimal | None = None
+    account_balance: Decimal | None = None
+
+
+class AccountSummaryOut(BaseModel):
+    """حساب فرعي في الكشف بأرصدته — قسم في «التجميع بالحساب الفرعي»."""
+
+    account_id: int
+    account_name: str
+    code: str | None = None
+    normal_side: str
+    opening: Decimal
+    debit: Decimal
+    credit: Decimal
+    closing: Decimal
+    lines: int = 0
 
 
 class AgingOut(BaseModel):
@@ -292,6 +309,10 @@ class StatementOut(BaseModel):
     total_overdue: Decimal = Decimal("0")
     aging: AgingOut = AgingOut()
     reconcilable: bool = False
+    # ناحية الحساب (debit/credit) — لتقسيم الرصيد على «رصيد مدين / رصيد دائن».
+    normal_side: str | None = None
+    # كل حساب فرعي بأول مدته وحركته وآخر مدته — مجموع إقفالاتهم = `closing_balance`.
+    account_summaries: list[AccountSummaryOut] = []
 
 
 def _out(v) -> VoucherOut:
@@ -360,8 +381,13 @@ def _statement_out(s, docs: dict | None = None, reps: dict | None = None,
             days_overdue=getattr(ln, "days_overdue", None),
             payment_state=getattr(ln, "payment_state", None),
             payment_state_label=getattr(ln, "payment_state_label", None),
-            matches=list(getattr(ln, "matches", ()) or ()))
+            matches=list(getattr(ln, "matches", ()) or ()),
+            account_balance_before=getattr(ln, "account_balance_before", None),
+            account_balance=getattr(ln, "account_balance", None))
             for ln in s.lines],
+        normal_side=getattr(s, "normal_side", None),
+        account_summaries=[AccountSummaryOut(**dataclasses.asdict(a))
+                           for a in getattr(s, "account_summaries", ()) or ()],
         total_due=getattr(s, "total_due", Decimal("0")),
         total_overdue=getattr(s, "total_overdue", Decimal("0")),
         aging=(AgingOut(**dataclasses.asdict(s.aging))
