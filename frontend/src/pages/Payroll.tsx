@@ -130,10 +130,15 @@ export default function Payroll() {
   };
 
   useEffect(() => {
-    loadMonth();
     loadEmps();
     loadRemits();
-    api.get('/api/v1/branches').then((r) => setBranches(r.data || [])).catch(() => {});
+    api.get('/api/v1/branches').then((r) => {
+      const list = (r.data || []).filter((b: any) => b.active !== false);
+      setBranches(list);
+      const first = list[0]?.id as number | undefined;
+      setBranchId(first);
+      loadMonth(first);
+    }).catch(() => loadMonth());
     api.get('/api/v1/treasuries').then((r) => setTreasuries(r.data || [])).catch(() => {});
   }, []);
 
