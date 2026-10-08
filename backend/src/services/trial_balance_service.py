@@ -188,3 +188,109 @@ def _group_rows(db: Session, buckets: dict[int, _Bucket]) -> list[TrialBalanceRo
             )
         )
     return rows
+
+
+def trial_balance_tree(
+    db: Session, *, from_date: date, to_date: date, branch_id: int | None = None,
+    cost_center_id: int | None = None,
+) -> dict:
+    accounts = {a.id: a for a in db.scalars(select(Account)).all()}
+    by_code = {a.code: a.id for a in accounts.values() if a.code}
+
+    def parent_of(acc: Account) -> int | None:
+        if acc.parent_id is not None:
+            return acc.parent_id
+        return by_code.get(chart_service._GROUP_CODE_BY_TYPE.get(acc.account_type))
+
+    eff = func.coalesce(LedgerEntry.entry_date, cast(LedgerEntry.created_at, Date))
+    debit = case((LedgerLine.direction == Direction.debit, LedgerLine.amount), else_=0)
+    credit = case((LedgerLine.direction == Direction.debit, 0), else_=LedgerLine.amount)
+    before = eff < from_date
+    stmt = (
+        select(LedgerLine.account_id,
+               func.sum(case((before, debit - credit), else_=0)),
+               func.sum(case((before, 0), else_=debit)),
+               func.sum(case((before, 0), else_=credit)))
+        .join(LedgerEntry, LedgerLine.entry_id == LedgerEntry.id)
+        .where(ledger_service.is_posted_sql(), eff <= to_date)
+        .group_by(LedgerLine.account_id)
+    )
+    if branch_id is not None:
+        stmt = stmt.where(LedgerEntry.branch_id == branch_id)
+    if cost_center_id is not None:
+        from src.models.analytic import LedgerLineDistribution
+
+        stmt = stmt.where(
+            (LedgerLine.cost_center_id == cost_center_id)
+            | LedgerLine.id.in_(select(LedgerLineDistribution.line_id).where(
+                LedgerLineDistribution.cost_center_id == cost_center_id)))
+
+    nodes: dict[int, dict] = {}
+
+    def node(acc: Account) -> dict:
+        n = nodes.get(acc.id)
+        if n is None:
+            n = {"account_id": acc.id, "code": acc.code, "name": _account_label(db, acc),
+                 "opening": ZERO, "debit": ZERO, "credit": ZERO, "kids": {}, "own": False}
+            nodes[acc.id] = n
+        return n
+
+    roots: dict[int, dict] = {}
+    for account_id, opening, period_debit, period_credit in db.execute(stmt).all():
+        acc = accounts.get(account_id)
+        if acc is None:
+            continue
+        o = to_money(Decimal(str(opening or 0)))
+        d = to_money(Decimal(str(period_debit or 0)))
+        c = to_money(Decimal(str(period_credit or 0)))
+        if o == ZERO and d == ZERO and c == ZERO:
+            continue
+        leaf = node(acc)
+        leaf["own"] = True
+        cur, child, seen = acc, leaf, {acc.id}
+        chain = [leaf]
+        while True:
+            pid = parent_of(cur)
+            if pid is None or pid in seen or pid not in accounts:
+                break
+            seen.add(pid)
+            parent = node(accounts[pid])
+            parent["kids"][child["account_id"]] = child
+            chain.append(parent)
+            cur, child = accounts[pid], parent
+        for n in chain:
+            n["opening"] += o
+            n["debit"] += d
+            n["credit"] += c
+        roots[child["account_id"]] = child
+
+    def finish(n: dict) -> dict:
+        kids = [finish(k) for k in n["kids"].values()]
+        kids.sort(key=lambda k: (k["code"] or "~", k["name"] or ""))
+        closing = n["opening"] + n["debit"] - n["credit"]
+        return {"account_id": n["account_id"], "code": n["code"], "name": n["name"],
+                "opening": str(to_money(n["opening"])), "debit": str(to_money(n["debit"])),
+                "credit": str(to_money(n["credit"])), "closing": str(to_money(closing)),
+                "children": kids}
+
+    out = [finish(r) for r in roots.values()]
+    out.sort(key=lambda k: (k["code"] or "~", k["name"] or ""))
+
+    def split(v: Decimal) -> tuple[Decimal, Decimal]:
+        return (v, ZERO) if v >= 0 else (ZERO, -v)
+
+    tot = {"opening_debit": ZERO, "opening_credit": ZERO, "debit": ZERO, "credit": ZERO,
+           "closing_debit": ZERO, "closing_credit": ZERO}
+    for n in nodes.values():
+        if not n["own"]:
+            continue
+        od, oc = split(n["opening"])
+        cd, cc = split(n["opening"] + n["debit"] - n["credit"])
+        tot["opening_debit"] += od
+        tot["opening_credit"] += oc
+        tot["debit"] += n["debit"]
+        tot["credit"] += n["credit"]
+        tot["closing_debit"] += cd
+        tot["closing_credit"] += cc
+    return {"from": from_date.isoformat(), "to": to_date.isoformat(), "branch_id": branch_id,
+            "rows": out, "totals": {k: str(to_money(v)) for k, v in tot.items()}}

@@ -1,254 +1,234 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { searchFilter, searchRank } from '../../utils/arabicSort';
+import { Button, Empty, Input, Select, Space, Spin } from 'antd';
 import {
-  Button, Card, Col, DatePicker, Divider, Empty, Form, Input, Row, Select, Space, Switch, Tabs, Tag, Tooltip, message, Radio,
-} from 'antd';
-import { FilterTable as Table } from '../../components/FilterTable';
-import { Statistic } from '../../components/Statistic';
-import { InputNumber } from '../../components/NumberInput';
-import {
-  PlusOutlined, RollbackOutlined, BookOutlined, FileAddOutlined, BankOutlined,
-  ReloadOutlined, SearchOutlined, DownloadOutlined, PrinterOutlined,
-  ProfileOutlined, CheckCircleOutlined, EditOutlined, StopOutlined, LinkOutlined,
-  SafetyCertificateOutlined,
+  AuditOutlined, CaretDownOutlined, CaretLeftOutlined, PrinterOutlined, ReloadOutlined,
+  SearchOutlined,
 } from '@ant-design/icons';
-import dayjs from 'dayjs';
+import dayjs, { Dayjs } from 'dayjs';
 import { useNavigate } from 'react-router-dom';
-import CostCenterSplit from '../../components/CostCenterSplit';
 import { api } from '../../api/client';
-import AccountItems from './AccountItems';
-import { useQueryTab } from '../../components/useQueryTab';
-import {
-  APPEARS_IN_LABEL, CostCenter, MAIN_LEVELS, NATURE_COLOR, NATURE_LABEL, egp,
-} from '../../utils/accounts';
-import { showReversalConfirm } from '../../components/ConfirmationDialog';
-import ListToolbar, { useListFilter, normalizeAr } from '../../components/ListToolbar';
-import { useTableKeyboard } from '../../components/keyboard';
-import { textColumn, numberColumn, choiceColumn, dateColumn } from '../../components/gridColumns';
-import { entryTypeLabel } from '../../components/labels';
-import PartyField from '../../components/PartyField';
-import { TabModal } from '../../components/TabModal';
-import { useTableColumns } from '../../components/ColumnSettings';
-import { exportCsv } from '../../utils/exportCsv';
+import ListPage, { ListStat } from '../../components/ListPage';
 import DateRangeFilter from '../../components/DateRangeFilter';
-import { printReport } from '../../print/reportSheet';
-import { TrialRow } from './types';
+import { normalizeAr } from '../../components/ListToolbar';
+import { searchFilter, searchRank } from '../../utils/arabicSort';
+import { printDocument } from '../../print/brand';
+import { money } from '../../utils/money';
 
-const BOOKS: { nature: TrialRow['nature']; label: string }[] = [
-  { nature: 'asset', label: 'اصول' },
-  { nature: 'liability', label: 'خصوم' },
-  { nature: 'equity', label: 'حقوق ملكية' },
-  { nature: 'expense', label: 'مصروفات' },
-  { nature: 'income', label: 'ايرادات' },
-];
+interface Node {
+  account_id: number;
+  code: string | null;
+  name: string | null;
+  opening: string;
+  debit: string;
+  credit: string;
+  closing: string;
+  children: Node[];
+}
+
+const n = (v: any) => Number(v || 0);
+const dr = (v: any) => (n(v) > 0 ? n(v) : 0);
+const cr = (v: any) => (n(v) < 0 ? -n(v) : 0);
+const cell = (v: number) => (v ? money(v) : '');
+
+const CSS = `
+.tb-table{width:100%;border-collapse:collapse;font-size:13.5px}
+.tb-table th{font-weight:700;color:#334155;background:#f8fafc;padding:7px 10px;border:1px solid #e2e8f0;text-align:center;white-space:nowrap}
+.tb-table td{padding:5px 10px;border-bottom:1px solid #f1f5f9;border-inline:1px solid #f1f5f9}
+.tb-table td.num{text-align:left;font-variant-numeric:tabular-nums;white-space:nowrap;width:120px}
+.tb-table tr.tb-top td{font-weight:700;background:#fcfcfd}
+.tb-table tr.tb-total td{font-weight:800;background:#f1f5f9;border-top:2px solid #334155;border-bottom:3px double #334155}
+.tb-table .tb-toggle{cursor:pointer;user-select:none}
+.tb-table .tb-caret{display:inline-block;width:18px;color:#94a3b8}
+.tb-table .tb-code{color:#94a3b8;font-size:12px;margin-inline-start:8px}
+.tb-table .tb-count{color:#94a3b8;font-size:12px;margin-inline-start:4px}
+.tb-table .tb-link{cursor:pointer;color:#1d4ed8}
+.tb-table .tb-link:hover{text-decoration:underline}
+`;
+
+const keysOf = (nodes: Node[]): number[] => nodes.flatMap((x) => (x.children.length ? [x.account_id, ...keysOf(x.children)] : []));
+
+function filterTree(nodes: Node[], q: string): Node[] {
+  if (!q) return nodes;
+  const want = normalizeAr(q);
+  const out: Node[] = [];
+  nodes.forEach((x) => {
+    const self = normalizeAr(`${x.name || ''} ${x.code || ''}`).includes(want);
+    const kids = filterTree(x.children, q);
+    if (self || kids.length) out.push({ ...x, children: self ? x.children : kids });
+  });
+  return out;
+}
 
 export default function TrialBalanceTab() {
   const navigate = useNavigate();
-  const [range, setRange] = useState<[dayjs.Dayjs, dayjs.Dayjs] | null>(null);
+  const [range, setRange] = useState<[Dayjs, Dayjs] | null>([dayjs().startOf('year'), dayjs()]);
   const [branchId, setBranchId] = useState<number | undefined>();
   const [costCenterId, setCostCenterId] = useState<number | undefined>();
   const [branches, setBranches] = useState<any[]>([]);
-  const [costCenters, setCostCenters] = useState<CostCenter[]>([]);
+  const [costCenters, setCostCenters] = useState<any[]>([]);
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(false);
-  const [rowQuery, setRowQuery] = useState('');
-  const [grouped, setGrouped] = useState(true);
-
-  const rows: TrialRow[] = data?.rows ?? [];
-  const trialRows: TrialRow[] = data?.rows ?? [];
-  const shownRows = rowQuery
-    ? rows.filter((r) => [r.code, r.name].some((f) => normalizeAr(f).includes(normalizeAr(rowQuery))))
-    : rows;
+  const [query, setQuery] = useState('');
+  const [open, setOpen] = useState<Set<number>>(new Set());
 
   useEffect(() => {
-    api.get('/api/v1/branches').then((r) => setBranches(r.data)).catch(() => {});
-    api.get('/api/v1/cost-centers?active=true').then((r) => setCostCenters(r.data)).catch(() => {});
+    api.get('/api/v1/branches').then((r) => setBranches(r.data || [])).catch(() => {});
+    api.get('/api/v1/cost-centers?active=true').then((r) => setCostCenters(r.data || [])).catch(() => {});
   }, []);
 
   const run = async () => {
     setLoading(true);
     try {
-      const params = new URLSearchParams({ include_groups: 'true' });
+      const params: any = {};
       if (range) {
-        params.set('from', range[0].format('YYYY-MM-DD'));
-        params.set('to', range[1].format('YYYY-MM-DD'));
+        params.from = range[0].format('YYYY-MM-DD');
+        params.to = range[1].format('YYYY-MM-DD');
       }
-      if (branchId) params.set('branch_id', String(branchId));
-      if (costCenterId) params.set('cost_center_id', String(costCenterId));
-      const res = await api.get(`/api/v1/trial-balance?${params.toString()}`);
+      if (branchId) params.branch_id = branchId;
+      if (costCenterId) params.cost_center_id = costCenterId;
+      const res = await api.get('/api/v1/trial-balance-tree', { params });
       setData(res.data);
     } catch (err) { console.error(err); } finally { setLoading(false); }
   };
+
   useEffect(() => { run(); }, [range, branchId, costCenterId]);
 
-  const columns = [
-    { title: 'الكود', dataIndex: 'code', key: 'code', width: 130,
-      ...textColumn(trialRows, (r: TrialRow) => r.code),
-      render: (c: string) => c ? <Tag color="blue">{c}</Tag> : '-' },
-    { title: 'الحساب', dataIndex: 'name', key: 'name',
-      ...textColumn(trialRows, (r: TrialRow) => r.name),
-      render: (n: string, r: TrialRow) => r.is_postable ? n : <strong>{n}</strong> },
-    { title: 'افتتاحي', dataIndex: 'opening', key: 'opening', align: 'left' as const,
-      ...numberColumn<TrialRow>((r: any) => r.opening), render: egp },
-    { title: 'مدين', dataIndex: 'period_debit', key: 'period_debit', align: 'left' as const,
-      ...numberColumn<TrialRow>((r: any) => r.period_debit),
-      render: (v: string) => <span style={{ color: '#6AB42D' }}>{egp(v)}</span> },
-    { title: 'دائن', dataIndex: 'period_credit', key: 'period_credit', align: 'left' as const,
-      ...numberColumn<TrialRow>((r: any) => r.period_credit),
-      render: (v: string) => <span style={{ color: '#F5A11D' }}>{egp(v)}</span> },
-    { title: 'ختامي', dataIndex: 'closing', key: 'closing', align: 'left' as const,
-      ...numberColumn<TrialRow>((r: any) => r.closing),
-      render: (v: string) => <strong>{egp(v)}</strong> },
-  ];
+  const rows: Node[] = useMemo(() => filterTree(data?.rows || [], query), [data, query]);
+  const allKeys = useMemo(() => keysOf(rows), [rows]);
+  const effectiveOpen = query ? new Set(allKeys) : open;
+  const t = data?.totals;
 
-  const trialBalanceTabCols = useTableColumns('gl-trial-balance', columns, {
-    export: { name: 'ميزان المراجعة', rows: shownRows },
-  });
-
-  const trialKb = useTableKeyboard<any>({
-    rows: shownRows, rowKey: (r) => r.account_id,
-    onOpen: (r) => navigate(`/account-statement?account=${r.account_id}`),
-  });
-
-  const bookLabel = (n: TrialRow['nature']) =>
-    BOOKS.find((b) => b.nature === n)?.label ?? 'بدون تصنيف';
-  const trialReportCols = [
-    { title: 'الكود', value: (r: TrialRow) => r.code },
-    { title: 'الحساب', value: (r: TrialRow) => r.name },
-    { title: 'القسم', value: (r: TrialRow) => bookLabel(r.nature) },
-    { title: 'افتتاحي', value: (r: TrialRow) => r.opening, numeric: true },
-    { title: 'مدين', value: (r: TrialRow) => r.period_debit, numeric: true },
-    { title: 'دائن', value: (r: TrialRow) => r.period_credit, numeric: true },
-    { title: 'ختامي', value: (r: TrialRow) => r.closing, numeric: true },
-  ];
-  const exportTrial = () => {
-    if (!shownRows.length) { message.info('لا توجد بيانات للتصدير'); return; }
-    exportCsv('trial-balance', trialReportCols, shownRows);
+  const toggle = (id: number) => {
+    const next = new Set(open);
+    if (next.has(id)) next.delete(id); else next.add(id);
+    setOpen(next);
   };
-  const printTrial = () => {
-    printReport(
-      {
-        title: 'ميزان المراجعة',
-        date: dayjs().format('YYYY/MM/DD'),
-        meta: [
-          ['من', range ? range[0].format('YYYY/MM/DD') : 'أول الحركة'],
-          ['إلى', range ? range[1].format('YYYY/MM/DD') : dayjs().format('YYYY/MM/DD')],
-          ...(branchId ? ([['الفرع', branches.find((b) => b.id === branchId)?.name ?? String(branchId)]] as [string, string][]) : []),
-          ...(costCenterId ? ([['مركز التكلفة', costCenters.find((c) => c.id === costCenterId)?.name ?? String(costCenterId)]] as [string, string][]) : []),
-        ],
-      },
-      trialReportCols, shownRows,
-      data ? [
-        { label: 'إجمالي مدين', value: egp(data.grand_total_debit) },
-        { label: 'إجمالي دائن', value: egp(data.grand_total_credit) },
-      ] : undefined,
-    );
+
+  const openStatement = (id: number) => {
+    const p = new URLSearchParams({ account: String(id) });
+    if (range) { p.set('from', range[0].format('YYYY-MM-DD')); p.set('to', range[1].format('YYYY-MM-DD')); }
+    navigate(`/account-statement?${p.toString()}`);
   };
+
+  const body: React.ReactNode[] = [];
+  const walk = (nodes: Node[], level: number) => {
+    nodes.forEach((x) => {
+      const kids = x.children.length > 0;
+      const isOpen = effectiveOpen.has(x.account_id);
+      body.push(
+        <tr key={`${x.account_id}-${level}`} className={level === 0 ? 'tb-top' : undefined}>
+          <td style={{ paddingInlineStart: 10 + level * 22 }}>
+            <span className={kids ? 'tb-toggle' : undefined} onClick={kids ? () => toggle(x.account_id) : undefined}>
+              <span className="tb-caret">{kids ? (isOpen ? <CaretDownOutlined /> : <CaretLeftOutlined />) : null}</span>
+              {kids ? x.name : <span className="tb-link" onClick={() => openStatement(x.account_id)}>{x.name}</span>}
+            </span>
+            {x.code ? <span className="tb-code">{x.code}</span> : null}
+            {kids ? <span className="tb-count">({x.children.length})</span> : null}
+          </td>
+          <td className="num">{cell(dr(x.opening))}</td>
+          <td className="num">{cell(cr(x.opening))}</td>
+          <td className="num">{cell(n(x.debit))}</td>
+          <td className="num">{cell(n(x.credit))}</td>
+          <td className="num">{cell(dr(x.closing))}</td>
+          <td className="num">{cell(cr(x.closing))}</td>
+        </tr>,
+      );
+      if (kids && isOpen) walk(x.children, level + 1);
+    });
+  };
+  walk(rows, 0);
+
+  const doPrint = () => {
+    if (!data) return;
+    const lines: string[] = [];
+    const add = (nodes: Node[], level: number) => nodes.forEach((x) => {
+      lines.push(`<tr><td style="padding-inline-start:${6 + level * 14}px">${x.name || ''}</td>`
+        + `<td class="num">${cell(dr(x.opening))}</td><td class="num">${cell(cr(x.opening))}</td>`
+        + `<td class="num">${cell(n(x.debit))}</td><td class="num">${cell(n(x.credit))}</td>`
+        + `<td class="num">${cell(dr(x.closing))}</td><td class="num">${cell(cr(x.closing))}</td></tr>`);
+      if (effectiveOpen.has(x.account_id)) add(x.children, level + 1);
+    });
+    add(rows, 0);
+    const html = `<table class="grid"><thead>
+      <tr><th rowspan="2">الحساب</th><th colspan="2">رصيد أول المدة</th><th colspan="2">حركة الفترة</th><th colspan="2">الرصيد</th></tr>
+      <tr><th>مدين</th><th>دائن</th><th>مدين</th><th>دائن</th><th>مدين</th><th>دائن</th></tr></thead>
+      <tbody>${lines.join('')}
+      <tr style="font-weight:700"><td>الإجمالي</td><td class="num">${money(t.opening_debit)}</td><td class="num">${money(t.opening_credit)}</td>
+      <td class="num">${money(t.debit)}</td><td class="num">${money(t.credit)}</td>
+      <td class="num">${money(t.closing_debit)}</td><td class="num">${money(t.closing_credit)}</td></tr></tbody></table>`;
+    printDocument({
+      title: 'ميزان المراجعة',
+      meta: [['الفترة', range ? `${range[0].format('YYYY/MM/DD')} — ${range[1].format('YYYY/MM/DD')}` : '']],
+    }, html);
+  };
+
+  const balanced = t && Math.abs(n(t.debit) - n(t.credit)) < 0.01;
 
   return (
-    <Card title="ميزان المراجعة">
-      <Space wrap style={{ marginBottom: 16 }}>
-        <Input allowClear value={rowQuery} onChange={(e) => setRowQuery(e.target.value)}
-          prefix={<SearchOutlined />} placeholder="بحث بكود الحساب أو الاسم" style={{ width: 240 }} />
-        <div style={{ width: 280 }}>
-          <DateRangeFilter value={range} onChange={(v) => setRange(v && v[0] && v[1] ? [v[0], v[1]] : null)} />
-        </div>
-        <Select allowClear placeholder="كل الفروع" style={{ width: 180 }} value={branchId} onChange={setBranchId}
-          options={branches.map((b) => ({ value: b.id, label: b.name }))} />
-        <Select allowClear placeholder="كل مراكز التكلفة" style={{ width: 220 }} value={costCenterId}
-          onChange={setCostCenterId} showSearch
-          options={costCenters.map((c) => ({ value: c.id, label: c.name, search: c.code || '' }))} filterOption={searchFilter} filterSort={searchRank}/>
-        <Radio.Group size="small" value={grouped} onChange={(e: any) => setGrouped(e.target.value)}>
-          <Radio.Button value>مقسّم بالطبيعة</Radio.Button>
-          <Radio.Button value={false}>ميزان مسطّح</Radio.Button>
-        </Radio.Group>
-        <Button type="primary" icon={<ReloadOutlined />} onClick={run} loading={loading}>عرض</Button>
-        <Button icon={<DownloadOutlined />} onClick={exportTrial}>تصدير CSV</Button>
-        <Button icon={<PrinterOutlined />} onClick={printTrial}>طباعة</Button>
-        {trialBalanceTabCols.control}
+    <ListPage
+      icon={<AuditOutlined />}
+      title="ميزان المراجعة"
+      actions={(<>
+        <Button icon={<PrinterOutlined />} onClick={doPrint} disabled={!data}>طباعة</Button>
+        <Button icon={<ReloadOutlined />} onClick={run} loading={loading}>تحديث</Button>
+      </>)}
+      filters={(<>
+        <DateRangeFilter className="sl-f-dates" value={range as any} onChange={(v: any) => setRange(v)} />
+        {branches.length > 1 ? (
+          <Select allowClear placeholder="كل الفروع" style={{ flex: '0 0 170px' }} value={branchId}
+            onChange={setBranchId} options={branches.map((b: any) => ({ value: b.id, label: b.name }))} />
+        ) : null}
+        {costCenters.length ? (
+          <Select allowClear showSearch placeholder="مركز التكلفة" style={{ flex: '0 0 190px' }} value={costCenterId}
+            onChange={setCostCenterId} filterOption={searchFilter} filterSort={searchRank}
+            options={costCenters.map((c: any) => ({ value: c.id, label: c.name }))} />
+        ) : null}
+        <Input className="sl-f-search" allowClear prefix={<SearchOutlined />} placeholder="بحث بالحساب أو الكود"
+          value={query} onChange={(e) => setQuery(e.target.value)} />
+      </>)}
+      summary={t ? (<>
+        <ListStat label="حركة مدين" value={money(t.debit)} />
+        <ListStat label="حركة دائن" value={money(t.credit)} />
+        <ListStat label="الميزان" value={balanced ? 'متوازن' : `فرق ${money(n(t.debit) - n(t.credit))}`}
+          tone={balanced ? 'pos' : 'neg'} />
+      </>) : undefined}
+    >
+      <style>{CSS}</style>
+      <Space style={{ margin: '6px 0 8px' }}>
+        <Button size="small" onClick={() => setOpen(new Set(allKeys))}>فتح الكل</Button>
+        <Button size="small" onClick={() => setOpen(new Set())}>طي الكل</Button>
       </Space>
-
-      {data && grouped ? (
-        <>
-          {BOOKS.map(({ nature, label }) => {
-            const book = shownRows.filter((r) => r.nature === nature);
-            const debit = book.reduce((t, r) => t + Number(r.period_debit || 0), 0);
-            const credit = book.reduce((t, r) => t + Number(r.period_credit || 0), 0);
-            return (
-              <Table
-                {...trialKb.tableProps}
-                className="sl-table"
-                key={nature ?? 'none'} rowKey="account_id" dataSource={book} columns={trialBalanceTabCols.columns}
-                loading={loading} pagination={false} size="small"
-                expandable={{
-                  expandedRowRender: (r: any) => (
-                    <AccountItems
-                      accountId={r.account_id}
-                      dateFrom={range?.[0]?.format('YYYY-MM-DD')}
-                      dateTo={range?.[1]?.format('YYYY-MM-DD')}
-                    />
-                  ),
-                  rowExpandable: (r: any) =>
-                    Number(r.period_debit || 0) !== 0 || Number(r.period_credit || 0) !== 0,
-                }}
-                style={{ marginBottom: 18 }}
-                title={() => <strong>{label}</strong>}
-                locale={{ emptyText: 'لا توجد حسابات في هذا القسم' }}
-                summary={() => (book.length ? (
-                  <Table.Summary.Row style={{ background: '#fafafa', fontWeight: 'bold' }}>
-                    <Table.Summary.Cell index={0} colSpan={3}>إجمالي {label}</Table.Summary.Cell>
-                    <Table.Summary.Cell index={3} align="left">{egp(debit)}</Table.Summary.Cell>
-                    <Table.Summary.Cell index={4} align="left">{egp(credit)}</Table.Summary.Cell>
-                    <Table.Summary.Cell index={5} />
-                  </Table.Summary.Row>
-                ) : null)}
-              />
-            );
-          })}
-          {shownRows.some((r) => !r.nature) && (
-            <Table
-              {...trialKb.tableProps}
-              className="sl-table"
-              rowKey="account_id" columns={trialBalanceTabCols.columns} pagination={false} size="small"
-              dataSource={shownRows.filter((r) => !r.nature)}
-              expandable={{
-                expandedRowRender: (r: any) => (
-                  <AccountItems
-                    accountId={r.account_id}
-                    dateFrom={range?.[0]?.format('YYYY-MM-DD')}
-                    dateTo={range?.[1]?.format('YYYY-MM-DD')}
-                  />
-                ),
-                rowExpandable: (r: any) =>
-                  Number(r.period_debit || 0) !== 0 || Number(r.period_credit || 0) !== 0,
-              }}
-              title={() => <strong style={{ color: '#d46b08' }}>بدون تصنيف</strong>}
-            />
-          )}
-          <div style={{ marginTop: 12, color: '#888', fontSize: 15 }}>
-            الإجمالي العام: مدين {egp(data.grand_total_debit)} · دائن {egp(data.grand_total_credit)}
-            {' '}{data.balanced ? <Tag color="green">متوازن ✓</Tag> : <Tag color="red">غير متوازن</Tag>}
+      <Spin spinning={loading}>
+        {!data ? <Empty description="لا توجد بيانات" /> : (
+          <div style={{ overflowX: 'auto' }}>
+            <table className="tb-table">
+              <thead>
+                <tr>
+                  <th rowSpan={2} style={{ textAlign: 'start' }}>الحساب</th>
+                  <th colSpan={2}>رصيد أول المدة</th>
+                  <th colSpan={2}>حركة الفترة</th>
+                  <th colSpan={2}>الرصيد</th>
+                </tr>
+                <tr><th>مدين</th><th>دائن</th><th>مدين</th><th>دائن</th><th>مدين</th><th>دائن</th></tr>
+              </thead>
+              <tbody>
+                {body}
+                {t ? (
+                  <tr className="tb-total">
+                    <td>الإجمالي</td>
+                    <td className="num">{money(t.opening_debit)}</td>
+                    <td className="num">{money(t.opening_credit)}</td>
+                    <td className="num">{money(t.debit)}</td>
+                    <td className="num">{money(t.credit)}</td>
+                    <td className="num">{money(t.closing_debit)}</td>
+                    <td className="num">{money(t.closing_credit)}</td>
+                  </tr>
+                ) : null}
+              </tbody>
+            </table>
           </div>
-        </>
-      ) : data ? (
-        <>
-          <Table {...trialKb.tableProps} className="sl-table" rowKey="account_id" dataSource={shownRows} columns={trialBalanceTabCols.columns} loading={loading}
-            pagination={false} size="small"
-            summary={() => (
-              <Table.Summary fixed>
-                <Table.Summary.Row style={{ background: '#fafafa', fontWeight: 'bold' }}>
-                  <Table.Summary.Cell index={0} colSpan={3}>الإجمالي</Table.Summary.Cell>
-                  <Table.Summary.Cell index={3} align="left">{egp(data.grand_total_debit)}</Table.Summary.Cell>
-                  <Table.Summary.Cell index={4} align="left">{egp(data.grand_total_credit)}</Table.Summary.Cell>
-                  <Table.Summary.Cell index={5} align="left">
-                    {data.balanced ? <Tag color="green">متوازن ✓</Tag> : <Tag color="red">غير متوازن</Tag>}
-                  </Table.Summary.Cell>
-                </Table.Summary.Row>
-              </Table.Summary>
-            )}
-          />
-        </>
-      ) : <Empty description="لا توجد بيانات" />}
-    </Card>
+        )}
+      </Spin>
+    </ListPage>
   );
 }

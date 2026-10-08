@@ -756,6 +756,26 @@ def post_opening_balances(
     return _entry_out(entry, _partner_names(db, [entry]))
 
 
+@router.get("/trial-balance-tree")
+def get_trial_balance_tree(
+    from_: date | None = Query(None, alias="from"),
+    to: date | None = Query(None),
+    branch_id: int | None = None,
+    cost_center_id: int | None = None,
+    current: CurrentUser = Depends(require_capability(CAP_ACCOUNTING_TRIAL_BALANCE_READ)),
+    db: Session = Depends(get_db),
+) -> dict:
+    from src.auth import branch_scope
+
+    if not current.is_admin and current.branch_id is not None:
+        branch_id = current.branch_id
+    elif branch_id is None:
+        branch_id = branch_scope.visible_branch_id(current)
+    return trial_balance_service.trial_balance_tree(
+        db, from_date=from_ or date(date.today().year, 1, 1), to_date=to or date.today(),
+        branch_id=branch_id, cost_center_id=cost_center_id)
+
+
 @router.get("/trial-balance", response_model=TrialBalanceOut)
 def get_trial_balance(
     from_: date | None = Query(None, alias="from"),
