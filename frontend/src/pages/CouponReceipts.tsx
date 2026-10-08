@@ -1,7 +1,7 @@
 import { allRows } from '../components/tableDefaults';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { PAGE_SIZE_OPTIONS } from '../utils/pagination';
-import { searchFilter, searchRank, compareArabic } from '../utils/arabicSort';
+import { searchFilter, searchRank } from '../utils/arabicSort';
 import {
   Alert, Button, Col, DatePicker, Descriptions, Empty, Input, Modal, Row, Segmented, Select,
   Space, Table, Tag, Tooltip, Typography, message,
@@ -19,6 +19,7 @@ import { useAuth } from '../components/AuthProvider';
 import { Popconfirm } from '../components/noConfirm';
 import { useTableColumns } from '../components/ColumnSettings';
 import DocumentLink from '../components/DocumentLink';
+import DocOpening from '../components/DocOpening';
 import ListPage from '../components/ListPage';
 import { useQueryTab } from '../components/useQueryTab';
 import { useScreenShortcuts } from '../components/keyboard';
@@ -26,6 +27,8 @@ import { numeralsLocale } from '../utils/money';
 import { useLookup } from '../hooks/useLookup';
 import CouponStatsOverview from '../components/CouponStatsOverview';
 import { useLiveRefresh } from '../utils/live';
+import { useDocRoute } from '../components/useDocRoute';
+import CouponReceiptEdit, { receiverOptionsOf } from './CouponReceiptEdit';
 
 type Status = 'valid' | 'unknown' | 'received' | 'checking' | 'pending'
   | 'wrong_kind' | 'ambiguous';
@@ -60,6 +63,7 @@ interface Receipt {
   customer_type?: string | null;
   status?: ReceiptStatus;
   source?: string | null;
+  receiver_note?: string | null;
   reject_reason?: string | null;
   rejected_serials?: string[];
   approved_at?: string | null;
@@ -225,6 +229,15 @@ export default function CouponReceipts() {
   const customerName = (id: number | null) =>
     customers.find((c) => c.id === id)?.name ?? (id ? `عميل #${id}` : '-');
 
+  const receiverOf = (r: Receipt) => (r.customer_id || !r.receiver_note
+    ? customerName(r.customer_id)
+    : (
+      <Space size={4}>
+        <span>{r.receiver_note}</span>
+        <Tag color="orange" style={{ marginInlineEnd: 0 }}>من البيان</Tag>
+      </Space>
+    ));
+
   const addSerial = async (raw: string) => {
     const serial = String(raw).trim();
     if (!serial) return;
@@ -292,25 +305,14 @@ export default function CouponReceipts() {
       : `أكثر من تاجر (${issuedToNames.length})`;
   const totalValue = (value ?? 0) * counted.length;
 
-  const receiverTypes = customerType === 'plumber' ? ['plumber'] : ['trader', 'merchant'];
-  const customerTypeLabel = (t: unknown) => {
+  const customerTypeLabel = useCallback((t: unknown) => {
     const key = String(t ?? '');
     if (!key) return '';
     return customerTypeLookup.find((o) => o.value === key)?.label ?? key;
-  };
-  const receiverOptions = [...customers]
-    .sort((a, b) => {
-      const rank = (c: any) => (receiverTypes.includes(String(c.customer_type)) ? 0 : 1);
-      return rank(a) - rank(b)
-        || compareArabic(a.name, b.name);
-    })
-    .map((c) => {
-      const typeLabel = customerTypeLabel(c.customer_type);
-      return {
-        value: c.id as number,
-        label: typeLabel ? `${String(c.name)} — ${typeLabel}` : String(c.name),
-      };
-    });
+  }, [customerTypeLookup]);
+  const receiverOptions = useMemo(
+    () => receiverOptionsOf(customers, customerType, customerTypeLabel),
+    [customers, customerType, customerTypeLabel]);
 
   const save = async () => {
     if (!entries.length) { message.warning('لا توجد كوبونات'); return; }
@@ -395,60 +397,24 @@ export default function CouponReceipts() {
     } finally { setActing(null); }
   };
 
-  const [editing, setEditing] = useState<Receipt | null>(null);
-  const [editSerials, setEditSerials] = useState<string[]>([]);
-  const [editKind, setEditKind] = useState<string>('');
-  const [editCustomer, setEditCustomer] = useState<number | undefined>();
-  const [editDate, setEditDate] = useState<Dayjs | null>(null);
-  const [editValue, setEditValue] = useState<number | null>(null);
-  const [editNotes, setEditNotes] = useState('');
-  const [editFrom, setEditFrom] = useState<number | null>(null);
-  const [editTo, setEditTo] = useState<number | null>(null);
-  const [editSaving, setEditSaving] = useState(false);
+  const [editingId, setEditingId] = useState<number | null>(null);
+
+  const { markOpen, markClosed, opening: docOpening } = useDocRoute<Receipt>({
+    rows: receipts,
+    openId: editingId,
+    open: (row) => setEditingId(row.id),
+    close: () => setEditingId(null),
+    fetchOne: async (id) => ({ id } as Receipt),
+  });
 
   const openEdit = (r: Receipt) => {
-    setEditing(r);
-    setEditSerials(r.lines.map((l) => l.serial));
-    setEditKind(r.declared_kind || r.lines.find((l) => l.coupon_kind)?.coupon_kind || '');
-    setEditCustomer(r.customer_id ?? undefined);
-    setEditDate(r.received_date ? dayjs(r.received_date) : null);
-    setEditValue(r.declared_value != null ? Number(r.declared_value) : null);
-    setEditNotes(r.notes || '');
-    setEditFrom(null); setEditTo(null);
+    setEditingId(r.id);
+    markOpen(r.id, 'edit');
   };
 
-  const addEditRange = () => {
-    const range = rangeOf(editFrom, editTo);
-    if (!range) { message.warning('اكتب رقم الكوبون في «من رقم»'); return; }
-    const [from, to] = range;
-    if (to < from) { message.warning('رقم النهاية أصغر من البداية'); return; }
-    if (to - from + 1 > 500) { message.warning('النطاق كبير — الحد الأقصى ٥٠٠ كوبون'); return; }
-    const added: string[] = [];
-    for (let n = from; n <= to; n += 1) added.push(String(n));
-    setEditSerials((prev) => Array.from(new Set([...prev, ...added])));
-    setEditFrom(null); setEditTo(null);
-  };
-
-  const saveEdit = async () => {
-    if (!editing) return;
-    const serials = editSerials.map((s) => s.trim()).filter(Boolean);
-    if (!serials.length) { message.warning('يجب أن يتضمن الاستلام كوبوناً واحداً على الأقل'); return; }
-    setEditSaving(true);
-    try {
-      const res = await api.put<Receipt>(`/api/v1/coupon-receipts/${editing.id}`, {
-        serials,
-        coupon_kind: editKind || null,
-        customer_id: editCustomer ?? null,
-        received_date: editDate ? editDate.format('YYYY-MM-DD') : null,
-        declared_value: editValue,
-        notes: editNotes.trim() || null,
-      });
-      message.success(`تم تعديل ${editing.document_number}`);
-      setEditing(null);
-      afterAction(res.data);
-    } catch (err: any) {
-      message.error(errorText(err, 'تعذر حفظ التعديل'));
-    } finally { setEditSaving(false); }
+  const closeEdit = () => {
+    setEditingId(null);
+    markClosed();
   };
 
   const statusTag = (r: Receipt) => {
@@ -523,7 +489,7 @@ export default function CouponReceipts() {
     { title: 'رقم المستند', dataIndex: 'document_number',
       render: (v: string) => <Tag>{v}</Tag> },
     { title: 'مُستلَم من', dataIndex: 'customer_id',
-      render: (id: number | null) => customerName(id) },
+      render: (_: number | null, r: Receipt) => receiverOf(r) },
     { title: 'الفئة', dataIndex: 'declared_kind',
       render: (v: string | null) => (v ? <Tag color="gold">{kindLabel(v)}</Tag> : '-') },
     { title: 'التاريخ', dataIndex: 'received_date',
@@ -745,7 +711,7 @@ export default function CouponReceipts() {
           <Tag>{detail.document_number}</Tag>
         </Descriptions.Item>
         <Descriptions.Item label="مُستلَم من">
-          {customerName(detail.customer_id)}
+          {receiverOf(detail)}
           {detail.customer_type ? (
             <Tag style={{ marginInlineStart: 6 }}>
               {detail.customer_type === 'plumber' ? 'سباك' : 'تاجر'}
@@ -872,8 +838,25 @@ export default function CouponReceipts() {
   );
 
   const searchRef = useRef<any>(null);
-  const listShown = tab === 'history' && !detail;
+  const listShown = tab === 'history' && !detail && editingId == null;
   useScreenShortcuts({ onSearch: () => { searchRef.current?.focus?.(); } }, listShown);
+
+  if (editingId != null) {
+    return (
+      <CouponReceiptEdit
+        receiptId={editingId}
+        customers={customers}
+        kindOptions={kindOptions}
+        customerTypeLabel={customerTypeLabel}
+        onClose={closeEdit}
+        onSaved={(updated: Receipt) => {
+          closeEdit();
+          afterAction(updated);
+        }}
+      />
+    );
+  }
+  if (docOpening) return <DocOpening />;
 
   return (
     <ListPage<'receive' | 'history'>
@@ -931,67 +914,6 @@ export default function CouponReceipts() {
           value={rejectReason} onChange={(e) => setRejectReason(e.target.value)} />
       </Modal>
 
-      <Modal
-        open={!!editing} width={720}
-        title={editing ? `تعديل ${editing.document_number}` : 'تعديل'}
-        okText="حفظ التعديل" cancelText="رجوع"
-        okButtonProps={{ icon: <SaveOutlined />, loading: editSaving }}
-        onOk={saveEdit} onCancel={() => setEditing(null)}
-        destroyOnClose
-      >
-        {editing?.status === 'approved' && (
-          <Alert type="info" showIcon style={{ marginBottom: 12 }}
-            message="هذا الاستلام معتمد — يُحتسب التعديل فوراً في التقارير" />
-        )}
-        <Row gutter={[8, 8]}>
-          <Col xs={24} md={8}>
-            <DatePicker style={{ width: '100%' }} format="YYYY/MM/DD" placeholder="تاريخ الاستلام"
-              value={editDate} onChange={(d) => setEditDate(d)}
-              disabledDate={(d) => d.isAfter(dayjs().add(1, 'day'), 'day')} />
-          </Col>
-          <Col xs={12} md={8}>
-            <Select style={{ width: '100%' }} showSearch placeholder="فئة الكوبون"
-              value={editKind || undefined} onChange={(v) => setEditKind(v)}
-              options={kindOptions.map((k) => ({ value: k.value, label: k.label }))}
-              filterOption={searchFilter} filterSort={searchRank} />
-          </Col>
-          <Col xs={12} md={8}>
-            <InputNumber style={{ width: '100%' }} placeholder="قيمة الكوبون" min={0}
-              value={editValue} onChange={(v) => setEditValue(v as number | null)} />
-          </Col>
-          <Col xs={24}>
-            <Select allowClear showSearch style={{ width: '100%' }} placeholder="مُستلَم من"
-              value={editCustomer} onChange={setEditCustomer}
-              options={receiverOptions} filterOption={searchFilter} filterSort={searchRank} />
-          </Col>
-          <Col xs={24}>
-            <Typography.Text type="secondary">أرقام الكوبونات ({editSerials.length})</Typography.Text>
-            <Select mode="tags" style={{ width: '100%' }} open={false}
-              placeholder="اكتب رقم الكوبون واضغط Enter"
-              tokenSeparators={[',', ' ', '،']}
-              value={editSerials}
-              onChange={(v) => setEditSerials(Array.from(new Set((v as string[])
-                .map((s) => String(s).trim()).filter(Boolean))))} />
-          </Col>
-          <Col xs={8}>
-            <InputNumber style={{ width: '100%' }} placeholder="من رقم" precision={0}
-              value={editFrom} onChange={(v) => setEditFrom(v as number | null)}
-              onPressEnter={addEditRange} />
-          </Col>
-          <Col xs={8}>
-            <InputNumber style={{ width: '100%' }} placeholder="إلى رقم (اختياري)"
-              precision={0} value={editTo} onChange={(v) => setEditTo(v as number | null)}
-              onPressEnter={addEditRange} />
-          </Col>
-          <Col xs={8}>
-            <Button block icon={<PlusOutlined />} onClick={addEditRange}>إضافة</Button>
-          </Col>
-          <Col xs={24}>
-            <Input.TextArea rows={2} placeholder="ملاحظات" value={editNotes}
-              onChange={(e) => setEditNotes(e.target.value)} />
-          </Col>
-        </Row>
-      </Modal>
     </ListPage>
   );
 }

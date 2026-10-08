@@ -58,6 +58,7 @@ class ReceiptOut(BaseModel):
     customer_type: str | None = None
     status: str = "approved"
     source: str | None = None
+    receiver_note: str | None = None
     approved_by: int | None = None
     approved_at: datetime | None = None
     reject_reason: str | None = None
@@ -75,6 +76,7 @@ def _out(r) -> ReceiptOut:
         declared_kind=r.declared_kind, declared_value=r.declared_value,
         customer_type=r.customer_type,
         status=coupon_receipt_service.status_of(r), source=r.source,
+        receiver_note=coupon_receipt_service.receiver_note(r),
         approved_by=r.approved_by, approved_at=r.approved_at,
         reject_reason=r.reject_reason,
         rejected_serials=[s for s in (r.rejected_serials or "").split(",") if s],
@@ -91,10 +93,11 @@ def check_serial(
     serial: str = Query(..., description="The number written on the coupon"),
     coupon_kind: str | None = Query(
         None, description="فئة الدفتر كما ذكرها المستلم — الرقم وحده غير كافٍ"),
+    receipt_id: int | None = Query(None, description="الاستلام الجاري تعديله"),
     _: CurrentUser = Depends(require_capability(CAP_COUPON_RECEIVE)),
     db: Session = Depends(get_db),
 ) -> dict:
-    return coupon_receipt_service.check_serial(db, serial, coupon_kind)
+    return coupon_receipt_service.check_serial(db, serial, coupon_kind, receipt_id)
 
 
 @router.get("/issued-to/{customer_id}", response_model=list[dict])
@@ -222,6 +225,66 @@ def get_receipt(
     return _out(_seen_receipt(db, receipt_id, current))
 
 
+class ReceiptEditLineOut(BaseModel):
+    id: int
+    serial: str
+    coupon_kind: str | None = None
+    kind: str | None = None
+    sales_invoice_id: int | None = None
+    coupon_issue_id: int | None = None
+    document_number: str | None = None
+    issued_to_id: int | None = None
+    issued_to_name: str | None = None
+
+
+class ReceiverOut(BaseModel):
+    id: int
+    name: str
+    customer_type: str | None = None
+
+
+class ReceiptEditOut(BaseModel):
+    receipt: ReceiptOut
+    lines: list[ReceiptEditLineOut]
+    receiver: ReceiverOut | None = None
+    receiver_note: str | None = None
+    receiver_suggestion: ReceiverOut | None = None
+    notes_without_receiver: str | None = None
+    rep_name: str | None = None
+
+
+@router.get("/{receipt_id}/edit", response_model=ReceiptEditOut)
+def get_receipt_for_edit(
+    receipt_id: int,
+    current: CurrentUser = Depends(require_capability(CAP_RECEIPT_MANAGE)),
+    db: Session = Depends(get_db),
+) -> ReceiptEditOut:
+    from src.models.customer import Customer
+    from src.models.user import User
+
+    receipt = _seen_receipt(db, receipt_id, current)
+    receiver = None
+    if receipt.customer_id:
+        party = db.get(Customer, receipt.customer_id)
+        if party is not None:
+            receiver = ReceiverOut(
+                id=party.id, name=party.name,
+                customer_type=getattr(party.customer_type, "value", party.customer_type))
+    note = coupon_receipt_service.receiver_note(receipt)
+    suggestion = coupon_receipt_service.suggest_receiver(db, note) if note else None
+    rep = db.get(User, receipt.rep_user_id) if receipt.rep_user_id else None
+    return ReceiptEditOut(
+        receipt=_out(receipt),
+        lines=[ReceiptEditLineOut(**row)
+               for row in coupon_receipt_service.describe_lines(db, receipt)],
+        receiver=receiver, receiver_note=note,
+        receiver_suggestion=ReceiverOut(**suggestion) if suggestion else None,
+        notes_without_receiver=(coupon_receipt_service.strip_receiver_note(receipt.notes)
+                                if note else receipt.notes),
+        rep_name=(rep.full_name or rep.username) if rep is not None else None,
+    )
+
+
 @router.delete("/{receipt_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_receipt(
     receipt_id: int,
@@ -242,7 +305,15 @@ class RejectIn(BaseModel):
     reason: str | None = None
 
 
+class ReceiptEditLineIn(BaseModel):
+    id: int | None = None
+    serial: str
+    coupon_kind: str | None = None
+
+
 class ReceiptEditIn(BaseModel):
+    lines: list[ReceiptEditLineIn] | None = None
+    rep_user_id: int | None = None
     serials: list[str] = []
     serial_from: str | None = None
     serial_to: str | None = None
@@ -307,11 +378,17 @@ def update_receipt(
         serials = list(body.serials)
         if body.serial_from or body.serial_to:
             serials.extend(coupon_receipt_service.expand_range(body.serial_from, body.serial_to))
+        header: dict = {}
+        if body.customer_id is not None:
+            header["customer_id"] = body.customer_id
+        if "rep_user_id" in body.model_fields_set:
+            header["rep_user_id"] = body.rep_user_id
         receipt = coupon_receipt_service.update_receipt(
             db, receipt_id=receipt_id, actor_user_id=current.id, serials=serials,
-            coupon_kind=body.coupon_kind, customer_id=body.customer_id,
+            lines=[ln.model_dump() for ln in body.lines] if body.lines is not None else None,
+            coupon_kind=body.coupon_kind,
             received_date=body.received_date, notes=body.notes,
-            declared_value=body.declared_value, customer_type=body.customer_type)
+            declared_value=body.declared_value, customer_type=body.customer_type, **header)
     except CouponReceiptError as exc:
         db.rollback()
         raise _refused(exc) from exc

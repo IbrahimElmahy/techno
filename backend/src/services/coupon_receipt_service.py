@@ -245,7 +245,8 @@ def kinds_for_serial(db: Session, serial: str) -> list[str]:
     return kinds_for_serials(db, [serial]).get(str(serial).strip(), [])
 
 
-def check_serial(db: Session, serial: str, coupon_kind: str | None = None) -> dict:
+def check_serial(db: Session, serial: str, coupon_kind: str | None = None,
+                 exclude_receipt_id: int | None = None) -> dict:
     serial = str(serial).strip()
     invoice, kindless = invoice_match(db, serial, coupon_kind)
     issue = None
@@ -253,6 +254,8 @@ def check_serial(db: Session, serial: str, coupon_kind: str | None = None) -> di
         issue, kindless = issue_match(db, serial, coupon_kind)
     known = invoice is not None or issue is not None
     taken = already_received(db, serial, None if kindless else coupon_kind)
+    if taken is not None and exclude_receipt_id and taken.receipt_id == exclude_receipt_id:
+        taken = None
     status = "valid" if known and not taken else ("received" if taken else "unknown")
 
     issued_to_id = (invoice.customer_id if invoice is not None
@@ -505,29 +508,83 @@ def reject_receipt(db: Session, *, receipt_id: int, actor_user_id: int,
     return receipt
 
 
+_UNSET = object()
+
+
+def _snapshot(receipt: CouponReceipt) -> dict:
+    return {
+        "lines": sorted(f"{line.coupon_kind or ''}:{line.serial}" for line in receipt.lines),
+        "kind": receipt.declared_kind, "customer_id": receipt.customer_id,
+        "rep_user_id": receipt.rep_user_id, "customer_type": receipt.customer_type,
+        "received_date": str(receipt.received_date) if receipt.received_date else None,
+        "declared_value": str(receipt.declared_value)
+        if receipt.declared_value is not None else None,
+        "notes": receipt.notes,
+    }
+
+
 def update_receipt(
-    db: Session, *, receipt_id: int, actor_user_id: int, serials: list[str],
-    coupon_kind: str | None = None, customer_id: int | None = None,
+    db: Session, *, receipt_id: int, actor_user_id: int, serials: list[str] | None = None,
+    lines: list[dict] | None = None,
+    coupon_kind: str | None = None, customer_id=_UNSET, rep_user_id=_UNSET,
     received_date: date | None = None, notes: str | None = None,
     declared_value: object | None = None, customer_type: str | None = None,
 ) -> CouponReceipt:
     receipt = _load(db, receipt_id)
     if status_of(receipt) == REJECTED:
         raise CouponReceiptConflict("لا يمكن تعديل الاستلام المرفوض — سجّل استلاماً جديداً.")
-    before = {"serials": sorted(line.serial for line in receipt.lines),
-              "kind": receipt.declared_kind, "customer_id": receipt.customer_id}
-    receipt.lines.clear()
+    before = _snapshot(receipt)
+    fallback_kind = (coupon_kind or "").strip() or receipt.declared_kind
+
+    if lines is None:
+        lines = [{"serial": s, "coupon_kind": fallback_kind} for s in (serials or [])]
+
+    existing = {line.id: line for line in receipt.lines}
+    keep: set[int] = set()
+    fresh: list[tuple[str, str | None]] = []
+    seen_kinds: list[str | None] = []
+    for item in lines:
+        serial = str(item.get("serial") or "").strip()
+        if not serial:
+            continue
+        kind = (str(item.get("coupon_kind") or "").strip()) or None
+        line = existing.get(item.get("id")) if item.get("id") else None
+        if (line is not None and line.id not in keep and line.serial == serial
+                and (line.coupon_kind is None or kind is None
+                     or _same_kind(line.coupon_kind, kind))):
+            keep.add(line.id)
+            seen_kinds.append(line.coupon_kind or kind or receipt.declared_kind)
+            continue
+        fresh.append((serial, kind or fallback_kind))
+        seen_kinds.append(kind or fallback_kind)
+
+    if not keep and not fresh:
+        raise CouponReceiptError("لا توجد كوبونات في الاستلام.")
+
+    for line in list(receipt.lines):
+        if line.id not in keep:
+            receipt.lines.remove(line)
     db.flush()
 
-    cleaned = [str(s).strip() for s in serials if str(s).strip()]
-    kind = coupon_kind if coupon_kind else receipt.declared_kind
-    matched = _match_serials(db, cleaned, kind)
+    groups: dict[str, tuple[str | None, list[str]]] = {}
+    for serial, kind in fresh:
+        groups.setdefault(_norm_kind(kind), (kind, []))[1].append(serial)
+    matched: list = []
+    for kind, group in groups.values():
+        matched.extend(_match_serials(db, group, kind))
     _write_lines(db, receipt, matched)
+    db.refresh(receipt)
 
-    receipt.coupon_count = len(matched)
-    receipt.declared_kind = kind
-    if customer_id is not None:
+    kinds = {_norm_kind(k): k for k in seen_kinds if k}
+    if len(kinds) == 1 and all(seen_kinds):
+        receipt.declared_kind = next(iter(kinds.values()))
+    elif kinds:
+        receipt.declared_kind = None
+    receipt.coupon_count = len(receipt.lines)
+    if customer_id is not _UNSET:
         receipt.customer_id = customer_id
+    if rep_user_id is not _UNSET:
+        receipt.rep_user_id = rep_user_id
     if received_date is not None:
         receipt.received_date = received_date
     receipt.notes = notes
@@ -540,11 +597,103 @@ def update_receipt(
     audit_service.record(
         db, action="coupon_receipt.update", actor_user_id=actor_user_id,
         entity_type="coupon_receipt", entity_id=receipt.id,
-        before=before,
-        after={"serials": sorted(s for s, *_ in matched), "kind": kind,
-               "customer_id": receipt.customer_id},
+        before=before, after=_snapshot(receipt),
     )
     return receipt
+
+
+def receiver_note(receipt: CouponReceipt) -> str | None:
+    if receipt.customer_id:
+        return None
+    from src.lib.coupon_lifecycle import _plumber_from_notes
+
+    return _plumber_from_notes(receipt.notes)
+
+
+def strip_receiver_note(notes: str | None) -> str | None:
+    from src.lib.coupon_lifecycle import _plumber_from_notes
+
+    rows = (notes or "").splitlines()
+    if rows and _plumber_from_notes(rows[0]):
+        rows = rows[1:]
+    text = "\n".join(rows).strip()
+    return text or None
+
+
+def suggest_receiver(db: Session, name: str | None) -> dict | None:
+    from src.lib import arabic
+    from src.models.customer import Customer
+
+    wanted = arabic.bare(name)
+    if not wanted:
+        return None
+    wanted = " ".join(wanted.split())
+    rows = db.execute(
+        select(Customer.id, Customer.name, Customer.customer_type, Customer.active)
+        .where(arabic.sort_key(Customer.name) == wanted)).all()
+    if not rows:
+        return None
+    live = [r for r in rows if r.active] or rows
+    plumbers = [r for r in live if str(getattr(r.customer_type, "value", r.customer_type))
+                == "plumber"]
+    pick = plumbers if plumbers else live
+    if len(pick) != 1:
+        return None
+    r = pick[0]
+    return {"id": r.id, "name": r.name,
+            "customer_type": getattr(r.customer_type, "value", r.customer_type)}
+
+
+def describe_lines(db: Session, receipt: CouponReceipt) -> list[dict]:
+    from src.models.customer import Customer
+
+    lines = list(receipt.lines)
+    issue_ids = {ln.coupon_issue_id for ln in lines if ln.coupon_issue_id}
+    invoice_ids = {ln.sales_invoice_id for ln in lines if ln.sales_invoice_id}
+    loose = [ln.serial for ln in lines if not ln.coupon_issue_id and not ln.sales_invoice_id]
+
+    by_serial: dict[str, list[CouponIssueLine]] = {}
+    if loose:
+        for row in db.scalars(select(CouponIssueLine)
+                              .where(CouponIssueLine.serial.in_(set(loose)))).all():
+            by_serial.setdefault(row.serial, []).append(row)
+            issue_ids.add(row.issue_id)
+
+    issues = {i.id: i for i in db.scalars(
+        select(CouponIssue).where(CouponIssue.id.in_(issue_ids))).all()} if issue_ids else {}
+    invoices = {i.id: i for i in db.scalars(
+        select(SalesInvoice).where(SalesInvoice.id.in_(invoice_ids))).all()} if invoice_ids else {}
+    party_ids = {d.customer_id for d in list(issues.values()) + list(invoices.values())
+                 if d.customer_id}
+    names = dict(db.execute(select(Customer.id, Customer.name)
+                            .where(Customer.id.in_(party_ids))).all()) if party_ids else {}
+
+    out: list[dict] = []
+    for ln in lines:
+        kind = ln.coupon_kind
+        issue = issues.get(ln.coupon_issue_id) if ln.coupon_issue_id else None
+        invoice = invoices.get(ln.sales_invoice_id) if ln.sales_invoice_id else None
+        if issue is None and invoice is None:
+            rows = by_serial.get(ln.serial) or []
+            hit = next((r for r in rows if kind and _same_kind(r.coupon_kind, kind)), None)
+            if hit is None and not kind:
+                same = [r for r in rows if not receipt.declared_kind
+                        or _same_kind(r.coupon_kind, receipt.declared_kind)]
+                hit = same[0] if len(same) == 1 else (rows[0] if len(rows) == 1 else None)
+            if hit is not None:
+                issue = issues.get(hit.issue_id)
+                kind = kind or hit.coupon_kind
+        doc = issue or invoice
+        party = doc.customer_id if doc is not None else None
+        out.append({
+            "id": ln.id, "serial": ln.serial, "coupon_kind": ln.coupon_kind,
+            "kind": kind or receipt.declared_kind,
+            "sales_invoice_id": invoice.id if invoice else None,
+            "coupon_issue_id": issue.id if issue else None,
+            "document_number": doc.document_number if doc is not None else None,
+            "issued_to_id": party, "issued_to_name": names.get(party) if party else None,
+        })
+    return out
 
 
 def _status_where(stmt, status: str | None):
