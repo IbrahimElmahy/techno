@@ -51,6 +51,9 @@ interface DebtRow {
   balance_other: string;
   total: string;
   last_movement_date: string | null;
+  last_payment_date: string | null;
+  last_sale_date: string | null;
+  days_since_payment: number | null;
 }
 
 interface DebtSummary {
@@ -66,7 +69,7 @@ interface DebtSummary {
   other_count: number;
 }
 
-interface DebtCounts { debtors: number; creditors: number; nonzero: number; all: number }
+interface DebtCounts { stagnant: number; debtors: number; creditors: number; nonzero: number; all: number }
 
 interface Filters {
   q?: string;
@@ -80,9 +83,10 @@ interface Filters {
   max_total?: number;
   active?: boolean;
   as_of?: string;
+  stagnant_days?: number;
 }
 
-type DebtTab = 'debtors' | 'creditors' | 'all';
+type DebtTab = 'debtors' | 'creditors' | 'all' | 'stagnant';
 type Sort = { field: string; order: 'asc' | 'desc' };
 
 const TYPE_LABELS: Record<string, string> = {
@@ -90,7 +94,8 @@ const TYPE_LABELS: Record<string, string> = {
 };
 
 const defaultSort = (tab: DebtTab): Sort =>
-  ({ field: 'total', order: tab === 'creditors' ? 'asc' : 'desc' });
+  (tab === 'stagnant' ? { field: 'days_since_payment', order: 'desc' }
+    : { field: 'total', order: tab === 'creditors' ? 'asc' : 'desc' });
 
 const n = (v: unknown) => Number(v || 0);
 
@@ -108,7 +113,7 @@ export default function CustomerDebts() {
   const typeLabel = (t: string) => typeLabels[t] || TYPE_LABELS[t] || t;
 
   const [tabRaw, setTabRaw] = useQueryTab('debtors');
-  const tab: DebtTab = tabRaw === 'creditors' || tabRaw === 'all' ? tabRaw : 'debtors';
+  const tab: DebtTab = tabRaw === 'creditors' || tabRaw === 'all' || tabRaw === 'stagnant' ? tabRaw : 'debtors';
   const [showZero, setShowZero] = useState(false);
 
   const [filters, setFilters] = useState<Filters>({});
@@ -316,6 +321,14 @@ export default function CustomerDebts() {
       ...srv('total'), render: (v: string) => <Amount v={v} strong /> },
     { title: 'آخر حركة', dataIndex: 'last_movement_date', width: 110, ...srv('last_date'),
       render: (v: string | null) => (v ? String(v).slice(0, 10) : '-') },
+    { title: 'آخر سداد', dataIndex: 'last_payment_date', width: 110, ...srv('last_payment'),
+      render: (v: string | null) => (v ? String(v).slice(0, 10) : 'لم يسدد') },
+    { title: 'آخر بيع', dataIndex: 'last_sale_date', width: 110, ...srv('last_sale'),
+      render: (v: string | null) => (v ? String(v).slice(0, 10) : '-') },
+    { title: 'أيام بدون سداد', dataIndex: 'days_since_payment', width: 120, align: 'left' as const,
+      total: false, ...srv('days_since_payment'),
+      render: (v: number | null) => (v === null || v === undefined ? 'لم يسدد'
+        : <span style={{ color: v >= (filters.stagnant_days ?? 90) ? '#cf1322' : undefined, fontWeight: 600 }}>{v.toLocaleString(numeralsLocale())}</span>) },
   ];
 
   const exportRows = useMemo(() => rows.map((r) => ({
@@ -355,11 +368,15 @@ export default function CustomerDebts() {
           ? [{ title: 'أخرى', value: (r: DebtRow) => money(r.balance_other), numeric: true }] : []),
         { title: 'الإجمالي', value: (r) => money(r.total), numeric: true },
         { title: 'آخر حركة', value: (r) => (r.last_movement_date || '').slice(0, 10) },
+        { title: 'آخر سداد', value: (r) => (r.last_payment_date || 'لم يسدد').slice(0, 10) },
+        { title: 'آخر بيع', value: (r) => (r.last_sale_date || '').slice(0, 10) },
+        { title: 'أيام بدون سداد', value: (r) => (r.days_since_payment ?? 'لم يسدد').toString(), numeric: true },
       ];
       const nameOf = (list: any[], id?: number, key = 'name') =>
         list.find((x) => x.id === id)?.[key] ?? '';
       const meta: [string, string][] = [
-        ['العرض', tab === 'debtors' ? 'المدينين' : tab === 'creditors' ? 'الدائنين' : 'الكل'],
+        ['العرض', tab === 'debtors' ? 'المدينين' : tab === 'creditors' ? 'الدائنين'
+          : tab === 'stagnant' ? `رواكد المديونية — بدون سداد ${filters.stagnant_days ?? 90} يوماً فأكثر` : 'الكل'],
         ...(filters.as_of ? [['الرصيد حتى', filters.as_of] as [string, string]] : []),
         ...(filters.q ? [['بحث', filters.q] as [string, string]] : []),
         ...(filters.rep_id ? [['المندوب', nameOf(reps, filters.rep_id, 'full_name')] as [string, string]] : []),
@@ -388,6 +405,7 @@ export default function CustomerDebts() {
   const tabs: ListTab<DebtTab>[] = [
     { key: 'debtors', label: 'المدينين', dot: '#cf1322', count: counts?.debtors },
     { key: 'creditors', label: 'الدائنين', dot: '#389e0d', count: counts?.creditors },
+    { key: 'stagnant', label: 'رواكد المديونية', dot: '#d46b08', count: counts?.stagnant },
     { key: 'all', label: 'الكل', count: counts ? (showZero ? counts.all : counts.nonzero) : undefined },
   ];
 
@@ -424,6 +442,12 @@ export default function CustomerDebts() {
           {tableCols.control}
         </>)}
         filters={(<>
+          {tab === 'stagnant' && (
+            <Select value={filters.stagnant_days ?? 90} style={{ minWidth: 170 }}
+              onChange={(v) => setFilter('stagnant_days', v)}
+              options={[30, 45, 60, 90, 120, 180, 270, 365].map((d) => ({
+                value: d, label: `بدون سداد ${d.toLocaleString(numeralsLocale())} يوماً فأكثر` }))} />
+          )}
           <Input
             className="sl-f-search"
             allowClear

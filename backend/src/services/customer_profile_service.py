@@ -64,6 +64,8 @@ def family_balances_subquery(as_of: date | None = None):
                 else_=signed)).label("other"),
             func.sum(signed).label("total"),
             func.max(eff_date).label("last_date"),
+            func.max(case((signed < 0, eff_date))).label("last_credit"),
+            func.max(case((signed > 0, eff_date))).label("last_debit"),
         )
         .join(Account, Account.id == CustomerAccount.account_id)
         .join(LedgerLine, LedgerLine.account_id == Account.id)

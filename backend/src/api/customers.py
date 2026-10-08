@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
@@ -357,6 +357,9 @@ class CustomerDebtRow(BaseModel):
     balance_other: Decimal
     total: Decimal
     last_movement_date: date | None = None
+    last_payment_date: date | None = None
+    last_sale_date: date | None = None
+    days_since_payment: int | None = None
 
 
 class CustomerDebtsSummary(BaseModel):
@@ -373,6 +376,7 @@ class CustomerDebtsSummary(BaseModel):
 
 
 class CustomerDebtsCounts(BaseModel):
+    stagnant: int = 0
     debtors: int
     creditors: int
     nonzero: int
@@ -389,7 +393,8 @@ class CustomerDebtsOut(BaseModel):
 
 
 _DEBT_SORTS = {"total", "white", "poly", "other", "name", "code", "last_date",
-               "phone", "type", "branch", "territory", "rep", "governorate", "markaz"}
+               "phone", "type", "branch", "territory", "rep", "governorate", "markaz",
+               "last_payment", "last_sale", "days_since_payment"}
 
 
 @router.get("/debts", response_model=CustomerDebtsOut)
@@ -401,7 +406,8 @@ def customer_debts(
     governorate_id: int | None = Query(None),
     customer_type: str | None = Query(None),
     family: str | None = Query(None, description="أبيض / بولي / other — من رصيده عليها غير صفري"),
-    status: str = Query("debtors", description="debtors | creditors | nonzero | all"),
+    status: str = Query("debtors", description="debtors | creditors | nonzero | all | stagnant"),
+    stagnant_days: int = Query(90, ge=0, le=3650),
     min_total: Decimal | None = Query(None),
     max_total: Decimal | None = Query(None),
     active: bool | None = Query(None),
@@ -453,6 +459,7 @@ def customer_debts(
             cust_ids.c.id.label("id"),
             white.label("white"), poly.label("poly"), other.label("other"),
             total.label("total"), bal.c.last_date.label("last_date"),
+            bal.c.last_credit.label("last_credit"), bal.c.last_debit.label("last_debit"),
         )
         .select_from(cust_ids)
         .outerjoin(bal, bal.c.customer_id == cust_ids.c.id)
@@ -465,15 +472,19 @@ def customer_debts(
     if max_total is not None:
         joined = joined.where(total <= max_total)
 
+    stagnant_cut = (as_of or date.today()) - timedelta(days=stagnant_days)
     pre = joined.subquery("pre")
     c_row = db.execute(select(
+        func.coalesce(func.sum(case((and_(pre.c.total > 0, or_(
+            pre.c.last_credit.is_(None), pre.c.last_credit < stagnant_cut)), 1), else_=0)), 0),
         func.count(),
         func.coalesce(func.sum(case((pre.c.total > 0, 1), else_=0)), 0),
         func.coalesce(func.sum(case((pre.c.total < 0, 1), else_=0)), 0),
         func.coalesce(func.sum(case((pre.c.total != 0, 1), else_=0)), 0),
     ).select_from(pre)).one()
-    counts = CustomerDebtsCounts(all=int(c_row[0] or 0), debtors=int(c_row[1] or 0),
-                                 creditors=int(c_row[2] or 0), nonzero=int(c_row[3] or 0))
+    counts = CustomerDebtsCounts(stagnant=int(c_row[0] or 0), all=int(c_row[1] or 0),
+                                 debtors=int(c_row[2] or 0), creditors=int(c_row[3] or 0),
+                                 nonzero=int(c_row[4] or 0))
 
     if status == "debtors":
         joined = joined.where(total > 0)
@@ -481,6 +492,9 @@ def customer_debts(
         joined = joined.where(total < 0)
     elif status == "nonzero":
         joined = joined.where(total != 0)
+    elif status == "stagnant":
+        joined = joined.where(total > 0, or_(bal.c.last_credit.is_(None),
+                                             bal.c.last_credit < stagnant_cut))
     flt = joined.subquery("flt")
 
     s = db.execute(select(
@@ -506,15 +520,21 @@ def customer_debts(
     sort_col = {
         "total": flt.c.total, "white": flt.c.white, "poly": flt.c.poly,
         "other": flt.c.other, "last_date": flt.c.last_date,
+        "last_payment": flt.c.last_credit, "last_sale": flt.c.last_debit,
+        "days_since_payment": flt.c.last_credit,
         "name": arabic.sort_key(Customer.name), "code": Customer.code,
         "phone": Customer.phone, "type": Customer.customer_type,
         "branch": Branch.name, "territory": Territory.name, "rep": User.full_name,
         "governorate": Governorate.name, "markaz": Customer.markaz,
     }[sort_key]
-    ordered = [sort_col.is_(None), sort_col.asc() if order == "asc" else sort_col.desc()]
+    ascending = (order == "asc") != (sort_key == "days_since_payment")
+    never_first = sort_key == "days_since_payment" and order != "asc"
+    ordered = [sort_col.isnot(None) if never_first else sort_col.is_(None),
+               sort_col.asc() if ascending else sort_col.desc()]
     page_stmt = (
         select(
             Customer, flt.c.white, flt.c.poly, flt.c.other, flt.c.total, flt.c.last_date,
+            flt.c.last_credit, flt.c.last_debit,
             Branch.name.label("branch_name"), Territory.name.label("territory_name"),
             Governorate.name.label("governorate_name"), User.full_name.label("rep_name"),
         )
@@ -541,6 +561,9 @@ def customer_debts(
             balance_white=to_money(r.white or 0), balance_poly=to_money(r.poly or 0),
             balance_other=to_money(r.other or 0), total=to_money(r.total or 0),
             last_movement_date=r.last_date,
+            last_payment_date=r.last_credit, last_sale_date=r.last_debit,
+            days_since_payment=((as_of or date.today()) - r.last_credit).days
+            if r.last_credit else None,
         ))
 
     out = CustomerDebtsOut(rows=rows, total=summary.count, limit=limit, offset=offset,
