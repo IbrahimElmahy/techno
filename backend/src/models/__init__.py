@@ -103,6 +103,7 @@ from src.models.hr_attendance import (  # noqa: E402
 )
 from src.models.owner import Owner  # noqa: E402
 from src.models.draft import DocumentDraft  # noqa: E402
+from src.models import fleet  # noqa: E402,F401
 from src.models import hr_commission  # noqa: E402,F401 — جداول إعدادات العمولات (create_all)
 from src.models import period_closing  # noqa: E402,F401
 

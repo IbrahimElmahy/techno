@@ -66,6 +66,7 @@ const LOYALTY = ['system_admin', 'branch_manager', 'after_sales_staff', 'viewer'
  *  backend grants `salary.view` to system_admin and accountant only, and a menu entry that opens
  *  onto a 403 is worse than no entry — it reads as a broken screen. Mirrors `rbac.py:_PAYROLL_ALL`. */
 const SALARY = ['system_admin', 'accountant'];
+const FLEET = ['system_admin', 'branch_manager', 'accountant', 'viewer'];
 
 /**
  * الشريط الجانبي بيقبل شاشة مستقلة، مش أقسام وبس.
@@ -525,6 +526,22 @@ export const EXTRA_SECTIONS: NavGroup[] = [
           { key: '/ops-reports?view=inspections-by-month', label: 'المعاينات شهر بشهر', roles: R([...SALES, 'after_sales_staff']) },
         ],
       },
+    ],
+  },
+  {
+    key: 'grp-fleet',
+    label: 'إدارة السيارات',
+    children: [
+      { key: '/fleet', label: 'لوحة التحكم', roles: FLEET },
+      { key: '/fleet/vehicles', label: 'السيارات', roles: FLEET },
+      { key: '/fleet/drivers', label: 'السائقون', roles: FLEET },
+      { key: '/fleet/maintenance', label: 'الصيانة', roles: FLEET },
+      { key: '/fleet/fuel', label: 'الوقود', roles: FLEET },
+      { key: '/fleet/faults', label: 'الأعطال', roles: FLEET },
+      { key: '/fleet/violations', label: 'المخالفات', roles: FLEET },
+      { key: '/fleet/inspections', label: 'الفحص اليومي', roles: FLEET },
+      { key: '/fleet/monthly', label: 'التقرير الشهري', roles: FLEET },
+      { key: '/fleet/tasks', label: 'مهام مسؤول الأسطول', roles: FLEET },
     ],
   },
 ];

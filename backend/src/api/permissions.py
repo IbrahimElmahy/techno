@@ -86,6 +86,8 @@ CAPABILITY_LABELS: dict[str, str] = {
     "payroll.post": "ترحيل الرواتب",
     "salary.view": "عرض قيمة الراتب",
     "stats.view": "كروت الإحصائيات",
+    "fleet.read": "عرض إدارة السيارات",
+    "fleet.write": "تسجيل حركات السيارات (مسؤول الأسطول)",
     **rbac.APP_CAPABILITIES,
 }
 
@@ -101,6 +103,7 @@ GROUPS: list[tuple[str, list[str]]] = [
     ("الولاء والكوبونات", ["loyalty", "points.", "product_points.", "coupon."]),
     ("ما بعد البيع والتصنيع", ["inspection.", "manufacture."]),
     ("الموارد البشرية", ["hr.", "payroll.", "salary."]),
+    ("إدارة السيارات", ["fleet."]),
     ("الإحصائيات", ["stats."]),
     ("التطبيق (الموبايل)", ["app."]),
 ]

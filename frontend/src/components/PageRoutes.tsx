@@ -94,6 +94,14 @@ const InspectionItems = lazy(() => import('../pages/InspectionItems'));
 const Vouchers = lazy(() => import('../pages/Vouchers'));
 const VoucherKeys = lazy(() => import('../pages/VoucherKeys'));
 const FinanceReports = lazy(() => import('../pages/FinanceReports'));
+const FleetDashboard = lazy(() => import('../pages/FleetDashboard'));
+const FleetVehicles = lazy(() => import('../pages/FleetVehicles'));
+const FleetVehicle = lazy(() => import('../pages/FleetVehicle'));
+const FleetDrivers = lazy(() => import('../pages/FleetDrivers'));
+const FleetRecords = lazy(() => import('../pages/FleetRecords'));
+const FleetInspections = lazy(() => import('../pages/FleetInspections'));
+const FleetMonthly = lazy(() => import('../pages/FleetMonthly'));
+const FleetTasks = lazy(() => import('../pages/FleetTasks'));
 const IncomeSheet = lazy(() => import('../pages/IncomeSheet'));
 const PeriodClosing = lazy(() => import('../pages/PeriodClosing'));
 
@@ -226,6 +234,17 @@ export default function PageRoutes({ location }: { location?: string }) {
       <Route path="/party-links" element={<PartyLinks />} />
       <Route path="/territories" element={<Territories />} />
       <Route path="/governorates" element={<Governorates />} />
+      <Route path="/fleet" element={<FleetDashboard />} />
+      <Route path="/fleet/vehicles" element={<FleetVehicles />} />
+      <Route path="/fleet/vehicles/:vehicleId" element={<FleetVehicle />} />
+      <Route path="/fleet/drivers" element={<FleetDrivers />} />
+      <Route path="/fleet/maintenance" element={<FleetRecords key="maintenance" kind="maintenance" />} />
+      <Route path="/fleet/fuel" element={<FleetRecords key="fuel" kind="fuel" />} />
+      <Route path="/fleet/faults" element={<FleetRecords key="faults" kind="faults" />} />
+      <Route path="/fleet/violations" element={<FleetRecords key="violations" kind="violations" />} />
+      <Route path="/fleet/inspections" element={<FleetInspections />} />
+      <Route path="/fleet/monthly" element={<FleetMonthly />} />
+      <Route path="/fleet/tasks" element={<FleetTasks />} />
       {/* A menu entry whose screen is not built yet lands here and says so, naming the a5 screen
           it will mirror. Bouncing to the dashboard instead would read as the click having failed. */}
       <Route path="*" element={<PendingScreen />} />

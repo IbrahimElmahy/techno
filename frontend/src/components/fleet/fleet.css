@@ -1,0 +1,7 @@
+.fleet-row-danger > td { background: rgba(255, 77, 79, 0.08) !important; }
+.fleet-row-dirty > td { background: rgba(250, 173, 20, 0.10) !important; }
+.fleet-row-muted > td { opacity: 0.55; }
+.fleet-check-bad .ant-select-selector { border-color: #ff4d4f !important; background: rgba(255, 77, 79, 0.08) !important; }
+.fleet-check-warn .ant-select-selector { border-color: #faad14 !important; }
+.fleet-tile { height: 100%; }
+.fleet-tile .sl-stat { border: 0; padding: 0; }

@@ -23,6 +23,7 @@ import {
   BuildOutlined,
   AppstoreOutlined,
   KeyOutlined,
+  CarOutlined,
 } from '@ant-design/icons';
 import {
   NAVIGATION, EXTRA_SECTIONS, HOME_SCREEN, isGroup, NavGroup, NavScreen,
@@ -72,6 +73,7 @@ const SECTION_ICONS: Record<string, React.ReactNode> = {
   'grp-production': <BuildOutlined />,
   'grp-settings': <SettingOutlined />,
   'grp-extra': <MobileOutlined />,
+  'grp-fleet': <CarOutlined />,
   // شاشة مستقلة في الشريط، مش قسم — ليها أيقونتها زي أي مدخل.
   '/voucher-keys': <KeyOutlined />,
 };

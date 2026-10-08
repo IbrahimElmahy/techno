@@ -225,6 +225,8 @@ def create_app() -> FastAPI:
     app.include_router(settings_lookups.router, prefix=prefix)
     # Production reporting (014) — wastage documents
     app.include_router(wastage.router, prefix=prefix)
+    from src.api import fleet as _fleet
+    app.include_router(_fleet.router, prefix=prefix)
     # Site inspections / معاينات (015) — rep mobile app
     app.include_router(inspections.router, prefix=prefix)
     # Owners / الملّاك (خدمات ما بعد البيع)

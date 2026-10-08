@@ -320,6 +320,12 @@ ROLE_CAPABILITIES.setdefault(RoleName.accountant, set()).add(CAP_HR_READ)
 
 ALL_CAPABILITIES |= _HR_ALL | _PAYROLL_ALL
 
+CAP_FLEET_READ = "fleet.read"
+CAP_FLEET_WRITE = "fleet.write"
+_FLEET_ALL = {CAP_FLEET_READ, CAP_FLEET_WRITE}
+ROLE_CAPABILITIES.setdefault(RoleName.system_admin, set()).update(_FLEET_ALL)
+ALL_CAPABILITIES |= _FLEET_ALL
+
 # ---------------------------------------------------------------------------
 # كروت الإحصائيات — «المالك» وحده (ومدير النظام).
 # ---------------------------------------------------------------------------
