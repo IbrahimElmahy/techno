@@ -18,7 +18,7 @@ from src.models.org import Branch
 
 router = APIRouter(tags=["partners-current"])
 
-GROUP_PATTERNS = ("%جار%", "%رأس المال%", "%راس المال%", "%استثمار%")
+GROUP_PATTERNS = ("%جار%", "%رأس المال%", "%راس المال%", "%استثمار%", "%مسحوبات%")
 
 
 class PartnerAccountOut(BaseModel):
@@ -132,7 +132,7 @@ def _partner_account(db: Session, account_id: int, current: CurrentUser) -> tupl
     acc = db.get(Account, account_id)
     parent = db.get(Account, acc.parent_id) if acc is not None and acc.parent_id else None
     pname = (parent.name or "") if parent is not None else ""
-    ok = acc is not None and any(w in pname for w in ("جار", "رأس المال", "راس المال", "استثمار"))
+    ok = acc is not None and any(w in pname for w in ("جار", "رأس المال", "راس المال", "استثمار", "مسحوبات"))
     bid = branch_scope.visible_branch_id(current)
     if not ok or (bid is not None and acc.branch_id != bid):
         raise HTTPException(404, {"code": "not_found", "message": "حساب الشريك غير موجود."})
