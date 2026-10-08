@@ -614,20 +614,20 @@ const IncomeSheet: React.FC = () => {
         </>)}
         filters={(<>
           {seesAll ? (
-            <Select style={{ minWidth: 160 }} value={branchId} onChange={setBranchId} placeholder="الفرع"
+            <Select style={{ flex: '0 0 170px' }} value={branchId} onChange={setBranchId} placeholder="الفرع"
               options={[...branches.map((b) => ({ value: b.id, label: b.name })), { value: 0, label: 'كل الفروع' }]} />
           ) : null}
-          <DateRangeFilter value={range} onChange={setRange} />
-          <Select style={{ minWidth: 150 }} placeholder="فترة جاهزة" value={null as any}
+          <DateRangeFilter className="sl-f-dates" value={range} onChange={setRange} />
+          <Select style={{ flex: '0 0 160px' }} placeholder="فترة جاهزة" value={null as any}
             onChange={(i: number) => setRange(quick[i].value)}
             options={quick.map((q, i) => ({ value: i, label: q.label }))} />
-          <Select style={{ minWidth: 200 }} value={compare} onChange={setCompare}
+          <Select style={{ flex: '0 0 230px' }} value={compare} onChange={setCompare}
             options={[
               { value: 'none', label: 'بدون مقارنة' },
               { value: 'prev', label: 'مقارنة بالفترة السابقة' },
               { value: 'year', label: 'مقارنة بنفس الفترة العام الماضي' },
             ]} />
-          <Select style={{ minWidth: 130 }} value={postedOnly} onChange={setPostedOnly}
+          <Select style={{ flex: '0 0 140px' }} value={postedOnly} onChange={setPostedOnly}
             options={[{ value: true, label: 'المرحّل' }, { value: false, label: 'كل القيود' }]} />
         </>)}
         summary={tab === 'sheet' && data ? <KpiCards data={data} /> : undefined}

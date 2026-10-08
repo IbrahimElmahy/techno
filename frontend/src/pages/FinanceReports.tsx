@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState, useMemo } from 'react';
 import { PAGE_SIZE } from '../utils/pagination';
-import { Select, Button, Tag, Alert, Input } from 'antd';
+import { Select, Button, Tag, Alert, Input, DatePicker } from 'antd';
 import { FilterTable as Table } from '../components/FilterTable';
 import {
   AccountBookOutlined, ClearOutlined, LinkOutlined, PrinterOutlined, ReloadOutlined, SearchOutlined,
@@ -38,6 +38,7 @@ const FinanceReports: React.FC = () => {
     else if (['cashflow', 'vat', 'commissions'].includes(tab)) setTab('sheet');
   }, [tab]);
   const [tree, setTree] = useState<any | null>(null);
+  const [asOf, setAsOf] = useState<Dayjs | null>(null);
   const [period] = useQueryTab('', 'period');
   const [range, setRange] = useState<[Dayjs | null, Dayjs | null] | null>(null);
   const [income, setIncome] = useState<IncomeStatement | null>(null);
@@ -69,7 +70,7 @@ const FinanceReports: React.FC = () => {
           params: { ...(p.date_to ? { as_of: p.date_to } : {}), ...reportParams(opts) },
         }),
         api.get('/api/v1/reports/balance-sheet-tree', {
-          params: { ...(p.date_to ? { as_of: p.date_to } : {}), posted_only: opts.postedOnly },
+          params: { ...(asOf ? { as_of: asOf.format('YYYY-MM-DD') } : {}), posted_only: opts.postedOnly },
         }),
         api.get<AgingRow[]>('/api/v1/reports/aging', { params: { party: agingParty } }),
       ]);
@@ -80,7 +81,7 @@ const FinanceReports: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, [params, agingParty, opts]);
+  }, [params, agingParty, opts, asOf]);
 
   useEffect(() => {
     loadAll();
@@ -258,6 +259,20 @@ const FinanceReports: React.FC = () => {
             طباعة
           </Button>
         )}
+        {tab === 'sheet' && tree && (
+          <Button icon={<PrinterOutlined />} onClick={() => {
+            const rowsOf = (nodes: any[], level: number): string => nodes.map((n) => (
+              `<tr><td style="padding-inline-start:${8 + level * 18}px">${n.name || ''}</td><td class="num">${money(n.amount)}</td></tr>`
+              + (level < 1 ? rowsOf(n.children || [], level + 1) : ''))).join('');
+            const block = (title: string, total: string, nodes: any[], extra = '') => (
+              `<h3>${title} — ${money(total)}</h3><table class="grid"><tbody>${rowsOf(nodes, 0)}${extra}</tbody></table>`);
+            printBlock('الميزانية',
+              block('الأصول', tree.total_assets, tree.assets)
+              + block('الالتزامات', tree.total_liabilities, tree.liabilities)
+              + block('حقوق الملكية', String(Number(tree.total_equity) + Number(tree.net_profit)), tree.equity,
+                `<tr><td>أرباح الفترة الحالية</td><td class="num">${money(tree.net_profit)}</td></tr>`));
+          }}>طباعة</Button>
+        )}
         {tab === 'aging' && agingCols.control}
         <span ref={setActionsSlot} className="sl-slot" />
         {!ownLoader && (
@@ -267,10 +282,16 @@ const FinanceReports: React.FC = () => {
         )}
       </>)}
       filters={(<>
-        <DateRangeFilter className="sl-f-dates" value={range as any} onChange={(v) => setRange(v as any)} />
-        <div style={{ flex: '0 0 auto' }}>
-          <ReportOptionsBar value={opts} onChange={setOpts} />
-        </div>
+        {tab === 'sheet' && (<>
+          <DatePicker style={{ flex: '0 0 200px' }} value={asOf} onChange={setAsOf}
+            placeholder="حتى تاريخ (اليوم)" format="YYYY/MM/DD" />
+          <Select style={{ flex: '0 0 160px' }} value={opts.postedOnly}
+            onChange={(v) => setOpts({ ...opts, postedOnly: v })}
+            options={[{ value: true, label: 'المرحّل فقط' }, { value: false, label: 'كل القيود' }]} />
+        </>)}
+        {tab === 'partner' && (
+          <DateRangeFilter className="sl-f-dates" value={range as any} onChange={(v) => setRange(v as any)} />
+        )}
         {tab === 'aging' && (<>
           <Select
             value={agingParty}

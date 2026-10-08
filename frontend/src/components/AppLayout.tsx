@@ -365,7 +365,7 @@ export default function AppLayout() {
           <div
             className={APP_SCROLL_CLASS}
             style={{
-              padding: 16,
+              padding: '16px 16px 88px',
               background: colorBgContainer,
               borderRadius: borderRadiusLG,
               flex: 1,
