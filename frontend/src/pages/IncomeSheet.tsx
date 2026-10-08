@@ -4,7 +4,7 @@ import {
   Table, Tabs, Tag, Tooltip, message,
 } from 'antd';
 import {
-  ArrowDownOutlined, ArrowUpOutlined, DeleteOutlined, FileExcelOutlined, FundOutlined, PlusOutlined,
+  ArrowDownOutlined, ArrowUpOutlined, DeleteOutlined, FileExcelOutlined, FundOutlined, PlusOutlined, SettingOutlined,
   PrinterOutlined, ReloadOutlined, SaveOutlined,
 } from '@ant-design/icons';
 import dayjs, { Dayjs } from 'dayjs';
@@ -73,7 +73,7 @@ const IncomeSheet: React.FC = () => {
   const [branches, setBranches] = useState<any[]>([]);
   const [branchId, setBranchId] = useState<number | undefined>(
     seesAll ? undefined : (user?.branch_id ?? undefined));
-  const [range, setRange] = useState<Range>(null);
+  const [range, setRange] = useState<Range>(() => quickRanges()[3].value);
   const [postedOnly, setPostedOnly] = useState(true);
   const [data, setData] = useState<any | null>(null);
   const [compare, setCompare] = useState<'none' | 'prev' | 'year'>('none');
@@ -589,7 +589,7 @@ const IncomeSheet: React.FC = () => {
     </Row>
   );
 
-  const empty = <Empty description="اختر الفترة" />;
+  const empty = <Empty description="اختر الفترة من الفلاتر فوق" />;
   const quick = quickRanges();
 
   return (
@@ -601,8 +601,7 @@ const IncomeSheet: React.FC = () => {
         tabs={[
           { key: 'sheet', label: 'القائمة' },
           { key: 'details', label: 'التفاصيل' },
-          { key: 'period', label: 'مدخلات الفترة' },
-          { key: 'settings', label: 'الإعدادات' },
+          { key: 'period', label: 'الجرد والتسويات' },
         ]}
         activeTab={tab as any}
         onTabChange={(k) => setTab(k)}
@@ -610,6 +609,12 @@ const IncomeSheet: React.FC = () => {
           <Button icon={<PrinterOutlined />} onClick={doPrint} disabled={!data}>طباعة</Button>
           <Button icon={<FileExcelOutlined />} onClick={doExport} disabled={!data}>إكسل</Button>
           <Button icon={<ReloadOutlined />} onClick={load} disabled={!range}>تحديث</Button>
+          {canEdit ? (
+            <Button icon={<SettingOutlined />} type={tab === 'settings' ? 'primary' : 'default'}
+              onClick={() => setTab(tab === 'settings' ? 'sheet' : 'settings')}>
+              {tab === 'settings' ? 'رجوع للقائمة' : 'إعدادات الحساب'}
+            </Button>
+          ) : null}
         </>)}
         filters={(<>
           {seesAll ? (
