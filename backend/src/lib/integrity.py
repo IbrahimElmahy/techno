@@ -65,7 +65,7 @@ def check_no_negative_stock(db: Session, report: IntegrityReport) -> None:
                 subject=f"item {item_id} @ {kind}:{loc_id}",
                 expected=">= 0",
                 found=str(qty),
-                detail="رصيد سالب — معناه إن حركة عدّت من غير ما تمرّ على بوابة المخزون.",
+                detail="رصيد سالب — أي أن حركة مرّت دون المرور على بوابة المخزون.",
             ))
 
 
@@ -148,7 +148,7 @@ def check_ledger_entries_balanced(db: Session, report: IntegrityReport) -> None:
                 subject=f"entry {entry_id}",
                 expected=str(debit),
                 found=str(credit),
-                detail="قيد غير متوازن — ميزان المراجعة هيبقى غلط من غير ما شاشة تبان غلط.",
+                detail="قيد غير متوازن — سيكون ميزان المراجعة خاطئاً دون أن تُظهر أي شاشة خطأً.",
             ))
 
 
@@ -170,7 +170,7 @@ def check_customers_have_a_rep(db: Session, report: IntegrityReport) -> None:
             subject=f"عميل #{cid} — {name or ''}".strip(),
             expected="مندوب موجود",
             found="مندوب محذوف أو غير محدد",
-            detail="العميل ده مش هيظهر لأي مندوب في التطبيق ولا في كشوف المندوبين.",
+            detail="لن يظهر هذا العميل لأي مندوب في التطبيق ولا في كشوف المندوبين.",
         ))
 
     closed = db.execute(
@@ -182,9 +182,9 @@ def check_customers_have_a_rep(db: Session, report: IntegrityReport) -> None:
         report.findings.append(Finding(
             check="customer_rep",
             subject=f"عميل #{cid} — {name or ''}".strip(),
-            expected="مندوب شغّال",
-            found=f"مندوب مقفول ({username})",
-            detail="محدش بيزور العميل ده — انقله لمندوب تاني.",
+            expected="مندوب نشط",
+            found=f"مندوب موقوف ({username})",
+            detail="لا يزور أحد هذا العميل — انقله إلى مندوب آخر.",
         ))
 
 
@@ -211,8 +211,8 @@ def check_reps_have_a_store(db: Session, report: IntegrityReport) -> None:
             check="rep_store",
             subject=f"مندوب {username} — {full_name or ''}".strip(),
             expected="مخزن أو عهدة",
-            found="مافيش",
-            detail="المندوب ده مايقدرش يبيع من التطبيق — اربطه بمخزن من ملف الموظف.",
+            found="لا يوجد",
+            detail="لا يستطيع هذا المندوب البيع من التطبيق — اربطه بمخزن من ملف الموظف.",
         ))
 
 

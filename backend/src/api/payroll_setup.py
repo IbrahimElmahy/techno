@@ -34,7 +34,7 @@ def _raise(exc: PayrollSetupError):
     text = str(exc)
     if "غير موجود" in text or "غير موجودة" in text:
         raise HTTPException(404, {"code": "not_found", "message": text}) from exc
-    if "استُخدمت في مرتب مرحّل" in text or "اتحسب عليه مسير مرحّل" in text:
+    if "استُخدمت في مرتب مرحّل" in text or "اتحسب عليه مسير مرحّل" in text or "احتُسب عليه مسير مرحّل" in text:
         raise HTTPException(409, {"code": "locked", "message": text}) from exc
     raise HTTPException(422, {"code": "validation", "message": text}) from exc
 

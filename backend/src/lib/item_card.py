@@ -72,7 +72,7 @@ def card(
         except ValueError as exc:
             raise ItemCardError("نوع الموقع غير صحيح.") from exc
         if location_id is None:
-            raise ItemCardError("لازم تحدّد الموقع مع نوعه.")
+            raise ItemCardError("حدّد الموقع ونوعه.")
 
     day_from = _parse_day(date_from)
     day_to = _parse_day(date_to)

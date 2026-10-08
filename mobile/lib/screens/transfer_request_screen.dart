@@ -345,7 +345,7 @@ class _TransferRequestScreenState extends State<TransferRequestScreen> {
                           color: Colors.black54)),
                   title: Text(l.item.name),
                   subtitle: Text(_sourceIsMine
-                      ? 'المتاح عندك: ${l.item.onHand}'
+                      ? 'المتاح لديك: ${l.item.onHand}'
                       : (l.item.category ?? '')),
                   trailing: SizedBox(
                     width: 96,

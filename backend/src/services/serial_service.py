@@ -51,15 +51,15 @@ def receive(
     actor_user_id: int,
 ) -> list[ItemSerial]:
     if not item.is_serialized:
-        raise SerialError("الصنف ده مش متتبّع بسيريال.")
+        raise SerialError("هذا الصنف غير متتبَّع بالسيريال.")
     if not serials:
-        raise SerialError("لازم سيريال واحد على الأقل.")
+        raise SerialError("يجب إدخال سيريال واحد على الأقل.")
     if len(set(serials)) != len(serials):
-        raise SerialError("فيه سيريال متكرر في الطلب.")
+        raise SerialError("يوجد سيريال مكرر في الطلب.")
     rows: list[ItemSerial] = []
     for s in serials:
         if _get(db, item.id, s) is not None:
-            raise SerialError(f"السيريال «{s}» متسجّل قبل كده للصنف ده.")
+            raise SerialError(f"السيريال «{s}» مسجّل مسبقاً لهذا الصنف.")
         row = ItemSerial(
             item_id=item.id, serial=s, status=SerialStatus.in_stock,
             location_kind=location_kind, location_id=location_id,
@@ -86,16 +86,16 @@ def assert_sale_serials(
     has_serials = bool(serials)
     if not item.is_serialized:
         if has_serials:
-            raise SerialError("اتبعت سيريالات لصنف مش متتبّع بسيريال.")
+            raise SerialError("أُرسلت سيريالات لصنف غير متتبَّع بالسيريال.")
         return
     if not has_serials:
-        raise SerialError("الصنف ده متتبّع بسيريال — لازم تكتب السيريالات.")
+        raise SerialError("هذا الصنف متتبَّع بالسيريال — أدخل السيريالات.")
     if to_qty(unit_factor) != to_qty(Decimal(1)):
-        raise SerialError("الأصناف اللي بسيريال بتتباع بالوحدة الأساسية بس.")
+        raise SerialError("تُباع الأصناف ذات السيريال بالوحدة الأساسية فقط.")
     if len(set(serials)) != len(serials):
-        raise SerialError("فيه سيريال متكرر في السطر.")
+        raise SerialError("يوجد سيريال مكرر في السطر.")
     if Decimal(len(serials)) != to_qty(quantity):
-        raise SerialError("عدد السيريالات لازم يساوي كمية السطر.")
+        raise SerialError("يجب أن يساوي عدد السيريالات كمية السطر.")
 
 
 def relocate(
@@ -150,9 +150,9 @@ def mark_sold(
     for s in serials:
         row = _get(db, item.id, s)
         if row is None or row.status != SerialStatus.in_stock:
-            raise SerialError(f"السيريال «{s}» مش موجود في المخزن.")
+            raise SerialError(f"السيريال «{s}» غير موجود في المخزن.")
         if row.location_kind != origin_kind or row.location_id != origin_id:
-            raise SerialError(f"السيريال «{s}» مش في المخزن اللي بتبيع منه.")
+            raise SerialError(f"السيريال «{s}» ليس في المخزن الذي تبيع منه.")
         row.status = SerialStatus.sold
         row.location_kind = None
         row.location_id = None
@@ -175,7 +175,7 @@ def restore_free(
     for s_no in serials:
         row = _get(db, item.id, s_no)
         if row is None or row.status != SerialStatus.sold:
-            raise SerialError(f"السيريال «{s_no}» مش مبيع في النظام — اتأكد من الرقم.")
+            raise SerialError(f"السيريال «{s_no}» غير مبيع في النظام — تأكد من الرقم.")
         row.status = SerialStatus.in_stock
         row.location_kind = origin_kind
         row.location_id = origin_id
@@ -198,7 +198,7 @@ def restore_for_return(
     for s in serials:
         row = _get(db, item.id, s)
         if row is None or row.status != SerialStatus.sold or row.sold_invoice_id != invoice_id:
-            raise SerialError(f"السيريال «{s}» مااتباعش على الفاتورة دي.")
+            raise SerialError(f"السيريال «{s}» لم يُبع على هذه الفاتورة.")
         row.status = SerialStatus.in_stock
         row.location_kind = origin_kind
         row.location_id = origin_id

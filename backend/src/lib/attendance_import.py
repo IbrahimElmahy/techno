@@ -50,7 +50,7 @@ def parse_day(value: str) -> date:
             return datetime.strptime(text[:10], fmt).date()
         except ValueError:
             continue
-    raise ImportError_(f"تاريخ مش مفهوم: {value}")
+    raise ImportError_(f"تاريخ غير مفهوم: {value}")
 
 
 def parse(rows: list[list[str]], mapping: ColumnMap, *, skip_header: bool = True) -> ParsedFile:
@@ -68,7 +68,7 @@ def parse(rows: list[list[str]], mapping: ColumnMap, *, skip_header: bool = True
                 continue
             key = str(cells[mapping.employee]).strip()
             if not key:
-                out.rejected.append((line, "مافيش رقم/اسم موظف"))
+                out.rejected.append((line, "لا يوجد رقم/اسم موظف"))
                 continue
             day = parse_day(cells[mapping.day])
         except ImportError_ as exc:

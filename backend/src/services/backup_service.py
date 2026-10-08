@@ -47,9 +47,9 @@ def from_gzip(raw: bytes) -> dict:
     data = json.loads(gzip.decompress(raw))
     meta = data.get("_meta") or {}
     if meta.get("app") != "techno" or "backup_version" not in meta:
-        raise ValueError("الملف ده مش نسخة احتياطية من النظام.")
+        raise ValueError("هذا الملف ليس نسخة احتياطية من النظام.")
     if meta["backup_version"] > BACKUP_VERSION:
-        raise ValueError("نسخة أحدث من النظام — حدّث التطبيق الأول.")
+        raise ValueError("نسخة من إصدار أحدث للنظام — حدّث التطبيق أولاً.")
     return data
 
 
@@ -57,7 +57,7 @@ def restore_all(db: Session, data: dict) -> dict[str, int]:
     known = {t.name for t in Base.metadata.sorted_tables}
     missing = [name for name in data if name != "_meta" and name not in known]
     if missing:
-        raise ValueError(f"النسخة فيها جداول مش من النظام: {', '.join(missing[:5])}")
+        raise ValueError(f"تحتوي النسخة على جداول ليست من النظام: {', '.join(missing[:5])}")
 
     counts: dict[str, int] = {}
     for table in reversed(Base.metadata.sorted_tables):

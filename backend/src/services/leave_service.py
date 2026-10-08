@@ -30,7 +30,7 @@ def create_type(
     if not clean:
         raise LeaveError("اسم نوع الأجازة مطلوب.")
     if db.scalar(select(LeaveType).where(LeaveType.name == clean)):
-        raise LeaveError("فيه نوع أجازة بنفس الاسم.")
+        raise LeaveError("يوجد نوع أجازة بالاسم نفسه.")
     wanted = (code or "").strip() or numbering.next_document_number(
         db, LeaveType, "LVT", column=LeaveType.code, width=3)
     row = LeaveType(
@@ -151,12 +151,12 @@ def request(
         LeaveRequest.date_from <= date_to,
         LeaveRequest.date_to >= date_from))
     if overlap is not None:
-        raise LeaveError(f"فيه طلب أجازة على نفس الأيام: {overlap.document_number}")
+        raise LeaveError(f"يوجد طلب أجازة على نفس الأيام: {overlap.document_number}")
 
     days = working_days(db, employee_id=employee_id, date_from=date_from, date_to=date_to,
                         counts_weekend=kind.counts_weekend)
     if days <= 0:
-        raise LeaveError("المدة دي كلها عطلات وراحات — مافيش أيام شغل فيها.")
+        raise LeaveError("هذه المدة كلها عطلات وراحات — لا توجد فيها أيام عمل.")
 
     row = LeaveRequest(
         document_number=numbering.next_document_number(db, LeaveRequest, "LV"),
@@ -185,7 +185,7 @@ def approve(db: Session, *, request_id: int, actor_user_id: int) -> LeaveRequest
     if row.status == LeaveStatus.approved:
         return row
     if row.status in (LeaveStatus.rejected, LeaveStatus.cancelled):
-        raise LeaveError("الطلب ده متقفل — اعمل طلب جديد.")
+        raise LeaveError("هذا الطلب مغلق — سجّل طلباً جديداً.")
 
     kind = db.get(LeaveType, row.leave_type_id)
     if kind is not None and kind.affects_balance:
@@ -194,7 +194,7 @@ def approve(db: Session, *, request_id: int, actor_user_id: int) -> LeaveRequest
                         leave_type_id=row.leave_type_id, year=year)
         if Decimal(state["remaining"]) < to_qty(Decimal(str(row.days))):
             raise LeaveError(
-                f"الرصيد مايكفيش — متبقي {state['remaining']} والطلب {row.days}.")
+                f"الرصيد غير كافٍ — المتبقي {state['remaining']} والطلب {row.days}.")
 
     row.status = LeaveStatus.approved
     row.approved_by_user_id = actor_user_id
@@ -240,7 +240,7 @@ def reject(db: Session, *, request_id: int, actor_user_id: int, reason: str | No
     if row is None:
         raise LeaveError("الطلب غير موجود.")
     if row.status == LeaveStatus.approved:
-        raise LeaveError("الطلب معتمد — الغيه بدل ما ترفضه.")
+        raise LeaveError("الطلب معتمد — ألغِه بدلاً من رفضه.")
     row.status = LeaveStatus.rejected
     row.reject_reason = reason
     row.approved_by_user_id = actor_user_id
@@ -267,8 +267,8 @@ def cancel(db: Session, *, request_id: int, actor_user_id: int) -> LeaveRequest:
     locked = [d for d in days if d.locked_by_payroll_run_id is not None]
     if locked:
         raise LeaveError(
-            f"فيه أيام من الأجازة دي داخل مسير مرحّل رقم {locked[0].locked_by_payroll_run_id} "
-            "— اعكس المسير الأول."
+            f"توجد أيام من هذه الأجازة داخل مسير مرحّل رقم {locked[0].locked_by_payroll_run_id} "
+            "— اعكس المسير أولاً."
         )
 
     for entry in days:

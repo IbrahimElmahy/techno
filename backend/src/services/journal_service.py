@@ -29,14 +29,14 @@ class JournalLineInput:
 
 def _validate_accounts(db: Session, lines: list[JournalLineInput]) -> None:
     if not lines:
-        raise JournalError("قيد اليومية لازم يكون فيه سطر واحد على الأقل.")
+        raise JournalError("يجب أن يتضمن قيد اليومية سطراً واحداً على الأقل.")
     for ln in lines:
         acc = db.get(Account, ln.account_id)
         if acc is None or not acc.active:
-            raise JournalError("الحساب ده مش موجود أو مقفول.")
+            raise JournalError("هذا الحساب غير موجود أو مقفل.")
         if ln.cost_center_id is not None and not cost_center_service.is_active(db, ln.cost_center_id):
             raise JournalError(
-                "مركز التكلفة ده مش موجود أو مقفول."
+                "مركز التكلفة هذا غير موجود أو مقفل."
             )
         if ln.cost_center_distribution:
             from src.services import analytic_service
@@ -141,9 +141,9 @@ def update_draft(
 ) -> LedgerEntry:
     entry = db.get(LedgerEntry, entry_id)
     if entry is None:
-        raise JournalError("القيد مش موجود.")
+        raise JournalError("القيد غير موجود.")
     if entry.state != EntryState.draft.value:
-        raise JournalError("القيد ده مش مسودة — رجّعه مسودة الأول عشان تعدّله.")
+        raise JournalError("هذا القيد ليس مسودة — أعده إلى مسودة أولاً لتعديله.")
     if partner_kind is not None or partner_id is not None:
         entry.partner_kind = (
             partner_kind.value if isinstance(partner_kind, PartnerKind) else partner_kind

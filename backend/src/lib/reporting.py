@@ -159,7 +159,7 @@ def production_consumption(db: Session, *, date_from=None, date_to=None, period=
             "material_cost": str(mat_cost), "resource_cost": str(res_cost),
             "total_cost": str(total),
             "statement": report_statement.text_of(o),
-            "state": "منفّذ" if done else "شغّال",
+            "state": "منفّذ" if done else "قيد التنفيذ",
             "created_at": str(when),
         })
         b = buckets.setdefault(bucket_key(when, period),

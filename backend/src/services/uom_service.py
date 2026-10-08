@@ -27,7 +27,7 @@ def is_meter_unit(label: str | None) -> bool:
 def length_unit(base_unit: str, meters_per_piece: Decimal) -> tuple[str, Decimal]:
     n = Decimal(str(meters_per_piece))
     if n <= 0:
-        raise UomError("طول القطعة لازم يكون أكبر من صفر.")
+        raise UomError("يجب أن يكون طول القطعة أكبر من صفر.")
     if is_meter_unit(base_unit):
         return PIECE, to_factor(n)
     return METER, to_factor(ONE / n)
@@ -62,7 +62,7 @@ def apply_length(db: Session, item: Item, length: Decimal | None) -> None:
         return
     name, factor = length_unit(base, Decimal(str(length)))
     if name in kept:
-        raise UomError(f"الصنف عليه وحدة اسمها «{name}» بالفعل.")
+        raise UomError(f"للصنف وحدة باسم «{name}» بالفعل.")
     db.add(ItemUnit(item_id=item.id, name=name, factor=factor))
     db.flush()
 
@@ -78,5 +78,5 @@ def resolve_factor(db: Session, item: Item, unit: str | None) -> Decimal:
         select(ItemUnit).where(ItemUnit.item_id == item.id, ItemUnit.name == unit)
     )
     if row is None:
-        raise UomError(f"الوحدة «{unit}» مش معرّفة للصنف ده.")
+        raise UomError(f"الوحدة «{unit}» غير معرّفة لهذا الصنف.")
     return to_factor(row.factor)

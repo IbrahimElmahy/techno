@@ -83,7 +83,7 @@ def resolve(db: Session, entry_type: str) -> Journal:
     if journal is None:
         journal = get_by_code(db, FALLBACK_CODE)
     if journal is None:  # pragma: no cover
-        raise RuntimeError("مافيش دفاتر يومية في القاعدة.")
+        raise RuntimeError("لا توجد دفاتر يومية في قاعدة البيانات.")
     return journal
 
 

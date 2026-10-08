@@ -34,7 +34,7 @@ def _log(
 
 def _require_perishable(item: Item) -> None:
     if not item.is_perishable:
-        raise BatchError("الدفعات بتتعمل للأصناف اللي ليها صلاحية بس.")
+        raise BatchError("تُسجَّل الدفعات للأصناف ذات الصلاحية فقط.")
 
 
 def _find(db: Session, item_id: int, kind: LocationKind, loc_id: int,
@@ -66,13 +66,13 @@ def receive(db: Session, *, item_id: int, location_kind: LocationKind, location_
             expiry_date: date, quantity: Decimal, actor_user_id: int) -> StockBatch:
     item = db.get(Item, item_id)
     if item is None:
-        raise BatchError("الصنف مش موجود.")
+        raise BatchError("الصنف غير موجود.")
     _require_perishable(item)
     qty = to_qty(quantity)
     if qty <= ZERO_QTY:
-        raise BatchError("كمية الدفعة لازم تكون أكبر من صفر.")
+        raise BatchError("يجب أن تكون كمية الدفعة أكبر من صفر.")
     if expiry_date is None:
-        raise BatchError("الدفعة لازم يكون ليها تاريخ صلاحية.")
+        raise BatchError("يجب أن يكون للدفعة تاريخ صلاحية.")
 
     stock_service.post_movement(
         db, item_id=item_id, location_kind=location_kind, location_id=location_id,
@@ -93,13 +93,13 @@ def add_to_lot(db: Session, *, item_id: int, location_kind: LocationKind, locati
                actor_user_id: int | None = None) -> StockBatch:
     item = db.get(Item, item_id)
     if item is None:
-        raise BatchError("الصنف مش موجود.")
+        raise BatchError("الصنف غير موجود.")
     _require_perishable(item)
     qty = to_qty(quantity)
     if qty <= ZERO_QTY:
-        raise BatchError("كمية الدفعة لازم تكون أكبر من صفر.")
+        raise BatchError("يجب أن تكون كمية الدفعة أكبر من صفر.")
     if expiry_date is None:
-        raise BatchError("الدفعة لازم يكون ليها تاريخ صلاحية.")
+        raise BatchError("يجب أن يكون للدفعة تاريخ صلاحية.")
     batch = _upsert(db, item_id=item_id, kind=location_kind, loc_id=location_id,
                     expiry=expiry_date, quantity=qty)
     _log(db, item_id=item_id, expiry=expiry_date, location_kind=location_kind,
@@ -114,11 +114,11 @@ def consume_fefo(db: Session, *, item_id: int, location_kind: LocationKind, loca
                  actor_user_id: int | None = None) -> list[tuple[date, Decimal]]:
     item = db.get(Item, item_id)
     if item is None:
-        raise BatchError("الصنف مش موجود.")
+        raise BatchError("الصنف غير موجود.")
     _require_perishable(item)
     needed = to_qty(quantity)
     if needed <= ZERO_QTY:
-        raise BatchError("الكمية المستهلكة لازم تكون أكبر من صفر.")
+        raise BatchError("يجب أن تكون الكمية المستهلكة أكبر من صفر.")
 
     batches = db.scalars(
         select(StockBatch).where(
@@ -132,7 +132,7 @@ def consume_fefo(db: Session, *, item_id: int, location_kind: LocationKind, loca
     available = to_qty(sum((Decimal(str(b.quantity)) for b in batches), ZERO_QTY))
     if needed > available:
         raise BatchError(
-            f"الدفعات مش كفاية — محتاج {needed} والمتاح فيها {available}."
+            f"الدفعات غير كافية — المطلوب {needed} والمتاح {available}."
         )
 
     taken: list[tuple[date, Decimal]] = []
@@ -158,7 +158,7 @@ def relocate(db: Session, *, item_id: int, from_kind: LocationKind, from_id: int
              actor_user_id: int | None = None) -> list[tuple[date, Decimal]]:
     item = db.get(Item, item_id)
     if item is None:
-        raise BatchError("الصنف مش موجود.")
+        raise BatchError("الصنف غير موجود.")
     if not getattr(item, "is_perishable", False):
         return []
     taken = consume_fefo(db, item_id=item_id, location_kind=from_kind, location_id=from_id,
@@ -180,13 +180,13 @@ def restore_for_return(db: Session, *, item_id: int, location_kind: LocationKind
                        actor_user_id: int | None = None) -> StockBatch:
     item = db.get(Item, item_id)
     if item is None:
-        raise BatchError("الصنف مش موجود.")
+        raise BatchError("الصنف غير موجود.")
     _require_perishable(item)
     if expiry_date is None:
-        raise BatchError("المرتجع لصنف له صلاحية لازم تكتب تاريخ صلاحية البضاعة الراجعة.")
+        raise BatchError("يجب إدخال تاريخ صلاحية البضاعة المرتجعة للصنف ذي الصلاحية.")
     qty = to_qty(quantity)
     if qty <= ZERO_QTY:
-        raise BatchError("الكمية المرتجعة لازم تكون أكبر من صفر.")
+        raise BatchError("يجب أن تكون الكمية المرتجعة أكبر من صفر.")
     batch = _upsert(db, item_id=item_id, kind=location_kind, loc_id=location_id,
                     expiry=expiry_date, quantity=qty)
     _log(db, item_id=item_id, expiry=expiry_date, location_kind=location_kind,

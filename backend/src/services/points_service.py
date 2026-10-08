@@ -33,7 +33,7 @@ KIND_LABELS: dict[str, str] = {
 
 
 PURSE_LABELS: dict[str, str] = {
-    "both": "الجيبين",
+    "both": "الرصيدان",
     "inspection": "معاينات",
     "coupon": "كوبونات",
 }

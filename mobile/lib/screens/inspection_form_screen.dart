@@ -156,7 +156,7 @@ class _InspectionFormScreenState extends State<InspectionFormScreen> {
               if (_lines.isEmpty)
                 const Padding(
                   padding: EdgeInsets.symmetric(vertical: 24),
-                  child: Center(child: Text('لسه ما اتضافش أصناف')),
+                  child: Center(child: Text('لم تُضف أصناف بعد')),
                 )
               else
                 Flexible(
@@ -229,8 +229,8 @@ class _InspectionFormScreenState extends State<InspectionFormScreen> {
     setState(() => _saving = false);
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(
         content: Text(_isEdit
-            ? 'اتعدّلت المعاينة ✔ — هترفع مع أول مزامنة'
-            : 'تم حفظ المعاينة على الجهاز ✔ — هتترفع مع أول مزامنة')));
+            ? 'تم تعديل المعاينة ✔ — ستُرفع مع أول مزامنة'
+            : 'تم حفظ المعاينة على الجهاز ✔ — ستُرفع مع أول مزامنة')));
     Navigator.pop(context);
   }
 
@@ -276,7 +276,6 @@ class _InspectionFormScreenState extends State<InspectionFormScreen> {
                 label: 'اسم صاحب الشقة *',
                 controller: _ownerName,
                 customerTypes: const [kOwnerCustomerType],
-                helper: 'اكتب الاسم — لو مالك مسجّل هيظهر لتختاره وتتملأ بياناته',
                 onPick: (c) {
                   _selectedCustomerId = c.id;
                   if ((c.phone ?? '').isNotEmpty) _ownerPhone.text = c.phone!;
@@ -288,7 +287,7 @@ class _InspectionFormScreenState extends State<InspectionFormScreen> {
               TextFormField(
                 controller: _ownerPhone,
                 keyboardType: TextInputType.phone,
-                decoration: const InputDecoration(labelText: 'تليفون المالك'),
+                decoration: const InputDecoration(labelText: 'هاتف المالك'),
               ),
               TextFormField(
                 controller: _nationalId,
@@ -344,7 +343,6 @@ class _InspectionFormScreenState extends State<InspectionFormScreen> {
                 _nameSearch(
                   label: 'اسم الفني',
                   controller: _technicianName,
-                  helper: 'اكتب الاسم — لو اتسجّل قبل كده هيظهر ويجيب تليفونه',
                   leading: Icons.engineering,
                   customerTypes: kTechnicianCustomerTypes,
                   onPick: (c) {
@@ -355,14 +353,13 @@ class _InspectionFormScreenState extends State<InspectionFormScreen> {
                 TextFormField(
                   controller: _technicianPhone,
                   keyboardType: TextInputType.phone,
-                  decoration: const InputDecoration(labelText: 'تليفون الفني'),
+                  decoration: const InputDecoration(labelText: 'هاتف الفني'),
                 ),
               ]),
             _section('معلومات إضافية', Icons.notes, [
               _nameSearch(
                 label: 'محل الشراء',
                 controller: _purchaseShop,
-                helper: 'اكتب اسم التاجر — لو متسجّل هيظهر ويجيب تليفونه',
                 leading: Icons.store_outlined,
                 customerTypes: kShopCustomerTypes,
                 onPick: (c) {
@@ -374,7 +371,7 @@ class _InspectionFormScreenState extends State<InspectionFormScreen> {
               TextFormField(
                 controller: _purchaseShopPhone,
                 keyboardType: TextInputType.phone,
-                decoration: const InputDecoration(labelText: 'تليفون محل الشراء'),
+                decoration: const InputDecoration(labelText: 'هاتف محل الشراء'),
               ),
               TextFormField(
                 controller: _visitDetails,
@@ -498,7 +495,7 @@ class _InspectionFormScreenState extends State<InspectionFormScreen> {
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
       ..showSnackBar(SnackBar(
-        content: Text('اتشال «${removed.itemName}»'),
+        content: Text('حُذف «${removed.itemName}»'),
         action: SnackBarAction(
           label: 'تراجع',
           onPressed: () => setState(() => _lines.insert(index, removed)),

@@ -84,13 +84,13 @@ def create_asset(
     money_cost = to_money(cost)
     salvage = to_money(salvage_value or 0)
     if money_cost <= ZERO:
-        raise FixedAssetError("تكلفة الأصل لازم تكون أكبر من صفر.")
+        raise FixedAssetError("يجب أن تكون تكلفة الأصل أكبر من صفر.")
     if salvage < ZERO:
         raise FixedAssetError("القيمة التخريدية لا تكون بالسالب.")
     if salvage > money_cost:
         raise FixedAssetError("القيمة التخريدية لا تزيد عن التكلفة.")
     if useful_life_months <= 0:
-        raise FixedAssetError("العمر الإنتاجي لازم يكون شهر واحد على الأقل.")
+        raise FixedAssetError("يجب ألا يقل العمر الإنتاجي عن شهر واحد.")
     try:
         chosen = DepreciationMethod(method)
     except ValueError as exc:
@@ -138,7 +138,7 @@ def run_depreciation(
     db: Session, *, year: int, month: int, actor_user_id: int,
 ) -> dict:
     if not 1 <= month <= 12:
-        raise FixedAssetError("الشهر لازم يكون من 1 لـ 12.")
+        raise FixedAssetError("يجب أن يكون الشهر من 1 إلى 12.")
     period_end = _period_end(year, month)
 
     assets = db.scalars(
@@ -209,7 +209,7 @@ def reverse_depreciation(db: Session, *, year: int, month: int, actor_user_id: i
         )
     ).all()
     if not records:
-        raise FixedAssetError("مافيش إهلاك مرحّل للشهر ده.")
+        raise FixedAssetError("لا يوجد إهلاك مرحّل لهذا الشهر.")
 
     entry_ids = {r.ledger_entry_id for r in records if r.ledger_entry_id}
     reversals = []

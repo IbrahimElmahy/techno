@@ -42,9 +42,9 @@ class LineInput:
 
 def _validate_lines(lines: list[LineInput]) -> None:
     if not lines:
-        raise LedgerError("القيد لازم يكون فيه سطر واحد على الأقل.")
+        raise LedgerError("يجب أن يتضمن القيد سطراً واحداً على الأقل.")
     if any(to_money(l.amount) <= ZERO for l in lines):
-        raise LedgerError("كل سطر لازم يكون مبلغه أكبر من صفر.")
+        raise LedgerError("يجب أن يكون مبلغ كل سطر أكبر من صفر.")
 
 
 def posted_only(stmt):
@@ -82,8 +82,8 @@ def _assert_balanced(lines: list[LineInput]) -> None:
     if debit != credit:
         diff = to_money(abs(debit - credit))
         raise LedgerError(
-            f"القيد مش متوازن: المدين {debit} والدائن {credit} — الفرق {diff}. "
-            "صلّح السطور أو سيبه مسودة."
+            f"القيد غير متوازن: المدين {debit} والدائن {credit} — الفرق {diff}. "
+            "صحّح السطور أو احفظه مسودة."
         )
 
 
@@ -269,7 +269,7 @@ def create_draft(
 
 def replace_lines(db: Session, *, entry: LedgerEntry, lines: list[LineInput]) -> LedgerEntry:
     if entry.state != EntryState.draft.value:
-        raise LedgerError("القيد ده مش مسودة — رجّعه مسودة الأول عشان تعدّل سطوره.")
+        raise LedgerError("هذا القيد ليس مسودة — أعده إلى مسودة أولاً لتعديل سطوره.")
     _validate_lines(lines)
     for line in list(entry.lines):
         db.delete(line)
@@ -288,11 +288,11 @@ def replace_lines(db: Session, *, entry: LedgerEntry, lines: list[LineInput]) ->
 def post_draft(db: Session, *, entry_id: int, actor_user_id: int | None = None) -> LedgerEntry:
     entry = db.get(LedgerEntry, entry_id)
     if entry is None:
-        raise LedgerError("القيد مش موجود.")
+        raise LedgerError("القيد غير موجود.")
     if entry.state == EntryState.posted.value:
-        raise LedgerError("القيد مرحّل خلاص.")
+        raise LedgerError("القيد مرحّل بالفعل.")
     if entry.state == EntryState.cancelled.value:
-        raise LedgerError("القيد ملغي — مايتّرحّلش.")
+        raise LedgerError("القيد ملغي — لا يمكن ترحيله.")
     inputs = _entry_lines_as_input(entry)
     _validate_lines(inputs)
     _assert_balanced(inputs)
@@ -315,7 +315,7 @@ def _release_residuals(db: Session, entry: LedgerEntry) -> None:
         )
         if linked is not None:
             raise LedgerError(
-                "القيد ده متقفل على فواتير — فك المطابقة الأول من شاشة التسوية.")
+                "هذا القيد مُطابَق على فواتير — فك المطابقة أولاً من شاشة التسوية.")
     for line in entry.lines:
         line.amount_residual = None
     entry.payment_state = None
@@ -324,7 +324,7 @@ def _release_residuals(db: Session, entry: LedgerEntry) -> None:
 def reset_to_draft(db: Session, *, entry_id: int, actor_user_id: int | None = None) -> LedgerEntry:
     entry = db.get(LedgerEntry, entry_id)
     if entry is None:
-        raise LedgerError("القيد مش موجود.")
+        raise LedgerError("القيد غير موجود.")
     if entry.state == EntryState.draft.value:
         return entry
     _assert_not_hashed(entry)
@@ -339,7 +339,7 @@ def reset_to_draft(db: Session, *, entry_id: int, actor_user_id: int | None = No
 def cancel_entry(db: Session, *, entry_id: int, actor_user_id: int | None = None) -> LedgerEntry:
     entry = db.get(LedgerEntry, entry_id)
     if entry is None:
-        raise LedgerError("القيد مش موجود.")
+        raise LedgerError("القيد غير موجود.")
     if entry.state == EntryState.posted.value:
         _assert_not_hashed(entry)
         _assert_period_open(db, entry.entry_date, actor_user_id or entry.actor_user_id)
@@ -352,7 +352,7 @@ def cancel_entry(db: Session, *, entry_id: int, actor_user_id: int | None = None
 def reverse_entry(db: Session, *, original_id: int, actor_user_id: int) -> LedgerEntry:
     original = db.get(LedgerEntry, original_id)
     if original is None:
-        raise LedgerError("القيد الأصلي مش موجود.")
+        raise LedgerError("القيد الأصلي غير موجود.")
 
     swapped = [
         LineInput(
@@ -408,7 +408,7 @@ def total_balance_of(db: Session, account_ids) -> Decimal:
 def balance_of(db: Session, account_id: int) -> Decimal:
     account = db.get(Account, account_id)
     if account is None:
-        raise LedgerError("الحساب مش موجود.")
+        raise LedgerError("الحساب غير موجود.")
     signed = case(
         (LedgerLine.direction == account.normal_side, LedgerLine.amount),
         else_=-LedgerLine.amount,

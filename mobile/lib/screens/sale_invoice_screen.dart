@@ -232,12 +232,12 @@ class _SaleInvoiceScreenState extends State<SaleInvoiceScreen> {
   bool get _boxMissing => _family != null && _treasuriesKnown && _treasury == null;
 
   String get _treasuryLabel {
-    if (_family == null) return 'بيتحدّد بنوع الفاتورة';
+    if (_family == null) return 'يُحدَّد بنوع الفاتورة';
     final t = _treasury;
     if (t != null) return t.code.isEmpty ? t.label : '${t.label} · ${t.code}';
     return _treasuriesKnown
-        ? 'مافيش صندوق لخط «$_family» — كلّم المكتب'
-        : 'اسحب البيانات عشان الصندوق يبان';
+        ? 'لا يوجد صندوق لخط «$_family» — تواصل مع المكتب'
+        : 'نفّذ المزامنة لعرض الصندوق';
   }
 
   @override
@@ -363,7 +363,7 @@ class _SaleInvoiceScreenState extends State<SaleInvoiceScreen> {
                 ],
               ),
               const Divider(height: 20),
-              const Text('بينزل في الخزنة',
+              const Text('يُضاف إلى الخزنة',
                   style: TextStyle(color: Colors.black54)),
               const SizedBox(height: 4),
               Row(
@@ -379,7 +379,7 @@ class _SaleInvoiceScreenState extends State<SaleInvoiceScreen> {
                 ],
               ),
               const SizedBox(height: 6),
-              Text('اتحدّد من نوع الفاتورة «${_family ?? ''}»',
+              Text('محدَّد من نوع الفاتورة «${_family ?? ''}»',
                   style: const TextStyle(fontSize: 11, color: Colors.black45)),
             ],
           ),
@@ -426,13 +426,13 @@ class _SaleInvoiceScreenState extends State<SaleInvoiceScreen> {
           title: const Row(children: [
             Icon(Icons.warning_amber_rounded, color: AppColors.danger),
             SizedBox(width: 8),
-            Expanded(child: Text('الكمية أكتر من اللي في عربيتك')),
+            Expanded(child: Text('الكمية أكبر من المتاح في سيارتك')),
           ]),
           content: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text('الفاتورة مش هتتعمل كده — قلّل الكميات دي للمتاح:',
+              const Text('لا يمكن حفظ الفاتورة هكذا — خفّض هذه الكميات إلى المتاح:',
                   style: TextStyle(fontSize: 13)),
               const SizedBox(height: 10),
               ...[
@@ -444,13 +444,13 @@ class _SaleInvoiceScreenState extends State<SaleInvoiceScreen> {
                       children: [
                         Text(
                           '• ${o.line.itemName}\n'
-                          '   طالب ${_qty(o.line.quantity)} — المتاح ${_qty(o.free)}'
-                          '${o.free <= 0 && o.holds.isEmpty ? ' (خلص من العربية)' : ''}',
+                          '   المطلوب ${_qty(o.line.quantity)} — المتاح ${_qty(o.free)}'
+                          '${o.free <= 0 && o.holds.isEmpty ? ' (نفد من السيارة)' : ''}',
                           style: const TextStyle(fontSize: 13),
                         ),
                         for (final h in o.holds)
                           Text(
-                            '   ${_qty(h.quantity)} محجوزين على ${_holdLabel(h)}',
+                            '   ${_qty(h.quantity)} محجوزة على ${_holdLabel(h)}',
                             style: const TextStyle(
                                 fontSize: 12,
                                 color: AppColors.danger,
@@ -465,24 +465,24 @@ class _SaleInvoiceScreenState extends State<SaleInvoiceScreen> {
                 const Padding(
                   padding: EdgeInsets.only(bottom: 4),
                   child: Text(
-                      'البضاعة دي متكتبة على فاتورة تانية لسه على الجهاز — مش خلصانة. '
-                      'لو اتكتبت مرتين بالغلط، قلّلها من الفاتورة التانية الأول '
-                      '(من «فواتيري») وارجع هنا.',
+                      'هذه البضاعة مسجّلة على فاتورة أخرى ما زالت على الجهاز ولم تُرفع. '
+                      'إن سُجّلت مرتين خطأً فخفّضها من الفاتورة الأخرى أولاً '
+                      '(من «فواتيري») ثم عُد إلى هنا.',
                       style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
                 ),
               const Text(
-                  'لو شايف إن البضاعة معاك فعلاً، اعمل «مزامنة البيانات» الأول — '
-                  'أرصدة العربية بتتحدّث منها.',
+                  'إن كانت البضاعة معك فعلاً فنفّذ «مزامنة البيانات» أولاً — '
+                  'فمنها تُحدَّث أرصدة السيارة.',
                   style: TextStyle(fontSize: 11, color: Colors.black54)),
             ],
           ),
           actions: [
             TextButton(
                 onPressed: () => Navigator.pop(dctx, false),
-                child: const Text('هعدّل بنفسي')),
+                child: const Text('سأعدّل بنفسي')),
             FilledButton(
                 onPressed: () => Navigator.pop(dctx, true),
-                child: const Text('قلّل للمتاح')),
+                child: const Text('خفّض إلى المتاح')),
           ],
         ),
       ),
@@ -519,15 +519,15 @@ class _SaleInvoiceScreenState extends State<SaleInvoiceScreen> {
     }
     if (_boxMissing) {
       return _say(_me.isEmpty
-          ? 'مافيش صندوق لخط «$_family» على حسابك — كلّم المكتب.'
-          : 'مافيش صندوق لخط «$_family» على «$_me» — كلّم المكتب.');
+          ? 'لا يوجد صندوق لخط «$_family» على حسابك — تواصل مع المكتب.'
+          : 'لا يوجد صندوق لخط «$_family» على «$_me» — تواصل مع المكتب.');
     }
     final hasCoupons = _coupons.any((c) => !c.isEmpty);
     if (_isBonus && _lines.isEmpty) {
-      return _say('البونص لازم يبقى فيه صنف على الأقل');
+      return _say('يجب أن يتضمن البونص صنفاً واحداً على الأقل');
     }
     if (_lines.isEmpty && !hasCoupons) {
-      return _say('ضيف صنف أو دفتر كوبونات على الأقل');
+      return _say('أضف صنفاً أو دفتر كوبونات على الأقل');
     }
     if (hasCoupons) {
       final custody =
@@ -546,24 +546,24 @@ class _SaleInvoiceScreenState extends State<SaleInvoiceScreen> {
       final from = c.serialFrom.trim();
       final to = c.serialTo.trim();
       if (from.isEmpty || to.isEmpty) {
-        return _say('في صف كوبونات ناقصه رقم — اكتب «من» و«إلى» أو امسح الصف');
+        return _say('يوجد صف كوبونات ينقصه رقم — اكتب «من» و«إلى» أو احذف الصف');
       }
       if (couponCount(from, to) == null) {
-        return _say('مدى الكوبونات «$from — $to» مش مفهوم — راجع الرقمين');
+        return _say('مدى الكوبونات «$from — $to» غير مفهوم — راجع الرقمين');
       }
     }
-    if (_lines.any((l) => l.quantity <= 0)) return _say('في سطر كميته صفر');
+    if (_lines.any((l) => l.quantity <= 0)) return _say('يوجد سطر كميته صفر');
     for (final l in _lines) {
       if (l.variableDiscountPct > 100) {
         return _say('خصم «${l.itemName}» ${_qty(l.variableDiscountPct)}٪ — '
-            'الخانة دي نسبة مش مبلغ. أعلى خصم ١٠٠٪ (بونص).');
+            'هذه الخانة نسبة لا مبلغ. أعلى خصم ١٠٠٪ (بونص).');
       }
     }
     if (!_isBonus) {
       for (final l in _lines) {
         if (l.isFull) {
-          return _say('«${l.itemName}» بخصم ١٠٠٪ — ده بونص، والبونص صفحة لوحدها. '
-              'احفظ البيع بخصم أقل من ١٠٠، واعمل الهدية من «فاتورة بونص» في الرئيسية.');
+          return _say('«${l.itemName}» بخصم ١٠٠٪ — هذا بونص، وللبونص شاشة مستقلة. '
+              'احفظ البيع بخصم أقل من ١٠٠، وسجّل الهدية من «فاتورة بونص» في الرئيسية.');
         }
       }
     }
@@ -573,8 +573,8 @@ class _SaleInvoiceScreenState extends State<SaleInvoiceScreen> {
       if (uuid != null &&
           movedCustomer &&
           await LocalDb.instance.queuedBonusesOn(uuid) > 0) {
-        return _say('الفاتورة دي عليها بونص لسه ما اترفعش — '
-            'ماينفعش تتنقل لعميل تاني. ارفعهم الأول أو عدّل البونص.');
+        return _say('على هذه الفاتورة بونص لم يُرفع بعد — '
+            'فلا يمكن نقلها إلى عميل آخر. ارفعهما أولاً أو عدّل البونص.');
       }
     }
     if (_isBonus) {
@@ -594,8 +594,8 @@ class _SaleInvoiceScreenState extends State<SaleInvoiceScreen> {
         if (listed == null || listed <= 0) continue;
         if (l.unitPrice < listed - 0.0001) {
           return _say('«${l.itemName}» بسعر ${_money(l.unitPrice)} وسعر الشريحة '
-              '${_money(listed)} — البيع تحت السعر محتاج صلاحية مالكش إياها. '
-              'ظبّط السعر أو كلّم المكتب.');
+              '${_money(listed)} — البيع تحت السعر يتطلب صلاحية ليست لديك. '
+              'عدّل السعر أو تواصل مع المكتب.');
         }
       }
     }
@@ -613,19 +613,19 @@ class _SaleInvoiceScreenState extends State<SaleInvoiceScreen> {
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text('الأصناف دي صافي سعرها أقل من سعر الشراء:'),
+                  const Text('صافي سعر هذه الأصناف أقل من سعر الشراء:'),
                   const SizedBox(height: 6),
                   for (final n in under)
                     Text('• $n',
                         style: const TextStyle(fontWeight: FontWeight.w700)),
                   const SizedBox(height: 8),
-                  const Text('ارفع السعر أو قلّل الخصم — البيع تحت سعر الشراء '
-                      'محتاج صلاحية «البيع تحت سعر التكلفة».'),
+                  const Text('ارفع السعر أو خفّض الخصم — البيع تحت سعر الشراء '
+                      'يتطلب صلاحية «البيع تحت سعر التكلفة».'),
                 ],
               ),
               actions: [
                 TextButton(
-                    onPressed: () => Navigator.pop(d), child: const Text('تمام')),
+                    onPressed: () => Navigator.pop(d), child: const Text('حسناً')),
               ],
             ),
           ),
@@ -644,19 +644,19 @@ class _SaleInvoiceScreenState extends State<SaleInvoiceScreen> {
         builder: (d) => Directionality(
           textDirection: TextDirection.rtl,
           child: AlertDialog(
-            title: const Text('المدفوع أكتر من المستحق'),
+            title: const Text('المدفوع أكبر من المستحق'),
             content: Text(
                 'الفاتورة ${_money(_total)}'
-                '${_prevBalance > 0.001 ? ' واللي عليه ${_money(_prevBalance)}' : ''}'
-                '، وإنت بتقبض ${_money(_cashAmount)}.'
-                '\n\nالزيادة ${_money(surplus)} هتتقيّد لصالح العميل.'),
+                '${_prevBalance > 0.001 ? ' وما عليه ${_money(_prevBalance)}' : ''}'
+                '، والمقبوض ${_money(_cashAmount)}.'
+                '\n\nالزيادة ${_money(surplus)} ستُقيَّد لصالح العميل.'),
             actions: [
               TextButton(
                   onPressed: () => Navigator.pop(d, false),
-                  child: const Text('أعدّل الرقم')),
+                  child: const Text('تعديل الرقم')),
               FilledButton(
                   onPressed: () => Navigator.pop(d, true),
-                  child: const Text('أيوه اقبض')),
+                  child: const Text('نعم، اقبض')),
             ],
           ),
         ),
@@ -693,7 +693,7 @@ class _SaleInvoiceScreenState extends State<SaleInvoiceScreen> {
         );
         if (!mounted) return;
         if (!ok) {
-          _say('الفاتورة اترفعت للنظام وهي بتتعدّل — التعديل اتلغى. كلّم المكتب لو فيها غلط.');
+          _say('رُفعت الفاتورة إلى النظام أثناء التعديل — أُلغي التعديل. تواصل مع المكتب إن كان فيها خطأ.');
           Navigator.pop(context, true);
           return;
         }
@@ -727,8 +727,8 @@ class _SaleInvoiceScreenState extends State<SaleInvoiceScreen> {
       final landed = (saved['synced'] as int?) == 1;
       if (!mounted) return;
       if (!landed) {
-        _say('اتحفظت على الجهاز. اعمل «مزامنة الآن» عشان ترفعها وتطبعها — '
-            'وتقدر تعدّلها لحد ساعتها.');
+        _say('حُفظت على الجهاز. نفّذ «مزامنة الآن» لرفعها وطباعتها — '
+            'ويمكنك تعديلها حتى ذلك الحين.');
         Navigator.pop(context, true);
         return;
       }
@@ -761,7 +761,7 @@ class _SaleInvoiceScreenState extends State<SaleInvoiceScreen> {
   }
 
   Future<void> _pickBonusTarget() async {
-    if (_customer == null) return _say('اختار العميل الأول');
+    if (_customer == null) return _say('اختر العميل أولاً');
     final picked = await showModalBottomSheet<_BonusTarget>(
       context: context,
       isScrollControlled: true,
@@ -795,7 +795,7 @@ class _SaleInvoiceScreenState extends State<SaleInvoiceScreen> {
                         style: TextStyle(fontWeight: FontWeight.w800, fontSize: 14)),
                     Text(
                         t == null
-                            ? 'على فاتورة بيع (اختياري) — اضغط لو عايز تربطه بفاتورة'
+                            ? 'على فاتورة بيع (اختياري)'
                             : 'على فاتورة بيع: ${t.label}',
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
@@ -807,7 +807,7 @@ class _SaleInvoiceScreenState extends State<SaleInvoiceScreen> {
               ),
               if (t != null)
                 IconButton(
-                  tooltip: 'من غير ربط',
+                  tooltip: 'بدون ربط',
                   icon: const Icon(Icons.close, size: 18, color: Colors.black45),
                   onPressed: () => setState(() => _bonusFor = null),
                 )
@@ -825,7 +825,7 @@ class _SaleInvoiceScreenState extends State<SaleInvoiceScreen> {
       context: context,
       builder: (c) => AlertDialog(
         title: const Text('حذف السطر'),
-        content: Text('تشيل «${l.itemName}» من الفاتورة؟'),
+        content: Text('حذف «${l.itemName}» من الفاتورة؟'),
         actions: [
           TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('رجوع')),
           FilledButton(
@@ -895,23 +895,23 @@ class _SaleInvoiceScreenState extends State<SaleInvoiceScreen> {
           title: Row(children: [
             const Icon(Icons.warning_amber_rounded, color: AppColors.danger),
             const SizedBox(width: 8),
-            Expanded(child: Text(_isEditing ? 'تسيب التعديل؟' : 'تسيب الفاتورة؟')),
+            Expanded(child: Text(_isEditing ? 'ترك التعديل؟' : 'ترك الفاتورة؟')),
           ]),
           content: Text(_isEditing
-              ? 'التعديلات اللي عملتها هتروح، والفاتورة هتفضل زي ما كانت.'
+              ? 'ستُفقد التعديلات التي أجريتها، وتبقى الفاتورة كما كانت.'
               : _lines.isEmpty
-                  ? 'اللي كتبته هيروح ومش هيترجع.'
-                  : 'فيها ${_lines.length} صنف '
+                  ? 'سيُفقد ما أدخلته ولا يمكن استرجاعه.'
+                  : 'بها ${_lines.length} صنف '
                       '${_isBonus ? 'بقيمة ${_money(_bonusValue)}' : 'بإجمالي ${_money(_total)}'}'
-                      ' — هتروح كلها ومش هترجع.'),
+                      ' — ستُفقد كلها ولا يمكن استرجاعها.'),
           actions: [
             TextButton(
                 onPressed: () => Navigator.pop(dctx, false),
-                child: Text(_isEditing ? 'أكمّل التعديل' : 'أكمّل الفاتورة')),
+                child: Text(_isEditing ? 'إكمال التعديل' : 'إكمال الفاتورة')),
             FilledButton(
               style: FilledButton.styleFrom(backgroundColor: AppColors.danger),
               onPressed: () => Navigator.pop(dctx, true),
-              child: const Text('اخرج واسيبها'),
+              child: const Text('الخروج وتركها'),
             ),
           ],
         ),
@@ -960,7 +960,7 @@ class _SaleInvoiceScreenState extends State<SaleInvoiceScreen> {
     ];
     final sub = _customer == null
         ? 'اضغط للاختيار'
-        : (_family == null ? 'اختار نوع الفاتورة' : bits.join(' · '));
+        : (_family == null ? 'اختر نوع الفاتورة' : bits.join(' · '));
     return Material(
       color: Colors.white,
       child: Row(
@@ -995,7 +995,7 @@ class _SaleInvoiceScreenState extends State<SaleInvoiceScreen> {
                               mainAxisSize: MainAxisSize.min,
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Text(_customer?.name ?? 'اختار العميل',
+                                Text(_customer?.name ?? 'اختر العميل',
                                     maxLines: 1,
                                     overflow: TextOverflow.ellipsis,
                                     style: const TextStyle(
@@ -1043,9 +1043,9 @@ class _SaleInvoiceScreenState extends State<SaleInvoiceScreen> {
         children: [
           ListTile(
             leading: const Icon(Icons.person_outline, color: AppColors.primary),
-            title: Text(_customer?.name ?? 'اختار العميل'),
+            title: Text(_customer?.name ?? 'اختر العميل'),
             subtitle: Text(_customer == null
-                ? 'عملاءك انت بس'
+                ? 'عملاؤك فقط'
                 : [
                     if (_customer!.phone != null) _customer!.phone!,
                     if (_customer!.priceTier != null) 'فئة ${_customer!.priceTier}',
@@ -1116,12 +1116,8 @@ class _SaleInvoiceScreenState extends State<SaleInvoiceScreen> {
             padding: const EdgeInsets.all(28),
             child: Text(
                 _isBonus
-                    ? 'مافيش أصناف على البونص لسه.\n'
-                        'اضغط «صنف» فوق وضيف البضاعة الهدية — '
-                        'السعر من الشريحة والخصم ١٠٠٪ لوحدهم.'
-                    : 'مافيش أصناف على الفاتورة لسه.\n'
-                        'اضغط «صنف» فوق عشان تضيف — أو سيبها من غير أصناف\n'
-                        'وسجّل دفتر كوبونات بس تحت.',
+                    ? 'لا توجد أصناف على البونص بعد.'
+                    : 'لا توجد أصناف على الفاتورة بعد.',
                 textAlign: TextAlign.center,
                 style: const TextStyle(color: Colors.black54)),
           )
@@ -1201,8 +1197,8 @@ class _SaleInvoiceScreenState extends State<SaleInvoiceScreen> {
                             ? 'المتاح ${_qty(_freeOf(l.itemId))} — والباقي محجوز على '
                                 '${_holds[l.itemId]!.map(_holdLabel).join('، ')}'
                             : _freeOf(l.itemId) <= 0
-                                ? 'الصنف ده خلص من عربيتك — الفاتورة مش هتتحفظ بيه'
-                                : 'المتاح في عربيتك ${_qty(_freeOf(l.itemId))} بس',
+                                ? 'نفد هذا الصنف من سيارتك — لا يمكن حفظ الفاتورة به'
+                                : 'المتاح في سيارتك ${_qty(_freeOf(l.itemId))} فقط',
                         style: const TextStyle(
                             fontSize: 11,
                             color: AppColors.danger,
@@ -1222,7 +1218,7 @@ class _SaleInvoiceScreenState extends State<SaleInvoiceScreen> {
                     SizedBox(width: 4),
                     Expanded(
                       child: Text(
-                        'خصم ١٠٠٪ = بونص — الهدية بتتعمل من «فاتورة بونص» مش هنا',
+                        'خصم ١٠٠٪ = بونص — تُسجَّل الهدية من «فاتورة بونص» لا من هنا',
                         style: TextStyle(
                             fontSize: 11,
                             color: AppColors.danger,
@@ -1245,7 +1241,7 @@ class _SaleInvoiceScreenState extends State<SaleInvoiceScreen> {
                       child: Text(
                         _canSellBelowCost
                             ? 'سعر البيع أقل من سعر الشراء'
-                            : 'سعر البيع أقل من سعر الشراء — الفاتورة مش هتتحفظ كده',
+                            : 'سعر البيع أقل من سعر الشراء — لا يمكن حفظ الفاتورة هكذا',
                         style: TextStyle(
                             fontSize: 11,
                             color: _canSellBelowCost
@@ -1400,7 +1396,7 @@ class _SaleInvoiceScreenState extends State<SaleInvoiceScreen> {
                       size: 18, color: AppColors.accent),
                   SizedBox(width: 6),
                   Expanded(
-                    child: Text('بضاعة هدية — خصم ١٠٠٪ على إجمالي الفاتورة، ومن غير فلوس',
+                    child: Text('بضاعة هدية — خصم ١٠٠٪ على إجمالي الفاتورة',
                         style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13)),
                   ),
                 ],
@@ -1413,7 +1409,7 @@ class _SaleInvoiceScreenState extends State<SaleInvoiceScreen> {
               const Divider(height: 18),
               _totalRow('صافي الفاتورة', _money(0), big: true),
               const SizedBox(height: 4),
-              const Text('البونص مابيلمسش حساب العميل — مافيش دفع ولا تحصيل عليه.',
+              const Text('لا يؤثر البونص في حساب العميل — لا دفع ولا تحصيل عليه.',
                   style: TextStyle(fontSize: 11, color: Colors.black54)),
             ] else ...[
             const Text('الدفع',
@@ -1435,7 +1431,7 @@ class _SaleInvoiceScreenState extends State<SaleInvoiceScreen> {
                       size: 14, color: _boxMissing ? AppColors.danger : Colors.black45),
                   const SizedBox(width: 6),
                   Expanded(
-                    child: Text('النقدي بينزل في: $_treasuryLabel',
+                    child: Text('يُضاف النقدي إلى: $_treasuryLabel',
                         maxLines: 2,
                         style: TextStyle(
                             fontSize: 11,
@@ -1462,7 +1458,7 @@ class _SaleInvoiceScreenState extends State<SaleInvoiceScreen> {
                   ),
               _totalRow(
                   _customer!.familyBalances.isEmpty
-                      ? 'مديونية العميل (حساب واحد مش مقسوم)'
+                      ? 'مديونية العميل (حساب واحد غير مقسّم)'
                       : 'حساب سابق على العميل',
                   _money(_prevBalance),
                   color: _prevBalance > 0.001 ? AppColors.danger : AppColors.primary),
@@ -1571,7 +1567,7 @@ class _SaleInvoiceScreenState extends State<SaleInvoiceScreen> {
                       width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
                   : const Icon(Icons.save_outlined),
               label: Text(_saving
-                  ? 'بيحفظ…'
+                  ? 'جارٍ الحفظ…'
                   : (_isBonus ? 'حفظ البونص' : 'حفظ الفاتورة')),
               style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(50)),
             ),
@@ -1618,10 +1614,10 @@ class _BonusTarget {
   String get key => '${serverId ?? ''}|${clientUuid ?? ''}';
 
   String get label => [
-        number ?? 'فاتورة لسه على الجهاز',
+        number ?? 'فاتورة ما زالت على الجهاز',
         if (date != null && date!.isNotEmpty) date!,
         if (net != null) '${_money(net!)}',
-        if (onDevice && number == null) 'بتترفع قبل البونص',
+        if (onDevice && number == null) 'تُرفع قبل البونص',
       ].join(' · ');
 }
 
@@ -1661,7 +1657,7 @@ class _BonusTargetSheetState extends State<_BonusTargetSheet> {
     try {
       server = await ApiClient.instance.customerSaleInvoices(widget.customerId);
     } catch (_) {
-      note = 'مافيش شبكة — ظاهر اللي على الجهاز بس';
+      note = 'لا يوجد اتصال — المعروض ما على الجهاز فقط';
     }
     if (!mounted) return;
     final byNumber = {
@@ -1709,7 +1705,7 @@ class _BonusTargetSheetState extends State<_BonusTargetSheet> {
       child: Column(
         children: [
           const SizedBox(height: 10),
-          const Text('البونص على أنهي فاتورة بيع؟ (اختياري)',
+          const Text('على أي فاتورة بيع هذا البونص؟ (اختياري)',
               style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
@@ -1717,7 +1713,7 @@ class _BonusTargetSheetState extends State<_BonusTargetSheet> {
               width: double.infinity,
               child: OutlinedButton.icon(
                 icon: const Icon(Icons.link_off, size: 18),
-                label: const Text('من غير ربط — كمّل البونص'),
+                label: const Text('بدون ربط — إكمال البونص'),
                 onPressed: () => Navigator.pop(context, const _BonusTarget.none()),
               ),
             ),
@@ -1742,9 +1738,8 @@ class _BonusTargetSheetState extends State<_BonusTargetSheet> {
                       padding: const EdgeInsets.all(24),
                       child: Text(
                           _loading
-                              ? 'بيدوّر…'
-                              : 'مافيش فواتير بيع للعميل ده.\n'
-                                  'البونص يتحفظ عادي من غير ربط.',
+                              ? 'جارٍ البحث…'
+                              : 'لا توجد فواتير بيع لهذا العميل.',
                           textAlign: TextAlign.center),
                     ),
                   )
@@ -1757,12 +1752,12 @@ class _BonusTargetSheetState extends State<_BonusTargetSheet> {
                         leading: Icon(
                             t.onDevice ? Icons.schedule : Icons.receipt_long_outlined,
                             color: t.onDevice ? AppColors.accent : AppColors.primary),
-                        title: Text(t.number ?? 'لسه على الجهاز — ما اترفعتش',
+                        title: Text(t.number ?? 'ما زالت على الجهاز — لم تُرفع',
                             style: const TextStyle(fontWeight: FontWeight.w700)),
                         subtitle: Text([
                           if (t.date != null && t.date!.isNotEmpty) t.date!,
                           if (t.net != null) '${_money(t.net!)}',
-                          if (t.onDevice) 'في الطابور',
+                          if (t.onDevice) 'في قائمة الانتظار',
                           if (t.repName != null && t.repName!.isNotEmpty)
                             'مندوب: ${t.repName}',
                         ].join(' · ')),
@@ -1814,7 +1809,7 @@ class _CustomerSheetState extends State<_CustomerSheet> {
         child: Column(
           children: [
             const SizedBox(height: 10),
-            const Text('اختار العميل',
+            const Text('اختر العميل',
                 style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
             Padding(
               padding: const EdgeInsets.all(12),
@@ -1822,7 +1817,7 @@ class _CustomerSheetState extends State<_CustomerSheet> {
                 controller: _search,
                 onChanged: (_) => _load(),
                 decoration: const InputDecoration(
-                  hintText: 'دوّر بالاسم',
+                  hintText: 'ابحث بالاسم',
                   prefixIcon: Icon(Icons.search),
                 ),
               ),
@@ -1832,7 +1827,7 @@ class _CustomerSheetState extends State<_CustomerSheet> {
                 child: Center(
                   child: Padding(
                     padding: EdgeInsets.all(24),
-                    child: Text('مافيش عملاء على الجهاز.\nاسحب البيانات الأول.',
+                    child: Text('لا يوجد عملاء على الجهاز.\nنفّذ المزامنة أولاً.',
                         textAlign: TextAlign.center),
                   ),
                 ),
@@ -1873,6 +1868,6 @@ class _OverLine {
 }
 
 String _holdLabel(PendingHold h) =>
-    '${h.isBonus ? 'فاتورة بونص' : 'فاتورة'} ${h.customerName} اللي لسه ما اترفعتش';
+    '${h.isBonus ? 'فاتورة بونص' : 'فاتورة'} ${h.customerName} التي لم تُرفع بعد';
 
 String _qty(double v) => _trim(v);

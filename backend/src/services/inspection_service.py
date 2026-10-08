@@ -115,7 +115,7 @@ def create_item_type(db: Session, *, name: str, points, actor_user_id: int,
     if not clean:
         raise InspectionError("اسم الصنف مطلوب.")
     if Decimal(str(points)) < 0:
-        raise InspectionError("النقاط لازم تكون صفر أو أكثر.")
+        raise InspectionError("يجب أن تكون النقاط صفراً أو أكثر.")
     if db.scalar(select(InspectionItemType).where(InspectionItemType.name == clean)):
         raise InspectionError("يوجد صنف بنفس الاسم.")
     if sort_order is None:
@@ -149,7 +149,7 @@ def update_item_type(db: Session, *, item_type_id: int, actor_user_id: int,
         t.name = clean
     if points is not None:
         if Decimal(str(points)) < 0:
-            raise InspectionError("النقاط لازم تكون صفر أو أكثر.")
+            raise InspectionError("يجب أن تكون النقاط صفراً أو أكثر.")
         t.points = Decimal(str(points))
     if active is not None:
         t.active = active
@@ -230,7 +230,7 @@ def create_inspection(
     for ln in lines:
         qty = to_qty(ln.quantity)
         if qty <= 0:
-            raise InspectionError("كمية السطر لازم تكون أكبر من صفر.")
+            raise InspectionError("يجب أن تكون كمية السطر أكبر من صفر.")
         name = ln.item_name
         if ln.item_id is not None:
             item = db.get(Item, ln.item_id)
@@ -415,7 +415,7 @@ def sync_inspection_points(db: Session, inspection: Inspection, *, actor_user_id
         return None
     if inspection.merchant_customer_id is None:
         _log.warning(
-            "inspection %s (%s) بـ%s نقطة من غير تاجر مربوط — مافيش خصم نقاط.",
+            "inspection %s (%s) بـ%s نقطة بلا تاجر مرتبط — لا خصم للنقاط.",
             inspection.id, inspection.document_number, total)
         return None
     if _has_live_deduction(db, inspection.id):
@@ -493,8 +493,8 @@ def _deduct_stock_again(db: Session, inspection: Inspection, *, actor_user_id: i
             )
         except stock_service.StockError as exc:
             raise InspectionError(
-                f"الرصيد غير كافٍ في العهدة للصنف «{line.item_name}» — القبول محتاج "
-                f"يخصم {to_qty(line.quantity)} تاني."
+                f"الرصيد غير كافٍ في العهدة للصنف «{line.item_name}» — يتطلب القبول "
+                f"خصم {to_qty(line.quantity)} مرة أخرى."
             ) from exc
         line.stock_movement_id = mv.id
 

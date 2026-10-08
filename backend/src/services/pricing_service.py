@@ -31,5 +31,5 @@ def tier_price(db: Session, item: Item, tier: PriceTier) -> Decimal:
     if item.sale_price is not None:
         return to_money(item.sale_price)
     raise PricingError(
-        "الصنف ده مالوش سعر للشريحة دي ولا سعر بيع أساسي."
+        "ليس لهذا الصنف سعر لهذه الشريحة ولا سعر بيع أساسي."
     )

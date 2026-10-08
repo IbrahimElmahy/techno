@@ -140,13 +140,13 @@ class AppUpdater with WidgetsBindingObserver {
   Future<void> check({bool manual = false, bool atStart = false, bool resume = false}) async {
     final tr = TaskTracker.instance;
     if (!supported) {
-      if (manual) tr.finish(BgTask.update, 'التحديث من السيرفر على أندرويد بس', error: true);
+      if (manual) tr.finish(BgTask.update, 'التحديث من الخادم متاح على أندرويد فقط', error: true);
       return;
     }
     if (_busy) {
       if (manual && _phase == _Phase.fetching) {
         _manual = true;
-        tr.update(BgTask.update, 'بيدوّر على تحديث…');
+        tr.update(BgTask.update, 'جارٍ البحث عن تحديث…');
       }
       return;
     }
@@ -157,14 +157,14 @@ class AppUpdater with WidgetsBindingObserver {
     _setPhase(_Phase.fetching);
     _manual = manual;
     try {
-      if (manual) tr.start(BgTask.update, 'بيدوّر على تحديث…');
+      if (manual) tr.start(BgTask.update, 'جارٍ البحث عن تحديث…');
       final AppRelease latest;
       try {
         latest = await _fetch();
       } on _FetchError catch (e) {
         if (_manual) {
           tr.finish(BgTask.update, e.message,
-              error: true, action: TaskAction('جرّب تاني', () => check(manual: true)));
+              error: true, action: TaskAction('إعادة المحاولة', () => check(manual: true)));
         }
         return;
       }
@@ -173,7 +173,7 @@ class AppUpdater with WidgetsBindingObserver {
 
       if (latest.code <= me.code) {
         available.value = null;
-        if (_manual) tr.finish(BgTask.update, 'عندك آخر نسخة (${me.label}) ✔');
+        if (_manual) tr.finish(BgTask.update, 'لديك أحدث نسخة (${me.label}) ✔');
         return;
       }
       available.value = latest;
@@ -186,7 +186,7 @@ class AppUpdater with WidgetsBindingObserver {
       if (snoozed) return;
 
       if (_manual) {
-        tr.update(BgTask.update, 'فيه نسخة جديدة (${latest.name})');
+        tr.update(BgTask.update, 'توجد نسخة جديدة (${latest.name})');
       }
       final later = await _offer(latest, me, manual: _manual);
       if (later) {
@@ -194,13 +194,13 @@ class AppUpdater with WidgetsBindingObserver {
         await prefs.setInt(_snoozeAtKey, now);
         if (_manual) {
           tr.finish(BgTask.update,
-              'النسخة ${latest.name} مستنياك — دوس «تحديث التطبيق» من القايمة وقت ما تحب');
+              'النسخة ${latest.name} متاحة — اضغط «تحديث التطبيق» من القائمة');
         }
       }
     } catch (e) {
       if (_manual || tr.isRunning(BgTask.update)) {
-        tr.finish(BgTask.update, 'التحديث مانفعش — جرّب تاني',
-            error: true, action: TaskAction('جرّب تاني', () => check(manual: true)));
+        tr.finish(BgTask.update, 'تعذر التحديث — أعد المحاولة',
+            error: true, action: TaskAction('إعادة المحاولة', () => check(manual: true)));
       }
     } finally {
       _setPhase(_Phase.idle);
@@ -217,19 +217,19 @@ class AppUpdater with WidgetsBindingObserver {
         headers: const {'Cache-Control': 'no-cache'},
       ).timeout(const Duration(seconds: 15));
     } on TimeoutException {
-      throw _FetchError('السيرفر مارضيش يرد — جرّب تاني كمان شوية');
+      throw _FetchError('لم يستجب الخادم — أعد المحاولة بعد قليل');
     } catch (_) {
-      throw _FetchError('مافيش نت — جرّب تاني لما يبقى فيه نت');
+      throw _FetchError('لا يوجد اتصال بالإنترنت — أعد المحاولة عند توفره');
     }
-    if (r.statusCode == 404) throw _FetchError('مافيش نسخة منشورة على السيرفر لسه');
+    if (r.statusCode == 404) throw _FetchError('لا توجد نسخة منشورة على الخادم بعد');
     if (r.statusCode != 200) {
-      throw _FetchError('السيرفر رد بخطأ (${r.statusCode}) — جرّب تاني كمان شوية');
+      throw _FetchError('أعاد الخادم خطأً (${r.statusCode}) — أعد المحاولة بعد قليل');
     }
     try {
       return AppRelease.fromJson(
           jsonDecode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>);
     } catch (_) {
-      throw _FetchError('رد السيرفر مش مفهوم — كلّم الإدارة');
+      throw _FetchError('رد الخادم غير مفهوم — تواصل مع الإدارة');
     }
   }
 
@@ -254,7 +254,7 @@ class AppUpdater with WidgetsBindingObserver {
     if (abi == null) {
       if (manual || r.force) {
         tr.finish(BgTask.update,
-            'فيه نسخة جديدة (${r.name}) بس مش منشورة لنوع موبايلك — كلّم الإدارة',
+            'توجد نسخة جديدة (${r.name}) لكنها غير منشورة لنوع هاتفك — تواصل مع الإدارة',
             error: true);
       }
       return false;
@@ -284,8 +284,8 @@ class AppUpdater with WidgetsBindingObserver {
                 ],
                 Text(
                   [
-                    'عندك ${me.label}',
-                    if (size != null) 'الحجم ${(size / (1024 * 1024)).toStringAsFixed(1)} ميجا',
+                    'لديك ${me.label}',
+                    if (size != null) 'الحجم ${(size / (1024 * 1024)).toStringAsFixed(1)} ميجابايت',
                   ].join(' · '),
                   style: TextStyle(color: Colors.blueGrey.shade600, fontSize: 13),
                 ),
@@ -298,17 +298,17 @@ class AppUpdater with WidgetsBindingObserver {
                       borderRadius: BorderRadius.circular(10),
                     ),
                     child: Text(
-                      'عندك ${pending.entries.map((e) => '${e.value} ${e.key}').join(' · ')} '
-                      'لسه ما اترفعتش. التحديث مابيمسحهاش — بتفضل على الجهاز — '
-                      'بس الأحسن تعمل «مزامنة» الأول.',
+                      'لديك ${pending.entries.map((e) => '${e.value} ${e.key}').join(' · ')} '
+                      'لم تُرفع بعد. لا يحذفها التحديث — تبقى على الجهاز — '
+                      'ويُفضَّل تنفيذ «مزامنة» أولاً.',
                       style: const TextStyle(fontSize: 13),
                     ),
                   ),
                 ],
                 const SizedBox(height: 10),
                 const Text(
-                  'أول مرة، أندرويد هيطلب تسمح بالتثبيت من التطبيق ده — اسمح وارجع، '
-                  'وبعدين دوس «تثبيت».',
+                  'في المرة الأولى سيطلب أندرويد السماح بالتثبيت من هذا التطبيق — اسمح ثم عُد '
+                  'واضغط «تثبيت».',
                   style: TextStyle(fontSize: 13),
                 ),
               ],
@@ -316,7 +316,7 @@ class AppUpdater with WidgetsBindingObserver {
           ),
           actions: [
             if (!r.force)
-              TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('بعدين')),
+              TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('لاحقاً')),
             FilledButton.icon(
               onPressed: () => Navigator.pop(c, true),
               icon: const Icon(Icons.download),
@@ -358,9 +358,9 @@ class AppUpdater with WidgetsBindingObserver {
               color: AppColors.primary, size: 36),
           title: const Text('اسمح بتثبيت التحديث'),
           content: const Text(
-            'أندرويد محتاج تسمح للتطبيق ده إنه يثبّت تحديثاته.\n\n'
-            'دوس «افتح الإعدادات»، فعّل «السماح من هذا المصدر»، وارجع للتطبيق — '
-            'التحديث هيكمّل لوحده.',
+            'يتطلب أندرويد السماح لهذا التطبيق بتثبيت تحديثاته.\n\n'
+            'اضغط «افتح الإعدادات»، وفعّل «السماح من هذا المصدر»، ثم عُد إلى التطبيق — '
+            'وسيكتمل التحديث تلقائياً.',
           ),
           actions: [
             TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('إلغاء')),
@@ -387,7 +387,7 @@ class AppUpdater with WidgetsBindingObserver {
   Future<void> _download(AppRelease r, String abi) async {
     final tr = TaskTracker.instance;
     if (!await _ensureInstallPermission()) {
-      tr.finish(BgTask.update, 'التحديث محتاج تسمح بالتثبيت من التطبيق ده',
+      tr.finish(BgTask.update, 'يتطلب التحديث السماح بالتثبيت من هذا التطبيق',
           error: true,
           action: TaskAction('افتح الإعدادات', () => unawaited(_openInstallSettings())));
       return;
@@ -401,7 +401,7 @@ class AppUpdater with WidgetsBindingObserver {
     _setPhase(_Phase.downloading);
     final ota = OtaUpdate();
     final cancel = TaskAction('إلغاء', () => unawaited(ota.cancel()));
-    tr.start(BgTask.update, 'بينزّل التحديث ${r.name}…', action: cancel);
+    tr.start(BgTask.update, 'جارٍ تنزيل التحديث ${r.name}…', action: cancel);
 
     final done = Completer<OtaEvent?>();
     StreamSubscription<OtaEvent>? sub;
@@ -424,7 +424,7 @@ class AppUpdater with WidgetsBindingObserver {
           arm();
           final p = int.tryParse(e.value ?? '');
           tr.update(BgTask.update,
-              p == null ? 'بينزّل التحديث ${r.name}…' : 'بينزّل التحديث $p٪',
+              p == null ? 'جارٍ تنزيل التحديث ${r.name}…' : 'جارٍ تنزيل التحديث $p٪',
               progress: p == null ? null : (p / 100).clamp(0.0, 1.0), action: cancel);
         } else if (!done.isCompleted) {
           done.complete(e);
@@ -448,20 +448,20 @@ class AppUpdater with WidgetsBindingObserver {
       OtaStatus.INSTALLING || OtaStatus.INSTALLATION_DONE || null => null,
       OtaStatus.CANCELED => null,
       OtaStatus.CHECKSUM_ERROR => await _dropCorrupt(filename),
-      OtaStatus.DOWNLOAD_ERROR => 'التنزيل وقف — اتأكد من النت وجرّب تاني.',
+      OtaStatus.DOWNLOAD_ERROR => 'توقف التنزيل — تأكد من الاتصال وأعد المحاولة.',
       OtaStatus.PERMISSION_NOT_GRANTED_ERROR =>
-        'لازم تسمح بالتثبيت من التطبيق ده عشان التحديث يكمّل.',
+        'يجب السماح بالتثبيت من هذا التطبيق لإكمال التحديث.',
       OtaStatus.ALREADY_RUNNING_ERROR || OtaStatus.INSTALLATION_ERROR => alreadyRunning
-          ? 'فيه تنزيل شغّال بالفعل — استنى يخلص.'
-          : 'التثبيت مانفعش — جرّب تاني.',
-      _ => 'التحديث مانفعش — جرّب تاني.',
+          ? 'يوجد تنزيل جارٍ بالفعل — انتظر حتى ينتهي.'
+          : 'تعذر التثبيت — أعد المحاولة.',
+      _ => 'تعذر التحديث — أعد المحاولة.',
     };
 
     if (error == null) {
       if (result?.status == OtaStatus.CANCELED) {
-        tr.finish(BgTask.update, 'اتلغى تنزيل التحديث — تقدر تبدأه تاني من القايمة');
+        tr.finish(BgTask.update, 'أُلغي تنزيل التحديث — يمكنك بدؤه مرة أخرى من القائمة');
       } else {
-        tr.finish(BgTask.update, 'جاهز للتثبيت — دوس «تثبيت» في الشاشة اللي طلعت ✔',
+        tr.finish(BgTask.update, 'جاهز للتثبيت — اضغط «تثبيت» في الشاشة الظاهرة ✔',
             hold: const Duration(seconds: 8));
       }
       return;
@@ -480,7 +480,7 @@ class AppUpdater with WidgetsBindingObserver {
     final retry = await showDialog<bool>(
       context: c2,
       builder: (c) => AlertDialog(
-        title: const Text('التحديث مانزلش'),
+        title: const Text('تعذر تنزيل التحديث'),
         content: Text(error),
         actions: [
           TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('إغلاق')),
@@ -491,7 +491,7 @@ class AppUpdater with WidgetsBindingObserver {
               },
               child: const Text('افتح الإعدادات'),
             ),
-          FilledButton(onPressed: () => Navigator.pop(c, true), child: const Text('جرّب تاني')),
+          FilledButton(onPressed: () => Navigator.pop(c, true), child: const Text('إعادة المحاولة')),
         ],
       ),
     );
@@ -504,6 +504,6 @@ class AppUpdater with WidgetsBindingObserver {
       final f = File('${dir.path}/ota_update/$filename');
       if (await f.exists()) await f.delete();
     } catch (_) {}
-    return 'الملف نزل ناقص أو متغيّر فاتمسح. جرّب تاني.';
+    return 'نُزّل الملف ناقصاً أو معدّلاً فحُذف. أعد المحاولة.';
   }
 }

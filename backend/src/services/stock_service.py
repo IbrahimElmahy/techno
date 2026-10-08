@@ -99,7 +99,7 @@ def not_enough_message(db, item_id: int, location_kind: LocationKind, location_i
     where = _label(db, location_kind, location_id)
     short = to_qty(wanted) - to_qty(available)
     return (
-        f"الرصيد مايكفيش: «{name}» في {where} المتاح منه {to_qty(available)} "
+        f"الرصيد غير كافٍ: «{name}» في {where} المتاح منه {to_qty(available)} "
         f"والمطلوب صرفه {to_qty(wanted)} — ناقص {short}."
     )
 
@@ -108,15 +108,15 @@ def _normalize_names(movement_type: str, source_doc_type: str | None) -> tuple[s
     move = stock_docs.canonical(movement_type, kind="movement")
     if move is None:
         raise StockError(
-            f"نوع حركة مش متسجّل: «{movement_type}» — ضيفه في `src/lib/stock_docs.py`."
+            f"نوع حركة غير مسجّل: «{movement_type}» — أضفه في `src/lib/stock_docs.py`."
         )
     doc = source_doc_type
     if doc is not None:
         doc = stock_docs.canonical(doc)
         if doc is None:
             raise StockError(
-                f"نوع مستند مش متسجّل: «{source_doc_type}» — "
-                "ضيفه في `src/lib/stock_docs.py`."
+                f"نوع مستند غير مسجّل: «{source_doc_type}» — "
+                "أضفه في `src/lib/stock_docs.py`."
             )
     return move, doc
 
@@ -139,7 +139,7 @@ def post_movement(
 ) -> StockMovement:
     q = to_qty(quantity)
     if q <= ZERO_QTY:
-        raise StockError("كمية الحركة لازم تكون أكبر من صفر.")
+        raise StockError("يجب أن تكون كمية الحركة أكبر من صفر.")
     movement_type, source_doc_type = _normalize_names(movement_type, source_doc_type)
     _lock_locator(db, item_id, location_kind, location_id)
     if direction == StockDirection.out and not allow_negative:
@@ -172,14 +172,14 @@ def reverse_movement(
 ) -> StockMovement:
     original = db.get(StockMovement, original_id)
     if original is None:
-        raise StockError("الحركة الأصلية مش موجودة.")
+        raise StockError("الحركة الأصلية غير موجودة.")
     if original.reverses_movement_id is not None:
-        raise StockError("الحركة العكسية نفسها مايتعملهاش عكس.")
+        raise StockError("لا يمكن عكس الحركة العكسية نفسها.")
     existing = db.scalar(
         select(StockMovement).where(StockMovement.reverses_movement_id == original_id)
     )
     if existing is not None:
-        raise StockError("الحركة دي اتعكست قبل كده.")
+        raise StockError("عُكست هذه الحركة مسبقاً.")
     mirror = (
         StockDirection.out if original.direction == StockDirection.in_ else StockDirection.in_
     )

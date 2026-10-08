@@ -28,8 +28,8 @@ def is_hashed(entry: LedgerEntry) -> bool:
 def assert_alterable(entry: LedgerEntry) -> None:
     if is_hashed(entry):
         raise HashChainError(
-            f"القيد {entry.number or entry.id} في دفتر متجزّأ — مايتغيّرش ولا يتحذف. "
-            "لو فيه غلط، اكتب قيد عكسي بتاريخ جديد."
+            f"القيد {entry.number or entry.id} في دفتر مُجزّأ — لا يمكن تعديله ولا حذفه. "
+            "إن وُجد خطأ فسجّل قيداً عكسياً بتاريخ جديد."
         )
 
 
@@ -129,14 +129,14 @@ def check_journal(db: Session, journal: Journal) -> JournalIntegrity:
         if entry.secure_sequence_number != expected_seq:
             report.problems.append(
                 f"فجوة في السلسلة عند {entry.number or entry.id}: "
-                f"متوقع {expected_seq} ولقينا {entry.secure_sequence_number}."
+                f"المتوقع {expected_seq} والموجود {entry.secure_sequence_number}."
             )
             expected_seq = entry.secure_sequence_number
         expected_seq += 1
         if entry.state != EntryState.posted.value:
             report.problems.append(
-                f"القيد {entry.number or entry.id} متجزّأ وحالته «{entry.state}» — "
-                "القيد المتجزّأ المفروض يفضل مرحّل."
+                f"القيد {entry.number or entry.id} مُجزّأ وحالته «{entry.state}» — "
+                "يجب أن يبقى القيد المُجزّأ مرحّلاً."
             )
         if _digest(previous_hash, entry) != entry.inalterable_hash:
             report.intact = False

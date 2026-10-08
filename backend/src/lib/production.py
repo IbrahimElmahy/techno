@@ -9,14 +9,14 @@ from src.models.stock import LocationKind
 def scale_factor(output_quantity, produced_quantity) -> Decimal:
     batch = to_qty(output_quantity)
     if batch <= to_qty(0):
-        raise ValueError("كمية ناتج التركيبة لازم تكون أكبر من صفر.")
+        raise ValueError("يجب أن تكون كمية ناتج التركيبة أكبر من صفر.")
     return to_qty(produced_quantity) / batch
 
 
 def consumed_quantity(component_quantity, scale, unit_factor=1) -> Decimal:
     factor = to_factor(unit_factor or 1)
     if factor <= to_qty(0):
-        raise ValueError("معامل الوحدة لازم يكون أكبر من صفر.")
+        raise ValueError("يجب أن يكون معامل الوحدة أكبر من صفر.")
     return to_qty(Decimal(component_quantity) * Decimal(scale) * factor)
 
 

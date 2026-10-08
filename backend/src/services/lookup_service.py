@@ -81,19 +81,19 @@ def with_children(db: Session, category: str, value: str) -> list[str]:
 
 def _check_parent(db: Session, *, category: str, value: str, parent_value: str) -> None:
     if parent_value == value:
-        raise LookupError("الفئة مش ممكن تبقى أب نفسها.")
+        raise LookupError("لا يمكن أن تكون الفئة رئيسية لنفسها.")
     parent = db.scalar(
         select(LookupOption).where(LookupOption.category == category,
                                    LookupOption.value == parent_value))
     if parent is None:
-        raise LookupError("الفئة الرئيسية دي مش موجودة في نفس القايمة.")
+        raise LookupError("هذه الفئة الرئيسية غير موجودة في القائمة نفسها.")
     if parent.parent_value:
-        raise LookupError("الفئة الرئيسية مالهاش تبقى فرعية هي كمان — مستويين وبس.")
+        raise LookupError("لا يمكن أن تكون الفئة الرئيسية فرعية أيضاً — مستويان فقط.")
     has_children = db.scalar(
         select(LookupOption.id).where(LookupOption.category == category,
                                       LookupOption.parent_value == value).limit(1))
     if has_children is not None:
-        raise LookupError("الفئة دي تحتها فئات فرعية، فمينفعش تبقى فرعية لغيرها.")
+        raise LookupError("لهذه الفئة فئات فرعية، فلا يمكن جعلها فرعية لغيرها.")
 
 
 def categories() -> list[dict]:
@@ -117,7 +117,7 @@ def create_option(db: Session, *, category: str, value: str, label: str,
                   parent_value: str | None = None) -> LookupOption:
     meta = CATEGORIES.get(category)
     if meta is None:
-        raise LookupError("القايمة دي مش معروفة.")
+        raise LookupError("هذه القائمة غير معروفة.")
     if meta.get("system"):
         raise LookupError(
             "This list is tied to system logic — you can relabel/reorder/hide its options, "
@@ -125,12 +125,12 @@ def create_option(db: Session, *, category: str, value: str, label: str,
         )
     _ensure_seeded(db, category)
     if not value or not label:
-        raise LookupError("القيمة والاسم الاتنين مطلوبين.")
+        raise LookupError("القيمة والاسم مطلوبان.")
     dup = db.scalar(
         select(LookupOption).where(LookupOption.category == category, LookupOption.value == value)
     )
     if dup is not None:
-        raise LookupError("فيه اختيار بنفس القيمة في القايمة دي.")
+        raise LookupError("يوجد خيار بالقيمة نفسها في هذه القائمة.")
     if sort_order is None:
         current = db.scalars(
             select(LookupOption.sort_order).where(LookupOption.category == category)
@@ -152,7 +152,7 @@ def update_option(db: Session, *, option_id: int, label: str | None = None,
                   parent_value: str | None = None) -> LookupOption:
     opt = db.get(LookupOption, option_id)
     if opt is None:
-        raise LookupError("الاختيار مش موجود.")
+        raise LookupError("الخيار غير موجود.")
     if label is not None:
         opt.label = label
     if parent_value is not None:
@@ -175,13 +175,13 @@ def update_option(db: Session, *, option_id: int, label: str | None = None,
 def delete_option(db: Session, *, option_id: int) -> None:
     opt = db.get(LookupOption, option_id)
     if opt is None:
-        raise LookupError("الاختيار مش موجود.")
+        raise LookupError("الخيار غير موجود.")
     if opt.is_system:
         raise LookupError("A system option cannot be deleted — hide it (deactivate) instead.")
     kid = db.scalar(
         select(LookupOption.id).where(LookupOption.category == opt.category,
                                       LookupOption.parent_value == opt.value).limit(1))
     if kid is not None:
-        raise LookupError("تحتها فئات فرعية — شيلها أو غيّر أبوها الأول.")
+        raise LookupError("لها فئات فرعية — احذفها أو غيّر فئتها الرئيسية أولاً.")
     db.delete(opt)
     db.flush()

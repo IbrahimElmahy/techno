@@ -19,9 +19,9 @@ from src.models.user import User
 STATUSES = ("with_rep", "given", "received", "returned")
 STATUS_LABELS = {
     "with_rep": "في العهدة",
-    "given": "اتسلّم لتاجر",
-    "received": "اتستلم من سباك",
-    "returned": "رجع المكتب",
+    "given": "سُلِّم لتاجر",
+    "received": "استُلم من سباك",
+    "returned": "أُعيد للمكتب",
 }
 DATE_FIELDS = ("handout", "receipt")
 
@@ -317,13 +317,13 @@ def lifecycle(
     offset: int = 0,
 ) -> dict:
     if date_field not in DATE_FIELDS:
-        raise CouponLifecycleError(f"تاريخ مش معروف: {date_field}")
+        raise CouponLifecycleError(f"تاريخ غير معروف: {date_field}")
     if status and status not in STATUSES:
-        raise CouponLifecycleError(f"حالة مش معروفة: {status}")
+        raise CouponLifecycleError(f"حالة غير معروفة: {status}")
     lo = _as_int(serial_from) if serial_from else None
     hi = _as_int(serial_to) if serial_to else None
     if (serial_from and lo is None) or (serial_to and hi is None):
-        raise CouponLifecycleError("نطاق الأرقام لازم يبقى أرقام.")
+        raise CouponLifecycleError("يجب أن يكون نطاق الأرقام أرقاماً.")
 
     entries = collect(db, current)
 

@@ -104,7 +104,7 @@ def _collect(db: Session, subject: str, filters: dict) -> list[dict]:
         return _collect_advances(db, look, keep, date_from, date_to)
     if subject == "adjustment":
         return _collect_adjustments(db, look, keep, filters)
-    raise HrReportError(f"موضوع تقرير مش معروف: {subject}")
+    raise HrReportError(f"موضوع تقرير غير معروف: {subject}")
 
 
 def _collect_headcount(db, look, keep, date_from, date_to) -> list[dict]:
@@ -137,7 +137,7 @@ def _collect_headcount(db, look, keep, date_from, date_to) -> list[dict]:
 
 
 _ATTENDANCE_LABEL = {
-    AttendanceStatus.present: "حاضر", AttendanceStatus.absent: "غايب",
+    AttendanceStatus.present: "حاضر", AttendanceStatus.absent: "غائب",
     AttendanceStatus.leave: "أجازة", AttendanceStatus.holiday: "عطلة",
     AttendanceStatus.weekend: "راحة", AttendanceStatus.mission: "مأمورية",
 }
@@ -382,13 +382,13 @@ def hr(
     scope_branch_id: int | None = None,
 ) -> dict:
     if subject not in SUBJECTS:
-        raise HrReportError(f"موضوع مش معروف: {subject}")
+        raise HrReportError(f"موضوع غير معروف: {subject}")
     if level not in LEVELS:
-        raise HrReportError(f"مستوى مش معروف: {level}")
+        raise HrReportError(f"مستوى غير معروف: {level}")
     if group_by not in GROUPS:
-        raise HrReportError(f"تجميع مش معروف: {group_by}")
+        raise HrReportError(f"تجميع غير معروف: {group_by}")
     if level == "summary" and group_by == "none":
-        raise HrReportError("الملخّص محتاج تجميع.")
+        raise HrReportError("يتطلب الملخّص تجميعاً.")
 
     rows = _collect(db, subject, {
         "date_from": date_from, "date_to": date_to, "year": year, "month": month,

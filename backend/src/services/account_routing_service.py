@@ -77,10 +77,10 @@ def set_routing(
     if acc is None:
         raise RoutingError("الحساب غير موجود.")
     if not acc.active:
-        raise RoutingError(f"حساب «{acc.name}» معطّل — التوجيه ليه معناه ترحيل لحساب مقفول.")
+        raise RoutingError(f"حساب «{acc.name}» معطّل — التوجيه إليه يعني الترحيل إلى حساب مقفل.")
     if not acc.is_postable:
         raise RoutingError(
-            f"«{acc.name}» مجموعة مش حساب ترحيل. التوجيه لازم يكون لحساب ورقة."
+            f"«{acc.name}» مجموعة وليس حساب ترحيل. يجب أن يكون التوجيه إلى حساب فرعي."
         )
 
     if existing is None:

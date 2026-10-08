@@ -140,10 +140,10 @@ def delete_treasury(db: Session, *, treasury_id: int, actor_user_id: int) -> Non
     if treasury is None:
         raise TreasuryError("الخزينة غير موجودة.")
     if treasury.is_default:
-        raise TreasuryError("الخزينة الافتراضية مابتتمسحش.")
+        raise TreasuryError("لا يمكن حذف الخزينة الافتراضية.")
     n = account_in_use(db, treasury.account_id)
     if n:
-        raise TreasuryError(f"الخزينة عليها {n} حركة فمينفعش تتمسح — استعمل «إخفاء».")
+        raise TreasuryError(f"على الخزينة {n} حركة فلا يمكن حذفها — استخدم «إخفاء».")
     before = {"name": treasury.name, "kind": treasury.kind.value, "branch_id": treasury.branch_id}
     account = db.get(Account, treasury.account_id)
     try:
@@ -154,7 +154,7 @@ def delete_treasury(db: Session, *, treasury_id: int, actor_user_id: int) -> Non
                 db.delete(account)
                 db.flush()
     except IntegrityError:
-        raise TreasuryError("الخزينة مربوطة بسندات أو شيكات أو مرتبات — استعمل «إخفاء».")
+        raise TreasuryError("الخزينة مرتبطة بسندات أو شيكات أو مرتبات — استخدم «إخفاء».")
     audit_service.record(db, action="treasury.delete", actor_user_id=actor_user_id,
                          entity_type="treasury", entity_id=treasury_id, before=before)
 

@@ -75,14 +75,14 @@ def require_account(db: Session, customer_id: int, *, family: str | None = None)
 
     customer = db.get(Customer, customer_id)
     if customer is None:
-        raise CustomerError("العميل مش موجود.")
+        raise CustomerError("العميل غير موجود.")
     acc = customer_merge_service.receivable_account(db, customer_id, family)
     if acc is not None:
         return acc
     if _norm_type(customer.customer_type) in NO_RECEIVABLE_TYPES:
         raise CustomerError(
-            f"«{customer.name}» عميل من نوع «سباك» — مابيتفتحلوش حساب ذمم ومابيتباعلوش. "
-            "لو المفروض يشتري، غيّر نوع العميل الأول."
+            f"«{customer.name}» عميل من نوع «سباك» — لا يُفتح له حساب ذمم ولا يُباع له. "
+            "إن كان سيشتري فغيّر نوع العميل أولاً."
         )
     return open_account(db, customer)
 
@@ -100,7 +100,7 @@ def assert_rep_matches_type(db: Session, *, customer_type: str, rep_id: int | No
     role = db.get(Role, rep.role_id) if rep else None
     if role is None or role.name != RoleName.after_sales_staff:
         raise CustomerError(
-            "عميل من نوع «سباك» لازم يكون المندوب المسؤول عنه مندوب خدمة ما بعد البيع."
+            "يجب أن يكون المندوب المسؤول عن العميل من نوع «سباك» مندوب خدمة ما بعد البيع."
         )
 
 

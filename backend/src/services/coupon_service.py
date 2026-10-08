@@ -29,7 +29,7 @@ class CouponError(Exception):
 
 def _require_issued(coupon: Coupon) -> None:
     if coupon.status != CouponStatus.issued:
-        raise CouponError("الكوبون ده مش صالح للصرف — الكوبون المصروف للعميل بس هو اللي يتصرف.")
+        raise CouponError("هذا الكوبون غير صالح للصرف — لا يُصرف إلا الكوبون المصروف للعميل.")
 
 
 def _receivable_account(db: Session, customer_id: int) -> tuple[int, str | None]:
@@ -50,9 +50,9 @@ def _receivable_account(db: Session, customer_id: int) -> tuple[int, str | None]
         key=lambda a: a.id,
     )
     if not rows:
-        raise CouponError("العميل ده مالوش حساب ذمم.")
+        raise CouponError("ليس لهذا العميل حساب ذمم.")
     acc = rows[0]
-    return acc.account_id, f"صرف كوبون على حساب «{acc.family or '—'}» (العميل عنده أكتر من حساب)"
+    return acc.account_id, f"صرف كوبون على حساب «{acc.family or '—'}» (للعميل أكثر من حساب)"
 
 
 def _original_receivable_account_id(db: Session, original: CouponRedemption) -> int | None:
@@ -99,7 +99,7 @@ def _post_money_redemption(
 def redeem_money(db, *, coupon: Coupon, sales_invoice_id=None, actor_user_id: int) -> CouponRedemption:
     _require_issued(coupon)
     if coupon.kind != CouponKind.money:
-        raise CouponError("ده مش كوبون فلوس.")
+        raise CouponError("هذا ليس كوبوناً نقدياً.")
     return _post_money_redemption(db, coupon=coupon, mode=RedemptionMode.money,
                                   sales_invoice_id=sales_invoice_id, actor_user_id=actor_user_id)
 
@@ -107,7 +107,7 @@ def redeem_money(db, *, coupon: Coupon, sales_invoice_id=None, actor_user_id: in
 def redeem_gift_money_off(db, *, coupon: Coupon, sales_invoice_id=None, actor_user_id: int) -> CouponRedemption:
     _require_issued(coupon)
     if coupon.kind != CouponKind.gift:
-        raise CouponError("ده مش كوبون هدية.")
+        raise CouponError("هذا ليس كوبون هدية.")
     return _post_money_redemption(db, coupon=coupon, mode=RedemptionMode.gift_money_off,
                                   sales_invoice_id=sales_invoice_id, actor_user_id=actor_user_id)
 
@@ -118,10 +118,10 @@ def redeem_gift_product(
 ) -> CouponRedemption:
     _require_issued(coupon)
     if coupon.kind != CouponKind.gift:
-        raise CouponError("ده مش كوبون هدية.")
+        raise CouponError("هذا ليس كوبون هدية.")
     item = db.get(Item, item_id)
     if item is None or item.kind != ItemKind.product:
-        raise CouponError("هدية الكوبون لازم تكون منتج.")
+        raise CouponError("يجب أن تكون هدية الكوبون منتجاً.")
     product_value = to_money(Decimal(quantity) * to_money(item.sale_price))
     if product_value > to_money(coupon.value):
         raise CouponError("قيمة المنتج أكبر من قيمة الكوبون.")
@@ -146,7 +146,7 @@ def redeem_gift_product(
 
 def reverse_redemption(db, *, coupon: Coupon, actor_user_id: int) -> CouponRedemption:
     if coupon.status != CouponStatus.redeemed:
-        raise CouponError("الكوبون ده مااتصرفش.")
+        raise CouponError("لم يُصرف هذا الكوبون.")
     original = db.scalar(
         select(CouponRedemption).where(
             CouponRedemption.coupon_id == coupon.id,
@@ -154,11 +154,11 @@ def reverse_redemption(db, *, coupon: Coupon, actor_user_id: int) -> CouponRedem
         ).order_by(CouponRedemption.id.desc())
     )
     if original is None:
-        raise CouponError("مفيش صرف يتعكس.")
+        raise CouponError("لا يوجد صرف لعكسه.")
     if db.scalar(select(CouponRedemption).where(
         CouponRedemption.reverses_redemption_id == original.id
     )) is not None:
-        raise CouponError("الصرف ده اتعكس قبل كده.")
+        raise CouponError("عُكس هذا الصرف مسبقاً.")
 
     rev = CouponRedemption(
         coupon_id=coupon.id, mode=original.mode, value=original.value,

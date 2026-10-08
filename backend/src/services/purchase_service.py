@@ -84,31 +84,31 @@ def create_purchase(
     cost_center_distribution: dict | None = None,
 ) -> PurchaseInvoice:
     if not lines:
-        raise PurchaseError("فاتورة الشراء لازم يكون فيها صنف واحد على الأقل.")
+        raise PurchaseError("يجب أن تتضمن فاتورة الشراء صنفاً واحداً على الأقل.")
     supplier = db.get(Supplier, supplier_id)
     if supplier is None:
-        raise PurchaseError("المورد مش موجود.")
+        raise PurchaseError("المورد غير موجود.")
     supplier_acc = supplier_service.require_account(db, supplier_id)
 
     fixed = sales_service.fixed_discount_pct(db)
     variable = Decimal(variable_discount_pct)
     combined = discounts.combine(fixed, variable)
     if variable < ZERO or variable >= Decimal("100") or fixed < ZERO or fixed >= Decimal("100"):
-        raise PurchaseError("كل خصم لازم يكون من صفر لأقل من ١٠٠٪.")
+        raise PurchaseError("يجب أن يكون كل خصم من صفر إلى أقل من ١٠٠٪.")
 
     gross = ZERO
     built: list[tuple[PurchaseLine, Decimal, Decimal, Decimal | None]] = []
     for ln in lines:
         item = db.get(Item, ln.item_id)
         if item is None:
-            raise PurchaseError("الصنف المشترى مش موجود.")
+            raise PurchaseError("الصنف المشترى غير موجود.")
         try:
             factor = uom_service.resolve_factor(db, item, ln.unit)
         except UomError as exc:
             raise PurchaseError(str(exc)) from exc
         line_disc = Decimal(ln.discount_pct) if getattr(ln, "discount_pct", None) is not None             else ZERO
         if line_disc < ZERO or line_disc >= Decimal("100"):
-            raise PurchaseError("خصم السطر لازم يكون من صفر لأقل من ١٠٠٪.")
+            raise PurchaseError("يجب أن يكون خصم السطر من صفر إلى أقل من ١٠٠٪.")
         line_before = Decimal(ln.quantity) * Decimal(ln.unit_price)
         line_total = to_money(line_before * (Decimal("1") - line_disc / Decimal("100")))
         gross += line_total
@@ -122,12 +122,12 @@ def create_purchase(
         credit_amount = total - cash_amount
     elif to_money(credit_amount) != total - cash_amount:
         raise PurchaseError(
-            f"النقدي + الآجل لازم يساوي إجمالي فاتورة الشراء ({total})."
+            f"يجب أن يساوي النقدي + الآجل إجمالي فاتورة الشراء ({total})."
         )
 
     existing = db.get(PurchaseInvoice, replace_invoice_id) if replace_invoice_id else None
     if replace_invoice_id and existing is None:
-        raise PurchaseError("فاتورة الشراء اللي بتتعدّل مش موجودة.")
+        raise PurchaseError("فاتورة الشراء المراد تعديلها غير موجودة.")
 
     invoice = existing or PurchaseInvoice(
         document_number=_doc_number(db, PurchaseInvoice, "PINV"),
@@ -245,7 +245,7 @@ def return_purchase(
 ) -> PurchaseReturn:
     inv = db.get(PurchaseInvoice, purchase_invoice_id)
     if inv is None:
-        raise PurchaseError("فاتورة الشراء مش موجودة.")
+        raise PurchaseError("فاتورة الشراء غير موجودة.")
     purchased = {
         ln.item_id: (Decimal(ln.quantity), to_money(ln.unit_price), to_factor(ln.unit_factor),
                      Decimal(ln.discount_pct or 0))
@@ -263,11 +263,11 @@ def return_purchase(
     for item_id, qty in lines:
         qty = Decimal(qty)
         if item_id not in purchased:
-            raise PurchaseError("الصنف ده مش على فاتورة الشراء دي أصلاً.")
+            raise PurchaseError("هذا الصنف ليس على فاتورة الشراء هذه أصلاً.")
         if prior.get(item_id, ZERO) + qty > purchased[item_id][0]:
             raise PurchaseError(
-                f"مرتجعات الفاتورة دي وصلت للكمية المشتراة خلاص — "
-                f"اتشرى {purchased[item_id][0]} واترجّع {prior.get(item_id, ZERO)} قبل كده.")
+                f"بلغت مرتجعات هذه الفاتورة الكمية المشتراة — "
+                f"المشترى {purchased[item_id][0]} والمرتجع سابقاً {prior.get(item_id, ZERO)}.")
         value += discounts.apply(qty * purchased[item_id][1], purchased[item_id][3])
     value = discounts.apply(value, doc_pct)
 
@@ -327,13 +327,13 @@ def reverse_purchase_return(
 ) -> PurchaseReturn:
     ret = db.get(PurchaseReturn, return_id)
     if ret is None:
-        raise PurchaseError("المردود مش موجود.")
+        raise PurchaseError("المردود غير موجود.")
     if ret.reversed_at is not None:
-        raise PurchaseError("المردود ده اتعكس قبل كده.")
+        raise PurchaseError("عُكس هذا المردود مسبقاً.")
 
     inv = db.get(PurchaseInvoice, ret.purchase_invoice_id) if ret.purchase_invoice_id else None
     if ret.purchase_invoice_id and inv is None:
-        raise PurchaseError("فاتورة الشراء بتاعت المردود مش موجودة.")
+        raise PurchaseError("فاتورة الشراء الخاصة بالمردود غير موجودة.")
 
     received_into = {
         ln.item_id: (ln.line_location_kind or inv.location_kind,
@@ -344,7 +344,7 @@ def reverse_purchase_return(
     fallback = ((inv.location_kind, inv.location_id) if inv
                 else (ret.origin_location_kind, ret.origin_location_id))
     if fallback[0] is None or fallback[1] is None:
-        raise PurchaseError("المردود ده مالوش مخزن مسجّل — مايتعكسش.")
+        raise PurchaseError("ليس لهذا المردود مخزن مسجّل — لا يمكن عكسه.")
 
     for line in ret.lines:
         back_kind, back_loc = received_into.get(line.item_id, fallback)
@@ -391,24 +391,24 @@ def create_standalone_purchase_return(
     cost_center_distribution: dict | None = None,
 ) -> PurchaseReturn:
     if not lines:
-        raise PurchaseError("المردود لازم يكون فيه صنف واحد على الأقل.")
+        raise PurchaseError("يجب أن يتضمن المردود صنفاً واحداً على الأقل.")
     variable = Decimal(variable_discount_pct or 0)
     if variable < ZERO or variable >= Decimal("100"):
-        raise PurchaseError("خصم المستند لازم يكون من صفر لأقل من ١٠٠٪.")
+        raise PurchaseError("يجب أن يكون خصم المستند من صفر إلى أقل من ١٠٠٪.")
 
     supplier = db.get(Supplier, supplier_id)
     if supplier is None:
-        raise PurchaseError("المورد مش موجود.")
+        raise PurchaseError("المورد غير موجود.")
 
     gross = ZERO
     built: list[dict] = []
     for ln in lines:
         item = db.get(Item, ln["item_id"])
         if item is None:
-            raise PurchaseError("الصنف مش موجود.")
+            raise PurchaseError("الصنف غير موجود.")
         qty = Decimal(ln["quantity"])
         if qty <= ZERO:
-            raise PurchaseError("الكمية لازم تكون أكبر من صفر.")
+            raise PurchaseError("يجب أن تكون الكمية أكبر من صفر.")
         unit = ln.get("unit")
         factor = uom_service.resolve_factor(db, item, unit) if unit else Decimal("1")
         price = to_money(ln.get("unit_price") or 0)
@@ -432,7 +432,7 @@ def create_standalone_purchase_return(
 
     existing = db.get(PurchaseReturn, replace_return_id) if replace_return_id else None
     if replace_return_id and existing is None:
-        raise PurchaseError("المردود اللي بيتعدّل مش موجود.")
+        raise PurchaseError("المردود المراد تعديله غير موجود.")
 
     ret = existing or PurchaseReturn(
         document_number=_doc_number(db, PurchaseReturn, "PRET"),
@@ -493,7 +493,7 @@ def create_standalone_purchase_return(
     expense_acc = (db.get(Account, expense_account_id) if expense_account_id
                    else account_resolver.purchases_expense_account(db, branch_id=ret.branch_id))
     if expense_acc is None:
-        raise PurchaseError("حساب المشتريات مش موجود.")
+        raise PurchaseError("حساب المشتريات غير موجود.")
     supplier_acc = supplier_service.require_account(db, supplier_id)
 
     entry = ledger_service.post_entry(

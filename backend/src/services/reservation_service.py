@@ -65,11 +65,11 @@ def create(
 ) -> Reservation:
     qty = to_qty(quantity)
     if qty <= ZERO:
-        raise ReservationError("الكمية المحجوزة لازم تكون أكبر من صفر.")
+        raise ReservationError("يجب أن تكون الكمية المحجوزة أكبر من صفر.")
     if expires_on is None:
-        raise ReservationError("الحجز لازم يكون ليه تاريخ انتهاء.")
+        raise ReservationError("يجب أن يكون للحجز تاريخ انتهاء.")
     if expires_on < date.today():
-        raise ReservationError("تاريخ انتهاء الحجز عدّى — الحجز ده مش هيمسك حاجة.")
+        raise ReservationError("تاريخ انتهاء الحجز مضى — لن يحجز هذا الحجز شيئاً.")
     if db.get(Customer, customer_id) is None:
         raise ReservationError("العميل غير موجود.")
     if db.get(Item, item_id) is None:
@@ -79,7 +79,7 @@ def create(
                      location_id=location_id, for_customer_id=customer_id)
     if qty > free:
         raise ReservationError(
-            f"المتاح للحجز {free} أقل من المطلوب {qty} — الباقي محجوز لعملاء تانيين أو مش موجود."
+            f"المتاح للحجز {free} أقل من المطلوب {qty} — الباقي محجوز لعملاء آخرين أو غير موجود."
         )
 
     row = Reservation(
@@ -101,7 +101,7 @@ def cancel(db: Session, *, reservation_id: int, actor_user_id: int) -> Reservati
     if row is None:
         raise ReservationError("الحجز غير موجود.")
     if row.status == ReservationStatus.converted:
-        raise ReservationError("الحجز ده اتحوّل لفاتورة — الفاتورة هي اللي تترجع، مش الحجز.")
+        raise ReservationError("تحوّل هذا الحجز إلى فاتورة — يُرجَع بالفاتورة لا بالحجز.")
     if row.status == ReservationStatus.cancelled:
         raise ReservationError("الحجز ملغي بالفعل.")
     row.status = ReservationStatus.cancelled
@@ -117,7 +117,7 @@ def mark_converted(db: Session, *, reservation_id: int, invoice_id: int) -> Rese
     if row is None:
         raise ReservationError("الحجز غير موجود.")
     if row.status != ReservationStatus.active:
-        raise ReservationError("الحجز مش نشط.")
+        raise ReservationError("الحجز غير نشط.")
     row.status = ReservationStatus.converted
     row.sales_invoice_id = invoice_id
     db.flush()

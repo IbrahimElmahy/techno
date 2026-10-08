@@ -27,7 +27,7 @@ def post_opening_balances(
     actor_user_id: int,
 ) -> LedgerEntry:
     if not lines:
-        raise JournalError("أرصدة أول المدة لازم يكون فيها سطر حساب واحد على الأقل.")
+        raise JournalError("يجب أن تتضمن أرصدة أول المدة سطر حساب واحداً على الأقل.")
 
     equity = account_resolver.opening_balance_equity_account(db)
     journal_lines: list[JournalLineInput] = []
@@ -35,7 +35,7 @@ def post_opening_balances(
     credit_sum = ZERO
     for ln in lines:
         if not chart_service.is_postable_leaf(db, ln.account_id):
-            raise JournalError("الحساب ده مش حساب فرعي شغال بيقبل الترحيل.")
+            raise JournalError("هذا الحساب ليس حساباً فرعياً نشطاً يقبل الترحيل.")
         acc = db.get(Account, ln.account_id)
         amount = to_money(ln.amount)
         if acc.normal_side == Direction.debit:

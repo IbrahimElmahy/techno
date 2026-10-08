@@ -21,11 +21,11 @@ def parse_hhmm(value: str | None) -> int | None:
     text = text.translate(str.maketrans("٠١٢٣٤٥٦٧٨٩", "0123456789"))
     parts = text.split(":")
     if len(parts) < 2:
-        raise AttendanceError(f"وقت مش مفهوم: {value}")
+        raise AttendanceError(f"وقت غير مفهوم: {value}")
     try:
         hours, minutes = int(parts[0]), int(parts[1])
     except ValueError as exc:
-        raise AttendanceError(f"وقت مش مفهوم: {value}") from exc
+        raise AttendanceError(f"وقت غير مفهوم: {value}") from exc
     if not (0 <= hours <= 23 and 0 <= minutes <= 59):
         raise AttendanceError(f"وقت خارج اليوم: {value}")
     return hours * 60 + minutes
@@ -55,7 +55,7 @@ def is_weekend(day: date, csv: str | None) -> bool:
 def shift_span(start: str, end: str) -> int:
     begin, finish = parse_hhmm(start), parse_hhmm(end)
     if begin is None or finish is None:
-        raise AttendanceError("الوردية مالهاش بداية أو نهاية.")
+        raise AttendanceError("ليس للوردية بداية أو نهاية.")
     return finish - begin if finish > begin else (24 * 60) - begin + finish
 
 

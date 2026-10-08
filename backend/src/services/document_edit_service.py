@@ -178,13 +178,13 @@ def assert_sale_editable(db: Session, invoice: SalesInvoice) -> None:
     if returns:
         nums = "، ".join(r.document_number for r in returns[:3])
         raise DocumentEditError(
-            f"الفاتورة دي عليها مرتجع ({nums}) — امسح المرتجع الأول وبعدين عدّل الفاتورة.")
+            f"على هذه الفاتورة مرتجع ({nums}) — احذف المرتجع أولاً ثم عدّل الفاتورة.")
 
 
 def delete_sale(db: Session, *, invoice_id: int, actor_user_id: int) -> None:
     invoice = db.get(SalesInvoice, invoice_id)
     if invoice is None:
-        raise DocumentEditError("فاتورة البيع مش موجودة.")
+        raise DocumentEditError("فاتورة البيع غير موجودة.")
     returns = db.scalars(select(SalesReturn).where(
         SalesReturn.sales_invoice_id == invoice.id)).all()
     for ret in returns:
@@ -210,7 +210,7 @@ def delete_voucher(db: Session, *, voucher_id: int, actor_user_id: int) -> None:
 
     voucher = db.get(Voucher, voucher_id)
     if voucher is None:
-        raise DocumentEditError("السند مش موجود.")
+        raise DocumentEditError("السند غير موجود.")
     doc = voucher.document_number
 
     mirrors = db.scalars(select(Voucher).where(Voucher.reverses_id == voucher_id)).all()
@@ -264,7 +264,7 @@ def purge_sales_return(db: Session, ret: SalesReturn) -> None:
 def delete_sales_return(db: Session, *, return_id: int, actor_user_id: int) -> None:
     ret = db.get(SalesReturn, return_id)
     if ret is None:
-        raise DocumentEditError("المرتجع مش موجود.")
+        raise DocumentEditError("المرتجع غير موجود.")
     doc = ret.document_number
     purge_sales_return(db, ret)
     db.delete(ret)
@@ -286,7 +286,7 @@ def purge_purchase_return(db: Session, ret: PurchaseReturn) -> None:
 def delete_purchase_return(db: Session, *, return_id: int, actor_user_id: int) -> None:
     ret = db.get(PurchaseReturn, return_id)
     if ret is None:
-        raise DocumentEditError("المردود مش موجود.")
+        raise DocumentEditError("المردود غير موجود.")
     doc = ret.document_number
     purge_purchase_return(db, ret)
     db.delete(ret)
@@ -313,13 +313,13 @@ def assert_purchase_editable(db: Session, invoice: PurchaseInvoice) -> None:
     if returns:
         nums = "، ".join(r.document_number for r in returns[:3])
         raise DocumentEditError(
-            f"الفاتورة دي عليها مردود ({nums}) — امسح المردود الأول وبعدين عدّل الفاتورة.")
+            f"على هذه الفاتورة مردود ({nums}) — احذف المردود أولاً ثم عدّل الفاتورة.")
 
 
 def delete_purchase(db: Session, *, purchase_id: int, actor_user_id: int) -> None:
     invoice = db.get(PurchaseInvoice, purchase_id)
     if invoice is None:
-        raise DocumentEditError("فاتورة الشراء مش موجودة.")
+        raise DocumentEditError("فاتورة الشراء غير موجودة.")
     assert_purchase_editable(db, invoice)
     doc = invoice.document_number
     purge_purchase(db, invoice)

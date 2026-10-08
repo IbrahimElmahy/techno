@@ -143,28 +143,28 @@ def _load_lines(db: Session, line_ids: list[int]) -> list[LedgerLine]:
     ).all()
     missing = set(line_ids) - {ln.id for ln in lines}
     if missing:
-        raise ReconcileError("فيه سطور مش موجودة.")
+        raise ReconcileError("توجد سطور غير موجودة.")
     return list(lines)
 
 
 def _assert_matchable(lines: list[LedgerLine]) -> None:
     if len(lines) < 2:
-        raise ReconcileError("المطابقة محتاجة سطرين على الأقل.")
+        raise ReconcileError("تتطلب المطابقة سطرين على الأقل.")
     accounts = {ln.account_id for ln in lines}
     if len(accounts) > 1:
         raise ReconcileError(
-            "السطور دي على حسابات مختلفة — المطابقة بتبقى جوّه الحساب الواحد.")
+            "هذه السطور على حسابات مختلفة — تتم المطابقة داخل الحساب الواحد.")
     for line in lines:
         if line.amount_residual is None:
             raise ReconcileError(
-                "فيه سطر على حساب مش قابل للتسوية — فعّل «قابل للتسوية» على الحساب الأول.")
+                "يوجد سطر على حساب غير قابل للتسوية — فعّل «قابل للتسوية» على الحساب أولاً.")
         if not ledger_service.is_posted(line.entry):
-            raise ReconcileError("فيه سطر قيده مش مرحّل — المسودة مابتتقفلش.")
+            raise ReconcileError("يوجد سطر قيده غير مرحّل — لا يمكن إقفال المسودة.")
     debits = [ln for ln in lines if residual_of(ln) > ZERO]
     credits = [ln for ln in lines if residual_of(ln) < ZERO]
     if not debits or not credits:
         raise ReconcileError(
-            "لازم يكون فيه مدين ودائن — سطور كلها في اتجاه واحد مالهاش حاجة تتقفل عليها.")
+            "يجب وجود مدين ودائن — السطور كلها في اتجاه واحد فلا يوجد ما تُقفل عليه.")
 
 
 def _next_number(db: Session, full: FullReconcile) -> str:
@@ -301,7 +301,7 @@ def unreconcile(
     if number:
         full = db.scalar(select(FullReconcile).where(FullReconcile.number == number))
         if full is None:
-            raise ReconcileError("رقم المطابقة مش موجود.")
+            raise ReconcileError("رقم المطابقة غير موجود.")
         partials = db.scalars(
             select(PartialReconcile).where(PartialReconcile.full_reconcile_id == full.id)
         ).all()
@@ -314,9 +314,9 @@ def unreconcile(
         ).all()
         full = None
     else:
-        raise ReconcileError("حدد سطور أو رقم مطابقة.")
+        raise ReconcileError("حدد سطوراً أو رقم مطابقة.")
     if not partials:
-        raise ReconcileError("مافيش مطابقة على السطور دي.")
+        raise ReconcileError("لا توجد مطابقة على هذه السطور.")
 
     touched: set[int] = set()
     fulls: set[int] = set()

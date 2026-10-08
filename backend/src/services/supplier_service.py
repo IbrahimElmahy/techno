@@ -24,7 +24,7 @@ def require_account(db: Session, supplier_id: int) -> SupplierAccount:
 
     supplier = db.get(Supplier, supplier_id)
     if supplier is None:
-        raise SupplierError("المورد مش موجود.")
+        raise SupplierError("المورد غير موجود.")
 
     acc = Account(account_type=AccountType.supplier_payable, normal_side=Direction.credit,
                   branch_id=getattr(supplier, "branch_id", None))

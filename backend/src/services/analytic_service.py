@@ -26,7 +26,7 @@ def normalize(shares) -> dict[int, Decimal]:
         cc = int(cc)
         value = Decimal(str(pct))
         if cc in out:
-            raise AnalyticError("المركز اتكرر في التوزيع — اجمع نسبته في سطر واحد.")
+            raise AnalyticError("المركز مكرر في التوزيع — اجمع نسبته في سطر واحد.")
         out[cc] = value
     return out
 
@@ -36,16 +36,16 @@ def validate(db: Session, shares: dict[int, Decimal]) -> None:
         return
     for cc, pct in shares.items():
         if pct <= ZERO:
-            raise AnalyticError("نسبة التوزيع لازم تكون أكبر من صفر.")
+            raise AnalyticError("يجب أن تكون نسبة التوزيع أكبر من صفر.")
         centre = db.get(CostCenter, cc)
         if centre is None:
-            raise AnalyticError(f"مركز التكلفة #{cc} مش موجود.")
+            raise AnalyticError(f"مركز التكلفة #{cc} غير موجود.")
         if not centre.active:
-            raise AnalyticError(f"مركز التكلفة «{centre.name}» مقفول — مايتوزّعش عليه.")
+            raise AnalyticError(f"مركز التكلفة «{centre.name}» مقفل — لا يمكن التوزيع عليه.")
     total = sum(shares.values(), ZERO)
     if total != HUNDRED:
         raise AnalyticError(
-            f"مجموع نِسَب التوزيع {total}٪ — لازم يساوي ١٠٠٪ بالظبط."
+            f"مجموع نِسَب التوزيع {total}٪ — يجب أن يساوي ١٠٠٪ تماماً."
         )
 
 

@@ -732,7 +732,7 @@ def delete_voucher(
         document_edit_service.delete_voucher(
             db, voucher_id=voucher_id, actor_user_id=current.id)
     except DocumentEditError as exc:
-        code = 404 if "مش موجود" in str(exc) else status.HTTP_409_CONFLICT
+        code = 404 if any(s in str(exc) for s in ("مش موجود", "غير موجود")) else status.HTTP_409_CONFLICT
         raise HTTPException(code, {"code": "delete_blocked", "message": str(exc)})
     db.commit()
 

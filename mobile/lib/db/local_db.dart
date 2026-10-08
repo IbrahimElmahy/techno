@@ -1415,14 +1415,7 @@ const _couponReceiptTable = '''
     customer_name TEXT,
     serials TEXT NOT NULL,
     coupon_count INTEGER NOT NULL DEFAULT 0,
-    -- تاريخ الاستلام اللي المندوب اختاره. مش وقت الكتابة: ممكن يسجّل النهاردة استلام
-    -- حصل امبارح، والتقارير بتتجمّع بالتاريخ ده.
     received_date TEXT,
-    -- نوع الكوبون وقيمته زي ما المندوب قالهم.
-    --
-    -- The server derives the true kind from the serial's issued range, but only when the phone
-    -- reaches it. A rep with no signal still has to see «ثلاثة ذهبي وواحد فضي» before he hands the
-    -- customer a receipt, so what he declared is kept here and travels with the sync.
     coupon_kind TEXT,
     coupon_value REAL,
     customer_type TEXT,
@@ -1470,11 +1463,8 @@ CREATE TABLE sale_invoice(
   notes TEXT,
   family TEXT,
   coupons TEXT,
-  -- حساب العميل قبل الفاتورة دي، زي ما كان ساعة الحفظ.
   prev_balance REAL,
-  -- رصيد كل خط قبل الطلب، JSON. شوف `prevBalancesJson`.
   prev_balances TEXT,
-  -- فاتورة بونص (هدية بقيمة صفر) والفاتورة اللي هي عليها — بالرقم أو بـclient_uuid.
   is_bonus INTEGER NOT NULL DEFAULT 0,
   bonus_for_invoice_id INTEGER,
   bonus_for_client_uuid TEXT,
@@ -1571,7 +1561,6 @@ CREATE TABLE price_sheet(
   local_id INTEGER PRIMARY KEY AUTOINCREMENT,
   title TEXT NOT NULL,
   sheet_date TEXT NOT NULL,
-  -- صافي العرض ساعة الحفظ. متخزّن عشان القايمة ماتحتاجش تقرا السطور كلها.
   total REAL NOT NULL DEFAULT 0,
   line_count INTEGER NOT NULL DEFAULT 0,
   notes TEXT,

@@ -128,14 +128,14 @@ def resolve_cash_account(
     ).all()
     if not rows:
         raise AccountResolutionError(
-            f"«{_rep_name(db, user_id)}» مالوش حساب عهدة — اعمله واحد الأول.")
+            f"«{_rep_name(db, user_id)}» ليس له حساب عهدة — أنشئ له حساباً أولاً.")
 
     if family:
         match = [c for c in rows if c.family == family]
         if not match:
             raise AccountResolutionError(
-                f"«{_rep_name(db, user_id)}» مالوش صندوق لخط «{family}» — "
-                "الفاتورة دي مش هتترحّل لحد ما المكتب يعمله واحد."
+                f"«{_rep_name(db, user_id)}» ليس له صندوق لخط «{family}» — "
+                "لن تُرحَّل هذه الفاتورة حتى يُنشئ المكتب صندوقاً له."
             )
         custody = match[0]
     else:
@@ -147,14 +147,14 @@ def resolve_cash_account(
         else:
             lines = "، ".join(c.family or "—" for c in rows)
             raise AccountResolutionError(
-                f"«{_rep_name(db, user_id)}» عنده أكتر من صندوق ({lines}) "
-                "والمستند ده مش قايل على أنهي خط.")
+                f"«{_rep_name(db, user_id)}» لديه أكثر من صندوق ({lines}) "
+                "ولم يحدد هذا المستند الخط.")
 
     if custody.account_id is None:
         raise AccountResolutionError(
             f"صندوق «{_rep_name(db, user_id)}»"
             + (f" — خط «{custody.family}»" if custody.family else "")
-            + " مالوش حساب في الدفاتر.")
+            + " ليس له حساب في الدفاتر.")
     return db.get(Account, custody.account_id)
 
 
@@ -163,5 +163,5 @@ def explicit_treasury(db: Session, account_id: int | None) -> Account | None:
         return None
     acc = db.get(Account, account_id)
     if acc is None or acc.account_type not in (AccountType.treasury, AccountType.custody):
-        raise AccountResolutionError("الخزنة المختارة مش موجودة أو مش خزنة.")
+        raise AccountResolutionError("الخزنة المختارة غير موجودة أو ليست خزنة.")
     return acc

@@ -315,7 +315,7 @@ def expand_range(serial_from: str, serial_to: str | None) -> list[str]:
         return [serial_from]
     first, last = _as_int(serial_from), _as_int(serial_to)
     if first is None or last is None:
-        raise CouponReceiptError("النطاق لازم يكون أرقام عشان يتفك؛ أدخل الكوبونات واحد واحد.")
+        raise CouponReceiptError("يجب أن يكون النطاق أرقاماً ليمكن تفصيله؛ أدخل الكوبونات واحداً تلو الآخر.")
     if last < first:
         raise CouponReceiptError("رقم النهاية أصغر من رقم البداية.")
     if last - first + 1 > 500:
@@ -344,10 +344,10 @@ def _match_serials(
     db: Session, cleaned: list[str], coupon_kind: str | None,
 ) -> list[tuple[str, SalesInvoice | None, CouponIssue | None, str | None]]:
     if not cleaned:
-        raise CouponReceiptError("مافيش كوبونات في الاستلام.")
+        raise CouponReceiptError("لا توجد كوبونات في الاستلام.")
     duplicates = {s for s in cleaned if cleaned.count(s) > 1}
     if duplicates:
-        raise CouponReceiptError(f"كوبونات مكرّرة في نفس الاستلام: {', '.join(sorted(duplicates))}")
+        raise CouponReceiptError(f"كوبونات مكرّرة في الاستلام نفسه: {', '.join(sorted(duplicates))}")
 
     from src.services import coupon_custody_service
 
@@ -388,13 +388,13 @@ def _match_serials(
 
     if unknown:
         raise CouponReceiptError(
-            f"كوبونات مش متصرّفة من النظام: {', '.join(unknown)}")
+            f"كوبونات غير مصروفة من النظام: {', '.join(unknown)}")
     if wrong_kind:
         raise CouponReceiptError(
-            f"كوبونات مش متصرّفة تحت فئة «{coupon_kind}»: {', '.join(wrong_kind)}")
+            f"كوبونات غير مصروفة تحت فئة «{coupon_kind}»: {', '.join(wrong_kind)}")
     if seen_before:
         raise CouponReceiptError(
-            f"كوبونات اتستلمت قبل كده: {', '.join(seen_before)}")
+            f"كوبونات مُستلَمة مسبقاً: {', '.join(seen_before)}")
     return matched
 
 
@@ -461,16 +461,16 @@ def _load(db: Session, receipt_id: int) -> CouponReceipt:
         select(CouponReceipt).options(selectinload(CouponReceipt.lines))
         .where(CouponReceipt.id == receipt_id))
     if receipt is None:
-        raise CouponReceiptError("الاستلام ده مش موجود.")
+        raise CouponReceiptError("هذا الاستلام غير موجود.")
     return receipt
 
 
 def approve_receipt(db: Session, *, receipt_id: int, actor_user_id: int) -> CouponReceipt:
     receipt = _load(db, receipt_id)
     if status_of(receipt) != PENDING:
-        raise CouponReceiptConflict("الاستلام ده مش بانتظار الاعتماد.")
+        raise CouponReceiptConflict("هذا الاستلام ليس بانتظار الاعتماد.")
     if not receipt.lines:
-        raise CouponReceiptConflict("الاستلام ده مافيهوش كوبونات — عدّله أو احذفه.")
+        raise CouponReceiptConflict("لا توجد كوبونات في هذا الاستلام — عدّله أو احذفه.")
     receipt.status = APPROVED
     receipt.approved_by = actor_user_id
     receipt.approved_at = datetime.utcnow()
@@ -487,7 +487,7 @@ def reject_receipt(db: Session, *, receipt_id: int, actor_user_id: int,
                    reason: str | None = None) -> CouponReceipt:
     receipt = _load(db, receipt_id)
     if status_of(receipt) != PENDING:
-        raise CouponReceiptConflict("الاستلام ده مش بانتظار الاعتماد.")
+        raise CouponReceiptConflict("هذا الاستلام ليس بانتظار الاعتماد.")
     serials = [line.serial for line in receipt.lines]
     receipt.rejected_serials = ",".join(serials) or None
     receipt.lines.clear()
@@ -513,7 +513,7 @@ def update_receipt(
 ) -> CouponReceipt:
     receipt = _load(db, receipt_id)
     if status_of(receipt) == REJECTED:
-        raise CouponReceiptConflict("الاستلام المرفوض مابيتعدّلش — سجّل استلام جديد.")
+        raise CouponReceiptConflict("لا يمكن تعديل الاستلام المرفوض — سجّل استلاماً جديداً.")
     before = {"serials": sorted(line.serial for line in receipt.lines),
               "kind": receipt.declared_kind, "customer_id": receipt.customer_id}
     receipt.lines.clear()
@@ -695,7 +695,7 @@ def delete_receipt(db: Session, *, receipt_id: int, actor_user_id: int) -> str:
         select(CouponReceipt).options(selectinload(CouponReceipt.lines))
         .where(CouponReceipt.id == receipt_id))
     if receipt is None:
-        raise CouponReceiptError("الاستلام ده مش موجود.")
+        raise CouponReceiptError("هذا الاستلام غير موجود.")
 
     serials = sorted(line.serial for line in receipt.lines)
     doc = receipt.document_number

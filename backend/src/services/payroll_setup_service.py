@@ -37,7 +37,7 @@ def create_component(
     if not clean:
         raise PayrollSetupError("اسم البند مطلوب.")
     if db.scalar(select(SalaryComponent).where(SalaryComponent.name == clean)):
-        raise PayrollSetupError("فيه بند بنفس الاسم.")
+        raise PayrollSetupError("يوجد بند بالاسم نفسه.")
     row = SalaryComponent(
         code=(code or "").strip() or numbering.next_document_number(
             db, SalaryComponent, "SC", column=SalaryComponent.code, width=3),
@@ -63,15 +63,15 @@ def set_salary(
     if employee is None:
         raise PayrollSetupError("الموظف غير موجود.")
     if to_money(Decimal(str(basic or 0))) < 0:
-        raise PayrollSetupError("الأساسي مايكونش بالسالب.")
+        raise PayrollSetupError("لا يمكن أن يكون الأساسي سالباً.")
 
     row = db.scalar(select(EmployeeSalary).where(
         EmployeeSalary.employee_id == employee_id,
         EmployeeSalary.effective_from == effective_from))
     if row is not None and used_by_posted_run(db, row):
         raise PayrollSetupError(
-            f"هيكل الراتب الساري من {effective_from} اتحسب عليه مسير مرحّل — "
-            "أي تغيير يتعمل بتاريخ سريان جديد (زيادة)، مش تعديل للقديم.")
+            f"هيكل الراتب الساري من {effective_from} احتُسب عليه مسير مرحّل — "
+            "يُسجَّل أي تغيير بتاريخ سريان جديد (زيادة)، لا بتعديل القديم.")
     if row is None:
         row = EmployeeSalary(employee_id=employee_id, effective_from=effective_from)
         db.add(row)
@@ -186,8 +186,8 @@ def delete_salary(db: Session, *, salary_id: int, actor_user_id: int) -> int:
         raise PayrollSetupError("هيكل الراتب غير موجود.")
     if used_by_posted_run(db, row):
         raise PayrollSetupError(
-            f"هيكل الراتب الساري من {row.effective_from} اتحسب عليه مسير مرحّل — "
-            "مينفعش يتمسح. لو الراتب اتغيّر اعمل نسخة جديدة بتاريخ سريان جديد.")
+            f"هيكل الراتب الساري من {row.effective_from} احتُسب عليه مسير مرحّل — "
+            "لا يمكن حذفه. إن تغيّر الراتب فأنشئ نسخة جديدة بتاريخ سريان جديد.")
     employee_id = row.employee_id
     before = {"from": str(row.effective_from), "basic": str(row.basic)}
     for line in db.scalars(select(EmployeeSalaryLine).where(
@@ -280,7 +280,7 @@ def create_version(
         PayrollSchemeVersion.scheme == scheme,
         PayrollSchemeVersion.effective_from == effective_from))
     if clash is not None:
-        raise PayrollSetupError("فيه إصدار بنفس تاريخ السريان.")
+        raise PayrollSetupError("يوجد إصدار بتاريخ السريان نفسه.")
 
     row = PayrollSchemeVersion(
         scheme=scheme, name=clean, effective_from=effective_from,
@@ -311,8 +311,8 @@ def _replace_brackets(db: Session, version: PayrollSchemeVersion, brackets: list
         upper = band.get("to_amount")
         if previous_top is not None and lower != previous_top:
             raise PayrollSetupError(
-                f"الشريحة رقم {index} بتبدأ من {lower} والسابقة انتهت عند {previous_top} — "
-                "لازم يبقوا متصلين."
+                f"الشريحة رقم {index} تبدأ من {lower} بينما انتهت السابقة عند {previous_top} — "
+                "يجب أن تكون متصلة."
             )
         if upper is not None and Decimal(str(upper)) <= lower:
             raise PayrollSetupError(f"الشريحة رقم {index} نهايتها قبل بدايتها.")
@@ -328,7 +328,7 @@ def _replace_brackets(db: Session, version: PayrollSchemeVersion, brackets: list
 def assert_editable(db: Session, version: PayrollSchemeVersion) -> None:
     if version.locked:
         raise PayrollSetupError(
-            "الشرايح دي استُخدمت في مرتب مرحّل — اعمل إصدار جديد بتاريخ سريان جديد."
+            "هذه الشرائح استُخدمت في مرتب مرحّل — أنشئ إصداراً جديداً بتاريخ سريان جديد."
         )
 
 

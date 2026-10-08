@@ -54,7 +54,7 @@ def _doc_number(db: Session, direction: ChequeDirection) -> str:
 def _positive(amount) -> Decimal:
     value = to_money(amount)
     if value <= ZERO:
-        raise ChequeError("قيمة الشيك لازم تكون أكبر من صفر.")
+        raise ChequeError("يجب أن تكون قيمة الشيك أكبر من صفر.")
     return value
 
 
@@ -80,14 +80,14 @@ def register_cheque(
 
     if direction == ChequeDirection.incoming:
         if customer_id is None:
-            raise ChequeError("لازم تحدد العميل صاحب الشيك.")
+            raise ChequeError("حدد العميل صاحب الشيك.")
         party = voucher_service._customer_account(db, customer_id)
         holding = under_collection_account(db)
         debit, credit = holding.id, party.account_id
         statement = "شيك وارد تحت التحصيل"
     else:
         if supplier_id is None:
-            raise ChequeError("لازم تحدد المورد المستفيد.")
+            raise ChequeError("حدد المورد المستفيد.")
         party = voucher_service._supplier_account(db, supplier_id)
         holding = cheques_payable_account(db)
         debit, credit = party.account_id, holding.id

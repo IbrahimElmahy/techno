@@ -64,12 +64,12 @@ def initiate(db, *, item_id, quantity, route: TransferRoute, source_kind, source
              external_document_number: str | None = None) -> StockTransfer:
     want_src, want_dst = _ROUTE_KINDS[route]
     if source_kind != want_src or dest_kind != want_dst:
-        raise TransferError("نوع التحويل ده مش متاح بين المكانين دول.")
+        raise TransferError("نوع التحويل هذا غير متاح بين هذين الموقعين.")
     qty = Decimal(quantity)
     if qty <= 0:
-        raise TransferError("كمية التحويل لازم تكون أكبر من صفر.")
+        raise TransferError("يجب أن تكون كمية التحويل أكبر من صفر.")
     if source_kind == dest_kind and source_id == dest_id:
-        raise TransferError("المصدر والوجهة لازم يكونوا مكانين مختلفين.")
+        raise TransferError("يجب أن يكون المصدر والوجهة موقعين مختلفين.")
     transfer = StockTransfer(
         document_number=_doc_number(db), item_id=item_id, quantity=Decimal(quantity), route=route,
         source_location_kind=source_kind, source_location_id=source_id,
@@ -89,23 +89,23 @@ def approve(db, *, transfer_id: int, approver_role: RoleName, approver_branch_id
             approver_user_id: int, is_admin: bool) -> StockTransfer:
     transfer = db.get(StockTransfer, transfer_id)
     if transfer is None:
-        raise TransferError("إذن التحويل مش موجود.")
+        raise TransferError("إذن التحويل غير موجود.")
     if transfer.status != TransferStatus.pending:
-        raise TransferError("الإذن اللي اتعتمد أو اترفض مايتعتمدش تاني.")
+        raise TransferError("لا يمكن اعتماد إذن معتمد أو مرفوض مرة أخرى.")
 
     src_branch = _location_branch(db, transfer.source_location_kind, transfer.source_location_id)
     if src_branch is None:
         if not is_admin:
-            raise TransferDenied("التحويل من مخزن مركزي محتاج صلاحية الإدارة.")
+            raise TransferDenied("يتطلب التحويل من مخزن مركزي صلاحية الإدارة.")
     elif not (is_admin or (approver_role == RoleName.branch_manager and approver_branch_id == src_branch)):
-        raise TransferDenied("الاعتماد لمدير فرع المصدر بس.")
+        raise TransferDenied("الاعتماد لمدير فرع المصدر فقط.")
 
     lines = db.scalars(select(StockTransferLine).where(
         StockTransferLine.transfer_id == transfer.id)).all()
     moving = ([(ln, ln.item_id, ln.quantity) for ln in lines] if lines
               else [(None, transfer.item_id, transfer.quantity)])
     if not moving:
-        raise TransferError("الإذن مفيهوش أصناف — ارفضه بدل ما تعتمده.")
+        raise TransferError("لا توجد أصناف في الإذن — ارفضه بدلاً من اعتماده.")
 
     first_out = first_in = None
     for line, item_id, quantity in moving:
@@ -175,7 +175,7 @@ def _drop_movements(db, transfer, lines) -> None:
 def delete(db, *, transfer_id: int, actor_user_id: int) -> None:
     transfer = db.get(StockTransfer, transfer_id)
     if transfer is None:
-        raise TransferError("إذن التحويل مش موجود.")
+        raise TransferError("إذن التحويل غير موجود.")
 
     lines = db.scalars(select(StockTransferLine).where(
         StockTransferLine.transfer_id == transfer.id)).all()
@@ -222,22 +222,22 @@ def _refuse_if_dest_goes_negative(db, transfer, lines) -> None:
         after = on_hand - Decimal(str(ln.quantity))
         if after < 0:
             item = db.get(Item, ln.item_id)
-            short.append(f"«{item.name if item else ln.item_id}» هينزل لـ{after}")
+            short.append(f"«{item.name if item else ln.item_id}» سينخفض إلى {after}")
     if short:
         raise TransferError(
-            "الإلغاء هيخلّي الوجهة برصيد سالب — يعني البضاعة وصلت واتباعت، فمش ممكن "
-            "نقول إنها ماوصلتش: " + "، ".join(short[:5])
-            + (f" وكمان {len(short) - 5}" if len(short) > 5 else "")
-            + ". اعمل إذن رجوع بالكمية اللي لسه موجودة، أو اظبط الجردة الأول.")
+            "سيجعل الإلغاء رصيد الوجهة سالباً — أي أن البضاعة وصلت وبيعت، فلا يمكن "
+            "اعتبارها لم تصل: " + "، ".join(short[:5])
+            + (f" و{len(short) - 5} أخرى" if len(short) > 5 else "")
+            + ". سجّل إذن إرجاع بالكمية الموجودة حالياً، أو اضبط الجرد أولاً.")
 
 
 def cancel(db, *, transfer_id: int, actor_user_id: int,
            reason: str | None = None) -> StockTransfer:
     transfer = db.get(StockTransfer, transfer_id)
     if transfer is None:
-        raise TransferError("إذن التحويل مش موجود.")
+        raise TransferError("إذن التحويل غير موجود.")
     if transfer.status != TransferStatus.approved:
-        raise TransferError("الإذن المعتمد بس هو اللي ينفع يتلغي — اللي لسه معلّق يترفض.")
+        raise TransferError("لا يُلغى إلا الإذن المعتمد — أما المعلّق فيُرفض.")
 
     lines = db.scalars(select(StockTransferLine).where(
         StockTransferLine.transfer_id == transfer.id)).all()
@@ -262,7 +262,7 @@ def cancel(db, *, transfer_id: int, actor_user_id: int,
     _drop_movements(db, transfer, lines)
 
     transfer.status = TransferStatus.reversed
-    transfer.reject_reason = (reason or "اتلغى بعد الاعتماد")[:240]
+    transfer.reject_reason = (reason or "أُلغي بعد الاعتماد")[:240]
     db.flush()
     audit_service.record(db, action="transfer.cancel", actor_user_id=actor_user_id,
                          entity_type="stock_transfer", entity_id=transfer.id,
@@ -275,7 +275,7 @@ def _pending(db, transfer_id: int) -> StockTransfer:
     if transfer is None:
         raise TransferError("إذن التحويل غير موجود.")
     if transfer.status != TransferStatus.pending:
-        raise TransferError("الإذن ده مش تحت الاعتماد — مايتعدلش.")
+        raise TransferError("هذا الإذن ليس قيد الاعتماد — لا يمكن تعديله.")
     return transfer
 
 
@@ -284,7 +284,7 @@ def add_line(db, *, transfer_id: int, item_id: int, quantity,
     transfer = _pending(db, transfer_id)
     qty = to_qty(quantity)
     if qty <= 0:
-        raise TransferError("الكمية لازم تكون أكبر من صفر.")
+        raise TransferError("يجب أن تكون الكمية أكبر من صفر.")
     line = StockTransferLine(transfer_id=transfer.id, item_id=item_id, quantity=qty)
     db.add(line)
     db.flush()
@@ -303,7 +303,7 @@ def set_line_quantity(db, *, line_id: int, quantity,
     _pending(db, line.transfer_id)
     qty = to_qty(quantity)
     if qty <= 0:
-        raise TransferError("الكمية لازم تكون أكبر من صفر — لو مش عايزه، امسح السطر.")
+        raise TransferError("يجب أن تكون الكمية أكبر من صفر — إن لم تكن تريده فاحذف السطر.")
     was = str(line.quantity)
     line.quantity = qty
     db.flush()

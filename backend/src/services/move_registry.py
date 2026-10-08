@@ -54,8 +54,8 @@ MOVE_TYPE_LABEL: dict[str, str] = {
     MoveType.entry.value: "قيد",
     MoveType.out_invoice.value: "فاتورة بيع",
     MoveType.out_refund.value: "مردود بيع",
-    MoveType.in_invoice.value: "فاتورة شرا",
-    MoveType.in_refund.value: "مردود شرا",
+    MoveType.in_invoice.value: "فاتورة شراء",
+    MoveType.in_refund.value: "مردود شراء",
 }
 
 PARTNER_KIND_LABEL: dict[str, str] = {

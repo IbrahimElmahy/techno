@@ -37,7 +37,7 @@ def create_shift(
     if not clean:
         raise AttendanceError("اسم الوردية مطلوب.")
     if db.scalar(select(WorkShift).where(WorkShift.name == clean)):
-        raise AttendanceError("فيه وردية بنفس الاسم.")
+        raise AttendanceError("توجد وردية بالاسم نفسه.")
     try:
         calc.shift_span(start_time, end_time)
     except calc.AttendanceError as exc:
@@ -118,7 +118,7 @@ def add_holiday(
         Holiday.branch_id.is_(None) if branch_id is None else Holiday.branch_id == branch_id,
         Holiday.active.is_(True)))
     if clash is not None:
-        raise AttendanceError("فيه عطلة مسجّلة في نفس اليوم.")
+        raise AttendanceError("توجد عطلة مسجّلة في اليوم نفسه.")
     row = Holiday(name=clean, holiday_date=holiday_date, paid=paid, branch_id=branch_id)
     db.add(row)
     db.flush()
@@ -145,8 +145,8 @@ def is_holiday(db: Session, day: date, branch_id: int | None = None) -> Holiday 
 def _assert_open(day: AttendanceDay | None) -> None:
     if day is not None and day.locked_by_payroll_run_id is not None:
         raise AttendanceLocked(
-            f"اليوم ده داخل مسير مرحّل رقم {day.locked_by_payroll_run_id} — "
-            "اعكس المسير الأول."
+            f"هذا اليوم داخل مسير مرحّل رقم {day.locked_by_payroll_run_id} — "
+            "اعكس المسير أولاً."
         )
 
 

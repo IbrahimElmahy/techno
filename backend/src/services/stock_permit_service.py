@@ -70,7 +70,7 @@ def create_permit(
 def _validate_lines(db: Session, permit_kind: PermitKind, warehouse_id: int,
                     lines: list[dict]) -> list[tuple]:
     if not lines:
-        raise StockPermitError("لازم سطر واحد على الأقل.")
+        raise StockPermitError("يجب إدخال سطر واحد على الأقل.")
     if db.get(Warehouse, warehouse_id) is None:
         raise StockPermitError("المخزن غير موجود.")
 
@@ -81,7 +81,7 @@ def _validate_lines(db: Session, permit_kind: PermitKind, warehouse_id: int,
             raise StockPermitError("صنف غير موجود.")
         quantity = to_qty(raw.get("quantity") or 0)
         if quantity <= ZERO_QTY:
-            raise StockPermitError(f"كمية «{item.name}» لازم تكون أكبر من صفر.")
+            raise StockPermitError(f"كمية «{item.name}» يجب أن تكون أكبر من صفر.")
         if permit_kind in (PermitKind.receipt, PermitKind.opening):
             raw_cost = raw.get("unit_cost")
             cost = to_money(raw_cost) if raw_cost not in (None, "") \
@@ -93,7 +93,7 @@ def _validate_lines(db: Session, permit_kind: PermitKind, warehouse_id: int,
         expiry = raw.get("expiry_date")
         if getattr(item, "is_perishable", False)                 and permit_kind in (PermitKind.receipt, PermitKind.opening) and not expiry:
             raise StockPermitError(
-                f"«{item.name}» صنف له صلاحية — لازم تكتب تاريخ صلاحية البضاعة الداخلة.")
+                f"«{item.name}» صنف ذو صلاحية — أدخل تاريخ صلاحية البضاعة الواردة.")
         built.append((item, quantity, cost, expiry))
     return built
 
@@ -161,8 +161,8 @@ def _assert_not_negative(db: Session, warehouse_id: int, item_ids: set[int]) -> 
         if bal < ZERO:
             item = db.get(Item, item_id)
             raise StockPermitError(
-                f"مش هينفع — رصيد «{item.name if item else item_id}» هيبقى بالسالب ({bal}): "
-                "البضاعة دي اتصرفت بعد الإذن.")
+                f"لا يمكن — رصيد «{item.name if item else item_id}» سيصبح سالباً ({bal}): "
+                "صُرفت هذه البضاعة بعد الإذن.")
 
 
 def _reversal_of(db: Session, permit: StockPermit) -> StockPermit | None:
@@ -178,9 +178,9 @@ def update_permit(
     if permit is None:
         raise StockPermitError("الإذن غير موجود.")
     if permit.reverses_id is not None:
-        raise StockPermitError("ده إذن عكس — امسحه بدل ما تعدّله.")
+        raise StockPermitError("هذا إذن عكسي — احذفه بدلاً من تعديله.")
     if _reversal_of(db, permit) is not None:
-        raise StockPermitError("الإذن ده اتعكس — امسح إذن العكس الأول وبعدين عدّله.")
+        raise StockPermitError("عُكس هذا الإذن — احذف إذن العكس أولاً ثم عدّله.")
     built = _validate_lines(db, permit.kind, warehouse_id, lines)
     before = {"doc": permit.document_number, "cost": str(permit.total_cost),
               "warehouse_id": permit.warehouse_id}
@@ -233,10 +233,10 @@ def reverse_permit(db: Session, *, permit_id: int, actor_user_id: int) -> StockP
     if original is None:
         raise StockPermitError("الإذن غير موجود.")
     if original.reverses_id is not None:
-        raise StockPermitError("ما ينفعش تعكس إذن عكسي.")
+        raise StockPermitError("لا يمكن عكس إذن عكسي.")
     already = db.scalar(select(StockPermit).where(StockPermit.reverses_id == permit_id))
     if already is not None:
-        raise StockPermitError("الإذن اتعكس قبل كده.")
+        raise StockPermitError("عُكس الإذن مسبقاً.")
 
     mirror_kind = (PermitKind.issue
                    if original.kind in (PermitKind.receipt, PermitKind.opening)

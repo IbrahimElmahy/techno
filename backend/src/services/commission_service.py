@@ -42,7 +42,7 @@ def set_rule(
 ) -> CommissionRule:
     rate = Decimal(str(rate_pct))
     if rate < 0 or rate > 100:
-        raise CommissionError("نسبة العمولة لازم تكون بين 0 و 100.")
+        raise CommissionError("يجب أن تكون نسبة العمولة بين 0 و100.")
     if rep_user_id is not None and db.get(User, rep_user_id) is None:
         raise CommissionError("المندوب غير موجود.")
     existing = db.scalar(
@@ -92,7 +92,7 @@ def compute(
         from src.services import hr_commission_service
 
         if branch_id is None or year is None or month is None:
-            raise CommissionError("عمولات المرتبات محتاجة الفرع والسنة والشهر.")
+            raise CommissionError("تتطلب عمولات المرتبات تحديد الفرع والسنة والشهر.")
         return hr_commission_service.compute(db, branch_id=branch_id, year=year, month=month,
                                              absences=absences)
     reps = db.scalars(

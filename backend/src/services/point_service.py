@@ -143,7 +143,7 @@ def _next_serial(db: Session) -> str:
 
 def convert(db: Session, *, customer_id: int, coupon_type_ids: list[int], actor_user_id: int) -> list[Coupon]:
     if not coupon_type_ids:
-        raise PointError("اختار نوع كوبون واحد على الأقل.")
+        raise PointError("اختر نوع كوبون واحداً على الأقل.")
     available = balance(db, customer_id, PointPurse.coupon)
     conversion = PointConversion(customer_id=customer_id, actor_user_id=actor_user_id)
     db.add(conversion)
@@ -152,10 +152,10 @@ def convert(db: Session, *, customer_id: int, coupon_type_ids: list[int], actor_
     for type_id in coupon_type_ids:
         ct = db.get(CouponType, type_id)
         if ct is None or not ct.active:
-            raise PointError("نوع الكوبون مش موجود أو مقفول.")
+            raise PointError("نوع الكوبون غير موجود أو مقفل.")
         cost = _points(ct.point_cost)
         if cost > available:
-            raise PointError("نقاط العميل مش كفاية لنوع الكوبون المختار.")
+            raise PointError("نقاط العميل غير كافية لنوع الكوبون المختار.")
         available -= cost
         coupon = Coupon(
             serial=_next_serial(db), customer_id=customer_id, coupon_type_id=ct.id,

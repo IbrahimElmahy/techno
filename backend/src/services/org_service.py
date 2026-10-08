@@ -49,7 +49,7 @@ def production_branch_problem(db: Session, branch_id: int | None,
     if branch_id is None and len(factories) == 1:
         branch_id = factories[0].id
     if branch_id not in ids:
-        return branch_id, f"أوامر التشغيل في فرع المصنع بس ({names})."
+        return branch_id, f"أوامر التشغيل في فرع المصنع فقط ({names})."
     from src.models.warehouse import Warehouse
 
     wanted = {int(w) for w in warehouse_ids if w is not None}
@@ -59,7 +59,7 @@ def production_branch_problem(db: Session, branch_id: int | None,
             (Warehouse.branch_id != branch_id) | Warehouse.branch_id.is_(None))).all()
         if foreign:
             listed = "، ".join(w.name for w in foreign[:3])
-            return branch_id, f"المخزن «{listed}» مش من فرع المصنع ({names})."
+            return branch_id, f"المخزن «{listed}» ليس من فرع المصنع ({names})."
     return branch_id, None
 
 

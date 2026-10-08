@@ -272,7 +272,7 @@ def _collect_cheques(db, look, filters, *, today: date) -> list[dict]:
     return rows
 
 
-_ORDER_STATUS = {"open": "مفتوح", "converted": "اتحوّل لفاتورة", "cancelled": "ملغي"}
+_ORDER_STATUS = {"open": "مفتوح", "converted": "تحوّل إلى فاتورة", "cancelled": "ملغي"}
 
 
 def _collect_orders(db, look, filters, *, today: date) -> list[dict]:
@@ -306,7 +306,7 @@ def _collect_orders(db, look, filters, *, today: date) -> list[dict]:
     return rows
 
 
-_RESERVATION_STATUS = {"active": "سارٍ", "converted": "اتحوّل لفاتورة", "cancelled": "ملغي"}
+_RESERVATION_STATUS = {"active": "سارٍ", "converted": "تحوّل إلى فاتورة", "cancelled": "ملغي"}
 _HOLD_PLACE = {"warehouse": "مخزن", "custody": "عهدة مندوب"}
 
 
@@ -404,13 +404,13 @@ def ops(
     statement: str | None = None,
 ) -> dict:
     if subject not in SUBJECTS:
-        raise OpsReportError(f"موضوع مش معروف: {subject}")
+        raise OpsReportError(f"موضوع غير معروف: {subject}")
     if level not in LEVELS:
-        raise OpsReportError(f"مستوى مش معروف: {level}")
+        raise OpsReportError(f"مستوى غير معروف: {level}")
     if group_by not in GROUPS:
-        raise OpsReportError(f"تجميع مش معروف: {group_by}")
+        raise OpsReportError(f"تجميع غير معروف: {group_by}")
     if level == "summary" and group_by == "none":
-        raise OpsReportError("الملخّص محتاج تجميع.")
+        raise OpsReportError("يتطلب الملخّص تجميعاً.")
 
     today = today or date.today()
     look = _lookups(db)
@@ -473,7 +473,7 @@ def ops(
 def top_customers(db: Session, *, metric: str = "points", limit: int = 20,
                   date_from=None, date_to=None) -> dict:
     if metric not in ("points", "coupons"):
-        raise OpsReportError(f"مقياس مش معروف: {metric}")
+        raise OpsReportError(f"مقياس غير معروف: {metric}")
     subject = "points" if metric == "points" else "coupons"
     report = ops(db, subject=subject, level="summary", group_by="customer",
                  date_from=date_from, date_to=date_to)

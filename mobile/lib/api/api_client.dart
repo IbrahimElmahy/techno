@@ -482,7 +482,7 @@ class ApiClient {
     final storeId = int.tryParse(await LocalDb.instance.getKv('store_id') ?? '');
     final storeKind = await LocalDb.instance.getKv('store_kind') ?? 'custody';
     if (storeId == null && pending.isNotEmpty) {
-      throw ApiException(0, 'اسحب البيانات أولاً — مخزنك غير معروف على الجهاز.');
+      throw ApiException(0, 'نفّذ المزامنة أولاً — مخزنك غير معروف على الجهاز.');
     }
     for (final inv in pending) {
       onProgress?.call(sent, pending.length);

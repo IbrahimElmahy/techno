@@ -48,7 +48,7 @@ def open_sheet(
     statement1: str | None = None,
 ) -> StockCount:
     if kind == StockCountKind.spot and not item_ids:
-        raise StockCountError("جرد العينة لازم تحدد فيه الأصناف.")
+        raise StockCountError("يجب تحديد الأصناف في جرد العينة.")
     if kind == StockCountKind.cycle and not batch_size:
         batch_size = 20
     warehouses = (
@@ -58,7 +58,7 @@ def open_sheet(
     if any(w is None for w in warehouses):
         raise StockCountError("المخزن غير موجود.")
     if not warehouses:
-        raise StockCountError("مفيش مخازن نشطة للجرد.")
+        raise StockCountError("لا توجد مخازن نشطة للجرد.")
 
     items = list(db.scalars(select(Item)).all())
     if item_ids:
@@ -95,7 +95,7 @@ def open_sheet(
         ))
 
     if not sheet.lines:
-        raise StockCountError("مفيش أرصدة في المخزن ده — مفيش حاجة تتجرد.")
+        raise StockCountError("لا توجد أرصدة في هذا المخزن — لا يوجد ما يُجرد.")
 
     db.flush()
     audit_service.record(db, action="stock_count.open", actor_user_id=actor_user_id,
@@ -115,7 +115,7 @@ def enter_counts(
     if sheet is None:
         raise StockCountError("الجرد غير موجود.")
     if sheet.status != StockCountStatus.draft:
-        raise StockCountError("الجرد ده مش مفتوح — القيم مابتتغيّرش بعد الترحيل.")
+        raise StockCountError("هذا الجرد غير مفتوح — لا تتغير القيم بعد الترحيل.")
     if statement1 is not _UNSET:
         sheet.statement1 = (statement1 or "").strip() or None
 
@@ -123,13 +123,13 @@ def enter_counts(
     for line_id, value in counts.items():
         line = by_id.get(line_id)
         if line is None:
-            raise StockCountError(f"السطر {line_id} مش في الجرد ده.")
+            raise StockCountError(f"السطر {line_id} ليس في هذا الجرد.")
         if value is None:
             line.counted_quantity = None
             continue
         qty = to_qty(value)
         if qty < ZERO:
-            raise StockCountError("الكمية المعدودة ماتكونش بالسالب.")
+            raise StockCountError("لا يمكن أن تكون الكمية المعدودة سالبة.")
         line.counted_quantity = qty
     db.flush()
     return sheet
@@ -140,9 +140,9 @@ def post(db: Session, *, count_id: int, actor_user_id: int) -> StockCount:
     if sheet is None:
         raise StockCountError("الجرد غير موجود.")
     if sheet.status != StockCountStatus.draft:
-        raise StockCountError("الجرد ده اترحّل أو اتلغى قبل كده.")
+        raise StockCountError("رُحِّل هذا الجرد أو أُلغي مسبقاً.")
     if not any(ln.counted_quantity is not None for ln in sheet.lines):
-        raise StockCountError("مفيش أي سطر متعدود — مفيش حاجة تترحّل.")
+        raise StockCountError("لا يوجد أي سطر معدود — لا يوجد ما يُرحَّل.")
 
     blocked = []
     for line in sheet.lines:
@@ -159,9 +159,9 @@ def post(db: Session, *, count_id: int, actor_user_id: int) -> StockCount:
             blocked.append(item.name)
     if blocked:
         raise StockCountError(
-            "الأصناف دي بسرايل أو بصلاحية وفرقها مايتسوّاش بكمية مجرّدة: "
+            "هذه الأصناف بسيريال أو بصلاحية ولا يُسوّى فرقها بكمية مجرّدة: "
             + "، ".join(sorted(set(blocked)))
-            + ". تسويتها بتتم بالسيريال أو باللوط."
+            + ". تتم تسويتها بالسيريال أو بالدفعة."
         )
 
     for line in sheet.lines:
@@ -197,7 +197,7 @@ def cancel(db: Session, *, count_id: int, actor_user_id: int) -> StockCount:
     if sheet is None:
         raise StockCountError("الجرد غير موجود.")
     if sheet.status == StockCountStatus.posted:
-        raise StockCountError("الجرد اترحّل — حركاته موجودة في المخزن وماتتلغيش بإلغاء الورقة.")
+        raise StockCountError("الجرد مرحّل — حركاته مسجلة في المخزن ولا تُلغى بإلغاء الكشف.")
     sheet.status = StockCountStatus.cancelled
     db.flush()
     return sheet

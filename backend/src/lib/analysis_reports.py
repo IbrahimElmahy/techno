@@ -58,7 +58,7 @@ def profitability(
     branch_id: int | None = None,
 ) -> dict:
     if dimension not in DIMENSIONS:
-        raise AnalysisReportError(f"بُعد مش معروف: {dimension}")
+        raise AnalysisReportError(f"بُعد غير معروف: {dimension}")
 
     names = ({c.id: c.name for c in db.scalars(select(CostCenter)).all()}
              if dimension == "cost_center"
@@ -122,7 +122,7 @@ def account_breakdown(
     date_from=None, date_to=None,
 ) -> dict:
     if dimension not in DIMENSIONS:
-        raise AnalysisReportError(f"بُعد مش معروف: {dimension}")
+        raise AnalysisReportError(f"بُعد غير معروف: {dimension}")
 
     rows_in = list(_pnl_lines(db, date_from=date_from, date_to=date_to, branch_id=branch_id))
     dists = (analytic_service.distributions_for(db, [ln.id for ln, _n, _s in rows_in])

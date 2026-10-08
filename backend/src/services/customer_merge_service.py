@@ -117,7 +117,7 @@ def plan(db: Session) -> MergePlan:
             continue
         base = _normalise(name[len(TECHNO_PREFIX):])
         if not base:
-            out.skipped.append((c.name, "«تكنو» من غير اسم بعدها"))
+            out.skipped.append((c.name, "«تكنو» بلا اسم بعدها"))
             continue
 
         candidates = by_name.get((c.branch_id, match_key(base)), [])
@@ -125,7 +125,7 @@ def plan(db: Session) -> MergePlan:
             out.techno_only.append((c.id, c.name))
             continue
         if len(candidates) > 1:
-            out.skipped.append((c.name, f"«{base}» متكرر {len(candidates)} مرات — محتاج قرار"))
+            out.skipped.append((c.name, f"«{base}» متكرر {len(candidates)} مرات — يتطلب قراراً"))
             continue
 
         keep = candidates[0]
@@ -134,15 +134,15 @@ def plan(db: Session) -> MergePlan:
         p_keep, p_dupe = _digits(keep.phone), _digits(c.phone)
         if p_keep and p_dupe and p_keep != p_dupe:
             out.skipped.append(
-                (c.name, f"تليفون مختلف عن «{keep.name}» ({keep.phone} / {c.phone})"))
+                (c.name, f"هاتف مختلف عن «{keep.name}» ({keep.phone} / {c.phone})"))
             continue
         keep_fams, dupe_fams = families.get(keep.id, []), families.get(c.id, [])
         if FAMILY_POLY in keep_fams:
-            out.skipped.append((c.name, f"«{keep.name}» عنده حساب بولي بالفعل"))
+            out.skipped.append((c.name, f"«{keep.name}» لديه حساب بولي بالفعل"))
             continue
         if len(dupe_fams) > 1 or any(f not in (None, FAMILY_POLY) for f in dupe_fams):
             fams = " / ".join(f or "-" for f in dupe_fams)
-            out.skipped.append((c.name, f"المكرر عنده حسابات ({fams})"))
+            out.skipped.append((c.name, f"للمكرر حسابات ({fams})"))
             continue
         out.pairs.append(MergePair(
             base_name=base,
@@ -186,7 +186,7 @@ def apply(db: Session, *, dry_run: bool = True, limit: int | None = None,
         keep = customers.get(pair.keep_customer_id)
         dupe = customers.get(pair.merge_customer_id)
         if keep is None or dupe is None:
-            p.skipped.append((pair.merge_name, "العميل اختفى بين التخطيط والتنفيذ"))
+            p.skipped.append((pair.merge_name, "اختفى العميل بين التخطيط والتنفيذ"))
             continue
 
         for acc in accounts_by_customer.get(keep.id, []):
@@ -365,13 +365,13 @@ def plan_leftovers(db: Session) -> list[Leftover]:
         keep = by_id.get(t) if t else None
         problem = None
         if keep is None:
-            problem = f"الهدف #{merged_target_id(c.name)} مش موجود أو مش شغّال أو السلسلة مقفولة"
+            problem = f"الهدف #{merged_target_id(c.name)} غير موجود أو غير نشط أو السلسلة مقفلة"
         elif keep.branch_id != c.branch_id:
-            problem = "الهدف في فرع تاني"
+            problem = "الهدف في فرع آخر"
         elif accs.get(c.id):
-            problem = f"لسه عليه {accs[c.id]} حساب ذمم — محتاج دمج حقيقي"
+            problem = f"ما زال له {accs[c.id]} حساب ذمم — يتطلب دمجاً فعلياً"
         elif c.active:
-            problem = "متعلّم مدموج بس لسه شغّال"
+            problem = "مُعلَّم مدموجاً لكنه ما زال نشطاً"
         out.append(Leftover(c.id, c.name, keep.id if keep else None,
                             keep.name if keep else None, r, accs.get(c.id, 0), problem))
     out.sort(key=lambda x: x.dupe_id)
@@ -410,11 +410,11 @@ def receivable_account(db: Session, customer_id: int, family: str | None = None)
                 return a
         if len(rows) == 1:
             return rows[0]
-        raise MergeError(f"العميل مالوش حساب لـ«{family}»")
+        raise MergeError(f"ليس للعميل حساب لـ«{family}»")
     if len(rows) == 1:
         return rows[0]
     for a in rows:
         if a.family is None:
             return a
     names = " / ".join(a.family or "-" for a in rows)
-    raise MergeError(f"العميل عنده أكتر من حساب ({names}) — لازم تحدد النوع")
+    raise MergeError(f"للعميل أكثر من حساب ({names}) — يجب تحديد النوع")

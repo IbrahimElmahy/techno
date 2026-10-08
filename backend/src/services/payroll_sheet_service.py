@@ -776,7 +776,7 @@ def _build_row(db: Session, *, run, sg, emp, sort_order, year, month, period_end
 
 def _absence_note(sg, days: Decimal, override, has_att: bool) -> str:
     base = " + ".join(c["label"] for c in sg.columns if c["key"] in (sg.absence_base or []))
-    origin = "مكتوبة بالإيد" if override is not None else (
+    origin = "مُدخلة يدوياً" if override is not None else (
         "من الحضور" if has_att else "لا يوجد حضور مسجّل")
     return f"({base or 'صفر'}) ÷ {sg.absence_divisor} × {days.normalize()} يوم — {origin}"
 
@@ -794,8 +794,8 @@ def _recompute_row(db: Session, run: PayrollRun, sg: PayrollSheetGroup,
         cell.computed = to_money(base / Decimal(sg.absence_divisor or 30) * days) if base else ZERO
         note = cell.source_note or ""
         head = note.split(" — ")[-1] if " — " in note else ""
-        origin = "مكتوبة بالإيد" if row.absent_days_override is not None else (
-            head if head and head != "مكتوبة بالإيد" else "من الحضور")
+        origin = "مُدخلة يدوياً" if row.absent_days_override is not None else (
+            head if head and head not in ("مكتوبة بالإيد", "مُدخلة يدوياً") else "من الحضور")
         names = " + ".join(c["label"] for c in sg.columns if c["key"] in (sg.absence_base or []))
         cell.source_note = (f"({names or 'صفر'}) ÷ {sg.absence_divisor} × "
                             f"{days.normalize()} يوم — {origin}")[:300]

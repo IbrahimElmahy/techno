@@ -51,13 +51,13 @@ def assert_open(db: Session, when: date | None, *, actor_user_id: int | None = N
     day = when or date.today()
     if fiscal is not None and day <= fiscal:
         raise LockDateError(
-            f"السنة مقفولة حتى {fiscal:%Y-%m-%d} — مافيش حركة بتاريخ {day:%Y-%m-%d}. "
-            "الأدمن هو اللي بيحرّك تاريخ القفل من إعدادات المحاسبة."
+            f"السنة مقفلة حتى {fiscal:%Y-%m-%d} — لا يمكن تسجيل حركة بتاريخ {day:%Y-%m-%d}. "
+            "مدير النظام وحده يغيّر تاريخ القفل من إعدادات المحاسبة."
         )
     if period is not None and day <= period and not _is_adviser(db, actor_user_id):
         raise LockDateError(
-            f"الفترة مقفولة حتى {period:%Y-%m-%d} — مافيش حركة بتاريخ {day:%Y-%m-%d}. "
-            "المحاسب أو الأدمن يقدر يعدّل في الفترة دي."
+            f"الفترة مقفلة حتى {period:%Y-%m-%d} — لا يمكن تسجيل حركة بتاريخ {day:%Y-%m-%d}. "
+            "يمكن للمحاسب أو مدير النظام التعديل في هذه الفترة."
         )
 
 
