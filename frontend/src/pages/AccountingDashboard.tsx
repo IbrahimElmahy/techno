@@ -47,7 +47,7 @@ function primaryAction(card: JournalCard): { label: string; to: string } {
     case 'purchase': return { label: 'فاتورة شراء', to: '/purchases?new=1' };
     case 'cash': return { label: 'سند قبض', to: '/vouchers?tab=receipt' };
     case 'bank': return { label: 'سند قبض', to: '/vouchers?tab=receipt' };
-    default: return { label: 'قيد جديد', to: '/general-ledger?tab=journal' };
+    default: return { label: 'سند صرف', to: '/vouchers?tab=payment' };
   }
 }
 

@@ -65,23 +65,21 @@ const FinanceReports: React.FC = () => {
     setLoading(true);
     try {
       const p = params();
-      const [b, t, a] = await Promise.all([
-        api.get<BalanceSheet>('/api/v1/reports/balance-sheet', {
-          params: { ...(p.date_to ? { as_of: p.date_to } : {}), ...reportParams(opts) },
-        }),
-        api.get('/api/v1/reports/balance-sheet-tree', {
+      void p;
+      if (tab === 'sheet') {
+        const t = await api.get('/api/v1/reports/balance-sheet-tree', {
           params: { ...(asOf ? { as_of: asOf.format('YYYY-MM-DD') } : {}), posted_only: opts.postedOnly },
-        }),
-        api.get<AgingRow[]>('/api/v1/reports/aging', { params: { party: agingParty } }),
-      ]);
-      setSheet(b.data);
-      setTree(t.data);
-      setAging(a.data);
+        });
+        setTree(t.data);
+      } else if (tab === 'aging') {
+        const a = await api.get<AgingRow[]>('/api/v1/reports/aging', { params: { party: agingParty } });
+        setAging(a.data);
+      }
     } catch {
     } finally {
       setLoading(false);
     }
-  }, [params, agingParty, opts, asOf]);
+  }, [params, agingParty, opts, asOf, tab]);
 
   useEffect(() => {
     loadAll();

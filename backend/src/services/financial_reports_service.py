@@ -4,7 +4,7 @@ from dataclasses import dataclass, field
 from datetime import date
 from decimal import Decimal
 
-from sqlalchemy import select
+from sqlalchemy import Date, case, cast, func, select
 from sqlalchemy.orm import Session, selectinload
 
 from src.core.money import ZERO, to_money
@@ -81,27 +81,25 @@ def _movements(
     db: Session, *, date_from: date | None, date_to: date | None,
     posted_only: bool = True, branch_id: int | None = None,
 ) -> dict[int, Decimal]:
+    eff = func.coalesce(LedgerEntry.entry_date, cast(LedgerEntry.created_at, Date))
+    signed = case((LedgerLine.direction == Account.normal_side, LedgerLine.amount),
+                  else_=-LedgerLine.amount)
     stmt = (
-        select(LedgerLine).options(selectinload(LedgerLine.entry),
-                                   selectinload(LedgerLine.account))
+        select(LedgerLine.account_id, func.sum(signed))
         .join(LedgerEntry, LedgerEntry.id == LedgerLine.entry_id)
+        .join(Account, Account.id == LedgerLine.account_id)
         .where(ledger_service.in_books_sql(posted_only))
+        .group_by(LedgerLine.account_id)
     )
     if branch_id is not None:
         stmt = stmt.where(
             (LedgerEntry.branch_id == branch_id) | LedgerEntry.branch_id.is_(None))
-    rows = db.scalars(stmt).all()
-    totals: dict[int, Decimal] = {}
-    for line in rows:
-        when = _effective_date(line.entry)
-        if date_from is not None and when < date_from:
-            continue
-        if date_to is not None and when > date_to:
-            continue
-        amount = to_money(line.amount)
-        signed = amount if line.direction == line.account.normal_side else -amount
-        totals[line.account_id] = totals.get(line.account_id, ZERO) + signed
-    return totals
+    if date_from is not None:
+        stmt = stmt.where(eff >= date_from)
+    if date_to is not None:
+        stmt = stmt.where(eff <= date_to)
+    return {account_id: to_money(Decimal(str(total or 0)))
+            for account_id, total in db.execute(stmt).all()}
 
 
 def _by_nature(
@@ -161,35 +159,35 @@ def _aging_for_accounts(
     wanted = dict(party_by_account)
     if not wanted:
         return []
+    eff = func.coalesce(LedgerEntry.entry_date, cast(LedgerEntry.created_at, Date))
     stmt = (
-        select(LedgerLine)
-        .options(selectinload(LedgerLine.entry), selectinload(LedgerLine.account))
+        select(LedgerLine.account_id, LedgerLine.amount, LedgerLine.direction,
+               LedgerLine.amount_residual, LedgerLine.date_maturity, eff, Account.normal_side)
         .join(LedgerEntry, LedgerEntry.id == LedgerLine.entry_id)
-        .where(LedgerLine.account_id.in_(list(wanted)), ledger_service.is_posted_sql())
+        .join(Account, Account.id == LedgerLine.account_id)
+        .where(LedgerLine.account_id.in_(list(wanted)), ledger_service.is_posted_sql(),
+               eff <= as_of)
     )
     if branch_id is not None:
         stmt = stmt.where(
             (LedgerEntry.branch_id == branch_id) | LedgerEntry.branch_id.is_(None))
-    rows = db.scalars(stmt).all()
+    rows = db.execute(stmt).all()
 
     per_party: dict[int, list[tuple[date, Decimal, bool]]] = {}
     tracked: dict[int, list[tuple[date, Decimal]]] = {}
-    for line in rows:
-        when = _effective_date(line.entry)
-        if when > as_of:
-            continue
-        party_id = wanted[line.account_id]
-        if line.amount_residual is not None:
-            residual = to_money(line.amount_residual)
+    for account_id, amount, direction, amount_residual, date_maturity, when, normal_side in rows:
+        party_id = wanted[account_id]
+        if amount_residual is not None:
+            residual = to_money(amount_residual)
             if residual == ZERO:
                 continue
-            signed = residual if line.account.normal_side == Direction.debit else -residual
-            due = line.date_maturity or when
+            signed = residual if normal_side == Direction.debit else -residual
+            due = date_maturity or when
             tracked.setdefault(party_id, []).append((due, signed))
             continue
-        is_charge = line.direction == line.account.normal_side
+        is_charge = direction == normal_side
         per_party.setdefault(party_id, []).append(
-            (when, to_money(line.amount), is_charge))
+            (when, to_money(amount), is_charge))
 
     result: list[AgingRow] = []
     rows_by_party: dict[int, AgingRow] = {}

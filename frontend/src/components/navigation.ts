@@ -171,7 +171,6 @@ export const NAVIGATION: (NavGroup | NavScreen)[] = [
           { key: '/vouchers?tab=expense', label: 'سند مصروف', roles: R(BOOKS) },
           { key: '/vouchers?tab=handover', label: 'توريد مندوب', roles: R(BOOKS) },
           { key: '/vouchers?tab=transfer', label: 'تحويل بين الخزن', roles: R(BOOKS) },
-          { key: '/general-ledger?tab=journal', label: 'قيد حر', roles: BOOKS, a5: '/entries' },
           { key: '/vouchers?tab=treasury-movement', label: 'حركة الخزينة', roles: R(BOOKS) },
           { key: '/treasury', label: 'حركة خزينه', roles: R(BOOKS), a5: '/draweraction' },
           { key: '/vouchers?tab=statement', label: 'كشف حساب السندات', roles: R(BOOKS) },
@@ -181,8 +180,7 @@ export const NAVIGATION: (NavGroup | NavScreen)[] = [
         key: 'grp-acct-reports',
         label: 'التقارير المالية',
         children: [
-          { key: '/general-ledger?tab=trial', label: 'دفتر الأستاذ وميزان المراجعة', roles: R(BOOKS), a5: '/ledger' },
-          { key: '/general-ledger?tab=chart', label: 'أرصدة الحسابات', roles: R(BOOKS), a5: '/account-balances' },
+          { key: '/general-ledger?tab=trial', label: 'ميزان المراجعة', roles: R(BOOKS), a5: '/ledger' },
           { key: '/finance-reports?tab=partner', label: 'دفتر الشريك', roles: R(BOOKS) },
           { key: '/finance-reports?tab=aging&side=customers', label: 'أعمار ديون العملاء', roles: R(BOOKS), a5: '/client-receivables' },
           { key: '/finance-reports?tab=aging&side=suppliers', label: 'أعمار ديون الموردين', roles: R(BOOKS), a5: '/supplier-payables' },

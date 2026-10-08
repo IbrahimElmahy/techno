@@ -4,7 +4,7 @@ from dataclasses import dataclass, field
 from datetime import date
 from decimal import Decimal
 
-from sqlalchemy import select
+from sqlalchemy import Date, case, cast, func, select
 from sqlalchemy.orm import Session
 
 from src.core.money import ZERO, to_money
@@ -71,10 +71,21 @@ def trial_balance(
     include_groups: bool = True,
     cost_center_id: int | None = None,
 ) -> TrialBalanceResult:
+    db.scalars(select(Account)).all()
+    eff = func.coalesce(LedgerEntry.entry_date, cast(LedgerEntry.created_at, Date))
+    debit = case((LedgerLine.direction == Direction.debit, LedgerLine.amount), else_=0)
+    credit = case((LedgerLine.direction == Direction.debit, 0), else_=LedgerLine.amount)
+    before = eff < from_date
     stmt = (
-        select(LedgerLine, LedgerEntry)
+        select(
+            LedgerLine.account_id,
+            func.sum(case((before, debit - credit), else_=0)),
+            func.sum(case((before, 0), else_=debit)),
+            func.sum(case((before, 0), else_=credit)),
+        )
         .join(LedgerEntry, LedgerLine.entry_id == LedgerEntry.id)
-        .where(ledger_service.is_posted_sql())
+        .where(ledger_service.is_posted_sql(), eff <= to_date)
+        .group_by(LedgerLine.account_id)
     )
     if branch_id is not None:
         stmt = stmt.where(LedgerEntry.branch_id == branch_id)
@@ -90,19 +101,11 @@ def trial_balance(
         )
 
     buckets: dict[int, _Bucket] = {}
-    for line, entry in db.execute(stmt).all():
-        eff = _effective_date(entry)
-        if eff > to_date:
-            continue
-        b = buckets.setdefault(line.account_id, _Bucket())
-        amount = to_money(line.amount)
-        if eff < from_date:
-            b.opening += amount if line.direction == Direction.debit else -amount
-        else:
-            if line.direction == Direction.debit:
-                b.period_debit += amount
-            else:
-                b.period_credit += amount
+    for account_id, opening, period_debit, period_credit in db.execute(stmt).all():
+        b = buckets.setdefault(account_id, _Bucket())
+        b.opening += to_money(Decimal(str(opening or 0)))
+        b.period_debit += to_money(Decimal(str(period_debit or 0)))
+        b.period_credit += to_money(Decimal(str(period_credit or 0)))
 
     result = TrialBalanceResult(from_date=from_date, to_date=to_date, branch_id=branch_id)
 
