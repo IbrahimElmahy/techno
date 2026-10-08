@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Button, Col, DatePicker, Input, Radio, Row, Select, Space, Table, Tag, message } from 'antd';
+import { ListStat } from '../../components/ListPage';
 import { DeleteOutlined, EditOutlined, PlusOutlined } from '@ant-design/icons';
 import dayjs, { Dayjs } from 'dayjs';
 
@@ -23,9 +24,11 @@ interface Leave {
   date_from: string; date_to: string; days: string; reason: string | null;
 }
 
-export function LeavesTab({ branchId, period, employees, onChanged }: {
-  branchId?: number; period: Dayjs; employees: PickEmployee[]; onChanged: () => void;
-}) {
+export interface TabParts { actions: React.ReactNode; summary: React.ReactNode; body: React.ReactNode }
+
+export function useLeavesTab({ active, branchId, period, employees, onChanged }: {
+  active: boolean; branchId?: number; period: Dayjs; employees: PickEmployee[]; onChanged: () => void;
+}): TabParts {
   const [rows, setRows] = useState<Leave[]>([]);
   const [loading, setLoading] = useState(false);
   const [open, setOpen] = useState<number | 'new' | null>(null);
@@ -43,7 +46,7 @@ export function LeavesTab({ branchId, period, employees, onChanged }: {
     } catch (err: any) { fail(err, 'تعذر تحميل الإجازات'); } finally { setLoading(false); }
   };
 
-  useEffect(() => { load(); }, [branchId, period.format('YYYY-MM')]);
+  useEffect(() => { if (active) load(); }, [active, branchId, period.format('YYYY-MM')]);
 
   const edit = (r?: Leave) => {
     setForm(r ? {
@@ -83,14 +86,18 @@ export function LeavesTab({ branchId, period, employees, onChanged }: {
   const days = rows.reduce((t, r) => t + Number(r.days || 0), 0);
   const unpaidDays = rows.filter((r) => !r.paid).reduce((t, r) => t + Number(r.days || 0), 0);
 
-  return (
-    <>
-      <Space style={{ marginBottom: 8 }} wrap>
-        <Button type="primary" icon={<PlusOutlined />} onClick={() => edit()}>إجازة جديدة</Button>
-        <span>عدد الإجازات: <b>{rows.length}</b></span>
-        <span>الأيام: <b>{days}</b></span>
-        <span>بدون أجر: <b>{unpaidDays}</b> يوم</span>
-      </Space>
+  return {
+    actions: (
+      <Button type="primary" className="sl-create" icon={<PlusOutlined />} onClick={() => edit()}>
+        إجازة جديدة
+      </Button>
+    ),
+    summary: (<>
+      <ListStat label="عدد الإجازات" value={rows.length} />
+      <ListStat label="الأيام" value={days} />
+      <ListStat label="بدون أجر" value={`${unpaidDays} يوم`} tone="warn" />
+    </>),
+    body: (<>
       <Table<Leave>
         className="sl-table" rowKey="id" size="small" loading={loading} dataSource={rows}
         locale={{ emptyText: 'لا توجد إجازات في هذا الشهر' }}
@@ -147,8 +154,8 @@ export function LeavesTab({ branchId, period, employees, onChanged }: {
           </Col>
         </Row>
       </TabModal>
-    </>
-  );
+    </>),
+  };
 }
 
 interface Adjustment {
@@ -164,9 +171,9 @@ const KINDS = [
   { value: 'other_earning', label: 'إضافة', color: 'blue' },
 ];
 
-export function AdjustmentsTab({ branchId, period, employees, onChanged }: {
-  branchId?: number; period: Dayjs; employees: PickEmployee[]; onChanged: () => void;
-}) {
+export function useAdjustmentsTab({ active, branchId, period, employees, onChanged }: {
+  active: boolean; branchId?: number; period: Dayjs; employees: PickEmployee[]; onChanged: () => void;
+}): TabParts {
   const [rows, setRows] = useState<Adjustment[]>([]);
   const [loading, setLoading] = useState(false);
   const [open, setOpen] = useState<number | 'new' | null>(null);
@@ -185,7 +192,7 @@ export function AdjustmentsTab({ branchId, period, employees, onChanged }: {
     } catch (err: any) { fail(err, 'تعذر تحميل الجزاءات والخصومات'); } finally { setLoading(false); }
   };
 
-  useEffect(() => { load(); }, [branchId, period.format('YYYY-MM')]);
+  useEffect(() => { if (active) load(); }, [active, branchId, period.format('YYYY-MM')]);
 
   const edit = (r?: Adjustment) => {
     setForm(r ? {
@@ -228,13 +235,18 @@ export function AdjustmentsTab({ branchId, period, employees, onChanged }: {
   const total = (kinds: string[]) => rows.filter((r) => kinds.includes(r.kind) && r.basis === 'amount')
     .reduce((t, r) => t + Number(r.amount || 0), 0);
 
-  return (
-    <>
-      <Space style={{ marginBottom: 8 }} wrap>
-        <Button type="primary" icon={<PlusOutlined />} onClick={() => edit()}>جزاء أو خصم جديد</Button>
-        <span>الجزاءات والخصومات: <b>{money(total(['penalty', 'other_deduction']))}</b></span>
-        <span>المكافآت والإضافات: <b>{money(total(['bonus', 'other_earning']))}</b></span>
-      </Space>
+  return {
+    actions: (
+      <Button type="primary" className="sl-create" icon={<PlusOutlined />} onClick={() => edit()}>
+        جزاء أو خصم جديد
+      </Button>
+    ),
+    summary: (<>
+      <ListStat label="عدد الحركات" value={rows.length} />
+      <ListStat label="الجزاءات والخصومات" value={money(total(['penalty', 'other_deduction']))} tone="neg" />
+      <ListStat label="المكافآت والإضافات" value={money(total(['bonus', 'other_earning']))} tone="pos" />
+    </>),
+    body: (<>
       <Table<Adjustment>
         className="sl-table" rowKey="id" size="small" loading={loading} dataSource={rows}
         locale={{ emptyText: 'لا توجد جزاءات أو خصومات في هذا الشهر' }}
@@ -308,6 +320,6 @@ export function AdjustmentsTab({ branchId, period, employees, onChanged }: {
           </Col>
         </Row>
       </TabModal>
-    </>
-  );
+    </>),
+  };
 }

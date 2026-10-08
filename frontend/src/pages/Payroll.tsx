@@ -23,7 +23,7 @@ import { printPayslip, printReport, type PrintColumn } from '../print/reportShee
 import { searchFilter, searchRank } from '../utils/arabicSort';
 import { money, numeralsLocale } from '../utils/money';
 import { PAGE_SIZE } from '../utils/pagination';
-import { AdjustmentsTab, LeavesTab } from './payroll/PayrollExtras';
+import { useAdjustmentsTab, useLeavesTab } from './payroll/PayrollExtras';
 
 interface Rule { id?: number; basis: string; basis_label?: string; pct: string | number }
 
@@ -401,6 +401,14 @@ export default function Payroll() {
   const pickable = emps.filter((e) => e.active && (!branchId || e.branch_id === branchId))
     .map((e) => ({ employee_id: e.employee_id, name: e.name }));
 
+  const leavesTab = useLeavesTab({
+    active: tab === 'leaves', branchId, period, employees: pickable, onChanged: () => loadMonth(),
+  });
+  const adjustmentsTab = useAdjustmentsTab({
+    active: tab === 'adjustments', branchId, period, employees: pickable, onChanged: () => loadMonth(),
+  });
+  const extra = tab === 'leaves' ? leavesTab : tab === 'adjustments' ? adjustmentsTab : null;
+
   const branchSelect = branches.length > 1 ? (
     <Select showSearch placeholder="الفرع" style={{ minWidth: 160 }} value={branchId}
       onChange={(v) => { setBranchId(v); loadMonth(v, period); }}
@@ -422,7 +430,7 @@ export default function Payroll() {
         ]}
         activeTab={tab as any}
         onTabChange={(k) => setTab(k)}
-        actions={tab === 'leaves' || tab === 'adjustments' ? undefined : tab === 'month' ? (<>
+        actions={extra ? extra.actions : tab === 'month' ? (<>
           {!run || draft ? (
             <Button type="primary" icon={<ReloadOutlined />} loading={busy} onClick={calculate}>
               {run ? 'إعادة الحساب' : 'احسب الشهر'}
@@ -496,7 +504,7 @@ export default function Payroll() {
             options={[{ value: 'yes', label: 'له كارت' }, { value: 'no', label: 'بدون كارت' }]} />
           <Button className="sl-f-clear" icon={<ClearOutlined />} onClick={empFilter.reset}>مسح</Button>
         </>) : undefined}
-        summary={tab === 'leaves' || tab === 'adjustments' ? undefined : tab === 'month' ? (<>
+        summary={extra ? extra.summary : tab === 'month' ? (<>
           <ListStat label="الحالة" value={run ? <Tag color={STATUS_COLOR[run.status]}>{run.status_label}</Tag> : 'لم يُحسب'} />
           <ListStat label="الموظفين" value={fmt(lines.length)} />
           <ListStat label="إجمالي المستحق" value={money(sum('earnings'))} />
@@ -518,13 +526,7 @@ export default function Payroll() {
           <ListStat label="إجمالي المسدد" value={money(remitted)} tone="strong" />
         </>)}
       >
-        {tab === 'leaves' ? (
-          <LeavesTab branchId={branchId} period={period} employees={pickable}
-            onChanged={() => loadMonth()} />
-        ) : tab === 'adjustments' ? (
-          <AdjustmentsTab branchId={branchId} period={period} employees={pickable}
-            onChanged={() => loadMonth()} />
-        ) : tab === 'month' ? (
+        {extra ? extra.body : tab === 'month' ? (
           <Table<Line>
             {...monthKb.tableProps}
             className="sl-table" rowKey="employee_id" size="small" loading={loading}
