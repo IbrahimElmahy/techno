@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import re
+
 from datetime import date
 from decimal import Decimal
 
@@ -20,13 +22,20 @@ from src.services.leave_service import LeaveError
 router = APIRouter(tags=["leave"], prefix="/hr/leave")
 
 
+_DIAC = re.compile("[ً-ْٰ]")
+
+
+def _has(text: str, needle: str) -> bool:
+    return _DIAC.sub("", needle) in _DIAC.sub("", text)
+
+
 def _raise(exc: LeaveError):
     text = str(exc)
-    if "غير موجود" in text or "غير موجودة" in text:
+    if _has(text, "غير موجود") or _has(text, "غير موجودة"):
         raise HTTPException(404, {"code": "not_found", "message": text}) from exc
-    if "مسير مرحّل" in text:
+    if _has(text, "مسير مرحّل"):
         raise HTTPException(409, {"code": "locked", "message": text}) from exc
-    if "نفس الأيام" in text:
+    if _has(text, "نفس الأيام"):
         raise HTTPException(409, {"code": "duplicate", "message": text}) from exc
     raise HTTPException(422, {"code": "validation", "message": text}) from exc
 

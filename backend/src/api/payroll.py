@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import re
+
 from datetime import date
 from decimal import Decimal
 
@@ -27,13 +29,20 @@ from src.services.payroll_service import PayrollError
 router = APIRouter(tags=["payroll"], prefix="/hr/payroll")
 
 
+_DIAC = re.compile("[ً-ْٰ]")
+
+
+def _has(text: str, needle: str) -> bool:
+    return _DIAC.sub("", needle) in _DIAC.sub("", text)
+
+
 def _raise(exc: Exception):
     text = str(exc)
     if isinstance(exc, LedgerError):
         raise HTTPException(409, {"code": "ledger_invalid", "message": text}) from exc
-    if "غير موجود" in text:
+    if _has(text, "غير موجود"):
         raise HTTPException(404, {"code": "not_found", "message": text}) from exc
-    if "مرحّل بالفعل" in text or any(s in text for s in ("اتصرف", "صُرف", "تم صرف")):
+    if _has(text, "مرحّل بالفعل") or any(_has(text, s) for s in ("اتصرف", "صُرف", "تم صرف")):
         raise HTTPException(409, {"code": "duplicate", "message": text}) from exc
     raise HTTPException(422, {"code": "validation", "message": text}) from exc
 
