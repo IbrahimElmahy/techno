@@ -188,15 +188,7 @@ export const NAVIGATION: (NavGroup | NavScreen)[] = [
           { key: '/profitability?view=branches', label: 'مقارنة الفروع', roles: R(BOOKS) },
         ],
       },
-      {
-        key: 'grp-journals',
-        label: 'التسوية وجاري الشركاء',
-        children: [
-          { key: '/reconciliation?tab=open', label: 'تسوية — المفتوح', roles: BOOKS },
-          { key: '/reconciliation?tab=matched', label: 'تسوية — المطابَق', roles: BOOKS },
-          { key: '/partners-current', label: 'جاري الشركاء', roles: R(BOOKS) },
-        ],
-      },
+      { key: '/partners-current', label: 'جاري الشركاء', roles: R(BOOKS) },
       {
         key: 'grp-period-closing',
         label: 'إقفال الفترة',

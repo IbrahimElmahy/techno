@@ -17,6 +17,42 @@ export interface Treasury {
 
 export interface ExpenseAccount {
   id: number; code?: string | null; name?: string | null; balance?: string | number;
+  parent_id?: number | null;
+}
+
+const GA_NAME = 'مصروفات عموميه';
+const normAr = (v?: string | null) => (v || '').trim()
+  .replace(/[أإآ]/g, 'ا').replace(/ة/g, 'ه').replace(/ى/g, 'ي').replace(/\s+/g, ' ');
+const branchOfCode = (code?: string | null) => (
+  code?.startsWith('AL-') ? 'العلياء' : code?.startsWith('FC-') ? 'السادات' : 'أكتوبر');
+
+function gaTree(accounts: ExpenseAccount[], groups: ExpenseAccount[]) {
+  const roots = groups.filter((g) => normAr(g.name) === GA_NAME);
+  if (!roots.length) return null;
+  const all = [...groups, ...accounts];
+  const kids = new Map<number, ExpenseAccount[]>();
+  all.forEach((a) => {
+    if (a.parent_id == null) return;
+    kids.set(a.parent_id, [...(kids.get(a.parent_id) || []), a]);
+  });
+  const postable = new Set(accounts.map((a) => a.id));
+  const groupIds = new Set(groups.map((g) => g.id));
+  return roots.map((root) => {
+    const leaves: ExpenseAccount[] = [];
+    const subGroups: ExpenseAccount[] = [root];
+    const stack = [root.id];
+    const seen = new Set<number>();
+    while (stack.length) {
+      const id = stack.pop()!;
+      if (seen.has(id)) continue;
+      seen.add(id);
+      (kids.get(id) || []).forEach((c) => {
+        if (postable.has(c.id)) leaves.push(c);
+        if (groupIds.has(c.id)) { subGroups.push(c); stack.push(c.id); }
+      });
+    }
+    return { root, leaves, subGroups };
+  }).filter((t) => t.leaves.length || t.subGroups.length);
 }
 
 export function TreasuryField({
@@ -93,13 +129,24 @@ export function ExpenseAccountField({
   const [form] = Form.useForm();
   const [saving, setSaving] = useState(false);
 
-  const options = useMemo(() => sortByName(accounts, (a) => a.name).map((a) => ({
+  const tree = useMemo(() => gaTree(accounts, groups), [accounts, groups]);
+  const toOpt = (a: ExpenseAccount) => ({
     value: a.id,
     label: a.name ?? a.code ?? '',
     search: a.code ?? '',
     full: a.name ?? a.code ?? '',
     spent: Number(a.balance || 0),
-  })), [accounts]);
+  });
+  const options = useMemo(() => (tree
+    ? tree.flatMap((t) => sortByName(t.leaves, (a) => a.name).map(toOpt))
+    : sortByName(accounts, (a) => a.name).map(toOpt)), [accounts, tree]);
+  const selectOptions = useMemo(() => (tree && tree.length > 1
+    ? tree.map((t) => ({
+      label: `${t.root.name} — ${branchOfCode(t.root.code)}`,
+      options: sortByName(t.leaves, (a) => a.name).map(toOpt),
+    }))
+    : options), [tree, options]);
+  const parentGroups = tree ? tree.flatMap((t) => t.subGroups) : groups;
 
   const create = async (v: any) => {
     setSaving(true);
@@ -128,9 +175,10 @@ export function ExpenseAccountField({
         <Select
           showSearch style={{ width }}
           placeholder="إيجار / مرتبات / بنزين…"
-          options={options}
+          options={selectOptions as any}
           optionRender={(opt) => {
-            const o = options.find((x) => x.value === opt.value)!;
+            const o = options.find((x) => x.value === opt.value);
+            if (!o) return opt.label;
             return (
               <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12 }}>
                 <span>{o.full}</span>
@@ -144,7 +192,10 @@ export function ExpenseAccountField({
               <div style={{ borderTop: '1px solid #f0f0f0', padding: 6 }}>
                 <Button type="link" icon={<PlusOutlined />} size="small"
                   onMouseDown={(e) => e.preventDefault()}
-                  onClick={() => setAdding(true)}>
+                  onClick={() => {
+                    if (parentGroups.length === 1) form.setFieldsValue({ parent_id: parentGroups[0].id });
+                    setAdding(true);
+                  }}>
                   حساب مصروف جديد
                 </Button>
               </div>
@@ -161,8 +212,10 @@ export function ExpenseAccountField({
           <Form.Item name="parent_id" label="الحساب الرئيسي"
             rules={[{ required: true, message: 'اختر الحساب الرئيسي' }]}>
             <Select showSearch placeholder="مصروفات ..."
-              options={groups.map((g) => ({
-                value: g.id, label: g.name ?? g.code ?? '', search: g.code ?? '',
+              options={parentGroups.map((g) => ({
+                value: g.id,
+                label: `${g.name ?? g.code ?? ''}${tree && tree.length > 1 ? ` — ${branchOfCode(g.code)}` : ''}`,
+                search: g.code ?? '',
               }))} filterOption={searchFilter} filterSort={searchRank}/>
           </Form.Item>
           <Form.Item name="code" label="الكود"

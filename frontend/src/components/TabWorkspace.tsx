@@ -5,7 +5,7 @@ import { useAuth } from './AuthProvider';
 import PageRoutes from './PageRoutes';
 import { TabActiveContext } from './keyboard';
 
-const KEEP = 4;
+const KEEP = 12;
 
 const Panel = React.memo(function Panel(
   { path, active, blocked }: { path: string; active: boolean; blocked: boolean },
