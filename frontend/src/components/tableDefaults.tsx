@@ -228,7 +228,7 @@ function withDefaults(
     next = {
       ...next,
       sticky: STICKY,
-      tableLayout: next.tableLayout ?? layoutBefore(next, next.scroll?.x),
+      tableLayout: 'fixed',
     };
   }
 
