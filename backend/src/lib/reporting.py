@@ -316,8 +316,9 @@ def stagnant_stock(db: Session, *, days: int = 90, warehouse_id: int | None = No
     now = now or datetime.utcnow()
     cutoff = _as_date(now) - timedelta(days=days)
     names = _item_names(db)
-    prices = {i.id: (to_money(i.purchase_price) if i.purchase_price is not None else ZERO)
-              for i in db.scalars(select(Item)).all()}
+    items = {i.id: i for i in db.scalars(select(Item)).all()}
+    prices = {iid: (to_money(i.purchase_price) if i.purchase_price is not None else ZERO)
+              for iid, i in items.items()}
     last_sold = last_sold_by_item(db)
 
     signed = func.sum(case(
@@ -341,8 +342,15 @@ def stagnant_stock(db: Session, *, days: int = 90, warehouse_id: int | None = No
         sold = last_sold.get(iid)
         if sold is not None and sold >= cutoff:
             continue
+        item = items.get(iid)
         rows.append({
             "item_id": iid, "item_name": names.get(iid, ""), "warehouse_id": wid,
+            "category": item.category if item else None,
+            "purchase_price": str(prices.get(iid, ZERO)),
+            "sale_price": (str(to_money(item.sale_price))
+                           if item is not None and item.sale_price is not None else None),
+            "discount_pct": (str(item.default_discount_pct)
+                             if item is not None and item.default_discount_pct is not None else None),
             "on_hand": str(on_hand), "last_out_date": str(sold) if sold else None,
             "value": str(to_money(on_hand * prices.get(iid, ZERO))),
         })

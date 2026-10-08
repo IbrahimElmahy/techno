@@ -283,9 +283,13 @@ function InventoryTab({ warehouses, items, slots }: TabProps) {
 
   const columns = [
     { title: 'الصنف', dataIndex: 'item_name', key: 'item_name', ...textColumn(rows, (r: any) => r.item_name) },
+    { title: 'الفئة', dataIndex: 'category', key: 'category', ...textColumn(rows, (r: any) => r.category), render: (v: string | null) => v || '' },
     { title: 'المخزن', dataIndex: 'warehouse_id', key: 'warehouse_id', ...textColumn(rows, (r: any) => whName(r.warehouse_id)), render: (id: number) => <Tag color="geekblue">{whName(id)}</Tag> },
     { title: 'الرصيد', dataIndex: 'on_hand', key: 'on_hand', ...numberColumn<any>((r) => r.on_hand), align: 'left' as const, render: qty },
     { title: 'تكلفة الوحدة', dataIndex: 'unit_cost', key: 'unit_cost', ...numberColumn<any>((r) => r.unit_cost), align: 'left' as const, render: egp },
+    { title: 'سعر الشراء', dataIndex: 'purchase_price', key: 'purchase_price', ...numberColumn<any>((r) => r.purchase_price), align: 'left' as const, total: false, render: (v: string) => egp(v) } as any,
+    { title: 'سعر البيع', dataIndex: 'sale_price', key: 'sale_price', ...numberColumn<any>((r) => r.sale_price), align: 'left' as const, total: false, render: (v: string | null) => (v == null ? '' : egp(v)) } as any,
+    { title: 'الخصم ٪', dataIndex: 'discount_pct', key: 'discount_pct', ...numberColumn<any>((r) => r.discount_pct), align: 'left' as const, total: false, render: (v: string | null) => (v == null || Number(v) === 0 ? '' : `${Number(v)}٪`) } as any,
     { title: 'القيمة', dataIndex: 'value', key: 'value', ...numberColumn<any>((r) => r.value), align: 'left' as const, render: (v: string) => <strong>{egp(v)}</strong> },
   ];
 
@@ -420,6 +424,10 @@ interface StagnantRow {
   on_hand: string;
   last_out_date: string | null;
   value: string;
+  category?: string | null;
+  purchase_price?: string;
+  sale_price?: string | null;
+  discount_pct?: string | null;
 }
 
 function StagnantTab({ warehouses, slots }: TabProps) {
