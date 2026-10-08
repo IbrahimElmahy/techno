@@ -211,10 +211,14 @@ class _CouponReceiptScreenState extends State<CouponReceiptScreen> {
   static const _maxRange = 2000;
 
   Future<void> _addRange() async {
-    final first = int.tryParse(_fromCtrl.text.trim());
-    final last = int.tryParse(_toCtrl.text.trim());
+    // كوبون واحد = خانة واحدة: «من» بس (أو «إلى» بس) هو الرقم ده لوحده — مش لازم
+    // المندوب يكتب نفس الرقم مرتين.
+    final a = int.tryParse(_fromCtrl.text.trim());
+    final b = int.tryParse(_toCtrl.text.trim());
+    final first = a ?? b;
+    final last = b ?? a;
     if (first == null || last == null) {
-      _toast('النطاق لازم يكون أرقام');
+      _toast('اكتب رقم الكوبون في «من رقم»');
       return;
     }
     if (last < first) {
@@ -287,7 +291,8 @@ class _CouponReceiptScreenState extends State<CouponReceiptScreen> {
       );
       try {
         await ApiClient.instance.pushCouponReceipts();
-        _toast('اتسجّل الاستلام واترفع للسيرفر');
+        // الاستلام من التطبيق بقى طلب بيستنى المكتب يعتمده — فمانقولش «اتسجّل» وخلاص.
+        _toast('اترفع للسيرفر — بانتظار اعتماد المكتب');
       } catch (e) {
         // Saved locally either way — the sync screen will push it when there is signal.
         _toast('اتسجّل على الجهاز، هيترفع مع المزامنة (${e.toString()})');
@@ -453,6 +458,8 @@ class _CouponReceiptScreenState extends State<CouponReceiptScreen> {
                         child: TextField(
                           controller: _fromCtrl,
                           keyboardType: TextInputType.number,
+                          // Enter على «من» بيضيف كمان — كوبون واحد مش محتاج «إلى».
+                          onSubmitted: (_) => _addRange(),
                           decoration: const InputDecoration(labelText: 'من رقم'),
                         ),
                       ),
@@ -465,7 +472,8 @@ class _CouponReceiptScreenState extends State<CouponReceiptScreen> {
                           // Enter on «إلى» adds the run — the rep's hands are already on the
                           // number pad and reaching for a button breaks the rhythm.
                           onSubmitted: (_) => _addRange(),
-                          decoration: const InputDecoration(labelText: 'إلى رقم'),
+                          decoration: const InputDecoration(
+                              labelText: 'إلى رقم', hintText: 'فاضي = كوبون واحد'),
                         ),
                       ),
                     ],
@@ -476,7 +484,7 @@ class _CouponReceiptScreenState extends State<CouponReceiptScreen> {
                     child: FilledButton.icon(
                       onPressed: _addRange,
                       icon: const Icon(Icons.playlist_add),
-                      label: const Text('إضافة النطاق'),
+                      label: const Text('إضافة'),
                     ),
                   ),
                 ],

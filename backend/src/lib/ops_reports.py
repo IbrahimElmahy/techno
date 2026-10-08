@@ -31,7 +31,7 @@ from sqlalchemy.orm import Session
 from src.core.money import ZERO, ZERO_QTY, to_money, to_qty
 from src.lib import report_statement
 from src.models.cheque import Cheque, ChequeDirection, ChequeStatus
-from src.models.coupon_receipt import CouponReceipt
+from src.models.coupon_receipt import CouponReceipt, receipt_counted
 from src.models.customer import Customer
 from src.models.inspection import Inspection, VisitKind
 from src.models.loyalty import Coupon, CouponType, PointRecord
@@ -225,7 +225,9 @@ def _collect_coupon_receipts(db, look, filters) -> list[dict]:
     """استلام الكوبونات من التجّار — «مين سلّم كام، ومين لسه»."""
     date_from, date_to = filters["date_from"], filters["date_to"]
     rows = []
-    for receipt in db.scalars(select(CouponReceipt).order_by(CouponReceipt.id.desc())).all():
+    # المعتمد بس — اللي بانتظار الاعتماد أو اترفض مش ورق اتستلم فعلاً.
+    for receipt in db.scalars(select(CouponReceipt).where(receipt_counted())
+                              .order_by(CouponReceipt.id.desc())).all():
         # الاستلامات القديمة `received_date` فيها فاضي — بنرجع لتاريخ التسجيل بدل ما الصف يتشال
         # خالص. استلام مالوش تاريخ مسجّل لسه اتسجّل في يوم معروف.
         when = receipt.received_date or (

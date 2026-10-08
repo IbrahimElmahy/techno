@@ -18,7 +18,7 @@ Two deliberate limits, both about not inventing certainty:
 """
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime
 
 from decimal import Decimal
 
@@ -28,13 +28,17 @@ from sqlalchemy.orm import Session, selectinload
 from src.lib.doc_order import newest_first
 from src.auth.branch_scope import branch_for
 from src.models.coupon_issue import CouponIssue, CouponIssueLine
-from src.models.coupon_receipt import CouponReceipt, CouponReceiptLine
+from src.models.coupon_receipt import CouponReceipt, CouponReceiptLine, receipt_counted
 from src.models.sales import SalesInvoice, SalesInvoiceCoupon
 from src.services import audit_service, numbering
 
 
 class CouponReceiptError(Exception):
     """The coupons cannot be received as presented."""
+
+
+class CouponReceiptConflict(CouponReceiptError):
+    """الاستلام موجود بس حالته مش بتسمح بالفعل ده (اعتماد معتمد، تعديل مرفوض…)."""
 
 
 def _as_int(value) -> int | None:
@@ -408,13 +412,31 @@ def check_serial(db: Session, serial: str, coupon_kind: str | None = None) -> di
         "customer_id": issued_to_id,
         "customer_name": issued_to_name,
         "received_receipt_id": taken.receipt_id if taken else None,
+        # الاستلام اللي حاجز الرقم لسه بانتظار الاعتماد؟ — «مُستلَم من قبل» لوحدها بتخلّي
+        # اللي بيستلم يدوّر على استلام معتمد مش موجود.
+        "received_pending": bool(taken) and _receipt_pending(db, taken.receipt_id),
     }
 
 
+def _receipt_pending(db: Session, receipt_id: int) -> bool:
+    owner = db.get(CouponReceipt, receipt_id)
+    return owner is not None and (owner.status or "approved") == "pending"
+
+
 def expand_range(serial_from: str, serial_to: str | None) -> list[str]:
-    """Turn «from 1200 to 1249» into the serials it covers — numeric books only."""
-    if not serial_to or str(serial_to).strip() == str(serial_from).strip():
-        return [str(serial_from).strip()]
+    """Turn «from 1200 to 1249» into the serials it covers — numeric books only.
+
+    **كوبون واحد = خانة واحدة.** «من» من غير «إلى» (أو العكس) هو الرقم ده لوحده — مش
+    لازم اللي بيدخل يكتب نفس الرقم مرتين عشان يستلم ورقة واحدة.
+    """
+    serial_from = str(serial_from or "").strip()
+    serial_to = str(serial_to or "").strip()
+    if not serial_from:
+        serial_from = serial_to
+    if not serial_from:
+        return []
+    if not serial_to or serial_to == serial_from:
+        return [serial_from]
     first, last = _as_int(serial_from), _as_int(serial_to)
     if first is None or last is None:
         raise CouponReceiptError("النطاق لازم يكون أرقام عشان يتفك؛ أدخل الكوبونات واحد واحد.")
@@ -429,34 +451,34 @@ def _doc_number(db: Session) -> str:
     return numbering.next_document_number(db, CouponReceipt, "CR")
 
 
-def create_receipt(
-    db: Session, *, serials: list[str], actor_user_id: int,
-    customer_id: int | None = None, rep_user_id: int | None = None,
-    received_date: date | None = None, notes: str | None = None,
-    declared_kind: str | None = None, declared_value: object | None = None,
-    customer_type: str | None = None,
-    client_uuid: str | None = None,
-    coupon_kind: str | None = None,
-) -> CouponReceipt:
-    """Take in a handful of coupons, or refuse the lot.
+# حالات الاستلام — نفس كلمات طلب تحويل المخازن. NULL في القاعدة = معتمد (القديم كله).
+PENDING = "pending"
+APPROVED = "approved"
+REJECTED = "rejected"
 
-    Every serial is checked before anything is written. One bad coupon fails the whole receipt
-    rather than posting the good ones — a half-accepted handover is worse than a rejected one,
-    because the rep walks away believing all of it went through.
 
-    `coupon_kind` هي فئة الدفتر اللي الأرقام دي منه — عادي/فضي/ذهبي/ماسي. من غيرها الرقم
-    لوحده مش بيحدد كوبون: الذهبي والفضي كل واحد مرقّم ١..٥٠، فكوبون فضي كان ممكن يتحسب
-    على فاتورة صرفت ذهبي. بتتساب فاضية بس لو الشغل بدفتر واحد.
+def status_of(receipt: CouponReceipt) -> str:
+    return receipt.status or APPROVED
+
+
+def approved_clause():
+    """شرط «الاستلام ده معتمد» — NULL معتمد كمان (`models.coupon_receipt.receipt_counted`).
+
+    المعلّق لسه المكتب ماشافهوش، والمرفوض اتقال عليه لأ: الاتنين مايتحسبوش في «اتستلم
+    كام» ولا في «لسه برّه كام». بس المعلّق **بيحجز أرقامه** (السطور موجودة) عشان
+    مندوبين مايسلّموش نفس الورقة مرتين وهي لسه بتتراجع.
     """
-    if client_uuid:
-        existing = db.scalar(
-            select(CouponReceipt).options(selectinload(CouponReceipt.lines))
-            .where(CouponReceipt.client_uuid == client_uuid))
-        if existing is not None:
-            # The app retried a queued receipt after a dropped connection. Same document.
-            return existing
+    return receipt_counted()
 
-    cleaned = [str(s).strip() for s in serials if str(s).strip()]
+
+def _match_serials(
+    db: Session, cleaned: list[str], coupon_kind: str | None,
+) -> list[tuple[str, SalesInvoice | None, CouponIssue | None, str | None]]:
+    """فحص الأرقام كلها قبل أي كتابة — الإضافة والتعديل بيعدّوا من هنا الاتنين.
+
+    كان جوّه `create_receipt`. التعديل لازم يفحص نفس الفحص بالظبط، وإلا الرقم اللي
+    اتصلّح بيدخل من باب جانبي من غير ما يتسأل «متصرّف؟ رجع قبل كده؟ في عهدة مندوب؟».
+    """
     if not cleaned:
         raise CouponReceiptError("مافيش كوبونات في الاستلام.")
     duplicates = {s for s in cleaned if cleaned.count(s) > 1}
@@ -500,8 +522,17 @@ def create_receipt(
         # الهوية الموجودة، فالسطر بيتكتب بلا فئة وفحص «رجع قبل كده» بيتم على الرقم
         # لوحده. من غير كده نفس الورقة تترد مرة تحت كل فئة وقيمتها تتصرف أربع مرات.
         line_kind = None if kindless else coupon_kind
-        if already_received(db, serial, line_kind) is not None:
-            seen_before.append(serial)
+        taken = already_received(db, serial, line_kind)
+        if taken is not None:
+            # المعلّق بيحجز رقمه كمان — فالرسالة بتقول ده وبتقول المستند، وإلا اللي
+            # بيستلم يدوّر على استلام معتمد مش موجود.
+            owner = db.get(CouponReceipt, taken.receipt_id)
+            if owner is not None and status_of(owner) == PENDING:
+                seen_before.append(f"{serial} (بانتظار الاعتماد في {owner.document_number})")
+            elif owner is not None:
+                seen_before.append(f"{serial} ({owner.document_number})")
+            else:
+                seen_before.append(serial)
             continue
         # مين اتصرفت له الورقة مش شرط يكون مين بيسلّمها.
         #
@@ -519,6 +550,53 @@ def create_receipt(
     if seen_before:
         raise CouponReceiptError(
             f"كوبونات اتستلمت قبل كده: {', '.join(seen_before)}")
+    return matched
+
+
+def _write_lines(db: Session, receipt: CouponReceipt, matched) -> None:
+    for serial, invoice, issue, line_kind in matched:
+        db.add(CouponReceiptLine(
+            receipt_id=receipt.id, serial=serial,
+            sales_invoice_id=invoice.id if invoice else None,
+            coupon_issue_id=issue.id if issue else None,
+            coupon_kind=line_kind))
+    db.flush()
+
+
+def create_receipt(
+    db: Session, *, serials: list[str], actor_user_id: int,
+    customer_id: int | None = None, rep_user_id: int | None = None,
+    received_date: date | None = None, notes: str | None = None,
+    declared_kind: str | None = None, declared_value: object | None = None,
+    customer_type: str | None = None,
+    client_uuid: str | None = None,
+    coupon_kind: str | None = None,
+    pending: bool = False,
+    source: str | None = None,
+) -> CouponReceipt:
+    """Take in a handful of coupons, or refuse the lot.
+
+    Every serial is checked before anything is written. One bad coupon fails the whole receipt
+    rather than posting the good ones — a half-accepted handover is worse than a rejected one,
+    because the rep walks away believing all of it went through.
+
+    `coupon_kind` هي فئة الدفتر اللي الأرقام دي منه — عادي/فضي/ذهبي/ماسي. من غيرها الرقم
+    لوحده مش بيحدد كوبون: الذهبي والفضي كل واحد مرقّم ١..٥٠، فكوبون فضي كان ممكن يتحسب
+    على فاتورة صرفت ذهبي. بتتساب فاضية بس لو الشغل بدفتر واحد.
+
+    `pending` = الاستلام جاي من التطبيق وبيستنى اعتماد المكتب. الأرقام بتتفحص وبتتحجز
+    دلوقتي (عشان المندوب يعرف الغلط وهو واقف)، بس مابيتحسبش في التقارير لحد ما يتعتمد.
+    """
+    if client_uuid:
+        existing = db.scalar(
+            select(CouponReceipt).options(selectinload(CouponReceipt.lines))
+            .where(CouponReceipt.client_uuid == client_uuid))
+        if existing is not None:
+            # The app retried a queued receipt after a dropped connection. Same document.
+            return existing
+
+    cleaned = [str(s).strip() for s in serials if str(s).strip()]
+    matched = _match_serials(db, cleaned, coupon_kind)
 
     receipt = CouponReceipt(
         document_number=_doc_number(db), customer_id=customer_id, rep_user_id=rep_user_id,
@@ -529,30 +607,154 @@ def create_receipt(
         # العهدة بتقول فرع المندوب اللي استلم؛ ومن غير مندوب بيرجع لفرع اللي سجّل.
         branch_id=branch_for(db, actor_user_id=actor_user_id,
                              location_kind="rep", location_id=rep_user_id),
+        status=PENDING if pending else APPROVED,
+        source=source,
     )
+    if not pending:
+        # المكتب هو المراجِع: اللي بيكتب هو اللي بيعتمد، في نفس اللحظة.
+        receipt.approved_by = actor_user_id
+        receipt.approved_at = datetime.utcnow()
     db.add(receipt)
     db.flush()
-    for serial, invoice, issue, line_kind in matched:
-        db.add(CouponReceiptLine(
-            receipt_id=receipt.id, serial=serial,
-            sales_invoice_id=invoice.id if invoice else None,
-            coupon_issue_id=issue.id if issue else None,
-            coupon_kind=line_kind))
-    db.flush()
+    _write_lines(db, receipt, matched)
 
     audit_service.record(
         db, action="coupon_receipt.create", actor_user_id=actor_user_id,
         entity_type="coupon_receipt", entity_id=receipt.id,
-        after={"doc": receipt.document_number, "count": len(matched)},
+        after={"doc": receipt.document_number, "count": len(matched),
+               "status": receipt.status},
     )
     return receipt
 
 
+def _load(db: Session, receipt_id: int) -> CouponReceipt:
+    receipt = db.scalar(
+        select(CouponReceipt).options(selectinload(CouponReceipt.lines))
+        .where(CouponReceipt.id == receipt_id))
+    if receipt is None:
+        raise CouponReceiptError("الاستلام ده مش موجود.")
+    return receipt
+
+
+def approve_receipt(db: Session, *, receipt_id: int, actor_user_id: int) -> CouponReceipt:
+    """اعتماد استلام جاي من التطبيق — من هنا بيتحسب في التقارير.
+
+    الأرقام اتفحصت واتحجزت وقت الرفع، ومافيش حاجة تانية بتتكتب: الاستلام مابيدّيش نقط
+    ولا بيعمل قيد (النقط بتتكسب من فاتورة البيع). فالاعتماد هو قرار المكتب إن الورق ده
+    وصل فعلاً بالأرقام دي، وبعده بس يدخل «اتستلم كام» و«لسه برّه كام».
+    """
+    receipt = _load(db, receipt_id)
+    if status_of(receipt) != PENDING:
+        raise CouponReceiptConflict("الاستلام ده مش بانتظار الاعتماد.")
+    if not receipt.lines:
+        raise CouponReceiptConflict("الاستلام ده مافيهوش كوبونات — عدّله أو احذفه.")
+    receipt.status = APPROVED
+    receipt.approved_by = actor_user_id
+    receipt.approved_at = datetime.utcnow()
+    db.flush()
+    audit_service.record(
+        db, action="coupon_receipt.approve", actor_user_id=actor_user_id,
+        entity_type="coupon_receipt", entity_id=receipt.id,
+        after={"doc": receipt.document_number, "count": len(receipt.lines)},
+    )
+    return receipt
+
+
+def reject_receipt(db: Session, *, receipt_id: int, actor_user_id: int,
+                   reason: str | None = None) -> CouponReceipt:
+    """رفض استلام جاي من التطبيق — المستند بيفضل بسببه، والأرقام بترجع للتداول.
+
+    السطور بتتشال لأن قيد `(فئة، رقم)` هو صف السطر نفسه: لو فضلت، الورقة اللي اترفض
+    استلامها (رقم اتكتب غلط مثلاً) تفضل «اتستلمت قبل كده» للأبد. الأرقام بتتحفظ نص على
+    المستند عشان المرفوض يفضل مقروء.
+    """
+    receipt = _load(db, receipt_id)
+    if status_of(receipt) != PENDING:
+        raise CouponReceiptConflict("الاستلام ده مش بانتظار الاعتماد.")
+    serials = [line.serial for line in receipt.lines]
+    receipt.rejected_serials = ",".join(serials) or None
+    receipt.lines.clear()
+    receipt.status = REJECTED
+    receipt.approved_by = actor_user_id
+    receipt.approved_at = datetime.utcnow()
+    receipt.reject_reason = (reason or "").strip()[:240] or None
+    db.flush()
+    audit_service.record(
+        db, action="coupon_receipt.reject", actor_user_id=actor_user_id,
+        entity_type="coupon_receipt", entity_id=receipt.id,
+        after={"doc": receipt.document_number, "serials": serials,
+               "reason": receipt.reject_reason},
+    )
+    return receipt
+
+
+def update_receipt(
+    db: Session, *, receipt_id: int, actor_user_id: int, serials: list[str],
+    coupon_kind: str | None = None, customer_id: int | None = None,
+    received_date: date | None = None, notes: str | None = None,
+    declared_value: object | None = None, customer_type: str | None = None,
+) -> CouponReceipt:
+    """تعديل استلام — أساساً تصحيح رقم كوبون اتكتب غلط.
+
+    السطور القديمة بتتشال **الأول** وبعدين الأرقام الجديدة بتتفحص نفس فحص الإضافة بالظبط
+    (`_match_serials`): كده الرقم اللي على نفس المستند مايترفضش «اتستلم قبل كده» بسبب
+    نفسه، والرقم المصحّح مايدخلش من غير ما يتسأل. أي رفض بيرمي استثناء والـAPI بيعمل
+    rollback، فالمستند يا يتعدّل كله يا يفضل زي ما هو.
+
+    الحالة مابتتغيرش: المعلّق بيفضل معلّق لحد ما حد يعتمده، والمعتمد بيفضل معتمد. وده
+    آمن على المعتمد لأن أثره كله هو السطور نفسها — مافيش نقط ولا قيد يتعكس.
+    المرفوض مابيتعدّلش: مافيهوش سطور، والتصحيح بتاعه استلام جديد.
+    """
+    receipt = _load(db, receipt_id)
+    if status_of(receipt) == REJECTED:
+        raise CouponReceiptConflict("الاستلام المرفوض مابيتعدّلش — سجّل استلام جديد.")
+    before = {"serials": sorted(line.serial for line in receipt.lines),
+              "kind": receipt.declared_kind, "customer_id": receipt.customer_id}
+    receipt.lines.clear()
+    db.flush()
+
+    cleaned = [str(s).strip() for s in serials if str(s).strip()]
+    kind = coupon_kind if coupon_kind else receipt.declared_kind
+    matched = _match_serials(db, cleaned, kind)
+    _write_lines(db, receipt, matched)
+
+    receipt.coupon_count = len(matched)
+    receipt.declared_kind = kind
+    if customer_id is not None:
+        receipt.customer_id = customer_id
+    if received_date is not None:
+        receipt.received_date = received_date
+    receipt.notes = notes
+    if declared_value is not None:
+        receipt.declared_value = declared_value
+    if customer_type is not None:
+        receipt.customer_type = customer_type
+    db.flush()
+    db.refresh(receipt)
+    audit_service.record(
+        db, action="coupon_receipt.update", actor_user_id=actor_user_id,
+        entity_type="coupon_receipt", entity_id=receipt.id,
+        before=before,
+        after={"serials": sorted(s for s, *_ in matched), "kind": kind,
+               "customer_id": receipt.customer_id},
+    )
+    return receipt
+
+
+def _status_where(stmt, status: str | None):
+    """فلتر الحالة — `approved` بيشمل NULL (كل الاستلامات اللي قبل الاعتماد)."""
+    if status == APPROVED:
+        return stmt.where(approved_clause())
+    if status in (PENDING, REJECTED):
+        return stmt.where(CouponReceipt.status == status)
+    return stmt
+
+
 def _build_receipts_stmt(
     *, customer_id: int | None = None, rep_user_id: int | None = None,
-    q: str | None = None,
+    q: str | None = None, status: str | None = None,
 ):
-    stmt = select(CouponReceipt)
+    stmt = _status_where(select(CouponReceipt), status)
     if customer_id:
         stmt = stmt.where(CouponReceipt.customer_id == customer_id)
     if rep_user_id:
@@ -582,8 +784,10 @@ def _build_receipts_stmt(
 def list_receipts(
     db: Session, *, customer_id: int | None = None, rep_user_id: int | None = None,
     q: str | None = None, limit: int | None = None, offset: int = 0,
+    status: str | None = None,
 ) -> tuple[list[CouponReceipt], int]:
-    base_stmt = _build_receipts_stmt(customer_id=customer_id, rep_user_id=rep_user_id, q=q)
+    base_stmt = _build_receipts_stmt(customer_id=customer_id, rep_user_id=rep_user_id, q=q,
+                                     status=status)
     total_count = db.scalar(select(func.count()).select_from(base_stmt.order_by(None).subquery())) or 0
 
     query = base_stmt.options(selectinload(CouponReceipt.lines)).order_by(*newest_first(CouponReceipt, CouponReceipt.received_date))
@@ -594,9 +798,12 @@ def list_receipts(
 
 def coupon_receipts_summary(
     db: Session, *, customer_id: int | None = None, rep_user_id: int | None = None,
-    q: str | None = None,
+    q: str | None = None, status: str | None = None,
 ) -> dict:
-    base_stmt = _build_receipts_stmt(customer_id=customer_id, rep_user_id=rep_user_id, q=q)
+    # الإجماليات (عدد الكوبونات وقيمتها) من غير فلتر حالة = **المعتمد بس**: المعلّق لسه
+    # ماحدش راجعه، والمرفوض اتقال عليه لأ — الاتنين مش ورق اتستلم فعلاً.
+    base_stmt = _build_receipts_stmt(customer_id=customer_id, rep_user_id=rep_user_id, q=q,
+                                     status=status or APPROVED)
     subq = base_stmt.order_by(None).subquery()
     summary_stmt = select(
         func.count(subq.c.id).label("total_receipts"),
@@ -610,7 +817,17 @@ def coupon_receipts_summary(
     ).where(subq.c.declared_kind.isnot(None)).group_by(subq.c.declared_kind)
     kind_counts = {r[0]: int(r[1]) for r in db.execute(kind_stmt).all() if r[0]}
 
+    # عدّادات شرايح الحالة — على نفس البحث من غير فلتر الحالة.
+    all_subq = _build_receipts_stmt(
+        customer_id=customer_id, rep_user_id=rep_user_id, q=q).order_by(None).subquery()
+    status_counts = {PENDING: 0, APPROVED: 0, REJECTED: 0}
+    for st, cnt in db.execute(select(all_subq.c.status, func.count())
+                              .group_by(all_subq.c.status)).all():
+        key = st or APPROVED  # NULL = القديم = معتمد
+        status_counts[key] = status_counts.get(key, 0) + int(cnt)
+
     return {
+        "status_counts": status_counts,
         "total_receipts": int(row.total_receipts or 0),
         "total_coupons": int(row.total_coupons or 0),
         "total_value": Decimal(str(row.total_value or 0)),

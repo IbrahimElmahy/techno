@@ -481,6 +481,8 @@ export const EXTRA_SECTIONS: NavGroup[] = [
         children: [
           { key: '/after-sales-reports?tab=distributors', label: 'كوبونات الموزعين', roles: LOYALTY },
           { key: '/after-sales-reports?tab=plumbers', label: 'كوبونات السباكين', roles: LOYALTY },
+          // ورقة ورقة: العهدة ← التسليم لتاجر ← الاستلام من سباك (زي «كل الكوبونات» في نظامهم القديم).
+          { key: '/after-sales-reports?tab=lifecycle', label: 'حركة الكوبون', roles: LOYALTY },
           { key: '/after-sales-reports?tab=technicians', label: 'زيارات الفنيين بالنقاط', roles: R([...SALES, 'after_sales_staff']) },
           { key: '/after-sales-reports?tab=reps', label: 'زيارات المناديب', roles: R([...SALES, 'after_sales_staff']) },
         ],

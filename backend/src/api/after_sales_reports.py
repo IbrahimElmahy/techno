@@ -28,7 +28,7 @@ from __future__ import annotations
 from datetime import date
 from decimal import Decimal
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -37,8 +37,9 @@ from src.auth import branch_scope
 from src.auth.dependencies import CurrentUser, require_capability
 from src.auth.rbac import CAP_COUPON_RECEIVE, CAP_INSPECTION_READ
 from src.core.db import get_db
+from src.lib import coupon_lifecycle
 from src.models.coupon_issue import CouponIssue, CouponIssueLine
-from src.models.coupon_receipt import CouponReceipt, CouponReceiptLine
+from src.models.coupon_receipt import CouponReceipt, CouponReceiptLine, receipt_counted
 from src.models.customer import Customer
 from src.models.inspection import Inspection
 from src.models.user import User
@@ -117,7 +118,7 @@ def _received_counts(db: Session, current: CurrentUser,
         select(CouponReceipt.customer_id, func.count(CouponReceiptLine.id),
                func.max(CouponReceipt.received_date))
         .join(CouponReceiptLine, CouponReceiptLine.receipt_id == CouponReceipt.id),
-        CouponReceipt, current)
+        CouponReceipt, current).where(receipt_counted())
     if date_from:
         stmt = stmt.where(CouponReceipt.received_date >= date_from)
     if date_to:
@@ -138,7 +139,10 @@ def _returned_against_issue(db: Session, current: CurrentUser,
     stmt = branch_scope.scope(
         select(CouponIssue.customer_id, func.count(CouponReceiptLine.id))
         .join(CouponReceiptLine,
-              CouponReceiptLine.coupon_issue_id == CouponIssue.id),
+              CouponReceiptLine.coupon_issue_id == CouponIssue.id)
+        # الاستلام اللي لسه بانتظار الاعتماد مايقلّلش «لسه برّه» — المكتب ماشافش الورق.
+        .join(CouponReceipt, CouponReceipt.id == CouponReceiptLine.receipt_id)
+        .where(receipt_counted()),
         CouponIssue, current)
     if date_from:
         stmt = stmt.where(CouponIssue.issue_date >= date_from)
@@ -223,7 +227,7 @@ def coupon_statement(
             serial_to=serials[-1] if serials else None))
 
     receipts = branch_scope.scope(select(CouponReceipt), CouponReceipt, current).where(
-        CouponReceipt.customer_id == customer_id)
+        CouponReceipt.customer_id == customer_id, receipt_counted())
     if date_from:
         receipts = receipts.where(CouponReceipt.received_date >= date_from)
     if date_to:
@@ -294,3 +298,37 @@ def inspections_by_rep(
            for rid, n, pts, custs, last in rows]
     out.sort(key=lambda r: -r.visits)
     return out
+
+
+@router.get("/coupons/lifecycle")
+def coupons_lifecycle(
+    date_field: str = Query("handout",
+                            description="handout = تاريخ التسليم، receipt = تاريخ الاستلام"),
+    date_from: date | None = None,
+    date_to: date | None = None,
+    rep_id: int | None = Query(None, description="مندوب العهدة أو التسليم أو الاستلام"),
+    party_id: int | None = Query(None, description="التاجر/الموزع اللي اتسلّمله"),
+    plumber_id: int | None = Query(None, description="السباك اللي رجّعها"),
+    kind: str | None = None,
+    status: str | None = Query(None, description="with_rep / given / received / returned"),
+    serial: str | None = Query(None, description="رقم ورقة واحدة"),
+    serial_from: str | None = None,
+    serial_to: str | None = None,
+    only_unlinked: bool = Query(False, description="اللي رجعت ومالهاش تسليم معروف"),
+    limit: int | None = Query(None, ge=1),
+    offset: int = Query(0, ge=0),
+    current: CurrentUser = Depends(require_capability(CAP_COUPON_RECEIVE)),
+    db: Session = Depends(get_db),
+) -> dict:
+    """حركة الكوبون — صف لكل ورقة: العهدة ← التسليم لتاجر ← الاستلام من سباك.
+
+    نفس اللي نظامهم القديم بيجاوبه من صف الورقة الواحدة عنده؛ الشرح في `lib/coupon_lifecycle`.
+    """
+    try:
+        return coupon_lifecycle.lifecycle(
+            db, current, date_field=date_field, date_from=date_from, date_to=date_to,
+            rep_id=rep_id, party_id=party_id, plumber_id=plumber_id, kind=kind,
+            status=status, serial=serial, serial_from=serial_from, serial_to=serial_to,
+            only_unlinked=only_unlinked, limit=limit, offset=offset)
+    except coupon_lifecycle.CouponLifecycleError as exc:
+        raise HTTPException(422, {"code": "report_invalid", "message": str(exc)}) from exc

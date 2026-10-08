@@ -6,21 +6,30 @@ and retried on a flaky connection lands once.
 """
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from src.auth.dependencies import CurrentUser, require_capability
-from src.auth.rbac import CAP_COUPON_RECEIVE
+from src.auth.rbac import CAP_COUPON_CUSTODY, CAP_COUPON_RECEIVE
+from src.core.client_app import is_mobile_app
 from src.core.db import get_db
 from src.core.fast_json import model_json
 from src.models.role import RoleName
 from src.auth import branch_scope
 from src.services import coupon_receipt_service
-from src.services.coupon_receipt_service import CouponReceiptError
+from src.services.coupon_receipt_service import CouponReceiptConflict, CouponReceiptError
+
+# اعتماد/رفض/تعديل/حذف استلام = صلاحية المكتب اللي ماسك الورق (`coupon.custody`).
+#
+# مش `coupon.receive`: دي عند المندوب، ولو اعتمد هي يبقى بيراجع شغله بنفسه والاعتماد
+# مالوش معنى. و`coupon.custody` أقرب صلاحية موجودة — «صلاحية المكتب اللي بيسلّم الورق»،
+# عند مدير النظام وخدمة ما بعد البيع ومدير الفرع ومدير المبيعات (والمالك)، ومش عند
+# المندوب. نفس منطق `transfer.approve` في إذن التحويل: اللي بيطلب غير اللي بيعتمد.
+CAP_RECEIPT_MANAGE = CAP_COUPON_CUSTODY
 
 router = APIRouter(tags=["coupon-receipts"], prefix="/coupon-receipts")
 
@@ -74,6 +83,16 @@ class ReceiptOut(BaseModel):
     declared_kind: str | None = None
     declared_value: Decimal | None = None
     customer_type: str | None = None
+    # pending / approved / rejected — القديم (NULL) بيطلع approved.
+    status: str = "approved"
+    source: str | None = None
+    approved_by: int | None = None
+    approved_at: datetime | None = None
+    reject_reason: str | None = None
+    # أرقام الاستلام المرفوض — سطوره اتشالت عشان الأرقام ترجع تتستلم.
+    rejected_serials: list[str] = []
+    actor_user_id: int | None = None
+    created_at: datetime | None = None
     lines: list[ReceiptLineOut] = []
 
 
@@ -84,6 +103,11 @@ def _out(r) -> ReceiptOut:
         coupon_count=r.coupon_count, notes=r.notes,
         declared_kind=r.declared_kind, declared_value=r.declared_value,
         customer_type=r.customer_type,
+        status=coupon_receipt_service.status_of(r), source=r.source,
+        approved_by=r.approved_by, approved_at=r.approved_at,
+        reject_reason=r.reject_reason,
+        rejected_serials=[s for s in (r.rejected_serials or "").split(",") if s],
+        actor_user_id=r.actor_user_id, created_at=r.created_at,
         lines=[ReceiptLineOut(id=ln.id, serial=ln.serial,
                               coupon_kind=ln.coupon_kind,
                               sales_invoice_id=ln.sales_invoice_id,
@@ -128,13 +152,21 @@ def coupons_issued_to(
 @router.post("", response_model=ReceiptOut, status_code=status.HTTP_201_CREATED)
 def create_receipt(
     body: ReceiptIn,
+    request: Request,
     current: CurrentUser = Depends(require_capability(CAP_COUPON_RECEIVE)),
     db: Session = Depends(get_db),
 ) -> ReceiptOut:
-    """استلام كوبونات — all of them or none: one bad coupon fails the whole handover."""
+    """استلام كوبونات — all of them or none: one bad coupon fails the whole handover.
+
+    اللي جاي من التطبيق بيتسجّل **بانتظار الاعتماد** — زي طلب تحويل المخازن: المندوب
+    بيطلب والمكتب بيعتمد أو يرفض. اللي المكتب بيكتبه من الشاشة معتمد على طول.
+    `client_uuid` مايفرقش بينهم (الشاشة بتبعته كمان)، فالفرق من `User-Agent` التطبيق.
+    """
+    from_app = is_mobile_app(request)
     try:
         serials = list(body.serials)
-        if body.serial_from:
+        # «من» لوحدها أو «إلى» لوحدها = كوبون واحد (`expand_range` بيتعامل معاها).
+        if body.serial_from or body.serial_to:
             serials.extend(coupon_receipt_service.expand_range(body.serial_from, body.serial_to))
         receipt = coupon_receipt_service.create_receipt(
             db, serials=serials, actor_user_id=current.id, customer_id=body.customer_id,
@@ -144,6 +176,7 @@ def create_receipt(
             received_date=body.received_date, notes=body.notes, client_uuid=body.client_uuid,
             declared_kind=body.declared_kind, declared_value=body.declared_value,
             customer_type=body.customer_type, coupon_kind=body.coupon_kind,
+            pending=from_app, source="app" if from_app else "web",
         )
     except CouponReceiptError as exc:
         raise HTTPException(422, {"code": "coupon_invalid", "message": str(exc)}) from exc
@@ -164,6 +197,15 @@ class CouponReceiptsSummaryOut(BaseModel):
     total_coupons: int
     total_value: Decimal
     kind_counts: dict[str, int] = {}
+    # عدّادات شرايح الحالة (بانتظار الاعتماد / تم الاعتماد / مرفوض).
+    status_counts: dict[str, int] = {}
+
+
+_STATUSES = ("pending", "approved", "rejected")
+
+
+def _status_param(value: str | None) -> str | None:
+    return value if value in _STATUSES else None
 
 
 @router.get("/summary", response_model=CouponReceiptsSummaryOut)
@@ -171,12 +213,14 @@ def get_coupon_receipts_summary(
     customer_id: int | None = Query(None),
     rep_user_id: int | None = Query(None),
     q: str | None = Query(None),
+    status_filter: str | None = Query(None, alias="status"),
     current: CurrentUser = Depends(require_capability(CAP_COUPON_RECEIVE)),
     db: Session = Depends(get_db),
 ) -> CouponReceiptsSummaryOut:
     scope_rep = current.id if current.role == RoleName.sales_rep else rep_user_id
     summary = coupon_receipt_service.coupon_receipts_summary(
-        db, customer_id=customer_id, rep_user_id=scope_rep, q=q)
+        db, customer_id=customer_id, rep_user_id=scope_rep, q=q,
+        status=_status_param(status_filter))
     return CouponReceiptsSummaryOut(**summary)
 
 
@@ -188,13 +232,15 @@ def list_receipts(
     q: str | None = Query(None),
     limit: int | None = Query(None),
     offset: int = Query(0),
+    status_filter: str | None = Query(None, alias="status"),
     current: CurrentUser = Depends(require_capability(CAP_COUPON_RECEIVE)),
     db: Session = Depends(get_db),
 ):
     # A rep sees his own handovers, not the branch's.
     scope_rep = current.id if current.role == RoleName.sales_rep else rep_user_id
     rows, total = coupon_receipt_service.list_receipts(
-        db, customer_id=customer_id, rep_user_id=scope_rep, q=q, limit=limit, offset=offset)
+        db, customer_id=customer_id, rep_user_id=scope_rep, q=q, limit=limit, offset=offset,
+        status=_status_param(status_filter))
     visible_rows = branch_scope.visible(current, rows)
     items_out = [_out(r) for r in visible_rows]
     response.headers["X-Total-Count"] = str(total)
@@ -237,13 +283,18 @@ def get_receipt(
 @router.delete("/{receipt_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_receipt(
     receipt_id: int,
-    current: CurrentUser = Depends(require_capability(CAP_COUPON_RECEIVE)),
+    current: CurrentUser = Depends(require_capability(CAP_RECEIPT_MANAGE)),
     db: Session = Depends(get_db),
 ) -> Response:
-    """يلغي الاستلام ويرجّع أوراقه للتداول.
+    """يلغي الاستلام ويرجّع أوراقه للتداول — في أي حالة.
 
     من غيره الورقة اللي اتستلمت غلط بتقفل رقمها للأبد — والاستلام الصح بعدها بيترفض
     «اتستلم قبل كده» وهي في إيد الراجل. الإلغاء بيتسجّل في اليومية بالأرقام.
+
+    حتى المعتمد بيتحذف من غير خطوة «عكس»: أثر الاستلام كله هو سطوره (الرقم محجوز +
+    بيتعد في التقارير) — مابيدّيش نقط ولا بيعمل قيد — فشيل المستند هو العكس الكامل.
+
+    كانت `coupon.receive`، يعني المندوب كان يقدر يمسح استلام معتمد. بقت صلاحية المكتب.
     """
     _seen_receipt(db, receipt_id, current)
     try:
@@ -253,3 +304,95 @@ def delete_receipt(
         raise HTTPException(404, {"code": "not_found", "message": str(exc)}) from exc
     db.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+class RejectIn(BaseModel):
+    reason: str | None = None
+
+
+class ReceiptEditIn(BaseModel):
+    """تعديل الاستلام — الأرقام كلها من جديد (أساساً تصحيح رقم اتكتب غلط).
+
+    نفس شكل الإضافة: قايمة أرقام و/أو نطاق، و«من» لوحدها = كوبون واحد.
+    """
+
+    serials: list[str] = []
+    serial_from: str | None = None
+    serial_to: str | None = None
+    coupon_kind: str | None = None
+    customer_id: int | None = None
+    received_date: date | None = None
+    notes: str | None = None
+    declared_value: Decimal | None = None
+    customer_type: str | None = None
+
+
+def _refused(exc: CouponReceiptError) -> HTTPException:
+    """حالة مش بتسمح (اعتماد المعتمد، تعديل المرفوض) = 409؛ رقم مرفوض = 422."""
+    if isinstance(exc, CouponReceiptConflict):
+        return HTTPException(409, {"code": "coupon_receipt_conflict", "message": str(exc)})
+    return HTTPException(422, {"code": "coupon_invalid", "message": str(exc)})
+
+
+@router.post("/{receipt_id}/approve", response_model=ReceiptOut)
+def approve_receipt(
+    receipt_id: int,
+    current: CurrentUser = Depends(require_capability(CAP_RECEIPT_MANAGE)),
+    db: Session = Depends(get_db),
+) -> ReceiptOut:
+    """اعتماد استلام جاي من التطبيق — من هنا بيتحسب في التقارير."""
+    _seen_receipt(db, receipt_id, current)
+    try:
+        receipt = coupon_receipt_service.approve_receipt(
+            db, receipt_id=receipt_id, actor_user_id=current.id)
+    except CouponReceiptError as exc:
+        raise _refused(exc) from exc
+    out = _out(receipt)
+    db.commit()
+    return out
+
+
+@router.post("/{receipt_id}/reject", response_model=ReceiptOut)
+def reject_receipt(
+    receipt_id: int,
+    body: RejectIn,
+    current: CurrentUser = Depends(require_capability(CAP_RECEIPT_MANAGE)),
+    db: Session = Depends(get_db),
+) -> ReceiptOut:
+    """رفض استلام جاي من التطبيق — المستند بيفضل بالسبب، والأرقام ترجع للتداول."""
+    _seen_receipt(db, receipt_id, current)
+    try:
+        receipt = coupon_receipt_service.reject_receipt(
+            db, receipt_id=receipt_id, actor_user_id=current.id, reason=body.reason)
+    except CouponReceiptError as exc:
+        raise _refused(exc) from exc
+    out = _out(receipt)
+    db.commit()
+    return out
+
+
+@router.put("/{receipt_id}", response_model=ReceiptOut)
+def update_receipt(
+    receipt_id: int,
+    body: ReceiptEditIn,
+    current: CurrentUser = Depends(require_capability(CAP_RECEIPT_MANAGE)),
+    db: Session = Depends(get_db),
+) -> ReceiptOut:
+    """تعديل الاستلام — الأرقام بتتفحص من جديد زي الإضافة بالظبط، وكله أو ولا حاجة."""
+    _seen_receipt(db, receipt_id, current)
+    try:
+        serials = list(body.serials)
+        if body.serial_from or body.serial_to:
+            serials.extend(coupon_receipt_service.expand_range(body.serial_from, body.serial_to))
+        receipt = coupon_receipt_service.update_receipt(
+            db, receipt_id=receipt_id, actor_user_id=current.id, serials=serials,
+            coupon_kind=body.coupon_kind, customer_id=body.customer_id,
+            received_date=body.received_date, notes=body.notes,
+            declared_value=body.declared_value, customer_type=body.customer_type)
+    except CouponReceiptError as exc:
+        # السطور القديمة اتشالت قبل الفحص — الـrollback هو اللي بيرجّعها.
+        db.rollback()
+        raise _refused(exc) from exc
+    out = _out(receipt)
+    db.commit()
+    return out

@@ -13,6 +13,7 @@ import ListPage from '../components/ListPage';
 import { useScreenShortcuts } from '../components/keyboard';
 import DateRangeFilter from '../components/DateRangeFilter';
 import { useQueryTab } from '../components/useQueryTab';
+import { useCouponLifecycle } from './CouponLifecycle';
 
 import { useCanSeeStats } from '../components/StatsRow';
 import { numeralsLocale } from '../utils/money';
@@ -203,8 +204,11 @@ export default function AfterSalesReports() {
   const searchRef = useRef<any>(null);
   useScreenShortcuts({ onSearch: () => { searchRef.current?.focus?.(); } });
 
-  type TabKey = 'plumbers' | 'distributors' | 'technicians' | 'reps';
-  const tabs: Record<TabKey, {
+  // «حركة الكوبون» ليها فلاترها وترقيمها في السيرفر — بتشارك الصفحة الفترة بس.
+  const lifecycle = useCouponLifecycle(range, activeTab === 'lifecycle');
+
+  type TabKey = 'plumbers' | 'distributors' | 'technicians' | 'reps' | 'lifecycle';
+  const tabs: Record<Exclude<TabKey, 'lifecycle'>, {
     label: string; rows: any[]; filter: any; cols: any; hint: string; stats: [string, string, string?][];
   }> = {
     plumbers: {
@@ -232,8 +236,10 @@ export default function AfterSalesReports() {
       stats: [['معاينات', num(totals.visits)], ['نقاط المعاينات', pts(totals.points)]],
     },
   };
-  const tabKey: TabKey = (activeTab in tabs ? activeTab : 'plumbers') as TabKey;
-  const cur = tabs[tabKey];
+  const tabKeys = [...(Object.keys(tabs) as TabKey[]), 'lifecycle' as TabKey];
+  const tabKey: TabKey = (tabKeys.includes(activeTab as TabKey) ? activeTab : 'plumbers') as TabKey;
+  const isLifecycle = tabKey === 'lifecycle';
+  const cur = tabs[isLifecycle ? 'plumbers' : tabKey as Exclude<TabKey, 'lifecycle'>];
 
   const footer = (
     <span className="sl-foot">
@@ -252,14 +258,20 @@ export default function AfterSalesReports() {
     <ListPage<TabKey>
       icon={<BarChartOutlined />}
       title="تقارير ما بعد البيع" muted="(تقارير المتابعة)"
-      subtitle={cur.hint}
-      tabs={(Object.keys(tabs) as TabKey[]).map((k) => ({
-        key: k, label: tabs[k].label, count: tabs[k].rows.length,
-      }))}
+      subtitle={isLifecycle
+        ? 'كل ورقة لوحدها: مين كان ماسكها، اتسلّمت لمين، ورجعت من أنهي سباك.'
+        : cur.hint}
+      tabs={tabKeys.map((k) => (k === 'lifecycle'
+        ? { key: k, label: 'حركة الكوبون', count: lifecycle.count }
+        : { key: k, label: tabs[k as Exclude<TabKey, 'lifecycle'>].label,
+          count: tabs[k as Exclude<TabKey, 'lifecycle'>].rows.length }))}
       activeTab={tabKey}
       onTabChange={setActiveTab}
-      actions={cur.cols.control}
-      filters={(<>
+      actions={isLifecycle ? lifecycle.actions : cur.cols.control}
+      filters={isLifecycle ? (<>
+        <DateRangeFilter className="sl-f-dates" value={range} onChange={setRange} />
+        {lifecycle.filters}
+      </>) : (<>
         <Input
           className="sl-f-search"
           ref={searchRef}
@@ -273,7 +285,7 @@ export default function AfterSalesReports() {
         <Button className="sl-f-clear" icon={<ClearOutlined />} onClick={cur.filter.reset}>مسح</Button>
       </>)}
     >
-      <Table
+      {isLifecycle ? lifecycle.table : <Table
         key={tabKey}
         className="sl-table"
         rowKey={(r: any) => String(r.customer_id ?? r.rep_user_id ?? r.name)}
@@ -284,7 +296,7 @@ export default function AfterSalesReports() {
           showTotal: () => footer,
         }}
         locale={{ emptyText: 'لا توجد بيانات في الفترة دي' }}
-      />
+      />}
     </ListPage>
   );
 }

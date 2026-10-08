@@ -2,17 +2,20 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { PAGE_SIZE_OPTIONS } from '../utils/pagination';
 import { searchFilter, searchRank, compareArabic } from '../utils/arabicSort';
 import {
-  Alert, Button, Col, DatePicker, Descriptions, Empty, Input, Row, Segmented, Select,
-  Space, Table, Tag, Typography, message,
+  Alert, Button, Col, DatePicker, Descriptions, Empty, Input, Modal, Row, Segmented, Select,
+  Space, Table, Tag, Tooltip, Typography, message,
 } from 'antd';
 import dayjs, { Dayjs } from 'dayjs';
 import { useNavigate } from 'react-router-dom';
 import { InputNumber } from '../components/NumberInput';
 import {
   DeleteOutlined, PlusOutlined, ReloadOutlined, SaveOutlined, ArrowLeftOutlined, SettingOutlined,
-  TagsOutlined, SearchOutlined, ClearOutlined,
+  TagsOutlined, SearchOutlined, ClearOutlined, CheckCircleOutlined, CloseCircleOutlined,
+  EditOutlined,
 } from '@ant-design/icons';
 import { api } from '../api/client';
+import { useAuth } from '../components/AuthProvider';
+import { Popconfirm } from '../components/noConfirm';
 import { useTableColumns } from '../components/ColumnSettings';
 import DocumentLink from '../components/DocumentLink';
 import ListPage from '../components/ListPage';
@@ -59,8 +62,30 @@ interface Receipt {
   declared_kind?: string | null;
   declared_value?: string | number | null;
   customer_type?: string | null;
+  // pending = جاي من التطبيق وبيستنى المكتب؛ القديم كله approved.
+  status?: ReceiptStatus;
+  source?: string | null;
+  reject_reason?: string | null;
+  rejected_serials?: string[];
+  approved_at?: string | null;
   lines: ReceiptLineOut[];
 }
+
+type ReceiptStatus = 'pending' | 'approved' | 'rejected';
+
+// نفس كلمات وألوان طلب تحويل المخازن — المستخدم بيقرا الحالتين بنفس العين.
+const RECEIPT_STATUS: Record<ReceiptStatus, { color: string; text: string; dot: string }> = {
+  pending: { color: 'warning', text: 'بانتظار الاعتماد', dot: '#F5A11D' },
+  approved: { color: 'success', text: 'تم الاعتماد', dot: '#6AB42D' },
+  rejected: { color: 'error', text: 'مرفوض', dot: '#f5222d' },
+};
+
+/** «من» و«إلى» → أول وآخر رقم. خانة واحدة متملية = كوبون واحد، مش غلط. */
+const rangeOf = (from: number | null, to: number | null): [number, number] | null => {
+  const a = from ?? to;
+  const b = to ?? from;
+  return a === null || b === null ? null : [a, b];
+};
 
 interface CouponTypeItem {
   id: number;
@@ -121,7 +146,18 @@ export default function CouponReceipts() {
     total_coupons: number;
     total_value: number;
     kind_counts: Record<string, number>;
+    status_counts?: Record<string, number>;
   }
+
+  const { can } = useAuth();
+  // اعتماد/رفض/تعديل/حذف = صلاحية المكتب اللي ماسك الورق (نفس اللي السيرفر بيطلبها).
+  // المندوب عنده «استلام» بس — ماينفعش يعتمد شغله بنفسه.
+  const canManage = can('coupon.custody');
+  // شريحة الحالة في السجل — «الكل» افتراضياً.
+  const [statusFilter, setStatusFilter] = useState<'all' | ReceiptStatus>('all');
+  const statusRef = useRef(statusFilter);
+  statusRef.current = statusFilter;
+  const statusParam = () => (statusRef.current === 'all' ? {} : { status: statusRef.current });
 
   const [receipts, setReceipts] = useState<Receipt[]>([]);
   const [loading, setLoading] = useState(false);
@@ -141,7 +177,7 @@ export default function CouponReceipts() {
 
   const loadSummary = useCallback(async (q = searchQuery) => {
     try {
-      const params: Record<string, any> = {};
+      const params: Record<string, any> = { ...statusParam() };
       if (q.trim()) params.q = q.trim();
       const res = await api.get<ReceiptsSummary>('/api/v1/coupon-receipts/summary', { params });
       setSummaryData({
@@ -149,6 +185,7 @@ export default function CouponReceipts() {
         total_coupons: Number(res.data.total_coupons || 0),
         total_value: Number(res.data.total_value || 0),
         kind_counts: res.data.kind_counts || {},
+        status_counts: res.data.status_counts || {},
       });
     } catch {
       // ignore
@@ -165,6 +202,7 @@ export default function CouponReceipts() {
       const params: Record<string, any> = {
         limit: targetPageSize,
         offset: (targetPage - 1) * targetPageSize,
+        ...statusParam(),
       };
       if (q.trim()) params.q = q.trim();
       const res = await api.get<any>('/api/v1/coupon-receipts', { params });
@@ -197,7 +235,7 @@ export default function CouponReceipts() {
       loadSummary(searchQuery);
     }, 300);
     return () => clearTimeout(timer);
-  }, [searchQuery]);
+  }, [searchQuery, statusFilter]);
 
   useEffect(() => {
     api.get('/api/v1/customers/options', { params: { limit: 20000 } }).then((r) => setCustomers(r.data || [])).catch(console.error);
@@ -255,10 +293,12 @@ export default function CouponReceipts() {
 
   const addRange = async () => {
     if (!kind) { message.warning('اختر فئة الكوبون الأول'); return; }
-    if (rangeFrom === null || rangeTo === null) { message.warning('النطاق لازم يكون أرقام'); return; }
-    if (rangeTo < rangeFrom) { message.warning('رقم النهاية أصغر من البداية'); return; }
-    if (rangeTo - rangeFrom + 1 > 2000) { message.warning('النطاق كبير — أقصى ٢٠٠٠ كوبون في المرة'); return; }
-    const from = rangeFrom; const to = rangeTo;
+    // كوبون واحد = «من» بس (أو «إلى» بس) — مش لازم يتكتب نفس الرقم مرتين.
+    const range = rangeOf(rangeFrom, rangeTo);
+    if (!range) { message.warning('اكتب رقم الكوبون في «من رقم»'); return; }
+    const [from, to] = range;
+    if (to < from) { message.warning('رقم النهاية أصغر من البداية'); return; }
+    if (to - from + 1 > 2000) { message.warning('النطاق كبير — أقصى ٢٠٠٠ كوبون في المرة'); return; }
     setRangeFrom(null); setRangeTo(null);
     for (let n = from; n <= to; n += 1) {
       await addSerial(String(n));
@@ -347,6 +387,166 @@ export default function CouponReceipts() {
     } finally { setSaving(false); }
   };
 
+  // ---------------------------------------------------------- عمليات السجل
+  // زي طلب تحويل المخازن: اللي جاي من التطبيق بيستنى المكتب يعتمده أو يرفضه، وأي
+  // استلام يتعدّل (تصحيح رقم اتكتب غلط) أو يتحذف.
+  const [acting, setActing] = useState<number | null>(null);
+  const [rejecting, setRejecting] = useState<Receipt | null>(null);
+  const [rejectReason, setRejectReason] = useState('');
+
+  const afterAction = (updated?: Receipt | null, removedId?: number) => {
+    loadReceipts(undefined, undefined, undefined, { silent: true });
+    loadSummary();
+    setDetail((d) => {
+      if (!d) return d;
+      if (removedId != null && d.id === removedId) return null;
+      return updated && d.id === updated.id ? updated : d;
+    });
+  };
+
+  const errorText = (err: any, fallback: string) =>
+    err?.response?.data?.detail?.message || fallback;
+
+  const approve = async (r: Receipt) => {
+    setActing(r.id);
+    try {
+      const res = await api.post<Receipt>(`/api/v1/coupon-receipts/${r.id}/approve`);
+      message.success(`تم اعتماد ${r.document_number}`);
+      afterAction(res.data);
+    } catch (err: any) {
+      message.error(errorText(err, 'تعذر الاعتماد'));
+    } finally { setActing(null); }
+  };
+
+  const reject = async () => {
+    if (!rejecting) return;
+    const r = rejecting;
+    setActing(r.id);
+    try {
+      const res = await api.post<Receipt>(`/api/v1/coupon-receipts/${r.id}/reject`,
+        { reason: rejectReason.trim() || null });
+      message.success(`تم رفض ${r.document_number} — أرقامه رجعت تتستلم تاني`);
+      setRejecting(null); setRejectReason('');
+      afterAction(res.data);
+    } catch (err: any) {
+      message.error(errorText(err, 'تعذر الرفض'));
+    } finally { setActing(null); }
+  };
+
+  const remove = async (r: Receipt) => {
+    setActing(r.id);
+    try {
+      await api.delete(`/api/v1/coupon-receipts/${r.id}`);
+      message.success(`تم حذف ${r.document_number} — أرقامه رجعت للتداول`);
+      afterAction(null, r.id);
+    } catch (err: any) {
+      message.error(errorText(err, 'تعذر الحذف'));
+    } finally { setActing(null); }
+  };
+
+  // التعديل — أساساً تصحيح رقم كوبون اتكتب غلط. السيرفر بيفحص الأرقام من جديد زي
+  // الإضافة بالظبط، والمستند يا يتعدّل كله يا يفضل زي ما هو.
+  const [editing, setEditing] = useState<Receipt | null>(null);
+  const [editSerials, setEditSerials] = useState<string[]>([]);
+  const [editKind, setEditKind] = useState<string>('');
+  const [editCustomer, setEditCustomer] = useState<number | undefined>();
+  const [editDate, setEditDate] = useState<Dayjs | null>(null);
+  const [editValue, setEditValue] = useState<number | null>(null);
+  const [editNotes, setEditNotes] = useState('');
+  const [editFrom, setEditFrom] = useState<number | null>(null);
+  const [editTo, setEditTo] = useState<number | null>(null);
+  const [editSaving, setEditSaving] = useState(false);
+
+  const openEdit = (r: Receipt) => {
+    setEditing(r);
+    setEditSerials(r.lines.map((l) => l.serial));
+    setEditKind(r.declared_kind || r.lines.find((l) => l.coupon_kind)?.coupon_kind || '');
+    setEditCustomer(r.customer_id ?? undefined);
+    setEditDate(r.received_date ? dayjs(r.received_date) : null);
+    setEditValue(r.declared_value != null ? Number(r.declared_value) : null);
+    setEditNotes(r.notes || '');
+    setEditFrom(null); setEditTo(null);
+  };
+
+  const addEditRange = () => {
+    // نفس قاعدة شاشة الاستلام: خانة واحدة = كوبون واحد.
+    const range = rangeOf(editFrom, editTo);
+    if (!range) { message.warning('اكتب رقم الكوبون في «من رقم»'); return; }
+    const [from, to] = range;
+    if (to < from) { message.warning('رقم النهاية أصغر من البداية'); return; }
+    if (to - from + 1 > 500) { message.warning('النطاق كبير — أقصى ٥٠٠ كوبون'); return; }
+    const added: string[] = [];
+    for (let n = from; n <= to; n += 1) added.push(String(n));
+    setEditSerials((prev) => Array.from(new Set([...prev, ...added])));
+    setEditFrom(null); setEditTo(null);
+  };
+
+  const saveEdit = async () => {
+    if (!editing) return;
+    const serials = editSerials.map((s) => s.trim()).filter(Boolean);
+    if (!serials.length) { message.warning('الاستلام لازم يكون فيه كوبون واحد على الأقل'); return; }
+    setEditSaving(true);
+    try {
+      const res = await api.put<Receipt>(`/api/v1/coupon-receipts/${editing.id}`, {
+        serials,
+        coupon_kind: editKind || null,
+        customer_id: editCustomer ?? null,
+        received_date: editDate ? editDate.format('YYYY-MM-DD') : null,
+        declared_value: editValue,
+        notes: editNotes.trim() || null,
+      });
+      message.success(`تم تعديل ${editing.document_number}`);
+      setEditing(null);
+      afterAction(res.data);
+    } catch (err: any) {
+      message.error(errorText(err, 'تعذر حفظ التعديل'));
+    } finally { setEditSaving(false); }
+  };
+
+  const statusTag = (r: Receipt) => {
+    const st = RECEIPT_STATUS[(r.status || 'approved') as ReceiptStatus] || RECEIPT_STATUS.approved;
+    return (
+      <Space size={2}>
+        <Tag color={st.color} style={{ marginInlineEnd: 0 }}>{st.text}</Tag>
+        {r.source === 'app' ? <Tag color="blue" style={{ marginInlineEnd: 0 }}>من التطبيق</Tag> : null}
+      </Space>
+    );
+  };
+
+  /** أزرار السطر — نفس ترتيب إذن التحويل: اعتماد · رفض (المعلّق بس) · تعديل · حذف. */
+  const rowActions = (r: Receipt) => {
+    if (!canManage) return null;
+    const st = r.status || 'approved';
+    const busy = acting === r.id;
+    return (
+      <Space size={2} onClick={(e) => e.stopPropagation()}>
+        {st === 'pending' && (
+          <Tooltip title="اعتماد">
+            <Button type="text" icon={<CheckCircleOutlined style={{ color: '#6AB42D' }} />}
+              loading={busy} onClick={() => approve(r)} />
+          </Tooltip>
+        )}
+        {st === 'pending' && (
+          <Tooltip title="رفض">
+            <Button type="text" danger icon={<CloseCircleOutlined />} disabled={busy}
+              onClick={() => { setRejecting(r); setRejectReason(''); }} />
+          </Tooltip>
+        )}
+        {st !== 'rejected' && (
+          <Tooltip title="تعديل">
+            <Button type="text" icon={<EditOutlined />} disabled={busy}
+              onClick={() => openEdit(r)} />
+          </Tooltip>
+        )}
+        <Popconfirm title="تحذف الاستلام ده؟ أرقامه هترجع للتداول" onConfirm={() => remove(r)}>
+          <Tooltip title="حذف">
+            <Button type="text" danger icon={<DeleteOutlined />} disabled={busy} />
+          </Tooltip>
+        </Popconfirm>
+      </Space>
+    );
+  };
+
   const statusChip = (e: Entry) => {
     switch (e.status) {
       case 'valid':
@@ -384,6 +584,12 @@ export default function CouponReceipts() {
     { title: 'عدد الكوبونات', dataIndex: 'coupon_count',
       render: (v: number) => <b style={{ color: '#F5A11D' }}>{v}</b> },
     { title: 'ملاحظات', dataIndex: 'notes', render: (v: string) => v || '-' },
+    { title: 'الحالة', dataIndex: 'status', key: 'status',
+      render: (_: any, r: Receipt) => statusTag(r) },
+    ...(canManage ? [{
+      title: 'الإجراءات', key: 'actions', width: 150, fixed: 'left' as const,
+      render: (_: any, r: Receipt) => rowActions(r),
+    }] : []),
   ];
 
   const listCols = useTableColumns('coupon-receipts', listColumns, {
@@ -392,8 +598,9 @@ export default function CouponReceipts() {
     export: { name: 'سجل الاستلامات', rows: receipts },
   });
 
-  // Read-only on purpose: a receipt is the act that spends coupons — un-spending one by editing
-  // the paper would leave the system counting a coupon the customer already handed over.
+  // كان «للقراءة بس عن قصد». العميل طلب تعديل وحذف (٢٠٢٦-١٠-٠٨): الرقم اللي اتكتب غلط
+  // كان بيقفل الورقة الصح للأبد. التعديل بيعدّي على نفس فحص الإضافة في السيرفر، فالرقم
+  // المصحّح مابيدخلش من غير ما يتسأل «متصرّف؟ رجع قبل كده؟».
 
   // الشريحة المفتوحة — كانت `Tabs` من غير حالة، وأول شريحة هي الافتراضية.
   // الشريحة في الرابط (`?tab=`) — الريفرش بيرجع عليها.
@@ -499,7 +706,7 @@ export default function CouponReceipts() {
         </Col>
         <Col xs={8} md={4}>
           <InputNumber
-            style={{ width: '100%' }} placeholder="إلى رقم" precision={0}
+            style={{ width: '100%' }} placeholder="إلى رقم (فاضي = كوبون واحد)" precision={0}
             value={rangeTo} onChange={(v) => setRangeTo(v as number | null)}
             onPressEnter={addRange} disabled={!kind}
           />
@@ -507,7 +714,7 @@ export default function CouponReceipts() {
         <Col xs={8} md={4}>
           <Button type="primary" icon={<PlusOutlined />} onClick={addRange} block
             disabled={!kind}>
-            إضافة النطاق
+            إضافة
           </Button>
         </Col>
       </Row>
@@ -629,8 +836,21 @@ export default function CouponReceipts() {
           {detail.received_date ? String(detail.received_date).slice(0, 10) : '-'}
         </Descriptions.Item>
         <Descriptions.Item label="العدد">{detail.coupon_count}</Descriptions.Item>
+        <Descriptions.Item label="الحالة">{statusTag(detail)}</Descriptions.Item>
         <Descriptions.Item label="ملاحظات" span={2}>{detail.notes || '-'}</Descriptions.Item>
       </Descriptions>
+      {detail.status === 'pending' && (
+        <Alert type="warning" showIcon style={{ marginBottom: 12 }}
+          message="الاستلام ده جاي من التطبيق وبانتظار الاعتماد"
+          description="أرقامه محجوزة (محدش يقدر يسلّمها تاني) بس مش بتتحسب في التقارير لحد ما يتعتمد. لو فيه رقم غلط عدّله قبل الاعتماد." />
+      )}
+      {detail.status === 'rejected' && (
+        <Alert type="error" showIcon style={{ marginBottom: 12 }}
+          message={detail.reject_reason ? `مرفوض — السبب: ${detail.reject_reason}` : 'الاستلام ده اترفض'}
+          description={detail.rejected_serials && detail.rejected_serials.length
+            ? `الأرقام اللي كانت عليه (رجعت تتستلم تاني): ${detail.rejected_serials.join('، ')}`
+            : undefined} />
+      )}
       {detail.lines.length ? (
         <Table
           rowKey="id" size="small" dataSource={detail.lines} pagination={false}
@@ -660,12 +880,36 @@ export default function CouponReceipts() {
             onClick={() => setDetail(null)}>رجوع</Button>
           <b>{detail.document_number}</b>
         </Space>
-        <Button onClick={() => setDetail(null)}>إغلاق</Button>
+        <Space>
+          {rowActions(detail)}
+          <Button onClick={() => setDetail(null)}>إغلاق</Button>
+        </Space>
       </Space>
       {detailBody}
     </>
   ) : (
     <>
+      {/* شرايح الحالة — زي «بانتظار الاعتماد / تم الاعتماد / مرفوض» في إذن التحويل.
+          الإجماليات تحت بتتبع الشريحة؛ و«الكل» بيعدّ المعتمد بس، لأن المعلّق والمرفوض
+          مش ورق اتستلم فعلاً. */}
+      <Segmented
+        style={{ marginBottom: 12 }}
+        value={statusFilter}
+        onChange={(v) => { setStatusFilter(v as 'all' | ReceiptStatus); setPage(1); }}
+        options={[
+          { value: 'all', label: `الكل (${Object.values(summaryData.status_counts || {}).reduce((a, b) => a + b, 0)})` },
+          ...(Object.keys(RECEIPT_STATUS) as ReceiptStatus[]).map((k) => ({
+            value: k,
+            label: (
+              <span>
+                <span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: 4,
+                  background: RECEIPT_STATUS[k].dot, marginInlineEnd: 6 }} />
+                {RECEIPT_STATUS[k].text} ({summaryData.status_counts?.[k] ?? 0})
+              </span>
+            ),
+          })),
+        ]}
+      />
       <CouponStatsOverview
         totalCount={summaryData.total_coupons}
         totalValue={summaryData.total_value}
@@ -719,13 +963,24 @@ export default function CouponReceipts() {
       subtitle="تسجيل ورق الكوبونات الراجع من السباكين والتجار، وسجل الاستلامات"
       tabs={[
         { key: 'receive', label: 'استلام كوبونات' },
-        { key: 'history', label: 'السجل', count: totalCount },
+        { key: 'history',
+          // اللي مستني اعتماد بيبان من غير ما حد يفتح السجل.
+          label: (summaryData.status_counts?.pending ?? 0) > 0 ? (
+            <span>السجل <Tag color="warning" style={{ marginInlineStart: 4 }}>
+              {summaryData.status_counts?.pending} بانتظار الاعتماد</Tag></span>
+          ) : 'السجل',
+          count: totalCount },
       ]}
       activeTab={tab}
       onTabChange={setTab}
       actions={(<>
         {tab === 'receive' && receiveActions}
         {listShown && (<>
+          {/* «إضافة» من السجل — بيفتح شريحة الاستلام نفسها، مش فورم تاني. */}
+          <Button type="primary" className="sl-create" icon={<PlusOutlined />}
+            onClick={() => setTab('receive')}>
+            استلام جديد
+          </Button>
           {listCols.control}
           {/* `onClick` بيبعت حدث الماوس كأول باراميتر — و`loadReceipts` أول باراميتر
               عنده رقم الصفحة، فالزرار كان بيطلب صفحة اسمها MouseEvent. */}
@@ -751,6 +1006,82 @@ export default function CouponReceipts() {
       </>) : undefined}
     >
       {tab === 'receive' ? receiveTab : historyTab}
+
+      <Modal
+        open={!!rejecting} title={rejecting ? `رفض ${rejecting.document_number}` : 'رفض'}
+        okText="رفض" okButtonProps={{ danger: true, loading: acting === rejecting?.id }}
+        cancelText="رجوع" onOk={reject}
+        onCancel={() => { setRejecting(null); setRejectReason(''); }}
+      >
+        <Typography.Paragraph type="secondary">
+          الرفض مابيحسبش الكوبونات دي، وأرقامها بترجع تتستلم تاني. المستند بيفضل في السجل بالسبب.
+        </Typography.Paragraph>
+        <Input.TextArea rows={3} autoFocus placeholder="سبب الرفض (اختياري)"
+          value={rejectReason} onChange={(e) => setRejectReason(e.target.value)} />
+      </Modal>
+
+      <Modal
+        open={!!editing} width={720}
+        title={editing ? `تعديل ${editing.document_number}` : 'تعديل'}
+        okText="حفظ التعديل" cancelText="رجوع"
+        okButtonProps={{ icon: <SaveOutlined />, loading: editSaving }}
+        onOk={saveEdit} onCancel={() => setEditing(null)}
+        destroyOnClose
+      >
+        {editing?.status === 'approved' && (
+          <Alert type="info" showIcon style={{ marginBottom: 12 }}
+            message="الاستلام ده معتمد — التعديل بيتحسب على طول في التقارير" />
+        )}
+        <Row gutter={[8, 8]}>
+          <Col xs={24} md={8}>
+            <DatePicker style={{ width: '100%' }} format="YYYY/MM/DD" placeholder="تاريخ الاستلام"
+              value={editDate} onChange={(d) => setEditDate(d)}
+              disabledDate={(d) => d.isAfter(dayjs().add(1, 'day'), 'day')} />
+          </Col>
+          <Col xs={12} md={8}>
+            <Select style={{ width: '100%' }} showSearch placeholder="فئة الكوبون"
+              value={editKind || undefined} onChange={(v) => setEditKind(v)}
+              options={kindOptions.map((k) => ({ value: k.value, label: k.label }))}
+              filterOption={searchFilter} filterSort={searchRank} />
+          </Col>
+          <Col xs={12} md={8}>
+            <InputNumber style={{ width: '100%' }} placeholder="قيمة الكوبون" min={0}
+              value={editValue} onChange={(v) => setEditValue(v as number | null)} />
+          </Col>
+          <Col xs={24}>
+            <Select allowClear showSearch style={{ width: '100%' }} placeholder="اتستلم من"
+              value={editCustomer} onChange={setEditCustomer}
+              options={receiverOptions} filterOption={searchFilter} filterSort={searchRank} />
+          </Col>
+          <Col xs={24}>
+            {/* أرقام الكوبونات — امسح الرقم الغلط (×) واكتب الصح وEnter. */}
+            <Typography.Text type="secondary">أرقام الكوبونات ({editSerials.length})</Typography.Text>
+            <Select mode="tags" style={{ width: '100%' }} open={false}
+              placeholder="اكتب رقم الكوبون واضغط Enter"
+              tokenSeparators={[',', ' ', '،']}
+              value={editSerials}
+              onChange={(v) => setEditSerials(Array.from(new Set((v as string[])
+                .map((s) => String(s).trim()).filter(Boolean))))} />
+          </Col>
+          <Col xs={8}>
+            <InputNumber style={{ width: '100%' }} placeholder="من رقم" precision={0}
+              value={editFrom} onChange={(v) => setEditFrom(v as number | null)}
+              onPressEnter={addEditRange} />
+          </Col>
+          <Col xs={8}>
+            <InputNumber style={{ width: '100%' }} placeholder="إلى رقم (فاضي = كوبون واحد)"
+              precision={0} value={editTo} onChange={(v) => setEditTo(v as number | null)}
+              onPressEnter={addEditRange} />
+          </Col>
+          <Col xs={8}>
+            <Button block icon={<PlusOutlined />} onClick={addEditRange}>إضافة</Button>
+          </Col>
+          <Col xs={24}>
+            <Input.TextArea rows={2} placeholder="ملاحظات" value={editNotes}
+              onChange={(e) => setEditNotes(e.target.value)} />
+          </Col>
+        </Row>
+      </Modal>
     </ListPage>
   );
 }

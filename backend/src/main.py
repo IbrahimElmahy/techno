@@ -802,6 +802,14 @@ _ADDED_COLUMNS: list[tuple[str, str, str]] = [
     ("wastage_document", "statement1", "VARCHAR(200)"),
     ("stock_count", "statement1", "VARCHAR(200)"),
     ("trade_order", "statement1", "VARCHAR(200)"),
+    # استلام الكوبونات من التطبيق بقى طلب بيتعتمد أو يترفض — الشرح في
+    # `models/coupon_receipt.py`. NULL في `status` = معتمد، فالقديم بيفضل زي ما هو.
+    ("coupon_receipt", "status", "VARCHAR(16)"),
+    ("coupon_receipt", "approved_by", "BIGINT"),
+    ("coupon_receipt", "approved_at", "TIMESTAMP"),
+    ("coupon_receipt", "reject_reason", "VARCHAR(240)"),
+    ("coupon_receipt", "rejected_serials", "TEXT"),
+    ("coupon_receipt", "source", "VARCHAR(8)"),
 ]
 
 # Columns whose TYPE widened after release (create_all never alters). (table, column, PG/MySQL type).

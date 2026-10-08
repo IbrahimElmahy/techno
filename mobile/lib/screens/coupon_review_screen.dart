@@ -174,8 +174,10 @@ class _CouponReviewScreenState extends State<CouponReviewScreen> {
                 ListTile(
                   contentPadding: EdgeInsets.zero,
                   title: Text(_receiptLine(r)),
+                  // اللي اترفع بيستنى المكتب يعتمده أو يرفضه — الجهاز مايعرفش القرار، فبيقول
+                  // إنه وصل وبس، مش إنه اتحسب.
                   subtitle: Text((r['synced'] as int?) == 1
-                      ? 'اتزامنت'
+                      ? 'اتزامنت — بتتراجع في المكتب'
                       : 'لسه متزامنتش'),
                   trailing: (r['synced'] as int?) == 1
                       ? const Icon(Icons.cloud_done_outlined, color: AppColors.success)

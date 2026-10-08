@@ -19,6 +19,7 @@ from sqlalchemy import (
     ForeignKey,
     Integer,
     String,
+    Text,
     UniqueConstraint,
     func,
 )
@@ -66,10 +67,43 @@ class CouponReceipt(Base):
         DateTime, server_default=func.now(), nullable=False
     )
 
+    # حالة الاستلام — زي طلب تحويل المخازن: pending / approved / rejected.
+    #
+    # اللي جاي من التطبيق بيستنى المكتب يراجعه: المندوب بيكتب الأرقام في الشارع والغلط في
+    # رقم وارد، والمكتب هو اللي ماسك الورق ويقدر يقارن. اللي المكتب بيكتبه بإيده بيتعتمد
+    # على طول — هو نفسه المراجِع.
+    #
+    # **NULL = معتمد.** كل الاستلامات اللي قبل العمود ده (١٬٤٧٨ على الإنتاج) اتعملت ومحدش
+    # راجعها، وكانت بتتحسب في التقارير — لو NULL بقى «معلّق» كانت هتختفي كلها مرة واحدة.
+    status: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    # مين اعتمد/رفض وإمتى — نفس خانتين إذن التحويل، بيتملوا في الحالتين.
+    approved_by: Mapped[int | None] = mapped_column(ForeignKey("user.id"), nullable=True)
+    approved_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    # ليه اترفض — على المستند نفسه مش في اليومية بس: المندوب بيقرا الشاشة دي.
+    reject_reason: Mapped[str | None] = mapped_column(String(240), nullable=True)
+    # الأرقام اللي كانت على الاستلام المرفوض.
+    #
+    # الرفض بيشيل السطور عشان الأرقام ترجع تتستلم تاني (قيد `(فئة، رقم)` هو صف السطر
+    # نفسه، فلو فضل الرقم يفضل مقفول). من غير الخانة دي المستند المرفوض يبقى فاضي ومحدش
+    # يعرف المندوب كان كاتب إيه.
+    rejected_serials: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # جه منين: `app` (تطبيق المندوب) أو `web`. `client_uuid` مايفرقش — الشاشة بتبعته كمان.
+    source: Mapped[str | None] = mapped_column(String(8), nullable=True)
+
     lines: Mapped[list["CouponReceiptLine"]] = relationship(  # noqa: UP037 — SQLAlchemy ref
         back_populates="receipt", cascade="all, delete-orphan",
         order_by="CouponReceiptLine.id",  # ترتيب الإدخال
     )
+
+
+def receipt_counted():
+    """شرط «الاستلام ده بيتحسب» للتقارير: معتمد، أو قديم من قبل الاعتماد (NULL).
+
+    المعلّق لسه المكتب ماراجعهوش والمرفوض اتقال عليه لأ — الاتنين مش ورق اتستلم فعلاً،
+    فمايدخلوش «اتستلم كام» ولا «لسه برّه كام». هنا في الموديل عشان التقارير (`lib/` و
+    `api/`) تاخده من غير ما تستورد خدمة.
+    """
+    return CouponReceipt.status.is_(None) | (CouponReceipt.status == "approved")
 
 
 class CouponReceiptLine(Base):
