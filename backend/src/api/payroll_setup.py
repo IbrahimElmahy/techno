@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import re
+
 from datetime import date
 from decimal import Decimal
 
@@ -29,11 +31,18 @@ from src.services.payroll_setup_service import PayrollSetupError
 router = APIRouter(tags=["payroll-setup"], prefix="/hr/payroll")
 
 
+_DIAC = re.compile("[ً-ْٰ]")
+
+
+def _has(text: str, needle: str) -> bool:
+    return _DIAC.sub("", needle) in _DIAC.sub("", text)
+
+
 def _raise(exc: PayrollSetupError):
     text = str(exc)
-    if "غير موجود" in text or "غير موجودة" in text:
+    if _has(text, "غير موجود") or _has(text, "غير موجودة"):
         raise HTTPException(404, {"code": "not_found", "message": text}) from exc
-    if "اتحسب عليه مسير مرحّل" in text or "احتُسب عليه مسير مرحّل" in text:
+    if _has(text, "اتحسب عليه مسير مرحّل") or _has(text, "احتُسب عليه مسير مرحّل"):
         raise HTTPException(409, {"code": "locked", "message": text}) from exc
     raise HTTPException(422, {"code": "validation", "message": text}) from exc
 

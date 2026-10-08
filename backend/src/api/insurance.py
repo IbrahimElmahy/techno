@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from datetime import date
 from decimal import Decimal
 
@@ -24,13 +25,20 @@ from src.services.payroll_service import PayrollError
 router = APIRouter(tags=["insurance"], prefix="/hr/insurance")
 
 
+_DIAC = re.compile("[\u064b-\u0652\u0670]")
+
+
+def _has(text: str, needle: str) -> bool:
+    return _DIAC.sub("", needle) in _DIAC.sub("", text)
+
+
 def _raise(exc: Exception):
     text = str(exc)
     if isinstance(exc, LedgerError):
         raise HTTPException(409, {"code": "ledger_invalid", "message": text}) from exc
-    if "غير موجود" in text:
+    if _has(text, "غير موجود"):
         raise HTTPException(404, {"code": "not_found", "message": text}) from exc
-    if "مرحّل" in text:
+    if _has(text, "مرحّل"):
         raise HTTPException(409, {"code": "locked", "message": text}) from exc
     raise HTTPException(422, {"code": "validation", "message": text}) from exc
 
