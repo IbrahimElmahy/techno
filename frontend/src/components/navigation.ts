@@ -58,8 +58,10 @@ const R = (base: string[]) => [...base, 'viewer'];
 /** الموارد البشرية. Kept as one shorthand so it cannot drift from the `hr.*` capabilities
  *  the backend gates on — the two vocabularies are separate and nothing enforces they agree. */
 const HR = ['system_admin', 'branch_manager', 'accountant'];
-/** مين بيقرا النقاط والكوبونات — نسخة من حاملي `loyalty.read`. */
-const LOYALTY = ['system_admin', 'after_sales_staff', 'viewer'];
+/** مين بيقرا النقاط والكوبونات — نسخة من حاملي `loyalty.read`. مدير الفرع واخدها من
+ *  «كل حاجة ما عدا» في `rbac.py`، بس القايمة كانت ناسياه فتقارير الكوبونات ماكانتش بتبانله
+ *  (طلب العميل ٢٠٢٦-١٠-٠٨). */
+const LOYALTY = ['system_admin', 'branch_manager', 'after_sales_staff', 'viewer'];
 /** مين بيشوف مبلغ باسم موظف. Deliberately narrower than `HR` and narrower than `BOOKS`: the
  *  backend grants `salary.view` to system_admin and accountant only, and a menu entry that opens
  *  onto a 403 is worse than no entry — it reads as a broken screen. Mirrors `rbac.py:_PAYROLL_ALL`. */
