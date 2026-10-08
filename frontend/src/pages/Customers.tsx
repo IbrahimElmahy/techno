@@ -1,3 +1,4 @@
+import { allRows } from '../components/tableDefaults';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { PAGE_SIZE_OPTIONS } from '../utils/pagination';
 import { searchFilter, searchRank, sortByName } from '../utils/arabicSort';
@@ -342,6 +343,15 @@ export default function Customers() {
     } catch (err) {
       console.error(err);
     }
+  };
+
+  const fetchAllCustomers = async () => {
+    const params: any = { party_group: partyGroup };
+    Object.entries(filters).forEach(([k, v]) => {
+      if (v !== undefined && v !== null && v !== '') params[k] = v;
+    });
+    const res = await api.get('/api/v1/customers', { params });
+    return (Array.isArray(res.data) ? res.data : (res.data?.rows ?? []));
   };
 
   const fetchCustomers = async (
@@ -844,6 +854,7 @@ export default function Customers() {
           size="small"
           tableLayout="fixed"
           expandable={{ expandedRowRender: expandedRow }}
+          {...allRows(fetchAllCustomers)}
           pagination={{
             current: page,
             pageSize,

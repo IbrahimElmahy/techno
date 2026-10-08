@@ -1,166 +1,172 @@
-import React, { useEffect, useRef, useState } from 'react';
-import { PAGE_SIZE } from '../utils/pagination';
-import { Button, Input, Tag } from 'antd';
-import { FilterTable as Table } from '../components/FilterTable';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { Button, Input, Tag, message } from 'antd';
 import { AlertOutlined, ClearOutlined, ReloadOutlined, SearchOutlined } from '@ant-design/icons';
-import ListPage from '../components/ListPage';
-import { useQueryTab } from '../components/useQueryTab';
-import { api } from '../api/client';
-import { useListFilter } from '../components/ListToolbar';
-import { useScreenShortcuts, useTableKeyboard } from '../components/keyboard';
-import { textColumn, numberColumn, choiceColumn } from '../components/gridColumns';
-import { useTableColumns } from '../components/ColumnSettings';
 import { useNavigate } from 'react-router-dom';
-
+import { Table } from 'antd';
+import ListPage, { ListStat } from '../components/ListPage';
+import { InputNumber } from '../components/NumberInput';
+import { useQueryTab } from '../components/useQueryTab';
+import { useListFilter } from '../components/ListToolbar';
+import { useScreenShortcuts } from '../components/keyboard';
+import { useTableColumns } from '../components/ColumnSettings';
+import { api } from '../api/client';
+import { PAGE_SIZE } from '../utils/pagination';
 import { qty, numeralsLocale } from '../utils/money';
 import { STOCK_TOPICS, useLiveRefresh } from '../utils/live';
 
-interface ReorderRow {
+interface Row {
   item_id: number;
   code: string | null;
   name: string;
+  category: string | null;
   unit_of_measure: string | null;
   on_hand: string;
   min_stock: string | null;
   max_stock: string | null;
   shortfall: string | null;
   excess: string | null;
-  flag: 'below_min' | 'above_max';
+  flag: 'below_min' | 'above_max' | 'ok' | 'unset';
+}
+
+const FLAG: Record<Row['flag'], { label: string; color: string }> = {
+  below_min: { label: 'تحت الحد', color: 'red' },
+  above_max: { label: 'فوق الحد', color: 'orange' },
+  ok: { label: 'سليم', color: 'green' },
+  unset: { label: 'بدون حد', color: 'default' },
+};
+
+function LimitCell({ row, field, onSaved }: {
+  row: Row; field: 'min_stock' | 'max_stock'; onSaved: (r: Row) => void;
+}) {
+  const initial = row[field] === null ? undefined : Number(row[field]);
+  const [value, setValue] = useState<number | undefined>(initial);
+  useEffect(() => { setValue(initial); }, [row[field]]);
+
+  const save = async () => {
+    const before = initial ?? null;
+    const after = value ?? null;
+    if (before === after) return;
+    try {
+      await api.patch(`/api/v1/items/${row.item_id}`, { [field]: after === null ? null : String(after) });
+      onSaved({ ...row, [field]: after === null ? null : String(after) });
+      message.success('تم الحفظ');
+    } catch (err: any) {
+      message.error(err?.response?.data?.detail?.message || 'تعذر الحفظ');
+      setValue(initial);
+    }
+  };
+
+  return (
+    <InputNumber size="small" min={0} style={{ width: 110 }} value={value}
+      onChange={(v) => setValue(v ?? undefined)} onBlur={save}
+      onPressEnter={(e: any) => { e.target.blur(); }}
+      onClick={(e) => e.stopPropagation()} />
+  );
+}
+
+function recompute(r: Row): Row {
+  const have = Number(r.on_hand || 0);
+  const min = r.min_stock === null ? null : Number(r.min_stock);
+  const max = r.max_stock === null ? null : Number(r.max_stock);
+  let flag: Row['flag'] = 'ok';
+  if (min === null && max === null) flag = 'unset';
+  else if (min !== null && have < min) flag = 'below_min';
+  else if (max !== null && have > max) flag = 'above_max';
+  return {
+    ...r, flag,
+    shortfall: flag === 'below_min' && min !== null ? String(min - have) : null,
+    excess: flag === 'above_max' && max !== null ? String(have - max) : null,
+  };
 }
 
 export default function StockAlerts() {
-  const [reorder, setReorder] = useState<ReorderRow[]>([]);
-  const [summary, setSummary] = useState({ below_min: 0, above_max: 0 });
+  const navigate = useNavigate();
+  const [rows, setRows] = useState<Row[]>([]);
   const [loading, setLoading] = useState(false);
+  const [tab, setTab] = useQueryTab('below_min');
+  const searchRef = useRef<any>(null);
 
-  const loadReorder = async (opts?: { silent?: boolean }) => {
-    const silent = !!opts?.silent;
-    if (!silent) setLoading(true);
+  const load = async (opts?: { silent?: boolean }) => {
+    if (!opts?.silent) setLoading(true);
     try {
-      const res = await api.get('/api/v1/reports/reorder');
-      setReorder(res.data.rows || []);
-      setSummary({ below_min: res.data.below_min || 0, above_max: res.data.above_max || 0 });
-    } catch (err) { console.error(err); } finally { if (!silent) setLoading(false); }
+      const res = await api.get('/api/v1/reports/reorder', { params: { include_all: true } });
+      setRows(res.data.rows || []);
+    } catch (err) { console.error(err); } finally { if (!opts?.silent) setLoading(false); }
   };
 
-  useEffect(() => { loadReorder(); }, []);
-  useLiveRefresh(STOCK_TOPICS, () => loadReorder({ silent: true }));
+  useEffect(() => { load(); }, []);
+  useLiveRefresh(STOCK_TOPICS, () => load({ silent: true }));
+  useScreenShortcuts({ onSearch: () => searchRef.current?.focus?.() });
 
-  const reorderFilter = useListFilter(reorder, {
-    search: (r) => [r.code, r.name],
-    filters: { flag: (r, v) => r.flag === v },
-  });
-  const navigate = useNavigate();
-  const reorderKb = useTableKeyboard<ReorderRow>({
-    rows: reorderFilter.filtered, rowKey: (r) => r.item_id,
-    onOpen: (r) => navigate(`/catalog/${r.item_id}`),
-  });
+  const counts = useMemo(() => {
+    const c: Record<string, number> = { all: rows.length, below_min: 0, above_max: 0, ok: 0, unset: 0 };
+    rows.forEach((r) => { c[r.flag] += 1; });
+    return c;
+  }, [rows]);
 
+  const tabRows = tab === 'all' ? rows : rows.filter((r) => r.flag === tab);
+  const filter = useListFilter(tabRows, { search: (r) => [r.code, r.name, r.category] });
+
+  const update = (r: Row) => setRows((prev) => prev.map((x) => (x.item_id === r.item_id ? recompute(r) : x)));
 
   const columns = [
-    { title: 'الصنف', dataIndex: 'name', ...textColumn(reorder, (r: ReorderRow) => r.name),
-      render: (n: string) => <b>{n}</b> },
-    { title: 'الرصيد الحالي', dataIndex: 'on_hand',
-      ...numberColumn<ReorderRow>((r) => r.on_hand),
-      render: (v: string, r: ReorderRow) => (
-        <span style={{ fontWeight: 600,
-          color: r.flag === 'below_min' ? '#cf1322' : '#F5A11D' }}>
-          {qty(v)} {r.unit_of_measure || ''}
-        </span>
-      ) },
-    { title: 'الحد الأدنى', dataIndex: 'min_stock',
-      ...numberColumn<ReorderRow>((r) => r.min_stock),
-      render: (v: string) => (v ? qty(v) : '-') },
-    { title: 'الحد الأقصى', dataIndex: 'max_stock',
-      ...numberColumn<ReorderRow>((r) => r.max_stock),
-      render: (v: string) => (v ? qty(v) : '-') },
-    { title: 'المطلوب شراؤه', dataIndex: 'shortfall',
-      ...numberColumn<ReorderRow>((r) => r.shortfall),
-      render: (v: string | null) => (v
-        ? <b style={{ color: '#cf1322' }}>{qty(v)}</b> : '-') },
-    { title: 'الزائد', dataIndex: 'excess',
-      ...numberColumn<ReorderRow>((r) => r.excess),
-      render: (v: string | null) => (v
-        ? <b style={{ color: '#F5A11D' }}>{qty(v)}</b> : '-') },
-    { title: 'الحالة', dataIndex: 'flag',
-      ...choiceColumn<ReorderRow>(
-        [{ text: 'تحت الأدنى', value: 'below_min' },
-         { text: 'فوق الأقصى', value: 'above_max' }],
-        (r, v) => r.flag === v),
-      render: (f: string) => (f === 'below_min'
-        ? <Tag color="red">تحت الأدنى</Tag>
-        : <Tag color="orange">فوق الأقصى</Tag>) },
+    { title: 'الصنف', dataIndex: 'name', key: 'name',
+      render: (v: string, r: Row) => <a onClick={() => navigate(`/catalog/${r.item_id}`)}>{v}</a> },
+    { title: 'الفئة', dataIndex: 'category', key: 'category', render: (v: string | null) => v || '' },
+    { title: 'الوحدة', dataIndex: 'unit_of_measure', key: 'unit_of_measure', width: 90 },
+    { title: 'الرصيد الحالي', dataIndex: 'on_hand', key: 'on_hand', align: 'left' as const, total: false,
+      render: (v: string) => <b>{qty(v)}</b> },
+    { title: 'الحد الأدنى', dataIndex: 'min_stock', key: 'min_stock', width: 130, total: false, filterable: false,
+      render: (_: any, r: Row) => <LimitCell row={r} field="min_stock" onSaved={update} /> },
+    { title: 'الحد الأقصى', dataIndex: 'max_stock', key: 'max_stock', width: 130, total: false, filterable: false,
+      render: (_: any, r: Row) => <LimitCell row={r} field="max_stock" onSaved={update} /> },
+    { title: 'المطلوب شراؤه', dataIndex: 'shortfall', key: 'shortfall', align: 'left' as const,
+      render: (v: string | null) => (v ? <b style={{ color: '#cf1322' }}>{qty(v)}</b> : '') },
+    { title: 'الزائد', dataIndex: 'excess', key: 'excess', align: 'left' as const,
+      render: (v: string | null) => (v ? qty(v) : '') },
+    { title: 'الحالة', dataIndex: 'flag', key: 'flag', width: 110,
+      render: (f: Row['flag']) => <Tag color={FLAG[f].color}>{FLAG[f].label}</Tag> },
   ];
-
-  const tableCols = useTableColumns('stock-alerts', columns, {
-    export: { name: 'تنبيهات المخزون', rows: reorderFilter.filtered },
+  const cols = useTableColumns('stock-reorder', columns as any, {
+    export: { name: 'حد إعادة الطلب', rows: filter.filtered },
   });
 
-  const searchRef = useRef<any>(null);
-  useScreenShortcuts({ onSearch: () => { searchRef.current?.focus?.(); } });
-
-  type FlagTab = 'all' | 'below_min' | 'above_max';
-  const flagValue = reorderFilter.values.flag;
-  const activeFlag: FlagTab = flagValue === 'below_min' || flagValue === 'above_max' ? flagValue : 'all';
-  const [listTab, setListTab] = useQueryTab('all');
-  const lastTab = useRef(activeFlag);
-  useEffect(() => {
-    if (listTab === 'below_min' || listTab === 'above_max') reorderFilter.setValue('flag', listTab);
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
-  useEffect(() => {
-    if (lastTab.current === activeFlag) return;
-    lastTab.current = activeFlag;
-    if (activeFlag !== listTab) setListTab(activeFlag);
-  }, [activeFlag]); // eslint-disable-line react-hooks/exhaustive-deps
-  const flagTabs: { key: FlagTab; label: string; dot?: string; count?: number }[] = [
-    { key: 'all', label: 'الكل', count: reorder.length },
-    { key: 'below_min', label: 'تحت الحد الأدنى', dot: '#cf1322', count: summary.below_min },
-    { key: 'above_max', label: 'فوق الحد الأقصى', dot: '#F5A11D', count: summary.above_max },
-  ];
-
-  const footer = (
-    <span className="sl-foot">
-      <span>المعروض: <b>{reorderFilter.filtered.length.toLocaleString(numeralsLocale())}</b>
-        {' '}من {reorder.length.toLocaleString(numeralsLocale())} صنف</span>
-      <span>تحتاج شراء: <b className={summary.below_min ? 'is-neg' : undefined}>
-        {summary.below_min.toLocaleString(numeralsLocale())}</b></span>
-      <span>تكدّس: <b style={summary.above_max ? { color: '#F5A11D' } : undefined}>
-        {summary.above_max.toLocaleString(numeralsLocale())}</b></span>
-    </span>
-  );
+  const fmt = (n: number) => n.toLocaleString(numeralsLocale());
 
   return (
-    <ListPage<FlagTab>
+    <ListPage
       icon={<AlertOutlined />}
       title="حد إعادة الطلب"
-      tabs={flagTabs} activeTab={activeFlag}
-      onTabChange={(k) => reorderFilter.setValue('flag', k === 'all' ? undefined : k)}
+      tabs={[
+        { key: 'below_min', label: 'تحت الحد', count: counts.below_min, dot: '#cf1322' },
+        { key: 'above_max', label: 'فوق الحد', count: counts.above_max },
+        { key: 'unset', label: 'بدون حد', count: counts.unset },
+        { key: 'all', label: 'كل الأصناف', count: counts.all },
+      ]}
+      activeTab={tab as any}
+      onTabChange={(k) => setTab(k)}
       actions={(<>
-        {tableCols.control}
-        <Button icon={<ReloadOutlined />} onClick={() => loadReorder()}>تحديث</Button>
+        {cols.control}
+        <Button icon={<ReloadOutlined />} onClick={() => load()} loading={loading}>تحديث</Button>
       </>)}
       filters={(<>
-        <Input
-          className="sl-f-search" allowClear ref={searchRef}
-          prefix={<SearchOutlined />} placeholder="بحث بالصنف أو الكود"
-          value={reorderFilter.query} onChange={(e) => reorderFilter.setQuery(e.target.value)}
-        />
-        <Button className="sl-f-clear" icon={<ClearOutlined />} onClick={reorderFilter.reset}>مسح</Button>
+        <Input className="sl-f-search" allowClear ref={searchRef} value={filter.query}
+          placeholder="بحث بالصنف أو الكود أو الفئة" prefix={<SearchOutlined />}
+          onChange={(e) => filter.setQuery(e.target.value)} />
+        <Button className="sl-f-clear" icon={<ClearOutlined />} onClick={filter.reset}>مسح</Button>
+      </>)}
+      summary={(<>
+        <ListStat label="تحت الحد" value={fmt(counts.below_min)} tone="neg" />
+        <ListStat label="فوق الحد" value={fmt(counts.above_max)} tone="warn" />
+        <ListStat label="بدون حد" value={fmt(counts.unset)} />
       </>)}
     >
-              <Table
-                {...reorderKb.tableProps}
-                className="sl-table"
-                rowKey="item_id" size="small" loading={loading}
-                dataSource={reorderFilter.filtered}
-                locale={{ emptyText: 'جميع الأصناف ضمن حدودها' }}
-                pagination={{
-                  defaultPageSize: PAGE_SIZE, showSizeChanger: true,
-                  locale: { items_per_page: '' },
-                  showTotal: () => footer,
-                }}
-                columns={tableCols.columns}
-              />
+      <Table<Row>
+        className="sl-table" rowKey="item_id" size="small" loading={loading}
+        dataSource={filter.filtered} columns={cols.columns as any}
+        locale={{ emptyText: tab === 'below_min' ? 'لا توجد أصناف تحت الحد' : 'لا توجد أصناف' }}
+        pagination={{ defaultPageSize: PAGE_SIZE, showSizeChanger: true }}
+      />
     </ListPage>
   );
 }

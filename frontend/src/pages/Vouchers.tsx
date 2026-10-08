@@ -1,3 +1,4 @@
+import { allRows } from '../components/tableDefaults';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { PAGE_SIZE, PAGE_SIZE_OPTIONS } from '../utils/pagination';
 import { searchFilter, searchRank, sortByName } from '../utils/arabicSort';
@@ -258,6 +259,15 @@ const Vouchers: React.FC = () => {
     }
     loadVouchers();
   }, [loadVouchers]);
+
+  const fetchAllVouchers = async () => {
+    const params: Record<string, string> = {};
+    if (listKind) params.kind = listKind;
+    if (range?.[0]) params.date_from = range[0].format('YYYY-MM-DD');
+    if (range?.[1]) params.date_to = range[1].format('YYYY-MM-DD');
+    const res = await api.get<any>('/api/v1/vouchers', { params });
+    return [...(Array.isArray(res.data) ? res.data : (res.data?.rows ?? []))].sort(newestFirst);
+  };
 
   const serverPagination = (foot: (total: number) => React.ReactNode) => ({
     current: vPage, pageSize: vPageSize, total: vTotal,
@@ -869,6 +879,7 @@ const Vouchers: React.FC = () => {
       columns={voucherCols.columns}
       locale={{ emptyText: empty }}
       pagination={serverPagination(() => voucherFoot(rows))}
+      {...allRows(fetchAllVouchers)}
     />
   );
 
@@ -1052,6 +1063,7 @@ const Vouchers: React.FC = () => {
         loading={loading}
         dataSource={shownVouchers}
         columns={voucherCols.columns}
+        {...allRows(fetchAllVouchers)}
         pagination={serverPagination((t) => (
           <span className="sl-foot">
             <span>عدد: <b>{t}</b></span>

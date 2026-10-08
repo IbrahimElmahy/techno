@@ -395,7 +395,7 @@ def sales(db: Session, *, date_from=None, date_to=None, period="month",
     }
 
 
-def reorder(db: Session, *, branch_id: int | None = None) -> dict:
+def reorder(db: Session, *, branch_id: int | None = None, include_all: bool = False) -> dict:
     signed = func.sum(case(
         (StockMovement.direction == StockDirection.in_, StockMovement.quantity),
         else_=-StockMovement.quantity,
@@ -413,7 +413,8 @@ def reorder(db: Session, *, branch_id: int | None = None) -> dict:
     for item in db.scalars(
         select(Item).where(Item.active.is_(True)).order_by(Item.name)
     ).all():
-        if item.min_stock is None and item.max_stock is None:
+        unset = item.min_stock is None and item.max_stock is None
+        if unset and not include_all:
             continue
         if mine is not None and item.id not in on_hand:
             continue
@@ -422,11 +423,13 @@ def reorder(db: Session, *, branch_id: int | None = None) -> dict:
             flag = "below_min"
         elif item.max_stock is not None and have > to_qty(item.max_stock):
             flag = "above_max"
-        else:
+        elif not include_all:
             continue
+        else:
+            flag = "unset" if unset else "ok"
         rows.append({
             "item_id": item.id, "code": item.code, "name": item.name,
-            "unit_of_measure": item.unit_of_measure,
+            "unit_of_measure": item.unit_of_measure, "category": item.category,
             "on_hand": str(have),
             "min_stock": str(to_qty(item.min_stock)) if item.min_stock is not None else None,
             "max_stock": str(to_qty(item.max_stock)) if item.max_stock is not None else None,

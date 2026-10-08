@@ -120,9 +120,6 @@ export default function Reports() {
       onTabChange={setTab}
       actions={(<>
         <span ref={setActionsSlot} className="sl-slot" />
-        <ExportButton type="sales" label="المبيعات CSV" params={dateParams(range)} />
-        <ExportButton type="purchases" label="المشتريات CSV" params={dateParams(range)} />
-        <ExportButton type="treasury" label="الأرصدة CSV" />
       </>)}
       filters={(<>
         <Select<Period>

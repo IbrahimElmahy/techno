@@ -1,3 +1,4 @@
+import { allRows } from '../components/tableDefaults';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useIsFactoryBranch } from '../components/useFactoryBranch';
 import { PAGE_SIZE as TABLE_PAGE_SIZE, PAGE_SIZE_OPTIONS }
@@ -309,7 +310,7 @@ export default function Invoices() {
   });
   const receiptRows = registerReceipts.rows;
 
-  const unifiedRecords = useMemo(() => {
+  const makeUnified = (invoices: any[], bonusInvoices: any[], salesReturns: any[]) => {
     const toSaleRow = (s: any) => {
       const bonusGross = s.is_bonus ? Number(s.gross_before_line_discount || 0) : null;
       const gross = bonusGross ?? Number(s.gross || 0);
@@ -392,7 +393,24 @@ export default function Invoices() {
     }
 
     return combined.sort((a, b) => (b.date || '').localeCompare(a.date || '') || b.id - a.id);
-  }, [invoices, bonusInvoices, salesReturns, receiptRows, docKindFilter]);
+  };
+  const unifiedRecords = useMemo(() => makeUnified(invoices, bonusInvoices, salesReturns),
+    [invoices, bonusInvoices, salesReturns, receiptRows, docKindFilter]);
+
+  const fetchAllInvoices = async () => {
+    const params: any = {};
+    Object.entries(filters).forEach(([k, v]) => {
+      if (v !== undefined && v !== null && v !== '') params[k] = v;
+    });
+    const [s, b, r] = await Promise.all([
+      api.get('/api/v1/sales', { params: { ...params, kind: 'sale' } }),
+      api.get('/api/v1/sales', { params: { ...params, kind: 'bonus' } }).catch(() => ({ data: [] })),
+      api.get('/api/v1/sales/returns', { params: { ...params, payment: undefined } }).catch(() => ({ data: [] })),
+    ]);
+    return makeUnified(s.data || [], b.data || [], r.data || []);
+  };
+  const invoicesPartial = (invoices?.length ?? 0) >= PAGE_SIZE
+    || (bonusInvoices?.length ?? 0) >= PAGE_SIZE || (salesReturns?.length ?? 0) >= PAGE_SIZE;
 
   const focusKey = focusRef.current ?? '';
   useEffect(() => { fetchInvoices(); /* eslint-disable-next-line */ }, [focusKey]);
@@ -2628,6 +2646,7 @@ function couponsTotal(inv: any): number {
             ...focusedRecords,
           ]}
           columns={tableColumns}
+          {...allRows(fetchAllInvoices, invoicesPartial)}
           size="small"
           tableLayout="fixed"
           rowKey="rowKey"

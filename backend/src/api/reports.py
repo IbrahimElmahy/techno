@@ -113,10 +113,12 @@ def stock_as_of_report(
 
 @router.get("/reorder")
 def reorder_report(
+    include_all: bool = Query(False),
     current: CurrentUser = Depends(require_capability(CAP_STOCK_READ)),
     db: Session = Depends(get_db),
 ):
-    return reporting.reorder(db, branch_id=branch_scope.visible_branch_id(current))
+    return reporting.reorder(db, branch_id=branch_scope.visible_branch_id(current),
+                             include_all=include_all)
 
 
 @router.get("/sales")

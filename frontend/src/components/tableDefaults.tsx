@@ -164,7 +164,7 @@ function computeAutoFilter(c: any, rows: any[], get: (r: any) => any): any {
     }
     labels.set(key, text || '(فارغ)');
   });
-  if (labels.size < 2 || labels.size > MAX_CHOICES) return c;
+  if (labels.size < 1 || labels.size > MAX_CHOICES) return c;
   const filters = [...labels.entries()]
     .sort((a, b) => a[1].localeCompare(b[1], 'ar'))
     .map(([value, text]) => ({ text, value }));
@@ -179,17 +179,21 @@ function computeAutoFilter(c: any, rows: any[], get: (r: any) => any): any {
   };
 }
 
-function withFilters(cols: any[] | undefined, rows: any[]): any[] | undefined {
+function withFilters(cols: any[] | undefined, rows: any[], onOpen?: () => void): any[] | undefined {
   if (!Array.isArray(cols)) return cols;
   let changed = false;
   const out = cols.map((c) => {
     if (!c || typeof c !== 'object') return c;
     let n = c;
     if (Array.isArray(c.children) && c.children.length) {
-      const kids = withFilters(c.children, rows);
+      const kids = withFilters(c.children, rows, onOpen);
       if (kids !== c.children) n = { ...n, children: kids };
     } else {
       n = autoFilter(n, rows);
+      if (onOpen && (n.filters || n.filterDropdown)) {
+        const prev = n.onFilterDropdownOpenChange;
+        n = { ...n, onFilterDropdownOpenChange: (open: boolean) => { if (open) onOpen(); prev?.(open); } };
+      }
     }
     if (Array.isArray(n.filters) && n.filters.length && n.filterMode === undefined && !n.filterDropdown) {
       n = { ...n, filterMode: 'tree', filterSearch: n.filterSearch ?? n.filters.length > 6 };
@@ -205,11 +209,14 @@ function withDefaults(
   nested: boolean,
   filters: Filters,
   setFilters: (f: Filters) => void,
+  filterRows?: any[] | null,
+  onOpen?: () => void,
 ): any {
   if (props.virtual) return props;
   let next = props;
-  const rowsForFilters = Array.isArray(props.dataSource) && !nested ? props.dataSource : [];
-  const cols = withFilters(props.columns, rowsForFilters);
+  const rowsForFilters = filterRows
+    ?? (Array.isArray(props.dataSource) && !nested ? props.dataSource : []);
+  const cols = withFilters(props.columns, rowsForFilters, onOpen);
   if (cols !== props.columns) next = { ...next, columns: cols };
 
   if (props.scroll === undefined) {
@@ -249,13 +256,45 @@ const T = Table as unknown as {
 if (typeof T.render === 'function') {
   const original = T.__original ?? T.render;
   T.__original = original;
-  T.render = function TableWithDefaults(props: any, ref: any) {
+  T.render = function TableWithDefaults(rawProps: any, ref: any) {
     const nested = React.useContext(InsideTable);
     const [filters, setFilters] = React.useState<Filters>(null);
+    const [full, setFull] = React.useState<any[] | null>(null);
+    const loading = React.useRef(false);
+    const { fetchAllRows, partialRows, ...props } = rawProps;
+    const shown = Array.isArray(props.dataSource) ? props.dataSource.length : 0;
+    const partial = typeof fetchAllRows === 'function' && !nested
+      && typeof props.pagination === 'object' && props.pagination
+      && (Number(props.pagination.total || 0) > shown || !!partialRows);
+    const active = !!filters && Object.values(filters).some((v) => Array.isArray(v) && v.length > 0);
+
+    React.useEffect(() => { if (!active && full) setFull(null); }, [active]);
+
+    const onOpen = partial ? () => {
+      if (full || loading.current) return;
+      loading.current = true;
+      Promise.resolve(fetchAllRows()).then((rows: any) => {
+        if (Array.isArray(rows)) setFull(rows);
+      }).catch(() => {}).finally(() => { loading.current = false; });
+    } : undefined;
+
+    let effective = props;
+    if (partial && full && active) {
+      const size = props.pagination.pageSize || props.pagination.defaultPageSize || 100;
+      effective = {
+        ...props,
+        dataSource: full,
+        pagination: { defaultPageSize: size, showSizeChanger: true, showTotal: props.pagination.showTotal },
+      };
+    }
     return (
       <InsideTable.Provider value>
-        {original(withDefaults(props, nested, filters, setFilters), ref)}
+        {original(withDefaults(effective, nested, filters, setFilters, partial ? (full ?? null) : null, onOpen), ref)}
       </InsideTable.Provider>
     );
   };
+}
+
+export function allRows(fetch: () => Promise<any[]>, partial?: boolean): {} {
+  return { fetchAllRows: fetch, partialRows: partial } as {};
 }

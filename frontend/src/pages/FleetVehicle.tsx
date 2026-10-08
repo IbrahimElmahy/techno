@@ -172,10 +172,14 @@ export default function FleetVehicle() {
 
   const tableOf = (key: string) => (
     <Table className="sl-table" size="small" rowKey={(r: any) => r.id ?? r.month}
-      dataSource={rowsOf(key)} scroll={{ x: 'max-content' }} pagination={{ defaultPageSize: 20 }}
+      dataSource={rowsOf(key).map((r: any) => {
+        const out: any = { ...r };
+        COLS[key].forEach((c, i) => { const v = cellOf(c, r); out[`__c${i}`] = typeof v === 'object' ? '' : (v ?? ''); });
+        return out;
+      })} scroll={{ x: 'max-content' }} pagination={{ defaultPageSize: 20 }}
       locale={{ emptyText: 'لا يوجد' }}
       columns={COLS[key].map((c, i) => ({
-        key: i, title: c.title, align: c.numeric ? 'left' as const : undefined,
+        key: i, title: c.title, dataIndex: `__c${i}`, align: c.numeric ? 'left' as const : undefined,
         render: (_: any, r: any) => (c.render ? c.render(r) : cellOf(c, r)),
       }))} />
   );

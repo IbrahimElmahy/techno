@@ -143,14 +143,8 @@ export const NAVIGATION: (NavGroup | NavScreen)[] = [
       { key: '/stock-permits?kind=receipt', label: 'إذن إضافة', roles: STOCK, a5: '/storeins/create' },
       { key: '/stock-permits?kind=issue', label: 'إذن صرف', roles: STOCK, a5: '/storeouts/create' },
       { key: '/transfers', label: 'اذن تحويل مخازن', roles: R(STOCK), a5: '/storetransfers' },
-      {
-        key: 'grp-stock-reports',
-        label: 'تقارير المخازن',
-        children: [
-          { key: '/stock-alerts', label: 'حد اعادة الطلب', roles: R(STOCK), a5: '/inventory/restock-alert' },
-          { key: '/reports?view=stagnant', label: 'اصناف راكدة', roles: R(STOCK), a5: '/stagnant-items' },
-        ],
-      },
+      { key: '/stock-alerts', label: 'حد اعادة الطلب', roles: R(STOCK), a5: '/inventory/restock-alert' },
+      { key: '/reports?view=stagnant', label: 'اصناف راكدة', roles: R(STOCK), a5: '/stagnant-items' },
     ],
   },
 

@@ -1,3 +1,4 @@
+import { allRows } from '../components/tableDefaults';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { PAGE_SIZE_OPTIONS } from '../utils/pagination';
 import { searchFilter, searchRank, compareArabic } from '../utils/arabicSort';
@@ -167,6 +168,13 @@ export default function CouponReceipts() {
     } catch {
     }
   }, [searchQuery]);
+
+  const fetchAllReceipts = async () => {
+    const params: Record<string, any> = { ...statusParam() };
+    if (searchQuery.trim()) params.q = searchQuery.trim();
+    const res = await api.get<any>('/api/v1/coupon-receipts', { params });
+    return (Array.isArray(res.data) ? res.data : (res.data?.rows ?? []));
+  };
 
   const loadReceipts = useCallback(async (
     targetPage = page, targetPageSize = pageSize, q = searchQuery, opts?: { silent?: boolean },
@@ -836,6 +844,7 @@ export default function CouponReceipts() {
         size="small"
         loading={loading}
         dataSource={receipts}
+        {...allRows(fetchAllReceipts)}
         onRow={(r) => ({ onClick: () => setDetail(r), style: { cursor: 'pointer' } })}
         locale={{ emptyText: 'لا توجد استلامات' }}
         pagination={{

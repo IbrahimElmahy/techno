@@ -1,3 +1,4 @@
+import { allRows } from '../components/tableDefaults';
 import React, { useCallback, useEffect, useState } from 'react';
 import { PAGE_SIZE_OPTIONS } from '../utils/pagination';
 import { searchFilter, searchRank, sortByName } from '../utils/arabicSort';
@@ -165,6 +166,11 @@ const Inspections: React.FC<{ fixedKind?: 'technician' | 'regular' }> = ({ fixed
     } catch {
     }
   }, [buildParams]);
+
+  const fetchAllRows = async () => {
+    const res = await api.get<any>('/api/v1/inspections', { params: { ...buildParams() } });
+    return (Array.isArray(res.data) ? res.data : (res.data?.rows ?? []));
+  };
 
   const load = useCallback(async (
     targetPage = page, targetPageSize = pageSize, opts?: { silent?: boolean },
@@ -529,6 +535,7 @@ const Inspections: React.FC<{ fixedKind?: 'technician' | 'regular' }> = ({ fixed
           rowKey="id"
           loading={loading}
           dataSource={rows}
+          {...allRows(fetchAllRows)}
           onRow={(record) => ({ onClick: () => openDetail(record), style: { cursor: 'pointer' } })}
           pagination={{
             current: page,
