@@ -410,11 +410,11 @@ const IncomeSheet: React.FC = () => {
   );
 
   const sheet = data && (
-    <Tabs type="card" defaultActiveKey="sales" items={[
+    <Tabs type="card" defaultActiveKey="sales" style={{ width: '100%' }} items={[
       {
         key: 'sales', label: 'المبيعات بالفئة',
         children: (
-          <div style={{ maxWidth: 1100 }}>
+          <div style={{ width: '100%' }}>
           <Table size="small" pagination={false} rowKey="key" dataSource={data.sales.lines}
             columns={[
               { title: 'الفئة', dataIndex: 'name', render: (n: string, r: any) =>
@@ -444,7 +444,7 @@ const IncomeSheet: React.FC = () => {
       {
         key: 'cost', label: 'تكلفة المبيعات',
         children: (
-          <div style={{ maxWidth: 1100 }}>
+          <div style={{ width: '100%' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <tbody>
               <StatementRow label={`المخزون أول المدة ${data.cost.opening_inventory.as_of}`}
@@ -482,7 +482,7 @@ const IncomeSheet: React.FC = () => {
       {
         key: 'ga', label: 'المصروفات العمومية والإدارية',
         children: (
-          <div style={{ maxWidth: 1100 }}>
+          <div style={{ width: '100%' }}>
           <Table size="small" pagination={false} rowKey={(r: any) => r.name} dataSource={data.ga.lines}
             onRow={(r: any) => ({ onClick: () => openLine(r), style: { cursor: r.manual ? undefined : 'pointer' } })}
             columns={[
@@ -497,7 +497,7 @@ const IncomeSheet: React.FC = () => {
       {
         key: 'marketing', label: 'البيع والتسويق',
         children: (
-          <div style={{ maxWidth: 1100 }}>
+          <div style={{ width: '100%' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <tbody>
               <StatementRow label="قيمة البوانص (بيع الفئة × نسبة بونصها)" amount={data.marketing.model.bonus_value} />
@@ -542,7 +542,7 @@ const IncomeSheet: React.FC = () => {
       {
         key: 'other', label: 'الإيرادات والخسائر الأخرى',
         children: (
-          <div style={{ maxWidth: 1100 }}>
+          <div style={{ width: '100%' }}>
           <Table size="small" pagination={false} rowKey={(r: any) => `${r.kind}-${r.name}`}
             dataSource={[
               ...data.other_income.lines.map((l: any) => ({ ...l, kind: 'إيراد' })),
@@ -561,7 +561,7 @@ const IncomeSheet: React.FC = () => {
       {
         key: 'recon', label: 'المطابقة مع الدفاتر',
         children: (
-          <div style={{ maxWidth: 1100 }}>
+          <div style={{ width: '100%' }}>
           <table style={{ width: '100%' }}>
             <tbody>
               <StatementRow label="صافي المبيعات من الحسابات (مبيعات − مردودات − خصم مسموح/بونص)"
