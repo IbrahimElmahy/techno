@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import date, datetime, timedelta
 
-from sqlalchemy import case, func, select
+from sqlalchemy import Date, case, cast, func, select
 from sqlalchemy.orm import Session
 
 from src.core.money import ZERO, to_money, to_qty
@@ -441,3 +441,80 @@ def reorder(db: Session, *, branch_id: int | None = None, include_all: bool = Fa
     return {"rows": rows,
             "below_min": sum(1 for r in rows if r["flag"] == "below_min"),
             "above_max": sum(1 for r in rows if r["flag"] == "above_max")}
+
+
+
+def stock_value(db: Session, *, warehouse_id: int | None = None,
+                branch_id: int | None = None) -> dict:
+    from src.models.catalog import ItemPrice
+    from src.models.org import Branch
+    from src.models.warehouse import Warehouse
+
+    items = {i.id: i for i in db.scalars(select(Item)).all()}
+    tiers: dict[int, dict[str, str]] = {}
+    for iid, tier, price in db.execute(select(ItemPrice.item_id, ItemPrice.tier, ItemPrice.price)).all():
+        tiers.setdefault(iid, {})[tier.value] = str(to_money(price))
+    branches = {b.id: b.name for b in db.scalars(select(Branch)).all()}
+    warehouses = {w.id: w for w in db.scalars(select(Warehouse)).all()}
+
+    signed = func.sum(case(
+        (StockMovement.direction == StockDirection.in_, StockMovement.quantity),
+        else_=-StockMovement.quantity,
+    ))
+    moved = func.coalesce(StockMovement.movement_date, cast(StockMovement.created_at, Date))
+    last_in = func.max(case((StockMovement.direction == StockDirection.in_, moved)))
+    last_out = func.max(case((StockMovement.direction == StockDirection.out, moved)))
+    stmt = (select(StockMovement.item_id, StockMovement.location_id, signed, last_in, last_out)
+            .where(StockMovement.location_kind == LocationKind.warehouse)
+            .group_by(StockMovement.item_id, StockMovement.location_id))
+    mine = branch_warehouse_ids(db, branch_id)
+    if mine is not None:
+        stmt = stmt.where(StockMovement.location_id.in_(mine or {-1}))
+    if warehouse_id is not None:
+        stmt = stmt.where(StockMovement.location_id == warehouse_id)
+
+    hundred = to_money(100)
+    rows = []
+    for iid, wid, qty, d_in, d_out in db.execute(stmt).all():
+        on_hand = to_qty(qty or 0)
+        if on_hand <= to_qty(0):
+            continue
+        item = items.get(iid)
+        if item is None:
+            continue
+        wh = warehouses.get(wid)
+        buy = to_money(item.purchase_price) if item.purchase_price is not None else ZERO
+        disc = to_money(item.purchase_discount_pct) if item.purchase_discount_pct is not None else ZERO
+        buy_net = to_money(buy * (hundred - disc) / hundred)
+        sell = to_money(item.sale_price) if item.sale_price is not None else ZERO
+        sale_disc = to_money(item.default_discount_pct) if item.default_discount_pct is not None else ZERO
+        sell_net = to_money(sell * (hundred - sale_disc) / hundred)
+        purchase_value = to_money(on_hand * buy_net)
+        sale_value = to_money(on_hand * sell)
+        sale_net_value = to_money(on_hand * sell_net)
+        profit = to_money(sale_net_value - purchase_value)
+        t = tiers.get(iid, {})
+        rows.append({
+            "key": f"{iid}-{wid}", "item_id": iid, "code": item.code, "item_name": item.name,
+            "category": item.category, "unit": item.unit_of_measure,
+            "warehouse_id": wid, "warehouse": wh.name if wh else "",
+            "branch": branches.get(wh.branch_id, "") if wh and wh.branch_id else "",
+            "on_hand": str(on_hand),
+            "min_stock": str(to_qty(item.min_stock)) if item.min_stock is not None else None,
+            "max_stock": str(to_qty(item.max_stock)) if item.max_stock is not None else None,
+            "purchase_price": str(buy), "purchase_discount_pct": str(disc),
+            "purchase_net": str(buy_net), "purchase_value": str(purchase_value),
+            "sale_price": str(sell), "sale_discount_pct": str(sale_disc),
+            "sale_net": str(sell_net), "sale_value": str(sale_value),
+            "sale_net_value": str(sale_net_value), "profit": str(profit),
+            "margin_pct": (str(to_money(profit * hundred / purchase_value))
+                           if purchase_value > ZERO else None),
+            "commercial": t.get("commercial"), "semi_commercial": t.get("semi_commercial"),
+            "wholesale": t.get("wholesale"), "semi_wholesale": t.get("semi_wholesale"),
+            "consumer": t.get("consumer"),
+            "last_in": str(_as_date(d_in)) if d_in else None,
+            "last_out": str(_as_date(d_out)) if d_out else None,
+            "active": item.active,
+        })
+    rows.sort(key=lambda r: (r["category"] or "", r["item_name"], r["warehouse"]))
+    return {"rows": rows}

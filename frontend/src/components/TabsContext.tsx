@@ -24,6 +24,7 @@ const BASE_TITLES: Record<string, string> = {
   '/stock-balance': 'رصيد صنف',
   '/stock-sheet': 'جرد المخازن',
   '/stock-alerts': 'تنبيهات المخزون',
+  '/stock-value': 'قيمة المخزون',
   '/item-card': 'كارت الصنف',
   '/stock-permits': 'أذونات المخزن',
   '/stocktake': 'جرد حتى تاريخ',

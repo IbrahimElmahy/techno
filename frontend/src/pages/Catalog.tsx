@@ -90,6 +90,7 @@ interface ItemRecord {
   kind: 'raw_material' | 'product';
   unit_of_measure: string;
   purchase_price: string | null;
+  purchase_discount_pct?: string | null;
   sale_price: string | null;
   is_serialized: boolean;
   active: boolean;
@@ -518,7 +519,8 @@ export default function Catalog() {
         is_serialized: !!values.is_serialized,
         is_perishable: !!values.is_perishable,
         default_discount_pct: values.default_discount_pct ?? 0,
-        purchase_price: values.kind === 'raw_material' ? (values.purchase_price ?? null) : null,
+        purchase_price: values.purchase_price ?? null,
+        purchase_discount_pct: values.purchase_discount_pct ?? null,
         sale_price: values.prices?.consumer?.price ?? null,
       };
 
@@ -641,6 +643,8 @@ export default function Catalog() {
       is_perishable: !!record.is_perishable,
       is_serialized: !!record.is_serialized,
       purchase_price: record.purchase_price ? Number(record.purchase_price) : undefined,
+      purchase_discount_pct: record.purchase_discount_pct != null
+        ? Number(record.purchase_discount_pct) : undefined,
       default_discount_pct: record.default_discount_pct !== null
         && record.default_discount_pct !== undefined
         ? Number(record.default_discount_pct) : undefined,
@@ -1147,14 +1151,18 @@ export default function Catalog() {
                   options={kindOptions.map((o) => ({ value: o.value, label: o.label }))} />
               </Form.Item>
             </Col>
+            <Col span={8}>
+              <Form.Item name="purchase_price" label="سعر الشراء">
+                <InputNumber min={0} step={0.01} style={{ width: '100%' }} placeholder="0.00" />
+              </Form.Item>
+            </Col>
+            <Col span={8}>
+              <Form.Item name="purchase_discount_pct" label="خصم الشراء الثابت %">
+                <InputNumber min={0} max={99.99} step={0.5} style={{ width: '100%' }} placeholder="اختياري" />
+              </Form.Item>
+            </Col>
             <Form.Item noStyle shouldUpdate={(a, b) => a.kind !== b.kind}>
-              {({ getFieldValue }) => (getFieldValue('kind') === 'raw_material' ? (
-                <Col span={8}>
-                  <Form.Item name="purchase_price" label="سعر الشراء المرجعي">
-                    <InputNumber min={0} step={0.01} style={{ width: '100%' }} placeholder="0.00" />
-                  </Form.Item>
-                </Col>
-              ) : canEditPoints ? (
+              {({ getFieldValue }) => (getFieldValue('kind') === 'raw_material' ? null : canEditPoints ? (
                 <Col span={8}>
                   <Form.Item name="point_value" label="نقاط المنتج">
                     <InputNumber min={0} step={0.001} style={{ width: '100%' }} placeholder="0" />

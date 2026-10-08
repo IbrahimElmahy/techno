@@ -512,6 +512,7 @@ export interface components {
       unit_of_measure: string;
       /** Purchase Price */
       purchase_price: string | null;
+      purchase_discount_pct?: string | null;
       /** Sale Price */
       sale_price: string | null;
       /** Active */

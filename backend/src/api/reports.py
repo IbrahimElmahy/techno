@@ -111,6 +111,16 @@ def stock_as_of_report(
                                  branch_id=branch_scope.visible_branch_id(current))
 
 
+@router.get("/stock-value")
+def stock_value_report(
+    warehouse_id: int | None = Query(None),
+    current: CurrentUser = Depends(require_capability(CAP_STOCK_READ)),
+    db: Session = Depends(get_db),
+):
+    return reporting.stock_value(db, warehouse_id=warehouse_id,
+                                 branch_id=branch_scope.visible_branch_id(current))
+
+
 @router.get("/reorder")
 def reorder_report(
     include_all: bool = Query(False),

@@ -74,6 +74,8 @@ export default function ItemEditModal({
           category: it.category ?? undefined,
           sale_price: it.sale_price != null ? Number(it.sale_price) : undefined,
           purchase_price: it.purchase_price != null ? Number(it.purchase_price) : undefined,
+          purchase_discount_pct: it.purchase_discount_pct != null
+            ? Number(it.purchase_discount_pct) : undefined,
           default_discount_pct: it.default_discount_pct != null
             ? Number(it.default_discount_pct) : 0,
           default_warehouse_id: it.default_warehouse_id ?? undefined,
@@ -102,7 +104,8 @@ export default function ItemEditModal({
         code: v.code,
         category: v.category ?? null,
         sale_price: item.kind === 'product' ? v.sale_price ?? null : null,
-        purchase_price: item.kind === 'raw_material' ? v.purchase_price ?? null : null,
+        purchase_price: v.purchase_price ?? null,
+        purchase_discount_pct: v.purchase_discount_pct ?? null,
         default_discount_pct: v.default_discount_pct ?? 0,
         default_warehouse_id: v.default_warehouse_id ?? null,
         is_serialized: v.is_serialized,
@@ -180,16 +183,22 @@ export default function ItemEditModal({
               </Form.Item>
             </Col>
             <Col xs={24} md={12}>
-              {isProduct ? (
+              <Form.Item name="purchase_price" label="سعر الشراء">
+                <InputNumber min={0} step={0.01} style={{ width: '100%' }} />
+              </Form.Item>
+            </Col>
+            <Col xs={24} md={12}>
+              <Form.Item name="purchase_discount_pct" label="خصم الشراء الثابت %">
+                <InputNumber min={0} max={99.99} step={0.5} style={{ width: '100%' }} placeholder="اختياري" />
+              </Form.Item>
+            </Col>
+            {isProduct && (
+              <Col xs={24} md={12}>
                 <Form.Item name="sale_price" label="سعر البيع المرجعي">
                   <InputNumber min={0} step={0.01} style={{ width: '100%' }} />
                 </Form.Item>
-              ) : (
-                <Form.Item name="purchase_price" label="سعر الشراء المرجعي">
-                  <InputNumber min={0} step={0.01} style={{ width: '100%' }} />
-                </Form.Item>
-              )}
-            </Col>
+              </Col>
+            )}
             <Col xs={24} md={12}>
               <Form.Item name="default_discount_pct" label="نسبة الخصم الافتراضية %">
                 <InputNumber min={0} max={100} step={0.5} style={{ width: '100%' }} />

@@ -325,6 +325,7 @@ _ADDED_INDEXES: list[tuple[str, str, str]] = [
 
 
 _ADDED_COLUMNS: list[tuple[str, str, str]] = [
+    ("item", "purchase_discount_pct", "NUMERIC(5,2)"),
     ("payroll_line", "commission", "DECIMAL(18,2)"),
     ("payroll_line", "commission_base", "DECIMAL(18,2)"),
     ("payroll_line", "commission_override", "DECIMAL(18,2)"),

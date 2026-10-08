@@ -55,6 +55,7 @@ class Item(Base):
     default_discount_pct: Mapped[object] = mapped_column(
         Numeric(5, 2), default=0, nullable=False
     )
+    purchase_discount_pct: Mapped[object | None] = mapped_column(Numeric(5, 2), nullable=True)
     is_serialized: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     min_stock: Mapped[object | None] = mapped_column(QTY, nullable=True)
     max_stock: Mapped[object | None] = mapped_column(QTY, nullable=True)

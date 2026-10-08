@@ -86,6 +86,7 @@ interface RawMaterial {
   sale_price?: string | null;
   consumer_price?: string | null;
   category?: string | null;
+  purchase_discount_pct?: string | null;
 }
 
 interface PurchaseItem {
@@ -553,12 +554,19 @@ export default function Purchases() {
     const cat = items.find((i) => i.id === itemId)?.category;
     return cat ? purchaseDisc?.groups[cat] ?? null : null;
   };
+  const ownFixedDisc = (itemId: number | null): number | null => {
+    const v = items.find((i) => i.id === itemId)?.purchase_discount_pct;
+    return v !== null && v !== undefined && v !== '' ? Number(v) : null;
+  };
   const defaultFixedDisc = (itemId: number | null): number | null => {
+    const own = ownFixedDisc(itemId);
+    if (own !== null) return own;
     const g = discGroupOf(itemId);
     if (!g || !purchaseDisc) return null;
     return g === 'poly' ? purchaseDisc.poly_pct : purchaseDisc.white_pct;
   };
   const rememberFixedDisc = (itemId: number | null, pct: number | null) => {
+    if (ownFixedDisc(itemId) !== null) return;
     const g = discGroupOf(itemId);
     if (!g || pct == null || !purchaseDisc) return;
     const current = g === 'poly' ? purchaseDisc.poly_pct : purchaseDisc.white_pct;
