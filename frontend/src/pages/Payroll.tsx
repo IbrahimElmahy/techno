@@ -51,6 +51,7 @@ interface MonthData {
   };
   lines: Line[]; branch_id: number; year: number; month: number;
   without_card: { employee_id: number; name: string }[];
+  addable: { employee_id: number; name: string }[];
 }
 
 interface Remittance {
@@ -92,7 +93,11 @@ export default function Payroll() {
   const [lineOf, setLineOf] = useState<number | null>(null);
   const [payOpen, setPayOpen] = useState<{ ids?: number[] } | null>(null);
   const [payForm, setPayForm] = useState<{ treasury_id?: number; pay_date: Dayjs }>({ pay_date: dayjs() });
-  const [remitOpen, setRemitOpen] = useState(false);
+  const [remitOpen, setRemitOpen] = useState<number | 'new' | null>(null);
+  const [addOpen, setAddOpen] = useState(false);
+  const [addId, setAddId] = useState<number | undefined>();
+  const [newCardOpen, setNewCardOpen] = useState(false);
+  const [newCardId, setNewCardId] = useState<number | undefined>();
   const [remitForm, setRemitForm] = useState<{ amount?: number; remit_date: Dayjs; treasury_id?: number; notes: string }>(
     { remit_date: dayjs(), notes: '' });
 
@@ -171,6 +176,18 @@ export default function Payroll() {
     setPayOpen(null);
   };
 
+  const removeLine = (employeeId: number) => act(
+    () => api.delete(`/api/v1/hr/salary/month/${run!.id}/employees/${employeeId}`),
+    'تم حذف الموظف من مرتبات الشهر', 'تعذر الحذف');
+
+  const addLine = async () => {
+    if (!addId) { message.warning('اختر الموظف'); return; }
+    await act(() => api.post(`/api/v1/hr/salary/month/${run!.id}/employees/${addId}`),
+      'تمت إضافة الموظف', 'تعذرت الإضافة');
+    setAddOpen(false);
+    setAddId(undefined);
+  };
+
   const unpay = (employeeId: number) => act(
     () => api.post(`/api/v1/hr/salary/month/${run!.id}/employees/${employeeId}/unpay`),
     'تم إلغاء الصرف', 'تعذر إلغاء الصرف');
@@ -241,11 +258,24 @@ export default function Payroll() {
       render: (v: string) => <b style={{ color: n(v) < 0 ? '#cf1322' : undefined }}>{money(v)}</b> },
     { title: 'الصرف', dataIndex: 'paid', key: 'paid', width: 90, total: false,
       render: (v: boolean) => (v ? <Tag color="green">مصروف</Tag> : '—') } as any,
-    { title: '', key: 'x', width: 90, total: false,
+    { title: '', key: 'x', width: 150, total: false,
       render: (_: any, r: Line) => (
         <Space size={0}>
-          <Button type="text" icon={<EditOutlined />} title="تفاصيل" onClick={() => setLineOf(r.employee_id)} />
+          <Button type="text" icon={<EditOutlined />} title="تعديل" onClick={() => setLineOf(r.employee_id)} />
           <Button type="text" icon={<PrinterOutlined />} title="القسيمة" onClick={() => printSlip(r)} />
+          {posted && !r.paid ? (
+            <Button type="text" icon={<WalletOutlined />} title="صرف" onClick={() => setPayOpen({ ids: [r.employee_id] })} />
+          ) : null}
+          {r.paid ? (
+            <Popconfirm title="إلغاء صرف المرتب؟" onConfirm={() => unpay(r.employee_id)}>
+              <Button type="text" icon={<RollbackOutlined />} title="إلغاء الصرف" />
+            </Popconfirm>
+          ) : null}
+          {draft ? (
+            <Popconfirm title="حذف الموظف من مرتبات هذا الشهر؟" onConfirm={() => removeLine(r.employee_id)}>
+              <Button type="text" danger icon={<DeleteOutlined />} title="حذف من الشهر" />
+            </Popconfirm>
+          ) : null}
         </Space>
       ) } as any,
   ];
@@ -325,16 +355,34 @@ export default function Payroll() {
     rows: empFilter.filtered, rowKey: (r) => r.employee_id, onOpen: (r) => setCardOf(r.employee_id),
   });
 
+  const openRemit = (r?: Remittance) => {
+    setRemitForm(r ? {
+      amount: n(r.amount), remit_date: dayjs(r.remit_date), treasury_id: r.treasury_id ?? undefined,
+      notes: r.notes || '',
+    } : { remit_date: dayjs(), notes: '' });
+    setRemitOpen(r ? r.id : 'new');
+  };
+
+  const deleteRemit = async (id: number) => {
+    try {
+      await api.delete(`/api/v1/hr/insurance/remittances/${id}`);
+      message.success('تم حذف السداد');
+      loadRemits();
+    } catch (err: any) { fail(err, 'تعذر الحذف'); }
+  };
+
   const saveRemit = async () => {
     if (!remitForm.amount) { message.warning('أدخل المبلغ'); return; }
     setBusy(true);
     try {
-      await api.post('/api/v1/hr/insurance/remittances', {
+      const body = {
         amount: String(remitForm.amount), remit_date: remitForm.remit_date.format('YYYY-MM-DD'),
         treasury_id: remitForm.treasury_id ?? null, notes: remitForm.notes || null,
-      });
-      message.success('تم تسجيل السداد');
-      setRemitOpen(false);
+      };
+      if (remitOpen === 'new') await api.post('/api/v1/hr/insurance/remittances', body);
+      else await api.put(`/api/v1/hr/insurance/remittances/${remitOpen}`, body);
+      message.success(remitOpen === 'new' ? 'تم تسجيل السداد' : 'تم تعديل السداد');
+      setRemitOpen(null);
       setRemitForm({ remit_date: dayjs(), notes: '' });
       loadRemits();
     } catch (err: any) { fail(err, 'تعذر التسجيل'); } finally { setBusy(false); }
@@ -394,6 +442,9 @@ export default function Payroll() {
               <Button danger icon={<DeleteOutlined />} loading={busy}>حذف</Button>
             </Popconfirm>
           ) : null}
+          {draft ? (
+            <Button icon={<PlusOutlined />} onClick={() => setAddOpen(true)}>إضافة موظف</Button>
+          ) : null}
           {run ? <Button icon={<PrinterOutlined />} onClick={printMonth}>طباعة</Button> : null}
           {monthCols.control}
         </>) : tab === 'employees' ? (<>
@@ -401,11 +452,13 @@ export default function Payroll() {
             onChange={(e) => { setShowInactive(e.target.checked); loadEmps(e.target.checked); }}>
             إظهار الموقوفين
           </Checkbox>
+          <Button type="primary" className="sl-create" icon={<PlusOutlined />}
+            onClick={() => setNewCardOpen(true)}>كارت مرتب جديد</Button>
           {empCols.control}
           <Button icon={<ReloadOutlined />} onClick={() => loadEmps()}>تحديث</Button>
         </>) : (<>
           <Button type="primary" className="sl-create" icon={<PlusOutlined />}
-            onClick={() => setRemitOpen(true)}>سداد جديد</Button>
+            onClick={() => openRemit()}>سداد جديد</Button>
           <Button icon={<ReloadOutlined />} onClick={loadRemits}>تحديث</Button>
         </>)}
         filters={tab === 'month' ? (<>
@@ -489,6 +542,15 @@ export default function Payroll() {
               { title: 'الفرع', dataIndex: 'branch_id', key: 'branch_id', render: (v: number | null) => branchName(v) },
               { title: 'الخزنة', dataIndex: 'treasury_id', key: 'treasury_id', render: (v: number | null) => treasuryName(v) },
               { title: 'ملاحظات', dataIndex: 'notes', key: 'notes', render: (v: string | null) => v || '' },
+              { title: '', key: 'x', width: 90,
+                render: (_: any, r: Remittance) => (
+                  <Space size={0}>
+                    <Button type="text" icon={<EditOutlined />} title="تعديل" onClick={() => openRemit(r)} />
+                    <Popconfirm title="حذف السداد وعكس قيده؟" onConfirm={() => deleteRemit(r.id)}>
+                      <Button type="text" danger icon={<DeleteOutlined />} title="حذف" />
+                    </Popconfirm>
+                  </Space>
+                ) },
             ]}
           />
         )}
@@ -538,8 +600,35 @@ export default function Payroll() {
       </TabModal>
 
       <TabModal
-        open={remitOpen} title="سداد تأمينات" destroyOnClose
-        onCancel={() => setRemitOpen(false)} onOk={saveRemit} okText="حفظ" cancelText="إلغاء"
+        open={addOpen} title="إضافة موظف لمرتبات الشهر" destroyOnClose
+        onCancel={() => setAddOpen(false)} onOk={addLine} okText="إضافة" cancelText="إلغاء"
+        okButtonProps={{ loading: busy }}
+      >
+        <Select showSearch style={{ width: '100%' }} placeholder="الموظف" value={addId}
+          onChange={setAddId} filterOption={searchFilter} filterSort={searchRank}
+          notFoundContent="لا يوجد موظفون لهم كارت مرتب خارج هذا الشهر"
+          options={(data?.addable || []).map((e) => ({ value: e.employee_id, label: e.name }))} />
+      </TabModal>
+
+      <TabModal
+        open={newCardOpen} title="كارت مرتب جديد" destroyOnClose
+        onCancel={() => setNewCardOpen(false)} okText="متابعة" cancelText="إلغاء"
+        onOk={() => {
+          if (!newCardId) { message.warning('اختر الموظف'); return; }
+          setNewCardOpen(false);
+          setCardOf(newCardId);
+          setNewCardId(undefined);
+        }}
+      >
+        <Select showSearch style={{ width: '100%' }} placeholder="الموظف" value={newCardId}
+          onChange={setNewCardId} filterOption={searchFilter} filterSort={searchRank}
+          options={emps.filter((e) => e.active).sort((a, b) => Number(a.has_card) - Number(b.has_card))
+            .map((e) => ({ value: e.employee_id, label: `${e.name}${e.has_card ? ' — له كارت' : ''}${branches.length > 1 ? ` — ${branchName(e.branch_id)}` : ''}` }))} />
+      </TabModal>
+
+      <TabModal
+        open={remitOpen !== null} title={remitOpen === 'new' ? 'سداد تأمينات' : 'تعديل سداد تأمينات'} destroyOnClose
+        onCancel={() => setRemitOpen(null)} onOk={saveRemit} okText="حفظ" cancelText="إلغاء"
         okButtonProps={{ loading: busy }}
       >
         <Row gutter={[10, 10]}>

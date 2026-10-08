@@ -183,3 +183,46 @@ def create_remittance(
            "ledger_entry_id": row.ledger_entry_id}
     db.commit()
     return out
+
+
+def _seen_remittance(db: Session, remittance_id: int, current: CurrentUser) -> PayrollRemittance:
+    row = db.get(PayrollRemittance, remittance_id)
+    if row is None or not (branch_scope.sees_all_branches(current)
+                           or row.branch_id in (None, current.branch_id)):
+        raise HTTPException(404, {"code": "not_found", "message": "السداد غير موجود."})
+    return row
+
+
+@router.put("/remittances/{remittance_id}")
+def update_remittance(
+    remittance_id: int,
+    body: RemitIn,
+    current: CurrentUser = Depends(require_capability(CAP_PAYROLL_POST)),
+    db: Session = Depends(get_db),
+) -> dict:
+    _seen_remittance(db, remittance_id, current)
+    try:
+        row = payroll_service.update_remittance(
+            db, remittance_id=remittance_id, actor_user_id=current.id, amount=body.amount,
+            remit_date=body.remit_date, treasury_id=body.treasury_id, notes=body.notes)
+    except (PayrollError, LedgerError) as exc:
+        _raise(exc)
+    out = {"id": row.id, "document_number": row.document_number, "amount": str(row.amount)}
+    db.commit()
+    return out
+
+
+@router.delete("/remittances/{remittance_id}")
+def delete_remittance(
+    remittance_id: int,
+    current: CurrentUser = Depends(require_capability(CAP_PAYROLL_POST)),
+    db: Session = Depends(get_db),
+) -> dict:
+    _seen_remittance(db, remittance_id, current)
+    try:
+        payroll_service.delete_remittance(db, remittance_id=remittance_id,
+                                          actor_user_id=current.id)
+    except (PayrollError, LedgerError) as exc:
+        _raise(exc)
+    db.commit()
+    return {"deleted": remittance_id}

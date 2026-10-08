@@ -66,6 +66,7 @@ class PayrollRun(Base):
     posted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     posted_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("user.id"), nullable=True)
     notes: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    excluded_employees: Mapped[str | None] = mapped_column(String(2000), nullable=True)
     actor_user_id: Mapped[int | None] = mapped_column(ForeignKey("user.id"), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime, server_default=func.now(), nullable=False

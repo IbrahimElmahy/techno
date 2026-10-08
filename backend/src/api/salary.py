@@ -202,6 +202,32 @@ def update_line(
     return svc.month_out(db, branch_id=run.branch_id, year=run.year, month=run.month)
 
 
+@router.delete("/month/{run_id}/employees/{employee_id}")
+def remove_line(run_id: int, employee_id: int,
+                current: CurrentUser = Depends(require_capability(CAP_PAYROLL_POST)),
+                db: Session = Depends(get_db)) -> dict:
+    run = _run(db, run_id, current)
+    try:
+        svc.remove_line(db, run_id=run.id, employee_id=employee_id, actor_user_id=current.id)
+    except SalaryError as exc:
+        _raise(exc)
+    db.commit()
+    return svc.month_out(db, branch_id=run.branch_id, year=run.year, month=run.month)
+
+
+@router.post("/month/{run_id}/employees/{employee_id}")
+def add_line(run_id: int, employee_id: int,
+             current: CurrentUser = Depends(require_capability(CAP_PAYROLL_POST)),
+             db: Session = Depends(get_db)) -> dict:
+    run = _run(db, run_id, current)
+    try:
+        svc.add_line(db, run_id=run.id, employee_id=employee_id, actor_user_id=current.id)
+    except SalaryError as exc:
+        _raise(exc)
+    db.commit()
+    return svc.month_out(db, branch_id=run.branch_id, year=run.year, month=run.month)
+
+
 @router.post("/month/{run_id}/post")
 def post(run_id: int, current: CurrentUser = Depends(require_capability(CAP_PAYROLL_POST)),
          db: Session = Depends(get_db)) -> dict:

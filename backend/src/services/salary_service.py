@@ -530,6 +530,7 @@ def calculate(db: Session, *, branch_id: int, year: int, month: int,
 
     source = live or next((r for r in runs if r.status == PayrollRunStatus.reversed), None)
     manual: dict[int, dict] = {}
+    excluded = _excluded(source)
     if source is not None:
         for line in db.scalars(select(PayrollLine).where(PayrollLine.run_id == source.id)).all():
             manual[line.employee_id] = _manual_of(line)
@@ -549,10 +550,13 @@ def calculate(db: Session, *, branch_id: int, year: int, month: int,
         for line in db.scalars(select(PayrollLine).where(PayrollLine.run_id == run.id)).all():
             _wipe_line(db, line)
 
+    run.excluded_employees = _excluded_text(excluded)
     employees = db.scalars(select(Employee).where(
         Employee.branch_id == branch_id, Employee.active.is_(True)).order_by(Employee.name)).all()
     count = 0
     for emp in employees:
+        if emp.id in excluded:
+            continue
         if _build_line(db, run, emp, manual.get(emp.id, {})) is not None:
             count += 1
     _refresh_totals(db, run)
@@ -561,6 +565,16 @@ def calculate(db: Session, *, branch_id: int, year: int, month: int,
                          after={"period": f"{year}-{month:02d}", "employees": count,
                                 "net": str(run.net)})
     return run
+
+
+def _excluded(run: PayrollRun | None) -> set[int]:
+    if run is None or not run.excluded_employees:
+        return set()
+    return {int(x) for x in run.excluded_employees.split(",") if x.strip().isdigit()}
+
+
+def _excluded_text(ids: set[int]) -> str | None:
+    return ",".join(str(i) for i in sorted(ids))[:2000] or None
 
 
 def _draft(db: Session, run_id: int) -> PayrollRun:
@@ -606,6 +620,39 @@ def update_line(db: Session, *, run_id: int, employee_id: int, fields: dict,
                                 **{k: (str(v) if v is not None else None)
                                    for k, v in manual.items()}})
     return new
+
+
+def remove_line(db: Session, *, run_id: int, employee_id: int, actor_user_id: int) -> None:
+    run = _draft(db, run_id)
+    line = db.scalar(select(PayrollLine).where(
+        PayrollLine.run_id == run.id, PayrollLine.employee_id == employee_id))
+    if line is None:
+        raise SalaryError("الموظف غير موجود في مرتبات هذا الشهر.")
+    _wipe_line(db, line)
+    run.excluded_employees = _excluded_text(_excluded(run) | {employee_id})
+    _refresh_totals(db, run)
+    audit_service.record(db, action="salary.line_remove", actor_user_id=actor_user_id,
+                         entity_type="payroll_run", entity_id=run.id,
+                         after={"employee_id": employee_id})
+
+
+def add_line(db: Session, *, run_id: int, employee_id: int, actor_user_id: int) -> PayrollLine:
+    run = _draft(db, run_id)
+    emp = db.get(Employee, employee_id)
+    if emp is None or emp.branch_id != run.branch_id:
+        raise SalaryError("الموظف غير موجود في هذا الفرع.")
+    if db.scalar(select(PayrollLine).where(
+            PayrollLine.run_id == run.id, PayrollLine.employee_id == employee_id)):
+        raise SalaryError("الموظف موجود بالفعل في مرتبات هذا الشهر.")
+    line = _build_line(db, run, emp, {})
+    if line is None:
+        raise SalaryError("لا يوجد كارت مرتب ساري لهذا الموظف في هذا الشهر — أنشئ كارته أولاً.")
+    run.excluded_employees = _excluded_text(_excluded(run) - {employee_id})
+    _refresh_totals(db, run)
+    audit_service.record(db, action="salary.line_add", actor_user_id=actor_user_id,
+                         entity_type="payroll_run", entity_id=run.id,
+                         after={"employee_id": employee_id})
+    return line
 
 
 def post(db: Session, *, run_id: int, actor_user_id: int) -> dict:
@@ -737,6 +784,7 @@ def month_out(db: Session, *, branch_id: int, year: int, month: int) -> dict:
         missing = db.scalars(select(Employee).where(
             Employee.branch_id == branch_id, Employee.active.is_(True))).all()
         return {"run": None, "lines": [], "branch_id": branch_id, "year": year, "month": month,
+                "addable": [],
                 "without_card": [{"employee_id": e.id, "name": e.name} for e in missing
                                  if setup.salary_on(db, e.id, period_end) is None]}
     lines = db.scalars(select(PayrollLine).where(PayrollLine.run_id == run.id)).all()
@@ -750,9 +798,12 @@ def month_out(db: Session, *, branch_id: int, year: int, month: int) -> dict:
     rows = sorted((_line_out(x, emps.get(x.employee_id), details[x.id]) for x in lines),
                   key=lambda r: r["name"] or "")
     in_run = {x.employee_id for x in lines}
-    without = [e for e in db.scalars(select(Employee).where(
-        Employee.branch_id == branch_id, Employee.active.is_(True))).all()
-        if e.id not in in_run and setup.salary_on(db, e.id, period_end) is None]
+    outside = [e for e in db.scalars(select(Employee).where(
+        Employee.branch_id == branch_id, Employee.active.is_(True))
+        .order_by(Employee.name)).all() if e.id not in in_run]
+    with_card = {e.id for e in outside if setup.salary_on(db, e.id, period_end) is not None}
+    without = [e for e in outside if e.id not in with_card]
+    addable = [e for e in outside if e.id in with_card]
     return {
         "run": {"id": run.id, "document_number": run.document_number, "year": run.year,
                 "month": run.month, "status": run.status.value,
@@ -760,6 +811,7 @@ def month_out(db: Session, *, branch_id: int, year: int, month: int) -> dict:
                 "posted_at": run.posted_at, "accrual_entry_id": run.accrual_entry_id},
         "lines": rows, "branch_id": branch_id, "year": year, "month": month,
         "without_card": [{"employee_id": e.id, "name": e.name} for e in without],
+        "addable": [{"employee_id": e.id, "name": e.name} for e in addable],
     }
 
 

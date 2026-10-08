@@ -329,3 +329,61 @@ def remit(
         after={"kind": kind, "amount": str(value)},
     )
     return row
+
+
+def update_remittance(
+    db: Session, *, remittance_id: int, actor_user_id: int, amount=None,
+    remit_date: date | None = None, treasury_id: int | None = None, notes: str | None = None,
+) -> PayrollRemittance:
+    row = db.get(PayrollRemittance, remittance_id)
+    if row is None:
+        raise PayrollError("السداد غير موجود.")
+    value = to_money(Decimal(str(amount if amount not in (None, "") else row.amount)))
+    if value <= ZERO:
+        raise PayrollError("يجب أن يكون المبلغ أكبر من صفر.")
+    before = {"amount": str(row.amount), "remit_date": str(row.remit_date),
+              "treasury_id": row.treasury_id}
+    if row.ledger_entry_id:
+        ledger_service.reverse_entry(db, original_id=row.ledger_entry_id,
+                                     actor_user_id=actor_user_id)
+    acc = accounts(db)
+    cash_account_id, treasury_id = _cash_side(db, treasury_id, row.branch_id)
+    when = remit_date or row.remit_date
+    entry = ledger_service.post_entry(
+        db, entry_type="payroll_remittance", actor_user_id=actor_user_id,
+        entry_date=when, branch_id=row.branch_id, description="سداد تأمينات اجتماعية",
+        lines=[
+            LineInput(acc["insurance_payable"].id, Direction.debit, value,
+                      statement="سداد تأمينات اجتماعية"),
+            LineInput(cash_account_id, Direction.credit, value,
+                      statement="سداد تأمينات اجتماعية"),
+        ],
+    )
+    row.amount = value
+    row.remit_date = when
+    row.treasury_id = treasury_id
+    row.notes = (notes or "").strip()[:300] or None
+    row.ledger_entry_id = entry.id
+    db.flush()
+    audit_service.record(
+        db, action="payroll.remit_update", actor_user_id=actor_user_id,
+        entity_type="payroll_remittance", entity_id=row.id, before=before,
+        after={"amount": str(value), "remit_date": str(when), "treasury_id": treasury_id},
+    )
+    return row
+
+
+def delete_remittance(db: Session, *, remittance_id: int, actor_user_id: int) -> None:
+    row = db.get(PayrollRemittance, remittance_id)
+    if row is None:
+        raise PayrollError("السداد غير موجود.")
+    if row.ledger_entry_id:
+        ledger_service.reverse_entry(db, original_id=row.ledger_entry_id,
+                                     actor_user_id=actor_user_id)
+    before = {"document_number": row.document_number, "amount": str(row.amount)}
+    db.delete(row)
+    db.flush()
+    audit_service.record(
+        db, action="payroll.remit_delete", actor_user_id=actor_user_id,
+        entity_type="payroll_remittance", entity_id=remittance_id, before=before,
+    )
