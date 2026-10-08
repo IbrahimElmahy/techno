@@ -9,6 +9,7 @@ import {
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import dayjs from 'dayjs';
 import { api, getViewBranch } from '../api/client';
+import { expenseAccountOptions } from '../components/VoucherFields';
 import { Popconfirm } from '../components/noConfirm';
 import { TabModal } from '../components/TabModal';
 import { InputNumber } from '../components/NumberInput';
@@ -67,8 +68,7 @@ export default function FleetVehicles() {
   useEffect(() => {
     load();
     api.get('/api/v1/branches').then((r) => setBranches(r.data || [])).catch(() => {});
-    api.get<any[]>('/api/v1/accounts').then((r) => setAccounts((r.data || [])
-      .filter((a) => a.nature === 'expense' && a.is_postable && a.active !== false))).catch(() => {});
+    api.get<any[]>('/api/v1/accounts').then((r) => setAccounts(r.data || [])).catch(() => {});
     api.get('/api/v1/fleet/settings').then((r) => setAlertDays(r.data.expiry_alert_days)).catch(() => {});
   }, []);
   useLiveRefresh(['fleet'], load);
@@ -198,7 +198,7 @@ export default function FleetVehicles() {
     );
   };
 
-  const accountOptions = sortByName(accounts, (a) => a.name).map((a) => ({ value: a.id, label: a.name, search: a.code }));
+  const accountOptions = expenseAccountOptions(accounts) as any[];
 
   return (
     <>

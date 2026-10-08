@@ -55,6 +55,20 @@ function gaTree(accounts: ExpenseAccount[], groups: ExpenseAccount[]) {
   }).filter((t) => t.leaves.length || t.subGroups.length);
 }
 
+export function expenseAccountOptions(all: any[]) {
+  const live = all.filter((a) => a.nature === 'expense' && a.active !== false);
+  const accounts = live.filter((a) => a.is_postable);
+  const groups = live.filter((a) => !a.is_postable);
+  const tree = gaTree(accounts, groups);
+  const opt = (a: ExpenseAccount) => ({ value: a.id, label: a.name ?? a.code ?? '', search: a.code ?? '' });
+  if (!tree) return sortByName(accounts, (a) => a.name).map(opt);
+  if (tree.length === 1) return sortByName(tree[0].leaves, (a) => a.name).map(opt);
+  return tree.map((t) => ({
+    label: `${t.root.name} — ${branchOfCode(t.root.code)}`,
+    options: sortByName(t.leaves, (a) => a.name).map(opt),
+  }));
+}
+
 export function TreasuryField({
   treasuries, amount, width = 260, optional = false, placeholder, extra,
 }: {
