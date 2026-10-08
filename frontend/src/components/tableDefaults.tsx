@@ -54,6 +54,25 @@ function layoutBefore(props: any, scrollX: unknown): 'auto' | 'fixed' {
   return cols.some((c) => c.ellipsis) ? 'fixed' : 'auto';
 }
 
+function withCheckAll(cols: any[] | undefined): any[] | undefined {
+  if (!Array.isArray(cols)) return cols;
+  let changed = false;
+  const out = cols.map((c) => {
+    if (!c || typeof c !== 'object') return c;
+    let n = c;
+    if (Array.isArray(c.children)) {
+      const kids = withCheckAll(c.children);
+      if (kids !== c.children) n = { ...n, children: kids };
+    }
+    if (Array.isArray(c.filters) && c.filters.length && c.filterMode === undefined && !c.filterDropdown) {
+      n = { ...n, filterMode: 'tree', filterSearch: c.filterSearch ?? c.filters.length > 6 };
+    }
+    if (n !== c) changed = true;
+    return n;
+  });
+  return changed ? out : cols;
+}
+
 function withDefaults(
   props: any,
   nested: boolean,
@@ -62,6 +81,8 @@ function withDefaults(
 ): any {
   if (props.virtual) return props;
   let next = props;
+  const cols = withCheckAll(props.columns);
+  if (cols !== props.columns) next = { ...next, columns: cols };
 
   if (props.scroll === undefined) {
     const x = contentWidth(props);

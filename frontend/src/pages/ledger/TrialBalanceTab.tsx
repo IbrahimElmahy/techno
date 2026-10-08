@@ -201,15 +201,22 @@ export default function TrialBalanceTab() {
       <Spin spinning={loading}>
         {!data ? <Empty description="لا توجد بيانات" /> : (
           <div style={{ overflowX: 'auto' }}>
+            <div className="ant-table" style={{ background: 'transparent' }}>
             <table className="tb-table">
-              <thead>
+              <colgroup>
+                <col /><col style={{ width: 130 }} /><col style={{ width: 130 }} /><col style={{ width: 130 }} />
+                <col style={{ width: 130 }} /><col style={{ width: 130 }} /><col style={{ width: 130 }} />
+              </colgroup>
+              <thead className="ant-table-thead">
                 <tr>
-                  <th rowSpan={2} style={{ textAlign: 'start' }}>الحساب</th>
-                  <th colSpan={2}>رصيد أول المدة</th>
-                  <th colSpan={2}>حركة الفترة</th>
-                  <th colSpan={2}>الرصيد</th>
+                  <th style={{ textAlign: 'start' }}>الحساب</th>
+                  <th>أول المدة مدين</th>
+                  <th>أول المدة دائن</th>
+                  <th>حركة مدين</th>
+                  <th>حركة دائن</th>
+                  <th>الرصيد مدين</th>
+                  <th>الرصيد دائن</th>
                 </tr>
-                <tr><th>مدين</th><th>دائن</th><th>مدين</th><th>دائن</th><th>مدين</th><th>دائن</th></tr>
               </thead>
               <tbody>
                 {body}
@@ -226,6 +233,7 @@ export default function TrialBalanceTab() {
                 ) : null}
               </tbody>
             </table>
+            </div>
           </div>
         )}
       </Spin>

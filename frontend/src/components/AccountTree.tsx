@@ -110,10 +110,13 @@ export default function AccountTree({ sections, footer, onOpenAccount }: {
         <Button size="small" onClick={() => setOpen(new Set())}>طي الكل</Button>
       </Space>
       <div style={{ overflowX: 'auto' }}>
+        <div className="ant-table" style={{ background: 'transparent' }}>
         <table className="at-table">
-          <thead><tr><th>الحساب</th><th className="num">الرصيد</th></tr></thead>
+          <colgroup><col /><col style={{ width: 180 }} /></colgroup>
+          <thead className="ant-table-thead"><tr><th>الحساب</th><th className="num">الرصيد</th></tr></thead>
           <tbody>{rows}</tbody>
         </table>
+        </div>
       </div>
     </div>
   );

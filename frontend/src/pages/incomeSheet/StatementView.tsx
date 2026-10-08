@@ -216,10 +216,16 @@ export default function StatementView({ rows, compare, label, compareLabel, sale
         <Button size="small" onClick={() => setOpen(new Set())}>طي الكل</Button>
       </Space>
       <div style={{ overflowX: 'auto' }}>
+        <div className="ant-table" style={{ background: 'transparent' }}>
         <table className="pl-table">
-          <thead>
+          <colgroup>
+            <col />
+            <col style={{ width: 150 }} /><col style={{ width: 100 }} />
+            {cmp ? (<><col style={{ width: 150 }} /><col style={{ width: 100 }} /><col style={{ width: 100 }} /></>) : null}
+          </colgroup>
+          <thead className="ant-table-thead">
             <tr>
-              <th />
+              <th>البند</th>
               <th className="num">{label}</th>
               <th className="pct">٪ من المبيعات</th>
               {cmp ? (<>
@@ -231,6 +237,7 @@ export default function StatementView({ rows, compare, label, compareLabel, sale
           </thead>
           <tbody>{body}</tbody>
         </table>
+        </div>
       </div>
     </div>
   );

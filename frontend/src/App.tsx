@@ -22,6 +22,13 @@ dayjs.updateLocale('ar', {
 
 const AR_LOCALE: typeof arEG = {
   ...arEG,
+  Table: {
+    ...arEG.Table!,
+    filterCheckAll: 'تحديد الكل',
+    filterSearchPlaceholder: 'بحث',
+    filterConfirm: 'تطبيق',
+    filterReset: 'مسح',
+  } as any,
   DatePicker: {
     ...arEG.DatePicker!,
     lang: {
