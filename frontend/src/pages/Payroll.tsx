@@ -11,6 +11,7 @@ import {
 } from '@ant-design/icons';
 import dayjs, { Dayjs } from 'dayjs';
 import type { ColumnsType } from 'antd/es/table';
+import { useNavigate } from 'react-router-dom';
 
 import { api } from '../api/client';
 import { useTableColumns } from '../components/ColumnSettings';
@@ -77,6 +78,8 @@ interface RunDetail extends Run {
   net: string;
   employees: number;
   without_attendance: number;
+  /** موظفين على رأس العمل مادخلوش المسودة لأن مالهمش إعدادات راتب — للمسودة بس. */
+  without_salary?: { id: number; code: string; name: string }[];
   paid: number;
   accrual_entry_id: number | null;
   lines: Line[];
@@ -95,6 +98,7 @@ export function periodLabel(year: number, month: number): string {
 
 export default function Payroll() {
   const [tab, setTab] = useQueryTab('runs', 'tab');
+  const navigate = useNavigate();
   const [runs, setRuns] = useState<Run[]>([]);
   const [detail, setDetail] = useState<RunDetail | null>(null);
   const [loading, setLoading] = useState(false);
@@ -358,6 +362,23 @@ export default function Payroll() {
         />
       ) : (
         <>
+          {/* المسير بيعدّي الموظف اللي مالوش إعدادات راتب (سطر بصفر كان هيتقري «مستحق صفر») —
+              بس العدّية دي كانت صامتة، فالشهر يطلع ناقص ناس ومحدش ياخد باله قبل الترحيل. */}
+          {detail.without_salary?.length ? (
+            <Alert
+              type="error" showIcon style={{ margin: '6px 0 8px' }}
+              message={`${detail.without_salary.length} موظف على رأس العمل مادخلوش المسير — مالهمش إعدادات راتب`}
+              description={(
+                <>
+                  {detail.without_salary.slice(0, 12).map((e) => e.name).join('، ')}
+                  {detail.without_salary.length > 12 ? ` و${detail.without_salary.length - 12} غيرهم` : ''}
+                  {' — '}
+                  <a onClick={() => navigate('/employee-salaries')}>حط إعداداتهم من «رواتب الموظفين»</a>
+                  {' ثم أعد حساب الشهر.'}
+                </>
+              )}
+            />
+          ) : null}
           {detail.without_attendance ? (
             <Alert
               type="warning" showIcon style={{ margin: '6px 0 8px' }}

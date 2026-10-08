@@ -6,7 +6,7 @@ from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from src.auth import branch_scope
@@ -19,6 +19,7 @@ from src.models.hr_payroll_run import (
     PayrollLineDetail,
     PayrollRemittance,
     PayrollRun,
+    PayrollRunStatus,
 )
 from src.services import payroll_service
 from src.services.ledger_service import LedgerError
@@ -36,6 +37,43 @@ def _raise(exc: Exception):
     if "مرحّل بالفعل" in text or "اتصرف" in text:
         raise HTTPException(409, {"code": "duplicate", "message": text}) from exc
     raise HTTPException(422, {"code": "validation", "message": text}) from exc
+
+
+# ------------------------------------------------------------- عزل الفروع
+#
+# الموارد البشرية مفصولة بين الفروع بالكامل: محاسب الفرع بيشوف مسيرات فرعه بس، والمالك/الأدمن
+# بيشوف الكل أو الفرع اللي اختاره من الفلتر فوق. المسير اللي مالوش فرع (`branch_id` فاضي) هو
+# مسير الشركة كلها — فيه مرتبات كل الفروع، فموظف الفرع مايشوفوش. ده عكس قاعدة `may_see` العامة
+# (اللي بتسيب المستندات القديمة اللي مالهاش فرع ظاهرة) عن قصد: المستند هنا مش قديم، ده بيجمع
+# مرتبات ناس من فروع تانية.
+
+
+def _run_visible(current: CurrentUser, run: PayrollRun) -> bool:
+    branch = branch_scope.visible_branch_id(current)
+    if branch is None or run.branch_id == branch:
+        return True
+    return run.branch_id is None and branch_scope.sees_all_branches(current)
+
+
+def _seen_run(db: Session, run_id: int, current: CurrentUser) -> PayrollRun:
+    """المسير لو اللي بيسأل يشوفه — و٤٠٤ لو لأ (مش ٤٠٣: وجوده نفسه مش بتاعه)."""
+    run = db.get(PayrollRun, run_id)
+    if run is None or not _run_visible(current, run):
+        raise HTTPException(404, {"code": "not_found", "message": "المسير غير موجود."})
+    return run
+
+
+def _target_branch(current: CurrentUser, requested: int | None) -> int | None:
+    """الفرع اللي المسير/السداد هيتعمل عليه.
+
+    موظف الفرع: فرعه دايماً، وطلب فرع تاني ٤٠٤. المالك/الأدمن: اللي طلبه، وإلا الفرع المختار
+    من الفلتر، وإلا الشركة كلها — فالشاشة مش محتاجة تبعت فرع عشان تطلع صح.
+    """
+    if branch_scope.sees_all_branches(current):
+        return requested if requested is not None else branch_scope.visible_branch_id(current)
+    if requested is not None and requested != current.branch_id:
+        raise HTTPException(404, {"code": "not_found", "message": "الفرع غير موجود."})
+    return current.branch_id
 
 
 class RunIn(BaseModel):
@@ -81,6 +119,20 @@ def _run_out(db: Session, run: PayrollRun, *, with_lines: bool = False) -> dict:
     # «موظفين من غير سجل حضور» — بيتعرض ولا بيتخبى، زي `lines_without_cost` في تقارير البيع.
     out["without_attendance"] = len([x for x in lines if not x.has_attendance])
     out["paid"] = len([x for x in lines if x.paid])
+    # «موظفين مادخلوش المسير لأن مالهمش إعدادات راتب» — نفس منطق `without_attendance`: المسير
+    # كان بيعدّيهم في صمت (`_compute_line` بيرجّع None)، فالشهر يطلع ناقص ناس ومحدش ياخد باله.
+    # للمسودة بس: المرحّل اتقفل على اللي كانوا موجودين ساعتها، وقايمة النهارده مش مقياس له.
+    if run.status == PayrollRunStatus.draft:
+        in_run = {x.employee_id for x in lines}
+        stmt = select(Employee).where(Employee.active.is_(True))
+        if run.branch_id is not None:
+            stmt = stmt.where(Employee.branch_id == run.branch_id)
+        out["without_salary"] = [
+            {"id": e.id, "code": e.code, "name": e.name}
+            for e in db.scalars(stmt.order_by(Employee.name)).all() if e.id not in in_run
+        ]
+    else:
+        out["without_salary"] = []
     if with_lines:
         names = {e.id: e.name for e in db.scalars(select(Employee)).all()}
         out["lines"] = [_line_out(db, x, names) for x in lines]
@@ -123,9 +175,15 @@ def list_runs(
     db: Session = Depends(get_db),
 ) -> list[dict]:
     """وجود المسير وحالته — من غير مبالغ باسم حد. الأرقام محتاجة `salary.view`."""
-    stmt = branch_scope.scope(
-        select(PayrollRun), PayrollRun, current
-    ).order_by(PayrollRun.year.desc(), PayrollRun.month.desc())
+    stmt = select(PayrollRun).order_by(PayrollRun.year.desc(), PayrollRun.month.desc())
+    branch = branch_scope.visible_branch_id(current)
+    if branch is not None:
+        # مش `branch_scope.scope`: ده بيضيف اللي مالهاش فرع، ومسير الشركة كلها مش لموظف فرع.
+        if branch_scope.sees_all_branches(current):
+            stmt = stmt.where(or_(PayrollRun.branch_id == branch,
+                                  PayrollRun.branch_id.is_(None)))
+        else:
+            stmt = stmt.where(PayrollRun.branch_id == branch)
     if year:
         stmt = stmt.where(PayrollRun.year == year)
     return [{
@@ -138,12 +196,10 @@ def list_runs(
 @router.get("/runs/{run_id}")
 def get_run(
     run_id: int,
-    _: CurrentUser = Depends(require_capability(CAP_SALARY_VIEW)),
+    current: CurrentUser = Depends(require_capability(CAP_SALARY_VIEW)),
     db: Session = Depends(get_db),
 ) -> dict:
-    run = db.get(PayrollRun, run_id)
-    if run is None:
-        raise HTTPException(404, {"code": "not_found", "message": "المسير غير موجود."})
+    run = _seen_run(db, run_id, current)
     return _run_out(db, run, with_lines=True)
 
 
@@ -154,8 +210,10 @@ def compute_run(
     db: Session = Depends(get_db),
 ) -> dict:
     """بيحسب مسودة الشهر — مابيلمسش الأستاذ، وينفع يتعاد براحتك."""
+    payload = body.model_dump()
+    payload["branch_id"] = _target_branch(current, body.branch_id)
     try:
-        run = payroll_service.compute_run(db, actor_user_id=current.id, **body.model_dump())
+        run = payroll_service.compute_run(db, actor_user_id=current.id, **payload)
     except (PayrollError, LedgerError) as exc:
         _raise(exc)
     out = _run_out(db, run, with_lines=True)
@@ -170,6 +228,7 @@ def post_run(
     db: Session = Depends(get_db),
 ) -> dict:
     """بيرحّل للأستاذ. ضغطة تانية بترجّع `skipped` مش خطأ."""
+    _seen_run(db, run_id, current)
     try:
         result = payroll_service.post_run(db, run_id=run_id, actor_user_id=current.id)
     except (PayrollError, LedgerError) as exc:
@@ -185,6 +244,7 @@ def reverse_run(
     db: Session = Depends(get_db),
 ) -> dict:
     """بيعكس المسير ويفتح الشهر — المستند بيفضل بترقيمه."""
+    _seen_run(db, run_id, current)
     try:
         result = payroll_service.reverse_run(db, run_id=run_id, actor_user_id=current.id)
     except (PayrollError, LedgerError) as exc:
@@ -201,6 +261,7 @@ def pay_run(
     db: Session = Depends(get_db),
 ) -> dict:
     """صرف المرتبات — مدين مرتبات مستحقة / دائن الخزنة."""
+    _seen_run(db, run_id, current)
     try:
         result = payroll_service.pay_run(
             db, run_id=run_id, actor_user_id=current.id, **body.model_dump())
@@ -214,15 +275,15 @@ def pay_run(
 def payslip(
     run_id: int,
     employee_id: int,
-    _: CurrentUser = Depends(require_capability(CAP_SALARY_VIEW)),
+    current: CurrentUser = Depends(require_capability(CAP_SALARY_VIEW)),
     db: Session = Depends(get_db),
 ) -> dict:
     """قسيمة الراتب — بند بند من `payroll_line_detail`."""
+    run = _seen_run(db, run_id, current)
     line = db.scalar(select(PayrollLine).where(
         PayrollLine.run_id == run_id, PayrollLine.employee_id == employee_id))
     if line is None:
         raise HTTPException(404, {"code": "not_found", "message": "مافيش سطر للموظف ده."})
-    run = db.get(PayrollRun, run_id)
     details = db.scalars(select(PayrollLineDetail).where(
         PayrollLineDetail.line_id == line.id).order_by(PayrollLineDetail.id)).all()
     return {
@@ -245,9 +306,16 @@ def list_remittances(
     current: CurrentUser = Depends(require_capability(CAP_PAYROLL_READ)),
     db: Session = Depends(get_db),
 ) -> list[dict]:
-    rows = db.scalars(branch_scope.scope(
-        select(PayrollRemittance), PayrollRemittance, current)
-        .order_by(PayrollRemittance.remit_date.desc())).all()
+    stmt = select(PayrollRemittance).order_by(PayrollRemittance.remit_date.desc())
+    branch = branch_scope.visible_branch_id(current)
+    if branch is not None:
+        # نفس قاعدة المسيرات: سداد الشركة كلها (من غير فرع) مش لموظف فرع.
+        if branch_scope.sees_all_branches(current):
+            stmt = stmt.where(or_(PayrollRemittance.branch_id == branch,
+                                  PayrollRemittance.branch_id.is_(None)))
+        else:
+            stmt = stmt.where(PayrollRemittance.branch_id == branch)
+    rows = db.scalars(stmt).all()
     return [{
         "id": r.id, "document_number": r.document_number, "kind": r.kind,
         "amount": str(r.amount), "remit_date": r.remit_date, "notes": r.notes,
@@ -262,8 +330,10 @@ def create_remittance(
     db: Session = Depends(get_db),
 ) -> dict:
     """سداد التأمينات أو الضريبة — من غيره الالتزام بيكبر للأبد."""
+    payload = body.model_dump()
+    payload["branch_id"] = _target_branch(current, body.branch_id)
     try:
-        row = payroll_service.remit(db, actor_user_id=current.id, **body.model_dump())
+        row = payroll_service.remit(db, actor_user_id=current.id, **payload)
     except (PayrollError, LedgerError) as exc:
         _raise(exc)
     out = {"id": row.id, "document_number": row.document_number, "kind": row.kind,

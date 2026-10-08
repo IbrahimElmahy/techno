@@ -88,6 +88,12 @@ def set_salary(
     row = db.scalar(select(EmployeeSalary).where(
         EmployeeSalary.employee_id == employee_id,
         EmployeeSalary.effective_from == effective_from))
+    if row is not None and used_by_posted_run(db, row):
+        # نفس قاعدة الشرايح: الهيكل اللي اتحسب عليه شهر مرحّل اتقفل. تعديله بنفس التاريخ
+        # بيخلّي الهيكل يقول رقم والقسيمة المرحّلة تقول رقم تاني، ومحدش يعرف أنهي الصح.
+        raise PayrollSetupError(
+            f"هيكل الراتب الساري من {effective_from} اتحسب عليه مسير مرحّل — "
+            "أي تغيير يتعمل بتاريخ سريان جديد (زيادة)، مش تعديل للقديم.")
     if row is None:
         row = EmployeeSalary(employee_id=employee_id, effective_from=effective_from)
         db.add(row)
@@ -182,6 +188,131 @@ def salary_breakdown(db: Session, salary: EmployeeSalary) -> dict:
                               if salary.insurance_base is not None else insurable),
         "taxable_base": str(to_money(taxable)),
     }
+
+
+def used_by_posted_run(db: Session, salary: EmployeeSalary) -> bool:
+    """هل فيه شهر مرحّل اتحسب على الهيكل ده بالذات؟
+
+    «بالذات» يعني: الموظف له سطر في مسير مرحّل، وآخر يوم في الشهر ده الهيكل الساري فيه كان
+    الصف ده (مش نسخة قبله ولا بعده). المسودة مابتحسبش — بتتعاد براحتها.
+    """
+    from src.models.hr_payroll_run import PayrollLine, PayrollRun, PayrollRunStatus
+
+    months = db.execute(
+        select(PayrollRun.year, PayrollRun.month)
+        .join(PayrollLine, PayrollLine.run_id == PayrollRun.id)
+        .where(PayrollLine.employee_id == salary.employee_id,
+               PayrollRun.status == PayrollRunStatus.posted)
+    ).all()
+    for year, month in months:
+        end = date(year + (month == 12), month % 12 + 1, 1)
+        in_force = salary_on(db, salary.employee_id, date.fromordinal(end.toordinal() - 1))
+        if in_force is not None and in_force.id == salary.id:
+            return True
+    return False
+
+
+def delete_salary(db: Session, *, salary_id: int, actor_user_id: int) -> int:
+    """بيمسح نسخة من هيكل راتب — للغلط في الإدخال أو «مسح الإعدادات».
+
+    النسخة اللي قبلها بترجع ساريّة لوحدها (`salary_on` بياخد آخر واحد بدأ). النسخة اللي اتحسب
+    عليها شهر مرحّل مابتتمسحش: الهيكل هو الإجابة على «القسيمة دي جت منين».
+    بيرجّع رقم الموظف.
+    """
+    row = db.get(EmployeeSalary, salary_id)
+    if row is None:
+        raise PayrollSetupError("هيكل الراتب غير موجود.")
+    if used_by_posted_run(db, row):
+        raise PayrollSetupError(
+            f"هيكل الراتب الساري من {row.effective_from} اتحسب عليه مسير مرحّل — "
+            "مينفعش يتمسح. لو الراتب اتغيّر اعمل نسخة جديدة بتاريخ سريان جديد.")
+    employee_id = row.employee_id
+    before = {"from": str(row.effective_from), "basic": str(row.basic)}
+    for line in db.scalars(select(EmployeeSalaryLine).where(
+            EmployeeSalaryLine.salary_id == row.id)).all():
+        db.delete(line)
+    # فلاش بين الاتنين: مافيش `relationship` بينهم، فالـORM مش عارف إن السطور لازم تتمسح
+    # الأول — ومن غيره ممكن يبعت مسح الهيكل قبلها ويقع على المفتاح الأجنبي.
+    db.flush()
+    db.delete(row)
+    db.flush()
+
+    # المرآة على كارت الموظف بتتبع الساري الجديد. لو مافضلش هيكل خالص بنسيب الكارت زي ما
+    # هو: الرقم ده ممكن يكون اتكتب بالإيد في شاشة الموظفين قبل أي هيكل.
+    employee = db.get(Employee, employee_id)
+    current = salary_on(db, employee_id, date.today())
+    if employee is not None and current is not None:
+        employee.salary = current.basic
+
+    audit_service.record(
+        db, action="employee_salary.delete", actor_user_id=actor_user_id,
+        entity_type="employee", entity_id=employee_id, before=before,
+    )
+    return employee_id
+
+
+def salary_roster(db: Session, employees: list[Employee], day: date) -> dict[int, dict]:
+    """ملخص الراتب الساري لكل موظف في القايمة — بعدد ثابت من الاستعلامات مش استعلام لكل موظف.
+
+    شاشة «رواتب الموظفين» بتعرض كل الموظفين (١٣٧ على الإنتاج) ومش ناقصها ٤٠٠ استعلام.
+    الموظف اللي مالوش هيكل ساري مش في القاموس — الشاشة بتكتب «مالوش إعدادات».
+    """
+    ids = [e.id for e in employees]
+    if not ids:
+        return {}
+    versions: dict[int, list[EmployeeSalary]] = {}
+    for row in db.scalars(
+        select(EmployeeSalary).where(EmployeeSalary.employee_id.in_(ids))
+        .order_by(EmployeeSalary.effective_from.desc())
+    ).all():
+        versions.setdefault(row.employee_id, []).append(row)
+
+    current_ids = []
+    picked: dict[int, tuple[EmployeeSalary, EmployeeSalary | None, int]] = {}
+    for emp_id, rows in versions.items():
+        cur = next((r for r in rows if r.effective_from <= day), None)
+        # زيادة متسجّلة لسه مابدأتش — بتبان جنب الساري عشان محدش يكتبها تاني.
+        upcoming = next((r for r in reversed(rows) if r.effective_from > day), None)
+        picked[emp_id] = (cur, upcoming, len(rows))
+        if cur is not None:
+            current_ids.append(cur.id)
+
+    components = {c.id: c for c in db.scalars(select(SalaryComponent)).all()}
+    lines: dict[int, list[EmployeeSalaryLine]] = {}
+    if current_ids:
+        for line in db.scalars(select(EmployeeSalaryLine).where(
+                EmployeeSalaryLine.salary_id.in_(current_ids))).all():
+            lines.setdefault(line.salary_id, []).append(line)
+
+    out: dict[int, dict] = {}
+    for emp_id, (cur, upcoming, count) in picked.items():
+        entry: dict = {"versions": count, "current": None, "upcoming": None}
+        if upcoming is not None:
+            entry["upcoming"] = {"id": upcoming.id, "effective_from": str(upcoming.effective_from),
+                                 "basic": str(upcoming.basic)}
+        if cur is not None:
+            basic = to_money(Decimal(str(cur.basic or 0)))
+            earnings = deductions = Decimal("0")
+            for line in lines.get(cur.id, []):
+                component = components.get(line.component_id)
+                if component is None or not component.active:
+                    continue
+                amount = (to_money(basic * Decimal(str(line.pct)) / Decimal("100"))
+                          if line.pct is not None else to_money(Decimal(str(line.amount or 0))))
+                if component.kind == ComponentKind.earning:
+                    earnings += amount
+                else:
+                    deductions += amount
+            entry["current"] = {
+                "id": cur.id, "effective_from": str(cur.effective_from),
+                "basic": str(basic), "allowances": str(to_money(earnings)),
+                "deductions": str(to_money(deductions)),
+                "gross": str(to_money(basic + earnings)),
+                "net_structure": str(to_money(basic + earnings - deductions)),
+                "payment_method": cur.payment_method.value,
+            }
+        out[emp_id] = entry
+    return out
 
 
 # ------------------------------------------------------------------ الشرايح

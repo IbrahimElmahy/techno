@@ -161,6 +161,9 @@ def compute_run(
             for detail in db.scalars(select(PayrollLineDetail).where(
                     PayrollLineDetail.line_id == line.id)).all():
                 db.delete(detail)
+            # فلاش قبل مسح السطر: مافيش `relationship` بين السطر وتفاصيله، فالـORM ممكن يبعت
+            # مسح السطر الأول ويقع على المفتاح الأجنبي — وإعادة حساب المسودة كانت بتطلع ٥٠٠.
+            db.flush()
             db.delete(line)
         db.flush()
 

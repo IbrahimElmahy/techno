@@ -66,6 +66,29 @@ def advances_account_id(db: Session) -> int:
 # ------------------------------------------------------------------ السلف
 
 
+def _cash_side(db: Session, *, treasury_id: int | None,
+               branch_id: int | None) -> tuple[int, int | None]:
+    """الفلوس طالعة منين — حساب الخزنة ورقمها.
+
+    `treasury_id` كان بيتخزّن على السلفة والقيد بيتجاهله ويقيّد على خزنة «النوع» العامة،
+    فالسلفة اللي اتصرفت من خزنة فرع كانت بتنزل في دفتر خزنة تانية. دلوقتي: الخزنة المختارة،
+    وإلا أول خزنة نشطة في فرع السلفة (نفس قاعدة السندات)، وإلا الخزنة العامة زي الأول.
+    """
+    from src.models.treasury import Treasury
+
+    if treasury_id is not None:
+        t = db.get(Treasury, treasury_id)
+        if t is None or not t.active:
+            raise AdvanceError("الخزنة غير موجودة.")
+        return t.account_id, t.id
+    if branch_id is not None:
+        own = db.scalar(select(Treasury).where(
+            Treasury.branch_id == branch_id, Treasury.active.is_(True)).order_by(Treasury.id))
+        if own is not None:
+            return own.account_id, own.id
+    return account_resolver.treasury_account(db, branch_id=branch_id).id, None
+
+
 def _split(amount: Decimal, count: int) -> list[Decimal]:
     """بيقسّم المبلغ على الأقساط، والباقي بيروح لآخر قسط.
 
@@ -136,7 +159,8 @@ def create_advance(
     db.flush()
 
     if post:
-        treasury_account = account_resolver.treasury_account(db, branch_id=branch_id)
+        cash_account_id, row.treasury_id = _cash_side(db, treasury_id=treasury_id,
+                                                      branch_id=branch_id)
         entry = ledger_service.post_entry(
             db, entry_type="employee_advance", actor_user_id=actor_user_id,
             entry_date=advance_date, branch_id=branch_id,
@@ -150,7 +174,7 @@ def create_advance(
                 LineInput(advances_account_id(db), Direction.debit, value,
                           statement=f"سلفة {row.document_number}",
                           cost_center_id=cost_center_id),
-                LineInput(treasury_account.id, Direction.credit, value,
+                LineInput(cash_account_id, Direction.credit, value,
                           statement=f"سلفة {row.document_number}"),
             ],
         )
@@ -205,6 +229,81 @@ def cancel_advance(db: Session, *, advance_id: int, actor_user_id: int) -> Emplo
     audit_service.record(
         db, action="advance.cancel", actor_user_id=actor_user_id,
         entity_type="employee_advance", entity_id=row.id, after={"status": "cancelled"},
+    )
+    return row
+
+
+def update_advance(
+    db: Session, *, advance_id: int, actor_user_id: int, amount, advance_date: date,
+    instalments: int = 1, start_year: int | None = None, start_month: int | None = None,
+    reason: str | None = None, treasury_id: int | None = None,
+    cost_center_id: int | None = None,
+) -> EmployeeAdvance:
+    """تعديل سلفة — **بشرط إن مااتخصمش منها ولا قسط.**
+
+    نفس رقم السلفة ونفس قيدها: القيد بيرجع مسودة وسطوره بتتبدّل وبيترحّل تاني، والأقساط
+    بتتعمل من جديد. قسط اتخصم في مسير مرحّل معناه إن قسيمة مرتب اتطبعت على الرقم القديم —
+    التعديل ساعتها كدب على القسيمة، والصح «اعكس المسير الأول».
+    """
+    row = db.get(EmployeeAdvance, advance_id)
+    if row is None:
+        raise AdvanceError("السلفة غير موجودة.")
+    if row.status != AdvanceStatus.active:
+        raise AdvanceError("السلفة دي مش مفتوحة — الملغية والمسدّدة ماتتعدلش.")
+    taken = taken_of(db, advance_id)
+    if taken > 0:
+        raise AdvanceError(f"اتخصم منها {taken} في مسير مرحّل — اعكس المسير الأول.")
+    value = to_money(Decimal(str(amount or 0)))
+    if value <= 0:
+        raise AdvanceError("مبلغ السلفة لازم يكون أكبر من صفر.")
+    if instalments < 1:
+        raise AdvanceError("عدد الأقساط لازم يكون واحد على الأقل.")
+    year = start_year or advance_date.year
+    month = start_month or advance_date.month
+    if not 1 <= month <= 12:
+        raise AdvanceError("الشهر لازم يكون من 1 لـ 12.")
+    before = {"amount": str(row.amount), "instalments": row.instalments,
+              "advance_date": str(row.advance_date)}
+
+    parts = _split(value, instalments)
+    for part in db.scalars(select(EmployeeAdvanceInstalment).where(
+            EmployeeAdvanceInstalment.advance_id == advance_id)).all():
+        db.delete(part)
+    db.flush()
+    row.amount, row.advance_date, row.instalments = value, advance_date, instalments
+    row.instalment_amount, row.start_year, row.start_month = parts[0], year, month
+    row.reason, row.cost_center_id = reason, cost_center_id
+    cursor_year, cursor_month = year, month
+    for part in parts:
+        db.add(EmployeeAdvanceInstalment(
+            advance_id=row.id, year=cursor_year, month=cursor_month, amount=part))
+        cursor_month += 1
+        if cursor_month > 12:
+            cursor_month, cursor_year = 1, cursor_year + 1
+
+    if row.ledger_entry_id:
+        cash_account_id, row.treasury_id = _cash_side(
+            db, treasury_id=treasury_id if treasury_id is not None else row.treasury_id,
+            branch_id=row.branch_id)
+        entry = ledger_service.reset_to_draft(
+            db, entry_id=row.ledger_entry_id, actor_user_id=actor_user_id)
+        # الفترة الجديدة لازم تكون مفتوحة هي كمان — `post_draft` بيتأكد.
+        entry.entry_date = advance_date
+        ledger_service.replace_lines(db, entry=entry, lines=[
+            LineInput(advances_account_id(db), Direction.debit, value,
+                      statement=f"سلفة {row.document_number}", cost_center_id=cost_center_id),
+            LineInput(cash_account_id, Direction.credit, value,
+                      statement=f"سلفة {row.document_number}"),
+        ])
+        ledger_service.post_draft(db, entry_id=entry.id, actor_user_id=actor_user_id)
+    elif treasury_id is not None:
+        row.treasury_id = treasury_id
+    db.flush()
+    audit_service.record(
+        db, action="advance.update", actor_user_id=actor_user_id,
+        entity_type="employee_advance", entity_id=row.id, before=before,
+        after={"amount": str(value), "instalments": instalments,
+               "advance_date": str(advance_date)},
     )
     return row
 

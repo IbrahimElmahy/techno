@@ -9,6 +9,7 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from src.auth import branch_scope
 from src.auth.dependencies import CurrentUser, require_capability
 from src.auth.rbac import CAP_HR_READ, CAP_HR_WRITE
 from src.core.db import get_db
@@ -29,6 +30,23 @@ def _raise(exc: LeaveError):
     if "نفس الأيام" in text:
         raise HTTPException(409, {"code": "duplicate", "message": text}) from exc
     raise HTTPException(422, {"code": "validation", "message": text}) from exc
+
+
+def _own_employee(db: Session, current: CurrentUser, employee_id: int) -> None:
+    """٤٠٤ لو الموظف من فرع تاني.
+
+    جدول الأجازات مالوش فرع — فرع الطلب هو فرع الموظف. القوايم متعزلة بيه، والكتابة
+    (طلب، رصيد) بتاخد رقم الموظف من الطلب، فلازم تتسأل هي كمان.
+    """
+    if not branch_scope.may_touch_employee(db, current, employee_id):
+        raise HTTPException(404, {"code": "not_found", "message": "الموظف غير موجود."})
+
+
+def _own_request(db: Session, current: CurrentUser, request_id: int) -> None:
+    """اعتماد/رفض/إلغاء طلب فرع تاني بالرقم — ٤٠٤ زي ما يكون مش موجود."""
+    row = db.get(LeaveRequest, request_id)
+    if row is not None and not branch_scope.may_touch_employee(db, current, row.employee_id):
+        raise HTTPException(404, {"code": "not_found", "message": "الطلب غير موجود."})
 
 
 class TypeIn(BaseModel):
@@ -148,14 +166,13 @@ def deactivate_type(
 def balances(
     year: int = Query(...),
     employee_id: int | None = Query(None),
-    _: CurrentUser = Depends(require_capability(CAP_HR_READ)),
+    current: CurrentUser = Depends(require_capability(CAP_HR_READ)),
     db: Session = Depends(get_db),
 ) -> list[dict]:
     """رصيد كل موظف في كل نوع — محسوب، مش مخزّن."""
-    employees = db.scalars(
-        select(Employee).where(Employee.id == employee_id) if employee_id
-        else select(Employee).where(Employee.active.is_(True))
-    ).all()
+    stmt = (select(Employee).where(Employee.id == employee_id) if employee_id
+            else select(Employee).where(Employee.active.is_(True)))
+    employees = db.scalars(branch_scope.scope(stmt, Employee, current)).all()
     types = db.scalars(select(LeaveType).where(LeaveType.active.is_(True))).all()
     out = []
     for emp in employees:
@@ -174,6 +191,7 @@ def set_entitlement(
     current: CurrentUser = Depends(require_capability(CAP_HR_WRITE)),
     db: Session = Depends(get_db),
 ) -> dict:
+    _own_employee(db, current, body.employee_id)
     try:
         leave_service.set_entitlement(db, actor_user_id=current.id, **body.model_dump())
     except LeaveError as exc:
@@ -193,10 +211,11 @@ def list_requests(
     employee_id: int | None = Query(None),
     date_from: date | None = Query(None),
     date_to: date | None = Query(None),
-    _: CurrentUser = Depends(require_capability(CAP_HR_READ)),
+    current: CurrentUser = Depends(require_capability(CAP_HR_READ)),
     db: Session = Depends(get_db),
 ) -> list[RequestOut]:
     stmt = select(LeaveRequest).order_by(LeaveRequest.date_from.desc())
+    stmt = branch_scope.scope_by_employee(stmt, LeaveRequest.employee_id, current)
     if status_filter:
         stmt = stmt.where(LeaveRequest.status == status_filter)
     if employee_id:
@@ -214,6 +233,7 @@ def create_request(
     current: CurrentUser = Depends(require_capability(CAP_HR_WRITE)),
     db: Session = Depends(get_db),
 ) -> RequestOut:
+    _own_employee(db, current, body.employee_id)
     try:
         row = leave_service.request(db, actor_user_id=current.id, **body.model_dump())
     except LeaveError as exc:
@@ -229,6 +249,7 @@ def approve_request(
     current: CurrentUser = Depends(require_capability(CAP_HR_WRITE)),
     db: Session = Depends(get_db),
 ) -> RequestOut:
+    _own_request(db, current, request_id)
     try:
         row = leave_service.approve(db, request_id=request_id, actor_user_id=current.id)
     except LeaveError as exc:
@@ -249,6 +270,7 @@ def reject_request(
     current: CurrentUser = Depends(require_capability(CAP_HR_WRITE)),
     db: Session = Depends(get_db),
 ) -> RequestOut:
+    _own_request(db, current, request_id)
     try:
         row = leave_service.reject(
             db, request_id=request_id, actor_user_id=current.id, reason=body.reason)
@@ -266,6 +288,7 @@ def cancel_request(
     db: Session = Depends(get_db),
 ) -> RequestOut:
     """بيلغي الطلب وبيشيل أيام الحضور اللي اتكتبت منه — مش بيمسح الطلب."""
+    _own_request(db, current, request_id)
     try:
         row = leave_service.cancel(db, request_id=request_id, actor_user_id=current.id)
     except LeaveError as exc:

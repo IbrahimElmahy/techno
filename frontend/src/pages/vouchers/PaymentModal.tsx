@@ -18,7 +18,7 @@ import VoucherShell, { BalanceTarget, Counterpart, PartyBalance, VoucherSubmit }
 
 export default function PaymentModal({
   open, onCancel, form, posting, submit, suppliers, treasuries, methodOptions, editing = false,
-  customers = [],
+  customers = [], initialKind = 'supplier',
 }: {
   open: boolean;
   onCancel: () => void;
@@ -32,6 +32,8 @@ export default function PaymentModal({
   editing?: boolean;
   /** العملاء (ومعاهم الموظفين والفروع) — صرف لعميل/سلفة موظف/تحويل لفرع. */
   customers?: Party[];
+  /** نوع الطرف اللي البوباب بيفتح عليه — «صرف على الذمة» من شاشة ذمم الموظفين بيفتح على «موظف». */
+  initialKind?: PartyKind;
 }) {
   // الطرف (المرحلة ١): مورد افتراضياً زي الأول، والباقي اختيار. في التعديل من قيم السند.
   const [kind, setKind] = React.useState<PartyKind>('supplier');
@@ -40,7 +42,7 @@ export default function PaymentModal({
   const [family, setFamily] = React.useState<string>('');
   React.useEffect(() => {
     if (!open) return;
-    setKind('supplier'); setLines([]); setFamily('');
+    setKind(initialKind); setLines([]); setFamily('');
     if (!editing) return;
     const t = setTimeout(() => {
       const k = kindOfValues(form.getFieldsValue(true), customers);

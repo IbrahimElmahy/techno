@@ -19,7 +19,8 @@ from src.auth.rbac import CAP_USER_READ, CAP_USER_WRITE
 from src.core.db import get_db
 from src.models.employee import Employee, JobTitle
 from src.models.hr_org import Department
-from src.services import numbering
+from src.services import hr_service, numbering
+from src.services.hr_service import HrError
 from src.auth import branch_scope
 
 router = APIRouter(tags=["employees"], prefix="")
@@ -171,6 +172,8 @@ def list_employees(
     active: bool | None = Query(None),
     branch_id: int | None = Query(None),
     job_title_id: int | None = Query(None),
+    # شاشة الأقسام بتفتح موظفين قسم واحد — فلتر على السيرفر بدل ما تنزّل الكل وتفلتر عندها.
+    department_id: int | None = Query(None),
     current: CurrentUser = Depends(require_capability(CAP_USER_READ)),
     db: Session = Depends(get_db),
 ) -> list[EmployeeOut]:
@@ -181,6 +184,8 @@ def list_employees(
         stmt = stmt.where(Employee.branch_id == branch_id)
     if job_title_id:
         stmt = stmt.where(Employee.job_title_id == job_title_id)
+    if department_id:
+        stmt = stmt.where(Employee.department_id == department_id)
     rows = db.scalars(stmt.order_by(Employee.name)).all()
     # المسميات تتحمّل مرة وتفضل ماسكينها — من غيرها `db.get` في `_out` بيسأل عن نفس
     # المسمى مع كل موظف (خريطة الهوية ضعيفة): ٩٥ استعلام للقايمة.
@@ -189,10 +194,27 @@ def list_employees(
     return [_out(db, e) for e in rows]
 
 
+def _check_department(db: Session, department_id: int | None, current_id: int | None = None) -> None:
+    """القسم المختار لازم يكون موجود وشغّال.
+
+    من غيره رقم غلط بيوقع الحفظ بخطأ قاعدة بيانات (٥٠٠) مالوش معنى عند اللي بيكتب، والنقل
+    لقسم مقفول بيحط الموظف في قسم مخفي من كل القوايم والتقارير. الموظف اللي **أصلاً** في قسم
+    اتقفل بعدين بيتحفظ عادي — تعديل تليفونه مايستاهلش يترفض عشان قسمه.
+    """
+    if department_id is None or department_id == current_id:
+        return
+    dept = db.get(Department, department_id)
+    if dept is None:
+        raise HTTPException(422, {"code": "validation", "message": "القسم المختار غير موجود."})
+    if not dept.active:
+        raise HTTPException(422, {"code": "validation",
+                                  "message": f"القسم «{dept.name}» مقفول — فعّله الأول أو اختار قسم تاني."})
+
+
 @router.post("/employees", response_model=EmployeeOut, status_code=status.HTTP_201_CREATED)
 def create_employee(
     body: EmployeeIn,
-    _: CurrentUser = Depends(require_capability(CAP_USER_WRITE)),
+    current: CurrentUser = Depends(require_capability(CAP_USER_WRITE)),
     db: Session = Depends(get_db),
 ) -> EmployeeOut:
     name = (body.name or "").strip()
@@ -201,6 +223,7 @@ def create_employee(
     if body.user_id and db.scalar(select(Employee).where(Employee.user_id == body.user_id)):
         raise HTTPException(409, {"code": "duplicate",
                                   "message": "المستخدم ده مربوط بموظف تاني."})
+    _check_department(db, body.department_id)
     # كان بيعدّ الصفوف — وده بالظبط الغلط اللي `numbering` اتكتبت عشانه: امسح موظف واحد من
     # تلاتة، العدد يقول اتنين، فالتالي بياخد `EMP-0003` وهو موجود على التالت. والعمود unique،
     # فالحفظ بيفشل — وبيفضل فاشل، لأن العدد عالق ورا واحد للأبد.
@@ -208,7 +231,8 @@ def create_employee(
         code=numbering.next_document_number(db, Employee, "EMP", column=Employee.code, width=4),
         name=name, job_title_id=body.job_title_id,
         department=body.department, department_id=body.department_id, phone=body.phone, national_id=body.national_id,
-        hire_date=body.hire_date, salary=body.salary, branch_id=body.branch_id,
+        hire_date=body.hire_date, salary=body.salary,
+        branch_id=_new_employee_branch(current, body.branch_id),
         warehouse_id=body.warehouse_id,
         user_id=body.user_id, notes=body.notes,
         address=body.address, work_start=body.work_start, work_end=body.work_end,
@@ -217,6 +241,32 @@ def create_employee(
     db.add(emp)
     db.commit()
     return _out(db, emp)
+
+
+def _new_employee_branch(current: CurrentUser, requested: int | None) -> int | None:
+    """فرع الموظف الجديد: موظف الفرع → فرعه هو، مهما اتبعت؛ المالك/الأدمن → اللي اختاره.
+
+    الأدمن لو ماختارش ووهو مفلتر على فرع من الشريط، الموظف بياخد الفرع ده — هو شايف شاشة
+    الفرع ده، وموظف من غير فرع بيظهر في الفروع التلاتة.
+    """
+    if not branch_scope.sees_all_branches(current):
+        return current.branch_id
+    return requested if requested is not None else branch_scope.visible_branch_id(current)
+
+
+def _check_branch_move(current: CurrentUser, emp: Employee, changes: dict) -> None:
+    """موظف الفرع مايقدرش ينقل موظف لفرع تاني — النقل بين الفروع من الإدارة.
+
+    الموظف اللي مالوش فرع ينفع يتربط بفرعه هو (تسكين بيانات قديمة)، غير كده ٤٠٣.
+    """
+    if "branch_id" not in changes or branch_scope.sees_all_branches(current):
+        return
+    target = changes["branch_id"]
+    if target == emp.branch_id:
+        return
+    if target != current.branch_id:
+        raise HTTPException(403, {"code": "forbidden",
+                                  "message": "نقل الموظف لفرع تاني من الإدارة بس."})
 
 
 def _seen_employee(db: Session, employee_id: int, current: CurrentUser) -> Employee:
@@ -250,7 +300,11 @@ def update_employee(
     db: Session = Depends(get_db),
 ) -> EmployeeOut:
     emp = _seen_employee(db, employee_id, current)
-    for field, value in body.model_dump(exclude_unset=True).items():
+    changes = body.model_dump(exclude_unset=True)
+    _check_branch_move(current, emp, changes)
+    if "department_id" in changes:
+        _check_department(db, changes["department_id"], emp.department_id)
+    for field, value in changes.items():
         setattr(emp, field, value)
     db.commit()
     return _out(db, emp)
@@ -259,10 +313,22 @@ def update_employee(
 @router.delete("/employees/{employee_id}", status_code=status.HTTP_204_NO_CONTENT)
 def deactivate_employee(
     employee_id: int,
+    hard: bool = Query(False),
     current: CurrentUser = Depends(require_capability(CAP_USER_WRITE)),
     db: Session = Depends(get_db),
 ) -> None:
-    """Deactivated, not deleted — the name must stay readable wherever it is already referenced."""
+    """Deactivated, not deleted — the name must stay readable wherever it is already referenced.
+
+    `hard=true` بيمسحه نهائياً **بشرط إن مالوش أي تاريخ** (مسير، سلفة، حضور، أجازة، حساب دخول،
+    حساب ذمة…) — للكارت اللي اتعمل بالغلط. غير كده ٤٠٩ بالأرقام، والصح «إيقاف».
+    """
     emp = _seen_employee(db, employee_id, current)
+    if hard:
+        try:
+            hr_service.delete_employee(db, employee=emp, actor_user_id=current.id)
+        except HrError as exc:
+            raise HTTPException(409, {"code": "has_history", "message": str(exc)}) from exc
+        db.commit()
+        return
     emp.active = False
     db.commit()

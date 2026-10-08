@@ -19,7 +19,7 @@ from __future__ import annotations
 from datetime import date, datetime
 from decimal import Decimal
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from src.core.money import ZERO, to_money, to_qty
@@ -97,9 +97,14 @@ def _collect(db: Session, subject: str, filters: dict) -> list[dict]:
     employee_id = filters.get("employee_id")
     department_id = filters.get("department_id")
     branch_id = filters.get("branch_id")
+    # فرع اللي بيسأل (من `branch_scope.visible_branch_id`) — مش فلتر اختياري زي `branch_id`:
+    # كل موضوع هنا بيعدّي على `keep`، فالعزل في السطر ده بيغطي الأربعين تقرير مرة واحدة.
+    scope_branch = filters.get("scope_branch_id")
 
     def keep(employee: Employee) -> bool:
         if employee is None:
+            return False
+        if scope_branch and employee.branch_id not in (scope_branch, None):
             return False
         if employee_id and employee.id != employee_id:
             return False
@@ -411,8 +416,12 @@ def hr(
     include_drafts: bool = False,
     limit: int | None = None,
     offset: int = 0,
+    scope_branch_id: int | None = None,
 ) -> dict:
-    """محرك واحد. `subject` × `level` × `group_by` = أربعين تقرير."""
+    """محرك واحد. `subject` × `level` × `group_by` = أربعين تقرير.
+
+    `scope_branch_id`: فرع اللي بيسأل — موظفين الفرع ده (واللي مالهمش فرع) بس.
+    """
     if subject not in SUBJECTS:
         raise HrReportError(f"موضوع مش معروف: {subject}")
     if level not in LEVELS:
@@ -426,6 +435,7 @@ def hr(
         "date_from": date_from, "date_to": date_to, "year": year, "month": month,
         "employee_id": employee_id, "department_id": department_id,
         "branch_id": branch_id, "include_drafts": include_drafts,
+        "scope_branch_id": scope_branch_id,
     })
     if status:
         rows = [r for r in rows if r["status"] == status]
@@ -451,12 +461,16 @@ def hr(
     }
 
 
-def leave_balances(db: Session, *, year: int, employee_id: int | None = None) -> dict:
+def leave_balances(db: Session, *, year: int, employee_id: int | None = None,
+                   scope_branch_id: int | None = None) -> dict:
     """أرصدة الأجازات — بتقعد جنب المحرك لأن الرصيد مشتق مش صف في جدول."""
     types = db.scalars(select(LeaveType).where(LeaveType.active.is_(True))).all()
     stmt = select(Employee).where(Employee.active.is_(True))
     if employee_id:
         stmt = select(Employee).where(Employee.id == employee_id)
+    if scope_branch_id:
+        stmt = stmt.where(or_(Employee.branch_id == scope_branch_id,
+                              Employee.branch_id.is_(None)))
     look = _lookups(db)
 
     rows = []

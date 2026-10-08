@@ -136,3 +136,49 @@ def visible(current: CurrentUser, rows):
     if visible_branch_id(current) is None:
         return list(rows)
     return [r for r in rows if may_see(current, r)]
+
+
+# ------------------------------------------------------- الموارد البشرية بفرع الموظف
+#
+# الحضور والأجازات ونهاية الخدمة والورديات مالهاش `branch_id` في جدولها — فرعها هو فرع
+# الموظف. نسخ عمود الفرع على كل يوم حضور كان هيخلّي نقل موظف من فرع لفرع يسيب تاريخه ورا
+# في الفرع القديم، فالعزل بيمشي من الموظف نفسه: سؤال واحد هنا بدل ما كل شاشة تكتب الـjoin.
+
+
+def employee_ids(current: CurrentUser):
+    """أرقام الموظفين اللي الشخص ده بيشوفهم — `select` جاهز لـ`in_`، أو None لو بيشوف الكل.
+
+    نفس قاعدة `scope`: فرعه + الموظف اللي مالوش فرع، وفلتر المالك من الشريط محترم.
+    """
+    branch_id = visible_branch_id(current)
+    if branch_id is None:
+        return None
+    from sqlalchemy import select
+
+    from src.models.employee import Employee
+
+    return select(Employee.id).where(
+        or_(Employee.branch_id == branch_id, Employee.branch_id.is_(None)))
+
+
+def scope_by_employee(stmt, employee_id_column, current: CurrentUser):
+    """`scope` للجداول اللي فرعها هو فرع الموظف — `employee_id_column` هو عمود الموظف فيها."""
+    ids = employee_ids(current)
+    if ids is None:
+        return stmt
+    return stmt.where(employee_id_column.in_(ids))
+
+
+def may_touch_employee(db: Session, current: CurrentUser, employee_id: int | None) -> bool:
+    """هل يكتب على الموظف ده (حضور، أجازة، وردية، نهاية خدمة)؟ — **صلاحية** مش عرض.
+
+    موظف الفرع: موظفين فرعه (واللي مالهمش فرع). اللي فوق الفروع: الكل، حتى لو مفلتر على
+    فرع تاني من الشريط — الفلتر بيضيّق القوايم، مش بيسحب صلاحية. موظف مش موجود بيرجع True
+    عشان الخدمة نفسها هي اللي تقول «غير موجود» برسالتها.
+    """
+    if sees_all_branches(current) or employee_id is None:
+        return True
+    from src.models.employee import Employee
+
+    emp = db.get(Employee, employee_id)
+    return emp is None or emp.branch_id is None or emp.branch_id == current.branch_id

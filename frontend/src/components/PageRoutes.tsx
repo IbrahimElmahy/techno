@@ -54,6 +54,7 @@ const Departments = lazy(() => import('../pages/Departments'));
 const Attendance = lazy(() => import('../pages/Attendance'));
 const Leave = lazy(() => import('../pages/Leave'));
 const PayrollSettings = lazy(() => import('../pages/PayrollSettings'));
+const EmployeeSalaries = lazy(() => import('../pages/EmployeeSalaries'));
 const Advances = lazy(() => import('../pages/Advances'));
 const EmployeeReceivables = lazy(() => import('../pages/EmployeeReceivables'));
 const Payroll = lazy(() => import('../pages/Payroll'));
@@ -174,6 +175,7 @@ export default function PageRoutes({ location }: { location?: string }) {
       <Route path="/attendance" element={<Attendance />} />
       <Route path="/leave" element={<Leave />} />
       <Route path="/payroll-settings" element={<PayrollSettings />} />
+      <Route path="/employee-salaries" element={<EmployeeSalaries />} />
       <Route path="/advances" element={<Advances />} />
       <Route path="/employee-receivables" element={<EmployeeReceivables />} />
       <Route path="/payroll" element={<Payroll />} />

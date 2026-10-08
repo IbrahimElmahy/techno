@@ -364,15 +364,19 @@ export const NAVIGATION: (NavGroup | NavScreen)[] = [
       { key: '/leave', label: 'الأجازات', roles: HR },
       { key: '/leave?tab=balances', label: 'أرصدة الأجازات', roles: HR },
       { key: '/leave?tab=types', label: 'أنواع الأجازات', roles: HR },
+      // إعدادات الراتب لكل موظف — القايمة جاية من الموظفين نفسهم، والمسير بيحسب منها. على
+      // `SALARY` مش `BOOKS`: كل سطر فيها مبلغ باسم موظف، ومدير الفرع مالوش `salary.view`.
+      { key: '/employee-salaries', label: 'رواتب الموظفين', roles: SALARY },
       { key: '/payroll-settings', label: 'شرايح الضريبة والتأمينات', roles: BOOKS },
       { key: '/payroll-settings?tab=components', label: 'بنود الراتب', roles: BOOKS },
       { key: '/payroll-settings?tab=rules', label: 'أرقام المسير', roles: BOOKS },
-      { key: '/advances', label: 'سلف العاملين', roles: BOOKS },
-      // الذمم أوسع من السلفة: أي حاجة الموظف أخدها ولسه عليه — سلفة، عهدة
-      // سيارة، بضاعة، فلوس حصّلها وماورّدهاش. حساب واحد في a5 بيشيلهم كلهم.
-      { key: '/employee-receivables', label: 'ذمم الموظفين', roles: BOOKS },
-      { key: '/advances?tab=adjustments', label: 'الجزاءات والمكافآت', roles: BOOKS },
-      { key: '/payroll', label: 'مسير الرواتب', roles: BOOKS },
+      // «ذمم الموظفين» و«سلف العاملين» بقوا شاشة واحدة (٢٠٢٦-١٠-٠٨): صف لكل موظف بذمته من
+      // الدفتر وسلفه المفتوحة وإجماليهم، والسلف كلها شريحة جوّاها. `/advances` بيحوّل عليها.
+      { key: '/employee-receivables', label: 'ذمم وسلف الموظفين', roles: BOOKS },
+      // الجزاءات أرقام باسم موظف بتتخصم من مرتبه — `SALARY` زي السلف، مش `BOOKS`.
+      { key: '/employee-receivables?tab=adjustments', label: 'الجزاءات والمكافآت', roles: SALARY },
+      // «مسير الرواتب» اتشال من القايمة بطلب العميل (٢٠٢٦-١٠-٠٨) — المرتبات هتتعمل على شكل
+      // ملفه هو. الشاشة والمسار لسه موجودين لحد ما الشكل الجديد يتبني.
       // تقارير الموارد البشرية — تسعتاشر اسم على محرك واحد (`pages/HrReports.tsx`). التقارير
       // اللي فيها مبالغ باسم موظف بتتقفل على `SALARY` مش `HR`.
       {

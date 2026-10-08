@@ -6,9 +6,10 @@ from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
+from src.auth import branch_scope
 from src.auth.dependencies import CurrentUser, require_capability
 from src.auth.rbac import CAP_HR_READ, CAP_HR_WRITE
 from src.core.db import get_db
@@ -21,6 +22,7 @@ from src.models.hr_attendance import (
     Holiday,
     WorkShift,
 )
+from src.models.user import User
 from src.services import attendance_service
 from src.services.attendance_service import AttendanceError, AttendanceLocked
 
@@ -38,6 +40,25 @@ def _raise(exc: AttendanceError):
     if "غير موجود" in str(exc) or "غير موجودة" in str(exc):
         raise HTTPException(404, {"code": "not_found", "message": str(exc)}) from exc
     raise HTTPException(422, {"code": "validation", "message": str(exc)}) from exc
+
+
+def _own_employee(db: Session, current: CurrentUser, employee_id: int) -> None:
+    """٤٠٤ لو الموظف من فرع تاني — نفس رد `_seen_employee` في كارت الموظف.
+
+    القوايم متعزلة، بس تسجيل يوم أو وردية بياخد رقم موظف من الطلب نفسه؛ من غير الفحص ده
+    موظف فرع بيكتب حضور موظف فرع تاني بمجرد إنه يعرف رقمه.
+    """
+    if not branch_scope.may_touch_employee(db, current, employee_id):
+        raise HTTPException(404, {"code": "not_found", "message": "الموظف غير موجود."})
+
+
+def _import_branch(current: CurrentUser) -> int | None:
+    """الفرع اللي ملف البصمة بيتطابق على موظفينه — None = كل الموظفين.
+
+    جهاز البصمة بتاع فرع، بس الملف ممكن يبقى فيه كود موظف فرع تاني (نفس الكود أو اسم
+    متشابه): من غير التقييد ده الاستيراد بيكتب أيام على موظف فرع تاني في صمت.
+    """
+    return None if branch_scope.sees_all_branches(current) else current.branch_id
 
 
 # ----------------------------------------------------------------- schemas
@@ -184,6 +205,7 @@ def assign_shift(
     current: CurrentUser = Depends(require_capability(CAP_HR_WRITE)),
     db: Session = Depends(get_db),
 ) -> dict:
+    _own_employee(db, current, body.employee_id)
     try:
         row = attendance_service.assign_shift(db, actor_user_id=current.id, **body.model_dump())
     except AttendanceError as exc:
@@ -199,10 +221,12 @@ def assign_shift(
 @router.get("/holidays", response_model=list[HolidayOut])
 def list_holidays(
     year: int | None = Query(None),
-    _: CurrentUser = Depends(require_capability(CAP_HR_READ)),
+    current: CurrentUser = Depends(require_capability(CAP_HR_READ)),
     db: Session = Depends(get_db),
 ) -> list[HolidayOut]:
     stmt = select(Holiday).order_by(Holiday.holiday_date.desc(), Holiday.id.desc())  # الأحدث فوق
+    # عطلة فرعه + العطلات العامة (branch_id فاضي = كل الفروع) — وده بالظبط شرط `scope`.
+    stmt = branch_scope.scope(stmt, Holiday, current)
     if year:
         stmt = stmt.where(Holiday.holiday_date >= date(year, 1, 1),
                           Holiday.holiday_date <= date(year, 12, 31))
@@ -215,8 +239,13 @@ def add_holiday(
     current: CurrentUser = Depends(require_capability(CAP_HR_WRITE)),
     db: Session = Depends(get_db),
 ) -> HolidayOut:
+    data = body.model_dump()
+    if not branch_scope.sees_all_branches(current):
+        # موظف الفرع بيقفل فرعه بس: عطلة عامة منه كانت هتعلّم الفروع التانية «عطلة» في
+        # يوم شغل عندهم، وفرع تاني معناه إنه بيكتب في دفتر مش بتاعه.
+        data["branch_id"] = current.branch_id
     try:
-        row = attendance_service.add_holiday(db, actor_user_id=current.id, **body.model_dump())
+        row = attendance_service.add_holiday(db, actor_user_id=current.id, **data)
     except AttendanceError as exc:
         _raise(exc)
     out = HolidayOut.model_validate(row, from_attributes=True)
@@ -227,12 +256,16 @@ def add_holiday(
 @router.delete("/holidays/{holiday_id}", status_code=status.HTTP_204_NO_CONTENT)
 def deactivate_holiday(
     holiday_id: int,
-    _: CurrentUser = Depends(require_capability(CAP_HR_WRITE)),
+    current: CurrentUser = Depends(require_capability(CAP_HR_WRITE)),
     db: Session = Depends(get_db),
 ) -> None:
     row = db.get(Holiday, holiday_id)
-    if row is None:
+    if row is None or not branch_scope.may_see(current, row):
         raise HTTPException(404, {"code": "not_found", "message": "العطلة غير موجودة."})
+    if row.branch_id is None and not branch_scope.sees_all_branches(current):
+        # العطلة العامة ظاهرة لكل فرع، بس إلغاؤها بيرجّع اليوم يوم شغل في الفروع كلها.
+        raise HTTPException(403, {"code": "forbidden",
+                                  "message": "العطلة دي عامة لكل الفروع — إلغاؤها من الإدارة."})
     row.active = False
     db.commit()
 
@@ -246,11 +279,12 @@ def list_days(
     date_to: date | None = Query(None),
     employee_id: int | None = Query(None),
     department_id: int | None = Query(None),
-    _: CurrentUser = Depends(require_capability(CAP_HR_READ)),
+    current: CurrentUser = Depends(require_capability(CAP_HR_READ)),
     db: Session = Depends(get_db),
 ) -> list[DayOut]:
     stmt = select(AttendanceDay).order_by(
         AttendanceDay.work_date.desc(), AttendanceDay.employee_id)
+    stmt = branch_scope.scope_by_employee(stmt, AttendanceDay.employee_id, current)
     if date_from:
         stmt = stmt.where(AttendanceDay.work_date >= date_from)
     if date_to:
@@ -273,6 +307,7 @@ def record_day(
     db: Session = Depends(get_db),
 ) -> DayOut:
     """بيسجّل يوم أو بيعدّله — مفتاح (موظف، يوم) واحد، فالإرسال تاني بيعدّل مش بيكرّر."""
+    _own_employee(db, current, body.employee_id)
     try:
         row = attendance_service.record_day(db, actor_user_id=current.id, **body.model_dump())
     except AttendanceError as exc:
@@ -288,6 +323,9 @@ def delete_day(
     current: CurrentUser = Depends(require_capability(CAP_HR_WRITE)),
     db: Session = Depends(get_db),
 ) -> None:
+    day = db.get(AttendanceDay, day_id)
+    if day is not None and not branch_scope.may_touch_employee(db, current, day.employee_id):
+        raise HTTPException(404, {"code": "not_found", "message": "اليوم غير موجود."})
     try:
         attendance_service.delete_day(db, day_id=day_id, actor_user_id=current.id)
     except AttendanceError as exc:
@@ -301,11 +339,12 @@ def delete_day(
 @router.post("/import/preview")
 def preview_import(
     body: ImportIn,
-    _: CurrentUser = Depends(require_capability(CAP_HR_READ)),
+    current: CurrentUser = Depends(require_capability(CAP_HR_READ)),
     db: Session = Depends(get_db),
 ) -> dict:
     """بيقرا الملف ومابيكتبش حاجة — خطوة «بص قبل ما تلتزم»، زي دورة الجرد."""
-    return attendance_service.preview_import(db, rows=body.rows, mapping=body.mapping())
+    return attendance_service.preview_import(db, rows=body.rows, mapping=body.mapping(),
+                                             branch_id=_import_branch(current))
 
 
 @router.post("/import", status_code=status.HTTP_201_CREATED)
@@ -317,6 +356,7 @@ def apply_import(
     result = attendance_service.apply_import(
         db, rows=body.rows, mapping=body.mapping(),
         actor_user_id=current.id, filename=body.filename,
+        branch_id=_import_branch(current),
     )
     db.commit()
     return result
@@ -324,12 +364,20 @@ def apply_import(
 
 @router.get("/imports")
 def list_imports(
-    _: CurrentUser = Depends(require_capability(CAP_HR_READ)),
+    current: CurrentUser = Depends(require_capability(CAP_HR_READ)),
     db: Session = Depends(get_db),
 ) -> list[dict]:
-    """«الملف ده عمل إيه» — سؤال بيتسأل بعد الاستيراد بأسبوع."""
-    rows = db.scalars(
-        select(AttendanceImport).order_by(AttendanceImport.id.desc()).limit(100)).all()
+    """«الملف ده عمل إيه» — سؤال بيتسأل بعد الاستيراد بأسبوع.
+
+    الدفعة مالهاش عمود فرع؛ فرعها فرع اللي استوردها. اللي استورده حساب مركزي (مالوش فرع)
+    ظاهر للكل — نفس قاعدة المستند اللي مالوش فرع في `scope`.
+    """
+    stmt = select(AttendanceImport).order_by(AttendanceImport.id.desc())
+    branch_id = branch_scope.visible_branch_id(current)
+    if branch_id is not None:
+        stmt = stmt.outerjoin(User, User.id == AttendanceImport.actor_user_id).where(
+            or_(User.branch_id == branch_id, User.branch_id.is_(None)))
+    rows = db.scalars(stmt.limit(100)).all()
     return [{
         "id": r.id, "document_number": r.document_number, "filename": r.filename,
         "date_from": r.date_from, "date_to": r.date_to,

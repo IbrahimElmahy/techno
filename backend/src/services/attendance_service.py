@@ -17,7 +17,7 @@ from __future__ import annotations
 
 from datetime import date
 
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from src.lib import attendance_calc as calc
@@ -141,7 +141,9 @@ def add_holiday(
     if not clean:
         raise AttendanceError("اسم العطلة مطلوب.")
     clash = db.scalar(select(Holiday).where(
-        Holiday.holiday_date == holiday_date, Holiday.branch_id.is_(branch_id),
+        Holiday.holiday_date == holiday_date,
+        # `IS 2` مش SQL صالح على بوستجرس — كانت أي عطلة لفرع بعينه بتوقع بـ٥٠٠.
+        Holiday.branch_id.is_(None) if branch_id is None else Holiday.branch_id == branch_id,
         Holiday.active.is_(True)))
     if clash is not None:
         raise AttendanceError("فيه عطلة مسجّلة في نفس اليوم.")
@@ -267,29 +269,37 @@ def delete_day(db: Session, *, day_id: int, actor_user_id: int) -> None:
 # ------------------------------------------------------------------ الاستيراد
 
 
-def _match_employees(db: Session) -> dict[str, int]:
+def _match_employees(db: Session, branch_id: int | None = None) -> dict[str, int]:
     """مفتاح الملف → رقم الموظف. الكود والرقم القومي والاسم، بالترتيب ده.
 
     Which one a device prints depends on how it was set up years ago and nobody remembers, so all
     three are accepted rather than making somebody re-key ninety rows.
+
+    `branch_id`: موظفين الفرع ده (واللي مالهمش فرع) بس — موظف الفرع بيستورد على فرعه، واسم
+    في الملف بيطابق موظف فرع تاني بيطلع «مش متطابق» بدل ما يتكتب عليه حضور في صمت.
     """
+    stmt = select(Employee)
+    if branch_id is not None:
+        stmt = stmt.where(or_(Employee.branch_id == branch_id, Employee.branch_id.is_(None)))
     keys: dict[str, int] = {}
-    for emp in db.scalars(select(Employee)).all():
+    for emp in db.scalars(stmt).all():
         for candidate in (emp.code, emp.national_id, emp.name):
             if candidate:
                 keys.setdefault(str(candidate).strip(), emp.id)
     return keys
 
 
-def preview_import(db: Session, *, rows: list[list[str]], mapping: importer.ColumnMap) -> dict:
+def preview_import(db: Session, *, rows: list[list[str]], mapping: importer.ColumnMap,
+                   branch_id: int | None = None) -> dict:
     """بيقرا الملف ومابيكتبش حاجة — عشان حد يبص قبل ما يلتزم."""
-    return _plan(db, rows=rows, mapping=mapping)
+    return _plan(db, rows=rows, mapping=mapping, branch_id=branch_id)
 
 
-def _plan(db: Session, *, rows: list[list[str]], mapping: importer.ColumnMap) -> dict:
+def _plan(db: Session, *, rows: list[list[str]], mapping: importer.ColumnMap,
+          branch_id: int | None = None) -> dict:
     parsed = importer.parse(rows, mapping)
     folded = importer.fold_days(parsed.punches)
-    keys = _match_employees(db)
+    keys = _match_employees(db, branch_id)
 
     matched, unmatched, locked = [], [], []
     for (key, day), slot in sorted(folded.items(), key=lambda kv: (kv[0][1], kv[0][0])):
@@ -324,10 +334,10 @@ def _plan(db: Session, *, rows: list[list[str]], mapping: importer.ColumnMap) ->
 
 def apply_import(
     db: Session, *, rows: list[list[str]], mapping: importer.ColumnMap, actor_user_id: int,
-    filename: str | None = None,
+    filename: str | None = None, branch_id: int | None = None,
 ) -> dict:
     """بينفّذ الاستيراد. آمن يتعاد: نفس الملف تاني بيعدّل الأيام مش بيكرّرها."""
-    plan = _plan(db, rows=rows, mapping=mapping)
+    plan = _plan(db, rows=rows, mapping=mapping, branch_id=branch_id)
     batch = AttendanceImport(
         document_number=numbering.next_document_number(db, AttendanceImport, "ATT"),
         filename=filename,

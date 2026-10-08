@@ -21,7 +21,7 @@ import { repOptions } from '../../utils/reps';
 export default function ReceiptModal({
   open, onCancel, form, posting, submit, customers, treasuries,
   methodOptions, families, setFamilies, target, setTarget, reps = [],
-  editing = false, treasuryOptional = false, suppliers = [],
+  editing = false, treasuryOptional = false, suppliers = [], initialKind = 'customer',
 }: {
   open: boolean;
   onCancel: () => void;
@@ -43,12 +43,14 @@ export default function ReceiptModal({
   treasuryOptional?: boolean;
   /** الموردين — قبض من مورد (رجّع فلوس). */
   suppliers?: Party[];
+  /** نوع الطرف اللي البوباب بيفتح عليه — «تحصيل» من شاشة ذمم الموظفين بيفتح على «موظف». */
+  initialKind?: PartyKind;
 }) {
   // الطرف (المرحلة ١): عميل افتراضياً زي الأول، والباقي اختيار. في التعديل من قيم السند.
   const [kind, setKind] = React.useState<PartyKind>('customer');
   React.useEffect(() => {
     if (!open) return;
-    setKind('customer');
+    setKind(initialKind);
     if (!editing) return;
     // القيم بتتحط بعد ما البوباب يتركّب (`useQuickVoucher.edit`) — فبنقراها بعدها.
     const t = setTimeout(() => {

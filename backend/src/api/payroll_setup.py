@@ -14,14 +14,17 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from src.auth import branch_scope
 from src.auth.dependencies import CurrentUser, require_capability
 from src.auth.rbac import CAP_HR_READ, CAP_PAYROLL_POST, CAP_SALARY_VIEW
 from src.core.db import get_db
-from src.models.employee import Employee
+from src.models.employee import Employee, JobTitle
+from src.models.hr_org import Department
 from src.models.hr_payroll import (
     ComponentCalc,
     ComponentKind,
     EmployeeSalary,
+    EmployeeSalaryLine,
     PayMethod,
     PayrollSchemeVersion,
     SalaryComponent,
@@ -37,7 +40,7 @@ def _raise(exc: PayrollSetupError):
     text = str(exc)
     if "غير موجود" in text or "غير موجودة" in text:
         raise HTTPException(404, {"code": "not_found", "message": text}) from exc
-    if "استُخدمت في مرتب مرحّل" in text:
+    if "استُخدمت في مرتب مرحّل" in text or "اتحسب عليه مسير مرحّل" in text:
         raise HTTPException(409, {"code": "locked", "message": text}) from exc
     raise HTTPException(422, {"code": "validation", "message": text}) from exc
 
@@ -191,6 +194,55 @@ def deactivate_component(
 # ------------------------------------------------------------- هيكل الراتب
 
 
+@router.get("/salaries")
+def list_salaries(
+    include_inactive: bool = Query(False),
+    branch_id: int | None = Query(None),
+    current: CurrentUser = Depends(require_capability(CAP_SALARY_VIEW)),
+    db: Session = Depends(get_db),
+) -> list[dict]:
+    """كل الموظفين ومعاهم راتبهم الساري — القايمة جاية من جدول الموظفين نفسه.
+
+    الشاشة دي كانت ناقصة خالص: الهيكل كان متخزّن بـ`employee_id` بس مافيش مكان يتكتب فيه،
+    فالمسير كان بيعدّي على كل الموظفين ويلاقي صفر هياكل. دلوقتي الموظف الجديد بيظهر هنا لوحده
+    بـ«مالوش إعدادات»، والموقوف بيستخبى إلا لو اتطلب.
+    """
+    # الموارد البشرية مفصولة بين الفروع: محاسب الفرع بيشوف مرتبات موظفين فرعه بس (واللي
+    # مالهمش فرع — نفس قاعدة الحضور والأجازات في `branch_scope.employee_ids`)، والمالك/الأدمن
+    # الكل أو الفرع المختار من الفلتر فوق.
+    stmt = branch_scope.scope(select(Employee), Employee, current)
+    if not include_inactive:
+        stmt = stmt.where(Employee.active.is_(True))
+    if branch_id:
+        stmt = stmt.where(Employee.branch_id == branch_id)
+    employees = db.scalars(stmt.order_by(Employee.name)).all()
+    titles = {t.id: t.name for t in db.scalars(select(JobTitle)).all()}
+    depts = {d.id: d.name for d in db.scalars(select(Department)).all()}
+    roster = setup.salary_roster(db, list(employees), date.today())
+    out = []
+    for e in employees:
+        entry = roster.get(e.id) or {"versions": 0, "current": None, "upcoming": None}
+        out.append({
+            "employee_id": e.id, "code": e.code, "name": e.name, "active": e.active,
+            "branch_id": e.branch_id,
+            "department": depts.get(e.department_id) if e.department_id else e.department,
+            "job_title": titles.get(e.job_title_id) if e.job_title_id else None,
+            "hire_date": str(e.hire_date) if e.hire_date else None,
+            # الرقم اللي على كارت الموظف — المسير مابيقراهوش؛ بيتعرض عشان يتنقل لهيكل.
+            "card_salary": str(e.salary) if e.salary is not None else None,
+            **entry,
+        })
+    return out
+
+
+def _seen_employee(db: Session, employee_id: int, current: CurrentUser) -> Employee:
+    """الموظف لو في فرع اللي بيسأل — وإلا ٤٠٤. هيكل الراتب مالوش فرع؛ فرعه هو فرع الموظف."""
+    emp = db.get(Employee, employee_id)
+    if emp is None or not branch_scope.may_see(current, emp):
+        raise HTTPException(404, {"code": "not_found", "message": "الموظف غير موجود."})
+    return emp
+
+
 @router.get("/salaries/{employee_id}")
 def employee_salary(
     employee_id: int,
@@ -199,25 +251,53 @@ def employee_salary(
     db: Session = Depends(get_db),
 ) -> dict:
     """هيكل الراتب الساري في يوم — ومعاه كل النسخ عشان الزيادات تتقري."""
-    if db.get(Employee, employee_id) is None:
-        raise HTTPException(404, {"code": "not_found", "message": "الموظف غير موجود."})
-    current = setup.salary_on(db, employee_id, on or date.today())
+    _seen_employee(db, employee_id, current)
+    active = setup.salary_on(db, employee_id, on or date.today())
     history = db.scalars(
         select(EmployeeSalary)
         .where(EmployeeSalary.employee_id == employee_id)
         .order_by(EmployeeSalary.effective_from.desc())
     ).all()
+    raw_lines = db.scalars(select(EmployeeSalaryLine).where(
+        EmployeeSalaryLine.salary_id == active.id)).all() if active else []
     return {
         "employee_id": employee_id,
-        "current": (setup.salary_breakdown(db, current) | {
-            "id": current.id, "effective_from": str(current.effective_from),
-            "payment_method": current.payment_method.value,
-        }) if current else None,
+        "current": (setup.salary_breakdown(db, active) | {
+            "id": active.id, "effective_from": str(active.effective_from),
+            "payment_method": active.payment_method.value,
+            # القيم زي ما اتكتبت (نسبة أو مبلغ) — شاشة التعديل محتاجاها، مش المحسوبة بس.
+            "insurance_base_set": (str(active.insurance_base)
+                                   if active.insurance_base is not None else None),
+            "bank_name": active.bank_name, "bank_account": active.bank_account,
+            "notes": active.notes,
+            "lines": [{"component_id": x.component_id, "amount": str(x.amount),
+                       "pct": str(x.pct) if x.pct is not None else None, "notes": x.notes}
+                      for x in raw_lines],
+        }) if active else None,
         "history": [
-            {"id": h.id, "effective_from": str(h.effective_from), "basic": str(h.basic)}
+            {"id": h.id, "effective_from": str(h.effective_from), "basic": str(h.basic),
+             "locked": setup.used_by_posted_run(db, h)}
             for h in history
         ],
     }
+
+
+@router.delete("/salaries/versions/{salary_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_salary(
+    salary_id: int,
+    current: CurrentUser = Depends(require_capability(CAP_PAYROLL_POST)),
+    db: Session = Depends(get_db),
+) -> None:
+    """مسح نسخة هيكل — اللي قبلها بترجع ساريّة. المستعملة في مسير مرحّل ٤٠٩."""
+    row = db.get(EmployeeSalary, salary_id)
+    if row is None:
+        raise HTTPException(404, {"code": "not_found", "message": "هيكل الراتب غير موجود."})
+    _seen_employee(db, row.employee_id, current)
+    try:
+        setup.delete_salary(db, salary_id=salary_id, actor_user_id=current.id)
+    except PayrollSetupError as exc:
+        _raise(exc)
+    db.commit()
 
 
 @router.post("/salaries", status_code=status.HTTP_201_CREATED)
@@ -228,6 +308,7 @@ def set_salary(
 ) -> dict:
     """الزيادة صف جديد بتاريخ سريان جديد — مش تعديل للقديم، عشان قسيمة الشهر اللي فات
     تفضل زي ما كانت."""
+    _seen_employee(db, body.employee_id, current)
     payload = body.model_dump()
     payload["lines"] = [line for line in (payload.get("lines") or [])] \
         if body.lines is not None else None

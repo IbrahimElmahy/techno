@@ -6,6 +6,7 @@ from datetime import date
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
+from src.auth import branch_scope
 from src.auth.dependencies import CurrentUser, require_capability
 from src.auth.rbac import CAP_HR_READ, CAP_SALARY_VIEW
 from src.core.db import get_db
@@ -55,6 +56,9 @@ def hr_report(
             date_from=date_from, date_to=date_to, year=year, month=month,
             employee_id=employee_id, department_id=department_id, branch_id=branch_id,
             status=status, include_drafts=include_drafts, limit=limit, offset=offset,
+            # مدير الفرع كان بيشوف «الموظفين بالفرع» و«تكلفة الأجور بالفرع» بالتلات فروع —
+            # العزل بفرع الموظف، والفلتر الاختياري `branch_id` بيضيّق جواه بس.
+            scope_branch_id=branch_scope.visible_branch_id(current),
         )
     except HrReportError as exc:
         raise HTTPException(422, {"code": "report_invalid", "message": str(exc)}) from exc
@@ -64,8 +68,9 @@ def hr_report(
 def leave_balances(
     year: int = Query(...),
     employee_id: int | None = Query(None),
-    _: CurrentUser = Depends(require_capability(CAP_HR_READ)),
+    current: CurrentUser = Depends(require_capability(CAP_HR_READ)),
     db: Session = Depends(get_db),
 ) -> dict:
     """أرصدة الأجازات — أيام مش فلوس، فـ`hr.read` كفاية."""
-    return hr_reports.leave_balances(db, year=year, employee_id=employee_id)
+    return hr_reports.leave_balances(db, year=year, employee_id=employee_id,
+                                     scope_branch_id=branch_scope.visible_branch_id(current))

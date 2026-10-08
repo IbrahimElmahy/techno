@@ -186,6 +186,100 @@ def import_departments_from_employees(db: Session, *, actor_user_id: int) -> dic
     return {"created": created, "linked": linked, "employees": len(rows)}
 
 
+# ------------------------------------------------------------- الحذف النهائي
+
+#: أسامي الجداول اللي بتشاور على موظف أو قسم، بالعربي — الرسالة بتتقري من مدير الموارد البشرية
+#: مش من المبرمج، و«payroll_line.employee_id: 12» مالهاش معنى عنده. أي جدول مش هنا بيظهر
+#: باسمه الخام بدل ما يتنسي — الأمان قبل الشكل.
+_REF_LABELS: dict[tuple[str, str], str] = {
+    ("employee", "department_id"): "موظف",
+    ("department", "parent_id"): "قسم فرعي",
+    ("department", "manager_employee_id"): "قسم هو مديره",
+    ("customer", "employee_id"): "عميل مربوط بيه",
+    ("employee_salary", "employee_id"): "هيكل راتب",
+    ("employee_shift_assignment", "employee_id"): "وردية",
+    ("employee_termination", "employee_id"): "نهاية خدمة",
+    ("leave_entitlement", "employee_id"): "رصيد أجازات",
+    ("leave_request", "employee_id"): "طلب أجازة",
+    ("payroll_adjustment", "employee_id"): "جزاء أو مكافأة",
+    ("attendance_day", "employee_id"): "يوم حضور",
+    ("employee_advance", "employee_id"): "سلفة",
+    ("payroll_line", "employee_id"): "سطر مسير رواتب",
+    ("payroll_line", "department_id"): "سطر مسير رواتب",
+}
+
+
+def _blockers(db: Session, referred_table: str, row_id: int) -> list[str]:
+    """كل صف في القاعدة بيشاور على الصف ده، معدود ومتسمّي.
+
+    بيتقري من القاعدة نفسها (زي مسح المستخدم والمخزن) مش من قايمة مكتوبة بالإيد — جدول يتضاف
+    بكرة ويشاور على الموظف لازم يمنع المسح من غير ما حد يفتكر يحدّث القايمة.
+    """
+    from sqlalchemy import inspect as sa_inspect
+    from sqlalchemy import text
+
+    found: list[str] = []
+    insp = sa_inspect(db.get_bind())
+    for table in insp.get_table_names():
+        for fk in insp.get_foreign_keys(table):
+            if fk.get("referred_table") != referred_table:
+                continue
+            col = fk["constrained_columns"][0]
+            n = db.execute(text(f'SELECT count(*) FROM "{table}" WHERE "{col}" = :i'),
+                           {"i": row_id}).scalar() or 0
+            if n:
+                found.append(f"{_REF_LABELS.get((table, col), f'{table}.{col}')}: {n}")
+    return found
+
+
+def delete_department(db: Session, *, department_id: int, actor_user_id: int) -> None:
+    """مسح نهائي — **للغلط في الإدخال بس**: قسم اتعمل بالخطأ أو مكرر ومحدش اتربط بيه.
+
+    أي موظف (حتى الموقوف)، أو قسم فرعي، أو سطر مسير اتحسب على القسم — بيمنع المسح. الموظف
+    الموقوف لسه اسمه على مسيرات قديمة وتقاريرها بتتجمّع بقسمه؛ مسح القسم من تحته بيخلّي التقرير
+    يقول «بدون قسم» عن ناس كانوا في قسم. والصح ساعتها «إقفال»: بيشيله من القوايم ويسيب التاريخ.
+    """
+    dept = db.get(Department, department_id)
+    if dept is None:
+        raise HrError("القسم غير موجود.")
+    found = _blockers(db, "department", department_id)
+    if found:
+        raise HrError("القسم ده مربوط بيه " + " · ".join(found[:6])
+                      + " — فمينفعش يتمسح. انقل موظفينه لقسم تاني، أو استعمل «إقفال» بدل المسح.")
+    audit_service.record(
+        db, action="department.delete", actor_user_id=actor_user_id,
+        entity_type="department", entity_id=dept.id,
+        before={"code": dept.code, "name": dept.name, "parent_id": dept.parent_id},
+    )
+    db.delete(dept)
+    db.flush()
+
+
+def delete_employee(db: Session, *, employee: Employee, actor_user_id: int) -> None:
+    """مسح نهائي للموظف — **للغلط في الإدخال بس**: كارت مكرر أو اتعمل بالخطأ ومالوش تاريخ.
+
+    موظف عليه مسير أو سلفة أو حضور أو أجازة اسمه جزء من دفاتر الشركة؛ مسحه بيسيب قسايم
+    مرتبات بتشاور على حد مش موجود. ولو مربوط بحساب دخول فهو مندوب أو مستخدم شغّال، وحساب
+    الذمة بتاعه عليه قيود. كل ده بيرفض بالأرقام، والصح ساعتها «إيقاف».
+    """
+    found = _blockers(db, "employee", employee.id)
+    if employee.user_id is not None:
+        found.insert(0, "حساب دخول (مستخدم أو مندوب)")
+    if employee.receivable_account_id is not None:
+        found.insert(0, "حساب ذمة في الدفتر")
+    if found:
+        raise HrError("الموظف ده مربوط بيه " + " · ".join(found[:6])
+                      + " — فمينفعش يتمسح. استعمل «إيقاف» بدل المسح.")
+    audit_service.record(
+        db, action="employee.delete", actor_user_id=actor_user_id,
+        entity_type="employee", entity_id=employee.id,
+        before={"code": employee.code, "name": employee.name,
+                "department_id": employee.department_id, "branch_id": employee.branch_id},
+    )
+    db.delete(employee)
+    db.flush()
+
+
 # ----------------------------------------------------------- نهاية الخدمة
 
 

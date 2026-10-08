@@ -81,14 +81,66 @@ class TerminationOut(BaseModel):
     settlement_amount: Decimal | None
 
 
-def _counts(db: Session) -> dict[int, int]:
-    """عدد الموظفين النشطين في كل قسم — استعلام واحد مش واحد لكل صف."""
-    rows = db.execute(
+def _counts(db: Session, current: CurrentUser | None = None) -> dict[int, int]:
+    """عدد الموظفين النشطين في كل قسم — استعلام واحد مش واحد لكل صف.
+
+    ومتعزل بالفرع زي قايمة الموظفين نفسها: قسم مالوش فرع (المبيعات مثلاً) ظاهر لكل الفروع،
+    ومن غير العزل مدير فرع أكتوبر كان هيشوف «١٢ موظف» ولما يفتح القسم يلاقي ٣ — العدد لازم
+    يطابق اللي هيتعرض لما يضغط عليه.
+    """
+    stmt = (
         select(Employee.department_id, func.count())
         .where(Employee.department_id.is_not(None), Employee.active.is_(True))
         .group_by(Employee.department_id)
-    ).all()
-    return {dept_id: n for dept_id, n in rows}
+    )
+    if current is not None:
+        stmt = branch_scope.scope(stmt, Employee, current)
+    return {dept_id: n for dept_id, n in db.execute(stmt).all()}
+
+
+def _seen_department(db: Session, department_id: int, current: CurrentUser) -> Department:
+    """القسم لو اللي بيسأل يشوفه — و٤٠٤ لو لأ (نفس قاعدة `_seen_employee`).
+
+    القايمة متعزلة بالفرع، فالرابط المباشر بالرقم لازم يتعزل هو كمان — وإلا مدير فرع
+    بيعدّل أو يقفل أو يمسح قسم فرع تاني بمجرد إنه يعرف رقمه.
+    """
+    dept = db.scalar(branch_scope.scope(
+        select(Department).where(Department.id == department_id), Department, current))
+    if dept is None:
+        raise HTTPException(404, {"code": "not_found", "message": "القسم غير موجود."})
+    return dept
+
+
+def _writable_department(db: Session, department_id: int, current: CurrentUser) -> Department:
+    """القسم لو اللي بيسأل يقدر **يغيّره** — مش بس يشوفه.
+
+    قسم فرع تاني: ٤٠٤ (من `_seen_department`). وقسم مالوش فرع (مشترك — زي اللي اتعمل من
+    ترحيل النص القديم): بيظهر لموظف الفرع عشان موظفينه متسجّلين فيه، لكن تعديله أو إقفاله أو
+    مسحه بيأثر على كل الفروع مرة واحدة — فده للّي فوق الفروع بس، مش لموظف فرع واحد.
+    """
+    dept = _seen_department(db, department_id, current)
+    if dept.branch_id is None and not branch_scope.sees_all_branches(current):
+        raise HTTPException(403, {"code": "shared_department",
+                                  "message": "القسم ده مشترك بين الفروع — تعديله من الإدارة العامة."})
+    return dept
+
+
+def _scope_fields(db: Session, current: CurrentUser, fields: dict, *, creating: bool) -> None:
+    """الفرع والروابط على مقاس اللي بيكتب — HR متفصّل بين الفروع.
+
+    * موظف الفرع: القسم بياخد فرعه هو، دايماً — إنشاء أو نقل. من غير كده كان يقدر يعمل قسم
+      «لفرع أكتوبر» من حساب العلياء، أو يسيبه فاضي فيبقى مشترك يظهر عند الكل.
+    * القسم الأب والمدير لازم يكونوا ظاهرين له؛ رقم من فرع تاني بيترفض بنفس ٤٠٤ — مايتقالش
+      له إن الرقم ده موجود عند حد تاني.
+    """
+    if not branch_scope.sees_all_branches(current) and (creating or "branch_id" in fields):
+        fields["branch_id"] = current.branch_id
+    if fields.get("parent_id") is not None:
+        _seen_department(db, fields["parent_id"], current)
+    if fields.get("manager_employee_id") is not None:
+        mgr = db.get(Employee, fields["manager_employee_id"])
+        if mgr is None or not branch_scope.may_see(current, mgr):
+            raise HTTPException(404, {"code": "not_found", "message": "المدير المختار غير موجود."})
 
 
 def _dept_out(db: Session, d: Department, counts: dict[int, int] | None = None) -> DepartmentOut:
@@ -128,7 +180,7 @@ def list_departments(
     ).order_by(Department.code)
     if active_only:
         stmt = stmt.where(Department.active.is_(True))
-    counts = _counts(db)
+    counts = _counts(db, current)
     return [_dept_out(db, d, counts) for d in db.scalars(stmt).all()]
 
 
@@ -138,12 +190,14 @@ def create_department(
     current: CurrentUser = Depends(require_capability(CAP_HR_WRITE)),
     db: Session = Depends(get_db),
 ) -> DepartmentOut:
+    fields = body.model_dump()
+    _scope_fields(db, current, fields, creating=True)
     try:
         dept = hr_service.create_department(
-            db, actor_user_id=current.id, **body.model_dump())
+            db, actor_user_id=current.id, **fields)
     except HrError as exc:
         raise HTTPException(422, {"code": "validation", "message": str(exc)}) from exc
-    out = _dept_out(db, dept)
+    out = _dept_out(db, dept, _counts(db, current))
     db.commit()
     return out
 
@@ -151,13 +205,11 @@ def create_department(
 @router.get("/departments/{department_id}", response_model=DepartmentOut)
 def get_department(
     department_id: int,
-    _: CurrentUser = Depends(require_capability(CAP_HR_READ)),
+    current: CurrentUser = Depends(require_capability(CAP_HR_READ)),
     db: Session = Depends(get_db),
 ) -> DepartmentOut:
-    dept = db.get(Department, department_id)
-    if dept is None:
-        raise HTTPException(404, {"code": "not_found", "message": "القسم غير موجود."})
-    return _dept_out(db, dept)
+    dept = _seen_department(db, department_id, current)
+    return _dept_out(db, dept, _counts(db, current))
 
 
 @router.patch("/departments/{department_id}", response_model=DepartmentOut)
@@ -167,15 +219,17 @@ def update_department(
     current: CurrentUser = Depends(require_capability(CAP_HR_WRITE)),
     db: Session = Depends(get_db),
 ) -> DepartmentOut:
+    _writable_department(db, department_id, current)
+    fields = body.model_dump(exclude_unset=True)
+    _scope_fields(db, current, fields, creating=False)
     try:
         dept = hr_service.update_department(
-            db, department_id=department_id, actor_user_id=current.id,
-            **body.model_dump(exclude_unset=True))
+            db, department_id=department_id, actor_user_id=current.id, **fields)
     except HrError as exc:
         code = "not_found" if "غير موجود" in str(exc) else "validation"
         raise HTTPException(404 if code == "not_found" else 422,
                             {"code": code, "message": str(exc)}) from exc
-    out = _dept_out(db, dept)
+    out = _dept_out(db, dept, _counts(db, current))
     db.commit()
     return out
 
@@ -183,13 +237,23 @@ def update_department(
 @router.delete("/departments/{department_id}", status_code=status.HTTP_204_NO_CONTENT)
 def deactivate_department(
     department_id: int,
+    hard: bool = Query(False),
     current: CurrentUser = Depends(require_capability(CAP_HR_WRITE)),
     db: Session = Depends(get_db),
 ) -> None:
-    """بيتقفل، مابيتمسحش (FR-023)."""
+    """بيتقفل، مابيتمسحش (FR-023) — و`hard=true` بيمسحه **بشرط إن مافيش حاجة مربوطة بيه**.
+
+    نفس اتفاق المخازن والعملاء: الإقفال هو الافتراضي والمسح للغلط في الإدخال، والسيرفر بيرفض
+    المسح بالأرقام لو القسم عليه موظف أو قسم فرعي أو مسير.
+    """
+    _writable_department(db, department_id, current)
     try:
-        hr_service.deactivate_department(
-            db, department_id=department_id, actor_user_id=current.id)
+        if hard:
+            hr_service.delete_department(
+                db, department_id=department_id, actor_user_id=current.id)
+        else:
+            hr_service.deactivate_department(
+                db, department_id=department_id, actor_user_id=current.id)
     except HrError as exc:
         if "غير موجود" in str(exc):
             raise HTTPException(404, {"code": "not_found", "message": str(exc)}) from exc
@@ -202,7 +266,14 @@ def import_departments(
     current: CurrentUser = Depends(require_capability(CAP_HR_WRITE)),
     db: Session = Depends(get_db),
 ) -> dict:
-    """بيحوّل نص «القسم» القديم لأقسام حقيقية — مرة واحدة، وبضغطة من المستخدم."""
+    """بيحوّل نص «القسم» القديم لأقسام حقيقية — مرة واحدة، وبضغطة من المستخدم.
+
+    للّي فوق الفروع بس: الترحيل بيلف على موظفين **كل** الفروع وبيعمل أقسام مشتركة، وده مش
+    قرار موظف فرع واحد.
+    """
+    if not branch_scope.sees_all_branches(current):
+        raise HTTPException(403, {"code": "forbidden",
+                                  "message": "ترحيل الأقسام القديمة من الإدارة العامة بس."})
     result = hr_service.import_departments_from_employees(db, actor_user_id=current.id)
     db.commit()
     return result
@@ -215,10 +286,12 @@ def import_departments(
 def list_terminations(
     date_from: date | None = Query(None),
     date_to: date | None = Query(None),
-    _: CurrentUser = Depends(require_capability(CAP_HR_READ)),
+    current: CurrentUser = Depends(require_capability(CAP_HR_READ)),
     db: Session = Depends(get_db),
 ) -> list[TerminationOut]:
     stmt = select(EmployeeTermination).order_by(EmployeeTermination.end_date.desc())
+    # نهاية الخدمة مالهاش فرع — فرعها فرع الموظف.
+    stmt = branch_scope.scope_by_employee(stmt, EmployeeTermination.employee_id, current)
     if date_from:
         stmt = stmt.where(EmployeeTermination.end_date >= date_from)
     if date_to:
@@ -233,6 +306,8 @@ def terminate_employee(
     current: CurrentUser = Depends(require_capability(CAP_HR_WRITE)),
     db: Session = Depends(get_db),
 ) -> TerminationOut:
+    if not branch_scope.may_touch_employee(db, current, body.employee_id):
+        raise HTTPException(404, {"code": "not_found", "message": "الموظف غير موجود."})
     try:
         row = hr_service.terminate(db, actor_user_id=current.id, **body.model_dump())
     except HrError as exc:
@@ -253,6 +328,8 @@ def reinstate_employee(
     db: Session = Depends(get_db),
 ) -> None:
     """بيلغي نهاية خدمة اتسجّلت بالغلط — ده تصحيح إدخال مش حذف بيانات."""
+    if not branch_scope.may_touch_employee(db, current, employee_id):
+        raise HTTPException(404, {"code": "not_found", "message": "الموظف غير موجود."})
     try:
         hr_service.reinstate(db, employee_id=employee_id, actor_user_id=current.id)
     except HrError as exc:
