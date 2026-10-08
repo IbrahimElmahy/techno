@@ -601,13 +601,11 @@ const IncomeSheet: React.FC = () => {
         tabs={[
           { key: 'sheet', label: 'القائمة' },
           { key: 'details', label: 'التفاصيل' },
-          { key: 'period', label: 'الجرد والتسويات' },
         ]}
         activeTab={tab as any}
         onTabChange={(k) => setTab(k)}
         actions={(<>
           <Button icon={<PrinterOutlined />} onClick={doPrint} disabled={!data}>طباعة</Button>
-          <Button icon={<FileExcelOutlined />} onClick={doExport} disabled={!data}>إكسل</Button>
           <Button icon={<ReloadOutlined />} onClick={load} disabled={!range}>تحديث</Button>
           {canEdit ? (
             <Button icon={<SettingOutlined />} type={tab === 'settings' ? 'primary' : 'default'}
@@ -639,9 +637,8 @@ const IncomeSheet: React.FC = () => {
         {tab === 'sheet' ? (!range ? empty : loading && !data ? <Spin /> : statement)
           : tab === 'details' ? (!range ? empty : loading && !data ? <Spin />
             : (data ? <Spin spinning={loading}>{sheet}</Spin> : null))
-          : tab === 'period' ? (
-            <PeriodInputs data={data} range={range} branchId={branchId} canEdit={canEdit} onSaved={load} />
-          ) : <SettingsTab branchId={branchId} canEdit={canEdit} onSaved={load} />}
+          : tab === 'settings' && canEdit ? <SettingsTab branchId={branchId} canEdit={canEdit} onSaved={load} />
+          : (!range ? empty : statement)}
       </ListPage>
 
       <Modal open={!!drill} onCancel={() => setDrill(null)} footer={null} width={900} title={drill?.title} destroyOnClose>
