@@ -27,6 +27,7 @@ const BASE_TITLES: Record<string, string> = {
   '/stock-value': 'قيمة المخزون',
   '/sales-reports': 'تقارير المبيعات',
   '/purchase-reports': 'تقارير المشتريات',
+  '/stock-reports': 'تقارير المخازن',
   '/item-card': 'كارت الصنف',
   '/stock-permits': 'أذونات المخزن',
   '/stocktake': 'جرد حتى تاريخ',

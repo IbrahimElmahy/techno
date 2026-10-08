@@ -1,4 +1,5 @@
 import { SALES_PRESETS, PURCHASE_PRESETS, type Preset } from '../pages/tradeAnalysisPresets';
+import { STOCK_PRESETS } from '../pages/stockAnalysisPresets';
 
 export interface NavScreen {
   key: string;
@@ -130,7 +131,15 @@ export const NAVIGATION: (NavGroup | NavScreen)[] = [
           { key: '/stock-sheet?view=count', label: 'جرد المخازن', roles: R(STOCK), a5: '/inventorycount' },
           { key: '/stock-counts', label: 'دورة الجرد (عدّ وتسوية)', roles: STOCK },
           { key: '/stocktake', label: 'جرد حتى تاريخ', roles: R(STOCK), a5: '/inventory/period-inventory' },
+          ...STOCK_PRESETS.filter((p) => p.group === 'جرد').map((p) => ({
+            key: `/stock-reports?preset=${p.key}`, label: p.label, roles: R(STOCK) })),
         ],
+      },
+      {
+        key: 'grp-stock-reports',
+        label: 'تقارير مخزنية',
+        children: STOCK_PRESETS.filter((p) => p.group !== 'جرد').map((p) => ({
+          key: `/stock-reports?preset=${p.key}`, label: p.label, roles: R(STOCK) })),
       },
       { key: '/stock-permits?kind=receipt', label: 'إذن إضافة', roles: STOCK, a5: '/storeins/create' },
       { key: '/stock-permits?kind=issue', label: 'إذن صرف', roles: STOCK, a5: '/storeouts/create' },

@@ -27,6 +27,7 @@ const StockSheet = lazy(() => import('../pages/StockSheet'));
 const StockAlerts = lazy(() => import('../pages/StockAlerts'));
 const StockValue = lazy(() => import('../pages/StockValue'));
 const TradeAnalysis = lazy(() => import('../pages/TradeAnalysis'));
+const StockAnalysis = lazy(() => import('../pages/StockAnalysis'));
 const Categories = lazy(() => import('../pages/Categories'));
 const PendingScreen = lazy(() => import('../pages/PendingScreen'));
 const PurchaseReturns = lazy(() => import('../pages/PurchaseReturns'));
@@ -149,6 +150,7 @@ export default function PageRoutes({ location }: { location?: string }) {
       <Route path="/stock-value" element={<StockValue />} />
       <Route path="/sales-reports" element={<TradeAnalysis side="sales" />} />
       <Route path="/purchase-reports" element={<TradeAnalysis side="purchases" />} />
+      <Route path="/stock-reports" element={<StockAnalysis />} />
       <Route path="/item-card" element={<ItemCard />} />
       <Route path="/stock-permits" element={<StockPermits />} />
       <Route path="/stocktake" element={<Stocktake />} />

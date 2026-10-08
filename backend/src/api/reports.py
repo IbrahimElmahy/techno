@@ -12,7 +12,8 @@ from sqlalchemy.orm import Session
 from src.auth.dependencies import CurrentUser, require_capability
 from src.auth.rbac import CAP_SALES_READ, CAP_STOCK_READ
 from src.core.db import get_db
-from src.lib import health, report_statement, reporting, stocktake, trade_analysis, trade_reports
+from src.lib import (health, report_statement, reporting, stock_analysis, stocktake,
+                     trade_analysis, trade_reports)
 from src.models.customer import Customer
 from src.models.ledger import Account, AccountType
 from src.models.purchasing import PurchaseInvoice
@@ -123,6 +124,28 @@ def trade_analysis_report(
             item_id=item_id, category=category, price_tier=price_tier, kind=kind,
             include_bonus=include_bonus)
     except trade_analysis.TradeAnalysisError as exc:
+        raise HTTPException(422, {"code": "report_invalid", "message": str(exc)}) from exc
+
+
+@router.get("/stock-analysis")
+def stock_analysis_report(
+    dims: str | None = Query(None),
+    date_from: date | None = Query(None), date_to: date | None = Query(None),
+    branch_id: int | None = Query(None), warehouse_id: int | None = Query(None),
+    item_id: int | None = Query(None), category: str | None = Query(None),
+    include_custody: bool = Query(False), hide_zero: bool = Query(True),
+    current: CurrentUser = Depends(require_capability(CAP_STOCK_READ)),
+    db: Session = Depends(get_db),
+):
+    scoped = branch_scope.visible_branch_id(current)
+    try:
+        return stock_analysis.analyse(
+            db, dims=[d.strip() for d in (dims or "").split(",") if d.strip()],
+            date_from=date_from, date_to=date_to,
+            branch_id=scoped if scoped is not None else branch_id,
+            warehouse_id=warehouse_id, item_id=item_id, category=category,
+            include_custody=include_custody, hide_zero=hide_zero)
+    except stock_analysis.StockAnalysisError as exc:
         raise HTTPException(422, {"code": "report_invalid", "message": str(exc)}) from exc
 
 
