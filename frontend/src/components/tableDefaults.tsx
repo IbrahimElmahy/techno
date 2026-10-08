@@ -246,8 +246,11 @@ function withDefaults(
   }
 
   if (props.sticky === undefined && !next.scroll?.y && !nested) {
+    const sx = next.scroll?.x;
+    const x = sx === 'max-content' || sx === true ? contentWidth(next) : undefined;
     next = {
       ...next,
+      ...(x ? { scroll: { ...next.scroll, x } } : {}),
       sticky: STICKY,
       tableLayout: 'fixed',
     };
