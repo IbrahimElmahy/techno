@@ -104,7 +104,7 @@ export default function UserPermissions() {
       const denies = Object.entries(diff).filter(([, v]) => !v).map(([k]) => k);
       const d: Perms = (await api.put(`/api/v1/permissions/users/${perms.user.id}`, { grants, denies })).data;
       setPerms(d);
-      message.success('اتحفظت صلاحيات المستخدم — هتتطبّق عنده من أول طلب جاي');
+      message.success('تم حفظ صلاحيات المستخدم، وستُطبَّق من الطلب التالي');
       loadUsers();
     } catch (e: any) {
       message.error(e?.response?.data?.detail?.message || 'تعذر الحفظ');
@@ -116,7 +116,7 @@ export default function UserPermissions() {
       .sort((a, b) => String(a[0]).localeCompare(String(b[0]))));
 
   const mark = (t: Tri) => (t.on !== t.def
-    ? <Tag color={t.on ? 'green' : 'red'} style={{ marginInlineStart: 6 }}>{t.on ? 'مدّاة له' : 'مقفولة عليه'}</Tag>
+    ? <Tag color={t.on ? 'green' : 'red'} style={{ marginInlineStart: 6 }}>{t.on ? 'ممنوحة له' : 'محجوبة عنه'}</Tag>
     : null);
 
   const pageRow = (s: NavScreen) => {
@@ -159,7 +159,7 @@ export default function UserPermissions() {
             const canTurnOn = assignable.has(c.key);
             return (
               <div key={c.key} className="up-row">
-                <Tooltip title={!t.on && !canTurnOn ? 'مش عندك الصلاحية دي — ماتقدرش تدّيها' : c.key}>
+                <Tooltip title={!t.on && !canTurnOn ? 'لا تملك هذه الصلاحية، فلا يمكنك منحها' : c.key}>
                   <Checkbox checked={t.on} disabled={!t.on && !canTurnOn}
                     onChange={(e) => toggle(c.key, t.def, e.target.checked)}>
                     {c.label}
@@ -180,8 +180,7 @@ export default function UserPermissions() {
     <ListPage
       icon={<SafetyCertificateOutlined />}
       title="صلاحيات المستخدمين"
-      muted={isAdmin ? '(كل الفروع)' : '(مستخدمين فرعك)'}
-      subtitle="صفحات النظام وعملياته وكروت التطبيق لكل مستخدم — فوق صلاحيات دوره"
+      muted={isAdmin ? '(كل الفروع)' : '(مستخدمو فرعك)'}
     >
       <div className="up-layout">
         <aside className="up-users">
@@ -189,7 +188,7 @@ export default function UserPermissions() {
             value={q} onChange={(e) => setQ(e.target.value)} />
           <div className="up-users-list">
             {loadingUsers ? <Spin style={{ margin: 24 }} /> : shownUsers.length === 0 ? (
-              <Empty description="مافيش مستخدمين" />
+              <Empty description="لا يوجد مستخدمون" />
             ) : shownUsers.map((u) => (
               <button type="button" key={u.id}
                 className={`up-user${selected === u.id ? ' is-on' : ''}${u.active ? '' : ' is-off'}`}
@@ -206,7 +205,7 @@ export default function UserPermissions() {
 
         <section className="up-detail">
           {!selected ? (
-            <Empty style={{ marginTop: 80 }} description="اختار مستخدم من القايمة" />
+            <Empty style={{ marginTop: 80 }} description="اختر مستخدماً من القائمة" />
           ) : loading || !perms ? (
             <Spin style={{ margin: 80 }} />
           ) : (
@@ -222,7 +221,7 @@ export default function UserPermissions() {
                 </div>
                 <Space>
                   <Button icon={<UndoOutlined />} disabled={Object.keys(diff).length === 0}
-                    onClick={() => setDiff({})}>رجوع لصلاحيات الدور</Button>
+                    onClick={() => setDiff({})}>الرجوع إلى صلاحيات الدور</Button>
                   <Button type="primary" icon={<SaveOutlined />} loading={saving}
                     disabled={!changed} onClick={save}>حفظ</Button>
                 </Space>

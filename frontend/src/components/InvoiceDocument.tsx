@@ -120,7 +120,7 @@ function footerColumns(
     col3.push(row('الباقي', cur(left), true));
   }
   if (d.kind === 'sale' && d.otherFamilyBalance != null) {
-    col3.push(row(`مديونية ${d.otherFamily || 'الخط التاني'}`, cur(d.otherFamilyBalance)));
+    col3.push(row(`مديونية ${d.otherFamily || 'الخط الثاني'}`, cur(d.otherFamilyBalance)));
   }
   if (Number(d.totalPoints || 0) > 0) {
     col3.push(row('نقاط الولاء', `${pts(d.totalPoints)} نقطة`));

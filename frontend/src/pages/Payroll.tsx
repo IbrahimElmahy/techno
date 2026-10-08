@@ -73,7 +73,7 @@ interface RunDetail extends Run {
 const STATUS: Record<string, { label: string; color?: string }> = {
   draft: { label: 'مسودة', color: 'orange' },
   posted: { label: 'مرحّل', color: 'green' },
-  reversed: { label: 'متعكس', color: 'red' },
+  reversed: { label: 'معكوس', color: 'red' },
 };
 
 export function periodLabel(year: number, month: number): string {
@@ -131,7 +131,7 @@ export default function Payroll() {
       });
       setDetail(res.data);
       setTab('detail');
-      message.success(`اتحسب ${res.data.employees} موظف`);
+      message.success(`تم حساب ${res.data.employees} موظف`);
       load();
     } catch (err: any) { fail(err, 'تعذر حساب المسير'); } finally { setBusy(false); }
   };
@@ -145,7 +145,7 @@ export default function Payroll() {
       if (res.data.skipped) {
         message.info(what === 'post' ? 'المسير مرحّل بالفعل' : 'لا توجد رواتب مستحقة للصرف');
       } else {
-        message.success({ post: 'اترحّل', reverse: 'اتعكس', pay: 'اتصرف' }[what]);
+        message.success({ post: 'تم الترحيل', reverse: 'تم العكس', pay: 'تم الصرف' }[what]);
       }
       await openRun(detail.id);
       load();
@@ -162,14 +162,14 @@ export default function Payroll() {
   };
 
   const saveRemit = async () => {
-    if (!remitForm.amount) { message.warning('اكتب المبلغ'); return; }
+    if (!remitForm.amount) { message.warning('أدخل المبلغ'); return; }
     try {
       await api.post('/api/v1/hr/payroll/remittances', {
         kind: remitForm.kind,
         amount: String(remitForm.amount),
         remit_date: remitForm.remit_date.format('YYYY-MM-DD'),
       });
-      message.success('اتسدّد');
+      message.success('تم السداد');
       setRemitOpen(false);
     } catch (err: any) { fail(err, 'تعذر السداد'); }
   };
@@ -215,7 +215,7 @@ export default function Payroll() {
     { title: 'الصافي', dataIndex: 'net', key: 'net', width: 130,
       render: (v: string) => <b style={{ color: '#0B5CA8' }}>{money(v)}</b> },
     { title: '', dataIndex: 'paid', key: 'paid', width: 80,
-      render: (v: boolean) => (v ? <Tag color="green">اتصرف</Tag> : null) },
+      render: (v: boolean) => (v ? <Tag color="green">تم الصرف</Tag> : null) },
   ];
 
   const runTable = useTableColumns('payroll-runs', runCols, {
@@ -259,9 +259,6 @@ export default function Payroll() {
       title="مسير الرواتب"
       muted={inDetail && detail
         ? `(${detail.document_number} · ${periodLabel(detail.year, detail.month)})` : undefined}
-      subtitle={inDetail
-        ? 'الترحيل بيكتب القيد ويقفل حضور الشهر — والتصحيح بعده بالعكس مش بالتعديل.'
-        : 'الحساب بيعمل مسودة — مابيلمسش الأستاذ، وينفع يتعاد.'}
       actions={!inDetail || !detail ? (<>
         <DatePicker picker="month" format="YYYY/MM" allowClear={false}
           value={period} onChange={(v) => setPeriod(v || dayjs())} />
@@ -272,13 +269,13 @@ export default function Payroll() {
         {runTable.control}
         <Button icon={<ReloadOutlined />} onClick={load}>تحديث</Button>
       </>) : (<>
-        <Button onClick={() => { setDetail(null); setTab('runs'); }}>رجوع للقايمة</Button>
+        <Button onClick={() => { setDetail(null); setTab('runs'); }}>العودة إلى القائمة</Button>
         <Tag color={STATUS[detail.status]?.color} style={{ fontSize: 15, marginInlineEnd: 0 }}>
           {STATUS[detail.status]?.label}
         </Tag>
         {detail.status === 'draft' ? (
           <Popconfirm
-            title="ترحّل المسير؟"
+            title="ترحيل المسير؟"
             description="سيُكتب قيد في الأستاذ، ويُغلق حضور الشهر. والتصحيح بعد ذلك يكون بالعكس لا بالتعديل."
             okText="ترحيل" cancelText="رجوع"
             onConfirm={() => act('post')}
@@ -288,7 +285,7 @@ export default function Payroll() {
           </Popconfirm>
         ) : null}
         {posted && detail.paid < detail.employees ? (
-          <Popconfirm title="تصرف المرتبات؟"
+          <Popconfirm title="صرف المرتبات؟"
             description="مدين مرتبات مستحقة / دائن الخزنة."
             okText="صرف" cancelText="رجوع" onConfirm={() => act('pay')}>
             <Button icon={<DollarOutlined />} loading={busy}>صرف المرتبات</Button>
@@ -296,7 +293,7 @@ export default function Payroll() {
         ) : null}
         {posted ? (
           <Popconfirm
-            title="تعكس المسير؟"
+            title="عكس المسير؟"
             description="سيُعكس القيد ويعود الشهر مفتوحاً. ويبقى المستند برقمه."
             okText="عكس" cancelText="رجوع" okButtonProps={{ danger: true }}
             onConfirm={() => act('reverse')}
@@ -347,13 +344,13 @@ export default function Payroll() {
           {detail.without_salary?.length ? (
             <Alert
               type="error" showIcon style={{ margin: '6px 0 8px' }}
-              message={`${detail.without_salary.length} موظف على رأس العمل مادخلوش المسير — مالهمش إعدادات راتب`}
+              message={`${detail.without_salary.length} موظف على رأس العمل لم يدخلوا المسير — ليست لهم إعدادات راتب`}
               description={(
                 <>
                   {detail.without_salary.slice(0, 12).map((e) => e.name).join('، ')}
                   {detail.without_salary.length > 12 ? ` و${detail.without_salary.length - 12} غيرهم` : ''}
                   {' — '}
-                  <a onClick={() => navigate('/employee-salaries')}>حط إعداداتهم من «رواتب الموظفين»</a>
+                  <a onClick={() => navigate('/employee-salaries')}>أدخل إعداداتهم من «رواتب الموظفين»</a>
                   {' ثم أعد حساب الشهر.'}
                 </>
               )}
@@ -362,12 +359,9 @@ export default function Payroll() {
           {detail.without_attendance ? (
             <Alert
               type="warning" showIcon style={{ margin: '6px 0 8px' }}
-              message={`${detail.without_attendance} موظف من غير سجل حضور — اتحسبوا حضور كامل`}
-              description={'«لم يُرفع الملف» ليست «غياب الشهر كله». احتُسب لهم راتب كامل عن قصد، '
-                + 'لكن يجب أن يعلم أحد بحدوث ذلك قبل الترحيل.'}
+              message={`${detail.without_attendance} موظف بدون سجل حضور — احتُسب لهم حضور كامل`}
             />
           ) : null}
-
           <Table
             {...lineKb.tableProps}
             className="sl-table"
@@ -446,11 +440,6 @@ export default function Payroll() {
         open={remitOpen} title="سداد تأمينات / ضريبة" onCancel={() => setRemitOpen(false)}
         onOk={saveRemit} okText="سداد" cancelText="إلغاء" destroyOnClose
       >
-        <Alert
-          type="info" showIcon style={{ marginBottom: 12 }}
-          message="بيقفل الالتزام من الخزنة"
-          description="بدونه يكبر الحساب بلا نهاية: يُرحِّل عليه المسيّر كل شهر ولا أحد يقفله."
-        />
         <Row gutter={[10, 10]}>
           <Col span={10}>
             <div style={{ marginBottom: 4 }}>النوع</div>

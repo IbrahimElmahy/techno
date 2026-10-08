@@ -90,7 +90,6 @@ export default function Governorates() {
     <ListPage
       icon={<EnvironmentOutlined />}
       title="المحافظات"
-      subtitle="أعلى مستوى في الهيكل — المحافظة فوق الفرع فوق المنطقة"
       actions={(<>
         <Button type="primary" className="sl-create" icon={<PlusOutlined />}
           onClick={() => { setEditing({ id: 0, name: '' }); setName(''); }}>

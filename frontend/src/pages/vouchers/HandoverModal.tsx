@@ -49,8 +49,7 @@ export default function HandoverModal({
                       placeholder="اختر المندوب"
                       options={repOptions(reps)} filterOption={searchFilter} filterSort={searchRank}/>
                   </Form.Item>
-                  <Form.Item name="family" label="من صندوق خط"
-                    extra="سيبها فاضية للعهدة القديمة اللي قبل تقسيم الصناديق">
+                  <Form.Item name="family" label="من صندوق خط">
                     <Select
                       allowClear
                       style={{ width: 240 }}
@@ -77,7 +76,7 @@ export default function HandoverModal({
                     <Input placeholder="اختياري" style={{ width: 180 }} />
                   </Form.Item>
                   <Form.Item name="statement1" label="بيان السند">
-                    <Input placeholder="الكلام المكتوب على ورقة السند" style={{ width: 220 }} />
+                    <Input placeholder="النص المكتوب على ورقة السند" style={{ width: 220 }} />
                   </Form.Item>
                   <Form.Item name="external_document_number" label="رقم المستند">
                     <Input placeholder="رقم السند الورقي" style={{ width: 160 }} />

@@ -465,7 +465,7 @@ export default function Invoices() {
       setPointValues(pts);
     } catch (err: any) {
       console.error(err);
-      message.error(err?.response?.data?.detail?.message || 'تعذر تحميل قوايم الشاشة');
+      message.error(err?.response?.data?.detail?.message || 'تعذر تحميل قوائم الشاشة');
     }
   };
 
@@ -683,16 +683,16 @@ export default function Invoices() {
     });
     if (verdict === 'silent') { leave(); return; }
     Modal.confirm({
-      title: verdict === 'confirm-edit' ? 'تسيب التعديل؟' : 'تسيب المستند؟',
+      title: verdict === 'confirm-edit' ? 'هل تريد ترك التعديل؟' : 'هل تريد ترك المستند؟',
       icon: <ExclamationCircleOutlined style={{ color: '#faad14' }} />,
       content: verdict === 'confirm-edit'
-        ? 'التعديلات اللي عملتها مااتحفظتش. الفاتورة نفسها هتفضل زي ما هي.'
+        ? 'التعديلات التي أجريتها لم تُحفظ. ستبقى الفاتورة كما هي.'
         : lines.length
-          ? `فيه ${lines.length} صنف بإجمالي ${money(netTotal)} — هيروحوا ومش هيرجعوا.`
-          : 'اللي كتبته هيروح ومش هيرجع.',
-      okText: verdict === 'confirm-edit' ? 'اخرج من غير حفظ' : 'اخرج واسيبه',
+          ? `يوجد ${lines.length} صنف بإجمالي ${money(netTotal)} — ستُفقد ولا يمكن استرجاعها.`
+          : 'ما أدخلته سيُفقد ولا يمكن استرجاعه.',
+      okText: verdict === 'confirm-edit' ? 'الخروج دون حفظ' : 'الخروج وترك المستند',
       okButtonProps: { danger: true },
-      cancelText: verdict === 'confirm-edit' ? 'أرجع أكمّل' : 'أكمّل المستند',
+      cancelText: verdict === 'confirm-edit' ? 'العودة للإكمال' : 'إكمال المستند',
       onOk: leave,
     });
   };
@@ -708,7 +708,7 @@ export default function Invoices() {
         const total = pickedQty(existing.key, itemId, existing.unit, wh,
           Number(existing.quantity || 0) + qty);
         setLines((prev) => prev.map((x) => (x.key === existing.key ? { ...x, quantity: total } : x)));
-        message.info(`«${productName(itemId)}» موجود بالفعل — اتزوّدت كميته`);
+        message.info(`«${productName(itemId)}» موجود بالفعل — تمت زيادة كميته`);
       } else {
         message.info(`«${productName(itemId)}» موجود بالفعل — عدّل الكمية من السطر`);
       }
@@ -836,8 +836,8 @@ export default function Invoices() {
     if (capModalOpenRef.current) return;
     capModalOpenRef.current = true;
     Modal.warning({
-      title: stock > 0 ? 'الكمية أكبر من المتاح' : 'مفيش رصيد',
-      okText: 'تمام',
+      title: stock > 0 ? 'الكمية أكبر من المتاح' : 'لا يوجد رصيد',
+      okText: 'موافق',
       centered: true,
       content: (
         <div style={{ lineHeight: 1.9 }}>
@@ -845,12 +845,12 @@ export default function Invoices() {
             <>
               المتاح <b style={{ color: '#cf4b1a' }}>{n}{u}</b> فقط من{' '}
               <b>«{itemName}»</b> في <b>{storeName}</b>.
-              <div style={{ marginTop: 6, color: '#6b6b6b' }}>الكمية اتظبطت على المتاح.</div>
+              <div style={{ marginTop: 6, color: '#6b6b6b' }}>تم ضبط الكمية على المتاح.</div>
             </>
           ) : (
             <>
-              مفيش رصيد من <b>«{itemName}»</b> في <b>{storeName}</b>.
-              <div style={{ marginTop: 6, color: '#6b6b6b' }}>الكمية اتشالت.</div>
+              لا يوجد رصيد من <b>«{itemName}»</b> في <b>{storeName}</b>.
+              <div style={{ marginTop: 6, color: '#6b6b6b' }}>تمت إزالة الكمية.</div>
             </>
           )}
         </div>
@@ -1033,7 +1033,7 @@ export default function Invoices() {
     }
     const noQty = validLines.find((l) => !Number(l.quantity));
     if (noQty) {
-      message.error(`«${productName(noQty.item_id as number)}»: اكتب الكمية.`);
+      message.error(`«${productName(noQty.item_id as number)}»: أدخل الكمية.`);
       setFocusLineKey(noQty.key);
       return;
     }
@@ -1077,15 +1077,15 @@ export default function Invoices() {
         title: 'سعر البيع أقل من سعر الشراء',
         content: (
           <div>
-            <div>الأصناف دي صافي سعرها أقل من سعر الشراء:</div>
+            <div>الأصناف التالية صافي سعرها أقل من سعر الشراء:</div>
             <ul style={{ margin: '6px 0', paddingInlineStart: 18 }}>
               {[...new Set(underCost.map((l) => productName(l.item_id as number)))]
                 .map((n) => <li key={n}>{n}</li>)}
             </ul>
-            <div>ارفع السعر أو قلّل الخصم — البيع تحت سعر الشراء محتاج صلاحية «البيع تحت سعر التكلفة».</div>
+            <div>ارفع السعر أو خفّض الخصم — البيع بأقل من سعر الشراء يتطلب صلاحية «البيع تحت سعر التكلفة».</div>
           </div>
         ),
-        okText: 'تمام',
+        okText: 'موافق',
       });
       setFocusLineKey(underCost[0].key);
       return;
@@ -1158,7 +1158,7 @@ export default function Invoices() {
           });
 
           message.success(editingInvoice
-            ? 'اتعدّلت الفاتورة واترحّلت من جديد' : 'تم تسجيل فاتورة البيع بنجاح');
+            ? 'تم تعديل الفاتورة وإعادة ترحيلها' : 'تم تسجيل فاتورة البيع بنجاح');
           discardDraft();
           finishClose();
           fetchInvoices();
@@ -1627,12 +1627,12 @@ function couponsTotal(inv: any): number {
     });
     if (verdict === 'silent') { go(); return; }
     Modal.confirm({
-      title: 'تبدأ فاتورة جديدة؟',
+      title: 'هل تريد بدء فاتورة جديدة؟',
       icon: <ExclamationCircleOutlined style={{ color: '#faad14' }} />,
       content: verdict === 'confirm-edit'
-        ? 'التعديلات اللي عملتها مااتحفظتش. الفاتورة نفسها هتفضل زي ما هي.'
-        : 'الفاتورة اللي على الشاشة مااتحفظتش وهتروح.',
-      okText: 'ابدأ جديدة', cancelText: 'أكمّل اللي فاتح', onOk: go,
+        ? 'التعديلات التي أجريتها لم تُحفظ. ستبقى الفاتورة كما هي.'
+        : 'الفاتورة المعروضة على الشاشة لم تُحفظ وستُفقد.',
+      okText: 'بدء فاتورة جديدة', cancelText: 'إكمال الفاتورة المفتوحة', onOk: go,
     });
   };
 
@@ -1704,7 +1704,7 @@ function couponsTotal(inv: any): number {
       },
       {
         key: 'next',
-        label: 'التالى',
+        label: 'التالي',
         icon: <ArrowLeftOutlined />,
         disabled: !isSaved || !neighbour(-1),
         onClick: () => {
@@ -1888,9 +1888,9 @@ function couponsTotal(inv: any): number {
             {isBonus && (
               <Col xs={24} md={8}>
                 <Form.Item label="على فاتورة بيع (اختياري)"
-                  help={!selectedCustomerId ? 'اختار العميل الأول' : undefined}>
+                  help={!selectedCustomerId ? 'اختر العميل أولاً' : undefined}>
                   <Select showSearch allowClear disabled={viewOnly || !selectedCustomerId}
-                    placeholder="من غير ربط — على أكتر من فاتورة"
+                    placeholder="بدون ربط — على أكثر من فاتورة"
                     value={bonusForId ?? undefined}
                     onChange={(v) => setBonusForId(v ?? null)}
                     optionFilterProp="label"
@@ -1977,7 +1977,7 @@ function couponsTotal(inv: any): number {
             </Col>
             <Col xs={24} md={showCouponBlock ? 6 : 11}>
               <Form.Item name="statement1" label="البيان">
-                <Input placeholder="اختياري — بيتطبع على الفاتورة وبيتدوّر بيه" disabled={viewOnly} />
+                <Input placeholder="اختياري" disabled={viewOnly} />
               </Form.Item>
             </Col>
             <Col xs={24} md={showCouponBlock ? 4 : 8}>
@@ -2014,10 +2014,10 @@ function couponsTotal(inv: any): number {
                         <>
                           {i === couponRows.length - 1 && (
                             <Button size="small" type="primary" className="sale-green-btn"
-                              icon={<PlusOutlined />} title="نوع كوبون تاني"
+                              icon={<PlusOutlined />} title="نوع كوبون آخر"
                               onClick={() => setCouponRows((rs) => [...rs, blankCoupon()])} />
                           )}
-                          <Button size="small" danger icon={<DeleteOutlined />} title="امسح الصف"
+                          <Button size="small" danger icon={<DeleteOutlined />} title="حذف الصف"
                             onClick={() => setCouponRows((rs) => (rs.length === 1
                               ? [blankCoupon()]
                               : rs.filter((x) => x.key !== row.key)))} />
@@ -2037,7 +2037,7 @@ function couponsTotal(inv: any): number {
                     عهدة المندوب:{' '}
                     {repCustody.map((b) => `${b.coupon_kind} ${b.available}${b.ranges.length
                       ? ` (${b.ranges.map(([a, z]) => (a === z ? a : `${a}–${z}`)).join('، ')})`
-                      : ' — خلصت'}`).join(' · ')}
+                      : ' — نفدت'}`).join(' · ')}
                   </div>
                 )}
               </div>
@@ -2086,9 +2086,9 @@ function couponsTotal(inv: any): number {
           <TabModal
             open={pendingItems.length > 0}
             title={pendingItems.length > 1
-              ? `الأصناف دي (${pendingItems.length}) من أنهي مخزن؟`
-              : 'الفاتورة دي من أنهي مخزن؟'}
-            okText="تمام" cancelText="إلغاء"
+              ? `من أي مخزن هذه الأصناف (${pendingItems.length})؟`
+              : 'من أي مخزن هذه الفاتورة؟'}
+            okText="موافق" cancelText="إلغاء"
             okButtonProps={{ disabled: pendingWarehouse === null }}
             onCancel={() => { pendingQtys.current = {}; setPendingItems([]); }}
             onOk={async () => {
@@ -2111,9 +2111,6 @@ function couponsTotal(inv: any): number {
               value={pendingWarehouse ?? undefined}
               onChange={(v) => setPendingWarehouse(v as number)}
               options={activeOptions(warehouses, pendingWarehouse)} filterOption={searchFilter} filterSort={searchRank}/>
-            <div style={{ marginTop: 10, color: '#6b6b6b', fontSize: 15 }}>
-              هيثبت لكل أصناف الفاتورة. تقدر تغيّر مخزن أي سطر من عمود «المخزن».
-            </div>
           </TabModal>
 
           <ProductPickerModal
@@ -2339,7 +2336,7 @@ function couponsTotal(inv: any): number {
 
         <WarehouseGate
           open={newStep === 'warehouse' && !viewOnly && !editingInvoice}
-          title="الفاتورة دي هتتصرف من أنهي مخزن؟"
+          title="من أي مخزن ستُصرف هذه الفاتورة؟"
           value={docWarehouseId}
           onChange={(v) => { doorWarehouseRef.current = v as number; onWarehouseChange(v as number); }}
           warehouses={warehouses}
@@ -2349,7 +2346,7 @@ function couponsTotal(inv: any): number {
 
         <TabModal
           open={newStep === 'family' && !viewOnly && !editingInvoice}
-          title="الفاتورة على أنهي حساب؟"
+          title="على أي حساب هذه الفاتورة؟"
           okText="ابدأ الفاتورة" cancelText="رجوع"
           okButtonProps={{ disabled: !invoiceFamily }}
           onCancel={() => setNewStep('warehouse')}
@@ -2398,9 +2395,6 @@ function couponsTotal(inv: any): number {
                 };
               })}
             />
-            <div style={{ marginTop: 10, color: '#6b6b6b', fontSize: 15 }}>
-              بيتغيّر من خانة «نوع الفاتورة» في الترويسة في أي وقت.
-            </div>
           </div>
         </TabModal>
       </div>
@@ -2512,7 +2506,6 @@ function couponsTotal(inv: any): number {
     <ListPage<DocKind>
       icon={<ShoppingCartOutlined />}
       title="المبيعات" muted="(سجل الفواتير والمرتجعات)"
-      subtitle="إدارة ومتابعة حركات البيع، المرتجعات وسندات القبض النقدية"
       tabs={kindTabs} activeTab={docKindFilter}
       onTabChange={(k) => { setDocKindFilter(k); setSelectedKeys([]); setReceiptsTotals(null); }}
       summary={summaryByKind[docKindFilter]}

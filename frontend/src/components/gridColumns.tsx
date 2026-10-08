@@ -12,7 +12,7 @@ function distinct<T>(rows: T[], get: (row: T) => any): { text: string; value: st
   rows.forEach((r) => {
     const raw = get(r);
     const key = raw === null || raw === undefined || raw === '' ? '' : String(raw);
-    if (!seen.has(key)) seen.set(key, key || '(فاضي)');
+    if (!seen.has(key)) seen.set(key, key || '(فارغ)');
   });
   return [...seen.entries()]
     .sort((a, b) => a[1].localeCompare(b[1], 'ar'))

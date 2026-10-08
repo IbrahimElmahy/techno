@@ -248,7 +248,7 @@ export default function VoucherKeyRunner({ keyDef, world, onClose, onPosted }: R
           ],
         });
       }
-      message.success(`اتسجّل ${KIND_LABELS[kind] || 'السند'} — ${keyDef.name}`);
+      message.success(`تم تسجيل ${KIND_LABELS[kind] || 'السند'} — ${keyDef.name}`);
       onClose();
       onPosted?.();
     } catch (err: any) {
@@ -320,8 +320,8 @@ export default function VoucherKeyRunner({ keyDef, world, onClose, onPosted }: R
       {stoppedSafe && (
         <Alert
           type="error" showIcon style={{ marginBottom: 12 }}
-          message={`خزنة «${stoppedSafe.name}» موقوفة — المفتاح ده مش هيترحّل.`}
-          description="شغّل الخزنة تاني من صفحة الخزائن، أو عدّل المفتاح يشاور على خزنة شغّالة."
+          message={`خزنة «${stoppedSafe.name}» موقوفة — لن يُرحَّل هذا المفتاح.`}
+          description="أعد تشغيل الخزنة من صفحة الخزائن، أو عدّل المفتاح ليشير إلى خزنة نشطة."
         />
       )}
       <Steps size="small" current={step} items={stepItems} style={{ marginBottom: 16 }} />
@@ -446,10 +446,6 @@ export default function VoucherKeyRunner({ keyDef, world, onClose, onPosted }: R
               <Descriptions.Item label="البيان">{values.description}</Descriptions.Item>
             )}
           </Descriptions>
-          <Alert
-            type="warning" showIcon style={{ marginTop: 12 }}
-            message="يُرحَّل السند فوراً كأي سند يُكتب يدوياً — وإن كان خطأ فيُعكس من صفحة السندات."
-          />
         </>
       )}
     </TabModal>

@@ -32,21 +32,20 @@ class SaleAddItemFlow {
         builder: (dctx) => Directionality(
           textDirection: TextDirection.rtl,
           child: AlertDialog(
-            title: const Text('الأصناف لسه ما نزلتش على الجهاز'),
+            title: const Text('لم تُحمَّل الأصناف على الجهاز بعد'),
             content: Text(source == null
-                ? 'افتح «مزامنة البيانات» من القايمة واعمل مزامنة — الأصناف بتنزل معاها '
-                    'بأرصدة عربيتك وأسعارها.'
+                ? 'نفّذ «مزامنة البيانات» من القائمة لتحميل الأصناف بأرصدة سيارتك وأسعارها.'
                     '\n\n'
-                    'لو المزامنة تمّت وبرضه فاضية، يبقى مالكش مخزن ولا عهدة مسجّلة — '
-                    'كلّم المخزن.'
-                : 'المخزن ده مافيهوش أصناف على الجهاز.'
+                    'إذا تمت المزامنة وظلت القائمة فارغة، فليس لديك مخزن أو عهدة مسجّلة — '
+                    'تواصل مع المخزن.'
+                : 'لا توجد أصناف لهذا المخزن على الجهاز.'
                     '\n\n'
-                    'اعمل «مزامنة البيانات» — أصناف المخازن بتنزل معاها. ولو بعد '
-                    'المزامنة برضه فاضي، يبقى المخزن نفسه مافيهوش رصيد.'),
+                    'نفّذ «مزامنة البيانات» لتحميل أصناف المخازن، وإذا ظلت القائمة فارغة '
+                    'بعد المزامنة فلا يوجد رصيد في هذا المخزن.'),
             actions: [
               TextButton(
                   onPressed: () => Navigator.pop(dctx),
-                  child: const Text('تمام')),
+                  child: const Text('حسناً')),
             ],
           ),
         ),
@@ -367,8 +366,8 @@ class _SaleItemDialogState extends State<_SaleItemDialog> {
             child: Text(
                 searching
                     ? (_searchAll
-                        ? 'نتايج البحث في كل الأصناف'
-                        : 'نتايج البحث في ${widget.category}')
+                        ? 'نتائج البحث في كل الأصناف'
+                        : 'نتائج البحث في ${widget.category}')
                     : widget.category,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
@@ -376,7 +375,7 @@ class _SaleItemDialogState extends State<_SaleItemDialog> {
           ),
           IconButton(
             icon: const Icon(Icons.close),
-            tooltip: 'رجوع للفئات',
+            tooltip: 'العودة إلى الفئات',
             onPressed: () => Navigator.pop(context),
           ),
         ],
@@ -414,9 +413,9 @@ class _SaleItemDialogState extends State<_SaleItemDialog> {
                         child: Text(
                           searching
                               ? (_searchAll
-                                  ? 'مفيش صنف بالاسم ده'
-                                  : 'مفيش صنف بالاسم ده في ${widget.category}')
-                              : 'مفيش أصناف هنا',
+                                  ? 'لا يوجد صنف بهذا الاسم'
+                                  : 'لا يوجد صنف بهذا الاسم في ${widget.category}')
+                              : 'لا توجد أصناف',
                           textAlign: TextAlign.center,
                         ),
                       ),
@@ -432,8 +431,8 @@ class _SaleItemDialogState extends State<_SaleItemDialog> {
                         final parts = <String>[
                           if (widget.showAvailable)
                             avail <= 0
-                                ? 'خلص من العربية'
-                                : 'عندك ${_fmt(avail)}',
+                                ? 'نفد من السيارة'
+                                : 'المتاح ${_fmt(avail)}',
                           if (it.unit != null && !widget.showAvailable)
                             '${it.unit}',
                           if (widget.showPrice)
@@ -473,8 +472,8 @@ class _SaleItemDialogState extends State<_SaleItemDialog> {
                     onPressed: () => setState(() => _searchAll = true),
                     label: Text(
                       elsewhere == 1
-                          ? 'فيه نتيجة واحدة في فئة تانية — دوّر في كل الأصناف'
-                          : 'فيه $elsewhere نتايج في فئات تانية — دوّر في كل الأصناف',
+                          ? 'توجد نتيجة واحدة في فئة أخرى — ابحث في كل الأصناف'
+                          : 'توجد $elsewhere نتائج في فئات أخرى — ابحث في كل الأصناف',
                       style: const TextStyle(fontWeight: FontWeight.w700),
                     ),
                   ),
@@ -529,7 +528,7 @@ class _SaleQuantityDialogState extends State<_SaleQuantityDialog> {
       return;
     }
     if (widget.capToAvailable && q > widget.available + 0.0001) {
-      setState(() => _error = 'المتاح ${_fmt(widget.available)} بس');
+      setState(() => _error = 'المتاح ${_fmt(widget.available)} فقط');
       return;
     }
     Navigator.pop(context, _QtyAnswer(q, another: another));
@@ -558,7 +557,7 @@ class _SaleQuantityDialogState extends State<_SaleQuantityDialog> {
                             : ''}'
                         '${widget.showAvailable ? ' · المتاح: ${_fmt(widget.available)}' : ''}'
                     : widget.showAvailable
-                        ? 'عندك في العربية: ${_fmt(widget.available)}'
+                        ? 'المتاح في السيارة: ${_fmt(widget.available)}'
                         : 'الوحدة: ${widget.item.unit}',
                 style: const TextStyle(
                     color: AppColors.primary, fontWeight: FontWeight.w700)),

@@ -164,7 +164,6 @@ export default function PointsLedger() {
     <ListPage
       icon={<StarOutlined />}
       title="سجل النقاط"
-      subtitle="كل حركات دفتر نقاط التجار — الوارد من الفواتير والمنصرف في الكوبونات والمعاينات"
       actions={(<>
         {columnSettings}
         <Button icon={<DownloadOutlined />} onClick={exportCsv} disabled={!shown}>

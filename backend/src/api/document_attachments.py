@@ -93,17 +93,17 @@ def _resolve(doc_type: str, doc_id: int, current: CurrentUser, db: Session) -> s
     if spec is None:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, {
             "code": "validation",
-            "message": f"نوع مستند مش متسجّل للمرفقات: «{doc_type}»."})
+            "message": f"نوع مستند غير مسجّل للمرفقات: «{doc_type}»."})
     module_name, class_name, capability = spec
 
     if not current.can(capability):
         raise HTTPException(status.HTTP_403_FORBIDDEN, {
-            "code": "forbidden", "message": "مالكش صلاحية على المستند ده."})
+            "code": "forbidden", "message": "ليس لديك صلاحية على هذا المستند."})
 
     model = getattr(importlib.import_module(module_name), class_name)
     if db.get(model, doc_id) is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, {
-            "code": "not_found", "message": "المستند مش موجود."})
+            "code": "not_found", "message": "المستند غير موجود."})
     return name
 
 
@@ -129,7 +129,7 @@ async def upload(
     if suffix is None:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, {
             "code": "validation",
-            "message": "صور بس (jpg / png / webp / heic) أو PDF."})
+            "message": "الصور فقط (jpg / png / webp / heic) أو PDF."})
 
     folder = UPLOAD_ROOT / name / datetime.now().strftime("%Y/%m")
     folder.mkdir(parents=True, exist_ok=True)
@@ -188,13 +188,13 @@ def download(
     row = db.get(DocumentAttachment, attachment_id)
     if row is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND,
-                            {"code": "not_found", "message": "المرفق مش موجود."})
+                            {"code": "not_found", "message": "المرفق غير موجود."})
     _resolve(row.doc_type, row.doc_id, current, db)
 
     path = (UPLOAD_ROOT / row.stored_path).resolve()
     if not str(path).startswith(str(UPLOAD_ROOT.resolve())) or not path.exists():
         raise HTTPException(status.HTTP_404_NOT_FOUND,
-                            {"code": "not_found", "message": "ملف المرفق مش موجود على السيرفر."})
+                            {"code": "not_found", "message": "ملف المرفق غير موجود على الخادم."})
     return FileResponse(path, media_type=row.content_type or "application/octet-stream",
                         filename=row.filename)
 
@@ -208,10 +208,10 @@ def remove(
     row = db.get(DocumentAttachment, attachment_id)
     if row is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND,
-                            {"code": "not_found", "message": "المرفق مش موجود."})
+                            {"code": "not_found", "message": "المرفق غير موجود."})
     if not current.is_admin and row.uploaded_by != current.id:
         raise HTTPException(status.HTTP_403_FORBIDDEN, {
-            "code": "forbidden", "message": "المرفق ده مش بتاعك — صاحبه أو المدير بس اللي يمسحه."})
+            "code": "forbidden", "message": "هذا المرفق ليس لك — لا يحذفه إلا صاحبه أو المدير."})
     (UPLOAD_ROOT / row.stored_path).unlink(missing_ok=True)
     db.delete(row)
     db.commit()

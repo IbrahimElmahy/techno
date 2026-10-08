@@ -64,7 +64,7 @@ export default function TransferModal({
                     <DatePicker />
                   </Form.Item>
                   <Form.Item name="statement1" label="بيان السند">
-                    <Input placeholder="الكلام المكتوب على ورقة السند" style={{ width: 220 }} />
+                    <Input placeholder="النص المكتوب على ورقة السند" style={{ width: 220 }} />
                   </Form.Item>
                   <Form.Item name="external_document_number" label="رقم المستند">
                     <Input placeholder="رقم السند الورقي" style={{ width: 160 }} />

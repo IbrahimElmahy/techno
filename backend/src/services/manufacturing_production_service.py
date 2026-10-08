@@ -52,9 +52,9 @@ def _factor(db: Session, item: Item, unit: str | None) -> Decimal:
 def _warehouse(db: Session, item: Item, given: int | None) -> int:
     wid = given if given is not None else item.default_warehouse_id
     if wid is None:
-        raise ProductionOrderError(f"الصنف «{item.name}» محتاج مخزن على السطر.")
+        raise ProductionOrderError(f"الصنف «{item.name}» يحتاج إلى مخزن على السطر.")
     if db.get(Warehouse, int(wid)) is None:
-        raise ProductionOrderError("المخزن مش موجود.")
+        raise ProductionOrderError("المخزن غير موجود.")
     return int(wid)
 
 
@@ -64,7 +64,7 @@ def recipe_plan(db: Session, *, product_id: int, quantity, bom_id: int | None = 
     if bom is None:
         return []
     if bom.product_id != product_id:
-        raise ProductionOrderError("التركيبة دي مش بتاعة المنتج ده.")
+        raise ProductionOrderError("هذه التركيبة لا تخص هذا المنتج.")
     scale = production.scale_factor(bom.output_quantity, quantity)
     return [(c.item_id, production.consumed_quantity(
         c.quantity, scale, getattr(c, "unit_factor", 1) or 1)) for c in bom.components]
@@ -80,7 +80,7 @@ def _active_bom(db: Session, *, product_id: int, bom_id=None):
 
 def _build_lines(db: Session, order: ProductionOrder, products) -> None:
     if not products:
-        raise ProductionOrderError("أمر التشغيل لازم يكون فيه منتج واحد على الأقل.")
+        raise ProductionOrderError("يجب أن يحتوي أمر التشغيل على منتج واحد على الأقل.")
 
     total_expense = ZERO
     total_plan_qty = to_qty(0)
@@ -90,18 +90,18 @@ def _build_lines(db: Session, order: ProductionOrder, products) -> None:
     for p in products:
         item = db.get(Item, int(p["item_id"]))
         if item is None:
-            raise ProductionOrderError("صنف المنتج مش موجود.")
+            raise ProductionOrderError("صنف المنتج غير موجود.")
         p_unit = p.get("unit") or None
         p_factor = _factor(db, item, p_unit)
         raw_plan = p.get("planned_quantity") or p.get("quantity")
         planned = to_qty(Decimal(str(raw_plan)) * p_factor)
         actual = to_qty(Decimal(str(p.get("quantity") or raw_plan)) * p_factor)
         if actual <= to_qty(0):
-            raise ProductionOrderError(f"كمية «{item.name}» لازم تكون أكبر من صفر.")
+            raise ProductionOrderError(f"يجب أن تكون كمية «{item.name}» أكبر من صفر.")
         p_wh = _warehouse(db, item, p.get("warehouse_id"))
         expense = to_money(p.get("expense_amount") or 0)
         if expense < ZERO:
-            raise ProductionOrderError("المصاريف مايكونوش بالسالب.")
+            raise ProductionOrderError("لا يمكن أن تكون المصاريف سالبة.")
 
         line = ProductionOrderProduct(
             order_id=order.id, item_id=item.id, warehouse_id=p_wh,
@@ -123,24 +123,24 @@ def _build_lines(db: Session, order: ProductionOrder, products) -> None:
                     recipe_plan(db, product_id=item.id, quantity=actual, bom_id=p.get("bom_id"))]
         if not rows:
             raise ProductionOrderError(
-                f"«{item.name}» مالوش خامات ولا وصفة — التكلفة مش هتتحسب من غيرها.")
+                f"«{item.name}» بلا خامات ولا وصفة — لا يمكن حساب التكلفة بدونها.")
         if len({int(m["item_id"]) for m in rows}) != len(rows):
-            raise ProductionOrderError(f"فيه خامة متكررة تحت «{item.name}».")
+            raise ProductionOrderError(f"توجد خامة متكررة تحت «{item.name}».")
 
         for m in rows:
             raw = db.get(Item, int(m["item_id"]))
             if raw is None:
-                raise ProductionOrderError("صنف الخامة مش موجود.")
+                raise ProductionOrderError("صنف الخامة غير موجود.")
             m_unit = m.get("unit") or None
             m_factor = _factor(db, raw, m_unit)
             m_plan_raw = m.get("planned_quantity") or m.get("quantity")
             m_planned = to_qty(Decimal(str(m_plan_raw)) * m_factor)
             m_qty = to_qty(Decimal(str(m.get("quantity") or m_plan_raw)) * m_factor)
             if m_qty <= to_qty(0):
-                raise ProductionOrderError(f"كمية «{raw.name}» لازم تكون أكبر من صفر.")
+                raise ProductionOrderError(f"يجب أن تكون كمية «{raw.name}» أكبر من صفر.")
             waste = to_qty(m.get("waste_quantity") or 0)
             if waste < to_qty(0) or waste > m_qty:
-                raise ProductionOrderError("كمية الهالك لازم تكون بين صفر والكمية المصروفة.")
+                raise ProductionOrderError("يجب أن تكون كمية الهالك بين صفر والكمية المصروفة.")
             order.materials.append(ProductionOrderMaterial(
                 order_id=order.id, product_line_id=line.id, item_id=raw.id,
                 warehouse_id=_warehouse(db, raw, m.get("warehouse_id")),
@@ -213,12 +213,12 @@ def create_order(
 def update_order(db: Session, *, order_id: int, products, actor_user_id: int, **header) -> ProductionOrder:
     order = db.get(ProductionOrder, order_id)
     if order is None:
-        raise ProductionOrderError("أمر التشغيل مش موجود.")
+        raise ProductionOrderError("أمر التشغيل غير موجود.")
     if order.state == ProductionState.in_progress:
         raise ProductionOrderError(
-            "الأمر بدأ وخاماته اتصرفت — اقفله وسجّل اللي طلع، أو اعكسه واكتب غيره.")
+            "بدأ الأمر وصُرفت خاماته — أغلقه وسجّل الناتج، أو اعكسه وأنشئ غيره.")
     if order.state not in (ProductionState.draft, ProductionState.confirmed):
-        raise ProductionOrderError("الأمر المنفّذ مايتعدّلش — اعكسه واكتب غيره.")
+        raise ProductionOrderError("لا يمكن تعديل الأمر المنفّذ — اعكسه وأنشئ غيره.")
     for field in ("production_date", "branch_id", "external_document_number",
                   "statement1", "notes", "reviewed"):
         if field in header:
@@ -240,9 +240,9 @@ def update_order(db: Session, *, order_id: int, products, actor_user_id: int, **
 def confirm_order(db: Session, *, order_id: int, actor_user_id: int) -> ProductionOrder:
     order = db.get(ProductionOrder, order_id)
     if order is None:
-        raise ProductionOrderError("أمر التشغيل مش موجود.")
+        raise ProductionOrderError("أمر التشغيل غير موجود.")
     if order.state != ProductionState.draft:
-        raise ProductionOrderError("التأكيد بيتعمل للمسودة بس.")
+        raise ProductionOrderError("التأكيد متاح للمسودة فقط.")
     order.state = ProductionState.confirmed
     order.reviewed = True
     db.flush()
@@ -288,13 +288,13 @@ def _issue_materials(db: Session, order: ProductionOrder, actor_user_id: int,
 def issue_quality(db: Session, *, order_id: int, actor_user_id: int) -> ProductionOrder:
     order = db.get(ProductionOrder, order_id)
     if order is None:
-        raise ProductionOrderError("أمر التشغيل مش موجود.")
+        raise ProductionOrderError("أمر التشغيل غير موجود.")
     if order.imported_from is not None:
-        raise ProductionOrderError("الأمر المنقول من a5 خلص في نظامهم.")
+        raise ProductionOrderError("الأمر المنقول من a5 مكتمل في نظامهم.")
     if order.state != ProductionState.in_progress:
-        raise ProductionOrderError("خامات الجودة بتتصرف للأمر الشغّال بس.")
+        raise ProductionOrderError("تُصرف خامات الجودة للأمر الجاري فقط.")
     if not pending(order, STAGE_QUALITY):
-        raise ProductionOrderError("مافيش خامات جودة لسه ما اتصرفتش في الأمر ده.")
+        raise ProductionOrderError("لا توجد خامات جودة لم تُصرف بعد في هذا الأمر.")
     order.material_cost = to_money(
         to_money(order.material_cost)
         + _issue_materials(db, order, actor_user_id, stage=STAGE_QUALITY))
@@ -309,11 +309,11 @@ def issue_quality(db: Session, *, order_id: int, actor_user_id: int) -> Producti
 def start_order(db: Session, *, order_id: int, actor_user_id: int) -> ProductionOrder:
     order = db.get(ProductionOrder, order_id)
     if order is None:
-        raise ProductionOrderError("أمر التشغيل مش موجود.")
+        raise ProductionOrderError("أمر التشغيل غير موجود.")
     if order.imported_from is not None:
-        raise ProductionOrderError("الأمر المنقول من a5 خلص في نظامهم.")
+        raise ProductionOrderError("الأمر المنقول من a5 مكتمل في نظامهم.")
     if order.state != ProductionState.confirmed:
-        raise ProductionOrderError("التشغيل بيبدأ من الأمر المؤكد بس.")
+        raise ProductionOrderError("يبدأ التشغيل من الأمر المؤكد فقط.")
     order.material_cost = _issue_materials(db, order, actor_user_id,
                                            stage=STAGE_PRODUCTION)
     order.total_cost = to_money(order.material_cost + order.expense_amount)
@@ -330,13 +330,13 @@ def receive_output(db: Session, *, order_id: int, actor_user_id: int,
                    notes: str | None = None) -> ProductionOrder:
     order = db.get(ProductionOrder, order_id)
     if order is None:
-        raise ProductionOrderError("أمر التشغيل مش موجود.")
+        raise ProductionOrderError("أمر التشغيل غير موجود.")
     if order.imported_from is not None:
-        raise ProductionOrderError("الأمر المنقول من a5 خلص في نظامهم.")
+        raise ProductionOrderError("الأمر المنقول من a5 مكتمل في نظامهم.")
     if order.state != ProductionState.in_progress:
-        raise ProductionOrderError("الاستلام بيتعمل للأمر الشغّال بس.")
+        raise ProductionOrderError("الاستلام متاح للأمر الجاري فقط.")
     if not rows:
-        raise ProductionOrderError("مافيش كمية اتكتبت.")
+        raise ProductionOrderError("لم تُدخل أي كمية.")
 
     by_id = {p.id: p for p in order.products}
     when = receipt_date or order.production_date
@@ -344,7 +344,7 @@ def receive_output(db: Session, *, order_id: int, actor_user_id: int,
     for line_id, raw in rows.items():
         line = by_id.get(int(line_id))
         if line is None:
-            raise ProductionOrderError("سطر منتج مش في الأمر ده.")
+            raise ProductionOrderError("سطر المنتج غير موجود في هذا الأمر.")
         q = to_qty(Decimal(str(raw or 0)))
         if q <= to_qty(0):
             continue
@@ -360,7 +360,7 @@ def receive_output(db: Session, *, order_id: int, actor_user_id: int,
         line.received_quantity = to_qty(to_qty(line.received_quantity) + q)
         total += q
     if total <= to_qty(0):
-        raise ProductionOrderError("الكمية المستلمة لازم تكون أكبر من صفر.")
+        raise ProductionOrderError("يجب أن تكون الكمية المستلمة أكبر من صفر.")
     db.flush()
     audit_service.record(db, action="production_order.receive",
                          actor_user_id=actor_user_id, entity_type="production_order",
@@ -372,12 +372,12 @@ def undo_receipt(db: Session, *, order_id: int, receipt_id: int,
                  actor_user_id: int) -> ProductionOrder:
     order = db.get(ProductionOrder, order_id)
     if order is None:
-        raise ProductionOrderError("أمر التشغيل مش موجود.")
+        raise ProductionOrderError("أمر التشغيل غير موجود.")
     if order.state != ProductionState.in_progress:
-        raise ProductionOrderError("عكس الاستلام بيتعمل للأمر الشغّال بس.")
+        raise ProductionOrderError("عكس الاستلام متاح للأمر الجاري فقط.")
     rc = db.get(ProductionOrderReceipt, receipt_id)
     if rc is None or rc.order_id != order.id:
-        raise ProductionOrderError("دفعة الاستلام مش في الأمر ده.")
+        raise ProductionOrderError("دفعة الاستلام غير موجودة في هذا الأمر.")
     if rc.stock_movement_id:
         stock_service.reverse_movement(
             db, original_id=rc.stock_movement_id, actor_user_id=actor_user_id,
@@ -399,27 +399,27 @@ def execute_order(db: Session, *, order_id: int, actor_user_id: int,
                   waste: dict[int, Decimal] | None = None) -> ProductionOrder:
     order = db.get(ProductionOrder, order_id)
     if order is None:
-        raise ProductionOrderError("أمر التشغيل مش موجود.")
+        raise ProductionOrderError("أمر التشغيل غير موجود.")
     if order.imported_from is not None:
-        raise ProductionOrderError("الأمر المنقول من a5 اتنفّذ في نظامهم — مايترحّلش تاني.")
+        raise ProductionOrderError("الأمر المنقول من a5 منفّذ في نظامهم — لا يمكن ترحيله مرة أخرى.")
     if order.state not in (ProductionState.draft, ProductionState.confirmed,
                            ProductionState.in_progress):
-        raise ProductionOrderError("الأمر ده اترحّل قبل كده.")
+        raise ProductionOrderError("هذا الأمر مُرحّل مسبقاً.")
 
     if outputs:
         by_id = {p.id: p for p in order.products}
         for line_id, qty in outputs.items():
             line = by_id.get(int(line_id))
             if line is None:
-                raise ProductionOrderError("سطر منتج مش في الأمر ده.")
+                raise ProductionOrderError("سطر المنتج غير موجود في هذا الأمر.")
             q = to_qty(Decimal(str(qty)))
             if q <= to_qty(0):
-                raise ProductionOrderError("الكمية اللي طلعت لازم تكون أكبر من صفر.")
+                raise ProductionOrderError("يجب أن تكون الكمية الناتجة أكبر من صفر.")
             if q < to_qty(line.received_quantity):
                 raise ProductionOrderError(
-                    f"اللي طلع ({q}) أقل من اللي اتستلم خلاص "
-                    f"({to_qty(line.received_quantity)}) — اعكس دفعة الاستلام الغلط "
-                    f"من كشف الدفعات الأول.")
+                    f"الناتج ({q}) أقل من المستلم فعلاً "
+                    f"({to_qty(line.received_quantity)}) — اعكس دفعة الاستلام الخاطئة "
+                    f"من كشف الدفعات أولاً.")
             line.quantity = q
         order.product_quantity = to_qty(sum((to_qty(p.quantity) for p in order.products),
                                             to_qty(0)))
@@ -437,11 +437,11 @@ def execute_order(db: Session, *, order_id: int, actor_user_id: int,
         for line_id, qty in waste.items():
             line = by_mid.get(int(line_id))
             if line is None:
-                raise ProductionOrderError("سطر خامة مش في الأمر ده.")
+                raise ProductionOrderError("سطر الخامة غير موجود في هذا الأمر.")
             w = to_qty(Decimal(str(qty or 0)))
             if w < to_qty(0) or w > to_qty(line.quantity):
                 raise ProductionOrderError(
-                    "الهالك لازم يكون بين صفر والكمية اللي اتصرفت.")
+                    "يجب أن يكون الهالك بين صفر والكمية المصروفة.")
             line.waste_quantity = w
         db.flush()
 
@@ -519,9 +519,9 @@ def reversed_ids(db: Session) -> set[int]:
 def delete_draft(db: Session, *, order_id: int, actor_user_id: int) -> None:
     order = db.get(ProductionOrder, order_id)
     if order is None:
-        raise ProductionOrderError("أمر التشغيل مش موجود.")
+        raise ProductionOrderError("أمر التشغيل غير موجود.")
     if order.state not in (ProductionState.draft, ProductionState.confirmed):
-        raise ProductionOrderError("المنفّذ مايتمسحش — اعكسه.")
+        raise ProductionOrderError("لا يمكن حذف الأمر المنفّذ — اعكسه.")
     audit_service.record(db, action="production_order.delete", actor_user_id=actor_user_id,
                          entity_type="production_order", entity_id=order.id,
                          before={"doc": order.document_number})
@@ -537,14 +537,14 @@ def purge_order(db: Session, *, order_id: int, actor_user_id: int, pair_ok: bool
 
     order = db.get(ProductionOrder, order_id)
     if order is None:
-        raise ProductionOrderError("أمر التشغيل مش موجود.")
+        raise ProductionOrderError("أمر التشغيل غير موجود.")
     if order.imported_from is not None:
         raise ProductionOrderError(
-            f"{order.document_number} منقول من a5 — مايتمسحش من هنا.")
+            f"{order.document_number} منقول من a5 — لا يمكن حذفه من هنا.")
     if not pair_ok and (order.reverses_id is not None or db.scalar(select(ProductionOrder.id).where(
             ProductionOrder.reverses_id == order_id)) is not None):
         raise ProductionOrderError(
-            f"{order.document_number} عليه أمر عكس (أو هو عكس) — امسحهم مع بعض بقرار.")
+            f"{order.document_number} مرتبط بأمر عكس (أو هو نفسه عكس) — احذفهما معاً بقرار.")
     doc = order.document_number
     before = {"doc": doc, "state": order.state.value if order.state else None,
               "branch_id": order.branch_id}
@@ -570,16 +570,16 @@ def purge_order(db: Session, *, order_id: int, actor_user_id: int, pair_ok: bool
 def reverse_order(db: Session, *, order_id: int, actor_user_id: int) -> ProductionOrder:
     original = db.get(ProductionOrder, order_id)
     if original is None:
-        raise ProductionOrderError("أمر التشغيل مش موجود.")
+        raise ProductionOrderError("أمر التشغيل غير موجود.")
     if original.reverses_id is not None:
-        raise ProductionOrderError("الأمر العكسي نفسه مايتعملهوش عكس.")
+        raise ProductionOrderError("لا يمكن عكس الأمر العكسي نفسه.")
     if original.imported_from is not None:
-        raise ProductionOrderError("الأمر المنقول من a5 للعرض بس — مايتعكسش من هنا.")
+        raise ProductionOrderError("الأمر المنقول من a5 للعرض فقط — لا يمكن عكسه من هنا.")
     if original.state not in (ProductionState.done, ProductionState.in_progress):
-        raise ProductionOrderError("العكس بيتعمل للشغّال والمنفّذ — المسودة تتعدّل أو تتمسح.")
+        raise ProductionOrderError("العكس متاح للأمر الجاري والمنفّذ — أما المسودة فتُعدَّل أو تُحذف.")
     if db.scalar(select(ProductionOrder).where(
             ProductionOrder.reverses_id == order_id)) is not None:
-        raise ProductionOrderError("الأمر ده اتعكس قبل كده.")
+        raise ProductionOrderError("هذا الأمر معكوس مسبقاً.")
 
     rev = ProductionOrder(
         document_number=_doc_number(db), production_date=date.today(),

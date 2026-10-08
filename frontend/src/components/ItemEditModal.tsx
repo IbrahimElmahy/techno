@@ -159,7 +159,7 @@ export default function ItemEditModal({
           <Row gutter={12}>
             <Col xs={24} md={12}>
               <Form.Item name="name" label="اسم الصنف"
-                rules={[{ required: true, message: 'اكتب اسم الصنف' }]}>
+                rules={[{ required: true, message: 'أدخل اسم الصنف' }]}>
                 <Input />
               </Form.Item>
             </Col>
@@ -169,8 +169,7 @@ export default function ItemEditModal({
               </Form.Item>
             </Col>
             <Col xs={24} md={12}>
-              <Form.Item name="unit_of_measure" label="وحدة القياس"
-                tooltip="الوحدة الأساسية بتتقفل بعد إنشاء الصنف — كل رصيده متعدّ بيها. تصليح متر/قطعة من «القطعة = كام متر؟» في شاشة الأصناف.">
+              <Form.Item name="unit_of_measure" label="وحدة القياس">
                 <Select showSearch disabled options={uomOptions.map((o) => ({ value: o.value, label: o.label }))} filterOption={searchFilter} filterSort={searchRank}/>
               </Form.Item>
             </Col>
@@ -197,16 +196,14 @@ export default function ItemEditModal({
               </Form.Item>
             </Col>
             <Col xs={24} md={12}>
-              <Form.Item name="default_warehouse_id" label="المخزن الافتراضي"
-                extra="التصنيع يسحب/يودع هذا الصنف هنا تلقائياً">
+              <Form.Item name="default_warehouse_id" label="المخزن الافتراضي">
                 <Select allowClear showSearch
                   filterOption={searchFilter} filterSort={searchRank}
                   options={sortByName(warehouses, (w) => w.name).map((w) => ({ value: w.id, label: w.name }))} />
               </Form.Item>
             </Col>
             <Col xs={12} md={6}>
-              <Form.Item name="min_stock" label="حد إعادة الطلب (الأدنى)"
-                extra="تنبيه فقط — لا يمنع البيع">
+              <Form.Item name="min_stock" label="حد إعادة الطلب (الأدنى)">
                 <InputNumber min={0} step={1} style={{ width: '100%' }} placeholder="اختياري" />
               </Form.Item>
             </Col>
@@ -217,12 +214,12 @@ export default function ItemEditModal({
             </Col>
             <Col xs={12} md={6}>
               <Form.Item name="is_perishable" label="له صلاحية"
-                valuePropName="checked" extra="يُستلم ويُباع بالتشغيلات (الأقدم صلاحية أولاً)">
+                valuePropName="checked">
                 <Switch checkedChildren="نعم" unCheckedChildren="لا" />
               </Form.Item>
             </Col>
             <Col xs={12} md={6}>
-              <Form.Item name="is_serialized" label="بسريال" valuePropName="checked">
+              <Form.Item name="is_serialized" label="برقم تسلسلي" valuePropName="checked">
                 <Switch checkedChildren="نعم" unCheckedChildren="لا" />
               </Form.Item>
             </Col>
@@ -255,8 +252,7 @@ export default function ItemEditModal({
               <Divider orientation="right" style={{ margin: '4px 0 12px' }}>
                 نقاط الولاء
               </Divider>
-              <Form.Item name="point_value" label="قيمة نقاط المنتج"
-                extra="قيمة كسرية مسموحة — مثال: 6 قطع = 1 نقطة ⇒ 0.167">
+              <Form.Item name="point_value" label="قيمة نقاط المنتج">
                 <InputNumber min={0} step={0.001} style={{ width: 220 }} />
               </Form.Item>
             </>

@@ -109,7 +109,7 @@ export default function Employees() {
       render: (v: number) => branches.find((b) => b.id === v)?.name || '' },
     { title: 'الوظيفة', dataIndex: 'job_title', render: (v: string) => v || '' },
     { title: 'القسم', dataIndex: 'department', render: (v: string) => v || '' },
-    { title: 'التليفون', dataIndex: 'phone', render: (v: string) => v || '' },
+    { title: 'الهاتف', dataIndex: 'phone', render: (v: string) => v || '' },
     { title: 'تاريخ التعيين', dataIndex: 'hire_date',
       render: (v: string) => (v ? String(v).slice(0, 10) : '-') },
     { title: 'الراتب', dataIndex: 'salary', align: 'left',
@@ -126,21 +126,21 @@ export default function Employees() {
             <Button type="text" icon={<EditOutlined />} onClick={() => startEdit(r)} />
           </Tooltip>
           {r.active ? (
-            <Popconfirm title="إيقاف الموظف؟" onConfirm={() => deactivate(r)}
+            <Popconfirm title="هل تريد إيقاف الموظف؟" onConfirm={() => deactivate(r)}
               okText="إيقاف" cancelText="إلغاء">
-              <Tooltip title="إيقاف — يفضل اسمه على كل اللي اتسجّل عليه">
+              <Tooltip title="إيقاف">
                 <Button type="text" icon={<StopOutlined />} />
               </Tooltip>
             </Popconfirm>
           ) : (
-            <Popconfirm title="رجوع للعمل؟" onConfirm={() => reactivate(r)}>
-              <Tooltip title="رجوع على رأس العمل">
+            <Popconfirm title="هل تريد إعادة الموظف للعمل؟" onConfirm={() => reactivate(r)}>
+              <Tooltip title="إعادة للعمل">
                 <Button type="text" icon={<UndoOutlined />} />
               </Tooltip>
             </Popconfirm>
           )}
-          <Popconfirm title="حذف الموظف نهائياً؟" onConfirm={() => remove(r)}>
-            <Tooltip title="حذف نهائي (لو مالوش أي حركة)">
+          <Popconfirm title="هل تريد حذف الموظف نهائياً؟" onConfirm={() => remove(r)}>
+            <Tooltip title="حذف نهائي">
               <Button type="text" danger icon={<DeleteOutlined />} />
             </Tooltip>
           </Popconfirm>
@@ -159,7 +159,6 @@ export default function Employees() {
     <ListPage<'employees' | 'titles'>
       icon={<TeamOutlined />}
       title="الموظفين" muted="(الموظفون والوظائف)"
-      subtitle="كل اللي الشركة مشغّلاهم — مش حسابات الدخول، والموظف ممكن يتربط بمستخدم"
       tabs={[
         { key: 'employees', label: 'الموظفون', count: employees.length },
         { key: 'titles', label: 'الوظائف', count: titles.length },
@@ -178,7 +177,7 @@ export default function Employees() {
       </>)}
       filters={onEmployees ? (<>
         <Input className="sl-f-search" allowClear ref={searchRef} value={filter.query}
-          placeholder="بحث بالكود أو الاسم أو القسم أو التليفون" prefix={<SearchOutlined />}
+          placeholder="بحث بالكود أو الاسم أو القسم أو الهاتف" prefix={<SearchOutlined />}
           onChange={(e) => filter.setQuery(e.target.value)} />
         {multiSelect('active', 'الحالة', [
           { value: 'active', label: 'على رأس العمل' }, { value: 'inactive', label: 'موقوف' }])}

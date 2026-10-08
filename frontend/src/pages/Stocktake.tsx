@@ -238,10 +238,7 @@ export default function Stocktake() {
     <ListPage
       icon={<CalendarOutlined />}
       title="جرد حتى تاريخ"
-      subtitle={<>
-        {`الأرصدة زي ما كانت يوم ${asOf.format('YYYY-MM-DD')} — كل حركة لحد اليوم ده وبس.`}
-        {method && ` التقييم بطريقة «${METHOD_LABELS[method] || method}» (تتغيّر من إعدادات المخزون).`}
-      </>}
+      subtitle={method ? `طريقة التقييم: «${METHOD_LABELS[method] || method}»` : undefined}
       actions={(<>
           <Button icon={<PrinterOutlined />} onClick={printIt}>
             {picked.length ? `طباعة (${picked.length})` : 'طباعة'}

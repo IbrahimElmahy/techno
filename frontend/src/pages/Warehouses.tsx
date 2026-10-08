@@ -139,7 +139,7 @@ export default function Warehouses() {
       await api.post('/api/v1/customers/assign-rep', {
         rep_id: customersFor.user_id, customer_ids: customerDraft,
       });
-      message.success(`اتسند ${customerDraft.length} عميل للمندوب`);
+      message.success(`تم إسناد ${customerDraft.length} عميل إلى المندوب`);
       setCustomersFor(null);
     } catch (err) {
       console.error(err);
@@ -190,7 +190,7 @@ export default function Warehouses() {
         description: values.description || null,
         warehouse_type: values.warehouse_type,
       });
-      message.success('اتعدّل المخزن');
+      message.success('تم تعديل المخزن');
       setEditing(null);
       fetchAll();
     } catch (err) {
@@ -223,7 +223,7 @@ export default function Warehouses() {
   const onActivate = async (record: WarehouseRecord) => {
     try {
       await api.patch(`/api/v1/warehouses/${record.id}`, { active: true });
-      message.success(`رجع «${record.name}» للقوايم`);
+      message.success(`أُعيد إظهار «${record.name}» في القوائم`);
       fetchAll();
     } catch (err: any) {
       message.error(err?.response?.data?.detail?.message || 'تعذر إظهار المخزن');
@@ -239,15 +239,15 @@ export default function Warehouses() {
       cancelText: 'إلغاء',
       content: (
         <span>
-          هيتشال المخزن من النظام نهائياً ومفيش رجعة.
+          سيُحذف المخزن من النظام نهائياً ولا يمكن التراجع.
           <br />
-          لو عليه أي حركة، النظام هيرفض ويقولك فيه إيه — ساعتها استعمل «إخفاء».
+          إن كانت عليه أي حركة فسيرفض النظام الحذف ويبيّن السبب، وعندها استخدم «إخفاء».
         </span>
       ),
       onOk: async () => {
         try {
           await api.delete(`/api/v1/warehouses/${record.id}`, { params: { hard: true } });
-          message.success('اتحذف المخزن');
+          message.success('تم حذف المخزن');
           fetchAll();
         } catch (err: any) {
           message.error(err?.response?.data?.detail?.message ?? 'تعذّر حذف المخزن', 8);
@@ -404,7 +404,6 @@ export default function Warehouses() {
       <ListPage
         icon={<HomeOutlined />}
         title="المخازن"
-        subtitle="مخازن الفروع والسيارات، ومناديب كل مخزن وعملاؤهم"
         actions={(<>
           {canWrite && (
             <Button data-shortcut="F2" type="primary" icon={<PlusOutlined />} className="sl-create"
@@ -412,7 +411,7 @@ export default function Warehouses() {
               مخزن جديد
             </Button>
           )}
-          <Button icon={<ReloadOutlined />} onClick={fetchAll}>اعادة تحميل</Button>
+          <Button icon={<ReloadOutlined />} onClick={fetchAll}>إعادة تحميل</Button>
           {tableCols.control}
         </>)}
         filters={(<>
@@ -474,10 +473,6 @@ export default function Warehouses() {
         okText="حفظ"
         cancelText="تراجع"
       >
-        <p style={{ color: '#888' }}>
-          الموظف له مخزن واحد — لو كان على مخزن تاني هيتنقل لهنا. وشيل العلامة معناه إنه يخرج من
-          المخزن ده.
-        </p>
         <Select showSearch
           mode="multiple"
           style={{ width: '100%' }}
@@ -537,13 +532,10 @@ export default function Warehouses() {
               options={customerSearch.map((c) => ({
                 value: c.id,
                 label: `${c.name}${c.phone ? ` · ${c.phone}` : ''}`
-                  + (c.rep_id === customersFor?.user_id ? ' · عنده بالفعل' : ''),
+                  + (c.rep_id === customersFor?.user_id ? ' · مُسند إليه بالفعل' : ''),
                 disabled: c.rep_id === customersFor?.user_id,
               }))}
             />
-            <p style={{ color: '#888', marginTop: 8 }}>
-              العميل له مندوب واحد — إسناده هنا معناه إنه بيخرج من عند مندوبه القديم.
-            </p>
           </>
         )}
       </TabModal>

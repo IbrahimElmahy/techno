@@ -178,7 +178,7 @@ export default function FreeProduction() {
         notes: notes || null,
         statement1: statement1 || null,
       });
-      message.success('تم تسجيل الانتاج الحر');
+      message.success('تم تسجيل الإنتاج الحر');
       reset();
       load();
     } catch (err: any) {
@@ -200,7 +200,7 @@ export default function FreeProduction() {
       render: (d: string, r: Order) => (
         <Space size={4}>
           <Tag color="geekblue">{d}</Tag>
-          {r.reversed && <Tag color="red">متراجع</Tag>}
+          {r.reversed && <Tag color="red">متراجع عنه</Tag>}
           {r.is_reversal && <Tag color="orange">تراجع</Tag>}
           <DocumentHistoryButton iconOnly entityType="manufacturing_order" entityId={r.id}
             documentNumber={r.document_number} />
@@ -218,11 +218,11 @@ export default function FreeProduction() {
       render: (q: string) => Number(q),
     },
     {
-      title: 'رقم الانتاج', dataIndex: 'work_order_ref', key: 'work_order_ref', width: 130,
+      title: 'رقم الإنتاج', dataIndex: 'work_order_ref', key: 'work_order_ref', width: 130,
       render: (v: string | null) => v || '-',
     },
     {
-      title: 'اجمالي خامات', dataIndex: 'material_cost', key: 'material_cost', width: 125,
+      title: 'إجمالي الخامات', dataIndex: 'material_cost', key: 'material_cost', width: 125,
       align: 'left' as const, render: (v: string) => `${money(v)}`,
     },
     {
@@ -230,7 +230,7 @@ export default function FreeProduction() {
       align: 'left' as const, render: (v: string) => `${money(v)}`,
     },
     {
-      title: 'اجمالي منتجات', dataIndex: 'total_cost', key: 'total_cost', width: 130,
+      title: 'إجمالي المنتجات', dataIndex: 'total_cost', key: 'total_cost', width: 130,
       align: 'left' as const, render: (v: string) => <strong>{money(v)}</strong>,
     },
     {
@@ -273,7 +273,7 @@ export default function FreeProduction() {
     <span className="sl-foot">
       <span>المعروض: <b>{filter.filtered.length.toLocaleString(numeralsLocale())}</b>
         {' '}من {orders.length.toLocaleString(numeralsLocale())} أمر</span>
-      <span>اجمالي المنتجات المعروضة: <b>{money(shownTotal)}</b></span>
+      <span>إجمالي المنتجات المعروضة: <b>{money(shownTotal)}</b></span>
     </span>
   );
 
@@ -287,8 +287,8 @@ export default function FreeProduction() {
             <Button size="small" icon={<ArrowRightOutlined />} onClick={() => setEntryOpen(false)}>
               رجوع للسجل
             </Button>
-            <span className="sale-title"><BuildOutlined /> انتاج حر</span>
-            <Tag color="blue" style={{ marginInlineEnd: 0 }}>من غير وصفة</Tag>
+            <span className="sale-title"><BuildOutlined /> إنتاج حر</span>
+            <Tag color="blue" style={{ marginInlineEnd: 0 }}>بدون وصفة</Tag>
             <div className="sale-toolbar-row">
               <Button onClick={reset}>تفريغ</Button>
               <Button type="primary" loading={saving} onClick={submit}>ترحيل الإنتاج</Button>
@@ -298,10 +298,6 @@ export default function FreeProduction() {
 
         <div className="sale-form">
         <div className="sale-card">
-        <div style={{ color: '#64748b', fontSize: 14, marginBottom: 10 }}>
-          اكتب الخامات المنصرفة فعلاً والمنتج الناتج. تُؤخذ الكميات كما هي دون أي نسب تضربها، حتى لا يتغيّر الرقم المقيس.
-        </div>
-
         <Row gutter={[12, 12]}>
           <Col xs={24} md={8}>
             <Form.Item label="المنتج الناتج" required style={{ marginBottom: 0 }}>
@@ -427,12 +423,11 @@ export default function FreeProduction() {
 
       <ListPage
         icon={<BuildOutlined />}
-        title="انتاج حر"
-        subtitle="الخامات المنصرفة فعلاً والمنتج الناتج — الكميات زي ما اتقاست، من غير نسب"
+        title="إنتاج حر"
         actions={(<>
             <Button data-shortcut="F2" type="primary" icon={<PlusOutlined />} className="sl-create"
               onClick={() => setEntryOpen(true)}>
-              انتاج حر جديد
+              إنتاج حر جديد
             </Button>
             <ExportExcelButton
               name="سجل الإنتاج الحر"

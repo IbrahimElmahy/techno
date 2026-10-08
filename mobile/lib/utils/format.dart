@@ -42,22 +42,22 @@ DateTime? parseDateTime(Object? v) {
 }
 
 String fmtRelative(DateTime? t, {DateTime? now}) {
-  if (t == null) return 'مافيش نشاط';
+  if (t == null) return 'لا يوجد نشاط';
   final n = now ?? DateTime.now();
   final diff = n.difference(t);
-  if (diff.isNegative || diff.inMinutes < 1) return 'دلوقتي';
+  if (diff.isNegative || diff.inMinutes < 1) return 'الآن';
   if (diff.inMinutes < 60) {
     final m = diff.inMinutes;
-    return m == 1 ? 'من دقيقة' : (m == 2 ? 'من دقيقتين' : 'من $m دقيقة');
+    return m == 1 ? 'منذ دقيقة' : (m == 2 ? 'منذ دقيقتين' : 'منذ $m دقيقة');
   }
   final today = DateTime(n.year, n.month, n.day);
   final day = DateTime(t.year, t.month, t.day);
   if (day == today) {
     final h = diff.inHours;
-    return h == 1 ? 'من ساعة' : (h == 2 ? 'من ساعتين' : 'من $h ساعات');
+    return h == 1 ? 'منذ ساعة' : (h == 2 ? 'منذ ساعتين' : 'منذ $h ساعات');
   }
   final days = today.difference(day).inDays;
-  if (days == 1) return 'امبارح ${fmtTime(t)}';
-  if (days < 7) return 'من $days أيام';
+  if (days == 1) return 'أمس ${fmtTime(t)}';
+  if (days < 7) return 'منذ $days أيام';
   return fmtDate(t);
 }

@@ -60,7 +60,7 @@ export function bracketGap(brackets: Bracket[]): string | null {
   for (const [i, band] of ordered.entries()) {
     const lower = Number(band.from_amount);
     if (top !== null && lower !== top) {
-      return `الشريحة ${i + 1} بتبدأ من ${lower} والسابقة انتهت عند ${top}`;
+      return `الشريحة ${i + 1} تبدأ من ${lower} بينما انتهت السابقة عند ${top}`;
     }
     if (band.to_amount !== null && Number(band.to_amount) <= lower) {
       return `الشريحة ${i + 1} نهايتها قبل بدايتها`;
@@ -128,7 +128,7 @@ export default function PayrollSettings() {
 
   const openEdit = (v: Version) => {
     if (v.locked) {
-      message.warning('الإصدار ده اتقفل لأن مرتب مرحّل استعمله — اعمل إصدار جديد.', 8);
+      message.warning('هذا الإصدار مقفل لأنه استُخدم في مرتب مرحّل — أنشئ إصداراً جديداً.', 8);
       return;
     }
     setEditing(v);
@@ -147,7 +147,7 @@ export default function PayrollSettings() {
   const gap = useMemo(() => (form.scheme === 'income_tax' ? bracketGap(bands) : null), [bands, form.scheme]);
 
   const save = async () => {
-    if (!form.name.trim()) { message.warning('اكتب اسم الإصدار'); return; }
+    if (!form.name.trim()) { message.warning('أدخل اسم الإصدار'); return; }
     if (gap) { message.warning(gap); return; }
     const payload: any = {
       scheme: form.scheme,
@@ -180,12 +180,12 @@ export default function PayrollSettings() {
   };
 
   const saveComponent = async () => {
-    if (!compForm.name.trim()) { message.warning('اكتب اسم البند'); return; }
+    if (!compForm.name.trim()) { message.warning('أدخل اسم البند'); return; }
     try {
       await api.post('/api/v1/hr/payroll/components', {
         ...compForm, name: compForm.name.trim(),
       });
-      message.success('اتضاف');
+      message.success('تمت الإضافة');
       setCompOpen(false);
       setCompForm({ ...compForm, name: '' });
       load();
@@ -209,7 +209,7 @@ export default function PayrollSettings() {
         : <Tag color="purple">تأمينات اجتماعية</Tag>) },
     { title: 'الإصدار', dataIndex: 'name', key: 'name' },
     { title: 'من تاريخ', dataIndex: 'effective_from', key: 'effective_from', width: 120 },
-    { title: 'الشرايح', dataIndex: 'brackets', key: 'brackets', width: 90,
+    { title: 'الشرائح', dataIndex: 'brackets', key: 'brackets', width: 90,
       render: (b: Bracket[]) => (b.length ? b.length : '—') },
     { title: 'حصة الموظف', dataIndex: 'employee_pct', key: 'employee_pct', width: 110,
       render: (v: string | null) => (v ? `${Number(v)}%` : '—') },
@@ -217,11 +217,11 @@ export default function PayrollSettings() {
       render: (v: string | null) => (v ? `${Number(v)}%` : '—') },
     { title: '', dataIndex: 'locked', key: 'locked', width: 130,
       render: (v: boolean, r: Version) => (v
-        ? <Tag color="default" title="مرتب مرحّل استعمله">🔒 متجمّد</Tag>
+        ? <Tag color="default" title="استُخدم في مرتب مرحّل">🔒 مُجمَّد</Tag>
         : <Button size="small" onClick={() => openEdit(r)}>تعديل</Button>) },
   ];
   const schemeCols = useTableColumns('payroll-schemes', schemeColumns as any, {
-    export: { name: 'الشرايح والنسب', rows: versions },
+    export: { name: 'الشرائح والنسب', rows: versions },
   });
 
   const componentColumns = [
@@ -231,9 +231,9 @@ export default function PayrollSettings() {
       render: (v: string) => (v === 'earning'
         ? <Tag color="green">استحقاق</Tag> : <Tag color="red">استقطاع</Tag>) },
     { title: 'داخل وعاء الضريبة', dataIndex: 'taxable', key: 'taxable', width: 150,
-      render: (v: boolean) => (v ? 'أيوه' : 'لأ') },
+      render: (v: boolean) => (v ? 'نعم' : 'لا') },
     { title: 'داخل الأجر التأميني', dataIndex: 'insurable', key: 'insurable', width: 160,
-      render: (v: boolean) => (v ? 'أيوه' : 'لأ') },
+      render: (v: boolean) => (v ? 'نعم' : 'لا') },
   ];
   const componentCols = useTableColumns('payroll-components', componentColumns as any, {
     export: { name: 'بنود الراتب', rows: components },
@@ -244,9 +244,8 @@ export default function PayrollSettings() {
     <ListPage
       icon={<SettingOutlined />}
       title="إعدادات المرتبات"
-      subtitle="شرايح الضريبة والتأمينات، بنود الراتب، وأرقام المسير"
       tabs={[
-        { key: 'schemes', label: 'الشرايح والنسب', count: versions.length },
+        { key: 'schemes', label: 'الشرائح والنسب', count: versions.length },
         { key: 'components', label: 'بنود الراتب', count: components.length },
         { key: 'rules', label: 'أرقام المسير' },
       ]}
@@ -268,8 +267,7 @@ export default function PayrollSettings() {
         <Alert
           type="warning" showIcon style={{ margin: '6px 0 8px' }}
           message="لم تُحدَّد الشرائح بعد"
-          description={'لا يأتي النظام بأي نسب — فأول إصدار يكتبه محاسب الشركة ويعتمده. '
-            + 'من غيره المسير هيحسب الضريبة والتأمينات صفر.'}
+          description="بدونها سيحسب المسير الضريبة والتأمينات صفراً."
         />
       ) : null}
 
@@ -287,9 +285,6 @@ export default function PayrollSettings() {
               <InputNumber style={{ width: '100%' }} min={1} max={31}
                 value={settings.days_per_month}
                 onChange={(v) => saveSettings({ days_per_month: v })} />
-              <div style={{ color: '#888', fontSize: 14, marginTop: 4 }}>
-                «ثلاثون» أم «أيام الشهر الفعلية» — كلاهما مستعمل، وليس أحدهما خطأً.
-              </div>
             </Col>
             <Col span={12}>
               <div style={{ marginBottom: 4 }}>ساعات اليوم</div>
@@ -314,7 +309,6 @@ export default function PayrollSettings() {
                 type="info" showIcon
                 message={`سياسة التأخير: ${settings.late_policy === 'none'
                   ? 'يُسجَّل ولا يُخصم' : settings.late_policy}`}
-                description="الافتراضي ألا يُخصم. والخصم الصامت على التأخير أسرع طريق لفقدان ثقة الموظفين في أول شهر."
               />
             </Col>
           </Row>
@@ -332,7 +326,7 @@ export default function PayrollSettings() {
 
       <TabModal
         open={open} width={860}
-        title={editing ? `تعديل «${editing.name}»` : 'إصدار شرايح جديد'}
+        title={editing ? `تعديل «${editing.name}»` : 'إصدار شرائح جديد'}
         onCancel={() => setOpen(false)} onOk={save} okText="حفظ" cancelText="إلغاء"
         destroyOnClose
       >
@@ -379,9 +373,6 @@ export default function PayrollSettings() {
                 <div style={{ marginBottom: 4 }}>الحد الأقصى للأجر</div>
                 <InputNumber style={{ width: '100%' }} value={form.max_base}
                   onChange={(v) => setForm({ ...form, max_base: v })} />
-                <div style={{ color: '#888', fontSize: 14, marginTop: 4 }}>
-                  الأجر فوق السقف بيدفع على السقف.
-                </div>
               </Col>
             </>
           ) : (
@@ -392,7 +383,7 @@ export default function PayrollSettings() {
                   onChange={(v) => setForm({ ...form, annual_exemption: v })} />
               </Col>
               <Col span={24}>
-                <Divider style={{ margin: '6px 0' }}>الشرايح</Divider>
+                <Divider style={{ margin: '6px 0' }}>الشرائح</Divider>
                 {gap ? <Alert type="error" showIcon message={gap} style={{ marginBottom: 8 }} /> : null}
                 {bands.map((band, i) => (
                   <Row gutter={[6, 6]} key={i} style={{ marginBottom: 6 }}>
@@ -452,10 +443,6 @@ export default function PayrollSettings() {
                   <Statistic title="شهرياً"
                     value={money(previewTax(trial, bands, form.annual_exemption || 0) / 12)} />
                 </Space>
-                <div style={{ color: '#888', fontSize: 14, marginTop: 6 }}>
-                  المعاينة دي عشان تراجع الشرايح قبل ما تحفظ — كل رقم بيوصل قسيمة راتب بيتحسب
-                  على السيرفر.
-                </div>
               </Col>
             </>
           )}
@@ -496,11 +483,6 @@ export default function PayrollSettings() {
                 { value: false, label: 'خارج الأجر التأميني' },
                 { value: true, label: 'داخل الأجر التأميني' },
               ]} />
-          </Col>
-          <Col span={24}>
-            <div style={{ color: '#888', fontSize: 14 }}>
-              هذان سؤالان مختلفان: بدل الانتقالات قد يكون خارج الأجر التأميني وداخل وعاء الضريبة.
-            </div>
           </Col>
         </Row>
       </TabModal>

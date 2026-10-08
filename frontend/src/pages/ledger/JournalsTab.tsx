@@ -60,10 +60,10 @@ export default function JournalsTab() {
       if (editing) {
         await api.patch(`/api/v1/journals/${editing.id}`,
           { name: v.name, kind: v.kind, sort_order: v.sort_order });
-        message.success('اتحفظ الدفتر');
+        message.success('تم حفظ الدفتر');
       } else {
         await api.post('/api/v1/journals', v);
-        message.success('اتضاف الدفتر');
+        message.success('تمت إضافة الدفتر');
       }
       setDrawer(false); form.resetFields(); setEditing(null); load();
     } catch (err) { console.error(err); }
@@ -72,16 +72,16 @@ export default function JournalsTab() {
   const toggleActive = async (j: Journal) => {
     try {
       await api.patch(`/api/v1/journals/${j.id}`, { active: !j.active });
-      message.success(j.active ? 'اتقفل الدفتر' : 'اتفتح الدفتر'); load();
+      message.success(j.active ? 'تم إغلاق الدفتر' : 'تم فتح الدفتر'); load();
     } catch (err) { console.error(err); }
   };
 
   const toggleHash = async (j: Journal) => {
     try {
       await api.patch(`/api/v1/journals/${j.id}`, { restrict_mode_hash: !j.restrict_mode_hash });
-      message.success(j.restrict_mode_hash ? 'اتقفلت السلسلة' : 'اتشغّلت السلسلة'); load();
+      message.success(j.restrict_mode_hash ? 'تم تعطيل السلسلة' : 'تم تفعيل السلسلة'); load();
     } catch (err: any) {
-      message.error(err?.response?.data?.detail?.message || 'مانفعش');
+      message.error(err?.response?.data?.detail?.message || 'تعذر تنفيذ العملية');
     }
   };
 
@@ -94,20 +94,16 @@ export default function JournalsTab() {
     { title: 'الحالة', dataIndex: 'active', key: 'active', width: 110,
       render: (a: boolean, r: Journal) => (
         <Space size={4}>
-          <Tag color={a ? 'green' : 'default'}>{a ? 'شغّال' : 'مقفول'}</Tag>
+          <Tag color={a ? 'green' : 'default'}>{a ? 'مفتوح' : 'مغلق'}</Tag>
           {r.is_system && <Tag color="blue">نظام</Tag>}
         </Space>
       ) },
     { title: 'سلسلة التجزئة', dataIndex: 'restrict_mode_hash', key: 'restrict_mode_hash', width: 190,
       render: (on: boolean, r: Journal) => (
-        <Tooltip title={on
-          ? 'شغّالة. الإطفاء بيترفض بعد ما يتجزّأ أول قيد.'
-          : 'التشغيل بيدّي كل قيد جديد بصمة — ومايرجعش مسودة ولا يتحذف، ومستنده مايتعدّلش.'}>
-          <Space size={6}>
-            <Switch size="small" checked={!!on} onChange={() => toggleHash(r)} />
-            <span style={{ color: '#888' }}>{on ? 'شغّالة' : 'مقفولة'}</span>
-          </Space>
-        </Tooltip>
+        <Space size={6}>
+          <Switch size="small" checked={!!on} onChange={() => toggleHash(r)} />
+          <span style={{ color: '#888' }}>{on ? 'مفعّلة' : 'معطّلة'}</span>
+        </Space>
       ) },
     { title: '', key: 'actions', width: 160,
       render: (_: any, r: Journal) => (
@@ -132,14 +128,6 @@ export default function JournalsTab() {
         </Space>
       }
     >
-      <div style={{ marginBottom: 12, color: '#888', fontSize: 15 }}>
-        كل قيد بيعيش في دفتر، والدفتر بيدّيه رقمه المتسلسل — <code>INV/2026/00001</code>.
-        الترقيم بيتصفّر مع كل سنة، والسنة بتتاخد من تاريخ القيد مش من تاريخ النهارده.
-        <br />
-        <b>سلسلة التجزئة</b> بتدّي كل قيد بصمة محسوبة من محتواه ومن بصمة اللي قبله، فأي
-        تغيير من ورا النظام بيبان في «سلامة الدفاتر». تشغيلها بيقفل الدفتر على نفسه —
-        قيده مايرجعش مسودة ومايتحذفش — وبتتشغّل على الدفتر اللي فواتيره اتسلّمت بس.
-      </div>
       <Table className="sl-table" rowKey="id" loading={loading} dataSource={rows} columns={columns}
         pagination={false} size="small" />
 
@@ -150,8 +138,7 @@ export default function JournalsTab() {
           initialValues={{ kind: 'general', sort_order: 100 }}>
           <Row gutter={16}>
             <Col span={10}>
-              <Form.Item name="code" label="الكود" rules={[{ required: true, message: 'أدخل الكود' }]}
-                tooltip="بادئة الترقيم — حروف لاتينية قصيرة">
+              <Form.Item name="code" label="الكود" rules={[{ required: true, message: 'أدخل الكود' }]}>
                 <Input placeholder="MISC" disabled={!!editing} maxLength={12} />
               </Form.Item>
             </Col>

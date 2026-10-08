@@ -92,7 +92,6 @@ class _DaySummaryScreenState extends State<DaySummaryScreen> {
                         ListTile(
                           leading: const Icon(Icons.payments_outlined),
                           title: const Text('نقدي على الفواتير'),
-                          subtitle: const Text('اللي اتدفع مع البيع نفسه'),
                           trailing: Text(_money(_t['cash_on_invoices'] ?? 0),
                               style: const TextStyle(fontWeight: FontWeight.w700)),
                         ),
@@ -100,7 +99,6 @@ class _DaySummaryScreenState extends State<DaySummaryScreen> {
                         ListTile(
                           leading: const Icon(Icons.account_balance_wallet_outlined),
                           title: const Text('دفعات عامة'),
-                          subtitle: const Text('تحصيل من حساب العميل، مش على فاتورة'),
                           trailing: Text(_money(_t['receipts'] ?? 0),
                               style: const TextStyle(fontWeight: FontWeight.w700)),
                         ),
@@ -113,8 +111,8 @@ class _DaySummaryScreenState extends State<DaySummaryScreen> {
                       leading: Icon(pending > 0 ? Icons.cloud_off : Icons.cloud_done,
                           color: pending > 0 ? AppColors.accent : AppColors.success),
                       title: Text(pending > 0
-                          ? '$pending مستند لسه ما اترفعش'
-                          : 'كل حاجة اترفعت ✔'),
+                          ? '$pending مستند لم يُرفع بعد'
+                          : 'تم رفع جميع المستندات ✔'),
                       subtitle: pending > 0
                           ? Text([
                               if (_pendingInvoices > 0) '$_pendingInvoices فاتورة',

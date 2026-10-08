@@ -74,9 +74,9 @@ def _revenue_account_id(db: Session, chosen: int | None, branch_id: int | None =
 
     acc = db.get(Account, chosen)
     if acc is None or not acc.active:
-        raise SalesError("حساب الإيراد مش موجود.")
+        raise SalesError("حساب الإيراد غير موجود.")
     if not acc.is_postable:
-        raise SalesError("حساب الإيراد ده مجموعة مش حساب — اختار حساب بيقبل الترحيل.")
+        raise SalesError("حساب الإيراد هذا مجموعة وليس حساباً — اختر حساباً يقبل الترحيل.")
     return acc.id
 
 
@@ -91,12 +91,12 @@ def _split_expenses(db, expenses: list[dict] | None) -> tuple[Decimal, Decimal]:
     for exp in (expenses or []):
         amount = to_money(exp.get("amount") or 0)
         if amount <= ZERO:
-            raise SalesError("قيمة المصروف لازم تكون أكبر من صفر.")
+            raise SalesError("يجب أن تكون قيمة المصروف أكبر من صفر.")
         account = db.get(Account, int(exp["account_id"]))
         if account is None:
             raise SalesError("حساب المصروف غير موجود.")
         if not account.is_postable:
-            raise SalesError("حساب المصروف لازم يكون حساب ترحيل مش مجموعة.")
+            raise SalesError("يجب أن يكون حساب المصروف حساب ترحيل لا مجموعة.")
         kind = str(exp.get("kind", "billed"))
         if kind not in ("billed", "operating"):
             raise SalesError("نوع المصروف غير صحيح.")
@@ -138,7 +138,7 @@ def _assert_lines_available(
         if needed > available:
             if held > ZERO:
                 raise stock_service.StockError(
-                    f"المتاح {available} أقل من المطلوب {needed} — فيه {held} محجوزة لعميل تاني "
+                    f"المتاح {available} أقل من المطلوب {needed} — توجد {held} محجوزة لعميل آخر "
                     f"(صنف {item_id}، {kind.value} {loc_id})."
                 )
             raise stock_service.StockError(
@@ -162,14 +162,14 @@ def compute_net(gross: Decimal, combined_pct: Decimal) -> Decimal:
 def _assert_bonus_target(db: Session, target_id: int | None, customer_id: int,
                          self_id: int | None) -> None:
     if self_id and target_id == self_id:
-        raise SalesError("فاتورة البونص ماينفعش تبقى على نفسها.")
+        raise SalesError("لا يمكن أن تكون فاتورة البونص مرتبطة بنفسها.")
     target = db.get(SalesInvoice, target_id)
     if target is None:
-        raise SalesError("فاتورة البيع اللي البونص عليها مش موجودة.")
+        raise SalesError("فاتورة البيع المرتبط بها البونص غير موجودة.")
     if target.is_bonus:
-        raise SalesError("البونص لازم يبقى على فاتورة بيع، مش على بونص تاني.")
+        raise SalesError("يجب أن يكون البونص على فاتورة بيع، لا على بونص آخر.")
     if target.customer_id != customer_id:
-        raise SalesError("فاتورة البونص لازم تبقى لنفس عميل الفاتورة اللي عليها.")
+        raise SalesError("يجب أن تكون فاتورة البونص للعميل نفسه في الفاتورة المرتبطة بها.")
 
 
 def _assert_not_below_cost(db: Session, built, base_costs: dict[int, Decimal], *,
@@ -191,10 +191,10 @@ def _assert_not_below_cost(db: Session, built, base_costs: dict[int, Decimal], *
     if not bad:
         return
     if len(bad) == 1:
-        raise SalesError(f"سعر بيع «{bad[0]}» أقل من سعر الشراء — محتاج صلاحية "
+        raise SalesError(f"سعر بيع «{bad[0]}» أقل من سعر الشراء — يتطلب صلاحية "
                          f"«البيع تحت سعر التكلفة».")
     names = "، ".join(f"«{n}»" for n in bad)
-    raise SalesError(f"سعر البيع أقل من سعر الشراء في الأصناف دي: {names} — محتاج صلاحية "
+    raise SalesError(f"سعر البيع أقل من سعر الشراء في هذه الأصناف: {names} — يتطلب صلاحية "
                      f"«البيع تحت سعر التكلفة».")
 
 
@@ -239,20 +239,20 @@ def create_sale(
         if bonus_for_invoice_id is not None:
             _assert_bonus_target(db, bonus_for_invoice_id, customer_id, replace_invoice_id)
         if to_money(cash_amount or ZERO) != ZERO:
-            raise SalesError("فاتورة البونص مافيهاش فلوس — النقدي لازم يبقى صفر.")
+            raise SalesError("فاتورة البونص بلا مبالغ — يجب أن يكون النقدي صفراً.")
         if expenses:
-            raise SalesError("فاتورة البونص مافيهاش مصروفات.")
+            raise SalesError("لا تتضمن فاتورة البونص مصروفات.")
         variable_discount_pct = ZERO
         credit_amount = None
     has_coupons = bool(coupon_serial_from or coupon_serial_to or coupon_count
                        or has_coupon_rows)
     if not lines and not has_coupons:
-        raise SalesError("الفاتورة لازم يكون فيها صنف أو دفتر كوبونات على الأقل.")
+        raise SalesError("يجب أن تحتوي الفاتورة على صنف أو دفتر كوبونات على الأقل.")
     fixed = ZERO if is_bonus else fixed_discount_pct(db)
     variable = Decimal(variable_discount_pct)
     combined = Decimal("100") if is_bonus else discounts.combine(fixed, variable)
     if variable < ZERO or variable >= Decimal("100") or fixed < ZERO or fixed >= Decimal("100"):
-        raise SalesError("كل خصم لازم يكون من صفر لأقل من ١٠٠٪.")
+        raise SalesError("يجب أن يكون كل خصم من صفر إلى أقل من ١٠٠٪.")
 
     customer = db.get(Customer, customer_id)
 
@@ -261,13 +261,13 @@ def create_sale(
     for ln in lines:
         item = db.get(Item, ln.item_id)
         if item is None or item.kind != ItemKind.product:
-            raise SalesError("البيع بيقبل منتجات بس — مش خامات.")
+            raise SalesError("البيع يقبل المنتجات فقط — لا الخامات.")
         try:
             factor = uom_service.resolve_factor(db, item, ln.unit)
         except UomError as exc:
             raise SalesError(str(exc)) from exc
         if item.is_perishable and factor != Decimal("1"):
-            raise SalesError("الأصناف اللي ليها صلاحية بتتباع بوحدتها الأساسية.")
+            raise SalesError("الأصناف ذات الصلاحية تُباع بوحدتها الأساسية.")
         try:
             serial_service.assert_sale_serials(
                 item, quantity=ln.quantity, unit_factor=factor, serials=ln.serials
@@ -288,8 +288,8 @@ def create_sale(
             unit_price = list_price
         if unit_price < list_price and not can_sell_below:
             raise SalesError(
-                f"البيع بأقل من سعر الشريحة ({list_price}) محتاج صلاحية "
-                f"«البيع تحت السعر» — مالكش الصلاحية دي."
+                f"البيع بأقل من سعر الشريحة ({list_price}) يتطلب صلاحية "
+                f"«البيع تحت السعر» — ليست لديك هذه الصلاحية."
             )
         split = ln.fixed_discount_pct is not None or ln.variable_discount_pct is not None
         if split and not is_bonus:
@@ -299,7 +299,7 @@ def create_sale(
                     continue
                 if Decimal(half) < ZERO or Decimal(half) >= Decimal("100"):
                     raise SalesError(
-                        f"الخصم {label} لازم يكون من صفر لأقل من ١٠٠٪ — جالي {half}.")
+                        f"يجب أن يكون الخصم {label} من صفر إلى أقل من ١٠٠٪ — القيمة المُدخلة {half}.")
             line_disc = discounts.combine(ln.fixed_discount_pct or ZERO,
                                           ln.variable_discount_pct or ZERO)
         else:
@@ -309,7 +309,7 @@ def create_sale(
         if is_bonus:
             line_disc = Decimal("100")
         elif line_disc < ZERO or line_disc >= Decimal("100"):
-            raise SalesError("خصم السطر لازم يكون من صفر لأقل من ١٠٠٪.")
+            raise SalesError("يجب أن يكون خصم السطر من صفر إلى أقل من ١٠٠٪.")
         line_before = Decimal(ln.quantity) * unit_price
         line_total = ZERO if is_bonus else discounts.net_of(line_before, line_disc)
         gross += line_total
@@ -337,7 +337,7 @@ def create_sale(
         credit_amount = payable - cash
     elif to_money(cash) + to_money(credit_amount) != payable:
         raise SalesError(
-            f"النقدي + الآجل لازم يساوي المستحق ({payable})."
+            f"يجب أن يساوي النقدي + الآجل المستحق ({payable})."
         )
 
     try:
@@ -352,7 +352,7 @@ def create_sale(
 
     existing = db.get(SalesInvoice, replace_invoice_id) if replace_invoice_id else None
     if replace_invoice_id and existing is None:
-        raise SalesError("الفاتورة اللي بتتعدّل مش موجودة.")
+        raise SalesError("الفاتورة المراد تعديلها غير موجودة.")
 
     _accounts = db.scalars(
         select(CustomerAccount).where(CustomerAccount.customer_id == customer_id)).all()
@@ -556,13 +556,13 @@ def reverse_sales_return(
 ) -> SalesReturn:
     ret = db.get(SalesReturn, return_id)
     if ret is None:
-        raise SalesError("المرتجع مش موجود.")
+        raise SalesError("المرتجع غير موجود.")
     if ret.reversed_at is not None:
-        raise SalesError("المرتجع ده اتعكس قبل كده.")
+        raise SalesError("هذا المرتجع معكوس مسبقاً.")
 
     inv = db.get(SalesInvoice, ret.sales_invoice_id) if ret.sales_invoice_id else None
     if ret.sales_invoice_id and inv is None:
-        raise SalesError("فاتورة البيع بتاعت المرتجع مش موجودة.")
+        raise SalesError("فاتورة البيع الخاصة بالمرتجع غير موجودة.")
 
     factors = {ln.item_id: to_factor(ln.unit_factor) for ln in inv.lines} if inv else {}
 
@@ -572,7 +572,7 @@ def reverse_sales_return(
         if out_kind is None or out_loc is None:
             out_kind, out_loc = ret.origin_location_kind, ret.origin_location_id
         if out_kind is None or out_loc is None:
-            raise SalesError("المرتجع ده مالوش مخزن مسجّل — مايتعكسش.")
+            raise SalesError("لا يوجد مخزن مسجّل لهذا المرتجع — لا يمكن عكسه.")
         factor = (to_factor(line.unit_factor) if getattr(line, "unit_factor", None) is not None
                   else factors.get(line.item_id, Decimal("1")))
         base_qty = to_qty(Decimal(line.quantity) * factor)
@@ -633,7 +633,7 @@ def sold_serials(db: Session, invoice_id: int, item_id: int) -> list[str]:
 def reverse_sale(db: Session, *, sales_invoice_id: int, actor_user_id: int) -> SalesReturn:
     inv = db.get(SalesInvoice, sales_invoice_id)
     if inv is None:
-        raise SalesError("فاتورة البيع مش موجودة.")
+        raise SalesError("فاتورة البيع غير موجودة.")
 
     prior = _already_returned(db, sales_invoice_id)
     lines: list[tuple[int, Decimal]] = []
@@ -654,7 +654,7 @@ def reverse_sale(db: Session, *, sales_invoice_id: int, actor_user_id: int) -> S
             serials[ln.item_id] = sold_serials(db, sales_invoice_id, ln.item_id)
 
     if not lines:
-        raise SalesError("الفاتورة دي اترجّعت بالكامل قبل كده — مفيش حاجة تتعكس.")
+        raise SalesError("أُرجعت هذه الفاتورة بالكامل مسبقاً — لا يوجد ما يُعكس.")
 
     return return_sale(
         db, sales_invoice_id=sales_invoice_id, lines=lines, actor_user_id=actor_user_id,
@@ -673,7 +673,7 @@ def return_sale(
 ) -> SalesReturn:
     inv = db.get(SalesInvoice, sales_invoice_id)
     if inv is None:
-        raise SalesError("فاتورة البيع مش موجودة.")
+        raise SalesError("فاتورة البيع غير موجودة.")
     doc_pct = Decimal(getattr(inv, "combined_pct", 0) or 0)
     by_item: dict[int, list] = {}
     for ln in inv.lines:
@@ -689,13 +689,13 @@ def return_sale(
     for item_id, qty in wanted.items():
         rows = by_item.get(item_id)
         if not rows:
-            raise SalesError("الصنف ده مش على الفاتورة دي أصلاً.")
+            raise SalesError("هذا الصنف غير موجود في هذه الفاتورة أصلاً.")
         sold_qty = sum((Decimal(r.quantity) for r in rows), ZERO)
         before = prior.get(item_id, ZERO)
         if before + qty > sold_qty:
             raise SalesError(
-                f"مرتجعات الفاتورة دي وصلت للكمية المباعة خلاص — "
-                f"اتباع {sold_qty} واترجّع {before} قبل كده.")
+                f"بلغت مرتجعات هذه الفاتورة الكمية المباعة — "
+                f"بيع {sold_qty} وأُرجع {before} مسبقاً.")
         skip, left = before, qty
         for r in rows:
             room = Decimal(r.quantity)
@@ -757,7 +757,7 @@ def return_sale(
         if item.is_serialized:
             all_ser = (serials or {}).get(item_id) or []
             if Decimal(len(all_ser)) != to_qty(wanted[item_id]):
-                raise SalesError("عدد السيريالات لازم يساوي الكمية المرتجعة.")
+                raise SalesError("يجب أن يساوي عدد السيريالات الكمية المرتجعة.")
             start = used_serials.get(item_id, 0)
             ser = all_ser[start:start + int(qty)]
             used_serials[item_id] = start + int(qty)
@@ -839,14 +839,14 @@ def create_standalone_return(
     cost_center_distribution: dict | None = None,
 ) -> SalesReturn:
     if not lines:
-        raise SalesError("المرتجع لازم يكون فيه صنف واحد على الأقل.")
+        raise SalesError("يجب أن يحتوي المرتجع على صنف واحد على الأقل.")
     variable = Decimal(variable_discount_pct)
     if variable < ZERO or variable >= Decimal("100"):
-        raise SalesError("خصم الفاتورة لازم يكون من صفر لأقل من ١٠٠٪.")
+        raise SalesError("يجب أن يكون خصم الفاتورة من صفر إلى أقل من ١٠٠٪.")
 
     customer = db.get(Customer, customer_id)
     if customer is None:
-        raise SalesError("العميل مش موجود.")
+        raise SalesError("العميل غير موجود.")
     try:
         cust_acc = customer_service.require_account(db, customer_id, family=family)
     except (MergeError, customer_service.CustomerError) as exc:
@@ -861,17 +861,17 @@ def create_standalone_return(
     for ln in lines:
         item = db.get(Item, ln.item_id)
         if item is None or item.kind != ItemKind.product:
-            raise SalesError("المرتجع بيقبل منتجات بس — مش خامات.")
+            raise SalesError("المرتجع يقبل المنتجات فقط — لا الخامات.")
         try:
             factor = uom_service.resolve_factor(db, item, ln.unit)
         except UomError as exc:
             raise SalesError(str(exc)) from exc
         unit_price = to_money(ln.unit_price)
         if unit_price < ZERO:
-            raise SalesError("سعر الاسترداد مايكونش بالسالب.")
+            raise SalesError("لا يمكن أن يكون سعر الاسترداد سالباً.")
         line_disc = Decimal(ln.discount_pct) if ln.discount_pct is not None else ZERO
         if line_disc < ZERO or line_disc >= Decimal("100"):
-            raise SalesError("خصم السطر لازم يكون من صفر لأقل من ١٠٠٪.")
+            raise SalesError("يجب أن يكون خصم السطر من صفر إلى أقل من ١٠٠٪.")
         line_before = Decimal(ln.quantity) * unit_price
         line_total = discounts.net_of(line_before, line_disc)
         gross += line_total
@@ -891,7 +891,7 @@ def create_standalone_return(
             cash_refund += gap
     elif gap != ZERO:
         raise SalesError(
-            "المرتجع نقدي + اللي بيتخصم من المديونية لازم يساوي صافي المرتجع." if tax == ZERO
+            "يجب أن يساوي المرتجع النقدي + المخصوم من المديونية صافي المرتجع." if tax == ZERO
             else f"cash refund + credit reduction must equal the total including VAT ({refund_total})."
         )
 
@@ -906,7 +906,7 @@ def create_standalone_return(
 
     existing = db.get(SalesReturn, replace_return_id) if replace_return_id else None
     if replace_return_id and existing is None:
-        raise SalesError("المرتجع اللي بيتعدّل مش موجود.")
+        raise SalesError("المرتجع المراد تعديله غير موجود.")
 
     ret = existing or SalesReturn(
         document_number=_doc_number(db, SalesReturn, "SRET"),
@@ -967,11 +967,11 @@ def create_standalone_return(
         if item is not None and item.is_serialized:
             ser = [s.strip() for s in (ln.serials or []) if s.strip()]
             if len(set(ser)) != len(ser):
-                raise SalesError(f"«{item.name}»: فيه سيريال مكرر في المرتجع.")
+                raise SalesError(f"«{item.name}»: يوجد سيريال مكرر في المرتجع.")
             if len(ser) != int(base_qty):
                 raise SalesError(
-                    f"«{item.name}»: اكتب {int(base_qty)} سيريال بعدد الكمية — "
-                    "هما اللي بيرجعوا للمخزن.")
+                    f"«{item.name}»: أدخل {int(base_qty)} سيريال بعدد الكمية — "
+                    "وهي التي تعود إلى المخزن.")
             serial_service.restore_free(
                 db, item=item, origin_kind=back_kind, origin_id=back_loc,
                 serials=ser, document_id=ret.id, actor_user_id=actor_user_id)

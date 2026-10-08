@@ -316,9 +316,6 @@ export default function StockSheet() {
     <ListPage
       icon={<ContainerOutlined />}
       title={TITLES[view]}
-      subtitle={general
-        ? 'سطر لكل صنف، والمخازن متجمّعة — اللي عند الشركة كلها'
-        : 'سطر لكل صنف في كل مخزن — اكتب العدد الفعلي والفرق بيطلع لوحده'}
       actions={(<>
           <Button icon={<PrinterOutlined />} onClick={printIt}>
             {picked.length ? `طباعة (${picked.length})` : 'طباعة'}
@@ -366,7 +363,7 @@ export default function StockSheet() {
           options={[
             { value: 'all', label: 'سجل: كل الحركات' },
             { value: 'm1', label: 'سجل: آخر شهر' },
-            { value: 'm3', label: 'سجل: آخر ٣ شهور' },
+            { value: 'm3', label: 'سجل: آخر ٣ أشهر' },
             { value: 'm12', label: 'سجل: آخر سنة' },
             { value: 'custom', label: 'سجل: فترة محددة' },
           ]}

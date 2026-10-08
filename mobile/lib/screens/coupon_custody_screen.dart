@@ -44,24 +44,22 @@ class _CouponCustodyScreenState extends State<CouponCustodyScreen> {
               child: ListView(
                 padding: const EdgeInsets.all(12),
                 children: [
-                  Card(
-                    color: const Color(0xFFF3F8FB),
-                    child: Padding(
-                      padding: const EdgeInsets.all(12),
-                      child: Text(
-                          'العهدة بتتحدّث مع «مزامنة». اللي كتبته على فواتير لسه على '
-                          'الجهاز متشال من المتاح.'
-                          '${_lastPull == null ? '' : '\nآخر تحديث: '
-                              '${_lastPull!.substring(0, 16).replaceAll('T', ' ')}'}',
-                          style: const TextStyle(fontSize: 12.5, color: Colors.black87)),
+                  if (_lastPull != null)
+                    Card(
+                      color: const Color(0xFFF3F8FB),
+                      child: Padding(
+                        padding: const EdgeInsets.all(12),
+                        child: Text(
+                            'آخر تحديث: '
+                            '${_lastPull!.substring(0, 16).replaceAll('T', ' ')}',
+                            style: const TextStyle(fontSize: 12.5, color: Colors.black87)),
+                      ),
                     ),
-                  ),
                   if (!_custody.known)
                     const Padding(
                       padding: EdgeInsets.all(24),
                       child: Text(
-                          'مافيش عهدة كوبونات على الجهاز.\n'
-                          'لو المكتب سلّمك دفاتر، اعمل «مزامنة» عشان تنزل.',
+                          'لا توجد عهدة كوبونات على الجهاز.',
                           textAlign: TextAlign.center),
                     )
                   else
@@ -107,13 +105,13 @@ class _CouponCustodyScreenState extends State<CouponCustodyScreen> {
             const SizedBox(height: 8),
             Text(
                 free.isEmpty
-                    ? 'مافيش سريالات متاحة في الفئة دي'
+                    ? 'لا توجد سريالات متاحة في هذه الفئة'
                     : free.map((r) => r.label).join('، '),
                 style: const TextStyle(fontSize: 13.5)),
             if (held > 0)
               Padding(
                 padding: const EdgeInsets.only(top: 6),
-                child: Text('محجوز لفواتير لسه على الجهاز: $held',
+                child: Text('محجوز لفواتير ما زالت على الجهاز: $held',
                     style: const TextStyle(fontSize: 12, color: Colors.black54)),
               ),
           ],

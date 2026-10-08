@@ -212,7 +212,7 @@ def _apply_tiers(db: Session, item: Item, tiers: list["TierPrice"], *, actor_use
         raise HTTPException(422, {"code": "validation", "message": "only products have sale prices"})
     for tp in tiers:
         if tp.price < 0:
-            raise HTTPException(422, {"code": "validation", "message": "price must be ≥ 0"})
+            raise HTTPException(422, {"code": "validation", "message": "يجب ألا يقل السعر عن صفر."})
     for tp in tiers:
         row = db.scalar(
             select(ItemPrice).where(ItemPrice.item_id == item.id, ItemPrice.tier == tp.tier)
@@ -252,7 +252,7 @@ def _apply_point_value(db: Session, item: Item, value, *, actor_user_id: int) ->
         raise HTTPException(422, {"code": "validation",
                                   "message": "Point values apply to products only"})
     if value < 0:
-        raise HTTPException(422, {"code": "validation", "message": "point_value must be ≥ 0"})
+        raise HTTPException(422, {"code": "validation", "message": "يجب ألا تقل قيمة النقاط عن صفر."})
     ppv = db.scalar(select(ProductPointValue).where(ProductPointValue.item_id == item.id))
     if ppv is None:
         db.add(ProductPointValue(item_id=item.id, point_value=value, updated_by=actor_user_id))
@@ -309,7 +309,7 @@ def items_import_template(
     ws.title = "الأصناف"
     ws.append(_IMPORT_HEADERS)
     ws.append(["سخام 4 بوصة", "مواسير", "قطعة", 120, 135, 110, 125, 150, None, None, None, None])
-    ws.append(["صنف تاني بدون أسعار اختيارية", "عدد وأدوات", "قطعة"])
+    ws.append(["صنف آخر بدون أسعار اختيارية", "عدد وأدوات", "قطعة"])
     buf = _io.BytesIO()
     wb.save(buf)
     buf.seek(0)
@@ -346,18 +346,18 @@ async def import_items_excel(
     except Exception:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, {
             "code": "bad_file",
-            "message": "الملف مش إكسل مقروء — نزّل القالب واملأ بنفس الأعمدة.",
+            "message": "الملف ليس ملف إكسل مقروءاً — نزّل القالب واملأه بالأعمدة نفسها.",
         })
     ws = wb[wb.sheetnames[0]]
     rows = list(ws.iter_rows(values_only=True))
     if not rows:
         raise HTTPException(status.HTTP_400_BAD_REQUEST,
-                            {"code": "empty", "message": "الملف فاضي."})
+                            {"code": "empty", "message": "الملف فارغ."})
     header = [(str(cell).strip() if cell is not None else "") for cell in rows[0]]
     if "الاسم" not in header:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, {
             "code": "bad_headers",
-            "message": "أول صف لازم يكون عناوين الأعمدة ويسبقها عمود «الاسم» — نزّل القالب.",
+            "message": "يجب أن يكون الصف الأول عناوين الأعمدة ومن بينها عمود «الاسم» — نزّل القالب.",
         })
 
     def col(title: str) -> int:
@@ -419,7 +419,7 @@ async def import_items_excel(
             failed += 1
             errors.append({"row": idx, "name": name, "message": str(exc)})
         if len(errors) >= 50:
-            errors.append({"row": 0, "name": "", "message": "… وفيه أخطاء تانية اتشالت من العرض"})
+            errors.append({"row": 0, "name": "", "message": "… وتوجد أخطاء أخرى حُذفت من العرض"})
             break
     return {"created": created, "skipped": skipped, "failed": failed, "errors": errors}
 
@@ -524,7 +524,7 @@ def get_return_price(
 ) -> ReturnPriceOut:
     item = db.get(Item, item_id)
     if item is None:
-        raise HTTPException(404, {"code": "not_found", "message": "الصنف مش موجود"})
+        raise HTTPException(404, {"code": "not_found", "message": "الصنف غير موجود"})
 
     from src.services import costing_service
 
@@ -812,11 +812,11 @@ def update_item(
     if "unit_of_measure" in sent and body.unit_of_measure is not None:
         label = body.unit_of_measure.strip()
         if not label:
-            raise HTTPException(422, {"code": "validation", "message": "اسم الوحدة مايبقاش فاضي"})
+            raise HTTPException(422, {"code": "validation", "message": "لا يمكن أن يكون اسم الوحدة فارغاً"})
         if label != item.unit_of_measure:
             if uom_service.is_meter_unit(label) == uom_service.is_meter_unit(item.unit_of_measure):
                 raise HTTPException(422, {"code": "validation", "message":
-                    "الوحدة الأساسية بتتصلّح بين «متر» و«قطعة» بس — أي تغيير تاني بيغيّر معنى "
+                    "تصحيح الوحدة الأساسية متاح بين «متر» و«قطعة» فقط — أي تغيير آخر يغيّر معنى "
                     "رصيد الصنف كله."})
             audit_service.record(db, action="item.unit_label", actor_user_id=current.id,
                                  entity_type="item", entity_id=item.id,
@@ -830,7 +830,7 @@ def update_item(
     if relabelled and db.scalar(select(ItemUnit.id).where(
             ItemUnit.item_id == item.id, ItemUnit.name == item.unit_of_measure)):
         raise HTTPException(422, {"code": "validation",
-                                  "message": f"فيه وحدة بديلة اسمها «{item.unit_of_measure}» بالفعل"})
+                                  "message": f"توجد بالفعل وحدة بديلة باسم «{item.unit_of_measure}»"})
     db.commit()
     out = _out(item)
     out.meters_per_piece = _length_of(db, item)

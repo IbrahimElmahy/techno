@@ -194,14 +194,12 @@ export default function ChartTab() {
       <TabModal footer={null} centered title="إضافة حساب جديد" width={460} open={drawer} onCancel={() => setDrawer(false)} destroyOnHidden>
         <Form form={form} layout="vertical" onFinish={onCreate} requiredMark={false}
           initialValues={{ is_postable: true, nature: 'expense' }}>
-          <Form.Item name="parent_id" label="الحساب الأب (المجموعة)"
-            extra="اترك فارغاً لإنشاء حساب جذر">
+          <Form.Item name="parent_id" label="الحساب الأب (المجموعة)">
             <Select allowClear placeholder="اختر المجموعة الأب" showSearch
               options={groups.map((g) => ({ value: g.id, label: g.name, search: g.code || '' }))} filterOption={searchFilter} filterSort={searchRank}/>
           </Form.Item>
           <Form.Item name="code" label="كود الحساب (مقطعي)"
-            rules={[{ required: true, message: 'أدخل الكود' }]}
-            extra="يجب أن يبدأ بكود الأب، مثل 5.10.001">
+            rules={[{ required: true, message: 'أدخل الكود' }]}>
             <Input placeholder="مثال: 5.10.001" />
           </Form.Item>
           <Form.Item name="name" label="اسم الحساب" rules={[{ required: true, message: 'أدخل الاسم' }]}>
@@ -216,16 +214,14 @@ export default function ChartTab() {
               { value: false, label: 'مجموعة (تجميعية فقط)' },
             ]} />
           </Form.Item>
-          <Form.Item name="main_level" label="المستوى الرئيسي"
-            extra="اختر من القائمة أو اكتب مستوى جديد">
+          <Form.Item name="main_level" label="المستوى الرئيسي">
             <Select allowClear showSearch placeholder="مثال: مصروفات غير مباشرة"
               options={MAIN_LEVELS.map((l) => ({ value: l, label: l }))}
               onSearch={() => {}}
               filterOption={searchFilter} filterSort={searchRank}
               mode="tags" maxCount={1} />
           </Form.Item>
-          <Form.Item name="appears_in" label="يظهر في"
-            extra="اتركه فارغاً ليتبع طبيعة الحساب تلقائياً">
+          <Form.Item name="appears_in" label="يظهر في">
             <Select allowClear placeholder="حسب الطبيعة"
               options={Object.entries(APPEARS_IN_LABEL).map(([v, l]) => ({ value: v, label: l }))} />
           </Form.Item>

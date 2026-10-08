@@ -41,8 +41,8 @@ interface Day {
 
 const STATUS: Record<string, { label: string; color?: string }> = {
   present: { label: 'حاضر', color: 'green' },
-  absent: { label: 'غايب', color: 'red' },
-  leave: { label: 'أجازة', color: 'blue' },
+  absent: { label: 'غائب', color: 'red' },
+  leave: { label: 'إجازة', color: 'blue' },
   holiday: { label: 'عطلة', color: 'purple' },
   weekend: { label: 'راحة' },
   mission: { label: 'مأمورية', color: 'cyan' },
@@ -122,7 +122,7 @@ export default function Attendance() {
         check_out: values.check_out?.trim() || null,
         notes: values.notes?.trim() || null,
       });
-      message.success(editingDay ? 'اتعدّل اليوم' : 'تم التسجيل');
+      message.success(editingDay ? 'تم تعديل اليوم' : 'تم التسجيل');
       setDayOpen(false);
       load();
     } catch (err: any) {
@@ -135,7 +135,7 @@ export default function Attendance() {
     if (!editingDay) return;
     try {
       await api.delete(`/api/v1/hr/attendance/days/${editingDay.id}`);
-      message.success('اتشال اليوم');
+      message.success('تم حذف اليوم');
       setDayOpen(false);
       load();
     } catch (err: any) {
@@ -150,7 +150,7 @@ export default function Attendance() {
       setCsvRows(parsed);
       setFilename(file.name);
       setPreview(null);
-      message.success(`اتقرا ${parsed.length} سطر`);
+      message.success(`تمت قراءة ${parsed.length} سطر`);
     };
     reader.readAsText(file, 'utf-8');
     return false;
@@ -214,7 +214,7 @@ export default function Attendance() {
 
   const openDay = (row: Day) => {
     if (row.locked) {
-      message.warning('اليوم ده داخل مسير مرحّل — اعكس المسير الأول.');
+      message.warning('هذا اليوم داخل مسير مرحّل — اعكس المسير أولاً.');
       return;
     }
     setEditingDay(row);
@@ -274,7 +274,7 @@ export default function Attendance() {
         ['من', range ? range[0].format('YYYY/MM/DD') : 'الكل'],
         ['إلى', range ? range[1].format('YYYY/MM/DD') : 'الكل'],
         ['حاضر', String(totals.present)],
-        ['غايب', String(totals.absent)],
+        ['غائب', String(totals.absent)],
       ] },
     csvCols as PrintColumn<Day>[], rows,
   );
@@ -291,7 +291,7 @@ export default function Attendance() {
           <span className="sl-foot">
             <span>أيام: <b>{rows.length}</b></span>
             <span>حاضر: <b className="is-pos">{totals.present}</b></span>
-            <span>غايب: <b className="is-neg">{totals.absent}</b></span>
+            <span>غائب: <b className="is-neg">{totals.absent}</b></span>
             <span>متأخر: <b>{totals.late}</b></span>
             <span>إضافي: <b>{totals.overtime.toFixed(2)}</b> س</span>
           </span>
@@ -304,12 +304,6 @@ export default function Attendance() {
 
   const importTab = (
     <div style={{ padding: '8px 6px 12px' }}>
-      <Alert
-        type="info" showIcon style={{ marginBottom: 12 }}
-        message="ملف جهاز البصمة"
-        description={'اختر ملف CSV، واضبط أرقام الأعمدة، ثم «معاينة» — تعرض لك ما سيحدث '
-          + 'دون أن تكتب شيئاً. وما لا يتطابق يُعرض بالاسم ولا يُحذف في صمت.'}
-      />
       <Row gutter={[8, 8]} style={{ marginBottom: 12 }}>
         <Col>
           <Upload beforeUpload={readFile} showUploadList={false} accept=".csv,.txt">
@@ -343,13 +337,13 @@ export default function Attendance() {
       {preview ? (
         <>
           <Space wrap style={{ marginBottom: 10 }}>
-            <Tag color="green">هيتسجّل {preview.matched.length}</Tag>
+            <Tag color="green">سيُسجَّل {preview.matched.length}</Tag>
             {preview.unmatched.length
-              ? <Tag color="red">مش متطابق {preview.unmatched.length}</Tag> : null}
+              ? <Tag color="red">غير متطابق {preview.unmatched.length}</Tag> : null}
             {preview.locked.length
-              ? <Tag color="orange">مقفول {preview.locked.length}</Tag> : null}
+              ? <Tag color="orange">مُقفل {preview.locked.length}</Tag> : null}
             {preview.rejected.length
-              ? <Tag color="volcano">سطور مكسورة {preview.rejected.length}</Tag> : null}
+              ? <Tag color="volcano">سطور تالفة {preview.rejected.length}</Tag> : null}
           </Space>
 
           {preview.unmatched.length ? (
@@ -364,7 +358,7 @@ export default function Attendance() {
           {preview.rejected.length ? (
             <Alert
               type="error" showIcon style={{ marginBottom: 10 }}
-              message="سطور مااتقرتش"
+              message="سطور تعذرت قراءتها"
               description={preview.rejected
                 .map((r: any) => `سطر ${r.line}: ${r.reason}`).join(' · ')}
             />
@@ -381,7 +375,7 @@ export default function Attendance() {
               { title: 'حضور', dataIndex: 'check_in' },
               { title: 'انصراف', dataIndex: 'check_out' },
               { title: '', dataIndex: 'existing',
-                render: (v: boolean) => (v ? <Tag>هيتعدّل</Tag> : <Tag color="green">جديد</Tag>) },
+                render: (v: boolean) => (v ? <Tag>سيُعدَّل</Tag> : <Tag color="green">جديد</Tag>) },
             ]}
           />
           <Button type="primary" loading={importing} onClick={runImport}
@@ -397,7 +391,6 @@ export default function Attendance() {
     <ListPage
       icon={<ClockCircleOutlined />}
       title="الحضور والانصراف"
-      subtitle="سجل الأيام، الإدخال اليدوي للتصحيح، واستيراد ملف جهاز البصمة"
       tabs={[
         { key: 'days', label: 'السجل', count: rows.length },
         { key: 'import', label: 'استيراد بصمة' },
@@ -459,7 +452,7 @@ export default function Attendance() {
             <Col span={8}>
               <Form.Item name="status" label="الحالة">
                 <Select
-                  allowClear placeholder="من المواعيد"
+                  allowClear placeholder="تُحدَّد من المواعيد"
                   options={Object.entries(STATUS).map(([value, st]) => ({ value, label: st.label }))} />
               </Form.Item>
             </Col>
@@ -474,8 +467,7 @@ export default function Attendance() {
               </Form.Item>
             </Col>
             <Col span={24}>
-              <Form.Item name="notes" label="ملاحظات"
-                extra="الحالة فاضية والحضور فاضي = غياب، إلا لو اليوم عطلة أو راحة.">
+              <Form.Item name="notes" label="ملاحظات">
                 <Input onPressEnter={(e) => { e.preventDefault(); dayForm.submit(); }} />
               </Form.Item>
             </Col>
@@ -483,7 +475,7 @@ export default function Attendance() {
           <Space style={{ width: '100%', justifyContent: 'space-between' }}>
             <Button type="primary" htmlType="submit" loading={saving}>حفظ (F9)</Button>
             {editingDay ? (
-              <Popconfirm title="تشيل اليوم ده؟" onConfirm={deleteDay}>
+              <Popconfirm title="هل تريد حذف هذا اليوم؟" onConfirm={deleteDay}>
                 <Button danger icon={<DeleteOutlined />}>حذف اليوم</Button>
               </Popconfirm>
             ) : null}

@@ -111,7 +111,7 @@ class _PriceSheetScreenState extends State<PriceSheetScreen> {
 
   Future<void> _save() async {
     if (_lines.isEmpty) {
-      _say('مافيش أصناف تتحفظ.');
+      _say('لا توجد أصناف للحفظ.');
       return;
     }
     setState(() => _saving = true);
@@ -127,7 +127,7 @@ class _PriceSheetScreenState extends State<PriceSheetScreen> {
       }
       if (!mounted) return;
       setState(() => _dirty = false);
-      _say('اتحفظ «$_title»');
+      _say('تم حفظ «$_title»');
     } finally {
       if (mounted) setState(() => _saving = false);
     }
@@ -138,25 +138,25 @@ class _PriceSheetScreenState extends State<PriceSheetScreen> {
     final leave = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('تسيب الشيت؟'),
+        title: const Text('مغادرة الشيت؟'),
         content: Text(_localId == null
-            ? 'فيه ${_lines.length} صنف مااتحفظوش — هيروحوا.'
-            : 'فيه تعديل مااتحفظش على «$_title» — هيروح.'),
+            ? 'يوجد ${_lines.length} صنف غير محفوظ وسيُفقد.'
+            : 'يوجد تعديل غير محفوظ على «$_title» وسيُفقد.'),
         actions: [
           TextButton(
               onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('أكمّل')),
+              child: const Text('متابعة')),
           TextButton(
             onPressed: () async {
               Navigator.pop(ctx, true);
               await _save();
             },
-            child: const Text('احفظ واخرج'),
+            child: const Text('حفظ وخروج'),
           ),
           FilledButton(
             onPressed: () => Navigator.pop(ctx, true),
             style: FilledButton.styleFrom(backgroundColor: AppColors.danger),
-            child: const Text('اخرج من غير حفظ'),
+            child: const Text('خروج دون حفظ'),
           ),
         ],
       ),
@@ -172,7 +172,7 @@ class _PriceSheetScreenState extends State<PriceSheetScreen> {
 
   Future<void> _addItem() async {
     if (_catalog.isEmpty) {
-      _say('مافيش أصناف على الجهاز — افتح «مزامنة البيانات» واعمل مزامنة.');
+      _say('لا توجد أصناف على الجهاز — نفّذ «مزامنة البيانات».');
       return;
     }
     await SaleAddItemFlow.show(
@@ -221,16 +221,16 @@ class _PriceSheetScreenState extends State<PriceSheetScreen> {
     final go = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('تحويل لفاتورة'),
-        content: Text('هتفتح فاتورة بيع بـ${_lines.length} صنف من العرض ده. '
-            'هتختار التاجر هناك، والأسعار هتترجع لفئته، والمتاح في عربيتك هيتفحص.'),
+        title: const Text('تحويل إلى فاتورة'),
+        content: Text('ستُفتح فاتورة بيع بـ${_lines.length} صنف من هذا العرض. '
+            'ستختار التاجر هناك، وستُعاد الأسعار حسب فئته، وسيُتحقق من المتاح في سيارتك.'),
         actions: [
           TextButton(
               onPressed: () => Navigator.pop(ctx, false),
               child: const Text('إلغاء')),
           FilledButton(
               onPressed: () => Navigator.pop(ctx, true),
-              child: const Text('كمّل')),
+              child: const Text('متابعة')),
         ],
       ),
     );
@@ -251,9 +251,9 @@ class _PriceSheetScreenState extends State<PriceSheetScreen> {
         .join('\n');
     Clipboard.setData(ClipboardData(
       text: 'عرض سعر\n\n$body\n\nالإجمالي: ${_money(_total)} ج\n'
-          '(عرض سعر — مش فاتورة، والأسعار قابلة للتغيير)',
+          '(عرض سعر — ليس فاتورة، والأسعار قابلة للتغيير)',
     ));
-    _say('اتنسخ عرض بـ${_lines.length} صنف');
+    _say('تم نسخ عرض بـ${_lines.length} صنف');
   }
 
   void _edit(VoidCallback change) {
@@ -282,7 +282,7 @@ class _PriceSheetScreenState extends State<PriceSheetScreen> {
         title: Text(_localId == null ? 'كشف تسعير' : 'تعديل شيت'),
         actions: [
           IconButton(
-            tooltip: _localId == null ? 'احفظ الشيت' : 'احفظ التعديل',
+            tooltip: _localId == null ? 'حفظ الشيت' : 'حفظ التعديل',
             icon: _saving
                 ? const SizedBox(
                     width: 18, height: 18,
@@ -291,13 +291,13 @@ class _PriceSheetScreenState extends State<PriceSheetScreen> {
             onPressed: _lines.isEmpty || _saving ? null : _save,
           ),
           IconButton(
-            tooltip: 'انسخ العرض',
+            tooltip: 'نسخ العرض',
             icon: const Icon(Icons.copy_all_outlined),
             onPressed: _lines.isEmpty ? null : _copy,
           ),
           if (_lines.isNotEmpty)
             IconButton(
-              tooltip: 'فضّي العرض',
+              tooltip: 'تفريغ العرض',
               icon: const Icon(Icons.delete_sweep_outlined),
               onPressed: () => _edit(() {
                 _lines.clear();
@@ -311,13 +311,12 @@ class _PriceSheetScreenState extends State<PriceSheetScreen> {
       floatingActionButton: FloatingActionButton.extended(
         onPressed: _loading ? null : _addItem,
         icon: const Icon(Icons.add),
-        label: const Text('زوّد صنف'),
+        label: const Text('إضافة صنف'),
       ),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : Column(
               children: [
-                _hint(),
                 _titleField(),
                 Expanded(
                   child: _lines.isEmpty
@@ -325,8 +324,7 @@ class _PriceSheetScreenState extends State<PriceSheetScreen> {
                           child: Padding(
                             padding: EdgeInsets.all(28),
                             child: Text(
-                              'دوس «زوّد صنف» وابدأ تسعّر.\n'
-                              'تقدر تسعّر أي صنف في النظام — حتى لو مش معاك في العربية.',
+                              'لم تُضف أصناف بعد.',
                               textAlign: TextAlign.center,
                               style: TextStyle(color: Colors.black54),
                             ),
@@ -344,17 +342,6 @@ class _PriceSheetScreenState extends State<PriceSheetScreen> {
       bottomNavigationBar: _lines.isEmpty ? null : _totalBar(),
     );
   }
-
-  Widget _hint() => Container(
-        width: double.infinity,
-        color: AppColors.primary.withValues(alpha: 0.06),
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-        child: Text(
-          'عرض سعر — مش فاتورة. مافيش عميل ولا مديونية ولا خصم من المخزن، '
-          'ومافيش حد للكمية. ${_catalog.length} صنف متاح للتسعير.',
-          style: const TextStyle(fontSize: 12.5, color: Colors.black54),
-        ),
-      );
 
   Widget _titleField() => Padding(
         padding: const EdgeInsets.fromLTRB(12, 10, 12, 2),
@@ -387,12 +374,6 @@ class _PriceSheetScreenState extends State<PriceSheetScreen> {
               const Divider(height: 18),
               _totalRow('صافي العرض', _money(_total),
                   big: true, color: AppColors.primary),
-              const SizedBox(height: 8),
-              const Text(
-                'عرض سعر — مش فاتورة. مافيش خصم من المخزن ولا مديونية على حد.',
-                textAlign: TextAlign.center,
-                style: TextStyle(fontSize: 11.5, color: Colors.black45),
-              ),
             ],
           ),
         ),
@@ -439,7 +420,7 @@ class _PriceSheetScreenState extends State<PriceSheetScreen> {
                   ),
                 ),
                 IconButton(
-                  tooltip: 'انسخ العرض',
+                  tooltip: 'نسخ العرض',
                   icon: const Icon(Icons.copy_all_outlined,
                       color: Colors.white, size: 22),
                   onPressed: _copy,
@@ -451,7 +432,7 @@ class _PriceSheetScreenState extends State<PriceSheetScreen> {
                       foregroundColor: AppColors.primary),
                   onPressed: _toInvoice,
                   icon: const Icon(Icons.receipt_long_outlined, size: 18),
-                  label: const Text('حوّله لفاتورة'),
+                  label: const Text('تحويل إلى فاتورة'),
                 ),
               ],
             ),

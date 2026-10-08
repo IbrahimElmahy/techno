@@ -282,7 +282,6 @@ export default function TradeReports() {
       icon={<BarChartOutlined />}
       title={view ? view.label : 'تقارير المبيعات والمشتريات'}
       muted={offPreset ? <Tag color="orange" style={{ fontWeight: 400 }}>معدّل</Tag> : undefined}
-      subtitle="المبيعات والمشتريات ومرتجعاتها — بالمستند أو بالصنف، تفصيلي أو مجمّع"
       tabs={(Object.keys(DOC_LABELS) as DocType[]).map((k) => ({ key: k, label: DOC_LABELS[k] }))}
       activeTab={docType}
       onTabChange={setDocType}
@@ -339,7 +338,7 @@ export default function TradeReports() {
         <Alert
           type="warning" showIcon style={{ margin: '6px 0 8px' }}
           message={`${totals.lines_without_cost} سطر بدون تكلفة محفوظة`}
-          description="سطور اتباعت قبل تفعيل حفظ التكلفة عند البيع — الربح المعروض لا يشملها، ولذلك هو أعلى من الحقيقي في هذه السطور."
+          description="الربح المعروض لا يشمل هذه السطور."
         />
       )}
 

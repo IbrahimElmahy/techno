@@ -343,7 +343,7 @@ export default function Returns({ embedded }: { embedded?: { onExit: () => void 
       setPointValues(pts);
     } catch (err: any) {
       console.error(err);
-      message.error(err?.response?.data?.detail?.message || 'تعذر تحميل قوايم الشاشة');
+      message.error(err?.response?.data?.detail?.message || 'تعذر تحميل قوائم الشاشة');
     }
   };
 
@@ -480,7 +480,7 @@ export default function Returns({ embedded }: { embedded?: { onExit: () => void 
     if (!itemId || !customerId) return null;
     const prod = products.find((p) => p.id === itemId);
     if (docWarehouseId === null) {
-      message.warning('اختار مخزن المرتجع الأول من خانة «المخزن» فوق، وبعدين ضيف الأصناف.');
+      message.warning('اختر مخزن المرتجع أولاً من خانة «المخزن» بالأعلى، ثم أضف الأصناف.');
       return null;
     }
     return addProductByIdWith(itemId, docWarehouseId, qty);
@@ -508,7 +508,7 @@ export default function Returns({ embedded }: { embedded?: { onExit: () => void 
       if (qty) {
         setLines((prev) => prev.map((x) => (x.key === existing.key
           ? { ...x, quantity: Number(x.quantity || 0) + qty } : x)));
-        message.info(`«${productName(itemId)}» موجود بالفعل — اتزوّدت كميته`);
+        message.info(`«${productName(itemId)}» موجود بالفعل — تمت زيادة كميته`);
       } else {
         message.info(`«${productName(itemId)}» موجود بالفعل — عدّل الكمية من السطر`);
       }
@@ -744,7 +744,7 @@ export default function Returns({ embedded }: { embedded?: { onExit: () => void 
       const given = [...new Set(l.serials || [])];
       if (given.length !== need) {
         message.error(`«${products.find((p) => p.id === l.item_id)?.name ?? 'صنف'}»: `
-          + `اكتب ${need} سيريال بعدد الكمية — هما اللي بيرجعوا للمخزن.`);
+          + `اكتب ${need} سيريال بعدد الكمية — وهي التي تعود إلى المخزن.`);
         return;
       }
       l.serials = given;
@@ -803,7 +803,7 @@ export default function Returns({ embedded }: { embedded?: { onExit: () => void 
                 })),
               });
               message.success(editingSourceId
-                ? `اتحفظ المرتجع. رقم السند: ${res.data.document_number}`
+                ? `تم حفظ المرتجع. رقم السند: ${res.data.document_number}`
                 : `تم تسجيل المرتجع بنجاح. رقم السند: ${res.data.document_number}`);
               discardDraft();
               closeCreate();
@@ -1001,7 +1001,7 @@ export default function Returns({ embedded }: { embedded?: { onExit: () => void 
       message.success('تم حذف المرتجع');
       fetchReturns();
     } catch (err: any) {
-      message.error(err?.response?.data?.detail?.message || 'تعذر مسح المرتجع');
+      message.error(err?.response?.data?.detail?.message || 'تعذر حذف المرتجع');
     }
   };
 
@@ -1068,8 +1068,8 @@ export default function Returns({ embedded }: { embedded?: { onExit: () => void 
 
       <WarehouseGate
         open={newStep === 'warehouse' && !viewOnly && !editingSourceId}
-        title="المرتجع ده هيدخل أنهي مخزن؟"
-        subtitle="ده المخزن الافتراضي للسطور الجديدة. تقدر تغيّر مخزن أي سطر من عمود «المخزن»."
+        title="إلى أي مخزن يدخل هذا المرتجع؟"
+        subtitle=""
         value={docWarehouseId}
         onChange={(v) => setDocWarehouseId(v as number)}
         warehouses={warehouses}
@@ -1209,7 +1209,7 @@ export default function Returns({ embedded }: { embedded?: { onExit: () => void 
               </Col>
               <Col xs={24} md={16}>
                 <Form.Item label="البيان">
-                  <Input placeholder="اختياري — بيتطبع وبيتدوّر بيه" disabled={viewOnly}
+                  <Input placeholder="اختياري" disabled={viewOnly}
                     value={statements[0]}
                     onChange={(e) => setStatements([e.target.value, statements[1], statements[2]])} />
                 </Form.Item>
@@ -1271,11 +1271,11 @@ export default function Returns({ embedded }: { embedded?: { onExit: () => void 
                         <div className="coupon-actions">
                           {!viewOnly && i === couponRows.length - 1 && (
                             <Button size="small" type="primary" className="sale-green-btn"
-                              icon={<PlusOutlined />} title="دفتر تاني"
+                              icon={<PlusOutlined />} title="دفتر آخر"
                               onClick={() => setCouponRows((rs) => [...rs, blankCoupon()])} />
                           )}
                           {!viewOnly && (
-                            <Button size="small" danger icon={<DeleteOutlined />} title="امسح الصف"
+                            <Button size="small" danger icon={<DeleteOutlined />} title="حذف الصف"
                               onClick={() => setCouponRows((rs) => (rs.length === 1
                                 ? [blankCoupon()]
                                 : rs.filter((x) => x.key !== row.key)))} />
@@ -1705,7 +1705,6 @@ export default function Returns({ embedded }: { embedded?: { onExit: () => void 
     <ListPage
       icon={<RollbackOutlined />}
       title="مرتجعات المبيعات"
-      subtitle="سندات البضاعة الراجعة من العملاء وأثرها على حساباتهم والخزنة"
       actions={(<>
         <Button type="primary" className="sl-create" icon={<PlusOutlined />}
           onClick={() => { setReturnDate(dayjs()); setNewStep('party'); }}>

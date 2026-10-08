@@ -174,7 +174,7 @@ export default function Owners() {
       ),
     },
     {
-      title: 'التليفون',
+      title: 'الهاتف',
       dataIndex: 'phone',
       width: 120,
       render: (v: string | null) => v || '—',
@@ -184,7 +184,7 @@ export default function Owners() {
       dataIndex: 'address',
       width: 220,
       render: (v: string | null, record: OwnerListItem) => {
-        const floor = record.floor_number ? ` (دور ${record.floor_number})` : '';
+        const floor = record.floor_number ? ` (الطابق ${record.floor_number})` : '';
         return v ? `${v}${floor}` : '—';
       },
     },
@@ -248,7 +248,6 @@ export default function Owners() {
       <ListPage
         icon={<HomeOutlined />}
         title="الملّاك" muted="(أصحاب البيوت)"
-        subtitle="أصحاب البيوت في خدمات ما بعد البيع — كارت كل مالك وسجل المعاينات عنده"
         actions={(<>
           {tableCols.control}
           <Button icon={<ReloadOutlined />} onClick={fetchOwners} loading={loading}>
@@ -258,7 +257,7 @@ export default function Owners() {
         filters={(<>
           <Input.Search
             className="sl-f-search"
-            placeholder="بحث بالاسم أو التليفون أو الكود أو العنوان..."
+            placeholder="بحث بالاسم أو الهاتف أو الكود أو العنوان..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             onSearch={fetchOwners}
@@ -328,10 +327,10 @@ export default function Owners() {
           <div>
             <Descriptions bordered size="small" column={{ xs: 1, sm: 2, md: 3 }} style={{ marginBottom: 20 }}>
               <Descriptions.Item label="الاسم">{selectedOwner.name}</Descriptions.Item>
-              <Descriptions.Item label="التليفون">{selectedOwner.phone || '—'}</Descriptions.Item>
+              <Descriptions.Item label="الهاتف">{selectedOwner.phone || '—'}</Descriptions.Item>
               <Descriptions.Item label="رقم البطاقة">{selectedOwner.national_id || '—'}</Descriptions.Item>
               <Descriptions.Item label="العنوان">{selectedOwner.address || '—'}</Descriptions.Item>
-              <Descriptions.Item label="الدور">{selectedOwner.floor_number || '—'}</Descriptions.Item>
+              <Descriptions.Item label="الطابق">{selectedOwner.floor_number || '—'}</Descriptions.Item>
               <Descriptions.Item label="المنطقة">
                 {selectedOwner.territory_id ? territoriesMap.get(selectedOwner.territory_id) || '—' : '—'}
               </Descriptions.Item>

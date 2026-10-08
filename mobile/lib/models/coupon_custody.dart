@@ -172,7 +172,7 @@ class CouponCustody {
     if (!isEnforced(kind)) return null;
     final name = _names[kindKey(kind)]!;
     final free = availableOf(kind);
-    if (free.isEmpty) return 'عهدتك في ${_theKind(name)} خلصت — مافيش سريالات متاحة';
+    if (free.isEmpty) return 'نفدت عهدتك من ${_theKind(name)} — لا توجد سريالات متاحة';
     return 'عهدتك في ${_theKind(name)}: ${rangesLabel(free)} (${totalCount(free)})';
   }
 
@@ -192,31 +192,31 @@ class CouponCustody {
     final toText = r.to.trim();
     if (fromText.isEmpty || toText.isEmpty) {
       return requireComplete
-          ? '${_theKind(name)} في عهدتك — لازم تكتب «من» و«إلى» للسريالات'
+          ? '${_theKind(name)} في عهدتك — يجب كتابة «من» و«إلى» للسريالات'
           : null;
     }
     final f = parseSerial(fromText);
     final t = parseSerial(toText);
     if (f == null || t == null) {
-      return 'السريال «${f == null ? fromText : toText}» ($name) لازم يبقى أرقام بس';
+      return 'السريال «${f == null ? fromText : toText}» ($name) يجب أن يكون أرقاماً فقط';
     }
-    if (t < f) return 'المدى $f–$t ($name) مقلوب — «من» لازم يبقى الأصغر';
+    if (t < f) return 'المدى $f–$t ($name) معكوس — يجب أن تكون «من» هي الأصغر';
     final want = [SerialRange(f, t)];
 
     final dup = intersectRanges(want, usedHere[key] ?? const []);
     usedHere.putIfAbsent(key, () => []).add(want.first);
     if (dup.isNotEmpty) {
-      return '${_serials(dup)} ($name) مكتوبة في صف تاني في نفس الفاتورة';
+      return '${_serials(dup)} ($name) مكتوبة في صف آخر في الفاتورة نفسها';
     }
     final outside = subtractRanges(want, custodyOf(key));
-    if (outside.isNotEmpty) return '${_serials(outside)} ($name) مش في عهدتك';
+    if (outside.isNotEmpty) return '${_serials(outside)} ($name) ليست في عهدتك';
     for (final h in holdsOf(key)) {
       final held = intersectRanges(want, [h.range]);
       if (held.isEmpty) continue;
       final who = h.customerName.trim();
       final one = held.length == 1 && held.first.count == 1;
-      return '${_serials(held)} ($name) ${one ? 'اتكتب' : 'اتكتبوا'} على فاتورة '
-          '${who.isEmpty ? 'تانية' : '«$who»'} لسه على الجهاز';
+      return '${_serials(held)} ($name) ${one ? 'مكتوب' : 'مكتوبة'} على فاتورة '
+          '${who.isEmpty ? 'أخرى' : '«$who»'} ما زالت على الجهاز';
     }
     return null;
   }

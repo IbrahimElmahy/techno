@@ -107,7 +107,7 @@ export function ContrastHeaderButton() {
   const { theme, toggle } = useUiTheme();
   const on = theme === 'hc';
   return (
-    <Tooltip title={on ? 'رجوع للألوان العادية' : 'ألوان واضحة / خط أكبر'}>
+    <Tooltip title={on ? 'العودة إلى الألوان العادية' : 'ألوان واضحة / خط أكبر'}>
       <Button
         type={on ? 'primary' : 'default'}
         shape="circle"

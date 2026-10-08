@@ -164,7 +164,7 @@ export default function Treasuries() {
       render: (name: string, r: RepSafe) => (
         <Space size={4}>
           <span style={{ fontWeight: 600 }}>{name || <span style={{ color: '#555b65' }}>حساب بلا اسم</span>}</span>
-          {!r.active && <Tag color="red">مقفول</Tag>}
+          {!r.active && <Tag color="red">مغلق</Tag>}
         </Space>
       ),
     },
@@ -199,7 +199,7 @@ export default function Treasuries() {
       width: 140,
       align: 'left' as const,
       render: (b: string | null) =>
-        b === null ? <span style={{ color: '#555b65' }} title="الرصيد مااتقراش">—</span>
+        b === null ? <span style={{ color: '#555b65' }} title="تعذرت قراءة الرصيد">—</span>
                    : <strong>{egp(b)}</strong>,
       sorter: (a: RepSafe, b: RepSafe) => Number(a.balance || 0) - Number(b.balance || 0),
     },
@@ -221,12 +221,12 @@ export default function Treasuries() {
         await api.post('/api/v1/custodies', {
           holder_type: 'rep', rep_id: v.rep_id, family: v.family || null, name: v.name,
         });
-        message.success('اتعمل الصندوق');
+        message.success('تم إنشاء الصندوق');
       } else if (safeEditing) {
         await api.patch(`/api/v1/custodies/${safeEditing.custody_id}`, {
           name: v.name, rep_id: v.rep_id, family: v.family || '',
         });
-        message.success('اتعدّل الصندوق');
+        message.success('تم تعديل الصندوق');
       }
       setSafeEditing(null);
       loadSafes();
@@ -238,7 +238,7 @@ export default function Treasuries() {
   const setSafeActive = async (s: RepSafe, active: boolean) => {
     try {
       await api.patch(`/api/v1/custodies/${s.custody_id}`, { active });
-      message.success(active ? 'الصندوق رجع ظاهر' : 'اتخفى الصندوق');
+      message.success(active ? 'تم إظهار الصندوق' : 'تم إخفاء الصندوق');
       loadSafes();
     } catch (err: any) {
       message.error(errText(err, 'تعذر الحفظ'));
@@ -248,7 +248,7 @@ export default function Treasuries() {
   const deleteSafe = async (s: RepSafe) => {
     try {
       await api.delete(`/api/v1/custodies/${s.custody_id}`, { params: { hard: true } });
-      message.success('اتمسح الصندوق');
+      message.success('تم حذف الصندوق');
       loadSafes();
     } catch (err: any) {
       message.error(errText(err, 'تعذر الحذف'));
@@ -258,7 +258,7 @@ export default function Treasuries() {
   const deleteTreasury = async (t: TreasuryRecord) => {
     try {
       await api.delete(`/api/v1/treasuries/${t.id}`);
-      message.success('اتمسحت الخزينة');
+      message.success('تم حذف الخزينة');
       load();
     } catch (err: any) {
       message.error(errText(err, 'تعذر الحذف'));
@@ -283,8 +283,8 @@ export default function Treasuries() {
             <Button type="text" icon={<CheckOutlined />} onClick={() => setSafeActive(r, true)} />
           </Tooltip>
         )}
-        <Popconfirm title="تمسح الصندوق ده؟" description="بيتمسح بس لو مالوش ولا حركة."
-          okText="امسح" cancelText="لأ" onConfirm={() => deleteSafe(r)}>
+        <Popconfirm title="حذف هذا الصندوق؟" description="يُحذف فقط إذا لم تكن له أي حركة."
+          okText="حذف" cancelText="لا" onConfirm={() => deleteSafe(r)}>
           <Tooltip title="حذف">
             <Button type="text" danger icon={<DeleteOutlined />} />
           </Tooltip>
@@ -323,7 +323,7 @@ export default function Treasuries() {
         is_default: !!v.is_default,
         active: !!v.active,
       });
-      message.success('اتعدّلت الخزينة');
+      message.success('تم تعديل الخزينة');
       setEditing(null);
       load();
     } catch (err) {
@@ -407,7 +407,7 @@ export default function Treasuries() {
       width: 140,
       align: 'left' as const,
       render: (b: string | null) =>
-        b === null ? <span style={{ color: '#555b65' }} title="الرصيد مااتقراش">—</span>
+        b === null ? <span style={{ color: '#555b65' }} title="تعذرت قراءة الرصيد">—</span>
                    : <strong>{egp(b)}</strong>,
       sorter: (a: TreasuryRecord, b: TreasuryRecord) =>
         Number(a.balance || 0) - Number(b.balance || 0),
@@ -431,8 +431,8 @@ export default function Treasuries() {
             </Tooltip>
           )}
           {!record.is_default && (
-            <Popconfirm title="تمسح الخزينة دي؟" description="بتتمسح بس لو مالهاش ولا حركة."
-              okText="امسح" cancelText="لأ" onConfirm={() => deleteTreasury(record)}>
+            <Popconfirm title="حذف هذه الخزينة؟" description="تُحذف فقط إذا لم تكن لها أي حركة."
+              okText="حذف" cancelText="لا" onConfirm={() => deleteTreasury(record)}>
               <Tooltip title="حذف">
                 <Button type="text" danger icon={<DeleteOutlined />} />
               </Tooltip>
@@ -457,7 +457,7 @@ export default function Treasuries() {
           : '—'}
       </span>
       <span><span style={{ color: '#888' }}>حساب الأستاذ: </span>#{r.account_id}</span>
-      {r.is_default && <Tag color="gold">يقع عليها السند الذي لا يسمّي خزينة</Tag>}
+      {r.is_default && <Tag color="gold">الخزينة الافتراضية</Tag>}
     </Space>
   );
 
@@ -505,7 +505,7 @@ export default function Treasuries() {
       </Form.Item>
 
       <Form.Item name="is_default" valuePropName="checked" noStyle>
-        <Checkbox>الخزينة الافتراضية — يقع عليها السند الذي لا يسمّي خزينة</Checkbox>
+        <Checkbox>الخزينة الافتراضية</Checkbox>
       </Form.Item>
     </>
   );
@@ -519,7 +519,6 @@ export default function Treasuries() {
     <ListPage<'treasuries' | 'safes'>
       icon={<BankOutlined />}
       title="الخزينه و البنوك"
-      subtitle="الخزائن والحسابات البنكية بأرصدتها، وصناديق عهد المناديب"
       tabs={[
         { key: 'treasuries', label: 'الخزائن والبنوك', count: rows.length },
         { key: 'safes', label: 'صناديق المناديب', count: safes.length },
@@ -533,7 +532,7 @@ export default function Treasuries() {
           </Button>
         )}
         {tableCols.control}
-        <Button icon={<ReloadOutlined />} onClick={load}>اعادة تحميل</Button>
+        <Button icon={<ReloadOutlined />} onClick={load}>إعادة تحميل</Button>
       </>) : (<>
         {canWrite && (
           <Button type="primary" className="sl-create" icon={<PlusOutlined />}
@@ -541,7 +540,7 @@ export default function Treasuries() {
             صندوق جديد
           </Button>
         )}
-        <Button icon={<ReloadOutlined />} onClick={loadSafes}>اعادة تحميل</Button>
+        <Button icon={<ReloadOutlined />} onClick={loadSafes}>إعادة تحميل</Button>
       </>)}
       filters={(<>
         <Input className="sl-f-search" allowClear value={search}
@@ -590,7 +589,7 @@ export default function Treasuries() {
           loading={safesLoading}
           size="small"
           tableLayout="fixed"
-          locale={{ emptyText: 'مافيش صناديق للمناديب' }}
+          locale={{ emptyText: 'لا توجد صناديق للمناديب' }}
           pagination={{ defaultPageSize: PAGE_SIZE, showSizeChanger: true,
             locale: { items_per_page: '' },
             showTotal: (t) => (

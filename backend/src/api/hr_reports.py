@@ -41,7 +41,7 @@ def hr_report(
 
         if not current.can(CAP_SALARY_VIEW):
             raise HTTPException(403, {"code": "forbidden",
-                                      "message": "التقرير ده فيه مبالغ باسم موظف."})
+                                      "message": "هذا التقرير يتضمن مبالغ باسم موظف."})
     try:
         return hr_reports.hr(
             db, subject=subject, level=level, group_by=group_by,

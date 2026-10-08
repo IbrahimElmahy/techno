@@ -234,7 +234,6 @@ export default function RepReports() {
     <ListPage
       icon={<TeamOutlined />}
       title={cur?.label ?? 'تقارير المندوبين'}
-      subtitle="تحصيلات ومبيعات المندوبين في الفترة — نفس الفترة للتلات تقارير"
       tabs={Object.entries(TAB_META).map(([key, m]) => ({ key, label: m.label, count: m.total }))}
       activeTab={tab}
       onTabChange={setTab}

@@ -29,7 +29,7 @@ export default function ExpenseModal({
     <ExpenseAccountField accounts={expenseAccounts} groups={expenseGroups}
       onCreated={loadExpenseAccounts} width="100%"
       extra={account ? (
-        <span className="vs-hint">اتصرف عليه لحد دلوقتي: <b>{money(account.balance)}</b></span>
+        <span className="vs-hint">المنصرف عليه حتى الآن: <b>{money(account.balance)}</b></span>
       ) : undefined} />
   );
 
@@ -45,7 +45,7 @@ export default function ExpenseModal({
       </Space>
     </Form.Item>,
     <Form.Item key="s" name="statement1" label="بيان السند">
-      <Input placeholder="الكلام المكتوب على ورقة السند" />
+      <Input placeholder="النص المكتوب على ورقة السند" />
     </Form.Item>,
   ];
 

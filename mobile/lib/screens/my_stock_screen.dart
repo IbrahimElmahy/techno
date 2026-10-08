@@ -102,7 +102,7 @@ class _MyStockScreenState extends State<MyStockScreen> {
                     controller: _search,
                     onChanged: (_) => _load(),
                     decoration: InputDecoration(
-                      hintText: 'دوّر باسم الصنف',
+                      hintText: 'ابحث باسم الصنف',
                       prefixIcon: const Icon(Icons.search),
                       suffixIcon: searching
                           ? IconButton(
@@ -135,9 +135,8 @@ class _MyStockScreenState extends State<MyStockScreen> {
                             padding: const EdgeInsets.all(24),
                             child: Text(
                                 searching
-                                    ? 'مافيش صنف بالاسم ده في عربيتك.'
-                                    : 'مافيش بضاعة على الجهاز.\n'
-                                        'افتح «مزامنة البيانات» واعمل مزامنة.',
+                                    ? 'لا يوجد صنف بهذا الاسم في سيارتك.'
+                                    : 'لا توجد بضاعة على الجهاز.',
                                 textAlign: TextAlign.center),
                           ),
                         )
@@ -178,7 +177,7 @@ class _MyStockScreenState extends State<MyStockScreen> {
           subtitle: Text([
             '${items.length} صنف',
             'إجمالي ${_qty(qty)} قطعة',
-            if (out > 0) '$out خلص',
+            if (out > 0) '$out نفد',
           ].join(' · '), style: const TextStyle(fontSize: 12)),
           trailing: Icon(open ? Icons.expand_less : Icons.expand_more),
           onTap: () => setState(() {
@@ -217,7 +216,7 @@ class _MyStockScreenState extends State<MyStockScreen> {
           style: const TextStyle(fontWeight: FontWeight.w600)),
       subtitle: Text([
         'المتاح: ${_qty(free)}${it.unit != null ? ' ${it.unit}' : ''}',
-        if (held > 0.0001) 'محجوز لفواتير مستنية: ${_qty(held)}',
+        if (held > 0.0001) 'محجوز لفواتير معلّقة: ${_qty(held)}',
         if (it.basePrice != null) 'السعر: ${_money(it.basePrice!)}',
       ].join(' · ')),
       trailing: Text(_qty(free),

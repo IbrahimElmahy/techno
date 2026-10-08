@@ -130,7 +130,7 @@ export default function PartnersCurrent() {
         description: v.description || undefined, statement1: v.description || undefined,
         external_document_number: v.external_document_number || undefined,
       });
-      message.success(`اتسجّل ${dialog === 'withdraw' ? 'سحب' : 'إيداع'} ${res.data.document_number}`);
+      message.success(`تم تسجيل ${dialog === 'withdraw' ? 'سحب' : 'إيداع'} ${res.data.document_number}`);
       setDialog(null);
       load();
       loadMoves();
@@ -212,7 +212,6 @@ export default function PartnersCurrent() {
     <ListPage
       icon={<TeamOutlined />}
       title="جاري الشركاء"
-      subtitle="حسابات الشركاء في كل فرع — اختار حساب تشوف حركته وتعمل سحب أو إيداع زي «الجاري» في a5"
       summary={(
         <>
           <ListStat label="إجمالي المدين (سحب)" value={fmt(totals.dr)} />
@@ -224,8 +223,8 @@ export default function PartnersCurrent() {
       actions={<Button icon={<ReloadOutlined />} onClick={load}>تحديث</Button>}
       filters={(
         <>
-          <DatePicker placeholder="الرصيد لحد تاريخ" value={asOf} onChange={setAsOf} format="YYYY/MM/DD" />
-          <Space><Switch size="small" checked={withZero} onChange={setWithZero} /> يشمل الحسابات من غير حركة</Space>
+          <DatePicker placeholder="الرصيد حتى تاريخ" value={asOf} onChange={setAsOf} format="YYYY/MM/DD" />
+          <Space><Switch size="small" checked={withZero} onChange={setWithZero} /> يشمل الحسابات بدون حركة</Space>
         </>
       )}
     >
@@ -242,14 +241,14 @@ export default function PartnersCurrent() {
           onClick: () => setSelected(r),
           style: { cursor: 'pointer', background: selected?.account_id === r.account_id ? '#e6f4ff' : undefined },
         })}
-        locale={{ emptyText: <Empty description="مافيش حسابات شركاء" /> }}
+        locale={{ emptyText: <Empty description="لا توجد حسابات شركاء" /> }}
       />
 
       <Card
         style={{ marginTop: 16 }}
         title={selected
           ? <span>حركة «{selected.name}» <span style={{ color: '#8c8c8c', fontWeight: 400 }}>— {selected.group_name} · {selected.branch_name}</span></span>
-          : 'اختار حساب من فوق عشان تشوف حركته'}
+          : 'اختر حساباً لعرض حركته'}
         extra={selected && (
           <Space wrap>
             <DatePicker.RangePicker value={range as any} onChange={(v) => setRange(v as any)} format="YYYY/MM/DD"
@@ -272,7 +271,7 @@ export default function PartnersCurrent() {
             dataSource={[...(moves?.rows || [])].reverse()}
             columns={moveColumns as any}
             pagination={false}
-            locale={{ emptyText: <Empty description="مافيش حركة في الفترة دي" /> }}
+            locale={{ emptyText: <Empty description="لا توجد حركة في هذه الفترة" /> }}
             title={() => (
               <Space>
                 رصيد أول المدة: <Bal v={moves?.opening || 0} />
@@ -297,22 +296,17 @@ export default function PartnersCurrent() {
         okButtonProps={{ danger: dialog === 'withdraw' }}
         onCancel={() => setDialog(null)} onOk={save} destroyOnClose
       >
-        <p style={{ color: '#595959' }}>
-          {dialog === 'withdraw'
-            ? 'الفلوس خارجة من الخزنة للشريك — الجاري بيتقيّد مدين (الى حـ الخزينة).'
-            : 'الفلوس داخلة الخزنة من الشريك — الجاري بيتقيّد دائن (من حـ الخزينة).'}
-        </p>
         <Form form={form} layout="vertical">
-          <Form.Item name="amount" label="المبلغ" rules={[{ required: true, message: 'اكتب المبلغ' }]}>
+          <Form.Item name="amount" label="المبلغ" rules={[{ required: true, message: 'أدخل المبلغ' }]}>
             <InputNumber min={0.01} style={{ width: '100%' }} dir="ltr" />
           </Form.Item>
-          <Form.Item name="treasury_id" label="الخزينة" rules={[{ required: true, message: 'اختار الخزينة' }]}>
+          <Form.Item name="treasury_id" label="الخزينة" rules={[{ required: true, message: 'اختر الخزينة' }]}>
             <Select options={branchTreasuries.map((t) => ({ value: t.id, label: t.name }))} />
           </Form.Item>
           <Form.Item name="voucher_date" label="التاريخ">
             <DatePicker style={{ width: '100%' }} format="YYYY/MM/DD" />
           </Form.Item>
-          <Form.Item name="description" label="البيان" extra="زي a5: اسم اللي استلم أو سبب الحركة">
+          <Form.Item name="description" label="البيان">
             <Input />
           </Form.Item>
           <Form.Item name="external_document_number" label="رقم المستند">

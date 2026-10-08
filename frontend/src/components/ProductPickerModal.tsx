@@ -389,13 +389,11 @@ export default function ProductPickerModal({
             <div className="ppk-head-text">
               <div className="ppk-title">
                 {heading}
-                <span className="ppk-pill">بحث فوري</span>
               </div>
               <div className="ppk-sub">
                 {warehouseName && (
                   <span><span className="ppk-dot" />المخزن النشط: <b>{warehouseName}</b></span>
                 )}
-                {availableFor && <span>رصيد متاح لحظي</span>}
                 {priceTierLabel && <span>سعر البيع الافتراضي: <b>{priceTierLabel}</b></span>}
               </div>
             </div>
@@ -614,7 +612,7 @@ export default function ProductPickerModal({
                   <button type="button" className="ppk-more-items"
                     onMouseDown={(e) => e.preventDefault()}
                     onClick={() => setShown((n) => n + PAGE)}>
-                    عرض المزيد ({qty(ordered.length - rendered.length)} صنف كمان)
+                    عرض المزيد ({qty(ordered.length - rendered.length)} صنف إضافي)
                   </button>
                 )}
               </div>
@@ -629,17 +627,11 @@ export default function ProductPickerModal({
                 </Button>
               )}
             </div>
-            <div className="ppk-hints">
-              <span><span className="ppk-key">اكتب</span> للبحث الفوري</span>
-              <span><span className="ppk-key">↑↓</span> للتنقل بين السطور</span>
-              <span><span className="ppk-key">↑↓</span> ثم الرقم = الكمية · <span className="ppk-key">Enter</span> يعلّمه ويرجّعك للبحث</span>
-              <span><span className="ppk-key">Esc</span> للإغلاق</span>
-            </div>
             <div className="ppk-foot-actions">
               <Button onClick={onCancel}>إغلاق (Esc)</Button>
               <Button type="primary" className="ppk-done" icon={<CheckOutlined />}
                 onClick={() => { if (onPickMany && picked.length) commitMany(picked); else onCancel(); }}>
-                تم واعتماد الأصناف {forDoc}
+                اعتماد الأصناف {forDoc}
               </Button>
             </div>
           </div>
@@ -658,7 +650,7 @@ export default function ProductPickerModal({
             ref={searchRef} size="large" allowClear value={query}
             placeholder={activeLabel
               ? `ابحث في «${activeLabel}» بالاسم أو الكود`
-              : 'ابحث بالاسم أو الكود — أو اختر فئة من جنب'}
+              : 'ابحث بالاسم أو الكود'}
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={onKeyDown}
           />
@@ -749,7 +741,7 @@ export default function ProductPickerModal({
             {rendered.length < visible.length && (
               <div style={{ textAlign: 'center', padding: '10px 0' }}>
                 <a onClick={() => setShown((n) => n + PAGE)}>
-                  عرض المزيد ({visible.length - rendered.length} صنف كمان)
+                  عرض المزيد ({visible.length - rendered.length} صنف إضافي)
                 </a>
               </div>
             )}
@@ -830,13 +822,11 @@ export default function ProductPickerModal({
 
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center',
         marginTop: 10, gap: 12, flexWrap: 'wrap' }}>
-        <span style={{ fontSize: 14, color: '#6b6b6b' }}>
-          اكتب للبحث · ↑↓ للتنقل · Enter {bulk ? 'للتحديد' : 'للإضافة'}
-        </span>
+        <span />
         {onPickMany && (
           <Space>
             <Button size="small" onClick={() => { setBulk(!bulk); setPicked([]); }}>
-              {bulk ? 'اختيار فردي' : 'اضافة مجمعة'}
+              {bulk ? 'اختيار فردي' : 'إضافة مجمعة'}
             </Button>
             {bulk && (
               <Button

@@ -155,10 +155,10 @@ export default function EmployeeSalaries() {
     if (form.basic === undefined || form.basic === null || form.basic === '') {
       message.warning('اكتب الأساسي'); return;
     }
-    if (!form.effective_from) { message.warning('اختار تاريخ السريان'); return; }
+    if (!form.effective_from) { message.warning('اختر تاريخ السريان'); return; }
     const picked = lines.filter((l) => l.component_id);
     const ids = picked.map((l) => l.component_id);
-    if (new Set(ids).size !== ids.length) { message.warning('البند متكرر — كل بند مرة واحدة'); return; }
+    if (new Set(ids).size !== ids.length) { message.warning('البند مكرر — يُدرج كل بند مرة واحدة'); return; }
     setSaving(true);
     try {
       await api.post('/api/v1/hr/payroll/salaries', {
@@ -184,10 +184,10 @@ export default function EmployeeSalaries() {
   const removeVersion = async (salaryId: number, after?: () => void) => {
     try {
       await api.delete(`/api/v1/hr/payroll/salaries/versions/${salaryId}`);
-      message.success('اتمسح');
+      message.success('تم الحذف');
       after?.();
       load();
-    } catch (err: any) { fail(err, 'تعذر المسح'); }
+    } catch (err: any) { fail(err, 'تعذر الحذف'); }
   };
 
   const openEmployee = async (row: Row) => {
@@ -213,10 +213,10 @@ export default function EmployeeSalaries() {
     { title: 'الأساسي', key: 'basic', align: 'left',
       render: (_: any, r) => (r.current ? money(r.current.basic) : (
         <Space size={4} direction="vertical">
-          <Tag color="orange">مالوش إعدادات</Tag>
+          <Tag color="orange">بلا إعدادات</Tag>
           {r.card_salary && n(r.card_salary) ? (
             <span style={{ color: '#888', fontSize: 13 }}
-              title="الرقم المكتوب في كارت الموظف — المسير مابيقراهوش لحد ما يتحفظ هنا">
+              title="الراتب المسجل في كارت الموظف">
               في الكارت: {money(r.card_salary)}
             </span>
           ) : null}
@@ -249,13 +249,13 @@ export default function EmployeeSalaries() {
             title={r.current ? 'تعديل إعدادات الراتب' : 'إضافة إعدادات الراتب'}
             onClick={() => openSettings(r, 'edit')} />
           {r.current ? (
-            <Button type="text" icon={<RiseOutlined />} title="زيادة — نسخة جديدة من تاريخ"
+            <Button type="text" icon={<RiseOutlined />} title="زيادة"
               onClick={() => openSettings(r, 'raise')} />
           ) : null}
           {r.current ? (
             <Popconfirm onConfirm={() => removeVersion(r.current!.id)}>
               <Button type="text" danger icon={<DeleteOutlined />}
-                title="مسح الإعدادات السارية — النسخة اللي قبلها (لو فيه) بترجع ساريّة" />
+                title="حذف الإعدادات السارية" />
             </Popconfirm>
           ) : null}
           <Button type="text" icon={<UserOutlined />} title="فتح كارت الموظف"
@@ -271,7 +271,7 @@ export default function EmployeeSalaries() {
       rows: filter.filtered.map((r) => ({
         code: r.code, name: r.name, branch_id: branchName(r.branch_id),
         department: r.department, job_title: r.job_title,
-        basic: r.current?.basic ?? 'مالوش إعدادات', allowances: r.current?.allowances ?? '',
+        basic: r.current?.basic ?? 'بلا إعدادات', allowances: r.current?.allowances ?? '',
         deductions: r.current?.deductions ?? '', gross: r.current?.gross ?? '',
         effective_from: r.current?.effective_from ?? '',
         payment_method: r.current ? PAY[r.current.payment_method] : '',
@@ -293,7 +293,6 @@ export default function EmployeeSalaries() {
     <ListPage
       icon={<WalletOutlined />}
       title="رواتب الموظفين"
-      subtitle="إعدادات الراتب لكل موظف — دي اللي المسير بيحسب منها"
       actions={(<>
         <Checkbox checked={showInactive}
           onChange={(e) => { setShowInactive(e.target.checked); load(e.target.checked); }}>
@@ -310,8 +309,8 @@ export default function EmployeeSalaries() {
           value={filter.values.setup}
           onChange={(v) => filter.setValue('setup', v)}
           options={[
-            { value: 'unset', label: 'مالهمش إعدادات' },
-            { value: 'set', label: 'ليهم إعدادات' },
+            { value: 'unset', label: 'بلا إعدادات' },
+            { value: 'set', label: 'لهم إعدادات' },
           ]} />
         {branches.length > 1 ? (
           <Select allowClear showSearch placeholder="الفرع" style={{ minWidth: 150 }}
@@ -324,18 +323,15 @@ export default function EmployeeSalaries() {
       </>)}
       summary={(<>
         <ListStat label="الموظفين" value={fmt(shown.length)} />
-        <ListStat label="ليهم إعدادات" value={fmt(withSetup.length)} tone="pos" />
-        <ListStat label="مالهمش إعدادات" value={fmt(shown.length - withSetup.length)}
-          tone={shown.length - withSetup.length ? 'warn' : undefined}
-          hint="مش هيدخلوا المسير" />
+        <ListStat label="لهم إعدادات" value={fmt(withSetup.length)} tone="pos" />
+        <ListStat label="بلا إعدادات" value={fmt(shown.length - withSetup.length)}
+          tone={shown.length - withSetup.length ? 'warn' : undefined} />
         <ListStat label="إجمالي الرواتب الشهرية" value={money(totalGross)} tone="strong" />
       </>)}
     >
       {rows.length && !rows.some((r) => r.current) ? (
         <Alert type="warning" showIcon style={{ margin: '6px 0 8px' }}
-          message="مافيش موظف ليه إعدادات راتب لسه"
-          description={'المسير بيحسب من الإعدادات دي بس — الموظف اللي مالوش إعدادات مابيدخلش المسير. '
-            + 'دوس «+» جنب الموظف وحط الأساسي والبدلات.'} />
+          message="لا يوجد موظف له إعدادات راتب بعد" />
       ) : null}
       <Table<Row>
         {...kb.tableProps}
@@ -370,7 +366,7 @@ export default function EmployeeSalaries() {
           <Col span={8}>
             <div style={{ marginBottom: 4 }}>الأجر التأميني</div>
             <InputNumber style={{ width: '100%' }} min={0} value={form.insurance_base}
-              placeholder="بيتحسب من البنود"
+              placeholder="يُحتسب من البنود"
               onChange={(v) => setForm({ ...form, insurance_base: v ?? undefined })} />
           </Col>
           <Col span={8}>
@@ -395,10 +391,7 @@ export default function EmployeeSalaries() {
             {mode === 'edit' && target.current
               && form.effective_from && dayjs(form.effective_from).format('YYYY-MM-DD') !== target.current.effective_from ? (
               <Alert type="info" showIcon
-                message="غيّرت تاريخ السريان — هتتعمل نسخة جديدة من التاريخ ده، والقديمة بتفضل للشهور اللي قبله." />
-            ) : mode === 'raise' ? (
-              <Alert type="info" showIcon
-                message="الزيادة نسخة جديدة من التاريخ ده — اللي قبلها بتفضل للشهور اللي فاتت، فقسايمها ماتتغيّرش." />
+                message="تغيّر تاريخ السريان — ستُنشأ نسخة جديدة من هذا التاريخ، وتبقى السابقة للشهور التي قبله." />
             ) : null}
           </Col>
 
@@ -406,7 +399,7 @@ export default function EmployeeSalaries() {
             <Divider style={{ margin: '4px 0' }}>البدلات والاستقطاعات</Divider>
             {!usable.length ? (
               <div style={{ color: '#888', fontSize: 14 }}>
-                مافيش بنود راتب لسه — اتعرّف من «بنود الراتب» (بدل انتقالات، حافز، …).
+                لا توجد بنود راتب بعد.
               </div>
             ) : null}
             {lines.map((l, i) => {
@@ -457,9 +450,6 @@ export default function EmployeeSalaries() {
               <span>البدلات: <b>{money(preview.earn)}</b></span>
               <span>الإجمالي: <b>{money(preview.gross)}</b></span>
               <span>استقطاعات ثابتة: <b style={{ color: '#cf1322' }}>{money(preview.ded)}</b></span>
-              <span style={{ color: '#888', fontSize: 13 }}>
-                (قبل الضريبة والتأمينات والغياب — دول بيتحسبوا في المسير)
-              </span>
             </Space>
           </Col>
 
@@ -478,13 +468,13 @@ export default function EmployeeSalaries() {
                   { title: 'الأساسي', dataIndex: 'basic', render: (v: string) => money(v) },
                   { title: '', key: 'x', width: 150,
                     render: (_: any, h: any) => (h.locked
-                      ? <Tag title="اتحسب عليها مسير مرحّل">🔒 متقفلة</Tag>
+                      ? <Tag title="احتُسب عليها مسير مرحّل">🔒 مغلقة</Tag>
                       : (
                         <Popconfirm onConfirm={() => removeVersion(h.id, () => {
                           setHistory(history.filter((x) => x.id !== h.id));
                           if (target.current?.id === h.id) closeSettings();
                         })}>
-                          <Button size="small" danger>مسح النسخة</Button>
+                          <Button size="small" danger>حذف النسخة</Button>
                         </Popconfirm>
                       )) },
                 ]}

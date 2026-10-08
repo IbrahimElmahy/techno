@@ -2,7 +2,7 @@ import React, {
   createContext, useCallback, useContext, useEffect, useMemo, useRef, useState,
 } from 'react';
 import {
-  Input, List, Tag, Typography
+  Input, List, Tag
 } from 'antd';
 import { useNavigate } from 'react-router-dom';
 import { allScreens } from './navigation';
@@ -21,9 +21,9 @@ export interface ScreenShortcuts {
 }
 
 export const KEY_MAP: { action: ShortcutAction; keys: string; label: string }[] = [
-  { action: 'new', keys: 'F2', label: 'جديد — يفتح نموذج إضافة في الشاشة المفتوحة' },
-  { action: 'search', keys: 'F3', label: 'بحث — يركّز على خانة البحث' },
-  { action: 'save', keys: 'F9', label: 'حفظ — يحفظ النموذج المفتوح' },
+  { action: 'new', keys: 'F2', label: 'جديد' },
+  { action: 'search', keys: 'F3', label: 'بحث' },
+  { action: 'save', keys: 'F9', label: 'حفظ' },
   { action: 'print', keys: 'F7', label: 'طباعة' },
   { action: 'delete', keys: 'F8', label: 'حذف السطر أو السجل المحدد' },
   { action: 'close', keys: 'Esc', label: 'إغلاق النافذة المفتوحة' },
@@ -297,23 +297,19 @@ export function KeyboardProvider({ children }: { children: React.ReactNode }) {
 
       <TabModal
         open={helpOpen} onCancel={() => setHelpOpen(false)} footer={null}
-        title="اختصارات الكيبورد" width={480} destroyOnHidden
+        title="اختصارات لوحة المفاتيح" width={480} destroyOnHidden
       >
-        <Typography.Paragraph type="secondary">
-          يمكن إنجاز العمل كله من لوحة المفاتيح. هذه الاختصارات تعمل في أي شاشة، وما لا يتوفر منها
-          في الشاشة المفتوحة يُتجاهَل.
-        </Typography.Paragraph>
         <List
           size="small"
           dataSource={[
-            { keys: 'F1', label: 'القائمة دي' },
-            { keys: 'F4 أو Ctrl+K', label: 'اذهب إلى شاشة — بحث بالاسم في كل شاشات النظام' },
+            { keys: 'F1', label: 'هذه القائمة' },
+            { keys: 'F4 أو Ctrl+K', label: 'الانتقال إلى شاشة بالاسم' },
             ...KEY_MAP.map((k) => ({ keys: k.keys, label: k.label })),
-            { keys: 'Enter', label: 'الخانة التالية — وفي سطور المستند: يفتح نافذة الصنف' },
-            { keys: '↑ ↓', label: 'سطر فوق / سطر تحت في جدول المستند، في نفس العمود' },
-            { keys: '↑ ↓ في القوايم', label: 'يتنقّل بين سطور القايمة — ومن خانة البحث ينزّلك للنتايج' },
-            { keys: 'Enter على سطر', label: 'يفتح السطر — تفاصيله أو شاشة تعديله حسب الشاشة' },
-            { keys: 'Home / End', label: 'أول سطر / آخر سطر في القايمة' },
+            { keys: 'Enter', label: 'الخانة التالية، وفي سطور المستند تفتح نافذة الصنف' },
+            { keys: '↑ ↓', label: 'السطر السابق / السطر التالي في جدول المستند ضمن العمود نفسه' },
+            { keys: '↑ ↓ في القوائم', label: 'التنقل بين سطور القائمة، ومن خانة البحث إلى النتائج' },
+            { keys: 'Enter على سطر', label: 'فتح تفاصيل السطر أو شاشة تعديله' },
+            { keys: 'Home / End', label: 'أول سطر / آخر سطر في القائمة' },
           ]}
           renderItem={(row) => (
             <List.Item>

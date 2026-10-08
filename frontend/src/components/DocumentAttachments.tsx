@@ -106,7 +106,7 @@ function Attachments({ docType, docId, title = 'المرفقات' }: Props) {
     }
     setBusy(false);
     if (added) {
-      message.success(added > 1 ? `اترفعت ${added} صور` : 'اترفعت الصورة');
+      message.success(added > 1 ? `تم رفع ${added} صور` : 'تم رفع الصورة');
       void load();
     }
   };
@@ -117,7 +117,7 @@ function Attachments({ docType, docId, title = 'المرفقات' }: Props) {
       dropUrl(a.id);
       setRows((prev) => prev.filter((r) => r.id !== a.id));
     } catch (err: any) {
-      message.error(err?.response?.data?.detail?.message || 'تعذر مسح المرفق');
+      message.error(err?.response?.data?.detail?.message || 'تعذر حذف المرفق');
     }
   };
 
@@ -143,7 +143,7 @@ function Attachments({ docType, docId, title = 'المرفقات' }: Props) {
 
       {rows.length === 0 && !loading && (
         <div style={{ color: '#555b65', fontSize: 14 }}>
-          مافيش صور على المستند ده لسه.
+          لا توجد صور على هذا المستند بعد.
         </div>
       )}
 
@@ -175,8 +175,8 @@ function Attachments({ docType, docId, title = 'المرفقات' }: Props) {
                     height: '100%',
                   }}><Spin size="small" /></div>
                 )}
-                <Popconfirm title="مسح المرفق؟" onConfirm={() => remove(a)}
-                  okText="مسح" cancelText="إلغاء">
+                <Popconfirm title="حذف المرفق؟" onConfirm={() => remove(a)}
+                  okText="حذف" cancelText="إلغاء">
                   <Button size="small" danger type="text" icon={<DeleteOutlined />}
                     title={`${a.filename} ${sizeText(a.bytes)}`}
                     style={{

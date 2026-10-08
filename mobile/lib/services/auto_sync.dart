@@ -53,7 +53,7 @@ class AutoSync extends ChangeNotifier {
   Future<void> run({bool includeSales = true}) async {
     if (_running && !includeSales) return;
     await _acquire();
-    _set(AutoSyncState.running, 'بيزامن...');
+    _set(AutoSyncState.running, 'جارٍ المزامنة...');
     final tr = TaskTracker.instance;
     final totalSteps = includeSales ? 7 : 6;
     var stepNo = 0;
@@ -63,7 +63,7 @@ class AutoSync extends ChangeNotifier {
           progress: ((stepNo + frac) / totalSteps).clamp(0.0, 1.0));
     }
 
-    tr.start(BgTask.sync, 'بيزامن…', progress: 0);
+    tr.start(BgTask.sync, 'جارٍ المزامنة…', progress: 0);
     try {
       final errors = <String>[];
       Future<int> step(String label, Future<int> Function(CountProgress p) f) async {
@@ -82,34 +82,34 @@ class AutoSync extends ChangeNotifier {
         }
       }
 
-      final pushed = await step('بيرفع المعاينات', (_) => ApiClient.instance.pushInspections());
-      final coupons = await step('بيرفع استلامات الكوبونات',
+      final pushed = await step('جارٍ رفع المعاينات', (_) => ApiClient.instance.pushInspections());
+      final coupons = await step('جارٍ رفع استلامات الكوبونات',
           (p) => ApiClient.instance.pushCouponReceipts(onProgress: p));
       final invoices = includeSales
-          ? await step('بيرفع الفواتير',
+          ? await step('جارٍ رفع الفواتير',
               (p) => ApiClient.instance.pushSaleInvoices(refreshStock: false, onProgress: p))
           : 0;
       final collected = await step(
-          'بيرفع التحصيلات', (p) => ApiClient.instance.pushReceipts(onProgress: p));
+          'جارٍ رفع التحصيلات', (p) => ApiClient.instance.pushReceipts(onProgress: p));
       final permits = await step(
-          'بيرفع أذون التحويل', (p) => ApiClient.instance.pushTransfers(onProgress: p));
+          'جارٍ رفع أذون التحويل', (p) => ApiClient.instance.pushTransfers(onProgress: p));
 
       final pulled = await _pullAll(errors,
-          onStep: (label) => show(label), onBundle: () => show('بيجيب بضاعتك وعملاءك…'),
+          onStep: (label) => show(label), onBundle: () => show('جارٍ جلب البضاعة والعملاء…'),
           afterReference: () => stepNo++);
       final items = pulled.items;
       final note = pulled.note;
 
       final parts = <String>[
-        if (pushed > 0) 'اترفعت $pushed معاينة',
-        if (coupons > 0) 'اترفع $coupons استلام كوبونات',
-        if (invoices > 0) 'اترفعت $invoices فاتورة',
-        if (collected > 0) 'اترفع $collected تحصيل',
-        if (permits > 0) 'اترفع $permits إذن تحويل',
-        if (items > 0) '$items صنف في عربيتك',
+        if (pushed > 0) 'تم رفع $pushed معاينة',
+        if (coupons > 0) 'تم رفع $coupons استلام كوبونات',
+        if (invoices > 0) 'تم رفع $invoices فاتورة',
+        if (collected > 0) 'تم رفع $collected تحصيل',
+        if (permits > 0) 'تم رفع $permits إذن تحويل',
+        if (items > 0) '$items صنف في سيارتك',
       ];
       final done =
-          parts.isEmpty ? 'كل حاجة محدّثة ✔' : '${parts.join(' و')} ✔';
+          parts.isEmpty ? 'جميع البيانات محدّثة ✔' : '${parts.join(' و')} ✔';
       final warn = <String>[if (note != null) note, ...errors];
       final failed = parts.isEmpty && errors.isNotEmpty;
       if (!failed) _lastRun = DateTime.now();
@@ -118,7 +118,7 @@ class AutoSync extends ChangeNotifier {
         warn.isEmpty ? done : '$done\n⚠ ${warn.join('\n⚠ ')}',
       );
       if (failed) {
-        tr.finish(BgTask.sync, 'المزامنة مانفعتش: ${errors.join(' · ')}', error: true);
+        tr.finish(BgTask.sync, 'فشلت المزامنة: ${errors.join(' · ')}', error: true);
       } else if (warn.isNotEmpty) {
         tr.finish(BgTask.sync, '$done — ⚠ ${warn.join(' · ')}',
             error: errors.isNotEmpty, hold: const Duration(seconds: 12));
@@ -129,7 +129,7 @@ class AutoSync extends ChangeNotifier {
     } catch (e) {
       final m = _short(e);
       _set(AutoSyncState.failed, m);
-      tr.finish(BgTask.sync, 'المزامنة مانفعتش: $m', error: true);
+      tr.finish(BgTask.sync, 'فشلت المزامنة: $m', error: true);
     } finally {
       _release();
     }
@@ -137,26 +137,26 @@ class AutoSync extends ChangeNotifier {
 
   Future<void> refreshLists() async {
     final tr = TaskTracker.instance;
-    if (_running) tr.start(BgTask.lists, 'مستني المزامنة اللي شغّالة تخلص…');
+    if (_running) tr.start(BgTask.lists, 'بانتظار انتهاء المزامنة الجارية…');
     await _acquire();
     var stepNo = 0;
     const totalSteps = 2;
     void show(String label) => tr.update(BgTask.lists, label,
         progress: ((stepNo + 0.15) / totalSteps).clamp(0.0, 1.0));
-    tr.start(BgTask.lists, 'بيجيب الأصناف والقوائم…', progress: 0);
+    tr.start(BgTask.lists, 'جارٍ جلب الأصناف والقوائم…', progress: 0);
     try {
       final errors = <String>[];
       final pulled = await _pullAll(errors,
           onStep: show,
-          onBundle: () => show('بيجيب أصناف عربيتك وأسعارها وعملاءك…'),
+          onBundle: () => show('جارٍ جلب أصناف سيارتك وأسعارها والعملاء…'),
           afterReference: () => stepNo++);
       final items = pulled.items;
       final ok = items > 0
-          ? 'اتحدّثت القوائم و$items صنف في عربيتك ✔'
-          : 'اتحدّثت القوائم ✔';
+          ? 'تم تحديث القوائم و$items صنف في سيارتك ✔'
+          : 'تم تحديث القوائم ✔';
       final warn = <String>[if (pulled.note != null) pulled.note!, ...errors];
       if (errors.isNotEmpty && !pulled.anyOk) {
-        tr.finish(BgTask.lists, 'التحديث مانفعش: ${errors.join(' · ')}', error: true);
+        tr.finish(BgTask.lists, 'فشل التحديث: ${errors.join(' · ')}', error: true);
       } else if (warn.isNotEmpty) {
         tr.finish(BgTask.lists, '$ok — ⚠ ${warn.join(' · ')}',
             error: errors.isNotEmpty, hold: const Duration(seconds: 12));
@@ -168,7 +168,7 @@ class AutoSync extends ChangeNotifier {
         notifyListeners();
       }
     } catch (e) {
-      tr.finish(BgTask.lists, 'التحديث مانفعش: ${_short(e)}', error: true);
+      tr.finish(BgTask.lists, 'فشل التحديث: ${_short(e)}', error: true);
     } finally {
       _release();
     }
@@ -205,7 +205,7 @@ class AutoSync extends ChangeNotifier {
     } on ApiException catch (e) {
       if (e.statusCode == 401) rethrow;
       if (e.statusCode == 404) {
-        note = 'مالكش مخزن ولا عهدة مسجّلة';
+        note = 'ليس لديك مخزن أو عهدة مسجّلة';
       } else if (e.statusCode != 403) {
         errors.add(e.message);
       }
@@ -246,10 +246,10 @@ class AutoSync extends ChangeNotifier {
         s.contains('Failed host lookup') ||
         s.contains('Connection refused') ||
         s.contains('Network is unreachable')) {
-      return 'مافيش نت — التطبيق شغّال بآخر بيانات نزلت';
+      return 'لا يوجد اتصال بالإنترنت — يعمل التطبيق بآخر بيانات محمّلة';
     }
     if (e is TimeoutException || s.contains('TimeoutException')) {
-      return 'السيرفر مارضيش يرد — جرّب تاني';
+      return 'لم يستجب الخادم — حاول مرة أخرى';
     }
     return s.length > 160 ? '${s.substring(0, 160)}…' : s;
   }

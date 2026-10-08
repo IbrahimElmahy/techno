@@ -52,10 +52,10 @@ def _check_supervisor(db: Session, supervisor_id: int | None, role,
     sup_role = db.get(Role, sup.role_id) if sup is not None else None
     if sup is None or sup_role is None or sup_role.name != RoleName.rep_supervisor:
         raise HTTPException(422, {"code": "validation",
-                                  "message": "المشرف لازم يكون مستخدم دوره «مشرف مناديب»."})
+                                  "message": "يجب أن يكون المشرف مستخدماً دوره «مشرف مناديب»."})
     if sup.branch_id is None or sup.branch_id != branch_id:
         raise HTTPException(422, {"code": "validation",
-                                  "message": "المشرف لازم يكون من نفس فرع المندوب."})
+                                  "message": "يجب أن يكون المشرف من فرع المندوب نفسه."})
     return sup.id
 
 
@@ -93,7 +93,7 @@ def _guard_elevated(current: CurrentUser, target_role) -> None:
         raise HTTPException(
             status.HTTP_403_FORBIDDEN,
             {"code": "forbidden",
-             "message": "حساب مدير النظام أو المالك مايتعدّلش إلا من المالك."})
+             "message": "لا يُعدَّل حساب مدير النظام أو المالك إلا من المالك."})
 
 
 BELOW_BRANCH_MANAGER = {
@@ -111,7 +111,7 @@ def _guard_role_ceiling(current: CurrentUser, target_role) -> None:
         raise HTTPException(
             status.HTTP_403_FORBIDDEN,
             {"code": "forbidden",
-             "message": "مدير الفرع بيدير الأدوار اللي تحته بس — مش مدير فرع ولا أدمن ولا مالك."})
+             "message": "يدير مدير الفرع الأدوار التي تحته فقط — وليس مدير فرع ولا مدير نظام ولا مالكاً."})
 
 
 @router.post("", response_model=UserOut, status_code=status.HTTP_201_CREATED)
@@ -127,7 +127,7 @@ def create_user(
             body.branch_id = current.branch_id
         if body.branch_id != current.branch_id:
             raise HTTPException(403, {"code": "forbidden",
-                                      "message": "المستخدم الجديد لازم يبقى على فرعك."})
+                                      "message": "يجب أن يكون المستخدم الجديد على فرعك."})
         ensure_branch_access(current, body.branch_id)
     if body.role in (RoleName.branch_manager, RoleName.purchasing_manager, RoleName.sales_manager,
                      RoleName.rep_supervisor):
@@ -216,11 +216,11 @@ def update_user(
         uname = body.username.strip()
         if not uname:
             raise HTTPException(422, {"code": "validation",
-                                      "message": "اسم المستخدم ماينفعش يبقى فاضي."})
+                                      "message": "لا يمكن أن يكون اسم المستخدم فارغاً."})
         clash = db.scalar(select(User).where(User.username == uname, User.id != user.id))
         if clash is not None:
             raise HTTPException(409, {"code": "conflict",
-                                      "message": f"«{uname}» متاخد لمستخدم تاني."})
+                                      "message": f"اسم «{uname}» مستخدم بالفعل لحساب آخر."})
         user.username = uname
     if body.role is not None:
         role = db.scalar(select(Role).where(Role.name == body.role))
@@ -250,7 +250,7 @@ def update_user(
     if new_role == RoleName.rep_supervisor:
         if user.branch_id is None:
             raise HTTPException(422, {"code": "validation",
-                                      "message": "مشرف المناديب لازم يبقى على فرع."})
+                                      "message": "يجب أن يكون مشرف المناديب على فرع."})
         for rep in db.scalars(select(User).where(User.supervisor_id == user.id,
                                                   User.branch_id != user.branch_id)).all():
             rep.supervisor_id = None
@@ -300,10 +300,10 @@ def delete_user(
 ) -> None:
     user = db.get(User, user_id)
     if user is None:
-        raise HTTPException(404, {"code": "not_found", "message": "المستخدم مش موجود"})
+        raise HTTPException(404, {"code": "not_found", "message": "المستخدم غير موجود"})
     if user.id == current.id:
         raise HTTPException(
-            409, {"code": "self", "message": "مش هتمسح حسابك وانت داخل بيه"})
+            409, {"code": "self", "message": "لا يمكنك حذف حسابك وأنت مسجّل الدخول به"})
     _guard_elevated(current, db.get(Role, user.role_id).name)
     _guard_role_ceiling(current, db.get(Role, user.role_id).name)
     if not current.is_admin:
@@ -332,9 +332,9 @@ def delete_user(
     if blockers:
         raise HTTPException(409, {
             "code": "has_history",
-            "message": ("الحساب ده عليه شغل مسجّل فمينفعش يتمسح — "
+            "message": ("هذا الحساب عليه عمليات مسجّلة فلا يمكن حذفه — "
                         + " · ".join(blockers[:6])
-                        + ". استعمل «تعطيل الحساب» بدل المسح."),
+                        + ". استخدم «تعطيل الحساب» بدلاً من الحذف."),
         })
 
     audit_service.record(

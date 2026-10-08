@@ -247,9 +247,6 @@ export default function TrialBalanceTab() {
               </Table.Summary>
             )}
           />
-          <div style={{ marginTop: 12, color: '#888', fontSize: 15 }}>
-            مشتقّ بالكامل من دفتر الأستاذ — إجمالي المدين = إجمالي الدائن دائماً.
-          </div>
         </>
       ) : <Empty description="لا توجد بيانات" />}
     </Card>

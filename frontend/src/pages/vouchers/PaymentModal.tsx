@@ -74,7 +74,7 @@ export default function PaymentModal({
 
   const buildPayload = (v: any) => {
     if (isCustomerKind(kind) && lines.length >= 2 && !family) {
-      message.error('حدد الصرف على أنهي حساب — أبيض ولا بولي');
+      message.error('حدد الحساب الذي يتم الصرف عليه: أبيض أم بولي');
       return null;
     }
     return {
@@ -103,7 +103,7 @@ export default function PaymentModal({
         />
       </div>
       {isCustomerKind(kind) && lines.length >= 2 && (
-        <Form.Item label="الصرف على أنهي حساب؟" required>
+        <Form.Item label="الصرف على أي حساب؟" required>
           <Segmented
             block
             value={family}
@@ -130,7 +130,7 @@ export default function PaymentModal({
       <CostCenterField style={{ width: '100%' }} />
     </Form.Item>,
     <Form.Item key="s" name="statement1" label="بيان السند">
-      <Input placeholder="الكلام المكتوب على ورقة السند" />
+      <Input placeholder="النص المكتوب على ورقة السند" />
     </Form.Item>,
   ];
 
@@ -145,7 +145,7 @@ export default function PaymentModal({
       details={details}
       detailsLabel="طريقة الدفع · المرجع · مركز التكلفة · بيان السند"
       journalNote={isCustomerKind(kind) && lines.length >= 2
-        ? (family ? `على حساب «${family}»` : 'اختار أنهي حساب')
+        ? (family ? `على حساب «${family}»` : 'اختر الحساب')
         : undefined}
       methodOptions={methodOptions}
       onAfterNew={() => { setLines([]); setFamily(''); }}

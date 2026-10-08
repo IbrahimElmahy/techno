@@ -550,7 +550,7 @@ def update_journal_entry(
     existing = db.get(LedgerEntry, entry_id)
     if existing is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND,
-                            {"code": "not_found", "message": "القيد مش موجود"})
+                            {"code": "not_found", "message": "القيد غير موجود"})
     _ensure_accounting_branch(current, existing.branch_id)
     try:
         entry = journal_service.update_draft(
@@ -660,10 +660,10 @@ def create_journal(
     code = body.code.strip().upper()
     if db.scalar(select(Journal).where(Journal.code == code)) is not None:
         raise HTTPException(status.HTTP_409_CONFLICT,
-                            {"code": "duplicate", "message": "فيه دفتر بنفس الكود."})
+                            {"code": "duplicate", "message": "يوجد دفتر بالكود نفسه."})
     if body.kind not in {k.value for k in JournalKind}:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY,
-                            {"code": "invalid", "message": "نوع الدفتر مش معروف."})
+                            {"code": "invalid", "message": "نوع الدفتر غير معروف."})
     journal = Journal(code=code, name=body.name.strip(), kind=body.kind,
                       sort_order=body.sort_order, is_system=False, active=True)
     db.add(journal)
@@ -682,13 +682,13 @@ def update_journal(
     journal = db.get(Journal, journal_id)
     if journal is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND,
-                            {"code": "not_found", "message": "الدفتر مش موجود"})
+                            {"code": "not_found", "message": "الدفتر غير موجود"})
     if body.name is not None:
         journal.name = body.name.strip()
     if body.kind is not None:
         if body.kind not in {k.value for k in JournalKind}:
             raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY,
-                                {"code": "invalid", "message": "نوع الدفتر مش معروف."})
+                                {"code": "invalid", "message": "نوع الدفتر غير معروف."})
         journal.kind = body.kind
     if body.sort_order is not None:
         journal.sort_order = body.sort_order
@@ -702,13 +702,13 @@ def update_journal(
             raise HTTPException(
                 status.HTTP_409_CONFLICT,
                 {"code": "hash_locked",
-                 "message": "الدفتر ده فيه قيود متجزّأة — السلسلة مابتتقفلش بعد ما تبدأ."})
+                 "message": "يحتوي هذا الدفتر على قيود مؤمّنة بالتجزئة — لا يمكن إيقاف السلسلة بعد بدئها."})
         journal.restrict_mode_hash = body.restrict_mode_hash
     if body.active is not None:
         if journal.is_system and not body.active:
             raise HTTPException(
                 status.HTTP_409_CONFLICT,
-                {"code": "system_journal", "message": "دفتر النظام مايتقفلش."})
+                {"code": "system_journal", "message": "لا يمكن تعطيل دفتر النظام."})
         journal.active = body.active
     db.commit()
     db.refresh(journal)
@@ -872,7 +872,7 @@ def set_lock_dates(
     if not current.is_admin:
         raise HTTPException(
             status.HTTP_403_FORBIDDEN,
-            {"code": "forbidden", "message": "أقفال التواريخ للأدمن والمالك بس."})
+            {"code": "forbidden", "message": "أقفال التواريخ لمدير النظام والمالك فقط."})
     row = lock_date_service.set_lock_dates(
         db, actor_user_id=current.id,
         fiscalyear_lock_date=body.fiscalyear_lock_date,
@@ -883,7 +883,7 @@ def set_lock_dates(
         if body.payment_terms_days < 0:
             raise HTTPException(
                 status.HTTP_422_UNPROCESSABLE_ENTITY,
-                {"code": "invalid", "message": "مهلة السداد ماتكونش بالسالب."})
+                {"code": "invalid", "message": "لا يمكن أن تكون مهلة السداد بالسالب."})
         row.payment_terms_days = body.payment_terms_days
     db.commit()
     return LockDatesOut(fiscalyear_lock_date=row.fiscalyear_lock_date,

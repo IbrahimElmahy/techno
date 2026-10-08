@@ -41,17 +41,17 @@ class PayrollSheetError(Exception):
 SOURCES: dict[str, dict] = {
     "basic": {"label": "اساسى", "kind": "earning", "hint": "من إعدادات الراتب"},
     "component": {"label": "بند راتب", "kind": None, "hint": "مبلغ ثابت من إعدادات الراتب"},
-    "commission": {"label": "محرك العمولات", "kind": None, "hint": "بيتحسب من المبيعات والتحصيل"},
+    "commission": {"label": "محرك العمولات", "kind": None, "hint": "يُحسب من المبيعات والتحصيل"},
     "absence": {"label": "غياب", "kind": "deduction", "posting": "reduce",
                 "hint": "أيام الغياب من الحضور × أجر اليوم"},
     "advances": {"label": "سلف", "kind": "deduction", "posting": "advance",
-                 "hint": "أقساط السلف المستحقة الشهر ده"},
+                 "hint": "أقساط السلف المستحقة هذا الشهر"},
     "penalties": {"label": "عجز /جزاء", "kind": "deduction", "posting": "penalty",
                   "hint": "الجزاءات المعتمدة للشهر"},
     "bonuses": {"label": "مكافأة", "kind": "earning", "hint": "المكافآت المعتمدة للشهر"},
     "insurance": {"label": "تأمينات", "kind": "deduction", "posting": "insurance",
-                  "hint": "حصة الموظف من شرايح التأمينات"},
-    "manual": {"label": "يدوي", "kind": None, "hint": "بيتكتب كل شهر بالإيد"},
+                  "hint": "حصة الموظف من شرائح التأمينات"},
+    "manual": {"label": "يدوي", "kind": None, "hint": "يُدخل يدوياً كل شهر"},
 }
 
 COMMISSION_KEYS: dict[str, tuple[str, str]] = {
@@ -98,27 +98,27 @@ def clean_columns(db: Session, columns: list[dict]) -> list[dict]:
     for raw in columns or []:
         source = (raw.get("source") or "").strip()
         if source not in SOURCES:
-            raise PayrollSheetError(f"مصدر العمود «{source}» مش معروف.")
+            raise PayrollSheetError(f"مصدر العمود «{source}» غير معروف.")
         ref = raw.get("ref")
         label = (raw.get("label") or "").strip()
         kind = raw.get("kind")
         if source == "component":
             comp = db.get(SalaryComponent, int(ref or 0)) if ref else None
             if comp is None:
-                raise PayrollSheetError("بند الراتب بتاع العمود غير موجود.")
+                raise PayrollSheetError("بند الراتب الخاص بالعمود غير موجود.")
             ref = comp.id
             kind = comp.kind.value
             label = label or comp.name
             key = f"component:{comp.id}"
         elif source == "commission":
             if ref not in COMMISSION_KEYS:
-                raise PayrollSheetError(f"مفتاح العمولة «{ref}» مش معروف.")
+                raise PayrollSheetError(f"مفتاح العمولة «{ref}» غير معروف.")
             kind = COMMISSION_KEYS[ref][1]
             label = label or COMMISSION_KEYS[ref][0]
             key = f"commission:{ref}"
         elif source == "manual":
             if kind not in ("earning", "deduction"):
-                raise PayrollSheetError("العمود اليدوي لازم يتحدد استحقاق ولا استقطاع.")
+                raise PayrollSheetError("يجب تحديد العمود اليدوي استحقاقاً أو استقطاعاً.")
             ref = _slug(str(ref or "")) if ref else ""
             if not ref:
                 manual_n += 1
@@ -140,7 +140,7 @@ def clean_columns(db: Session, columns: list[dict]) -> list[dict]:
         if kind == "deduction":
             posting = raw.get("posting") or SOURCES[source].get("posting") or "reduce"
             if posting not in POSTINGS:
-                raise PayrollSheetError(f"ترحيل العمود «{label}» مش معروف.")
+                raise PayrollSheetError(f"ترحيل العمود «{label}» غير معروف.")
         fallback = raw.get("fallback_component_id")
         if fallback and db.get(SalaryComponent, int(fallback)) is None:
             fallback = None
@@ -201,14 +201,14 @@ def save_group(
     if not clean:
         raise PayrollSheetError("اسم المجموعة مطلوب.")
     if not absence_divisor or absence_divisor <= 0:
-        raise PayrollSheetError("قاسم الغياب لازم يكون أكبر من صفر.")
+        raise PayrollSheetError("يجب أن يكون قاسم الغياب أكبر من صفر.")
     cols = clean_columns(db, columns)
     if not cols:
-        raise PayrollSheetError("المجموعة لازم يبقى فيها عمود واحد على الأقل.")
+        raise PayrollSheetError("يجب أن تحتوي المجموعة على عمود واحد على الأقل.")
     dup = db.scalar(select(PayrollGroup).where(
         PayrollGroup.branch_id == branch_id, PayrollGroup.name == clean))
     if dup is not None and dup.id != group_id:
-        raise PayrollSheetError("فيه مجموعة بنفس الاسم في الفرع ده.")
+        raise PayrollSheetError("توجد مجموعة بالاسم نفسه في هذا الفرع.")
     if group_id is not None:
         g = db.get(PayrollGroup, group_id)
         if g is None or g.branch_id != branch_id:
@@ -290,7 +290,7 @@ def assign(db: Session, *, branch_id: int, employee_ids: list[int], group_id: in
     for emp_id in employee_ids:
         emp = db.get(Employee, emp_id)
         if emp is None or emp.branch_id != branch_id:
-            raise PayrollSheetError("الموظف مش من الفرع ده.")
+            raise PayrollSheetError("الموظف لا يتبع هذا الفرع.")
         m = db.scalar(select(PayrollGroupMember).where(PayrollGroupMember.employee_id == emp_id))
         if group is None:
             if m is not None:
@@ -415,10 +415,10 @@ def _commission_values(db: Session, *, branch_id: int, year: int, month: int,
     try:
         from src.services import commission_service
     except Exception as exc:  # noqa: BLE001
-        return {}, {}, f"محرك العمولات مش موجود ({type(exc).__name__})"
+        return {}, {}, f"محرك العمولات غير موجود ({type(exc).__name__})"
     fn = getattr(commission_service, "compute", None)
     if fn is None:
-        return {}, {}, "محرك العمولات مش موجود"
+        return {}, {}, "محرك العمولات غير موجود"
     nested = db.begin_nested()
     try:
         try:
@@ -431,9 +431,9 @@ def _commission_values(db: Session, *, branch_id: int, year: int, month: int,
         nested.rollback()
         import logging
         logging.getLogger(__name__).warning("commission engine failed: %r", exc)
-        return {}, {}, "محرك العمولات ماردّش على الفرع/الشهر ده — اكتب العمولات بالإيد"
+        return {}, {}, "لم يُرجع محرك العمولات نتيجة لهذا الفرع/الشهر — أدخل العمولات يدوياً"
     if not isinstance(result, dict):
-        return {}, {}, "محرك العمولات رجّع شكل مش متوقع"
+        return {}, {}, "أرجع محرك العمولات صيغة غير متوقعة"
     values: dict[int, dict] = {}
     for k, v in result.items():
         try:
@@ -566,25 +566,25 @@ def _wipe_lines(db: Session, run_id: int, employee_id: int | None = None) -> Non
 def prepare(db: Session, *, branch_id: int, year: int, month: int,
             actor_user_id: int) -> PayrollRun:
     if not 1 <= month <= 12:
-        raise PayrollSheetError("الشهر لازم يكون من 1 لـ 12.")
+        raise PayrollSheetError("يجب أن يكون الشهر من 1 إلى 12.")
     runs = _runs_of(db, branch_id, year, month)
     live = next((r for r in runs if r.status != PayrollRunStatus.reversed), None)
     if live is not None and live.status == PayrollRunStatus.posted:
         raise PayrollSheetError(
-            f"الشهر ده مرحّل في {live.document_number} — اعكس الترحيل الأول لو محتاج تعدّل.")
+            f"هذا الشهر مُرحّل في {live.document_number} — اعكس الترحيل أولاً إن أردت التعديل.")
     if live is not None and live.status == PayrollRunStatus.closed:
-        raise PayrollSheetError("الشهر ده معتمد — الغي الاعتماد الأول عشان تعيد التجهيز.")
+        raise PayrollSheetError("هذا الشهر معتمد — ألغِ الاعتماد أولاً لإعادة التجهيز.")
     if live is not None and not is_sheet(db, live.id) and db.scalar(
             select(func.count()).select_from(PayrollLine).where(PayrollLine.run_id == live.id)):
         raise PayrollSheetError(
-            f"الشهر ده عليه مسودة من «مسير الرواتب» القديم ({live.document_number}).")
+            f"لهذا الشهر مسودة في «مسير الرواتب» القديم ({live.document_number}).")
 
     groups = db.scalars(select(PayrollGroup).where(
         PayrollGroup.branch_id == branch_id, PayrollGroup.active.is_(True))
         .order_by(PayrollGroup.sort_order, PayrollGroup.id)).all()
     if not groups:
         raise PayrollSheetError(
-            "الفرع ده مالوش مجموعات مرتبات — اعملها من «مجموعات المرتبات» الأول.")
+            "لا توجد مجموعات مرتبات لهذا الفرع — أنشئها أولاً من «مجموعات المرتبات».")
 
     keep_from = live if live is not None else next(
         (r for r in runs if r.status == PayrollRunStatus.reversed and is_sheet(db, r.id)), None)
@@ -686,7 +686,7 @@ def _build_row(db: Session, *, run, sg, emp, sort_order, year, month, period_end
         if src == "basic":
             value = info["basic"] if info else ZERO
             note_txt = (f"إعدادات الراتب (ساري من {info['effective_from']})" if info
-                        else "مالوش إعدادات راتب")
+                        else "لا توجد إعدادات راتب")
         elif src == "component":
             value = comps.get(col["ref"], ZERO)
             note_txt = "إعدادات الراتب"
@@ -696,12 +696,12 @@ def _build_row(db: Session, *, run, sg, emp, sort_order, year, month, period_end
                 value = to_money(raw)
                 note_txt = _note_commission(comm_details, emp.id, col["ref"])
             else:
-                note_txt = ("محرك العمولات مارجّعش رقم للموظف ده" if comm_ok
-                            else "محرك العمولات مش متاح — اكتب الرقم بالإيد")
+                note_txt = ("لم يُرجع محرك العمولات رقماً لهذا الموظف" if comm_ok
+                            else "محرك العمولات غير متاح — أدخل الرقم يدوياً")
         elif src == "advances":
             parts = advance_service.due_in(db, employee_id=emp.id, year=year, month=month)
             value = to_money(sum((Decimal(str(p.amount)) for p in parts), ZERO))
-            note_txt = (f"أقساط سلف الشهر ({len(parts)})" if parts else "مافيش أقساط الشهر ده")
+            note_txt = (f"أقساط سلف الشهر ({len(parts)})" if parts else "لا توجد أقساط هذا الشهر")
         elif src == "insurance":
             if ins_version is not None and info is not None:
                 emp_share, _ = calc.insurance_for(
@@ -709,14 +709,14 @@ def _build_row(db: Session, *, run, sg, emp, sort_order, year, month, period_end
                     employer_pct=ins_version.employer_pct or 0,
                     min_base=ins_version.min_base, max_base=ins_version.max_base)
                 value = to_money(emp_share)
-                note_txt = f"شرايح التأمينات «{ins_version.name}»"
+                note_txt = f"شرائح التأمينات «{ins_version.name}»"
             else:
-                note_txt = "شرايح التأمينات مش متعرّفة — اكتب الرقم بالإيد"
+                note_txt = "شرائح التأمينات غير معرّفة — أدخل الرقم يدوياً"
         elif src == "manual":
             prev = carry.get((emp.id, key)) if col.get("carry") else None
             if prev is not None:
                 value = prev
-                note_txt = "من الشهر اللي فات"
+                note_txt = "من الشهر السابق"
             else:
                 value = ZERO
                 note_txt = "يدوي"
@@ -761,8 +761,8 @@ def _build_row(db: Session, *, run, sg, emp, sort_order, year, month, period_end
                 total += amount
                 labels.append(adj.reason or adj.document_number or "")
             values[key] = (to_money(total), ("، ".join(x for x in labels if x)[:240]
-                                             or ("مافيش مكافآت معتمدة" if want_bonus
-                                                 else "مافيش جزاءات معتمدة")))
+                                             or ("لا توجد مكافآت معتمدة" if want_bonus
+                                                 else "لا توجد جزاءات معتمدة")))
 
     for col in sg.columns:
         key = col["key"]
@@ -777,7 +777,7 @@ def _build_row(db: Session, *, run, sg, emp, sort_order, year, month, period_end
 def _absence_note(sg, days: Decimal, override, has_att: bool) -> str:
     base = " + ".join(c["label"] for c in sg.columns if c["key"] in (sg.absence_base or []))
     origin = "مكتوبة بالإيد" if override is not None else (
-        "من الحضور" if has_att else "مافيش حضور مسجّل")
+        "من الحضور" if has_att else "لا يوجد حضور مسجّل")
     return f"({base or 'صفر'}) ÷ {sg.absence_divisor} × {days.normalize()} يوم — {origin}"
 
 
@@ -901,9 +901,9 @@ def _draft(db: Session, run_id: int) -> PayrollRun:
     if run is None or not is_sheet(db, run_id):
         raise PayrollSheetError("الشيت غير موجود.")
     if run.status != PayrollRunStatus.draft:
-        label = {"closed": "معتمد", "posted": "مرحّل", "reversed": "متعكس"}.get(
+        label = {"closed": "معتمد", "posted": "مرحّل", "reversed": "معكوس"}.get(
             run.status.value, run.status.value)
-        raise PayrollSheetError(f"الشيت {label} — مينفعش يتعدّل.")
+        raise PayrollSheetError(f"الشيت {label} — لا يمكن تعديله.")
     return run
 
 
@@ -911,7 +911,7 @@ def _row_of(db: Session, run_id: int, employee_id: int):
     row = db.scalar(select(PayrollSheetRow).where(
         PayrollSheetRow.run_id == run_id, PayrollSheetRow.employee_id == employee_id))
     if row is None:
-        raise PayrollSheetError("الموظف مش في الشيت ده.")
+        raise PayrollSheetError("الموظف غير موجود في هذا الشيت.")
     return row, db.get(PayrollSheetGroup, row.sheet_group_id)
 
 
@@ -921,7 +921,7 @@ def set_cell(db: Session, *, run_id: int, employee_id: int, col_key: str, value,
     row, sg = _row_of(db, run_id, employee_id)
     col = next((c for c in sg.columns if c["key"] == col_key), None)
     if col is None:
-        raise PayrollSheetError("العمود مش في المجموعة دي.")
+        raise PayrollSheetError("العمود غير موجود في هذه المجموعة.")
     cell = db.scalar(select(PayrollSheetCell).where(
         PayrollSheetCell.row_id == row.id, PayrollSheetCell.col_key == col_key))
     if cell is None:
@@ -929,9 +929,9 @@ def set_cell(db: Session, *, run_id: int, employee_id: int, col_key: str, value,
         db.add(cell)
     v = _dec(value)
     if value not in (None, "") and v is None:
-        raise PayrollSheetError("القيمة لازم تكون رقم.")
+        raise PayrollSheetError("يجب أن تكون القيمة رقماً.")
     if v is not None and v < 0:
-        raise PayrollSheetError("القيمة مينفعش تكون بالسالب.")
+        raise PayrollSheetError("لا يمكن أن تكون القيمة سالبة.")
     before = str(cell.override) if cell.override is not None else None
     cell.override = to_money(v) if v is not None else None
     db.flush()
@@ -952,9 +952,9 @@ def set_absent_days(db: Session, *, run_id: int, employee_id: int, days,
     row, sg = _row_of(db, run_id, employee_id)
     v = _dec(days)
     if days not in (None, "") and v is None:
-        raise PayrollSheetError("الأيام لازم تكون رقم.")
+        raise PayrollSheetError("يجب أن تكون الأيام رقماً.")
     if v is not None and (v < 0 or v > 31):
-        raise PayrollSheetError("أيام الغياب من 0 لـ 31.")
+        raise PayrollSheetError("أيام الغياب من 0 إلى 31.")
     row.absent_days_override = to_qty(v) if v is not None else None
     db.flush()
     _recompute_row(db, run, sg, row)
@@ -977,7 +977,7 @@ def close(db: Session, *, run_id: int, actor_user_id: int) -> PayrollRun:
     run = _draft(db, run_id)
     if not db.scalar(select(func.count()).select_from(PayrollSheetRow).where(
             PayrollSheetRow.run_id == run.id)):
-        raise PayrollSheetError("الشيت فاضي — مافيش موظفين في المجموعات.")
+        raise PayrollSheetError("الشيت فارغ — لا يوجد موظفون في المجموعات.")
     run.status = PayrollRunStatus.closed
     db.flush()
     audit_service.record(db, action="payroll_sheet.close", actor_user_id=actor_user_id,
@@ -991,7 +991,7 @@ def reopen(db: Session, *, run_id: int, actor_user_id: int) -> PayrollRun:
     if run is None or not is_sheet(db, run_id):
         raise PayrollSheetError("الشيت غير موجود.")
     if run.status != PayrollRunStatus.closed:
-        raise PayrollSheetError("الشيت مش معتمد.")
+        raise PayrollSheetError("الشيت غير معتمد.")
     run.status = PayrollRunStatus.draft
     db.flush()
     audit_service.record(db, action="payroll_sheet.reopen", actor_user_id=actor_user_id,
@@ -1006,11 +1006,11 @@ def post(db: Session, *, run_id: int, actor_user_id: int) -> dict:
     if run is None or not is_sheet(db, run_id):
         raise PayrollSheetError("الشيت غير موجود.")
     if run.status == PayrollRunStatus.draft:
-        raise PayrollSheetError("اعتمد الشيت الأول، وبعدين رحّله.")
+        raise PayrollSheetError("اعتمد الشيت أولاً ثم رحّله.")
     negative = db.scalar(select(func.count()).select_from(PayrollSheetRow).where(
         PayrollSheetRow.run_id == run.id, PayrollSheetRow.net < 0))
     if negative:
-        raise PayrollSheetError(f"فيه {negative} موظف صافيه بالسالب — راجعهم قبل الترحيل.")
+        raise PayrollSheetError(f"يوجد {negative} موظف صافي راتبهم سالب — راجعهم قبل الترحيل.")
     return payroll_service.post_run(db, run_id=run_id, actor_user_id=actor_user_id)
 
 

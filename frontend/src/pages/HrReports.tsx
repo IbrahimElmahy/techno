@@ -62,7 +62,7 @@ export const REPORT_VIEWS: Record<string, HrReportView> = {
   'leave-by-type': { label: 'الأجازات بالنوع', subject: 'leave', level: 'summary', groupBy: 'status' },
   'leave-balances': { label: 'كشف أرصدة الأجازات', subject: 'leave_balance', level: 'detail', groupBy: 'none' },
   'payroll-sheet': { label: 'مسير المرتبات', subject: 'payroll', level: 'detail', groupBy: 'none' },
-  'payroll-by-month': { label: 'المرتبات شهر بشهر', subject: 'payroll', level: 'summary', groupBy: 'month' },
+  'payroll-by-month': { label: 'المرتبات شهرياً', subject: 'payroll', level: 'summary', groupBy: 'month' },
   'cost-by-component': { label: 'تكلفة الأجور بالبند', subject: 'cost', level: 'summary', groupBy: 'component' },
   'cost-by-department': { label: 'تكلفة الأجور بالقسم', subject: 'cost', level: 'summary', groupBy: 'department' },
   'cost-by-branch': { label: 'تكلفة الأجور بالفرع', subject: 'cost', level: 'summary', groupBy: 'branch' },
@@ -195,7 +195,7 @@ export default function HrReports() {
           <Tag color={r.status === 'absent' ? 'red' : r.status === 'present' ? 'green' : undefined}>
             {v}
           </Tag>
-          {r.locked ? <Tag color="gold">مقفول</Tag> : null}
+          {r.locked ? <Tag color="gold">مقفل</Tag> : null}
         </>
       ) },
   ] : subject === 'leave' ? [
@@ -210,7 +210,7 @@ export default function HrReports() {
       render: (_: string, r: any) => (
         <Tag color={r.approved ? 'green' : r.status === 'rejected' ? 'red' : 'blue'}>
           {r.approved ? 'معتمدة' : r.status === 'rejected' ? 'مرفوضة'
-            : r.status === 'cancelled' ? 'ملغاة' : 'منتظرة'}
+            : r.status === 'cancelled' ? 'ملغاة' : 'قيد الانتظار'}
         </Tag>
       ) },
     { title: 'السبب', dataIndex: 'reason', ...textColumn(rows, (r: any) => r.reason) },
@@ -300,7 +300,7 @@ export default function HrReports() {
       ...numberColumn<any>((r) => r.amount), render: (v: string) => <b>{money(v)}</b> },
     { title: '', key: 'applied', width: 90,
       render: (_: any, r: any) => (r.applied
-        ? <Tag color="green">اتخصم</Tag> : <Tag>لسه</Tag>) },
+        ? <Tag color="green">تم الخصم</Tag> : <Tag>لم يُخصم بعد</Tag>) },
   ] : [
     { title: 'الكود', dataIndex: 'code', ...textColumn(rows, (r: any) => r.code) },
     { title: 'التعيين', dataIndex: 'hire_date', ...dateColumn<any>((r) => r.hire_date) },
@@ -349,7 +349,7 @@ export default function HrReports() {
       pairs.push(['الفرع', branches.find((b: any) => b.id === branchId)?.name ?? '']);
     }
     if (page?.truncated) {
-      pairs.push(['ملحوظة', `معروض ${rows.length} من ${page.total_rows} سطر`]);
+      pairs.push(['ملاحظة', `المعروض ${rows.length} من ${page.total_rows} سطر`]);
     }
     return pairs;
   };
@@ -422,7 +422,7 @@ export default function HrReports() {
       icon={<IdcardOutlined />}
       title={view ? view.label : 'تقارير الموارد البشرية'}
       muted={offPreset ? <Tag color="orange" style={{ fontWeight: 400 }}>معدّل</Tag> : undefined}
-      subtitle="الموظفين والحضور والأجازات والمرتبات والسلف — تفصيلي أو مجمّع"
+
       tabs={(Object.keys(SUBJECT_LABELS) as Subject[])
         .map((k) => ({ key: k, label: SUBJECT_LABELS[k] }))}
       activeTab={subject}
@@ -501,7 +501,7 @@ export default function HrReports() {
       {denied && (
         <Alert
           type="warning" showIcon style={{ margin: '6px 0 8px' }}
-          message="التقرير ده فيه مبالغ باسم موظف"
+          message="هذا التقرير يتضمن مبالغ باسم موظف"
           description="صلاحية «عرض المرتبات» غير متاحة لحسابك. اختر موضوعاً آخر، أو اطلب الصلاحية من مدير النظام."
         />
       )}
@@ -509,8 +509,8 @@ export default function HrReports() {
       {page?.truncated && (
         <Alert
           type="info" showIcon style={{ margin: '6px 0 8px' }}
-          message={`معروض ${rows.length} سطر من ${page.total_rows}`}
-          description="الإجماليات تحت الجدول محسوبة على كل السطور في المدى المحدد، لا على المعروض منها. ضيّق الفترة أو الفلاتر لعرض الباقي."
+          message={`المعروض ${rows.length} سطر من ${page.total_rows}`}
+          description="الإجماليات أسفل الجدول محسوبة على جميع السطور في المدى المحدد، لا على المعروض منها فقط. ضيّق الفترة أو عوامل التصفية لعرض الباقي."
         />
       )}
 
@@ -519,7 +519,7 @@ export default function HrReports() {
         className="sl-table"
         rowKey={rowKeyOf}
         size="small" loading={loading} dataSource={rows} columns={tableCols.columns}
-        locale={{ emptyText: denied ? 'مالكش صلاحية على التقرير ده' : 'لا توجد بيانات في هذه الفترة' }}
+        locale={{ emptyText: denied ? 'ليس لديك صلاحية على هذا التقرير' : 'لا توجد بيانات في هذه الفترة' }}
         pagination={{
           defaultPageSize: PAGE_SIZE, showSizeChanger: true,
           locale: { items_per_page: '' },

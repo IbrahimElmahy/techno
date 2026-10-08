@@ -60,7 +60,7 @@ class _RegularVisitFormScreenState extends State<RegularVisitFormScreen> {
     final name = _customerName.text.trim();
     if (name.isEmpty) {
       ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text('اكتب اسم العميل الأول')));
+          .showSnackBar(const SnackBar(content: Text('أدخل اسم العميل أولاً')));
       return;
     }
     setState(() => _saving = true);
@@ -87,7 +87,7 @@ class _RegularVisitFormScreenState extends State<RegularVisitFormScreen> {
     if (!mounted) return;
     setState(() => _saving = false);
     ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-        content: Text('تم حفظ الزيارة على الجهاز ✔ — هتترفع مع أول مزامنة')));
+        content: Text('تم حفظ الزيارة على الجهاز ✔ — سيتم رفعها مع أول مزامنة')));
     Navigator.pop(context);
   }
 

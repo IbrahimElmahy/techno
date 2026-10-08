@@ -116,19 +116,19 @@ export default function PayrollGroups() {
     try {
       const res = await api.post('/api/v1/hr/payroll-sheet/groups/template', { branch_id: branchId });
       const made = res.data.created || [];
-      message.success(made.length ? `اتعملت: ${made.join('، ')}` : 'مجموعات الملف موجودة بالفعل');
+      message.success(made.length ? `تم إنشاء: ${made.join('، ')}` : 'مجموعات الملف موجودة بالفعل');
       load();
       api.get('/api/v1/hr/payroll-sheet/catalog').then((r) => setCatalog(r.data)).catch(() => {});
     } catch (err: any) { fail(err, 'تعذر التنفيذ'); }
   };
 
   const copyGroups = async () => {
-    if (!copyFrom) { message.warning('اختار الفرع اللي هتنسخ منه'); return; }
+    if (!copyFrom) { message.warning('اختر الفرع المراد النسخ منه'); return; }
     try {
       const res = await api.post('/api/v1/hr/payroll-sheet/groups/copy',
         { from_branch_id: copyFrom, to_branch_id: branchId });
       const made = res.data.created || [];
-      message.success(made.length ? `اتنسخت: ${made.join('، ')}` : 'مافيش مجموعات جديدة تتنسخ');
+      message.success(made.length ? `تم نسخ: ${made.join('، ')}` : 'لا توجد مجموعات جديدة للنسخ');
       setCopyFrom(undefined);
       load();
     } catch (err: any) { fail(err, 'تعذر النسخ'); }
@@ -149,9 +149,9 @@ export default function PayrollGroups() {
   const remove = async (g: Group) => {
     try {
       await api.delete(`/api/v1/hr/payroll-sheet/groups/${g.id}`);
-      message.success(`اتمسحت «${g.name}» — الشهور اللي اتجهّزت بيها فاضلة زي ما هي`);
+      message.success(`تم حذف «${g.name}» — الشهور التي جُهّزت بها باقية كما هي`);
       load();
-    } catch (err: any) { fail(err, 'تعذر المسح'); }
+    } catch (err: any) { fail(err, 'تعذر الحذف'); }
   };
 
   const openEditor = (g?: Group) => {
@@ -211,10 +211,10 @@ export default function PayrollGroups() {
 
   const save = async () => {
     if (!editing) return;
-    if (!(editing.name || '').trim()) { message.warning('اكتب اسم المجموعة'); return; }
+    if (!(editing.name || '').trim()) { message.warning('أدخل اسم المجموعة'); return; }
     for (const c of cols) {
       if ((c.source === 'component' || c.source === 'commission') && !c.ref) {
-        message.warning('فيه عمود ناقص: اختار البند أو نوع العمولة'); return;
+        message.warning('يوجد عمود ناقص: اختر البند أو نوع العمولة'); return;
       }
     }
     setSaving(true);
@@ -231,7 +231,7 @@ export default function PayrollGroups() {
     try {
       if (editing.id) await api.put(`/api/v1/hr/payroll-sheet/groups/${editing.id}`, body);
       else await api.post('/api/v1/hr/payroll-sheet/groups', body);
-      message.success('اتحفظت المجموعة — الشهور الجاية بتتجهّز بيها');
+      message.success('تم حفظ المجموعة');
       setEditing(null);
       load();
     } catch (err: any) { fail(err, 'تعذر الحفظ'); } finally { setSaving(false); }
@@ -242,7 +242,7 @@ export default function PayrollGroups() {
     try {
       const res = await api.post('/api/v1/hr/payroll-sheet/members',
         { branch_id: branchId, employee_ids: ids, group_id: groupId });
-      message.success(`اتوزّع ${res.data.changed} موظف`);
+      message.success(`تم توزيع ${res.data.changed} موظف`);
       setTarget(undefined);
       load();
     } catch (err: any) { fail(err, 'تعذر التوزيع'); }
@@ -319,14 +319,14 @@ export default function PayrollGroups() {
       render: (_: any, g, i) => (
         <Space size={0}>
           <Button type="text" size="small" icon={<ArrowUpOutlined />} disabled={i === 0}
-            title="لفوق" onClick={() => move(g, -1)} />
+            title="تحريك لأعلى" onClick={() => move(g, -1)} />
           <Button type="text" size="small" icon={<ArrowDownOutlined />} disabled={i === groups.length - 1}
-            title="لتحت" onClick={() => move(g, 1)} />
+            title="تحريك لأسفل" onClick={() => move(g, 1)} />
         </Space>
       ) },
     { title: 'المجموعة', dataIndex: 'name', key: 'name', width: 160,
       render: (v: string, g) => <a onClick={() => openEditor(g)}><b>{v}</b></a> },
-    { title: 'الأعمدة (بترتيب الورقة)', key: 'columns',
+    { title: 'الأعمدة', key: 'columns',
       render: (_: any, g) => (
         <Space size={[2, 4]} wrap style={{ maxWidth: 560 }}>
           {g.columns.filter((c) => c.kind === 'earning').map((c) => (
@@ -348,7 +348,7 @@ export default function PayrollGroups() {
           <Button type="text" icon={<EditOutlined />} title="تعديل" onClick={() => openEditor(g)} />
           <Popconfirm onConfirm={() => remove(g)}>
             <Button type="text" danger icon={<DeleteOutlined />}
-              title="مسح المجموعة — موظفينها بيتفكّوا، والشهور القديمة فاضلة بنسختها" />
+              title="حذف المجموعة" />
           </Popconfirm>
         </Space>
       ) },
@@ -361,7 +361,7 @@ export default function PayrollGroups() {
         <Space size={4}>
           <b>{v}</b>
           {!m.has_salary ? (
-            <Tooltip title="مالوش إعدادات راتب — من «رواتب الموظفين»">
+            <Tooltip title="ليست له إعدادات راتب">
               <Tag color="orange">بدون إعدادات</Tag>
             </Tooltip>
           ) : null}
@@ -369,7 +369,7 @@ export default function PayrollGroups() {
       ) },
     { title: 'المجموعة', key: 'group', width: 220,
       render: (_: any, m) => (
-        <Select size="small" style={{ width: 200 }} allowClear placeholder="من غير مجموعة"
+        <Select size="small" style={{ width: 200 }} allowClear placeholder="بدون مجموعة"
           value={m.group_id ?? undefined}
           onChange={(v) => assign([m.employee_id], v ?? null)}
           options={groups.map((g) => ({ value: g.id, label: g.name }))} />
@@ -395,7 +395,6 @@ export default function PayrollGroups() {
         icon={<AppstoreOutlined />}
         title="مجموعات المرتبات"
         muted={branchName(branchId) || undefined}
-        subtitle="شكل ورقة المرتبات لكل فرع: المجموعات وأعمدتها، ومين في أنهي مجموعة"
         tabs={[
           { key: 'groups', label: 'المجموعات', count: groups.length },
           { key: 'members', label: 'توزيع الموظفين', count: members.length },
@@ -406,8 +405,7 @@ export default function PayrollGroups() {
           {tab === 'groups' ? (<>
             <Button type="primary" icon={<PlusOutlined />} disabled={!branchId}
               onClick={() => openEditor()}>مجموعة</Button>
-            <Button icon={<TableOutlined />} disabled={!branchId} onClick={applyTemplate}
-              title="البيع، الإدارية، خدمة العملاء — بأعمدة ملف العميل بالظبط">مجموعات الملف</Button>
+            <Button icon={<TableOutlined />} disabled={!branchId} onClick={applyTemplate}>مجموعات الملف</Button>
           </>) : null}
           <Button icon={<PrinterOutlined />} onClick={printList}>طباعة</Button>
           <Button icon={<FileExcelOutlined />} onClick={exportList}>إكسل</Button>
@@ -430,7 +428,7 @@ export default function PayrollGroups() {
           {tab === 'members' ? (
             <Select allowClear placeholder="المجموعة" style={{ minWidth: 170 }}
               value={groupFilter as any} onChange={(v) => setGroupFilter(v)}
-              options={[{ value: 'none', label: 'من غير مجموعة' },
+              options={[{ value: 'none', label: 'بدون مجموعة' },
                 ...groups.map((g) => ({ value: g.id, label: g.name }))]} />
           ) : null}
           <Button className="sl-f-clear" icon={<ClearOutlined />}
@@ -438,17 +436,16 @@ export default function PayrollGroups() {
         </>)}
         summary={(<>
           <ListStat label="المجموعات" value={groups.length} />
-          <ListStat label="موظفين الفرع" value={members.length} />
-          <ListStat label="من غير مجموعة" value={unassigned} tone={unassigned ? 'warn' : undefined}
-            hint="مش هيدخلوا الشيت" />
+          <ListStat label="موظفو الفرع" value={members.length} />
+          <ListStat label="بدون مجموعة" value={unassigned} tone={unassigned ? 'warn' : undefined}
+            hint="لن يدخلوا الشيت" />
         </>)}
       >
-        {!branchId ? <Empty description="اختار الفرع" /> : tab === 'groups' ? (
+        {!branchId ? <Empty description="اختر الفرع" /> : tab === 'groups' ? (
           <>
             {!loading && !groups.length ? (
               <Alert type="info" showIcon style={{ margin: '6px 0 8px' }}
-                message="الفرع ده مالوش مجموعات مرتبات لسه"
-                description="«مجموعات الملف» بتعمل البيع والإدارية وخدمة العملاء بأعمدة ورقة الإكسل بالظبط — أو انسخ مجموعات فرع تاني." />
+                message="لا توجد مجموعات مرتبات لهذا الفرع بعد" />
             ) : null}
             {seesAll && branches.length > 1 ? (
               <Space style={{ margin: '4px 0 8px' }} wrap>
@@ -462,18 +459,18 @@ export default function PayrollGroups() {
             <Table<Group>
               className="sl-table" size="small" rowKey="id" loading={loading}
               dataSource={shownGroups} pagination={false} columns={groupColumns}
-              scroll={{ x: 'max-content' }} locale={{ emptyText: 'مافيش مجموعات' }}
+              scroll={{ x: 'max-content' }} locale={{ emptyText: 'لا توجد مجموعات' }}
             />
           </>
         ) : (
           <>
             <Space style={{ margin: '4px 0 8px' }} wrap>
-              <span>المحددين ({selected.length}):</span>
-              <Select size="small" style={{ minWidth: 180 }} placeholder="انقلهم لمجموعة"
+              <span>المحددون ({selected.length}):</span>
+              <Select size="small" style={{ minWidth: 180 }} placeholder="نقل إلى مجموعة"
                 value={target === undefined ? undefined : (target ?? 0)}
                 onChange={(v) => setTarget(v === 0 ? null : v)}
                 options={[...groups.map((g) => ({ value: g.id, label: g.name })),
-                  { value: 0, label: '— شيلهم من المجموعات —' }]} />
+                  { value: 0, label: '— إزالة من المجموعات —' }]} />
               <Button size="small" type="primary" disabled={!selected.length || target === undefined}
                 onClick={() => assign(selected, target ?? null)}>تطبيق</Button>
             </Space>
@@ -482,7 +479,7 @@ export default function PayrollGroups() {
               dataSource={shownMembers} pagination={false} columns={memberColumns}
               scroll={{ x: 'max-content' }}
               rowSelection={{ selectedRowKeys: selected, onChange: (keys) => setSelected(keys as number[]) }}
-              locale={{ emptyText: 'مافيش موظفين' }}
+              locale={{ emptyText: 'لا يوجد موظفون' }}
             />
           </>
         )}
@@ -507,13 +504,13 @@ export default function PayrollGroups() {
                 onChange={(v) => setEditing({ ...editing, absence_divisor: Number(v) || 30 })} />
             </Col>
             <Col span={10}>
-              <div style={{ marginBottom: 4 }}>الغياب بيتحسب على</div>
+              <div style={{ marginBottom: 4 }}>يُحتسب الغياب على</div>
               <Select mode="multiple" style={{ width: '100%' }} value={editing.absence_base}
                 onChange={(v) => setEditing({ ...editing, absence_base: v })}
                 options={earningKeys.map(({ c, key }) => ({ value: key, label: c.label || key }))} />
             </Col>
             <Col span={24}>
-              <Divider style={{ margin: '4px 0' }}>الأعمدة — بالترتيب (الاستحقاقات قبل «الاجمالي» والاستقطاعات بعده)</Divider>
+              <Divider style={{ margin: '4px 0' }}>الأعمدة بالترتيب</Divider>
               {cols.map((c, i) => {
                 const kind = kindOf(c);
                 return (
@@ -551,7 +548,7 @@ export default function PayrollGroups() {
                     </Col>
                     <Col span={4}>
                       {kind === 'deduction' ? (
-                        <Select size="small" style={{ width: '100%' }} title="بيترحّل على"
+                        <Select size="small" style={{ width: '100%' }} title="يُرحَّل على"
                           value={c.posting || (c.source === 'advances' ? 'advance'
                             : c.source === 'penalties' ? 'penalty'
                               : c.source === 'insurance' ? 'insurance' : 'reduce')}
@@ -563,14 +560,12 @@ export default function PayrollGroups() {
                     </Col>
                     <Col span={4}>
                       {c.source === 'manual' ? (
-                        <Tooltip title="الخانة بتبدأ كل شهر بقيمة الشهر اللي فات (لحد ما تتكتب غيرها)">
-                          <Checkbox checked={!!c.carry} onChange={(e) => setCol(i, { carry: e.target.checked })}>
-                            يتنقل
-                          </Checkbox>
-                        </Tooltip>
+                        <Checkbox checked={!!c.carry} onChange={(e) => setCol(i, { carry: e.target.checked })}>
+                          يُنقل
+                        </Checkbox>
                       ) : ['commission', 'insurance'].includes(c.source) ? (
                         <Select size="small" style={{ width: '100%' }} allowClear
-                          placeholder="لو المصدر مارجّعش: بند"
+                          placeholder="البند البديل"
                           value={c.fallback_component_id ?? undefined}
                           onChange={(v) => setCol(i, { fallback_component_id: v ?? null })}
                           options={catalog.components.map((x) => ({ value: x.id, label: x.name }))} />
@@ -591,11 +586,6 @@ export default function PayrollGroups() {
               })}
               <Button size="small" icon={<PlusOutlined />}
                 onClick={() => setCols([...cols, { source: 'component', label: '' }])}>عمود</Button>
-              <div style={{ color: '#888', fontSize: 12, marginTop: 8 }}>
-                «بند راتب» مبلغ ثابت من «رواتب الموظفين» · «محرك العمولات» بيتحسب لوحده كل شهر ·
-                «يدوي» بيتكتب كل شهر في الشيت · الاستقطاع بيترحّل على حسابه: «يقلل مصروف المرتبات»
-                للغياب وخصم الـ٢٥٪، والسلف بتقفل السلفة، والجزاءات لحصيلة الجزاءات، والتأمينات لتأمينات مستحقة.
-              </div>
             </Col>
             <Col span={24}>
               <div style={{ marginBottom: 4 }}>ملاحظات</div>

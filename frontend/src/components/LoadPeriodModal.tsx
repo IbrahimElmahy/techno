@@ -46,7 +46,7 @@ export default function LoadPeriodModal({
   const run = async () => {
     const from = range?.[0];
     const to = range?.[1];
-    if (!from || !to) { message.warning('اختار الفترة الأول'); return; }
+    if (!from || !to) { message.warning('اختر الفترة أولاً'); return; }
     setBusy(true);
     try {
       const res = await api.get(endpoint, {
@@ -63,16 +63,16 @@ export default function LoadPeriodModal({
         const sorted = [...data].sort((a: any, b: any) =>
           String(b?.[dateKey] || '').localeCompare(String(a?.[dateKey] || ''))
           || Number(b?.id || 0) - Number(a?.id || 0));
-        if (!sorted.length) { message.info('مافيش مستندات في الفترة دي'); return; }
+        if (!sorted.length) { message.info('لا توجد مستندات في هذه الفترة'); return; }
         onLoaded?.(sorted);
         onCancel();
         onPick(sorted[0]);
-        message.success(`اتحمّل ${sorted.length} — اتنقّل بينهم بـ«السابق» و«التالى»`);
+        message.success(`تم تحميل ${sorted.length} مستند`);
         return;
       }
       setRows(data);
       onLoaded?.(data);
-      if (!data.length) message.info('مافيش مستندات في الفترة دي');
+      if (!data.length) message.info('لا توجد مستندات في هذه الفترة');
     } catch (err: any) {
       message.error(err?.response?.data?.detail?.message || 'تعذر تحميل الفترة');
     } finally {
@@ -89,7 +89,7 @@ export default function LoadPeriodModal({
       destroyOnHidden={false}
       footer={rows?.length ? (
         <Space>
-          <Button onClick={() => { setRows(null); setRange(null); }}>فترة تانية</Button>
+          <Button onClick={() => { setRows(null); setRange(null); }}>فترة أخرى</Button>
           <Button onClick={onCancel}>إغلاق</Button>
         </Space>
       ) : (
@@ -118,11 +118,6 @@ export default function LoadPeriodModal({
       ) : (
         <>
           <DateRangeFilter value={range} onChange={(v: any) => setRange(v)} />
-          <div style={{ marginTop: 10, color: '#6b6b6b', fontSize: 15 }}>
-            {openNewest
-              ? 'هيتفتح أحدث مستند في الفترة، وتتنقّل بينهم بـ«السابق» و«التالى».'
-              : 'هيتحمّل مستندات الفترة دي في كشف، وتدوس على اللي عايزه فيفتح.'}
-          </div>
         </>
       )}
     </TabModal>

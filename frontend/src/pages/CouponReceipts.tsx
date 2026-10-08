@@ -220,9 +220,9 @@ export default function CouponReceipts() {
   const addSerial = async (raw: string) => {
     const serial = String(raw).trim();
     if (!serial) return;
-    if (!kind) { message.warning('اختر فئة الكوبون الأول'); return; }
+    if (!kind) { message.warning('اختر فئة الكوبون أولاً'); return; }
     if (entries.some((e) => e.serial === serial)) {
-      message.warning('الكوبون ده مضاف بالفعل');
+      message.warning('هذا الكوبون مضاف بالفعل');
       return;
     }
     setEntries((prev) => [{ serial, status: 'checking', couponKind: kind }, ...prev]);
@@ -241,31 +241,31 @@ export default function CouponReceipts() {
         kinds: (d.kinds || []) as string[],
       } : e)));
       if (d.in_custody) {
-        message.error(`الكوبون ${serial} لسه في عهدة المندوب ${d.custody_rep_name || ''} — ماتصرفش لعميل`);
-      } else if (st === 'unknown') message.warning(`الكوبون ${serial} مش متصرّف من النظام`);
+        message.error(`الكوبون ${serial} لا يزال في عهدة المندوب ${d.custody_rep_name || ''} — لم يُصرف لعميل`);
+      } else if (st === 'unknown') message.warning(`الكوبون ${serial} غير مصروف من النظام`);
       if (st === 'received') message.warning(`الكوبون ${serial} مُستلَم من قبل`);
       if (st === 'wrong_kind') {
         const where = ((d.kinds || []) as string[]).map(kindLabel).join(' + ');
         message.error(
-          `الكوبون ${serial} مش متصرّف تحت فئة ${kindLabel(kind)}`
+          `الكوبون ${serial} غير مصروف تحت فئة ${kindLabel(kind)}`
           + (where ? `. موجود تحت: ${where}` : ''));
       }
       if (st === 'ambiguous') {
-        message.warning(`الكوبون ${serial} متصرّف تحت أكتر من فئة — راجع الورقة`);
+        message.warning(`الكوبون ${serial} مصروف تحت أكثر من فئة — راجع الورقة`);
       }
     } catch (err: any) {
       setEntries((prev) => prev.map((e) => (e.serial === serial ? { ...e, status: 'pending' } : e)));
-      message.warning(`الكوبون ${serial} هيتراجع مع الحفظ (${err?.message || 'انقطاع'})`);
+      message.warning(`الكوبون ${serial} ستتم مراجعته عند الحفظ (${err?.message || 'انقطاع'})`);
     }
   };
 
   const addRange = async () => {
-    if (!kind) { message.warning('اختر فئة الكوبون الأول'); return; }
+    if (!kind) { message.warning('اختر فئة الكوبون أولاً'); return; }
     const range = rangeOf(rangeFrom, rangeTo);
     if (!range) { message.warning('اكتب رقم الكوبون في «من رقم»'); return; }
     const [from, to] = range;
     if (to < from) { message.warning('رقم النهاية أصغر من البداية'); return; }
-    if (to - from + 1 > 2000) { message.warning('النطاق كبير — أقصى ٢٠٠٠ كوبون في المرة'); return; }
+    if (to - from + 1 > 2000) { message.warning('النطاق كبير — الحد الأقصى ٢٠٠٠ كوبون في المرة الواحدة'); return; }
     setRangeFrom(null); setRangeTo(null);
     for (let n = from; n <= to; n += 1) {
       await addSerial(String(n));
@@ -281,7 +281,7 @@ export default function CouponReceipts() {
     new Set(counted.map((e) => e.issuedToName).filter(Boolean) as string[]));
   const issuedToText = issuedToNames.length === 0 ? ''
     : issuedToNames.length <= 2 ? issuedToNames.join(' + ')
-      : `أكتر من تاجر (${issuedToNames.length})`;
+      : `أكثر من تاجر (${issuedToNames.length})`;
   const totalValue = (value ?? 0) * counted.length;
 
   const receiverTypes = customerType === 'plumber' ? ['plumber'] : ['trader', 'merchant'];
@@ -306,9 +306,9 @@ export default function CouponReceipts() {
 
   const save = async () => {
     if (!entries.length) { message.warning('لا توجد كوبونات'); return; }
-    if (rejects.length) { message.warning('شيل الكوبونات المرفوضة الأول'); return; }
-    if (!kind) { message.warning('اختر فئة الكوبون الأول'); return; }
-    if (!customerId) { message.warning('حدد بتستلم من مين'); return; }
+    if (rejects.length) { message.warning('احذف الكوبونات المرفوضة أولاً'); return; }
+    if (!kind) { message.warning('اختر فئة الكوبون أولاً'); return; }
+    if (!customerId) { message.warning('حدد جهة الاستلام'); return; }
     setSaving(true);
     try {
       await api.post('/api/v1/coupon-receipts', {
@@ -368,7 +368,7 @@ export default function CouponReceipts() {
     try {
       const res = await api.post<Receipt>(`/api/v1/coupon-receipts/${r.id}/reject`,
         { reason: rejectReason.trim() || null });
-      message.success(`تم رفض ${r.document_number} — أرقامه رجعت تتستلم تاني`);
+      message.success(`تم رفض ${r.document_number} — أُعيدت أرقامه متاحة للاستلام`);
       setRejecting(null); setRejectReason('');
       afterAction(res.data);
     } catch (err: any) {
@@ -380,7 +380,7 @@ export default function CouponReceipts() {
     setActing(r.id);
     try {
       await api.delete(`/api/v1/coupon-receipts/${r.id}`);
-      message.success(`تم حذف ${r.document_number} — أرقامه رجعت للتداول`);
+      message.success(`تم حذف ${r.document_number} — أُعيدت أرقامه للتداول`);
       afterAction(null, r.id);
     } catch (err: any) {
       message.error(errorText(err, 'تعذر الحذف'));
@@ -414,7 +414,7 @@ export default function CouponReceipts() {
     if (!range) { message.warning('اكتب رقم الكوبون في «من رقم»'); return; }
     const [from, to] = range;
     if (to < from) { message.warning('رقم النهاية أصغر من البداية'); return; }
-    if (to - from + 1 > 500) { message.warning('النطاق كبير — أقصى ٥٠٠ كوبون'); return; }
+    if (to - from + 1 > 500) { message.warning('النطاق كبير — الحد الأقصى ٥٠٠ كوبون'); return; }
     const added: string[] = [];
     for (let n = from; n <= to; n += 1) added.push(String(n));
     setEditSerials((prev) => Array.from(new Set([...prev, ...added])));
@@ -424,7 +424,7 @@ export default function CouponReceipts() {
   const saveEdit = async () => {
     if (!editing) return;
     const serials = editSerials.map((s) => s.trim()).filter(Boolean);
-    if (!serials.length) { message.warning('الاستلام لازم يكون فيه كوبون واحد على الأقل'); return; }
+    if (!serials.length) { message.warning('يجب أن يتضمن الاستلام كوبوناً واحداً على الأقل'); return; }
     setEditSaving(true);
     try {
       const res = await api.put<Receipt>(`/api/v1/coupon-receipts/${editing.id}`, {
@@ -477,7 +477,7 @@ export default function CouponReceipts() {
               onClick={() => openEdit(r)} />
           </Tooltip>
         )}
-        <Popconfirm title="تحذف الاستلام ده؟ أرقامه هترجع للتداول" onConfirm={() => remove(r)}>
+        <Popconfirm title="هل تريد حذف هذا الاستلام؟ ستعود أرقامه للتداول" onConfirm={() => remove(r)}>
           <Tooltip title="حذف">
             <Button type="text" danger icon={<DeleteOutlined />} disabled={busy} />
           </Tooltip>
@@ -491,30 +491,30 @@ export default function CouponReceipts() {
       case 'valid':
         return <Tag color="green">سليم</Tag>;
       case 'unknown':
-        return <Tag color="red">مش متصرّف من النظام</Tag>;
+        return <Tag color="red">غير مصروف من النظام</Tag>;
       case 'wrong_kind':
         return (
           <Tag color="red">
-            مش تحت فئة {kindLabel(e.couponKind || kind)}
+            ليس تحت فئة {kindLabel(e.couponKind || kind)}
             {e.kinds && e.kinds.length
               ? ` — موجود تحت ${e.kinds.map(kindLabel).join(' + ')}` : ''}
           </Tag>
         );
       case 'ambiguous':
-        return <Tag color="volcano">متصرّف تحت أكتر من فئة</Tag>;
+        return <Tag color="volcano">مصروف تحت أكثر من فئة</Tag>;
       case 'received':
         return <Tag color="orange">مُستلَم من قبل</Tag>;
       case 'checking':
-        return <Tag>بيتراجع…</Tag>;
+        return <Tag>جارٍ التحقق…</Tag>;
       default:
-        return <Tag color="geekblue">هيتراجع مع المزامنة</Tag>;
+        return <Tag color="geekblue">ستتم مراجعته عند المزامنة</Tag>;
     }
   };
 
   const listColumns = [
     { title: 'رقم المستند', dataIndex: 'document_number',
       render: (v: string) => <Tag>{v}</Tag> },
-    { title: 'اتستلم من', dataIndex: 'customer_id',
+    { title: 'مُستلَم من', dataIndex: 'customer_id',
       render: (id: number | null) => customerName(id) },
     { title: 'الفئة', dataIndex: 'declared_kind',
       render: (v: string | null) => (v ? <Tag color="gold">{kindLabel(v)}</Tag> : '-') },
@@ -571,7 +571,7 @@ export default function CouponReceipts() {
         <Col xs={12} md={5}>
           <Select
             style={{ width: '100%' }} showSearch
-            placeholder="فئة الكوبون — اختر قبل الإدخال"
+            placeholder="فئة الكوبون"
             status={!kind ? 'warning' : undefined}
             disabled={entries.length > 0}
             value={kind || undefined} onChange={handleKindChange}
@@ -584,8 +584,8 @@ export default function CouponReceipts() {
         </Col>
         <Col xs={24} md={10}>
           <Input
-            style={{ width: '100%' }} readOnly addonBefore="اتصرف له"
-            placeholder="التاجر اللي اتصرف له — بيظهر بعد أول كوبون سليم"
+            style={{ width: '100%' }} readOnly addonBefore="صُرف له"
+            placeholder="التاجر الذي صُرف له"
             value={issuedToText}
           />
         </Col>
@@ -598,19 +598,19 @@ export default function CouponReceipts() {
             value={customerType}
             onChange={(v) => { setCustomerType(v as string); setCustomerId(undefined); }}
             options={[
-              { value: 'plumber', label: 'بستلم من سباك' },
-              { value: 'merchant', label: 'بستلم من تاجر' },
+              { value: 'plumber', label: 'استلام من سباك' },
+              { value: 'merchant', label: 'استلام من تاجر' },
             ]}
           />
         </Col>
         <Col xs={24} md={16}>
           <Select
             allowClear showSearch style={{ width: '100%' }}
-            placeholder="بستلم من مين"
+            placeholder="الاستلام من"
             status={!customerId ? 'warning' : undefined}
             value={customerId} onChange={setCustomerId}
             options={receiverOptions}
-            notFoundContent="مافيش عميل بالاسم ده" filterOption={searchFilter} filterSort={searchRank}/>
+            notFoundContent="لا يوجد عميل بهذا الاسم" filterOption={searchFilter} filterSort={searchRank}/>
         </Col>
       </Row>
 
@@ -624,7 +624,7 @@ export default function CouponReceipts() {
         </Col>
         <Col xs={8} md={4}>
           <InputNumber
-            style={{ width: '100%' }} placeholder="إلى رقم (فاضي = كوبون واحد)" precision={0}
+            style={{ width: '100%' }} placeholder="إلى رقم (اختياري)" precision={0}
             value={rangeTo} onChange={(v) => setRangeTo(v as number | null)}
             onPressEnter={addRange} disabled={!kind}
           />
@@ -639,7 +639,7 @@ export default function CouponReceipts() {
 
       {customerId != null && (
         <Alert type="success" showIcon={false} style={{ marginTop: 8 }}
-          message={`بستلم من: ${customerName(customerId)}`} />
+          message={`الاستلام من: ${customerName(customerId)}`} />
       )}
 
       <Table<Entry>
@@ -655,7 +655,7 @@ export default function CouponReceipts() {
             render: (v: string) => <b style={{ color: '#1677ff' }}>{v}</b>,
           },
           {
-            title: 'التاجر اللي اتصرف له',
+            title: 'التاجر الذي صُرف له',
             key: 'issued_to',
             render: (_: any, r: Entry) => {
               const name = r.issuedToName || (r.issuedToId ? customerName(r.issuedToId) : null);
@@ -712,20 +712,19 @@ export default function CouponReceipts() {
 
       {rejects.length > 0 && (
         <Alert type="error" showIcon style={{ marginTop: 12 }}
-          message={`فيه ${rejects.length} كوبون مرفوض`}
-          description="شيلهم من القائمة الأول — الكوبون الواحد الغلط بيرفض الاستلام كله." />
+          message={`يوجد ${rejects.length} كوبون مرفوض`}
+          description="احذفها من القائمة أولاً؛ فالكوبون الخاطئ الواحد يرفض الاستلام كله." />
       )}
       {issuedToNames.length > 1 && (
         <Alert type="info" showIcon style={{ marginTop: 12 }}
-          message="الورق ده متصرّف لأكتر من تاجر"
-          description="ده مش خطأ — السباك بيجمّع ورق من أكتر من تاجر. متسجّل للعلم بس." />
+          message="هذه الكوبونات مصروفة لأكثر من تاجر" />
       )}
 
       <div style={{ marginTop: 12 }}>
         <Typography.Text strong type={rejects.length ? 'danger' : 'success'}>
           مقبول {good.length}
           {offline.length > 0 ? ` · بانتظار الاتصال ${offline.length}` : ''}
-          {rejects.length ? ' · فيه مرفوض' : ''}
+          {rejects.length ? ' · يوجد مرفوض' : ''}
         </Typography.Text>
       </div>
     </>
@@ -737,7 +736,7 @@ export default function CouponReceipts() {
         <Descriptions.Item label="رقم المستند">
           <Tag>{detail.document_number}</Tag>
         </Descriptions.Item>
-        <Descriptions.Item label="اتستلم من">
+        <Descriptions.Item label="مُستلَم من">
           {customerName(detail.customer_id)}
           {detail.customer_type ? (
             <Tag style={{ marginInlineStart: 6 }}>
@@ -757,14 +756,13 @@ export default function CouponReceipts() {
       </Descriptions>
       {detail.status === 'pending' && (
         <Alert type="warning" showIcon style={{ marginBottom: 12 }}
-          message="الاستلام ده جاي من التطبيق وبانتظار الاعتماد"
-          description="أرقامه محجوزة (محدش يقدر يسلّمها تاني) بس مش بتتحسب في التقارير لحد ما يتعتمد. لو فيه رقم غلط عدّله قبل الاعتماد." />
+          message="هذا الاستلام وارد من التطبيق وبانتظار الاعتماد" />
       )}
       {detail.status === 'rejected' && (
         <Alert type="error" showIcon style={{ marginBottom: 12 }}
-          message={detail.reject_reason ? `مرفوض — السبب: ${detail.reject_reason}` : 'الاستلام ده اترفض'}
+          message={detail.reject_reason ? `مرفوض — السبب: ${detail.reject_reason}` : 'تم رفض هذا الاستلام'}
           description={detail.rejected_serials && detail.rejected_serials.length
-            ? `الأرقام اللي كانت عليه (رجعت تتستلم تاني): ${detail.rejected_serials.join('، ')}`
+            ? `الأرقام التي كانت عليه (أُعيدت متاحة للاستلام): ${detail.rejected_serials.join('، ')}`
             : undefined} />
       )}
       {detail.lines.length ? (
@@ -872,7 +870,6 @@ export default function CouponReceipts() {
     <ListPage<'receive' | 'history'>
       icon={<TagsOutlined />}
       title="استلام الكوبونات"
-      subtitle="تسجيل ورق الكوبونات الراجع من السباكين والتجار، وسجل الاستلامات"
       tabs={[
         { key: 'receive', label: 'استلام كوبونات' },
         { key: 'history',
@@ -921,9 +918,6 @@ export default function CouponReceipts() {
         cancelText="رجوع" onOk={reject}
         onCancel={() => { setRejecting(null); setRejectReason(''); }}
       >
-        <Typography.Paragraph type="secondary">
-          الرفض مابيحسبش الكوبونات دي، وأرقامها بترجع تتستلم تاني. المستند بيفضل في السجل بالسبب.
-        </Typography.Paragraph>
         <Input.TextArea rows={3} autoFocus placeholder="سبب الرفض (اختياري)"
           value={rejectReason} onChange={(e) => setRejectReason(e.target.value)} />
       </Modal>
@@ -938,7 +932,7 @@ export default function CouponReceipts() {
       >
         {editing?.status === 'approved' && (
           <Alert type="info" showIcon style={{ marginBottom: 12 }}
-            message="الاستلام ده معتمد — التعديل بيتحسب على طول في التقارير" />
+            message="هذا الاستلام معتمد — يُحتسب التعديل فوراً في التقارير" />
         )}
         <Row gutter={[8, 8]}>
           <Col xs={24} md={8}>
@@ -957,7 +951,7 @@ export default function CouponReceipts() {
               value={editValue} onChange={(v) => setEditValue(v as number | null)} />
           </Col>
           <Col xs={24}>
-            <Select allowClear showSearch style={{ width: '100%' }} placeholder="اتستلم من"
+            <Select allowClear showSearch style={{ width: '100%' }} placeholder="مُستلَم من"
               value={editCustomer} onChange={setEditCustomer}
               options={receiverOptions} filterOption={searchFilter} filterSort={searchRank} />
           </Col>
@@ -976,7 +970,7 @@ export default function CouponReceipts() {
               onPressEnter={addEditRange} />
           </Col>
           <Col xs={8}>
-            <InputNumber style={{ width: '100%' }} placeholder="إلى رقم (فاضي = كوبون واحد)"
+            <InputNumber style={{ width: '100%' }} placeholder="إلى رقم (اختياري)"
               precision={0} value={editTo} onChange={(v) => setEditTo(v as number | null)}
               onPressEnter={addEditRange} />
           </Col>

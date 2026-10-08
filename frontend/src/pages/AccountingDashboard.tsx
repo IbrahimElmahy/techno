@@ -44,7 +44,7 @@ const KIND_COLOR: Record<string, string> = {
 function primaryAction(card: JournalCard): { label: string; to: string } {
   switch (card.kind) {
     case 'sale': return { label: 'فاتورة بيع', to: '/invoices?new=1' };
-    case 'purchase': return { label: 'فاتورة شرا', to: '/purchases?new=1' };
+    case 'purchase': return { label: 'فاتورة شراء', to: '/purchases?new=1' };
     case 'cash': return { label: 'سند قبض', to: '/vouchers?tab=receipt' };
     case 'bank': return { label: 'ورقة قبض', to: '/vouchers?tab=cheques' };
     default: return { label: 'قيد جديد', to: '/general-ledger?tab=journal' };
@@ -88,7 +88,7 @@ export default function AccountingDashboard() {
 
       <div>
         <h3 style={{ margin: '0 0 10px' }}>دفاتر اليومية</h3>
-        {journals.length === 0 ? <Empty description="مافيش دفاتر" /> : (
+        {journals.length === 0 ? <Empty description="لا توجد دفاتر" /> : (
           <StatsRow gutter={[16, 16]}>
             {journals.map((j) => {
               const action = primaryAction(j);
@@ -101,7 +101,7 @@ export default function AccountingDashboard() {
                         <Tag color={KIND_COLOR[j.kind] || 'default'}>{j.code}</Tag>
                         <span>{j.name}</span>
                         {j.restrict_mode_hash && (
-                          <Tooltip title="سلسلة تجزئة شغّالة — القيد هنا مايتعدّلش">
+                          <Tooltip title="سلسلة التجزئة مفعّلة — لا يمكن تعديل القيود">
                             <SafetyCertificateOutlined style={{ color: '#1677ff' }} />
                           </Tooltip>
                         )}
@@ -155,7 +155,7 @@ export default function AccountingDashboard() {
                     <div style={{ marginTop: 8, color: '#888', fontSize: 14 }}>
                       {j.last_number
                         ? <>آخر قيد: {j.last_number} · {j.last_date}</>
-                        : 'مافيش قيود لسه'}
+                        : 'لا توجد قيود بعد'}
                     </div>
                   </Card>
                 </Col>
@@ -167,7 +167,7 @@ export default function AccountingDashboard() {
 
       <div>
         <h3 style={{ margin: '0 0 10px' }}>الخزن والبنوك</h3>
-        {treasuries.length === 0 ? <Empty description="مافيش خزن" /> : (
+        {treasuries.length === 0 ? <Empty description="لا توجد خزائن" /> : (
           <StatsRow gutter={[16, 16]}>
             {treasuries.map((t) => (
               <Col key={t.id} xs={24} sm={12} lg={8} xxl={6}>

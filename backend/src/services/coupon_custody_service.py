@@ -46,7 +46,7 @@ def _ranges_text(numbers: Iterable[int], limit: int = 6) -> str:
     shown = [f"{a}–{b}" if a != b else f"{a}" for a, b in parts[:limit]]
     text = "، ".join(shown)
     if len(parts) > limit:
-        text += f" و{len(parts) - limit} نطاق كمان"
+        text += f" و{len(parts) - limit} نطاق آخر"
     return text
 
 
@@ -90,18 +90,18 @@ def parse_range(serial_from, serial_to) -> tuple[int, int]:
     raw_from = ascii_digits(serial_from)
     raw_to = ascii_digits(serial_to) or raw_from
     if not raw_from:
-        raise CouponCustodyError("اكتب السريال «من».")
+        raise CouponCustodyError("أدخل السريال «من».")
     first, last = _as_int(raw_from), _as_int(raw_to)
     if first is None or last is None or first < 0 or last < 0:
         raise CouponCustodyError(
-            f"السريالات لازم تكون أرقام صحيحة من غير حروف ولا أصفار على الشمال "
+            f"يجب أن تكون السريالات أرقاماً صحيحة بلا حروف ولا أصفار على اليسار "
             f"(«{raw_from}» – «{raw_to}»).")
     if last < first:
         raise CouponCustodyError("رقم النهاية أصغر من رقم البداية.")
     if last - first + 1 > MAX_PER_DOC:
         raise CouponCustodyError(
             f"النطاق كبير جداً ({last - first + 1} ورقة) — أقصى {MAX_PER_DOC} "
-            "في المستند الواحد. قسّمه على أكتر من مستند.")
+            "في المستند الواحد. قسّمه على أكثر من مستند.")
     return first, last
 
 
@@ -118,7 +118,7 @@ def stored_kind(db: Session, kind: str | None) -> str | None:
 def _canonical_kind(db: Session, kind: str | None) -> str:
     text = " ".join(str(kind or "").split())
     if not text:
-        raise CouponCustodyError("اختار فئة الكوبون.")
+        raise CouponCustodyError("اختر فئة الكوبون.")
     return stored_kind(db, text) or text
 
 
@@ -142,11 +142,11 @@ def _rows_for(db: Session, kind: str, serials: list[str]) -> dict[str, CouponCus
 
 def _require_rep(db: Session, rep_user_id: int | None) -> User:
     if not rep_user_id:
-        raise CouponCustodyError("اختار المندوب.")
+        raise CouponCustodyError("اختر المندوب.")
     rep = db.scalar(select(User).join(Role, Role.id == User.role_id).where(
         User.id == rep_user_id, Role.name == RoleName.sales_rep))
     if rep is None:
-        raise CouponCustodyError("المستخدم ده مش مندوب.")
+        raise CouponCustodyError("هذا المستخدم ليس مندوباً.")
     return rep
 
 
@@ -218,15 +218,15 @@ def issue(db: Session, *, rep_user_id: int, coupon_kind: str, serial_from, seria
     problems: list[str] = []
     names = _rep_names(db, held)
     for rid, nums in held.items():
-        who = "نفس المندوب" if rid == rep_user_id else names.get(rid, f"مندوب #{rid}")
+        who = "المندوب نفسه" if rid == rep_user_id else names.get(rid, f"مندوب #{rid}")
         problems.append(f"{_label(nums, kind)} في عهدة {who} بالفعل")
     if given:
-        problems.append(f"{_label(given, kind)} اتصرفت لعملاء قبل كده")
+        problems.append(f"{_label(given, kind)} صُرفت لعملاء مسبقاً")
     skip = {int(s) for s in rows}
     for doc, nums in list(_handed_elsewhere(db, kind, first, last, skip).items())[:4]:
         problems.append(f"{_label(nums, kind)} متصرّفة على {doc}")
     if problems:
-        raise CouponCustodyError("ماينفعش تتصرف: " + "؛ ".join(problems))
+        raise CouponCustodyError("لا يمكن الصرف: " + "؛ ".join(problems))
 
     doc = CouponCustody(
         document_number=_doc_number(db), direction=OUT, rep_user_id=rep_user_id,
@@ -267,7 +267,7 @@ def return_(db: Session, *, rep_user_id: int, coupon_kind: str, serial_from, ser
     _require_rep(db, rep_user_id)
     kind = stored_kind(db, coupon_kind)
     if kind is None:
-        raise CouponCustodyError(f"الفئة «{coupon_kind or '—'}» مالهاش عهدة عند أي مندوب.")
+        raise CouponCustodyError(f"الفئة «{coupon_kind or '—'}» ليست لها عهدة لدى أي مندوب.")
     first, last = parse_range(serial_from, serial_to)
     serials = [str(n) for n in range(first, last + 1)]
     rows = _rows_for(db, kind, serials)
@@ -292,17 +292,17 @@ def return_(db: Session, *, rep_user_id: int, coupon_kind: str, serial_from, ser
 
     problems: list[str] = []
     if missing:
-        problems.append(f"{_label(missing, kind)} مش متسجّلة في أي عهدة")
+        problems.append(f"{_label(missing, kind)} غير مسجّلة في أي عهدة")
     if back_already:
-        problems.append(f"{_label(back_already, kind)} رجعت المكتب قبل كده")
+        problems.append(f"{_label(back_already, kind)} أُعيدت إلى المكتب مسبقاً")
     if given:
-        problems.append(f"{_label(given, kind)} اتصرفت لعملاء — مابترجعش")
+        problems.append(f"{_label(given, kind)} صُرفت لعملاء — لا تُرجع")
     names = _rep_names(db, other)
     for rid, nums in other.items():
         problems.append(f"{_label(nums, kind)} في عهدة {names.get(rid, f'مندوب #{rid}')} "
-                        "مش المندوب ده")
+                        "لا هذا المندوب")
     if problems:
-        raise CouponCustodyError("ماينفعش ترجع: " + "؛ ".join(problems))
+        raise CouponCustodyError("لا يمكن الإرجاع: " + "؛ ".join(problems))
 
     doc = CouponCustody(
         document_number=_doc_number(db), direction=IN, rep_user_id=rep_user_id,
@@ -331,7 +331,7 @@ def return_(db: Session, *, rep_user_id: int, coupon_kind: str, serial_from, ser
 def delete_doc(db: Session, *, custody_id: int, actor_user_id: int) -> str:
     doc = db.get(CouponCustody, custody_id)
     if doc is None:
-        raise CouponCustodyError("مستند العهدة ده مش موجود.")
+        raise CouponCustodyError("مستند العهدة هذا غير موجود.")
     if doc.direction == OUT:
         rows = db.scalars(select(CouponCustodySerial).where(
             CouponCustodySerial.custody_id == doc.id)).all()
@@ -339,8 +339,8 @@ def delete_doc(db: Session, *, custody_id: int, actor_user_id: int) -> str:
             1 for r in rows if r.status != WITH_REP or r.rep_user_id != doc.rep_user_id)
         if moved:
             raise CouponCustodyError(
-                f"المستند {doc.document_number} ماينفعش يتمسح — {moved} ورقة منه اتحرّكت "
-                "(اتصرفت لعميل، أو رجعت، أو اتصرفت تاني). امسح الحركة دي الأول.")
+                f"لا يمكن حذف المستند {doc.document_number} — {moved} ورقة منه تحرّكت "
+                "(صُرفت لعميل، أو أُعيدت، أو صُرفت مرة أخرى). احذف هذه الحركة أولاً.")
         db.execute(delete(CouponCustodySerial).where(
             CouponCustodySerial.custody_id == doc.id))
     else:
@@ -349,8 +349,8 @@ def delete_doc(db: Session, *, custody_id: int, actor_user_id: int) -> str:
         moved = (doc.count - len(rows)) + sum(1 for r in rows if r.status != RETURNED)
         if moved:
             raise CouponCustodyError(
-                f"المستند {doc.document_number} ماينفعش يتمسح — {moved} ورقة منه اتصرفت "
-                "تاني بعد ما رجعت. امسح الصرف ده الأول.")
+                f"لا يمكن حذف المستند {doc.document_number} — {moved} ورقة منه صُرفت "
+                "مرة أخرى بعد إعادتها. احذف هذا الصرف أولاً.")
         for r in rows:
             r.status = WITH_REP
             r.return_id = None
@@ -465,13 +465,13 @@ def consume_for_invoice(db: Session, invoice: SalesInvoice, rep_user_id: int | N
         grandfathered = _row_key(kind, s_from, s_to) in prior
         if not kind:
             if enforced and not grandfathered:
-                problems.append("اختار فئة الكوبون — المندوب عليه عهدة كوبونات")
+                problems.append("اختر فئة الكوبون — على المندوب عهدة كوبونات")
             continue
         key = _norm_kind(kind)
         locked = enforced.get(key)
         if not s_from and not s_to:
             if locked and count and not grandfathered:
-                problems.append(f"اكتب السريالات من-إلى — الفئة دي عليها عهدة ({kind})")
+                problems.append(f"أدخل السريالات من-إلى — على هذه الفئة عهدة ({kind})")
             continue
         first = _as_int(s_from or s_to)
         last = _as_int(s_to or s_from)
@@ -479,8 +479,8 @@ def consume_for_invoice(db: Session, invoice: SalesInvoice, rep_user_id: int | N
                 or last - first + 1 > MAX_PER_DOC):
             if locked and not grandfathered:
                 problems.append(
-                    f"سريالات «{kind}» لازم تكون أرقام من-إلى (النهاية مش أصغر من البداية، "
-                    f"وأقصى {MAX_PER_DOC}) — الفئة دي عليها عهدة")
+                    f"يجب أن تكون سريالات «{kind}» أرقاماً من-إلى (النهاية ليست أصغر من البداية، "
+                    f"وبحد أقصى {MAX_PER_DOC}) — على هذه الفئة عهدة")
             continue
         nums = list(range(first, last + 1))
         dup = seen.setdefault(key, set()).intersection(nums)
@@ -508,7 +508,7 @@ def consume_for_invoice(db: Session, invoice: SalesInvoice, rep_user_id: int | N
                 held_by.setdefault(r.rep_user_id, []).append(n)
 
         if not_held:
-            problems.append(f"{_label(not_held, kind)} مش في عهدة {_as_rep(rep_label)}")
+            problems.append(f"{_label(not_held, kind)} ليست في عهدة {_as_rep(rep_label)}")
         if given_by:
             invoice_ids = [i for i in given_by if i]
             docs = dict(db.execute(
@@ -516,16 +516,16 @@ def consume_for_invoice(db: Session, invoice: SalesInvoice, rep_user_id: int | N
                 .where(SalesInvoice.id.in_(invoice_ids))).all()) if invoice_ids else {}
             for iid, ns in given_by.items():
                 where = docs.get(iid) if iid else None
-                problems.append(f"{_label(ns, kind)} اتصرفت قبل كده"
+                problems.append(f"{_label(ns, kind)} صُرفت مسبقاً"
                                 + (f" على {where}" if where else ""))
         names = _rep_names(db, held_by)
         for rid, ns in held_by.items():
             who = names.get(rid, f"مندوب #{rid}")
             if locked:
-                problems.append(f"{_label(ns, kind)} في عهدة {who} مش {_as_rep(rep_label)}")
+                problems.append(f"{_label(ns, kind)} في عهدة {who} لا {_as_rep(rep_label)}")
             else:
                 problems.append(f"{_label(ns, kind)} في عهدة {_as_rep(who)} — "
-                                "ماتتصرفش إلا على فاتورة باسمه")
+                                "لا تُصرف إلا على فاتورة باسمه")
 
     if problems:
         raise CouponCustodyError("؛ ".join(problems))
@@ -553,7 +553,7 @@ def assert_received_kept(db: Session, invoice: SalesInvoice) -> None:
                 back.setdefault(row.coupon_kind, []).append(n)
     if back:
         raise CouponCustodyError("؛ ".join(
-            f"{_label(nums, kind)} اتستلمت من سباك على الفاتورة دي — ماينفعش تتشال منها"
+            f"{_label(nums, kind)} استُلمت من سباك على هذه الفاتورة — لا يمكن إزالتها منها"
             for kind, nums in back.items()))
 
 
@@ -583,5 +583,5 @@ def held_message(db: Session, held: dict[str, int], coupon_kind: str | None) -> 
     kind = coupon_kind or "—"
     parts = [f"{_label(nums, kind)} في عهدة {names.get(rid, f'مندوب #{rid}')}"
              for rid, nums in by_rep.items()]
-    return ("كوبونات لسه في عهدة المندوب ومااتصرفتش لعميل — السباك مايكونش ماسكها: "
+    return ("كوبونات ما زالت في عهدة المندوب ولم تُصرف لعميل — فلا يمكن أن تكون مع السباك: "
             + "؛ ".join(parts))

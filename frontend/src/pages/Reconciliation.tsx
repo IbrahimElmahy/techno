@@ -140,19 +140,19 @@ export default function Reconciliation() {
     };
   }, [lines, selected]);
 
-  const blockReason = selected.length < 2 ? 'اختار فاتورة ودفعة'
-    : !selectedTotals.sameAccount ? 'السطور دي على حسابات مختلفة — المطابقة جوّه الحساب الواحد'
-    : selectedTotals.willMatch <= 0 ? 'لازم يكون فيه مدين ودائن'
-    : `هيتقفل ${egp(selectedTotals.willMatch)}`;
+  const blockReason = selected.length < 2 ? 'اختر فاتورة ودفعة'
+    : !selectedTotals.sameAccount ? 'هذه السطور على حسابات مختلفة — تتم المطابقة داخل الحساب الواحد'
+    : selectedTotals.willMatch <= 0 ? 'يجب أن يوجد مدين ودائن'
+    : `سيتم إقفال ${egp(selectedTotals.willMatch)}`;
 
   const doReconcile = async () => {
-    if (selected.length < 2) { message.error('اختار سطرين على الأقل'); return; }
+    if (selected.length < 2) { message.error('اختر سطرين على الأقل'); return; }
     try {
       const { data } = await api.post('/api/v1/reconciliation', { line_ids: selected });
       message.success(
         data.number
-          ? `اتقفل ${egp(data.matched)} — رقم المطابقة ${data.number}`
-          : `اتقفل ${egp(data.matched)} جزئياً — لسه فيه متبقّي`);
+          ? `تم إقفال ${egp(data.matched)} — رقم المطابقة ${data.number}`
+          : `تم إقفال ${egp(data.matched)} جزئياً — ولا يزال هناك متبقٍّ`);
       reload();
     } catch (err) { console.error(err); }
   };
@@ -163,8 +163,8 @@ export default function Reconciliation() {
       const { data } = await api.post('/api/v1/reconciliation/auto', {
         partner_kind: kind, partner_id: partnerId,
       });
-      if (Number(data.matched) <= 0) message.info('مافيش حاجة تتقفل — إما كله مقفول أو كله في اتجاه واحد');
-      else message.success(`اتقفل ${egp(data.matched)} في ${data.groups} مجموعة`);
+      if (Number(data.matched) <= 0) message.info('لا يوجد ما يمكن إقفاله — إما أن الكل مقفل أو أن الكل في اتجاه واحد');
+      else message.success(`تم إقفال ${egp(data.matched)} في ${data.groups} مجموعة`);
       reload();
     } catch (err) { console.error(err); }
   };
@@ -172,7 +172,7 @@ export default function Reconciliation() {
   const doUnreconcile = async (number: string) => {
     try {
       const { data } = await api.post('/api/v1/reconciliation/unreconcile', { number });
-      message.success(`اتفكّت المطابقة — ${data.unlinked} ربط رجع على ${data.entries} مستند`);
+      message.success(`تم فك المطابقة — أُعيد ${data.unlinked} ربط على ${data.entries} مستند`);
       reload();
     } catch (err) { console.error(err); }
   };
@@ -226,7 +226,7 @@ export default function Reconciliation() {
             setSelected([...others, ...(keys as number[])]);
           },
         }}
-        locale={{ emptyText: <Empty description="مافيش" image={Empty.PRESENTED_IMAGE_SIMPLE} /> }}
+        locale={{ emptyText: <Empty description="لا توجد بيانات" image={Empty.PRESENTED_IMAGE_SIMPLE} /> }}
       />
     </Card>
   );
@@ -240,7 +240,6 @@ export default function Reconciliation() {
       icon={<LinkOutlined />}
       title="تسوية الحسابات"
       muted={activePartner ? `(${activePartner.partner_name})` : undefined}
-      subtitle="الفاتورة اتدفعت بإيه، وفاضل عليه إيه — مطابقة الفواتير بالدفعات"
       tabs={[
         { key: 'open', label: 'المفتوح', count: partners.length },
         { key: 'matched', label: 'المطابقات', count: matched.length },
@@ -278,7 +277,7 @@ export default function Reconciliation() {
           options={Object.entries(KIND_LABEL).map(([value, label]) => ({ value, label }))}
         />
         {tab === 'open' && (
-          <Input className="sl-f-search" placeholder="دوّر على الطرف بالاسم" allowClear value={q}
+          <Input className="sl-f-search" placeholder="بحث عن الطرف بالاسم" allowClear value={q}
             prefix={<SearchOutlined />}
             onChange={(e) => setQ(e.target.value)} />
         )}
@@ -287,7 +286,7 @@ export default function Reconciliation() {
       {tab === 'open' ? (
         <Row gutter={12} style={{ padding: '8px 0' }}>
           <Col span={6}>
-            <Card size="small" title="الأطراف اللي عليها مفتوح"
+            <Card size="small" title="الأطراف التي عليها مبالغ مفتوحة"
               styles={{ body: { padding: 8 } }}>
               <Table
                 className="sl-table"
@@ -318,7 +317,7 @@ export default function Reconciliation() {
                       </strong>
                     ) },
                 ]}
-                locale={{ emptyText: <Empty description="مافيش أطراف عليها مفتوح"
+                locale={{ emptyText: <Empty description="لا توجد أطراف عليها مبالغ مفتوحة"
                   image={Empty.PRESENTED_IMAGE_SIMPLE} /> }}
               />
             </Card>
@@ -326,14 +325,14 @@ export default function Reconciliation() {
           <Col span={18}>
             {!partnerId ? (
               <Alert type="info" showIcon
-                message="اختار طرف من القايمة عشان تشوف المفتوح عليه" />
+                message="اختر طرفاً من القائمة لعرض المبالغ المفتوحة عليه" />
             ) : (
               <>
                 {canSeeStats && (
                   <div style={{ marginBottom: 10 }}>
                     <span className="sl-foot">
                       <span>مستحق عليه: <b className="is-neg">{egp(data?.total_debit ?? 0)}</b></span>
-                      <span>دفعات ملهاش فواتير: <b className="is-pos">{egp(data?.total_credit ?? 0)}</b></span>
+                      <span>دفعات بلا فواتير: <b className="is-pos">{egp(data?.total_credit ?? 0)}</b></span>
                       <span>الصافي المفتوح: <b>{egp(data?.balance ?? 0)}</b></span>
                     </span>
                   </div>
@@ -404,7 +403,7 @@ export default function Reconciliation() {
                   onClick={() => doUnreconcile(g.number)}>فك المطابقة</Button>
               ) },
           ]}
-          locale={{ emptyText: <Empty description="مافيش مطابقات لسه"
+          locale={{ emptyText: <Empty description="لا توجد مطابقات بعد"
             image={Empty.PRESENTED_IMAGE_SIMPLE} /> }}
         />
       )}

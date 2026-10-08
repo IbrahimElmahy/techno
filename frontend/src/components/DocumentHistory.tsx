@@ -9,7 +9,7 @@ import { num } from '../utils/money';
 import { entryTypeLabel } from './labels';
 
 const ACTION_LABEL: Record<string, string> = {
-  baseline: 'النسخة قبل أول تعديل متسجّل',
+  baseline: 'النسخة قبل أول تعديل مسجَّل',
   create: 'إنشاء',
   update: 'تعديل',
   delete: 'حذف',
@@ -19,7 +19,7 @@ const ACTION_LABEL: Record<string, string> = {
   reject: 'رفض',
   cancel: 'إلغاء',
   post: 'ترحيل',
-  'reset-to-draft': 'رجوع لمسودة',
+  'reset-to-draft': 'إرجاع إلى مسودة',
   lines: 'تعديل السطور',
   execute: 'تنفيذ وإقفال',
   start: 'بدء/صرف خامات',
@@ -56,7 +56,7 @@ const FIELD_LABEL: Record<string, string> = {
   location_id: 'المخزن', source_location_id: 'من', dest_location_id: 'إلى',
   from_warehouse_id: 'من مخزن', to_warehouse_id: 'إلى مخزن',
   rep_id: 'المندوب', rep_name: 'المندوب', rep_user_id: 'المندوب',
-  family: 'الحساب (أبيض/بولي)', other_family: 'الحساب التاني',
+  family: 'الحساب (أبيض/بولي)', other_family: 'الحساب الثاني',
   combined_pct: 'الخصم الكلي %', discount_pct: 'خصم %', fixed_discount_pct: 'خصم ثابت %',
   variable_discount_pct: 'خصم متغيّر %', line_discount: 'خصم السطور', discount: 'الخصم',
   gross_before_line_discount: 'قبل خصم السطور',
@@ -64,9 +64,9 @@ const FIELD_LABEL: Record<string, string> = {
   treasury_id: 'الخزينة', to_treasury_id: 'إلى خزينة',
   cost_center_id: 'مركز التكلفة', cost_center_distribution: 'توزيع مراكز التكلفة',
   branch_id: 'الفرع', payment_method: 'طريقة الدفع',
-  approved_by: 'اعتمده', created_by: 'عمله', posted_at: 'اترحّل في',
+  approved_by: 'اعتمده', created_by: 'أنشأه', posted_at: 'رُحِّل في',
   reject_reason: 'سبب الرفض', is_reversal: 'عكس؟', is_bonus: 'بونص؟',
-  prior_balance: 'الرصيد السابق', other_family_balance: 'رصيد الحساب التاني',
+  prior_balance: 'الرصيد السابق', other_family_balance: 'رصيد الحساب الثاني',
   expenses_billed: 'مصاريف على العميل', expenses_operating: 'مصاريف تشغيل',
   coupon_serial_from: 'كوبونات من', coupon_serial_to: 'كوبونات إلى', coupon_count: 'عدد الكوبونات',
   bonus_for_number: 'بونص على فاتورة',
@@ -83,18 +83,18 @@ const FIELD_LABEL: Record<string, string> = {
   balanced: 'متزن؟', move_type: 'نوع المستند',
   expense_amount: 'مصروفات', total_cost: 'إجمالي التكلفة', line_cost: 'التكلفة',
   product_quantity: 'كمية الإنتاج', material_cost: 'تكلفة الخامات', resource_cost: 'المصروفات',
-  work_order_ref: 'رقم الانتاج', reason: 'السبب', imported_from: 'منقول من', reversed: 'اتعكس؟',
-  stage: 'المرحلة', planned_quantity: 'الكمية المخططة', reviewed: 'اتراجع؟',
-  line_count: 'عدد السطور', counted_count: 'اتعدّ منها', item_code: 'كود الصنف',
+  work_order_ref: 'رقم الإنتاج', reason: 'السبب', imported_from: 'منقول من', reversed: 'معكوس؟',
+  stage: 'المرحلة', planned_quantity: 'الكمية المخططة', reviewed: 'تمت مراجعته؟',
+  line_count: 'عدد السطور', counted_count: 'المعدود منها', item_code: 'كود الصنف',
 };
 
 const ENUM_KEYS = new Set(['status', 'state', 'kind', 'route', 'payment_method', 'payment_state',
   'price_tier', 'customer_type', 'location_kind', 'direction', 'partner_kind']);
 const VALUE_LABEL: Record<string, string> = {
   draft: 'مسودة', posted: 'مرحّل', pending: 'معلّق', approved: 'معتمد', rejected: 'مرفوض',
-  cancelled: 'ملغي', canceled: 'ملغي', reversed: 'معكوس', open: 'مفتوح', closed: 'مقفول',
-  completed: 'مكتمل', done: 'منفّذ', in_progress: 'جاري', confirmed: 'متأكد', received: 'مستلم',
-  converted: 'اتحوّل لفاتورة', paid: 'مدفوع', partial: 'مدفوع جزئي', unpaid: 'غير مدفوع',
+  cancelled: 'ملغي', canceled: 'ملغي', reversed: 'معكوس', open: 'مفتوح', closed: 'مغلق',
+  completed: 'مكتمل', done: 'منفّذ', in_progress: 'جاري', confirmed: 'مؤكد', received: 'مستلم',
+  converted: 'محوّل إلى فاتورة', paid: 'مدفوع', partial: 'مدفوع جزئي', unpaid: 'غير مدفوع',
   warehouse: 'مخزن', custody: 'عهدة', cash: 'نقدي', cheque: 'شيك', bank: 'بنك',
   receipt: 'سند قبض', payment: 'سند صرف', issue: 'صرف', opening: 'أول المدة', sale: 'بيع',
   purchase: 'شراء', full: 'كاملة', cycle: 'جزئية',
@@ -195,7 +195,7 @@ function useFormatter(names: Names) {
   const families = useMemo(() => labelMap(famOpts), [famOpts]);
   return (key: string, v: any, row: Record<string, any>): string => {
     if (v === null || v === undefined || v === '') return '—';
-    if (typeof v === 'boolean') return v ? 'أيوه' : 'لأ';
+    if (typeof v === 'boolean') return v ? 'نعم' : 'لا';
     const kind = kindOf(key, row);
     if (kind && (typeof v === 'number' || typeof v === 'string')) {
       return names[kind]?.[String(v)] ?? `#${v}`;
@@ -293,17 +293,15 @@ function SnapshotView({ version, names }: { version: VersionFull; names: Names }
     <div>
       {version.action === 'delete' && (
         <Alert type="error" showIcon style={{ marginBottom: 12 }}
-          message="المستند اتحذف — دي آخر نسخة كانت قبل الحذف" />
+          message="تم حذف المستند — هذه آخر نسخة قبل الحذف" />
       )}
       {version.action === 'baseline' && (
         <Alert type="info" showIcon style={{ marginBottom: 12 }}
-          message="دي شكل المستند ساعة ما السجل بدأ يتسجّل — اللي قبلها مالوش نسخ." />
+          message="هذا هو المستند عند بدء التسجيل في السجل — لا توجد نسخ سابقة له." />
       )}
-      {prev && (
+      {prev && !changedHead.length && (
         <div style={{ marginBottom: 8, color: '#64748b', fontSize: 13 }}>
-          {changedHead.length
-            ? <>اللي اتغيّر عن النسخة اللي قبلها <span style={{ background: CHANGED_BG, padding: '0 4px' }}>متلوّن</span>، والقيمة القديمة مشطوبة جنبه.</>
-            : 'الرأس زي النسخة اللي قبلها.'}
+          الرأس مطابق للنسخة السابقة.
         </div>
       )}
       <Descriptions bordered size="small" column={{ xs: 1, sm: 2, lg: 3 }}
@@ -331,9 +329,9 @@ function SnapshotView({ version, names }: { version: VersionFull; names: Names }
           <div key={lk} style={{ marginTop: 16 }}>
             <div style={{ fontWeight: 700, marginBottom: 6 }}>
               {labelOf(lk)} <span style={{ color: '#64748b', fontWeight: 400 }}>({cur.length})</span>
-              {added > 0 && <Tag color="green" style={{ marginInlineStart: 8 }}>اتضاف {added}</Tag>}
-              {removed > 0 && <Tag color="red">اتشال {removed}</Tag>}
-              {changed > 0 && <Tag color="orange">اتعدّل {changed}</Tag>}
+              {added > 0 && <Tag color="green" style={{ marginInlineStart: 8 }}>أُضيف {added}</Tag>}
+              {removed > 0 && <Tag color="red">حُذف {removed}</Tag>}
+              {changed > 0 && <Tag color="orange">عُدِّل {changed}</Tag>}
             </div>
             <Table<RowDiff>
               size="small" rowKey="key" dataSource={rows} pagination={false}
@@ -348,7 +346,7 @@ function SnapshotView({ version, names }: { version: VersionFull; names: Names }
               columns={[
                 { title: '#', key: '_n', width: 40,
                   render: (_: any, r: RowDiff, i: number) => (r.status === 'removed'
-                    ? <Tag color="red" style={{ marginInlineEnd: 0 }}>اتشال</Tag>
+                    ? <Tag color="red" style={{ marginInlineEnd: 0 }}>محذوف</Tag>
                     : r.status === 'added'
                       ? <Tag color="green" style={{ marginInlineEnd: 0 }}>جديد</Tag>
                       : i + 1) },
@@ -394,7 +392,7 @@ function HistoryBody({ entityType, entityId }: { entityType: string; entityId: n
       .catch((e) => {
         if (cancelled) return;
         setError(e?.response?.status === 403
-          ? 'مالكش صلاحية تشوف سجل المستندات.'
+          ? 'ليست لديك صلاحية عرض سجل المستندات.'
           : (e?.response?.data?.detail?.message || 'تعذّر تحميل السجل'));
       })
       .finally(() => !cancelled && setLoading(false));
@@ -446,7 +444,7 @@ function HistoryBody({ entityType, entityId }: { entityType: string; entityId: n
 
   if (loading) return <div style={{ textAlign: 'center', padding: 40 }}><Spin /></div>;
   if (error) return <Alert type="warning" showIcon message={error} />;
-  if (!versions.length) return <Empty description="مافيش نسخ متسجّلة للمستند ده لسه" />;
+  if (!versions.length) return <Empty description="لا توجد نسخ مسجّلة لهذا المستند بعد" />;
 
   const newestFirst = versions.slice().reverse();
   return (
@@ -492,7 +490,7 @@ function HistoryBody({ entityType, entityId }: { entityType: string; entityId: n
               </div>
               <SnapshotView version={version} names={names} />
             </>
-          ) : <Empty description="اختار نسخة من القايمة" />}
+          ) : <Empty description="اختر نسخة من القائمة" />}
       </div>
     </div>
   );

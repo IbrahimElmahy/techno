@@ -108,7 +108,7 @@ export default function Territories() {
     {
       title: 'الإجراءات', key: 'actions', width: 100,
       render: (_: any, r: Territory) => (
-        <Tooltip title={r.customer_count ? 'عليها عملاء — أوقفها بدل ما تمسحها' : 'حذف'}>
+        <Tooltip title={r.customer_count ? 'عليها عملاء — أوقفها بدلاً من حذفها' : 'حذف'}>
           <Button type="text" danger size="small" icon={<DeleteOutlined />}
             disabled={r.customer_count > 0}
             onClick={() => Modal.confirm({
@@ -136,7 +136,6 @@ export default function Territories() {
     <ListPage
       icon={<AimOutlined />}
       title="المناطق"
-      subtitle="المنطقة الرئيسية تجمع تحتها مناطق فرعية، والمنطقة التي عليها عملاء لا تُحذف — أوقفها بدلاً من ذلك"
       actions={(<>
         <Button type="primary" className="sl-create" icon={<PlusOutlined />} onClick={() => {
           setDraft({ name: '', branch_id: branches[0]?.id });
@@ -179,7 +178,7 @@ export default function Territories() {
           <Select style={{ width: '100%' }} placeholder="الفرع" value={draft.branch_id}
             onChange={(v) => setDraft({ ...draft, branch_id: v, parent_id: undefined })}
             options={activeOptions(branches, draft.branch_id)} />
-          <Select showSearch style={{ width: '100%' }} allowClear placeholder="تحت منطقة — اتركه فارغاً لمنطقة رئيسية"
+          <Select showSearch style={{ width: '100%' }} allowClear placeholder="تحت منطقة"
             value={draft.parent_id}
             onChange={(v) => setDraft({ ...draft, parent_id: v })}
             options={parents.filter((p) => p.branch_id === draft.branch_id)

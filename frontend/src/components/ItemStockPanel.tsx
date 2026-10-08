@@ -112,10 +112,7 @@ export default function ItemStockPanel({
         return <Empty description="لا توجد أصناف في الفئة" image={Empty.PRESENTED_IMAGE_SIMPLE} />;
       }
       return (
-        <div>
-          <div style={{ fontSize: 14, color: '#6b6b6b', marginBottom: 8 }}>
-            أصناف الفئة ورصيدها الكلي — اضغط على صنف تشوف توزيعه على المخازن.
-          </div>
+        <div>
           {categoryItems.map((p) => {
             const has = Number(p.on_hand || 0) > 0;
             return (

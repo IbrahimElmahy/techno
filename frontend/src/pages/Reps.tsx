@@ -120,7 +120,7 @@ export default function Reps() {
       if ((v.warehouse_id ?? null) !== before) {
         await api.patch(`/api/v1/reps/${userId}`, { warehouse_id: v.warehouse_id ?? 0 });
       }
-      message.success(editing === 'new' ? 'اتعمل المندوب' : 'اتعدّل المندوب');
+      message.success(editing === 'new' ? 'تم إنشاء المندوب' : 'تم تعديل المندوب');
       setEditing(null);
       load();
     } catch {} finally {
@@ -131,7 +131,7 @@ export default function Reps() {
   const remove = async (r: Rep) => {
     try {
       await api.delete(`/api/v1/users/${r.user_id}`);
-      message.success('اتحذف المندوب');
+      message.success('تم حذف المندوب');
       load();
     } catch {}
   };
@@ -188,7 +188,7 @@ export default function Reps() {
               .filter((w: any) => !r.branch_id || !w.branch_id || w.branch_id === r.branch_id)
               .map((w: any) => ({ value: w.id, label: w.name }))} filterOption={searchFilter} filterSort={searchRank} />
           {!v && !r.custody_id && (
-            <span style={{ fontSize: 14, color: '#cf1322' }}>التطبيق مش هيزامن من غير مخزن</span>
+            <span style={{ fontSize: 14, color: '#cf1322' }}>لن يتزامن التطبيق بدون مخزن</span>
           )}
         </Space>
       ),
@@ -204,7 +204,7 @@ export default function Reps() {
         <Space size={2}>
           <span style={{ fontWeight: v ? 600 : 400, color: v ? undefined : '#bfbfbf' }}>{v}</span>
           {v > 0 && (
-            <Tooltip title="نقل عملاؤه لمندوب تاني">
+            <Tooltip title="نقل عملائه إلى مندوب آخر">
               <Button type="text" size="small" icon={<SwapOutlined />}
                 onClick={() => { setMoveFrom(r); setMoveTo(null); }} />
             </Tooltip>
@@ -218,7 +218,7 @@ export default function Reps() {
       render: (v: number) => <span style={{ color: v ? undefined : '#bfbfbf' }}>{v}</span>,
     },
     {
-      title: 'أصناف معاه', dataIndex: 'stock_items', key: 'stock_items', width: 100,
+      title: 'أصناف بحوزته', dataIndex: 'stock_items', key: 'stock_items', width: 100,
       align: 'center' as const,
       render: (v: number) => <span style={{ color: v ? undefined : '#bfbfbf' }}>{v}</span>,
     },
@@ -243,11 +243,11 @@ export default function Reps() {
           {!r.invoice_count && !r.customer_count && (
             <Popconfirm
               title="حذف المندوب؟"
-              description="مالوش فواتير ولا عملاء — الحساب هيتمسح نهائي."
+              description="ليس له فواتير ولا عملاء — سيتم حذف الحساب نهائياً."
               okText="حذف" cancelText="إلغاء" okButtonProps={{ danger: true }}
               onConfirm={() => remove(r)}
             >
-              <Tooltip title="حذف (للي ماشتغلش بس)">
+              <Tooltip title="حذف">
                 <Button type="text" size="small" danger icon={<DeleteOutlined />} />
               </Tooltip>
             </Popconfirm>
@@ -257,9 +257,9 @@ export default function Reps() {
               title="إيقاف المندوب؟"
               description={
                 (r.customer_count || 0) > 0
-                  ? `عليه ${r.customer_count} عميل — هيفضلوا مربوطين بيه، بس مش هيظهر في `
-                    + 'قوايم الاختيار. انقل عملاءه الأول لو ده مش المطلوب.'
-                  : 'مش هيظهر في قوايم الاختيار. مستنداته القديمة بتفضل باسمه.'
+                  ? `لديه ${r.customer_count} عميل — سيبقون مرتبطين به، لكنه لن يظهر في `
+                    + 'قوائم الاختيار. انقل عملاءه أولاً إن لم يكن هذا هو المطلوب.'
+                  : 'لن يظهر في قوائم الاختيار. تبقى مستنداته القديمة باسمه.'
               }
               okText="إيقاف"
               cancelText="إلغاء"
@@ -290,7 +290,6 @@ export default function Reps() {
     <ListPage<RepTab>
       icon={<CarOutlined />}
       title="المناديب"
-      subtitle="فرع كل مندوب ومنطقته ومخزن بضاعته وعملاؤه في شاشة واحدة"
       tabs={[
         { key: 'active', label: 'النشطين', dot: '#52c41a', count: showInactive ? undefined : rows.length },
         { key: 'all', label: 'يشمل الموقوفين', count: showInactive ? rows.length : undefined },
@@ -332,22 +331,22 @@ export default function Reps() {
             <Input placeholder="مثلاً: مندوب السياره ( ه )" />
           </Form.Item>
           <Form.Item name="username" label="اسم الدخول (للتطبيق)"
-            rules={[{ required: true, message: 'اكتب اسم الدخول' }, { min: 2, message: 'حرفين على الأقل' }]}>
+            rules={[{ required: true, message: 'اكتب اسم الدخول' }, { min: 2, message: 'حرفان على الأقل' }]}>
             <Input dir="ltr" placeholder="car.e" autoComplete="off" />
           </Form.Item>
           <Form.Item name="password"
-            label={editing === 'new' ? 'كلمة السر' : 'كلمة سر جديدة (سيبها فاضية لو مش هتتغيّر)'}
+            label={editing === 'new' ? 'كلمة السر' : 'كلمة سر جديدة (اتركها فارغة إن لم تتغير)'}
             rules={editing === 'new' ? [{ required: true, message: 'اكتب كلمة السر' }] : []}>
             <Input.Password autoComplete="new-password" />
           </Form.Item>
-          <Form.Item name="branch_id" label="الفرع" rules={[{ required: true, message: 'اختار الفرع' }]}>
+          <Form.Item name="branch_id" label="الفرع" rules={[{ required: true, message: 'اختر الفرع' }]}>
             <Select placeholder="الفرع"
               onChange={() => form.setFieldsValue({
                 territory_id: undefined, warehouse_id: undefined, supervisor_id: undefined,
               })}
               options={branches.map((b: any) => ({ value: b.id, label: b.name }))} />
           </Form.Item>
-          <Form.Item name="territory_id" label="المنطقة" rules={[{ required: true, message: 'اختار المنطقة' }]}>
+          <Form.Item name="territory_id" label="المنطقة" rules={[{ required: true, message: 'اختر المنطقة' }]}>
             <Select showSearch placeholder="المنطقة" filterOption={searchFilter} filterSort={searchRank}
               options={territories
                 .filter((t: any) => !formBranch || t.branch_id === formBranch)
@@ -355,16 +354,15 @@ export default function Reps() {
                   value: t.id, label: t.parent_name ? `${t.parent_name} ← ${t.name}` : t.name,
                 }))} />
           </Form.Item>
-          <Form.Item name="warehouse_id" label="مخزن البضاعة (عربيته)"
-            extra="من غير مخزن التطبيق مش هيزامن">
+          <Form.Item name="warehouse_id" label="مخزن البضاعة (سيارته)">
             <Select showSearch allowClear placeholder="بلا مخزن" filterOption={searchFilter} filterSort={searchRank}
               options={warehouses
                 .filter((w: any) => !formBranch || !w.branch_id || w.branch_id === formBranch)
                 .map((w: any) => ({ value: w.id, label: w.name }))} />
           </Form.Item>
           <Form.Item name="supervisor_id" label="المشرف"
-            extra={supervisors.some((x) => x.branch_id === formBranch) ? undefined : 'مافيش «مشرف مناديب» على الفرع ده'}>
-            <Select allowClear placeholder="من غير مشرف"
+            extra={supervisors.some((x) => x.branch_id === formBranch) ? undefined : 'لا يوجد «مشرف مناديب» في هذا الفرع'}>
+            <Select allowClear placeholder="بدون مشرف"
               options={supervisors
                 .filter((x) => x.branch_id === formBranch)
                 .map((x) => ({ value: x.id, label: x.full_name || x.username }))} />
@@ -375,7 +373,7 @@ export default function Reps() {
       <Modal
         open={Boolean(moveFrom)}
         title={`نقل عملاء «${moveFrom?.full_name || ''}»`}
-        okText="انقل"
+        okText="نقل"
         cancelText="إلغاء"
         okButtonProps={{ disabled: !moveTo, danger: true }}
         onCancel={() => setMoveFrom(null)}
@@ -385,14 +383,13 @@ export default function Reps() {
           const ids = (list.data || []).map((c: any) => c.id);
           const res = await api.post(`/api/v1/reps/${moveFrom.user_id}/customers`,
             { customer_ids: ids, to_rep_id: moveTo });
-          message.success(`اتنقل ${res.data.moved} عميل`);
+          message.success(`تم نقل ${res.data.moved} عميل`);
           setMoveFrom(null);
           load();
         }}
       >
         <p>
-          هيتنقل <b>{moveFrom?.customer_count}</b> عميل. والفواتير القديمة بتفضل باسم المندوب
-          اللي باعها — اللي باع هو اللي باع، والعميل وحده هو اللي بيتحرّك.
+          سيتم نقل <b>{moveFrom?.customer_count}</b> عميل.
         </p>
         <Select showSearch style={{ width: '100%' }} placeholder="المندوب المنقول له"
           value={moveTo ?? undefined} onChange={setMoveTo}

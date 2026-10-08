@@ -289,7 +289,7 @@ export default function CustomerDebts() {
           {!r.active && <Tag color="red">مخفي</Tag>}
         </Space>
       ) },
-    { title: 'التليفون', dataIndex: 'phone', width: 120, ...srv('phone'),
+    { title: 'الهاتف', dataIndex: 'phone', width: 120, ...srv('phone'),
       render: (v: string | null) => v || '-' },
     { title: 'النوع', dataIndex: 'customer_type', width: 100, ...srv('type'),
       filterValue: (r: DebtRow) => typeLabel(r.customer_type),
@@ -344,7 +344,7 @@ export default function CustomerDebts() {
       const cols: PrintColumn<DebtRow>[] = [
         { title: 'الكود', value: 'code' },
         { title: 'العميل', value: 'name' },
-        { title: 'التليفون', value: (r) => r.phone || '' },
+        { title: 'الهاتف', value: (r) => r.phone || '' },
         { title: 'النوع', value: (r) => typeLabel(r.customer_type) },
         { title: 'الفرع', value: (r) => r.branch_name || '' },
         { title: 'المنطقة', value: (r) => r.territory_name || '' },
@@ -415,7 +415,6 @@ export default function CustomerDebts() {
       <ListPage<DebtTab>
         icon={<WalletOutlined />}
         title="مديونيات العملاء"
-        subtitle="رصيد كل عميل على أبيض وبولي والإجمالي — الضغط على العميل يعرض سجل عملياته"
         tabs={tabs}
         activeTab={tab}
         onTabChange={changeTab}
@@ -429,7 +428,7 @@ export default function CustomerDebts() {
             className="sl-f-search"
             allowClear
             value={search}
-            placeholder="بحث بالاسم أو الكود أو التليفون"
+            placeholder="بحث بالاسم أو الكود أو الهاتف"
             prefix={<SearchOutlined />}
             onChange={(e) => {
               setSearch(e.target.value);
@@ -708,7 +707,7 @@ function CustomerOpsDrawer({ row, asOf, onClose, onOpenStatement, onOpenCard }: 
           {loading && !data ? (
             <div style={{ textAlign: 'center', padding: 32 }}><Spin /></div>
           ) : !data || (!data.lines.length && !n(data.opening_balance)) ? (
-            <Empty description="مافيش حركة على العميل ده في الفترة دي" />
+            <Empty description="لا توجد حركة على هذا العميل في هذه الفترة" />
           ) : (
             <>
               <Table<StatementLine>

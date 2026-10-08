@@ -41,7 +41,7 @@ export function DensityProvider({ children }: { children: React.ReactNode }) {
 export default function RowDensityControl() {
   const { density, setDensity } = useDensity();
   return (
-    <Tooltip title="ارتفاع صفوف الجداول — في النظام كله">
+    <Tooltip title="ارتفاع صفوف الجداول">
       <Segmented
         size="small"
         value={density}

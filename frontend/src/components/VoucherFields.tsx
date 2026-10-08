@@ -108,7 +108,7 @@ export function ExpenseAccountField({
         code: v.code, name: v.name, nature: 'expense', is_postable: true,
         parent_id: v.parent_id ?? null,
       });
-      message.success('اتضاف حساب المصروف');
+      message.success('تمت إضافة حساب المصروف');
       setAdding(false);
       form.resetFields();
       onCreated();
@@ -158,7 +158,7 @@ export function ExpenseAccountField({
         confirmLoading={saving} destroyOnHidden width={420}
       >
         <Form form={form} layout="vertical" onFinish={create} requiredMark={false}>
-          <Form.Item name="parent_id" label="تحت أي حساب رئيسي"
+          <Form.Item name="parent_id" label="الحساب الرئيسي"
             rules={[{ required: true, message: 'اختر الحساب الرئيسي' }]}>
             <Select showSearch placeholder="مصروفات ..."
               options={groups.map((g) => ({
@@ -173,10 +173,6 @@ export function ExpenseAccountField({
             rules={[{ required: true, message: 'اكتب اسم الحساب' }]}>
             <Input placeholder="مثال: بنزين وانتقالات" />
           </Form.Item>
-          <div style={{ color: '#6b6b6b', fontSize: 14 }}>
-            بيتعمل كحساب مصروف يقبل الترحيل، فيبان في القايمة على طول.
-            وتقدر تعدّله أو تخفيه بعد كده من «اداره الانشاءات ← الحسابات الفرعيه».
-          </div>
         </Form>
       </TabModal>
     </>

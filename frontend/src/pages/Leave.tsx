@@ -139,7 +139,7 @@ export default function Leave() {
     try {
       await api.post(`/api/v1/hr/leave/requests/${row.id}/${what}`,
         what === 'reject' ? { reason: null } : undefined);
-      message.success({ approve: 'اتعتمد', reject: 'اترفض', cancel: 'تم الإلغاء' }[what]);
+      message.success({ approve: 'تم الاعتماد', reject: 'تم الرفض', cancel: 'تم الإلغاء' }[what]);
       load();
     } catch (err: any) { fail(err, 'تعذر تنفيذ الطلب'); }
   };
@@ -151,7 +151,7 @@ export default function Leave() {
         ...typeForm, name: typeForm.name.trim(),
         annual_quota: String(typeForm.annual_quota ?? 0),
       });
-      message.success('اتضاف');
+      message.success('تمت الإضافة');
       setTypeOpen(false);
       setTypeForm({ ...typeForm, name: '' });
       load();
@@ -181,9 +181,9 @@ export default function Leave() {
         )}
         {r.status === 'approved' && (
           <Popconfirm
-            title="تلغي الأجازة؟"
-            description="الأيام هتترفع من كشف الحضور والرصيد هيرجع."
-            okText="إلغاء الأجازة" cancelText="رجوع"
+            title="هل تريد إلغاء الإجازة؟"
+            description="ستُحذف الأيام من كشف الحضور ويُعاد الرصيد."
+            okText="إلغاء الإجازة" cancelText="رجوع"
             onConfirm={() => act(r, 'cancel')}
           >
             <Button size="small" danger>إلغاء</Button>
@@ -210,11 +210,11 @@ export default function Leave() {
 
   const reqTable = useTableColumns('leave-requests', requestCols, {
     locked: ['document_number'],
-    export: { name: 'طلبات الأجازات', rows: requests },
+    export: { name: 'طلبات الإجازات', rows: requests },
   });
   const balTable = useTableColumns('leave-balances', balanceCols, {
     locked: ['employee_name'],
-    export: { name: `أرصدة الأجازات ${year}`, rows: balances },
+    export: { name: `أرصدة الإجازات ${year}`, rows: balances },
   });
 
   const openRequest = (row: LeaveRequestRow) => {
@@ -256,9 +256,8 @@ export default function Leave() {
     <>
     <ListPage
       icon={<CalendarOutlined />}
-      title="الأجازات"
-      muted={pending ? `(${pending} طلب مستني الاعتماد)` : undefined}
-      subtitle="طلبات الأجازات واعتمادها، أرصدة السنة، وأنواع الأجازات"
+      title="الإجازات"
+      muted={pending ? `(${pending} طلب بانتظار الاعتماد)` : undefined}
       tabs={[
         { key: 'requests', label: 'الطلبات', count: requests.length },
         { key: 'balances', label: 'الأرصدة', count: balances.length },
@@ -267,15 +266,15 @@ export default function Leave() {
       activeTab={tab} onTabChange={setTab}
       actions={(<>
         <Button data-shortcut="F2" type="primary" className="sl-create" icon={<PlusOutlined />}
-          onClick={() => setCreating(true)}>طلب أجازة</Button>
+          onClick={() => setCreating(true)}>طلب إجازة</Button>
         {tab === 'types' ? (
           <Button icon={<PlusOutlined />} onClick={() => setTypeOpen(true)}>نوع جديد</Button>
         ) : null}
         <Button icon={<PrinterOutlined />}
           onClick={() => (onBalances
-            ? printReport({ title: 'أرصدة الأجازات', meta: [['السنة', String(year)]] },
+            ? printReport({ title: 'أرصدة الإجازات', meta: [['السنة', String(year)]] },
               balCsv as PrintColumn<BalanceRow>[], balances)
-            : printReport({ title: 'طلبات الأجازات' },
+            : printReport({ title: 'طلبات الإجازات' },
               reqCsv as PrintColumn<LeaveRequestRow>[], requests))}>طباعة</Button>
         <Button icon={<DownloadOutlined />}
           onClick={() => (onBalances
@@ -294,16 +293,12 @@ export default function Leave() {
       ) : onBalances ? (<>
         <InputNumber value={year} onChange={(v) => setYear(Number(v) || year)}
           style={{ flex: '0 0 120px' }} />
-        <span style={{ color: '#888', flex: '1 1 auto' }}>
-          المستهلك محسوب من الطلبات المعتمدة، مش رقم مخزّن.
-        </span>
       </>) : undefined}
     >
       {!types.length ? (
         <Alert
           type="info" showIcon style={{ margin: '6px 0 8px' }}
           message="لا توجد أنواع إجازات بعد"
-          description="ابدأ من تبويب «الأنواع» — سنوية، عارضة، مرضية، بدون أجر."
         />
       ) : null}
 
@@ -335,11 +330,11 @@ export default function Leave() {
             { title: 'الرصيد السنوي', dataIndex: 'annual_quota',
               render: (v: string) => Number(v) },
             { title: 'مدفوعة', dataIndex: 'paid',
-              render: (v: boolean) => (v ? <Tag color="green">أيوه</Tag> : <Tag>لأ</Tag>) },
-            { title: 'بتخصم من المرتب', dataIndex: 'deducts_salary',
-              render: (v: boolean) => (v ? <Tag color="red">أيوه</Tag> : '—') },
-            { title: 'بتحسب الجمعة والسبت', dataIndex: 'counts_weekend',
-              render: (v: boolean) => (v ? 'أيوه' : 'لأ') },
+              render: (v: boolean) => (v ? <Tag color="green">نعم</Tag> : <Tag>لا</Tag>) },
+            { title: 'تُخصم من الراتب', dataIndex: 'deducts_salary',
+              render: (v: boolean) => (v ? <Tag color="red">نعم</Tag> : '—') },
+            { title: 'تُحتسب الجمعة والسبت', dataIndex: 'counts_weekend',
+              render: (v: boolean) => (v ? 'نعم' : 'لا') },
           ]}
         />
       ) : (
@@ -353,7 +348,7 @@ export default function Leave() {
             showTotal: () => (
               <span className="sl-foot">
                 <span>الطلبات: <b>{requests.length}</b></span>
-                <span>مستنية الاعتماد: <b>{pending}</b></span>
+                <span>بانتظار الاعتماد: <b>{pending}</b></span>
               </span>
             ),
           }}
@@ -364,7 +359,7 @@ export default function Leave() {
     </ListPage>
 
       <TabModal
-        open={creating} title="طلب أجازة" onCancel={() => setCreating(false)}
+        open={creating} title="طلب إجازة" onCancel={() => setCreating(false)}
         onOk={submit} confirmLoading={saving} okText="تسجيل" cancelText="إلغاء" destroyOnClose
       >
         <Row gutter={[10, 10]}>
@@ -385,9 +380,6 @@ export default function Leave() {
             <div style={{ marginBottom: 4 }}>المدة *</div>
             <DateRangeFilter
               value={form.range} onChange={(v) => setForm({ ...form, range: v })} />
-            <div style={{ color: '#888', fontSize: 14, marginTop: 4 }}>
-              الجمعة والسبت والعطلات الرسمية مابيتخصموش من الرصيد.
-            </div>
           </Col>
           <Col span={24}>
             <div style={{ marginBottom: 4 }}>السبب</div>
@@ -398,7 +390,7 @@ export default function Leave() {
       </TabModal>
 
       <TabModal
-        open={typeOpen} title="نوع أجازة جديد" onCancel={() => setTypeOpen(false)}
+        open={typeOpen} title="نوع إجازة جديد" onCancel={() => setTypeOpen(false)}
         onOk={saveType} okText="حفظ" cancelText="إلغاء" destroyOnClose
       >
         <Row gutter={[10, 10]}>
@@ -421,19 +413,19 @@ export default function Leave() {
                 onChange={(v) => setTypeForm({ ...typeForm, deducts_salary: v })}
                 options={[
                   { value: false, label: 'لا تُخصم من الراتب' },
-                  { value: true, label: 'بتخصم من المرتب' },
+                  { value: true, label: 'تُخصم من الراتب' },
                 ]} />
               <Select style={{ width: 260 }} value={typeForm.counts_weekend}
                 onChange={(v) => setTypeForm({ ...typeForm, counts_weekend: v })}
                 options={[
                   { value: false, label: 'أيام العمل فقط' },
-                  { value: true, label: 'بتحسب الجمعة والسبت' },
+                  { value: true, label: 'تُحتسب الجمعة والسبت' },
                 ]} />
               <Select style={{ width: 260 }} value={typeForm.requires_approval}
                 onChange={(v) => setTypeForm({ ...typeForm, requires_approval: v })}
                 options={[
-                  { value: true, label: 'محتاجة اعتماد' },
-                  { value: false, label: 'من غير اعتماد' },
+                  { value: true, label: 'تحتاج إلى اعتماد' },
+                  { value: false, label: 'بدون اعتماد' },
                 ]} />
             </Space>
           </Col>

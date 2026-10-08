@@ -28,10 +28,10 @@ import { useQueryTab } from '../components/useQueryTab';
 const PRICE_TIERS: { key: string; label: string }[] = [
   { key: 'consumer', label: 'مستهلك' },
   { key: 'commercial', label: 'تجاري' },
-  { key: 'semi_commercial', label: 'نص تجاري' },
-  { key: 'wholesale', label: 'جمله' },
-  { key: 'semi_wholesale', label: 'نص جمله' },
-  { key: 'list_price', label: 'سعر اللسنة' },
+  { key: 'semi_commercial', label: 'نصف تجاري' },
+  { key: 'wholesale', label: 'جملة' },
+  { key: 'semi_wholesale', label: 'نصف جملة' },
+  { key: 'list_price', label: 'سعر القائمة' },
 ];
 
 const PriceTiersButton = ({ itemId, canEdit }: { itemId: number; canEdit: boolean }) => {
@@ -67,7 +67,7 @@ const PriceTiersButton = ({ itemId, canEdit }: { itemId: number; canEdit: boolea
       <Button size="small" type="link" icon={<DollarOutlined />} onClick={onOpen}>الأسعار</Button>
       <TabModal title="الأطر السعرية الخمسة" open={open} onCancel={() => setOpen(false)}
         onOk={onSave} okText={canEdit ? 'حفظ' : 'إغلاق'} okButtonProps={{ disabled: !canEdit }}>
-        <p style={{ color: '#888' }}>سعر البيع المرجعي (الأساس): {base ? `${base}` : '—'} — يُستخدم كبديل لأي فئة غير محددة.</p>
+        <p style={{ color: '#888' }}>سعر البيع المرجعي (الأساس): {base ? `${base}` : '—'}</p>
         {PRICE_TIERS.map((t) => (
           <Row key={t.key} gutter={8} align="middle" style={{ marginBottom: 8 }}>
             <Col span={10}>{t.label}</Col>
@@ -143,8 +143,8 @@ const InlineNumberCell = ({
     if (v === null || v === undefined || Number.isNaN(v) || v < min
       || (max !== undefined && v > max)) {
       message.warning(max !== undefined
-        ? `القيمة لازم تبقى بين ${min} و${max}`
-        : `القيمة لازم تبقى ${min} أو أكتر`);
+        ? `يجب أن تكون القيمة بين ${min} و${max}`
+        : `يجب ألا تقل القيمة عن ${min}`);
       setDraft(committed.current);
       return;
     }
@@ -306,7 +306,7 @@ const ItemUnitsButton = ({ itemId, canEdit }: { itemId: number; canEdit: boolean
       <Button size="small" type="link" icon={<ColumnWidthOutlined />} onClick={onOpen}>الوحدات</Button>
       <TabModal title="وحدات القياس ومعامل التحويل" open={open} onCancel={() => setOpen(false)}
         onOk={onSave} okText={canEdit ? 'حفظ' : 'إغلاق'} okButtonProps={{ disabled: !canEdit }}>
-        <p style={{ color: '#888' }}>الوحدة الأساسية: <strong>{base}</strong> (معامل = 1). أضف وحدات أكبر بمعاملها مقابل الأساس (مثلاً: كرتونة = 12).</p>
+        <p style={{ color: '#888' }}>الوحدة الأساسية: <strong>{base}</strong> (معامل = 1)</p>
         {rows.map((r, i) => (
           <Row key={i} gutter={8} align="middle" style={{ marginBottom: 8 }}>
             <Col span={12}>
@@ -561,7 +561,7 @@ export default function Catalog() {
         }
       }
 
-      message.success(editingItem ? 'اتعدّل الصنف' : 'تم تسجيل الصنف');
+      message.success(editingItem ? 'تم تعديل الصنف' : 'تم تسجيل الصنف');
       setDrawerVisible(false);
       setEditingItem(null);
       form.resetFields();
@@ -682,7 +682,7 @@ export default function Catalog() {
 
   const columns = [
     {
-      title: 'الفئه',
+      title: 'الفئة',
       dataIndex: 'category',
       key: 'category',
       ellipsis: true,
@@ -870,7 +870,7 @@ export default function Catalog() {
       const res = await api.post('/api/v1/items/import-excel', fd,
         { headers: { 'Content-Type': 'multipart/form-data' } });
       const d = res.data;
-      message.success(`اتضاف ${d.created} صنف · اتم تخطي ${d.skipped} موجود`
+      message.success(`تمت إضافة ${d.created} صنف · تم تخطي ${d.skipped} موجود`
         + (d.failed ? ` · فشل ${d.failed}` : ''));
       if (d.errors?.length) {
         Modal.warning({
@@ -906,8 +906,7 @@ export default function Catalog() {
       <ListPage<'grouped' | 'table'>
         icon={<InboxOutlined />}
         title="الأصناف" muted="(كتالوج المنتجات)"
-        subtitle="بيانات الأصناف وشرائح أسعار البيع والرصيد الحالي"
-        tabs={[
+          tabs={[
           { key: 'grouped', label: <><AppstoreOutlined /> مجمّع بالفئات</> },
           { key: 'table', label: <><UnorderedListOutlined /> جدول واحد</> },
         ]}
@@ -1063,7 +1062,7 @@ export default function Catalog() {
           initialValues={{ pieces_per_unit: 1, kind: 'product' }}>
           <Row gutter={12}>
             <Col span={8}>
-              <Form.Item name="category" label="الفئه">
+              <Form.Item name="category" label="الفئة">
                 <Select allowClear showSearch placeholder="اختر الفئة"
                   options={categoryTreeOptions}
                   filterOption={searchFilter} filterSort={searchRank} />
@@ -1081,7 +1080,7 @@ export default function Catalog() {
             <Col span={8}>
               <Form.Item name="unit_of_measure" label="اسم الوحدة"
                 rules={[{ required: true, message: 'اختر الوحدة' }]}>
-                <Select showSearch placeholder="وحده" disabled={!!editingItem}
+                <Select showSearch placeholder="الوحدة" disabled={!!editingItem}
                   options={uomOptions.map((o) => ({ value: o.value, label: o.label }))}
                   filterOption={searchFilter} filterSort={searchRank} />
               </Form.Item>
@@ -1093,15 +1092,14 @@ export default function Catalog() {
             </Col>
             <Col span={8}>
               <Form.Item name="piece_name" label="اسم القطعة">
-                <Input placeholder="قطعه" />
+                <Input placeholder="قطعة" />
               </Form.Item>
             </Col>
           </Row>
 
           <Row gutter={12} align="bottom">
             <Col span={8}>
-              <Form.Item name="meters_per_piece" label="القطعة = كام متر؟"
-                tooltip="لو الصنف بيتباع بالمتر وبالقطعة: اكتب طول القطعة. الفاتورة هتسمح باختيار متر أو قطعة على السطر، والسعر والمخزن بيتحسبوا بالوحدة اللي اتختارت. سيبها فاضية لو الصنف مابيتقاسش بالطول.">
+              <Form.Item name="meters_per_piece" label="طول القطعة بالمتر">
                 <InputNumber min={0} step={0.5} style={{ width: '100%' }}
                   addonBefore="القطعة =" addonAfter="متر" placeholder="مثلاً 3" />
               </Form.Item>
@@ -1116,8 +1114,8 @@ export default function Catalog() {
                   return (
                     <Col span={16} style={{ color: '#64748b', paddingBottom: 30 }}>
                       {isMeterUnit(base)
-                        ? `المخزن بالمتر — البيع بالقطعة بيخصم ${n} متر للقطعة.`
-                        : `المخزن بـ«${base || 'القطعة'}» — البيع بالمتر بيخصم 1÷${n} قطعة للمتر.`}
+                        ? `المخزون بالمتر — البيع بالقطعة يخصم ${n} متر للقطعة.`
+                        : `المخزون بـ«${base || 'القطعة'}» — البيع بالمتر يخصم 1÷${n} قطعة للمتر.`}
                     </Col>
                   );
                 }
@@ -1126,15 +1124,14 @@ export default function Catalog() {
                 const onHand = Number((editingItem as ItemRecord & { on_hand?: string }).on_hand || 0);
                 return (
                   <Col span={16}>
-                    <Form.Item name="length_base" label="رصيد الصنف ده متسجّل بـ"
-                      tooltip="تصليح اسم الوحدة الأساسية بس — مفيش كمية بتتحوّل. لو الرصيد مكتوب أمتار والكارت مكتوب عليه «قطعة» اختار «متر».">
+                    <Form.Item name="length_base" label="وحدة تسجيل رصيد هذا الصنف">
                       <Radio.Group optionType="button" buttonStyle="solid"
                         options={[{ value: ch.meter, label: 'متر' }, { value: ch.piece, label: ch.piece }]} />
                     </Form.Item>
                     {chosen !== editingItem.unit_of_measure ? (
                       <div style={{ color: '#b45309', marginTop: -16, marginBottom: 12, fontSize: 13 }}>
-                        الوحدة الأساسية هتتغيّر من «{editingItem.unit_of_measure}» لـ«{chosen}» — الاسم بس،
-                        والرصيد ({dualQty(onHand, lengthUnits(chosen, n))}) مابيتحوّلش.
+                        ستتغيّر الوحدة الأساسية من «{editingItem.unit_of_measure}» إلى «{chosen}» — الاسم فقط،
+                        ولن يُحوَّل الرصيد ({dualQty(onHand, lengthUnits(chosen, n))}).
                       </div>
                     ) : null}
                   </Col>
@@ -1159,16 +1156,14 @@ export default function Catalog() {
                 </Col>
               ) : canEditPoints ? (
                 <Col span={8}>
-                  <Form.Item name="point_value" label="نقاط المنتج"
-                    tooltip="النقاط التي يحصل عليها العميل عن القطعة الواحدة — وقد تكون كسراً (٦ قطع = نقطة ← 0.167)">
+                  <Form.Item name="point_value" label="نقاط المنتج">
                     <InputNumber min={0} step={0.001} style={{ width: '100%' }} placeholder="0" />
                   </Form.Item>
                 </Col>
               ) : null)}
             </Form.Item>
             <Col span={8}>
-              <Form.Item name="default_discount_pct" label="خصم الصنف %"
-                tooltip="الخصم الثابت على الصنف. وإن كان للعميل خصم محدد في كارت العميل فإنه يحل محل هذا الخصم ولا يُجمع معه.">
+              <Form.Item name="default_discount_pct" label="خصم الصنف %">
                 <InputNumber min={0} max={99.99} step={0.01} style={{ width: '100%' }}
                   placeholder="0" />
               </Form.Item>
@@ -1183,7 +1178,7 @@ export default function Catalog() {
               <Checkbox>يستخدم صلاحية</Checkbox>
             </Form.Item>
             <Form.Item name="is_serialized" valuePropName="checked" noStyle>
-              <Checkbox>يستخدم سيريال نمبر</Checkbox>
+              <Checkbox>يستخدم الرقم التسلسلي</Checkbox>
             </Form.Item>
           </Space>
 
@@ -1233,9 +1228,6 @@ export default function Catalog() {
           <Divider orientation="right" style={{ margin: '12px 0 8px' }}>
             وحدات القياس البديلة
           </Divider>
-          <div style={{ color: '#888', marginBottom: 8, fontSize: 15 }}>
-            الوحدة الأساسية هي الأولى. أضف الوحدات الأكبر بمعاملاتها (مثلاً: كرتونة = ١٢).
-          </div>
           {unitRows.map((r, i) => (
             <Row key={i} gutter={8} align="middle" style={{ marginBottom: 8 }}>
               <Col span={10}>
@@ -1262,7 +1254,7 @@ export default function Catalog() {
 
           <Row gutter={12} style={{ marginTop: 16 }}>
             <Col span={6}>
-              <Form.Item name="min_stock" label="حد اعادة الطلب">
+              <Form.Item name="min_stock" label="حد إعادة الطلب">
                 <InputNumber min={0} style={{ width: '100%' }} />
               </Form.Item>
             </Col>

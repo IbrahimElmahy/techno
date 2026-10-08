@@ -111,7 +111,7 @@ class _ItemPickerDialogState extends State<_ItemPickerDialog> {
               autofocus: true,
               onChanged: _load,
               decoration: InputDecoration(
-                hintText: 'ابحث بإسم الصنف...',
+                hintText: 'ابحث باسم الصنف...',
                 prefixIcon: const Icon(Icons.search),
                 suffixIcon: _search.text.isEmpty
                     ? null
@@ -130,7 +130,7 @@ class _ItemPickerDialogState extends State<_ItemPickerDialog> {
                           child: Padding(
                             padding: EdgeInsets.all(16),
                             child: Text(
-                              'مفيش أصناف — اعمل «تحديث الأصناف والقوائم» من القائمة',
+                              'لا توجد أصناف',
                               textAlign: TextAlign.center,
                             ),
                           ),

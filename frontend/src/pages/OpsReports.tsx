@@ -67,7 +67,7 @@ export const REPORT_VIEWS: Record<string, OpsReportView> = {
   'inspections-by-rep': { label: 'المعاينات بالمندوب', subject: 'inspections', level: 'summary', groupBy: 'rep' },
   'inspections-by-kind': { label: 'المعاينات بالنوع', subject: 'inspections', level: 'summary', groupBy: 'kind' },
   'inspections-by-shop': { label: 'المعاينات بمحل الشراء', subject: 'inspections', level: 'summary', groupBy: 'shop' },
-  'inspections-by-month': { label: 'المعاينات شهر بشهر', subject: 'inspections', level: 'summary', groupBy: 'month' },
+  'inspections-by-month': { label: 'المعاينات شهرياً', subject: 'inspections', level: 'summary', groupBy: 'month' },
   'cheque-wallet': { label: 'محفظة الشيكات', subject: 'cheques', level: 'detail', groupBy: 'none' },
   'cheques-due-soon': { label: 'شيكات تستحق قريباً', subject: 'cheques', level: 'detail', groupBy: 'none', dueWithinDays: 30 },
   'cheques-by-status': { label: 'الشيكات بالحالة', subject: 'cheques', level: 'summary', groupBy: 'status' },
@@ -247,7 +247,7 @@ export default function OpsReports() {
     { title: 'النوع', dataIndex: 'kind', ...textColumn(rows, (r: any) => r.kind) },
     { title: 'الاستحقاق', dataIndex: 'due_date', ...dateColumn<any>((r) => r.due_date),
       render: (v: string, r: any) => (r.late
-        ? <Tag color="red">{v} — فات ميعاده</Tag> : (v || '-')) },
+        ? <Tag color="red">{v} — تجاوز موعده</Tag> : (v || '-')) },
     { title: 'سطور', dataIndex: 'quantity', align: 'left' as const,
       ...numberColumn<any>((r) => r.quantity), render: (v: string) => num(v) },
     { title: 'الإجمالي', dataIndex: 'amount', align: 'left' as const,
@@ -330,7 +330,7 @@ export default function OpsReports() {
     if (statement) pairs.push(['البيان', statement]);
     if (totals?.excluded) pairs.push(['مستبعد من الإجمالي', `${totals.excluded} سطر ملغي`]);
     if (page?.truncated) {
-      pairs.push(['ملحوظة', `معروض ${rows.length} من ${page.total_rows} سطر`]);
+      pairs.push(['ملاحظة', `المعروض ${rows.length} من ${page.total_rows} سطر`]);
     }
     return pairs;
   };
@@ -379,7 +379,7 @@ export default function OpsReports() {
       icon={<FileSearchOutlined />}
       title={view ? view.label : 'تقارير التشغيل'}
       muted={offPreset ? <Tag color="orange" style={{ fontWeight: 400 }}>معدّل</Tag> : undefined}
-      subtitle="النقاط والكوبونات والمعاينات والشيكات والطلبات والحجوزات — تفصيلي أو مجمّع"
+
       tabs={(Object.keys(SUBJECT_LABELS) as Subject[])
         .map((k) => ({ key: k, label: SUBJECT_LABELS[k] }))}
       activeTab={subject}
@@ -415,12 +415,12 @@ export default function OpsReports() {
         />
         {isCheque && (
           <Select
-            allowClear placeholder="بيستحق خلال…"
+            allowClear placeholder="يستحق خلال…"
             value={dueWithin} onChange={setDueWithin}
             options={[
               { value: 7, label: 'أسبوع' },
               { value: 30, label: 'شهر' },
-              { value: 90, label: 'تلات شهور' },
+              { value: 90, label: 'ثلاثة أشهر' },
             ]}
           />
         )}
@@ -454,8 +454,7 @@ export default function OpsReports() {
       {denied && (
         <Alert
           type="warning" showIcon style={{ margin: '6px 0 8px' }}
-          message="مالكش صلاحية على التقرير ده"
-          description="كل موضوع مقيَّد بصلاحية القسم الذي يقرأ منه. اختر موضوعاً آخر، أو اطلب الصلاحية من مدير النظام."
+          message="ليس لديك صلاحية على هذا التقرير"
         />
       )}
 
@@ -463,15 +462,13 @@ export default function OpsReports() {
         <Alert
           type="info" showIcon style={{ margin: '6px 0 8px' }}
           message={`${totals.excluded} سطر ملغي معروض وغير محسوب في الإجماليات`}
-          description="يبقى الملغى على الشاشة ليجده من يبحث عن سبب اختفائه، ولا يُحتسب في الأرقام حتى لا يوهم بوجود التزام غير قائم."
         />
       )}
 
       {page?.truncated && (
         <Alert
           type="info" showIcon style={{ margin: '6px 0 8px' }}
-          message={`معروض ${rows.length} سطر من ${page.total_rows}`}
-          description="الإجماليات تحت الجدول محسوبة على كل السطور في المدى المحدد، لا على المعروض منها. ضيّق الفترة أو الفلاتر لعرض الباقي."
+          message={`المعروض ${rows.length} سطر من ${page.total_rows}`}
         />
       )}
 
@@ -483,7 +480,7 @@ export default function OpsReports() {
         rowClassName={(r: any) => [
           r.counts === false ? 'row-muted' : '', kb.rowClassName(r),
         ].filter(Boolean).join(' ')}
-        locale={{ emptyText: denied ? 'مالكش صلاحية على التقرير ده' : 'لا توجد بيانات في هذه الفترة' }}
+        locale={{ emptyText: denied ? 'ليس لديك صلاحية على هذا التقرير' : 'لا توجد بيانات في هذه الفترة' }}
         pagination={{
           defaultPageSize: PAGE_SIZE, showSizeChanger: true,
           locale: { items_per_page: '' },

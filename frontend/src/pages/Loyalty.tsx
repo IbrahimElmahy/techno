@@ -522,9 +522,6 @@ export default function Loyalty() {
       count: couponKinds.length,
       children: (
         <div>
-          <div style={{ color: '#555b65', fontSize: 14, padding: '6px 4px 8px' }}>
-            الفئة مع رقم الكوبون هما هويته: «٥ ذهبي» غير «٥ فضي».
-          </div>
           <Table
             className="sl-table"
             size="small"
@@ -604,7 +601,6 @@ export default function Loyalty() {
         icon={<TagsOutlined />}
         title="أنواع الكوبونات"
         muted="(الكوبونات والنقاط)"
-        subtitle="فئة الورقة اللي بتتسلّم للعميل على الفاتورة (عادي / فضي / ذهبي / ماسي)"
         tabs={items.map((t) => ({ key: t.key, label: t.label, count: t.count }))}
         activeTab={shownTab}
         onTabChange={setActiveTab}
@@ -861,7 +857,7 @@ export default function Loyalty() {
         <Form form={kindForm} layout="vertical" onFinish={onSaveCouponKind} requiredMark={false}>
           <Form.Item
             name="label"
-            label="اسم الفئة / النوع (مثال: عادي، فضي، ذهبي، ماسي)"
+            label="اسم الفئة / النوع"
             rules={[{ required: true, message: 'يرجى إدخال اسم الفئة!' }]}
           >
             <Input placeholder="اسم الفئة" />
@@ -869,7 +865,7 @@ export default function Loyalty() {
 
           <Form.Item
             name="value"
-            label="القيمة المرجعية (اختياري - تُترك فارغة لاستخدام الاسم)"
+            label="القيمة المرجعية (اختياري)"
           >
             <Input placeholder="كود أو قيمة الفئة" />
           </Form.Item>

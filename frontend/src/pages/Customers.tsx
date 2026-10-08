@@ -135,8 +135,8 @@ const useCellStatus = () => {
 
 const phoneError = (digits: string): string | null => {
   if (!digits) return null;
-  if (!/^\+?\d{6,15}$/.test(digits)) return 'رقم التليفون أرقام بس (من ٦ لـ١٥ رقم)';
-  if (/^01/.test(digits) && digits.length !== 11) return 'رقم الموبايل لازم ١١ رقم ويبدأ بـ01';
+  if (!/^\+?\d{6,15}$/.test(digits)) return 'يجب أن يتكون رقم الهاتف من أرقام فقط (من ٦ إلى ١٥ رقماً)';
+  if (/^01/.test(digits) && digits.length !== 11) return 'يجب أن يتكون رقم الهاتف المحمول من ١١ رقماً ويبدأ بـ01';
   return null;
 };
 
@@ -525,7 +525,7 @@ export default function Customers() {
       ellipsis: true,
       render: (name: string, record: CustomerRecord) => (editMode
         ? <InlineTextCell gridCol="name" value={name}
-            validate={(v) => (v ? null : 'الاسم مايبقاش فاضي')}
+            validate={(v) => (v ? null : 'لا يمكن أن يكون الاسم فارغاً')}
             onCommit={(v) => saveField(record, { name: v })} />
         : (
           <Space size={4}>
@@ -585,7 +585,7 @@ export default function Customers() {
       },
     },
     {
-      title: 'مورد كمان',
+      title: 'مورد أيضاً',
       dataIndex: 'supplier_name',
       key: 'supplier_name',
       ellipsis: true,
@@ -603,7 +603,7 @@ export default function Customers() {
       },
     },
     {
-      title: 'محافظه',
+      title: 'المحافظة',
       dataIndex: 'governorate_id',
       key: 'governorate_id',
       ellipsis: true,
@@ -761,7 +761,6 @@ export default function Customers() {
       <ListPage<StatusTab>
         icon={<TeamOutlined />}
         title={partyGroup === 'employees' ? 'الموظفين' : partyGroup === 'branches' ? 'الفروع والشركات التابعة' : 'العملاء'}
-        subtitle="بطاقات العملاء وأرصدتهم ومناديبهم — الضغط على السطر يفتح ملف العميل"
         tabs={statusTabs}
         activeTab={statusTab}
         onTabChange={(k) => {
@@ -887,8 +886,7 @@ export default function Customers() {
               </Form.Item>
             </Col>
             <Col span={8}>
-              <Form.Item name="default_price_tier" label="السعر الافتراضي"
-                extra="تُستخدم تلقائياً على فواتيره (الافتراضي: مستهلك)">
+              <Form.Item name="default_price_tier" label="السعر الافتراضي">
                 <Select allowClear placeholder="مستهلك (افتراضي)"
                   options={Object.entries(TIER_LABELS).map(([k, l]) => ({ value: k, label: l }))} />
               </Form.Item>
@@ -903,13 +901,13 @@ export default function Customers() {
               </Form.Item>
             </Col>
             <Col span={8}>
-              <Form.Item name="email" label="البريد الالكترونى"
+              <Form.Item name="email" label="البريد الإلكتروني"
                 rules={[{ type: 'email', message: 'بريد غير صحيح' }]}>
                 <Input placeholder="nour@example.com" />
               </Form.Item>
             </Col>
             <Col span={8}>
-              <Form.Item name="tax_number" label="رقم الضريبي">
+              <Form.Item name="tax_number" label="الرقم الضريبي">
                 <Input />
               </Form.Item>
             </Col>
@@ -942,14 +940,14 @@ export default function Customers() {
               </Form.Item>
             </Col>
             <Col span={8}>
-              <Form.Item name="governorate_id" label="محافظات">
+              <Form.Item name="governorate_id" label="المحافظة">
                 <Select allowClear showSearch placeholder="اختر المحافظة"
                   options={governorates.map((g) => ({ value: g.id, label: g.name }))}
                   filterOption={searchFilter} filterSort={searchRank} />
               </Form.Item>
             </Col>
             <Col span={8}>
-              <Form.Item name="markaz" label="مدن">
+              <Form.Item name="markaz" label="المدينة">
                 <Input placeholder="مثال: دمنهور" />
               </Form.Item>
             </Col>
@@ -957,9 +955,7 @@ export default function Customers() {
 
           <Row gutter={12}>
             <Col span={4}>
-              <Form.Item name="discount_pct" label="خصم %"
-                tooltip="إن حُدِّد فإنه يحل محل خصم الصنف ولا يُضاف إليه. اتركه فارغاً ليأخذ الصنف خصمه."
-                extra="فارغ = لا يوجد اتفاق">
+              <Form.Item name="discount_pct" label="خصم %">
                 <InputNumber min={0} max={100} step={0.01} style={{ width: '100%' }} />
               </Form.Item>
             </Col>

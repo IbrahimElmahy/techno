@@ -218,13 +218,13 @@ export default function ItemCard() {
       render: (v: string | null, r: CardRow) => (v
         ? <span>{qty(v)} <span style={{ color: '#6b6b6b' }}>{r.unit}</span></span>
         : <span style={{ color: '#555b65' }}>-</span>) },
-    { title: 'جهه التعامل', dataIndex: 'party', ellipsis: true,
+    { title: 'جهة التعامل', dataIndex: 'party', ellipsis: true,
       ...textColumn(cardRows, (r: CardRow) => r.party),
       render: (v: string | null) => v ?? <span style={{ color: '#555b65' }}>-</span> },
     { title: 'السعر', dataIndex: 'unit_price', align: 'left',
       ...numberColumn<CardRow>((r) => r.unit_price),
       render: (v: string | null) => (v ? money(v) : '-') },
-    { title: 'الاجمالي', dataIndex: 'line_total', align: 'left',
+    { title: 'الإجمالي', dataIndex: 'line_total', align: 'left',
       ...numberColumn<CardRow>((r) => r.line_total),
       render: (v: string | null) => (v ? <b>{money(v)}</b> : '-') },
     { title: 'خصم', dataIndex: 'discount_pct', align: 'left', width: 90,
@@ -272,7 +272,7 @@ export default function ItemCard() {
       title="كارت الصنف"
       subtitle={card
         ? <>{card.item_name}{card.item_code && <span dir="ltr"> · {card.item_code}</span>}</>
-        : 'كل حركة على الصنف بالرصيد قبلها وبعدها'}
+        : undefined}
       actions={(<>
         <Button icon={<PrinterOutlined />} onClick={printIt} disabled={!card?.rows.length}>طباعة</Button>
         <Button icon={<DownloadOutlined />} onClick={exportCsv}
@@ -300,7 +300,7 @@ export default function ItemCard() {
               value: i.id,
               label: dupNames.has((i.name || '').trim()) ? `${i.name} — ${branchOfCode(i.code)}` : i.name,
               search: i.code || '' }))}
-            notFoundContent={category ? 'مافيش صنف بالاسم ده في الفئة دي' : undefined} filterOption={searchFilter} filterSort={searchRank}/>
+            notFoundContent={category ? 'لا يوجد صنف بهذا الاسم في هذه الفئة' : undefined} filterOption={searchFilter} filterSort={searchRank}/>
           <Select showSearch
             allowClear placeholder="كل المواقع"
             value={warehouseId} onChange={setWarehouseId}
@@ -325,14 +325,6 @@ export default function ItemCard() {
 
       {card && (
         <>
-          {(movementType || range) && (
-            <Alert
-              type="info" showIcon style={{ margin: '6px 0' }}
-              message="الفلاتر تخفي سطوراً ولا تغيّر الأرصدة."
-              description="الرصيد قبل/بعد محسوب على كل حركات الصنف، فالرصيد الحالي هو الرصيد الحقيقي مهما كان المعروض."
-            />
-          )}
-
           <Table<CardRow>
             {...kb.tableProps}
             className="sl-table"

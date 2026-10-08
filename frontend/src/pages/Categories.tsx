@@ -152,7 +152,7 @@ export default function Categories() {
           description: values.description || null,
           parent_value: values.parent_value || null,
         });
-        message.success('اتضافت الفئة');
+        message.success('تمت إضافة الفئة');
       }
       setOpen(false);
       invalidateCategoryTree();
@@ -166,7 +166,7 @@ export default function Categories() {
     setRows((rs) => rs.map((r) => (r.id === row.id ? { ...r, hidden_in_price_sheet: !show } : r)));
     try {
       await api.patch(`/api/v1/settings/lookups/${row.id}`, { hidden_in_price_sheet: !show });
-      message.success(show ? `«${row.label}» ظاهرة في شيت التسعير` : `«${row.label}» اتخفت من شيت التسعير`);
+      message.success(show ? `«${row.label}» ظاهرة في شيت التسعير` : `«${row.label}» مخفية من شيت التسعير`);
     } catch (err: any) {
       message.error(err?.response?.data?.detail?.message || 'تعذر الحفظ');
       load();
@@ -176,7 +176,7 @@ export default function Categories() {
   const remove = async (row: Category) => {
     try {
       await api.delete(`/api/v1/settings/lookups/${row.id}`);
-      message.success('اتشالت الفئة');
+      message.success('تم حذف الفئة');
       invalidateCategoryTree();
       load();
     } catch (err: any) {
@@ -227,7 +227,7 @@ export default function Categories() {
     { title: '', key: 'act', width: 110, align: 'center' as const,
       render: (_: unknown, row: Category) => (
         <Space size={4}>
-          <Popconfirm title="تشيل الفئة دي؟" okText="أيوه" cancelText="لأ"
+          <Popconfirm title="هل تريد حذف هذه الفئة؟" okText="نعم" cancelText="لا"
             onConfirm={() => remove(row)}>
             <Tooltip title="حذف">
               <Button type="text" danger size="small" icon={<DeleteOutlined />} />
@@ -254,12 +254,11 @@ export default function Categories() {
     <>
     <ListPage
       icon={<AppstoreOutlined />}
-      title="الفئات" muted="(فئات الاصناف)"
-      subtitle="الفئات الرئيسية والفرعية اللي الأصناف بتتصنّف عليها"
+      title="الفئات" muted="(فئات الأصناف)"
       actions={(<>
         <Button data-shortcut="F2" type="primary" icon={<PlusOutlined />} className="sl-create"
           onClick={openCreate}>فئة جديدة</Button>
-        <Button icon={<ReloadOutlined />} onClick={load}>اعادة تحميل</Button>
+        <Button icon={<ReloadOutlined />} onClick={load}>إعادة تحميل</Button>
         <Dropdown menu={{ items: moreMenu }}>
           <Button>المزيد <DownOutlined /></Button>
         </Dropdown>
@@ -327,8 +326,8 @@ export default function Categories() {
           <Form.Item
             name="parent_value" label="الفئة الرئيسية"
             extra={editingHasChildren
-              ? 'الفئة دي تحتها فئات فرعية، فهي رئيسية ومش ممكن تبقى فرعية لغيرها.'
-              : 'سيبها فاضية لو دي فئة رئيسية.'}
+              ? 'لهذه الفئة فئات فرعية، فلا يمكن جعلها فرعية لغيرها.'
+              : undefined}
           >
             <Select
               allowClear showSearch

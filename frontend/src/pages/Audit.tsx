@@ -234,7 +234,6 @@ export default function Audit() {
         icon={<HistoryOutlined />}
         title="سجل العمليات"
         muted="(Audit Logs)"
-        subtitle="كل عملية اتعملت في النظام: مين عملها وإمتى، والبيانات قبل وبعد"
         actions={(<>
           <Button icon={<ReloadOutlined />} onClick={fetchLogs}>
             تحديث السجل

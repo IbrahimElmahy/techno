@@ -236,7 +236,7 @@ export default function ListToolbar({
           ))}
           {facets.length > 1 && (
             <Button type="link" size="small" style={{ padding: 0 }} onClick={onReset}>
-              امسح الكل
+              مسح الكل
             </Button>
           )}
         </div>

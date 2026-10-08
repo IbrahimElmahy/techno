@@ -102,7 +102,7 @@ export default function ReceiptModal({
     }
     const ls = families[v.customer_id] || [];
     if (ls.length >= 2 && !target) {
-      message.error('حدد أنهي مديونية — أو اختر «على الإجمالي»');
+      message.error('حدد المديونية أو اختر «على الإجمالي»');
       return null;
     }
     return {
@@ -123,8 +123,7 @@ export default function ReceiptModal({
         />
       </div>
       {lines.length >= 2 && (
-        <Form.Item label="على أنهي مديونية؟" required
-          tooltip="الإجمالي بيتوزّع على الخطين بنسبة مديونية كل واحد">
+        <Form.Item label="على أي مديونية؟" required>
           <Segmented
             block
             value={target}
@@ -154,12 +153,12 @@ export default function ReceiptModal({
       <CostCenterField style={{ width: '100%' }} />
     </Form.Item>,
     <Form.Item key="s" name="statement1" label="بيان السند">
-      <Input placeholder="الكلام المكتوب على ورقة السند" />
+      <Input placeholder="النص المكتوب على ورقة السند" />
     </Form.Item>,
   ];
   if (isCustomerKind(kind)) {
     details.unshift(
-      <Form.Item key="rep" name="rep_user_id" label="المندوب" tooltip="فاضي = مندوب العميل">
+      <Form.Item key="rep" name="rep_user_id" label="المندوب">
         <Select
           allowClear showSearch placeholder="مندوب العميل (تلقائي)"
           options={repOptions(reps, repUserId)}
@@ -177,12 +176,12 @@ export default function ReceiptModal({
       buildPayload={buildPayload}
       party={party} counterpart={counterpart}
       treasuries={treasuries} treasuryOptional={treasuryOptional}
-      treasuryPlaceholder={treasuryOptional ? 'عهدة المندوب (من غير تغيير)' : undefined}
+      treasuryPlaceholder={treasuryOptional ? 'عهدة المندوب (دون تغيير)' : undefined}
       details={details}
       detailsLabel={`${isCustomerKind(kind) ? 'المندوب · ' : ''}طريقة الدفع · المرجع · مركز التكلفة · بيان السند`}
       journalNote={lines.length >= 2
         ? (target === '__total__' ? 'على الإجمالي — موزّع على الخطين'
-          : target ? `على مديونية «${target}»` : 'اختار أنهي مديونية')
+          : target ? `على مديونية «${target}»` : 'اختر المديونية')
         : undefined}
       methodOptions={methodOptions}
       onAfterNew={() => setTarget('')}

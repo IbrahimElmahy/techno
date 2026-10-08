@@ -39,13 +39,12 @@ export function UnitsPanel({ itemId, canEdit }: { itemId: number; canEdit: boole
   return (
     <>
       <Typography.Paragraph type="secondary">
-        الوحدة الأساسية: <strong>{base}</strong> (معامل = 1). أضف وحدات أكبر بمعاملها مقابل
-        الأساس (مثلاً: كرتونة = 12).
+        الوحدة الأساسية: <strong>{base}</strong> (معامل = 1)
       </Typography.Paragraph>
       {rows.map((r, i) => (
         <Row key={i} gutter={8} align="middle" style={{ marginBottom: 8, maxWidth: 620 }}>
           <Col span={12}>
-            <Input placeholder="اسم الوحدة (كرتونة)" disabled={!canEdit} value={r.name}
+            <Input placeholder="اسم الوحدة" disabled={!canEdit} value={r.name}
               onChange={(e) => setRows(rows.map((x, j) => (j === i ? { ...x, name: e.target.value } : x)))} />
           </Col>
           <Col span={9}>

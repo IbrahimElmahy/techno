@@ -87,7 +87,7 @@ def compute_run(
     db: Session, *, year: int, month: int, actor_user_id: int, branch_id: int | None = None,
 ) -> PayrollRun:
     if not 1 <= month <= 12:
-        raise PayrollError("الشهر لازم يكون من 1 لـ 12.")
+        raise PayrollError("يجب أن يكون الشهر من 1 إلى 12.")
     period_end = _period_end(year, month)
 
     posted = db.scalar(select(PayrollRun).where(
@@ -97,7 +97,7 @@ def compute_run(
         PayrollRun.status == PayrollRunStatus.posted))
     if posted is not None:
         raise PayrollError(
-            f"الشهر ده مرحّل بالفعل في المسير {posted.document_number} — اعكسه الأول."
+            f"هذا الشهر مُرحّل بالفعل في المسير {posted.document_number} — اعكسه أولاً."
         )
 
     from src.services.payroll_sheet_service import is_sheet
@@ -109,7 +109,7 @@ def compute_run(
             PayrollRun.status.in_((PayrollRunStatus.draft, PayrollRunStatus.closed)))).all():
         if other.status == PayrollRunStatus.closed or is_sheet(db, other.id):
             raise PayrollError(
-                f"الشهر ده متجهّز من «شيت المرتبات» ({other.document_number}) — عدّله من هناك.")
+                f"هذا الشهر مُجهّز من «شيت المرتبات» ({other.document_number}) — عدّله من هناك.")
 
     run = db.scalar(select(PayrollRun).where(
         PayrollRun.year == year, PayrollRun.month == month,
@@ -360,11 +360,11 @@ def post_run(db: Session, *, run_id: int, actor_user_id: int) -> dict:
         return {"skipped": True, "run_id": run.id, "total": "0.00",
                 "ledger_entry_id": run.accrual_entry_id}
     if run.status == PayrollRunStatus.reversed:
-        raise PayrollError("المسير ده اتعكس — اعمل حساب جديد للشهر.")
+        raise PayrollError("هذا المسير معكوس — أنشئ حساباً جديداً للشهر.")
 
     lines = db.scalars(select(PayrollLine).where(PayrollLine.run_id == run.id)).all()
     if not lines:
-        raise PayrollError("المسير مافيهوش سطور — اعمل الحساب الأول.")
+        raise PayrollError("لا توجد سطور في المسير — أجرِ الحساب أولاً.")
 
     acc = accounts(db)
     period_end = _period_end(run.year, run.month)
@@ -476,12 +476,12 @@ def reverse_run(db: Session, *, run_id: int, actor_user_id: int) -> dict:
     if run is None:
         raise PayrollError("المسير غير موجود.")
     if run.status != PayrollRunStatus.posted:
-        raise PayrollError("المسير ده مش مرحّل.")
+        raise PayrollError("هذا المسير غير مُرحّل.")
 
     paid = db.scalar(select(func.count()).select_from(PayrollLine).where(
         PayrollLine.run_id == run.id, PayrollLine.paid.is_(True))) or 0
     if paid:
-        raise PayrollError(f"فيه {paid} مرتب اتصرف من المسير ده — اعكس الصرف الأول.")
+        raise PayrollError(f"يوجد {paid} مرتب مصروف من هذا المسير — اعكس الصرف أولاً.")
 
     reversal = ledger_service.reverse_entry(
         db, original_id=run.accrual_entry_id, actor_user_id=actor_user_id)
@@ -525,7 +525,7 @@ def pay_run(
     if run is None:
         raise PayrollError("المسير غير موجود.")
     if run.status != PayrollRunStatus.posted:
-        raise PayrollError("لازم المسير يترحّل الأول.")
+        raise PayrollError("يجب ترحيل المسير أولاً.")
 
     lines = db.scalars(select(PayrollLine).where(
         PayrollLine.run_id == run.id, PayrollLine.paid.is_(False))).all()
@@ -534,7 +534,7 @@ def pay_run(
 
     total = to_money(sum((Decimal(str(x.net)) for x in lines), ZERO))
     if total <= ZERO:
-        raise PayrollError("مافيش صافي مستحق للصرف.")
+        raise PayrollError("لا يوجد صافٍ مستحق للصرف.")
 
     acc = accounts(db)
     treasury = account_resolver.treasury_account(db, branch_id=run.branch_id)
@@ -569,10 +569,10 @@ def remit(
     branch_id: int | None = None, notes: str | None = None,
 ) -> PayrollRemittance:
     if kind not in ("insurance", "tax"):
-        raise PayrollError("النوع لازم يكون insurance أو tax.")
+        raise PayrollError("يجب أن يكون النوع insurance أو tax.")
     value = to_money(Decimal(str(amount or 0)))
     if value <= ZERO:
-        raise PayrollError("المبلغ لازم يكون أكبر من صفر.")
+        raise PayrollError("يجب أن يكون المبلغ أكبر من صفر.")
 
     acc = accounts(db)
     liability = acc["insurance_payable"] if kind == "insurance" else acc["tax_payable"]

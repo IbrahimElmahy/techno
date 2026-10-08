@@ -159,7 +159,7 @@ export default function CouponCustody() {
         notes: v.notes || null,
       };
       const res = await api.post(`/api/v1/coupon-custody/${modal === 'out' ? 'issue' : 'return'}`, body);
-      message.success(`${modal === 'out' ? 'اتصرفت' : 'اترجعت'} ${res.data.count} ورقة — ${res.data.document_number}`);
+      message.success(`${modal === 'out' ? 'تم صرف' : 'تم استرجاع'} ${res.data.count} ورقة — ${res.data.document_number}`);
       setModal(null);
       loadDocs(1, pageSize);
       setPage(1);
@@ -173,7 +173,7 @@ export default function CouponCustody() {
   const remove = async (doc: CustodyDoc) => {
     try {
       await api.delete(`/api/v1/coupon-custody/${doc.id}`);
-      message.success(`اتمسح ${doc.document_number}`);
+      message.success(`تم حذف ${doc.document_number}`);
       loadDocs();
       loadBalance();
     } catch {
@@ -210,7 +210,7 @@ export default function CouponCustody() {
     { title: '', key: 'actions', width: 50,
       render: (_: any, r: CustodyDoc) => (
         <Popconfirm onConfirm={() => remove(r)}>
-          <Button type="text" danger icon={<DeleteOutlined />} title="امسح المستند" />
+          <Button type="text" danger icon={<DeleteOutlined />} title="حذف المستند" />
         </Popconfirm>
       ) },
   ];
@@ -219,14 +219,14 @@ export default function CouponCustody() {
     { title: 'المندوب', dataIndex: 'rep_name' },
     { title: 'الفئة', dataIndex: 'coupon_kind', width: 90,
       render: (v: string) => <Tag color="gold">{v}</Tag> },
-    { title: 'المتاح معاه', dataIndex: 'available', width: 100,
+    { title: 'المتاح لديه', dataIndex: 'available', width: 100,
       render: (v: number) => <b>{v}</b> },
     { title: 'السريالات المتاحة', dataIndex: 'ranges',
       render: (v: [string, string][]) => (v?.length
         ? <Typography.Text style={{ direction: 'ltr', display: 'inline-block' }}>{rangesText(v)}</Typography.Text>
-        : <span style={{ color: '#555b65' }}>خلصت</span>) },
-    { title: 'اتصرف لعملاء', dataIndex: 'given', width: 110 },
-    { title: 'رجع المكتب', dataIndex: 'returned', width: 100 },
+        : <span style={{ color: '#555b65' }}>نفدت</span>) },
+    { title: 'صُرف للعملاء', dataIndex: 'given', width: 110 },
+    { title: 'أُعيد للمكتب', dataIndex: 'returned', width: 100 },
     { title: 'إجمالي المصروف', dataIndex: 'issued', width: 110 },
   ];
 
@@ -250,7 +250,6 @@ export default function CouponCustody() {
     <ListPage<'docs' | 'balance'>
       icon={<InboxOutlined />}
       title="عهدة الكوبونات"
-      subtitle="دفاتر الكوبونات المرقّمة في إيد المناديب — الصرف والاسترجاع والمتاح مع كل مندوب"
       tabs={[
         { key: 'docs', label: 'المستندات', count: total },
         { key: 'balance', label: 'الرصيد' },
@@ -275,7 +274,7 @@ export default function CouponCustody() {
           className="sl-table"
           rowKey="id" size="small" loading={loading} dataSource={docs}
           columns={docColumns} scroll={{ x: 900 }}
-          locale={{ emptyText: 'مافيش مستندات عهدة' }}
+          locale={{ emptyText: 'لا توجد مستندات عهدة' }}
           pagination={{
             current: page, pageSize, total, showSizeChanger: true,
             pageSizeOptions: PAGE_SIZE_OPTIONS,
@@ -295,7 +294,7 @@ export default function CouponCustody() {
           loading={balanceLoading}
           dataSource={shownBalance}
           columns={balanceColumns} pagination={false} scroll={{ x: 800 }}
-          locale={{ emptyText: 'مافيش عهدة كوبونات على أي مندوب' }}
+          locale={{ emptyText: 'لا توجد عهدة كوبونات لدى أي مندوب' }}
         />
       )}
     </ListPage>
@@ -314,14 +313,14 @@ export default function CouponCustody() {
           <Row gutter={8}>
             <Col span={14}>
               <Form.Item name="rep_user_id" label="المندوب"
-                rules={[{ required: true, message: 'اختار المندوب' }]}>
+                rules={[{ required: true, message: 'اختر المندوب' }]}>
                 <Select showSearch placeholder="المندوب" options={repOptions}
                   filterOption={searchFilter} filterSort={searchRank} />
               </Form.Item>
             </Col>
             <Col span={10}>
               <Form.Item name="coupon_kind" label="فئة الكوبون"
-                rules={[{ required: true, message: 'اختار الفئة' }]}>
+                rules={[{ required: true, message: 'اختر الفئة' }]}>
                 <Select showSearch placeholder="عادي / فضي / ذهبي" options={kindOptions}
                   filterOption={searchFilter} filterSort={searchRank} />
               </Form.Item>
@@ -359,11 +358,11 @@ export default function CouponCustody() {
           </Row>
           {(watchFrom && count === null) && (
             <Alert type="warning" showIcon style={{ marginBottom: 8 }}
-              message="السريالات لازم تكون أرقام، والنهاية مش أصغر من البداية." />
+              message="يجب أن تكون الأرقام التسلسلية أرقاماً، وألا تكون النهاية أصغر من البداية." />
           )}
           {watchRep && modalRepBalance.length > 0 && (
             <Alert type="info" showIcon
-              message="معاه دلوقتي"
+              message="لديه الآن"
               description={modalRepBalance.map((b) => (
                 <div key={b.coupon_kind}>
                   <Tag color="gold">{b.coupon_kind}</Tag>

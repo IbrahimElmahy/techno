@@ -32,7 +32,6 @@ export default function GeneralLedger() {
     <ListPage
       icon={<AuditOutlined />}
       title="الأستاذ العام"
-      subtitle="دليل الحسابات والقيود وميزان المراجعة والدفاتر — كله في مكان واحد"
       tabs={TABS.map((t) => ({ key: t.key, label: <>{t.icon} {t.label}</> }))}
       activeTab={activeTab}
       onTabChange={selectTab}

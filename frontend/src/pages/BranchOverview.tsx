@@ -94,7 +94,7 @@ export default function BranchOverview() {
       render: (v: string, r: Row) => (
         <span style={{ color: '#0958d9' }}>{money(v)} <small>({num(r.purchases_count)})</small></span>
       ) },
-    { title: 'مردودات شرا', dataIndex: 'purchase_returns_count', key: 'purchase_returns_count',
+    { title: 'مردودات شراء', dataIndex: 'purchase_returns_count', key: 'purchase_returns_count',
       width: 110, align: 'center' as const, render: num },
     { title: 'تحويلات', dataIndex: 'transfers_count', key: 'transfers_count', width: 90,
       align: 'center' as const, render: num },
@@ -116,7 +116,7 @@ export default function BranchOverview() {
 
   return (
     <Card
-      title="نظرة على الفروع — كل فرع بأرقامه"
+      title="نظرة على الفروع"
       extra={
         <Space>
           {cols.control}

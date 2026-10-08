@@ -98,7 +98,7 @@ class _TransferRequestScreenState extends State<TransferRequestScreen> {
     final out = <DropdownMenuItem<String>>[];
     if (_myKind == 'custody' && _myId != null) {
       out.add(const DropdownMenuItem(
-          value: '__me__', child: Text('عربيتي (عهدتي)')));
+          value: '__me__', child: Text('سيارتي (عهدتي)')));
     }
     for (final w in _warehouses) {
       out.add(DropdownMenuItem(
@@ -115,8 +115,8 @@ class _TransferRequestScreenState extends State<TransferRequestScreen> {
   }
 
   String _myPlaceName() {
-    if (_myId == null) return 'اسحب البيانات الأول — مخزنك مش معروف';
-    if (_myKind == 'custody') return 'عربيتي (عهدتي)';
+    if (_myId == null) return 'يجب مزامنة البيانات أولاً — مخزنك غير معروف';
+    if (_myKind == 'custody') return 'سيارتي (عهدتي)';
     for (final w in _warehouses) {
       if (w['id'] == _myId) return '${w['name']}';
     }
@@ -139,7 +139,7 @@ class _TransferRequestScreenState extends State<TransferRequestScreen> {
 
   Future<void> _addItem() async {
     if (_source == null) {
-      _say('اختر المخزن اللي البضاعة جاية منه الأول');
+      _say('اختر أولاً المخزن الذي ستأتي منه البضاعة');
       return;
     }
     final source = await _sourceItems();
@@ -174,20 +174,20 @@ class _TransferRequestScreenState extends State<TransferRequestScreen> {
   Future<void> _save() async {
     final src = _source, dst = _dest;
     if (dst == null) {
-      _say('مخزنك مش معروف على الجهاز — اعمل مزامنة الأول');
+      _say('مخزنك غير معروف على الجهاز — قم بالمزامنة أولاً');
       return;
     }
     if (src == null) {
-      _say('اختر المخزن اللي البضاعة جاية منه');
+      _say('اختر المخزن الذي ستأتي منه البضاعة');
       return;
     }
     if (_resolve(src) == _resolve(dst)) {
-      _say('المصدر والوجهة لازم يكونوا مكانين مختلفين');
+      _say('يجب أن يكون المصدر والوجهة مكانين مختلفين');
       return;
     }
     final valid = _lines.where((l) => (l.quantity ?? 0) > 0).toList();
     if (valid.isEmpty) {
-      _say('أضف صنف واحد على الأقل بكمية أكبر من صفر');
+      _say('أضف صنفاً واحداً على الأقل بكمية أكبر من صفر');
       return;
     }
 
@@ -216,14 +216,14 @@ class _TransferRequestScreenState extends State<TransferRequestScreen> {
         );
         if (!mounted) return;
         if (!ok) {
-          _say('الطلب اترفع للنظام وهو بيتعدّل — التعديل اتلغى. '
-              'عدّله من النظام أو اعمل طلب جديد.');
+          _say('رُفع الطلب إلى النظام أثناء التعديل — أُلغي التعديل. '
+              'عدّله من النظام أو أنشئ طلباً جديداً.');
           Navigator.pop(context, true);
           return;
         }
         Navigator.pop(context, true);
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('اتعدّل — هيترفع مع المزامنة')),
+          const SnackBar(content: Text('تم التعديل — سيُرفع مع المزامنة')),
         );
         return;
       }
@@ -241,7 +241,7 @@ class _TransferRequestScreenState extends State<TransferRequestScreen> {
       Navigator.pop(context, true);
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('اتسجّل الطلب — هيترفع مع المزامنة ويستنى الاعتماد'),
+          content: Text('تم تسجيل الطلب — سيُرفع مع المزامنة وينتظر الاعتماد'),
         ),
       );
     } finally {
@@ -298,7 +298,7 @@ class _TransferRequestScreenState extends State<TransferRequestScreen> {
             onChanged: (v) => setState(() {
               if (v != _source && _lines.isNotEmpty) {
                 _lines.clear();
-                _say('الأصناف اتشالت — المصدر اتغيّر');
+                _say('تمت إزالة الأصناف — تغيّر المصدر');
               }
               _source = v;
             }),
@@ -333,7 +333,7 @@ class _TransferRequestScreenState extends State<TransferRequestScreen> {
           if (_lines.isEmpty)
             const Padding(
               padding: EdgeInsets.symmetric(vertical: 24),
-              child: Center(child: Text('مافيش أصناف على الطلب لسه')),
+              child: Center(child: Text('لم تُضف أصناف إلى الطلب بعد')),
             )
           else
             for (final (n, l) in _lines.indexed)
@@ -378,19 +378,13 @@ class _TransferRequestScreenState extends State<TransferRequestScreen> {
             maxLines: 2,
           ),
           const SizedBox(height: 20),
-
-          const Text(
-            'الطلب بيروح للمسؤول — البضاعة بتتحرك بعد ما يعتمده.',
-            style: TextStyle(color: Colors.black54),
-          ),
-          const SizedBox(height: 12),
           FilledButton(
             style: FilledButton.styleFrom(
               backgroundColor: AppColors.primary,
               minimumSize: const Size.fromHeight(48),
             ),
             onPressed: _saving ? null : _save,
-            child: Text(_saving ? 'بيتحفظ…' : 'إرسال الطلب'),
+            child: Text(_saving ? 'جارٍ الحفظ…' : 'إرسال الطلب'),
           ),
         ],
       ),

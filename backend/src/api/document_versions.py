@@ -63,7 +63,7 @@ def get_version(
 ) -> VersionOut:
     r = db.get(DocumentVersion, version_id)
     if r is None:
-        raise HTTPException(404, {"code": "not_found", "message": "النسخة مش موجودة"})
+        raise HTTPException(404, {"code": "not_found", "message": "النسخة غير موجودة"})
     prev = db.scalars(select(DocumentVersion).where(
         DocumentVersion.entity_type == r.entity_type, DocumentVersion.entity_id == r.entity_id,
         DocumentVersion.version_no < r.version_no).order_by(DocumentVersion.version_no.desc())).first()

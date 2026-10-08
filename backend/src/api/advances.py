@@ -234,9 +234,9 @@ def update_advance(
 @router.get("/employee-dues")
 def employee_dues(
     q: str | None = Query(None, description="بحث بالاسم أو الكود"),
-    branch_id: int | None = Query(None, description="فلتر فرع جوّه اللي مسموحلك تشوفه"),
-    only_open: bool = Query(True, description="اللي عليهم حاجة بس"),
-    include_orphans: bool = Query(True, description="حسابات ذمم مالهاش موظف"),
+    branch_id: int | None = Query(None, description="تصفية بفرع ضمن الفروع المسموح لك بعرضها"),
+    only_open: bool = Query(True, description="من عليهم مبالغ مستحقة فقط"),
+    include_orphans: bool = Query(True, description="حسابات ذمم غير مرتبطة بموظف"),
     current: CurrentUser = Depends(require_capability(CAP_HR_READ)),
     db: Session = Depends(get_db),
 ) -> dict:

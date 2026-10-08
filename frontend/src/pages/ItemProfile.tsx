@@ -256,7 +256,7 @@ export default function ItemProfile() {
                         <Descriptions.Item label="متوسط سعر الشراء الفعلي">
                           {money(data.avg_purchase_price)}
                         </Descriptions.Item>
-                        <Descriptions.Item label="بسريال">
+                        <Descriptions.Item label="له أرقام تسلسلية">
                           {it.is_serialized ? 'نعم' : 'لا'}
                         </Descriptions.Item>
                         <Descriptions.Item label="إجمالي المشترى">

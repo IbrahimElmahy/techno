@@ -154,9 +154,9 @@ def save_settings(db: Session, *, branch_id: int, data: dict, actor_user_id: int
         if key in data and data[key] is not None:
             setattr(row, key, data[key])
     if _d(row.factor_divisor) <= 0 or _d(row.absence_divisor) <= 0:
-        raise CommissionSetupError("القاسم لازم يكون أكبر من صفر.")
+        raise CommissionSetupError("يجب أن يكون القاسم أكبر من صفر.")
     if _d(row.point_value) < 0 or int(row.points_per_coupon or 0) < 0:
-        raise CommissionSetupError("قيمة النقطة ونقاط الكوبون مايبقوش بالسالب.")
+        raise CommissionSetupError("لا يمكن أن تكون قيمة النقطة ونقاط الكوبون سالبة.")
     row.updated_by = actor_user_id
     db.flush()
     audit_service.record(db, action="hr_commission.settings", actor_user_id=actor_user_id,
@@ -183,14 +183,14 @@ def _check_employee(db: Session, branch_id: int, employee_id: int) -> Employee:
     if e is None:
         raise CommissionSetupError("الموظف غير موجود.")
     if e.branch_id is not None and e.branch_id != branch_id:
-        raise CommissionSetupError(f"«{e.name}» موظف في فرع تاني.")
+        raise CommissionSetupError(f"«{e.name}» موظف في فرع آخر.")
     return e
 
 
 def _check_rate(value, label: str) -> Decimal:
     v = _d(value)
     if v < 0 or v > 100:
-        raise CommissionSetupError(f"{label} لازم تكون بين 0 و 100.")
+        raise CommissionSetupError(f"يجب أن تكون {label} بين 0 و 100.")
     return v
 
 
@@ -234,16 +234,16 @@ def save_team(db: Session, *, branch_id: int, data: dict, actor_user_id: int,
         HrCommissionTeam.branch_id == branch_id, HrCommissionTeam.name == name,
         HrCommissionTeam.id != (team_id or -1)))
     if dup:
-        raise CommissionSetupError(f"فيه سيارة اسمها «{name}» في الفرع ده.")
+        raise CommissionSetupError(f"توجد سيارة باسم «{name}» في هذا الفرع.")
     team.name = name
     team.rate_poly = _check_rate(data.get("rate_poly"), "نسبة البولي")
     team.rate_white = _check_rate(data.get("rate_white"), "نسبة الأبيض")
-    team.rate_other = _check_rate(data.get("rate_other"), "نسبة التحصيل من غير عيلة")
+    team.rate_other = _check_rate(data.get("rate_other"), "نسبة التحصيل بلا عائلة")
     team.split_equally = bool(data.get("split_equally", True))
     team.penalty_enabled = bool(data.get("penalty_enabled", False))
     team.credit_limit = _d(data.get("credit_limit"))
     if _d(team.credit_limit) < 0:
-        raise CommissionSetupError("الائتمان مايبقاش بالسالب.")
+        raise CommissionSetupError("لا يمكن أن يكون الائتمان سالباً.")
     team.active = bool(data.get("active", True))
     team.sort_order = int(data.get("sort_order") or 0)
     team.notes = (data.get("notes") or None)
@@ -257,7 +257,7 @@ def save_team(db: Session, *, branch_id: int, data: dict, actor_user_id: int,
             if u is None:
                 raise CommissionSetupError("حساب المندوب غير موجود.")
             if u.branch_id is not None and u.branch_id != branch_id:
-                raise CommissionSetupError(f"«{u.full_name or u.username}» حساب في فرع تاني.")
+                raise CommissionSetupError(f"«{u.full_name or u.username}» حساب في فرع آخر.")
             if uid not in wanted:
                 wanted.append(uid)
         db.execute(delete(HrCommissionTeamUser).where(HrCommissionTeamUser.team_id == team.id))
@@ -358,16 +358,16 @@ def save_supervisor(db: Session, *, branch_id: int, data: dict, actor_user_id: i
         db.add(sup)
         before = None
     if not data.get("employee_id"):
-        raise CommissionSetupError("اختار الموظف.")
+        raise CommissionSetupError("اختر الموظف.")
     sup.employee_id = _check_employee(db, branch_id, int(data["employee_id"])).id
     sup.label = (data.get("label") or "").strip() or None
     sup.rate_poly = _check_rate(data.get("rate_poly"), "نسبة البولي")
     sup.rate_white = _check_rate(data.get("rate_white"), "نسبة الأبيض")
-    sup.rate_other = _check_rate(data.get("rate_other"), "نسبة التحصيل من غير عيلة")
+    sup.rate_other = _check_rate(data.get("rate_other"), "نسبة التحصيل بلا عائلة")
     sup.penalty_rate = _check_rate(data.get("penalty_rate"), "نسبة الخصم")
     offset = int(data.get("period_offset") or 0)
     if offset not in (0, 1):
-        raise CommissionSetupError("الفترة: نفس الشهر أو الشهر اللي فات بس.")
+        raise CommissionSetupError("الفترة: الشهر نفسه أو الشهر السابق فقط.")
     sup.period_offset = offset
     sup.deduct_absence = bool(data.get("deduct_absence", True))
     sup.active = bool(data.get("active", True))
@@ -379,7 +379,7 @@ def save_supervisor(db: Session, *, branch_id: int, data: dict, actor_user_id: i
         for tid in data["teams"]:
             t = db.get(HrCommissionTeam, int(tid))
             if t is None or t.branch_id != branch_id:
-                raise CommissionSetupError("سيارة من بره الفرع.")
+                raise CommissionSetupError("السيارة من خارج الفرع.")
             if t.id not in wanted:
                 wanted.append(t.id)
         db.execute(delete(HrCommissionSupervisorTeam)
@@ -438,14 +438,14 @@ def save_technician(db: Session, *, branch_id: int, data: dict, actor_user_id: i
         db.add(tech)
         before = None
     if not data.get("employee_id"):
-        raise CommissionSetupError("اختار الموظف.")
+        raise CommissionSetupError("اختر الموظف.")
     eid = _check_employee(db, branch_id, int(data["employee_id"])).id
     dup = db.scalar(select(HrCommissionTechnician.id).where(
         HrCommissionTechnician.branch_id == branch_id,
         HrCommissionTechnician.employee_id == eid,
         HrCommissionTechnician.id != (technician_id or -1)))
     if dup:
-        raise CommissionSetupError("الموظف ده متسجّل فني قبل كده.")
+        raise CommissionSetupError("هذا الموظف مسجّل فنياً مسبقاً.")
     tech.employee_id = eid
     tech.factor = _d(data.get("factor"))
     tech.min_inspections = int(data.get("min_inspections") or 0)
@@ -453,10 +453,10 @@ def save_technician(db: Session, *, branch_id: int, data: dict, actor_user_id: i
     tech.plumber_rate = _d(data.get("plumber_rate"))
     if min(_d(tech.factor), _d(tech.inspection_rate), _d(tech.plumber_rate)) < 0 \
             or tech.min_inspections < 0:
-        raise CommissionSetupError("الأرقام مايبقوش بالسالب.")
+        raise CommissionSetupError("لا يمكن أن تكون الأرقام سالبة.")
     scope = data.get("scope") or "own"
     if scope not in ("own", "all"):
-        raise CommissionSetupError("النطاق: شغله هو أو كل الفنيين.")
+        raise CommissionSetupError("النطاق: عمله وحده أو كل الفنيين.")
     tech.scope = scope
     tech.active = bool(data.get("active", True))
     tech.sort_order = int(data.get("sort_order") or 0)
@@ -788,7 +788,7 @@ def compute(db: Session, *, branch_id: int, year: int, month: int,
             result[eid] = {"name": e.name if e else f"#{eid}"} | {k: ZERO for k in AMOUNT_KEYS}
             result[eid]["absent_days"] = att.get(eid, ZERO)
             if e is not None and not e.active:
-                warnings.append(f"«{e.name}» موظف موقوف ولسه في إعدادات العمولات.")
+                warnings.append(f"«{e.name}» موظف موقوف وما زال في إعدادات العمولات.")
         return result[eid]
 
     all_users = {u for us in team_users.values() for u in us}
@@ -829,9 +829,9 @@ def compute(db: Session, *, branch_id: int, year: int, month: int,
         n = len(ms)
         share = (gross / n if (n and t.split_equally) else gross)
         if not team_users.get(t.id) and c["total"] == 0:
-            warnings.append(f"«{t.name}»: مالهاش حسابات مناديب ولا تحصيل يدوي — تحصيلها صفر.")
+            warnings.append(f"«{t.name}»: ليس لها حسابات مناديب ولا تحصيل يدوي — تحصيلها صفر.")
         if not ms and gross > 0:
-            warnings.append(f"«{t.name}»: عمولتها {to_money(gross)} ومالهاش أفراد يقبضوها.")
+            warnings.append(f"«{t.name}»: عمولتها {to_money(gross)} وليس لها أفراد يقبضونها.")
         mrows = []
         for m in ms:
             days = att.get(m.employee_id, ZERO)
@@ -897,7 +897,7 @@ def compute(db: Session, *, branch_id: int, year: int, month: int,
         coll = team_collections(period)
         tids = [tid for tid in sup_links.get(s.id, []) if tid in team_by_id]
         if not tids:
-            warnings.append(f"المشرف «{emp_row(s.employee_id)['name']}» مالوش سيارات.")
+            warnings.append(f"المشرف «{emp_row(s.employee_id)['name']}» ليس له سيارات.")
         totals = _fam()
         trows = []
         for tid in tids:
@@ -918,7 +918,7 @@ def compute(db: Session, *, branch_id: int, year: int, month: int,
         pen = pen_base * _d(s.penalty_rate) / HUNDRED
         row["penalty_25"] += pen
         if _d(s.penalty_rate) > 0 and not any(team_by_id[t].penalty_enabled for t in tids):
-            warnings.append(f"المشرف «{row['name']}» عليه نسبة خصم وسياراته مافيهاش خصم ٢٥٪.")
+            warnings.append(f"المشرف «{row['name']}» عليه نسبة خصم وسياراته بلا خصم ٢٥٪.")
         sup_details.append({
             "id": s.id, "employee_id": s.employee_id, "name": row["name"], "label": s.label,
             "period": {"year": period[0], "month": period[1]},
@@ -936,7 +936,7 @@ def compute(db: Session, *, branch_id: int, year: int, month: int,
         e = emps.get(t.employee_id)
         tech_users[t.id] = e.user_id if e else None
         if e is not None and e.user_id is None:
-            warnings.append(f"الفني «{e.name}» مالوش حساب على التطبيق — كوبوناته ومعايناته صفر.")
+            warnings.append(f"الفني «{e.name}» ليس له حساب على التطبيق — كوبوناته ومعايناته صفر.")
     stats = technician_stats(db, [u for u in tech_users.values() if u], d1, d2)
     own = [t for t in techs if (t.scope or "own") == "own"]
     all_coupons = sum((stats.get(tech_users[t.id], {}).get("coupons", 0) for t in own), 0)
@@ -945,7 +945,7 @@ def compute(db: Session, *, branch_id: int, year: int, month: int,
     ppc = int(st.points_per_coupon or 0)
     div = _d(st.factor_divisor) or Decimal("600")
     if techs and pv == 0:
-        warnings.append("قيمة النقطة صفر — عمولة الكوبونات هتطلع صفر.")
+        warnings.append("قيمة النقطة صفر — ستكون عمولة الكوبونات صفراً.")
     tech_details = []
     for t in techs:
         st_ = stats.get(tech_users[t.id], {"coupons": 0, "inspections": 0, "plumbers": set()})
@@ -997,7 +997,7 @@ def compute(db: Session, *, branch_id: int, year: int, month: int,
             row[k] = to_money(row[k])
 
     if not teams and not sups and not techs:
-        warnings.append("مافيش إعدادات عمولات للفرع ده لسه.")
+        warnings.append("لا توجد إعدادات عمولات لهذا الفرع بعد.")
 
     result["details"] = {
         "branch_id": branch_id, "year": year, "month": month,

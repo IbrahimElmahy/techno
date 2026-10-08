@@ -41,9 +41,9 @@ const ALL = '__all__';
 const TIER_LABELS: Record<string, string> = {
   consumer: 'مستهلك',
   commercial: 'تجاري',
-  semi_commercial: 'نص تجاري',
+  semi_commercial: 'نصف تجاري',
   wholesale: 'جملة',
-  semi_wholesale: 'نص جملة',
+  semi_wholesale: 'نصف جملة',
 };
 
 const money = (v: any) =>
@@ -181,7 +181,6 @@ export default function StockBalance() {
     <ListPage<'all' | 'in_stock' | 'moved'>
       icon={<DatabaseOutlined />}
       title={TITLES[view] ?? TITLES.balance}
-      subtitle="اختار الفئة والصنف — الأسعار ورصيد كل مخزن قدامك مرة واحدة"
       tabs={scopeTabs} activeTab={stockScope} onTabChange={setStockScope}
       actions={locCols.control}
       filters={(<>
@@ -267,14 +266,14 @@ export default function StockBalance() {
               </div>
 
               <Row gutter={[8, 8]}>
-                <Col span={8}>{priceCell('اخر بيع', balance.prices.last_sale)}</Col>
+                <Col span={8}>{priceCell('آخر بيع', balance.prices.last_sale)}</Col>
                 <Col span={8}>{priceCell('المتوسط', balance.prices.average_cost)}</Col>
-                <Col span={8}>{priceCell('اخر شراء', balance.prices.last_purchase)}</Col>
+                <Col span={8}>{priceCell('آخر شراء', balance.prices.last_purchase)}</Col>
                 <Col span={8}>{priceCell('مستهلك', balance.prices.tiers.consumer)}</Col>
                 <Col span={8}>{priceCell('تجاري', balance.prices.tiers.commercial)}</Col>
-                <Col span={8}>{priceCell('نص تجاري', balance.prices.tiers.semi_commercial)}</Col>
+                <Col span={8}>{priceCell('نصف تجاري', balance.prices.tiers.semi_commercial)}</Col>
                 <Col span={8}>{priceCell('جملة', balance.prices.tiers.wholesale)}</Col>
-                <Col span={8}>{priceCell('نص جملة', balance.prices.tiers.semi_wholesale)}</Col>
+                <Col span={8}>{priceCell('نصف جملة', balance.prices.tiers.semi_wholesale)}</Col>
                 <Col span={8}>{priceCell('سعر القائمة', balance.prices.list_price)}</Col>
               </Row>
 

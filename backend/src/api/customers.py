@@ -301,7 +301,7 @@ class CustomerOptionOut(BaseModel):
 
 @router.get("/options", response_model=list[CustomerOptionOut])
 def customer_options(
-    q: str | None = Query(default=None, description="بحث بالاسم أو الكود أو التليفون"),
+    q: str | None = Query(default=None, description="بحث بالاسم أو الكود أو الهاتف"),
     customer_type: str | None = Query(default=None),
     limit: int = Query(default=500, ge=1, le=20000),
     current: CurrentUser = Depends(require_capability(CAP_CUSTOMER_READ)),
@@ -394,18 +394,18 @@ _DEBT_SORTS = {"total", "white", "poly", "other", "name", "code", "last_date",
 
 @router.get("/debts", response_model=CustomerDebtsOut)
 def customer_debts(
-    q: str | None = Query(None, description="الاسم أو الكود أو التليفون"),
+    q: str | None = Query(None, description="الاسم أو الكود أو الهاتف"),
     rep_id: int | None = Query(None),
     territory_id: int | None = Query(None),
     branch_id: int | None = Query(None),
     governorate_id: int | None = Query(None),
     customer_type: str | None = Query(None),
-    family: str | None = Query(None, description="أبيض / بولي / other — اللي رصيده مش صفر عليها"),
+    family: str | None = Query(None, description="أبيض / بولي / other — من رصيده عليها غير صفري"),
     status: str = Query("debtors", description="debtors | creditors | nonzero | all"),
     min_total: Decimal | None = Query(None),
     max_total: Decimal | None = Query(None),
     active: bool | None = Query(None),
-    as_of: date | None = Query(None, description="الرصيد لحد التاريخ ده"),
+    as_of: date | None = Query(None, description="الرصيد حتى هذا التاريخ"),
     sort: str = Query("total"),
     order: str = Query("desc"),
     limit: int = Query(100, ge=1, le=5000),
@@ -622,7 +622,7 @@ def create_customer(
 ) -> CustomerCreated:
     if body.customer_type == "owner":
         raise HTTPException(422, {"code": "validation",
-                                  "message": "الملّاك بيتسجّلوا من شاشة «الملّاك» في ما بعد البيع، مش من العملاء"})
+                                  "message": "يُسجَّل الملّاك من شاشة «الملّاك» في ما بعد البيع، وليس من العملاء"})
     try:
         result = customer_service.create_customer(
             db,
@@ -665,7 +665,7 @@ def update_customer(
     if body.customer_type is not None:
         if body.customer_type == "owner":
             raise HTTPException(422, {"code": "validation",
-                                      "message": "الملّاك في شاشة «الملّاك» — ماينفعش يتحوّل لكارت عميل"})
+                                      "message": "الملّاك في شاشة «الملّاك» — لا يمكن تحويل المالك إلى كارت عميل"})
         try:
             customer_service.assert_rep_matches_type(
                 db, customer_type=body.customer_type, rep_id=c.rep_id)
@@ -888,7 +888,7 @@ def customer_account(
                 CustomerAccount.customer_id == customer_id)) is not None:
             raise HTTPException(409, {
                 "code": "multiple_accounts",
-                "message": "العميل ده عنده حساب لكل عيلة — استخدم /accounts"})
+                "message": "لهذا العميل حساب لكل عائلة — استخدم /accounts"})
         return CustomerAccountOut(
             id=None, customer_id=customer_id, account_id=None, balance=Decimal("0"))
     return CustomerAccountOut(

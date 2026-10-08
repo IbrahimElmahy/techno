@@ -90,7 +90,6 @@ export default function BonusReport() {
     <ListPage<Group>
       icon={<GiftOutlined />}
       title="تقرير البونص"
-      subtitle="البضاعة المصروفة بونص بسعر البيع والتكلفة — مجمّعة لكل عميل أو مندوب أو شهر"
       tabs={[
         { key: 'customer', label: 'لكل عميل' },
         { key: 'rep', label: 'لكل مندوب' },

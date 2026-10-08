@@ -243,7 +243,7 @@ export function buildRegisterColumns({
       align: 'left' as const,
       sorter: (a: any, b: any) => a.net - b.net,
       render: (val: number, r: any) => (isRcv(r)
-        ? <Tooltip title="تحصيل من عميل — مش داخل في صافي المبيعات">
+        ? <Tooltip title="تحصيل من عميل — غير محتسب في صافي المبيعات">
             <strong style={{ color: '#389e0d' }}>
               <span style={{ fontSize: 14, fontWeight: 500 }}>تحصيل </span>{money(val)}
             </strong>
@@ -301,7 +301,7 @@ export function buildRegisterColumns({
           : r.payment_state === 'partial' ? 'orange' : 'red';
         const rest = Number(r.residual ?? 0);
         return (
-          <Tooltip title={rest > 0 ? `متبقّي ${money(rest)}` : 'مقفولة بالكامل'}>
+          <Tooltip title={rest > 0 ? `المتبقي ${money(rest)}` : 'مسددة بالكامل'}>
             <Tag
               color={color}
               style={{ cursor: 'pointer' }}
@@ -350,7 +350,7 @@ export function buildRegisterColumns({
                     onClick={() => Modal.confirm({
                       title: 'تأكيد حذف سند القبض',
                       icon: <ExclamationCircleOutlined style={{ color: '#ff4d4f' }} />,
-                      content: `هل أنت متأكد من حذف السند رقم (${record.document_number})؟ هيتمسح هو وقيده.`,
+                      content: `هل أنت متأكد من حذف السند رقم (${record.document_number})؟ سيتم حذفه مع قيده.`,
                       okText: 'نعم، احذف',
                       okType: 'danger',
                       cancelText: 'إلغاء',
@@ -367,7 +367,7 @@ export function buildRegisterColumns({
         if (record.__isDraft) {
           return (
             <Space size={2} onClick={(e) => e.stopPropagation()}>
-              <Tooltip title="مسح المسودّة">
+              <Tooltip title="حذف المسودة">
                 <Button
                   type="text"
                   danger

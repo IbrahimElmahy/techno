@@ -30,7 +30,7 @@ export interface WarehouseGateProps {
 export default function WarehouseGate({
   open,
   title = 'اختر المخزن',
-  subtitle = 'ده المخزن الافتراضي للسطور الجديدة. تقدر تغيّر مخزن أي سطر من عمود «المخزن».',
+  subtitle = '',
   value,
   onChange,
   warehouses,

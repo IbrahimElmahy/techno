@@ -287,7 +287,7 @@ export default function Transfers() {
     const existing = lines.find((l) => l.item_id === itemId);
     if (existing) {
       if (qtyTyped) setLineQty(existing.key, Number(existing.quantity || 0) + qtyTyped);
-      else message.info(`«${row.name}» موجود بالفعل — عدّل الكمية من السطر`);
+      else message.info(`«${row.name}» موجود بالفعل`);
       return { dup: itemId };
     }
     const key = `${itemId}-${lines.length}`;
@@ -295,8 +295,8 @@ export default function Transfers() {
     if (qtyTyped) {
       if (qtyTyped > available) {
         message.warning(available > 0
-          ? `«${row.name}»: المتاح ${qty(available)} — اتسجّلت ${qty(available)}.`
-          : `«${row.name}»: مفيش رصيد متاح في المصدر — ممنوع تحويل صنف مش موجود.`);
+          ? `«${row.name}»: المتاح ${qty(available)} — تم تسجيل ${qty(available)}.`
+          : `«${row.name}»: لا يوجد رصيد متاح في المصدر.`);
       }
       quantity = Math.min(available, qtyTyped) || null;
     }
@@ -327,8 +327,8 @@ export default function Transfers() {
     const line = lines.find((l) => l.key === key);
     if (line && value != null && value > line.available) {
       message.warning(line.available > 0
-        ? `«${line.name}»: المتاح ${qty(line.available)} — اتسجّلت ${qty(line.available)}.`
-        : `«${line.name}»: مفيش رصيد متاح في المصدر — ممنوع تحويل صنف مش موجود.`);
+        ? `«${line.name}»: المتاح ${qty(line.available)} — تم تسجيل ${qty(line.available)}.`
+        : `«${line.name}»: لا يوجد رصيد متاح في المصدر.`);
     }
     setLines((prev) => prev.map((l) => (l.key === key
       ? { ...l, quantity: value == null ? null : Math.max(0, Math.min(l.available, value)) } : l)));
@@ -418,7 +418,7 @@ export default function Transfers() {
     api.get(`/api/v1/transfers/${wanted}`)
       .then((r) => openTransfer(r.data))
       .catch(() => {
-        message.warning(`إذن التحويل رقم ${wanted} مش موجود`);
+        message.warning(`إذن التحويل رقم ${wanted} غير موجود`);
         if (docInUrl.current == null) clearDocParam();
       })
       .finally(() => {
@@ -534,26 +534,23 @@ export default function Transfers() {
     over: { line: TransferLine; free: number }[],
   ) => {
     Modal.confirm({
-      title: 'ممنوع تحويل صنف مش موجود',
+      title: 'لا يمكن تحويل كمية غير متاحة',
       icon: <ExclamationCircleOutlined style={{ color: '#faad14' }} />,
       width: 520,
       content: (
         <div>
-          <div style={{ marginBottom: 8 }}>الكميات دي أكتر من المتاح في المصدر — قلّلها:</div>
+          <div style={{ marginBottom: 8 }}>هذه الكميات أكبر من المتاح في المصدر:</div>
           {over.map((o) => (
             <div key={o.line.key} style={{ marginBottom: 4 }}>
               • <b>{o.line.name}</b> — مطلوب {qty(Number(o.line.quantity || 0))}، المتاح{' '}
               {qty(o.free)}
-              {o.free <= 0 ? ' (مفيش رصيد متاح)' : ''}
+              {o.free <= 0 ? ' (لا يوجد رصيد متاح)' : ''}
             </div>
           ))}
-          <div style={{ marginTop: 10, fontSize: 14, color: '#888' }}>
-            المتاح هنا بعد خصم اللي متعهّد عليه على أذونات تحويل لسه مستنية الاعتماد.
-          </div>
         </div>
       ),
-      okText: 'قلّل للمتاح',
-      cancelText: 'هعدّل بنفسي',
+      okText: 'تخفيض إلى المتاح',
+      cancelText: 'تعديل يدوي',
       onOk: () => {
         setLines((prev) => prev
           .filter((l) => !over.some((o) => o.line.key === l.key && o.free <= 0))
@@ -608,11 +605,11 @@ export default function Transfers() {
         refused = err?.response?.data?.detail?.message || err?.response?.data?.message || null;
       }
       if (refused) {
-        message.warning(`اتسجّل طلب التحويل بس مااتعتمدش: ${refused}`, 8);
+        message.warning(`تم تسجيل طلب التحويل ولم يُعتمد: ${refused}`, 8);
       } else {
         message.success(approved
-          ? `تم اعتماد إذن التحويل بـ${valid.length} صنف واتحرّك المخزون`
-          : `اتسجّل طلب التحويل بـ${valid.length} صنف — بانتظار المراجعة والاعتماد`);
+          ? `تم اعتماد إذن التحويل بـ${valid.length} صنف وتم تحريك المخزون`
+          : `تم تسجيل طلب التحويل بـ${valid.length} صنف — بانتظار المراجعة والاعتماد`);
       }
       discardDraft();
       closeCreate();
@@ -689,7 +686,7 @@ export default function Transfers() {
     try {
       await api.delete(`/api/v1/transfers/lines/${lineId}`);
       if (editing) await refreshEditing(editing.id);
-      message.success('اتشال الصنف من الإذن');
+      message.success('تم حذف الصنف من الإذن');
     } catch (err: any) {
       message.error(err?.response?.data?.detail?.message || 'تعذر حذف الصنف');
     }
@@ -738,10 +735,10 @@ export default function Transfers() {
     const ok = await new Promise<boolean>((resolve) => {
       Modal.confirm({
         title: `تعديل إذن «${t.document_number}»؟`,
-        content: 'الإذن ده معتمد وبضاعته اتحركت، فمايتعدّلش في مكانه. اللي هيحصل: '
-          + 'الإذن ده يتلغي والبضاعة ترجع لمصدرها، ويتفتحلك طلب جديد بنفس محتواه '
-          + 'تصحّحه وترسله للاعتماد. والإذن الملغي بيفضل في السجل.',
-        okText: 'ألغيه وافتح طلب جديد', okButtonProps: { danger: true },
+        content: 'هذا الإذن معتمد وقد تحركت بضاعته، فلا يمكن تعديله في مكانه. '
+          + 'سيُلغى الإذن وتعود البضاعة إلى مصدرها، ويُفتح طلب جديد بالمحتوى نفسه '
+          + 'لتصحيحه وإرساله للاعتماد. ويبقى الإذن الملغي في السجل.',
+        okText: 'إلغاء وفتح طلب جديد', okButtonProps: { danger: true },
         cancelText: 'تراجع',
         onOk: () => resolve(true),
         onCancel: () => resolve(false),
@@ -754,7 +751,7 @@ export default function Transfers() {
       message.error(err?.response?.data?.detail?.message || 'تعذر إلغاء الإذن');
       return;
     }
-    message.success('تم إلغاء الإذن — عدّله وأرسله للاعتماد من جديد');
+    message.success('تم إلغاء الإذن');
     await refillAsNew(t);
     fetchTransfers();
   };
@@ -809,13 +806,13 @@ export default function Transfers() {
     await openTransfer(t);
     setViewOnly(true);
     Modal.confirm({
-      title: 'الإذن ده مقفول',
+      title: 'هذا الإذن مغلق',
       content: t.status === 'rejected'
-        ? 'الإذن اتلغى أو اترفض، فمايتعدلش — المستند المقفول بيفضل زي ما هو في السجل. '
-          + 'تحب أعمل طلب جديد بنفس محتواه؟'
-        : 'الإذن ده مش تحت الاعتماد فمايتعدلش. تحب أعمل طلب جديد بنفس محتواه؟',
-      okText: 'اعمل طلب جديد بمحتواه',
-      cancelText: 'لأ، سيبه',
+        ? 'هذا الإذن ملغى أو مرفوض فلا يمكن تعديله. '
+          + 'هل تريد إنشاء طلب جديد بالمحتوى نفسه؟'
+        : 'هذا الإذن ليس قيد الاعتماد فلا يمكن تعديله. هل تريد إنشاء طلب جديد بالمحتوى نفسه؟',
+      okText: 'إنشاء طلب جديد بمحتواه',
+      cancelText: 'لا',
       onOk: () => refillAsNew(t),
     });
   };
@@ -927,7 +924,7 @@ export default function Transfers() {
       <WarehouseGate
         open={newStep === 'source' && !editing && !viewOnly}
         title="التحويل من أين؟"
-        subtitle="البضاعة بتطلع من هنا — والرصيد المتاح بيتحمّل على أساسه."
+        subtitle=""
         placeholder="اختر المخزن المصدر"
         value={source}
         onChange={(v) => { onSourceChange(v); }}
@@ -941,7 +938,7 @@ export default function Transfers() {
       <WarehouseGate
         open={newStep === 'dest' && !editing && !viewOnly}
         title="التحويل إلى أين؟"
-        subtitle="المصدر مستبعد من القايمة — تحويل لنفس المكان مش تحويل."
+        subtitle=""
         placeholder="اختر المخزن الوجهة"
         value={dest}
         onChange={(v) => {
@@ -971,17 +968,14 @@ export default function Transfers() {
     <TabModal
       open={rejectOpen}
       title="رفض إذن التحويل"
-      okText="ارفض" cancelText="تراجع"
+      okText="رفض" cancelText="تراجع"
       okButtonProps={{ danger: true }}
       onCancel={() => { setRejectOpen(false); setRejectReason(''); }}
       onOk={rejectTransfer}
       destroyOnHidden
     >
-      <Alert type="info" showIcon style={{ marginBottom: 12 }}
-        message="لن تتحرك أي بضاعة"
-        description="الرفض ليس كـ«اعتمد ثم اعكس» — فلم ينزل شيء من الرف حتى يعود إليه." />
       <Input.TextArea rows={3} value={rejectReason} autoFocus
-        placeholder="سبب الرفض — أول ما سيسأل عنه طالب التحويل"
+        placeholder="سبب الرفض"
         onChange={(e: any) => setRejectReason(e.target.value)} />
     </TabModal>
   );
@@ -1064,7 +1058,7 @@ export default function Transfers() {
     { title: 'رقم المستند', dataIndex: 'document_number', key: 'document_number',
       sorter: (a: TransferRecord, b: TransferRecord) => (a.document_number || '').localeCompare(b.document_number || ''),
       render: (doc: string, r: any) => (r.__isDraft
-        ? <DraftTag label="مسودّة — لسه ما اتبعتتش"
+        ? <DraftTag label="مسودة — لم تُرسل بعد"
                     onDelete={() => removeDraft(r.__draft.id)} />
         : <Tag color="blue">{doc}</Tag>) },
     { title: 'الصنف', dataIndex: 'item_id', key: 'item_id',
@@ -1096,7 +1090,7 @@ export default function Transfers() {
       title: 'الإجراءات', key: 'actions', width: 140, fixed: 'left' as const,
       render: (_: any, record: TransferRecord) => ((record as any).__isDraft ? (
         <Space size={2} onClick={(e) => e.stopPropagation()}>
-          <Tooltip title="مسح المسودّة">
+          <Tooltip title="حذف المسودة">
             <Button type="text" danger icon={<DeleteOutlined />}
               onClick={() => removeDraft((record as any).__draft.id)} />
           </Tooltip>
@@ -1166,7 +1160,7 @@ export default function Transfers() {
     ...(editing?.status === 'pending' && !viewOnly ? [{
       key: 'actions', title: '', width: 50,
       render: (_: any, r: any) => (r._header ? null : (
-        <Popconfirm title="تشيل الصنف ده من الإذن؟" okText="شيل" cancelText="لأ"
+        <Popconfirm title="حذف هذا الصنف من الإذن؟" okText="حذف" cancelText="لا"
           onConfirm={() => removeReviewLine(r.id)}>
           <Button type="text" size="small" danger icon={<DeleteOutlined />} />
         </Popconfirm>
@@ -1210,7 +1204,7 @@ export default function Transfers() {
       cellProps: (r) => ({ [QTY_DATA_ATTR]: r.item_id } as any),
       cell: (r) => (
         <div className="qty-stepper">
-          <button type="button" tabIndex={-1} className="qty-step" title="قلّل واحد"
+          <button type="button" tabIndex={-1} className="qty-step" title="إنقاص واحد"
             disabled={Number(r.quantity || 0) <= 1}
             onClick={() => {
               const q = Number(r.quantity || 0);
@@ -1227,7 +1221,7 @@ export default function Transfers() {
               setLineQty(r.key, kept);
               if (kept !== null) advance(r.key);
             }} />
-          <button type="button" tabIndex={-1} className="qty-step" title="زوّد واحد"
+          <button type="button" tabIndex={-1} className="qty-step" title="زيادة واحد"
             onClick={() => setLineQty(r.key, Number(r.quantity || 0) + 1)}>
             <PlusOutlined /></button>
         </div>
@@ -1239,7 +1233,7 @@ export default function Transfers() {
     { key: 'actions', title: 'إجراء', label: 'حذف السطر', width: 50, minWidth: 40, locked: true,
       cellStyle: { textAlign: 'center' },
       cell: (r) => (
-        <Button size="small" danger type="text" icon={<DeleteOutlined />} title="امسح السطر"
+        <Button size="small" danger type="text" icon={<DeleteOutlined />} title="حذف السطر"
           onClick={() => removeLine(r.key)} />
       ),
       footer: () => null },
@@ -1285,23 +1279,15 @@ export default function Transfers() {
             <Alert type="info" showIcon
               message={canApprove
                 ? 'هذا الإذن ما زال بانتظار الاعتماد'
-                : 'هذا الإذن ما زال بانتظار اعتماد مدير المخزن'}
-              description={canApprove
-                ? 'عدّل الكميات أو احذف صنفاً عند الحاجة، ثم اعتمد أو ارفض من الأعلى. ولم تتحرك أي بضاعة حتى الآن.'
-                : 'يمكنك عرضه ومراجعته — أما الاعتماد فمن صلاحية مدير المخزن.'} />
+                : 'هذا الإذن ما زال بانتظار اعتماد مدير المخزن'} />
           )}
           {editing && editing.status !== 'pending' && !viewOnly && (
             <Alert type="warning" showIcon
               message={{
-                approved: 'الإذن ده اتعتمد واتشحن',
-                rejected: 'الإذن ده اترفض',
-                reversed: 'الإذن ده اتلغى',
-              }[editing.status] ?? 'الإذن ده مقفول'}
-              description={{
-                approved: 'الاعتماد رحَّل حركات على مخزنين، فلا يُعدَّل الإذن في مكانه. و«تعديل الإذن» يلغيه ويفتح طلباً جديداً بمحتواه لتصحّحه وترسله للاعتماد من جديد — وتبقى الثلاثة في السجل.',
-                rejected: 'الإذن المرفوض لم تتحرك فيه أي بضاعة. وإن كنت ما زلت بحاجة إليه، أنشئ طلباً جديداً.',
-                reversed: 'الإذن ده كان معتمداً وبضاعته اتحركت، وبالإلغاء رجعت لمصدرها. بيفضل في السجل عشان الحركتين يفضلوا مفهومين.',
-              }[editing.status] ?? ''}
+                approved: 'تم اعتماد هذا الإذن وشحنه',
+                rejected: 'تم رفض هذا الإذن',
+                reversed: 'تم إلغاء هذا الإذن',
+              }[editing.status] ?? 'هذا الإذن مغلق'}
               action={editing.reject_reason
                 ? <span>{editing.status === 'reversed' ? 'سبب الإلغاء: ' : 'سبب الرفض: '}
                     <b>{editing.reject_reason}</b></span> : undefined} />
@@ -1407,7 +1393,7 @@ export default function Transfers() {
               <Table
                 className="sale-grid" size="small" rowKey="id" pagination={false}
                 dataSource={docLines(editing)}
-                locale={{ emptyText: 'لا توجد أصناف على الإذن — ارفضه بدلاً من اعتماده' }}
+                locale={{ emptyText: 'لا توجد أصناف على الإذن' }}
                 columns={docCols.columns}
               />
             </div>
@@ -1579,7 +1565,6 @@ export default function Transfers() {
     <ListPage
       icon={<SwapOutlined />}
       title="اذن تحويل مخازن" muted="(تحويلات ومناقلات المخزون)"
-      subtitle="نقل البضاعة بين المخازن، واعتماد الطلبات"
       tabs={statusTabs} activeTab={activeStatusTab}
       onTabChange={(k) => filter.setValue('status', k === 'all' ? undefined : k)}
       actions={(<>

@@ -135,7 +135,7 @@ class _ReviewScreenState extends State<ReviewScreen> {
             child: _loading
                 ? const Center(child: CircularProgressIndicator())
                 : _rows.isEmpty
-                    ? const Center(child: Text('مفيش زيارات في اليوم ده'))
+                    ? const Center(child: Text('لا توجد زيارات في هذه الفترة'))
                     : ListView.builder(
                         padding: const EdgeInsets.only(bottom: 16),
                         itemCount: _rows.length,
@@ -260,7 +260,7 @@ class _ReviewScreenState extends State<ReviewScreen> {
                       padding: EdgeInsetsDirectional.only(end: 4),
                       child: Chip(
                         avatar: Icon(Icons.lock_outline, size: 16, color: AppColors.success),
-                        label: Text('اتزامنت — مش بتتعدّل من التطبيق',
+                        label: Text('تمت المزامنة — لا يمكن تعديلها من التطبيق',
                             style: TextStyle(fontSize: 11)),
                         visualDensity: VisualDensity.compact,
                       ),
@@ -275,7 +275,7 @@ class _ReviewScreenState extends State<ReviewScreen> {
                           builder: (d) => AlertDialog(
                             title: const Text('حذف المعاينة؟'),
                             content: const Text(
-                                'المعاينة دي لسه ما اتزامنتش — لو اتحذفت مش هتترفع للسيرفر.'),
+                                'لم تتم مزامنة هذه المعاينة بعد — إذا حُذفت فلن تُرفع إلى الخادم.'),
                             actions: [
                               TextButton(
                                   onPressed: () => Navigator.pop(d, false),
@@ -297,7 +297,7 @@ class _ReviewScreenState extends State<ReviewScreen> {
               ),
               const SizedBox(height: 8),
               _kv('التاريخ', insp.inspectionDate),
-              _kv('تليفون المالك', insp.ownerPhone),
+              _kv('هاتف المالك', insp.ownerPhone),
               _kv('رقم البطاقة', insp.nationalId),
               _kv('العنوان', insp.ownerAddress),
               _kv('الدور', insp.floorNumber),
@@ -305,7 +305,7 @@ class _ReviewScreenState extends State<ReviewScreen> {
               _kv('نوع المعاينة', insp.inspectionType),
               _kv('نوع الزيارة', insp.visitType),
               _kv('اسم الفني', insp.technicianName),
-              _kv('تليفون الفني', insp.technicianPhone),
+              _kv('هاتف الفني', insp.technicianPhone),
               _kv('محل الشراء', insp.purchaseShop),
               _kv('تفاصيل الزيارة', insp.visitDetails),
               if (insp.lines.isNotEmpty) ...[

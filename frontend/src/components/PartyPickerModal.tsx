@@ -290,10 +290,6 @@ export default function PartyPickerModal({
                 <span>{title ?? `اختيار جهة التعامل / ${KIND_LABEL[activeKind]}`}</span>
                 {contextLabel && <span className="pp-context">{contextLabel}</span>}
               </div>
-              <div className="pp-head-sub">
-                اختر {KIND_LABEL[activeKind]} بالضغط المباشر أو الضغط على Enter للانتقال الفوري
-                إلى الفاتورة
-              </div>
             </div>
           </div>
           <div className="pp-head-actions">
@@ -314,10 +310,6 @@ export default function PartyPickerModal({
           <div className="pp-foot-count">
             عرض <b>{num(visible.length)}</b> من أصل <b>{num(kindTotal)}</b>
             {' '}{KIND_UNIT[activeKind]} مسجل
-          </div>
-          <div className="pp-foot-hint">
-            اضغط على أي {KIND_UNIT[activeKind]} أو اضغط <kbd className="pp-kbd">Enter</kbd>
-            {' '}للاختيار الفوري والانتقال المباشر للفاتورة
           </div>
           <button type="button" className="pp-btn pp-btn--ghost" onClick={onCancel}>
             إلغاء وإغلاق النافذة <kbd className="pp-kbd">Esc</kbd>
@@ -384,7 +376,7 @@ export default function PartyPickerModal({
         {loading ? (
           <div style={{ textAlign: 'center', padding: 32 }}><Spin /></div>
         ) : visible.length === 0 ? (
-          <Empty description="لا توجد نتائج — استخدم زر الإضافة بالأعلى"
+          <Empty description="لا توجد نتائج"
             style={{ margin: '32px 0' }} />
         ) : shown.map((party, i) => {
           const p = party as any;
@@ -446,7 +438,7 @@ export default function PartyPickerModal({
       open={open} onCancel={onCancel} width={780} centered destroyOnHidden
       title={(
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <span>{title ?? 'انشاء'}</span>
+          <span>{title ?? 'إنشاء'}</span>
           {!creating && (kinds ?? [kind]).filter((k) => k !== 'employee').map((k) => (
             <Button key={k} size="small" icon={<PlusOutlined />}
               onClick={() => { setActiveKind(k); setCreating(true); }}>
@@ -503,13 +495,6 @@ export default function PartyPickerModal({
                 </div>
               </div>
             )}
-
-            {date && (
-              <div style={{ color: '#6b6b6b', fontSize: 14 }}>
-                التاريخ ده بيتسجّل على الفاتورة وعلى قيدها المحاسبي — يعني الفاتورة والدفاتر
-                بيقعوا في نفس اليوم.
-              </div>
-            )}
           </div>
         </Col>
 
@@ -519,7 +504,7 @@ export default function PartyPickerModal({
             {loading ? (
               <div style={{ textAlign: 'center', padding: 32 }}><Spin /></div>
             ) : visible.length === 0 ? (
-              <Empty description="لا توجد نتائج — استخدم زر الإنشاء بالأعلى"
+              <Empty description="لا توجد نتائج"
                 style={{ margin: '32px 0' }} />
             ) : visible.map((party, i) => (
               <div key={party.id} onClick={() => onPick(party)}
@@ -547,7 +532,7 @@ export default function PartyPickerModal({
             ))}
           </div>
           <div style={{ marginTop: 6, color: '#6b6b6b', fontSize: 14 }}>
-            {visible.length} من {parties.length} · ↑↓ للتنقل · Enter للاختيار
+            {visible.length} من {parties.length}
           </div>
         </Col>
       </Row>
@@ -608,7 +593,7 @@ export default function PartyPickerModal({
             </Form.Item>
           </Col>
           <Col xs={24} md={8}>
-            <Form.Item name="email" label="البريد الالكترونى" style={{ marginBottom: 10 }}>
+            <Form.Item name="email" label="البريد الإلكتروني" style={{ marginBottom: 10 }}>
               <Input placeholder="اختياري" />
             </Form.Item>
           </Col>

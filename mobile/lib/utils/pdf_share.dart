@@ -43,7 +43,7 @@ Future<void> sendPdfToWhatsApp(
 
   if (!Platform.isAndroid) return fallback(null);
   if (number == null) {
-    return fallback('العميل مالوش رقم متسجل — اختار من المشاركة');
+    return fallback('لا يوجد رقم هاتف مسجل للعميل — اختر من قائمة المشاركة');
   }
   try {
     final dir = Directory('${(await getTemporaryDirectory()).path}/$subdir');
@@ -57,11 +57,11 @@ Future<void> sendPdfToWhatsApp(
     });
   } on PlatformException catch (e) {
     await fallback(e.code == 'NOT_INSTALLED'
-        ? 'واتساب مش متثبت على الجهاز — اختار من المشاركة'
-        : 'ماقدرناش نفتح واتساب — اختار من المشاركة');
+        ? 'تطبيق واتساب غير مثبت على الجهاز — اختر من قائمة المشاركة'
+        : 'تعذر فتح واتساب — اختر من قائمة المشاركة');
   } on MissingPluginException {
-    await fallback('ماقدرناش نفتح واتساب — اختار من المشاركة');
+    await fallback('تعذر فتح واتساب — اختر من قائمة المشاركة');
   } catch (_) {
-    await fallback('ماقدرناش نفتح واتساب — اختار من المشاركة');
+    await fallback('تعذر فتح واتساب — اختر من قائمة المشاركة');
   }
 }

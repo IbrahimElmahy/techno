@@ -157,7 +157,7 @@ export default function CommissionSettings() {
       const body = { ...teamForm, members };
       if (teamEditing) await api.put(`/api/v1/hr/commissions/teams/${teamEditing.id}`, body, { params });
       else await api.post('/api/v1/hr/commissions/teams', body, { params });
-      message.success('اتحفظت');
+      message.success('تم الحفظ');
       setTeamOpen(false);
       load();
     } catch (err: any) {
@@ -168,7 +168,7 @@ export default function CommissionSettings() {
   const removeRow = async (kind: 'teams' | 'supervisors' | 'technicians', id: number) => {
     try {
       await api.delete(`/api/v1/hr/commissions/${kind}/${id}`, { params });
-      message.success('اتمسحت');
+      message.success('تم الحذف');
       load();
     } catch (err: any) {
       message.error(errText(err, 'تعذر الحذف'));
@@ -180,13 +180,13 @@ export default function CommissionSettings() {
       render: (v, r) => (<>{v}{!r.active && <Tag style={{ marginInlineStart: 6 }}>موقوفة</Tag>}</>) },
     { title: 'بولي', dataIndex: 'rate_poly', key: 'rate_poly', width: 80, render: pct },
     { title: 'أبيض', dataIndex: 'rate_white', key: 'rate_white', width: 80, render: pct },
-    { title: 'من غير عيلة', dataIndex: 'rate_other', key: 'rate_other', width: 100, render: pct },
+    { title: 'بدون عائلة', dataIndex: 'rate_other', key: 'rate_other', width: 100, render: pct },
     { title: 'التقسيم', dataIndex: 'split_equally', key: 'split', width: 110,
       render: (v) => (v ? 'بالتساوي' : 'كاملة لكل فرد') },
     { title: 'الأفراد', key: 'members',
       render: (_, r) => (r.members.length ? r.members.map((m) => (
         <Tag key={m.employee_id} color={m.exempt_25 && r.penalty_enabled ? 'default' : 'blue'}>
-          {m.name}{m.exempt_25 && r.penalty_enabled ? ' — معفي من ٢٥٪' : ''}
+          {m.name}{m.exempt_25 && r.penalty_enabled ? ' — مُعفى من ٢٥٪' : ''}
         </Tag>
       )) : <span style={{ color: '#999' }}>—</span>) },
     { title: 'حسابات المناديب', key: 'users', width: 200,
@@ -221,12 +221,12 @@ export default function CommissionSettings() {
   };
 
   const saveSup = async () => {
-    if (!supForm.employee_id) { message.warning('اختار الموظف'); return; }
+    if (!supForm.employee_id) { message.warning('اختر الموظف'); return; }
     setSaving(true);
     try {
       if (supEditing) await api.put(`/api/v1/hr/commissions/supervisors/${supEditing.id}`, supForm, { params });
       else await api.post('/api/v1/hr/commissions/supervisors', supForm, { params });
-      message.success('اتحفظ');
+      message.success('تم الحفظ');
       setSupOpen(false);
       load();
     } catch (err: any) {
@@ -241,10 +241,10 @@ export default function CommissionSettings() {
     { title: 'السيارات', key: 'teams', render: (_, r) => r.teams.map((t) => <Tag key={t.team_id}>{t.name}</Tag>) },
     { title: 'بولي', dataIndex: 'rate_poly', key: 'rp', width: 80, render: pct },
     { title: 'أبيض', dataIndex: 'rate_white', key: 'rw', width: 80, render: pct },
-    { title: 'من غير عيلة', dataIndex: 'rate_other', key: 'ro', width: 100, render: pct },
+    { title: 'بدون عائلة', dataIndex: 'rate_other', key: 'ro', width: 100, render: pct },
     { title: 'تحصيل', dataIndex: 'period_offset', key: 'po', width: 110,
-      render: (v) => (v ? 'الشهر اللي فات' : 'نفس الشهر') },
-    { title: 'غياب', dataIndex: 'deduct_absence', key: 'da', width: 70, render: (v) => (v ? 'بيتخصم' : '—') },
+      render: (v) => (v ? 'الشهر السابق' : 'نفس الشهر') },
+    { title: 'غياب', dataIndex: 'deduct_absence', key: 'da', width: 70, render: (v) => (v ? 'يُخصم' : '—') },
     { title: 'خصم من زيادة ٢٥٪', dataIndex: 'penalty_rate', key: 'pr', width: 130,
       render: (v) => (Number(v) ? pct(v) : '—') },
     { title: '', key: 'ops', width: 90,
@@ -273,12 +273,12 @@ export default function CommissionSettings() {
   };
 
   const saveTech = async () => {
-    if (!techForm.employee_id) { message.warning('اختار الموظف'); return; }
+    if (!techForm.employee_id) { message.warning('اختر الموظف'); return; }
     setSaving(true);
     try {
       if (techEditing) await api.put(`/api/v1/hr/commissions/technicians/${techEditing.id}`, techForm, { params });
       else await api.post('/api/v1/hr/commissions/technicians', techForm, { params });
-      message.success('اتحفظ');
+      message.success('تم الحفظ');
       setTechOpen(false);
       load();
     } catch (err: any) {
@@ -290,13 +290,13 @@ export default function CommissionSettings() {
     { title: 'الفني', dataIndex: 'employee_name', key: 'name', width: 170,
       render: (v, r) => (<>{v}{!r.active && <Tag style={{ marginInlineStart: 6 }}>موقوف</Tag>}</>) },
     { title: 'حساب التطبيق', dataIndex: 'user_name', key: 'user', width: 160,
-      render: (v) => v || <Tag color="orange">مالوش حساب</Tag> },
+      render: (v) => v || <Tag color="orange">بلا حساب</Tag> },
     { title: 'المعامل', dataIndex: 'factor', key: 'factor', width: 80, render: (v) => num(v) },
     { title: 'الحد الأدنى للمعاينات', dataIndex: 'min_inspections', key: 'min', width: 140 },
     { title: 'سعر المعاينة', dataIndex: 'inspection_rate', key: 'ir', width: 100, render: money },
     { title: 'سعر السباك', dataIndex: 'plumber_rate', key: 'pr', width: 100, render: money },
     { title: 'النطاق', dataIndex: 'scope', key: 'scope', width: 120,
-      render: (v) => (v === 'all' ? 'كل الفنيين' : 'شغله هو') },
+      render: (v) => (v === 'all' ? 'كل الفنيين' : 'عمله فقط') },
     { title: '', key: 'ops', width: 90,
       render: (_, r) => (
         <Space size={4}>
@@ -315,7 +315,7 @@ export default function CommissionSettings() {
     setSaving(true);
     try {
       await api.put('/api/v1/hr/commissions/settings', settingsForm, { params });
-      message.success('اتحفظت');
+      message.success('تم الحفظ');
       load();
     } catch (err: any) {
       message.error(errText(err, 'تعذر الحفظ'));
@@ -355,7 +355,7 @@ export default function CommissionSettings() {
       await api.put(`/api/v1/hr/commissions/teams/${manualTeam.id}/manual`, {
         ...manualForm, year: period.year(), month: period.month() + 1,
       }, { params });
-      message.success('اتحفظ');
+      message.success('تم الحفظ');
       setManualTeam(null);
       runPreview();
     } catch (err: any) {
@@ -377,7 +377,7 @@ export default function CommissionSettings() {
     { title: 'إشراف', dataIndex: 'supervision', key: 's', render: moneyCell },
     { title: 'عمولة المعاينات', dataIndex: 'inspection_commission', key: 'i', render: moneyCell },
     { title: 'التعامل مع الفنيين', dataIndex: 'technician_bonus', key: 'b', render: moneyCell },
-    { title: 'عمولة الكوبونات (بتتصرف)', dataIndex: 'coupon_commission_payable', key: 'cp', render: moneyCell },
+    { title: 'عمولة الكوبونات (تُصرف)', dataIndex: 'coupon_commission_payable', key: 'cp', render: moneyCell },
     { title: 'أيام الغياب', dataIndex: 'absent_days', key: 'a', width: 90,
       render: (v) => (Number(v) ? num(v) : '—') },
     { title: 'إجمالي العمولات', dataIndex: 'earnings', key: 'e', render: (v) => <b>{money(v)}</b> },
@@ -390,7 +390,7 @@ export default function CommissionSettings() {
   const famTable = (rows: { label: React.ReactNode; vals: Fam & { total?: any }; fmt?: (v: any) => React.ReactNode }[]) => (
     <table className="comm-block">
       <thead>
-        <tr><th /> <th>بولي / تكنو</th><th>أبيض</th><th>من غير عيلة</th><th>الإجمالي</th></tr>
+        <tr><th /> <th>بولي / تكنو</th><th>أبيض</th><th>بدون عائلة</th><th>الإجمالي</th></tr>
       </thead>
       <tbody>
         {rows.map((r, i) => {
@@ -418,7 +418,7 @@ export default function CommissionSettings() {
 
   const renderPreview = () => {
     if (previewing && !preview) return <Spin style={{ margin: 40 }} />;
-    if (!details) return <Empty description="اختار الشهر" />;
+    if (!details) return <Empty description="اختر الشهر" />;
     const st = details.settings;
     return (
       <Spin spinning={previewing}>
@@ -460,10 +460,10 @@ export default function CommissionSettings() {
                 <div className="comm-note">
                   منه نقدي على الفواتير {money(t.collections.invoice_cash)} وسندات قبض{' '}
                   {money(t.collections.receipts)} ({num(t.collections.receipt_count)} سند)
-                  {Number(t.collections.via_customer) ? <> — منه {money(t.collections.via_customer)} اتحسب
-                    بمندوب العميل (مستندات من غير مندوب)</> : null}
+                  {Number(t.collections.via_customer) ? <> — منه {money(t.collections.via_customer)} حُسب
+                    بمندوب العميل (مستندات بلا مندوب)</> : null}
                   {(Number(t.collections.manual.poly) + Number(t.collections.manual.white)
-                    + Number(t.collections.manual.other)) ? <> — فيه تحصيل يدوي{' '}
+                    + Number(t.collections.manual.other)) ? <> — يشمل تحصيلاً يدوياً{' '}
                     {money(Number(t.collections.manual.poly) + Number(t.collections.manual.white)
                       + Number(t.collections.manual.other))}</> : null}
                 </div>
@@ -481,12 +481,12 @@ export default function CommissionSettings() {
                         <td><b>{money(m.net)}</b></td></tr>
                     ))}</tbody>
                   </table>
-                ) : <div className="comm-note">مالهاش أفراد.</div>}
+                ) : <div className="comm-note">لا يوجد أفراد.</div>}
 
                 {t.penalty?.enabled ? (<>
                   <div className="comm-sub">خصم {num(t.penalty.sales_pct)}٪</div>
                   {kv([
-                    ['اجمالي البيع', money(t.penalty.sales)],
+                    ['إجمالي البيع', money(t.penalty.sales)],
                     [`${num(t.penalty.sales_pct)}٪ من البيع`, money(t.penalty.sales_pct_amount)],
                     ['المديونية (آخر الشهر)', money(t.penalty.debt)],
                     ['الائتمان', money(t.penalty.credit_limit)],
@@ -496,7 +496,7 @@ export default function CommissionSettings() {
                     [`على كل 1000 زيادة ${num(t.penalty.per_thousand)}ج`, <b>{money(t.penalty.penalty)}</b>],
                     ['نصيب الفرد', money(t.penalty.share_per_member)],
                     ...t.penalty.members.map((m: any) => [
-                      m.name, m.exempt_25 ? <Tag>معفي</Tag> : money(m.amount),
+                      m.name, m.exempt_25 ? <Tag>مُعفى</Tag> : money(m.amount),
                     ] as [React.ReactNode, React.ReactNode]),
                   ])}
                 </>) : null}
@@ -513,13 +513,13 @@ export default function CommissionSettings() {
                 extra={<span style={{ color: '#888', fontSize: 12 }}>
                   تحصيل {s.period.month}/{s.period.year}{s.period_offset ? ' (الشهر السابق)' : ''}</span>}>
                 <table className="comm-block">
-                  <thead><tr><th>السيارة</th><th>بولي / تكنو</th><th>أبيض</th><th>من غير عيلة</th><th>الإجمالي</th></tr></thead>
+                  <thead><tr><th>السيارة</th><th>بولي / تكنو</th><th>أبيض</th><th>بدون عائلة</th><th>الإجمالي</th></tr></thead>
                   <tbody>
                     {s.teams.map((t: any) => (
                       <tr key={t.team_id}><th>{t.name}</th><td>{money(t.poly)}</td><td>{money(t.white)}</td>
                         <td>{money(t.other)}</td><td>{money(t.total)}</td></tr>
                     ))}
-                    <tr className="comm-total"><th>الاجمالى</th><td>{money(s.totals.poly)}</td>
+                    <tr className="comm-total"><th>الإجمالي</th><td>{money(s.totals.poly)}</td>
                       <td>{money(s.totals.white)}</td><td>{money(s.totals.other)}</td><td>{money(s.totals.total)}</td></tr>
                     <tr><th>النسبة</th><td>{pct(s.rates.poly)}</td><td>{pct(s.rates.white)}</td><td>{pct(s.rates.other)}</td><td /></tr>
                     <tr><th>العمولة</th><td>{money(s.parts.poly)}</td><td>{money(s.parts.white)}</td>
@@ -528,7 +528,7 @@ export default function CommissionSettings() {
                 </table>
                 {kv([
                   ...(s.deduct_absence ? [[`غياب (${num(s.absent_days)} يوم)`, money(s.absence_deduction)]] : []) as [React.ReactNode, React.ReactNode][],
-                  ['الصافى', <b>{money(s.net)}</b>],
+                  ['الصافي', <b>{money(s.net)}</b>],
                   ...(Number(s.penalty_rate) ? [
                     [`خصم ${pct(s.penalty_rate)} من زيادة سياراته (${money(s.penalty_base)})`,
                       <span style={{ color: '#cf1322' }}>{money(s.penalty)}</span>],
@@ -551,18 +551,18 @@ export default function CommissionSettings() {
               { title: 'قيمة النقاط', dataIndex: 'points_value', key: 'pv', render: money },
               { title: 'نسبة العمولة', dataIndex: 'factor', key: 'f', render: (v) => num(v) },
               { title: 'عمولة الكوبونات', dataIndex: 'coupon_commission', key: 'cc', render: money },
-              { title: 'الفنيين اللي اتعامل معاهم', dataIndex: 'plumbers', key: 'pl', render: (v) => num(v) },
+              { title: 'الفنيون الذين تعامل معهم', dataIndex: 'plumbers', key: 'pl', render: (v) => num(v) },
               { title: 'عدد المعاينات', dataIndex: 'inspections', key: 'i', render: (v) => num(v) },
-              { title: 'الحد الادنى للمعاينات', dataIndex: 'min_inspections', key: 'm', render: (v) => num(v) },
+              { title: 'الحد الأدنى للمعاينات', dataIndex: 'min_inspections', key: 'm', render: (v) => num(v) },
               { title: 'نصيب المعاينة من الخصم', dataIndex: 'per_inspection_share', key: 'ps', render: money },
               { title: 'خصم المعاينات', dataIndex: 'min_inspection_deduction', key: 'md',
                 render: (v) => (st.apply_min_inspections ? money(v)
-                  : <Tooltip title="محسوب للعرض — مش مطبّق (من أرقام الفرع)"><span style={{ color: '#999' }}>{money(v)}</span></Tooltip>) },
+                  : <Tooltip title="محسوب للعرض فقط — غير مطبّق (من أرقام الفرع)"><span style={{ color: '#999' }}>{money(v)}</span></Tooltip>) },
               { title: 'عمولة المعاينة', dataIndex: 'inspection_rate', key: 'ir', render: money },
               { title: 'عمولة المعاينات', dataIndex: 'inspection_commission', key: 'ic', render: money },
               { title: 'التعامل مع الفنيين', dataIndex: 'technician_bonus', key: 'tb', render: money },
-              { title: 'عمولة كوبونات بتتصرف', dataIndex: 'coupon_commission_payable', key: 'cp', render: money },
-              { title: 'اجمالي العمولات', dataIndex: 'total', key: 't', render: (v) => <b>{money(v)}</b> },
+              { title: 'عمولة كوبونات تُصرف', dataIndex: 'coupon_commission_payable', key: 'cp', render: money },
+              { title: 'إجمالي العمولات', dataIndex: 'total', key: 't', render: (v) => <b>{money(v)}</b> },
             ]} />
         </>) : null}
       </Spin>
@@ -597,7 +597,6 @@ export default function CommissionSettings() {
         icon={<CalculatorOutlined />}
         title="إعدادات العمولات"
         muted={setup ? `(${setup.branch.name})` : undefined}
-        subtitle="السيارات ونسبها، المشرفين، خصم ٢٥٪، الفنيين — والحساب الفعلي لأي شهر"
         tabs={tabs as any}
         activeTab={tab}
         onTabChange={setTab}
@@ -638,7 +637,7 @@ export default function CommissionSettings() {
             <div style={{ maxWidth: 900, padding: 8 }}>
               <h3 className="comm-h">الفنيين والكوبونات</h3>
               <Row gutter={[12, 12]}>
-                <Field label="قيمة النقطة (ج)" hint="بتتغيّر كل كام شهر — «52.35 قيمة نقطة شهر 2»">
+                <Field label="قيمة النقطة (ج)">
                   <InputNumber style={{ width: '100%' }} min={0} step={0.01} value={Number(settingsForm.point_value)}
                     onChange={(v) => setSettingsForm({ ...settingsForm, point_value: v ?? 0 })} />
                 </Field>
@@ -646,20 +645,18 @@ export default function CommissionSettings() {
                   <InputNumber style={{ width: '100%' }} min={0} value={settingsForm.points_per_coupon}
                     onChange={(v) => setSettingsForm({ ...settingsForm, points_per_coupon: Number(v ?? 0) })} />
                 </Field>
-                <Field label="قاسم معامل الفني" hint="المعامل 1.5 ÷ 600 = 0.25٪ من قيمة النقاط">
+                <Field label="قاسم معامل الفني">
                   <InputNumber style={{ width: '100%' }} min={1} value={Number(settingsForm.factor_divisor)}
                     onChange={(v) => setSettingsForm({ ...settingsForm, factor_divisor: v ?? 600 })} />
                 </Field>
                 <Field span={12} label={<Checkbox checked={settingsForm.pay_coupon_commission}
                   onChange={(e) => setSettingsForm({ ...settingsForm, pay_coupon_commission: e.target.checked })}>
-                  عمولة الكوبونات بتتصرف في المرتب</Checkbox>}
-                  hint="في ملف أكتوبر بتتحسب ومش داخلة المرتب (عمود «عمولة معاينات» = المعاينات بس)">
+                  تُصرف عمولة الكوبونات في المرتب</Checkbox>}>
                   <span />
                 </Field>
                 <Field span={12} label={<Checkbox checked={settingsForm.apply_min_inspections}
                   onChange={(e) => setSettingsForm({ ...settingsForm, apply_min_inspections: e.target.checked })}>
-                  تطبيق خصم الحد الأدنى للمعاينات</Checkbox>}
-                  hint="نصيب المعاينة = عمولة الكوبونات ÷ الحد الأدنى، والخصم = النصيب × المعاينات الناقصة">
+                  تطبيق خصم الحد الأدنى للمعاينات</Checkbox>}>
                   <span />
                 </Field>
               </Row>
@@ -679,8 +676,7 @@ export default function CommissionSettings() {
                 </Field>
                 <Field span={24} label={<Checkbox checked={settingsForm.attribute_by_customer_rep}
                   onChange={(e) => setSettingsForm({ ...settingsForm, attribute_by_customer_rep: e.target.checked })}>
-                  المستند اللي مالوش مندوب يتحسب لمندوب العميل</Checkbox>}
-                  hint="السندات والفواتير المنقولة من a5 من غير مندوب — من غيرها تحصيلها مش بيتحسب لحد">
+                  المستند الذي ليس له مندوب يُحسب لمندوب العميل</Checkbox>}>
                   <span />
                 </Field>
               </Row>
@@ -706,18 +702,17 @@ export default function CommissionSettings() {
             <InputNumber style={{ width: '100%' }} min={0} max={100} step={0.05} value={teamForm.rate_white}
               onChange={(v) => setTeamForm({ ...teamForm, rate_white: Number(v ?? 0) })} />
           </Field>
-          <Field label="من غير عيلة ٪" span={6} hint="تحصيل على حساب العميل القديم">
+          <Field label="بدون عائلة ٪" span={6}>
             <InputNumber style={{ width: '100%' }} min={0} max={100} step={0.05} value={teamForm.rate_other}
               onChange={(v) => setTeamForm({ ...teamForm, rate_other: Number(v ?? 0) })} />
           </Field>
-          <Field label="حسابات المناديب (مصدر التحصيل والبيع والمديونية)" span={24}
-            hint="فاضية = حسابات الأفراد نفسهم على التطبيق">
+          <Field label="حسابات المناديب (مصدر التحصيل والبيع والمديونية)" span={24}>
             <Select mode="multiple" style={{ width: '100%' }} allowClear showSearch
               filterOption={searchFilter} value={teamForm.users} options={repUserOptions}
               onChange={(v) => setTeamForm({ ...teamForm, users: v })} />
           </Field>
           <Col span={24}>
-            <div style={{ marginBottom: 4 }}>الأفراد اللي بيقتسموا العمولة</div>
+            <div style={{ marginBottom: 4 }}>الأفراد الذين يقتسمون العمولة</div>
             {teamForm.members.map((m, i) => (
               <Space key={i} style={{ display: 'flex', marginBottom: 6 }}>
                 <Select style={{ width: 300 }} showSearch filterOption={searchFilter} placeholder="الموظف"
@@ -744,8 +739,7 @@ export default function CommissionSettings() {
           <Field label="" span={8}>
             <Checkbox checked={teamForm.split_equally}
               onChange={(e) => setTeamForm({ ...teamForm, split_equally: e.target.checked })}>
-              تتقسم على الأفراد بالتساوي</Checkbox>
-            <div style={{ color: '#888', fontSize: 12 }}>من غيرها كل فرد ياخدها كاملة (زي الشرقية)</div>
+              تُقسَّم على الأفراد بالتساوي</Checkbox>
           </Field>
           <Field label="" span={8}>
             <Checkbox checked={teamForm.penalty_enabled}
@@ -783,10 +777,10 @@ export default function CommissionSettings() {
               onChange={(v) => setSupForm({ ...supForm, employee_id: v })} />
           </Field>
           <Field label="الوصف" span={12}>
-            <Input value={supForm.label} placeholder="اشراف على ب/د"
+            <Input value={supForm.label} placeholder="إشراف على ب/د"
               onChange={(e) => setSupForm({ ...supForm, label: e.target.value })} />
           </Field>
-          <Field label="السيارات اللي تحته" span={24}>
+          <Field label="السيارات التابعة له" span={24}>
             <Select mode="multiple" style={{ width: '100%' }} value={supForm.teams} options={teamOptions}
               onChange={(v) => setSupForm({ ...supForm, teams: v })} />
           </Field>
@@ -798,23 +792,22 @@ export default function CommissionSettings() {
             <InputNumber style={{ width: '100%' }} min={0} max={100} step={0.01} value={supForm.rate_white}
               onChange={(v) => setSupForm({ ...supForm, rate_white: Number(v ?? 0) })} />
           </Field>
-          <Field label="من غير عيلة ٪" span={6}>
+          <Field label="بدون عائلة ٪" span={6}>
             <InputNumber style={{ width: '100%' }} min={0} max={100} step={0.01} value={supForm.rate_other}
               onChange={(v) => setSupForm({ ...supForm, rate_other: Number(v ?? 0) })} />
           </Field>
           <Field label="التحصيل" span={6}>
             <Select style={{ width: '100%' }} value={supForm.period_offset}
               onChange={(v) => setSupForm({ ...supForm, period_offset: v })}
-              options={[{ value: 0, label: 'نفس الشهر' }, { value: 1, label: 'الشهر اللي فات' }]} />
+              options={[{ value: 0, label: 'نفس الشهر' }, { value: 1, label: 'الشهر السابق' }]} />
           </Field>
-          <Field label="خصم ٪ من زيادة الـ٢٥٪ بتاعة سياراته" span={10}
-            hint="حسن رمضان في الملف: 0.5٪ من زيادة ب + د">
+          <Field label="خصم ٪ من زيادة الـ٢٥٪ الخاصة بسياراته" span={10}>
             <InputNumber style={{ width: '100%' }} min={0} max={100} step={0.01} value={supForm.penalty_rate}
               onChange={(v) => setSupForm({ ...supForm, penalty_rate: Number(v ?? 0) })} />
           </Field>
           <Field label="" span={7}>
             <Checkbox checked={supForm.deduct_absence}
-              onChange={(e) => setSupForm({ ...supForm, deduct_absence: e.target.checked })}>بيتخصم منها الغياب</Checkbox>
+              onChange={(e) => setSupForm({ ...supForm, deduct_absence: e.target.checked })}>يُخصم منها الغياب</Checkbox>
           </Field>
           <Field label="" span={7}>
             <Checkbox checked={supForm.active}
@@ -835,8 +828,7 @@ export default function CommissionSettings() {
         onCancel={() => setTechOpen(false)} onOk={saveTech} okText="حفظ" cancelText="إلغاء"
         confirmLoading={saving}>
         <Row gutter={[10, 10]}>
-          <Field label="الموظف *" span={12}
-            hint="الكوبونات والمعاينات بتتقري من حسابه على التطبيق (المربوط بكارت الموظف)">
+          <Field label="الموظف *" span={12}>
             <Select style={{ width: '100%' }} showSearch filterOption={searchFilter}
               value={techForm.employee_id} options={empOptions}
               onChange={(v) => setTechForm({ ...techForm, employee_id: v })} />
@@ -844,10 +836,10 @@ export default function CommissionSettings() {
           <Field label="النطاق" span={12}>
             <Select style={{ width: '100%' }} value={techForm.scope}
               onChange={(v) => setTechForm({ ...techForm, scope: v })}
-              options={[{ value: 'own', label: 'شغله هو' },
+              options={[{ value: 'own', label: 'عمله فقط' },
                 { value: 'all', label: 'مسؤول الفنيين — على مجموع الفنيين' }]} />
           </Field>
-          <Field label="نسبة العمولة (المعامل)" span={6} hint="1.5 / 3.6 / 1.8">
+          <Field label="نسبة العمولة (المعامل)" span={6}>
             <InputNumber style={{ width: '100%' }} min={0} step={0.1} value={techForm.factor}
               onChange={(v) => setTechForm({ ...techForm, factor: Number(v ?? 0) })} />
           </Field>
@@ -859,7 +851,7 @@ export default function CommissionSettings() {
             <InputNumber style={{ width: '100%' }} min={0} value={techForm.inspection_rate}
               onChange={(v) => setTechForm({ ...techForm, inspection_rate: Number(v ?? 0) })} />
           </Field>
-          <Field label="السباك الواحد (ج)" span={6} hint="التعامل مع الفنيين">
+          <Field label="السباك الواحد (ج)" span={6}>
             <InputNumber style={{ width: '100%' }} min={0} value={techForm.plumber_rate}
               onChange={(v) => setTechForm({ ...techForm, plumber_rate: Number(v ?? 0) })} />
           </Field>
@@ -881,9 +873,6 @@ export default function CommissionSettings() {
         title={manualTeam ? `تحصيل يدوي — ${manualTeam.name} — ${period.format('YYYY/MM')}` : ''}
         onCancel={() => setManualTeam(null)} onOk={saveManual} okText="حفظ" cancelText="إلغاء"
         confirmLoading={saving}>
-        <div style={{ color: '#888', marginBottom: 8 }}>
-          تحصيل من بره النظام للشهر ده — بيتجمع على اللي النظام حسبه. أصفار من غير ملاحظة = شيله.
-        </div>
         <Row gutter={[10, 10]}>
           <Field label="بولي / تكنو">
             <InputNumber style={{ width: '100%' }} min={0} value={manualForm.poly}
@@ -893,7 +882,7 @@ export default function CommissionSettings() {
             <InputNumber style={{ width: '100%' }} min={0} value={manualForm.white}
               onChange={(v) => setManualForm({ ...manualForm, white: Number(v ?? 0) })} />
           </Field>
-          <Field label="من غير عيلة">
+          <Field label="بدون عائلة">
             <InputNumber style={{ width: '100%' }} min={0} value={manualForm.other}
               onChange={(v) => setManualForm({ ...manualForm, other: Number(v ?? 0) })} />
           </Field>

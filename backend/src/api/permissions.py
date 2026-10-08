@@ -29,7 +29,7 @@ CAPABILITY_LABELS: dict[str, str] = {
     "custody.write": "تعديل عهدة المندوبين",
     "customer.read": "عرض العملاء",
     "customer.write": "إضافة وتعديل العملاء",
-    "customer.reassign": "نقل عميل لمندوب تاني",
+    "customer.reassign": "نقل عميل إلى مندوب آخر",
     "supplier.read": "عرض الموردين",
     "supplier.write": "إضافة وتعديل الموردين",
     "catalog.read": "عرض الأصناف",
@@ -185,13 +185,13 @@ def set_role_permissions(
     if role == RoleName.system_admin:
         raise HTTPException(status.HTTP_409_CONFLICT, {
             "code": "role_locked",
-            "message": "مدير النظام بصلاحياته كاملة دايماً — وإلا مافيش حد يقدر يرجّعها.",
+            "message": "يحتفظ مدير النظام بصلاحياته كاملة دائماً — وإلا فلن يتمكن أحد من استعادتها.",
         })
     unknown = sorted(set(body.capabilities) - rbac.ALL_CAPABILITIES)
     if unknown:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, {
             "code": "unknown_capability",
-            "message": "صلاحيات مش معروفة: " + "، ".join(unknown),
+            "message": "صلاحيات غير معروفة: " + "، ".join(unknown),
         })
 
     before = sorted(rbac.effective_capabilities(role))
@@ -238,7 +238,7 @@ def _manager(current: CurrentUser = Depends(get_current_user)) -> CurrentUser:
         return current
     if not current.can(CAP_USER_WRITE) or current.branch_id is None:
         raise HTTPException(status.HTTP_403_FORBIDDEN,
-                            {"code": "forbidden", "message": "مش مسموح لك تدير صلاحيات المستخدمين."})
+                            {"code": "forbidden", "message": "غير مسموح لك بإدارة صلاحيات المستخدمين."})
     return current
 
 
@@ -252,15 +252,15 @@ def _manageable(db: Session, current: CurrentUser, user: User | None) -> User:
     from src.api.users import BELOW_BRANCH_MANAGER
 
     if user is None:
-        raise HTTPException(404, {"code": "not_found", "message": "المستخدم مش موجود."})
+        raise HTTPException(404, {"code": "not_found", "message": "المستخدم غير موجود."})
     role = _role_name(db, user)
     if current.is_admin:
         if role in (RoleName.system_admin, RoleName.owner) and not current.is_owner:
             raise HTTPException(403, {"code": "forbidden",
-                                      "message": "صلاحيات مدير النظام أو المالك مابتتعدّلش إلا من المالك."})
+                                      "message": "لا تُعدَّل صلاحيات مدير النظام أو المالك إلا من المالك."})
         return user
     if user.branch_id != current.branch_id or role not in BELOW_BRANCH_MANAGER:
-        raise HTTPException(404, {"code": "not_found", "message": "المستخدم مش موجود."})
+        raise HTTPException(404, {"code": "not_found", "message": "المستخدم غير موجود."})
     return user
 
 
@@ -381,17 +381,17 @@ def set_user_permissions(
     u = _manageable(db, current, db.get(User, user_id))
     if u.id == current.id and not current.is_owner:
         raise HTTPException(403, {"code": "forbidden",
-                                  "message": "مايصحّش تعدّل صلاحياتك بنفسك — اطلبها من اللي فوقك."})
+                                  "message": "لا يجوز أن تعدّل صلاحياتك بنفسك — اطلبها من مسؤولك المباشر."})
     grants, denies = set(body.grants), set(body.denies)
     both = grants & denies
     if both:
         raise HTTPException(422, {"code": "validation",
-                                  "message": "صلاحية مدّية ومشالة في نفس الوقت: " + "، ".join(sorted(both))})
+                                  "message": "صلاحية ممنوحة ومسحوبة في الوقت نفسه: " + "، ".join(sorted(both))})
     caps = {c for c in grants | denies if not c.startswith(PAGE_PREFIX)}
     unknown = sorted(caps - rbac.ALL_CAPABILITIES)
     if unknown:
         raise HTTPException(422, {"code": "unknown_capability",
-                                  "message": "صلاحيات مش معروفة: " + "، ".join(unknown)})
+                                  "message": "صلاحيات غير معروفة: " + "، ".join(unknown)})
     if not current.is_admin:
         allowed = _assignable(current)
         over = sorted(c for c in grants if not c.startswith(PAGE_PREFIX) and c not in allowed)
@@ -400,7 +400,7 @@ def set_user_permissions(
             names = ([CAPABILITY_LABELS.get(c, c) for c in over]
                      + [c[len(PAGE_PREFIX):] for c in hidden])
             raise HTTPException(403, {"code": "forbidden",
-                                      "message": "مش هتقدر تدّي حاجة مش عندك: " + "، ".join(names)})
+                                      "message": "لا يمكنك منح صلاحية لا تملكها: " + "، ".join(names)})
 
     before = db.execute(select(UserCapability.capability, UserCapability.granted)
                         .where(UserCapability.user_id == u.id)).all()

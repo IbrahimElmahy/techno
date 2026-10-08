@@ -184,7 +184,7 @@ export default function Departments() {
         if (form.code.trim()) body.code = form.code.trim();
         await api.post('/api/v1/hr/departments', body);
       }
-      message.success(editing ? 'اتعدّل' : 'اتضاف');
+      message.success(editing ? 'تم التعديل' : 'تمت الإضافة');
       setCreating(false);
       load();
     } catch {
@@ -195,7 +195,7 @@ export default function Departments() {
   const deactivate = async (row: Department) => {
     try {
       await api.delete(`/api/v1/hr/departments/${row.id}`);
-      message.success('اتقفل');
+      message.success('تم الإغلاق');
       load();
     } catch {}
   };
@@ -203,7 +203,7 @@ export default function Departments() {
   const reactivate = async (row: Department) => {
     try {
       await api.patch(`/api/v1/hr/departments/${row.id}`, { active: true });
-      message.success('اتفعّل');
+      message.success('تم التفعيل');
       load();
     } catch {}
   };
@@ -211,7 +211,7 @@ export default function Departments() {
   const remove = async (row: Department) => {
     try {
       await api.delete(`/api/v1/hr/departments/${row.id}`, { params: { hard: true } });
-      message.success('اتمسح القسم');
+      message.success('تم حذف القسم');
       if (viewing?.id === row.id) setViewing(null);
       load();
     } catch {}
@@ -242,7 +242,7 @@ export default function Departments() {
       const res = await api.post('/api/v1/hr/departments/import-from-employees');
       const { created, linked } = res.data;
       message.success(created || linked
-        ? `اتعمل ${created} قسم، واترّبط ${linked} موظف`
+        ? `أُنشئ ${created} قسم، ورُبط ${linked} موظف`
         : 'لا توجد أقسام جديدة — كل الموظفين مرتبطون');
       load();
     } catch {}
@@ -253,7 +253,7 @@ export default function Departments() {
       render: (v: string, r) => (
         <Space>
           <span style={{ fontWeight: 600 }}>{v}</span>
-          {!r.active && <Tag>مقفول</Tag>}
+          {!r.active && <Tag>مغلق</Tag>}
         </Space>
       ) },
     { title: 'الكود', dataIndex: 'code', key: 'code', width: 100 },
@@ -261,7 +261,7 @@ export default function Departments() {
       render: (v: string | null) => v || <span style={{ color: '#6b6b6b' }}>—</span> },
     { title: 'عدد الموظفين', dataIndex: 'employee_count', key: 'employee_count', width: 120,
       render: (v: number, r) => (
-        <Tooltip title="عرض موظفين القسم">
+        <Tooltip title="عرض موظفي القسم">
           <Tag color={v ? 'blue' : undefined} style={{ cursor: 'pointer' }}
             onClick={(e) => { e.stopPropagation(); openStaff(r); }}>
             {v || 0}
@@ -281,20 +281,20 @@ export default function Departments() {
             onClick={(e) => { e.stopPropagation(); openEdit(r); }} />
         </Tooltip>
         {r.active ? (
-          <Popconfirm title="تقفل القسم؟" onConfirm={() => deactivate(r)}>
-            <Tooltip title="إقفال — يختفي من القوايم ويفضل اسمه على اللي اتسجّل عليه">
+          <Popconfirm title="هل تريد إغلاق القسم؟" onConfirm={() => deactivate(r)}>
+            <Tooltip title="إغلاق">
               <Button type="text" icon={<StopOutlined />} />
             </Tooltip>
           </Popconfirm>
         ) : (
-          <Popconfirm title="تفعيل القسم؟" onConfirm={() => reactivate(r)}>
+          <Popconfirm title="هل تريد تفعيل القسم؟" onConfirm={() => reactivate(r)}>
             <Tooltip title="تفعيل">
               <Button type="text" icon={<UndoOutlined />} />
             </Tooltip>
           </Popconfirm>
         )}
-        <Popconfirm title="حذف القسم نهائياً؟" onConfirm={() => remove(r)}>
-          <Tooltip title="حذف نهائي (لو مافيش حاجة مربوطة بيه)">
+        <Popconfirm title="هل تريد حذف القسم نهائياً؟" onConfirm={() => remove(r)}>
+          <Tooltip title="حذف نهائي">
             <Button type="text" danger icon={<DeleteOutlined />} />
           </Tooltip>
         </Popconfirm>
@@ -319,7 +319,6 @@ export default function Departments() {
     <ListPage
       icon={<ApartmentOutlined />}
       title="الأقسام" muted="(الهيكل التنظيمي)"
-      subtitle="الأقسام وتبعيتها ومديريها ومراكز تكلفتها"
       actions={(<>
         <Button data-shortcut="F2" type="primary" className="sl-create" icon={<PlusOutlined />}
           onClick={openCreate}>قسم جديد</Button>
@@ -334,8 +333,8 @@ export default function Departments() {
           placeholder="بحث بالاسم أو الكود أو المدير" prefix={<SearchOutlined />}
           onChange={(e) => filter.setQuery(e.target.value)} />
         {multiSelect('active', 'الحالة', [
-          { value: 'yes', label: 'الشغّالة' },
-          { value: 'no', label: 'المقفولة' },
+          { value: 'yes', label: 'النشطة' },
+          { value: 'no', label: 'المغلقة' },
         ])}
         <Button className="sl-f-clear" icon={<ClearOutlined />} onClick={filter.reset}>مسح</Button>
       </>      )}
@@ -344,8 +343,6 @@ export default function Departments() {
         <Alert
           type="info" showIcon style={{ margin: '6px 0 8px' }}
           message="لا توجد أقسام بعد"
-          description={'«القسم» كان مكتوب بالإيد على كارت الموظف. اضغط «ترحيل الأقسام القديمة» '
-            + 'وسيُنشئ قسماً لكل اسم مكتوب ويربط الموظفين به — ويمكن الضغط عليه أكثر من مرة بأمان.'}
         />
       ) : null}
 
@@ -365,7 +362,7 @@ export default function Departments() {
       <div style={{ padding: '10px 4px', borderTop: '1px solid #f1f5f9' }}>
         <span className="sl-foot">
           <span>الأقسام المعروضة: <b>{filter.filtered.length}</b> من {rows.length}</span>
-          <span>موظفين فيها: <b>{filter.filtered.reduce((n, r) => n + (r.employee_count || 0), 0)}</b></span>
+          <span>الموظفون فيها: <b>{filter.filtered.reduce((n, r) => n + (r.employee_count || 0), 0)}</b></span>
         </span>
       </div>
     </ListPage>
@@ -451,9 +448,9 @@ export default function Departments() {
         title={viewing && (
           <Space size={8} wrap>
             <TeamOutlined />
-            <span>موظفين قسم «{viewing.name}»</span>
+            <span>موظفو قسم «{viewing.name}»</span>
             <Tag>{viewing.code}</Tag>
-            {!viewing.active && <Tag>مقفول</Tag>}
+            {!viewing.active && <Tag>مغلق</Tag>}
           </Space>
         )}
         extra={viewing?.active ? (
@@ -464,7 +461,7 @@ export default function Departments() {
       >
         <Space wrap style={{ marginBottom: 8 }}>
           <Input allowClear value={staffQuery} style={{ width: 260 }}
-            placeholder="بحث بالاسم أو الكود أو التليفون" prefix={<SearchOutlined />}
+            placeholder="بحث بالاسم أو الكود أو الهاتف" prefix={<SearchOutlined />}
             onChange={(e) => setStaffQuery(e.target.value)} />
           <Checkbox checked={showInactive} onChange={(e) => setShowInactive(e.target.checked)}>
             عرض الموقوفين
@@ -477,38 +474,38 @@ export default function Departments() {
           rowKey="id" size="small" loading={staffLoading}
           dataSource={shownStaff} pagination={false}
           scroll={{ x: 'max-content' }}
-          locale={{ emptyText: 'لا يوجد موظفون في القسم ده' }}
+          locale={{ emptyText: 'لا يوجد موظفون في هذا القسم' }}
           columns={[
             { title: 'الكود', dataIndex: 'code', width: 100, render: (v: string) => <Tag>{v}</Tag> },
             { title: 'الاسم', dataIndex: 'name', render: (v: string) => <b>{v}</b> },
             { title: 'الوظيفة', dataIndex: 'job_title', render: (v: string | null) => v || '' },
             { title: 'الفرع', dataIndex: 'branch_id', render: (v: number | null) => branchName(v) },
-            { title: 'التليفون', dataIndex: 'phone', render: (v: string | null) => v || '' },
+            { title: 'الهاتف', dataIndex: 'phone', render: (v: string | null) => v || '' },
             { title: 'الحالة', dataIndex: 'active',
               render: (v: boolean) => (v
                 ? <Tag color="green">على رأس العمل</Tag> : <Tag>موقوف</Tag>) },
             { title: '', key: 'actions', width: 130,
               render: (_: any, r: Employee) => (
                 <Space size={0}>
-                  <Tooltip title="تعديل (ومنه النقل لقسم تاني)">
+                  <Tooltip title="تعديل">
                     <Button type="text" icon={<EditOutlined />}
                       onClick={(e) => { e.stopPropagation(); editEmployee(r); }} />
                   </Tooltip>
                   {r.active ? (
-                    <Popconfirm title="إيقاف الموظف؟" onConfirm={() => stopEmployee(r)}>
-                      <Tooltip title="إيقاف — يفضل اسمه على كل اللي اتسجّل عليه">
+                    <Popconfirm title="هل تريد إيقاف الموظف؟" onConfirm={() => stopEmployee(r)}>
+                      <Tooltip title="إيقاف">
                         <Button type="text" icon={<StopOutlined />} />
                       </Tooltip>
                     </Popconfirm>
                   ) : (
-                    <Popconfirm title="رجوع للعمل؟" onConfirm={() => resumeEmployee(r)}>
-                      <Tooltip title="رجوع على رأس العمل">
+                    <Popconfirm title="هل تريد إعادة الموظف للعمل؟" onConfirm={() => resumeEmployee(r)}>
+                      <Tooltip title="إعادة للعمل">
                         <Button type="text" icon={<UndoOutlined />} />
                       </Tooltip>
                     </Popconfirm>
                   )}
-                  <Popconfirm title="حذف الموظف نهائياً؟" onConfirm={() => removeEmployee(r)}>
-                    <Tooltip title="حذف نهائي (لو مالوش أي حركة)">
+                  <Popconfirm title="هل تريد حذف الموظف نهائياً؟" onConfirm={() => removeEmployee(r)}>
+                    <Tooltip title="حذف نهائي">
                       <Button type="text" danger icon={<DeleteOutlined />} />
                     </Tooltip>
                   </Popconfirm>
@@ -519,7 +516,7 @@ export default function Departments() {
         <div style={{ padding: '10px 4px', borderTop: '1px solid #f1f5f9' }}>
           <Space size={24}>
             <span>على رأس العمل: <b>{staff.filter((e) => e.active).length}</b></span>
-            <span>موقوفين: <b>{staff.filter((e) => !e.active).length}</b></span>
+            <span>الموقوفون: <b>{staff.filter((e) => !e.active).length}</b></span>
           </Space>
         </div>
       </TabDrawer>

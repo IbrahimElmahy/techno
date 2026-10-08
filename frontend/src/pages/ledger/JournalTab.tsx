@@ -163,7 +163,7 @@ export default function JournalTab() {
     const valid = lines.filter((l) => l.account_id && l.amount > 0);
     if (!valid.length) { message.error('أدخل سطراً واحداً صالحاً على الأقل'); return; }
     if (!asDraft && !balanced) {
-      message.error('القيد غير متوازن: مجموع المدين لازم يساوي الدائن — أو احفظه مسودة');
+      message.error('القيد غير متوازن: يجب أن يساوي مجموع المدين مجموع الدائن — أو احفظه كمسودة');
       return;
     }
     const payload = {
@@ -207,13 +207,13 @@ export default function JournalTab() {
 
   const handleResetDraft = (r: JournalEntry) => {
     showReversalConfirm({
-      title: 'رجوع القيد لمسودة',
-      content: `القيد ${r.number ?? `#${r.id}`} هيخرج من الحسابات وكل التقارير، ورقمه هيفضل محجوز `
-        + 'ليه. تكمّل؟',
+      title: 'إعادة القيد إلى مسودة',
+      content: `القيد ${r.number ?? `#${r.id}`} سيخرج من الحسابات وجميع التقارير، وسيظل رقمه محجوزاً `
+        + 'له. هل تريد المتابعة؟',
       onOk: async () => {
         try {
           await api.post(`/api/v1/journal-entries/${r.id}/reset-to-draft`);
-          message.success('رجع مسودة'); load();
+          message.success('تمت إعادة القيد إلى مسودة'); load();
         } catch (err) { console.error(err); }
       },
     });
@@ -222,11 +222,11 @@ export default function JournalTab() {
   const handleCancel = (r: JournalEntry) => {
     showReversalConfirm({
       title: 'إلغاء القيد',
-      content: `القيد ${r.number ?? `#${r.id}`} هيخرج من الحسابات وهيفضل موجود برقمه للمراجعة. تكمّل؟`,
+      content: `القيد ${r.number ?? `#${r.id}`} سيخرج من الحسابات وسيظل موجوداً برقمه للمراجعة. هل تريد المتابعة؟`,
       onOk: async () => {
         try {
           await api.post(`/api/v1/journal-entries/${r.id}/cancel`);
-          message.success('اتلغى القيد'); load();
+          message.success('تم إلغاء القيد'); load();
         } catch (err) { console.error(err); }
       },
     });
@@ -351,7 +351,7 @@ export default function JournalTab() {
           : r.payment_state === 'partial' ? 'orange' : 'red';
         const rest = Number(r.residual ?? 0);
         return (
-          <Tooltip title={rest > 0 ? `متبقّي ${egp(rest)}` : 'مقفولة بالكامل'}>
+          <Tooltip title={rest > 0 ? `المتبقي ${egp(rest)}` : 'مسوّاة بالكامل'}>
             <Tag color={color}>{r.payment_state_label ?? r.payment_state}</Tag>
           </Tooltip>
         );
@@ -406,13 +406,11 @@ export default function JournalTab() {
           <Space size={0}>
             {history}
             {r.partner_id && r.partner_kind && (
-              <Tooltip title="افتح المفتوح على الطرف ده وقفله">
-                <Button type="link" icon={<LinkOutlined />}
-                  onClick={() => navigate(
-                    `/reconciliation?kind=${r.partner_kind}&partner=${r.partner_id}`)}>
-                  تسوية
-                </Button>
-              </Tooltip>
+              <Button type="link" icon={<LinkOutlined />}
+                onClick={() => navigate(
+                  `/reconciliation?kind=${r.partner_kind}&partner=${r.partner_id}`)}>
+                تسوية
+              </Button>
             )}
             {!r.reverses_entry_id && !reversed && (
               <Button type="link" danger icon={<RollbackOutlined />}
@@ -420,7 +418,7 @@ export default function JournalTab() {
             )}
             {reversed && <Tag color="red">معكوس</Tag>}
             <Button type="link" icon={<RollbackOutlined />}
-              onClick={() => handleResetDraft(r)}>رجوع لمسودة</Button>
+              onClick={() => handleResetDraft(r)}>إعادة إلى مسودة</Button>
           </Space>
         );
       } },
@@ -480,7 +478,7 @@ export default function JournalTab() {
         <Space>
           {!full && (
             <Button icon={<ReloadOutlined />} loading={loading} onClick={() => load(true)}>
-              حمّل كل القيود (المعروض آخر {PAGE})
+              تحميل كل القيود (المعروض آخر {PAGE})
             </Button>
           )}
           <Button icon={<DownloadOutlined />} onClick={exportJournal}>تصدير CSV</Button>
@@ -576,8 +574,7 @@ export default function JournalTab() {
               </Form.Item>
             </Col>
             <Col span={8}>
-              <Form.Item name="journal_id" label="الدفتر"
-                tooltip="لو سِبته فاضي بيروح «قيود متنوعة»">
+              <Form.Item name="journal_id" label="الدفتر">
                 <Select allowClear placeholder="قيود متنوعة"
                   options={journals.map((j) => ({ value: j.id, label: j.name || j.code }))} />
               </Form.Item>
@@ -588,8 +585,7 @@ export default function JournalTab() {
           </Form.Item>
           <Row gutter={16}>
             <Col span={8}>
-              <Form.Item name="partner_kind" label="القيد على"
-                tooltip="سيبه فاضي لو القيد مش على طرف — إقفال أو تسوية بين حسابات">
+              <Form.Item name="partner_kind" label="القيد على">
                 <Select allowClear placeholder="بدون طرف" options={PARTNER_KINDS}
                   onChange={() => { form.setFieldValue('partner_id', undefined);
                     setPartnerName(''); }} />
@@ -617,8 +613,7 @@ export default function JournalTab() {
               </Form.Item>
             </Col>
             <Col span={8}>
-              <Form.Item name="due_date" label="تاريخ الاستحقاق"
-                tooltip="سيبه فاضي ياخد تاريخ القيد — يعني مستحق فوراً">
+              <Form.Item name="due_date" label="تاريخ الاستحقاق">
                 <DatePicker style={{ width: '100%' }} format="YYYY-MM-DD" />
               </Form.Item>
             </Col>
@@ -707,9 +702,6 @@ export default function JournalTab() {
               </Form.Item>
             </Col>
           </Row>
-          <p style={{ color: '#888', fontSize: 15 }}>
-            يُسجَّل كل مبلغ على الجانب الطبيعي للحساب، ويُقابَل الإجمالي بحساب «أرصدة افتتاحية».
-          </p>
           {openLines.map((l) => (
             <Row gutter={8} key={l.key} align="middle" style={{ marginBottom: 8 }}>
               <Col span={14}>

@@ -12,14 +12,14 @@ export function quantityProblem(c: QuantityCheck): string | null {
   const v = Number(c.value ?? 0);
   if (c.value === null || c.value === undefined || Number.isNaN(v)) return null;
   if (v < 0) {
-    return 'الكمية مايصحّش تكون بالسالب. لو الغرض ترجّع بضاعة، ده مرتجع بمستنده.';
+    return 'لا يجوز أن تكون الكمية سالبة. لإرجاع بضاعة استخدم مستند المرتجع.';
   }
   if (v === 0) {
-    return 'الكمية صفر ليست كمية. احذف السطر إن لم تكن بحاجة إليه.';
+    return 'لا يجوز أن تكون الكمية صفراً. احذف السطر إن لم تكن بحاجة إليه.';
   }
   if (c.available !== undefined && c.available !== null && v > Number(c.available)) {
     const u = c.unit ? ` ${c.unit}` : '';
-    return `المتاح ${qty(Number(c.available))}${u} بس، وإنت طالب ${qty(v)}${u}.`;
+    return `المتاح ${qty(Number(c.available))}${u} فقط، والمطلوب ${qty(v)}${u}.`;
   }
   return null;
 }
@@ -30,7 +30,7 @@ export function guardQuantity(c: QuantityCheck, previous: number | null): number
   Modal.warning({
     title: c.itemName ? `الكمية: ${c.itemName}` : 'الكمية غير صحيحة',
     content: problem,
-    okText: 'تمام',
+    okText: 'حسناً',
     centered: true,
   });
   return previous;

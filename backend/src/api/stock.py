@@ -477,7 +477,7 @@ def _seen_permit(db: Session, permit_id: int, current: CurrentUser):
             branch_scope.scope(select(Warehouse), Warehouse, current)).all()}
         wid = getattr(permit, "warehouse_id", None)
         if wid is not None and wid not in mine:
-            raise HTTPException(404, {"code": "not_found", "message": "الإذن مش موجود."})
+            raise HTTPException(404, {"code": "not_found", "message": "الإذن غير موجود."})
     return permit
 
 

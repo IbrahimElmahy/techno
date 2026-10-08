@@ -56,9 +56,9 @@ export default function UpdateBanner() {
       color: '#fff', padding: '6px 16px', display: 'flex', alignItems: 'center',
       justifyContent: 'center', gap: 12, fontWeight: 700, boxShadow: '0 2px 6px rgba(0,0,0,.15)',
     }}>
-      فيه تحديث جديد للنظام — احفظ اللي بتكتبه ودوس «حدّث»
+      يتوفر تحديث جديد للنظام — احفظ ما تكتبه ثم اضغط «تحديث»
       <Button size="small" icon={<ReloadOutlined />} onClick={() => window.location.reload()}>
-        حدّث
+        تحديث
       </Button>
     </div>
   );

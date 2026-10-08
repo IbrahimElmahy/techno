@@ -155,7 +155,7 @@ def deactivate_warehouse(
 ) -> None:
     wh = db.get(Warehouse, warehouse_id)
     if wh is None:
-        raise HTTPException(404, {"code": "not_found", "message": "المخزن مش موجود"})
+        raise HTTPException(404, {"code": "not_found", "message": "المخزن غير موجود"})
     if hard:
         from sqlalchemy import inspect as sa_inspect
         from sqlalchemy import text
@@ -182,9 +182,9 @@ def deactivate_warehouse(
         if blockers:
             raise HTTPException(409, {
                 "code": "has_history",
-                "message": ("المخزن ده عليه حركة فمينفعش يتمسح — "
+                "message": ("على هذا المخزن حركات فلا يمكن حذفه — "
                             + " · ".join(blockers[:6])
-                            + ". استعمل «إخفاء» بدل المسح."),
+                            + ". استخدم «إخفاء» بدلاً من الحذف."),
             })
         audit_service.record(db, action="warehouse.delete", actor_user_id=current.id,
                              entity_type="warehouse", entity_id=wh.id,
@@ -300,7 +300,7 @@ def update_custody(
             Custody.family == c.family if c.family else Custody.family.is_(None)))
         if clash is not None:
             raise HTTPException(409, {"code": "custody_exists",
-                                      "message": "المندوب ده عنده صندوق لنفس الخط."})
+                                      "message": "لهذا المندوب صندوق للخط نفسه."})
         c.rep_id = body.rep_id
     if body.name is not None and body.name.strip() and c.account_id:
         acc = db.get(Account, c.account_id)
@@ -333,7 +333,7 @@ def deactivate_custody(
         blockers = []
         n = account_in_use(db, c.account_id) if c.account_id else 0
         if n:
-            blockers.append(f"حركات فلوس: {n}")
+            blockers.append(f"حركات نقدية: {n}")
         n_mov = db.execute(_text(
             "SELECT COUNT(*) FROM stock_movement WHERE location_kind = 'custody' "
             "AND location_id = :i"), {"i": c.id}).scalar() or 0
@@ -341,8 +341,8 @@ def deactivate_custody(
             blockers.append(f"حركات بضاعة: {n_mov}")
         if blockers:
             raise HTTPException(409, {"code": "has_history", "message": (
-                "الصندوق ده عليه حركة فمينفعش يتمسح — " + " · ".join(blockers)
-                + ". استعمل «إخفاء» بدل المسح.")})
+                "على هذا الصندوق حركات فلا يمكن حذفه — " + " · ".join(blockers)
+                + ". استخدم «إخفاء» بدلاً من الحذف.")})
         acc = db.get(Account, c.account_id) if c.account_id else None
         try:
             with db.begin_nested():
@@ -355,7 +355,7 @@ def deactivate_custody(
                     db.flush()
         except IntegrityError:
             raise HTTPException(409, {"code": "has_history", "message":
-                                      "الصندوق مربوط بسندات أو مستندات — استعمل «إخفاء»."})
+                                      "الصندوق مرتبط بسندات أو مستندات — استخدم «إخفاء»."})
         audit_service.record(db, action="custody.delete", actor_user_id=current.id,
                              entity_type="custody", entity_id=custody_id)
         db.commit()

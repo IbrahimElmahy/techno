@@ -107,7 +107,7 @@ export default function ShortcutsDock({ userId, tree, openTab }: Props) {
   const row = (text: string) => (
     <span style={{ display: 'flex', justifyContent: 'space-between', gap: 16, minWidth: 180 }}>
       <span>{text}</span>
-      <CloseOutlined data-del="1" title="شيل الاختصار"
+      <CloseOutlined data-del="1" title="إزالة الاختصار"
         style={{ fontSize: 14, color: '#555b65', padding: 2 }} />
     </span>
   );
@@ -121,7 +121,7 @@ export default function ShortcutsDock({ userId, tree, openTab }: Props) {
       key: `link:${l.id}`, icon: <LinkOutlined style={{ color: '#1677ff' }} />, label: row(l.label),
     })),
     ...(mine.length || links.length
-      ? [] : [{ key: 'empty', label: 'مافيش اختصارات لسه — ضيف من تحت', disabled: true }]),
+      ? [] : [{ key: 'empty', label: 'لا توجد اختصارات بعد', disabled: true }]),
     { type: 'divider' as const },
     {
       key: 'grp:add', icon: <PlusOutlined />, label: 'إضافة اختصار',
@@ -136,7 +136,7 @@ export default function ShortcutsDock({ userId, tree, openTab }: Props) {
           })),
         })),
         { type: 'divider' as const },
-        { key: 'add-link', icon: <LinkOutlined />, label: 'اختصار باسم ولينك…' },
+        { key: 'add-link', icon: <LinkOutlined />, label: 'اختصار باسم ورابط…' },
       ],
     },
   ];
@@ -151,7 +151,7 @@ export default function ShortcutsDock({ userId, tree, openTab }: Props) {
       openTab(a.route);
       if (!a.button) return;
       pressWhenReady(a.button, () => message.info(
-        `«${a.label}» — اقفل المستند المفتوح في الشاشة دي الأول، وبعدين دوس الاختصار تاني`));
+        `«${a.label}» — أغلق المستند المفتوح في هذه الشاشة أولاً، ثم اضغط الاختصار مرة أخرى`));
       return;
     }
     if (key.startsWith('link:')) {
@@ -174,11 +174,11 @@ export default function ShortcutsDock({ userId, tree, openTab }: Props) {
   const addLink = () => {
     const label = linkName.trim();
     let url = linkUrl.trim();
-    if (!label || !url) { message.warning('اكتب اسم الاختصار واللينك'); return; }
+    if (!label || !url) { message.warning('اكتب اسم الاختصار والرابط'); return; }
     if (!/^https?:\/\//i.test(url) && !url.startsWith('/')) url = `https://${url}`;
     saveLinks([...links, { id: String(Date.now()), label, url }]);
     setLinkOpen(false);
-    message.success(`اتضاف «${label}»`);
+    message.success(`تمت إضافة «${label}»`);
   };
 
   return (
@@ -194,17 +194,14 @@ export default function ShortcutsDock({ userId, tree, openTab }: Props) {
           <PlusOutlined />
         </button>
       </Dropdown>
-      <Modal open={linkOpen} title="اختصار باسم ولينك" okText="إضافة" cancelText="إلغاء"
+      <Modal open={linkOpen} title="اختصار باسم ورابط" okText="إضافة" cancelText="إلغاء"
         onOk={addLink} onCancel={() => setLinkOpen(false)} destroyOnHidden>
         <div style={{ marginBottom: 6 }}>اسم الاختصار</div>
         <Input autoFocus value={linkName} onChange={(e) => setLinkName(e.target.value)}
           placeholder="مثلاً: كشف حساب محمد" onPressEnter={addLink} />
-        <div style={{ margin: '12px 0 6px' }}>اللينك</div>
+        <div style={{ margin: '12px 0 6px' }}>الرابط</div>
         <Input value={linkUrl} onChange={(e) => setLinkUrl(e.target.value)} dir="ltr"
           placeholder="https://app.technothermeg.com/..." onPressEnter={addLink} />
-        <div style={{ marginTop: 8, fontSize: 14, color: '#6b6b6b' }}>
-          لينك صفحة في النظام بيتفتح في تبويب جوّه النظام، وأي لينك تاني بيتفتح في المتصفح.
-        </div>
       </Modal>
     </div>
   );

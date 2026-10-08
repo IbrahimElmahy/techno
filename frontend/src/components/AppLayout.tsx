@@ -99,7 +99,7 @@ export default function AppLayout() {
         if (res && res.updateAvailable) {
           Modal.confirm({
             title: 'يتوفر تحديث جديد للبرنامج',
-            content: `يتوفر إصدار أحدث للتحميل (${res.version}). هل ترغب في ترقية نسخة التطبيق الآن؟`,
+            content: `يتوفر إصدار أحدث للتحميل (${res.version}). هل ترغب في ترقية البرنامج الآن؟`,
             okText: 'تنزيل الترقية',
             cancelText: 'تذكيري لاحقاً',
             onOk: () => {
@@ -246,7 +246,7 @@ export default function AppLayout() {
           <Result
             status="error"
             title="انقطع الاتصال بالشبكة"
-            subTitle="عذراً، فقدنا الاتصال بالخادم. يرجى التحقق من اتصال الإنترنت الخاص بك ومحاولة إعادة الاتصال لمتابعة العمل بأمان."
+            subTitle="تعذر الاتصال بالخادم. يرجى التحقق من اتصال الإنترنت."
             extra={
               <Button type="primary" onClick={() => setIsOnline(navigator.onLine)}>
                 إعادة المحاولة

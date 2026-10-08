@@ -181,7 +181,6 @@ export default function Profitability() {
     <ListPage<Dimension>
       icon={<FundOutlined />}
       title={view?.label ?? 'تحليل الربحية'}
-      subtitle="الإيرادات والمصروفات والربح موزّعة على مراكز التكلفة أو الفروع"
       tabs={[
         { key: 'cost_center', label: 'بمركز التكلفة' },
         { key: 'branch', label: 'بالفرع' },
@@ -209,14 +208,13 @@ export default function Profitability() {
       {!!totals?.unassigned_lines && includeUnassigned && (
         <Alert
           type="info" showIcon style={{ margin: '6px 0 8px' }}
-          message={`${totals.unassigned_lines} سطر مترحّل من غير ${dimension === 'cost_center' ? 'مركز تكلفة' : 'فرع'}`}
-          description="تظهر في سطر «غير موزّع» ليساوي مجموع الأسطر قائمة الدخل. وإخفاؤها يجعل الأجزاء لا تُكوِّن الكل دون ما يوضّح السبب."
+          message={`${totals.unassigned_lines} سطر مُرحَّل بدون ${dimension === 'cost_center' ? 'مركز تكلفة' : 'فرع'}`}
         />
       )}
       {!includeUnassigned && (
         <Alert
           type="warning" showIcon style={{ margin: '6px 0 8px' }}
-          message="غير الموزّع مخفي — الإجماليات دي أقل من قائمة الدخل"
+          message="غير الموزّع مخفي — هذه الإجماليات أقل من قائمة الدخل"
         />
       )}
 

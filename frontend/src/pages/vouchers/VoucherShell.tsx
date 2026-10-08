@@ -33,18 +33,18 @@ export interface BalanceTarget {
 }
 
 const META: Record<ShellKind, {
-  title: string; sub: string; color: 'green' | 'volcano' | 'orange'; icon: React.ReactNode;
+  title: string; color: 'green' | 'volcano' | 'orange'; icon: React.ReactNode;
 }> = {
   receipt: {
-    title: 'سند قبض', sub: 'استلام نقدية — الفلوس داخلة الخزينة',
+    title: 'سند قبض',
     color: 'green', icon: <ArrowDownOutlined />,
   },
   payment: {
-    title: 'سند صرف', sub: 'صرف نقدية — الفلوس خارجة من الخزينة',
+    title: 'سند صرف',
     color: 'volcano', icon: <ArrowUpOutlined />,
   },
   expense: {
-    title: 'سند مصروف', sub: 'مصروف من الخزينة على حساب مصروف',
+    title: 'سند مصروف',
     color: 'orange', icon: <ShoppingOutlined />,
   },
 };
@@ -62,7 +62,7 @@ const parseThousands = (v?: string): any => toLatinDigits(String(v ?? '')).repla
 
 function describe(netDebit: number, party: boolean): string {
   const abs = money(Math.abs(netDebit));
-  if (Math.abs(netDebit) < 0.005) return party ? 'صفر — مفيش رصيد' : money(0);
+  if (Math.abs(netDebit) < 0.005) return party ? 'صفر — لا يوجد رصيد' : money(0);
   if (party) return netDebit > 0 ? `عليه ${abs}` : `له ${abs}`;
   return netDebit > 0 ? `${abs} مدين` : `${abs} دائن`;
 }
@@ -134,7 +134,7 @@ function JournalPreview({
       {' — '}
       {l.name
         ? <b>{l.name}</b>
-        : <span style={{ color: token.colorTextQuaternary }}>لسه مااتختارش</span>}
+        : <span style={{ color: token.colorTextQuaternary }}>لم يُحدَّد بعد</span>}
     </>
   );
   const rows = [
@@ -150,9 +150,9 @@ function JournalPreview({
         display: 'flex', justifyContent: 'space-between', alignItems: 'center',
         gap: 8, padding: '8px 10px', flexWrap: 'wrap',
       }}>
-        <b>القيد اللي هيتسجّل</b>
+        <b>القيد الذي سيُسجَّل</b>
         <span style={{ color: token.colorTextTertiary, fontSize: 13 }}>
-          {note ?? 'معاينة — بيتسجّل مع الحفظ'}
+          {note}
         </span>
       </div>
       <div style={{ overflowX: 'auto' }}>
@@ -248,10 +248,10 @@ export default function VoucherShell({
       </span>
       {overdraw && (
         <Alert type="warning" showIcon style={{ marginTop: 6, padding: '4px 10px' }}
-          message={`المبلغ أكبر من اللي في الخزينة (${money(tBal)}) — رصيدها هيطلع بالسالب`} />
+          message={`المبلغ أكبر من رصيد الخزينة (${money(tBal)}) — سيصبح رصيدها سالباً`} />
       )}
     </div>
-  ) : treasuryOptional ? 'فاضي = السند يفضل في عهدة المندوب' : undefined;
+  ) : undefined;
 
   const docOf = (res: any, payload: any, cp: Counterpart, tName?: string | null): VoucherDoc => {
     const method = res?.payment_method ?? payload.payment_method ?? null;
@@ -372,18 +372,14 @@ export default function VoucherShell({
           {editing ? `تعديل ${meta.title}` : meta.title}
           {editing && <Tag color="gold" style={{ marginInlineStart: 8, verticalAlign: 2 }}>تعديل</Tag>}
         </div>
-        <div style={{ fontSize: 13, fontWeight: 400, color: token.colorTextSecondary }}>{meta.sub}</div>
       </div>
     </div>
   );
 
   const footer = (
     <div style={{
-      display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap',
+      display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 8, flexWrap: 'wrap',
     }}>
-      <span style={{ color: token.colorTextTertiary, fontSize: 13 }}>
-        Enter: الخانة التالية · Ctrl+Enter: حفظ
-      </span>
       <Space wrap size={8}>
         <Button onClick={onCancel} disabled={busy}>إلغاء</Button>
         {!editing && (
@@ -445,7 +441,7 @@ export default function VoucherShell({
                 color: amount > 0 ? token.colorText : token.colorTextQuaternary,
                 background: amount > 0 ? c1 : 'transparent',
               }}>
-                {amount > 0 ? amountToArabicWords(amount) : 'المبلغ بالحروف هيتكتب هنا'}
+                {amount > 0 ? amountToArabicWords(amount) : 'المبلغ بالحروف'}
               </div>
             </Col>
             <Col xs={24} md={12}>
@@ -459,7 +455,7 @@ export default function VoucherShell({
             </Col>
             <Col xs={24} md={12}>
               <Form.Item name="description" label="البيان">
-                <Input placeholder="وصف الحركة — بيظهر في القيد وكشف الحساب" />
+                <Input placeholder="وصف الحركة" />
               </Form.Item>
             </Col>
             <Col xs={24} md={12}>

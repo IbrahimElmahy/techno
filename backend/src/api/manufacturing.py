@@ -451,14 +451,14 @@ def _own_branch(current: CurrentUser, branch_id: int | None) -> int | None:
     if mine is None:
         return branch_id
     if branch_id is not None and branch_id != mine:
-        raise HTTPException(403, {"code": "forbidden", "message": "مش فرعك."})
+        raise HTTPException(403, {"code": "forbidden", "message": "ليس فرعك."})
     return mine
 
 
 def _seen_po(db: Session, order_id: int, current: CurrentUser):
     order = production_order_service.get_order(db, order_id)
     if order is None or not branch_scope.may_see(current, order):
-        raise HTTPException(404, {"code": "not_found", "message": "أمر التشغيل مش موجود"})
+        raise HTTPException(404, {"code": "not_found", "message": "أمر التشغيل غير موجود"})
     return order
 
 

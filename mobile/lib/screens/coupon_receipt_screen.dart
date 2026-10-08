@@ -127,7 +127,7 @@ class _CouponReceiptScreenState extends State<CouponReceiptScreen> {
     final serial = raw.trim();
     if (serial.isEmpty) return;
     if (_entries.any((e) => e.serial == serial)) {
-      _toast('الكوبون ده مضاف بالفعل');
+      _toast('هذا الكوبون مضاف بالفعل');
       return;
     }
     final entry = _CouponEntry(serial);
@@ -154,14 +154,14 @@ class _CouponReceiptScreenState extends State<CouponReceiptScreen> {
         }
       });
       if (entry.status == 'unknown') {
-        _toast('الكوبون ${entry.serial} مش متصرّف من النظام');
+        _toast('الكوبون ${entry.serial} غير مصروف من النظام');
       } else if (entry.status == 'received') {
-        _toast('الكوبون ${entry.serial} اتستلم قبل كده');
+        _toast('الكوبون ${entry.serial} تم استلامه من قبل');
       } else if (entry.status == 'wrong_kind') {
         final where = entry.kinds.isEmpty ? '' : ' — موجود تحت: ${entry.kinds.join('، ')}';
-        _toast('الكوبون ${entry.serial} مش متصرّف تحت «$_kind»$where');
+        _toast('الكوبون ${entry.serial} غير مصروف ضمن «$_kind»$where');
       } else if (_customerId != null && entry.customerId != _customerId) {
-        _toast('الكوبون ${entry.serial} متصرّف لعميل تاني');
+        _toast('الكوبون ${entry.serial} مصروف لعميل آخر');
       }
     } catch (_) {
       if (mounted) setState(() => entry.status = 'pending');
@@ -176,7 +176,7 @@ class _CouponReceiptScreenState extends State<CouponReceiptScreen> {
     final first = a ?? b;
     final last = b ?? a;
     if (first == null || last == null) {
-      _toast('اكتب رقم الكوبون في «من رقم»');
+      _toast('أدخل رقم الكوبون في «من رقم»');
       return;
     }
     if (last < first) {
@@ -184,7 +184,7 @@ class _CouponReceiptScreenState extends State<CouponReceiptScreen> {
       return;
     }
     if (last - first + 1 > _maxRange) {
-      _toast('النطاق كبير — أقصى $_maxRange كوبون في المرة');
+      _toast('النطاق كبير — الحد الأقصى $_maxRange كوبون في المرة الواحدة');
       return;
     }
     _fromCtrl.clear();
@@ -218,11 +218,11 @@ class _CouponReceiptScreenState extends State<CouponReceiptScreen> {
 
   Future<void> _save() async {
     if (_entries.isEmpty) {
-      _toast('مافيش كوبونات');
+      _toast('لا توجد كوبونات');
       return;
     }
     if (_hasRejects) {
-      _toast('شيل الكوبونات المرفوضة الأول');
+      _toast('احذف الكوبونات المرفوضة أولاً');
       return;
     }
     setState(() => _saving = true);
@@ -243,9 +243,9 @@ class _CouponReceiptScreenState extends State<CouponReceiptScreen> {
       );
       try {
         await ApiClient.instance.pushCouponReceipts();
-        _toast('اترفع للسيرفر — بانتظار اعتماد المكتب');
+        _toast('تم الرفع إلى الخادم — بانتظار اعتماد المكتب');
       } catch (e) {
-        _toast('اتسجّل على الجهاز، هيترفع مع المزامنة (${e.toString()})');
+        _toast('تم التسجيل على الجهاز، وسيُرفع مع المزامنة (${e.toString()})');
       }
       if (mounted) Navigator.pop(context, true);
     } finally {
@@ -402,7 +402,7 @@ class _CouponReceiptScreenState extends State<CouponReceiptScreen> {
                           textInputAction: TextInputAction.done,
                           onSubmitted: (_) => _addRange(),
                           decoration: const InputDecoration(
-                              labelText: 'إلى رقم', hintText: 'فاضي = كوبون واحد'),
+                              labelText: 'إلى رقم', hintText: 'فارغ = كوبون واحد'),
                         ),
                       ),
                     ],
@@ -429,7 +429,7 @@ class _CouponReceiptScreenState extends State<CouponReceiptScreen> {
               ),
             Expanded(
               child: _entries.isEmpty
-                  ? const Center(child: Text('مافيش كوبونات مضافة'))
+                  ? const Center(child: Text('لا توجد كوبونات مضافة'))
                   : ListView.separated(
                       itemCount: _entries.length,
                       separatorBuilder: (_, __) => const Divider(height: 1),
@@ -515,7 +515,7 @@ class _CouponReceiptScreenState extends State<CouponReceiptScreen> {
                           child: Text(
                             'مقبول $good'
                             '${pending > 0 ? ' · بانتظار الاتصال $pending' : ''}'
-                            '${_hasRejects ? ' · فيه مرفوض' : ''}',
+                            '${_hasRejects ? ' · يوجد مرفوض' : ''}',
                             style: TextStyle(
                                 color: _hasRejects ? AppColors.danger : AppColors.success,
                                 fontWeight: FontWeight.w700),
@@ -547,15 +547,15 @@ class _CouponReceiptScreenState extends State<CouponReceiptScreen> {
       builder: (c) => Directionality(
         textDirection: TextDirection.rtl,
         child: AlertDialog(
-          title: const Text('تسيب الاستلام؟'),
-          content: Text('عندك ${_entries.length} كوبون متسجّلين ولسه متسجّلوش. '
-              'لو خرجت دلوقتي هيروحوا.'),
+          title: const Text('مغادرة الاستلام؟'),
+          content: Text('لديك ${_entries.length} كوبون مُدخل لم يُسجَّل بعد. '
+              'إذا خرجت الآن فستُفقد.'),
           actions: [
-            TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('أكمّل')),
+            TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('متابعة')),
             FilledButton(
               style: FilledButton.styleFrom(backgroundColor: AppColors.danger),
               onPressed: () => Navigator.pop(c, true),
-              child: const Text('اخرج وامسح'),
+              child: const Text('خروج وحذف'),
             ),
           ],
         ),
@@ -582,13 +582,13 @@ class _CouponReceiptScreenState extends State<CouponReceiptScreen> {
   Widget _statusChip(_CouponEntry e) {
     final (text, color) = switch (e.status) {
       'valid' => ((e.customerName ?? 'سليم'), AppColors.success),
-      'unknown' => ('مش متصرّف من النظام', AppColors.danger),
-      'received' => ('اتستلم قبل كده', AppColors.accent),
+      'unknown' => ('غير مصروف من النظام', AppColors.danger),
+      'received' => ('تم استلامه من قبل', AppColors.accent),
       'wrong_kind' => (
-          e.kinds.isEmpty ? 'فئة تانية' : 'فئته: ${e.kinds.join('، ')}',
+          e.kinds.isEmpty ? 'فئة أخرى' : 'فئته: ${e.kinds.join('، ')}',
           AppColors.danger,
         ),
-      _ => ('هيتراجع مع المزامنة', Colors.blueGrey),
+      _ => ('سيُراجَع مع المزامنة', Colors.blueGrey),
     };
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),

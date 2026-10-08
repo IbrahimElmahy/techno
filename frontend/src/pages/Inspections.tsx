@@ -253,7 +253,7 @@ const Inspections: React.FC<{ fixedKind?: 'technician' | 'regular' }> = ({ fixed
     try {
       const { data } = await api.post<InspectionRecord>(`/api/v1/inspections/${detail.id}/reject`);
       patchDetail(data);
-      message.success('تم رفض المعاينة وإرجاع البضاعة لعهدة المندوب');
+      message.success('تم رفض المعاينة وإرجاع البضاعة إلى عهدة المندوب');
     } catch (e: any) {
       message.error(e?.response?.data?.detail?.message || 'فشل الرفض');
     }
@@ -285,13 +285,13 @@ const Inspections: React.FC<{ fixedKind?: 'technician' | 'regular' }> = ({ fixed
         number: d.certificate_number ? `رقم ${d.certificate_number}` : d.document_number,
         meta: [
           ['اسم المالك', d.owner_name],
-          ['تليفون المالك', d.owner_phone ?? '—'],
+          ['هاتف المالك', d.owner_phone ?? '—'],
           ['العنوان', d.owner_address ?? '—'],
           ['الدور', d.floor_number ?? '—'],
           ['توصيف المعاينة', d.description ?? '—'],
           ['نوع المعاينة', d.inspection_type ?? '—'],
           ['اسم الفني', d.technician_name ?? '—'],
-          ['تليفون الفني', d.technician_phone ?? '—'],
+          ['هاتف الفني', d.technician_phone ?? '—'],
           ['المندوب', repName(d.rep_user_id)],
           ['التاجر / محل الشراء', d.merchant_name || d.purchase_shop || '—'],
           ['نوع الزيارة', d.visit_type],
@@ -301,7 +301,7 @@ const Inspections: React.FC<{ fixedKind?: 'technician' | 'regular' }> = ({ fixed
       },
       `<table class="grid">
         <thead><tr><th>الصنف</th><th>الكمية</th><th>النقاط</th><th>الإجمالي</th></tr></thead>
-        <tbody>${linesHtml || '<tr><td colspan="4">بدون أصناف</td></tr>'}</tbody>
+        <tbody>${linesHtml || '<tr><td colspan="4">لا توجد أصناف</td></tr>'}</tbody>
       </table>
       <table class="totals">
         <tr><td>إجمالي النقاط</td><td style="text-align:left">${fmt(d.total_points)}</td></tr>
@@ -348,7 +348,7 @@ const Inspections: React.FC<{ fixedKind?: 'technician' | 'regular' }> = ({ fixed
       },
     },
     {
-      title: 'تليفون المالك',
+      title: 'هاتف المالك',
       dataIndex: 'owner_phone',
       width: 135,
       render: (v: string | null) => (v ? <a href={`tel:${v}`} dir="ltr">{v}</a> : '—'),
@@ -388,7 +388,7 @@ const Inspections: React.FC<{ fixedKind?: 'technician' | 'regular' }> = ({ fixed
       },
     },
     {
-      title: 'تليفون التاجر',
+      title: 'هاتف التاجر',
       dataIndex: 'purchase_shop_phone',
       width: 135,
       render: (v: string | null) => (v ? <a href={`tel:${v}`} dir="ltr">{v}</a> : '—'),
@@ -432,10 +432,7 @@ const Inspections: React.FC<{ fixedKind?: 'technician' | 'regular' }> = ({ fixed
       <ListPage
         icon={isVisits ? <EnvironmentOutlined /> : <MobileOutlined />}
         title={isVisits ? 'الزيارات العادية' : 'المعاينات'}
-        muted={isVisits ? '(متابعات وزيارات العملاء)' : '(مراجعة زيارات المناديب)'}
-        subtitle={isVisits
-          ? 'زيارات المناديب للعملاء من غير فني — بتتزامن من التطبيق'
-          : 'معاينات الفنيين من التطبيق — القبول والرفض وطباعة شهادة الضمان'}
+
         actions={(<>
           {tableCols.control}
           <ExportExcelButton
@@ -501,7 +498,7 @@ const Inspections: React.FC<{ fixedKind?: 'technician' | 'regular' }> = ({ fixed
             value={printedF}
             onChange={setPrintedF}
             options={[
-              { value: 'true', label: 'تم الطباعة' },
+              { value: 'true', label: 'تمت الطباعة' },
               { value: 'false', label: 'غير مطبوعة' },
             ]}
           />
@@ -564,7 +561,7 @@ const Inspections: React.FC<{ fixedKind?: 'technician' | 'regular' }> = ({ fixed
             ) : (
               <Tag color="green">مقبولة</Tag>
             )}
-            {detail.printed && <Tag color="blue">تم الطباعة</Tag>}
+            {detail.printed && <Tag color="blue">تمت الطباعة</Tag>}
           </Space>
         }
       >
@@ -606,8 +603,8 @@ const Inspections: React.FC<{ fixedKind?: 'technician' | 'regular' }> = ({ fixed
                       <div style={{ maxWidth: 280 }}>
                         ستُعاد البضاعة إلى عهدة المندوب
                         {Number(detail.total_points || 0) > 0 && detail.merchant_customer_id ? (
-                          <>، وترجع <b>{Number(detail.total_points).toLocaleString(numeralsLocale())}</b>
-                          {' '}نقطة لرصيد <b>{detail.merchant_name}</b></>
+                          <>، وتُعاد <b>{Number(detail.total_points).toLocaleString(numeralsLocale())}</b>
+                          {' '}نقطة إلى رصيد <b>{detail.merchant_name}</b></>
                         ) : null}.
                       </div>
                     )}
@@ -626,10 +623,10 @@ const Inspections: React.FC<{ fixedKind?: 'technician' | 'regular' }> = ({ fixed
                     description={(
                       <div style={{ maxWidth: 280 }}>
                         {Number(detail.total_points || 0) > 0 && detail.merchant_customer_id ? (
-                          <>هتتخصم <b>{Number(detail.total_points).toLocaleString(numeralsLocale())}</b>
+                          <>ستُخصم <b>{Number(detail.total_points).toLocaleString(numeralsLocale())}</b>
                           {' '}نقطة من رصيد <b>{detail.merchant_name}</b>.</>
                         ) : (
-                          <>المعاينة دي مالهاش تاجر مربوط — مافيش نقط هتتخصم.</>
+                          <>هذه المعاينة غير مرتبطة بتاجر — لن تُخصم أي نقاط.</>
                         )}
                       </div>
                     )}
@@ -664,10 +661,10 @@ const Inspections: React.FC<{ fixedKind?: 'technician' | 'regular' }> = ({ fixed
                   detail.owner_name
                 )}
               </Descriptions.Item>
-              <Descriptions.Item label="تليفون المالك">
+              <Descriptions.Item label="هاتف المالك">
                 {detail.owner_phone || '—'}
               </Descriptions.Item>
-              <Descriptions.Item label="رقم البطاقة">{detail.national_id || '—'}</Descriptions.Item>
+              <Descriptions.Item label="الرقم القومي">{detail.national_id || '—'}</Descriptions.Item>
               <Descriptions.Item label="العنوان">{detail.owner_address || '—'}</Descriptions.Item>
               <Descriptions.Item label="الدور">{detail.floor_number || '—'}</Descriptions.Item>
               <Descriptions.Item label="توصيف المعاينة">
@@ -679,7 +676,7 @@ const Inspections: React.FC<{ fixedKind?: 'technician' | 'regular' }> = ({ fixed
               <Descriptions.Item label="اسم الفني">
                 {detail.technician_name || '—'}
               </Descriptions.Item>
-              <Descriptions.Item label="تليفون الفني">
+              <Descriptions.Item label="هاتف الفني">
                 {detail.technician_phone || '—'}
               </Descriptions.Item>
               <Descriptions.Item label="التاجر / محل الشراء">

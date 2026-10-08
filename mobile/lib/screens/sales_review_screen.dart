@@ -103,13 +103,13 @@ class _SalesReviewScreenState extends State<SalesReviewScreen> {
   Future<void> _push() async {
     setState(() => _pushing = true);
     final tr = TaskTracker.instance;
-    tr.start(BgTask.upload, 'بيرفع الفواتير…');
+    tr.start(BgTask.upload, 'جارٍ رفع الفواتير…');
     try {
       final n = await ApiClient.instance.pushSaleInvoices(
           onProgress: (done, total) => tr.update(
-              BgTask.upload, 'بيرفع الفواتير ${done + 1}/$total',
+              BgTask.upload, 'جارٍ رفع الفواتير ${done + 1}/$total',
               progress: total == 0 ? null : done / total));
-      tr.finish(BgTask.upload, n == 0 ? 'مافيش فواتير مستنية' : 'اترفعت $n فاتورة ✔');
+      tr.finish(BgTask.upload, n == 0 ? 'لا توجد فواتير بانتظار الرفع' : 'تم رفع $n فاتورة ✔');
       unawaited(AppUpdater.instance.check());
     } catch (e) {
       tr.finish(BgTask.upload, '$e', error: true, hold: const Duration(seconds: 12));
@@ -133,7 +133,7 @@ class _SalesReviewScreenState extends State<SalesReviewScreen> {
                     width: 18, height: 18,
                     child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
                 : const Icon(Icons.cloud_upload_outlined),
-            tooltip: 'رفع المستني',
+            tooltip: 'رفع المعلّق',
           ),
         ],
       ),
@@ -147,7 +147,7 @@ class _SalesReviewScreenState extends State<SalesReviewScreen> {
                     controller: _search,
                     onChanged: (_) => setState(() {}),
                     decoration: InputDecoration(
-                      hintText: 'دوّر بالعميل أو رقم المستند',
+                      hintText: 'ابحث بالعميل أو رقم المستند',
                       prefixIcon: const Icon(Icons.search),
                       isDense: true,
                       suffixIcon: _search.text.isEmpty
@@ -182,7 +182,7 @@ class _SalesReviewScreenState extends State<SalesReviewScreen> {
                       ),
                       if (_from != null || _to != null)
                         IconButton(
-                          tooltip: 'شيل الفترة',
+                          tooltip: 'إلغاء الفترة',
                           icon: const Icon(Icons.filter_alt_off_outlined, size: 20),
                           onPressed: () => setState(() {
                             _from = null;
@@ -204,8 +204,8 @@ class _SalesReviewScreenState extends State<SalesReviewScreen> {
                               padding: const EdgeInsets.all(40),
                               child: Text(
                                   _rows.isEmpty
-                                      ? 'مافيش فواتير على الجهاز.'
-                                      : 'مافيش فواتير على الفلتر ده.',
+                                      ? 'لا توجد فواتير على الجهاز.'
+                                      : 'لا توجد فواتير مطابقة للتصفية.',
                                   textAlign: TextAlign.center),
                             )
                           ])
@@ -217,9 +217,7 @@ class _SalesReviewScreenState extends State<SalesReviewScreen> {
                                   child: ListTile(
                                     leading: const Icon(Icons.schedule,
                                         color: AppColors.accent),
-                                    title: Text('$pending فاتورة مستنية الرفع'),
-                                    subtitle:
-                                        const Text('اضغط السحابة فوق عشان ترفعهم'),
+                                    title: Text('$pending فاتورة بانتظار الرفع'),
                                   ),
                                 ),
                               for (final r in _visible) _invoiceCard(r),
@@ -257,7 +255,7 @@ class _SalesReviewScreenState extends State<SalesReviewScreen> {
     if (uuid != null) {
       for (final o in _rows) {
         if (o['client_uuid'] == uuid) {
-          return (o['document_number'] as String?) ?? 'فاتورة لسه على الجهاز';
+          return (o['document_number'] as String?) ?? 'فاتورة لم تُرفع بعد';
         }
       }
     }
@@ -304,7 +302,7 @@ class _SalesReviewScreenState extends State<SalesReviewScreen> {
           '${(r['total'] as num?)?.toStringAsFixed(2) ?? '0.00'}',
           if (bonusFor != null) 'على $bonusFor',
           if (_couponTotal(r) > 0) '${_couponTotal(r)} كوبون',
-          if (synced) r['document_number'] as String? ?? '' else 'لسه على الجهاز',
+          if (synced) r['document_number'] as String? ?? '' else 'لم تُرفع بعد',
         ].where((s) => s.isNotEmpty).join(' · ')),
         children: [
           FutureBuilder<List<SaleDraftLine>>(
@@ -372,7 +370,7 @@ class _SalesReviewScreenState extends State<SalesReviewScreen> {
                         if (!synced)
                           const Padding(
                             padding: EdgeInsets.only(right: 8),
-                            child: Text('اعمل «مزامنة الآن» عشان تطبع',
+                            child: Text('تتاح الطباعة بعد المزامنة',
                                 style: TextStyle(
                                     fontSize: 11, color: Colors.black45)),
                           ),

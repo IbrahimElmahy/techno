@@ -425,7 +425,7 @@ def get_purchase_return(
     if r is None:
         raise HTTPException(404, {"code": "not_found", "message": "Purchase return not found"})
     if not branch_scope.may_see(current, r):
-        raise HTTPException(404, {"code": "not_found", "message": "المردود مش موجود"})
+        raise HTTPException(404, {"code": "not_found", "message": "المردود غير موجود"})
     inv = db.get(PurchaseInvoice, r.purchase_invoice_id) if r.purchase_invoice_id else None
     sup_id = r.supplier_id if r.supplier_id else (inv.supplier_id if inv else None)
     supplier = db.get(Supplier, sup_id) if sup_id else None
@@ -470,7 +470,7 @@ def get_purchase(
     if p is None:
         raise HTTPException(404, {"code": "not_found", "message": "Purchase not found"})
     if not branch_scope.may_see(current, p):
-        raise HTTPException(404, {"code": "not_found", "message": "الفاتورة مش موجودة"})
+        raise HTTPException(404, {"code": "not_found", "message": "الفاتورة غير موجودة"})
     supplier = db.get(Supplier, p.supplier_id)
     returns = db.scalars(
         select(PurchaseReturn).where(PurchaseReturn.purchase_invoice_id == purchase_id)
@@ -516,7 +516,7 @@ def update_purchase(
     if inv is None:
         raise HTTPException(404, {"code": "not_found", "message": "فاتورة الشراء غير موجودة"})
     if not branch_scope.may_see(current, inv):
-        raise HTTPException(404, {"code": "not_found", "message": "الفاتورة مش موجودة"})
+        raise HTTPException(404, {"code": "not_found", "message": "الفاتورة غير موجودة"})
     try:
         document_edit_service.assert_purchase_editable(db, inv)
         document_edit_service.purge_purchase(db, inv)
@@ -559,7 +559,7 @@ def delete_purchase(
         document_edit_service.delete_purchase(
             db, purchase_id=purchase_id, actor_user_id=current.id)
     except DocumentEditError as exc:
-        code = 404 if "مش موجودة" in str(exc) else status.HTTP_409_CONFLICT
+        code = 404 if any(s in str(exc) for s in ("مش موجودة", "غير موجودة", "مش موجود", "غير موجود")) else status.HTTP_409_CONFLICT
         raise HTTPException(code, {"code": "delete_blocked", "message": str(exc)})
     db.commit()
 
@@ -691,7 +691,7 @@ def update_purchase_return(
     if ret is None:
         raise HTTPException(404, {"code": "not_found", "message": "المردود غير موجود"})
     if not branch_scope.may_see(current, ret):
-        raise HTTPException(404, {"code": "not_found", "message": "المردود مش موجود"})
+        raise HTTPException(404, {"code": "not_found", "message": "المردود غير موجود"})
     try:
         document_edit_service.purge_purchase_return(db, ret)
     except DocumentEditError as exc:
@@ -738,7 +738,7 @@ def delete_purchase_return(
         document_edit_service.delete_purchase_return(
             db, return_id=return_id, actor_user_id=current.id)
     except DocumentEditError as exc:
-        code = 404 if "مش موجود" in str(exc) else status.HTTP_409_CONFLICT
+        code = 404 if any(s in str(exc) for s in ("مش موجود", "غير موجود")) else status.HTTP_409_CONFLICT
         raise HTTPException(code, {"code": "delete_blocked", "message": str(exc)})
     db.commit()
 

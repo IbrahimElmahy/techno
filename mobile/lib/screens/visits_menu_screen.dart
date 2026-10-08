@@ -18,7 +18,6 @@ class VisitsMenuScreen extends StatelessWidget {
             icon: Icons.engineering,
             color: AppColors.primary,
             title: 'زيارات الفنيين (معاينات)',
-            subtitle: 'معاينة موقع مع فني وتسجيل الأصناف والنقاط',
             onTap: () => Navigator.push(
                 context,
                 MaterialPageRoute(
@@ -29,7 +28,6 @@ class VisitsMenuScreen extends StatelessWidget {
             icon: Icons.home_work_outlined,
             color: AppColors.success,
             title: 'الزيارات العادية',
-            subtitle: 'زيارة متابعة أو زيارة عميل بدون فني',
             onTap: () => Navigator.push(
                 context,
                 MaterialPageRoute(
@@ -45,14 +43,12 @@ class _VisitCard extends StatelessWidget {
   final IconData icon;
   final Color color;
   final String title;
-  final String subtitle;
   final VoidCallback onTap;
 
   const _VisitCard(
       {required this.icon,
       required this.color,
       required this.title,
-      required this.subtitle,
       required this.onTap});
 
   @override
@@ -82,9 +78,6 @@ class _VisitCard extends StatelessWidget {
                     Text(title,
                         style:
                             const TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
-                    const SizedBox(height: 4),
-                    Text(subtitle,
-                        style: TextStyle(fontSize: 13, color: Colors.grey.shade600)),
                   ],
                 ),
               ),

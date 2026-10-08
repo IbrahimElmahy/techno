@@ -111,13 +111,13 @@ class _ReceiptsReviewScreenState extends State<ReceiptsReviewScreen> {
   Future<void> _push() async {
     setState(() => _pushing = true);
     final tr = TaskTracker.instance;
-    tr.start(BgTask.upload, 'بيرفع التحصيلات…');
+    tr.start(BgTask.upload, 'جارٍ رفع التحصيلات…');
     try {
       final n = await ApiClient.instance.pushReceipts(
           onProgress: (done, total) => tr.update(
-              BgTask.upload, 'بيرفع التحصيلات ${done + 1}/$total',
+              BgTask.upload, 'جارٍ رفع التحصيلات ${done + 1}/$total',
               progress: total == 0 ? null : done / total));
-      tr.finish(BgTask.upload, n == 0 ? 'مافيش تحصيلات مستنية' : 'اترفع $n تحصيل ✔');
+      tr.finish(BgTask.upload, n == 0 ? 'لا توجد تحصيلات بانتظار الرفع' : 'تم رفع $n تحصيل ✔');
       unawaited(AppUpdater.instance.check());
     } catch (e) {
       tr.finish(BgTask.upload, '$e', error: true, hold: const Duration(seconds: 12));
@@ -146,7 +146,7 @@ class _ReceiptsReviewScreenState extends State<ReceiptsReviewScreen> {
                     child: CircularProgressIndicator(
                         strokeWidth: 2, color: Colors.white))
                 : const Icon(Icons.cloud_upload_outlined),
-            tooltip: 'رفع المستني',
+            tooltip: 'رفع المعلّق',
           ),
         ],
       ),
@@ -160,7 +160,7 @@ class _ReceiptsReviewScreenState extends State<ReceiptsReviewScreen> {
                     controller: _search,
                     onChanged: (_) => setState(() {}),
                     decoration: InputDecoration(
-                      hintText: 'دوّر بالعميل أو رقم السند',
+                      hintText: 'ابحث بالعميل أو رقم السند',
                       prefixIcon: const Icon(Icons.search),
                       isDense: true,
                       suffixIcon: _search.text.isEmpty
@@ -195,7 +195,7 @@ class _ReceiptsReviewScreenState extends State<ReceiptsReviewScreen> {
                       ),
                       if (_from != null || _to != null)
                         IconButton(
-                          tooltip: 'شيل الفترة',
+                          tooltip: 'إلغاء الفترة',
                           icon: const Icon(Icons.filter_alt_off_outlined, size: 20),
                           onPressed: () => setState(() {
                             _from = null;
@@ -231,7 +231,7 @@ class _ReceiptsReviewScreenState extends State<ReceiptsReviewScreen> {
                       const Icon(Icons.schedule, size: 18, color: AppColors.accent),
                       const SizedBox(width: 8),
                       Expanded(
-                          child: Text('$pending سند مستني الرفع — اضغط السحابة فوق',
+                          child: Text('$pending سند بانتظار الرفع',
                               style: const TextStyle(fontSize: 13))),
                     ]),
                   ),
@@ -241,7 +241,7 @@ class _ReceiptsReviewScreenState extends State<ReceiptsReviewScreen> {
                     child: rows.isEmpty
                         ? ListView(children: const [
                             SizedBox(height: 80),
-                            Center(child: Text('مافيش تحصيلات هنا')),
+                            Center(child: Text('لا توجد تحصيلات')),
                           ])
                         : ListView.separated(
                             itemCount: rows.length,
@@ -263,7 +263,7 @@ class _ReceiptsReviewScreenState extends State<ReceiptsReviewScreen> {
                                 subtitle: Text([
                                   '${r['receipt_date'] ?? ''}',
                                   if (family.isNotEmpty) family,
-                                  if (doc.isNotEmpty) doc else 'لسه على الجهاز',
+                                  if (doc.isNotEmpty) doc else 'لم يُرفع بعد',
                                   if (notes.isNotEmpty) notes,
                                 ].join(' · '),
                                     style: const TextStyle(fontSize: 12)),

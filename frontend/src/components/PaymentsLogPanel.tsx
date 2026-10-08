@@ -155,7 +155,7 @@ export default function PaymentsLogPanel({
       icon: <ExclamationCircleOutlined style={{ color: '#ff4d4f' }} />,
       content: isInv
         ? `هل أنت متأكد من حذف الفاتورة رقم (${r.document_number})؟`
-        : `هل أنت متأكد من حذف السند رقم (${r.document_number})؟ هيتمسح هو وقيده.`,
+        : `هل أنت متأكد من حذف السند رقم (${r.document_number})؟ سيتم حذفه مع قيده.`,
       okText: 'نعم، احذف',
       okType: 'danger',
       cancelText: 'إلغاء',

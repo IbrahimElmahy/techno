@@ -19,7 +19,7 @@ router = APIRouter(tags=["hr-commissions"], prefix="/hr/commissions")
 def _writer(current: CurrentUser = Depends(require_capability(CAP_SALARY_VIEW))) -> CurrentUser:
     if not current.can(CAP_PAYROLL_POST):
         raise HTTPException(status.HTTP_403_FORBIDDEN, {
-            "code": "forbidden", "message": "تعديل إعدادات العمولات لمحاسب المرتبات بس."})
+            "code": "forbidden", "message": "تعديل إعدادات العمولات لمحاسب المرتبات فقط."})
     return current
 
 
@@ -27,11 +27,11 @@ def _branch(current: CurrentUser, branch_id: int | None) -> int:
     if not branch_scope.sees_all_branches(current):
         if branch_id is not None and branch_id != current.branch_id:
             raise HTTPException(status.HTTP_403_FORBIDDEN, {
-                "code": "forbidden", "message": "عمولات فرعك بس."})
+                "code": "forbidden", "message": "عمولات فرعك فقط."})
         return int(current.branch_id)
     bid = branch_id or branch_scope.visible_branch_id(current)
     if bid is None:
-        raise HTTPException(422, {"code": "validation", "message": "اختار الفرع الأول."})
+        raise HTTPException(422, {"code": "validation", "message": "اختر الفرع أولاً."})
     return int(bid)
 
 

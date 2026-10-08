@@ -56,7 +56,7 @@ def _gate(current: CurrentUser = Depends(get_current_user)) -> CurrentUser:
         if current.can(CAP_SALES_READ) or current.can(CAP_APP_SUPERVISOR):
             return current
     raise HTTPException(status.HTTP_403_FORBIDDEN, {
-        "code": "forbidden", "message": "متابعة المناديب للمشرف والمديرين بس."})
+        "code": "forbidden", "message": "متابعة المناديب للمشرف والمديرين فقط."})
 
 
 def _doc_view(current: CurrentUser) -> CurrentUser:
@@ -514,7 +514,7 @@ def rep_activity(
 ) -> dict:
     if kind != "all" and kind not in KINDS:
         raise HTTPException(422, {"code": "validation",
-                                  "message": f"النوع لازم يبقى all أو واحد من: {', '.join(KINDS)}"})
+                                  "message": f"يجب أن يكون النوع all أو أحد: {', '.join(KINDS)}"})
     rep = _rep_or_404(db, current, rep_id)
     d1, d2 = _range(date_from, date_to)
     view = _doc_view(current)
@@ -566,7 +566,7 @@ def rep_document(
     db: Session = Depends(get_db),
 ) -> dict:
     if kind not in DETAIL_KINDS:
-        raise _not_found("التفاصيل للمبيعات والمرتجعات والتحويلات بس.")
+        raise _not_found("التفاصيل للمبيعات والمرتجعات والتحويلات فقط.")
     rep = _rep_or_404(db, current, rep_id)
     view = _doc_view(current)
     missing = _not_found("المستند غير موجود.")

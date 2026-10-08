@@ -99,7 +99,7 @@ def collections(
     date_from: date | None = Query(default=None),
     date_to: date | None = Query(default=None),
     rep_id: int | None = Query(default=None),
-    statement: str | None = Query(default=None, description="البيان — جزء من الكلام"),
+    statement: str | None = Query(default=None, description="البيان — جزء من النص"),
     current: CurrentUser = Depends(require_capability(CAP_VOUCHER_READ)),
     db: Session = Depends(get_db),
 ) -> list[CollectionRow]:
@@ -126,7 +126,7 @@ def collections_by_customer(
     date_from: date | None = Query(default=None),
     date_to: date | None = Query(default=None),
     rep_id: int | None = Query(default=None),
-    statement: str | None = Query(default=None, description="البيان — جزء من الكلام"),
+    statement: str | None = Query(default=None, description="البيان — جزء من النص"),
     current: CurrentUser = Depends(require_capability(CAP_VOUCHER_READ)),
     db: Session = Depends(get_db),
 ) -> list[CollectionByCustomerRow]:
@@ -159,7 +159,7 @@ def rep_items(
     date_from: date | None = Query(default=None),
     date_to: date | None = Query(default=None),
     rep_id: int | None = Query(default=None),
-    statement: str | None = Query(default=None, description="البيان — جزء من الكلام"),
+    statement: str | None = Query(default=None, description="البيان — جزء من النص"),
     current: CurrentUser = Depends(require_capability(CAP_VOUCHER_READ)),
     db: Session = Depends(get_db),
 ) -> list[RepItemRow]:

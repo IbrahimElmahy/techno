@@ -24,7 +24,7 @@ export const ENTRY_TYPE_LABEL: Record<string, string> = {
   employee_advance: 'سلفة موظف',
   payroll_accrual: 'استحقاق مرتبات',
   payroll_payment: 'صرف مرتبات',
-  payroll_remittance: 'سداد تأمينات/ضرايب',
+  payroll_remittance: 'سداد تأمينات/ضرائب',
   sales_invoice: 'فاتورة بيع',
   sales_return: 'مرتجع بيع',
   purchase_invoice: 'فاتورة شراء',

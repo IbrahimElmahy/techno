@@ -96,8 +96,7 @@ class _ReceiptPrintScreenState extends State<ReceiptPrintScreen> {
                           border: Border.all(color: const Color(0xFFFFD8A8)),
                         ),
                         child: const Text(
-                          'السند لسه على الجهاز — الورقة مكتوب عليها «غير مرحّل بعد». '
-                          'اعمل «مزامنة الآن» عشان رقمه يطلع.',
+                          'لم يُرفع السند بعد — ستُطبع عليه عبارة «غير مرحّل بعد».',
                           textAlign: TextAlign.center,
                           style: TextStyle(fontSize: 12.5, height: 1.4),
                         ),
@@ -174,7 +173,7 @@ class _ReceiptPrintScreenState extends State<ReceiptPrintScreen> {
     final hasFamily = family != null && family.isNotEmpty;
     final notes = '${r['notes'] ?? ''}'.trim();
     final date = '${r['receipt_date'] ?? ''}';
-    final number = synced && _number.isNotEmpty ? _number : 'لسه على الجهاز';
+    final number = synced && _number.isNotEmpty ? _number : 'لم يُرفع بعد';
     final now = DateTime.now().toIso8601String();
     final printedAt = '${now.substring(0, 10)} ${now.substring(11, 16)}';
 
@@ -252,7 +251,7 @@ class _ReceiptPrintScreenState extends State<ReceiptPrintScreen> {
                   border: pw.Border.all(width: 0.8, color: _brand),
                   borderRadius: pw.BorderRadius.circular(4),
                 ),
-                child: pw.Text('غير مرحّل بعد — لسه على جهاز المندوب، ورقمه بيطلع بعد المزامنة',
+                child: pw.Text('غير مرحّل بعد — ما زال على جهاز المندوب، ويصدر رقمه بعد المزامنة',
                     textAlign: pw.TextAlign.center,
                     style: const pw.TextStyle(fontSize: 10)),
               ),
@@ -265,7 +264,7 @@ class _ReceiptPrintScreenState extends State<ReceiptPrintScreen> {
               child: pw.Column(children: [
                 _row('العميل', '${r['customer_name'] ?? ''}'),
                 pw.Row(children: [
-                  pw.Expanded(child: _row('التليفون',
+                  pw.Expanded(child: _row('الهاتف',
                       (_phone ?? '').trim().isEmpty ? '—' : _phone!.trim())),
                   pw.Expanded(child: _row('التاريخ', date)),
                 ]),
@@ -318,7 +317,7 @@ class _ReceiptPrintScreenState extends State<ReceiptPrintScreen> {
               if (after != null && after < -0.001)
                 pw.Padding(
                   padding: const pw.EdgeInsets.only(top: 3),
-                  child: pw.Text('دفع أكتر من اللي عليه — الزيادة بتتقيّد له',
+                  child: pw.Text('المدفوع أكبر من المستحق — تُقيَّد الزيادة لحسابه',
                       style: const pw.TextStyle(fontSize: 9, color: PdfColors.grey700)),
                 ),
             ],
@@ -337,7 +336,7 @@ class _ReceiptPrintScreenState extends State<ReceiptPrintScreen> {
               ],
             ),
             pw.SizedBox(height: 4),
-            pw.Text('اتطبعت من تطبيق المندوب — $printedAt',
+            pw.Text('طُبعت من تطبيق المندوب — $printedAt',
                 textAlign: pw.TextAlign.center,
                 style: const pw.TextStyle(fontSize: 8, color: PdfColors.grey600)),
           ],

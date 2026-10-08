@@ -20,7 +20,7 @@ def _assert_no_cycle(db: Session, *, department_id: int, parent_id: int | None) 
     cursor = parent_id
     while cursor is not None:
         if cursor in seen:
-            raise HrError("القسم ده هيبقى تحت نفسه.")
+            raise HrError("لا يمكن أن يكون القسم تابعاً لنفسه.")
         seen.add(cursor)
         node = db.get(Department, cursor)
         cursor = node.parent_id if node else None
@@ -30,7 +30,7 @@ def _validate_links(db: Session, *, parent_id, manager_employee_id, cost_center_
     if parent_id is not None and db.get(Department, parent_id) is None:
         raise HrError("القسم الأب غير موجود.")
     if manager_employee_id is not None and db.get(Employee, manager_employee_id) is None:
-        raise HrError("المدير المختار مش موظف موجود.")
+        raise HrError("المدير المختار ليس موظفاً موجوداً.")
     if cost_center_id is not None and db.get(CostCenter, cost_center_id) is None:
         raise HrError("مركز التكلفة غير موجود.")
 
@@ -51,12 +51,12 @@ def create_department(
     if not clean:
         raise HrError("اسم القسم مطلوب.")
     if db.scalar(select(Department).where(Department.name == clean)):
-        raise HrError("فيه قسم بنفس الاسم.")
+        raise HrError("يوجد قسم بالاسم نفسه.")
     wanted = (code or "").strip() or numbering.next_document_number(
         db, Department, "DEP", column=Department.code, width=3
     )
     if db.scalar(select(Department).where(Department.code == wanted)):
-        raise HrError("كود القسم مستخدم قبل كده.")
+        raise HrError("كود القسم مستخدم مسبقاً.")
     _validate_links(db, parent_id=parent_id, manager_employee_id=manager_employee_id,
                     cost_center_id=cost_center_id, branch_id=branch_id)
 
@@ -88,11 +88,11 @@ def update_department(db: Session, *, department_id: int, actor_user_id: int, **
         clash = db.scalar(select(Department).where(
             Department.name == clean, Department.id != department_id))
         if clash:
-            raise HrError("فيه قسم بنفس الاسم.")
+            raise HrError("يوجد قسم بالاسم نفسه.")
         fields["name"] = clean
     if "parent_id" in fields:
         if fields["parent_id"] == department_id:
-            raise HrError("القسم ده هيبقى تحت نفسه.")
+            raise HrError("لا يمكن أن يكون القسم تابعاً لنفسه.")
         _assert_no_cycle(db, department_id=department_id, parent_id=fields["parent_id"])
     _validate_links(
         db,
@@ -120,11 +120,11 @@ def deactivate_department(db: Session, *, department_id: int, actor_user_id: int
     inside = db.scalar(select(func.count()).select_from(Employee).where(
         Employee.department_id == department_id, Employee.active.is_(True))) or 0
     if inside:
-        raise HrError(f"فيه {inside} موظف نشط في القسم ده — انقلهم الأول.")
+        raise HrError(f"يوجد {inside} موظف نشط في هذا القسم — انقلهم أولاً.")
     children = db.scalar(select(func.count()).select_from(Department).where(
         Department.parent_id == department_id, Department.active.is_(True))) or 0
     if children:
-        raise HrError(f"فيه {children} قسم فرعي شغّال تحته.")
+        raise HrError(f"يوجد {children} قسم فرعي نشط تحته.")
 
     dept.active = False
     db.flush()
@@ -164,13 +164,13 @@ def import_departments_from_employees(db: Session, *, actor_user_id: int) -> dic
 _REF_LABELS: dict[tuple[str, str], str] = {
     ("employee", "department_id"): "موظف",
     ("department", "parent_id"): "قسم فرعي",
-    ("department", "manager_employee_id"): "قسم هو مديره",
-    ("customer", "employee_id"): "عميل مربوط بيه",
+    ("department", "manager_employee_id"): "قسم يديره",
+    ("customer", "employee_id"): "عميل مرتبط به",
     ("employee_salary", "employee_id"): "هيكل راتب",
     ("employee_shift_assignment", "employee_id"): "وردية",
     ("employee_termination", "employee_id"): "نهاية خدمة",
-    ("leave_entitlement", "employee_id"): "رصيد أجازات",
-    ("leave_request", "employee_id"): "طلب أجازة",
+    ("leave_entitlement", "employee_id"): "رصيد إجازات",
+    ("leave_request", "employee_id"): "طلب إجازة",
     ("payroll_adjustment", "employee_id"): "جزاء أو مكافأة",
     ("attendance_day", "employee_id"): "يوم حضور",
     ("employee_advance", "employee_id"): "سلفة",
@@ -203,8 +203,8 @@ def delete_department(db: Session, *, department_id: int, actor_user_id: int) ->
         raise HrError("القسم غير موجود.")
     found = _blockers(db, "department", department_id)
     if found:
-        raise HrError("القسم ده مربوط بيه " + " · ".join(found[:6])
-                      + " — فمينفعش يتمسح. انقل موظفينه لقسم تاني، أو استعمل «إقفال» بدل المسح.")
+        raise HrError("هذا القسم مرتبط به " + " · ".join(found[:6])
+                      + " — فلا يمكن حذفه. انقل موظفيه إلى قسم آخر، أو استخدم «إقفال» بدلاً من الحذف.")
     audit_service.record(
         db, action="department.delete", actor_user_id=actor_user_id,
         entity_type="department", entity_id=dept.id,
@@ -228,8 +228,8 @@ def delete_employee(db: Session, *, employee: Employee, actor_user_id: int) -> N
         if n_lines:
             found.insert(0, f"حساب ذمة عليه {n_lines} حركة في الدفتر")
     if found:
-        raise HrError("الموظف ده مربوط بيه " + " · ".join(found[:6])
-                      + " — فمينفعش يتمسح. استعمل «إيقاف» بدل المسح.")
+        raise HrError("هذا الموظف مرتبط به " + " · ".join(found[:6])
+                      + " — فلا يمكن حذفه. استخدم «إيقاف» بدلاً من الحذف.")
     audit_service.record(
         db, action="employee.delete", actor_user_id=actor_user_id,
         entity_type="employee", entity_id=employee.id,
@@ -256,11 +256,11 @@ def terminate(
         raise HrError("الموظف غير موجود.")
     if db.scalar(select(EmployeeTermination).where(
             EmployeeTermination.employee_id == employee_id)):
-        raise HrError("الموظف ده متسجّل خروجه قبل كده.")
+        raise HrError("خروج هذا الموظف مسجّل مسبقاً.")
     if emp.hire_date and end_date < emp.hire_date:
         raise HrError("تاريخ نهاية الخدمة قبل تاريخ التعيين.")
     if last_working_day and last_working_day > end_date:
-        raise HrError("آخر يوم شغل بعد تاريخ نهاية الخدمة.")
+        raise HrError("آخر يوم عمل بعد تاريخ نهاية الخدمة.")
 
     row = EmployeeTermination(
         employee_id=employee_id, end_date=end_date, last_working_day=last_working_day,
@@ -285,7 +285,7 @@ def reinstate(db: Session, *, employee_id: int, actor_user_id: int) -> Employee:
     row = db.scalar(select(EmployeeTermination).where(
         EmployeeTermination.employee_id == employee_id))
     if row is None:
-        raise HrError("مافيش نهاية خدمة مسجّلة للموظف ده.")
+        raise HrError("لا توجد نهاية خدمة مسجّلة لهذا الموظف.")
     db.delete(row)
     emp.active = True
     db.flush()

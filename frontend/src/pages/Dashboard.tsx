@@ -38,16 +38,16 @@ const SEVERITY: Record<Issue['severity'], {
     note: 'هناك رقم في النظام أصبح خاطئاً',
   },
   medium: {
-    label: 'محتاج تظبيط',
+    label: 'يحتاج إلى ضبط',
     color: '#d46b08',
     icon: <WarningFilled />,
-    note: 'لا يوجد خلل، لكن هناك قراراً يُتَّخذ على بيانات ناقصة',
+    note: 'لا يوجد خلل، لكن هناك قرار يُتَّخذ على بيانات ناقصة',
   },
   low: {
     label: 'للعلم',
     color: '#0958d9',
     icon: <InfoCircleFilled />,
-    note: 'حد انتوا حطتوه واتعدّى',
+    note: 'تم تجاوز حدٍّ وضعتموه',
   },
 };
 
@@ -84,9 +84,6 @@ export default function Dashboard() {
     <Row justify="space-between" align="middle" style={{ marginBottom: 16 }}>
       <Col>
         <h2 style={{ margin: 0 }}>فحص النظام</h2>
-        <span style={{ color: '#6b6b6b', fontSize: 15 }}>
-          كل حاجة فيها خلل — المنتجات والأرصدة والفواتير والحسابات
-        </span>
       </Col>
       <Col>
         <Button icon={<ReloadOutlined />} onClick={() => load()} loading={loading}>
@@ -105,7 +102,7 @@ export default function Dashboard() {
       <div>
         {header}
         <Alert type="error" showIcon
-          message="الفحص نفسه مانجحش"
+          message="تعذر إجراء الفحص"
           description="لا يعني ذلك عدم وجود مشكلات — بل يعني أننا لا نعلم. أعد الفحص."
           action={<Button size="small" onClick={() => load()}>إعادة المحاولة</Button>} />
       </div>
@@ -203,7 +200,7 @@ export default function Dashboard() {
                 )}
                 {issue.count > issue.samples.length && (
                   <div style={{ color: '#6b6b6b', fontSize: 14, marginTop: 4 }}>
-                    و{issue.count - issue.samples.length} غيرهم — افتح الصفحة تشوفهم كلهم
+                    و{issue.count - issue.samples.length} غيرها — افتح الصفحة لعرضها كلها
                   </div>
                 )}
               </Card>

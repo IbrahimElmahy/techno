@@ -468,7 +468,7 @@ export default function Purchases() {
       setItems(itemsRes.data.filter((i: any) => i.active !== false));
     } catch (err: any) {
       console.error(err);
-      message.error(err?.response?.data?.detail?.message || 'تعذر تحميل قوايم الشاشة');
+      message.error(err?.response?.data?.detail?.message || 'تعذر تحميل قوائم الشاشة');
     } finally {
       setLoading(false);
     }
@@ -565,7 +565,7 @@ export default function Purchases() {
     if (Math.abs(current - pct) < 0.001) return;
     setPurchaseDisc({ ...purchaseDisc, [g === 'poly' ? 'poly_pct' : 'white_pct']: pct });
     api.put('/api/v1/settings/purchase-discounts', { group: g, pct })
-      .then(() => message.success(`خصم ${g === 'poly' ? 'البولي' : 'الأبيض والجوان'} بقى ${pct}% للفواتير الجاية`))
+      .then(() => message.success(`خصم ${g === 'poly' ? 'البولي' : 'الأبيض والجوان'} أصبح ${pct}% للفواتير القادمة`))
       .catch(() => {});
   };
 
@@ -868,7 +868,7 @@ export default function Purchases() {
     }
     const homeless = validLines.find((l) => l.warehouse_id == null);
     if (homeless) {
-      message.error(`«${itemName(homeless.item_id as number)}»: اختار مخزن الاستلام.`);
+      message.error(`«${itemName(homeless.item_id as number)}»: اختر مخزن الاستلام.`);
       return;
     }
     const noQty = validLines.find((l) => !Number(l.quantity));
@@ -977,7 +977,7 @@ export default function Purchases() {
     };
     const dups = ids.filter((id) => purchaseItems.some((l) => l.item_id === id));
     dups.forEach((id) => message.info(qtys?.[id]
-      ? `«${itemName(id)}» موجود بالفعل — اتزوّدت كميته`
+      ? `«${itemName(id)}» موجود بالفعل — تمت زيادة كميته`
       : `«${itemName(id)}» موجود بالفعل — عدّل الكمية من السطر`));
     const fresh = ids.filter((id) => !dups.includes(id));
     if (!fresh.length && dups.length) flashExistingItem(dups[0]);
@@ -1091,7 +1091,7 @@ export default function Purchases() {
     paused: Boolean(viewOnly || editingId),
     isEmpty: (x: any) => !x?.form?.supplier_id
       && !(x?.lines || []).some((l: any) => l.item_id != null),
-    title: (x: any) => `فاتورة شرا — ${(x?.lines || []).length} صنف`,
+    title: (x: any) => `فاتورة شراء — ${(x?.lines || []).length} صنف`,
   });
 
   const resumeDraft = (d: any) => {
@@ -1144,16 +1144,16 @@ export default function Purchases() {
     });
     if (verdict === 'silent') { leave(); return; }
     Modal.confirm({
-      title: verdict === 'confirm-edit' ? 'تسيب التعديل؟' : 'تسيب المستند؟',
+      title: verdict === 'confirm-edit' ? 'ترك التعديل؟' : 'ترك المستند؟',
       icon: <ExclamationCircleOutlined style={{ color: '#faad14' }} />,
       content: verdict === 'confirm-edit'
-        ? 'التعديلات اللي عملتها مااتحفظتش. الفاتورة نفسها هتفضل زي ما هي.'
+        ? 'لم يتم حفظ التعديلات. ستبقى الفاتورة كما هي.'
         : typed.length
-          ? `فيه ${typed.length} صنف مكتوب — هيروحوا ومش هيرجعوا.`
-          : 'اللي كتبته هيروح ومش هيرجع.',
-      okText: verdict === 'confirm-edit' ? 'اخرج من غير حفظ' : 'اخرج واسيبه',
+          ? `يوجد ${typed.length} صنف مُدخل — سيتم فقدانها نهائياً.`
+          : 'سيتم فقدان ما أدخلته نهائياً.',
+      okText: verdict === 'confirm-edit' ? 'خروج بدون حفظ' : 'خروج وترك المستند',
       okButtonProps: { danger: true },
-      cancelText: verdict === 'confirm-edit' ? 'أرجع أكمّل' : 'أكمّل المستند',
+      cancelText: verdict === 'confirm-edit' ? 'متابعة التعديل' : 'متابعة المستند',
       onOk: leave,
       onCancel: () => { if (!keepUrl && editingId != null) markOpen(editingId); },
     });
@@ -1800,7 +1800,6 @@ export default function Purchases() {
     <ListPage<'all' | 'purchase' | 'return' | 'payments'>
       icon={<ShoppingOutlined />}
       title="المشتريات" muted="(سجل فواتير الشراء والمردودات)"
-      subtitle="تسجيل ومتابعة فواتير الشراء ومردوداتها والمستحق للموردين"
       tabs={kindTabs} activeTab={paymentsTab ? 'payments' : kindTab}
       summary={listSummary}
       onTabChange={(k) => {
@@ -1938,7 +1937,7 @@ export default function Purchases() {
           locale: { items_per_page: '' },
           showTotal: () => listFooter,
         }}
-        locale={{ emptyText: 'لا يوجد عمليات شراء بعد' }}
+        locale={{ emptyText: 'لا توجد عمليات شراء بعد' }}
         summary={(rows) => {
           const list = rows as readonly PurchaseRecord[];
           if (!list.length) return null;
@@ -2018,8 +2017,8 @@ export default function Purchases() {
 
       <WarehouseGate
         open={newStep === 'warehouse' && !viewOnly && editingId === null}
-        title="الشحنة دي داخلة أنهي مخزن؟"
-        subtitle="ده المخزن الافتراضي للسطور الجديدة. تقدر تغيّر مخزن أي سطر من عمود «المخزن»."
+        title="إلى أي مخزن تدخل هذه الشحنة؟"
+        subtitle=""
         value={stickyWarehouseId}
         onChange={(v) => setStickyWarehouseId(v as number)}
         warehouses={lineWarehouses}

@@ -207,7 +207,7 @@ export default function StockPermits() {
       try {
         return (await api.get(`/api/v1/stock/permits/${id}`)).data as Permit;
       } catch {
-        message.warning(`الإذن رقم ${id} مش موجود`);
+        message.warning(`الإذن رقم ${id} غير موجود`);
         return null;
       }
     },
@@ -301,7 +301,7 @@ export default function StockPermits() {
   const deletePermit = (p: Permit) => {
     Modal.confirm({
       title: 'حذف الإذن',
-      content: `هل أنت متأكد من حذف الإذن ${p.document_number}؟ حركته على المخزن هتتشال.`,
+      content: `هل أنت متأكد من حذف الإذن ${p.document_number}؟ ستُزال حركته من المخزن.`,
       okText: 'نعم، احذف', okType: 'danger', cancelText: 'تراجع',
       onOk: async () => {
         try {
@@ -327,7 +327,7 @@ export default function StockPermits() {
   const reverse = async (p: Permit) => {
     try {
       await api.post(`/api/v1/stock/permits/${p.id}/reverse`);
-      message.success('اتعكس الإذن');
+      message.success('تم عكس الإذن');
       closeDoc(); load();
     } catch (err: any) {
       message.error(err?.response?.data?.detail?.message || 'تعذر عكس الإذن');
@@ -366,10 +366,8 @@ export default function StockPermits() {
 
       <WarehouseGate
         open={newStep === 'warehouse' && !detail}
-        title={kind === 'issue' ? 'الصرف من أي مخزن؟' : (kind === 'opening' ? 'بضاعة أول المدة في أي مخزن؟' : 'الإضافة لأي مخزن؟')}
-        subtitle={kind === 'issue'
-          ? 'الأصناف التي ستظهر بعد ذلك هي المتاحة في هذا المخزن فقط.'
-          : 'البضاعة هتدخل على المخزن ده.'}
+        title={kind === 'issue' ? 'الصرف من أي مخزن؟' : (kind === 'opening' ? 'بضاعة أول المدة في أي مخزن؟' : 'الإضافة إلى أي مخزن؟')}
+        subtitle=""
         value={warehouseId}
         onChange={setWarehouseId}
         warehouses={warehouses}
@@ -518,13 +516,6 @@ export default function StockPermits() {
       <div className="sale-card sale-notes">
         <Input.TextArea rows={2} placeholder="ملاحظات" value={notes}
           onChange={(e) => setNotes(e.target.value)} />
-
-        <Alert
-          type="info" showIcon
-          message={kind === 'issue'
-            ? 'الصرف من المتاح فقط — ممنوع أي رصيد سالب.'
-            : 'لو سِبت التكلفة فاضية هتتاخد من تكلفة الصنف الحالية.'}
-        />
       </div>
 
       <div className="sale-bottom">
@@ -558,10 +549,10 @@ export default function StockPermits() {
     <div className="sale-form">
       <Alert
         type={detail.reversed_by ? 'warning' : 'info'} showIcon
-        message={detail.reversed_by ? 'الإذن ده اتعكس' : 'هذا الإذن مُرحَّل'}
+        message={detail.reversed_by ? 'تم عكس هذا الإذن' : 'هذا الإذن مُرحَّل'}
         description={detail.reversed_by
-          ? 'أُنشئ له إذن عكسي أعاد المخزون إلى ما كان عليه — وكلاهما موجود في القائمة.'
-          : 'تحركت البضاعة على المخزن. «تعديل» بيفتح الإذن بنفس رقمه ويعدّل حركته، و«حذف» بيشيله هو وحركته.'}
+          ? 'أُنشئ له إذن عكسي أعاد المخزون إلى ما كان عليه.'
+          : undefined}
       />
       <div className="sale-card sale-fields">
       <Form layout="vertical" size="small" component={false}>
@@ -691,7 +682,7 @@ export default function StockPermits() {
         const n = detail ? neighbour(1) : navRows[0];
         if (n) openPermit(n);
       } },
-    { key: 'next', label: 'التالى', icon: <ArrowLeftOutlined />,
+    { key: 'next', label: 'التالي', icon: <ArrowLeftOutlined />,
       disabled: !neighbour(-1), onClick: () => { const n = neighbour(-1); if (n) openPermit(n); } },
     { key: 'delete', label: 'حذف', shortcut: 'F8', icon: <DeleteOutlined />, danger: true,
       disabled: !detail, onClick: () => detail && deletePermit(detail) },
@@ -711,7 +702,7 @@ export default function StockPermits() {
         <>
           <Tag color={KIND_COLOR[k]}>{KIND_LABEL[k] || k}</Tag>
           {r.is_reversal && <Tag color="orange">عكسي</Tag>}
-          {r.reversed_by && <Tag color="default">اتعكس</Tag>}
+          {r.reversed_by && <Tag color="default">معكوس</Tag>}
         </>
       ) },
     { title: 'التاريخ', dataIndex: 'permit_date',
@@ -732,7 +723,7 @@ export default function StockPermits() {
           <Tooltip title="عرض">
             <Button type="text" size="small" icon={<EyeOutlined />} onClick={() => openPermit(r)} />
           </Tooltip>
-          <Tooltip title={r.is_reversal || r.reversed_by ? 'إذن معكوس — امسحه بدل التعديل' : 'تعديل'}>
+          <Tooltip title={r.is_reversal || r.reversed_by ? 'لا يمكن تعديل إذن معكوس' : 'تعديل'}>
             <Button type="text" size="small" icon={<EditOutlined />}
               disabled={r.is_reversal || !!r.reversed_by} onClick={() => editPosted(r)} />
           </Tooltip>
@@ -775,7 +766,7 @@ export default function StockPermits() {
             <DocumentToolbar actions={permitToolbar()} variant="buttons" />
             <DocumentHistoryButton entityType="stock_permit"
               entityId={detail?.id ?? editingId} documentNumber={detail?.document_number} />
-            {detail?.reversed_by && <Tag color="default" style={{ marginInlineEnd: 0 }}>اتعكس</Tag>}
+            {detail?.reversed_by && <Tag color="default" style={{ marginInlineEnd: 0 }}>معكوس</Tag>}
             {detail && (
               <span className="sale-pager">
                 <DocumentBar
@@ -803,7 +794,6 @@ export default function StockPermits() {
     <ListPage<KindTab>
       icon={<FileTextOutlined />}
       title="أذونات المخزن" muted="(إضافة · صرف · أول المدة)"
-      subtitle="حركات دخول وخروج البضاعة من المخازن لأسباب غير البيع والشراء"
       tabs={kindTabs} activeTab={activeKindTab}
       onTabChange={(k) => filter.setValue('kind', k === 'all' ? undefined : k)}
       actions={(<>

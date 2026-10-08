@@ -99,7 +99,7 @@ export function buildLineColumns({
           <b>{fmtQty(Number(line.quantity || 0))}</b>
         ) : (
           <div className="qty-stepper">
-            <button type="button" tabIndex={-1} className="qty-step" title="قلّل واحد"
+            <button type="button" tabIndex={-1} className="qty-step" title="إنقاص واحد"
               disabled={Number(line.quantity || 0) <= 1}
               onClick={() => {
                 const q = Number(line.quantity || 0);
@@ -115,7 +115,7 @@ export function buildLineColumns({
                 handleLineChange(line.key, 'quantity', checkedQuantity(line));
                 advanceFrom(line.key);
               }} />
-            <button type="button" tabIndex={-1} className="qty-step" title="زوّد واحد"
+            <button type="button" tabIndex={-1} className="qty-step" title="زيادة واحد"
               onClick={() => handleLineChange(line.key, 'quantity',
                 checkedQuantity({ ...line, quantity: Number(line.quantity || 0) + 1 }))}>
               <PlusOutlined /></button>
@@ -216,7 +216,7 @@ export function buildLineColumns({
       cellStyle: { textAlign: 'center' },
       cell: (line) => (
         viewOnly ? null : (
-          <Button size="small" danger type="text" icon={<DeleteOutlined />} title="امسح السطر"
+          <Button size="small" danger type="text" icon={<DeleteOutlined />} title="حذف السطر"
             onClick={() => handleRemoveLine(line.key)} />
         )
       ),

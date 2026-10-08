@@ -70,11 +70,11 @@ export default function Users() {
       <Form.Item
         name="supervisor_id"
         label="المشرف"
-        extra={!branchId ? 'اختار فرع المندوب الأول'
-          : mine.length ? 'مشرف المناديب اللي بيتابع شغل المندوب ده من التطبيق — من نفس الفرع'
-            : 'مافيش «مشرف مناديب» على الفرع ده لسه'}
+        extra={!branchId ? 'اختر فرع المندوب أولاً'
+          : mine.length ? undefined
+            : 'لا يوجد «مشرف مناديب» على هذا الفرع بعد'}
       >
-        <Select allowClear showSearch placeholder="من غير مشرف" filterOption={searchFilter} filterSort={searchRank}
+        <Select allowClear showSearch placeholder="بدون مشرف" filterOption={searchFilter} filterSort={searchRank}
           options={mine.map((s) => ({ value: s.id, label: s.full_name || s.username }))} />
       </Form.Item>
     );
@@ -156,16 +156,16 @@ export default function Users() {
       cancelText: 'إلغاء',
       content: (
         <span>
-          هيتشال الحساب «{record.username}» من النظام نهائياً ومفيش رجعة.
+          سيُحذف الحساب «{record.username}» من النظام نهائياً ولا يمكن التراجع.
           <br />
-          لو عليه أي شغل مسجّل، النظام هيرفض ويقولك شغل إيه — ساعتها استعمل
+          إن كان عليه أي عمل مسجّل فسيرفض النظام الحذف ويبيّن نوعه، وعندها استخدم
           «تعطيل الحساب».
         </span>
       ),
       onOk: async () => {
         try {
           await api.delete(`/api/v1/users/${record.id}`);
-          message.success('اتحذف الحساب');
+          message.success('تم حذف الحساب');
           fetchUsers();
         } catch (err: any) {
           const d = err?.response?.data?.detail;
@@ -327,7 +327,6 @@ export default function Users() {
         icon={<TeamOutlined />}
         title="المستخدمين"
         muted="(إدارة مستخدمي النظام)"
-        subtitle="حسابات الدخول وأدوارها وربطها بالفروع والمناطق"
         actions={(<>
           <Button data-shortcut="F2" type="primary" className="sl-create" icon={<UserAddOutlined />}
             onClick={() => setDrawerVisible(true)}>
@@ -490,10 +489,9 @@ export default function Users() {
           <Form.Item
             name="username"
             label="اسم الدخول"
-            extra="ده اللي بيتكتب في شاشة الدخول — خلّيه قصير وسهل"
             rules={[
               { required: true, message: 'يرجى إدخال اسم الدخول!' },
-              { min: 2, message: 'حرفين على الأقل' },
+              { min: 2, message: 'حرفان على الأقل' },
             ]}
           >
             <Input placeholder="مثال: ahmed" autoComplete="off" />
@@ -577,7 +575,6 @@ export default function Users() {
           <Form.Item
             name="password"
             label="إعادة تعيين كلمة المرور (اختياري)"
-            extra="اتركه فارغاً للإبقاء على كلمة المرور الحالية"
           >
             <Input.Password prefix={<LockOutlined />} placeholder="كلمة مرور جديدة" />
           </Form.Item>

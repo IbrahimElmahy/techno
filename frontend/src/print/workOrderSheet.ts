@@ -12,13 +12,13 @@ export type WorkOrderStage = 'production' | 'quality';
 const STAGE_SHEET: Record<WorkOrderStage, { title: string; note: string; who: string }> = {
   production: {
     title: 'إذن تشغيل — خامات التصنيع',
-    who: 'الورشة / المكن',
-    note: 'الخامات دي بتتصرف مع بداية الأمر. اكتب المنصرف واللي طلع فعلاً بالقلم وسلّم الورقة للمكتب.',
+    who: 'الورشة / الماكينات',
+    note: 'تُصرف هذه الخامات مع بداية الأمر. اكتب المنصرف والناتج الفعلي بالقلم وسلّم الورقة للمكتب.',
   },
   quality: {
     title: 'إذن جودة — مواد التعبئة',
     who: 'الجودة / التعبئة',
-    note: 'المواد دي بتتصرف بعد ما الإنتاج يطلع. اكتب المنصرف الفعلي بالقلم وسلّم الورقة للمكتب.',
+    note: 'تُصرف هذه المواد بعد خروج الإنتاج. اكتب المنصرف الفعلي بالقلم وسلّم الورقة للمكتب.',
   },
 };
 
@@ -64,9 +64,6 @@ function qty(v: string | number): string {
 const SHEET_CSS = `
 <style>
   table.wo { width: 100%; border-collapse: collapse; margin-top: 6px; }
-  /* رأس الجدول أسود على رمادي فاتح ومقفول بخط أسود — على الشاشة وعلى الورق بنفس الشكل.
-     كان أبيض على أخضر، والطابعة الأبيض والأسود بتطبع من غير خلفيات فكان بيطلع فاضي.
-     الشرح كامل عند PRINT_COLORS في brand.ts. */
   table.wo > thead > tr > th {
     background: #e6e6e6; color: #000; padding: 6px 8px; font-size: 12.5px; font-weight: 800;
     border: 1px solid #444; border-bottom: 2px solid #000; text-align: center;
@@ -81,7 +78,6 @@ const SHEET_CSS = `
   .prod-code { color: #2b2b2b; font-size: 11.5px; direction: ltr; display: block; }
   .kv { margin-top: 5px; font-size: 12px; color: #1a1a1a; }
   .kv b { color: #000; }
-  /* خانة الكتابة بالقلم — سطر مفتوح بعرض معروف، مش مربع فاضي يتلخبط مع الجدول. */
   .pen {
     display: inline-block; min-width: 74px; border-bottom: 1.4px dotted #333;
     height: 17px; vertical-align: -4px;
@@ -129,7 +125,7 @@ export function printWorkOrder(
              <td><span class="pen"></span></td>
            </tr>`).join('')}</tbody>
          </table>`
-      : '<span class="none">مافيش مواد في المرحلة دي</span>';
+      : '<span class="none">لا توجد مواد في هذه المرحلة</span>';
 
     return `<tr>
       <td style="width:8%;text-align:center">${i + 1}</td>
@@ -138,8 +134,8 @@ export function printWorkOrder(
         <span class="prod-code">${esc(n.itemCode(p.item_id))}</span>
         <div class="kv">المطلوب <b>${qty(p.planned_quantity || p.quantity)}
           ${esc(n.itemUnit(p.item_id))}</b></div>
-        <div class="kv">ينزل مخزن <b>${esc(n.whName(p.warehouse_id))}</b></div>
-        <div class="kv">اللي طلع فعلاً <span class="pen"></span></div>
+        <div class="kv">مخزن الاستلام <b>${esc(n.whName(p.warehouse_id))}</b></div>
+        <div class="kv">الناتج الفعلي <span class="pen"></span></div>
       </td>
       <td style="width:62%">${mats}</td>
     </tr>`;
@@ -147,13 +143,13 @@ export function printWorkOrder(
 
   const body = `${SHEET_CSS}
     <div class="hdr-note">
-      <b>الورقة دي لـ:</b> ${STAGE_SHEET[stage].who}
+      <b>هذه الورقة لـ:</b> ${STAGE_SHEET[stage].who}
       ${doc.statement1 ? ` · <b>البيان:</b> ${esc(doc.statement1)}` : ''}
       ${doc.notes ? ` · <b>ملاحظات:</b> ${esc(doc.notes)}` : ''}
     </div>
     <table class="wo">
       <thead><tr><th>#</th><th>المنتج</th><th>المواد المطلوبة له</th></tr></thead>
-      <tbody>${rows || '<tr><td colspan="3">مافيش سطور</td></tr>'}</tbody>
+      <tbody>${rows || '<tr><td colspan="3">لا توجد سطور</td></tr>'}</tbody>
     </table>
     <div class="signatures">
       <div class="sig">أمين المخزن</div>

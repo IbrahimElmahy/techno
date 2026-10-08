@@ -77,8 +77,8 @@ class ApiClient {
         final who = owner == null ? 'مستخدم سابق' : '«$owner»';
         throw ApiException(
             0,
-            'على الجهاز شغل لـ$who لسه ما اترفعش ($what). '
-            'ادخل بحسابه وزامن الأول، وبعدين سجّل دخول بالحساب الجديد.');
+            'توجد على الجهاز بيانات لـ$who لم تُرفع بعد ($what). '
+            'سجّل الدخول بحسابه ونفّذ المزامنة أولاً، ثم سجّل الدخول بالحساب الجديد.');
       }
       await LocalDb.instance.wipeUserData();
 
@@ -86,8 +86,8 @@ class ApiClient {
       if (left.isNotEmpty) {
         final what = left.entries.map((e) => '${e.value} ${e.key}').join(' · ');
         throw ApiException(
-            0, 'مقدرناش نمسح داتا المستخدم اللي قبلك من الجهاز ($what). '
-                'امسح بيانات التطبيق من إعدادات الموبايل وجرّب تاني.');
+            0, 'تعذر مسح بيانات المستخدم السابق من الجهاز ($what). '
+                'امسح بيانات التطبيق من إعدادات الهاتف وأعد المحاولة.');
       }
     }
 
@@ -147,9 +147,9 @@ class ApiClient {
     final r = await http
         .get(await _uri(path, q), headers: await _headers())
         .timeout(const Duration(seconds: 30));
-    if (r.statusCode == 401) throw ApiException(401, 'انتهت الجلسة — سجّل الدخول تاني');
+    if (r.statusCode == 401) throw ApiException(401, 'انتهت الجلسة — سجّل الدخول مرة أخرى');
     if (r.statusCode == 403) {
-      throw ApiException(403, 'الحساب ده مالوش صلاحية متابعة المناديب');
+      throw ApiException(403, 'ليس لهذا الحساب صلاحية متابعة المناديب');
     }
     if (r.statusCode != 200) throw ApiException(r.statusCode, _error(r));
     return jsonDecode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
@@ -179,11 +179,11 @@ class ApiClient {
 
   Future<void> pullReferenceData({void Function(String step)? onStep}) async {
     final headers = await _headers();
-    onStep?.call('بيجيب أصناف المعاينة…');
+    onStep?.call('جارٍ جلب أصناف المعاينة…');
     final typesR = await http
         .get(await _uri('/inspections/item-types'), headers: headers)
         .timeout(const Duration(seconds: 60));
-    if (typesR.statusCode == 401) throw ApiException(401, 'انتهت الجلسة — سجّل الدخول تاني');
+    if (typesR.statusCode == 401) throw ApiException(401, 'انتهت الجلسة — سجّل الدخول مرة أخرى');
     if (typesR.statusCode != 200) throw ApiException(typesR.statusCode, _error(typesR));
     final types = jsonDecode(utf8.decode(typesR.bodyBytes)) as List;
     await LocalDb.instance.replaceItemTypes([
@@ -195,7 +195,7 @@ class ApiClient {
         )
     ]);
 
-    onStep?.call('بيجيب القوائم…');
+    onStep?.call('جارٍ جلب القوائم…');
     for (final category in ['inspection_description', 'inspection_type', 'coupon_kind']) {
       final r = await http
           .get(await _uri('/settings/lookups', {'category': category}), headers: headers)
@@ -213,7 +213,7 @@ class ApiClient {
       ]);
     }
     await refreshPriceSheetHidden();
-    onStep?.call('بيجيب العملاء…');
+    onStep?.call('جارٍ جلب العملاء…');
     final custR = await http
         .get(await _uri('/customers'), headers: headers)
         .timeout(const Duration(seconds: 60));
@@ -235,7 +235,7 @@ class ApiClient {
     try {
       const page = 1000;
       for (var offset = 0;; offset += page) {
-        onStep?.call(offset == 0 ? 'بيجيب الملّاك…' : 'بيجيب الملّاك ($offset)…');
+        onStep?.call(offset == 0 ? 'جارٍ جلب الملّاك…' : 'جارٍ جلب الملّاك ($offset)…');
         final ownR = await http
             .get(await _uri('/owners', {'limit': '$page', 'offset': '$offset'}),
                 headers: headers)
@@ -262,7 +262,7 @@ class ApiClient {
       ownersFailed = true;
     }
     if (ownersFailed && parties.every((p) => p.customerType != 'owner')) {
-      throw ApiException(0, 'تعذّر تحديث كشف الملّاك — جرّب المزامنة تاني');
+      throw ApiException(0, 'تعذر تحديث كشف الملّاك — أعد المزامنة');
     }
     if (parties.isNotEmpty) {
       await LocalDb.instance.replaceCustomers(parties);
@@ -279,7 +279,7 @@ class ApiClient {
             headers: await _headers(),
             body: jsonEncode({'inspections': [for (final i in pending) i.toApi()]}))
         .timeout(const Duration(seconds: 120));
-    if (r.statusCode == 401) throw ApiException(401, 'انتهت الجلسة — سجّل الدخول تاني');
+    if (r.statusCode == 401) throw ApiException(401, 'انتهت الجلسة — سجّل الدخول مرة أخرى');
     if (r.statusCode != 200) throw ApiException(r.statusCode, _error(r));
     final results = jsonDecode(utf8.decode(r.bodyBytes)) as List;
     for (final res in results) {
@@ -323,7 +323,7 @@ class ApiClient {
 
       final res = await http.Response.fromStream(
           await req.send().timeout(const Duration(seconds: 120)));
-      if (res.statusCode == 401) throw ApiException(401, 'انتهت الجلسة — سجّل الدخول تاني');
+      if (res.statusCode == 401) throw ApiException(401, 'انتهت الجلسة — سجّل الدخول مرة أخرى');
       if (res.statusCode == 201) {
         await LocalDb.instance.markAttachmentSynced(row['local_id'] as int);
         sent++;
@@ -366,9 +366,9 @@ class ApiClient {
     final r = await http
         .get(await _uri('/sales/rep-bundle'), headers: await _headers())
         .timeout(const Duration(seconds: 60));
-    if (r.statusCode == 401) throw ApiException(401, 'انتهت الجلسة — سجّل الدخول تاني');
-    if (r.statusCode == 403) throw ApiException(403, 'الشاشة دي للمناديب.');
-    if (r.statusCode == 404) throw ApiException(404, 'مالكش عهدة مفتوحة — كلّم المخزن.');
+    if (r.statusCode == 401) throw ApiException(401, 'انتهت الجلسة — سجّل الدخول مرة أخرى');
+    if (r.statusCode == 403) throw ApiException(403, 'هذه الشاشة مخصصة للمناديب.');
+    if (r.statusCode == 404) throw ApiException(404, 'ليس لديك عهدة مفتوحة — تواصل مع المخزن.');
     if (r.statusCode != 200) throw ApiException(r.statusCode, _error(r));
     final body = jsonDecode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
 
@@ -482,7 +482,7 @@ class ApiClient {
     final storeId = int.tryParse(await LocalDb.instance.getKv('store_id') ?? '');
     final storeKind = await LocalDb.instance.getKv('store_kind') ?? 'custody';
     if (storeId == null && pending.isNotEmpty) {
-      throw ApiException(0, 'اسحب البيانات الأول — مخزنك مش معروف على الجهاز.');
+      throw ApiException(0, 'اسحب البيانات أولاً — مخزنك غير معروف على الجهاز.');
     }
     for (final inv in pending) {
       onProgress?.call(sent, pending.length);
@@ -522,7 +522,7 @@ class ApiClient {
                 ],
               }))
           .timeout(const Duration(seconds: 90));
-      if (r.statusCode == 401) throw ApiException(401, 'انتهت الجلسة — سجّل الدخول تاني');
+      if (r.statusCode == 401) throw ApiException(401, 'انتهت الجلسة — سجّل الدخول مرة أخرى');
       if (r.statusCode == 200 || r.statusCode == 201) {
         final body = jsonDecode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
         await LocalDb.instance.markSaleSynced(
@@ -575,7 +575,7 @@ class ApiClient {
                 ],
               }))
           .timeout(const Duration(seconds: 90));
-      if (r.statusCode == 401) throw ApiException(401, 'انتهت الجلسة — سجّل الدخول تاني');
+      if (r.statusCode == 401) throw ApiException(401, 'انتهت الجلسة — سجّل الدخول مرة أخرى');
       if (r.statusCode != 200 && r.statusCode != 201) {
         throw ApiException(r.statusCode, 'إذن تحويل: ${_error(r)}');
       }
@@ -585,7 +585,7 @@ class ApiClient {
       final got = (body['lines'] as List?)?.length ?? 0;
       if (got != lines.length) {
         throw ApiException(
-            502, 'إذن تحويل: وصل $got صنف من ${lines.length} — الطلب لسه في الطابور');
+            502, 'إذن تحويل: وصل $got صنف من ${lines.length} — الطلب ما زال في قائمة الانتظار');
       }
 
       await LocalDb.instance.markTransferSynced(
@@ -622,7 +622,7 @@ class ApiClient {
                 'client_uuid': row['client_uuid'],
               }))
           .timeout(const Duration(seconds: 60));
-      if (r.statusCode == 401) throw ApiException(401, 'انتهت الجلسة — سجّل الدخول تاني');
+      if (r.statusCode == 401) throw ApiException(401, 'انتهت الجلسة — سجّل الدخول مرة أخرى');
       if (r.statusCode == 200 || r.statusCode == 201) {
         final body = jsonDecode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
         await LocalDb.instance.markReceiptSynced(
@@ -639,7 +639,7 @@ class ApiClient {
     final r = await http
         .get(await _uri('/customers/$customerId/profile'), headers: await _headers())
         .timeout(const Duration(seconds: 30));
-    if (r.statusCode == 401) throw ApiException(401, 'انتهت الجلسة — سجّل الدخول تاني');
+    if (r.statusCode == 401) throw ApiException(401, 'انتهت الجلسة — سجّل الدخول مرة أخرى');
     if (r.statusCode != 200) throw ApiException(r.statusCode, _error(r));
     return jsonDecode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
   }
@@ -654,7 +654,7 @@ class ApiClient {
             }),
             headers: await _headers())
         .timeout(const Duration(seconds: 12));
-    if (r.statusCode == 401) throw ApiException(401, 'انتهت الجلسة — سجّل الدخول تاني');
+    if (r.statusCode == 401) throw ApiException(401, 'انتهت الجلسة — سجّل الدخول مرة أخرى');
     if (r.statusCode != 200) throw ApiException(r.statusCode, _error(r));
     final rows = jsonDecode(utf8.decode(r.bodyBytes)) as List;
     return [
@@ -673,7 +673,7 @@ class ApiClient {
             }),
             headers: await _headers())
         .timeout(const Duration(seconds: 30));
-    if (r.statusCode == 401) throw ApiException(401, 'انتهت الجلسة — سجّل الدخول تاني');
+    if (r.statusCode == 401) throw ApiException(401, 'انتهت الجلسة — سجّل الدخول مرة أخرى');
     if (r.statusCode != 200) throw ApiException(r.statusCode, _error(r));
     final rows = jsonDecode(utf8.decode(r.bodyBytes)) as List;
     return [
@@ -693,7 +693,7 @@ class ApiClient {
     final r = await http
         .get(await _uri('/customers/$customerId/accounts'), headers: await _headers())
         .timeout(const Duration(seconds: 30));
-    if (r.statusCode == 401) throw ApiException(401, 'انتهت الجلسة — سجّل الدخول تاني');
+    if (r.statusCode == 401) throw ApiException(401, 'انتهت الجلسة — سجّل الدخول مرة أخرى');
     if (r.statusCode != 200) throw ApiException(r.statusCode, _error(r));
     final body = jsonDecode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
     return [
@@ -712,7 +712,7 @@ class ApiClient {
             }),
             headers: await _headers())
         .timeout(const Duration(seconds: 20));
-    if (r.statusCode == 401) throw ApiException(401, 'انتهت الجلسة — سجّل الدخول تاني');
+    if (r.statusCode == 401) throw ApiException(401, 'انتهت الجلسة — سجّل الدخول مرة أخرى');
     if (r.statusCode != 200) throw ApiException(r.statusCode, _error(r));
     return jsonDecode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
   }
@@ -741,7 +741,7 @@ class ApiClient {
                 'customer_type': row['customer_type'],
               }))
           .timeout(const Duration(seconds: 60));
-      if (r.statusCode == 401) throw ApiException(401, 'انتهت الجلسة — سجّل الدخول تاني');
+      if (r.statusCode == 401) throw ApiException(401, 'انتهت الجلسة — سجّل الدخول مرة أخرى');
       if (r.statusCode == 201) {
         final body = jsonDecode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
         await LocalDb.instance.markCouponReceiptSynced(

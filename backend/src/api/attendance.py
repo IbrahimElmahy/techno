@@ -230,7 +230,7 @@ def deactivate_holiday(
         raise HTTPException(404, {"code": "not_found", "message": "العطلة غير موجودة."})
     if row.branch_id is None and not branch_scope.sees_all_branches(current):
         raise HTTPException(403, {"code": "forbidden",
-                                  "message": "العطلة دي عامة لكل الفروع — إلغاؤها من الإدارة."})
+                                  "message": "هذه العطلة عامة لكل الفروع — يكون إلغاؤها من الإدارة."})
     row.active = False
     db.commit()
 

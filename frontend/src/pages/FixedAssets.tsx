@@ -113,7 +113,7 @@ export default function FixedAssets() {
   });
 
   const save = async () => {
-    if (!form.name || !form.cost) { message.warning('الاسم والتكلفة مطلوبين'); return; }
+    if (!form.name || !form.cost) { message.warning('الاسم والتكلفة مطلوبان'); return; }
     setSaving(true);
     try {
       await api.post('/api/v1/fixed-assets', {
@@ -146,7 +146,7 @@ export default function FixedAssets() {
           ? `هذا الشهر مُرحَّل من قبل (${skipped} أصل) — ولم يتغيّر شيء.`
           : 'لا يوجد إهلاك مستحق لهذا الشهر.');
       } else {
-        message.success(`اترحّل إهلاك ${count} أصل بإجمالي ${money(total)}`);
+        message.success(`تم ترحيل إهلاك ${count} أصل بإجمالي ${money(total)}`);
       }
       load();
     } catch (err: any) {
@@ -159,7 +159,7 @@ export default function FixedAssets() {
       await api.post('/api/v1/fixed-assets/depreciation/reverse', {
         year: period.year(), month: period.month() + 1,
       });
-      message.success('اتعكس إهلاك الشهر');
+      message.success('تم عكس إهلاك الشهر');
       load();
     } catch (err: any) {
       message.error(err?.response?.data?.detail?.message || 'تعذر عكس الإهلاك');
@@ -198,19 +198,19 @@ export default function FixedAssets() {
       ) },
     { title: 'الفرع', dataIndex: 'branch_id', ellipsis: true,
       render: (id: number | null) => branches.find((b) => b.id === id)?.name || '-' },
-    { title: 'فترة الاهلاك', dataIndex: 'useful_life_months', width: 110,
+    { title: 'فترة الإهلاك', dataIndex: 'useful_life_months', width: 110,
       render: (m: number) => `${m} شهر` },
-    { title: 'نسبه الاهلاك', key: 'rate', width: 110,
+    { title: 'نسبة الإهلاك', key: 'rate', width: 110,
       render: (_: any, r: Asset) => (r.useful_life_months
         ? `${(1200 / r.useful_life_months).toFixed(2)}%` : '-') },
-    { title: 'التكلفه', dataIndex: 'cost', align: 'left', width: 130,
+    { title: 'التكلفة', dataIndex: 'cost', align: 'left', width: 130,
       render: (v: string) => money(v) },
     { title: 'وصف', dataIndex: 'notes', ellipsis: true,
       render: (v: string | null) => v || '-' },
   ];
 
   const tableCols = useTableColumns('fixed-assets', columns, {
-    export: { name: 'الاصول الثابتة', rows: filter.filtered },
+    export: { name: 'الأصول الثابتة', rows: filter.filtered },
   });
 
   return (
@@ -218,8 +218,7 @@ export default function FixedAssets() {
     {!docOpen && (
     <ListPage
       icon={<BuildOutlined />}
-      title="الاصول الثابتة"
-      subtitle="سجل الأصول وإهلاكها الشهري — والاستبعاد بيترحّل بربحه أو خسارته"
+      title="الأصول الثابتة"
       actions={(<>
         <Button data-shortcut="F2" type="primary" className="sl-create" icon={<PlusOutlined />}
           onClick={() => setCreating(true)}>أصل جديد</Button>
@@ -252,13 +251,10 @@ export default function FixedAssets() {
           ترحيل الإهلاك
         </Button>
         <Popconfirm title="عكس إهلاك الشهر؟"
-          description="هيتعمل قيد عكسي والشهر يرجع متاح للترحيل تاني."
+          description="سيتم إنشاء قيد عكسي ويعود الشهر متاحاً للترحيل مرة أخرى."
           onConfirm={reverseDepreciation} okText="عكس" cancelText="إلغاء">
           <Button danger>عكس الشهر</Button>
         </Popconfirm>
-        <span style={{ color: '#555b65', fontSize: 14 }}>
-          آمن تضغط أكتر من مرة — الأصل المرحّل للشهر ده بيتخطّى، فالمصروف ما بيتضاعفش.
-        </span>
       </div>
 
       <Table<Asset>
@@ -337,8 +333,6 @@ export default function FixedAssets() {
               onChange={(e) => setForm({ ...form, notes: e.target.value })} />
           </Col>
         </Row>
-        <Alert type="info" showIcon style={{ marginTop: 12 }}
-          message="القيمة التخريدية لا تُهلَك أبداً — ينزل الأصل حتى يبلغها ثم يتوقف." />
 
         <div style={{
           marginTop: 16, padding: 16, borderRadius: 10,
@@ -364,9 +358,7 @@ export default function FixedAssets() {
           {disposing && (
             <Alert
               type="info" showIcon
-              message={`القيمة الدفترية دلوقتي ${money(disposing.book_value)}`}
-              description={`الفرق بين قيمة البيع والقيمة الدفترية هو الربح أو الخسارة، وبيترحّل
-                لحسابه تلقائياً.`}
+              message={`القيمة الدفترية الآن ${money(disposing.book_value)}`}
             />
           )}
         </Space>

@@ -111,7 +111,7 @@ const InspectionItems: React.FC = () => {
   const deactivate = async (row: ItemType) => {
     try {
       await api.delete(`/api/v1/inspections/item-types/${row.id}`);
-      message.success('تم إيقاف الصنف — هيختفي من التطبيق');
+      message.success('تم إيقاف الصنف — سيختفي من التطبيق');
       load();
     } catch {
     }
@@ -198,7 +198,6 @@ const InspectionItems: React.FC = () => {
       <ListPage<'active' | 'all'>
         icon={<AppstoreOutlined />}
         title="أصناف المعاينة" muted="(قيمة النقاط)"
-        subtitle="الأصناف اللي بتظهر في تطبيق المعاينات — التعديل بيوصل للمناديب مع «تحديث الأصناف والقوائم»"
         tabs={[
           { key: 'active', label: 'النشطة', count: activeCount },
           { key: 'all', label: 'الكل مع الموقوفة', count: rows.length },
@@ -281,7 +280,6 @@ const InspectionItems: React.FC = () => {
             name="points"
             label="قيمة النقاط للوحدة"
             rules={[{ required: true, message: 'أدخل النقاط' }]}
-            extra="بتقبل الكسور (مثال 0.1667 لصنف كل 6 قطع بنقطة)"
           >
             <InputNumber min={0} step={0.0001} style={{ width: '100%' }} />
           </Form.Item>

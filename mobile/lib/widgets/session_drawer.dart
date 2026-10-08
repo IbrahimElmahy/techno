@@ -31,7 +31,7 @@ Future<void> confirmLogout(BuildContext context, {String? warning}) async {
     context: context,
     builder: (c) => AlertDialog(
       title: const Text('تسجيل الخروج'),
-      content: Text(warning ?? 'متأكد إنك عايز تخرج؟'),
+      content: Text(warning ?? 'هل تريد تسجيل الخروج؟'),
       actions: [
         TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('إلغاء')),
         FilledButton(onPressed: () => Navigator.pop(c, true), child: const Text('خروج')),

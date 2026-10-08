@@ -69,7 +69,7 @@ def _cash_side(db: Session, *, treasury_id: int | None,
 
 def _split(amount: Decimal, count: int) -> list[Decimal]:
     if count <= 0:
-        raise AdvanceError("عدد الأقساط لازم يكون واحد على الأقل.")
+        raise AdvanceError("يجب ألا يقل عدد الأقساط عن واحد.")
     each = to_money(amount / count)
     parts = [each] * (count - 1)
     parts.append(to_money(amount - each * (count - 1)))
@@ -96,14 +96,14 @@ def create_advance(
         raise AdvanceError("الموظف غير موجود.")
     value = to_money(Decimal(str(amount or 0)))
     if value <= 0:
-        raise AdvanceError("مبلغ السلفة لازم يكون أكبر من صفر.")
+        raise AdvanceError("يجب أن يكون مبلغ السلفة أكبر من صفر.")
     if instalments < 1:
-        raise AdvanceError("عدد الأقساط لازم يكون واحد على الأقل.")
+        raise AdvanceError("يجب ألا يقل عدد الأقساط عن واحد.")
 
     year = start_year or advance_date.year
     month = start_month or advance_date.month
     if not 1 <= month <= 12:
-        raise AdvanceError("الشهر لازم يكون من 1 لـ 12.")
+        raise AdvanceError("يجب أن يكون الشهر من 1 إلى 12.")
 
     parts = _split(value, instalments)
     row = EmployeeAdvance(
@@ -177,7 +177,7 @@ def cancel_advance(db: Session, *, advance_id: int, actor_user_id: int) -> Emplo
     taken = taken_of(db, advance_id)
     if taken > 0:
         raise AdvanceError(
-            f"اتخصم منها {taken} في مسير مرحّل — اعكس المسير الأول."
+            f"خُصم منها {taken} في مسير مُرحّل — اعكس المسير أولاً."
         )
 
     if row.ledger_entry_id:
@@ -206,19 +206,19 @@ def update_advance(
     if row is None:
         raise AdvanceError("السلفة غير موجودة.")
     if row.status != AdvanceStatus.active:
-        raise AdvanceError("السلفة دي مش مفتوحة — الملغية والمسدّدة ماتتعدلش.")
+        raise AdvanceError("هذه السلفة غير مفتوحة — لا يمكن تعديل الملغاة والمسدّدة.")
     taken = taken_of(db, advance_id)
     if taken > 0:
-        raise AdvanceError(f"اتخصم منها {taken} في مسير مرحّل — اعكس المسير الأول.")
+        raise AdvanceError(f"خُصم منها {taken} في مسير مُرحّل — اعكس المسير أولاً.")
     value = to_money(Decimal(str(amount or 0)))
     if value <= 0:
-        raise AdvanceError("مبلغ السلفة لازم يكون أكبر من صفر.")
+        raise AdvanceError("يجب أن يكون مبلغ السلفة أكبر من صفر.")
     if instalments < 1:
-        raise AdvanceError("عدد الأقساط لازم يكون واحد على الأقل.")
+        raise AdvanceError("يجب ألا يقل عدد الأقساط عن واحد.")
     year = start_year or advance_date.year
     month = start_month or advance_date.month
     if not 1 <= month <= 12:
-        raise AdvanceError("الشهر لازم يكون من 1 لـ 12.")
+        raise AdvanceError("يجب أن يكون الشهر من 1 إلى 12.")
     before = {"amount": str(row.amount), "instalments": row.instalments,
               "advance_date": str(row.advance_date)}
 
@@ -292,14 +292,14 @@ def create_adjustment(
     if db.get(Employee, employee_id) is None:
         raise AdvanceError("الموظف غير موجود.")
     if not 1 <= month <= 12:
-        raise AdvanceError("الشهر لازم يكون من 1 لـ 12.")
+        raise AdvanceError("يجب أن يكون الشهر من 1 إلى 12.")
 
     value = to_money(Decimal(str(amount or 0)))
     qty = Decimal(str(quantity or 0))
     if basis == AdjustmentBasis.amount and value <= ZERO:
-        raise AdvanceError("المبلغ لازم يكون أكبر من صفر.")
+        raise AdvanceError("يجب أن يكون المبلغ أكبر من صفر.")
     if basis != AdjustmentBasis.amount and qty <= 0:
-        raise AdvanceError("العدد لازم يكون أكبر من صفر.")
+        raise AdvanceError("يجب أن يكون العدد أكبر من صفر.")
 
     row = PayrollAdjustment(
         document_number=numbering.next_document_number(db, PayrollAdjustment, "ADJ"),
@@ -324,7 +324,7 @@ def cancel_adjustment(db: Session, *, adjustment_id: int, actor_user_id: int):
     if row is None:
         raise AdvanceError("الجزاء غير موجود.")
     if row.payroll_line_id is not None:
-        raise AdvanceError("اتحسب في مسير مرحّل — اعكس المسير الأول.")
+        raise AdvanceError("حُسب في مسير مُرحّل — اعكس المسير أولاً.")
     row.status = AdjustmentStatus.cancelled
     db.flush()
     audit_service.record(

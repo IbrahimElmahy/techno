@@ -114,17 +114,17 @@ def _validate(db: Session, body: VoucherKeyIn) -> None:
         if bool(account_id) == bool(group):
             raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, {
                 "code": "validation",
-                "message": f"اختار للطرف {side} حساب واحد أو مجموعة واحدة "
-                           "— مش الاتنين ولا ولا حاجة."})
+                "message": f"اختر للطرف {side} حساباً واحداً أو مجموعة واحدة "
+                           "— لا كليهما ولا أيّاً منهما."})
         if account_id and db.get(Account, account_id) is None:
             raise HTTPException(status.HTTP_404_NOT_FOUND,
-                                {"code": "not_found", "message": "الحساب مش موجود."})
+                                {"code": "not_found", "message": "الحساب غير موجود."})
         if group:
             try:
                 AccountType(group)
             except ValueError:
                 raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, {
-                    "code": "validation", "message": "المجموعة دي مش معروفة."}) from None
+                    "code": "validation", "message": "هذه المجموعة غير معروفة."}) from None
 
     same_account = (body.debit_account_id is not None
                     and body.debit_account_id == body.credit_account_id)
@@ -132,7 +132,7 @@ def _validate(db: Session, body: VoucherKeyIn) -> None:
     if same_account or same_group:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, {
             "code": "validation",
-            "message": "المدين والدائن مايكونوش نفس الحاجة."})
+            "message": "لا يجوز أن يكون المدين والدائن الحساب نفسه."})
 
 
 def _out(db: Session, k: VoucherKey) -> VoucherKeyOut:
@@ -204,7 +204,7 @@ def update_key(
     key = db.get(VoucherKey, key_id)
     if key is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND,
-                            {"code": "not_found", "message": "المفتاح مش موجود."})
+                            {"code": "not_found", "message": "المفتاح غير موجود."})
     _validate(db, body)
     for field, value in body.model_dump().items():
         setattr(key, field, value)
@@ -221,7 +221,7 @@ def delete_key(
     key = db.get(VoucherKey, key_id)
     if key is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND,
-                            {"code": "not_found", "message": "المفتاح مش موجود."})
+                            {"code": "not_found", "message": "المفتاح غير موجود."})
     db.delete(key)
     db.commit()
     return {"deleted": key_id}

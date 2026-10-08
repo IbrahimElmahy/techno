@@ -28,7 +28,7 @@ router = APIRouter(tags=["reports"], prefix="/reports")
 def production_report(
     date_from: str | None = Query(None), date_to: str | None = Query(None),
     period: str = Query("month"), product_id: int | None = Query(None),
-    statement: str | None = Query(None, description="البيان — جزء من الكلام، بتوحيد الهمزات"),
+    statement: str | None = Query(None, description="البيان — جزء من النص، مع توحيد الهمزات"),
     current: CurrentUser = Depends(require_capability(CAP_SALES_READ)),
     db: Session = Depends(get_db),
 ):
@@ -51,7 +51,7 @@ def inventory_report(
 def wastage_report(
     date_from: str | None = Query(None), date_to: str | None = Query(None),
     item_id: int | None = Query(None), warehouse_id: int | None = Query(None),
-    statement: str | None = Query(None, description="البيان — جزء من الكلام، بتوحيد الهمزات"),
+    statement: str | None = Query(None, description="البيان — جزء من النص، مع توحيد الهمزات"),
     current: CurrentUser = Depends(require_capability(CAP_STOCK_READ)),
     db: Session = Depends(get_db),
 ):
@@ -82,7 +82,7 @@ def trade_report(
     party_id: int | None = Query(None),
     item_id: int | None = Query(None),
     warehouse_id: int | None = Query(None),
-    statement: str | None = Query(None, description="البيان — جزء من الكلام، بتوحيد الهمزات"),
+    statement: str | None = Query(None, description="البيان — جزء من النص، مع توحيد الهمزات"),
     current: CurrentUser = Depends(require_capability(CAP_SALES_READ)),
     db: Session = Depends(get_db),
 ):
@@ -123,7 +123,7 @@ def reorder_report(
 def sales_report(
     date_from: str | None = Query(None), date_to: str | None = Query(None),
     period: str = Query("month"),
-    statement: str | None = Query(None, description="البيان — جزء من الكلام، بتوحيد الهمزات"),
+    statement: str | None = Query(None, description="البيان — جزء من النص، مع توحيد الهمزات"),
     current: CurrentUser = Depends(require_capability(CAP_SALES_READ)),
     db: Session = Depends(get_db),
 ):
@@ -183,7 +183,7 @@ def export_report(
     report_type: str = Query(..., description="Type of report: sales, purchases, treasury"),
     date_from: date | None = Query(None, description="تاريخ المستند من"),
     date_to: date | None = Query(None, description="تاريخ المستند إلى"),
-    statement: str | None = Query(None, description="البيان — جزء من الكلام"),
+    statement: str | None = Query(None, description="البيان — جزء من النص"),
     current: CurrentUser = Depends(require_capability(CAP_SALES_READ)),
     db: Session = Depends(get_db),
 ):

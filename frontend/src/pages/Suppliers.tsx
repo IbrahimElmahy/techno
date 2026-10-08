@@ -325,7 +325,6 @@ export default function Suppliers() {
       <ListPage
         icon={<ShopOutlined />}
         title="الموردين" muted="(دليل الموردين وأرصدتهم)"
-        subtitle="بيانات الموردين والرصيد الدائن لكل مورد — اضغط على السطر لفتح ملفه"
         actions={(<>
           <Button data-shortcut="F2" type="primary" icon={<PlusOutlined />} className="sl-create"
             onClick={() => setDrawerVisible(true)}>

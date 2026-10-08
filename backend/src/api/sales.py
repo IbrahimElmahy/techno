@@ -63,7 +63,7 @@ def _reject_non_trader(db: Session, customer_id: int) -> None:
     cust = db.get(Customer, customer_id)
     if cust is not None and (cust.customer_type or "") == "plumber":
         raise HTTPException(422, {"code": "validation",
-                                  "message": "السباك مالوش فواتير بيع — شغله معاينات وكوبونات ونقاط"})
+                                  "message": "ليس للسباك فواتير بيع — عمله معاينات وكوبونات ونقاط"})
 
 
 class LocationIn(BaseModel):
@@ -291,11 +291,11 @@ def _rep_scope_check(db: Session, current: CurrentUser, customer_id: int, origin
     if store is None:
         raise HTTPException(403, {
             "code": "forbidden",
-            "message": "مالكش عهدة ولا مخزن مسجّل — كلّم المخزن قبل ما تبيع."})
+            "message": "ليس لديك عهدة ولا مخزن مسجّل — تواصل مع المخزن قبل البيع."})
     if (origin.location_kind, origin.location_id) != store:
         raise HTTPException(403, {
             "code": "forbidden",
-            "message": "لازم تبيع من مخزنك انت."})
+            "message": "يجب أن تبيع من مخزنك أنت."})
 
 
 def _line_locations_check(db: Session, current: CurrentUser, body) -> None:
@@ -307,7 +307,7 @@ def _line_locations_check(db: Session, current: CurrentUser, body) -> None:
         own = store[1] if store and getattr(store[0], "value", store[0]) == "warehouse" else None
         if any(w != own for w in line_whs):
             raise HTTPException(403, {"code": "forbidden",
-                                      "message": "لازم كل الأصناف تتحرّك من مخزنك انت."})
+                                      "message": "يجب أن تُصرف كل الأصناف من مخزنك أنت."})
         return
     branch_id = branch_scope.visible_branch_id(current)
     if branch_id is None:
@@ -318,10 +318,10 @@ def _line_locations_check(db: Session, current: CurrentUser, body) -> None:
     for wid in whs:
         wh = db.get(Warehouse, wid)
         if wh is None:
-            raise HTTPException(422, {"code": "validation", "message": f"مخزن رقم {wid} مش موجود."})
+            raise HTTPException(422, {"code": "validation", "message": f"المخزن رقم {wid} غير موجود."})
         if wh.branch_id is not None and wh.branch_id != branch_id:
             raise HTTPException(403, {"code": "forbidden",
-                                      "message": f"«{wh.name}» مش في فرعك — ماينفعش تبيع منه."})
+                                      "message": f"«{wh.name}» ليس في فرعك — لا يمكنك البيع منه."})
 
 
 def _rep_treasuries(db: Session, rep_id: int) -> list[dict]:
@@ -361,11 +361,11 @@ def rep_bundle(
     db: Session = Depends(get_db),
 ) -> dict:
     if current.rep_id is None:
-        raise HTTPException(403, {"code": "forbidden", "message": "الشاشة دي للمناديب."})
+        raise HTTPException(403, {"code": "forbidden", "message": "هذه الشاشة للمناديب."})
     store = rep_store(db, current.rep_id)
     if store is None:
         raise HTTPException(404, {
-            "code": "not_found", "message": "مالكش عهدة ولا مخزن مسجّل."})
+            "code": "not_found", "message": "ليس لديك عهدة ولا مخزن مسجّل."})
     store_kind, store_id = store
 
     customers = db.scalars(
@@ -632,7 +632,7 @@ def _build_sale(
     if body.is_bonus:
         if not current.can(CAP_SALE_BONUS):
             raise HTTPException(403, {"code": "forbidden",
-                                      "message": "مالكش صلاحية «إصدار فاتورة بونص»."})
+                                      "message": "ليس لديك صلاحية «إصدار فاتورة بونص»."})
         if bonus_for is None and body.bonus_for_client_uuid:
             bonus_for = db.scalar(select(SalesInvoice.id).where(
                 SalesInvoice.client_uuid == body.bonus_for_client_uuid))
@@ -642,7 +642,7 @@ def _build_sale(
                     target.rep_id == current.id
                     or (target.rep_id is None and target.actor_user_id == current.id)))):
             raise HTTPException(403, {"code": "forbidden",
-                                      "message": "البونص لازم يبقى على فاتورة من فواتيرك."})
+                                      "message": "يجب أن يكون البونص على فاتورة من فواتيرك."})
     can_sell_below = current.can(CAP_SELL_BELOW_PRICE)
     can_sell_below_cost = current.can(CAP_SELL_BELOW_COST)
     try:
@@ -734,10 +734,10 @@ def update_sale(
         mine = inv.rep_id == current.id or (inv.rep_id is None and inv.actor_user_id == current.id)
         if not mine:
             raise HTTPException(403, {"code": "forbidden",
-                                      "message": "مش فاتورتك — تقدر تعدّل فواتيرك انت بس."})
+                                      "message": "هذه ليست فاتورتك — يمكنك تعديل فواتيرك أنت فقط."})
         if body.rep_id not in (None, current.id):
             raise HTTPException(403, {"code": "forbidden",
-                                      "message": "ماينفعش تحط الفاتورة باسم مندوب تاني."})
+                                      "message": "لا يمكنك تسجيل الفاتورة باسم مندوب آخر."})
     try:
         document_edit_service.assert_sale_editable(db, inv)
         kept_costs = document_edit_service.frozen_costs(db, inv)
@@ -759,17 +759,17 @@ def delete_sale(
 ) -> None:
     inv = db.get(SalesInvoice, sale_id)
     if inv is None or not branch_scope.may_see(current, inv):
-        raise HTTPException(404, {"code": "delete_blocked", "message": "الفاتورة مش موجودة"})
+        raise HTTPException(404, {"code": "delete_blocked", "message": "الفاتورة غير موجودة"})
     bonuses = db.scalars(select(SalesInvoice.document_number).where(
         SalesInvoice.bonus_for_invoice_id == sale_id)).all()
     if bonuses:
         raise HTTPException(409, {"code": "delete_blocked",
-                                  "message": f"الفاتورة دي عليها بونص ({'، '.join(bonuses)}) — امسحه الأول."})
+                                  "message": f"على هذه الفاتورة بونص ({'، '.join(bonuses)}) — احذفه أولاً."})
     try:
         document_edit_service.delete_sale(
             db, invoice_id=sale_id, actor_user_id=current.id)
     except DocumentEditError as exc:
-        code = 404 if "مش موجودة" in str(exc) else status.HTTP_409_CONFLICT
+        code = 404 if any(s in str(exc) for s in ("مش موجودة", "غير موجودة", "مش موجود", "غير موجود")) else status.HTTP_409_CONFLICT
         raise HTTPException(code, {"code": "delete_blocked", "message": str(exc)})
     db.commit()
 
@@ -1494,7 +1494,7 @@ def update_standalone_return(
     if ret is None:
         raise HTTPException(404, {"code": "not_found", "message": "المرتجع غير موجود"})
     if not branch_scope.may_see(current, ret):
-        raise HTTPException(404, {"code": "not_found", "message": "المرتجع مش موجود"})
+        raise HTTPException(404, {"code": "not_found", "message": "المرتجع غير موجود"})
     _rep_scope_check(db, current, body.customer_id, body.origin)
     _line_locations_check(db, current, body)
     _reject_non_trader(db, body.customer_id)
@@ -1548,7 +1548,7 @@ def delete_sales_return(
         document_edit_service.delete_sales_return(
             db, return_id=return_id, actor_user_id=current.id)
     except DocumentEditError as exc:
-        code = 404 if "مش موجود" in str(exc) else status.HTTP_409_CONFLICT
+        code = 404 if any(s in str(exc) for s in ("مش موجود", "غير موجود")) else status.HTTP_409_CONFLICT
         raise HTTPException(code, {"code": "delete_blocked", "message": str(exc)})
     db.commit()
 
@@ -1563,7 +1563,7 @@ def get_standalone_return(
     if r is None:
         raise HTTPException(404, {"code": "not_found", "message": "Return not found"})
     if not branch_scope.may_see(current, r):
-        raise HTTPException(404, {"code": "not_found", "message": "المرتجع مش موجود"})
+        raise HTTPException(404, {"code": "not_found", "message": "المرتجع غير موجود"})
     out = _standalone_return_out(r)
     out["origin_location_kind"] = r.origin_location_kind.value if r.origin_location_kind else None
     out["origin_location_id"] = r.origin_location_id
@@ -1690,7 +1690,7 @@ def return_sale(
     if current.rep_id is not None and not (
             inv.rep_id == current.id or (inv.rep_id is None and inv.actor_user_id == current.id)):
         raise HTTPException(403, {"code": "forbidden",
-                                  "message": "مش فاتورتك — تقدر ترجّع على فواتيرك انت بس."})
+                                  "message": "هذه ليست فاتورتك — يمكنك الإرجاع على فواتيرك أنت فقط."})
     serials: dict[int, list[str]] = {}
     for l in body.lines:
         if l.serials:

@@ -107,7 +107,7 @@ export default function Branches() {
         is_factory: !!values.is_factory,
       });
       forgetFactoryBranches();
-      message.success('اتعدّل الفرع');
+      message.success('تم تعديل الفرع');
       setEditing(null);
       fetchAll();
     } catch (err) {
@@ -232,8 +232,7 @@ export default function Branches() {
           </Col>
         )}
         <Col span={10}>
-          <Form.Item name="is_factory" valuePropName="checked" label=" "
-            tooltip="الفرع ده بيصنّع: قسم الإنتاج بيبان فيه، والكوبونات والنقاط وخط الفاتورة بيختفوا">
+          <Form.Item name="is_factory" valuePropName="checked" label=" ">
             <Checkbox>فرع تصنيع</Checkbox>
           </Form.Item>
         </Col>
@@ -250,7 +249,6 @@ export default function Branches() {
       <ListPage
         icon={<ShopOutlined />}
         title="الفروع"
-        subtitle="فروع الشركة ومحافظاتها — والمركز الرئيسي وفروع التصنيع"
         actions={(<>
           {canWrite && (
             <Button data-shortcut="F2" type="primary" className="sl-create" icon={<PlusOutlined />}
@@ -258,7 +256,7 @@ export default function Branches() {
               فرع جديد
             </Button>
           )}
-          <Button icon={<ReloadOutlined />} onClick={fetchAll}>اعادة تحميل</Button>
+          <Button icon={<ReloadOutlined />} onClick={fetchAll}>إعادة تحميل</Button>
           {tableCols.control}
         </>)}
         filters={(

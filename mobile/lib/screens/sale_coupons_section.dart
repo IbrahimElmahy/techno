@@ -98,10 +98,10 @@ class _SaleCouponsSectionState extends State<SaleCouponsSection> {
                 style: TextStyle(fontWeight: FontWeight.w700)),
             subtitle: Text(
                 hasError
-                    ? 'في مشكلة في سريالات الكوبونات — افتح وراجع'
+                    ? 'توجد مشكلة في سريالات الكوبونات — افتح للمراجعة'
                     : _total > 0
                         ? '$_total كوبون في $filled ${filled == 1 ? 'فئة' : 'فئات'}'
-                        : 'اختياري — دفاتر الكوبونات اللي اتسلّمت للعميل',
+                        : 'اختياري',
                 style: hasError
                     ? const TextStyle(
                         color: AppColors.danger, fontWeight: FontWeight.w700)
@@ -122,7 +122,7 @@ class _SaleCouponsSectionState extends State<SaleCouponsSection> {
                     alignment: AlignmentDirectional.centerStart,
                     child: TextButton.icon(
                       icon: const Icon(Icons.add),
-                      label: const Text('فئة كوبون تانية'),
+                      label: const Text('فئة كوبون أخرى'),
                       onPressed: () =>
                           setState(() => widget.rows.add(SaleCouponRow())),
                     ),
@@ -148,7 +148,7 @@ class _SaleCouponsSectionState extends State<SaleCouponsSection> {
     final bad = r.serialFrom.trim().isNotEmpty &&
         r.serialTo.trim().isNotEmpty &&
         n == null;
-    final problem = custodyError ?? (bad ? 'المدى ده مش مفهوم — راجع الرقمين' : null);
+    final problem = custodyError ?? (bad ? 'هذا المدى غير صالح — راجع الرقمين' : null);
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),
       child: Column(
@@ -188,7 +188,7 @@ class _SaleCouponsSectionState extends State<SaleCouponsSection> {
               if (widget.rows.length > 1)
                 IconButton(
                   icon: const Icon(Icons.delete_outline, color: AppColors.danger),
-                  tooltip: 'امسح الصف',
+                  tooltip: 'احذف الصف',
                   onPressed: () => setState(() {
                     widget.rows.removeAt(i);
                     widget.onChanged();

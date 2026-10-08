@@ -145,7 +145,7 @@ export function useEntryGrid<T>(storageKey: string, columns: EntryColumn<T>[]) {
           {c.title}
           <span className="eg-resize" onPointerDown={startResize(c)}
             onDoubleClick={(e) => { e.stopPropagation(); resetWidth(c.key); }}
-            title="اسحب لتغيير العرض — دبل كليك يرجّعه" />
+            title="تغيير عرض العمود" />
         </th>
       ))}
     </tr>

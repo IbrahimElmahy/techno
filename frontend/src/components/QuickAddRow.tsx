@@ -10,7 +10,7 @@ export interface QuickAddItem { id: number; name: string; code?: string | null; 
 
 export default function QuickAddRow({
   colSpan, items, onPick, onOpenPicker, warehouses, warehouseId, onWarehouseChange,
-  availableFor, disabled = false, placeholder = 'اكتب اسم الصنف وأضفه على طول…', asDiv = false,
+  availableFor, disabled = false, placeholder = 'اكتب اسم الصنف لإضافته…', asDiv = false,
 }: {
   colSpan: number;
   items: QuickAddItem[];
@@ -76,9 +76,9 @@ export default function QuickAddRow({
               setSearch('');
             }}
             options={options}
-            notFoundContent={search ? 'مافيش صنف بالاسم ده هنا' : null}
+            notFoundContent={search ? 'لا يوجد صنف بهذا الاسم' : null}
           />
-          <Button icon={<AppstoreOutlined />} onClick={onOpenPicker}>قايمة الأصناف</Button>
+          <Button icon={<AppstoreOutlined />} onClick={onOpenPicker}>قائمة الأصناف</Button>
         </div>
   );
   if (asDiv) return <div className="eg-quick-row eg-quick-div">{body}</div>;

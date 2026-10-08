@@ -161,7 +161,7 @@ const FinanceReports: React.FC = () => {
     { title: agingParty === 'customers' ? 'العميل' : 'المورد', dataIndex: 'party_name', key: 'party_name',
       ...textColumn(aging, (r: AgingRow) => r.party_name) },
     ...BUCKETS.map((b) => ({
-      title: b === '90+' ? 'أكثر من 90 يوم' : `${b} يوم`,
+      title: b === '90+' ? 'أكثر من 90 يوماً' : `${b} يوم`,
       key: `bucket_${b}`,
       dataIndex: ['buckets', b],
       width: 130,
@@ -215,21 +215,14 @@ const FinanceReports: React.FC = () => {
     ? { filters: filtersSlot, actions: actionsSlot } : undefined);
   const ownLoader = tab === 'partner' || tab === 'cashflow';
 
-  const TABS: { key: string; label: string; title: string; subtitle: string }[] = [
-    { key: 'income', label: 'قائمة الدخل', title: 'قائمة الدخل',
-      subtitle: 'الإيرادات والمصروفات وصافي الربح في الفترة' },
-    { key: 'sheet', label: 'الميزانية', title: 'المركز المالي (الميزانية)',
-      subtitle: 'الأصول والالتزامات وحقوق الملكية في آخر يوم من الفترة' },
-    { key: 'aging', label: 'أعمار الديون', title: 'أعمار الديون',
-      subtitle: 'المديونيات المفتوحة موزّعة على شرايح الأيام' },
-    { key: 'partner', label: 'دفتر الشريك', title: 'دفتر الشريك',
-      subtitle: 'حركة كل طرف في الفترة — أول المدة والمدين والدائن وآخر المدة' },
-    { key: 'cashflow', label: 'التدفق النقدي', title: 'التدفق النقدي',
-      subtitle: 'النقدية الداخلة والخارجة في الفترة حسب الحساب المقابل' },
-    { key: 'vat', label: 'الإقرار الضريبي', title: 'الإقرار الضريبي',
-      subtitle: 'ضريبة القيمة المضافة — المبيعات والمشتريات والمستحق للمصلحة' },
-    { key: 'commissions', label: 'عمولات المناديب', title: 'عمولات المناديب',
-      subtitle: 'عمولة كل مندوب على التحصيل أو المبيعات في الفترة' },
+  const TABS: { key: string; label: string; title: string }[] = [
+    { key: 'income', label: 'قائمة الدخل', title: 'قائمة الدخل' },
+    { key: 'sheet', label: 'الميزانية', title: 'المركز المالي (الميزانية)' },
+    { key: 'aging', label: 'أعمار الديون', title: 'أعمار الديون' },
+    { key: 'partner', label: 'دفتر الشريك', title: 'دفتر الشريك' },
+    { key: 'cashflow', label: 'التدفق النقدي', title: 'التدفق النقدي' },
+    { key: 'vat', label: 'الإقرار الضريبي', title: 'الإقرار الضريبي' },
+    { key: 'commissions', label: 'عمولات المناديب', title: 'عمولات المناديب' },
   ];
   const cur = TABS.find((t) => t.key === tab);
 
@@ -244,7 +237,6 @@ const FinanceReports: React.FC = () => {
     <ListPage
       icon={<AccountBookOutlined />}
       title={cur?.title ?? 'التقارير المالية'}
-      subtitle={cur?.subtitle}
       tabs={TABS.map((t) => ({ key: t.key, label: t.label }))}
       activeTab={tab}
       onTabChange={setTab}

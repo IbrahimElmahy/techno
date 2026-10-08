@@ -4,7 +4,7 @@ import { DeleteOutlined } from '@ant-design/icons';
 
 export default function DraftTag({
   onDelete,
-  label = 'مسودّة — لسه ما اترحّلتش',
+  label = 'مسودّة — لم تُرحَّل بعد',
 }: {
   onDelete: () => void | Promise<void>;
   label?: string;
@@ -18,9 +18,9 @@ export default function DraftTag({
     setBusy(true);
     try {
       await onDelete();
-      message.success('المسودّة اتمسحت');
+      message.success('تم حذف المسودّة');
     } catch (err: any) {
-      message.error(err?.response?.data?.detail?.message || 'تعذر مسح المسودّة');
+      message.error(err?.response?.data?.detail?.message || 'تعذر حذف المسودّة');
     } finally {
       setBusy(false);
     }
@@ -36,7 +36,7 @@ export default function DraftTag({
         icon={<DeleteOutlined />}
         onClick={run}
       >
-        امسح
+        احذف
       </Button>
     </Space>
   );

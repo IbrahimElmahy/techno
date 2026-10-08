@@ -58,7 +58,7 @@ const STATUS: Record<string, { label: string; color: string }> = {
   draft: { label: 'مسودة', color: 'default' },
   closed: { label: 'معتمد', color: 'blue' },
   posted: { label: 'مرحّل', color: 'green' },
-  reversed: { label: 'متعكس', color: 'red' },
+  reversed: { label: 'معكوس', color: 'red' },
 };
 const MONTHS = ['يناير', 'فبراير', 'مارس', 'ابريل', 'مايو', 'يونيو', 'يوليو', 'اغسطس', 'سبتمبر',
   'اكتوبر', 'نوفمبر', 'ديسمبر'];
@@ -103,18 +103,17 @@ function MoneyCell({ cell, editable, onSave, strong }: {
       {cell.note ? <div>{cell.note}</div> : null}
       {overridden ? (
         <div style={{ marginTop: 4 }}>
-          مكتوب بالإيد — المحسوب: <b>{money(cell.computed)}</b>
+          مُدخل يدوياً — المحسوب: <b>{money(cell.computed)}</b>
           {editable ? (
             <div style={{ marginTop: 4 }}>
               <Button size="small" icon={<RollbackOutlined />}
                 onClick={async () => { setBusy(true); try { await onSave(null); } finally { setBusy(false); } }}>
-                رجّع المحسوب
+                استعادة المحسوب
               </Button>
             </div>
           ) : null}
         </div>
       ) : null}
-      {editable ? <div style={{ color: '#888', marginTop: 4 }}>اضغط على الخانة للكتابة فوقها</div> : null}
     </div>
   );
   return (
@@ -164,17 +163,12 @@ function DaysCell({ row, editable, onSave }: {
         <div style={{ fontSize: 13 }}>
           <div>من الحضور: <b>{n(row.absent_days)}</b> يوم</div>
           {overridden ? (
-            <div>مكتوبة بالإيد: <b>{n(row.absent_days_override)}</b>
+            <div>مُدخلة يدوياً: <b>{n(row.absent_days_override)}</b>
               {editable ? (
                 <Button size="small" style={{ marginInlineStart: 6 }} onClick={() => onSave(null)}>
-                  رجّع الحضور
+                  استعادة الحضور
                 </Button>
               ) : null}
-            </div>
-          ) : null}
-          {editable ? (
-            <div style={{ color: '#888' }}>
-              اضغط لكتابة عدد الأيام — والعمولة بتتخصم بيها بعد «تحديث من المصادر»
             </div>
           ) : null}
         </div>
@@ -258,7 +252,7 @@ export default function PayrollSheet() {
 
   const prepare = () => act('prepare', () => api.post('/api/v1/hr/payroll-sheet/sheet/prepare', {
     branch_id: branchId, year: month.year(), month: month.month() + 1,
-  }), run && run.status === 'draft' ? 'اتحدّث من المصادر — المكتوب بالإيد زي ما هو' : 'الشهر اتجهّز');
+  }), run && run.status === 'draft' ? 'تم التحديث من المصادر مع الإبقاء على القيم المُدخلة يدوياً' : 'تم تجهيز الشهر');
 
   const runAction = (path: string, ok: string) => act(path,
     () => api.post(`/api/v1/hr/payroll-sheet/sheet/${run!.id}/${path}`), ok);
@@ -266,7 +260,7 @@ export default function PayrollSheet() {
   const removeDraft = () => act('delete', async () => {
     await api.delete(`/api/v1/hr/payroll-sheet/sheet/${run!.id}`);
     return null;
-  }, 'المسودة اتمسحت');
+  }, 'تم حذف المسودة');
 
   const applyRow = (res: any) => {
     setData((prev) => {
@@ -340,12 +334,12 @@ export default function PayrollSheet() {
           <Space size={4} wrap>
             <b>{r.name}</b>
             {r.no_salary ? (
-              <Tooltip title="مالوش إعدادات راتب — حطّها من «رواتب الموظفين»">
+              <Tooltip title="ليست له إعدادات راتب — أضفها من «رواتب الموظفين»">
                 <Tag color="orange" style={{ marginInlineEnd: 0 }}>بدون إعدادات</Tag>
               </Tooltip>
             ) : null}
             {r.hidden_components.length ? (
-              <Tooltip title={`بنود في إعدادات راتبه مالهاش عمود في المجموعة دي: ${r.hidden_components
+              <Tooltip title={`بنود في إعدادات راتبه ليس لها عمود في هذه المجموعة: ${r.hidden_components
                 .map((h) => `${h.name} ${money(h.amount)}`).join('، ')}`}>
                 <WarningOutlined style={{ color: '#fa8c16' }} />
               </Tooltip>
@@ -473,17 +467,17 @@ export default function PayrollSheet() {
       ) : null}
       {tab === 'sheet' && run?.status === 'draft' ? (
         <Button icon={<CheckCircleOutlined />} loading={acting === 'close'}
-          onClick={() => runAction('close', 'الشيت اتعمد')}>اعتماد</Button>
+          onClick={() => runAction('close', 'تم اعتماد الشيت')}>اعتماد</Button>
       ) : null}
       {tab === 'sheet' && run?.status === 'closed' ? (<>
         <Button icon={<UnlockOutlined />} loading={acting === 'reopen'}
-          onClick={() => runAction('reopen', 'رجع مسودة')}>إلغاء الاعتماد</Button>
-        <Popconfirm onConfirm={() => runAction('post', 'قيد المرتبات اترحّل')}>
+          onClick={() => runAction('reopen', 'أُعيد إلى مسودة')}>إلغاء الاعتماد</Button>
+        <Popconfirm onConfirm={() => runAction('post', 'تم ترحيل قيد المرتبات')}>
           <Button type="primary" icon={<SendOutlined />} loading={acting === 'post'}>ترحيل</Button>
         </Popconfirm>
       </>) : null}
       {tab === 'sheet' && run?.status === 'posted' ? (
-        <Popconfirm onConfirm={() => runAction('reverse', 'الترحيل اتعكس — الشهر رجع مفتوح')}>
+        <Popconfirm onConfirm={() => runAction('reverse', 'تم عكس الترحيل وأُعيد فتح الشهر')}>
           <Button danger icon={<RollbackOutlined />} loading={acting === 'reverse'}>عكس الترحيل</Button>
         </Popconfirm>
       ) : null}
@@ -494,7 +488,7 @@ export default function PayrollSheet() {
       {tab === 'sheet' && run?.status === 'draft' ? (
         <Popconfirm onConfirm={removeDraft}>
           <Button danger icon={<DeleteOutlined />} loading={acting === 'delete'}
-            title="مسح المسودة — الشهر يرجع من غير شيت">مسح</Button>
+            title="حذف المسودة">مسح</Button>
         </Popconfirm>
       ) : null}
       <Button icon={<AppstoreOutlined />} onClick={() => openGroups()}>مجموعات المرتبات</Button>
@@ -529,7 +523,6 @@ export default function PayrollSheet() {
       icon={<TableOutlined />}
       title="شيت المرتبات"
       muted={run ? `${MONTHS[run.month - 1]} ${run.year} — ${branchName(run.branch_id)}` : undefined}
-      subtitle="نفس ورقة الإكسل: مجموعة تحت مجموعة، وأي خانة تتكتب فوقها"
       tabs={[{ key: 'sheet', label: 'الشيت' }, { key: 'months', label: 'الشهور', count: tab === 'months' ? history.length : null }]}
       activeTab={tab as any}
       onTabChange={(k) => setTab(k)}
@@ -542,7 +535,7 @@ export default function PayrollSheet() {
         <ListStat label="الاستحقاقات" value={money(data?.totals.earnings)} tone="pos" />
         <ListStat label="الاستقطاعات" value={money(data?.totals.deductions)} tone="neg" />
         <ListStat label="الصافي" value={money(data?.totals.net)} tone="strong" />
-        <ListStat label="خانات مكتوبة بالإيد" value={overrides} tone={overrides ? 'warn' : undefined} />
+        <ListStat label="خانات مُدخلة يدوياً" value={overrides} tone={overrides ? 'warn' : undefined} />
       </>) : undefined}
     >
       {tab === 'months' ? (
@@ -557,7 +550,7 @@ export default function PayrollSheet() {
             },
             style: { cursor: 'pointer' },
           })}
-          locale={{ emptyText: 'مافيش شهور متجهّزة' }}
+          locale={{ emptyText: 'لا توجد شهور مجهّزة' }}
           columns={[
             { title: 'المستند', dataIndex: 'document_number' },
             { title: 'الشهر', key: 'm', render: (_: any, r) => `${MONTHS[r.month - 1]} ${r.year}` },
@@ -573,14 +566,10 @@ export default function PayrollSheet() {
       ) : (
         <Spin spinning={loading}>
           {!branchId ? (
-            <Empty description="اختار الفرع" />
+            <Empty description="اختر الفرع" />
           ) : !run ? (
-            <Empty description={`مرتبات ${MONTHS[month.month()]} ${month.year()} لسه ماتجهّزتش`}>
+            <Empty description={`مرتبات ${MONTHS[month.month()]} ${month.year()} لم تُجهَّز بعد`}>
               <Space direction="vertical">
-                <span style={{ color: '#888' }}>
-                  «تجهيز الشهر» بيعمل الشيت من مجموعات المرتبات وإعدادات راتب كل موظف، والعمولات
-                  والغياب والسلف والجزاءات بتتملى لوحدها.
-                </span>
                 <Space>
                   <Button type="primary" icon={<ReloadOutlined />} loading={acting === 'prepare'}
                     onClick={prepare}>تجهيز الشهر</Button>
@@ -592,16 +581,15 @@ export default function PayrollSheet() {
             <>
               {run.status === 'reversed' ? (
                 <Alert type="warning" showIcon style={{ marginBottom: 8 }}
-                  message={`المستند ${run.document_number} اتعكس`}
-                  description="«تجهيز الشهر» بيعمل شيت جديد للشهر وبيحتفظ بكل الخانات اللي اتكتبت بالإيد." />
+                  message={`تم عكس المستند ${run.document_number}`} />
               ) : null}
               {run.commission_note && run.status === 'draft' ? (
                 <Alert type="info" showIcon style={{ marginBottom: 8 }}
-                  message="أعمدة العمولة يدوي الشهر ده" description={run.commission_note} />
+                  message="أعمدة العمولة يدوية هذا الشهر" description={run.commission_note} />
               ) : null}
               {data!.unassigned.length && run.status === 'draft' ? (
                 <Alert type="warning" showIcon style={{ marginBottom: 8 }}
-                  message={`${data!.unassigned.length} موظف في الفرع مش في أي مجموعة — مش في الشيت`}
+                  message={`${data!.unassigned.length} موظف في الفرع غير مدرجين في أي مجموعة ولا يظهرون في الشيت`}
                   description={data!.unassigned.slice(0, 12).map((e) => e.name).join('، ')
                     + (data!.unassigned.length > 12 ? '، …' : '')}
                   action={<Button size="small" onClick={() => openGroups('members')}>توزيع الموظفين</Button>} />
@@ -621,7 +609,7 @@ export default function PayrollSheet() {
                       scroll={{ x: 'max-content' }}
                       columns={columnsFor(g)}
                       summary={() => groupSummary(g)}
-                      locale={{ emptyText: query ? 'مافيش نتايج' : 'مافيش موظفين في المجموعة دي' }}
+                      locale={{ emptyText: query ? 'لا توجد نتائج' : 'لا يوجد موظفون في هذه المجموعة' }}
                     />
                   </div>
                 );

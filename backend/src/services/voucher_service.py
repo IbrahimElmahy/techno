@@ -46,7 +46,7 @@ def _doc_number(db: Session, kind: VoucherKind) -> str:
 def _positive(amount) -> Decimal:
     value = to_money(amount)
     if value <= ZERO:
-        raise VoucherError("قيمة السند لازم تكون أكبر من صفر.")
+        raise VoucherError("يجب أن تكون قيمة السند أكبر من صفر.")
     return value
 
 
@@ -218,7 +218,7 @@ def create_receipt(
 ) -> Voucher:
     value = _positive(amount)
     if len([x for x in (customer_id, supplier_id, account_id) if x]) != 1:
-        raise VoucherError("اختار طرف واحد للسند: عميل أو مورد أو حساب.")
+        raise VoucherError("اختر طرفاً واحداً للسند: عميل أو مورد أو حساب.")
     if customer_id is None:
         return _party_voucher(
             db, receipt=True, value=value, supplier_id=supplier_id, account_id=account_id,
@@ -281,7 +281,7 @@ def _party_voucher(
 ) -> Voucher:
     given = [x for x in (customer_id, supplier_id, account_id) if x]
     if len(given) != 1:
-        raise VoucherError("اختار طرف واحد للسند: عميل أو مورد أو حساب.")
+        raise VoucherError("اختر طرفاً واحداً للسند: عميل أو مورد أو حساب.")
     party_name = ""
     if customer_id:
         cust = db.get(Customer, customer_id)
@@ -302,7 +302,7 @@ def _party_voucher(
         if not acc.is_postable:
             raise VoucherError("لا يمكن الترحيل على حساب تجميعي — اختر حسابًا فرعيًا.")
         if acc.account_type == AccountType.treasury:
-            raise VoucherError("ده حساب خزنة — النقل بين الخزن بـ«تحويل نقدي».")
+            raise VoucherError("هذا حساب خزنة — يتم النقل بين الخزن بـ«تحويل نقدي».")
         party_account = acc.id
         party_name = acc.name or acc.code or ""
     cash_account_id, safe_id = _cash_side(
@@ -349,7 +349,7 @@ def create_payment(
 ) -> Voucher:
     value = _positive(amount)
     if len([x for x in (customer_id, supplier_id, account_id) if x]) != 1:
-        raise VoucherError("اختار طرف واحد للسند: عميل أو مورد أو حساب.")
+        raise VoucherError("اختر طرفاً واحداً للسند: عميل أو مورد أو حساب.")
     if supplier_id is None:
         return _party_voucher(
             db, receipt=False, value=value, customer_id=customer_id, account_id=account_id,
@@ -390,7 +390,7 @@ def create_expense(
     from src.services.financial_reports_service import effective_nature
 
     if effective_nature(account) != AccountNature.expense:
-        raise VoucherError("لازم تختار حسابًا من طبيعة «مصروفات».")
+        raise VoucherError("يجب اختيار حساب من طبيعة «مصروفات».")
     if not account.is_postable:
         raise VoucherError("لا يمكن الترحيل على حساب تجميعي — اختر حسابًا فرعيًا.")
     cash_account_id, safe_id = _cash_side(
@@ -422,7 +422,7 @@ def create_partner_movement(
     pname = (parent.name or "") if parent is not None else ""
     if acc is None or not acc.active or not acc.is_postable or not any(
             w in pname for w in ("جار", "رأس المال", "راس المال", "استثمار")):
-        raise VoucherError("الحساب لازم يكون حساب شريك تحت «جارى الشركاء» أو «رأس المال».")
+        raise VoucherError("يجب أن يكون الحساب حساب شريك تحت «جارى الشركاء» أو «رأس المال».")
     cash_account_id, safe_id = _cash_side(
         db, actor_role=actor_role, actor_user_id=actor_user_id, treasury_id=treasury_id)
     if withdraw:
@@ -562,15 +562,15 @@ def replace_voucher(
 
     original = db.get(Voucher, voucher_id)
     if original is None:
-        raise VoucherNotFound("السند مش موجود.")
+        raise VoucherNotFound("السند غير موجود.")
     if (original.client_uuid or "").startswith("a5:"):
-        raise VoucherError("السند ده منقول من a5 — عدّله في a5 والمزامنة هتجيب التعديل.")
+        raise VoucherError("هذا السند منقول من a5 — عدّله في a5 وستجلب المزامنة التعديل.")
     if original.kind != kind:
-        raise VoucherError("نوع السند مش مطابق.")
+        raise VoucherError("نوع السند غير مطابق.")
     if original.reverses_id is not None:
         raise VoucherError("لا يمكن تعديل سند عكسي.")
     if db.scalar(select(Voucher.id).where(Voucher.reverses_id == voucher_id)) is not None:
-        raise VoucherError("السند معكوس — مايتعدّلش.")
+        raise VoucherError("السند معكوس — لا يمكن تعديله.")
 
     keep = {
         "id": original.id, "document_number": original.document_number,

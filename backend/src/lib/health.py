@@ -172,8 +172,8 @@ def check_negative_stock(db: Session, on_hand, labels, places=None,
         group="رصيد المنتجات",
         severity="high",
         count=len(bad),
-        hint="الصنف طلع من مكان مكانش فيه — التكلفة والجرد والمتاح كلهم "
-             "بيتحسبوا على كمية مش موجودة.",
+        hint="خرج الصنف من مكان لم يكن فيه — فتُحسب التكلفة والجرد والمتاح "
+             "على كمية غير موجودة.",
         link=_with_ids("/stock-balance", sorted({iid for iid, _k, _l, _q in bad})),
         ids=sorted({iid for iid, _k, _l, _q in bad}),
         samples=[{"label": labels.get(iid, f"#{iid}"),
@@ -202,17 +202,17 @@ def check_reorder(db: Session, on_hand, labels, scope: Scope | None = None) -> l
         have = totals.get(item.id, ZERO)
         if item.min_stock is not None and have < to_qty(item.min_stock):
             below.append({"item_id": item.id, "label": f"{item.code} — {item.name}",
-                          "detail": f"عندك {have} والحد الأدنى {to_qty(item.min_stock)}"})
+                          "detail": f"لديك {have} والحد الأدنى {to_qty(item.min_stock)}"})
         elif item.max_stock is not None and have > to_qty(item.max_stock):
             above.append({"item_id": item.id, "label": f"{item.code} — {item.name}",
-                          "detail": f"عندك {have} والحد الأقصى {to_qty(item.max_stock)}"})
+                          "detail": f"لديك {have} والحد الأقصى {to_qty(item.max_stock)}"})
 
     out: list[Issue] = []
     if below:
         out.append(Issue(
             key="below_min", title="أصناف تحت الحد الأدنى", group="رصيد المنتجات",
             severity="medium", count=len(below),
-            hint="هتقف عن البيع لو مااشتريتش — والحد ده انتوا اللي حطتوه.",
+            hint="سيتوقف البيع إن لم تتم إعادة الشراء — وهذا الحد من إعدادكم.",
             link=_with_ids("/stock-alerts", [b["item_id"] for b in below]),
             ids=[b["item_id"] for b in below], samples=below[:SAMPLE],
         ))
@@ -220,7 +220,7 @@ def check_reorder(db: Session, on_hand, labels, scope: Scope | None = None) -> l
         out.append(Issue(
             key="above_max", title="أصناف فوق الحد الأقصى", group="رصيد المنتجات",
             severity="low", count=len(above),
-            hint="فلوس واقفة في بضاعة زيادة عن اللي قررتوه.",
+            hint="أموال مجمّدة في بضاعة تزيد على ما حددتموه.",
             link=_with_ids("/stock-alerts", [a["item_id"] for a in above]),
             ids=[a["item_id"] for a in above], samples=above[:SAMPLE],
         ))
@@ -256,15 +256,15 @@ def check_stagnant(db: Session, on_hand, labels, *, days: int = 90,
         if day is not None and day >= cutoff:
             continue
         rows.append({"item_id": iid, "label": labels.get(iid, f"#{iid}"),
-                     "detail": (f"آخر بيع {day} — عندك {to_qty(qty)}" if day
-                                else f"مااتباعش ولا مرة — عندك {to_qty(qty)}")})
+                     "detail": (f"آخر بيع {day} — لديك {to_qty(qty)}" if day
+                                else f"لم يُبع أبداً — لديك {to_qty(qty)}")})
     if not rows:
         return None
     rows.sort(key=lambda r: r["label"])
     return Issue(
-        key="stagnant", title=f"بضاعة راكدة أكتر من {days} يوم", group="رصيد المنتجات",
+        key="stagnant", title=f"بضاعة راكدة أكثر من {days} يوم", group="رصيد المنتجات",
         severity="low", count=len(rows),
-        hint="فلوس نايمة في المخزن — يا تتحرّك بعرض يا تتصفّى.",
+        hint="أموال مجمّدة في المخزن — إما أن تُحرَّك بعرض أو تُصفّى.",
         link=_with_ids("/reports?view=stagnant", [r["item_id"] for r in rows]),
         ids=[r["item_id"] for r in rows], samples=rows[:SAMPLE],
     )
@@ -273,7 +273,7 @@ def check_stagnant(db: Session, on_hand, labels, *, days: int = 90,
 def check_items_without_price(db: Session, scope: Scope | None = None) -> Issue | None:
     tiered = {row[0] for row in db.execute(select(ItemPrice.item_id).distinct()).all()}
     rows = [
-        {"label": f"{i.code} — {i.name}", "detail": "مفيش سعر لا على الصنف ولا على أي شريحة"}
+        {"label": f"{i.code} — {i.name}", "detail": "لا يوجد سعر على الصنف ولا على أي شريحة"}
         for i in db.scalars(
             select(Item).where(Item.active.is_(True), Item.kind == ItemKind.product,
                                Item.sale_price.is_(None))
@@ -283,16 +283,16 @@ def check_items_without_price(db: Session, scope: Scope | None = None) -> Issue 
     if not rows:
         return None
     return Issue(
-        key="item_no_price", title="منتجات من غير سعر بيع", group="المنتجات",
+        key="item_no_price", title="منتجات بلا سعر بيع", group="المنتجات",
         severity="medium", count=len(rows),
-        hint="بيتباعوا بالسعر اللي البايع يكتبه — مش بسعر الشركة.",
+        hint="تُباع بالسعر الذي يكتبه البائع — لا بسعر الشركة.",
         link="/catalog", samples=rows[:SAMPLE],
     )
 
 
 def check_items_without_category(db: Session, scope: Scope | None = None) -> Issue | None:
     rows = [
-        {"label": f"{i.code} — {i.name}", "detail": "مش تحت أي فئة"}
+        {"label": f"{i.code} — {i.name}", "detail": "لا ينتمي إلى أي فئة"}
         for i in db.scalars(
             select(Item).where(Item.active.is_(True),
                                (Item.category.is_(None)) | (Item.category == ""))
@@ -302,9 +302,9 @@ def check_items_without_category(db: Session, scope: Scope | None = None) -> Iss
     if not rows:
         return None
     return Issue(
-        key="item_no_category", title="أصناف من غير فئة", group="المنتجات",
+        key="item_no_category", title="أصناف بلا فئة", group="المنتجات",
         severity="low", count=len(rows),
-        hint="بتختفي من أي تقرير أو فلتر بيتقسّم بالفئة.",
+        hint="تختفي من أي تقرير أو مرشح يُقسَّم بالفئة.",
         link="/catalog", samples=rows[:SAMPLE],
     )
 
@@ -324,7 +324,7 @@ def check_min_over_max(db: Session, scope: Scope | None = None) -> Issue | None:
     return Issue(
         key="min_over_max", title="حد أدنى أكبر من الحد الأقصى", group="المنتجات",
         severity="medium", count=len(rows),
-        hint="تقرير إعادة الطلب بيطلع كلام متناقض على الأصناف دي.",
+        hint="يُظهر تقرير إعادة الطلب نتائج متناقضة لهذه الأصناف.",
         link="/catalog", samples=rows[:SAMPLE],
     )
 
@@ -341,12 +341,12 @@ def check_invoice_lines_without_cost(db: Session, scope: Scope | None = None) ->
         return None
     ids = [r[0] for r in rows]
     return Issue(
-        key="invoice_no_cost", title="فواتير بنودها من غير تكلفة", group="فواتير العملاء",
+        key="invoice_no_cost", title="فواتير بنودها بلا تكلفة", group="فواتير العملاء",
         severity="high", count=len(rows),
-        hint="الربح عليها بيتحسب وكأن التكلفة صفر — يعني ربح الفاتورة والعميل "
+        hint="يُحسب ربحها كأن التكلفة صفر — أي إن ربح الفاتورة والعميل "
              "والصنف والشهر كله أعلى من الحقيقة.",
         link=_with_ids("/invoices", ids), ids=ids,
-        samples=[{"label": f"فاتورة {num}", "detail": f"{n} بند من غير تكلفة"}
+        samples=[{"label": f"فاتورة {num}", "detail": f"{n} بند بلا تكلفة"}
                  for _i, num, n in rows[:SAMPLE]],
     )
 
@@ -367,9 +367,9 @@ def check_empty_invoices(db: Session, scope: Scope | None = None) -> Issue | Non
         return None
     ids = [r[0] for r in rows]
     return Issue(
-        key="invoice_no_lines", title="فواتير من غير بنود", group="فواتير العملاء",
+        key="invoice_no_lines", title="فواتير بلا بنود", group="فواتير العملاء",
         severity="high", count=len(rows),
-        hint="مستند بيحمّل العميل مديونية ومش قايل اتباعله إيه.",
+        hint="مستند يحمّل العميل مديونية دون أن يبيّن ما بيع له.",
         link=_with_ids("/invoices", ids), ids=ids,
         samples=[{"label": f"فاتورة {num}", "detail": f"صافي {_money(net)}"}
                  for _i, num, net in rows[:SAMPLE]],
@@ -392,7 +392,7 @@ def check_unbalanced_entries(db: Session, scope: Scope | None = None) -> Issue |
     return Issue(
         key="unbalanced_entry", title="قيود غير متوازنة", group="الحسابات",
         severity="high", count=len(rows),
-        hint="الميزانية مش هتقفل، وكل تقرير مالي بيقرا القيود دي رقمه غلط.",
+        hint="لن تتوازن الميزانية، وكل تقرير مالي يقرأ هذه القيود سيعطي رقماً خاطئاً.",
         link="/general-ledger?tab=integrity",
         samples=[{"label": f"قيد #{eid}",
                   "detail": f"مدين {_money(d)} — دائن {_money(c)}"}
@@ -417,12 +417,12 @@ def check_accounts_without_nature(db: Session, scope: Scope | None = None) -> Is
     total = sum((to_money(b) for _i, _c, _n, b in bad), ZERO)
     return Issue(
         key="account_no_nature",
-        title="حسابات مالهاش تصنيف بتسقط من الميزانية",
+        title="حسابات بلا تصنيف تسقط من الميزانية",
         group="الحسابات",
         severity="high",
         count=len(bad),
-        hint=f"رصيدهم {_money(total)} ج.م مش ظاهر لا في الأصول ولا الالتزامات — "
-             "الميزانية بتقفل بفرق بسببهم.",
+        hint=f"رصيدها {_money(total)} ج.م لا يظهر في الأصول ولا في الالتزامات — "
+             "فتتوازن الميزانية بفرق بسببها.",
         link=_with_ids("/sub-accounts", [i for i, _c, _n, _b in bad]),
         ids=[i for i, _c, _n, _b in bad],
         samples=[{"label": f"{c or ''} {n or f'#{i}'}".strip(), "detail": _money(b)}
@@ -458,7 +458,7 @@ def check_negative_treasuries(db: Session, scope: Scope | None = None) -> Issue 
     return Issue(
         key="negative_treasury", title="خزائن برصيد سالب", group="الحسابات",
         severity="high", count=len(rows),
-        hint="اتصرف منها أكتر من اللي دخلها — يا صرف اتسجّل مرتين يا قبض مااتسجّلش.",
+        hint="صُرف منها أكثر مما دخلها — إما صرف سُجّل مرتين أو قبض لم يُسجَّل.",
         link="/treasuries", samples=rows[:SAMPLE],
     )
 
@@ -477,9 +477,9 @@ def check_duplicate_customers(db: Session, scope: Scope | None = None) -> Issue 
     if not pairs:
         return None
     return Issue(
-        key="duplicate_customers", title="عملاء مكرّرين", group="فواتير العملاء",
+        key="duplicate_customers", title="عملاء مكرّرون", group="فواتير العملاء",
         severity="medium", count=len(pairs),
-        hint="العميل بمديونيتين في ملفين، ومفيش واحدة فيهم هي اللي عليه.",
+        hint="للعميل مديونيتان في ملفين، ولا تمثّل أيٌّ منهما ما عليه فعلاً.",
         link="/customers",
         samples=[{"label": p.get("base_name", ""),
                   "detail": f"{p['keep']['name']} + {p['merge']['name']}"}
@@ -504,10 +504,10 @@ def check_overdue_cheques(db: Session, *, scope: Scope | None = None,
         return None
     total = sum((to_money(r.amount) for r in rows), ZERO)
     return Issue(
-        key="overdue_cheques", title="شيكات فات استحقاقها", group="الحسابات",
+        key="overdue_cheques", title="شيكات تجاوزت تاريخ استحقاقها", group="الحسابات",
         severity="high", count=len(rows),
-        hint=f"إجمالي {_money(total)} تاريخ استحقاقه عدّى وهو لسه تحت التحصيل — "
-             "يا اتحصّل وماتسجّلش، يا محدش بيجري وراه.",
+        hint=f"إجمالي {_money(total)} تجاوز تاريخ استحقاقه وما زال تحت التحصيل — "
+             "إما حُصّل ولم يُسجَّل، أو لا أحد يتابعه.",
         link="/ops-reports?view=cheque-wallet",
         samples=[{
             "label": f"{'وارد' if r.direction == ChequeDirection.incoming else 'صادر'} "
@@ -533,10 +533,10 @@ def check_expired_reservations(db: Session, *, scope: Scope | None = None,
     if not rows:
         return None
     return Issue(
-        key="expired_reservations", title="حجوزات منتهية لسه ماسكة بضاعة",
+        key="expired_reservations", title="حجوزات منتهية ما زالت تحجز بضاعة",
         group="المخزون", severity="medium", count=len(rows),
-        hint="الكمية المحجوزة بتتخصم من المتاح للبيع، فالبضاعة دي مش بتتباع لحد "
-             "وهي مش محجوزة لحد فعلاً.",
+        hint="تُخصم الكمية المحجوزة من المتاح للبيع، فلا تُباع هذه البضاعة لأحد "
+             "مع أنها ليست محجوزة لأحد فعلاً.",
         link="/ops-reports?view=reservations-open",
         samples=[{"label": r.document_number,
                   "detail": f"{to_qty(r.quantity)} — انتهى {r.expires_on}"}
@@ -560,13 +560,13 @@ def check_late_orders(db: Session, *, scope: Scope | None = None,
     if not rows:
         return None
     return Issue(
-        key="late_orders", title="طلبات فات ميعادها", group="المبيعات",
+        key="late_orders", title="طلبات تجاوزت موعدها", group="المبيعات",
         severity="low", count=len(rows),
-        hint="اتفق عليها بتاريخ عدّى وهي لسه مفتوحة — يا اتنفّذت وماتحوّلتش لفاتورة، "
-             "يا العميل مستني.",
+        hint="اتُّفق عليها بتاريخ مضى وما زالت مفتوحة — إما نُفّذت ولم تُحوَّل إلى فاتورة، "
+             "أو أن العميل ما زال ينتظر.",
         link="/ops-reports?view=orders-open",
         samples=[{"label": r.document_number,
-                  "detail": f"{_money(r.total)} — كان مستحق {r.due_date}"}
+                  "detail": f"{_money(r.total)} — كان مستحقاً في {r.due_date}"}
                  for r in rows[:SAMPLE]],
     )
 
@@ -596,9 +596,9 @@ def check_reps_without_store(db: Session, scope: Scope | None = None) -> Issue |
             continue
         missing = []
         if not has_store and not has_custody:
-            missing.append("مافيش مخزن ولا عهدة — مايقدرش يبيع")
+            missing.append("لا يوجد مخزن ولا عهدة — لا يمكنه البيع")
         elif not has_custody:
-            missing.append("مافيش عهدة — التحصيل مالوش مكان يتقيّد فيه")
+            missing.append("لا توجد عهدة — لا يوجد مكان لقيد التحصيل")
         else:
             continue
         rows.append({"label": r.username, "detail": " · ".join(missing)})
@@ -606,9 +606,9 @@ def check_reps_without_store(db: Session, scope: Scope | None = None) -> Issue |
     if not rows:
         return None
     return Issue(
-        key="rep_no_store", title="مناديب ناقصهم مخزن أو عهدة", group="المناديب",
+        key="rep_no_store", title="مناديب ينقصهم مخزن أو عهدة", group="المناديب",
         severity="high", count=len(rows),
-        hint="المندوب بيبيع من مكانه وبيحصّل في عهدته — الناقص بيقف قدام العميل.",
+        hint="يبيع المندوب من مخزنه ويحصّل في عهدته — والنقص يعطّل خدمة العميل.",
         link="/employees", samples=rows[:SAMPLE],
     )
 

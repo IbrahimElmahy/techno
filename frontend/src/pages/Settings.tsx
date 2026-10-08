@@ -110,10 +110,6 @@ export default function Settings() {
               { value: 'last_purchase', label: 'آخر سعر شراء' },
             ]}
           />
-          <span style={{ color: '#888' }}>
-            بتتحكم في تقييم أي تكلفة جديدة (الجرد، أذونات الصرف). التكاليف المتجمّدة على
-            المستندات القديمة ما بتتغيّرش.
-          </span>
         </Space>
       </Card>
 
@@ -130,10 +126,6 @@ export default function Settings() {
 
       <Card title="بيانات تجريبية للاختبار" size="small">
         <Space wrap>
-          <span style={{ color: '#888' }}>
-            تحميل داتا كاملة للشركة (خامات، منتجات، وصفات بموارد، موردين، عملاء، مشتريات،
-            أوامر تصنيع، هوالك، مبيعات) لتجربة كل النظام. آمن — لا يُكرّر لو اتحمّل قبل كده.
-          </span>
           <Popconfirm
             title="تحميل بيانات تجريبية كاملة؟"
             okText="تحميل" cancelText="إلغاء" onConfirm={handleSeed}
@@ -144,11 +136,6 @@ export default function Settings() {
       </Card>
 
     <Card title="إعدادات القوائم المنسدلة" loading={loading}>
-      <p style={{ color: '#888', marginBottom: 16 }}>
-        تحكّم في خيارات القوائم المنسدلة في كل صفحة. القوائم المربوطة بمنطق النظام{' '}
-        <Tag icon={<LockOutlined />} color="gold">مقيّدة</Tag>{' '}
-        — تقدر تعيد تسميتها وترتيبها وإخفاءها، لكن ما تقدرش تضيف/تحذف قيمها.
-      </p>
       <ListToolbar
         searchPlaceholder="بحث باسم القائمة أو الصفحة"
         query={catFilter.query} onQueryChange={catFilter.setQuery}
@@ -283,7 +270,7 @@ function CategoryEditor({ meta }: { meta: CategoryMeta }) {
       title: '', width: 60,
       render: (_: any, r: Option) =>
         r.is_system ? (
-          <Tooltip title="خيار نظام — يُخفى ولا يُحذف"><LockOutlined style={{ color: '#ccc' }} /></Tooltip>
+          <Tooltip title="خيار نظام"><LockOutlined style={{ color: '#ccc' }} /></Tooltip>
         ) : (
           <Popconfirm title="حذف الخيار؟" okText="نعم" cancelText="لا" onConfirm={() => removeOption(r)}>
             <Button size="small" type="link" danger icon={<DeleteOutlined />} />
@@ -336,8 +323,7 @@ function CategoryEditor({ meta }: { meta: CategoryMeta }) {
             <Input placeholder="مثال: نصف جملة كبار" />
           </Form.Item>
           <Form.Item name="value" label="القيمة (كود يُخزَّن)"
-            rules={[{ required: true, message: 'أدخل القيمة' }]}
-            tooltip="الكود المخزَّن في قاعدة البيانات — يُفضَّل بالإنجليزية ودون مسافات">
+            rules={[{ required: true, message: 'أدخل القيمة' }]}>
             <Input placeholder="مثال: wholesale_vip" />
           </Form.Item>
         </Form>
@@ -395,7 +381,7 @@ function AccountRoutingCard() {
     try {
       const res = await api.put('/api/v1/account-routing', { role, account_id: accountId });
       setRows(res.data || []);
-      message.success(accountId ? 'تم حفظ التوجيه' : 'رجع للحساب الافتراضي');
+      message.success(accountId ? 'تم حفظ التوجيه' : 'تمت العودة إلى الحساب الافتراضي');
     } catch (err: any) {
       message.error(err?.response?.data?.detail?.message || 'تعذر حفظ التوجيه');
     } finally { setSaving(null); }
@@ -404,10 +390,6 @@ function AccountRoutingCard() {
   return (
     <Card title="التوجيه المحاسبي" size="small" loading={loading}
       extra={<Button icon={<ReloadOutlined />} onClick={load} />}>
-      <p style={{ color: '#888', marginTop: 0 }}>
-        كل دور محاسبي بيترحّل على أنهي حساب. سيبه فاضي والنظام يستخدم حسابه الافتراضي —
-        مش لازم تظبط حاجة عشان الترحيل يشتغل صح.
-      </p>
       <Table<RoutingRow>
         rowKey="role" size="small" dataSource={rows} pagination={false}
         columns={[
@@ -417,7 +399,7 @@ function AccountRoutingCard() {
                 <b>{l}</b>
                 {r.source === 'default'
                   ? <Tag style={{ marginInlineStart: 8 }}>افتراضي</Tag>
-                  : <Tag color="blue" style={{ marginInlineStart: 8 }}>مظبوط</Tag>}
+                  : <Tag color="blue" style={{ marginInlineStart: 8 }}>مخصّص</Tag>}
               </>
             ) },
           { title: 'الحساب', key: 'acc',
@@ -460,9 +442,6 @@ function DocumentPolicyCard() {
       <Space wrap align="center">
         <span>الخصم الثابت: <b>{fixedPct}%</b></span>
         <span>نسبة الضريبة: <b>{vatPct}%</b></span>
-        <span style={{ color: '#888' }}>
-          الاتنين بيتظبطوا من شاشة الخصومات والضرائب.
-        </span>
       </Space>
     </Card>
   );
@@ -494,7 +473,7 @@ function LockDatesCard() {
         period_lock_date: period ? period.format('YYYY-MM-DD') : null,
         payment_terms_days: terms,
       });
-      message.success('اتحفظ');
+      message.success('تم الحفظ');
     } catch (err: any) {
       message.error(err?.response?.data?.detail?.message || 'تعذر الحفظ');
     } finally {
@@ -508,35 +487,20 @@ function LockDatesCard() {
                          onClick={save}>حفظ</Button>}>
       <Space direction="vertical" size="middle" style={{ width: '100%' }}>
         <Space wrap align="center">
-          <span style={{ minWidth: 150 }}>قفل السنة (على الكل):</span>
+          <span style={{ minWidth: 150 }}>قفل السنة (على الجميع):</span>
           <DatePicker value={fiscal} onChange={setFiscal} allowClear
-                      placeholder="مفيش قفل" style={{ minWidth: 180 }} />
-          <span style={{ color: '#888' }}>
-            مافيش أي حركة في الدفتر بتاريخ أقدم من ده أو مساوي له — حتى الأدمن.
-          </span>
+                      placeholder="بدون قفل" style={{ minWidth: 180 }} />
         </Space>
         <Space wrap align="center">
           <span style={{ minWidth: 150 }}>قفل الفترة (على غير المحاسبين):</span>
           <DatePicker value={period} onChange={setPeriod} allowClear
-                      placeholder="مفيش قفل" style={{ minWidth: 180 }} />
-          <span style={{ color: '#888' }}>
-            المبيعات والمخازن مايكتبوش في الفترة دي. المحاسب والأدمن لسه بيقدروا يظبطوا.
-          </span>
+                      placeholder="بدون قفل" style={{ minWidth: 180 }} />
         </Space>
-        <span style={{ color: '#888' }}>
-          سيب الخانة فاضية = مفيش قفل. والقفل بيمنع الترحيل والرجوع لمسودة والإلغاء —
-          الخروج من الحسابات بيغيّر الميزانية زي الدخول بالظبط.
-        </span>
         <Divider style={{ margin: '4px 0' }} />
         <Space wrap align="center">
           <span style={{ minWidth: 150 }}>مهلة السداد (أيام):</span>
           <InputNumber min={0} max={365} value={terms} style={{ width: 120 }}
                        onChange={(v) => setTerms(Number(v || 0))} />
-          <span style={{ color: '#888' }}>
-            الفاتورة اللي مالهاش تاريخ استحقاق مكتوب بتستحق بعد المدة دي من تاريخها.
-            صفر = مستحقة يوم ما اتكتبت، وده اللي بيخلّي كل فاتورة قديمة مفتوحة تظهر
-            «متأخرة» في كشف الحساب.
-          </span>
         </Space>
       </Space>
     </Card>
@@ -571,12 +535,12 @@ function CustomerMergeCard() {
           `/api/v1/admin/merge-customers?apply=true&limit=${BATCH}`);
         last = res.data;
         done += res.data?.merged_now ?? 0;
-        setProgress(`اتدمج ${done} — فاضل ${res.data?.remaining ?? 0}`);
+        setProgress(`تم دمج ${done} — المتبقي ${res.data?.remaining ?? 0}`);
         if (!res.data?.merged_now || !res.data?.remaining) break;
       }
       setPlan({ ...last, pairs: [], applied: true });
       setProgress(null);
-      message.success(`اتنفّذ الدمج — ${done} عميل، والأرصدة زي ما هي`);
+      message.success(`تم تنفيذ الدمج — ${done} عميل، والأرصدة كما هي`);
     } catch (err: any) {
       setProgress(null);
       message.error(err?.response?.data?.detail?.message || 'تعذر تشغيل الدمج');
@@ -588,24 +552,17 @@ function CustomerMergeCard() {
 
   return (
     <Card title="دمج العملاء المكرّرين (أبيض / بولي)" size="small"
-      extra={<Button loading={busy} onClick={() => run(false)}>وريني الخطة</Button>}>
-      <p style={{ color: '#888', marginTop: 0 }}>
-        العميل اللي اتفتح مرتين — «فلان» و«تكنو فلان» — بيرجع عميل واحد بحسابين: أبيض وبولي،
-        وإجمالي. <b>لا يُحذف شيء ولا تتحرك أي أموال:</b> حساب الأستاذ بتاع المكرّر بيفضل
-        بكل حركاته وبيبقى حساب البولي. السيرفر بيجمع أرصدة العملاء قبل وبعد، ولو اختلفت بمليم
-        بيرفض الدمج كله.
-      </p>
-
+      extra={<Button loading={busy} onClick={() => run(false)}>عرض الخطة</Button>}>
       {plan && (
         <>
           <Space wrap style={{ marginBottom: 8 }}>
             <Tag color={pairs.length ? 'blue' : 'green'}>{pairs.length} عميل متكرّر</Tag>
-            <Tag>{plan.techno_only?.length ?? 0} «تكنو» من غير أصل</Tag>
-            {plan.skipped?.length ? <Tag color="orange">{plan.skipped.length} اتخطّى</Tag> : null}
+            <Tag>{plan.techno_only?.length ?? 0} «تكنو» بدون أصل</Tag>
+            {plan.skipped?.length ? <Tag color="orange">{plan.skipped.length} تم تخطيه</Tag> : null}
             <Tag color={balancesMatch ? 'green' : 'red'}>
               الأرصدة: {plan.balance_before} {balancesMatch ? '— كما هي' : `← ${plan.balance_after}`}
             </Tag>
-            {plan.applied && <Tag color="green">اتنفّذ</Tag>}
+            {plan.applied && <Tag color="green">تم التنفيذ</Tag>}
             {progress && <Tag color="processing">{progress}</Tag>}
           </Space>
 
@@ -642,7 +599,7 @@ function CustomerMergeCard() {
           {!plan.applied && pairs.length > 0 && (
             <Popconfirm
               title="تنفيذ الدمج؟"
-              description="العملاء المكرّرين هيتدمجوا. الأرصدة هتتراجع قبل وبعد، ولو اختلفت هيترفض كله."
+              description="سيتم دمج العملاء المكرّرين. ستُراجَع الأرصدة قبل الدمج وبعده، وإذا اختلفت يُرفض الدمج بالكامل."
               okText="نفّذ" cancelText="رجوع" okButtonProps={{ danger: true }}
               onConfirm={() => run(true)}
             >
@@ -674,14 +631,14 @@ function BackupCard() {
       a.click();
       a.remove();
       URL.revokeObjectURL(url);
-      message.success('اتنزّلت النسخة الاحتياطية — احفظها في مكان آمن خارج الجهاز');
+      message.success('تم تنزيل النسخة الاحتياطية — احفظها في مكان آمن خارج الجهاز');
     } catch (err: any) {
       message.error(err?.response?.data?.detail?.message || 'تعذر إنشاء النسخة الاحتياطية');
     } finally { setDownloading(false); }
   };
 
   const restore = async () => {
-    if (!file) { message.warning('اختر ملف النسخة الأول'); return; }
+    if (!file) { message.warning('اختر ملف النسخة أولاً'); return; }
     setRestoring(true);
     try {
       const fd = new FormData();
@@ -689,7 +646,7 @@ function BackupCard() {
       const res = await api.post('/api/v1/admin/restore', fd,
         { headers: { 'Content-Type': 'multipart/form-data' } });
       const d = res.data;
-      message.success(`اتستعادت ${d.restored_rows} سجل في ${d.restored_tables} جدول`
+      message.success(`تمت استعادة ${d.restored_rows} سجل في ${d.restored_tables} جدول`
         + (d.safety_snapshot ? ' — وحُفظت نسخة احتياطية من البيانات السابقة على الخادم' : ''));
       setFile(null);
     } catch (err: any) {
@@ -702,9 +659,6 @@ function BackupCard() {
       <Space direction="vertical" style={{ width: '100%' }} size="middle">
         <Space wrap align="center">
           <Button type="primary" loading={downloading} onClick={download}>تنزيل نسخة احتياطية الآن</Button>
-          <span style={{ color: '#888' }}>
-            ملف مضغوط فيه كل بيانات النظام. خُد نسخة بانتظام واحفظها خارج السيرفر.
-          </span>
         </Space>
         <Space wrap align="center">
           <input type="file" accept=".gz,.json"
@@ -712,10 +666,6 @@ function BackupCard() {
           <Button danger loading={restoring} disabled={!file} onClick={restore}>
             استعادة كل البيانات من الملف
           </Button>
-          <span style={{ color: '#888' }}>
-            الاستعادة بتستبدل كل البيانات الحالية — والسيرفر بيحفظ نسخة أمان أوتوماتيكية
-            قبل الاستبدال.
-          </span>
         </Space>
       </Space>
     </Card>

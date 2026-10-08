@@ -108,8 +108,8 @@ type TabKey = 'open' | 'all' | 'advances' | 'adjustments';
 const TAB_KEYS: TabKey[] = ['open', 'all', 'advances', 'adjustments'];
 
 const ADVANCE_STATUS: Record<string, { label: string; color?: string }> = {
-  active: { label: 'بتتقسّط', color: 'blue' },
-  settled: { label: 'اتسدّدت', color: 'green' },
+  active: { label: 'قيد التقسيط', color: 'blue' },
+  settled: { label: 'مسدَّدة', color: 'green' },
   cancelled: { label: 'ملغية' },
 };
 
@@ -271,10 +271,10 @@ export default function EmployeeReceivables() {
     try {
       if (advForm.id) {
         await api.put(`/api/v1/hr/advances/${advForm.id}`, body);
-        message.success('اتعدّلت السلفة');
+        message.success('تم تعديل السلفة');
       } else {
         await api.post('/api/v1/hr/advances', { ...body, employee_id: advForm.employee_id });
-        message.success('اتصرفت السلفة');
+        message.success('تم صرف السلفة');
       }
       setAdvOpen(false);
       reloadAll();
@@ -406,7 +406,7 @@ export default function EmployeeReceivables() {
       title: 'الذمة (الدفتر)', dataIndex: 'ledger_balance', key: 'ledger_balance', width: 130,
       align: 'left', sorter: (a, b) => Number(a.ledger_balance) - Number(b.ledger_balance),
       render: (v: string, r) => (r.account_id ? money(v) : (
-        <Tooltip title="مالوش حساب ذمة في الشجرة — سلفه بس هي اللي بتتحسب">—</Tooltip>
+        <Tooltip title="ليس له حساب ذمة في الشجرة — تُحتسب سلفه فقط">—</Tooltip>
       )),
     },
     ...(advancesVisible ? [
@@ -421,7 +421,7 @@ export default function EmployeeReceivables() {
         title: 'الأقساط', key: 'instalments', width: 190,
         render: (_: any, r: DueRow) => (r.remaining_instalments ? (
           <span>
-            باقي {r.remaining_instalments} {r.remaining_instalments === 1 ? 'قسط' : 'أقساط'}
+            متبقٍّ {r.remaining_instalments} {r.remaining_instalments === 1 ? 'قسط' : 'أقساط'}
             <span style={{ color: '#888' }}>
               {' · '}{period(r.next_instalment_year, r.next_instalment_month)}: {money(r.next_instalment_amount)}
             </span>
@@ -452,7 +452,7 @@ export default function EmployeeReceivables() {
       render: (v: string) => money(v) },
     { title: 'التقسيط', key: 'instalments', width: 170,
       render: (_: any, r: Advance) => instalmentLabel(r.instalments, r.instalment_amount) },
-    { title: 'اتخصم', dataIndex: 'taken', key: 'taken', width: 110,
+    { title: 'المخصوم', dataIndex: 'taken', key: 'taken', width: 110,
       render: (v: string) => money(v) },
     { title: 'المتبقي', dataIndex: 'outstanding', key: 'outstanding', width: 120,
       render: (_: string, r: Advance) => (r.status === 'cancelled' ? '—'
@@ -466,8 +466,8 @@ export default function EmployeeReceivables() {
         <span style={{ display: 'inline-flex', gap: 6 }}>
           <Button size="small" onClick={() => openAdvance(undefined, r)}>تعديل</Button>
           <Popconfirm
-            title="تلغي السلفة؟"
-            description="قيد الصرف هيتعكس والفلوس هترجع للخزنة."
+            title="هل تريد إلغاء السلفة؟"
+            description="سيُعكس قيد الصرف وتعود المبالغ إلى الخزنة."
             okText="إلغاء السلفة" cancelText="رجوع" okButtonProps={{ danger: true }}
             onConfirm={() => cancel('advances', r.id)}
           >
@@ -475,8 +475,8 @@ export default function EmployeeReceivables() {
           </Popconfirm>
         </span>
       ) : r.status === 'active' ? (
-        <Tooltip title="اتخصم منها قسط في مسير مرحّل — اعكس المسير الأول عشان تعدّلها أو تلغيها">
-          <Tag>مقفولة للتعديل</Tag>
+        <Tooltip title="خُصم منها قسط في مسير مرحّل — اعكس المسير أولاً لتعديلها أو إلغائها">
+          <Tag>مغلقة للتعديل</Tag>
         </Tooltip>
       ) : null
     ) },
@@ -486,13 +486,13 @@ export default function EmployeeReceivables() {
     <Table
       size="small" pagination={false} rowKey={(p) => `${p.year}-${p.month}`}
       dataSource={r.schedule}
-      locale={{ emptyText: 'مافيش أقساط' }}
+      locale={{ emptyText: 'لا توجد أقساط' }}
       columns={[
         { title: 'الشهر', key: 'period', width: 120,
           render: (_: any, p: ScheduleRow) => period(p.year, p.month) },
         { title: 'القسط', dataIndex: 'amount', width: 140, render: (v: string) => money(v) },
         { title: '', dataIndex: 'paid',
-          render: (v: boolean) => (v ? <Tag color="green">اتخصم</Tag> : <Tag color="orange">لسه</Tag>) },
+          render: (v: boolean) => (v ? <Tag color="green">خُصم</Tag> : <Tag color="orange">لم يُخصم بعد</Tag>) },
       ]}
     />
   );
@@ -507,11 +507,11 @@ export default function EmployeeReceivables() {
     { title: 'السبب', dataIndex: 'reason', key: 'reason', ellipsis: true },
     { title: 'الحالة', key: 'status', width: 130,
       render: (_: any, r) => (r.applied
-        ? <Tag color="green">اتحسب في المسير</Tag>
+        ? <Tag color="green">احتُسب في المسير</Tag>
         : r.status === 'cancelled' ? <Tag>ملغي</Tag> : <Tag color="orange">بانتظار المسيّر</Tag>) },
     { title: '', key: 'actions', width: 90, render: (_: any, r) => (
       !r.applied && r.status !== 'cancelled' ? (
-        <Popconfirm title="تلغيه؟" okText="إلغاء" cancelText="رجوع"
+        <Popconfirm title="هل تريد إلغاءه؟" okText="إلغاء" cancelText="رجوع"
           onConfirm={() => cancel('adjustments', r.id)}>
           <Button size="small" danger>إلغاء</Button>
         </Popconfirm>
@@ -546,7 +546,7 @@ export default function EmployeeReceivables() {
     { title: 'الذمة', value: (r) => r.ledger_balance },
     ...(advancesVisible ? [
       { title: 'السلف المتبقية', value: (r: DueRow) => r.advances_outstanding ?? '' },
-      { title: 'أقساط باقية', value: (r: DueRow) => String(r.remaining_instalments ?? '') },
+      { title: 'الأقساط المتبقية', value: (r: DueRow) => String(r.remaining_instalments ?? '') },
     ] : []),
     { title: 'الإجمالي', value: (r) => r.total_due },
     { title: 'آخر حركة', value: (r) => r.last_movement ?? '' },
@@ -557,7 +557,7 @@ export default function EmployeeReceivables() {
     { title: 'الموظف', value: 'employee_name' },
     { title: 'التاريخ', value: 'advance_date' },
     { title: 'المبلغ', value: 'amount' },
-    { title: 'اتخصم', value: 'taken' },
+    { title: 'المخصوم', value: 'taken' },
     { title: 'المتبقي', value: (r) => String(remaining(r)) },
   ];
 
@@ -596,7 +596,7 @@ export default function EmployeeReceivables() {
       date: new Date().toLocaleDateString('en-CA'),
       meta: [
         ['الفرع', branchId ? branchName[branchId] ?? '—' : 'كل الفروع'],
-        ['النطاق', tab === 'open' ? 'اللي عليهم حاجة' : 'كل الموظفين'],
+        ['النطاق', tab === 'open' ? 'من عليهم مستحقات' : 'كل الموظفين'],
       ],
     }, cols, rows, totals);
   };
@@ -620,9 +620,8 @@ export default function EmployeeReceivables() {
     <ListPage<TabKey>
       icon={<IdcardOutlined />}
       title="ذمم وسلف الموظفين"
-      subtitle="اللي على كل موظف: ذمته من الدفتر (سلف a5، عهد، بضاعة، فلوس لسه ماتورّدتش) + سلفه اللي بتتخصم من المرتب"
       tabs={[
-        { key: 'open', label: 'اللي عليهم حاجة' },
+        { key: 'open', label: 'من عليهم مستحقات' },
         { key: 'all', label: 'كل الموظفين' },
         ...(advancesVisible ? [
           { key: 'advances' as TabKey, label: 'السلف', count: tab === 'advances' ? advances.length : null },
@@ -666,12 +665,7 @@ export default function EmployeeReceivables() {
       {onDues && dues && dues.unlinked_employees > 0 ? (
         <Alert
           type="info" showIcon style={{ margin: '6px 0 8px' }}
-          message={`${dues.unlinked_employees} موظف نشط مالوش حساب ذمة في شجرة a5`}
-          description={
-            'دول مالهمش حساب ذمة أصلاً — سلفهم بتبان هنا، بس التحصيل وكشف الحساب محتاجين حساب. '
-            + 'لو واحد فيهم عليه ذمة، لازم يتعمله حساب تحت «ذمم الموظفين» ويتربط '
-            + 'بـ`link_employee_receivables`.'
-          }
+          message={`${dues.unlinked_employees} موظف نشط ليس له حساب ذمة في شجرة a5`}
         />
       ) : null}
 
@@ -723,7 +717,7 @@ export default function EmployeeReceivables() {
             defaultPageSize: PAGE_SIZE, showSizeChanger: true,
             showTotal: () => (
               <span className="sl-foot">
-                <span>سلف بتتقسّط: <b>{advTotals.open}</b></span>
+                <span>سلف قيد التقسيط: <b>{advTotals.open}</b></span>
                 <span>إجمالي المتبقي: <b className={advTotals.outstanding ? 'is-neg' : 'is-pos'}>
                   {money(advTotals.outstanding)}</b></span>
               </span>
@@ -759,13 +753,6 @@ export default function EmployeeReceivables() {
         onOk={saveAdvance} confirmLoading={saving} okText={advForm.id ? 'حفظ التعديل' : 'صرف'}
         cancelText="إلغاء" destroyOnClose
       >
-        <Alert
-          type="info" showIcon style={{ marginBottom: 12 }}
-          message="السلفة أصل لا مصروف"
-          description={advForm.id
-            ? 'نفس رقم السلفة ونفس قيدها — القيد بيتعدّل والأقساط بتتعمل من جديد.'
-            : 'بتتقيد مدين «سلف العاملين» ودائن الخزنة، والمرتب بيسدّدها قسط بقسط.'}
-        />
         <Row gutter={[10, 10]}>
           <Col span={14}>
             <div style={{ marginBottom: 4 }}>الموظف *</div>
@@ -841,9 +828,6 @@ export default function EmployeeReceivables() {
             <DatePicker picker="month" style={{ width: '100%' }} format="YYYY/MM"
               allowClear={false} value={adjForm.period}
               onChange={(v) => setAdjForm({ ...adjForm, period: v || dayjs() })} />
-            <div style={{ color: '#888', fontSize: 14, marginTop: 4 }}>
-              الشهر الذي سيُطبَّق فيه — وجزاء الشهر الماضي يُطبَّق في المسيّر المفتوح.
-            </div>
           </Col>
           <Col span={12}>
             <div style={{ marginBottom: 4 }}>النوع</div>
@@ -876,9 +860,6 @@ export default function EmployeeReceivables() {
                 <InputNumber style={{ width: '100%' }} min={0.5} step={0.5}
                   value={adjForm.quantity}
                   onChange={(v) => setAdjForm({ ...adjForm, quantity: v })} />
-                <div style={{ color: '#888', fontSize: 14, marginTop: 4 }}>
-                  المسير بيحوّلها لفلوس بأجر يوم الشهر ده.
-                </div>
               </>
             )}
           </Col>

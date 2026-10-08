@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Alert, Button, Card, Checkbox, Empty, Input, Space, Table, Tag, Tooltip, message } from 'antd';
+import { Button, Card, Checkbox, Empty, Input, Space, Table, Tag, Tooltip, message } from 'antd';
 import { ReloadOutlined, SaveOutlined, UndoOutlined, SearchOutlined } from '@ant-design/icons';
 import { api } from '../api/client';
 import { useTableColumns } from '../components/ColumnSettings';
@@ -155,7 +155,7 @@ export default function Permissions() {
 
   return (
     <Card
-      title="الصلاحيات — ما الذي يستطيع كل دور فعله"
+      title="الصلاحيات"
       extra={
         <Space>
           {tableCols.control}
@@ -163,13 +163,7 @@ export default function Permissions() {
         </Space>
       }
     >
-      <Alert
-        type="info"
-        showIcon
-        style={{ marginBottom: 12 }}
-        message="مدير النظام بصلاحياته كاملة دائماً وليس في الجدول — وإلا أمكن أن يُغلق الباب من الداخل فلا يستطيع أحد إعادته."
-        description="الدور المكتوب عليه «افتراضي» لم يُعدَّل، فيأخذ أي صلاحيات جديدة تأتي مع التحديثات. وبمجرد الحفظ عليه يصبح «مضبوطاً» ويعمل بما حددته أنت فقط — و«رجوع للافتراضي» يعيده كما كان."
-      />
+
 
       <Space style={{ marginBottom: 12, width: '100%', justifyContent: 'space-between', flexWrap: 'wrap' }}>
         <Input
@@ -194,7 +188,7 @@ export default function Permissions() {
                 حفظ {role.label}
               </Button>
               {!role.is_default && (
-                <Tooltip title="يمسح الضبط ويرجّع الدور لافتراضي النظام">
+                <Tooltip title="رجوع للافتراضي">
                   <Button size="small" icon={<UndoOutlined />}
                     loading={saving === role.role}
                     onClick={() => reset(role)} />

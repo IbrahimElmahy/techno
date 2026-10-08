@@ -274,7 +274,7 @@ def entry_matching(
     entry = db.get(LedgerEntry, entry_id)
     if entry is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND,
-                            {"code": "not_found", "message": "القيد مش موجود"})
+                            {"code": "not_found", "message": "القيد غير موجود"})
     line_ids = [ln.id for ln in entry.lines]
     partials = db.scalars(
         select(PartialReconcile).where(

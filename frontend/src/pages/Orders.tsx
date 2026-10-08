@@ -126,7 +126,7 @@ export default function Orders() {
       try {
         return (await api.get(`/api/v1/orders/${id}`)).data as Order;
       } catch {
-        message.warning(`الطلب رقم ${id} مش موجود`);
+        message.warning(`الطلب رقم ${id} غير موجود`);
         return null;
       }
     },
@@ -148,7 +148,7 @@ export default function Orders() {
     });
   }, []);
 
-  const kindLabel = kind === 'sale' ? 'بيع' : 'شرا';
+  const kindLabel = kind === 'sale' ? 'بيع' : 'شراء';
   const sheetName = `تسعيرة ${kindLabel}`;
 
   const partyName = (o: Order) => (o.kind === 'sale'
@@ -223,7 +223,7 @@ export default function Orders() {
             ? { ...l, unit_price: v as number } : l)))}
           onPressEnter={(e) => { e.preventDefault(); advanceFrom(line.key); }} />
       ) },
-    { key: 'gross', title: 'اجمالي قبل', width: 100,
+    { key: 'gross', title: 'إجمالي قبل الخصم', width: 100,
       cellStyle: { whiteSpace: 'nowrap' },
       cell: (line) => money(lineGross(line)) },
     { key: 'disc_value', title: 'خصم', width: 95,
@@ -304,7 +304,7 @@ export default function Orders() {
         onClick: () => setPickerOpen(true) },
       { key: 'prev', label: 'السابق', icon: <ArrowRightOutlined />,
         disabled: filter.filtered.length === 0, onClick: () => stepList(-1) },
-      { key: 'next', label: 'التالى', icon: <ArrowLeftOutlined />,
+      { key: 'next', label: 'التالي', icon: <ArrowLeftOutlined />,
         disabled: filter.filtered.length === 0, onClick: () => stepList(1) },
       { key: 'delete', label: 'حذف', shortcut: 'F8', icon: <DeleteOutlined />, danger: true,
         disabled: typed === 0, onClick: clear },
@@ -338,7 +338,7 @@ export default function Orders() {
         date: o.order_date ? String(o.order_date).slice(0, 10) : undefined,
         meta: [
           ...(o.due_date
-            ? [['ساري لحد', String(o.due_date).slice(0, 10)]] as [string, string][]
+            ? [['ساري حتى', String(o.due_date).slice(0, 10)]] as [string, string][]
             : []),
           ...(o.statement1 ? [['البيان', o.statement1]] as [string, string][] : []),
           ...(o.notes ? [['ملاحظات', o.notes]] as [string, string][] : []),
@@ -351,7 +351,7 @@ export default function Orders() {
         { title: 'الوحدة', value: 'unit' },
         { title: 'الكمية', value: 'quantity', numeric: true },
         { title: 'سعر الوحدة', value: 'price', numeric: true },
-        { title: 'اجمالي قبل', value: 'gross', numeric: true },
+        { title: 'إجمالي قبل الخصم', value: 'gross', numeric: true },
         { title: 'خصم', value: 'disc', numeric: true },
         { title: 'الإجمالي', value: 'total', numeric: true },
       ],
@@ -406,7 +406,7 @@ export default function Orders() {
       if (qty) {
         setLines((prev) => prev.map((l) => (l.key === existing.key
           ? { ...l, quantity: Number(l.quantity || 0) + qty } : l)));
-        message.info(`«${name}» موجود بالفعل — اتزوّدت كميته`);
+        message.info(`«${name}» موجود بالفعل — تمت زيادة كميته`);
       } else {
         message.info(`«${name}» موجود بالفعل — عدّل الكمية من السطر`);
       }
@@ -474,7 +474,7 @@ export default function Orders() {
     if (!detail || !invoiceId) { message.warning('اكتب رقم الفاتورة'); return; }
     try {
       await api.post(`/api/v1/orders/${detail.id}/convert`, { invoice_id: invoiceId });
-      message.success('اتربط الطلب بالفاتورة');
+      message.success('تم ربط الطلب بالفاتورة');
       closeDoc(); setInvoiceId(undefined); load();
     } catch (err: any) {
       message.error(err?.response?.data?.detail?.message || 'تعذر ربط الطلب');
@@ -539,7 +539,6 @@ export default function Orders() {
     <ListPage
       icon={<FileTextOutlined />}
       title={`شيت تسعير ${kindLabel}`} muted={`(سجل طلبات ال${kind === 'sale' ? 'بيع' : 'شراء'})`}
-      subtitle="ورقة تسعير — لا تحرّك مخزوناً ولا خزينة. اكتب أي كمية بغض النظر عن المتاح، وعند تأكيد البيع أنشئ الفاتورة واربطها بالطلب."
       actions={(<>
         <Button type="primary" icon={<PlusOutlined />} className="sl-create"
           onClick={() => startNew(kind)}>{sheetName}</Button>
@@ -635,7 +634,7 @@ export default function Orders() {
               </Form.Item>
             </Col>
             <Col xs={12} md={4}>
-              <Form.Item label="ساري لحد">
+              <Form.Item label="ساري حتى">
                 <DatePicker style={{ width: '100%' }} format="YYYY-MM-DD"
                   placeholder="اختياري" value={dueDate} onChange={setDueDate} />
               </Form.Item>
@@ -648,7 +647,7 @@ export default function Orders() {
             </Col>
             <Col xs={24} md={8}>
               <Form.Item label="البيان">
-                <Input placeholder="اختياري — بيتطبع على الورقة" value={statement1}
+                <Input placeholder="اختياري — يُطبع على الورقة" value={statement1}
                   maxLength={200} onChange={(e) => setStatement1(e.target.value)} />
               </Form.Item>
             </Col>
@@ -715,7 +714,6 @@ export default function Orders() {
                     <InputNumber min={0} max={99.99} style={{ width: '100%' }} addonAfter="%"
                       value={discountPct} onChange={(v) => setDiscountPct(v || 0)} />
                   </Form.Item>
-                  <div className="sale-pay-note">ورقة تسعير — لا مخزون يتحرك ولا أموال تُقيَّد.</div>
                   <div className="sale-pay-actions">
                     <Button type="primary" loading={saving} onClick={submit}
                       icon={<CheckOutlined />} className="sale-green-btn sale-save-btn">
@@ -810,7 +808,7 @@ export default function Orders() {
                   { title: 'الوحدة', dataIndex: 'unit', render: (v: string | null) => v || 'الأساسية' },
                   { title: 'الكمية', dataIndex: 'quantity', render: (v: string) => qty(v) },
                   { title: 'السعر', dataIndex: 'unit_price', render: (v: string) => money(v) },
-                  { title: 'اجمالي قبل', render: (_: any, r: OrderLine) => money(
+                  { title: 'إجمالي قبل الخصم', render: (_: any, r: OrderLine) => money(
                     Number(r.quantity || 0) * Number(r.unit_price || 0)) },
                   { title: 'خصم %', dataIndex: 'discount_pct',
                     render: (v: string | null) => (Number(v || 0) ? `${Number(v)}%` : '-') },
@@ -831,16 +829,12 @@ export default function Orders() {
                   onChange={(v) => setInvoiceId(v as number)} style={{ width: 160 }} />
                 <Button type="primary" className="sale-green-btn" onClick={convert}>ربط</Button>
               </Space>
-              <div style={{ color: '#64748b', marginTop: 8, fontSize: 14 }}>
-                اعمل الفاتورة من شاشة الفواتير الأول عشان تعدّي على كل الفحوصات (التوافر
-                والتكلفة والقيد)، وبعدين اربطها بالطلب هنا. الربط بيحصل مرة واحدة بس.
-              </div>
             </div>
           )}
 
           {detail.converted_invoice_id && (
             <Alert type="success" showIcon
-              message={`اتحوّل لفاتورة رقم #${detail.converted_invoice_id}`}
+              message={`تم التحويل إلى فاتورة رقم #${detail.converted_invoice_id}`}
               action={<DocumentLink kind="invoice" id={detail.converted_invoice_id}
                 size="small" allowEdit onNavigate={() => setDetail(null)} />} />
           )}

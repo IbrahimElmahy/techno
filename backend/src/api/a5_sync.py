@@ -49,13 +49,13 @@ async def upload_export(
     _: CurrentUser = Depends(_require_admin),
 ) -> dict:
     if branch_tag not in BRANCHES:
-        raise HTTPException(422, {"code": "validation", "message": "فرع مش معروف."})
+        raise HTTPException(422, {"code": "validation", "message": "فرع غير معروف."})
     if filename not in ALLOWED_FILES:
         raise HTTPException(422, {"code": "validation",
-                                  "message": f"الملف «{filename}» مش في القايمة المسموحة."})
+                                  "message": f"الملف «{filename}» ليس ضمن القائمة المسموح بها."})
     folder = Path(BRANCHES[branch_tag][0])
     if not folder.is_dir():
-        raise HTTPException(500, {"code": "no_folder", "message": f"مجلد {folder} مش موجود."})
+        raise HTTPException(500, {"code": "no_folder", "message": f"المجلد {folder} غير موجود."})
 
     size = 0
     tmp_path = None
@@ -84,7 +84,7 @@ def run_import(
     db: Session = Depends(get_db),
 ) -> dict:
     if branch_tag not in BRANCHES:
-        raise HTTPException(422, {"code": "validation", "message": "فرع مش معروف."})
+        raise HTTPException(422, {"code": "validation", "message": "فرع غير معروف."})
     folder, prefix = BRANCHES[branch_tag]
     name = BRANCH_NAME[branch_tag]
 
@@ -115,7 +115,7 @@ def sync_status(
     _: CurrentUser = Depends(_require_admin),
 ) -> dict:
     if branch_tag not in BRANCHES:
-        raise HTTPException(422, {"code": "validation", "message": "فرع مش معروف."})
+        raise HTTPException(422, {"code": "validation", "message": "فرع غير معروف."})
     folder = Path(BRANCHES[branch_tag][0])
     out = {}
     for f in sorted(ALLOWED_FILES):

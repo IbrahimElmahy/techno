@@ -143,9 +143,6 @@ export default function Login() {
             >
               تذكّر بيانات الدخول
             </Checkbox>
-            <div style={{ fontSize: 14, color: '#555b65', marginTop: 2 }}>
-              يُحفظ اسم المستخدم وكلمة المرور على هذا الجهاز — اتركها غير مفعّلة على جهاز مشترك.
-            </div>
           </Form.Item>
 
           <Form.Item style={{ marginBottom: 0 }}>

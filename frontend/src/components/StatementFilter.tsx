@@ -38,7 +38,7 @@ export default function StatementFilter({
       prefix={<FileTextOutlined style={{ color: '#555b65' }} />}
       placeholder={placeholder}
       aria-label="البيان"
-      title="البيان — جزء من الكلام المكتوب على المستند"
+      title="البيان"
       value={text}
       onChange={(e) => setText(e.target.value)}
       onPressEnter={() => push(text)}

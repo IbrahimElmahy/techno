@@ -4,7 +4,7 @@ import { NUMERALS_LABELS, type Numerals, setNumerals, useNumerals } from '../uti
 export default function NumeralsControl() {
   const numerals = useNumerals();
   return (
-    <Tooltip title="شكل الأرقام المعروضة — في النظام كله. الخانات اللي بتكتب فيها بتفضل بالأرقام اللاتينية.">
+    <Tooltip title="شكل الأرقام المعروضة">
       <Segmented
         size="small"
         value={numerals}

@@ -112,8 +112,7 @@ class _InvoicePrintScreenState extends State<InvoicePrintScreen> {
                           border: Border.all(color: const Color(0xFFFFD8A8)),
                         ),
                         child: const Text(
-                          'مسودّة — اعمل «مزامنة الآن» من الرئيسية عشان ترفعها، '
-                          'وبعدها تقدر تطبع وتبعت. لسه تقدر تعدّلها.',
+                          'مسودّة — لم تُرفع بعد، وتتاح الطباعة والإرسال بعد المزامنة.',
                           textAlign: TextAlign.center,
                           style: TextStyle(fontSize: 12.5, height: 1.4),
                         ),
@@ -286,7 +285,7 @@ class _InvoicePrintScreenState extends State<InvoicePrintScreen> {
                   border: pw.Border.all(width: 0.8, color: _brand),
                   borderRadius: pw.BorderRadius.circular(4),
                 ),
-                child: pw.Text('مسودّة — لسه ما اترفعتش على النظام',
+                child: pw.Text('مسودّة — لم تُرفع إلى النظام بعد',
                     textAlign: pw.TextAlign.center,
                     style: const pw.TextStyle(fontSize: 11)),
               ),
@@ -299,7 +298,7 @@ class _InvoicePrintScreenState extends State<InvoicePrintScreen> {
               child: pw.Column(children: [
                 pw.Row(children: [
                   pw.Expanded(flex: 3, child: _row('العميل', '${inv['customer_name']}')),
-                  pw.Expanded(flex: 2, child: _row('التليفون',
+                  pw.Expanded(flex: 2, child: _row('الهاتف',
                       (_phone ?? '').trim().isEmpty ? '—' : _phone!)),
                   pw.Expanded(flex: 2, child: _row('التاريخ', '${inv['invoice_date']}')),
                 ]),
@@ -312,7 +311,7 @@ class _InvoicePrintScreenState extends State<InvoicePrintScreen> {
                   pw.Padding(
                     padding: const pw.EdgeInsets.symmetric(vertical: 1.5),
                     child: pw.Text(
-                        'على طلب بيع رقم ${_bonusFor ?? '— (لسه بيترفع)'}',
+                        'على طلب بيع رقم ${_bonusFor ?? '— (قيد الرفع)'}',
                         style: const pw.TextStyle(
                             fontSize: 11, fontWeight: pw.FontWeight.bold)),
                   ),
@@ -478,7 +477,7 @@ class _InvoicePrintScreenState extends State<InvoicePrintScreen> {
               ],
             ),
             pw.SizedBox(height: 4),
-            pw.Text('اتطبعت من تطبيق المندوب — $printedAt',
+            pw.Text('طُبعت من تطبيق المندوب — $printedAt',
                 textAlign: pw.TextAlign.center,
                 style: const pw.TextStyle(fontSize: 8, color: PdfColors.grey600)),
         ],

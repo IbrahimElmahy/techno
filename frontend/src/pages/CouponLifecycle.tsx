@@ -54,9 +54,9 @@ const STATUS_COLORS: Record<string, string> = {
 };
 const STATUS_OPTIONS = [
   { value: 'with_rep', label: 'في العهدة' },
-  { value: 'given', label: 'اتسلّم لتاجر' },
-  { value: 'received', label: 'اتستلم من سباك' },
-  { value: 'returned', label: 'رجع المكتب' },
+  { value: 'given', label: 'سُلِّم لتاجر' },
+  { value: 'received', label: 'استُلم من سباك' },
+  { value: 'returned', label: 'أُعيد للمكتب' },
 ];
 
 const num = (v: any) => Number(v || 0).toLocaleString(numeralsLocale(), { maximumFractionDigits: 0 });
@@ -173,7 +173,7 @@ export function useCouponLifecycle(range: [Dayjs, Dayjs] | null, active: boolean
         <span>
           <Tag color={STATUS_COLORS[r.status]}>{v}</Tag>
           {r.unlinked && (
-            <Tooltip title="رجعت من سباك والنظام مايعرفش اتسلّمت لمين">
+            <Tooltip title="أُعيدت من سباك ولا يُعرف لمن سُلِّمت">
               <Tag color="red">بدون تسليم</Tag>
             </Tooltip>
           )}
@@ -182,7 +182,7 @@ export function useCouponLifecycle(range: [Dayjs, Dayjs] | null, active: boolean
     { title: 'عهدة المندوب', dataIndex: 'custody_rep', key: 'custody_rep', width: 140,
       ellipsis: true, render: dash },
     { title: 'مستند العهدة', dataIndex: 'custody_doc', key: 'custody_doc', width: 120, render: dash },
-    { title: 'اتسلّم لـ', dataIndex: 'party', key: 'party', width: 180, ellipsis: true,
+    { title: 'سُلِّم إلى', dataIndex: 'party', key: 'party', width: 180, ellipsis: true,
       render: (v: string | null) => dash(v) },
     { title: 'النوع', dataIndex: 'party_type', key: 'party_type', width: 80,
       render: (v: string | null) => (v ? (typeLabel[v] || v) : '-') },
@@ -194,7 +194,7 @@ export function useCouponLifecycle(range: [Dayjs, Dayjs] | null, active: boolean
         : (v ? <Tooltip title="مستند صرف كوبونات">{v}</Tooltip> : '-')) },
     { title: 'مندوب التسليم', dataIndex: 'handout_rep', key: 'handout_rep', width: 140,
       ellipsis: true, render: dash },
-    { title: 'رجع من (السباك)', dataIndex: 'plumber', key: 'plumber', width: 170, ellipsis: true,
+    { title: 'أُعيد من (السباك)', dataIndex: 'plumber', key: 'plumber', width: 170, ellipsis: true,
       render: dash },
     { title: 'تاريخ الاستلام', dataIndex: 'receipt_date', key: 'receipt_date', width: 110,
       render: dash },
@@ -243,7 +243,7 @@ export function useCouponLifecycle(range: [Dayjs, Dayjs] | null, active: boolean
       ['إلى', range ? range[1].format('YYYY/MM/DD') : 'كل التواريخ'],
     ];
     if (repId) meta.push(['المندوب', repOptions.find((o) => o.value === repId)?.label ?? '']);
-    if (partyId) meta.push(['اتسلّم لـ', partyOptions.find((o) => o.value === partyId)?.label ?? '']);
+    if (partyId) meta.push(['سُلِّم إلى', partyOptions.find((o) => o.value === partyId)?.label ?? '']);
     if (plumberId) meta.push(['السباك', plumberOptions.find((o) => o.value === plumberId)?.label ?? '']);
     if (kind) meta.push(['الفئة', kind]);
     if (status) meta.push(['الحالة', STATUS_OPTIONS.find((o) => o.value === status)?.label ?? '']);
@@ -255,10 +255,10 @@ export function useCouponLifecycle(range: [Dayjs, Dayjs] | null, active: boolean
 
   const summaryLines = () => (summary ? [
     { label: 'في العهدة', value: num(summary.with_rep) },
-    { label: 'اتسلّم لتاجر', value: num(summary.given) },
-    { label: 'اتستلم من سباك', value: num(summary.received) },
-    { label: 'رجع المكتب', value: num(summary.returned) },
-    { label: 'رجع من غير تسليم معروف', value: num(summary.unlinked) },
+    { label: 'سُلِّم لتاجر', value: num(summary.given) },
+    { label: 'استُلم من سباك', value: num(summary.received) },
+    { label: 'أُعيد للمكتب', value: num(summary.returned) },
+    { label: 'أُعيد دون تسليم معروف', value: num(summary.unlinked) },
   ] : []);
 
   const filters = (
@@ -301,7 +301,7 @@ export function useCouponLifecycle(range: [Dayjs, Dayjs] | null, active: boolean
         onChange={setPlumberId} options={plumberOptions} filterOption={searchFilter}
         filterSort={searchRank} style={{ width: 180 }} />
       <Checkbox checked={onlyUnlinked} onChange={(e) => setOnlyUnlinked(e.target.checked)}>
-        رجع من غير تسليم
+        أُعيد دون تسليم
       </Checkbox>
       <Button className="sl-f-clear" icon={<ClearOutlined />} onClick={reset}>مسح</Button>
     </>
@@ -320,11 +320,11 @@ export function useCouponLifecycle(range: [Dayjs, Dayjs] | null, active: boolean
     <span className="sl-foot">
       <span>العدد: <b>{num(total)}</b></span>
       <span>في العهدة: <b>{num(summary.with_rep)}</b></span>
-      <span>اتسلّم لتاجر: <b>{num(summary.given)}</b></span>
-      <span>اتستلم من سباك: <b>{num(summary.received)}</b></span>
-      <span>رجع المكتب: <b>{num(summary.returned)}</b></span>
+      <span>سُلِّم لتاجر: <b>{num(summary.given)}</b></span>
+      <span>استُلم من سباك: <b>{num(summary.received)}</b></span>
+      <span>أُعيد للمكتب: <b>{num(summary.returned)}</b></span>
       {!!summary.unlinked && (
-        <span>من غير تسليم: <b className="is-neg">{num(summary.unlinked)}</b></span>
+        <span>دون تسليم: <b className="is-neg">{num(summary.unlinked)}</b></span>
       )}
       {Number(summary.value_total) > 0 && (
         <span>قيمة المستلم: <b>{money(summary.value_total)}</b></span>
@@ -337,7 +337,7 @@ export function useCouponLifecycle(range: [Dayjs, Dayjs] | null, active: boolean
       className="sl-table"
       rowKey="key" size="small" loading={loading} dataSource={rows}
       columns={cols.columns as any} tableLayout="fixed" scroll={{ x: 'max-content' }}
-      locale={{ emptyText: 'لا توجد كوبونات بالفلاتر دي' }}
+      locale={{ emptyText: 'لا توجد كوبونات مطابقة للفلاتر' }}
       pagination={{
         current: page, pageSize, total, showSizeChanger: true,
         pageSizeOptions: PAGE_SIZE_OPTIONS, locale: { items_per_page: '' },

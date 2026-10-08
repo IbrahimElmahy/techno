@@ -100,7 +100,7 @@ def _writable_department(db: Session, department_id: int, current: CurrentUser) 
     dept = _seen_department(db, department_id, current)
     if dept.branch_id is None and not branch_scope.sees_all_branches(current):
         raise HTTPException(403, {"code": "shared_department",
-                                  "message": "القسم ده مشترك بين الفروع — تعديله من الإدارة العامة."})
+                                  "message": "هذا القسم مشترك بين الفروع — يكون تعديله من الإدارة العامة."})
     return dept
 
 
@@ -232,7 +232,7 @@ def import_departments(
 ) -> dict:
     if not branch_scope.sees_all_branches(current):
         raise HTTPException(403, {"code": "forbidden",
-                                  "message": "ترحيل الأقسام القديمة من الإدارة العامة بس."})
+                                  "message": "ترحيل الأقسام القديمة من الإدارة العامة فقط."})
     result = hr_service.import_departments_from_employees(db, actor_user_id=current.id)
     db.commit()
     return result
@@ -268,7 +268,7 @@ def terminate_employee(
     except HrError as exc:
         if "غير موجود" in str(exc):
             raise HTTPException(404, {"code": "not_found", "message": str(exc)}) from exc
-        code = "duplicate" if "قبل كده" in str(exc) else "validation"
+        code = "duplicate" if any(s in str(exc) for s in ("قبل كده", "مسبقاً", "من قبل")) else "validation"
         raise HTTPException(409 if code == "duplicate" else 422,
                             {"code": code, "message": str(exc)}) from exc
     out = _term_out(db, row)
@@ -323,8 +323,8 @@ _RECEIVABLE_GROUPS = ("A5M-22", "AL-A5M-22")
 def employee_receivables(
     q: str | None = Query(None, description="بحث بالاسم أو الكود"),
     branch_id: int | None = Query(None),
-    only_nonzero: bool = Query(True, description="اللي عليهم رصيد بس"),
-    include_orphans: bool = Query(True, description="حسابات الذمم اللي مالهاش موظف"),
+    only_nonzero: bool = Query(True, description="من عليهم رصيد فقط"),
+    include_orphans: bool = Query(True, description="حسابات الذمم غير المرتبطة بموظف"),
     current: CurrentUser = Depends(require_capability(CAP_HR_READ)),
     db: Session = Depends(get_db),
 ) -> EmployeeReceivablesOut:

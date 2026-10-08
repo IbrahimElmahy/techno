@@ -70,7 +70,7 @@ class BalanceOut(BaseModel):
 def _reader(current: CurrentUser = Depends(get_current_user)) -> CurrentUser:
     if current.rep_id is not None or current.can(CAP_COUPON_CUSTODY):
         return current
-    raise HTTPException(403, {"code": "forbidden", "message": "مالكش صلاحية «عهدة الكوبونات»."})
+    raise HTTPException(403, {"code": "forbidden", "message": "ليس لديك صلاحية «عهدة الكوبونات»."})
 
 
 def _balance_reader(current: CurrentUser = Depends(get_current_user)) -> CurrentUser:
@@ -79,7 +79,7 @@ def _balance_reader(current: CurrentUser = Depends(get_current_user)) -> Current
             for cap in (CAP_COUPON_CUSTODY, CAP_COUPON_RECEIVE, CAP_SALE_WRITE,
                         CAP_SALES_READ)):
         return current
-    raise HTTPException(403, {"code": "forbidden", "message": "مالكش صلاحية «عهدة الكوبونات»."})
+    raise HTTPException(403, {"code": "forbidden", "message": "ليس لديك صلاحية «عهدة الكوبونات»."})
 
 
 def _out(doc: CouponCustody, names: dict[int, str]) -> CustodyOut:
@@ -172,7 +172,7 @@ def delete_custody(
 ) -> Response:
     doc = db.get(CouponCustody, custody_id)
     if doc is None or not branch_scope.may_see(current, doc):
-        raise HTTPException(404, {"code": "not_found", "message": "مستند العهدة مش موجود."})
+        raise HTTPException(404, {"code": "not_found", "message": "مستند العهدة غير موجود."})
     try:
         coupon_custody_service.delete_doc(db, custody_id=custody_id, actor_user_id=current.id)
     except CouponCustodyError as exc:

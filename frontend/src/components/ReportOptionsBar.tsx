@@ -27,8 +27,7 @@ export default function ReportOptionsBar({
 }) {
   return (
     <Space wrap size={12} align="center">
-      <Tooltip title="المرحّل بس هو الافتراضي. «كل القيود» بتضم المسودات — والملغي بره في الحالتين.">
-        <Space size={6}>
+      <Space size={6}>
           <Switch
             size="small"
             checked={!value.postedOnly}
@@ -36,8 +35,7 @@ export default function ReportOptionsBar({
           />
           <span>كل القيود</span>
           {!value.postedOnly && <Tag color="orange">شامل المسودات</Tag>}
-        </Space>
-      </Tooltip>
+      </Space>
 
       {showComparison && (
         <Space size={6}>

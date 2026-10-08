@@ -195,7 +195,7 @@ export default function EmployeeFormModal({
 export async function deactivateEmployee(e: Employee): Promise<boolean> {
   try {
     await api.delete(`/api/v1/employees/${e.id}`);
-    message.success('اتوقف الموظف');
+    message.success('تم إيقاف الموظف');
     return true;
   } catch { return false; }
 }
@@ -203,7 +203,7 @@ export async function deactivateEmployee(e: Employee): Promise<boolean> {
 export async function reactivateEmployee(e: Employee): Promise<boolean> {
   try {
     await api.patch(`/api/v1/employees/${e.id}`, { active: true });
-    message.success('رجع على رأس العمل');
+    message.success('تمت إعادة الموظف إلى العمل');
     return true;
   } catch { return false; }
 }
@@ -211,7 +211,7 @@ export async function reactivateEmployee(e: Employee): Promise<boolean> {
 export async function deleteEmployee(e: Employee): Promise<boolean> {
   try {
     await api.delete(`/api/v1/employees/${e.id}`, { params: { hard: true } });
-    message.success('اتمسح الموظف');
+    message.success('تم حذف الموظف');
     return true;
   } catch { return false; }
 }

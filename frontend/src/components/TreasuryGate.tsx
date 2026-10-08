@@ -47,7 +47,7 @@ export function useTreasurySafes(enabled = true): [TreasuryChoice[], boolean] {
         setRows([]);
         setFailed(true);
         // eslint-disable-next-line no-console
-        console.error('[TreasuryGate] قايمة الخزائن مانزلتش', e);
+        console.error('[TreasuryGate] تعذر تحميل قائمة الخزائن', e);
       });
     return () => { alive = false; };
   }, [enabled]);
@@ -82,7 +82,7 @@ export default function TreasuryGate({
   return (
     <TabModal
       open={open}
-      title={inbound ? 'الفلوس هتنزل في أنهي خزنة؟' : 'الفلوس هتتصرف من أنهي خزنة؟'}
+      title={inbound ? 'إلى أي خزنة ستُضاف الأموال؟' : 'من أي خزنة ستُصرف الأموال؟'}
       okText={okText}
       cancelText={cancelText}
       okButtonProps={{ disabled: value === null || value === undefined }}
@@ -110,7 +110,7 @@ export default function TreasuryGate({
           <span style={{ color: tone, fontWeight: 700, whiteSpace: 'nowrap' }}>
             {Math.abs(amount) > 0.004
               ? `${inbound ? '+' : '−'} ${money(amount)}`
-              : 'كله آجل — مافيش نقدي دلوقتي'}
+              : 'المبلغ كله آجل — لا يوجد نقدي حالياً'}
           </span>
         </div>
 
@@ -123,9 +123,6 @@ export default function TreasuryGate({
           value={value ?? undefined}
           onChange={(v) => { chosenRef.current = v as number; onChange(v as number); }}
           options={options.map((o) => ({ value: o.value, label: o.label }))} filterOption={searchFilter} filterSort={searchRank}/>
-        <div style={{ marginTop: 10, color: '#6b6b6b', fontSize: 15 }}>
-          المقترح صندوق خط المستند — غيّره لو الفلوس اتحطّت في خزنة تانية.
-        </div>
       </div>
     </TabModal>
   );
@@ -171,7 +168,7 @@ export function useTreasuryGate(enabled = true) {
       return;
     }
     if (failed) {
-      message.error('قايمة الخزائن مانزلتش — الخزنة هتتحدد من السيرفر. جرّب تحدّث الصفحة.');
+      message.error('تعذر تحميل قائمة الخزائن — سيحدد الخادم الخزنة. حاول تحديث الصفحة.');
       run(null);
       return;
     }

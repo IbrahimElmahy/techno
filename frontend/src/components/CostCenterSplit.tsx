@@ -69,7 +69,7 @@ export default function CostCenterSplit({
 
   return (
     <>
-      <Tooltip title="توزيع السطر على أكتر من مركز تكلفة بنِسَب">
+      <Tooltip title="توزيع على مراكز التكلفة">
         <Button size={size} type={label ? 'primary' : 'default'} ghost={!!label}
                 icon={<PartitionOutlined />} disabled={disabled} onClick={openModal}>
           {label || 'توزيع'}
@@ -134,7 +134,7 @@ export default function CostCenterSplit({
               </Tag>
               {Math.abs(total - 100) >= 0.0001 && (
                 <span style={{ color: '#888' }}>
-                  فاضل {(100 - total).toFixed(2)}٪ — المجموع لازم يبقى ١٠٠٪ بالظبط.
+                  المتبقي {(100 - total).toFixed(2)}٪ — يجب أن يكون المجموع ١٠٠٪ تماماً.
                 </span>
               )}
             </Space>
@@ -150,7 +150,7 @@ export function useSplitGuard() {
     if (!split) return true;
     const total = Object.values(split).reduce((t, v) => t + Number(v || 0), 0);
     if (Math.abs(total - 100) >= 0.0001) {
-      message.error('مجموع نِسَب التوزيع لازم يساوي ١٠٠٪.');
+      message.error('يجب أن يساوي مجموع نِسَب التوزيع ١٠٠٪.');
       return false;
     }
     return true;

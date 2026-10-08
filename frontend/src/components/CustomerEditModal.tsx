@@ -187,8 +187,7 @@ export default function CustomerEditModal({
               <Form.Item name="markaz" label="المركز"><Input /></Form.Item>
             </Col>
             <Col xs={24} md={12}>
-              <Form.Item name="default_price_tier" label="الفئة السعرية الافتراضية"
-                extra="تُستخدم تلقائياً على فواتير هذا العميل">
+              <Form.Item name="default_price_tier" label="الفئة السعرية الافتراضية">
                 <Select allowClear placeholder="مستهلك (افتراضي)"
                   options={Object.entries(TIER_LABELS).map(([k, l]) => ({ value: k, label: l }))} />
               </Form.Item>

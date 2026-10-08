@@ -122,8 +122,8 @@ def merge_customers(
         db.rollback()
         raise HTTPException(status.HTTP_409_CONFLICT, {
             "code": "merge_changed_balances",
-            "message": (f"الدمج اترفض: أرصدة العملاء اتغيّرت من {before} لـ {after}. "
-                        "مفيش حاجة اتحفظت."),
+            "message": (f"رُفض الدمج: تغيّرت أرصدة العملاء من {before} إلى {after}. "
+                        "لم يُحفظ أي شيء."),
         })
 
     db.commit()
@@ -176,7 +176,7 @@ async def restore_database(
     except Exception:
         raise HTTPException(status.HTTP_400_BAD_REQUEST,
                             {"code": "bad_backup",
-                             "message": "الملف مش مقروء — اتأكد إنه نسخة .json.gz من النظام."})
+                             "message": "تعذرت قراءة الملف — تأكد من أنه نسخة .json.gz من النظام."})
 
     current = backup_service.export_all(db)
     snapshot = backup_service.save_safety_snapshot(current)
@@ -188,7 +188,7 @@ async def restore_database(
         db.rollback()
         raise HTTPException(status.HTTP_409_CONFLICT,
                             {"code": "restore_failed",
-                             "message": f"الاستعادة فشلت ومفيش حاجة اتبدلت: {exc}"})
+                             "message": f"فشلت الاستعادة ولم يُستبدل أي شيء: {exc}"})
     return {
         "restored_tables": len(counts),
         "restored_rows": sum(counts.values()),

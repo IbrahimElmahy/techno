@@ -346,7 +346,6 @@ export default function Treasury() {
     <ListPage
       icon={<SwapOutlined />}
       title="حركة خزينه" muted="(دفتر أستاذ القيود المزدوجة)"
-      subtitle="القيود المرحّلة على الحسابات المالية، والتسوية اليدوية والعكس"
       actions={(<>
         <Button data-shortcut="F2" type="primary" className="sl-create" icon={<PlusOutlined />}
           onClick={() => setDrawerVisible(true)}>

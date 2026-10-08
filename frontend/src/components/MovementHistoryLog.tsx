@@ -142,7 +142,7 @@ export default function MovementHistoryLog({
                 options={[
                   { value: 'all', label: 'كل الحركات' },
                   { value: 'm1', label: 'آخر شهر' },
-                  { value: 'm3', label: 'آخر ٣ شهور' },
+                  { value: 'm3', label: 'آخر ٣ أشهر' },
                   { value: 'm12', label: 'آخر سنة' },
                   { value: 'custom', label: 'فترة محددة' },
                 ]}
@@ -167,11 +167,10 @@ export default function MovementHistoryLog({
             <span style={{ fontSize: 14, color: '#4a4a4a' }}>
               الفترة:{' '}
               <b>
-                {range?.[0] ? range[0]!.format('YYYY-MM-DD') : 'من الأول'}
+                {range?.[0] ? range[0]!.format('YYYY-MM-DD') : 'من البداية'}
                 {' ← '}
-                {range?.[1] ? range[1]!.format('YYYY-MM-DD') : 'النهارده'}
+                {range?.[1] ? range[1]!.format('YYYY-MM-DD') : 'اليوم'}
               </b>
-              {' '}— بتتغيّر من فوق الورقة
             </span>
           )}
 

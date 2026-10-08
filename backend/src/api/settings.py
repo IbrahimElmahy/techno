@@ -54,10 +54,10 @@ def update_sales_settings(
     s = _get_or_create(db)
     if body.vat_rate_pct < 0 or body.vat_rate_pct > 100:
         raise HTTPException(422, {"code": "validation",
-                                  "message": "نسبة الضريبة لازم تكون بين 0 و 100."})
+                                  "message": "يجب أن تكون نسبة الضريبة بين 0 و 100."})
     if body.edit_lock_days is not None and body.edit_lock_days < 0:
         raise HTTPException(422, {"code": "validation",
-                                  "message": "عدد أيام قفل التعديل ما ينفعش يكون بالسالب."})
+                                  "message": "لا يمكن أن يكون عدد أيام قفل التعديل بالسالب."})
     s.fixed_discount_pct = body.fixed_discount_pct
     s.vat_rate_pct = body.vat_rate_pct
     s.edit_lock_days = body.edit_lock_days or None
@@ -117,10 +117,10 @@ def set_purchase_discount(
     db: Session = Depends(get_db),
 ) -> PurchaseDiscountsBody:
     if body.group not in ("poly", "white"):
-        raise HTTPException(422, {"code": "validation", "message": "الخط لازم يكون بولي أو أبيض."})
+        raise HTTPException(422, {"code": "validation", "message": "يجب أن يكون الخط بولي أو أبيض."})
     if body.pct < 0 or body.pct >= 100:
         raise HTTPException(422, {"code": "validation",
-                                  "message": "الخصم لازم يكون من صفر لأقل من ١٠٠٪."})
+                                  "message": "يجب أن يكون الخصم من صفر إلى أقل من ١٠٠٪."})
     s = _get_or_create(db)
     if body.group == "poly":
         s.purchase_poly_discount_pct = body.pct
@@ -165,7 +165,7 @@ def update_stock_settings(
     except ValueError as exc:
         raise HTTPException(422, {
             "code": "validation",
-            "message": "طريقة التكلفة لازم تكون «المتوسط المرجح» أو «آخر سعر شراء».",
+            "message": "يجب أن تكون طريقة التكلفة «المتوسط المرجح» أو «آخر سعر شراء».",
         }) from exc
     s = _stock_settings(db)
     s.costing_method = method

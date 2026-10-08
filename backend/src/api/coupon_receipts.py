@@ -90,7 +90,7 @@ def _out(r) -> ReceiptOut:
 def check_serial(
     serial: str = Query(..., description="The number written on the coupon"),
     coupon_kind: str | None = Query(
-        None, description="فئة الدفتر زي ما اللي بيستلم قالها — الرقم لوحده مش كافي"),
+        None, description="فئة الدفتر كما ذكرها المستلم — الرقم وحده غير كافٍ"),
     _: CurrentUser = Depends(require_capability(CAP_COUPON_RECEIVE)),
     db: Session = Depends(get_db),
 ) -> dict:
@@ -209,7 +209,7 @@ def _seen_receipt(db: Session, receipt_id: int, current: CurrentUser):
     except CouponReceiptError as exc:
         raise HTTPException(404, {"code": "not_found", "message": str(exc)}) from exc
     if not branch_scope.may_see(current, receipt):
-        raise HTTPException(404, {"code": "not_found", "message": "الاستلام مش موجود."})
+        raise HTTPException(404, {"code": "not_found", "message": "الاستلام غير موجود."})
     return receipt
 
 

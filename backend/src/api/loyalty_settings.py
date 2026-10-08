@@ -93,7 +93,7 @@ def delete_type(
 ) -> None:
     ct = db.get(CouponType, type_id)
     if ct is None:
-        raise HTTPException(404, {"code": "not_found", "message": "نوع الكوبون مش موجود"})
+        raise HTTPException(404, {"code": "not_found", "message": "نوع الكوبون غير موجود"})
 
     from src.models.loyalty import Coupon
     from src.models.sales import SalesInvoiceCoupon

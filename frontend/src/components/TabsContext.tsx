@@ -26,7 +26,7 @@ const BASE_TITLES: Record<string, string> = {
   '/stock-alerts': 'تنبيهات المخزون',
   '/item-card': 'كارت الصنف',
   '/stock-permits': 'أذونات المخزن',
-  '/stocktake': 'جرد حق تاريخ',
+  '/stocktake': 'جرد حتى تاريخ',
   '/account-statement': 'كشف حساب',
   '/reconciliation': 'تسوية الحسابات',
   '/fixed-assets': 'الأصول الثابتة',

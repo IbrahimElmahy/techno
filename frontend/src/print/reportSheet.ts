@@ -66,7 +66,7 @@ export function reportTableHtml<T>(
     .join('');
   const empty = rows.length
     ? ''
-    : `<tr><td colspan="${columns.length}">مفيش بيانات في المدى المحدد</td></tr>`;
+    : `<tr><td colspan="${columns.length}">لا توجد بيانات في المدى المحدد</td></tr>`;
   const totalsHtml = totals?.length
     ? `<table class="totals">${totals
         .map((t) => `<tr><td>${esc(t.label)}</td><td>${esc(t.value)}</td></tr>`)
@@ -129,6 +129,6 @@ export function printPayslip(slip: PayslipData): void {
       ['الموظف', slip.employee_name ?? ''],
       ['الشهر', `${slip.run.year}/${String(slip.run.month).padStart(2, '0')}`],
     ],
-    note: 'قسيمة صادرة آلياً — أي اعتراض يتقدّم خلال شهر من تاريخ الصرف.',
+    note: 'قسيمة صادرة آلياً — يُقدَّم أي اعتراض خلال شهر من تاريخ الصرف.',
   }, body);
 }

@@ -135,7 +135,7 @@ def create_order(
         raise HTTPException(422, {"code": "validation",
                                   "message": "نوع الطلب غير صحيح."}) from exc
     if not body.lines:
-        raise HTTPException(422, {"code": "validation", "message": "لازم سطر واحد على الأقل."})
+        raise HTTPException(422, {"code": "validation", "message": "يجب إدخال سطر واحد على الأقل."})
 
     n = db.scalar(select(func.count()).select_from(TradeOrder).where(
         TradeOrder.kind == kind)) or 0
@@ -154,7 +154,7 @@ def create_order(
     doc_pct = to_money(body.variable_discount_pct or 0)
     if doc_pct < ZERO or doc_pct >= to_money(100):
         raise HTTPException(422, {"code": "validation",
-                                  "message": "خصم الورقة لازم يكون بين صفر و٩٩٫٩٩."})
+                                  "message": "يجب أن يكون خصم الورقة بين صفر و٩٩٫٩٩."})
     gross = ZERO
     net = ZERO
     for raw in body.lines:
@@ -163,11 +163,11 @@ def create_order(
         quantity = to_qty(raw.quantity)
         if quantity <= to_qty(0):
             raise HTTPException(422, {"code": "validation",
-                                      "message": "الكمية لازم تكون أكبر من صفر."})
+                                      "message": "يجب أن تكون الكمية أكبر من صفر."})
         line_pct = to_money(raw.discount_pct or 0)
         if line_pct < ZERO or line_pct >= to_money(100):
             raise HTTPException(422, {"code": "validation",
-                                      "message": "خصم السطر لازم يكون بين صفر و٩٩٫٩٩."})
+                                      "message": "يجب أن يكون خصم السطر بين صفر و٩٩٫٩٩."})
         before = to_money(quantity * to_money(raw.unit_price))
         line_total = discounts.apply(before, line_pct)
         gross = to_money(gross + before)
@@ -239,7 +239,7 @@ def mark_converted(
         raise HTTPException(404, {"code": "not_found", "message": "الطلب غير موجود."})
     if order.status == OrderStatus.converted:
         raise HTTPException(409, {"code": "already_converted",
-                                  "message": "الطلب اتحوّل لفاتورة قبل كده."})
+                                  "message": "تم تحويل الطلب إلى فاتورة من قبل."})
     if order.status == OrderStatus.cancelled:
         raise HTTPException(409, {"code": "cancelled", "message": "الطلب ملغي."})
     order.converted_invoice_id = body.invoice_id
@@ -263,7 +263,7 @@ def cancel_order(
         raise HTTPException(404, {"code": "not_found", "message": "الطلب غير موجود."})
     if order.status == OrderStatus.converted:
         raise HTTPException(409, {"code": "already_converted",
-                                  "message": "الطلب اتحوّل لفاتورة — ما ينفعش يتلغي."})
+                                  "message": "تم تحويل الطلب إلى فاتورة — لا يمكن إلغاؤه."})
     order.status = OrderStatus.cancelled
     db.flush()
     out = _out(db, order)

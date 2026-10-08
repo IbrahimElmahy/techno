@@ -66,7 +66,7 @@ async def upload(
     insp = db.get(Inspection, inspection_id)
     if insp is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND,
-                            {"code": "not_found", "message": "الزيارة مش موجودة."})
+                            {"code": "not_found", "message": "الزيارة غير موجودة."})
 
     if client_uuid:
         existing = db.scalar(select(InspectionAttachment).where(
@@ -78,7 +78,7 @@ async def upload(
     if suffix is None:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, {
             "code": "validation",
-            "message": "الصور بس (jpg / png / webp / heic)."})
+            "message": "الصور فقط (jpg / png / webp / heic)."})
 
     day = datetime.now().strftime("%Y/%m")
     folder = UPLOAD_ROOT / day
@@ -134,11 +134,11 @@ def download(
     row = db.get(InspectionAttachment, attachment_id)
     if row is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND,
-                            {"code": "not_found", "message": "المرفق مش موجود."})
+                            {"code": "not_found", "message": "المرفق غير موجود."})
     path = (UPLOAD_ROOT / row.stored_path).resolve()
     if not str(path).startswith(str(UPLOAD_ROOT.resolve())) or not path.exists():
         raise HTTPException(status.HTTP_404_NOT_FOUND,
-                            {"code": "not_found", "message": "ملف المرفق مش موجود على السيرفر."})
+                            {"code": "not_found", "message": "ملف المرفق غير موجود على الخادم."})
     return FileResponse(path, media_type=row.content_type or "application/octet-stream",
                         filename=row.filename)
 
@@ -152,7 +152,7 @@ def remove(
     row = db.get(InspectionAttachment, attachment_id)
     if row is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND,
-                            {"code": "not_found", "message": "المرفق مش موجود."})
+                            {"code": "not_found", "message": "المرفق غير موجود."})
     (UPLOAD_ROOT / row.stored_path).unlink(missing_ok=True)
     db.delete(row)
     db.commit()

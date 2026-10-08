@@ -161,11 +161,8 @@ class _SupervisorHomeScreenState extends State<SupervisorHomeScreen> {
               children: [
                 Icon(Icons.group_off_outlined, size: 48, color: Colors.grey.shade400),
                 const SizedBox(height: 10),
-                Text('مافيش مناديب تحت إشرافك لسه',
+                Text('لا يوجد مناديب تحت إشرافك بعد',
                     style: TextStyle(fontSize: 15, color: Colors.grey.shade700)),
-                const SizedBox(height: 4),
-                Text('المكتب بيحدّدهم من شاشة المستخدمين',
-                    style: TextStyle(fontSize: 13, color: Colors.grey.shade500)),
               ],
             ),
           ),
@@ -204,7 +201,7 @@ class _SupervisorHomeScreenState extends State<SupervisorHomeScreen> {
             const Icon(Icons.cloud_off_outlined, size: 20, color: AppColors.danger),
             const SizedBox(width: 10),
             Expanded(
-              child: Text('${friendlyError(_error!)} — الأرقام دي من آخر تحديث',
+              child: Text('${friendlyError(_error!)} — هذه الأرقام من آخر تحديث',
                   style: const TextStyle(
                       fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.danger)),
             ),
@@ -212,7 +209,7 @@ class _SupervisorHomeScreenState extends State<SupervisorHomeScreen> {
               onPressed: _load,
               style: TextButton.styleFrom(
                   foregroundColor: AppColors.danger, padding: EdgeInsets.zero),
-              child: const Text('حاول تاني'),
+              child: const Text('حاول مرة أخرى'),
             ),
           ],
         ),
@@ -245,14 +242,12 @@ class _SupervisorHomeScreenState extends State<SupervisorHomeScreen> {
       StatTile(
         label: 'الصافي',
         value: fmtMoney(t.net),
-        sub: 'المبيعات ناقص المرتجعات',
         icon: Icons.trending_up,
         color: AppColors.primaryDark,
       ),
       StatTile(
         label: 'مديونية العملاء',
         value: fmtMoney(t.customersDebt),
-        sub: 'على عملاء المناديب لحد دلوقتي',
         icon: Icons.account_balance_wallet_outlined,
         color: const Color(0xFFB4532A),
       ),
@@ -289,7 +284,7 @@ class _SupervisorHomeScreenState extends State<SupervisorHomeScreen> {
       final t = r.lastActivityAt;
       return t != null && t.year == n.year && t.month == n.month && t.day == n.day;
     }).length;
-    return '$active اشتغلوا النهارده';
+    return '$active نشطون اليوم';
   }
 
   Widget _header() {

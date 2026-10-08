@@ -131,7 +131,7 @@ def create_job_title(
     if not name:
         raise HTTPException(422, {"code": "validation", "message": "اسم الوظيفة مطلوب."})
     if db.scalar(select(JobTitle).where(JobTitle.name == name)):
-        raise HTTPException(409, {"code": "duplicate", "message": "الوظيفة دي موجودة."})
+        raise HTTPException(409, {"code": "duplicate", "message": "هذه الوظيفة موجودة بالفعل."})
     title = JobTitle(name=name, description=body.description)
     db.add(title)
     db.commit()
@@ -184,7 +184,7 @@ def _check_department(db: Session, department_id: int | None, current_id: int | 
         raise HTTPException(422, {"code": "validation", "message": "القسم المختار غير موجود."})
     if not dept.active:
         raise HTTPException(422, {"code": "validation",
-                                  "message": f"القسم «{dept.name}» مقفول — فعّله الأول أو اختار قسم تاني."})
+                                  "message": f"القسم «{dept.name}» مغلق — فعّله أولاً أو اختر قسماً آخر."})
 
 
 @router.post("/employees", response_model=EmployeeOut, status_code=status.HTTP_201_CREATED)
@@ -198,7 +198,7 @@ def create_employee(
         raise HTTPException(422, {"code": "validation", "message": "اسم الموظف مطلوب."})
     if body.user_id and db.scalar(select(Employee).where(Employee.user_id == body.user_id)):
         raise HTTPException(409, {"code": "duplicate",
-                                  "message": "المستخدم ده مربوط بموظف تاني."})
+                                  "message": "هذا المستخدم مرتبط بموظف آخر."})
     _check_department(db, body.department_id)
     emp = Employee(
         code=numbering.next_document_number(db, Employee, "EMP", column=Employee.code, width=4),
@@ -230,7 +230,7 @@ def _check_branch_move(current: CurrentUser, emp: Employee, changes: dict) -> No
         return
     if target != current.branch_id:
         raise HTTPException(403, {"code": "forbidden",
-                                  "message": "نقل الموظف لفرع تاني من الإدارة بس."})
+                                  "message": "نقل الموظف إلى فرع آخر من الإدارة فقط."})
 
 
 def _seen_employee(db: Session, employee_id: int, current: CurrentUser) -> Employee:

@@ -41,11 +41,11 @@ function quickRanges(): { label: string; value: [Dayjs, Dayjs] }[] {
   const qStart = now.month(Math.floor(now.month() / 3) * 3).startOf('month');
   const prevQ = qStart.subtract(3, 'month');
   return [
-    { label: 'الشهر ده', value: [now.startOf('month'), now.endOf('month')] },
-    { label: 'الشهر اللي فات', value: [now.subtract(1, 'month').startOf('month'), now.subtract(1, 'month').endOf('month')] },
-    { label: 'الربع ده', value: [qStart, qStart.add(2, 'month').endOf('month')] },
-    { label: 'الربع اللي فات', value: [prevQ, prevQ.add(2, 'month').endOf('month')] },
-    { label: 'السنة دي', value: [now.startOf('year'), now.endOf('year')] },
+    { label: 'الشهر الحالي', value: [now.startOf('month'), now.endOf('month')] },
+    { label: 'الشهر الماضي', value: [now.subtract(1, 'month').startOf('month'), now.subtract(1, 'month').endOf('month')] },
+    { label: 'الربع الحالي', value: [qStart, qStart.add(2, 'month').endOf('month')] },
+    { label: 'الربع الماضي', value: [prevQ, prevQ.add(2, 'month').endOf('month')] },
+    { label: 'السنة الحالية', value: [now.startOf('year'), now.endOf('year')] },
   ];
 }
 
@@ -159,7 +159,7 @@ const IncomeSheet: React.FC = () => {
           <>
             {d.missing_cost > 0 && (
               <Alert type="warning" showIcon style={{ marginBottom: 8 }}
-                message={`${d.missing_cost} صنف ليه رصيد ومالوش تكلفة — قيمته صفر في الإجمالي.`} />
+                message={`${d.missing_cost} صنف له رصيد دون تكلفة — قيمته صفر في الإجمالي.`} />
             )}
             <Tabs items={[
               {
@@ -174,7 +174,7 @@ const IncomeSheet: React.FC = () => {
                 ),
               },
               {
-                key: 'rows', label: 'صنف صنف',
+                key: 'rows', label: 'تفصيل الأصناف',
                 children: (
                   <Table size="small" rowKey={(x: any) => `${x.item_id}-${x.warehouse_id}`} dataSource={d.rows}
                     pagination={{ pageSize: 20 }}
@@ -187,8 +187,8 @@ const IncomeSheet: React.FC = () => {
                         title: 'تكلفة الوحدة', dataIndex: 'unit_cost', align: 'left',
                         render: (v: string, r: any) => (
                           <Tooltip title={{
-                            average: 'متوسط سعر الشرا لحد التاريخ', list_factor: 'أصل اللستة × نسبة الصافي',
-                            item_purchase_price: 'سعر الشرا على كارت الصنف', none: 'مالوش تكلفة',
+                            average: 'متوسط سعر الشراء حتى التاريخ', list_factor: 'أصل قائمة الأسعار × نسبة الصافي',
+                            item_purchase_price: 'سعر الشراء في كارت الصنف', none: 'ليس له تكلفة',
                           }[r.cost_source as string]}>{money(v)}</Tooltip>
                         ),
                       },
@@ -214,8 +214,8 @@ const IncomeSheet: React.FC = () => {
       body: (
         <>
           <p style={{ color: '#64748b' }}>
-            فواتير الشرا ناقص المرتجع في الفترة، من غير الفئات المستبعدة
-            ({(data.cost.excluded_categories || []).join('، ')}) — مستبعد منها {money(p.excluded)}.
+            فواتير الشراء مطروحاً منها المرتجعات في الفترة، دون الفئات المستبعدة
+            ({(data.cost.excluded_categories || []).join('، ')}) — المستبعد منها {money(p.excluded)}.
           </p>
           <Table size="small" rowKey="category" pagination={false}
             dataSource={Object.entries(p.by_category).map(([category, value]) => ({ category, value }))}
@@ -426,7 +426,7 @@ const IncomeSheet: React.FC = () => {
           </table>
           {(data.cost.opening_inventory.missing_cost > 0 || data.cost.closing_inventory.missing_cost > 0) && (
             <Alert type="warning" showIcon style={{ marginTop: 8 }}
-              message="فيه أصناف ليها رصيد ومالهاش تكلفة — قيمتها صفر في المخزون الدفتري. دوس على رقم المخزون للتفصيل." />
+              message="توجد أصناف لها رصيد دون تكلفة — قيمتها صفر في المخزون الدفتري. اضغط على رقم المخزون لعرض التفصيل." />
           )}
         </Card>
 
@@ -464,8 +464,8 @@ const IncomeSheet: React.FC = () => {
               </Table.Summary.Row>
             )} />
           <div style={{ color: '#64748b', fontSize: 12, marginTop: 6 }}>
-            من فواتير البيع ناقص المرتجع، بعد الخصم ومن غير ضريبة
-            {data.sales.include_bonus ? '، شامل فواتير البونص' : '، من غير فواتير البونص (هدية — قيمتها في الخصم المسموح به)'}.
+            من فواتير البيع مطروحاً منها المرتجعات، بعد الخصم ودون ضريبة
+            {data.sales.include_bonus ? '، شاملةً فواتير البونص' : '، دون فواتير البونص (هدية — قيمتها ضمن الخصم المسموح به)'}.
           </div>
         </Card>
 
@@ -479,7 +479,7 @@ const IncomeSheet: React.FC = () => {
               <StatementRow label={`× ${data.marketing.model.ratio_num} ÷ ${data.marketing.model.ratio_den}`}
                 amount={data.marketing.model.ratio_coupons} />
               <StatementRow sign="يضاف" label="كوبونات البيع الفعلي" amount={data.marketing.model.sales_coupons}
-                note={{ issued: 'المصروفة للعملاء في الفترة', received: 'المستلمة في الفترة', manual: 'رقم ثابت من الإعدادات', period: 'مكتوبة للفترة دي' }[data.marketing.model.sales_coupons_source as string]} />
+                note={{ issued: 'المصروفة للعملاء في الفترة', received: 'المستلمة في الفترة', manual: 'رقم ثابت من الإعدادات', period: 'مُدخلة لهذه الفترة' }[data.marketing.model.sales_coupons_source as string]} />
               <StatementRow label={`إجمالي الكوبونات ${money(data.marketing.model.total_coupons)} × ${data.marketing.model.coupon_cost}`}
                 amount={data.marketing.model.amount} strong
                 note={data.marketing.source === 'model' ? <Tag color="blue">المستعمل في القائمة</Tag> : null} />
@@ -489,15 +489,15 @@ const IncomeSheet: React.FC = () => {
             </tbody>
           </table>
           <Alert style={{ marginTop: 10 }} type="info"
-            message="للمقارنة — الفعلي من النظام (مش داخل في القائمة إلا لو اخترته في الإعدادات)"
+            message="للمقارنة — القيم الفعلية من النظام (غير محتسبة في القائمة إلا إذا اختيرت في الإعدادات)"
             description={(
               <div>
-                <div>كوبونات اتصرفت للعملاء في الفترة: <b>{data.marketing.actual.issued_total}</b>
+                <div>كوبونات صُرفت للعملاء في الفترة: <b>{data.marketing.actual.issued_total}</b>
                   {' '}({Object.entries(data.marketing.actual.coupons_issued).map(([k, n]) => `${k} ${n}`).join('، ') || '—'})
                   {' '}× القيمة = <b>{money(data.marketing.actual.coupons_value)}</b>
                   {data.marketing.source === 'coupons' && <Tag color="blue" style={{ marginInlineStart: 6 }}>المستعمل</Tag>}
                 </div>
-                <div>كوبونات اتستلمت في الفترة: <b>{data.marketing.actual.received_total}</b></div>
+                <div>كوبونات استُلمت في الفترة: <b>{data.marketing.actual.received_total}</b></div>
                 <div>حسابات «بيع وتسويق» الفعلية (نقاط، عهدة خدمة العملاء…): <b>{money(data.marketing.actual.ledger.total)}</b>
                   {data.marketing.source === 'ledger' && <Tag color="blue" style={{ marginInlineStart: 6 }}>المستعمل</Tag>}
                 </div>
@@ -516,7 +516,7 @@ const IncomeSheet: React.FC = () => {
               ...data.other_income.lines.map((l: any) => ({ ...l, kind: 'إيراد' })),
               ...data.other_losses.lines.map((l: any) => ({ ...l, kind: 'خسارة' })),
             ]}
-            locale={{ emptyText: 'مافيش' }}
+            locale={{ emptyText: 'لا يوجد' }}
             onRow={(r: any) => ({ onClick: () => openLine(r), style: { cursor: r.manual ? undefined : 'pointer' } })}
             columns={[
               { title: '', dataIndex: 'kind', width: 70 },
@@ -574,7 +574,7 @@ const IncomeSheet: React.FC = () => {
       <Tabs activeKey={tab} onChange={setTab} items={[
         {
           key: 'sheet', label: 'القائمة',
-          children: !range ? <Empty description="اختار الفترة (من / إلى) — أو دوس الربع اللي فات" />
+          children: !range ? <Empty description="اختر الفترة (من / إلى)" />
             : loading && !data ? <Spin /> : (data ? <Spin spinning={loading}>{sheet}</Spin> : null),
         },
         {
@@ -613,7 +613,7 @@ const PeriodInputs: React.FC<{
     setAdj((inputs.adjustments || []).map((a: any) => ({ ...a, amount: Number(a.amount) })));
   }, [data?.period_key, data?.branch_id]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  if (!range || !data) return <Empty description="اختار الفرع والفترة الأول" />;
+  if (!range || !data) return <Empty description="اختر الفرع والفترة أولاً" />;
 
   const save = async () => {
     setSaving(true);
@@ -624,7 +624,7 @@ const PeriodInputs: React.FC<{
         opening_inventory: opening, closing_inventory: closing, sales_coupons: coupons,
         adjustments: adj,
       }, { params: p });
-      message.success('اتحفظت مدخلات الفترة');
+      message.success('تم حفظ مدخلات الفترة');
       onSaved();
     } catch (e: any) {
       message.error(e?.response?.data?.detail?.message || 'تعذّر الحفظ');
@@ -638,7 +638,7 @@ const PeriodInputs: React.FC<{
       <Col flex="260px">{label}</Col>
       <Col flex="220px">
         <InputNumber style={{ width: '100%' }} value={value} onChange={(v) => set(v as number | null)}
-          disabled={!canEdit} placeholder="فاضي = الدفتري / النظام" />
+          disabled={!canEdit} placeholder="فارغ = القيمة الدفترية / النظام" />
       </Col>
       <Col flex="auto" style={{ color: '#64748b' }}>{hint}</Col>
     </Row>
@@ -646,8 +646,6 @@ const PeriodInputs: React.FC<{
 
   return (
     <Card size="small" title={`مدخلات الفترة ${data.date_from} → ${data.date_to} — ${data.branch_name}`}>
-      <Alert type="info" showIcon style={{ marginBottom: 12 }}
-        message="الخانة الفاضية = الشاشة بتحسب من النظام. الرقم المكتوب هنا بيتستعمل للفترة دي بس." />
       {field(`المخزون أول المدة (جرد ${data.cost.opening_inventory.as_of})`, opening, setOpening,
         <>الدفتري: {money(data.cost.opening_inventory.computed)}</>)}
       {field(`المخزون آخر المدة (جرد ${data.cost.closing_inventory.as_of})`, closing, setClosing,
@@ -655,7 +653,7 @@ const PeriodInputs: React.FC<{
       {field('كوبونات البيع الفعلي (عدد)', coupons, setCoupons,
         <>المصروف للعملاء في الفترة: {data.marketing.actual.issued_total} · المستلم: {data.marketing.actual.received_total}</>)}
 
-      <h4 style={{ marginTop: 16 }}>بنود يدوية («زيادة») — مصروفات مالهاش قيد في الفترة</h4>
+      <h4 style={{ marginTop: 16 }}>بنود يدوية («زيادة») — مصروفات ليس لها قيد في الفترة</h4>
       <Table size="small" pagination={false} rowKey={(_: any, i?: number) => String(i)} dataSource={adj}
         columns={[
           { title: 'البند', render: (_: any, r: any, i: number) => (
@@ -734,7 +732,7 @@ const SettingsTab: React.FC<{ branchId?: number; canEdit: boolean; onSaved: () =
       const body = { ...cfg, accounts: { ...cfg.accounts, roles } };
       delete body.periods;
       await api.put('/api/v1/reports/income-sheet/settings', { config: body }, { params: p });
-      message.success('اتحفظت الإعدادات');
+      message.success('تم حفظ الإعدادات');
       await load();
       onSaved();
     } catch (e: any) {
@@ -760,10 +758,9 @@ const SettingsTab: React.FC<{ branchId?: number; canEdit: boolean; onSaved: () =
   return (
     <div>
       <Alert type="info" showIcon style={{ marginBottom: 12 }}
-        message={`إعدادات ${meta.branch_name}`}
-        description="الافتراضي مكتوب من ورقة العلياء ٣٠-٦-٢٠٢٦. أي تعديل هنا بيتحفظ للفرع ده بس." />
+        message={`إعدادات ${meta.branch_name}`} />
 
-      <Card size="small" title="فئات المبيعات — أول قاعدة تنطبق على السطر بتاخده" style={{ marginBottom: 16 }}>
+      <Card size="small" title="فئات المبيعات — تُطبَّق على السطر أول قاعدة مطابقة" style={{ marginBottom: 16 }}>
         {cats.map((c, i) => (
           <Card key={`${c.key}-${i}`} size="small" style={{ marginBottom: 8 }}
             title={(
@@ -805,11 +802,11 @@ const SettingsTab: React.FC<{ branchId?: number; canEdit: boolean; onSaved: () =
             </Row>
             {meta.resolved_customers?.[c.key]?.length > 0 && (
               <div style={{ marginTop: 6, fontSize: 12, color: '#64748b' }}>
-                العملاء دلوقتي: {meta.resolved_customers[c.key].map((x: any) => x.name).join('، ')}
+                العملاء حالياً: {meta.resolved_customers[c.key].map((x: any) => x.name).join('، ')}
               </div>
             )}
             {!(c.item_categories?.length || c.customer_types?.length || c.customer_ids?.length || c.customer_name_words?.length) && (
-              <Tag color="blue" style={{ marginTop: 6 }}>من غير شروط = الباقي كله</Tag>
+              <Tag color="blue" style={{ marginTop: 6 }}>بدون شروط = جميع ما تبقى</Tag>
             )}
           </Card>
         ))}
@@ -819,23 +816,23 @@ const SettingsTab: React.FC<{ branchId?: number; canEdit: boolean; onSaved: () =
         )}
         <div style={{ marginTop: 8 }}>
           <Radio.Group disabled={!canEdit} value={!!cfg.sales.include_bonus} onChange={(e) => set(['sales', 'include_bonus'], e.target.value)}>
-            <Radio value={false}>من غير فواتير البونص</Radio>
-            <Radio value>شامل فواتير البونص</Radio>
+            <Radio value={false}>بدون فواتير البونص</Radio>
+            <Radio value>شاملة فواتير البونص</Radio>
           </Radio.Group>
         </div>
       </Card>
 
       <Card size="small" title="تقييم المخزون والمشتريات" style={{ marginBottom: 16 }}>
         <Radio.Group disabled={!canEdit} value={cfg.inventory.cost_basis} onChange={(e) => set(['inventory', 'cost_basis'], e.target.value)}>
-          <Radio value="average">متوسط سعر الشرا لحد التاريخ</Radio>
-          <Radio value="list_factor">أصل اللستة × نسبة الصافي (زي ورق الجرد)</Radio>
+          <Radio value="average">متوسط سعر الشراء حتى التاريخ</Radio>
+          <Radio value="list_factor">أصل قائمة الأسعار × نسبة الصافي (كما في أوراق الجرد)</Radio>
         </Radio.Group>
-        <div style={{ marginTop: 10, fontSize: 12, color: '#64748b' }}>فئات مستبعدة من المخزون ومن المشتريات (مش بضاعة للبيع)</div>
+        <div style={{ marginTop: 10, fontSize: 12, color: '#64748b' }}>فئات مستبعدة من المخزون ومن المشتريات (ليست بضاعة للبيع)</div>
         <Select mode="multiple" style={{ width: '100%' }} disabled={!canEdit} options={catOptions}
           value={cfg.inventory.exclude_categories || []} onChange={(v) => set(['inventory', 'exclude_categories'], v)} />
         {cfg.inventory.cost_basis === 'list_factor' && (
           <>
-            <div style={{ marginTop: 10, fontSize: 12, color: '#64748b' }}>نسبة الصافي من أصل اللستة لكل فئة (الفاضي = متوسط الشرا)</div>
+            <div style={{ marginTop: 10, fontSize: 12, color: '#64748b' }}>نسبة الصافي من أصل قائمة الأسعار لكل فئة (الفارغ = متوسط سعر الشراء)</div>
             <Row gutter={[8, 8]}>
               {meta.item_categories.map((c: string) => (
                 <Col key={c} xs={12} md={6}>
@@ -853,16 +850,16 @@ const SettingsTab: React.FC<{ branchId?: number; canEdit: boolean; onSaved: () =
       <Card size="small" title="مصاريف البيع والتسويق (البوانص والكوبونات)" style={{ marginBottom: 16 }}>
         <Radio.Group disabled={!canEdit} value={cfg.marketing.source} onChange={(e) => set(['marketing', 'source'], e.target.value)}
           style={{ marginBottom: 10 }}>
-          <Radio value="model">نموذج البوانص (زي الورقة)</Radio>
+          <Radio value="model">نموذج البوانص (كما في الورقة)</Radio>
           <Radio value="coupons">الكوبونات المصروفة × قيمتها</Radio>
           <Radio value="ledger">حسابات البيع والتسويق الفعلية</Radio>
         </Radio.Group>
         <Row gutter={[8, 8]}>
-          {num(['marketing', 'coupon_base'], 'قيمة الكوبون الأساسية', '73.4 في الورقة')}
-          {num(['marketing', 'coupon_base_pct'], 'نسبة منها %', '90% في الورقة')}
-          {num(['marketing', 'coupon_cost'], 'تكلفة الكوبون الواحد', '180 في الورقة')}
-          {num(['marketing', 'ratio_num'], 'معامل × (بسط)', '2 في الورقة')}
-          {num(['marketing', 'ratio_den'], 'معامل ÷ (مقام)', '30 في الورقة')}
+          {num(['marketing', 'coupon_base'], 'قيمة الكوبون الأساسية')}
+          {num(['marketing', 'coupon_base_pct'], 'نسبة منها %')}
+          {num(['marketing', 'coupon_cost'], 'تكلفة الكوبون الواحد')}
+          {num(['marketing', 'ratio_num'], 'معامل × (بسط)')}
+          {num(['marketing', 'ratio_den'], 'معامل ÷ (مقام)')}
           <Col xs={24} md={8}>
             <div style={{ color: '#64748b', fontSize: 12 }}>كوبونات البيع الفعلي</div>
             <Select style={{ width: '100%' }} disabled={!canEdit} value={cfg.marketing.sales_coupons_source}
@@ -876,12 +873,11 @@ const SettingsTab: React.FC<{ branchId?: number; canEdit: boolean; onSaved: () =
               <InputNumber style={{ width: '100%', marginTop: 4 }} disabled={!canEdit} value={cfg.marketing.sales_coupons_manual}
                 onChange={(v) => set(['marketing', 'sales_coupons_manual'], v)} />
             )}
-            <div style={{ color: '#94a3b8', fontSize: 11 }}>رقم فترة بعينها يتكتب في «مدخلات الفترة»</div>
           </Col>
         </Row>
       </Card>
 
-      <Card size="small" title="بنود المصروفات (تجميع الحسابات زي الورقة)" style={{ marginBottom: 16 }}>
+      <Card size="small" title="بنود المصروفات (تجميع الحسابات كما في الورقة)" style={{ marginBottom: 16 }}>
         <Table size="small" pagination={false} rowKey={(_: any, i?: number) => String(i)} dataSource={cfg.accounts.groups}
           columns={[
             { title: 'البند', width: 220, render: (_: any, g: any, i: number) => (
@@ -900,7 +896,7 @@ const SettingsTab: React.FC<{ branchId?: number; canEdit: boolean; onSaved: () =
         )}
       </Card>
 
-      <Card size="small" title="تصنيف الحسابات — كل حساب إيرادات/مصروفات بيروح فين في القائمة"
+      <Card size="small" title="تصنيف الحسابات — موضع كل حساب إيرادات/مصروفات في القائمة"
         extra={<Input.Search allowClear placeholder="بحث" onSearch={setAccFilter} style={{ width: 200 }} />}>
         <Table size="small" rowKey="account_id" dataSource={accounts} pagination={{ pageSize: 25 }}
           columns={[

@@ -33,7 +33,7 @@ def _raise(exc: Exception):
         raise HTTPException(409, {"code": "ledger_invalid", "message": text}) from exc
     if "غير موجود" in text:
         raise HTTPException(404, {"code": "not_found", "message": text}) from exc
-    if "مرحّل بالفعل" in text or "اتصرف" in text:
+    if "مرحّل بالفعل" in text or any(s in text for s in ("اتصرف", "صُرف", "تم صرف")):
         raise HTTPException(409, {"code": "duplicate", "message": text}) from exc
     raise HTTPException(422, {"code": "validation", "message": text}) from exc
 
@@ -253,7 +253,7 @@ def payslip(
     line = db.scalar(select(PayrollLine).where(
         PayrollLine.run_id == run_id, PayrollLine.employee_id == employee_id))
     if line is None:
-        raise HTTPException(404, {"code": "not_found", "message": "مافيش سطر للموظف ده."})
+        raise HTTPException(404, {"code": "not_found", "message": "لا يوجد سطر لهذا الموظف."})
     details = db.scalars(select(PayrollLineDetail).where(
         PayrollLineDetail.line_id == line.id).order_by(PayrollLineDetail.id)).all()
     return {

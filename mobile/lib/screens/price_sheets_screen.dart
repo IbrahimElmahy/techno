@@ -46,8 +46,8 @@ class _PriceSheetsScreenState extends State<PriceSheetsScreen> {
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('تمسح الشيت؟'),
-        content: Text('«$title» هيتشال من الجهاز. مافيش رجوع.'),
+        title: const Text('حذف الشيت؟'),
+        content: Text('سيتم حذف «$title» من الجهاز نهائياً.'),
         actions: [
           TextButton(
               onPressed: () => Navigator.pop(ctx, false),
@@ -55,7 +55,7 @@ class _PriceSheetsScreenState extends State<PriceSheetsScreen> {
           FilledButton(
             onPressed: () => Navigator.pop(ctx, true),
             style: FilledButton.styleFrom(backgroundColor: AppColors.danger),
-            child: const Text('امسح'),
+            child: const Text('حذف'),
           ),
         ],
       ),
@@ -65,7 +65,7 @@ class _PriceSheetsScreenState extends State<PriceSheetsScreen> {
     await _load();
     if (mounted) {
       ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text('اتمسح «$title»')));
+          .showSnackBar(SnackBar(content: Text('تم حذف «$title»')));
     }
   }
 
@@ -77,9 +77,9 @@ class _PriceSheetsScreenState extends State<PriceSheetsScreen> {
     final days = DateTime(today.year, today.month, today.day)
         .difference(DateTime(t.year, t.month, t.day))
         .inDays;
-    if (days == 0) return 'النهارده';
-    if (days == 1) return 'امبارح';
-    if (days < 7) return 'من $days أيام';
+    if (days == 0) return 'اليوم';
+    if (days == 1) return 'أمس';
+    if (days < 7) return 'منذ $days أيام';
     return '${t.year}/${t.month.toString().padLeft(2, '0')}/'
         '${t.day.toString().padLeft(2, '0')}';
   }
@@ -100,9 +100,7 @@ class _PriceSheetsScreenState extends State<PriceSheetsScreen> {
                   child: Padding(
                     padding: EdgeInsets.all(28),
                     child: Text(
-                      'مافيش شيتات متحفوظة.\n'
-                      'دوس «شيت جديد» وابدأ تسعّر — والشيت بيفضل على الجهاز '
-                      'ترجعله وتعدّله في أي وقت.',
+                      'لا توجد شيتات محفوظة.',
                       textAlign: TextAlign.center,
                       style: TextStyle(color: Colors.black54),
                     ),
@@ -138,7 +136,7 @@ class _PriceSheetsScreenState extends State<PriceSheetsScreen> {
               style: const TextStyle(
                   fontWeight: FontWeight.w700, color: AppColors.primary)),
           IconButton(
-            tooltip: 'امسح',
+            tooltip: 'حذف',
             icon: const Icon(Icons.delete_outline, color: AppColors.danger),
             onPressed: () => _delete(row),
           ),

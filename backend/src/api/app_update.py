@@ -57,11 +57,11 @@ def download(abi: str) -> FileResponse:
     name = files.get(abi) or files.get("universal")
     if not name:
         raise HTTPException(status.HTTP_404_NOT_FOUND,
-                            {"code": "not_found", "message": "مافيش نسخة منشورة للتطبيق."})
+                            {"code": "not_found", "message": "لا توجد نسخة منشورة للتطبيق."})
     path = (APP_ROOT / name).resolve()
     if path.parent != APP_ROOT.resolve() or not path.is_file():
         raise HTTPException(status.HTTP_404_NOT_FOUND,
-                            {"code": "not_found", "message": "ملف التحديث مش موجود على السيرفر."})
+                            {"code": "not_found", "message": "ملف التحديث غير موجود على الخادم."})
     return FileResponse(
         path,
         media_type=APK_MEDIA,

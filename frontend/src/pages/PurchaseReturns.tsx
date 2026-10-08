@@ -188,7 +188,7 @@ export default function PurchaseReturns({ embedded }: { embedded?: { onExit: () 
       && !(x.lines || []).some((l: any) => l.item_id != null),
     title: (x: any) => {
       const n = (x.lines || []).filter((l: any) => l.item_id != null).length;
-      return `مردود شرا — ${n} صنف`;
+      return `مردود شراء — ${n} صنف`;
     },
   });
 
@@ -546,7 +546,7 @@ export default function PurchaseReturns({ embedded }: { embedded?: { onExit: () 
         const lineWh = dup.warehouse_id ?? wh;
         const total = pickedQty(itemId, lineWh, Number(dup.quantity || 0) + qty, dup.quantity);
         setReturnLines((prev) => prev.map((l) => (l.key === dup.key ? { ...l, quantity: total } : l)));
-        message.info(`«${itemName(itemId)}» موجود بالفعل — اتزوّدت كميته`);
+        message.info(`«${itemName(itemId)}» موجود بالفعل — تمت زيادة كميته`);
       } else {
         message.info(`«${itemName(itemId)}» موجود بالفعل — عدّل الكمية من السطر`);
       }
@@ -681,7 +681,7 @@ export default function PurchaseReturns({ embedded }: { embedded?: { onExit: () 
 
   const submit = async () => {
     if (!supplierFilter) { message.warning('اختر المورد أولاً'); return; }
-    if (!warehouseId) { message.warning('اختر المخزن الذي ترتجع منه البضاعة'); return; }
+    if (!warehouseId) { message.warning('اختر المخزن الذي تُرجع منه البضاعة'); return; }
     const lines = returnLines
       .filter((l) => l.item_id && Number(l.quantity || 0) > 0)
       .map((l) => ({
@@ -734,7 +734,7 @@ export default function PurchaseReturns({ embedded }: { embedded?: { onExit: () 
       ...dateColumn<ReturnRow>((r) => r.return_date || r.created_at),
       defaultSortOrder: 'descend' as const,
       render: (v: string | null, r: ReturnRow) => (v ? String(v).slice(0, 10) : (
-        <span style={{ color: '#6b6b6b' }} title="مردود قديم — التاريخ ده يوم التسجيل">
+        <span style={{ color: '#6b6b6b' }} title="مردود قديم — هذا التاريخ هو يوم التسجيل">
           {r.created_at ? `${String(r.created_at).slice(0, 10)}*` : '-'}
         </span>
       )),
@@ -950,7 +950,6 @@ export default function PurchaseReturns({ embedded }: { embedded?: { onExit: () 
       <ListPage
         icon={<RollbackOutlined />}
         title="مردودات الشراء" muted="(سجل المردودات للموردين)"
-        subtitle="البضاعة الراجعة للموردين — بتقلّل المستحق عليهم بقيمتها"
         actions={(<>
           <Button data-shortcut="F2" type="primary" icon={<PlusOutlined />} className="sl-create"
             onClick={openCreate}>
@@ -1072,9 +1071,9 @@ export default function PurchaseReturns({ embedded }: { embedded?: { onExit: () 
       <TabModal
         open={pendingItems.length > 0}
         title={pendingItems.length > 1
-          ? `الأصناف دي (${pendingItems.length}) خارجة من أنهي مخزن؟`
-          : 'البضاعة خارجة من أنهي مخزن؟'}
-        okText="تمام" cancelText="إلغاء"
+          ? `من أي مخزن تخرج هذه الأصناف (${pendingItems.length})؟`
+          : 'من أي مخزن تخرج البضاعة؟'}
+        okText="موافق" cancelText="إلغاء"
         okButtonProps={{ disabled: pendingWarehouse === null }}
         onCancel={() => { pendingQtys.current = {}; setPendingItems([]); }}
         onOk={async () => {
@@ -1096,9 +1095,6 @@ export default function PurchaseReturns({ embedded }: { embedded?: { onExit: () 
           value={pendingWarehouse ?? undefined}
           onChange={(v) => setPendingWarehouse(v as number)}
           options={activeOptions(sortByName(warehouses, (w: any) => w.name), pendingWarehouse)} filterOption={searchFilter} filterSort={searchRank}/>
-        <div style={{ marginTop: 10, color: '#6b6b6b', fontSize: 15 }}>
-          هيثبت لكل أصناف المردود. تقدر تغيّر مخزن أي سطر من عمود «المخزن».
-        </div>
       </TabModal>
 
       <ProductPickerModal
@@ -1226,7 +1222,7 @@ export default function PurchaseReturns({ embedded }: { embedded?: { onExit: () 
             </Col>
             <Col xs={24} md={8}>
               <Form.Item label="ملاحظات">
-                <Input placeholder="سبب الرجوع (مكسورة، ناقصة، غلط في الصنف…)"
+                <Input placeholder="سبب الإرجاع (مكسورة، ناقصة، خطأ في الصنف…)"
                   disabled={viewOnly}
                   value={notes} onChange={(e) => setNotes(e.target.value)} />
               </Form.Item>

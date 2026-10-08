@@ -354,7 +354,7 @@ export default function CustomerProfile() {
     { label: 'اليوم', get: () => [dayjs(), dayjs()] },
     { label: 'الأمس', get: () => [dayjs().subtract(1, 'day'), dayjs().subtract(1, 'day')] },
     { label: 'آخر ٧ أيام', get: () => [dayjs().subtract(6, 'day'), dayjs()] },
-    { label: 'الشهر ده', get: () => [dayjs().startOf('month'), dayjs()] },
+    { label: 'هذا الشهر', get: () => [dayjs().startOf('month'), dayjs()] },
     {
       label: 'الشهر الماضي',
       get: () => [
@@ -362,7 +362,7 @@ export default function CustomerProfile() {
         dayjs().subtract(1, 'month').endOf('month'),
       ],
     },
-    { label: 'السنة دي', get: () => [dayjs().startOf('year'), dayjs()] },
+    { label: 'هذه السنة', get: () => [dayjs().startOf('year'), dayjs()] },
   ];
   const presetActive = (p: { get: () => [Dayjs, Dayjs] }) => {
     if (!range || !range[0] || !range[1]) return false;
@@ -998,8 +998,8 @@ export default function CustomerProfile() {
                   {Number(statement.aging?.credit_open || 0) > 0 && (
                     <div style={{ fontSize: 14, color: '#8c8c8c', marginTop: 6 }}>
                       مطلوب <b>{money(statement.aging?.debit_open || 0)}</b> ·
-                      دفعات لسه ماتخصمتش من فاتورة <b>{money(statement.aging?.credit_open || 0)}</b> ·
-                      الصافي هو المستحق فوق
+                      دفعات لم تُخصم بعد من فاتورة <b>{money(statement.aging?.credit_open || 0)}</b> ·
+                      الصافي هو المستحق أعلاه
                     </div>
                   )}
                             </Card>
@@ -1012,7 +1012,7 @@ export default function CustomerProfile() {
                               setShowStock(on);
                               if (!on) setExpandedKeys([]);
                             }}>
-                              حركة مخزنية — فرد أصناف كل المستندات
+                              حركة مخزنية — عرض أصناف كل المستندات
                             </Checkbox>
                           </div>
 
@@ -1255,7 +1255,7 @@ export default function CustomerProfile() {
                         ]}
                       />
                       {!points?.rows.length ? (
-                        <Empty description="مافيش حركة نقاط للعميل ده" />
+                        <Empty description="لا توجد حركة نقاط لهذا العميل" />
                       ) : (
                         <Table size="small" rowKey="id" dataSource={pointsFilter.filtered}
                           pagination={{ defaultPageSize: PAGE_SIZE, showSizeChanger: true, pageSizeOptions: PAGE_SIZE_OPTIONS }}
@@ -1282,7 +1282,7 @@ export default function CustomerProfile() {
                           style={{ marginTop: 12 }}
                           type="warning"
                           showIcon
-                          message={`معروض ${points.rows.length} حركة من ${points.count} — الحركات الأقدم لسه ماتحمّلتش.`}
+                          message={`معروض ${points.rows.length} حركة من ${points.count} — لم تُحمَّل الحركات الأقدم بعد.`}
                           action={(
                             <Button size="small" loading={pointsMoreLoading}
                               onClick={() => loadPoints(points.rows.length)}>

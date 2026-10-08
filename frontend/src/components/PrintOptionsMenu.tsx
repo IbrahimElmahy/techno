@@ -40,14 +40,14 @@ export default function PrintOptionsMenu({
           </Space>
           <div style={{ marginTop: 10, borderTop: '1px solid #f0f0f0', paddingTop: 8 }}>
             <Button size="small" type="link" onClick={() => set(DEFAULT_PRINT_OPTIONS)}>
-              رجّع الكل
+              استعادة الكل
             </Button>
           </div>
         </div>
       )}
     >
       <Button icon={<PrinterOutlined />}>
-        مفاتيح الطباعة{offCount ? ` (${offCount} مقفول)` : ''}
+        مفاتيح الطباعة{offCount ? ` (${offCount} مغلق)` : ''}
       </Button>
     </Dropdown>
   );

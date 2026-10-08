@@ -121,7 +121,7 @@ export default function SubAccounts() {
     try {
       await api.patch(`/api/v1/accounts/${editing.id}`,
         { name: v.name, reconcilable: !!v.reconcilable });
-      message.success('اتعدّل الحساب');
+      message.success('تم تعديل الحساب');
       setEditing(null);
       load();
     } catch (err) {
@@ -132,7 +132,7 @@ export default function SubAccounts() {
   const toggleActive = async (record: ChartAccount) => {
     try {
       await api.patch(`/api/v1/accounts/${record.id}`, { active: !record.active });
-      message.success(record.active ? 'اتخفى من القوايم' : 'رجع يظهر في القوايم');
+      message.success(record.active ? 'تم الإخفاء من القوائم' : 'تم الإظهار في القوائم');
       load();
     } catch (err) {
       console.error(err);
@@ -142,7 +142,7 @@ export default function SubAccounts() {
   const removeAccount = async (record: ChartAccount) => {
     try {
       await api.delete(`/api/v1/accounts/${record.id}`);
-      message.success('اتقفل الحساب');
+      message.success('تم إقفال الحساب');
       load();
     } catch (err) {
       console.error(err);
@@ -206,15 +206,14 @@ export default function SubAccounts() {
             <Button type="text" icon={<EditOutlined />} disabled={record.is_system}
               onClick={() => openEdit(record)} />
           </Tooltip>
-          <Tooltip title={record.active ? 'إخفاء من قوايم الاختيار' : 'إظهار في قوايم الاختيار'}>
+          <Tooltip title={record.active ? 'إخفاء من قوائم الاختيار' : 'إظهار في قوائم الاختيار'}>
             <Button type="text" disabled={record.is_system}
               icon={record.active ? <EyeInvisibleOutlined /> : <EyeOutlined />}
               onClick={() => toggleActive(record)} />
           </Tooltip>
           <Popconfirm
-            title="تقفل الحساب؟"
-            description="يُغلق ولا يُحذف — ويبقى اسمه مقروءاً على القيود المسجّلة عليه."
-            okText="اقفل" cancelText="رجوع" okButtonProps={{ danger: true }}
+            title="إقفال الحساب؟"
+            okText="إقفال" cancelText="رجوع" okButtonProps={{ danger: true }}
             onConfirm={() => removeAccount(record)}
           >
             <Tooltip title="حذف (إقفال)">
@@ -230,7 +229,7 @@ export default function SubAccounts() {
   const formFields = (isCreate: boolean) => (
     <Row gutter={12}>
       <Col span={10}>
-        <Form.Item name="parent_id" label="الحسابات الرئيسيه"
+        <Form.Item name="parent_id" label="الحسابات الرئيسية"
           rules={[{ required: isCreate, message: 'اختر الحساب الرئيسي' }]}>
           <Select showSearch disabled={!isCreate} placeholder="اختر الحساب الرئيسي"
             options={groups.map((g) => ({
@@ -242,7 +241,7 @@ export default function SubAccounts() {
       <Col span={8}>
         <Form.Item name="name" label="الاسم"
           rules={[{ required: true, message: 'اكتب اسم الحساب' }]}>
-          <Input placeholder="مثال: ايجار المركز الرئيسى" />
+          <Input placeholder="مثال: إيجار المركز الرئيسي" />
         </Form.Item>
       </Col>
       <Col span={6}>
@@ -253,9 +252,8 @@ export default function SubAccounts() {
       </Col>
       {!isCreate && (
         <Col span={24}>
-          <Form.Item name="reconcilable" label="قابل للتسوية" valuePropName="checked"
-            extra="سطوره هتظهر في شاشة تسوية الحسابات عشان تتقفل على بعضها">
-            <Switch checkedChildren="أيوه" unCheckedChildren="لأ" />
+          <Form.Item name="reconcilable" label="قابل للتسوية" valuePropName="checked">
+            <Switch checkedChildren="نعم" unCheckedChildren="لا" />
           </Form.Item>
         </Col>
       )}
@@ -264,7 +262,7 @@ export default function SubAccounts() {
 
   const inSection = columns.filter((c: any) => c.key !== 'parent_id');
   const tableCols = useTableColumns('sub-accounts', inSection, {
-    export: { name: 'الحسابات الفرعيه', rows: filtered },
+    export: { name: 'الحسابات الفرعية', rows: filtered },
   });
 
   const sections = useMemo(() => {
@@ -292,8 +290,7 @@ export default function SubAccounts() {
     <>
       <ListPage
         icon={<PartitionOutlined />}
-        title="الحسابات الفرعيه"
-        subtitle="الحسابات اللي بتتسجّل عليها القيود — متجمّعة تحت حساباتها الرئيسية"
+        title="الحسابات الفرعية"
         actions={(<>
           {canWrite && (
             <Button data-shortcut="F2" type="primary" className="sl-create" icon={<PlusOutlined />}
@@ -301,7 +298,7 @@ export default function SubAccounts() {
               حساب فرعي جديد
             </Button>
           )}
-          <Button icon={<ReloadOutlined />} onClick={load}>اعادة تحميل</Button>
+          <Button icon={<ReloadOutlined />} onClick={load}>إعادة تحميل</Button>
           {tableCols.control}
         </>)}
         filters={(

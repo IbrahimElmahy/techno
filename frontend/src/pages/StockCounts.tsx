@@ -106,7 +106,7 @@ export default function StockCounts() {
         batch_size: kind === 'cycle' ? batchSize : undefined,
         item_ids: kind === 'spot' ? spotItems : undefined,
       });
-      message.success(`اتفتح كشف الجرد ${res.data.document_number}`);
+      message.success(`تم فتح كشف الجرد ${res.data.document_number}`);
       setOpenVisible(false);
       setSheet(res.data); setEntered({}); setDetailVisible(true);
       setSheetStatement(res.data.statement1 || '');
@@ -170,7 +170,7 @@ export default function StockCounts() {
     try {
       const res = await api.post(`/api/v1/stock-counts/${sheet.id}/post`);
       setSheet(res.data);
-      message.success('اترحّل الجرد والفروق اتسوّت');
+      message.success('تم ترحيل الجرد وتسوية الفروق');
       load();
     } catch (err: any) {
       message.error(err?.response?.data?.detail?.message || 'تعذر ترحيل الجرد');
@@ -275,16 +275,16 @@ export default function StockCounts() {
       render: (v: string | null) => v ?? <Tag>كل المخازن</Tag> },
     { title: 'السطور', key: 'lines', width: 150,
       ...numberColumn((r: Sheet) => r.line_count),
-      render: (_: any, r: Sheet) => `${r.counted_count} / ${r.line_count} متعدود` },
+      render: (_: any, r: Sheet) => `${r.counted_count} / ${r.line_count} معدود` },
     { title: 'البيان', dataIndex: 'statement1', ellipsis: true,
       ...textColumn(sheets, (r: Sheet) => r.statement1),
       render: (v: string | null) => v || '-' },
     { title: 'الحالة', dataIndex: 'status', width: 120,
       ...choiceColumn<Sheet>(
-        [{ text: 'مفتوح', value: 'draft' }, { text: 'مترحّل', value: 'posted' },
+        [{ text: 'مفتوح', value: 'draft' }, { text: 'مُرحّل', value: 'posted' },
          { text: 'ملغي', value: 'cancelled' }],
         (r, v) => r.status === v),
-      render: (v: Sheet['status']) => (v === 'posted' ? <Tag color="green">مترحّل</Tag>
+      render: (v: Sheet['status']) => (v === 'posted' ? <Tag color="green">مُرحّل</Tag>
         : v === 'cancelled' ? <Tag>ملغي</Tag> : <Tag color="blue">مفتوح</Tag>) },
   ];
 
@@ -313,7 +313,7 @@ export default function StockCounts() {
   const statusTabs: { key: StatusTab; label: string; dot?: string; count?: number }[] = [
     { key: 'all', label: 'الكل', count: sheets.length },
     { key: 'draft', label: 'مفتوح', dot: '#1677ff', count: statusCount('draft') },
-    { key: 'posted', label: 'مترحّل', dot: '#52c41a', count: statusCount('posted') },
+    { key: 'posted', label: 'مُرحّل', dot: '#52c41a', count: statusCount('posted') },
     { key: 'cancelled', label: 'ملغي', dot: '#bfbfbf', count: statusCount('cancelled') },
   ];
 
@@ -331,7 +331,6 @@ export default function StockCounts() {
       <ListPage<StatusTab>
         icon={<AuditOutlined />}
         title="دورة الجرد" muted="(عدّ وتسوية)"
-        subtitle="الجرد بيسوّي الفرق لحد ما الرصيد يساوي المعدود — على الرصيد الحالي، فحركة حصلت أثناء العدّ ماتتحسبش مرتين"
         tabs={statusTabs} activeTab={activeStatus}
         onTabChange={(k) => filter.setValue('status', k === 'all' ? undefined : k)}
         actions={(<>
@@ -361,7 +360,7 @@ export default function StockCounts() {
             value={filter.values.progress} onChange={(v) => filter.setValue('progress', v)}
             options={[
               { value: 'incomplete', label: 'لم ينتهِ العدّ بعد' },
-              { value: 'complete', label: 'العد خلص' }]} />
+              { value: 'complete', label: 'اكتمل العدّ' }]} />
           <Input allowClear placeholder="البيان"
             value={filter.values.statement ?? undefined}
             onChange={(e) => filter.setValue('statement', e.target.value || undefined)} />
@@ -398,11 +397,6 @@ export default function StockCounts() {
                 { value: 'spot', label: 'عينة' },
               ]}
             />
-            <div style={{ color: '#6b6b6b', fontSize: 14, marginTop: 6 }}>
-              {kind === 'full' && 'كل صنف له رصيد في المخزن — الجردة التي تُغلق عندها الأرفف.'}
-              {kind === 'cycle' && 'دفعة بالتناوب، الأقدم عدّاً الأول — بتغطي المخزن مع الوقت من غير ما الشغل يقف.'}
-              {kind === 'spot' && 'الأصناف التي تحددها فقط — حتى لو كانت الدفاتر تقول إنها نفدت.'}
-            </div>
           </Form.Item>
 
           {kind === 'cycle' && (
@@ -412,8 +406,7 @@ export default function StockCounts() {
             </Form.Item>
           )}
           {kind === 'spot' && (
-            <Form.Item label="الأصناف" required
-              extra="جرد العينة يلزمه تحديد الأصناف — و«عينة» بلا أصناف ليست جرداً.">
+            <Form.Item label="الأصناف" required>
               <Select mode="multiple" allowClear showSearch
                 style={{ width: '100%' }} placeholder="اختر الأصناف"
                 value={spotItems} onChange={setSpotItems}
@@ -421,8 +414,7 @@ export default function StockCounts() {
             </Form.Item>
           )}
 
-          <Form.Item label="المخزن"
-            help="سيبه فاضي والكشف هيفتح على كل المخازن النشطة (جرد عام)">
+          <Form.Item label="المخزن">
             <Select allowClear showSearch
               placeholder="كل المخازن النشطة"
               value={warehouseId} onChange={setWarehouseId}
@@ -446,11 +438,11 @@ export default function StockCounts() {
       <div className="sale-doc">
         <div className="sale-card sale-head">
           <div className="sale-head-row">
-            <Button size="small" icon={<ArrowRightOutlined />} onClick={closeDoc}>رجوع للكشوف</Button>
+            <Button size="small" icon={<ArrowRightOutlined />} onClick={closeDoc}>رجوع إلى الكشوف</Button>
             <span className="sale-title">كشف الجرد <b dir="ltr">{sheet.document_number}</b></span>
             <Tag style={{ marginInlineEnd: 0 }} color={sheet.status === 'posted' ? 'green'
               : sheet.status === 'cancelled' ? 'default' : 'blue'}>
-              {sheet.status === 'posted' ? 'مترحّل'
+              {sheet.status === 'posted' ? 'مُرحّل'
                 : sheet.status === 'cancelled' ? 'ملغي' : 'مفتوح'}
             </Tag>
             <DocumentHistoryButton entityType="stock_count" entityId={sheet.id}
@@ -477,11 +469,11 @@ export default function StockCounts() {
           {canSeeStats && (
             <div className="sale-tiles">
               <div className="sale-tile">
-                <div className="sale-tile-label">متعدود</div>
+                <div className="sale-tile-label">معدود</div>
                 <div className="sale-tile-value">{`${countedNow} / ${allLines.length}`}</div>
               </div>
               <div className="sale-tile">
-                <div className="sale-tile-label">سطور بفرق</div>
+                <div className="sale-tile-label">سطور بها فرق</div>
                 <div className="sale-tile-value" style={{ color: differing ? '#cf1322' : undefined }}>
                   {differing}
                 </div>
@@ -518,8 +510,8 @@ export default function StockCounts() {
                   setLineView(String(v) as 'all' | 'differing' | 'uncounted')}
                 options={[
                   { value: 'all', label: `الكل (${allLines.length})` },
-                  { value: 'differing', label: `فيه فرق (${differing})` },
-                  { value: 'uncounted', label: `لسه ماتعدش (${allLines.length - countedNow})` },
+                  { value: 'differing', label: `بها فرق (${differing})` },
+                  { value: 'uncounted', label: `لم يُعدّ بعد (${allLines.length - countedNow})` },
                 ]}
               />
               {categories.length > 1 && (
@@ -597,7 +589,7 @@ export default function StockCounts() {
                       onChange={(v) => setEntered((p) => ({ ...p, [ln.id]: v as number | null }))}
                     />
                   ) : (ln.counted_quantity === null
-                    ? <span style={{ color: '#8c8c8c' }}>مش متعدود</span>
+                    ? <span style={{ color: '#8c8c8c' }}>غير معدود</span>
                     : qty(ln.counted_quantity))),
                 },
                 {

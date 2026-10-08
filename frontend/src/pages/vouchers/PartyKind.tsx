@@ -105,7 +105,7 @@ export function PartyKindField({
   }
   return (
     <Form.Item name="account_id" label="الحساب" rules={[{ required: true, message: 'اختر الحساب' }]}
-      extra={extra ?? 'أي حساب فرعي في الشجرة — زي a5'}>
+      extra={extra}>
       <Select
         showSearch allowClear placeholder="اكتب اسم الحساب أو كوده"
         options={activeChoices(accounts, currentAccount).map((a: any) => ({

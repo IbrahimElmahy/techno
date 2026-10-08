@@ -68,7 +68,7 @@ class _CouponReviewScreenState extends State<CouponReviewScreen> {
       if (to != null && (date == null || date.compareTo(to) > 0)) continue;
 
       final name = (r['customer_name'] as String?)?.trim();
-      final key = name == null || name.isEmpty ? '— من غير اسم —' : name;
+      final key = name == null || name.isEmpty ? '— بدون اسم —' : name;
       final q = _customerFilter.text.trim();
       if (q.isNotEmpty && !key.toLowerCase().contains(q.toLowerCase())) continue;
       final t = totals.putIfAbsent(key, () => _CustomerTotal(key));
@@ -148,8 +148,8 @@ class _CouponReviewScreenState extends State<CouponReviewScreen> {
                   contentPadding: EdgeInsets.zero,
                   title: Text(_receiptLine(r)),
                   subtitle: Text((r['synced'] as int?) == 1
-                      ? 'اتزامنت — بتتراجع في المكتب'
-                      : 'لسه متزامنتش'),
+                      ? 'تمت المزامنة — قيد المراجعة في المكتب'
+                      : 'لم تتم مزامنتها بعد'),
                   trailing: (r['synced'] as int?) == 1
                       ? const Icon(Icons.cloud_done_outlined, color: AppColors.success)
                       : Row(
@@ -197,8 +197,8 @@ class _CouponReviewScreenState extends State<CouponReviewScreen> {
         textDirection: TextDirection.rtl,
         child: AlertDialog(
           title: const Text('إلغاء الاستلام؟'),
-          content: Text('${r['coupon_count']} كوبون هيتشالوا من الجهاز، '
-              'والعملية دي لسه ما اترفعتش للسيرفر.'),
+          content: Text('سيُحذف ${r['coupon_count']} كوبون من الجهاز، '
+              'ولم تُرفع هذه العملية إلى الخادم بعد.'),
           actions: [
             TextButton(onPressed: () => Navigator.pop(d, false), child: const Text('رجوع')),
             FilledButton(
@@ -251,7 +251,7 @@ class _CouponReviewScreenState extends State<CouponReviewScreen> {
               onChanged: (_) => _load(),
               decoration: InputDecoration(
                 isDense: true,
-                hintText: 'فلتر بإسم العميل',
+                hintText: 'تصفية باسم العميل',
                 prefixIcon: const Icon(Icons.search, size: 20),
                 suffixIcon: _customerFilter.text.isEmpty
                     ? null
@@ -283,7 +283,7 @@ class _CouponReviewScreenState extends State<CouponReviewScreen> {
             child: _loading
                 ? const Center(child: CircularProgressIndicator())
                 : _rows.isEmpty
-                    ? const Center(child: Text('مفيش كوبونات في المدة دي'))
+                    ? const Center(child: Text('لا توجد كوبونات في هذه الفترة'))
                     : ListView.separated(
                         padding: const EdgeInsets.only(bottom: 20),
                         itemCount: _rows.length,
@@ -304,7 +304,7 @@ class _CouponReviewScreenState extends State<CouponReviewScreen> {
                                     _KindChip(label: _kinds[e.key] ?? e.key, count: e.value),
                                   if (r.pending > 0)
                                     _KindChip(
-                                      label: 'مستني المزامنة',
+                                      label: 'بانتظار المزامنة',
                                       count: r.pending,
                                       color: AppColors.accent,
                                     ),

@@ -88,7 +88,7 @@ export default function MainAccounts() {
         appears_in: v.appears_in ?? null,
         main_level: (Array.isArray(v.main_level) ? v.main_level[0] : v.main_level) || null,
       });
-      message.success('اتعدّل الحساب');
+      message.success('تم تعديل الحساب');
       setEditing(null);
       load();
     } catch (err) {
@@ -99,7 +99,7 @@ export default function MainAccounts() {
   const removeAccount = async (record: ChartAccount) => {
     try {
       await api.delete(`/api/v1/accounts/${record.id}`);
-      message.success('اتقفل الحساب');
+      message.success('تم إقفال الحساب');
       load();
     } catch (err) {
       console.error(err);
@@ -178,9 +178,8 @@ export default function MainAccounts() {
               onClick={() => openEdit(record)} />
           </Tooltip>
           <Popconfirm
-            title="تقفل الحساب؟"
-            description="يُغلق ولا يُحذف — ويبقى اسمه مقروءاً على القيود المسجّلة عليه."
-            okText="اقفل" cancelText="رجوع" okButtonProps={{ danger: true }}
+            title="هل تريد إقفال الحساب؟"
+            okText="إقفال" cancelText="رجوع" okButtonProps={{ danger: true }}
             onConfirm={() => removeAccount(record)}
           >
             <Tooltip title="حذف (إقفال)">
@@ -217,8 +216,7 @@ export default function MainAccounts() {
       </Row>
       <Row gutter={12}>
         <Col span={8}>
-          <Form.Item name="appears_in" label="يظهر في"
-            extra="سيبه فاضي يتبع طبيعة الحساب">
+          <Form.Item name="appears_in" label="يظهر في">
             <Select allowClear placeholder="حسب الطبيعة"
               options={Object.entries(APPEARS_IN_LABEL)
                 .map(([v, l]) => ({ value: v, label: l }))} />
@@ -250,8 +248,7 @@ export default function MainAccounts() {
     <>
       <ListPage
         icon={<ApartmentOutlined />}
-        title="الحسابات الرئيسيه"
-        subtitle="الحسابات المجمِّعة في الدليل — اللي بيتفرّع منها الحسابات الفرعية"
+        title="الحسابات الرئيسية"
         actions={(<>
           {canWrite && (
             <Button data-shortcut="F2" type="primary" className="sl-create" icon={<PlusOutlined />}
@@ -259,7 +256,7 @@ export default function MainAccounts() {
               حساب رئيسي جديد
             </Button>
           )}
-          <Button icon={<ReloadOutlined />} onClick={load}>اعادة تحميل</Button>
+          <Button icon={<ReloadOutlined />} onClick={load}>إعادة تحميل</Button>
           {tableCols.control}
         </>)}
         filters={(

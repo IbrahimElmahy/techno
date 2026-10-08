@@ -13,8 +13,8 @@ const Panel = React.memo(function Panel(
   return (
     <div style={{ display: active ? 'block' : 'none', height: '100%' }}>
       {blocked ? (
-        <Result status="403" title="الصفحة دي مقفولة عليك"
-          subTitle="اتخبّت من صلاحيات المستخدمين — اطلبها من مديرك لو محتاجها." />
+        <Result status="403" title="ليس لديك صلاحية الوصول إلى هذه الصفحة"
+          subTitle="تم حجبها من صلاحيات المستخدمين — اطلبها من مديرك إن كنت تحتاجها." />
       ) : (
         <TabActiveContext.Provider value={active}>
           <PageRoutes location={path} />

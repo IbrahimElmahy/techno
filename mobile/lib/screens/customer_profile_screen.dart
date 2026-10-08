@@ -130,7 +130,7 @@ class _CustomerProfileScreenState extends State<CustomerProfileScreen> {
             controller: _search,
             onChanged: (v) => _reload(v.trim()),
             decoration: InputDecoration(
-              hintText: 'دوّر باسم العميل',
+              hintText: 'ابحث باسم العميل',
               prefixIcon: const Icon(Icons.search),
               isDense: true,
               suffixIcon: _search.text.isEmpty
@@ -144,7 +144,7 @@ class _CustomerProfileScreenState extends State<CustomerProfileScreen> {
         ),
         Expanded(
           child: rows.isEmpty
-              ? const Center(child: Text('مافيش عميل بالاسم ده'))
+              ? const Center(child: Text('لا يوجد عميل بهذا الاسم'))
               : ListView.separated(
                   itemCount: rows.length,
                   separatorBuilder: (_, __) => const Divider(height: 1),
@@ -172,7 +172,7 @@ class _CustomerProfileScreenState extends State<CustomerProfileScreen> {
             children: [
               const Icon(Icons.wifi_off, size: 48, color: Colors.black26),
               const SizedBox(height: 12),
-              const Text('الحساب محتاج شبكة — الرصيد بيتغيّر من المكتب كمان.',
+              const Text('يتطلب عرض الحساب اتصالاً بالإنترنت.',
                   textAlign: TextAlign.center),
               const SizedBox(height: 6),
               Text(_error!,
@@ -182,11 +182,11 @@ class _CustomerProfileScreenState extends State<CustomerProfileScreen> {
               FilledButton.icon(
                 onPressed: () => _open(_picked!),
                 icon: const Icon(Icons.refresh),
-                label: const Text('جرّب تاني'),
+                label: const Text('حاول مرة أخرى'),
               ),
               TextButton(
                 onPressed: () => setState(() => _picked = null),
-                child: const Text('رجوع للقايمة'),
+                child: const Text('العودة إلى القائمة'),
               ),
             ],
           ),
@@ -266,7 +266,7 @@ class _CustomerProfileScreenState extends State<CustomerProfileScreen> {
                 ),
                 if (_from != null || _to != null)
                   IconButton(
-                    tooltip: 'شيل الفترة',
+                    tooltip: 'إلغاء الفترة',
                     icon: const Icon(Icons.filter_alt_off_outlined, size: 20),
                     onPressed: () => setState(() {
                       _from = null;
@@ -281,7 +281,7 @@ class _CustomerProfileScreenState extends State<CustomerProfileScreen> {
               _ranged(receipts).isEmpty)
             const Padding(
               padding: EdgeInsets.all(24),
-              child: Center(child: Text('مافيش حركة في الفترة دي')),
+              child: Center(child: Text('لا توجد حركة في هذه الفترة')),
             ),
           _section('آخر الفواتير', _ranged(invoices)),
           _section('آخر التحصيلات', _ranged(receipts)),
@@ -293,7 +293,7 @@ class _CustomerProfileScreenState extends State<CustomerProfileScreen> {
                 _profile = null;
               }),
               icon: const Icon(Icons.list),
-              label: const Text('عميل تاني'),
+              label: const Text('عميل آخر'),
             ),
           ),
         ],

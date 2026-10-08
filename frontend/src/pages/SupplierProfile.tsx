@@ -249,7 +249,7 @@ export default function SupplierProfile() {
     { label: 'اليوم', get: () => [dayjs(), dayjs()] },
     { label: 'الأمس', get: () => [dayjs().subtract(1, 'day'), dayjs().subtract(1, 'day')] },
     { label: 'آخر ٧ أيام', get: () => [dayjs().subtract(6, 'day'), dayjs()] },
-    { label: 'الشهر ده', get: () => [dayjs().startOf('month'), dayjs()] },
+    { label: 'هذا الشهر', get: () => [dayjs().startOf('month'), dayjs()] },
     {
       label: 'الشهر الماضي',
       get: () => [
@@ -257,7 +257,7 @@ export default function SupplierProfile() {
         dayjs().subtract(1, 'month').endOf('month'),
       ],
     },
-    { label: 'السنة دي', get: () => [dayjs().startOf('year'), dayjs()] },
+    { label: 'هذه السنة', get: () => [dayjs().startOf('year'), dayjs()] },
   ];
   const presetActive = (p: { get: () => [Dayjs, Dayjs] }) => {
     if (!range) return false;
@@ -812,8 +812,8 @@ export default function SupplierProfile() {
                   {Number(statement.aging?.credit_open || 0) > 0 && (
                     <div style={{ fontSize: 14, color: '#8c8c8c', marginTop: 6 }}>
                       مستحق للمورد <b>{money(statement.aging?.debit_open || 0)}</b> ·
-                      دفعات لسه ماتخصمتش من فاتورة <b>{money(statement.aging?.credit_open || 0)}</b> ·
-                      الصافي هو المستحق فوق
+                      دفعات لم تُخصم من فاتورة بعد <b>{money(statement.aging?.credit_open || 0)}</b> ·
+                      والصافي هو المستحق أعلاه
                     </div>
                   )}
                             </Card>
@@ -826,7 +826,7 @@ export default function SupplierProfile() {
                               setShowStock(on);
                               if (!on) setExpandedKeys([]);
                             }}>
-                              حركة مخزنية — فرد أصناف كل المستندات
+                              حركة مخزنية — تفصيل أصناف كل المستندات
                             </Checkbox>
                           </div>
 

@@ -40,7 +40,7 @@ class PriceDisplayOut(BaseModel):
 def _resolve(db: Session, code: str) -> Item:
     item = db.scalar(select(Item).where(Item.code == code))
     if item is None:
-        raise HTTPException(404, {"code": "not_found", "message": "الكود ده مش معروف"})
+        raise HTTPException(404, {"code": "not_found", "message": "هذا الكود غير معروف"})
     return item
 
 
@@ -52,13 +52,13 @@ def lookup(
 ) -> PriceDisplayOut:
     item = _resolve(db, code.strip())
     if not item.active:
-        raise HTTPException(404, {"code": "not_found", "message": "الصنف ده موقوف"})
+        raise HTTPException(404, {"code": "not_found", "message": "هذا الصنف موقوف"})
 
     try:
         base = pricing_service.tier_price(db, item, PriceTier.consumer)
     except PricingError as exc:
         raise HTTPException(
-            409, {"code": "no_price", "message": "الصنف ده مالوش سعر مستهلك"}) from exc
+            409, {"code": "no_price", "message": "ليس لهذا الصنف سعر مستهلك"}) from exc
 
     unit_price = to_money(Decimal(str(base)))
     item_pct = Decimal(str(item.default_discount_pct or 0))

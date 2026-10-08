@@ -132,8 +132,7 @@ export default function StockAlerts() {
   return (
     <ListPage<FlagTab>
       icon={<AlertOutlined />}
-      title="حد إعادة الطلب" muted="(الأصناف خارج حدودها المخزنية)"
-      subtitle="الحدود إرشادية للتخطيط فقط — لا تمنع أي عملية بيع. الصنف بيظهر لو رصيده الكلي نزل تحت الأدنى أو عدّى الأقصى."
+      title="حد إعادة الطلب"
       tabs={flagTabs} activeTab={activeFlag}
       onTabChange={(k) => reorderFilter.setValue('flag', k === 'all' ? undefined : k)}
       actions={(<>
@@ -154,7 +153,7 @@ export default function StockAlerts() {
                 className="sl-table"
                 rowKey="item_id" size="small" loading={loading}
                 dataSource={reorderFilter.filtered}
-                locale={{ emptyText: 'كل الأصناف داخل حدودها' }}
+                locale={{ emptyText: 'جميع الأصناف ضمن حدودها' }}
                 pagination={{
                   defaultPageSize: PAGE_SIZE, showSizeChanger: true,
                   locale: { items_per_page: '' },

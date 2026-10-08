@@ -87,7 +87,7 @@ export default function CostCenters() {
     if (!editing) return;
     try {
       await api.patch(`/api/v1/cost-centers/${editing.id}`, { name: v.name });
-      message.success('اتعدّل مركز التكلفة');
+      message.success('تم تعديل مركز التكلفة');
       setEditing(null);
       load();
     } catch (err: any) {
@@ -148,7 +148,7 @@ export default function CostCenters() {
       ),
     },
     {
-      title: 'مستوي مركز التكلفة',
+      title: 'مستوى مركز التكلفة',
       dataIndex: 'level',
       key: 'level',
       width: 160,
@@ -196,7 +196,6 @@ export default function CostCenters() {
       <ListPage
         icon={<ClusterOutlined />}
         title="مراكز التكلفة"
-        subtitle="تقسيم المصروفات والإيرادات على الأقسام وخطوط الإنتاج — بمستويات"
         actions={(<>
           {canWrite && (
             <Button data-shortcut="F2" type="primary" className="sl-create" icon={<PlusOutlined />}
@@ -204,7 +203,7 @@ export default function CostCenters() {
               مركز جديد
             </Button>
           )}
-          <Button icon={<ReloadOutlined />} onClick={load}>اعادة تحميل</Button>
+          <Button icon={<ReloadOutlined />} onClick={load}>إعادة تحميل</Button>
           {tableCols.control}
         </>)}
         filters={(
@@ -234,8 +233,7 @@ export default function CostCenters() {
         <Form form={form} layout="vertical" onFinish={onCreate} requiredMark={false}>
           <Row gutter={12}>
             <Col span={10}>
-              <Form.Item name="parent_id" label="المركز التابع له"
-                extra="سيبه فاضي = مركز في المستوى الأول">
+              <Form.Item name="parent_id" label="المركز التابع له">
                 <Select allowClear showSearch placeholder="بدون (مستوى ١)"
                   options={rows.filter((c) => c.active).map((c) => ({
                     value: c.id, label: `${c.name} · مستوى ${c.level ?? 1}`,
@@ -269,14 +267,12 @@ export default function CostCenters() {
           <Form form={editForm} layout="vertical" onFinish={onEdit} requiredMark={false}>
             <Row gutter={12}>
               <Col span={12}>
-                <Form.Item label="الكود"
-                  extra="الكود لا يتغيّر — فقد سُجّلت عليه القيود.">
+                <Form.Item label="الكود">
                   <Input value={editing.code} disabled />
                 </Form.Item>
               </Col>
               <Col span={12}>
-                <Form.Item label="المركز التابع له"
-                  extra="يُحتسب المستوى منه، فلا يتغيّر بعد الإنشاء.">
+                <Form.Item label="المركز التابع له">
                   <Input value={parentName(editing.parent_id)} disabled />
                 </Form.Item>
               </Col>

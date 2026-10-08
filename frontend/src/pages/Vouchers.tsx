@@ -82,7 +82,7 @@ const TreasuryMovementTab: React.FC<{ treasuries: any[]; treasuryId?: number; ra
   if (!statement) {
     return (
       <Empty style={{ padding: '32px 0' }} image={Empty.PRESENTED_IMAGE_SIMPLE}
-        description={loading ? 'جاري التحميل…' : 'اختر الخزينة من سطر الفلاتر'} />
+        description={loading ? 'جاري التحميل…' : 'اختر الخزينة'} />
     );
   }
 
@@ -167,7 +167,7 @@ const Vouchers: React.FC = () => {
       try {
         return (await api.get<VoucherRecord>(`/api/v1/vouchers/${id}`)).data;
       } catch {
-        message.warning(`السند رقم ${id} مش موجود أو مش من صلاحيتك`);
+        message.warning(`السند رقم ${id} غير موجود أو ليس ضمن صلاحيتك`);
         return null;
       }
     },
@@ -562,33 +562,27 @@ const Vouchers: React.FC = () => {
   };
 
   const VOUCHER_TABS: Record<string, {
-    kind: string; label: string; subtitle: string; empty: string; file: string;
+    kind: string; label: string; empty: string; file: string;
     kb: { tableProps: any }; create: string; onCreate: () => void;
   }> = {
-    receipt: { kind: 'receipt', label: 'سند قبض', subtitle: 'تحصيل من عميل',
+    receipt: { kind: 'receipt', label: 'سند قبض',
       empty: 'لا توجد سندات قبض', file: 'سندات القبض', kb: receiptKb, create: 'سند قبض جديد',
       onCreate: () => { setReceiptTarget(''); openVoucher(receiptForm, setReceiptOpen); } },
-    payment: { kind: 'payment', label: 'سند صرف', subtitle: 'دفع لمورد',
+    payment: { kind: 'payment', label: 'سند صرف',
       empty: 'لا توجد سندات صرف', file: 'سندات الصرف', kb: paymentKb, create: 'سند صرف جديد',
       onCreate: () => openVoucher(paymentForm, setPaymentOpen) },
-    handover: { kind: 'rep_handover', label: 'توريد مندوب', subtitle: 'استلام نقدية من عهدة مندوب',
+    handover: { kind: 'rep_handover', label: 'توريد مندوب',
       empty: 'لا توجد سندات توريد', file: 'توريدات المناديب', kb: handoverKb, create: 'توريد جديد',
       onCreate: () => { handoverForm.resetFields(); setHandoverOpen(true); } },
-    expense: { kind: 'expense', label: 'سند مصروف', subtitle: 'صرف مصروف من الخزينة',
+    expense: { kind: 'expense', label: 'سند مصروف',
       empty: 'لا توجد مصروفات', file: 'سندات المصروفات', kb: expenseKb, create: 'مصروف جديد',
       onCreate: () => openVoucher(expenseForm, setExpenseOpen) },
-    transfer: { kind: 'cash_transfer', label: 'تحويل بين الخزائن', subtitle: 'تحويل نقدية بين خزينتين',
+    transfer: { kind: 'cash_transfer', label: 'تحويل بين الخزائن',
       empty: 'لا توجد تحويلات', file: 'التحويلات بين الخزائن', kb: transferKb, create: 'تحويل جديد',
       onCreate: () => { transferForm.resetFields(); setTransferOpen(true); } },
   };
   const vTab = VOUCHER_TABS[tab];
 
-  const SUBTITLES: Record<string, string> = {
-    'treasury-movement': 'وارد ومنصرف خزينة بعينها برصيدها قبل وبعد كل حركة',
-    cheques: 'أوراق القبض والدفع — تحصيل وصرف وارتداد',
-    statement: 'كشف حساب عميل أو مورد أو عهدة مندوب',
-    log: 'كل السندات في الفترة — بحث ونوع وتاريخ',
-  };
 
   const tabs: ListTab[] = [
     ...Object.entries(VOUCHER_TABS).map(([key, t]) => ({
@@ -658,14 +652,14 @@ const Vouchers: React.FC = () => {
         c.status === 'settled' ? (
           <Popconfirm
             title="عكس التحصيل؟"
-            description="القيمة هترجع للحساب الوسيط وتخرج من الخزينة، والشيك يرجع تحت التحصيل."
+            description="ستعود القيمة إلى الحساب الوسيط وتخرج من الخزينة، ويعود الشيك تحت التحصيل."
             okText="عكس"
             cancelText="إلغاء"
             okButtonProps={{ danger: true }}
             onConfirm={async () => {
               try {
                 await api.post(`/api/v1/cheques/${c.id}/unsettle`);
-                message.success('تم عكس التحصيل — الشيك رجع تحت التحصيل');
+                message.success('تم عكس التحصيل وأُعيد الشيك تحت التحصيل');
                 loadCheques();
                 loadTreasuries();
               } catch {
@@ -696,7 +690,7 @@ const Vouchers: React.FC = () => {
             {c.direction === 'incoming' && (
               <Popconfirm
                 title="ارتداد الشيك؟"
-                description="الدين هيرجع على العميل."
+                description="سيعود الدين على العميل."
                 okText="ارتداد"
                 cancelText="إلغاء"
                 okButtonProps={{ danger: true }}
@@ -1079,7 +1073,6 @@ const Vouchers: React.FC = () => {
       icon={<WalletOutlined />}
       title="سندات القبض والصرف"
       muted={vTab ? `(${vTab.label})` : undefined}
-      subtitle={vTab ? vTab.subtitle : SUBTITLES[tab]}
       tabs={tabs} activeTab={tab} onTabChange={setTab}
       actions={actions}
       filters={filters}

@@ -168,16 +168,16 @@ def link(
     for m in body.members:
         card = _card(db, m.kind, m.ref_id)
         if card is None:
-            raise HTTPException(404, {"code": "not_found", "message": "كارت مش موجود."})
+            raise HTTPException(404, {"code": "not_found", "message": "الكارت غير موجود."})
         if not _visible(current, card.branch_id):
-            raise HTTPException(403, {"code": "forbidden", "message": "الكارت ده في فرع تاني."})
+            raise HTTPException(403, {"code": "forbidden", "message": "هذا الكارت في فرع آخر."})
         cards.append((m, card))
     existing = {m.group_id for m in db.scalars(select(PartyGroupMember).where(
         PartyGroupMember.kind.in_(KINDS))) if (m.kind, m.ref_id) in
         {(x.kind, x.ref_id) for x, _c in cards}}
     if len(existing) > 1:
         raise HTTPException(409, {"code": "conflict",
-                                  "message": "الكروت دي مربوطة في أطراف مختلفة — فك واحد منهم الأول."})
+                                  "message": "هذه الكروت مرتبطة بأطراف مختلفة — فك ربط أحدها أولاً."})
     if existing:
         g = db.get(PartyGroup, existing.pop())
     else:
@@ -208,7 +208,7 @@ def unlink(
 ) -> None:
     g = db.get(PartyGroup, gid)
     if g is None or not _visible(current, g.branch_id):
-        raise HTTPException(404, {"code": "not_found", "message": "الطرف مش موجود."})
+        raise HTTPException(404, {"code": "not_found", "message": "الطرف غير موجود."})
     db.execute(delete(PartyGroupMember).where(
         PartyGroupMember.group_id == gid, PartyGroupMember.kind == kind,
         PartyGroupMember.ref_id == ref_id))
@@ -238,28 +238,28 @@ def netting(
 ) -> dict:
     g = db.get(PartyGroup, gid)
     if g is None or not _visible(current, g.branch_id):
-        raise HTTPException(404, {"code": "not_found", "message": "الطرف مش موجود."})
+        raise HTTPException(404, {"code": "not_found", "message": "الطرف غير موجود."})
     members = {(m.kind, m.ref_id) for m in db.scalars(
         select(PartyGroupMember).where(PartyGroupMember.group_id == gid))}
     if ("customer", body.customer_id) not in members or ("supplier", body.supplier_id) not in members:
         raise HTTPException(422, {"code": "validation",
-                                  "message": "العميل والمورد لازم يكونوا من نفس الطرف."})
+                                  "message": "يجب أن يكون العميل والمورد من الطرف نفسه."})
     value = to_money(body.amount)
     if value <= 0:
-        raise HTTPException(422, {"code": "validation", "message": "المبلغ لازم يكون أكبر من صفر."})
+        raise HTTPException(422, {"code": "validation", "message": "يجب أن يكون المبلغ أكبر من صفر."})
     try:
         cacc = customer_merge_service.receivable_account(db, body.customer_id, body.family)
     except customer_merge_service.MergeError as exc:
         raise HTTPException(422, {"code": "validation", "message": str(exc)}) from exc
     sacc = db.scalar(select(SupplierAccount).where(SupplierAccount.supplier_id == body.supplier_id))
     if cacc is None or sacc is None:
-        raise HTTPException(422, {"code": "validation", "message": "العميل أو المورد مالوش حساب."})
+        raise HTTPException(422, {"code": "validation", "message": "العميل أو المورد ليس له حساب."})
     owes = ledger_service.balance_of(db, cacc.account_id)
     owe = ledger_service.balance_of(db, sacc.account_id)
     if value > owes or value > owe:
         raise HTTPException(409, {"code": "conflict", "message": (
-            f"المقاصة أكبر من الرصيد — عليه كعميل {owes} وليه كمورد {owe}، "
-            f"والمقاصة لحد {min(owes, owe)}.")})
+            f"المقاصة أكبر من الرصيد — عليه بصفته عميلاً {owes} وله بصفته مورداً {owe}، "
+            f"والحد الأقصى للمقاصة {min(owes, owe)}.")})
     cust = db.get(Customer, body.customer_id)
     sup = db.get(Supplier, body.supplier_id)
     stmt = f"مقاصة — {g.name}"

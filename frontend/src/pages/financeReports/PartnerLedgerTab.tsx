@@ -74,7 +74,7 @@ export default function PartnerLedgerTab({ params, slots }: {
             onChange={(v) => setOnlyOpen(v === 'open')}
             options={[
               { value: 'all', label: 'كل الأطراف' },
-              { value: 'open', label: 'اللي عليه مفتوح بس' },
+              { value: 'open', label: 'ذوو الأرصدة المفتوحة فقط' },
             ]}
           />
           <StatementFilter value={stmtQ} onChange={setStmtQ} style={{ width: 200 }} />
@@ -90,7 +90,6 @@ export default function PartnerLedgerTab({ params, slots }: {
         <Alert
           type="info" showIcon style={{ margin: '6px 0 8px' }}
           message={`بيان «${stmtQ}» — ${shownRows.length} طرف من ${partnerRows.length}`}
-          description="المدين والدائن للسطور المطابقة للبيان فقط؛ أول وآخر المدة رصيد الطرف كله."
         />
       )}
       <Table<PartnerLedgerRow>
@@ -147,7 +146,7 @@ export default function PartnerLedgerTab({ params, slots }: {
                 {
                   title: 'المتبقّي', dataIndex: 'residual', width: 120, align: 'left' as const,
                   render: (v: string | null) =>
-                    v === null ? '—' : Number(v) ? money(v) : <Tag color="green">مقفول</Tag>,
+                    v === null ? '—' : Number(v) ? money(v) : <Tag color="green">مقفل</Tag>,
                 },
                 {
                   title: 'المطابقة', dataIndex: 'reconcile_number', width: 110,

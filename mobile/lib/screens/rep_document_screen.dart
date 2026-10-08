@@ -234,7 +234,7 @@ class _RepDocumentScreenState extends State<RepDocumentScreen> {
           if (lines.isEmpty)
             Padding(
               padding: const EdgeInsets.all(20),
-              child: Text('مافيش سطور',
+              child: Text('لا توجد سطور',
                   style: TextStyle(fontSize: 14, color: Colors.grey.shade600)),
             ),
           for (var i = 0; i < lines.length; i++)

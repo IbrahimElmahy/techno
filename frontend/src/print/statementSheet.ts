@@ -144,7 +144,7 @@ export function statementSheetHtml(s: StatementSheet): string {
   }
 
   const empty = rows.length || sections.length
-    ? '' : `<tr><td colspan="${cols}" class="b">مفيش حركة في الفترة دي</td></tr>`;
+    ? '' : `<tr><td colspan="${cols}" class="b">لا توجد حركة في هذه الفترة</td></tr>`;
 
   const suffix = s.filtered ? ' (المعروض)' : '';
   const totalRow = `<tr class="total"><td colspan="2" class="b">الإجمالي${suffix}</td>`

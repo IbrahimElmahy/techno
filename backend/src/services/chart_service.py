@@ -130,21 +130,21 @@ def create_account(
     if not code:
         raise ChartError("كود الحساب مطلوب.")
     if db.scalar(select(Account).where(Account.code == code)) is not None:
-        raise ChartError(f"كود الحساب «{code}» متسجّل قبل كده.")
+        raise ChartError(f"كود الحساب «{code}» مسجّل مسبقاً.")
 
     parent: Account | None = None
     if parent_id is not None:
         parent = db.get(Account, parent_id)
         if parent is None:
-            raise ChartError("الحساب الرئيسي مش موجود.")
+            raise ChartError("الحساب الرئيسي غير موجود.")
         if parent.is_postable:
-            raise ChartError("الحساب الرئيسي لازم يكون مجموعة مش حساب بيقبل الترحيل.")
+            raise ChartError("يجب أن يكون الحساب الرئيسي مجموعة لا حساباً يقبل الترحيل.")
         if not code.startswith(parent.code + "."):
             raise ChartError(
-                f"كود الحساب الفرعي «{code}» لازم يبدأ بكود الرئيسي «{parent.code}»."
+                f"يجب أن يبدأ كود الحساب الفرعي «{code}» بكود الرئيسي «{parent.code}»."
             )
     elif "." in code:
-        raise ChartError("كود الحساب الرئيسي الأعلى مايكونش فيه نقطة.")
+        raise ChartError("لا يجوز أن يحتوي كود الحساب الرئيسي الأعلى على نقطة.")
 
     acc = Account(
         account_type=AccountType.user_defined,
@@ -159,7 +159,7 @@ def create_account(
     if appears_in:
         if appears_in not in _APPEARS_IN:
             raise ChartError(
-                "«يظهر في» لازم تكون: متاجرة (trading) أو أرباح وخسائر (profit_loss) "
+                "يجب أن تكون قيمة «يظهر في»: متاجرة (trading) أو أرباح وخسائر (profit_loss) "
                 "أو ميزانية عمومية (balance_sheet)."
             )
         acc.appears_in = appears_in
@@ -180,13 +180,13 @@ def update_account(
 ) -> Account:
     acc = db.get(Account, account_id)
     if acc is None:
-        raise ChartError("الحساب مش موجود.")
+        raise ChartError("الحساب غير موجود.")
     if name is not None:
         acc.name = name
     if appears_in is not None:
         if appears_in and appears_in not in _APPEARS_IN:
             raise ChartError(
-                "«يظهر في» لازم تكون: متاجرة (trading) أو أرباح وخسائر (profit_loss) "
+                "يجب أن تكون قيمة «يظهر في»: متاجرة (trading) أو أرباح وخسائر (profit_loss) "
                 "أو ميزانية عمومية (balance_sheet)."
             )
         acc.appears_in = appears_in or None
@@ -205,7 +205,7 @@ def update_account(
 def deactivate_account(db: Session, *, account_id: int) -> Account:
     acc = db.get(Account, account_id)
     if acc is None:
-        raise ChartError("الحساب مش موجود.")
+        raise ChartError("الحساب غير موجود.")
     _assert_deactivatable(db, acc)
     acc.active = False
     db.flush()
@@ -214,18 +214,18 @@ def deactivate_account(db: Session, *, account_id: int) -> Account:
 
 def _assert_deactivatable(db: Session, acc: Account) -> None:
     if acc.is_system:
-        raise ChartError("حسابات النظام مايتقفلوش.")
+        raise ChartError("لا يمكن إقفال حسابات النظام.")
     has_active_child = db.scalar(
         select(Account.id).where(Account.parent_id == acc.id, Account.active.is_(True))
     )
     if has_active_child is not None:
-        raise ChartError("الحساب ده تحته حسابات شغالة — اقفلهم الأول.")
+        raise ChartError("تحت هذا الحساب حسابات نشطة — أقفلها أولاً.")
 
 
 def account_balance(db: Session, account_id: int) -> Decimal:
     acc = db.get(Account, account_id)
     if acc is None:
-        raise ChartError("الحساب مش موجود.")
+        raise ChartError("الحساب غير موجود.")
     if acc.is_postable:
         return ledger_service.balance_of(db, account_id)
     total = ZERO

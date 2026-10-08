@@ -146,15 +146,15 @@ export default function RatioProduction() {
   const estCost = matRows.reduce((s, m) => s + (m.quantity || 0) * Number(itemOf(m.item_id)?.purchase_price || 0), 0);
 
   const submit = async () => {
-    if (!outWh) { message.warning('اختار مخزن الإنتاج التام'); return; }
+    if (!outWh) { message.warning('اختر مخزن الإنتاج التام'); return; }
     const filled = lines.filter((l) => l.product_id);
-    if (!filled.length) { message.warning('اكتب منتج واحد على الأقل'); return; }
+    if (!filled.length) { message.warning('أدخل منتجاً واحداً على الأقل'); return; }
     for (const l of filled) {
       const name = itemOf(l.product_id)?.name;
-      if (!l.quantity || l.quantity <= 0) { message.warning(`اكتب كمية «${name}»`); return; }
-      if (!l.materials.length) { message.warning(`«${name}» مالوش نسب — اعمل له نسب انتاج الأول`); return; }
+      if (!l.quantity || l.quantity <= 0) { message.warning(`أدخل كمية «${name}»`); return; }
+      if (!l.materials.length) { message.warning(`«${name}» ليست له نسب إنتاج — أنشئ له نسب إنتاج أولاً`); return; }
       const bad = l.materials.find((m) => !m.warehouse_id || !m.quantity || m.quantity <= 0);
-      if (bad) { message.warning(`خامة «${itemOf(bad.item_id)?.name}» محتاجة كمية ومخزن`); return; }
+      if (bad) { message.warning(`الخامة «${itemOf(bad.item_id)?.name}» تحتاج إلى كمية ومخزن`); return; }
     }
     setSaving(true);
     try {
@@ -172,7 +172,7 @@ export default function RatioProduction() {
           })),
         })),
       });
-      message.success('اتسجّل الإنتاج واتصرفت الخامات');
+      message.success('تم تسجيل الإنتاج وصرف الخامات');
       setEntryOpen(false);
       load();
     } catch (e: any) {
@@ -182,12 +182,12 @@ export default function RatioProduction() {
 
   const reverse = (o: PO) => Modal.confirm({
     title: `تراجع عن ${o.document_number}؟`,
-    content: 'الخامات بترجع مخازنها والإنتاج بيتخصم — بقيد عكسي، والأصل بيفضل في السجل.',
+    content: 'ستُعاد الخامات إلى مخازنها ويُخصم الإنتاج بقيد عكسي، ويبقى الأصل في السجل.',
     okText: 'تراجع', cancelText: 'لا', okButtonProps: { danger: true },
     onOk: async () => {
       try {
         await api.post(`/api/v1/manufacturing/production-orders/${o.id}/reverse`);
-        message.success('اتعمل التراجع'); load();
+        message.success('تم التراجع'); load();
       } catch (e: any) { message.error(e?.response?.data?.detail?.message || 'تعذر التراجع'); }
     },
   });
@@ -254,7 +254,7 @@ export default function RatioProduction() {
               </Col>
               <Col xs={12} md={6}>
                 <Form.Item label="مخزن الإنتاج التام" required style={{ marginBottom: 0 }}>
-                  <Select showSearch placeholder="اختار المخزن" value={outWh} onChange={setOutWh}
+                  <Select showSearch placeholder="اختر المخزن" value={outWh} onChange={setOutWh}
                     options={whOptions} filterOption={searchFilter} filterSort={searchRank} />
                 </Form.Item>
               </Col>
@@ -276,7 +276,7 @@ export default function RatioProduction() {
             <Table size="small" pagination={false} rowKey="key" dataSource={lines}
               columns={[
                 { title: 'المنتج', width: '45%', render: (_: unknown, l: ProdLine) => (
-                  <Select showSearch style={{ width: '100%' }} placeholder="اختار المنتج (اللي ليه نسب)"
+                  <Select showSearch style={{ width: '100%' }} placeholder="اختر منتجاً له نسب إنتاج"
                     value={l.product_id} filterOption={searchFilter} filterSort={searchRank}
                     options={products.map((p) => ({ value: p.id, label: p.name }))}
                     onChange={(v: number) => { setLine(l.key, { product_id: v, materials: [] }); plan(l.key, v, l.quantity); }} />) },
@@ -286,22 +286,22 @@ export default function RatioProduction() {
                     onBlur={() => plan(l.key, l.product_id, l.quantity)}
                     onPressEnter={() => plan(l.key, l.product_id, l.quantity)} />) },
                 { title: 'مخزن الإنتاج', width: 200, render: (_: unknown, l: ProdLine) => (
-                  <Select allowClear style={{ width: '100%' }} placeholder={outWh ? whName(outWh) : 'زي الورقة'}
+                  <Select allowClear style={{ width: '100%' }} placeholder={outWh ? whName(outWh) : 'مخزن المستند'}
                     value={l.warehouse_id} options={whOptions} onChange={(v: number) => setLine(l.key, { warehouse_id: v })} />) },
                 { title: '', width: 160, render: (_: unknown, l: ProdLine) => (
-                  l.loading ? <Tag>بيحسب الخامات…</Tag>
-                    : l.noRecipe ? <Tag color="red">مالوش نسب</Tag>
+                  l.loading ? <Tag>جارٍ حساب الخامات…</Tag>
+                    : l.noRecipe ? <Tag color="red">بلا نسب</Tag>
                       : l.materials.length ? <Tag color="green">{l.materials.length} خامة</Tag> : null) },
                 { title: '', width: 50, render: (_: unknown, l: ProdLine) => (
                   <Button type="text" danger icon={<DeleteOutlined />} onClick={() => setLines((p) => p.filter((x) => x.key !== l.key))} />) },
               ]} />
-            <Button style={{ marginTop: 10 }} icon={<PlusOutlined />} onClick={addProduct}>منتج تاني</Button>
+            <Button style={{ marginTop: 10 }} icon={<PlusOutlined />} onClick={addProduct}>منتج آخر</Button>
           </div>
 
           <div className="sale-card">
             <div style={{ fontWeight: 800, marginBottom: 8 }}>الخامات المصروفة (من النسب)</div>
             <Table size="small" pagination={false} rowKey="key" dataSource={matRows}
-              locale={{ emptyText: 'الخامات بتنزل لوحدها أول ما تكتب المنتج والكمية' }}
+              locale={{ emptyText: 'لا توجد خامات' }}
               columns={[
                 { title: 'المنتج', width: '22%', render: (_: unknown, m: any) => <span style={{ color: '#475569' }}>{itemOf(m.product_id)?.name}</span> },
                 { title: 'الخامة', width: '24%', render: (_: unknown, m: any) => <b>{itemOf(m.item_id)?.name ?? m.item_id}</b> },
@@ -312,7 +312,7 @@ export default function RatioProduction() {
                     <div style={{ fontSize: 12, color: '#64748b' }}>{unitText(m.quantity, itemOf(m.item_id)?.unit_of_measure)}</div>
                   </div>) },
                 { title: 'المخزن', width: 200, render: (_: unknown, m: any) => (
-                  <Select style={{ width: '100%' }} placeholder="اختار المخزن" value={m.warehouse_id} options={whOptions}
+                  <Select style={{ width: '100%' }} placeholder="اختر المخزن" value={m.warehouse_id} options={whOptions}
                     onChange={(v: number) => { setMat(m.lineKey, m.key, { warehouse_id: v }); ensureStock(v); }} />) },
                 { title: 'المتاح في المخزن', width: 130, render: (_: unknown, m: any) => {
                   const have = m.warehouse_id ? stock[m.warehouse_id]?.[m.item_id] : undefined;
@@ -323,7 +323,6 @@ export default function RatioProduction() {
               ]} />
             <div style={{ marginTop: 10, display: 'flex', gap: 16, alignItems: 'center' }}>
               <span>تكلفة تقديرية للخامات: <b>{money(estCost)}</b></span>
-              <span style={{ color: '#64748b', fontSize: 13 }}>التكلفة النهائية بتتحسب بمتوسط تكلفة الخامة وقت الحفظ</span>
               <Button type="primary" loading={saving} onClick={submit} style={{ marginInlineStart: 'auto' }}>حفظ وترحيل</Button>
             </div>
           </div>
@@ -335,7 +334,6 @@ export default function RatioProduction() {
   return (
     <ListPage
       icon={<BuildOutlined />} title="انتاج حسب النسب"
-      subtitle="ورقة واحدة زي a5: المنتجات وكمياتها، والخامات بتنزل من النسب، والحفظ بيصرف ويدخّل الإنتاج"
       actions={(<>
         <Button data-shortcut="F2" type="primary" icon={<PlusOutlined />} className="sl-create" onClick={openEntry}>انتاج جديد</Button>
         <Button icon={<ReloadOutlined />} onClick={load}>تحديث</Button>

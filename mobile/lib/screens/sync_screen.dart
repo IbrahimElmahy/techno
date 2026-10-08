@@ -48,16 +48,16 @@ class _SyncScreenState extends State<SyncScreen> {
   }
 
   static String _pendingLabel(int n) => switch (n) {
-        1 => 'في مستند واحد مستني الرفع',
-        2 => 'في مستندين مستنيين الرفع',
-        _ when n <= 10 => 'في $n مستندات مستنية الرفع',
-        _ => 'في $n مستند مستني الرفع',
+        1 => 'يوجد مستند واحد بانتظار الرفع',
+        2 => 'يوجد مستندان بانتظار الرفع',
+        _ when n <= 10 => 'يوجد $n مستندات بانتظار الرفع',
+        _ => 'يوجد $n مستندًا بانتظار الرفع',
       };
 
   Future<void> _syncNow() async {
     setState(() {
       _busy = true;
-      _status = 'جاري المزامنة...';
+      _status = 'جارٍ المزامنة...';
       _error = false;
     });
     await AutoSync.instance.run();
@@ -78,7 +78,7 @@ class _SyncScreenState extends State<SyncScreen> {
     await LocalDb.instance.setKv('api_base', url);
     if (mounted) {
       ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text('تم حفظ عنوان السيرفر ✔')));
+          .showSnackBar(const SnackBar(content: Text('تم حفظ عنوان الخادم ✔')));
     }
   }
 
@@ -113,7 +113,7 @@ class _SyncScreenState extends State<SyncScreen> {
                   ),
                   const SizedBox(height: 10),
                   Text(
-                    _pending > 0 ? _pendingLabel(_pending) : 'كل حاجة متزامنة ✔',
+                    _pending > 0 ? _pendingLabel(_pending) : 'جميع البيانات متزامنة ✔',
                     style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w700),
                   ),
                   const SizedBox(height: 6),
@@ -154,7 +154,7 @@ class _SyncScreenState extends State<SyncScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text('إعدادات السيرفر',
+                  const Text('إعدادات الخادم',
                       style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700)),
                   const SizedBox(height: 12),
                   TextField(
@@ -162,7 +162,7 @@ class _SyncScreenState extends State<SyncScreen> {
                     keyboardType: TextInputType.url,
                     textDirection: TextDirection.ltr,
                     decoration: const InputDecoration(
-                        labelText: 'عنوان السيرفر',
+                        labelText: 'عنوان الخادم',
                         prefixIcon: Icon(Icons.dns_outlined)),
                   ),
                   const SizedBox(height: 10),

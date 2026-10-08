@@ -144,7 +144,7 @@ def deactivate_type(
 ) -> None:
     row = db.get(LeaveType, type_id)
     if row is None:
-        raise HTTPException(404, {"code": "not_found", "message": "نوع الأجازة غير موجود."})
+        raise HTTPException(404, {"code": "not_found", "message": "نوع الإجازة غير موجود."})
     row.active = False
     db.commit()
 

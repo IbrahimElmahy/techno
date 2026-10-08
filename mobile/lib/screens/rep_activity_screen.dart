@@ -312,8 +312,8 @@ class _ActivityListState extends State<_ActivityList>
             const SizedBox(height: 10),
             Text(
               widget.kind == ActivityKind.all
-                  ? 'مافيش حركة في الفترة دي'
-                  : 'مافيش ${widget.kind.label} في الفترة دي',
+                  ? 'لا توجد حركة في هذه الفترة'
+                  : 'لا توجد ${widget.kind.label} في هذه الفترة',
               textAlign: TextAlign.center,
               style: TextStyle(fontSize: 15, color: Colors.grey.shade700),
             ),
@@ -362,7 +362,7 @@ class _ActivityListState extends State<_ActivityList>
               _loadMore();
             },
             icon: const Icon(Icons.refresh),
-            label: Text('${friendlyError(_moreError!)} — حاول تاني'),
+            label: Text('${friendlyError(_moreError!)} — حاول مرة أخرى'),
           ),
         ),
       );

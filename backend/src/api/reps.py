@@ -187,7 +187,7 @@ def update_rep(
             if clash is not None:
                 raise HTTPException(status.HTTP_409_CONFLICT, {
                     "code": "warehouse_taken",
-                    "message": f"المخزن ده مربوط بـ«{clash.name}» — فُكّه منه الأول.",
+                    "message": f"هذا المخزن مرتبط بـ«{clash.name}» — فك ربطه أولاً.",
                 })
         emp.warehouse_id = body.warehouse_id or None
         before["warehouse_id"] = emp.warehouse_id

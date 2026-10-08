@@ -38,10 +38,10 @@ def _require_subject(current: CurrentUser, subject: str) -> None:
     needed = _SUBJECT_CAPABILITY.get(subject)
     if needed is None:
         raise HTTPException(422, {"code": "report_invalid",
-                                  "message": f"موضوع مش معروف: {subject}"})
+                                  "message": f"موضوع غير معروف: {subject}"})
     if not current.can(needed):
         raise HTTPException(403, {"code": "forbidden",
-                                  "message": "مالكش صلاحية على التقرير ده."})
+                                  "message": "ليس لديك صلاحية على هذا التقرير."})
 
 
 @router.get("/ops")
@@ -59,7 +59,7 @@ def ops_report(
     only_open: bool = Query(False),
     limit: int | None = Query(None),
     offset: int = Query(0),
-    statement: str | None = Query(None, description="البيان — جزء من الكلام"),
+    statement: str | None = Query(None, description="البيان — جزء من النص"),
     current: CurrentUser = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> dict:

@@ -102,10 +102,10 @@ export default function AfterSalesReports() {
         <a onClick={() => openCard(r.customer_id)}>{v}</a>) },
     { title: 'الهاتف', dataIndex: 'phone', key: 'phone', width: 130,
       render: (v: string | null) => v || '-' },
-    { title: 'رجّع', dataIndex: 'received', key: 'received', width: 100,
+    { title: 'المُعاد', dataIndex: 'received', key: 'received', width: 100,
       sorter: (a: PartyRow, b: PartyRow) => a.received - b.received,
       render: (v: number) => <b>{num(v)}</b> },
-    { title: 'اتصرف له', dataIndex: 'issued', key: 'issued', width: 100,
+    { title: 'المصروف له', dataIndex: 'issued', key: 'issued', width: 100,
       sorter: (a: PartyRow, b: PartyRow) => a.issued - b.issued,
       render: (v: number) => (v ? num(v) : '-') },
     { title: 'آخر استلام', dataIndex: 'last_receipt', key: 'last_receipt', width: 120,
@@ -118,13 +118,13 @@ export default function AfterSalesReports() {
         <a onClick={() => openCard(r.customer_id)}>{v}</a>) },
     { title: 'الهاتف', dataIndex: 'phone', key: 'phone', width: 130,
       render: (v: string | null) => v || '-' },
-    { title: 'اتصرف له', dataIndex: 'issued', key: 'issued', width: 110,
+    { title: 'المصروف له', dataIndex: 'issued', key: 'issued', width: 110,
       sorter: (a: PartyRow, b: PartyRow) => a.issued - b.issued,
       render: (v: number) => num(v) },
-    { title: 'رجع', dataIndex: 'returned', key: 'returned', width: 100,
+    { title: 'المُعاد', dataIndex: 'returned', key: 'returned', width: 100,
       sorter: (a: PartyRow, b: PartyRow) => a.returned - b.returned,
       render: (v: number) => num(v) },
-    { title: 'لسه برّه', dataIndex: 'outstanding', key: 'outstanding', width: 110,
+    { title: 'المتبقي لديه', dataIndex: 'outstanding', key: 'outstanding', width: 110,
       sorter: (a: PartyRow, b: PartyRow) => a.outstanding - b.outstanding,
       render: (v: number) => (
         <Tag color={v > 0 ? 'orange' : 'green'}>{num(v)}</Tag>) },
@@ -191,30 +191,25 @@ export default function AfterSalesReports() {
 
   type TabKey = 'plumbers' | 'distributors' | 'technicians' | 'reps' | 'lifecycle';
   const tabs: Record<Exclude<TabKey, 'lifecycle'>, {
-    label: string; rows: any[]; filter: any; cols: any; hint: string; stats: [string, string, string?][];
+    label: string; rows: any[]; filter: any; cols: any; stats: [string, string, string?][];
   }> = {
     plumbers: {
       label: 'كوبونات السباكين', rows: plumbers, filter: plumberFilter, cols: plumberCols,
-      hint: 'كل فني رجّع كام ورقة. الورقة بتتصرف للموزع وبترجع من الفني، '
-        + 'فالمتبقّي بيتحسب على الموزع مش عليه.',
-      stats: [['رجع من السباكين', num(totals.returnedByPlumbers)]],
+      stats: [['المُعاد من السباكين', num(totals.returnedByPlumbers)]],
     },
     distributors: {
       label: 'كوبونات الموزعين', rows: distributors, filter: distFilter, cols: distCols,
-      hint: 'اتصرف له كام، رجع من الصرف ده كام، والفرق لسه برّه.',
       stats: [
-        ['اتصرف للموزعين', num(totals.issued)],
-        ['لسه برّه', num(totals.outstanding), totals.outstanding > 0 ? 'is-neg' : 'is-pos'],
+        ['المصروف للموزعين', num(totals.issued)],
+        ['المتبقي لدى الموزعين', num(totals.outstanding), totals.outstanding > 0 ? 'is-neg' : 'is-pos'],
       ],
     },
     technicians: {
       label: 'الزيارات بنقاط الفني', rows: techs, filter: techFilter, cols: techCols,
-      hint: 'كل فني عمل كام معاينة وجمّع كام نقطة.',
       stats: [['معاينات', num(totals.visits)], ['نقاط المعاينات', pts(totals.points)]],
     },
     reps: {
       label: 'زيارات المناديب', rows: reps, filter: repFilter, cols: repCols,
-      hint: 'كل مندوب نزل كام معاينة وعند كام عميل.',
       stats: [['معاينات', num(totals.visits)], ['نقاط المعاينات', pts(totals.points)]],
     },
   };
@@ -239,9 +234,6 @@ export default function AfterSalesReports() {
     <ListPage<TabKey>
       icon={<BarChartOutlined />}
       title="تقارير ما بعد البيع" muted="(تقارير المتابعة)"
-      subtitle={isLifecycle
-        ? 'كل ورقة لوحدها: مين كان ماسكها، اتسلّمت لمين، ورجعت من أنهي سباك.'
-        : cur.hint}
       tabs={tabKeys.map((k) => (k === 'lifecycle'
         ? { key: k, label: 'حركة الكوبون', count: lifecycle.count }
         : { key: k, label: tabs[k as Exclude<TabKey, 'lifecycle'>].label,
@@ -276,7 +268,7 @@ export default function AfterSalesReports() {
           defaultPageSize: PAGE_SIZE, showSizeChanger: true, locale: { items_per_page: '' },
           showTotal: () => footer,
         }}
-        locale={{ emptyText: 'لا توجد بيانات في الفترة دي' }}
+        locale={{ emptyText: 'لا توجد بيانات في هذه الفترة' }}
       />}
     </ListPage>
   );

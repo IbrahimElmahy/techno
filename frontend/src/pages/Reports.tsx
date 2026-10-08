@@ -115,7 +115,6 @@ export default function Reports() {
       icon={cur?.icon ?? <BuildOutlined />}
       title={cur?.label ?? 'التقارير الشاملة'}
       muted="(التقارير الشاملة)"
-      subtitle="الإنتاج والمخازن والهوالك والرواكد والمبيعات — على نفس الفترة"
       tabs={TABS.map((t) => ({ key: t.key, label: <>{t.icon} {t.label}</>, dot: t.dot }))}
       activeTab={tab}
       onTabChange={setTab}

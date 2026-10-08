@@ -32,7 +32,7 @@ export default function PendingScreen() {
               {screen?.label || 'شاشة غير معروفة'}
             </Typography.Title>
             <Typography.Paragraph type="secondary" style={{ marginBottom: 8 }}>
-              هذه الشاشة قيد الإنشاء. وهي موجودة في القائمة ليكتمل الترتيب من أول يوم.
+              هذه الشاشة قيد الإنشاء.
             </Typography.Paragraph>
             {pending && (
               <Typography.Paragraph style={{ marginBottom: 8 }}>
@@ -46,14 +46,14 @@ export default function PendingScreen() {
             )}
             {pending?.insteadPath && (
               <Typography.Paragraph style={{ marginBottom: 8 }}>
-                <Typography.Text type="secondary">لحد ما تتعمل، أقرب حاجة موجودة:</Typography.Text>
+                <Typography.Text type="secondary">إلى حين اكتمالها، أقرب شاشة متاحة:</Typography.Text>
                 <Button type="link" onClick={() => navigate(pending.insteadPath!)}>
                   {pending.insteadLabel}
                 </Button>
               </Typography.Paragraph>
             )}
             {screen?.a5 && (
-              <Tag color="blue">تقابل عندهم: {screen.a5}</Tag>
+              <Tag color="blue">المقابل في النظام السابق: {screen.a5}</Tag>
             )}
           </div>
         }

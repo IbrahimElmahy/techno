@@ -278,7 +278,7 @@ def update_territory(
     if body.parent_id is not None:
         if body.parent_id == t.id:
             raise HTTPException(422, {"code": "validation",
-                                      "message": "المنطقة ماينفعش تكون تحت نفسها."})
+                                      "message": "لا يمكن أن تكون المنطقة تابعة لنفسها."})
         t.parent_id = body.parent_id or None
     db.flush()
     db.commit()

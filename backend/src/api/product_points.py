@@ -56,7 +56,7 @@ def set_point_value(
     if item is None or item.kind != ItemKind.product:
         raise HTTPException(422, {"code": "validation", "message": "Point values apply to products only"})
     if body.point_value < 0:
-        raise HTTPException(422, {"code": "validation", "message": "point_value must be ≥ 0"})
+        raise HTTPException(422, {"code": "validation", "message": "يجب ألا تقل قيمة النقاط عن صفر."})
     ppv = db.scalar(select(ProductPointValue).where(ProductPointValue.item_id == item_id))
     if ppv is None:
         ppv = ProductPointValue(item_id=item_id, point_value=body.point_value, updated_by=current.id)

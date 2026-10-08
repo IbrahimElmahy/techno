@@ -62,7 +62,7 @@ def login(body: LoginRequest, request: Request,
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
             detail={"code": "too_many_attempts",
-                    "message": f"محاولات دخول كتير. استنى {wait} ثانية وجرّب تاني."},
+                    "message": f"محاولات دخول كثيرة. انتظر {wait} ثانية ثم أعد المحاولة."},
         )
 
     user = db.scalar(select(User).where(User.username == body.username))

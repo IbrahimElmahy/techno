@@ -34,7 +34,7 @@ def _branch(current: CurrentUser, branch_id: int | None) -> int | None:
 
 def _period(date_from: date | None, date_to: date | None) -> tuple[date, date]:
     if date_from is None or date_to is None:
-        raise _bad("اختار الفترة (من / إلى) الأول.")
+        raise _bad("اختر الفترة (من / إلى) أولاً.")
     if date_from > date_to:
         raise _bad("تاريخ البداية بعد تاريخ النهاية.")
     return date_from, date_to
@@ -117,7 +117,7 @@ def get_settings(
 def _office(current: CurrentUser, branch: int | None) -> None:
     if branch is None and not branch_scope.sees_all_branches(current):
         raise HTTPException(status_code=403, detail={
-            "code": "forbidden", "message": "إعدادات الشركة كلها للأدمن بس."})
+            "code": "forbidden", "message": "إعدادات الشركة كلها لمدير النظام فقط."})
 
 
 @router.put("/settings")
@@ -133,10 +133,10 @@ def put_settings(
     allowed = {k: config[k] for k in ("sales", "inventory", "accounts", "marketing") if k in config}
     for cat in (allowed.get("sales") or {}).get("categories") or []:
         if not str(cat.get("key") or "").strip() or not str(cat.get("name") or "").strip():
-            raise _bad("كل فئة مبيعات لازم يبقى ليها اسم.")
+            raise _bad("يجب أن يكون لكل فئة مبيعات اسم.")
     for acc_id, role in ((allowed.get("accounts") or {}).get("roles") or {}).items():
         if role not in svc.ROLES:
-            raise _bad(f"دور مش معروف للحساب {acc_id}: {role}")
+            raise _bad(f"دور غير معروف للحساب {acc_id}: {role}")
     own = svc._row(db, branch)
     allowed["periods"] = ((own.config or {}).get("periods") if own else None) or {}
     out = svc.save_config(db, branch, allowed, actor_user_id=current.id)
@@ -150,7 +150,7 @@ def _num(value) -> str | None:
     try:
         return str(Decimal(str(value)))
     except InvalidOperation:
-        raise _bad(f"رقم مش مفهوم: {value}") from None
+        raise _bad(f"رقم غير مفهوم: {value}") from None
 
 
 @router.put("/period")
@@ -171,7 +171,7 @@ def put_period_inputs(
             continue
         section = a.get("section") or "ga"
         if section not in svc.ADJ_SECTIONS:
-            raise _bad(f"قسم مش معروف: {section}")
+            raise _bad(f"قسم غير معروف: {section}")
         adjustments.append({"label": str(a["label"]).strip(), "amount": _num(a.get("amount")),
                             "section": section, "note": (a.get("note") or "زيادة")})
     entry = {

@@ -35,7 +35,7 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
 
   Future<void> _login() async {
     if (_username.text.trim().isEmpty || _password.text.isEmpty) {
-      setState(() => _error = 'اكتب اسم المستخدم وكلمة السر');
+      setState(() => _error = 'أدخل اسم المستخدم وكلمة المرور');
       return;
     }
     setState(() {
@@ -140,7 +140,7 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
                             obscureText: _hide,
                             onSubmitted: (_) => _login(),
                             decoration: InputDecoration(
-                              labelText: 'كلمة السر',
+                              labelText: 'كلمة المرور',
                               prefixIcon: const Icon(Icons.lock_outline),
                               suffixIcon: IconButton(
                                 icon: Icon(_hide ? Icons.visibility : Icons.visibility_off),
@@ -161,7 +161,7 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
                               keyboardType: TextInputType.url,
                               autocorrect: false,
                               decoration: const InputDecoration(
-                                labelText: 'عنوان السيرفر',
+                                labelText: 'عنوان الخادم',
                                 helperText: ApiClient.defaultBase,
                                 prefixIcon: Icon(Icons.link),
                               ),

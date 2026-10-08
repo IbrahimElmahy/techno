@@ -36,7 +36,7 @@ class _TransfersReviewScreenState extends State<TransfersReviewScreen> {
   }
 
   String _place(String? kind, int? id) {
-    if (kind == 'custody') return 'عربيتي (عهدتي)';
+    if (kind == 'custody') return 'سيارتي (عهدتي)';
     return _wh[id] ?? 'مخزن #$id';
   }
 
@@ -45,12 +45,12 @@ class _TransfersReviewScreenState extends State<TransfersReviewScreen> {
     try {
       final n = await ApiClient.instance.pushTransfers();
       if (!mounted) return;
-      _say(n > 0 ? 'اترفع $n طلب' : 'مافيش طلبات مستنية');
+      _say(n > 0 ? 'تم رفع $n طلب' : 'لا توجد طلبات بانتظار الرفع');
       await _load();
     } on ApiException catch (e) {
       if (mounted) _say(e.message);
     } catch (_) {
-      if (mounted) _say('مش قادر أوصل للسيرفر — جرّب تاني');
+      if (mounted) _say('تعذر الاتصال بالخادم — حاول مرة أخرى');
     } finally {
       if (mounted) setState(() => _pushing = false);
     }
@@ -67,7 +67,7 @@ class _TransfersReviewScreenState extends State<TransfersReviewScreen> {
         title: const Text('طلبات التحويل'),
         actions: [
           IconButton(
-            tooltip: 'ارفع اللي في الطابور',
+            tooltip: 'رفع الطلبات المعلّقة',
             icon: _pushing
                 ? const SizedBox(
                     width: 18, height: 18,
@@ -93,7 +93,7 @@ class _TransfersReviewScreenState extends State<TransfersReviewScreen> {
               child: _rows.isEmpty
                   ? ListView(children: const [
                       SizedBox(height: 120),
-                      Center(child: Text('مافيش طلبات تحويل على الجهاز')),
+                      Center(child: Text('لا توجد طلبات تحويل على الجهاز')),
                     ])
                   : ListView(
                       children: [
@@ -102,8 +102,7 @@ class _TransfersReviewScreenState extends State<TransfersReviewScreen> {
                             color: const Color(0xFFFFF6E5),
                             child: ListTile(
                               leading: const Icon(Icons.schedule, color: AppColors.accent),
-                              title: Text('$pending طلب مستني الرفع'),
-                              subtitle: const Text('اضغط السحابة فوق عشان ترفعهم'),
+                              title: Text('$pending طلب بانتظار الرفع'),
                             ),
                           ),
                         for (final r in _rows) _card(r),
@@ -127,7 +126,7 @@ class _TransfersReviewScreenState extends State<TransfersReviewScreen> {
             style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14)),
         subtitle: Text([
           (r['created_at'] as String? ?? '').split('T').first,
-          if (synced) (r['document_number'] as String? ?? 'اترفع') else 'لسه على الجهاز',
+          if (synced) (r['document_number'] as String? ?? 'تم الرفع') else 'لم يُرفع بعد',
         ].where((s) => s.isNotEmpty).join(' · ')),
         children: [
           FutureBuilder<List<Map<String, Object?>>>(
@@ -171,7 +170,7 @@ class _TransfersReviewScreenState extends State<TransfersReviewScreen> {
                         else
                           const Padding(
                             padding: EdgeInsets.only(right: 8),
-                            child: Text('اترفع للنظام — التعديل من المكتب',
+                            child: Text('تم الرفع إلى النظام — يُعدَّل من المكتب',
                                 style: TextStyle(fontSize: 11, color: Colors.black45)),
                           ),
                         if (!synced)
@@ -179,7 +178,7 @@ class _TransfersReviewScreenState extends State<TransfersReviewScreen> {
                             onPressed: () => _confirmDelete(localId),
                             icon: const Icon(Icons.delete_outline,
                                 color: AppColors.danger),
-                            label: const Text('مسح',
+                            label: const Text('حذف',
                                 style: TextStyle(color: AppColors.danger)),
                           ),
                       ],
@@ -200,13 +199,13 @@ class _TransfersReviewScreenState extends State<TransfersReviewScreen> {
       builder: (c) => Directionality(
         textDirection: TextDirection.rtl,
         child: AlertDialog(
-          title: const Text('تمسح الطلب؟'),
-          content: const Text('الطلب لسه ما اترفعش، فهيتشال من الجهاز خالص.'),
+          title: const Text('حذف الطلب؟'),
+          content: const Text('لم يُرفع الطلب بعد، وسيُحذف من الجهاز نهائياً.'),
           actions: [
-            TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('لأ')),
+            TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('لا')),
             TextButton(
                 onPressed: () => Navigator.pop(c, true),
-                child: const Text('امسح', style: TextStyle(color: AppColors.danger))),
+                child: const Text('حذف', style: TextStyle(color: AppColors.danger))),
           ],
         ),
       ),
@@ -215,7 +214,7 @@ class _TransfersReviewScreenState extends State<TransfersReviewScreen> {
     final done = await LocalDb.instance.deleteQueuedTransfer(localId);
     if (!mounted) return;
     if (!done) {
-      _say('الطلب اترفع قبل المسح — بقى مستند عند المكتب.');
+      _say('تم رفع الطلب قبل الحذف — أصبح مستنداً في النظام.');
     }
     _load();
   }

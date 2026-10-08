@@ -53,7 +53,7 @@ async def events(request: Request, ticket: str | None = Query(default=None)):
     if ticket:
         user = _take_ticket(ticket)
         if user is None:
-            raise HTTPException(401, {"code": "unauthorized", "message": "التذكرة انتهت"})
+            raise HTTPException(401, {"code": "unauthorized", "message": "انتهت صلاحية التذكرة"})
     else:
         auth = request.headers.get("authorization") or ""
         raw = auth[7:].strip() if auth.lower().startswith("bearer ") else ""

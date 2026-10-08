@@ -57,12 +57,12 @@ class _CollectCashScreenState extends State<CollectCashScreen> {
   bool get _boxMissing => _family != null && _treasuriesKnown && _treasury == null;
 
   String get _treasuryLabel {
-    if (_family == null) return 'بيتحدّد من نوع الدفعة';
+    if (_family == null) return 'يُحدَّد حسب نوع الدفعة';
     final t = _treasury;
     if (t != null) return t.code.isEmpty ? t.label : '${t.label} · ${t.code}';
     return _treasuriesKnown
-        ? 'مافيش صندوق لخط «$_family» — كلّم المكتب'
-        : 'اسحب البيانات عشان الصندوق يبان';
+        ? 'لا يوجد صندوق لخط «$_family» — تواصل مع المكتب'
+        : 'نفّذ المزامنة لعرض الصندوق';
   }
 
   @override
@@ -146,11 +146,11 @@ class _CollectCashScreenState extends State<CollectCashScreen> {
 
   Future<void> _save() async {
     final amount = _typed;
-    if (_customer == null) return _say('اختار العميل');
-    if (_family == null) return _say('المدفوع ده أبيض ولا بولي؟');
-    if (amount <= 0) return _say('اكتب المبلغ');
+    if (_customer == null) return _say('اختر العميل');
+    if (_family == null) return _say('هل هذا المبلغ أبيض أم بولي؟');
+    if (amount <= 0) return _say('أدخل المبلغ');
     if (_boxMissing) {
-      return _say('مافيش صندوق لخط «$_family» على حسابك — كلّم المكتب.');
+      return _say('لا يوجد صندوق لخط «$_family» على حسابك — تواصل مع المكتب.');
     }
 
     if (!await _confirmTreasury(amount)) return;
@@ -177,7 +177,7 @@ class _CollectCashScreenState extends State<CollectCashScreen> {
       } catch (_) {}
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text(pushed ? 'التحصيل اترفع ✔' : 'التحصيل اتحفظ — هيرفع مع المزامنة'),
+        content: Text(pushed ? 'تم رفع التحصيل ✔' : 'تم حفظ التحصيل — سيُرفع مع المزامنة'),
         backgroundColor: AppColors.success,
       ));
       setState(() {
@@ -256,7 +256,7 @@ class _CollectCashScreenState extends State<CollectCashScreen> {
                 ],
               ),
               const Divider(height: 20),
-              const Text('بينزل في الخزنة',
+              const Text('يُضاف إلى الخزنة',
                   style: TextStyle(color: Colors.black54)),
               const SizedBox(height: 4),
               Row(
@@ -271,9 +271,6 @@ class _CollectCashScreenState extends State<CollectCashScreen> {
                   ),
                 ],
               ),
-              const SizedBox(height: 6),
-              Text('اتحدّد من نوع الدفعة «${_family ?? ''}»',
-                  style: const TextStyle(fontSize: 11, color: Colors.black45)),
             ],
           ),
           actionsPadding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
@@ -305,7 +302,7 @@ class _CollectCashScreenState extends State<CollectCashScreen> {
               children: [
                 ListTile(
                   leading: const Icon(Icons.person_outline, color: AppColors.primary),
-                  title: Text(_customer?.name ?? 'اختار العميل'),
+                  title: Text(_customer?.name ?? 'اختر العميل'),
                   trailing: const Icon(Icons.chevron_left),
                   onTap: _pickCustomer,
                 ),
@@ -352,7 +349,7 @@ class _CollectCashScreenState extends State<CollectCashScreen> {
                             color: _boxMissing ? AppColors.danger : Colors.black45),
                         const SizedBox(width: 6),
                         Expanded(
-                          child: Text('الفلوس بتنزل في: $_treasuryLabel',
+                          child: Text('تُضاف المبالغ إلى: $_treasuryLabel',
                               maxLines: 2,
                               style: TextStyle(
                                   fontSize: 11,
@@ -389,7 +386,7 @@ class _CollectCashScreenState extends State<CollectCashScreen> {
                           padding: EdgeInsets.only(top: 4),
                           child: Align(
                             alignment: AlignmentDirectional.centerStart,
-                            child: Text('دفع أكتر من اللي عليه — الزيادة بتتقيّد له',
+                            child: Text('المدفوع أكثر من المستحق — تُقيَّد الزيادة لصالحه',
                                 style: TextStyle(
                                     fontSize: 11, color: Colors.black45)),
                           ),
@@ -431,7 +428,7 @@ class _CollectCashScreenState extends State<CollectCashScreen> {
                   ? const SizedBox(
                       width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
                   : const Icon(Icons.payments_outlined),
-              label: Text(_saving ? 'بيحفظ…' : 'حفظ التحصيل'),
+              label: Text(_saving ? 'جارٍ الحفظ…' : 'حفظ التحصيل'),
               style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(52)),
             ),
           ),
@@ -450,7 +447,7 @@ class _CollectCashScreenState extends State<CollectCashScreen> {
                 controller: _recentSearch,
                 onChanged: (_) => setState(() {}),
                 decoration: InputDecoration(
-                  hintText: 'دوّر بالعميل أو رقم السند',
+                  hintText: 'ابحث بالعميل أو رقم السند',
                   prefixIcon: const Icon(Icons.search),
                   isDense: true,
                   suffixIcon: _recentSearch.text.isEmpty
@@ -485,7 +482,7 @@ class _CollectCashScreenState extends State<CollectCashScreen> {
                   ),
                   if (_from != null || _to != null)
                     IconButton(
-                      tooltip: 'شيل الفترة',
+                      tooltip: 'إزالة الفترة',
                       icon: const Icon(Icons.filter_alt_off_outlined, size: 20),
                       onPressed: () => setState(() {
                         _from = null;
@@ -498,7 +495,7 @@ class _CollectCashScreenState extends State<CollectCashScreen> {
             if (_visibleRecent.isEmpty)
               const Padding(
                 padding: EdgeInsets.all(24),
-                child: Center(child: Text('مافيش تحصيلات على الفلتر ده')),
+                child: Center(child: Text('لا توجد تحصيلات مطابقة للتصفية')),
               ),
             for (final r in _visibleRecent)
               ListTile(
@@ -512,7 +509,7 @@ class _CollectCashScreenState extends State<CollectCashScreen> {
                   if ((r['synced'] as int?) == 1)
                     r['document_number'] as String? ?? ''
                   else
-                    'لسه على الجهاز',
+                    'ما زال على الجهاز',
                 ].where((s) => s.isNotEmpty).join(' · ')),
                 trailing: Row(
                   mainAxisSize: MainAxisSize.min,
@@ -574,14 +571,14 @@ class _PickSheetState extends State<_PickSheet> {
       child: Column(
         children: [
           const SizedBox(height: 10),
-          const Text('اختار العميل',
+          const Text('اختر العميل',
               style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
           Padding(
             padding: const EdgeInsets.all(12),
             child: TextField(
               onChanged: (v) => _load(v.trim()),
               decoration: const InputDecoration(
-                hintText: 'دوّر بالاسم',
+                hintText: 'ابحث بالاسم',
                 prefixIcon: Icon(Icons.search),
               ),
             ),

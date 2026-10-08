@@ -31,11 +31,6 @@ const P = PRINT_COLORS;
 
 export const printStyles = `
   @page { size: A4; margin: 12mm; }
-  /* **الفاتورة الطويلة بتتقسّم على صفحات، وكل صفحة بتفضل مقروءة.**
-     المتصفح بيقسّم لوحده، بس من غير القواعد دي بيقطع السطر في نصّه ويسيب الصفحة
-     التانية بأرقام من غير عناوين — واللي ماسك الورقة التانية مايعرفش الرقم ده كمية
-     ولا سعر. table-header-group بيكرّر رأس الجدول، وbreak-inside بيمنع قطع السطر.
-     (من غير علامات باك-تِك هنا: النص ده جوّه template literal وبتقفله.) */
   @media print {
     thead { display: table-header-group; }
     tfoot { display: table-footer-group; }
@@ -52,7 +47,6 @@ export const printStyles = `
     gap: 20px; padding-bottom: 14px; border-bottom: 3px solid ${BRAND.green};
   }
   .letterhead .who { text-align: right; }
-  /* اسم الشركة أسود: أخضر ٢١ بيكسل على ليزر بيطلع رمادي متوسط. الخط الأخضر تحته كفاية هوية. */
   .letterhead .who b { font-size: 21px; color: ${P.text}; display: block; }
   .letterhead .who span { font-size: 12.5px; color: ${P.muted}; display: block; margin-top: 2px; }
   .accent { height: 4px; background: ${BRAND.orange}; margin-top: 3px; }
@@ -61,8 +55,6 @@ export const printStyles = `
     justify-content: space-between; gap: 12px; flex-wrap: wrap;
   }
   .doc-title h1 { margin: 0; font-size: 20px; color: ${P.text}; }
-  /* رقم المستند بإطار مش بكبسولة ملوّنة — الأبيض على الأخضر كان بيختفي على الورق،
-     والشاشة دلوقتي بتورّي نفس اللي هيطلع. */
   .doc-no {
     background: none; color: ${P.text}; border: 1.5px solid ${P.strong}; padding: 4px 14px;
     border-radius: 999px; font-weight: 800; font-size: 14px;
@@ -71,8 +63,6 @@ export const printStyles = `
   table.meta td { border: 1px solid ${P.line}; padding: 7px 10px; font-size: 13.5px; color: ${P.text}; }
   table.meta td.k { background: ${P.fill}; font-weight: 800; width: 120px; color: ${P.text}; }
   table.grid { width: 100%; border-collapse: collapse; }
-  /* **رأس الجدول: أسود تقيل على رمادي فاتح، ومقفول بخط أسود.** نفس الشكل على الشاشة وعلى
-     الورق — اللي بيبص على المعاينة قبل الطباعة بيشوف اللي هيطلع بالظبط. */
   table.grid th {
     background: ${P.fill}; color: ${P.text}; padding: 8px 8px; font-weight: 800;
     font-size: 13.5px; border: 1px solid ${P.line}; border-bottom: 2px solid ${P.strong};
@@ -81,7 +71,6 @@ export const printStyles = `
     border: 1px solid ${P.line}; padding: 7px 8px; font-size: 13.5px; text-align: center;
     color: ${P.text};
   }
-  /* التظليل بالتبادل للشاشة بس — على الورق الشبكة الغامقة هي اللي بتمسك السطر. */
   table.grid tbody tr:nth-child(even) td { background: #f5f5f5; }
   table.grid tfoot td {
     font-weight: 800; background: ${P.fill}; border-top: 2px solid ${P.strong};
@@ -101,8 +90,6 @@ export const printStyles = `
     font-size: 11.5px; color: ${P.muted}; display: flex; justify-content: space-between; gap: 12px;
   }
   @media print { .no-print { display: none; } }
-  /* الخلفيات الفاتحة (رأس الجدول والإجمالي واسم الحقل) بتتطلب صراحةً عشان تطلع لو الطابعة
-     بتقدر — ولو المستخدم قافلها من نافذة الطباعة، الخط الأسود والكلام التقيل لسه شايلين المعنى. */
   @media print {
     table.grid th, table.grid tfoot td, table.meta td.k, .f-strong {
       -webkit-print-color-adjust: exact; print-color-adjust: exact;
@@ -110,7 +97,6 @@ export const printStyles = `
     table.grid tbody tr:nth-child(even) td { background: none; }
   }
 
-  /* ============================ المضغوط — الشرح عند DocMeta.compact */
   body.compact .sheet { max-width: none; }
   .c-head {
     display: flex; align-items: center; justify-content: space-between; gap: 12px;
@@ -126,7 +112,6 @@ export const printStyles = `
     background: none; color: ${P.text}; border: 1.5px solid ${P.strong}; padding: 1px 10px;
     border-radius: 999px; font-weight: 800; font-size: 13px; direction: ltr;
   }
-  /* البيانات في شبكة ٣ أعمدة، مش صف لكل حقل. */
   .c-meta {
     display: grid; grid-template-columns: repeat(3, 1fr); gap: 0;
     border: 1px solid ${P.line}; border-radius: 4px; margin-bottom: 6px;
@@ -137,11 +122,8 @@ export const printStyles = `
     text-overflow: ellipsis; color: ${P.text};
   }
   .c-meta div b { color: ${P.text}; font-weight: 800; margin-inline-end: 4px; }
-  /* **١٢٫٥ أقل حاجة في جسم الجدول.** كان ١١ عشان الفاتورة تلمّ في صفحة — وعلى ليزر
-     بيسيّح الحبر شوية، ١١ عربي بقى نقط ملزوقة في بعض. الحشو هو اللي اتقلّ مش الخط. */
   body.compact table.grid th { padding: 4px 5px; font-size: 12.5px; }
   body.compact table.grid td { padding: 3px 5px; font-size: 12.5px; line-height: 1.35; }
-  /* الإجماليات جنب التوقيعات في شريط واحد، مش تحتها. */
   .c-bottom {
     display: flex; gap: 14px; align-items: flex-start; margin-top: 6px;
   }
@@ -156,7 +138,6 @@ export const printStyles = `
     width: auto; flex: 1; border-top: 1px solid ${P.strong}; padding-top: 3px;
     font-size: 12px; text-align: center;
   }
-  /* الفوتر على أعمدة — زي دفتر الفواتير. الشرح عند footerColumns. */
   .f-cols { display: flex; gap: 10px; margin-top: 8px; align-items: stretch; }
   .f-col {
     flex: 1; border: 1px solid ${P.line}; border-radius: 4px; padding: 3px 0;
@@ -167,12 +148,9 @@ export const printStyles = `
   }
   .f-row:last-child { border-bottom: none; }
   .f-row b { white-space: nowrap; direction: ltr; }
-  /* السطر المهم (الصافي/المطلوب) بخط أسود فوقه — الخلفية لوحدها مش ضمان إنها تطلع. */
   .f-strong { background: ${P.fill}; font-weight: 800; border-top: 1.5px solid ${P.strong}; }
   .f-strong b { color: ${P.text}; font-size: 14px; }
   body.compact .c-sigs { padding-top: 22px; }
-  /* الورق اللي لسه بيكتب .signatures و.totals بالشكل القديم (السندات،
-     التحويلات، التقارير) بياخد نفس الكثافة من غير ما حد يعيد كتابته. */
   body.compact .signatures { margin-top: 20px; }
   body.compact .signatures .sig { font-size: 12px; padding-top: 3px; width: 160px; }
   body.compact table.totals { margin-top: 6px; }

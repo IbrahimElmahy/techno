@@ -43,7 +43,7 @@ export default function CashFlowTab({ params, slots }: {
           {!cash.consistent && (
             <Alert
               type="warning" showIcon style={{ margin: '6px 0 8px' }}
-              message="فيه قيد فيه حركة خزينة ومش متوازن — الفرق طالع في «غير موزّع»."
+              message="يوجد قيد يتضمن حركة خزينة وهو غير متوازن — يظهر الفرق في «غير موزّع»."
             />
           )}
           {canSeeStats && (

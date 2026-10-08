@@ -110,7 +110,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Future<void> _logout() => confirmLogout(context,
       warning: _pending > 0
-          ? 'في $_pending معاينة لسه ما اتزامنتش — هتفضل محفوظة على الجهاز.'
+          ? 'توجد $_pending معاينة لم تتم مزامنتها بعد، وستبقى محفوظة على الجهاز.'
           : null);
 
   @override
@@ -186,8 +186,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       child: ListTile(
                         leading: const Icon(Icons.cloud_upload_outlined,
                             color: AppColors.accent, size: 30),
-                        title: Text('$_pending معاينة مستنية المزامنة'),
-                        subtitle: const Text('اضغط للمزامنة مع السيرفر'),
+                        title: Text('$_pending معاينة بانتظار المزامنة'),
                         trailing: const Icon(Icons.chevron_left),
                         onTap: () async {
                           await Navigator.push(context,
@@ -202,7 +201,6 @@ class _HomeScreenState extends State<HomeScreen> {
                       icon: Icons.groups_2_outlined,
                       color: AppColors.primary,
                       title: 'متابعة المناديب',
-                      subtitle: 'مبيعات وتحصيل كل مندوب وحركته — محتاج شبكة',
                       onTap: () => Navigator.push(context,
                           MaterialPageRoute(builder: (_) => const SupervisorHomeScreen())),
                     ),
@@ -213,7 +211,6 @@ class _HomeScreenState extends State<HomeScreen> {
                     icon: Icons.receipt_long_outlined,
                     color: AppColors.success,
                     title: 'فاتورة بيع',
-                    subtitle: 'بيع لعملائك من اللي في العربية',
                     onTap: () async {
                       await Navigator.push(context,
                           MaterialPageRoute(builder: (_) => const SaleInvoiceScreen()));
@@ -226,7 +223,6 @@ class _HomeScreenState extends State<HomeScreen> {
                     icon: Icons.card_giftcard_outlined,
                     color: AppColors.accent,
                     title: 'فاتورة بونص',
-                    subtitle: 'بضاعة هدية على فاتورة بيع — خصم ١٠٠٪ ومن غير فلوس',
                     onTap: () async {
                       await Navigator.push(context,
                           MaterialPageRoute(builder: (_) => const BonusInvoiceScreen()));
@@ -240,8 +236,8 @@ class _HomeScreenState extends State<HomeScreen> {
                     color: AppColors.primary,
                     title: 'فواتيري',
                     subtitle: _pendingSales > 0
-                        ? '$_pendingSales فاتورة لسه ما اترفعتش'
-                        : 'الفواتير المسجلة على الجهاز',
+                        ? '$_pendingSales فاتورة لم تُرفع بعد'
+                        : null,
                     onTap: () async {
                       await Navigator.push(context,
                           MaterialPageRoute(builder: (_) => const SalesReviewScreen()));
@@ -254,7 +250,6 @@ class _HomeScreenState extends State<HomeScreen> {
                     icon: Icons.payments_outlined,
                     color: AppColors.accent,
                     title: 'تحصيل من عميل',
-                    subtitle: 'سند قبض — بيتحفظ ويترفع زي الفاتورة',
                     onTap: () async {
                       await Navigator.push(context,
                           MaterialPageRoute(builder: (_) => const CollectCashScreen()));
@@ -268,8 +263,8 @@ class _HomeScreenState extends State<HomeScreen> {
                     color: AppColors.accent,
                     title: 'تحصيلاتي',
                     subtitle: _pendingReceipts > 0
-                        ? '$_pendingReceipts سند لسه ما اترفعش'
-                        : 'سندات القبض المسجلة على الجهاز',
+                        ? '$_pendingReceipts سند لم يُرفع بعد'
+                        : null,
                     onTap: () async {
                       await Navigator.push(context,
                           MaterialPageRoute(builder: (_) => const ReceiptsReviewScreen()));
@@ -282,7 +277,6 @@ class _HomeScreenState extends State<HomeScreen> {
                     icon: Icons.local_shipping_outlined,
                     color: AppColors.primary,
                     title: 'بضاعتي',
-                    subtitle: 'اللي في العربية دلوقتي بكمياته',
                     onTap: () => Navigator.push(context,
                         MaterialPageRoute(builder: (_) => const MyStockScreen())),
                   ),
@@ -292,7 +286,6 @@ class _HomeScreenState extends State<HomeScreen> {
                     icon: Icons.request_quote_outlined,
                     color: AppColors.primary,
                     title: 'كشف تسعير',
-                    subtitle: 'سعّر أي صنف — والشيت بيفضل محفوظ ترجعله',
                     onTap: () async {
                       await Navigator.push(context,
                           MaterialPageRoute(builder: (_) => const PriceSheetsScreen()));
@@ -305,7 +298,6 @@ class _HomeScreenState extends State<HomeScreen> {
                     icon: Icons.swap_horiz_outlined,
                     color: AppColors.accent,
                     title: 'طلبات التحويل',
-                    subtitle: 'اطلب بضاعة أو رجّعها — وشوف اللي طلبته وعدّله',
                     onTap: () async {
                       await Navigator.push(context, MaterialPageRoute(
                           builder: (_) => const TransfersReviewScreen()));
@@ -318,7 +310,6 @@ class _HomeScreenState extends State<HomeScreen> {
                     icon: Icons.receipt_long_outlined,
                     color: AppColors.danger,
                     title: 'كشف المديونيات',
-                    subtitle: 'مين عليه كام — أبيض وبولي، بيشتغل من غير نت',
                     onTap: () async {
                       await Navigator.push(context,
                           MaterialPageRoute(builder: (_) => const DebtsScreen()));
@@ -331,7 +322,6 @@ class _HomeScreenState extends State<HomeScreen> {
                     icon: Icons.account_balance_wallet_outlined,
                     color: AppColors.success,
                     title: 'حساب عميل',
-                    subtitle: 'رصيده وآخر حركته — محتاج شبكة',
                     onTap: () => Navigator.push(context,
                         MaterialPageRoute(builder: (_) => const CustomerProfileScreen())),
                   ),
@@ -341,7 +331,6 @@ class _HomeScreenState extends State<HomeScreen> {
                     icon: Icons.insights_outlined,
                     color: AppColors.accent,
                     title: 'ملخّص اليوم',
-                    subtitle: 'بعت بكام وحصّلت كام',
                     onTap: () => Navigator.push(context,
                         MaterialPageRoute(builder: (_) => const DaySummaryScreen())),
                   ),
@@ -351,7 +340,6 @@ class _HomeScreenState extends State<HomeScreen> {
                     icon: Icons.assignment_add,
                     color: AppColors.primary,
                     title: 'الزيارات',
-                    subtitle: 'تسجيل معاينة فنيين أو زيارة عادية',
                     onTap: () async {
                       await Navigator.push(context,
                           MaterialPageRoute(builder: (_) => const VisitsMenuScreen()));
@@ -364,7 +352,6 @@ class _HomeScreenState extends State<HomeScreen> {
                     icon: Icons.confirmation_number_outlined,
                     color: AppColors.accent,
                     title: 'استلام كوبونات',
-                    subtitle: 'استلام كوبونات العميل والتأكد من صلاحيتها',
                     onTap: () async {
                       await Navigator.push(context,
                           MaterialPageRoute(builder: (_) => const CouponReceiptScreen()));
@@ -377,7 +364,6 @@ class _HomeScreenState extends State<HomeScreen> {
                     icon: Icons.summarize_outlined,
                     color: AppColors.primary,
                     title: 'مراجعة الكوبونات',
-                    subtitle: 'الإجمالي لكل عميل بالنوع — من الجهاز',
                     onTap: () => Navigator.push(context,
                         MaterialPageRoute(builder: (_) => const CouponReviewScreen())),
                   ),
@@ -387,7 +373,6 @@ class _HomeScreenState extends State<HomeScreen> {
                     icon: Icons.fact_check_outlined,
                     color: AppColors.success,
                     title: 'مراجعة الزيارات',
-                    subtitle: 'استعراض المعاينات المسجلة بالتاريخ',
                     onTap: () async {
                       await Navigator.push(
                           context, MaterialPageRoute(builder: (_) => const ReviewScreen()));
@@ -413,7 +398,7 @@ class _HomeScreenState extends State<HomeScreen> {
             leading: const Icon(Icons.sync),
             title: const Text('مزامنة الآن'),
             subtitle: _pendingSales + _pendingReceipts + _pending > 0
-                ? Text('${_pendingSales + _pendingReceipts + _pending} مستند مستني الرفع')
+                ? Text('${_pendingSales + _pendingReceipts + _pending} مستند بانتظار الرفع')
                 : null,
             onTap: () async {
               Navigator.pop(context);
@@ -435,7 +420,6 @@ class _HomeScreenState extends State<HomeScreen> {
           ListTile(
             leading: const Icon(Icons.cloud_sync_outlined),
             title: const Text('شاشة المزامنة'),
-            subtitle: const Text('المستني وآخر مزامنة'),
             onTap: () async {
               Navigator.pop(context);
               await Navigator.push(
@@ -471,14 +455,14 @@ class _BigAction extends StatelessWidget {
   final IconData icon;
   final Color color;
   final String title;
-  final String subtitle;
+  final String? subtitle;
   final VoidCallback onTap;
 
   const _BigAction(
       {required this.icon,
       required this.color,
       required this.title,
-      required this.subtitle,
+      this.subtitle,
       required this.onTap});
 
   @override
@@ -508,9 +492,11 @@ class _BigAction extends StatelessWidget {
                     Text(title,
                         style:
                             const TextStyle(fontSize: 19, fontWeight: FontWeight.w700)),
-                    const SizedBox(height: 4),
-                    Text(subtitle,
-                        style: TextStyle(fontSize: 13, color: Colors.grey.shade600)),
+                    if (subtitle != null) ...[
+                      const SizedBox(height: 4),
+                      Text(subtitle!,
+                          style: TextStyle(fontSize: 13, color: Colors.grey.shade600)),
+                    ],
                   ],
                 ),
               ),
@@ -610,7 +596,7 @@ class _SyncBannerState extends State<_SyncBanner> {
                 onPressed: widget.onRetry,
                 style: TextButton.styleFrom(
                     foregroundColor: fg, padding: EdgeInsets.zero),
-                child: const Text('حاول تاني')),
+                child: const Text('إعادة المحاولة')),
         ],
       ),
     );

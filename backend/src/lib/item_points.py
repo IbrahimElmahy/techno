@@ -197,10 +197,10 @@ def classify(name: str, category: str | None) -> Verdict:
     fam = family_of(category)
 
     if "كوبون" in text:
-        return _ok(0, "كوبون — مش بضاعة تكسب نقط", fam)
+        return _ok(0, "كوبون — ليس بضاعة تكسب نقاطاً", fam)
 
     if _NOT_GOODS.search(text):
-        return _ok(0, "قطعة غيار أو تعبئة — مش صنف كامل", fam)
+        return _ok(0, "قطعة غيار أو تعبئة — ليست صنفاً كاملاً", fam)
 
     if "قفيز" in text:
         inch = size_in(text)
@@ -208,12 +208,12 @@ def classify(name: str, category: str | None) -> Verdict:
             inch = Decimal("0.75")
         if inch is not None and inch in _QAFIZ:
             return _ok(_QAFIZ[inch], f"قفيز {inch}", fam)
-        return _no("قفيز بمقاس مش في الجدول", fam)
+        return _no("قفيز بمقاس غير موجود في الجدول", fam)
 
     if fam == NONE:
-        return _ok(0, "تصنيف مالوش نقط (هدايا/خامات/كوبونات/غراء)", fam)
+        return _ok(0, "تصنيف بلا نقاط (هدايا/خامات/كوبونات/غراء)", fam)
     if fam == UNRATED:
-        return _no("تصنيف مش موجود في جدول النقاط", fam)
+        return _no("تصنيف غير موجود في جدول النقاط", fam)
 
     if fam == DRAIN:
         if "بلاعه" in text and "طبه" not in text:
@@ -221,12 +221,12 @@ def classify(name: str, category: str | None) -> Verdict:
         pipe = _is_pipe(text)
         inch = size_in(text, first=pipe, quarters=False)
         if inch is None:
-            return _no("صرف من غير مقاس مقروء", fam)
+            return _no("صرف بلا مقاس مقروء", fam)
         table, label = (_DRAIN_PIPE, "متر ماسورة صرف") if pipe else (_DRAIN_PIECE, "قطعة صرف")
         if inch in table:
             return _ok(table[inch], f"{label} {inch}", fam,
                        length=PIPE_LENGTH_M[DRAIN] if pipe else 1)
-        return _no(f"صرف مقاس {inch} مش في الجدول", fam)
+        return _no(f"صرف مقاس {inch} غير موجود في الجدول", fam)
 
     mm = size_mm(text)
     if mm is None:
@@ -234,40 +234,40 @@ def classify(name: str, category: str | None) -> Verdict:
         if inch is not None and inch in _IN_TO_MM:
             mm = _IN_TO_MM[inch]
     if mm is None:
-        return _no("مقاس مش مقروء", fam)
+        return _no("المقاس غير مقروء", fam)
 
     if "بطاري" in text:
         return _ok(10, "بطارية", fam)
     if "شيك بلف" in text:
         if mm in (25, 32):
             return _ok(10, f"شيك بلف {mm}", fam)
-        return _no(f"شيك بلف {mm} مش في الجدول", fam)
+        return _no(f"شيك بلف {mm} غير موجود في الجدول", fam)
     if "محبس" in text or "محيس" in text:
         if "دفن" in text:
             if mm in _BURIED_VALVE:
                 return _ok(_BURIED_VALVE[mm], f"محبس دفن {mm}", fam)
-            return _no(f"محبس دفن {mm} مش في الجدول", fam)
+            return _no(f"محبس دفن {mm} غير موجود في الجدول", fam)
         if "بليه" in text or "بلبه" in text or "لاكور" in text:
             if mm in _BALL_VALVE:
                 return _ok(_BALL_VALVE[mm], f"محبس بلية {mm}", fam)
-            return _no(f"محبس بلية {mm} مش في الجدول", fam)
-        return _no("نوع محبس مش في الجدول", fam)
+            return _no(f"محبس بلية {mm} غير موجود في الجدول", fam)
+        return _no("نوع المحبس غير موجود في الجدول", fam)
 
     if _is_pipe(text):
         table = _PIPE_PPR_INS if fam == PPR_INS else _PIPE_PPR
         kind = "معزول" if fam == PPR_INS else "بولى"
         if mm in table:
             return _ok(table[mm], f"متر ماسورة {kind} {mm}", fam, length=PIPE_LENGTH_M[fam])
-        return _no(f"ماسورة {kind} {mm} مش في الجدول", fam)
+        return _no(f"ماسورة {kind} {mm} غير موجودة في الجدول", fam)
 
     if _THREADED_WORDS.search(text):
         if mm in _THREADED:
             return _ok(_THREADED[mm], f"قطعة بسن {mm}", fam)
-        return _no(f"بسن {mm} مش في الجدول", fam)
+        return _no(f"بسن {mm} غير موجود في الجدول", fam)
 
     if fam == PE:
-        return _no("وصلة بولى ايثيلين — مش في الجدول", fam)
+        return _no("وصلة بولى ايثيلين — غير موجودة في الجدول", fam)
 
     if mm in _WELDED:
         return _ok(_WELDED[mm], f"قطعة لحام {mm}", fam)
-    return _no(f"لحام {mm} مش في الجدول", fam)
+    return _no(f"لحام {mm} غير موجود في الجدول", fam)

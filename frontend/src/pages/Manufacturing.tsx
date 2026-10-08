@@ -41,8 +41,8 @@ interface Item {
 type Stage = 'production' | 'quality';
 
 const STAGES: { value: Stage; label: string; short: string; color: string }[] = [
-  { value: 'production', label: 'تصنيع — بتدخل الماكينة', short: 'تصنيع', color: 'green' },
-  { value: 'quality', label: 'جودة — بتتحط على المنتج بعد ما يطلع', short: 'جودة', color: 'gold' },
+  { value: 'production', label: 'تصنيع — تدخل الماكينة', short: 'تصنيع', color: 'green' },
+  { value: 'quality', label: 'جودة — توضع على المنتج بعد خروجه', short: 'جودة', color: 'gold' },
 ];
 const stageOf = (v?: string | null): Stage => (v === 'quality' ? 'quality' : 'production');
 const stageLabel = (v?: string | null) => STAGES.find((x) => x.value === stageOf(v))!.short;
@@ -153,7 +153,7 @@ export default function Manufacturing() {
   const header: SectionHeader = {
     tabs: [
       { key: 'orders', label: 'أوامر التشغيل', count: ordersTotal },
-      { key: 'recipes', label: 'نسب انتاج', count: boms.length },
+      { key: 'recipes', label: 'نسب إنتاج', count: boms.length },
       { key: 'wastage', label: 'مستندات الهالك', count: wastages.length },
     ],
     activeTab: tab as Section,
@@ -290,10 +290,10 @@ function RecipesTab({
           name: payload.name, output_quantity: payload.output_quantity,
           components: payload.components, resources: payload.resources,
         });
-        message.success('تم تحديث نسب الانتاج');
+        message.success('تم تحديث نسب الإنتاج');
       } else {
         await api.post('/api/v1/manufacturing/boms', payload);
-        message.success('تم إضافة نسب الانتاج');
+        message.success('تم إضافة نسب الإنتاج');
       }
       setOpen(false);
       reload();
@@ -303,7 +303,7 @@ function RecipesTab({
   const deactivate = async (bom: Bom) => {
     try {
       await api.delete(`/api/v1/manufacturing/boms/${bom.id}`);
-      message.success('تم إلغاء تفعيل نسب الانتاج');
+      message.success('تم إلغاء تفعيل نسب الإنتاج');
       reload();
     } catch (err) { console.error(err); }
   };
@@ -328,7 +328,7 @@ function RecipesTab({
         <Space>
           <Button type="link" icon={<EditOutlined />} onClick={() => openEdit(r)}>تعديل</Button>
           {r.active && (
-            <Popconfirm title="إلغاء تفعيل نسب الانتاج؟" okText="نعم" cancelText="لا"
+            <Popconfirm title="إلغاء تفعيل نسب الإنتاج؟" okText="نعم" cancelText="لا"
               onConfirm={() => deactivate(r)}>
               <Button type="link" danger icon={<DeleteOutlined />}>إلغاء تفعيل</Button>
             </Popconfirm>
@@ -338,7 +338,7 @@ function RecipesTab({
   ];
 
   const recipesTabCols = useTableColumns('mfg-recipes', columns, {
-    export: { name: 'نسب انتاج', rows: filter.filtered },
+    export: { name: 'نسب إنتاج', rows: filter.filtered },
   });
 
   const searchRef = React.useRef<any>(null);
@@ -349,12 +349,11 @@ function RecipesTab({
     <>
     <ListPage<Section>
       icon={<BuildOutlined />}
-      title="نسب انتاج"
-      subtitle="خامات كل منتج — «انتاج حسب النسب» بيحسب الخامات المصروفة منها"
+      title="نسب إنتاج"
       tabs={header.tabs} activeTab={header.activeTab} onTabChange={header.onTabChange}
       actions={(<>
         <Button type="primary" icon={<PlusOutlined />} className="sl-create" onClick={openCreate}>
-          إضافة نسب انتاج
+          إضافة نسب إنتاج
         </Button>
         {recipesTabCols.control}
       </>)}
@@ -382,11 +381,11 @@ function RecipesTab({
           showSizeChanger: true, locale: { items_per_page: '' },
           showTotal: () => footOf(filter.filtered.length, boms.length, 'منتج'),
         }}
-        locale={{ emptyText: 'لا يوجد وصفات بعد' }} />
+        locale={{ emptyText: 'لا توجد وصفات بعد' }} />
     </ListPage>
 
       <TabModal centered
-        title={editing ? 'تعديل نسب انتاج' : 'نسب انتاج جديدة'} width={560} open={open}
+        title={editing ? 'تعديل نسب إنتاج' : 'نسب إنتاج جديدة'} width={560} open={open}
         onCancel={() => setOpen(false)} destroyOnHidden
         footer={<Button type="primary" onClick={() => form.submit()}>حفظ</Button>}
       >
@@ -400,8 +399,7 @@ function RecipesTab({
             <Input placeholder="مثال: نسب كوع ٢ بوصة" />
           </Form.Item>
           <Form.Item name="output_quantity" label="الكمية الناتجة"
-            rules={[{ required: true, message: 'أدخل كمية الناتج' }]}
-            tooltip="عدد وحدات المنتج الناتجة من تشغيل الوصفة مرة واحدة">
+            rules={[{ required: true, message: 'أدخل كمية الناتج' }]}>
             <InputNumber min={0.001} style={{ width: '100%' }} />
           </Form.Item>
 
@@ -558,7 +556,7 @@ function WastageTab({
   const reverse = (record: Wastage) => {
     showReversalConfirm({
       title: 'عكس مستند هالك',
-      content: `عكس المستند "${record.document_number}" هيرجّع الكمية المهلَكة للمخزون. تمام؟`,
+      content: `سيؤدي عكس المستند "${record.document_number}" إلى إرجاع الكمية المهلَكة إلى المخزون. هل تريد المتابعة؟`,
       onOk: async () => {
         try {
           await api.post(`/api/v1/wastage/${record.id}/reverse`);
@@ -605,7 +603,6 @@ function WastageTab({
     <ListPage<Section>
       icon={<BuildOutlined />}
       title="عمليات التصنيع" muted="(مستندات الهالك)"
-      subtitle="الكميات اللي اتهلكت من المخزن بتكلفتها — والعكس بيرجّعها"
       tabs={header.tabs} activeTab={header.activeTab} onTabChange={header.onTabChange}
       actions={(<>
         <Button type="primary" icon={<PlusOutlined />} className="sl-create" onClick={openCreate}>
@@ -644,7 +641,7 @@ function WastageTab({
           showSizeChanger: true, locale: { items_per_page: '' },
           showTotal: () => footOf(filter.filtered.length, wastages.length, 'مستند'),
         }}
-        locale={{ emptyText: 'لا يوجد مستندات هالك بعد' }} />
+        locale={{ emptyText: 'لا توجد مستندات هالك بعد' }} />
     </ListPage>
 
       <TabModal centered
@@ -709,7 +706,7 @@ interface ProductionOrder {
 const PO_STATE_TAG: Record<POState, { color: string; label: string }> = {
   draft: { color: 'default', label: 'مسودة' },
   confirmed: { color: 'blue', label: 'مؤكد' },
-  in_progress: { color: 'processing', label: 'شغّال' },
+  in_progress: { color: 'processing', label: 'قيد التنفيذ' },
   done: { color: 'green', label: 'منفّذ' },
   reversed: { color: 'red', label: 'معكوس' },
 };
@@ -720,7 +717,7 @@ function POFlow({ state }: { state: POState }) {
   if (state === 'reversed') {
     return (
       <Tag color="red" style={{ marginInlineEnd: 0 }}>
-        اتعكس — الحركات المرآة اتكتبت والسطور فضلت في السجل
+        معكوس — سُجِّلت الحركات العكسية وبقيت السطور في السجل
       </Tag>
     );
   }
@@ -897,7 +894,7 @@ function ProductionOrdersTab({
         return (await api.get(
           `/api/v1/manufacturing/production-orders/${id}`)).data as ProductionOrder;
       } catch {
-        message.warning(`أمر التشغيل رقم ${id} مش موجود`);
+        message.warning(`أمر التشغيل رقم ${id} غير موجود`);
         return null;
       }
     },
@@ -1065,7 +1062,7 @@ function ProductionOrdersTab({
       const rows = recipeMaterials(ln);
       if (!rows) {
         const hasBom = boms.some((b) => b.product_id === ln.item_id);
-        message.info(hasBom ? 'اكتب الكمية الأول' : 'المنتج ده مالوش وصفة');
+        message.info(hasBom ? 'أدخل الكمية أولاً' : 'لا توجد وصفة لهذا المنتج');
         return ln;
       }
       const bom = boms.find((b) => b.id === ln.bom_id)
@@ -1099,13 +1096,13 @@ function ProductionOrdersTab({
   });
 
   const submit = async () => {
-    if (!lines.length) { message.warning('ضيف منتج واحد على الأقل'); return; }
+    if (!lines.length) { message.warning('أضف منتجاً واحداً على الأقل'); return; }
     for (const ln of lines) {
       if (!ln.item_id || !ln.planned_quantity) {
-        message.warning('كل سطر منتج محتاج صنف وكمية'); return;
+        message.warning('كل سطر منتج يحتاج إلى صنف وكمية'); return;
       }
       if (!ln.materials.some((m) => m.item_id && (m.planned_quantity ?? m.quantity))) {
-        message.warning(`«${itemName(ln.item_id)}» مالوش خامات — اختار وصفة أو ضيفها بإيدك`);
+        message.warning(`«${itemName(ln.item_id)}» ليس له خامات — اختر وصفة أو أضفها يدوياً`);
         return;
       }
     }
@@ -1113,7 +1110,7 @@ function ProductionOrdersTab({
     try {
       if (editingId) await api.put(`/api/v1/manufacturing/production-orders/${editingId}`, payload());
       else await api.post('/api/v1/manufacturing/production-orders', payload());
-      message.success(editingId ? 'اتحفظت المسودة' : 'اتفتح أمر تشغيل كمسودة — مافيش حركة مخزون لسه');
+      message.success(editingId ? 'تم حفظ المسودة' : 'تم فتح أمر تشغيل كمسودة — لا توجد حركة مخزون بعد');
       closeEditor(); setPage(1); load();
     } catch (err) { console.error(err); } finally { setSaving(false); }
   };
@@ -1136,11 +1133,11 @@ function ProductionOrdersTab({
         const fresh = (res?.data ?? r) as ProductionOrder;
         const quality = verb === 'issue-quality';
         Modal.confirm({
-          title: quality ? 'اتصرفت مواد التعبئة' : 'الأمر اتأكد',
+          title: quality ? 'تم صرف مواد التعبئة' : 'تم تأكيد الأمر',
           content: quality
-            ? 'تطبع إذن الجودة وتديه للتعبئة؟'
-            : 'تطبع إذن التشغيل وتديه للورشة؟',
-          okText: 'اطبع', cancelText: 'بعدين',
+            ? 'هل تريد طباعة إذن الجودة وتسليمه للتعبئة؟'
+            : 'هل تريد طباعة إذن التشغيل وتسليمه للورشة؟',
+          okText: 'طباعة', cancelText: 'لاحقاً',
           onOk: () => printOrder(fresh, quality ? 'quality' : 'production'),
         });
       }
@@ -1159,12 +1156,12 @@ function ProductionOrdersTab({
   const submitClose = async () => {
     if (!closing) return;
     const bad = closing.products.find((p) => !Number(outputs[p.id]));
-    if (bad) { message.error(`اكتب اللي طلع من «${itemName(bad.item_id)}»`); return; }
+    if (bad) { message.error(`أدخل الكمية الناتجة من «${itemName(bad.item_id)}»`); return; }
     try {
       await api.post(`/api/v1/manufacturing/production-orders/${closing.id}/execute`,
         { outputs, waste: Object.fromEntries(
           Object.entries(waste).filter(([, v]) => Number(v) > 0)) });
-      message.success('اتقفل الأمر: الإنتاج اتضاف للمخزن والتكلفة اتحسبت');
+      message.success('تم إقفال الأمر: أُضيف الإنتاج إلى المخزن وحُسبت التكلفة');
       setClosing(null);
       load();
     } catch (err) { console.error(err); }
@@ -1184,7 +1181,7 @@ function ProductionOrdersTab({
     try {
       const res = await api.delete(
         `/api/v1/manufacturing/production-orders/${receiving.id}/receipts/${rc.id}`);
-      message.success('اتعكست الدفعة — الكمية خرجت من المخزن');
+      message.success('تم عكس الدفعة — خرجت الكمية من المخزن');
       setReceiving(res.data as ProductionOrder);
       load();
     } catch (err) { console.error(err); }
@@ -1195,14 +1192,14 @@ function ProductionOrdersTab({
     const quantities = Object.fromEntries(
       Object.entries(received).filter(([, v]) => Number(v) > 0));
     if (!Object.keys(quantities).length) {
-      message.warning('اكتب الكمية اللي استلمتها'); return;
+      message.warning('أدخل الكمية المستلمة'); return;
     }
     try {
       await api.post(`/api/v1/manufacturing/production-orders/${receiving.id}/receive`, {
         quantities,
         receipt_date: receiptDate ? receiptDate.format('YYYY-MM-DD') : undefined,
       });
-      message.success('اتسجّل الاستلام — البضاعة دخلت المخزن');
+      message.success('تم تسجيل الاستلام — دخلت البضاعة المخزن');
       setReceiving(null);
       load();
     } catch (err) { console.error(err); }
@@ -1211,7 +1208,7 @@ function ProductionOrdersTab({
   const reverse = (r: ProductionOrder) => {
     showReversalConfirm({
       title: 'التراجع عن أمر تشغيل',
-      content: `عكس «${r.document_number}» هيرجّع الخامات للمخزن ويشيل الإنتاج، وهيفضل في السجل كحركة عكسية مش مسح. لو الإنتاج اتباع أو اتصرف، العكس هيتمنع. تمام؟`,
+      content: `سيؤدي عكس «${r.document_number}» إلى إرجاع الخامات إلى المخزن وإلغاء الإنتاج، وسيبقى في السجل كحركة عكسية لا كحذف. وإذا كان الإنتاج قد بيع أو صُرف فسيُمنع العكس. هل تريد المتابعة؟`,
       onOk: async () => {
         try {
           await api.post(`/api/v1/manufacturing/production-orders/${r.id}/reverse`);
@@ -1225,7 +1222,7 @@ function ProductionOrdersTab({
   const removeDraft = async (r: ProductionOrder) => {
     try {
       await api.delete(`/api/v1/manufacturing/production-orders/${r.id}`);
-      message.success('اتمسحت المسودة');
+      message.success('تم حذف المسودة');
       load();
     } catch (err) { console.error(err); }
   };
@@ -1237,7 +1234,7 @@ function ProductionOrdersTab({
     { title: 'المستند', key: 'doc',
       render: (_: any, r: ProductionOrder) => (
         r.imported_from
-          ? <Tag color="gold">أمر شغل {poPaper(r)}</Tag>
+          ? <Tag color="gold">أمر تشغيل {poPaper(r)}</Tag>
           : <Tag color="blue">{r.document_number}</Tag>
       ) },
     { title: 'التاريخ', dataIndex: 'production_date', key: 'date', width: 115,
@@ -1248,7 +1245,7 @@ function ProductionOrdersTab({
       render: (_: any, r: ProductionOrder) => branchName(r.branch_id) },
     { title: 'المنتجات', key: 'np', width: 85,
       render: (_: any, r: ProductionOrder) => r.products.length },
-    { title: 'المخطّط / اللي طلع', key: 'pq', width: 170,
+    { title: 'المخطّط / الناتج', key: 'pq', width: 170,
       render: (_: any, r: ProductionOrder) => {
         const u = r.products.length === 1 ? itemUnit(r.products[0].item_id) : '';
         return Number(r.planned_quantity) ? (
@@ -1304,9 +1301,9 @@ function ProductionOrdersTab({
               <>
                 {icon('تعديل', <EditOutlined />, () => openEdit(r))}
                 {icon('تأكيد', <CheckOutlined />,
-                  () => act(r, 'confirm', 'اتأكد الأمر — لسه مافيش حركة مخزون'))}
-                <Popconfirm title="تمسح المسودة؟" onConfirm={() => removeDraft(r)}>
-                  <Tooltip title="مسح المسودة">
+                  () => act(r, 'confirm', 'تم تأكيد الأمر — لا توجد حركة مخزون بعد'))}
+                <Popconfirm title="هل تريد حذف المسودة؟" onConfirm={() => removeDraft(r)}>
+                  <Tooltip title="حذف المسودة">
                     <Button type="text" size="small" danger icon={<DeleteOutlined />} />
                   </Tooltip>
                 </Popconfirm>
@@ -1322,11 +1319,11 @@ function ProductionOrdersTab({
                       () => printOrder(r, 'quality'))}
             {r.state === 'confirmed'
               && icon('اصرف الخامات وابدأ', <PlayCircleOutlined />,
-                      () => act(r, 'start', 'اتصرفت الخامات — الأمر بقى شغّال'), false, true)}
+                      () => act(r, 'start', 'تم صرف الخامات — الأمر قيد التنفيذ'), false, true)}
             {r.state === 'in_progress' && qualityPending(r) > 0
               && icon(`اصرف مواد الجودة (${num(qualityPending(r))})`,
                       <ExperimentOutlined style={{ color: '#d48806' }} />,
-                      () => act(r, 'issue-quality', 'اتصرفت مواد التعبئة'))}
+                      () => act(r, 'issue-quality', 'تم صرف مواد التعبئة'))}
             {(r.state === 'in_progress' || r.state === 'confirmed')
               && icon(r.state === 'in_progress'
                         ? 'الاستلام والإقفال' : 'صرف وإقفال مرة واحدة',
@@ -1346,7 +1343,6 @@ function ProductionOrdersTab({
     <ListPage<Section>
       icon={<BuildOutlined />}
       title="عمليات التصنيع" muted="(أوامر التشغيل)"
-      subtitle="انتاج حسب النسب — كل أمر بمنتجاته وخاماته، والفرق بين المفروض واللي حصل"
       tabs={header.tabs} activeTab={header.activeTab} onTabChange={header.onTabChange}
       actions={(<>
         <Button data-shortcut="F2" type="primary" icon={<PlusOutlined />} className="sl-create"
@@ -1368,7 +1364,7 @@ function ProductionOrdersTab({
           onChange={(v) => { setScope(v); setPage(1); }}
           options={[
             { value: 'all', label: 'الكل' },
-            { value: 'ours', label: 'المكتوب عندنا' },
+            { value: 'ours', label: 'المُدخل في النظام' },
             { value: 'imported', label: 'المنقول من a5' },
           ]} />
       </>)}
@@ -1392,7 +1388,7 @@ function ProductionOrdersTab({
             <div>
               <div style={{ marginBottom: 14 }}>
                 {r.imported_from
-                  ? <Tag color="gold">منقول من a5 — خلص في نظامهم، مالوش خط سير عندنا</Tag>
+                  ? <Tag color="gold">منقول من a5 — اكتمل في نظامهم، وليس له مسار هنا</Tag>
                   : <POFlow state={r.state} />}
               </div>
               <Divider orientation="right" style={{ margin: '4px 0 8px' }}>الإنتاج التام</Divider>
@@ -1402,9 +1398,9 @@ function ProductionOrdersTab({
                   { title: 'المخزن', dataIndex: 'warehouse_id', render: (w: number | null) => whName(w) },
                   { title: 'الوحدة', key: 'u', width: 80,
                     render: (_: any, p: POProduct) => itemUnit(p.item_id) || '—' },
-                  { title: 'المفروض', dataIndex: 'planned_quantity',
+                  { title: 'المخطّط', dataIndex: 'planned_quantity',
                     render: (q: string) => (Number(q) ? num(q) : '—') },
-                  { title: 'اللي طلع', dataIndex: 'quantity', render: (q: string) => num(q) },
+                  { title: 'الناتج', dataIndex: 'quantity', render: (q: string) => num(q) },
                   { title: 'الفرق', key: 'v',
                     render: (_: any, p: POProduct) => (
                       <Variance planned={p.planned_quantity} actual={p.quantity} />) },
@@ -1436,9 +1432,9 @@ function ProductionOrdersTab({
                   { title: 'المخزن', dataIndex: 'warehouse_id', render: (w: number | null) => whName(w) },
                   { title: 'الوحدة', key: 'u', width: 80,
                     render: (_: any, m: POMaterial) => itemUnit(m.item_id) || '—' },
-                  { title: 'المفروض', dataIndex: 'planned_quantity',
+                  { title: 'المخطّط', dataIndex: 'planned_quantity',
                     render: (q: string) => (Number(q) ? num(q) : '—') },
-                  { title: 'اللي اتصرف', dataIndex: 'quantity', render: (q: string) => num(q) },
+                  { title: 'المصروف', dataIndex: 'quantity', render: (q: string) => num(q) },
                   { title: 'الفرق', key: 'v',
                     render: (_: any, m: POMaterial) => (
                       <Variance planned={m.planned_quantity} actual={m.quantity} />) },
@@ -1450,15 +1446,15 @@ function ProductionOrdersTab({
 
               {r.imported_from && (
                 <p style={{ color: '#ad6800', marginTop: 12 }}>
-                  الأمر ده اتلمّ من حركة منقولة من a5، وحركته اترحّلت في نظامهم — فهو
-                  للقراءة بس. والتكلفة اللي ظاهرة هي **تكلفة a5 وقتها**، مش محسوبة
-                  بمتوسط النهارده. المصدر مافيهوش كمية مخطّطة ولا بيقول أنهي خامة راحت
-                  لأنهي منتج، فالفرق والنسبة مابيتعرضوش بدل ما يتخمّنوا.
+                  هذا الأمر مُجمَّع من حركة منقولة من a5، وقد رُحِّلت حركته في نظامهم، لذا فهو
+                  للقراءة فقط. والتكلفة الظاهرة هي **تكلفة a5 في حينها**، وليست محسوبة
+                  بمتوسط اليوم. ولا يتضمن المصدر كمية مخطّطة ولا يحدد الخامة الخاصة بكل
+                  منتج، لذا لا يُعرض الفرق والنسبة.
                 </p>
               )}
               {r.state !== 'done' && !r.imported_from && (
                 <p style={{ color: '#888', marginTop: 12 }}>
-                  الأمر لسه ماترحّلش — مافيش أي حركة مخزون عليه، والتكلفة بتتحسب وقت التنفيذ.
+                  لم يُرحَّل الأمر بعد — لا توجد أي حركة مخزون عليه، وتُحتسب التكلفة عند التنفيذ.
                 </p>
               )}
               {r.statement1 && (
@@ -1470,7 +1466,7 @@ function ProductionOrdersTab({
             </div>
           ),
         }}
-        locale={{ emptyText: 'مافيش أوامر تشغيل' }}
+        locale={{ emptyText: 'لا توجد أوامر تشغيل' }}
       />
     </ListPage>
 
@@ -1491,7 +1487,7 @@ function ProductionOrdersTab({
           <Col span={8}>
             <div style={{ marginBottom: 4 }}>تاريخ الإنتاج</div>
             <DatePicker style={{ width: '100%' }} format="YYYY-MM-DD"
-              value={productionDate} onChange={setProductionDate} placeholder="النهارده" />
+              value={productionDate} onChange={setProductionDate} placeholder="اليوم" />
           </Col>
           <Col span={8}>
             <div style={{ marginBottom: 4 }}>الفرع</div>
@@ -1502,7 +1498,7 @@ function ProductionOrdersTab({
           <Col span={8}>
             <div style={{ marginBottom: 4 }}>رقم الورقة</div>
             <Input value={externalRef} onChange={(e) => setExternalRef(e.target.value)}
-              maxLength={40} placeholder="رقم الورقة اللي في إيدك" />
+              maxLength={40} placeholder="رقم الورقة" />
           </Col>
         </Row>
 
@@ -1511,7 +1507,7 @@ function ProductionOrdersTab({
           items={[
             {
               key: 'work',
-              label: `الشغل (${lines.length})`,
+              label: `التشغيل (${lines.length})`,
               children: <>
           {shortages.length > 0 && (
             <Alert type="error" showIcon style={{ marginBottom: 12 }}
@@ -1519,9 +1515,9 @@ function ProductionOrdersTab({
                 const prod = shortages.filter((x) => x.stage === 'production').length;
                 const qual = shortages.length - prod;
                 const parts: string[] = [];
-                if (prod) parts.push(`${num(prod)} خامة تصنيع — الأمر هيقف عند «ابدأ»`);
-                if (qual) parts.push(`${num(qual)} مادة تعبئة — هتقف عند «اصرف مواد الجودة»`);
-                return `مش كفاية في مخزنها: ${parts.join(' · ')}`;
+                if (prod) parts.push(`${num(prod)} خامة تصنيع — سيتوقف الأمر عند «ابدأ»`);
+                if (qual) parts.push(`${num(qual)} مادة تعبئة — سيتوقف الأمر عند «اصرف مواد الجودة»`);
+                return `الكمية غير كافية في مخزنها: ${parts.join(' · ')}`;
               })()}
               description={(
                 <ul style={{ margin: 0, paddingInlineStart: 18 }}>
@@ -1590,7 +1586,7 @@ function ProductionOrdersTab({
                 <div key={st.value} style={{ marginTop: 10 }}>
                   <Divider orientation="right" style={{ margin: '10px 0 8px' }}>
                     <Tag color={st.color}>{st.short}</Tag>
-                    {st.value === 'production' ? 'خامات بتدخل الماكينة' : 'مواد بتتحط بعد الإنتاج'}
+                    {st.value === 'production' ? 'خامات تدخل الماكينة' : 'مواد توضع بعد الإنتاج'}
                     {rows.length > 0 && (
                       <span style={{ color: '#555b65', fontSize: 14 }}>
                         {' '}· {num(rows.length)}
@@ -1606,7 +1602,7 @@ function ProductionOrdersTab({
                           onChange={(v) => patchMaterial(ln.key, m.key, { item_id: v })} />
                       </Col>
                       <Col span={5}>
-                        <Select showSearch style={{ width: '100%' }} placeholder="تتصرف من"
+                        <Select showSearch style={{ width: '100%' }} placeholder="تُصرف من"
                           value={m.warehouse_id} options={whOptions}
                           onChange={(v) => patchMaterial(ln.key, m.key, { warehouse_id: v })} filterOption={searchFilter} filterSort={searchRank} />
                       </Col>
@@ -1668,7 +1664,7 @@ function ProductionOrdersTab({
                   <div style={{ marginBottom: 4 }}>البيان</div>
                   <Input value={statement} maxLength={200}
                     onChange={(e) => setStatement(e.target.value)}
-                    placeholder="سطر واحد بيتطبع على الورقة" />
+                    placeholder="سطر واحد يُطبع على الورقة" />
                   <div style={{ margin: '12px 0 4px' }}>ملاحظات</div>
                   <Input.TextArea rows={4} maxLength={500} value={notes}
                     onChange={(e) => setNotes(e.target.value)} />
@@ -1693,8 +1689,8 @@ function ProductionOrdersTab({
             <>
               <Alert type="info" showIcon style={{ marginBottom: 12 }}
                 message={totalGot > 0
-                  ? `اتستلم ${num(totalGot)} من ${num(totalPlan)} — الباقي ${num(totalPlan - totalGot)}`
-                  : `لسه مااستلمتش حاجة. المخطّط ${num(totalPlan)}`} />
+                  ? `تم استلام ${num(totalGot)} من ${num(totalPlan)} — المتبقي ${num(totalPlan - totalGot)}`
+                  : `لم يُستلم شيء بعد. المخطّط ${num(totalPlan)}`} />
               <Tabs defaultActiveKey={receiving.state === 'in_progress' ? 'take' : 'close'}
                 items={[
                   ...(receiving.state === 'in_progress' ? [{
@@ -1723,12 +1719,12 @@ function ProductionOrdersTab({
                                 <div style={{ fontSize: 14, color: '#555b65' }}>
                                   المطلوب <Qty value={p.planned_quantity}
                                     unit={itemUnit(p.item_id)} />
-                                  {got > 0 && <> · اتستلم <b>{num(got)}</b></>}
+                                  {got > 0 && <> · تم استلام <b>{num(got)}</b></>}
                                 </div>
                               </Col>
                               <Col span={6}>
                                 <InputNumber style={{ width: '100%' }} min={0}
-                                  placeholder="اللي وصل"
+                                  placeholder="الكمية الواردة"
                                   addonAfter={itemUnit(p.item_id) || undefined}
                                   value={received[p.id] as any}
                                   onChange={(v) => setReceived(
@@ -1745,14 +1741,14 @@ function ProductionOrdersTab({
                                     )}
                                     {after < plan && (
                                       <Tag style={{ marginInlineStart: 6 }}>
-                                        باقي {num(plan - after)}
+                                        المتبقي {num(plan - after)}
                                       </Tag>
                                     )}
                                   </>
                                 ) : (
                                   <span style={{ color: '#555b65' }}>
                                     {plan - got > 0
-                                      ? `الباقي ${num(plan - got)}` : 'اتستلم بالكامل'}
+                                      ? `المتبقي ${num(plan - got)}` : 'تم الاستلام بالكامل'}
                                   </span>
                                 )}
                               </Col>
@@ -1789,7 +1785,7 @@ function ProductionOrdersTab({
                                   } },
                                 { title: '', key: 'x', width: 44, align: 'center' as const,
                                   render: (_: any, rc: POReceipt) => (
-                                    <Popconfirm title="تعكس الدفعة دي؟"
+                                    <Popconfirm title="هل تريد عكس هذه الدفعة؟"
                                       onConfirm={() => undoReceipt(rc)}>
                                       <Tooltip title="عكس الدفعة">
                                         <Button type="text" danger size="small"
@@ -1820,7 +1816,7 @@ function ProductionOrdersTab({
                             </Col>
                             <Col span={7}>
                               <InputNumber style={{ width: '100%' }} min={0.001}
-                                placeholder="إجمالي اللي طلع"
+                                placeholder="إجمالي الناتج"
                                 addonAfter={itemUnit(p.item_id) || undefined}
                                 value={outputs[p.id] as any}
                                 onChange={(v) => setOutputs(
@@ -1848,7 +1844,7 @@ function ProductionOrdersTab({
                                   </Tag>
                                 </Col>
                                 <Col span={7} style={{ opacity: 0.65, fontSize: 14 }}>
-                                  اتصرف <Qty value={m.quantity} unit={itemUnit(m.item_id)} />
+                                  المصروف <Qty value={m.quantity} unit={itemUnit(m.item_id)} />
                                 </Col>
                                 <Col span={7}>
                                   <InputNumber style={{ width: '100%' }} min={0}
@@ -1862,11 +1858,6 @@ function ProductionOrdersTab({
                             ))}
                           </>
                         )}
-                        <p style={{ color: '#888', marginTop: 12 }}>
-                          {receiving.state === 'in_progress'
-                            ? 'الخامات اتصرفت خلاص وقت البدء — الإقفال بيضيف الباقي للمخزن ويحسب التكلفة.'
-                            : 'الأمر ده ماصرفش خاماته لسه — الإقفال هيصرفها ويضيف الإنتاج مرة واحدة.'}
-                        </p>
                         <div style={{ textAlign: 'left' }}>
                           <Button type="primary" onClick={submitClose}>إقفال وترحيل</Button>
                         </div>

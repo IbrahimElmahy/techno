@@ -462,7 +462,7 @@ def _replace(db: Session, current: CurrentUser, voucher_id: int, kind: VoucherKi
         own = db.get(Voucher, voucher_id)
         if own is not None and current.id not in (own.actor_user_id, own.rep_user_id):
             raise HTTPException(status.HTTP_403_FORBIDDEN,
-                                {"code": "forbidden", "message": "السند ده مش بتاعك."})
+                                {"code": "forbidden", "message": "هذا السند ليس لك."})
     try:
         v = voucher_service.replace_voucher(
             db, voucher_id=voucher_id, kind=kind, editor_user_id=current.id,
@@ -814,7 +814,7 @@ def get_voucher(
         v = None
     if v is None or not branch_scope.visible(current, [v]):
         raise HTTPException(status.HTTP_404_NOT_FOUND,
-                            {"code": "not_found", "message": "السند مش موجود."})
+                            {"code": "not_found", "message": "السند غير موجود."})
     return _out(v)
 
 
@@ -823,7 +823,7 @@ def customer_statement(
     customer_id: int,
     date_from: date | None = Query(default=None),
     date_to: date | None = Query(default=None),
-    family: str | None = Query(default=None, description="أبيض / بولي — سيبها فاضية تجيب الكل"),
+    family: str | None = Query(default=None, description="أبيض / بولي — اتركها فارغة لعرض الكل"),
     _: CurrentUser = Depends(require_capability(CAP_VOUCHER_READ)),
     db: Session = Depends(get_db),
 ) -> StatementOut:
@@ -839,7 +839,7 @@ def customer_statement(
         if not chosen:
             raise HTTPException(status.HTTP_404_NOT_FOUND,
                                 {"code": "not_found",
-                                 "message": f"العميل مالوش حساب لـ«{family}»"})
+                                 "message": f"ليس للعميل حساب لـ«{family}»"})
     else:
         chosen = accounts
 
@@ -918,7 +918,7 @@ def account_group_statement(
         members = [a for a in members if a.branch_id in (bid, None)]
     if not members:
         raise HTTPException(status.HTTP_404_NOT_FOUND,
-                            {"code": "not_found", "message": "المجموعة دي مافيهاش حسابات"})
+                            {"code": "not_found", "message": "لا توجد حسابات في هذه المجموعة"})
 
     ids = [a.id for a in members]
     s = statement_service.account_statement(
@@ -935,7 +935,7 @@ def any_account_statement(
     date_from: date | None = Query(default=None),
     date_to: date | None = Query(default=None),
     all_customer_accounts: bool = Query(
-        default=False, description="حساب عميل؟ هات كل حساباته (أبيض/بولي) في كشف واحد"),
+        default=False, description="حساب عميل؟ اعرض كل حساباته (أبيض/بولي) في كشف واحد"),
     _: CurrentUser = Depends(require_capability(CAP_VOUCHER_READ)),
     db: Session = Depends(get_db),
 ) -> StatementOut:

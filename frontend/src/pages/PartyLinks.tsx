@@ -31,7 +31,7 @@ function Net({ v }: { v: string | number }) {
   return (
     <Space size={4}>
       <b dir="ltr" style={{ color: n > 0 ? '#cf1322' : n < 0 ? '#389e0d' : undefined }}>{fmt(Math.abs(n))}</b>
-      {n !== 0 && <Tag color={n > 0 ? 'red' : 'green'}>{n > 0 ? 'عليه' : 'ليه'}</Tag>}
+      {n !== 0 && <Tag color={n > 0 ? 'red' : 'green'}>{n > 0 ? 'عليه' : 'له'}</Tag>}
     </Space>
   );
 }
@@ -95,13 +95,13 @@ export default function PartyLinks() {
       ...(v.supplier_ids || []).map((id: number) => ({ kind: 'supplier', ref_id: id })),
     ];
     if (members.length < 2) {
-      message.error('اختار كارتين على الأقل');
+      message.error('اختر كارتين على الأقل');
       return;
     }
     setSaving(true);
     try {
       await link(members, v.name);
-      message.success('اتربطوا');
+      message.success('تم الربط');
       setLinkOpen(false);
       load();
     } catch {} finally {
@@ -112,7 +112,7 @@ export default function PartyLinks() {
   const linkSuggestion = async (s: Suggestion) => {
     try {
       await link([{ kind: 'customer', ref_id: s.customer.ref_id }, { kind: 'supplier', ref_id: s.supplier.ref_id }]);
-      message.success(`اتربط «${s.name}»`);
+      message.success(`تم ربط «${s.name}»`);
       load();
     } catch {}
   };
@@ -125,14 +125,14 @@ export default function PartyLinks() {
         n += 1;
       } catch {}
     }
-    message.success(`اتربط ${n} طرف`);
+    message.success(`تم ربط ${n} طرف`);
     load();
   };
 
   const unlink = async (g: Group, m: Member) => {
     try {
       await api.delete(`/api/v1/party-groups/${g.id}/members/${m.kind}/${m.ref_id}`);
-      message.success('اتفك');
+      message.success('تم فك الارتباط');
       load();
     } catch {}
   };
@@ -165,7 +165,7 @@ export default function PartyLinks() {
         family: v.family || undefined, description: v.description || undefined,
         entry_date: v.entry_date ? v.entry_date.format('YYYY-MM-DD') : undefined,
       });
-      message.success('اتسجّلت المقاصة');
+      message.success('تم تسجيل المقاصة');
       setNetGroup(null);
       load();
     } catch {} finally {
@@ -191,7 +191,7 @@ export default function PartyLinks() {
         <div>{g.members.map((m) => (
           <span key={`${m.kind}-${m.ref_id}`} style={{ display: 'inline-flex', alignItems: 'center' }}>
             <MemberTag m={m} />
-            <Popconfirm title={`فك «${m.name}» من الطرف؟`} okText="فك" cancelText="إلغاء"
+            <Popconfirm title={`فك ارتباط «${m.name}» بالطرف؟`} okText="فك" cancelText="إلغاء"
               onConfirm={() => unlink(g, m)}>
               <Button type="text" size="small" icon={<DisconnectOutlined />} style={{ marginInlineEnd: 6 }} />
             </Popconfirm>
@@ -200,7 +200,7 @@ export default function PartyLinks() {
       ) },
     { title: 'عليه كعميل', dataIndex: 'owes_us', key: 'owes', width: 130, align: 'right' as const,
       render: (v: string) => <span dir="ltr">{fmt(v)}</span> },
-    { title: 'ليه كمورد', dataIndex: 'we_owe', key: 'owe', width: 130, align: 'right' as const,
+    { title: 'له كمورد', dataIndex: 'we_owe', key: 'owe', width: 130, align: 'right' as const,
       render: (v: string) => <span dir="ltr">{fmt(v)}</span> },
     { title: 'الصافي', dataIndex: 'net', key: 'net', width: 150, align: 'right' as const,
       render: (v: string) => <Net v={v} /> },
@@ -220,7 +220,7 @@ export default function PartyLinks() {
     { title: 'كمورد', key: 's', render: (_: any, s: Suggestion) => <MemberTag m={s.supplier} /> },
     { title: '', key: 'act', width: 90,
       render: (_: any, s: Suggestion) => (
-        <Button size="small" type="primary" icon={<LinkOutlined />} onClick={() => linkSuggestion(s)}>اربط</Button>
+        <Button size="small" type="primary" icon={<LinkOutlined />} onClick={() => linkSuggestion(s)}>ربط</Button>
       ) },
   ];
 
@@ -228,9 +228,8 @@ export default function PartyLinks() {
     <ListPage<'linked' | 'suggest'>
       icon={<TeamOutlined />}
       title="الأطراف المرتبطة"
-      subtitle="عميل ومورد (أو موظف/فرع) هما نفس الشخص — أرصدته كلها والصافي، والمقاصة بينهم"
       tabs={[
-        { key: 'linked', label: 'المرتبطين', count: groups.length },
+        { key: 'linked', label: 'المرتبطون', count: groups.length },
         { key: 'suggest', label: 'اقتراحات', count: suggs.length, dot: suggs.length ? '#faad14' : undefined },
       ]}
       activeTab={tab === 'suggest' ? 'suggest' : 'linked'}
@@ -238,18 +237,18 @@ export default function PartyLinks() {
       summary={tab !== 'suggest' ? (
         <>
           <ListStat label="عليهم كعملاء" value={fmt(totals.owes)} />
-          <ListStat label="ليهم كموردين" value={fmt(totals.owe)} />
+          <ListStat label="لهم كموردين" value={fmt(totals.owe)} />
           <ListStat label="الصافي" value={fmt(Math.abs(totals.owes - totals.owe))}
             tone={totals.owes - totals.owe > 0 ? 'neg' : 'pos'}
-            hint={totals.owes - totals.owe > 0 ? 'عليهم' : 'ليهم'} />
+            hint={totals.owes - totals.owe > 0 ? 'عليهم' : 'لهم'} />
         </>
       ) : undefined}
       actions={(
         <>
           <Button type="primary" icon={<LinkOutlined />} onClick={openLink}>ربط كروت</Button>
           {tab === 'suggest' && suggs.length > 0 && (
-            <Popconfirm title={`ربط الـ${suggs.length} اقتراح كلهم؟`} okText="اربط" cancelText="إلغاء" onConfirm={linkAll}>
-              <Button>اربط الكل</Button>
+            <Popconfirm title={`ربط جميع الاقتراحات (${suggs.length})؟`} okText="ربط" cancelText="إلغاء" onConfirm={linkAll}>
+              <Button>ربط الكل</Button>
             </Popconfirm>
           )}
           <Button icon={<ReloadOutlined />} onClick={load}>تحديث</Button>
@@ -263,17 +262,17 @@ export default function PartyLinks() {
         <Table<Suggestion> className="sl-table" size="small" loading={loading}
           rowKey={(s) => `${s.customer.ref_id}-${s.supplier.ref_id}`}
           dataSource={suggs} columns={suggCols as any} pagination={false}
-          locale={{ emptyText: <Empty description="مافيش عميل ومورد بنفس الاسم مش مربوطين" /> }} />
+          locale={{ emptyText: <Empty description="لا يوجد عميل ومورد بالاسم نفسه غير مرتبطين" /> }} />
       ) : (
         <Table<Group> className="sl-table" size="small" loading={loading} rowKey="id"
           dataSource={shown} columns={groupCols as any} pagination={false}
-          locale={{ emptyText: <Empty description="مافيش أطراف مرتبطة — شوف «اقتراحات» أو «ربط كروت»" /> }} />
+          locale={{ emptyText: <Empty description="لا توجد أطراف مرتبطة" /> }} />
       )}
 
-      <Modal open={linkOpen} title="ربط كروت في طرف واحد" okText="اربط" cancelText="إلغاء"
+      <Modal open={linkOpen} title="ربط كروت في طرف واحد" okText="ربط" cancelText="إلغاء"
         confirmLoading={saving} onCancel={() => setLinkOpen(false)} onOk={saveLink} destroyOnClose>
         <Form form={linkForm} layout="vertical">
-          <Form.Item name="name" label="اسم الطرف" extra="فاضي = اسم أول كارت">
+          <Form.Item name="name" label="اسم الطرف">
             <Input />
           </Form.Item>
           <Form.Item name="customer_ids" label="كروت العملاء / الموظفين / الفروع">
@@ -289,25 +288,21 @@ export default function PartyLinks() {
 
       <Modal open={netGroup !== null} title={`مقاصة — ${netGroup?.name || ''}`} okText="تسجيل المقاصة"
         cancelText="إلغاء" confirmLoading={saving} onCancel={() => setNetGroup(null)} onOk={saveNetting} destroyOnClose>
-        <p style={{ color: '#595959' }}>
-          اللي عليه كعميل بيتخصم من اللي ليه كمورد — قيد واحد من غير فلوس (مدين المورد، دائن العميل).
-        </p>
         <Form form={netForm} layout="vertical">
           <Form.Item name="customer_id" label="من رصيده كعميل" rules={[{ required: true }]}>
             <Select options={(netGroup?.members || []).filter((m) => m.kind === 'customer')
               .map((m) => ({ value: m.ref_id, label: `${m.name} — عليه ${fmt(m.balance)}` }))} />
           </Form.Item>
           {netLines.length >= 2 && (
-            <Form.Item name="family" label="على أنهي حساب؟" rules={[{ required: true, message: 'اختار الحساب' }]}>
+            <Form.Item name="family" label="على أي حساب؟" rules={[{ required: true, message: 'اختر الحساب' }]}>
               <Segmented options={netLines.map((l) => ({ value: l.family as string, label: `${l.family} (${fmt(l.balance)})` }))} />
             </Form.Item>
           )}
           <Form.Item name="supplier_id" label="مقابل رصيده كمورد" rules={[{ required: true }]}>
             <Select options={(netGroup?.members || []).filter((m) => m.kind === 'supplier')
-              .map((m) => ({ value: m.ref_id, label: `${m.name} — ليه ${fmt(m.balance)}` }))} />
+              .map((m) => ({ value: m.ref_id, label: `${m.name} — له ${fmt(m.balance)}` }))} />
           </Form.Item>
-          <Form.Item name="amount" label="المبلغ" rules={[{ required: true, message: 'اكتب المبلغ' }]}
-            extra="مايعديش أقل الرصيدين">
+          <Form.Item name="amount" label="المبلغ" rules={[{ required: true, message: 'أدخل المبلغ' }]}>
             <InputNumber min={0.01} style={{ width: '100%' }} dir="ltr" />
           </Form.Item>
           <Form.Item name="entry_date" label="التاريخ"><DatePicker style={{ width: '100%' }} format="YYYY/MM/DD" /></Form.Item>

@@ -74,7 +74,7 @@ class PeriodChips extends StatelessWidget {
       firstDate: DateTime(2020),
       lastDate: DateTime(now.year, now.month, now.day),
       initialDateRange: DateTimeRange(start: period.from, end: period.to),
-      helpText: 'اختار الفترة',
+      helpText: 'اختر الفترة',
       saveText: 'تم',
     );
     if (r != null) onChanged(SupPeriod.of(PeriodPreset.custom, range: r));
@@ -134,9 +134,9 @@ bool isOfflineError(Object e) =>
     e is SocketException || e is TimeoutException || e is http.ClientException;
 
 String friendlyError(Object e) {
-  if (isOfflineError(e)) return 'مافيش اتصال بالسيرفر';
+  if (isOfflineError(e)) return 'لا يوجد اتصال بالخادم';
   if (e is ApiException) return e.message;
-  return 'حصل خطأ: $e';
+  return 'حدث خطأ: $e';
 }
 
 class OnlineErrorView extends StatelessWidget {
@@ -173,8 +173,8 @@ class OnlineErrorView extends StatelessWidget {
           const SizedBox(height: 6),
           Text(
             offline
-                ? 'المتابعة محتاجة نت — اتأكد إنه شغّال وجرّب تاني.'
-                : 'جرّب تاني بعد شوية، ولو فضلت كلّم الدعم.',
+                ? 'المتابعة تتطلب اتصالاً بالإنترنت — تأكد من الاتصال وحاول مرة أخرى.'
+                : 'حاول مرة أخرى بعد قليل، وإذا استمرت المشكلة فتواصل مع الدعم.',
             textAlign: TextAlign.center,
             style: TextStyle(fontSize: 13.5, color: Colors.grey.shade600),
           ),
@@ -189,7 +189,7 @@ class OnlineErrorView extends StatelessWidget {
             FilledButton.icon(
               onPressed: onRetry,
               icon: const Icon(Icons.refresh),
-              label: const Text('حاول تاني'),
+              label: const Text('حاول مرة أخرى'),
             ),
         ],
       ),

@@ -38,12 +38,12 @@ def _branch(current: CurrentUser, requested: int | None) -> int:
     if branch_scope.sees_all_branches(current):
         branch = requested if requested is not None else branch_scope.visible_branch_id(current)
         if branch is None:
-            raise HTTPException(422, {"code": "validation", "message": "اختار الفرع."})
+            raise HTTPException(422, {"code": "validation", "message": "اختر الفرع."})
         return branch
     if requested is not None and requested != current.branch_id:
         raise HTTPException(404, {"code": "not_found", "message": "الفرع غير موجود."})
     if current.branch_id is None:
-        raise HTTPException(422, {"code": "validation", "message": "اختار الفرع."})
+        raise HTTPException(422, {"code": "validation", "message": "اختر الفرع."})
     return current.branch_id
 
 

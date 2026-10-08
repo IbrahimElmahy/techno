@@ -22,7 +22,7 @@ extension on _Kind {
         _Kind.white => 'أبيض',
         _Kind.poly => 'بولي',
         _Kind.both => 'على الخطين',
-        _Kind.credit => 'ليهم فلوس',
+        _Kind.credit => 'لهم رصيد دائن',
       };
 }
 
@@ -119,7 +119,7 @@ class _DebtsScreenState extends State<DebtsScreen> {
                     controller: _search,
                     onChanged: (_) => setState(() {}),
                     decoration: InputDecoration(
-                      hintText: 'دوّر باسم العميل',
+                      hintText: 'ابحث باسم العميل',
                       prefixIcon: const Icon(Icons.search),
                       suffixIcon: _search.text.isEmpty
                           ? null
@@ -157,9 +157,8 @@ class _DebtsScreenState extends State<DebtsScreen> {
                             padding: const EdgeInsets.all(24),
                             child: Text(
                                 _all.isEmpty
-                                    ? 'مافيش عملاء على الجهاز.\n'
-                                        'افتح «مزامنة البيانات» واعمل مزامنة.'
-                                    : 'مافيش عميل بالمواصفات دي.',
+                                    ? 'لا يوجد عملاء على الجهاز.'
+                                    : 'لا يوجد عميل بهذه المواصفات.',
                                 textAlign: TextAlign.center,
                                 style: const TextStyle(color: Colors.black54)),
                           ),
@@ -208,7 +207,7 @@ class _DebtsScreenState extends State<DebtsScreen> {
                   fontSize: 16,
                   fontWeight: FontWeight.w800,
                   color: t > _eps ? AppColors.danger : AppColors.success)),
-          Text(t > _eps ? 'عليه' : 'ليه',
+          Text(t > _eps ? 'عليه' : 'له',
               style: const TextStyle(fontSize: 10, color: Colors.black45)),
         ],
       ),

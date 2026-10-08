@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { searchFilter, searchRank, sortByName } from '../utils/arabicSort';
 import {
-  Alert, Button, Card, Col, Empty, Form, Input, Row, Select, Space, Switch, Tag, Tooltip, message,
+  Alert, Button, Card, Col, Empty, Form, Input, Row, Select, Space, Switch, Tag, message,
 } from 'antd';
 import { InputNumber } from '../components/NumberInput';
 import { Popconfirm } from '../components/noConfirm';
@@ -71,12 +71,12 @@ function SideFields({
         const main: string | undefined = form.getFieldValue(`${side}_main`);
         const subs = subsOf(main);
         const why = !main ? 'اختر الحساب الرئيسي أولاً'
-          : subs.length === 0 ? 'الحساب ده مافيهوش حسابات فرعية' : null;
+          : subs.length === 0 ? 'لا توجد حسابات فرعية لهذا الحساب' : null;
         return (
           <>
             <Form.Item name={`${side}_main`} label={title}
               style={{ marginBottom: 6 }}
-              rules={[{ required: true, message: `اختار ${title}` }]}>
+              rules={[{ required: true, message: `اختر ${title}` }]}>
               <Select showSearch options={mainOptions}
                 placeholder={`${hint} — الحساب الرئيسي`}
                 onChange={() => {
@@ -87,7 +87,7 @@ function SideFields({
             <Form.Item name={`${side}_sub`} style={{ marginBottom: 14 }}>
               <Select showSearch allowClear options={subs}
                 disabled={!!why}
-                placeholder={why || 'حساب فرعي (اختياري) — سيبه فاضي للربط على الرئيسي'}
+                placeholder={why || 'حساب فرعي (اختياري)'}
                 onChange={onChange} filterOption={searchFilter} filterSort={searchRank}/>
             </Form.Item>
           </>
@@ -214,7 +214,7 @@ export default function VoucherKeys() {
       };
       if (editing?.id) await api.put(`/api/v1/voucher-keys/${editing.id}`, body);
       else await api.post('/api/v1/voucher-keys', body);
-      message.success(editing?.id ? 'المفتاح اتعدّل' : 'تم إنشاء المفتاح');
+      message.success(editing?.id ? 'تم تعديل المفتاح' : 'تم إنشاء المفتاح');
       setEditing(null);
       load();
     } catch (err: any) {
@@ -227,10 +227,10 @@ export default function VoucherKeys() {
   const remove = async (k: VoucherKey) => {
     try {
       await api.delete(`/api/v1/voucher-keys/${k.id}`);
-      message.success('المفتاح اتشال');
+      message.success('تم حذف المفتاح');
       load();
     } catch (err: any) {
-      message.error(err?.response?.data?.detail?.message || 'تعذّر شيل المفتاح');
+      message.error(err?.response?.data?.detail?.message || 'تعذّر حذف المفتاح');
     }
   };
 
@@ -287,7 +287,6 @@ export default function VoucherKeys() {
       icon={<KeyOutlined />}
       title="مفاتيح خاصة"
       muted={manage ? '(وضع الإعداد)' : undefined}
-      subtitle="سندات جاهزة بضغطة — الحسابين محفوظين في المفتاح"
       actions={(<>
         {manage && (
           <Button data-shortcut="F2" type="primary" className="sl-create" icon={<PlusOutlined />}
@@ -297,7 +296,7 @@ export default function VoucherKeys() {
         )}
         <Button icon={<SettingOutlined />} type={manage ? 'primary' : 'default'}
           onClick={() => setManage(!manage)}>
-          {manage ? 'خلصت إعداد' : 'إعداد المفاتيح'}
+          {manage ? 'إنهاء الإعداد' : 'إعداد المفاتيح'}
         </Button>
         <Button icon={<ReloadOutlined />} onClick={load} loading={loading}>تحديث</Button>
       </>)}
@@ -309,16 +308,10 @@ export default function VoucherKeys() {
       </>)}
     >
       <div style={{ padding: '8px 0 12px' }}>
-      <Alert
-        type="info" showIcon style={{ marginBottom: 12 }}
-        message="كل مفتاح ربط بين حسابين رئيسيين — اضغط عليه واكتب المبلغ فقط."
-        description="اتجاه الربط هو ما يحدد نوع السند: مدين الخزينة ودائن العملاء يعني سند قبض، والعكس نوع آخر. ويُرحَّل السند كأي سند يُكتب يدوياً."
-      />
-
       {!loading && !shown.length && (
         <Empty description={keys.length
           ? 'لا يوجد مفتاح مطابق للبحث'
-          : 'لا توجد مفاتيح بعد — اضغط «إعداد المفاتيح» وابدأ بواحد'} />
+          : 'لا توجد مفاتيح بعد'} />
       )}
 
       <Row gutter={[12, 12]}>
@@ -347,9 +340,8 @@ export default function VoucherKeys() {
                   <Button size="small" icon={<EditOutlined />}
                     onClick={(e) => { e.stopPropagation(); openEditor(k); }}>تعديل</Button>
                   <Popconfirm
-                    title="تشيل المفتاح؟"
-                    description="السندات المنشأة منه لا تتأثر — كل سند مستند قائم بذاته."
-                    okText="شيله" cancelText="سيبه"
+                    title="حذف المفتاح؟"
+                    okText="حذف" cancelText="إلغاء"
                      onConfirm={() => remove(k)}
                    >
                      <Button size="small" danger icon={<DeleteOutlined />} />
@@ -386,9 +378,7 @@ export default function VoucherKeys() {
             mainOptions={mainOptions} subsOf={subsOf} form={form} onChange={refreshPreview} />
 
           <div style={{ textAlign: 'center', marginBottom: 8 }}>
-            <Tooltip title="بدّل المدين بالدائن — الاتجاه بيغيّر نوع السند">
-              <Button size="small" icon={<SwapOutlined />} onClick={swapSides}>عكس الاتجاه</Button>
-            </Tooltip>
+            <Button size="small" icon={<SwapOutlined />} onClick={swapSides}>عكس الاتجاه</Button>
           </div>
 
           <SideFields
@@ -400,19 +390,19 @@ export default function VoucherKeys() {
               type="success" showIcon style={{ marginBottom: 12 }}
               message={(
                 <Space>
-                  المفتاح ده هيعمل
+                  هذا المفتاح سينشئ
                   <Tag color={KIND_COLORS[preview.voucher_kind]}>
                     {KIND_LABELS[preview.voucher_kind] || preview.voucher_kind}
                   </Tag>
                 </Space>
               )}
               description={preview.asks.length
-                ? `هيسأل عن: ${preview.asks.map((a) => ({
+                ? `سيطلب: ${preview.asks.map((a) => ({
                   customer: 'العميل', supplier: 'المورد', rep: 'المندوب',
                   debit_account: 'الحساب المدين تحت المجموعة',
                   credit_account: 'الحساب الدائن تحت المجموعة',
                 } as Record<string, string>)[a] || a).join('، ')} — والمبلغ`
-                : 'لن يسأل إلا عن المبلغ.'}
+                : 'لن يطلب سوى المبلغ.'}
             />
           )}
 
@@ -423,18 +413,17 @@ export default function VoucherKeys() {
               { value: 'cheque', label: 'شيك' },
             ]} />
           </Form.Item>
-          <Form.Item name="family" label="العيلة (اختياري)"
-            tooltip="إن كان هذا المفتاح لخط منتجات بعينه — اتركها فارغة ليسري السند على كامل المديونية">
+          <Form.Item name="family" label="العائلة (اختياري)">
             <Input placeholder="أبيض / بولي" />
           </Form.Item>
           <Form.Item name="description" label="البيان الجاهز (اختياري)">
-            <Input placeholder="بيتكتب في السند وينفع يتعدّل وقت الترحيل" />
+            <Input placeholder="البيان" />
           </Form.Item>
           <Space size="large">
             <Form.Item name="sort_order" label="الترتيب">
               <InputNumber min={0} />
             </Form.Item>
-            <Form.Item name="active" label="شغّال" valuePropName="checked">
+            <Form.Item name="active" label="مفعّل" valuePropName="checked">
               <Switch />
             </Form.Item>
           </Space>

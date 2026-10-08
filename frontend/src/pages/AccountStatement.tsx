@@ -439,7 +439,7 @@ export default function AccountStatement() {
     { label: 'اليوم', get: () => [dayjs(), dayjs()] },
     { label: 'الأمس', get: () => [dayjs().subtract(1, 'day'), dayjs().subtract(1, 'day')] },
     { label: 'آخر ٧ أيام', get: () => [dayjs().subtract(6, 'day'), dayjs()] },
-    { label: 'الشهر ده', get: () => [dayjs().startOf('month'), dayjs()] },
+    { label: 'هذا الشهر', get: () => [dayjs().startOf('month'), dayjs()] },
     {
       label: 'الشهر الماضي',
       get: () => [
@@ -447,7 +447,7 @@ export default function AccountStatement() {
         dayjs().subtract(1, 'month').endOf('month'),
       ],
     },
-    { label: 'السنة دي', get: () => [dayjs().startOf('year'), dayjs()] },
+    { label: 'هذه السنة', get: () => [dayjs().startOf('year'), dayjs()] },
   ];
   const fullRange = (): [Dayjs, Dayjs] | null =>
     (range && range[0] && range[1] ? [range[0], range[1]] : null);
@@ -486,9 +486,9 @@ export default function AccountStatement() {
   const copyLink = async () => {
     try {
       await navigator.clipboard.writeText(window.location.href);
-      message.success('نُسخ رابط الكشف بالفلاتر كما هي — أرسله لمن يريد فتحه');
+      message.success('تم نسخ رابط الكشف');
     } catch {
-      message.error('المتصفح رفض النسخ — انسخ العنوان من شريط العناوين');
+      message.error('تعذر النسخ — انسخ العنوان من شريط العناوين');
     }
   };
 
@@ -993,7 +993,7 @@ export default function AccountStatement() {
             {rows.map((m) => (
               <div key={m.line_id} style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
                 <Tag color={m.full ? 'green' : 'orange'} style={{ margin: 0 }}>
-                  {m.full ? 'مقفول' : 'جزئي'}
+                  {m.full ? 'مُقفل' : 'جزئي'}
                 </Tag>
                 <span style={{ color: '#8c8c8c' }}>{String(m.entry_date || '').slice(0, 10)}</span>
                 <span>{m.entry_number || (m.entry_type ? entryTypeLabel(m.entry_type) : '—')}</span>
@@ -1154,9 +1154,6 @@ export default function AccountStatement() {
       icon={<FileSearchOutlined />}
       title={isItem ? 'كشف صنف' : 'كشف حساب'}
       muted={statement?.account_name ? `(${statement.account_name})` : undefined}
-      subtitle={isItem
-        ? 'حركة الصنف داخل وخارج برصيده قبل وبعد كل حركة'
-        : 'حركات الحساب برصيدها قبل وبعد كل سطر — أو كشف مجمّع لحساب رئيسي'}
       tabs={[
         { key: 'account', label: 'كشف حساب' },
         { key: 'item', label: 'كشف صنف' },
@@ -1270,7 +1267,7 @@ export default function AccountStatement() {
             setShowStock(on);
             if (!on) setExpandedKeys([]);
           }}>
-            حركة مخزنية — فرد أصناف كل المستندات
+            حركة مخزنية — عرض أصناف كل المستندات
           </Checkbox>
           <span style={{ marginInlineStart: 'auto', color: '#8c8c8c' }}>تجميع:</span>
           <Select size="small" style={{ width: 170 }} value={groupMode}
@@ -1282,7 +1279,7 @@ export default function AccountStatement() {
               ...(multiScope ? [{ value: 'account' as const, label: 'بالحساب الفرعي' }] : []),
             ]} />
           {groupMode === 'account' && sections.length > 1 && (<>
-            <Button size="small" onClick={() => setOpenSections(sections.map((s) => s.key))}>فرد الكل</Button>
+            <Button size="small" onClick={() => setOpenSections(sections.map((s) => s.key))}>توسيع الكل</Button>
             <Button size="small" onClick={() => setOpenSections([])}>طي الكل</Button>
           </>)}
         </>)}
@@ -1290,7 +1287,7 @@ export default function AccountStatement() {
 
       {((isItem && !itemId) || (!isItem && !accountId && !mainKey)) && (
         <Empty style={{ padding: '32px 0' }} description={isItem ? 'اختر صنفاً لعرض كشفه'
-          : 'اختر حساباً — أو حساباً رئيسياً فقط لكشف مجمّع لكل ما تحته'} />
+          : 'اختر حساباً أو حساباً رئيسياً'} />
       )}
 
       {statement && (
@@ -1336,7 +1333,7 @@ export default function AccountStatement() {
               {Number(aging?.credit_open || 0) > 0 && (
                 <span style={{ fontSize: 14, color: '#8c8c8c' }}>
                   مطلوب <b>{num(aging?.debit_open || 0)}</b> ·
-                  دفعات لسه ماتخصمتش من فاتورة <b>{num(aging?.credit_open || 0)}</b> ·
+                  دفعات لم تُخصم بعد من فاتورة <b>{num(aging?.credit_open || 0)}</b> ·
                   الصافي هو المستحق
                 </span>
               )}

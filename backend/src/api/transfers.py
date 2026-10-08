@@ -204,7 +204,7 @@ def self_approve(
 ) -> TransferOut:
     t = db.get(StockTransfer, transfer_id)
     if t is None:
-        raise HTTPException(404, {"code": "not_found", "message": "إذن التحويل مش موجود"})
+        raise HTTPException(404, {"code": "not_found", "message": "إذن التحويل غير موجود"})
     if t.status != TransferStatus.pending or not _may_approve_now(db, current, t):
         return _out(t)
     sees_all = branch_scope.sees_all_branches(current)
@@ -219,7 +219,7 @@ def self_approve(
                             {"code": "transfer_conflict", "message": str(exc)})
     except Exception:  # noqa: BLE001
         db.rollback()
-        log.exception("self-approve %s وقع — الإذن اتساب معلّق", transfer_id)
+        log.exception("self-approve %s فشل — بقي الإذن معلّقاً", transfer_id)
         t = db.get(StockTransfer, transfer_id)
     return _out(t)
 
@@ -272,7 +272,7 @@ def get_transfer(
 ) -> TransferOut:
     t = db.get(StockTransfer, transfer_id)
     if t is None or not branch_scope.may_see(current, t):
-        raise HTTPException(404, {"code": "not_found", "message": "إذن التحويل مش موجود."})
+        raise HTTPException(404, {"code": "not_found", "message": "إذن التحويل غير موجود."})
     return _out(t)
 
 
@@ -285,7 +285,7 @@ def delete_transfer(
     try:
         transfer_service.delete(db, transfer_id=transfer_id, actor_user_id=current.id)
     except (TransferError, StockError) as exc:
-        code = 404 if "مش موجود" in str(exc) else status.HTTP_409_CONFLICT
+        code = 404 if any(s in str(exc) for s in ("مش موجود", "غير موجود")) else status.HTTP_409_CONFLICT
         raise HTTPException(code, {"code": "transfer_conflict", "message": str(exc)})
     db.commit()
 
@@ -316,7 +316,7 @@ def update_transfer_texts(
 ) -> TransferOut:
     t = db.get(StockTransfer, transfer_id)
     if t is None or not branch_scope.may_see(current, t):
-        raise HTTPException(404, {"code": "not_found", "message": "إذن التحويل مش موجود."})
+        raise HTTPException(404, {"code": "not_found", "message": "إذن التحويل غير موجود."})
     try:
         transfer_service.set_texts(
             db, transfer_id=transfer_id, values=body.model_dump(exclude_unset=True),
