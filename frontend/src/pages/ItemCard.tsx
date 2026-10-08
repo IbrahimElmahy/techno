@@ -130,10 +130,42 @@ export default function ItemCard() {
   useEffect(() => { if (askedItem) setItemId(askedItem); }, [askedItem]);
 
   useEffect(() => {
-    Promise.all([api.get('/api/v1/items'), api.get('/api/v1/warehouses')])
-      .then(([i, w]) => { setItems(i.data || []); setWarehouses(w.data || []); })
-      .catch(console.error);
+    api.get('/api/v1/warehouses').then((w) => setWarehouses(w.data || [])).catch(console.error);
   }, []);
+
+  /**
+   * **أصناف فرع المخزن المختار بس** (٢٠٢٦-١٠-٠٨). الكتالوج مشترك بين الفروع وفيه أسامي
+   * مكررة حرفياً (كارت العلياء وكارت أكتوبر لنفس الحاجة)، فالمالك اللي شايف الفروع كلها
+   * كان بيختار «ماسورة ٢٥» بتاعة العلياء ويفتحها على مخزن أكتوبر — والكارت يطلع فاضي
+   * وكأن الصنف مااتحركش. أول ما المخزن يتحدد، القايمة بتبقى كتالوج فرعه، والصنف
+   * المختار بيتبدّل بتوأمه اللي بنفس الاسم في الفرع ده.
+   */
+  const whBranch = warehouses.find((w) => w.id === warehouseId)?.branch_id as number | undefined;
+  useEffect(() => {
+    api.get('/api/v1/items', { params: whBranch ? { branch_id: whBranch } : {} })
+      .then((r) => {
+        const list: any[] = r.data || [];
+        setItems((prev) => {
+          if (itemId && !list.some((i) => i.id === itemId)) {
+            const old = prev.find((i) => i.id === itemId);
+            const twin = old && list.find((i) => (i.name || '').trim() === (old.name || '').trim());
+            setItemId(twin ? twin.id : undefined);
+          }
+          return list;
+        });
+      })
+      .catch(console.error);
+  }, [whBranch]);
+
+  /** فرع الصنف من بادئة كوده — نفس قاعدة النقل: `AL-` العلياء، `FC-` السادات، والباقي أكتوبر. */
+  const branchOfCode = (code?: string | null) => (!code ? '' : code.startsWith('AL-') ? 'العلياء'
+    : code.startsWith('FC-') ? 'السادات' : 'أكتوبر');
+  /** الأسامي اللي متكررة في القايمة — دي بس اللي بيتكتب جنبها الفرع. */
+  const dupNames = useMemo(() => {
+    const seen = new Map<string, number>();
+    items.forEach((i: any) => seen.set((i.name || '').trim(), (seen.get((i.name || '').trim()) || 0) + 1));
+    return new Set([...seen].filter(([, n]) => n > 1).map(([k]) => k));
+  }, [items]);
 
   /** الطرفين مع بعض، أو `null` — الفترة النص مالهاش معنى هنا. */
   const fullRange = (): [Dayjs, Dayjs] | null =>
@@ -353,7 +385,9 @@ export default function ItemCard() {
             placeholder={category ? `أصناف «${categoryLabels[category] || category}»` : 'اختر الصنف'}
             value={itemId} onChange={setItemId}
             options={pickableItems.map((i: any) => ({
-              value: i.id, label: i.name, search: i.code || '' }))}
+              value: i.id,
+              label: dupNames.has((i.name || '').trim()) ? `${i.name} — ${branchOfCode(i.code)}` : i.name,
+              search: i.code || '' }))}
             notFoundContent={category ? 'مافيش صنف بالاسم ده في الفئة دي' : undefined} filterOption={searchFilter} filterSort={searchRank}/>
           <Select showSearch
             allowClear placeholder="كل المواقع"

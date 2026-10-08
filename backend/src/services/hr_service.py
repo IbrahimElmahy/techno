@@ -265,8 +265,18 @@ def delete_employee(db: Session, *, employee: Employee, actor_user_id: int) -> N
     found = _blockers(db, "employee", employee.id)
     if employee.user_id is not None:
         found.insert(0, "حساب دخول (مستخدم أو مندوب)")
+    # حساب الذمة **بيمنع بس لو عليه حركة.** موظفين a5 كلهم ليهم حساب ذمة اتعمل مع النقل حتى لو
+    # عمره ما اتقيد عليه حاجة، فكان المسح بيترفض لكل موظف منقول (٢٠٢٦-١٠-٠٨). الحساب الفاضي
+    # بيتفك من الموظف ويفضل في الشجرة — مزامنة a5 بتشاور عليه بكوده.
     if employee.receivable_account_id is not None:
-        found.insert(0, "حساب ذمة في الدفتر")
+        from sqlalchemy import func as _f
+        from sqlalchemy import select as _sel
+
+        from src.models.ledger import LedgerLine
+        n_lines = db.scalar(_sel(_f.count()).select_from(LedgerLine).where(
+            LedgerLine.account_id == employee.receivable_account_id)) or 0
+        if n_lines:
+            found.insert(0, f"حساب ذمة عليه {n_lines} حركة في الدفتر")
     if found:
         raise HrError("الموظف ده مربوط بيه " + " · ".join(found[:6])
                       + " — فمينفعش يتمسح. استعمل «إيقاف» بدل المسح.")
