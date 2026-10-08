@@ -337,10 +337,15 @@ def _tree_nodes(db: Session, totals: dict[int, Decimal], natures: set) -> list[d
     accounts = {a.id: a for a in db.scalars(select(Account)).all()}
     nodes: dict[int, dict] = {}
 
+    type_names = {"customer_receivable": "ذمم عملاء", "supplier_payable": "ذمم موردين",
+                  "opening_balance_equity": "أرصدة افتتاحية"}
+
     def node(acc: Account) -> dict:
         n = nodes.get(acc.id)
         if n is None:
             code, name = _label(acc)
+            if not acc.name:
+                name = type_names.get(acc.account_type.value, name)
             n = {"account_id": acc.id, "code": code, "name": name, "amount": ZERO,
                  "children": [], "_kids": {}, "parent_id": acc.parent_id}
             nodes[acc.id] = n
@@ -367,9 +372,10 @@ def _tree_nodes(db: Session, totals: dict[int, Decimal], natures: set) -> list[d
         roots[child["account_id"]] = child
 
     def finish(n: dict) -> dict:
-        kids = [finish(k) for k in n["_kids"].values() if k["amount"] != ZERO]
+        raw = [k for k in n["_kids"].values() if k["amount"] != ZERO]
+        own = n["amount"] - sum((k["amount"] for k in raw), ZERO)
+        kids = [finish(k) for k in raw]
         kids.sort(key=lambda k: (k["code"] or "", k["name"] or ""))
-        own = n["amount"] - sum((k["amount"] for k in kids), ZERO)
         if kids and own != ZERO:
             kids.insert(0, {"account_id": n["account_id"], "code": n["code"],
                             "name": f"{n['name']} (مباشر)", "amount": str(to_money(own)),
