@@ -77,7 +77,6 @@ from src.models.hr_leave import LeaveEntitlement, LeaveRequest, LeaveType  # noq
 from src.models.hr_payroll_run import (  # noqa: E402
     PayrollLine, PayrollLineDetail, PayrollRemittance, PayrollRun,
 )
-from src.models import hr_payroll_sheet  # noqa: E402,F401
 from src.models.hr_advance import (  # noqa: E402
     EmployeeAdvance, EmployeeAdvanceInstalment, PayrollAdjustment,
 )
@@ -90,7 +89,7 @@ from src.models.hr_attendance import (  # noqa: E402
 from src.models.owner import Owner  # noqa: E402
 from src.models.draft import DocumentDraft  # noqa: E402
 from src.models import fleet  # noqa: E402,F401
-from src.models import hr_commission  # noqa: E402,F401
+from src.models import hr_salary  # noqa: E402,F401
 from src.models import period_closing  # noqa: E402,F401
 
 __all__ = [

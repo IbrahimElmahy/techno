@@ -61,7 +61,7 @@ export const REPORT_VIEWS: Record<string, HrReportView> = {
   'leave-movement': { label: 'حركة الأجازات', subject: 'leave', level: 'detail', groupBy: 'none' },
   'leave-by-type': { label: 'الأجازات بالنوع', subject: 'leave', level: 'summary', groupBy: 'status' },
   'leave-balances': { label: 'كشف أرصدة الأجازات', subject: 'leave_balance', level: 'detail', groupBy: 'none' },
-  'payroll-sheet': { label: 'مسير المرتبات', subject: 'payroll', level: 'detail', groupBy: 'none' },
+  'payroll-sheet': { label: 'كشف المرتبات', subject: 'payroll', level: 'detail', groupBy: 'none' },
   'payroll-by-month': { label: 'المرتبات شهرياً', subject: 'payroll', level: 'summary', groupBy: 'month' },
   'cost-by-component': { label: 'تكلفة الأجور بالبند', subject: 'cost', level: 'summary', groupBy: 'component' },
   'cost-by-department': { label: 'تكلفة الأجور بالقسم', subject: 'cost', level: 'summary', groupBy: 'department' },

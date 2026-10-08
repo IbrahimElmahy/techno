@@ -44,7 +44,7 @@ from src.api import (
     owners,
     insurance,
     payroll_setup,
-    payroll_sheet,
+    salary,
     permissions,
     points,
     price_display,
@@ -210,10 +210,8 @@ def create_app() -> FastAPI:
     app.include_router(payroll_setup.router, prefix=prefix)
     app.include_router(advances.router, prefix=prefix)
     app.include_router(insurance.router, prefix=prefix)
-    app.include_router(payroll_sheet.router, prefix=prefix)
+    app.include_router(salary.router, prefix=prefix)
     app.include_router(hr_reports.router, prefix=prefix)
-    from src.api import hr_commissions as _hr_commissions
-    app.include_router(_hr_commissions.router, prefix=prefix)
     app.include_router(ops_reports.router, prefix=prefix)
     app.include_router(orders.router, prefix=prefix)
     app.include_router(coupon_receipts.router, prefix=prefix)
@@ -327,6 +325,13 @@ _ADDED_INDEXES: list[tuple[str, str, str]] = [
 
 
 _ADDED_COLUMNS: list[tuple[str, str, str]] = [
+    ("payroll_line", "commission", "DECIMAL(18,2)"),
+    ("payroll_line", "commission_base", "DECIMAL(18,2)"),
+    ("payroll_line", "commission_override", "DECIMAL(18,2)"),
+    ("payroll_line", "absent_override", "DECIMAL(18,3)"),
+    ("payroll_line", "extra_earning", "DECIMAL(18,2)"),
+    ("payroll_line", "extra_deduction", "DECIMAL(18,2)"),
+    ("payroll_line", "notes", "VARCHAR(300)"),
     ("bom_component", "stage", "VARCHAR(16)"),
     ("production_order_material", "stage", "VARCHAR(16)"),
     ("production_order_product", "received_quantity", "DECIMAL(18,3) NOT NULL DEFAULT 0"),

@@ -15,16 +15,15 @@ from src.models.hr_payroll import (
     SalaryComponent,
 )
 from src.models.hr_payroll_run import PayrollLine, PayrollRun, PayrollRunStatus
-from src.models.hr_payroll_sheet import PayrollSheetCell, PayrollSheetGroup, PayrollSheetRow
 from src.services import audit_service
 
 LEGACY_COMPONENT = "تأمينات"
 
 STATUS_LABELS = {
     PayrollRunStatus.draft: "مسودة",
-    PayrollRunStatus.closed: "معتمد",
+    PayrollRunStatus.closed: "مسودة",
     PayrollRunStatus.posted: "مرحّل",
-    PayrollRunStatus.reversed: "معكوس",
+    PayrollRunStatus.reversed: "ملغى",
 }
 
 
@@ -47,24 +46,13 @@ def amount_on(db: Session, employee_id: int, day: date) -> EmployeeInsurance | N
 
 
 def _insurance_cells(db: Session, employee_id: int) -> list[tuple]:
-    out = []
-    for run, sg, row in db.execute(
-        select(PayrollRun, PayrollSheetGroup, PayrollSheetRow)
-        .join(PayrollSheetRow, PayrollSheetRow.run_id == PayrollRun.id)
-        .join(PayrollSheetGroup, PayrollSheetGroup.id == PayrollSheetRow.sheet_group_id)
-        .where(PayrollSheetRow.employee_id == employee_id)
+    return db.execute(
+        select(PayrollRun, PayrollLine)
+        .join(PayrollLine, PayrollLine.run_id == PayrollRun.id)
+        .where(PayrollLine.employee_id == employee_id)
         .order_by(PayrollRun.year.desc(), PayrollRun.month.desc(),
                   PayrollRun.reversal_seq.desc())
-    ).all():
-        keys = [c["key"] for c in (sg.columns or []) if c.get("source") == "insurance"]
-        if not keys:
-            continue
-        cell = db.scalar(select(PayrollSheetCell).where(
-            PayrollSheetCell.row_id == row.id, PayrollSheetCell.col_key == keys[0]))
-        if cell is None:
-            continue
-        out.append((run, cell))
-    return out
+    ).all()
 
 
 def _posted_months(db: Session, employee_id: int) -> list[tuple[int, int]]:
@@ -162,22 +150,19 @@ def history(db: Session, employee_id: int) -> dict:
     months = []
     seen: set[tuple[int, int]] = set()
     total = ZERO
-    for run, cell in _insurance_cells(db, employee_id):
+    for run, line in _insurance_cells(db, employee_id):
         if run.status == PayrollRunStatus.reversed and (run.year, run.month) in seen:
             continue
         seen.add((run.year, run.month))
-        value = to_money(Decimal(str(cell.override if cell.override is not None
-                                     else cell.computed or 0)))
-        paid = db.scalar(select(PayrollLine.paid).where(
-            PayrollLine.run_id == run.id, PayrollLine.employee_id == employee_id))
+        value = to_money(Decimal(str(line.insurance_employee or 0)))
         if run.status == PayrollRunStatus.posted:
             total += value
         months.append({
             "year": run.year, "month": run.month, "run_id": run.id,
             "document_number": run.document_number, "status": run.status.value,
             "status_label": STATUS_LABELS.get(run.status, run.status.value),
-            "amount": str(value), "manual": cell.override is not None,
-            "salary_paid": bool(paid),
+            "amount": str(value), "manual": False,
+            "salary_paid": bool(line.paid),
         })
     return {
         "employee_id": employee_id,

@@ -85,16 +85,7 @@ def _in_window(when: date, date_from: date | None, date_to: date | None) -> bool
 def compute(
     db: Session, *, date_from: date | None = None, date_to: date | None = None,
     rep_user_id: int | None = None,
-    branch_id: int | None = None, year: int | None = None, month: int | None = None,
-    absences: dict | None = None,
 ):
-    if year is not None or month is not None or branch_id is not None:
-        from src.services import hr_commission_service
-
-        if branch_id is None or year is None or month is None:
-            raise CommissionError("تتطلب عمولات المرتبات تحديد الفرع والسنة والشهر.")
-        return hr_commission_service.compute(db, branch_id=branch_id, year=year, month=month,
-                                             absences=absences)
     reps = db.scalars(
         select(User).join(Role, User.role_id == Role.id)
         .where(Role.name == RoleName.sales_rep)

@@ -117,6 +117,13 @@ class PayrollLine(Base):
         ForeignKey("ledger_entry.id"), nullable=True
     )
     paid_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    commission: Mapped[object | None] = mapped_column(MONEY, nullable=True)
+    commission_base: Mapped[object | None] = mapped_column(MONEY, nullable=True)
+    commission_override: Mapped[object | None] = mapped_column(MONEY, nullable=True)
+    absent_override: Mapped[object | None] = mapped_column(QTY, nullable=True)
+    extra_earning: Mapped[object | None] = mapped_column(MONEY, nullable=True)
+    extra_deduction: Mapped[object | None] = mapped_column(MONEY, nullable=True)
+    notes: Mapped[str | None] = mapped_column(String(300), nullable=True)
 
 
 class DetailSource(str, enum.Enum):
@@ -128,6 +135,8 @@ class DetailSource(str, enum.Enum):
     advance = "advance"
     insurance = "insurance"
     tax = "tax"
+    commission = "commission"
+    manual = "manual"
 
 
 class DetailKind(str, enum.Enum):
