@@ -57,6 +57,7 @@ export default function RatioProduction() {
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [entryOpen, setEntryOpen] = useState(false);
+  const [viewId, setViewId] = useState<number | null>(null);
 
   const [date, setDate] = useState<Dayjs>(dayjs());
   const [outWh, setOutWh] = useState<number | undefined>();
@@ -201,7 +202,7 @@ export default function RatioProduction() {
     onOk: async () => {
       try {
         await api.post(`/api/v1/manufacturing/production-orders/${o.id}/reverse`);
-        message.success('تم التراجع'); load();
+        message.success('تم التراجع'); setViewId(null); load();
       } catch (e: any) { message.error(e?.response?.data?.detail?.message || 'تعذر التراجع'); }
     },
   });
@@ -236,7 +237,7 @@ export default function RatioProduction() {
     { title: 'ملاحظات', dataIndex: 'statement1', key: 's', ellipsis: true, render: (v: string | null) => v || '-' },
     { title: '', key: 'a', width: 80,
       render: (_: unknown, r: PO) => (
-        <Space size={0}>
+        <Space size={0} onClick={(e) => e.stopPropagation()}>
           <DocumentHistoryButton iconOnly entityType="production_order" entityId={r.id}
             documentNumber={r.document_number} />
           {r.state === 'done' && !r.reversed && !r.is_reversal && (
@@ -352,6 +353,91 @@ export default function RatioProduction() {
     );
   }
 
+  const viewing = viewId != null ? orders.find((o) => o.id === viewId) : undefined;
+  if (viewing) {
+    const list = filter.filtered;
+    const idx = list.findIndex((o) => o.id === viewing.id);
+    const prev = idx > 0 ? list[idx - 1] : undefined;
+    const next = idx >= 0 && idx < list.length - 1 ? list[idx + 1] : undefined;
+    const matTotal = viewing.materials.reduce((t, m) => t + Number(m.line_cost || 0), 0);
+    const field = (label: string, value: React.ReactNode) => (
+      <Col xs={12} md={4}>
+        <div style={{ fontSize: 13, color: '#64748b' }}>{label}</div>
+        <div style={{ fontWeight: 700, minHeight: 24 }}>{value || '-'}</div>
+      </Col>
+    );
+    return (
+      <div className="sale-doc">
+        <div className="sale-card sale-head">
+          <div className="sale-head-row">
+            <Button size="small" icon={<ArrowRightOutlined />} onClick={() => setViewId(null)}>رجوع للسجل</Button>
+            <span className="sale-title"><BuildOutlined /> اذن انتاج {viewing.external_document_number || shortDoc(viewing.document_number)}</span>
+            {viewing.reversed && <Tag color="red">متراجع</Tag>}
+            {viewing.is_reversal && <Tag color="orange">تراجع</Tag>}
+            <div className="sale-toolbar-row">
+              <Button disabled={!prev} onClick={() => prev && setViewId(prev.id)}>السابق</Button>
+              <Button disabled={!next} onClick={() => next && setViewId(next.id)}>التالي</Button>
+              <DocumentHistoryButton entityType="production_order" entityId={viewing.id}
+                documentNumber={viewing.document_number} />
+              {viewing.state === 'done' && !viewing.reversed && !viewing.is_reversal && (
+                <Button danger icon={<RollbackOutlined />} onClick={() => reverse(viewing)}>تراجع</Button>
+              )}
+            </div>
+          </div>
+        </div>
+        <div className="sale-form">
+          <div className="sale-card">
+            <Row gutter={[12, 12]}>
+              {field('التاريخ', viewing.production_date ? viewing.production_date.slice(0, 10) : '')}
+              {field('رقم الانتاج', viewing.external_document_number)}
+              {field('رقم المستند الورقي', viewing.paper_number)}
+              {field('مستند النظام', shortDoc(viewing.document_number))}
+              <Col xs={24} md={8}>
+                <div style={{ fontSize: 13, color: '#64748b' }}>ملاحظات</div>
+                <div style={{ fontWeight: 700, minHeight: 24 }}>{viewing.statement1 || '-'}</div>
+              </Col>
+            </Row>
+          </div>
+
+          <div className="sale-card">
+            <div style={{ fontWeight: 800, marginBottom: 8 }}>المنتجات</div>
+            <Table size="small" pagination={false} rowKey="id" dataSource={viewing.products}
+              columns={[
+                { title: '#', width: 50, render: (_: unknown, __: unknown, i: number) => i + 1 },
+                { title: 'المنتج', render: (_: unknown, x: POProduct) => <b>{itemOf(x.item_id)?.name ?? x.item_id}</b> },
+                { title: 'الكمية', width: 180, render: (_: unknown, x: POProduct) => unitText(Number(x.quantity), itemOf(x.item_id)?.unit_of_measure) },
+                { title: 'مخزن الإنتاج', width: 200, render: (_: unknown, x: POProduct) => whName(x.warehouse_id) },
+                { title: 'تكلفة الوحدة', width: 130, align: 'left' as const, render: (_: unknown, x: POProduct) => money(x.unit_cost) },
+                { title: 'الإجمالي', width: 140, align: 'left' as const, render: (_: unknown, x: POProduct) => <b>{money(x.total_cost)}</b> },
+              ]} />
+          </div>
+
+          <div className="sale-card">
+            <div style={{ fontWeight: 800, marginBottom: 8 }}>الخامات المصروفة</div>
+            <Table size="small" pagination={false} rowKey="id" dataSource={viewing.materials}
+              locale={{ emptyText: 'لا توجد خامات' }}
+              columns={[
+                { title: '#', width: 50, render: (_: unknown, __: unknown, i: number) => i + 1 },
+                { title: 'المنتج', width: '24%', render: (_: unknown, m: POMaterial) => {
+                  const p = viewing.products.find((x) => x.id === m.product_line_id);
+                  return <span style={{ color: '#475569' }}>{p ? itemOf(p.item_id)?.name : '-'}</span>;
+                } },
+                { title: 'الخامة', render: (_: unknown, m: POMaterial) => <b>{itemOf(m.item_id)?.name ?? m.item_id}</b> },
+                { title: 'الكمية', width: 180, render: (_: unknown, m: POMaterial) => unitText(Number(m.quantity), itemOf(m.item_id)?.unit_of_measure) },
+                { title: 'المخزن', width: 200, render: (_: unknown, m: POMaterial) => whName(m.warehouse_id) },
+                { title: 'التكلفة', width: 140, align: 'left' as const, render: (_: unknown, m: POMaterial) => money(m.line_cost) },
+              ]} />
+            <div style={{ marginTop: 10, display: 'flex', gap: 24, flexWrap: 'wrap' }}>
+              <span>اجمالي خامات: <b>{money(matTotal)}</b></span>
+              <span>مصروفات: <b>{money(viewing.expense_amount || 0)}</b></span>
+              <span>اجمالي منتجات: <b>{money(viewing.total_cost)}</b></span>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <ListPage
       icon={<BuildOutlined />} title="انتاج حسب النسب"
@@ -369,20 +455,7 @@ export default function RatioProduction() {
     >
       <Table className="sl-table" size="small" rowKey="id" loading={loading} tableLayout="fixed"
         dataSource={filter.filtered} columns={listCols.columns}
-        expandable={{
-          expandRowByClick: true,
-          expandedRowRender: (r: PO) => (
-            <Table size="small" pagination={false} rowKey="id"
-              dataSource={[...r.products.map((p) => ({ ...p, kind: 'p' })), ...r.materials.map((m) => ({ ...m, kind: 'm' }))]}
-              columns={[
-                { title: '', width: 70, render: (_: unknown, x: any) => (x.kind === 'p' ? <Tag color="green">إنتاج</Tag> : <Tag>خامة</Tag>) },
-                { title: 'الصنف', render: (_: unknown, x: any) => itemOf(x.item_id)?.name ?? x.item_id },
-                { title: 'الكمية', width: 160, render: (_: unknown, x: any) => unitText(Number(x.quantity), itemOf(x.item_id)?.unit_of_measure) },
-                { title: 'المخزن', width: 180, render: (_: unknown, x: any) => whName(x.warehouse_id) },
-                { title: 'التكلفة', width: 130, align: 'left' as const, render: (_: unknown, x: any) => money(x.kind === 'p' ? x.total_cost : x.line_cost) },
-              ]} />
-          ),
-        }}
+        onRow={(r: PO) => ({ onClick: () => setViewId(r.id), style: { cursor: 'pointer' } })}
         pagination={{
           defaultPageSize: PAGE_SIZE, showSizeChanger: true, pageSizeOptions: PAGE_SIZE_OPTIONS,
           locale: { items_per_page: '' },
