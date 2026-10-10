@@ -694,7 +694,7 @@ interface POProduct {
 }
 interface ProductionOrder {
   id: number; document_number: string; production_date: string | null;
-  branch_id: number | null; external_document_number: string | null;
+  branch_id: number | null; external_document_number: string | null; paper_number?: string | null;
   statement1: string | null; notes: string | null; state: POState; reviewed: boolean;
   material_cost: string; expense_amount: string; total_cost: string;
   planned_quantity: string; product_quantity: string; material_quantity: string;
@@ -809,6 +809,8 @@ function ProductionOrdersTab({
   const [productionDate, setProductionDate] = useState<any>(null);
   const [branchId, setBranchId] = useState<number | undefined>();
   const [externalRef, setExternalRef] = useState('');
+  const [paperRef, setPaperRef] = useState('');
+  const fillNext = React.useRef(false);
   const [statement, setStatement] = useState('');
   const [notes, setNotes] = useState('');
   const [lines, setLines] = useState<DraftProduct[]>([]);
@@ -869,7 +871,12 @@ function ProductionOrdersTab({
 
   const resetForm = () => {
     setEditingId(null); setProductionDate(null); setBranchId(undefined);
-    setExternalRef(''); setStatement(''); setNotes(''); setLines([]); setFormTab('work');
+    setExternalRef(''); setPaperRef(''); setStatement('');
+    fillNext.current = true;
+    api.get('/api/v1/manufacturing/production-orders/next-number')
+      .then((res) => { if (fillNext.current) setExternalRef((cur) => cur || res.data?.next || ''); })
+      .catch(() => {});
+    setNotes(''); setLines([]); setFormTab('work');
   };
 
   const refreshBoms = () => {
@@ -908,7 +915,9 @@ function ProductionOrdersTab({
     setEditingId(r.id);
     setProductionDate(r.production_date ? dayjs(r.production_date) : null);
     setBranchId(r.branch_id ?? undefined);
+    fillNext.current = false;
     setExternalRef(r.external_document_number || '');
+    setPaperRef(r.paper_number || '');
     setStatement(r.statement1 || '');
     setNotes(r.notes || '');
     setLines(r.products.map((p) => ({
@@ -1076,6 +1085,7 @@ function ProductionOrdersTab({
     production_date: productionDate ? productionDate.format('YYYY-MM-DD') : undefined,
     branch_id: orderBranch ?? undefined,
     external_document_number: externalRef || undefined,
+    paper_number: paperRef || undefined,
     statement1: statement || undefined,
     notes: notes || undefined,
     products: lines.map((ln) => ({
@@ -1247,8 +1257,10 @@ function ProductionOrdersTab({
       ) },
     { title: 'التاريخ', dataIndex: 'production_date', key: 'date', width: 115,
       render: (d: string | null) => d || '-' },
-    { title: 'رقم الورقة', dataIndex: 'external_document_number', key: 'ext', width: 125,
-      render: (v: string | null, r: ProductionOrder) => (r.imported_from ? '—' : v || '-') },
+    { title: 'رقم الانتاج', dataIndex: 'external_document_number', key: 'ext', width: 110,
+      render: (v: string | null) => (v ? <b>{v}</b> : '-') },
+    { title: 'رقم المستند الورقي', dataIndex: 'paper_number', key: 'paper', width: 120,
+      render: (v: string | null) => v || '-' },
     { title: 'الفرع', key: 'branch', width: 120,
       render: (_: any, r: ProductionOrder) => branchName(r.branch_id) },
     { title: 'المنتجات', key: 'np', width: 85,
@@ -1361,7 +1373,7 @@ function ProductionOrdersTab({
       </>)}
       filters={(<>
         <Input.Search className="sl-f-search" allowClear
-          placeholder="بحث برقم المستند أو رقم الورقة أو البيان"
+          placeholder="بحث برقم الانتاج أو المستند الورقي أو البيان"
           value={query} onChange={(e) => setQuery(e.target.value)}
           onSearch={() => { setPage(1); load(); }} />
         <Select allowClear placeholder="الحالة" value={stateFilter}
@@ -1504,9 +1516,14 @@ function ProductionOrdersTab({
               options={branchChoices.map((b) => ({ value: b.id, label: b.name }))} placeholder="الفرع" />
           </Col>
           <Col span={8}>
-            <div style={{ marginBottom: 4 }}>رقم الورقة</div>
+            <div style={{ marginBottom: 4 }}>رقم الانتاج</div>
             <Input value={externalRef} onChange={(e) => setExternalRef(e.target.value)}
-              maxLength={40} placeholder="رقم الورقة" />
+              maxLength={40} placeholder="رقم الانتاج" />
+          </Col>
+          <Col span={8}>
+            <div style={{ marginBottom: 4 }}>رقم المستند الورقي</div>
+            <Input value={paperRef} onChange={(e) => setPaperRef(e.target.value)}
+              maxLength={40} placeholder="اختياري" />
           </Col>
         </Row>
 

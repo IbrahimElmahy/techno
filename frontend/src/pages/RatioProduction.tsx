@@ -31,7 +31,7 @@ interface POProduct { id: number; item_id: number; warehouse_id: number | null; 
 interface POMaterial { id: number; product_line_id: number | null; item_id: number; warehouse_id: number | null; quantity: string; line_cost: string }
 interface PO {
   id: number; document_number: string; production_date: string | null; state: string;
-  external_document_number: string | null; statement1: string | null; notes: string | null;
+  external_document_number: string | null; paper_number?: string | null; statement1: string | null; notes: string | null;
   total_cost: string; expense_amount: string; product_quantity: string; imported_from: string | null;
   reversed: boolean; is_reversal: boolean; products: POProduct[]; materials: POMaterial[];
 }
@@ -59,6 +59,7 @@ export default function RatioProduction() {
   const [date, setDate] = useState<Dayjs>(dayjs());
   const [outWh, setOutWh] = useState<number | undefined>();
   const [docNo, setDocNo] = useState('');
+  const [paperNo, setPaperNo] = useState('');
   const [statement, setStatement] = useState('');
   const [lines, setLines] = useState<ProdLine[]>([]);
   const seq = useRef(0);
@@ -139,8 +140,12 @@ export default function RatioProduction() {
     l.key !== lk ? l : { ...l, materials: l.materials.map((m) => (m.key === mk ? { ...m, ...patch } : m)) })));
 
   const addProduct = () => setLines((p) => [...p, { key: nextKey(), quantity: null, materials: [] }]);
-  const reset = () => { setLines([{ key: nextKey(), quantity: null, materials: [] }]); setDocNo(''); setStatement(''); };
-  const openEntry = () => { reset(); setDate(dayjs()); setEntryOpen(true); };
+  const reset = () => { setLines([{ key: nextKey(), quantity: null, materials: [] }]); setDocNo(''); setPaperNo(''); setStatement(''); };
+  const openEntry = () => {
+    reset(); setDate(dayjs()); setEntryOpen(true);
+    api.get('/api/v1/manufacturing/production-orders/next-number')
+      .then((r) => setDocNo((cur) => cur || r.data?.next || '')).catch(() => {});
+  };
 
   const matRows = lines.flatMap((l) => l.materials.map((m) => ({ ...m, lineKey: l.key, product_id: l.product_id })));
   const estCost = matRows.reduce((s, m) => s + (m.quantity || 0) * Number(itemOf(m.item_id)?.purchase_price || 0), 0);
@@ -161,6 +166,7 @@ export default function RatioProduction() {
       await api.post('/api/v1/manufacturing/production-orders', {
         production_date: date.format('YYYY-MM-DD'),
         external_document_number: docNo || null,
+        paper_number: paperNo || null,
         statement1: statement || null,
         execute: true,
         products: filled.map((l) => ({
@@ -199,7 +205,7 @@ export default function RatioProduction() {
   });
 
   const filter = useListFilter<PO>(orders, {
-    search: (o) => [o.document_number, o.external_document_number, o.statement1,
+    search: (o) => [o.document_number, o.external_document_number, o.paper_number, o.statement1,
       ...o.products.map((p) => itemOf(p.item_id)?.name)],
     filters: { statement: (o, v) => matchesStatement(o, v) },
     dateOf: (o) => o.production_date,
@@ -208,15 +214,18 @@ export default function RatioProduction() {
 
   const listColumns = [
     { title: 'التاريخ', dataIndex: 'production_date', key: 'd', width: 105, render: (v: string | null) => (v ? v.slice(0, 10) : '-') },
-    { title: 'مستند رقم', dataIndex: 'document_number', key: 'n', width: 170,
-      render: (d: string, r: PO) => (
-        <Space size={4} wrap>
-          <Tag color="geekblue">{d}</Tag>
+    { title: 'رقم الانتاج', dataIndex: 'external_document_number', key: 'x', width: 100,
+      render: (v: string | null) => (v ? <b>{v}</b> : '-') },
+    { title: 'رقم المستند الورقي', dataIndex: 'paper_number', key: 'pp', width: 120, render: (v: string | null) => v || '-' },
+    { title: 'الحالة', key: 'st', width: 90,
+      render: (_: unknown, r: PO) => (
+        <Space size={2} wrap>
           {r.reversed && <Tag color="red">متراجع</Tag>}
           {r.is_reversal && <Tag color="orange">تراجع</Tag>}
           {r.imported_from === 'a5' && <Tag>a5</Tag>}
         </Space>) },
-    { title: 'رقم الانتاج', dataIndex: 'external_document_number', key: 'x', width: 100, render: (v: string | null) => v || '-' },
+    { title: 'مستند النظام', dataIndex: 'document_number', key: 'n', width: 120, ellipsis: true,
+      render: (d: string) => <span style={{ fontSize: 12, color: '#64748b' }}>{d}</span> },
     { title: 'المنتجات', key: 'p', ellipsis: true,
       render: (_: unknown, r: PO) => r.products.map((p) => `${itemOf(p.item_id)?.name ?? p.item_id} (${fmtQty(Number(p.quantity))})`).join(' · ') },
     { title: 'اجمالي خامات', key: 'm', width: 120, align: 'left' as const,
@@ -265,11 +274,16 @@ export default function RatioProduction() {
                 </Form.Item>
               </Col>
               <Col xs={12} md={4}>
-                <Form.Item label="امر تشغيل" style={{ marginBottom: 0 }}>
-                  <Input value={docNo} onChange={(e) => setDocNo(e.target.value)} />
+                <Form.Item label="رقم الانتاج" style={{ marginBottom: 0 }}>
+                  <Input value={docNo} maxLength={40} onChange={(e) => setDocNo(e.target.value)} />
                 </Form.Item>
               </Col>
-              <Col xs={24} md={10}>
+              <Col xs={12} md={4}>
+                <Form.Item label="رقم المستند الورقي" style={{ marginBottom: 0 }}>
+                  <Input value={paperNo} maxLength={40} placeholder="اختياري" onChange={(e) => setPaperNo(e.target.value)} />
+                </Form.Item>
+              </Col>
+              <Col xs={24} md={6}>
                 <Form.Item label="ملاحظات" style={{ marginBottom: 0 }}>
                   <Input value={statement} maxLength={200} placeholder="اختياري" onChange={(e) => setStatement(e.target.value)} />
                 </Form.Item>

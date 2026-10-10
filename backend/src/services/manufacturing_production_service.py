@@ -181,6 +181,7 @@ def create_order(
     production_date: date | None = None,
     branch_id: int | None = None,
     external_document_number: str | None = None,
+    paper_number: str | None = None,
     statement1: str | None = None,
     notes: str | None = None,
     reviewed: bool = False,
@@ -190,6 +191,7 @@ def create_order(
         document_number=_doc_number(db),
         production_date=production_date or date.today(), branch_id=branch_id,
         external_document_number=(external_document_number or None),
+        paper_number=(paper_number or None),
         statement1=(statement1 or None), notes=(notes or None), reviewed=bool(reviewed),
         state=ProductionState.draft,
         material_cost=ZERO, expense_amount=ZERO, total_cost=ZERO,
@@ -219,7 +221,7 @@ def update_order(db: Session, *, order_id: int, products, actor_user_id: int, **
             "بدأ الأمر وصُرفت خاماته — أغلقه وسجّل الناتج، أو اعكسه وأنشئ غيره.")
     if order.state not in (ProductionState.draft, ProductionState.confirmed):
         raise ProductionOrderError("لا يمكن تعديل الأمر المنفّذ — اعكسه وأنشئ غيره.")
-    for field in ("production_date", "branch_id", "external_document_number",
+    for field in ("production_date", "branch_id", "external_document_number", "paper_number",
                   "statement1", "notes", "reviewed"):
         if field in header:
             setattr(order, field, header[field])
@@ -520,6 +522,7 @@ def list_orders(db: Session, *, search: str | None = None, branch_id: int | None
         q = f"%{search.strip()}%"
         stmt = stmt.where(ProductionOrder.document_number.ilike(q)
                           | ProductionOrder.external_document_number.ilike(q)
+                          | ProductionOrder.paper_number.ilike(q)
                           | ProductionOrder.statement1.ilike(q)
                           | ProductionOrder.notes.ilike(q))
     if statement and statement.strip():
@@ -606,6 +609,7 @@ def reverse_order(db: Session, *, order_id: int, actor_user_id: int) -> Producti
         document_number=_doc_number(db), production_date=date.today(),
         branch_id=original.branch_id,
         external_document_number=original.external_document_number,
+        paper_number=original.paper_number,
         statement1=f"عكس {original.document_number}", notes=original.notes,
         state=ProductionState.done,
         material_cost=original.material_cost, expense_amount=original.expense_amount,

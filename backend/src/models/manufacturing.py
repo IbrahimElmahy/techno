@@ -117,6 +117,7 @@ class ProductionOrder(Base):
     branch_id: Mapped[int | None] = mapped_column(ForeignKey("branch.id"), nullable=True, index=True)
     external_document_number: Mapped[str | None] = mapped_column(
         String(40), nullable=True, index=True)
+    paper_number: Mapped[str | None] = mapped_column(String(40), nullable=True)
     statement1: Mapped[str | None] = mapped_column(String(200), nullable=True)
     notes: Mapped[str | None] = mapped_column(String(500), nullable=True)
     state: Mapped[ProductionState] = mapped_column(

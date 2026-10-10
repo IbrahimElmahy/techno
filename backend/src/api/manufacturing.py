@@ -4,6 +4,7 @@ from datetime import date
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy import BigInteger as _BigInt
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
@@ -488,6 +489,7 @@ class POIn(BaseModel):
     production_date: date | None = None
     branch_id: int | None = None
     external_document_number: str | None = Field(default=None, max_length=40)
+    paper_number: str | None = Field(default=None, max_length=40)
     statement1: str | None = Field(default=None, max_length=200)
     notes: str | None = Field(default=None, max_length=500)
     reviewed: bool = False
@@ -538,6 +540,7 @@ class POOut(BaseModel):
     production_date: date | None
     branch_id: int | None
     external_document_number: str | None
+    paper_number: str | None = None
     statement1: str | None
     notes: str | None
     state: str
@@ -560,6 +563,7 @@ def _po_out(o, rev_ids: set[int]) -> POOut:
     return POOut(
         id=o.id, document_number=o.document_number, production_date=o.production_date,
         branch_id=o.branch_id, external_document_number=o.external_document_number,
+        paper_number=getattr(o, "paper_number", None),
         statement1=o.statement1, notes=o.notes, state=o.state.value, reviewed=o.reviewed,
         material_cost=o.material_cost, expense_amount=o.expense_amount,
         total_cost=o.total_cost, planned_quantity=o.planned_quantity,
@@ -655,6 +659,25 @@ def recipe_plan(
     return RecipePlanOut(product_id=product_id, bom_id=bom.id if bom else None, materials=out)
 
 
+@router.get("/production-orders/next-number")
+def next_production_number(
+    current: CurrentUser = Depends(require_capability(CAP_MANUFACTURE_READ)),
+    db: Session = Depends(get_db),
+) -> dict:
+    from sqlalchemy import func as _f
+    from sqlalchemy import select as _s
+
+    from src.models.manufacturing import ProductionOrder
+
+    stmt = _s(_f.max(_f.cast(ProductionOrder.external_document_number, _BigInt))).where(
+        ProductionOrder.external_document_number.op("~")(r"^[0-9]{1,15}$"))
+    mine = branch_scope.visible_branch_id(current)
+    if mine is not None:
+        stmt = stmt.where(ProductionOrder.branch_id == mine)
+    top = db.scalar(stmt)
+    return {"next": str((top or 0) + 1)}
+
+
 @router.get("/production-orders")
 def list_production_orders(
     search: str | None = None,
@@ -702,6 +725,7 @@ def create_production_order(
             production_date=body.production_date,
             branch_id=_own_branch(current, body.branch_id),
             external_document_number=body.external_document_number,
+            paper_number=body.paper_number,
             statement1=body.statement1, notes=body.notes, reviewed=body.reviewed,
             execute=body.execute)
     except (ProductionOrderError, ManufacturingError, StockError) as exc:
@@ -724,6 +748,7 @@ def update_production_order(
             production_date=body.production_date,
             branch_id=_own_branch(current, body.branch_id),
             external_document_number=body.external_document_number,
+            paper_number=body.paper_number,
             statement1=body.statement1, notes=body.notes, reviewed=body.reviewed)
     except (ProductionOrderError, ManufacturingError, StockError) as exc:
         raise _conflict(exc)
