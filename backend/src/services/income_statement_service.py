@@ -99,6 +99,7 @@ DEFAULT_CONFIG: dict = {
         "coupon_base": 73.4, "coupon_base_pct": 90,
         "coupon_item_id": None, "coupon_item_name": "كوع بسن داخلى 25×20",
         "coupon_item_tier": "sale_price", "coupon_discount_pct": 10,
+        "gold_coupon_points": 30,
         "ratio_num": 2, "ratio_den": 30,
         "coupon_cost": 180,
         "sales_coupons_source": "issued", "sales_coupons_manual": 0,
@@ -523,6 +524,37 @@ def coupon_price_item(db: Session, m: dict) -> dict | None:
     return None
 
 
+def coupon_item_points(db: Session, m: dict, coupon_item: dict | None) -> Decimal | None:
+    from src.models.loyalty import ProductPointValue
+
+    ids: list[int] = []
+    if coupon_item is not None:
+        ids.append(coupon_item["id"])
+    if m.get("coupon_item_name"):
+        from src.lib.arabic import western_digits
+
+        def key(text: str) -> str:
+            return norm(western_digits(text) or "").replace("x", "×").replace("*", "×")
+
+        wanted = key(m["coupon_item_name"])
+        ids += [i.id for i in db.scalars(select(Item).where(Item.active.is_(True))).all()
+                if key(i.name) == wanted and i.id not in ids]
+    for iid in ids:
+        v = db.scalar(select(ProductPointValue.point_value).where(ProductPointValue.item_id == iid))
+        if v is not None and D(v) > 0:
+            return D(v)
+    return None
+
+
+def gold_coupon_type(db: Session):
+    from src.models.loyalty import CouponType
+
+    for ct in db.scalars(select(CouponType).where(CouponType.active.is_(True))).all():
+        if "ذهب" in norm(ct.name):
+            return ct
+    return None
+
+
 def _pct(part: Decimal, whole: Decimal) -> str | None:
     return str((part / whole * 100).quantize(Decimal("0.01"))) if whole else None
 
@@ -646,8 +678,14 @@ def build(db: Session, *, branch_id: int | None, date_from: date, date_to: date,
         coupon_price = D(m.get("coupon_base"))
         coupon_unit = coupon_price * D(m.get("coupon_base_pct")) / 100
     bonus_coupons = bonus_value / coupon_unit if coupon_unit else ZERO
-    ratio_den = D(m.get("ratio_den"))
-    ratio_coupons = bonus_coupons * D(m.get("ratio_num")) / ratio_den if ratio_den else ZERO
+    item_points = coupon_item_points(db, m, coupon_item)
+    ratio_num = item_points if item_points is not None else D(m.get("ratio_num"))
+    gold = gold_coupon_type(db)
+    if gold is not None and gold.point_cost:
+        ratio_den, den_source = D(gold.point_cost), f"من «أنواع الكوبونات»: {gold.name}"
+    else:
+        ratio_den, den_source = D(m.get("gold_coupon_points") or m.get("ratio_den")), "من الإعدادات"
+    ratio_coupons = bonus_coupons * ratio_num / ratio_den if ratio_den else ZERO
     src_sc = m.get("sales_coupons_source") or "issued"
     if period.get("sales_coupons") not in (None, ""):
         sales_coupons, sc_source = D(period.get("sales_coupons")), "period"
@@ -741,7 +779,11 @@ def build(db: Session, *, branch_id: int | None, date_from: date, date_to: date,
                 "coupon_item": ({k: v for k, v in coupon_item.items() if k != "price"}
                                 if coupon_item is not None else None),
                 "bonus_coupons": str(bonus_coupons.quantize(Decimal("0.01"))),
-                "ratio_num": str(D(m.get("ratio_num"))), "ratio_den": str(ratio_den),
+                "ratio_num": str(ratio_num.normalize() if ratio_num else ratio_num),
+                "ratio_num_source": "نقاط الصنف" if item_points is not None else "من الإعدادات",
+                "ratio_den": str(ratio_den.normalize() if ratio_den else ratio_den),
+                "ratio_den_source": den_source,
+                "ratio_den_editable": gold is None or not gold.point_cost,
                 "ratio_coupons": str(ratio_coupons.quantize(Decimal("0.01"))),
                 "sales_coupons": str(sales_coupons), "sales_coupons_source": sc_source,
                 "total_coupons": str(total_coupons.quantize(Decimal("0.01"))),

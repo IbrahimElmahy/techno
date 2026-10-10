@@ -84,7 +84,7 @@ export function buildStatement(data: any, h: {
         { key: 'mkt-bonus', label: 'قيمة البوانص', amount: n(mm.bonus_value), kind: 'info' },
         { key: 'mkt-unit', label: mm.coupon_item ? `قيمة الكوبون: ${mm.coupon_item.name} (${mm.coupon_item.tier_label}) ${mm.coupon_price} − خصم ${Number(mm.coupon_discount_pct)}%` : `قيمة الكوبون (${mm.coupon_base} × ${mm.coupon_base_pct}%)`, amount: n(mm.coupon_unit), kind: 'info' },
         { key: 'mkt-bc', label: `كوبونات البوانص (÷ ${mm.coupon_unit})`, amount: n(mm.bonus_coupons), kind: 'info', count: true },
-        { key: 'mkt-ratio', label: `× ${mm.ratio_num} ÷ ${mm.ratio_den}`, amount: n(mm.ratio_coupons), kind: 'info', count: true },
+        { key: 'mkt-ratio', label: `× ${mm.ratio_num} نقطة (نقاط الصنف) ÷ ${mm.ratio_den} نقطة (الكوبون الذهبي)`, amount: n(mm.ratio_coupons), kind: 'info', count: true },
         { key: 'mkt-sc', label: 'كوبونات البيع الفعلي', sign: '+', amount: n(mm.sales_coupons), kind: 'info', count: true },
         { key: 'mkt-model', label: `إجمالي الكوبونات × ${mm.coupon_cost}`, amount: n(mm.amount), kind: 'line' },
         ...data.marketing.manual.map((l: any, i: number) => ({

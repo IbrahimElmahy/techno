@@ -299,7 +299,7 @@ const IncomeSheet: React.FC = () => {
     add('مصاريف البيع والتسويق', 'قيمة البوانص', mm.bonus_value);
     add('مصاريف البيع والتسويق', couponLabel(mm), mm.coupon_unit);
     add('مصاريف البيع والتسويق', 'كوبونات البوانص', mm.bonus_coupons);
-    add('مصاريف البيع والتسويق', `× ${mm.ratio_num} ÷ ${mm.ratio_den}`, mm.ratio_coupons);
+    add('مصاريف البيع والتسويق', `× ${mm.ratio_num} نقطة (نقاط الصنف) ÷ ${mm.ratio_den} نقطة (الكوبون الذهبي)`, mm.ratio_coupons);
     add('مصاريف البيع والتسويق', 'كوبونات البيع الفعلي', mm.sales_coupons);
     add('مصاريف البيع والتسويق', `إجمالي الكوبونات × ${mm.coupon_cost}`, mm.amount);
     add('مصاريف البيع والتسويق', 'مصاريف البيع والتسويق', data.marketing.amount);
@@ -361,7 +361,7 @@ const IncomeSheet: React.FC = () => {
       tr('قيمة البوانص', mm.bonus_value),
       tr(couponLabel(mm), mm.coupon_unit),
       tr('كوبونات البوانص', mm.bonus_coupons),
-      tr(`× ${mm.ratio_num} ÷ ${mm.ratio_den}`, mm.ratio_coupons),
+      tr(`× ${mm.ratio_num} نقطة (نقاط الصنف) ÷ ${mm.ratio_den} نقطة (الكوبون الذهبي)`, mm.ratio_coupons),
       tr('كوبونات البيع الفعلي', mm.sales_coupons, { sign: 'يضاف' }),
       tr(`الإجمالي × ${mm.coupon_cost}`, mm.amount, { bold: true }),
     ].join('');
@@ -382,6 +382,36 @@ const IncomeSheet: React.FC = () => {
       {money(v)}
     </span>
   );
+
+  const saveMarketing = async (patch: Record<string, any>) => {
+    const p: any = {};
+    if (branchId !== undefined) p.branch_id = branchId;
+    try {
+      const r = await api.get('/api/v1/reports/income-sheet/settings', { params: p });
+      const cfg = r.data.config;
+      const body = { ...cfg, marketing: { ...cfg.marketing, ...patch } };
+      delete body.periods;
+      await api.put('/api/v1/reports/income-sheet/settings', { config: body }, { params: p });
+      message.success('تم الحفظ');
+      load();
+    } catch (e: any) {
+      message.error(e?.response?.data?.detail?.message || 'تعذّر الحفظ');
+    }
+  };
+
+  const InlineNum: React.FC<{ value: any; field: string; suffix?: string; width?: number }> = ({ value, field, suffix, width = 90 }) => {
+    const [v, setV] = useState<number | null>(value === null || value === undefined ? null : Number(value));
+    const commit = () => {
+      if (v === null || Number(v) === Number(value)) return;
+      saveMarketing({ [field]: v });
+    };
+    if (!canEdit) return <b>{value}{suffix}</b>;
+    return (
+      <InputNumber size="small" style={{ width }} min={0} value={v as any} addonAfter={suffix}
+        onChange={(x) => setV(x as number | null)} onBlur={commit}
+        onPressEnter={(e: any) => { e.target.blur(); }} />
+    );
+  };
 
   const StatementRow: React.FC<{
     sign?: string; label: React.ReactNode; amount: any; strong?: boolean; onClick?: () => void; note?: React.ReactNode;
@@ -501,14 +531,26 @@ const IncomeSheet: React.FC = () => {
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <tbody>
               <StatementRow label="قيمة البوانص (بيع الفئة × نسبة بونصها)" amount={data.marketing.model.bonus_value} />
-              <StatementRow label={couponLabel(data.marketing.model)}
+              <StatementRow label={data.marketing.model.coupon_item ? (
+                <span>قيمة الكوبون: {data.marketing.model.coupon_item.name} ({data.marketing.model.coupon_item.tier_label}) {data.marketing.model.coupon_price} − خصم{' '}
+                  <InlineNum value={data.marketing.model.coupon_discount_pct} field="coupon_discount_pct" suffix="%" /></span>
+              ) : couponLabel(data.marketing.model)}
                 amount={data.marketing.model.coupon_unit} />
               <StatementRow label="كوبونات البوانص (البوانص ÷ قيمة الكوبون)" amount={data.marketing.model.bonus_coupons} />
-              <StatementRow label={`× ${data.marketing.model.ratio_num} ÷ ${data.marketing.model.ratio_den}`}
-                amount={data.marketing.model.ratio_coupons} />
+              <StatementRow label={(
+                <span>× {data.marketing.model.ratio_num} نقطة (نقاط الصنف) ÷{' '}
+                  {data.marketing.model.ratio_den_editable
+                    ? <InlineNum value={data.marketing.model.ratio_den} field="gold_coupon_points" />
+                    : <b>{data.marketing.model.ratio_den}</b>}{' '}نقطة (الكوبون الذهبي)</span>
+              )}
+                amount={data.marketing.model.ratio_coupons}
+                note={`النقاط: ${data.marketing.model.ratio_num_source} · الذهبي: ${data.marketing.model.ratio_den_source}`} />
               <StatementRow sign="يضاف" label="كوبونات البيع الفعلي" amount={data.marketing.model.sales_coupons}
                 note={{ issued: 'المصروفة للعملاء في الفترة', received: 'المستلمة في الفترة', manual: 'رقم ثابت من الإعدادات', period: 'مُدخلة لهذه الفترة' }[data.marketing.model.sales_coupons_source as string]} />
-              <StatementRow label={`إجمالي الكوبونات ${money(data.marketing.model.total_coupons)} × ${data.marketing.model.coupon_cost}`}
+              <StatementRow label={(
+                <span>إجمالي الكوبونات {money(data.marketing.model.total_coupons)} ×{' '}
+                  <InlineNum value={data.marketing.model.coupon_cost} field="coupon_cost" /></span>
+              )}
                 amount={data.marketing.model.amount} strong
                 note={data.marketing.source === 'model' ? <Tag color="blue">المستعمل في القائمة</Tag> : null} />
               {data.marketing.manual.map((l: any, i: number) => (
@@ -931,8 +973,7 @@ const SettingsTab: React.FC<{ branchId?: number; canEdit: boolean; onSaved: () =
           </Col>
           {num(['marketing', 'coupon_discount_pct'], 'خصم على سعر الصنف %')}
           {num(['marketing', 'coupon_cost'], 'تكلفة الكوبون الواحد')}
-          {num(['marketing', 'ratio_num'], 'معامل × (بسط)')}
-          {num(['marketing', 'ratio_den'], 'معامل ÷ (مقام)')}
+          {num(['marketing', 'gold_coupon_points'], 'نقاط الكوبون الذهبي', 'تُستعمل لو لم يُعرَّف «كوبون ذهبي» في أنواع الكوبونات')}
           <Col xs={24} md={8}>
             <div style={{ color: '#64748b', fontSize: 12 }}>كوبونات البيع الفعلي</div>
             <Select style={{ width: '100%' }} disabled={!canEdit} value={cfg.marketing.sales_coupons_source}
