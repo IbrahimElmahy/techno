@@ -1361,6 +1361,7 @@ body.eg-resizing * {
 .list-page .sl-filters > .sl-f-search { flex: 2 1 230px; }
 .list-page .sl-filters > .sl-f-customer { flex: 1.6 1 190px; }
 .list-page .sl-filters > .sl-f-dates { flex: 2 1 280px; }
+.list-page .sl-filters > .techno-date-filter-group { flex: 2 1 280px; min-width: max-content; }
 .list-page .sl-filters > .sl-f-clear { flex: 0 0 auto; }
 .list-page .sl-filters .ant-input-affix-wrapper,
 .list-page .sl-filters .ant-select .ant-select-selector,
