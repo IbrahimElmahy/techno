@@ -71,7 +71,7 @@ export function useCouponLifecycle(range: [Dayjs, Dayjs] | null, active: boolean
   const { options: typeLookup } = useLookup('customer_type');
   const typeLabel = useMemo(() => labelMap(typeLookup || []), [typeLookup]);
 
-  const [dateField, setDateField] = useState<'handout' | 'receipt'>('handout');
+  const [dateField, setDateField] = useState<'custody' | 'handout' | 'receipt'>('handout');
   const [repId, setRepId] = useState<number | undefined>();
   const [partyId, setPartyId] = useState<number | undefined>();
   const [plumberId, setPlumberId] = useState<number | undefined>();
@@ -165,10 +165,29 @@ export function useCouponLifecycle(range: [Dayjs, Dayjs] | null, active: boolean
   };
 
   const columns = [
-    { title: 'الرقم', dataIndex: 'serial', key: 'serial', width: 100,
+    { title: 'رقم الكوبون', dataIndex: 'serial', key: 'serial', width: 100,
       render: (v: string) => <b>{v}</b> },
-    { title: 'الفئة', dataIndex: 'kind', key: 'kind', width: 80, render: dash },
-    { title: 'الحالة', dataIndex: 'status_label', key: 'status', width: 120,
+    { title: 'الموزع', dataIndex: 'party', key: 'party', width: 180, ellipsis: true,
+      render: (v: string | null) => dash(v) },
+    { title: 'كود التسليم', dataIndex: 'handout_doc', key: 'handout_doc', width: 130,
+      render: (v: string | null, r: LifecycleRow) => (r.handout_source === 'invoice'
+        ? <DocRef kind="invoice" id={r.handout_doc_id} label={v} />
+        : (v ? <Tooltip title="مستند صرف كوبونات">{v}</Tooltip> : '-')) },
+    { title: 'تاريخ التسليم', dataIndex: 'handout_date', key: 'handout_date', width: 110,
+      render: dash },
+    { title: 'الفني', dataIndex: 'plumber', key: 'plumber', width: 170, ellipsis: true,
+      render: dash },
+    { title: 'كود الاستلام', dataIndex: 'receipt_doc', key: 'receipt_doc', width: 120,
+      render: dash },
+    { title: 'تاريخ الاستلام', dataIndex: 'receipt_date', key: 'receipt_date', width: 110,
+      render: dash },
+    { title: 'مندوب الاستلام', dataIndex: 'receipt_rep', key: 'receipt_rep', width: 140,
+      ellipsis: true, render: dash },
+    { title: 'مندوب التسليم', dataIndex: 'handout_rep', key: 'handout_rep', width: 140,
+      ellipsis: true, render: dash },
+    { title: 'قيمة الكوبون', dataIndex: 'value', key: 'value', width: 100,
+      render: (v: any) => (v === null || v === undefined ? '-' : money(v)) },
+    { title: 'حالة الكوبون', dataIndex: 'status_label', key: 'status', width: 130,
       render: (v: string, r: LifecycleRow) => (
         <span>
           <Tag color={STATUS_COLORS[r.status]}>{v}</Tag>
@@ -179,34 +198,16 @@ export function useCouponLifecycle(range: [Dayjs, Dayjs] | null, active: boolean
           )}
         </span>
       ) },
+    { title: 'رمز الكوبون', dataIndex: 'kind', key: 'kind', width: 90, render: dash },
+    { title: 'نوع الموزع', dataIndex: 'party_type', key: 'party_type', width: 90,
+      render: (v: string | null) => (v ? (typeLabel[v] || v) : '-') },
     { title: 'عهدة المندوب', dataIndex: 'custody_rep', key: 'custody_rep', width: 140,
       ellipsis: true, render: dash },
-    { title: 'مستند العهدة', dataIndex: 'custody_doc', key: 'custody_doc', width: 120, render: dash },
-    { title: 'سُلِّم إلى', dataIndex: 'party', key: 'party', width: 180, ellipsis: true,
-      render: (v: string | null) => dash(v) },
-    { title: 'النوع', dataIndex: 'party_type', key: 'party_type', width: 80,
-      render: (v: string | null) => (v ? (typeLabel[v] || v) : '-') },
-    { title: 'تاريخ التسليم', dataIndex: 'handout_date', key: 'handout_date', width: 110,
-      render: dash },
-    { title: 'مستند التسليم', dataIndex: 'handout_doc', key: 'handout_doc', width: 130,
-      render: (v: string | null, r: LifecycleRow) => (r.handout_source === 'invoice'
-        ? <DocRef kind="invoice" id={r.handout_doc_id} label={v} />
-        : (v ? <Tooltip title="مستند صرف كوبونات">{v}</Tooltip> : '-')) },
-    { title: 'مندوب التسليم', dataIndex: 'handout_rep', key: 'handout_rep', width: 140,
-      ellipsis: true, render: dash },
-    { title: 'أُعيد من (السباك)', dataIndex: 'plumber', key: 'plumber', width: 170, ellipsis: true,
-      render: dash },
-    { title: 'تاريخ الاستلام', dataIndex: 'receipt_date', key: 'receipt_date', width: 110,
-      render: dash },
-    { title: 'مستند الاستلام', dataIndex: 'receipt_doc', key: 'receipt_doc', width: 120,
-      render: dash },
-    { title: 'مندوب الاستلام', dataIndex: 'receipt_rep', key: 'receipt_rep', width: 140,
-      ellipsis: true, render: dash },
-    { title: 'القيمة', dataIndex: 'value', key: 'value', width: 90,
-      render: (v: any) => (v === null || v === undefined ? '-' : money(v)) },
+    { title: 'مستند الإصدار', dataIndex: 'custody_doc', key: 'custody_doc', width: 120, render: dash },
+    { title: 'تاريخ الإصدار', dataIndex: 'custody_date', key: 'custody_date', width: 110, render: dash },
   ];
-  const cols = useTableColumns('as-coupons-lifecycle', columns as any, {
-    defaultHidden: ['custody_doc', 'party_type'],
+  const cols = useTableColumns('as-coupons-query', columns as any, {
+    defaultHidden: ['kind', 'party_type', 'custody_rep', 'custody_doc', 'custody_date'],
   });
 
   const fetchAll = async (): Promise<LifecycleRow[] | null> => {
@@ -238,7 +239,7 @@ export function useCouponLifecycle(range: [Dayjs, Dayjs] | null, active: boolean
     const printable: PrintColumn<LifecycleRow>[] = flatColumns()
       .map((c) => ({ title: c.title, value: c.value as any }));
     const meta: [string, string][] = [
-      ['التاريخ على', dateField === 'handout' ? 'التسليم' : 'الاستلام'],
+      ['التاريخ على', dateField === 'custody' ? 'الإصدار' : dateField === 'handout' ? 'التسليم' : 'الاستلام'],
       ['من', range ? range[0].format('YYYY/MM/DD') : 'كل التواريخ'],
       ['إلى', range ? range[1].format('YYYY/MM/DD') : 'كل التواريخ'],
     ];
@@ -266,13 +267,14 @@ export function useCouponLifecycle(range: [Dayjs, Dayjs] | null, active: boolean
       <Select
         value={dateField} onChange={setDateField} style={{ width: 140 }}
         options={[
+          { value: 'custody', label: 'بتاريخ الإصدار' },
           { value: 'handout', label: 'بتاريخ التسليم' },
           { value: 'receipt', label: 'بتاريخ الاستلام' },
         ]}
       />
       <Input
         allowClear style={{ width: 120 }} prefix={<SearchOutlined />}
-        placeholder="رقم / من" value={serialText}
+        placeholder="من كوبون" value={serialText}
         onChange={(e) => {
           setSerialText(e.target.value);
           if (!e.target.value && !serialToText) setSerialQuery({ from: '', to: '' });
@@ -280,24 +282,24 @@ export function useCouponLifecycle(range: [Dayjs, Dayjs] | null, active: boolean
         onPressEnter={applySerial} onBlur={applySerial}
       />
       <Input
-        allowClear style={{ width: 100 }} placeholder="إلى" value={serialToText}
+        allowClear style={{ width: 100 }} placeholder="إلى كوبون" value={serialToText}
         onChange={(e) => {
           setSerialToText(e.target.value);
           if (!e.target.value) setSerialQuery((q) => ({ ...q, to: '' }));
         }}
         onPressEnter={applySerial} onBlur={applySerial}
       />
-      <Select allowClear placeholder="كل الفئات" value={kind} onChange={setKind}
+      <Select allowClear placeholder="رمز الكوبون" value={kind} onChange={setKind}
         options={kindOptions} style={{ width: 110 }} />
       <Select allowClear placeholder="كل الحالات" value={status} onChange={setStatus}
         options={STATUS_OPTIONS} style={{ width: 140 }} popupMatchSelectWidth={false} />
       <Select allowClear showSearch placeholder="كل المناديب" value={repId} onChange={setRepId}
         options={repOptions} filterOption={searchFilter} filterSort={searchRank}
         style={{ width: 170 }} />
-      <Select allowClear showSearch placeholder="كل التجار / الموزعين" value={partyId}
+      <Select allowClear showSearch placeholder="الموزع" value={partyId}
         onChange={setPartyId} options={partyOptions} filterOption={searchFilter}
         filterSort={searchRank} style={{ width: 200 }} />
-      <Select allowClear showSearch placeholder="كل السباكين" value={plumberId}
+      <Select allowClear showSearch placeholder="اسم الفني" value={plumberId}
         onChange={setPlumberId} options={plumberOptions} filterOption={searchFilter}
         filterSort={searchRank} style={{ width: 180 }} />
       <Checkbox checked={onlyUnlinked} onChange={(e) => setOnlyUnlinked(e.target.checked)}>

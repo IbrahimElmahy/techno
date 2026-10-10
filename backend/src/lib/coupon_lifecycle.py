@@ -23,7 +23,7 @@ STATUS_LABELS = {
     "received": "استُلم من سباك",
     "returned": "أُعيد للمكتب",
 }
-DATE_FIELDS = ("handout", "receipt")
+DATE_FIELDS = ("custody", "handout", "receipt")
 
 DEFAULT_LIMIT = 50
 MAX_LIMIT = 100_000
@@ -340,7 +340,7 @@ def lifecycle(
 
     rows = [_flatten(e, users, parties) for e in entries]
 
-    date_key = "handout_date" if date_field == "handout" else "receipt_date"
+    date_key = {"custody": "custody_date", "handout": "handout_date"}.get(date_field, "receipt_date")
     if date_from:
         rows = [r for r in rows if r[date_key] and r[date_key] >= date_from]
     if date_to:
