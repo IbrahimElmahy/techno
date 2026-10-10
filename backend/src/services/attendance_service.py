@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 from datetime import date
+from decimal import Decimal
 
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
+from src.core.money import to_qty
 from src.lib import attendance_calc as calc
 from src.lib import attendance_import as importer
 from src.models.employee import Employee
@@ -176,7 +178,11 @@ def record_day(
 
     figures = {"late_minutes": 0, "early_leave_minutes": 0,
                "worked_hours": calc.ZERO_QTY, "overtime_hours": calc.ZERO_QTY}
-    if shift is not None and check_in:
+    if shift is None and check_in and check_out:
+        present = calc.elapsed(check_in, check_out)
+        if present is not None:
+            figures["worked_hours"] = to_qty(Decimal(max(0, present)) / 60)
+    if shift is not None and (check_in or check_out):
         try:
             figures = calc.day_figures(
                 check_in=check_in, check_out=check_out,

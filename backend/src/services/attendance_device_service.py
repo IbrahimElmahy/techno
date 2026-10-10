@@ -174,13 +174,18 @@ def rebuild_days(db: Session, keys: set[tuple[int, date]]) -> dict:
     return {"updated": updated, "skipped": skipped}
 
 
+_IN_STATUSES = {0, 3, 4}
+_OUT_STATUSES = {1, 2, 5}
+
+
 def rebuild_day(db: Session, employee_id: int, day: date) -> bool:
     start = datetime.combine(day, datetime.min.time())
     end = start + timedelta(days=1)
     window = and_(AttendancePunch.employee_id == employee_id,
                   AttendancePunch.punched_at >= start, AttendancePunch.punched_at < end)
-    times = list(db.scalars(select(AttendancePunch.punched_at).where(window)
-                            .order_by(AttendancePunch.punched_at)).all())
+    punches = db.execute(select(AttendancePunch.punched_at, AttendancePunch.status).where(window)
+                         .order_by(AttendancePunch.punched_at)).all()
+    times = [p.punched_at for p in punches]
     db.execute(update(AttendancePunch).where(window, AttendancePunch.processed.is_(False))
                .values(processed=True))
     if not times:
@@ -195,9 +200,23 @@ def rebuild_day(db: Session, employee_id: int, day: date) -> bool:
     ):
         return False
 
-    first = times[0].strftime("%H:%M")
-    last = times[-1].strftime("%H:%M")
-    check_out = last if len(times) > 1 and last != first else None
+    ins = [p.punched_at for p in punches if (p.status or 0) in _IN_STATUSES]
+    outs = [p.punched_at for p in punches if (p.status or 0) in _OUT_STATUSES]
+    if ins and outs:
+        first_at, last_at = ins[0], outs[-1]
+        if last_at <= first_at:
+            last_at = times[-1] if times[-1] > first_at else None
+    elif outs:
+        first_at, last_at = (times[0] if len(times) > 1 else None), outs[-1]
+        if first_at is not None and first_at >= last_at:
+            first_at = None
+    else:
+        first_at = times[0]
+        last_at = times[-1] if len(times) > 1 and times[-1] != times[0] else None
+    first = first_at.strftime("%H:%M") if first_at else None
+    check_out = last_at.strftime("%H:%M") if last_at else None
+    if first == check_out:
+        check_out = None
     try:
         attendance_service.record_day(
             db, employee_id=employee_id, work_date=day,
