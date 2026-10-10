@@ -35,7 +35,7 @@ import InvoiceDocument, { InvoiceDoc, invoiceFooter, printInvoice }
 import { textColumn, numberColumn, dateColumn } from '../components/gridColumns';
 import PartyPickerModal from '../components/PartyPickerModal';
 import DocumentBar from '../components/DocumentBar';
-import LoadPeriodModal from '../components/LoadPeriodModal';
+import { useDocNav } from '../components/useDocNav';
 import QuickAddRow from '../components/QuickAddRow';
 import DocumentToolbar, { ToolbarAction } from '../components/DocumentToolbar';
 import DocumentHistoryButton from '../components/DocumentHistory';
@@ -124,7 +124,6 @@ export default function PurchaseReturns({ embedded }: { embedded?: { onExit: () 
   const [viewOnly, setViewOnly] = useState(false);
   const [detail, setDetail] = useState<any>(null);
   const [viewing, setViewing] = useState<any>(null);
-  const [loadPeriodOpen, setLoadPeriodOpen] = useState(false);
   const [viewLoading, setViewLoading] = useState(false);
   const [qty, setQty] = useState<Record<number, number | null>>({});
   const [saving, setSaving] = useState(false);
@@ -291,18 +290,15 @@ export default function PurchaseReturns({ embedded }: { embedded?: { onExit: () 
     }
   };
 
+  const nav = useDocNav({
+    family: 'purchases', doc: 'purchase_return', kind: 'purchase_return',
+    id: viewing?.id ?? null, active: creating,
+    open: (row) => { openReturn({ id: row.id } as ReturnRow); },
+  });
+
   const returnToolbar = (): ToolbarAction[] => {
     const typed = returnLines.filter((l) => l.item_id && Number(l.quantity || 0) > 0).length;
     const isSaved = Boolean(editingId && viewing);
-    const stepList = (step: number) => {
-      if (!filter.filtered.length) return;
-      const at = filter.filtered.findIndex((r) => r.id === editingId);
-      const target = at >= 0 ? filter.filtered[at + step]
-        : (step > 0 ? filter.filtered[0] : filter.filtered[filter.filtered.length - 1]);
-      if (target) {
-        openReturn(target);
-      }
-    };
     return [
       {
         key: 'new',
@@ -365,15 +361,15 @@ export default function PurchaseReturns({ embedded }: { embedded?: { onExit: () 
         key: 'prev',
         label: 'السابق',
         icon: <ArrowRightOutlined />,
-        disabled: filter.filtered.length === 0,
-        onClick: () => stepList(-1),
+        disabled: !nav.prev,
+        onClick: nav.goPrev,
       },
       {
         key: 'next',
         label: 'التالى',
         icon: <ArrowLeftOutlined />,
-        disabled: filter.filtered.length === 0,
-        onClick: () => stepList(1),
+        disabled: !nav.next,
+        onClick: nav.goNext,
       },
       {
         key: 'delete',
@@ -438,7 +434,7 @@ export default function PurchaseReturns({ embedded }: { embedded?: { onExit: () 
         key: 'reload',
         label: 'تحميل',
         icon: <ReloadOutlined />,
-        onClick: () => setLoadPeriodOpen(true),
+        onClick: nav.openLoad,
       },
     ];
   };
@@ -909,15 +905,6 @@ export default function PurchaseReturns({ embedded }: { embedded?: { onExit: () 
 
   const docOpen = creating;
 
-  const neighbourReturn = (step: number) => {
-    if (!viewing) return null;
-    const at = filter.filtered.findIndex((r) => r.id === viewing.id);
-    if (at < 0) return null;
-    return filter.filtered[at + step] ?? null;
-  };
-  const prevReturn = neighbourReturn(-1);
-  const nextReturn = neighbourReturn(1);
-
   const moreActive = ['document_number', 'purchase_document_number', 'notes', 'statement']
     .some((k) => !!filter.values[k]);
   const moreOpen = showMoreFilters || moreActive;
@@ -1131,18 +1118,7 @@ export default function PurchaseReturns({ embedded }: { embedded?: { onExit: () 
         }}
         onCancel={() => { setNewStep(null); setPartyPickerOpen(false); }} />
 
-      <LoadPeriodModal
-        open={loadPeriodOpen} onCancel={() => setLoadPeriodOpen(false)}
-        title="تحميل مردودات شراء فترة" endpoint="/api/v1/purchases/returns"
-        columns={[
-          { title: 'المستند', key: 'document_number', width: 150 },
-          { title: 'التاريخ', key: 'return_date', width: 120 },
-          { title: 'المورد', key: 'supplier_name' },
-          { title: 'القيمة', key: 'value', width: 130, money: true },
-        ]}
-        onLoaded={(loaded) => { setRows(loaded); filter.reset(); }}
-        openNewest dateKey="return_date"
-        onPick={(r) => openReturn(r)} />
+      {nav.loadModal}
 
       {creating && (
       <>
@@ -1165,11 +1141,11 @@ export default function PurchaseReturns({ embedded }: { embedded?: { onExit: () 
               title={viewing
                 ? (viewing.document_number || `#${viewing.id}`)
                 : (editingId ? `تعديل #${editingId}` : 'مردود شراء جديد')}
-              position={viewing
-                ? filter.filtered.findIndex((r) => r.id === viewing.id) + 1 || null : null}
-              total={viewing ? filter.filtered.length : null}
-              onPrev={prevReturn ? () => openReturn(prevReturn) : undefined}
-              onNext={nextReturn ? () => openReturn(nextReturn) : undefined}
+              position={nav.position}
+              total={nav.total}
+              onPrev={nav.prev ? nav.goPrev : undefined}
+              onNext={nav.next ? nav.goNext : undefined}
+              badge={nav.tag}
               steps={[
                 { key: 'draft', label: 'مسودة' },
                 { key: 'posted', label: 'مرحّل', color: 'green' },

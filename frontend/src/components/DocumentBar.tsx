@@ -9,7 +9,7 @@ export interface DocumentStep {
 }
 
 export default function DocumentBar({
-  listLabel, listTo, title, position, total, onPrev, onNext, steps, current, extra,
+  listLabel, listTo, title, position, total, onPrev, onNext, steps, current, extra, badge,
 }: {
   listLabel: string;
   listTo?: string;
@@ -21,6 +21,7 @@ export default function DocumentBar({
   steps?: DocumentStep[];
   current?: string | null;
   extra?: React.ReactNode;
+  badge?: React.ReactNode;
 }) {
   const showPager = onPrev || onNext;
   const now = steps?.find((s) => s.key === current);
@@ -34,6 +35,7 @@ export default function DocumentBar({
         </Tooltip>
       )}
       {extra}
+      {badge}
       {showPager && (
         <Space size={0}>
           <Tooltip title="السابق">

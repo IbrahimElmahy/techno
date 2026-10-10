@@ -35,7 +35,7 @@ import { combineDiscounts, netOf } from '../utils/discounts';
 import InvoiceDocument, { InvoiceDoc, invoiceFooter, printInvoice } from '../components/InvoiceDocument';
 import CustomerAccountPanel from '../components/CustomerAccountPanel';
 import PartyPickerModal, { Party } from '../components/PartyPickerModal';
-import LoadPeriodModal from '../components/LoadPeriodModal';
+import { useDocNav } from '../components/useDocNav';
 import QuickAddRow from '../components/QuickAddRow';
 import DocumentToolbar, { ToolbarAction } from '../components/DocumentToolbar';
 import DocumentHistoryButton from '../components/DocumentHistory';
@@ -110,8 +110,6 @@ export default function Invoices() {
   const [docOpening, setDocOpening] = useState(false);
   const [viewOnly, setViewOnly] = useState(false);
   const [formTick, setFormTick] = useState(0);
-  const [loadRangeOpen, setLoadRangeOpen] = useState(false);
-  const [periodRows, setPeriodRows] = useState<any[] | null>(null);
 
   const invoiceCols = useHiddenColumns('invoices-list', [
     'revenue_account_id', 'discount_value', 'coupons', 'payment_state', 'notes',
@@ -1277,13 +1275,14 @@ export default function Invoices() {
     else handleEditInvoice(target);
   }, [searchParams, invoices]);
 
-  const neighbour = (step: number) => {
-    if (!viewInvoice) return null;
-    const rows = periodRows ?? (viewInvoice.is_bonus ? bonusInvoices : invoices);
-    const at = rows.findIndex((r: any) => r.id === viewInvoice.id);
-    if (at < 0) return null;
-    return rows[at + step] ?? null;
-  };
+  const nav = useDocNav({
+    family: 'sales', doc: 'invoice', kind: isBonus ? 'bonus' : 'sale',
+    id: viewInvoice?.id ?? null, active: createVisible,
+    open: (row) => {
+      if (!viewInvoice && !editingInvoice) closeCreate({ stay: true });
+      openDetail({ id: row.id } as InvoiceRecord);
+    },
+  });
 
   const printMeta = (inv: any): [string, string][] | undefined => {
     const meta: [string, string][] = [];
@@ -1621,13 +1620,6 @@ function couponsTotal(inv: any): number {
   })();
   const tableColumns = docKindFilter === 'bonus' ? bonusColumns : visibleColumns;
 
-  const stepFromDraft = (index: number) => {
-    const target = invoices[index];
-    if (!target) return;
-    closeCreate({ stay: true });
-    openDetail(target);
-  };
-
   const startNew = (opts?: { bonus?: boolean }) => {
     const go = () => {
       resetDocument();
@@ -1710,25 +1702,15 @@ function couponsTotal(inv: any): number {
         key: 'prev',
         label: 'السابق',
         icon: <ArrowRightOutlined />,
-        disabled: !isSaved ? invoices.length === 0 : !neighbour(1),
-        onClick: () => {
-          if (isSaved) {
-            const n = neighbour(1);
-            if (n) openDetail(n);
-          } else {
-            stepFromDraft(0);
-          }
-        },
+        disabled: !nav.prev,
+        onClick: nav.goPrev,
       },
       {
         key: 'next',
         label: 'التالي',
         icon: <ArrowLeftOutlined />,
-        disabled: !isSaved || !neighbour(-1),
-        onClick: () => {
-          const n = neighbour(-1);
-          if (n) openDetail(n);
-        },
+        disabled: !nav.next,
+        onClick: nav.goNext,
       },
       {
         key: 'delete',
@@ -1778,7 +1760,7 @@ function couponsTotal(inv: any): number {
         key: 'reload',
         label: 'تحميل',
         icon: <ReloadOutlined />,
-        onClick: () => setLoadRangeOpen(true),
+        onClick: nav.openLoad,
       },
     ];
   };
@@ -1844,14 +1826,11 @@ function couponsTotal(inv: any): number {
                 : editingInvoice
                   ? `تعديل #${editingInvoice.id}`
                   : 'فاتورة جديدة'}
-              position={viewInvoice
-                ? (periodRows ?? invoices).findIndex((r: any) => r.id === viewInvoice.id) + 1 || null
-                : null}
-              total={viewInvoice ? (periodRows ?? invoices).length : null}
-              onPrev={viewInvoice && neighbour(1)
-                ? () => { const n = neighbour(1); if (n) openDetail(n); } : undefined}
-              onNext={viewInvoice && neighbour(-1)
-                ? () => { const n = neighbour(-1); if (n) openDetail(n); } : undefined}
+              position={nav.position}
+              total={nav.total}
+              onPrev={nav.prev ? nav.goPrev : undefined}
+              onNext={nav.next ? nav.goNext : undefined}
+              badge={nav.tag}
               steps={[
                 { key: 'draft', label: 'مسودة' },
                 { key: 'posted', label: 'مرحّل', color: 'green' },
@@ -2339,18 +2318,7 @@ function couponsTotal(inv: any): number {
 
         <TreasuryGate {...treasuryGate} />
 
-        <LoadPeriodModal
-          open={loadRangeOpen} onCancel={() => setLoadRangeOpen(false)}
-          title="تحميل فواتير فترة" endpoint="/api/v1/sales"
-          columns={[
-            { title: 'المستند', key: 'document_number', width: 150 },
-            { title: 'التاريخ', key: 'invoice_date', width: 120 },
-            { title: 'العميل', key: 'customer_name' },
-            { title: 'الإجمالي', key: 'total', width: 130, money: true },
-          ]}
-          onLoaded={(rows) => { setInvoices(rows); setPeriodRows(rows); }}
-          openNewest dateKey="invoice_date"
-          onPick={(r) => openDetail(r)} />
+        {nav.loadModal}
 
         <WarehouseGate
           open={newStep === 'warehouse' && !viewOnly && !editingInvoice}

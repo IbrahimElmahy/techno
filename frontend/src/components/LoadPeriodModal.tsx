@@ -21,7 +21,7 @@ const DEFAULT_COLS: PeriodColumn[] = [
 
 export default function LoadPeriodModal({
   open, onCancel, title, endpoint, params, columns = DEFAULT_COLS, onPick, rowsRef,
-  onLoaded, openNewest = false, dateKey = 'date',
+  onLoaded, openNewest = false, dateKey = 'date', sorter,
 }: {
   open: boolean;
   onCancel: () => void;
@@ -34,6 +34,7 @@ export default function LoadPeriodModal({
   onLoaded?: (rows: any[]) => void;
   openNewest?: boolean;
   dateKey?: string;
+  sorter?: (a: any, b: any) => number;
 }) {
   const [range, setRange] = React.useState<any>(null);
   const [rows, setRows] = React.useState<any[] | null>(null);
@@ -60,9 +61,9 @@ export default function LoadPeriodModal({
       const d: any = res.data;
       const data = Array.isArray(d) ? d : (d?.rows ?? d?.items ?? []);
       if (openNewest) {
-        const sorted = [...data].sort((a: any, b: any) =>
+        const sorted = [...data].sort(sorter ?? ((a: any, b: any) =>
           String(b?.[dateKey] || '').localeCompare(String(a?.[dateKey] || ''))
-          || Number(b?.id || 0) - Number(a?.id || 0));
+          || Number(b?.id || 0) - Number(a?.id || 0)));
         if (!sorted.length) { message.info('لا توجد مستندات في هذه الفترة'); return; }
         onLoaded?.(sorted);
         onCancel();

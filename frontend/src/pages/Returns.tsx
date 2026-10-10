@@ -33,7 +33,7 @@ import DocumentAttachments from '../components/DocumentAttachments';
 import { showReversalConfirm } from '../components/ConfirmationDialog';
 import InvoiceDocument, { InvoiceDoc, invoiceFooter, printInvoice } from '../components/InvoiceDocument';
 import DocumentBar from '../components/DocumentBar';
-import LoadPeriodModal from '../components/LoadPeriodModal';
+import { useDocNav } from '../components/useDocNav';
 import QuickAddRow from '../components/QuickAddRow';
 import DocumentToolbar, { ToolbarAction } from '../components/DocumentToolbar';
 import DocumentHistoryButton from '../components/DocumentHistory';
@@ -224,7 +224,6 @@ export default function Returns({ embedded }: { embedded?: { onExit: () => void 
   const [detailVisible, setDetailVisible] = useState(false);
   const [viewOnly, setViewOnly] = useState(false);
   const [viewReturn, setViewReturn] = useState<any>(null);
-  const [loadPeriodOpen, setLoadPeriodOpen] = useState(false);
 
   const draftPayload = useMemo(() => ({
     customer_id: customerId,
@@ -570,19 +569,14 @@ export default function Returns({ embedded }: { embedded?: { onExit: () => void 
   };
   const handleRemoveLine = (key: string) => setLines(lines.filter((l) => l.key !== key));
 
-  const neighbour = (step: number) => {
-    if (!viewReturn) return null;
-    const at = returns.findIndex((r) => r.id === viewReturn.id);
-    if (at < 0) return null;
-    return returns[at + step] ?? null;
-  };
-
-  const stepFromDraft = (step: number) => {
-    const target = neighbour(step);
-    if (!target) return;
-    closeCreate({ keepUrl: true });
-    openDetail(target);
-  };
+  const nav = useDocNav({
+    family: 'sales', doc: 'return', kind: 'return',
+    id: viewReturn?.id ?? null, active: createVisible,
+    open: (row) => {
+      closeCreate({ keepUrl: true });
+      openDetail({ id: row.id } as ReturnRecord);
+    },
+  });
 
   const returnToolbar = (): ToolbarAction[] => {
     const typed = lines.filter((l) => l.item_id !== null).length;
@@ -654,15 +648,15 @@ export default function Returns({ embedded }: { embedded?: { onExit: () => void 
         key: 'prev',
         label: 'السابق',
         icon: <ArrowRightOutlined />,
-        disabled: returns.length === 0,
-        onClick: () => stepFromDraft(-1),
+        disabled: !nav.prev,
+        onClick: nav.goPrev,
       },
       {
         key: 'next',
         label: 'التالى',
         icon: <ArrowLeftOutlined />,
-        disabled: returns.length === 0,
-        onClick: () => stepFromDraft(1),
+        disabled: !nav.next,
+        onClick: nav.goNext,
       },
       {
         key: 'delete',
@@ -728,7 +722,7 @@ export default function Returns({ embedded }: { embedded?: { onExit: () => void 
         key: 'reload',
         label: 'تحميل',
         icon: <ReloadOutlined />,
-        onClick: () => setLoadPeriodOpen(true),
+        onClick: nav.openLoad,
       },
     ];
   };
@@ -1108,11 +1102,11 @@ export default function Returns({ embedded }: { embedded?: { onExit: () => void 
                 title={viewReturn
                   ? (viewReturn.document_number || `#${viewReturn.id}`)
                   : (editingSourceId ? 'تعديل مرتجع' : 'مرتجع جديد')}
-                position={viewReturn
-                  ? returns.findIndex((r: any) => r.id === viewReturn.id) + 1 || null : null}
-                total={viewReturn ? returns.length : null}
-                onPrev={viewReturn && neighbour(-1) ? () => stepFromDraft(-1) : undefined}
-                onNext={viewReturn && neighbour(1) ? () => stepFromDraft(1) : undefined}
+                position={nav.position}
+                total={nav.total}
+                onPrev={nav.prev ? nav.goPrev : undefined}
+                onNext={nav.next ? nav.goNext : undefined}
+                badge={nav.tag}
                 steps={[
                   { key: 'draft', label: 'مسودة' },
                   { key: 'posted', label: 'مرحّل', color: 'green' },
@@ -1523,18 +1517,7 @@ export default function Returns({ embedded }: { embedded?: { onExit: () => void 
           })()}
         </Form>
 
-        <LoadPeriodModal
-          open={loadPeriodOpen} onCancel={() => setLoadPeriodOpen(false)}
-          title="تحميل مرتجعات فترة" endpoint="/api/v1/sales/returns"
-          columns={[
-            { title: 'المستند', key: 'document_number', width: 150 },
-            { title: 'التاريخ', key: 'return_date', width: 120 },
-            { title: 'العميل', key: 'customer_name' },
-            { title: 'القيمة', key: 'value', width: 130, money: true },
-          ]}
-          onLoaded={(rows) => setReturns(rows)}
-          openNewest dateKey="return_date"
-          onPick={(r) => openDetail(r)} />
+        {nav.loadModal}
 
         <TabModal centered width={560} open={!!histModal} onCancel={() => setHistModal(null)}
           title={`سجل شراء العميل — ${histModal?.name ?? ''}`}

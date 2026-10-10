@@ -34,7 +34,7 @@ import SummaryTile from '../components/saleDoc/SummaryTile';
 import InvoiceDocument, { InvoiceDoc, invoiceFooter, printInvoice }
   from '../components/InvoiceDocument';
 import DocumentBar from '../components/DocumentBar';
-import LoadPeriodModal from '../components/LoadPeriodModal';
+import { useDocNav } from '../components/useDocNav';
 import QuickAddRow from '../components/QuickAddRow';
 import DocumentToolbar, { ToolbarAction } from '../components/DocumentToolbar';
 import DocumentHistoryButton from '../components/DocumentHistory';
@@ -234,7 +234,6 @@ export default function Purchases() {
   const [detail, setDetail] = useState<PurchaseDetail | null>(null);
   const [viewOnly, setViewOnly] = useState(false);
   const [viewPurchase, setViewPurchase] = useState<PurchaseDetail | null>(null);
-  const [loadPeriodOpen, setLoadPeriodOpen] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [openedFingerprint, setOpenedFingerprint] = useState<string | null>(null);
   const [printing, setPrinting] = useState(false);
@@ -637,18 +636,18 @@ export default function Purchases() {
     handleSplitBalance();
   }, [cashAmount, invoiceTotal]);
 
+  const nav = useDocNav({
+    family: 'purchases', doc: 'purchase', kind: 'purchase',
+    id: viewPurchase?.id ?? null, active: createVisible,
+    open: (row) => {
+      closeCreate({ keepUrl: true });
+      openDetail({ id: row.id, kind: 'purchase' } as PurchaseRecord);
+    },
+  });
+
   const purchaseToolbar = (): ToolbarAction[] => {
     const typed = purchaseItems.filter((i) => i.item_id !== null).length;
-    const invoicesInList = purchasesFilter.filtered.filter((r) => r.kind === 'purchase');
     const isSaved = Boolean(editingId && viewPurchase);
-    const stepDoc = (step: number) => {
-      if (!invoicesInList.length) return;
-      const at = invoicesInList.findIndex(
-        (r) => r.id === (editingId ?? (docResult?.id as number | undefined) ?? null));
-      const target = at >= 0 ? invoicesInList[at + step]
-        : (step > 0 ? invoicesInList[0] : invoicesInList[invoicesInList.length - 1]);
-      if (target) { closeCreate({ keepUrl: true }); openDetail(target); }
-    };
     return [
       {
         key: 'new',
@@ -723,15 +722,15 @@ export default function Purchases() {
         key: 'prev',
         label: 'السابق',
         icon: <ArrowRightOutlined />,
-        disabled: invoicesInList.length === 0,
-        onClick: () => stepDoc(-1),
+        disabled: !nav.prev,
+        onClick: nav.goPrev,
       },
       {
         key: 'next',
         label: 'التالى',
         icon: <ArrowLeftOutlined />,
-        disabled: invoicesInList.length === 0,
-        onClick: () => stepDoc(1),
+        disabled: !nav.next,
+        onClick: nav.goNext,
       },
       {
         key: 'delete',
@@ -795,7 +794,7 @@ export default function Purchases() {
         key: 'reload',
         label: 'تحميل',
         icon: <ReloadOutlined />,
-        onClick: () => setLoadPeriodOpen(true),
+        onClick: nav.openLoad,
       },
     ];
   };
@@ -1309,9 +1308,11 @@ export default function Purchases() {
               title={viewPurchase
                 ? (viewPurchase.document_number || `#${viewPurchase.id}`)
                 : (editingId ? `تعديل #${editingId}` : 'فاتورة شراء جديدة')}
-              position={viewPurchase
-                ? purchases.findIndex((r: any) => r.id === viewPurchase.id) + 1 || null : null}
-              total={viewPurchase ? purchases.length : null}
+              position={nav.position}
+              total={nav.total}
+              onPrev={nav.prev ? nav.goPrev : undefined}
+              onNext={nav.next ? nav.goNext : undefined}
+              badge={nav.tag}
               steps={[
                 { key: 'draft', label: 'مسودة' },
                 { key: 'posted', label: 'مرحّل', color: 'green' },
@@ -1539,18 +1540,7 @@ export default function Purchases() {
           </div>
       </Form>
 
-      <LoadPeriodModal
-        open={loadPeriodOpen} onCancel={() => setLoadPeriodOpen(false)}
-        title="تحميل فواتير شراء فترة" endpoint="/api/v1/purchases"
-        columns={[
-          { title: 'المستند', key: 'document_number', width: 150 },
-          { title: 'التاريخ', key: 'purchase_date', width: 120 },
-          { title: 'المورد', key: 'supplier_name' },
-          { title: 'الإجمالي', key: 'total', width: 130, money: true },
-        ]}
-        onLoaded={(rows) => setPurchases(rows.map((r: any) => ({ ...r, kind: 'purchase' as const })))}
-        openNewest dateKey="purchase_date"
-        onPick={(r) => openDetail(r)} />
+      {nav.loadModal}
     </div>
   );
 

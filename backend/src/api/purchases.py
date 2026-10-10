@@ -2,12 +2,14 @@ from __future__ import annotations
 
 from datetime import date
 from decimal import Decimal
+from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from src.lib import doc_nav
 from src.lib.doc_order import newest_first
 from src.auth.dependencies import CurrentUser, require_capability
 from src.auth.rbac import CAP_PURCHASE_WRITE, CAP_RETURN_WRITE, CAP_STOCK_READ
@@ -347,6 +349,28 @@ def payments_log(
     return {"rows": rows, "total_on_invoice": str(on_inv), "total_payments": str(pays),
             "total": str(on_inv + pays),
             "count_on_invoice": n_inv, "count_payments": n_v, "count": n_inv + n_v}
+
+
+@router.get("/nav-sequence", response_model=dict)
+def purchases_nav_sequence(
+    date_from: date | None = None,
+    date_to: date | None = None,
+    doc: Literal["purchase", "purchase_return"] | None = None,
+    id: int | None = None,
+    current: CurrentUser = Depends(require_capability(CAP_STOCK_READ)),
+    db: Session = Depends(get_db),
+) -> dict:
+    inv = branch_scope.scope(
+        doc_nav.nav_part(PurchaseInvoice, PurchaseInvoice.purchase_date,
+                         doc_nav.kind_value("purchase")),
+        PurchaseInvoice, current)
+    ret = branch_scope.scope(
+        doc_nav.nav_part(PurchaseReturn, PurchaseReturn.return_date,
+                         doc_nav.kind_value("purchase_return")),
+        PurchaseReturn, current).where(PurchaseReturn.reversed_at.is_(None))
+    kinds = [doc] if doc else None
+    return doc_nav.nav_sequence(db, [inv, ret], date_from=date_from, date_to=date_to,
+                                doc_kinds=kinds, doc_id=id)
 
 
 @router.get("/returns", response_model=list[PurchaseReturnListOut])

@@ -41,7 +41,7 @@ from src.models.stock import LocationKind, StockDirection, StockMovement
 from src.models.transfer import StockTransfer, StockTransferLine, TransferStatus
 from src.models.user import User
 from src.models.warehouse import Custody, Warehouse, WarehouseType
-from src.lib import arabic
+from src.lib import arabic, doc_nav
 from src.services import (
     analytic_read, coupon_receipt_service, reconcile_service, sales_service,
 )
@@ -1286,6 +1286,33 @@ def receipts_log(
     return {"rows": rows, "total_on_invoice": str(total_inv), "total_payments": str(total_v),
             "total": str(total_inv + total_v),
             "count_on_invoice": n_inv, "count_payments": n_v, "count": n_inv + n_v}
+
+
+@router.get("/nav-sequence", response_model=dict)
+def sales_nav_sequence(
+    date_from: date | None = None,
+    date_to: date | None = None,
+    doc: Literal["invoice", "return"] | None = None,
+    id: int | None = None,
+    current: CurrentUser = Depends(require_capability(CAP_SALES_READ)),
+    db: Session = Depends(get_db),
+) -> dict:
+    inv_kind = case((SalesInvoice.is_bonus.is_(True), doc_nav.kind_value("bonus")),
+                    else_=doc_nav.kind_value("sale"))
+    inv = branch_scope.scope(
+        doc_nav.nav_part(SalesInvoice, SalesInvoice.invoice_date, inv_kind),
+        SalesInvoice, current)
+    ret = branch_scope.scope(
+        doc_nav.nav_part(SalesReturn, SalesReturn.return_date, doc_nav.kind_value("return")),
+        SalesReturn, current).where(
+        SalesReturn.customer_id.isnot(None), SalesReturn.reversed_at.is_(None))
+    if current.rep_id is not None:
+        mine = select(Customer.id).where(Customer.rep_id == current.rep_id)
+        inv = inv.where(SalesInvoice.customer_id.in_(mine))
+        ret = ret.where(SalesReturn.customer_id.in_(mine))
+    kinds = {"invoice": ["sale", "bonus"], "return": ["return"]}.get(doc or "")
+    return doc_nav.nav_sequence(db, [inv, ret], date_from=date_from, date_to=date_to,
+                                doc_kinds=kinds, doc_id=id)
 
 
 @router.get("/summary", response_model=dict)
