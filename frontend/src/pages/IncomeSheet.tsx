@@ -297,7 +297,7 @@ const IncomeSheet: React.FC = () => {
     add('مصاريف عمومية وإدارية', 'الإجمالي', data.ga.total);
     const mm = data.marketing.model;
     add('مصاريف البيع والتسويق', 'قيمة البوانص', mm.bonus_value);
-    add('مصاريف البيع والتسويق', `قيمة الكوبون (${mm.coupon_base} × ${mm.coupon_base_pct}%)`, mm.coupon_unit);
+    add('مصاريف البيع والتسويق', couponLabel(mm), mm.coupon_unit);
     add('مصاريف البيع والتسويق', 'كوبونات البوانص', mm.bonus_coupons);
     add('مصاريف البيع والتسويق', `× ${mm.ratio_num} ÷ ${mm.ratio_den}`, mm.ratio_coupons);
     add('مصاريف البيع والتسويق', 'كوبونات البيع الفعلي', mm.sales_coupons);
@@ -359,7 +359,7 @@ const IncomeSheet: React.FC = () => {
       + tr('الإجمالي', data.ga.total, { bold: true });
     const mk = [
       tr('قيمة البوانص', mm.bonus_value),
-      tr(`قيمة الكوبون ${mm.coupon_base} × ${mm.coupon_base_pct}%`, mm.coupon_unit),
+      tr(couponLabel(mm), mm.coupon_unit),
       tr('كوبونات البوانص', mm.bonus_coupons),
       tr(`× ${mm.ratio_num} ÷ ${mm.ratio_den}`, mm.ratio_coupons),
       tr('كوبونات البيع الفعلي', mm.sales_coupons, { sign: 'يضاف' }),
@@ -501,7 +501,7 @@ const IncomeSheet: React.FC = () => {
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <tbody>
               <StatementRow label="قيمة البوانص (بيع الفئة × نسبة بونصها)" amount={data.marketing.model.bonus_value} />
-              <StatementRow label={`قيمة الكوبون (${data.marketing.model.coupon_base} × ${data.marketing.model.coupon_base_pct}%)`}
+              <StatementRow label={couponLabel(data.marketing.model)}
                 amount={data.marketing.model.coupon_unit} />
               <StatementRow label="كوبونات البوانص (البوانص ÷ قيمة الكوبون)" amount={data.marketing.model.bonus_coupons} />
               <StatementRow label={`× ${data.marketing.model.ratio_num} ÷ ${data.marketing.model.ratio_den}`}
@@ -734,12 +734,20 @@ const PeriodInputs: React.FC<{
   );
 };
 
+export const couponLabel = (mm: any) => (mm.coupon_item
+  ? `قيمة الكوبون: ${mm.coupon_item.name} (${mm.coupon_item.tier_label}) ${mm.coupon_price} − خصم ${Number(mm.coupon_discount_pct)}%`
+  : `قيمة الكوبون (${mm.coupon_base} × ${mm.coupon_base_pct}%)`);
+
 const SettingsTab: React.FC<{ branchId?: number; canEdit: boolean; onSaved: () => void }> = ({ branchId, canEdit, onSaved }) => {
   const [meta, setMeta] = useState<any | null>(null);
   const [cfg, setCfg] = useState<any | null>(null);
   const [roles, setRoles] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
   const [accFilter, setAccFilter] = useState('');
+  const [items, setItems] = useState<any[]>([]);
+  useEffect(() => {
+    api.get('/api/v1/items').then((r) => setItems(r.data || [])).catch(() => {});
+  }, []);
 
   const load = useCallback(async () => {
     const p: any = {};
@@ -905,8 +913,23 @@ const SettingsTab: React.FC<{ branchId?: number; canEdit: boolean; onSaved: () =
           <Radio value="ledger">حسابات البيع والتسويق الفعلية</Radio>
         </Radio.Group>
         <Row gutter={[8, 8]}>
-          {num(['marketing', 'coupon_base'], 'قيمة الكوبون الأساسية')}
-          {num(['marketing', 'coupon_base_pct'], 'نسبة منها %')}
+          <Col xs={24} md={8}>
+            <div style={{ color: '#64748b', fontSize: 12 }}>صنف قيمة الكوبون</div>
+            <Select showSearch allowClear style={{ width: '100%' }} disabled={!canEdit}
+              placeholder={cfg.marketing.coupon_item_name || 'اختر الصنف'}
+              value={cfg.marketing.coupon_item_id ?? undefined}
+              onChange={(v) => set(['marketing', 'coupon_item_id'], v ?? null)}
+              optionFilterProp="label"
+              options={items.map((i: any) => ({ value: i.id, label: `${i.name} — ${i.code}` }))} />
+          </Col>
+          <Col xs={24} md={8}>
+            <div style={{ color: '#64748b', fontSize: 12 }}>شريحة السعر</div>
+            <Select style={{ width: '100%' }} disabled={!canEdit} value={cfg.marketing.coupon_item_tier || 'semi_commercial'}
+              onChange={(v) => set(['marketing', 'coupon_item_tier'], v)}
+              options={[['commercial', 'تجاري'], ['semi_commercial', 'نصف تجاري'], ['wholesale', 'جملة'],
+                ['semi_wholesale', 'نصف جملة'], ['consumer', 'مستهلك']].map(([value, label]) => ({ value, label }))} />
+          </Col>
+          {num(['marketing', 'coupon_discount_pct'], 'خصم على سعر الصنف %')}
           {num(['marketing', 'coupon_cost'], 'تكلفة الكوبون الواحد')}
           {num(['marketing', 'ratio_num'], 'معامل × (بسط)')}
           {num(['marketing', 'ratio_den'], 'معامل ÷ (مقام)')}

@@ -97,6 +97,8 @@ DEFAULT_CONFIG: dict = {
     "marketing": {
         "source": "model",
         "coupon_base": 73.4, "coupon_base_pct": 90,
+        "coupon_item_id": None, "coupon_item_name": "كوع بسن داخلى 25×20",
+        "coupon_item_tier": "semi_commercial", "coupon_discount_pct": 10,
         "ratio_num": 2, "ratio_den": 30,
         "coupon_cost": 180,
         "sales_coupons_source": "issued", "sales_coupons_manual": 0,
@@ -481,6 +483,41 @@ def coupons_in_period(db: Session, *, branch_id: int | None, date_from: date,
             "issued_total": sum(issued.values()), "received_total": sum(received.values())}
 
 
+TIER_LABELS = {"commercial": "تجاري", "semi_commercial": "نصف تجاري", "wholesale": "جملة",
+               "semi_wholesale": "نصف جملة", "consumer": "مستهلك", "list_price": "سعر القائمة"}
+
+
+def coupon_price_item(db: Session, m: dict) -> dict | None:
+    from src.models.catalog import ItemPrice, PriceTier
+
+    tier = m.get("coupon_item_tier") or "semi_commercial"
+    try:
+        tier_enum = PriceTier(tier)
+    except ValueError:
+        tier_enum = PriceTier.semi_commercial
+    candidates: list[Item] = []
+    if m.get("coupon_item_id"):
+        it = db.get(Item, int(m["coupon_item_id"]))
+        if it is not None:
+            candidates = [it]
+    if not candidates and m.get("coupon_item_name"):
+        wanted = norm(m["coupon_item_name"]).replace("x", "×").replace("*", "×")
+        candidates = [i for i in db.scalars(select(Item).where(Item.active.is_(True))).all()
+                      if norm(i.name).replace("*", "×") == wanted]
+    for it in candidates:
+        price = db.scalar(select(ItemPrice.price).where(ItemPrice.item_id == it.id,
+                                                        ItemPrice.tier == tier_enum))
+        if price is not None and D(price) > 0:
+            return {"id": it.id, "code": it.code, "name": it.name, "tier": tier_enum.value,
+                    "tier_label": TIER_LABELS.get(tier_enum.value, tier_enum.value),
+                    "price": D(price)}
+    for it in candidates:
+        if it.sale_price:
+            return {"id": it.id, "code": it.code, "name": it.name, "tier": "sale_price",
+                    "tier_label": "سعر البيع", "price": D(it.sale_price)}
+    return None
+
+
 def _pct(part: Decimal, whole: Decimal) -> str | None:
     return str((part / whole * 100).quantize(Decimal("0.01"))) if whole else None
 
@@ -595,7 +632,14 @@ def build(db: Session, *, branch_id: int | None, date_from: date, date_to: date,
 
     m = cfg["marketing"]
     coupons = coupons_in_period(db, branch_id=branch_id, date_from=date_from, date_to=date_to)
-    coupon_unit = D(m.get("coupon_base")) * D(m.get("coupon_base_pct")) / 100
+    coupon_item = coupon_price_item(db, m)
+    disc = D(m.get("coupon_discount_pct"))
+    if coupon_item is not None:
+        coupon_price = coupon_item["price"]
+        coupon_unit = coupon_price * (100 - disc) / 100
+    else:
+        coupon_price = D(m.get("coupon_base"))
+        coupon_unit = coupon_price * D(m.get("coupon_base_pct")) / 100
     bonus_coupons = bonus_value / coupon_unit if coupon_unit else ZERO
     ratio_den = D(m.get("ratio_den"))
     ratio_coupons = bonus_coupons * D(m.get("ratio_num")) / ratio_den if ratio_den else ZERO
@@ -685,7 +729,12 @@ def build(db: Session, *, branch_id: int | None, date_from: date, date_to: date,
                 "bonus_value": str(to_money(bonus_value)),
                 "coupon_base": str(D(m.get("coupon_base"))),
                 "coupon_base_pct": str(D(m.get("coupon_base_pct"))),
-                "coupon_unit": str(coupon_unit),
+                "coupon_unit": str(to_money(coupon_unit)),
+                "coupon_price": str(to_money(coupon_price)),
+                "coupon_discount_pct": str(disc) if coupon_item is not None
+                else str(100 - D(m.get("coupon_base_pct"))),
+                "coupon_item": ({k: v for k, v in coupon_item.items() if k != "price"}
+                                if coupon_item is not None else None),
                 "bonus_coupons": str(bonus_coupons.quantize(Decimal("0.01"))),
                 "ratio_num": str(D(m.get("ratio_num"))), "ratio_den": str(ratio_den),
                 "ratio_coupons": str(ratio_coupons.quantize(Decimal("0.01"))),
