@@ -164,6 +164,16 @@ export default function Transfers() {
 
   const [editing, setEditing] = useState<TransferRecord | null>(null);
   const [viewOnly, setViewOnly] = useState(false);
+  const [revising, setRevising] = useState<TransferRecord | null>(null);
+  const bonusOf = (t: TransferRecord | null, loc: string | null): Record<number, number> => {
+    if (!t || !loc || !t.source_location_kind || t.source_location_id == null) return {};
+    if (locValue(t.source_location_kind, t.source_location_id) !== loc) return {};
+    const out: Record<number, number> = {};
+    (t.lines?.length ? t.lines : (t.item_id ? [{ item_id: t.item_id, quantity: t.quantity }] : []))
+      .forEach((l: any) => { out[l.item_id] = (out[l.item_id] || 0) + Number(l.quantity || 0); });
+    return out;
+  };
+  const reviseBonus = useMemo(() => bonusOf(revising, source), [revising, source]);
 
   const fetchTransfers = async (opts?: { silent?: boolean }) => {
     const silent = !!opts?.silent;
@@ -272,10 +282,11 @@ export default function Transfers() {
   const availableById = useMemo(() => {
     const m: Record<number, number> = {};
     sourceStock.forEach((r) => {
-      m[r.item_id] = Math.max(0, Number(r.on_hand || 0) - Number(r.pending_out || 0));
+      m[r.item_id] = Math.max(0, Number(r.on_hand || 0) - Number(r.pending_out || 0))
+        + (reviseBonus[r.item_id] || 0);
     });
     return m;
-  }, [sourceStock]);
+  }, [sourceStock, reviseBonus]);
   const codeById = useMemo(() => Object.fromEntries(
     sourceStock.map((r) => [r.item_id, r.code])) as Record<number, string | null>, [sourceStock]);
 
@@ -283,7 +294,7 @@ export default function Transfers() {
     const row = sourceStock.find((s) => s.item_id === itemId);
     if (!row) return null;
     const available = Math.max(
-      0, Number(row.on_hand || 0) - Number(row.pending_out || 0));
+      0, Number(row.on_hand || 0) - Number(row.pending_out || 0)) + (reviseBonus[itemId] || 0);
     const existing = lines.find((l) => l.item_id === itemId);
     if (existing) {
       if (qtyTyped) setLineQty(existing.key, Number(existing.quantity || 0) + qtyTyped);
@@ -339,7 +350,7 @@ export default function Transfers() {
   const startNew = () => {
     clearDocParam();
     setSource(null); setDest(null); setLines([]); setCreateVisible(false);
-    setViewOnly(false); setEditing(null);
+    setViewOnly(false); setEditing(null); setRevising(null);
     setStatement1(''); setExternalDocNumber(''); setDocNotes('');
     setNewStep('source');
   };
@@ -353,6 +364,7 @@ export default function Transfers() {
       clearDocParam();
     }
     setCreateVisible(false); setEditing(null); setDraftQty({}); setViewOnly(false);
+    setRevising(null);
     setSource(null); setDest(null); setSourceStock([]); setLines([]); setActiveCategory(null);
     setStatement1(''); setExternalDocNumber(''); setDocNotes('');
   };
@@ -438,7 +450,7 @@ export default function Transfers() {
   } = useDraft({
     kind: 'transfer',
     payload: draftPayload,
-    paused: Boolean(editing),
+    paused: Boolean(editing || revising),
     isEmpty: (x: any) => !x.source && !(x.lines || []).length,
     title: (x: any) => {
       const from = x.source ? locationName(parseLoc(x.source).kind as any,
@@ -451,6 +463,7 @@ export default function Transfers() {
     const x = d.payload || {};
     adoptDraft(d.id);
     setEditing(null);
+    setRevising(null);
     setViewOnly(false);
     setNewStep(null);
     setSource(x.source ?? null);
@@ -466,6 +479,7 @@ export default function Transfers() {
   const openTransfer = async (t: TransferRecord) => {
     writeDocParam(t.id);
     setEditing(t);
+    setRevising(null);
     setDraftQty({});
     setViewOnly(!(t.status === 'pending' && canApprove));
     setTransferDate(dayjs(t.transfer_date || t.created_at || undefined));
@@ -516,11 +530,11 @@ export default function Transfers() {
       });
       const rows: StockRow[] = res.data || [];
       setSourceStock(rows.filter((r) =>
-        Number(r.on_hand || 0) - Number(r.pending_out || 0) > 0));
+        Number(r.on_hand || 0) - Number(r.pending_out || 0) > 0 || reviseBonus[r.item_id] > 0));
       const map: Record<number, number> = {};
       rows.forEach((r) => {
         map[r.item_id] = Math.max(
-          0, Number(r.on_hand || 0) - Number(r.pending_out || 0));
+          0, Number(r.on_hand || 0) - Number(r.pending_out || 0)) + (reviseBonus[r.item_id] || 0);
       });
       setLines((prev) => prev.map((l) => ({ ...l, available: map[l.item_id] ?? 0 })));
       return map;
@@ -573,6 +587,7 @@ export default function Transfers() {
       .map((l) => ({ line: l, free: fresh ? (fresh[l.item_id] ?? 0) : l.available }))
       .filter((o) => Number(o.line.quantity || 0) > o.free + 1e-9);
     if (over.length) { warnOverAvailable(over); return; }
+    if (revising) { await submitRevision(valid); return; }
 
     const src = parseLoc(source);
     const dst = parseLoc(dest);
@@ -616,6 +631,48 @@ export default function Transfers() {
     } catch (err: any) {
       message.error(err?.response?.data?.detail?.message || 'تعذّر تسجيل طلب التحويل');
       console.error(err);
+    } finally {
+      setSubmitting(false);
+      fetchTransfers();
+    }
+  };
+
+  const submitRevision = async (valid: TransferLine[]) => {
+    if (!revising || !source || !dest) return;
+    const ok = await new Promise<boolean>((resolve) => {
+      Modal.confirm({
+        title: `حفظ تعديل إذن «${revising.document_number}»؟`,
+        content: 'لن يُلغى الإذن، وإنما تُرحَّل الفروق فقط: الزيادة تُحوَّل من المصدر، '
+          + 'والنقص يُعاد من الوجهة إلى المصدر، وما لم يتغير لا يتحرك.',
+        okText: 'حفظ التعديل',
+        cancelText: 'تراجع',
+        onOk: () => resolve(true),
+        onCancel: () => resolve(false),
+      });
+    });
+    if (!ok) return;
+    const src = parseLoc(source);
+    const dst = parseLoc(dest);
+    setSubmitting(true);
+    try {
+      const res = await api.post(`/api/v1/transfers/${revising.id}/revise`, {
+        source: { location_kind: src.kind, location_id: src.id },
+        dest: { location_kind: dst.kind, location_id: dst.id },
+        transfer_date: transferDate.format('YYYY-MM-DD'),
+        statement1: statement1 || null,
+        external_document_number: externalDocNumber || null,
+        notes: docNotes || null,
+        lines: valid.map((l) => ({ item_id: l.item_id, quantity: String(l.quantity || 0) })),
+      });
+      message.success('تم حفظ التعديل وترحيل الفروق فقط');
+      setLines([]); setSourceStock([]);
+      await openTransfer(res.data);
+    } catch (err: any) {
+      Modal.error({
+        title: 'تعذّر حفظ التعديل',
+        width: 560,
+        content: err?.response?.data?.detail?.message || 'تعذّر حفظ التعديل',
+      });
     } finally {
       setSubmitting(false);
       fetchTransfers();
@@ -732,36 +789,18 @@ export default function Transfers() {
   };
 
   const editApproved = async (t: TransferRecord) => {
-    const ok = await new Promise<boolean>((resolve) => {
-      Modal.confirm({
-        title: `تعديل إذن «${t.document_number}»؟`,
-        content: 'هذا الإذن معتمد وقد تحركت بضاعته، فلا يمكن تعديله في مكانه. '
-          + 'سيُلغى الإذن وتعود البضاعة إلى مصدرها، ويُفتح طلب جديد بالمحتوى نفسه '
-          + 'لتصحيحه وإرساله للاعتماد. ويبقى الإذن الملغي في السجل.',
-        okText: 'إلغاء وفتح طلب جديد', okButtonProps: { danger: true },
-        cancelText: 'تراجع',
-        onOk: () => resolve(true),
-        onCancel: () => resolve(false),
-      });
-    });
-    if (!ok) return;
-    try {
-      await api.post(`/api/v1/transfers/${t.id}/cancel`, { reason: 'تعديل' });
-    } catch (err: any) {
-      message.error(err?.response?.data?.detail?.message || 'تعذر إلغاء الإذن');
-      return;
-    }
-    message.success('تم إلغاء الإذن');
-    await refillAsNew(t);
-    fetchTransfers();
+    await refillAsNew(t, true);
   };
 
-  const refillAsNew = async (t: TransferRecord) => {
+  const refillAsNew = async (t: TransferRecord, revise = false) => {
     const src = t.source_location_kind && t.source_location_id != null
       ? locValue(t.source_location_kind, t.source_location_id) : null;
     const dst = t.dest_location_kind && t.dest_location_id != null
       ? locValue(t.dest_location_kind, t.dest_location_id) : null;
-    setEditing(null); setDraftQty({});
+    const bonus = revise ? bonusOf(t, src) : {};
+    setEditing(null); setDraftQty({}); setViewOnly(false);
+    setRevising(revise ? t : null);
+    if (revise) setTransferDate(dayjs(t.transfer_date || t.created_at || undefined));
     setSource(src); setDest(dst);
     setStatement1(t.statement1 || '');
     setExternalDocNumber(t.external_document_number || '');
@@ -785,7 +824,7 @@ export default function Transfers() {
         category: row?.category ?? null,
         unit: null,
         available: Math.max(
-          0, Number(row?.on_hand ?? 0) - Number(row?.pending_out ?? 0)),
+          0, Number(row?.on_hand ?? 0) - Number(row?.pending_out ?? 0)) + (bonus[l.item_id] || 0),
         quantity: Number(l.quantity) || 0,
       };
     }));
@@ -1252,14 +1291,20 @@ export default function Transfers() {
             <span className="sale-title">
               {editing
                 ? <>إذن تحويل <b dir="ltr">{editing.document_number}</b></>
-                : 'طلب تحويل مخزني جديد'}
+                : revising
+                  ? <>تعديل إذن تحويل <b dir="ltr">{revising.document_number}</b></>
+                  : 'طلب تحويل مخزني جديد'}
             </span>
             {editing && (
               <Tag color={(STATUS_TAGS[editing.status] || {}).color} style={{ marginInlineEnd: 0 }}>
                 {(STATUS_TAGS[editing.status] || {}).text || editing.status}
               </Tag>
             )}
-            {!editing && <Tag color="blue" style={{ marginInlineEnd: 0 }}>مسودة</Tag>}
+            {!editing && (
+              <Tag color={revising ? 'orange' : 'blue'} style={{ marginInlineEnd: 0 }}>
+                {revising ? 'تعديل' : 'مسودة'}
+              </Tag>
+            )}
             {editing && navRows.some((r) => r.id === editing.id) && (
               <Tag style={{ marginInlineEnd: 0 }}>
                 {navRows.findIndex((r) => r.id === editing.id) + 1} / {navRows.length}
@@ -1513,7 +1558,7 @@ export default function Transfers() {
                           icon={<CheckOutlined />} className="sale-green-btn sale-save-btn"
                           disabled={!route || sameLocation || lines.length === 0}
                           onClick={handleSubmit}>
-                          إرسال طلب التحويل
+                          {revising ? 'حفظ التعديل' : 'إرسال طلب التحويل'}
                         </Button>
                         <Button onClick={() => closeCreate()}>إلغاء</Button>
                       </>

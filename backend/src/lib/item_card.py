@@ -290,6 +290,8 @@ def _document_detail(db: Session, item_id: int, rows: list[dict],
             detail[(StockDoc.TRANSFER, t.id)] = {
                 "document_number": t.document_number,
                 "party_in": f"من {src}", "party_out": f"إلى {dst}",
+                "party_back_in": f"من {dst}", "party_back_out": f"إلى {src}",
+                "source_key": (src_kind, t.source_location_id),
             }
 
     permit_ids = by_type.get(StockDoc.PERMIT, set())
@@ -325,7 +327,10 @@ def _document_detail(db: Session, item_id: int, rows: list[dict],
         key = (r.pop("_kind", None), r["source_doc_id"])
         d = detail.get(key, {})
         if "party_in" in d:
-            r["party"] = d["party_in"] if r["direction"] == "in" else d["party_out"]
+            back = (r["location_kind"], r["location_id"]) == d["source_key"]
+            r["party"] = ((d["party_back_in"] if back else d["party_in"])
+                          if r["direction"] == "in"
+                          else (d["party_out"] if back else d["party_back_out"]))
         else:
             r["party"] = d.get("party")
         r["document_number"] = d.get("document_number")

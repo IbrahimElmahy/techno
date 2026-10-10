@@ -264,6 +264,45 @@ def cancel_transfer(
     return _out(t)
 
 
+class ReviseIn(BaseModel):
+    source: LocationIn | None = None
+    dest: LocationIn | None = None
+    transfer_date: date | None = None
+    lines: list[LineIn]
+    statement1: str | None = Field(default=None, max_length=200)
+    external_document_number: str | None = Field(default=None, max_length=40)
+    notes: str | None = Field(default=None, max_length=500)
+
+
+@router.post("/{transfer_id}/revise", response_model=TransferOut)
+def revise_transfer(
+    transfer_id: int,
+    body: ReviseIn,
+    current: CurrentUser = Depends(require_capability(CAP_TRANSFER_APPROVE)),
+    db: Session = Depends(get_db),
+) -> TransferOut:
+    t = db.get(StockTransfer, transfer_id)
+    if t is None or not branch_scope.may_see(current, t):
+        raise HTTPException(404, {"code": "not_found", "message": "إذن التحويل غير موجود."})
+    texts = body.model_dump(include={"statement1", "external_document_number", "notes"},
+                            exclude_unset=True)
+    try:
+        t = transfer_service.revise(
+            db, transfer_id=transfer_id, actor_user_id=current.id,
+            lines=[(ln.item_id, ln.quantity) for ln in body.lines],
+            source_kind=body.source.location_kind if body.source else None,
+            source_id=body.source.location_id if body.source else None,
+            dest_kind=body.dest.location_kind if body.dest else None,
+            dest_id=body.dest.location_id if body.dest else None,
+            transfer_date=body.transfer_date, texts=texts)
+    except (TransferError, StockError, SerialError, BatchError) as exc:
+        db.rollback()
+        raise HTTPException(status.HTTP_409_CONFLICT,
+                            {"code": "transfer_conflict", "message": str(exc)})
+    db.commit()
+    return _out(db.get(StockTransfer, transfer_id))
+
+
 @router.get("/{transfer_id}", response_model=TransferOut)
 def get_transfer(
     transfer_id: int,
