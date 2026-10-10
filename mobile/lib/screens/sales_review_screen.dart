@@ -83,6 +83,20 @@ class _SalesReviewScreenState extends State<SalesReviewScreen> {
 
   String _d(DateTime? v) => v == null ? '' : v.toIso8601String().substring(0, 10);
 
+  bool _namesTried = false;
+
+  Future<List<SaleDraftLine>> _linesOf(int localId) async {
+    final lines = await LocalDb.instance.saleInvoiceLines(localId);
+    if (!_namesTried &&
+        lines.any((l) => LocalDb.isUnknownItemName(l.itemName, l.itemId))) {
+      _namesTried = true;
+      unawaited(AutoSync.instance.refreshUnknownItems().then((ok) {
+        if (ok && mounted) setState(() {});
+      }));
+    }
+    return lines;
+  }
+
   @override
   void initState() {
     super.initState();
@@ -306,7 +320,7 @@ class _SalesReviewScreenState extends State<SalesReviewScreen> {
         ].where((s) => s.isNotEmpty).join(' · ')),
         children: [
           FutureBuilder<List<SaleDraftLine>>(
-            future: LocalDb.instance.saleInvoiceLines(r['local_id'] as int),
+            future: _linesOf(r['local_id'] as int),
             builder: (_, snap) {
               final lines = snap.data ?? const <SaleDraftLine>[];
               return Column(

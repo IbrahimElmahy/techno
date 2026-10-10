@@ -174,6 +174,34 @@ class AutoSync extends ChangeNotifier {
     }
   }
 
+  DateTime? _lastItemsRefresh;
+
+  Future<bool> refreshUnknownItems() async {
+    if (await LocalDb.instance.healItemNames() == 0) return true;
+    if (_running) return false;
+    final last = _lastItemsRefresh;
+    if (last != null && DateTime.now().difference(last) < const Duration(minutes: 2)) {
+      return false;
+    }
+    if (await LocalDb.instance.getKv('token') == null) return false;
+    _lastItemsRefresh = DateTime.now();
+    await _acquire();
+    try {
+      try {
+        await ApiClient.instance.pullSalesBundle();
+      } on ApiException catch (e) {
+        if (e.statusCode != 403 && e.statusCode != 404) rethrow;
+        await ApiClient.instance.pullPriceCatalog();
+      }
+      notifyListeners();
+      return true;
+    } catch (_) {
+      return false;
+    } finally {
+      _release();
+    }
+  }
+
   Future<({int items, String? note, bool anyOk})> _pullAll(
     List<String> errors, {
     required void Function(String label) onStep,

@@ -596,6 +596,14 @@ def _rep_recent_invoices(db: Session, rep_id: int) -> list[dict]:
                func.coalesce(SalesInvoice.invoice_date, cast(SalesInvoice.created_at, Date))
                >= since)
     ).all()
+    item_ids = {ln.item_id for inv in rows for ln in inv.lines}
+    item_info = {
+        r[0]: (r[1], r[2], r[3])
+        for r in db.execute(
+            select(Item.id, Item.name, Item.code, Item.unit_of_measure)
+            .where(Item.id.in_(item_ids))
+        ).all()
+    } if item_ids else {}
     out = []
     for inv in rows:
         out.append({
@@ -606,20 +614,25 @@ def _rep_recent_invoices(db: Session, rep_id: int) -> list[dict]:
             "credit_amount": str(inv.credit_amount or 0),
             "total": str(inv.net or 0),
             "prior_balance": str(inv.prior_balance) if inv.prior_balance is not None else None,
-            "lines": [
-                {
-                    "item_id": ln.item_id,
-                    "quantity": str(ln.quantity),
-                    "unit_price": str(ln.unit_price),
-                    "discount_pct": str(ln.discount_pct or 0),
-                    "fixed_discount_pct": str(ln.fixed_discount_pct or 0),
-                    "variable_discount_pct": str(ln.variable_discount_pct or 0),
-                    "line_total": str(ln.line_total or 0),
-                }
-                for ln in inv.lines
-            ],
+            "lines": [_rep_recent_line(ln, item_info.get(ln.item_id)) for ln in inv.lines],
         })
     return out
+
+
+def _rep_recent_line(ln, info: tuple | None) -> dict:
+    name, code, base_unit = info or (None, None, None)
+    return {
+        "item_id": ln.item_id,
+        "item_name": name,
+        "item_code": code,
+        "unit": ln.unit or base_unit,
+        "quantity": str(ln.quantity),
+        "unit_price": str(ln.unit_price),
+        "discount_pct": str(ln.discount_pct or 0),
+        "fixed_discount_pct": str(ln.fixed_discount_pct or 0),
+        "variable_discount_pct": str(ln.variable_discount_pct or 0),
+        "line_total": str(ln.line_total or 0),
+    }
 
 
 _AR_FOLD = (("ة", "ه"), ("ى", "ي"), ("أ", "ا"), ("إ", "ا"), ("آ", "ا"))

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
 
@@ -10,6 +11,7 @@ import 'package:printing/printing.dart';
 import '../db/local_db.dart';
 import '../models/discount.dart';
 import '../models/models.dart';
+import '../services/auto_sync.dart';
 import '../theme.dart';
 import '../utils/pdf_share.dart';
 
@@ -29,6 +31,9 @@ class _InvoicePrintScreenState extends State<InvoicePrintScreen> {
   bool _loading = true;
 
   String? _bonusFor;
+
+  int _rev = 0;
+  bool _namesTried = false;
 
   @override
   void initState() {
@@ -65,6 +70,21 @@ class _InvoicePrintScreenState extends State<InvoicePrintScreen> {
         _loading = false;
       });
     }
+    if (!_namesTried &&
+        lines.any((l) => LocalDb.isUnknownItemName(l.itemName, l.itemId))) {
+      _namesTried = true;
+      unawaited(_refreshNames());
+    }
+  }
+
+  Future<void> _refreshNames() async {
+    if (!await AutoSync.instance.refreshUnknownItems() || !mounted) return;
+    final lines = await LocalDb.instance.saleInvoiceLines(widget.invoice['local_id'] as int);
+    if (!mounted) return;
+    setState(() {
+      _lines = lines;
+      _rev++;
+    });
   }
 
   @override
@@ -85,6 +105,7 @@ class _InvoicePrintScreenState extends State<InvoicePrintScreen> {
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : PdfPreview(
+              key: ValueKey(_rev),
               build: (format) => _buildPdf(format),
               canChangeOrientation: false,
               canChangePageFormat: false,

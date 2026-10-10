@@ -1259,12 +1259,76 @@ class LocalDb {
     return (r.first['c'] as int?) ?? 0;
   }
 
+  static String unknownItemName(int itemId) => 'صنف #$itemId';
+
+  static bool isUnknownItemName(String name, int itemId) {
+    final s = name.trim();
+    return s.isEmpty || s == unknownItemName(itemId);
+  }
+
+  Future<Map<int, String>> _knownItemNames(
+      DatabaseExecutor ex, Iterable<int> itemIds) async {
+    final out = <int, String>{};
+    for (final table in ['sale_item', 'branch_catalog_item', 'warehouse_item']) {
+      final want = {for (final id in itemIds) if (!out.containsKey(id)) id}.toList();
+      for (var i = 0; i < want.length; i += 500) {
+        final chunk = want.sublist(i, i + 500 > want.length ? want.length : i + 500);
+        final rows = await ex.query(table,
+            columns: ['item_id', 'name'],
+            where: 'item_id IN (${List.filled(chunk.length, '?').join(',')})',
+            whereArgs: chunk);
+        for (final r in rows) {
+          final name = '${r['name'] ?? ''}'.trim();
+          if (name.isNotEmpty) out.putIfAbsent(r['item_id'] as int, () => name);
+        }
+      }
+    }
+    return out;
+  }
+
+  Future<int> healItemNames() async {
+    final d = await db;
+    final rows = await d.query('sale_invoice_line',
+        columns: ['id', 'item_id', 'item_name'],
+        where: "TRIM(item_name) = '' OR item_name LIKE ?",
+        whereArgs: ['صنف #%']);
+    final broken = [
+      for (final r in rows)
+        if (isUnknownItemName('${r['item_name'] ?? ''}', r['item_id'] as int)) r
+    ];
+    if (broken.isEmpty) return 0;
+    final names = await _knownItemNames(d, broken.map((r) => r['item_id'] as int));
+    var left = 0;
+    final batch = d.batch();
+    for (final r in broken) {
+      final name = names[r['item_id'] as int];
+      if (name == null) {
+        left++;
+        continue;
+      }
+      batch.update('sale_invoice_line', {'item_name': name},
+          where: 'id = ?', whereArgs: [r['id']]);
+    }
+    await batch.commit(noResult: true);
+    return left;
+  }
+
   Future<int> applyServerInvoices(List<dynamic> invoices) async {
     if (invoices.isEmpty) return 0;
     final d = await db;
     num? n(Object? v) => v == null ? null : num.tryParse('$v');
+    String? text(Object? v) {
+      final s = v?.toString().trim() ?? '';
+      return s.isEmpty ? null : s;
+    }
     var changed = 0;
     await d.transaction((tx) async {
+      final catalogNames = await _knownItemNames(tx, {
+        for (final raw in invoices)
+          for (final l in (((raw as Map)['lines'] as List?) ?? const []))
+            if ((l as Map)['item_id'] is int && text(l['item_name']) == null)
+              l['item_id'] as int
+      });
       for (final raw in invoices) {
         final inv = raw as Map;
         final uuid = inv['client_uuid'] as String?;
@@ -1293,18 +1357,21 @@ class LocalDb {
               columns: ['item_id', 'item_name'],
               where: 'invoice_local_id = ?',
               whereArgs: [localId]);
-          final names = {for (final r in old) r['item_id'] as int: r['item_name'] as String};
+          final names = {
+            for (final r in old)
+              if (!isUnknownItemName('${r['item_name'] ?? ''}', r['item_id'] as int))
+                r['item_id'] as int: r['item_name'] as String
+          };
           await tx.delete('sale_invoice_line',
               where: 'invoice_local_id = ?', whereArgs: [localId]);
           for (final raw in lines) {
             final l = raw as Map;
             final itemId = l['item_id'] as int;
-            var name = names[itemId];
-            if (name == null) {
-              final it = await tx.query('sale_item',
-                  columns: ['name'], where: 'item_id = ?', whereArgs: [itemId], limit: 1);
-              name = it.isEmpty ? 'صنف #$itemId' : it.first['name'] as String;
-            }
+            final name = text(l['item_name']) ??
+                names[itemId] ??
+                catalogNames[itemId] ??
+                text(l['item_code']) ??
+                unknownItemName(itemId);
             await tx.insert('sale_invoice_line', {
               'invoice_local_id': localId,
               'item_id': itemId,

@@ -396,6 +396,7 @@ class ApiClient {
           },
         )
     ]);
+    await LocalDb.instance.healItemNames();
     return catalog.length;
   }
 
@@ -439,8 +440,6 @@ class ApiClient {
           balance: double.tryParse('${c['balance'] ?? 0}') ?? 0,
         )
     ]);
-    await LocalDb.instance
-        .applyServerInvoices((body['recent_invoices'] as List?) ?? const []);
     await LocalDb.instance.replaceSaleItems([
       for (final i in (body['items'] as List))
         SaleItem(
@@ -506,6 +505,9 @@ class ApiClient {
     ]);
     await LocalDb.instance.replaceCouponCustody(
         body['coupon_custody'], body['coupon_custody_kinds']);
+    await LocalDb.instance
+        .applyServerInvoices((body['recent_invoices'] as List?) ?? const []);
+    await LocalDb.instance.healItemNames();
     await LocalDb.instance.setKv('last_sales_pull', DateTime.now().toIso8601String());
   }
 
