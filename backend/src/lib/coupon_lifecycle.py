@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 
 from src.auth import branch_scope
 from src.auth.dependencies import CurrentUser
+from src.lib import multi_filter as mf
 from src.models.coupon_custody import CouponCustody, CouponCustodySerial
 from src.models.coupon_issue import CouponIssue, CouponIssueLine
 from src.models.coupon_receipt import CouponReceipt, CouponReceiptLine
@@ -304,11 +305,11 @@ def lifecycle(
     date_field: str = "handout",
     date_from: date | None = None,
     date_to: date | None = None,
-    rep_id: int | None = None,
-    party_id: int | None = None,
-    plumber_id: int | None = None,
-    kind: str | None = None,
-    status: str | None = None,
+    rep_id=None,
+    party_id=None,
+    plumber_id=None,
+    kind=None,
+    status=None,
     serial: str | None = None,
     serial_from: str | None = None,
     serial_to: str | None = None,
@@ -318,8 +319,14 @@ def lifecycle(
 ) -> dict:
     if date_field not in DATE_FIELDS:
         raise CouponLifecycleError(f"تاريخ غير معروف: {date_field}")
-    if status and status not in STATUSES:
-        raise CouponLifecycleError(f"حالة غير معروفة: {status}")
+    rep_ids = set(mf.ids(rep_id) or [])
+    party_ids_f = set(mf.ids(party_id) or [])
+    plumber_ids = set(mf.ids(plumber_id) or [])
+    kinds = {norm_kind(k) for k in (mf.strs(kind) or [])}
+    statuses = set(mf.strs(status) or [])
+    bad = [s for s in statuses if s not in STATUSES]
+    if bad:
+        raise CouponLifecycleError(f"حالة غير معروفة: {bad[0]}")
     lo = _as_int(serial_from) if serial_from else None
     hi = _as_int(serial_to) if serial_to else None
     if (serial_from and lo is None) or (serial_to and hi is None):
@@ -345,16 +352,15 @@ def lifecycle(
         rows = [r for r in rows if r[date_key] and r[date_key] >= date_from]
     if date_to:
         rows = [r for r in rows if r[date_key] and r[date_key] <= date_to]
-    if rep_id:
-        rows = [r for r in rows if rep_id in (
-            r["custody_rep_id"], r["handout_rep_id"], r["receipt_rep_id"])]
-    if party_id:
-        rows = [r for r in rows if r["party_id"] == party_id]
-    if plumber_id:
-        rows = [r for r in rows if r["plumber_id"] == plumber_id]
-    if kind:
-        wanted_kind = norm_kind(kind)
-        rows = [r for r in rows if norm_kind(r["kind"]) == wanted_kind]
+    if rep_ids:
+        rows = [r for r in rows if rep_ids & {
+            r["custody_rep_id"], r["handout_rep_id"], r["receipt_rep_id"]}]
+    if party_ids_f:
+        rows = [r for r in rows if r["party_id"] in party_ids_f]
+    if plumber_ids:
+        rows = [r for r in rows if r["plumber_id"] in plumber_ids]
+    if kinds:
+        rows = [r for r in rows if norm_kind(r["kind"]) in kinds]
     if serial and serial.strip():
         s_kind, s_num, _ = split_serial(None, serial)
         rows = [r for r in rows if r["serial"] == s_num
@@ -374,8 +380,8 @@ def lifecycle(
         unlinked += 1 if r["unlinked"] else 0
     value_total = sum((r["value"] for r in rows
                        if r["status"] == "received" and r["value"] is not None), Decimal("0"))
-    if status:
-        rows = [r for r in rows if r["status"] == status]
+    if statuses:
+        rows = [r for r in rows if r["status"] in statuses]
 
     def _last(r: dict) -> date:
         return max((d for d in (r["receipt_date"], r["handout_date"], r["custody_date"]) if d),

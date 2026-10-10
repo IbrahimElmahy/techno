@@ -72,11 +72,11 @@ export function useCouponLifecycle(range: [Dayjs, Dayjs] | null, active: boolean
   const typeLabel = useMemo(() => labelMap(typeLookup || []), [typeLookup]);
 
   const [dateField, setDateField] = useState<'custody' | 'handout' | 'receipt'>('handout');
-  const [repId, setRepId] = useState<number | undefined>();
-  const [partyId, setPartyId] = useState<number | undefined>();
-  const [plumberId, setPlumberId] = useState<number | undefined>();
-  const [kind, setKind] = useState<string | undefined>();
-  const [status, setStatus] = useState<string | undefined>();
+  const [repId, setRepId] = useState<number[]>([]);
+  const [partyId, setPartyId] = useState<number[]>([]);
+  const [plumberId, setPlumberId] = useState<number[]>([]);
+  const [kind, setKind] = useState<string[]>([]);
+  const [status, setStatus] = useState<string[]>([]);
   const [onlyUnlinked, setOnlyUnlinked] = useState(false);
   const [serialText, setSerialText] = useState('');
   const [serialToText, setSerialToText] = useState('');
@@ -104,7 +104,7 @@ export function useCouponLifecycle(range: [Dayjs, Dayjs] | null, active: boolean
   }, [active]);
 
   const repOptions = useMemo(
-    () => repPickerOptions(sortByName(reps, (r: any) => r.full_name || r.username || ''), repId),
+    () => repPickerOptions(sortByName(reps, (r: any) => r.full_name || r.username || '')),
     [reps, repId]);
   const partyOptions = useMemo(() => sortByName(
     customers.filter((c: any) => c.customer_type !== 'plumber'), (c: any) => c.name || '')
@@ -119,11 +119,11 @@ export function useCouponLifecycle(range: [Dayjs, Dayjs] | null, active: boolean
       p.date_from = range[0].format('YYYY-MM-DD');
       p.date_to = range[1].format('YYYY-MM-DD');
     }
-    if (repId) p.rep_id = repId;
-    if (partyId) p.party_id = partyId;
-    if (plumberId) p.plumber_id = plumberId;
-    if (kind) p.kind = kind;
-    if (status) p.status = status;
+    if (repId.length) p.rep_id = repId.join(',');
+    if (partyId.length) p.party_id = partyId.join(',');
+    if (plumberId.length) p.plumber_id = plumberId.join(',');
+    if (kind.length) p.kind = kind.join(',');
+    if (status.length) p.status = status.join(',');
     if (onlyUnlinked) p.only_unlinked = true;
     const from = serialQuery.from.trim();
     const to = serialQuery.to.trim();
@@ -155,8 +155,8 @@ export function useCouponLifecycle(range: [Dayjs, Dayjs] | null, active: boolean
   }, [active, params]);
 
   const reset = () => {
-    setRepId(undefined); setPartyId(undefined); setPlumberId(undefined); setKind(undefined);
-    setStatus(undefined); setOnlyUnlinked(false); setSerialText(''); setSerialToText('');
+    setRepId([]); setPartyId([]); setPlumberId([]); setKind([]);
+    setStatus([]); setOnlyUnlinked(false); setSerialText(''); setSerialToText('');
     setSerialQuery({ from: '', to: '' });
   };
   const applySerial = () => {
@@ -243,11 +243,13 @@ export function useCouponLifecycle(range: [Dayjs, Dayjs] | null, active: boolean
       ['من', range ? range[0].format('YYYY/MM/DD') : 'كل التواريخ'],
       ['إلى', range ? range[1].format('YYYY/MM/DD') : 'كل التواريخ'],
     ];
-    if (repId) meta.push(['المندوب', repOptions.find((o) => o.value === repId)?.label ?? '']);
-    if (partyId) meta.push(['سُلِّم إلى', partyOptions.find((o) => o.value === partyId)?.label ?? '']);
-    if (plumberId) meta.push(['السباك', plumberOptions.find((o) => o.value === plumberId)?.label ?? '']);
-    if (kind) meta.push(['الفئة', kind]);
-    if (status) meta.push(['الحالة', STATUS_OPTIONS.find((o) => o.value === status)?.label ?? '']);
+    const names = (opts: { value: any; label: any }[], vals: any[]) =>
+      vals.map((v) => String(opts.find((o) => o.value === v)?.label ?? v)).join('، ');
+    if (repId.length) meta.push(['المندوب', names(repOptions, repId)]);
+    if (partyId.length) meta.push(['سُلِّم إلى', names(partyOptions, partyId)]);
+    if (plumberId.length) meta.push(['السباك', names(plumberOptions, plumberId)]);
+    if (kind.length) meta.push(['الفئة', kind.join('، ')]);
+    if (status.length) meta.push(['الحالة', names(STATUS_OPTIONS, status)]);
     if (params.serial) meta.push(['الرقم', params.serial]);
     if (params.serial_from) meta.push(['الأرقام', `${params.serial_from} - ${params.serial_to}`]);
     printReport({ title: 'حركة الكوبون', date: dayjs().format('YYYY/MM/DD'), meta },
@@ -289,17 +291,17 @@ export function useCouponLifecycle(range: [Dayjs, Dayjs] | null, active: boolean
         }}
         onPressEnter={applySerial} onBlur={applySerial}
       />
-      <Select allowClear placeholder="رمز الكوبون" value={kind} onChange={setKind}
-        options={kindOptions} style={{ width: 110 }} />
-      <Select allowClear placeholder="كل الحالات" value={status} onChange={setStatus}
-        options={STATUS_OPTIONS} style={{ width: 140 }} popupMatchSelectWidth={false} />
-      <Select allowClear showSearch placeholder="كل المناديب" value={repId} onChange={setRepId}
+      <Select mode="multiple" maxTagCount="responsive" allowClear placeholder="رمز الكوبون" value={kind} onChange={setKind}
+        options={kindOptions} style={{ width: 140 }} />
+      <Select mode="multiple" maxTagCount="responsive" allowClear placeholder="كل الحالات" value={status} onChange={setStatus}
+        options={STATUS_OPTIONS} style={{ width: 160 }} popupMatchSelectWidth={false} />
+      <Select mode="multiple" maxTagCount="responsive" allowClear showSearch placeholder="كل المناديب" value={repId} onChange={setRepId}
         options={repOptions} filterOption={searchFilter} filterSort={searchRank}
         style={{ width: 240 }} popupMatchSelectWidth={false} />
-      <Select allowClear showSearch placeholder="الموزع" value={partyId}
+      <Select mode="multiple" maxTagCount="responsive" allowClear showSearch placeholder="الموزع" value={partyId}
         onChange={setPartyId} options={partyOptions} filterOption={searchFilter}
         filterSort={searchRank} style={{ width: 200 }} popupMatchSelectWidth={false} />
-      <Select allowClear showSearch placeholder="اسم الفني" value={plumberId}
+      <Select mode="multiple" maxTagCount="responsive" allowClear showSearch placeholder="اسم الفني" value={plumberId}
         onChange={setPlumberId} options={plumberOptions} filterOption={searchFilter}
         filterSort={searchRank} style={{ width: 180 }} popupMatchSelectWidth={false} />
       <Checkbox checked={onlyUnlinked} onChange={(e) => setOnlyUnlinked(e.target.checked)}>
