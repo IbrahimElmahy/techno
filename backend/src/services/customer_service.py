@@ -54,6 +54,10 @@ def open_account(db: Session, customer: Customer, *, family: str | None = None) 
     db.add(cust_account)
     db.flush()
     account.owner_ref = cust_account.id
+    from src.services import chart_service
+
+    chart_service.place_party_account(db, account, kind="customer", name=customer.name,
+                                      code=customer.code, family=family)
     db.flush()
     return cust_account
 

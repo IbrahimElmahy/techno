@@ -345,3 +345,31 @@ def bulk_owner_names(db: Session, accounts: list[Account]) -> dict[int, str]:
 
 def owner_group_label(account_type: AccountType) -> str | None:
     return _OWNER_LABEL.get(account_type)
+
+
+def party_group(db: Session, branch_id: int | None, kind: str) -> Account | None:
+    suffix = "A5M-5" if kind == "customer" else "A5M-6"
+    name = "العملاء" if kind == "customer" else "الموردون"
+    rows = db.scalars(select(Account).where(Account.branch_id == branch_id,
+                                            Account.code.like(f"%{suffix}"))).all()
+    hit = next((a for a in rows if a.code and a.code.endswith(suffix)), None)
+    if hit is not None:
+        return hit
+    return db.scalars(select(Account).where(Account.branch_id == branch_id,
+                                            Account.name == name,
+                                            Account.is_postable.is_(False))).first()
+
+
+def place_party_account(db: Session, account: Account, *, kind: str, name: str | None,
+                        code: str | None, family: str | None = None) -> None:
+    group = party_group(db, account.branch_id, kind)
+    if group is not None and account.parent_id is None:
+        account.parent_id = group.id
+        account.nature = group.nature
+    if not account.name and name:
+        account.name = (f"{name} {family}" if family else name)[:160]
+    if not account.code and code:
+        want = (f"{code}-{family}" if family else code)[:40]
+        taken = db.scalar(select(Account.id).where(Account.code == want))
+        if taken is None:
+            account.code = want

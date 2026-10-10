@@ -34,5 +34,9 @@ def require_account(db: Session, supplier_id: int) -> SupplierAccount:
     db.add(link)
     db.flush()
     acc.owner_ref = link.id
+    from src.services import chart_service
+
+    chart_service.place_party_account(db, acc, kind="supplier", name=supplier.name,
+                                      code=supplier.code)
     db.flush()
     return link
