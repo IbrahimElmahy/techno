@@ -2,3 +2,4 @@ state.json
 state.json.tmp
 zk_agent.log*
 __pycache__/
+basma_defaults.py

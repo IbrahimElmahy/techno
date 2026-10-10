@@ -300,6 +300,10 @@ def run_sync(cfg: Config, since_override: date | None = None) -> int:
         save_state(state)
 
     state["records_count"] = snap.records_count
+    state["users_count"] = snap.users_count
+    state["records_capacity"] = snap.records_capacity or cfg.log_capacity
+    state["last_totals"] = totals
+    state["last_sent"] = len(pending)
     state["last_run"] = datetime.now().replace(microsecond=0).isoformat()
     if not state.get("last_punch"):
         state["last_punch"] = since_dt.isoformat()
