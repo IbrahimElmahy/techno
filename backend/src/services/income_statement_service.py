@@ -501,9 +501,14 @@ def coupon_price_item(db: Session, m: dict) -> dict | None:
         if it is not None:
             candidates = [it]
     if not candidates and m.get("coupon_item_name"):
-        wanted = norm(m["coupon_item_name"]).replace("x", "×").replace("*", "×")
+        from src.lib.arabic import western_digits
+
+        def key(text: str) -> str:
+            return norm(western_digits(text) or "").replace("x", "×").replace("*", "×")
+
+        wanted = key(m["coupon_item_name"])
         candidates = [i for i in db.scalars(select(Item).where(Item.active.is_(True))).all()
-                      if norm(i.name).replace("*", "×") == wanted]
+                      if key(i.name) == wanted]
     for it in candidates:
         price = db.scalar(select(ItemPrice.price).where(ItemPrice.item_id == it.id,
                                                         ItemPrice.tier == tier_enum))
