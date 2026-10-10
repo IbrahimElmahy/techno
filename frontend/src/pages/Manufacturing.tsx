@@ -1141,7 +1141,15 @@ function ProductionOrdersTab({
           onOk: () => printOrder(fresh, quality ? 'quality' : 'production'),
         });
       }
-    } catch (err) { console.error(err); }
+    } catch (err: any) {
+      if (err?.response?.status === 409) {
+        Modal.error({
+          title: 'تعذّر تنفيذ الأمر', width: 560,
+          content: <div style={{ whiteSpace: 'pre-wrap', lineHeight: 1.9 }}>{err?.response?.data?.detail?.message}</div>,
+          okText: 'حسناً',
+        });
+      }
+    }
   };
 
   const openClose = (r: ProductionOrder) => {

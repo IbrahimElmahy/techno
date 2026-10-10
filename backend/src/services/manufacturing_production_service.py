@@ -265,11 +265,32 @@ def pending(order: ProductionOrder, stage: str | None = None) -> list:
             and (stage is None or stage_of(m) == stage)]
 
 
+def shortages(db: Session, rows) -> list[str]:
+    need: dict[tuple[int, int], Decimal] = {}
+    for m in rows:
+        key = (m.item_id, int(m.warehouse_id))
+        need[key] = need.get(key, ZERO) + to_qty(m.quantity)
+    out = []
+    for (item_id, wh_id), qty in need.items():
+        have = to_qty(stock_service.on_hand(db, item_id, LocationKind.warehouse, wh_id))
+        if have < qty:
+            item = db.get(Item, item_id)
+            wh = db.get(Warehouse, wh_id)
+            out.append(f"• {item.name if item else item_id} في «{wh.name if wh else wh_id}»: "
+                       f"المطلوب {qty.normalize():f} والمتاح {have.normalize():f}")
+    return out
+
+
 def _issue_materials(db: Session, order: ProductionOrder, actor_user_id: int,
                      *, stage: str | None = None) -> Decimal:
     rows = pending(order, stage)
     if not rows:
         return ZERO
+    missing = shortages(db, rows)
+    if missing:
+        raise ProductionOrderError(
+            "الخامات التالية غير كافية في مخازنها — حوّل الكمية للمخزن أو غيّر مخزن الخامة:" + chr(10)
+            + chr(10).join(missing))
     averages = costing_service.average_cost_bulk(db, {m.item_id for m in rows})
     total = ZERO
     for m in rows:

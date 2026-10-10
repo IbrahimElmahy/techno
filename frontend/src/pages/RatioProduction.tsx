@@ -176,7 +176,13 @@ export default function RatioProduction() {
       setEntryOpen(false);
       load();
     } catch (e: any) {
-      message.error(e?.response?.data?.detail?.message || 'تعذر حفظ الإنتاج');
+      const msg = e?.response?.data?.detail?.message || 'تعذر حفظ الإنتاج';
+      Modal.error({
+        title: 'لم يُسجَّل الإنتاج',
+        width: 560,
+        content: <div style={{ whiteSpace: 'pre-wrap', lineHeight: 1.9 }}>{msg}</div>,
+        okText: 'حسناً',
+      });
     } finally { setSaving(false); }
   };
 
