@@ -75,6 +75,33 @@ function applyStored(widths: Widths) {
   });
 }
 
+function syncHeaders(watch?: (el: Element) => void) {
+  document.querySelectorAll<HTMLElement>('.ant-table-container').forEach((box) => {
+    const header = box.querySelector<HTMLElement>(':scope > .ant-table-header');
+    const body = box.querySelector<HTMLElement>(':scope > .ant-table-body');
+    if (!header || !body) return;
+    const bodyTable = body.querySelector<HTMLElement>(':scope > table');
+    const headTable = header.querySelector<HTMLElement>(':scope > table');
+    const measure = bodyTable?.querySelector<HTMLElement>(':scope > tbody > tr.ant-table-measure-row');
+    if (!bodyTable || !headTable || !measure) return;
+    watch?.(bodyTable);
+    const widths = [...measure.children].map((c) => (c as HTMLElement).getBoundingClientRect().width);
+    if (!widths.length || widths.some((w) => !w)) return;
+    const cols = [...(headTable.querySelector(':scope > colgroup')?.children ?? [])] as HTMLElement[];
+    widths.forEach((w, i) => {
+      const col = cols[i];
+      if (!col) return;
+      const cur = parseFloat(col.style.width);
+      if (!(Math.abs(cur - w) < 0.5)) col.style.width = `${w}px`;
+    });
+    if (cols.length === widths.length) {
+      const bw = bodyTable.getBoundingClientRect().width;
+      const hw = headTable.getBoundingClientRect().width;
+      if (Math.abs(bw - hw) >= 0.5) headTable.style.width = `${bw}px`;
+    }
+  });
+}
+
 export default function ColumnResizeProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     let widths = shared;
@@ -91,6 +118,7 @@ export default function ColumnResizeProvider({ children }: { children: React.Rea
       const delta = rtl ? drag.startX - e.clientX : e.clientX - drag.startX;
       const next = Math.max(MIN_WIDTH, Math.round(drag.startWidth + delta));
       colsAt(drag.table, drag.index).forEach((col) => { col.style.width = `${next}px`; });
+      syncHeaders();
       widths[drag.key] = next;
       emit();
       e.preventDefault();
@@ -139,10 +167,23 @@ export default function ColumnResizeProvider({ children }: { children: React.Rea
       e.stopPropagation();
     };
 
+    const watched = new WeakSet<Element>();
+    let syncRaf = 0;
+    const scheduleSync = () => {
+      if (syncRaf) return;
+      syncRaf = requestAnimationFrame(() => { syncRaf = 0; syncHeaders(watch); });
+    };
+    const sizes = new ResizeObserver(scheduleSync);
+    const watch = (el: Element) => {
+      if (watched.has(el)) return;
+      watched.add(el);
+      sizes.observe(el);
+    };
+
     let queued: ReturnType<typeof setTimeout> | null = null;
     const observer = new MutationObserver(() => {
       if (queued) return;
-      queued = setTimeout(() => { queued = null; applyStored(widths); }, 16);
+      queued = setTimeout(() => { queued = null; applyStored(widths); scheduleSync(); }, 16);
     });
     observer.observe(document.body, { childList: true, subtree: true });
 
@@ -150,10 +191,17 @@ export default function ColumnResizeProvider({ children }: { children: React.Rea
     document.addEventListener('dblclick', onDoubleClick, true);
     window.addEventListener('pointermove', onMove);
     window.addEventListener('pointerup', onUp);
+    window.addEventListener('resize', scheduleSync);
+    window.addEventListener(WIDTHS_EVENT, scheduleSync);
     applyStored(widths);
+    scheduleSync();
 
     return () => {
       if (queued) clearTimeout(queued);
+      if (syncRaf) cancelAnimationFrame(syncRaf);
+      sizes.disconnect();
+      window.removeEventListener('resize', scheduleSync);
+      window.removeEventListener(WIDTHS_EVENT, scheduleSync);
       observer.disconnect();
       document.removeEventListener('pointerdown', onDown, true);
       document.removeEventListener('dblclick', onDoubleClick, true);
