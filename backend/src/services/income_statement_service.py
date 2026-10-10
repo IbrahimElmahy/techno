@@ -102,7 +102,7 @@ DEFAULT_CONFIG: dict = {
         "gold_coupon_points": 30,
         "ratio_num": 2, "ratio_den": 30,
         "coupon_cost": 180,
-        "sales_coupons_source": "issued", "sales_coupons_manual": 0,
+        "sales_coupons_source": "received", "sales_coupons_manual": 0,
         "kind_values": {},
     },
     "periods": {},
