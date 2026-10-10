@@ -147,9 +147,10 @@
 }
 .ppk-cards .ppk-card.is-cursor,
 .ppk-cards .ppk-card.is-checked {
-  border-color: var(--ppk-green); background: var(--ppk-green-bg);
+  border-color: var(--ppk-green); background: #e6f5da;
   box-shadow: 0 0 0 1px var(--ppk-green) inset;
 }
+.ppk-cards .ppk-card.is-cursor { background: #cfeab6; box-shadow: 0 0 0 2px var(--ppk-green) inset; }
 .ppk-cards .ppk-card.is-out { cursor: not-allowed; opacity: 0.5; background: #fafafa; box-shadow: none; }
 .ppk-cards .ppk-check { pointer-events: none; }
 
@@ -260,8 +261,10 @@
   gap: 6px; padding: 3px 8px; margin: 0; border-radius: 0; min-height: 38px;
   border: none; border-bottom: 1px solid #eef2ec;
 }
-.ppk-compact .ppk-card.is-cursor,
-.ppk-compact .ppk-card.is-checked { box-shadow: inset 3px 0 0 var(--ppk-green); }
+.ppk-compact .ppk-card.is-checked { background: #e6f5da; box-shadow: inset -4px 0 0 var(--ppk-green); }
+.ppk-compact .ppk-card.is-cursor {
+  background: #cfeab6; box-shadow: inset -5px 0 0 var(--ppk-green), inset 0 0 0 1px var(--ppk-green);
+}
 .ppk-compact .ppk-figs { gap: 6px; }
 .ppk-compact .ppk-box {
   justify-content: center; padding: 2px 4px; border-radius: 6px; border-color: transparent;

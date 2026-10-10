@@ -105,7 +105,13 @@ export default function App() {
       direction="rtl"
       locale={AR_LOCALE}
       theme={{
-        components: hc ? HC_THEME.components : undefined,
+        components: hc ? HC_THEME.components : {
+          Select: { optionActiveBg: '#d3edbd', optionSelectedBg: '#b5dd8f', optionSelectedFontWeight: 800 },
+          TreeSelect: { nodeHoverBg: '#d3edbd', nodeSelectedBg: '#b5dd8f' },
+          Cascader: { optionSelectedBg: '#b5dd8f' },
+          Menu: { itemHoverBg: '#e3f3d6' },
+          Dropdown: { controlItemBgHover: '#d3edbd' },
+        },
         token: {
           colorPrimary: '#6AB42D',
           colorInfo: '#6AB42D',
