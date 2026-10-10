@@ -98,7 +98,7 @@ DEFAULT_CONFIG: dict = {
         "source": "model",
         "coupon_base": 73.4, "coupon_base_pct": 90,
         "coupon_item_id": None, "coupon_item_name": "كوع بسن داخلى 25×20",
-        "coupon_item_tier": "semi_commercial", "coupon_discount_pct": 10,
+        "coupon_item_tier": "sale_price", "coupon_discount_pct": 10,
         "ratio_num": 2, "ratio_den": 30,
         "coupon_cost": 180,
         "sales_coupons_source": "issued", "sales_coupons_manual": 0,
@@ -490,11 +490,11 @@ TIER_LABELS = {"commercial": "تجاري", "semi_commercial": "نصف تجاري
 def coupon_price_item(db: Session, m: dict) -> dict | None:
     from src.models.catalog import ItemPrice, PriceTier
 
-    tier = m.get("coupon_item_tier") or "semi_commercial"
+    tier = m.get("coupon_item_tier") or "sale_price"
     try:
         tier_enum = PriceTier(tier)
     except ValueError:
-        tier_enum = PriceTier.semi_commercial
+        tier_enum = None
     candidates: list[Item] = []
     if m.get("coupon_item_id"):
         it = db.get(Item, int(m["coupon_item_id"]))
@@ -509,7 +509,7 @@ def coupon_price_item(db: Session, m: dict) -> dict | None:
         wanted = key(m["coupon_item_name"])
         candidates = [i for i in db.scalars(select(Item).where(Item.active.is_(True))).all()
                       if key(i.name) == wanted]
-    for it in candidates:
+    for it in candidates if tier_enum is not None else []:
         price = db.scalar(select(ItemPrice.price).where(ItemPrice.item_id == it.id,
                                                         ItemPrice.tier == tier_enum))
         if price is not None and D(price) > 0:

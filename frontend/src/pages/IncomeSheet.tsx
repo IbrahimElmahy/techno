@@ -924,9 +924,9 @@ const SettingsTab: React.FC<{ branchId?: number; canEdit: boolean; onSaved: () =
           </Col>
           <Col xs={24} md={8}>
             <div style={{ color: '#64748b', fontSize: 12 }}>شريحة السعر</div>
-            <Select style={{ width: '100%' }} disabled={!canEdit} value={cfg.marketing.coupon_item_tier || 'semi_commercial'}
+            <Select style={{ width: '100%' }} disabled={!canEdit} value={cfg.marketing.coupon_item_tier || 'sale_price'}
               onChange={(v) => set(['marketing', 'coupon_item_tier'], v)}
-              options={[['commercial', 'تجاري'], ['semi_commercial', 'نصف تجاري'], ['wholesale', 'جملة'],
+              options={[['sale_price', 'سعر البيع'], ['commercial', 'تجاري'], ['semi_commercial', 'نصف تجاري'], ['wholesale', 'جملة'],
                 ['semi_wholesale', 'نصف جملة'], ['consumer', 'مستهلك']].map(([value, label]) => ({ value, label }))} />
           </Col>
           {num(['marketing', 'coupon_discount_pct'], 'خصم على سعر الصنف %')}
