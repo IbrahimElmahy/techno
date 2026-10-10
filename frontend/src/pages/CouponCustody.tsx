@@ -232,7 +232,7 @@ export default function CouponCustody() {
 
   const filters = (<>
     <Select className="sl-f-customer" allowClear showSearch placeholder="كل المناديب"
-      value={repId} onChange={setRepId} options={repOptions}
+      value={repId} onChange={setRepId} options={repOptions} popupMatchSelectWidth={false}
       filterOption={searchFilter} filterSort={searchRank} />
     <Select allowClear showSearch placeholder="كل الفئات"
       value={kind} onChange={setKind} options={kindOptions}

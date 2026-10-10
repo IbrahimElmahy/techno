@@ -248,7 +248,8 @@ export default function RepReports() {
         />
         <Select
           allowClear showSearch
-          placeholder="كل المناديب" value={repId} onChange={setRepId} options={repOptions} filterOption={searchFilter} filterSort={searchRank}/>
+          placeholder="كل المناديب" value={repId} onChange={setRepId} options={repOptions} filterOption={searchFilter} filterSort={searchRank}
+          popupMatchSelectWidth={false} style={{ minWidth: 240 }} />
         <StatementFilter value={statement} onChange={setStatement} />
         {cur && (<>
           <Input

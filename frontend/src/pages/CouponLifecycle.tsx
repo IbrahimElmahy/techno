@@ -295,13 +295,13 @@ export function useCouponLifecycle(range: [Dayjs, Dayjs] | null, active: boolean
         options={STATUS_OPTIONS} style={{ width: 140 }} popupMatchSelectWidth={false} />
       <Select allowClear showSearch placeholder="كل المناديب" value={repId} onChange={setRepId}
         options={repOptions} filterOption={searchFilter} filterSort={searchRank}
-        style={{ width: 170 }} />
+        style={{ width: 240 }} popupMatchSelectWidth={false} />
       <Select allowClear showSearch placeholder="الموزع" value={partyId}
         onChange={setPartyId} options={partyOptions} filterOption={searchFilter}
-        filterSort={searchRank} style={{ width: 200 }} />
+        filterSort={searchRank} style={{ width: 200 }} popupMatchSelectWidth={false} />
       <Select allowClear showSearch placeholder="اسم الفني" value={plumberId}
         onChange={setPlumberId} options={plumberOptions} filterOption={searchFilter}
-        filterSort={searchRank} style={{ width: 180 }} />
+        filterSort={searchRank} style={{ width: 180 }} popupMatchSelectWidth={false} />
       <Checkbox checked={onlyUnlinked} onChange={(e) => setOnlyUnlinked(e.target.checked)}>
         أُعيد دون تسليم
       </Checkbox>
