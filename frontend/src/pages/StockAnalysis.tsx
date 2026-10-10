@@ -9,6 +9,7 @@ import DateRangeFilter from '../components/DateRangeFilter';
 import { useTableColumns } from '../components/ColumnSettings';
 import { useLookup } from '../hooks/useLookup';
 import { useCategoryTree, categorySelectOptions } from '../hooks/useCategoryTree';
+import { MULTI, categorySet, filterParams, picked, usePrune } from '../utils/reportFilters';
 import { searchFilter, searchRank, sortByName } from '../utils/arabicSort';
 import { money, qty, numeralsLocale } from '../utils/money';
 import { PAGE_SIZE } from '../utils/pagination';
@@ -77,7 +78,7 @@ export default function StockAnalysis() {
         if (range?.[0]) p.date_from = range[0].format('YYYY-MM-DD');
         if (range?.[1]) p.date_to = range[1].format('YYYY-MM-DD');
       }
-      Object.entries(f).forEach(([k, v]) => { if (v !== undefined && v !== null && v !== '') p[k] = v; });
+      Object.assign(p, filterParams(f));
       const res = await api.get('/api/v1/reports/stock-analysis', { params: p });
       if (my !== seq.current) return;
       setRows(res.data.rows || []);
@@ -167,6 +168,21 @@ export default function StockAnalysis() {
 
   const setFilter = (k: string, v: any) => setF((prev) => ({ ...prev, [k]: v }));
 
+  const warehouseList = useMemo(() => {
+    const br = picked(f, 'branch_id');
+    const all = lists.warehouses || [];
+    return br.length ? all.filter((w: any) => br.includes(w.branch_id)) : all;
+  }, [lists.warehouses, JSON.stringify(f.branch_id)]);
+  const itemList = useMemo(() => {
+    const cats = picked(f, 'category');
+    const all = lists.items || [];
+    if (!cats.length) return all;
+    const set = categorySet(categoryTree, cats);
+    return all.filter((i: any) => set.has(i.category));
+  }, [lists.items, categoryTree, JSON.stringify(f.category)]);
+  usePrune(f, setF, 'warehouse_id', warehouseList);
+  usePrune(f, setF, 'item_id', itemList);
+
   return (
     <ListPage
       icon={<DatabaseOutlined />}
@@ -186,19 +202,19 @@ export default function StockAnalysis() {
         <Select mode="multiple" allowClear maxTagCount="responsive" style={{ minWidth: 220 }}
           placeholder="التجميع حسب" value={dims} onChange={(v) => setDims(v as StockDim[])}
           options={(Object.keys(DIM_LABEL) as StockDim[]).map((d) => ({ value: d, label: DIM_LABEL[d] }))} />
-        <Select allowClear showSearch placeholder="الفرع" value={f.branch_id} style={{ minWidth: 130 }}
+        <Select {...MULTI} showSearch placeholder="الفرع" value={picked(f, 'branch_id')} style={{ minWidth: 150 }}
           onChange={(v) => setFilter('branch_id', v)} filterOption={searchFilter} filterSort={searchRank}
           options={(lists.branches || []).map((b) => ({ value: b.id, label: b.name }))} />
-        <Select allowClear showSearch placeholder="المخزن" value={f.warehouse_id} style={{ minWidth: 160 }}
+        <Select {...MULTI} showSearch placeholder="المخزن" value={picked(f, 'warehouse_id')} style={{ minWidth: 180 }}
           onChange={(v) => setFilter('warehouse_id', v)} filterOption={searchFilter} filterSort={searchRank}
-          options={(lists.warehouses || []).map((w) => ({ value: w.id, label: w.name }))} />
-        <TreeSelect allowClear showSearch placeholder="الفئة" value={f.category} style={{ minWidth: 170 }}
-          popupMatchSelectWidth={false} onChange={(v) => setFilter('category', v)}
+          options={warehouseList.map((w: any) => ({ value: w.id, label: w.name }))} />
+        <TreeSelect multiple allowClear showSearch maxTagCount="responsive" placeholder="الفئة" value={picked(f, 'category')}
+          style={{ minWidth: 180 }} popupMatchSelectWidth={false} onChange={(v) => setFilter('category', v)}
           treeData={categoryTreeOptions as any} treeNodeFilterProp="label" />
-        <Select allowClear showSearch placeholder="الصنف" value={f.item_id} style={{ minWidth: 200 }}
+        <Select {...MULTI} showSearch placeholder="الصنف" value={picked(f, 'item_id')} style={{ minWidth: 220 }}
           popupMatchSelectWidth={false} onChange={(v) => setFilter('item_id', v)}
           filterOption={searchFilter} filterSort={searchRank}
-          options={(lists.items || []).map((i: any) => ({ value: i.id, label: `${i.name} — ${i.code}` }))} />
+          options={itemList.map((i: any) => ({ value: i.id, label: `${i.name} — ${i.code}` }))} />
         <Checkbox checked={includeCustody} onChange={(e) => setIncludeCustody(e.target.checked)}>عهد المناديب</Checkbox>
         <Checkbox checked={hideZero} onChange={(e) => setHideZero(e.target.checked)}>إخفاء الصفري</Checkbox>
         <Button className="sl-f-clear" icon={<ClearOutlined />}

@@ -7,6 +7,7 @@ from sqlalchemy import Date, String, and_, case, cast, func, literal, select, tr
 from sqlalchemy.orm import Session
 
 from src.core.money import ZERO, to_money, to_qty
+from src.lib import multi_filter as mf
 from src.models.catalog import Item
 from src.models.lookup import LookupOption
 from src.models.org import Branch
@@ -53,10 +54,10 @@ def analyse(
     dims: list[str] | None = None,
     date_from: date | None = None,
     date_to: date | None = None,
-    branch_id: int | None = None,
-    warehouse_id: int | None = None,
-    item_id: int | None = None,
-    category: str | None = None,
+    branch_id=None,
+    warehouse_id=None,
+    item_id=None,
+    category=None,
     include_custody: bool = False,
     hide_zero: bool = True,
 ) -> dict:
@@ -127,15 +128,16 @@ def analyse(
         stmt = stmt.where(when <= date_to)
     if has_period and date_from:
         stmt = stmt.where(when >= date_from)
-    if branch_id is not None:
-        stmt = stmt.where(Warehouse.branch_id == branch_id)
-    if warehouse_id is not None:
-        stmt = stmt.where(m.location_kind == LocationKind.warehouse, m.location_id == warehouse_id)
-    if item_id is not None:
-        stmt = stmt.where(m.item_id == item_id)
-    if category:
-        stmt = stmt.where(Item.category.in_(
-            lookup_service.with_children(db, lookup_service.ITEM_CATEGORY, category)))
+    branch_id, warehouse_id, item_id = mf.ids(branch_id), mf.ids(warehouse_id), mf.ids(item_id)
+    if branch_id:
+        stmt = stmt.where(Warehouse.branch_id.in_(branch_id))
+    if warehouse_id:
+        stmt = stmt.where(m.location_kind == LocationKind.warehouse, m.location_id.in_(warehouse_id))
+    if item_id:
+        stmt = stmt.where(m.item_id.in_(item_id))
+    cats = mf.categories(db, category)
+    if cats:
+        stmt = stmt.where(Item.category.in_(cats))
     if group:
         stmt = stmt.group_by(*group)
 

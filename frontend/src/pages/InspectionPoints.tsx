@@ -7,6 +7,7 @@ import { api } from '../api/client';
 import ListPage, { ListStat } from '../components/ListPage';
 import DateRangeFilter from '../components/DateRangeFilter';
 import { useTableColumns } from '../components/ColumnSettings';
+import { MULTI, filterParams, picked, usePrune } from '../utils/reportFilters';
 import { searchFilter, searchRank, sortByName } from '../utils/arabicSort';
 import { qty, numeralsLocale } from '../utils/money';
 import { isStopped } from '../utils/reps';
@@ -103,7 +104,8 @@ export default function InspectionPoints() {
       const p: Record<string, any> = { dims: effectiveDims.join(',') };
       if (range?.[0]) p.date_from = range[0].format('YYYY-MM-DD');
       if (range?.[1]) p.date_to = range[1].format('YYYY-MM-DD');
-      Object.entries(f).forEach(([k, v]) => { if (v !== undefined && v !== null && v !== '') p[k] = v; });
+      Object.assign(p, filterParams({ ...f, item: undefined }));
+      if (picked(f, 'item').length) p.item = picked(f, 'item').join('|');
       const res = await api.get('/api/v1/after-sales-reports/inspection-points', { params: p });
       if (my !== seq.current) return;
       setRows(res.data.rows || []);
@@ -188,6 +190,16 @@ export default function InspectionPoints() {
 
   const setFilter = (k: string, v: any) => setF((prev) => ({ ...prev, [k]: v }));
 
+  const govs = picked(f, 'governorate_id');
+  const technicianList = useMemo(() => (govs.length
+    ? (lists.technicians || []).filter((c: any) => govs.includes(c.governorate_id))
+    : lists.technicians || []), [lists.technicians, JSON.stringify(govs)]);
+  const merchantList = useMemo(() => (govs.length
+    ? (lists.merchants || []).filter((c: any) => govs.includes(c.governorate_id))
+    : lists.merchants || []), [lists.merchants, JSON.stringify(govs)]);
+  usePrune(f, setF, 'technician_id', technicianList);
+  usePrune(f, setF, 'merchant_id', merchantList);
+
   const print = () => {
     const visible = (cols.columns as any[]).filter((c) => c.dataIndex);
     const pc: PrintColumn<Row>[] = visible.map((c: any) => ({
@@ -239,29 +251,29 @@ export default function InspectionPoints() {
         <Select style={{ width: 120 }} value={period} onChange={(v) => setPeriod(v)}
           options={[{ value: 'none', label: 'بدون فترة' }, { value: 'day', label: 'باليوم' },
             { value: 'month', label: 'بالشهر' }]} />
-        <Select allowClear placeholder="نوع الزيارة" value={f.visit_kind} style={{ minWidth: 130 }}
+        <Select {...MULTI} placeholder="نوع الزيارة" value={picked(f, 'visit_kind')} style={{ minWidth: 130 }}
           onChange={(v) => setFilter('visit_kind', v)}
           options={[{ value: 'technician', label: 'معاينة فني' }, { value: 'regular', label: 'زيارة عادية' }]} />
-        <Select allowClear showSearch placeholder="الفرع" value={f.branch_id} style={{ minWidth: 130 }}
+        <Select {...MULTI} showSearch placeholder="الفرع" value={picked(f, 'branch_id')} style={{ minWidth: 130 }}
           onChange={(v) => setFilter('branch_id', v)} filterOption={searchFilter} filterSort={searchRank}
           options={(lists.branches || []).map((b) => ({ value: b.id, label: b.name }))} />
-        <Select allowClear showSearch placeholder="المندوب" value={f.rep_id} style={{ minWidth: 170 }}
+        <Select {...MULTI} showSearch placeholder="المندوب" value={picked(f, 'rep_id')} style={{ minWidth: 170 }}
           popupMatchSelectWidth={false} onChange={(v) => setFilter('rep_id', v)}
           filterOption={searchFilter} filterSort={searchRank}
           options={(lists.reps || []).map((r) => ({ value: r.id, label: repLabel(r) }))} />
-        <Select allowClear showSearch placeholder="الفني" value={f.technician_id} style={{ minWidth: 200 }}
+        <Select {...MULTI} showSearch placeholder="الفني" value={picked(f, 'technician_id')} style={{ minWidth: 200 }}
           popupMatchSelectWidth={false} onChange={(v) => setFilter('technician_id', v)}
           filterOption={searchFilter} filterSort={searchRank}
-          options={(lists.technicians || []).map((p) => ({ value: p.id, label: partyLabel(p) }))} />
-        <Select allowClear showSearch placeholder="التاجر" value={f.merchant_id} style={{ minWidth: 200 }}
+          options={technicianList.map((p: any) => ({ value: p.id, label: partyLabel(p) }))} />
+        <Select {...MULTI} showSearch placeholder="التاجر" value={picked(f, 'merchant_id')} style={{ minWidth: 200 }}
           popupMatchSelectWidth={false} onChange={(v) => setFilter('merchant_id', v)}
           filterOption={searchFilter} filterSort={searchRank}
-          options={(lists.merchants || []).map((p) => ({ value: p.id, label: partyLabel(p) }))} />
-        <Select allowClear showSearch placeholder="الصنف" value={f.item} style={{ minWidth: 200 }}
+          options={merchantList.map((p: any) => ({ value: p.id, label: partyLabel(p) }))} />
+        <Select {...MULTI} showSearch placeholder="الصنف" value={picked(f, 'item')} style={{ minWidth: 200 }}
           popupMatchSelectWidth={false} onChange={(v) => setFilter('item', v)}
           filterOption={searchFilter} filterSort={searchRank}
           options={(lists.items || []).map((i: any) => ({ value: i.name, label: i.name }))} />
-        <Select allowClear showSearch placeholder="المحافظة" value={f.governorate_id} style={{ minWidth: 140 }}
+        <Select {...MULTI} showSearch placeholder="المحافظة" value={picked(f, 'governorate_id')} style={{ minWidth: 140 }}
           onChange={(v) => setFilter('governorate_id', v)} filterOption={searchFilter} filterSort={searchRank}
           options={(lists.governorates || []).map((g) => ({ value: g.id, label: g.name }))} />
         <Button className="sl-f-clear" icon={<ClearOutlined />}

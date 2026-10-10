@@ -3,6 +3,7 @@ import { Alert, Button, Checkbox, DatePicker, Select, Table, message } from 'ant
 import { AuditOutlined, ClearOutlined, PrinterOutlined, ReloadOutlined } from '@ant-design/icons';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import dayjs, { Dayjs } from 'dayjs';
+import { MULTI, filterParams, picked, territorySet, usePrune } from '../utils/reportFilters';
 import { api } from '../api/client';
 import ListPage, { ListStat } from '../components/ListPage';
 import DateRangeFilter from '../components/DateRangeFilter';
@@ -80,7 +81,7 @@ export default function LedgerAnalysis() {
         if (range?.[0]) p.date_from = range[0].format('YYYY-MM-DD');
         if (range?.[1]) p.date_to = range[1].format('YYYY-MM-DD');
       }
-      Object.entries(f).forEach(([k, v]) => { if (v !== undefined && v !== null && v !== '') p[k] = v; });
+      Object.assign(p, filterParams(f));
       const res = await api.get('/api/v1/reports/ledger-analysis', { params: p });
       if (my !== seq.current) return;
       setRows(res.data.rows || []);
@@ -172,10 +173,30 @@ export default function LedgerAnalysis() {
   };
 
   const setFilter = (k: string, v: any) => setF((prev) => ({ ...prev, [k]: v }));
-  const parties = f.party_kind === 'supplier' ? lists.suppliers : f.party_kind === 'customer' ? lists.customers : [];
-  const accountOptions = useMemo(() => (lists.accounts || [])
-    .filter((a: any) => a.name)
-    .map((a: any) => ({ value: a.id, label: `${a.code || ''} ${a.name}`.trim() })), [lists.accounts]);
+  const kinds = picked(f, 'party_kind');
+  const oneKind = kinds.length === 1 ? kinds[0] : null;
+  const parties = useMemo(() => {
+    if (oneKind === 'supplier') return lists.suppliers || [];
+    if (oneKind !== 'customer') return [];
+    let all = lists.customers || [];
+    const ter = picked(f, 'territory_id');
+    const rep = picked(f, 'rep_id');
+    if (ter.length) {
+      const set = territorySet(lists.territories || [], ter);
+      all = all.filter((c: any) => set.has(c.territory_id));
+    }
+    if (rep.length) all = all.filter((c: any) => rep.includes(c.rep_id));
+    return all;
+  }, [oneKind, lists.customers, lists.suppliers, lists.territories, JSON.stringify([f.territory_id, f.rep_id])]);
+  usePrune(f, setF, 'party_id', oneKind ? parties : []);
+  const accountList = useMemo(() => {
+    const types = picked(f, 'account_type');
+    const all = (lists.accounts || []).filter((a: any) => a.name);
+    return types.length ? all.filter((a: any) => types.includes(a.account_type)) : all;
+  }, [lists.accounts, JSON.stringify(f.account_type)]);
+  usePrune(f, setF, 'account_id', accountList);
+  const accountOptions = useMemo(() => accountList
+    .map((a: any) => ({ value: a.id, label: `${a.code || ''} ${a.name}`.trim() })), [accountList]);
 
   return (
     <ListPage
@@ -196,31 +217,31 @@ export default function LedgerAnalysis() {
         <Select mode="multiple" allowClear maxTagCount="responsive" style={{ minWidth: 220 }}
           placeholder="التجميع حسب" value={dims} onChange={(v) => setDims(v as LedgerDim[])}
           options={(Object.keys(DIM_LABEL) as LedgerDim[]).map((d) => ({ value: d, label: DIM_LABEL[d] }))} />
-        <Select allowClear showSearch placeholder="الحساب" value={f.account_id} style={{ minWidth: 220 }}
+        <Select {...MULTI} showSearch placeholder="الحساب" value={picked(f, 'account_id')} style={{ minWidth: 240 }}
           popupMatchSelectWidth={false} onChange={(v) => setFilter('account_id', v)}
           filterOption={searchFilter} filterSort={searchRank} options={accountOptions} />
-        <Select allowClear placeholder="نوع الحساب" value={f.account_type} style={{ minWidth: 140 }}
+        <Select {...MULTI} placeholder="نوع الحساب" value={picked(f, 'account_type')} style={{ minWidth: 160 }}
           onChange={(v) => setFilter('account_type', v)}
           options={ACCOUNT_TYPES.map(([value, label]) => ({ value, label }))} />
-        <Select allowClear placeholder="نوع الطرف" value={f.party_kind} style={{ minWidth: 120 }}
+        <Select {...MULTI} placeholder="نوع الطرف" value={kinds} style={{ minWidth: 150 }}
           onChange={(v) => setF((prev) => ({ ...prev, party_kind: v, party_id: undefined }))}
           options={[{ value: 'customer', label: 'العملاء' }, { value: 'supplier', label: 'الموردين' }]} />
-        {f.party_kind && (
-          <Select allowClear showSearch placeholder="الطرف" value={f.party_id} style={{ minWidth: 200 }}
+        {oneKind && (
+          <Select {...MULTI} showSearch placeholder="الطرف" value={picked(f, 'party_id')} style={{ minWidth: 220 }}
             popupMatchSelectWidth={false} onChange={(v) => setFilter('party_id', v)}
             filterOption={searchFilter} filterSort={searchRank}
-            options={(parties || []).map((p: any) => ({ value: p.id, label: `${p.name}${p.code ? ` — ${p.code}` : ''}` }))} />
+            options={parties.map((p: any) => ({ value: p.id, label: `${p.name}${p.code ? ` — ${p.code}` : ''}` }))} />
         )}
-        <Select allowClear showSearch placeholder="الفرع" value={f.branch_id} style={{ minWidth: 130 }}
+        <Select {...MULTI} showSearch placeholder="الفرع" value={picked(f, 'branch_id')} style={{ minWidth: 150 }}
           onChange={(v) => setFilter('branch_id', v)} filterOption={searchFilter} filterSort={searchRank}
           options={(lists.branches || []).map((b) => ({ value: b.id, label: b.name }))} />
-        <Select allowClear showSearch placeholder="المنطقة" value={f.territory_id} style={{ minWidth: 140 }}
+        <Select {...MULTI} showSearch placeholder="المنطقة" value={picked(f, 'territory_id')} style={{ minWidth: 160 }}
           onChange={(v) => setFilter('territory_id', v)} filterOption={searchFilter} filterSort={searchRank}
           options={(lists.territories || []).map((t) => ({ value: t.id, label: t.name }))} />
-        <Select allowClear showSearch placeholder="المندوب" value={f.rep_id} style={{ minWidth: 170 }}
+        <Select {...MULTI} showSearch placeholder="المندوب" value={picked(f, 'rep_id')} style={{ minWidth: 180 }}
           popupMatchSelectWidth={false} onChange={(v) => setFilter('rep_id', v)}
-          filterOption={searchFilter} filterSort={searchRank} options={repOptions(lists.reps || [], f.rep_id)} />
-        <Select allowClear showSearch placeholder="مركز التكلفة" value={f.cost_center_id} style={{ minWidth: 150 }}
+          filterOption={searchFilter} filterSort={searchRank} options={repOptions(lists.reps || [])} />
+        <Select {...MULTI} showSearch placeholder="مركز التكلفة" value={picked(f, 'cost_center_id')} style={{ minWidth: 170 }}
           onChange={(v) => setFilter('cost_center_id', v)} filterOption={searchFilter} filterSort={searchRank}
           options={(lists.costCenters || []).map((c) => ({ value: c.id, label: c.name }))} />
         <Checkbox checked={postedOnly} onChange={(e) => setPostedOnly(e.target.checked)}>المرحّل فقط</Checkbox>

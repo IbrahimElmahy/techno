@@ -297,6 +297,8 @@ class CustomerOptionOut(BaseModel):
     rep_id: int | None = None
     default_price_tier: str | None = None
     discount_pct: Decimal | None = None
+    territory_id: int | None = None
+    governorate_id: int | None = None
 
 
 @router.get("/options", response_model=list[CustomerOptionOut])
@@ -310,7 +312,8 @@ def customer_options(
     stmt = _scope_filter(
         select(Customer.id, Customer.code, Customer.name, Customer.phone,
                Customer.customer_type, Customer.rep_id,
-               Customer.default_price_tier, Customer.discount_pct),
+               Customer.default_price_tier, Customer.discount_pct,
+               Customer.territory_id, Customer.governorate_id),
         current).where(Customer.active.is_(True),
                        Customer.customer_type != "owner")
     if customer_type:
@@ -331,7 +334,8 @@ def customer_options(
             customer_type=getattr(r.customer_type, "value", r.customer_type),
             rep_id=r.rep_id,
             default_price_tier=getattr(r.default_price_tier, "value", r.default_price_tier),
-            discount_pct=r.discount_pct)
+            discount_pct=r.discount_pct,
+            territory_id=r.territory_id, governorate_id=r.governorate_id)
         for r in rows
     ]
 

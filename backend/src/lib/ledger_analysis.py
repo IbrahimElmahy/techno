@@ -7,6 +7,7 @@ from sqlalchemy import Date, String, and_, case, cast, func, literal, or_, selec
 from sqlalchemy.orm import Session, aliased
 
 from src.core.money import to_money
+from src.lib import multi_filter as mf
 from src.models.cost_center import CostCenter
 from src.models.customer import Customer, CustomerAccount
 from src.models.ledger import Account, Direction, LedgerEntry, LedgerLine
@@ -57,14 +58,14 @@ def analyse(
     dims: list[str] | None = None,
     date_from: date | None = None,
     date_to: date | None = None,
-    branch_id: int | None = None,
-    account_id: int | None = None,
-    account_type: str | None = None,
-    party_kind: str | None = None,
-    party_id: int | None = None,
-    territory_id: int | None = None,
-    rep_id: int | None = None,
-    cost_center_id: int | None = None,
+    branch_id=None,
+    account_id=None,
+    account_type=None,
+    party_kind=None,
+    party_id=None,
+    territory_id=None,
+    rep_id=None,
+    cost_center_id=None,
     nonzero: bool = True,
     posted_only: bool = True,
 ) -> dict:
@@ -151,24 +152,27 @@ def analyse(
         stmt = stmt.where(when <= date_to)
     if has_period and date_from:
         stmt = stmt.where(when >= date_from)
-    if branch_id is not None:
-        stmt = stmt.where(or_(en.branch_id == branch_id,
-                              and_(en.branch_id.is_(None), acc.branch_id == branch_id)))
-    if account_id is not None:
-        stmt = stmt.where(or_(acc.id == account_id, acc.parent_id == account_id,
-                              parent.parent_id == account_id))
+    branch_id, account_id, party_id = mf.ids(branch_id), mf.ids(account_id), mf.ids(party_id)
+    territory_id, rep_id, cost_center_id = mf.ids(territory_id), mf.ids(rep_id), mf.ids(cost_center_id)
+    account_type, party_kind = mf.strs(account_type), mf.strs(party_kind)
+    if branch_id:
+        stmt = stmt.where(or_(en.branch_id.in_(branch_id),
+                              and_(en.branch_id.is_(None), acc.branch_id.in_(branch_id))))
+    if account_id:
+        stmt = stmt.where(or_(acc.id.in_(account_id), acc.parent_id.in_(account_id),
+                              parent.parent_id.in_(account_id)))
     if account_type:
-        stmt = stmt.where(cast(acc.account_type, String) == account_type)
+        stmt = stmt.where(cast(acc.account_type, String).in_(account_type))
     if party_kind:
-        stmt = stmt.where(pm.c.kind == party_kind)
-    if party_id is not None:
-        stmt = stmt.where(pm.c.party_id == party_id)
-    if territory_id is not None:
-        stmt = stmt.where(Customer.territory_id == territory_id)
-    if rep_id is not None:
-        stmt = stmt.where(Customer.rep_id == rep_id)
-    if cost_center_id is not None:
-        stmt = stmt.where(ln.cost_center_id == cost_center_id)
+        stmt = stmt.where(pm.c.kind.in_(party_kind))
+    if party_id:
+        stmt = stmt.where(pm.c.party_id.in_(party_id))
+    if territory_id:
+        stmt = stmt.where(Customer.territory_id.in_(territory_id))
+    if rep_id:
+        stmt = stmt.where(Customer.rep_id.in_(rep_id))
+    if cost_center_id:
+        stmt = stmt.where(ln.cost_center_id.in_(cost_center_id))
     if group:
         stmt = stmt.group_by(*group)
 

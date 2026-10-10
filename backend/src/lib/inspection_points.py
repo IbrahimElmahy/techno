@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session, aliased
 
 from src.core.money import to_qty
 from src.lib import arabic
+from src.lib import multi_filter as mf
 from src.models.customer import Customer
 from src.models.inspection import Inspection, InspectionItem, InspectionStatus, VisitKind
 from src.models.org import Branch, Governorate
@@ -53,14 +54,14 @@ def analyse(
     dims: list[str] | None = None,
     date_from: date | None = None,
     date_to: date | None = None,
-    branch_id: int | None = None,
-    rep_id: int | None = None,
-    technician_id: int | None = None,
+    branch_id=None,
+    rep_id=None,
+    technician_id=None,
     technician_name: str | None = None,
-    merchant_id: int | None = None,
-    item: str | None = None,
-    visit_kind: str | None = None,
-    governorate_id: int | None = None,
+    merchant_id=None,
+    item=None,
+    visit_kind=None,
+    governorate_id=None,
 ) -> dict:
     dims = [d for d in (dims or []) if d]
     bad = [d for d in dims if d not in DIMENSIONS]
@@ -68,7 +69,10 @@ def analyse(
         raise InspectionPointsError(f"بعد غير معروف: {', '.join(bad)}")
     if len(dims) != len(set(dims)):
         raise InspectionPointsError("لا يجوز تكرار نفس البعد")
-    if visit_kind and visit_kind not in VISIT_KIND_LABELS:
+    branch_ids, rep_ids, technician_ids = mf.ids(branch_id), mf.ids(rep_id), mf.ids(technician_id)
+    merchant_ids, governorate_ids = mf.ids(merchant_id), mf.ids(governorate_id)
+    item_names, visit_kinds = mf.strs(item, "|"), mf.strs(visit_kind)
+    if visit_kinds and any(v not in VISIT_KIND_LABELS for v in visit_kinds):
         raise InspectionPointsError("نوع الزيارة غير معروف")
 
     i, ln = Inspection, InspectionItem
@@ -146,22 +150,22 @@ def analyse(
             stmt = stmt.where(i.inspection_date >= date_from)
         if date_to:
             stmt = stmt.where(i.inspection_date <= date_to)
-        if branch_id is not None:
-            stmt = stmt.where(or_(i.branch_id == branch_id, i.branch_id.is_(None)))
-        if rep_id is not None:
-            stmt = stmt.where(i.rep_user_id == rep_id)
-        if technician_id is not None:
-            stmt = stmt.where(tech_id == technician_id)
+        if branch_ids:
+            stmt = stmt.where(or_(i.branch_id.in_(branch_ids), i.branch_id.is_(None)))
+        if rep_ids:
+            stmt = stmt.where(i.rep_user_id.in_(rep_ids))
+        if technician_ids:
+            stmt = stmt.where(tech_id.in_(technician_ids))
         if technician_name:
             stmt = stmt.where(i.technician_name == technician_name.strip())
-        if merchant_id is not None:
-            stmt = stmt.where(i.merchant_customer_id == merchant_id)
-        if item:
-            stmt = stmt.where(ln.item_name.in_(_text_variants(item)))
-        if visit_kind:
-            stmt = stmt.where(i.visit_kind == VisitKind(visit_kind))
-        if governorate_id is not None:
-            stmt = stmt.where(tech.governorate_id == governorate_id)
+        if merchant_ids:
+            stmt = stmt.where(i.merchant_customer_id.in_(merchant_ids))
+        if item_names:
+            stmt = stmt.where(ln.item_name.in_(set().union(*(_text_variants(n) for n in item_names))))
+        if visit_kinds:
+            stmt = stmt.where(i.visit_kind.in_([VisitKind(v) for v in visit_kinds]))
+        if governorate_ids:
+            stmt = stmt.where(tech.governorate_id.in_(governorate_ids))
         return stmt
 
     cols, group = [], []

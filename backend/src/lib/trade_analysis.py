@@ -7,6 +7,7 @@ from sqlalchemy import Boolean, Date, Numeric, String, and_, case, cast, func, l
 from sqlalchemy.orm import Session, aliased
 
 from src.core.money import ZERO, to_money, to_qty
+from src.lib import multi_filter as mf
 from src.models.catalog import Item
 from src.models.customer import Customer
 from src.models.lookup import LookupOption
@@ -155,19 +156,22 @@ def analyse(
     dims: list[str] | None = None,
     date_from: date | None = None,
     date_to: date | None = None,
-    branch_id: int | None = None,
-    warehouse_id: int | None = None,
-    party_id: int | None = None,
-    party_type: str | None = None,
-    rep_id: int | None = None,
-    territory_id: int | None = None,
-    governorate_id: int | None = None,
-    item_id: int | None = None,
-    category: str | None = None,
-    price_tier: str | None = None,
+    branch_id=None,
+    warehouse_id=None,
+    party_id=None,
+    party_type=None,
+    rep_id=None,
+    territory_id=None,
+    governorate_id=None,
+    item_id=None,
+    category=None,
+    price_tier=None,
     kind: str | None = None,
     include_bonus: bool = True,
 ) -> dict:
+    branch_id, warehouse_id, party_id = mf.ids(branch_id), mf.ids(warehouse_id), mf.ids(party_id)
+    rep_id, territory_id, governorate_id = mf.ids(rep_id), mf.ids(territory_id), mf.ids(governorate_id)
+    item_id, party_type, price_tier = mf.ids(item_id), mf.strs(party_type), mf.strs(price_tier)
     if side not in SIDES:
         raise TradeAnalysisError("side")
     dims = [d for d in (dims or []) if d]
@@ -257,27 +261,27 @@ def analyse(
         stmt = stmt.where(ln.c.d >= date_from)
     if date_to:
         stmt = stmt.where(ln.c.d <= date_to)
-    if branch_id is not None:
-        stmt = stmt.where(or_(ln.c.branch_id == branch_id, ln.c.branch_id.is_(None)))
-    if warehouse_id is not None:
-        stmt = stmt.where(ln.c.loc_id == warehouse_id)
-    if party_id is not None:
-        stmt = stmt.where(ln.c.party_id == party_id)
+    if branch_id:
+        stmt = stmt.where(or_(ln.c.branch_id.in_(branch_id), ln.c.branch_id.is_(None)))
+    if warehouse_id:
+        stmt = stmt.where(ln.c.loc_id.in_(warehouse_id))
+    if party_id:
+        stmt = stmt.where(ln.c.party_id.in_(party_id))
     if party_type:
-        stmt = stmt.where((party.customer_type if sales else party.supplier_type) == party_type)
-    if rep_id is not None:
-        stmt = stmt.where(ln.c.rep_id == rep_id)
-    if territory_id is not None and sales:
-        stmt = stmt.where(or_(party.territory_id == territory_id, terr.parent_id == territory_id))
-    if governorate_id is not None:
-        stmt = stmt.where(party.governorate_id == governorate_id)
-    if item_id is not None:
-        stmt = stmt.where(ln.c.item_id == item_id)
-    if category:
-        stmt = stmt.where(Item.category.in_(
-            lookup_service.with_children(db, lookup_service.ITEM_CATEGORY, category)))
+        stmt = stmt.where((party.customer_type if sales else party.supplier_type).in_(party_type))
+    if rep_id:
+        stmt = stmt.where(ln.c.rep_id.in_(rep_id))
+    if territory_id and sales:
+        stmt = stmt.where(or_(party.territory_id.in_(territory_id), terr.parent_id.in_(territory_id)))
+    if governorate_id:
+        stmt = stmt.where(party.governorate_id.in_(governorate_id))
+    if item_id:
+        stmt = stmt.where(ln.c.item_id.in_(item_id))
+    cats = mf.categories(db, category)
+    if cats:
+        stmt = stmt.where(Item.category.in_(cats))
     if price_tier and sales:
-        stmt = stmt.where(ln.c.tier == price_tier)
+        stmt = stmt.where(ln.c.tier.in_(price_tier))
     if kind in ("sale", "return"):
         stmt = stmt.where(ln.c.kind == kind)
 

@@ -10,6 +10,7 @@ import { useTableColumns } from '../components/ColumnSettings';
 import { useOpenDocument, type DocKind } from '../components/DocumentLink';
 import { useLookup } from '../hooks/useLookup';
 import { useCategoryTree, categorySelectOptions } from '../hooks/useCategoryTree';
+import { MULTI, categorySet, filterParams, picked, territorySet, usePrune } from '../utils/reportFilters';
 import { searchFilter, searchRank, sortByName } from '../utils/arabicSort';
 import { money, qty, numeralsLocale } from '../utils/money';
 import { repOptions } from '../utils/reps';
@@ -157,7 +158,7 @@ export default function TradeAnalysis({ side: fixedSide }: { side?: Side }) {
       if (range?.[0]) p.date_from = range[0].format('YYYY-MM-DD');
       if (range?.[1]) p.date_to = range[1].format('YYYY-MM-DD');
       if (kind !== 'net') p.kind = kind;
-      Object.entries(f).forEach(([k, v]) => { if (v !== undefined && v !== null && v !== '') p[k] = v; });
+      Object.assign(p, filterParams(f));
       const res = await api.get('/api/v1/reports/analysis', { params: p });
       if (my !== seq.current) return;
       setRows(res.data.rows || []);
@@ -278,6 +279,37 @@ export default function TradeAnalysis({ side: fixedSide }: { side?: Side }) {
 
   const dimOptions = SIDE_DIMS[side].map((d) => ({ value: d, label: dimLabel[d] }));
   const setFilter = (k: string, v: any) => setF((prev) => ({ ...prev, [k]: v }));
+
+  const warehouseList = useMemo(() => {
+    const br = picked(f, 'branch_id');
+    const all = lists.warehouses || [];
+    return br.length ? all.filter((w: any) => br.includes(w.branch_id)) : all;
+  }, [lists.warehouses, JSON.stringify(f.branch_id)]);
+  const itemList = useMemo(() => {
+    const cats = picked(f, 'category');
+    const all = lists.items || [];
+    if (!cats.length) return all;
+    const set = categorySet(categoryTree, cats);
+    return all.filter((i: any) => set.has(i.category));
+  }, [lists.items, categoryTree, JSON.stringify(f.category)]);
+  const partyList = useMemo(() => {
+    let all = lists.parties || [];
+    const ter = picked(f, 'territory_id');
+    const gov = picked(f, 'governorate_id');
+    const rep = picked(f, 'rep_id');
+    const typ = picked(f, 'party_type');
+    if (ter.length) {
+      const set = territorySet(lists.territories || [], ter);
+      all = all.filter((p: any) => set.has(p.territory_id));
+    }
+    if (gov.length) all = all.filter((p: any) => gov.includes(p.governorate_id));
+    if (rep.length && side === 'sales') all = all.filter((p: any) => rep.includes(p.rep_id));
+    if (typ.length) all = all.filter((p: any) => typ.includes(side === 'sales' ? p.customer_type : p.supplier_type));
+    return all;
+  }, [lists.parties, lists.territories, side, JSON.stringify([f.territory_id, f.governorate_id, f.rep_id, f.party_type])]);
+  usePrune(f, setF, 'warehouse_id', warehouseList);
+  usePrune(f, setF, 'item_id', itemList);
+  usePrune(f, setF, 'party_id', partyList);
   const partyLabel = (p: any) => `${p.name}${p.code ? ` — ${p.code}` : ''}`;
 
   return (
@@ -311,41 +343,41 @@ export default function TradeAnalysis({ side: fixedSide }: { side?: Side }) {
         <Select style={{ width: 120 }} value={kind} onChange={setKind}
           options={[{ value: 'net', label: 'الصافي' }, { value: 'sale', label: side === 'sales' ? 'البيع فقط' : 'الشراء فقط' },
             { value: 'return', label: 'المرتجع فقط' }]} />
-        <Select allowClear showSearch placeholder="الفرع" value={f.branch_id} style={{ minWidth: 130 }}
+        <Select {...MULTI} showSearch placeholder="الفرع" value={picked(f, 'branch_id')} style={{ minWidth: 150 }}
           onChange={(v) => setFilter('branch_id', v)} filterOption={searchFilter} filterSort={searchRank}
           options={(lists.branches || []).map((b) => ({ value: b.id, label: b.name }))} />
-        <Select allowClear showSearch placeholder="المخزن" value={f.warehouse_id} style={{ minWidth: 150 }}
+        <Select {...MULTI} showSearch placeholder="المخزن" value={picked(f, 'warehouse_id')} style={{ minWidth: 170 }}
           onChange={(v) => setFilter('warehouse_id', v)} filterOption={searchFilter} filterSort={searchRank}
-          options={(lists.warehouses || []).map((w) => ({ value: w.id, label: w.name }))} />
-        <Select allowClear showSearch placeholder={dimLabel.party} value={f.party_id} style={{ minWidth: 200 }}
-          popupMatchSelectWidth={false} onChange={(v) => setFilter('party_id', v)}
-          filterOption={searchFilter} filterSort={searchRank}
-          options={(lists.parties || []).map((p) => ({ value: p.id, label: partyLabel(p) }))} />
+          options={warehouseList.map((w: any) => ({ value: w.id, label: w.name }))} />
         {side === 'sales' && (
-          <Select allowClear placeholder="نوع العميل" value={f.party_type} style={{ minWidth: 130 }}
+          <Select {...MULTI} placeholder="نوع العميل" value={picked(f, 'party_type')} style={{ minWidth: 150 }}
             onChange={(v) => setFilter('party_type', v)}
             options={typeOptions.filter((o) => o.value !== 'owner').map((o) => ({ value: o.value, label: o.label }))} />
         )}
-        <Select allowClear showSearch placeholder="المندوب" value={f.rep_id} style={{ minWidth: 180 }}
+        <Select {...MULTI} showSearch placeholder="المندوب" value={picked(f, 'rep_id')} style={{ minWidth: 180 }}
           popupMatchSelectWidth={false} onChange={(v) => setFilter('rep_id', v)}
-          filterOption={searchFilter} filterSort={searchRank} options={repOptions(lists.reps || [], f.rep_id)} />
+          filterOption={searchFilter} filterSort={searchRank} options={repOptions(lists.reps || [])} />
         {side === 'sales' && (
-          <Select allowClear showSearch placeholder="المنطقة" value={f.territory_id} style={{ minWidth: 150 }}
+          <Select {...MULTI} showSearch placeholder="المنطقة" value={picked(f, 'territory_id')} style={{ minWidth: 160 }}
             onChange={(v) => setFilter('territory_id', v)} filterOption={searchFilter} filterSort={searchRank}
             options={(lists.territories || []).map((t) => ({ value: t.id, label: t.name }))} />
         )}
-        <Select allowClear showSearch placeholder="المحافظة" value={f.governorate_id} style={{ minWidth: 140 }}
+        <Select {...MULTI} showSearch placeholder="المحافظة" value={picked(f, 'governorate_id')} style={{ minWidth: 160 }}
           onChange={(v) => setFilter('governorate_id', v)} filterOption={searchFilter} filterSort={searchRank}
           options={(lists.governorates || []).map((g) => ({ value: g.id, label: g.name }))} />
-        <TreeSelect allowClear showSearch placeholder="الفئة" value={f.category} style={{ minWidth: 170 }}
-          popupMatchSelectWidth={false} onChange={(v) => setFilter('category', v)}
+        <Select {...MULTI} showSearch placeholder={dimLabel.party} value={picked(f, 'party_id')} style={{ minWidth: 220 }}
+          popupMatchSelectWidth={false} onChange={(v) => setFilter('party_id', v)}
+          filterOption={searchFilter} filterSort={searchRank}
+          options={partyList.map((p: any) => ({ value: p.id, label: partyLabel(p) }))} />
+        <TreeSelect multiple allowClear showSearch maxTagCount="responsive" placeholder="الفئة" value={picked(f, 'category')}
+          style={{ minWidth: 180 }} popupMatchSelectWidth={false} onChange={(v) => setFilter('category', v)}
           treeData={categoryTreeOptions as any} treeNodeFilterProp="label" />
-        <Select allowClear showSearch placeholder="الصنف" value={f.item_id} style={{ minWidth: 200 }}
+        <Select {...MULTI} showSearch placeholder="الصنف" value={picked(f, 'item_id')} style={{ minWidth: 220 }}
           popupMatchSelectWidth={false} onChange={(v) => setFilter('item_id', v)}
           filterOption={searchFilter} filterSort={searchRank}
-          options={(lists.items || []).map((i: any) => ({ value: i.id, label: `${i.name} — ${i.code}` }))} />
+          options={itemList.map((i: any) => ({ value: i.id, label: `${i.name} — ${i.code}` }))} />
         {side === 'sales' && (
-          <Select allowClear placeholder="شريحة السعر" value={f.price_tier} style={{ minWidth: 130 }}
+          <Select {...MULTI} placeholder="شريحة السعر" value={picked(f, 'price_tier')} style={{ minWidth: 150 }}
             onChange={(v) => setFilter('price_tier', v)}
             options={[['commercial', 'تجاري'], ['semi_commercial', 'نصف تجاري'], ['wholesale', 'جملة'],
               ['semi_wholesale', 'نصف جملة'], ['consumer', 'مستهلك']].map(([value, label]) => ({ value, label }))} />
