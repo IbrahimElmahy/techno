@@ -84,7 +84,8 @@ from src.models.hr_payroll import (  # noqa: E402
     EmployeeInsurance, EmployeeSalary, EmployeeSalaryLine, PayrollSetting, SalaryComponent,
 )
 from src.models.hr_attendance import (  # noqa: E402
-    AttendanceDay, AttendanceImport, EmployeeShiftAssignment, Holiday, WorkShift,
+    AttendanceDay, AttendanceDevice, AttendanceDeviceUser, AttendanceImport, AttendancePunch,
+    EmployeeShiftAssignment, Holiday, WorkShift,
 )
 from src.models.owner import Owner  # noqa: E402
 from src.models.draft import DocumentDraft  # noqa: E402
@@ -110,6 +111,7 @@ __all__ = [
     "InspectionAttachment", "DocumentAttachment",
     "Department", "EmployeeTermination",
     "WorkShift", "EmployeeShiftAssignment", "Holiday", "AttendanceDay", "AttendanceImport",
+    "AttendanceDevice", "AttendanceDeviceUser", "AttendancePunch",
     "LeaveType", "LeaveEntitlement", "LeaveRequest",
     "SalaryComponent", "EmployeeSalary", "EmployeeSalaryLine", "PayrollSetting",
     "EmployeeInsurance",

@@ -21,6 +21,7 @@ import { useQueryTab } from '../components/useQueryTab';
 import { exportCsv as writeCsv, type CsvColumn } from '../utils/exportCsv';
 import { printReport, type PrintColumn } from '../print/reportSheet';
 import ListPage from '../components/ListPage';
+import AttendanceDevices from './AttendanceDevices';
 
 interface Day {
   id: number;
@@ -46,6 +47,13 @@ const STATUS: Record<string, { label: string; color?: string }> = {
   holiday: { label: 'عطلة', color: 'purple' },
   weekend: { label: 'راحة' },
   mission: { label: 'مأمورية', color: 'cyan' },
+};
+
+const SOURCE: Record<string, { label: string; color?: string }> = {
+  manual: { label: 'يدوي' },
+  import: { label: 'استيراد', color: 'blue' },
+  generated: { label: 'تلقائي' },
+  device: { label: 'بصمة', color: 'geekblue' },
 };
 
 export function minutesLabel(total: number): string {
@@ -202,6 +210,8 @@ export default function Attendance() {
     { title: 'ساعات', dataIndex: 'worked_hours', key: 'worked_hours', width: 90 },
     { title: 'إضافي', dataIndex: 'overtime_hours', key: 'overtime_hours', width: 90,
       render: (v: string) => (Number(v) ? <Tag color="green">{v}</Tag> : '—') },
+    { title: 'المصدر', dataIndex: 'source', key: 'source', width: 90,
+      render: (v: string) => <Tag color={SOURCE[v]?.color}>{SOURCE[v]?.label ?? v}</Tag> },
     { title: '', key: 'locked', width: 50,
       render: (_: any, r) => (r.locked
         ? <Tag color="default" title="داخل مسير مرحّل">🔒</Tag> : null) },
@@ -394,6 +404,7 @@ export default function Attendance() {
       tabs={[
         { key: 'days', label: 'السجل', count: rows.length },
         { key: 'import', label: 'استيراد بصمة' },
+        { key: 'devices', label: 'أجهزة البصمة' },
       ]}
       activeTab={tab} onTabChange={setTab}
       actions={(<>
@@ -407,7 +418,9 @@ export default function Attendance() {
             onClick={() => writeCsv('attendance', csvCols, rows)}>تصدير CSV</Button>
           {cols.control}
         </>) : null}
-        <Button icon={<ReloadOutlined />} onClick={load}>تحديث</Button>
+        {tab !== 'devices' ? (
+          <Button icon={<ReloadOutlined />} onClick={load}>تحديث</Button>
+        ) : null}
       </>)}
       filters={tab === 'days' ? (<>
         <DateRangeFilter
@@ -421,7 +434,8 @@ export default function Attendance() {
           options={employees.map((e) => ({ value: e.id, label: e.name }))} filterOption={searchFilter} filterSort={searchRank}/>
       </>) : undefined}
     >
-      {tab === 'import' ? importTab : daysTab}
+      {tab === 'devices' ? <AttendanceDevices employees={employees} />
+        : tab === 'import' ? importTab : daysTab}
 
       <TabModal
         open={dayOpen} onCancel={() => setDayOpen(false)} footer={null} destroyOnHidden

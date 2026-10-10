@@ -10,6 +10,7 @@ from sqlalchemy import (
     Enum,
     ForeignKey,
     Integer,
+    SmallInteger,
     String,
     UniqueConstraint,
     func,
@@ -82,6 +83,7 @@ class AttendanceSource(str, enum.Enum):
     manual = "manual"
     import_file = "import"
     generated = "generated"
+    device = "device"
 
 
 class AttendanceImport(Base):
@@ -139,3 +141,66 @@ class AttendanceDay(Base):
         DateTime, server_default=func.now(), nullable=False
     )
     updated_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+
+class AttendanceDevice(Base):
+    __tablename__ = "attendance_device"
+
+    id: Mapped[int] = mapped_column(BigIntPK, primary_key=True, autoincrement=True)
+    name: Mapped[str] = mapped_column(String(120), nullable=False)
+    serial: Mapped[str | None] = mapped_column(String(40), nullable=True, index=True)
+    ip: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    port: Mapped[int] = mapped_column(Integer, default=4370, nullable=False)
+    branch_id: Mapped[int | None] = mapped_column(ForeignKey("branch.id"), nullable=True)
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
+    active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    last_seen_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    last_punch_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    users_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    records_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    records_capacity: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    firmware: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=func.now(), nullable=False
+    )
+
+
+class AttendanceDeviceUser(Base):
+    __tablename__ = "attendance_device_user"
+    __table_args__ = (
+        UniqueConstraint("device_id", "user_no", name="uq_attendance_device_user"),
+    )
+
+    id: Mapped[int] = mapped_column(BigIntPK, primary_key=True, autoincrement=True)
+    device_id: Mapped[int] = mapped_column(
+        ForeignKey("attendance_device.id"), nullable=False, index=True
+    )
+    user_no: Mapped[str] = mapped_column(String(20), nullable=False)
+    name: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    privilege: Mapped[int] = mapped_column(SmallInteger, default=0, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=func.now(), nullable=False
+    )
+
+
+class AttendancePunch(Base):
+    __tablename__ = "attendance_punch"
+    __table_args__ = (
+        UniqueConstraint("device_id", "user_no", "punched_at", name="uq_attendance_punch"),
+    )
+
+    id: Mapped[int] = mapped_column(BigIntPK, primary_key=True, autoincrement=True)
+    device_id: Mapped[int] = mapped_column(
+        ForeignKey("attendance_device.id"), nullable=False, index=True
+    )
+    user_no: Mapped[str] = mapped_column(String(20), nullable=False, index=True)
+    punched_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, index=True)
+    status: Mapped[int] = mapped_column(SmallInteger, default=0, nullable=False)
+    verify: Mapped[int] = mapped_column(SmallInteger, default=0, nullable=False)
+    employee_id: Mapped[int | None] = mapped_column(
+        ForeignKey("employee.id"), nullable=True, index=True
+    )
+    processed: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=func.now(), nullable=False
+    )

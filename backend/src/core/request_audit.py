@@ -10,7 +10,10 @@ log = logging.getLogger(__name__)
 
 _SKIP_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
 _SKIP_PATHS = frozenset({"/api/v1/auth/login", "/api/v1/auth/refresh",
-                         "/api/v1/live/ticket"})
+                         "/api/v1/live/ticket",
+                         "/api/v1/hr/attendance/agent/punches",
+                         "/api/v1/hr/attendance/agent/users",
+                         "/api/v1/hr/attendance/agent/heartbeat"})
 _VERB = {"POST": "create", "PUT": "update", "PATCH": "update", "DELETE": "delete"}
 
 

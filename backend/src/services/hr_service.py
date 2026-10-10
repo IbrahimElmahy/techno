@@ -173,6 +173,7 @@ _REF_LABELS: dict[tuple[str, str], str] = {
     ("leave_request", "employee_id"): "طلب إجازة",
     ("payroll_adjustment", "employee_id"): "جزاء أو مكافأة",
     ("attendance_day", "employee_id"): "يوم حضور",
+    ("attendance_punch", "employee_id"): "بصمة جهاز",
     ("employee_advance", "employee_id"): "سلفة",
     ("payroll_line", "employee_id"): "سطر مسير رواتب",
     ("payroll_line", "department_id"): "سطر مسير رواتب",

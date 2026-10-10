@@ -35,6 +35,7 @@ class Employee(Base):
     )
     phone: Mapped[str | None] = mapped_column(String(32), nullable=True)
     national_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    fingerprint_no: Mapped[str | None] = mapped_column(String(20), nullable=True, index=True)
     hire_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     salary: Mapped[object | None] = mapped_column(MONEY, nullable=True)
     address: Mapped[str | None] = mapped_column(String(240), nullable=True)

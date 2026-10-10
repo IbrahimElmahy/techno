@@ -17,6 +17,7 @@ from src.api import (
     document_attachments,
     a5_sync,
     attendance,
+    attendance_devices,
     audit,
     auth,
     branch_overview,
@@ -206,6 +207,7 @@ def create_app() -> FastAPI:
     app.include_router(employees.router, prefix=prefix)
     app.include_router(hr.router, prefix=prefix)
     app.include_router(attendance.router, prefix=prefix)
+    app.include_router(attendance_devices.router, prefix=prefix)
     app.include_router(leave.router, prefix=prefix)
     app.include_router(payroll_setup.router, prefix=prefix)
     app.include_router(advances.router, prefix=prefix)
@@ -321,6 +323,7 @@ _ADDED_INDEXES: list[tuple[str, str, str]] = [
     ("ix_ledger_line_residual", "ledger_line", "amount_residual"),
     ("ix_ledger_line_full_reconcile", "ledger_line", "full_reconcile_id"),
     ("ix_stock_movement_location", "stock_movement", "location_kind, location_id"),
+    ("ix_employee_fingerprint_no", "employee", "fingerprint_no"),
 ]
 
 
@@ -600,6 +603,7 @@ _ADDED_COLUMNS: list[tuple[str, str, str]] = [
     ("coupon_receipt", "reject_reason", "VARCHAR(240)"),
     ("coupon_receipt", "rejected_serials", "TEXT"),
     ("coupon_receipt", "source", "VARCHAR(8)"),
+    ("employee", "fingerprint_no", "VARCHAR(20)"),
 ]
 
 _WIDENED_COLUMNS: list[tuple[str, str, str]] = [

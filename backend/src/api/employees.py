@@ -13,7 +13,8 @@ from src.auth.rbac import CAP_USER_READ, CAP_USER_WRITE
 from src.core.db import get_db
 from src.models.employee import Employee, JobTitle
 from src.models.hr_org import Department
-from src.services import hr_service, numbering
+from src.services import attendance_device_service, hr_service, numbering
+from src.services.attendance_service import AttendanceError
 from src.services.hr_service import HrError
 from src.auth import branch_scope
 
@@ -39,6 +40,7 @@ class EmployeeIn(BaseModel):
     department_id: int | None = None
     phone: str | None = None
     national_id: str | None = None
+    fingerprint_no: str | None = None
     hire_date: date | None = None
     salary: Decimal | None = None
     branch_id: int | None = None
@@ -58,6 +60,7 @@ class EmployeePatch(BaseModel):
     department_id: int | None = None
     phone: str | None = None
     national_id: str | None = None
+    fingerprint_no: str | None = None
     hire_date: date | None = None
     salary: Decimal | None = None
     branch_id: int | None = None
@@ -81,6 +84,7 @@ class EmployeeOut(BaseModel):
     department_id: int | None = None
     phone: str | None
     national_id: str | None
+    fingerprint_no: str | None = None
     hire_date: date | None
     salary: Decimal | None
     branch_id: int | None
@@ -102,7 +106,8 @@ def _out(db: Session, e: Employee) -> EmployeeOut:
         department=(dept.name if (dept := (db.get(Department, e.department_id)
                                           if e.department_id else None)) else e.department),
         department_id=e.department_id, phone=e.phone,
-        national_id=e.national_id, hire_date=e.hire_date, salary=e.salary,
+        national_id=e.national_id, fingerprint_no=getattr(e, "fingerprint_no", None),
+        hire_date=e.hire_date, salary=e.salary,
         address=getattr(e, "address", None), work_start=getattr(e, "work_start", None),
         work_end=getattr(e, "work_end", None),
         collection_commission_pct=getattr(e, "collection_commission_pct", None),
@@ -176,6 +181,22 @@ def list_employees(
     return [_out(db, e) for e in rows]
 
 
+def _fingerprint(db: Session, value: str | None, branch_id: int | None,
+                 exclude_id: int | None = None) -> str | None:
+    try:
+        number = attendance_device_service.clean_fingerprint_no(value)
+    except AttendanceError as exc:
+        raise HTTPException(422, {"code": "validation", "message": str(exc)}) from exc
+    if number is None:
+        return None
+    clash = attendance_device_service.fingerprint_clash(
+        db, fingerprint_no=number, branch_id=branch_id, exclude_id=exclude_id)
+    if clash is not None:
+        raise HTTPException(409, {"code": "duplicate",
+                                  "message": f"رقم البصمة {number} مسجّل للموظف «{clash.name}»."})
+    return number
+
+
 def _check_department(db: Session, department_id: int | None, current_id: int | None = None) -> None:
     if department_id is None or department_id == current_id:
         return
@@ -200,18 +221,24 @@ def create_employee(
         raise HTTPException(409, {"code": "duplicate",
                                   "message": "هذا المستخدم مرتبط بموظف آخر."})
     _check_department(db, body.department_id)
+    branch_id = _new_employee_branch(current, body.branch_id)
+    fingerprint_no = _fingerprint(db, body.fingerprint_no, branch_id)
     emp = Employee(
         code=numbering.next_document_number(db, Employee, "EMP", column=Employee.code, width=4),
         name=name, job_title_id=body.job_title_id,
         department=body.department, department_id=body.department_id, phone=body.phone, national_id=body.national_id,
+        fingerprint_no=fingerprint_no,
         hire_date=body.hire_date, salary=body.salary,
-        branch_id=_new_employee_branch(current, body.branch_id),
+        branch_id=branch_id,
         warehouse_id=body.warehouse_id,
         user_id=body.user_id, notes=body.notes,
         address=body.address, work_start=body.work_start, work_end=body.work_end,
         collection_commission_pct=body.collection_commission_pct,
     )
     db.add(emp)
+    db.flush()
+    if emp.fingerprint_no:
+        attendance_device_service.claim_for_employee(db, emp)
     db.commit()
     return _out(db, emp)
 
@@ -263,8 +290,18 @@ def update_employee(
     _check_branch_move(current, emp, changes)
     if "department_id" in changes:
         _check_department(db, changes["department_id"], emp.department_id)
+    claim = False
+    if "fingerprint_no" in changes or ("branch_id" in changes and emp.fingerprint_no):
+        number = changes.get("fingerprint_no", emp.fingerprint_no)
+        changes["fingerprint_no"] = _fingerprint(
+            db, number, changes.get("branch_id", emp.branch_id), exclude_id=emp.id)
+        claim = changes["fingerprint_no"] is not None and (
+            changes["fingerprint_no"] != emp.fingerprint_no or "branch_id" in changes)
     for field, value in changes.items():
         setattr(emp, field, value)
+    if claim:
+        db.flush()
+        attendance_device_service.claim_for_employee(db, emp)
     db.commit()
     return _out(db, emp)
 

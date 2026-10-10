@@ -60,7 +60,7 @@ export default function Employees() {
   }, []);
 
   const filter = useListFilter(employees, {
-    search: (e) => [e.code, e.name, e.department, e.phone, e.job_title],
+    search: (e) => [e.code, e.name, e.department, e.phone, e.job_title, e.fingerprint_no],
     filters: {
       active: (e, v) => e.active === (v === 'active'),
       job_title_id: (e, v) => e.job_title_id === v,
@@ -110,6 +110,7 @@ export default function Employees() {
     { title: 'الوظيفة', dataIndex: 'job_title', render: (v: string) => v || '' },
     { title: 'القسم', dataIndex: 'department', render: (v: string) => v || '' },
     { title: 'الهاتف', dataIndex: 'phone', render: (v: string) => v || '' },
+    { title: 'رقم البصمة', dataIndex: 'fingerprint_no', render: (v: string | null) => v || '' },
     { title: 'تاريخ التعيين', dataIndex: 'hire_date',
       render: (v: string) => (v ? String(v).slice(0, 10) : '-') },
     { title: 'الراتب', dataIndex: 'salary', align: 'left',

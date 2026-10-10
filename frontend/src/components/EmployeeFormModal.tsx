@@ -12,7 +12,7 @@ export interface Employee {
   id: number; code: string; name: string;
   job_title_id: number | null; job_title: string | null;
   department: string | null; department_id: number | null;
-  phone: string | null; national_id: string | null;
+  phone: string | null; national_id: string | null; fingerprint_no?: string | null;
   hire_date: string | null; salary: string | null;
   branch_id: number | null; warehouse_id?: number | null; user_id: number | null;
   active: boolean; notes: string | null;
@@ -31,7 +31,7 @@ interface Lookups {
 const EMPTY: Lookups = { titles: [], branches: [], warehouses: [], users: [], departments: [] };
 
 const FIELDS = [
-  'name', 'branch_id', 'job_title_id', 'department_id', 'phone', 'address', 'national_id',
+  'name', 'branch_id', 'job_title_id', 'department_id', 'phone', 'address', 'national_id', 'fingerprint_no',
   'work_start', 'work_end', 'salary', 'collection_commission_pct', 'warehouse_id', 'user_id', 'notes',
 ] as const;
 
@@ -71,7 +71,7 @@ export default function EmployeeFormModal({
       setForm({
         name: employee.name, job_title_id: employee.job_title_id,
         department_id: employee.department_id, phone: employee.phone,
-        national_id: employee.national_id,
+        national_id: employee.national_id, fingerprint_no: employee.fingerprint_no,
         salary: employee.salary ? Number(employee.salary) : undefined,
         branch_id: employee.branch_id, user_id: employee.user_id, notes: employee.notes,
         warehouse_id: employee.warehouse_id, address: employee.address,
@@ -186,6 +186,11 @@ export default function EmployeeFormModal({
             onChange={(v) => setForm({ ...form, user_id: v })}
             options={users.map((u) => ({
               value: u.id, label: u.full_name || u.username }))} filterOption={searchFilter} filterSort={searchRank}/>
+        </Col>
+        <Col xs={24} md={8}>
+          <Input placeholder="رقم البصمة" value={form.fingerprint_no ?? ''} maxLength={20}
+            addonBefore="رقم البصمة"
+            onChange={(e) => setForm({ ...form, fingerprint_no: e.target.value })} />
         </Col>
       </Row>
     </TabModal>
