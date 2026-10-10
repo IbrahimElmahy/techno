@@ -47,6 +47,8 @@ function unitText(q: number | null | undefined, unit?: string | null): string {
   return `${fmtQty(q)} ${u}`.trim();
 }
 
+const shortDoc = (d: string) => (d || '').replace(/^WO-A5-(?:[A-Z]+-)?MFG-/, 'WO-');
+
 export default function RatioProduction() {
   const [items, setItems] = useState<Item[]>([]);
   const [warehouses, setWarehouses] = useState<Wh[]>([]);
@@ -193,7 +195,7 @@ export default function RatioProduction() {
   };
 
   const reverse = (o: PO) => Modal.confirm({
-    title: `تراجع عن ${o.document_number}؟`,
+    title: `تراجع عن ${shortDoc(o.document_number)}؟`,
     content: 'ستُعاد الخامات إلى مخازنها ويُخصم الإنتاج بقيد عكسي، ويبقى الأصل في السجل.',
     okText: 'تراجع', cancelText: 'لا', okButtonProps: { danger: true },
     onOk: async () => {
@@ -222,10 +224,9 @@ export default function RatioProduction() {
         <Space size={2} wrap>
           {r.reversed && <Tag color="red">متراجع</Tag>}
           {r.is_reversal && <Tag color="orange">تراجع</Tag>}
-          {r.imported_from === 'a5' && <Tag>a5</Tag>}
         </Space>) },
     { title: 'مستند النظام', dataIndex: 'document_number', key: 'n', width: 120, ellipsis: true,
-      render: (d: string) => <span style={{ fontSize: 12, color: '#64748b' }}>{d}</span> },
+      render: (d: string) => <span style={{ fontSize: 12, color: '#64748b' }}>{shortDoc(d)}</span> },
     { title: 'المنتجات', key: 'p', ellipsis: true,
       render: (_: unknown, r: PO) => r.products.map((p) => `${itemOf(p.item_id)?.name ?? p.item_id} (${fmtQty(Number(p.quantity))})`).join(' · ') },
     { title: 'اجمالي خامات', key: 'm', width: 120, align: 'left' as const,
