@@ -408,6 +408,7 @@ def customer_debts(
     family: str | None = Query(None, description="أبيض / بولي / other — من رصيده عليها غير صفري"),
     status: str = Query("debtors", description="debtors | creditors | nonzero | all | stagnant"),
     stagnant_days: int = Query(90, ge=0, le=3650),
+    include_employees: bool = Query(False),
     min_total: Decimal | None = Query(None),
     max_total: Decimal | None = Query(None),
     active: bool | None = Query(None),
@@ -429,6 +430,8 @@ def customer_debts(
         customer_type=customer_type, rep_id=rep_id, territory_id=territory_id,
         governorate_id=governorate_id, active=active,
     ).where(Customer.customer_type != "owner")
+    if not include_employees and customer_type not in ("employee", "internal"):
+        base = base.where(Customer.customer_type.notin_(("employee", "internal")))
     if branch_id is not None:
         branch_terr = select(Territory.id).where(Territory.branch_id == branch_id)
         base = base.where(or_(

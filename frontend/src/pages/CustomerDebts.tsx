@@ -84,6 +84,7 @@ interface Filters {
   active?: boolean;
   as_of?: string;
   stagnant_days?: number;
+  include_employees?: boolean;
 }
 
 type DebtTab = 'debtors' | 'creditors' | 'all' | 'stagnant';
@@ -442,6 +443,8 @@ export default function CustomerDebts() {
           {tableCols.control}
         </>)}
         filters={(<>
+          <Checkbox checked={!!filters.include_employees}
+            onChange={(e) => setFilter('include_employees', e.target.checked || undefined)}>إظهار الموظفين</Checkbox>
           {tab === 'stagnant' && (
             <Select value={filters.stagnant_days ?? 90} style={{ minWidth: 170 }}
               onChange={(v) => setFilter('stagnant_days', v)}
