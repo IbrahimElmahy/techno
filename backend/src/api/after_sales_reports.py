@@ -12,7 +12,7 @@ from src.auth import branch_scope
 from src.auth.dependencies import CurrentUser, require_capability
 from src.auth.rbac import CAP_COUPON_RECEIVE, CAP_INSPECTION_READ
 from src.core.db import get_db
-from src.lib import coupon_lifecycle
+from src.lib import coupon_lifecycle, inspection_points, technician_statement
 from src.models.coupon_issue import CouponIssue, CouponIssueLine
 from src.models.coupon_receipt import CouponReceipt, CouponReceiptLine, receipt_counted
 from src.models.customer import Customer
@@ -276,4 +276,74 @@ def coupons_lifecycle(
             status=status, serial=serial, serial_from=serial_from, serial_to=serial_to,
             only_unlinked=only_unlinked, limit=limit, offset=offset)
     except coupon_lifecycle.CouponLifecycleError as exc:
+        raise HTTPException(422, {"code": "report_invalid", "message": str(exc)}) from exc
+
+
+@router.get("/inspection-points")
+def inspection_points_report(
+    dims: str | None = Query(None, description="أبعاد التجميع مفصولة بفاصلة"),
+    date_from: date | None = None,
+    date_to: date | None = None,
+    branch_id: int | None = None,
+    rep_id: int | None = None,
+    technician_id: int | None = None,
+    technician_name: str | None = None,
+    merchant_id: int | None = None,
+    item: str | None = None,
+    visit_kind: str | None = Query(None, description="technician | regular"),
+    governorate_id: int | None = None,
+    current: CurrentUser = Depends(require_capability(CAP_INSPECTION_READ)),
+    db: Session = Depends(get_db),
+) -> dict:
+    scoped = branch_scope.visible_branch_id(current)
+    try:
+        return inspection_points.analyse(
+            db, dims=[d.strip() for d in (dims or "").split(",") if d.strip()],
+            date_from=date_from, date_to=date_to,
+            branch_id=scoped if scoped is not None else branch_id,
+            rep_id=rep_id, technician_id=technician_id, technician_name=technician_name,
+            merchant_id=merchant_id, item=item, visit_kind=visit_kind,
+            governorate_id=governorate_id)
+    except inspection_points.InspectionPointsError as exc:
+        raise HTTPException(422, {"code": "report_invalid", "message": str(exc)}) from exc
+
+
+@router.get("/technician-statement")
+def technician_statement_report(
+    year: int | None = None,
+    date_from: date | None = None,
+    date_to: date | None = None,
+    rep_id: int | None = None,
+    governorate_id: int | None = None,
+    q: str | None = None,
+    scope: str = Query("plumber", description="plumber | all"),
+    active_only: bool = False,
+    current: CurrentUser = Depends(require_capability(CAP_COUPON_RECEIVE)),
+    db: Session = Depends(get_db),
+) -> dict:
+    try:
+        return technician_statement.statement(
+            db, current, year=year or date.today().year, date_from=date_from,
+            date_to=date_to, rep_id=rep_id, governorate_id=governorate_id, search=q,
+            scope=scope, active_only=active_only)
+    except technician_statement.TechnicianStatementError as exc:
+        raise HTTPException(422, {"code": "report_invalid", "message": str(exc)}) from exc
+
+
+@router.get("/technician-statement/details")
+def technician_statement_details(
+    customer_id: int | None = None,
+    name: str | None = None,
+    year: int | None = None,
+    date_from: date | None = None,
+    date_to: date | None = None,
+    scope: str = Query("plumber", description="plumber | all"),
+    current: CurrentUser = Depends(require_capability(CAP_COUPON_RECEIVE)),
+    db: Session = Depends(get_db),
+) -> dict:
+    try:
+        return technician_statement.details(
+            db, current, year=year or date.today().year, customer_id=customer_id, name=name,
+            date_from=date_from, date_to=date_to, scope=scope)
+    except technician_statement.TechnicianStatementError as exc:
         raise HTTPException(422, {"code": "report_invalid", "message": str(exc)}) from exc

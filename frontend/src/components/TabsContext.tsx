@@ -40,6 +40,8 @@ const BASE_TITLES: Record<string, string> = {
   '/coupon-receipts': 'استلام الكوبونات',
   '/coupon-custody': 'عهدة الكوبونات',
   '/after-sales-reports': 'تقارير المتابعة',
+  '/inspection-points': 'تحليل أصناف المعاينات بالنقاط',
+  '/technician-statement': 'كشف حساب الفني',
   '/points-ledger': 'سجل النقاط',
   '/treasury': 'الحسابات والخزينة',
   '/vouchers': 'سندات القبض والصرف',

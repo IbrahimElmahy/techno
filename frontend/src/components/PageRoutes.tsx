@@ -55,6 +55,8 @@ const Orders = lazy(() => import('../pages/Orders'));
 const CouponReceipts = lazy(() => import('../pages/CouponReceipts'));
 const CouponCustody = lazy(() => import('../pages/CouponCustody'));
 const AfterSalesReports = lazy(() => import('../pages/AfterSalesReports'));
+const InspectionPoints = lazy(() => import('../pages/InspectionPoints'));
+const TechnicianStatement = lazy(() => import('../pages/TechnicianStatement'));
 const PointsLedger = lazy(() => import('../pages/PointsLedger'));
 const Invoices = lazy(() => import('../pages/Invoices'));
 const BonusReport = lazy(() => import('../pages/BonusReport'));
@@ -178,6 +180,8 @@ export default function PageRoutes({ location }: { location?: string }) {
       <Route path="/coupon-receipts" element={<CouponReceipts />} />
       <Route path="/coupon-custody" element={<CouponCustody />} />
       <Route path="/after-sales-reports" element={<AfterSalesReports />} />
+      <Route path="/inspection-points" element={<InspectionPoints />} />
+      <Route path="/technician-statement" element={<TechnicianStatement />} />
       <Route path="/points-ledger" element={<PointsLedger />} />
       <Route path="/treasury" element={<Treasury />} />
       <Route path="/vouchers" element={<Vouchers />} />

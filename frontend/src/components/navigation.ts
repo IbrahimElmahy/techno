@@ -1,6 +1,7 @@
 import { SALES_PRESETS, PURCHASE_PRESETS, type Preset } from '../pages/tradeAnalysisPresets';
 import { STOCK_PRESETS } from '../pages/stockAnalysisPresets';
 import { LEDGER_PRESETS } from '../pages/ledgerAnalysisPresets';
+import { INSPECTION_POINTS_PRESETS, INSPECTION_POINTS_GROUP } from '../pages/inspectionPointsPresets';
 
 export interface NavScreen {
   key: string;
@@ -316,6 +317,7 @@ export const EXTRA_SECTIONS: NavGroup[] = [
           { key: '/after-sales-reports?tab=lifecycle', label: 'استعلام الكوبونات (حركة الكوبون)', roles: LOYALTY },
           { key: '/after-sales-reports?tab=technicians', label: 'زيارات الفنيين بالنقاط', roles: R([...SALES, 'after_sales_staff']) },
           { key: '/after-sales-reports?tab=reps', label: 'زيارات المناديب', roles: R([...SALES, 'after_sales_staff']) },
+          { key: '/technician-statement', label: 'كشف حساب الفني', roles: LOYALTY },
         ],
       },
       {
@@ -328,6 +330,15 @@ export const EXTRA_SECTIONS: NavGroup[] = [
           { key: '/ops-reports?view=inspections-by-shop', label: 'المعاينات بمحل الشراء', roles: R([...SALES, 'after_sales_staff']) },
           { key: '/ops-reports?view=inspections-by-month', label: 'المعاينات شهرياً', roles: R([...SALES, 'after_sales_staff']) },
         ],
+      },
+      {
+        key: 'grp-inspection-points',
+        label: INSPECTION_POINTS_GROUP,
+        children: INSPECTION_POINTS_PRESETS.map((p) => ({
+          key: `/inspection-points?preset=${p.key}`,
+          label: p.label,
+          roles: R([...SALES, 'after_sales_staff']),
+        })),
       },
     ],
   },
