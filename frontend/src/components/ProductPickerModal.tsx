@@ -61,6 +61,7 @@ export default function ProductPickerModal({
   const [bulk, setBulk] = useState(false);
   const [picked, setPicked] = useState<number[]>([]);
   const [qtys, setQtys] = useState<Record<number, number>>({});
+  const [qtyText, setQtyText] = useState<Record<number, string>>({});
   const [onlyAvailableStockPref, setOnlyAvailableStock] = useState(() => {
     try {
       const v = localStorage.getItem('picker.onlyAvailable');
@@ -577,11 +578,15 @@ export default function ProductPickerModal({
                           <input
                             className={`ppk-qty-lite${isCursor && rowMode ? ' is-active' : ''}`}
                             inputMode="decimal" tabIndex={-1} disabled={out}
-                            placeholder="الكمية" value={qtys[p.id] ?? ''}
+                            placeholder="الكمية"
+                            value={qtyText[p.id] !== undefined && qtyText[p.id] !== ''
+                              && Number(qtyText[p.id]) === qtys[p.id] ? qtyText[p.id] : (qtys[p.id] ?? '')}
                             onChange={(e) => {
                               const raw = e.target.value
                                 .replace(/[٠-٩]/g, (d) => String('٠١٢٣٤٥٦٧٨٩'.indexOf(d)))
-                                .replace(/[٫,]/g, '.').replace(/[^0-9.]/g, '');
+                                .replace(/[٫,]/g, '.').replace(/[^0-9.]/g, '')
+                                .replace(/^(\d*\.\d*).*$/, '$1');
+                              setQtyText((prev) => ({ ...prev, [p.id]: raw }));
                               setQtyOf(p.id, raw === '' || Number.isNaN(Number(raw)) ? null : Number(raw));
                             }}
                             onKeyDown={(e) => {
