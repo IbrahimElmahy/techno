@@ -26,8 +26,14 @@ CAP_RECEIPT_MANAGE = CAP_COUPON_CUSTODY
 router = APIRouter(tags=["coupon-receipts"], prefix="/coupon-receipts")
 
 
+class ReceiptLineIn(BaseModel):
+    serial: str
+    coupon_kind: str | None = None
+
+
 class ReceiptIn(BaseModel):
     serials: list[str] = []
+    lines: list[ReceiptLineIn] | None = None
     serial_from: str | None = None
     serial_to: str | None = None
     customer_id: int | None = None
@@ -47,6 +53,16 @@ class ReceiptLineOut(BaseModel):
     coupon_kind: str | None = None
     sales_invoice_id: int | None = None
     coupon_issue_id: int | None = None
+    kind: str | None = None
+    value: Decimal | None = None
+    document_number: str | None = None
+    issued_to_name: str | None = None
+
+
+class KindTotalOut(BaseModel):
+    kind: str | None = None
+    count: int = 0
+    value: Decimal | None = None
 
 
 class ReceiptOut(BaseModel):
@@ -69,11 +85,30 @@ class ReceiptOut(BaseModel):
     rejected_serials: list[str] = []
     actor_user_id: int | None = None
     created_at: datetime | None = None
+    rep_name: str | None = None
+    actor_name: str | None = None
+    total_value: Decimal | None = None
+    kind_totals: list[KindTotalOut] = []
     lines: list[ReceiptLineOut] = []
 
 
-def _out(r) -> ReceiptOut:
+def _user_names(db: Session, receipts) -> dict[int, str]:
+    from sqlalchemy import select
+
+    from src.models.user import User
+
+    ids = {x for r in receipts for x in (r.rep_user_id, r.actor_user_id) if x}
+    if not ids:
+        return {}
+    return {u.id: (u.full_name or u.username) for u in db.execute(
+        select(User.id, User.full_name, User.username).where(User.id.in_(ids))).all()}
+
+
+def _out(r, names: dict[int, str] | None = None) -> ReceiptOut:
+    names = names or {}
     return ReceiptOut(
+        rep_name=names.get(r.rep_user_id) if r.rep_user_id else None,
+        actor_name=names.get(r.actor_user_id) if r.actor_user_id else None,
         id=r.id, document_number=r.document_number, customer_id=r.customer_id,
         rep_user_id=r.rep_user_id, received_date=r.received_date,
         coupon_count=r.coupon_count, notes=r.notes,
@@ -92,6 +127,21 @@ def _out(r) -> ReceiptOut:
     )
 
 
+def _detail_out(db: Session, r) -> ReceiptOut:
+    out = _out(r, _user_names(db, [r]))
+    rows = coupon_receipt_service.describe_lines(db, r)
+    out.lines = [ReceiptLineOut(
+        id=row["id"], serial=row["serial"], coupon_kind=row["coupon_kind"],
+        sales_invoice_id=row["sales_invoice_id"], coupon_issue_id=row["coupon_issue_id"],
+        kind=row["kind"], value=row["value"], document_number=row["document_number"],
+        issued_to_name=row["issued_to_name"]) for row in rows]
+    totals = coupon_receipt_service.kind_totals(rows)
+    out.kind_totals = [KindTotalOut(**t) for t in totals]
+    values = [row["value"] for row in rows if row["value"] is not None]
+    out.total_value = sum(values, Decimal("0")) if values else None
+    return out
+
+
 @router.get("/check", response_model=dict)
 def check_serial(
     serial: str = Query(..., description="The number written on the coupon"),
@@ -102,6 +152,35 @@ def check_serial(
     db: Session = Depends(get_db),
 ) -> dict:
     return coupon_receipt_service.check_serial(db, serial, coupon_kind, receipt_id)
+
+
+class ReceiverUserOut(BaseModel):
+    id: int
+    name: str
+    username: str | None = None
+    role: str | None = None
+    active: bool = True
+
+
+@router.get("/receivers", response_model=list[ReceiverUserOut])
+def receiving_users(
+    current: CurrentUser = Depends(require_capability(CAP_COUPON_RECEIVE)),
+    db: Session = Depends(get_db),
+) -> list[ReceiverUserOut]:
+    from sqlalchemy import select
+
+    from src.models.role import Role
+    from src.models.user import User
+
+    stmt = (select(User.id, User.full_name, User.username, User.active, Role.name)
+            .join(Role, Role.id == User.role_id)
+            .where(Role.name.in_([RoleName.after_sales_staff, RoleName.sales_rep])))
+    stmt = branch_scope.scope(stmt, User, current)
+    out = [ReceiverUserOut(id=row.id, name=row.full_name or row.username, username=row.username,
+                           role=getattr(row.name, "value", row.name), active=bool(row.active))
+           for row in db.execute(stmt).all()]
+    out.sort(key=lambda u: (u.role != RoleName.after_sales_staff.value, u.name))
+    return out
 
 
 @router.get("/issued-to/{customer_id}", response_model=list[dict])
@@ -121,14 +200,17 @@ def create_receipt(
     db: Session = Depends(get_db),
 ) -> ReceiptOut:
     from_app = is_mobile_app(request)
+    rep_user_id = body.rep_user_id
+    if rep_user_id is None and (from_app or current.role == RoleName.sales_rep):
+        rep_user_id = current.id
     try:
         serials = list(body.serials)
         if body.serial_from or body.serial_to:
             serials.extend(coupon_receipt_service.expand_range(body.serial_from, body.serial_to))
         receipt = coupon_receipt_service.create_receipt(
             db, serials=serials, actor_user_id=current.id, customer_id=body.customer_id,
-            rep_user_id=body.rep_user_id if body.rep_user_id is not None else (
-                current.id if current.role == RoleName.sales_rep else None),
+            lines=[ln.model_dump() for ln in body.lines] if body.lines else None,
+            rep_user_id=rep_user_id,
             received_date=body.received_date, notes=body.notes, client_uuid=body.client_uuid,
             declared_kind=body.declared_kind, declared_value=body.declared_value,
             customer_type=body.customer_type, coupon_kind=body.coupon_kind,
@@ -137,7 +219,7 @@ def create_receipt(
     except CouponReceiptError as exc:
         db.rollback()
         raise _refused(exc) from exc
-    out = _out(receipt)
+    out = _detail_out(db, receipt)
     db.commit()
     return out
 
@@ -197,7 +279,8 @@ def list_receipts(
         db, customer_id=customer_id, rep_user_id=scope_rep, q=q, limit=limit, offset=offset,
         status=_status_param(status_filter))
     visible_rows = branch_scope.visible(current, rows)
-    items_out = [_out(r) for r in visible_rows]
+    names = _user_names(db, visible_rows)
+    items_out = [_out(r, names) for r in visible_rows]
     response.headers["X-Total-Count"] = str(total)
 
     if limit is not None:
@@ -227,7 +310,7 @@ def get_receipt(
     current: CurrentUser = Depends(require_capability(CAP_COUPON_RECEIVE)),
     db: Session = Depends(get_db),
 ) -> ReceiptOut:
-    return _out(_seen_receipt(db, receipt_id, current))
+    return _detail_out(db, _seen_receipt(db, receipt_id, current))
 
 
 class ReceiptEditLineOut(BaseModel):
@@ -240,6 +323,7 @@ class ReceiptEditLineOut(BaseModel):
     document_number: str | None = None
     issued_to_id: int | None = None
     issued_to_name: str | None = None
+    value: Decimal | None = None
 
 
 class ReceiverOut(BaseModel):
@@ -350,7 +434,7 @@ def approve_receipt(
             db, receipt_id=receipt_id, actor_user_id=current.id)
     except CouponReceiptError as exc:
         raise _refused(exc) from exc
-    out = _out(receipt)
+    out = _detail_out(db, receipt)
     db.commit()
     return out
 
@@ -368,7 +452,7 @@ def reject_receipt(
             db, receipt_id=receipt_id, actor_user_id=current.id, reason=body.reason)
     except CouponReceiptError as exc:
         raise _refused(exc) from exc
-    out = _out(receipt)
+    out = _detail_out(db, receipt)
     db.commit()
     return out
 
@@ -399,6 +483,6 @@ def update_receipt(
     except CouponReceiptError as exc:
         db.rollback()
         raise _refused(exc) from exc
-    out = _out(receipt)
+    out = _detail_out(db, receipt)
     db.commit()
     return out

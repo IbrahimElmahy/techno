@@ -435,6 +435,7 @@ def create_receipt(
     coupon_kind: str | None = None,
     pending: bool = False,
     source: str | None = None,
+    lines: list[dict] | None = None,
 ) -> CouponReceipt:
     if client_uuid:
         existing = db.scalar(
@@ -451,8 +452,25 @@ def create_receipt(
             notes = f"الفني: {owner.name}" + (chr(10) + notes if notes else "")
             customer_id = None
     _require_party(db, customer_id)
-    cleaned = [str(s).strip() for s in serials if str(s).strip()]
-    matched = _match_serials(db, cleaned, coupon_kind)
+    fallback_kind = (coupon_kind or "").strip() or (declared_kind or "").strip() or None
+    pairs: list[tuple[str, str | None]] = []
+    for item in lines or []:
+        serial = str(item.get("serial") or "").strip()
+        if serial:
+            pairs.append((serial, (str(item.get("coupon_kind") or "").strip()) or fallback_kind))
+    pairs.extend((str(s).strip(), coupon_kind) for s in serials if str(s).strip())
+    if not pairs:
+        raise CouponReceiptError("لا توجد كوبونات في الاستلام.")
+    groups: dict[str, tuple[str | None, list[str]]] = {}
+    for serial, kind in pairs:
+        groups.setdefault(_norm_kind(kind), (kind, []))[1].append(serial)
+    matched: list = []
+    for kind, group in groups.values():
+        matched.extend(_match_serials(db, group, kind))
+    named = {_norm_kind(k): k for _, k in pairs if k}
+    if lines:
+        declared_kind = next(iter(named.values())) if len(named) == 1 and all(
+            k for _, k in pairs) else None
 
     receipt = CouponReceipt(
         document_number=_doc_number(db), customer_id=customer_id, rep_user_id=rep_user_id,
@@ -709,7 +727,11 @@ def describe_lines(db: Session, receipt: CouponReceipt) -> list[dict]:
                 kind = kind or hit.coupon_kind
         doc = issue or invoice
         party = doc.customer_id if doc is not None else None
+        value = _money_or_none(receipt.declared_value)
+        if value is None and issue is not None:
+            value = _money_or_none(issue.unit_value)
         out.append({
+            "value": value,
             "id": ln.id, "serial": ln.serial, "coupon_kind": ln.coupon_kind,
             "kind": kind or receipt.declared_kind,
             "sales_invoice_id": invoice.id if invoice else None,
@@ -718,6 +740,26 @@ def describe_lines(db: Session, receipt: CouponReceipt) -> list[dict]:
             "issued_to_id": party, "issued_to_name": names.get(party) if party else None,
         })
     return out
+
+
+def _money_or_none(value) -> Decimal | None:
+    if value is None or str(value).strip() == "":
+        return None
+    try:
+        return Decimal(str(value).strip())
+    except Exception:
+        return None
+
+
+def kind_totals(rows: list[dict]) -> list[dict]:
+    groups: dict[str, dict] = {}
+    for row in rows:
+        kind = row.get("kind")
+        bucket = groups.setdefault(_norm_kind(kind), {"kind": kind, "count": 0, "value": None})
+        bucket["count"] += 1
+        if row.get("value") is not None:
+            bucket["value"] = (bucket["value"] or Decimal("0")) + row["value"]
+    return list(groups.values())
 
 
 def _status_where(stmt, status: str | None):
@@ -787,11 +829,22 @@ def coupon_receipts_summary(
         func.coalesce(func.sum(subq.c.declared_value * subq.c.coupon_count), Decimal("0.00")).label("total_value"),
     )
     row = db.execute(summary_stmt).one()
-    kind_stmt = select(
-        subq.c.declared_kind,
-        func.coalesce(func.sum(subq.c.coupon_count), 0).label("cnt")
-    ).where(subq.c.declared_kind.isnot(None)).group_by(subq.c.declared_kind)
-    kind_counts = {r[0]: int(r[1]) for r in db.execute(kind_stmt).all() if r[0]}
+    line_kind = func.coalesce(CouponReceiptLine.coupon_kind, subq.c.declared_kind)
+    kind_stmt = (select(line_kind, func.count(CouponReceiptLine.id))
+                 .select_from(CouponReceiptLine)
+                 .join(subq, subq.c.id == CouponReceiptLine.receipt_id)
+                 .where(line_kind.isnot(None)).group_by(line_kind))
+    kind_counts: dict[str, int] = {}
+    for k, cnt in db.execute(kind_stmt).all():
+        if k:
+            kind_counts[k] = kind_counts.get(k, 0) + int(cnt)
+    has_lines = select(CouponReceiptLine.id).where(CouponReceiptLine.receipt_id == subq.c.id)
+    bare_stmt = (select(subq.c.declared_kind, func.coalesce(func.sum(subq.c.coupon_count), 0))
+                 .where(subq.c.declared_kind.isnot(None), ~has_lines.exists())
+                 .group_by(subq.c.declared_kind))
+    for k, cnt in db.execute(bare_stmt).all():
+        if k:
+            kind_counts[k] = kind_counts.get(k, 0) + int(cnt)
 
     all_subq = _build_receipts_stmt(
         customer_id=customer_id, rep_user_id=rep_user_id, q=q).order_by(None).subquery()

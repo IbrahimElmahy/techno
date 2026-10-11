@@ -167,6 +167,9 @@ export function useCouponLifecycle(range: [Dayjs, Dayjs] | null, active: boolean
   const columns = [
     { title: 'رقم الكوبون', dataIndex: 'serial', key: 'serial', width: 100,
       render: (v: string) => <b>{v}</b> },
+    { title: 'الفئة', dataIndex: 'kind', key: 'coupon_kind', width: 90,
+      render: (v: string | null) => (v
+        ? (kindOptions.find((o) => o.value === v)?.label ?? v) : '-') },
     { title: 'الموزع', dataIndex: 'party', key: 'party', width: 180, ellipsis: true,
       render: (v: string | null) => dash(v) },
     { title: 'كود التسليم', dataIndex: 'handout_doc', key: 'handout_doc', width: 130,
@@ -198,7 +201,6 @@ export function useCouponLifecycle(range: [Dayjs, Dayjs] | null, active: boolean
           )}
         </span>
       ) },
-    { title: 'رمز الكوبون', dataIndex: 'kind', key: 'kind', width: 90, render: dash },
     { title: 'نوع الموزع', dataIndex: 'party_type', key: 'party_type', width: 90,
       render: (v: string | null) => (v ? (typeLabel[v] || v) : '-') },
     { title: 'عهدة المندوب', dataIndex: 'custody_rep', key: 'custody_rep', width: 140,
@@ -207,7 +209,7 @@ export function useCouponLifecycle(range: [Dayjs, Dayjs] | null, active: boolean
     { title: 'تاريخ الإصدار', dataIndex: 'custody_date', key: 'custody_date', width: 110, render: dash },
   ];
   const cols = useTableColumns('as-coupons-query', columns as any, {
-    defaultHidden: ['kind', 'party_type', 'custody_rep', 'custody_doc', 'custody_date'],
+    defaultHidden: ['party_type', 'custody_rep', 'custody_doc', 'custody_date'],
   });
 
   const fetchAll = async (): Promise<LifecycleRow[] | null> => {
@@ -291,7 +293,7 @@ export function useCouponLifecycle(range: [Dayjs, Dayjs] | null, active: boolean
         }}
         onPressEnter={applySerial} onBlur={applySerial}
       />
-      <Select mode="multiple" maxTagCount="responsive" allowClear placeholder="رمز الكوبون" value={kind} onChange={setKind}
+      <Select mode="multiple" maxTagCount="responsive" allowClear placeholder="الفئة" value={kind} onChange={setKind}
         options={kindOptions} style={{ width: 140 }} />
       <Select mode="multiple" maxTagCount="responsive" allowClear placeholder="كل الحالات" value={status} onChange={setStatus}
         options={STATUS_OPTIONS} style={{ width: 160 }} popupMatchSelectWidth={false} />

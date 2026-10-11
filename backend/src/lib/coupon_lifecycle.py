@@ -194,7 +194,7 @@ def collect(db: Session, current: CurrentUser) -> list[dict]:
                    CouponReceipt.id, CouponReceipt.document_number, CouponReceipt.received_date,
                    CouponReceipt.customer_id, CouponReceipt.rep_user_id,
                    CouponReceipt.declared_value, CouponReceipt.declared_kind,
-                   CouponReceipt.notes)
+                   CouponReceipt.notes, CouponReceipt.actor_user_id)
             .join(CouponReceipt, CouponReceipt.id == CouponReceiptLine.receipt_id))
     counted = _receipt_counted_clause()
     if counted is not None:
@@ -203,7 +203,8 @@ def collect(db: Session, current: CurrentUser) -> list[dict]:
     for row in db.execute(branch_scope.scope(stmt, CouponReceipt, current)).all():
         e = entry(row.coupon_kind, row.serial)
         receipt = {"doc_id": row.id, "doc": row.document_number, "date": row.received_date,
-                   "party_id": row.customer_id, "rep_id": row.rep_user_id,
+                   "party_id": row.customer_id,
+                   "rep_id": row.rep_user_id or row.actor_user_id,
                    "value": _money(row.declared_value), "declared_kind": row.declared_kind,
                    "party_note": _plumber_from_notes(row.notes) if not row.customer_id else None}
         old = e["receipt"]

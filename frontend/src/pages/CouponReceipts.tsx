@@ -23,7 +23,7 @@ import DocOpening from '../components/DocOpening';
 import ListPage from '../components/ListPage';
 import { useQueryTab } from '../components/useQueryTab';
 import { useScreenShortcuts } from '../components/keyboard';
-import { numeralsLocale } from '../utils/money';
+import { money, numeralsLocale } from '../utils/money';
 import { useLookup } from '../hooks/useLookup';
 import CouponStatsOverview from '../components/CouponStatsOverview';
 import { useLiveRefresh } from '../utils/live';
@@ -49,7 +49,28 @@ interface ReceiptLineOut {
   coupon_kind?: string | null;
   sales_invoice_id?: number | null;
   coupon_issue_id?: number | null;
+  kind?: string | null;
+  value?: string | number | null;
+  document_number?: string | null;
+  issued_to_name?: string | null;
 }
+
+interface KindTotal {
+  kind?: string | null;
+  count: number;
+  value?: string | number | null;
+}
+
+interface ReceiverUser {
+  id: number;
+  name: string;
+  username?: string | null;
+  role?: string | null;
+  active?: boolean;
+}
+
+const entryKey = (e: { serial: string; couponKind?: string | null }) =>
+  `${e.couponKind ?? ''}|${e.serial}`;
 
 interface Receipt {
   id: number;
@@ -67,6 +88,11 @@ interface Receipt {
   reject_reason?: string | null;
   rejected_serials?: string[];
   approved_at?: string | null;
+  rep_user_id?: number | null;
+  rep_name?: string | null;
+  actor_name?: string | null;
+  total_value?: string | number | null;
+  kind_totals?: KindTotal[];
   lines: ReceiptLineOut[];
 }
 
@@ -126,6 +152,37 @@ export default function CouponReceipts() {
 
   const kindLabel = (k: string) => kindOptions.find((o) => o.value === k)?.label ?? k;
 
+  const kindCountsOf = (r: Receipt): [string, number][] => {
+    const counts = new Map<string, number>();
+    r.lines.forEach((l) => {
+      const k = l.coupon_kind || l.kind || r.declared_kind || '';
+      counts.set(k, (counts.get(k) ?? 0) + 1);
+    });
+    if (!r.lines.length && r.declared_kind) counts.set(r.declared_kind, r.coupon_count);
+    return Array.from(counts.entries());
+  };
+
+  const kindTags = (r: Receipt) => {
+    const counts = kindCountsOf(r);
+    if (!counts.length) return '-';
+    if (counts.length === 1) {
+      const [k] = counts[0];
+      return k ? <Tag color="gold">{kindLabel(k)}</Tag> : '-';
+    }
+    return (
+      <Space size={2} wrap>
+        {counts.map(([k, n]) => (
+          <Tag key={k} color="gold" style={{ marginInlineEnd: 0 }}>
+            {k ? kindLabel(k) : 'غير محددة'} {n.toLocaleString(numeralsLocale())}
+          </Tag>
+        ))}
+      </Space>
+    );
+  };
+
+  const [receivers, setReceivers] = useState<ReceiverUser[]>([]);
+  const [repId, setRepId] = useState<number | undefined>();
+
   interface ReceiptsSummary {
     total_receipts: number;
     total_coupons: number;
@@ -134,7 +191,7 @@ export default function CouponReceipts() {
     status_counts?: Record<string, number>;
   }
 
-  const { can } = useAuth();
+  const { can, user } = useAuth();
   const canManage = can('coupon.custody');
   const [statusFilter, setStatusFilter] = useState<'all' | ReceiptStatus>('all');
   const statusRef = useRef(statusFilter);
@@ -224,7 +281,24 @@ export default function CouponReceipts() {
 
   useEffect(() => {
     api.get('/api/v1/customers/options', { params: { limit: 20000 } }).then((r) => setCustomers(r.data || [])).catch(console.error);
+    api.get<ReceiverUser[]>('/api/v1/coupon-receipts/receivers')
+      .then((r) => {
+        const list = r.data || [];
+        setReceivers(list);
+        const me = list.find((u) => user && u.username === user.username);
+        if (me) setRepId((cur) => cur ?? me.id);
+      })
+      .catch(() => {});
   }, []);
+
+  const receiverUserOptions = useMemo(
+    () => receivers
+      .filter((u) => u.active !== false || u.id === repId)
+      .map((u) => ({
+        value: u.id,
+        label: `${u.name}${u.role === 'sales_rep' ? ' — مندوب' : ' — خدمة ما بعد البيع'}${u.active === false ? ' (موقوف)' : ''}`,
+      })),
+    [receivers, repId]);
 
   const customerName = (id: number | null) =>
     customers.find((c) => c.id === id)?.name ?? (id ? `عميل #${id}` : '-');
@@ -242,7 +316,8 @@ export default function CouponReceipts() {
     const serial = String(raw).trim();
     if (!serial) return;
     if (!kind) { message.warning('اختر فئة الكوبون أولاً'); return; }
-    if (entries.some((e) => e.serial === serial)) {
+    const key = entryKey({ serial, couponKind: kind });
+    if (entries.some((e) => entryKey(e) === key)) {
       message.warning('هذا الكوبون مضاف بالفعل');
       return;
     }
@@ -252,13 +327,13 @@ export default function CouponReceipts() {
         { params: { serial, coupon_kind: kind } });
       const d = res.data;
       const st = (d.status as Status) || 'unknown';
-      setEntries((prev) => prev.map((e) => (e.serial === serial ? {
+      setEntries((prev) => prev.map((e) => (entryKey(e) === key ? {
         serial,
         status: st,
         issuedToId: d.issued_to_id ?? d.customer_id ?? null,
         issuedToName: d.issued_to_name ?? d.customer_name ?? null,
         documentNumber: d.document_number,
-        couponKind: d.coupon_kind || kind,
+        couponKind: kind,
         kinds: (d.kinds || []) as string[],
       } : e)));
       if (d.in_custody) {
@@ -275,7 +350,7 @@ export default function CouponReceipts() {
         message.warning(`الكوبون ${serial} مصروف تحت أكثر من فئة — راجع الورقة`);
       }
     } catch (err: any) {
-      setEntries((prev) => prev.map((e) => (e.serial === serial ? { ...e, status: 'pending' } : e)));
+      setEntries((prev) => prev.map((e) => (entryKey(e) === key ? { ...e, status: 'pending' } : e)));
       message.warning(`الكوبون ${serial} ستتم مراجعته عند الحفظ (${err?.message || 'انقطاع'})`);
     }
   };
@@ -317,18 +392,21 @@ export default function CouponReceipts() {
   const save = async () => {
     if (!entries.length) { message.warning('لا توجد كوبونات'); return; }
     if (rejects.length) { message.warning('احذف الكوبونات المرفوضة أولاً'); return; }
-    if (!kind) { message.warning('اختر فئة الكوبون أولاً'); return; }
+    if (counted.some((e) => !e.couponKind)) { message.warning('حدد فئة كل كوبون'); return; }
     if (!customerId) { message.warning('حدد جهة الاستلام'); return; }
+    const usedKinds = Array.from(new Set(counted.map((e) => e.couponKind as string)));
+    const singleKind = usedKinds.length === 1 ? usedKinds[0] : null;
     setSaving(true);
     try {
       await api.post('/api/v1/coupon-receipts', {
-        serials: counted.map((e) => e.serial),
+        lines: counted.map((e) => ({ serial: e.serial, coupon_kind: e.couponKind })),
         customer_id: customerId ?? null,
+        rep_user_id: repId ?? null,
         notes: notes.trim() || null,
         client_uuid: clientUuid.current,
         received_date: receivedDate.format('YYYY-MM-DD'),
-        declared_kind: kind,
-        coupon_kind: kind,
+        declared_kind: singleKind,
+        coupon_kind: singleKind,
         declared_value: value,
         customer_type: customerType,
       });
@@ -395,6 +473,13 @@ export default function CouponReceipts() {
     } catch (err: any) {
       message.error(errorText(err, 'تعذر الحذف'));
     } finally { setActing(null); }
+  };
+
+  const openDetail = (r: Receipt) => {
+    setDetail(r);
+    api.get<Receipt>(`/api/v1/coupon-receipts/${r.id}`)
+      .then((res) => setDetail((d) => (d && d.id === r.id ? res.data : d)))
+      .catch(() => {});
   };
 
   const [editingId, setEditingId] = useState<number | null>(null);
@@ -491,7 +576,9 @@ export default function CouponReceipts() {
     { title: 'مُستلَم من', dataIndex: 'customer_id',
       render: (_: number | null, r: Receipt) => receiverOf(r) },
     { title: 'الفئة', dataIndex: 'declared_kind',
-      render: (v: string | null) => (v ? <Tag color="gold">{kindLabel(v)}</Tag> : '-') },
+      render: (_: string | null, r: Receipt) => kindTags(r) },
+    { title: 'مندوب الاستلام', dataIndex: 'rep_name', key: 'rep_name',
+      render: (v: string | null, r: Receipt) => v || r.actor_name || '-' },
     { title: 'التاريخ', dataIndex: 'received_date',
       render: (d: string) => (d ? String(d).slice(0, 10) : '-') },
     { title: 'عدد الكوبونات', dataIndex: 'coupon_count',
@@ -515,7 +602,7 @@ export default function CouponReceipts() {
   const receiveActions = (
     <>
       <Button type="primary" className="sl-create" icon={<SaveOutlined />} loading={saving}
-        disabled={!counted.length || !!rejects.length || !kind || !customerId}
+        disabled={!counted.length || !!rejects.length || !customerId}
         onClick={save}>
         تسجيل الاستلام
       </Button>
@@ -547,7 +634,6 @@ export default function CouponReceipts() {
             style={{ width: '100%' }} showSearch
             placeholder="فئة الكوبون"
             status={!kind ? 'warning' : undefined}
-            disabled={entries.length > 0}
             value={kind || undefined} onChange={handleKindChange}
             options={kindOptions.map((k) => ({ value: k.value, label: k.label }))} filterOption={searchFilter} filterSort={searchRank}/>
         </Col>
@@ -577,7 +663,7 @@ export default function CouponReceipts() {
             ]}
           />
         </Col>
-        <Col xs={24} md={16}>
+        <Col xs={24} md={10}>
           <Select
             allowClear showSearch style={{ width: '100%' }}
             placeholder="الاستلام من"
@@ -585,6 +671,14 @@ export default function CouponReceipts() {
             value={customerId} onChange={setCustomerId}
             options={receiverOptions}
             notFoundContent="لا يوجد عميل بهذا الاسم" filterOption={searchFilter} filterSort={searchRank}/>
+        </Col>
+        <Col xs={24} md={6}>
+          <Select
+            allowClear showSearch style={{ width: '100%' }}
+            placeholder="مندوب الاستلام"
+            value={repId} onChange={setRepId}
+            options={receiverUserOptions}
+            filterOption={searchFilter} filterSort={searchRank}/>
         </Col>
       </Row>
 
@@ -618,7 +712,7 @@ export default function CouponReceipts() {
 
       <Table<Entry>
         className="sl-table"
-        rowKey="serial" size="small" dataSource={entries} pagination={false}
+        rowKey={entryKey} size="small" dataSource={entries} pagination={false}
         locale={{ emptyText: 'لا توجد كوبونات مضافة' }}
         scroll={{ y: 320 }} style={{ marginTop: 12 }}
         columns={[
@@ -627,6 +721,12 @@ export default function CouponReceipts() {
             dataIndex: 'serial',
             width: 140,
             render: (v: string) => <b style={{ color: '#1677ff' }}>{v}</b>,
+          },
+          {
+            title: 'الفئة',
+            dataIndex: 'couponKind',
+            width: 110,
+            render: (v: string | null) => (v ? <Tag color="gold">{kindLabel(v)}</Tag> : '-'),
           },
           {
             title: 'التاجر الذي صُرف له',
@@ -661,7 +761,7 @@ export default function CouponReceipts() {
                 type="text"
                 danger
                 icon={<DeleteOutlined />}
-                onClick={() => setEntries((prev) => prev.filter((e) => e.serial !== r.serial))}
+                onClick={() => setEntries((prev) => prev.filter((e) => entryKey(e) !== entryKey(r)))}
               />
             ),
           },
@@ -718,13 +818,25 @@ export default function CouponReceipts() {
             </Tag>
           ) : null}
         </Descriptions.Item>
-        <Descriptions.Item label="فئة الكوبون">
-          {detail.declared_kind ? <Tag color="gold">{kindLabel(detail.declared_kind)}</Tag> : '-'}
-        </Descriptions.Item>
+        <Descriptions.Item label="فئة الكوبون">{kindTags(detail)}</Descriptions.Item>
         <Descriptions.Item label="التاريخ">
           {detail.received_date ? String(detail.received_date).slice(0, 10) : '-'}
         </Descriptions.Item>
         <Descriptions.Item label="العدد">{detail.coupon_count}</Descriptions.Item>
+        <Descriptions.Item label="مندوب الاستلام">
+          {detail.rep_name || detail.actor_name || '-'}
+        </Descriptions.Item>
+        <Descriptions.Item label="قيمة الكوبون">
+          {detail.declared_value != null ? money(detail.declared_value) : '-'}
+        </Descriptions.Item>
+        <Descriptions.Item label="إجمالي القيمة">
+          {detail.total_value != null ? <b>{money(detail.total_value)}</b> : '-'}
+          {(detail.kind_totals?.length ?? 0) > 1 ? (
+            <span style={{ marginInlineStart: 8 }}>
+              ({(detail.kind_totals || []).map((t) => `${t.kind ? kindLabel(t.kind) : 'غير محددة'} ${t.count.toLocaleString(numeralsLocale())}${t.value != null ? `: ${money(t.value)}` : ''}`).join(' · ')})
+            </span>
+          ) : null}
+        </Descriptions.Item>
         <Descriptions.Item label="الحالة">{statusTag(detail)}</Descriptions.Item>
         <Descriptions.Item label="ملاحظات" span={2}>{detail.notes || '-'}</Descriptions.Item>
       </Descriptions>
@@ -746,8 +858,12 @@ export default function CouponReceipts() {
             { title: 'رقم الكوبون', dataIndex: 'serial',
               render: (v: string) => <b>{v}</b> },
             { title: 'الفئة', dataIndex: 'coupon_kind',
-              render: (v: string | null) => (v ? <Tag color="gold">{kindLabel(v)}</Tag>
-                : <Tag>غير محددة</Tag>) },
+              render: (v: string | null, r: ReceiptLineOut) => {
+                const k = v || r.kind || detail.declared_kind;
+                return k ? <Tag color="gold">{kindLabel(k)}</Tag> : <Tag>غير محددة</Tag>;
+              } },
+            { title: 'القيمة', dataIndex: 'value',
+              render: (v: string | number | null | undefined) => (v != null ? money(v) : '-') },
             { title: 'من فاتورة', dataIndex: 'sales_invoice_id',
               render: (v: number | null, r: ReceiptLineOut) => (v
                 ? <DocumentLink kind="invoice" id={v} size="small" label={`#${v}`}
@@ -811,7 +927,7 @@ export default function CouponReceipts() {
         loading={loading}
         dataSource={receipts}
         {...allRows(fetchAllReceipts)}
-        onRow={(r) => ({ onClick: () => setDetail(r), style: { cursor: 'pointer' } })}
+        onRow={(r) => ({ onClick: () => openDetail(r), style: { cursor: 'pointer' } })}
         locale={{ emptyText: 'لا توجد استلامات' }}
         pagination={{
           current: page,

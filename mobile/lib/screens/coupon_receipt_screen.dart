@@ -45,7 +45,7 @@ class _CouponReceiptScreenState extends State<CouponReceiptScreen> {
 
   String _customerType = 'plumber';
 
-  String _kind = 'عادي';
+  String? _kind;
   final _valueCtrl = TextEditingController();
 
   static const _plumberTypes = ['plumber'];
@@ -69,8 +69,13 @@ class _CouponReceiptScreenState extends State<CouponReceiptScreen> {
     }
     setState(() {
       _tiers = {for (final o in rows) o.value: o.label};
-      if (!_tiers.containsKey(_kind)) _kind = _tiers.keys.first;
     });
+  }
+
+  Map<String, String> get _tierChoices {
+    final current = _kind;
+    if (current == null || _tiers.containsKey(current)) return _tiers;
+    return {..._tiers, current: current};
   }
 
   late final String _uuid;
@@ -89,7 +94,8 @@ class _CouponReceiptScreenState extends State<CouponReceiptScreen> {
     _customerId = savedId != null && savedId > 0 ? savedId : null;
     _customerName = e['customer_name'] as String?;
     _customerType = (e['customer_type'] as String?) ?? 'plumber';
-    _kind = (e['coupon_kind'] as String?) ?? 'عادي';
+    final savedKind = (e['coupon_kind'] as String?)?.trim();
+    _kind = savedKind == null || savedKind.isEmpty ? null : savedKind;
     final v = e['coupon_value'] as num?;
     if (v != null) _valueCtrl.text = _fmtValue(v.toDouble());
     _notesCtrl.text = (e['notes'] as String?) ?? '';
@@ -131,6 +137,10 @@ class _CouponReceiptScreenState extends State<CouponReceiptScreen> {
   Future<void> _add(String raw) async {
     final serial = raw.trim();
     if (serial.isEmpty) return;
+    if (_kind == null) {
+      _toast('اختر فئة الكوبون أولاً');
+      return;
+    }
     if (_entries.any((e) => e.serial == serial)) {
       _toast('هذا الكوبون مضاف بالفعل');
       return;
@@ -176,6 +186,10 @@ class _CouponReceiptScreenState extends State<CouponReceiptScreen> {
   static const _maxRange = 2000;
 
   Future<void> _addRange() async {
+    if (_kind == null) {
+      _toast('اختر فئة الكوبون أولاً');
+      return;
+    }
     final a = int.tryParse(_fromCtrl.text.trim());
     final b = int.tryParse(_toCtrl.text.trim());
     final first = a ?? b;
@@ -208,8 +222,9 @@ class _CouponReceiptScreenState extends State<CouponReceiptScreen> {
 
   List<(String, int)> get _summary {
     final counted = _entries.where((e) => e.isGood || e.status == 'pending').length;
-    if (counted == 0) return const [];
-    return [(_tiers[_kind] ?? _kind, counted)];
+    final kind = _kind;
+    if (counted == 0 || kind == null) return const [];
+    return [(_tiers[kind] ?? kind, counted)];
   }
 
   double get _totalValue {
@@ -224,6 +239,10 @@ class _CouponReceiptScreenState extends State<CouponReceiptScreen> {
   Future<void> _save() async {
     if (_entries.isEmpty) {
       _toast('لا توجد كوبونات');
+      return;
+    }
+    if (_kind == null) {
+      _toast('اختر فئة الكوبون قبل الحفظ');
       return;
     }
     if (_hasRejects) {
@@ -305,17 +324,28 @@ class _CouponReceiptScreenState extends State<CouponReceiptScreen> {
                       Expanded(
                         flex: 3,
                         child: DropdownButtonFormField<String>(
+                          key: ValueKey('${_tierChoices.keys.join('|')}#${_kind ?? ''}'),
                           initialValue: _kind,
                           isDense: true,
-                          decoration: const InputDecoration(
-                            labelText: 'نوع الكوبون',
-                            prefixIcon: Icon(Icons.workspace_premium_outlined),
+                          hint: const Text('اختر الفئة'),
+                          decoration: InputDecoration(
+                            labelText: 'فئة الكوبون',
+                            prefixIcon: const Icon(Icons.workspace_premium_outlined),
+                            errorText: _kind == null && _entries.isNotEmpty
+                                ? 'اختر فئة الكوبون'
+                                : null,
                           ),
                           items: [
-                            for (final e in _tiers.entries)
+                            for (final e in _tierChoices.entries)
                               DropdownMenuItem(value: e.key, child: Text(e.value)),
                           ],
-                          onChanged: (v) => setState(() => _kind = v ?? _kind),
+                          onChanged: (v) {
+                            if (v == null || v == _kind) return;
+                            setState(() => _kind = v);
+                            for (final e in List.of(_entries)) {
+                              _verify(e);
+                            }
+                          },
                         ),
                       ),
                       const SizedBox(width: 8),

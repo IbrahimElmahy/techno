@@ -32,6 +32,7 @@ interface EditLine {
   issuedToId?: number | null;
   issuedToName?: string | null;
   kinds?: string[];
+  savedValue?: number | null;
 }
 
 interface Receiver {
@@ -63,6 +64,7 @@ interface EditPayload {
     document_number: string | null;
     issued_to_id: number | null;
     issued_to_name: string | null;
+    value?: string | number | null;
   }[];
   receiver: Receiver | null;
   receiver_note: string | null;
@@ -147,6 +149,7 @@ export default function CouponReceiptEdit({
           documentNumber: l.document_number, salesInvoiceId: l.sales_invoice_id,
           couponIssueId: l.coupon_issue_id, issuedToId: l.issued_to_id,
           issuedToName: l.issued_to_name,
+          savedValue: l.value != null ? Number(l.value) : null,
         })));
         setCustomerId(party?.id ?? undefined);
         setCustomerType(r.customer_type ? sideOf(r.customer_type)
@@ -159,9 +162,15 @@ export default function CouponReceiptEdit({
         setRangeKind(firstKind ?? undefined);
       })
       .catch(() => { if (!cancelled) setFailed(true); });
-    api.get('/api/v1/users')
+    api.get('/api/v1/coupon-receipts/receivers')
       .then((res) => {
-        if (!cancelled) setReps((res.data || []).filter((u: any) => u.role === 'sales_rep'));
+        if (!cancelled) {
+          setReps((res.data || []).map((u: any) => ({
+            id: u.id,
+            full_name: `${u.name}${u.role === 'sales_rep' ? ' — مندوب' : ' — خدمة ما بعد البيع'}`,
+            active: u.active,
+          })));
+        }
       })
       .catch(() => {});
     return () => { cancelled = true; };
@@ -307,7 +316,9 @@ export default function CouponReceiptEdit({
   const filled = lines.filter((l) => l.serial.trim());
   const bad = filled.filter((l) => BAD.includes(statusOf(l)));
   const busy = filled.some((l) => statusOf(l) === 'checking');
-  const unitValue = value ?? 0;
+  const lineValue = (l: EditLine) => (value != null ? value
+    : unchanged(l) && l.savedValue != null ? l.savedValue : null);
+  const linesValue = filled.reduce((sum, l) => sum + (lineValue(l) ?? 0), 0);
 
   const save = async () => {
     if (!data) return;
@@ -426,7 +437,10 @@ export default function CouponReceiptEdit({
     },
     {
       title: 'القيمة', key: 'value', width: 120,
-      render: (_: any, l: EditLine) => (l.serial.trim() ? money(unitValue) : '-'),
+      render: (_: any, l: EditLine) => {
+        const v = l.serial.trim() ? lineValue(l) : null;
+        return v != null ? money(v) : '-';
+      },
     },
     {
       title: 'الحالة', key: 'status', width: 150,
@@ -499,9 +513,9 @@ export default function CouponReceiptEdit({
                 filterOption={searchFilter} filterSort={searchRank} />
             </div>
             <div style={{ minWidth: 200 }}>
-              <div style={{ marginBottom: 4, fontWeight: 600 }}>المندوب</div>
+              <div style={{ marginBottom: 4, fontWeight: 600 }}>مندوب الاستلام</div>
               <Select
-                allowClear showSearch style={{ width: '100%' }} placeholder="المندوب"
+                allowClear showSearch style={{ width: '100%' }} placeholder="مندوب الاستلام"
                 value={repId} onChange={setRepId}
                 options={repChoices} filterOption={searchFilter} filterSort={searchRank} />
             </div>
@@ -550,7 +564,7 @@ export default function CouponReceiptEdit({
           <div style={{ marginTop: 12 }}>
             <CouponStatsOverview
               totalCount={filled.length}
-              totalValue={unitValue * filled.length}
+              totalValue={linesValue}
               kinds={kindChoices.map((k) => ({
                 key: k.value,
                 label: k.label,
