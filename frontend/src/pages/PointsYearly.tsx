@@ -19,7 +19,7 @@ type Row = Record<string, any>;
 
 const one = (v: any) => Number(v || 0).toLocaleString(numeralsLocale(), { maximumFractionDigits: 1 });
 const num = (v: any) => (Number(v) ? one(v) : '');
-const int = (v: any) => (Number(v) ? Number(v).toLocaleString(numeralsLocale()) : '');
+const int = (v: any) => Number(v || 0).toLocaleString(numeralsLocale());
 
 export default function PointsYearly() {
   const [year, setYear] = useState<number>(dayjs().year());
@@ -79,9 +79,9 @@ export default function PointsYearly() {
       { title: 'فضي', dataIndex: 'received_silver', key: 'received_silver', width: 80, align: 'left' as const, render: int },
     ] },
     { title: 'المجموع بالذهبي', dataIndex: 'received_in_gold', key: 'received_in_gold', width: 110,
-      align: 'left' as const, render: (v: any) => <b>{num(v)}</b> },
+      align: 'left' as const, render: (v: any) => <b>{one(v)}</b> },
     { title: 'الفرق', dataIndex: 'coupon_gap', key: 'coupon_gap', width: 100, align: 'left' as const,
-      render: (v: any) => <b style={{ color: Number(v) < 0 ? '#cf1322' : undefined }}>{num(v)}</b> },
+      render: (v: any) => <b style={{ color: Number(v) < 0 ? '#cf1322' : undefined }}>{one(v)}</b> },
   ];
   const cols = useTableColumns('points-yearly', columns as any, {
     defaultHidden: ['party_code', 'party_phone', 'party_governorate'],
@@ -97,7 +97,7 @@ export default function PointsYearly() {
       { title: 'إجمالي الكوبونات', value: (r) => num(r.earned_coupons), numeric: true },
       { title: 'مسلّم ذهبي', value: (r) => int(r.received_gold), numeric: true },
       { title: 'مسلّم فضي', value: (r) => int(r.received_silver), numeric: true },
-      { title: 'المجموع بالذهبي', value: (r) => num(r.received_in_gold), numeric: true },
+      { title: 'المجموع بالذهبي', value: (r) => one(r.received_in_gold), numeric: true },
       { title: 'الفرق', value: (r) => num(r.coupon_gap), numeric: true },
     ];
     printReport({ title: `مجمع نقاط ${year}`, meta: reps.length ? [['المندوب', reps.join('، ')]] : [] },
