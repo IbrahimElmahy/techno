@@ -48,13 +48,15 @@ export default function PointsYearly() {
     [...new Set(rows.map((r) => r.party_rep || 'بدون مندوب'))], (r) => r,
   ).map((r) => ({ value: r, label: r })), [rows]);
 
-  const shown = useMemo(() => rows.filter((r) => (!reps.length || reps.includes(r.party_rep || 'بدون مندوب'))
+  const shown = useMemo(() => rows.map((r): Row => ({
+    ...r, coupon_gap: Number(r.earned_coupons || 0) - Number(r.received_in_gold || 0),
+  })).filter((r) => (!reps.length || reps.includes(r.party_rep || 'بدون مندوب'))
     && (!query.trim() || matchesWords(`${r.party} ${r.party_code || ''} ${r.party_phone || ''}`, query))),
   [rows, reps, query]);
 
   const totals = useMemo(() => {
     const t: Row = {};
-    [...MONTH_KEYS, 'total_points', 'earned_coupons', 'received_gold', 'received_silver', 'received_in_gold']
+    [...MONTH_KEYS, 'total_points', 'earned_coupons', 'received_gold', 'received_silver', 'received_in_gold', 'coupon_gap']
       .forEach((k) => { t[k] = shown.reduce((s, r) => s + Number(r[k] || 0), 0); });
     return t;
   }, [shown]);
@@ -78,6 +80,8 @@ export default function PointsYearly() {
     ] },
     { title: 'المجموع بالذهبي', dataIndex: 'received_in_gold', key: 'received_in_gold', width: 110,
       align: 'left' as const, render: (v: any) => <b>{num(v)}</b> },
+    { title: 'الفرق', dataIndex: 'coupon_gap', key: 'coupon_gap', width: 100, align: 'left' as const,
+      render: (v: any) => <b style={{ color: Number(v) < 0 ? '#cf1322' : undefined }}>{num(v)}</b> },
   ];
   const cols = useTableColumns('points-yearly', columns as any, {
     defaultHidden: ['party_code', 'party_phone', 'party_governorate'],
@@ -94,12 +98,14 @@ export default function PointsYearly() {
       { title: 'مسلّم ذهبي', value: (r) => int(r.received_gold), numeric: true },
       { title: 'مسلّم فضي', value: (r) => int(r.received_silver), numeric: true },
       { title: 'المجموع بالذهبي', value: (r) => num(r.received_in_gold), numeric: true },
+      { title: 'الفرق', value: (r) => num(r.coupon_gap), numeric: true },
     ];
     printReport({ title: `مجمع نقاط ${year}`, meta: reps.length ? [['المندوب', reps.join('، ')]] : [] },
       pc, shown, [
         { label: 'إجمالي نقاط السنة', value: one(totals.total_points) },
         { label: 'إجمالي الكوبونات', value: one(totals.earned_coupons) },
         { label: 'المسلّم بالذهبي', value: one(totals.received_in_gold) },
+        { label: 'الفرق', value: one(totals.coupon_gap) },
       ]);
   };
 
@@ -132,6 +138,7 @@ export default function PointsYearly() {
         <ListStat label="مسلّم ذهبي" value={int(totals.received_gold) || '0'} />
         <ListStat label="مسلّم فضي" value={int(totals.received_silver) || '0'} />
         <ListStat label="المسلّم بالذهبي" value={one(totals.received_in_gold)} tone="strong" />
+        <ListStat label="الفرق" value={one(totals.coupon_gap)} tone={totals.coupon_gap < 0 ? 'neg' : undefined} />
         <ListStat label="عدد التجار" value={shown.length.toLocaleString(numeralsLocale())} />
       </>)}
     >
