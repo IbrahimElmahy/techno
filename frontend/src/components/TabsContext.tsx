@@ -62,6 +62,7 @@ const BASE_TITLES: Record<string, string> = {
   '/income-sheet': 'قائمة الدخل',
   '/settings': 'إعدادات القوائم',
   '/permissions': 'الصلاحيات',
+  '/user-permissions': 'الصلاحيات',
   '/branch-overview': 'نظرة على الفروع',
   '/reps': 'المناديب',
   '/partners-current': 'جاري الشركاء',

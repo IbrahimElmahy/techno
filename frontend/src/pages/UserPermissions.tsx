@@ -8,6 +8,8 @@ import {
 import { api } from '../api/client';
 import { useAuth, roleForAccess } from '../components/AuthProvider';
 import ListPage from '../components/ListPage';
+import { useQueryTab } from '../components/useQueryTab';
+import RolePermissions from './Permissions';
 import {
   EXTRA_SECTIONS, HOME_SCREEN, NAVIGATION, isGroup, type NavGroup, type NavScreen,
 } from '../components/navigation';
@@ -36,6 +38,8 @@ export default function UserPermissions() {
   const meRole = me ? roleForAccess(me.role) : 'viewer';
   const isAdmin = me?.role === 'owner' || me?.role === 'system_admin';
 
+  const [tab, setTab] = useQueryTab('users');
+  const showRoles = isAdmin && tab === 'roles';
   const [users, setUsers] = useState<UserRow[]>([]);
   const [loadingUsers, setLoadingUsers] = useState(false);
   const [q, setQ] = useState('');
@@ -177,11 +181,15 @@ export default function UserPermissions() {
   const count = (pred: (k: string) => boolean) => Object.keys(diff).filter(pred).length;
 
   return (
-    <ListPage
+    <ListPage<string>
       icon={<SafetyCertificateOutlined />}
-      title="صلاحيات المستخدمين"
-      muted={isAdmin ? '(كل الفروع)' : '(مستخدمو فرعك)'}
+      title="الصلاحيات"
+      muted={showRoles ? '(الأدوار)' : isAdmin ? '(كل الفروع)' : '(مستخدمو فرعك)'}
+      tabs={isAdmin ? [{ key: 'users', label: 'المستخدمين' }, { key: 'roles', label: 'الأدوار' }] : undefined}
+      activeTab={showRoles ? 'roles' : 'users'}
+      onTabChange={(k) => setTab(k)}
     >
+      {showRoles ? <RolePermissions /> : (
       <div className="up-layout">
         <aside className="up-users">
           <Input allowClear prefix={<SearchOutlined />} placeholder="بحث بالاسم أو الدور أو الفرع"
@@ -254,6 +262,7 @@ export default function UserPermissions() {
           )}
         </section>
       </div>
+      )}
     </ListPage>
   );
 }
