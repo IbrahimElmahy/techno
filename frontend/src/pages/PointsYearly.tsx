@@ -12,8 +12,7 @@ import { qty, numeralsLocale } from '../utils/money';
 import { PAGE_SIZE } from '../utils/pagination';
 import { printReport, type PrintColumn } from '../print/reportSheet';
 
-const MONTHS = ['يناير', 'فبراير', 'مارس', 'أبريل', 'مايو', 'يونيو', 'يوليو', 'أغسطس',
-  'سبتمبر', 'أكتوبر', 'نوفمبر', 'ديسمبر'];
+const MONTHS = Array.from({ length: 12 }, (_, i) => String(i + 1));
 const MONTH_KEYS = MONTHS.map((_, i) => `m${String(i + 1).padStart(2, '0')}`);
 
 type Row = Record<string, any>;
@@ -66,8 +65,8 @@ export default function PointsYearly() {
     { title: 'الكود', dataIndex: 'party_code', key: 'party_code', width: 110 },
     { title: 'الهاتف', dataIndex: 'party_phone', key: 'party_phone', width: 120 },
     { title: 'المحافظة', dataIndex: 'party_governorate', key: 'party_governorate', width: 110 },
-    ...MONTH_KEYS.map((k, i) => ({ title: MONTHS[i], dataIndex: k, key: k, width: 90,
-      align: 'left' as const, render: num })),
+    ...MONTH_KEYS.map((k, i) => ({ title: MONTHS[i], dataIndex: k, key: k, width: 80,
+      align: 'center' as const, render: num })),
     { title: 'إجمالي نقاط السنة', dataIndex: 'total_points', key: 'total_points', width: 120,
       align: 'left' as const, render: (v: any) => <b>{num(v)}</b> },
     { title: 'إجمالي الكوبونات', dataIndex: 'earned_coupons', key: 'earned_coupons', width: 110,
