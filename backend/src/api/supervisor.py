@@ -15,15 +15,24 @@ from src.core.db import get_db
 from src.core.money import to_money, to_qty
 from src.models.catalog import Item
 from src.models.coupon_receipt import CouponReceipt, CouponReceiptLine
-from src.models.customer import Customer
+from src.models.customer import Customer, CustomerAccount
 from src.models.inspection import Inspection, InspectionItem, InspectionStatus, VisitKind
+from src.models.ledger import Account, LedgerEntry, LedgerLine
+from src.models.loyalty import CouponType
 from src.models.role import Role, RoleName
-from src.models.sales import SalesInvoice, SalesInvoiceLine, SalesReturn, SalesReturnLine
+from src.models.sales import (
+    SalesInvoice,
+    SalesInvoiceCoupon,
+    SalesInvoiceLine,
+    SalesReturn,
+    SalesReturnLine,
+)
 from src.models.stock import LocationKind
 from src.models.transfer import StockTransfer, StockTransferLine, TransferStatus
 from src.models.user import User
 from src.models.voucher import Voucher, VoucherKind
 from src.models.warehouse import Custody, Warehouse
+from src.services import ledger_service
 from src.services.rep_store_service import rep_store
 
 router = APIRouter(tags=["supervisor"], prefix="/supervisor")
@@ -492,7 +501,8 @@ def _inspection_items(db: Session, rows: list[Inspection]) -> list[dict]:
     return out
 
 
-def _sources(db: Session, view: CurrentUser, rep_id: int, d1: date, d2: date, kinds):
+def _sources(db: Session, view: CurrentUser, rep_id: int, d1: date, d2: date, kinds,
+             *, invoice_cash: bool = True):
     out = []
     if "sales" in kinds:
         out.append((_sales_stmt(view, d1, d2, kind=None).where(SalesInvoice.rep_id == rep_id),
@@ -506,9 +516,11 @@ def _sources(db: Session, view: CurrentUser, rep_id: int, d1: date, d2: date, ki
                      SalesReturn.created_at.desc(), SalesReturn.id.desc()),
                     _returns_items))
     if "collections" in kinds:
-        out.append((_cash_invoices_stmt(view, d1, d2).where(SalesInvoice.rep_id == rep_id),
-                    (_inv_day().desc(), SalesInvoice.created_at.desc(), SalesInvoice.id.desc()),
-                    _cash_invoice_items))
+        if invoice_cash:
+            out.append((_cash_invoices_stmt(view, d1, d2).where(SalesInvoice.rep_id == rep_id),
+                        (_inv_day().desc(), SalesInvoice.created_at.desc(),
+                         SalesInvoice.id.desc()),
+                        _cash_invoice_items))
         out.append((_receipts_stmt(view, d1, d2).where(_voucher_rep() == rep_id),
                     (Voucher.voucher_date.desc(), Voucher.created_at.desc(), Voucher.id.desc()),
                     _voucher_items))
@@ -555,7 +567,8 @@ def rep_activity(
     total = 0
     items: list[dict] = []
     want = offset + limit
-    for stmt, order, convert in _sources(db, view, rep.id, d1, d2, kinds):
+    for stmt, order, convert in _sources(db, view, rep.id, d1, d2, kinds,
+                                         invoice_cash="sales" not in kinds):
         total += db.scalar(select(func.count()).select_from(stmt.subquery())) or 0
         rows = list(db.scalars(stmt.order_by(*order).limit(want)).all())
         items.extend(convert(db, rows))
@@ -589,6 +602,67 @@ def _line(info, item_id, quantity, unit, unit_price, line_total) -> dict:
     }
 
 
+def _balance_before(db: Session, account_ids: list[int], entry_id: int) -> Decimal:
+    if not account_ids:
+        return Decimal("0")
+    signed = case(
+        (LedgerLine.direction == Account.normal_side, LedgerLine.amount),
+        else_=-LedgerLine.amount,
+    )
+    total = db.scalar(
+        select(func.coalesce(func.sum(signed), 0))
+        .select_from(LedgerLine)
+        .join(Account, Account.id == LedgerLine.account_id)
+        .join(LedgerEntry, LedgerEntry.id == LedgerLine.entry_id)
+        .where(LedgerLine.account_id.in_(account_ids), ledger_service.is_posted_sql(),
+               LedgerEntry.id < entry_id))
+    return to_money(Decimal(str(total or 0)))
+
+
+def _invoice_balances(db: Session, inv: SalesInvoice) -> list[dict]:
+    rows: list[tuple[str | None, bool, Decimal]] = []
+    if inv.prior_balance is not None:
+        rows.append((inv.family, True, Decimal(str(inv.prior_balance))))
+        if inv.other_family_balance is not None:
+            rows.append((inv.other_family, False, Decimal(str(inv.other_family_balance))))
+    elif inv.ledger_entry_id and inv.customer_id:
+        accounts = list(db.scalars(select(CustomerAccount).where(
+            CustomerAccount.customer_id == inv.customer_id)).all())
+        mine = [a for a in accounts if inv.family and a.family == inv.family]
+        if mine:
+            rows.append((inv.family, True, _balance_before(
+                db, [a.account_id for a in mine], inv.ledger_entry_id)))
+            others: dict[str | None, list[int]] = {}
+            for a in accounts:
+                if a not in mine:
+                    others.setdefault(a.family, []).append(a.account_id)
+            for fam in sorted(others, key=lambda f: f or ""):
+                rows.append((fam, False, _balance_before(db, others[fam], inv.ledger_entry_id)))
+        elif accounts:
+            rows.append((None, True, _balance_before(
+                db, [a.account_id for a in accounts], inv.ledger_entry_id)))
+    credit = Decimal(str(inv.credit_amount or 0))
+    return [{"family": fam, "own": own, "before": _money(before),
+             "after": _money(before + credit if own else before)}
+            for fam, own, before in rows]
+
+
+def _invoice_coupons(db: Session, inv: SalesInvoice) -> list[dict]:
+    rows = list(db.scalars(select(SalesInvoiceCoupon)
+                           .where(SalesInvoiceCoupon.invoice_id == inv.id)
+                           .order_by(SalesInvoiceCoupon.id)).all())
+    type_ids = {r.coupon_type_id for r in rows if r.coupon_type_id}
+    types = dict(db.execute(select(CouponType.id, CouponType.name)
+                            .where(CouponType.id.in_(type_ids))).all()) if type_ids else {}
+    out = [{"coupon_kind": r.coupon_kind or types.get(r.coupon_type_id),
+            "count": r.count, "serial_from": r.serial_from, "serial_to": r.serial_to}
+           for r in rows]
+    if not out and (inv.coupon_count or inv.coupon_serial_from):
+        out.append({"coupon_kind": None, "count": inv.coupon_count,
+                    "serial_from": inv.coupon_serial_from, "serial_to": inv.coupon_serial_to})
+    return out
+
+
 @router.get("/reps/{rep_id}/documents/{kind}/{doc_id}", response_model=dict)
 def rep_document(
     rep_id: int,
@@ -602,6 +676,7 @@ def rep_document(
     rep = _rep_or_404(db, current, rep_id)
     view = _doc_view(current)
     missing = _not_found("المستند غير موجود.")
+    extra: dict = {}
 
     if kind == "sales":
         doc = db.get(SalesInvoice, doc_id)
@@ -612,6 +687,9 @@ def rep_document(
         info = _item_info(db, (ln.item_id for ln in rows))
         lines = [_line(info, ln.item_id, ln.quantity, ln.unit, ln.unit_price, ln.line_total)
                  for ln in rows]
+        extra = {"family": doc.family, "is_bonus": bool(doc.is_bonus),
+                 "balances": _invoice_balances(db, doc),
+                 "coupons": _invoice_coupons(db, doc)}
     elif kind == "returns":
         doc = db.get(SalesReturn, doc_id)
         if doc is None or doc.rep_id != rep.id or not branch_scope.may_see(view, doc):
@@ -642,4 +720,4 @@ def rep_document(
         info = _item_info(db, (i for i, _ in pairs))
         lines = [_line(info, i, q, None, None, None) for i, q in pairs]
 
-    return {"header": header, "lines": lines}
+    return {"header": header, "lines": lines, **extra}

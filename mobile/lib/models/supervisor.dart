@@ -208,11 +208,61 @@ class SupDocLine {
       );
 }
 
+class SupFamilyBalance {
+  final String? family;
+  final bool own;
+  final double before;
+  final double after;
+
+  const SupFamilyBalance(
+      {this.family, this.own = false, this.before = 0, this.after = 0});
+
+  factory SupFamilyBalance.fromJson(Map<String, dynamic> j) => SupFamilyBalance(
+        family: _str(j['family']),
+        own: j['own'] == true,
+        before: parseMoney(j['before']) ?? 0,
+        after: parseMoney(j['after']) ?? 0,
+      );
+
+  String get label => family != null
+      ? 'مديونية $family'
+      : own
+          ? 'مديونية العميل'
+          : 'مديونية الحساب الآخر';
+}
+
+class SupCoupon {
+  final String? kind;
+  final int? count;
+  final String? serialFrom;
+  final String? serialTo;
+
+  const SupCoupon({this.kind, this.count, this.serialFrom, this.serialTo});
+
+  factory SupCoupon.fromJson(Map<String, dynamic> j) => SupCoupon(
+        kind: _str(j['coupon_kind']),
+        count: j['count'] == null ? null : _int(j['count']),
+        serialFrom: _str(j['serial_from']),
+        serialTo: _str(j['serial_to']),
+      );
+}
+
 class SupDocument {
   final SupActivity header;
   final List<SupDocLine> lines;
+  final String? family;
+  final bool isBonus;
+  final List<SupFamilyBalance> balances;
+  final List<SupCoupon> coupons;
 
-  const SupDocument({required this.header, required this.lines});
+  const SupDocument({
+    required this.header,
+    required this.lines,
+    this.family,
+    this.isBonus = false,
+    this.balances = const [],
+    this.coupons = const [],
+  });
 
   factory SupDocument.fromJson(Map<String, dynamic> j, {ActivityKind? kind}) {
     final h = <String, dynamic>{...?(j['header'] as Map?)?.cast<String, dynamic>()};
@@ -222,6 +272,16 @@ class SupDocument {
       lines: [
         for (final l in (j['lines'] as List? ?? const []))
           if (l is Map) SupDocLine.fromJson(l.cast<String, dynamic>())
+      ],
+      family: _str(j['family']),
+      isBonus: j['is_bonus'] == true,
+      balances: [
+        for (final b in (j['balances'] as List? ?? const []))
+          if (b is Map) SupFamilyBalance.fromJson(b.cast<String, dynamic>())
+      ],
+      coupons: [
+        for (final c in (j['coupons'] as List? ?? const []))
+          if (c is Map) SupCoupon.fromJson(c.cast<String, dynamic>())
       ],
     );
   }

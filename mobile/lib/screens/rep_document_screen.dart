@@ -78,8 +78,10 @@ class _RepDocumentScreenState extends State<RepDocumentScreen> {
             else if (_error != null)
               OnlineErrorView(error: _error!, onRetry: _load)
             else if (_doc != null) ...[
-              _linesCard(_doc!.lines),
+              if (_doc!.lines.isNotEmpty || _doc!.coupons.isEmpty) _linesCard(_doc!.lines),
+              if (_doc!.coupons.isNotEmpty) _couponsCard(_doc!.coupons),
               _totalsCard(_doc!),
+              if (_doc!.balances.isNotEmpty) _balancesCard(_doc!.balances),
             ],
           ],
         ),
@@ -138,6 +140,8 @@ class _RepDocumentScreenState extends State<RepDocumentScreen> {
               _info(Icons.person_outline, k == ActivityKind.transfers ? 'الجهة' : 'العميل',
                   h.partyName!),
             if (h.when.isNotEmpty) _info(Icons.event_outlined, 'التاريخ', h.when),
+            if (_doc?.family != null)
+              _info(Icons.category_outlined, 'نوع الطلب', _doc!.family!),
             if (h.note != null) _info(Icons.notes_outlined, 'ملاحظات', h.note!),
             if (h.amount != null || h.cash != null || h.credit != null) ...[
               const SizedBox(height: 10),
@@ -246,6 +250,120 @@ class _RepDocumentScreenState extends State<RepDocumentScreen> {
                 mid(lines[i].unitPrice == null ? '—' : fmtMoney(lines[i].unitPrice)),
                 mid(lines[i].lineTotal == null ? '—' : fmtMoney(lines[i].lineTotal),
                     bold: true),
+              ],
+              color: i.isOdd ? AppColors.surface : Colors.white,
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _sectionTitle(String text) => Padding(
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+        child: Align(
+          alignment: AlignmentDirectional.centerStart,
+          child: Text(text,
+              style: const TextStyle(fontSize: 14.5, fontWeight: FontWeight.w800)),
+        ),
+      );
+
+  Widget _grid(List<int> flex, List<Widget> cells, {Color? color}) => Container(
+        color: color,
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            for (var i = 0; i < cells.length; i++)
+              Expanded(flex: flex[i], child: cells[i]),
+          ],
+        ),
+      );
+
+  Widget _couponsCard(List<SupCoupon> coupons) {
+    const flex = [4, 3, 3, 2];
+    const head = TextStyle(fontSize: 12.5, fontWeight: FontWeight.w800, color: Colors.white);
+    const cell = TextStyle(fontSize: 13);
+    Widget mid(String s, {bool bold = false}) => Text(s,
+        textAlign: TextAlign.center,
+        style: bold ? const TextStyle(fontSize: 13, fontWeight: FontWeight.w800) : cell);
+    final total = coupons.fold<int>(0, (t, c) => t + (c.count ?? 0));
+    return Card(
+      clipBehavior: Clip.antiAlias,
+      child: Column(
+        children: [
+          _sectionTitle('الكوبونات المسلّمة'),
+          _grid(
+            flex,
+            const [
+              Text('الفئة', style: head),
+              Text('من رقم', style: head, textAlign: TextAlign.center),
+              Text('إلى رقم', style: head, textAlign: TextAlign.center),
+              Text('العدد', style: head, textAlign: TextAlign.center),
+            ],
+            color: AppColors.primary,
+          ),
+          for (var i = 0; i < coupons.length; i++)
+            _grid(
+              flex,
+              [
+                Text(coupons[i].kind ?? '—', style: cell),
+                mid(coupons[i].serialFrom ?? '—'),
+                mid(coupons[i].serialTo ?? '—'),
+                mid(coupons[i].count == null ? '—' : '${coupons[i].count}', bold: true),
+              ],
+              color: i.isOdd ? AppColors.surface : Colors.white,
+            ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text('إجمالي الكوبونات',
+                      style: TextStyle(fontSize: 14, color: Colors.grey.shade700)),
+                ),
+                Text('$total',
+                    style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w800)),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _balancesCard(List<SupFamilyBalance> balances) {
+    const flex = [4, 3, 3];
+    const head = TextStyle(fontSize: 12.5, fontWeight: FontWeight.w800, color: Colors.white);
+    Widget amount(double v, {bool bold = false}) => Text(fmtMoney(v),
+        textAlign: TextAlign.center,
+        style: TextStyle(
+            fontSize: 13.5,
+            fontWeight: bold ? FontWeight.w800 : FontWeight.w600,
+            color: v > 0.001 ? AppColors.danger : AppColors.primary));
+    return Card(
+      clipBehavior: Clip.antiAlias,
+      child: Column(
+        children: [
+          _sectionTitle('حساب العميل'),
+          _grid(
+            flex,
+            const [
+              Text('الحساب', style: head),
+              Text('قبل الفاتورة', style: head, textAlign: TextAlign.center),
+              Text('بعد الفاتورة', style: head, textAlign: TextAlign.center),
+            ],
+            color: AppColors.primary,
+          ),
+          for (var i = 0; i < balances.length; i++)
+            _grid(
+              flex,
+              [
+                Text(balances[i].label,
+                    style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: balances[i].own ? FontWeight.w800 : FontWeight.w500)),
+                amount(balances[i].before),
+                amount(balances[i].after, bold: balances[i].own),
               ],
               color: i.isOdd ? AppColors.surface : Colors.white,
             ),
