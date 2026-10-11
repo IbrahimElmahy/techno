@@ -14,7 +14,9 @@ TOLERANCE = Decimal("0.02")
 def run(*, execute: bool, branch: str = "") -> None:
     db = SessionLocal()
     try:
-        q = select(SalesInvoice).where(SalesInvoice.net == 0)
+        q = select(SalesInvoice).where(SalesInvoice.net == 0,
+                                       func.coalesce(SalesInvoice.combined_pct, 0) < 100,
+                                       func.coalesce(SalesInvoice.is_bonus, False).is_(False))
         if branch:
             from src.models.org import Branch
             bid = db.scalar(select(Branch.id).where(Branch.name == branch))
@@ -68,7 +70,8 @@ def run(*, execute: bool, branch: str = "") -> None:
 
         left = db.scalar(
             select(func.count()).select_from(SalesInvoice)
-            .where(SalesInvoice.net == 0, SalesInvoice.gross != 0)) or 0
+            .where(SalesInvoice.net == 0, SalesInvoice.gross != 0,
+                   func.coalesce(SalesInvoice.combined_pct, 0) < 100)) or 0
         shown = db.scalar(select(func.coalesce(func.sum(SalesInvoice.net), 0))) or 0
         print(f"\n✔ اتصلّح {len(fixable)} فاتورة.")
         print(f"   لسه `net=0` و`gross` مش صفر: {left}")
