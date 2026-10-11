@@ -12,8 +12,8 @@ from sqlalchemy.orm import Session
 from src.auth.dependencies import CurrentUser, require_capability
 from src.auth.rbac import CAP_ACCOUNTING_TRIAL_BALANCE_READ, CAP_SALES_READ, CAP_STOCK_READ
 from src.core.db import get_db
-from src.lib import (health, ledger_analysis, report_statement, reporting, stock_analysis,
-                     stocktake, trade_analysis, trade_reports)
+from src.lib import (health, ledger_analysis, profit_guard, report_statement, reporting,
+                     stock_analysis, stocktake, trade_analysis, trade_reports)
 from src.models.customer import Customer
 from src.models.ledger import Account, AccountType
 from src.models.purchasing import PurchaseInvoice
@@ -44,8 +44,9 @@ def inventory_report(
     current: CurrentUser = Depends(require_capability(CAP_STOCK_READ)),
     db: Session = Depends(get_db),
 ):
-    return reporting.inventory(db, warehouse_id=warehouse_id, item_id=item_id,
-                               branch_id=branch_scope.visible_branch_id(current))
+    return profit_guard.guard(current, reporting.inventory(
+        db, warehouse_id=warehouse_id, item_id=item_id,
+        branch_id=branch_scope.visible_branch_id(current)), frozenset({"value"}))
 
 
 @router.get("/wastage")
@@ -67,8 +68,9 @@ def stagnant_report(
     current: CurrentUser = Depends(require_capability(CAP_STOCK_READ)),
     db: Session = Depends(get_db),
 ):
-    return reporting.stagnant_stock(db, days=days, warehouse_id=warehouse_id,
-                                    branch_id=branch_scope.visible_branch_id(current))
+    return profit_guard.guard(current, reporting.stagnant_stock(
+        db, days=days, warehouse_id=warehouse_id,
+        branch_id=branch_scope.visible_branch_id(current)), frozenset({"value"}))
 
 
 @router.get("/trade")
@@ -88,12 +90,12 @@ def trade_report(
     db: Session = Depends(get_db),
 ):
     try:
-        return trade_reports.trade(
+        return profit_guard.guard(current, trade_reports.trade(
             db, doc_type=doc_type, level=level, group_by=group_by,
             date_from=date_from, date_to=date_to, party_id=party_id,
             item_id=item_id, warehouse_id=warehouse_id, statement=statement,
             branch_id=branch_scope.visible_branch_id(current),
-        )
+        ))
     except trade_reports.TradeReportError as exc:
         raise HTTPException(422, {"code": "report_invalid", "message": str(exc)}) from exc
 
@@ -115,14 +117,14 @@ def trade_analysis_report(
 ):
     scoped = branch_scope.visible_branch_id(current)
     try:
-        return trade_analysis.analyse(
+        return profit_guard.guard(current, trade_analysis.analyse(
             db, side=side, dims=[d.strip() for d in (dims or "").split(",") if d.strip()],
             date_from=date_from, date_to=date_to,
             branch_id=scoped if scoped is not None else branch_id,
             warehouse_id=warehouse_id, party_id=party_id, party_type=party_type,
             rep_id=rep_id, territory_id=territory_id, governorate_id=governorate_id,
             item_id=item_id, category=category, price_tier=price_tier, kind=kind,
-            include_bonus=include_bonus)
+            include_bonus=include_bonus))
     except trade_analysis.TradeAnalysisError as exc:
         raise HTTPException(422, {"code": "report_invalid", "message": str(exc)}) from exc
 
@@ -139,12 +141,12 @@ def stock_analysis_report(
 ):
     scoped = branch_scope.visible_branch_id(current)
     try:
-        return stock_analysis.analyse(
+        return profit_guard.guard(current, stock_analysis.analyse(
             db, dims=[d.strip() for d in (dims or "").split(",") if d.strip()],
             date_from=date_from, date_to=date_to,
             branch_id=scoped if scoped is not None else branch_id,
             warehouse_id=warehouse_id, item_id=item_id, category=category,
-            include_custody=include_custody, hide_zero=hide_zero)
+            include_custody=include_custody, hide_zero=hide_zero))
     except stock_analysis.StockAnalysisError as exc:
         raise HTTPException(422, {"code": "report_invalid", "message": str(exc)}) from exc
 
@@ -194,8 +196,8 @@ def stock_value_report(
     current: CurrentUser = Depends(require_capability(CAP_STOCK_READ)),
     db: Session = Depends(get_db),
 ):
-    return reporting.stock_value(db, warehouse_id=warehouse_id,
-                                 branch_id=branch_scope.visible_branch_id(current))
+    return profit_guard.guard(current, reporting.stock_value(
+        db, warehouse_id=warehouse_id, branch_id=branch_scope.visible_branch_id(current)))
 
 
 @router.get("/reorder")

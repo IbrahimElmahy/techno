@@ -5,6 +5,7 @@ import { useSearchParams } from 'react-router-dom';
 import dayjs, { Dayjs } from 'dayjs';
 import { api } from '../api/client';
 import ListPage, { ListStat } from '../components/ListPage';
+import { useAuth } from '../components/AuthProvider';
 import DateRangeFilter from '../components/DateRangeFilter';
 import { useTableColumns } from '../components/ColumnSettings';
 import { useOpenDocument, type DocKind } from '../components/DocumentLink';
@@ -43,7 +44,9 @@ const SIDE_DIMS: Record<Side, Dim[]> = {
 
 interface Row { [k: string]: any }
 
-const MEASURES = (side: Side) => {
+const PROFIT_PRESET_GROUPS = new Set(['تقارير ارباح فواتير', 'حجم مبيعات = هامش']);
+
+const MEASURES = (side: Side, profit = true) => {
   const sales = side === 'sales';
   return [
     { key: 'sold_qty', title: sales ? 'الكمية المباعة' : 'الكمية المشتراة', kind: 'qty' },
@@ -57,7 +60,7 @@ const MEASURES = (side: Side) => {
     { key: 'returns_pct', title: 'نسبة المرتجع ٪', kind: 'pct' },
     { key: 'net_value', title: 'الصافي', kind: 'money', strong: true },
     { key: 'avg_price', title: 'متوسط السعر', kind: 'money' },
-    ...(sales ? [
+    ...(sales && profit ? [
       { key: 'cost', title: 'التكلفة', kind: 'money' },
       { key: 'profit', title: 'الربح', kind: 'money', strong: true },
       { key: 'margin_pct', title: 'هامش الربح ٪', kind: 'pct' },
@@ -86,7 +89,11 @@ const DOC_OF: Record<Side, Record<string, DocKind>> = {
 export default function TradeAnalysis({ side: fixedSide }: { side?: Side }) {
   const [params, setParams] = useSearchParams();
   const side: Side = fixedSide ?? (params.get('side') === 'purchases' ? 'purchases' : 'sales');
-  const presets = side === 'sales' ? SALES_PRESETS : PURCHASE_PRESETS;
+  const { can } = useAuth();
+  const showProfit = side === 'sales' && can('reports.profit');
+  const presets = side === 'sales'
+    ? SALES_PRESETS.filter((p) => showProfit || !PROFIT_PRESET_GROUPS.has(p.group))
+    : PURCHASE_PRESETS;
   const presetKey = params.get('preset') || presets[0].key;
   const preset = presets.find((p) => p.key === presetKey) || presets[0];
   const dimLabel = DIM_LABEL(side);
@@ -174,7 +181,7 @@ export default function TradeAnalysis({ side: fixedSide }: { side?: Side }) {
   useEffect(() => { load(); }, [side, effectiveDims.join(','), kind, includeBonus,
     range?.[0]?.valueOf(), range?.[1]?.valueOf(), JSON.stringify(f)]);
 
-  const measures = MEASURES(side);
+  const measures = MEASURES(side, showProfit);
   const periodDim = effectiveDims.find((d) => PERIODS.includes(d as Period));
   const pivot = layout === 'pivot' && !!periodDim;
 
@@ -393,8 +400,8 @@ export default function TradeAnalysis({ side: fixedSide }: { side?: Side }) {
         <ListStat label={side === 'sales' ? 'المبيعات' : 'المشتريات'} value={money(totals.sales_value)} />
         <ListStat label="المرتجعات" value={money(totals.returns_value)} tone="warn" />
         <ListStat label="الصافي" value={money(totals.net_value)} tone="strong" />
-        {side === 'sales' && <ListStat label="التكلفة" value={money(totals.cost)} />}
-        {side === 'sales' && (
+        {showProfit && <ListStat label="التكلفة" value={money(totals.cost)} />}
+        {showProfit && (
           <ListStat label="الربح" value={money(totals.profit)} tone={Number(totals.profit) < 0 ? 'neg' : 'pos'}
             hint={`هامش ${Number(totals.margin_pct || 0).toLocaleString(numeralsLocale())}٪`} />
         )}
@@ -404,7 +411,7 @@ export default function TradeAnalysis({ side: fixedSide }: { side?: Side }) {
     >
       {truncated && <Alert type="warning" showIcon style={{ marginBottom: 8 }}
         message="النتيجة كبيرة جداً وتم عرض أول ٢٠٬٠٠٠ سطر — ضيّق الفترة أو الفلاتر" />}
-      {side === 'sales' && totals && Number(totals.missing_cost) > 0 && (
+      {showProfit && totals && Number(totals.missing_cost) > 0 && (
         <Alert type="info" showIcon style={{ marginBottom: 8 }}
           message={`${Number(totals.missing_cost).toLocaleString(numeralsLocale())} سطر بلا تكلفة مسجلة — مستبعدة من حساب الربح والهامش`} />
       )}

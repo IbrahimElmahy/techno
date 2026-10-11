@@ -43,6 +43,7 @@ CAPABILITY_LABELS: dict[str, str] = {
     "sale.delete": "حذف فاتورة بيع",
     "sell.below_price": "البيع تحت السعر المحدد",
     "sell.below_cost": "البيع تحت سعر التكلفة",
+    "reports.profit": "عرض التكلفة والأرباح وأسعار الشراء في التقارير",
     "return.write": "تسجيل مرتجع",
     "purchase.write": "تسجيل فاتورة شراء",
     "treasury.read": "عرض الخزينة",
@@ -93,7 +94,7 @@ GROUPS: list[tuple[str, list[str]]] = [
     ("ما بعد البيع والتصنيع", ["inspection.", "manufacture."]),
     ("الموارد البشرية", ["hr.", "payroll.", "salary."]),
     ("إدارة السيارات", ["fleet."]),
-    ("الإحصائيات", ["stats."]),
+    ("الإحصائيات والتقارير", ["stats.", "reports."]),
     ("التطبيق (الموبايل)", ["app."]),
 ]
 

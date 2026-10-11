@@ -5,6 +5,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import dayjs, { Dayjs } from 'dayjs';
 import { api } from '../api/client';
 import ListPage, { ListStat } from '../components/ListPage';
+import { useAuth } from '../components/AuthProvider';
 import DateRangeFilter from '../components/DateRangeFilter';
 import { useTableColumns } from '../components/ColumnSettings';
 import { useLookup } from '../hooks/useLookup';
@@ -32,6 +33,7 @@ const TYPE_COLS: [string, string][] = [
 ];
 
 export default function StockAnalysis() {
+  const canCost = useAuth().can('reports.profit');
   const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
   const preset: StockPreset = STOCK_PRESETS.find((p) => p.key === params.get('preset')) || STOCK_PRESETS[0];
@@ -117,12 +119,12 @@ export default function StockAnalysis() {
     { title: asof ? 'الرصيد' : 'رصيد آخر الفترة', dataIndex: 'closing', key: 'closing', align: 'left' as const,
       render: (v: any) => <b style={{ color: Number(v) < 0 ? '#cf1322' : undefined }}>{qty(v)}</b> },
     ...(hasItem ? [
-      { title: 'سعر الشراء الصافي', dataIndex: 'purchase_price', key: 'purchase_price', align: 'left' as const, total: false, render: (v: any) => money(v) },
+      ...(canCost ? [{ title: 'سعر الشراء الصافي', dataIndex: 'purchase_price', key: 'purchase_price', align: 'left' as const, total: false, render: (v: any) => money(v) }] : []),
       { title: 'سعر البيع', dataIndex: 'sale_price', key: 'sale_price', align: 'left' as const, total: false, render: (v: any) => money(v) },
       { title: 'الحد الأدنى', dataIndex: 'min_stock', key: 'min_stock', align: 'left' as const, total: false, render: q },
       { title: 'الحد الأقصى', dataIndex: 'max_stock', key: 'max_stock', align: 'left' as const, total: false, render: q },
     ] : []),
-    { title: 'القيمة بسعر الشراء', dataIndex: 'closing_cost_value', key: 'closing_cost_value', align: 'left' as const, render: (v: any) => money(v) },
+    ...(canCost ? [{ title: 'القيمة بسعر الشراء', dataIndex: 'closing_cost_value', key: 'closing_cost_value', align: 'left' as const, render: (v: any) => money(v) }] : []),
     { title: 'القيمة بسعر البيع', dataIndex: 'closing_sale_value', key: 'closing_sale_value', align: 'left' as const, render: (v: any) => money(v) },
     { title: 'عدد الحركات', dataIndex: 'moves', key: 'moves', align: 'left' as const },
   ];
@@ -161,7 +163,7 @@ export default function StockAnalysis() {
     const meta: [string, string][] = [asof ? ['حتى تاريخ', until.format('YYYY-MM-DD')]
       : ['الفترة', range ? `${range[0].format('YYYY-MM-DD')} — ${range[1].format('YYYY-MM-DD')}` : 'كل الفترات']];
     printReport({ title: preset.label, meta }, pc, rows, totals ? [
-      { label: 'القيمة بسعر الشراء', value: money(totals.closing_cost_value) },
+      ...(canCost ? [{ label: 'القيمة بسعر الشراء', value: money(totals.closing_cost_value) }] : []),
       { label: 'القيمة بسعر البيع', value: money(totals.closing_sale_value) },
     ] : []);
   };
@@ -224,7 +226,7 @@ export default function StockAnalysis() {
         {!asof && <ListStat label="إجمالي الوارد" value={qty(totals.in_qty)} tone="pos" />}
         {!asof && <ListStat label="إجمالي المنصرف" value={qty(totals.out_qty)} tone="neg" />}
         <ListStat label={asof ? 'إجمالي الرصيد' : 'رصيد آخر الفترة'} value={qty(totals.closing)} />
-        <ListStat label="القيمة بسعر الشراء" value={money(totals.closing_cost_value)} tone="strong" />
+        {canCost && <ListStat label="القيمة بسعر الشراء" value={money(totals.closing_cost_value)} tone="strong" />}
         <ListStat label="القيمة بسعر البيع" value={money(totals.closing_sale_value)} />
         <ListStat label="عدد السطور" value={rows.length.toLocaleString(numeralsLocale())} />
       </>)}

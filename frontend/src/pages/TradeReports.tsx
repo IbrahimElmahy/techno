@@ -18,6 +18,7 @@ import { printReport, type PrintColumn, type PrintTotal } from '../print/reportS
 
 import ListPage from '../components/ListPage';
 import { useCanSeeStats } from '../components/StatsRow';
+import { useAuth } from '../components/AuthProvider';
 import { money, numeralsLocale, qty } from '../utils/money';
 const DOC_SCREEN: Partial<Record<DocType, DocKind>> = {
   sale: 'invoice',
@@ -68,6 +69,7 @@ export const REPORT_VIEWS: Record<string, ReportView> = {
 };
 
 export default function TradeReports() {
+  const { can } = useAuth();
   const [viewKey] = useQueryTab('', 'view');
   const view: ReportView | undefined = REPORT_VIEWS[viewKey];
 
@@ -141,7 +143,7 @@ export default function TradeReports() {
   useEffect(() => { load(); }, [params]);
 
   const grouped = groupBy !== 'none';
-  const wantsProfit = isSale;
+  const wantsProfit = isSale && can('reports.profit');
 
   const profitColumns = wantsProfit ? [
     { title: 'التكلفة', dataIndex: 'cost', align: 'left' as const,

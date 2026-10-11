@@ -11,6 +11,7 @@ import { api } from '../api/client';
 import { PAGE_SIZE } from '../utils/pagination';
 import { money, qty } from '../utils/money';
 import { searchFilter, searchRank, sortByName } from '../utils/arabicSort';
+import { useAuth } from '../components/AuthProvider';
 import { STOCK_TOPICS, useLiveRefresh } from '../utils/live';
 
 interface Row {
@@ -60,7 +61,8 @@ export default function StockValue() {
   const [warehouseId, setWarehouseId] = useState<number | undefined>();
   const [warehouses, setWarehouses] = useState<{ id: number; name: string }[]>([]);
   const [tab, setTab] = useQueryTab('sale');
-  const basis: Basis = tab === 'purchase' ? 'purchase' : 'sale';
+  const canCost = useAuth().can('reports.profit');
+  const basis: Basis = canCost && tab === 'purchase' ? 'purchase' : 'sale';
   const searchRef = useRef<any>(null);
 
   const load = async (opts?: { silent?: boolean }) => {
@@ -132,7 +134,9 @@ export default function StockValue() {
     { title: 'الحالة', dataIndex: 'active', key: 'active', width: 90,
       render: (v: boolean) => (v ? 'نشط' : 'موقوف') },
   ];
-  const cols = useTableColumns(`stock-value-${basis}`, columns as any, {
+  const shownColumns = canCost ? columns
+    : columns.filter((c: any) => ![...PURCHASE_KEYS, 'profit', 'margin_pct'].includes(c.key ?? c.dataIndex));
+  const cols = useTableColumns(`stock-value-${basis}`, shownColumns as any, {
     defaultHidden: [...(basis === 'sale' ? PURCHASE_KEYS : SALE_KEYS), 'profit', 'margin_pct', ...EXTRA_KEYS],
     export: { name: basis === 'sale' ? 'قيمة المخزون بسعر البيع' : 'قيمة المخزون بسعر الشراء', rows: filter.filtered },
   });
@@ -143,7 +147,7 @@ export default function StockValue() {
       title="قيمة المخزون"
       tabs={[
         { key: 'sale', label: 'بسعر البيع' },
-        { key: 'purchase', label: 'بسعر الشراء' },
+        ...(canCost ? [{ key: 'purchase', label: 'بسعر الشراء' }] : []),
       ]}
       activeTab={basis as any}
       onTabChange={(k) => setTab(k)}

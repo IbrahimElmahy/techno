@@ -20,6 +20,7 @@ import StatementFilter, { statementColumn } from '../components/StatementFilter'
 
 import ListPage from '../components/ListPage';
 import { useCanSeeStats } from '../components/StatsRow';
+import { useAuth } from '../components/AuthProvider';
 import { numeralsLocale } from '../utils/money';
 type Period = 'week' | 'month' | 'year';
 type Range = [Dayjs | null, Dayjs | null] | null;
@@ -259,6 +260,7 @@ interface InvRow {
 }
 
 function InventoryTab({ warehouses, items, slots }: TabProps) {
+  const canCost = useAuth().can('reports.profit');
   const [warehouseId, setWarehouseId] = useState<number | undefined>();
   const [itemId, setItemId] = useState<number | undefined>();
   const [rows, setRows] = useState<InvRow[]>([]);
@@ -282,8 +284,10 @@ function InventoryTab({ warehouses, items, slots }: TabProps) {
     { title: 'الصنف', dataIndex: 'item_name', key: 'item_name', ...textColumn(rows, (r: any) => r.item_name) },
     { title: 'المخزن', dataIndex: 'warehouse_id', key: 'warehouse_id', ...textColumn(rows, (r: any) => whName(r.warehouse_id)), render: (id: number) => <Tag color="geekblue">{whName(id)}</Tag> },
     { title: 'الرصيد', dataIndex: 'on_hand', key: 'on_hand', ...numberColumn<any>((r) => r.on_hand), align: 'left' as const, render: qty },
-    { title: 'تكلفة الوحدة', dataIndex: 'unit_cost', key: 'unit_cost', ...numberColumn<any>((r) => r.unit_cost), align: 'left' as const, render: egp },
-    { title: 'القيمة', dataIndex: 'value', key: 'value', ...numberColumn<any>((r) => r.value), align: 'left' as const, render: (v: string) => <strong>{egp(v)}</strong> },
+    ...(canCost ? [
+      { title: 'تكلفة الوحدة', dataIndex: 'unit_cost', key: 'unit_cost', ...numberColumn<any>((r) => r.unit_cost), align: 'left' as const, render: egp },
+      { title: 'القيمة', dataIndex: 'value', key: 'value', ...numberColumn<any>((r) => r.value), align: 'left' as const, render: (v: string) => <strong>{egp(v)}</strong> },
+    ] : []),
   ];
 
   const inventoryTabCols = useTableColumns('rep-inventory', columns, {
@@ -306,7 +310,7 @@ function InventoryTab({ warehouses, items, slots }: TabProps) {
 
       <Table className="sl-table" size="small" rowKey="_key" loading={loading} pagination={PAGINATION}
         dataSource={rows} columns={inventoryTabCols.columns}
-        summary={(data) => {
+        summary={canCost ? (data) => {
           const total = data.reduce((s, r) => s + Number(r.value ?? 0), 0);
           return (
             <Table.Summary.Row style={{ background: '#fafafa', fontWeight: 'bold' }}>
@@ -314,7 +318,7 @@ function InventoryTab({ warehouses, items, slots }: TabProps) {
               <Table.Summary.Cell index={4} align="left">{egp(total)}</Table.Summary.Cell>
             </Table.Summary.Row>
           );
-        }}
+        } : undefined}
         locale={{ emptyText: <Empty description="لا توجد بيانات" /> }} />
     </div>
   );
@@ -424,6 +428,7 @@ interface StagnantRow {
 }
 
 function StagnantTab({ warehouses, slots }: TabProps) {
+  const canCost = useAuth().can('reports.profit');
   const [days, setDays] = useState<number>(90);
   const [warehouseId, setWarehouseId] = useState<number | undefined>();
   const [rows, setRows] = useState<StagnantRow[]>([]);
@@ -453,10 +458,10 @@ function StagnantTab({ warehouses, slots }: TabProps) {
       render: (d: string | null) => d
         ? dayjs(d).format('YYYY-MM-DD')
         : <Tag color="red">لم يتحرك مطلقاً</Tag> },
-    { title: 'سعر الشراء', dataIndex: 'purchase_price', key: 'purchase_price', ...numberColumn<any>((r) => r.purchase_price), align: 'left' as const, total: false, render: (v: string) => egp(v) } as any,
+    ...(canCost ? [{ title: 'سعر الشراء', dataIndex: 'purchase_price', key: 'purchase_price', ...numberColumn<any>((r) => r.purchase_price), align: 'left' as const, total: false, render: (v: string) => egp(v) } as any] : []),
     { title: 'سعر البيع', dataIndex: 'sale_price', key: 'sale_price', ...numberColumn<any>((r) => r.sale_price), align: 'left' as const, total: false, render: (v: string | null) => (v == null ? '' : egp(v)) } as any,
     { title: 'الخصم ٪', dataIndex: 'discount_pct', key: 'discount_pct', ...numberColumn<any>((r) => r.discount_pct), align: 'left' as const, total: false, render: (v: string | null) => (v == null || Number(v) === 0 ? '' : `${Number(v)}٪`) } as any,
-    { title: 'القيمة', dataIndex: 'value', key: 'value', ...numberColumn<any>((r) => r.value), align: 'left' as const, render: (v: string) => <strong>{egp(v)}</strong> },
+    ...(canCost ? [{ title: 'القيمة', dataIndex: 'value', key: 'value', ...numberColumn<any>((r) => r.value), align: 'left' as const, render: (v: string) => <strong>{egp(v)}</strong> }] : []),
   ];
 
   const focus = useFocusedIds();
@@ -487,7 +492,7 @@ function StagnantTab({ warehouses, slots }: TabProps) {
         dataSource={shownRows} columns={stagnantTabCols.columns}
         rowClassName={(r) => (r.last_out_date === null ? 'stagnant-never-moved' : '')}
         onRow={(r) => (r.last_out_date === null ? { style: { background: '#fff1f0' } } : {})}
-        summary={(data) => {
+        summary={canCost ? (data) => {
           const total = data.reduce((s, r) => s + Number(r.value ?? 0), 0);
           return (
             <Table.Summary.Row style={{ background: '#fafafa', fontWeight: 'bold' }}>
@@ -495,7 +500,7 @@ function StagnantTab({ warehouses, slots }: TabProps) {
               <Table.Summary.Cell index={4} align="left">{egp(total)}</Table.Summary.Cell>
             </Table.Summary.Row>
           );
-        }}
+        } : undefined}
         locale={{ emptyText: <Empty description="لا توجد رواكد" /> }} />
     </div>
   );

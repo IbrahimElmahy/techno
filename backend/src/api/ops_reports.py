@@ -8,9 +8,9 @@ from sqlalchemy.orm import Session
 from src.auth import branch_scope
 from src.auth.dependencies import CurrentUser, get_current_user, require_capability
 from src.auth.rbac import (
-    CAP_ACCOUNTING_TRIAL_BALANCE_READ,
     CAP_INSPECTION_READ,
     CAP_LOYALTY_READ,
+    CAP_PROFIT_VIEW,
     CAP_SALES_READ,
     CAP_VOUCHER_READ,
     role_has_capability,
@@ -99,7 +99,7 @@ def profitability(
     date_from: date | None = Query(None),
     date_to: date | None = Query(None),
     include_unassigned: bool = Query(True),
-    current: CurrentUser = Depends(require_capability(CAP_ACCOUNTING_TRIAL_BALANCE_READ)),
+    current: CurrentUser = Depends(require_capability(CAP_PROFIT_VIEW)),
     db: Session = Depends(get_db),
 ) -> dict:
     try:
@@ -117,7 +117,7 @@ def profitability_breakdown(
     key: int | None = Query(None),
     date_from: date | None = Query(None),
     date_to: date | None = Query(None),
-    _: CurrentUser = Depends(require_capability(CAP_ACCOUNTING_TRIAL_BALANCE_READ)),
+    _: CurrentUser = Depends(require_capability(CAP_PROFIT_VIEW)),
     db: Session = Depends(get_db),
 ) -> dict:
     try:
@@ -133,7 +133,7 @@ def analytic_items(
     date_from: date | None = Query(None),
     date_to: date | None = Query(None),
     include_unassigned: bool = Query(False),
-    _: CurrentUser = Depends(require_capability(CAP_ACCOUNTING_TRIAL_BALANCE_READ)),
+    _: CurrentUser = Depends(require_capability(CAP_PROFIT_VIEW)),
     db: Session = Depends(get_db),
 ) -> dict:
     return analytic_items_service.analytic_items(

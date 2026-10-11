@@ -184,8 +184,8 @@ export const NAVIGATION: (NavGroup | NavScreen)[] = [
           { key: '/customer-debts?tab=stagnant', label: 'رواكد مديونية العملاء', roles: R(BOOKS) },
           { key: '/stock-value?tab=sale', label: 'قيمة المخزون بسعر البيع', roles: R(BOOKS) },
           { key: '/stock-value?tab=purchase', label: 'قيمة المخزون بسعر الشراء', roles: R(BOOKS) },
-          { key: '/profitability?view=cost-centers', label: 'أرباح مراكز التكلفة', roles: R(BOOKS) },
-          { key: '/profitability?view=branches', label: 'مقارنة الفروع', roles: R(BOOKS) },
+          { key: '/profitability?view=cost-centers', label: 'أرباح مراكز التكلفة', roles: BOOKS },
+          { key: '/profitability?view=branches', label: 'مقارنة الفروع', roles: BOOKS },
         ],
       },
       ...[...new Set(LEDGER_PRESETS.map((p) => p.group))].map((g) => ({
