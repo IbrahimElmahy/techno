@@ -80,7 +80,12 @@ export function buildStatement(data: any, h: {
       children: accountRows('ga', data.ga.lines) },
     {
       key: 'mkt', label: 'مصاريف البيع والتسويق', sign: '-', amount: n(data.marketing.amount), kind: 'section',
-      children: [
+      children: data.marketing.source === 'ledger' ? [
+        ...accountRows('mkt', data.marketing.actual?.ledger?.lines || []),
+        ...data.marketing.manual.map((l: any, i: number) => ({
+          key: `mkt-man-${i}`, label: l.name, sign: '+' as const, amount: n(l.amount), kind: 'line' as const, note: l.note,
+        })),
+      ] : [
         { key: 'mkt-bonus', label: 'قيمة البوانص', amount: n(mm.bonus_value), kind: 'info' },
         { key: 'mkt-unit', label: mm.coupon_item ? `قيمة الكوبون: ${mm.coupon_item.name} (${mm.coupon_item.tier_label}) ${mm.coupon_price} − خصم ${Number(mm.coupon_discount_pct)}%` : `قيمة الكوبون (${mm.coupon_base} × ${mm.coupon_base_pct}%)`, amount: n(mm.coupon_unit), kind: 'info' },
         { key: 'mkt-bc', label: `كوبونات البوانص (÷ ${mm.coupon_unit})`, amount: n(mm.bonus_coupons), kind: 'info', count: true },
