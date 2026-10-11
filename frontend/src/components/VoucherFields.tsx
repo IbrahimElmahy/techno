@@ -29,7 +29,31 @@ const groupLabel = (t: { root: ExpenseAccount }, trees: { root: ExpenseAccount }
   return t.root.id > 0 && branches.size > 1 ? `${t.root.name} — ${branchOfCode(t.root.code)}` : (t.root.name || '');
 };
 
-function gaTree(accounts: ExpenseAccount[], groups: ExpenseAccount[]) {
+const NOT_EXPENSE_EXACT = ['المشتريات', 'مردودات المبيعات', 'مردودات مبيعات'].map(normAr);
+const NOT_EXPENSE_PART = ['خصم مسموح', 'تكلفة المبيعات', 'تقدير تكلفة انتاج', 'تكاليف صناعية خامات',
+  'فروق مخزون', 'اهلاكات', 'تحت راتب', 'ضرائب مخصومة'].map(normAr);
+const notExpenseGroup = (name?: string | null) => {
+  const n = normAr(name);
+  return NOT_EXPENSE_EXACT.includes(n) || NOT_EXPENSE_PART.some((w) => n.includes(w));
+};
+
+function dropNonOperating(accounts: ExpenseAccount[], groups: ExpenseAccount[]) {
+  const byId = new Map([...groups, ...accounts].map((a) => [a.id, a]));
+  const blocked = (a: ExpenseAccount): boolean => {
+    let cur: ExpenseAccount | undefined = a;
+    const seen = new Set<number>();
+    while (cur && !seen.has(cur.id)) {
+      seen.add(cur.id);
+      if (notExpenseGroup(cur.name)) return true;
+      cur = cur.parent_id != null ? byId.get(cur.parent_id) : undefined;
+    }
+    return false;
+  };
+  return { accounts: accounts.filter((a) => !blocked(a)), groups: groups.filter((g) => !blocked(g)) };
+}
+
+function gaTree(allAccounts: ExpenseAccount[], allGroups: ExpenseAccount[]) {
+  const { accounts, groups } = dropNonOperating(allAccounts, allGroups);
   const groupIds = new Set(groups.map((g) => g.id));
   const roots = groups.filter((g) => g.parent_id == null || !groupIds.has(g.parent_id));
   if (!roots.length) return null;

@@ -20,6 +20,7 @@ class AddItemFlow {
       title: 'اختيار أصناف المعاينة',
       confirmLabel: 'إضافة',
       memoryKey: 'inspection',
+      keepOrder: true,
       emptyMessage: 'لا توجد أصناف على الجهاز — نفّذ «تحديث الأصناف والقوائم».',
       entries: [
         for (final it in items)

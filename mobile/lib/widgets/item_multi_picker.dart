@@ -69,6 +69,7 @@ Future<List<PickedQty>> showItemMultiPicker(
   String confirmLabel = 'إضافة الأصناف',
   String? memoryKey,
   String emptyMessage = 'لا توجد أصناف',
+  bool keepOrder = false,
 }) async {
   final picked = await showDialog<List<PickedQty>>(
     context: context,
@@ -80,6 +81,7 @@ Future<List<PickedQty>> showItemMultiPicker(
         confirmLabel: confirmLabel,
         memory: _memories.putIfAbsent(memoryKey ?? title, _Memory.new),
         emptyMessage: emptyMessage,
+        keepOrder: keepOrder,
       ),
     ),
   );
@@ -93,6 +95,7 @@ class _ItemMultiPickerDialog extends StatefulWidget {
     required this.confirmLabel,
     required this.memory,
     required this.emptyMessage,
+    this.keepOrder = false,
   });
 
   final List<PickerEntry> entries;
@@ -100,6 +103,7 @@ class _ItemMultiPickerDialog extends StatefulWidget {
   final String confirmLabel;
   final _Memory memory;
   final String emptyMessage;
+  final bool keepOrder;
 
   @override
   State<_ItemMultiPickerDialog> createState() => _ItemMultiPickerDialogState();
@@ -120,18 +124,23 @@ class _ItemMultiPickerDialogState extends State<_ItemMultiPickerDialog> {
   void initState() {
     super.initState();
     _entries = [...widget.entries];
-    sortByName<PickerEntry>(_entries, (e) => e.name);
+    if (!widget.keepOrder) sortByName<PickerEntry>(_entries, (e) => e.name);
     final counts = <String, int>{};
     for (final e in _entries) {
       counts.update(_categoryOf(e), (n) => n + 1, ifAbsent: () => 1);
     }
-    _categories = counts.entries.toList()
-      ..sort((a, b) {
-        if ((a.key == _noCategory) != (b.key == _noCategory)) {
-          return a.key == _noCategory ? 1 : -1;
-        }
-        return compareArabic(a.key, b.key);
-      });
+    _categories = widget.keepOrder
+        ? [
+            ...counts.entries.where((c) => c.key != _noCategory),
+            ...counts.entries.where((c) => c.key == _noCategory),
+          ]
+        : (counts.entries.toList()
+          ..sort((a, b) {
+            if ((a.key == _noCategory) != (b.key == _noCategory)) {
+              return a.key == _noCategory ? 1 : -1;
+            }
+            return compareArabic(a.key, b.key);
+          }));
     final remembered = widget.memory.category;
     _category = remembered != null && counts.containsKey(remembered) ? remembered : null;
   }

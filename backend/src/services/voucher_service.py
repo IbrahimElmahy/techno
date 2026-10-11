@@ -422,8 +422,8 @@ def create_partner_movement(
     parent = db.get(Account, acc.parent_id) if acc is not None and acc.parent_id else None
     pname = (parent.name or "") if parent is not None else ""
     if acc is None or not acc.active or not acc.is_postable or not any(
-            w in pname for w in ("جار", "رأس المال", "راس المال", "استثمار")):
-        raise VoucherError("يجب أن يكون الحساب حساب شريك تحت «جارى الشركاء» أو «رأس المال».")
+            w in pname for w in ("جار", "رأس المال", "راس المال", "استثمار", "مسحوبات")):
+        raise VoucherError("يجب أن يكون الحساب حساب شريك تحت «جارى الشركاء» أو «رأس المال» أو «المسحوبات».")
     cash_account_id, safe_id = _cash_side(
         db, actor_role=actor_role, actor_user_id=actor_user_id, treasury_id=treasury_id)
     if withdraw:
