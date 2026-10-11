@@ -102,7 +102,7 @@ export default function Owners() {
   const fetchOwners = async () => {
     setLoading(true);
     try {
-      const params: Record<string, any> = { limit: 1000 };
+      const params: Record<string, any> = { limit: 2000 };
       if (search.trim()) params.search = search.trim();
       if (territoryId) params.territory_id = territoryId;
       if (serviceRepId) params.service_rep_id = serviceRepId;

@@ -13,7 +13,7 @@ from src.auth.dependencies import CurrentUser, require_capability
 from src.auth.rbac import CAP_INSPECTION_READ, CAP_INSPECTION_WRITE
 from src.core.client_app import is_mobile_app
 from src.core.db import get_db
-from src.lib import phones
+from src.lib import arabic, phones
 from src.models.inspection import Inspection
 from src.models.owner import Owner
 
@@ -133,6 +133,7 @@ def list_owners(
         stmt = stmt.where(
             or_(
                 Owner.name.ilike(q),
+                arabic.sort_key(Owner.name).like(f"%{arabic.bare(search)}%"),
                 Owner.phone.ilike(q),
                 Owner.code.ilike(q),
                 Owner.national_id.ilike(q),
@@ -153,7 +154,7 @@ def list_owners(
         stmt = stmt.where(func.coalesce(insp_subq.c.insp_count, 0) == 0)
 
     stmt = stmt.order_by(
-        desc(func.coalesce(insp_subq.c.insp_count, 0)),
+        insp_subq.c.last_date.desc().nulls_last(),
         desc(Owner.id),
     ).offset(offset).limit(limit)
 

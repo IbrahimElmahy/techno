@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal
 
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from sqlalchemy.orm import selectinload
@@ -13,6 +13,7 @@ from sqlalchemy.orm import selectinload
 from src.services import numbering
 
 from src.core.money import to_qty
+from src.lib import arabic, phones
 from src.models.catalog import Item
 from src.models.inspection import Inspection, InspectionItem, InspectionStatus, VisitKind
 from src.models.stock import LocationKind, StockDirection, StockMovement
@@ -167,6 +168,103 @@ def deactivate_item_type(db: Session, *, item_type_id: int, actor_user_id: int):
                             active=False)
 
 
+def _bare_name(text: str | None) -> str:
+    return " ".join(arabic.bare(text).split())
+
+
+def _owner_numbers(owner) -> set[str]:
+    return set(phones.split_numbers(owner.phone)) | set(phones.split_numbers(owner.phone2))
+
+
+def _digits_only(column):
+    return func.regexp_replace(
+        func.translate(column, "٠١٢٣٤٥٦٧٨٩۰۱۲۳۴۵۶۷۸۹", "01234567890123456789"),
+        r"\D", "", "g")
+
+
+def find_owner(db: Session, *, name: str | None, phone: str | None = None,
+               national_id: str | None = None, address: str | None = None):
+    from src.models.owner import Owner
+
+    key = _bare_name(name)
+    if not key:
+        return None
+    nums = phones.split_numbers(phone)
+    pg = db.bind is not None and db.bind.dialect.name == "postgresql"
+    if nums:
+        if pg:
+            tails = {n[-9:] for n in nums}
+            conds = []
+            for t in tails:
+                conds.append(_digits_only(Owner.phone).like(f"%{t}"))
+                conds.append(_digits_only(Owner.phone2).like(f"%{t}"))
+            cands = db.scalars(select(Owner).where(or_(*conds))).all()
+        else:
+            cands = db.scalars(select(Owner).where(
+                or_(Owner.phone.is_not(None), Owner.phone2.is_not(None)))).all()
+        hits = [o for o in cands if _owner_numbers(o) & set(nums)]
+        if hits:
+            hits.sort(key=lambda o: (_bare_name(o.name) != key, not o.active, o.id))
+            return hits[0]
+        return None
+
+    nid = (national_id or "").strip()
+    if nid:
+        same_nid = db.scalars(select(Owner).where(Owner.national_id == nid)
+                              .order_by(Owner.id)).all()
+        for o in same_nid:
+            if _bare_name(o.name) == key:
+                return o
+
+    addr = _bare_name(address)
+    stmt = select(Owner).order_by(Owner.id)
+    if pg:
+        stmt = stmt.where(func.trim(arabic.sort_key(Owner.name)) == key)
+    cands = db.scalars(stmt).all()
+    for o in cands:
+        if _bare_name(o.name) != key or _owner_numbers(o):
+            continue
+        if nid and o.national_id and o.national_id.strip() != nid:
+            continue
+        if _bare_name(o.address) != addr:
+            continue
+        return o
+    return None
+
+
+def find_or_create_owner(db: Session, *, name: str | None, phone: str | None = None,
+                         national_id: str | None = None, address: str | None = None,
+                         floor_number: str | None = None, branch_id: int | None = None,
+                         rep_user_id: int | None = None, actor_user_id: int | None = None):
+    from src.models.owner import Owner
+
+    found = find_owner(db, name=name, phone=phone, national_id=national_id, address=address)
+    if found is not None:
+        return found, False
+    clean = (name or "").strip()
+    if not _bare_name(clean):
+        return None, False
+    nums = phones.split_numbers(phone)
+    owner = Owner(
+        name=clean[:160],
+        phone=nums[0] if nums else None,
+        phone2=nums[1] if len(nums) > 1 else None,
+        national_id=((national_id or "").strip()[:32] or None),
+        address=((address or "").strip()[:255] or None),
+        floor_number=((floor_number or "").strip()[:16] or None),
+        branch_id=branch_id,
+        service_rep_id=rep_user_id,
+        active=True,
+    )
+    db.add(owner)
+    db.flush()
+    audit_service.record(db, action="owner.create", actor_user_id=actor_user_id,
+                         entity_type="owner", entity_id=owner.id,
+                         after={"name": owner.name, "phone": owner.phone,
+                                "source": "inspection"})
+    return owner, True
+
+
 def create_inspection(
     db: Session, *, visit_kind: VisitKind, inspection_date: date, owner_name: str | None,
     rep_user_id: int, actor_user_id: int, lines: list[LineIn],
@@ -205,6 +303,16 @@ def create_inspection(
         if existing is not None:
             return existing
 
+    branch_id = branch_for(db, actor_user_id=actor_user_id,
+                           location_kind="rep", location_id=rep_user_id)
+    if owner_id is None and customer_id is None:
+        owner, _ = find_or_create_owner(
+            db, name=name, phone=owner_phone, national_id=national_id,
+            address=owner_address, floor_number=floor_number, branch_id=branch_id,
+            rep_user_id=rep_user_id, actor_user_id=actor_user_id)
+        if owner is not None:
+            owner_id = owner.id
+
     insp = Inspection(
         document_number=_doc_number(db), certificate_number=_next_certificate_number(db),
         client_uuid=client_uuid, visit_kind=visit_kind, customer_id=customer_id,
@@ -218,8 +326,7 @@ def create_inspection(
         merchant_customer_id=merchant_customer_id,
         visit_details=visit_details,
         total_points=_points(0), rep_user_id=rep_user_id,
-        branch_id=branch_for(db, actor_user_id=actor_user_id,
-                             location_kind="rep", location_id=rep_user_id),
+        branch_id=branch_id,
     )
     db.add(insp)
     db.flush()
