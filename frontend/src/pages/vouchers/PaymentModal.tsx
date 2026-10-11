@@ -47,6 +47,12 @@ export default function PaymentModal({
   };
 
   const customerId = Form.useWatch('customer_id', form);
+  const kindKey = `${Form.useWatch('customer_id', form) ?? ''}|${Form.useWatch('supplier_id', form) ?? ''}|${Form.useWatch('account_id', form) ?? ''}`;
+  React.useEffect(() => {
+    if (!open || !editing) return;
+    const k = kindOfValues(form.getFieldsValue(true), customers || []);
+    if (k && k !== kind) setKind(k);
+  }, [open, editing, kindKey, (customers || []).length]);
   const supplierId = Form.useWatch('supplier_id', form);
   const accountId = Form.useWatch('account_id', form);
   const accounts = usePostableAccounts(kind === 'account');

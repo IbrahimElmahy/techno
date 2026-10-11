@@ -1,5 +1,5 @@
 import { allRows } from '../components/tableDefaults';
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { PAGE_SIZE, PAGE_SIZE_OPTIONS } from '../utils/pagination';
 import { searchFilter, searchRank, sortByName } from '../utils/arabicSort';
 import {
@@ -29,14 +29,13 @@ import { useQueryTab } from '../components/useQueryTab';
 import { useDocRoute } from '../components/useDocRoute';
 import DocOpening from '../components/DocOpening';
 import { useListFilter, normalizeAr } from '../components/ListToolbar';
-import ListPage, { ListTab } from '../components/ListPage';
+import ListPage, { ListStat, ListTab } from '../components/ListPage';
 import { matchesStatement } from '../utils/statements';
 import DateRangeFilter from '../components/DateRangeFilter';
 import { printDocument } from '../print/brand';
 import { useScreenShortcuts, useTableKeyboard } from '../components/keyboard';
 import VoucherDocument, { VoucherDoc, VOUCHER_TITLES, voucherFooter } from '../components/VoucherDocument';
 import { useLookup } from '../hooks/useLookup';
-import { VoucherKeyStrip, RunnerWorld } from '../components/VoucherKeyRunner';
 import { defaultTreasuryId } from '../components/VoucherFields';
 import { TabModal } from '../components/TabModal';
 import DocumentAttachments from '../components/DocumentAttachments';
@@ -177,10 +176,6 @@ const Vouchers: React.FC = () => {
   const openView = (v: VoucherRecord) => { setVoucherView(v); markOpen(v.id); };
 
   const closeView = () => { setVoucherView(null); markClosed(); };
-
-  const keyWorld = useMemo<RunnerWorld>(() => ({
-    treasuries: treasuries as any, customers, suppliers, reps: reps as any, accounts: [],
-  }), [treasuries, customers, suppliers, reps]);
 
   const [receiptForm] = Form.useForm();
   const [receiptFamilies, setReceiptFamilies] = useState<Record<number, any[]>>({});
@@ -1087,11 +1082,13 @@ const Vouchers: React.FC = () => {
       tabs={tabs} activeTab={tab} onTabChange={setTab}
       actions={actions}
       filters={filters}
+      summary={treasuries.filter((t) => t.active !== false).length ? (<>
+        {sortByName(treasuries.filter((t) => t.active !== false), (t) => t.name).map((t) => (
+          <ListStat key={t.id} label={t.name} value={money(t.balance)}
+            tone={Number(t.balance) < 0 ? 'neg' : 'strong'} />
+        ))}
+      </>) : undefined}
     >
-      <div style={{ paddingTop: 6 }}>
-        <VoucherKeyStrip world={keyWorld}
-          onPosted={() => { loadVouchers(); loadTreasuries(); }} />
-      </div>
       {body}
     </ListPage>
 

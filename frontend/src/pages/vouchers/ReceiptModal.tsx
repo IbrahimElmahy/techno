@@ -55,6 +55,12 @@ export default function ReceiptModal({
   const customerId = Form.useWatch('customer_id', form);
   const supplierId = Form.useWatch('supplier_id', form);
   const accountId = Form.useWatch('account_id', form);
+  const kindKey = `${Form.useWatch('customer_id', form) ?? ''}|${Form.useWatch('supplier_id', form) ?? ''}|${Form.useWatch('account_id', form) ?? ''}`;
+  React.useEffect(() => {
+    if (!open || !editing) return;
+    const k = kindOfValues(form.getFieldsValue(true), customers || []);
+    if (k && k !== kind) setKind(k);
+  }, [open, editing, kindKey, (customers || []).length]);
   const repUserId = Form.useWatch('rep_user_id', form) as number | undefined;
   const accounts = usePostableAccounts(kind === 'account');
   const lines = isCustomerKind(kind) ? families[customerId] || [] : [];
