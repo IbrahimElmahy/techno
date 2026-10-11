@@ -48,11 +48,11 @@ export default function PointsYearly() {
   useEffect(() => { load(); }, [year, goldPoints, silverPoints]);
 
   const repOptions = useMemo(() => sortByName(
-    [...new Set(rows.map((r) => r.technician_rep || 'بدون مندوب'))], (r) => r,
+    [...new Set(rows.map((r) => r.party_rep || 'بدون مندوب'))], (r) => r,
   ).map((r) => ({ value: r, label: r })), [rows]);
 
-  const shown = useMemo(() => rows.filter((r) => (!reps.length || reps.includes(r.technician_rep || 'بدون مندوب'))
-    && (!query.trim() || matchesWords(`${r.technician} ${r.technician_code || ''} ${r.technician_phone || ''}`, query))),
+  const shown = useMemo(() => rows.filter((r) => (!reps.length || reps.includes(r.party_rep || 'بدون مندوب'))
+    && (!query.trim() || matchesWords(`${r.party} ${r.party_code || ''} ${r.party_phone || ''}`, query))),
   [rows, reps, query]);
 
   const totals = useMemo(() => {
@@ -63,19 +63,19 @@ export default function PointsYearly() {
   }, [shown]);
 
   const columns = [
-    { title: 'الفني', dataIndex: 'technician', key: 'technician', width: 200, fixed: 'right' as const },
-    { title: 'المندوب', dataIndex: 'technician_rep', key: 'technician_rep', width: 150,
+    { title: 'التاجر', dataIndex: 'party', key: 'party', width: 200, fixed: 'right' as const },
+    { title: 'المندوب', dataIndex: 'party_rep', key: 'party_rep', width: 150,
       render: (v: string | null) => v || '' },
-    { title: 'الكود', dataIndex: 'technician_code', key: 'technician_code', width: 110 },
-    { title: 'الهاتف', dataIndex: 'technician_phone', key: 'technician_phone', width: 120 },
-    { title: 'المحافظة', dataIndex: 'technician_governorate', key: 'technician_governorate', width: 110 },
+    { title: 'الكود', dataIndex: 'party_code', key: 'party_code', width: 110 },
+    { title: 'الهاتف', dataIndex: 'party_phone', key: 'party_phone', width: 120 },
+    { title: 'المحافظة', dataIndex: 'party_governorate', key: 'party_governorate', width: 110 },
     ...MONTH_KEYS.map((k, i) => ({ title: MONTHS[i], dataIndex: k, key: k, width: 90,
       align: 'left' as const, render: num })),
     { title: 'إجمالي نقاط السنة', dataIndex: 'total_points', key: 'total_points', width: 120,
       align: 'left' as const, render: (v: any) => <b>{num(v)}</b> },
     { title: 'إجمالي الكوبونات', dataIndex: 'earned_coupons', key: 'earned_coupons', width: 110,
       align: 'left' as const, render: (v: any) => <b>{num(v)}</b> },
-    { title: 'مستلم كوبونات', key: 'received', children: [
+    { title: 'الكوبونات المسلّمة', key: 'received', children: [
       { title: 'ذهبي', dataIndex: 'received_gold', key: 'received_gold', width: 80, align: 'left' as const, render: int },
       { title: 'فضي', dataIndex: 'received_silver', key: 'received_silver', width: 80, align: 'left' as const, render: int },
     ] },
@@ -83,26 +83,26 @@ export default function PointsYearly() {
       align: 'left' as const, render: (v: any) => <b>{num(v)}</b> },
   ];
   const cols = useTableColumns('points-yearly', columns as any, {
-    defaultHidden: ['technician_code', 'technician_phone', 'technician_governorate'],
+    defaultHidden: ['party_code', 'party_phone', 'party_governorate'],
     export: { name: `مجمع نقاط ${year}`, rows: shown },
   });
 
   const print = () => {
     const pc: PrintColumn<Row>[] = [
-      { title: 'الفني', value: 'technician' },
-      { title: 'المندوب', value: (r) => r.technician_rep || '' },
+      { title: 'التاجر', value: 'party' },
+      { title: 'المندوب', value: (r) => r.party_rep || '' },
       ...MONTH_KEYS.map((k, i) => ({ title: MONTHS[i], value: (r: Row) => num(r[k]), numeric: true })),
       { title: 'إجمالي النقاط', value: (r) => num(r.total_points), numeric: true },
       { title: 'إجمالي الكوبونات', value: (r) => num(r.earned_coupons), numeric: true },
-      { title: 'مستلم ذهبي', value: (r) => int(r.received_gold), numeric: true },
-      { title: 'مستلم فضي', value: (r) => int(r.received_silver), numeric: true },
+      { title: 'مسلّم ذهبي', value: (r) => int(r.received_gold), numeric: true },
+      { title: 'مسلّم فضي', value: (r) => int(r.received_silver), numeric: true },
       { title: 'المجموع بالذهبي', value: (r) => num(r.received_in_gold), numeric: true },
     ];
     printReport({ title: `مجمع نقاط ${year}`, meta: reps.length ? [['المندوب', reps.join('، ')]] : [] },
       pc, shown, [
         { label: 'إجمالي نقاط السنة', value: qty(totals.total_points) },
         { label: 'إجمالي الكوبونات', value: qty(totals.earned_coupons) },
-        { label: 'المستلم بالذهبي', value: qty(totals.received_in_gold) },
+        { label: 'المسلّم بالذهبي', value: qty(totals.received_in_gold) },
       ]);
   };
 
@@ -119,7 +119,7 @@ export default function PointsYearly() {
         <Button icon={<ReloadOutlined />} onClick={load} loading={loading}>تحديث</Button>
       </>)}
       filters={(<>
-        <Input className="sl-f-search" allowClear prefix={<SearchOutlined />} placeholder="بحث باسم الفني أو الكود أو الهاتف"
+        <Input className="sl-f-search" allowClear prefix={<SearchOutlined />} placeholder="بحث باسم التاجر أو الكود أو الهاتف"
           value={query} onChange={(e) => setQuery(e.target.value)} />
         <Select style={{ width: 110 }} value={year} onChange={setYear}
           options={Array.from({ length: 6 }, (_, i) => dayjs().year() - i).map((y) => ({ value: y, label: String(y) }))} />
@@ -136,14 +136,14 @@ export default function PointsYearly() {
       summary={(<>
         <ListStat label="إجمالي نقاط السنة" value={qty(totals.total_points)} tone="strong" />
         <ListStat label="إجمالي الكوبونات" value={qty(totals.earned_coupons)} />
-        <ListStat label="مستلم ذهبي" value={int(totals.received_gold) || '0'} />
-        <ListStat label="مستلم فضي" value={int(totals.received_silver) || '0'} />
-        <ListStat label="المستلم بالذهبي" value={qty(totals.received_in_gold)} tone="strong" />
-        <ListStat label="عدد الفنيين" value={shown.length.toLocaleString(numeralsLocale())} />
+        <ListStat label="مسلّم ذهبي" value={int(totals.received_gold) || '0'} />
+        <ListStat label="مسلّم فضي" value={int(totals.received_silver) || '0'} />
+        <ListStat label="المسلّم بالذهبي" value={qty(totals.received_in_gold)} tone="strong" />
+        <ListStat label="عدد التجار" value={shown.length.toLocaleString(numeralsLocale())} />
       </>)}
     >
       <Table<Row>
-        className="sl-table" size="small" loading={loading} rowKey={(r: Row) => String(r.technician_id)}
+        className="sl-table" size="small" loading={loading} rowKey={(r: Row) => String(r.party_id)}
         dataSource={shown} columns={cols.columns as any}
         pagination={{ defaultPageSize: PAGE_SIZE, showSizeChanger: true }}
         summary={() => (
