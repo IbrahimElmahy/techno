@@ -20,14 +20,18 @@ export interface ExpenseAccount {
   parent_id?: number | null;
 }
 
-const GA_NAME = 'مصروفات عموميه';
 const normAr = (v?: string | null) => (v || '').trim()
   .replace(/[أإآ]/g, 'ا').replace(/ة/g, 'ه').replace(/ى/g, 'ي').replace(/\s+/g, ' ');
 const branchOfCode = (code?: string | null) => (
   code?.startsWith('AL-') ? 'العلياء' : code?.startsWith('FC-') ? 'السادات' : 'أكتوبر');
+const groupLabel = (t: { root: ExpenseAccount }, trees: { root: ExpenseAccount }[]) => {
+  const branches = new Set(trees.filter((x) => x.root.id > 0).map((x) => branchOfCode(x.root.code)));
+  return t.root.id > 0 && branches.size > 1 ? `${t.root.name} — ${branchOfCode(t.root.code)}` : (t.root.name || '');
+};
 
 function gaTree(accounts: ExpenseAccount[], groups: ExpenseAccount[]) {
-  const roots = groups.filter((g) => normAr(g.name) === GA_NAME);
+  const groupIds = new Set(groups.map((g) => g.id));
+  const roots = groups.filter((g) => g.parent_id == null || !groupIds.has(g.parent_id));
   if (!roots.length) return null;
   const all = [...groups, ...accounts];
   const kids = new Map<number, ExpenseAccount[]>();
@@ -36,8 +40,8 @@ function gaTree(accounts: ExpenseAccount[], groups: ExpenseAccount[]) {
     kids.set(a.parent_id, [...(kids.get(a.parent_id) || []), a]);
   });
   const postable = new Set(accounts.map((a) => a.id));
-  const groupIds = new Set(groups.map((g) => g.id));
-  return roots.map((root) => {
+  const placed = new Set<number>();
+  const trees = roots.map((root) => {
     const leaves: ExpenseAccount[] = [];
     const subGroups: ExpenseAccount[] = [root];
     const stack = [root.id];
@@ -47,12 +51,22 @@ function gaTree(accounts: ExpenseAccount[], groups: ExpenseAccount[]) {
       if (seen.has(id)) continue;
       seen.add(id);
       (kids.get(id) || []).forEach((c) => {
-        if (postable.has(c.id)) leaves.push(c);
+        if (postable.has(c.id)) { leaves.push(c); placed.add(c.id); }
         if (groupIds.has(c.id)) { subGroups.push(c); stack.push(c.id); }
       });
     }
     return { root, leaves, subGroups };
-  }).filter((t) => t.leaves.length || t.subGroups.length);
+  }).filter((t) => t.leaves.length);
+  const loose = accounts.filter((a) => !placed.has(a.id));
+  if (loose.length) {
+    trees.push({ root: { id: -1, name: 'حسابات مصروفات أخرى', code: null } as ExpenseAccount,
+      leaves: loose, subGroups: [] });
+  }
+  const rank = (t: { root: ExpenseAccount }) => (normAr(t.root.name).includes('مصروف') ? 0 : 1);
+  trees.sort((a, b) => rank(a) - rank(b)
+    || branchOfCode(a.root.code).localeCompare(branchOfCode(b.root.code), 'ar')
+    || (a.root.name || '').localeCompare(b.root.name || '', 'ar'));
+  return trees;
 }
 
 export function expenseAccountOptions(all: any[]) {
@@ -64,7 +78,7 @@ export function expenseAccountOptions(all: any[]) {
   if (!tree) return sortByName(accounts, (a) => a.name).map(opt);
   if (tree.length === 1) return sortByName(tree[0].leaves, (a) => a.name).map(opt);
   return tree.map((t) => ({
-    label: `${t.root.name} — ${branchOfCode(t.root.code)}`,
+    label: groupLabel(t, tree),
     options: sortByName(t.leaves, (a) => a.name).map(opt),
   }));
 }
@@ -156,7 +170,7 @@ export function ExpenseAccountField({
     : sortByName(accounts, (a) => a.name).map(toOpt)), [accounts, tree]);
   const selectOptions = useMemo(() => (tree && tree.length > 1
     ? tree.map((t) => ({
-      label: `${t.root.name} — ${branchOfCode(t.root.code)}`,
+      label: groupLabel(t, tree),
       options: sortByName(t.leaves, (a) => a.name).map(toOpt),
     }))
     : options), [tree, options]);
