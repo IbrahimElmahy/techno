@@ -172,6 +172,7 @@ export default function RatioProduction() {
         paper_number: paperNo || null,
         statement1: statement || null,
         execute: true,
+        allow_negative: true,
         products: filled.map((l) => ({
           item_id: l.product_id, quantity: String(l.quantity), planned_quantity: String(l.quantity),
           warehouse_id: l.warehouse_id || outWh, bom_id: l.bom_id ?? null,

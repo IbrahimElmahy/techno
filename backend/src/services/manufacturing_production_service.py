@@ -186,6 +186,7 @@ def create_order(
     notes: str | None = None,
     reviewed: bool = False,
     execute: bool = False,
+    allow_negative: bool = False,
 ) -> ProductionOrder:
     order = ProductionOrder(
         document_number=_doc_number(db),
@@ -208,7 +209,8 @@ def create_order(
                          entity_type="production_order", entity_id=order.id,
                          after={"doc": order.document_number})
     if execute:
-        execute_order(db, order_id=order.id, actor_user_id=actor_user_id)
+        execute_order(db, order_id=order.id, actor_user_id=actor_user_id,
+                      allow_negative=allow_negative)
     return order
 
 
@@ -284,11 +286,11 @@ def shortages(db: Session, rows) -> list[str]:
 
 
 def _issue_materials(db: Session, order: ProductionOrder, actor_user_id: int,
-                     *, stage: str | None = None) -> Decimal:
+                     *, stage: str | None = None, allow_negative: bool = False) -> Decimal:
     rows = pending(order, stage)
     if not rows:
         return ZERO
-    missing = shortages(db, rows)
+    missing = [] if allow_negative else shortages(db, rows)
     if missing:
         raise ProductionOrderError(
             "الخامات التالية غير كافية في مخازنها — حوّل الكمية للمخزن أو غيّر مخزن الخامة:" + chr(10)
@@ -300,7 +302,8 @@ def _issue_materials(db: Session, order: ProductionOrder, actor_user_id: int,
             db, item_id=m.item_id, location_kind=LocationKind.warehouse,
             location_id=int(m.warehouse_id), movement_type="consumption_out",
             direction=StockDirection.out, quantity=to_qty(m.quantity),
-            actor_user_id=actor_user_id, source_doc_type=DOC_TYPE, source_doc_id=order.id)
+            actor_user_id=actor_user_id, source_doc_type=DOC_TYPE, source_doc_id=order.id,
+            allow_negative=allow_negative)
         m.unit_cost = to_money(averages.get(m.item_id, ZERO))
         m.line_cost = production.line_cost(m.quantity, m.unit_cost)
         m.stock_movement_id = mv.id
@@ -419,7 +422,8 @@ def undo_receipt(db: Session, *, order_id: int, receipt_id: int,
 
 def execute_order(db: Session, *, order_id: int, actor_user_id: int,
                   outputs: dict[int, Decimal] | None = None,
-                  waste: dict[int, Decimal] | None = None) -> ProductionOrder:
+                  waste: dict[int, Decimal] | None = None,
+                  allow_negative: bool = False) -> ProductionOrder:
     order = db.get(ProductionOrder, order_id)
     if order is None:
         raise ProductionOrderError("أمر التشغيل غير موجود.")
@@ -469,7 +473,7 @@ def execute_order(db: Session, *, order_id: int, actor_user_id: int,
         db.flush()
 
     by_line: dict[int, Decimal] = {}
-    _issue_materials(db, order, actor_user_id)
+    _issue_materials(db, order, actor_user_id, allow_negative=allow_negative)
     for m in order.materials:
         if m.product_line_id is not None:
             by_line[m.product_line_id] = (

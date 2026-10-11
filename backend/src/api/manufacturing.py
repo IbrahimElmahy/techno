@@ -494,6 +494,7 @@ class POIn(BaseModel):
     notes: str | None = Field(default=None, max_length=500)
     reviewed: bool = False
     execute: bool = False
+    allow_negative: bool = False
 
 
 class POMaterialOut(BaseModel):
@@ -727,7 +728,7 @@ def create_production_order(
             external_document_number=body.external_document_number,
             paper_number=body.paper_number,
             statement1=body.statement1, notes=body.notes, reviewed=body.reviewed,
-            execute=body.execute)
+            execute=body.execute, allow_negative=body.allow_negative)
     except (ProductionOrderError, ManufacturingError, StockError) as exc:
         raise _conflict(exc)
     db.commit()
