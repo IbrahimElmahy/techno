@@ -43,7 +43,15 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
       _error = null;
     });
     try {
-      await ApiClient.instance.login(_username.text.trim(), _password.text);
+      try {
+        await ApiClient.instance.login(_username.text.trim(), _password.text);
+      } on ApiException catch (e) {
+        final base = await ApiClient.instance.baseUrl();
+        if (e.statusCode != 404 || base == ApiClient.defaultBase) rethrow;
+        await LocalDb.instance.setKv('api_base', ApiClient.defaultBase);
+        _server.text = ApiClient.defaultBase;
+        await ApiClient.instance.login(_username.text.trim(), _password.text);
+      }
       if (await ApiClient.instance.isSupervisor()) {
         if (!mounted) return;
         Navigator.of(context).pushReplacement(MaterialPageRoute(
