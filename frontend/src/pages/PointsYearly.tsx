@@ -8,7 +8,7 @@ import { FilterTable as Table } from '../components/FilterTable';
 import { useTableColumns } from '../components/ColumnSettings';
 import { MULTI } from '../utils/reportFilters';
 import { matchesWords, searchFilter, searchRank, sortByName } from '../utils/arabicSort';
-import { qty, numeralsLocale } from '../utils/money';
+import { numeralsLocale } from '../utils/money';
 import { PAGE_SIZE } from '../utils/pagination';
 import { printReport, type PrintColumn } from '../print/reportSheet';
 
@@ -17,7 +17,8 @@ const MONTH_KEYS = MONTHS.map((_, i) => `m${String(i + 1).padStart(2, '0')}`);
 
 type Row = Record<string, any>;
 
-const num = (v: any) => (Number(v) ? qty(v) : '');
+const one = (v: any) => Number(v || 0).toLocaleString(numeralsLocale(), { maximumFractionDigits: 1 });
+const num = (v: any) => (Number(v) ? one(v) : '');
 const int = (v: any) => (Number(v) ? Number(v).toLocaleString(numeralsLocale()) : '');
 
 export default function PointsYearly() {
@@ -96,9 +97,9 @@ export default function PointsYearly() {
     ];
     printReport({ title: `مجمع نقاط ${year}`, meta: reps.length ? [['المندوب', reps.join('، ')]] : [] },
       pc, shown, [
-        { label: 'إجمالي نقاط السنة', value: qty(totals.total_points) },
-        { label: 'إجمالي الكوبونات', value: qty(totals.earned_coupons) },
-        { label: 'المسلّم بالذهبي', value: qty(totals.received_in_gold) },
+        { label: 'إجمالي نقاط السنة', value: one(totals.total_points) },
+        { label: 'إجمالي الكوبونات', value: one(totals.earned_coupons) },
+        { label: 'المسلّم بالذهبي', value: one(totals.received_in_gold) },
       ]);
   };
 
@@ -126,11 +127,11 @@ export default function PointsYearly() {
           onClick={() => { setReps([]); setQuery(''); setYear(dayjs().year()); }}>مسح</Button>
       </>)}
       summary={(<>
-        <ListStat label="إجمالي نقاط السنة" value={qty(totals.total_points)} tone="strong" />
-        <ListStat label="إجمالي الكوبونات" value={qty(totals.earned_coupons)} />
+        <ListStat label="إجمالي نقاط السنة" value={one(totals.total_points)} tone="strong" />
+        <ListStat label="إجمالي الكوبونات" value={one(totals.earned_coupons)} />
         <ListStat label="مسلّم ذهبي" value={int(totals.received_gold) || '0'} />
         <ListStat label="مسلّم فضي" value={int(totals.received_silver) || '0'} />
-        <ListStat label="المسلّم بالذهبي" value={qty(totals.received_in_gold)} tone="strong" />
+        <ListStat label="المسلّم بالذهبي" value={one(totals.received_in_gold)} tone="strong" />
         <ListStat label="عدد التجار" value={shown.length.toLocaleString(numeralsLocale())} />
       </>)}
     >
