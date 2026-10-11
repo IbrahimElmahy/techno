@@ -233,6 +233,68 @@ from src.models.user import User  # noqa: E402
 
 PAGE_PREFIX = "page:"
 
+PAGE_CAPS: dict[str, set[str]] = {
+    "/purchases": {"purchase.write"},
+    "/purchase-returns": {"return.write"},
+    "/suppliers": {"supplier.write"},
+    "/customers": {"customer.write"},
+    "/invoices": {"sale.write", "sale.edit"},
+    "/returns": {"return.write"},
+    "/orders": {"sale.write"},
+    "/vouchers": {"voucher.write"},
+    "/partners-current": {"voucher.write"},
+    "/treasury": {"voucher.write"},
+    "/treasuries": {"voucher.write"},
+    "/voucher-keys": {"voucher.write"},
+    "/ratio-production": {"manufacture.write"},
+    "/free-production": {"manufacture.write"},
+    "/manufacturing": {"manufacture.write"},
+    "/transfers": {"transfer.initiate"},
+    "/stock-permits": {"transfer.initiate"},
+    "/stock-counts": {"purchase.write"},
+    "/stocktake": {"purchase.write"},
+    "/catalog": {"catalog.write"},
+    "/categories": {"catalog.write"},
+    "/warehouses": {"warehouse.write"},
+    "/attendance": {"hr.write"},
+    "/departments": {"hr.write"},
+    "/employees": {"hr.write"},
+    "/main-accounts": {"accounting.chart.write"},
+    "/sub-accounts": {"accounting.chart.write"},
+    "/cost-centers": {"accounting.chart.write"},
+    "/fixed-assets": {"accounting.journal.post"},
+    "/coupon-receipts": {"coupon.receive"},
+    "/coupon-custody": {"coupon.custody"},
+    "/inspections": {"inspection.write"},
+    "/inspection-items": {"inspection.write"},
+    "/visits": {"inspection.write"},
+    "/territories": {"territory.write"},
+    "/governorates": {"territory.write"},
+    "/fleet": {"fleet.write"},
+}
+
+
+def page_caps(pages) -> set[str]:
+    out: set[str] = set()
+    for key in pages:
+        if key.startswith(PAGE_PREFIX):
+            out |= PAGE_CAPS.get(key[len(PAGE_PREFIX):].split("?")[0], set())
+    return out
+
+
+def with_page_caps(role: RoleName, grants: set[str], denies: set[str], before_grants: set[str],
+                   allowed: set[str] | None) -> set[str]:
+    wanted = page_caps(grants)
+    dropped = page_caps(before_grants - grants) - wanted
+    out = set(grants) - dropped
+    for cap in wanted:
+        if cap in denies or rbac.role_has_capability(role, cap):
+            continue
+        if allowed is not None and cap not in allowed:
+            continue
+        out.add(cap)
+    return out
+
 
 def _manager(current: CurrentUser = Depends(get_current_user)) -> CurrentUser:
     if current.is_admin:
@@ -405,6 +467,9 @@ def set_user_permissions(
 
     before = db.execute(select(UserCapability.capability, UserCapability.granted)
                         .where(UserCapability.user_id == u.id)).all()
+    grants = with_page_caps(_role_name(db, u), grants, denies,
+                            {c for c, g in before if g},
+                            None if current.is_admin else _assignable(current))
     db.execute(delete(UserCapability).where(UserCapability.user_id == u.id))
     for c in sorted(grants):
         db.add(UserCapability(user_id=u.id, capability=c, granted=True, actor_user_id=current.id))
