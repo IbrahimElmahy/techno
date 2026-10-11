@@ -23,6 +23,20 @@ class CouponReceiptConflict(CouponReceiptError):
     pass
 
 
+class CouponReceiptPartyMissing(CouponReceiptError):
+    pass
+
+
+def _require_party(db: Session, customer_id: int | None) -> None:
+    if customer_id is None:
+        return
+    from src.models.customer import Customer
+
+    if customer_id <= 0 or db.get(Customer, customer_id) is None:
+        raise CouponReceiptPartyMissing(
+            "العميل المختار غير موجود في النظام — اختر الفني أو التاجر من القائمة بعد المزامنة.")
+
+
 def _as_int(value) -> int | None:
     try:
         text = str(value).strip()
@@ -429,6 +443,14 @@ def create_receipt(
         if existing is not None:
             return existing
 
+    if customer_id is not None and customer_id < 0:
+        from src.models.owner import Owner
+
+        owner = db.get(Owner, -customer_id)
+        if owner is not None:
+            notes = f"الفني: {owner.name}" + (chr(10) + notes if notes else "")
+            customer_id = None
+    _require_party(db, customer_id)
     cleaned = [str(s).strip() for s in serials if str(s).strip()]
     matched = _match_serials(db, cleaned, coupon_kind)
 
@@ -533,6 +555,8 @@ def update_receipt(
     receipt = _load(db, receipt_id)
     if status_of(receipt) == REJECTED:
         raise CouponReceiptConflict("لا يمكن تعديل الاستلام المرفوض — سجّل استلاماً جديداً.")
+    if customer_id is not _UNSET:
+        _require_party(db, customer_id)
     before = _snapshot(receipt)
     fallback_kind = (coupon_kind or "").strip() or receipt.declared_kind
 

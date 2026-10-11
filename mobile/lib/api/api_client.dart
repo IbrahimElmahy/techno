@@ -756,6 +756,24 @@ class ApiClient {
     return jsonDecode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
   }
 
+  static String? _receiverNote(String? name, String? notes) {
+    final who = _text(name);
+    final rest = _text(notes);
+    if (who == null) return rest;
+    final line = 'الفني: $who';
+    if (rest != null && rest.split('\n').first.trim().startsWith('الفني')) return rest;
+    return rest == null ? line : '$line\n$rest';
+  }
+
+  static String? _detailCode(http.Response r) {
+    try {
+      final body = jsonDecode(utf8.decode(r.bodyBytes));
+      final detail = body is Map ? body['detail'] : null;
+      if (detail is Map) return _text(detail['code']);
+    } catch (_) {}
+    return null;
+  }
+
   Future<int> pushCouponReceipts({CountProgress? onProgress}) async {
     final pending = await LocalDb.instance.couponReceipts(synced: false);
     var sent = 0;
@@ -765,13 +783,17 @@ class ApiClient {
           .split(',')
           .where((s) => s.trim().isNotEmpty)
           .toList();
-      final r = await http
+      final rawId = row['customer_id'];
+      final partyId = rawId is int && rawId > 0 ? rawId : null;
+      final name = row['customer_name'] as String?;
+      final notes = row['notes'] as String?;
+      Future<http.Response> send(int? customerId) async => http
           .post(await _uri('/coupon-receipts'),
               headers: await _headers(),
               body: jsonEncode({
                 'serials': serials,
-                'customer_id': row['customer_id'],
-                'notes': row['notes'],
+                'customer_id': customerId,
+                'notes': customerId == null ? _receiverNote(name, notes) : notes,
                 'client_uuid': row['client_uuid'],
                 'received_date': row['received_date'],
                 'coupon_kind': row['coupon_kind'],
@@ -780,6 +802,10 @@ class ApiClient {
                 'customer_type': row['customer_type'],
               }))
           .timeout(const Duration(seconds: 60));
+      var r = await send(partyId);
+      if (partyId != null && r.statusCode == 422 && _detailCode(r) == 'customer_not_found') {
+        r = await send(null);
+      }
       if (r.statusCode == 401) throw ApiException(401, 'انتهت الجلسة — سجّل الدخول مرة أخرى');
       if (r.statusCode == 201) {
         final body = jsonDecode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
@@ -788,7 +814,8 @@ class ApiClient {
         sent++;
         continue;
       }
-      throw ApiException(r.statusCode, _error(r));
+      throw ApiException(r.statusCode,
+          'استلام كوبونات${name == null ? '' : ' $name'}: ${_error(r)}');
     }
     return sent;
   }

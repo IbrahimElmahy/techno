@@ -298,6 +298,7 @@ class LocalDb {
     String query = '',
     int limit = 40,
     List<String>? customerTypes,
+    List<String>? excludeCustomerTypes,
   }) async {
     final d = await db;
     final where = <String>[];
@@ -308,6 +309,14 @@ class LocalDb {
     if (types.isNotEmpty) {
       where.add('customer_type IN (${List.filled(types.length, '?').join(',')})');
       args.addAll(types);
+    }
+    final excluded = (excludeCustomerTypes ?? const <String>[])
+        .where((t) => t.trim().isNotEmpty)
+        .toList();
+    if (excluded.isNotEmpty) {
+      where.add('(customer_type IS NULL OR customer_type NOT IN '
+          '(${List.filled(excluded.length, '?').join(',')}))');
+      args.addAll(excluded);
     }
     final rows = await d.query('customer',
         where: where.isEmpty ? null : where.join(' AND '),

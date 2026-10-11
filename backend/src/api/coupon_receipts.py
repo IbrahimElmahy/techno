@@ -15,7 +15,11 @@ from src.core.fast_json import model_json
 from src.models.role import RoleName
 from src.auth import branch_scope
 from src.services import coupon_receipt_service
-from src.services.coupon_receipt_service import CouponReceiptConflict, CouponReceiptError
+from src.services.coupon_receipt_service import (
+    CouponReceiptConflict,
+    CouponReceiptError,
+    CouponReceiptPartyMissing,
+)
 
 CAP_RECEIPT_MANAGE = CAP_COUPON_CUSTODY
 
@@ -131,7 +135,8 @@ def create_receipt(
             pending=from_app, source="app" if from_app else "web",
         )
     except CouponReceiptError as exc:
-        raise HTTPException(422, {"code": "coupon_invalid", "message": str(exc)}) from exc
+        db.rollback()
+        raise _refused(exc) from exc
     out = _out(receipt)
     db.commit()
     return out
@@ -326,6 +331,8 @@ class ReceiptEditIn(BaseModel):
 
 
 def _refused(exc: CouponReceiptError) -> HTTPException:
+    if isinstance(exc, CouponReceiptPartyMissing):
+        return HTTPException(422, {"code": "customer_not_found", "message": str(exc)})
     if isinstance(exc, CouponReceiptConflict):
         return HTTPException(409, {"code": "coupon_receipt_conflict", "message": str(exc)})
     return HTTPException(422, {"code": "coupon_invalid", "message": str(exc)})

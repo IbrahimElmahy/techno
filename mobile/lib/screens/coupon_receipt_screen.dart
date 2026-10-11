@@ -48,8 +48,8 @@ class _CouponReceiptScreenState extends State<CouponReceiptScreen> {
   String _kind = 'عادي';
   final _valueCtrl = TextEditingController();
 
-  List<CustomerRef> _customers = [];
-  final _customerSearch = TextEditingController();
+  static const _plumberTypes = ['plumber'];
+  static const _nonMerchantTypes = ['plumber', 'owner', 'employee'];
 
   static const kinds = <String, String>{
     'عادي': 'عادي',
@@ -80,13 +80,13 @@ class _CouponReceiptScreenState extends State<CouponReceiptScreen> {
   @override
   void initState() {
     super.initState();
-    _loadCustomers();
     _loadTiers();
     final e = widget.existing;
     _uuid = (e?['client_uuid'] as String?) ??
         'cr-${DateTime.now().microsecondsSinceEpoch}';
     if (e == null) return;
-    _customerId = e['customer_id'] as int?;
+    final savedId = e['customer_id'] as int?;
+    _customerId = savedId != null && savedId > 0 ? savedId : null;
     _customerName = e['customer_name'] as String?;
     _customerType = (e['customer_type'] as String?) ?? 'plumber';
     _kind = (e['coupon_kind'] as String?) ?? 'عادي';
@@ -106,9 +106,15 @@ class _CouponReceiptScreenState extends State<CouponReceiptScreen> {
   static String _fmtValue(double v) =>
       v == v.roundToDouble() ? v.toInt().toString() : v.toString();
 
-  Future<void> _loadCustomers([String q = '']) async {
-    final rows = await LocalDb.instance.customers(query: q);
-    if (mounted) setState(() => _customers = rows);
+  Future<Iterable<CustomerRef>> _parties(String q) async {
+    final plumber = _customerType == 'plumber';
+    final rows = await LocalDb.instance.customers(
+      query: q,
+      limit: q.isEmpty ? 30 : 60,
+      customerTypes: plumber ? _plumberTypes : null,
+      excludeCustomerTypes: plumber ? null : _nonMerchantTypes,
+    );
+    return rows.where((c) => c.id > 0);
   }
 
   @override
@@ -118,7 +124,6 @@ class _CouponReceiptScreenState extends State<CouponReceiptScreen> {
     _fromCtrl.dispose();
     _toCtrl.dispose();
     _valueCtrl.dispose();
-    _customerSearch.dispose();
     _focus.dispose();
     super.dispose();
   }
@@ -349,27 +354,24 @@ class _CouponReceiptScreenState extends State<CouponReceiptScreen> {
                       Expanded(
                         child: Autocomplete<CustomerRef>(
                           displayStringForOption: (c) => c.name,
-                          optionsBuilder: (v) {
-                            final q = v.text.trim();
-                            if (q.isEmpty) return _customers.take(15);
-                            return _customers.where((c) => c.name.contains(q));
-                          },
+                          optionsBuilder: (v) => _parties(v.text.trim()),
                           onSelected: (c) => setState(() {
                             _customerId = c.id;
                             _customerName = c.name;
+                            _customerType =
+                                c.customerType == 'plumber' ? 'plumber' : 'merchant';
                           }),
                           fieldViewBuilder: (ctx, ctrl, focus, _) => TextField(
                             controller: ctrl,
                             focusNode: focus,
                             onChanged: (q) {
-                              _loadCustomers(q);
                               if (_customerName != null && q != _customerName) {
                                 setState(() { _customerId = null; _customerName = null; });
                               }
                             },
                             decoration: InputDecoration(
                               isDense: true,
-                              labelText: 'العميل',
+                              labelText: _customerType == 'plumber' ? 'الفني' : 'التاجر',
                               hintText: 'ابحث بالاسم',
                               suffixIcon: _customerId == null
                                   ? null
