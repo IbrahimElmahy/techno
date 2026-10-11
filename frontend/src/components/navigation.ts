@@ -334,11 +334,14 @@ export const EXTRA_SECTIONS: NavGroup[] = [
       {
         key: 'grp-inspection-points',
         label: INSPECTION_POINTS_GROUP,
-        children: INSPECTION_POINTS_PRESETS.map((p) => ({
-          key: `/inspection-points?preset=${p.key}`,
-          label: p.label,
-          roles: R([...SALES, 'after_sales_staff']),
-        })),
+        children: [
+          { key: '/points-yearly', label: 'مجمع نقاط', roles: R([...SALES, 'after_sales_staff']) },
+          ...INSPECTION_POINTS_PRESETS.map((p) => ({
+            key: `/inspection-points?preset=${p.key}`,
+            label: p.label,
+            roles: R([...SALES, 'after_sales_staff']),
+          })),
+        ],
       },
     ],
   },

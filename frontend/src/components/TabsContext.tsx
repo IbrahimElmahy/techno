@@ -41,6 +41,7 @@ const BASE_TITLES: Record<string, string> = {
   '/coupon-custody': 'عهدة الكوبونات',
   '/after-sales-reports': 'تقارير المتابعة',
   '/inspection-points': 'تحليل أصناف المعاينات بالنقاط',
+  '/points-yearly': 'مجمع نقاط',
   '/technician-statement': 'كشف حساب الفني',
   '/points-ledger': 'سجل النقاط',
   '/treasury': 'الحسابات والخزينة',

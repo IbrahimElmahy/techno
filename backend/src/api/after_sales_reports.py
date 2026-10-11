@@ -12,7 +12,7 @@ from src.auth import branch_scope
 from src.auth.dependencies import CurrentUser, require_capability
 from src.auth.rbac import CAP_COUPON_RECEIVE, CAP_INSPECTION_READ
 from src.core.db import get_db
-from src.lib import coupon_lifecycle, inspection_points, technician_statement
+from src.lib import coupon_lifecycle, inspection_points, points_yearly, technician_statement
 from src.models.coupon_issue import CouponIssue, CouponIssueLine
 from src.models.coupon_receipt import CouponReceipt, CouponReceiptLine, receipt_counted
 from src.models.customer import Customer
@@ -276,6 +276,23 @@ def coupons_lifecycle(
             status=status, serial=serial, serial_from=serial_from, serial_to=serial_to,
             only_unlinked=only_unlinked, limit=limit, offset=offset)
     except coupon_lifecycle.CouponLifecycleError as exc:
+        raise HTTPException(422, {"code": "report_invalid", "message": str(exc)}) from exc
+
+
+@router.get("/points-yearly")
+def points_yearly_report(
+    year: int = Query(..., description="السنة"),
+    gold_points: Decimal = Query(Decimal(30), gt=0),
+    silver_points: Decimal = Query(Decimal(10), gt=0),
+    current: CurrentUser = Depends(require_capability(CAP_INSPECTION_READ)),
+    db: Session = Depends(get_db),
+) -> dict:
+    try:
+        return points_yearly.yearly(db, current, year=year,
+                                    branch_id=branch_scope.visible_branch_id(current),
+                                    gold_points=gold_points, silver_points=silver_points)
+    except (points_yearly.PointsYearlyError, coupon_lifecycle.CouponLifecycleError,
+            inspection_points.InspectionPointsError) as exc:
         raise HTTPException(422, {"code": "report_invalid", "message": str(exc)}) from exc
 
 
