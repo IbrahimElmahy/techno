@@ -179,6 +179,7 @@ export default function Invoices() {
 
   const [invoiceDate, setInvoiceDate] = useState<any>(dayjs());
   const [availability, setAvailability] = useState<Record<number, Record<number, number>>>({});
+  const stockLoaded = useRef<Set<number>>(new Set());
   const excludeDocRef = useRef<number | null>(null);
   const [partyPickerOpen, setPartyPickerOpen] = useState(false);
   const [newStep, setNewStep] = useState<null | 'date' | 'party' | 'warehouse' | 'family'>(null);
@@ -588,6 +589,7 @@ export default function Invoices() {
     setFamilyAccounts([]);
     setInvoiceFamily(null);
     setAvailability({});
+    stockLoaded.current.clear();
     excludeDocRef.current = null;
     setParty(null);
     setDocWarehouseId(null);
@@ -778,6 +780,7 @@ export default function Invoices() {
     if (l.unit && !(unitsCache[l.item_id] || []).some((u) => u.name === l.unit)) return false;
     const min = Math.round(base * unitFactor(l.item_id, l.unit) * 100) / 100;
     const net = Math.round(netOf(l.unit_price || 0, lineDiscountPct(l)) * 100) / 100;
+    if (net <= 0) return false;
     return net < min - 0.0001;
   };
 
@@ -954,7 +957,7 @@ export default function Invoices() {
 
   const loadWarehouseStock = async (warehouseId: number, force = false) => {
     if (!warehouseId) return;
-    if (!force && availability[warehouseId]) return;
+    if (!force && stockLoaded.current.has(warehouseId)) return;
     try {
       const res = await api.get('/api/v1/stock/by-location', {
         params: {
@@ -966,6 +969,7 @@ export default function Invoices() {
       const map: Record<number, number> = {};
       (res.data || []).forEach((r: any) => { map[r.item_id] = Number(r.on_hand || 0); });
       setAvailability((prev) => ({ ...prev, [warehouseId]: map }));
+      stockLoaded.current.add(warehouseId);
     } catch (err) { console.error(err); }
   };
 
@@ -1404,6 +1408,7 @@ function couponsTotal(inv: any): number {
 
       excludeDocRef.current = record.id;
       setAvailability({});
+      stockLoaded.current.clear();
       const stores = new Set<number>(
         (refilled.map((l) => l.warehouse_id).filter(Boolean) as number[]));
       if (first?.warehouse_id) stores.add(first.warehouse_id);

@@ -183,6 +183,8 @@ def _assert_not_below_cost(db: Session, built, base_costs: dict[int, Decimal], *
             continue
         unit_cost = to_money(Decimal(str(base_cost)) * factor)
         net_unit = discounts.net_of(unit_price, line_disc)
+        if net_unit <= ZERO:
+            continue
         if net_unit < unit_cost:
             item = db.get(Item, ln.item_id)
             name = item.name if item else str(ln.item_id)
