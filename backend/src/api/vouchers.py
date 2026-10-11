@@ -173,6 +173,7 @@ class VoucherOut(BaseModel):
     cost_center_id: int | None = None
     statement1: str | None = None
     external_document_number: str | None = None
+    party_account_id: int | None = None
     ledger_entry_id: int | None
     is_reversal: bool
 
@@ -272,6 +273,7 @@ def _out(v) -> VoucherOut:
         cost_center_id=getattr(v, "cost_center_id", None),
         statement1=getattr(v, "statement1", None),
         external_document_number=getattr(v, "external_document_number", None),
+        party_account_id=getattr(v, "party_account_id", None),
         is_reversal=v.reverses_id is not None,
     )
 
@@ -547,6 +549,19 @@ def create_expense(
         raise _conflict(exc)
     db.commit()
     return _out(v)
+
+
+@router.put("/vouchers/expenses/{voucher_id}", response_model=VoucherOut)
+def update_expense(
+    voucher_id: int,
+    body: ExpenseIn,
+    current: CurrentUser = Depends(require_capability(CAP_VOUCHER_WRITE)),
+    db: Session = Depends(get_db),
+) -> VoucherOut:
+    if current.role == RoleName.sales_rep:
+        raise HTTPException(status.HTTP_403_FORBIDDEN,
+                            {"code": "forbidden", "message": "المصروفات من المكتب فقط."})
+    return _replace(db, current, voucher_id, VoucherKind.expense, body.model_dump())
 
 
 @router.post("/vouchers/transfers", response_model=VoucherOut,

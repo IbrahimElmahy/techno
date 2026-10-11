@@ -11,6 +11,8 @@ import {
   WalletOutlined,
   FileSearchOutlined,
   DeleteOutlined,
+  EditOutlined,
+  RollbackOutlined,
   UndoOutlined,
   PrinterOutlined,
   SearchOutlined,
@@ -194,6 +196,7 @@ const Vouchers: React.FC = () => {
   const [paymentOpen, setPaymentOpen] = useState(false);
   const [handoverOpen, setHandoverOpen] = useState(false);
   const [expenseOpen, setExpenseOpen] = useState(false);
+  const [editingVoucher, setEditingVoucher] = useState<VoucherRecord | null>(null);
   const [transferOpen, setTransferOpen] = useState(false);
 
   useScreenShortcuts({
@@ -397,8 +400,12 @@ const Vouchers: React.FC = () => {
     try {
       const payload: any = { ...values, amount: String(values.amount) };
       if (values.voucher_date) payload.voucher_date = values.voucher_date.format('YYYY-MM-DD');
-      const { data } = await api.post(path, payload);
-      message.success(okMsg);
+      const editing = editingVoucher;
+      const { data } = editing
+        ? await api.put(`${path}/${editing.id}`, payload)
+        : await api.post(path, payload);
+      message.success(editing ? `تم تعديل السند ${editing.document_number}` : okMsg);
+      if (editing) setEditingVoucher(null);
       form.resetFields();
       if (!opts?.keepOpen) {
         setReceiptOpen(false);
@@ -418,6 +425,78 @@ const Vouchers: React.FC = () => {
       return null;
     } finally {
       setPosting(false);
+    }
+  };
+
+  const closeVoucherModal = (show: (v: boolean) => void) => {
+    show(false);
+    setEditingVoucher(null);
+  };
+
+  const editVoucher = async (r: VoucherRecord) => {
+    let v: any;
+    try {
+      v = (await api.get(`/api/v1/vouchers/${r.id}`)).data;
+    } catch (err: any) {
+      message.error(err?.response?.data?.detail?.message || 'تعذر تحميل السند');
+      return;
+    }
+    const common = {
+      amount: Number(v.amount),
+      treasury_id: v.treasury_id ?? undefined,
+      voucher_date: v.voucher_date ? dayjs(v.voucher_date) : dayjs(),
+      payment_method: v.payment_method ?? undefined,
+      reference: v.reference ?? undefined,
+      cost_center_id: v.cost_center_id ?? undefined,
+      description: v.description ?? undefined,
+      statement1: v.statement1 ?? undefined,
+      external_document_number: v.external_document_number ?? undefined,
+    };
+    const party = {
+      customer_id: v.customer_id ?? undefined,
+      supplier_id: v.supplier_id ?? undefined,
+      account_id: !v.customer_id && !v.supplier_id ? (v.party_account_id ?? undefined) : undefined,
+    };
+    setEditingVoucher(v);
+    if (v.kind === 'receipt') {
+      receiptForm.resetFields();
+      const values = { ...common, ...party, rep_user_id: v.rep_user_id ?? undefined };
+      receiptForm.setFieldsValue(values);
+      if (v.customer_id) {
+        try {
+          const res = await api.get(`/api/v1/customers/${v.customer_id}/accounts`);
+          const ls = (res.data?.accounts || []).filter((a: any) => a.family);
+          setReceiptFamilies((prev) => ({ ...prev, [v.customer_id]: ls }));
+          setReceiptTarget(ls.length >= 2 ? (v.family || '__total__') : '');
+        } catch { setReceiptTarget(''); }
+      } else {
+        setReceiptTarget('');
+      }
+      setReceiptOpen(true);
+      setTimeout(() => receiptForm.setFieldsValue(values), 0);
+    } else if (v.kind === 'payment') {
+      paymentForm.resetFields();
+      const values = { ...common, ...party };
+      paymentForm.setFieldsValue(values);
+      setPaymentOpen(true);
+      setTimeout(() => paymentForm.setFieldsValue(values), 0);
+    } else if (v.kind === 'expense') {
+      expenseForm.resetFields();
+      const values = { ...common, expense_account_id: v.party_account_id ?? undefined };
+      expenseForm.setFieldsValue(values);
+      setExpenseOpen(true);
+      setTimeout(() => expenseForm.setFieldsValue(values), 0);
+    }
+  };
+
+  const reverseVoucher = async (id: number) => {
+    try {
+      const { data } = await api.post(`/api/v1/vouchers/${id}/reverse`);
+      message.success(`تم عكس السند بالسند ${data?.document_number ?? ''}`);
+      loadVouchers();
+      loadTreasuries();
+    } catch (err: any) {
+      message.error(err?.response?.data?.detail?.message || 'تعذر عكس السند');
     }
   };
 
@@ -526,7 +605,7 @@ const Vouchers: React.FC = () => {
     { title: 'البيان', dataIndex: 'description' },
     {
       title: '',
-      width: 220,
+      width: 400,
       render: (_: any, r: VoucherRecord) => (
         <Space size={4}>
           <Button size="small" icon={<PrinterOutlined />} onClick={() => openView(r)}>
@@ -534,6 +613,22 @@ const Vouchers: React.FC = () => {
           </Button>
           <DocumentHistoryButton iconOnly entityType="voucher" entityId={r.id}
             documentNumber={r.document_number} />
+          {!r.is_reversal && ['receipt', 'payment', 'expense'].includes(r.kind) && (
+            <Button size="small" icon={<EditOutlined />} onClick={() => editVoucher(r)}>
+              تعديل
+            </Button>
+          )}
+          {!r.is_reversal && (
+            <Popconfirm
+              title="عكس السند؟"
+              description="يُسجَّل سند عكسي بنفس المبلغ بتاريخ اليوم ويبقى الأصل ظاهراً."
+              okText="عكس"
+              cancelText="إلغاء"
+              onConfirm={() => reverseVoucher(r.id)}
+            >
+              <Button size="small" icon={<RollbackOutlined />}>عكس</Button>
+            </Popconfirm>
+          )}
           {r.is_reversal ? (
             <Tag>عكسي</Tag>
           ) : (
@@ -1121,7 +1216,8 @@ const Vouchers: React.FC = () => {
       </TabModal>
 
       <ReceiptModal
-        open={receiptOpen} onCancel={() => setReceiptOpen(false)}
+        open={receiptOpen} onCancel={() => closeVoucherModal(setReceiptOpen)}
+        editing={editingVoucher?.kind === 'receipt'}
         form={receiptForm} posting={posting} submit={submit}
         customers={customers} treasuries={treasuries} methodOptions={methodOptions}
         families={receiptFamilies} setFamilies={setReceiptFamilies}
@@ -1130,7 +1226,8 @@ const Vouchers: React.FC = () => {
       />
 
       <PaymentModal
-        open={paymentOpen} onCancel={() => setPaymentOpen(false)}
+        open={paymentOpen} onCancel={() => closeVoucherModal(setPaymentOpen)}
+        editing={editingVoucher?.kind === 'payment'}
         form={paymentForm} posting={posting} submit={submit}
         suppliers={suppliers} treasuries={treasuries} methodOptions={methodOptions}
         customers={customers}
@@ -1142,7 +1239,8 @@ const Vouchers: React.FC = () => {
       />
 
       <ExpenseModal
-        open={expenseOpen} onCancel={() => setExpenseOpen(false)}
+        open={expenseOpen} onCancel={() => closeVoucherModal(setExpenseOpen)}
+        editing={editingVoucher?.kind === 'expense'}
         form={expenseForm} posting={posting} submit={submit}
         expenseAccounts={expenseAccounts} expenseGroups={expenseGroups}
         loadExpenseAccounts={loadExpenseAccounts} treasuries={treasuries}

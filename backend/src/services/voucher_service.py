@@ -382,6 +382,7 @@ def create_expense(
     cost_center_id: int | None = None,
     cost_center_distribution: dict | None = None, statement1: str | None = None,
     external_document_number: str | None = None,
+    replacing: dict | None = None,
 ) -> Voucher:
     value = _positive(amount)
     account = db.get(Account, expense_account_id)
@@ -406,7 +407,7 @@ def create_expense(
         treasury_id=safe_id,
         cost_center_id=cost_center_id,
         cost_center_distribution=cost_center_distribution, statement1=statement1,
-        external_document_number=external_document_number,
+        external_document_number=external_document_number, replacing=replacing,
     )
 
 
@@ -577,8 +578,6 @@ def replace_voucher(
     original = db.get(Voucher, voucher_id)
     if original is None:
         raise VoucherNotFound("السند غير موجود.")
-    if (original.client_uuid or "").startswith("a5:"):
-        raise VoucherError("هذا السند منقول من a5 — عدّله في a5 وستجلب المزامنة التعديل.")
     if original.kind != kind:
         raise VoucherError("نوع السند غير مطابق.")
     if original.reverses_id is not None:
@@ -613,6 +612,9 @@ def replace_voucher(
     args = {k: v for k, v in fields.items() if k != "client_uuid"}
     if kind == VoucherKind.receipt:
         v = create_receipt(db, actor_user_id=actor_id, actor_role=actor_role,
+                           replacing=keep, **args)
+    elif kind == VoucherKind.expense:
+        v = create_expense(db, actor_user_id=actor_id, actor_role=actor_role,
                            replacing=keep, **args)
     else:
         v = create_payment(db, actor_user_id=actor_id, actor_role=actor_role,

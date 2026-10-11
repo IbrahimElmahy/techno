@@ -9,7 +9,7 @@ import VoucherShell, { VoucherSubmit } from './VoucherShell';
 
 export default function ExpenseModal({
   open, onCancel, form, posting, submit, expenseAccounts, expenseGroups,
-  loadExpenseAccounts, treasuries,
+  loadExpenseAccounts, treasuries, editing = false,
 }: {
   open: boolean;
   onCancel: () => void;
@@ -20,6 +20,7 @@ export default function ExpenseModal({
   expenseGroups: any[];
   loadExpenseAccounts: () => void;
   treasuries: any[];
+  editing?: boolean;
 }) {
   const accountId = Form.useWatch('expense_account_id', form);
   const account = expenseAccounts.find((a) => a.id === accountId);
@@ -51,7 +52,7 @@ export default function ExpenseModal({
 
   return (
     <VoucherShell
-      kind="expense" open={open} onCancel={onCancel}
+      kind="expense" open={open} onCancel={onCancel} editing={editing}
       posting={posting} form={form} submit={submit}
       url="/api/v1/vouchers/expenses" okMsg="تم تسجيل سند المصروف ✔"
       buildPayload={(v) => v}
