@@ -244,9 +244,7 @@ export function buildRegisterColumns({
       sorter: (a: any, b: any) => a.net - b.net,
       render: (val: number, r: any) => (isRcv(r)
         ? <Tooltip title="تحصيل من عميل — غير محتسب في صافي المبيعات">
-            <strong style={{ color: '#389e0d' }}>
-              <span style={{ fontSize: 14, fontWeight: 500 }}>تحصيل </span>{money(val)}
-            </strong>
+            <strong style={{ color: '#389e0d' }}>{money(val)}</strong>
           </Tooltip>
         : (
         <strong style={{ color: r.doc_type === 'sale' ? '#237804' : '#cf1322' }}>
@@ -256,30 +254,27 @@ export function buildRegisterColumns({
     },
     {
       title: 'تم السداد',
-      dataIndex: 'residual',
+      dataIndex: 'cash_amount',
       key: 'cash_amount',
       width: 100,
       align: 'left' as const,
-      sorter: (a: any, b: any) =>
-        (a.net - (a.residual ?? a.credit_amount)) - (b.net - (b.residual ?? b.credit_amount)),
+      sorter: (a: any, b: any) => Number(a.cash_amount || 0) - Number(b.cash_amount || 0),
       onCell: () => ({ style: { color: '#389e0d' } }),
       render: (_v: any, row: any) => {
         if (isRcv(row)) return `${money(row.amount)}`;
-        const res = Number(row.residual ?? row.credit_amount ?? 0);
-        return `${money(Number(row.net || 0) - res)}`;
+        return `${money(Number(row.cash_amount || 0))}`;
       },
     },
     {
       title: 'الباقي',
-      dataIndex: 'residual',
+      dataIndex: 'credit_amount',
       key: 'credit_amount',
       width: 100,
       align: 'left' as const,
-      sorter: (a: any, b: any) =>
-        (a.residual ?? a.credit_amount) - (b.residual ?? b.credit_amount),
+      sorter: (a: any, b: any) => Number(a.credit_amount || 0) - Number(b.credit_amount || 0),
       render: (_v: any, row: any) => {
         if (isRcv(row)) return DASH;
-        const n = Number(row.residual ?? row.credit_amount ?? 0);
+        const n = Number(row.credit_amount ?? 0);
         const color = n > 0.005 ? '#cf1322' : n < -0.005 ? '#6AB42D' : undefined;
         return <span style={{ color, fontWeight: Math.abs(n) > 0.005 ? 600 : undefined }}>{money(n)}</span>;
       },
