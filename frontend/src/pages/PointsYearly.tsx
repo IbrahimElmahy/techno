@@ -5,7 +5,6 @@ import dayjs from 'dayjs';
 import { api } from '../api/client';
 import ListPage, { ListStat } from '../components/ListPage';
 import { FilterTable as Table } from '../components/FilterTable';
-import { InputNumber } from '../components/NumberInput';
 import { useTableColumns } from '../components/ColumnSettings';
 import { MULTI } from '../utils/reportFilters';
 import { matchesWords, searchFilter, searchRank, sortByName } from '../utils/arabicSort';
@@ -24,8 +23,6 @@ const int = (v: any) => (Number(v) ? Number(v).toLocaleString(numeralsLocale()) 
 
 export default function PointsYearly() {
   const [year, setYear] = useState<number>(dayjs().year());
-  const [goldPoints, setGoldPoints] = useState<number>(30);
-  const [silverPoints, setSilverPoints] = useState<number>(10);
   const [rows, setRows] = useState<Row[]>([]);
   const [loading, setLoading] = useState(false);
   const [reps, setReps] = useState<string[]>([]);
@@ -35,7 +32,7 @@ export default function PointsYearly() {
     setLoading(true);
     try {
       const res = await api.get('/api/v1/after-sales-reports/points-yearly', {
-        params: { year, gold_points: goldPoints || 30, silver_points: silverPoints || 10 },
+        params: { year },
       });
       setRows(res.data.rows || []);
     } catch (err: any) {
@@ -45,7 +42,7 @@ export default function PointsYearly() {
     }
   };
 
-  useEffect(() => { load(); }, [year, goldPoints, silverPoints]);
+  useEffect(() => { load(); }, [year]);
 
   const repOptions = useMemo(() => sortByName(
     [...new Set(rows.map((r) => r.party_rep || 'بدون مندوب'))], (r) => r,
@@ -126,12 +123,8 @@ export default function PointsYearly() {
         <Select {...MULTI} showSearch placeholder="المندوب" value={reps} onChange={setReps}
           style={{ minWidth: 220 }} popupMatchSelectWidth={false}
           filterOption={searchFilter} filterSort={searchRank} options={repOptions} />
-        <InputNumber addonBefore="نقاط الذهبي" value={goldPoints} min={1} style={{ width: 170 }}
-          onChange={(v) => setGoldPoints(Number(v) || 30)} />
-        <InputNumber addonBefore="نقاط الفضي" value={silverPoints} min={1} style={{ width: 160 }}
-          onChange={(v) => setSilverPoints(Number(v) || 10)} />
         <Button className="sl-f-clear" icon={<ClearOutlined />}
-          onClick={() => { setReps([]); setQuery(''); setGoldPoints(30); setSilverPoints(10); setYear(dayjs().year()); }}>مسح</Button>
+          onClick={() => { setReps([]); setQuery(''); setYear(dayjs().year()); }}>مسح</Button>
       </>)}
       summary={(<>
         <ListStat label="إجمالي نقاط السنة" value={qty(totals.total_points)} tone="strong" />

@@ -282,15 +282,12 @@ def coupons_lifecycle(
 @router.get("/points-yearly")
 def points_yearly_report(
     year: int = Query(..., description="السنة"),
-    gold_points: Decimal = Query(Decimal(30), gt=0),
-    silver_points: Decimal = Query(Decimal(10), gt=0),
     current: CurrentUser = Depends(require_capability(CAP_INSPECTION_READ)),
     db: Session = Depends(get_db),
 ) -> dict:
     try:
         return points_yearly.yearly(db, current, year=year,
-                                    branch_id=branch_scope.visible_branch_id(current),
-                                    gold_points=gold_points, silver_points=silver_points)
+                                    branch_id=branch_scope.visible_branch_id(current))
     except (points_yearly.PointsYearlyError, coupon_lifecycle.CouponLifecycleError,
             inspection_points.InspectionPointsError) as exc:
         raise HTTPException(422, {"code": "report_invalid", "message": str(exc)}) from exc
