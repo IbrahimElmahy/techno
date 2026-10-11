@@ -5,6 +5,7 @@ import argparse
 from sqlalchemy import text
 
 from src.core.db import SessionLocal
+from src.services import reconcile_service
 
 
 def _ids(db, sql: str, **kw) -> list[int]:
@@ -121,13 +122,29 @@ def main() -> None:
         ("delete from voucher where id = any(:v)", {"v": vo}),
         ("update ledger_entry set reverses_entry_id=null where reverses_entry_id = any(:e)",
          {"e": en}),
+    ]
+    tail = [
+        ("delete from ledger_line_distribution where line_id = any(:l)", {"l": None}),
         ("delete from ledger_line where entry_id = any(:e)", {"e": en}),
         ("delete from ledger_entry where id = any(:e)", {"e": en}),
     ]
-    for sql, kw in steps:
-        r = db.execute(text(sql), kw)
-        n = r.rowcount if r.rowcount is not None else "-"
-        print(f"   {n:>6}  {sql[:80]}")
+
+    def run_steps(items):
+        for sql, kw in items:
+            r = db.execute(text(sql), kw)
+            n = r.rowcount if r.rowcount is not None else "-"
+            print(f"   {n:>6}  {sql[:80]}")
+
+    run_steps(steps)
+    lines = _ids(db, "select id from ledger_line where entry_id = any(:e)", e=en)
+    matched = _ids(db, """select debit_line_id from partial_reconcile where debit_line_id = any(:l)
+                          union select credit_line_id from partial_reconcile
+                          where credit_line_id = any(:l)""", l=lines)
+    if matched:
+        out = reconcile_service.unreconcile(db, line_ids=matched)
+        print(f"   فك مطابقات: {out}")
+    tail[0] = (tail[0][0], {"l": lines})
+    run_steps(tail)
     if a.yes:
         db.commit()
         print("APPLIED")
