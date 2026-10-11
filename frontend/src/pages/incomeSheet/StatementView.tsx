@@ -149,7 +149,7 @@ export default function StatementView({ rows, compare, label, compareLabel, sale
   salesTotal: number;
   compareSalesTotal?: number;
 }) {
-  const [open, setOpen] = useState<Set<string>>(new Set(['sales', 'cost', 'ga']));
+  const [open, setOpen] = useState<Set<string>>(new Set());
   const cmp = useMemo(() => (compare ? flatten(compare) : null), [compare]);
   const keys = useMemo(() => allKeys(rows), [rows]);
 

@@ -9,7 +9,7 @@ import {
 } from '@ant-design/icons';
 import dayjs, { Dayjs } from 'dayjs';
 import { useNavigate } from 'react-router-dom';
-import { api } from '../api/client';
+import { api, getViewBranch } from '../api/client';
 import { useAuth, roleForAccess } from '../components/AuthProvider';
 import DateRangeFilter from '../components/DateRangeFilter';
 import { useQueryTab } from '../components/useQueryTab';
@@ -68,11 +68,11 @@ const IncomeSheet: React.FC = () => {
   const navigate = useNavigate();
   const { user, can } = useAuth();
   const seesAll = roleForAccess(user?.role) === 'system_admin' || !user?.branch_id;
+  const opened = seesAll ? getViewBranch() : (user?.branch_id ?? null);
   const canEdit = can('accounting.chart.write');
   const [tab, setTab] = useQueryTab('sheet');
   const [branches, setBranches] = useState<any[]>([]);
-  const [branchId, setBranchId] = useState<number | undefined>(
-    seesAll ? undefined : (user?.branch_id ?? undefined));
+  const [branchId, setBranchId] = useState<number | undefined>(opened ?? undefined);
   const [range, setRange] = useState<Range>(() => quickRanges()[3].value);
   const [postedOnly, setPostedOnly] = useState(true);
   const [data, setData] = useState<any | null>(null);
@@ -82,7 +82,6 @@ const IncomeSheet: React.FC = () => {
   const [drill, setDrill] = useState<{ title: string; body: React.ReactNode } | null>(null);
 
   useEffect(() => {
-    if (!seesAll) return;
     api.get('/api/v1/branches').then((r) => {
       const list = r.data || [];
       setBranches(list);
@@ -655,10 +654,13 @@ const IncomeSheet: React.FC = () => {
           ) : null}
         </>)}
         filters={(<>
-          {seesAll ? (
+          {opened ? (
+            <Select style={{ flex: '0 0 170px' }} value={opened} disabled
+              options={[{ value: opened, label: branches.find((b) => b.id === opened)?.name || branchName }]} />
+          ) : (
             <Select style={{ flex: '0 0 170px' }} value={branchId} onChange={setBranchId} placeholder="الفرع"
               options={[...branches.map((b) => ({ value: b.id, label: b.name })), { value: 0, label: 'كل الفروع' }]} />
-          ) : null}
+          )}
           <DateRangeFilter className="sl-f-dates" value={range} onChange={setRange} />
           <Select style={{ flex: '0 0 160px' }} placeholder="فترة جاهزة" value={null as any}
             onChange={(i: number) => setRange(quick[i].value)}

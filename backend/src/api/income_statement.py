@@ -27,8 +27,9 @@ def _bad(message: str) -> HTTPException:
 def _branch(current: CurrentUser, branch_id: int | None) -> int | None:
     if not branch_scope.sees_all_branches(current):
         return current.branch_id
-    if branch_id is None:
-        return branch_scope.visible_branch_id(current)
+    opened = branch_scope.visible_branch_id(current)
+    if opened is not None:
+        return opened
     return branch_id or None
 
 
