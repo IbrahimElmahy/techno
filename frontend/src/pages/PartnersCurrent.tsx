@@ -4,7 +4,8 @@ import {
   Tag, Tooltip, message,
 } from 'antd';
 import {
-  FileSearchOutlined, MinusCircleOutlined, PlusCircleOutlined, ReloadOutlined, TeamOutlined,
+  FileSearchOutlined, MinusCircleOutlined, PlusCircleOutlined, ReloadOutlined, RollbackOutlined,
+  StopOutlined, TeamOutlined,
 } from '@ant-design/icons';
 import dayjs, { type Dayjs } from 'dayjs';
 import { useNavigate } from 'react-router-dom';
@@ -20,6 +21,7 @@ interface Row {
 interface Move {
   entry_id: number; entry_date: string | null; document: string | null; voucher_id: number | null;
   kind: string | null; description: string; debit: string; credit: string; balance: string;
+  reverses_id?: number | null; reversed_by_id?: number | null;
 }
 interface Movements {
   account_id: number; name: string; group_name: string; branch_name: string | null;
@@ -183,6 +185,36 @@ export default function PartnersCurrent() {
       render: (v: string | null) => <span dir="ltr">{v || '—'}</span> },
   ];
 
+  const cancelMove = (m: Move) => Modal.confirm({
+    title: 'إلغاء الحركة؟',
+    content: `يُسجَّل سند عكسي بنفس المبلغ ويرجع الرصيد كما كان، وتبقى ${m.document || 'الحركة'} ظاهرة كملغاة.`,
+    okText: 'إلغاء الحركة', okButtonProps: { danger: true }, cancelText: 'رجوع',
+    onOk: async () => {
+      try {
+        await api.post(`/api/v1/vouchers/${m.voucher_id}/reverse`);
+        message.success('تم إلغاء الحركة');
+        load(); loadMoves();
+      } catch (err: any) {
+        message.error(err?.response?.data?.detail?.message || 'تعذر إلغاء الحركة');
+      }
+    },
+  });
+
+  const undoCancel = (m: Move) => Modal.confirm({
+    title: 'التراجع عن الإلغاء؟',
+    content: 'يُحذف سند الإلغاء وترجع الحركة الأصلية كما كانت.',
+    okText: 'تراجع عن الإلغاء', cancelText: 'رجوع',
+    onOk: async () => {
+      try {
+        await api.delete(`/api/v1/vouchers/${m.voucher_id}`);
+        message.success('تم التراجع عن الإلغاء');
+        load(); loadMoves();
+      } catch (err: any) {
+        message.error(err?.response?.data?.detail?.message || 'تعذر التراجع');
+      }
+    },
+  });
+
   const moveColumns = [
     { title: 'التاريخ', dataIndex: 'entry_date', key: 'd', width: 105,
       render: (v: string | null) => <span dir="ltr">{v || '—'}</span> },
@@ -202,6 +234,22 @@ export default function PartnersCurrent() {
       render: (v: string) => (Number(v) ? <span dir="ltr">{fmt(v)}</span> : '') },
     { title: 'الرصيد', dataIndex: 'balance', key: 'bal', width: 160, align: 'right' as const,
       render: (v: string) => <Bal v={v} /> },
+    {
+      title: '', key: 'act', width: 170, align: 'center' as const,
+      render: (_: any, m: Move) => {
+        if (!m.voucher_id) return null;
+        if (m.reverses_id) {
+          return (
+            <Space size={4}>
+              <Tag color="orange">إلغاء</Tag>
+              <Button size="small" icon={<RollbackOutlined />} onClick={() => undoCancel(m)}>تراجع</Button>
+            </Space>
+          );
+        }
+        if (m.reversed_by_id) return <Tag color="red">ملغاة</Tag>;
+        return <Button size="small" danger icon={<StopOutlined />} onClick={() => cancelMove(m)}>إلغاء</Button>;
+      },
+    },
   ];
 
   const branchTreasuries = treasuries.filter(
@@ -270,6 +318,7 @@ export default function PartnersCurrent() {
             loading={movesLoading}
             dataSource={[...(moves?.rows || [])].reverse()}
             columns={moveColumns as any}
+            rowClassName={(m: Move) => (m.reversed_by_id ? 'row-cancelled' : '')}
             pagination={false}
             locale={{ emptyText: <Empty description="لا توجد حركة في هذه الفترة" /> }}
             title={() => (

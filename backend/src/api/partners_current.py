@@ -113,6 +113,8 @@ class MovementOut(BaseModel):
     debit: Decimal
     credit: Decimal
     balance: Decimal
+    reverses_id: int | None = None
+    reversed_by_id: int | None = None
 
 
 class MovementsOut(BaseModel):
@@ -170,6 +172,9 @@ def partner_movements(
     pairs = db.execute(stmt).all()
     vouchers = {v.ledger_entry_id: v for v in db.scalars(select(Voucher).where(
         Voucher.ledger_entry_id.in_([e.id for _l, e in pairs]))).all()} if pairs else {}
+    vids = [v.id for v in vouchers.values()]
+    reversed_by = {v.reverses_id: v.id for v in db.scalars(select(Voucher).where(
+        Voucher.reverses_id.in_(vids))).all()} if vids else {}
     run = opening
     rows: list[MovementOut] = []
     tdr = tcr = Decimal("0")
@@ -188,6 +193,8 @@ def partner_movements(
             description=(v.description if v and v.description else None)
             or entry.description or line.statement or "",
             debit=dr, credit=cr, balance=to_money(run),
+            reverses_id=(v.reverses_id if v else None),
+            reversed_by_id=(reversed_by.get(v.id) if v else None),
         ))
     branch = db.get(Branch, acc.branch_id) if acc.branch_id else None
     return MovementsOut(

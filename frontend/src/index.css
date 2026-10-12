@@ -1620,3 +1620,6 @@ body.eg-resizing * {
 .ant-select-dropdown .ant-select-item-option-selected:not(.ant-select-item-option-disabled) {
   background: #b5dd8f;
 }
+
+.row-cancelled td { color: #94a3b8 !important; text-decoration: line-through; }
+.row-cancelled td:last-child { text-decoration: none; }
