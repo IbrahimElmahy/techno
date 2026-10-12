@@ -25,10 +25,10 @@ RECEIPT_PREFIX = "WBR-"
 EMP_TO_USER = {
     "EMP-0053": "ashraf", "EMP-0002": "ibrahim.khattab", "EMP-0003": "anas",
     "EMP-0008": "bayoumy", "EMP-0004": "hassan.eid", "EMP-0005": "ahmed.torky",
-    "EMP-0054": "care", "EMP-0006": "mohamed.mamdouh", "EMP-0007": "medhat",
+    "EMP-0054": "care", "EMP-0006": "mohamed.mamdouh", "EMP-0007": "medhat.kh",
     "EMP-0055": "mohamed.torky", "EMP-0040": "sales.dept2",
-    "EMP-0045": "car.a", "EMP-0043": "car.b", "EMP-0046": "car.g",
-    "EMP-0044": "car.d", "EMP-0047": "car.sharqia",
+    "EMP-0045": "mandob_a", "EMP-0043": "car.b", "EMP-0046": "manbod_car.g",
+    "EMP-0044": "car.d", "EMP-0047": "car.sh",
 }
 
 
@@ -137,8 +137,19 @@ def run(folder: str, *, execute: bool) -> None:
         print(f"صفوف الملف: {len(rows)}")
         for k, c in notes.most_common(8):
             print(f"   {k:<38}{c:>7}")
-        new_i = {k: v for k, v in issues.items()
-                 if f"wb:{k[0]}:{k[1]}:{k[2]}:{k[3]}" not in taken_i}
+        issued = {(k, sr) for k, sr in db.execute(
+            select(CouponIssueLine.coupon_kind, CouponIssueLine.serial)).all()}
+        new_i = {}
+        dup_lines = 0
+        for k, v in issues.items():
+            if f"wb:{k[0]}:{k[1]}:{k[2]}:{k[3]}" in taken_i:
+                continue
+            fresh = [x for x in v if (k[2], x["serial"][:24]) not in issued]
+            dup_lines += len(v) - len(fresh)
+            if fresh:
+                new_i[k] = fresh
+        if dup_lines:
+            print(f"   أوراق صرف متسجّلة قبل كده — اتخطّت{dup_lines:>17}")
         new_r = {k: v for k, v in receipts.items()
                  if RECEIPT_PREFIX + k not in taken_r}
         print(f"\n   {'مستندات صرف':<38}{len(issues):>7}   جديد {len(new_i)}")

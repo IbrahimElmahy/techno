@@ -51,14 +51,14 @@ def run(folder: str, *, execute: bool) -> None:
             "EMP-0005": "ahmed.torky",
             "EMP-0054": "care",
             "EMP-0006": "mohamed.mamdouh",
-            "EMP-0007": "medhat",
+            "EMP-0007": "medhat.kh",
             "EMP-0055": "mohamed.torky",
             "EMP-0040": "sales.dept2",
-            "EMP-0045": "car.a",
+            "EMP-0045": "mandob_a",
             "EMP-0043": "car.b",
-            "EMP-0046": "car.g",
+            "EMP-0046": "manbod_car.g",
             "EMP-0044": "car.d",
-            "EMP-0047": "car.sharqia",
+            "EMP-0047": "car.sh",
         }
         by_code = {c.code: c for c in db.scalars(select(Customer)).all() if c.code}
 

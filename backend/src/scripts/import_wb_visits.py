@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import csv
 import os
+import re
 import sys
 from collections import Counter, defaultdict
 from datetime import date, datetime
@@ -30,10 +31,10 @@ INSPECTION_TYPE = {"1": "تغذية وصرف", "2": "تغذية فقط", "3": "�
 EMP_TO_USER = {
     "EMP-0053": "ashraf", "EMP-0002": "ibrahim.khattab", "EMP-0003": "anas",
     "EMP-0008": "bayoumy", "EMP-0004": "hassan.eid", "EMP-0005": "ahmed.torky",
-    "EMP-0054": "care", "EMP-0006": "mohamed.mamdouh", "EMP-0007": "medhat",
+    "EMP-0054": "care", "EMP-0006": "mohamed.mamdouh", "EMP-0007": "medhat.kh",
     "EMP-0055": "mohamed.torky", "EMP-0040": "sales.dept2",
-    "EMP-0045": "car.a", "EMP-0043": "car.b", "EMP-0046": "car.g",
-    "EMP-0044": "car.d", "EMP-0047": "car.sharqia",
+    "EMP-0045": "mandob_a", "EMP-0043": "car.b", "EMP-0046": "manbod_car.g",
+    "EMP-0044": "car.d", "EMP-0047": "car.sh",
 }
 
 
@@ -67,11 +68,42 @@ def _num(v: str) -> Decimal:
         return Decimal(0)
 
 
+def _shop_key(v: str | None) -> str:
+    s = re.sub(r"[أإآ]", "ا", v or "").replace("ة", "ه").replace("ى", "ي")
+    return re.sub(r"\s+", " ", s).strip()
+
+
 def run(folder: str, *, execute: bool) -> None:
     visits = _read(os.path.join(folder, "visits.tsv"))
     points = _read(os.path.join(folder, "points.tsv"))
     reps = _read(os.path.join(folder, "reps.tsv"))
     old_uid_to_emp = {r["user_id"]: r["emp_code"] for r in reps if r.get("user_id")}
+    owner_names = {r["id"]: r["name"] for r in _read(os.path.join(folder, "owners.tsv"))
+                   if r.get("id") and r.get("name")}
+    plumber_names = {r["code"]: r["name"] for r in _read(os.path.join(folder, "plumbers.tsv"))
+                     if r.get("code") and r.get("name")}
+    shop_votes: dict[str, Counter] = defaultdict(Counter)
+    for v in visits:
+        shop, code = _shop_key(v.get("shop")), v.get("trader_a5", "")
+        if shop and code:
+            shop_votes[shop][code] += 1
+    shop_to_trader = {}
+    for shop, votes in shop_votes.items():
+        code, hits = votes.most_common(1)[0]
+        if hits >= 3 and hits >= 0.8 * sum(votes.values()):
+            shop_to_trader[shop] = code
+    for v in visits:
+        if not v.get("owner_name"):
+            v["owner_name"] = owner_names.get(v.get("owner_erp", ""), "")
+        if not v.get("plumber_name"):
+            v["plumber_name"] = plumber_names.get(v.get("plumber_code", ""), "")
+        if not v.get("trader_a5"):
+            mid = v.get("merchant_id", "")
+            if mid.startswith(("AL-A5-", "A5-")):
+                v["trader_a5"] = mid
+            elif shop_to_trader.get(_shop_key(v.get("shop"))):
+                v["trader_a5"] = shop_to_trader[_shop_key(v.get("shop"))]
+                v["_trader_from_shop"] = "1"
 
     by_visit: dict[str, list[dict[str, str]]] = defaultdict(list)
     for p in points:
@@ -113,6 +145,8 @@ def run(folder: str, *, execute: bool) -> None:
                 trader = (custs.get(trader_code)
                           or custs.get(TRADER_PREFIX + trader_code)
                           or custs.get(ALIAS.get(trader_code, "")))
+            if trader is not None and v.get("_trader_from_shop"):
+                notes["تاجر من اسم المحل (ربط العميل القديم)"] += 1
             if trader_code and trader is None:
                 notes["كود تاجر مش عندنا"] += 1
             elif not trader_code:

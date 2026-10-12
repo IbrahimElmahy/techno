@@ -24,14 +24,14 @@ EMP_TO_USER = {
     "EMP-0005": "ahmed.torky",
     "EMP-0054": "care",
     "EMP-0006": "mohamed.mamdouh",
-    "EMP-0007": "medhat",
+    "EMP-0007": "medhat.kh",
     "EMP-0055": "mohamed.torky",
     "EMP-0040": "sales.dept2",
-    "EMP-0045": "car.a",
+    "EMP-0045": "mandob_a",
     "EMP-0043": "car.b",
-    "EMP-0046": "car.g",
+    "EMP-0046": "manbod_car.g",
     "EMP-0044": "car.d",
-    "EMP-0047": "car.sharqia",
+    "EMP-0047": "car.sh",
 }
 
 
@@ -43,7 +43,7 @@ def _read(path: str) -> list[dict[str, str]]:
                 for row in csv.DictReader(fh, delimiter="\t")]
 
 
-def run(folder: str, *, execute: bool) -> None:
+def run(folder: str, *, execute: bool, new_only: bool = False) -> None:
     rows = _read(os.path.join(folder, "owners.tsv"))
     reps = _read(os.path.join(folder, "reps.tsv"))
     erp_to_emp = {r["erp_id"]: r["emp_code"] for r in reps if r.get("erp_id")}
@@ -90,6 +90,8 @@ def run(folder: str, *, execute: bool) -> None:
                 made.append((code, name, svc))
                 continue
             notes["مالك موجود"] += 1
+            if new_only:
+                continue
             if svc is not None and o.service_rep_id != svc.id:
                 o.service_rep_id = svc.id
                 upd += 1
@@ -156,7 +158,7 @@ def run(folder: str, *, execute: bool) -> None:
 def main() -> None:
     args = sys.argv[1:]
     folder = args[args.index("--dir") + 1] if "--dir" in args else "C:/pgtmp/wb2"
-    run(folder, execute="--yes" in args)
+    run(folder, execute="--yes" in args, new_only="--new-only" in args)
 
 
 if __name__ == "__main__":
