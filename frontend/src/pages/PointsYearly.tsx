@@ -76,14 +76,14 @@ export default function PointsYearly() {
     ...MONTH_KEYS.map((k, i) => ({ title: MONTHS[i], dataIndex: k, key: k, width: 80,
       align: 'center' as const, render: num })),
     { title: 'إجمالي كوبونات السنة', dataIndex: 'earned_coupons', key: 'earned_coupons', width: 120,
-      align: 'left' as const, render: (v: any) => <b>{num(v)}</b> },
+      align: 'center' as const, render: (v: any) => <b>{num(v)}</b> },
     { title: 'الكوبونات المسلّمة', key: 'received', children: [
-      { title: 'ذهبي', dataIndex: 'received_gold', key: 'received_gold', width: 80, align: 'left' as const, render: int },
-      { title: 'فضي', dataIndex: 'received_silver', key: 'received_silver', width: 80, align: 'left' as const, render: int },
+      { title: 'ذهبي', dataIndex: 'received_gold', key: 'received_gold', width: 80, align: 'center' as const, render: int },
+      { title: 'فضي', dataIndex: 'received_silver', key: 'received_silver', width: 80, align: 'center' as const, render: int },
     ] },
     { title: 'المجموع بالذهبي', dataIndex: 'received_in_gold', key: 'received_in_gold', width: 110,
-      align: 'left' as const, render: (v: any) => <b>{one(v)}</b> },
-    { title: 'الفرق', dataIndex: 'coupon_gap', key: 'coupon_gap', width: 100, align: 'left' as const,
+      align: 'center' as const, render: (v: any) => <b>{one(v)}</b> },
+    { title: 'الفرق', dataIndex: 'coupon_gap', key: 'coupon_gap', width: 100, align: 'center' as const,
       render: (v: any) => <b style={{ color: Number(v) < 0 ? '#cf1322' : undefined }}>{one(v)}</b> },
   ];
   const plain = (list: any[]): any[] => list.map((c) => ({
@@ -158,7 +158,7 @@ export default function PointsYearly() {
                 const v = i === 0 ? 'الإجمالي'
                   : k === 'received_gold' || k === 'received_silver' ? int(totals[k])
                     : k in totals ? num(totals[k]) : '';
-                return <AntTable.Summary.Cell key={c.key || i} index={i} align={i === 0 ? undefined : 'left'}>
+                return <AntTable.Summary.Cell key={c.key || i} index={i} align={i === 0 ? undefined : 'center'}>
                   <b>{v}</b></AntTable.Summary.Cell>;
               })}
             </AntTable.Summary.Row>
