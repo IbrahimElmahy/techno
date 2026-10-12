@@ -34,7 +34,12 @@ export default function PointsYearly() {
       const res = await api.get('/api/v1/after-sales-reports/points-yearly', {
         params: { year },
       });
-      setRows(res.data.rows || []);
+      const per = Number(res.data.gold_points) || 30;
+      setRows((res.data.rows || []).map((r: Row): Row => {
+        const out: Row = { ...r };
+        MONTH_KEYS.forEach((k) => { out[k] = Number(r[k] || 0) / per; });
+        return out;
+      }));
     } catch (err: any) {
       message.error(err?.response?.data?.detail?.message || 'تعذر تحميل التقرير');
     } finally {
@@ -56,7 +61,7 @@ export default function PointsYearly() {
 
   const totals = useMemo(() => {
     const t: Row = {};
-    [...MONTH_KEYS, 'total_points', 'earned_coupons', 'received_gold', 'received_silver', 'received_in_gold', 'coupon_gap']
+    [...MONTH_KEYS, 'earned_coupons', 'received_gold', 'received_silver', 'received_in_gold', 'coupon_gap']
       .forEach((k) => { t[k] = shown.reduce((s, r) => s + Number(r[k] || 0), 0); });
     return t;
   }, [shown]);
@@ -70,9 +75,7 @@ export default function PointsYearly() {
     { title: 'المحافظة', dataIndex: 'party_governorate', key: 'party_governorate', width: 110 },
     ...MONTH_KEYS.map((k, i) => ({ title: MONTHS[i], dataIndex: k, key: k, width: 80,
       align: 'center' as const, render: num })),
-    { title: 'إجمالي نقاط السنة', dataIndex: 'total_points', key: 'total_points', width: 120,
-      align: 'left' as const, render: (v: any) => <b>{num(v)}</b> },
-    { title: 'إجمالي الكوبونات', dataIndex: 'earned_coupons', key: 'earned_coupons', width: 110,
+    { title: 'إجمالي كوبونات السنة', dataIndex: 'earned_coupons', key: 'earned_coupons', width: 120,
       align: 'left' as const, render: (v: any) => <b>{num(v)}</b> },
     { title: 'الكوبونات المسلّمة', key: 'received', children: [
       { title: 'ذهبي', dataIndex: 'received_gold', key: 'received_gold', width: 80, align: 'left' as const, render: int },
@@ -93,7 +96,6 @@ export default function PointsYearly() {
       { title: 'التاجر', value: 'party' },
       { title: 'المندوب', value: (r) => r.party_rep || '' },
       ...MONTH_KEYS.map((k, i) => ({ title: MONTHS[i], value: (r: Row) => num(r[k]), numeric: true })),
-      { title: 'إجمالي النقاط', value: (r) => num(r.total_points), numeric: true },
       { title: 'إجمالي الكوبونات', value: (r) => num(r.earned_coupons), numeric: true },
       { title: 'مسلّم ذهبي', value: (r) => int(r.received_gold), numeric: true },
       { title: 'مسلّم فضي', value: (r) => int(r.received_silver), numeric: true },
@@ -102,8 +104,7 @@ export default function PointsYearly() {
     ];
     printReport({ title: `مجمع نقاط ${year}`, meta: reps.length ? [['المندوب', reps.join('، ')]] : [] },
       pc, shown, [
-        { label: 'إجمالي نقاط السنة', value: one(totals.total_points) },
-        { label: 'إجمالي الكوبونات', value: one(totals.earned_coupons) },
+        { label: 'إجمالي كوبونات السنة', value: one(totals.earned_coupons) },
         { label: 'المسلّم بالذهبي', value: one(totals.received_in_gold) },
         { label: 'الفرق', value: one(totals.coupon_gap) },
       ]);
@@ -115,7 +116,7 @@ export default function PointsYearly() {
     <ListPage
       icon={<TrophyOutlined />}
       title="مجمع نقاط"
-      muted={String(year)}
+      muted={`${year} · بالكوبون الذهبي`}
       actions={(<>
         {cols.control}
         <Button icon={<PrinterOutlined />} onClick={print}>طباعة</Button>
@@ -133,8 +134,7 @@ export default function PointsYearly() {
           onClick={() => { setReps([]); setQuery(''); setYear(dayjs().year()); }}>مسح</Button>
       </>)}
       summary={(<>
-        <ListStat label="إجمالي نقاط السنة" value={one(totals.total_points)} tone="strong" />
-        <ListStat label="إجمالي الكوبونات" value={one(totals.earned_coupons)} />
+        <ListStat label="إجمالي كوبونات السنة" value={one(totals.earned_coupons)} tone="strong" />
         <ListStat label="مسلّم ذهبي" value={int(totals.received_gold) || '0'} />
         <ListStat label="مسلّم فضي" value={int(totals.received_silver) || '0'} />
         <ListStat label="المسلّم بالذهبي" value={one(totals.received_in_gold)} tone="strong" />
