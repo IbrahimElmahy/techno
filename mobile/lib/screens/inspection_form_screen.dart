@@ -225,9 +225,6 @@ class _InspectionFormScreenState extends State<InspectionFormScreen>
     }
   }
 
-  double get _totalPoints =>
-      double.parse(_lines.fold<double>(0, (s, l) => s + l.total).toStringAsFixed(3));
-
   Future<void> _pickDate() async {
     final picked = await showDatePicker(
       context: context,
@@ -286,28 +283,14 @@ class _InspectionFormScreenState extends State<InspectionFormScreen>
                           dense: true,
                           contentPadding: EdgeInsets.zero,
                           title: Text(l.itemName),
-                          subtitle: Text(
-                              'الكمية: ${_fmt(l.quantity)} × ${_fmt(l.points)} نقطة'),
-                          trailing: Text(_fmt(l.total),
+                          trailing: Text(_fmt(l.quantity),
                               style: const TextStyle(
                                   fontWeight: FontWeight.w700, fontSize: 15)),
                         ),
                     ],
                   ),
                 ),
-              const Divider(),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  const Text('إجمالي النقاط',
-                      style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
-                  Text(_fmt(_totalPoints),
-                      style: const TextStyle(
-                          fontSize: 20,
-                          fontWeight: FontWeight.w800,
-                          color: AppColors.primary)),
-                ],
-              ),
+
             ],
           ),
         ),
@@ -526,9 +509,9 @@ class _InspectionFormScreenState extends State<InspectionFormScreen>
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('إجمالي النقاط',
+                    Text('عدد الأصناف',
                         style: TextStyle(fontSize: 12, color: Colors.grey.shade600)),
-                    Text(_fmt(_totalPoints),
+                    Text('${_lines.length}',
                         style: const TextStyle(
                             fontSize: 22,
                             fontWeight: FontWeight.w800,
@@ -589,12 +572,10 @@ class _InspectionFormScreenState extends State<InspectionFormScreen>
                   contentPadding: EdgeInsets.zero,
                   onTap: () => _editLine(i),
                   title: Text(_lines[i].itemName),
-                  subtitle:
-                      Text('${_fmt(_lines[i].quantity)} × ${_fmt(_lines[i].points)} نقطة'),
                   trailing: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Text(_fmt(_lines[i].total),
+                      Text(_fmt(_lines[i].quantity),
                           style: const TextStyle(
                               fontWeight: FontWeight.w700, fontSize: 15)),
                       const SizedBox(width: 8),
@@ -641,8 +622,6 @@ class _InspectionFormScreenState extends State<InspectionFormScreen>
         textDirection: TextDirection.rtl,
         child: StatefulBuilder(
           builder: (c, setInner) {
-            final typed = double.tryParse(qty.text.trim()) ?? 0;
-            final total = typed * line.points;
             return AlertDialog(
               titlePadding: const EdgeInsetsDirectional.fromSTEB(20, 16, 8, 0),
               title: Row(
@@ -662,10 +641,6 @@ class _InspectionFormScreenState extends State<InspectionFormScreen>
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  Text('نقاط الوحدة: ${_fmt(line.points)}',
-                      style: const TextStyle(
-                          color: AppColors.primary, fontWeight: FontWeight.w700)),
-                  const SizedBox(height: 12),
                   TextField(
                     controller: qty,
                     autofocus: true,
@@ -673,17 +648,6 @@ class _InspectionFormScreenState extends State<InspectionFormScreen>
                     onChanged: (_) => setInner(() {}),
                     onSubmitted: (_) => Navigator.pop(c, double.tryParse(qty.text)),
                     decoration: const InputDecoration(labelText: 'الكمية'),
-                  ),
-                  const SizedBox(height: 10),
-                  Align(
-                    alignment: AlignmentDirectional.centerStart,
-                    child: Text(
-                      total > 0 ? 'الإجمالي: ${_fmt(total)} نقطة' : 'الإجمالي: —',
-                      style: TextStyle(
-                        color: total > 0 ? AppColors.success : Colors.blueGrey,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
                   ),
                 ],
               ),

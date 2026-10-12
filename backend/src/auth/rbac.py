@@ -262,7 +262,7 @@ APP_CAPABILITIES: dict[str, str] = {
     "app.supervisor": "التطبيق: متابعة المناديب (مشرف)",
 }
 CAP_APP_SUPERVISOR = "app.supervisor"
-REP_APP_CAPABILITIES: set[str] = set(APP_CAPABILITIES) - {CAP_APP_SUPERVISOR}
+REP_APP_CAPABILITIES: set[str] = set(APP_CAPABILITIES) - {CAP_APP_SUPERVISOR, "app.customer_account"}
 ALL_CAPABILITIES |= set(APP_CAPABILITIES)
 ROLE_CAPABILITIES.setdefault(RoleName.sales_rep, set()).update(REP_APP_CAPABILITIES)
 

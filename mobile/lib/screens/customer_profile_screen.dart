@@ -236,7 +236,6 @@ class _CustomerProfileScreenState extends State<CustomerProfileScreen> {
                       _stat('مبيعات', _num(p['total_sales'])),
                       _stat('تحصيل', _num(p['total_receipts'])),
                       _stat('مرتجع', _num(p['total_returns'])),
-                      _stat('نقاط', _num(p['points_balance'])),
                     ],
                   ),
                 ],

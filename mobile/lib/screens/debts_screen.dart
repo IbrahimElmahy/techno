@@ -4,7 +4,6 @@ import '../db/local_db.dart';
 import '../models/models.dart';
 import '../theme.dart';
 import 'collect_cash_screen.dart';
-import 'customer_profile_screen.dart';
 import '../services/auto_sync.dart';
 
 class DebtsScreen extends StatefulWidget {
@@ -238,18 +237,6 @@ class _DebtsScreenState extends State<DebtsScreen> {
                     context,
                     MaterialPageRoute(
                         builder: (_) => const CollectCashScreen()));
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.receipt_long_outlined,
-                  color: AppColors.primary),
-              title: const Text('كشف حسابه'),
-              onTap: () {
-                Navigator.pop(sheet);
-                Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                        builder: (_) => const CustomerProfileScreen()));
               },
             ),
           ],

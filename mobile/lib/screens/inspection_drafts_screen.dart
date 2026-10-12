@@ -64,9 +64,6 @@ class _InspectionDraftsScreenState extends State<InspectionDraftsScreen> {
   static String _titleOf(Inspection d) =>
       d.ownerName.trim().isEmpty ? 'معاينة بلا اسم' : d.ownerName.trim();
 
-  static String _fmt(double v) =>
-      v == v.roundToDouble() ? v.toInt().toString() : v.toStringAsFixed(2);
-
   static String _when(String? iso) {
     final t = iso == null ? null : DateTime.tryParse(iso)?.toLocal();
     if (t == null) return '';
@@ -100,7 +97,6 @@ class _InspectionDraftsScreenState extends State<InspectionDraftsScreen> {
                     final d = drafts[i];
                     final parts = <String>[
                       if (d.lines.isNotEmpty) '${d.lines.length} صنف',
-                      if (d.lines.isNotEmpty) '${_fmt(d.totalPoints)} نقطة',
                       if ((d.purchaseShop ?? '').isNotEmpty) d.purchaseShop!,
                     ];
                     return Card(
