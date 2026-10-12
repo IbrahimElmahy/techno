@@ -86,7 +86,10 @@ export default function PointsYearly() {
     { title: 'الفرق', dataIndex: 'coupon_gap', key: 'coupon_gap', width: 100, align: 'left' as const,
       render: (v: any) => <b style={{ color: Number(v) < 0 ? '#cf1322' : undefined }}>{one(v)}</b> },
   ];
-  const cols = useTableColumns('points-yearly', columns as any, {
+  const plain = (list: any[]): any[] => list.map((c) => ({
+    ...c, filterable: false, ...(c.children ? { children: plain(c.children) } : {}),
+  }));
+  const cols = useTableColumns('points-yearly', plain(columns) as any, {
     defaultHidden: ['party_code', 'party_phone', 'party_governorate'],
     export: { name: `مجمع نقاط ${year}`, rows: shown },
   });
