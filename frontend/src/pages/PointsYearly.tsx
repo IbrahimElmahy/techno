@@ -144,6 +144,7 @@ export default function PointsYearly() {
     >
       <Table<Row>
         className="sl-table" size="small" loading={loading} rowKey={(r: Row) => String(r.party_id)}
+        autoFilters={false}
         dataSource={shown} columns={cols.columns as any}
         pagination={{ defaultPageSize: PAGE_SIZE, showSizeChanger: true }}
         summary={() => (
