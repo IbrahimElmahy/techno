@@ -244,11 +244,11 @@ export function buildRegisterColumns({
       sorter: (a: any, b: any) => a.net - b.net,
       render: (val: number, r: any) => (isRcv(r)
         ? <Tooltip title="تحصيل من عميل — غير محتسب في صافي المبيعات">
-            <strong style={{ color: '#389e0d' }}>{money(val)}</strong>
+            <strong style={{ color: '#389e0d' }}>{money(r.amount)}</strong>
           </Tooltip>
         : (
         <strong style={{ color: r.doc_type === 'sale' ? '#237804' : '#cf1322' }}>
-          {r.doc_type === 'return' ? '-' : ''}{money(val)}
+          {money(val)}
         </strong>
       )),
     },

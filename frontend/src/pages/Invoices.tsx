@@ -371,9 +371,9 @@ export default function Invoices() {
       combined_pct: Number(r.combined_pct || 0),
       discount_value: Number(r.gross || 0) - Number(r.net || 0),
       discount_base: Number(r.gross || 0),
-      net: Number(r.net || 0),
-      cash_amount: Number(r.cash_refund || 0),
-      credit_amount: Number(r.credit_reduction || 0),
+      net: -Number(r.net || 0),
+      cash_amount: -Number(r.cash_refund || 0),
+      credit_amount: -Number(r.credit_reduction || 0),
       ledger_entry_id: r.ledger_entry_id,
       raw: r,
     }));
@@ -646,9 +646,10 @@ export default function Invoices() {
     invoice_date: invoiceDate ? dayjs(invoiceDate).format('YYYY-MM-DD') : null,
     family: invoiceFamily,
     couponRows,
+    doc_warehouse_id: docWarehouseId,
     form: createForm.getFieldsValue(),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }), [lines, discountPct, cashAmount, invoiceDate, invoiceFamily, couponRows, formTick]);
+  }), [lines, discountPct, cashAmount, invoiceDate, invoiceFamily, couponRows, formTick, docWarehouseId]);
 
   const {
     drafts, discard: discardDraft, adopt: adoptDraft, remove: removeDraft,
@@ -675,7 +676,12 @@ export default function Invoices() {
     setInvoiceFamily(x.family ?? null);
     if (Array.isArray(x.couponRows) && x.couponRows.length) setCouponRows(x.couponRows);
     createForm.setFieldsValue(x.form || {});
-    setLines((x.lines || []).map((l: any, i: number) => ({ ...l, key: String(i + 1) })));
+    const restored = (x.lines || []).map((l: any, i: number) => ({ ...l, key: String(i + 1) }));
+    setLines(restored);
+    const stores = new Set<number>(restored.map((l: any) => l.warehouse_id).filter(Boolean));
+    const first = x.doc_warehouse_id ?? restored.find((l: any) => l.warehouse_id)?.warehouse_id;
+    if (first) { setDocWarehouseId(first); stores.add(first); }
+    stores.forEach((w) => { loadWarehouseStock(w, true); });
     setCreateVisible(true);
   };
 

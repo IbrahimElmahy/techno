@@ -1459,6 +1459,8 @@ body.eg-resizing * {
 
 .list-page .sl-filters > .sl-f-account { flex: 2 1 240px; }
 .sl-account-popup { min-width: 300px; }
+.sl-box-popup { min-width: 440px; }
+.sl-box-popup .ant-select-item { font-size: 15px; }
 
 .ant-table-wrapper .ant-table-thead > tr > th,
 .ant-table-wrapper .ant-table-tbody > tr > td,

@@ -78,7 +78,7 @@ export function useRegisterReceipts(opts: {
         gross: null,
         discount_value: null,
         discount_base: 0,
-        net: amount,
+        net: 0,
         amount,
         cash_amount: amount,
         credit_amount: 0,

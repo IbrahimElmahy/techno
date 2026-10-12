@@ -67,7 +67,7 @@ export default function TransferModal({
       confirmLoading={posting}
       onCancel={onCancel}
       onOk={() => form.submit()}
-      destroyOnHidden width={640}
+      destroyOnHidden width={860}
     >
       <Form
         form={form}
@@ -78,6 +78,7 @@ export default function TransferModal({
           <Col xs={24} md={12}>
             <Form.Item name="from_key" label="من" rules={[{ required: true, message: 'اختر الخزينة أو الصندوق' }]}>
               <Select showSearch filterOption={searchFilter} filterSort={searchRank}
+                popupMatchSelectWidth={false} popupClassName="sl-box-popup"
                 options={boxOptions(boxes.filter((b) => b.active || Number(b.balance) !== 0), toKey)}
                 onChange={(k) => {
                   const b = boxes.find((x) => x.key === k);
@@ -94,6 +95,7 @@ export default function TransferModal({
           <Col xs={24} md={12}>
             <Form.Item name="to_key" label="إلى" rules={[{ required: true, message: 'اختر الخزينة أو الصندوق' }]}>
               <Select showSearch filterOption={searchFilter} filterSort={searchRank}
+                popupMatchSelectWidth={false} popupClassName="sl-box-popup"
                 options={boxOptions(active, fromKey)} />
             </Form.Item>
             {to ? (
