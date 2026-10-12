@@ -18,8 +18,8 @@ WHITE_SUFFIXES = ("وايت",)
 
 def _base_of(name: str) -> str | None:
     words = cms._normalise(name).split()
-    if len(words) >= 2 and words[-1] in WHITE_SUFFIXES:
-        return " ".join(words[:-1])
+    if len(words) >= 2 and any(w in WHITE_SUFFIXES for w in words[1:]):
+        return " ".join(w for i, w in enumerate(words) if i == 0 or w not in WHITE_SUFFIXES)
     return None
 
 
