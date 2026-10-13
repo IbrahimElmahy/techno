@@ -183,6 +183,8 @@ export default function Purchases() {
   const [variableDiscount, setVariableDiscount] = useState<number>(0);
   const [cashAmount, setCashAmount] = useState<number>(0);
   const [creditAmount, setCreditAmount] = useState<number>(0);
+  const [supplierBal, setSupplierBal] = useState<number | null>(null);
+  const [loadedEffect, setLoadedEffect] = useState<{ supplierId: number; amount: number } | null>(null);
   const { ask: askTreasury, gateProps: treasuryGate } = useTreasuryGate();
 
   const [docResult, setDocResult] = useState<any>(null);
@@ -396,6 +398,8 @@ export default function Purchases() {
       [...new Set((det.lines || []).map((l: any) => l.item_id))].forEach((id) => fetchUnits(id as number));
       setCashAmount(Number(det.cash_amount) || 0);
       setCreditAmount(Number(det.credit_amount) || 0);
+      setLoadedEffect({ supplierId: det.supplier_id,
+        amount: Number((det as any).total || 0) - Number(det.cash_amount || 0) });
       setVariableDiscount(Number((det as any).variable_discount_pct) || 0);
       setOpenedFingerprint(fingerprintOf({
         items: loadedItems,
@@ -636,6 +640,21 @@ export default function Purchases() {
     handleSplitBalance();
   }, [cashAmount, invoiceTotal]);
 
+  useEffect(() => {
+    setSupplierBal(null);
+    if (!watchedSupplierId) return;
+    let alive = true;
+    api.get(`/api/v1/suppliers/${watchedSupplierId}/account`)
+      .then((r) => { if (alive) setSupplierBal(Number(r.data?.balance ?? 0)); })
+      .catch(() => { if (alive) setSupplierBal(null); });
+    return () => { alive = false; };
+  }, [watchedSupplierId]);
+
+  const balanceBefore = supplierBal === null ? null
+    : supplierBal - (loadedEffect && loadedEffect.supplierId === watchedSupplierId ? loadedEffect.amount : 0);
+  const balanceAfter = balanceBefore === null ? null
+    : balanceBefore + invoiceTotal - (Number(cashAmount) || 0);
+
   const nav = useDocNav({
     family: 'purchases', doc: 'purchase', kind: 'purchase',
     id: viewPurchase?.id ?? null, active: createVisible,
@@ -664,7 +683,7 @@ export default function Purchases() {
           setPurchaseDate(dayjs());
           setDetail(null);
           setDocResult(null);
-          setEditingId(null);
+          setEditingId(null); setLoadedEffect(null);
           setViewPurchase(null);
           setViewOnly(false);
           setPartyPickerOpen(true);
@@ -833,6 +852,8 @@ export default function Purchases() {
     setVariableDiscount(Number((det as any).variable_discount_pct) || 0);
     setCashAmount(Number(det.cash_amount) || 0);
     setCreditAmount(Number(det.credit_amount) || 0);
+    setLoadedEffect({ supplierId: det.supplier_id,
+      amount: Number((det as any).total || 0) - Number(det.cash_amount || 0) });
     setDetail(null);
     setOpenedFingerprint(fingerprintOf({
       items: loadedItems,
@@ -937,12 +958,13 @@ export default function Purchases() {
           setDocResult(null);
           setNewStep(null);
           setOpenedFingerprint(null);
-          setEditingId(null);
+          setEditingId(null); setLoadedEffect(null);
           form.resetFields();
           setPurchaseItems([{ key: '1', item_id: null, quantity: null, unit_price: 0, unit: null,
             discount_pct: null, fixed_discount_pct: null, warehouse_id: null }]);
           setCashAmount(0);
           setCreditAmount(0);
+          setLoadedEffect(null);
           discardDraft();
           fetchPurchases();
         } catch (err: any) {
@@ -1104,7 +1126,7 @@ export default function Purchases() {
   const resumeDraft = (d: any) => {
     const x = d.payload || {};
     adoptDraft(d.id);
-    setEditingId(null);
+    setEditingId(null); setLoadedEffect(null);
     setViewOnly(false);
     setDocResult(null);
     setDetail(null);
@@ -1136,7 +1158,7 @@ export default function Purchases() {
       setDetail(null);
       setDocResult(null);
       setNewStep(null);
-      setEditingId(null);
+      setEditingId(null); setLoadedEffect(null);
       setOpenedFingerprint(null);
     };
     const typed = purchaseItems.filter((l) => l.item_id !== null);
@@ -1499,7 +1521,18 @@ export default function Purchases() {
                     value={`− ${money(grossTotal - invoiceTotal)}`} color="#dc2626" />
                 )}
                 <SummaryTile label="صافي الفاتورة" value={money(invoiceTotal)} color="#16a34a" />
-                {(Number(cashAmount) || 0) - invoiceTotal > 0.001 ? (
+                {balanceBefore !== null && Math.abs(balanceBefore) > 0.001 && (
+                  <SummaryTile tone="yellow"
+                    label={balanceBefore < 0 ? 'دفعات مقدّمة لدى المورد' : 'رصيد المورد قبل الفاتورة'}
+                    value={money(Math.abs(balanceBefore))}
+                    color={balanceBefore < 0 ? '#15803d' : '#dc2626'} />
+                )}
+                {balanceAfter !== null ? (
+                  <SummaryTile tone={balanceAfter > 0.001 ? 'rose' : 'mint'}
+                    label={balanceAfter < -0.001 ? 'رصيد لنا عند المورد' : 'الباقي للمورد'}
+                    value={money(Math.abs(balanceAfter))}
+                    color={balanceAfter > 0.001 ? '#dc2626' : '#15803d'} />
+                ) : (Number(cashAmount) || 0) - invoiceTotal > 0.001 ? (
                   <SummaryTile label="دفعة مقدّمة للمورد" tone="mint" color="#15803d"
                     value={money((Number(cashAmount) || 0) - invoiceTotal)} />
                 ) : (
@@ -1825,7 +1858,7 @@ export default function Purchases() {
             setPurchaseDate(dayjs());
             setDetail(null);
             setDocResult(null);
-            setEditingId(null);
+            setEditingId(null); setLoadedEffect(null);
             setNewStep('party');
           }}>
           تسجيل فاتورة شراء
