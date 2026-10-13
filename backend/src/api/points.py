@@ -132,13 +132,14 @@ def points_ledger(
     date_from: date | None = Query(default=None),
     date_to: date | None = Query(default=None),
     kind: list[str] | None = Query(default=None),
-    limit: int = Query(default=1000, ge=1, le=5000),
+    rep_id: int | None = Query(default=None),
+    limit: int = Query(default=1000, ge=1, le=20000),
     offset: int = Query(default=0, ge=0),
     _: CurrentUser = Depends(require_capability(CAP_LOYALTY_READ)),
     db: Session = Depends(get_db),
 ) -> PointLedgerOut:
     data = points_service.ledger(
         db, customer_id=customer_id, kinds=kind, date_from=date_from, date_to=date_to,
-        limit=limit, offset=offset)
+        limit=limit, offset=offset, rep_id=rep_id)
     return PointLedgerOut(**data, kinds=points_service.KIND_LABELS,
                           purses=points_service.PURSE_LABELS)

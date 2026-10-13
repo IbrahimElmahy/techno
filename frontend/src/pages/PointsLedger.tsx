@@ -12,7 +12,8 @@ import DateRangeFilter from '../components/DateRangeFilter';
 import { DocRef, type DocKind } from '../components/DocumentLink';
 import { useTableColumns } from '../components/ColumnSettings';
 import { exportCsv as writeCsv, type CsvColumn } from '../utils/exportCsv';
-import ListPage from '../components/ListPage';
+import ListPage, { ListStat } from '../components/ListPage';
+import { repOptions } from '../utils/reps';
 import { useCanSeeStats } from '../components/StatsRow';
 import { qty as num } from '../utils/money';
 const { Text } = Typography;
@@ -41,7 +42,7 @@ interface LedgerData {
   kinds: Record<string, string>;
 }
 
-const PAGE_SIZE = 200;
+const PAGE_SIZE = 50;
 
 export default function PointsLedger() {
   const navigate = useNavigate();
@@ -50,6 +51,8 @@ export default function PointsLedger() {
   const [customers, setCustomers] = useState<any[]>([]);
 
   const [customerId, setCustomerId] = useState<number | undefined>();
+  const [repId, setRepId] = useState<number | undefined>();
+  const [reps, setReps] = useState<any[]>([]);
   const [kinds, setKinds] = useState<string[]>([]);
   const [range, setRange] = useState<[Dayjs, Dayjs] | null>(null);
   const [page, setPage] = useState(1);
@@ -57,8 +60,9 @@ export default function PointsLedger() {
   const load = async () => {
     setLoading(true);
     try {
-      const params: Record<string, any> = { limit: PAGE_SIZE, offset: (page - 1) * PAGE_SIZE };
+      const params: Record<string, any> = { limit: 20000, offset: 0 };
       if (customerId) params.customer_id = customerId;
+      if (repId) params.rep_id = repId;
       if (kinds.length) params.kind = kinds;
       if (range) {
         params.date_from = range[0].format('YYYY-MM-DD');
@@ -76,19 +80,20 @@ export default function PointsLedger() {
 
   useEffect(() => {
     api.get('/api/v1/customers/options', { params: { limit: 20000 } }).then((r) => setCustomers(r.data || [])).catch(() => {});
+    api.get('/api/v1/users').then((r) => setReps((r.data || []).filter((u: any) => (u.role?.name ?? u.role) === 'sales_rep'))).catch(() => {});
   }, []);
 
   const filterKey = JSON.stringify([
-    customerId ?? null, kinds, range ? range.map((d) => d.format('YYYY-MM-DD')) : null]);
+    customerId ?? null, repId ?? null, kinds, range ? range.map((d) => d.format('YYYY-MM-DD')) : null]);
   const lastFilterKey = useRef(filterKey);
   useEffect(() => {
     if (lastFilterKey.current !== filterKey) {
       lastFilterKey.current = filterKey;
-      if (page !== 1) { setPage(1); return; }
+      setPage(1);
     }
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filterKey, page]);
+  }, [filterKey]);
 
   const kindOptions = useMemo(
     () => Object.entries(data?.kinds || {}).map(([value, label]) => ({ value, label })),
@@ -152,11 +157,9 @@ export default function PointsLedger() {
     <span className="sl-foot">
       <span>عدد الحركات: <b>{num(total)}</b></span>
       {total > 0 && <span>المعروض: <b>{num(shown)}</b></span>}
-      {canSeeStats && (<>
-        <span>وارد: <b className="is-pos">{num(data?.earned)}</b></span>
-        <span>منصرف: <b className="is-neg">{num(data?.spent)}</b></span>
-        <span>الصافي: <b className={net < 0 ? 'is-neg' : 'is-pos'}>{num(data?.net)}</b></span>
-      </>)}
+      <span>وارد: <b className="is-pos">{num(data?.earned)}</b></span>
+      <span>منصرف: <b className="is-neg">{num(data?.spent)}</b></span>
+      <span>الصافي: <b className={net < 0 ? 'is-neg' : 'is-pos'}>{num(data?.net)}</b></span>
     </span>
   );
 
@@ -171,11 +174,24 @@ export default function PointsLedger() {
         </Button>
         <Button icon={<ReloadOutlined />} onClick={load} loading={loading}>تحديث</Button>
       </>)}
+      summary={(<>
+        <ListStat label="عدد الحركات" value={num(total)} />
+        <ListStat label="وارد" value={num(data?.earned)} tone="pos" />
+        <ListStat label="منصرف" value={num(data?.spent)} tone="neg" />
+        <ListStat label="الصافي" value={num(data?.net)} tone="strong" />
+      </>)}
       filters={(<>
+        <Select
+          allowClear showSearch
+          placeholder="كل المناديب"
+          value={repId}
+          onChange={setRepId}
+          style={{ minWidth: 200 }}
+          options={repOptions(reps)} filterOption={searchFilter} filterSort={searchRank} />
         <Select
           className="sl-f-customer"
           allowClear showSearch
-          placeholder="كل العملاء"
+          placeholder="كل التجار والعملاء"
           value={customerId}
           onChange={setCustomerId}
           options={customerOptions} filterOption={searchFilter} filterSort={searchRank}/>
@@ -200,10 +216,10 @@ export default function PointsLedger() {
         scroll={{ x: true }}
         pagination={{
           current: page,
-          pageSize: PAGE_SIZE,
-          total,
-          showSizeChanger: false,
-          onChange: setPage,
+          defaultPageSize: PAGE_SIZE,
+          showSizeChanger: true,
+          pageSizeOptions: [50, 100, 500, 2000],
+          onChange: (p) => setPage(p),
           showTotal: () => footer,
         }}
       />

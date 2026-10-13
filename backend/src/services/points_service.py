@@ -112,9 +112,13 @@ def _doc_ref(record: PointRecord) -> tuple[str | None, int | None]:
     return None, None
 
 
-def _filtered(stmt, *, customer_id, kinds, date_from, date_to):
+def _filtered(stmt, *, customer_id, kinds, date_from, date_to, rep_id=None):
     if customer_id is not None:
         stmt = stmt.where(PointRecord.customer_id == customer_id)
+    if rep_id is not None:
+        from src.models.customer import Customer
+        stmt = stmt.where(PointRecord.customer_id.in_(
+            select(Customer.id).where(Customer.rep_id == rep_id)))
     if kinds:
         stmt = stmt.where(PointRecord.kind.in_(list(kinds)))
     if date_from is not None:
@@ -135,6 +139,7 @@ def ledger(
     date_to: date | None = None,
     limit: int = 500,
     offset: int = 0,
+    rep_id: int | None = None,
 ) -> dict:
     asked = list(kinds or [])
     kinds = [k for k in asked if k in KIND_LABELS]
@@ -150,7 +155,7 @@ def ledger(
             func.coalesce(func.sum(positive), 0),
             func.coalesce(func.sum(negative), 0),
         ),
-        customer_id=customer_id, kinds=kinds, date_from=date_from, date_to=date_to,
+        customer_id=customer_id, kinds=kinds, date_from=date_from, date_to=date_to, rep_id=rep_id,
     )).one()
     count, earned, spent = int(totals_row[0]), _points(totals_row[1]), _points(totals_row[2])
 
@@ -163,7 +168,7 @@ def ledger(
             )
         ))
     stmt = _filtered(select(PointRecord), customer_id=customer_id, kinds=kinds,
-                     date_from=date_from, date_to=date_to)
+                     date_from=date_from, date_to=date_to, rep_id=rep_id)
     stmt = stmt.order_by(PointRecord.created_at.desc(), PointRecord.id.desc())
     records = list(db.scalars(stmt.limit(limit).offset(offset)).all())
 
@@ -171,13 +176,13 @@ def ledger(
     if customer_id is not None:
         window_sum = _points(db.scalar(_filtered(
             select(func.coalesce(func.sum(PointRecord.delta), 0)),
-            customer_id=customer_id, kinds=kinds, date_from=date_from, date_to=date_to,
+            customer_id=customer_id, kinds=kinds, date_from=date_from, date_to=date_to, rep_id=rep_id,
         )))
         running = _points(opening + window_sum)
         if offset:
             newer = db.scalars(_filtered(
                 select(PointRecord.delta), customer_id=customer_id, kinds=kinds,
-                date_from=date_from, date_to=date_to,
+                date_from=date_from, date_to=date_to, rep_id=rep_id,
             ).order_by(PointRecord.created_at.desc(), PointRecord.id.desc())
                 .limit(offset)).all()
             running = _points(running - sum((_points(d) for d in newer), ZERO))
