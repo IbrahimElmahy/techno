@@ -15,13 +15,21 @@ export const toLatinDigits = (s: string): string => s
   .replace(new RegExp(AR_DECIMAL, 'g'), '.')
   .replace(/٬/g, '');
 
+const parseTyped = (s: string): string => {
+  const unified = s.replace(/[,،٬]/g, '.');
+  const first = unified.indexOf('.');
+  const single = first < 0 ? unified
+    : unified.slice(0, first + 1) + unified.slice(first + 1).replace(/\./g, '');
+  return toLatinDigits(single);
+};
+
 export const InputNumber = React.forwardRef<HTMLInputElement, InputNumberProps<any>>(
   ({ formatter, parser, ...rest }, ref) => (
     <AntInputNumber
       {...rest}
       ref={ref as any}
       formatter={formatter ?? ((v) => toArabicDigits(String(v ?? '')))}
-      parser={parser ?? ((v) => toLatinDigits(String(v ?? '')) as any)}
+      parser={parser ?? ((v) => parseTyped(String(v ?? '')) as any)}
     />
   ),
 );
