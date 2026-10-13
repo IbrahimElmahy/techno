@@ -28,6 +28,50 @@ const sizeText = (n: number | null) => {
     : `${num(Math.round(n / 1024))} ك.ب`;
 };
 
+const pasteStack: Array<(files: File[]) => void> = [];
+
+function onWindowPaste(e: ClipboardEvent) {
+  const top = pasteStack[pasteStack.length - 1];
+  if (!top) return;
+  const files = Array.from(e.clipboardData?.files || [])
+    .filter((f) => f.type.startsWith('image/') || f.type === 'application/pdf');
+  if (!files.length) return;
+  e.preventDefault();
+  top(files.map((f, i) => (f.name && f.name !== 'image.png' ? f
+    : new File([f], `لصق-${Date.now()}-${i + 1}.${(f.type.split('/')[1] || 'png').replace('jpeg', 'jpg')}`,
+      { type: f.type }))));
+}
+
+function usePasteFiles(handler: (files: File[]) => void, active = true) {
+  const ref = React.useRef(handler);
+  ref.current = handler;
+  React.useEffect(() => {
+    if (!active) return undefined;
+    const fn = (files: File[]) => ref.current(files);
+    pasteStack.push(fn);
+    if (pasteStack.length === 1) window.addEventListener('paste', onWindowPaste);
+    return () => {
+      const i = pasteStack.lastIndexOf(fn);
+      if (i >= 0) pasteStack.splice(i, 1);
+      if (!pasteStack.length) window.removeEventListener('paste', onWindowPaste);
+    };
+  }, [active]);
+}
+
+function dropProps(onFiles: (files: File[]) => void) {
+  return {
+    onDragOver: (e: React.DragEvent) => { e.preventDefault(); },
+    onDrop: (e: React.DragEvent) => {
+      e.preventDefault();
+      const files = Array.from(e.dataTransfer.files || [])
+        .filter((f) => f.type.startsWith('image/') || f.type === 'application/pdf');
+      if (files.length) onFiles(files);
+    },
+  };
+}
+
+const PASTE_HINT = 'أو الصق صورة (Ctrl+V) أو اسحبها هنا';
+
 const newUuid = () => {
   const c: any = (globalThis as any).crypto;
   if (c?.randomUUID) return c.randomUUID() as string;
@@ -88,6 +132,12 @@ function Attachments({ docType, docId, title = 'المرفقات' }: Props) {
   const onPick = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || []);
     e.target.value = '';
+    await addFiles(files);
+  };
+
+  usePasteFiles((files) => { void addFiles(files); }, !!docId);
+
+  const addFiles = async (files: File[]) => {
     if (!files.length || !docId) return;
     setBusy(true);
     let added = 0;
@@ -124,7 +174,7 @@ function Attachments({ docType, docId, title = 'المرفقات' }: Props) {
   if (!docId) return null;
 
   return (
-    <div style={{ marginTop: 16 }}>
+    <div style={{ marginTop: 16 }} {...dropProps((f) => { void addFiles(f); })}>
       <Space style={{ marginBottom: 8 }} align="center">
         <b>{title}</b>
         {rows.length > 0 && (
@@ -136,6 +186,7 @@ function Attachments({ docType, docId, title = 'المرفقات' }: Props) {
           onClick={() => pickerRef.current?.click()}>
           أضف صورة
         </Button>
+        <Typography.Text type="secondary" style={{ fontSize: 13 }}>{PASTE_HINT}</Typography.Text>
         {loading && <Spin size="small" />}
       </Space>
       <input ref={pickerRef} type="file" multiple accept={IMAGE_ACCEPT}
@@ -250,12 +301,18 @@ export function PendingAttachments({ files, onChange }: {
 }) {
   const ref = React.useRef<HTMLInputElement>(null);
   const urls = React.useMemo(() => files.map((f) => URL.createObjectURL(f)), [files]);
+  const add = (picked: File[]) => onChange([...files, ...picked]);
+  usePasteFiles(add);
   React.useEffect(() => () => { urls.forEach((u) => URL.revokeObjectURL(u)); }, [urls]);
   return (
-    <div style={{ marginTop: 8 }}>
-      <Button size="small" icon={<PaperClipOutlined />} onClick={() => ref.current?.click()}>
-        إرفاق صورة أو PDF
-      </Button>
+    <div style={{ marginTop: 8, padding: 6, border: '1px dashed #d9d9d9', borderRadius: 8 }}
+      {...dropProps(add)}>
+      <Space wrap size={6}>
+        <Button size="small" icon={<PaperClipOutlined />} onClick={() => ref.current?.click()}>
+          إرفاق صورة أو PDF
+        </Button>
+        <Typography.Text type="secondary" style={{ fontSize: 13 }}>{PASTE_HINT}</Typography.Text>
+      </Space>
       {files.length > 0 && (
         <Image.PreviewGroup>
           <Space wrap size={8} style={{ marginTop: 8, display: 'flex' }}>
