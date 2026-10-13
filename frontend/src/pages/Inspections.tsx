@@ -681,7 +681,11 @@ const Inspections: React.FC<{ fixedKind?: 'technician' | 'regular' }> = ({ fixed
                 {detail.inspection_type || '—'}
               </Descriptions.Item>
               <Descriptions.Item label="اسم الفني">
-                {detail.technician_name || '—'}
+                {(detail as any).technician_customer_id ? (
+                  <a onClick={() => navigate(`/customers/${(detail as any).technician_customer_id}`)}>
+                    {detail.technician_name}
+                  </a>
+                ) : (detail.technician_name || '—')}
               </Descriptions.Item>
               <Descriptions.Item label="هاتف الفني">
                 {detail.technician_phone || '—'}

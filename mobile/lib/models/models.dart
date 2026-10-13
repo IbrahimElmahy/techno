@@ -99,6 +99,7 @@ class Inspection {
   String? purchaseShop;
   String? purchaseShopPhone;
   int? merchantCustomerId;
+  int? technicianCustomerId;
   String? visitDetails;
   int? customerId;
   List<InspectionLine> lines;
@@ -124,6 +125,7 @@ class Inspection {
     this.purchaseShop,
     this.purchaseShopPhone,
     this.merchantCustomerId,
+    this.technicianCustomerId,
     this.visitDetails,
     this.customerId,
     List<InspectionLine>? lines,
@@ -151,6 +153,7 @@ class Inspection {
         'technician_phone': technicianPhone,
         'purchase_shop': purchaseShop,
         'merchant_customer_id': merchantCustomerId,
+        'technician_customer_id': technicianCustomerId,
         'purchase_shop_phone': purchaseShopPhone,
         'visit_details': visitDetails,
         'customer_id': customerId,
@@ -194,6 +197,7 @@ class Inspection {
       technicianPhone: s('technician_phone'),
       purchaseShop: s('purchase_shop'),
       merchantCustomerId: i('merchant_customer_id'),
+      technicianCustomerId: i('technician_customer_id'),
       purchaseShopPhone: s('purchase_shop_phone'),
       visitDetails: s('visit_details'),
       customerId: i('customer_id'),
@@ -227,6 +231,7 @@ class Inspection {
         'technician_phone': technicianPhone,
         'purchase_shop': purchaseShop,
         'merchant_customer_id': merchantCustomerId,
+        'technician_customer_id': technicianCustomerId,
         'purchase_shop_phone': purchaseShopPhone,
         'visit_details': visitDetails,
         'customer_id': (customerId != null && customerId! > 0) ? customerId : null,

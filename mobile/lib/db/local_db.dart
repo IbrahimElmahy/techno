@@ -15,7 +15,10 @@ class LocalDb {
   Future<Database> get db async {
     if (_db != null) return _db!;
     final path = p.join(await getDatabasesPath(), 'techno_inspections.db');
-    _db = await openDatabase(path, version: 33, onUpgrade: (d, from, to) async {
+    _db = await openDatabase(path, version: 34, onUpgrade: (d, from, to) async {
+      try {
+        await d.execute('ALTER TABLE inspection ADD COLUMN technician_customer_id INTEGER');
+      } catch (_) {}
       if (from < 33) {
         for (final col in ['prev_balance REAL', 'prev_balances TEXT']) {
           try { await d.execute('ALTER TABLE sale_receipt ADD COLUMN $col'); } catch (_) {}
@@ -184,7 +187,7 @@ class LocalDb {
           description TEXT, inspection_type TEXT, visit_type TEXT,
           technician_name TEXT, technician_phone TEXT,
           purchase_shop TEXT, purchase_shop_phone TEXT,
-          merchant_customer_id INTEGER, visit_details TEXT,
+          merchant_customer_id INTEGER, technician_customer_id INTEGER, visit_details TEXT,
           customer_id INTEGER,
           total_points REAL NOT NULL DEFAULT 0,
           synced INTEGER NOT NULL DEFAULT 0,
@@ -409,6 +412,7 @@ class LocalDb {
         'technician_phone': insp.technicianPhone,
         'purchase_shop': insp.purchaseShop,
         'merchant_customer_id': insp.merchantCustomerId,
+        'technician_customer_id': insp.technicianCustomerId,
         'purchase_shop_phone': insp.purchaseShopPhone,
         'visit_details': insp.visitDetails,
         'customer_id': insp.customerId,
@@ -486,6 +490,7 @@ class LocalDb {
       technicianPhone: r['technician_phone'] as String?,
       purchaseShop: r['purchase_shop'] as String?,
       merchantCustomerId: r['merchant_customer_id'] as int?,
+      technicianCustomerId: r['technician_customer_id'] as int?,
       purchaseShopPhone: r['purchase_shop_phone'] as String?,
       visitDetails: r['visit_details'] as String?,
       customerId: r['customer_id'] as int?,

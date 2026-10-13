@@ -507,6 +507,7 @@ _ADDED_COLUMNS: list[tuple[str, str, str]] = [
     ("sales_invoice", "coupon_serial_to", "VARCHAR(24)"),
     ("sales_invoice", "coupon_count", "INTEGER"),
     ("account", "appears_in", "VARCHAR(24)"),
+    ("inspection", "technician_customer_id", "BIGINT"),
     ("item", "default_warehouse_id", "BIGINT"),
     ("sales_invoice_line", "discount_pct", "NUMERIC(5,2) NOT NULL DEFAULT 0"),
     ("sales_invoice_line", "fixed_discount_pct", "NUMERIC(5,2)"),

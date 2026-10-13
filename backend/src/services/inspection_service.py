@@ -277,6 +277,7 @@ def create_inspection(
     visit_details: str | None = None,
     customer_id: int | None = None, owner_id: int | None = None, client_uuid: str | None = None,
     merchant_customer_id: int | None = None,
+    technician_customer_id: int | None = None,
 ) -> Inspection:
     name = (owner_name or "").strip()
     if customer_id is not None:
@@ -324,6 +325,7 @@ def create_inspection(
         technician_name=technician_name, technician_phone=technician_phone,
         purchase_shop=purchase_shop, purchase_shop_phone=purchase_shop_phone,
         merchant_customer_id=merchant_customer_id,
+        technician_customer_id=technician_customer_id,
         visit_details=visit_details,
         total_points=_points(0), rep_user_id=rep_user_id,
         branch_id=branch_id,

@@ -28,6 +28,7 @@ class AddItemFlow {
             key: it.id,
             name: it.name,
             category: it.category,
+            info: '${_fmt(it.points)} نقطة',
             note: (alreadyAdded[it.name] ?? 0) > 0
                 ? 'في المعاينة ${_fmt(alreadyAdded[it.name]!)}'
                 : null,

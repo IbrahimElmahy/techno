@@ -55,6 +55,8 @@ class Inspection(Base):
 
     merchant_customer_id: Mapped[int | None] = mapped_column(
         ForeignKey("customer.id"), nullable=True, index=True)
+    technician_customer_id: Mapped[int | None] = mapped_column(
+        ForeignKey("customer.id"), nullable=True, index=True)
 
     purchase_shop: Mapped[str | None] = mapped_column(String(160), nullable=True)
     purchase_shop_phone: Mapped[str | None] = mapped_column(String(40), nullable=True)

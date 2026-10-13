@@ -52,6 +52,7 @@ class InspectionIn(BaseModel):
     purchase_shop: str | None = None
     purchase_shop_phone: str | None = None
     merchant_customer_id: int | None = None
+    technician_customer_id: int | None = None
     visit_details: str | None = None
     client_uuid: str | None = Field(default=None, max_length=40)
     items: list[InspectionLineIn] = []
@@ -89,6 +90,7 @@ class InspectionOut(BaseModel):
     technician_phone: str | None
     merchant_customer_id: int | None = None
     merchant_name: str | None = None
+    technician_customer_id: int | None = None
     purchase_shop: str | None
     purchase_shop_phone: str | None
     visit_details: str | None
@@ -155,6 +157,7 @@ def _out(i, merchant_name: str | None = None,
         technician_phone=phones.display(i.technician_phone) or None,
         merchant_customer_id=i.merchant_customer_id,
         merchant_name=merchant_name or i.purchase_shop,
+        technician_customer_id=getattr(i, "technician_customer_id", None),
         purchase_shop=i.purchase_shop,
         purchase_shop_phone=(phones.display(i.purchase_shop_phone)
                              or phones.display(merchant_phone) or None),
@@ -193,6 +196,7 @@ def _create(db: Session, body: InspectionIn, current: CurrentUser):
         technician_phone=phones.normalize(body.technician_phone),
         purchase_shop=body.purchase_shop, purchase_shop_phone=body.purchase_shop_phone,
         merchant_customer_id=body.merchant_customer_id,
+        technician_customer_id=body.technician_customer_id,
         visit_details=body.visit_details,
         client_uuid=body.client_uuid,
         lines=[LineIn(item_id=ln.item_id, item_name=ln.item_name,
