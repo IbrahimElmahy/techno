@@ -249,19 +249,48 @@ export function PendingAttachments({ files, onChange }: {
   files: File[]; onChange: (files: File[]) => void;
 }) {
   const ref = React.useRef<HTMLInputElement>(null);
+  const urls = React.useMemo(() => files.map((f) => URL.createObjectURL(f)), [files]);
+  React.useEffect(() => () => { urls.forEach((u) => URL.revokeObjectURL(u)); }, [urls]);
   return (
     <div style={{ marginTop: 8 }}>
-      <Space wrap size={6}>
-        <Button size="small" icon={<PaperClipOutlined />} onClick={() => ref.current?.click()}>
-          إرفاق صورة أو PDF
-        </Button>
-        {files.map((f, i) => (
-          <Tag key={`${f.name}-${i}`} closable onClose={(e) => {
-            e.preventDefault();
-            onChange(files.filter((_, j) => j !== i));
-          }}>{f.name}</Tag>
-        ))}
-      </Space>
+      <Button size="small" icon={<PaperClipOutlined />} onClick={() => ref.current?.click()}>
+        إرفاق صورة أو PDF
+      </Button>
+      {files.length > 0 && (
+        <Image.PreviewGroup>
+          <Space wrap size={8} style={{ marginTop: 8, display: 'flex' }}>
+            {files.map((f, i) => {
+              const isPdf = f.type.includes('pdf');
+              return (
+                <div key={`${f.name}-${i}`} style={{
+                  position: 'relative', width: 96, height: 96, borderRadius: 8,
+                  border: '1px solid #e6efe3', overflow: 'hidden', background: '#fafafa',
+                }}>
+                  {isPdf ? (
+                    <a href={urls[i]} target="_blank" rel="noreferrer" title={f.name}
+                      style={{
+                        display: 'flex', flexDirection: 'column', alignItems: 'center',
+                        justifyContent: 'center', height: '100%', gap: 4, color: '#c0392b',
+                      }}>
+                      <FilePdfOutlined style={{ fontSize: 28 }} />
+                      <span style={{ fontSize: 13, color: '#595959' }}>PDF</span>
+                    </a>
+                  ) : (
+                    <Image src={urls[i]} alt={f.name} width={96} height={96}
+                      style={{ objectFit: 'cover' }} />
+                  )}
+                  <Button size="small" danger type="text" icon={<DeleteOutlined />}
+                    title="إزالة" onClick={() => onChange(files.filter((_, j) => j !== i))}
+                    style={{
+                      position: 'absolute', top: 0, insetInlineEnd: 0,
+                      background: 'rgba(255,255,255,.85)',
+                    }} />
+                </div>
+              );
+            })}
+          </Space>
+        </Image.PreviewGroup>
+      )}
       <input ref={ref} type="file" multiple accept={IMAGE_ACCEPT} style={{ display: 'none' }}
         onChange={(e) => {
           const picked = Array.from(e.target.files || []);

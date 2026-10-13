@@ -3,7 +3,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { PAGE_SIZE, PAGE_SIZE_OPTIONS } from '../utils/pagination';
 import { searchFilter, searchRank, sortByName } from '../utils/arabicSort';
 import {
-  Form, Select, Input, Button, Space, Tag, message, Descriptions, Alert, Empty,
+  Form, Select, Input, Button, Space, Tag, message, Descriptions, Alert, Empty, Tooltip,
 } from 'antd';
 import { FilterTable as Table } from '../components/FilterTable';
 import { Popconfirm } from '../components/noConfirm';
@@ -12,8 +12,9 @@ import {
   FileSearchOutlined,
   DeleteOutlined,
   EditOutlined,
-  RollbackOutlined,
   UndoOutlined,
+  CheckOutlined,
+  CloseCircleOutlined,
   PrinterOutlined,
   SearchOutlined,
   PlusOutlined,
@@ -489,17 +490,6 @@ const Vouchers: React.FC = () => {
     }
   };
 
-  const reverseVoucher = async (id: number) => {
-    try {
-      const { data } = await api.post(`/api/v1/vouchers/${id}/reverse`);
-      message.success(`تم عكس السند بالسند ${data?.document_number ?? ''}`);
-      loadVouchers();
-      loadTreasuries();
-    } catch (err: any) {
-      message.error(err?.response?.data?.detail?.message || 'تعذر عكس السند');
-    }
-  };
-
   const deleteVoucher = async (id: number) => {
     try {
       await api.delete(`/api/v1/vouchers/${id}`);
@@ -605,34 +595,21 @@ const Vouchers: React.FC = () => {
     { title: 'البيان', dataIndex: 'description' },
     {
       title: '',
-      width: 400,
+      width: 190,
       render: (_: any, r: VoucherRecord) => (
         <Space size={4}>
-          <Button size="small" icon={<PrinterOutlined />} onClick={() => openView(r)}>
-            عرض / طباعة
-          </Button>
+          <Tooltip title="عرض / طباعة">
+            <Button size="small" icon={<PrinterOutlined />} onClick={() => openView(r)} />
+          </Tooltip>
           <DocumentHistoryButton iconOnly entityType="voucher" entityId={r.id}
             documentNumber={r.document_number} />
-          <AttachmentsButton docType="voucher" docId={r.id} />
+          <Tooltip title="المرفقات"><span><AttachmentsButton docType="voucher" docId={r.id} /></span></Tooltip>
           {!r.is_reversal && ['receipt', 'payment', 'expense'].includes(r.kind) && (
-            <Button size="small" icon={<EditOutlined />} onClick={() => editVoucher(r)}>
-              تعديل
-            </Button>
+            <Tooltip title="تعديل">
+              <Button size="small" icon={<EditOutlined />} onClick={() => editVoucher(r)} />
+            </Tooltip>
           )}
-          {!r.is_reversal && (
-            <Popconfirm
-              title="عكس السند؟"
-              description="يُسجَّل سند عكسي بنفس المبلغ بتاريخ اليوم ويبقى الأصل ظاهراً."
-              okText="عكس"
-              cancelText="إلغاء"
-              onConfirm={() => reverseVoucher(r.id)}
-            >
-              <Button size="small" icon={<RollbackOutlined />}>عكس</Button>
-            </Popconfirm>
-          )}
-          {r.is_reversal ? (
-            <Tag>عكسي</Tag>
-          ) : (
+          {r.is_reversal && <Tag>عكسي</Tag>}
           <Popconfirm
             title="مسح السند؟"
             description="سيُحذف هو وقيده، ويعود الرصيد إلى ما كان عليه."
@@ -641,11 +618,10 @@ const Vouchers: React.FC = () => {
             okButtonProps={{ danger: true }}
             onConfirm={() => deleteVoucher(r.id)}
           >
-            <Button size="small" danger icon={<DeleteOutlined />}>
-              مسح
-            </Button>
+            <Tooltip title="مسح">
+              <Button size="small" danger icon={<DeleteOutlined />} />
+            </Tooltip>
           </Popconfirm>
-          )}
         </Space>
       ),
     },
@@ -751,7 +727,7 @@ const Vouchers: React.FC = () => {
     },
     {
       title: '',
-      width: 240,
+      width: 110,
       render: (_: any, c: any) =>
         c.status === 'settled' ? (
           <Popconfirm
@@ -770,15 +746,17 @@ const Vouchers: React.FC = () => {
               }
             }}
           >
-            <Button size="small" icon={<UndoOutlined />}>
-              {c.direction === 'incoming' ? 'عكس التحصيل' : 'عكس الصرف'}
-            </Button>
+            <Tooltip title={c.direction === 'incoming' ? 'عكس التحصيل' : 'عكس الصرف'}>
+              <Button size="small" icon={<UndoOutlined />} />
+            </Tooltip>
           </Popconfirm>
         ) : c.status !== 'pending' ? null : (
           <Space>
+            <Tooltip title={c.direction === 'incoming' ? 'تحصيل' : 'صرف'}>
             <Button
               size="small"
               type="primary"
+              icon={<CheckOutlined />}
               onClick={async () => {
                 try {
                   await api.post(`/api/v1/cheques/${c.id}/settle`, {});
@@ -788,9 +766,8 @@ const Vouchers: React.FC = () => {
                 } catch {
                 }
               }}
-            >
-              {c.direction === 'incoming' ? 'تحصيل' : 'صرف'}
-            </Button>
+            />
+            </Tooltip>
             {c.direction === 'incoming' && (
               <Popconfirm
                 title="ارتداد الشيك؟"
@@ -807,9 +784,9 @@ const Vouchers: React.FC = () => {
                   }
                 }}
               >
-                <Button size="small" danger>
-                  ارتداد
-                </Button>
+                <Tooltip title="ارتداد">
+                  <Button size="small" danger icon={<CloseCircleOutlined />} />
+                </Tooltip>
               </Popconfirm>
             )}
           </Space>
