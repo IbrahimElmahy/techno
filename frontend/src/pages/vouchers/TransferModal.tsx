@@ -5,6 +5,7 @@ import type { FormInstance } from 'antd';
 import { searchFilter, searchRank } from '../../utils/arabicSort';
 import { InputNumber } from '../../components/NumberInput';
 import { TabModal } from '../../components/TabModal';
+import { PendingAttachments, uploadFiles } from '../../components/DocumentAttachments';
 import { api } from '../../api/client';
 import { money } from './types';
 
@@ -36,11 +37,13 @@ export default function TransferModal({
   onCancel: () => void;
   form: FormInstance;
   posting: boolean;
-  submit: (url: string, values: any, form: FormInstance, ok: string) => void;
+  submit: (url: string, values: any, form: FormInstance, ok: string) => any;
   treasuries?: any[];
   presetFrom?: string;
 }) {
   const [boxes, setBoxes] = useState<CashBox[]>([]);
+  const [files, setFiles] = useState<File[]>([]);
+  useEffect(() => { if (open) setFiles([]); }, [open]);
   const fromKey = Form.useWatch('from_key', form);
   const toKey = Form.useWatch('to_key', form);
 
@@ -72,7 +75,10 @@ export default function TransferModal({
       <Form
         form={form}
         layout="vertical"
-        onFinish={(v) => submit('/api/v1/vouchers/transfers', v, form, 'تم تسجيل التحويل')}
+        onFinish={async (v) => {
+          const res = await submit('/api/v1/vouchers/transfers', v, form, 'تم تسجيل التحويل');
+          if (res?.id && files.length) { const f = files; setFiles([]); await uploadFiles('voucher', res.id, f); }
+        }}
       >
         <Row gutter={12}>
           <Col xs={24} md={12}>
@@ -134,6 +140,7 @@ export default function TransferModal({
             </Form.Item>
           </Col>
         </Row>
+        <PendingAttachments files={files} onChange={setFiles} />
       </Form>
     </TabModal>
   );

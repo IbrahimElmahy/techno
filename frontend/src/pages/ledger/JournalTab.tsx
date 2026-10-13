@@ -30,6 +30,7 @@ import { textColumn, numberColumn, choiceColumn, dateColumn } from '../../compon
 import { entryTypeLabel } from '../../components/labels';
 import PartyField from '../../components/PartyField';
 import { TabModal } from '../../components/TabModal';
+import { AttachmentsButton, PendingAttachments, uploadFiles } from '../../components/DocumentAttachments';
 import { useTableColumns } from '../../components/ColumnSettings';
 import { exportCsv } from '../../utils/exportCsv';
 import DateRangeFilter from '../../components/DateRangeFilter';
@@ -56,6 +57,7 @@ export default function JournalTab() {
   const [costCenters, setCostCenters] = useState<CostCenter[]>([]);
   const [loading, setLoading] = useState(false);
   const [drawer, setDrawer] = useState(false);
+  const [files, setFiles] = useState<File[]>([]);
   const [partnerName, setPartnerName] = useState<string>('');
   const [openingDrawer, setOpeningDrawer] = useState(false);
   const [form] = Form.useForm();
@@ -120,7 +122,7 @@ export default function JournalTab() {
   };
 
   const resetDrawer = () => {
-    setDrawer(false); setEditing(null); form.resetFields(); setPartnerName('');
+    setDrawer(false); setEditing(null); form.resetFields(); setPartnerName(''); setFiles([]);
     setLines([
       { key: '1', account_id: null, direction: 'debit', amount: 0, statement: '' },
       { key: '2', account_id: null, direction: 'credit', amount: 0, statement: '' },
@@ -184,11 +186,13 @@ export default function JournalTab() {
       if (editing) {
         await api.patch(`/api/v1/journal-entries/${editing.id}`, payload);
         if (!asDraft) await api.post(`/api/v1/journal-entries/${editing.id}/post`);
+        if (files.length) await uploadFiles('ledger_entry', editing.id, files);
         message.success(asDraft ? 'تم حفظ المسودة' : 'تم ترحيل القيد');
       } else {
         const { data } = await api.post('/api/v1/journal-entries', {
           ...payload, state: asDraft ? 'draft' : 'posted',
         });
+        if (files.length && data?.id) await uploadFiles('ledger_entry', data.id, files);
         message.success(asDraft ? 'تم حفظ المسودة' : `تم ترحيل القيد ${data.number ?? ''}`);
       }
       resetDrawer();
@@ -385,8 +389,11 @@ export default function JournalTab() {
       render: (_: any, r: JournalEntry) => {
         const state = r.state ?? 'posted';
         const history = (
-          <DocumentHistoryButton iconOnly entityType="journal_entry" entityId={r.id}
-            documentNumber={r.number} />
+          <>
+            <DocumentHistoryButton iconOnly entityType="journal_entry" entityId={r.id}
+              documentNumber={r.number} />
+            <AttachmentsButton docType="ledger_entry" docId={r.id} />
+          </>
         );
         if (state === 'cancelled') return <Space size={4}>{history}<Tag>ملغي</Tag></Space>;
         if (state === 'draft') {
@@ -672,6 +679,7 @@ export default function JournalTab() {
             <Col span={8}><Statistic title="الفرق" value={Math.abs(totalDebit - totalCredit)} precision={2}
               valueStyle={{ color: balanced ? '#6AB42D' : '#cf1322' }} /></Col>
           </StatsRow>
+          <PendingAttachments files={files} onChange={setFiles} />
           <Divider />
           <Row gutter={8}>
             <Col span={12}>

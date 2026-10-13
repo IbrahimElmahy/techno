@@ -57,6 +57,8 @@ ATTACHABLE: dict[str, tuple[str, str, str]] = {
     "coupon_receipt": ("src.models.coupon_receipt", "CouponReceipt", CAP_COUPON_RECEIVE),
     "coupon_issue": ("src.models.coupon_issue", "CouponIssue", CAP_COUPON_RECEIVE),
     "trade_order": ("src.models.trade_order", "TradeOrder", CAP_SALES_READ),
+    "ledger_entry": ("src.models.ledger", "LedgerEntry", CAP_VOUCHER_READ),
+    "cheque": ("src.models.cheque", "Cheque", CAP_VOUCHER_READ),
 }
 
 

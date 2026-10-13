@@ -14,6 +14,7 @@ import { TreasuryField, ExpenseAccountField } from '../../components/VoucherFiel
 import { api } from '../../api/client';
 import { Party, UserRecord, money } from './types';
 import { repOptions } from '../../utils/reps';
+import { PendingAttachments, uploadFiles } from '../../components/DocumentAttachments';
 
 export default function HandoverModal({
   open, onCancel, form, posting, submit, reps,
@@ -22,9 +23,11 @@ export default function HandoverModal({
   onCancel: () => void;
   form: FormInstance;
   posting: boolean;
-  submit: (url: string, values: any, form: FormInstance, ok: string) => void;
+  submit: (url: string, values: any, form: FormInstance, ok: string) => any;
   reps: UserRecord[];
 }) {
+  const [files, setFiles] = React.useState<File[]>([]);
+  React.useEffect(() => { if (open) setFiles([]); }, [open]);
   return (
       <TabModal
         open={open}
@@ -38,9 +41,10 @@ export default function HandoverModal({
       <Form
                   form={form}
                   layout="vertical"
-                  onFinish={(v) =>
-                    submit('/api/v1/vouchers/handovers', v, form, 'تم تسجيل التوريد ✔')
-                  }
+                  onFinish={async (v) => {
+                    const res = await submit('/api/v1/vouchers/handovers', v, form, 'تم تسجيل التوريد ✔');
+                    if (res?.id && files.length) { const f = files; setFiles([]); await uploadFiles('voucher', res.id, f); }
+                  }}
                 >
                   <Form.Item name="rep_user_id" label="المندوب" rules={[{ required: true, message: 'اختر المندوب' }]}>
                     <Select
@@ -81,6 +85,7 @@ export default function HandoverModal({
                   <Form.Item name="external_document_number" label="رقم المستند">
                     <Input placeholder="رقم السند الورقي" style={{ width: 160 }} />
                   </Form.Item>
+                  <PendingAttachments files={files} onChange={setFiles} />
                   <Form.Item>
                     <Button type="primary" htmlType="submit" loading={posting}>
                       تسجيل التوريد

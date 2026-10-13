@@ -1,7 +1,7 @@
 import React from 'react';
 import { num } from '../utils/money';
-import { Button, Image, Space, Spin, Typography, message } from 'antd';
-import { DeleteOutlined, FilePdfOutlined, PlusOutlined } from '@ant-design/icons';
+import { Button, Image, Modal, Space, Spin, Tag, Typography, message } from 'antd';
+import { DeleteOutlined, FilePdfOutlined, PaperClipOutlined, PlusOutlined } from '@ant-design/icons';
 import { Popconfirm } from './noConfirm';
 import { api } from '../api/client';
 
@@ -223,5 +223,68 @@ export default function DocumentAttachments(props: Props) {
     <AttachmentsBoundary>
       <Attachments {...props} />
     </AttachmentsBoundary>
+  );
+}
+
+
+export async function uploadFiles(docType: string, docId: number, files: File[]): Promise<number> {
+  let added = 0;
+  for (const f of files) {
+    try {
+      const fd = new FormData();
+      fd.append('file', f);
+      fd.append('client_uuid', newUuid());
+      await api.post(`/api/v1/documents/${docType}/${docId}/attachments`, fd,
+        { headers: { 'Content-Type': 'multipart/form-data' } });
+      added += 1;
+    } catch (err: any) {
+      message.error(err?.response?.data?.detail?.message || `تعذر رفع «${f.name}»`);
+    }
+  }
+  if (added) message.success(added > 1 ? `تم رفع ${added} مرفقات` : 'تم رفع المرفق');
+  return added;
+}
+
+export function PendingAttachments({ files, onChange }: {
+  files: File[]; onChange: (files: File[]) => void;
+}) {
+  const ref = React.useRef<HTMLInputElement>(null);
+  return (
+    <div style={{ marginTop: 8 }}>
+      <Space wrap size={6}>
+        <Button size="small" icon={<PaperClipOutlined />} onClick={() => ref.current?.click()}>
+          إرفاق صورة أو PDF
+        </Button>
+        {files.map((f, i) => (
+          <Tag key={`${f.name}-${i}`} closable onClose={(e) => {
+            e.preventDefault();
+            onChange(files.filter((_, j) => j !== i));
+          }}>{f.name}</Tag>
+        ))}
+      </Space>
+      <input ref={ref} type="file" multiple accept={IMAGE_ACCEPT} style={{ display: 'none' }}
+        onChange={(e) => {
+          const picked = Array.from(e.target.files || []);
+          e.target.value = '';
+          if (picked.length) onChange([...files, ...picked]);
+        }} />
+    </div>
+  );
+}
+
+export function AttachmentsButton({ docType, docId, label }: {
+  docType: string; docId?: number | null; label?: string;
+}) {
+  const [open, setOpen] = React.useState(false);
+  if (!docId) return null;
+  return (
+    <>
+      <Button size="small" icon={<PaperClipOutlined />} onClick={() => setOpen(true)}
+        title="المرفقات">{label}</Button>
+      <Modal open={open} onCancel={() => setOpen(false)} footer={null} width={640}
+        title="المرفقات" destroyOnHidden>
+        <DocumentAttachments docType={docType} docId={docId} title="الصور والملفات" />
+      </Modal>
+    </>
   );
 }

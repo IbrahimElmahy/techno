@@ -11,6 +11,7 @@ import dayjs, { type Dayjs } from 'dayjs';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../api/client';
 import ListPage, { ListStat } from '../components/ListPage';
+import { AttachmentsButton, PendingAttachments, uploadFiles } from '../components/DocumentAttachments';
 
 interface Row {
   account_id: number; code: string | null; name: string;
@@ -58,6 +59,7 @@ export default function PartnersCurrent() {
   const [treasuries, setTreasuries] = useState<any[]>([]);
   const [dialog, setDialog] = useState<'withdraw' | 'deposit' | null>(null);
   const [saving, setSaving] = useState(false);
+  const [files, setFiles] = useState<File[]>([]);
   const [form] = Form.useForm();
   const navigate = useNavigate();
 
@@ -118,6 +120,7 @@ export default function PartnersCurrent() {
       voucher_date: dayjs(),
       treasury_id: (mine.find((t) => t.is_default) || mine[0])?.id,
     });
+    setFiles([]);
     setDialog(kind);
   };
 
@@ -133,6 +136,7 @@ export default function PartnersCurrent() {
         external_document_number: v.external_document_number || undefined,
       });
       message.success(`تم تسجيل ${dialog === 'withdraw' ? 'سحب' : 'إيداع'} ${res.data.document_number}`);
+      if (files.length && res.data?.id) { const f = files; setFiles([]); await uploadFiles('voucher', res.data.id, f); }
       setDialog(null);
       load();
       loadMoves();
@@ -235,19 +239,26 @@ export default function PartnersCurrent() {
     { title: 'الرصيد', dataIndex: 'balance', key: 'bal', width: 160, align: 'right' as const,
       render: (v: string) => <Bal v={v} /> },
     {
-      title: '', key: 'act', width: 170, align: 'center' as const,
+      title: '', key: 'act', width: 210, align: 'center' as const,
       render: (_: any, m: Move) => {
         if (!m.voucher_id) return null;
+        const clip = <AttachmentsButton docType="voucher" docId={m.voucher_id} />;
         if (m.reverses_id) {
           return (
             <Space size={4}>
+              {clip}
               <Tag color="orange">إلغاء</Tag>
               <Button size="small" icon={<RollbackOutlined />} onClick={() => undoCancel(m)}>تراجع</Button>
             </Space>
           );
         }
-        if (m.reversed_by_id) return <Tag color="red">ملغاة</Tag>;
-        return <Button size="small" danger icon={<StopOutlined />} onClick={() => cancelMove(m)}>إلغاء</Button>;
+        if (m.reversed_by_id) return <Space size={4}>{clip}<Tag color="red">ملغاة</Tag></Space>;
+        return (
+          <Space size={4}>
+            {clip}
+            <Button size="small" danger icon={<StopOutlined />} onClick={() => cancelMove(m)}>إلغاء</Button>
+          </Space>
+        );
       },
     },
   ];
@@ -362,6 +373,7 @@ export default function PartnersCurrent() {
             <Input placeholder="رقم السند الورقي" />
           </Form.Item>
         </Form>
+        <PendingAttachments files={files} onChange={setFiles} />
       </Modal>
     </ListPage>
   );

@@ -16,6 +16,7 @@ import { amountToArabicWords } from '../../utils/arabicNumberWords';
 import { api } from '../../api/client';
 import { money } from '../../utils/money';
 import { loadPostableAccounts } from './PartyKind';
+import { PendingAttachments, uploadFiles } from '../../components/DocumentAttachments';
 
 export type VoucherSubmit = (
   url: string, values: any, form: FormInstance, ok: string, opts?: { keepOpen?: boolean },
@@ -226,7 +227,8 @@ export default function VoucherShell({
   const saveRef = useRef<HTMLButtonElement>(null);
   const [mode, setMode] = useState<SaveMode | null>(null);
   const [detailsOpen, setDetailsOpen] = useState(false);
-  useEffect(() => { if (open) setDetailsOpen(editing); }, [open]);
+  const [files, setFiles] = useState<File[]>([]);
+  useEffect(() => { if (open) { setDetailsOpen(editing); setFiles([]); } }, [open]);
 
   const amount = Number(Form.useWatch('amount', form) || 0);
   const treasuryId = Form.useWatch('treasury_id', form);
@@ -296,6 +298,11 @@ export default function VoucherShell({
       setMode(null);
     }
     if (!res) return;
+    if (files.length && res.id) {
+      const pending = files;
+      setFiles([]);
+      await uploadFiles('voucher', res.id, pending);
+    }
     if (m === 'print') printVoucher(docOf(res, payload, cp, tName));
     if (m === 'new') {
       form.setFieldsValue({ ...keep, voucher_date: keep.voucher_date ?? dayjs() });
@@ -490,6 +497,8 @@ export default function VoucherShell({
               ),
             }]}
           />
+
+          <PendingAttachments files={files} onChange={setFiles} />
 
           <JournalPreview kind={kind} amount={amount} treasuryName={treasuryName}
             counterpart={counterpart} note={journalNote} />

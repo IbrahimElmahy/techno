@@ -11,6 +11,7 @@ import CostCenterField from '../../components/CostCenterField';
 import CostCenterSplit from '../../components/CostCenterSplit';
 import { TreasuryField, ExpenseAccountField } from '../../components/VoucherFields';
 import { api } from '../../api/client';
+import { PendingAttachments, uploadFiles } from '../../components/DocumentAttachments';
 import { Party, UserRecord, money } from './types';
 
 export default function ChequeModal({
@@ -27,6 +28,8 @@ export default function ChequeModal({
   onSaved: () => void;
   defaultDirection?: string;
 }) {
+  const [files, setFiles] = React.useState<File[]>([]);
+  React.useEffect(() => { if (open) setFiles([]); }, [open]);
   return (
       <TabModal
         open={open}
@@ -44,11 +47,12 @@ export default function ChequeModal({
           onFinish={async (v) => {
             setPosting(true);
             try {
-              await api.post('/api/v1/cheques', {
+              const { data } = await api.post('/api/v1/cheques', {
                 ...v,
                 amount: String(v.amount),
                 due_date: v.due_date.format('YYYY-MM-DD'),
               });
+              if (files.length && data?.id) { const f = files; setFiles([]); await uploadFiles('cheque', data.id, f); }
               message.success('تم تسجيل الشيك ✔');
               form.resetFields();
               onCancel();
@@ -116,6 +120,7 @@ export default function ChequeModal({
           <Form.Item name="statement1" label="البيان">
             <Input placeholder="اختياري" maxLength={200} />
           </Form.Item>
+          <PendingAttachments files={files} onChange={setFiles} />
         </Form>
       </TabModal>
   );

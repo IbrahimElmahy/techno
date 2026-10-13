@@ -40,7 +40,7 @@ import VoucherDocument, { VoucherDoc, VOUCHER_TITLES, voucherFooter } from '../c
 import { useLookup } from '../hooks/useLookup';
 import { defaultTreasuryId } from '../components/VoucherFields';
 import { TabModal } from '../components/TabModal';
-import DocumentAttachments from '../components/DocumentAttachments';
+import DocumentAttachments, { AttachmentsButton } from '../components/DocumentAttachments';
 import DocumentHistoryButton from '../components/DocumentHistory';
 import { money, numeralsLocale } from '../utils/money';
 import ReceiptModal from './vouchers/ReceiptModal';
@@ -613,6 +613,7 @@ const Vouchers: React.FC = () => {
           </Button>
           <DocumentHistoryButton iconOnly entityType="voucher" entityId={r.id}
             documentNumber={r.document_number} />
+          <AttachmentsButton docType="voucher" docId={r.id} />
           {!r.is_reversal && ['receipt', 'payment', 'expense'].includes(r.kind) && (
             <Button size="small" icon={<EditOutlined />} onClick={() => editVoucher(r)}>
               تعديل
@@ -743,6 +744,10 @@ const Vouchers: React.FC = () => {
         const [color, label] = map[v] || ['default', v];
         return <Tag color={color}>{label}</Tag>;
       },
+    },
+    {
+      title: '', key: 'att', width: 50,
+      render: (_: any, c: any) => <AttachmentsButton docType="cheque" docId={c.id} />,
     },
     {
       title: '',
