@@ -5,11 +5,11 @@ from datetime import date
 from decimal import Decimal
 from functools import lru_cache
 
-from sqlalchemy import exists, or_, select
+from sqlalchemy import exists, select, union_all
 from sqlalchemy.orm import Session, aliased
 
 from src.models.ledger import Account, Direction, EntryState, LedgerEntry, PartnerKind
-from src.services import audit_service, chart_service, cost_center_service, ledger_service
+from src.services import audit_service, cost_center_service, ledger_service
 from src.services.ledger_service import LedgerError, LineInput
 
 
@@ -257,7 +257,9 @@ def _entry_refs() -> tuple:
 
 
 def _linked(target_id):
-    return or_(*[exists().where(col == target_id) for col in _entry_refs()])
+    refs = union_all(*[select(col.label("entry_id")).where(col.is_not(None))
+                       for col in _entry_refs()]).subquery()
+    return target_id.in_(select(refs.c.entry_id))
 
 
 def manual_entry_sql():
