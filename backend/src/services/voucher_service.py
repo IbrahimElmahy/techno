@@ -476,10 +476,14 @@ def create_cash_transfer(
     if not dest.active:
         raise VoucherError(f"«{dest.name}» موقوفة — أظهرها أولاً.")
     _assert_cash_available(db, source.account_id, value)
+    auto = f"الى حـ {dest.name} من {source.name}"
+    extra = (description or "").strip()
+    description = f"{auto} — {extra}" if extra and extra != auto else auto
     return _create(
         db, kind=VoucherKind.cash_transfer, amount=value, cash_account_id=source.account_id,
         party_account_id=dest.account_id, debit_account_id=dest.account_id,
         credit_account_id=source.account_id, actor_user_id=actor_user_id,
+        rep_user_id=source.rep_id or dest.rep_id,
         voucher_date=voucher_date, description=description, reference=reference,
         payment_method=None, entry_type="cash_transfer",
         statement=f"تحويل من {source.name} إلى {dest.name}",
