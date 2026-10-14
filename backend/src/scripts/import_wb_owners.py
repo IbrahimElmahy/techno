@@ -35,6 +35,16 @@ EMP_TO_USER = {
 }
 
 
+def _phone(raw: str | None) -> str | None:
+    text = str(raw or "").strip()
+    if text.endswith(".0"):
+        text = text[:-2]
+    digits = "".join(ch for ch in text if ch.isdigit())
+    if len(digits) == 10 and digits.startswith("1"):
+        digits = "0" + digits
+    return digits if len(digits) >= 7 else None
+
+
 def _read(path: str) -> list[dict[str, str]]:
     if not os.path.exists(path):
         raise SystemExit(f"مافيش {path} — صدّر صفحات الملف الأول.")
@@ -80,7 +90,7 @@ def run(folder: str, *, execute: bool, new_only: bool = False) -> None:
 
             nums = []
             for k in ("phone1", "mobile", "phone2"):
-                x = (r.get(k) or "").strip()
+                x = _phone(r.get(k))
                 if x and x not in nums:
                     nums.append(x)
             phone = nums[0] if nums else None
@@ -130,7 +140,7 @@ def run(folder: str, *, execute: bool, new_only: bool = False) -> None:
             svc = users.get(uname) if uname else None
             nums = []
             for k in ("phone1", "mobile", "phone2"):
-                x = (r.get(k) or "").strip()
+                x = _phone(r.get(k))
                 if x and x not in nums:
                     nums.append(x)
             phone = nums[0] if nums else None
