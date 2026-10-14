@@ -128,22 +128,94 @@ def average_cost_at(db: Session, item_ids, *, as_of: date,
     return out
 
 
-def value_at(
-    db: Session, *, branch_id: int | None, as_of: date, cost_basis: str = "average",
-    exclude_categories=(), list_factors: dict[str, Decimal | float | str] | None = None,
-    with_rows: bool = True,
-) -> Valuation:
-    if cost_basis not in COST_BASES:
-        cost_basis = "average"
-    excluded = {str(c) for c in (exclude_categories or ())}
-    factors = {str(k): Decimal(str(v)) for k, v in (list_factors or {}).items()
-               if v not in (None, "")}
-    qtys = quantities_at(db, branch_id=branch_id, as_of=as_of)
-    item_ids = {iid for iid, _ in qtys}
-    items = {i.id: i for i in db.scalars(select(Item).where(Item.id.in_(item_ids or [-1]))).all()}
-    avg = average_cost_at(db, item_ids, as_of=as_of, branch_id=branch_id)
-    wh_names = dict(db.execute(select(Warehouse.id, Warehouse.name)).all())
+def quantities_many(db: Session, *, branch_id: int | None,
+                    dates: list[date]) -> dict[date, dict[tuple[int, int], Decimal]]:
+    when = func.coalesce(StockMovement.movement_date, cast(StockMovement.created_at, Date))
+    signed = case(
+        (StockMovement.direction == StockDirection.in_, StockMovement.quantity),
+        else_=-StockMovement.quantity,
+    )
+    cols = [func.sum(case((when <= d, signed), else_=0)) for d in dates]
+    stmt = (select(StockMovement.item_id, StockMovement.location_id, *cols)
+            .where(StockMovement.location_kind == LocationKind.warehouse, when <= max(dates))
+            .group_by(StockMovement.item_id, StockMovement.location_id))
+    mine = branch_warehouse_ids(db, branch_id)
+    if mine is not None:
+        stmt = stmt.where(StockMovement.location_id.in_(mine or [-1]))
+    out: dict[date, dict[tuple[int, int], Decimal]] = {d: {} for d in dates}
+    for item_id, wh_id, *qtys in db.execute(stmt).all():
+        for d, qty in zip(dates, qtys, strict=True):
+            q = to_qty(qty or 0)
+            if q != to_qty(0):
+                out[d][(item_id, wh_id)] = q
+    return out
 
+
+def average_cost_many(db: Session, item_ids, *, dates: list[date],
+                      branch_id: int | None) -> dict[date, dict[int, Decimal]]:
+    ids = list({int(i) for i in item_ids})
+    if not ids:
+        return {d: {} for d in dates}
+    after_doc = 1 - func.coalesce(PurchaseInvoice.combined_pct, 0) / 100
+    p_date = func.coalesce(PurchaseInvoice.purchase_date, cast(PurchaseInvoice.created_at, Date))
+    b_qty = PurchaseInvoiceLine.quantity * PurchaseInvoiceLine.unit_factor
+    b_val = PurchaseInvoiceLine.line_total * after_doc
+    bought_cols = []
+    for d in dates:
+        bought_cols += [func.sum(case((p_date <= d, b_qty), else_=0)),
+                        func.sum(case((p_date <= d, b_val), else_=0))]
+    bought_stmt = (
+        select(PurchaseInvoiceLine.item_id, *bought_cols)
+        .join(PurchaseInvoice, PurchaseInvoice.id == PurchaseInvoiceLine.invoice_id)
+        .where(PurchaseInvoiceLine.item_id.in_(ids), p_date <= max(dates))
+        .group_by(PurchaseInvoiceLine.item_id)
+    )
+    if branch_id is not None:
+        bought_stmt = bought_stmt.where(PurchaseInvoice.branch_id == branch_id)
+
+    r_date = func.coalesce(PurchaseReturn.return_date, cast(PurchaseReturn.created_at, Date))
+    r_qty = PurchaseReturnLine.quantity
+    r_val = (PurchaseReturnLine.quantity * PurchaseInvoiceLine.unit_price
+             * (1 - func.coalesce(PurchaseInvoiceLine.discount_pct, 0) / 100) * after_doc)
+    returned_cols = []
+    for d in dates:
+        returned_cols += [func.sum(case((r_date <= d, r_qty), else_=0)),
+                          func.sum(case((r_date <= d, r_val), else_=0))]
+    returned_stmt = (
+        select(PurchaseReturnLine.item_id, *returned_cols)
+        .select_from(PurchaseReturnLine)
+        .join(PurchaseReturn, PurchaseReturn.id == PurchaseReturnLine.return_id)
+        .join(PurchaseInvoice, PurchaseInvoice.id == PurchaseReturn.purchase_invoice_id)
+        .join(PurchaseInvoiceLine, and_(
+            PurchaseInvoiceLine.invoice_id == PurchaseInvoice.id,
+            PurchaseInvoiceLine.item_id == PurchaseReturnLine.item_id))
+        .where(PurchaseReturnLine.item_id.in_(ids), PurchaseReturn.reversed_at.is_(None),
+               r_date <= max(dates))
+        .group_by(PurchaseReturnLine.item_id)
+    )
+    if branch_id is not None:
+        returned_stmt = returned_stmt.where(PurchaseReturn.branch_id == branch_id)
+
+    def pairs(row) -> list[tuple[Decimal, Decimal]]:
+        vals = [Decimal(str(v or 0)) for v in row]
+        return [(vals[2 * k], vals[2 * k + 1]) for k in range(len(dates))]
+
+    bought = {r[0]: pairs(r[1:]) for r in db.execute(bought_stmt).all()}
+    returned = {r[0]: pairs(r[1:]) for r in db.execute(returned_stmt).all()}
+    empty = [(ZERO, ZERO)] * len(dates)
+    out: dict[date, dict[int, Decimal]] = {d: {} for d in dates}
+    for item_id in ids:
+        b, r = bought.get(item_id, empty), returned.get(item_id, empty)
+        for k, d in enumerate(dates):
+            (b_q, b_v), (r_q, r_v) = b[k], r[k]
+            if b_q - r_q > 0:
+                out[d][item_id] = (b_v - r_v) / (b_q - r_q)
+    return out
+
+
+def _valuate(*, as_of: date, branch_id: int | None, cost_basis: str, qtys, items, avg,
+             excluded: set[str], factors: dict[str, Decimal], wh_names: dict,
+             with_rows: bool) -> Valuation:
     out = Valuation(as_of=as_of, branch_id=branch_id, cost_basis=cost_basis)
     no_cost: set[int] = set()
     for (iid, wid), qty in qtys.items():
@@ -183,3 +255,46 @@ def value_at(
     if with_rows:
         out.rows.sort(key=lambda r: (r["category"], r["item_name"] or "", r["warehouse_id"]))
     return out
+
+
+def _options(cost_basis: str, exclude_categories, list_factors) -> tuple[str, set[str], dict]:
+    if cost_basis not in COST_BASES:
+        cost_basis = "average"
+    excluded = {str(c) for c in (exclude_categories or ())}
+    factors = {str(k): Decimal(str(v)) for k, v in (list_factors or {}).items()
+               if v not in (None, "")}
+    return cost_basis, excluded, factors
+
+
+def value_at(
+    db: Session, *, branch_id: int | None, as_of: date, cost_basis: str = "average",
+    exclude_categories=(), list_factors: dict[str, Decimal | float | str] | None = None,
+    with_rows: bool = True,
+) -> Valuation:
+    cost_basis, excluded, factors = _options(cost_basis, exclude_categories, list_factors)
+    qtys = quantities_at(db, branch_id=branch_id, as_of=as_of)
+    item_ids = {iid for iid, _ in qtys}
+    items = {i.id: i for i in db.scalars(select(Item).where(Item.id.in_(item_ids or [-1]))).all()}
+    avg = average_cost_at(db, item_ids, as_of=as_of, branch_id=branch_id)
+    wh_names = dict(db.execute(select(Warehouse.id, Warehouse.name)).all())
+    return _valuate(as_of=as_of, branch_id=branch_id, cost_basis=cost_basis, qtys=qtys,
+                    items=items, avg=avg, excluded=excluded, factors=factors,
+                    wh_names=wh_names, with_rows=with_rows)
+
+
+def values_at(
+    db: Session, *, branch_id: int | None, dates: list[date], cost_basis: str = "average",
+    exclude_categories=(), list_factors: dict[str, Decimal | float | str] | None = None,
+) -> dict[date, Valuation]:
+    dates = sorted(set(dates))
+    if not dates:
+        return {}
+    cost_basis, excluded, factors = _options(cost_basis, exclude_categories, list_factors)
+    qtys = quantities_many(db, branch_id=branch_id, dates=dates)
+    item_ids = {iid for q in qtys.values() for iid, _ in q}
+    items = {i.id: i for i in db.scalars(select(Item).where(Item.id.in_(item_ids or [-1]))).all()}
+    avg = average_cost_many(db, item_ids, dates=dates, branch_id=branch_id)
+    return {d: _valuate(as_of=d, branch_id=branch_id, cost_basis=cost_basis, qtys=qtys[d],
+                        items=items, avg=avg[d], excluded=excluded, factors=factors,
+                        wh_names={}, with_rows=False)
+            for d in dates}

@@ -2,10 +2,11 @@ from __future__ import annotations
 
 import copy
 import re
+from functools import lru_cache
 from datetime import date, timedelta
 from decimal import Decimal
 
-from sqlalchemy import Date, cast, func, select
+from sqlalchemy import Date, and_, case, cast, func, literal, select
 from sqlalchemy.orm import Session
 
 from src.core.money import ZERO, to_money
@@ -135,6 +136,7 @@ _ROLE_BY_TYPE = {
 _AR_NORM = str.maketrans({"ة": "ه", "أ": "ا", "إ": "ا", "آ": "ا", "ى": "ي", "ـ": None})
 
 
+@lru_cache(maxsize=8192)
 def norm(text: str | None) -> str:
     return re.sub(r"\s+", " ", (text or "").translate(_AR_NORM)).strip()
 
@@ -192,29 +194,56 @@ def period_key(date_from: date, date_to: date) -> str:
     return f"{date_from.isoformat()}|{date_to.isoformat()}"
 
 
+Period = tuple[date, date]
+
+
+def _bucket(when, periods: list[Period]):
+    if len(periods) == 1:
+        return literal(0)
+    return case(*[(and_(when >= f, when <= t), i) for i, (f, t) in enumerate(periods)],
+                else_=-1)
+
+
+def _by(bucket, periods: list[Period]) -> list:
+    return [bucket] if len(periods) > 1 else []
+
+
+def _span(when, periods: list[Period]):
+    return and_(when >= min(f for f, _ in periods), when <= max(t for _, t in periods))
+
+
 def _sales_rows(db: Session, *, branch_id: int | None, date_from: date, date_to: date,
                 include_bonus: bool) -> list[dict]:
-    out: list[dict] = []
+    return _sales_rows_many(db, branch_id=branch_id, periods=[(date_from, date_to)],
+                            include_bonus=include_bonus)[0]
+
+
+def _sales_rows_many(db: Session, *, branch_id: int | None, periods: list[Period],
+                     include_bonus: bool) -> list[list[dict]]:
+    out: list[list[dict]] = [[] for _ in periods]
 
     def run(stmt, sign: int):
-        for cid, cname, ctype, cat, fam, wh, value in db.execute(stmt).all():
-            out.append({"customer_id": cid, "customer_name": cname or "",
-                        "customer_type": ctype or "", "category": cat or "بدون فئة",
-                        "family": fam or "", "warehouse_id": wh,
-                        "value": D(value) * sign})
+        for b, cid, cname, ctype, cat, fam, wh, value in db.execute(stmt).all():
+            if 0 <= b < len(periods):
+                out[b].append({"customer_id": cid, "customer_name": cname or "",
+                               "customer_type": ctype or "", "category": cat or "بدون فئة",
+                               "family": fam or "", "warehouse_id": wh,
+                               "value": D(value) * sign})
 
     after = 1 - func.coalesce(SalesInvoice.combined_pct, 0) / 100
     inv_date = func.coalesce(SalesInvoice.invoice_date, cast(SalesInvoice.created_at, Date))
+    inv_b = _bucket(inv_date, periods)
     inv = (
-        select(SalesInvoice.customer_id, Customer.name, Customer.customer_type, Item.category,
-               SalesInvoice.family, SalesInvoiceLine.location_id,
+        select(inv_b, SalesInvoice.customer_id, Customer.name, Customer.customer_type,
+               Item.category, SalesInvoice.family, SalesInvoiceLine.location_id,
                func.sum(SalesInvoiceLine.line_total * after))
         .join(SalesInvoice, SalesInvoice.id == SalesInvoiceLine.invoice_id)
         .join(Item, Item.id == SalesInvoiceLine.item_id)
         .outerjoin(Customer, Customer.id == SalesInvoice.customer_id)
-        .where(inv_date >= date_from, inv_date <= date_to)
-        .group_by(SalesInvoice.customer_id, Customer.name, Customer.customer_type, Item.category,
-                  SalesInvoice.family, SalesInvoiceLine.location_id)
+        .where(_span(inv_date, periods))
+        .group_by(*_by(inv_b, periods), SalesInvoice.customer_id, Customer.name,
+                  Customer.customer_type, Item.category, SalesInvoice.family,
+                  SalesInvoiceLine.location_id)
     )
     if not include_bonus:
         inv = inv.where(func.coalesce(SalesInvoice.is_bonus, False).is_(False))
@@ -224,16 +253,18 @@ def _sales_rows(db: Session, *, branch_id: int | None, date_from: date, date_to:
 
     r_after = 1 - func.coalesce(SalesReturn.combined_pct, 0) / 100
     ret_date = func.coalesce(SalesReturn.return_date, cast(SalesReturn.created_at, Date))
+    ret_b = _bucket(ret_date, periods)
     ret = (
-        select(SalesReturn.customer_id, Customer.name, Customer.customer_type, Item.category,
-               SalesReturn.family, SalesReturnLine.location_id,
+        select(ret_b, SalesReturn.customer_id, Customer.name, Customer.customer_type,
+               Item.category, SalesReturn.family, SalesReturnLine.location_id,
                func.sum(SalesReturnLine.line_total * r_after))
         .join(SalesReturn, SalesReturn.id == SalesReturnLine.return_id)
         .join(Item, Item.id == SalesReturnLine.item_id)
         .outerjoin(Customer, Customer.id == SalesReturn.customer_id)
-        .where(ret_date >= date_from, ret_date <= date_to, SalesReturn.reversed_at.is_(None))
-        .group_by(SalesReturn.customer_id, Customer.name, Customer.customer_type, Item.category,
-                  SalesReturn.family, SalesReturnLine.location_id)
+        .where(_span(ret_date, periods), SalesReturn.reversed_at.is_(None))
+        .group_by(*_by(ret_b, periods), SalesReturn.customer_id, Customer.name,
+                  Customer.customer_type, Item.category, SalesReturn.family,
+                  SalesReturnLine.location_id)
     )
     if branch_id is not None:
         ret = ret.where(SalesReturn.branch_id == branch_id)
@@ -263,17 +294,20 @@ def _matches(rule: dict, row: dict) -> bool:
     return True
 
 
-def classify_sales(rows: list[dict],
-                   categories: list[dict]) -> tuple[dict[str, list[dict]], list[dict]]:
+def classify_sales(rows: list[dict], categories: list[dict],
+                   memo: dict | None = None) -> tuple[dict[str, list[dict]], list[dict]]:
     buckets: dict[str, list[dict]] = {c["key"]: [] for c in categories}
     unmatched: list[dict] = []
+    memo = {} if memo is None else memo
     for row in rows:
-        for cat in categories:
-            if _matches(cat, row):
-                buckets[cat["key"]].append(row)
-                break
-        else:
+        k = (row["customer_id"], row["customer_name"], row["customer_type"], row["category"],
+             row["family"], row["warehouse_id"])
+        if k not in memo:
+            memo[k] = next((c["key"] for c in categories if _matches(c, row)), None)
+        if memo[k] is None:
             unmatched.append(row)
+        else:
+            buckets[memo[k]].append(row)
     return buckets, unmatched
 
 
@@ -310,34 +344,52 @@ def inventory_at(db: Session, *, branch_id: int | None, as_of: date, with_rows: 
 
 def net_purchases(db: Session, *, branch_id: int | None, date_from: date, date_to: date,
                   exclude_categories) -> dict:
-    excluded = list(exclude_categories or [])
+    return net_purchases_many(db, branch_id=branch_id, periods=[(date_from, date_to)],
+                              exclude_categories=exclude_categories)[0]
+
+
+def net_purchases_many(db: Session, *, branch_id: int | None, periods: list[Period],
+                       exclude_categories) -> list[dict]:
     after = 1 - func.coalesce(PurchaseInvoice.combined_pct, 0) / 100
     p_date = func.coalesce(PurchaseInvoice.purchase_date, cast(PurchaseInvoice.created_at, Date))
-    stmt = (select(Item.category, func.sum(PurchaseInvoiceLine.line_total * after))
+    p_b = _bucket(p_date, periods)
+    stmt = (select(p_b, Item.category, func.sum(PurchaseInvoiceLine.line_total * after))
             .join(PurchaseInvoice, PurchaseInvoice.id == PurchaseInvoiceLine.invoice_id)
             .join(Item, Item.id == PurchaseInvoiceLine.item_id)
-            .where(p_date >= date_from, p_date <= date_to)
-            .group_by(Item.category))
+            .where(_span(p_date, periods))
+            .group_by(*_by(p_b, periods), Item.category))
     if branch_id is not None:
         stmt = stmt.where(PurchaseInvoice.branch_id == branch_id)
-    gross_by_cat = {c or "بدون فئة": D(v) for c, v in db.execute(stmt).all()}
+    gross_by: list[dict[str, Decimal]] = [{} for _ in periods]
+    for b, c, v in db.execute(stmt).all():
+        if 0 <= b < len(periods):
+            gross_by[b][c or "بدون فئة"] = D(v)
 
     r_date = func.coalesce(PurchaseReturn.return_date, cast(PurchaseReturn.created_at, Date))
-    rstmt = (select(PurchaseReturn.id, PurchaseReturn.value, PurchaseReturn.gross,
+    r_b = _bucket(r_date, periods)
+    rstmt = (select(r_b, PurchaseReturn.id, PurchaseReturn.value, PurchaseReturn.gross,
                     Item.category, func.sum(PurchaseReturnLine.line_total))
              .join(PurchaseReturn, PurchaseReturn.id == PurchaseReturnLine.return_id)
              .join(Item, Item.id == PurchaseReturnLine.item_id)
-             .where(r_date >= date_from, r_date <= date_to, PurchaseReturn.reversed_at.is_(None))
-             .group_by(PurchaseReturn.id, PurchaseReturn.value, PurchaseReturn.gross,
-                       Item.category))
+             .where(_span(r_date, periods), PurchaseReturn.reversed_at.is_(None))
+             .group_by(*_by(r_b, periods), PurchaseReturn.id, PurchaseReturn.value,
+                       PurchaseReturn.gross, Item.category))
     if branch_id is not None:
         rstmt = rstmt.where(PurchaseReturn.branch_id == branch_id)
-    ret_by_cat: dict[str, Decimal] = {}
-    for _rid, value, gross, cat, line_sum in db.execute(rstmt).all():
+    ret_by: list[dict[str, Decimal]] = [{} for _ in periods]
+    for b, _rid, value, gross, cat, line_sum in db.execute(rstmt).all():
+        if not 0 <= b < len(periods):
+            continue
         ratio = (D(value) / D(gross)) if D(gross) else Decimal(1)
         key = cat or "بدون فئة"
-        ret_by_cat[key] = ret_by_cat.get(key, ZERO) + D(line_sum) * ratio
+        ret_by[b][key] = ret_by[b].get(key, ZERO) + D(line_sum) * ratio
+    return [_purchases_summary(g, r, exclude_categories)
+            for g, r in zip(gross_by, ret_by, strict=True)]
 
+
+def _purchases_summary(gross_by_cat: dict[str, Decimal], ret_by_cat: dict[str, Decimal],
+                       exclude_categories) -> dict:
+    excluded = list(exclude_categories or [])
     gross = sum((v for c, v in gross_by_cat.items() if c not in excluded), ZERO)
     returns = sum((v for c, v in ret_by_cat.items() if c not in excluded), ZERO)
     excl = sum((v for c, v in gross_by_cat.items() if c in excluded), ZERO) \
@@ -350,23 +402,27 @@ def net_purchases(db: Session, *, branch_id: int | None, date_from: date, date_t
     }
 
 
-def _account_movements(db: Session, *, branch_id: int | None, date_from: date, date_to: date,
-                       posted_only: bool) -> dict[int, Decimal]:
+def _account_movements(db: Session, *, branch_id: int | None, periods: list[Period],
+                       posted_only: bool) -> list[dict[int, Decimal]]:
     when = func.coalesce(LedgerEntry.entry_date, cast(LedgerEntry.created_at, Date))
+    bucket = _bucket(when, periods)
     stmt = (
-        select(LedgerLine.account_id, LedgerLine.direction, Account.normal_side,
+        select(bucket, LedgerLine.account_id, LedgerLine.direction, Account.normal_side,
                func.sum(LedgerLine.amount))
         .join(LedgerEntry, LedgerEntry.id == LedgerLine.entry_id)
         .join(Account, Account.id == LedgerLine.account_id)
-        .where(ledger_service.in_books_sql(posted_only), when >= date_from, when <= date_to)
-        .group_by(LedgerLine.account_id, LedgerLine.direction, Account.normal_side)
+        .where(ledger_service.in_books_sql(posted_only), _span(when, periods))
+        .group_by(*_by(bucket, periods), LedgerLine.account_id, LedgerLine.direction,
+                  Account.normal_side)
     )
     if branch_id is not None:
         stmt = stmt.where((LedgerEntry.branch_id == branch_id) | LedgerEntry.branch_id.is_(None))
-    out: dict[int, Decimal] = {}
-    for acc_id, direction, normal, amount in db.execute(stmt).all():
+    out: list[dict[int, Decimal]] = [{} for _ in periods]
+    for b, acc_id, direction, normal, amount in db.execute(stmt).all():
+        if not 0 <= b < len(periods):
+            continue
         v = D(amount) if direction == normal else -D(amount)
-        out[acc_id] = out.get(acc_id, ZERO) + v
+        out[b][acc_id] = out[b].get(acc_id, ZERO) + v
     return out
 
 
@@ -468,22 +524,34 @@ def _section_lines(items: list[tuple[Account, Decimal]], groups: list[dict],
 
 def coupons_in_period(db: Session, *, branch_id: int | None, date_from: date,
                       date_to: date) -> dict:
-    issued_stmt = (select(CouponIssue.coupon_kind, func.coalesce(func.sum(CouponIssue.count), 0))
-                   .where(CouponIssue.active.is_(True), CouponIssue.issue_date >= date_from,
-                          CouponIssue.issue_date <= date_to)
-                   .group_by(CouponIssue.coupon_kind))
-    rec_stmt = (select(CouponReceipt.declared_kind,
+    return coupons_many(db, branch_id=branch_id, periods=[(date_from, date_to)])[0]
+
+
+def coupons_many(db: Session, *, branch_id: int | None, periods: list[Period]) -> list[dict]:
+    i_b = _bucket(CouponIssue.issue_date, periods)
+    issued_stmt = (select(i_b, CouponIssue.coupon_kind,
+                          func.coalesce(func.sum(CouponIssue.count), 0))
+                   .where(CouponIssue.active.is_(True), _span(CouponIssue.issue_date, periods))
+                   .group_by(*_by(i_b, periods), CouponIssue.coupon_kind))
+    r_b = _bucket(CouponReceipt.received_date, periods)
+    rec_stmt = (select(r_b, CouponReceipt.declared_kind,
                        func.coalesce(func.sum(CouponReceipt.coupon_count), 0))
-                .where(receipt_counted(), CouponReceipt.received_date >= date_from,
-                       CouponReceipt.received_date <= date_to)
-                .group_by(CouponReceipt.declared_kind))
+                .where(receipt_counted(), _span(CouponReceipt.received_date, periods))
+                .group_by(*_by(r_b, periods), CouponReceipt.declared_kind))
     if branch_id is not None:
         issued_stmt = issued_stmt.where(CouponIssue.branch_id == branch_id)
         rec_stmt = rec_stmt.where(CouponReceipt.branch_id == branch_id)
-    issued = {k or "غير محدد": int(v or 0) for k, v in db.execute(issued_stmt).all()}
-    received = {k or "غير محدد": int(v or 0) for k, v in db.execute(rec_stmt).all()}
-    return {"issued": issued, "received": received,
-            "issued_total": sum(issued.values()), "received_total": sum(received.values())}
+    issued: list[dict[str, int]] = [{} for _ in periods]
+    received: list[dict[str, int]] = [{} for _ in periods]
+    for b, k, v in db.execute(issued_stmt).all():
+        if 0 <= b < len(periods):
+            issued[b][k or "غير محدد"] = int(v or 0)
+    for b, k, v in db.execute(rec_stmt).all():
+        if 0 <= b < len(periods):
+            received[b][k or "غير محدد"] = int(v or 0)
+    return [{"issued": i, "received": r,
+             "issued_total": sum(i.values()), "received_total": sum(r.values())}
+            for i, r in zip(issued, received, strict=True)]
 
 
 TIER_LABELS = {"commercial": "تجاري", "semi_commercial": "نصف تجاري", "wholesale": "جملة",
@@ -561,16 +629,84 @@ def _pct(part: Decimal, whole: Decimal) -> str | None:
     return str((part / whole * 100).quantize(Decimal("0.01"))) if whole else None
 
 
+PERIOD_UNITS = ("month", "quarter", "year")
+
+
+def _months_back(day: date, months: int) -> date:
+    n = day.year * 12 + day.month - 1 - months
+    return date(n // 12, n % 12 + 1, 1)
+
+
+def trailing_periods(anchor: date, unit: str, count: int) -> list[Period]:
+    if unit == "year":
+        start, step = date(anchor.year, 1, 1), 12
+    elif unit == "quarter":
+        start, step = date(anchor.year, (anchor.month - 1) // 3 * 3 + 1, 1), 3
+    else:
+        start, step = anchor.replace(day=1), 1
+    out: list[Period] = []
+    for k in range(count):
+        first = _months_back(start, k * step)
+        out.append((first, _months_back(first, -step) - timedelta(days=1)))
+    return out
+
+
 def build(db: Session, *, branch_id: int | None, date_from: date, date_to: date,
           posted_only: bool = True) -> dict:
+    return build_many(db, branch_id=branch_id, periods=[(date_from, date_to)],
+                      posted_only=posted_only)[0]
+
+
+def build_many(db: Session, *, branch_id: int | None, periods: list[Period],
+               posted_only: bool = True) -> list[dict]:
     cfg = get_config(db, branch_id)
+    excluded_cats = cfg["inventory"].get("exclude_categories") or []
+    inv_cfg = cfg["inventory"]
+    m = cfg["marketing"]
+    all_rows = _sales_rows_many(db, branch_id=branch_id, periods=periods,
+                                include_bonus=bool(cfg["sales"].get("include_bonus")))
+    all_moves = _account_movements(db, branch_id=branch_id, periods=periods,
+                                   posted_only=posted_only)
+    index = _accounts_index(db, branch_id)
+    for moves in all_moves:
+        for acc_id in moves:
+            if acc_id not in index:
+                acc = db.get(Account, acc_id)
+                if acc is not None:
+                    index[acc_id] = acc
+    vals = inventory_valuation_service.values_at(
+        db, branch_id=branch_id,
+        dates=[d for f, t in periods for d in (f - timedelta(days=1), t)],
+        cost_basis=inv_cfg.get("cost_basis", "average"), exclude_categories=excluded_cats,
+        list_factors=inv_cfg.get("list_factors"))
+    all_purchases = net_purchases_many(db, branch_id=branch_id, periods=periods,
+                                       exclude_categories=excluded_cats)
+    all_coupons = coupons_many(db, branch_id=branch_id, periods=periods)
+    coupon_item = coupon_price_item(db, m)
+    item_points = coupon_item_points(db, m, coupon_item)
+    gold = gold_coupon_type(db)
+    branch = db.get(Branch, branch_id) if branch_id else None
+    memo: dict = {}
+    roles: dict[int, str] = {}
+    return [
+        _statement(cfg=cfg, branch=branch, branch_id=branch_id, date_from=f, date_to=t,
+                   posted_only=posted_only, rows=all_rows[i], moves=all_moves[i], index=index,
+                   opening_val=vals[f - timedelta(days=1)], closing_val=vals[t],
+                   purchases=all_purchases[i], coupons=all_coupons[i], coupon_item=coupon_item,
+                   item_points=item_points, gold=gold, memo=memo, roles=roles)
+        for i, (f, t) in enumerate(periods)
+    ]
+
+
+def _statement(*, cfg: dict, branch: Branch | None, branch_id: int | None, date_from: date,
+               date_to: date, posted_only: bool, rows: list[dict], moves: dict[int, Decimal],
+               index: dict[int, Account], opening_val, closing_val, purchases: dict,
+               coupons: dict, coupon_item: dict | None, item_points: Decimal | None,
+               gold, memo: dict, roles: dict[int, str]) -> dict:
     period = cfg.get("periods", {}).get(period_key(date_from, date_to)) or {}
     excluded_cats = cfg["inventory"].get("exclude_categories") or []
-
-    rows = _sales_rows(db, branch_id=branch_id, date_from=date_from, date_to=date_to,
-                       include_bonus=bool(cfg["sales"].get("include_bonus")))
     cats = cfg["sales"]["categories"]
-    buckets, unmatched = classify_sales(rows, cats)
+    buckets, unmatched = classify_sales(rows, cats, memo)
     sales_total = sum((r["value"] for r in rows), ZERO)
     sales_lines = []
     bonus_value = ZERO
@@ -589,14 +725,6 @@ def build(db: Session, *, branch_id: int | None, date_from: date, date_to: date,
                             "pct": _pct(unmatched_total, sales_total),
                             "bonus_pct": "0", "bonus_value": "0.00"})
 
-    moves = _account_movements(db, branch_id=branch_id, date_from=date_from, date_to=date_to,
-                               posted_only=posted_only)
-    index = _accounts_index(db, branch_id)
-    for acc_id in moves:
-        if acc_id not in index:
-            acc = db.get(Account, acc_id)
-            if acc is not None:
-                index[acc_id] = acc
     saved_roles = {str(k): v for k, v in (cfg["accounts"].get("roles") or {}).items()}
     by_role: dict[str, list[tuple[Account, Decimal]]] = {}
     for acc_id, amount in moves.items():
@@ -606,7 +734,9 @@ def build(db: Session, *, branch_id: int | None, date_from: date, date_to: date,
         nature = effective_nature(acc)
         if nature is None or nature.value not in ("income", "expense"):
             continue
-        role = saved_roles.get(str(acc_id)) or default_role(acc, _chain(acc, index))
+        if acc_id not in roles:
+            roles[acc_id] = saved_roles.get(str(acc_id)) or default_role(acc, _chain(acc, index))
+        role = roles[acc_id]
         by_role.setdefault(role, []).append((acc, amount))
     groups = cfg["accounts"].get("groups") or []
 
@@ -632,15 +762,6 @@ def build(db: Session, *, branch_id: int | None, date_from: date, date_to: date,
         return {"lines": lines, "total": str(to_money(total)), "_total": total}
 
     inv_cfg = cfg["inventory"]
-    opening_day = date_from - timedelta(days=1)
-    opening_val = inventory_valuation_service.value_at(
-        db, branch_id=branch_id, as_of=opening_day, cost_basis=inv_cfg.get("cost_basis", "average"),
-        exclude_categories=excluded_cats, list_factors=inv_cfg.get("list_factors"),
-        with_rows=False)
-    closing_val = inventory_valuation_service.value_at(
-        db, branch_id=branch_id, as_of=date_to, cost_basis=inv_cfg.get("cost_basis", "average"),
-        exclude_categories=excluded_cats, list_factors=inv_cfg.get("list_factors"),
-        with_rows=False)
 
     def inv_block(val, override_key: str) -> dict:
         override = period.get(override_key)
@@ -653,8 +774,6 @@ def build(db: Session, *, branch_id: int | None, date_from: date, date_to: date,
 
     opening = inv_block(opening_val, "opening_inventory")
     closing = inv_block(closing_val, "closing_inventory")
-    purchases = net_purchases(db, branch_id=branch_id, date_from=date_from, date_to=date_to,
-                              exclude_categories=excluded_cats)
     direct_materials = opening["_amount"] + purchases["net"] - closing["_amount"]
     mfg = {r: role_total(r) for r in MFG_ROLES}
     cost_manual = adj_lines("cost")
@@ -670,8 +789,6 @@ def build(db: Session, *, branch_id: int | None, date_from: date, date_to: date,
     marketing_ledger = section("marketing", grouped=False)
 
     m = cfg["marketing"]
-    coupons = coupons_in_period(db, branch_id=branch_id, date_from=date_from, date_to=date_to)
-    coupon_item = coupon_price_item(db, m)
     disc = D(m.get("coupon_discount_pct"))
     if coupon_item is not None:
         coupon_price = coupon_item["price"]
@@ -680,9 +797,7 @@ def build(db: Session, *, branch_id: int | None, date_from: date, date_to: date,
         coupon_price = D(m.get("coupon_base"))
         coupon_unit = coupon_price * D(m.get("coupon_base_pct")) / 100
     bonus_coupons = bonus_value / coupon_unit if coupon_unit else ZERO
-    item_points = coupon_item_points(db, m, coupon_item)
     ratio_num = item_points if item_points is not None else D(m.get("ratio_num"))
-    gold = gold_coupon_type(db)
     if gold is not None and gold.point_cost:
         ratio_den, den_source = D(gold.point_cost), f"من «أنواع الكوبونات»: {gold.name}"
     else:
@@ -741,7 +856,6 @@ def build(db: Session, *, branch_id: int | None, date_from: date, date_to: date,
         blk.pop("_amount", None)
     for s in (ga, other_income, other_loss, marketing_ledger):
         s.pop("_total", None)
-    branch = db.get(Branch, branch_id) if branch_id else None
     return {
         "branch_id": branch_id, "branch_name": branch.name if branch else "كل الفروع",
         "date_from": date_from.isoformat(), "date_to": date_to.isoformat(),

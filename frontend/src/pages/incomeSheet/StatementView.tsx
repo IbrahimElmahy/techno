@@ -23,12 +23,12 @@ export function buildStatement(data: any, h: {
   openInventory?: (asOf: string, title: string) => void;
   openPurchases?: () => void;
   openAccount?: (id: number) => void;
-}): StatementRow[] {
+}, withDates = true): StatementRow[] {
   if (!data) return [];
   const c = data.cost;
   const mm = data.marketing.model;
   const accountRows = (prefix: string, lines: any[]): StatementRow[] => lines.map((l: any, i: number) => ({
-    key: `${prefix}-${l.name}-${i}`,
+    key: `${prefix}-${l.manual ? 'man-' : ''}${l.name}-${lines.slice(0, i).filter((x: any) => x.name === l.name && !!x.manual === !!l.manual).length}`,
     label: l.name,
     amount: n(l.amount),
     kind: 'line',
@@ -55,13 +55,13 @@ export function buildStatement(data: any, h: {
     {
       key: 'cost', label: 'تكلفة المبيعات', sign: '-', amount: n(c.total), kind: 'section',
       children: [
-        { key: 'cost-open', label: `المخزون أول المدة (${c.opening_inventory.as_of})`,
+        { key: 'cost-open', label: withDates ? `المخزون أول المدة (${c.opening_inventory.as_of})` : 'المخزون أول المدة',
           amount: n(c.opening_inventory.amount), kind: 'line',
           note: c.opening_inventory.source === 'override' ? 'جرد فعلي' : undefined,
           onClick: h.openInventory ? () => h.openInventory!(c.opening_inventory.as_of, 'المخزون أول المدة') : undefined },
         { key: 'cost-purch', label: 'صافي المشتريات', sign: '+', amount: n(c.purchases.net), kind: 'line',
           onClick: h.openPurchases },
-        { key: 'cost-close', label: `المخزون آخر المدة (${c.closing_inventory.as_of})`, sign: '-',
+        { key: 'cost-close', label: withDates ? `المخزون آخر المدة (${c.closing_inventory.as_of})` : 'المخزون آخر المدة', sign: '-',
           amount: n(c.closing_inventory.amount), kind: 'line',
           note: c.closing_inventory.source === 'override' ? 'جرد فعلي' : undefined,
           onClick: h.openInventory ? () => h.openInventory!(c.closing_inventory.as_of, 'المخزون آخر المدة') : undefined },
@@ -106,12 +106,32 @@ export function buildStatement(data: any, h: {
   ];
 }
 
-const flatten = (rows: StatementRow[], out = new Map<string, StatementRow>()) => {
+export const flatten = (rows: StatementRow[], out = new Map<string, StatementRow>()) => {
   rows.forEach((r) => { out.set(r.key, r); if (r.children) flatten(r.children, out); });
   return out;
 };
 
 const allKeys = (rows: StatementRow[]): string[] => rows.flatMap((r) => (r.children?.length ? [r.key, ...allKeys(r.children)] : []));
+
+export const mergeRows = (lists: StatementRow[][]): StatementRow[] => {
+  const order: StatementRow[] = [];
+  const kids = new Map<string, StatementRow[][]>();
+  lists.forEach((list) => list.forEach((r) => {
+    if (!kids.has(r.key)) { kids.set(r.key, []); order.push(r); }
+    if (r.children?.length) kids.get(r.key)!.push(r.children);
+  }));
+  return order.map((r) => {
+    const k = kids.get(r.key)!;
+    return { ...r, children: k.length ? mergeRows(k) : undefined };
+  });
+};
+
+export interface StatementColumn {
+  key: string;
+  label: string;
+  rows: StatementRow[];
+  salesTotal: number;
+}
 
 export function KpiCards({ data }: { data: any }) {
   if (!data) return null;
@@ -146,17 +166,22 @@ const CSS = `
 .pl-table .up{color:#389e0d}.pl-table .down{color:#cf1322}
 `;
 
-export default function StatementView({ rows, compare, label, compareLabel, salesTotal, compareSalesTotal }: {
+export default function StatementView({ rows, compare, label, compareLabel, salesTotal, compareSalesTotal, columns }: {
   rows: StatementRow[];
   compare?: StatementRow[] | null;
   label: string;
   compareLabel?: string;
   salesTotal: number;
   compareSalesTotal?: number;
+  columns?: StatementColumn[] | null;
 }) {
   const [open, setOpen] = useState<Set<string>>(new Set());
-  const cmp = useMemo(() => (compare ? flatten(compare) : null), [compare]);
-  const keys = useMemo(() => allKeys(rows), [rows]);
+  const [showPct, setShowPct] = useState(false);
+  const multi = !!columns && columns.length > 1;
+  const baseRows = useMemo(() => (multi ? mergeRows(columns!.map((c) => c.rows)) : rows), [multi, columns, rows]);
+  const maps = useMemo(() => (multi ? columns!.map((c) => flatten(c.rows)) : []), [multi, columns]);
+  const cmp = useMemo(() => (!multi && compare ? flatten(compare) : null), [multi, compare]);
+  const keys = useMemo(() => allKeys(baseRows), [baseRows]);
 
   const fmt = (r: StatementRow, v: number | null) => {
     if (v === null) return '';
@@ -165,6 +190,12 @@ export default function StatementView({ rows, compare, label, compareLabel, sale
   };
   const pctOf = (r: StatementRow, v: number | null, total: number) => (
     r.kind === 'info' || v === null || !total ? '' : `${((v / total) * 100).toFixed(1)}٪`);
+  const changeOf = (r: StatementRow, now: StatementRow | undefined, before: StatementRow | undefined): React.ReactNode => {
+    if (!now || !before || !before.amount || r.kind === 'info' || now.amount === null) return '';
+    const ch = ((now.amount - before.amount) / Math.abs(before.amount)) * 100;
+    const good = r.sign === '-' ? ch <= 0 : ch >= 0;
+    return <span className={good ? 'up' : 'down'}>{ch >= 0 ? '▲' : '▼'} {Math.abs(ch).toFixed(1)}٪</span>;
+  };
 
   const toggle = (k: string) => {
     const next = new Set(open);
@@ -182,37 +213,52 @@ export default function StatementView({ rows, compare, label, compareLabel, sale
         r.kind === 'total' ? 'pl-total' : '', r.key === 'net' ? 'pl-final' : '',
         r.kind === 'section' ? 'pl-section' : '', r.kind === 'info' ? 'pl-info' : '',
       ].join(' ');
-      let change: React.ReactNode = '';
-      if (o && o.amount && r.kind !== 'info' && r.amount !== null) {
-        const ch = ((r.amount - o.amount) / Math.abs(o.amount)) * 100;
-        const good = r.sign === '-' ? ch <= 0 : ch >= 0;
-        change = <span className={good ? 'up' : 'down'}>{ch >= 0 ? '▲' : '▼'} {Math.abs(ch).toFixed(1)}٪</span>;
-      }
-      body.push(
-        <tr key={r.key} className={cls}>
-          <td style={{ paddingInlineStart: 12 + level * 22 }}>
-            <span className={hasKids ? 'pl-toggle' : undefined} onClick={hasKids ? () => toggle(r.key) : undefined}>
-              <span className="pl-caret">{hasKids ? (isOpen ? <CaretDownOutlined /> : <CaretLeftOutlined />) : null}</span>
-              <span className="pl-sign">{r.sign === '-' ? '−' : r.sign === '+' ? '+' : ''}</span>
-              {r.label}
-            </span>
-            {r.note ? <span className="pl-note">{r.note}</span> : null}
-          </td>
-          <td className={`num${(r.amount ?? 0) < 0 ? ' neg' : ''}`}>
-            <span className={r.onClick ? 'pl-link' : undefined} onClick={r.onClick}>{fmt(r, r.amount)}</span>
-          </td>
-          <td className="pct">{pctOf(r, r.amount, salesTotal)}</td>
-          {cmp ? (<>
-            <td className={`num${(o?.amount ?? 0) < 0 ? ' neg' : ''}`}>{o ? fmt(r, o.amount) : ''}</td>
-            <td className="pct">{o ? pctOf(r, o.amount, compareSalesTotal || 0) : ''}</td>
-            <td className="pct">{change}</td>
-          </>) : null}
-        </tr>,
+      const labelCell = (
+        <td style={{ paddingInlineStart: 12 + level * 22 }}>
+          <span className={hasKids ? 'pl-toggle' : undefined} onClick={hasKids ? () => toggle(r.key) : undefined}>
+            <span className="pl-caret">{hasKids ? (isOpen ? <CaretDownOutlined /> : <CaretLeftOutlined />) : null}</span>
+            <span className="pl-sign">{r.sign === '-' ? '−' : r.sign === '+' ? '+' : ''}</span>
+            {r.label}
+          </span>
+          {r.note ? <span className="pl-note">{r.note}</span> : null}
+        </td>
       );
+      if (multi) {
+        const cells = maps.map((m) => m.get(r.key));
+        body.push(
+          <tr key={r.key} className={cls}>
+            {labelCell}
+            {cells.map((c, i) => (
+              <React.Fragment key={columns![i].key}>
+                <td className={`num${(c?.amount ?? 0) < 0 ? ' neg' : ''}`}>
+                  {c ? <span className={c.onClick ? 'pl-link' : undefined} onClick={c.onClick}>{fmt(r, c.amount)}</span> : ''}
+                </td>
+                {showPct ? <td className="pct">{c ? pctOf(r, c.amount, columns![i].salesTotal) : ''}</td> : null}
+              </React.Fragment>
+            ))}
+            <td className="pct">{changeOf(r, cells[0], cells[1])}</td>
+          </tr>,
+        );
+      } else {
+        body.push(
+          <tr key={r.key} className={cls}>
+            {labelCell}
+            <td className={`num${(r.amount ?? 0) < 0 ? ' neg' : ''}`}>
+              <span className={r.onClick ? 'pl-link' : undefined} onClick={r.onClick}>{fmt(r, r.amount)}</span>
+            </td>
+            <td className="pct">{pctOf(r, r.amount, salesTotal)}</td>
+            {cmp ? (<>
+              <td className={`num${(o?.amount ?? 0) < 0 ? ' neg' : ''}`}>{o ? fmt(r, o.amount) : ''}</td>
+              <td className="pct">{o ? pctOf(r, o.amount, compareSalesTotal || 0) : ''}</td>
+              <td className="pct">{changeOf(r, r, o)}</td>
+            </>) : null}
+          </tr>,
+        );
+      }
       if (hasKids && isOpen) walk(r.children!, level + 1);
     });
   };
-  walk(rows, 0);
+  walk(baseRows, 0);
 
   return (
     <div>
@@ -220,26 +266,57 @@ export default function StatementView({ rows, compare, label, compareLabel, sale
       <Space style={{ marginBottom: 8 }}>
         <Button size="small" onClick={() => setOpen(new Set(keys))}>فتح الكل</Button>
         <Button size="small" onClick={() => setOpen(new Set())}>طي الكل</Button>
+        {multi ? (
+          <Button size="small" type={showPct ? 'primary' : 'default'} onClick={() => setShowPct(!showPct)}>
+            ٪ من المبيعات
+          </Button>
+        ) : null}
       </Space>
       <div style={{ overflowX: 'auto' }}>
         <div className="ant-table" style={{ background: 'transparent' }}>
         <table className="pl-table">
-          <colgroup>
-            <col />
-            <col style={{ width: 150 }} /><col style={{ width: 100 }} />
-            {cmp ? (<><col style={{ width: 150 }} /><col style={{ width: 100 }} /><col style={{ width: 100 }} /></>) : null}
-          </colgroup>
+          {multi ? (
+            <colgroup>
+              <col style={{ minWidth: 240 }} />
+              {columns!.map((c) => (
+                <React.Fragment key={c.key}>
+                  <col style={{ width: 140 }} />
+                  {showPct ? <col style={{ width: 80 }} /> : null}
+                </React.Fragment>
+              ))}
+              <col style={{ width: 100 }} />
+            </colgroup>
+          ) : (
+            <colgroup>
+              <col />
+              <col style={{ width: 150 }} /><col style={{ width: 100 }} />
+              {cmp ? (<><col style={{ width: 150 }} /><col style={{ width: 100 }} /><col style={{ width: 100 }} /></>) : null}
+            </colgroup>
+          )}
           <thead className="ant-table-thead">
-            <tr>
-              <th>البند</th>
-              <th className="num">{label}</th>
-              <th className="pct">٪ من المبيعات</th>
-              {cmp ? (<>
-                <th className="num">{compareLabel}</th>
-                <th className="pct">٪ من المبيعات</th>
+            {multi ? (
+              <tr>
+                <th style={{ minWidth: 240 }}>البند</th>
+                {columns!.map((c) => (
+                  <React.Fragment key={c.key}>
+                    <th className="num">{c.label}</th>
+                    {showPct ? <th className="pct">٪</th> : null}
+                  </React.Fragment>
+                ))}
                 <th className="pct">التغير</th>
-              </>) : null}
-            </tr>
+              </tr>
+            ) : (
+              <tr>
+                <th>البند</th>
+                <th className="num">{label}</th>
+                <th className="pct">٪ من المبيعات</th>
+                {cmp ? (<>
+                  <th className="num">{compareLabel}</th>
+                  <th className="pct">٪ من المبيعات</th>
+                  <th className="pct">التغير</th>
+                </>) : null}
+              </tr>
+            )}
           </thead>
           <tbody>{body}</tbody>
         </table>

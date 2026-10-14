@@ -16,7 +16,9 @@ import { useQueryTab } from '../components/useQueryTab';
 import { money, num } from '../utils/money';
 import { printDocument } from '../print/brand';
 import { exportExcel } from '../utils/exportExcel';
-import StatementView, { buildStatement, KpiCards } from './incomeSheet/StatementView';
+import StatementView, {
+  buildStatement, flatten, KpiCards, mergeRows, StatementColumn,
+} from './incomeSheet/StatementView';
 import ListPage from '../components/ListPage';
 
 type Range = [Dayjs, Dayjs] | null;
@@ -38,8 +40,46 @@ const CUSTOMER_TYPE_LABELS: Record<string, string> = {
 const pct = (v: string | null | undefined) => (v == null ? '—' : `${num(v, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%`);
 const iso = (d: Dayjs) => d.format('YYYY-MM-DD');
 
-function compareRange(range: Range, mode: 'none' | 'prev' | 'year'): Range {
-  if (!range || mode === 'none') return null;
+type CompareMode = 'none' | 'prev' | 'year' | 'multi';
+type PeriodUnit = 'month' | 'quarter' | 'year';
+
+const AR_MONTHS = ['يناير', 'فبراير', 'مارس', 'أبريل', 'مايو', 'يونيو', 'يوليو', 'أغسطس', 'سبتمبر', 'أكتوبر', 'نوفمبر', 'ديسمبر'];
+const AR_QUARTERS = ['الأول', 'الثاني', 'الثالث', 'الرابع'];
+const UNIT_COUNT_LABELS: Record<PeriodUnit, [string, string, string]> = {
+  month: ['شهران', 'أشهر', 'شهرًا'],
+  quarter: ['ربعان', 'أرباع', 'ربعًا'],
+  year: ['سنتان', 'سنوات', 'سنة'],
+};
+
+const countLabel = (unit: PeriodUnit, n: number) => {
+  const [two, few, many] = UNIT_COUNT_LABELS[unit];
+  return n === 2 ? two : `${n} ${n <= 10 ? few : many}`;
+};
+
+function periodStart(d: Dayjs, unit: PeriodUnit): Dayjs {
+  if (unit === 'year') return d.startOf('year');
+  if (unit === 'quarter') return d.month(Math.floor(d.month() / 3) * 3).startOf('month');
+  return d.startOf('month');
+}
+
+function inferUnit(range: Range): PeriodUnit {
+  if (!range) return 'month';
+  const [from, to] = range;
+  if (from.isSame(from.startOf('year'), 'day') && to.isSame(from.endOf('year'), 'day')) return 'year';
+  const q = periodStart(from, 'quarter');
+  if (from.isSame(q, 'day') && to.isSame(q.add(2, 'month').endOf('month'), 'day')) return 'quarter';
+  return 'month';
+}
+
+function periodName(p: any, unit: PeriodUnit): string {
+  const d = dayjs(p.date_from);
+  if (unit === 'year') return `${d.year()}`;
+  if (unit === 'quarter') return `الربع ${AR_QUARTERS[Math.floor(d.month() / 3)]} ${d.year()}`;
+  return `${AR_MONTHS[d.month()]} ${d.year()}`;
+}
+
+function compareRange(range: Range, mode: CompareMode): Range {
+  if (!range || (mode !== 'prev' && mode !== 'year')) return null;
   if (mode === 'year') return [range[0].subtract(1, 'year'), range[1].subtract(1, 'year')];
   const startOfMonth = range[0].date() === 1 && range[1].isSame(range[1].endOf('month'), 'day');
   if (startOfMonth) {
@@ -76,8 +116,11 @@ const IncomeSheet: React.FC = () => {
   const [range, setRange] = useState<Range>(() => quickRanges()[3].value);
   const [postedOnly, setPostedOnly] = useState(true);
   const [data, setData] = useState<any | null>(null);
-  const [compare, setCompare] = useState<'none' | 'prev' | 'year'>('none');
+  const [compare, setCompare] = useState<CompareMode>('none');
   const [cmpData, setCmpData] = useState<any | null>(null);
+  const [unit, setUnit] = useState<PeriodUnit>(() => inferUnit(quickRanges()[3].value));
+  const [count, setCount] = useState(4);
+  const [multi, setMulti] = useState<{ unit: PeriodUnit; periods: any[] } | null>(null);
   const [loading, setLoading] = useState(false);
   const [drill, setDrill] = useState<{ title: string; body: React.ReactNode } | null>(null);
 
@@ -96,10 +139,28 @@ const IncomeSheet: React.FC = () => {
     return p;
   }, [branchId, range, postedOnly]);
 
+  const changeRange = (r: Range) => { setRange(r); setUnit(inferUnit(r)); };
+
   const load = useCallback(async () => {
     if (!range) { setData(null); return; }
     setLoading(true);
     try {
+      if (compare === 'multi') {
+        const newest = periodStart(range[1], unit);
+        const same = range[0].isSame(newest, 'day')
+          && range[1].isSame(newest.add(unit === 'year' ? 12 : unit === 'quarter' ? 3 : 1, 'month').subtract(1, 'day'), 'day');
+        const [m, r] = await Promise.all([
+          api.get('/api/v1/reports/income-sheet/periods', {
+            params: { ...params(), date_from: undefined, date_to: undefined, unit, count, anchor: iso(range[1]) },
+          }),
+          same ? Promise.resolve(null) : api.get('/api/v1/reports/income-sheet', { params: params() }),
+        ]);
+        setMulti({ unit, periods: m.data.periods });
+        setData(r ? r.data : m.data.periods[0]);
+        setCmpData(null);
+        return;
+      }
+      setMulti(null);
       const cmpRange = compareRange(range, compare);
       const [r, c] = await Promise.all([
         api.get('/api/v1/reports/income-sheet', { params: params() }),
@@ -114,7 +175,7 @@ const IncomeSheet: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, [params, range, compare]);
+  }, [params, range, compare, unit, count]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -122,17 +183,20 @@ const IncomeSheet: React.FC = () => {
     || branches.find((b) => b.id === branchId)?.name || '';
   const periodLabel = range ? `من ${range[0].format('D-M-YYYY')} إلى ${range[1].format('D-M-YYYY')}` : '';
 
-  const openAccount = (accountId: number) => {
+  const openAccount = (accountId: number, period?: any) => {
     if (!range) return;
-    navigate(`/account-statement?account=${accountId}&from=${iso(range[0])}&to=${iso(range[1])}`);
+    const from = period ? period.date_from : iso(range[0]);
+    const to = period ? period.date_to : iso(range[1]);
+    navigate(`/account-statement?account=${accountId}&from=${from}&to=${to}`);
   };
 
-  const openSales = async (key: string, name: string) => {
+  const openSales = async (key: string, name: string, period?: any) => {
     if (!range) return;
     setDrill({ title: `مبيعات «${name}»`, body: <Spin /> });
     try {
+      const dates = period ? { date_from: period.date_from, date_to: period.date_to } : {};
       const r = await api.get('/api/v1/reports/income-sheet/sales-detail',
-        { params: { ...params(), category: key } });
+        { params: { ...params(), ...dates, category: key } });
       const d = r.data;
       setDrill({
         title: `مبيعات «${name}» — ${money(d.total)}`,
@@ -229,8 +293,10 @@ const IncomeSheet: React.FC = () => {
     }
   };
 
-  const openPurchases = () => {
-    const p = data?.cost?.purchases;
+  const openPurchases = () => showPurchases(data);
+
+  const showPurchases = (src: any) => {
+    const p = src?.cost?.purchases;
     if (!p) return;
     setDrill({
       title: `صافي المشتريات — ${money(p.net)}`,
@@ -322,6 +388,29 @@ const IncomeSheet: React.FC = () => {
   const doPrint = () => {
     if (!data) return;
     const esc = (s: any) => String(s ?? '').replace(/[&<>]/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[ch] as string));
+    if (multiColumns && multiColumns.length > 1) {
+      const maps = multiColumns.map((c) => flatten(c.rows));
+      const lines: string[] = [];
+      const walk = (rows: any[], level: number) => rows.forEach((r) => {
+        if (r.kind === 'info') return;
+        const bold = r.kind === 'total' || r.kind === 'section';
+        const sign = r.sign === '-' ? '− ' : r.sign === '+' ? '+ ' : '';
+        const cells = maps.map((m) => {
+          const x = m.get(r.key);
+          return `<td style="text-align:left">${x && x.amount !== null ? money(x.amount) : ''}</td>`;
+        }).join('');
+        lines.push(`<tr${bold ? ' style="font-weight:700;background:#f1f5f9"' : ''}><td style="padding-inline-start:${6 + level * 14}px">${esc(sign + r.label)}</td>${cells}</tr>`);
+        if (level === 0 && r.children) walk(r.children, 1);
+      });
+      walk(mergeRows(multiColumns.map((c) => c.rows)), 0);
+      const head = `<tr><th>البند</th>${multiColumns.map((c) => `<th style="text-align:left">${esc(c.label)}</th>`).join('')}</tr>`;
+      const span = `${multiColumns[multiColumns.length - 1].label} — ${multiColumns[0].label}`;
+      printDocument({
+        title: `قائمة الدخل المقارنة لفرع ${branchName}`, date: span,
+        fileName: `قائمة الدخل المقارنة ${branchName} ${span}`,
+      }, `<table class="items"${multiColumns.length > 6 ? ' style="font-size:10px"' : ''}><thead>${head}</thead><tbody>${lines.join('')}</tbody></table>`);
+      return;
+    }
     const tr = (label: string, amount: any, opts: { bold?: boolean; sign?: string; note?: string } = {}) =>
       `<tr${opts.bold ? ' style="font-weight:700;background:#f1f5f9"' : ''}><td style="width:50px">${esc(opts.sign || '')}</td><td>${esc(label)}</td><td style="text-align:left">${amount === '' ? '' : money(amount)}</td><td style="color:#64748b">${esc(opts.note || '')}</td></tr>`;
     const table = (title: string, body: string) =>
@@ -429,9 +518,21 @@ const IncomeSheet: React.FC = () => {
   const cmpRange = compareRange(range, compare);
   const compareLabel = cmpRange ? `${cmpRange[0].format('D-M-YYYY')} — ${cmpRange[1].format('D-M-YYYY')}` : '';
 
+  const multiColumns = useMemo<StatementColumn[] | null>(() => (multi ? multi.periods.map((p: any) => ({
+    key: p.period_key,
+    label: periodName(p, multi.unit),
+    salesTotal: Number(p.sales.total),
+    rows: buildStatement(p, {
+      openSales: (key: string, name: string) => openSales(key, name, p),
+      openInventory,
+      openPurchases: () => showPurchases(p),
+      openAccount: (id: number) => openAccount(id, p),
+    }, false),
+  })) : null), [multi]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const statement = data && (
     <Spin spinning={loading}>
-      <StatementView rows={statementRows} compare={compareRows}
+      <StatementView rows={statementRows} compare={compareRows} columns={multiColumns}
         label={range ? `${range[0].format('D-M-YYYY')} — ${range[1].format('D-M-YYYY')}` : ''}
         compareLabel={compareLabel}
         salesTotal={Number(data.sales.total)} compareSalesTotal={cmpData ? Number(cmpData.sales.total) : 0} />
@@ -661,16 +762,24 @@ const IncomeSheet: React.FC = () => {
             <Select style={{ flex: '0 0 170px' }} value={branchId} onChange={setBranchId} placeholder="الفرع"
               options={[...branches.map((b) => ({ value: b.id, label: b.name })), { value: 0, label: 'كل الفروع' }]} />
           )}
-          <DateRangeFilter className="sl-f-dates" value={range} onChange={setRange} />
+          <DateRangeFilter className="sl-f-dates" value={range} onChange={changeRange} />
           <Select style={{ flex: '0 0 160px' }} placeholder="فترة جاهزة" value={null as any}
-            onChange={(i: number) => setRange(quick[i].value)}
+            onChange={(i: number) => changeRange(quick[i].value)}
             options={quick.map((q, i) => ({ value: i, label: q.label }))} />
           <Select style={{ flex: '0 0 230px' }} value={compare} onChange={setCompare}
             options={[
               { value: 'none', label: 'بدون مقارنة' },
               { value: 'prev', label: 'مقارنة بالفترة السابقة' },
               { value: 'year', label: 'مقارنة بنفس الفترة العام الماضي' },
+              { value: 'multi', label: 'مقارنة عدة فترات' },
             ]} />
+          {compare === 'multi' ? (<>
+            <Select style={{ flex: '0 0 110px' }} value={unit} onChange={setUnit} title="نوع الفترة"
+              options={[{ value: 'month', label: 'شهري' }, { value: 'quarter', label: 'ربع سنوي' }, { value: 'year', label: 'سنوي' }]} />
+            <Select style={{ flex: '0 0 170px' }} value={count} onChange={setCount} title="عدد الفترات"
+              prefix={<span style={{ color: '#64748b' }}>عدد الفترات</span>}
+              options={Array.from({ length: 11 }, (_x, i) => i + 2).map((n) => ({ value: n, label: countLabel(unit, n) }))} />
+          </>) : null}
           <Select style={{ flex: '0 0 140px' }} value={postedOnly} onChange={setPostedOnly}
             options={[{ value: true, label: 'المرحّل' }, { value: false, label: 'كل القيود' }]} />
         </>)}

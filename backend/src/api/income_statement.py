@@ -55,6 +55,23 @@ def income_sheet(
                      posted_only=posted_only)
 
 
+@router.get("/periods")
+def income_sheet_periods(
+    unit: str = Query(default="month"),
+    count: int = Query(default=4, ge=2, le=12),
+    anchor: date | None = Query(default=None),
+    branch_id: int | None = Query(default=None),
+    posted_only: bool = Query(default=True),
+    current: CurrentUser = Depends(require_capability(CAP_VOUCHER_READ)),
+    db: Session = Depends(get_db),
+) -> dict:
+    if unit not in svc.PERIOD_UNITS:
+        raise _bad(f"نوع فترة غير معروف: {unit}")
+    periods = svc.trailing_periods(anchor or date.today(), unit, count)
+    return {"unit": unit, "periods": svc.build_many(
+        db, branch_id=_branch(current, branch_id), periods=periods, posted_only=posted_only)}
+
+
 @router.get("/sales-detail")
 def sales_detail(
     category: str = Query(...),
