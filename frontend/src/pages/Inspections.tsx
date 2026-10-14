@@ -3,7 +3,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { PAGE_SIZE_OPTIONS } from '../utils/pagination';
 import { searchFilter, searchRank, sortByName } from '../utils/arabicSort';
 import {
-  Button, Card, Descriptions, Input, Radio, Select, Space, Table, Tag, message,
+  Button, Card, Descriptions, Input, Radio, Select, Space, Table, Tag, Tooltip, message,
 } from 'antd';
 import { InputNumber } from '../components/NumberInput';
 import { Popconfirm } from '../components/noConfirm';
@@ -17,6 +17,7 @@ import {
   SaveOutlined,
   ArrowLeftOutlined,
   EnvironmentOutlined,
+  SafetyCertificateOutlined,
 } from '@ant-design/icons';
 import dayjs, { Dayjs } from 'dayjs';
 import { useNavigate } from 'react-router-dom';
@@ -234,8 +235,16 @@ const Inspections: React.FC<{ fixedKind?: 'technician' | 'regular' }> = ({ fixed
   };
 
   const patchDetail = (updated: InspectionRecord) => {
-    setDetail(updated);
+    setDetail((prev) => (prev && prev.id === updated.id ? updated : prev));
     setRows((prev) => prev.map((r) => (r.id === updated.id ? updated : r)));
+  };
+
+  const markPrinted = async (rec: InspectionRecord) => {
+    try {
+      const { data } = await api.post<InspectionRecord>(`/api/v1/inspections/${rec.id}/mark-printed`);
+      patchDetail(data);
+    } catch {
+    }
   };
 
   const saveVisitType = async () => {
@@ -254,10 +263,9 @@ const Inspections: React.FC<{ fixedKind?: 'technician' | 'regular' }> = ({ fixed
     }
   };
 
-  const rejectInspection = async () => {
-    if (!detail) return;
+  const rejectInspection = async (rec: InspectionRecord) => {
     try {
-      const { data } = await api.post<InspectionRecord>(`/api/v1/inspections/${detail.id}/reject`);
+      const { data } = await api.post<InspectionRecord>(`/api/v1/inspections/${rec.id}/reject`);
       patchDetail(data);
       message.success('تم رفض المعاينة وإرجاع البضاعة إلى عهدة المندوب');
     } catch (e: any) {
@@ -265,10 +273,9 @@ const Inspections: React.FC<{ fixedKind?: 'technician' | 'regular' }> = ({ fixed
     }
   };
 
-  const acceptInspection = async () => {
-    if (!detail) return;
+  const acceptInspection = async (rec: InspectionRecord) => {
     try {
-      const { data } = await api.post<InspectionRecord>(`/api/v1/inspections/${detail.id}/accept`);
+      const { data } = await api.post<InspectionRecord>(`/api/v1/inspections/${rec.id}/accept`);
       patchDetail(data);
       message.success('تم قبول المعاينة');
     } catch (e: any) {
@@ -276,9 +283,7 @@ const Inspections: React.FC<{ fixedKind?: 'technician' | 'regular' }> = ({ fixed
     }
   };
 
-  const printCertificate = async () => {
-    if (!detail) return;
-    const d = detail;
+  const printInspection = async (d: InspectionRecord) => {
     const linesHtml = d.items
       .map(
         (l) =>
@@ -318,12 +323,110 @@ const Inspections: React.FC<{ fixedKind?: 'technician' | 'regular' }> = ({ fixed
         <div class="sig">ختم الشركة</div>
       </div>`,
     );
+    await markPrinted(d);
+  };
+
+  const certificateData = (d: InspectionRecord) => ({
+    certificateNumber: d.certificate_number ? String(d.certificate_number) : '',
+    date: d.inspection_date ? dayjs(d.inspection_date).format('YYYY/M/D') : '',
+    ownerName: d.owner_name || '',
+    ownerPhone: d.owner_phone || '',
+    address: [d.owner_address, d.floor_number ? `الدور ${d.floor_number}` : ''].filter(Boolean).join(' - '),
+    technicianName: d.technician_name || '',
+    technicianPhone: d.technician_phone || '',
+    trader: d.merchant_name || d.purchase_shop || '',
+    rep: d.rep_user_id ? repName(d.rep_user_id) : '',
+    description: d.description || '',
+    products: d.inspection_type || '',
+  });
+
+  const certificateName = (d: InspectionRecord) =>
+    `شهادة-ضمان-${d.certificate_number ?? d.document_number}`;
+
+  const printWarranty = async (d: InspectionRecord) => {
+    if (d.status === 'rejected') return;
+    const { printWarrantyCertificate } = await import('../print/warrantyCertificate');
+    await printWarrantyCertificate(certificateData(d), certificateName(d));
+    await markPrinted(d);
+  };
+
+  const exportWarranty = async (d: InspectionRecord) => {
+    if (d.status === 'rejected') return;
     try {
-      const { data } = await api.post<InspectionRecord>(`/api/v1/inspections/${detail.id}/mark-printed`);
-      patchDetail(data);
+      const { exportWarrantyCertificatePdf } = await import('../print/warrantyCertificate');
+      await exportWarrantyCertificatePdf(certificateData(d), `${certificateName(d)}.pdf`);
+      await markPrinted(d);
     } catch {
+      message.error('تعذر تصدير شهادة الضمان');
     }
   };
+
+  const reviewConfirm = (d: InspectionRecord, button: React.ReactNode) => (
+    d.status !== 'rejected' ? (
+      <Popconfirm
+        title="رفض المعاينة؟"
+        description={(
+          <div style={{ maxWidth: 280 }}>
+            ستُعاد البضاعة إلى عهدة المندوب
+            {Number(d.total_points || 0) > 0 && d.merchant_customer_id ? (
+              <>، وتُعاد <b>{Number(d.total_points).toLocaleString(numeralsLocale())}</b>
+              {' '}نقطة إلى رصيد <b>{d.merchant_name}</b></>
+            ) : null}.
+          </div>
+        )}
+        okText="رفض"
+        cancelText="إلغاء"
+        okButtonProps={{ danger: true }}
+        onConfirm={() => rejectInspection(d)}
+      >
+        {button}
+      </Popconfirm>
+    ) : (
+      <Popconfirm
+        title="قبول المعاينة؟"
+        description={(
+          <div style={{ maxWidth: 280 }}>
+            {Number(d.total_points || 0) > 0 && d.merchant_customer_id ? (
+              <>ستُخصم <b>{Number(d.total_points).toLocaleString(numeralsLocale())}</b>
+              {' '}نقطة من رصيد <b>{d.merchant_name}</b>.</>
+            ) : (
+              <>هذه المعاينة غير مرتبطة بتاجر — لن تُخصم أي نقاط.</>
+            )}
+          </div>
+        )}
+        okText="قبول"
+        cancelText="إلغاء"
+        onConfirm={() => acceptInspection(d)}
+      >
+        {button}
+      </Popconfirm>
+    )
+  );
+
+  const rowActions = (r: InspectionRecord) => (
+    <Space size={2} onClick={(e) => e.stopPropagation()}>
+      <Tooltip title={r.status === 'rejected' ? 'المعاينة مرفوضة' : 'طباعة شهادة ضمان'}>
+        <Button type="text" icon={<PrinterOutlined />} disabled={r.status === 'rejected'}
+          onClick={() => printWarranty(r)} />
+      </Tooltip>
+      <Tooltip title={r.status === 'rejected' ? 'المعاينة مرفوضة' : 'تصدير شهادة ضمان'}>
+        <Button type="text" icon={<SafetyCertificateOutlined />} disabled={r.status === 'rejected'}
+          onClick={() => exportWarranty(r)} />
+      </Tooltip>
+      <Tooltip title="تصدير PDF">
+        <Button type="text" icon={<FilePdfOutlined />} onClick={() => printInspection(r)} />
+      </Tooltip>
+      {reviewConfirm(r, r.status !== 'rejected' ? (
+        <Tooltip title="رفض المعاينة">
+          <Button type="text" danger icon={<CloseCircleOutlined />} />
+        </Tooltip>
+      ) : (
+        <Tooltip title="قبول المعاينة">
+          <Button type="text" icon={<CheckCircleOutlined style={{ color: '#6AB42D' }} />} />
+        </Tooltip>
+      ))}
+    </Space>
+  );
 
   const columns: ColumnsType<InspectionRecord> = [
     {
@@ -413,6 +516,13 @@ const Inspections: React.FC<{ fixedKind?: 'technician' | 'regular' }> = ({ fixed
       render: (v: string) => (
         <Tag color={v === 'مرمة' ? 'orange' : 'cyan'}>{v}</Tag>
       ),
+    },
+    {
+      title: 'الإجراءات',
+      key: 'actions',
+      width: 150,
+      fixed: 'left' as const,
+      render: (_: unknown, r: InspectionRecord) => rowActions(r),
     },
   ];
 
@@ -597,55 +707,30 @@ const Inspections: React.FC<{ fixedKind?: 'technician' | 'regular' }> = ({ fixed
                 >
                   حفظ نوع الزيارة
                 </Button>
-                <Button type="primary" icon={<PrinterOutlined />} onClick={printCertificate}>
-                  طباعة شهادة ضمان
-                </Button>
-                <Button icon={<FilePdfOutlined />} onClick={printCertificate}>
+                <Tooltip title={detail.status === 'rejected' ? 'المعاينة مرفوضة' : undefined}>
+                  <Button type="primary" icon={<PrinterOutlined />} disabled={detail.status === 'rejected'}
+                    onClick={() => printWarranty(detail)}>
+                    طباعة شهادة ضمان
+                  </Button>
+                </Tooltip>
+                <Tooltip title={detail.status === 'rejected' ? 'المعاينة مرفوضة' : undefined}>
+                  <Button icon={<SafetyCertificateOutlined />} disabled={detail.status === 'rejected'}
+                    onClick={() => exportWarranty(detail)}>
+                    تصدير شهادة ضمان
+                  </Button>
+                </Tooltip>
+                <Button icon={<FilePdfOutlined />} onClick={() => printInspection(detail)}>
                   تصدير PDF
                 </Button>
-                {detail.status !== 'rejected' ? (
-                  <Popconfirm
-                    title="رفض المعاينة؟"
-                    description={(
-                      <div style={{ maxWidth: 280 }}>
-                        ستُعاد البضاعة إلى عهدة المندوب
-                        {Number(detail.total_points || 0) > 0 && detail.merchant_customer_id ? (
-                          <>، وتُعاد <b>{Number(detail.total_points).toLocaleString(numeralsLocale())}</b>
-                          {' '}نقطة إلى رصيد <b>{detail.merchant_name}</b></>
-                        ) : null}.
-                      </div>
-                    )}
-                    okText="رفض"
-                    cancelText="إلغاء"
-                    okButtonProps={{ danger: true }}
-                    onConfirm={rejectInspection}
-                  >
-                    <Button danger icon={<CloseCircleOutlined />}>
-                      رفض المعاينة
-                    </Button>
-                  </Popconfirm>
+                {reviewConfirm(detail, detail.status !== 'rejected' ? (
+                  <Button danger icon={<CloseCircleOutlined />}>
+                    رفض المعاينة
+                  </Button>
                 ) : (
-                  <Popconfirm
-                    title="قبول المعاينة؟"
-                    description={(
-                      <div style={{ maxWidth: 280 }}>
-                        {Number(detail.total_points || 0) > 0 && detail.merchant_customer_id ? (
-                          <>ستُخصم <b>{Number(detail.total_points).toLocaleString(numeralsLocale())}</b>
-                          {' '}نقطة من رصيد <b>{detail.merchant_name}</b>.</>
-                        ) : (
-                          <>هذه المعاينة غير مرتبطة بتاجر — لن تُخصم أي نقاط.</>
-                        )}
-                      </div>
-                    )}
-                    okText="قبول"
-                    cancelText="إلغاء"
-                    onConfirm={acceptInspection}
-                  >
-                    <Button type="primary" icon={<CheckCircleOutlined />}>
-                      قبول المعاينة
-                    </Button>
-                  </Popconfirm>
-                )}
+                  <Button type="primary" icon={<CheckCircleOutlined />}>
+                    قبول المعاينة
+                  </Button>
+                ))}
               </Space>
             </Card>
             <Descriptions column={1} bordered size="small">
