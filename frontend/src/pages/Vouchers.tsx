@@ -480,7 +480,10 @@ const Vouchers: React.FC = () => {
       setTimeout(() => receiptForm.setFieldsValue(values), 0);
     } else if (v.kind === 'payment') {
       paymentForm.resetFields();
-      const values = { ...common, ...party };
+      const values = {
+        ...common, ...party,
+        cash_account_id: v.treasury_id ? undefined : (v.cash_account_id ?? undefined),
+      };
       paymentForm.setFieldsValue(values);
       setPaymentOpen(true);
       setTimeout(() => paymentForm.setFieldsValue(values), 0);

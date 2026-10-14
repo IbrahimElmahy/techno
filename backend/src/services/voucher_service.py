@@ -315,7 +315,7 @@ def _party_voucher(
     description: str | None = None, reference: str | None = None,
     payment_method: str | None = None, cost_center_id: int | None = None,
     statement1: str | None = None, external_document_number: str | None = None,
-    replacing: dict | None = None,
+    replacing: dict | None = None, custody_id: int | None = None,
 ) -> Voucher:
     given = [x for x in (customer_id, supplier_id, account_id) if x]
     if len(given) != 1:
@@ -345,7 +345,7 @@ def _party_voucher(
         party_name = acc.name or acc.code or ""
     cash_account_id, safe_id = _cash_side(
         db, actor_role=actor_role, actor_user_id=actor_user_id, treasury_id=treasury_id,
-        family=family)
+        family=family, custody_id=custody_id)
     if not receipt:
         _assert_cash_available(db, cash_account_id, value)
     kind = VoucherKind.receipt if receipt else VoucherKind.payment
@@ -383,7 +383,7 @@ def create_payment(
     treasury_id: int | None = None,
     cost_center_id: int | None = None, statement1: str | None = None,
     external_document_number: str | None = None,
-    replacing: dict | None = None,
+    replacing: dict | None = None, custody_id: int | None = None,
 ) -> Voucher:
     value = _positive(amount)
     if len([x for x in (customer_id, supplier_id, account_id) if x]) != 1:
@@ -402,10 +402,11 @@ def create_payment(
             treasury_id=treasury_id, voucher_date=voucher_date, description=description,
             reference=reference, payment_method=payment_method, cost_center_id=cost_center_id,
             statement1=statement1, external_document_number=external_document_number,
-            replacing=replacing)
+            replacing=replacing, custody_id=custody_id)
     party = _supplier_account(db, supplier_id)
     cash_account_id, safe_id = _cash_side(
-        db, actor_role=actor_role, actor_user_id=actor_user_id, treasury_id=treasury_id)
+        db, actor_role=actor_role, actor_user_id=actor_user_id, treasury_id=treasury_id,
+        custody_id=custody_id)
     _assert_cash_available(db, cash_account_id, value)
     return _create(
         db, kind=VoucherKind.payment, amount=value, cash_account_id=cash_account_id,

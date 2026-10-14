@@ -10,6 +10,8 @@ import {
 } from './PartyKind';
 import VoucherShell, { BalanceTarget, Counterpart, PartyBalance, VoucherSubmit } from './VoucherShell';
 
+const alefs = (t: string) => t.replace(/[أإآ]/g, 'ا');
+
 export default function PaymentModal({
   open, onCancel, form, posting, submit, suppliers, treasuries, methodOptions, editing = false,
   customers = [], initialKind = 'supplier',
@@ -56,6 +58,26 @@ export default function PaymentModal({
   const supplierId = Form.useWatch('supplier_id', form);
   const accountId = Form.useWatch('account_id', form);
   const accounts = usePostableAccounts(kind === 'account');
+  const [boxes, setBoxes] = React.useState<any[]>([]);
+  const [boxesTick, setBoxesTick] = React.useState(0);
+  React.useEffect(() => {
+    if (!open) return;
+    api.get<any[]>('/api/v1/cash-boxes', { params: { active_only: true } })
+      .then((r) => setBoxes((r.data || []).filter((b) => b.kind === 'safe' && b.custody_id)))
+      .catch(() => setBoxes([]));
+  }, [open, boxesTick]);
+  const boxTreasuries = React.useMemo(() => boxes.map((b) => ({
+    id: -b.custody_id,
+    name: b.family && !alefs(String(b.name)).includes(alefs(b.family)) ? `${b.name} — ${b.family}` : b.name,
+    balance: b.balance, kind: 'custody', active: true,
+  })), [boxes]);
+  React.useEffect(() => {
+    if (!open || !editing || !boxes.length) return;
+    const cash = form.getFieldValue('cash_account_id');
+    if (!cash || form.getFieldValue('treasury_id')) return;
+    const box = boxes.find((b) => b.account_id === cash);
+    if (box) form.setFieldValue('treasury_id', -box.custody_id);
+  }, [open, editing, boxes]);
 
   let counterpart: Counterpart;
   let balance: BalanceTarget;
@@ -78,11 +100,14 @@ export default function PaymentModal({
     balance = { side: 'account', id: accountId };
   }
 
-  const buildPayload = (v: any) => {
+  const buildPayload = (raw: any) => {
     if (isCustomerKind(kind) && lines.length >= 2 && !family) {
       message.error('حدد الحساب الذي يتم الصرف عليه: أبيض أم بولي');
       return null;
     }
+    const { cash_account_id: _cash, ...rest } = raw;
+    const v = rest.treasury_id < 0
+      ? { ...rest, custody_id: -rest.treasury_id, treasury_id: undefined } : rest;
     return {
       ...v,
       supplier_id: kind === 'supplier' ? v.supplier_id : undefined,
@@ -147,14 +172,14 @@ export default function PaymentModal({
       url="/api/v1/vouchers/payments" okMsg="تم تسجيل سند الصرف ✔"
       buildPayload={buildPayload}
       party={party} counterpart={counterpart}
-      treasuries={treasuries}
+      treasuries={[...treasuries, ...boxTreasuries]}
       details={details}
       detailsLabel="طريقة الدفع · المرجع · مركز التكلفة · بيان السند"
       journalNote={isCustomerKind(kind) && lines.length >= 2
         ? (family ? `على حساب «${family}»` : 'اختر الحساب')
         : undefined}
       methodOptions={methodOptions}
-      onAfterNew={() => { setLines([]); setFamily(''); }}
+      onAfterNew={() => { setLines([]); setFamily(''); setBoxesTick((n) => n + 1); }}
     />
   );
 }

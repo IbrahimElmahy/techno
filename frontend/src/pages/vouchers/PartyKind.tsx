@@ -83,12 +83,27 @@ export function PartyKindField({
   const custs = useMemo(() => customersOfKind(customers, kind), [customers, kind]);
   const label = PARTY_KIND_OPTIONS.find((o) => o.value === kind)?.label || 'الطرف';
 
+  if (kind === 'branch') {
+    return (
+      <Form.Item name="customer_id" label={label} rules={[{ required: true, message: `اختر ال${label}` }]}
+        extra={extra}>
+        <Select
+          showSearch placeholder="اختر الفرع"
+          options={custs.map((c) => ({ value: c.id, label: c.name }))}
+          onChange={onCustomerChange}
+          filterOption={searchFilter} filterSort={searchRank}
+        />
+      </Form.Item>
+    );
+  }
   if (isCustomerKind(kind)) {
+    const employee = kind === 'employee';
     return (
       <Form.Item name="customer_id" label={label} rules={[{ required: true, message: `اختر ال${label}` }]}
         extra={extra}>
         <PartyField
-          kind="customer"
+          kind={employee ? 'employee' : 'customer'}
+          excludeTypes={employee ? undefined : ['employee', 'internal']}
           options={custs.map((c) => ({ value: c.id, label: c.name }))}
           onChange={onCustomerChange}
         />

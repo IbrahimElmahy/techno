@@ -73,6 +73,7 @@ class PaymentIn(BaseModel):
     cost_center_id: int | None = None
     statement1: str | None = Field(default=None, max_length=200)
     external_document_number: str | None = Field(default=None, max_length=40)
+    custody_id: int | None = None
 
 
 class HandoverIn(BaseModel):
@@ -456,7 +457,8 @@ def create_payment(
             actor_role=current.role, treasury_id=body.treasury_id,
             voucher_date=body.voucher_date, description=body.description,
             reference=body.reference, payment_method=body.payment_method,
-            cost_center_id=body.cost_center_id, statement1=body.statement1, external_document_number=body.external_document_number)
+            cost_center_id=body.cost_center_id, statement1=body.statement1, external_document_number=body.external_document_number,
+            custody_id=body.custody_id)
     except (VoucherError, LedgerError, TreasuryError) as exc:
         raise _conflict(exc)
     db.commit()

@@ -4,7 +4,7 @@ import { Select } from 'antd';
 import PartyPickerModal, { Party, PartyKind } from './PartyPickerModal';
 
 export default function PartyField({
-  kind, value, onChange, onPicked, options, placeholder, style, disabled,
+  kind, value, onChange, onPicked, options, placeholder, style, disabled, excludeTypes,
 }: {
   kind: PartyKind;
   value?: number;
@@ -14,6 +14,7 @@ export default function PartyField({
   placeholder?: string;
   style?: React.CSSProperties;
   disabled?: boolean;
+  excludeTypes?: string[];
 }) {
   const [open, setOpen] = useState(false);
   return (
@@ -21,7 +22,8 @@ export default function PartyField({
       <Select
         showSearch
         style={style ?? { width: 240 }}
-        placeholder={placeholder ?? (kind === 'customer' ? 'اختر العميل' : 'اختر المورد')}
+        placeholder={placeholder ?? (kind === 'customer' ? 'اختر العميل'
+          : kind === 'employee' ? 'اختر الموظف' : 'اختر المورد')}
         value={value}
         disabled={disabled}
         open={false}
@@ -30,6 +32,7 @@ export default function PartyField({
       <PartyPickerModal
         open={open}
         kind={kind}
+        excludeTypes={excludeTypes}
         onPick={(party) => { setOpen(false); onChange?.(party.id); onPicked?.(party); }}
         onCancel={() => setOpen(false)}
       />
