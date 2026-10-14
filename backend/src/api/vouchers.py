@@ -809,6 +809,7 @@ def list_vouchers(
     supplier_id: int | None = Query(default=None),
     rep_id: int | None = Query(default=None),
     treasury_id: int | None = Query(default=None),
+    cash_account_id: int | None = Query(default=None),
     date_from: date | None = Query(default=None),
     date_to: date | None = Query(default=None),
     limit: int | None = Query(default=None),
@@ -819,7 +820,8 @@ def list_vouchers(
     scope_rep = current.id if current.role == RoleName.sales_rep else rep_id
     rows = voucher_service.list_vouchers(
         db, kind=kind, customer_id=customer_id, supplier_id=supplier_id,
-        rep_user_id=scope_rep, treasury_id=treasury_id, date_from=date_from, date_to=date_to)
+        rep_user_id=scope_rep, treasury_id=treasury_id, date_from=date_from, date_to=date_to,
+        cash_account_id=cash_account_id)
     if current.role == RoleName.sales_rep:
         rows = [v for v in rows
                 if v.actor_user_id == current.id or v.rep_user_id == current.id]

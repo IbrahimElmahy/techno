@@ -716,12 +716,18 @@ def list_vouchers(
     supplier_id: int | None = None, rep_user_id: int | None = None,
     treasury_id: int | None = None,
     date_from: date | None = None, date_to: date | None = None,
+    cash_account_id: int | None = None,
 ) -> list[Voucher]:
     stmt = select(Voucher)
     if kind is not None:
         stmt = stmt.where(Voucher.kind == kind)
     if treasury_id is not None:
         stmt = stmt.where(Voucher.treasury_id == treasury_id)
+    if cash_account_id is not None:
+        stmt = stmt.where(
+            (Voucher.cash_account_id == cash_account_id)
+            | (Voucher.kind.in_([VoucherKind.cash_transfer, VoucherKind.rep_handover])
+               & (Voucher.party_account_id == cash_account_id)))
     if customer_id is not None:
         stmt = stmt.where(Voucher.customer_id == customer_id)
     if supplier_id is not None:

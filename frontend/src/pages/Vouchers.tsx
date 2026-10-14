@@ -144,6 +144,10 @@ const Vouchers: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [posting, setPosting] = useState(false);
   const [kindFilter, setKindFilter] = useState<string | undefined>(undefined);
+  const [cashFilter, setCashFilter] = useState<number | undefined>(undefined);
+  const [repFilter, setRepFilter] = useState<number | undefined>(undefined);
+  const [cashBoxes, setCashBoxes] = useState<any[]>([]);
+  const [userNames, setUserNames] = useState<Record<number, string>>({});
   const [range, setRange] = useState<[Dayjs | null, Dayjs | null] | null>(null);
   const { options: methodOptions } = useLookup('payment_method');
 
@@ -232,6 +236,8 @@ const Vouchers: React.FC = () => {
         limit: vPageSize, offset: (vPage - 1) * vPageSize,
       };
       if (listKind) params.kind = listKind;
+      if (cashFilter) params.cash_account_id = cashFilter;
+      if (repFilter) params.rep_id = repFilter;
       if (range?.[0]) params.date_from = range[0].format('YYYY-MM-DD');
       if (range?.[1]) params.date_to = range[1].format('YYYY-MM-DD');
       const { data } = await api.get<any>('/api/v1/vouchers', { params });
@@ -246,7 +252,7 @@ const Vouchers: React.FC = () => {
         setListLoaded(true);
       }
     }
-  }, [listActive, listKind, range, vPage, vPageSize]);
+  }, [listActive, listKind, range, vPage, vPageSize, cashFilter, repFilter]);
 
   const queryKey = [listActive, listKind ?? '', range?.[0]?.format('YYYY-MM-DD') ?? '',
     range?.[1]?.format('YYYY-MM-DD') ?? ''].join('|');
@@ -328,10 +334,41 @@ const Vouchers: React.FC = () => {
     api.get<Party[]>('/api/v1/suppliers').then((r) => setSuppliers(r.data)).catch(() => {});
     api
       .get<UserRecord[]>('/api/v1/users')
-      .then((r) => setReps(sortByName(r.data.filter((u) => u.role === 'sales_rep'),
-        (u) => u.full_name || u.username)))
+      .then((r) => {
+        setReps(sortByName(r.data.filter((u) => u.role === 'sales_rep'),
+          (u) => u.full_name || u.username));
+        setUserNames(Object.fromEntries(r.data.map((u) => [u.id, u.full_name || u.username])));
+      })
       .catch(() => {});
+    api.get<any[]>('/api/v1/cash-boxes').then((r) => setCashBoxes(r.data || [])).catch(() => {});
   }, []);
+
+  const boxName = (accountId: any): string | null => {
+    if (!accountId) return null;
+    const b = cashBoxes.find((x) => x.account_id === accountId);
+    if (!b) return null;
+    return b.family && !String(b.name).includes(b.family) ? `${b.name} — ${b.family}` : b.name;
+  };
+  const cashOf = (v: any): string => {
+    const own = boxName(v.cash_account_id)
+      ?? treasuries.find((t) => t.id === v.treasury_id)?.name ?? null;
+    if (v.kind === 'cash_transfer' || v.kind === 'rep_handover') {
+      const other = boxName(v.party_account_id)
+        ?? treasuries.find((t) => t.id === v.to_treasury_id)?.name ?? null;
+      if (v.kind === 'rep_handover') return [other, own].filter(Boolean).join(' ← ') || '—';
+      return [own, other].filter(Boolean).join(' ← ') || '—';
+    }
+    return own || '—';
+  };
+  const cashOptions = (['cash', 'bank', 'safe'] as const)
+    .map((k) => ({
+      label: k === 'safe' ? 'صناديق المناديب' : k === 'bank' ? 'البنوك' : 'الخزائن',
+      options: cashBoxes.filter((b) => b.kind === k).map((b) => ({
+        value: b.account_id as number,
+        label: b.family && !String(b.name).includes(b.family) ? `${b.name} — ${b.family}` : b.name,
+      })),
+    }))
+    .filter((g) => g.options.length);
 
   const partyName = (v: VoucherRecord) => {
     if (v.customer_id) return customers.find((c) => c.id === v.customer_id)?.name || `#${v.customer_id}`;
@@ -594,6 +631,10 @@ const Vouchers: React.FC = () => {
       align: 'left' as const,
       render: (v: string) => <b>{money(v)}</b>,
     },
+    { title: 'الخزينة / الصندوق', key: 'cash_box', width: 170,
+      render: (_: any, r: VoucherRecord) => cashOf(r) },
+    { title: 'المندوب', key: 'rep', width: 140,
+      render: (_: any, r: VoucherRecord) => (r.rep_user_id ? userNames[r.rep_user_id] || '—' : '—') },
     { title: 'طريقة الدفع', dataIndex: 'payment_method', width: 110 },
     { title: 'المرجع', dataIndex: 'reference', width: 120 },
     { title: 'رقم المستند الورقي', dataIndex: 'external_document_number', width: 130, ellipsis: true,
@@ -687,6 +728,8 @@ const Vouchers: React.FC = () => {
   const resetVoucherFilters = () => {
     setVoucherQuery('');
     setKindFilter(undefined);
+    setCashFilter(undefined);
+    setRepFilter(undefined);
     setRange(null);
   };
 
@@ -846,9 +889,28 @@ const Vouchers: React.FC = () => {
       placeholder="بحث برقم السند أو الطرف أو البيان"
     />
   );
-  const voucherDates = (
+  const voucherDates = (<>
+    <Select
+      placeholder="الخزينة / الصندوق"
+      allowClear showSearch
+      value={cashFilter}
+      onChange={(v) => { setCashFilter(v); setVPage(1); }}
+      options={cashOptions}
+      filterOption={searchFilter} filterSort={searchRank}
+      style={{ minWidth: 200 }}
+      popupMatchSelectWidth={false}
+    />
+    <Select
+      placeholder="المندوب"
+      allowClear showSearch
+      value={repFilter}
+      onChange={(v) => { setRepFilter(v); setVPage(1); }}
+      options={reps.map((u) => ({ value: u.id, label: u.full_name || u.username }))}
+      filterOption={searchFilter} filterSort={searchRank}
+      style={{ minWidth: 160 }}
+    />
     <DateRangeFilter className="sl-f-dates" value={range as any} onChange={(v) => setRange(v as any)} />
-  );
+  </>);
 
   let filters: React.ReactNode = null;
   if (vTab) {
