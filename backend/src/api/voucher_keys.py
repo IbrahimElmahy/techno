@@ -83,6 +83,10 @@ def _resolve(db: Session, debit_id: int | None, credit_id: int | None,
     if dm is None or cm is None:
         return ("journal", [])
     kind, parties = _KINDS.get((dm, cm), ("journal", {}))
+    if kind == "journal" and dm == "treasury" and cm != "treasury":
+        kind = "account_receipt"
+    elif kind == "journal" and cm == "treasury" and dm != "treasury":
+        kind = "account_payment"
     asks = list(parties.values())
     for side, acc, group in (("debit", debit, debit_group), ("credit", credit, credit_group)):
         if side in parties:

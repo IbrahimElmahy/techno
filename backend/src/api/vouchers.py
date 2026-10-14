@@ -56,6 +56,7 @@ class ReceiptIn(BaseModel):
     statement1: str | None = Field(default=None, max_length=200)
     external_document_number: str | None = Field(default=None, max_length=40)
     rep_user_id: int | None = None
+    custody_id: int | None = None
 
 
 class PaymentIn(BaseModel):
@@ -174,6 +175,7 @@ class VoucherOut(BaseModel):
     statement1: str | None = None
     external_document_number: str | None = None
     party_account_id: int | None = None
+    cash_account_id: int | None = None
     ledger_entry_id: int | None
     is_reversal: bool
 
@@ -274,6 +276,7 @@ def _out(v) -> VoucherOut:
         statement1=getattr(v, "statement1", None),
         external_document_number=getattr(v, "external_document_number", None),
         party_account_id=getattr(v, "party_account_id", None),
+        cash_account_id=getattr(v, "cash_account_id", None),
         is_reversal=v.reverses_id is not None,
     )
 
@@ -428,7 +431,7 @@ def create_receipt(
             family=body.family, on_total=body.on_total,
             client_uuid=body.client_uuid, cost_center_id=body.cost_center_id,
             statement1=body.statement1, external_document_number=body.external_document_number,
-            rep_user_id=body.rep_user_id)
+            rep_user_id=body.rep_user_id, custody_id=body.custody_id)
     except (VoucherError, LedgerError, TreasuryError) as exc:
         raise _conflict(exc)
     db.commit()

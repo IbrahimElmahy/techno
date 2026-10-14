@@ -12,6 +12,8 @@ import {
 import VoucherShell, { BalanceTarget, Counterpart, PartyBalance, VoucherSubmit } from './VoucherShell';
 import { repOptions } from '../../utils/reps';
 
+const alefs = (t: string) => t.replace(/[أإآ]/g, 'ا');
+
 export default function ReceiptModal({
   open, onCancel, form, posting, submit, customers, treasuries,
   methodOptions, families, setFamilies, target, setTarget, reps = [],
@@ -62,8 +64,37 @@ export default function ReceiptModal({
     if (k && k !== kind) setKind(k);
   }, [open, editing, kindKey, (customers || []).length]);
   const repUserId = Form.useWatch('rep_user_id', form) as number | undefined;
+  const treasuryId = Form.useWatch('treasury_id', form) as number | undefined;
+  const [boxes, setBoxes] = React.useState<any[]>([]);
+  React.useEffect(() => {
+    if (!open) return;
+    api.get<any[]>('/api/v1/cash-boxes', { params: { active_only: true } })
+      .then((r) => setBoxes((r.data || []).filter((b) => b.kind === 'safe' && b.custody_id)))
+      .catch(() => setBoxes([]));
+  }, [open]);
+  const boxTreasuries = React.useMemo(() => boxes
+    .filter((b) => !repUserId || b.rep_id === repUserId || -b.custody_id === treasuryId)
+    .map((b) => ({
+      id: -b.custody_id,
+      name: b.family && !alefs(String(b.name)).includes(alefs(b.family)) ? `${b.name} — ${b.family}` : b.name,
+      balance: b.balance, kind: 'custody', active: true, rep_id: b.rep_id, family: b.family,
+    })), [boxes, repUserId, treasuryId]);
   const accounts = usePostableAccounts(kind === 'account');
   const lines = isCustomerKind(kind) ? families[customerId] || [] : [];
+  React.useEffect(() => {
+    if (!open || !editing || !boxes.length) return;
+    const cash = form.getFieldValue('cash_account_id');
+    if (!cash || form.getFieldValue('treasury_id')) return;
+    const box = boxes.find((b) => b.account_id === cash);
+    if (box) form.setFieldValue('treasury_id', -box.custody_id);
+  }, [open, editing, boxes]);
+  React.useEffect(() => {
+    if (!treasuryId || treasuryId >= 0) return;
+    const box = boxTreasuries.find((b) => b.id === treasuryId);
+    if (!box) return;
+    if (!form.getFieldValue('rep_user_id')) form.setFieldValue('rep_user_id', box.rep_id);
+    if (box.family && !target && lines.some((l: any) => l.family === box.family)) setTarget(box.family);
+  }, [treasuryId, lines.length]);
 
   const loadLines = (id: number) => {
     form.setFieldValue('customer_id', id);
@@ -98,7 +129,10 @@ export default function ReceiptModal({
     balance = { side: 'account', id: accountId };
   }
 
-  const buildPayload = (v: any) => {
+  const buildPayload = (raw: any) => {
+    const { cash_account_id: _cash, ...rest } = raw;
+    const v = rest.treasury_id < 0
+      ? { ...rest, custody_id: -rest.treasury_id, treasury_id: undefined } : rest;
     if (!isCustomerKind(kind)) {
       return {
         ...v, customer_id: undefined, rep_user_id: undefined,
@@ -181,7 +215,8 @@ export default function ReceiptModal({
       url="/api/v1/vouchers/receipts" okMsg="تم تسجيل سند القبض ✔"
       buildPayload={buildPayload}
       party={party} counterpart={counterpart}
-      treasuries={treasuries} treasuryOptional={treasuryOptional}
+      treasuries={isCustomerKind(kind) ? [...treasuries, ...boxTreasuries] : treasuries}
+      treasuryOptional={treasuryOptional}
       treasuryPlaceholder={treasuryOptional ? 'عهدة المندوب (دون تغيير)' : undefined}
       details={details}
       detailsLabel={`${isCustomerKind(kind) ? 'المندوب · ' : ''}طريقة الدفع · المرجع · مركز التكلفة · بيان السند`}

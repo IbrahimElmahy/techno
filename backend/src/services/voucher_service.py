@@ -170,11 +170,24 @@ def _create(
 
 def _cash_side(
     db: Session, *, actor_role: RoleName, actor_user_id: int, treasury_id: int | None,
-    family: str | None = None,
+    family: str | None = None, keep_cash_account_id: int | None = None,
+    custody_id: int | None = None,
 ) -> tuple[int, int | None]:
+    if custody_id is not None and actor_role != RoleName.sales_rep:
+        box = db.get(Custody, custody_id)
+        if box is None or box.account_id is None or box.rep_id is None:
+            raise VoucherError("صندوق المندوب غير موجود.")
+        if not box.active:
+            raise VoucherError("صندوق المندوب موقوف.")
+        return box.account_id, None
     if actor_role == RoleName.sales_rep:
-        return account_resolver.resolve_cash_account(
-            db, role=actor_role, user_id=actor_user_id, family=family).id, None
+        if keep_cash_account_id is not None and treasury_id is None:
+            return keep_cash_account_id, None
+        try:
+            return account_resolver.resolve_cash_account(
+                db, role=actor_role, user_id=actor_user_id, family=family).id, None
+        except account_resolver.AccountResolutionError as exc:
+            raise VoucherError(str(exc)) from exc
     if treasury_id is None:
         from src.models.treasury import Treasury
         from src.models.user import User
@@ -215,10 +228,14 @@ def create_receipt(
     external_document_number: str | None = None,
     rep_user_id: int | None = None,
     replacing: dict | None = None,
+    keep_cash_account_id: int | None = None,
+    custody_id: int | None = None,
 ) -> Voucher:
     value = _positive(amount)
     if len([x for x in (customer_id, supplier_id, account_id) if x]) != 1:
         raise VoucherError("اختر طرفاً واحداً للسند: عميل أو مورد أو حساب.")
+    if customer_id is None and custody_id is not None:
+        raise VoucherError("صندوق المندوب متاح لسندات العملاء فقط.")
     if customer_id is None:
         return _party_voucher(
             db, receipt=True, value=value, supplier_id=supplier_id, account_id=account_id,
@@ -231,7 +248,9 @@ def create_receipt(
                           actor_role=actor_role, rep_user_id=rep_user_id)
     cash_account_id, safe_id = _cash_side(
         db, actor_role=actor_role, actor_user_id=actor_user_id, treasury_id=treasury_id,
-        family=family)
+        family=family, keep_cash_account_id=keep_cash_account_id, custody_id=custody_id)
+    if custody_id is not None and rep_user_id is None and actor_role != RoleName.sales_rep:
+        rep_id = db.get(Custody, custody_id).rep_id
 
     accounts = _customer_accounts(db, customer_id)
     if on_total and family is None and len(accounts) > 1:
@@ -595,12 +614,13 @@ def replace_voucher(
         "branch_id": original.branch_id,
     }
     old_amount = str(original.amount)
+    old_cash = original.cash_account_id
     actor_id = original.actor_user_id
     actor = db.get(User, actor_id)
     role = db.get(Role, actor.role_id) if actor is not None else None
     actor_role = role.name if role is not None else editor_role
-    if (actor_role == RoleName.sales_rep and fields.get("treasury_id") is not None
-            and editor_role != RoleName.sales_rep):
+    if (actor_role == RoleName.sales_rep and editor_role != RoleName.sales_rep
+            and (fields.get("treasury_id") is not None or fields.get("custody_id") is not None)):
         actor_role = editor_role
 
     entry_id = original.ledger_entry_id
@@ -616,7 +636,7 @@ def replace_voucher(
     args = {k: v for k, v in fields.items() if k != "client_uuid"}
     if kind == VoucherKind.receipt:
         v = create_receipt(db, actor_user_id=actor_id, actor_role=actor_role,
-                           replacing=keep, **args)
+                           replacing=keep, keep_cash_account_id=old_cash, **args)
     elif kind == VoucherKind.expense:
         v = create_expense(db, actor_user_id=actor_id, actor_role=actor_role,
                            replacing=keep, **args)

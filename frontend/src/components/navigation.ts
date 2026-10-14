@@ -85,6 +85,7 @@ export const NAVIGATION: (NavGroup | NavScreen)[] = [
     children: [
       { key: '/invoices', label: 'فاتوره بيع', roles: R(SALES), a5: '/sales/create' },
       { key: '/returns', label: 'مردود مبيعات', roles: R(SALES), a5: '/salesreturns/create' },
+      { key: '/coupon-custody', label: 'تحميل كوبونات', roles: [...SALES, 'after_sales_staff'] },
       ...analysisGroups('sales', SALES_PRESETS),
       { key: '/bonus-report', label: 'تقرير البونص', roles: R(SALES) },
       { key: '/customer-debts', label: 'مديونيات العملاء', roles: R(SALES) },
@@ -287,7 +288,6 @@ export const EXTRA_SECTIONS: NavGroup[] = [
     label: 'خدمات ما بعد البيع',
     children: [
       { key: '/coupon-receipts', label: 'استلام الكوبونات', roles: [...SALES, 'after_sales_staff'] },
-      { key: '/coupon-custody', label: 'عهدة الكوبونات', roles: [...SALES, 'after_sales_staff'] },
       { key: '/inspections', label: 'المعاينات', roles: R([...SALES, 'after_sales_staff']) },
       { key: '/visits', label: 'الزيارات العادية', roles: R([...SALES, 'after_sales_staff']) },
       { key: '/owners', label: 'الملّاك', roles: R([...SALES, 'after_sales_staff']) },

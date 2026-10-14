@@ -569,14 +569,16 @@ export default function Purchases() {
     return g === 'poly' ? purchaseDisc.poly_pct : purchaseDisc.white_pct;
   };
   const rememberFixedDisc = (itemId: number | null, pct: number | null) => {
-    if (ownFixedDisc(itemId) !== null) return;
-    const g = discGroupOf(itemId);
-    if (!g || pct == null || !purchaseDisc) return;
-    const current = g === 'poly' ? purchaseDisc.poly_pct : purchaseDisc.white_pct;
-    if (Math.abs(current - pct) < 0.001) return;
-    setPurchaseDisc({ ...purchaseDisc, [g === 'poly' ? 'poly_pct' : 'white_pct']: pct });
-    api.put('/api/v1/settings/purchase-discounts', { group: g, pct })
-      .then(() => message.success(`خصم ${g === 'poly' ? 'البولي' : 'الأبيض والجوان'} أصبح ${pct}% للفواتير القادمة`))
+    if (!itemId || pct == null) return;
+    const current = defaultFixedDisc(itemId);
+    if (current !== null && Math.abs(current - pct) < 0.001) return;
+    const name = items.find((i) => i.id === itemId)?.name;
+    api.patch(`/api/v1/items/${itemId}`, { purchase_discount_pct: String(pct) })
+      .then(() => {
+        setItems((prev) => prev.map((i) => (i.id === itemId
+          ? { ...i, purchase_discount_pct: String(pct) } as any : i)));
+        message.success(`خصم الصنف «${name ?? ''}» أصبح ${pct}% للفواتير القادمة`);
+      })
       .catch(() => {});
   };
 

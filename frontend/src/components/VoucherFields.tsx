@@ -146,13 +146,15 @@ export function TreasuryField({
           children: undefined,
         }))}
         optionRender={(opt) => {
-          const o = options.find((x) => x.value === opt.value)!;
+          const o = options.find((x) => x.value === opt.value);
+          if (!o) return opt.label;
           const short = Number(o.balance) < Number(amount || 0);
           return (
             <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12 }}>
               <span>
                 {o.short}
                 {o.kind === 'bank' && <Tag style={{ marginInlineStart: 6 }}>بنك</Tag>}
+                {o.kind === 'custody' && <Tag color="purple" style={{ marginInlineStart: 6 }}>صندوق مندوب</Tag>}
                 {o.isDefault && <Tag color="green" style={{ marginInlineStart: 6 }}>الافتراضية</Tag>}
               </span>
               <span style={{ color: short ? '#cf1322' : '#6AB42D', fontSize: 14 }}>

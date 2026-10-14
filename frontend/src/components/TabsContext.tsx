@@ -38,7 +38,7 @@ const BASE_TITLES: Record<string, string> = {
   '/employees': 'الموظفون والوظائف',
   '/orders': 'طلبات البيع والشراء',
   '/coupon-receipts': 'استلام الكوبونات',
-  '/coupon-custody': 'عهدة الكوبونات',
+  '/coupon-custody': 'تحميل كوبونات',
   '/after-sales-reports': 'تقارير المتابعة',
   '/inspection-points': 'تحليل أصناف المعاينات بالنقاط',
   '/points-yearly': 'مجمع نقاط',

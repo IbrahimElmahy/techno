@@ -249,7 +249,7 @@ export default function CouponCustody() {
     <>
     <ListPage<'docs' | 'balance'>
       icon={<InboxOutlined />}
-      title="عهدة الكوبونات"
+      title="تحميل كوبونات"
       tabs={[
         { key: 'docs', label: 'المستندات', count: total },
         { key: 'balance', label: 'الرصيد' },

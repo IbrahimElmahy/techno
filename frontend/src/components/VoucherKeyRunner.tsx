@@ -38,6 +38,8 @@ export const KIND_LABELS: Record<string, string> = {
   handover: 'سند توريد مندوب',
   expense: 'سند مصروف',
   transfer: 'تحويل بين خزينتين',
+  account_receipt: 'سند قبض',
+  account_payment: 'سند صرف',
   journal: 'قيد حر',
 };
 
@@ -47,6 +49,8 @@ export const KIND_COLORS: Record<string, string> = {
   handover: 'blue',
   expense: 'orange',
   transfer: 'purple',
+  account_receipt: 'green',
+  account_payment: 'red',
   journal: 'default',
 };
 
@@ -145,7 +149,8 @@ export default function VoucherKeyRunner({ keyDef, world, onClose, onPosted }: R
     });
   }, [keyDef?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const needsTreasury = kind === 'receipt' || kind === 'payment' || kind === 'expense';
+  const needsTreasury = kind === 'receipt' || kind === 'payment' || kind === 'expense'
+    || kind === 'account_receipt' || kind === 'account_payment';
   const askingTreasury = needsTreasury && !debitTreasury && !creditTreasury;
 
   const doors = useMemo(() => {
@@ -155,7 +160,9 @@ export default function VoucherKeyRunner({ keyDef, world, onClose, onPosted }: R
       if (!debitTreasury) d.push('to_treasury');
       return d;
     }
-    const treasurySide = keyDef?.debit_group === 'treasury' ? 'debit_account'
+    const treasurySide = kind === 'account_receipt' ? 'debit_account'
+      : kind === 'account_payment' ? 'credit_account'
+      : keyDef?.debit_group === 'treasury' ? 'debit_account'
       : keyDef?.credit_group === 'treasury' ? 'credit_account' : null;
     const d = asks.filter((a) => a !== treasurySide);
     if (askingTreasury || treasurySide) d.push('treasury');
@@ -235,6 +242,22 @@ export default function VoucherKeyRunner({ keyDef, world, onClose, onPosted }: R
           ...common,
           from_treasury_id: creditTreasury?.id ?? v.from_treasury_id,
           to_treasury_id: debitTreasury?.id ?? v.to_treasury_id,
+        });
+      } else if (kind === 'account_receipt') {
+        await api.post('/api/v1/vouchers/receipts', {
+          ...common,
+          account_id: sideAccount('credit'),
+          treasury_id: v.treasury_id ?? debitTreasury?.id,
+          payment_method: v.payment_method || null,
+          cost_center_id: keyDef.cost_center_id || null,
+        });
+      } else if (kind === 'account_payment') {
+        await api.post('/api/v1/vouchers/payments', {
+          ...common,
+          account_id: sideAccount('debit'),
+          treasury_id: v.treasury_id ?? creditTreasury?.id,
+          payment_method: v.payment_method || null,
+          cost_center_id: keyDef.cost_center_id || null,
         });
       } else {
         await api.post('/api/v1/journal-entries', {
@@ -393,7 +416,7 @@ export default function VoucherKeyRunner({ keyDef, world, onClose, onPosted }: R
             rules={[{ required: true, message: 'اختر التاريخ' }]}>
             <DatePicker style={{ width: '100%' }} />
           </Form.Item>
-          {(kind === 'receipt' || kind === 'payment') && !keyDef.payment_method && (
+          {['receipt', 'payment', 'account_receipt', 'account_payment'].includes(kind) && !keyDef.payment_method && (
             <Form.Item name="payment_method" label="طريقة الدفع">
               <Select allowClear options={[
                 { value: 'cash', label: 'نقدي' },

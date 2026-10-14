@@ -461,7 +461,10 @@ const Vouchers: React.FC = () => {
     setEditingVoucher(v);
     if (v.kind === 'receipt') {
       receiptForm.resetFields();
-      const values = { ...common, ...party, rep_user_id: v.rep_user_id ?? undefined };
+      const values = {
+        ...common, ...party, rep_user_id: v.rep_user_id ?? undefined,
+        cash_account_id: v.treasury_id ? undefined : (v.cash_account_id ?? undefined),
+      };
       receiptForm.setFieldsValue(values);
       if (v.customer_id) {
         try {
