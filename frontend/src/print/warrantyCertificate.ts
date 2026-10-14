@@ -1,4 +1,5 @@
 import backgroundAsset from '../assets/warranty-certificate.jpg';
+import paperAsset from '../assets/warranty-paper.jpg';
 import { latinDigits } from './brand';
 
 export interface WarrantyCertificateData {
@@ -48,42 +49,46 @@ const FIELDS: FieldBox[] = [
   { key: 'products', left: 53, right: 276, dots: 635 },
 ];
 
-const PAPER_SHIFT: Partial<Record<FieldKey, { dx?: number; dy?: number }>> = {
-  certificateNumber: { dx: -22 },
-  ownerName: { dx: -22 },
-  address: { dx: -22 },
-  technicianName: { dy: -4 },
-  technicianPhone: { dy: -4 },
-  trader: { dy: -10 },
-  rep: { dy: -10 },
-  description: { dy: -12 },
-  products: { dy: -12 },
-};
-
 const MM = IMG_W / PAGE_W_MM;
 const A4_H_MM = 297;
-const STUB_TOP_MM = 232;
 
-const STUB_FIELDS: FieldBox[] = [
-  { key: 'certificateNumber', left: 110 * MM, right: 172 * MM, dots: (237.6 - STUB_TOP_MM) * MM },
-  { key: 'ownerName', left: 110 * MM, right: 170 * MM, dots: (246.4 - STUB_TOP_MM) * MM },
-  { key: 'address', left: 12 * MM, right: 182 * MM, dots: (254.8 - STUB_TOP_MM) * MM },
-  { key: 'technicianName', left: 110 * MM, right: 173 * MM, dots: (263.3 - STUB_TOP_MM) * MM },
-  { key: 'trader', left: 110 * MM, right: 159 * MM, dots: (275.1 - STUB_TOP_MM) * MM },
-  { key: 'description', left: 110 * MM, right: 168 * MM, dots: (283.6 - STUB_TOP_MM) * MM },
-  { key: 'date', left: 10 * MM, right: 62 * MM, dots: (242.3 - STUB_TOP_MM) * MM },
-  { key: 'ownerPhone', left: 10 * MM, right: 73 * MM, dots: (250.75 - STUB_TOP_MM) * MM },
-  { key: 'technicianPhone', left: 10 * MM, right: 73 * MM, dots: (268.9 - STUB_TOP_MM) * MM },
-  { key: 'rep', left: 10 * MM, right: 62 * MM, dots: (278.25 - STUB_TOP_MM) * MM },
-  { key: 'products', left: 10 * MM, right: 62 * MM, dots: (286.7 - STUB_TOP_MM) * MM },
+interface PaperField { key: FieldKey; colon: number; left: number; y: number }
+
+const PAPER_FIELDS: PaperField[] = [
+  { key: 'certificateNumber', colon: 168, left: 96, y: 79.5 },
+  { key: 'ownerName', colon: 169.5, left: 96, y: 88 },
+  { key: 'address', colon: 176.5, left: 8, y: 96.7 },
+  { key: 'technicianName', colon: 167.7, left: 96, y: 105.2 },
+  { key: 'trader', colon: 152.7, left: 92, y: 114 },
+  { key: 'description', colon: 165.7, left: 94, y: 122.6 },
+  { key: 'date', colon: 62, left: 8, y: 79.5 },
+  { key: 'ownerPhone', colon: 74, left: 8, y: 88 },
+  { key: 'technicianPhone', colon: 72.5, left: 8, y: 105.2 },
+  { key: 'rep', colon: 58.5, left: 8, y: 114 },
+  { key: 'products', colon: 57.6, left: 8, y: 122.6 },
+  { key: 'certificateNumber', colon: 168, left: 96, y: 237.5 },
+  { key: 'ownerName', colon: 166, left: 96, y: 245.7 },
+  { key: 'address', colon: 174.8, left: 8, y: 254.5 },
+  { key: 'technicianName', colon: 166, left: 96, y: 263.2 },
+  { key: 'trader', colon: 152.7, left: 92, y: 271.8 },
+  { key: 'description', colon: 161.1, left: 94, y: 280.6 },
+  { key: 'date', colon: 62.7, left: 8, y: 237.5 },
+  { key: 'ownerPhone', colon: 76, left: 8, y: 245.7 },
+  { key: 'technicianPhone', colon: 73, left: 8, y: 263.2 },
+  { key: 'rep', colon: 59.3, left: 8, y: 271.8 },
+  { key: 'products', colon: 58.4, left: 8, y: 280.6 },
 ];
 
-const CALIBRATION_KEY = 'warrantyCertificate.calibration';
+const PAPER_FIELD_BOXES: FieldBox[] = PAPER_FIELDS.map((f) => ({
+  key: f.key, left: f.left * MM, right: (f.colon - 2.5) * MM, dots: f.y * MM,
+}));
 
-interface Calibration { x: number; y: number; scale: number; stubX: number; stubY: number }
+const CALIBRATION_KEY = 'warrantyCertificate.calibration.v2';
+
+interface Calibration { x: number; y: number; scale: number }
 
 function loadCalibration(): Calibration {
-  const base = { x: 0, y: 0, scale: 100, stubX: 0, stubY: 0 };
+  const base = { x: 0, y: 0, scale: 100 };
   try {
     return { ...base, ...JSON.parse(localStorage.getItem(CALIBRATION_KEY) || '{}') };
   } catch {
@@ -118,6 +123,22 @@ function values(d: WarrantyCertificateData): Record<FieldKey, string> {
 }
 
 let backgroundData: string | null = null;
+let paperData: string | null = null;
+
+async function asDataUrl(url: string): Promise<string> {
+  const blob = await (await fetch(url)).blob();
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result));
+    reader.onerror = reject;
+    reader.readAsDataURL(blob);
+  });
+}
+
+async function paperBackground(): Promise<string> {
+  if (!paperData) paperData = await asDataUrl(paperAsset);
+  return paperData;
+}
 
 async function background(): Promise<string> {
   if (backgroundData) return backgroundData;
@@ -173,9 +194,7 @@ async function renderCanvas(
   fields.forEach((field) => {
     const text = v[field.key];
     if (!text) return;
-    const shift = withBackground || fields !== FIELDS ? {} : (PAPER_SHIFT[field.key] || {});
-    const f = { ...field, left: field.left + (shift.dx || 0), right: field.right + (shift.dx || 0),
-      dots: field.dots + (shift.dy || 0) };
+    const f = field;
     const width = f.right - f.left;
     const size = fontPx(text, width);
     ctx.save();
@@ -192,10 +211,8 @@ async function renderCanvas(
 export async function printWarrantyCertificate(d: WarrantyCertificateData, title: string): Promise<void> {
   const win = window.open('', '_blank', 'width=900,height=1000');
   if (!win) return;
-  const backgroundUrl = await background();
-  const layer = (await renderCanvas(d, PRINT_SCALE, false)).toDataURL('image/png');
-  const stubHeightMm = A4_H_MM - STUB_TOP_MM;
-  const stub = (await renderCanvas(d, PRINT_SCALE, false, STUB_FIELDS, stubHeightMm * MM))
+  const paperUrl = await paperBackground();
+  const layer = (await renderCanvas(d, PRINT_SCALE, false, PAPER_FIELD_BOXES, A4_H_MM * MM))
     .toDataURL('image/png');
   const cal = loadCalibration();
   const html = `<!DOCTYPE html><html dir="rtl" lang="ar"><head><meta charset="utf-8">
@@ -205,10 +222,8 @@ export async function printWarrantyCertificate(d: WarrantyCertificateData, title
   * { box-sizing: border-box; }
   html, body { margin: 0; padding: 0; background: #888; font-family: Tahoma, sans-serif; }
   .sheet { position: relative; width: ${PAGE_W_MM}mm; height: ${A4_H_MM}mm; margin: 0 auto; background: #fff; overflow: hidden; }
-  .cert { position: absolute; top: 0; right: 0; width: ${PAGE_W_MM}mm; height: ${PAGE_H_MM.toFixed(2)}mm; transform-origin: top right; }
-  .cert img { position: absolute; inset: 0; width: 100%; height: 100%; }
-  .stub { position: absolute; top: ${STUB_TOP_MM}mm; right: 0; width: ${PAGE_W_MM}mm; height: ${stubHeightMm}mm; }
-  .stub img { width: 100%; height: 100%; }
+  .sheet img { position: absolute; inset: 0; width: 100%; height: 100%; }
+  .data { transform-origin: top right; }
   .bar { position: sticky; top: 0; z-index: 2; background: #fff; border-bottom: 1px solid #ccc; padding: 6px 10px; display: flex; flex-wrap: wrap; gap: 10px; align-items: center; font-size: 13px; }
   .bar label { display: inline-flex; gap: 4px; align-items: center; }
   .bar input { width: 64px; }
@@ -225,25 +240,22 @@ export async function printWarrantyCertificate(d: WarrantyCertificateData, title
   <label>أفقي <input id="x" type="number" step="0.5" value="${cal.x}"></label>
   <label>رأسي <input id="y" type="number" step="0.5" value="${cal.y}"></label>
   <label>الحجم % <input id="scale" type="number" step="0.5" value="${cal.scale}"></label>
-  <label>كعب الشهادة أفقي <input id="stubX" type="number" step="0.5" value="${cal.stubX}"></label>
-  <label>كعب الشهادة رأسي <input id="stubY" type="number" step="0.5" value="${cal.stubY}"></label>
   <button id="go">طباعة</button>
 </div>
 <div class="sheet">
-  <div class="cert" id="cert"><img class="bg" src="${backgroundUrl}" alt=""><img src="${layer}" alt=""></div>
-  <div class="stub" id="stub"><img src="${stub}" alt=""></div>
+  <img class="bg" src="${paperUrl}" alt="">
+  <img class="data" id="data" src="${layer}" alt="">
 </div>
 <script>
   var KEY = ${JSON.stringify(CALIBRATION_KEY)};
   function num(id) { var v = parseFloat(document.getElementById(id).value); return isNaN(v) ? 0 : v; }
   function apply() {
-    var c = { x: num('x'), y: num('y'), scale: num('scale') || 100, stubX: num('stubX'), stubY: num('stubY') };
-    document.getElementById('cert').style.transform =
+    var c = { x: num('x'), y: num('y'), scale: num('scale') || 100 };
+    document.getElementById('data').style.transform =
       'translate(' + (-c.x) + 'mm,' + c.y + 'mm) scale(' + (c.scale / 100) + ')';
-    document.getElementById('stub').style.transform = 'translate(' + (-c.stubX) + 'mm,' + c.stubY + 'mm)';
     try { window.opener && window.opener.localStorage.setItem(KEY, JSON.stringify(c)); } catch (e) {}
   }
-  ['x', 'y', 'scale', 'stubX', 'stubY'].forEach(function (id) {
+  ['x', 'y', 'scale'].forEach(function (id) {
     document.getElementById(id).addEventListener('input', apply);
   });
   document.getElementById('go').addEventListener('click', function () { window.print(); });
