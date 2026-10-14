@@ -21,7 +21,7 @@ interface FieldBox {
   key: FieldKey;
   left: number;
   right: number;
-  base: number;
+  dots: number;
 }
 
 const IMG_W = 993;
@@ -29,21 +29,23 @@ const IMG_H = 1184;
 const PAGE_W_MM = 210;
 const PAGE_H_MM = (PAGE_W_MM * IMG_H) / IMG_W;
 const FONT_PX = 19;
-const MIN_FONT_PX = 11;
+const MIN_FONT_PX = 10;
+const LIFT_PX = 3;
+const PRINT_SCALE = 4;
 const FONT_FAMILY = '"Cairo Variable", Cairo, "Segoe UI", Tahoma, sans-serif';
 
 const FIELDS: FieldBox[] = [
-  { key: 'certificateNumber', left: 470, right: 817, base: 407 },
-  { key: 'date', left: 52, right: 280, base: 407 },
-  { key: 'ownerName', left: 466, right: 830, base: 453 },
-  { key: 'ownerPhone', left: 52, right: 349, base: 453 },
-  { key: 'address', left: 52, right: 857, base: 498 },
-  { key: 'technicianName', left: 467, right: 813, base: 544 },
-  { key: 'technicianPhone', left: 52, right: 337, base: 544 },
-  { key: 'trader', left: 465, right: 766, base: 590 },
-  { key: 'rep', left: 52, right: 264, base: 590 },
-  { key: 'description', left: 464, right: 789, base: 636 },
-  { key: 'products', left: 52, right: 260, base: 636 },
+  { key: 'certificateNumber', left: 470, right: 824, dots: 405 },
+  { key: 'date', left: 52, right: 298, dots: 405 },
+  { key: 'ownerName', left: 466, right: 826, dots: 450 },
+  { key: 'ownerPhone', left: 50, right: 352, dots: 450 },
+  { key: 'address', left: 54, right: 866, dots: 497 },
+  { key: 'technicianName', left: 468, right: 828, dots: 543 },
+  { key: 'technicianPhone', left: 50, right: 338, dots: 543 },
+  { key: 'trader', left: 466, right: 766, dots: 589 },
+  { key: 'rep', left: 50, right: 278, dots: 589 },
+  { key: 'description', left: 464, right: 806, dots: 635 },
+  { key: 'products', left: 53, right: 276, dots: 635 },
 ];
 
 let measureCtx: CanvasRenderingContext2D | null = null;
@@ -94,51 +96,6 @@ async function ensureFont(): Promise<void> {
   }
 }
 
-export async function printWarrantyCertificate(d: WarrantyCertificateData, title: string): Promise<void> {
-  const win = window.open('', '_blank', 'width=900,height=1000');
-  if (!win) return;
-  await ensureFont();
-  const backgroundUrl = await background();
-  const v = values(d);
-  const mm = PAGE_W_MM / IMG_W;
-  const fields = FIELDS.map((f) => {
-    const text = v[f.key];
-    if (!text) return '';
-    const width = f.right - f.left;
-    const size = fontPx(text, width);
-    const top = f.base - size * 1.27;
-    return `<div class="f" style="left:${(f.left * mm).toFixed(2)}mm;top:${(top * mm).toFixed(2)}mm;`
-      + `width:${(width * mm).toFixed(2)}mm;font-size:${(size * mm).toFixed(2)}mm">${esc(text)}</div>`;
-  }).join('');
-  const html = `<!DOCTYPE html><html dir="rtl" lang="ar"><head><meta charset="utf-8">
-<title>${esc(title)}</title>
-<link href="https://fonts.googleapis.com/css2?family=Cairo:wght@700&display=swap" rel="stylesheet">
-<style>
-  @page { size: A4; margin: 0; }
-  * { box-sizing: border-box; }
-  html, body { margin: 0; padding: 0; background: #888; }
-  body { font-family: ${FONT_FAMILY}; color: #000; }
-  .page { position: relative; width: ${PAGE_W_MM}mm; height: ${PAGE_H_MM.toFixed(2)}mm; margin: 0 auto; background: #fff; overflow: hidden; }
-  .bg { position: absolute; inset: 0; width: 100%; height: 100%; }
-  .f { position: absolute; font-weight: 700; line-height: 1.6; text-align: right; white-space: nowrap; overflow: hidden; unicode-bidi: plaintext; }
-  @media print {
-    html, body { background: #fff; }
-    .page { margin: 0; }
-    .bg { display: none; }
-  }
-</style></head>
-<body><div class="page"><img class="bg" src="${backgroundUrl}" alt="">${fields}</div>
-<script>
-  window.onload = function () {
-    var go = function () { window.print(); };
-    if (document.fonts && document.fonts.ready) document.fonts.ready.then(go); else go();
-  };
-</script>
-</body></html>`;
-  win.document.write(html);
-  win.document.close();
-}
-
 function loadImage(src: string): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
     const img = new Image();
@@ -148,18 +105,22 @@ function loadImage(src: string): Promise<HTMLImageElement> {
   });
 }
 
-async function renderCanvas(d: WarrantyCertificateData, scale: number): Promise<HTMLCanvasElement> {
+async function renderCanvas(
+  d: WarrantyCertificateData, scale: number, withBackground: boolean,
+): Promise<HTMLCanvasElement> {
   await ensureFont();
-  const img = await loadImage(await background());
   const canvas = document.createElement('canvas');
   canvas.width = IMG_W * scale;
   canvas.height = IMG_H * scale;
   const ctx = canvas.getContext('2d');
   if (!ctx) throw new Error('canvas');
-  ctx.fillStyle = '#fff';
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
-  ctx.imageSmoothingQuality = 'high';
-  ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+  if (withBackground) {
+    const img = await loadImage(await background());
+    ctx.fillStyle = '#fff';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.imageSmoothingQuality = 'high';
+    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+  }
   ctx.fillStyle = '#000';
   ctx.direction = 'rtl';
   ctx.textAlign = 'right';
@@ -168,11 +129,45 @@ async function renderCanvas(d: WarrantyCertificateData, scale: number): Promise<
   FIELDS.forEach((f) => {
     const text = v[f.key];
     if (!text) return;
-    const size = fontPx(text, f.right - f.left);
+    const width = f.right - f.left;
+    const size = fontPx(text, width);
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(f.left * scale, (f.dots - 40) * scale, width * scale, 44 * scale);
+    ctx.clip();
     ctx.font = `700 ${size * scale}px ${FONT_FAMILY}`;
-    ctx.fillText(text, f.right * scale, (f.base - size * 0.1) * scale, (f.right - f.left) * scale);
+    ctx.fillText(text, f.right * scale, (f.dots - LIFT_PX) * scale, width * scale);
+    ctx.restore();
   });
   return canvas;
+}
+
+export async function printWarrantyCertificate(d: WarrantyCertificateData, title: string): Promise<void> {
+  const win = window.open('', '_blank', 'width=900,height=1000');
+  if (!win) return;
+  const backgroundUrl = await background();
+  const layer = (await renderCanvas(d, PRINT_SCALE, false)).toDataURL('image/png');
+  const html = `<!DOCTYPE html><html dir="rtl" lang="ar"><head><meta charset="utf-8">
+<title>${esc(title)}</title>
+<style>
+  @page { size: A4; margin: 0; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; background: #888; }
+  .page { position: relative; width: ${PAGE_W_MM}mm; height: ${PAGE_H_MM.toFixed(2)}mm; margin: 0 auto; background: #fff; overflow: hidden; }
+  .page img { position: absolute; inset: 0; width: 100%; height: 100%; }
+  @media print {
+    html, body { background: #fff; }
+    .page { margin: 0; }
+    .bg { display: none; }
+  }
+</style></head>
+<body><div class="page"><img class="bg" src="${backgroundUrl}" alt=""><img src="${layer}" alt=""></div>
+<script>
+  window.onload = function () { window.print(); };
+</script>
+</body></html>`;
+  win.document.write(html);
+  win.document.close();
 }
 
 function dataUrlBytes(url: string): Uint8Array {
@@ -221,7 +216,7 @@ function buildPdf(jpeg: Uint8Array, pxW: number, pxH: number): Blob {
 }
 
 export async function exportWarrantyCertificatePdf(d: WarrantyCertificateData, fileName: string): Promise<void> {
-  const canvas = await renderCanvas(d, 2);
+  const canvas = await renderCanvas(d, 2, true);
   const jpeg = dataUrlBytes(canvas.toDataURL('image/jpeg', 0.9));
   const blob = buildPdf(jpeg, canvas.width, canvas.height);
   const url = URL.createObjectURL(blob);
