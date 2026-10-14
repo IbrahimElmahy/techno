@@ -28,7 +28,9 @@ import { useLookup } from '../hooks/useLookup';
 import CouponStatsOverview from '../components/CouponStatsOverview';
 import { useLiveRefresh } from '../utils/live';
 import { useDocRoute } from '../components/useDocRoute';
-import CouponReceiptEdit, { receiverOptionsOf } from './CouponReceiptEdit';
+import CouponReceiptEdit, {
+  receiverOptionsOf, receiverSideLabel, receiverSideOf,
+} from './CouponReceiptEdit';
 
 type Status = 'valid' | 'unknown' | 'received' | 'checking' | 'pending'
   | 'wrong_kind' | 'ambiguous';
@@ -302,6 +304,22 @@ export default function CouponReceipts() {
 
   const customerName = (id: number | null) =>
     customers.find((c) => c.id === id)?.name ?? (id ? `عميل #${id}` : '-');
+
+  const partyTypeOf = (id?: number | null) => (id == null ? undefined
+    : customers.find((c) => c.id === id)?.customer_type);
+
+  const pickCustomer = (id?: number) => {
+    setCustomerId(id);
+    const side = receiverSideOf(partyTypeOf(id));
+    if (side) setCustomerType(side);
+  };
+
+  const receiverKindOf = (r: Receipt) => {
+    const partyType = partyTypeOf(r.customer_id);
+    if (receiverSideOf(partyType)) return receiverSideLabel(partyType);
+    if (partyType) return customerTypeLabel(partyType);
+    return r.customer_type ? receiverSideLabel(r.customer_type) : null;
+  };
 
   const receiverOf = (r: Receipt) => (r.customer_id || !r.receiver_note
     ? customerName(r.customer_id)
@@ -668,7 +686,7 @@ export default function CouponReceipts() {
             allowClear showSearch style={{ width: '100%' }}
             placeholder="الاستلام من"
             status={!customerId ? 'warning' : undefined}
-            value={customerId} onChange={setCustomerId}
+            value={customerId} onChange={pickCustomer}
             options={receiverOptions}
             notFoundContent="لا يوجد عميل بهذا الاسم" filterOption={searchFilter} filterSort={searchRank}/>
         </Col>
@@ -812,10 +830,8 @@ export default function CouponReceipts() {
         </Descriptions.Item>
         <Descriptions.Item label="مُستلَم من">
           {receiverOf(detail)}
-          {detail.customer_type ? (
-            <Tag style={{ marginInlineStart: 6 }}>
-              {detail.customer_type === 'plumber' ? 'سباك' : 'تاجر'}
-            </Tag>
+          {receiverKindOf(detail) ? (
+            <Tag style={{ marginInlineStart: 6 }}>{receiverKindOf(detail)}</Tag>
           ) : null}
         </Descriptions.Item>
         <Descriptions.Item label="فئة الكوبون">{kindTags(detail)}</Descriptions.Item>

@@ -37,6 +37,25 @@ def _require_party(db: Session, customer_id: int | None) -> None:
             "العميل المختار غير موجود في النظام — اختر الفني أو التاجر من القائمة بعد المزامنة.")
 
 
+RECEIVER_SIDES = {"plumber": "plumber", "trader": "merchant"}
+
+
+def receiver_side_of(party_type, given: str | None = None) -> str | None:
+    ctype = str(getattr(party_type, "value", party_type) or "")
+    side = RECEIVER_SIDES.get(ctype)
+    if side:
+        return side
+    given = (given or "").strip() or None
+    return RECEIVER_SIDES.get(given, given)
+
+
+def receiver_kind(db: Session, customer_id: int | None, given: str | None) -> str | None:
+    from src.models.customer import Customer
+
+    party = db.get(Customer, customer_id) if customer_id else None
+    return receiver_side_of(party.customer_type if party is not None else None, given)
+
+
 def _as_int(value) -> int | None:
     try:
         text = str(value).strip()
@@ -452,6 +471,7 @@ def create_receipt(
             notes = f"الفني: {owner.name}" + (chr(10) + notes if notes else "")
             customer_id = None
     _require_party(db, customer_id)
+    customer_type = receiver_kind(db, customer_id, customer_type)
     fallback_kind = (coupon_kind or "").strip() or (declared_kind or "").strip() or None
     pairs: list[tuple[str, str | None]] = []
     for item in lines or []:
@@ -632,8 +652,9 @@ def update_receipt(
     receipt.notes = notes
     if declared_value is not None:
         receipt.declared_value = declared_value
-    if customer_type is not None:
-        receipt.customer_type = customer_type
+    receipt.customer_type = receiver_kind(
+        db, receipt.customer_id,
+        customer_type if customer_type is not None else receipt.customer_type)
     db.flush()
     db.refresh(receipt)
     audit_service.record(

@@ -29,7 +29,8 @@ def main() -> None:
             continue
         before = {"customer_id": None, "customer_type": r.customer_type, "notes": r.notes}
         r.customer_id = hit["id"]
-        r.customer_type = hit["customer_type"]
+        r.customer_type = coupon_receipt_service.receiver_side_of(
+            hit["customer_type"], r.customer_type)
         r.notes = coupon_receipt_service.strip_receiver_note(r.notes)
         audit_service.record(db, action="coupon_receipt.link_receiver", actor_user_id=None,
                              entity_type="coupon_receipt", entity_id=r.id, before=before,

@@ -16,6 +16,7 @@ from src.models.customer import Customer
 from src.models.org import Branch
 from src.models.user import User
 from src.scripts.wb_profile import ALIAA, WbProfile, dir_from_argv, profile_from_argv
+from src.services import coupon_receipt_service
 
 
 def _read(path: str) -> list[dict[str, str]]:
@@ -77,8 +78,10 @@ def run(folder: str, *, execute: bool, profile: WbProfile = ALIAA) -> None:
         by_id = {c.id: c for c in custs.values()}
 
         def resolve(code: str) -> Customer | None:
-            c = (custs.get(code) or custs.get(profile.trader_prefix + code)
-                 or custs.get(profile.trader_alias.get(code, "")))
+            return follow(custs.get(code) or custs.get(profile.trader_prefix + code)
+                          or custs.get(profile.trader_alias.get(code, "")))
+
+        def follow(c: Customer | None) -> Customer | None:
             if c is None or c.active:
                 return c
             mark = "(مدموج في #"
@@ -89,6 +92,17 @@ def run(folder: str, *, execute: bool, profile: WbProfile = ALIAA) -> None:
                 except ValueError:
                     return c
             return c
+
+        def receiver_of(x: dict[str, str]) -> Customer | None:
+            pcode = (x.get("plumber_code") or "").strip()
+            if pcode and pcode != "0":
+                c = follow(custs.get(profile.plumber_prefix + pcode) if pcode.isdigit()
+                           else custs.get(pcode))
+                if c is not None:
+                    return c
+            tech = x.get("plumber_name") or ""
+            hit = coupon_receipt_service.suggest_receiver(db, tech) if tech else None
+            return follow(by_id.get(hit["id"])) if hit else None
 
         def rep_of(val: str, emp: str) -> User | None:
             code = emp_by_code.get(emp) or emp_by_uid.get(val)
@@ -155,6 +169,11 @@ def run(folder: str, *, execute: bool, profile: WbProfile = ALIAA) -> None:
                       if len({value_of(x) for x in v if value_of(x)}) > 1)
         print(f"   {'استلام بأكتر من فئة (بلا إقرار)':<38}{mixed_k:>7}")
         print(f"   {'استلام بأكتر من قيمة (بلا إقرار)':<38}{mixed_v:>7}")
+        sides = Counter(
+            coupon_receipt_service.receiver_side_of(p.customer_type) if p else "بلا حساب"
+            for p in (receiver_of(v[0]) for v in new_r.values()))
+        print(f"   {'المستلم منه حسب نوع الحساب':<38}"
+              + " · ".join(f"{k}: {n}" for k, n in sides.most_common()))
         if not execute:
             print("\nعرض فقط — مافيش حاجة اتكتبت. أضف --yes للتنفيذ.")
             return
@@ -185,12 +204,15 @@ def run(folder: str, *, execute: bool, profile: WbProfile = ALIAA) -> None:
             first = lines[0]
             rep = rep_of(first.get("rep_recv_emp", ""), first.get("rep_recv_emp", ""))
             tech = first.get("plumber_name") or ""
+            party = receiver_of(first)
             doc = CouponReceipt(
                 document_number=profile.receipt_prefix + rcode[:18], branch_id=branch.id,
-                customer_id=None, rep_user_id=rep.id if rep else None,
+                customer_id=party.id if party else None, rep_user_id=rep.id if rep else None,
                 received_date=_date(first.get("recv_date", "")),
                 coupon_count=len(lines),
-                notes=(f"الفني: {tech}" if tech else None),
+                notes=(None if party else f"الفني: {tech}" if tech else None),
+                customer_type=(coupon_receipt_service.receiver_side_of(party.customer_type)
+                               if party else None),
                 declared_kind=(next(iter(kinds)) if len(kinds) == 1 else None),
                 declared_value=(_money(next(iter(vals))) if len(vals) == 1 else None),
                 actor_user_id=admin.id)

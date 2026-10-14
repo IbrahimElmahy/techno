@@ -82,6 +82,15 @@ const BAD: LineStatus[] = ['unknown', 'received', 'wrong_kind', 'ambiguous', 'du
 
 const sideOf = (t?: string | null) => (t === 'plumber' ? 'plumber' : 'merchant');
 
+export const receiverSideOf = (t?: unknown): string | null => {
+  const key = String(t ?? '');
+  if (key === 'plumber') return 'plumber';
+  if (key === 'trader' || key === 'merchant') return 'merchant';
+  return null;
+};
+
+export const receiverSideLabel = (t?: unknown) => (receiverSideOf(t) === 'plumber' ? 'سباك' : 'تاجر');
+
 export function receiverOptionsOf(
   customers: any[], customerType: string, typeLabel: (t: unknown) => string,
 ) {
@@ -152,8 +161,8 @@ export default function CouponReceiptEdit({
           savedValue: l.value != null ? Number(l.value) : null,
         })));
         setCustomerId(party?.id ?? undefined);
-        setCustomerType(r.customer_type ? sideOf(r.customer_type)
-          : party ? sideOf(party.customer_type) : 'plumber');
+        setCustomerType(receiverSideOf(party?.customer_type)
+          ?? (r.customer_type ? sideOf(r.customer_type) : 'plumber'));
         setRepId(r.rep_user_id ?? undefined);
         setReceivedDate(r.received_date ? dayjs(r.received_date) : null);
         setValue(r.declared_value != null ? Number(r.declared_value) : null);
@@ -194,6 +203,24 @@ export default function CouponReceiptEdit({
     }
     return opts;
   }, [customers, customerType, customerTypeLabel, data]);
+
+  const partyType = (id?: number) => {
+    const known = data?.receiver ?? data?.receiver_suggestion;
+    if (id != null && known?.id === id) return known.customer_type;
+    return customers.find((c) => c.id === id)?.customer_type;
+  };
+
+  const pickCustomer = (id?: number) => {
+    setCustomerId(id);
+    const side = receiverSideOf(partyType(id));
+    if (side) setCustomerType(side);
+  };
+
+  const pickType = (t: string) => {
+    setCustomerType(t);
+    const side = receiverSideOf(partyType(customerId));
+    if (side && side !== t) setCustomerId(undefined);
+  };
 
   const repChoices = useMemo(() => {
     const opts = repOptions(reps, repId);
@@ -495,7 +522,7 @@ export default function CouponReceiptEdit({
               <div style={{ marginBottom: 4, fontWeight: 600 }}>نوع المستلم</div>
               <Segmented
                 block value={customerType}
-                onChange={(v) => setCustomerType(String(v))}
+                onChange={(v) => pickType(String(v))}
                 options={[
                   { value: 'plumber', label: 'استلام من سباك' },
                   { value: 'merchant', label: 'استلام من تاجر' },
@@ -507,7 +534,7 @@ export default function CouponReceiptEdit({
               <Select
                 showSearch style={{ width: '100%' }} placeholder="الاستلام من"
                 status={!customerId ? 'warning' : undefined}
-                value={customerId} onChange={setCustomerId}
+                value={customerId} onChange={pickCustomer}
                 options={receiverOptions}
                 notFoundContent="لا يوجد عميل بهذا الاسم"
                 filterOption={searchFilter} filterSort={searchRank} />
