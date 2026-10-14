@@ -60,6 +60,7 @@ export interface JournalEntry {
   payment_state: 'not_paid' | 'partial' | 'paid' | null;
   payment_state_label: string | null;
   residual: string | null;
+  manual?: boolean;
 }
 
 export interface TrialRow {

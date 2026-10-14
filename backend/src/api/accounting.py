@@ -202,6 +202,7 @@ class JournalEntryOut(BaseModel):
     partner_id: int | None = None
     partner_name: str | None = None
     due_date: date | None = None
+    manual: bool = True
     payment_state: str | None = None
     payment_state_label: str | None = None
     residual: Decimal | None = None
@@ -451,9 +452,7 @@ def list_journal_entries(
     db: Session = Depends(get_db),
 ) -> list[JournalEntryOut]:
     stmt = branch_scope.scope(
-        select(LedgerEntry).where(
-            LedgerEntry.entry_type.in_(["journal", "opening_balance", "reversal"])
-        ),
+        select(LedgerEntry).where(journal_service.manual_entry_sql()),
         LedgerEntry, current,
     )
     if journal_id is not None:
@@ -503,7 +502,9 @@ def get_journal_entry(
     entry = db.get(LedgerEntry, entry_id)
     if entry is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, {"code": "not_found", "message": "Entry not found"})
-    return _entry_out(entry, _partner_names(db, [entry]))
+    out = _entry_out(entry, _partner_names(db, [entry]))
+    out.manual = journal_service.is_manual(db, entry)
+    return out
 
 
 @router.post("/journal-entries", response_model=JournalEntryOut, status_code=status.HTTP_201_CREATED)
@@ -571,6 +572,62 @@ def update_journal_entry(
                             {"code": "journal_invalid", "message": str(exc)})
     db.commit()
     return _entry_out(entry, _partner_names(db, [entry]))
+
+
+@router.put("/journal-entries/{entry_id}", response_model=JournalEntryOut)
+def replace_journal_entry(
+    entry_id: int,
+    body: JournalEntryCreate,
+    current: CurrentUser = Depends(require_capability(CAP_ACCOUNTING_JOURNAL_REVERSE)),
+    db: Session = Depends(get_db),
+) -> JournalEntryOut:
+    existing = db.get(LedgerEntry, entry_id)
+    if existing is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND,
+                            {"code": "not_found", "message": "القيد غير موجود"})
+    _ensure_accounting_branch(current, existing.branch_id)
+    branch_id = body.branch_id if body.branch_id is not None else existing.branch_id
+    _ensure_accounting_branch(current, branch_id)
+    try:
+        entry = journal_service.replace_entry(
+            db, entry_id=entry_id, actor_user_id=current.id,
+            entry_date=body.date, description=body.description,
+            branch_id=branch_id, journal_id=body.journal_id,
+            partner_kind=body.partner_kind, partner_id=body.partner_id,
+            invoice_date_due=body.due_date,
+            lines=[
+                JournalLineInput(l.account_id, l.direction, l.amount, l.statement,
+                                 l.cost_center_id, l.partner_kind, l.partner_id,
+                                 l.cost_center_distribution)
+                for l in body.lines
+            ],
+        )
+    except JournalError as exc:
+        db.rollback()
+        raise HTTPException(status.HTTP_409_CONFLICT,
+                            {"code": "journal_conflict", "message": str(exc)})
+    db.commit()
+    return _entry_out(entry, _partner_names(db, [entry]))
+
+
+@router.delete("/journal-entries/{entry_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_journal_entry(
+    entry_id: int,
+    current: CurrentUser = Depends(require_capability(CAP_ACCOUNTING_JOURNAL_REVERSE)),
+    db: Session = Depends(get_db),
+) -> None:
+    existing = db.get(LedgerEntry, entry_id)
+    if existing is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND,
+                            {"code": "not_found", "message": "القيد غير موجود"})
+    _ensure_accounting_branch(current, existing.branch_id)
+    try:
+        journal_service.delete_entry(db, entry_id=entry_id, actor_user_id=current.id)
+    except JournalError as exc:
+        db.rollback()
+        raise HTTPException(status.HTTP_409_CONFLICT,
+                            {"code": "journal_conflict", "message": str(exc)})
+    db.commit()
 
 
 @router.post("/journal-entries/{entry_id}/post", response_model=JournalEntryOut)

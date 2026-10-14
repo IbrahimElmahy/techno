@@ -169,6 +169,7 @@ export const NAVIGATION: (NavGroup | NavScreen)[] = [
           { key: '/vouchers?tab=expense', label: 'سند مصروف', roles: R(BOOKS) },
           { key: '/vouchers?tab=handover', label: 'توريد مندوب', roles: R(BOOKS) },
           { key: '/vouchers?tab=transfer', label: 'تحويل بين الخزن', roles: R(BOOKS) },
+          { key: '/general-ledger?tab=journal', label: 'القيود اليدوية', roles: R(BOOKS), a5: '/entries' },
           { key: '/vouchers?tab=treasury-movement', label: 'حركة الخزينة', roles: R(BOOKS) },
           { key: '/treasury', label: 'حركة خزينه', roles: R(BOOKS), a5: '/draweraction' },
           { key: '/vouchers?tab=statement', label: 'كشف حساب السندات', roles: R(BOOKS) },

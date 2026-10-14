@@ -2,7 +2,8 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { PAGE_SIZE, PAGE_SIZE_OPTIONS } from '../../utils/pagination';
 import { searchFilter, searchRank } from '../../utils/arabicSort';
 import {
-  Button, Card, Col, DatePicker, Divider, Empty, Form, Input, Row, Select, Space, Switch, Tabs, Tag, Tooltip, message, Radio,
+  Button, Card, Col, DatePicker, Descriptions, Divider, Empty, Form, Input, Modal, Row, Select, Space, Switch, Tabs, Tag, Tooltip, message, Radio,
+  Table as AntTable,
 } from 'antd';
 import { FilterTable as Table } from '../../components/FilterTable';
 import { Statistic } from '../../components/Statistic';
@@ -11,7 +12,7 @@ import {
   PlusOutlined, RollbackOutlined, BookOutlined, FileAddOutlined, BankOutlined,
   ReloadOutlined, SearchOutlined, DownloadOutlined, PrinterOutlined,
   ProfileOutlined, CheckCircleOutlined, EditOutlined, StopOutlined, LinkOutlined,
-  SafetyCertificateOutlined,
+  SafetyCertificateOutlined, EyeOutlined, DeleteOutlined, ExclamationCircleOutlined,
 } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import { useNavigate, useSearchParams } from 'react-router-dom';
@@ -19,6 +20,7 @@ import GroupedTable from '../../components/GroupedTable';
 import CostCenterSplit from '../../components/CostCenterSplit';
 import { api } from '../../api/client';
 import DocumentHistoryButton from '../../components/DocumentHistory';
+import { useAuth } from '../../components/AuthProvider';
 import { useQueryTab } from '../../components/useQueryTab';
 import {
   APPEARS_IN_LABEL, CostCenter, MAIN_LEVELS, NATURE_COLOR, NATURE_LABEL, egp,
@@ -49,7 +51,11 @@ const PARTNER_KINDS = [
 
 export default function JournalTab() {
   const navigate = useNavigate();
+  const { can } = useAuth();
+  const canPost = can('accounting.journal.post');
+  const canFix = can('accounting.journal.reverse');
   const [entries, setEntries] = useState<JournalEntry[]>([]);
+  const [viewing, setViewing] = useState<JournalEntry | null>(null);
   const [journals, setJournals] = useState<Journal[]>([]);
   const [editing, setEditing] = useState<JournalEntry | null>(null);
   const [leaves, setLeaves] = useState<Account[]>([]);
@@ -138,7 +144,7 @@ export default function JournalTab() {
     setDrawer(true);
   };
 
-  const openDraft = (e: JournalEntry) => {
+  const openEdit = (e: JournalEntry) => {
     setEditing(e);
     form.setFieldsValue({
       date: e.date ? dayjs(e.date) : dayjs(),
@@ -183,7 +189,11 @@ export default function JournalTab() {
       })),
     };
     try {
-      if (editing) {
+      if (editing && editing.state !== 'draft') {
+        await api.put(`/api/v1/journal-entries/${editing.id}`, payload);
+        if (files.length) await uploadFiles('ledger_entry', editing.id, files);
+        message.success(`تم تعديل القيد ${editing.number ?? ''}`);
+      } else if (editing) {
         await api.patch(`/api/v1/journal-entries/${editing.id}`, payload);
         if (!asDraft) await api.post(`/api/v1/journal-entries/${editing.id}/post`);
         if (files.length) await uploadFiles('ledger_entry', editing.id, files);
@@ -209,15 +219,22 @@ export default function JournalTab() {
     } catch (err) { console.error(err); }
   };
 
-  const handleResetDraft = (r: JournalEntry) => {
-    showReversalConfirm({
-      title: 'إعادة القيد إلى مسودة',
-      content: `القيد ${r.number ?? `#${r.id}`} سيخرج من الحسابات وجميع التقارير، وسيظل رقمه محجوزاً `
-        + 'له. هل تريد المتابعة؟',
+  const handleDelete = (r: JournalEntry) => {
+    const reversed = entries.some((e) => e.reverses_entry_id === r.id);
+    Modal.confirm({
+      title: 'تأكيد حذف القيد',
+      icon: <ExclamationCircleOutlined style={{ color: '#ff4d4f' }} />,
+      content: `هل أنت متأكد من حذف القيد ${r.number ?? `#${r.id}`}؟ سيُحذف نهائياً من الحسابات وجميع التقارير`
+        + (reversed ? ' ومعه القيد العكسي الخاص به.' : '.'),
+      okText: 'نعم، احذف',
+      okType: 'danger',
+      cancelText: 'إلغاء',
       onOk: async () => {
         try {
-          await api.post(`/api/v1/journal-entries/${r.id}/reset-to-draft`);
-          message.success('تمت إعادة القيد إلى مسودة'); load();
+          await api.delete(`/api/v1/journal-entries/${r.id}`);
+          message.success('تم حذف القيد');
+          setEntries((prev) => prev.filter((e) => e.id !== r.id && e.reverses_entry_id !== r.id));
+          if (viewing?.id === r.id) setViewing(null);
         } catch (err) { console.error(err); }
       },
     });
@@ -322,7 +339,8 @@ export default function JournalTab() {
     { title: 'رقم القيد', dataIndex: 'number', key: 'number', width: 140,
       ...textColumn(entries, (e: JournalEntry) => e.number ?? ''),
       render: (n: string | null, r: JournalEntry) =>
-        (n ? <Tag color="blue">{n}</Tag> : <Tag>#{r.id} — مسودة</Tag>) },
+        (n ? <Tag color="blue">{n}</Tag>
+          : <Tag>#{r.id}{(r.state ?? 'posted') === 'draft' ? ' — مسودة' : ''}</Tag>) },
     { title: 'الدفتر', dataIndex: 'journal_name', key: 'journal_name', width: 130,
       ...textColumn(entries, (e: JournalEntry) => e.journal_name ?? ''),
       render: (n: string | null) => (n ? <Tag color="purple">{n}</Tag> : '-') },
@@ -385,47 +403,59 @@ export default function JournalTab() {
     { title: 'الإجمالي', dataIndex: 'total', key: 'total', width: 120,
       ...numberColumn<JournalEntry>((e: any) => e.total),
       render: (t: string) => <strong>{egp(t)}</strong> },
-    { title: '', key: 'actions', width: 260,
+    { title: 'الإجراءات', key: 'actions', width: 230,
       render: (_: any, r: JournalEntry) => {
         const state = r.state ?? 'posted';
-        const history = (
-          <>
+        const manual = r.manual !== false;
+        const reversed = entries.some((e) => e.reverses_entry_id === r.id);
+        const editable = manual && state !== 'cancelled' && !r.reverses_entry_id && !reversed
+          && (state === 'draft' ? canPost : canFix);
+        return (
+          <Space size={2} onClick={(e) => e.stopPropagation()}>
+            <Tooltip title="عرض">
+              <Button type="text" size="small" icon={<EyeOutlined />} onClick={() => setViewing(r)} />
+            </Tooltip>
+            {editable && (
+              <Tooltip title="تعديل">
+                <Button type="text" size="small" icon={<EditOutlined />} onClick={() => openEdit(r)} />
+              </Tooltip>
+            )}
+            {state === 'draft' && canPost && (
+              <Tooltip title="ترحيل">
+                <Button type="text" size="small" icon={<CheckCircleOutlined />}
+                  onClick={() => handlePostDraft(r)} />
+              </Tooltip>
+            )}
+            {state === 'posted' && !r.reverses_entry_id && !reversed && canFix && (
+              <Tooltip title="عكس">
+                <Button type="text" size="small" icon={<RollbackOutlined />}
+                  onClick={() => handleReverse(r)} />
+              </Tooltip>
+            )}
+            {state === 'draft' && canFix && (
+              <Tooltip title="إلغاء">
+                <Button type="text" size="small" icon={<StopOutlined />}
+                  onClick={() => handleCancel(r)} />
+              </Tooltip>
+            )}
+            {state === 'posted' && r.partner_id && r.partner_kind && (
+              <Tooltip title="تسوية">
+                <Button type="text" size="small" icon={<LinkOutlined />}
+                  onClick={() => navigate(
+                    `/reconciliation?kind=${r.partner_kind}&partner=${r.partner_id}`)} />
+              </Tooltip>
+            )}
+            {manual && canFix && (
+              <Tooltip title="حذف">
+                <Button type="text" size="small" danger icon={<DeleteOutlined />}
+                  onClick={() => handleDelete(r)} />
+              </Tooltip>
+            )}
             <DocumentHistoryButton iconOnly entityType="journal_entry" entityId={r.id}
               documentNumber={r.number} />
             <AttachmentsButton docType="ledger_entry" docId={r.id} />
-          </>
-        );
-        if (state === 'cancelled') return <Space size={4}>{history}<Tag>ملغي</Tag></Space>;
-        if (state === 'draft') {
-          return (
-            <Space size={0}>
-              {history}
-              <Button type="link" icon={<EditOutlined />} onClick={() => openDraft(r)}>تعديل</Button>
-              <Button type="link" icon={<CheckCircleOutlined />}
-                onClick={() => handlePostDraft(r)}>ترحيل</Button>
-              <Button type="link" danger icon={<StopOutlined />}
-                onClick={() => handleCancel(r)}>إلغاء</Button>
-            </Space>
-          );
-        }
-        const reversed = entries.some((e) => e.reverses_entry_id === r.id);
-        return (
-          <Space size={0}>
-            {history}
-            {r.partner_id && r.partner_kind && (
-              <Button type="link" icon={<LinkOutlined />}
-                onClick={() => navigate(
-                  `/reconciliation?kind=${r.partner_kind}&partner=${r.partner_id}`)}>
-                تسوية
-              </Button>
-            )}
-            {!r.reverses_entry_id && !reversed && (
-              <Button type="link" danger icon={<RollbackOutlined />}
-                onClick={() => handleReverse(r)}>عكس</Button>
-            )}
             {reversed && <Tag color="red">معكوس</Tag>}
-            <Button type="link" icon={<RollbackOutlined />}
-              onClick={() => handleResetDraft(r)}>إعادة إلى مسودة</Button>
+            {state === 'cancelled' && <Tag>ملغي</Tag>}
           </Space>
         );
       } },
@@ -480,7 +510,7 @@ export default function JournalTab() {
 
   return (
     <Card
-      title="قيود اليومية (دفتر الأستاذ الموحد)"
+      title="سجل القيود"
       extra={
         <Space>
           {!full && (
@@ -491,7 +521,7 @@ export default function JournalTab() {
           <Button icon={<DownloadOutlined />} onClick={exportJournal}>تصدير CSV</Button>
           <Button icon={<PrinterOutlined />} onClick={printJournal}>طباعة</Button>
           <Button icon={<BankOutlined />} onClick={() => setOpeningDrawer(true)}>أرصدة افتتاحية</Button>
-          <Button type="primary" icon={<PlusOutlined />} onClick={openNew}>قيد جديد</Button>
+          {canPost && <Button type="primary" icon={<PlusOutlined />} onClick={openNew}>قيد جديد</Button>}
         </Space>
       }
     >
@@ -512,7 +542,7 @@ export default function JournalTab() {
         ]}
         filters={[
           { key: 'entry_type', placeholder: 'نوع القيد', span: 4,
-            options: Object.entries(TYPE_LABEL).map(([v, m]) => ({ value: v, label: m.t })) },
+            options: Object.keys(TYPE_COLOR).map((v) => ({ value: v, label: entryTypeLabel(v) })) },
           { key: 'branch_id', placeholder: 'الفرع', span: 4,
             options: [{ value: 0, label: 'عام' }, ...branches.map((b) => ({ value: b.id, label: b.name }))] },
           { key: 'journal_id', placeholder: 'الدفتر', span: 4,
@@ -564,7 +594,9 @@ export default function JournalTab() {
       />
 
       <TabModal footer={null} centered
-        title={editing ? `تعديل مسودة ${editing.number ?? `#${editing.id}`}` : 'قيد يومية جديد'}
+        title={editing
+          ? `${editing.state === 'draft' ? 'تعديل مسودة' : 'تعديل القيد'} ${editing.number ?? `#${editing.id}`}`
+          : 'قيد يومية جديد'}
         width={640} open={drawer} onCancel={resetDrawer} destroyOnHidden>
         <Form form={form} layout="vertical" onFinish={onPost} requiredMark={false}
           initialValues={{ date: dayjs() }}>
@@ -681,17 +713,67 @@ export default function JournalTab() {
           </StatsRow>
           <PendingAttachments files={files} onChange={setFiles} />
           <Divider />
-          <Row gutter={8}>
-            <Col span={12}>
-              <Button block onClick={() => submit(true)}>حفظ كمسودة</Button>
-            </Col>
-            <Col span={12}>
-              <Button type="primary" htmlType="submit" block disabled={!balanced}>
-                {balanced ? 'ترحيل القيد' : `غير متوازن — الفرق ${Math.abs(totalDebit - totalCredit).toFixed(2)}`}
-              </Button>
-            </Col>
-          </Row>
+          {editing && editing.state !== 'draft' ? (
+            <Button type="primary" htmlType="submit" block disabled={!balanced}>
+              {balanced ? 'حفظ التعديل' : `غير متوازن — الفرق ${Math.abs(totalDebit - totalCredit).toFixed(2)}`}
+            </Button>
+          ) : (
+            <Row gutter={8}>
+              <Col span={12}>
+                <Button block onClick={() => submit(true)}>حفظ كمسودة</Button>
+              </Col>
+              <Col span={12}>
+                <Button type="primary" htmlType="submit" block disabled={!balanced}>
+                  {balanced ? 'ترحيل القيد' : `غير متوازن — الفرق ${Math.abs(totalDebit - totalCredit).toFixed(2)}`}
+                </Button>
+              </Col>
+            </Row>
+          )}
         </Form>
+      </TabModal>
+
+      <TabModal footer={null} centered width={720} open={!!viewing}
+        title={viewing ? `القيد ${viewing.number ?? `#${viewing.id}`}` : ''}
+        onCancel={() => setViewing(null)} destroyOnHidden>
+        {viewing && (
+          <>
+            <Descriptions size="small" column={2} bordered style={{ marginBottom: 12 }}>
+              <Descriptions.Item label="التاريخ">{viewing.date ?? '-'}</Descriptions.Item>
+              <Descriptions.Item label="الحالة">{STATE_META(viewing.state).t}</Descriptions.Item>
+              <Descriptions.Item label="النوع">{entryTypeLabel(viewing.entry_type)}</Descriptions.Item>
+              <Descriptions.Item label="الفرع">{branchName(viewing.branch_id)}</Descriptions.Item>
+              <Descriptions.Item label="الدفتر">{viewing.journal_name ?? '-'}</Descriptions.Item>
+              <Descriptions.Item label="الطرف">{viewing.partner_name ?? '-'}</Descriptions.Item>
+              <Descriptions.Item label="البيان" span={2}>{viewing.description || '-'}</Descriptions.Item>
+            </Descriptions>
+            <AntTable<JournalLine>
+              size="small" pagination={false}
+              rowKey={(l) => `${l.account_id}-${l.direction}-${l.amount}-${l.statement ?? ''}`}
+              dataSource={viewing.lines}
+              columns={[
+                { title: 'الحساب', key: 'account', render: (_: unknown, l: JournalLine) => acctLabel(l.account_id) },
+                { title: 'مدين', key: 'debit', align: 'left' as const,
+                  render: (_: unknown, l: JournalLine) => (l.direction === 'debit' ? egp(l.amount) : '') },
+                { title: 'دائن', key: 'credit', align: 'left' as const,
+                  render: (_: unknown, l: JournalLine) => (l.direction === 'credit' ? egp(l.amount) : '') },
+                { title: 'بيان السطر', key: 'statement', render: (_: unknown, l: JournalLine) => l.statement || '' },
+              ]}
+              summary={() => (
+                <AntTable.Summary.Row>
+                  <AntTable.Summary.Cell index={0}><strong>الإجمالي</strong></AntTable.Summary.Cell>
+                  <AntTable.Summary.Cell index={1} align="left"><strong>{egp(sideSum([viewing], 'debit'))}</strong></AntTable.Summary.Cell>
+                  <AntTable.Summary.Cell index={2} align="left"><strong>{egp(sideSum([viewing], 'credit'))}</strong></AntTable.Summary.Cell>
+                  <AntTable.Summary.Cell index={3} />
+                </AntTable.Summary.Row>
+              )}
+            />
+            {viewing.manual === false && (
+              <div style={{ marginTop: 10, color: '#8c8c8c' }}>
+                هذا القيد ناتج عن مستند في النظام، ويُعدَّل أو يُحذف من شاشة المستند نفسه.
+              </div>
+            )}
+          </>
+        )}
       </TabModal>
 
       <TabModal footer={null} centered title="تسجيل الأرصدة الافتتاحية" width={560} open={openingDrawer}

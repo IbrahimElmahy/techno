@@ -3,8 +3,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal
+from functools import lru_cache
 
-from sqlalchemy.orm import Session
+from sqlalchemy import exists, or_, select
+from sqlalchemy.orm import Session, aliased
 
 from src.models.ledger import Account, Direction, EntryState, LedgerEntry, PartnerKind
 from src.services import audit_service, chart_service, cost_center_service, ledger_service
@@ -221,3 +223,196 @@ def reverse_entry(db: Session, *, entry_id: int, actor_user_id: int) -> LedgerEn
         entity_id=reversal.id, after={"reverses_entry_id": entry_id},
     )
     return reversal
+
+
+MANUAL_ENTRY_TYPES = ("journal", "opening_balance", "reversal")
+
+_DOC_LABEL = {
+    "invoice": "فاتورة بيع",
+    "return": "مرتجع بيع",
+    "purchase": "فاتورة شراء",
+    "purchase_return": "مرتجع شراء",
+    "voucher": "سند",
+}
+
+
+@lru_cache(maxsize=1)
+def _entry_refs() -> tuple:
+    import src.models  # noqa: F401
+    from src.core.db import Base
+
+    refs = []
+    for _, table in sorted(Base.metadata.tables.items()):
+        if table.name in ("ledger_entry", "ledger_line"):
+            continue
+        for col in table.columns:
+            if any(fk.target_fullname == "ledger_entry.id" for fk in col.foreign_keys):
+                refs.append(col)
+    payroll = Base.metadata.tables.get("payroll_remittance")
+    if payroll is not None and "payment_entry_id" in payroll.c:
+        col = payroll.c.payment_entry_id
+        if col not in refs:
+            refs.append(col)
+    return tuple(refs)
+
+
+def _linked(target_id):
+    return or_(*[exists().where(col == target_id) for col in _entry_refs()])
+
+
+def manual_entry_sql():
+    original = aliased(LedgerEntry)
+    return (
+        LedgerEntry.entry_type.in_(MANUAL_ENTRY_TYPES)
+        & ~_linked(LedgerEntry.id)
+        & ~exists(
+            select(original.id).where(
+                original.id == LedgerEntry.reverses_entry_id,
+                original.entry_type.not_in(MANUAL_ENTRY_TYPES) | _linked(original.id))
+        )
+    )
+
+
+def is_manual(db: Session, entry: LedgerEntry) -> bool:
+    return db.scalar(
+        select(LedgerEntry.id).where(LedgerEntry.id == entry.id, manual_entry_sql())
+    ) is not None
+
+
+def assert_manual(db: Session, entry: LedgerEntry) -> None:
+    if is_manual(db, entry):
+        return
+    from src.services import document_resolver
+
+    doc = document_resolver.resolve_entry(db, entry.id)
+    if doc is None and entry.reverses_entry_id:
+        doc = document_resolver.resolve_entry(db, entry.reverses_entry_id)
+    if doc is not None:
+        label = _DOC_LABEL.get(doc["kind"], "مستند")
+        number = doc.get("document_number") or doc["id"]
+        raise JournalError(
+            f"هذا القيد ناتج عن {label} رقم {number} — عدّله أو احذفه من شاشة المستند نفسه.")
+    raise JournalError(
+        "هذا القيد ناتج عن مستند في النظام وليس قيداً يدوياً — عدّله أو احذفه من شاشة المستند نفسه.")
+
+
+def _snapshot(entry: LedgerEntry) -> dict:
+    return {
+        "number": entry.number,
+        "entry_type": entry.entry_type,
+        "state": entry.state,
+        "date": entry.entry_date.isoformat() if entry.entry_date else None,
+        "description": entry.description,
+        "branch_id": entry.branch_id,
+        "journal_id": entry.journal_id,
+        "partner_kind": entry.partner_kind,
+        "partner_id": entry.partner_id,
+        "reverses_entry_id": entry.reverses_entry_id,
+        "lines": [
+            {
+                "account_id": ln.account_id,
+                "account": (ln.account.name or ln.account.code) if ln.account else None,
+                "direction": getattr(ln.direction, "value", ln.direction),
+                "amount": str(ln.amount),
+                "statement": ln.statement,
+                "cost_center_id": ln.cost_center_id,
+            }
+            for ln in entry.lines
+        ],
+    }
+
+
+def replace_entry(
+    db: Session,
+    *,
+    entry_id: int,
+    actor_user_id: int,
+    entry_date: date,
+    description: str,
+    branch_id: int | None,
+    journal_id: int | None,
+    lines: list[JournalLineInput],
+    partner_kind: PartnerKind | str | None = None,
+    partner_id: int | None = None,
+    invoice_date_due: date | None = None,
+) -> LedgerEntry:
+    entry = db.get(LedgerEntry, entry_id)
+    if entry is None:
+        raise JournalError("القيد غير موجود.")
+    assert_manual(db, entry)
+    if entry.reverses_entry_id is not None:
+        raise JournalError("هذا قيد عكسي لا يُعدَّل — احذفه إن لم يعد مطلوباً.")
+    if db.scalar(
+        select(LedgerEntry.id).where(LedgerEntry.reverses_entry_id == entry.id).limit(1)
+    ) is not None:
+        raise JournalError("هذا القيد معكوس — احذف القيد العكسي أولاً ثم عدّل القيد.")
+    before = _snapshot(entry)
+    _validate_accounts(db, lines)
+
+    line_ids = [ln.id for ln in entry.lines]
+    if line_ids:
+        from src.models.reconcile import PartialReconcile
+        from src.services import reconcile_service
+
+        if db.scalar(
+            select(PartialReconcile.id).where(
+                PartialReconcile.debit_line_id.in_(line_ids)
+                | PartialReconcile.credit_line_id.in_(line_ids)
+            ).limit(1)
+        ) is not None:
+            reconcile_service.unreconcile(db, line_ids=line_ids)
+
+    kind = partner_kind.value if isinstance(partner_kind, PartnerKind) else partner_kind
+    entry.partner_kind = kind if partner_id else None
+    entry.partner_id = partner_id if kind else None
+    entry.invoice_date_due = invoice_date_due or entry_date
+    entry.description = description
+    entry.branch_id = branch_id
+    if journal_id is not None:
+        entry.journal_id = journal_id
+    try:
+        ledger_service.rewrite_entry(
+            db, entry=entry, lines=_to_line_inputs(lines), entry_date=entry_date,
+            actor_user_id=actor_user_id,
+        )
+    except LedgerError as exc:
+        raise JournalError(str(exc)) from exc
+    db.refresh(entry)
+    audit_service.record(
+        db, action="journal.update", actor_user_id=actor_user_id,
+        entity_type="ledger_entry", entity_id=entry.id,
+        before=before, after=_snapshot(entry),
+    )
+    return entry
+
+
+def delete_entry(db: Session, *, entry_id: int, actor_user_id: int) -> None:
+    from src.services.document_edit_service import DocumentEditError, _drop_entry
+
+    entry = db.get(LedgerEntry, entry_id)
+    if entry is None:
+        raise JournalError("القيد غير موجود.")
+    assert_manual(db, entry)
+    reversals = list(db.scalars(
+        select(LedgerEntry).where(LedgerEntry.reverses_entry_id == entry.id)).all())
+    for e in (entry, *reversals):
+        if ledger_service.is_posted(e):
+            try:
+                ledger_service._assert_period_open(db, e.entry_date, actor_user_id)
+            except LedgerError as exc:
+                raise JournalError(str(exc)) from exc
+    before = _snapshot(entry)
+    if reversals:
+        before["reversals"] = [dict(_snapshot(r), id=r.id) for r in reversals]
+    try:
+        _drop_entry(db, entry_id)
+    except DocumentEditError as exc:
+        raise JournalError(str(exc)) from exc
+    db.flush()
+    db.expunge(entry)
+    for r in reversals:
+        db.expunge(r)
+    audit_service.record(
+        db, action="journal.delete", actor_user_id=actor_user_id,
+        entity_type="ledger_entry", entity_id=entry_id, before=before,
+    )

@@ -20,7 +20,7 @@ import InvoiceDocument, { invoiceFooter } from '../components/InvoiceDocument';
 import VoucherDocument, { voucherFooter } from '../components/VoucherDocument';
 import CustomerEditModal from '../components/CustomerEditModal';
 import ListToolbar, { useListFilter, normalizeAr } from '../components/ListToolbar';
-import DocumentLink, { DocKind, DocRef, docKindOf, useOpenDocument } from '../components/DocumentLink';
+import DocumentLink, { DocKind, ManualEntryLink, DocRef, docKindOf, useOpenDocument } from '../components/DocumentLink';
 import { entryTypeLabel } from '../components/labels';
 import { TabModal } from '../components/TabModal';
 import DateRangeFilter from '../components/DateRangeFilter';
@@ -483,7 +483,7 @@ export default function CustomerProfile() {
             <DocumentLink kind={l.doc_kind} id={l.doc_id}
               label={l.doc_number ? `المستند ${l.doc_number}` : 'فتح المستند'} allowEdit />
           ) : (
-            <span style={{ color: '#8c8c8c' }}>قيد يدوي — لا يوجد مستند خلفه</span>
+            <ManualEntryLink entryId={l.entry_id} label="قيد يدوي — لا يوجد مستند خلفه" />
           )}
         </span>
       </div>
@@ -666,7 +666,7 @@ export default function CustomerProfile() {
         <DocumentLink kind={l.doc_kind} id={l.doc_id} size="small"
           label={l.doc_number || undefined}
           allowEdit />
-      ) : <span style={{ color: '#8c8c8c' }}>قيد يدوي</span>) },
+      ) : <ManualEntryLink entryId={l.entry_id} label="قيد يدوي" />) },
   ];
 
   const tableCols = useTableColumns('customer-ledger-v2', columns, {

@@ -285,6 +285,34 @@ def replace_lines(db: Session, *, entry: LedgerEntry, lines: list[LineInput]) ->
     return entry
 
 
+def rewrite_entry(
+    db: Session,
+    *,
+    entry: LedgerEntry,
+    lines: list[LineInput],
+    entry_date: date,
+    actor_user_id: int,
+) -> LedgerEntry:
+    if entry.state == EntryState.cancelled.value:
+        raise LedgerError("القيد ملغي — لا يمكن تعديله.")
+    posted = is_posted(entry)
+    _validate_lines(lines)
+    if posted:
+        _assert_balanced(lines)
+        _assert_not_hashed(entry)
+    _assert_period_open(db, entry.entry_date, actor_user_id)
+    _assert_period_open(db, entry_date, actor_user_id)
+    if posted:
+        _release_residuals(db, entry)
+        entry.state = EntryState.draft.value
+    entry.entry_date = entry_date
+    replace_lines(db, entry=entry, lines=lines)
+    if posted:
+        _stamp_posted(db, entry)
+        db.flush()
+    return entry
+
+
 def post_draft(db: Session, *, entry_id: int, actor_user_id: int | None = None) -> LedgerEntry:
     entry = db.get(LedgerEntry, entry_id)
     if entry is None:

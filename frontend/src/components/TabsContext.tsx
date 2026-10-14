@@ -47,7 +47,7 @@ const BASE_TITLES: Record<string, string> = {
   '/treasury': 'الحسابات والخزينة',
   '/vouchers': 'سندات القبض والصرف',
   '/finance-reports': 'القوائم المالية',
-  '/general-ledger': 'الأستاذ العام والقيود',
+  '/general-ledger': 'القيود اليدوية',
   '/loyalty': 'الكوبونات والنقاط',
   '/audit': 'سجل العمليات',
   '/inspections': 'المعاينات',

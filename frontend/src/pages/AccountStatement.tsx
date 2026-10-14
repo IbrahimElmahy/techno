@@ -16,7 +16,7 @@ import { useSearchParams } from 'react-router-dom';
 import { api } from '../api/client';
 import { useOnScreen, useTableKeyboard } from '../components/keyboard';
 import { textColumn, numberColumn, dateColumn } from '../components/gridColumns';
-import DocumentLink, { DocKind, docKindOf, useOpenDocument } from '../components/DocumentLink';
+import DocumentLink, { DocKind, ManualEntryLink, docKindOf, useOpenDocument } from '../components/DocumentLink';
 import { entryTypeLabel } from '../components/labels';
 import JournalEntryLines from '../components/JournalEntryLines';
 import DocumentItemLines, { hasItemLines } from '../components/DocumentItemLines';
@@ -777,7 +777,7 @@ export default function AccountStatement() {
         <DocumentLink kind={l.doc_kind} id={l.doc_id} size="small"
           label={l.doc_number || undefined}
           allowEdit />
-      ) : <span style={{ color: '#8c8c8c' }}>قيد يدوي</span>) },
+      ) : <ManualEntryLink entryId={l.entry_id} label="قيد يدوي" />) },
   ];
 
   const withOpening = (cols: ColumnsType<StatementLine>): ColumnsType<StatementLine> =>
@@ -1029,7 +1029,7 @@ export default function AccountStatement() {
             <DocumentLink kind={l.doc_kind} id={l.doc_id}
               label={l.doc_number ? `المستند ${l.doc_number}` : 'فتح المستند'} allowEdit />
           ) : (
-            <span style={{ color: '#8c8c8c' }}>قيد يدوي — لا يوجد مستند خلفه</span>
+            <ManualEntryLink entryId={l.entry_id} label="قيد يدوي — لا يوجد مستند خلفه" />
           )}
         </span>
       </div>

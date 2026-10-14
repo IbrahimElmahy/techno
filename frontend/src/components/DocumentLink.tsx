@@ -86,6 +86,25 @@ export function DocRef({ kind, id, label, onNavigate }: {
   );
 }
 
+export function ManualEntryLink({ entryId, label }: {
+  entryId: number | null | undefined; label: string;
+}) {
+  const navigate = useNavigate();
+  const here = useLocation();
+  if (!entryId || entryId < 0) return <span style={{ color: '#8c8c8c' }}>{label}</span>;
+  return (
+    <Tooltip title="افتح القيد في شاشة القيود اليدوية">
+      <a onClick={(e) => {
+        e.stopPropagation();
+        navigate(withReturn(`/general-ledger?tab=journal&entry=${entryId}`,
+          here.pathname + here.search));
+      }}>
+        {label}
+      </a>
+    </Tooltip>
+  );
+}
+
 export default function DocumentLink({
   kind, id, label, size = 'middle', onNavigate,
 }: Props) {
