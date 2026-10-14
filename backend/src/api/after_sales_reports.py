@@ -208,7 +208,8 @@ def inspections_by_technician(
         select(Inspection.technician_name, func.count(Inspection.id),
                func.coalesce(func.sum(Inspection.total_points), 0),
                func.max(Inspection.inspection_date)),
-        Inspection, current).where(Inspection.technician_name.isnot(None))
+        Inspection, current).where(Inspection.technician_name.isnot(None),
+                                   inspection_points.counted_visit())
     if date_from:
         stmt = stmt.where(Inspection.inspection_date >= date_from)
     if date_to:
@@ -235,7 +236,7 @@ def inspections_by_rep(
                func.coalesce(func.sum(Inspection.total_points), 0),
                func.count(func.distinct(Inspection.customer_id)),
                func.max(Inspection.inspection_date)),
-        Inspection, current)
+        Inspection, current).where(inspection_points.counted_visit())
     if date_from:
         stmt = stmt.where(Inspection.inspection_date >= date_from)
     if date_to:

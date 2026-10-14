@@ -519,6 +519,8 @@ def sync_inspection_points(db: Session, inspection: Inspection, *, actor_user_id
     from src.models.loyalty import PointKind
     from src.services import points_service
 
+    if inspection.status == InspectionStatus.rejected:
+        return None
     total = _points(inspection.total_points or 0)
     if total <= 0:
         return None
