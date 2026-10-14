@@ -6,10 +6,16 @@ import { autoColumnFilters } from './gridColumns';
 function FilterTableInner<T extends object>(
   { autoFilters = true, columns, dataSource, ...rest }: TableProps<T> & { autoFilters?: boolean },
 ) {
-  const cols = useMemo(
-    () => (autoFilters ? autoColumnFilters(columns as any[], dataSource as T[]) : columns),
-    [autoFilters, columns, dataSource],
-  );
+  const cols = useMemo(() => {
+    if (!autoFilters) return columns;
+    const out: any = autoColumnFilters(columns as any[], dataSource as T[]);
+    const src: any = columns;
+    if (src?.__managed && out && out !== src) {
+      out.__managed = true;
+      out.__tableKey = src.__tableKey;
+    }
+    return out;
+  }, [autoFilters, columns, dataSource]);
   return <AntTable<T> columns={cols as any} dataSource={dataSource} {...rest} />;
 }
 

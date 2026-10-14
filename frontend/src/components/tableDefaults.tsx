@@ -2,6 +2,7 @@ import React from 'react';
 import { Table } from 'antd';
 import { buildSummary, filteredRows, leavesOf } from './tableTotals';
 import { WIDTHS_EVENT, storedWidth } from './ColumnResize';
+import ColumnSettings from './ColumnSettings';
 
 export const APP_SCROLL_CLASS = 'app-scroll';
 export const STICKY_BAR = 12;
@@ -25,6 +26,62 @@ const STICKY = {
 const InsideTable = React.createContext(false);
 
 type Filters = Record<string, any[] | null> | null;
+
+type Sorter = { key: string; order: 'ascend' | 'descend' } | null;
+type TableState = { filters?: Filters; sorter?: Sorter; hidden?: string[]; pageSize?: number };
+
+const GEAR_KEY = '__col_settings__';
+
+function colKeyOf(c: any, idx = 0): string {
+  if (c.key !== undefined && c.key !== null) return String(c.key);
+  const di = c.dataIndex;
+  if (Array.isArray(di)) return di.join('.');
+  if (di !== undefined && di !== null && di !== '') return String(di);
+  return `__col_${idx}__`;
+}
+
+function scopeKey(): string {
+  const p = new URLSearchParams(window.location.search);
+  const extra = ['view', 'tab', 'kind'].map((k) => p.get(k)).filter(Boolean).join('|');
+  return `${window.location.pathname}${extra ? `?${extra}` : ''}`;
+}
+
+function tableIdOf(cols: any): string | null {
+  if (!Array.isArray(cols) || !cols.length) return null;
+  if ((cols as any).__tableKey) return `${scopeKey()}#${(cols as any).__tableKey}`;
+  const keys = (leavesOf(cols) as any[]).map((c, i) => colKeyOf(c, i)).filter((k) => k !== GEAR_KEY);
+  return `${scopeKey()}#${keys.join(',').slice(0, 240)}`;
+}
+
+function loadState(id: string | null): TableState {
+  if (!id) return {};
+  try { return JSON.parse(localStorage.getItem(`tbl:${id}`) || '{}') || {}; } catch { return {}; }
+}
+
+function saveState(id: string | null, st: TableState) {
+  if (!id) return;
+  try { localStorage.setItem(`tbl:${id}`, JSON.stringify(st)); } catch { /* ignore */ }
+}
+
+function withControlled(cols: any[] | undefined, filters: Filters, sorter: Sorter): any[] | undefined {
+  if (!Array.isArray(cols)) return cols;
+  const leaves = leavesOf(cols) as any[];
+  const pageSorts = leaves.some((c) => c && c.sortOrder !== undefined);
+  const map = (list: any[]): any[] => list.map((c, i) => {
+    if (!c || typeof c !== 'object') return c;
+    if (Array.isArray(c.children) && c.children.length) return { ...c, children: map(c.children) };
+    let n = c;
+    const k = colKeyOf(c, i);
+    if ((c.filters || c.filterDropdown || c.onFilter) && c.filteredValue === undefined) {
+      n = { ...n, filteredValue: filters?.[k] ?? null };
+    }
+    if (c.sorter && !pageSorts) {
+      n = { ...n, sortOrder: sorter && sorter.key === k ? sorter.order : null };
+    }
+    return n;
+  });
+  return map(cols);
+}
 
 function widthOf(c: { width?: number | string; minWidth?: number }): number {
   if (typeof c.width === 'number' && c.width > 0) return c.width;
@@ -66,6 +123,10 @@ function valueOf(row: any, di: any): any {
     v = v[k];
   }
   return v;
+}
+
+function textOfTitle(node: any): string {
+  return textOf(typeof node === 'function' ? '' : node).trim();
 }
 
 function textOf(node: any): string {
@@ -225,6 +286,13 @@ function withFilters(cols: any[] | undefined, rows: any[], onOpen?: () => void):
   return changed ? out : cols;
 }
 
+type Extra = {
+  sorter: Sorter;
+  pageSize?: number;
+  decorate: (cols: any[] | undefined) => any[] | undefined;
+  onTableChange: (pagination: any, filters: Filters, sorter: any) => void;
+};
+
 function withDefaults(
   props: any,
   nested: boolean,
@@ -232,6 +300,7 @@ function withDefaults(
   setFilters: (f: Filters) => void,
   filterRows?: any[] | null,
   onOpen?: () => void,
+  extra?: Extra,
 ): any {
   if (props.virtual) return props;
   let next = props;
@@ -239,6 +308,13 @@ function withDefaults(
     ?? (Array.isArray(props.dataSource) && !nested ? props.dataSource : []);
   const cols = withStoredWidths(withFilters(props.columns, rowsForFilters, onOpen));
   if (cols !== props.columns) next = { ...next, columns: cols };
+  if (!nested && extra) {
+    next = { ...next, columns: extra.decorate(withControlled(next.columns, filters, extra.sorter)) };
+    if (next.pagination && typeof next.pagination === 'object' && next.pagination.pageSize === undefined
+        && extra.pageSize) {
+      next = { ...next, pagination: { ...next.pagination, defaultPageSize: extra.pageSize } };
+    }
+  }
 
   if (props.scroll === undefined) {
     const x = contentWidth(props);
@@ -260,16 +336,17 @@ function withDefaults(
     const leaves = leavesOf(next.columns);
     const rows = filteredRows(props, leaves, filters);
     const summary = buildSummary(props, leaves, rows, Boolean(next.sticky || next.scroll?.y));
-    const onChange = props.onChange;
-    next = {
-      ...next,
-      ...(summary ? { summary } : {}),
-      onChange: (...args: any[]) => {
-        setFilters(args[1] ?? null);
-        return onChange?.(...args);
-      },
-    };
+    if (summary) next = { ...next, summary };
   }
+  const onChange = props.onChange;
+  next = {
+    ...next,
+    onChange: (...args: any[]) => {
+      setFilters(args[1] ?? null);
+      extra?.onTableChange(args[0], args[1] ?? null, args[2]);
+      return onChange?.(...args);
+    },
+  };
   return next;
 }
 
@@ -282,7 +359,22 @@ if (typeof T.render === 'function') {
   T.__original = original;
   T.render = function TableWithDefaults(rawProps: any, ref: any) {
     const nested = React.useContext(InsideTable);
-    const [filters, setFilters] = React.useState<Filters>(null);
+    const tableId = nested ? null : tableIdOf(rawProps.columns);
+    const [stored, setStored] = React.useState<TableState>(() => loadState(tableId));
+    const [filters, setFilters] = React.useState<Filters>(() => stored.filters ?? null);
+    const idRef = React.useRef(tableId);
+    React.useEffect(() => {
+      if (idRef.current === tableId) return;
+      idRef.current = tableId;
+      const st = loadState(tableId);
+      setStored(st);
+      setFilters(st.filters ?? null);
+    }, [tableId]);
+    const update = (patchState: TableState) => setStored((prev) => {
+      const nextState = { ...prev, ...patchState };
+      saveState(idRef.current, nextState);
+      return nextState;
+    });
     const [full, setFull] = React.useState<any[] | null>(null);
     const [, setWidthTick] = React.useState(0);
     React.useEffect(() => {
@@ -317,9 +409,43 @@ if (typeof T.render === 'function') {
         pagination: { defaultPageSize: size, showSizeChanger: true, showTotal: props.pagination.showTotal },
       };
     }
+    const managed = !!(rawProps.columns as any)?.__managed;
+    const extra: Extra | undefined = nested || !tableId ? undefined : {
+      sorter: stored.sorter ?? null,
+      pageSize: stored.pageSize,
+      onTableChange: (pagination, f, sorter) => {
+        const s = Array.isArray(sorter) ? sorter[0] : sorter;
+        const key = s && s.order ? String(s.columnKey ?? colKeyOf(s.column || {})) : null;
+        update({
+          filters: f,
+          sorter: key ? { key, order: s.order } : null,
+          ...(pagination?.pageSize ? { pageSize: pagination.pageSize } : {}),
+        });
+      },
+      decorate: (cols) => {
+        if (managed || rawProps.pagination === false || !Array.isArray(cols)) return cols;
+        const top = cols.filter((c: any) => c && typeof c === 'object');
+        if (top.length < 3) return cols;
+        const hidden = stored.hidden ?? [];
+        const choices = top.map((c: any, i: number) => ({
+          key: colKeyOf(c, i),
+          title: textOfTitle(c.title) || 'إجراءات',
+        }));
+        const visible = cols.filter((c: any, i: number) => !hidden.includes(colKeyOf(c, i)));
+        const gear = {
+          key: GEAR_KEY, width: 36, align: 'center' as const,
+          title: (
+            <ColumnSettings compact choices={choices} hidden={hidden}
+              onChange={(h) => update({ hidden: h })} />
+          ),
+          render: () => null,
+        };
+        return [...visible, gear];
+      },
+    };
     return (
       <InsideTable.Provider value>
-        {original(withDefaults(effective, nested, filters, setFilters, partial ? (full ?? null) : null, onOpen), ref)}
+        {original(withDefaults(effective, nested, filters, setFilters, partial ? (full ?? null) : null, onOpen, extra), ref)}
       </InsideTable.Provider>
     );
   };

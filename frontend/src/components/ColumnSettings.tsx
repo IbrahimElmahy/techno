@@ -65,7 +65,10 @@ export function useHiddenColumns(storageKey: string, defaultHidden: string[] = [
     const visible = decorated.filter(({ key }) => !prefs.hidden.includes(key));
     const rankedKeys = orderKeys(visible.map(({ key }) => key), prefs.order);
     const byKey = new Map(visible.map(({ key, col }) => [key, col]));
-    return rankedKeys.map((k) => byKey.get(k)!).filter(Boolean);
+    const out: any = rankedKeys.map((k) => byKey.get(k)!).filter(Boolean);
+    out.__managed = true;
+    out.__tableKey = storageKey;
+    return out as T[];
   };
 
   return { hidden: prefs.hidden, order: prefs.order, setHidden, move, reset, apply };
@@ -88,10 +91,11 @@ interface Props {
   onMove?: (key: string, direction: -1 | 1) => void;
   onResetOrder?: () => void;
   onResetWidths?: () => void;
+  compact?: boolean;
 }
 
 export default function ColumnSettings({
-  choices, hidden, onChange, order, onMove, onResetOrder, onResetWidths,
+  choices, hidden, onChange, order, onMove, onResetOrder, onResetWidths, compact,
 }: Props) {
   const toggle = (key: string, show: boolean) =>
     onChange(show ? hidden.filter((k) => k !== key) : [...hidden, key]);
@@ -167,7 +171,10 @@ export default function ColumnSettings({
         </div>
       )}
     >
-      <Button icon={<SettingOutlined />} style={{ flexShrink: 0 }}>الأعمدة</Button>
+      {compact
+        ? <Button size="small" type="text" icon={<SettingOutlined />} title="الأعمدة"
+            onClick={(e) => e.stopPropagation()} />
+        : <Button icon={<SettingOutlined />} style={{ flexShrink: 0 }}>الأعمدة</Button>}
     </Dropdown>
   );
 }
@@ -182,6 +189,8 @@ export function useTableColumns<T extends { key?: React.Key; dataIndex?: any; ti
   const allKeys = columns.map((c, idx) => keyOf(c, idx));
   const locked = opts.locked ?? allKeys.slice(0, 1);
   const visible = prefs.apply(columns);
+  (visible as any).__managed = true;
+  (visible as any).__tableKey = storageKey;
 
   const control = (
     <>
