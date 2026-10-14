@@ -85,7 +85,7 @@ const sideOf = (t?: string | null) => (t === 'plumber' ? 'plumber' : 'merchant')
 export const receiverSideOf = (t?: unknown): string | null => {
   const key = String(t ?? '');
   if (key === 'plumber') return 'plumber';
-  if (key === 'trader' || key === 'merchant') return 'merchant';
+  if (key === 'trader' || key === 'merchant' || key === 'showroom') return 'merchant';
   return null;
 };
 
@@ -94,7 +94,7 @@ export const receiverSideLabel = (t?: unknown) => (receiverSideOf(t) === 'plumbe
 export function receiverOptionsOf(
   customers: any[], customerType: string, typeLabel: (t: unknown) => string,
 ) {
-  const wanted = customerType === 'plumber' ? ['plumber'] : ['trader', 'merchant'];
+  const wanted = customerType === 'plumber' ? ['plumber'] : ['trader', 'merchant', 'showroom'];
   return [...customers]
     .sort((a, b) => {
       const rank = (c: any) => (wanted.includes(String(c.customer_type)) ? 0 : 1);

@@ -37,7 +37,7 @@ def _require_party(db: Session, customer_id: int | None) -> None:
             "العميل المختار غير موجود في النظام — اختر الفني أو التاجر من القائمة بعد المزامنة.")
 
 
-RECEIVER_SIDES = {"plumber": "plumber", "trader": "merchant"}
+RECEIVER_SIDES = {"plumber": "plumber", "trader": "merchant", "showroom": "merchant"}
 
 
 def receiver_side_of(party_type, given: str | None = None) -> str | None:
