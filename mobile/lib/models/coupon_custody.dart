@@ -172,8 +172,8 @@ class CouponCustody {
     if (!isEnforced(kind)) return null;
     final name = _names[kindKey(kind)]!;
     final free = availableOf(kind);
-    if (free.isEmpty) return 'نفدت عهدتك من ${_theKind(name)} — لا توجد سريالات متاحة';
-    return 'عهدتك في ${_theKind(name)}: ${rangesLabel(free)} (${totalCount(free)})';
+    if (free.isEmpty) return 'نفدت كوبوناتك من ${_theKind(name)} — لا توجد سريالات متاحة';
+    return 'كوبوناتك في ${_theKind(name)}: ${rangesLabel(free)} (${totalCount(free)})';
   }
 
   List<String?> check(List<CouponRowInput> rows, {bool requireComplete = false}) {
@@ -192,7 +192,7 @@ class CouponCustody {
     final toText = r.to.trim();
     if (fromText.isEmpty || toText.isEmpty) {
       return requireComplete
-          ? '${_theKind(name)} في عهدتك — يجب كتابة «من» و«إلى» للسريالات'
+          ? '${_theKind(name)} محمّلة عليك — يجب كتابة «من» و«إلى» للسريالات'
           : null;
     }
     final f = parseSerial(fromText);
@@ -209,7 +209,7 @@ class CouponCustody {
       return '${_serials(dup)} ($name) مكتوبة في صف آخر في الفاتورة نفسها';
     }
     final outside = subtractRanges(want, custodyOf(key));
-    if (outside.isNotEmpty) return '${_serials(outside)} ($name) ليست في عهدتك';
+    if (outside.isNotEmpty) return '${_serials(outside)} ($name) ليست محمّلة عليك';
     for (final h in holdsOf(key)) {
       final held = intersectRanges(want, [h.range]);
       if (held.isEmpty) continue;

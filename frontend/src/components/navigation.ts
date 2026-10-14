@@ -146,6 +146,7 @@ export const NAVIGATION: (NavGroup | NavScreen)[] = [
       },
       { key: '/stock-permits?kind=receipt', label: 'إذن إضافة', roles: STOCK, a5: '/storeins/create' },
       { key: '/stock-permits?kind=issue', label: 'إذن صرف', roles: STOCK, a5: '/storeouts/create' },
+      { key: '/coupon-custody?from=stock', label: 'تحميل كوبونات', roles: [...SALES, ...STOCK, 'after_sales_staff'] },
       { key: '/transfers', label: 'اذن تحويل مخازن', roles: R(STOCK), a5: '/storetransfers' },
       { key: '/stock-alerts', label: 'حد اعادة الطلب', roles: R(STOCK), a5: '/inventory/restock-alert' },
       { key: '/reports?view=stagnant', label: 'اصناف راكدة', roles: R(STOCK), a5: '/stagnant-items' },
@@ -289,7 +290,6 @@ export const EXTRA_SECTIONS: NavGroup[] = [
     label: 'خدمات ما بعد البيع',
     children: [
       { key: '/coupon-receipts', label: 'استلام الكوبونات', roles: [...SALES, 'after_sales_staff'] },
-      { key: '/coupon-custody?from=after-sales', label: 'تحميل كوبونات', roles: [...SALES, 'after_sales_staff'] },
       { key: '/inspections', label: 'المعاينات', roles: R([...SALES, 'after_sales_staff']) },
       { key: '/visits', label: 'الزيارات العادية', roles: R([...SALES, 'after_sales_staff']) },
       { key: '/owners', label: 'الملّاك', roles: R([...SALES, 'after_sales_staff']) },

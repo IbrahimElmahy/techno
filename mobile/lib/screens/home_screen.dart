@@ -372,6 +372,16 @@ class _HomeScreenState extends State<HomeScreen> {
                         MaterialPageRoute(builder: (_) => const CouponReviewScreen())),
                   ),
                   const SizedBox(height: 14),
+                  if (_can('app.coupon_balance'))
+                  _BigAction(
+                    icon: Icons.confirmation_number_outlined,
+                    color: AppColors.primary,
+                    title: 'كوبوناتي',
+                    onTap: () => Navigator.push(context,
+                        MaterialPageRoute(builder: (_) => const CouponCustodyScreen())),
+                  ),
+                  if (_can('app.coupon_balance'))
+                  const SizedBox(height: 14),
                   if (_can('app.visit_review'))
                   _BigAction(
                     icon: Icons.fact_check_outlined,
@@ -431,9 +441,10 @@ class _HomeScreenState extends State<HomeScreen> {
               _refresh();
             },
           ),
+          if (_can('app.coupon_balance'))
           ListTile(
             leading: const Icon(Icons.confirmation_number_outlined),
-            title: const Text('عهدة الكوبونات'),
+            title: const Text('كوبوناتي'),
             onTap: () {
               Navigator.pop(context);
               Navigator.push(context,

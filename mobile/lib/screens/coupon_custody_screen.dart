@@ -36,7 +36,7 @@ class _CouponCustodyScreenState extends State<CouponCustodyScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('عهدة الكوبونات')),
+      appBar: AppBar(title: const Text('كوبوناتي')),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : RefreshIndicator(
@@ -59,7 +59,7 @@ class _CouponCustodyScreenState extends State<CouponCustodyScreen> {
                     const Padding(
                       padding: EdgeInsets.all(24),
                       child: Text(
-                          'لا توجد عهدة كوبونات على الجهاز.',
+                          'لا توجد كوبونات محمّلة على الجهاز.',
                           textAlign: TextAlign.center),
                     )
                   else

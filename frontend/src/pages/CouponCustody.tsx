@@ -259,7 +259,7 @@ export default function CouponCustody() {
       actions={(<>
         <Button type="primary" className="sl-create" icon={<ExportOutlined />}
           onClick={() => openModal('out')}>
-          صرف عهدة لمندوب
+          تحميل كوبونات لمندوب
         </Button>
         <Button icon={<ImportOutlined />} onClick={() => openModal('in')}>
           استرجاع من مندوب
@@ -274,7 +274,7 @@ export default function CouponCustody() {
           className="sl-table"
           rowKey="id" size="small" loading={loading} dataSource={docs}
           columns={docColumns} scroll={{ x: 900 }}
-          locale={{ emptyText: 'لا توجد مستندات عهدة' }}
+          locale={{ emptyText: 'لا توجد مستندات تحميل' }}
           pagination={{
             current: page, pageSize, total, showSizeChanger: true,
             pageSizeOptions: PAGE_SIZE_OPTIONS,
@@ -294,14 +294,14 @@ export default function CouponCustody() {
           loading={balanceLoading}
           dataSource={shownBalance}
           columns={balanceColumns} pagination={false} scroll={{ x: 800 }}
-          locale={{ emptyText: 'لا توجد عهدة كوبونات لدى أي مندوب' }}
+          locale={{ emptyText: 'لا توجد كوبونات محمّلة على أي مندوب' }}
         />
       )}
     </ListPage>
 
       <Modal
         open={modal !== null}
-        title={modal === 'out' ? 'صرف عهدة كوبونات لمندوب' : 'استرجاع كوبونات من مندوب'}
+        title={modal === 'out' ? 'تحميل كوبونات لمندوب' : 'استرجاع كوبونات من مندوب'}
         onCancel={() => setModal(null)}
         onOk={submit}
         okText={modal === 'out' ? 'صرف' : 'استرجاع'}

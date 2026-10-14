@@ -219,7 +219,7 @@ def issue(db: Session, *, rep_user_id: int, coupon_kind: str, serial_from, seria
     names = _rep_names(db, held)
     for rid, nums in held.items():
         who = "المندوب نفسه" if rid == rep_user_id else names.get(rid, f"مندوب #{rid}")
-        problems.append(f"{_label(nums, kind)} في عهدة {who} بالفعل")
+        problems.append(f"{_label(nums, kind)} محمّلة على {who} بالفعل")
     if given:
         problems.append(f"{_label(given, kind)} صُرفت لعملاء مسبقاً")
     skip = {int(s) for s in rows}
@@ -267,7 +267,7 @@ def return_(db: Session, *, rep_user_id: int, coupon_kind: str, serial_from, ser
     _require_rep(db, rep_user_id)
     kind = stored_kind(db, coupon_kind)
     if kind is None:
-        raise CouponCustodyError(f"الفئة «{coupon_kind or '—'}» ليست لها عهدة لدى أي مندوب.")
+        raise CouponCustodyError(f"الفئة «{coupon_kind or '—'}» غير محمّلة على أي مندوب.")
     first, last = parse_range(serial_from, serial_to)
     serials = [str(n) for n in range(first, last + 1)]
     rows = _rows_for(db, kind, serials)
@@ -292,14 +292,14 @@ def return_(db: Session, *, rep_user_id: int, coupon_kind: str, serial_from, ser
 
     problems: list[str] = []
     if missing:
-        problems.append(f"{_label(missing, kind)} غير مسجّلة في أي عهدة")
+        problems.append(f"{_label(missing, kind)} غير محمّلة على أي مندوب")
     if back_already:
         problems.append(f"{_label(back_already, kind)} أُعيدت إلى المكتب مسبقاً")
     if given:
         problems.append(f"{_label(given, kind)} صُرفت لعملاء — لا تُرجع")
     names = _rep_names(db, other)
     for rid, nums in other.items():
-        problems.append(f"{_label(nums, kind)} في عهدة {names.get(rid, f'مندوب #{rid}')} "
+        problems.append(f"{_label(nums, kind)} محمّلة على {names.get(rid, f'مندوب #{rid}')} "
                         "لا هذا المندوب")
     if problems:
         raise CouponCustodyError("لا يمكن الإرجاع: " + "؛ ".join(problems))
@@ -331,7 +331,7 @@ def return_(db: Session, *, rep_user_id: int, coupon_kind: str, serial_from, ser
 def delete_doc(db: Session, *, custody_id: int, actor_user_id: int) -> str:
     doc = db.get(CouponCustody, custody_id)
     if doc is None:
-        raise CouponCustodyError("مستند العهدة هذا غير موجود.")
+        raise CouponCustodyError("مستند التحميل هذا غير موجود.")
     if doc.direction == OUT:
         rows = db.scalars(select(CouponCustodySerial).where(
             CouponCustodySerial.custody_id == doc.id)).all()
@@ -465,13 +465,13 @@ def consume_for_invoice(db: Session, invoice: SalesInvoice, rep_user_id: int | N
         grandfathered = _row_key(kind, s_from, s_to) in prior
         if not kind:
             if enforced and not grandfathered:
-                problems.append("اختر فئة الكوبون — على المندوب عهدة كوبونات")
+                problems.append("اختر فئة الكوبون — على المندوب كوبونات محمّلة")
             continue
         key = _norm_kind(kind)
         locked = enforced.get(key)
         if not s_from and not s_to:
             if locked and count and not grandfathered:
-                problems.append(f"أدخل السريالات من-إلى — على هذه الفئة عهدة ({kind})")
+                problems.append(f"أدخل السريالات من-إلى — هذه الفئة محمّلة على المندوب ({kind})")
             continue
         first = _as_int(s_from or s_to)
         last = _as_int(s_to or s_from)
@@ -480,7 +480,7 @@ def consume_for_invoice(db: Session, invoice: SalesInvoice, rep_user_id: int | N
             if locked and not grandfathered:
                 problems.append(
                     f"يجب أن تكون سريالات «{kind}» أرقاماً من-إلى (النهاية ليست أصغر من البداية، "
-                    f"وبحد أقصى {MAX_PER_DOC}) — على هذه الفئة عهدة")
+                    f"وبحد أقصى {MAX_PER_DOC}) — هذه الفئة محمّلة على المندوب")
             continue
         nums = list(range(first, last + 1))
         dup = seen.setdefault(key, set()).intersection(nums)
@@ -508,7 +508,7 @@ def consume_for_invoice(db: Session, invoice: SalesInvoice, rep_user_id: int | N
                 held_by.setdefault(r.rep_user_id, []).append(n)
 
         if not_held:
-            problems.append(f"{_label(not_held, kind)} ليست في عهدة {_as_rep(rep_label)}")
+            problems.append(f"{_label(not_held, kind)} ليست محمّلة على {_as_rep(rep_label)}")
         if given_by:
             invoice_ids = [i for i in given_by if i]
             docs = dict(db.execute(
@@ -522,9 +522,9 @@ def consume_for_invoice(db: Session, invoice: SalesInvoice, rep_user_id: int | N
         for rid, ns in held_by.items():
             who = names.get(rid, f"مندوب #{rid}")
             if locked:
-                problems.append(f"{_label(ns, kind)} في عهدة {who} لا {_as_rep(rep_label)}")
+                problems.append(f"{_label(ns, kind)} محمّلة على {who} لا {_as_rep(rep_label)}")
             else:
-                problems.append(f"{_label(ns, kind)} في عهدة {_as_rep(who)} — "
+                problems.append(f"{_label(ns, kind)} محمّلة على {_as_rep(who)} — "
                                 "لا تُصرف إلا على فاتورة باسمه")
 
     if problems:
@@ -581,7 +581,7 @@ def held_message(db: Session, held: dict[str, int], coupon_kind: str | None) -> 
             by_rep.setdefault(rid, []).append(n)
     names = _rep_names(db, by_rep)
     kind = coupon_kind or "—"
-    parts = [f"{_label(nums, kind)} في عهدة {names.get(rid, f'مندوب #{rid}')}"
+    parts = [f"{_label(nums, kind)} محمّلة على {names.get(rid, f'مندوب #{rid}')}"
              for rid, nums in by_rep.items()]
-    return ("كوبونات ما زالت في عهدة المندوب ولم تُصرف لعميل — فلا يمكن أن تكون مع السباك: "
+    return ("كوبونات ما زالت محمّلة على المندوب ولم تُصرف لعميل — فلا يمكن أن تكون مع السباك: "
             + "؛ ".join(parts))

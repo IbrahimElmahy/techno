@@ -64,7 +64,7 @@ CAPABILITY_LABELS: dict[str, str] = {
     "points.convert": "تحويل النقاط",
     "product_points.write": "تحديد نقاط الأصناف",
     "coupon.receive": "استلام الكوبونات",
-    "coupon.custody": "عهدة الكوبونات للمناديب",
+    "coupon.custody": "تحميل الكوبونات للمناديب",
     "coupon.redeem": "صرف الكوبونات",
     "coupon.reverse": "إلغاء صرف كوبون",
     "inspection.read": "عرض المعاينات",

@@ -258,6 +258,7 @@ APP_CAPABILITIES: dict[str, str] = {
     "app.visits": "التطبيق: الزيارات",
     "app.coupon_receive": "التطبيق: استلام كوبونات",
     "app.coupon_review": "التطبيق: مراجعة الكوبونات",
+    "app.coupon_balance": "التطبيق: كوبوناتي",
     "app.visit_review": "التطبيق: مراجعة الزيارات",
     "app.supervisor": "التطبيق: متابعة المناديب (مشرف)",
 }

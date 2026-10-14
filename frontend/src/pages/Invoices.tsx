@@ -2042,7 +2042,7 @@ function couponsTotal(inv: any): number {
                 )}
                 {repCustody.length > 0 && (
                   <div className="coupon-note">
-                    عهدة المندوب:{' '}
+                    كوبونات المندوب:{' '}
                     {repCustody.map((b) => `${b.coupon_kind} ${b.available}${b.ranges.length
                       ? ` (${b.ranges.map(([a, z]) => (a === z ? a : `${a}–${z}`)).join('، ')})`
                       : ' — نفدت'}`).join(' · ')}
