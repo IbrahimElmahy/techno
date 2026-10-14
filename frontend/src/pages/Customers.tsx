@@ -24,7 +24,8 @@ import ListPage, { type ListTab } from '../components/ListPage';
 import { useQueryTab } from '../components/useQueryTab';
 import { money, numeralsLocale } from '../utils/money';
 import { useLiveRefresh } from '../utils/live';
-import { repOptions } from '../utils/reps';
+import { isAfterSalesType, repOptions, serviceRepOptions } from '../utils/reps';
+import CustomerRepField from '../components/CustomerRepField';
 import { activeOptions } from '../utils/active';
 interface CustomerRecord {
   id: number;
@@ -311,6 +312,7 @@ export default function Customers() {
     const res = await api.patch(`/api/v1/customers/${r.id}`, body);
     mergeRow(r.id, {
       name: res.data.name, customer_type: res.data.customer_type, address: res.data.address,
+      rep_id: res.data.rep_id, service_rep_id: res.data.service_rep_id,
       phone: res.data.phone, governorate_id: res.data.governorate_id, markaz: res.data.markaz,
     });
   };
@@ -319,6 +321,11 @@ export default function Customers() {
       new_territory_id: territoryId,
     });
     mergeRow(r.id, { territory_id: res.data.territory_id, rep_id: res.data.rep_id });
+  };
+
+  const saveServiceRep = async (r: CustomerRecord, repId: number) => {
+    const res = await api.patch(`/api/v1/customers/${r.id}`, { service_rep_id: repId });
+    mergeRow(r.id, { service_rep_id: res.data.service_rep_id, rep_id: res.data.rep_id });
   };
 
   const saveRep = async (r: CustomerRecord, repId: number) => {
@@ -459,9 +466,12 @@ export default function Customers() {
 
   const onCreateCustomer = async (values: any) => {
     try {
-      const { hidden, ...rest } = values;
+      const { hidden, rep_id, service_rep_id, ...rest } = values;
+      const afterSales = isAfterSalesType(values.customer_type);
       const created = await api.post('/api/v1/customers', {
         ...rest,
+        rep_id: afterSales ? null : rep_id,
+        service_rep_id: afterSales ? service_rep_id : null,
         governorate_id: values.governorate_id ?? null,
         markaz: values.markaz ?? null,
         address: values.address ?? null,
@@ -582,7 +592,7 @@ export default function Customers() {
       key: 'rep_id',
       ellipsis: true,
       render: (repId: number | null, row: CustomerRecord) => {
-        if (editMode && canEditTerritory) {
+        if (editMode && canEditTerritory && !isAfterSalesType(row.customer_type)) {
           return (
             <InlineSelectCell<number> value={repId}
               options={repOptions(reps, repId)}
@@ -606,7 +616,21 @@ export default function Customers() {
       dataIndex: 'service_rep_id',
       key: 'service_rep_id',
       ellipsis: true,
-      render: (id: number | null) => {
+      render: (id: number | null, row: CustomerRecord) => {
+        if (editMode && isAfterSalesType(row.customer_type)) {
+          const branchId = row.branch_id
+            ?? territories.find((t) => t.id === row.territory_id)?.branch_id;
+          return (
+            <InlineSelectCell<number> value={id}
+              options={[
+                ...serviceRepOptions(serviceReps, branchId, id),
+                ...(id && !serviceReps.some((r) => r.id === id)
+                  ? [{ value: id, label: reps.find((r) => r.id === id)?.full_name || `مندوب #${id}` }]
+                  : []),
+              ]}
+              onCommit={(v) => saveServiceRep(row, v)} />
+          );
+        }
         if (!id) return '—';
         const rep = serviceReps.find((r) => r.id === id) || reps.find((r) => r.id === id);
         return rep ? rep.full_name : `مندوب #${id}`;
@@ -700,7 +724,8 @@ export default function Customers() {
     const authored: any[] = [...columns];
     authored.splice(authored.findIndex((c) => c.key === 'markaz') + 1, 0, territoryColumn, addressColumn);
     const out: any[] = [...tableCols.columns];
-    for (const key of ['name', 'customer_type', 'phone', 'rep_id', 'governorate_id', 'markaz',
+    for (const key of ['name', 'customer_type', 'phone', 'rep_id', 'service_rep_id',
+      'governorate_id', 'markaz',
       'territory_id', 'address']) {
       if (out.some((c) => c.key === key)) continue;
       const idx = authored.findIndex((c) => c.key === key);
@@ -889,12 +914,7 @@ export default function Customers() {
               </Form.Item>
             </Col>
             <Col span={8}>
-              <Form.Item name="rep_id" label="مندوب"
-                rules={[{ required: true, message: 'يرجى تحديد المندوب!' }]}>
-                <Select showSearch placeholder="اختر المندوب"
-                  options={repOptions(reps)}
-                  filterOption={searchFilter} filterSort={searchRank} />
-              </Form.Item>
+              <CustomerRepField reps={reps} serviceReps={serviceReps} territories={territories} />
             </Col>
             <Col span={8}>
               <Form.Item name="default_price_tier" label="السعر الافتراضي">

@@ -47,7 +47,8 @@ class _CustomerCard(BaseModel):
 class CustomerCreate(_CustomerCard):
     name: str
     customer_type: str
-    rep_id: int
+    rep_id: int | None = None
+    service_rep_id: int | None = None
     territory_id: int
     phone: str | None = None
     default_price_tier: PriceTier | None = None
@@ -67,6 +68,7 @@ class CustomerUpdate(_CustomerCard):
     markaz: str | None = None
     address: str | None = None
     phones: list[str] | None = None
+    service_rep_id: int | None = None
 
 
 class CustomerOut(BaseModel):
@@ -659,7 +661,9 @@ def create_customer(
             name=body.name,
             customer_type=body.customer_type,
             rep_id=body.rep_id,
+            service_rep_id=body.service_rep_id,
             territory_id=body.territory_id,
+            branch_id=body.branch_id,
             phone=phone_fmt.normalize(body.phone),
             actor_user_id=current.id,
         )
@@ -696,12 +700,24 @@ def update_customer(
         if body.customer_type == "owner":
             raise HTTPException(422, {"code": "validation",
                                       "message": "الملّاك في شاشة «الملّاك» — لا يمكن تحويل المالك إلى كارت عميل"})
-        try:
-            customer_service.assert_rep_matches_type(
-                db, customer_type=body.customer_type, rep_id=c.rep_id)
-        except CustomerError as exc:
-            raise HTTPException(422, {"code": "validation", "message": str(exc)}) from exc
+        if customer_service.is_after_sales_type(body.customer_type) and c.rep_id is not None:
+            audit_service.record(db, action="customer.reassign", actor_user_id=current.id,
+                                 entity_type="customer", entity_id=c.id,
+                                 before={"rep_id": c.rep_id}, after={"rep_id": None})
+            c.rep_id = None
         c.customer_type = body.customer_type
+    if ("service_rep_id" in body.model_fields_set
+            and body.service_rep_id != c.service_rep_id):
+        if body.service_rep_id is not None:
+            try:
+                customer_service.assert_service_rep(
+                    db, service_rep_id=body.service_rep_id,
+                    branch_id=customer_service.customer_branch_id(
+                        db, branch_id=body.branch_id or c.branch_id,
+                        territory_id=c.territory_id))
+            except CustomerError as exc:
+                raise HTTPException(422, {"code": "validation", "message": str(exc)}) from exc
+        c.service_rep_id = body.service_rep_id
     if body.default_price_tier is not None:
         c.default_price_tier = body.default_price_tier
     if body.active is not None:
@@ -762,6 +778,12 @@ def reassign_customer(
     db: Session = Depends(get_db),
 ) -> CustomerOut:
     c = _seen(db, customer_id, current)
+    if body.new_rep_id is not None and body.new_rep_id != c.rep_id:
+        try:
+            customer_service.assert_rep_matches_type(
+                db, customer_type=c.customer_type, rep_id=body.new_rep_id)
+        except CustomerError as exc:
+            raise HTTPException(422, {"code": "validation", "message": str(exc)}) from exc
     customer_service.reassign_customer(
         db, customer=c,
         new_rep_id=body.new_rep_id if body.new_rep_id is not None else c.rep_id,

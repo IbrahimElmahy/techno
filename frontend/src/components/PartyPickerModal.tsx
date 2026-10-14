@@ -16,7 +16,8 @@ import { TabModal } from './TabModal';
 import { keepInView } from '../utils/keepInView';
 import { money, num, numeralsLocale } from '../utils/money';
 import './PartyPickerModal.css';
-import { repOptions } from '../utils/reps';
+import CustomerRepField from './CustomerRepField';
+import { isAfterSalesType } from '../utils/reps';
 import { activeChoices, activeOptions } from '../utils/active';
 
 export type PartyKind = 'customer' | 'supplier' | 'employee';
@@ -83,6 +84,7 @@ export default function PartyPickerModal({
   const [parties, setParties] = useState<Party[]>([]);
   const [branches, setBranches] = useState<any[]>([]);
   const [reps, setReps] = useState<any[]>([]);
+  const [serviceReps, setServiceReps] = useState<any[]>([]);
   const [territories, setTerritories] = useState<any[]>([]);
   const { options: customerTypes } = useLookup('customer_type');
   const typeLabels = useMemo(() => labelMap(customerTypes), [customerTypes]);
@@ -115,6 +117,8 @@ export default function PartyPickerModal({
       const byName = (r: any) => r.full_name || r.username || r.name;
       setBranches(sortByName(bRes.data || [], byName));
       setReps(sortByName((uRes.data || []).filter((u: any) => u.role === 'sales_rep'), byName));
+      setServiceReps(sortByName(
+        (uRes.data || []).filter((u: any) => u.role === 'after_sales_staff'), byName));
       setTerritories(sortByName(tRes.data || [], byName));
     } catch (err) { console.error(err); } finally { setLoading(false); }
   };
@@ -220,7 +224,9 @@ export default function PartyPickerModal({
       if (activeKind === 'customer') {
         payload.customer_type = values.customer_type
           || KIND_CUSTOMER_TYPE[activeKind] || 'تاجر';
-        payload.rep_id = values.rep_id;
+        const afterSales = isAfterSalesType(payload.customer_type);
+        payload.rep_id = afterSales ? undefined : values.rep_id;
+        payload.service_rep_id = afterSales ? values.service_rep_id : undefined;
         payload.territory_id = values.territory_id;
         payload.default_price_tier = values.default_price_tier || undefined;
         payload.discount_pct = values.discount_pct ?? undefined;
@@ -562,12 +568,8 @@ export default function PartyPickerModal({
                 </Form.Item>
               </Col>
               <Col xs={24} md={8}>
-                <Form.Item name="rep_id" label="مندوب"
-                  rules={[{ required: true, message: 'المندوب مطلوب' }]}
-                  style={{ marginBottom: 10 }}>
-                  <Select showSearch placeholder="اختر المندوب"
-                    options={repOptions(reps)} filterOption={searchFilter} filterSort={searchRank}/>
-                </Form.Item>
+                <CustomerRepField reps={reps} serviceReps={serviceReps}
+                  territories={territories} style={{ marginBottom: 10 }} />
               </Col>
               <Col xs={24} md={8}>
                 <Form.Item name="default_price_tier" label="السعر الافتراضي"

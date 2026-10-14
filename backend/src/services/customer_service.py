@@ -94,18 +94,42 @@ def require_account(db: Session, customer_id: int, *, family: str | None = None)
 AFTER_SALES_TYPES = {"plumber"}
 
 
+def is_after_sales_type(customer_type) -> bool:
+    return _norm_type(customer_type) in AFTER_SALES_TYPES
+
+
 def assert_rep_matches_type(db: Session, *, customer_type: str, rep_id: int | None) -> None:
-    if customer_type not in AFTER_SALES_TYPES or rep_id is None:
+    if not is_after_sales_type(customer_type) or rep_id is None:
         return
+    raise CustomerError(
+        "العميل من نوع «سباك» لا يُسنَد إليه مندوب بيع؛ يُحدَّد له مندوب خدمة ما بعد البيع."
+    )
+
+
+def customer_branch_id(db: Session, *, branch_id: int | None,
+                       territory_id: int | None) -> int | None:
+    if branch_id is not None:
+        return branch_id
+    if territory_id is None:
+        return None
+    from src.models.org import Territory
+
+    territory = db.get(Territory, territory_id)
+    return territory.branch_id if territory is not None else None
+
+
+def assert_service_rep(db: Session, *, service_rep_id: int, branch_id: int | None) -> None:
     from src.models.role import Role, RoleName
     from src.models.user import User
 
-    rep = db.get(User, rep_id)
+    rep = db.get(User, service_rep_id)
     role = db.get(Role, rep.role_id) if rep else None
-    if role is None or role.name != RoleName.after_sales_staff:
-        raise CustomerError(
-            "يجب أن يكون المندوب المسؤول عن العميل من نوع «سباك» مندوب خدمة ما بعد البيع."
-        )
+    if rep is None or role is None or role.name != RoleName.after_sales_staff:
+        raise CustomerError("مندوب الخدمة يجب أن يكون من مناديب خدمة ما بعد البيع.")
+    if not rep.active:
+        raise CustomerError(f"مندوب الخدمة «{rep.full_name}» موقوف.")
+    if branch_id is not None and rep.branch_id is not None and rep.branch_id != branch_id:
+        raise CustomerError(f"مندوب الخدمة «{rep.full_name}» ليس من فرع العميل.")
 
 
 def create_customer(
@@ -113,12 +137,23 @@ def create_customer(
     *,
     name: str,
     customer_type: str,
-    rep_id: int,
+    rep_id: int | None,
     territory_id: int,
     phone: str | None,
     actor_user_id: int,
+    service_rep_id: int | None = None,
+    branch_id: int | None = None,
 ) -> CreateResult:
     assert_rep_matches_type(db, customer_type=customer_type, rep_id=rep_id)
+    if is_after_sales_type(customer_type):
+        if service_rep_id is None:
+            raise CustomerError("يرجى تحديد مندوب خدمة ما بعد البيع للعميل من نوع «سباك».")
+    elif rep_id is None:
+        raise CustomerError("يرجى تحديد مندوب البيع.")
+    if service_rep_id is not None:
+        assert_service_rep(db, service_rep_id=service_rep_id,
+                           branch_id=customer_branch_id(db, branch_id=branch_id,
+                                                        territory_id=territory_id))
     dup_ids: list[int] = []
     if phone:
         dup_ids = list(
@@ -131,6 +166,7 @@ def create_customer(
         customer_type=customer_type,
         phone=phone,
         rep_id=rep_id,
+        service_rep_id=service_rep_id,
         territory_id=territory_id,
     )
     db.add(customer)
@@ -145,7 +181,8 @@ def create_customer(
         actor_user_id=actor_user_id,
         entity_type="customer",
         entity_id=customer.id,
-        after={"code": customer.code, "rep_id": rep_id, "territory_id": territory_id},
+        after={"code": customer.code, "rep_id": rep_id, "service_rep_id": service_rep_id,
+               "territory_id": territory_id},
     )
     return CreateResult(customer=customer, duplicate_phone_customer_ids=dup_ids)
 

@@ -157,9 +157,10 @@ def seed_demo(db: Session) -> dict:
         reason="كرتون تالف بسبب الرطوبة", actor_user_id=actor)
 
     def customer(name, ctype, phone):
-        owner = after_sales if (ctype == "plumber" and after_sales) else rep
+        svc = after_sales if (ctype == "plumber" and after_sales) else None
         return customer_service.create_customer(
-            db, name=name, customer_type=ctype, rep_id=owner.id, territory_id=territory.id,
+            db, name=name, customer_type=ctype, rep_id=None if svc else rep.id,
+            service_rep_id=svc.id if svc else None, territory_id=territory.id,
             phone=phone, actor_user_id=actor).customer
 
     c1 = customer("مؤسسة النور للأدوات الصحية", "trader", "01111111111")

@@ -7,7 +7,8 @@ import { PlusOutlined, MinusCircleOutlined } from '@ant-design/icons';
 import { api } from '../api/client';
 import { useLookup } from '../hooks/useLookup';
 import { TabModal } from './TabModal';
-import { repOptions } from '../utils/reps';
+import { isAfterSalesType } from '../utils/reps';
+import CustomerRepField from './CustomerRepField';
 import { activeOptions } from '../utils/active';
 
 const TIER_LABELS: Record<string, string> = {
@@ -51,12 +52,12 @@ export default function CustomerEditModal({
   onSaved?: () => void;
 }) {
   const [form] = Form.useForm();
-  const watchedRep = Form.useWatch('rep_id', form) as number | undefined;
   const watchedTerritory = Form.useWatch('territory_id', form) as number | undefined;
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [record, setRecord] = useState<any>(null);
   const [reps, setReps] = useState<any[]>([]);
+  const [serviceReps, setServiceReps] = useState<any[]>([]);
   const [territories, setTerritories] = useState<any[]>([]);
   const [governorates, setGovernorates] = useState<any[]>([]);
   const { options: typeOptions } = useLookup('customer_type');
@@ -84,6 +85,8 @@ export default function CustomerEditModal({
         setRecord(rec);
         const byName = (r: any) => r.full_name || r.username || r.name;
         setReps(sortByName(users.data.filter((u: any) => u.role === 'sales_rep'), byName));
+        setServiceReps(sortByName(
+          users.data.filter((u: any) => u.role === 'after_sales_staff'), byName));
         setTerritories(sortByName(terr.data || [], byName));
         setGovernorates(sortByName(gov.data || [], byName));
         form.setFieldsValue({
@@ -95,7 +98,8 @@ export default function CustomerEditModal({
           markaz: rec.markaz ?? undefined,
           address: rec.address ?? undefined,
           phones: rec.phones ?? [],
-          rep_id: rec.rep_id,
+          rep_id: rec.rep_id ?? undefined,
+          service_rep_id: rec.service_rep_id ?? undefined,
           territory_id: rec.territory_id,
           active: rec.active,
         });
@@ -114,13 +118,9 @@ export default function CustomerEditModal({
     if (!record) return;
     setSaving(true);
     try {
-      if (v.rep_id !== record.rep_id || v.territory_id !== record.territory_id) {
-        await api.post(`/api/v1/customers/${record.id}/reassign`, {
-          new_rep_id: v.rep_id,
-          new_territory_id: v.territory_id,
-        });
-      }
+      const afterSales = isAfterSalesType(v.customer_type);
       await api.patch(`/api/v1/customers/${record.id}`, {
+        ...(afterSales ? { service_rep_id: v.service_rep_id ?? null } : {}),
         name: v.name,
         phone: v.phone,
         customer_type: v.customer_type,
@@ -131,6 +131,13 @@ export default function CustomerEditModal({
         address: v.address ?? null,
         phones: cleanPhones(v.phones),
       });
+      const repId = afterSales ? null : v.rep_id;
+      if ((repId != null && repId !== record.rep_id) || v.territory_id !== record.territory_id) {
+        await api.post(`/api/v1/customers/${record.id}/reassign`, {
+          new_rep_id: repId,
+          new_territory_id: v.territory_id,
+        });
+      }
       message.success('تم حفظ بيانات العميل');
       onSaved?.();
       onClose();
@@ -199,11 +206,8 @@ export default function CustomerEditModal({
             </Col>
             <Col xs={24}><ExtraPhonesList /></Col>
             <Col xs={24} md={12}>
-              <Form.Item name="rep_id" label="المندوب المسؤول"
-                rules={[{ required: true, message: 'يرجى تحديد المندوب!' }]}>
-                <Select showSearch filterOption={searchFilter} filterSort={searchRank}
-                  options={repOptions(reps, watchedRep)} />
-              </Form.Item>
+              <CustomerRepField reps={reps} serviceReps={serviceReps} territories={territories}
+                repLabel="المندوب المسؤول" branchId={record?.branch_id} />
             </Col>
             <Col xs={24} md={12}>
               <Form.Item name="territory_id" label="المنطقة الجغرافية"
