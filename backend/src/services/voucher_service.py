@@ -217,6 +217,18 @@ def _receipt_rep(
     return customer.rep_id if customer is not None else None
 
 
+def _owner_of_account(db: Session, account_id: int | None) -> tuple[str, int, str | None] | None:
+    if not account_id:
+        return None
+    sa = db.scalar(select(SupplierAccount).where(SupplierAccount.account_id == account_id))
+    if sa is not None:
+        return "supplier", sa.supplier_id, None
+    ca = db.scalar(select(CustomerAccount).where(CustomerAccount.account_id == account_id))
+    if ca is not None:
+        return "customer", ca.customer_id, ca.family
+    return None
+
+
 def create_receipt(
     db: Session, *, customer_id: int | None = None, amount, actor_user_id: int,
     actor_role: RoleName, supplier_id: int | None = None, account_id: int | None = None,
@@ -234,6 +246,13 @@ def create_receipt(
     value = _positive(amount)
     if len([x for x in (customer_id, supplier_id, account_id) if x]) != 1:
         raise VoucherError("اختر طرفاً واحداً للسند: عميل أو مورد أو حساب.")
+    owner = _owner_of_account(db, account_id)
+    if owner is not None:
+        account_id = None
+        if owner[0] == "customer":
+            customer_id, family, on_total = owner[1], owner[2], False
+        else:
+            supplier_id = owner[1]
     if customer_id is None and custody_id is not None:
         raise VoucherError("صندوق المندوب متاح لسندات العملاء فقط.")
     if customer_id is None:
@@ -369,6 +388,13 @@ def create_payment(
     value = _positive(amount)
     if len([x for x in (customer_id, supplier_id, account_id) if x]) != 1:
         raise VoucherError("اختر طرفاً واحداً للسند: عميل أو مورد أو حساب.")
+    owner = _owner_of_account(db, account_id)
+    if owner is not None:
+        account_id = None
+        if owner[0] == "customer":
+            customer_id, family = owner[1], owner[2]
+        else:
+            supplier_id = owner[1]
     if supplier_id is None:
         return _party_voucher(
             db, receipt=False, value=value, customer_id=customer_id, account_id=account_id,

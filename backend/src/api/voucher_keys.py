@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 from src.auth.dependencies import CurrentUser, require_capability
 from src.auth.rbac import CAP_LEDGER_POST, CAP_VOUCHER_READ
 from src.core.db import get_db
-from src.models.ledger import Account, AccountType
+from src.models.ledger import Account, AccountNature, AccountType
 from src.models.voucher_key import VoucherKey
 from src.services import chart_service
 
@@ -83,6 +83,8 @@ def _resolve(db: Session, debit_id: int | None, credit_id: int | None,
     if dm is None or cm is None:
         return ("journal", [])
     kind, parties = _KINDS.get((dm, cm), ("journal", {}))
+    if kind == "expense" and debit is not None and debit.nature != AccountNature.expense:
+        kind = "journal"
     if kind == "journal" and dm == "treasury" and cm != "treasury":
         kind = "account_receipt"
     elif kind == "journal" and cm == "treasury" and dm != "treasury":
