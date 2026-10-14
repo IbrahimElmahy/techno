@@ -12,13 +12,9 @@ from src.core.db import SessionLocal
 from src.models.customer import Customer
 from src.models.org import Branch, Governorate, Territory
 from src.models.user import User
+from src.scripts.wb_profile import ALIAA, WbProfile, dir_from_argv, profile_from_argv
 
-CODE_PREFIX = "WB-T-"
-BRANCH = "العلياء"
-
-ALIAS: dict[str, str] = {
-    "1001355": "A5X1",
-}
+ALIAS: dict[str, str] = ALIAA.trader_alias
 
 
 def _read(path: str) -> list[dict[str, str]]:
@@ -34,14 +30,15 @@ def _norm_rep(s: str) -> str:
     return re.sub(r"\s+", "", s).strip()
 
 
-def run(folder: str, *, execute: bool) -> None:
+def run(folder: str, *, execute: bool, profile: WbProfile = ALIAA) -> None:
+    alias = profile.trader_alias
     rows = _read(os.path.join(folder, "traders.tsv"))
 
     db = SessionLocal()
     try:
-        branch = db.scalar(select(Branch).where(Branch.name == BRANCH))
+        branch = db.scalar(select(Branch).where(Branch.name == profile.branch))
         if branch is None:
-            raise SystemExit(f"مافيش فرع اسمه «{BRANCH}».")
+            raise SystemExit(f"مافيش فرع اسمه «{profile.branch}».")
         terr = db.scalar(select(Territory).where(Territory.branch_id == branch.id)
                          .order_by(Territory.id))
         govs = {g.id for g in db.scalars(select(Governorate)).all()}
@@ -67,12 +64,12 @@ def run(folder: str, *, execute: bool) -> None:
                 continue
             seen.add(rid)
 
-            if rid in ALIAS:
-                c = by_code.get(ALIAS[rid])
+            if rid in alias:
+                c = by_code.get(alias[rid])
                 if c is None:
-                    problems.append(f"{rid} «{name}»: مربوط بـ{ALIAS[rid]} وهو مش موجود")
+                    problems.append(f"{rid} «{name}»: مربوط بـ{alias[rid]} وهو مش موجود")
                 else:
-                    notes[f"مربوط بكارت موجود: {ALIAS[rid]}"] += 1
+                    notes[f"مربوط بكارت موجود: {alias[rid]}"] += 1
                 continue
 
             rep = reps.get(_norm_rep(r.get("rep_name", "")))
@@ -84,7 +81,7 @@ def run(folder: str, *, execute: bool) -> None:
             if gov and gid is None:
                 problems.append(f"{rid} «{name}»: محافظة «{gov}» مش في الجدول")
 
-            code = CODE_PREFIX + rid
+            code = profile.trader_prefix + rid
             c = by_code.get(code)
             if c is None:
                 made.append((code, r, rep))
@@ -131,7 +128,7 @@ def run(folder: str, *, execute: bool) -> None:
         db.commit()
 
         n = db.scalar(select(func.count()).select_from(Customer)
-                      .where(Customer.code.like(f"{CODE_PREFIX}%"))) or 0
+                      .where(Customer.code.like(f"{profile.trader_prefix}%"))) or 0
         print(f"\n✔ اتعمل {len(made)} تاجر · اتحدّث {len(upd)} حقل")
         print(f"   كروت «اضافه تجار» دلوقتي: {n}")
     finally:
@@ -140,8 +137,8 @@ def run(folder: str, *, execute: bool) -> None:
 
 def main() -> None:
     args = sys.argv[1:]
-    folder = args[args.index("--dir") + 1] if "--dir" in args else "C:/pgtmp/wb2"
-    run(folder, execute="--yes" in args)
+    profile = profile_from_argv(args)
+    run(dir_from_argv(args, profile), execute="--yes" in args, profile=profile)
 
 
 if __name__ == "__main__":

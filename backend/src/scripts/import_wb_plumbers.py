@@ -11,10 +11,9 @@ from src.core.db import SessionLocal
 from src.models.customer import Customer
 from src.models.org import Branch, Territory
 from src.models.user import User
+from src.scripts.wb_profile import ALIAA, WbProfile, dir_from_argv, profile_from_argv
 
 PLUMBER, TRADER = "plumber", "trader"
-BRANCH = "العلياء"
-CODE_PREFIX = "WB-P-"
 
 
 def _read(path: str) -> list[dict[str, str]]:
@@ -29,37 +28,20 @@ def _is_a5(code: str) -> bool:
     return bool(code) and (code.startswith("A5-") or code.startswith("AL-A5-"))
 
 
-def run(folder: str, *, execute: bool) -> None:
+def run(folder: str, *, execute: bool, profile: WbProfile = ALIAA) -> None:
     rows = _read(os.path.join(folder, "plumbers.tsv"))
     _read(os.path.join(folder, "reps.tsv"))
 
     db = SessionLocal()
     try:
-        branch = db.scalar(select(Branch).where(Branch.name == BRANCH))
+        branch = db.scalar(select(Branch).where(Branch.name == profile.branch))
         if branch is None:
-            raise SystemExit(f"مافيش فرع اسمه «{BRANCH}».")
+            raise SystemExit(f"مافيش فرع اسمه «{profile.branch}».")
         terr = db.scalar(select(Territory).where(Territory.branch_id == branch.id)
                          .order_by(Territory.id))
 
         users = {u.username: u for u in db.scalars(select(User)).all()}
-        by_emp_code = {
-            "EMP-0053": "ashraf",
-            "EMP-0002": "ibrahim.khattab",
-            "EMP-0003": "anas",
-            "EMP-0008": "bayoumy",
-            "EMP-0004": "hassan.eid",
-            "EMP-0005": "ahmed.torky",
-            "EMP-0054": "care",
-            "EMP-0006": "mohamed.mamdouh",
-            "EMP-0007": "medhat.kh",
-            "EMP-0055": "mohamed.torky",
-            "EMP-0040": "sales.dept2",
-            "EMP-0045": "mandob_a",
-            "EMP-0043": "car.b",
-            "EMP-0046": "manbod_car.g",
-            "EMP-0044": "car.d",
-            "EMP-0047": "car.sh",
-        }
+        by_emp_code = profile.emp_to_user
         by_code = {c.code: c for c in db.scalars(select(Customer)).all() if c.code}
 
         made: list[tuple[str, str, User | None]] = []
@@ -96,7 +78,7 @@ def run(folder: str, *, execute: bool) -> None:
                 notes["تاجر بكود a5"] += 1
                 continue
 
-            our = CODE_PREFIX + code
+            our = profile.plumber_prefix + code
             c = by_code.get(our)
             if c is None:
                 made.append((our, name, svc))
@@ -140,9 +122,9 @@ def run(folder: str, *, execute: bool) -> None:
         print(f"\n✔ اتعمل {len(made)} سباك · اتعدّل {len(upd)} حقل")
 
         n_pl = db.scalar(select(func.count()).select_from(Customer)
-                         .where(Customer.code.like(f"{CODE_PREFIX}%"))) or 0
+                         .where(Customer.code.like(f"{profile.plumber_prefix}%"))) or 0
         bad = db.scalar(select(func.count()).select_from(Customer)
-                        .where(Customer.code.like(f"{CODE_PREFIX}%"),
+                        .where(Customer.code.like(f"{profile.plumber_prefix}%"),
                                Customer.rep_id.is_not(None))) or 0
         print(f"   كروت السباكين دلوقتي: {n_pl}   ·   منهم عليه مندوب بيع (لازم صفر): {bad}")
         if bad:
@@ -153,8 +135,8 @@ def run(folder: str, *, execute: bool) -> None:
 
 def main() -> None:
     args = sys.argv[1:]
-    folder = args[args.index("--dir") + 1] if "--dir" in args else "C:/pgtmp/wb2"
-    run(folder, execute="--yes" in args)
+    profile = profile_from_argv(args)
+    run(dir_from_argv(args, profile), execute="--yes" in args, profile=profile)
 
 
 if __name__ == "__main__":

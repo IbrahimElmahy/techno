@@ -16,26 +16,15 @@ from src.models.inspection import Inspection, InspectionItem, InspectionStatus, 
 from src.models.org import Branch
 from src.models.owner import Owner
 from src.models.user import User
-from src.scripts.import_wb_traders import ALIAS
+from src.scripts.wb_profile import ALIAA, WbProfile, dir_from_argv, profile_from_argv
 
-BRANCH = "العلياء"
-DOC_PREFIX = "WBV-"
-TRADER_PREFIX = "WB-T-"
 MARMA, PREVIEW = "مرمة", "معاينة"
 DESCRIPTION = {
     "1": "حمام ومطبخ", "2": "حمام فقط", "3": "مطبخ فقط", "4": "مسجد",
     "5": "محل", "6": "صيدلية", "7": "مرمه", "8": "2حمام ومطبخ",
 }
 INSPECTION_TYPE = {"1": "تغذية وصرف", "2": "تغذية فقط", "3": "صرف فقط"}
-
-EMP_TO_USER = {
-    "EMP-0053": "ashraf", "EMP-0002": "ibrahim.khattab", "EMP-0003": "anas",
-    "EMP-0008": "bayoumy", "EMP-0004": "hassan.eid", "EMP-0005": "ahmed.torky",
-    "EMP-0054": "care", "EMP-0006": "mohamed.mamdouh", "EMP-0007": "medhat.kh",
-    "EMP-0055": "mohamed.torky", "EMP-0040": "sales.dept2",
-    "EMP-0045": "mandob_a", "EMP-0043": "car.b", "EMP-0046": "manbod_car.g",
-    "EMP-0044": "car.d", "EMP-0047": "car.sh",
-}
+NOT_AVAILABLE = "#N/A"
 
 
 def _read(path: str) -> list[dict[str, str]]:
@@ -73,11 +62,13 @@ def _shop_key(v: str | None) -> str:
     return re.sub(r"\s+", " ", s).strip()
 
 
-def run(folder: str, *, execute: bool) -> None:
+def run(folder: str, *, execute: bool, profile: WbProfile = ALIAA) -> None:
     visits = _read(os.path.join(folder, "visits.tsv"))
     points = _read(os.path.join(folder, "points.tsv"))
     reps = _read(os.path.join(folder, "reps.tsv"))
     old_uid_to_emp = {r["user_id"]: r["emp_code"] for r in reps if r.get("user_id")}
+    emp_names = {r["emp_code"]: (r.get("new_name") or r.get("erp_name") or "")
+                 for r in reps if r.get("emp_code")}
     owner_names = {r["id"]: r["name"] for r in _read(os.path.join(folder, "owners.tsv"))
                    if r.get("id") and r.get("name")}
     plumber_names = {r["code"]: r["name"] for r in _read(os.path.join(folder, "plumbers.tsv"))
@@ -101,6 +92,8 @@ def run(folder: str, *, execute: bool) -> None:
             mid = v.get("merchant_id", "")
             if mid.startswith(("AL-A5-", "A5-")):
                 v["trader_a5"] = mid
+            elif v.get("trader_code_raw") == NOT_AVAILABLE:
+                continue
             elif shop_to_trader.get(_shop_key(v.get("shop"))):
                 v["trader_a5"] = shop_to_trader[_shop_key(v.get("shop"))]
                 v["_trader_from_shop"] = "1"
@@ -109,54 +102,78 @@ def run(folder: str, *, execute: bool) -> None:
     for p in points:
         if p.get("visit_id"):
             by_visit[p["visit_id"]].append(p)
+    visit_ids = {v.get("id", "") for v in visits}
+    orphan_points = sum(1 for p in points if p.get("visit_id", "") not in visit_ids)
 
     db = SessionLocal()
     try:
-        branch = db.scalar(select(Branch).where(Branch.name == BRANCH))
+        branch = db.scalar(select(Branch).where(Branch.name == profile.branch))
         if branch is None:
-            raise SystemExit(f"مافيش فرع اسمه «{BRANCH}».")
+            raise SystemExit(f"مافيش فرع اسمه «{profile.branch}».")
         users = {u.username: u for u in db.scalars(select(User)).all()}
         owners = {o.code: o for o in db.scalars(select(Owner)).all() if o.code}
         custs = {c.code: c for c in db.scalars(select(Customer)).all() if c.code}
+        by_id = {c.id: c for c in custs.values()}
+
+        def resolve(code: str) -> Customer | None:
+            c = (custs.get(code) or custs.get(profile.trader_prefix + code)
+                 or custs.get(profile.trader_alias.get(code, "")))
+            if c is None or c.active:
+                return c
+            mark = "(مدموج في #"
+            if mark in (c.name or ""):
+                try:
+                    keep = int(c.name.split(mark, 1)[1].split(")", 1)[0])
+                    return by_id.get(keep) or c
+                except ValueError:
+                    return c
+            return c
+
         taken = {n for (n,) in db.execute(select(Inspection.document_number)).all()}
 
         plan: list[tuple[dict[str, str], Owner | None, Customer | None, User | None]] = []
         notes: Counter = Counter()
         n_items = 0
+        fresh = 0
+        blocked: Counter = Counter()
 
         for v in visits:
             vid = v.get("id", "")
             if not vid:
                 notes["صف بلا رقم"] += 1
                 continue
-            doc = DOC_PREFIX + vid
+            doc = profile.visit_prefix + vid
             if doc in taken:
                 notes["موجود خلاص — اتخطّى"] += 1
                 continue
+            fresh += 1
             if _date(v.get("visit_date", "")) is None:
                 notes["تاريخ غير صالح — اتخطّى"] += 1
                 continue
-            owner = owners.get("WB-C-" + v.get("owner_erp", ""))
+            owner = owners.get(profile.owner_prefix + v.get("owner_erp", ""))
             if owner is None and v.get("owner_erp"):
                 notes["المالك مش عندنا"] += 1
             trader_code = v.get("trader_a5", "")
             trader = None
             if trader_code:
-                trader = (custs.get(trader_code)
-                          or custs.get(TRADER_PREFIX + trader_code)
-                          or custs.get(ALIAS.get(trader_code, "")))
+                trader = resolve(trader_code)
             if trader is not None and v.get("_trader_from_shop"):
                 notes["تاجر من اسم المحل (ربط العميل القديم)"] += 1
             if trader_code and trader is None:
                 notes["كود تاجر مش عندنا"] += 1
             elif not trader_code:
                 notes["مافيش كود تاجر على الصف"] += 1
+            if v.get("trader_code_raw") == NOT_AVAILABLE:
+                notes["كود التاجر #N/A في الملف — بلا تاجر"] += 1
+            if v.get("vtype") and v["vtype"] not in INSPECTION_TYPE:
+                notes[f"نوع معاينة غير معروف: {v['vtype']}"] += 1
             emp = old_uid_to_emp.get(v.get("rep_erp", ""))
-            rep = users.get(EMP_TO_USER.get(emp, "")) if emp else None
+            rep = users.get(profile.emp_to_user.get(emp, "")) if emp else None
             if emp and rep is None:
                 notes[f"مندوب مش موجود: {emp}"] += 1
             if rep is None:
                 notes["✘ بلا مندوب — اتخطّى"] += 1
+                blocked[emp or f"(رقم مستخدم {v.get('rep_erp', '') or '—'})"] += 1
                 continue
             plan.append((v, owner, trader, rep))
             n_items += len(by_visit.get(vid, []))
@@ -173,6 +190,16 @@ def run(folder: str, *, execute: bool) -> None:
         print("\n   التوزيع على المناديب:")
         for k, c in dist.most_common():
             print(f"      {str(k)[:28]:<30}{c:>7}")
+        if fresh:
+            if orphan_points:
+                print(f"\n   {'بنود معاينتها ليست في الصفحة — تُخطّت':<38}{orphan_points:>7}")
+            if blocked:
+                print("\n   معاينات تُخطّت لأن مندوبها بلا حساب:")
+                for emp, c in blocked.most_common():
+                    uname = profile.emp_to_user.get(emp)
+                    acct = (f"الحساب «{uname}» غير موجود" if uname
+                            else "ليس في خريطة المناديب")
+                    print(f"      {emp:<10}{emp_names.get(emp, '')[:22]:<24}{acct:<30}{c:>7}")
         if not execute:
             print("\nعرض فقط — مافيش حاجة اتكتبت. أضف --yes للتنفيذ.")
             return
@@ -181,7 +208,7 @@ def run(folder: str, *, execute: bool) -> None:
         for v, owner, trader, rep in plan:
             vid = v["id"]
             insp = Inspection(
-                branch_id=branch.id, document_number=DOC_PREFIX + vid,
+                branch_id=branch.id, document_number=profile.visit_prefix + vid,
                 visit_kind=VisitKind.technician,
                 certificate_number=int(vid) if vid.isdigit() else None,
                 description=DESCRIPTION.get(v.get("disc", "")),
@@ -226,8 +253,8 @@ def run(folder: str, *, execute: bool) -> None:
 
 def main() -> None:
     args = sys.argv[1:]
-    folder = args[args.index("--dir") + 1] if "--dir" in args else "C:/pgtmp/wb2"
-    run(folder, execute="--yes" in args)
+    profile = profile_from_argv(args)
+    run(dir_from_argv(args, profile), execute="--yes" in args, profile=profile)
 
 
 if __name__ == "__main__":

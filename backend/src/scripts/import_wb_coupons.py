@@ -15,21 +15,7 @@ from src.models.coupon_receipt import CouponReceipt, CouponReceiptLine
 from src.models.customer import Customer
 from src.models.org import Branch
 from src.models.user import User
-from src.scripts.import_wb_traders import ALIAS
-
-BRANCH = "العلياء"
-ISSUE_PREFIX = "WBI-"
-TRADER_PREFIX = "WB-T-"
-RECEIPT_PREFIX = "WBR-"
-
-EMP_TO_USER = {
-    "EMP-0053": "ashraf", "EMP-0002": "ibrahim.khattab", "EMP-0003": "anas",
-    "EMP-0008": "bayoumy", "EMP-0004": "hassan.eid", "EMP-0005": "ahmed.torky",
-    "EMP-0054": "care", "EMP-0006": "mohamed.mamdouh", "EMP-0007": "medhat.kh",
-    "EMP-0055": "mohamed.torky", "EMP-0040": "sales.dept2",
-    "EMP-0045": "mandob_a", "EMP-0043": "car.b", "EMP-0046": "manbod_car.g",
-    "EMP-0044": "car.d", "EMP-0047": "car.sh",
-}
+from src.scripts.wb_profile import ALIAA, WbProfile, dir_from_argv, profile_from_argv
 
 
 def _read(path: str) -> list[dict[str, str]]:
@@ -67,17 +53,22 @@ def _kind(serial: str) -> str | None:
     return head.replace("ى", "ي") if head else None
 
 
-def run(folder: str, *, execute: bool) -> None:
+def run(folder: str, *, execute: bool, profile: WbProfile = ALIAA) -> None:
     rows = _read(os.path.join(folder, "coupons.tsv"))
+    kinds_known = {_kind(k) for k in profile.coupon_kind_by_prefix.values()}
+
+    def value_of(x: dict[str, str]) -> str:
+        v = x.get("value") or ""
+        return "" if profile.zero_value_unknown and _money(v) == 0 else v
     reps = _read(os.path.join(folder, "reps.tsv"))
     emp_by_uid = {r["user_id"]: r["emp_code"] for r in reps if r.get("user_id")}
     emp_by_code = {r["emp_code"]: r["emp_code"] for r in reps if r.get("emp_code")}
 
     db = SessionLocal()
     try:
-        branch = db.scalar(select(Branch).where(Branch.name == BRANCH))
+        branch = db.scalar(select(Branch).where(Branch.name == profile.branch))
         if branch is None:
-            raise SystemExit(f"مافيش فرع اسمه «{BRANCH}».")
+            raise SystemExit(f"مافيش فرع اسمه «{profile.branch}».")
         users = {u.username: u for u in db.scalars(select(User)).all()}
         admin = db.scalar(select(User).order_by(User.id))
         if admin is None:
@@ -86,8 +77,8 @@ def run(folder: str, *, execute: bool) -> None:
         by_id = {c.id: c for c in custs.values()}
 
         def resolve(code: str) -> Customer | None:
-            c = (custs.get(code) or custs.get(TRADER_PREFIX + code)
-                 or custs.get(ALIAS.get(code, "")))
+            c = (custs.get(code) or custs.get(profile.trader_prefix + code)
+                 or custs.get(profile.trader_alias.get(code, "")))
             if c is None or c.active:
                 return c
             mark = "(مدموج في #"
@@ -101,7 +92,7 @@ def run(folder: str, *, execute: bool) -> None:
 
         def rep_of(val: str, emp: str) -> User | None:
             code = emp_by_code.get(emp) or emp_by_uid.get(val)
-            return users.get(EMP_TO_USER.get(code, "")) if code else None
+            return users.get(profile.emp_to_user.get(code, "")) if code else None
 
         taken_i = {r for (r,) in db.execute(
             select(CouponIssue.external_ref)).all() if r}
@@ -117,6 +108,9 @@ def run(folder: str, *, execute: bool) -> None:
             kind = _kind(serial)
             if not serial:
                 notes["صف بلا رقم كوبون"] += 1
+                continue
+            if kinds_known and kind not in kinds_known:
+                notes[f"فئة كوبون غير معروفة «{kind}» — تُخطّت"] += 1
                 continue
             code = r.get("trader_a5", "")
             trader = resolve(code) if code else None
@@ -142,7 +136,7 @@ def run(folder: str, *, execute: bool) -> None:
         new_i = {}
         dup_lines = 0
         for k, v in issues.items():
-            if f"wb:{k[0]}:{k[1]}:{k[2]}:{k[3]}" in taken_i:
+            if profile.issue_ref(k[0], k[1], k[2], k[3]) in taken_i:
                 continue
             fresh = [x for x in v if (k[2], x["serial"][:24]) not in issued]
             dup_lines += len(v) - len(fresh)
@@ -151,14 +145,14 @@ def run(folder: str, *, execute: bool) -> None:
         if dup_lines:
             print(f"   أوراق صرف متسجّلة قبل كده — اتخطّت{dup_lines:>17}")
         new_r = {k: v for k, v in receipts.items()
-                 if RECEIPT_PREFIX + k not in taken_r}
+                 if profile.receipt_prefix + k not in taken_r}
         print(f"\n   {'مستندات صرف':<38}{len(issues):>7}   جديد {len(new_i)}")
         print(f"   {'أوراق فيها':<38}{sum(len(v) for v in new_i.values()):>7}")
         print(f"   {'مستندات استلام':<38}{len(receipts):>7}   جديد {len(new_r)}")
         print(f"   {'أوراق فيها':<38}{sum(len(v) for v in new_r.values()):>7}")
         mixed_k = sum(1 for v in new_r.values() if len({_kind(x['serial']) for x in v}) > 1)
         mixed_v = sum(1 for v in new_r.values()
-                      if len({x.get('value') for x in v if x.get('value')}) > 1)
+                      if len({value_of(x) for x in v if value_of(x)}) > 1)
         print(f"   {'استلام بأكتر من فئة (بلا إقرار)':<38}{mixed_k:>7}")
         print(f"   {'استلام بأكتر من قيمة (بلا إقرار)':<38}{mixed_v:>7}")
         if not execute:
@@ -166,11 +160,14 @@ def run(folder: str, *, execute: bool) -> None:
             return
 
         n_i = n_il = n_r = n_rl = 0
-        seq = db.scalar(select(func.count()).select_from(CouponIssue)) or 0
+        seq = max((int(n[len(profile.issue_prefix):]) for (n,) in db.execute(
+            select(CouponIssue.document_number).where(
+                CouponIssue.document_number.like(f"{profile.issue_prefix}%"))).all()
+            if n[len(profile.issue_prefix):].isdigit()), default=0)
         for (cid, d_dt, kind, rid), lines in new_i.items():
-            ref = f"wb:{cid}:{d_dt}:{kind}:{rid}"
+            ref = profile.issue_ref(cid, d_dt, kind, rid)
             doc = CouponIssue(
-                document_number=f"{ISSUE_PREFIX}{seq + n_i + 1:06d}", branch_id=branch.id,
+                document_number=f"{profile.issue_prefix}{seq + n_i + 1:06d}", branch_id=branch.id,
                 customer_id=cid, coupon_kind=kind, issue_date=d_dt,
                 count=len(lines), rep_user_id=rid or None,
                 external_ref=ref, actor_user_id=admin.id, active=True)
@@ -184,12 +181,12 @@ def run(folder: str, *, execute: bool) -> None:
 
         for rcode, lines in new_r.items():
             kinds = {_kind(x["serial"]) for x in lines}
-            vals = {x.get("value") for x in lines if x.get("value")}
+            vals = {value_of(x) for x in lines if value_of(x)}
             first = lines[0]
             rep = rep_of(first.get("rep_recv_emp", ""), first.get("rep_recv_emp", ""))
             tech = first.get("plumber_name") or ""
             doc = CouponReceipt(
-                document_number=RECEIPT_PREFIX + rcode[:18], branch_id=branch.id,
+                document_number=profile.receipt_prefix + rcode[:18], branch_id=branch.id,
                 customer_id=None, rep_user_id=rep.id if rep else None,
                 received_date=_date(first.get("recv_date", "")),
                 coupon_count=len(lines),
@@ -217,8 +214,8 @@ def run(folder: str, *, execute: bool) -> None:
 
 def main() -> None:
     args = sys.argv[1:]
-    folder = args[args.index("--dir") + 1] if "--dir" in args else "C:/pgtmp/wb2"
-    run(folder, execute="--yes" in args)
+    profile = profile_from_argv(args)
+    run(dir_from_argv(args, profile), execute="--yes" in args, profile=profile)
 
 
 if __name__ == "__main__":

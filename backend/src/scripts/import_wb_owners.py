@@ -11,28 +11,7 @@ from src.core.db import SessionLocal
 from src.models.org import Branch, Territory
 from src.models.owner import Owner
 from src.models.user import User
-
-BRANCH = "العلياء"
-CODE_PREFIX = "WB-C-"
-
-EMP_TO_USER = {
-    "EMP-0053": "ashraf",
-    "EMP-0002": "ibrahim.khattab",
-    "EMP-0003": "anas",
-    "EMP-0008": "bayoumy",
-    "EMP-0004": "hassan.eid",
-    "EMP-0005": "ahmed.torky",
-    "EMP-0054": "care",
-    "EMP-0006": "mohamed.mamdouh",
-    "EMP-0007": "medhat.kh",
-    "EMP-0055": "mohamed.torky",
-    "EMP-0040": "sales.dept2",
-    "EMP-0045": "mandob_a",
-    "EMP-0043": "car.b",
-    "EMP-0046": "manbod_car.g",
-    "EMP-0044": "car.d",
-    "EMP-0047": "car.sh",
-}
+from src.scripts.wb_profile import ALIAA, WbProfile, dir_from_argv, profile_from_argv
 
 
 def _phone(raw: str | None) -> str | None:
@@ -53,16 +32,17 @@ def _read(path: str) -> list[dict[str, str]]:
                 for row in csv.DictReader(fh, delimiter="\t")]
 
 
-def run(folder: str, *, execute: bool, new_only: bool = False) -> None:
+def run(folder: str, *, execute: bool, new_only: bool = False,
+        profile: WbProfile = ALIAA) -> None:
     rows = _read(os.path.join(folder, "owners.tsv"))
     reps = _read(os.path.join(folder, "reps.tsv"))
     erp_to_emp = {r["erp_id"]: r["emp_code"] for r in reps if r.get("erp_id")}
 
     db = SessionLocal()
     try:
-        branch = db.scalar(select(Branch).where(Branch.name == BRANCH))
+        branch = db.scalar(select(Branch).where(Branch.name == profile.branch))
         if branch is None:
-            raise SystemExit(f"مافيش فرع اسمه «{BRANCH}».")
+            raise SystemExit(f"مافيش فرع اسمه «{profile.branch}».")
         terr = db.scalar(select(Territory).where(Territory.branch_id == branch.id)
                          .order_by(Territory.id))
         users = {u.username: u for u in db.scalars(select(User)).all()}
@@ -78,9 +58,9 @@ def run(folder: str, *, execute: bool, new_only: bool = False) -> None:
             if not rid or not name:
                 notes["صف بلا رقم أو اسم"] += 1
                 continue
-            code = CODE_PREFIX + rid
+            code = profile.owner_prefix + rid
             emp = erp_to_emp.get(r.get("svc_rep_erp", ""))
-            uname = EMP_TO_USER.get(emp) if emp else None
+            uname = profile.emp_to_user.get(emp) if emp else None
             svc = users.get(uname) if uname else None
             if emp and uname is None:
                 notes[f"كود موظف مش في الخريطة: {emp}"] += 1
@@ -132,11 +112,11 @@ def run(folder: str, *, execute: bool, new_only: bool = False) -> None:
             rid, name = r.get("id", ""), r.get("name", "")
             if not rid or not name:
                 continue
-            code = CODE_PREFIX + rid
+            code = profile.owner_prefix + rid
             if code in have:
                 continue
             emp = erp_to_emp.get(r.get("svc_rep_erp", ""))
-            uname = EMP_TO_USER.get(emp) if emp else None
+            uname = profile.emp_to_user.get(emp) if emp else None
             svc = users.get(uname) if uname else None
             nums = []
             for k in ("phone1", "mobile", "phone2"):
@@ -167,8 +147,9 @@ def run(folder: str, *, execute: bool, new_only: bool = False) -> None:
 
 def main() -> None:
     args = sys.argv[1:]
-    folder = args[args.index("--dir") + 1] if "--dir" in args else "C:/pgtmp/wb2"
-    run(folder, execute="--yes" in args, new_only="--new-only" in args)
+    profile = profile_from_argv(args)
+    run(dir_from_argv(args, profile), execute="--yes" in args,
+        new_only="--new-only" in args, profile=profile)
 
 
 if __name__ == "__main__":
