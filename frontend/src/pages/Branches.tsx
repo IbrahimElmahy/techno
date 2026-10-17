@@ -23,6 +23,7 @@ interface BranchRecord {
   governorate_id: number;
   is_head_office: boolean;
   is_factory?: boolean;
+  auto_approve_rep_transfers?: boolean;
   active: boolean;
   note1: string | null;
   note2: string | null;
@@ -85,6 +86,7 @@ export default function Branches() {
         governorate_id: values.governorate_id,
         is_head_office: !!values.is_head_office,
         is_factory: !!values.is_factory,
+        auto_approve_rep_transfers: !!values.auto_approve_rep_transfers,
       });
       forgetFactoryBranches();
       message.success('تم تسجيل الفرع');
@@ -105,6 +107,7 @@ export default function Branches() {
         note2: values.note2 || null,
         governorate_id: values.governorate_id,
         is_factory: !!values.is_factory,
+        auto_approve_rep_transfers: !!values.auto_approve_rep_transfers,
       });
       forgetFactoryBranches();
       message.success('تم تعديل الفرع');
@@ -155,6 +158,7 @@ export default function Branches() {
           <span style={{ fontWeight: 600 }}>{name}</span>
           {record.is_head_office && <Tag color="blue">المركز الرئيسي</Tag>}
           {record.is_factory && <Tag color="purple">مصنع</Tag>}
+          {record.auto_approve_rep_transfers && <Tag color="cyan">اعتماد تحويلات المناديب تلقائياً</Tag>}
           {!record.active && <Tag color="red">مخفي</Tag>}
         </Space>
       ),
@@ -234,6 +238,11 @@ export default function Branches() {
         <Col span={10}>
           <Form.Item name="is_factory" valuePropName="checked" label=" ">
             <Checkbox>فرع تصنيع</Checkbox>
+          </Form.Item>
+        </Col>
+        <Col span={14}>
+          <Form.Item name="auto_approve_rep_transfers" valuePropName="checked" label=" ">
+            <Checkbox>اعتماد تحويلات المناديب تلقائياً</Checkbox>
           </Form.Item>
         </Col>
       </Row>

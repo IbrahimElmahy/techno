@@ -180,6 +180,15 @@ def create_transfer(
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY,
                             {"code": "transfer_invalid", "message": str(exc)})
     db.commit()
+    if current.role == RoleName.sales_rep and transfer_service.rep_auto_approve_enabled(db, t):
+        tid = t.id
+        try:
+            transfer_service.approve_available(db, transfer_id=tid, actor_user_id=current.id)
+            db.commit()
+        except Exception:  # noqa: BLE001
+            db.rollback()
+            log.exception("auto-approve %s فشل — بقي الإذن معلّقاً", tid)
+        t = db.get(StockTransfer, tid)
     db.refresh(t)
     return _out(t)
 

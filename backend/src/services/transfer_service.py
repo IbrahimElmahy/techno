@@ -162,6 +162,58 @@ def approve(db, *, transfer_id: int, approver_role: RoleName, approver_branch_id
     return transfer
 
 
+def rep_auto_approve_enabled(db, transfer: StockTransfer) -> bool:
+    from src.models.org import Branch
+
+    branch_id = _location_branch(db, transfer.source_location_kind, transfer.source_location_id)
+    if branch_id is None:
+        return False
+    return bool(db.scalar(select(Branch.auto_approve_rep_transfers).where(Branch.id == branch_id)))
+
+
+def approve_available(db, *, transfer_id: int, actor_user_id: int) -> StockTransfer:
+    transfer = _pending(db, transfer_id)
+    kind, loc = transfer.source_location_kind, transfer.source_location_id
+    lines = list(db.scalars(select(StockTransferLine).where(
+        StockTransferLine.transfer_id == transfer.id).order_by(StockTransferLine.id)).all())
+    rows = ([(ln, ln.item_id, to_qty(ln.quantity)) for ln in lines] if lines
+            else [(None, transfer.item_id, to_qty(transfer.quantity))])
+    left: dict[int, Decimal] = {}
+    plan = []
+    for line, item_id, asked in rows:
+        if item_id not in left:
+            left[item_id] = max(to_qty(stock_service.on_hand(db, item_id, kind, loc)), to_qty(0))
+        give = min(asked, left[item_id])
+        left[item_id] = to_qty(left[item_id] - give)
+        plan.append((line, item_id, asked, give))
+    if not any(give > 0 for *_, give in plan):
+        return transfer
+    cut = [(item_id, asked, give) for _, item_id, asked, give in plan if give != asked]
+    for line, item_id, asked, give in plan:
+        if give == asked:
+            continue
+        if line is None:
+            transfer.quantity = give
+        elif give <= 0:
+            db.delete(line)
+        else:
+            line.quantity = give
+    kept = [(item_id, give) for _, item_id, _, give in plan if give > 0]
+    transfer.item_id, transfer.quantity = kept[0]
+    if cut:
+        note = "؛ ".join(f"{_item_name(db, i)}: طُلب {a.normalize():f} — اعتُمد {g.normalize():f}"
+                         for i, a, g in cut)
+        transfer.notes = " | ".join(x for x in (transfer.notes, note) if x)[:500]
+    db.flush()
+    audit_service.record(
+        db, action="transfer.auto_approve", actor_user_id=actor_user_id,
+        entity_type="stock_transfer", entity_id=transfer.id,
+        before={"lines": [{"item_id": i, "quantity": str(a)} for _, i, a, _ in plan]},
+        after={"lines": [{"item_id": i, "quantity": str(g)} for i, g in kept]})
+    return approve(db, transfer_id=transfer.id, approver_role=RoleName.branch_manager,
+                   approver_branch_id=None, approver_user_id=actor_user_id, is_admin=True)
+
+
 def _drop_movements(db, transfer, lines) -> None:
     from src.models.stock import StockMovement
 

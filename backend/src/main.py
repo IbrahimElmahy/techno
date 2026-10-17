@@ -366,6 +366,7 @@ _ADDED_COLUMNS: list[tuple[str, str, str]] = [
     ("customer", "service_rep_id", "BIGINT"),
     ("customer", "supplier_id", "BIGINT"),
     ("branch", "is_factory", "BOOLEAN NOT NULL DEFAULT FALSE"),
+    ("branch", "auto_approve_rep_transfers", "BOOLEAN NOT NULL DEFAULT FALSE"),
     ("lookup_option", "parent_value", "VARCHAR(64)"),
     ("point_record", "inspection_id", "BIGINT"),
     ("point_record", "purse", "VARCHAR(16)"),

@@ -30,6 +30,7 @@ class Branch(Base):
     note1: Mapped[str | None] = mapped_column(String(300), nullable=True)
     note2: Mapped[str | None] = mapped_column(String(300), nullable=True)
     is_factory: Mapped[bool] = mapped_column(default=False, nullable=False)
+    auto_approve_rep_transfers: Mapped[bool] = mapped_column(default=False, nullable=False)
     active: Mapped[bool] = mapped_column(default=True, nullable=False)
 
     governorate: Mapped[Governorate] = relationship()

@@ -31,6 +31,7 @@ class BranchCreate(BaseModel):
     governorate_id: int
     is_head_office: bool = False
     is_factory: bool = False
+    auto_approve_rep_transfers: bool = False
     note1: str | None = None
     note2: str | None = None
 
@@ -40,6 +41,7 @@ class BranchUpdate(BaseModel):
     governorate_id: int | None = None
     active: bool | None = None
     is_factory: bool | None = None
+    auto_approve_rep_transfers: bool | None = None
     note1: str | None = None
     note2: str | None = None
 
@@ -56,6 +58,7 @@ class BranchOut(BaseModel):
     governorate_id: int
     is_head_office: bool
     is_factory: bool = False
+    auto_approve_rep_transfers: bool = False
     active: bool
     note1: str | None = None
     note2: str | None = None
@@ -130,6 +133,7 @@ def _branch_out(b: Branch) -> BranchOut:
         id=b.id, name=b.name, governorate_id=b.governorate_id,
         is_head_office=b.is_head_office,
         is_factory=bool(getattr(b, "is_factory", False)),
+        auto_approve_rep_transfers=bool(getattr(b, "auto_approve_rep_transfers", False)),
         active=b.active, note1=b.note1, note2=b.note2,
     )
 
@@ -155,6 +159,7 @@ def create_branch(
     branch = Branch(
         name=body.name, governorate_id=body.governorate_id, is_head_office=body.is_head_office,
         is_factory=body.is_factory,
+        auto_approve_rep_transfers=body.auto_approve_rep_transfers,
         note1=body.note1, note2=body.note2,
     )
     db.add(branch)
@@ -185,6 +190,8 @@ def update_branch(
         b.active = body.active
     if body.is_factory is not None:
         b.is_factory = body.is_factory
+    if body.auto_approve_rep_transfers is not None:
+        b.auto_approve_rep_transfers = body.auto_approve_rep_transfers
     for field in ("note1", "note2"):
         val = getattr(body, field)
         if val is not None:
