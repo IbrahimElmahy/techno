@@ -330,7 +330,7 @@ const Vouchers: React.FC = () => {
   });
 
   useEffect(() => {
-    api.get<Party[]>('/api/v1/customers').then((r) => setCustomers(r.data)).catch(() => {});
+    api.get<Party[]>('/api/v1/customers', { params: { for_voucher: true } }).then((r) => setCustomers(r.data)).catch(() => {});
     api.get<Party[]>('/api/v1/suppliers').then((r) => setSuppliers(r.data)).catch(() => {});
     api
       .get<UserRecord[]>('/api/v1/users')

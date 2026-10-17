@@ -186,9 +186,21 @@ def _scope_filter(stmt, current: CurrentUser, *, view_filter: bool = True):
     return stmt
 
 
-def _seen(db: Session, customer_id: int, current: CurrentUser) -> Customer:
-    c = db.scalar(_scope_filter(select(Customer).where(Customer.id == customer_id), current,
-                                view_filter=False))
+def _factory_wide(db: Session, current: CurrentUser) -> bool:
+    if current.is_admin or current.rep_id is not None or current.branch_id is None:
+        return False
+    from src.models.org import Branch
+
+    return bool(db.scalar(select(Branch.is_factory).where(Branch.id == current.branch_id)))
+
+
+def _seen(db: Session, customer_id: int, current: CurrentUser, *,
+          all_branches: bool = False) -> Customer:
+    if all_branches:
+        c = db.get(Customer, customer_id)
+    else:
+        c = db.scalar(_scope_filter(select(Customer).where(Customer.id == customer_id), current,
+                                    view_filter=False))
     if c is None:
         raise HTTPException(404, {"code": "not_found", "message": "Customer not found"})
     return c
@@ -596,13 +608,17 @@ def list_customers(
     party_group: str | None = Query(None, pattern="^(customers|employees|branches)$"),
     limit: int | None = Query(None),
     offset: int = Query(0),
+    for_voucher: bool = Query(False),
     current: CurrentUser = Depends(require_capability(CAP_CUSTOMER_READ)),
     db: Session = Depends(get_db),
 ):
     if active is None and is_mobile_app(request):
         active = True
+    base = select(Customer)
+    if not (for_voucher and _factory_wide(db, current)):
+        base = _scope_filter(base, current)
     stmt = customer_profile_service.apply_filters(
-        _scope_filter(select(Customer), current),
+        base,
         q=q, customer_type=customer_type, rep_id=rep_id,
         service_rep_id=service_rep_id, territory_id=territory_id,
         governorate_id=governorate_id, active=active,
@@ -912,7 +928,7 @@ def customer_accounts(
     current: CurrentUser = Depends(require_capability(CAP_CUSTOMER_READ)),
     db: Session = Depends(get_db),
 ) -> CustomerAccountsOut:
-    _seen(db, customer_id, current)
+    _seen(db, customer_id, current, all_branches=_factory_wide(db, current))
     rows = db.scalars(select(CustomerAccount).where(
         CustomerAccount.customer_id == customer_id)).all()
     out = [CustomerAccountOut(
@@ -931,7 +947,7 @@ def customer_account(
     current: CurrentUser = Depends(require_capability(CAP_CUSTOMER_READ)),
     db: Session = Depends(get_db),
 ) -> CustomerAccountOut:
-    _seen(db, customer_id, current)
+    _seen(db, customer_id, current, all_branches=_factory_wide(db, current))
     acc = db.scalar(select(CustomerAccount).where(
         CustomerAccount.customer_id == customer_id,
         CustomerAccount.family.is_(None)))
