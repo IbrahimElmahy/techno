@@ -84,7 +84,7 @@ export default function ChequeModal({
               ) : (
                 <Form.Item name="customer_id" label="العميل"
                   rules={[{ required: true, message: 'اختر العميل' }]}>
-                  <PartyField kind="customer" forVoucher style={{ width: '100%' }}
+                  <PartyField kind="customer" style={{ width: '100%' }}
                     options={customers.map((c) => ({ value: c.id, label: c.name }))} />
                 </Form.Item>
               )

@@ -4,7 +4,7 @@ import { Select } from 'antd';
 import PartyPickerModal, { Party, PartyKind } from './PartyPickerModal';
 
 export default function PartyField({
-  kind, value, onChange, onPicked, options, placeholder, style, disabled, excludeTypes, forVoucher,
+  kind, value, onChange, onPicked, options, placeholder, style, disabled, excludeTypes,
 }: {
   kind: PartyKind;
   value?: number;
@@ -15,7 +15,6 @@ export default function PartyField({
   style?: React.CSSProperties;
   disabled?: boolean;
   excludeTypes?: string[];
-  forVoucher?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   return (
@@ -34,7 +33,6 @@ export default function PartyField({
         open={open}
         kind={kind}
         excludeTypes={excludeTypes}
-        forVoucher={forVoucher}
         onPick={(party) => { setOpen(false); onChange?.(party.id); onPicked?.(party); }}
         onCancel={() => setOpen(false)}
       />

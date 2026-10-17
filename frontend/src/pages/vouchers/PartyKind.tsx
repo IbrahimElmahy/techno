@@ -104,7 +104,6 @@ export function PartyKindField({
         <PartyField
           kind={employee ? 'employee' : 'customer'}
           excludeTypes={employee ? undefined : ['employee', 'internal']}
-          forVoucher
           options={custs.map((c) => ({ value: c.id, label: c.name }))}
           onChange={onCustomerChange}
         />
