@@ -63,7 +63,7 @@ const debtState = (k: PartyKind, balance?: string | null): DebtState => {
 
 export default function PartyPickerModal({
   open, kind, onPick, onCancel, date, onDateChange, kinds, title, excludeTypes,
-  variant = 'cards', contextLabel,
+  variant = 'cards', contextLabel, forVoucher,
 }: {
   open: boolean;
   kind: PartyKind;
@@ -76,6 +76,7 @@ export default function PartyPickerModal({
    excludeTypes?: string[];
    variant?: 'classic' | 'cards';
    contextLabel?: string;
+   forVoucher?: boolean;
  }) {
   const cards = variant === 'cards';
   const navigate = useNavigate();
@@ -106,7 +107,8 @@ export default function PartyPickerModal({
     setLoading(true);
     try {
       const [pRes, bRes, uRes, tRes] = await Promise.all([
-        api.get(KIND_ENDPOINT[activeKind]),
+        api.get(KIND_ENDPOINT[activeKind],
+          forVoucher && activeKind !== 'supplier' ? { params: { for_voucher: true } } : undefined),
         api.get('/api/v1/branches').catch(() => ({ data: [] })),
         activeKind === 'customer' ? api.get('/api/v1/users').catch(() => ({ data: [] }))
           : Promise.resolve({ data: [] }),
