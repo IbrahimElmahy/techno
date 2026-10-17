@@ -241,7 +241,7 @@ class _TransferRequestScreenState extends State<TransferRequestScreen> {
       Navigator.pop(context, true);
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('تم تسجيل الطلب — سيُرفع مع المزامنة وينتظر الاعتماد'),
+          content: Text('تم تسجيل الطلب — سيُرفع مع المزامنة'),
         ),
       );
     } finally {

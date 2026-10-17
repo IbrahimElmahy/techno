@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../api/api_client.dart';
 import '../db/local_db.dart';
+import '../services/auto_sync.dart';
 import '../theme.dart';
 import 'transfer_request_screen.dart';
 
@@ -45,8 +46,9 @@ class _TransfersReviewScreenState extends State<TransfersReviewScreen> {
     try {
       final n = await ApiClient.instance.pushTransfers();
       if (!mounted) return;
-      _say(n > 0 ? 'تم رفع $n طلب' : 'لا توجد طلبات بانتظار الرفع');
+      _say(n > 0 ? 'تم رفع $n طلب — جارٍ تحديث أصناف سيارتك' : 'لا توجد طلبات بانتظار الرفع');
       await _load();
+      if (n > 0) await AutoSync.instance.refreshLists();
     } on ApiException catch (e) {
       if (mounted) _say(e.message);
     } catch (_) {
