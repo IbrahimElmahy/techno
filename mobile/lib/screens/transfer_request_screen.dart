@@ -1,7 +1,10 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../db/local_db.dart';
 import '../models/models.dart';
+import '../services/auto_sync.dart';
 import '../theme.dart';
 import 'sale_add_item_flow.dart';
 
@@ -221,10 +224,12 @@ class _TransferRequestScreenState extends State<TransferRequestScreen> {
           Navigator.pop(context, true);
           return;
         }
+        final messenger = ScaffoldMessenger.of(context);
         Navigator.pop(context, true);
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('تم التعديل — سيُرفع مع المزامنة')),
+        messenger.showSnackBar(
+          const SnackBar(content: Text('تم التعديل — جارٍ رفع الطلب')),
         );
+        unawaited(_sendNow(messenger));
         return;
       }
       await LocalDb.instance.saveTransfer(
@@ -238,15 +243,24 @@ class _TransferRequestScreenState extends State<TransferRequestScreen> {
         lines: rows,
       );
       if (!mounted) return;
+      final messenger = ScaffoldMessenger.of(context);
       Navigator.pop(context, true);
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('تم تسجيل الطلب — سيُرفع مع المزامنة'),
-        ),
+      messenger.showSnackBar(
+        const SnackBar(content: Text('تم تسجيل الطلب — جارٍ رفعه')),
       );
+      unawaited(_sendNow(messenger));
     } finally {
       if (mounted) setState(() => _saving = false);
     }
+  }
+
+  static Future<void> _sendNow(ScaffoldMessengerState messenger) async {
+    final sent = await AutoSync.instance.sendTransfersNow();
+    messenger.showSnackBar(SnackBar(
+      content: Text(sent == null
+          ? 'تعذّر الاتصال الآن — سيُرفع الطلب مع المزامنة'
+          : 'تم رفع الطلب وتحديث أصناف سيارتك'),
+    ));
   }
 
   void _say(String m) => ScaffoldMessenger.of(context)

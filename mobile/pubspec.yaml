@@ -1,7 +1,7 @@
 name: techno_inspections
 description: "A new Flutter project."
 publish_to: 'none'
-version: 0.3.24+35
+version: 0.3.25+36
 
 environment:
   sdk: ^3.5.4

@@ -174,6 +174,22 @@ class AutoSync extends ChangeNotifier {
     }
   }
 
+  Future<int?> sendTransfersNow() async {
+    if (await LocalDb.instance.getKv('token') == null) return null;
+    if (!await _online()) return null;
+    var sent = 0;
+    await _acquire();
+    try {
+      sent = await ApiClient.instance.pushTransfers();
+    } catch (_) {
+      return null;
+    } finally {
+      _release();
+    }
+    if (sent > 0) await refreshLists();
+    return sent;
+  }
+
   DateTime? _lastItemsRefresh;
 
   Future<bool> refreshUnknownItems() async {
