@@ -35,7 +35,7 @@ export const isCustomerKind = (k: PartyKind) => k === 'customer' || k === 'emplo
 export function customersOfKind(customers: Party[], kind: PartyKind): Party[] {
   if (kind === 'employee') return customers.filter((c) => c.customer_type === 'employee');
   if (kind === 'branch') return customers.filter((c) => c.customer_type === 'internal');
-  return customers.filter((c) => c.customer_type !== 'employee' && c.customer_type !== 'internal');
+  return customers.filter((c) => c.customer_type !== 'employee');
 }
 
 let accountsPromise: Promise<any[]> | null = null;
@@ -103,7 +103,7 @@ export function PartyKindField({
         extra={extra}>
         <PartyField
           kind={employee ? 'employee' : 'customer'}
-          excludeTypes={employee ? undefined : ['employee', 'internal']}
+          excludeTypes={employee ? undefined : ['employee']}
           options={custs.map((c) => ({ value: c.id, label: c.name }))}
           onChange={onCustomerChange}
         />
