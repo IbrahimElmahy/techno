@@ -42,6 +42,16 @@ export function useIsFactoryBranch(): boolean {
 
 export default useIsFactoryBranch;
 
+export function useFactoryBranchIds(): Set<number> {
+  const [ids, setIds] = useState<Set<number>>(new Set());
+  useEffect(() => {
+    let alive = true;
+    factoryBranchIds().then((s) => { if (alive) setIds(s); });
+    return () => { alive = false; };
+  }, []);
+  return ids;
+}
+
 export function useShowsFactoryTools(): boolean {
   const { user } = useAuth();
   const branchId = (user as any)?.branch_id ?? null;

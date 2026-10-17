@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { Form, Segmented, Select } from 'antd';
 import { api } from '../../api/client';
 import PartyField from '../../components/PartyField';
+import { useFactoryBranchIds } from '../../components/useFactoryBranch';
 import { searchFilter, searchRank } from '../../utils/arabicSort';
 import type { Party } from './types';
 import { activeChoices, withInactiveTag } from '../../utils/active';
@@ -32,10 +33,14 @@ export function kindOfValues(v: any, customers: Party[]): PartyKind | null {
 
 export const isCustomerKind = (k: PartyKind) => k === 'customer' || k === 'employee' || k === 'branch';
 
-export function customersOfKind(customers: Party[], kind: PartyKind): Party[] {
+const hiddenBranchCard = (factory: Set<number>) => (c: { customer_type?: string; branch_id?: number | null }) =>
+  c.customer_type === 'internal' && !factory.has(Number(c.branch_id));
+
+export function customersOfKind(customers: Party[], kind: PartyKind, factory: Set<number> = new Set()): Party[] {
   if (kind === 'employee') return customers.filter((c) => c.customer_type === 'employee');
   if (kind === 'branch') return customers.filter((c) => c.customer_type === 'internal');
-  return customers.filter((c) => c.customer_type !== 'employee');
+  const hidden = hiddenBranchCard(factory);
+  return customers.filter((c) => c.customer_type !== 'employee' && !hidden(c));
 }
 
 let accountsPromise: Promise<any[]> | null = null;
@@ -80,7 +85,9 @@ export function PartyKindField({
 }) {
   const accounts = usePostableAccounts(kind === 'account');
   const currentAccount = Form.useWatch('account_id') as number | undefined;
-  const custs = useMemo(() => customersOfKind(customers, kind), [customers, kind]);
+  const factory = useFactoryBranchIds();
+  const hideParty = useMemo(() => hiddenBranchCard(factory), [factory]);
+  const custs = useMemo(() => customersOfKind(customers, kind, factory), [customers, kind, factory]);
   const label = PARTY_KIND_OPTIONS.find((o) => o.value === kind)?.label || 'الطرف';
 
   if (kind === 'branch') {
@@ -104,6 +111,7 @@ export function PartyKindField({
         <PartyField
           kind={employee ? 'employee' : 'customer'}
           excludeTypes={employee ? undefined : ['employee']}
+          hideParty={employee ? undefined : hideParty}
           options={custs.map((c) => ({ value: c.id, label: c.name }))}
           onChange={onCustomerChange}
         />

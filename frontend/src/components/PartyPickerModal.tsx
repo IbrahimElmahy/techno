@@ -63,7 +63,7 @@ const debtState = (k: PartyKind, balance?: string | null): DebtState => {
 
 export default function PartyPickerModal({
   open, kind, onPick, onCancel, date, onDateChange, kinds, title, excludeTypes,
-  variant = 'cards', contextLabel,
+  variant = 'cards', contextLabel, hideParty,
 }: {
   open: boolean;
   kind: PartyKind;
@@ -76,6 +76,7 @@ export default function PartyPickerModal({
    excludeTypes?: string[];
    variant?: 'classic' | 'cards';
    contextLabel?: string;
+   hideParty?: (p: Party) => boolean;
  }) {
   const cards = variant === 'cards';
   const navigate = useNavigate();
@@ -144,15 +145,16 @@ export default function PartyPickerModal({
     return parties.filter((p) => {
       if (onlyType && (p as any).customer_type !== onlyType) return false;
       if (excludeTypes?.includes((p as any).customer_type)) return false;
+      if (hideParty?.(p)) return false;
       if (branchId && p.branch_id !== branchId) return false;
       if (debt !== 'all' && debtState(activeKind, p.balance) !== debt) return false;
       if (!needle) return true;
       return matchesWords(bare(p), needle) || normalizeAr(p.phone).includes(needle);
     }).sort((a, b) => (rank(a) - rank(b)) || arCollator.compare(bare(a), bare(b)));
-  }, [parties, bareNames, query, branchId, activeKind, debt]);
+  }, [parties, bareNames, query, branchId, activeKind, debt, hideParty]);
 
   const kindCounts = useMemo(() => {
-    const base = parties.filter((p) => !excludeTypes?.includes((p as any).customer_type)
+    const base = parties.filter((p) => !excludeTypes?.includes((p as any).customer_type) && !hideParty?.(p)
       && (!branchId || p.branch_id === branchId));
     const out: Partial<Record<PartyKind, number>> = {};
     (kinds ?? [kind]).forEach((k) => {
@@ -161,7 +163,7 @@ export default function PartyPickerModal({
       out[k] = t ? base.filter((p) => (p as any).customer_type === t).length : base.length;
     });
     return out;
-  }, [parties, excludeTypes, branchId, kinds, kind, activeKind]);
+  }, [parties, excludeTypes, branchId, kinds, kind, activeKind, hideParty]);
 
   const PAGE = 150;
   const [renderLimit, setRenderLimit] = useState(PAGE);

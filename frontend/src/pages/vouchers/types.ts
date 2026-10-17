@@ -40,6 +40,7 @@ export interface Party {
   id: number;
   name: string;
   customer_type?: string;
+  branch_id?: number | null;
   balance?: string | number | null;
 }
 export interface UserRecord {
