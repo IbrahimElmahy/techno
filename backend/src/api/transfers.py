@@ -162,7 +162,7 @@ def create_transfer(
                          .where(StockTransfer.client_uuid == body.client_uuid)
                          .options(selectinload(StockTransfer.lines)))
         if seen is not None:
-            return _out(seen)
+            return _with_requested(_out(seen), body.lines)
     try:
         t = transfer_service.initiate(
             db, item_id=body.item_id, quantity=body.quantity, route=body.route,
@@ -180,17 +180,35 @@ def create_transfer(
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY,
                             {"code": "transfer_invalid", "message": str(exc)})
     db.commit()
-    if current.role == RoleName.sales_rep and transfer_service.rep_auto_approve_enabled(db, t):
-        tid = t.id
-        try:
-            transfer_service.approve_available(db, transfer_id=tid, actor_user_id=current.id)
-            db.commit()
-        except Exception:  # noqa: BLE001
-            db.rollback()
-            log.exception("auto-approve %s فشل — بقي الإذن معلّقاً", tid)
-        t = db.get(StockTransfer, tid)
+    if body.lines:
+        t = _auto_approve_for_rep(db, current, t)
     db.refresh(t)
-    return _out(t)
+    return _with_requested(_out(t), body.lines)
+
+
+def _auto_approve_for_rep(db: Session, current: CurrentUser, t):
+    if current.role != RoleName.sales_rep or t.status != TransferStatus.pending:
+        return t
+    if not transfer_service.rep_auto_approve_enabled(db, t):
+        return t
+    tid = t.id
+    try:
+        transfer_service.approve_available(db, transfer_id=tid, actor_user_id=current.id)
+        db.commit()
+    except Exception:  # noqa: BLE001
+        db.rollback()
+        log.exception("auto-approve %s فشل — بقي الإذن معلّقاً", tid)
+    return db.get(StockTransfer, tid)
+
+
+def _with_requested(out: TransferOut, asked) -> TransferOut:
+    if not asked or len(out.lines) >= len(asked):
+        return out
+    kept = {ln.item_id for ln in out.lines}
+    dropped = [a for a in asked if a.item_id not in kept] + list(asked)
+    out.lines = out.lines + [TransferLineOut(id=0, item_id=a.item_id, quantity=to_qty(0))
+                             for a in dropped[:len(asked) - len(out.lines)]]
+    return out
 
 
 def _may_approve_now(db: Session, current: CurrentUser, t) -> bool:
@@ -214,7 +232,11 @@ def self_approve(
     t = db.get(StockTransfer, transfer_id)
     if t is None:
         raise HTTPException(404, {"code": "not_found", "message": "إذن التحويل غير موجود"})
-    if t.status != TransferStatus.pending or not _may_approve_now(db, current, t):
+    if t.status != TransferStatus.pending:
+        return _out(t)
+    if not _may_approve_now(db, current, t):
+        t = _auto_approve_for_rep(db, current, t)
+        db.refresh(t)
         return _out(t)
     sees_all = branch_scope.sees_all_branches(current)
     try:
