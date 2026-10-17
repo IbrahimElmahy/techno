@@ -187,11 +187,14 @@ def _scope_filter(stmt, current: CurrentUser, *, view_filter: bool = True):
 
 
 def _factory_wide(db: Session, current: CurrentUser) -> bool:
-    if current.is_admin or current.rep_id is not None or current.branch_id is None:
+    if current.rep_id is not None:
+        return False
+    branch_id = branch_scope.visible_branch_id(current)
+    if branch_id is None:
         return False
     from src.models.org import Branch
 
-    return bool(db.scalar(select(Branch.is_factory).where(Branch.id == current.branch_id)))
+    return bool(db.scalar(select(Branch.is_factory).where(Branch.id == branch_id)))
 
 
 def _seen(db: Session, customer_id: int, current: CurrentUser, *,
