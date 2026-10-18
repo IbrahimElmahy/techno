@@ -29,6 +29,7 @@ _ROUTING: dict[str, str] = {
     "receipt": "CSH",
     "payment": "CSH",
     "expense": "CSH",
+    "expense_bill": "BILL",
     "cash_transfer": "CSH",
     "rep_handover": "CSH",
     "cheque_register": "BNK",

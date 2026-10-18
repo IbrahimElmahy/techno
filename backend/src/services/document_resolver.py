@@ -11,6 +11,7 @@ _SOURCES: list[tuple[str, str, str]] = [
     ("purchase", "src.models.purchasing:PurchaseInvoice", "/purchases"),
     ("purchase_return", "src.models.purchasing:PurchaseReturn", "/purchases"),
     ("voucher", "src.models.voucher:Voucher", "/vouchers"),
+    ("expense_bill", "src.models.expense_bill:ExpenseBill", "/expense-bills"),
 ]
 
 

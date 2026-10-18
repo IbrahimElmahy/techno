@@ -1056,3 +1056,8 @@ def rep_cash_statement(
     s = statement_service.account_statement(
         db, account_id=custody.account_id, date_from=date_from, date_to=date_to)
     return _with_docs(db, s)
+
+
+from src.api import expense_bills as _expense_bills  # noqa: E402
+
+router.include_router(_expense_bills.router)

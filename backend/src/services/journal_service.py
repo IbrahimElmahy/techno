@@ -233,6 +233,7 @@ _DOC_LABEL = {
     "purchase": "فاتورة شراء",
     "purchase_return": "مرتجع شراء",
     "voucher": "سند",
+    "expense_bill": "فاتورة مصروف",
 }
 
 

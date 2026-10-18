@@ -242,6 +242,7 @@ PAGE_CAPS: dict[str, set[str]] = {
     "/returns": {"return.write"},
     "/orders": {"sale.write"},
     "/vouchers": {"voucher.write"},
+    "/expense-bills": {"voucher.write"},
     "/partners-current": {"voucher.write"},
     "/treasury": {"voucher.write"},
     "/treasuries": {"voucher.write"},

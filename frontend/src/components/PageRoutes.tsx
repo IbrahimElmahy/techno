@@ -81,6 +81,7 @@ const Inspections = lazy(() => import('../pages/Inspections'));
 const Owners = lazy(() => import('../pages/Owners'));
 const InspectionItems = lazy(() => import('../pages/InspectionItems'));
 const Vouchers = lazy(() => import('../pages/Vouchers'));
+const ExpenseBills = lazy(() => import('../pages/ExpenseBills'));
 const VoucherKeys = lazy(() => import('../pages/VoucherKeys'));
 const FinanceReports = lazy(() => import('../pages/FinanceReports'));
 const FleetDashboard = lazy(() => import('../pages/FleetDashboard'));
@@ -186,6 +187,7 @@ export default function PageRoutes({ location }: { location?: string }) {
       <Route path="/points-ledger" element={<PointsLedger />} />
       <Route path="/treasury" element={<Treasury />} />
       <Route path="/vouchers" element={<Vouchers />} />
+      <Route path="/expense-bills" element={<ExpenseBills />} />
       <Route path="/voucher-keys" element={<VoucherKeys />} />
       <Route path="/finance-reports" element={<FinanceReports />} />
       <Route path="/income-sheet" element={<IncomeSheet />} />

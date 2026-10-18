@@ -168,6 +168,7 @@ export const NAVIGATION: (NavGroup | NavScreen)[] = [
           { key: '/vouchers?tab=receipt', label: 'سند قبض', roles: R(BOOKS) },
           { key: '/vouchers?tab=payment', label: 'سند صرف', roles: R(BOOKS) },
           { key: '/vouchers?tab=expense', label: 'سند مصروف', roles: R(BOOKS) },
+          { key: '/expense-bills', label: 'فواتير المصروفات', roles: R(BOOKS) },
           { key: '/vouchers?tab=handover', label: 'توريد مندوب', roles: R(BOOKS) },
           { key: '/vouchers?tab=transfer', label: 'تحويل بين الخزن', roles: R(BOOKS) },
           { key: '/general-ledger?tab=journal', label: 'القيود اليدوية', roles: R(BOOKS), a5: '/entries' },

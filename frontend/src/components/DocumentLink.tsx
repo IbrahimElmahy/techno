@@ -5,7 +5,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { withReturn } from './docReturn';
 
 export type DocKind = 'invoice' | 'return' | 'purchase' | 'purchase_return'
-  | 'transfer' | 'stock_permit' | 'stock_count' | 'production_order' | 'voucher';
+  | 'transfer' | 'stock_permit' | 'stock_count' | 'production_order' | 'voucher' | 'expense_bill';
 
 const SCREEN: Record<DocKind, string> = {
   invoice: '/invoices',
@@ -17,6 +17,7 @@ const SCREEN: Record<DocKind, string> = {
   stock_count: '/stock-counts',
   production_order: '/manufacturing?tab=orders',
   voucher: '/vouchers?tab=log',
+  expense_bill: '/expense-bills',
 };
 
 const OPEN_PARAM: Partial<Record<DocKind, 'doc' | 'edit'>> = {
@@ -41,6 +42,7 @@ export function docKindOf(sourceDocType: string | null | undefined): DocKind | n
     case 'stock_permit': return 'stock_permit';
     case 'stock_count': return 'stock_count';
     case 'production_order': return 'production_order';
+    case 'expense_bill': return 'expense_bill';
     default: return null;
   }
 }

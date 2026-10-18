@@ -18,6 +18,7 @@ export const ENTRY_TYPE_LABEL: Record<string, string> = {
   cheque_settle: 'تحصيل شيك',
   cheque_bounce: 'ارتداد شيك',
   expense: 'مصروف',
+  expense_bill: 'فاتورة مصروف',
   netting: 'مقاصة',
   depreciation: 'إهلاك',
   asset_disposal: 'استبعاد أصل',
@@ -39,4 +40,5 @@ export const DOC_KIND_LABEL: Record<string, string> = {
   purchase: 'فاتورة شراء',
   purchase_return: 'مرتجع شراء',
   voucher: 'سند',
+  expense_bill: 'فاتورة مصروف',
 };
