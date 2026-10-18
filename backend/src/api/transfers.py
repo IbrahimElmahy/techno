@@ -69,6 +69,9 @@ class TransferOut(BaseModel):
     statement1: str | None = None
     external_document_number: str | None = None
     notes: str | None = None
+    initiated_by: int | None = None
+    initiated_by_name: str | None = None
+    created_from: str = "system"
     lines: list["TransferLineOut"] = []
 
 
@@ -97,7 +100,7 @@ class RejectIn(BaseModel):
     reason: str | None = None
 
 
-def _out(t) -> TransferOut:
+def _out(t, names: dict | None = None) -> TransferOut:
     lines = list(getattr(t, "lines", []))
     head_item = lines[0].item_id if len(lines) == 1 else (None if lines else t.item_id)
     head_qty = (sum((ln.quantity for ln in lines), to_qty(0)) if lines else t.quantity)
@@ -115,6 +118,9 @@ def _out(t) -> TransferOut:
         statement1=getattr(t, "statement1", None),
         external_document_number=getattr(t, "external_document_number", None),
         notes=getattr(t, "notes", None),
+        initiated_by=t.initiated_by,
+        initiated_by_name=(names or {}).get(t.initiated_by),
+        created_from="app" if getattr(t, "client_uuid", None) else "system",
         lines=[TransferLineOut(id=ln.id, item_id=ln.item_id, quantity=ln.quantity)
                for ln in getattr(t, "lines", [])],
     )
@@ -148,7 +154,13 @@ def list_transfers(
         selectinload(StockTransfer.lines))
     if limit is not None:
         stmt = stmt.limit(limit).offset(offset)
-    return [_out(t) for t in db.scalars(stmt).all()]
+    rows = db.scalars(stmt).all()
+    from src.models.user import User
+
+    ids = {t.initiated_by for t in rows if t.initiated_by}
+    names = {u.id: (u.full_name or u.username) for u in db.scalars(
+        select(User).where(User.id.in_(ids or {0}))).all()}
+    return [_out(t, names) for t in rows]
 
 
 @router.post("", response_model=TransferOut, status_code=status.HTTP_201_CREATED)

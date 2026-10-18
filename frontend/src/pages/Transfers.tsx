@@ -74,6 +74,9 @@ interface TransferRecord {
   statement1?: string | null;
   external_document_number?: string | null;
   notes?: string | null;
+  initiated_by?: number | null;
+  initiated_by_name?: string | null;
+  created_from?: 'app' | 'system';
 }
 
 interface StockRow {
@@ -1117,6 +1120,13 @@ export default function Transfers() {
         const tag = STATUS_TAGS[s] || { color: 'default', text: s };
         return <Tag color={tag.color}>{tag.text}</Tag>;
       } },
+    { title: 'المصدر', dataIndex: 'created_from', key: 'created_from', width: 90,
+      filters: [{ text: 'التطبيق', value: 'app' }, { text: 'النظام', value: 'system' }],
+      onFilter: (v: any, r: TransferRecord) => (r.created_from || 'system') === v,
+      render: (v: string | undefined, r: TransferRecord) => ((r as any).__isDraft ? '-'
+        : v === 'app' ? <Tag color="purple">التطبيق</Tag> : <Tag>النظام</Tag>) },
+    { title: 'أنشأه', dataIndex: 'initiated_by_name', key: 'initiated_by_name', ellipsis: true,
+      render: (v: string | null | undefined) => v || '-' },
     { title: 'التاريخ', dataIndex: 'transfer_date', key: 'transfer_date',
       sorter: (a: TransferRecord, b: TransferRecord) =>
         docDate(a).localeCompare(docDate(b)),
