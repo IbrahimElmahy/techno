@@ -171,7 +171,8 @@ def create_bill(
     _office_only(current)
     try:
         b = expense_bill_service.create(db, **_inputs(body), actor_user_id=current.id,
-                                        actor_role=current.role)
+                                        actor_role=current.role,
+                                        view_branch_id=branch_scope.visible_branch_id(current))
     except (ExpenseBillError, LedgerError) as exc:
         db.rollback()
         raise _refused(exc)
@@ -190,7 +191,8 @@ def update_bill(
     b = _seen(db, current, bill_id)
     try:
         b = expense_bill_service.update(db, b, **_inputs(body), actor_user_id=current.id,
-                                        actor_role=current.role)
+                                        actor_role=current.role,
+                                        view_branch_id=branch_scope.visible_branch_id(current))
     except (ExpenseBillError, LedgerError) as exc:
         db.rollback()
         raise _refused(exc)

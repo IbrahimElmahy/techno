@@ -156,10 +156,23 @@ def snapshot(bill: ExpenseBill) -> dict:
     }
 
 
+def _branch(db: Session, plan: dict, *, actor_user_id: int, view_branch_id: int | None) -> int | None:
+    found = branch_for(db, actor_user_id=actor_user_id) or view_branch_id
+    if found is None and plan["treasury_id"]:
+        from src.models.treasury import Treasury
+
+        safe = db.get(Treasury, plan["treasury_id"])
+        found = safe.branch_id if safe is not None else None
+    if found is None and plan["supplier"] is not None:
+        found = plan["supplier"].branch_id
+    return found
+
+
 def create(db: Session, *, lines: list[BillLineInput], supplier_id: int | None,
            creditor_account_id: int | None, cash_amount, treasury_id: int | None,
            bill_date: date | None, external_document_number: str | None, notes: str | None,
-           actor_user_id: int, actor_role: RoleName) -> ExpenseBill:
+           actor_user_id: int, actor_role: RoleName,
+           view_branch_id: int | None = None) -> ExpenseBill:
     plan = _prepare(db, lines=lines, supplier_id=supplier_id,
                     creditor_account_id=creditor_account_id, cash_amount=cash_amount,
                     treasury_id=treasury_id, actor_user_id=actor_user_id, actor_role=actor_role)
@@ -169,7 +182,8 @@ def create(db: Session, *, lines: list[BillLineInput], supplier_id: int | None,
             raise ExpenseBillError(
                 f"الرصيد النقدي غير كافٍ — المتاح {available} والمطلوب صرفه {plan['cash']}.")
     bill = ExpenseBill(document_number=next_document_number(db, ExpenseBill, "EXB"),
-                       branch_id=branch_for(db, actor_user_id=actor_user_id),
+                       branch_id=_branch(db, plan, actor_user_id=actor_user_id,
+                                         view_branch_id=view_branch_id),
                        actor_user_id=actor_user_id, bill_date=bill_date or date.today(),
                        creditor_account_id=plan["creditor"].id, total=ZERO,
                        cash_amount=ZERO, credit_amount=ZERO)
@@ -200,12 +214,16 @@ def update(db: Session, bill: ExpenseBill, *, lines: list[BillLineInput],
            supplier_id: int | None, creditor_account_id: int | None, cash_amount,
            treasury_id: int | None, bill_date: date | None,
            external_document_number: str | None, notes: str | None,
-           actor_user_id: int, actor_role: RoleName) -> ExpenseBill:
+           actor_user_id: int, actor_role: RoleName,
+           view_branch_id: int | None = None) -> ExpenseBill:
     before = snapshot(bill)
     plan = _prepare(db, lines=lines, supplier_id=supplier_id,
                     creditor_account_id=creditor_account_id, cash_amount=cash_amount,
                     treasury_id=treasury_id, actor_user_id=actor_user_id, actor_role=actor_role)
     _drop(db, bill)
+    if bill.branch_id is None:
+        bill.branch_id = _branch(db, plan, actor_user_id=actor_user_id,
+                                 view_branch_id=view_branch_id)
     _apply(bill, plan, bill_date=bill_date or bill.bill_date,
            external_document_number=external_document_number, notes=notes)
     db.flush()
