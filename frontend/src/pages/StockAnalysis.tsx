@@ -172,7 +172,7 @@ export default function StockAnalysis() {
 
   const warehouseList = useMemo(() => {
     const br = picked(f, 'branch_id');
-    const all = lists.warehouses || [];
+    const all = (lists.warehouses || []).filter((w: any) => w.active !== false);
     return br.length ? all.filter((w: any) => br.includes(w.branch_id)) : all;
   }, [lists.warehouses, JSON.stringify(f.branch_id)]);
   const itemList = useMemo(() => {
