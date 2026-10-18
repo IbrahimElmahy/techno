@@ -166,7 +166,7 @@ class _CouponReceiptScreenState extends State<CouponReceiptScreen> {
         entry.kinds = [
           for (final k in (res['kinds'] as List? ?? const [])) k.toString(),
         ];
-        if (entry.isGood && _customerId == null) {
+        if (entry.isGood && _customerId == null && _customerType == 'merchant') {
           _customerId = entry.customerId;
           _customerName = entry.customerName;
         }
@@ -178,7 +178,8 @@ class _CouponReceiptScreenState extends State<CouponReceiptScreen> {
       } else if (entry.status == 'wrong_kind') {
         final where = entry.kinds.isEmpty ? '' : ' — موجود تحت: ${entry.kinds.join('، ')}';
         _toast('الكوبون ${entry.serial} غير مصروف ضمن «${entry.kind}»$where');
-      } else if (_customerId != null && entry.customerId != _customerId) {
+      } else if (_customerType == 'merchant' && _customerId != null &&
+          entry.customerId != _customerId) {
         _toast('الكوبون ${entry.serial} مصروف لعميل آخر');
       }
     } catch (_) {
@@ -264,6 +265,10 @@ class _CouponReceiptScreenState extends State<CouponReceiptScreen> {
     }
     if (_hasRejects) {
       _toast('احذف الكوبونات المرفوضة أولاً');
+      return;
+    }
+    if (_customerType == 'plumber' && _customerId == null) {
+      _toast('اختر الفني من القائمة أولاً');
       return;
     }
     setState(() => _saving = true);
@@ -364,9 +369,11 @@ class _CouponReceiptScreenState extends State<CouponReceiptScreen> {
                           onChanged: (v) {
                             if (v == null || v == _kind) return;
                             setState(() {
-                              if (_kind != null) _values[_kind!] = _valueCtrl.text;
+                              if (_kind != null) {
+                                _values[_kind!] = _valueCtrl.text;
+                                _valueCtrl.text = _values[v] ?? '';
+                              }
                               _kind = v;
-                              _valueCtrl.text = _values[v] ?? '';
                             });
                           },
                         ),
