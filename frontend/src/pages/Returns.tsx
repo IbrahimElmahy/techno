@@ -1052,7 +1052,7 @@ export default function Returns({ embedded }: { embedded?: { onExit: () => void 
     <>
       <PartyPickerModal contextLabel="مرتجع مبيعات"
         open={newStep === 'party' || partyPickerOpen} kind="customer"
-        kinds={['customer', 'employee', 'supplier']}
+        kinds={['customer', 'employee', 'supplier']} supplierAsCustomer
         excludeTypes={['plumber']}
         date={returnDate} onDateChange={(d) => setReturnDate(d)}
         onPick={handlePartyPicked}

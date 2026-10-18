@@ -1779,7 +1779,7 @@ function couponsTotal(inv: any): number {
   const partyPicker = (
     <PartyPickerModal
       open={partyPickerOpen || newStep === 'party'} kind="customer"
-      kinds={['customer', 'employee']}
+      kinds={['customer', 'employee', 'supplier']} supplierAsCustomer
       excludeTypes={['plumber']} variant="cards" contextLabel={isBonus ? 'فاتورة بونص' : 'طلب بيع مباشر'}
       date={invoiceDate} onDateChange={(d) => setInvoiceDate(d)}
       onPick={handlePartyPicked}

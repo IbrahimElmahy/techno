@@ -63,7 +63,7 @@ const debtState = (k: PartyKind, balance?: string | null): DebtState => {
 
 export default function PartyPickerModal({
   open, kind, onPick, onCancel, date, onDateChange, kinds, title, excludeTypes,
-  variant = 'cards', contextLabel, hideParty,
+  variant = 'cards', contextLabel, hideParty, supplierAsCustomer,
 }: {
   open: boolean;
   kind: PartyKind;
@@ -77,6 +77,7 @@ export default function PartyPickerModal({
    variant?: 'classic' | 'cards';
    contextLabel?: string;
    hideParty?: (p: Party) => boolean;
+   supplierAsCustomer?: boolean;
  }) {
   const cards = variant === 'cards';
   const navigate = useNavigate();
@@ -208,7 +209,18 @@ export default function PartyPickerModal({
       e.preventDefault(); setCursor((c) => Math.min(c + 1, visible.length - 1));
     }
     if (e.key === 'ArrowUp') { e.preventDefault(); setCursor((c) => Math.max(c - 1, 0)); }
-    if (e.key === 'Enter' && visible[cursor]) { e.preventDefault(); onPick(visible[cursor]); }
+    if (e.key === 'Enter' && visible[cursor]) { e.preventDefault(); void choose(visible[cursor]); }
+  };
+
+  const choose = async (p: Party) => {
+    if (!supplierAsCustomer || activeKind !== 'supplier') { onPick(p); return; }
+    try {
+      const r = await api.post(`/api/v1/suppliers/${p.id}/customer-card`);
+      onPick({ id: r.data.id, name: r.data.name, phone: r.data.phone ?? null,
+               address: r.data.address ?? null, branch_id: r.data.branch_id ?? null, balance: '0' });
+    } catch (err: any) {
+      message.error(err?.response?.data?.detail?.message || 'تعذّر تجهيز كارت العميل للمورد');
+    }
   };
 
   const handleCreate = async (values: any) => {
@@ -236,7 +248,7 @@ export default function PartyPickerModal({
       }
       const res = await api.post(KIND_ENDPOINT[activeKind], payload);
       message.success(`تم إنشاء ${KIND_LABEL[activeKind]} بنجاح`);
-      onPick({ id: res.data.id, name: res.data.name, phone: res.data.phone ?? null,
+      await choose({ id: res.data.id, name: res.data.name, phone: res.data.phone ?? null,
                address: res.data.address ?? null, balance: '0' });
       createForm.resetFields();
       setCreating(false);
@@ -395,7 +407,7 @@ export default function PartyPickerModal({
             ? (typeLabels[p.customer_type] ?? p.customer_type) : null;
           return (
             <div key={party.id} className={`pp-card${active ? ' is-active' : ''}`}
-              onClick={() => onPick(party)}
+              onClick={() => { void choose(party); }}
               ref={(el) => { rowRefs.current[i] = el; }}
               onMouseMove={onCardPointer(i)}>
               <div className="pp-c-name">
@@ -423,7 +435,7 @@ export default function PartyPickerModal({
               <div className="pp-c-bal">{balanceView(party)}</div>
               <div className="pp-c-act">
                 <button type="button" className="pp-btn pp-btn--primary pp-btn--sm"
-                  onClick={(e) => { e.stopPropagation(); onPick(party); }}>
+                  onClick={(e) => { e.stopPropagation(); void choose(party); }}>
                   اختيار ومتابعة الفاتورة
                 </button>
                 <button type="button" className="pp-icon-btn"
@@ -515,7 +527,7 @@ export default function PartyPickerModal({
               <Empty description="لا توجد نتائج"
                 style={{ margin: '32px 0' }} />
             ) : visible.map((party, i) => (
-              <div key={party.id} onClick={() => onPick(party)}
+              <div key={party.id} onClick={() => { void choose(party); }}
                 ref={(el) => { rowRefs.current[i] = el; }}
                 onMouseEnter={() => setCursor(i)}
                 style={{

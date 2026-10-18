@@ -195,6 +195,54 @@ def _seen(db: Session, supplier_id: int, current: CurrentUser) -> Supplier:
     return s
 
 
+class SupplierCustomerCardOut(BaseModel):
+    id: int
+    name: str
+    phone: str | None = None
+    address: str | None = None
+    branch_id: int | None = None
+    created: bool = False
+
+
+@router.post("/{supplier_id}/customer-card", response_model=SupplierCustomerCardOut)
+def supplier_customer_card(
+    supplier_id: int,
+    current: CurrentUser = Depends(require_capability("sale.write")),
+    db: Session = Depends(get_db),
+) -> SupplierCustomerCardOut:
+    from src.models.customer import Customer
+    from src.models.org import Territory
+    from src.services import customer_service
+
+    supplier = _seen(db, supplier_id, current)
+    card = db.scalar(select(Customer).where(Customer.supplier_id == supplier.id,
+                                            Customer.active.is_(True)).order_by(Customer.id))
+    created = False
+    if card is None:
+        branch_id = supplier.branch_id or current.branch_id
+        territory_id = db.scalar(select(Territory.id).where(Territory.branch_id == branch_id)
+                                 .order_by(Territory.id)) if branch_id else None
+        territory_id = territory_id or db.scalar(select(Territory.id).order_by(Territory.id))
+        if territory_id is None:
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, {
+                "code": "no_territory", "message": "لا توجد منطقة لتسجيل كارت العميل للمورد."})
+        card = Customer(code=customer_service._next_code(db), name=supplier.name,
+                        customer_type="trader", phone=supplier.phone, address=supplier.address,
+                        territory_id=territory_id, branch_id=branch_id, supplier_id=supplier.id)
+        db.add(card)
+        db.flush()
+        customer_service.open_account(db, card)
+        audit_service.record(db, action="customer.create_for_supplier", actor_user_id=current.id,
+                             entity_type="customer", entity_id=card.id,
+                             after={"code": card.code, "supplier_id": supplier.id,
+                                    "branch_id": branch_id})
+        db.commit()
+        created = True
+    return SupplierCustomerCardOut(id=card.id, name=card.name, phone=card.phone,
+                                   address=getattr(card, "address", None),
+                                   branch_id=card.branch_id, created=created)
+
+
 @router.get("/{supplier_id}", response_model=SupplierOut)
 def get_supplier(
     supplier_id: int,
