@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { PAGE_SIZE } from '../utils/pagination';
 import { searchFilter, searchRank } from '../utils/arabicSort';
 import {
-  Button, Col, Form, Input, Modal, Row, Select, Space, Table, Tag, Tooltip, message
+  Button, Col, Form, Input, Modal, Row, Select, Space, Table, Tag, Tooltip, message, Checkbox,
 } from 'antd';
 import {
   PlusOutlined, EditOutlined, StopOutlined, SearchOutlined, ReloadOutlined, TeamOutlined,
@@ -157,7 +157,9 @@ export default function Warehouses() {
 
   const branchName = (id: number | null) => branches.find((b) => b.id === id)?.name || '-';
 
+  const [showHidden, setShowHidden] = useState(false);
   const filtered = rows.filter((w) => {
+    if (!showHidden && !w.active) return false;
     const q = search.trim();
     if (!q) return true;
     return [String(w.id), w.name, branchName(w.branch_id), w.description || '']
@@ -420,6 +422,7 @@ export default function Warehouses() {
             ref={searchRef}
             prefix={<SearchOutlined />} onChange={(e) => setSearch(e.target.value)} />
           <Button className="sl-f-clear" icon={<ClearOutlined />} onClick={() => setSearch('')}>مسح</Button>
+          <Checkbox checked={showHidden} onChange={(e) => setShowHidden(e.target.checked)}>عرض المخفية</Checkbox>
         </>)}
       >
         <Table
