@@ -16,8 +16,9 @@ class CouponReceiptScreen extends StatefulWidget {
 }
 
 class _CouponEntry {
-  _CouponEntry(this.serial);
+  _CouponEntry(this.serial, this.kind);
   final String serial;
+  final String? kind;
 
   String status = 'pending';
   String? customerName;
@@ -47,6 +48,7 @@ class _CouponReceiptScreenState extends State<CouponReceiptScreen> {
 
   String? _kind;
   final _valueCtrl = TextEditingController();
+  final _values = <String, String>{};
 
   static const _plumberTypes = ['plumber'];
   static const _nonMerchantTypes = ['plumber', 'owner', 'employee'];
@@ -98,13 +100,14 @@ class _CouponReceiptScreenState extends State<CouponReceiptScreen> {
     _kind = savedKind == null || savedKind.isEmpty ? null : savedKind;
     final v = e['coupon_value'] as num?;
     if (v != null) _valueCtrl.text = _fmtValue(v.toDouble());
+    if (_kind != null) _values[_kind!] = _valueCtrl.text;
     _notesCtrl.text = (e['notes'] as String?) ?? '';
     final d = e['received_date'] as String?;
     if (d != null) _received = DateTime.tryParse(d) ?? _received;
     for (final serial in ((e['serials'] as String?) ?? '').split(',')) {
       final t = serial.trim();
       if (t.isEmpty) continue;
-      final entry = _CouponEntry(t)..status = 'valid'..customerName = _customerName;
+      final entry = _CouponEntry(t, _kind)..status = 'valid'..customerName = _customerName;
       _entries.add(entry);
     }
   }
@@ -141,11 +144,11 @@ class _CouponReceiptScreenState extends State<CouponReceiptScreen> {
       _toast('اختر فئة الكوبون أولاً');
       return;
     }
-    if (_entries.any((e) => e.serial == serial)) {
+    if (_entries.any((e) => e.serial == serial && e.kind == _kind)) {
       _toast('هذا الكوبون مضاف بالفعل');
       return;
     }
-    final entry = _CouponEntry(serial);
+    final entry = _CouponEntry(serial, _kind);
     setState(() => _entries.insert(0, entry));
     await _verify(entry);
   }
@@ -153,7 +156,7 @@ class _CouponReceiptScreenState extends State<CouponReceiptScreen> {
   Future<void> _verify(_CouponEntry entry) async {
     try {
       final res =
-          await ApiClient.instance.checkCoupon(entry.serial, couponKind: _kind);
+          await ApiClient.instance.checkCoupon(entry.serial, couponKind: entry.kind);
       if (!mounted) return;
       setState(() {
         entry.status = res['status'] as String? ?? 'unknown';
@@ -174,7 +177,7 @@ class _CouponReceiptScreenState extends State<CouponReceiptScreen> {
         _toast('الكوبون ${entry.serial} تم استلامه من قبل');
       } else if (entry.status == 'wrong_kind') {
         final where = entry.kinds.isEmpty ? '' : ' — موجود تحت: ${entry.kinds.join('، ')}';
-        _toast('الكوبون ${entry.serial} غير مصروف ضمن «$_kind»$where');
+        _toast('الكوبون ${entry.serial} غير مصروف ضمن «${entry.kind}»$where');
       } else if (_customerId != null && entry.customerId != _customerId) {
         _toast('الكوبون ${entry.serial} مصروف لعميل آخر');
       }
@@ -220,17 +223,31 @@ class _CouponReceiptScreenState extends State<CouponReceiptScreen> {
       ..showSnackBar(SnackBar(content: Text(msg)));
   }
 
-  List<(String, int)> get _summary {
-    final counted = _entries.where((e) => e.isGood || e.status == 'pending').length;
-    final kind = _kind;
-    if (counted == 0 || kind == null) return const [];
-    return [(_tiers[kind] ?? kind, counted)];
+  String _valueOf(String? kind) =>
+      (kind == _kind ? _valueCtrl.text : _values[kind] ?? '').trim();
+
+  Map<String?, List<_CouponEntry>> get _byKind {
+    final out = <String?, List<_CouponEntry>>{};
+    for (final e in _entries.reversed) {
+      out.putIfAbsent(e.kind, () => []).add(e);
+    }
+    return out;
   }
 
+  List<(String, int)> get _summary => [
+        for (final g in _byKind.entries)
+          if (g.value.any((e) => e.isGood || e.status == 'pending'))
+            (_tiers[g.key] ?? g.key ?? '—',
+             g.value.where((e) => e.isGood || e.status == 'pending').length),
+      ];
+
   double get _totalValue {
-    final each = double.tryParse(_valueCtrl.text.trim()) ?? 0;
-    final counted = _entries.where((e) => e.isGood || e.status == 'pending').length;
-    return each * counted;
+    var total = 0.0;
+    for (final g in _byKind.entries) {
+      final each = double.tryParse(_valueOf(g.key)) ?? 0;
+      total += each * g.value.where((e) => e.isGood || e.status == 'pending').length;
+    }
+    return total;
   }
 
   bool get _hasRejects => _entries.any((e) =>
@@ -241,7 +258,7 @@ class _CouponReceiptScreenState extends State<CouponReceiptScreen> {
       _toast('لا توجد كوبونات');
       return;
     }
-    if (_kind == null) {
+    if (_entries.any((e) => e.kind == null)) {
       _toast('اختر فئة الكوبون قبل الحفظ');
       return;
     }
@@ -254,20 +271,25 @@ class _CouponReceiptScreenState extends State<CouponReceiptScreen> {
       if (_isEdit) {
         await LocalDb.instance.deleteCouponReceipt(widget.existing!['local_id'] as int);
       }
-      await LocalDb.instance.saveCouponReceipt(
-        clientUuid: _uuid,
-        serials: [for (final e in _entries) e.serial],
-        customerId: _customerId,
-        customerName: _customerName,
-        customerType: _customerType,
-        receivedDate: intl.DateFormat('yyyy-MM-dd').format(_received),
-        couponKind: _kind,
-        couponValue: double.tryParse(_valueCtrl.text.trim()),
-        notes: _notesCtrl.text.trim().isEmpty ? null : _notesCtrl.text.trim(),
-      );
+      final groups = _byKind.entries.toList();
+      for (final (i, g) in groups.indexed) {
+        await LocalDb.instance.saveCouponReceipt(
+          clientUuid: i == 0 ? _uuid : '$_uuid-$i',
+          serials: [for (final e in g.value) e.serial],
+          customerId: _customerId,
+          customerName: _customerName,
+          customerType: _customerType,
+          receivedDate: intl.DateFormat('yyyy-MM-dd').format(_received),
+          couponKind: g.key,
+          couponValue: double.tryParse(_valueOf(g.key)),
+          notes: _notesCtrl.text.trim().isEmpty ? null : _notesCtrl.text.trim(),
+        );
+      }
       try {
         await ApiClient.instance.pushCouponReceipts();
-        _toast('تم الرفع إلى الخادم — بانتظار اعتماد المكتب');
+        _toast(groups.length > 1
+            ? 'تم الرفع — ${groups.length} استلامات (استلام لكل فئة) بانتظار اعتماد المكتب'
+            : 'تم الرفع إلى الخادم — بانتظار اعتماد المكتب');
       } catch (e) {
         _toast('تم التسجيل على الجهاز، وسيُرفع مع المزامنة (${e.toString()})');
       }
@@ -331,7 +353,7 @@ class _CouponReceiptScreenState extends State<CouponReceiptScreen> {
                           decoration: InputDecoration(
                             labelText: 'فئة الكوبون',
                             prefixIcon: const Icon(Icons.workspace_premium_outlined),
-                            errorText: _kind == null && _entries.isNotEmpty
+                            errorText: _kind == null && _entries.any((e) => e.kind == null)
                                 ? 'اختر فئة الكوبون'
                                 : null,
                           ),
@@ -341,10 +363,11 @@ class _CouponReceiptScreenState extends State<CouponReceiptScreen> {
                           ],
                           onChanged: (v) {
                             if (v == null || v == _kind) return;
-                            setState(() => _kind = v);
-                            for (final e in List.of(_entries)) {
-                              _verify(e);
-                            }
+                            setState(() {
+                              if (_kind != null) _values[_kind!] = _valueCtrl.text;
+                              _kind = v;
+                              _valueCtrl.text = _values[v] ?? '';
+                            });
                           },
                         ),
                       ),
@@ -475,6 +498,12 @@ class _CouponReceiptScreenState extends State<CouponReceiptScreen> {
                               Text(e.serial,
                                   style: const TextStyle(
                                       fontWeight: FontWeight.w700, fontSize: 15)),
+                              if (e.kind != null) ...[
+                                const SizedBox(width: 6),
+                                Text(_tiers[e.kind] ?? e.kind!,
+                                    style: const TextStyle(
+                                        fontSize: 12, color: Colors.black54)),
+                              ],
                               const SizedBox(width: 10),
                               Flexible(child: _statusChip(e)),
                             ],
