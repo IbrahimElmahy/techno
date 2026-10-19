@@ -15,6 +15,12 @@ _SOURCES: list[tuple[str, str, str]] = [
 ]
 
 
+_EXTRA_TEXT: dict[str, tuple[str, ...]] = {
+    "voucher": ("description",),
+    "expense_bill": ("notes",),
+}
+
+
 def _model(path: str):
     module, name = path.split(":")
     return getattr(__import__(module, fromlist=[name]), name)
@@ -68,7 +74,7 @@ def resolve_many(db: Session, entry_ids: list[int]) -> dict[int, dict]:
                 "document_number": getattr(doc, "document_number", None),
                 "screen": screen,
                 "rep_user_id": _rep_of(doc),
-                "statement": report_statement.text_of(doc),
+                "statement": report_statement.text_of(doc, _EXTRA_TEXT.get(kind, ())),
                 "origin_kind": getattr(doc, "origin_location_kind", None),
                 "origin_id": getattr(doc, "origin_location_id", None),
                 "family": getattr(doc, "family", None),
