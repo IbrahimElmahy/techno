@@ -88,6 +88,16 @@ def require_account(db: Session, customer_id: int, *, family: str | None = None)
             f"«{customer.name}» عميل من نوع «سباك» — لا يُفتح له حساب ذمم ولا يُباع له. "
             "إن كان سيشتري فغيّر نوع العميل أولاً."
         )
+    if getattr(customer, "supplier_id", None):
+        from src.models.supplier import SupplierAccount
+
+        payable = db.scalar(select(SupplierAccount.account_id).where(
+            SupplierAccount.supplier_id == customer.supplier_id))
+        if payable is not None:
+            link = CustomerAccount(customer_id=customer.id, account_id=payable)
+            db.add(link)
+            db.flush()
+            return link
     return open_account(db, customer)
 
 
