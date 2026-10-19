@@ -348,6 +348,7 @@ _ADDED_COLUMNS: list[tuple[str, str, str]] = [
     ("sales_invoice", "other_family_balance", "DECIMAL(18,2)"),
     ("sales_invoice", "other_family", "VARCHAR(16)"),
     ("stock_movement", "movement_date", "DATE"),
+    ("stock_movement", "unit_cost", "NUMERIC(18,4)"),
     ("user", "session_id", "VARCHAR(64)"),
     ("user", "session_client", "VARCHAR(16)"),
     ("user", "session_started_at", "TIMESTAMP"),

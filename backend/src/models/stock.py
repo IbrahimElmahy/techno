@@ -10,6 +10,7 @@ from sqlalchemy import (
     DateTime,
     Enum,
     ForeignKey,
+    Numeric,
     String,
     UniqueConstraint,
     event,
@@ -58,6 +59,7 @@ class StockMovement(Base):
         DateTime, server_default=func.now(), nullable=False
     )
     movement_date: Mapped[date | None] = mapped_column(Date, nullable=True, index=True)
+    unit_cost: Mapped[object | None] = mapped_column(Numeric(18, 4), nullable=True)
 
 
 class StockLocator(Base):

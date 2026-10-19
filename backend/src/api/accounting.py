@@ -239,6 +239,7 @@ class TrialBalanceOut(BaseModel):
     grand_total_debit: Decimal
     grand_total_credit: Decimal
     balanced: bool
+    checks: dict = Field(default_factory=dict)
 
     model_config = {"populate_by_name": True}
 
@@ -868,6 +869,7 @@ def get_trial_balance(
         grand_total_debit=result.grand_total_debit,
         grand_total_credit=result.grand_total_credit,
         balanced=result.balanced,
+        checks=result.checks,
     )
 
 

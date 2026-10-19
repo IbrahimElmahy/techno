@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from datetime import date, datetime
 from decimal import Decimal
 
-from sqlalchemy import case, exists, func, select
+from sqlalchemy import case, exists, func, select, true
 from sqlalchemy.orm import Session
 
 from src.core.money import ZERO, to_money
@@ -53,6 +53,12 @@ def posted_only(stmt):
 
 def is_posted_sql():
     return LedgerEntry.state.is_(None) | (LedgerEntry.state == EntryState.posted.value)
+
+
+def branch_sql(branch_id: int | None):
+    if branch_id is None:
+        return true()
+    return LedgerEntry.branch_id == branch_id
 
 
 def in_books_sql(posted_only: bool = True):

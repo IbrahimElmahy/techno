@@ -43,6 +43,32 @@ export function buildStatement(data: any, h: {
     })) : undefined,
   }));
 
+  const missing = (blk: any) => (blk?.missing_cost ? `${blk.missing_cost} صنف بلا تكلفة` : undefined);
+  const perpetual = c.method === 'perpetual';
+  const pp = c.perpetual || {};
+  const materialRows: StatementRow[] = perpetual ? [
+    { key: 'cost-sold', label: 'تكلفة البضاعة المباعة (المجمّدة على سطور البيع)', amount: n(pp.sold), kind: 'line',
+      note: pp.missing ? `${pp.missing} سطر بلا تكلفة` : undefined },
+    { key: 'cost-ret', label: 'تكلفة المرتجعات', sign: '-', amount: n(pp.returns), kind: 'line' },
+    { key: 'cost-diff', label: 'فروق المخزون (أذون وجرد وهالك)', sign: '+', amount: n(pp.differences), kind: 'line' },
+    { key: 'cost-prod', label: 'صافي التصنيع (خامات مستهلكة − إنتاج تام)', sign: '+', amount: n(pp.production_net), kind: 'line' },
+    { key: 'cost-dm', label: 'المواد المباشرة', amount: n(c.direct_materials), kind: 'total' },
+    { key: 'cost-gap', label: 'الفرق عن طريقة الجرد الدوري', amount: n(c.method_gap), kind: 'info' },
+  ] : [
+    { key: 'cost-open', label: withDates ? `المخزون أول المدة (${c.opening_inventory.as_of})` : 'المخزون أول المدة',
+      amount: n(c.opening_inventory.amount), kind: 'line',
+      note: c.opening_inventory.source === 'override' ? 'جرد فعلي' : missing(c.opening_inventory),
+      onClick: h.openInventory ? () => h.openInventory!(c.opening_inventory.as_of, 'المخزون أول المدة') : undefined },
+    { key: 'cost-purch', label: 'صافي المشتريات', sign: '+', amount: n(c.purchases.net), kind: 'line',
+      onClick: h.openPurchases },
+    { key: 'cost-close', label: withDates ? `المخزون آخر المدة (${c.closing_inventory.as_of})` : 'المخزون آخر المدة', sign: '-',
+      amount: n(c.closing_inventory.amount), kind: 'line',
+      note: c.closing_inventory.source === 'override' ? 'جرد فعلي' : missing(c.closing_inventory),
+      onClick: h.openInventory ? () => h.openInventory!(c.closing_inventory.as_of, 'المخزون آخر المدة') : undefined },
+    { key: 'cost-dm', label: 'المواد المباشرة', amount: n(c.direct_materials), kind: 'total' },
+    ...(c.method_gap !== undefined ? [{ key: 'cost-gap', label: 'الفرق عن طريقة التكلفة المجمّدة', amount: n(c.method_gap), kind: 'info' as const }] : []),
+  ];
+
   return [
     {
       key: 'sales', label: 'صافي المبيعات', amount: n(data.sales.total), kind: 'section',
@@ -55,17 +81,7 @@ export function buildStatement(data: any, h: {
     {
       key: 'cost', label: 'تكلفة المبيعات', sign: '-', amount: n(c.total), kind: 'section',
       children: [
-        { key: 'cost-open', label: withDates ? `المخزون أول المدة (${c.opening_inventory.as_of})` : 'المخزون أول المدة',
-          amount: n(c.opening_inventory.amount), kind: 'line',
-          note: c.opening_inventory.source === 'override' ? 'جرد فعلي' : undefined,
-          onClick: h.openInventory ? () => h.openInventory!(c.opening_inventory.as_of, 'المخزون أول المدة') : undefined },
-        { key: 'cost-purch', label: 'صافي المشتريات', sign: '+', amount: n(c.purchases.net), kind: 'line',
-          onClick: h.openPurchases },
-        { key: 'cost-close', label: withDates ? `المخزون آخر المدة (${c.closing_inventory.as_of})` : 'المخزون آخر المدة', sign: '-',
-          amount: n(c.closing_inventory.amount), kind: 'line',
-          note: c.closing_inventory.source === 'override' ? 'جرد فعلي' : undefined,
-          onClick: h.openInventory ? () => h.openInventory!(c.closing_inventory.as_of, 'المخزون آخر المدة') : undefined },
-        { key: 'cost-dm', label: 'المواد المباشرة', amount: n(c.direct_materials), kind: 'total' },
+        ...materialRows,
         ...(n(c.direct_labor) ? [{ key: 'cost-dl', label: 'الأجور المباشرة', sign: '+' as const, amount: n(c.direct_labor), kind: 'line' as const }] : []),
         ...(n(c.indirect_materials) ? [{ key: 'cost-im', label: 'مواد غير مباشرة', sign: '+' as const, amount: n(c.indirect_materials), kind: 'line' as const }] : []),
         ...(n(c.indirect_labor) ? [{ key: 'cost-il', label: 'أجور غير مباشرة', sign: '+' as const, amount: n(c.indirect_labor), kind: 'line' as const }] : []),
@@ -102,6 +118,11 @@ export function buildStatement(data: any, h: {
       children: data.other_income.lines.length ? accountRows('oi', data.other_income.lines) : undefined },
     { key: 'ol', label: 'الخسائر الأخرى', sign: '-', amount: n(data.other_losses.total), kind: 'section',
       children: data.other_losses.lines.length ? accountRows('ol', data.other_losses.lines) : undefined },
+    ...(data.unclassified?.lines?.length ? [{
+      key: 'uncl', label: 'بنود غير مصنفة (صنّفها من الإعدادات)', sign: '+' as const,
+      amount: n(data.unclassified.total), kind: 'section' as const,
+      children: accountRows('uncl', data.unclassified.lines),
+    }] : []),
     { key: 'net', label: 'صافي الربح', amount: n(data.net_profit), kind: 'total' },
   ];
 }

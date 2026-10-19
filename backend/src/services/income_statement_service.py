@@ -2,11 +2,11 @@ from __future__ import annotations
 
 import copy
 import re
-from functools import lru_cache
 from datetime import date, timedelta
 from decimal import Decimal
+from functools import lru_cache
 
-from sqlalchemy import Date, and_, case, cast, func, literal, select
+from sqlalchemy import Date, and_, case, cast, func, literal, or_, select, true
 from sqlalchemy.orm import Session
 
 from src.core.money import ZERO, to_money
@@ -15,7 +15,8 @@ from src.models.coupon_issue import CouponIssue
 from src.models.coupon_receipt import CouponReceipt, receipt_counted
 from src.models.customer import Customer
 from src.models.income_statement_setting import IncomeStatementSetting
-from src.models.ledger import Account, AccountType, LedgerEntry, LedgerLine
+from src.models.ledger import Account, AccountType, Direction, LedgerEntry, LedgerLine
+from src.models.manufacturing import ManufacturingOrder, ProductionOrderProduct
 from src.models.org import Branch
 from src.models.purchasing import (
     PurchaseInvoice,
@@ -24,9 +25,10 @@ from src.models.purchasing import (
     PurchaseReturnLine,
 )
 from src.models.sales import SalesInvoice, SalesInvoiceLine, SalesReturn, SalesReturnLine
-from src.services import inventory_valuation_service, ledger_service
+from src.models.stock import LocationKind, StockMovement
+from src.models.supplier import Supplier
+from src.services import costing_service, inventory_valuation_service, ledger_service
 from src.services.financial_reports_service import effective_nature
-
 
 ROLES: dict[str, str] = {
     "ga": "مصاريف عمومية وإدارية",
@@ -43,9 +45,16 @@ ROLES: dict[str, str] = {
     "purchases": "مشتريات (من الفواتير)",
     "purchase_returns": "مردودات مشتريات (من المستندات)",
     "excluded": "مستبعد من القائمة",
+    "unclassified": "غير مصنف",
 }
 DOC_ROLES = ("sales", "sales_returns", "sales_discount", "purchases", "purchase_returns")
 MFG_ROLES = ("direct_labor", "indirect_materials", "indirect_labor", "other_mfg")
+COGS_METHODS = ("periodic", "perpetual")
+PROFIT_SIDE = {"sales", "purchase_returns", "other_income", "unclassified"}
+PRODUCTION_DOCS = ("production_order", "manufacturing_order")
+PRODUCT_MOVES = ("production_in", "reverse_production_in")
+NOT_DIFFERENCES = ("sales_invoice", "sales_return", "purchase_invoice", "purchase_return",
+                   "stock_transfer", "a5_opening", *PRODUCTION_DOCS)
 
 ADJ_SECTIONS = ("ga", "marketing", "other_income", "other_loss", "cost")
 
@@ -57,7 +66,7 @@ DEFAULT_CONFIG: dict = {
         "include_bonus": False,
         "categories": [
             {"key": "branches", "name": "الفروع", "customer_ids": [],
-             "customer_name_words": ["ثيرم", "فرع"], "bonus_pct": 0},
+             "customer_types": ["internal"], "bonus_pct": 0},
             {"key": "poly", "name": "بولي",
              "item_categories": ["تكنو ثيرم", "تكنو ثيرم معزول"], "bonus_pct": 15},
             {"key": "retail", "name": "قطعي",
@@ -68,6 +77,7 @@ DEFAULT_CONFIG: dict = {
     },
     "inventory": {
         "cost_basis": "average",
+        "cogs_method": "periodic",
         "exclude_categories": DEFAULT_EXCLUDED_CATEGORIES,
         "list_factors": {"تكنو ثيرم": 40, "تكنو ثيرم معزول": 40, "ابيض تكنوو": 60,
                          "ابيض تكنوو 110": 60, "تكنو جوان": 60},
@@ -106,6 +116,7 @@ DEFAULT_CONFIG: dict = {
         "sales_coupons_source": "received", "sales_coupons_manual": 0,
         "kind_values": {},
     },
+    "consolidation": {"eliminate_internal": False},
     "periods": {},
 }
 
@@ -154,9 +165,11 @@ def D(value) -> Decimal:
 
 def _merge(base: dict, saved: dict | None) -> dict:
     out = copy.deepcopy(base)
+    plain = {"periods", "list_factors", "kind_values"}
     for key, value in (saved or {}).items():
-        if isinstance(value, dict) and isinstance(out.get(key), dict) and key != "periods" \
-                and key != "roles" and key != "list_factors" and key != "kind_values":
+        if key == "roles" and isinstance(value, dict) and isinstance(out.get(key), dict):
+            out[key] = {**out[key], **copy.deepcopy(value)}
+        elif isinstance(value, dict) and isinstance(out.get(key), dict) and key not in plain:
             out[key] = _merge(out[key], value)
         else:
             out[key] = copy.deepcopy(value)
@@ -213,13 +226,29 @@ def _span(when, periods: list[Period]):
 
 
 def _sales_rows(db: Session, *, branch_id: int | None, date_from: date, date_to: date,
-                include_bonus: bool) -> list[dict]:
+                include_bonus: bool, internal: bool = False) -> list[dict]:
     return _sales_rows_many(db, branch_id=branch_id, periods=[(date_from, date_to)],
-                            include_bonus=include_bonus)[0]
+                            include_bonus=include_bonus, internal=internal)[0]
+
+
+def _internal_customers():
+    return select(Customer.id).where(Customer.customer_type == "internal")
+
+
+def _internal_suppliers():
+    return select(Supplier.id).where(Supplier.supplier_type == "internal")
+
+
+def _not_internal(column, ids_select):
+    return or_(column.is_(None), column.not_in(ids_select))
+
+
+def _eliminate_internal(cfg: dict, branch_id: int | None) -> bool:
+    return branch_id is None and bool((cfg.get("consolidation") or {}).get("eliminate_internal"))
 
 
 def _sales_rows_many(db: Session, *, branch_id: int | None, periods: list[Period],
-                     include_bonus: bool) -> list[list[dict]]:
+                     include_bonus: bool, internal: bool = False) -> list[list[dict]]:
     out: list[list[dict]] = [[] for _ in periods]
 
     def run(stmt, sign: int):
@@ -249,6 +278,8 @@ def _sales_rows_many(db: Session, *, branch_id: int | None, periods: list[Period
         inv = inv.where(func.coalesce(SalesInvoice.is_bonus, False).is_(False))
     if branch_id is not None:
         inv = inv.where(SalesInvoice.branch_id == branch_id)
+    if internal:
+        inv = inv.where(_not_internal(SalesInvoice.customer_id, _internal_customers()))
     run(inv, 1)
 
     r_after = 1 - func.coalesce(SalesReturn.combined_pct, 0) / 100
@@ -268,6 +299,8 @@ def _sales_rows_many(db: Session, *, branch_id: int | None, periods: list[Period
     )
     if branch_id is not None:
         ret = ret.where(SalesReturn.branch_id == branch_id)
+    if internal:
+        ret = ret.where(_not_internal(SalesReturn.customer_id, _internal_customers()))
     run(ret, -1)
     return out
 
@@ -315,7 +348,8 @@ def sales_breakdown(db: Session, *, branch_id: int | None, date_from: date, date
                     category_key: str, config: dict | None = None) -> dict:
     cfg = config or get_config(db, branch_id)
     rows = _sales_rows(db, branch_id=branch_id, date_from=date_from, date_to=date_to,
-                       include_bonus=bool(cfg["sales"].get("include_bonus")))
+                       include_bonus=bool(cfg["sales"].get("include_bonus")),
+                       internal=_eliminate_internal(cfg, branch_id))
     buckets, unmatched = classify_sales(rows, cfg["sales"]["categories"])
     picked = unmatched if category_key == "_unmatched" else buckets.get(category_key, [])
     by_customer: dict = {}
@@ -349,7 +383,7 @@ def net_purchases(db: Session, *, branch_id: int | None, date_from: date, date_t
 
 
 def net_purchases_many(db: Session, *, branch_id: int | None, periods: list[Period],
-                       exclude_categories) -> list[dict]:
+                       exclude_categories, internal: bool = False) -> list[dict]:
     after = 1 - func.coalesce(PurchaseInvoice.combined_pct, 0) / 100
     p_date = func.coalesce(PurchaseInvoice.purchase_date, cast(PurchaseInvoice.created_at, Date))
     p_b = _bucket(p_date, periods)
@@ -360,6 +394,8 @@ def net_purchases_many(db: Session, *, branch_id: int | None, periods: list[Peri
             .group_by(*_by(p_b, periods), Item.category))
     if branch_id is not None:
         stmt = stmt.where(PurchaseInvoice.branch_id == branch_id)
+    if internal:
+        stmt = stmt.where(_not_internal(PurchaseInvoice.supplier_id, _internal_suppliers()))
     gross_by: list[dict[str, Decimal]] = [{} for _ in periods]
     for b, c, v in db.execute(stmt).all():
         if 0 <= b < len(periods):
@@ -376,6 +412,8 @@ def net_purchases_many(db: Session, *, branch_id: int | None, periods: list[Peri
                        PurchaseReturn.gross, Item.category))
     if branch_id is not None:
         rstmt = rstmt.where(PurchaseReturn.branch_id == branch_id)
+    if internal:
+        rstmt = rstmt.where(_not_internal(PurchaseReturn.supplier_id, _internal_suppliers()))
     ret_by: list[dict[str, Decimal]] = [{} for _ in periods]
     for b, _rid, value, gross, cat, line_sum in db.execute(rstmt).all():
         if not 0 <= b < len(periods):
@@ -406,24 +444,41 @@ def _account_movements(db: Session, *, branch_id: int | None, periods: list[Peri
                        posted_only: bool) -> list[dict[int, Decimal]]:
     when = func.coalesce(LedgerEntry.entry_date, cast(LedgerEntry.created_at, Date))
     bucket = _bucket(when, periods)
+    dc = case((LedgerLine.direction == Direction.debit, LedgerLine.amount),
+              else_=-LedgerLine.amount)
     stmt = (
-        select(bucket, LedgerLine.account_id, LedgerLine.direction, Account.normal_side,
-               func.sum(LedgerLine.amount))
+        select(bucket, LedgerLine.account_id, func.sum(dc))
         .join(LedgerEntry, LedgerEntry.id == LedgerLine.entry_id)
-        .join(Account, Account.id == LedgerLine.account_id)
-        .where(ledger_service.in_books_sql(posted_only), _span(when, periods))
-        .group_by(*_by(bucket, periods), LedgerLine.account_id, LedgerLine.direction,
-                  Account.normal_side)
+        .where(ledger_service.in_books_sql(posted_only), _span(when, periods),
+               ledger_service.branch_sql(branch_id))
+        .group_by(*_by(bucket, periods), LedgerLine.account_id)
     )
-    if branch_id is not None:
-        stmt = stmt.where((LedgerEntry.branch_id == branch_id) | LedgerEntry.branch_id.is_(None))
     out: list[dict[int, Decimal]] = [{} for _ in periods]
-    for b, acc_id, direction, normal, amount in db.execute(stmt).all():
-        if not 0 <= b < len(periods):
-            continue
-        v = D(amount) if direction == normal else -D(amount)
-        out[b][acc_id] = out[b].get(acc_id, ZERO) + v
+    for b, acc_id, amount in db.execute(stmt).all():
+        if 0 <= b < len(periods):
+            out[b][acc_id] = out[b].get(acc_id, ZERO) + D(amount)
     return out
+
+
+def fallback_role(acc: Account, appears_in: str | None) -> tuple[str, str]:
+    if acc.account_type in _ROLE_BY_TYPE:
+        return _ROLE_BY_TYPE[acc.account_type], "type"
+    nature = effective_nature(acc)
+    income = nature is not None and nature.value == "income"
+    if appears_in == "none":
+        return "excluded", "appears_in"
+    if appears_in == "trading":
+        return ("other_income" if income else "other_mfg"), "appears_in"
+    if appears_in == "profit_loss":
+        return ("other_income" if income else "ga"), "appears_in"
+    return "unclassified", "none"
+
+
+def resolve_role(acc: Account, saved: dict) -> tuple[str, str]:
+    role = saved.get(str(acc.id))
+    if role in ROLES:
+        return role, "config"
+    return fallback_role(acc, acc.appears_in)
 
 
 def default_role(acc: Account, chain_names: list[str]) -> str:
@@ -472,12 +527,14 @@ def account_roles(db: Session, *, branch_id: int | None, config: dict) -> list[d
         if nature is None or nature.value not in ("income", "expense"):
             continue
         chain = _chain(acc, index)
-        dflt = default_role(acc, chain)
+        role, source = resolve_role(acc, saved)
+        dflt, _ = resolve_role(acc, {})
         out.append({
             "account_id": acc.id, "code": acc.code, "name": acc.name or acc.account_type.value,
             "parent_name": chain[0] if chain else None, "nature": nature.value,
             "postable": bool(acc.is_postable), "default_role": dflt,
-            "role": saved.get(str(acc.id), dflt), "overridden": str(acc.id) in saved,
+            "suggested_role": default_role(acc, chain), "appears_in": acc.appears_in,
+            "role": role, "role_source": source, "overridden": str(acc.id) in saved,
             "group": _group_of(acc, config["accounts"].get("groups") or [], chain),
         })
     out.sort(key=lambda r: (r["nature"], r["parent_name"] or "", r["code"] or "", r["name"]))
@@ -657,14 +714,140 @@ def build(db: Session, *, branch_id: int | None, date_from: date, date_to: date,
                       posted_only=posted_only)[0]
 
 
+def _category_kept(excluded):
+    cat = func.coalesce(Item.category, "بدون فئة")
+    return cat.not_in(list(excluded)) if excluded else true()
+
+
+def _frozen_lines_many(db: Session, *, head, line, fk: str, day, periods: list[Period],
+                       branch_id: int | None, excluded, internal: bool, extra=()):
+    b = _bucket(day, periods)
+    base = (select().select_from(line)
+            .join(head, head.id == getattr(line, fk))
+            .join(Item, Item.id == line.item_id)
+            .where(_span(day, periods), _category_kept(excluded), *extra))
+    if branch_id is not None:
+        base = base.where(head.branch_id == branch_id)
+    if internal:
+        base = base.where(_not_internal(head.customer_id, _internal_customers()))
+    frozen = [ZERO for _ in periods]
+    stmt = base.add_columns(b, func.sum(line.quantity * line.unit_cost)).where(
+        line.unit_cost.is_not(None)).group_by(*_by(b, periods))
+    for k, v in db.execute(stmt).all():
+        if 0 <= k < len(periods):
+            frozen[k] += D(v)
+    open_rows: list[list[tuple[int, date, Decimal]]] = [[] for _ in periods]
+    stmt = base.add_columns(b, line.item_id, day,
+                            func.sum(line.quantity * func.coalesce(line.unit_factor, 1))).where(
+        line.unit_cost.is_(None)).group_by(*_by(b, periods), line.item_id, day)
+    for k, item_id, d, q in db.execute(stmt).all():
+        if 0 <= k < len(periods):
+            open_rows[k].append((item_id, d, D(q)))
+    return frozen, open_rows
+
+
+def _perpetual_many(db: Session, *, branch_id: int | None, periods: list[Period], excluded,
+                    book: costing_service.CostBook, internal: bool) -> list[dict]:
+    out = [{"sold": ZERO, "returns": ZERO, "estimated": ZERO, "differences": ZERO,
+            "consumption": ZERO, "production": ZERO, "missing": 0} for _ in periods]
+
+    def priced(rows, key: str, sign: int, k: int, estimate: bool = False) -> None:
+        for item_id, d, q in rows:
+            c = book.at(item_id, d)
+            if c is None:
+                out[k]["missing"] += 1
+                continue
+            out[k][key] += sign * q * c
+            if estimate:
+                out[k]["estimated"] += q * c if key == "sold" else -q * c
+
+    inv_day = func.coalesce(SalesInvoice.invoice_date, cast(SalesInvoice.created_at, Date))
+    frozen, open_rows = _frozen_lines_many(
+        db, head=SalesInvoice, line=SalesInvoiceLine, fk="invoice_id", day=inv_day,
+        periods=periods, branch_id=branch_id, excluded=excluded, internal=internal)
+    for k in range(len(periods)):
+        out[k]["sold"] += frozen[k]
+        priced(open_rows[k], "sold", 1, k, estimate=True)
+
+    ret_day = func.coalesce(SalesReturn.return_date, cast(SalesReturn.created_at, Date))
+    frozen, open_rows = _frozen_lines_many(
+        db, head=SalesReturn, line=SalesReturnLine, fk="return_id", day=ret_day,
+        periods=periods, branch_id=branch_id, excluded=excluded, internal=internal,
+        extra=(SalesReturn.reversed_at.is_(None),))
+    for k in range(len(periods)):
+        out[k]["returns"] += frozen[k]
+        priced(open_rows[k], "returns", 1, k, estimate=True)
+
+    day = costing_service.movement_day()
+    b = _bucket(day, periods)
+    sq = costing_service.signed_quantity()
+    mine = inventory_valuation_service.branch_warehouse_ids(db, branch_id)
+    where = [StockMovement.location_kind == LocationKind.warehouse, _span(day, periods),
+             _category_kept(excluded)]
+    if mine is not None:
+        where.append(StockMovement.location_id.in_(mine or [-1]))
+    doc = func.coalesce(StockMovement.source_doc_type, "")
+    kind = case((and_(doc.in_(PRODUCTION_DOCS), StockMovement.movement_type.in_(PRODUCT_MOVES)),
+                 "product"),
+                (doc.in_(PRODUCTION_DOCS), "consumption"), else_="difference")
+    stmt = (select(b, kind, StockMovement.item_id, day, func.sum(sq))
+            .join(Item, Item.id == StockMovement.item_id)
+            .where(*where, or_(doc.not_in(NOT_DIFFERENCES), doc.in_(PRODUCTION_DOCS)))
+            .group_by(*_by(b, periods), kind, StockMovement.item_id, day))
+    uncosted: list[list[tuple[int, date, Decimal]]] = [[] for _ in periods]
+    for k, what, item_id, d, q in db.execute(stmt).all():
+        if not 0 <= k < len(periods):
+            continue
+        if what == "product":
+            continue
+        c = book.at(item_id, d)
+        if c is None:
+            out[k]["missing"] += 1
+            continue
+        out[k]["consumption" if what == "consumption" else "differences"] += -D(q) * c
+
+    pop = ProductionOrderProduct
+    unit = case(
+        (and_(pop.total_cost > 0, pop.quantity > 0),
+         pop.total_cost / (pop.quantity * func.coalesce(pop.unit_factor, 1))),
+        (and_(ManufacturingOrder.total_cost > 0, ManufacturingOrder.quantity > 0),
+         ManufacturingOrder.total_cost / ManufacturingOrder.quantity),
+        else_=None)
+    stmt = (select(b, StockMovement.item_id, day,
+                   func.sum(case((unit.is_not(None), sq * unit), else_=0)),
+                   func.sum(case((unit.is_(None), sq), else_=0)))
+            .select_from(StockMovement)
+            .join(Item, Item.id == StockMovement.item_id)
+            .outerjoin(ProductionOrderProduct,
+                       ProductionOrderProduct.stock_movement_id == StockMovement.id)
+            .outerjoin(ManufacturingOrder, ManufacturingOrder.stock_movement_id == StockMovement.id)
+            .where(*where, doc.in_(PRODUCTION_DOCS),
+                   StockMovement.movement_type.in_(PRODUCT_MOVES))
+            .group_by(*_by(b, periods), StockMovement.item_id, day))
+    for k, item_id, d, valued, q in db.execute(stmt).all():
+        if not 0 <= k < len(periods):
+            continue
+        out[k]["production"] += D(valued)
+        if D(q):
+            uncosted[k].append((item_id, d, D(q)))
+    for k in range(len(periods)):
+        priced(uncosted[k], "production", 1, k)
+        o = out[k]
+        o["materials"] = (o["sold"] - o["returns"] + o["differences"]
+                          + o["consumption"] - o["production"])
+    return out
+
+
 def build_many(db: Session, *, branch_id: int | None, periods: list[Period],
                posted_only: bool = True) -> list[dict]:
     cfg = get_config(db, branch_id)
     excluded_cats = cfg["inventory"].get("exclude_categories") or []
     inv_cfg = cfg["inventory"]
     m = cfg["marketing"]
+    internal = _eliminate_internal(cfg, branch_id)
     all_rows = _sales_rows_many(db, branch_id=branch_id, periods=periods,
-                                include_bonus=bool(cfg["sales"].get("include_bonus")))
+                                include_bonus=bool(cfg["sales"].get("include_bonus")),
+                                internal=internal)
     all_moves = _account_movements(db, branch_id=branch_id, periods=periods,
                                    posted_only=posted_only)
     index = _accounts_index(db, branch_id)
@@ -674,13 +857,17 @@ def build_many(db: Session, *, branch_id: int | None, periods: list[Period],
                 acc = db.get(Account, acc_id)
                 if acc is not None:
                     index[acc_id] = acc
+    book = costing_service.cost_book(db, branch_id=branch_id,
+                                     until=max(t for _, t in periods))
     vals = inventory_valuation_service.values_at(
         db, branch_id=branch_id,
         dates=[d for f, t in periods for d in (f - timedelta(days=1), t)],
         cost_basis=inv_cfg.get("cost_basis", "average"), exclude_categories=excluded_cats,
-        list_factors=inv_cfg.get("list_factors"))
+        list_factors=inv_cfg.get("list_factors"), book=book)
     all_purchases = net_purchases_many(db, branch_id=branch_id, periods=periods,
-                                       exclude_categories=excluded_cats)
+                                       exclude_categories=excluded_cats, internal=internal)
+    perpetual = _perpetual_many(db, branch_id=branch_id, periods=periods,
+                                excluded=excluded_cats, book=book, internal=internal)
     all_coupons = coupons_many(db, branch_id=branch_id, periods=periods)
     coupon_item = coupon_price_item(db, m)
     item_points = coupon_item_points(db, m, coupon_item)
@@ -692,8 +879,9 @@ def build_many(db: Session, *, branch_id: int | None, periods: list[Period],
         _statement(cfg=cfg, branch=branch, branch_id=branch_id, date_from=f, date_to=t,
                    posted_only=posted_only, rows=all_rows[i], moves=all_moves[i], index=index,
                    opening_val=vals[f - timedelta(days=1)], closing_val=vals[t],
-                   purchases=all_purchases[i], coupons=all_coupons[i], coupon_item=coupon_item,
-                   item_points=item_points, gold=gold, memo=memo, roles=roles)
+                   purchases=all_purchases[i], perpetual=perpetual[i], coupons=all_coupons[i],
+                   coupon_item=coupon_item, item_points=item_points, gold=gold, memo=memo,
+                   roles=roles, internal=internal)
         for i, (f, t) in enumerate(periods)
     ]
 
@@ -701,8 +889,9 @@ def build_many(db: Session, *, branch_id: int | None, periods: list[Period],
 def _statement(*, cfg: dict, branch: Branch | None, branch_id: int | None, date_from: date,
                date_to: date, posted_only: bool, rows: list[dict], moves: dict[int, Decimal],
                index: dict[int, Account], opening_val, closing_val, purchases: dict,
-               coupons: dict, coupon_item: dict | None, item_points: Decimal | None,
-               gold, memo: dict, roles: dict[int, str]) -> dict:
+               perpetual: dict, coupons: dict, coupon_item: dict | None,
+               item_points: Decimal | None, gold, memo: dict, roles: dict[int, str],
+               internal: bool) -> dict:
     period = cfg.get("periods", {}).get(period_key(date_from, date_to)) or {}
     excluded_cats = cfg["inventory"].get("exclude_categories") or []
     cats = cfg["sales"]["categories"]
@@ -727,17 +916,19 @@ def _statement(*, cfg: dict, branch: Branch | None, branch_id: int | None, date_
 
     saved_roles = {str(k): v for k, v in (cfg["accounts"].get("roles") or {}).items()}
     by_role: dict[str, list[tuple[Account, Decimal]]] = {}
-    for acc_id, amount in moves.items():
+    ledger_net = ZERO
+    for acc_id, dc in moves.items():
         acc = index.get(acc_id)
-        if acc is None or amount == ZERO:
+        if acc is None or dc == ZERO:
             continue
         nature = effective_nature(acc)
         if nature is None or nature.value not in ("income", "expense"):
             continue
+        ledger_net -= dc
         if acc_id not in roles:
-            roles[acc_id] = saved_roles.get(str(acc_id)) or default_role(acc, _chain(acc, index))
+            roles[acc_id] = resolve_role(acc, saved_roles)[0]
         role = roles[acc_id]
-        by_role.setdefault(role, []).append((acc, amount))
+        by_role.setdefault(role, []).append((acc, -dc if role in PROFIT_SIDE else dc))
     groups = cfg["accounts"].get("groups") or []
 
     def role_total(role: str) -> Decimal:
@@ -762,6 +953,8 @@ def _statement(*, cfg: dict, branch: Branch | None, branch_id: int | None, date_
         return {"lines": lines, "total": str(to_money(total)), "_total": total}
 
     inv_cfg = cfg["inventory"]
+    method = inv_cfg.get("cogs_method") if inv_cfg.get("cogs_method") in COGS_METHODS \
+        else "periodic"
 
     def inv_block(val, override_key: str) -> dict:
         override = period.get(override_key)
@@ -770,11 +963,14 @@ def _statement(*, cfg: dict, branch: Branch | None, branch_id: int | None, date_
                 "source": "override" if override not in (None, "") else "computed",
                 "computed": str(val.total), "as_of": val.as_of.isoformat(),
                 "by_category": {k: str(v) for k, v in val.by_category.items()},
-                "missing_cost": val.missing_cost, "negative_rows": val.negative_rows}
+                "missing_cost": val.missing_cost, "missing_items": val.missing_items[:20],
+                "negative_rows": val.negative_rows, "negative_value": str(val.negative_value)}
 
     opening = inv_block(opening_val, "opening_inventory")
     closing = inv_block(closing_val, "closing_inventory")
-    direct_materials = opening["_amount"] + purchases["net"] - closing["_amount"]
+    periodic_materials = opening["_amount"] + purchases["net"] - closing["_amount"]
+    perpetual_materials = perpetual["materials"]
+    direct_materials = perpetual_materials if method == "perpetual" else periodic_materials
     mfg = {r: role_total(r) for r in MFG_ROLES}
     cost_manual = adj_lines("cost")
     cost_manual_total = sum((ln["amount"] for ln in cost_manual), ZERO)
@@ -787,6 +983,11 @@ def _statement(*, cfg: dict, branch: Branch | None, branch_id: int | None, date_
     other_income = section("other_income", "other_income", grouped=False, by_parent=True)
     other_loss = section("other_loss", "other_loss", grouped=False, by_parent=True)
     marketing_ledger = section("marketing", grouped=False)
+    unclassified_lines = _section_lines(by_role.get("unclassified", []), [], index,
+                                        by_parent=True)
+    unclassified_total = sum((ln["amount"] for ln in unclassified_lines), ZERO)
+    for ln in unclassified_lines:
+        ln["amount"] = str(to_money(ln["amount"]))
 
     m = cfg["marketing"]
     disc = D(m.get("coupon_discount_pct"))
@@ -828,21 +1029,50 @@ def _statement(*, cfg: dict, branch: Branch | None, branch_id: int | None, date_
     marketing_total = base + marketing_manual_total
 
     operating_profit = gross_profit - ga["_total"] - marketing_total
-    net_profit = operating_profit + other_income["_total"] - other_loss["_total"]
+    net_profit = (operating_profit + other_income["_total"] - other_loss["_total"]
+                  + unclassified_total)
+
+    ledger_net_sales = (role_total("sales") - role_total("sales_returns")
+                        - role_total("sales_discount"))
+    ledger_net_purchases = role_total("purchases") - role_total("purchase_returns")
+    manual_total = sum((D(a.get("amount")) for a in adjustments
+                        if a.get("section") in ("ga", "cost", "marketing", "other_loss")), ZERO) \
+        - sum((D(a.get("amount")) for a in adjustments if a.get("section") == "other_income"), ZERO)
+    bridge = [
+        {"key": "ledger", "label": "صافي الربح في الدفاتر", "amount": ledger_net},
+        {"key": "sales", "label": "المبيعات من المستندات مقابل الدفاتر",
+         "amount": sales_total - ledger_net_sales},
+        {"key": "purchases", "label": "المشتريات في الدفاتر مقابل المستندات",
+         "amount": ledger_net_purchases - purchases["net"]},
+        {"key": "inventory", "label": "تغير المخزون (آخر المدة − أول المدة)",
+         "amount": closing["_amount"] - opening["_amount"]},
+        {"key": "method", "label": "فرق طريقة التكلفة (الجرد الدوري − التكلفة المجمّدة)",
+         "amount": (periodic_materials - perpetual_materials) if method == "perpetual" else ZERO},
+        {"key": "excluded", "label": "حسابات مستبعدة من القائمة",
+         "amount": role_total("excluded")},
+        {"key": "marketing", "label": "التسويق في الدفاتر مقابل القائمة",
+         "amount": marketing_ledger["_total"] - base},
+        {"key": "manual", "label": "بنود يدوية", "amount": -manual_total},
+    ]
+    explained = sum((x["amount"] for x in bridge), ZERO)
+    bridge.append({"key": "statement", "label": "صافي الربح في القائمة", "amount": net_profit})
+    bridge.append({"key": "residual", "label": "فرق غير مفسر", "amount": net_profit - explained})
+    for x in bridge:
+        x["amount"] = str(to_money(x["amount"]))
 
     recon = {
         "ledger_sales": str(to_money(role_total("sales"))),
         "ledger_sales_returns": str(to_money(role_total("sales_returns"))),
         "ledger_sales_discount": str(to_money(role_total("sales_discount"))),
-        "ledger_net_sales": str(to_money(role_total("sales") - role_total("sales_returns")
-                                         - role_total("sales_discount"))),
+        "ledger_net_sales": str(to_money(ledger_net_sales)),
         "documents_net_sales": str(to_money(sales_total)),
         "ledger_purchases": str(to_money(role_total("purchases"))),
         "ledger_purchase_returns": str(to_money(role_total("purchase_returns"))),
-        "ledger_net_purchases": str(to_money(role_total("purchases")
-                                             - role_total("purchase_returns"))),
+        "ledger_net_purchases": str(to_money(ledger_net_purchases)),
         "documents_net_purchases": str(purchases["net"]),
         "documents_excluded_purchases": str(purchases["excluded"]),
+        "ledger_net_profit": str(to_money(ledger_net)),
+        "bridge": bridge,
         "excluded_accounts": [{"account_id": a.id, "code": a.code, "name": a.name,
                                "amount": str(to_money(v))}
                               for a, v in sorted(by_role.get("excluded", []),
@@ -850,12 +1080,14 @@ def _statement(*, cfg: dict, branch: Branch | None, branch_id: int | None, date_
         "doc_role_accounts": [{"account_id": a.id, "code": a.code, "name": a.name,
                                "role": r, "amount": str(to_money(v))}
                               for r in DOC_ROLES for a, v in by_role.get(r, [])],
+        "internal_eliminated": internal,
     }
 
     for blk in (opening, closing):
         blk.pop("_amount", None)
     for s in (ga, other_income, other_loss, marketing_ledger):
         s.pop("_total", None)
+    p = perpetual
     return {
         "branch_id": branch_id, "branch_name": branch.name if branch else "كل الفروع",
         "date_from": date_from.isoformat(), "date_to": date_to.isoformat(),
@@ -865,14 +1097,30 @@ def _statement(*, cfg: dict, branch: Branch | None, branch_id: int | None, date_
                   "unmatched": str(to_money(unmatched_total)),
                   "include_bonus": bool(cfg["sales"].get("include_bonus"))},
         "cost": {
+            "method": method,
             "opening_inventory": opening, "closing_inventory": closing,
             "purchases": {k: (str(v) if isinstance(v, Decimal) else v)
                           for k, v in purchases.items()},
+            "periodic_materials": str(to_money(periodic_materials)),
+            "perpetual": {
+                "sold": str(to_money(p["sold"])), "returns": str(to_money(p["returns"])),
+                "estimated": str(to_money(p["estimated"])),
+                "differences": str(to_money(p["differences"])),
+                "consumption": str(to_money(p["consumption"])),
+                "production": str(to_money(p["production"])),
+                "production_net": str(to_money(p["consumption"] - p["production"])),
+                "missing": p["missing"],
+                "materials": str(to_money(perpetual_materials)),
+            },
+            "method_gap": str(to_money(periodic_materials - perpetual_materials)),
             "direct_materials": str(to_money(direct_materials)),
             "direct_labor": str(to_money(mfg["direct_labor"])),
             "indirect_materials": str(to_money(mfg["indirect_materials"])),
             "indirect_labor": str(to_money(mfg["indirect_labor"])),
             "other_mfg": str(to_money(mfg["other_mfg"])),
+            "mfg_accounts": [{"account_id": a.id, "code": a.code, "name": a.name, "role": r,
+                              "amount": str(to_money(v))}
+                             for r in MFG_ROLES for a, v in by_role.get(r, [])],
             "manual": cost_manual,
             "total": str(to_money(cost_of_sales)),
             "cost_basis": inv_cfg.get("cost_basis", "average"),
@@ -917,6 +1165,7 @@ def _statement(*, cfg: dict, branch: Branch | None, branch_id: int | None, date_
         "operating_profit": str(to_money(operating_profit)),
         "other_income": other_income,
         "other_losses": other_loss,
+        "unclassified": {"lines": unclassified_lines, "total": str(to_money(unclassified_total))},
         "net_profit": str(to_money(net_profit)),
         "net_margin_pct": _pct(net_profit, sales_total),
         "expenses_to_sales_pct": _pct(D(ga["total"]), sales_total),

@@ -44,6 +44,7 @@ class TrialBalanceResult:
     rows: list[TrialBalanceRow] = field(default_factory=list)
     grand_total_debit: Decimal = ZERO
     grand_total_credit: Decimal = ZERO
+    checks: dict = field(default_factory=dict)
 
     @property
     def balanced(self) -> bool:
@@ -60,6 +61,36 @@ def _account_label(db: Session, acc: Account) -> str | None:
     if acc.owner_ref is not None:
         return f"{acc.account_type.value}#{acc.owner_ref}"
     return acc.account_type.value
+
+
+def integrity_checks(db: Session, *, from_date: date, to_date: date,
+                     branch_id: int | None) -> dict:
+    eff = func.coalesce(LedgerEntry.entry_date, cast(LedgerEntry.created_at, Date))
+    signed = case((LedgerLine.direction == Direction.debit, LedgerLine.amount),
+                  else_=-LedgerLine.amount)
+    per_entry = (
+        select(LedgerEntry.id.label("entry_id"), func.sum(signed).label("diff"))
+        .join(LedgerLine, LedgerLine.entry_id == LedgerEntry.id)
+        .where(ledger_service.is_posted_sql(), eff >= from_date, eff <= to_date,
+               ledger_service.branch_sql(branch_id))
+        .group_by(LedgerEntry.id)
+        .having(func.sum(signed) != 0)
+    ).subquery()
+    count, total = db.execute(select(func.count(), func.coalesce(func.sum(per_entry.c.diff), 0))
+                              ).one()
+    stray = db.execute(
+        select(Account.id, Account.code, Account.name, func.count())
+        .join(LedgerLine, LedgerLine.account_id == Account.id)
+        .join(LedgerEntry, LedgerEntry.id == LedgerLine.entry_id)
+        .where(Account.is_postable.is_(False), ledger_service.is_posted_sql(), eff <= to_date,
+               ledger_service.branch_sql(branch_id))
+        .group_by(Account.id, Account.code, Account.name)).all()
+    return {
+        "unbalanced_entries": int(count or 0),
+        "unbalanced_amount": str(to_money(Decimal(str(total or 0)))),
+        "group_accounts_with_lines": [{"account_id": i, "code": c, "name": n, "lines": k}
+                                      for i, c, n, k in stray],
+    }
 
 
 def trial_balance(
@@ -84,11 +115,10 @@ def trial_balance(
             func.sum(case((before, 0), else_=credit)),
         )
         .join(LedgerEntry, LedgerLine.entry_id == LedgerEntry.id)
-        .where(ledger_service.is_posted_sql(), eff <= to_date)
+        .where(ledger_service.is_posted_sql(), eff <= to_date,
+               ledger_service.branch_sql(branch_id))
         .group_by(LedgerLine.account_id)
     )
-    if branch_id is not None:
-        stmt = stmt.where(LedgerEntry.branch_id == branch_id)
     if cost_center_id is not None:
         from src.models.analytic import LedgerLineDistribution
 
@@ -110,6 +140,9 @@ def trial_balance(
     result = TrialBalanceResult(from_date=from_date, to_date=to_date, branch_id=branch_id)
 
     leaf_rows: dict[int, TrialBalanceRow] = {}
+    for b in buckets.values():
+        result.grand_total_debit += b.period_debit
+        result.grand_total_credit += b.period_credit
     for account_id, b in buckets.items():
         acc = db.get(Account, account_id)
         if acc is None or not acc.is_postable:
@@ -127,8 +160,6 @@ def trial_balance(
             nature=acc.nature.value if acc.nature else None,
         )
         leaf_rows[account_id] = row
-        result.grand_total_debit += row.period_debit
-        result.grand_total_credit += row.period_credit
 
     result.grand_total_debit = to_money(result.grand_total_debit)
     result.grand_total_credit = to_money(result.grand_total_credit)
@@ -140,6 +171,8 @@ def trial_balance(
 
     rows.sort(key=lambda r: (r.code or "~", r.account_id))
     result.rows = rows
+    result.checks = integrity_checks(db, from_date=from_date, to_date=to_date,
+                                     branch_id=branch_id)
     del _accounts
     return result
 
@@ -155,9 +188,9 @@ def _group_rows(db: Session, buckets: dict[int, _Bucket]) -> list[TrialBalanceRo
 
     for account_id, b in buckets.items():
         acc = db.get(Account, account_id)
-        if acc is None or not acc.is_postable:
+        if acc is None:
             continue
-        parent_id = parent_of(acc)
+        parent_id = parent_of(acc) if acc.is_postable else acc.id
         guard = 0
         while parent_id is not None and guard < 64:
             gb = group_acc.setdefault(parent_id, _Bucket())
@@ -212,11 +245,10 @@ def trial_balance_tree(
                func.sum(case((before, 0), else_=debit)),
                func.sum(case((before, 0), else_=credit)))
         .join(LedgerEntry, LedgerLine.entry_id == LedgerEntry.id)
-        .where(ledger_service.is_posted_sql(), eff <= to_date)
+        .where(ledger_service.is_posted_sql(), eff <= to_date,
+               ledger_service.branch_sql(branch_id))
         .group_by(LedgerLine.account_id)
     )
-    if branch_id is not None:
-        stmt = stmt.where(LedgerEntry.branch_id == branch_id)
     if cost_center_id is not None:
         from src.models.analytic import LedgerLineDistribution
 
@@ -292,5 +324,10 @@ def trial_balance_tree(
         tot["credit"] += n["credit"]
         tot["closing_debit"] += cd
         tot["closing_credit"] += cc
+    checks = integrity_checks(db, from_date=from_date, to_date=to_date, branch_id=branch_id)
+    checks["balanced"] = (to_money(tot["debit"]) == to_money(tot["credit"])
+                          and to_money(tot["closing_debit"]) == to_money(tot["closing_credit"]))
+    checks["difference"] = str(to_money(tot["debit"] - tot["credit"]))
     return {"from": from_date.isoformat(), "to": to_date.isoformat(), "branch_id": branch_id,
-            "rows": out, "totals": {k: str(to_money(v)) for k, v in tot.items()}}
+            "rows": out, "totals": {k: str(to_money(v)) for k, v in tot.items()},
+            "checks": checks}

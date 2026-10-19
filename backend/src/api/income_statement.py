@@ -148,7 +148,11 @@ def put_settings(
     branch = _branch(current, branch_id)
     _office(current, branch)
     config = payload.get("config") if isinstance(payload.get("config"), dict) else payload
-    allowed = {k: config[k] for k in ("sales", "inventory", "accounts", "marketing") if k in config}
+    allowed = {k: config[k] for k in ("sales", "inventory", "accounts", "marketing",
+                                      "consolidation") if k in config}
+    method = (allowed.get("inventory") or {}).get("cogs_method")
+    if method is not None and method not in svc.COGS_METHODS:
+        raise _bad(f"طريقة تكلفة غير معروفة: {method}")
     for cat in (allowed.get("sales") or {}).get("categories") or []:
         if not str(cat.get("key") or "").strip() or not str(cat.get("name") or "").strip():
             raise _bad("يجب أن يكون لكل فئة مبيعات اسم.")

@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  Alert, Button, Card, Col, Empty, Input, InputNumber, Modal, Radio, Row, Select, Space, Spin,
+  Alert, Button, Card, Checkbox, Col, Empty, Input, InputNumber, Modal, Radio, Row, Select, Space, Spin,
   Table, Tabs, Tag, Tooltip, message,
 } from 'antd';
 import {
@@ -26,7 +26,11 @@ type Range = [Dayjs, Dayjs] | null;
 const ROLE_COLORS: Record<string, string> = {
   ga: 'blue', marketing: 'purple', other_income: 'green', other_loss: 'red', excluded: 'default',
   sales: 'gold', sales_returns: 'gold', sales_discount: 'gold', purchases: 'cyan',
-  purchase_returns: 'cyan',
+  purchase_returns: 'cyan', direct_labor: 'geekblue', indirect_materials: 'geekblue',
+  indirect_labor: 'geekblue', other_mfg: 'geekblue', unclassified: 'orange',
+};
+const APPEARS_IN_LABELS: Record<string, string> = {
+  trading: 'المتاجرة والتشغيل', profit_loss: 'الأرباح والخسائر', none: 'مستبعد',
 };
 const SECTION_LABELS: Record<string, string> = {
   ga: 'مصاريف عمومية وإدارية', marketing: 'مصاريف البيع والتسويق', other_income: 'إيرادات أخرى',
@@ -714,6 +718,17 @@ const IncomeSheet: React.FC = () => {
                 note={`مستبعد بفئته ${money(data.reconciliation.documents_excluded_purchases)}`} />
             </tbody>
           </table>
+          {data.reconciliation.bridge && (
+            <table style={{ width: '100%', marginTop: 12 }}>
+              <tbody>
+                {data.reconciliation.bridge.map((x: any) => (
+                  <StatementRow key={x.key} label={x.label} amount={x.amount}
+                    strong={x.key === 'ledger' || x.key === 'statement' || x.key === 'residual'}
+                    sign={x.key === 'ledger' || x.key === 'statement' || x.key === 'residual' ? '' : '±'} />
+                ))}
+              </tbody>
+            </table>
+          )}
           {data.reconciliation.excluded_accounts.length > 0 && (
             <div style={{ marginTop: 8, color: '#64748b', fontSize: 12 }}>
               حسابات مستبعدة من القائمة (من الإعدادات): {data.reconciliation.excluded_accounts.map((a: any) => (
@@ -1034,10 +1049,25 @@ const SettingsTab: React.FC<{ branchId?: number; canEdit: boolean; onSaved: () =
       </Card>
 
       <Card size="small" title="تقييم المخزون والمشتريات" style={{ marginBottom: 16 }}>
+        <div style={{ fontSize: 12, color: '#64748b' }}>طريقة حساب تكلفة المبيعات</div>
+        <Radio.Group disabled={!canEdit} value={cfg.inventory.cogs_method || 'periodic'}
+          onChange={(e) => set(['inventory', 'cogs_method'], e.target.value)} style={{ marginBottom: 10 }}>
+          <Radio value="periodic">الجرد الدوري: مخزون أول المدة + المشتريات − مخزون آخر المدة</Radio>
+          <Radio value="perpetual">التكلفة المجمّدة على سطور البيع + فروق المخزون والتصنيع</Radio>
+        </Radio.Group>
+        <div style={{ fontSize: 12, color: '#64748b' }}>تقييم المخزون</div>
         <Radio.Group disabled={!canEdit} value={cfg.inventory.cost_basis} onChange={(e) => set(['inventory', 'cost_basis'], e.target.value)}>
-          <Radio value="average">متوسط سعر الشراء حتى التاريخ</Radio>
+          <Radio value="average">المتوسط المرجّح المتحرك (أول المدة والمشتريات والإنتاج)</Radio>
           <Radio value="list_factor">أصل قائمة الأسعار × نسبة الصافي (كما في أوراق الجرد)</Radio>
         </Radio.Group>
+        {branchId === undefined && (
+          <div style={{ marginTop: 10 }}>
+            <Checkbox disabled={!canEdit} checked={!!cfg.consolidation?.eliminate_internal}
+              onChange={(e) => set(['consolidation', 'eliminate_internal'], e.target.checked)}>
+              استبعاد البيع والشراء بين الفروع في عرض كل الفروع (العملاء والموردون المصنفون «داخلي»)
+            </Checkbox>
+          </div>
+        )}
         <div style={{ marginTop: 10, fontSize: 12, color: '#64748b' }}>فئات مستبعدة من المخزون ومن المشتريات (ليست بضاعة للبيع)</div>
         <Select mode="multiple" style={{ width: '100%' }} disabled={!canEdit} options={catOptions}
           value={cfg.inventory.exclude_categories || []} onChange={(v) => set(['inventory', 'exclude_categories'], v)} />
@@ -1129,6 +1159,8 @@ const SettingsTab: React.FC<{ branchId?: number; canEdit: boolean; onSaved: () =
             { title: 'الحساب', dataIndex: 'name' },
             { title: 'تحت', dataIndex: 'parent_name' },
             { title: 'البند', dataIndex: 'group', render: (g: string) => g || '—' },
+            { title: 'يظهر في', dataIndex: 'appears_in', width: 130,
+              render: (v: string | null) => (v ? APPEARS_IN_LABELS[v] || v : <Tag color="orange">غير محدد</Tag>) },
             { title: 'الدور', width: 260, render: (_: any, a: any) => {
               const value = roles[String(a.account_id)] ?? a.default_role;
               return (

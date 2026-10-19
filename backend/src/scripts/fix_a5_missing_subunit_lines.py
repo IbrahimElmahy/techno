@@ -17,8 +17,8 @@ from src.models.warehouse import Warehouse
 from src.scripts.fix_a5_fractional_quantities import SPECS, _fold_transfer, _load_specs
 from src.scripts.import_a5 import _clean, _money, _read
 from src.scripts.import_a5_docs import (
-    L_CODE, L_COST, L_DATE, L_IN, L_JUST, L_OUT, L_PRICE, L_QTY, L_TOTAL, L_TYPE,
-    _date, _doc_key)
+    L_CODE, L_DATE, L_IN, L_JUST, L_OUT, L_PRICE, L_QTY, L_TOTAL, L_TYPE,
+    _date, _doc_key, line_unit_cost)
 
 ZERO = Decimal("0")
 
@@ -205,7 +205,7 @@ def main() -> None:
                     continue
                 mv = BUILDERS[doc_type](
                     db, head, it, w, qty, to_money(_money(r[L_PRICE])),
-                    to_money(_money(r[L_TOTAL])), to_money(_money(r[L_COST])),
+                    to_money(_money(r[L_TOTAL])), line_unit_cost(r),
                     actor.id)
                 mv.movement_date = _date(r[L_DATE]) or mv.movement_date
 

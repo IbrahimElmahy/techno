@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Button, Empty, Input, Select, Space, Spin } from 'antd';
+import { Alert, Button, Empty, Input, Select, Space, Spin } from 'antd';
 import {
   AuditOutlined, CaretDownOutlined, CaretLeftOutlined, PrinterOutlined, ReloadOutlined,
   SearchOutlined,
@@ -162,7 +162,8 @@ export default function TrialBalanceTab() {
     }, html);
   };
 
-  const balanced = t && Math.abs(n(t.debit) - n(t.credit)) < 0.01;
+  const checks = data?.checks;
+  const balanced = t && (checks ? !!checks.balanced : Math.abs(n(t.debit) - n(t.credit)) < 0.01);
 
   return (
     <ListPage
@@ -194,6 +195,17 @@ export default function TrialBalanceTab() {
       </>) : undefined}
     >
       <style>{CSS}</style>
+      {checks && (checks.unbalanced_entries > 0 || checks.group_accounts_with_lines?.length > 0) ? (
+        <Alert type="warning" showIcon style={{ margin: '6px 0' }}
+          message={[
+            checks.unbalanced_entries > 0
+              ? `يوجد ${checks.unbalanced_entries} قيد غير متوازن في الفترة، صافي الفرق ${money(checks.unbalanced_amount)}.`
+              : null,
+            checks.group_accounts_with_lines?.length > 0
+              ? `حسابات تجميعية عليها حركات مباشرة: ${checks.group_accounts_with_lines.map((a: any) => a.name).join('، ')}.`
+              : null,
+          ].filter(Boolean).join(' ')} />
+      ) : null}
       <Space style={{ margin: '6px 0 8px' }}>
         <Button size="small" onClick={() => setOpen(new Set(allKeys))}>فتح الكل</Button>
         <Button size="small" onClick={() => setOpen(new Set())}>طي الكل</Button>

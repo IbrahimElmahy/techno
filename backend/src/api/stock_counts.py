@@ -82,7 +82,7 @@ def _names(db: Session):
         {i.id: i.name for i in all_items},
         {w.id: w.name for w in db.scalars(select(Warehouse)).all()},
         {i.id: i.category for i in all_items},
-        {i.id: costing_service.average_cost(db, i.id) for i in all_items},
+        costing_service.average_cost_bulk(db, [i.id for i in all_items]),
     )
 
 

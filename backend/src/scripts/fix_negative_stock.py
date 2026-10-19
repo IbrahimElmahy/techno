@@ -88,6 +88,7 @@ def main() -> None:
                 source_doc_id=0,
                 actor_user_id=args.actor,
                 created_at=moment,
+                movement_date=moment.date(),
                 branch_id=branch_id,
             ))
         db.commit()

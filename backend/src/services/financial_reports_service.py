@@ -91,9 +91,7 @@ def _movements(
         .where(ledger_service.in_books_sql(posted_only))
         .group_by(LedgerLine.account_id)
     )
-    if branch_id is not None:
-        stmt = stmt.where(
-            (LedgerEntry.branch_id == branch_id) | LedgerEntry.branch_id.is_(None))
+    stmt = stmt.where(ledger_service.branch_sql(branch_id))
     if date_from is not None:
         stmt = stmt.where(eff >= date_from)
     if date_to is not None:
@@ -168,9 +166,7 @@ def _aging_for_accounts(
         .where(LedgerLine.account_id.in_(list(wanted)), ledger_service.is_posted_sql(),
                eff <= as_of)
     )
-    if branch_id is not None:
-        stmt = stmt.where(
-            (LedgerEntry.branch_id == branch_id) | LedgerEntry.branch_id.is_(None))
+    stmt = stmt.where(ledger_service.branch_sql(branch_id))
     rows = db.execute(stmt).all()
 
     per_party: dict[int, list[tuple[date, Decimal, bool]]] = {}

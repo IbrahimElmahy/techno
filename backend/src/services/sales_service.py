@@ -321,7 +321,7 @@ def create_sale(
     base_costs: dict[int, Decimal] = {}
     fresh_ids = [ln.item_id for ln, *_ in built
                  if (keep_costs or {}).get(ln.item_id) is None]
-    base_costs.update(costing_service.average_cost_bulk(db, fresh_ids) if fresh_ids else {})
+    base_costs.update(costing_service.known_costs(db, fresh_ids) if fresh_ids else {})
     for ln, *_ in built:
         kept = (keep_costs or {}).get(ln.item_id)
         if kept is not None:
@@ -442,8 +442,8 @@ def create_sale(
             direction=StockDirection.out, quantity=base_qty, actor_user_id=actor_user_id,
             source_doc_type=StockDoc.SALE, source_doc_id=invoice.id,
         )
-        base_cost = base_costs.get(ln.item_id, ZERO)
-        unit_cost = to_money(Decimal(str(base_cost)) * factor)
+        base_cost = base_costs.get(ln.item_id)
+        unit_cost = to_money(Decimal(str(base_cost)) * factor) if base_cost is not None else None
         invoice.lines.append(
             SalesInvoiceLine(item_id=ln.item_id, quantity=ln.quantity,
                              unit_price=unit_price, discount_pct=line_disc,
@@ -984,7 +984,9 @@ def create_standalone_return(
             variable_discount_pct=ln.variable_discount_pct,
             line_total=line_total, unit=ln.unit, unit_factor=factor,
             location_kind=back_kind, location_id=back_loc,
-            unit_cost=to_money(costing_service.average_cost(db, ln.item_id) * factor),
+            unit_cost=(to_money(known * factor)
+                       if (known := costing_service.known_cost(db, ln.item_id)) is not None
+                       else None),
         ))
 
     entry_lines = [LineInput(account_resolver.sales_revenue_account(db, branch_id=ret.branch_id).id,

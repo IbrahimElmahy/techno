@@ -16,6 +16,9 @@ from src.models.stock import (
 )
 
 
+OPENING_DOCS = ("a5_opening", "a5_opening_fix")
+
+
 class StockError(Exception):
     pass
 
@@ -136,11 +139,15 @@ def post_movement(
     reverses_movement_id: int | None = None,
     allow_negative: bool = False,
     movement_date=None,
+    unit_cost: Decimal | None = None,
 ) -> StockMovement:
     q = to_qty(quantity)
     if q <= ZERO_QTY:
         raise StockError("يجب أن تكون كمية الحركة أكبر من صفر.")
     movement_type, source_doc_type = _normalize_names(movement_type, source_doc_type)
+    if source_doc_type in OPENING_DOCS and movement_date is None and reverses_movement_id is None:
+        raise StockError("رصيد أول المدة يحتاج تاريخاً صريحاً هو تاريخ بداية الفترة "
+                         "(اليوم السابق لأول يوم في السنة المالية).")
     _lock_locator(db, item_id, location_kind, location_id)
     if direction == StockDirection.out and not allow_negative:
         current = on_hand(db, item_id, location_kind, location_id)
@@ -161,6 +168,7 @@ def post_movement(
                        or stock_docs.date_of(db, source_doc_type, source_doc_id)
                        or date.today()),
         branch_id=_branch_of(db, location_kind, location_id),
+        unit_cost=unit_cost,
     )
     db.add(mv)
     db.flush()
@@ -195,4 +203,5 @@ def reverse_movement(
         source_doc_type=original.source_doc_type,
         source_doc_id=original.source_doc_id,
         reverses_movement_id=original_id,
+        movement_date=original.movement_date if original.source_doc_type in OPENING_DOCS else None,
     )

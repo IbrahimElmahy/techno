@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import sys
+from datetime import date, datetime
 
 from sqlalchemy import func, select
 
@@ -21,9 +22,18 @@ from src.scripts.fix_account_natures import target_for_group as _target_nature
 
 
 OPENING_DOC = "a5_opening"
+OPENING_DATE = date(2025, 12, 31)
+
+
+def opening_unit_cost(r: list[str]):
+    if len(r) < 8:
+        return None
+    unit = _money(r[7])
+    return unit if unit > 0 else None
+
 
 def run(folder: str, *, execute: bool, branch_name: str = "",
-        prefix: str = "") -> None:
+        prefix: str = "", opening_date: date = OPENING_DATE) -> None:
     accs = _read(os.path.join(folder, "a5_acc.tsv"))
     opens = _read(os.path.join(folder, "a5_open.tsv"))
     mains = [r for r in accs if r and r[0] == "MAIN"]
@@ -32,7 +42,7 @@ def run(folder: str, *, execute: bool, branch_name: str = "",
     print("المصدر:")
     print(f"   حسابات رئيسية        {len(mains):>6}")
     print(f"   حسابات فرعية         {len(subs):>6}")
-    print(f"   أرصدة افتتاحية       {len(opens):>6}")
+    print(f"   أرصدة افتتاحية       {len(opens):>6}  بتاريخ {opening_date.isoformat()}")
     if not execute:
         print("\nعرض فقط — مافيش حاجة اتكتبت. أضف --yes للتنفيذ.")
         return
@@ -172,6 +182,8 @@ def run(folder: str, *, execute: bool, branch_name: str = "",
                 direction=StockDirection.out if out else StockDirection.in_,
                 quantity=abs(qty), allow_negative=True,
                 source_doc_type=OPENING_DOC, source_doc_id=0,
+                movement_date=opening_date,
+                unit_cost=None if out else opening_unit_cost(r),
                 actor_user_id=admin.id if admin else 1)
             done.add((it.id, wh.id))
             made["أرصدة"] += 1
@@ -198,4 +210,7 @@ if __name__ == "__main__":
     folder = args[args.index("--dir") + 1] if "--dir" in args else "C:/pgtmp"
     branch = args[args.index("--branch") + 1] if "--branch" in args else ""
     prefix = args[args.index("--prefix") + 1] if "--prefix" in args else ""
-    run(folder, execute="--yes" in args, branch_name=branch, prefix=prefix)
+    opening = (datetime.strptime(args[args.index("--opening-date") + 1], "%Y-%m-%d").date()
+               if "--opening-date" in args else OPENING_DATE)
+    run(folder, execute="--yes" in args, branch_name=branch, prefix=prefix,
+        opening_date=opening)

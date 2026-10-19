@@ -231,8 +231,16 @@ def _lines_of(c: Ctx, rows: list[list[str]], store_col: int, label: str):
         if qty <= ZERO:
             continue
         out.append((it, wh, qty, to_money(_money(r[L_PRICE])),
-                    to_money(_money(r[L_TOTAL])), to_money(_money(r[L_COST]))))
+                    to_money(_money(r[L_TOTAL])), line_unit_cost(r)))
     return out
+
+
+def line_unit_cost(r: list[str]) -> Decimal:
+    qty = _money(r[L_QTY])
+    total = _money(r[L_COST])
+    if qty <= ZERO or total <= ZERO:
+        return ZERO
+    return to_money(total / qty)
 
 
 def _sale(c: Ctx, h: list[str], rows: list[list[str]]) -> None:
