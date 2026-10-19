@@ -64,6 +64,7 @@ from src.models.commission import CommissionRule  # noqa: E402
 from src.models.treasury import PeriodLock, Treasury  # noqa: E402
 from src.models.voucher import Voucher  # noqa: E402
 from src.models.expense_bill import ExpenseBill, ExpenseBillLine  # noqa: E402
+from src.models.perpetual import InventoryAccount, InventoryPosting  # noqa: E402
 from src.models.coupon_receipt import CouponReceipt, CouponReceiptLine  # noqa: E402
 from src.models.coupon_custody import CouponCustody, CouponCustodySerial  # noqa: E402
 from src.models.permission import RoleCapability  # noqa: E402

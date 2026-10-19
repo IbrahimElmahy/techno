@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from sqlalchemy import ForeignKey, String
+from datetime import date
+
+from sqlalchemy import Date, ForeignKey, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from src.core.db import Base, BigIntPK
@@ -31,6 +33,7 @@ class Branch(Base):
     note2: Mapped[str | None] = mapped_column(String(300), nullable=True)
     is_factory: Mapped[bool] = mapped_column(default=False, nullable=False)
     auto_approve_rep_transfers: Mapped[bool] = mapped_column(default=False, nullable=False)
+    perpetual_from: Mapped[date | None] = mapped_column(Date, nullable=True)
     active: Mapped[bool] = mapped_column(default=True, nullable=False)
 
     governorate: Mapped[Governorate] = relationship()

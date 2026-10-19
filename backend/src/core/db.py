@@ -36,3 +36,6 @@ def get_db() -> Generator[Session, None, None]:
         yield db
     finally:
         db.close()
+
+
+from src.core import inventory_hooks  # noqa: E402,F401

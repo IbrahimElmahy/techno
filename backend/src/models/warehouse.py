@@ -26,6 +26,7 @@ class Warehouse(Base):
     warehouse_type: Mapped[WarehouseType] = mapped_column(Enum(WarehouseType), nullable=False)
     branch_id: Mapped[int | None] = mapped_column(ForeignKey("branch.id"), nullable=True)
     description: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    inventory_role: Mapped[str | None] = mapped_column(String(16), nullable=True)
     active: Mapped[bool] = mapped_column(default=True, nullable=False)
 
 

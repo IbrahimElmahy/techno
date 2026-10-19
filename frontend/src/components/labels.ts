@@ -19,6 +19,7 @@ export const ENTRY_TYPE_LABEL: Record<string, string> = {
   cheque_bounce: 'ارتداد شيك',
   expense: 'مصروف',
   expense_bill: 'فاتورة مصروف',
+  inventory: 'قيد مخزني',
   netting: 'مقاصة',
   depreciation: 'إهلاك',
   asset_disposal: 'استبعاد أصل',

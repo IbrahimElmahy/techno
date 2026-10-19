@@ -24,6 +24,7 @@ from src.models.role import RoleName
 from src.models.stock import LocationKind, StockDirection, StockDoc
 from src.models.supplier import Supplier
 from src.services import (
+    perpetual_service,
     account_resolver,
     supplier_service,
     audit_service,
@@ -194,7 +195,11 @@ def create_purchase(
                 or account_resolver.resolve_cash_account(
                     db, role=actor_role, user_id=actor_user_id, branch_id=invoice.branch_id))
     expense_acc = account_resolver.purchases_expense_account(db, branch_id=invoice.branch_id)
-    entry_lines = [LineInput(expense_acc.id, Direction.debit, total)]
+    entry_lines = perpetual_service.stock_side(
+        db, invoice.branch_id, invoice.purchase_date,
+        [(ln.line_location_kind or location_kind, ln.line_location_id or location_id, ln.line_total)
+         for ln in invoice.lines],
+        total, expense_acc.id, Direction.debit)
     if to_money(cash_amount) > ZERO:
         entry_lines.append(LineInput(cash_acc.id, Direction.credit, to_money(cash_amount)))
     if to_money(credit_amount) > ZERO:
@@ -298,7 +303,10 @@ def return_purchase(
                                                      branch_id=ret.branch_id)
     expense_acc = account_resolver.purchases_expense_account(db, branch_id=ret.branch_id)
     supplier_acc = supplier_service.require_account(db, inv.supplier_id)
-    entry_lines = [LineInput(expense_acc.id, Direction.credit, value)]
+    entry_lines = perpetual_service.stock_side(
+        db, ret.branch_id, ret.return_date,
+        [(*received_into[item_id], Decimal(qty) * purchased[item_id][1]) for item_id, qty in lines],
+        value, expense_acc.id, Direction.credit)
     if cash_refund > ZERO:
         entry_lines.append(LineInput(cash_acc.id, Direction.debit, cash_refund))
     if credit_reduction > ZERO:
@@ -500,7 +508,10 @@ def create_standalone_purchase_return(
         db, entry_type="purchase_return", actor_user_id=actor_user_id,
         branch_id=ret.branch_id,
         lines=[
-            LineInput(expense_acc.id, Direction.credit, value),
+            *perpetual_service.stock_side(
+                db, ret.branch_id, ret.return_date,
+                [(ln.line_location_kind, ln.line_location_id, ln.line_total) for ln in ret.lines],
+                value, expense_acc.id, Direction.credit),
             LineInput(supplier_acc.account_id, Direction.debit, value),
         ],
         description=entry_text.purchase_return(ret.document_number),

@@ -955,6 +955,9 @@ def _statement(*, cfg: dict, branch: Branch | None, branch_id: int | None, date_
     inv_cfg = cfg["inventory"]
     method = inv_cfg.get("cogs_method") if inv_cfg.get("cogs_method") in COGS_METHODS \
         else "periodic"
+    switched = getattr(branch, "perpetual_from", None) if branch is not None else None
+    if switched is not None and date_from >= switched:
+        method = "perpetual"
 
     def inv_block(val, override_key: str) -> dict:
         override = period.get(override_key)

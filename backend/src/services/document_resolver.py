@@ -81,4 +81,39 @@ def resolve_many(db: Session, entry_ids: list[int]) -> dict[int, dict]:
                 "voucher_kind": (_kind_value(getattr(doc, "kind", None))
                                  if kind == "voucher" else None),
             }
+    rest = wanted - found.keys()
+    if rest:
+        found.update(_inventory_docs(db, rest))
     return found
+
+
+_INVENTORY_DOCS = {
+    "stock_transfer": ("transfer", "src.models.transfer:StockTransfer", "/transfers"),
+    "production_order": ("production_order", "src.models.manufacturing:ProductionOrder",
+                         "/manufacturing?tab=orders"),
+    "stock_permit": ("stock_permit", "src.models.stock_permit:StockPermit", "/stock-permits"),
+    "stock_count": ("stock_count", "src.models.stock_count:StockCount", "/stock-counts"),
+}
+
+
+def _inventory_docs(db: Session, entry_ids: set[int]) -> dict[int, dict]:
+    from src.models.perpetual import InventoryPosting
+
+    out: dict[int, dict] = {}
+    rows = db.scalars(select(InventoryPosting).where(
+        InventoryPosting.ledger_entry_id.in_(entry_ids))).all()
+    for row in rows:
+        spec = _INVENTORY_DOCS.get(row.doc_type)
+        if spec is None:
+            continue
+        kind, path, screen = spec
+        doc = db.get(_model(path), row.doc_id)
+        if doc is None:
+            continue
+        out[int(row.ledger_entry_id)] = {
+            "kind": kind, "id": doc.id,
+            "document_number": getattr(doc, "document_number", None),
+            "screen": screen, "rep_user_id": None,
+            "statement": report_statement.text_of(doc),
+        }
+    return out

@@ -26,6 +26,7 @@ interface WarehouseRecord {
   branch_id: number | null;
   description: string | null;
   active: boolean;
+  inventory_role?: 'raw' | 'wip' | 'finished' | null;
 }
 
 interface EmployeeRecord {
@@ -191,6 +192,7 @@ export default function Warehouses() {
         branch_id: values.branch_id ?? null,
         description: values.description || null,
         warehouse_type: values.warehouse_type,
+        inventory_role: values.inventory_role || 'none',
       });
       message.success('تم تعديل المخزن');
       setEditing(null);
@@ -392,6 +394,13 @@ export default function Warehouses() {
         <Select options={[
           { value: 'central', label: 'مركزي' },
           { value: 'branch', label: 'فرعي' },
+        ]} />
+      </Form.Item>
+      <Form.Item name="inventory_role" label="حساب المخزون (الجرد المستمر)">
+        <Select allowClear placeholder="بدون" options={[
+          { value: 'raw', label: 'مخزون الخامات' },
+          { value: 'wip', label: 'تحت التشغيل' },
+          { value: 'finished', label: 'مخزون الإنتاج التام' },
         ]} />
       </Form.Item>
     </>

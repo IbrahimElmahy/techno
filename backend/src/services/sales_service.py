@@ -30,6 +30,7 @@ from src.models.sales import (
 from src.models.sales_expense import ExpenseKind, SalesInvoiceExpense
 from src.models.stock import LocationKind, StockDirection, StockDoc
 from src.services import (
+    perpetual_service,
     reservation_service,
     account_resolver,
     audit_service,
@@ -505,6 +506,10 @@ def create_sale(
         else:
             entry_lines.append(LineInput(account_id, Direction.credit, amount,
                                          statement=exp.get("description") or "مصروف على العميل"))
+    entry_lines += perpetual_service.cogs_lines(
+        db, invoice.branch_id, invoice_date,
+        [(sl.location_kind, sl.location_id,
+          Decimal(str(sl.quantity)) * Decimal(str(sl.unit_cost or 0))) for sl in invoice.lines])
     if entry_lines:
         entry = ledger_service.post_entry(
             db, entry_type="sale", actor_user_id=actor_user_id, lines=entry_lines,
@@ -785,6 +790,11 @@ def return_sale(
         entry_lines.append(LineInput(inv.cash_account_id, Direction.credit, cash_refund))
     if credit_reduction > ZERO:
         entry_lines.append(LineInput(cust_acc.account_id, Direction.credit, credit_reduction))
+    entry_lines += perpetual_service.cogs_lines(
+        db, ret.branch_id, ret.return_date,
+        [(rl.location_kind, rl.location_id,
+          Decimal(str(rl.quantity)) * Decimal(str(rl.unit_cost or 0))) for rl in ret.lines],
+        reverse=True)
     entry = ledger_service.post_entry(
         db, entry_type="sale_return", actor_user_id=actor_user_id, lines=entry_lines,
         rep_id=ret.rep_id, branch_id=ret.branch_id,
@@ -998,6 +1008,11 @@ def create_standalone_return(
         entry_lines.append(LineInput(cash_acc.id, Direction.credit, to_money(cash_refund)))
     if to_money(credit_reduction) > ZERO:
         entry_lines.append(LineInput(cust_acc.account_id, Direction.credit, to_money(credit_reduction)))
+    entry_lines += perpetual_service.cogs_lines(
+        db, ret.branch_id, ret.return_date,
+        [(rl.location_kind, rl.location_id,
+          Decimal(str(rl.quantity)) * Decimal(str(rl.unit_cost or 0))) for rl in ret.lines],
+        reverse=True)
     entry = ledger_service.post_entry(
         db, entry_type="sale_return", actor_user_id=actor_user_id, lines=entry_lines,
         rep_id=ret.rep_id, branch_id=ret.branch_id,

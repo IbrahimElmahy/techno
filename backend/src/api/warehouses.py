@@ -3,7 +3,7 @@ from __future__ import annotations
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -37,6 +37,7 @@ class WarehouseUpdate(BaseModel):
     description: str | None = None
     branch_id: int | None = None
     warehouse_type: WarehouseType | None = None
+    inventory_role: str | None = Field(default=None, pattern="^(raw|wip|finished|none)$")
 
 
 class CustodyUpdate(BaseModel):
@@ -53,6 +54,7 @@ class WarehouseOut(BaseModel):
     branch_id: int | None
     description: str | None = None
     active: bool
+    inventory_role: str | None = None
 
 
 class CustodyCreate(BaseModel):
@@ -93,6 +95,7 @@ def list_warehouses(
         WarehouseOut(
             id=w.id, name=w.name, warehouse_type=w.warehouse_type,
             description=w.description, branch_id=w.branch_id, active=w.active,
+            inventory_role=w.inventory_role,
         )
         for w in db.scalars(stmt).all()
     ]
@@ -137,13 +140,16 @@ def update_warehouse(
         wh.branch_id = body.branch_id
     if body.warehouse_type is not None:
         wh.warehouse_type = body.warehouse_type
+    if body.inventory_role is not None:
+        wh.inventory_role = None if body.inventory_role == "none" else body.inventory_role
     db.flush()
     audit_service.record(db, action="warehouse.update", actor_user_id=current.id,
                          entity_type="warehouse", entity_id=wh.id)
     db.commit()
     return WarehouseOut(id=wh.id, name=wh.name, warehouse_type=wh.warehouse_type,
                         description=wh.description,
-                        branch_id=wh.branch_id, active=wh.active)
+                        branch_id=wh.branch_id, active=wh.active,
+                        inventory_role=wh.inventory_role)
 
 
 @router.delete("/warehouses/{warehouse_id}", status_code=status.HTTP_204_NO_CONTENT)
