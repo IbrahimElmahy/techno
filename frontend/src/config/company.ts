@@ -3,7 +3,7 @@ export const COMPANY = {
   nameEn: 'TechnoTherm — German Technology',
   activity: 'أنظمة السباكة والتغذية',
   address: 'قطعة 676 امتداد المنطقة الصناعية السادسة — مدينة السادس من أكتوبر',
-  phones: ['01062240047', '01020275910'],
+  phones: ['01062240047'],
   taxId: '',
   commercialRegister: '',
   email: '',
