@@ -204,6 +204,22 @@ class SupplierCustomerCardOut(BaseModel):
     created: bool = False
 
 
+def _link_supplier_account(db: Session, card, supplier: Supplier) -> bool:
+    from src.models.customer import CustomerAccount
+    from src.services import customer_service
+
+    if db.scalar(select(CustomerAccount.id).where(CustomerAccount.customer_id == card.id)):
+        return False
+    payable = db.scalar(select(SupplierAccount.account_id).where(
+        SupplierAccount.supplier_id == supplier.id))
+    if payable is None:
+        customer_service.open_account(db, card)
+    else:
+        db.add(CustomerAccount(customer_id=card.id, account_id=payable))
+        db.flush()
+    return True
+
+
 @router.post("/{supplier_id}/customer-card", response_model=SupplierCustomerCardOut)
 def supplier_customer_card(
     supplier_id: int,
@@ -231,13 +247,13 @@ def supplier_customer_card(
                         territory_id=territory_id, branch_id=branch_id, supplier_id=supplier.id)
         db.add(card)
         db.flush()
-        customer_service.open_account(db, card)
         audit_service.record(db, action="customer.create_for_supplier", actor_user_id=current.id,
                              entity_type="customer", entity_id=card.id,
                              after={"code": card.code, "supplier_id": supplier.id,
                                     "branch_id": branch_id})
-        db.commit()
         created = True
+    if _link_supplier_account(db, card, supplier) or created:
+        db.commit()
     return SupplierCustomerCardOut(id=card.id, name=card.name, phone=card.phone,
                                    address=getattr(card, "address", None),
                                    branch_id=card.branch_id, created=created)
