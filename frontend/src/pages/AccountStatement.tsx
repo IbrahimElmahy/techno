@@ -171,6 +171,10 @@ function scrollParentOf(el: HTMLElement | null): HTMLElement | null {
   return null;
 }
 
+const ownTextFirst = (l: StatementLine): boolean => !!l.doc_statement
+  && l.doc_statement !== l.description
+  && (l.doc_kind === 'voucher' || l.doc_kind === 'expense_bill');
+
 export default function AccountStatement() {
   const [search, setSearch] = useSearchParams();
   const u0 = {
@@ -691,6 +695,14 @@ export default function AccountStatement() {
       ...textColumn(lines, (l: StatementLine) => stripSerial(l.description, l.doc_number)),
       render: (v: string, l: StatementLine) => {
         const shown = stripSerial(v, l.doc_number);
+        if (ownTextFirst(l)) {
+          return (
+            <Space direction="vertical" size={0}>
+              <span>{l.doc_statement}</span>
+              <span style={{ color: '#8c8c8c', fontSize: 14 }}>{shown}</span>
+            </Space>
+          );
+        }
         const text = l.cash_on_invoice ? <span style={{ color: '#389e0d' }}>{shown}</span> : shown;
         return l.doc_statement && l.doc_statement !== v && !l.cash_on_invoice ? (
           <Space direction="vertical" size={0}>
@@ -824,9 +836,11 @@ export default function AccountStatement() {
       case 'description':
         return {
           title: 'البيان',
-          value: (l) => (l.doc_statement && l.doc_statement !== l.description
-            ? `${stripSerial(l.description, l.doc_number)} — ${l.doc_statement}`
-            : stripSerial(l.description, l.doc_number)),
+          value: (l) => (ownTextFirst(l)
+            ? `${l.doc_statement} — ${stripSerial(l.description, l.doc_number)}`
+            : l.doc_statement && l.doc_statement !== l.description
+              ? `${stripSerial(l.description, l.doc_number)} — ${l.doc_statement}`
+              : stripSerial(l.description, l.doc_number)),
         };
       case 'rep_name': return { title: 'مندوب', value: (l) => l.rep_name ?? '' };
       case 'store_name': return { title: 'المخزن', value: (l) => l.store_name ?? '' };
