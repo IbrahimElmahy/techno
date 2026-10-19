@@ -12,12 +12,15 @@ _SOURCES: list[tuple[str, str, str]] = [
     ("purchase_return", "src.models.purchasing:PurchaseReturn", "/purchases"),
     ("voucher", "src.models.voucher:Voucher", "/vouchers"),
     ("expense_bill", "src.models.expense_bill:ExpenseBill", "/expense-bills"),
+    ("settlement_discount", "src.models.settlement_discount:SettlementDiscount",
+     "/settlement-discounts"),
 ]
 
 
 _EXTRA_TEXT: dict[str, tuple[str, ...]] = {
     "voucher": ("description",),
     "expense_bill": ("notes",),
+    "settlement_discount": ("notes",),
 }
 
 

@@ -1061,3 +1061,7 @@ def rep_cash_statement(
 from src.api import expense_bills as _expense_bills  # noqa: E402
 
 router.include_router(_expense_bills.router)
+
+from src.api import settlement_discounts as _settlement_discounts  # noqa: E402
+
+router.include_router(_settlement_discounts.router)

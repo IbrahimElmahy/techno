@@ -173,7 +173,8 @@ function scrollParentOf(el: HTMLElement | null): HTMLElement | null {
 
 const ownTextFirst = (l: StatementLine): boolean => !!l.doc_statement
   && l.doc_statement !== l.description
-  && (l.doc_kind === 'voucher' || l.doc_kind === 'expense_bill');
+  && (l.doc_kind === 'voucher' || l.doc_kind === 'expense_bill'
+    || l.doc_kind === 'settlement_discount');
 
 export default function AccountStatement() {
   const [search, setSearch] = useSearchParams();
