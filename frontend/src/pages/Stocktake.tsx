@@ -112,6 +112,8 @@ export default function Stocktake() {
       { title: 'الوحدة', value: 'unit_of_measure' },
       { title: 'الموقع', value: 'location' },
       { title: 'الكمية في النظام', value: 'quantity' },
+      { title: 'متوسط السعر', value: 'unit_cost' },
+      { title: 'القيمة', value: 'value' },
       { title: 'العدد الفعلي', value: (r) => actual[rowKey(r)] },
       { title: 'الفرق', value: (r) => diffOf(r) },
     ];
@@ -129,6 +131,8 @@ export default function Stocktake() {
       { title: 'الصنف', value: 'name' },
       { title: 'الموقع', value: 'location' },
       { title: 'الكمية في النظام', value: 'quantity', numeric: true },
+      { title: 'متوسط السعر', value: (r) => money(r.unit_cost), numeric: true },
+      { title: 'القيمة', value: (r) => money(r.value), numeric: true },
       { title: 'العدد الفعلي', value: (r) => actual[rowKey(r)], numeric: true },
       { title: 'الفرق', value: (r) => diffOf(r), numeric: true },
     ];
@@ -179,6 +183,12 @@ export default function Stocktake() {
     { title: 'الكمية', dataIndex: 'quantity', align: 'left' as const,
       ...numberColumn((r: Row) => r.quantity),
       render: (v: string) => <b>{qty(v)}</b> },
+    { title: 'متوسط السعر', dataIndex: 'unit_cost', align: 'left' as const, width: 120,
+      ...numberColumn((r: Row) => r.unit_cost),
+      render: (v: string) => money(v) },
+    { title: 'القيمة', dataIndex: 'value', align: 'left' as const, width: 140,
+      ...numberColumn((r: Row) => r.value),
+      render: (v: string) => <b>{money(v)}</b> },
     { title: 'العدد الفعلي', key: 'actual', align: 'left' as const, width: 140,
       ...numberColumn<Row>((r) => actual[rowKey(r)]),
       render: (_: any, r: Row) => (
