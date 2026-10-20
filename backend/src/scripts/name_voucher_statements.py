@@ -14,6 +14,7 @@ from src.services import audit_service
 RULES = (
     (VoucherKind.receipt, "customer", "تحصيل من عميل", "تحصيل من العميل {name}"),
     (VoucherKind.payment, "supplier", "دفع لمورد", "دفع للمورد {name}"),
+    (VoucherKind.payment, "customer", "دفع لمورد", "صرف إلى {name}"),
 )
 
 
