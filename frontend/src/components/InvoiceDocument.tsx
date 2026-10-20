@@ -179,9 +179,8 @@ export function printInvoice(d: InvoiceDoc, opts?: PrintOptions): void {
       meta: headMeta(d, o),
       note: NOTE[d.kind],
       hide: {
-        logo: d.kind === 'sale' || !o.logo,
-        companyName: d.kind === 'sale' || !o.companyName,
-        companyFooter: d.kind === 'sale',
+        logo: !o.logo,
+        companyName: !o.companyName,
         invoiceNumber: !o.invoiceNumber,
         invoiceTitle: !o.invoiceTitle,
       },
