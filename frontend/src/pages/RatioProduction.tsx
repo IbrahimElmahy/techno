@@ -4,7 +4,7 @@ import {
 } from 'antd';
 import {
   ArrowRightOutlined, BuildOutlined, ClearOutlined, DeleteOutlined, PlusOutlined,
-  ReloadOutlined, RollbackOutlined, SearchOutlined,
+  EditOutlined, ReloadOutlined, RollbackOutlined, SearchOutlined,
 } from '@ant-design/icons';
 import dayjs, { Dayjs } from 'dayjs';
 import { InputNumber } from '../components/NumberInput';
@@ -27,7 +27,7 @@ interface ProdLine {
   key: number; product_id?: number; quantity: number | null; warehouse_id?: number;
   bom_id?: number | null; materials: MatLine[]; loading?: boolean; noRecipe?: boolean;
 }
-interface POProduct { id: number; item_id: number; warehouse_id: number | null; quantity: string; total_cost: string; unit_cost: string }
+interface POProduct { id: number; item_id: number; warehouse_id: number | null; quantity: string; total_cost: string; unit_cost: string; bom_id?: number | null }
 interface POMaterial { id: number; product_line_id: number | null; item_id: number; warehouse_id: number | null; quantity: string; line_cost: string }
 interface PO {
   id: number; document_number: string; production_date: string | null; state: string;
@@ -58,6 +58,7 @@ export default function RatioProduction() {
   const [saving, setSaving] = useState(false);
   const [entryOpen, setEntryOpen] = useState(false);
   const [viewId, setViewId] = useState<number | null>(null);
+  const [editingId, setEditingId] = useState<number | null>(null);
 
   const [date, setDate] = useState<Dayjs>(dayjs());
   const [outWh, setOutWh] = useState<number | undefined>();
@@ -145,10 +146,31 @@ export default function RatioProduction() {
   const addProduct = () => setLines((p) => [...p, { key: nextKey(), quantity: null, materials: [] }]);
   const reset = () => { setLines([{ key: nextKey(), quantity: null, materials: [] }]); setDocNo(''); setPaperNo(''); setStatement(''); };
   const openEntry = () => {
-    reset(); setDate(dayjs()); setEntryOpen(true);
+    reset(); setDate(dayjs()); setEditingId(null); setEntryOpen(true);
     api.get('/api/v1/manufacturing/production-orders/next-number')
       .then((r) => setDocNo((cur) => cur || r.data?.next || '')).catch(() => {});
   };
+
+  const startEdit = (o: PO) => {
+    setEditingId(o.id);
+    setDate(o.production_date ? dayjs(o.production_date) : dayjs());
+    setOutWh(o.products[0]?.warehouse_id ?? undefined);
+    setDocNo(o.external_document_number || '');
+    setPaperNo(o.paper_number || '');
+    setStatement(o.statement1 || '');
+    setLines(o.products.map((p) => ({
+      key: nextKey(), product_id: p.item_id, quantity: Number(p.quantity),
+      warehouse_id: p.warehouse_id ?? undefined, bom_id: p.bom_id ?? null,
+      materials: o.materials.filter((m) => m.product_line_id === p.id).map((m) => ({
+        key: nextKey(), item_id: m.item_id, quantity: Number(m.quantity),
+        warehouse_id: m.warehouse_id ?? undefined,
+      })),
+    })));
+    o.materials.forEach((m) => { if (m.warehouse_id) ensureStock(m.warehouse_id); });
+    setViewId(null);
+    setEntryOpen(true);
+  };
+  const editable = (o: PO) => o.state === 'done' && !o.reversed && !o.is_reversal && !o.imported_from;
 
   const matRows = lines.flatMap((l) => l.materials.map((m) => ({ ...m, lineKey: l.key, product_id: l.product_id })));
   const estCost = matRows.reduce((s, m) => s + (m.quantity || 0) * Number(itemOf(m.item_id)?.purchase_price || 0), 0);
@@ -166,7 +188,10 @@ export default function RatioProduction() {
     }
     setSaving(true);
     try {
-      await api.post('/api/v1/manufacturing/production-orders', {
+      const url = editingId
+        ? `/api/v1/manufacturing/production-orders/${editingId}/edit`
+        : '/api/v1/manufacturing/production-orders';
+      await api.post(url, {
         production_date: date.format('YYYY-MM-DD'),
         external_document_number: docNo || null,
         paper_number: paperNo || null,
@@ -182,13 +207,14 @@ export default function RatioProduction() {
           })),
         })),
       });
-      message.success('تم تسجيل الإنتاج وصرف الخامات');
+      message.success(editingId ? 'تم تعديل إذن الإنتاج' : 'تم تسجيل الإنتاج وصرف الخامات');
       setEntryOpen(false);
+      setEditingId(null);
       load();
     } catch (e: any) {
       const msg = e?.response?.data?.detail?.message || 'تعذر حفظ الإنتاج';
       Modal.error({
-        title: 'لم يُسجَّل الإنتاج',
+        title: editingId ? 'لم يُعدَّل إذن الإنتاج' : 'لم يُسجَّل الإنتاج',
         width: 560,
         content: <div style={{ whiteSpace: 'pre-wrap', lineHeight: 1.9 }}>{msg}</div>,
         okText: 'حسناً',
@@ -236,11 +262,14 @@ export default function RatioProduction() {
     { title: 'مصروفات', dataIndex: 'expense_amount', key: 'e', width: 100, align: 'left' as const, render: (v: string) => money(v || 0) },
     { title: 'اجمالي منتجات', dataIndex: 'total_cost', key: 'c', width: 130, align: 'left' as const, render: (v: string) => <b>{money(v)}</b> },
     { title: 'ملاحظات', dataIndex: 'statement1', key: 's', ellipsis: true, render: (v: string | null) => v || '-' },
-    { title: '', key: 'a', width: 80,
+    { title: '', key: 'a', width: 110,
       render: (_: unknown, r: PO) => (
         <Space size={0} onClick={(e) => e.stopPropagation()}>
           <DocumentHistoryButton iconOnly entityType="production_order" entityId={r.id}
             documentNumber={r.document_number} />
+          {editable(r) && (
+            <Button size="small" type="text" icon={<EditOutlined />} title="تعديل" onClick={(e) => { e.stopPropagation(); startEdit(r); }} />
+          )}
           {r.state === 'done' && !r.reversed && !r.is_reversal && (
             <Button size="small" type="text" danger icon={<RollbackOutlined />} title="تراجع" onClick={(e) => { e.stopPropagation(); reverse(r); }} />
           )}
@@ -254,8 +283,10 @@ export default function RatioProduction() {
       <div className="sale-doc">
         <div className="sale-card sale-head">
           <div className="sale-head-row">
-            <Button size="small" icon={<ArrowRightOutlined />} onClick={() => setEntryOpen(false)}>رجوع للسجل</Button>
-            <span className="sale-title"><BuildOutlined /> انتاج حسب النسب</span>
+            <Button size="small" icon={<ArrowRightOutlined />} onClick={() => { setEntryOpen(false); setEditingId(null); }}>رجوع للسجل</Button>
+            <span className="sale-title"><BuildOutlined /> {editingId
+              ? `تعديل اذن انتاج ${orders.find((o) => o.id === editingId)?.external_document_number || ''}`.trim()
+              : 'انتاج حسب النسب'}</span>
             <div className="sale-toolbar-row">
               <Button onClick={reset}>تفريغ</Button>
               <Button type="primary" loading={saving} onClick={submit}>حفظ وترحيل</Button>
@@ -380,6 +411,9 @@ export default function RatioProduction() {
               <Button disabled={!next} onClick={() => next && setViewId(next.id)}>التالي</Button>
               <DocumentHistoryButton entityType="production_order" entityId={viewing.id}
                 documentNumber={viewing.document_number} />
+              {editable(viewing) && (
+                <Button icon={<EditOutlined />} onClick={() => startEdit(viewing)}>تعديل</Button>
+              )}
               {viewing.state === 'done' && !viewing.reversed && !viewing.is_reversal && (
                 <Button danger icon={<RollbackOutlined />} onClick={() => reverse(viewing)}>تراجع</Button>
               )}

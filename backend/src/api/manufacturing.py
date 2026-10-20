@@ -757,6 +757,30 @@ def update_production_order(
     return _po_out(order, production_order_service.reversed_ids(db))
 
 
+@router.post("/production-orders/{order_id}/edit", response_model=POOut)
+def edit_production_order(
+    order_id: int,
+    body: POIn,
+    current: CurrentUser = Depends(require_capability(CAP_MANUFACTURE_WRITE)),
+    db: Session = Depends(get_db),
+) -> POOut:
+    _seen_po(db, order_id, current)
+    try:
+        order = production_order_service.edit_done_order(
+            db, order_id=order_id, products=_po_products(body), actor_user_id=current.id,
+            allow_negative=body.allow_negative,
+            production_date=body.production_date,
+            branch_id=_own_branch(current, body.branch_id),
+            external_document_number=body.external_document_number,
+            paper_number=body.paper_number,
+            statement1=body.statement1, notes=body.notes)
+    except (ProductionOrderError, ManufacturingError, StockError) as exc:
+        db.rollback()
+        raise _conflict(exc)
+    db.commit()
+    return _po_out(order, production_order_service.reversed_ids(db))
+
+
 @router.post("/production-orders/{order_id}/confirm", response_model=POOut)
 def confirm_production_order(
     order_id: int,

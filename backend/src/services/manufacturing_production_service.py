@@ -241,6 +241,56 @@ def update_order(db: Session, *, order_id: int, products, actor_user_id: int, **
     return order
 
 
+def edit_done_order(db: Session, *, order_id: int, products, actor_user_id: int,
+                    allow_negative: bool = False, **header) -> ProductionOrder:
+    from sqlalchemy import delete
+
+    from src.services.document_edit_service import _drop_stock
+
+    order = db.get(ProductionOrder, order_id)
+    if order is None:
+        raise ProductionOrderError("أمر التشغيل غير موجود.")
+    if order.imported_from is not None:
+        raise ProductionOrderError("الأمر المنقول من a5 للعرض فقط — لا يمكن تعديله.")
+    if order.state != ProductionState.done:
+        return update_order(db, order_id=order_id, products=products,
+                            actor_user_id=actor_user_id, **header)
+    if order.reverses_id is not None:
+        raise ProductionOrderError("لا يمكن تعديل أمر التراجع.")
+    if db.scalar(select(ProductionOrder.id).where(
+            ProductionOrder.reverses_id == order_id)) is not None:
+        raise ProductionOrderError("هذا الأمر متراجع عنه — لا يمكن تعديله.")
+    before = {"products": [{"item_id": p.item_id, "quantity": str(p.quantity),
+                            "warehouse_id": p.warehouse_id} for p in order.products],
+              "materials": [{"item_id": m.item_id, "quantity": str(m.quantity),
+                             "warehouse_id": m.warehouse_id} for m in order.materials],
+              "total_cost": str(order.total_cost)}
+    db.execute(delete(ProductionOrderReceipt).where(ProductionOrderReceipt.order_id == order_id))
+    for line in list(order.materials):
+        db.delete(line)
+    for line in list(order.products):
+        db.delete(line)
+    db.flush()
+    _drop_stock(db, source_doc_type=DOC_TYPE, source_doc_id=order_id)
+    db.flush()
+    db.expire(order)
+    for field in ("production_date", "branch_id", "external_document_number", "paper_number",
+                  "statement1", "notes"):
+        if field in header and not (field in ("production_date", "branch_id")
+                                    and header[field] is None):
+            setattr(order, field, header[field])
+    _build_lines(db, order, products)
+    _enforce_factory_branch(db, order)
+    order.state = ProductionState.draft
+    db.flush()
+    execute_order(db, order_id=order_id, actor_user_id=actor_user_id,
+                  allow_negative=allow_negative)
+    audit_service.record(db, action="production_order.edit", actor_user_id=actor_user_id,
+                         entity_type="production_order", entity_id=order.id, before=before,
+                         after={"total_cost": str(order.total_cost)})
+    return order
+
+
 def confirm_order(db: Session, *, order_id: int, actor_user_id: int) -> ProductionOrder:
     order = db.get(ProductionOrder, order_id)
     if order is None:
