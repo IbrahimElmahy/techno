@@ -270,7 +270,7 @@ export default function RatioProduction() {
           {editable(r) && (
             <Button size="small" type="text" icon={<EditOutlined />} title="تعديل" onClick={(e) => { e.stopPropagation(); startEdit(r); }} />
           )}
-          {r.state === 'done' && !r.reversed && !r.is_reversal && (
+          {editable(r) && (
             <Button size="small" type="text" danger icon={<RollbackOutlined />} title="تراجع" onClick={(e) => { e.stopPropagation(); reverse(r); }} />
           )}
         </Space>
@@ -414,7 +414,7 @@ export default function RatioProduction() {
               {editable(viewing) && (
                 <Button icon={<EditOutlined />} onClick={() => startEdit(viewing)}>تعديل</Button>
               )}
-              {viewing.state === 'done' && !viewing.reversed && !viewing.is_reversal && (
+              {editable(viewing) && (
                 <Button danger icon={<RollbackOutlined />} onClick={() => reverse(viewing)}>تراجع</Button>
               )}
             </div>
