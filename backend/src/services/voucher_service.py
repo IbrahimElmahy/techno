@@ -229,6 +229,11 @@ def _owner_of_account(db: Session, account_id: int | None) -> tuple[str, int, st
     return None
 
 
+def _receipt_label(db: Session, customer_id: int) -> str:
+    name = getattr(db.get(Customer, customer_id), "name", None)
+    return f"تحصيل من العميل {name}" if name else "تحصيل من عميل"
+
+
 def create_receipt(
     db: Session, *, customer_id: int | None = None, amount, actor_user_id: int,
     actor_role: RoleName, supplier_id: int | None = None, account_id: int | None = None,
@@ -281,7 +286,7 @@ def create_receipt(
             credit_account_id=parts[0][0].account_id, actor_user_id=actor_user_id,
             voucher_date=voucher_date, description=description, reference=reference,
             payment_method=payment_method, entry_type="receipt",
-            statement="تحصيل من عميل — على إجمالي المديونية",
+            statement=f"{_receipt_label(db, customer_id)} — على إجمالي المديونية",
             customer_id=customer_id, treasury_id=safe_id,
             credit_split=[(a.account_id, v) for a, v in parts],
             family=None,
@@ -296,7 +301,7 @@ def create_receipt(
         credit_account_id=party.account_id, actor_user_id=actor_user_id,
         voucher_date=voucher_date, description=description, reference=reference,
         payment_method=payment_method, entry_type="receipt",
-        statement="تحصيل من عميل" + (f" — {family}" if family else ""),
+        statement=_receipt_label(db, customer_id) + (f" — {family}" if family else ""),
         customer_id=customer_id, treasury_id=safe_id, family=family,
         client_uuid=client_uuid, rep_user_id=rep_id,
         cost_center_id=cost_center_id, statement1=statement1, external_document_number=external_document_number,
@@ -413,7 +418,8 @@ def create_payment(
         party_account_id=party.account_id, debit_account_id=party.account_id,
         credit_account_id=cash_account_id, actor_user_id=actor_user_id,
         voucher_date=voucher_date, description=description, reference=reference,
-        payment_method=payment_method, entry_type="payment", statement="دفع لمورد",
+        payment_method=payment_method, entry_type="payment",
+        statement=f"دفع للمورد {getattr(db.get(Supplier, supplier_id), 'name', '') or ''}".strip(),
         supplier_id=supplier_id, treasury_id=safe_id,
         cost_center_id=cost_center_id, statement1=statement1, external_document_number=external_document_number,
         replacing=replacing,
