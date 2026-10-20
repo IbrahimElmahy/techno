@@ -1056,3 +1056,22 @@ def last_sold_price(db: Session, *, customer_id: int, item_id: int) -> dict | No
             "effective_price": str(effective),
         })
     return {"last_price": history[0]["effective_price"], "history": history}
+
+
+def prior_balances_as_of(db: Session, inv: SalesInvoice) -> tuple[Decimal | None, Decimal | None]:
+    stored = (inv.prior_balance, inv.other_family_balance)
+    if inv.prior_balance is None or not inv.ledger_entry_id or not inv.customer_id:
+        return stored
+    accounts = db.scalars(
+        select(CustomerAccount).where(CustomerAccount.customer_id == inv.customer_id)).all()
+    family = inv.family
+    mine = [a for a in accounts if family and a.family == family]
+    others = [a for a in accounts if family and a.family and a.family != family]
+    prior = ledger_service.balance_before_entry(
+        db, [a.account_id for a in (mine or accounts)], inv.ledger_entry_id)
+    if prior is None:
+        return stored
+    other = (ledger_service.balance_before_entry(
+        db, [a.account_id for a in others], inv.ledger_entry_id)
+        if others and inv.other_family_balance is not None else inv.other_family_balance)
+    return prior, other

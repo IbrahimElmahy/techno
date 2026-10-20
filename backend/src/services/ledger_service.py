@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from datetime import date, datetime
 from decimal import Decimal
 
-from sqlalchemy import case, exists, func, select, true
+from sqlalchemy import Date, case, cast, exists, func, select, true
 from sqlalchemy.orm import Session
 
 from src.core.money import ZERO, to_money
@@ -435,6 +435,28 @@ def total_balance_of(db: Session, account_ids) -> Decimal:
         .join(Account, Account.id == LedgerLine.account_id)
         .join(LedgerEntry, LedgerEntry.id == LedgerLine.entry_id)
         .where(LedgerLine.account_id.in_(ids), is_posted_sql())
+    )
+    return to_money(total or 0)
+
+
+def balance_before_entry(db: Session, account_ids, entry_id: int) -> Decimal | None:
+    ids = list(account_ids)
+    entry = db.get(LedgerEntry, entry_id)
+    if entry is None or not ids:
+        return None
+    when = entry.entry_date or entry.created_at.date()
+    effective = func.coalesce(LedgerEntry.entry_date, cast(LedgerEntry.created_at, Date))
+    signed = case(
+        (LedgerLine.direction == Account.normal_side, LedgerLine.amount),
+        else_=-LedgerLine.amount,
+    )
+    total = db.scalar(
+        select(func.coalesce(func.sum(signed), 0))
+        .select_from(LedgerLine)
+        .join(Account, Account.id == LedgerLine.account_id)
+        .join(LedgerEntry, LedgerEntry.id == LedgerLine.entry_id)
+        .where(LedgerLine.account_id.in_(ids), is_posted_sql(),
+               (effective < when) | ((effective == when) & (LedgerEntry.id < entry_id)))
     )
     return to_money(total or 0)
 

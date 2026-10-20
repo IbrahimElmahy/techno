@@ -942,6 +942,8 @@ def _inv_out(inv: SalesInvoice, db: Session | None = None, *,
              bonus_for_numbers: dict[int, str] | None = None,
              ) -> SalesInvoiceOut:
     coupons: list[InvoiceCouponOut] = coupons_in or []
+    priors = (sales_service.prior_balances_as_of(db, inv) if db is not None
+              else (getattr(inv, "prior_balance", None), getattr(inv, "other_family_balance", None)))
     if db is not None:
         rows = db.scalars(
             select(SalesInvoiceCoupon).where(SalesInvoiceCoupon.invoice_id == inv.id)
@@ -983,8 +985,8 @@ def _inv_out(inv: SalesInvoice, db: Session | None = None, *,
         rep_id=inv.rep_id, external_document_number=inv.external_document_number,
         coupon_serial_from=inv.coupon_serial_from, coupon_serial_to=inv.coupon_serial_to,
         coupon_count=inv.coupon_count, invoice_date=inv.invoice_date,
-        prior_balance=getattr(inv, "prior_balance", None),
-        other_family_balance=getattr(inv, "other_family_balance", None),
+        prior_balance=priors[0],
+        other_family_balance=priors[1],
         other_family=getattr(inv, "other_family", None),
         expenses_billed=getattr(inv, "expenses_billed", None),
         expenses_operating=getattr(inv, "expenses_operating", None),
@@ -1675,6 +1677,7 @@ def get_sale(
         raise HTTPException(404, {"code": "not_found", "message": "Sale not found"})
     if not branch_scope.may_see(current, inv):
         raise HTTPException(404, {"code": "not_found", "message": "الفاتورة غير موجودة"})
+    priors = sales_service.prior_balances_as_of(db, inv)
     return SalesInvoiceDetail(
         coupons=_inv_out(inv, db).coupons,
         id=inv.id,
@@ -1690,8 +1693,8 @@ def get_sale(
         credit_amount=inv.credit_amount,
         cash_account_id=inv.cash_account_id,
         ledger_entry_id=inv.ledger_entry_id,
-        prior_balance=getattr(inv, "prior_balance", None),
-        other_family_balance=getattr(inv, "other_family_balance", None),
+        prior_balance=priors[0],
+        other_family_balance=priors[1],
         other_family=getattr(inv, "other_family", None),
         customer_name=(db.get(Customer, inv.customer_id).name
                        if inv.customer_id else None),

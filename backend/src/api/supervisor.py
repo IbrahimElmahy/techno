@@ -32,7 +32,7 @@ from src.models.transfer import StockTransfer, StockTransferLine, TransferStatus
 from src.models.user import User
 from src.models.voucher import Voucher, VoucherKind
 from src.models.warehouse import Custody, Warehouse
-from src.services import ledger_service
+from src.services import ledger_service, sales_service
 from src.services.rep_store_service import rep_store
 
 router = APIRouter(tags=["supervisor"], prefix="/supervisor")
@@ -622,9 +622,10 @@ def _balance_before(db: Session, account_ids: list[int], entry_id: int) -> Decim
 def _invoice_balances(db: Session, inv: SalesInvoice) -> list[dict]:
     rows: list[tuple[str | None, bool, Decimal]] = []
     if inv.prior_balance is not None:
-        rows.append((inv.family, True, Decimal(str(inv.prior_balance))))
-        if inv.other_family_balance is not None:
-            rows.append((inv.other_family, False, Decimal(str(inv.other_family_balance))))
+        prior, other = sales_service.prior_balances_as_of(db, inv)
+        rows.append((inv.family, True, Decimal(str(prior))))
+        if other is not None:
+            rows.append((inv.other_family, False, Decimal(str(other))))
     elif inv.ledger_entry_id and inv.customer_id:
         accounts = list(db.scalars(select(CustomerAccount).where(
             CustomerAccount.customer_id == inv.customer_id)).all())
