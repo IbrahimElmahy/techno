@@ -259,6 +259,48 @@ def supplier_customer_card(
                                    branch_id=card.branch_id, created=created)
 
 
+@router.post("/from-customer/{customer_id}", response_model=SupplierCustomerCardOut)
+def customer_supplier_card(
+    customer_id: int,
+    current: CurrentUser = Depends(require_capability("purchase.write")),
+    db: Session = Depends(get_db),
+) -> SupplierCustomerCardOut:
+    from src.models.customer import Customer
+    from src.services import customer_service
+
+    customer = db.scalar(branch_scope.scope(
+        select(Customer).where(Customer.id == customer_id), Customer, current).with_for_update())
+    if customer is None:
+        raise HTTPException(404, {"code": "not_found", "message": "العميل غير موجود."})
+    supplier = db.get(Supplier, customer.supplier_id) if customer.supplier_id else None
+    created = False
+    if supplier is None or not supplier.active:
+        try:
+            receivable = customer_service.require_account(db, customer.id)
+        except customer_service.CustomerError as e:
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY,
+                                {"code": "no_account", "message": str(e)})
+        supplier = Supplier(code=next_document_number(db, Supplier, "SUP", column=Supplier.code,
+                                                      width=5),
+                            name=customer.name, phone=customer.phone,
+                            address=getattr(customer, "address", None),
+                            branch_id=customer.branch_id)
+        db.add(supplier)
+        db.flush()
+        db.add(SupplierAccount(supplier_id=supplier.id, account_id=receivable.account_id))
+        customer.supplier_id = supplier.id
+        db.flush()
+        audit_service.record(db, action="supplier.create_for_customer", actor_user_id=current.id,
+                             entity_type="supplier", entity_id=supplier.id,
+                             after={"code": supplier.code, "customer_id": customer.id,
+                                    "account_id": receivable.account_id})
+        db.commit()
+        created = True
+    return SupplierCustomerCardOut(id=supplier.id, name=supplier.name, phone=supplier.phone,
+                                   address=supplier.address, branch_id=supplier.branch_id,
+                                   created=created)
+
+
 @router.get("/{supplier_id}", response_model=SupplierOut)
 def get_supplier(
     supplier_id: int,

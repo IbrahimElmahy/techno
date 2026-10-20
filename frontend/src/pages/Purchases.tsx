@@ -2020,7 +2020,7 @@ export default function Purchases() {
     <>
       <PartyPickerModal contextLabel="فاتورة شراء"
         open={partyPickerOpen || newStep === 'party'} kind="supplier"
-        kinds={['supplier', 'customer']}
+        kinds={['supplier', 'customer']} customerAsSupplier
         date={purchaseDate} onDateChange={(d) => setPurchaseDate(d)}
         onPick={handlePartyPicked}
         onCancel={() => { setPartyPickerOpen(false); setNewStep(null); }} />

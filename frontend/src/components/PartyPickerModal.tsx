@@ -63,7 +63,7 @@ const debtState = (k: PartyKind, balance?: string | null): DebtState => {
 
 export default function PartyPickerModal({
   open, kind, onPick, onCancel, date, onDateChange, kinds, title, excludeTypes,
-  variant = 'cards', contextLabel, hideParty, supplierAsCustomer,
+  variant = 'cards', contextLabel, hideParty, supplierAsCustomer, customerAsSupplier,
 }: {
   open: boolean;
   kind: PartyKind;
@@ -78,6 +78,7 @@ export default function PartyPickerModal({
    contextLabel?: string;
    hideParty?: (p: Party) => boolean;
    supplierAsCustomer?: boolean;
+   customerAsSupplier?: boolean;
  }) {
   const cards = variant === 'cards';
   const navigate = useNavigate();
@@ -212,7 +213,22 @@ export default function PartyPickerModal({
     if (e.key === 'Enter' && visible[cursor]) { e.preventDefault(); void choose(visible[cursor]); }
   };
 
+  const picking = useRef(false);
   const choose = async (p: Party) => {
+    if (customerAsSupplier && activeKind === 'customer') {
+      if (picking.current) return;
+      picking.current = true;
+      try {
+        const r = await api.post(`/api/v1/suppliers/from-customer/${p.id}`);
+        onPick({ id: r.data.id, name: r.data.name, phone: r.data.phone ?? null,
+                 address: r.data.address ?? null, branch_id: r.data.branch_id ?? null, balance: '0' });
+      } catch (err: any) {
+        message.error(err?.response?.data?.detail?.message || 'تعذّر تجهيز كارت المورد للعميل');
+      } finally {
+        picking.current = false;
+      }
+      return;
+    }
     if (!supplierAsCustomer || activeKind !== 'supplier') { onPick(p); return; }
     try {
       const r = await api.post(`/api/v1/suppliers/${p.id}/customer-card`);

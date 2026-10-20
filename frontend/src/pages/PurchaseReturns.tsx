@@ -1107,7 +1107,7 @@ export default function PurchaseReturns({ embedded }: { embedded?: { onExit: () 
 
       <PartyPickerModal contextLabel="مردود مشتريات"
         open={newStep === 'party' || partyPickerOpen} kind="supplier"
-        kinds={['supplier', 'customer']}
+        kinds={['supplier', 'customer']} customerAsSupplier
         date={returnDate} onDateChange={(d) => setReturnDate(d)}
         onPick={(picked) => {
           setNewStep(null);
