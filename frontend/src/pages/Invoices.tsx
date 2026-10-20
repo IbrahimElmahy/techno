@@ -185,6 +185,7 @@ export default function Invoices() {
   const [newStep, setNewStep] = useState<null | 'date' | 'party' | 'warehouse' | 'family'>(null);
   const [party, setParty] = useState<Party | null>(null);
   const [docWarehouseId, setDocWarehouseId] = useState<number | null>(null);
+  const [stockVersion, setStockVersion] = useState(0);
   const [minPrices, setMinPrices] = useState<Record<number, number>>({});
   const [canSellBelowCost, setCanSellBelowCost] = useState(false);
   useEffect(() => {
@@ -975,9 +976,21 @@ export default function Invoices() {
       const map: Record<number, number> = {};
       (res.data || []).forEach((r: any) => { map[r.item_id] = Number(r.on_hand || 0); });
       setAvailability((prev) => ({ ...prev, [warehouseId]: map }));
+      setStockVersion((v) => v + 1);
       stockLoaded.current.add(warehouseId);
     } catch (err) { console.error(err); }
   };
+
+  const refreshStock = async () => {
+    const ids = new Set<number>();
+    if (docWarehouseId) ids.add(docWarehouseId);
+    lines.forEach((l) => { const w = l.warehouse_id ?? docWarehouseId; if (w) ids.add(w); });
+    await Promise.all([...ids].map((id) => loadWarehouseStock(id, true)));
+  };
+
+  useEffect(() => {
+    if (pickerOpen && docWarehouseId) loadWarehouseStock(docWarehouseId, true);
+  }, [pickerOpen]);
 
   const onWarehouseChange = async (warehouseId: number) => {
     setDocWarehouseId(warehouseId);
@@ -2131,9 +2144,10 @@ function couponsTotal(inv: any): number {
             onCategoryChange={(c) => { setActiveCategory(c); setPanelItemId(null); }}
             availableFor={(id) => (docWarehouseId === null || !availability[docWarehouseId]
               ? null : availableFor(id, null, docWarehouseId))}
-            availabilityVersion={`${docWarehouseId ?? ''}|${Object.keys(availability).join(',')}`}
+            availabilityVersion={`${docWarehouseId ?? ''}|${Object.keys(availability).join(',')}|${stockVersion}`}
             disableOutOfStock
             hidePurchasePrice
+            onRefresh={refreshStock}
             onCancel={() => setPickerOpen(false)}
             onPick={(id, q) => {
               setPickerOpen(false);

@@ -3,7 +3,7 @@ import { compareArabic, searchByName, sortByName } from '../utils/arabicSort';
 import {
   Button, Checkbox, Col, Empty, Input, InputNumber, Row, Select, Space, Tag
 } from 'antd';
-import { AppstoreOutlined, CheckOutlined, PlusOutlined, SearchOutlined } from '@ant-design/icons';
+import { AppstoreOutlined, CheckOutlined, PlusOutlined, ReloadOutlined, SearchOutlined } from '@ant-design/icons';
 import { keepInView } from '../utils/keepInView';
 import { normalizeAr } from './ListToolbar';
 import { TabModal } from './TabModal';
@@ -34,6 +34,7 @@ interface Props {
   warehouseName?: string | null;
   priceTier?: string | null;
   priceTierLabel?: string | null;
+  onRefresh?: () => Promise<void> | void;
 }
 
 const LOW_STOCK = 5;
@@ -49,8 +50,14 @@ export default function ProductPickerModal({
   open, categories, categoryLabels, products: allProducts, activeCategory, onCategoryChange, hideCategories,
   onPick, onPickMany, onCancel, title = 'اختر الصنف', availableFor, priceFor,
   disableOutOfStock = false, availabilityVersion, hidePurchasePrice = false,
-  variant = 'cards', warehouseName, priceTier, priceTierLabel,
+  variant = 'cards', warehouseName, priceTier, priceTierLabel, onRefresh,
 }: Props) {
+  const [refreshing, setRefreshing] = useState(false);
+  const refresh = async () => {
+    if (!onRefresh || refreshing) return;
+    setRefreshing(true);
+    try { await onRefresh(); } finally { setRefreshing(false); }
+  };
   const cards = variant === 'cards';
   const products = useMemo(() => activeChoices(allProducts), [allProducts]);
   const memory = (memories[title] ??= { query: '', scrollTop: 0, cursor: 0 });
@@ -474,6 +481,12 @@ export default function ProductPickerModal({
                         : [...prev, ...selectable.filter((id) => !prev.includes(id))]))}>
                       {allSelected ? 'إلغاء التحديد' : 'تحديد الكل المعروض'}
                     </button>
+                  )}
+                  {onRefresh && (
+                    <Button size="small" type="link" icon={<ReloadOutlined spin={refreshing} />}
+                      onMouseDown={(e) => e.preventDefault()} onClick={refresh} disabled={refreshing}>
+                      تحديث الكميات
+                    </Button>
                   )}
                 </div>
                 {availableFor && (
