@@ -19,6 +19,7 @@ from src.models.purchasing import (
 )
 from src.models.stock import (
     CostingMethod,
+    ItemCostReset,
     LocationKind,
     StockDirection,
     StockMovement,
@@ -199,13 +200,29 @@ def cost_book(db: Session, *, item_ids=None, branch_id: int | None = None,
             slot[0] += q
             slot[1] += v
 
+    resets: dict[int, dict[date, Decimal]] = {}
+    reset_stmt = (select(ItemCostReset.item_id, ItemCostReset.effective_date,
+                         ItemCostReset.unit_cost)
+                  .where(*_items_filter(ItemCostReset.item_id, item_ids, branch_items))
+                  .order_by(ItemCostReset.id))
+    if until is not None:
+        reset_stmt = reset_stmt.where(ItemCostReset.effective_date <= until)
+    for item_id, d, c in db.execute(reset_stmt).all():
+        resets.setdefault(item_id, {})[d] = Decimal(str(c))
+
     book = CostBook()
-    for item_id in set(moves) | set(acq):
-        m, a = moves.get(item_id, {}), acq.get(item_id, {})
+    for item_id in set(moves) | set(acq) | set(resets):
+        m, a, r = moves.get(item_id, {}), acq.get(item_id, {}), resets.get(item_id, {})
         on_hand, avg = Decimal(0), None
         days: list[date] = []
         costs: list[Decimal] = []
-        for d in sorted(set(m) | set(a)):
+        for d in sorted(set(m) | set(a) | set(r)):
+            if d in r:
+                new = r[d].quantize(_PLACES)
+                if new != avg:
+                    days.append(d)
+                    costs.append(new)
+                avg = new
             got = a.get(d)
             if got is not None:
                 q, v = got

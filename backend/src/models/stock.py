@@ -92,6 +92,20 @@ class StockSetting(Base):
     )
 
 
+class ItemCostReset(Base):
+    __tablename__ = "item_cost_reset"
+
+    id: Mapped[int] = mapped_column(BigIntPK, primary_key=True, autoincrement=True)
+    item_id: Mapped[int] = mapped_column(ForeignKey("item.id"), nullable=False, index=True)
+    effective_date: Mapped[date] = mapped_column(Date, nullable=False)
+    unit_cost: Mapped[float] = mapped_column(Numeric(18, 6), nullable=False)
+    note: Mapped[str | None] = mapped_column(String(240), nullable=True)
+    actor_user_id: Mapped[int | None] = mapped_column(ForeignKey("user.id"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=func.now(), nullable=False
+    )
+
+
 class StockImmutableError(Exception):
     pass
 
