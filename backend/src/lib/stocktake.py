@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 from src.core import clock
 from src.core.money import ZERO, to_money
 from src.models.catalog import Item
-from src.models.stock import LocationKind, StockDirection, StockMovement
+from src.models.stock import CostingMethod, LocationKind, StockDirection, StockMovement
 from src.services import costing_service
 
 ZERO_QTY = Decimal("0.000")
@@ -71,7 +71,13 @@ def stock_as_of(
             select(Item).where(Item.id.in_({r[0] for r in raw}))).all()
     }
     names = _location_names(db)
-    costs: dict[int, Decimal] = costing_service.unit_cost_bulk(db, {r[0] for r in raw})
+    ids = {r[0] for r in raw}
+    if day is not None and costing_service.costing_method(db) != CostingMethod.last_purchase:
+        book = costing_service.cost_book(db, branch_id=branch_id, until=day)
+        costs: dict[int, Decimal] = {i: c for i in ids
+                                     if (c := book.at(i, day)) is not None}
+    else:
+        costs = costing_service.unit_cost_bulk(db, ids)
 
     rows: list[dict] = []
     total_qty = ZERO_QTY
@@ -94,7 +100,7 @@ def stock_as_of(
             "location_id": loc_id,
             "location": names.get((loc_kind, loc_id), f"#{loc_id}"),
             "quantity": str(held),
-            "unit_cost": str(cost),
+            "unit_cost": str(to_money(cost)),
             "value": str(value),
         })
         total_qty = _qty(total_qty + held)
