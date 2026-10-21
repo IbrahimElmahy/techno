@@ -9,7 +9,7 @@ import { useScreenShortcuts } from '../components/keyboard';
 import { useTableColumns } from '../components/ColumnSettings';
 import { api } from '../api/client';
 import { PAGE_SIZE } from '../utils/pagination';
-import { money, qty } from '../utils/money';
+import { money, numeralsLocale, qty } from '../utils/money';
 import { searchFilter, searchRank, sortByName } from '../utils/arabicSort';
 import { useAuth } from '../components/AuthProvider';
 import { STOCK_TOPICS, useLiveRefresh } from '../utils/live';
@@ -168,12 +168,12 @@ export default function StockValue() {
           onClick={() => { filter.reset(); setWarehouseId(undefined); }}>مسح</Button>
       </>)}
       summary={(<>
-        <ListStat label="عدد الأصناف" value={totals.count.toLocaleString('ar-EG')} />
+        <ListStat label="عدد الأصناف" value={totals.count.toLocaleString(numeralsLocale())} />
         <ListStat label="إجمالي العدد" value={qty(totals.q)} />
         <ListStat label={basis === 'sale' ? 'القيمة بسعر البيع' : 'القيمة بسعر الشراء'}
           value={money(totals.value)} tone="strong" />
         {totals.priced < totals.lines && (
-          <ListStat label="سطور بدون سعر" value={(totals.lines - totals.priced).toLocaleString('ar-EG')} tone="warn" />
+          <ListStat label="سطور بدون سعر" value={(totals.lines - totals.priced).toLocaleString(numeralsLocale())} tone="warn" />
         )}
       </>)}
     >

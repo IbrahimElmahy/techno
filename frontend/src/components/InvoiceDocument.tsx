@@ -7,6 +7,7 @@ import { PrintOptions, loadPrintOptions } from '../print/printOptions';
 import { COMPANY, companyLines } from '../config/company';
 import { printMoney as n } from '../print/reportSheet';
 import { exportExcel } from '../utils/exportExcel';
+import { numeralsLocale } from '../utils/numerals';
 
 export interface InvoiceLine {
   name: string;
@@ -84,7 +85,7 @@ function headMeta(d: InvoiceDoc, o: PrintOptions): [string, string][] {
   if (o.branch && d.branchName) rows.push(['الفرع', d.branchName]);
   if (o.rep && d.repName) rows.push(['مندوب', d.repName]);
   rows.push(['التاريخ',
-    d.date ? String(d.date).slice(0, 10) : new Date().toLocaleDateString('ar-EG')]);
+    d.date ? String(d.date).slice(0, 10) : new Date().toLocaleDateString(numeralsLocale())]);
   if (o.paidAndRemaining) {
     if (!d.isBonus) rows.push(['طريقة السداد', Number(d.credit || 0) > 0 ? 'آجل / جزئي' : 'نقدي']);
   }

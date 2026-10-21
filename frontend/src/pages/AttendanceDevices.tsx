@@ -16,6 +16,7 @@ import { Popconfirm } from '../components/noConfirm';
 import { TabModal } from '../components/TabModal';
 import { searchFilter, searchRank } from '../utils/arabicSort';
 import { PAGE_SIZE } from '../utils/pagination';
+import { numeralsLocale } from '../utils/numerals';
 
 interface Device {
   id: number;
@@ -85,7 +86,7 @@ function logUsage(d: Device) {
   const color = pct >= 90 ? 'red' : pct >= 75 ? 'orange' : undefined;
   return (
     <Tooltip title={pct >= 90 ? 'سعة سجل الجهاز قاربت الامتلاء' : undefined}>
-      <Tag color={color}>{d.records_count.toLocaleString('en')} / {cap.toLocaleString('en')} · {pct}٪</Tag>
+      <Tag color={color}>{d.records_count.toLocaleString(numeralsLocale())} / {cap.toLocaleString(numeralsLocale())} · {pct}٪</Tag>
     </Tooltip>
   );
 }
@@ -276,10 +277,10 @@ export default function AttendanceDevices({ employees }: { employees: any[] }) {
     { title: 'سجل الجهاز', key: 'records', render: (_: any, d) => logUsage(d) },
     { title: 'البصمات المستلمة', key: 'punches',
       render: (_: any, d) => (
-        <span>{d.punches.toLocaleString('en')}
+        <span>{d.punches.toLocaleString(numeralsLocale())}
           {d.punches > d.matched_punches
             ? <Tag color="red" style={{ marginInlineStart: 6 }}>
-                غير مربوطة {(d.punches - d.matched_punches).toLocaleString('en')}</Tag>
+                غير مربوطة {(d.punches - d.matched_punches).toLocaleString(numeralsLocale())}</Tag>
             : null}
         </span>
       ) },

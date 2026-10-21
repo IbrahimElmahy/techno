@@ -15,6 +15,7 @@ import {
 import { searchFilter, searchRank } from '../../utils/arabicSort';
 import { money } from '../../utils/money';
 import './fleet.css';
+import { numeralsLocale } from '../../utils/numerals';
 
 export const VEHICLE_STATUS: Record<string, { label: string; color: string }> = {
   good: { label: 'جيدة', color: 'green' },
@@ -82,7 +83,7 @@ export const labelOf = (m: Record<string, { label: string }>, v?: string | null)
 
 export const d10 = (v?: string | null) => (v ? String(v).slice(0, 10) : '');
 export const km = (v: any) => (v === null || v === undefined || v === ''
-  ? '' : Number(v).toLocaleString('en-US'));
+  ? '' : Number(v).toLocaleString(numeralsLocale()));
 
 export interface FleetVehicle {
   id: number; code: string; kind: string | null; model: string | null;

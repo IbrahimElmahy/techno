@@ -1,6 +1,7 @@
 import React from 'react';
 import { InputNumber as AntInputNumber } from 'antd';
 import type { InputNumberProps } from 'antd';
+import { useNumerals } from '../utils/numerals';
 
 const AR = '٠١٢٣٤٥٦٧٨٩';
 const AR_DECIMAL = '٫';
@@ -24,14 +25,17 @@ const parseTyped = (s: string): string => {
 };
 
 export const InputNumber = React.forwardRef<HTMLInputElement, InputNumberProps<any>>(
-  ({ formatter, parser, ...rest }, ref) => (
-    <AntInputNumber
-      {...rest}
-      ref={ref as any}
-      formatter={formatter ?? ((v) => toArabicDigits(String(v ?? '')))}
-      parser={parser ?? ((v) => parseTyped(String(v ?? '')) as any)}
-    />
-  ),
+  ({ formatter, parser, ...rest }, ref) => {
+    const arabic = useNumerals() === 'arabic';
+    return (
+      <AntInputNumber
+        {...rest}
+        ref={ref as any}
+        formatter={formatter ?? ((v) => (arabic ? toArabicDigits(String(v ?? '')) : String(v ?? '')))}
+        parser={parser ?? ((v) => parseTyped(String(v ?? '')) as any)}
+      />
+    );
+  },
 );
 InputNumber.displayName = 'InputNumber';
 

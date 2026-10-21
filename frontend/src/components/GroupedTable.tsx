@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { Collapse, Table, Tag } from 'antd';
 import type { TableProps } from 'antd';
+import { numeralsLocale } from '../utils/numerals';
 
 export interface GroupDef<T> {
   value: string;
@@ -37,7 +38,7 @@ export default function GroupedTable<T extends object>({
   }, [def, dataSource]);
 
   const fmt = money || ((v: number) =>
-    v.toLocaleString('en-EG', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
+    v.toLocaleString(numeralsLocale(), { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
 
   const [openKeys, setOpenKeys] = useState<string[] | null>(null);
   const defaultOpen = buckets.length <= 6 ? buckets.map(([k]) => k) : [];

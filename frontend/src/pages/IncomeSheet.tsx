@@ -13,7 +13,7 @@ import { api, getViewBranch } from '../api/client';
 import { useAuth, roleForAccess } from '../components/AuthProvider';
 import DateRangeFilter from '../components/DateRangeFilter';
 import { useQueryTab } from '../components/useQueryTab';
-import { money, num } from '../utils/money';
+import { money, num, numeralsLocale } from '../utils/money';
 import { printDocument } from '../print/brand';
 import { exportExcel } from '../utils/exportExcel';
 import StatementView, {
@@ -273,7 +273,7 @@ const IncomeSheet: React.FC = () => {
                       { title: 'الصنف', dataIndex: 'item_name' },
                       { title: 'الفئة', dataIndex: 'category' },
                       { title: 'المخزن', dataIndex: 'warehouse_name' },
-                      { title: 'الكمية', dataIndex: 'quantity', align: 'left', render: (v: string) => Number(v).toLocaleString() },
+                      { title: 'الكمية', dataIndex: 'quantity', align: 'left', render: (v: string) => Number(v).toLocaleString(numeralsLocale()) },
                       {
                         title: 'تكلفة الوحدة', dataIndex: 'unit_cost', align: 'left',
                         render: (v: string, r: any) => (

@@ -1,5 +1,6 @@
 import React from 'react';
 import { Segmented, Space, Switch, Tag, Tooltip } from 'antd';
+import { numeralsLocale } from '../utils/numerals';
 
 export type Comparison = 'none' | 'previous' | 'last_year';
 
@@ -72,7 +73,7 @@ export function DeltaCell({ now, before, goodWhenUp = true }: {
   return (
     <span style={{ color: good ? '#2e9e6b' : '#d64545', whiteSpace: 'nowrap' }}>
       {diff > 0 ? '▲' : '▼'}{' '}
-      {Math.abs(diff).toLocaleString('en-EG', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+      {Math.abs(diff).toLocaleString(numeralsLocale(), { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
       {pct !== null && <span style={{ fontSize: 14 }}> ({Math.abs(pct).toFixed(1)}%)</span>}
     </span>
   );

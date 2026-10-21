@@ -1,3 +1,4 @@
+import { numeralsLocale } from '../../utils/numerals';
 export interface ReportLine {
   account_id: number;
   code: string | null;
@@ -109,6 +110,6 @@ export interface CommissionRow {
 }
 
 export const money = (v: string | number) =>
-  Number(v).toLocaleString('en-EG', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  Number(v).toLocaleString(numeralsLocale(), { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 export const BUCKETS = ['0-30', '31-60', '61-90', '90+'];

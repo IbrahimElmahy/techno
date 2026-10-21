@@ -9,6 +9,7 @@ import { useNavigate } from 'react-router-dom';
 import { api } from '../api/client';
 
 import StatsRow from '../components/StatsRow';
+import { numeralsLocale } from '../utils/numerals';
 
 interface JournalCard {
   id: number;
@@ -35,7 +36,7 @@ interface TreasuryCard {
 }
 
 const money = (v: string | number) =>
-  Number(v).toLocaleString('en-EG', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  Number(v).toLocaleString(numeralsLocale(), { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 const KIND_COLOR: Record<string, string> = {
   sale: 'green', purchase: 'orange', cash: 'gold', bank: 'blue', general: 'purple',
