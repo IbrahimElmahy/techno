@@ -583,7 +583,7 @@ export default function AccountStatement() {
   const wantsOpening = (opening: unknown) => !!fullRange() || Math.abs(Number(opening || 0)) >= 0.005;
 
   const tableRows = useMemo(() => (statement && wantsOpening(statement.opening_balance)
-    ? [...shownLines, openingLine(statement.opening_balance, stmtSide, 'opening')]
+    ? [openingLine(statement.opening_balance, stmtSide, 'opening'), ...shownLines]
     : shownLines), [shownLines, statement, stmtSide, range]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const sections = useMemo(() => {
@@ -609,7 +609,7 @@ export default function AccountStatement() {
         const run = runningTotals(own, rowKeyOf);
         const rows: StatementLine[] = own.map((l) => ({ ...l, _running: run.get(rowKeyOf(l)) ?? 0 }));
         if (wantsOpening(s.opening) || !rows.length) {
-          rows.push(openingLine(s.opening, s.normal_side, `opening-${s.account_id}`,
+          rows.unshift(openingLine(s.opening, s.normal_side, `opening-${s.account_id}`,
             { id: s.account_id, name: s.account_name }));
         }
         return {
@@ -812,8 +812,12 @@ export default function AccountStatement() {
           }
         },
         ...(typeof sorter === 'function' ? {
-          sorter: (a: StatementLine, b: StatementLine, order?: any) => (
-            a._opening ? -1 : b._opening ? 1 : sorter(a, b, order)),
+          sorter: (a: StatementLine, b: StatementLine, order?: any) => {
+            const top = order === 'descend' ? 1 : -1;
+            if (a._opening) return top;
+            if (b._opening) return -top;
+            return sorter(a, b, order);
+          },
         } : {}),
         ...(typeof onFilter === 'function' ? {
           onFilter: (value: any, l: StatementLine) => (l._opening ? true : onFilter(value, l)),
