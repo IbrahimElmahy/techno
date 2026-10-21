@@ -34,7 +34,8 @@ from src.models.catalog import (
 from src.models.stock import LocationKind, StockMovement
 from src.lib import item_card as item_card_lib
 from src.services import (
-    audit_service, item_profile_service, lookup_service, serial_service, uom_service,
+    audit_service, item_branch_service, item_profile_service, lookup_service, serial_service,
+    uom_service,
 )
 from src.services.serial_service import SerialError
 
@@ -155,13 +156,7 @@ def list_items(
     scoped = branch_scope.visible_branch_id(current)
     wanted = scoped if scoped is not None else branch_id
     if wanted is not None:
-        moved_here = (select(StockMovement.item_id)
-                      .where(or_(StockMovement.branch_id == wanted,
-                                 StockMovement.branch_id.is_(None)))
-                      .distinct())
-        moved_anywhere = select(StockMovement.item_id).distinct()
-        stmt = stmt.where(or_(Item.id.in_(moved_here),
-                              Item.id.not_in(moved_anywhere)))
+        stmt = stmt.where(item_branch_service.belongs_to(db, wanted))
     stmt = stmt.order_by(*arabic.match_order(q, Item.name, Item.code),
                          arabic.sort_key(Item.name), Item.name)
     if limit is not None and not stock_filter:
