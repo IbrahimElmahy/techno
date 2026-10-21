@@ -9,7 +9,7 @@ import ListPage from '../components/ListPage';
 import dayjs, { Dayjs } from 'dayjs';
 import { useSearchParams } from 'react-router-dom';
 import { api } from '../api/client';
-import { useTableKeyboard } from '../components/keyboard';
+import { useOnScreen, useTableKeyboard } from '../components/keyboard';
 import { textColumn, numberColumn, dateColumn } from '../components/gridColumns';
 import DocumentLink, { docKindOf, useOpenDocument } from '../components/DocumentLink';
 import type { ColumnsType } from 'antd/es/table';
@@ -58,8 +58,9 @@ interface CardOut {
 export default function ItemCard() {
   const moveLabels = useMovementLabels();
   const moveTypes = useMovementTypes();
+  const [search, setSearch] = useSearchParams();
   const [items, setItems] = useState<any[]>([]);
-  const [category, setCategory] = useState<string | undefined>();
+  const [category, setCategory] = useState<string | undefined>(search.get('cat') || undefined);
   const { options: categoryOptions } = useLookup('item_category');
   const categoryLabels = labelMap(categoryOptions);
 
@@ -74,15 +75,31 @@ export default function ItemCard() {
     [items, category],
   );
   const [warehouses, setWarehouses] = useState<any[]>([]);
-  const [itemId, setItemId] = useState<number | undefined>();
-  const [warehouseId, setWarehouseId] = useState<number | undefined>();
-  const [range, setRange] = useState<[Dayjs | null, Dayjs | null] | null>(null);
-  const [movementType, setMovementType] = useState<string | undefined>();
+  const [itemId, setItemId] = useState<number | undefined>(Number(search.get('item')) || undefined);
+  const [warehouseId, setWarehouseId] = useState<number | undefined>(
+    Number(search.get('wh')) || undefined);
+  const [range, setRange] = useState<[Dayjs | null, Dayjs | null] | null>(
+    search.get('from') && search.get('to')
+      ? [dayjs(search.get('from')), dayjs(search.get('to'))] : null);
+  const [movementType, setMovementType] = useState<string | undefined>(
+    search.get('type') || undefined);
   const [card, setCard] = useState<CardOut | null>(null);
   const [loading, setLoading] = useState(false);
-  const [search] = useSearchParams();
   const askedItem = Number(search.get('item')) || undefined;
   useEffect(() => { if (askedItem) setItemId(askedItem); }, [askedItem]);
+
+  const urlShown = useOnScreen();
+  useEffect(() => {
+    if (!urlShown) return;
+    const p = new URLSearchParams();
+    if (category) p.set('cat', category);
+    if (itemId) p.set('item', String(itemId));
+    if (warehouseId) p.set('wh', String(warehouseId));
+    if (range?.[0]) p.set('from', range[0].format('YYYY-MM-DD'));
+    if (range?.[1]) p.set('to', range[1].format('YYYY-MM-DD'));
+    if (movementType) p.set('type', movementType);
+    if (p.toString() !== search.toString()) setSearch(p, { replace: true });
+  }, [category, itemId, warehouseId, range, movementType, urlShown]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     api.get('/api/v1/warehouses').then((w) => setWarehouses(w.data || [])).catch(console.error);
