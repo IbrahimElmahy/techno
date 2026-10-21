@@ -44,6 +44,7 @@ class UserOut(BaseModel):
     capabilities: list[str] = []
     pages_shown: list[str] = []
     pages_hidden: list[str] = []
+    branch_ids: list[int] = []
 
 
 @router.post("/auth/login", response_model=TokenResponse)
@@ -162,7 +163,7 @@ def me(current: CurrentUser = Depends(get_current_user), db: Session = Depends(g
         username=user.username,
         role=current.role.value,
         full_name=user.full_name,
-        branch_id=user.branch_id,
+        branch_id=current.branch_id if current.branch_ids else user.branch_id,
         territory_id=user.territory_id,
         active=user.active,
         supervisor_id=user.supervisor_id,
@@ -172,4 +173,5 @@ def me(current: CurrentUser = Depends(get_current_user), db: Session = Depends(g
                             - set(current.denies)),
         pages_shown=sorted(c[5:] for c in current.grants if c.startswith("page:")),
         pages_hidden=sorted(c[5:] for c in current.denies if c.startswith("page:")),
+        branch_ids=list(current.branch_ids),
     )

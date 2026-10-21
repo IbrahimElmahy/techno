@@ -347,7 +347,7 @@ def _rep_treasuries(db: Session, rep_id: int) -> list[dict]:
 
 def _scoped_warehouses(current: CurrentUser):
     stmt = select(Warehouse).where(Warehouse.active.is_(True))
-    if not current.is_admin and current.branch_id is not None:
+    if not current.sees_all:
         stmt = stmt.where(
             (Warehouse.branch_id == current.branch_id)
             | (Warehouse.warehouse_type == WarehouseType.central)

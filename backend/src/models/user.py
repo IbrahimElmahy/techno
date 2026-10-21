@@ -17,6 +17,7 @@ class User(Base):
     password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
     role_id: Mapped[int] = mapped_column(ForeignKey("role.id"), nullable=False)
     branch_id: Mapped[int | None] = mapped_column(ForeignKey("branch.id"), nullable=True)
+    branch_ids: Mapped[str | None] = mapped_column(String(64), nullable=True)
     territory_id: Mapped[int | None] = mapped_column(ForeignKey("territory.id"), nullable=True)
     full_name: Mapped[str] = mapped_column(String(120), default="", nullable=False)
     active: Mapped[bool] = mapped_column(default=True, nullable=False)

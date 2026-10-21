@@ -3,9 +3,11 @@ import { Select } from 'antd';
 import { ApartmentOutlined } from '@ant-design/icons';
 import { api, clearApiCache, getViewBranch, setViewBranch } from '../api/client';
 
-export default function BranchFilter() {
+export default function BranchFilter({ allowed }: { allowed?: number[] }) {
   const [branches, setBranches] = useState<{ id: number; name: string }[]>([]);
-  const current = getViewBranch();
+  const limited = Boolean(allowed && allowed.length);
+  const stored = getViewBranch();
+  const current = limited ? (stored && allowed!.includes(stored) ? stored : allowed![0]) : stored;
 
   useEffect(() => {
     api.get('/api/v1/branches')
@@ -13,7 +15,7 @@ export default function BranchFilter() {
       .catch(() => setBranches([]));
   }, []);
 
-  if (branches.length < 2) return null;
+  if (branches.length < 2 && !limited) return null;
 
   return (
     <Select
@@ -28,7 +30,7 @@ export default function BranchFilter() {
       style={{ minWidth: 130 }}
       className={current ? 'branch-filter is-on' : 'branch-filter'}
       options={[
-        { value: 0, label: 'كل الفروع' },
+        ...(limited ? [] : [{ value: 0, label: 'كل الفروع' }]),
         ...branches.map((b) => ({ value: b.id, label: b.name })),
       ]}
     />

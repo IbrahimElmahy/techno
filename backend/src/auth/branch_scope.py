@@ -18,14 +18,18 @@ def reset_view_branch(token) -> None:
     _view_branch.reset(token)
 
 
+def requested_view_branch() -> int | None:
+    return _view_branch.get()
+
+
 def visible_branch_id(current: CurrentUser) -> int | None:
-    if current.is_admin:
+    if current.is_admin and not current.branch_ids:
         return _view_branch.get()
     return current.branch_id
 
 
 def sees_all_branches(current: CurrentUser) -> bool:
-    return current.is_admin or current.branch_id is None
+    return current.sees_all
 
 
 def scope(stmt, model, current: CurrentUser):

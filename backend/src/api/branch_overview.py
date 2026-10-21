@@ -23,7 +23,7 @@ router = APIRouter(tags=["branch-overview"])
 
 
 def _admin_only(current: CurrentUser = Depends(get_current_user)) -> CurrentUser:
-    if not current.is_admin:
+    if not current.is_admin or current.branch_ids:
         raise HTTPException(status.HTTP_403_FORBIDDEN,
                             {"code": "forbidden", "message": "هذه الشاشة لمدير الشركة وحده."})
     return current

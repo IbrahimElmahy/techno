@@ -347,7 +347,7 @@ export default function AppLayout() {
             paddingLeft: 16, display: 'flex', alignItems: 'center', gap: 12, flexShrink: 0,
           }}>
             {(user?.role === 'owner' || user?.role === 'system_admin')
-              ? <BranchFilter /> : <BranchBadge branchId={user?.branch_id} />}
+              ? <BranchFilter allowed={user?.branch_ids} /> : <BranchBadge branchId={user?.branch_id} />}
             <ShortcutsDock userId={(user as any)?.id} tree={buildItems([...NAVIGATION, ...EXTRA_SECTIONS])}
               openTab={openTab} />
             <ContrastHeaderButton />

@@ -145,7 +145,9 @@ def list_branches(
 ) -> list[BranchOut]:
     stmt = select(Branch)
     scoped_branch = None if branch_scope.sees_all_branches(current) else current.branch_id
-    if scoped_branch is not None:
+    if current.branch_ids:
+        stmt = stmt.where(Branch.id.in_(current.branch_ids))
+    elif scoped_branch is not None:
         stmt = stmt.where(Branch.id == scoped_branch)
     return [_branch_out(b) for b in db.scalars(stmt).all()]
 

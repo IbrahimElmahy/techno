@@ -24,6 +24,7 @@ class CurrentUser:
     territory_id: int | None
     grants: frozenset = field(default_factory=frozenset)
     denies: frozenset = field(default_factory=frozenset)
+    branch_ids: tuple = ()
 
     def can(self, capability: str) -> bool:
         if self.role == RoleName.system_admin:
@@ -41,6 +42,10 @@ class CurrentUser:
     @property
     def is_admin(self) -> bool:
         return self.role in (RoleName.system_admin, RoleName.owner)
+
+    @property
+    def sees_all(self) -> bool:
+        return not self.branch_ids and (self.is_admin or self.branch_id is None)
 
     @property
     def rep_id(self) -> int | None:
@@ -82,15 +87,27 @@ def get_current_user(
         )
     role = db.get(Role, user.role_id)
     grants, denies = user_overrides(db, user.id)
+    branch_ids = parse_branch_ids(user.branch_ids)
+    branch_id = user.branch_id
+    if branch_ids:
+        from src.auth import branch_scope
+
+        view = branch_scope.requested_view_branch()
+        branch_id = view if view in branch_ids else branch_ids[0]
     return CurrentUser(
         id=user.id,
         username=user.username,
         role=role.name,
-        branch_id=user.branch_id,
+        branch_id=branch_id,
         territory_id=user.territory_id,
         grants=grants,
         denies=denies,
+        branch_ids=branch_ids,
     )
+
+
+def parse_branch_ids(raw: str | None) -> tuple:
+    return tuple(int(x) for x in (raw or "").split(",") if x.strip().isdigit())
 
 
 def user_overrides(db: Session, user_id: int) -> tuple[frozenset, frozenset]:
@@ -113,9 +130,9 @@ def require_capability(capability: str):
 
 
 def ensure_branch_access(current: CurrentUser, target_branch_id: int | None) -> None:
-    if current.is_admin or current.branch_id is None:
+    if current.sees_all:
         return
-    if current.branch_id != target_branch_id:
+    if target_branch_id not in (current.branch_ids or (current.branch_id,)):
         raise _deny("Out-of-branch access denied.")
 
 

@@ -19,6 +19,7 @@ export interface User {
   capabilities?: string[];
   pages_shown?: string[];
   pages_hidden?: string[];
+  branch_ids?: number[];
 }
 
 interface AuthContextType {
@@ -77,6 +78,7 @@ export function AuthProvider({ children, apiUrl }: { children: React.ReactNode; 
             const next = {
               ...prev, capabilities: me.data.capabilities,
               pages_shown: me.data.pages_shown ?? [], pages_hidden: me.data.pages_hidden ?? [],
+              branch_ids: me.data.branch_ids ?? [],
             };
             localStorage.setItem('user', JSON.stringify(next));
             return next;

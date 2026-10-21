@@ -57,7 +57,7 @@ router = APIRouter(tags=["accounting"])
 
 
 def _ensure_accounting_branch(current: CurrentUser, target_branch_id: int | None) -> None:
-    if current.is_admin or current.branch_id is None:
+    if current.sees_all:
         return
     if current.branch_id != target_branch_id:
         raise HTTPException(
@@ -825,7 +825,7 @@ def get_trial_balance_tree(
 ) -> dict:
     from src.auth import branch_scope
 
-    if not current.is_admin and current.branch_id is not None:
+    if not current.sees_all:
         branch_id = current.branch_id
     elif branch_id is None:
         branch_id = branch_scope.visible_branch_id(current)
@@ -844,7 +844,7 @@ def get_trial_balance(
     current: CurrentUser = Depends(require_capability(CAP_ACCOUNTING_TRIAL_BALANCE_READ)),
     db: Session = Depends(get_db),
 ) -> TrialBalanceOut:
-    if not current.is_admin and current.branch_id is not None:
+    if not current.sees_all:
         branch_id = current.branch_id
     if from_ is None:
         from_ = date(2000, 1, 1)

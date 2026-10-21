@@ -60,6 +60,7 @@ export default function Login() {
         capabilities: profile.capabilities ?? [],
         pages_shown: profile.pages_shown ?? [],
         pages_hidden: profile.pages_hidden ?? [],
+        branch_ids: profile.branch_ids ?? [],
       };
 
       login(access_token, activeUser);
