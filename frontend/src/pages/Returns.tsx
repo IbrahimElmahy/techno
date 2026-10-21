@@ -17,6 +17,7 @@ import {
   ArrowLeftOutlined, ArrowRightOutlined, BankOutlined, ReloadOutlined,
   ExclamationCircleOutlined, CheckOutlined, ShoppingCartOutlined, PhoneOutlined,
   RollbackOutlined,
+  FileExcelOutlined,
 } from '@ant-design/icons';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import dayjs, { Dayjs } from 'dayjs';
@@ -31,7 +32,7 @@ import PartyPickerModal, { Party } from '../components/PartyPickerModal';
 import SummaryTile from '../components/saleDoc/SummaryTile';
 import DocumentAttachments from '../components/DocumentAttachments';
 import { showReversalConfirm } from '../components/ConfirmationDialog';
-import InvoiceDocument, { InvoiceDoc, invoiceFooter, printInvoice } from '../components/InvoiceDocument';
+import InvoiceDocument, { InvoiceDoc, invoiceFooter, printInvoice, exportInvoiceExcel } from '../components/InvoiceDocument';
 import DocumentBar from '../components/DocumentBar';
 import { useDocNav } from '../components/useDocNav';
 import QuickAddRow from '../components/QuickAddRow';
@@ -691,6 +692,16 @@ export default function Returns({ embedded }: { embedded?: { onExit: () => void 
         },
       },
       {
+        key: 'excel',
+        label: 'Excel',
+        icon: <FileExcelOutlined />,
+        disabled: !isSaved,
+        onClick: async () => {
+          const doc = await returnDoc(viewReturn);
+          if (doc) exportInvoiceExcel(doc);
+        },
+      },
+      {
         key: 'print',
         label: 'طباعة',
         shortcut: 'F7',
@@ -977,6 +988,7 @@ export default function Returns({ embedded }: { embedded?: { onExit: () => void 
         (s: number, l: any) => s + (pointValues[l.item_id] || 0) * Number(l.quantity || 0), 0),
       lines: (r.lines || []).map((l: any) => ({
         name: productName(l.item_id),
+        code: (products.find((p) => p.id === l.item_id) as any)?.code ?? null,
         itemId: l.item_id,
         quantity: l.quantity,
         unit: l.unit || unitsCache[l.item_id]?.find((u) => u.is_base)?.name || null,

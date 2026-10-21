@@ -18,6 +18,7 @@ import {
   ArrowRightOutlined, ArrowLeftOutlined, SearchOutlined, ClearOutlined,
   FileAddOutlined, UndoOutlined, SaveOutlined, BankOutlined, ReloadOutlined,
   PhoneOutlined, CheckOutlined, ShoppingCartOutlined, GiftOutlined,
+  FileExcelOutlined,
 } from '@ant-design/icons';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useDocReturn } from '../components/docReturn';
@@ -32,7 +33,7 @@ import { api } from '../api/client';
 import { statementMeta } from '../utils/statements';
 import { useDraft } from '../components/useDraft';
 import { combineDiscounts, netOf } from '../utils/discounts';
-import InvoiceDocument, { InvoiceDoc, invoiceFooter, printInvoice } from '../components/InvoiceDocument';
+import InvoiceDocument, { InvoiceDoc, invoiceFooter, printInvoice, exportInvoiceExcel } from '../components/InvoiceDocument';
 import CustomerAccountPanel from '../components/CustomerAccountPanel';
 import PartyPickerModal, { Party } from '../components/PartyPickerModal';
 import { useDocNav } from '../components/useDocNav';
@@ -1594,6 +1595,7 @@ function couponsTotal(inv: any): number {
       ],
       lines: (inv.lines || []).map((l: any) => ({
         name: productName(l.item_id),
+        code: (products.find((p) => p.id === l.item_id) as any)?.code ?? null,
         itemId: l.item_id,
         quantity: l.quantity,
         unit: l.unit || unitsCache[l.item_id]?.find((u) => u.is_base)?.name
@@ -1760,6 +1762,16 @@ function couponsTotal(inv: any): number {
           } else {
             setLines([]);
           }
+        },
+      },
+      {
+        key: 'excel',
+        label: 'Excel',
+        icon: <FileExcelOutlined />,
+        disabled: !isSaved,
+        onClick: async () => {
+          const doc = await invoiceDoc(viewInvoice || editingInvoice);
+          if (doc) exportInvoiceExcel(doc);
         },
       },
       {

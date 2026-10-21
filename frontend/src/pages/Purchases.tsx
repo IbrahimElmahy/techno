@@ -18,6 +18,7 @@ import {
   ArrowLeftOutlined, ArrowRightOutlined, SearchOutlined, BankOutlined, ReloadOutlined,
   ExclamationCircleOutlined, CheckOutlined, PhoneOutlined, ShoppingCartOutlined,
   ShoppingOutlined, ClearOutlined, DownOutlined, UpOutlined,
+  FileExcelOutlined,
 } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import { useDocRoute, type DocMode } from '../components/useDocRoute';
@@ -31,7 +32,7 @@ import { useTableColumns } from '../components/ColumnSettings';
 import { useEntryGrid, type EntryColumn } from '../components/EntryGrid';
 import DocumentAttachments from '../components/DocumentAttachments';
 import SummaryTile from '../components/saleDoc/SummaryTile';
-import InvoiceDocument, { InvoiceDoc, invoiceFooter, printInvoice }
+import InvoiceDocument, { InvoiceDoc, invoiceFooter, printInvoice, exportInvoiceExcel }
   from '../components/InvoiceDocument';
 import DocumentBar from '../components/DocumentBar';
 import { useDocNav } from '../components/useDocNav';
@@ -448,6 +449,7 @@ export default function Purchases() {
       credit: p.credit_amount ?? 0,
       lines: (p.lines || []).map((l) => ({
         name: itemName(l.item_id),
+        code: (items.find((i) => i.id === l.item_id) as any)?.code ?? null,
         quantity: l.quantity,
         unit: (l as any).unit,
         unit_price: l.unit_price,
@@ -786,6 +788,16 @@ export default function Purchases() {
                 discount_pct: null, fixed_discount_pct: null, warehouse_id: null }
             ]);
           }
+        },
+      },
+      {
+        key: 'excel',
+        label: 'Excel',
+        icon: <FileExcelOutlined />,
+        disabled: !isSaved,
+        onClick: async () => {
+          const doc = await viewPurchase ? purchaseDoc(viewPurchase) : null;
+          if (doc) exportInvoiceExcel(doc);
         },
       },
       {

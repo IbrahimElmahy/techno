@@ -6,9 +6,11 @@ import { printDocument } from '../print/brand';
 import { PrintOptions, loadPrintOptions } from '../print/printOptions';
 import { COMPANY, companyLines } from '../config/company';
 import { printMoney as n } from '../print/reportSheet';
+import { exportExcel } from '../utils/exportExcel';
 
 export interface InvoiceLine {
   name: string;
+  code?: string | null;
   itemId?: number | null;
   quantity: string | number;
   unit?: string | null;
@@ -369,4 +371,46 @@ export function invoiceFooter(doc: InvoiceDoc | null, onClose: () => void) {
       <Button onClick={onClose}>إغلاق</Button>
     </Space>
   );
+}
+
+
+type ExcelRow = Record<string, string | number | null | undefined>;
+
+export function exportInvoiceExcel(d: InvoiceDoc): void {
+  const num = (v: unknown) => (v === null || v === undefined || v === '' ? null : Number(v));
+  const rows: ExcelRow[] = d.lines.map((l, i) => ({
+    no: i + 1, code: l.code ?? '', name: l.name, unit: l.unit ?? '', warehouse: l.warehouse ?? '',
+    quantity: num(l.quantity), price: num(l.unit_price),
+    discount: num(l.discount_pct) || null, total: num(l.line_total),
+  }));
+  const add = (label: string, value: unknown) => {
+    if (value === null || value === undefined || value === '') return;
+    rows.push({ name: label, total: typeof value === 'number' || /^-?\d+(\.\d+)?$/.test(String(value))
+      ? Number(value) : String(value) });
+  };
+  rows.push({});
+  add(titleOf(d), d.document_number);
+  add('التاريخ', d.date ? String(d.date).slice(0, 10) : '');
+  add(d.partyLabel, d.partyName);
+  add('الهاتف', d.partyPhone);
+  add('المندوب', d.repName);
+  add('الفرع', d.branchName);
+  rows.push({});
+  const discount = Number(d.gross || 0) - Number(d.net || 0);
+  add('إجمالي الأصناف', num(d.gross));
+  if (discount > 0.005) add(`الخصم (${Number(d.discountPct || 0)}%)`, discount);
+  if (Number(d.tax || 0)) add('ضريبة القيمة المضافة', num(d.tax));
+  add(payableLabel(d), payable(d));
+  add(cashLabel(d), num(d.cash));
+  add(creditLabel(d), num(d.credit));
+  if (d.priorBalance !== null && d.priorBalance !== undefined && d.priorBalance !== '') {
+    add('الحساب السابق', num(d.priorBalance));
+    add('الإجمالي', Number(d.priorBalance) + payable(d));
+  }
+  exportExcel(`${titleOf(d)} ${d.document_number}`, [
+    { title: 'م', value: 'no' }, { title: 'الكود', value: 'code' }, { title: 'الصنف', value: 'name' },
+    { title: 'الوحدة', value: 'unit' }, { title: 'المخزن', value: 'warehouse' },
+    { title: 'الكمية', value: 'quantity' }, { title: 'السعر', value: 'price' },
+    { title: 'الخصم %', value: 'discount' }, { title: 'الإجمالي', value: 'total' },
+  ], rows, d.document_number);
 }

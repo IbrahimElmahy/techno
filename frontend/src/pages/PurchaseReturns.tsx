@@ -14,6 +14,7 @@ import {
   EyeOutlined, FileAddOutlined, PhoneOutlined, PlusOutlined, PrinterOutlined, ReloadOutlined,
   SaveOutlined, SearchOutlined, UndoOutlined, ExclamationCircleOutlined,
   RollbackOutlined, ClearOutlined, DownOutlined, UpOutlined,
+  FileExcelOutlined,
 } from '@ant-design/icons';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { api } from '../api/client';
@@ -30,7 +31,7 @@ import ListPage from '../components/ListPage';
 import DateRangeFilter from '../components/DateRangeFilter';
 import { matchesStatement, statementMeta, statementText } from '../utils/statements';
 import { useLookup, labelMap } from '../hooks/useLookup';
-import InvoiceDocument, { InvoiceDoc, invoiceFooter, printInvoice }
+import InvoiceDocument, { InvoiceDoc, invoiceFooter, printInvoice, exportInvoiceExcel }
   from '../components/InvoiceDocument';
 import { textColumn, numberColumn, dateColumn } from '../components/gridColumns';
 import PartyPickerModal from '../components/PartyPickerModal';
@@ -403,6 +404,16 @@ export default function PurchaseReturns({ embedded }: { embedded?: { onExit: () 
           } else {
             setReturnLines([]);
           }
+        },
+      },
+      {
+        key: 'excel',
+        label: 'Excel',
+        icon: <FileExcelOutlined />,
+        disabled: !isSaved,
+        onClick: async () => {
+          const doc = await returnDoc(viewing);
+          if (doc) exportInvoiceExcel(doc);
         },
       },
       {
@@ -844,6 +855,7 @@ export default function PurchaseReturns({ embedded }: { embedded?: { onExit: () 
       partyName: r.supplier_name || '-',
       lines: (r.lines || []).map((l: any) => ({
         name: l.item_name || itemName(l.item_id),
+        code: (items.find((i) => i.id === l.item_id) as any)?.code ?? null,
         quantity: l.quantity,
         unit: l.unit ?? null,
         unit_price: l.unit_price ?? 0,
