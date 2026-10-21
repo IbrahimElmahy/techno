@@ -143,6 +143,7 @@ class VehicleIn(BaseModel):
     status_override: VehicleStatus | None = None
     next_maintenance_km: int | None = None
     last_maintenance_km: int | None = None
+    next_oil_km: int | None = None
     insurance_until: date | None = None
     license_until: date | None = None
     fuel_account_id: int | None = None
@@ -176,6 +177,7 @@ def _vehicles_out(db: Session, vehicles: list[Vehicle]) -> list[dict]:
             "status": st["status"].value, "auto_status": st["auto_status"].value,
             "status_label": svc.STATUS_LABELS[st["status"]], "reasons": st["reasons"],
             "open_faults": st["open_faults"], "km_to_maintenance": st["km_to_maintenance"],
+            "km_to_oil": st["km_to_oil"],
             "driver_name": names.get(v.current_driver_id),
             "fuel_account_name": accounts.get(v.fuel_account_id),
             "maintenance_account_name": accounts.get(v.maintenance_account_id),
@@ -218,6 +220,7 @@ def create_vehicle(body: VehicleIn, current: CurrentUser = WRITE,
             code=code, kind=body.kind, model=body.model, plate_number=body.plate_number,
             odometer_base=body.odometer or 0, odometer=body.odometer or 0,
             status_override=body.status_override, next_maintenance_km=body.next_maintenance_km,
+            next_oil_km=body.next_oil_km,
             last_maintenance_km=body.last_maintenance_km,
             insurance_until=body.insurance_until, license_until=body.license_until,
             fuel_account_id=body.fuel_account_id,
@@ -250,6 +253,7 @@ def update_vehicle(vehicle_id: int, body: VehicleIn, current: CurrentUser = WRIT
             v.odometer_base = body.odometer
         v.status_override = body.status_override
         v.next_maintenance_km = body.next_maintenance_km
+        v.next_oil_km = body.next_oil_km
         v.last_maintenance_km = body.last_maintenance_km
         v.insurance_until, v.license_until = body.insurance_until, body.license_until
         v.fuel_account_id = body.fuel_account_id
@@ -377,6 +381,7 @@ def vehicle_detail(vehicle_id: int, current: CurrentUser = READ,
                          - a.start_odometer if a.start_odometer is not None else None}
                         for a in assignments],
         "maintenance": _records_out(db, rows(VehicleMaintenance)),
+        "oil": _records_out(db, [r for r in rows(VehicleMaintenance) if r.kind == svc.OIL_KIND]),
         "fuel": _records_out(db, fuel, consumption=svc.fuel_consumption(fuel)),
         "faults": _records_out(db, rows(VehicleFault)),
         "violations": _records_out(db, rows(VehicleViolation)),
@@ -505,6 +510,18 @@ class MaintenanceIn(BaseModel):
     notes: str | None = None
 
 
+class OilIn(BaseModel):
+    record_date: date
+    vehicle_id: int
+    odometer: int | None = None
+    oil_type: str | None = None
+    oil_liters: Decimal | None = None
+    cost: Decimal = Decimal("0")
+    workshop: str | None = None
+    next_oil_km: int | None = None
+    notes: str | None = None
+
+
 class FuelIn(BaseModel):
     record_date: date
     vehicle_id: int
@@ -596,6 +613,7 @@ def _maintenance_rules(db: Session, current: CurrentUser, row: VehicleMaintenanc
 
 _KINDS = {
     "maintenance": (VehicleMaintenance, MaintenanceIn),
+    "oil": (VehicleMaintenance, OilIn),
     "fuel": (VehicleFuel, FuelIn),
     "faults": (VehicleFault, FaultIn),
     "violations": (VehicleViolation, ViolationIn),
@@ -635,6 +653,8 @@ def _create(kind: str, body, db: Session, current: CurrentUser) -> dict:
         _validate_amounts(body)
         v = svc.get_vehicle(db, current, body.vehicle_id)
         data = body.model_dump()
+        if kind == "oil":
+            data["kind"] = svc.OIL_KIND
         row = model(**data, branch_id=v.branch_id, created_by_user_id=current.id)
         if hasattr(row, "driver_id") and not row.driver_id:
             row.driver_id = svc.driver_on(db, v, row.record_date)
@@ -677,6 +697,8 @@ def _update(kind: str, record_id: int, body, db: Session, current: CurrentUser) 
             row.approved_at = None
         for k, x in body.model_dump().items():
             setattr(row, k, x)
+        if kind == "oil":
+            row.kind = svc.OIL_KIND
         row.branch_id = v.branch_id
         if hasattr(row, "driver_id") and not row.driver_id:
             row.driver_id = svc.driver_on(db, v, row.record_date)
@@ -727,6 +749,32 @@ def list_maintenance(vehicle_id: int | None = None, date_from: date | None = Non
                      db: Session = Depends(get_db)) -> list[dict]:
     return _list(db, current, VehicleMaintenance, vehicle_id=vehicle_id, driver_id=None,
                  date_from=date_from, date_to=date_to)
+
+
+@router.get("/oil")
+def list_oil(vehicle_id: int | None = None, date_from: date | None = None,
+             date_to: date | None = None, current: CurrentUser = READ,
+             db: Session = Depends(get_db)) -> list[dict]:
+    return _list(db, current, VehicleMaintenance, vehicle_id=vehicle_id, driver_id=None,
+                 date_from=date_from, date_to=date_to,
+                 extra=(VehicleMaintenance.kind == svc.OIL_KIND,))
+
+
+@router.post("/oil", status_code=status.HTTP_201_CREATED)
+def create_oil(body: OilIn, current: CurrentUser = WRITE, db: Session = Depends(get_db)) -> dict:
+    return _create("oil", body, db, current)
+
+
+@router.put("/oil/{record_id}")
+def update_oil(record_id: int, body: OilIn, current: CurrentUser = WRITE,
+               db: Session = Depends(get_db)) -> dict:
+    return _update("oil", record_id, body, db, current)
+
+
+@router.delete("/oil/{record_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_oil(record_id: int, current: CurrentUser = WRITE,
+               db: Session = Depends(get_db)) -> None:
+    _delete("oil", record_id, db, current)
 
 
 @router.post("/maintenance", status_code=status.HTTP_201_CREATED)

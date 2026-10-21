@@ -23,13 +23,23 @@ import {
 } from '../components/fleet/fleetShared';
 
 interface Detail {
-  vehicle: any; assignments: any[]; maintenance: any[]; fuel: any[]; faults: any[];
+  vehicle: any; assignments: any[]; maintenance: any[]; oil: any[]; fuel: any[]; faults: any[];
   violations: any[]; inspections: any[]; monthly: any[];
 }
 
 type Col = PrintColumn<any> & { render?: (r: any) => React.ReactNode };
 
 const COLS: Record<string, Col[]> = {
+  oil: [
+    { title: 'التاريخ', value: (r) => d10(r.record_date) },
+    { title: 'العداد', value: (r) => km(r.odometer), numeric: true },
+    { title: 'نوع الزيت', value: 'oil_type' },
+    { title: 'لتر', value: (r) => qty(r.oil_liters), numeric: true },
+    { title: 'التكلفة', value: (r) => money(r.cost), numeric: true },
+    { title: 'الورشة/الفني', value: 'workshop' },
+    { title: 'التغيير القادم (كم)', value: (r) => km(r.next_oil_km), numeric: true },
+    { title: 'سند المصروف', value: (r) => (r.voucher_reversed ? '' : r.voucher_number || '') },
+  ],
   maintenance: [
     { title: 'التاريخ', value: (r) => d10(r.record_date) },
     { title: 'العداد', value: (r) => km(r.odometer), numeric: true },
@@ -110,7 +120,7 @@ const COLS: Record<string, Col[]> = {
 };
 
 const TAB_LABELS: Record<string, string> = {
-  maintenance: 'الصيانة', fuel: 'الوقود', faults: 'الأعطال', violations: 'المخالفات',
+  maintenance: 'الصيانة', oil: 'الزيت', fuel: 'الوقود', faults: 'الأعطال', violations: 'المخالفات',
   inspections: 'الفحص اليومي', assignments: 'السائقون', monthly: 'التكلفة الشهرية',
 };
 
@@ -185,7 +195,7 @@ export default function FleetVehicle() {
   );
 
   const LINK: Record<string, string> = {
-    maintenance: '/fleet/maintenance', fuel: '/fleet/fuel', faults: '/fleet/faults',
+    maintenance: '/fleet/maintenance', oil: '/fleet/oil', fuel: '/fleet/fuel', faults: '/fleet/faults',
     violations: '/fleet/violations', inspections: '/fleet/inspections',
   };
 
@@ -235,6 +245,7 @@ export default function FleetVehicle() {
           <Descriptions.Item label="السائق الحالي">{v.driver_name || '-'}</Descriptions.Item>
           <Descriptions.Item label="آخر صيانة (كم)">{km(v.last_maintenance_km) || '-'}</Descriptions.Item>
           <Descriptions.Item label="الصيانة القادمة (كم)">{km(v.next_maintenance_km) || '-'}</Descriptions.Item>
+          <Descriptions.Item label="تغيير الزيت القادم (كم)">{km(v.next_oil_km) || '-'}</Descriptions.Item>
           <Descriptions.Item label="أعطال مفتوحة">{v.open_faults}</Descriptions.Item>
           <Descriptions.Item label="التأمين حتى">{d10(v.insurance_until) || '-'}</Descriptions.Item>
           <Descriptions.Item label="الرخصة حتى">{d10(v.license_until) || '-'}</Descriptions.Item>

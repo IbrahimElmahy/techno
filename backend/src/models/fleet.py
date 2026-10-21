@@ -92,6 +92,7 @@ class Vehicle(_Audit, Base):
         _enum(VehicleStatus), nullable=True)
     last_maintenance_km: Mapped[int | None] = mapped_column(Integer, nullable=True)
     next_maintenance_km: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    next_oil_km: Mapped[int | None] = mapped_column(Integer, nullable=True)
     insurance_until: Mapped[date | None] = mapped_column(Date, nullable=True)
     license_until: Mapped[date | None] = mapped_column(Date, nullable=True)
     fuel_account_id: Mapped[int | None] = mapped_column(ForeignKey("account.id"), nullable=True)
@@ -157,6 +158,9 @@ class VehicleMaintenance(_VehicleRecord, Base):
     cost: Mapped[object] = mapped_column(MONEY, default=0, nullable=False)
     workshop: Mapped[str | None] = mapped_column(String(160), nullable=True)
     next_maintenance_km: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    oil_type: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    oil_liters: Mapped[object | None] = mapped_column(QTY, nullable=True)
+    next_oil_km: Mapped[int | None] = mapped_column(Integer, nullable=True)
     fault_id: Mapped[int | None] = mapped_column(ForeignKey("fleet_fault.id"), nullable=True)
     voucher_id: Mapped[int | None] = mapped_column(ForeignKey("voucher.id"), nullable=True)
 

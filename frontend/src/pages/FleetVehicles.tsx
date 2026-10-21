@@ -12,6 +12,7 @@ import { api, getViewBranch } from '../api/client';
 import { expenseAccountOptions } from '../components/VoucherFields';
 import { Popconfirm } from '../components/noConfirm';
 import { TabModal } from '../components/TabModal';
+import DocumentAttachments, { PendingAttachments, uploadFiles } from '../components/DocumentAttachments';
 import { InputNumber } from '../components/NumberInput';
 import ListPage, { ListStat } from '../components/ListPage';
 import CostCenterField from '../components/CostCenterField';
@@ -28,7 +29,7 @@ import {
 } from '../components/fleet/fleetShared';
 
 const VEHICLE_FIELDS = ['code', 'kind', 'model', 'plate_number', 'current_driver_id', 'odometer',
-  'status_override', 'next_maintenance_km', 'last_maintenance_km', 'insurance_until',
+  'status_override', 'next_maintenance_km', 'last_maintenance_km', 'next_oil_km', 'insurance_until',
   'license_until', 'fuel_account_id', 'maintenance_account_id', 'cost_center_id', 'branch_id',
   'active', 'notes'];
 
@@ -54,6 +55,7 @@ export default function FleetVehicles() {
   const [alertDays, setAlertDays] = useState(30);
   const [editing, setEditing] = useState<FleetVehicle | null>(null);
   const [open, setOpen] = useState(false);
+  const [files, setFiles] = useState<File[]>([]);
   const [saving, setSaving] = useState(false);
   const [form] = Form.useForm();
   const searchRef = useRef<any>(null);
@@ -89,6 +91,7 @@ export default function FleetVehicles() {
   const startCreate = () => {
     if (!canWrite) return;
     setEditing(null);
+    setFiles([]);
     form.resetFields();
     form.setFieldsValue({ active: true, branch_id: ownBranch ?? viewBranch ?? undefined });
     setOpen(true);
@@ -119,7 +122,11 @@ export default function FleetVehicles() {
     setSaving(true);
     try {
       if (editing) await api.put(`/api/v1/fleet/vehicles/${editing.id}`, payload);
-      else await api.post('/api/v1/fleet/vehicles', payload);
+      else {
+        const res = await api.post('/api/v1/fleet/vehicles', payload);
+        const id = res.data?.id ?? res.data?.vehicle?.id;
+        if (files.length && id) { const f = files; setFiles([]); await uploadFiles('fleet_vehicle', id, f); }
+      }
       setOpen(false); load();
     } catch { return; } finally { setSaving(false); }
   };
@@ -150,6 +157,7 @@ export default function FleetVehicles() {
       ) },
     { key: 'last', title: 'آخر صيانة (كم)', text: (r) => km(r.last_maintenance_km), numeric: true },
     { key: 'next', title: 'موعد الصيانة القادمة (كم)', text: (r) => km(r.next_maintenance_km), numeric: true },
+    { key: 'next_oil', title: 'تغيير الزيت القادم (كم)', text: (r) => km(r.next_oil_km), numeric: true },
     { key: 'left', title: 'باقي على الصيانة (كم)', numeric: true, text: (r) => km(r.km_to_maintenance),
       render: (r) => (r.km_to_maintenance === null ? '' : (
         <span style={{ color: r.km_to_maintenance < 0 ? '#cf1322' : r.status === 'maintenance_due' ? '#d46b08' : undefined }}>
@@ -261,6 +269,7 @@ export default function FleetVehicles() {
 
             <Col xs={24} md={6}><Form.Item name="last_maintenance_km" label="آخر صيانة (كم)"><InputNumber min={0} precision={0} style={{ width: '100%' }} /></Form.Item></Col>
             <Col xs={24} md={6}><Form.Item name="next_maintenance_km" label="موعد الصيانة القادمة (كم)"><InputNumber min={0} precision={0} style={{ width: '100%' }} /></Form.Item></Col>
+            <Col xs={24} md={6}><Form.Item name="next_oil_km" label="تغيير الزيت القادم (كم)"><InputNumber min={0} precision={0} style={{ width: '100%' }} /></Form.Item></Col>
             <Col xs={24} md={6}><Form.Item name="insurance_until" label="التأمين حتى"><DatePicker style={{ width: '100%' }} /></Form.Item></Col>
             <Col xs={24} md={6}><Form.Item name="license_until" label="الرخصة حتى"><DatePicker style={{ width: '100%' }} /></Form.Item></Col>
 
@@ -285,6 +294,9 @@ export default function FleetVehicles() {
             <Col xs={24} md={12}><Form.Item name="notes" label="ملاحظات"><Input maxLength={500} /></Form.Item></Col>
             <Col xs={24} md={4}><Form.Item name="active" label=" " valuePropName="checked"><Checkbox>نشطة</Checkbox></Form.Item></Col>
           </Row>
+          {editing
+            ? <DocumentAttachments docType="fleet_vehicle" docId={editing.id} title="صور السيارة والأوراق" />
+            : <PendingAttachments files={files} onChange={setFiles} />}
         </Form>
       </TabModal>
     </>

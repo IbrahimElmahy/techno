@@ -4,7 +4,7 @@ import {
   Tooltip,
 } from 'antd';
 import {
-  AlertOutlined, ClearOutlined, DeleteOutlined, EditOutlined, FireOutlined, PlusOutlined,
+  AlertOutlined, ClearOutlined, ExperimentOutlined, DeleteOutlined, EditOutlined, FireOutlined, PlusOutlined,
   PrinterOutlined, ReloadOutlined, SearchOutlined, ToolOutlined, WarningOutlined,
 } from '@ant-design/icons';
 import { useSearchParams } from 'react-router-dom';
@@ -28,7 +28,7 @@ import {
   VehicleSelect, d10, km, labelOf, optionsOf, tagOf, useFleetLookups,
 } from '../components/fleet/fleetShared';
 
-type Kind = 'maintenance' | 'fuel' | 'faults' | 'violations';
+type Kind = 'maintenance' | 'oil' | 'fuel' | 'faults' | 'violations';
 
 type FieldType = 'date' | 'vehicle' | 'driver' | 'int' | 'money' | 'qty' | 'text' | 'textarea'
   | 'select' | 'bool' | 'suggest' | 'fault';
@@ -49,7 +49,25 @@ const MAINT_KINDS = ['صيانة دورية', 'تغيير زيت', 'فلاتر',
 const VIOLATION_KINDS = ['سرعة', 'انتظار خاطئ', 'رخصة', 'حزام الأمان', 'استخدام الهاتف',
   'تجاوز الإشارة', 'حمولة زائدة', 'السير عكس الاتجاه'];
 
+const OIL_TYPES = ['5W-30', '5W-40', '10W-40', '15W-40', '20W-50', 'زيت فتيس', 'زيت باور'];
+
 const CONFIG: Record<Kind, KindConfig> = {
+  oil: {
+    title: 'الزيت', icon: <ExperimentOutlined />, create: 'تغيير زيت جديد',
+    source: 'maintenance', amountKey: 'cost', hasDriver: false,
+    fields: [
+      { name: 'record_date', label: 'التاريخ', type: 'date', required: true, span: 6 },
+      { name: 'vehicle_id', label: 'السيارة', type: 'vehicle', required: true, span: 10 },
+      { name: 'odometer', label: 'العداد', type: 'int', span: 8 },
+      { name: 'oil_type', label: 'نوع الزيت', type: 'suggest', span: 8,
+        options: OIL_TYPES.map((k) => ({ value: k, label: k })) },
+      { name: 'oil_liters', label: 'الكمية (لتر)', type: 'qty', span: 8 },
+      { name: 'cost', label: 'التكلفة', type: 'money', span: 8 },
+      { name: 'workshop', label: 'الورشة/الفني', type: 'text', span: 8 },
+      { name: 'next_oil_km', label: 'التغيير القادم (كم)', type: 'int', span: 8 },
+      { name: 'notes', label: 'ملاحظات', type: 'text', span: 24 },
+    ],
+  },
   maintenance: {
     title: 'الصيانة', icon: <ToolOutlined />, create: 'صيانة جديدة',
     source: 'maintenance', amountKey: 'cost', hasDriver: false,
@@ -261,6 +279,14 @@ export default function FleetRecords({ kind }: { kind: Kind }) {
       render: (r) => <MoneyCell row={r} amount={amountOf(r)} onOpen={() => setMoneyRow(r)} /> },
   ];
   const middle: Record<Kind, FleetCol<any>[]> = {
+    oil: [
+      { key: 'odometer', title: 'العداد', text: (r) => km(r.odometer), numeric: true },
+      { key: 'oil_type', title: 'نوع الزيت', text: (r) => r.oil_type },
+      { key: 'oil_liters', title: 'الكمية (لتر)', text: (r) => qty(r.oil_liters), numeric: true },
+      { key: 'cost', title: 'التكلفة', text: (r) => money(r.cost), numeric: true },
+      { key: 'workshop', title: 'الورشة/الفني', text: (r) => r.workshop },
+      { key: 'next_oil', title: 'التغيير القادم (كم)', text: (r) => km(r.next_oil_km), numeric: true },
+    ],
     maintenance: [
       { key: 'odometer', title: 'العداد', text: (r) => km(r.odometer), numeric: true },
       { key: 'kind', title: 'نوع الصيانة', text: (r) => r.kind },

@@ -53,6 +53,8 @@ STATUS_LABELS = {
 
 CHECK_FIELDS = ("fuel", "oil_water", "tires", "brakes", "lights", "cleanliness")
 
+OIL_KIND = "تغيير زيت"
+
 MONEY_SOURCES = {
     "maintenance": (VehicleMaintenance, "cost", "صيانة"),
     "fuel": (VehicleFuel, "amount", "وقود"),
@@ -182,7 +184,9 @@ def vehicle_states(db: Session, vehicles: list[Vehicle], today: date | None = No
         reasons: list[str] = []
         f = faults.get(v.id, {"count": 0, "stopped": False, "critical": False})
         km_left = (v.next_maintenance_km - v.odometer) if v.next_maintenance_km else None
-        due = km_left is not None and km_left <= cfg.maintenance_alert_km
+        oil_left = (v.next_oil_km - v.odometer) if v.next_oil_km else None
+        oil_due = oil_left is not None and oil_left <= cfg.maintenance_alert_km
+        due = (km_left is not None and km_left <= cfg.maintenance_alert_km) or oil_due
         expired = [n for n, d in (("التأمين منتهي", v.insurance_until),
                                   ("الرخصة منتهية", v.license_until)) if d and d < today]
         if f["stopped"]:
@@ -194,9 +198,12 @@ def vehicle_states(db: Session, vehicles: list[Vehicle], today: date | None = No
             auto = VehicleStatus.attention
         else:
             auto = VehicleStatus.good
-        if due:
+        if km_left is not None and km_left <= cfg.maintenance_alert_km:
             reasons.append(f"تجاوزت موعد الصيانة بـ {-km_left:,} كم" if km_left < 0
                            else f"متبقٍ {km_left:,} كم على الصيانة")
+        if oil_due:
+            reasons.append(f"تجاوزت موعد تغيير الزيت بـ {-oil_left:,} كم" if oil_left < 0
+                           else f"متبقٍ {oil_left:,} كم على تغيير الزيت")
         if f["count"] and not f["stopped"]:
             reasons.append(f"أعطال مفتوحة: {f['count']}")
         reasons.extend(expired)
@@ -208,6 +215,7 @@ def vehicle_states(db: Session, vehicles: list[Vehicle], today: date | None = No
             "reasons": reasons,
             "open_faults": f["count"],
             "km_to_maintenance": km_left,
+            "km_to_oil": oil_left,
         }
     return out
 
@@ -228,6 +236,14 @@ def refresh_vehicle(db: Session, vehicle: Vehicle) -> None:
             vehicle.last_maintenance_km = latest.odometer
         if latest.next_maintenance_km:
             vehicle.next_maintenance_km = latest.next_maintenance_km
+    oil = db.scalars(
+        select(VehicleMaintenance)
+        .where(VehicleMaintenance.vehicle_id == vehicle.id, VehicleMaintenance.kind == OIL_KIND)
+        .order_by(VehicleMaintenance.record_date.desc(),
+                  VehicleMaintenance.odometer.desc().nulls_last(), VehicleMaintenance.id.desc())
+    ).first()
+    if oil is not None and oil.next_oil_km:
+        vehicle.next_oil_km = oil.next_oil_km
     vehicle.status = vehicle_states(db, [vehicle])[vehicle.id]["status"]
     db.flush()
 

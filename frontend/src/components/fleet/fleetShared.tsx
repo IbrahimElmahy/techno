@@ -90,7 +90,7 @@ export interface FleetVehicle {
   odometer: number; odometer_base: number; status: string; auto_status: string;
   status_override: string | null; reasons: string[]; open_faults: number;
   km_to_maintenance: number | null; last_maintenance_km: number | null;
-  next_maintenance_km: number | null; insurance_until: string | null; license_until: string | null;
+  next_maintenance_km: number | null; next_oil_km?: number | null; insurance_until: string | null; license_until: string | null;
   insurance_days_left: number | null; license_days_left: number | null;
   fuel_account_id: number | null; maintenance_account_id: number | null;
   fuel_account_name: string | null; maintenance_account_name: string | null;

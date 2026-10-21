@@ -224,6 +224,7 @@ export default function PageRoutes({ location }: { location?: string }) {
       <Route path="/fleet/drivers" element={<FleetDrivers />} />
       <Route path="/fleet/maintenance" element={<FleetRecords key="maintenance" kind="maintenance" />} />
       <Route path="/fleet/fuel" element={<FleetRecords key="fuel" kind="fuel" />} />
+      <Route path="/fleet/oil" element={<FleetRecords key="oil" kind="oil" />} />
       <Route path="/fleet/faults" element={<FleetRecords key="faults" kind="faults" />} />
       <Route path="/fleet/violations" element={<FleetRecords key="violations" kind="violations" />} />
       <Route path="/fleet/inspections" element={<FleetInspections />} />

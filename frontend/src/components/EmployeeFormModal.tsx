@@ -5,6 +5,7 @@ import dayjs from 'dayjs';
 import { api } from '../api/client';
 import { InputNumber } from './NumberInput';
 import { TabModal } from './TabModal';
+import DocumentAttachments, { PendingAttachments, uploadFiles } from './DocumentAttachments';
 import { useScreenShortcuts } from './keyboard';
 import { useAuth } from './AuthProvider';
 
@@ -48,6 +49,7 @@ export default function EmployeeFormModal({
   const [loaded, setLoaded] = useState(false);
   const [form, setForm] = useState<any>({});
   const [hireDate, setHireDate] = useState<any>(null);
+  const [files, setFiles] = useState<File[]>([]);
   const [saving, setSaving] = useState(false);
   const { user } = useAuth();
   const ownBranch = user && user.role !== 'owner' && user.role !== 'system_admin'
@@ -67,6 +69,7 @@ export default function EmployeeFormModal({
 
   useEffect(() => {
     if (!open) return;
+    setFiles([]);
     if (employee) {
       setForm({
         name: employee.name, job_title_id: employee.job_title_id,
@@ -101,6 +104,9 @@ export default function EmployeeFormModal({
       const res = employee
         ? await api.patch(`/api/v1/employees/${employee.id}`, payload)
         : await api.post('/api/v1/employees', payload);
+      if (!employee && files.length && res.data?.id) {
+        const f = files; setFiles([]); await uploadFiles('employee', res.data.id, f);
+      }
       message.success(employee ? 'تم حفظ التعديل' : 'تم تسجيل الموظف');
       onClose();
       onSaved?.(res.data);
@@ -193,6 +199,9 @@ export default function EmployeeFormModal({
             onChange={(e) => setForm({ ...form, fingerprint_no: e.target.value })} />
         </Col>
       </Row>
+      {employee
+        ? <DocumentAttachments docType="employee" docId={employee.id} title="صور ومستندات الموظف" />
+        : <PendingAttachments files={files} onChange={setFiles} />}
     </TabModal>
   );
 }

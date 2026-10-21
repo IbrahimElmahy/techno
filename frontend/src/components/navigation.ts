@@ -358,6 +358,7 @@ export const EXTRA_SECTIONS: NavGroup[] = [
       { key: '/fleet/drivers', label: 'السائقون', roles: FLEET },
       { key: '/fleet/maintenance', label: 'الصيانة', roles: FLEET },
       { key: '/fleet/fuel', label: 'الوقود', roles: FLEET },
+      { key: '/fleet/oil', label: 'الزيت', roles: FLEET },
       { key: '/fleet/faults', label: 'الأعطال', roles: FLEET },
       { key: '/fleet/violations', label: 'المخالفات', roles: FLEET },
       { key: '/fleet/inspections', label: 'الفحص اليومي', roles: FLEET },

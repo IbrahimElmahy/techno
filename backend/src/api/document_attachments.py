@@ -15,11 +15,13 @@ from sqlalchemy.orm import Session
 from src.auth.dependencies import CurrentUser, get_current_user
 from src.auth.rbac import (
     CAP_COUPON_RECEIVE,
+    CAP_FLEET_READ,
     CAP_INSPECTION_READ,
     CAP_MANUFACTURE_READ,
     CAP_SALES_READ,
     CAP_STOCK_READ,
     CAP_TRANSFER_INITIATE,
+    CAP_USER_READ,
     CAP_VOUCHER_READ,
     role_has_capability,
 )
@@ -59,6 +61,8 @@ ATTACHABLE: dict[str, tuple[str, str, str]] = {
     "trade_order": ("src.models.trade_order", "TradeOrder", CAP_SALES_READ),
     "ledger_entry": ("src.models.ledger", "LedgerEntry", CAP_VOUCHER_READ),
     "cheque": ("src.models.cheque", "Cheque", CAP_VOUCHER_READ),
+    "fleet_vehicle": ("src.models.fleet", "Vehicle", CAP_FLEET_READ),
+    "employee": ("src.models.employee", "Employee", CAP_USER_READ),
 }
 
 
