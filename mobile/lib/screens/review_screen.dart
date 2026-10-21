@@ -297,16 +297,16 @@ class _ReviewScreenState extends State<ReviewScreen> {
               ),
               const SizedBox(height: 8),
               _kv('التاريخ', insp.inspectionDate),
-              _kv('هاتف المالك', insp.ownerPhone),
+              _kv('هاتف المالك', insp.ownerPhone, strong: true),
               _kv('رقم البطاقة', insp.nationalId),
               _kv('العنوان', insp.ownerAddress),
               _kv('الدور', insp.floorNumber),
-              _kv('توصيف المعاينة', insp.description),
+              _kv('توصيف المعاينة', insp.description, strong: true),
               _kv('نوع المعاينة', insp.inspectionType),
-              _kv('نوع الزيارة', insp.visitType),
+              _kv('نوع الزيارة', insp.visitType, strong: true),
               _kv('اسم الفني', insp.technicianName),
               _kv('هاتف الفني', insp.technicianPhone),
-              _kv('محل الشراء', insp.purchaseShop),
+              _kv('محل الشراء', insp.purchaseShop, strong: true),
               _kv('تفاصيل الزيارة', insp.visitDetails),
               if (insp.lines.isNotEmpty) ...[
                 const Divider(height: 24),
@@ -343,8 +343,9 @@ class _ReviewScreenState extends State<ReviewScreen> {
     );
   }
 
-  Widget _kv(String label, String? value) {
+  Widget _kv(String label, String? value, {bool strong = false}) {
     if (value == null || value.isEmpty) return const SizedBox.shrink();
+    final itemStyle = Theme.of(context).textTheme.bodyLarge;
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4),
       child: Row(
@@ -353,8 +354,12 @@ class _ReviewScreenState extends State<ReviewScreen> {
           SizedBox(
               width: 110,
               child: Text(label,
-                  style: TextStyle(color: Colors.grey.shade600, fontSize: 13))),
-          Expanded(child: Text(value, style: const TextStyle(fontSize: 14))),
+                  style: strong
+                      ? itemStyle
+                      : TextStyle(color: Colors.grey.shade600, fontSize: 13))),
+          Expanded(
+              child: Text(value,
+                  style: strong ? itemStyle : const TextStyle(fontSize: 14))),
         ],
       ),
     );
