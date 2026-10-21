@@ -97,6 +97,13 @@ class _PriceSheetScreenState extends State<PriceSheetScreen> {
       _catalog = items;
       if (head != null) {
         _titleCtl.text = (head['title'] as String?) ?? '';
+        final byId = {for (final it in items) it.itemId: it};
+        for (final l in saved) {
+          final it = byId[l.itemId];
+          if (it != null && l.fixedDiscountPct == 0) {
+            l.fixedDiscountPct = it.defaultDiscountPct;
+          }
+        }
         _lines
           ..clear()
           ..addAll(saved);
@@ -201,7 +208,7 @@ class _PriceSheetScreenState extends State<PriceSheetScreen> {
               itemName: picked.name,
               quantity: qty,
               unitPrice: picked.priceFor(null),
-              fixedDiscountPct: 0,
+              fixedDiscountPct: picked.defaultDiscountPct,
               variableDiscountPct: 0,
             ));
           }
