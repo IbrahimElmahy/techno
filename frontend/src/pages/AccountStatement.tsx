@@ -671,8 +671,9 @@ export default function AccountStatement() {
       ...numberColumn<StatementLine>((l) => l._serial ?? 0) },
     { title: 'التاريخ', dataIndex: 'entry_date',
       ...dateColumn<StatementLine>((l) => l.entry_date),
-      sorter: (a: StatementLine, b: StatementLine) => String(a.entry_date || '')
-        .localeCompare(String(b.entry_date || '')),
+      sorter: (a: StatementLine, b: StatementLine) => String(a.entry_date || '').slice(0, 10)
+        .localeCompare(String(b.entry_date || '').slice(0, 10))
+        || (Number(b._serial ?? 0) - Number(a._serial ?? 0)),
       render: (d: string) => (d ? String(d).slice(0, 10) : '-') },
     { title: 'النوع', dataIndex: 'entry_type',
       ...textColumn(lines, (l: StatementLine) => entryTypeLabel(l.entry_type)),
