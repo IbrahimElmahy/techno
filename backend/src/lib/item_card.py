@@ -94,15 +94,47 @@ def card(
 
     names = _location_names(db)
 
+    def edit_key(mv: StockMovement):
+        if (stock_docs.canonical(mv.source_doc_type) != StockDoc.TRANSFER
+                or not mv.source_doc_id or mv.reverses_movement_id is not None):
+            return None
+        return (mv.source_doc_id, str(mv.location_kind), mv.location_id,
+                mv.movement_date or _day(mv.created_at))
+
+    first_of: dict[tuple, int] = {}
+    for mv in movements:
+        k = edit_key(mv)
+        if k is not None:
+            first_of.setdefault(k, mv.id)
+    movements = sorted(movements, key=lambda mv: (
+        mv.movement_date or _day(mv.created_at) or date.min,
+        first_of.get(edit_key(mv), mv.id) if edit_key(mv) else mv.id, mv.id))
+
     opening = ZERO_QTY
     rows: list[dict] = []
     balance = ZERO_QTY
     total_in = total_out = ZERO_QTY
+    last_key = None
 
     for mv in movements:
         signed = _qty(mv.quantity) if mv.direction == StockDirection.in_ else -_qty(mv.quantity)
         before = balance
         balance = _qty(balance + signed)
+
+        key = edit_key(mv)
+        if key is not None and key == last_key and rows:
+            prev = rows[-1]
+            net = _qty(Decimal(prev["quantity_in"]) - Decimal(prev["quantity_out"]) + signed)
+            prev["quantity_in"] = str(net if net >= 0 else ZERO_QTY)
+            prev["quantity_out"] = str(ZERO_QTY if net >= 0 else -net)
+            prev["direction"] = "in" if net >= 0 else "out"
+            prev["balance_after"] = str(balance)
+            if signed >= 0:
+                total_in = _qty(total_in + signed)
+            else:
+                total_out = _qty(total_out - signed)
+            continue
+        last_key = None
 
         when = mv.movement_date or _day(mv.created_at)
         if day_from is not None and when is not None and when < day_from:
@@ -116,6 +148,7 @@ def card(
         if direction and mv.direction.value != direction:
             continue
 
+        last_key = key
         quantity = _qty(mv.quantity)
         is_in = mv.direction == StockDirection.in_
         total_in = _qty(total_in + quantity) if is_in else total_in
