@@ -192,10 +192,12 @@ def _cash_side(
         from src.models.treasury import Treasury
         from src.models.user import User
 
-        user = db.get(User, actor_user_id)
-        if user is not None and user.branch_id:
+        from src.auth.branch_scope import user_branch
+
+        own_branch = user_branch(db.get(User, actor_user_id))
+        if own_branch:
             own = db.scalar(select(Treasury).where(
-                Treasury.branch_id == user.branch_id, Treasury.active.is_(True)
+                Treasury.branch_id == own_branch, Treasury.active.is_(True)
             ).order_by(Treasury.id))
             if own is not None:
                 return own.account_id, own.id

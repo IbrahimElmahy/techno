@@ -22,6 +22,18 @@ def requested_view_branch() -> int | None:
     return _view_branch.get()
 
 
+def user_branch(user) -> int | None:
+    from src.auth.dependencies import parse_branch_ids
+
+    if user is None:
+        return None
+    ids = parse_branch_ids(getattr(user, "branch_ids", None))
+    if ids:
+        view = _view_branch.get()
+        return view if view in ids else ids[0]
+    return user.branch_id
+
+
 def visible_branch_id(current: CurrentUser) -> int | None:
     if current.is_admin and not current.branch_ids:
         return _view_branch.get()
@@ -79,8 +91,7 @@ def branch_for(db: Session, *, actor_user_id: int | None = None,
     if actor_user_id:
         from src.models.user import User
 
-        actor = db.get(User, actor_user_id)
-        return actor.branch_id if actor else None
+        return user_branch(db.get(User, actor_user_id))
     return None
 
 

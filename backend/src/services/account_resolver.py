@@ -117,8 +117,9 @@ def resolve_cash_account(
         if branch_id is None:
             from src.models.user import User
 
-            user = db.get(User, user_id)
-            branch_id = user.branch_id if user is not None else None
+            from src.auth.branch_scope import user_branch
+
+            branch_id = user_branch(db.get(User, user_id))
         return treasury_account(db, branch_id=branch_id)
 
     rows = db.scalars(
