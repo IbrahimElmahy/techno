@@ -1195,7 +1195,9 @@ export default function Invoices() {
             statement3: values.statement3 || undefined,
             family: invoiceFamily,
             cash_account_id: cashAccountId ?? undefined,
+            from_order_id: editingId ? undefined : (convertOrderRef.current ?? undefined),
           });
+          convertOrderRef.current = null;
 
           message.success(editingInvoice
             ? 'تم تعديل الفاتورة وإعادة ترحيلها' : 'تم تسجيل فاتورة البيع بنجاح');
@@ -1269,7 +1271,55 @@ export default function Invoices() {
 
   closeOnBackRef.current = () => { resetDocument(); setCreateVisible(false); };
 
+  const convertOrderRef = useRef<number | null>(null);
+  const pendingOrderRef = useRef<any>(null);
+  const handledOrderRef = useRef<number | null>(null);
   const pendingIntent = useRef<{ id: number; mode: 'view' | 'edit' } | null>(null);
+
+  useEffect(() => {
+    const fromOrder = Number(searchParams.get('from_order')) || null;
+    if (!fromOrder || handledOrderRef.current === fromOrder) return;
+    handledOrderRef.current = fromOrder;
+    const next = new URLSearchParams(searchParams);
+    next.delete('from_order');
+    setSearchParams(next, { replace: true });
+    api.get(`/api/v1/orders/${fromOrder}`)
+      .then((res) => {
+        if (res.data?.status !== 'open') {
+          message.warning('الشيت ده اتحول لفاتورة أو اتلغى قبل كده');
+          return;
+        }
+        startNew({ fromOrder: res.data });
+        message.info(`اختر العميل والمخزن — أصناف الشيت ${res.data.document_number} هتتضاف للفاتورة`);
+      })
+      .catch(() => message.error('تعذر تحميل شيت التسعير'));
+  }, [searchParams]);
+
+  useEffect(() => {
+    const order = pendingOrderRef.current;
+    if (!order || newStep !== null || !createVisible || !docWarehouseId || !selectedCustomerId) return;
+    pendingOrderRef.current = null;
+    (async () => {
+      const tier = customerTier || 'consumer';
+      const built: SaleLineItem[] = [];
+      for (const ol of order.lines || []) {
+        const fresh = await fetchPrices(ol.item_id);
+        const prod = products.find((p) => p.id === ol.item_id);
+        const l = blankLine(`${Date.now()}-${++lineSeq.current}`, tier);
+        l.warehouse_id = docWarehouseId;
+        l.category = prod?.category ?? null;
+        l.item_id = ol.item_id;
+        l.unit = ol.unit ?? null;
+        l.unit_price = Number(ol.unit_price || 0);
+        l.fixed_discount = defaultFixedDiscount(ol.item_id, fresh);
+        l.variable_discount = Number(ol.discount_pct || 0) || null;
+        l.quantity = pickedQty(l.key, ol.item_id, l.unit, docWarehouseId, Number(ol.quantity || 0));
+        built.push(l);
+      }
+      setLines(built);
+      if (Number(order.variable_discount_pct || 0)) setDiscountPct(Number(order.variable_discount_pct));
+    })();
+  }, [newStep, createVisible, docWarehouseId, selectedCustomerId]);
 
   useEffect(() => {
     const doc = searchParams.get('doc');
@@ -1646,9 +1696,11 @@ function couponsTotal(inv: any): number {
   })();
   const tableColumns = docKindFilter === 'bonus' ? bonusColumns : visibleColumns;
 
-  const startNew = (opts?: { bonus?: boolean }) => {
+  const startNew = (opts?: { bonus?: boolean; fromOrder?: any }) => {
     const go = () => {
       resetDocument();
+      convertOrderRef.current = opts?.fromOrder?.id ?? null;
+      pendingOrderRef.current = opts?.fromOrder ?? null;
       if (opts?.bonus) { setIsBonus(true); setBonusForId(null); setCashAmount(0); }
       setCreateVisible(true);
       setNewStep('party');

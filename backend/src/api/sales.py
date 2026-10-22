@@ -135,6 +135,7 @@ class SaleCreate(BaseModel):
     is_bonus: bool = False
     bonus_for_invoice_id: int | None = None
     bonus_for_client_uuid: str | None = None
+    from_order_id: int | None = None
 
 
 class ReturnLineIn(BaseModel):
@@ -840,6 +841,18 @@ def create_sale(
             return _inv_out(seen, db)
 
     inv = _build_sale(db, body, current)
+    if body.from_order_id:
+        from datetime import datetime
+
+        from src.models.trade_order import OrderStatus, TradeOrder
+
+        order = db.get(TradeOrder, body.from_order_id)
+        if order is not None and order.status == OrderStatus.open:
+            order.status = OrderStatus.converted
+            order.converted_invoice_id = inv.id
+            order.converted_at = datetime.now()
+            if order.customer_id is None:
+                order.customer_id = inv.customer_id
     db.commit()
     return _inv_out(inv, db, payment_states=_payment_states(db, [inv]))
 

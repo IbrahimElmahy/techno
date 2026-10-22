@@ -13,6 +13,7 @@ import {
   PrinterOutlined, BankOutlined, CheckOutlined, FileTextOutlined, ClearOutlined,
 } from '@ant-design/icons';
 import dayjs, { Dayjs } from 'dayjs';
+import { useNavigate } from 'react-router-dom';
 import { api } from '../api/client';
 import { netOf, MAX_DISCOUNT_PCT } from '../utils/discounts';
 import { useQueryTab } from '../components/useQueryTab';
@@ -102,6 +103,8 @@ export default function Orders() {
   const [saving, setSaving] = useState(false);
 
   const [invoiceId, setInvoiceId] = useState<number | undefined>();
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const navigate = useNavigate();
 
   const load = async () => {
     setLoading(true);
@@ -254,7 +257,33 @@ export default function Orders() {
   const draftTotal = netOf(netBeforeDoc, Math.min(MAX_DISCOUNT_PCT, discountPct));
 
   const startNew = (k: Kind) => {
-    setKind(k); setLines([]); setCreating(true);
+    setKind(k); setLines([]); setEditingId(null); setCreating(true);
+  };
+
+  const startEdit = (o: Order) => {
+    setKind(o.kind);
+    setLines(o.lines.map((l) => ({
+      key: ++keySeq.current, item_id: l.item_id, quantity: Number(l.quantity),
+      unit_price: Number(l.unit_price), unit: l.unit, discount_pct: Number(l.discount_pct || 0),
+    })));
+    o.lines.forEach((l) => { fetchUnits(l.item_id); });
+    setNotes(o.notes || ''); setStatement1(o.statement1 || '');
+    setDueDate(o.due_date ? dayjs(o.due_date) : null);
+    setSheetDate(o.order_date ? dayjs(o.order_date) : dayjs());
+    setDiscountPct(Number(o.variable_discount_pct || 0));
+    setEditingId(o.id);
+    closeDoc();
+    setCreating(true);
+  };
+
+  const removeOrder = async (o: Order) => {
+    try {
+      await api.delete(`/api/v1/orders/${o.id}`);
+      message.success('تم حذف الشيت');
+      closeDoc(); load();
+    } catch (err: any) {
+      message.error(err?.response?.data?.detail?.message || 'تعذر حذف الشيت');
+    }
   };
 
   const fetchUnits = async (itemId: number) => {
@@ -451,7 +480,10 @@ export default function Orders() {
     if (!payload.length) { message.warning('أضف سطراً واحداً على الأقل'); return; }
     setSaving(true);
     try {
-      await api.post('/api/v1/orders', {
+      const send = editingId
+        ? (b: any) => api.put(`/api/v1/orders/${editingId}`, b)
+        : (b: any) => api.post('/api/v1/orders', b);
+      await send({
         kind,
         customer_id: null,
         supplier_id: null,
@@ -461,7 +493,8 @@ export default function Orders() {
         variable_discount_pct: String(discountPct || 0),
         notes: notes || null, statement1: statement1 || null, lines: payload,
       });
-      message.success('تم تسجيل الطلب');
+      message.success(editingId ? 'تم حفظ التعديل' : 'تم تسجيل الطلب');
+      setEditingId(null);
       setCreating(false);
       setLines([]); setNotes(''); setStatement1(''); setDueDate(null); setDiscountPct(0);
       load();
@@ -614,8 +647,10 @@ export default function Orders() {
         <div className="sale-card sale-head">
           <div className="sale-head-row">
             <Button size="small" icon={<ArrowRightOutlined />}
-              onClick={() => setCreating(false)}>رجوع</Button>
-            <span className="sale-title">{sheetName}</span>
+              onClick={() => { setCreating(false); setEditingId(null); }}>رجوع</Button>
+            <span className="sale-title">
+              {editingId ? `تعديل ${orders.find((o) => o.id === editingId)?.document_number ?? ''}` : sheetName}
+            </span>
             <div className="sale-toolbar-row">
               <DocumentToolbar actions={sheetToolbar()} variant="buttons" />
               {lineGrid.control}
@@ -719,7 +754,7 @@ export default function Orders() {
                       icon={<CheckOutlined />} className="sale-green-btn sale-save-btn">
                       حفظ التسعيرة (F9)
                     </Button>
-                    <Button onClick={() => setCreating(false)}>إلغاء</Button>
+                    <Button onClick={() => { setCreating(false); setEditingId(null); }}>إلغاء</Button>
                   </div>
                 </div>
               </Col>
@@ -746,6 +781,21 @@ export default function Orders() {
                 onClick={() => printOrder(detail)}>طباعة</Button>
               <DocumentHistoryButton entityType="sales_order" entityId={detail.id}
                 documentNumber={detail.document_number} />
+              {detail.status === 'open' && detail.kind === 'sale' && (
+                <Button type="primary" className="sale-green-btn"
+                  onClick={() => navigate(`/invoices?from_order=${detail.id}`)}>
+                  تحويل لفاتورة
+                </Button>
+              )}
+              {detail.status === 'open' && (
+                <Button icon={<EditOutlined />} onClick={() => startEdit(detail)}>تعديل</Button>
+              )}
+              {detail.status !== 'converted' && (
+                <Popconfirm title="حذف الشيت نهائياً؟" onConfirm={() => removeOrder(detail)}
+                  okText="حذف" cancelText="رجوع">
+                  <Button danger icon={<DeleteOutlined />}>حذف</Button>
+                </Popconfirm>
+              )}
               {detail.status === 'open' && (
                 <Popconfirm title="إلغاء الطلب؟" onConfirm={() => cancel(detail)}
                   okText="إلغاء الطلب" cancelText="رجوع">

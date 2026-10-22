@@ -143,14 +143,23 @@ def create_order(
         document_number=f"{_PREFIX[kind]}-{n + 1:06d}", kind=kind,
         customer_id=body.customer_id, supplier_id=body.supplier_id,
         order_date=body.order_date, due_date=body.due_date, warehouse_id=body.warehouse_id,
-        branch_id=body.branch_id, notes=body.notes,
+        branch_id=body.branch_id or branch_scope.branch_for(db, actor_user_id=current.id)
+        or branch_scope.visible_branch_id(current),
+        notes=body.notes,
         statement1=(body.statement1 or "").strip() or None,
         gross=ZERO, variable_discount_pct=to_money(body.variable_discount_pct or 0),
         total=ZERO, actor_user_id=current.id,
     )
     db.add(order)
     db.flush()
+    _fill_lines(db, order, body)
+    db.flush()
+    out = _out(db, order)
+    db.commit()
+    return out
 
+
+def _fill_lines(db: Session, order: TradeOrder, body: OrderIn) -> None:
     doc_pct = to_money(body.variable_discount_pct or 0)
     if doc_pct < ZERO or doc_pct >= to_money(100):
         raise HTTPException(422, {"code": "validation",
@@ -179,10 +188,60 @@ def create_order(
             discount_pct=line_pct, line_total=line_total, notes=raw.notes))
     order.gross = gross
     order.total = discounts.apply(net, sales_service.fixed_discount_pct(db), doc_pct)
+
+
+def _editable(db: Session, order_id: int, current: CurrentUser) -> TradeOrder:
+    order = db.scalar(select(TradeOrder).options(selectinload(TradeOrder.lines))
+                      .where(TradeOrder.id == order_id))
+    if order is None or not branch_scope.may_see(current, order):
+        raise HTTPException(404, {"code": "not_found", "message": "الطلب غير موجود."})
+    if order.status == OrderStatus.converted:
+        raise HTTPException(409, {"code": "already_converted",
+                                  "message": "تم تحويل الشيت إلى فاتورة — لا يمكن تعديله أو حذفه."})
+    return order
+
+
+@router.put("/{order_id}", response_model=OrderOut)
+def update_order(
+    order_id: int,
+    body: OrderIn,
+    current: CurrentUser = Depends(require_capability(CAP_SALES_READ)),
+    db: Session = Depends(get_db),
+) -> OrderOut:
+    order = _editable(db, order_id, current)
+    if not body.lines:
+        raise HTTPException(422, {"code": "validation", "message": "يجب إدخال سطر واحد على الأقل."})
+    for ln in list(order.lines):
+        db.delete(ln)
     db.flush()
+    order.customer_id = body.customer_id
+    order.supplier_id = body.supplier_id
+    order.order_date = body.order_date or order.order_date
+    order.due_date = body.due_date
+    order.warehouse_id = body.warehouse_id
+    order.notes = body.notes
+    order.statement1 = (body.statement1 or "").strip() or None
+    order.variable_discount_pct = to_money(body.variable_discount_pct or 0)
+    _fill_lines(db, order, body)
+    db.flush()
+    db.refresh(order)
     out = _out(db, order)
     db.commit()
     return out
+
+
+@router.delete("/{order_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_order(
+    order_id: int,
+    current: CurrentUser = Depends(require_capability(CAP_SALES_READ)),
+    db: Session = Depends(get_db),
+) -> None:
+    order = _editable(db, order_id, current)
+    for ln in list(order.lines):
+        db.delete(ln)
+    db.flush()
+    db.delete(order)
+    db.commit()
 
 
 @router.get("", response_model=list[OrderOut])
