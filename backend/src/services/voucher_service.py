@@ -451,7 +451,7 @@ def create_expense(
     cash_account_id, safe_id = _cash_side(
         db, actor_role=actor_role, actor_user_id=actor_user_id, treasury_id=treasury_id)
     _assert_cash_available(db, cash_account_id, value)
-    return _create(
+    voucher = _create(
         db, kind=VoucherKind.expense, amount=value, cash_account_id=cash_account_id,
         party_account_id=account.id, debit_account_id=account.id,
         credit_account_id=cash_account_id, actor_user_id=actor_user_id,
@@ -463,6 +463,10 @@ def create_expense(
         cost_center_distribution=cost_center_distribution, statement1=statement1,
         external_document_number=external_document_number, replacing=replacing,
     )
+    from src.services import fleet_service
+
+    fleet_service.sync_expense_voucher(db, voucher)
+    return voucher
 
 
 def create_partner_movement(
@@ -665,6 +669,9 @@ def replace_voucher(
         _drop_entry(db, entry_id)
     except DocumentEditError as exc:
         raise VoucherError(str(exc)) from exc
+    from src.services import fleet_service
+
+    linked = fleet_service.detach_voucher(db, voucher_id)
     db.delete(original)
     db.flush()
 
@@ -678,6 +685,9 @@ def replace_voucher(
     else:
         v = create_payment(db, actor_user_id=actor_id, actor_role=actor_role,
                            replacing=keep, **args)
+    for r in linked:
+        r.voucher_id = v.id
+    db.flush()
     audit_service.record(
         db, action="voucher.update", actor_user_id=editor_user_id,
         entity_type="voucher", entity_id=v.id,
@@ -712,6 +722,12 @@ def reverse_voucher(db: Session, *, voucher_id: int, actor_user_id: int) -> Vouc
         branch_id=getattr(original, "branch_id", None),
     )
     db.add(mirror)
+    db.flush()
+    from src.services import fleet_service
+
+    for r in fleet_service._voucher_records(db, voucher_id):
+        if r.from_voucher:
+            db.delete(r)
     db.flush()
     audit_service.record(db, action="voucher.reverse", actor_user_id=actor_user_id,
                          entity_type="voucher", entity_id=mirror.id,

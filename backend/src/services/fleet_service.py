@@ -439,6 +439,10 @@ def link_voucher(db: Session, current: CurrentUser, *, source: str, record_id: i
             raise FleetError("يجب أن يكون السند سند مصروف.")
         if not voucher_live(db, voucher_id):
             raise FleetError("هذا السند معكوس.")
+        for auto in _voucher_records(db, voucher_id):
+            if auto.from_voucher:
+                db.delete(auto)
+        db.flush()
         if _linked_elsewhere(db, voucher_id, source, record_id):
             raise FleetError("هذا السند مرتبط بسجل آخر في إدارة السيارات.")
         if source == "violation":
@@ -866,3 +870,66 @@ def task_log(db: Session, current: CurrentUser, date_from: date | None, date_to:
              "done_by": users.get(lg.done_by_user_id), "branch_id": lg.branch_id}
             for lg, t in rows]
 
+
+
+def vehicle_for_account(db: Session, account_id: int | None):
+    if not account_id:
+        return None
+    v = db.scalar(select(Vehicle).where(Vehicle.fuel_account_id == account_id).order_by(Vehicle.id))
+    if v is not None:
+        return v, VehicleFuel
+    v = db.scalar(select(Vehicle).where(Vehicle.maintenance_account_id == account_id)
+                  .order_by(Vehicle.id))
+    if v is not None:
+        return v, VehicleMaintenance
+    return None
+
+
+def _voucher_records(db: Session, voucher_id: int) -> list:
+    return [r for model in (VehicleFuel, VehicleMaintenance)
+            for r in db.scalars(select(model).where(model.voucher_id == voucher_id)).all()]
+
+
+def detach_voucher(db: Session, voucher_id: int) -> list:
+    kept = []
+    for r in _voucher_records(db, voucher_id):
+        if r.from_voucher:
+            db.delete(r)
+        else:
+            r.voucher_id = None
+            kept.append(r)
+    db.flush()
+    return kept
+
+
+def sync_expense_voucher(db: Session, voucher: Voucher) -> None:
+    if voucher.kind != VoucherKind.expense or voucher.reverses_id is not None:
+        return
+    if (voucher.reference or "").startswith("FLEET-"):
+        return
+    records = _voucher_records(db, voucher.id)
+    if any(not r.from_voucher for r in records):
+        return
+    target = vehicle_for_account(db, voucher.party_account_id)
+    keep = None
+    if target is not None:
+        vehicle, model = target
+        keep = next((r for r in records if isinstance(r, model)), None)
+        if keep is None:
+            keep = model(record_date=voucher.voucher_date, vehicle_id=vehicle.id,
+                         voucher_id=voucher.id, from_voucher=True,
+                         created_by_user_id=voucher.actor_user_id)
+            db.add(keep)
+        keep.record_date = voucher.voucher_date
+        keep.vehicle_id = vehicle.id
+        keep.branch_id = vehicle.branch_id
+        keep.notes = (voucher.description or voucher.statement1 or "")[:500] or None
+        if model is VehicleFuel:
+            keep.amount = voucher.amount
+        else:
+            keep.cost = voucher.amount
+            keep.kind = keep.kind or "صيانة"
+    for r in records:
+        if r is not keep:
+            db.delete(r)
+    db.flush()

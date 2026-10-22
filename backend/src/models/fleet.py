@@ -163,6 +163,7 @@ class VehicleMaintenance(_VehicleRecord, Base):
     next_oil_km: Mapped[int | None] = mapped_column(Integer, nullable=True)
     fault_id: Mapped[int | None] = mapped_column(ForeignKey("fleet_fault.id"), nullable=True)
     voucher_id: Mapped[int | None] = mapped_column(ForeignKey("voucher.id"), nullable=True)
+    from_voucher: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
 
 class VehicleFuel(_VehicleRecord, Base):
@@ -176,6 +177,7 @@ class VehicleFuel(_VehicleRecord, Base):
     station: Mapped[str | None] = mapped_column(String(160), nullable=True)
     route: Mapped[str | None] = mapped_column(String(240), nullable=True)
     voucher_id: Mapped[int | None] = mapped_column(ForeignKey("voucher.id"), nullable=True)
+    from_voucher: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
 
 class VehicleFault(_VehicleRecord, Base):

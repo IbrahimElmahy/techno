@@ -222,6 +222,9 @@ def delete_voucher(db: Session, *, voucher_id: int, actor_user_id: int) -> None:
         db.delete(m)
     db.flush()
 
+    from src.services import fleet_service
+
+    fleet_service.detach_voucher(db, voucher_id)
     v_entry = voucher.ledger_entry_id
     voucher.ledger_entry_id = None
     db.flush()
