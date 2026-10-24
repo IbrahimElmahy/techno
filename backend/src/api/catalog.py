@@ -708,6 +708,21 @@ def item_balance(
         raise HTTPException(404, {"code": "not_found", "message": str(exc)}) from exc
 
 
+@router.get("/unit-costs", response_model=dict[int, Decimal])
+def item_unit_costs(
+    ids: str = Query(""),
+    current: CurrentUser = Depends(require_capability(CAP_CATALOG_READ)),
+    db: Session = Depends(get_db),
+) -> dict[int, Decimal]:
+    from src.auth.rbac import CAP_PROFIT_VIEW
+    from src.services import costing_service
+
+    if not current.can(CAP_PROFIT_VIEW):
+        return {}
+    wanted = {int(x) for x in ids.split(",") if x.strip().isdigit()}
+    return costing_service.unit_cost_bulk(db, wanted) if wanted else {}
+
+
 @router.get("/{item_id}/card", response_model=dict)
 def item_card(
     item_id: int,

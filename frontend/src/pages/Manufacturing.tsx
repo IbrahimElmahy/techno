@@ -29,7 +29,7 @@ import { TabModal } from '../components/TabModal';
 import { useTableColumns } from '../components/ColumnSettings';
 
 import StatsRow from '../components/StatsRow';
-import { numeralsLocale } from '../utils/money';
+import { money, numeralsLocale, qty } from '../utils/money';
 import { activeOptions } from '../utils/active';
 interface Warehouse { id: number; name: string; branch_id?: number | null; }
 interface BranchRef { id: number; name: string; is_factory?: boolean; }
@@ -224,6 +224,35 @@ function RecipesTab({
   const [editing, setEditing] = useState<Bom | null>(null);
   const [form] = Form.useForm();
   const [unitOpts, setUnitOpts] = useState<Record<number, AltUnit[]>>({});
+  const [costs, setCosts] = useState<Record<number, number>>({});
+  const watchedComponents = Form.useWatch('components', form) as any[] | undefined;
+  const watchedResources = Form.useWatch('resources', form) as any[] | undefined;
+  const watchedOutput = Form.useWatch('output_quantity', form) as number | undefined;
+  useEffect(() => {
+    const missing = [...new Set((watchedComponents || []).map((c) => c?.item_id)
+      .filter((id) => id && !(id in costs)))];
+    if (!missing.length) return;
+    api.get('/api/v1/items/unit-costs', { params: { ids: missing.join(',') } })
+      .then((r) => {
+        const got: Record<number, number> = {};
+        missing.forEach((id) => { got[id] = Number(r.data?.[id] ?? r.data?.[String(id)] ?? 0); });
+        setCosts((prev) => ({ ...prev, ...got }));
+      })
+      .catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [JSON.stringify((watchedComponents || []).map((c) => c?.item_id))]);
+  const costLines = (watchedComponents || []).filter((c) => c?.item_id).map((c) => {
+    const alt = (unitOpts[c.item_id] || []).find((u) => u.name === c.unit);
+    const factor = alt ? Number(alt.factor) : 1;
+    const unitCost = costs[c.item_id] ?? 0;
+    const qtyNum = Number(c.quantity || 0);
+    return { id: c.item_id, qty: qtyNum, unit: c.unit, unitCost: unitCost * factor,
+      total: qtyNum * factor * unitCost };
+  });
+  const materialsCost = costLines.reduce((s, l) => s + l.total, 0);
+  const resourcesCost = (watchedResources || []).reduce(
+    (s, r) => s + Number(r?.quantity || 0) * Number(r?.rate || 0), 0);
+  const outputQty = Number(watchedOutput || 0);
   const loadUnits = async (itemId: number) => {
     if (!itemId || unitOpts[itemId]) return;
     try {
@@ -496,6 +525,31 @@ function RecipesTab({
               </>
             )}
           </Form.List>
+
+          <Divider orientation="right">تكلفة المنتج</Divider>
+          <div style={{ background: '#f6faf7', border: '1px solid #d9e6dc', borderRadius: 8, padding: 10 }}>
+            {costLines.map((l, i) => (
+              <div key={`${l.id}-${i}`} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, color: '#555' }}>
+                <span>{itemName(l.id)}</span>
+                <span>{qty(l.qty)} × {money(l.unitCost)} = <b>{money(l.total)}</b></span>
+              </div>
+            ))}
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 8 }}>
+              <span>تكلفة الخامات</span><b>{money(materialsCost)}</b>
+            </div>
+            {resourcesCost > 0 && (
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                <span>تكلفة الموارد</span><b>{money(resourcesCost)}</b>
+              </div>
+            )}
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 6, fontSize: 15 }}>
+              <span>تكلفة {qty(outputQty || 0)} من المنتج</span><b>{money(materialsCost + resourcesCost)}</b>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 16, color: '#16a34a' }}>
+              <span>تكلفة الوحدة</span>
+              <b>{outputQty > 0 ? money((materialsCost + resourcesCost) / outputQty) : '-'}</b>
+            </div>
+          </div>
         </Form>
       </TabModal>
     </>
