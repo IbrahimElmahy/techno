@@ -40,7 +40,7 @@ import QuickAddRow from '../components/QuickAddRow';
 import DocumentToolbar, { ToolbarAction } from '../components/DocumentToolbar';
 import DocumentHistoryButton from '../components/DocumentHistory';
 import PrintOptionsMenu from '../components/PrintOptionsMenu';
-import { PrintOptions, loadPrintOptions } from '../print/printOptions';
+import { usePrintOptions } from '../print/printOptions';
 import { useListFilter } from '../components/ListToolbar';
 import ListPage, { ListStat } from '../components/ListPage';
 import ExportExcelButton from '../components/ExportExcelButton';
@@ -200,7 +200,7 @@ export default function Purchases() {
   const payment = useQuickVoucher(() => setPaymentsKey((k) => k + 1));
   const [formTick, setFormTick] = useState(0);
   const [purchases, setPurchases] = useState<PurchaseRecord[]>([]);
-  const [printOpts, setPrintOpts] = useState<PrintOptions>(loadPrintOptions);
+  const [printOpts, setPrintOpts] = usePrintOptions();
   const [focusRowKey, setFocusRowKey] = useState<string | null>(null);
   const [newStep, setNewStep] = useState<null | 'party' | 'warehouse'>(null);
   const [purchaseDate, setPurchaseDate] = useState<Dayjs>(dayjs());

@@ -41,7 +41,7 @@ import QuickAddRow from '../components/QuickAddRow';
 import DocumentToolbar, { ToolbarAction } from '../components/DocumentToolbar';
 import DocumentHistoryButton from '../components/DocumentHistory';
 import PrintOptionsMenu from '../components/PrintOptionsMenu';
-import { PrintOptions, loadPrintOptions } from '../print/printOptions';
+import { usePrintOptions } from '../print/printOptions';
 import ProductPickerModal from '../components/ProductPickerModal';
 import ColumnSettings, { useHiddenColumns } from '../components/ColumnSettings';
 import ExportExcelButton from '../components/ExportExcelButton';
@@ -102,7 +102,7 @@ export default function Invoices() {
   const [employees, setEmployees] = useState<RepEmployee[]>([]);
   const [reps, setReps] = useState<{ id: number; full_name: string }[]>([]);
   const [postingAccounts, setPostingAccounts] = useState<any[]>([]);
-  const [printOpts, setPrintOpts] = useState<PrintOptions>(loadPrintOptions);
+  const [printOpts, setPrintOpts] = usePrintOptions();
   const [branches, setBranches] = useState<{ id: number; name: string }[]>([]);
   const [pointValues, setPointValues] = useState<Record<number, number>>({});
   const [loading, setLoading] = useState(false);

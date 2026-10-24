@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -7,7 +8,7 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from src.auth.dependencies import CurrentUser, require_capability
+from src.auth.dependencies import CurrentUser, get_current_user, require_capability
 from src.auth.rbac import CAP_PURCHASE_WRITE, CAP_SETTINGS_WRITE, CAP_STOCK_READ
 from src.lib import item_points
 from src.models.catalog import Item
@@ -67,6 +68,33 @@ def update_sales_settings(
     return SalesSettingsBody(fixed_discount_pct=Decimal(s.fixed_discount_pct),
                              vat_rate_pct=Decimal(s.vat_rate_pct or 0),
                              edit_lock_days=getattr(s, "edit_lock_days", None))
+
+
+class PrintOptionsBody(BaseModel):
+    options: dict[str, bool] | None = None
+
+
+@router.get("/print-options", response_model=PrintOptionsBody)
+def get_print_options(
+    _: CurrentUser = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> PrintOptionsBody:
+    s = db.scalar(select(SalesSetting))
+    raw = getattr(s, "print_options", None) if s is not None else None
+    return PrintOptionsBody(options=json.loads(raw) if raw else None)
+
+
+@router.put("/print-options", response_model=PrintOptionsBody)
+def update_print_options(
+    body: PrintOptionsBody,
+    current: CurrentUser = Depends(require_capability(CAP_SETTINGS_WRITE)),
+    db: Session = Depends(get_db),
+) -> PrintOptionsBody:
+    s = _get_or_create(db)
+    s.print_options = json.dumps(body.options or {}, ensure_ascii=False)
+    s.updated_by = current.id
+    db.commit()
+    return PrintOptionsBody(options=body.options)
 
 
 _POLY = {item_points.PPR, item_points.PPR_INS}

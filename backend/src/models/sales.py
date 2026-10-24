@@ -175,6 +175,7 @@ class SalesSetting(Base):
     edit_lock_days: Mapped[int | None] = mapped_column(Integer, nullable=True)
     purchase_poly_discount_pct: Mapped[object] = mapped_column(PCT, default=52.5, nullable=False)
     purchase_white_discount_pct: Mapped[object] = mapped_column(PCT, default=34.5, nullable=False)
+    print_options: Mapped[str | None] = mapped_column(String(2000), nullable=True)
     updated_by: Mapped[int | None] = mapped_column(ForeignKey("user.id"), nullable=True)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, server_default=func.now(), nullable=False

@@ -46,7 +46,7 @@ import ProductPickerModal from '../components/ProductPickerModal';
 import { useScreenShortcuts, useTableKeyboard } from '../components/keyboard';
 import { useAuth } from '../components/AuthProvider';
 import PrintOptionsMenu from '../components/PrintOptionsMenu';
-import { PrintOptions, loadPrintOptions } from '../print/printOptions';
+import { usePrintOptions } from '../print/printOptions';
 import dayjs, { Dayjs } from 'dayjs';
 import { TabModal } from '../components/TabModal';
 import { money, numeralsLocale } from '../utils/money';
@@ -261,7 +261,7 @@ export default function PurchaseReturns({ embedded }: { embedded?: { onExit: () 
   };
 
   const [printing, setPrinting] = useState(false);
-  const [printOpts, setPrintOpts] = useState<PrintOptions>(loadPrintOptions);
+  const [printOpts, setPrintOpts] = usePrintOptions();
 
   const editPosted = async (row: ReturnRow) => {
     await openReturn(row);

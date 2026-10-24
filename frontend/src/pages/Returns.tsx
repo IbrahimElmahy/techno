@@ -43,7 +43,7 @@ import ColumnSettings, { useHiddenColumns } from '../components/ColumnSettings';
 import ExportExcelButton from '../components/ExportExcelButton';
 import { useEntryGrid, type EntryColumn } from '../components/EntryGrid';
 import PrintOptionsMenu from '../components/PrintOptionsMenu';
-import { PrintOptions, loadPrintOptions } from '../print/printOptions';
+import { usePrintOptions } from '../print/printOptions';
 import CustomerAccountPanel from '../components/CustomerAccountPanel';
 import { guardQuantity } from '../components/quantityGuard';
 import { useAuth } from '../components/AuthProvider';
@@ -294,7 +294,7 @@ export default function Returns({ embedded }: { embedded?: { onExit: () => void 
   });
   const [editingSourceId, setEditingSourceId] = useState<number | null>(null);
   const [printing, setPrinting] = useState(false);
-  const [printOpts, setPrintOpts] = useState<PrintOptions>(loadPrintOptions);
+  const [printOpts, setPrintOpts] = usePrintOptions();
   const returnCols = useHiddenColumns('returns-list', [
     'id', 'gross', 'discount_value', 'combined_pct', 'tax_amount',
     'rep_id', 'notes',

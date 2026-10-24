@@ -1,5 +1,5 @@
 import React from 'react';
-import { Button, Checkbox, Dropdown, Space } from 'antd';
+import { Button, Checkbox, Dropdown, Space, message } from 'antd';
 import { PrinterOutlined } from '@ant-design/icons';
 import {
   DEFAULT_PRINT_OPTIONS, PRINT_OPTION_LABELS, PrintOptions, savePrintOptions,
@@ -12,7 +12,14 @@ export default function PrintOptionsMenu({
   onChange: (next: PrintOptions) => void;
   hideKeys?: (keyof PrintOptions)[];
 }) {
-  const set = (next: PrintOptions) => { savePrintOptions(next); onChange(next); };
+  const set = (next: PrintOptions) => {
+    onChange(next);
+    savePrintOptions(next).catch((err: any) => {
+      message.warning(err?.response?.status === 403
+        ? 'التعديل اتطبق على جهازك بس — حفظه لكل الأجهزة لمدير النظام'
+        : 'تعذر حفظ مفاتيح الطباعة على النظام');
+    });
+  };
   const shown = PRINT_OPTION_LABELS.filter((o) => !(hideKeys || []).includes(o.key));
   const offCount = shown.filter((o) => !value[o.key]).length;
 

@@ -84,9 +84,11 @@ function headMeta(d: InvoiceDoc, o: PrintOptions): [string, string][] {
   if (o.customerAccount && d.partyAccount) rows.push(['حساب العميل', d.partyAccount]);
   if (o.branch && d.branchName) rows.push(['الفرع', d.branchName]);
   if (o.rep && d.repName) rows.push(['مندوب', d.repName]);
-  rows.push(['التاريخ',
-    d.date ? String(d.date).slice(0, 10) : new Date().toLocaleDateString(numeralsLocale())]);
-  if (o.paidAndRemaining) {
+  if (o.date) {
+    rows.push(['التاريخ',
+      d.date ? String(d.date).slice(0, 10) : new Date().toLocaleDateString(numeralsLocale())]);
+  }
+  if (o.paymentMethod) {
     if (!d.isBonus) rows.push(['طريقة السداد', Number(d.credit || 0) > 0 ? 'آجل / جزئي' : 'نقدي']);
   }
   return [...rows, ...(d.extraMeta || [])];
@@ -125,50 +127,50 @@ function footerColumns(
   if (d.kind === 'sale' && d.otherFamilyBalance != null) {
     col3.push(row(`مديونية ${d.otherFamily || 'الخط الثاني'}`, cur(d.otherFamilyBalance)));
   }
-  if (Number(d.totalPoints || 0) > 0) {
+  if (o.loyaltyPoints && Number(d.totalPoints || 0) > 0) {
     col3.push(row('نقاط الولاء', `${pts(d.totalPoints)} نقطة`));
   }
 
   const col = (rows: string[]) => (rows.length ? `<div class="f-col">${rows.join('')}</div>` : '');
+  const sigs = (a: string, b: string) => (o.signatures ? `
+    <div class="c-sigs">
+      <div class="sig">${a}</div>
+      <div class="sig">${b}</div>
+      <div class="sig">المحاسب</div>
+    </div>` : '');
   if (d.isBonus) {
     return `
     <div class="f-cols">${col([row('قيمة البونص بسعر البيع', cur(d.gross)),
-      row('المطلوب من العميل', cur(0), true)])}</div>
-    <div class="c-sigs">
-      <div class="sig">توقيع المستلم</div>
-      <div class="sig">المندوب</div>
-      <div class="sig">المحاسب</div>
-    </div>`;
+      row('المطلوب من العميل', cur(0), true)])}</div>${sigs('توقيع المستلم', 'المندوب')}`;
   }
   return `
-    <div class="f-cols">${col(col1)}${col(col2)}${col(col3)}</div>
-    <div class="c-sigs">
-      <div class="sig">${d.kind === 'purchase' ? 'توقيع المورد' : 'توقيع المستلم'}</div>
-      <div class="sig">${d.kind === 'purchase' ? 'أمين المخزن' : 'المندوب'}</div>
-      <div class="sig">المحاسب</div>
-    </div>`;
+    <div class="f-cols">${col(col1)}${col(col2)}${col(col3)}</div>${sigs(
+      d.kind === 'purchase' ? 'توقيع المورد' : 'توقيع المستلم',
+      d.kind === 'purchase' ? 'أمين المخزن' : 'المندوب')}`;
 }
 
 export function printInvoice(d: InvoiceDoc, opts?: PrintOptions): void {
   const o = opts ?? loadPrintOptions();
-  const anyDisc = d.lines.some((l) => Number(l.discount_pct || 0) > 0);
-  const anyPts = d.lines.some((l) => Number(l.points || 0) > 0);
+  const anyDisc = o.discountColumn && d.lines.some((l) => Number(l.discount_pct || 0) > 0);
+  const anyPts = o.pointsColumn && d.lines.some((l) => Number(l.points || 0) > 0);
+  const showUnit = o.unitColumn;
   const warehouses = new Set(d.lines.map((l) => l.warehouse).filter(Boolean));
   const anyWh = warehouses.size > 1;
-  const cols = 6 + (anyWh ? 1 : 0) + (anyDisc ? 1 : 0) + (anyPts ? 1 : 0);
+  const cols = 5 + (showUnit ? 1 : 0) + (anyWh ? 1 : 0) + (anyDisc ? 1 : 0) + (anyPts ? 1 : 0);
   const pts = (v: any) => Number(v || 0).toLocaleString('en-US', { maximumFractionDigits: 3 });
   const rows = d.lines.map((l, i) => `
     <tr><td>${i + 1}</td><td style="text-align:right">${l.name}</td>
     ${anyWh ? `<td>${l.warehouse || '-'}</td>` : ''}
-    <td>${Number(l.quantity)}</td><td>${l.unit || '-'}</td>
+    <td>${Number(l.quantity)}</td>${showUnit ? `<td>${l.unit || '-'}</td>` : ''}
     <td>${n(l.unit_price)}</td>${anyDisc ? `<td>${Number(l.discount_pct || 0)}%</td>` : ''}
     ${anyPts ? `<td>${pts(l.points)}</td>` : ''}
     <td>${n(l.line_total)}</td></tr>`).join('');
   const discount = Number(d.gross || 0) - Number(d.net || 0);
-  const dPrior = d.priorBalance == null || d.kind !== 'sale' ? null : Number(d.priorBalance);
+  const dPrior = !o.priorBalance || d.priorBalance == null || d.kind !== 'sale'
+    ? null : Number(d.priorBalance);
   const body = `
     <table class="grid">
-      <thead><tr><th>#</th><th>الصنف</th>${anyWh ? '<th>المخزن</th>' : ''}<th>الكمية</th><th>الوحدة</th>
+      <thead><tr><th>#</th><th>الصنف</th>${anyWh ? '<th>المخزن</th>' : ''}<th>الكمية</th>${showUnit ? '<th>الوحدة</th>' : ''}
         <th>سعر الوحدة</th>${anyDisc ? '<th>الخصم</th>' : ''}${anyPts ? '<th>النقاط</th>' : ''}<th>الإجمالي</th></tr></thead>
       <tbody>${rows || `<tr><td colspan="${cols}">لا توجد أصناف</td></tr>`}</tbody>
     </table>
@@ -180,7 +182,7 @@ export function printInvoice(d: InvoiceDoc, opts?: PrintOptions): void {
       fileName: d.partyName || undefined,
       compact: true,
       meta: headMeta(d, o),
-      note: NOTE[d.kind],
+      note: o.footerNote ? NOTE[d.kind] : undefined,
       hide: {
         logo: d.kind === 'sale' || !o.logo,
         companyName: d.kind === 'sale' || !o.companyName,
