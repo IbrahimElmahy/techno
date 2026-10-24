@@ -1327,8 +1327,8 @@ class LocalDb {
     return left;
   }
 
-  Future<int> applyServerInvoices(List<dynamic> invoices) async {
-    if (invoices.isEmpty) return 0;
+  Future<int> applyServerInvoices(List<dynamic> invoices, {String? since}) async {
+    if (invoices.isEmpty && since == null) return 0;
     final d = await db;
     num? n(Object? v) => v == null ? null : num.tryParse('$v');
     String? text(Object? v) {
@@ -1357,6 +1357,8 @@ class LocalDb {
         await tx.update(
             'sale_invoice',
             {
+              if (inv['customer_id'] is int) 'customer_id': inv['customer_id'],
+              if (text(inv['customer_name']) != null) 'customer_name': text(inv['customer_name']),
               'cash_amount': n(inv['cash_amount']) ?? 0,
               'credit_amount': n(inv['credit_amount']) ?? 0,
               'total': n(inv['total']) ?? 0,
@@ -1399,6 +1401,62 @@ class LocalDb {
             });
           }
         }
+        changed++;
+      }
+      if (since != null) {
+        final keep = {
+          for (final raw in invoices)
+            if ((raw as Map)['client_uuid'] is String) raw['client_uuid'] as String
+        };
+        final gone = await tx.query('sale_invoice',
+            columns: ['local_id', 'client_uuid'],
+            where: 'synced = 1 AND invoice_date >= ?',
+            whereArgs: [since]);
+        for (final r in gone) {
+          if (keep.contains(r['client_uuid'])) continue;
+          final id = r['local_id'] as int;
+          await tx.delete('sale_invoice_line', where: 'invoice_local_id = ?', whereArgs: [id]);
+          await tx.delete('sale_invoice', where: 'local_id = ?', whereArgs: [id]);
+          changed++;
+        }
+      }
+    });
+    return changed;
+  }
+
+  Future<int> applyServerReceipts(List<dynamic> receipts, {required String since}) async {
+    final d = await db;
+    String? text(Object? v) {
+      final s = v?.toString().trim() ?? '';
+      return s.isEmpty ? null : s;
+    }
+    var changed = 0;
+    await d.transaction((tx) async {
+      final keep = <String>{};
+      for (final raw in receipts) {
+        final r = raw as Map;
+        final uuid = r['client_uuid'] as String?;
+        if (uuid == null) continue;
+        keep.add(uuid);
+        changed += await tx.update(
+            'sale_receipt',
+            {
+              if (r['customer_id'] is int) 'customer_id': r['customer_id'],
+              if (text(r['customer_name']) != null) 'customer_name': text(r['customer_name']),
+              if (num.tryParse('${r['amount']}') != null) 'amount': num.parse('${r['amount']}'),
+              if (text(r['document_number']) != null) 'document_number': text(r['document_number']),
+              if (text(r['voucher_date']) != null) 'receipt_date': text(r['voucher_date']),
+            },
+            where: 'client_uuid = ? AND synced = 1',
+            whereArgs: [uuid]);
+      }
+      final local = await tx.query('sale_receipt',
+          columns: ['local_id', 'client_uuid'],
+          where: 'synced = 1 AND receipt_date >= ?',
+          whereArgs: [since]);
+      for (final r in local) {
+        if (keep.contains(r['client_uuid'])) continue;
+        await tx.delete('sale_receipt', where: 'local_id = ?', whereArgs: [r['local_id']]);
         changed++;
       }
     });

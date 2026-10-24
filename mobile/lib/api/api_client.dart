@@ -505,8 +505,13 @@ class ApiClient {
     ]);
     await LocalDb.instance.replaceCouponCustody(
         body['coupon_custody'], body['coupon_custody_kinds']);
-    await LocalDb.instance
-        .applyServerInvoices((body['recent_invoices'] as List?) ?? const []);
+    final since = _text(body['recent_since']);
+    await LocalDb.instance.applyServerInvoices(
+        (body['recent_invoices'] as List?) ?? const [], since: since);
+    if (since != null && body['recent_receipts'] is List) {
+      await LocalDb.instance
+          .applyServerReceipts(body['recent_receipts'] as List, since: since);
+    }
     await LocalDb.instance.healItemNames();
     await LocalDb.instance.setKv('last_sales_pull', DateTime.now().toIso8601String());
   }

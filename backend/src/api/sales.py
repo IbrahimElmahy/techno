@@ -502,6 +502,8 @@ def rep_bundle(
         "warehouse_items": warehouse_items,
         "treasuries": _rep_treasuries(db, current.rep_id),
         "recent_invoices": _rep_recent_invoices(db, current.rep_id),
+        "recent_receipts": _rep_recent_receipts(db, current.rep_id),
+        "recent_since": str(date.today() - timedelta(days=_RECENT_DAYS)),
         "customers": [
             {
                 "id": c.id, "name": c.name, "phone": c.phone, "address": c.address,
@@ -587,8 +589,29 @@ def price_catalog(
         "price_sheet_hidden_categories": hidden,
     }
 
+_RECENT_DAYS = 60
+
+
+def _rep_recent_receipts(db: Session, rep_id: int) -> list[dict]:
+    from src.models.voucher import Voucher, VoucherKind
+
+    since = date.today() - timedelta(days=_RECENT_DAYS)
+    reversed_ids = select(Voucher.reverses_id).where(Voucher.reverses_id.is_not(None))
+    rows = db.scalars(select(Voucher).where(
+        Voucher.kind == VoucherKind.receipt, Voucher.client_uuid.is_not(None),
+        or_(Voucher.actor_user_id == rep_id, Voucher.rep_user_id == rep_id),
+        Voucher.reverses_id.is_(None), Voucher.id.not_in(reversed_ids),
+        Voucher.voucher_date >= since)).all()
+    names = dict(db.execute(select(Customer.id, Customer.name).where(
+        Customer.id.in_({v.customer_id for v in rows if v.customer_id} or {0}))).all())
+    return [{"client_uuid": v.client_uuid, "document_number": v.document_number,
+             "amount": str(v.amount), "customer_id": v.customer_id,
+             "customer_name": names.get(v.customer_id), "voucher_date": str(v.voucher_date)}
+            for v in rows]
+
+
 def _rep_recent_invoices(db: Session, rep_id: int) -> list[dict]:
-    since = date.today() - timedelta(days=60)
+    since = date.today() - timedelta(days=_RECENT_DAYS)
     rows = db.scalars(
         select(SalesInvoice)
         .options(selectinload(SalesInvoice.lines))
@@ -605,11 +628,15 @@ def _rep_recent_invoices(db: Session, rep_id: int) -> list[dict]:
             .where(Item.id.in_(item_ids))
         ).all()
     } if item_ids else {}
+    names = dict(db.execute(select(Customer.id, Customer.name).where(
+        Customer.id.in_({inv.customer_id for inv in rows if inv.customer_id} or {0}))).all())
     out = []
     for inv in rows:
         out.append({
             "client_uuid": inv.client_uuid,
             "id": inv.id,
+            "customer_id": inv.customer_id,
+            "customer_name": names.get(inv.customer_id),
             "document_number": inv.document_number,
             "cash_amount": str(inv.cash_amount or 0),
             "credit_amount": str(inv.credit_amount or 0),
