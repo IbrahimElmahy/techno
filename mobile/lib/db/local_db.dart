@@ -1348,12 +1348,31 @@ class LocalDb {
         final uuid = inv['client_uuid'] as String?;
         if (uuid == null) continue;
         final local = await tx.query('sale_invoice',
-            columns: ['local_id'],
-            where: 'client_uuid = ? AND synced = 1',
+            columns: ['local_id', 'synced'],
+            where: 'client_uuid = ?',
             whereArgs: [uuid],
             limit: 1);
-        if (local.isEmpty) continue;
-        final localId = local.first['local_id'] as int;
+        if (local.isNotEmpty && local.first['synced'] != 1) continue;
+        final int localId;
+        if (local.isNotEmpty) {
+          localId = local.first['local_id'] as int;
+        } else {
+          if (!uuid.startsWith('inv-') || inv['customer_id'] is! int ||
+              text(inv['invoice_date']) == null) {
+            continue;
+          }
+          localId = await tx.insert('sale_invoice', {
+            'client_uuid': uuid,
+            'customer_id': inv['customer_id'],
+            'customer_name': text(inv['customer_name']) ?? '',
+            'invoice_date': text(inv['invoice_date']),
+            'notes': text(inv['notes']),
+            'family': text(inv['family']),
+            'is_bonus': inv['is_bonus'] == true ? 1 : 0,
+            'synced': 1,
+            'created_at': DateTime.now().toIso8601String(),
+          });
+        }
         await tx.update(
             'sale_invoice',
             {
