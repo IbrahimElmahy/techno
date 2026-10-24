@@ -46,17 +46,6 @@ export function buildLineColumns({
   return [
     { key: 'idx', title: '#', width: 32, locked: true,
       cellStyle: { color: '#5b6575', textAlign: 'center' }, cell: (_l, i) => i + 1 },
-    { key: 'item', title: 'اسم الصنف والوصف', width: 210, minWidth: 120, locked: true,
-      cell: (line) => {
-        const name = line.item_id ? productName(line.item_id) : 'اختر الصنف';
-        return (
-          <div style={{ cursor: 'pointer', lineHeight: 1.25 }} onClick={() => setPanelItemId(line.item_id)}>
-            <div className="eg-ellipsis" title={name} style={{ fontWeight: 700, fontSize: 15, color: '#0f172a' }}>
-              {name}
-            </div>
-          </div>
-        );
-      } },
     { key: 'warehouse', title: 'المخزن', width: 120,
       cellStyle: { textAlign: 'center' },
       cell: (line) => (
@@ -72,6 +61,17 @@ export function buildLineColumns({
             options={activeOptions(warehouses, line.warehouse_id)} />
         )
       ) },
+    { key: 'item', title: 'اسم الصنف والوصف', width: 210, minWidth: 120, locked: true,
+      cell: (line) => {
+        const name = line.item_id ? productName(line.item_id) : 'اختر الصنف';
+        return (
+          <div style={{ cursor: 'pointer', lineHeight: 1.25 }} onClick={() => setPanelItemId(line.item_id)}>
+            <div className="eg-ellipsis" title={name} style={{ fontWeight: 700, fontSize: 15, color: '#0f172a' }}>
+              {name}
+            </div>
+          </div>
+        );
+      } },
     { key: 'unit', title: 'الوحدة', width: 80,
       cell: (line) => {
         const hint = availabilityHint?.(line);
