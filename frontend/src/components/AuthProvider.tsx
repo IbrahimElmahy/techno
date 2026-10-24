@@ -2,6 +2,7 @@ import React, { createContext, useContext, useState, useEffect } from 'react';
 import { Spin } from 'antd';
 import { api, clearApiCache, getApiBaseURL } from '../api/client';
 import { startLive, stopLive } from '../utils/live';
+import { syncPrefs } from '../utils/userPrefs';
 
 const REFRESH_EVERY_MS = 6 * 60 * 60 * 1000;
 
@@ -100,6 +101,13 @@ export function AuthProvider({ children, apiUrl }: { children: React.ReactNode; 
     if (token) startLive();
     else stopLive();
   }, [token]);
+  const prefsFor = React.useRef<string | null>(null);
+  useEffect(() => {
+    const who = token ? (user as any)?.username ?? 'me' : null;
+    if (!who || prefsFor.current === who) return;
+    prefsFor.current = who;
+    syncPrefs();
+  }, [token, (user as any)?.username]);
   useEffect(() => () => stopLive(), []);
 
   const login = (newToken: string, newUser: User) => {

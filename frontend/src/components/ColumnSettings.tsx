@@ -2,6 +2,7 @@ import React from 'react';
 import { Button, Checkbox, Dropdown, Space } from 'antd';
 import { SettingOutlined, HolderOutlined } from '@ant-design/icons';
 import ExportExcelButton, { type ExcelExport } from './ExportExcelButton';
+import { PREFS_EVENT, pushPref } from '../utils/userPrefs';
 
 export interface ColumnChoice {
   key: string;
@@ -13,6 +14,9 @@ interface StoredPrefs {
   hidden: string[];
   order?: string[];
 }
+
+export const columnKeyOf = (c: { key?: React.Key; dataIndex?: any; title?: any }, idx: number) => String(
+  c.key ?? c.dataIndex ?? (typeof c.title === 'string' && c.title ? `t:${c.title}` : `__col_${idx}__`));
 
 function load(key: string, defaultHidden: string[]): StoredPrefs {
   try {
@@ -26,17 +30,28 @@ function load(key: string, defaultHidden: string[]): StoredPrefs {
   }
 }
 
-export function useHiddenColumns(storageKey: string, defaultHidden: string[] = []) {
+export function useHiddenColumns(storageKey: string, defaultHidden: string[] = [],
+  _allKeys?: string[]) {
   const full = `cols:${storageKey}`;
   const [prefs, setPrefs] = React.useState<StoredPrefs>(() => load(full, defaultHidden));
-
   const persist = (next: StoredPrefs) => {
     try {
-      localStorage.setItem(full, JSON.stringify(next));
+      const text = JSON.stringify(next);
+      localStorage.setItem(full, text);
+      pushPref(full, text);
     } catch {
     }
     return next;
   };
+
+  React.useEffect(() => {
+    const reload = () => setPrefs(load(full, defaultHidden));
+    window.addEventListener(PREFS_EVENT, reload);
+    return () => window.removeEventListener(PREFS_EVENT, reload);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [full]);
+
+  const hidden = prefs.hidden;
 
   const save = (next: StoredPrefs) => {
     setPrefs(persist(next));
@@ -46,7 +61,7 @@ export function useHiddenColumns(storageKey: string, defaultHidden: string[] = [
     setPrefs((prev) => persist(fn(prev)));
   };
 
-  const setHidden = (hidden: string[]) => save({ ...prefs, hidden });
+  const setHidden = (next: string[]) => save({ ...prefs, hidden: next });
 
   const move = (key: string, direction: -1 | 1, allKeys: string[]) => update((prev) => {
     const current = orderKeys(allKeys, prev.order);
@@ -59,10 +74,9 @@ export function useHiddenColumns(storageKey: string, defaultHidden: string[] = [
 
   const reset = () => save({ hidden: [], order: undefined });
 
-  const apply = <T extends { key?: React.Key; dataIndex?: any }>(columns: T[]): T[] => {
-    const keyOf = (c: T, idx: number) => String(c.key ?? c.dataIndex ?? `__col_${idx}__`);
-    const decorated = columns.map((c, idx) => ({ col: c, key: keyOf(c, idx) }));
-    const visible = decorated.filter(({ key }) => !prefs.hidden.includes(key));
+  const apply = <T extends { key?: React.Key; dataIndex?: any; title?: any }>(columns: T[]): T[] => {
+    const decorated = columns.map((c, idx) => ({ col: c, key: columnKeyOf(c, idx) }));
+    const visible = decorated.filter(({ key }) => !hidden.includes(key));
     const rankedKeys = orderKeys(visible.map(({ key }) => key), prefs.order);
     const byKey = new Map(visible.map(({ key, col }) => [key, col]));
     const out: any = rankedKeys.map((k) => byKey.get(k)!).filter(Boolean);
@@ -71,7 +85,7 @@ export function useHiddenColumns(storageKey: string, defaultHidden: string[] = [
     return out as T[];
   };
 
-  return { hidden: prefs.hidden, order: prefs.order, setHidden, move, reset, apply };
+  return { hidden, order: prefs.order, setHidden, move, reset, apply };
 }
 
 export function orderKeys(allKeys: string[], saved: string[] | undefined): string[] {
@@ -184,9 +198,9 @@ export function useTableColumns<T extends { key?: React.Key; dataIndex?: any; ti
   columns: T[],
   opts: { defaultHidden?: string[]; locked?: string[]; export?: ExcelExport } = {},
 ) {
-  const prefs = useHiddenColumns(storageKey, opts.defaultHidden);
-  const keyOf = (c: T, idx: number) => String(c.key ?? c.dataIndex ?? `__col_${idx}__`);
+  const keyOf = (c: T, idx: number) => columnKeyOf(c, idx);
   const allKeys = columns.map((c, idx) => keyOf(c, idx));
+  const prefs = useHiddenColumns(storageKey, opts.defaultHidden, allKeys);
   const locked = opts.locked ?? allKeys.slice(0, 1);
   const visible = prefs.apply(columns);
   (visible as any).__managed = true;

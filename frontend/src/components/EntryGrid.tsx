@@ -1,5 +1,6 @@
 import React from 'react';
 import ColumnSettings, { orderKeys, useHiddenColumns } from './ColumnSettings';
+import { PREFS_EVENT, pushPref } from '../utils/userPrefs';
 
 export interface EntryColumn<T> {
   key: string;
@@ -29,15 +30,24 @@ function loadWidths(key: string): Record<string, number> {
   }
 }
 function saveWidths(key: string, w: Record<string, number>) {
-  try { localStorage.setItem(key, JSON.stringify(w)); } catch {}
+  try {
+    const text = JSON.stringify(w);
+    localStorage.setItem(key, text);
+    pushPref(key, text);
+  } catch {}
 }
 
 export function useEntryGrid<T>(storageKey: string, columns: EntryColumn<T>[]) {
-  const prefs = useHiddenColumns(storageKey);
   const allKeys = columns.map((c) => c.key);
+  const prefs = useHiddenColumns(storageKey, [], allKeys);
 
   const widthsKey = `cols:${storageKey}:widths`;
   const [widths, setWidths] = React.useState<Record<string, number>>(() => loadWidths(widthsKey));
+  React.useEffect(() => {
+    const reload = () => setWidths(loadWidths(widthsKey));
+    window.addEventListener(PREFS_EVENT, reload);
+    return () => window.removeEventListener(PREFS_EVENT, reload);
+  }, [widthsKey]);
   const defWidth = (c: EntryColumn<T>) => (typeof c.width === 'number' ? c.width : (c.minWidth ?? 100));
   const minOf = (c: EntryColumn<T>) => Math.min(c.minWidth ?? MIN_COL, defWidth(c));
   const widthOf = (c: EntryColumn<T>) => {

@@ -1,4 +1,5 @@
 import React, { useEffect } from 'react';
+import { PREFS_EVENT, pushPref } from '../utils/userPrefs';
 
 const STORAGE_KEY = 'techno.col-widths';
 const GRIP = 8;
@@ -10,11 +11,16 @@ function load(): Widths {
   try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}'); } catch { return {}; }
 }
 function save(w: Widths) {
-  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(w)); } catch {}
+  try {
+    const text = JSON.stringify(w);
+    localStorage.setItem(STORAGE_KEY, text);
+    pushPref(STORAGE_KEY, text);
+  } catch {}
 }
 
 export const WIDTHS_EVENT = 'techno:col-widths';
 let shared: Widths = load();
+window.addEventListener(PREFS_EVENT, () => { shared = load(); emit(); });
 let raf = 0;
 function emit() {
   if (raf) return;

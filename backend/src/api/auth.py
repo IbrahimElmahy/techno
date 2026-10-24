@@ -4,7 +4,7 @@ import uuid
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -175,3 +175,32 @@ def me(current: CurrentUser = Depends(get_current_user), db: Session = Depends(g
         pages_hidden=sorted(c[5:] for c in current.denies if c.startswith("page:")),
         branch_ids=list(current.branch_ids),
     )
+
+
+class PrefIn(BaseModel):
+    key: str = Field(max_length=200)
+    value: str = Field(max_length=50000)
+
+
+@router.get("/auth/prefs", response_model=dict[str, str])
+def my_prefs(current: CurrentUser = Depends(get_current_user),
+             db: Session = Depends(get_db)) -> dict[str, str]:
+    from src.models.user import UserPref
+
+    return {p.key: p.value for p in db.scalars(
+        select(UserPref).where(UserPref.user_id == current.id)).all()}
+
+
+@router.put("/auth/prefs", response_model=dict)
+def save_pref(body: PrefIn, current: CurrentUser = Depends(get_current_user),
+              db: Session = Depends(get_db)) -> dict:
+    from src.models.user import UserPref
+
+    row = db.scalar(select(UserPref).where(UserPref.user_id == current.id,
+                                           UserPref.key == body.key))
+    if row is None:
+        db.add(UserPref(user_id=current.id, key=body.key, value=body.value))
+    else:
+        row.value = body.value
+    db.commit()
+    return {"ok": True}
