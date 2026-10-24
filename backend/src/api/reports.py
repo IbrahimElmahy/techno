@@ -6,14 +6,18 @@ from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
+from pydantic import BaseModel
 from sqlalchemy import Date, cast, func, select
 from sqlalchemy.orm import Session
 
 from src.auth.dependencies import CurrentUser, require_capability
-from src.auth.rbac import CAP_ACCOUNTING_TRIAL_BALANCE_READ, CAP_SALES_READ, CAP_STOCK_READ
+from src.auth.rbac import (
+    CAP_ACCOUNTING_TRIAL_BALANCE_READ, CAP_CATALOG_WRITE, CAP_SALES_READ, CAP_STOCK_READ,
+)
 from src.core.db import get_db
 from src.lib import (health, ledger_analysis, profit_guard, report_statement, reporting,
                      stock_analysis, stocktake, trade_analysis, trade_reports)
+from src.models.catalog import Item
 from src.models.customer import Customer
 from src.models.ledger import Account, AccountType
 from src.models.purchasing import PurchaseInvoice
@@ -208,6 +212,56 @@ def reorder_report(
 ):
     return reporting.reorder(db, branch_id=branch_scope.visible_branch_id(current),
                              include_all=include_all)
+
+
+@router.get("/reorder/warehouses")
+def warehouse_reorder_report(
+    warehouse_id: int | None = Query(None),
+    current: CurrentUser = Depends(require_capability(CAP_STOCK_READ)),
+    db: Session = Depends(get_db),
+):
+    return reporting.warehouse_reorder(
+        db, branch_id=branch_scope.visible_branch_id(current), warehouse_id=warehouse_id)
+
+
+class WarehouseLimitIn(BaseModel):
+    item_id: int
+    warehouse_id: int
+    min_qty: Decimal | None = None
+    max_qty: Decimal | None = None
+
+
+@router.put("/reorder/limit")
+def set_warehouse_limit(
+    body: WarehouseLimitIn,
+    current: CurrentUser = Depends(require_capability(CAP_CATALOG_WRITE)),
+    db: Session = Depends(get_db),
+) -> dict:
+    from src.models.stock import ItemWarehouseLimit
+    from src.models.warehouse import Warehouse
+
+    wh = db.get(Warehouse, body.warehouse_id)
+    if wh is None or not branch_scope.may_see(current, wh) or db.get(Item, body.item_id) is None:
+        raise HTTPException(404, {"code": "not_found", "message": "الصنف أو المخزن غير موجود."})
+    for v in (body.min_qty, body.max_qty):
+        if v is not None and v < 0:
+            raise HTTPException(422, {"code": "validation", "message": "الحد لا يكون بالسالب."})
+    if body.min_qty is not None and body.max_qty is not None and body.max_qty < body.min_qty:
+        raise HTTPException(422, {"code": "validation",
+                                  "message": "الحد الأقصى أقل من الحد الأدنى."})
+    lim = db.scalar(select(ItemWarehouseLimit).where(
+        ItemWarehouseLimit.item_id == body.item_id,
+        ItemWarehouseLimit.warehouse_id == body.warehouse_id))
+    if body.min_qty is None and body.max_qty is None:
+        if lim is not None:
+            db.delete(lim)
+    else:
+        if lim is None:
+            lim = ItemWarehouseLimit(item_id=body.item_id, warehouse_id=body.warehouse_id)
+            db.add(lim)
+        lim.min_qty, lim.max_qty, lim.updated_by = body.min_qty, body.max_qty, current.id
+    db.commit()
+    return {"ok": True}
 
 
 @router.get("/sales")

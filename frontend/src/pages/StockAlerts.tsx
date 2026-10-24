@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Button, Input, Tag, message } from 'antd';
+import { Button, Input, Select, Tag, message } from 'antd';
 import { AlertOutlined, ClearOutlined, ReloadOutlined, SearchOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import { Table } from 'antd';
@@ -15,6 +15,9 @@ import { qty, numeralsLocale } from '../utils/money';
 import { STOCK_TOPICS, useLiveRefresh } from '../utils/live';
 
 interface Row {
+  key: string;
+  warehouse_id: number;
+  warehouse_name: string | null;
   item_id: number;
   code: string | null;
   name: string;
@@ -47,7 +50,12 @@ function LimitCell({ row, field, onSaved }: {
     const after = value ?? null;
     if (before === after) return;
     try {
-      await api.patch(`/api/v1/items/${row.item_id}`, { [field]: after === null ? null : String(after) });
+      const other = field === 'min_stock' ? row.max_stock : row.min_stock;
+      await api.put('/api/v1/reports/reorder/limit', {
+        item_id: row.item_id, warehouse_id: row.warehouse_id,
+        min_qty: field === 'min_stock' ? (after === null ? null : String(after)) : other,
+        max_qty: field === 'max_stock' ? (after === null ? null : String(after)) : other,
+      });
       onSaved({ ...row, [field]: after === null ? null : String(after) });
       message.success('تم الحفظ');
     } catch (err: any) {
@@ -85,16 +93,33 @@ export default function StockAlerts() {
   const [loading, setLoading] = useState(false);
   const [tab, setTab] = useQueryTab('below_min');
   const searchRef = useRef<any>(null);
+  const [warehouses, setWarehouses] = useState<{ id: number; name: string }[]>([]);
+  const [warehouseId, setWarehouseId] = useState<number | undefined>(() => {
+    try { return Number(localStorage.getItem('reorder.warehouse')) || undefined; } catch { return undefined; }
+  });
 
   const load = async (opts?: { silent?: boolean }) => {
     if (!opts?.silent) setLoading(true);
     try {
-      const res = await api.get('/api/v1/reports/reorder', { params: { include_all: true } });
+      const res = await api.get('/api/v1/reports/reorder/warehouses', {
+        params: warehouseId ? { warehouse_id: warehouseId } : {},
+      });
       setRows(res.data.rows || []);
     } catch (err) { console.error(err); } finally { if (!opts?.silent) setLoading(false); }
   };
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => {
+    api.get('/api/v1/warehouses')
+      .then((r) => setWarehouses((r.data || []).filter((w: any) => w.active !== false)))
+      .catch(() => setWarehouses([]));
+  }, []);
+  useEffect(() => {
+    try {
+      if (warehouseId) localStorage.setItem('reorder.warehouse', String(warehouseId));
+      else localStorage.removeItem('reorder.warehouse');
+    } catch {}
+    load();
+  }, [warehouseId]);
   useLiveRefresh(STOCK_TOPICS, () => load({ silent: true }));
   useScreenShortcuts({ onSearch: () => searchRef.current?.focus?.() });
 
@@ -105,13 +130,14 @@ export default function StockAlerts() {
   }, [rows]);
 
   const tabRows = tab === 'all' ? rows : rows.filter((r) => r.flag === tab);
-  const filter = useListFilter(tabRows, { search: (r) => [r.code, r.name, r.category] });
+  const filter = useListFilter(tabRows, { search: (r) => [r.code, r.name, r.category, r.warehouse_name] });
 
-  const update = (r: Row) => setRows((prev) => prev.map((x) => (x.item_id === r.item_id ? recompute(r) : x)));
+  const update = (r: Row) => setRows((prev) => prev.map((x) => (x.key === r.key ? recompute(r) : x)));
 
   const columns = [
     { title: 'الصنف', dataIndex: 'name', key: 'name',
       render: (v: string, r: Row) => <a onClick={() => navigate(`/catalog/${r.item_id}`)}>{v}</a> },
+    { title: 'المخزن', dataIndex: 'warehouse_name', key: 'warehouse_name', render: (v: string | null) => v || '' },
     { title: 'الفئة', dataIndex: 'category', key: 'category', render: (v: string | null) => v || '' },
     { title: 'الوحدة', dataIndex: 'unit_of_measure', key: 'unit_of_measure', width: 90 },
     { title: 'الرصيد الحالي', dataIndex: 'on_hand', key: 'on_hand', align: 'left' as const, total: false,
@@ -150,6 +176,10 @@ export default function StockAlerts() {
         <Button icon={<ReloadOutlined />} onClick={() => load()} loading={loading}>تحديث</Button>
       </>)}
       filters={(<>
+        <Select style={{ minWidth: 200 }} allowClear placeholder="كل المخازن (الأصناف اللي ليها حد)"
+          value={warehouseId} onChange={(v) => setWarehouseId(v ?? undefined)}
+          showSearch optionFilterProp="label"
+          options={warehouses.map((w) => ({ value: w.id, label: w.name }))} />
         <Input className="sl-f-search" allowClear ref={searchRef} value={filter.query}
           placeholder="بحث بالصنف أو الكود أو الفئة" prefix={<SearchOutlined />}
           onChange={(e) => filter.setQuery(e.target.value)} />
@@ -162,9 +192,11 @@ export default function StockAlerts() {
       </>)}
     >
       <Table<Row>
-        className="sl-table" rowKey="item_id" size="small" loading={loading}
+        className="sl-table" rowKey="key" size="small" loading={loading}
         dataSource={filter.filtered} columns={cols.columns as any}
-        locale={{ emptyText: tab === 'below_min' ? 'لا توجد أصناف تحت الحد' : 'لا توجد أصناف' }}
+        locale={{ emptyText: !warehouseId && tab !== 'below_min' && tab !== 'above_max'
+          ? 'اختر مخزن من فوق عشان تحدد حد لأصنافه'
+          : tab === 'below_min' ? 'لا توجد أصناف تحت الحد' : 'لا توجد أصناف' }}
         pagination={{ defaultPageSize: PAGE_SIZE, showSizeChanger: true }}
       />
     </ListPage>

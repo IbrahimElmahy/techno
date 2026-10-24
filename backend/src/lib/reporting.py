@@ -518,3 +518,59 @@ def stock_value(db: Session, *, warehouse_id: int | None = None,
         })
     rows.sort(key=lambda r: (r["category"] or "", r["item_name"], r["warehouse"]))
     return {"rows": rows}
+
+
+def warehouse_reorder(db: Session, *, branch_id: int | None = None,
+                      warehouse_id: int | None = None) -> dict:
+    from src.models.stock import ItemWarehouseLimit
+    from src.models.warehouse import Warehouse
+
+    signed = func.sum(case(
+        (StockMovement.direction == StockDirection.in_, StockMovement.quantity),
+        else_=-StockMovement.quantity,
+    ))
+    mine = branch_warehouse_ids(db, branch_id)
+    whs = {w.id: w.name for w in db.scalars(select(Warehouse)).all()
+           if (mine is None or w.id in mine) and (warehouse_id is None or w.id == warehouse_id)}
+    limits = {(lim.item_id, lim.warehouse_id): lim for lim in db.scalars(
+        select(ItemWarehouseLimit).where(ItemWarehouseLimit.warehouse_id.in_(whs or {-1}))).all()}
+    stock = {(i, w): to_qty(q) for i, w, q in db.execute(
+        select(StockMovement.item_id, StockMovement.location_id, signed)
+        .where(StockMovement.location_kind == LocationKind.warehouse,
+               StockMovement.location_id.in_(whs or {-1}))
+        .group_by(StockMovement.item_id, StockMovement.location_id)).all()}
+    keys = set(limits) | (set(stock) if warehouse_id is not None else set())
+    items = {i.id: i for i in db.scalars(
+        select(Item).where(Item.id.in_({k[0] for k in keys} or {-1}))).all()}
+    rows = []
+    for item_id, wid in keys:
+        item = items.get(item_id)
+        if item is None or not item.active:
+            continue
+        lim = limits.get((item_id, wid))
+        lo = to_qty(lim.min_qty) if lim is not None and lim.min_qty is not None else None
+        hi = to_qty(lim.max_qty) if lim is not None and lim.max_qty is not None else None
+        have = stock.get((item_id, wid), to_qty(0))
+        if lo is None and hi is None:
+            flag = "unset"
+        elif lo is not None and have < lo:
+            flag = "below_min"
+        elif hi is not None and have > hi:
+            flag = "above_max"
+        else:
+            flag = "ok"
+        rows.append({
+            "key": f"{item_id}-{wid}", "item_id": item_id, "code": item.code, "name": item.name,
+            "unit_of_measure": item.unit_of_measure, "category": item.category,
+            "warehouse_id": wid, "warehouse_name": whs.get(wid),
+            "on_hand": str(have),
+            "min_stock": str(lo) if lo is not None else None,
+            "max_stock": str(hi) if hi is not None else None,
+            "shortfall": str(lo - have) if flag == "below_min" else None,
+            "excess": str(have - hi) if flag == "above_max" else None,
+            "flag": flag,
+        })
+    rows.sort(key=lambda r: (r["warehouse_name"] or "", r["name"]))
+    return {"rows": rows,
+            "below_min": sum(1 for r in rows if r["flag"] == "below_min"),
+            "above_max": sum(1 for r in rows if r["flag"] == "above_max")}

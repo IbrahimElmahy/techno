@@ -92,6 +92,22 @@ class StockSetting(Base):
     )
 
 
+class ItemWarehouseLimit(Base):
+    __tablename__ = "item_warehouse_limit"
+    __table_args__ = (UniqueConstraint("item_id", "warehouse_id", name="uq_item_warehouse_limit"),)
+
+    id: Mapped[int] = mapped_column(BigIntPK, primary_key=True, autoincrement=True)
+    item_id: Mapped[int] = mapped_column(ForeignKey("item.id"), nullable=False, index=True)
+    warehouse_id: Mapped[int] = mapped_column(ForeignKey("warehouse.id"), nullable=False,
+                                              index=True)
+    min_qty: Mapped[object | None] = mapped_column(QTY, nullable=True)
+    max_qty: Mapped[object | None] = mapped_column(QTY, nullable=True)
+    updated_by: Mapped[int | None] = mapped_column(ForeignKey("user.id"), nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+
 class ItemCostReset(Base):
     __tablename__ = "item_cost_reset"
 
