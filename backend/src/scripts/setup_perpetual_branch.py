@@ -22,7 +22,7 @@ ACCOUNTS = {
     "cogs": ("COGS", "تكلفة البضاعة المباعة", "تكلفة المبيعات", AccountNature.expense,
              Direction.debit),
     "adjust": ("ADJ", "فروق جرد المخزون", "فروق مخزون", AccountNature.expense, Direction.debit),
-    "opening": ("OPN", "تسوية مخزون بداية الجرد المستمر", "ارباح وخسائر مرحلة",
+    "opening": ("OPN", "حساب وسيط — مخزون بداية الجرد المستمر", "ارباح وخسائر مرحلة",
                 AccountNature.equity, Direction.credit),
 }
 NOT_IN_STATEMENT = ("cogs", "adjust", "opening")
