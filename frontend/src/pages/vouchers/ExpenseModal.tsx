@@ -1,5 +1,7 @@
-import React from 'react';
-import { Form, Input, Space } from 'antd';
+import React, { useEffect, useState } from 'react';
+import { Form, Input, Select, Space } from 'antd';
+import { api } from '../../api/client';
+import { searchFilter } from '../../utils/arabicSort';
 import type { FormInstance } from 'antd';
 import CostCenterField from '../../components/CostCenterField';
 import CostCenterSplit from '../../components/CostCenterSplit';
@@ -25,13 +27,33 @@ export default function ExpenseModal({
   const accountId = Form.useWatch('expense_account_id', form);
   const account = expenseAccounts.find((a) => a.id === accountId);
   const name = account ? (account.name ?? null) : null;
+  const perVehicle = /مخالف|ترخيص|تراخيص/.test(name || '');
+  const [vehicles, setVehicles] = useState<any[]>([]);
+  useEffect(() => {
+    if (!perVehicle || vehicles.length) return;
+    api.get('/api/v1/vouchers/vehicles').then((r) => setVehicles(r.data || [])).catch(() => {});
+  }, [perVehicle]);
+  useEffect(() => {
+    if (!perVehicle && form.getFieldValue('vehicle_id')) form.setFieldsValue({ vehicle_id: undefined });
+  }, [perVehicle]);
 
   const party = (
-    <ExpenseAccountField accounts={expenseAccounts} groups={expenseGroups}
-      onCreated={loadExpenseAccounts} width="100%"
-      extra={account ? (
-        <span className="vs-hint">المنصرف عليه حتى الآن: <b>{money(account.balance)}</b></span>
-      ) : undefined} />
+    <>
+      <ExpenseAccountField accounts={expenseAccounts} groups={expenseGroups}
+        onCreated={loadExpenseAccounts} width="100%"
+        extra={account ? (
+          <span className="vs-hint">المنصرف عليه حتى الآن: <b>{money(account.balance)}</b></span>
+        ) : undefined} />
+      {perVehicle && (
+        <Form.Item name="vehicle_id" label="السيارة">
+          <Select showSearch allowClear placeholder="اختر السيارة" filterOption={searchFilter}
+            options={vehicles.map((v) => ({
+              value: v.id,
+              label: [v.code, v.kind, v.plate_number].filter(Boolean).join(' — '),
+            }))} />
+        </Form.Item>
+      )}
+    </>
   );
 
   const details: React.ReactNode[] = [

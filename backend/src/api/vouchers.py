@@ -100,6 +100,7 @@ class ExpenseIn(BaseModel):
     cost_center_distribution: dict[str, Decimal] | None = None
     statement1: str | None = Field(default=None, max_length=200)
     external_document_number: str | None = Field(default=None, max_length=40)
+    vehicle_id: int | None = None
 
 
 class CashTransferIn(BaseModel):
@@ -177,6 +178,7 @@ class VoucherOut(BaseModel):
     external_document_number: str | None = None
     party_account_id: int | None = None
     cash_account_id: int | None = None
+    vehicle_id: int | None = None
     ledger_entry_id: int | None
     is_reversal: bool
 
@@ -278,6 +280,7 @@ def _out(v) -> VoucherOut:
         external_document_number=getattr(v, "external_document_number", None),
         party_account_id=getattr(v, "party_account_id", None),
         cash_account_id=getattr(v, "cash_account_id", None),
+        vehicle_id=getattr(v, "vehicle_id", None),
         is_reversal=v.reverses_id is not None,
     )
 
@@ -549,11 +552,24 @@ def create_expense(
             voucher_date=body.voucher_date, description=body.description,
             reference=body.reference, payment_method=body.payment_method,
             cost_center_id=body.cost_center_id, statement1=body.statement1, external_document_number=body.external_document_number,
-            cost_center_distribution=body.cost_center_distribution)
+            cost_center_distribution=body.cost_center_distribution, vehicle_id=body.vehicle_id)
     except (VoucherError, TreasuryError, LedgerError) as exc:
         raise _conflict(exc)
     db.commit()
     return _out(v)
+
+
+@router.get("/vouchers/vehicles")
+def voucher_vehicles(
+    current: CurrentUser = Depends(require_capability(CAP_VOUCHER_READ)),
+    db: Session = Depends(get_db),
+) -> list[dict]:
+    from src.models.fleet import Vehicle
+
+    rows = db.scalars(branch_scope.scope(select(Vehicle), Vehicle, current)
+                      .where(Vehicle.active.is_(True)).order_by(Vehicle.code)).all()
+    return [{"id": v.id, "code": v.code, "kind": v.kind, "plate_number": v.plate_number}
+            for v in rows]
 
 
 @router.put("/vouchers/expenses/{voucher_id}", response_model=VoucherOut)

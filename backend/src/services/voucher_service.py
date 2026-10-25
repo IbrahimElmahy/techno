@@ -437,6 +437,7 @@ def create_expense(
     cost_center_distribution: dict | None = None, statement1: str | None = None,
     external_document_number: str | None = None,
     replacing: dict | None = None,
+    vehicle_id: int | None = None,
 ) -> Voucher:
     value = _positive(amount)
     account = db.get(Account, expense_account_id)
@@ -463,6 +464,8 @@ def create_expense(
         cost_center_distribution=cost_center_distribution, statement1=statement1,
         external_document_number=external_document_number, replacing=replacing,
     )
+    voucher.vehicle_id = vehicle_id
+    db.flush()
     from src.services import fleet_service
 
     fleet_service.sync_expense_voucher(db, voucher)

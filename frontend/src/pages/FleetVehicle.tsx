@@ -119,6 +119,8 @@ const COLS: Record<string, Col[]> = {
     { title: 'كم/لتر', value: (r) => (r.km_per_liter ? num(r.km_per_liter, { maximumFractionDigits: 2 }) : ''), numeric: true },
     { title: 'الوقود', value: (r) => money(r.fuel_amount), numeric: true },
     { title: 'الصيانة', value: (r) => money(r.maintenance_cost), numeric: true },
+    { title: 'الزيت', value: (r) => money(r.oil_cost), numeric: true },
+    { title: 'الكارتة', value: (r) => money(r.toll_cost), numeric: true },
     { title: 'الأعطال', value: (r) => money(r.faults_cost), numeric: true },
     { title: 'إجمالي التشغيل', value: (r) => money(r.total), numeric: true },
     { title: 'المخالفات', value: (r) => money(r.violations_amount), numeric: true },
@@ -242,7 +244,7 @@ export default function FleetVehicle() {
           tone={v.km_to_maintenance !== null && v.km_to_maintenance < 0 ? 'neg' : undefined} />
         <ListStat label="متوسط كم/لتر" value={kmpl ? num(kmpl, { maximumFractionDigits: 2 }) : '-'} />
         <ListStat label="الوقود (آخر ١٢ شهرًا)" value={money(sum(year, 'fuel_amount'))} />
-        <ListStat label="الصيانة والأعطال (آخر ١٢ شهرًا)" value={money(sum(year, 'maintenance_cost') + sum(year, 'faults_cost'))} />
+        <ListStat label="الصيانة والأعطال (آخر ١٢ شهرًا)" value={money(sum(year, 'maintenance_cost') + sum(year, 'faults_cost') + sum(year, 'oil_cost'))} />
         <ListStat label="المخالفات (آخر ١٢ شهرًا)" value={money(sum(year, 'violations_amount'))} tone="warn" />
       </div>
 

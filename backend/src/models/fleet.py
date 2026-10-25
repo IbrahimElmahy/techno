@@ -214,6 +214,7 @@ class VehicleViolation(_VehicleRecord, Base):
     paid_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     admin_action: Mapped[str | None] = mapped_column(String(300), nullable=True)
     voucher_id: Mapped[int | None] = mapped_column(ForeignKey("voucher.id"), nullable=True)
+    from_voucher: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     penalty_adjustment_id: Mapped[int | None] = mapped_column(
         ForeignKey("payroll_adjustment.id"), nullable=True)
 

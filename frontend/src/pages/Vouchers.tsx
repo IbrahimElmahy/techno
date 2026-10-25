@@ -526,7 +526,8 @@ const Vouchers: React.FC = () => {
       setTimeout(() => paymentForm.setFieldsValue(values), 0);
     } else if (v.kind === 'expense') {
       expenseForm.resetFields();
-      const values = { ...common, expense_account_id: v.party_account_id ?? undefined };
+      const values = { ...common, expense_account_id: v.party_account_id ?? undefined,
+        vehicle_id: v.vehicle_id ?? undefined };
       expenseForm.setFieldsValue(values);
       setExpenseOpen(true);
       setTimeout(() => expenseForm.setFieldsValue(values), 0);

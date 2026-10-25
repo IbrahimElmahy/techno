@@ -55,6 +55,7 @@ CHECK_FIELDS = ("fuel", "oil_water", "tires", "brakes", "lights", "cleanliness")
 
 OIL_KIND = "تغيير زيت"
 TOLL_KIND = "كارتة"
+LICENSE_KIND = "ترخيص"
 
 MONEY_SOURCES = {
     "maintenance": (VehicleMaintenance, "cost", "صيانة"),
@@ -584,9 +585,10 @@ def dashboard(db: Session, current: CurrentUser, today: date | None = None) -> d
     }
 
 
-def _sum_by_vehicle(db, model, cols, start, end, vids):
+def _sum_by_vehicle(db, model, cols, start, end, vids, where=()):
     q = (select(model.vehicle_id, func.count(), *[func.coalesce(func.sum(c), 0) for c in cols])
-         .where(model.record_date >= start, model.record_date <= end, model.vehicle_id.in_(vids))
+         .where(model.record_date >= start, model.record_date <= end, model.vehicle_id.in_(vids),
+                *where)
          .group_by(model.vehicle_id))
     return {r[0]: r[1:] for r in db.execute(q).all()}
 
@@ -653,7 +655,13 @@ def monthly_report(db: Session, current: CurrentUser, year: int, month: int) -> 
     vehicles = db.scalars(branch_scope.scope(select(Vehicle), Vehicle, current)
                           .order_by(Vehicle.code)).all()
     vids = [v.id for v in vehicles]
-    maint = _sum_by_vehicle(db, VehicleMaintenance, [VehicleMaintenance.cost], start, end, vids)
+    kind = func.coalesce(VehicleMaintenance.kind, "")
+    maint = _sum_by_vehicle(db, VehicleMaintenance, [VehicleMaintenance.cost], start, end, vids,
+                            (kind.not_in([OIL_KIND, TOLL_KIND]),))
+    oil = _sum_by_vehicle(db, VehicleMaintenance, [VehicleMaintenance.cost], start, end, vids,
+                          (kind == OIL_KIND,))
+    tolls = _sum_by_vehicle(db, VehicleMaintenance, [VehicleMaintenance.cost], start, end, vids,
+                            (kind == TOLL_KIND,))
     fuel = _sum_by_vehicle(db, VehicleFuel, [VehicleFuel.liters, VehicleFuel.amount], start, end, vids)
     faults = _sum_by_vehicle(db, VehicleFault, [VehicleFault.cost], start, end, vids)
     viol = _sum_by_vehicle(db, VehicleViolation, [VehicleViolation.amount], start, end, vids)
@@ -676,7 +684,9 @@ def monthly_report(db: Session, current: CurrentUser, year: int, month: int) -> 
         f = fuel.get(v.id, (0, 0, 0))
         fa = faults.get(v.id, (0, 0))
         vi = viol.get(v.id, (0, 0))
-        has_any = any(x[0] for x in (m, f, fa, vi))
+        oi = oil.get(v.id, (0, 0))
+        to = tolls.get(v.id, (0, 0))
+        has_any = any(x[0] for x in (m, f, fa, vi, oi, to))
         if not v.active and not has_any:
             continue
         k = km.get(v.id)
@@ -684,12 +694,14 @@ def monthly_report(db: Session, current: CurrentUser, year: int, month: int) -> 
         base = _div(*b_cons[v.id]) if v.id in b_cons else None
         ref = base or fleet_kmpl
         abnormal = bool(kmpl is not None and ref and kmpl < ref * (1 - pct))
-        cost = Decimal(str(m[1])) + Decimal(str(f[2])) + Decimal(str(fa[1]))
+        cost = (Decimal(str(m[1])) + Decimal(str(f[2])) + Decimal(str(fa[1]))
+                + Decimal(str(oi[1])) + Decimal(str(to[1])))
         rows.append({
             "vehicle_id": v.id, "vehicle_code": v.code, "kind": v.kind,
             "plate_number": v.plate_number,
             "driver_name": drivers.get(v.current_driver_id),
             "maintenance_count": int(m[0]), "maintenance_cost": Decimal(str(m[1])),
+            "oil_cost": Decimal(str(oi[1])), "toll_cost": Decimal(str(to[1])),
             "fuel_count": int(f[0]), "fuel_liters": Decimal(str(f[1])),
             "fuel_amount": Decimal(str(f[2])),
             "faults_count": int(fa[0]), "faults_cost": Decimal(str(fa[1])),
@@ -737,16 +749,20 @@ def monthly_costs(db: Session, vehicle_id: int, months: int = 12) -> list[dict]:
     for _ in range(months - 1):
         start = (start - timedelta(days=1)).replace(day=1)
 
-    def by_month(model, col):
+    def by_month(model, col, *where):
         ym = func.to_char(model.record_date, "YYYY-MM") if db.bind.dialect.name == "postgresql" \
             else func.strftime("%Y-%m", model.record_date)
         return dict(db.execute(select(ym, func.coalesce(func.sum(col), 0))
-                               .where(model.vehicle_id == vehicle_id, model.record_date >= start)
+                               .where(model.vehicle_id == vehicle_id, model.record_date >= start,
+                                      *where)
                                .group_by(ym)).all())
 
     fuel = by_month(VehicleFuel, VehicleFuel.amount)
     liters = by_month(VehicleFuel, VehicleFuel.liters)
-    maint = by_month(VehicleMaintenance, VehicleMaintenance.cost)
+    kind = func.coalesce(VehicleMaintenance.kind, "")
+    maint = by_month(VehicleMaintenance, VehicleMaintenance.cost, kind.not_in([OIL_KIND, TOLL_KIND]))
+    oil = by_month(VehicleMaintenance, VehicleMaintenance.cost, kind == OIL_KIND)
+    tolls = by_month(VehicleMaintenance, VehicleMaintenance.cost, kind == TOLL_KIND)
     faults = by_month(VehicleFault, VehicleFault.cost)
     viol = by_month(VehicleViolation, VehicleViolation.amount)
     out = []
@@ -756,11 +772,11 @@ def monthly_costs(db: Session, vehicle_id: int, months: int = 12) -> list[dict]:
         last = date(cur.year, cur.month, monthrange(cur.year, cur.month)[1])
         km = _km_by_vehicle(db, [vehicle_id], cur, last).get(vehicle_id)
         cons = _consumption(db, [vehicle_id], cur, last).get(vehicle_id)
-        f, m, fa = (Decimal(str(d.get(key, 0))) for d in (fuel, maint, faults))
+        f, m, fa, oi, to = (Decimal(str(d.get(key, 0))) for d in (fuel, maint, faults, oil, tolls))
         out.append({"month": key, "fuel_amount": f, "fuel_liters": Decimal(str(liters.get(key, 0))),
-                    "maintenance_cost": m, "faults_cost": fa,
+                    "maintenance_cost": m, "oil_cost": oi, "toll_cost": to, "faults_cost": fa,
                     "violations_amount": Decimal(str(viol.get(key, 0))),
-                    "total": f + m + fa, "km": km,
+                    "total": f + m + fa + oi + to, "km": km,
                     "km_per_liter": _div(*cons) if cons else None})
         cur = last + timedelta(days=1)
     return out
@@ -891,8 +907,23 @@ def vehicle_for_account(db: Session, account_id: int | None):
     return None
 
 
+def vehicle_for_voucher(db: Session, voucher: Voucher):
+    target = vehicle_for_account(db, voucher.party_account_id)
+    if target is not None or not voucher.vehicle_id:
+        return target
+    vehicle = db.get(Vehicle, voucher.vehicle_id)
+    if vehicle is None:
+        return None
+    name = (db.get(Account, voucher.party_account_id).name or "")
+    if "مخالف" in name:
+        return vehicle, VehicleViolation, None
+    if "ترخيص" in name or "تراخيص" in name:
+        return vehicle, VehicleMaintenance, LICENSE_KIND
+    return vehicle, VehicleMaintenance, None
+
+
 def _voucher_records(db: Session, voucher_id: int) -> list:
-    return [r for model in (VehicleFuel, VehicleMaintenance)
+    return [r for model in (VehicleFuel, VehicleMaintenance, VehicleViolation)
             for r in db.scalars(select(model).where(model.voucher_id == voucher_id)).all()]
 
 
@@ -916,7 +947,7 @@ def sync_expense_voucher(db: Session, voucher: Voucher) -> None:
     records = _voucher_records(db, voucher.id)
     if any(not r.from_voucher for r in records):
         return
-    target = vehicle_for_account(db, voucher.party_account_id)
+    target = vehicle_for_voucher(db, voucher)
     keep = None
     if target is not None:
         vehicle, model, kind = target
@@ -932,6 +963,10 @@ def sync_expense_voucher(db: Session, voucher: Voucher) -> None:
         keep.notes = (voucher.description or voucher.statement1 or "")[:500] or None
         if model is VehicleFuel:
             keep.amount = voucher.amount
+        elif model is VehicleViolation:
+            keep.amount = voucher.amount
+            keep.paid, keep.paid_date = True, voucher.voucher_date
+            keep.driver_id = keep.driver_id or driver_on(db, vehicle, voucher.voucher_date)
         else:
             keep.cost = voucher.amount
             keep.kind = kind or (keep.kind if keep.kind not in (OIL_KIND, TOLL_KIND) else None)                 or "صيانة"

@@ -51,6 +51,8 @@ export default function FleetMonthly() {
     { key: 'driver', title: 'السائق', text: (r) => r.driver_name },
     { key: 'm_count', title: 'عدد الصيانات', text: (r) => r.maintenance_count, numeric: true },
     { key: 'm_cost', title: 'إجمالي تكلفة الصيانة', text: (r) => money(r.maintenance_cost), numeric: true },
+    { key: 'oil', title: 'الزيت', text: (r) => money(r.oil_cost), numeric: true },
+    { key: 'tolls', title: 'الكارتة', text: (r) => money(r.toll_cost), numeric: true },
     { key: 'liters', title: 'إجمالي الوقود (لتر)', text: (r) => qty(r.fuel_liters), numeric: true },
     { key: 'fuel', title: 'إجمالي قيمة الوقود', text: (r) => money(r.fuel_amount), numeric: true },
     { key: 'f_count', title: 'عدد الأعطال', text: (r) => r.faults_count, numeric: true },
@@ -90,6 +92,8 @@ export default function FleetMonthly() {
   const totals = [
     { label: 'عدد السيارات', value: num(rows.length) },
     { label: 'تكلفة الصيانة', value: money(sum('maintenance_cost')) },
+    { label: 'الزيت', value: money(sum('oil_cost')) },
+    { label: 'الكارتة', value: money(sum('toll_cost')) },
     { label: 'الوقود (لتر)', value: qty(sum('fuel_liters')) },
     { label: 'قيمة الوقود', value: money(sum('fuel_amount')) },
     { label: 'تكلفة الأعطال', value: money(sum('faults_cost')) },

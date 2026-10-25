@@ -359,6 +359,8 @@ _ADDED_COLUMNS: list[tuple[str, str, str]] = [
     ("fleet_maintenance", "next_oil_km", "INTEGER"),
     ("fleet_maintenance", "from_voucher", "BOOLEAN NOT NULL DEFAULT FALSE"),
     ("fleet_fuel", "from_voucher", "BOOLEAN NOT NULL DEFAULT FALSE"),
+    ("fleet_violation", "from_voucher", "BOOLEAN NOT NULL DEFAULT FALSE"),
+    ("voucher", "vehicle_id", "BIGINT"),
     ("sales_setting", "print_options", "VARCHAR(2000)"),
     ("user", "session_client", "VARCHAR(16)"),
     ("user", "session_started_at", "TIMESTAMP"),

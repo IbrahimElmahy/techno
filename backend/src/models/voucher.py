@@ -58,6 +58,7 @@ class Voucher(Base):
     external_document_number: Mapped[str | None] = mapped_column(
         String(40), nullable=True, index=True)
     statement1: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    vehicle_id: Mapped[int | None] = mapped_column(ForeignKey("fleet_vehicle.id"), nullable=True)
 
     ledger_entry_id: Mapped[int | None] = mapped_column(ForeignKey("ledger_entry.id"),
                                                         nullable=True)
