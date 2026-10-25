@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { searchFilter, searchRank, sortByName } from '../utils/arabicSort';
 import { PAGE_SIZE } from '../utils/pagination';
-import { Button, Input, Select, Tag, message } from 'antd';
+import { Button, DatePicker, Input, Select, Tag, message } from 'antd';
 import { FilterTable as Table } from '../components/FilterTable';
 import { InputNumber } from '../components/NumberInput';
 import {
@@ -11,7 +11,6 @@ import ListPage from '../components/ListPage';
 import dayjs, { Dayjs } from 'dayjs';
 import { api } from '../api/client';
 import { useListFilter } from '../components/ListToolbar';
-import DateRangeFilter from '../components/DateRangeFilter';
 import { choiceColumn, numberColumn, textColumn } from '../components/gridColumns';
 import MovementHistoryLog from '../components/MovementHistoryLog';
 import { useScreenShortcuts, useTableKeyboard } from '../components/keyboard';
@@ -265,16 +264,14 @@ export default function Stocktake() {
           prefix={<SearchOutlined />} placeholder="بحث بالصنف أو الكود أو الموقع"
           value={filter.query} onChange={(e) => filter.setQuery(e.target.value)}
         />
-        <DateRangeFilter
-          className="sl-f-dates"
-          allowClear={false}
-          value={[dateFrom, asOf] as any}
-          placeholder={['من تاريخ', 'الرصيد حتى']}
-          onChange={(v: any) => {
-            if (!v || !v[1]) { setDateFrom(null); return; }
-            setDateFrom(v[0] || null);
-            setAsOf(v[1]);
-          }}
+        <DatePicker
+          allowClear={false} format="YYYY/MM/DD" placeholder="الرصيد حتى تاريخ"
+          value={asOf} onChange={(d) => d && setAsOf(d)}
+        />
+        <DatePicker
+          format="YYYY/MM/DD" placeholder="سجل الحركة من تاريخ"
+          value={dateFrom} onChange={(d) => setDateFrom(d || null)}
+          disabledDate={(d) => d.isAfter(asOf, 'day')}
         />
         <Select showSearch
           allowClear placeholder="كل المخازن"
