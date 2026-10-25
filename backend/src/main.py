@@ -352,6 +352,8 @@ _ADDED_COLUMNS: list[tuple[str, str, str]] = [
     ("user", "session_id", "VARCHAR(64)"),
     ("user", "branch_ids", "VARCHAR(64)"),
     ("fleet_vehicle", "next_oil_km", "INTEGER"),
+    ("fleet_vehicle", "oil_account_id", "BIGINT"),
+    ("fleet_vehicle", "toll_account_id", "BIGINT"),
     ("fleet_maintenance", "oil_type", "VARCHAR(80)"),
     ("fleet_maintenance", "oil_liters", "DECIMAL(18,3)"),
     ("fleet_maintenance", "next_oil_km", "INTEGER"),

@@ -23,13 +23,19 @@ import {
 } from '../components/fleet/fleetShared';
 
 interface Detail {
-  vehicle: any; assignments: any[]; maintenance: any[]; oil: any[]; fuel: any[]; faults: any[];
+  vehicle: any; assignments: any[]; maintenance: any[]; oil: any[]; tolls: any[]; fuel: any[]; faults: any[];
   violations: any[]; inspections: any[]; monthly: any[];
 }
 
 type Col = PrintColumn<any> & { render?: (r: any) => React.ReactNode };
 
 const COLS: Record<string, Col[]> = {
+  tolls: [
+    { title: 'التاريخ', value: (r) => d10(r.record_date) },
+    { title: 'المبلغ', value: (r) => money(r.cost), numeric: true },
+    { title: 'ملاحظات', value: 'notes' },
+    { title: 'سند المصروف', value: (r) => (r.voucher_reversed ? '' : r.voucher_number || '') },
+  ],
   oil: [
     { title: 'التاريخ', value: (r) => d10(r.record_date) },
     { title: 'العداد', value: (r) => km(r.odometer), numeric: true },
@@ -120,7 +126,7 @@ const COLS: Record<string, Col[]> = {
 };
 
 const TAB_LABELS: Record<string, string> = {
-  maintenance: 'الصيانة', oil: 'الزيت', fuel: 'الوقود', faults: 'الأعطال', violations: 'المخالفات',
+  maintenance: 'الصيانة', oil: 'الزيت', tolls: 'الكارتة', fuel: 'الوقود', faults: 'الأعطال', violations: 'المخالفات',
   inspections: 'الفحص اليومي', assignments: 'السائقون', monthly: 'التكلفة الشهرية',
 };
 
@@ -195,7 +201,7 @@ export default function FleetVehicle() {
   );
 
   const LINK: Record<string, string> = {
-    maintenance: '/fleet/maintenance', oil: '/fleet/oil', fuel: '/fleet/fuel', faults: '/fleet/faults',
+    maintenance: '/fleet/maintenance', oil: '/fleet/oil', tolls: '/fleet/tolls', fuel: '/fleet/fuel', faults: '/fleet/faults',
     violations: '/fleet/violations', inspections: '/fleet/inspections',
   };
 

@@ -4,7 +4,7 @@ import {
   Tooltip,
 } from 'antd';
 import {
-  AlertOutlined, ClearOutlined, ExperimentOutlined, DeleteOutlined, EditOutlined, FireOutlined, PlusOutlined,
+  AlertOutlined, CarOutlined, ClearOutlined, ExperimentOutlined, DeleteOutlined, EditOutlined, FireOutlined, PlusOutlined,
   PrinterOutlined, ReloadOutlined, SearchOutlined, ToolOutlined, WarningOutlined,
 } from '@ant-design/icons';
 import { useSearchParams } from 'react-router-dom';
@@ -28,7 +28,7 @@ import {
   VehicleSelect, d10, km, labelOf, optionsOf, tagOf, useFleetLookups,
 } from '../components/fleet/fleetShared';
 
-type Kind = 'maintenance' | 'oil' | 'fuel' | 'faults' | 'violations';
+type Kind = 'maintenance' | 'oil' | 'tolls' | 'fuel' | 'faults' | 'violations';
 
 type FieldType = 'date' | 'vehicle' | 'driver' | 'int' | 'money' | 'qty' | 'text' | 'textarea'
   | 'select' | 'bool' | 'suggest' | 'fault';
@@ -52,6 +52,16 @@ const VIOLATION_KINDS = ['سرعة', 'انتظار خاطئ', 'رخصة', 'حز�
 const OIL_TYPES = ['5W-30', '5W-40', '10W-40', '15W-40', '20W-50', 'زيت فتيس', 'زيت باور'];
 
 const CONFIG: Record<Kind, KindConfig> = {
+  tolls: {
+    title: 'الكارتة', icon: <CarOutlined />, create: 'كارتة جديدة',
+    source: 'maintenance', amountKey: 'cost', hasDriver: false,
+    fields: [
+      { name: 'record_date', label: 'التاريخ', type: 'date', required: true, span: 8 },
+      { name: 'vehicle_id', label: 'السيارة', type: 'vehicle', required: true, span: 8 },
+      { name: 'cost', label: 'المبلغ', type: 'money', span: 8 },
+      { name: 'notes', label: 'ملاحظات', type: 'text', span: 24 },
+    ],
+  },
   oil: {
     title: 'الزيت', icon: <ExperimentOutlined />, create: 'تغيير زيت جديد',
     source: 'maintenance', amountKey: 'cost', hasDriver: false,
@@ -279,6 +289,9 @@ export default function FleetRecords({ kind }: { kind: Kind }) {
       render: (r) => <MoneyCell row={r} amount={amountOf(r)} onOpen={() => setMoneyRow(r)} /> },
   ];
   const middle: Record<Kind, FleetCol<any>[]> = {
+    tolls: [
+      { key: 'cost', title: 'المبلغ', text: (r) => money(r.cost), numeric: true },
+    ],
     oil: [
       { key: 'odometer', title: 'العداد', text: (r) => km(r.odometer), numeric: true },
       { key: 'oil_type', title: 'نوع الزيت', text: (r) => r.oil_type },

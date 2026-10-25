@@ -98,6 +98,8 @@ class Vehicle(_Audit, Base):
     fuel_account_id: Mapped[int | None] = mapped_column(ForeignKey("account.id"), nullable=True)
     maintenance_account_id: Mapped[int | None] = mapped_column(
         ForeignKey("account.id"), nullable=True)
+    oil_account_id: Mapped[int | None] = mapped_column(ForeignKey("account.id"), nullable=True)
+    toll_account_id: Mapped[int | None] = mapped_column(ForeignKey("account.id"), nullable=True)
     cost_center_id: Mapped[int | None] = mapped_column(ForeignKey("cost_center.id"),
                                                        nullable=True)
     active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)

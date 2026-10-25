@@ -94,6 +94,7 @@ export interface FleetVehicle {
   next_maintenance_km: number | null; next_oil_km?: number | null; insurance_until: string | null; license_until: string | null;
   insurance_days_left: number | null; license_days_left: number | null;
   fuel_account_id: number | null; maintenance_account_id: number | null;
+  oil_account_id?: number | null; toll_account_id?: number | null;
   fuel_account_name: string | null; maintenance_account_name: string | null;
   cost_center_id: number | null; branch_id: number | null; active: boolean; notes: string | null;
 }

@@ -148,6 +148,8 @@ class VehicleIn(BaseModel):
     license_until: date | None = None
     fuel_account_id: int | None = None
     maintenance_account_id: int | None = None
+    oil_account_id: int | None = None
+    toll_account_id: int | None = None
     cost_center_id: int | None = None
     branch_id: int | None = None
     active: bool = True
@@ -166,7 +168,8 @@ def _vehicles_out(db: Session, vehicles: list[Vehicle]) -> list[dict]:
     states = svc.vehicle_states(db, vehicles)
     names = svc.employee_names(db, [v.current_driver_id for v in vehicles])
     accounts = dict(db.execute(select(Account.id, Account.name).where(Account.id.in_(
-        {a for v in vehicles for a in (v.fuel_account_id, v.maintenance_account_id) if a} or {0})))
+        {a for v in vehicles for a in (v.fuel_account_id, v.maintenance_account_id,
+                                       v.oil_account_id, v.toll_account_id) if a} or {0})))
         .all())
     today = date.today()
     out = []
@@ -181,6 +184,8 @@ def _vehicles_out(db: Session, vehicles: list[Vehicle]) -> list[dict]:
             "driver_name": names.get(v.current_driver_id),
             "fuel_account_name": accounts.get(v.fuel_account_id),
             "maintenance_account_name": accounts.get(v.maintenance_account_id),
+            "oil_account_name": accounts.get(v.oil_account_id),
+            "toll_account_name": accounts.get(v.toll_account_id),
             "insurance_days_left": (v.insurance_until - today).days if v.insurance_until else None,
             "license_days_left": (v.license_until - today).days if v.license_until else None,
         })
@@ -225,6 +230,7 @@ def create_vehicle(body: VehicleIn, current: CurrentUser = WRITE,
             insurance_until=body.insurance_until, license_until=body.license_until,
             fuel_account_id=body.fuel_account_id,
             maintenance_account_id=body.maintenance_account_id,
+            oil_account_id=body.oil_account_id, toll_account_id=body.toll_account_id,
             cost_center_id=body.cost_center_id, active=body.active, notes=body.notes,
             branch_id=svc.new_branch_id(db, current, body.branch_id),
             created_by_user_id=current.id)
@@ -258,6 +264,7 @@ def update_vehicle(vehicle_id: int, body: VehicleIn, current: CurrentUser = WRIT
         v.insurance_until, v.license_until = body.insurance_until, body.license_until
         v.fuel_account_id = body.fuel_account_id
         v.maintenance_account_id = body.maintenance_account_id
+        v.oil_account_id, v.toll_account_id = body.oil_account_id, body.toll_account_id
         v.cost_center_id = body.cost_center_id
         v.active, v.notes = body.active, body.notes
         if branch_scope.sees_all_branches(current) and body.branch_id:
@@ -380,8 +387,11 @@ def vehicle_detail(vehicle_id: int, current: CurrentUser = READ,
                          "km": (a.end_odometer if a.end_odometer is not None else v.odometer)
                          - a.start_odometer if a.start_odometer is not None else None}
                         for a in assignments],
-        "maintenance": _records_out(db, rows(VehicleMaintenance)),
+        "maintenance": _records_out(db, [r for r in rows(VehicleMaintenance)
+                                         if r.kind != svc.TOLL_KIND]),
         "oil": _records_out(db, [r for r in rows(VehicleMaintenance) if r.kind == svc.OIL_KIND]),
+        "tolls": _records_out(db, [r for r in rows(VehicleMaintenance)
+                                   if r.kind == svc.TOLL_KIND]),
         "fuel": _records_out(db, fuel, consumption=svc.fuel_consumption(fuel)),
         "faults": _records_out(db, rows(VehicleFault)),
         "violations": _records_out(db, rows(VehicleViolation)),
@@ -522,6 +532,13 @@ class OilIn(BaseModel):
     notes: str | None = None
 
 
+class TollIn(BaseModel):
+    record_date: date
+    vehicle_id: int
+    cost: Decimal = Decimal("0")
+    notes: str | None = None
+
+
 class FuelIn(BaseModel):
     record_date: date
     vehicle_id: int
@@ -614,11 +631,15 @@ def _maintenance_rules(db: Session, current: CurrentUser, row: VehicleMaintenanc
 _KINDS = {
     "maintenance": (VehicleMaintenance, MaintenanceIn),
     "oil": (VehicleMaintenance, OilIn),
+    "tolls": (VehicleMaintenance, TollIn),
     "fuel": (VehicleFuel, FuelIn),
     "faults": (VehicleFault, FaultIn),
     "violations": (VehicleViolation, ViolationIn),
     "inspections": (VehicleInspection, InspectionIn),
 }
+
+
+_FIXED_KIND = {"oil": svc.OIL_KIND, "tolls": svc.TOLL_KIND}
 
 
 def _list(db, current, model, *, vehicle_id, driver_id, date_from, date_to, extra=()):
@@ -653,8 +674,8 @@ def _create(kind: str, body, db: Session, current: CurrentUser) -> dict:
         _validate_amounts(body)
         v = svc.get_vehicle(db, current, body.vehicle_id)
         data = body.model_dump()
-        if kind == "oil":
-            data["kind"] = svc.OIL_KIND
+        if kind in _FIXED_KIND:
+            data["kind"] = _FIXED_KIND[kind]
         row = model(**data, branch_id=v.branch_id, created_by_user_id=current.id)
         if hasattr(row, "driver_id") and not row.driver_id:
             row.driver_id = svc.driver_on(db, v, row.record_date)
@@ -697,8 +718,8 @@ def _update(kind: str, record_id: int, body, db: Session, current: CurrentUser) 
             row.approved_at = None
         for k, x in body.model_dump().items():
             setattr(row, k, x)
-        if kind == "oil":
-            row.kind = svc.OIL_KIND
+        if kind in _FIXED_KIND:
+            row.kind = _FIXED_KIND[kind]
         row.branch_id = v.branch_id
         if hasattr(row, "driver_id") and not row.driver_id:
             row.driver_id = svc.driver_on(db, v, row.record_date)
@@ -748,7 +769,34 @@ def list_maintenance(vehicle_id: int | None = None, date_from: date | None = Non
                      date_to: date | None = None, current: CurrentUser = READ,
                      db: Session = Depends(get_db)) -> list[dict]:
     return _list(db, current, VehicleMaintenance, vehicle_id=vehicle_id, driver_id=None,
-                 date_from=date_from, date_to=date_to)
+                 date_from=date_from, date_to=date_to,
+                 extra=(func.coalesce(VehicleMaintenance.kind, "") != svc.TOLL_KIND,))
+
+
+@router.get("/tolls")
+def list_tolls(vehicle_id: int | None = None, date_from: date | None = None,
+               date_to: date | None = None, current: CurrentUser = READ,
+               db: Session = Depends(get_db)) -> list[dict]:
+    return _list(db, current, VehicleMaintenance, vehicle_id=vehicle_id, driver_id=None,
+                 date_from=date_from, date_to=date_to,
+                 extra=(VehicleMaintenance.kind == svc.TOLL_KIND,))
+
+
+@router.post("/tolls", status_code=status.HTTP_201_CREATED)
+def create_toll(body: TollIn, current: CurrentUser = WRITE, db: Session = Depends(get_db)) -> dict:
+    return _create("tolls", body, db, current)
+
+
+@router.put("/tolls/{record_id}")
+def update_toll(record_id: int, body: TollIn, current: CurrentUser = WRITE,
+                db: Session = Depends(get_db)) -> dict:
+    return _update("tolls", record_id, body, db, current)
+
+
+@router.delete("/tolls/{record_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_toll(record_id: int, current: CurrentUser = WRITE,
+                db: Session = Depends(get_db)) -> None:
+    _delete("tolls", record_id, db, current)
 
 
 @router.get("/oil")
@@ -1055,7 +1103,7 @@ def expense_suggest(source: str, record_id: int, current: CurrentUser = READ,
     elif source == "maintenance" and row.kind:
         extra = f" — {row.kind}"
     return {
-        "expense_account_id": svc.suggest_account(db, source, v),
+        "expense_account_id": svc.suggest_account(db, source, v, getattr(row, "kind", None)),
         "amount": str(getattr(row, col) or 0),
         "voucher_date": row.record_date,
         "description": f"{label} سيارة {v.code}{extra} ({row.record_date.isoformat()})",

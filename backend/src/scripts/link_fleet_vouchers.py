@@ -16,7 +16,8 @@ def run(*, execute: bool) -> None:
     try:
         accounts = set()
         for v in db.scalars(select(Vehicle)).all():
-            accounts.update(a for a in (v.fuel_account_id, v.maintenance_account_id) if a)
+            accounts.update(a for a in (v.fuel_account_id, v.maintenance_account_id,
+                                        v.oil_account_id, v.toll_account_id) if a)
         reversed_ids = select(Voucher.reverses_id).where(Voucher.reverses_id.is_not(None))
         linked = select(VehicleFuel.voucher_id).where(VehicleFuel.voucher_id.is_not(None)).union(
             select(VehicleMaintenance.voucher_id).where(VehicleMaintenance.voucher_id.is_not(None)))
@@ -29,8 +30,8 @@ def run(*, execute: bool) -> None:
         summary: Counter = Counter()
         for v in vouchers:
             target = fleet_service.vehicle_for_account(db, v.party_account_id)
-            vehicle, model = target
-            summary[(vehicle.code, "وقود" if model is VehicleFuel else "صيانة")] += 1
+            vehicle, model, kind = target
+            summary[(vehicle.code, "وقود" if model is VehicleFuel else kind or "صيانة")] += 1
         for (code, kind), n in sorted(summary.items()):
             print(f"{code:<10} {kind:<6} {n}")
         print(f"سندات هتتربط: {len(vouchers)}")

@@ -54,6 +54,7 @@ STATUS_LABELS = {
 CHECK_FIELDS = ("fuel", "oil_water", "tires", "brakes", "lights", "cleanliness")
 
 OIL_KIND = "تغيير زيت"
+TOLL_KIND = "كارتة"
 
 MONEY_SOURCES = {
     "maintenance": (VehicleMaintenance, "cost", "صيانة"),
@@ -366,9 +367,14 @@ def voucher_info(db: Session, ids) -> dict[int, dict]:
                    "reversed": v.id in reversed_ids} for v in rows}
 
 
-def suggest_account(db: Session, source: str, vehicle: Vehicle) -> int | None:
+def suggest_account(db: Session, source: str, vehicle: Vehicle,
+                    kind: str | None = None) -> int | None:
     if source == "fuel" and vehicle.fuel_account_id:
         return vehicle.fuel_account_id
+    if source == "maintenance" and kind == OIL_KIND and vehicle.oil_account_id:
+        return vehicle.oil_account_id
+    if source == "maintenance" and kind == TOLL_KIND and vehicle.toll_account_id:
+        return vehicle.toll_account_id
     if source in ("maintenance", "fault") and vehicle.maintenance_account_id:
         return vehicle.maintenance_account_id
     words = _ACCOUNT_WORDS.get(source, ())
@@ -875,13 +881,13 @@ def task_log(db: Session, current: CurrentUser, date_from: date | None, date_to:
 def vehicle_for_account(db: Session, account_id: int | None):
     if not account_id:
         return None
-    v = db.scalar(select(Vehicle).where(Vehicle.fuel_account_id == account_id).order_by(Vehicle.id))
-    if v is not None:
-        return v, VehicleFuel
-    v = db.scalar(select(Vehicle).where(Vehicle.maintenance_account_id == account_id)
-                  .order_by(Vehicle.id))
-    if v is not None:
-        return v, VehicleMaintenance
+    for col, model, kind in ((Vehicle.fuel_account_id, VehicleFuel, None),
+                             (Vehicle.oil_account_id, VehicleMaintenance, OIL_KIND),
+                             (Vehicle.toll_account_id, VehicleMaintenance, TOLL_KIND),
+                             (Vehicle.maintenance_account_id, VehicleMaintenance, None)):
+        v = db.scalar(select(Vehicle).where(col == account_id).order_by(Vehicle.id))
+        if v is not None:
+            return v, model, kind
     return None
 
 
@@ -913,7 +919,7 @@ def sync_expense_voucher(db: Session, voucher: Voucher) -> None:
     target = vehicle_for_account(db, voucher.party_account_id)
     keep = None
     if target is not None:
-        vehicle, model = target
+        vehicle, model, kind = target
         keep = next((r for r in records if isinstance(r, model)), None)
         if keep is None:
             keep = model(record_date=voucher.voucher_date, vehicle_id=vehicle.id,
@@ -928,7 +934,7 @@ def sync_expense_voucher(db: Session, voucher: Voucher) -> None:
             keep.amount = voucher.amount
         else:
             keep.cost = voucher.amount
-            keep.kind = keep.kind or "صيانة"
+            keep.kind = kind or (keep.kind if keep.kind not in (OIL_KIND, TOLL_KIND) else None)                 or "صيانة"
     for r in records:
         if r is not keep:
             db.delete(r)

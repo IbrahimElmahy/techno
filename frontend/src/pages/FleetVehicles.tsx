@@ -30,7 +30,7 @@ import {
 
 const VEHICLE_FIELDS = ['code', 'kind', 'model', 'plate_number', 'current_driver_id', 'odometer',
   'status_override', 'next_maintenance_km', 'last_maintenance_km', 'next_oil_km', 'insurance_until',
-  'license_until', 'fuel_account_id', 'maintenance_account_id', 'cost_center_id', 'branch_id',
+  'license_until', 'fuel_account_id', 'maintenance_account_id', 'oil_account_id', 'toll_account_id', 'cost_center_id', 'branch_id',
   'active', 'notes'];
 
 const daysTag = (days: number | null, date: string | null, alertDays = 30) => {
@@ -280,6 +280,16 @@ export default function FleetVehicles() {
             </Col>
             <Col xs={24} md={8}>
               <Form.Item name="maintenance_account_id" label="حساب الصيانة">
+                <Select allowClear showSearch options={accountOptions} filterOption={searchFilter} filterSort={searchRank} />
+              </Form.Item>
+            </Col>
+            <Col xs={24} md={8}>
+              <Form.Item name="oil_account_id" label="حساب الزيت">
+                <Select allowClear showSearch options={accountOptions} filterOption={searchFilter} filterSort={searchRank} />
+              </Form.Item>
+            </Col>
+            <Col xs={24} md={8}>
+              <Form.Item name="toll_account_id" label="حساب الكارتة">
                 <Select allowClear showSearch options={accountOptions} filterOption={searchFilter} filterSort={searchRank} />
               </Form.Item>
             </Col>
