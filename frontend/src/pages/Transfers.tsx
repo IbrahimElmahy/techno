@@ -1097,40 +1097,40 @@ export default function Transfers() {
   };
 
   const columns = [
+    { title: 'التاريخ', dataIndex: 'transfer_date', key: 'transfer_date',
+      sorter: (a: TransferRecord, b: TransferRecord) =>
+        docDate(a).localeCompare(docDate(b)),
+      render: (_: any, r: TransferRecord) => docDate(r) || '-' },
     { title: 'رقم المستند', dataIndex: 'document_number', key: 'document_number',
       sorter: (a: TransferRecord, b: TransferRecord) => (a.document_number || '').localeCompare(b.document_number || ''),
       render: (doc: string, r: any) => (r.__isDraft
         ? <DraftTag label="مسودة — لم تُرسل بعد"
                     onDelete={() => removeDraft(r.__draft.id)} />
         : <Tag color="blue">{doc}</Tag>) },
-    { title: 'الصنف', dataIndex: 'item_id', key: 'item_id',
-      render: (id: number | null) => nameOfItem(id) },
-    { title: 'الكمية', dataIndex: 'quantity', key: 'quantity',
-      sorter: (a: TransferRecord, b: TransferRecord) => Number(a.quantity || 0) - Number(b.quantity || 0),
-      render: (q: string | null) => <b>{qty(q)}</b> },
     { title: 'من', key: 'src',
       render: (_: any, r: TransferRecord) => locationName(r.source_location_kind, r.source_location_id) },
     { title: 'إلى', key: 'dst',
       render: (_: any, r: TransferRecord) => locationName(r.dest_location_kind, r.dest_location_id) },
-    { title: 'نوع المناقلة', dataIndex: 'route', key: 'route',
-      render: (r: string) => ROUTE_LABELS[r] || r },
     { title: 'الحالة', dataIndex: 'status', key: 'status',
       sorter: (a: TransferRecord, b: TransferRecord) => (a.status || '').localeCompare(b.status || ''),
       render: (s: string) => {
         const tag = STATUS_TAGS[s] || { color: 'default', text: s };
         return <Tag color={tag.color}>{tag.text}</Tag>;
       } },
+    { title: 'أنشأه', dataIndex: 'initiated_by_name', key: 'initiated_by_name', ellipsis: true,
+      render: (v: string | null | undefined) => v || '-' },
+    { title: 'الصنف', dataIndex: 'item_id', key: 'item_id',
+      render: (id: number | null) => nameOfItem(id) },
+    { title: 'الكمية', dataIndex: 'quantity', key: 'quantity',
+      sorter: (a: TransferRecord, b: TransferRecord) => Number(a.quantity || 0) - Number(b.quantity || 0),
+      render: (q: string | null) => <b>{qty(q)}</b> },
+    { title: 'نوع المناقلة', dataIndex: 'route', key: 'route',
+      render: (r: string) => ROUTE_LABELS[r] || r },
     { title: 'المصدر', dataIndex: 'created_from', key: 'created_from', width: 90,
       filters: [{ text: 'التطبيق', value: 'app' }, { text: 'النظام', value: 'system' }],
       onFilter: (v: any, r: TransferRecord) => (r.created_from || 'system') === v,
       render: (v: string | undefined, r: TransferRecord) => ((r as any).__isDraft ? '-'
         : v === 'app' ? <Tag color="purple">التطبيق</Tag> : <Tag>النظام</Tag>) },
-    { title: 'أنشأه', dataIndex: 'initiated_by_name', key: 'initiated_by_name', ellipsis: true,
-      render: (v: string | null | undefined) => v || '-' },
-    { title: 'التاريخ', dataIndex: 'transfer_date', key: 'transfer_date',
-      sorter: (a: TransferRecord, b: TransferRecord) =>
-        docDate(a).localeCompare(docDate(b)),
-      render: (_: any, r: TransferRecord) => docDate(r) || '-' },
     { title: 'البيان', dataIndex: 'statement1', key: 'statement1', ellipsis: true,
       render: (v: string | null) => v || '-' },
     { title: 'رقم المستند الورقي', dataIndex: 'external_document_number', key: 'external_document_number',
