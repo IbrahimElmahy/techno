@@ -390,7 +390,8 @@ def suggest_account(db: Session, source: str, vehicle: Vehicle,
 
     def score(a: Account) -> tuple:
         name = a.name or ""
-        return (sum(1 for h in hints if h and h in name), "سيار" in name, -(a.id or 0))
+        return (a.branch_id == vehicle.branch_id, sum(1 for h in hints if h and h in name),
+                "سيار" in name, -(a.id or 0))
 
     return max(rows, key=score).id
 
@@ -581,7 +582,8 @@ def dashboard(db: Session, current: CurrentUser, today: date | None = None) -> d
         "alerts": alerts,
         "settings": {"expiry_alert_days": cfg.expiry_alert_days,
                      "maintenance_alert_km": cfg.maintenance_alert_km,
-                     "fuel_abnormal_pct": cfg.fuel_abnormal_pct},
+                     "fuel_abnormal_pct": cfg.fuel_abnormal_pct,
+                     "diesel_price": cfg.diesel_price, "petrol_price": cfg.petrol_price},
     }
 
 
@@ -907,6 +909,34 @@ def vehicle_for_account(db: Session, account_id: int | None):
     return None
 
 
+def fuel_price(db: Session, vehicle: Vehicle) -> Decimal | None:
+    cfg = settings(db)
+    account = db.get(Account, vehicle.fuel_account_id) if vehicle.fuel_account_id else None
+    petrol = "بنزين" in ((account.name if account else "") or "")
+    price = cfg.petrol_price if petrol else cfg.diesel_price
+    return Decimal(str(price)) if price else None
+
+
+def liters_for(db: Session, vehicle: Vehicle, amount) -> Decimal | None:
+    price = fuel_price(db, vehicle)
+    value = Decimal(str(amount or 0))
+    if not price or value <= 0:
+        return None
+    return (value / price).quantize(Decimal("0.001"))
+
+
+def fill_liters(db: Session) -> int:
+    done = 0
+    for r in db.scalars(select(VehicleFuel).where(
+            func.coalesce(VehicleFuel.liters, 0) == 0, VehicleFuel.amount > 0)).all():
+        liters = liters_for(db, db.get(Vehicle, r.vehicle_id), r.amount)
+        if liters:
+            r.liters = liters
+            done += 1
+    db.flush()
+    return done
+
+
 def vehicle_for_voucher(db: Session, voucher: Voucher):
     target = vehicle_for_account(db, voucher.party_account_id)
     if target is not None or not voucher.vehicle_id:
@@ -962,7 +992,10 @@ def sync_expense_voucher(db: Session, voucher: Voucher) -> None:
         keep.branch_id = vehicle.branch_id
         keep.notes = (voucher.description or voucher.statement1 or "")[:500] or None
         if model is VehicleFuel:
+            changed = Decimal(str(keep.amount or 0)) != Decimal(str(voucher.amount))
             keep.amount = voucher.amount
+            if changed or not keep.liters:
+                keep.liters = liters_for(db, vehicle, voucher.amount) or keep.liters or 0
         elif model is VehicleViolation:
             keep.amount = voucher.amount
             keep.paid, keep.paid_date = True, voucher.voucher_date

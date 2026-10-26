@@ -84,6 +84,8 @@ class SettingsIn(BaseModel):
     expiry_alert_days: int = 30
     maintenance_alert_km: int = 500
     fuel_abnormal_pct: int = 20
+    diesel_price: Decimal | None = None
+    petrol_price: Decimal | None = None
 
 
 @router.get("/settings")
@@ -102,7 +104,13 @@ def put_settings(body: SettingsIn, current: CurrentUser = WRITE,
     row.expiry_alert_days = body.expiry_alert_days
     row.maintenance_alert_km = body.maintenance_alert_km
     row.fuel_abnormal_pct = body.fuel_abnormal_pct
+    for price in (body.diesel_price, body.petrol_price):
+        if price is not None and price < 0:
+            raise HTTPException(422, {"code": "validation", "message": "قيم غير صالحة."})
+    row.diesel_price, row.petrol_price = body.diesel_price or None, body.petrol_price or None
     _touch(row, current)
+    db.flush()
+    svc.fill_liters(db)
     for v in db.scalars(select(Vehicle)).all():
         svc.refresh_vehicle(db, v)
     db.commit()
@@ -677,6 +685,8 @@ def _create(kind: str, body, db: Session, current: CurrentUser) -> dict:
         if kind in _FIXED_KIND:
             data["kind"] = _FIXED_KIND[kind]
         row = model(**data, branch_id=v.branch_id, created_by_user_id=current.id)
+        if model is VehicleFuel and not row.liters:
+            row.liters = svc.liters_for(db, v, row.amount) or 0
         if hasattr(row, "driver_id") and not row.driver_id:
             row.driver_id = svc.driver_on(db, v, row.record_date)
         if model is VehicleInspection:
@@ -720,6 +730,8 @@ def _update(kind: str, record_id: int, body, db: Session, current: CurrentUser) 
             setattr(row, k, x)
         if kind in _FIXED_KIND:
             row.kind = _FIXED_KIND[kind]
+        if model is VehicleFuel and not row.liters:
+            row.liters = svc.liters_for(db, v, row.amount) or 0
         row.branch_id = v.branch_id
         if hasattr(row, "driver_id") and not row.driver_id:
             row.driver_id = svc.driver_on(db, v, row.record_date)

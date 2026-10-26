@@ -80,7 +80,7 @@ export default function FleetDashboard() {
           <Button size="small" onClick={() => open('/fleet/monthly')}>التقرير الشهري</Button>
           {can('fleet.write') && (
             <Button icon={<SettingOutlined />} onClick={() => { form.setFieldsValue(d.settings); setCfgOpen(true); }}>
-              إعدادات التنبيهات
+              الإعدادات
             </Button>
           )}
           <Button icon={<ReloadOutlined />} loading={loading} onClick={load}>تحديث</Button>
@@ -123,7 +123,7 @@ export default function FleetDashboard() {
         ) : <Empty description="لا توجد تنبيهات" image={Empty.PRESENTED_IMAGE_SIMPLE} />}
       </Card>
 
-      <TabModal open={cfgOpen} onCancel={() => setCfgOpen(false)} onOk={saveCfg} title="إعدادات التنبيهات"
+      <TabModal open={cfgOpen} onCancel={() => setCfgOpen(false)} onOk={saveCfg} title="الإعدادات"
         okText="حفظ" cancelText="إلغاء" forceRender width={480}>
         <Form form={form} layout="vertical" requiredMark={false}>
           <Form.Item name="expiry_alert_days" label="التنبيه قبل انتهاء التأمين والرخصة (يوم)" rules={[{ required: true, message: 'مطلوب' }]}>
@@ -134,6 +134,12 @@ export default function FleetDashboard() {
           </Form.Item>
           <Form.Item name="fuel_abnormal_pct" label="نسبة انخفاض كم/لتر عن المعدل المعتاد (٪)" rules={[{ required: true, message: 'مطلوب' }]}>
             <InputNumber min={0} max={100} precision={0} style={{ width: '100%' }} />
+          </Form.Item>
+          <Form.Item name="diesel_price" label="سعر لتر السولار">
+            <InputNumber min={0} precision={2} style={{ width: '100%' }} />
+          </Form.Item>
+          <Form.Item name="petrol_price" label="سعر لتر البنزين">
+            <InputNumber min={0} precision={2} style={{ width: '100%' }} />
           </Form.Item>
         </Form>
       </TabModal>

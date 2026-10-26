@@ -293,5 +293,7 @@ class FleetSetting(Base):
     expiry_alert_days: Mapped[int] = mapped_column(Integer, default=30, nullable=False)
     maintenance_alert_km: Mapped[int] = mapped_column(Integer, default=500, nullable=False)
     fuel_abnormal_pct: Mapped[int] = mapped_column(Integer, default=20, nullable=False)
+    diesel_price: Mapped[object | None] = mapped_column(MONEY, nullable=True)
+    petrol_price: Mapped[object | None] = mapped_column(MONEY, nullable=True)
     updated_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     updated_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("user.id"), nullable=True)
