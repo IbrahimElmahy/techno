@@ -125,8 +125,8 @@ def approve(db, *, transfer_id: int, approver_role: RoleName, approver_branch_id
     if src_branch is None:
         if not is_admin:
             raise TransferDenied("يتطلب التحويل من مخزن مركزي صلاحية الإدارة.")
-    elif not (is_admin or (approver_role == RoleName.branch_manager and approver_branch_id == src_branch)):
-        raise TransferDenied("الاعتماد لمدير فرع المصدر فقط.")
+    elif not (is_admin or approver_branch_id == src_branch):
+        raise TransferDenied("الاعتماد لمن له صلاحية الاعتماد في فرع المصدر فقط.")
 
     lines = db.scalars(select(StockTransferLine).where(
         StockTransferLine.transfer_id == transfer.id)).all()

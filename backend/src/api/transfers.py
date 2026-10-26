@@ -231,8 +231,7 @@ def _may_approve_now(db: Session, current: CurrentUser, t) -> bool:
     sees_all = branch_scope.sees_all_branches(current)
     if src_branch is None:
         return sees_all
-    return sees_all or (current.role == RoleName.branch_manager
-                        and current.branch_id == src_branch)
+    return sees_all or current.branch_id == src_branch
 
 
 @router.post("/{transfer_id}/self-approve", response_model=TransferOut)
