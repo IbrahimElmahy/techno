@@ -162,12 +162,13 @@ export function printInvoice(d: InvoiceDoc, opts?: PrintOptions): void {
     ? (Number(l.quantity) ? lineTotal(l) / Number(l.quantity) : 0) : Number(l.unit_price || 0));
   const anyPts = o.pointsColumn && d.lines.some((l) => Number(l.points || 0) > 0);
   const showUnit = o.unitColumn;
+  const showCode = o.codeColumn && d.lines.some((l) => l.code);
   const warehouses = new Set(d.lines.map((l) => l.warehouse).filter(Boolean));
   const anyWh = warehouses.size > 1;
-  const cols = 5 + (showUnit ? 1 : 0) + (anyWh ? 1 : 0) + (anyDisc ? 1 : 0) + (anyPts ? 1 : 0);
+  const cols = 5 + (showCode ? 1 : 0) + (showUnit ? 1 : 0) + (anyWh ? 1 : 0) + (anyDisc ? 1 : 0) + (anyPts ? 1 : 0);
   const pts = (v: any) => Number(v || 0).toLocaleString('en-US', { maximumFractionDigits: 3 });
   const rows = d.lines.map((l, i) => `
-    <tr><td>${i + 1}</td><td style="text-align:right">${l.name}</td>
+    <tr><td>${i + 1}</td>${showCode ? `<td dir="ltr">${l.code || '-'}</td>` : ''}<td style="text-align:right">${l.name}</td>
     ${anyWh ? `<td>${l.warehouse || '-'}</td>` : ''}
     <td>${Number(l.quantity)}</td>${showUnit ? `<td>${l.unit || '-'}</td>` : ''}
     <td>${n(unitPrice(l))}</td>${anyDisc ? `<td>${Number(l.discount_pct || 0)}%</td>` : ''}
@@ -178,7 +179,7 @@ export function printInvoice(d: InvoiceDoc, opts?: PrintOptions): void {
     ? null : Number(d.priorBalance);
   const body = `
     <table class="grid">
-      <thead><tr><th>#</th><th>الصنف</th>${anyWh ? '<th>المخزن</th>' : ''}<th>الكمية</th>${showUnit ? '<th>الوحدة</th>' : ''}
+      <thead><tr><th>#</th>${showCode ? '<th>الكود</th>' : ''}<th>الصنف</th>${anyWh ? '<th>المخزن</th>' : ''}<th>الكمية</th>${showUnit ? '<th>الوحدة</th>' : ''}
         <th>${o.netPrices ? 'السعر بعد الخصم' : 'سعر الوحدة'}</th>${anyDisc ? '<th>الخصم</th>' : ''}${anyPts ? '<th>النقاط</th>' : ''}<th>الإجمالي</th></tr></thead>
       <tbody>${rows || `<tr><td colspan="${cols}">لا توجد أصناف</td></tr>`}</tbody>
     </table>

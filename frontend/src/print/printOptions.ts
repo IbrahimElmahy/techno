@@ -13,6 +13,7 @@ export interface PrintOptions {
   paidAndRemaining: boolean;
   paymentMethod: boolean;
   date: boolean;
+  codeColumn: boolean;
   unitColumn: boolean;
   discountColumn: boolean;
   netPrices: boolean;
@@ -35,6 +36,7 @@ export const PRINT_OPTION_LABELS: { key: keyof PrintOptions; label: string }[] =
   { key: 'paidAndRemaining', label: 'المدفوع والمتبقي' },
   { key: 'paymentMethod', label: 'طريقة السداد' },
   { key: 'date', label: 'التاريخ' },
+  { key: 'codeColumn', label: 'عمود كود الصنف' },
   { key: 'unitColumn', label: 'عمود الوحدة' },
   { key: 'discountColumn', label: 'عمود الخصم' },
   { key: 'netPrices', label: 'السعر بعد الخصم' },
@@ -57,6 +59,7 @@ export const DEFAULT_PRINT_OPTIONS: PrintOptions = {
   paidAndRemaining: true,
   paymentMethod: true,
   date: true,
+  codeColumn: true,
   unitColumn: true,
   discountColumn: true,
   netPrices: true,
