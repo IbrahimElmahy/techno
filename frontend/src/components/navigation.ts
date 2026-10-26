@@ -89,7 +89,7 @@ export const NAVIGATION: (NavGroup | NavScreen)[] = [
       ...analysisGroups('sales', SALES_PRESETS),
       { key: '/bonus-report', label: 'تقرير البونص', roles: R(SALES) },
       { key: '/customer-debts', label: 'مديونيات العملاء', roles: R(SALES) },
-      { key: '/orders?kind=sale', label: 'شيت تسعير بيع', roles: R(SALES), a5: '/saleorders/create' },
+      { key: '/orders?kind=sale', label: 'عرض أسعار', roles: R(SALES), a5: '/saleorders/create' },
       {
         key: 'grp-orders-reports',
         label: 'تقارير الطلبات والحجوزات',

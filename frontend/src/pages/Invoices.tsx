@@ -1292,7 +1292,7 @@ export default function Invoices() {
         startNew({ fromOrder: res.data });
         message.info(`اختر العميل والمخزن — أصناف الشيت ${res.data.document_number} هتتضاف للفاتورة`);
       })
-      .catch(() => message.error('تعذر تحميل شيت التسعير'));
+      .catch(() => message.error('تعذر تحميل عرض الأسعار'));
   }, [searchParams]);
 
   useEffect(() => {

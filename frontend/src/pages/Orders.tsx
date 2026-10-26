@@ -152,7 +152,7 @@ export default function Orders() {
   }, []);
 
   const kindLabel = kind === 'sale' ? 'بيع' : 'شراء';
-  const sheetName = `تسعيرة ${kindLabel}`;
+  const sheetName = kind === 'sale' ? 'عرض أسعار' : 'تسعيرة شراء';
 
   const partyName = (o: Order) => (o.kind === 'sale'
     ? (o as any).customer_name || customers.find((c) => c.id === o.customer_id)?.name
@@ -362,7 +362,7 @@ export default function Orders() {
     const pct = Number(o.variable_discount_pct || 0);
     printReport(
       {
-        title: o.kind === 'sale' ? 'تسعيرة بيع' : 'تسعيرة شراء',
+        title: o.kind === 'sale' ? 'عرض أسعار' : 'تسعيرة شراء',
         number: o.document_number || '',
         date: o.order_date ? String(o.order_date).slice(0, 10) : undefined,
         meta: [
@@ -372,7 +372,8 @@ export default function Orders() {
           ...(o.statement1 ? [['البيان', o.statement1]] as [string, string][] : []),
           ...(o.notes ? [['ملاحظات', o.notes]] as [string, string][] : []),
         ],
-        note: 'ورقة تسعير — لا تحرّك مخزوناً ولا خزينة.',
+        note: o.kind === 'sale' ? 'عرض أسعار — لا يحرّك مخزوناً ولا خزينة.'
+          : 'ورقة تسعير — لا تحرّك مخزوناً ولا خزينة.',
       },
       [
         { title: '#', value: 'no' },
@@ -571,12 +572,12 @@ export default function Orders() {
     {!docOpen && (
     <ListPage
       icon={<FileTextOutlined />}
-      title={`شيت تسعير ${kindLabel}`} muted={`(سجل طلبات ال${kind === 'sale' ? 'بيع' : 'شراء'})`}
+      title={kind === 'sale' ? 'عرض أسعار' : `شيت تسعير ${kindLabel}`} muted={`(سجل طلبات ال${kind === 'sale' ? 'بيع' : 'شراء'})`}
       actions={(<>
         <Button type="primary" icon={<PlusOutlined />} className="sl-create"
           onClick={() => startNew(kind)}>{sheetName}</Button>
         <Button icon={<ReloadOutlined />} onClick={load}>تحديث</Button>
-        <ExportExcelButton name={`شيت تسعير ${kindLabel}`} rows={filter.filtered}
+        <ExportExcelButton name={kind === 'sale' ? 'عرض أسعار' : `شيت تسعير ${kindLabel}`} rows={filter.filtered}
           tableColumns={tableCols.columns as any} style={{ marginInlineStart: 0 }} />
         {tableCols.control}
       </>)}
@@ -770,7 +771,7 @@ export default function Orders() {
           <div className="sale-head-row">
             <Button size="small" icon={<ArrowRightOutlined />} onClick={closeDoc}>رجوع</Button>
             <span className="sale-title">
-              {detail.kind === 'sale' ? 'تسعيرة بيع' : 'تسعيرة شراء'} رقم:{' '}
+              {detail.kind === 'sale' ? 'عرض أسعار' : 'تسعيرة شراء'} رقم:{' '}
               <b dir="ltr">{detail.document_number}</b>
             </span>
             <Tag color={STATUS_LABELS[detail.status]?.color} style={{ marginInlineEnd: 0 }}>
@@ -813,7 +814,7 @@ export default function Orders() {
               <Col xs={12} md={4}>
                 <Form.Item label="النوع">
                   <Input readOnly
-                    value={detail.kind === 'sale' ? 'تسعيرة بيع' : 'تسعيرة شراء'} />
+                    value={detail.kind === 'sale' ? 'عرض أسعار' : 'تسعيرة شراء'} />
                 </Form.Item>
               </Col>
               <Col xs={12} md={5}>
