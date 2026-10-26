@@ -346,7 +346,9 @@ export default function ItemCard() {
             {...kb.tableProps}
             className="sl-table"
             rowKey="movement_id" size="small" loading={loading} dataSource={card.rows}
-            locale={{ emptyText: 'لا توجد حركات في هذه الفترة' }}
+            locale={{ emptyText: range?.[0]
+              ? <span>لا توجد حركات في هذه الفترة — الرصيد قبل الفترة: <b>{qty(card.opening_balance)}</b></span>
+              : 'لا توجد حركات في هذه الفترة' }}
             pagination={{
               defaultPageSize: PAGE_SIZE, showSizeChanger: true,
               locale: { items_per_page: '' },
