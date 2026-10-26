@@ -15,6 +15,7 @@ export interface PrintOptions {
   date: boolean;
   unitColumn: boolean;
   discountColumn: boolean;
+  netPrices: boolean;
   pointsColumn: boolean;
   priorBalance: boolean;
   loyaltyPoints: boolean;
@@ -36,6 +37,7 @@ export const PRINT_OPTION_LABELS: { key: keyof PrintOptions; label: string }[] =
   { key: 'date', label: 'التاريخ' },
   { key: 'unitColumn', label: 'عمود الوحدة' },
   { key: 'discountColumn', label: 'عمود الخصم' },
+  { key: 'netPrices', label: 'السعر بعد الخصم' },
   { key: 'pointsColumn', label: 'عمود النقاط' },
   { key: 'priorBalance', label: 'الحساب السابق' },
   { key: 'loyaltyPoints', label: 'نقاط الولاء' },
@@ -57,6 +59,7 @@ export const DEFAULT_PRINT_OPTIONS: PrintOptions = {
   date: true,
   unitColumn: true,
   discountColumn: true,
+  netPrices: true,
   pointsColumn: true,
   priorBalance: true,
   loyaltyPoints: true,

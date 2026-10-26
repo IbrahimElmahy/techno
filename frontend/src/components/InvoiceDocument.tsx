@@ -104,7 +104,9 @@ function footerColumns(
   const due = payable(d);
 
   const col1: string[] = [];
-  if (discount > 0 || Number(d.tax || 0) > 0) {
+  if (o.netPrices) {
+    if (Number(d.tax || 0) > 0) col1.push(row('ضريبة القيمة المضافة', cur(d.tax as any)));
+  } else if (discount > 0 || Number(d.tax || 0) > 0) {
     col1.push(row('الإجمالي قبل الخصم', cur(d.gross)));
     if (discount > 0) col1.push(row(`الخصم (${Number(d.discountPct || 0)}%)`, cur(discount)));
     if (Number(d.tax || 0) > 0) col1.push(row('ضريبة القيمة المضافة', cur(d.tax as any)));
@@ -151,7 +153,13 @@ function footerColumns(
 
 export function printInvoice(d: InvoiceDoc, opts?: PrintOptions): void {
   const o = opts ?? loadPrintOptions();
-  const anyDisc = o.discountColumn && d.lines.some((l) => Number(l.discount_pct || 0) > 0);
+  const anyDisc = !o.netPrices && o.discountColumn
+    && d.lines.some((l) => Number(l.discount_pct || 0) > 0);
+  const ratio = o.netPrices && !d.isBonus && Number(d.gross || 0) > 0
+    ? Number(d.net || 0) / Number(d.gross) : 1;
+  const lineTotal = (l: InvoiceLine) => Number(l.line_total || 0) * ratio;
+  const unitPrice = (l: InvoiceLine) => (o.netPrices
+    ? (Number(l.quantity) ? lineTotal(l) / Number(l.quantity) : 0) : Number(l.unit_price || 0));
   const anyPts = o.pointsColumn && d.lines.some((l) => Number(l.points || 0) > 0);
   const showUnit = o.unitColumn;
   const warehouses = new Set(d.lines.map((l) => l.warehouse).filter(Boolean));
@@ -162,16 +170,16 @@ export function printInvoice(d: InvoiceDoc, opts?: PrintOptions): void {
     <tr><td>${i + 1}</td><td style="text-align:right">${l.name}</td>
     ${anyWh ? `<td>${l.warehouse || '-'}</td>` : ''}
     <td>${Number(l.quantity)}</td>${showUnit ? `<td>${l.unit || '-'}</td>` : ''}
-    <td>${n(l.unit_price)}</td>${anyDisc ? `<td>${Number(l.discount_pct || 0)}%</td>` : ''}
+    <td>${n(unitPrice(l))}</td>${anyDisc ? `<td>${Number(l.discount_pct || 0)}%</td>` : ''}
     ${anyPts ? `<td>${pts(l.points)}</td>` : ''}
-    <td>${n(l.line_total)}</td></tr>`).join('');
+    <td>${n(lineTotal(l))}</td></tr>`).join('');
   const discount = Number(d.gross || 0) - Number(d.net || 0);
   const dPrior = !o.priorBalance || d.priorBalance == null || d.kind !== 'sale'
     ? null : Number(d.priorBalance);
   const body = `
     <table class="grid">
       <thead><tr><th>#</th><th>الصنف</th>${anyWh ? '<th>المخزن</th>' : ''}<th>الكمية</th>${showUnit ? '<th>الوحدة</th>' : ''}
-        <th>سعر الوحدة</th>${anyDisc ? '<th>الخصم</th>' : ''}${anyPts ? '<th>النقاط</th>' : ''}<th>الإجمالي</th></tr></thead>
+        <th>${o.netPrices ? 'السعر بعد الخصم' : 'سعر الوحدة'}</th>${anyDisc ? '<th>الخصم</th>' : ''}${anyPts ? '<th>النقاط</th>' : ''}<th>الإجمالي</th></tr></thead>
       <tbody>${rows || `<tr><td colspan="${cols}">لا توجد أصناف</td></tr>`}</tbody>
     </table>
     ${footerColumns(d, o, dPrior, discount, pts)}`;
