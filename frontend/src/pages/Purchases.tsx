@@ -570,20 +570,6 @@ export default function Purchases() {
     if (!g || !purchaseDisc) return null;
     return g === 'poly' ? purchaseDisc.poly_pct : purchaseDisc.white_pct;
   };
-  const rememberFixedDisc = (itemId: number | null, pct: number | null) => {
-    if (!itemId || pct == null) return;
-    const current = defaultFixedDisc(itemId);
-    if (current !== null && Math.abs(current - pct) < 0.001) return;
-    const name = items.find((i) => i.id === itemId)?.name;
-    api.patch(`/api/v1/items/${itemId}`, { purchase_discount_pct: String(pct) })
-      .then(() => {
-        setItems((prev) => prev.map((i) => (i.id === itemId
-          ? { ...i, purchase_discount_pct: String(pct) } as any : i)));
-        message.success(`خصم الصنف «${name ?? ''}» أصبح ${pct}% للفواتير القادمة`);
-      })
-      .catch(() => {});
-  };
-
   const fetchUnits = async (itemId: number) => {
     if (unitsCache[itemId]) return;
     try {
@@ -1289,7 +1275,6 @@ export default function Purchases() {
           disabled={viewOnly}
           placeholder="ثابت" value={line.fixed_discount_pct ?? undefined}
           onChange={(val) => handleItemChange(line.key, 'fixed_discount_pct', val ?? null)}
-          onBlur={() => rememberFixedDisc(line.item_id, line.fixed_discount_pct)}
           onPressEnter={(e) => { e.preventDefault(); advanceFrom(line.key); }} />
       ),
       footer: () => null },
