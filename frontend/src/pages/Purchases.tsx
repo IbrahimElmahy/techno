@@ -1411,7 +1411,12 @@ export default function Purchases() {
                   disabled={viewOnly}
                   placeholder="اختر المخزن الافتراضي"
                   value={stickyWarehouseId ?? undefined}
-                  onChange={(val) => setStickyWarehouseId(val ?? null)}
+                  onChange={(val) => {
+                    setStickyWarehouseId(val ?? null);
+                    if (val != null) {
+                      setPurchaseItems((prev) => prev.map((l) => (l.item_id ? { ...l, warehouse_id: val } : l)));
+                    }
+                  }}
                   options={sortByName(lineWarehouses, (w: any) => w.name).map((w: any) => ({
                     value: w.id,
                     label: `${w.name} (${w.warehouse_type === 'central' ? 'مركزي' : 'فرعي'})`,
