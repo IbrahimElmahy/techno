@@ -13,7 +13,7 @@ from src.auth.rbac import CAP_USER_READ, CAP_USER_WRITE
 from src.core.db import get_db
 from src.models.employee import Employee, JobTitle
 from src.models.hr_org import Department
-from src.services import attendance_device_service, hr_service, numbering
+from src.services import attendance_device_service, employee_card_service, hr_service, numbering
 from src.services.attendance_service import AttendanceError
 from src.services.hr_service import HrError
 from src.auth import branch_scope
@@ -237,6 +237,7 @@ def create_employee(
     )
     db.add(emp)
     db.flush()
+    employee_card_service.open_card(db, emp)
     if emp.fingerprint_no:
         attendance_device_service.claim_for_employee(db, emp)
     db.commit()

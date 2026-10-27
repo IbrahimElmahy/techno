@@ -1059,9 +1059,12 @@ export default function Invoices() {
     api.get('/api/v1/coupons', { params: { customer_id: customerId, status_filter: 'issued' } })
       .then((res) => setCustomerCoupons(res.data || []))
       .catch(() => setCustomerCoupons([]));
-    setLines((prev) => prev.map((l) => l.item_id
-      ? { ...l, tier: tier || 'consumer', unit_price: resolvePrice(l.item_id, tier || 'consumer', l.unit) }
-      : { ...l, tier }));
+    if (editingInvoice) return;
+    setLines((prev) => prev.map((l) => {
+      if (!l.item_id) return { ...l, tier };
+      const price = resolvePrice(l.item_id, tier || 'consumer', l.unit);
+      return { ...l, tier: tier || 'consumer', unit_price: price || l.unit_price };
+    }));
   };
 
   const handleCreateSubmit = async (values: any) => {
