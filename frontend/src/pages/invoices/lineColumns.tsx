@@ -44,8 +44,9 @@ export function buildLineColumns({
   productCode, belowCost, canSellBelowCost = false,
 }: LineColumnsCtx): EntryColumn<SaleLineItem>[] {
   return [
-    { key: 'idx', title: '#', width: 32, locked: true,
-      cellStyle: { color: '#5b6575', textAlign: 'center' }, cell: (_l, i) => i + 1 },
+    { key: 'idx', title: '#', width: 40, locked: true,
+      cellStyle: { color: '#5b6575', textAlign: 'center', paddingInline: 2, textOverflow: 'clip' },
+      cell: (_l, i) => i + 1 },
     { key: 'warehouse', title: 'المخزن', width: 120,
       cellStyle: { textAlign: 'center' },
       cell: (line) => (

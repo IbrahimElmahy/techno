@@ -62,6 +62,7 @@ export default function ProductPickerModal({
   const products = useMemo(() => activeChoices(allProducts), [allProducts]);
   const memory = (memories[title] ??= { query: '', scrollTop: 0, cursor: 0 });
   const [query, setQuery] = useState(() => memory.query);
+  const changeCategory = (c: string | null) => { setQuery(''); onCategoryChange(c); };
   const [cursor, setCursor] = useState(() => memory.cursor);
   const { tree } = useCategoryTree();
   const [activeRoot, setActiveRoot] = useState<string | null>(null);
@@ -441,7 +442,7 @@ export default function ProductPickerModal({
               </div>
               <div className="ppk-cats-list">
                 {catItem('__all', 'كل الفئات', totalCount, allActive,
-                  () => { setActiveRoot(null); onCategoryChange(null); })}
+                  () => { setActiveRoot(null); changeCategory(null); })}
                 {shownGroups.map((g) => {
                   const rootActive = activeRoot === g.value && !activeCategory;
                   return (
@@ -449,12 +450,12 @@ export default function ProductPickerModal({
                       {catItem(g.value, catLabel(g.value), cardCount(g.value, g.children),
                         rootActive || activeCategory === g.value,
                         () => {
-                          if (g.children.length) { setActiveRoot(g.value); onCategoryChange(null); }
-                          else { setActiveRoot(null); onCategoryChange(g.value); }
+                          if (g.children.length) { setActiveRoot(g.value); changeCategory(null); }
+                          else { setActiveRoot(null); changeCategory(g.value); }
                         })}
                       {g.children.map((c) => catItem(c, catLabel(c), cardCount(c),
                         c === activeCategory,
-                        () => { setActiveRoot(g.value); onCategoryChange(c); }, true))}
+                        () => { setActiveRoot(g.value); changeCategory(c); }, true))}
                     </React.Fragment>
                   );
                 })}
@@ -693,7 +694,7 @@ export default function ProductPickerModal({
         <Col xs={24} md={7}>
           <div style={{ maxHeight: '52vh', overflowY: 'auto' }}>
             <div
-              onClick={() => { setActiveRoot(null); onCategoryChange(null); }}
+              onClick={() => { setActiveRoot(null); changeCategory(null); }}
               style={{
                 padding: '8px 10px', borderRadius: 6, marginBottom: 4, cursor: 'pointer',
                 background: activeCategory === null && activeRoot === null ? '#6AB42D' : '#f6faf3',
@@ -711,10 +712,10 @@ export default function ProductPickerModal({
                     onClick={() => {
                       if (g.children.length) {
                         setActiveRoot(g.value);
-                        onCategoryChange(null);
+                        changeCategory(null);
                       } else {
                         setActiveRoot(null);
-                        onCategoryChange(g.value);
+                        changeCategory(g.value);
                       }
                     }}
                     style={{
@@ -736,7 +737,7 @@ export default function ProductPickerModal({
                     const active = c === activeCategory;
                     return (
                       <div key={c}
-                        onClick={() => { setActiveRoot(g.value); onCategoryChange(c); }}
+                        onClick={() => { setActiveRoot(g.value); changeCategory(c); }}
                         style={{
                           padding: '6px 10px', borderRadius: 6, marginBottom: 4,
                           marginInlineStart: 14, cursor: 'pointer', fontSize: 15,
