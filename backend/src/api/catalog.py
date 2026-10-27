@@ -517,6 +517,7 @@ class ReturnPriceOut(BaseModel):
 @router.get("/{item_id}/return-price", response_model=ReturnPriceOut)
 def get_return_price(
     item_id: int,
+    supplier_id: int | None = Query(None),
     _: CurrentUser = Depends(require_capability(CAP_CATALOG_READ)),
     db: Session = Depends(get_db),
 ) -> ReturnPriceOut:
@@ -526,7 +527,9 @@ def get_return_price(
 
     from src.services import costing_service
 
-    last = costing_service.last_purchase_cost(db, item_id)
+    last = (costing_service.last_purchase_cost(db, item_id, supplier_id) if supplier_id else None)
+    if not last:
+        last = costing_service.last_purchase_cost(db, item_id)
     if last and Decimal(str(last)) > 0:
         price, source = Decimal(str(last)), "last_purchase"
     elif item.sale_price is not None and Decimal(str(item.sale_price)) > 0:
@@ -539,7 +542,7 @@ def get_return_price(
         .where(ItemPrice.item_id == item_id, ItemPrice.discount_pct.isnot(None))
         .limit(1)
     )
-    disc = Decimal(str(row or 0))
+    disc = Decimal("0") if source == "last_purchase" else Decimal(str(row or 0))
 
     return ReturnPriceOut(item_id=item_id, unit_price=price, discount_pct=disc, source=source)
 

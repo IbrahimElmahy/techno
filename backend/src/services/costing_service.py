@@ -275,15 +275,15 @@ def average_cost_bulk(db: Session, item_ids) -> dict[int, Decimal]:
     return {i: to_money(known.get(i, ZERO)) for i in ids}
 
 
-def last_purchase_cost(db: Session, item_id: int) -> Decimal:
-    row = db.execute(
-        select(PurchaseInvoiceLine.unit_price, PurchaseInvoiceLine.unit_factor,
-               PurchaseInvoiceLine.discount_pct, PurchaseInvoice.combined_pct)
-        .join(PurchaseInvoice, PurchaseInvoice.id == PurchaseInvoiceLine.invoice_id)
-        .where(PurchaseInvoiceLine.item_id == item_id)
-        .order_by(PurchaseInvoice.id.desc(), PurchaseInvoiceLine.id.desc())
-        .limit(1)
-    ).first()
+def last_purchase_cost(db: Session, item_id: int, supplier_id: int | None = None) -> Decimal:
+    stmt = (select(PurchaseInvoiceLine.unit_price, PurchaseInvoiceLine.unit_factor,
+                   PurchaseInvoiceLine.discount_pct, PurchaseInvoice.combined_pct)
+            .join(PurchaseInvoice, PurchaseInvoice.id == PurchaseInvoiceLine.invoice_id)
+            .where(PurchaseInvoiceLine.item_id == item_id))
+    if supplier_id is not None:
+        stmt = stmt.where(PurchaseInvoice.supplier_id == supplier_id)
+    row = db.execute(stmt.order_by(PurchaseInvoice.id.desc(), PurchaseInvoiceLine.id.desc())
+                     .limit(1)).first()
     if row is None or row[0] is None:
         return ZERO
     unit_price = discounts.apply(Decimal(str(row[0])), row[2], row[3])

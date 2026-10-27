@@ -543,7 +543,8 @@ export default function PurchaseReturns({ embedded }: { embedded?: { onExit: () 
     let price = product?.purchase_price ? parseFloat(product.purchase_price) : 0;
     let disc: number | null = null;
     try {
-      const r = await api.get(`/api/v1/items/${itemId}/return-price`);
+      const r = await api.get(`/api/v1/items/${itemId}/return-price`,
+        { params: supplierFilter ? { supplier_id: supplierFilter } : undefined });
       if (Number(r.data?.unit_price) > 0) price = Number(r.data.unit_price);
       if (Number(r.data?.discount_pct) > 0) disc = Number(r.data.discount_pct);
     } catch {}

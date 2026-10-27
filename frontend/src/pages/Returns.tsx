@@ -491,18 +491,14 @@ export default function Returns({ embedded }: { embedded?: { onExit: () => void 
   ): Promise<PickResult> => {
     const prod = products.find((p) => p.id === itemId);
     const info = await fetchLastInfo(itemId);
-    let price = info.last_price != null ? parseFloat(info.last_price) : 0;
-    let priceUnit: string | null = price > 0 ? (info.history[0]?.unit ?? null) : null;
-    let fallbackDisc: number | null = null;
-    if (!(price > 0)) {
-      priceUnit = null;
-      try {
-        const r = await api.get(`/api/v1/items/${itemId}/return-price`);
-        if (Number(r.data?.unit_price) > 0) price = Number(r.data.unit_price);
-        if (Number(r.data?.discount_pct) > 0) fallbackDisc = Number(r.data.discount_pct);
-      } catch {}
-    }
-    if (!(price > 0)) price = prod?.sale_price ? parseFloat(prod.sale_price) : 0;
+    const lastSale = info.history[0];
+    const listed = lastSale ? Number(lastSale.unit_price || 0) : 0;
+    const paid = lastSale ? Number(lastSale.effective_price || 0) : 0;
+    let price = listed > 0 ? listed : (prod?.sale_price ? parseFloat(prod.sale_price) : 0);
+    const priceUnit: string | null = listed > 0 ? (lastSale?.unit ?? null) : null;
+    const saleDisc = listed > 0 && paid > 0 && paid < listed
+      ? Math.round((1 - paid / listed) * 10000) / 100 : 0;
+    if (!(price > 0)) price = 0;
     const existing = lines.find((x) => x.item_id === itemId);
     if (existing) {
       if (qty) {
@@ -518,8 +514,8 @@ export default function Returns({ embedded }: { embedded?: { onExit: () => void 
       setLines((prev) => [...prev, {
         key, category: prod?.category ?? null, item_id: itemId,
         quantity: qty || null, unit_price: price, discount: 0,
-        fixed_discount: prod?.default_discount_pct
-          ? parseFloat(prod.default_discount_pct) : (fallbackDisc ?? 0),
+        fixed_discount: listed > 0 ? saleDisc
+          : (prod?.default_discount_pct ? parseFloat(prod.default_discount_pct) : 0),
         warehouse_id: warehouseId,
         is_serialized: !!prod?.is_serialized,
         serials: [] as string[],
@@ -857,7 +853,7 @@ export default function Returns({ embedded }: { embedded?: { onExit: () => void 
           }))}
           options={unitSelectOptions(unitsCache[line.item_id || 0])} />
       ) },
-    { key: 'last_price', title: 'آخر سعر شراء', span: 2, xs: 12, width: 110,
+    { key: 'last_price', title: 'آخر سعر بيع للعميل', span: 2, xs: 12, width: 110,
       cell: (line) => {
         const info = line.item_id ? lastInfo[line.item_id] : undefined;
         const last = info?.last_price;
