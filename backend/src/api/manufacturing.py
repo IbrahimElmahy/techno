@@ -650,12 +650,25 @@ def recipe_plan(
               and (cast(:b as bigint) is null or w.branch_id = :b)
             order by m.item_id, m.id desc"""), {"ids": ids, "b": mine}).all()
         last = {i: w for i, w in rows}
+        held = db.execute(_t("""
+            select m.item_id, m.location_id,
+                   sum(case when m.direction = 'in_' then m.quantity else -m.quantity end) q
+            from stock_movement m join warehouse w on w.id = m.location_id
+            where m.item_id = any(:ids) and m.location_kind = 'warehouse'
+              and (cast(:b as bigint) is null or w.branch_id = :b)
+            group by m.item_id, m.location_id"""), {"ids": ids, "b": mine}).all()
+        on_hand = {(i, w): Decimal(str(q or 0)) for i, w, q in held}
+    else:
+        on_hand = {}
     out = []
     for item_id, qty in plan:
-        wh = last.get(item_id)
-        if wh is None:
-            it = db.get(Item, item_id)
-            wh = it.default_warehouse_id if it else None
+        it = db.get(Item, item_id)
+        default = it.default_warehouse_id if it else None
+        stocked = max(((w, q) for (i, w), q in on_hand.items() if i == item_id and q > 0),
+                      key=lambda x: x[1], default=(None, 0))[0]
+        wh = next((w for w in (last.get(item_id), default)
+                   if w and on_hand.get((item_id, w), 0) > 0), None)
+        wh = wh or stocked or last.get(item_id) or default
         out.append(PlanMaterialOut(item_id=item_id, quantity=qty, warehouse_id=wh))
     return RecipePlanOut(product_id=product_id, bom_id=bom.id if bom else None, materials=out)
 
