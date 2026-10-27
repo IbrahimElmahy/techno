@@ -5,7 +5,7 @@ from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
 from src.lib.doc_order import newest_first
@@ -19,7 +19,7 @@ from src.models.customer import Customer
 from src.models.supplier import Supplier
 from src.models.trade_order import OrderKind, OrderStatus, TradeOrder, TradeOrderLine
 from src.auth import branch_scope
-from src.services import sales_service
+from src.services import numbering, sales_service
 
 router = APIRouter(tags=["orders"], prefix="/orders")
 
@@ -137,10 +137,8 @@ def create_order(
     if not body.lines:
         raise HTTPException(422, {"code": "validation", "message": "يجب إدخال سطر واحد على الأقل."})
 
-    n = db.scalar(select(func.count()).select_from(TradeOrder).where(
-        TradeOrder.kind == kind)) or 0
     order = TradeOrder(
-        document_number=f"{_PREFIX[kind]}-{n + 1:06d}", kind=kind,
+        document_number=numbering.next_document_number(db, TradeOrder, _PREFIX[kind]), kind=kind,
         customer_id=body.customer_id, supplier_id=body.supplier_id,
         order_date=body.order_date, due_date=body.due_date, warehouse_id=body.warehouse_id,
         branch_id=body.branch_id or branch_scope.branch_for(db, actor_user_id=current.id)

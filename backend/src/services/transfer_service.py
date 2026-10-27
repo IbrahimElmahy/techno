@@ -493,19 +493,14 @@ def revise(db, *, transfer_id: int, lines, actor_user_id: int,
                       "from": f"{getattr(frm[0], 'value', frm[0])}:{frm[1]}",
                       "to": f"{getattr(to[0], 'value', to[0])}:{to[1]}"})
 
-    kept: dict[int, StockTransferLine] = {}
+    previous: dict[int, tuple] = {}
     for ln in old_lines:
-        if ln.item_id in new and ln.item_id not in kept:
-            kept[ln.item_id] = ln
-            ln.quantity = new[ln.item_id]
-            if ln.item_id in posted and moved:
-                ln.out_movement_id, ln.in_movement_id = posted[ln.item_id]
-        else:
-            db.delete(ln)
+        previous.setdefault(ln.item_id, (ln.out_movement_id, ln.in_movement_id))
+        db.delete(ln)
+    db.flush()
     for item_id, quantity in new.items():
-        if item_id in kept:
-            continue
-        out_id, in_id = posted.get(item_id, (None, None))
+        out_id, in_id = (posted[item_id] if item_id in posted and (moved or item_id not in previous)
+                         else previous.get(item_id, (None, None)))
         db.add(StockTransferLine(transfer_id=transfer.id, item_id=item_id, quantity=quantity,
                                  out_movement_id=out_id, in_movement_id=in_id))
     head_item = wanted[0][0]

@@ -348,6 +348,7 @@ export default function Orders() {
   const printOrder = (o: Order) => {
     const rows = o.lines.map((l, i) => ({
       no: i + 1,
+      code: items.find((x) => x.id === (l as any).item_id)?.code ?? '',
       item: l.item_name ?? `صنف #${(l as any).item_id ?? ''}`,
       unit: l.unit ?? 'الأساسية',
       quantity: qty(l.quantity),
@@ -377,6 +378,7 @@ export default function Orders() {
       },
       [
         { title: '#', value: 'no' },
+        { title: 'الكود', value: 'code' },
         { title: 'الصنف', value: 'item' },
         { title: 'الوحدة', value: 'unit' },
         { title: 'الكمية', value: 'quantity', numeric: true },
