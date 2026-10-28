@@ -6,8 +6,13 @@ export interface QuotePrintOptions {
   companyName: boolean;
   customer: boolean;
   codeColumn: boolean;
+  itemColumn: boolean;
   unitColumn: boolean;
-  netPrices: boolean;
+  quantityColumn: boolean;
+  priceColumn: boolean;
+  grossColumn: boolean;
+  discountColumn: boolean;
+  netColumn: boolean;
   date: boolean;
   validUntil: boolean;
   statement: boolean;
@@ -17,9 +22,14 @@ export const QUOTE_PRINT_LABELS: { key: keyof QuotePrintOptions; label: string }
   { key: 'logo', label: 'شعار الشركة' },
   { key: 'companyName', label: 'اسم الشركة' },
   { key: 'customer', label: 'اسم العميل' },
-  { key: 'codeColumn', label: 'عمود كود الصنف' },
+  { key: 'codeColumn', label: 'عمود الكود' },
+  { key: 'itemColumn', label: 'عمود اسم الصنف' },
   { key: 'unitColumn', label: 'عمود الوحدة' },
-  { key: 'netPrices', label: 'السعر بعد الخصم' },
+  { key: 'quantityColumn', label: 'عمود الكمية' },
+  { key: 'priceColumn', label: 'عمود السعر' },
+  { key: 'grossColumn', label: 'عمود الإجمالي' },
+  { key: 'discountColumn', label: 'عمود نسبة الخصم' },
+  { key: 'netColumn', label: 'عمود الإجمالي بعد الخصم' },
   { key: 'date', label: 'التاريخ' },
   { key: 'validUntil', label: 'ساري حتى' },
   { key: 'statement', label: 'البيان والملاحظات' },
@@ -30,8 +40,13 @@ export const DEFAULT_QUOTE_PRINT_OPTIONS: QuotePrintOptions = {
   companyName: true,
   customer: true,
   codeColumn: true,
+  itemColumn: true,
   unitColumn: false,
-  netPrices: true,
+  quantityColumn: true,
+  priceColumn: true,
+  grossColumn: true,
+  discountColumn: true,
+  netColumn: true,
   date: true,
   validUntil: true,
   statement: true,

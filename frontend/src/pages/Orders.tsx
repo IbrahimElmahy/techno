@@ -358,33 +358,38 @@ export default function Orders() {
       : Number(l.quantity || 0) * Number(l.unit_price || 0)
         * (1 - Math.min(MAX_DISCOUNT_PCT, Number(l.discount_pct || 0)) / 100));
     const linesNet = o.lines.reduce((s, l) => s + lineNet(l), 0);
-    const ratio = op.netPrices && linesNet > 0 && o.total != null ? Number(o.total) / linesNet : 1;
+    const ratio = linesNet > 0 && o.total != null ? Number(o.total) / linesNet : 1;
     const rows = o.lines.map((l, i) => {
-      const lineTotal = lineNet(l) * ratio;
       const q = Number(l.quantity || 0);
+      const gross = q * Number(l.unit_price || 0);
+      const net = lineNet(l) * ratio;
+      const pct = gross > 0 ? (1 - net / gross) * 100 : 0;
       return {
         no: i + 1,
         code: items.find((x) => x.id === (l as any).item_id)?.code ?? '',
         item: l.item_name ?? `صنف #${(l as any).item_id ?? ''}`,
         unit: l.unit ?? 'الأساسية',
         quantity: qty(l.quantity),
-        price: money(op.netPrices ? (q ? lineTotal / q : 0) : Number(l.unit_price || 0)),
-        disc: Number(l.discount_pct || 0) ? `${Number(l.discount_pct)}%` : '-',
-        total: money(lineTotal),
+        price: money(Number(l.unit_price || 0)),
+        gross: money(gross),
+        disc: pct > 0.005 ? `${Math.round(pct * 100) / 100}%` : '-',
+        net: money(net),
       };
     });
     type Row = typeof rows[number];
+    const pick = (on: boolean, col: PrintColumn<Row>) => (on ? [col] : []);
     const columns: PrintColumn<Row>[] = [
       { title: '#', value: 'no' },
-      ...(op.codeColumn ? [{ title: 'الكود', value: 'code' } as PrintColumn<Row>] : []),
-      { title: 'الصنف', value: 'item' },
-      ...(op.unitColumn ? [{ title: 'الوحدة', value: 'unit' } as PrintColumn<Row>] : []),
-      { title: 'الكمية', value: 'quantity', numeric: true },
-      { title: op.netPrices ? 'السعر' : 'سعر الوحدة', value: 'price', numeric: true },
-      ...(op.netPrices ? [] : [{ title: 'خصم', value: 'disc', numeric: true } as PrintColumn<Row>]),
-      { title: 'الإجمالي', value: 'total', numeric: true },
+      ...pick(op.codeColumn, { title: 'الكود', value: 'code' }),
+      ...pick(op.itemColumn, { title: 'اسم الصنف', value: 'item' }),
+      ...pick(op.unitColumn, { title: 'الوحدة', value: 'unit' }),
+      ...pick(op.quantityColumn, { title: 'الكمية', value: 'quantity', numeric: true }),
+      ...pick(op.priceColumn, { title: 'السعر', value: 'price', numeric: true }),
+      ...pick(op.grossColumn, { title: 'الإجمالي', value: 'gross', numeric: true }),
+      ...pick(op.discountColumn, { title: 'نسبة الخصم', value: 'disc', numeric: true }),
+      ...pick(op.netColumn, { title: 'الإجمالي بعد الخصم', value: 'net', numeric: true }),
     ];
-    const pct = Number(o.variable_discount_pct || 0);
+    const grossTotal = o.lines.reduce((s, l) => s + Number(l.quantity || 0) * Number(l.unit_price || 0), 0);
     printReport(
       {
         title: o.kind === 'sale' ? 'عرض أسعار' : 'تسعيرة شراء',
@@ -410,10 +415,10 @@ export default function Orders() {
       rows,
       [
         { label: 'عدد الأصناف', value: String(rows.length) },
-        ...(!op.netPrices && Number(o.total) < linesNet - 0.005
-          ? [{ label: pct > 0.001 ? `خصم الورقة ${pct}%` : 'الخصم', value: money(linesNet - Number(o.total)) }]
-          : []),
-        { label: 'الإجمالي', value: money(o.total) },
+        ...(op.grossColumn ? [{ label: 'الإجمالي', value: money(grossTotal) }] : []),
+        ...(grossTotal > Number(o.total) + 0.005
+          ? [{ label: 'الخصم', value: money(grossTotal - Number(o.total)) }] : []),
+        { label: 'الإجمالي بعد الخصم', value: money(o.total) },
       ],
     );
   };
