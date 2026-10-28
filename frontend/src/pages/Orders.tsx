@@ -346,21 +346,24 @@ export default function Orders() {
   };
 
   const printOrder = (o: Order) => {
-    const rows = o.lines.map((l, i) => ({
-      no: i + 1,
-      code: items.find((x) => x.id === (l as any).item_id)?.code ?? '',
-      item: l.item_name ?? `صنف #${(l as any).item_id ?? ''}`,
-      unit: l.unit ?? 'الأساسية',
-      quantity: qty(l.quantity),
-      price: money(l.unit_price),
-      gross: money(Number(l.quantity || 0) * Number(l.unit_price || 0)),
-      disc: Number(l.discount_pct || 0) ? `${Number(l.discount_pct)}%` : '-',
-      total: money(l.line_total != null
-        ? l.line_total
-        : Number(l.quantity || 0) * Number(l.unit_price || 0)
-          * (1 - Math.min(MAX_DISCOUNT_PCT, Number(l.discount_pct || 0)) / 100)),
-    }));
-    const pct = Number(o.variable_discount_pct || 0);
+    const netOf = (l: Order['lines'][number]) => (l.line_total != null
+      ? Number(l.line_total)
+      : Number(l.quantity || 0) * Number(l.unit_price || 0)
+        * (1 - Math.min(MAX_DISCOUNT_PCT, Number(l.discount_pct || 0)) / 100));
+    const linesNet = o.lines.reduce((s, l) => s + netOf(l), 0);
+    const ratio = linesNet > 0 && o.total != null ? Number(o.total) / linesNet : 1;
+    const rows = o.lines.map((l, i) => {
+      const lineTotal = netOf(l) * ratio;
+      const q = Number(l.quantity || 0);
+      return {
+        no: i + 1,
+        code: items.find((x) => x.id === (l as any).item_id)?.code ?? '',
+        item: l.item_name ?? `صنف #${(l as any).item_id ?? ''}`,
+        quantity: qty(l.quantity),
+        price: money(q ? lineTotal / q : 0),
+        total: money(lineTotal),
+      };
+    });
     printReport(
       {
         title: o.kind === 'sale' ? 'عرض أسعار' : 'تسعيرة شراء',
@@ -380,20 +383,13 @@ export default function Orders() {
         { title: '#', value: 'no' },
         { title: 'الكود', value: 'code' },
         { title: 'الصنف', value: 'item' },
-        { title: 'الوحدة', value: 'unit' },
         { title: 'الكمية', value: 'quantity', numeric: true },
-        { title: 'سعر الوحدة', value: 'price', numeric: true },
-        { title: 'إجمالي قبل الخصم', value: 'gross', numeric: true },
-        { title: 'خصم', value: 'disc', numeric: true },
+        { title: 'السعر', value: 'price', numeric: true },
         { title: 'الإجمالي', value: 'total', numeric: true },
       ],
       rows,
       [
         { label: 'عدد الأصناف', value: String(rows.length) },
-        { label: 'قبل الخصم', value: money(o.gross) },
-        ...(pct > 0.001
-          ? [{ label: `خصم الورقة ${pct}%`, value: money(Number(o.gross) - Number(o.total)) }]
-          : []),
         { label: 'الإجمالي', value: money(o.total) },
       ],
     );

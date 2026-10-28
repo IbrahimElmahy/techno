@@ -180,7 +180,7 @@ export function printInvoice(d: InvoiceDoc, opts?: PrintOptions): void {
   const body = `
     <table class="grid">
       <thead><tr><th>#</th>${showCode ? '<th>الكود</th>' : ''}<th>الصنف</th>${anyWh ? '<th>المخزن</th>' : ''}<th>الكمية</th>${showUnit ? '<th>الوحدة</th>' : ''}
-        <th>${o.netPrices ? 'السعر بعد الخصم' : 'سعر الوحدة'}</th>${anyDisc ? '<th>الخصم</th>' : ''}${anyPts ? '<th>النقاط</th>' : ''}<th>الإجمالي</th></tr></thead>
+        <th>${o.netPrices ? 'السعر' : 'سعر الوحدة'}</th>${anyDisc ? '<th>الخصم</th>' : ''}${anyPts ? '<th>النقاط</th>' : ''}<th>الإجمالي</th></tr></thead>
       <tbody>${rows || `<tr><td colspan="${cols}">لا توجد أصناف</td></tr>`}</tbody>
     </table>
     ${footerColumns(d, o, dPrior, discount, pts)}`;
