@@ -136,6 +136,7 @@ export default function Invoices() {
   const [familyAccounts, setFamilyAccounts] = useState<
     { family: string | null; balance: string }[]>([]);
   const [invoiceFamily, setInvoiceFamily] = useState<string | null>(null);
+  const [partyIsEmployee, setPartyIsEmployee] = useState(false);
   const FAMILIES = ['أبيض', 'بولي'];
   const families = FAMILIES.map((f) => ({
     family: f,
@@ -590,6 +591,7 @@ export default function Invoices() {
     setCustomerBalance(null);
     setFamilyAccounts([]);
     setInvoiceFamily(null);
+    setPartyIsEmployee(false);
     setAvailability({});
     stockLoaded.current.clear();
     excludeDocRef.current = null;
@@ -954,6 +956,8 @@ export default function Invoices() {
 
   const handlePartyPicked = (picked: Party) => {
     setParty(picked);
+    setPartyIsEmployee(picked.kind === 'employee');
+    if (picked.kind === 'employee') setInvoiceFamily(null);
     setPartyPickerOpen(false);
     if (newStep === 'party') { setNewStep('warehouse'); setCreateVisible(true); }
     createForm.setFieldsValue({ customer_id: picked.id });
@@ -998,7 +1002,7 @@ export default function Invoices() {
     await loadWarehouseStock(warehouseId);
   };
 
-  const afterWarehouseStep = (): null | 'family' => (isFactory ? null : 'family');
+  const afterWarehouseStep = (): null | 'family' => (isFactory || partyIsEmployee ? null : 'family');
 
   const familyChoices = (): { value: string; label: string }[] => (
     families.length > 1

@@ -29,6 +29,7 @@ export interface Party {
   address?: string | null;
   branch_id?: number | null;
   balance?: string | null;
+  kind?: PartyKind;
 }
 
 const KIND_LABEL: Record<PartyKind, string> = { customer: 'العميل', supplier: 'المورد', employee: 'الموظف' };
@@ -229,7 +230,7 @@ export default function PartyPickerModal({
       }
       return;
     }
-    if (!supplierAsCustomer || activeKind !== 'supplier') { onPick(p); return; }
+    if (!supplierAsCustomer || activeKind !== 'supplier') { onPick({ ...p, kind: activeKind }); return; }
     try {
       const r = await api.post(`/api/v1/suppliers/${p.id}/customer-card`);
       onPick({ id: r.data.id, name: r.data.name, phone: r.data.phone ?? null,
