@@ -75,6 +75,14 @@ const NAV_KEYS = new Set(allScreens().map((s) => s.key));
 
 export function baseOf(path: string): string {
   if (NAV_KEYS.has(path)) return path;
+  const [pathname, query] = path.split('?');
+  if (query) {
+    const params = new URLSearchParams(query);
+    params.delete('doc');
+    params.delete('edit');
+    const clean = params.toString() ? `${pathname}?${params.toString()}` : pathname;
+    if (NAV_KEYS.has(clean)) return clean;
+  }
   const seg = path.split('?')[0].split('/').filter(Boolean);
   return `/${seg[0] || 'dashboard'}`;
 }
