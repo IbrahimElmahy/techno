@@ -43,7 +43,7 @@ import {
 } from '../print/quotePrintOptions';
 import { QTY_DATA_ATTR } from '../utils/duplicateItem';
 import { addPickedSequentially, type PickResult } from '../utils/pickMany';
-import { money, num, numeralsLocale, qty } from '../utils/money';
+import { money, numeralsLocale, qty } from '../utils/money';
 import { unitSelectOptions } from '../utils/units';
 import './docs.extra.css';
 
@@ -359,7 +359,9 @@ export default function Orders() {
         * (1 - Math.min(MAX_DISCOUNT_PCT, Number(l.discount_pct || 0)) / 100));
     const linesNet = o.lines.reduce((s, l) => s + lineNet(l), 0);
     const ratio = linesNet > 0 && o.total != null ? Number(o.total) / linesNet : 1;
-    const amount = (v: number) => (op.decimals ? money(v) : num(Math.round(v), { maximumFractionDigits: 0 }));
+    const amount = (v: number) => v.toLocaleString('en-US', op.decimals
+      ? { minimumFractionDigits: 2, maximumFractionDigits: 2, useGrouping: true }
+      : { maximumFractionDigits: 0, useGrouping: true });
     const rows = o.lines.map((l, i) => {
       const q = Number(l.quantity || 0);
       const gross = q * Number(l.unit_price || 0);
