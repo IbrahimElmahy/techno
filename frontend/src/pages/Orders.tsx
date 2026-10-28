@@ -43,7 +43,7 @@ import {
 } from '../print/quotePrintOptions';
 import { QTY_DATA_ATTR } from '../utils/duplicateItem';
 import { addPickedSequentially, type PickResult } from '../utils/pickMany';
-import { money, numeralsLocale, qty } from '../utils/money';
+import { money, num, numeralsLocale, qty } from '../utils/money';
 import { unitSelectOptions } from '../utils/units';
 import './docs.extra.css';
 
@@ -359,6 +359,7 @@ export default function Orders() {
         * (1 - Math.min(MAX_DISCOUNT_PCT, Number(l.discount_pct || 0)) / 100));
     const linesNet = o.lines.reduce((s, l) => s + lineNet(l), 0);
     const ratio = linesNet > 0 && o.total != null ? Number(o.total) / linesNet : 1;
+    const amount = (v: number) => (op.decimals ? money(v) : num(Math.round(v), { maximumFractionDigits: 0 }));
     const rows = o.lines.map((l, i) => {
       const q = Number(l.quantity || 0);
       const gross = q * Number(l.unit_price || 0);
@@ -370,10 +371,10 @@ export default function Orders() {
         item: l.item_name ?? `صنف #${(l as any).item_id ?? ''}`,
         unit: l.unit ?? 'الأساسية',
         quantity: qty(l.quantity),
-        price: money(Number(l.unit_price || 0)),
-        gross: money(gross),
+        price: amount(Number(l.unit_price || 0)),
+        gross: amount(gross),
         disc: pct > 0.005 ? `${Math.round(pct * 100) / 100}%` : '-',
-        net: money(net),
+        net: amount(net),
       };
     });
     type Row = typeof rows[number];
@@ -384,10 +385,11 @@ export default function Orders() {
       ...pick(op.itemColumn, { title: 'اسم الصنف', value: 'item', center: true }),
       ...pick(op.unitColumn, { title: 'الوحدة', value: 'unit', center: true }),
       ...pick(op.quantityColumn, { title: 'الكمية', value: 'quantity', numeric: true, center: true }),
-      ...pick(op.priceColumn, { title: 'السعر', value: 'price', numeric: true, center: true }),
+      ...pick(op.priceColumn, {
+        title: op.netColumn ? 'سعر الوحدة' : 'السعر', value: 'price', numeric: true, center: true }),
       ...pick(op.grossColumn, { title: 'الإجمالي', value: 'gross', numeric: true, center: true }),
       ...pick(op.discountColumn, { title: 'نسبة الخصم', value: 'disc', numeric: true, center: true }),
-      ...pick(op.netColumn, { title: 'الإجمالي بعد الخصم', value: 'net', numeric: true, center: true }),
+      ...pick(op.netColumn, { title: 'السعر', value: 'net', numeric: true, center: true }),
     ];
     const grossTotal = o.lines.reduce((s, l) => s + Number(l.quantity || 0) * Number(l.unit_price || 0), 0);
     printReport(
@@ -415,10 +417,10 @@ export default function Orders() {
       rows,
       [
         { label: 'عدد الأصناف', value: String(rows.length) },
-        ...(op.grossColumn ? [{ label: 'الإجمالي', value: money(grossTotal) }] : []),
+        ...(op.grossColumn ? [{ label: 'الإجمالي', value: amount(grossTotal) }] : []),
         ...(grossTotal > Number(o.total) + 0.005
-          ? [{ label: 'الخصم', value: money(grossTotal - Number(o.total)) }] : []),
-        { label: 'الإجمالي بعد الخصم', value: money(o.total) },
+          ? [{ label: 'الخصم', value: amount(grossTotal - Number(o.total)) }] : []),
+        { label: 'الإجمالي بعد الخصم', value: amount(Number(o.total)) },
       ],
     );
   };

@@ -13,6 +13,7 @@ export interface QuotePrintOptions {
   grossColumn: boolean;
   discountColumn: boolean;
   netColumn: boolean;
+  decimals: boolean;
   date: boolean;
   validUntil: boolean;
   statement: boolean;
@@ -29,7 +30,8 @@ export const QUOTE_PRINT_LABELS: { key: keyof QuotePrintOptions; label: string }
   { key: 'priceColumn', label: 'عمود السعر' },
   { key: 'grossColumn', label: 'عمود الإجمالي' },
   { key: 'discountColumn', label: 'عمود نسبة الخصم' },
-  { key: 'netColumn', label: 'عمود الإجمالي بعد الخصم' },
+  { key: 'netColumn', label: 'عمود السعر بعد الخصم' },
+  { key: 'decimals', label: 'العلامات العشرية (لحسابي)' },
   { key: 'date', label: 'التاريخ' },
   { key: 'validUntil', label: 'ساري حتى' },
   { key: 'statement', label: 'البيان والملاحظات' },
@@ -47,6 +49,7 @@ export const DEFAULT_QUOTE_PRINT_OPTIONS: QuotePrintOptions = {
   grossColumn: true,
   discountColumn: true,
   netColumn: true,
+  decimals: true,
   date: true,
   validUntil: true,
   statement: true,
@@ -70,25 +73,36 @@ function keepLocal(o: QuotePrintOptions): void {
   }
 }
 
+const DECIMALS_PREF = 'quote:decimals';
+
 export function saveQuotePrintOptions(o: QuotePrintOptions): Promise<void> {
   keepLocal(o);
-  return api.put('/api/v1/settings/print-options', { options: o }, { params: { scope: 'quote' } })
-    .then(() => undefined);
+  const { decimals, ...shared } = o;
+  return Promise.all([
+    api.put('/api/v1/auth/prefs', { key: DECIMALS_PREF, value: decimals ? '1' : '0' }),
+    api.put('/api/v1/settings/print-options', { options: shared }, { params: { scope: 'quote' } }),
+  ]).then(() => undefined);
 }
 
 export function useQuotePrintOptions(): [QuotePrintOptions, (o: QuotePrintOptions) => void] {
   const [opts, setOpts] = useState<QuotePrintOptions>(loadLocal);
   useEffect(() => {
     let alive = true;
-    api.get('/api/v1/settings/print-options', { params: { scope: 'quote' } })
-      .then((r) => {
-        const saved = r.data?.options;
-        if (!alive || !saved) return;
-        const next = { ...DEFAULT_QUOTE_PRINT_OPTIONS, ...saved };
+    Promise.all([
+      api.get('/api/v1/settings/print-options', { params: { scope: 'quote' } })
+        .then((r) => r.data?.options || null).catch(() => null),
+      api.get('/api/v1/auth/prefs').then((r) => r.data?.[DECIMALS_PREF] ?? null).catch(() => null),
+    ]).then(([saved, decimals]) => {
+      if (!alive || (!saved && decimals == null)) return;
+      setOpts((prev) => {
+        const next = {
+          ...prev, ...(saved || {}),
+          ...(decimals == null ? {} : { decimals: decimals === '1' }),
+        };
         keepLocal(next);
-        setOpts(next);
-      })
-      .catch(() => {});
+        return next;
+      });
+    });
     return () => { alive = false; };
   }, []);
   return [opts, setOpts];
