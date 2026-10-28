@@ -4,6 +4,7 @@ export interface PrintColumn<T = any> {
   title: string;
   value: keyof T | ((row: T) => unknown);
   numeric?: boolean;
+  center?: boolean;
 }
 
 export interface PrintTotal {
@@ -56,7 +57,9 @@ export function reportTableHtml<T>(
     .map((row) => {
       const cells = columns
         .map((c) => {
-          const align = c.numeric ? ' style="text-align:left;direction:ltr"' : '';
+          const align = c.center
+            ? ` style="text-align:center${c.numeric ? ';direction:ltr' : ''}"`
+            : c.numeric ? ' style="text-align:left;direction:ltr"' : '';
           const v = cellOf(row, c);
           return `<td${align}>${esc(c.numeric ? numericCell(v) : v)}</td>`;
         })

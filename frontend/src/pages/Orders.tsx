@@ -379,15 +379,15 @@ export default function Orders() {
     type Row = typeof rows[number];
     const pick = (on: boolean, col: PrintColumn<Row>) => (on ? [col] : []);
     const columns: PrintColumn<Row>[] = [
-      { title: '#', value: 'no' },
-      ...pick(op.codeColumn, { title: 'الكود', value: 'code' }),
-      ...pick(op.itemColumn, { title: 'اسم الصنف', value: 'item' }),
-      ...pick(op.unitColumn, { title: 'الوحدة', value: 'unit' }),
-      ...pick(op.quantityColumn, { title: 'الكمية', value: 'quantity', numeric: true }),
-      ...pick(op.priceColumn, { title: 'السعر', value: 'price', numeric: true }),
-      ...pick(op.grossColumn, { title: 'الإجمالي', value: 'gross', numeric: true }),
-      ...pick(op.discountColumn, { title: 'نسبة الخصم', value: 'disc', numeric: true }),
-      ...pick(op.netColumn, { title: 'الإجمالي بعد الخصم', value: 'net', numeric: true }),
+      { title: '#', value: 'no', center: true },
+      ...pick(op.codeColumn, { title: 'الكود', value: 'code', center: true }),
+      ...pick(op.itemColumn, { title: 'اسم الصنف', value: 'item', center: true }),
+      ...pick(op.unitColumn, { title: 'الوحدة', value: 'unit', center: true }),
+      ...pick(op.quantityColumn, { title: 'الكمية', value: 'quantity', numeric: true, center: true }),
+      ...pick(op.priceColumn, { title: 'السعر', value: 'price', numeric: true, center: true }),
+      ...pick(op.grossColumn, { title: 'الإجمالي', value: 'gross', numeric: true, center: true }),
+      ...pick(op.discountColumn, { title: 'نسبة الخصم', value: 'disc', numeric: true, center: true }),
+      ...pick(op.netColumn, { title: 'الإجمالي بعد الخصم', value: 'net', numeric: true, center: true }),
     ];
     const grossTotal = o.lines.reduce((s, l) => s + Number(l.quantity || 0) * Number(l.unit_price || 0), 0);
     printReport(
