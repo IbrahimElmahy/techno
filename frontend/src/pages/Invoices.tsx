@@ -1895,11 +1895,11 @@ function couponsTotal(inv: any): number {
                 ? `تعديل ${isBonus ? 'فاتورة بونص' : 'طلب بيع'} #${editingInvoice.id}`
                 : isBonus ? 'تسجيل فاتورة بونص جديدة' : 'تسجيل طلب بيع جديد'}
           </span>
-          {((viewInvoice as any)?.family || invoiceFamily) && (
-            <Tag color={((viewInvoice as any)?.family || invoiceFamily) === 'أبيض'
+          {(invoiceFamily || (viewInvoice as any)?.family) && (
+            <Tag color={(invoiceFamily || (viewInvoice as any)?.family) === 'أبيض'
               ? 'default' : 'blue'}
               style={{ fontWeight: 700, marginInlineEnd: 0 }}>
-              {(viewInvoice as any)?.family || invoiceFamily}
+              {invoiceFamily || (viewInvoice as any)?.family}
             </Tag>
           )}
           {viewInvoice && !viewOnly && (
