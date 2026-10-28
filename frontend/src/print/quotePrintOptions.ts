@@ -2,6 +2,9 @@ import { useEffect, useState } from 'react';
 import { api } from '../api/client';
 
 export interface QuotePrintOptions {
+  logo: boolean;
+  companyName: boolean;
+  customer: boolean;
   codeColumn: boolean;
   unitColumn: boolean;
   netPrices: boolean;
@@ -11,6 +14,9 @@ export interface QuotePrintOptions {
 }
 
 export const QUOTE_PRINT_LABELS: { key: keyof QuotePrintOptions; label: string }[] = [
+  { key: 'logo', label: 'شعار الشركة' },
+  { key: 'companyName', label: 'اسم الشركة' },
+  { key: 'customer', label: 'اسم العميل' },
   { key: 'codeColumn', label: 'عمود كود الصنف' },
   { key: 'unitColumn', label: 'عمود الوحدة' },
   { key: 'netPrices', label: 'السعر بعد الخصم' },
@@ -20,6 +26,9 @@ export const QUOTE_PRINT_LABELS: { key: keyof QuotePrintOptions; label: string }
 ];
 
 export const DEFAULT_QUOTE_PRINT_OPTIONS: QuotePrintOptions = {
+  logo: true,
+  companyName: true,
+  customer: true,
   codeColumn: true,
   unitColumn: false,
   netPrices: true,

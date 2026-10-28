@@ -389,8 +389,14 @@ export default function Orders() {
       {
         title: o.kind === 'sale' ? 'عرض أسعار' : 'تسعيرة شراء',
         number: o.document_number || '',
-        date: op.date && o.order_date ? String(o.order_date).slice(0, 10) : undefined,
+        hide: { logo: !op.logo, companyName: !op.companyName },
         meta: [
+          ...(op.customer && partyName(o)
+            ? [[o.kind === 'sale' ? 'العميل' : 'المورد', String(partyName(o))]] as [string, string][]
+            : []),
+          ...(op.date && (o.order_date || o.created_at)
+            ? [['التاريخ', String(o.order_date || o.created_at).slice(0, 10)]] as [string, string][]
+            : []),
           ...(op.validUntil && o.due_date
             ? [['ساري حتى', String(o.due_date).slice(0, 10)]] as [string, string][]
             : []),
