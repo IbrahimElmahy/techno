@@ -35,7 +35,12 @@ import DocumentToolbar, { ToolbarAction } from '../components/DocumentToolbar';
 import DocumentHistoryButton from '../components/DocumentHistory';
 import SummaryTile from '../components/saleDoc/SummaryTile';
 import DocumentAttachments from '../components/DocumentAttachments';
-import { printReport } from '../print/reportSheet';
+import { printReport, type PrintColumn } from '../print/reportSheet';
+import PrintOptionsMenu from '../components/PrintOptionsMenu';
+import {
+  DEFAULT_QUOTE_PRINT_OPTIONS, QUOTE_PRINT_LABELS, saveQuotePrintOptions, useQuotePrintOptions,
+  type QuotePrintOptions,
+} from '../print/quotePrintOptions';
 import { QTY_DATA_ATTR } from '../utils/duplicateItem';
 import { addPickedSequentially, type PickResult } from '../utils/pickMany';
 import { money, numeralsLocale, qty } from '../utils/money';
@@ -151,6 +156,7 @@ export default function Orders() {
     });
   }, []);
 
+  const [quoteOpts, setQuoteOpts] = useQuotePrintOptions();
   const kindLabel = kind === 'sale' ? 'بيع' : 'شراء';
   const sheetName = kind === 'sale' ? 'عرض أسعار' : 'تسعيرة شراء';
 
@@ -346,50 +352,61 @@ export default function Orders() {
   };
 
   const printOrder = (o: Order) => {
-    const netOf = (l: Order['lines'][number]) => (l.line_total != null
+    const op = quoteOpts;
+    const lineNet = (l: Order['lines'][number]) => (l.line_total != null
       ? Number(l.line_total)
       : Number(l.quantity || 0) * Number(l.unit_price || 0)
         * (1 - Math.min(MAX_DISCOUNT_PCT, Number(l.discount_pct || 0)) / 100));
-    const linesNet = o.lines.reduce((s, l) => s + netOf(l), 0);
-    const ratio = linesNet > 0 && o.total != null ? Number(o.total) / linesNet : 1;
+    const linesNet = o.lines.reduce((s, l) => s + lineNet(l), 0);
+    const ratio = op.netPrices && linesNet > 0 && o.total != null ? Number(o.total) / linesNet : 1;
     const rows = o.lines.map((l, i) => {
-      const lineTotal = netOf(l) * ratio;
+      const lineTotal = lineNet(l) * ratio;
       const q = Number(l.quantity || 0);
       return {
         no: i + 1,
         code: items.find((x) => x.id === (l as any).item_id)?.code ?? '',
         item: l.item_name ?? `صنف #${(l as any).item_id ?? ''}`,
+        unit: l.unit ?? 'الأساسية',
         quantity: qty(l.quantity),
-        price: money(q ? lineTotal / q : 0),
+        price: money(op.netPrices ? (q ? lineTotal / q : 0) : Number(l.unit_price || 0)),
+        disc: Number(l.discount_pct || 0) ? `${Number(l.discount_pct)}%` : '-',
         total: money(lineTotal),
       };
     });
+    type Row = typeof rows[number];
+    const columns: PrintColumn<Row>[] = [
+      { title: '#', value: 'no' },
+      ...(op.codeColumn ? [{ title: 'الكود', value: 'code' } as PrintColumn<Row>] : []),
+      { title: 'الصنف', value: 'item' },
+      ...(op.unitColumn ? [{ title: 'الوحدة', value: 'unit' } as PrintColumn<Row>] : []),
+      { title: 'الكمية', value: 'quantity', numeric: true },
+      { title: op.netPrices ? 'السعر' : 'سعر الوحدة', value: 'price', numeric: true },
+      ...(op.netPrices ? [] : [{ title: 'خصم', value: 'disc', numeric: true } as PrintColumn<Row>]),
+      { title: 'الإجمالي', value: 'total', numeric: true },
+    ];
+    const pct = Number(o.variable_discount_pct || 0);
     printReport(
       {
         title: o.kind === 'sale' ? 'عرض أسعار' : 'تسعيرة شراء',
         number: o.document_number || '',
-        date: o.order_date ? String(o.order_date).slice(0, 10) : undefined,
+        date: op.date && o.order_date ? String(o.order_date).slice(0, 10) : undefined,
         meta: [
-          ...(o.due_date
+          ...(op.validUntil && o.due_date
             ? [['ساري حتى', String(o.due_date).slice(0, 10)]] as [string, string][]
             : []),
-          ...(o.statement1 ? [['البيان', o.statement1]] as [string, string][] : []),
-          ...(o.notes ? [['ملاحظات', o.notes]] as [string, string][] : []),
+          ...(op.statement && o.statement1 ? [['البيان', o.statement1]] as [string, string][] : []),
+          ...(op.statement && o.notes ? [['ملاحظات', o.notes]] as [string, string][] : []),
         ],
         note: o.kind === 'sale' ? 'عرض أسعار — لا يحرّك مخزوناً ولا خزينة.'
           : 'ورقة تسعير — لا تحرّك مخزوناً ولا خزينة.',
       },
-      [
-        { title: '#', value: 'no' },
-        { title: 'الكود', value: 'code' },
-        { title: 'الصنف', value: 'item' },
-        { title: 'الكمية', value: 'quantity', numeric: true },
-        { title: 'السعر', value: 'price', numeric: true },
-        { title: 'الإجمالي', value: 'total', numeric: true },
-      ],
+      columns,
       rows,
       [
         { label: 'عدد الأصناف', value: String(rows.length) },
+        ...(!op.netPrices && Number(o.total) < linesNet - 0.005
+          ? [{ label: pct > 0.001 ? `خصم الورقة ${pct}%` : 'الخصم', value: money(linesNet - Number(o.total)) }]
+          : []),
         { label: 'الإجمالي', value: money(o.total) },
       ],
     );
@@ -577,6 +594,9 @@ export default function Orders() {
         <Button icon={<ReloadOutlined />} onClick={load}>تحديث</Button>
         <ExportExcelButton name={kind === 'sale' ? 'عرض أسعار' : `شيت تسعير ${kindLabel}`} rows={filter.filtered}
           tableColumns={tableCols.columns as any} style={{ marginInlineStart: 0 }} />
+        <PrintOptionsMenu<QuotePrintOptions> value={quoteOpts} onChange={setQuoteOpts}
+          labels={QUOTE_PRINT_LABELS} defaults={DEFAULT_QUOTE_PRINT_OPTIONS}
+          save={saveQuotePrintOptions} title="ما يُطبع على عرض الأسعار" />
         {tableCols.control}
       </>)}
       filters={(<>
@@ -652,6 +672,9 @@ export default function Orders() {
             </span>
             <div className="sale-toolbar-row">
               <DocumentToolbar actions={sheetToolbar()} variant="buttons" />
+              <PrintOptionsMenu<QuotePrintOptions> value={quoteOpts} onChange={setQuoteOpts}
+                labels={QUOTE_PRINT_LABELS} defaults={DEFAULT_QUOTE_PRINT_OPTIONS}
+                save={saveQuotePrintOptions} title="ما يُطبع على عرض الأسعار" />
               {lineGrid.control}
             </div>
           </div>

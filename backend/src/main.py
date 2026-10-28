@@ -364,6 +364,7 @@ _ADDED_COLUMNS: list[tuple[str, str, str]] = [
     ("fleet_setting", "diesel_price", "DECIMAL(18,2)"),
     ("fleet_setting", "petrol_price", "DECIMAL(18,2)"),
     ("sales_setting", "print_options", "VARCHAR(2000)"),
+    ("sales_setting", "quote_print_options", "VARCHAR(2000)"),
     ("user", "session_client", "VARCHAR(16)"),
     ("user", "session_started_at", "TIMESTAMP"),
     ("user", "supervisor_id", "BIGINT"),

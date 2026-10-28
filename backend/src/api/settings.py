@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from decimal import Decimal
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -74,24 +74,30 @@ class PrintOptionsBody(BaseModel):
     options: dict[str, bool] | None = None
 
 
+def _print_column(scope: str | None) -> str:
+    return "quote_print_options" if scope == "quote" else "print_options"
+
+
 @router.get("/print-options", response_model=PrintOptionsBody)
 def get_print_options(
+    scope: str | None = Query(None),
     _: CurrentUser = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> PrintOptionsBody:
     s = db.scalar(select(SalesSetting))
-    raw = getattr(s, "print_options", None) if s is not None else None
+    raw = getattr(s, _print_column(scope), None) if s is not None else None
     return PrintOptionsBody(options=json.loads(raw) if raw else None)
 
 
 @router.put("/print-options", response_model=PrintOptionsBody)
 def update_print_options(
     body: PrintOptionsBody,
+    scope: str | None = Query(None),
     current: CurrentUser = Depends(require_capability(CAP_SETTINGS_WRITE)),
     db: Session = Depends(get_db),
 ) -> PrintOptionsBody:
     s = _get_or_create(db)
-    s.print_options = json.dumps(body.options or {}, ensure_ascii=False)
+    setattr(s, _print_column(scope), json.dumps(body.options or {}, ensure_ascii=False))
     s.updated_by = current.id
     db.commit()
     return PrintOptionsBody(options=body.options)
