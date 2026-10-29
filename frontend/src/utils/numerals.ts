@@ -8,6 +8,7 @@ export const NUMERALS_LABELS: Record<Numerals, string> = {
 };
 
 const KEY_PREFIX = 'techno.numerals.';
+const GROUPING_PREFIX = 'techno.grouping.';
 
 const LOCALES: Record<Numerals, string> = { arabic: 'ar-EG', latin: 'en-EG' };
 
@@ -33,8 +34,18 @@ function read(key: string): Numerals {
   return 'arabic';
 }
 
+function readGrouping(username: string | null | undefined): boolean {
+  try {
+    return localStorage.getItem(GROUPING_PREFIX + (username && username.trim() ? username.trim() : 'default')) === '1';
+  } catch {
+    return false;
+  }
+}
+
 let activeKey = keyFor(storedUsername());
 let current: Numerals = read(activeKey);
+let activeUser: string | null = storedUsername();
+let grouping = readGrouping(activeUser);
 
 const listeners = new Set<() => void>();
 
@@ -44,6 +55,24 @@ function emit(): void {
 
 export function getNumerals(): Numerals {
   return current;
+}
+
+export function getGrouping(): boolean {
+  return grouping;
+}
+
+export function setGrouping(next: boolean): void {
+  if (next === grouping) return;
+  grouping = next;
+  try {
+    localStorage.setItem(GROUPING_PREFIX + (activeUser && activeUser.trim() ? activeUser.trim() : 'default'),
+      next ? '1' : '0');
+  } catch {}
+  emit();
+}
+
+export function useGrouping(): boolean {
+  return useSyncExternalStore(subscribe, getGrouping, getGrouping);
 }
 
 export function numeralsLocale(): string {
@@ -61,6 +90,8 @@ export function bindNumeralsUser(username: string | null | undefined): void {
   const key = keyFor(username);
   if (key === activeKey) return;
   activeKey = key;
+  activeUser = username ?? null;
+  grouping = readGrouping(activeUser);
   const next = read(key);
   if (next !== current) {
     current = next;

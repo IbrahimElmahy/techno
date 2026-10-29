@@ -417,8 +417,8 @@ export default function Orders() {
   const printOrder = (o: Order) => {
     const op = quoteOpts;
     const amount = (v: number) => v.toLocaleString('en-US', op.decimals
-      ? { minimumFractionDigits: 2, maximumFractionDigits: 2, useGrouping: true }
-      : { maximumFractionDigits: 0, useGrouping: true });
+      ? { minimumFractionDigits: 2, maximumFractionDigits: 2 }
+      : { maximumFractionDigits: 0 });
     const { lines } = quoteNumbers(o);
     const rows = lines.map((l) => ({
       no: l.no,

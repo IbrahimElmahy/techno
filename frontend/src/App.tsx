@@ -59,7 +59,7 @@ import ColumnResizeProvider from './components/ColumnResize';
 import Login from './pages/Login';
 import UpdateBanner from './components/UpdateBanner';
 import { setApiBaseURL } from './api/client';
-import { useNumerals } from './utils/numerals';
+import { useGrouping, useNumerals } from './utils/numerals';
 import { HC_THEME, UiThemeProvider, useUiThemeState } from './components/ContrastTheme';
 
 export default function App() {
@@ -67,6 +67,7 @@ export default function App() {
   const [apiUrl, setApiUrl] = useState('');
 
   useNumerals();
+  useGrouping();
 
   const uiTheme = useUiThemeState();
   const hc = uiTheme.theme === 'hc';
