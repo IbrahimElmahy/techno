@@ -10,7 +10,7 @@ import { Popconfirm } from '../components/noConfirm';
 import {
   DeleteOutlined, PlusOutlined, ReloadOutlined, ArrowLeftOutlined, FileAddOutlined,
   SaveOutlined, UndoOutlined, EditOutlined, SearchOutlined, ArrowRightOutlined,
-  PrinterOutlined, BankOutlined, CheckOutlined, FileTextOutlined, ClearOutlined,
+  PrinterOutlined, BankOutlined, CheckOutlined, FileTextOutlined, ClearOutlined, FileExcelOutlined,
 } from '@ant-design/icons';
 import dayjs, { Dayjs } from 'dayjs';
 import { useNavigate } from 'react-router-dom';
@@ -36,6 +36,7 @@ import DocumentHistoryButton from '../components/DocumentHistory';
 import SummaryTile from '../components/saleDoc/SummaryTile';
 import DocumentAttachments from '../components/DocumentAttachments';
 import { printReport, type PrintColumn } from '../print/reportSheet';
+import { exportExcel } from '../utils/exportExcel';
 import PrintOptionsMenu from '../components/PrintOptionsMenu';
 import {
   DEFAULT_QUOTE_PRINT_OPTIONS, QUOTE_PRINT_LABELS, saveQuotePrintOptions, useQuotePrintOptions,
@@ -346,39 +347,90 @@ export default function Orders() {
       { key: 'print', label: 'طباعة', shortcut: 'F7', icon: <PrinterOutlined />,
         disabled: typed === 0,
         onClick: () => printOrder(draftAsOrder()) },
+      { key: 'excel', label: 'Excel', icon: <FileExcelOutlined />,
+        disabled: typed === 0,
+        onClick: () => exportOrder(draftAsOrder()) },
       { key: 'accounts', label: 'حسابات', icon: <BankOutlined />, disabled: true },
       { key: 'reload', label: 'تحميل', icon: <ReloadOutlined />, onClick: load },
     ];
   };
 
-  const printOrder = (o: Order) => {
-    const op = quoteOpts;
+  const quoteNumbers = (o: Order) => {
     const lineNet = (l: Order['lines'][number]) => (l.line_total != null
       ? Number(l.line_total)
       : Number(l.quantity || 0) * Number(l.unit_price || 0)
         * (1 - Math.min(MAX_DISCOUNT_PCT, Number(l.discount_pct || 0)) / 100));
     const linesNet = o.lines.reduce((s, l) => s + lineNet(l), 0);
     const ratio = linesNet > 0 && o.total != null ? Number(o.total) / linesNet : 1;
-    const amount = (v: number) => v.toLocaleString('en-US', op.decimals
-      ? { minimumFractionDigits: 2, maximumFractionDigits: 2, useGrouping: true }
-      : { maximumFractionDigits: 0, useGrouping: true });
-    const rows = o.lines.map((l, i) => {
+    const lines = o.lines.map((l, i) => {
       const q = Number(l.quantity || 0);
       const gross = q * Number(l.unit_price || 0);
       const net = lineNet(l) * ratio;
-      const pct = gross > 0 ? (1 - net / gross) * 100 : 0;
       return {
         no: i + 1,
         code: items.find((x) => x.id === (l as any).item_id)?.code ?? '',
         item: l.item_name ?? `صنف #${(l as any).item_id ?? ''}`,
         unit: l.unit ?? 'الأساسية',
-        quantity: qty(l.quantity),
-        price: amount(Number(l.unit_price || 0)),
-        gross: amount(gross),
-        disc: pct > 0.005 ? `${Math.round(pct * 100) / 100}%` : '-',
-        net: amount(net),
+        quantity: q,
+        price: Number(l.unit_price || 0),
+        gross,
+        pct: gross > 0 ? Math.round((1 - net / gross) * 10000) / 100 : 0,
+        net,
       };
     });
+    const grossTotal = lines.reduce((s, l) => s + l.gross, 0);
+    return { lines, grossTotal, total: Number(o.total || 0) };
+  };
+
+  const exportOrder = (o: Order) => {
+    const op = quoteOpts;
+    const { lines, grossTotal, total } = quoteNumbers(o);
+    const round = (v: number) => (op.decimals ? Math.round(v * 100) / 100 : Math.round(v));
+    type XRow = Record<string, string | number | null>;
+    const rows: XRow[] = lines.map((l) => ({
+      no: l.no, code: l.code, item: l.item, unit: l.unit, quantity: l.quantity,
+      price: round(l.price), gross: round(l.gross), pct: l.pct > 0.005 ? l.pct : null, net: round(l.net),
+    }));
+    rows.push({});
+    if (op.customer) rows.push({ item: o.kind === 'sale' ? 'العميل' : 'المورد', net: String(partyName(o)) });
+    if (op.date && (o.order_date || o.created_at)) {
+      rows.push({ item: 'التاريخ', net: String(o.order_date || o.created_at).slice(0, 10) });
+    }
+    if (op.grossColumn) rows.push({ item: 'الإجمالي', net: round(grossTotal) });
+    if (grossTotal > total + 0.005) rows.push({ item: 'الخصم', net: round(grossTotal - total) });
+    rows.push({ item: 'الإجمالي بعد الخصم', net: round(total) });
+    const pick = (on: boolean, title: string, value: string) => (on ? [{ title, value }] : []);
+    const name = `${o.kind === 'sale' ? 'عرض أسعار' : 'تسعيرة شراء'} ${o.document_number || ''}`.trim();
+    exportExcel(name, [
+      { title: 'م', value: 'no' },
+      ...pick(op.codeColumn, 'الكود', 'code'),
+      ...pick(op.itemColumn, 'اسم الصنف', 'item'),
+      ...pick(op.unitColumn, 'الوحدة', 'unit'),
+      ...pick(op.quantityColumn, 'الكمية', 'quantity'),
+      ...pick(op.priceColumn, op.netColumn ? 'سعر الوحدة' : 'السعر', 'price'),
+      ...pick(op.grossColumn, 'الإجمالي', 'gross'),
+      ...pick(op.discountColumn, 'نسبة الخصم %', 'pct'),
+      ...pick(op.netColumn, 'السعر', 'net'),
+    ] as any, rows, o.document_number || name);
+  };
+
+  const printOrder = (o: Order) => {
+    const op = quoteOpts;
+    const amount = (v: number) => v.toLocaleString('en-US', op.decimals
+      ? { minimumFractionDigits: 2, maximumFractionDigits: 2, useGrouping: true }
+      : { maximumFractionDigits: 0, useGrouping: true });
+    const { lines } = quoteNumbers(o);
+    const rows = lines.map((l) => ({
+      no: l.no,
+      code: l.code,
+      item: l.item,
+      unit: l.unit,
+      quantity: qty(l.quantity),
+      price: amount(l.price),
+      gross: amount(l.gross),
+      disc: l.pct > 0.005 ? `${l.pct}%` : '-',
+      net: amount(l.net),
+    }));
     type Row = typeof rows[number];
     const pick = (on: boolean, col: PrintColumn<Row>) => (on ? [col] : []);
     const columns: PrintColumn<Row>[] = [
@@ -393,7 +445,7 @@ export default function Orders() {
       ...pick(op.discountColumn, { title: 'نسبة الخصم', value: 'disc', numeric: true, center: true }),
       ...pick(op.netColumn, { title: 'السعر', value: 'net', numeric: true, center: true }),
     ];
-    const grossTotal = o.lines.reduce((s, l) => s + Number(l.quantity || 0) * Number(l.unit_price || 0), 0);
+    const { grossTotal } = quoteNumbers(o);
     printReport(
       {
         title: o.kind === 'sale' ? 'عرض أسعار' : 'تسعيرة شراء',
@@ -816,6 +868,8 @@ export default function Orders() {
             <div className="sale-toolbar-row">
               <Button icon={<PrinterOutlined />}
                 onClick={() => printOrder(detail)}>طباعة</Button>
+              <Button icon={<FileExcelOutlined />}
+                onClick={() => exportOrder(detail)}>Excel</Button>
               <DocumentHistoryButton entityType="sales_order" entityId={detail.id}
                 documentNumber={detail.document_number} />
               {detail.status === 'open' && detail.kind === 'sale' && (
