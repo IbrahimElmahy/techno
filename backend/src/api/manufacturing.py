@@ -660,8 +660,12 @@ def recipe_plan(
         on_hand = {(i, w): Decimal(str(q or 0)) for i, w, q in held}
     else:
         on_hand = {}
+    wip = _wip_warehouse(db, mine or _branch_of_item(db, product_id))
     out = []
     for item_id, qty in plan:
+        if wip is not None:
+            out.append(PlanMaterialOut(item_id=item_id, quantity=qty, warehouse_id=wip))
+            continue
         it = db.get(Item, item_id)
         default = it.default_warehouse_id if it else None
         stocked = max(((w, q) for (i, w), q in on_hand.items() if i == item_id and q > 0),
@@ -671,6 +675,28 @@ def recipe_plan(
         wh = wh or stocked or last.get(item_id) or default
         out.append(PlanMaterialOut(item_id=item_id, quantity=qty, warehouse_id=wh))
     return RecipePlanOut(product_id=product_id, bom_id=bom.id if bom else None, materials=out)
+
+
+def _branch_of_item(db: Session, item_id: int) -> int | None:
+    from src.models.catalog import Item
+    from src.models.warehouse import Warehouse
+
+    it = db.get(Item, item_id)
+    wh = db.get(Warehouse, it.default_warehouse_id) if it and it.default_warehouse_id else None
+    return wh.branch_id if wh else None
+
+
+def _wip_warehouse(db: Session, branch_id: int | None) -> int | None:
+    from sqlalchemy import select as _s
+
+    from src.models.warehouse import Warehouse
+    from src.services import perpetual_service
+
+    if not perpetual_service.is_active(db, branch_id, None):
+        return None
+    return db.scalar(_s(Warehouse.id).where(
+        Warehouse.branch_id == branch_id, Warehouse.inventory_role == "wip",
+        Warehouse.active.is_(True)).limit(1))
 
 
 @router.get("/production-orders/next-number")
