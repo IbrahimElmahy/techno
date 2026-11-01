@@ -69,7 +69,7 @@ import {
   InvoiceRecord, ItemPrices, Customer, RepEmployee, Product, Warehouse, SaleLineItem,
   ItemUnit, InvoiceDetail, InvoiceFilters, CouponRow, couponRowHasContent,
 } from './invoices/types';
-import { afterFixedOf, buildLineColumns } from './invoices/lineColumns';
+import { buildLineColumns } from './invoices/lineColumns';
 import { buildRegisterColumns } from './invoices/registerColumns';
 import ReceiptModal from './vouchers/ReceiptModal';
 import { useQuickVoucher, fetchVoucher, type EditableVoucher } from './vouchers/useQuickVoucher';
@@ -553,7 +553,6 @@ export default function Invoices() {
     (l.item_id ? (pointValues[l.item_id] || 0) : 0) * (l.quantity || 0);
 
   const grossTotal = lines.reduce((sum, line) => sum + lineTotal(line), 0);
-  const afterFixedTotal = lines.reduce((sum, line) => sum + afterFixedOf(line), 0);
   const netTotal = isBonus ? 0 : netOf(grossTotal, discountPct);
 
   const totalPoints = lines.reduce((sum, line) => sum + linePoints(line), 0);
@@ -2307,8 +2306,14 @@ function couponsTotal(inv: any): number {
           {(() => {
             const invoiceDiscount = grossTotal - netTotal;
             const hasParty = !!selectedCustomerId && customerBalance !== null;
-            const balance = customerBalance ?? 0;
-            const due = balance + netTotal - cashAmount;
+            const familyRow = invoiceFamily ? families.find((a) => a.family === invoiceFamily) : undefined;
+            const balance = familyRow ? Number(familyRow.balance || 0) : (customerBalance ?? 0);
+            const others = familyRow ? [
+              ...families.filter((a) => a.family !== invoiceFamily),
+              ...familyAccounts.filter((a) => !a.family && Math.abs(Number(a.balance || 0)) > 0.001),
+            ] : [];
+            const totalDue = balance + netTotal;
+            const due = totalDue - cashAmount;
             return (
               <>
               <div className="sale-card sale-notes">
@@ -2342,29 +2347,31 @@ function couponsTotal(inv: any): number {
               <Row gutter={[10, 10]}>
                 <Col xs={24} lg={16}>
                   <div className="sale-tiles">
-                    <SummaryTile label="بعد الخصم الثابت" value={money(afterFixedTotal)} />
                     <SummaryTile label="إجمالي الأصناف" value={money(grossTotal)} />
                     {invoiceDiscount > 0.001 && (
                       <SummaryTile label={`خصم الفاتورة (${isBonus ? 100 : discountPct}%)`}
                         value={`− ${money(invoiceDiscount)}`} color="#dc2626" />
                     )}
                     <SummaryTile label="صافي الفاتورة" value={money(netTotal)} color="#16a34a" />
-                    {hasParty && families.map((a) => {
-                      const b = Number(a.balance || 0);
-                      return (
-                        <SummaryTile key={a.family} label={`مديونية ${a.family}`}
-                          value={money(b)} color={b > 0 ? '#dc2626' : '#16a34a'}
-                          active={a.family === invoiceFamily} />
-                      );
-                    })}
                     {hasParty && (
-                      <SummaryTile label="إجمالي المديونية" tone="yellow" value={money(balance)}
-                        color={balance > 0 ? '#dc2626' : '#16a34a'} />
+                      <SummaryTile label={familyRow ? `حساب سابق ${familyRow.family}` : 'حساب سابق'}
+                        value={money(balance)} color={balance > 0 ? '#dc2626' : '#16a34a'} />
+                    )}
+                    {hasParty && (
+                      <SummaryTile label="إجمالي المديونية" tone="yellow" value={money(totalDue)}
+                        color={totalDue > 0 ? '#dc2626' : '#16a34a'} />
                     )}
                     {hasParty && (
                       <SummaryTile label="الباقي على العميل" tone={due > 0.001 ? 'rose' : 'mint'}
                         value={money(due)} color={due > 0.001 ? '#dc2626' : '#15803d'} />
                     )}
+                    {hasParty && others.map((a) => {
+                      const b = Number(a.balance || 0);
+                      return (
+                        <SummaryTile key={a.family ?? '-'} label={a.family ? `حساب ${a.family}` : 'حساب بدون نوع'}
+                          value={money(b)} color={b > 0 ? '#dc2626' : '#16a34a'} />
+                      );
+                    })}
                   </div>
                 </Col>
 
