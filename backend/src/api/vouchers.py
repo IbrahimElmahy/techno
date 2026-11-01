@@ -864,6 +864,10 @@ def get_voucher(
     current: CurrentUser = Depends(require_capability(CAP_VOUCHER_READ)),
     db: Session = Depends(get_db),
 ) -> VoucherOut:
+    return _out(get_voucher_row(db, voucher_id, current))
+
+
+def get_voucher_row(db: Session, voucher_id: int, current: CurrentUser) -> Voucher:
     v = db.get(Voucher, voucher_id)
     if v is not None and current.role == RoleName.sales_rep \
             and current.id not in (v.actor_user_id, v.rep_user_id):
@@ -871,7 +875,57 @@ def get_voucher(
     if v is None or not branch_scope.visible(current, [v]):
         raise HTTPException(status.HTTP_404_NOT_FOUND,
                             {"code": "not_found", "message": "السند غير موجود."})
-    return _out(v)
+    return v
+
+
+class ReceiptFamilyBalance(BaseModel):
+    family: str
+    balance: Decimal
+
+
+class ReceiptContextOut(BaseModel):
+    phone: str | None = None
+    rep_name: str | None = None
+    prior: Decimal | None = None
+    total_prior: Decimal | None = None
+    others: list[ReceiptFamilyBalance] = []
+
+
+@router.get("/vouchers/{voucher_id}/receipt-context", response_model=ReceiptContextOut)
+def receipt_context(
+    voucher_id: int,
+    current: CurrentUser = Depends(require_capability(CAP_VOUCHER_READ)),
+    db: Session = Depends(get_db),
+) -> ReceiptContextOut:
+    from src.models.customer import Customer, CustomerAccount
+    from src.models.user import User
+    v = get_voucher_row(db, voucher_id, current)
+    rep = db.get(User, v.rep_user_id) if v.rep_user_id else None
+    out = ReceiptContextOut(rep_name=(rep.full_name or rep.username) if rep else None)
+    if not v.customer_id:
+        return out
+    c = db.get(Customer, v.customer_id)
+    out.phone = c.phone if c else None
+    accounts = db.scalars(select(CustomerAccount).where(
+        CustomerAccount.customer_id == v.customer_id)).all()
+
+    def before(ids: list[int]) -> Decimal:
+        if not ids:
+            return Decimal("0")
+        if v.ledger_entry_id:
+            return ledger_service.balance_before_entry(db, ids, v.ledger_entry_id) or Decimal("0")
+        return sum((ledger_service.balance_of(db, i) for i in ids), Decimal("0"))
+
+    out.total_prior = before([a.account_id for a in accounts])
+    family = getattr(v, "family", None)
+    mine = [a.account_id for a in accounts if family and a.family == family]
+    out.prior = before(mine) if mine else out.total_prior
+    if mine:
+        for fam in sorted({a.family for a in accounts if a.family and a.family != family}):
+            b = before([a.account_id for a in accounts if a.family == fam])
+            if abs(b) > Decimal("0.001"):
+                out.others.append(ReceiptFamilyBalance(family=fam, balance=b))
+    return out
 
 
 @router.get("/customers/{customer_id}/statement", response_model=StatementOut)

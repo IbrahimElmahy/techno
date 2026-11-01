@@ -428,6 +428,7 @@ const Vouchers: React.FC = () => {
       family: (v as any).family ?? null,
       entryId: (v as any).ledger_entry_id ?? null,
       isReversal: v.is_reversal,
+      voucherId: v.id,
     };
   };
 

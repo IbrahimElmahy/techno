@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { Button, Space } from 'antd';
 import { PrinterOutlined } from '@ant-design/icons';
 import Logo, { BRAND } from './Logo';
@@ -6,6 +6,7 @@ import { printDocument } from '../print/brand';
 import { amountToArabicWords } from '../utils/arabicNumberWords';
 import { COMPANY, companyLines } from '../config/company';
 import { printMoney as n } from '../print/reportSheet';
+import { api } from '../api/client';
 
 export type VoucherKind = 'receipt' | 'payment' | 'expense' | 'rep_handover' | 'cash_transfer'
   | 'partner_withdraw' | 'partner_deposit';
@@ -26,6 +27,43 @@ export interface VoucherDoc {
   family?: string | null;
   entryId?: number | null;
   isReversal?: boolean;
+  voucherId?: number | null;
+}
+
+export interface ReceiptContext {
+  phone?: string | null;
+  rep_name?: string | null;
+  prior?: string | number | null;
+  total_prior?: string | number | null;
+  others?: { family: string; balance: string | number }[];
+}
+
+export async function loadReceiptContext(d: VoucherDoc): Promise<ReceiptContext | null> {
+  if (d.kind !== 'receipt' || !d.voucherId || d.isReversal) return null;
+  try {
+    return (await api.get<ReceiptContext>(`/api/v1/vouchers/${d.voucherId}/receipt-context`)).data;
+  } catch {
+    return null;
+  }
+}
+
+function balanceRows(d: VoucherDoc, ctx: ReceiptContext | null): [string, number, boolean][] {
+  if (!ctx || ctx.prior == null) return [];
+  const amount = Number(d.amount || 0);
+  const prior = Number(ctx.prior);
+  const fam = d.family ? ` (${d.family})` : '';
+  const out: [string, number, boolean][] = [
+    [`حساب سابق${fam}`, prior, false],
+    ['المدفوع', amount, false],
+    [`الباقي بعد الدفعة${fam}`, prior - amount, true],
+  ];
+  if (d.family) {
+    (ctx.others || []).forEach((o) => out.push([`مديونية ${o.family}`, Number(o.balance), false]));
+    if (ctx.total_prior != null) {
+      out.push(['إجمالي حساب العميل بعد الدفعة', Number(ctx.total_prior) - amount, false]);
+    }
+  }
+  return out;
 }
 
 export const VOUCHER_TITLES: Record<VoucherKind, string> = {
@@ -58,9 +96,15 @@ const STATEMENT: Record<VoucherKind, string> = {
   partner_deposit: 'استلمنا من',
 };
 
-function rows(d: VoucherDoc): [string, string][] {
+function titleOf(d: VoucherDoc): string {
+  return d.kind === 'receipt' && d.family ? `${VOUCHER_TITLES.receipt} — ${d.family}` : VOUCHER_TITLES[d.kind];
+}
+
+function rows(d: VoucherDoc, ctx: ReceiptContext | null = null): [string, string][] {
   const out: [string, string][] = [];
   if (d.partyName) out.push([d.partyLabel || 'الطرف', d.partyName]);
+  if (ctx?.phone) out.push(['الهاتف', ctx.phone]);
+  if (ctx?.rep_name) out.push(['المندوب', ctx.rep_name]);
   out.push(['التاريخ', d.date ? String(d.date).slice(0, 10) : '-']);
   if (d.treasury) out.push([d.kind === 'cash_transfer' ? 'من خزينة' : 'الخزينة', d.treasury]);
   if (d.toTreasury) out.push(['إلى خزينة', d.toTreasury]);
@@ -76,7 +120,9 @@ function rows(d: VoucherDoc): [string, string][] {
   return out;
 }
 
-export function printVoucher(d: VoucherDoc): void {
+export async function printVoucher(d: VoucherDoc): Promise<void> {
+  const ctx = await loadReceiptContext(d);
+  const bal = balanceRows(d, ctx);
   const [a, b, c] = SIGNATURES[d.kind];
   const body = `
     <div style="margin:18px 0;padding:16px 18px;border:2px solid #000;border-radius:10px">
@@ -89,14 +135,17 @@ export function printVoucher(d: VoucherDoc): void {
         ${STATEMENT[d.kind]}: <b>${d.partyName}</b></div>` : ''}
     </div>
     <table class="meta">
-      ${rows(d).map(([k, v]) => `<tr><td class="k">${k}</td><td>${v}</td></tr>`).join('')}
+      ${rows(d, ctx).map(([k, v]) => `<tr><td class="k">${k}</td><td>${v}</td></tr>`).join('')}
     </table>
+    ${bal.length ? `<table class="meta" style="margin-top:12px">
+      ${bal.map(([k, v, big]) => `<tr><td class="k">${k}</td><td style="${big ? 'font-weight:800;font-size:16px' : ''}">${n(v)}</td></tr>`).join('')}
+    </table>` : ''}
     <div class="signatures">
       <div class="sig">${a}</div><div class="sig">${b}</div><div class="sig">${c}</div>
     </div>`;
   printDocument(
     {
-      title: VOUCHER_TITLES[d.kind],
+      title: titleOf(d),
       number: d.document_number,
       note: 'هذا السند لا يُعتد به إلا موقعًا ومختومًا من الشركة.',
     },
@@ -110,6 +159,14 @@ const cell: React.CSSProperties = {
 
 export default function VoucherDocument({ doc }: { doc: VoucherDoc }) {
   const [a, b, c] = SIGNATURES[doc.kind];
+  const [ctx, setCtx] = useState<ReceiptContext | null>(null);
+  useEffect(() => {
+    let live = true;
+    setCtx(null);
+    loadReceiptContext(doc).then((r) => { if (live) setCtx(r); });
+    return () => { live = false; };
+  }, [doc.kind, doc.voucherId, doc.isReversal]);
+  const bal = balanceRows(doc, ctx);
   return (
     <div style={{ background: '#fff' }}>
       <div style={{
@@ -130,7 +187,7 @@ export default function VoucherDocument({ doc }: { doc: VoucherDoc }) {
         display: 'flex', alignItems: 'center', justifyContent: 'space-between',
         gap: 12, margin: '16px 0 10px', flexWrap: 'wrap',
       }}>
-        <h2 style={{ margin: 0, fontSize: 19 }}>{VOUCHER_TITLES[doc.kind]}</h2>
+        <h2 style={{ margin: 0, fontSize: 19 }}>{titleOf(doc)}</h2>
         <span style={{
           background: BRAND.green, color: '#fff', padding: '4px 14px',
           borderRadius: 999, fontWeight: 700,
@@ -155,7 +212,7 @@ export default function VoucherDocument({ doc }: { doc: VoucherDoc }) {
 
       <table style={{ width: '100%', borderCollapse: 'collapse' }}>
         <tbody>
-          {rows(doc).map(([k, v]) => (
+          {rows(doc, ctx).map(([k, v]) => (
             <tr key={k}>
               <td style={{ ...cell, background: '#f2f9f3', fontWeight: 700, width: 130 }}>{k}</td>
               <td style={cell}>{v}</td>
@@ -163,6 +220,20 @@ export default function VoucherDocument({ doc }: { doc: VoucherDoc }) {
           ))}
         </tbody>
       </table>
+
+      {bal.length > 0 && (
+        <table style={{ width: '100%', borderCollapse: 'collapse', marginTop: 12 }}>
+          <tbody>
+            {bal.map(([k, v, big]) => (
+              <tr key={k}>
+                <td style={{ ...cell, background: '#f2f9f3', fontWeight: 700, width: 220 }}>{k}</td>
+                <td style={{ ...cell, fontWeight: big ? 800 : 400, fontSize: big ? 16 : 13,
+                  color: big ? BRAND.green : undefined }}>{n(v)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
 
       <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 34 }}>
         {[a, b, c].map((s) => (

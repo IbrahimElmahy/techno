@@ -116,6 +116,7 @@ export function useRegisterReceipts(opts: {
     family: x.v.family ?? null,
     entryId: x.v.ledger_entry_id ?? null,
     isReversal: x.v.is_reversal,
+    voucherId: x.v.id,
   });
 
   const modal = (

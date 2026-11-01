@@ -272,6 +272,7 @@ export default function VoucherShell({
       family: res?.family ?? payload.family ?? null,
       entryId: res?.ledger_entry_id ?? null,
       isReversal: !!res?.is_reversal,
+      voucherId: res?.id ?? null,
     };
   };
 

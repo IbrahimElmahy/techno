@@ -402,6 +402,8 @@ def _voucher_detail(db: Session, customer_id: int, record_id: int) -> dict:
             "description": v.description,
             "entryId": v.ledger_entry_id,
             "isReversal": v.reverses_id is not None,
+            "voucherId": v.id,
+            "family": getattr(v, "family", None),
         },
         "fields": [
             {"label": "رقم السند", "value": v.document_number},
