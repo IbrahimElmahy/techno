@@ -136,6 +136,8 @@ export default function Invoices() {
   const [familyAccounts, setFamilyAccounts] = useState<
     { family: string | null; balance: string }[]>([]);
   const [invoiceFamily, setInvoiceFamily] = useState<string | null>(null);
+  const [docPrior, setDocPrior] = useState<
+    { customerId: number; family: string | null; balance: number } | null>(null);
   const [partyIsEmployee, setPartyIsEmployee] = useState(false);
   const FAMILIES = ['أبيض', 'بولي'];
   const families = FAMILIES.map((f) => ({
@@ -590,6 +592,7 @@ export default function Invoices() {
     setCustomerBalance(null);
     setFamilyAccounts([]);
     setInvoiceFamily(null);
+    setDocPrior(null);
     setPartyIsEmployee(false);
     setAvailability({});
     stockLoaded.current.clear();
@@ -1498,6 +1501,10 @@ function couponsTotal(inv: any): number {
         ? { id: det.bonus_for_invoice_id, number: det.bonus_for_number } : null;
       setInvoiceDate(dayjs(det.invoice_date || det.created_at || undefined));
       setInvoiceFamily(det.family || null);
+      setDocPrior(det.customer_id && (det as any).balance_before != null
+        ? { customerId: det.customer_id, family: det.family || null,
+            balance: Number((det as any).balance_before) }
+        : null);
       createForm.setFieldsValue({
         customer_id: det.customer_id,
         rep_id: det.rep_id,
@@ -2307,7 +2314,9 @@ function couponsTotal(inv: any): number {
             const invoiceDiscount = grossTotal - netTotal;
             const hasParty = !!selectedCustomerId && customerBalance !== null;
             const familyRow = invoiceFamily ? families.find((a) => a.family === invoiceFamily) : undefined;
-            const balance = familyRow ? Number(familyRow.balance || 0) : (customerBalance ?? 0);
+            const savedPrior = docPrior && docPrior.customerId === selectedCustomerId
+              && docPrior.family === (invoiceFamily || null) ? docPrior.balance : null;
+            const balance = savedPrior ?? (familyRow ? Number(familyRow.balance || 0) : (customerBalance ?? 0));
             const others = familyRow ? [
               ...families.filter((a) => a.family !== invoiceFamily),
               ...familyAccounts.filter((a) => !a.family && Math.abs(Number(a.balance || 0)) > 0.001),

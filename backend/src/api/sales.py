@@ -263,6 +263,7 @@ class SalesInvoiceDetail(BaseModel):
     prior_balance: Decimal | None = None
     other_family_balance: Decimal | None = None
     other_family: str | None = None
+    balance_before: Decimal | None = None
     customer_name: str | None = None
     rep_id: int | None = None
     rep_name: str | None = None
@@ -1740,6 +1741,7 @@ def get_sale(
         prior_balance=priors[0],
         other_family_balance=priors[1],
         other_family=getattr(inv, "other_family", None),
+        balance_before=sales_service.balance_before_invoice(db, inv),
         customer_name=(db.get(Customer, inv.customer_id).name
                        if inv.customer_id else None),
         rep_id=inv.rep_id,
