@@ -731,7 +731,7 @@ export default function Invoices() {
     itemId: number, warehouseId: number, qty: number | null = null,
   ): Promise<PickResult> => {
     const fresh = await fetchPrices(itemId);
-    const existing = lines.find((x) => x.item_id === itemId);
+    const existing = lines.find((x) => x.item_id === itemId && lineWarehouse(x) === warehouseId);
     if (existing) {
       if (qty) {
         const wh = lineWarehouse(existing);

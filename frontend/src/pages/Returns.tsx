@@ -499,7 +499,7 @@ export default function Returns({ embedded }: { embedded?: { onExit: () => void 
     const saleDisc = listed > 0 && paid > 0 && paid < listed
       ? Math.round((1 - paid / listed) * 10000) / 100 : 0;
     if (!(price > 0)) price = 0;
-    const existing = lines.find((x) => x.item_id === itemId);
+    const existing = lines.find((x) => x.item_id === itemId && (x.warehouse_id ?? docWarehouseId) === warehouseId);
     if (existing) {
       if (qty) {
         setLines((prev) => prev.map((x) => (x.key === existing.key

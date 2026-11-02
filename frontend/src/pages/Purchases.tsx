@@ -1004,7 +1004,8 @@ export default function Purchases() {
       const p = selected?.purchase_price ? parseFloat(selected.purchase_price) : 0;
       return !p && selected?.sale_price ? parseFloat(selected.sale_price) : p;
     };
-    const dups = ids.filter((id) => purchaseItems.some((l) => l.item_id === id));
+    const sameLine = (l: PurchaseItem, id: number) => l.item_id === id && (l.warehouse_id ?? warehouseId) === warehouseId;
+    const dups = ids.filter((id) => purchaseItems.some((l) => sameLine(l, id)));
     dups.forEach((id) => message.info(qtys?.[id]
       ? `«${itemName(id)}» موجود بالفعل — تمت زيادة كميته`
       : `«${itemName(id)}» موجود بالفعل — عدّل الكمية من السطر`));
@@ -1017,7 +1018,7 @@ export default function Purchases() {
       let first = '';
       ids.forEach((itemId) => {
         const q = qtys?.[itemId] ?? null;
-        const existing = next.find((l) => l.item_id === itemId);
+        const existing = next.find((l) => sameLine(l, itemId));
         if (existing) {
           if (q) {
             next = next.map((l) => (l.key === existing.key

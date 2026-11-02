@@ -548,7 +548,7 @@ export default function PurchaseReturns({ embedded }: { embedded?: { onExit: () 
       if (Number(r.data?.unit_price) > 0) price = Number(r.data.unit_price);
       if (Number(r.data?.discount_pct) > 0) disc = Number(r.data.discount_pct);
     } catch {}
-    const dup = returnLines.find((l) => l.item_id === itemId);
+    const dup = returnLines.find((l) => l.item_id === itemId && (l.warehouse_id ?? wh) === wh);
     if (dup) {
       if (qty) {
         const lineWh = dup.warehouse_id ?? wh;

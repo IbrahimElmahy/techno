@@ -68,7 +68,7 @@ export default function QuickAddRow({
           )}
           <Select
             size="middle" style={{ flex: 1, minWidth: 260 }}
-            showSearch filterOption={false} value={value ?? undefined}
+            showSearch filterOption={false} value={value}
             placeholder={placeholder} searchValue={search} onSearch={setSearch}
             onChange={(v: number) => {
               onPick(v);
