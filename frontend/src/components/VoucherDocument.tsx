@@ -100,17 +100,34 @@ function titleOf(d: VoucherDoc): string {
   return d.kind === 'receipt' && d.family ? `${VOUCHER_TITLES.receipt} — ${d.family}` : VOUCHER_TITLES[d.kind];
 }
 
+function partyStrip(d: VoucherDoc, ctx: ReceiptContext | null): [string, string][] {
+  if (d.kind !== 'receipt') return [];
+  return [
+    [d.partyLabel || 'العميل', d.partyName || '-'],
+    ['الهاتف', ctx?.phone || '-'],
+    ['المندوب', ctx?.rep_name || '-'],
+    ['التاريخ', d.date ? String(d.date).slice(0, 10) : '-'],
+    ['رقم القيد', d.entryId ? String(d.entryId) : '-'],
+  ];
+}
+
 function rows(d: VoucherDoc, ctx: ReceiptContext | null = null): [string, string][] {
   const out: [string, string][] = [];
+  if (d.kind === 'receipt') {
+    out.push(['على مديونية', d.family || 'الإجمالي (موزّع بالنسبة)']);
+    if (d.paymentMethod) out.push(['طريقة الدفع', d.paymentMethod]);
+    if (d.reference) out.push(['المرجع', d.reference]);
+    if (d.description) out.push(['البيان', d.description]);
+    if (d.statement) out.push(['بيان السند', d.statement]);
+    if (d.isReversal) out.push(['ملاحظة', 'سند عكسي (إلغاء)']);
+    return out;
+  }
   if (d.partyName) out.push([d.partyLabel || 'الطرف', d.partyName]);
   if (ctx?.phone) out.push(['الهاتف', ctx.phone]);
   if (ctx?.rep_name) out.push(['المندوب', ctx.rep_name]);
   out.push(['التاريخ', d.date ? String(d.date).slice(0, 10) : '-']);
   if (d.treasury) out.push([d.kind === 'cash_transfer' ? 'من خزينة' : 'الخزينة', d.treasury]);
   if (d.toTreasury) out.push(['إلى خزينة', d.toTreasury]);
-  if (d.kind === 'receipt') {
-    out.push(['على مديونية', d.family || 'الإجمالي (موزّع بالنسبة)']);
-  }
   if (d.paymentMethod) out.push(['طريقة الدفع', d.paymentMethod]);
   if (d.reference) out.push(['المرجع', d.reference]);
   if (d.description) out.push(['البيان', d.description]);
@@ -124,7 +141,15 @@ export async function printVoucher(d: VoucherDoc): Promise<void> {
   const ctx = await loadReceiptContext(d);
   const bal = balanceRows(d, ctx);
   const [a, b, c] = SIGNATURES[d.kind];
-  const body = `
+  const strip = partyStrip(d, ctx);
+  const top = strip.length ? `
+    <div class="c-meta" style="grid-template-columns:repeat(${strip.length},1fr)">
+      ${strip.map(([k, v]) => `<div><b>${k}:</b>${v}</div>`).join('')}
+    </div>
+    <div class="c-doc" style="justify-content:space-between;margin:10px 0 0">
+      <span class="t">${titleOf(d)}</span><span class="n">${d.document_number}</span>
+    </div>` : '';
+  const body = `${top}
     <div style="margin:18px 0;padding:16px 18px;border:2px solid #000;border-radius:10px">
       <div style="font-size:14px;color:#2b2b2b;font-weight:700">المبلغ</div>
       <div style="font-size:30px;font-weight:800;color:#000">${n(d.amount)}</div>
@@ -147,6 +172,7 @@ export async function printVoucher(d: VoucherDoc): Promise<void> {
     {
       title: titleOf(d),
       number: d.document_number,
+      hide: strip.length ? { invoiceTitle: true, invoiceNumber: true } : undefined,
       note: 'هذا السند لا يُعتد به إلا موقعًا ومختومًا من الشركة.',
     },
     body,
@@ -167,6 +193,7 @@ export default function VoucherDocument({ doc }: { doc: VoucherDoc }) {
     return () => { live = false; };
   }, [doc.kind, doc.voucherId, doc.isReversal]);
   const bal = balanceRows(doc, ctx);
+  const strip = partyStrip(doc, ctx);
   return (
     <div style={{ background: '#fff' }}>
       <div style={{
@@ -182,6 +209,23 @@ export default function VoucherDocument({ doc }: { doc: VoucherDoc }) {
         <Logo width={150} />
       </div>
       <div style={{ height: 4, background: BRAND.orange, marginTop: 3 }} />
+
+      {strip.length > 0 && (
+        <div style={{
+          display: 'grid', gridTemplateColumns: `repeat(${strip.length}, minmax(0, 1fr))`,
+          marginTop: 14, border: '1px solid #d9e6dc', borderRadius: 8, overflow: 'hidden',
+        }}>
+          {strip.map(([k, v], i) => (
+            <div key={k} style={{
+              padding: '6px 10px', borderInlineStart: i ? '1px solid #d9e6dc' : undefined,
+              minWidth: 0,
+            }}>
+              <div style={{ fontSize: 12, color: '#5d6f64', background: '#f2f9f3' }}>{k}</div>
+              <div style={{ fontWeight: 700, fontSize: 13, overflowWrap: 'anywhere' }}>{v}</div>
+            </div>
+          ))}
+        </div>
+      )}
 
       <div style={{
         display: 'flex', alignItems: 'center', justifyContent: 'space-between',
