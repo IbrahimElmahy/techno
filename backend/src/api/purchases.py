@@ -131,6 +131,7 @@ class PurchaseLineOut(BaseModel):
     variable_discount_pct: Decimal | None = None
     line_total: Decimal
     unit: str | None = None
+    line_location_id: int | None = None
 
 
 class PurchaseReturnOut(BaseModel):
@@ -514,7 +515,8 @@ def get_purchase(
                                discount_pct=ln.discount_pct,
                                fixed_discount_pct=ln.fixed_discount_pct,
                                variable_discount_pct=ln.variable_discount_pct,
-                               line_total=ln.line_total, unit=ln.unit) for ln in p.lines],
+                               line_total=ln.line_total, unit=ln.unit,
+                               line_location_id=ln.line_location_id) for ln in p.lines],
         returns=[PurchaseReturnOut(id=r.id, document_number=r.document_number, value=r.value,
                                    created_at=str(r.created_at)) for r in returns],
     )
