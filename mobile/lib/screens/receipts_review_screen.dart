@@ -10,7 +10,9 @@ import '../theme.dart';
 import 'receipt_print_screen.dart';
 
 class ReceiptsReviewScreen extends StatefulWidget {
-  const ReceiptsReviewScreen({super.key});
+  const ReceiptsReviewScreen({super.key, this.embedded = false});
+
+  final bool embedded;
 
   @override
   State<ReceiptsReviewScreen> createState() => _ReceiptsReviewScreenState();
@@ -135,7 +137,9 @@ class _ReceiptsReviewScreenState extends State<ReceiptsReviewScreen> {
         0, (a, r) => a + ((r['amount'] as num?)?.toDouble() ?? 0));
 
     return Scaffold(
-      appBar: AppBar(
+      appBar: widget.embedded
+          ? null
+          : AppBar(
         title: const Text('تحصيلاتي'),
         actions: [
           IconButton(
@@ -150,6 +154,18 @@ class _ReceiptsReviewScreenState extends State<ReceiptsReviewScreen> {
           ),
         ],
       ),
+      floatingActionButton: !widget.embedded
+          ? null
+          : FloatingActionButton.small(
+              heroTag: null,
+              onPressed: _pushing ? null : _push,
+              tooltip: 'رفع المعلّق',
+              child: _pushing
+                  ? const SizedBox(
+                      width: 18, height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                  : const Icon(Icons.cloud_upload_outlined),
+            ),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : Column(

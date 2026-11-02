@@ -16,7 +16,9 @@ import '../services/auto_sync.dart';
 import '../services/task_progress.dart';
 
 class SalesReviewScreen extends StatefulWidget {
-  const SalesReviewScreen({super.key});
+  const SalesReviewScreen({super.key, this.embedded = false});
+
+  final bool embedded;
 
   @override
   State<SalesReviewScreen> createState() => _SalesReviewScreenState();
@@ -137,7 +139,9 @@ class _SalesReviewScreenState extends State<SalesReviewScreen> {
   Widget build(BuildContext context) {
     final pending = _rows.where((r) => (r['synced'] as int?) != 1).length;
     return Scaffold(
-      appBar: AppBar(
+      appBar: widget.embedded
+          ? null
+          : AppBar(
         title: const Text('فواتيري'),
         actions: [
           IconButton(
@@ -151,6 +155,18 @@ class _SalesReviewScreenState extends State<SalesReviewScreen> {
           ),
         ],
       ),
+      floatingActionButton: !widget.embedded
+          ? null
+          : FloatingActionButton.small(
+              heroTag: null,
+              onPressed: _pushing ? null : _push,
+              tooltip: 'رفع المعلّق',
+              child: _pushing
+                  ? const SizedBox(
+                      width: 18, height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                  : const Icon(Icons.cloud_upload_outlined),
+            ),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : Column(

@@ -18,8 +18,7 @@ import 'day_summary_screen.dart';
 import 'my_stock_screen.dart';
 import 'price_sheets_screen.dart';
 import 'transfers_review_screen.dart';
-import 'receipts_review_screen.dart';
-import 'sales_review_screen.dart';
+import 'invoices_and_collections_screen.dart';
 import 'coupon_review_screen.dart';
 import 'review_screen.dart';
 import 'supervisor_home_screen.dart';
@@ -43,6 +42,14 @@ class _HomeScreenState extends State<HomeScreen> {
   Set<String>? _appCaps;
 
   bool _can(String cap) => _appCaps == null || _appCaps!.contains(cap);
+
+  String? get _pendingLabel {
+    final parts = [
+      if (_pendingSales > 0) '$_pendingSales فاتورة',
+      if (_pendingReceipts > 0) '$_pendingReceipts سند',
+    ];
+    return parts.isEmpty ? null : '${parts.join(' و')} لم تُرفع بعد';
+  }
 
   @override
   void initState() {
@@ -233,21 +240,6 @@ class _HomeScreenState extends State<HomeScreen> {
                     },
                   ),
                   const SizedBox(height: 14),
-                  if (_can('app.my_invoices'))
-                  _BigAction(
-                    icon: Icons.receipt_outlined,
-                    color: AppColors.primary,
-                    title: 'فواتيري',
-                    subtitle: _pendingSales > 0
-                        ? '$_pendingSales فاتورة لم تُرفع بعد'
-                        : null,
-                    onTap: () async {
-                      await Navigator.push(context,
-                          MaterialPageRoute(builder: (_) => const SalesReviewScreen()));
-                      _refresh();
-                    },
-                  ),
-                  const SizedBox(height: 14),
                   if (_can('app.collect'))
                   _BigAction(
                     icon: Icons.payments_outlined,
@@ -260,17 +252,20 @@ class _HomeScreenState extends State<HomeScreen> {
                     },
                   ),
                   const SizedBox(height: 14),
-                  if (_can('app.my_collections'))
+                  if (_can('app.my_invoices') || _can('app.my_collections'))
                   _BigAction(
-                    icon: Icons.receipt_long_outlined,
-                    color: AppColors.accent,
-                    title: 'تحصيلاتي',
-                    subtitle: _pendingReceipts > 0
-                        ? '$_pendingReceipts سند لم يُرفع بعد'
-                        : null,
+                    icon: Icons.receipt_outlined,
+                    color: AppColors.primary,
+                    title: 'فواتير وتحصيل',
+                    subtitle: _pendingLabel,
                     onTap: () async {
-                      await Navigator.push(context,
-                          MaterialPageRoute(builder: (_) => const ReceiptsReviewScreen()));
+                      await Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                              builder: (_) => InvoicesAndCollectionsScreen(
+                                    showInvoices: _can('app.my_invoices'),
+                                    showCollections: _can('app.my_collections'),
+                                  )));
                       _refresh();
                     },
                   ),

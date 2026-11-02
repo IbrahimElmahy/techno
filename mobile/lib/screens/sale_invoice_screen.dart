@@ -467,7 +467,7 @@ class _SaleInvoiceScreenState extends State<SaleInvoiceScreen> {
                   child: Text(
                       'هذه البضاعة مسجّلة على فاتورة أخرى ما زالت على الجهاز ولم تُرفع. '
                       'إن سُجّلت مرتين خطأً فخفّضها من الفاتورة الأخرى أولاً '
-                      '(من «فواتيري») ثم عُد إلى هنا.',
+                      '(من «فواتير وتحصيل») ثم عُد إلى هنا.',
                       style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
                 ),
               const Text(
