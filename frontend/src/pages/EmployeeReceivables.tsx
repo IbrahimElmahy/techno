@@ -24,6 +24,8 @@ import { money, numeralsLocale } from '../utils/money';
 import ListPage from '../components/ListPage';
 import { useQueryTab } from '../components/useQueryTab';
 import ReceiptModal from './vouchers/ReceiptModal';
+import EmployeeFormModal from '../components/EmployeeFormModal';
+import { useAuth } from '../components/AuthProvider';
 import PaymentModal from './vouchers/PaymentModal';
 import { useQuickVoucher } from './vouchers/useQuickVoucher';
 import type { PartyKind } from './vouchers/PartyKind';
@@ -191,6 +193,9 @@ export default function EmployeeReceivables() {
   }, [q, branchId, tab === 'all']);
 
   const advancesVisible = dues?.advances_visible ?? false;
+  const { user } = useAuth();
+  const canAddEmployee = ['owner', 'system_admin', 'branch_manager', 'accountant'].includes(user?.role ?? '');
+  const [empOpen, setEmpOpen] = useState(false);
 
   const loadAdvances = useCallback(async () => {
     if (!advancesVisible) return;
@@ -632,6 +637,9 @@ export default function EmployeeReceivables() {
           <Button data-shortcut="F2" type="primary" className="sl-create" icon={<PlusOutlined />}
             onClick={() => openAdvance(tab === 'advances' ? employeeId : undefined)}>صرف سلفة</Button>
         ) : null}
+        {canAddEmployee && onDues ? (
+          <Button icon={<PlusOutlined />} onClick={() => setEmpOpen(true)}>موظف جديد</Button>
+        ) : null}
         {advancesVisible && tab === 'adjustments' ? (
           <Button data-shortcut="F2" type="primary" className="sl-create" icon={<PlusOutlined />}
             onClick={() => setAdjOpen(true)}>جزاء أو مكافأة</Button>
@@ -881,6 +889,8 @@ export default function EmployeeReceivables() {
         suppliers={[]} customers={cards} treasuries={payment.treasuries}
         methodOptions={payment.methodOptions} editing={payment.editing} initialKind={voucherKind}
       />
+      <EmployeeFormModal open={empOpen} employee={null} onClose={() => setEmpOpen(false)}
+        onSaved={() => { setEmpOpen(false); reloadAll(); }} />
     </>
   );
 }
