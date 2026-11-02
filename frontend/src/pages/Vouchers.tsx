@@ -1261,6 +1261,7 @@ const Vouchers: React.FC = () => {
               <Descriptions.Item label="رقم المستند">
                 {voucherView.external_document_number || '-'}
               </Descriptions.Item>
+              <Descriptions.Item label="كتبه">{voucherView.actor_name || '-'}</Descriptions.Item>
             </Descriptions>
             <DocumentAttachments docType="voucher" docId={voucherView.id} />
           </>

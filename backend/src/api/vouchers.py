@@ -181,6 +181,7 @@ class VoucherOut(BaseModel):
     vehicle_id: int | None = None
     ledger_entry_id: int | None
     is_reversal: bool
+    actor_name: str | None = None
 
 
 class StatementLineOut(BaseModel):
@@ -267,7 +268,7 @@ class StatementOut(BaseModel):
     account_summaries: list[AccountSummaryOut] = []
 
 
-def _out(v) -> VoucherOut:
+def _out(v, names: dict[int, str] | None = None) -> VoucherOut:
     return VoucherOut(
         id=v.id, document_number=v.document_number, kind=v.kind, amount=v.amount,
         customer_id=v.customer_id, supplier_id=v.supplier_id, rep_user_id=v.rep_user_id,
@@ -282,7 +283,17 @@ def _out(v) -> VoucherOut:
         cash_account_id=getattr(v, "cash_account_id", None),
         vehicle_id=getattr(v, "vehicle_id", None),
         is_reversal=v.reverses_id is not None,
+        actor_name=(names or {}).get(v.actor_user_id),
     )
+
+
+def _actor_names(db: Session, rows) -> dict[int, str]:
+    from src.models.user import User
+    ids = {v.actor_user_id for v in rows if v.actor_user_id}
+    if not ids:
+        return {}
+    return {u.id: u.full_name or u.username
+            for u in db.scalars(select(User).where(User.id.in_(ids))).all()}
 
 
 def _treasury_out(db: Session, t) -> TreasuryOut:
@@ -848,14 +859,16 @@ def list_vouchers(
     if limit is not None:
         clamped_limit = min(limit, 500)
         paged_rows = visible_rows[offset:offset + clamped_limit]
+        names = _actor_names(db, paged_rows)
         page = PaginatedVouchersOut(
-            rows=[_out(v) for v in paged_rows],
+            rows=[_out(v, names) for v in paged_rows],
             total=total,
             limit=clamped_limit,
             offset=offset,
         )
         return model_json(page, headers={"X-Total-Count": str(total)})
-    return model_json([_out(v) for v in visible_rows], headers={"X-Total-Count": str(total)})
+    names = _actor_names(db, visible_rows)
+    return model_json([_out(v, names) for v in visible_rows], headers={"X-Total-Count": str(total)})
 
 
 @router.get("/vouchers/{voucher_id}", response_model=VoucherOut)

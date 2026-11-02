@@ -15,6 +15,7 @@ export interface VoucherRecord {
   external_document_number?: string | null;
   family?: string | null;
   is_reversal: boolean;
+  actor_name?: string | null;
 }
 
 export interface StatementLine {
