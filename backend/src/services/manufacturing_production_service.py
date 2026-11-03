@@ -338,11 +338,6 @@ def shortages(db: Session, rows) -> list[str]:
     return out
 
 
-def _is_wip(db: Session, warehouse_id) -> bool:
-    wh = db.get(Warehouse, int(warehouse_id)) if warehouse_id else None
-    return wh is not None and wh.inventory_role == "wip"
-
-
 def _wip_of(db: Session, order: ProductionOrder) -> int | None:
     from src.services import perpetual_service
 
@@ -376,8 +371,7 @@ def _issue_materials(db: Session, order: ProductionOrder, actor_user_id: int,
     if not rows:
         return ZERO
     wip = _wip_of(db, order)
-    strict = [m for m in rows if _is_wip(db, m.warehouse_id)]
-    missing = shortages(db, strict if allow_negative else rows)
+    missing = [] if allow_negative else shortages(db, rows)
     if missing:
         raise ProductionOrderError(
             "الخامات التالية غير كافية في مخازنها — حوّل الكمية للمخزن أو غيّر مخزن الخامة:" + chr(10)
