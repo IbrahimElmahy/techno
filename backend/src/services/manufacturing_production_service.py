@@ -30,6 +30,7 @@ from src.services import (
 )
 
 DOC_TYPE = "production_order"
+TRANSFER_DOC = "production_transfer"
 
 
 class ProductionOrderError(Exception):
@@ -272,6 +273,8 @@ def edit_done_order(db: Session, *, order_id: int, products, actor_user_id: int,
         db.delete(line)
     db.flush()
     _drop_stock(db, source_doc_type=DOC_TYPE, source_doc_id=order_id)
+    _drop_stock(db, source_doc_type=TRANSFER_DOC, source_doc_id=order_id)
+    _touch_transfer(db, order_id)
     db.flush()
     db.expire(order)
     for field in ("production_date", "branch_id", "external_document_number", "paper_number",
@@ -340,11 +343,39 @@ def _is_wip(db: Session, warehouse_id) -> bool:
     return wh is not None and wh.inventory_role == "wip"
 
 
+def _wip_of(db: Session, order: ProductionOrder) -> int | None:
+    from src.services import perpetual_service
+
+    if not perpetual_service.is_active(db, order.branch_id, order.production_date):
+        return None
+    return db.scalar(select(Warehouse.id).where(
+        Warehouse.branch_id == order.branch_id, Warehouse.inventory_role == "wip",
+        Warehouse.active.is_(True)).order_by(Warehouse.id).limit(1))
+
+
+def _to_wip(db: Session, order: ProductionOrder, m, wip: int, actor_user_id: int,
+            allow_negative: bool) -> None:
+    q = to_qty(m.quantity)
+    for location_id, movement_type, direction in (
+            (int(m.warehouse_id), "transfer_out", StockDirection.out),
+            (wip, "transfer_in", StockDirection.in_)):
+        stock_service.post_movement(
+            db, item_id=m.item_id, location_kind=LocationKind.warehouse,
+            location_id=location_id, movement_type=movement_type, direction=direction,
+            quantity=q, actor_user_id=actor_user_id, source_doc_type=TRANSFER_DOC,
+            source_doc_id=order.id, allow_negative=allow_negative)
+
+
+def _touch_transfer(db: Session, order_id: int) -> None:
+    db.info.setdefault("inventory_touched", set()).add((TRANSFER_DOC, int(order_id)))
+
+
 def _issue_materials(db: Session, order: ProductionOrder, actor_user_id: int,
                      *, stage: str | None = None, allow_negative: bool = False) -> Decimal:
     rows = pending(order, stage)
     if not rows:
         return ZERO
+    wip = _wip_of(db, order)
     strict = [m for m in rows if _is_wip(db, m.warehouse_id)]
     missing = shortages(db, strict if allow_negative else rows)
     if missing:
@@ -354,9 +385,13 @@ def _issue_materials(db: Session, order: ProductionOrder, actor_user_id: int,
     averages = costing_service.average_cost_bulk(db, {m.item_id for m in rows})
     total = ZERO
     for m in rows:
+        where = int(m.warehouse_id)
+        if wip is not None and where != wip:
+            _to_wip(db, order, m, wip, actor_user_id, allow_negative)
+            where = wip
         mv = stock_service.post_movement(
             db, item_id=m.item_id, location_kind=LocationKind.warehouse,
-            location_id=int(m.warehouse_id), movement_type="consumption_out",
+            location_id=where, movement_type="consumption_out",
             direction=StockDirection.out, quantity=to_qty(m.quantity),
             actor_user_id=actor_user_id, source_doc_type=DOC_TYPE, source_doc_id=order.id,
             allow_negative=allow_negative)
@@ -638,11 +673,13 @@ def purge_order(db: Session, *, order_id: int, actor_user_id: int, pair_ok: bool
         ProductionOrderMaterial.order_id == order_id))
     db.execute(delete(ProductionOrderProduct).where(
         ProductionOrderProduct.order_id == order_id))
-    db.execute(delete(StockMovement).where(
-        StockMovement.source_doc_type == "production_order",
-        StockMovement.source_doc_id == order_id,
-        StockMovement.reverses_movement_id.is_not(None)))
-    _drop_stock(db, source_doc_type="production_order", source_doc_id=order_id)
+    for doc_type in (DOC_TYPE, TRANSFER_DOC):
+        db.execute(delete(StockMovement).where(
+            StockMovement.source_doc_type == doc_type,
+            StockMovement.source_doc_id == order_id,
+            StockMovement.reverses_movement_id.is_not(None)))
+        _drop_stock(db, source_doc_type=doc_type, source_doc_id=order_id)
+    _touch_transfer(db, order_id)
     db.execute(delete(ProductionOrder).where(ProductionOrder.id == order_id))
     db.flush()
     db.expire_all()
@@ -715,6 +752,14 @@ def reverse_order(db: Session, *, order_id: int, actor_user_id: int) -> Producti
             unit=m.unit, unit_factor=m.unit_factor, unit_cost=m.unit_cost,
             line_cost=m.line_cost, waste_quantity=m.waste_quantity, stage=m.stage,
             stock_movement_id=(mirror.id if mirror else None)))
+
+    from src.models.stock import StockMovement
+
+    moved = db.scalars(select(StockMovement).where(
+        StockMovement.source_doc_type == TRANSFER_DOC, StockMovement.source_doc_id == order_id,
+        StockMovement.reverses_movement_id.is_(None)).order_by(StockMovement.id)).all()
+    for mv in moved:
+        stock_service.reverse_movement(db, original_id=mv.id, actor_user_id=actor_user_id)
 
     original.state = ProductionState.reversed
     db.flush()

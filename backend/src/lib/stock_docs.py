@@ -30,6 +30,8 @@ DOCS: tuple[DocSpec, ...] = (
             ("src.models.manufacturing", "ManufacturingOrder", "production_date")),
     DocSpec("production_order", "أمر تشغيل", (),
             ("src.models.manufacturing", "ProductionOrder", "production_date")),
+    DocSpec("production_transfer", "تحويل للتشغيل", (),
+            ("src.models.manufacturing", "ProductionOrder", "production_date")),
     DocSpec("inspection", "معاينة", (),
             ("src.models.inspection", "Inspection", "inspection_date")),
     DocSpec("a5_opening", "رصيد أول المدة", ("opening",)),

@@ -54,7 +54,7 @@ PROFIT_SIDE = {"sales", "purchase_returns", "other_income", "unclassified"}
 PRODUCTION_DOCS = ("production_order", "manufacturing_order")
 PRODUCT_MOVES = ("production_in", "reverse_production_in")
 NOT_DIFFERENCES = ("sales_invoice", "sales_return", "purchase_invoice", "purchase_return",
-                   "stock_transfer", "a5_opening", *PRODUCTION_DOCS)
+                   "stock_transfer", "production_transfer", "a5_opening", *PRODUCTION_DOCS)
 
 ADJ_SECTIONS = ("ga", "marketing", "other_income", "other_loss", "cost")
 

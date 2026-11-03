@@ -43,7 +43,8 @@ export function docKindOf(sourceDocType: string | null | undefined): DocKind | n
     case 'permit':
     case 'stock_permit': return 'stock_permit';
     case 'stock_count': return 'stock_count';
-    case 'production_order': return 'production_order';
+    case 'production_order':
+    case 'production_transfer': return 'production_order';
     case 'expense_bill': return 'expense_bill';
     case 'settlement_discount': return 'settlement_discount';
     default: return null;

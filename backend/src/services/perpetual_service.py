@@ -17,11 +17,12 @@ from src.models.warehouse import Warehouse
 
 ENTRY_TYPE = "inventory"
 MOVEMENT_DOCS = ("stock_transfer", "stock_permit", "stock_count", "manufacturing_order",
-                 "production_order", "wastage")
+                 "production_order", "production_transfer", "wastage")
 PRODUCTION_DOCS = ("manufacturing_order", "production_order")
 DOC_LABEL = {
     "stock_transfer": "تحويل مخزني", "stock_permit": "إذن مخزني", "stock_count": "جرد",
-    "manufacturing_order": "تصنيع", "production_order": "أمر تشغيل", "wastage": "هالك",
+    "manufacturing_order": "تصنيع", "production_order": "أمر تشغيل",
+    "production_transfer": "تحويل للتشغيل", "wastage": "هالك",
 }
 
 
