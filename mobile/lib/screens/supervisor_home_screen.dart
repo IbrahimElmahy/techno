@@ -7,6 +7,7 @@ import '../theme.dart';
 import '../utils/format.dart';
 import '../widgets/session_drawer.dart';
 import '../widgets/supervisor_widgets.dart';
+import 'price_sheets_screen.dart';
 import 'rep_activity_screen.dart';
 
 class SupervisorHomeScreen extends StatefulWidget {
@@ -25,6 +26,7 @@ class _SupervisorHomeScreenState extends State<SupervisorHomeScreen> {
   bool _loading = true;
   String _name = '';
   String? _role;
+  bool _priceSheet = false;
 
   int _req = 0;
 
@@ -42,11 +44,17 @@ class _SupervisorHomeScreenState extends State<SupervisorHomeScreen> {
     final full = await LocalDb.instance.getKv('full_name');
     final user = await LocalDb.instance.getKv('username');
     final role = await LocalDb.instance.getKv('role');
+    final caps = await LocalDb.instance.getKv('app_caps') ?? '';
     if (!mounted) return;
     setState(() {
       _name = (full != null && full.trim().isNotEmpty) ? full.trim() : (user ?? '');
       _role = role;
+      _priceSheet = caps.contains('"app.price_sheet"');
     });
+  }
+
+  void _openPriceSheets() {
+    Navigator.push(context, MaterialPageRoute(builder: (_) => const PriceSheetsScreen()));
   }
 
   Future<void> _load() async {
@@ -309,6 +317,12 @@ class _SupervisorHomeScreenState extends State<SupervisorHomeScreen> {
       expandedHeight: 190,
       pinned: true,
       actions: [
+        if (_priceSheet)
+          IconButton(
+            tooltip: 'كشف تسعير',
+            icon: const Icon(Icons.request_quote_outlined),
+            onPressed: _openPriceSheets,
+          ),
         IconButton(
           tooltip: 'تحديث',
           icon: const Icon(Icons.refresh),
@@ -398,6 +412,15 @@ class _SupervisorHomeScreenState extends State<SupervisorHomeScreen> {
               _load();
             },
           ),
+          if (_priceSheet)
+            ListTile(
+              leading: const Icon(Icons.request_quote_outlined),
+              title: const Text('كشف تسعير'),
+              onTap: () {
+                Navigator.pop(context);
+                _openPriceSheets();
+              },
+            ),
           const AppUpdateTile(),
           const Divider(),
           ListTile(

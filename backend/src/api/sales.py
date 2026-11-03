@@ -47,7 +47,7 @@ from src.services import (
 )
 from src.services.rep_store_service import rep_store
 from src.services.coupon_receipt_service import CouponReceiptError
-from src.services import coupon_custody_service
+from src.services import coupon_custody_service, item_branch_service
 from src.services.coupon_custody_service import CouponCustodyError
 from src.services.sales_service import ReturnLine, SaleLine, SalesError
 from src.services import document_edit_service
@@ -465,12 +465,7 @@ def rep_bundle(
                 "category": cat_label.get(category, category),
             })
 
-    catalog = db.execute(
-        select(Item.id, Item.name, Item.unit_of_measure, Item.category,
-               Item.sale_price, Item.default_discount_pct)
-        .where(Item.active.is_(True))
-        .order_by(arabic.sort_key(Item.name), Item.name)
-    ).all()
+    catalog = _branch_catalog(db, current)
 
     tiers: dict[int, dict[str, str]] = {}
     _priced = {r[0] for r in live} | {c[0] for c in catalog}
@@ -551,9 +546,19 @@ def rep_bundle(
 
 
 
+def _branch_catalog(db: Session, current: CurrentUser) -> list:
+    stmt = (select(Item.id, Item.name, Item.unit_of_measure, Item.category,
+                   Item.sale_price, Item.default_discount_pct)
+            .where(Item.active.is_(True)))
+    branch_id = branch_scope.visible_branch_id(current)
+    if branch_id is not None:
+        stmt = stmt.where(item_branch_service.belongs_to(db, branch_id))
+    return db.execute(stmt.order_by(arabic.sort_key(Item.name), Item.name)).all()
+
+
 @router.get("/price-catalog", response_model=dict)
 def price_catalog(
-    _: CurrentUser = Depends(require_capability("app.price_sheet")),
+    current: CurrentUser = Depends(require_capability("app.price_sheet")),
     db: Session = Depends(get_db),
 ) -> dict:
     cat_rows = db.execute(
@@ -563,12 +568,7 @@ def price_catalog(
     cat_label = {r[0]: r[1] for r in cat_rows}
     hidden_vals = {r[0] for r in cat_rows if r[3]}
     hidden = sorted(r[1] for r in cat_rows if r[0] in hidden_vals or r[2] in hidden_vals)
-    catalog = db.execute(
-        select(Item.id, Item.name, Item.unit_of_measure, Item.category,
-               Item.sale_price, Item.default_discount_pct)
-        .where(Item.active.is_(True))
-        .order_by(arabic.sort_key(Item.name), Item.name)
-    ).all()
+    catalog = _branch_catalog(db, current)
     tiers: dict[int, dict[str, str]] = {}
     for item_id, tier, price in db.execute(
         select(ItemPrice.item_id, ItemPrice.tier, ItemPrice.price)
