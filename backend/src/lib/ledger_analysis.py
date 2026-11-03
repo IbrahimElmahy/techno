@@ -42,10 +42,11 @@ def _party_map():
                literal("customer").label("kind"),
                CustomerAccount.customer_id.label("party_id"),
                CustomerAccount.family.label("family"))
-    s = select(SupplierAccount.account_id.label("account_id"),
-               literal("supplier").label("kind"),
-               SupplierAccount.supplier_id.label("party_id"),
-               cast(literal(None), String(40)).label("family"))
+    s = (select(SupplierAccount.account_id.label("account_id"),
+                literal("supplier").label("kind"),
+                SupplierAccount.supplier_id.label("party_id"),
+                cast(literal(None), String(40)).label("family"))
+         .where(SupplierAccount.account_id.notin_(select(CustomerAccount.account_id))))
     u = union_all(c, s).subquery("pmu")
     return (select(u.c.account_id, func.min(u.c.kind).label("kind"),
                    func.min(u.c.party_id).label("party_id"), func.min(u.c.family).label("family"))
