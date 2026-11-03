@@ -1462,7 +1462,10 @@ class LocalDb {
         if (exists.isEmpty) {
           final amount = num.tryParse('${r['amount']}');
           final day = text(r['voucher_date']);
-          if (r['customer_id'] is! int || amount == null || day == null) continue;
+          if (!uuid.startsWith('rcp-') || r['customer_id'] is! int || amount == null ||
+              day == null) {
+            continue;
+          }
           await tx.insert('sale_receipt', {
             'client_uuid': uuid,
             'customer_id': r['customer_id'],
