@@ -165,6 +165,9 @@ def analyse(
         stmt = stmt.where(cast(acc.account_type, String).in_(account_type))
     if party_kind:
         stmt = stmt.where(pm.c.kind.in_(party_kind))
+        if "customer" in party_kind:
+            stmt = stmt.where(or_(Customer.id.is_(None),
+                                  Customer.customer_type.notin_(("employee", "internal"))))
     if party_id:
         stmt = stmt.where(pm.c.party_id.in_(party_id))
     if territory_id:
