@@ -1457,6 +1457,27 @@ class LocalDb {
         final uuid = r['client_uuid'] as String?;
         if (uuid == null) continue;
         keep.add(uuid);
+        final exists = await tx.query('sale_receipt',
+            columns: ['local_id'], where: 'client_uuid = ?', whereArgs: [uuid], limit: 1);
+        if (exists.isEmpty) {
+          final amount = num.tryParse('${r['amount']}');
+          final day = text(r['voucher_date']);
+          if (r['customer_id'] is! int || amount == null || day == null) continue;
+          await tx.insert('sale_receipt', {
+            'client_uuid': uuid,
+            'customer_id': r['customer_id'],
+            'customer_name': text(r['customer_name']) ?? '',
+            'amount': amount,
+            'receipt_date': day,
+            'family': text(r['family']),
+            'notes': text(r['notes']),
+            'document_number': text(r['document_number']),
+            'synced': 1,
+            'created_at': DateTime.now().toIso8601String(),
+          });
+          changed++;
+          continue;
+        }
         changed += await tx.update(
             'sale_receipt',
             {

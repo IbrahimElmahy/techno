@@ -8,6 +8,7 @@ import '../db/local_db.dart';
 import '../models/models.dart';
 import '../theme.dart';
 import 'invoice_print_screen.dart';
+import 'receipt_print_screen.dart';
 import 'sale_coupons_section.dart';
 import 'sale_invoice_screen.dart';
 import 'bonus_invoice_screen.dart';
@@ -16,9 +17,10 @@ import '../services/auto_sync.dart';
 import '../services/task_progress.dart';
 
 class SalesReviewScreen extends StatefulWidget {
-  const SalesReviewScreen({super.key, this.embedded = false});
+  const SalesReviewScreen({super.key, this.embedded = false, this.withReceipts = false});
 
   final bool embedded;
+  final bool withReceipts;
 
   @override
   State<SalesReviewScreen> createState() => _SalesReviewScreenState();
@@ -26,6 +28,7 @@ class SalesReviewScreen extends StatefulWidget {
 
 class _SalesReviewScreenState extends State<SalesReviewScreen> {
   List<Map<String, Object?>> _rows = [];
+  List<Map<String, Object?>> _receipts = [];
   bool _loading = true;
   bool _pushing = false;
 
@@ -48,6 +51,27 @@ class _SalesReviewScreenState extends State<SalesReviewScreen> {
             _inRange(r['invoice_date'] as String?))
           r
     ];
+  }
+
+  List<Map<String, Object?>> get _visibleReceipts {
+    final q = _bare(_search.text.trim());
+    return [
+      for (final r in _receipts)
+        if ((q.isEmpty ||
+                _bare('${r['customer_name'] ?? ''}').contains(q) ||
+                '${r['document_number'] ?? ''}'.contains(q)) &&
+            _inRange(r['receipt_date'] as String?))
+          r
+    ];
+  }
+
+  List<Widget> get _cards {
+    final entries = [
+      for (final r in _visible) (r['invoice_date'] as String? ?? '', false, r),
+      for (final r in _visibleReceipts) (r['receipt_date'] as String? ?? '', true, r),
+    ];
+    entries.sort((a, b) => b.$1.compareTo(a.$1));
+    return [for (final e in entries) e.$2 ? _receiptCard(e.$3) : _invoiceCard(e.$3)];
   }
 
   bool _inRange(String? d) {
@@ -113,7 +137,8 @@ class _SalesReviewScreenState extends State<SalesReviewScreen> {
 
   Future<void> _load() async {
     final rows = await LocalDb.instance.saleInvoices();
-    if (mounted) setState(() { _rows = rows; _loading = false; });
+    final receipts = widget.withReceipts ? await LocalDb.instance.receipts() : _receipts;
+    if (mounted) setState(() { _rows = rows; _receipts = receipts; _loading = false; });
   }
 
   Future<void> _push() async {
@@ -125,7 +150,10 @@ class _SalesReviewScreenState extends State<SalesReviewScreen> {
           onProgress: (done, total) => tr.update(
               BgTask.upload, 'جارٍ رفع الفواتير ${done + 1}/$total',
               progress: total == 0 ? null : done / total));
-      tr.finish(BgTask.upload, n == 0 ? 'لا توجد فواتير بانتظار الرفع' : 'تم رفع $n فاتورة ✔');
+      final m = widget.withReceipts ? await ApiClient.instance.pushReceipts() : 0;
+      tr.finish(BgTask.upload, n + m == 0
+          ? 'لا توجد مستندات بانتظار الرفع'
+          : [if (n > 0) 'تم رفع $n فاتورة', if (m > 0) 'تم رفع $m تحصيل'].join(' و') + ' ✔');
       unawaited(AppUpdater.instance.check());
     } catch (e) {
       tr.finish(BgTask.upload, '$e', error: true, hold: const Duration(seconds: 12));
@@ -137,7 +165,9 @@ class _SalesReviewScreenState extends State<SalesReviewScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final pending = _rows.where((r) => (r['synced'] as int?) != 1).length;
+    final pending = _rows.where((r) => (r['synced'] as int?) != 1).length
+        + _receipts.where((r) => (r['synced'] as int?) != 1).length;
+    final cards = _cards;
     return Scaffold(
       appBar: widget.embedded
           ? null
@@ -228,14 +258,14 @@ class _SalesReviewScreenState extends State<SalesReviewScreen> {
                             await AutoSync.instance.maybeRun(force: true);
                             await _load();
                           },
-                    child: _visible.isEmpty
+                    child: cards.isEmpty
                         ? ListView(children: [
                             Padding(
                               padding: const EdgeInsets.all(40),
                               child: Text(
-                                  _rows.isEmpty
-                                      ? 'لا توجد فواتير على الجهاز.'
-                                      : 'لا توجد فواتير مطابقة للتصفية.',
+                                  _rows.isEmpty && _receipts.isEmpty
+                                      ? 'لا توجد مستندات على الجهاز.'
+                                      : 'لا توجد مستندات مطابقة للتصفية.',
                                   textAlign: TextAlign.center),
                             )
                           ])
@@ -247,16 +277,66 @@ class _SalesReviewScreenState extends State<SalesReviewScreen> {
                                   child: ListTile(
                                     leading: const Icon(Icons.schedule,
                                         color: AppColors.accent),
-                                    title: Text('$pending فاتورة بانتظار الرفع'),
+                                    title: Text(widget.withReceipts
+                                        ? '$pending مستند بانتظار الرفع'
+                                        : '$pending فاتورة بانتظار الرفع'),
                                   ),
                                 ),
-                              for (final r in _visible) _invoiceCard(r),
+                              ...cards,
                             ],
                           ),
                   ),
                 ),
               ],
             ),
+    );
+  }
+
+  Widget _receiptCard(Map<String, Object?> r) {
+    final synced = (r['synced'] as int?) == 1;
+    final family = '${r['family'] ?? ''}';
+    return Card(
+      child: ListTile(
+        leading: Icon(
+          synced ? Icons.check_circle : Icons.schedule,
+          color: synced ? AppColors.success : AppColors.accent,
+        ),
+        title: Row(
+          children: [
+            Flexible(
+              child: Text(r['customer_name'] as String? ?? '—',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontWeight: FontWeight.w700)),
+            ),
+            const SizedBox(width: 6),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+              decoration: BoxDecoration(
+                color: AppColors.primary.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: const Text('تحصيل منفصل',
+                  style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w800,
+                      color: AppColors.primary)),
+            ),
+          ],
+        ),
+        subtitle: Text([
+          r['receipt_date'] as String? ?? '',
+          ((r['amount'] as num?)?.toDouble() ?? 0).toStringAsFixed(2),
+          if (family.isNotEmpty) family,
+          if (synced) r['document_number'] as String? ?? '' else 'لم يُرفع بعد',
+        ].where((s) => s.isNotEmpty).join(' · ')),
+        trailing: const Icon(Icons.print_outlined, color: AppColors.primary),
+        onTap: () async {
+          await Navigator.push(context,
+              MaterialPageRoute(builder: (_) => ReceiptPrintScreen(receipt: r)));
+          if (mounted) _load();
+        },
+      ),
     );
   }
 

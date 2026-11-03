@@ -15,6 +15,12 @@ class InvoicesAndCollectionsScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (showInvoices && showCollections) {
+      return Scaffold(
+        appBar: AppBar(title: const Text('فواتير وتحصيل')),
+        body: const SalesReviewScreen(embedded: true, withReceipts: true),
+      );
+    }
     final tabs = <Tab>[
       if (showInvoices) const Tab(text: 'الفواتير'),
       if (showCollections) const Tab(text: 'التحصيل'),

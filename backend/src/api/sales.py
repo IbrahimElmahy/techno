@@ -607,7 +607,8 @@ def _rep_recent_receipts(db: Session, rep_id: int) -> list[dict]:
         Customer.id.in_({v.customer_id for v in rows if v.customer_id} or {0}))).all())
     return [{"client_uuid": v.client_uuid, "document_number": v.document_number,
              "amount": str(v.amount), "customer_id": v.customer_id,
-             "customer_name": names.get(v.customer_id), "voucher_date": str(v.voucher_date)}
+             "customer_name": names.get(v.customer_id), "voucher_date": str(v.voucher_date),
+             "family": v.family, "notes": v.description}
             for v in rows]
 
 

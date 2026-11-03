@@ -221,9 +221,15 @@ export default function StockSheet() {
     return r[c.dataIndex] ?? '';
   };
 
+  const [colFilters, setColFilters] = useState<Record<string, React.Key[] | null>>({});
+  const narrowed = shown.filter((r: any) => (visibleColumns as any[]).every((c) => {
+    const keep = colFilters[String(c.key ?? c.dataIndex)];
+    return !keep?.length || !c.onFilter || keep.some((v) => c.onFilter(v, r));
+  }));
+
   const forOutput = () => (picked.length
-    ? shown.filter((r: any) => picked.includes(rowKey(r)))
-    : shown);
+    ? narrowed.filter((r: any) => picked.includes(rowKey(r)))
+    : narrowed);
 
   const withLogs = async (data: any[]) => {
     if (data.length > LOG_LIMIT) {
@@ -325,7 +331,7 @@ export default function StockSheet() {
           </Button>
           <ExportExcelButton
             name={TITLES[view]}
-            rows={shown}
+            rows={forOutput()}
             tableColumns={visibleColumns}
             style={{ marginInlineStart: 0 }}
           />
@@ -403,6 +409,7 @@ export default function StockSheet() {
         loading={loading}
         dataSource={shown}
         columns={visibleColumns}
+        onChange={(_p, f) => setColFilters(f as Record<string, React.Key[] | null>)}
         tableLayout="fixed"
         scroll={{ x: 'max-content' }}
         locale={{ emptyText: 'لا توجد أرصدة' }}
