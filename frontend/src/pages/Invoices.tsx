@@ -731,19 +731,6 @@ export default function Invoices() {
     itemId: number, warehouseId: number, qty: number | null = null,
   ): Promise<PickResult> => {
     const fresh = await fetchPrices(itemId);
-    const existing = lines.find((x) => x.item_id === itemId && lineWarehouse(x) === warehouseId);
-    if (existing) {
-      if (qty) {
-        const wh = lineWarehouse(existing);
-        const total = pickedQty(existing.key, itemId, existing.unit, wh,
-          Number(existing.quantity || 0) + qty);
-        setLines((prev) => prev.map((x) => (x.key === existing.key ? { ...x, quantity: total } : x)));
-        message.info(`«${productName(itemId)}» موجود بالفعل — تمت زيادة كميته`);
-      } else {
-        message.info(`«${productName(itemId)}» موجود بالفعل — عدّل الكمية من السطر`);
-      }
-      return { dup: itemId };
-    }
     const prod = products.find((p) => p.id === itemId);
     const tier = customerTier || 'consumer';
     const l = blankLine(`${Date.now()}-${++lineSeq.current}`, tier);
