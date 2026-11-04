@@ -80,8 +80,15 @@ def require_account(db: Session, customer_id: int, *, family: str | None = None)
     customer = db.get(Customer, customer_id)
     if customer is None:
         raise CustomerError("العميل غير موجود.")
-    acc = customer_merge_service.receivable_account(db, customer_id, family)
+    try:
+        acc = customer_merge_service.receivable_account(db, customer_id, family)
+    except customer_merge_service.MergeError:
+        if not family or not _keeps_own_family_accounts(db, customer):
+            raise
+        return open_account(db, customer, family=family)
     if acc is not None:
+        if family and acc.family != family and _keeps_own_family_accounts(db, customer):
+            return open_account(db, customer, family=family)
         return acc
     if _norm_type(customer.customer_type) in NO_RECEIVABLE_TYPES:
         raise CustomerError(
@@ -98,7 +105,20 @@ def require_account(db: Session, customer_id: int, *, family: str | None = None)
             db.add(link)
             db.flush()
             return link
-    return open_account(db, customer)
+    return open_account(db, customer, family=family)
+
+
+def _keeps_own_family_accounts(db: Session, customer: Customer) -> bool:
+    from src.models.supplier import SupplierAccount
+
+    if _norm_type(customer.customer_type) in {"employee", "internal"}:
+        return False
+    if getattr(customer, "supplier_id", None):
+        return False
+    linked = db.scalar(select(func.count()).select_from(CustomerAccount).join(
+        SupplierAccount, SupplierAccount.account_id == CustomerAccount.account_id).where(
+        CustomerAccount.customer_id == customer.id))
+    return not linked
 
 
 AFTER_SALES_TYPES = {"plumber"}
