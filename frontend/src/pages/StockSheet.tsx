@@ -20,7 +20,7 @@ import { useScreenShortcuts, useTableKeyboard } from '../components/keyboard';
 import { exportCsv as writeCsv, type CsvColumn } from '../utils/exportCsv';
 import { printReport, type PrintColumn } from '../print/reportSheet';
 import {
-  LOG_LIMIT, exportItemsWithLogs, fetchLog, printItemsWithLogs,
+  LOG_LIMIT, exportItemsWithLogs, fetchLog, plainQty, printItemsWithLogs,
 } from '../print/itemLogSheet';
 import { qty, money, numeralsLocale } from '../utils/money';
 import { STOCK_TOPICS, useLiveRefresh } from '../utils/live';
@@ -215,8 +215,9 @@ export default function StockSheet() {
     if (c.key === 'actual') return actual[rowKey(r)] ?? '';
     if (c.key === 'diff') {
       const d = diffOf(r);
-      return d === null ? '' : d === 0 ? 'مطابق' : d > 0 ? `عجز ${d}` : `زيادة ${Math.abs(d)}`;
+      return d === null ? '' : d === 0 ? 'مطابق' : d > 0 ? `عجز ${plainQty(d)}` : `زيادة ${plainQty(Math.abs(d))}`;
     }
+    if (c.key === 'quantity') return plainQty(r.quantity);
     return r[c.dataIndex] ?? '';
   };
 

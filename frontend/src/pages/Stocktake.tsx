@@ -19,7 +19,7 @@ import { useTableColumns } from '../components/ColumnSettings';
 import { exportCsv as writeCsv, type CsvColumn } from '../utils/exportCsv';
 import { printReport, type PrintColumn } from '../print/reportSheet';
 import {
-  LOG_LIMIT, exportItemsWithLogs, fetchLog, printItemsWithLogs,
+  LOG_LIMIT, exportItemsWithLogs, fetchLog, plainQty, printItemsWithLogs,
 } from '../print/itemLogSheet';
 import { money, numeralsLocale, qty } from '../utils/money';
 
@@ -110,11 +110,11 @@ export default function Stocktake() {
       { title: 'الفئة', value: 'category' },
       { title: 'الوحدة', value: 'unit_of_measure' },
       { title: 'الموقع', value: 'location' },
-      { title: 'الكمية في النظام', value: 'quantity' },
+      { title: 'الكمية في النظام', value: (r) => plainQty(r.quantity) },
       { title: 'متوسط السعر', value: 'unit_cost' },
       { title: 'القيمة', value: 'value' },
       { title: 'العدد الفعلي', value: (r) => actual[rowKey(r)] },
-      { title: 'الفرق', value: (r) => diffOf(r) },
+      { title: 'الفرق', value: (r) => plainQty(diffOf(r)) },
     ];
     const name = `stocktake-${asOf.format('YYYY-MM-DD')}`;
     const entries = await withLogs(data);

@@ -15,6 +15,7 @@ export interface ItemLogTarget {
 export interface LogRow {
   date?: string | null;
   movement_type?: string | null;
+  movement_label?: string | null;
   document_number?: string | null;
   party?: string | null;
   location?: string | null;
@@ -36,20 +37,31 @@ export async function fetchLog(
   if (to) params.date_to = to;
   try {
     const r = await api.get(`/api/v1/items/${t.itemId}/card`, { params });
-    return r.data?.rows || [];
+    const rows: LogRow[] = [...(r.data?.rows || [])].reverse();
+    if (!from) return rows;
+    return [{ date: from, movement_label: 'رصيد افتتاحي', balance_after: r.data?.opening_balance ?? 0 },
+      ...rows];
   } catch {
     return [];
   }
 }
 
+export const plainQty = (v: unknown): string => {
+  if (v === null || v === undefined || v === '') return '';
+  const n = Number(v);
+  return Number.isFinite(n) ? String(Math.round(n * 1000) / 1000) : String(v);
+};
+
+const moveName = (r: LogRow) => r.movement_label ?? r.movement_type ?? '-';
+
 const LOG_COLUMNS: PrintColumn<LogRow>[] = [
   { title: 'التاريخ', value: (r) => (r.date ? String(r.date).slice(0, 10) : '-') },
-  { title: 'الحركة', value: (r) => r.movement_type ?? '-' },
+  { title: 'الحركة', value: moveName },
   { title: 'المستند', value: (r) => r.document_number ?? '-' },
   { title: 'جهة التعامل', value: (r) => r.party ?? '-' },
-  { title: 'داخل', value: (r) => r.quantity_in ?? '', numeric: true },
-  { title: 'خارج', value: (r) => r.quantity_out ?? '', numeric: true },
-  { title: 'الرصيد بعدها', value: (r) => r.balance_after ?? '', numeric: true },
+  { title: 'داخل', value: (r) => plainQty(r.quantity_in), numeric: true },
+  { title: 'خارج', value: (r) => plainQty(r.quantity_out), numeric: true },
+  { title: 'الرصيد بعدها', value: (r) => plainQty(r.balance_after), numeric: true },
 ];
 
 const esc = (v: unknown) => String(v ?? '')
@@ -62,9 +74,10 @@ export function printItemsWithLogs<T>(
 ): void {
   const sections = entries.map(({ row, name, log }) => {
     const head = reportTableHtml(itemColumns, [row]);
-    const body = log.length
+    const moved = log.some((m) => m.movement_label !== 'رصيد افتتاحي');
+    const body = moved
       ? reportTableHtml(LOG_COLUMNS, log)
-      : '<p style="color:#2b2b2b;margin:4px 0 12px">لا توجد حركات في هذه الفترة.</p>';
+      : `${log.length ? reportTableHtml(LOG_COLUMNS, log) : ''}<p style="color:#2b2b2b;margin:4px 0 12px">لا توجد حركات في هذه الفترة.</p>`;
     return `<h3 style="margin:16px 0 6px;font-size:14px">${esc(name)}</h3>${head}${body}`;
   }).join('');
 
@@ -94,12 +107,12 @@ export function exportItemsWithLogs<T>(
         : ''),
     })),
     { title: 'تاريخ الحركة', value: (r) => (r.__log?.date ? String(r.__log.date).slice(0, 10) : '') },
-    { title: 'نوع الحركة', value: (r) => r.__log?.movement_type ?? '' },
+    { title: 'نوع الحركة', value: (r) => (r.__log ? moveName(r.__log) : '') },
     { title: 'مستند الحركة', value: (r) => r.__log?.document_number ?? '' },
     { title: 'جهة التعامل', value: (r) => r.__log?.party ?? '' },
-    { title: 'داخل', value: (r) => r.__log?.quantity_in ?? '' },
-    { title: 'خارج', value: (r) => r.__log?.quantity_out ?? '' },
-    { title: 'الرصيد بعدها', value: (r) => r.__log?.balance_after ?? '' },
+    { title: 'داخل', value: (r) => plainQty(r.__log?.quantity_in) },
+    { title: 'خارج', value: (r) => plainQty(r.__log?.quantity_out) },
+    { title: 'الرصيد بعدها', value: (r) => plainQty(r.__log?.balance_after) },
   ];
   exportCsv(filename, columns, flat);
 }
