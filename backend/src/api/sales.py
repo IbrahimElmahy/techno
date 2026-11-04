@@ -612,6 +612,47 @@ def _rep_recent_receipts(db: Session, rep_id: int) -> list[dict]:
             for v in rows]
 
 
+def _prior_by_family(db: Session, rows) -> dict[int, dict[str, Decimal]]:
+    from sqlalchemy.orm import aliased
+
+    from src.models.ledger import Account
+    from src.services import ledger_service
+
+    ids = [inv.id for inv in rows if inv.ledger_entry_id and inv.customer_id]
+    if not ids:
+        return {}
+    own = aliased(LedgerEntry)
+
+    def day(e):
+        return func.coalesce(e.entry_date, cast(e.created_at, Date))
+
+    signed = case((LedgerLine.direction == Account.normal_side, LedgerLine.amount),
+                  else_=-LedgerLine.amount)
+    typed: dict[int, set[str]] = {}
+    for cid, fam in db.execute(select(CustomerAccount.customer_id, CustomerAccount.family).where(
+            CustomerAccount.customer_id.in_({inv.customer_id for inv in rows if inv.customer_id}),
+            CustomerAccount.family.is_not(None))).all():
+        typed.setdefault(cid, set()).add(fam)
+    out: dict[int, dict[str, Decimal]] = {
+        inv.id: {f: Decimal("0.00") for f in typed[inv.customer_id]}
+        for inv in rows if inv.id in ids and inv.customer_id in typed}
+    for inv_id, fam, total in db.execute(
+        select(SalesInvoice.id, CustomerAccount.family, func.sum(signed))
+        .join(own, own.id == SalesInvoice.ledger_entry_id)
+        .join(CustomerAccount, (CustomerAccount.customer_id == SalesInvoice.customer_id)
+              & CustomerAccount.family.is_not(None))
+        .join(LedgerLine, LedgerLine.account_id == CustomerAccount.account_id)
+        .join(Account, Account.id == LedgerLine.account_id)
+        .join(LedgerEntry, LedgerEntry.id == LedgerLine.entry_id)
+        .where(SalesInvoice.id.in_(ids), ledger_service.is_posted_sql(),
+               (day(LedgerEntry) < day(own))
+               | ((day(LedgerEntry) == day(own)) & (LedgerEntry.id < own.id)))
+        .group_by(SalesInvoice.id, CustomerAccount.family)
+    ).all():
+        out.setdefault(inv_id, {})[fam] = to_money(total or 0)
+    return out
+
+
 def _rep_recent_invoices(db: Session, rep_id: int) -> list[dict]:
     since = date.today() - timedelta(days=_RECENT_DAYS)
     rows = db.scalars(
@@ -632,8 +673,10 @@ def _rep_recent_invoices(db: Session, rep_id: int) -> list[dict]:
     } if item_ids else {}
     names = dict(db.execute(select(Customer.id, Customer.name).where(
         Customer.id.in_({inv.customer_id for inv in rows if inv.customer_id} or {0}))).all())
+    priors = _prior_by_family(db, rows)
     out = []
     for inv in rows:
+        mine = priors.get(inv.id)
         out.append({
             "client_uuid": inv.client_uuid,
             "id": inv.id,
@@ -647,7 +690,10 @@ def _rep_recent_invoices(db: Session, rep_id: int) -> list[dict]:
             "cash_amount": str(inv.cash_amount or 0),
             "credit_amount": str(inv.credit_amount or 0),
             "total": str(inv.net or 0),
-            "prior_balance": str(inv.prior_balance) if inv.prior_balance is not None else None,
+            "prior_balance": (str(mine[inv.family]) if mine and inv.family in mine
+                              else str(inv.prior_balance) if inv.prior_balance is not None
+                              else None),
+            "prior_balances": {f: str(v) for f, v in mine.items()} if mine else None,
             "lines": [_rep_recent_line(ln, item_info.get(ln.item_id)) for ln in inv.lines],
         })
     return out

@@ -1383,6 +1383,8 @@ class LocalDb {
               'total': n(inv['total']) ?? 0,
               if (inv['document_number'] != null) 'document_number': inv['document_number'],
               if (inv['prior_balance'] != null) 'prev_balance': n(inv['prior_balance']),
+              if (inv['prior_balances'] is Map)
+                'prev_balances': jsonEncode(inv['prior_balances']),
             },
             where: 'local_id = ?',
             whereArgs: [localId]);
