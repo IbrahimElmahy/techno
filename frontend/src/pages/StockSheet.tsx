@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { PAGE_SIZE, PAGE_SIZE_OPTIONS } from '../utils/pagination';
-import { Button, DatePicker, Input, Select, Space, Tag, message } from 'antd';
+import { Button, Input, Tag, message } from 'antd';
 import { FilterTable as Table } from '../components/FilterTable';
 import dayjs, { Dayjs } from 'dayjs';
 import { InputNumber } from '../components/NumberInput';
@@ -8,6 +8,7 @@ import {
   ClearOutlined, ContainerOutlined, DownloadOutlined, PrinterOutlined, ReloadOutlined, SearchOutlined,
 } from '@ant-design/icons';
 import ListPage from '../components/ListPage';
+import DateRangeFilter from '../components/DateRangeFilter';
 import { useSearchParams } from 'react-router-dom';
 import { api } from '../api/client';
 import { useListFilter } from '../components/ListToolbar';
@@ -59,9 +60,6 @@ const TITLES: Record<string, string> = {
   general: 'جرد عام المخازن',
 };
 
-type LogPreset = 'all' | 'm1' | 'm3' | 'm12' | 'custom';
-const LOG_MONTHS: Record<'m1' | 'm3' | 'm12', number> = { m1: 1, m3: 3, m12: 12 };
-
 export default function StockSheet() {
   const [search] = useSearchParams();
   const view = search.get('view') === 'general' ? 'general' : 'count';
@@ -71,12 +69,16 @@ export default function StockSheet() {
   const [loading, setLoading] = useState(false);
   const [costingMethod, setCostingMethod] = useState<string | null>(null);
   const [openRows, setOpenRows] = useState<React.Key[]>([]);
+  const [logFrom, setLogFrom] = useState<Dayjs | null>(null);
+  const [logTo, setLogTo] = useState<Dayjs | null>(null);
 
   const load = async (opts?: { silent?: boolean }) => {
     const silent = !!opts?.silent;
     if (!silent) setLoading(true);
     try {
-      const res = await api.get('/api/v1/reports/stock-as-of');
+      const res = await api.get('/api/v1/reports/stock-as-of', {
+        params: logTo ? { date_to: logTo.format('YYYY-MM-DD') } : undefined,
+      });
       setRows(res.data?.rows || []);
       setCostingMethod(res.data?.costing_method ?? null);
     } catch {
@@ -84,7 +86,7 @@ export default function StockSheet() {
     } finally { if (!silent) setLoading(false); }
   };
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load(); }, [logTo?.format('YYYY-MM-DD')]);
   useLiveRefresh(STOCK_TOPICS, () => load({ silent: true }));
 
   const totals = useMemo<TotalRow[]>(() => {
@@ -134,9 +136,6 @@ export default function StockSheet() {
   const openHistory = (r: any) => toggleRow(rowKey(r));
 
   const [picked, setPicked] = useState<React.Key[]>([]);
-  const [logPreset, setLogPreset] = useState<LogPreset>('all');
-  const [logFrom, setLogFrom] = useState<Dayjs | null>(null);
-  const [logTo, setLogTo] = useState<Dayjs | null>(null);
 
   const historyTarget = (r: any) => ({
     dateFrom: logFrom ? logFrom.format('YYYY-MM-DD') : null,
@@ -281,7 +280,7 @@ export default function StockSheet() {
       printReport(
         {
           title: TITLES[view],
-          date: dayjs().format('YYYY/MM/DD'),
+          date: (logTo ?? dayjs()).format('YYYY/MM/DD'),
           meta: [
             ...(filter.query ? [['بحث', filter.query] as [string, string]] : []),
             ['المطبوع', picked.length ? `${picked.length} صنف محدّد` : 'كل ما في الفلتر'],
@@ -294,7 +293,7 @@ export default function StockSheet() {
     printItemsWithLogs(
       {
         title: `${TITLES[view]} — بالسجل`,
-        date: dayjs().format('YYYY/MM/DD'),
+        date: (logTo ?? dayjs()).format('YYYY/MM/DD'),
         meta: [
           ['فترة السجل', logFrom || logTo
             ? `${logFrom ? logFrom.format('YYYY/MM/DD') : '—'} ← ${logTo ? logTo.format('YYYY/MM/DD') : '—'}`
@@ -352,36 +351,11 @@ export default function StockSheet() {
           placeholder="بحث بالكود أو الاسم أو الفئة أو الموقع"
           value={filter.query} onChange={(e) => filter.setQuery(e.target.value)}
         />
-        <Select
-          value={logPreset}
-          onChange={(v) => {
-            const key = v as LogPreset;
-            setLogPreset(key);
-            if (key === 'all') { setLogFrom(null); setLogTo(null); return; }
-            if (key === 'custom') {
-              setLogFrom(logFrom ?? dayjs().subtract(1, 'month'));
-              setLogTo(logTo ?? dayjs());
-              return;
-            }
-            setLogFrom(dayjs().subtract(LOG_MONTHS[key], 'month'));
-            setLogTo(dayjs());
-          }}
-          options={[
-            { value: 'all', label: 'سجل: كل الحركات' },
-            { value: 'm1', label: 'سجل: آخر شهر' },
-            { value: 'm3', label: 'سجل: آخر ٣ أشهر' },
-            { value: 'm12', label: 'سجل: آخر سنة' },
-            { value: 'custom', label: 'سجل: فترة محددة' },
-          ]}
+        <DateRangeFilter
+          className="sl-f-dates"
+          value={logFrom && logTo ? [logFrom, logTo] : null}
+          onChange={(v) => { setLogFrom(v?.[0] ?? null); setLogTo(v?.[1] ?? null); }}
         />
-        {logPreset === 'custom' && (
-          <Space.Compact className="sl-f-dates">
-            <DatePicker format="YYYY-MM-DD" placeholder="من" allowClear={false}
-              style={{ width: '50%', height: 38 }} value={logFrom} onChange={setLogFrom} />
-            <DatePicker format="YYYY-MM-DD" placeholder="إلى" allowClear={false}
-              style={{ width: '50%', height: 38 }} value={logTo} onChange={setLogTo} />
-          </Space.Compact>
-        )}
         <Button className="sl-f-clear" icon={<ClearOutlined />} onClick={filter.reset}>مسح</Button>
       </>)}
     >
