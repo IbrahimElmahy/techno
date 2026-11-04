@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import sys
 from collections import defaultdict
+from decimal import Decimal
 
 from sqlalchemy import select, text, update
 
@@ -32,13 +33,19 @@ def _plan(db):
             continue
         acc = accounts[0]
         rows = db.execute(text("""
-            select l.id, l.entry_id, e.inalterable_hash is not null
+            select l.id, l.entry_id, e.inalterable_hash is not null,
+                   case when l.direction::text = 'debit' then l.amount else -l.amount end
               from ledger_line l join ledger_entry e on e.id = l.entry_id
              where l.account_id = :a order by e.entry_date, l.id"""), {"a": acc.account_id}).all()
-        if not rows or any(r[2] or r[1] not in family_of for r in rows):
+        typed = [r for r in rows if r[1] in family_of]
+        untyped_net: dict[int, Decimal] = defaultdict(Decimal)
+        for r in rows:
+            if r[1] not in family_of:
+                untyped_net[r[1]] += r[3]
+        if not typed or any(r[2] for r in typed) or any(untyped_net.values()):
             continue
         families: dict[str, list[int]] = {}
-        for line_id, entry_id, _ in rows:
+        for line_id, entry_id, _, _ in typed:
             families.setdefault(family_of[entry_id], []).append(line_id)
         plans.append((customer, acc, families))
     return plans
