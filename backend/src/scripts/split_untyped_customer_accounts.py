@@ -18,8 +18,22 @@ FAMILY_OF_ENTRY = text("""
     union all select ledger_entry_id, family from voucher where ledger_entry_id is not null
 """)
 
+A5_TWIN_BRANCHES = {"أكتوبر", "العلياء"}
+A5_CARD_TYPES = {"trader", "showroom"}
 
-def _plan(db):
+
+def _a5_default_family(db, customer) -> str | None:
+    from src.models.org import Branch
+
+    branch = db.get(Branch, customer.branch_id) if customer.branch_id else None
+    if branch is None or branch.name not in A5_TWIN_BRANCHES or "A5" not in (customer.code or ""):
+        return None
+    if getattr(customer.customer_type, "value", customer.customer_type) not in A5_CARD_TYPES:
+        return None
+    return "بولي" if customer.name.strip().startswith("تكنو") else "أبيض"
+
+
+def _plan(db, *, a5_cards: bool = False):
     family_of = {eid: fam for eid, fam in db.execute(FAMILY_OF_ENTRY) if fam}
     by_customer: dict[int, list[CustomerAccount]] = defaultdict(list)
     for acc in db.scalars(select(CustomerAccount)).all():
@@ -42,19 +56,26 @@ def _plan(db):
         for r in rows:
             if r[1] not in family_of:
                 untyped_net[r[1]] += r[3]
-        if not typed or any(r[2] for r in typed) or any(untyped_net.values()):
-            continue
         families: dict[str, list[int]] = {}
+        if a5_cards:
+            default = _a5_default_family(db, customer)
+            if default is None or not any(untyped_net.values()):
+                continue
+            families[default] = []
+            if any(r[2] for r in typed if family_of[r[1]] != default):
+                continue
+        elif not typed or any(r[2] for r in typed) or any(untyped_net.values()):
+            continue
         for line_id, entry_id, _, _ in typed:
             families.setdefault(family_of[entry_id], []).append(line_id)
         plans.append((customer, acc, families))
     return plans
 
 
-def run(*, execute: bool) -> None:
+def run(*, execute: bool, a5_cards: bool = False) -> None:
     db = SessionLocal()
     try:
-        plans = _plan(db)
+        plans = _plan(db, a5_cards=a5_cards)
         for customer, acc, families in plans:
             first, *others = list(families)
             print(f"{customer.code} {customer.name}: "
@@ -82,4 +103,4 @@ def run(*, execute: bool) -> None:
 
 
 if __name__ == "__main__":
-    run(execute="--yes" in sys.argv[1:])
+    run(execute="--yes" in sys.argv[1:], a5_cards="--a5-cards" in sys.argv[1:])
