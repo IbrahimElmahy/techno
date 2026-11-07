@@ -469,7 +469,7 @@ export default function StockSheet() {
         </div>
       )}
       {!general && (
-        <Drawer title="سجل الجرد" placement="left" width={820} open={logOpen}
+        <Drawer title="سجل الجرد" placement="left" width={1000} open={logOpen}
           onClose={() => setLogOpen(false)}>
           <Table
             size="small"
