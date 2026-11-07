@@ -440,11 +440,12 @@ export default function StockSheet() {
         <Button className="sl-f-clear" icon={<ClearOutlined />} onClick={filter.reset}>مسح</Button>
       </>)}
     >
-      {!general && savedCounts.length > 0 && (
+      {!general && (
         <Card size="small" title="سجل الجرد" style={{ marginBottom: 12 }}>
           <Table
             size="small"
             rowKey="id"
+            locale={{ emptyText: 'لا يوجد جرد محفوظ' }}
             dataSource={savedCounts}
             pagination={savedCounts.length > 5 ? { pageSize: 5, size: 'small' } : false}
             rowClassName={(c: any) => (editing?.id === c.id ? 'ant-table-row-selected' : '')}
