@@ -132,7 +132,9 @@ export default function StockSheet() {
   };
 
   const [savedCounts, setSavedCounts] = useState<any[]>([]);
-  const [editing, setEditing] = useState<{ id: number; document_number: string } | null>(null);
+  const [editing, setEditing] = useState<{
+    id: number; document_number: string; count_date: string; warehouses: string;
+  } | null>(null);
   const [saving, setSaving] = useState(false);
   const [logOpen, setLogOpen] = useState(false);
 
@@ -155,6 +157,9 @@ export default function StockSheet() {
         book_quantity: Number(r.quantity || 0), counted_quantity: a,
       }));
     if (!lines.length) { message.info('لا توجد كميات معدودة للحفظ'); return; }
+    const names = [...new Set(rows
+      .filter((r) => r.location_kind === 'warehouse' && actual[rowKey(r)] != null)
+      .map((r) => r.location))].join('، ');
     setSaving(true);
     try {
       const res = await api.post('/api/v1/stock-counts/sheet', {
@@ -162,7 +167,8 @@ export default function StockSheet() {
         count_date: (logTo ?? dayjs()).format('YYYY-MM-DD'),
         lines,
       });
-      setEditing({ id: res.data.id, document_number: res.data.document_number });
+      setEditing({ id: res.data.id, document_number: res.data.document_number,
+        count_date: res.data.count_date, warehouses: names });
       message.success(`تم حفظ الجرد ${res.data.document_number}`);
       loadCounts();
     } catch (err: any) {
@@ -183,7 +189,11 @@ export default function StockSheet() {
         }
       });
       setActual(next);
-      setEditing({ id: res.data.id, document_number: res.data.document_number });
+      const names: string[] = [...new Set<string>((res.data.lines || []).map((ln: any) => ln.warehouse_name))];
+      filter.setQuery('');
+      setColFilters({ location: names });
+      setEditing({ id: res.data.id, document_number: res.data.document_number,
+        count_date: res.data.count_date, warehouses: names.join('، ') });
       setLogOpen(false);
     } catch (err: any) {
       message.error(err?.response?.data?.detail?.message || 'تعذر فتح الجرد');
@@ -447,6 +457,17 @@ export default function StockSheet() {
         <Button className="sl-f-clear" icon={<ClearOutlined />} onClick={filter.reset}>مسح</Button>
       </>)}
     >
+      {!general && editing && (
+        <div style={{
+          display: 'flex', flexWrap: 'wrap', gap: 24, alignItems: 'center',
+          padding: '8px 14px', marginBottom: 10, borderRadius: 8,
+          background: '#f0f7eb', border: '1px solid #b7dc9a', fontSize: 15,
+        }}>
+          <span>جرد رقم: <b>{editing.document_number}</b></span>
+          <span>التاريخ: <b>{editing.count_date}</b></span>
+          {editing.warehouses && <span>المخزن: <b>{editing.warehouses}</b></span>}
+        </div>
+      )}
       {!general && (
         <Drawer title="سجل الجرد" placement="left" width={820} open={logOpen}
           onClose={() => setLogOpen(false)}>
@@ -505,7 +526,9 @@ export default function StockSheet() {
         size="small"
         loading={loading}
         dataSource={shown}
-        columns={visibleColumns}
+        columns={(visibleColumns as any[]).map((c) => ({
+          ...c, filteredValue: colFilters[String(c.key ?? c.dataIndex)] ?? null,
+        }))}
         onChange={(_p, f) => setColFilters(f as Record<string, React.Key[] | null>)}
         tableLayout="fixed"
         scroll={{ x: 'max-content' }}
