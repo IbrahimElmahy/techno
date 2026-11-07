@@ -45,7 +45,7 @@ class Inspection(Base):
     owner_phone: Mapped[str | None] = mapped_column(String(32), nullable=True)
     national_id: Mapped[str | None] = mapped_column(String(20), nullable=True)
     owner_address: Mapped[str | None] = mapped_column(String(240), nullable=True)
-    floor_number: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    floor_number: Mapped[str | None] = mapped_column(String(120), nullable=True)
 
     description: Mapped[str | None] = mapped_column(String(80), nullable=True)
     inspection_type: Mapped[str | None] = mapped_column(String(80), nullable=True)
