@@ -469,7 +469,7 @@ export default function StockSheet() {
         </div>
       )}
       {!general && (
-        <Drawer title="سجل الجرد" placement="left" width={1000} open={logOpen}
+        <Drawer title="سجل الجرد" placement="left" width={720} open={logOpen}
           onClose={() => setLogOpen(false)}>
           <Table
             size="small"
@@ -481,13 +481,9 @@ export default function StockSheet() {
             columns={[
               { title: 'الرقم', dataIndex: 'document_number', key: 'doc', width: 120 },
               { title: 'التاريخ', dataIndex: 'count_date', key: 'date', width: 110 },
-              { title: 'المخزن', key: 'wh',
-                render: (_: any, c: any) => c.warehouse_name || '-' },
-              { title: 'الأصناف', dataIndex: 'counted_count', key: 'n', width: 90 },
-              { title: 'بواسطة', dataIndex: 'actor_name', key: 'by', width: 140 },
-              { title: 'الحالة', key: 'st', width: 90,
-                render: (_: any, c: any) => (c.status === 'posted'
-                  ? <Tag color="green">مرحّل</Tag> : <Tag>محفوظ</Tag>) },
+              { title: 'المخزن', dataIndex: 'warehouse_name', key: 'wh',
+                ...textColumn(savedCounts, (c: any) => c.warehouse_name),
+                render: (v: string | null) => v || '-' },
               { title: '', key: 'act', width: 160,
                 render: (_: any, c: any) => (
                   <Space size={4}>
