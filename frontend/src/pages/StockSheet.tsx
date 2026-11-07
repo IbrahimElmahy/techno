@@ -1,11 +1,11 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { PAGE_SIZE, PAGE_SIZE_OPTIONS } from '../utils/pagination';
-import { Button, Card, Input, Space, Tag, message } from 'antd';
+import { Badge, Button, Drawer, Input, Space, Tag, message } from 'antd';
 import { FilterTable as Table } from '../components/FilterTable';
 import dayjs, { Dayjs } from 'dayjs';
 import { InputNumber } from '../components/NumberInput';
 import {
-  ClearOutlined, ContainerOutlined, DeleteOutlined, DownloadOutlined, EditOutlined, PlusOutlined,
+  ClearOutlined, ContainerOutlined, DeleteOutlined, DownloadOutlined, EditOutlined, HistoryOutlined, PlusOutlined,
   PrinterOutlined, ReloadOutlined, SaveOutlined, SearchOutlined,
 } from '@ant-design/icons';
 import { Popconfirm } from '../components/noConfirm';
@@ -134,6 +134,7 @@ export default function StockSheet() {
   const [savedCounts, setSavedCounts] = useState<any[]>([]);
   const [editing, setEditing] = useState<{ id: number; document_number: string } | null>(null);
   const [saving, setSaving] = useState(false);
+  const [logOpen, setLogOpen] = useState(false);
 
   const loadCounts = async () => {
     try {
@@ -183,6 +184,7 @@ export default function StockSheet() {
       });
       setActual(next);
       setEditing({ id: res.data.id, document_number: res.data.document_number });
+      setLogOpen(false);
     } catch (err: any) {
       message.error(err?.response?.data?.detail?.message || 'تعذر فتح الجرد');
     }
@@ -424,6 +426,11 @@ export default function StockSheet() {
           {!general && editing && (
             <Button icon={<PlusOutlined />} onClick={newCount}>جرد جديد</Button>
           )}
+          {!general && (
+            <Button icon={<HistoryOutlined />} onClick={() => { loadCounts(); setLogOpen(true); }}>
+              سجل الجرد <Badge count={savedCounts.length} showZero color="#8c8c8c" size="small" />
+            </Button>
+          )}
       </>)}
       filters={(<>
         <Input
@@ -441,13 +448,14 @@ export default function StockSheet() {
       </>)}
     >
       {!general && (
-        <Card size="small" title="سجل الجرد" style={{ marginBottom: 12 }}>
+        <Drawer title="سجل الجرد" placement="left" width={820} open={logOpen}
+          onClose={() => setLogOpen(false)}>
           <Table
             size="small"
             rowKey="id"
             locale={{ emptyText: 'لا يوجد جرد محفوظ' }}
             dataSource={savedCounts}
-            pagination={savedCounts.length > 5 ? { pageSize: 5, size: 'small' } : false}
+            pagination={savedCounts.length > 15 ? { pageSize: 15, size: 'small' } : false}
             rowClassName={(c: any) => (editing?.id === c.id ? 'ant-table-row-selected' : '')}
             columns={[
               { title: 'الرقم', dataIndex: 'document_number', key: 'doc', width: 120 },
@@ -472,7 +480,7 @@ export default function StockSheet() {
                 ) },
             ]}
           />
-        </Card>
+        </Drawer>
       )}
       <Table
         expandable={{
