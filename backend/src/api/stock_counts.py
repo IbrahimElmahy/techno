@@ -43,6 +43,19 @@ class EnterIn(BaseModel):
     statement1: str | None = Field(default=None, max_length=200)
 
 
+class SheetLineIn(BaseModel):
+    item_id: int
+    warehouse_id: int
+    book_quantity: Decimal = Decimal(0)
+    counted_quantity: Decimal
+
+
+class SheetIn(BaseModel):
+    count_id: int | None = None
+    count_date: date | None = None
+    lines: list[SheetLineIn]
+
+
 class LineOut(BaseModel):
     id: int
     item_id: int
@@ -69,6 +82,8 @@ class CountOut(BaseModel):
     statement1: str | None = None
     created_at: str
     posted_at: str | None
+    source: str | None = None
+    actor_name: str | None = None
     line_count: int
     counted_count: int
     lines: list[LineOut] | None = None
@@ -112,6 +127,7 @@ def _out(sheet: StockCount, items, warehouses, categories=None, costs=None,
         kind=(sheet.kind.value if getattr(sheet, "kind", None) else "full"),
         created_at=str(sheet.created_at),
         posted_at=str(sheet.posted_at) if sheet.posted_at else None,
+        source=getattr(sheet, "source", None),
         line_count=len(sheet.lines),
         counted_count=sum(1 for ln in sheet.lines if ln.counted_quantity is not None),
         lines=lines,
@@ -121,12 +137,57 @@ def _out(sheet: StockCount, items, warehouses, categories=None, costs=None,
 @router.get("", response_model=list[CountOut])
 def list_counts(
     status_filter: str | None = None,
+    source: str | None = None,
     _: CurrentUser = Depends(require_capability(CAP_STOCK_READ)),
     db: Session = Depends(get_db),
 ) -> list[CountOut]:
+    from src.models.user import User
+
     items, warehouses, categories, costs = _names(db)
-    return [_out(s, items, warehouses, categories, costs, with_lines=False)
-            for s in stock_count_service.listing(db, status=status_filter)]
+    sheets = stock_count_service.listing(db, status=status_filter, source=source)
+    users = {u.id: (u.full_name or u.username) for u in db.scalars(select(User).where(
+        User.id.in_({s.actor_user_id for s in sheets} or {0}))).all()}
+    out = []
+    for s in sheets:
+        row = _out(s, items, warehouses, categories, costs, with_lines=False)
+        row.actor_name = users.get(s.actor_user_id)
+        if s.warehouse_id is None and s.source == stock_count_service.SHEET_SOURCE:
+            row.warehouse_name = "، ".join(sorted(
+                {warehouses.get(ln.warehouse_id, "") for ln in s.lines}))
+        out.append(row)
+    return out
+
+
+@router.post("/sheet", response_model=CountOut)
+def save_sheet(
+    body: SheetIn,
+    current: CurrentUser = Depends(require_capability(CAP_PURCHASE_WRITE)),
+    db: Session = Depends(get_db),
+) -> CountOut:
+    try:
+        sheet = stock_count_service.save_sheet(
+            db, count_id=body.count_id, count_date=body.count_date,
+            lines=[(ln.item_id, ln.warehouse_id, ln.book_quantity, ln.counted_quantity)
+                   for ln in body.lines],
+            actor_user_id=current.id)
+    except StockCountError as exc:
+        raise HTTPException(409, {"code": "count_invalid", "message": str(exc)}) from exc
+    db.commit()
+    items, warehouses, categories, costs = _names(db)
+    return _out(sheet, items, warehouses, categories, costs, with_lines=False)
+
+
+@router.delete("/{count_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_sheet(
+    count_id: int,
+    current: CurrentUser = Depends(require_capability(CAP_PURCHASE_WRITE)),
+    db: Session = Depends(get_db),
+) -> None:
+    try:
+        stock_count_service.delete_sheet(db, count_id=count_id, actor_user_id=current.id)
+    except StockCountError as exc:
+        raise HTTPException(409, {"code": "count_invalid", "message": str(exc)}) from exc
+    db.commit()
 
 
 @router.get("/{count_id}", response_model=CountOut)

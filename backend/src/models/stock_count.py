@@ -38,6 +38,7 @@ class StockCount(Base):
     )
     notes: Mapped[str | None] = mapped_column(String(500), nullable=True)
     statement1: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    source: Mapped[str | None] = mapped_column(String(16), nullable=True)
     actor_user_id: Mapped[int] = mapped_column(ForeignKey("user.id"), nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime, server_default=func.now(), nullable=False

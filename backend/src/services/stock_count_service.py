@@ -210,8 +210,62 @@ def get(db: Session, count_id: int) -> StockCount | None:
     )
 
 
-def listing(db: Session, *, status: str | None = None) -> list[StockCount]:
+SHEET_SOURCE = "sheet"
+
+
+def save_sheet(
+    db: Session, *, count_id: int | None, count_date: date | None,
+    lines: list[tuple[int, int, Decimal, Decimal]], actor_user_id: int,
+) -> StockCount:
+    if not lines:
+        raise StockCountError("لا توجد كميات معدودة للحفظ.")
+    if any(to_qty(counted) < ZERO for _, _, _, counted in lines):
+        raise StockCountError("لا يمكن أن تكون الكمية المعدودة سالبة.")
+    if count_id is None:
+        sheet = StockCount(
+            document_number=_doc_number(db), count_date=count_date or date.today(),
+            status=StockCountStatus.draft, kind=StockCountKind.spot,
+            source=SHEET_SOURCE, actor_user_id=actor_user_id)
+        db.add(sheet)
+    else:
+        sheet = db.get(StockCount, count_id)
+        if sheet is None or sheet.source != SHEET_SOURCE:
+            raise StockCountError("الجرد غير موجود.")
+        if sheet.status != StockCountStatus.draft:
+            raise StockCountError("هذا الجرد مرحّل — لا يُعدّل.")
+        sheet.count_date = count_date or sheet.count_date
+        sheet.lines.clear()
+    warehouses = {wh for _, wh, _, _ in lines}
+    sheet.warehouse_id = next(iter(warehouses)) if len(warehouses) == 1 else None
+    for item_id, wh, book, counted in lines:
+        sheet.lines.append(StockCountLine(item_id=item_id, warehouse_id=wh,
+                                          book_quantity=to_qty(book),
+                                          counted_quantity=to_qty(counted)))
+    db.flush()
+    audit_service.record(db, action="stock_count.sheet_save", actor_user_id=actor_user_id,
+                         entity_type="stock_count", entity_id=sheet.id,
+                         after={"doc": sheet.document_number, "lines": len(lines)})
+    return sheet
+
+
+def delete_sheet(db: Session, *, count_id: int, actor_user_id: int) -> None:
+    sheet = db.get(StockCount, count_id)
+    if sheet is None or sheet.source != SHEET_SOURCE:
+        raise StockCountError("الجرد غير موجود.")
+    if sheet.status != StockCountStatus.draft:
+        raise StockCountError("هذا الجرد مرحّل — لا يُحذف.")
+    audit_service.record(db, action="stock_count.sheet_delete", actor_user_id=actor_user_id,
+                         entity_type="stock_count", entity_id=sheet.id,
+                         before={"doc": sheet.document_number, "lines": len(sheet.lines)})
+    db.delete(sheet)
+    db.flush()
+
+
+def listing(db: Session, *, status: str | None = None,
+            source: str | None = None) -> list[StockCount]:
     stmt = select(StockCount)
     if status:
         stmt = stmt.where(StockCount.status == status)
+    if source:
+        stmt = stmt.where(StockCount.source == source)
     return list(db.scalars(stmt.order_by(*newest_first(StockCount, StockCount.count_date))).all())

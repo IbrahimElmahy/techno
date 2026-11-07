@@ -1,12 +1,14 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { PAGE_SIZE, PAGE_SIZE_OPTIONS } from '../utils/pagination';
-import { Button, Input, Tag, message } from 'antd';
+import { Button, Card, Input, Space, Tag, message } from 'antd';
 import { FilterTable as Table } from '../components/FilterTable';
 import dayjs, { Dayjs } from 'dayjs';
 import { InputNumber } from '../components/NumberInput';
 import {
-  ClearOutlined, ContainerOutlined, DownloadOutlined, PrinterOutlined, ReloadOutlined, SearchOutlined,
+  ClearOutlined, ContainerOutlined, DeleteOutlined, DownloadOutlined, EditOutlined, PlusOutlined,
+  PrinterOutlined, ReloadOutlined, SaveOutlined, SearchOutlined,
 } from '@ant-design/icons';
+import { Popconfirm } from '../components/noConfirm';
 import ListPage from '../components/ListPage';
 import DateRangeFilter from '../components/DateRangeFilter';
 import { useSearchParams } from 'react-router-dom';
@@ -128,6 +130,76 @@ export default function StockSheet() {
     if (a === null || a === undefined) return null;
     return Number(Number(r.quantity || 0) - a);
   };
+
+  const [savedCounts, setSavedCounts] = useState<any[]>([]);
+  const [editing, setEditing] = useState<{ id: number; document_number: string } | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  const loadCounts = async () => {
+    try {
+      const res = await api.get('/api/v1/stock-counts', { params: { source: 'sheet' } });
+      setSavedCounts(res.data || []);
+    } catch { setSavedCounts([]); }
+  };
+
+  useEffect(() => { if (!general) loadCounts(); }, [general]);
+
+  const saveCount = async () => {
+    const lines = rows
+      .filter((r) => r.location_kind === 'warehouse')
+      .map((r) => ({ r, a: actual[rowKey(r)] }))
+      .filter(({ a }) => a !== null && a !== undefined)
+      .map(({ r, a }) => ({
+        item_id: r.item_id, warehouse_id: r.location_id,
+        book_quantity: Number(r.quantity || 0), counted_quantity: a,
+      }));
+    if (!lines.length) { message.info('لا توجد كميات معدودة للحفظ'); return; }
+    setSaving(true);
+    try {
+      const res = await api.post('/api/v1/stock-counts/sheet', {
+        count_id: editing?.id ?? null,
+        count_date: (logTo ?? dayjs()).format('YYYY-MM-DD'),
+        lines,
+      });
+      setEditing({ id: res.data.id, document_number: res.data.document_number });
+      message.success(`تم حفظ الجرد ${res.data.document_number}`);
+      loadCounts();
+    } catch (err: any) {
+      message.error(err?.response?.data?.detail?.message || 'تعذر حفظ الجرد');
+    } finally { setSaving(false); }
+  };
+
+  const openCount = async (c: any) => {
+    try {
+      const res = await api.get(`/api/v1/stock-counts/${c.id}`);
+      const day = dayjs(res.data.count_date);
+      setLogFrom(day);
+      setLogTo(day);
+      const next: Record<string, number | null> = {};
+      (res.data.lines || []).forEach((ln: any) => {
+        if (ln.counted_quantity !== null && ln.counted_quantity !== undefined) {
+          next[`${ln.item_id}-warehouse-${ln.warehouse_id}`] = Number(ln.counted_quantity);
+        }
+      });
+      setActual(next);
+      setEditing({ id: res.data.id, document_number: res.data.document_number });
+    } catch (err: any) {
+      message.error(err?.response?.data?.detail?.message || 'تعذر فتح الجرد');
+    }
+  };
+
+  const deleteCount = async (c: any) => {
+    try {
+      await api.delete(`/api/v1/stock-counts/${c.id}`);
+      if (editing?.id === c.id) { setEditing(null); setActual({}); }
+      message.success(`تم حذف الجرد ${c.document_number}`);
+      loadCounts();
+    } catch (err: any) {
+      message.error(err?.response?.data?.detail?.message || 'تعذر حذف الجرد');
+    }
+  };
+
+  const newCount = () => { setEditing(null); setActual({}); };
 
   const toggleRow = (key: React.Key) =>
     setOpenRows((prev) => (prev.includes(key)
@@ -344,6 +416,14 @@ export default function StockSheet() {
             order={cols.order} onMove={(k, d) => cols.move(k, d, columns.map((c) => String(c.key ?? (c as any).dataIndex ?? '')))}
           />
           <Button icon={<ReloadOutlined />} onClick={() => load()}>تحديث</Button>
+          {!general && (
+            <Button type="primary" icon={<SaveOutlined />} loading={saving} onClick={saveCount}>
+              {editing ? `حفظ ${editing.document_number}` : 'حفظ الجرد'}
+            </Button>
+          )}
+          {!general && editing && (
+            <Button icon={<PlusOutlined />} onClick={newCount}>جرد جديد</Button>
+          )}
       </>)}
       filters={(<>
         <Input
@@ -360,6 +440,39 @@ export default function StockSheet() {
         <Button className="sl-f-clear" icon={<ClearOutlined />} onClick={filter.reset}>مسح</Button>
       </>)}
     >
+      {!general && savedCounts.length > 0 && (
+        <Card size="small" title="سجل الجرد" style={{ marginBottom: 12 }}>
+          <Table
+            size="small"
+            rowKey="id"
+            dataSource={savedCounts}
+            pagination={savedCounts.length > 5 ? { pageSize: 5, size: 'small' } : false}
+            rowClassName={(c: any) => (editing?.id === c.id ? 'ant-table-row-selected' : '')}
+            columns={[
+              { title: 'الرقم', dataIndex: 'document_number', key: 'doc', width: 120 },
+              { title: 'التاريخ', dataIndex: 'count_date', key: 'date', width: 110 },
+              { title: 'المخزن', key: 'wh',
+                render: (_: any, c: any) => c.warehouse_name || '-' },
+              { title: 'الأصناف', dataIndex: 'counted_count', key: 'n', width: 90 },
+              { title: 'بواسطة', dataIndex: 'actor_name', key: 'by', width: 140 },
+              { title: 'الحالة', key: 'st', width: 90,
+                render: (_: any, c: any) => (c.status === 'posted'
+                  ? <Tag color="green">مرحّل</Tag> : <Tag>محفوظ</Tag>) },
+              { title: '', key: 'act', width: 160,
+                render: (_: any, c: any) => (
+                  <Space size={4}>
+                    <Button size="small" icon={<EditOutlined />} onClick={() => openCount(c)}>فتح</Button>
+                    {c.status === 'draft' && (
+                      <Popconfirm onConfirm={() => deleteCount(c)}>
+                        <Button size="small" danger icon={<DeleteOutlined />}>حذف</Button>
+                      </Popconfirm>
+                    )}
+                  </Space>
+                ) },
+            ]}
+          />
+        </Card>
+      )}
       <Table
         expandable={{
           expandedRowKeys: openRows,

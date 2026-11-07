@@ -617,6 +617,7 @@ _ADDED_COLUMNS: list[tuple[str, str, str]] = [
     ("manufacturing_order", "statement1", "VARCHAR(200)"),
     ("wastage_document", "statement1", "VARCHAR(200)"),
     ("stock_count", "statement1", "VARCHAR(200)"),
+    ("stock_count", "source", "VARCHAR(16)"),
     ("trade_order", "statement1", "VARCHAR(200)"),
     ("coupon_receipt", "status", "VARCHAR(16)"),
     ("coupon_receipt", "approved_by", "BIGINT"),
