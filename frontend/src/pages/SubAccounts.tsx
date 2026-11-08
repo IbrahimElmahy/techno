@@ -97,6 +97,20 @@ export default function SubAccounts() {
     return [a.code, accountName(a), parentName(a)].some((v) => normalizeAr(v).includes(q));
   });
 
+  const nextCode = (parentId: number) => {
+    const parent = groups.find((g) => g.id === parentId);
+    if (!parent?.code) return undefined;
+    const all = [...rows, ...groups];
+    const prefix = `${parent.code}.`;
+    let top = 0;
+    for (const a of all) {
+      if (!a.code?.startsWith(prefix)) continue;
+      const n = Number(a.code.slice(prefix.length));
+      if (Number.isInteger(n) && n > top) top = n;
+    }
+    return `${prefix}${top + 1}`;
+  };
+
   const onCreate = async (v: any) => {
     const parent = groups.find((g) => g.id === v.parent_id);
     try {
@@ -232,6 +246,7 @@ export default function SubAccounts() {
         <Form.Item name="parent_id" label="الحسابات الرئيسية"
           rules={[{ required: isCreate, message: 'اختر الحساب الرئيسي' }]}>
           <Select showSearch disabled={!isCreate} placeholder="اختر الحساب الرئيسي"
+            onChange={(id: number) => { if (isCreate) form.setFieldValue('code', nextCode(id)); }}
             options={groups.map((g) => ({
               value: g.id,
               label: `${g.name || g.id}${g.nature ? ` · ${NATURE_LABEL[g.nature]}` : ''}`,
@@ -247,7 +262,7 @@ export default function SubAccounts() {
       <Col span={6}>
         <Form.Item name="code" label="الكود"
           rules={[{ required: isCreate, message: 'اكتب كود الحساب' }]}>
-          <Input disabled={!isCreate} placeholder="مثال: 5101" />
+          <Input disabled={!isCreate} autoComplete="off" />
         </Form.Item>
       </Col>
       {!isCreate && (
