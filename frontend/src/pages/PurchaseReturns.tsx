@@ -548,36 +548,16 @@ export default function PurchaseReturns({ embedded }: { embedded?: { onExit: () 
       if (Number(r.data?.unit_price) > 0) price = Number(r.data.unit_price);
       if (Number(r.data?.discount_pct) > 0) disc = Number(r.data.discount_pct);
     } catch {}
-    const dup = returnLines.find((l) => l.item_id === itemId && (l.warehouse_id ?? wh) === wh);
-    if (dup) {
-      if (qty) {
-        const lineWh = dup.warehouse_id ?? wh;
-        const total = pickedQty(itemId, lineWh, Number(dup.quantity || 0) + qty, dup.quantity);
-        setReturnLines((prev) => prev.map((l) => (l.key === dup.key ? { ...l, quantity: total } : l)));
-        message.info(`«${itemName(itemId)}» موجود بالفعل — تمت زيادة كميته`);
-      } else {
-        message.info(`«${itemName(itemId)}» موجود بالفعل — عدّل الكمية من السطر`);
-      }
-      return { dup: itemId };
-    }
-    const key = `${Date.now()}-${itemId}`;
+    const key = `${Date.now()}-${itemId}-${returnLines.length}`;
     const quantity = qty ? pickedQty(itemId, wh, qty, null) : null;
-    let landed = true;
-    setReturnLines((prev) => {
-      const existing = prev.find((l) => l.item_id === itemId);
-      if (existing) {
-        landed = false;
-        return prev;
-      }
-      return [...prev, {
+    setReturnLines((prev) => [...prev, {
         key, item_id: itemId, quantity, unit_price: price,
         discount_pct: null, fixed_discount_pct: disc, unit: null,
         warehouse_id: wh,
-      }];
-    });
+      }]);
     fetchOnHand(itemId, wh);
     fetchUnits(itemId);
-    return landed && quantity == null ? { needsQty: key } : null;
+    return quantity == null ? { needsQty: key } : null;
   };
 
   const lineColumns: EntryColumn<ReturnLineDraft>[] = [

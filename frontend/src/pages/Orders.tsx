@@ -512,18 +512,6 @@ export default function Orders() {
   });
 
   const addItem = (itemId: number, qty: number | null = null): PickResult => {
-    const existing = lines.find((l) => l.item_id === itemId);
-    if (existing) {
-      const name = items.find((i) => i.id === itemId)?.name ?? `صنف #${itemId}`;
-      if (qty) {
-        setLines((prev) => prev.map((l) => (l.key === existing.key
-          ? { ...l, quantity: Number(l.quantity || 0) + qty } : l)));
-        message.info(`«${name}» موجود بالفعل — تمت زيادة كميته`);
-      } else {
-        message.info(`«${name}» موجود بالفعل — عدّل الكمية من السطر`);
-      }
-      return { dup: itemId };
-    }
     const key = Math.max(lines[lines.length - 1]?.key ?? 0, keySeq.current) + 1;
     keySeq.current = key;
     setLines((prev) => [...prev, { key, item_id: itemId,
