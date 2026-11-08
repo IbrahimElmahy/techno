@@ -59,7 +59,7 @@ import { money, numeralsLocale } from '../utils/money';
 import { convertUnitPrice, factorOf, unitSelectOptions } from '../utils/units';
 import { fingerprint, verdictOnLeave } from '../utils/unsavedWork';
 import { applyPct, combinePct, splitLineDiscount } from '../utils/discounts';
-import { QTY_DATA_ATTR, flashExistingItem } from '../utils/duplicateItem';
+import { QTY_DATA_ATTR } from '../utils/duplicateItem';
 
 import { useLiveRefresh } from '../utils/live';
 
@@ -1004,28 +1004,14 @@ export default function Purchases() {
       const p = selected?.purchase_price ? parseFloat(selected.purchase_price) : 0;
       return !p && selected?.sale_price ? parseFloat(selected.sale_price) : p;
     };
-    const sameLine = (l: PurchaseItem, id: number) => l.item_id === id && (l.warehouse_id ?? warehouseId) === warehouseId;
-    const dups = ids.filter((id) => purchaseItems.some((l) => sameLine(l, id)));
-    dups.forEach((id) => message.info(qtys?.[id]
-      ? `«${itemName(id)}» موجود بالفعل — تمت زيادة كميته`
-      : `«${itemName(id)}» موجود بالفعل — عدّل الكمية من السطر`));
-    const fresh = ids.filter((id) => !dups.includes(id));
-    if (!fresh.length && dups.length) flashExistingItem(dups[0]);
-    if (!fresh.length && !dups.some((id) => qtys?.[id])) return;
+    const fresh = ids;
+    if (!fresh.length) return;
 
     setPurchaseItems((prev) => {
       let next = prev;
       let first = '';
       ids.forEach((itemId) => {
         const q = qtys?.[itemId] ?? null;
-        const existing = next.find((l) => sameLine(l, itemId));
-        if (existing) {
-          if (q) {
-            next = next.map((l) => (l.key === existing.key
-              ? { ...l, quantity: Number(l.quantity || 0) + q } : l));
-          }
-          return;
-        }
         const blank = next.find((l) => l.item_id === null);
         if (blank) {
           next = next.map((l) => (l.key === blank.key
@@ -1036,7 +1022,7 @@ export default function Purchases() {
           if (!first && !(q ?? blank.quantity)) first = blank.key;
           return;
         }
-        const key = `${Date.now()}-${itemId}`;
+        const key = `${Date.now()}-${itemId}-${next.length}`;
         if (!first && !q) first = key;
         next = [...next, {
           key, item_id: itemId, quantity: q, unit_price: priceOf(itemId), unit: null,
