@@ -164,7 +164,7 @@ export function printInvoice(d: InvoiceDoc, opts?: PrintOptions): void {
   const showUnit = o.unitColumn;
   const showCode = o.codeColumn && d.lines.some((l) => l.code);
   const warehouses = new Set(d.lines.map((l) => l.warehouse).filter(Boolean));
-  const anyWh = warehouses.size > 1;
+  const anyWh = o.warehouseColumn && warehouses.size > 1;
   const cols = 5 + (showCode ? 1 : 0) + (showUnit ? 1 : 0) + (anyWh ? 1 : 0) + (anyDisc ? 1 : 0) + (anyPts ? 1 : 0);
   const pts = (v: any) => Number(v || 0).toLocaleString('en-US', { maximumFractionDigits: 3 });
   const rows = d.lines.map((l, i) => `
