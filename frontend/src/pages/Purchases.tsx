@@ -464,14 +464,11 @@ export default function Purchases() {
   const loadLookups = async () => {
     setLoading(true);
     try {
-      const [supRes, whRes, itemsRes] = await Promise.all([
-        api.get('/api/v1/suppliers'),
-        api.get('/api/v1/warehouses'),
-        api.get('/api/v1/items'),
+      await Promise.all([
+        api.get('/api/v1/warehouses').then((r) => setWarehouses(r.data)),
+        api.get('/api/v1/suppliers').then((r) => setSuppliers(r.data)),
+        api.get('/api/v1/items').then((r) => setItems(r.data.filter((i: any) => i.active !== false))),
       ]);
-      setSuppliers(supRes.data);
-      setWarehouses(whRes.data);
-      setItems(itemsRes.data.filter((i: any) => i.active !== false));
     } catch (err: any) {
       console.error(err);
       message.error(err?.response?.data?.detail?.message || 'تعذر تحميل قوائم الشاشة');

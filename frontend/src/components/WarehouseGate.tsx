@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef } from 'react';
 import { searchFilter, searchRank } from '../utils/arabicSort';
-import { Select } from 'antd';
+import { Select, Spin } from 'antd';
 import { TabModal } from './TabModal';
 
 export interface WarehouseOption {
@@ -110,6 +110,8 @@ export default function WarehouseGate({
           size="large"
           showSearch
           placeholder={placeholder}
+          loading={selectableOptions.length === 0}
+          notFoundContent={selectableOptions.length === 0 ? <Spin size="small" /> : undefined}
           value={value ?? undefined}
           onChange={(v) => {
             selectedRef.current = v;
