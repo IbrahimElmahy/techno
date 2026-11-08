@@ -25,9 +25,10 @@ export default defineConfig({
     ]),
   ],
   resolve: {
-    alias: {
-      '@': path.resolve(__dirname, './src'),
-    },
+    alias: [
+      { find: '@', replacement: path.resolve(__dirname, './src') },
+      { find: /^antd$/, replacement: path.resolve(__dirname, './src/lib/antdShim.tsx') },
+    ],
   },
   // Vitest and Playwright both look for `*.spec.ts`, and without this vitest picks up the ten
   // end-to-end specs and fails all of them on «test.describe() was not expected here» — so

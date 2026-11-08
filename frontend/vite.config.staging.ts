@@ -12,6 +12,11 @@ import { manualChunks } from './vite.chunks';
 export default defineConfig({
   base: '/staging/',
   plugins: [react()],
-  resolve: { alias: { '@': path.resolve(__dirname, './src') } },
+  resolve: {
+    alias: [
+      { find: '@', replacement: path.resolve(__dirname, './src') },
+      { find: /^antd$/, replacement: path.resolve(__dirname, './src/lib/antdShim.tsx') },
+    ],
+  },
   build: { outDir: 'dist-staging', rollupOptions: { output: { manualChunks } } },
 });

@@ -18,7 +18,12 @@ import { manualChunks } from './vite.chunks';
 export default defineConfig({
   base: '/',
   plugins: [react()],
-  resolve: { alias: { '@': path.resolve(__dirname, './src') } },
+  resolve: {
+    alias: [
+      { find: '@', replacement: path.resolve(__dirname, './src') },
+      { find: /^antd$/, replacement: path.resolve(__dirname, './src/lib/antdShim.tsx') },
+    ],
+  },
   // التشغيل المحلي (`npx vite --config vite.config.web.ts`): الواجهة بتنادي `/api` على نفس
   // الأصل زي السيرفر، فبتتحوّل للباك إند المحلي. مالوش أثر على البيلد.
   server: { port: 5173, strictPort: true, proxy: { '/api': 'http://127.0.0.1:8000' } },
