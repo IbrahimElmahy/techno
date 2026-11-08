@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 
 from src.services import numbering
 
-from src.core.money import ZERO, to_factor, to_money, to_qty
+from src.core.money import ZERO, to_factor, to_money, to_price, to_qty
 from src.lib import entry_text
 from src.lib import discounts
 from src.models.catalog import Item
@@ -184,7 +184,7 @@ def create_purchase(
         )
         invoice.lines.append(
             PurchaseInvoiceLine(item_id=ln.item_id, quantity=ln.quantity,
-                                unit_price=to_money(ln.unit_price), line_total=line_total,
+                                unit_price=to_price(ln.unit_price), line_total=line_total,
                                 discount_pct=ln.discount_pct, unit=ln.unit, unit_factor=factor,
                                 fixed_discount_pct=ln.fixed_discount_pct,
                                 variable_discount_pct=ln.variable_discount_pct,
@@ -252,7 +252,7 @@ def return_purchase(
     if inv is None:
         raise PurchaseError("فاتورة الشراء غير موجودة.")
     purchased = {
-        ln.item_id: (Decimal(ln.quantity), to_money(ln.unit_price), to_factor(ln.unit_factor),
+        ln.item_id: (Decimal(ln.quantity), to_price(ln.unit_price), to_factor(ln.unit_factor),
                      Decimal(ln.discount_pct or 0))
         for ln in inv.lines
     }
@@ -419,10 +419,10 @@ def create_standalone_purchase_return(
             raise PurchaseError("يجب أن تكون الكمية أكبر من صفر.")
         unit = ln.get("unit")
         factor = uom_service.resolve_factor(db, item, unit) if unit else Decimal("1")
-        price = to_money(ln.get("unit_price") or 0)
+        price = to_price(ln.get("unit_price") or 0)
         disc = ln.get("discount_pct")
         disc = Decimal(disc) if disc is not None else None
-        before = to_money(qty * price)
+        before = qty * price
         line_total = to_money(before * (Decimal("1") - (disc or ZERO) / Decimal("100")))
         gross += line_total
         built.append({

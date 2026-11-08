@@ -650,6 +650,8 @@ _WIDENED_COLUMNS: list[tuple[str, str, str]] = [
     ("sales_invoice_line", "unit_factor", "NUMERIC(18,9)"),
     ("sales_return_line", "unit_factor", "NUMERIC(18,9)"),
     ("purchase_invoice_line", "unit_factor", "NUMERIC(18,9)"),
+    ("purchase_invoice_line", "unit_price", "NUMERIC(18,6)"),
+    ("purchase_return_line", "unit_price", "NUMERIC(18,6)"),
     ("purchase_return_line", "unit_factor", "NUMERIC(18,9)"),
     ("trade_order_line", "unit_factor", "NUMERIC(18,9)"),
     ("bom_component", "unit_factor", "NUMERIC(18,9)"),

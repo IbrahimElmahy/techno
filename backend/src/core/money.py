@@ -8,10 +8,12 @@ MONEY = Numeric(18, 2)
 QTY = Numeric(18, 3)
 PCT = Numeric(5, 2)
 FACTOR = Numeric(18, 9)
+PRICE = Numeric(18, 6)
 
 TWO_PLACES = Decimal("0.01")
 THREE_PLACES = Decimal("0.001")
 NINE_PLACES = Decimal("0.000000001")
+SIX_PLACES = Decimal("0.000001")
 ZERO = Decimal("0.00")
 ZERO_QTY = Decimal("0.000")
 
@@ -22,6 +24,10 @@ def to_money(value: Decimal | int | str) -> Decimal:
 
 def to_qty(value: Decimal | int | str) -> Decimal:
     return Decimal(value).quantize(THREE_PLACES, rounding=ROUND_HALF_UP)
+
+
+def to_price(value: Decimal | int | str) -> Decimal:
+    return Decimal(str(value)).quantize(SIX_PLACES, rounding=ROUND_HALF_UP)
 
 
 def to_factor(value: Decimal | int | str) -> Decimal:

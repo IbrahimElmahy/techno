@@ -6,7 +6,7 @@ from sqlalchemy import BigInteger, Date, DateTime, Enum, ForeignKey, String, fun
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from src.core.db import Base, BigIntPK
-from src.core.money import FACTOR, MONEY, PCT, QTY
+from src.core.money import FACTOR, MONEY, PCT, PRICE, QTY
 from src.models.stock import LocationKind
 
 
@@ -56,7 +56,7 @@ class PurchaseInvoiceLine(Base):
     invoice_id: Mapped[int] = mapped_column(ForeignKey("purchase_invoice.id"), nullable=False)
     item_id: Mapped[int] = mapped_column(ForeignKey("item.id"), nullable=False)
     quantity: Mapped[object] = mapped_column(QTY, nullable=False)
-    unit_price: Mapped[object] = mapped_column(MONEY, nullable=False)
+    unit_price: Mapped[object] = mapped_column(PRICE, nullable=False)
     discount_pct: Mapped[object | None] = mapped_column(PCT, nullable=True)
     fixed_discount_pct: Mapped[object | None] = mapped_column(PCT, nullable=True)
     variable_discount_pct: Mapped[object | None] = mapped_column(PCT, nullable=True)
@@ -115,7 +115,7 @@ class PurchaseReturnLine(Base):
     return_id: Mapped[int] = mapped_column(ForeignKey("purchase_return.id"), nullable=False)
     item_id: Mapped[int] = mapped_column(ForeignKey("item.id"), nullable=False)
     quantity: Mapped[object] = mapped_column(QTY, nullable=False)
-    unit_price: Mapped[object] = mapped_column(MONEY, nullable=False, default=0)
+    unit_price: Mapped[object] = mapped_column(PRICE, nullable=False, default=0)
     discount_pct: Mapped[object | None] = mapped_column(PCT, nullable=True)
     fixed_discount_pct: Mapped[object | None] = mapped_column(PCT, nullable=True)
     variable_discount_pct: Mapped[object | None] = mapped_column(PCT, nullable=True)
