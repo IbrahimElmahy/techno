@@ -355,6 +355,7 @@ export default function Transfers() {
     setSource(null); setDest(null); setLines([]); setCreateVisible(false);
     setViewOnly(false); setEditing(null); setRevising(null);
     setStatement1(''); setExternalDocNumber(''); setDocNotes('');
+    setTransferDate(dayjs());
     setNewStep('source');
   };
 
@@ -370,6 +371,7 @@ export default function Transfers() {
     setRevising(null);
     setSource(null); setDest(null); setSourceStock([]); setLines([]); setActiveCategory(null);
     setStatement1(''); setExternalDocNumber(''); setDocNotes('');
+    setTransferDate(dayjs());
   };
 
   const docInUrl = useRef<number | null>(null);
@@ -475,6 +477,7 @@ export default function Transfers() {
     setStatement1(x.statement1 || '');
     setExternalDocNumber(x.external_document_number || '');
     setDocNotes(x.notes || '');
+    setTransferDate(dayjs());
     setCreateVisible(true);
     if (x.source) loadSourceStock(x.source);
   };
@@ -803,7 +806,7 @@ export default function Transfers() {
     const bonus = revise ? bonusOf(t, src) : {};
     setEditing(null); setDraftQty({}); setViewOnly(false);
     setRevising(revise ? t : null);
-    if (revise) setTransferDate(dayjs(t.transfer_date || t.created_at || undefined));
+    setTransferDate(revise ? dayjs(t.transfer_date || t.created_at || undefined) : dayjs());
     setSource(src); setDest(dst);
     setStatement1(t.statement1 || '');
     setExternalDocNumber(t.external_document_number || '');
