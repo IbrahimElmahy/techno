@@ -74,7 +74,10 @@ export function useEntryGrid<T>(storageKey: string, columns: EntryColumn<T>[]) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [columns, prefs.order]);
 
-  const shown = ordered.filter((c) => !prefs.hidden.includes(c.key));
+  const shown = [
+    ...ordered.filter((c) => c.key !== 'actions' && (c.locked || !prefs.hidden.includes(c.key))),
+    ...ordered.filter((c) => c.key === 'actions'),
+  ];
 
   const control = (
     <ColumnSettings
