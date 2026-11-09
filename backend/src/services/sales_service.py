@@ -124,12 +124,12 @@ def _coupon_count(serial_from: str | None, serial_to: str | None,
 def _assert_lines_available(
     db: Session, built_locations: list[tuple[int, LocationKind, int, Decimal]],
     customer_id: int | None = None,
+    prior_out: dict[tuple[int, LocationKind, int], Decimal] | None = None,
 ) -> None:
-    wanted: dict[tuple[int, LocationKind, int], Decimal] = {}
-    for item_id, kind, loc_id, base_qty in built_locations:
-        key = (item_id, kind, loc_id)
-        wanted[key] = wanted.get(key, ZERO) + base_qty
+    wanted = _wanted_by_location(built_locations)
     for (item_id, kind, loc_id), needed in wanted.items():
+        if needed <= (prior_out or {}).get((item_id, kind, loc_id), ZERO):
+            continue
         on_hand = stock_service.on_hand(db, item_id, kind, loc_id)
         held = reservation_service.held_against(
             db, item_id=item_id, location_kind=kind, location_id=loc_id,
@@ -145,6 +145,25 @@ def _assert_lines_available(
             raise stock_service.StockError(
                 stock_service.not_enough_message(db, item_id, kind, loc_id, available, needed)
             )
+
+
+def _wanted_by_location(
+    built_locations: list[tuple[int, LocationKind, int, Decimal]],
+) -> dict[tuple[int, LocationKind, int], Decimal]:
+    wanted: dict[tuple[int, LocationKind, int], Decimal] = {}
+    for item_id, kind, loc_id, base_qty in built_locations:
+        key = (item_id, kind, loc_id)
+        wanted[key] = wanted.get(key, ZERO) + base_qty
+    return wanted
+
+
+def prior_out_of(invoice: SalesInvoice) -> dict[tuple[int, LocationKind, int], Decimal]:
+    return _wanted_by_location([
+        (ln.item_id, ln.location_kind or invoice.origin_location_kind,
+         ln.location_id if ln.location_id is not None else invoice.origin_location_id,
+         to_qty(Decimal(ln.quantity) * Decimal(ln.unit_factor or 1)))
+        for ln in invoice.lines
+    ])
 
 
 def _doc_number(db: Session, model, prefix: str) -> str:
@@ -218,6 +237,7 @@ def create_sale(
     can_sell_below: bool = False,
     can_sell_below_cost: bool = False,
     keep_costs: dict[int, Decimal] | None = None,
+    prior_out: dict[tuple[int, LocationKind, int], Decimal] | None = None,
     rep_id: int | None = None,
     revenue_account_id: int | None = None,
     external_document_number: str | None = None,
@@ -429,11 +449,14 @@ def create_sale(
     else:
         db.add(invoice)
     db.flush()
-    _assert_lines_available(db, [
+    built_locations = [
         (ln.item_id, *_line_location(ln, origin_location_kind, origin_location_id),
          to_qty(Decimal(ln.quantity) * factor))
         for ln, _price, _total, _tier, factor, _disc in built
-    ], customer_id=customer_id)
+    ]
+    _assert_lines_available(db, built_locations, customer_id=customer_id, prior_out=prior_out)
+    tolerated = {key for key, needed in _wanted_by_location(built_locations).items()
+                 if needed <= (prior_out or {}).get(key, ZERO)}
     for ln, unit_price, line_total, tier, factor, line_disc in built:
         base_qty = to_qty(Decimal(ln.quantity) * factor)
         line_kind, line_loc = _line_location(ln, origin_location_kind, origin_location_id)
@@ -442,6 +465,7 @@ def create_sale(
             location_id=line_loc, movement_type="sale_out",
             direction=StockDirection.out, quantity=base_qty, actor_user_id=actor_user_id,
             source_doc_type=StockDoc.SALE, source_doc_id=invoice.id,
+            allow_negative=(ln.item_id, line_kind, line_loc) in tolerated,
         )
         base_cost = base_costs.get(ln.item_id)
         unit_cost = to_money(Decimal(str(base_cost)) * factor) if base_cost is not None else None

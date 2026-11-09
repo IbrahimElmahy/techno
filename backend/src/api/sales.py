@@ -755,6 +755,7 @@ def _build_sale(
     db: Session, body: "SaleCreate", current: CurrentUser, *,
     replace_invoice_id: int | None = None,
     keep_costs: dict[int, Decimal] | None = None,
+    prior_out: dict | None = None,
 ) -> SalesInvoice:
     _rep_scope_check(db, current, body.customer_id, body.origin)
     _line_locations_check(db, current, body)
@@ -808,6 +809,7 @@ def _build_sale(
             client_uuid=body.client_uuid,
             replace_invoice_id=replace_invoice_id,
             keep_costs=keep_costs,
+            prior_out=prior_out,
         )
     except SalesError as exc:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -874,12 +876,13 @@ def update_sale(
     try:
         document_edit_service.assert_sale_editable(db, inv)
         kept_costs = document_edit_service.frozen_costs(db, inv)
+        prior_out = sales_service.prior_out_of(inv)
         document_edit_service.purge_sale(db, inv)
     except DocumentEditError as exc:
         raise HTTPException(status.HTTP_409_CONFLICT,
                             {"code": "edit_blocked", "message": str(exc)})
     inv = _build_sale(db, body, current, replace_invoice_id=sale_id,
-                      keep_costs=kept_costs)
+                      keep_costs=kept_costs, prior_out=prior_out)
     db.commit()
     return _inv_out(inv, db, payment_states=_payment_states(db, [inv]))
 

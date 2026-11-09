@@ -185,6 +185,7 @@ export default function Invoices() {
   const [availability, setAvailability] = useState<Record<number, Record<number, number>>>({});
   const stockLoaded = useRef<Set<number>>(new Set());
   const excludeDocRef = useRef<number | null>(null);
+  const priorOutRef = useRef<Map<string, number>>(new Map());
   const [partyPickerOpen, setPartyPickerOpen] = useState(false);
   const [newStep, setNewStep] = useState<null | 'date' | 'party' | 'warehouse' | 'family'>(null);
   const [party, setParty] = useState<Party | null>(null);
@@ -597,6 +598,7 @@ export default function Invoices() {
     setAvailability({});
     stockLoaded.current.clear();
     excludeDocRef.current = null;
+    priorOutRef.current = new Map();
     setParty(null);
     setDocWarehouseId(null);
     setPendingItems([]);
@@ -1081,6 +1083,7 @@ export default function Invoices() {
     });
     const short = validLines.find((l) => {
       const asked = wanted.get(`${lineWarehouse(l)}:${l.item_id}`) ?? 0;
+      if (asked <= (priorOutRef.current.get(`${lineWarehouse(l)}:${l.item_id}`) ?? 0)) return false;
       return asked > availableFor(l.item_id, l.unit, lineWarehouse(l));
     });
     if (short) {
@@ -1473,6 +1476,11 @@ function couponsTotal(inv: any): number {
       const first = (det.lines || [])[0];
 
       excludeDocRef.current = record.id;
+      priorOutRef.current = new Map();
+      refilled.forEach((l) => {
+        const key = `${l.warehouse_id ?? first?.warehouse_id ?? null}:${l.item_id}`;
+        priorOutRef.current.set(key, (priorOutRef.current.get(key) ?? 0) + Number(l.quantity || 0));
+      });
       setAvailability({});
       stockLoaded.current.clear();
       const stores = new Set<number>(
