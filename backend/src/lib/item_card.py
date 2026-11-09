@@ -113,6 +113,7 @@ def card(
     opening = ZERO_QTY
     rows: list[dict] = []
     balance = ZERO_QTY
+    closing = ZERO_QTY
     total_in = total_out = ZERO_QTY
     last_key = None
 
@@ -120,6 +121,9 @@ def card(
         signed = _qty(mv.quantity) if mv.direction == StockDirection.in_ else -_qty(mv.quantity)
         before = balance
         balance = _qty(balance + signed)
+        moved_on = mv.movement_date or _day(mv.created_at)
+        if day_to is None or moved_on is None or moved_on <= day_to:
+            closing = balance
 
         key = edit_key(mv)
         if key is not None and key == last_key and rows:
@@ -188,7 +192,7 @@ def card(
         "location": (names.get((kind.value, location_id), f"#{location_id}") if kind
                      else "كل المواقع"),
         "opening_balance": str(opening),
-        "closing_balance": str(balance),
+        "closing_balance": str(closing),
         "total_in": str(total_in),
         "total_out": str(total_out),
         "rows": rows,

@@ -79,8 +79,9 @@ export default function ItemCard() {
   const [warehouseId, setWarehouseId] = useState<number | undefined>(
     Number(search.get('wh')) || undefined);
   const [range, setRange] = useState<[Dayjs | null, Dayjs | null] | null>(
-    search.get('from') && search.get('to')
-      ? [dayjs(search.get('from')), dayjs(search.get('to'))] : null);
+    search.get('from') || search.get('to')
+      ? [search.get('from') ? dayjs(search.get('from')) : null,
+        search.get('to') ? dayjs(search.get('to')) : null] : null);
   const [movementType, setMovementType] = useState<string | undefined>(
     search.get('type') || undefined);
   const [card, setCard] = useState<CardOut | null>(null);
@@ -130,20 +131,14 @@ export default function ItemCard() {
     return new Set([...seen].filter(([, n]) => n > 1).map(([k]) => k));
   }, [items]);
 
-  const fullRange = (): [Dayjs, Dayjs] | null =>
-    (range && range[0] && range[1] ? [range[0], range[1]] : null);
-
   const load = async () => {
     if (!itemId) { setCard(null); return; }
     setLoading(true);
     try {
       const params: any = {};
       if (warehouseId) { params.location_kind = 'warehouse'; params.location_id = warehouseId; }
-      const r = fullRange();
-      if (r) {
-        params.date_from = r[0].format('YYYY-MM-DD');
-        params.date_to = r[1].format('YYYY-MM-DD');
-      }
+      if (range?.[0]) params.date_from = range[0].format('YYYY-MM-DD');
+      if (range?.[1]) params.date_to = range[1].format('YYYY-MM-DD');
       if (movementType) params.movement_type = movementType;
       const res = await api.get(`/api/v1/items/${itemId}/card`, { params });
       setCard(res.data);
@@ -279,7 +274,7 @@ export default function ItemCard() {
       <span>رصيد أول المدة: <b>{qty(card.opening_balance)}</b></span>
       <span>إجمالي الوارد: <b className="is-pos">{qty(card.total_in)}</b></span>
       <span>إجمالي المنصرف: <b className="is-neg">{qty(card.total_out)}</b></span>
-      <span>الرصيد الحالي — {card.location}: <b style={{ color: '#0B5CA8' }}>{qty(card.closing_balance)}</b></span>
+      <span>{range?.[1] ? `الرصيد في ${range[1].format('YYYY-MM-DD')}` : 'الرصيد الحالي'} — {card.location}: <b style={{ color: '#0B5CA8' }}>{qty(card.closing_balance)}</b></span>
     </span>
   );
 
@@ -323,7 +318,7 @@ export default function ItemCard() {
             value={warehouseId} onChange={setWarehouseId}
             options={sortByName(warehouses, (w) => w.name).map((w) => ({ value: w.id, label: w.name }))} filterOption={searchFilter} filterSort={searchRank} />
           <DateRangeFilter
-            className="sl-f-dates"
+            className="sl-f-dates" openEnded
             value={range as any}
             onChange={(v) => setRange(v as any)}
           />

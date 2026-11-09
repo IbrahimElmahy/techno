@@ -450,8 +450,8 @@ export default function StockSheet() {
           value={filter.query} onChange={(e) => filter.setQuery(e.target.value)}
         />
         <DateRangeFilter
-          className="sl-f-dates"
-          value={logFrom && logTo ? [logFrom, logTo] : null}
+          className="sl-f-dates" openEnded
+          value={logFrom || logTo ? [logFrom, logTo] as [Dayjs, Dayjs] : null}
           onChange={(v) => { setLogFrom(v?.[0] ?? null); setLogTo(v?.[1] ?? null); }}
         />
         <Button className="sl-f-clear" icon={<ClearOutlined />} onClick={filter.reset}>مسح</Button>

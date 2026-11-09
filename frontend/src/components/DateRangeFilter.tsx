@@ -12,6 +12,7 @@ export interface DateRangeFilterProps {
   allowClear?: boolean;
   size?: 'small' | 'middle' | 'large';
   showPresets?: boolean;
+  openEnded?: boolean;
 }
 
 export const DATE_PRESETS: { label: string; value: [Dayjs, Dayjs] }[] = [
@@ -32,6 +33,7 @@ export default function DateRangeFilter({
   placeholder = ['من تاريخ', 'إلى تاريخ'],
   allowClear = true,
   size = 'middle',
+  openEnded = false,
 }: DateRangeFilterProps) {
   const [half, setHalf] = useState<[Dayjs | null, Dayjs | null] | null>(null);
 
@@ -39,6 +41,11 @@ export default function DateRangeFilter({
   const endVal = half ? half[1] : (value && value[1] ? value[1] : null);
 
   const settle = (start: Dayjs | null, end: Dayjs | null) => {
+    if (openEnded) {
+      setHalf(null);
+      onChange?.(start || end ? [start, end] as [Dayjs, Dayjs] : null);
+      return;
+    }
     if (start && end) {
       setHalf(null);
       onChange?.([start, end]);
