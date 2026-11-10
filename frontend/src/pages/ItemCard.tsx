@@ -264,7 +264,9 @@ export default function ItemCard() {
         : '-') },
   ];
 
-  const tableCols = useTableColumns('item-card', columns, {
+  const dateOnlySort = columns.map((c) => (
+    (c as any).dataIndex === 'date' ? c : { ...c, sorter: undefined, defaultSortOrder: undefined }));
+  const tableCols = useTableColumns('item-card', dateOnlySort, {
     export: { name: 'كارت الصنف', rows: cardRows },
   });
 
