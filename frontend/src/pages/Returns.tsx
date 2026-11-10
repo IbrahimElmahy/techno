@@ -1034,6 +1034,15 @@ export default function Returns({ embedded }: { embedded?: { onExit: () => void 
         unit: l.unit ?? null,
       })));
       setCreateVisible(true);
+      const itemIds = [...new Set<number>((det.lines || []).map((l: any) => l.item_id))];
+      if (det.customer_id && itemIds.length) {
+        const found = await Promise.all(itemIds.map((itemId) => api.get(
+          '/api/v1/sales/customer-item-history',
+          { params: { customer_id: det.customer_id, item_id: itemId } },
+        ).then((r) => [itemId, { last_price: r.data.last_price, history: r.data.history || [] }] as const)
+          .catch(() => [itemId, { last_price: null, history: [] }] as const)));
+        setLastInfo(Object.fromEntries(found));
+      }
     } catch (err) {
       console.error(err);
       message.error('تعذر تحميل تفاصيل المردود');
