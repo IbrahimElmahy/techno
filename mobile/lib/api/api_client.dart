@@ -164,6 +164,9 @@ class ApiClient {
         if (prevTo != null) 'prev_to': prevTo,
       });
 
+  Future<Map<String, dynamic>> supervisorRepDebts(int repId) =>
+      _getJson('/supervisor/reps/$repId/debts');
+
   Future<Map<String, dynamic>> supervisorRepActivity(
     int repId, {
     String kind = 'all',

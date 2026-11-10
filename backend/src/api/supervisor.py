@@ -545,6 +545,48 @@ def _sources(db: Session, view: CurrentUser, rep_id: int, d1: date, d2: date, ki
     return out
 
 
+@router.get("/reps/{rep_id}/debts", response_model=dict)
+def rep_customer_debts(
+    rep_id: int,
+    current: CurrentUser = Depends(_gate),
+    db: Session = Depends(get_db),
+) -> dict:
+    from src.api.customers import _scope_filter
+    from src.services import customer_profile_service
+
+    rep = _rep_or_404(db, current, rep_id)
+    zero = Decimal("0")
+    base = customer_profile_service.apply_filters(
+        _scope_filter(select(Customer.id, Customer.code, Customer.name, Customer.phone),
+                      _doc_view(current))
+    ).where(Customer.customer_type != "owner", Customer.rep_id == rep.id).subquery()
+    bal = customer_profile_service.family_balances_subquery(None)
+    total = func.coalesce(bal.c.total, zero)
+    rows = db.execute(
+        select(base.c.id, base.c.code, base.c.name, base.c.phone,
+               func.coalesce(bal.c.white, zero), func.coalesce(bal.c.poly, zero),
+               func.coalesce(bal.c.other, zero), total, bal.c.last_date)
+        .select_from(base.outerjoin(bal, bal.c.customer_id == base.c.id))
+        .where(total != 0)
+        .order_by(total.desc())
+    ).all()
+    customers = [{
+        "id": cid, "code": code, "name": name, "phone": phone,
+        "white": _money(w), "poly": _money(p), "other": _money(o), "total": _money(t),
+        "last_date": str(last) if last else None,
+    } for cid, code, name, phone, w, p, o, t, last in rows]
+    pos = [Decimal(c["total"]) for c in customers if Decimal(c["total"]) > 0]
+    return {
+        "rep_id": rep.id,
+        "rep_name": rep.full_name or rep.username,
+        "customers": customers,
+        "debtors_count": len(pos),
+        "debt_total": _money(sum(pos, zero)),
+        "white_total": _money(sum((Decimal(c["white"]) for c in customers), zero)),
+        "poly_total": _money(sum((Decimal(c["poly"]) for c in customers), zero)),
+    }
+
+
 @router.get("/reps/{rep_id}/activity", response_model=dict)
 def rep_activity(
     rep_id: int,

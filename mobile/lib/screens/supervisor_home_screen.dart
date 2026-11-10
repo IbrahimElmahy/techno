@@ -9,6 +9,7 @@ import '../widgets/session_drawer.dart';
 import '../widgets/supervisor_widgets.dart';
 import 'price_sheets_screen.dart';
 import 'rep_activity_screen.dart';
+import 'supervisor_debts_screen.dart';
 
 class SupervisorHomeScreen extends StatefulWidget {
   const SupervisorHomeScreen({super.key, this.isRoot = false});
@@ -51,6 +52,11 @@ class _SupervisorHomeScreenState extends State<SupervisorHomeScreen> {
       _role = role;
       _priceSheet = caps.contains('"app.price_sheet"');
     });
+  }
+
+  void _openDebts() {
+    Navigator.push(context, MaterialPageRoute(
+        builder: (_) => SupervisorDebtsScreen(reps: _data?.reps ?? const [])));
   }
 
   void _openPriceSheets() {
@@ -317,6 +323,11 @@ class _SupervisorHomeScreenState extends State<SupervisorHomeScreen> {
       expandedHeight: 190,
       pinned: true,
       actions: [
+        IconButton(
+          tooltip: 'مديونية العملاء',
+          icon: const Icon(Icons.account_balance_wallet_outlined),
+          onPressed: _openDebts,
+        ),
         if (_priceSheet)
           IconButton(
             tooltip: 'كشف تسعير',
@@ -410,6 +421,14 @@ class _SupervisorHomeScreenState extends State<SupervisorHomeScreen> {
             onTap: () {
               Navigator.pop(context);
               _load();
+            },
+          ),
+          ListTile(
+            leading: const Icon(Icons.account_balance_wallet_outlined),
+            title: const Text('مديونية العملاء'),
+            onTap: () {
+              Navigator.pop(context);
+              _openDebts();
             },
           ),
           if (_priceSheet)
