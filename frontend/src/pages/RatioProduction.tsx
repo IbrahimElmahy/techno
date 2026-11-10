@@ -87,7 +87,11 @@ export default function RatioProduction() {
       setWarehouses(factory.size ? all.filter((x) => x.branch_id != null && factory.has(Number(x.branch_id))) : all);
       setRecipeProducts(new Set((boms.data || []).filter((x: { active: boolean }) => x.active)
         .map((x: { product_id: number }) => x.product_id)));
-      setOrders((o.data || []).filter((x: PO) => x.state === 'done' || x.reversed || x.is_reversal));
+      const live = (o.data || []).filter((x: PO) => x.state === 'done' && !x.reversed && !x.is_reversal);
+      const ours = new Set(live.filter((x: PO) => !x.imported_from && x.external_document_number)
+        .map((x: PO) => x.external_document_number));
+      setOrders(live.filter((x: PO) => !(x.imported_from && x.external_document_number
+        && ours.has(x.external_document_number))));
     } catch {
       message.error('تعذر تحميل البيانات');
     } finally { setLoading(false); }
