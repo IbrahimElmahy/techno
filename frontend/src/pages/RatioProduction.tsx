@@ -90,8 +90,10 @@ export default function RatioProduction() {
       const live = (o.data || []).filter((x: PO) => x.state === 'done' && !x.reversed && !x.is_reversal);
       const ours = new Set(live.filter((x: PO) => !x.imported_from && x.external_document_number)
         .map((x: PO) => x.external_document_number));
+      const prodNo = (x: PO) => Number(String(x.external_document_number ?? '').replace(/\D/g, '')) || 0;
       setOrders(live.filter((x: PO) => !(x.imported_from && x.external_document_number
-        && ours.has(x.external_document_number))));
+        && ours.has(x.external_document_number)))
+        .sort((a: PO, b: PO) => prodNo(b) - prodNo(a) || b.id - a.id));
     } catch {
       message.error('تعذر تحميل البيانات');
     } finally { setLoading(false); }
