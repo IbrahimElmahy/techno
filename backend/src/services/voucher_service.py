@@ -53,9 +53,12 @@ def _positive(amount) -> Decimal:
 def _customer_account(db: Session, customer_id: int, family: str | None = None) -> CustomerAccount:
     if db.get(Customer, customer_id) is None:
         raise VoucherError("العميل غير موجود.")
+    from src.services import customer_service
+
     try:
-        acc = customer_merge_service.receivable_account(db, customer_id, family)
-    except MergeError as exc:
+        acc = (customer_service.require_account(db, customer_id, family=family) if family
+               else customer_merge_service.receivable_account(db, customer_id, family))
+    except (MergeError, customer_service.CustomerError) as exc:
         raise VoucherError(str(exc)) from exc
     if acc is None:
         raise VoucherError("العميل ليس له حساب ذمم.")

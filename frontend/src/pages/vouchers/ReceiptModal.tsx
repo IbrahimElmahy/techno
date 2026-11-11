@@ -80,7 +80,15 @@ export default function ReceiptModal({
       balance: b.balance, kind: 'custody', active: true, rep_id: b.rep_id, family: b.family,
     })), [boxes, repUserId, treasuryId]);
   const accounts = usePostableAccounts(kind === 'account');
-  const lines = isCustomerKind(kind) ? families[customerId] || [] : [];
+  const withFamilies = (id: number | undefined): any[] => {
+    const all = (id && families[id]) || [];
+    const own = all.filter((a: any) => a.family);
+    if (kind !== 'customer' || !id || !families[id]) return own;
+    if (all.some((a: any) => !a.family && Math.abs(Number(a.balance || 0)) > 0.004)) return own;
+    const missing = ['أبيض', 'بولي'].filter((f) => !own.some((l: any) => l.family === f));
+    return [...own, ...missing.map((f) => ({ family: f, balance: 0 }))];
+  };
+  const lines = isCustomerKind(kind) ? withFamilies(customerId) : [];
   React.useEffect(() => {
     if (!open || !editing || !boxes.length) return;
     const cash = form.getFieldValue('cash_account_id');
@@ -103,7 +111,7 @@ export default function ReceiptModal({
     api.get(`/api/v1/customers/${id}/accounts`)
       .then((r) => setFamilies((prev) => ({
         ...prev,
-        [id]: (r.data?.accounts || []).filter((a: any) => a.family),
+        [id]: r.data?.accounts || [],
       })))
       .catch(() => setFamilies((prev) => ({ ...prev, [id]: [] })));
   };
@@ -140,7 +148,7 @@ export default function ReceiptModal({
         account_id: kind === 'account' ? v.account_id : undefined,
       };
     }
-    const ls = families[v.customer_id] || [];
+    const ls = withFamilies(v.customer_id);
     if (ls.length >= 2 && !target) {
       message.error('حدد المديونية أو اختر «على الإجمالي»');
       return null;

@@ -508,7 +508,7 @@ const Vouchers: React.FC = () => {
         try {
           const res = await api.get(`/api/v1/customers/${v.customer_id}/accounts`);
           const ls = (res.data?.accounts || []).filter((a: any) => a.family);
-          setReceiptFamilies((prev) => ({ ...prev, [v.customer_id]: ls }));
+          setReceiptFamilies((prev) => ({ ...prev, [v.customer_id]: res.data?.accounts || [] }));
           setReceiptTarget(ls.length >= 2 ? (v.family || '__total__') : '');
         } catch { setReceiptTarget(''); }
       } else {
