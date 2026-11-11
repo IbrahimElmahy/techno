@@ -33,6 +33,24 @@ export function useDocRoute<T extends { id: number }>(opts: {
   const pendingClose = useRef(false);
   const [missing, setMissing] = useState<number | null>(null);
 
+  const prevOpenId = useRef<number | null>(openId);
+  useEffect(() => {
+    const was = prevOpenId.current;
+    prevOpenId.current = openId;
+    if (!enabled || !writable) return;
+    if (was == null || openId != null || wanted !== was) return;
+    handled.current = null;
+    pendingOpen.current = null;
+    pendingClose.current = true;
+    setParams((p) => {
+      const next = new URLSearchParams(p);
+      next.delete('doc');
+      next.delete('edit');
+      return next;
+    }, { replace: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [openId]);
+
   useEffect(() => {
     if (!enabled) return;
     if (wanted === openId) {
