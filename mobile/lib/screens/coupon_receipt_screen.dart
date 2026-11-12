@@ -24,6 +24,7 @@ class _CouponEntry {
   String? customerName;
   int? customerId;
   String? documentNumber;
+  String? otherBranch;
 
   List<String> kinds = const [];
 
@@ -163,6 +164,8 @@ class _CouponReceiptScreenState extends State<CouponReceiptScreen> {
         entry.customerName = res['customer_name'] as String?;
         entry.customerId = res['customer_id'] as int?;
         entry.documentNumber = res['document_number'] as String?;
+        entry.otherBranch = res['other_branch'] == true
+            ? (res['other_branch_name'] as String? ?? 'فرع آخر') : null;
         entry.kinds = [
           for (final k in (res['kinds'] as List? ?? const [])) k.toString(),
         ];
@@ -171,7 +174,9 @@ class _CouponReceiptScreenState extends State<CouponReceiptScreen> {
           _customerName = entry.customerName;
         }
       });
-      if (entry.status == 'unknown') {
+      if (entry.otherBranch != null) {
+        _toast('الكوبون ${entry.serial} مصروف من ${entry.otherBranch}');
+      } else if (entry.status == 'unknown') {
         _toast('الكوبون ${entry.serial} غير مصروف من النظام');
       } else if (entry.status == 'received') {
         _toast('الكوبون ${entry.serial} تم استلامه من قبل');
@@ -674,7 +679,8 @@ class _CouponReceiptScreenState extends State<CouponReceiptScreen> {
   Widget _statusChip(_CouponEntry e) {
     final (text, color) = switch (e.status) {
       'valid' => ((e.customerName ?? 'سليم'), AppColors.success),
-      'unknown' => ('غير مصروف من النظام', AppColors.danger),
+      'unknown' => (e.otherBranch != null ? 'مصروف من ${e.otherBranch}' : 'غير مصروف من النظام',
+          AppColors.danger),
       'received' => ('تم استلامه من قبل', AppColors.accent),
       'wrong_kind' => (
           e.kinds.isEmpty ? 'فئة أخرى' : 'فئته: ${e.kinds.join('، ')}',
