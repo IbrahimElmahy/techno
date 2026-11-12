@@ -148,10 +148,11 @@ def check_serial(
     coupon_kind: str | None = Query(
         None, description="فئة الدفتر كما ذكرها المستلم — الرقم وحده غير كافٍ"),
     receipt_id: int | None = Query(None, description="الاستلام الجاري تعديله"),
-    _: CurrentUser = Depends(require_capability(CAP_COUPON_RECEIVE)),
+    current: CurrentUser = Depends(require_capability(CAP_COUPON_RECEIVE)),
     db: Session = Depends(get_db),
 ) -> dict:
-    return coupon_receipt_service.check_serial(db, serial, coupon_kind, receipt_id)
+    return coupon_receipt_service.check_serial(
+        db, serial, coupon_kind, receipt_id, branch_id=current.branch_id)
 
 
 class ReceiverUserOut(BaseModel):

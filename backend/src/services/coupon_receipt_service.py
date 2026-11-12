@@ -278,8 +278,15 @@ def kinds_for_serial(db: Session, serial: str) -> list[str]:
     return kinds_for_serials(db, [serial]).get(str(serial).strip(), [])
 
 
+def _branch_name(db: Session, branch_id: int | None) -> str:
+    from src.models.org import Branch
+
+    b = db.get(Branch, branch_id) if branch_id else None
+    return b.name if b is not None else "فرع آخر"
+
+
 def check_serial(db: Session, serial: str, coupon_kind: str | None = None,
-                 exclude_receipt_id: int | None = None) -> dict:
+                 exclude_receipt_id: int | None = None, branch_id: int | None = None) -> dict:
     serial = str(serial).strip()
     invoice, kindless = invoice_match(db, serial, coupon_kind)
     issue = None
@@ -290,6 +297,10 @@ def check_serial(db: Session, serial: str, coupon_kind: str | None = None,
     if taken is not None and exclude_receipt_id and taken.receipt_id == exclude_receipt_id:
         taken = None
     status = "valid" if known and not taken else ("received" if taken else "unknown")
+    doc_branch = getattr(invoice if invoice is not None else issue, "branch_id", None)
+    other_branch = bool(branch_id and doc_branch and doc_branch != branch_id and status == "valid")
+    if other_branch:
+        status = "unknown"
 
     issued_to_id = (invoice.customer_id if invoice is not None
                     else issue.customer_id if issue is not None else None)
@@ -332,6 +343,8 @@ def check_serial(db: Session, serial: str, coupon_kind: str | None = None,
         "customer_name": issued_to_name,
         "received_receipt_id": taken.receipt_id if taken else None,
         "received_pending": bool(taken) and _receipt_pending(db, taken.receipt_id),
+        "other_branch": other_branch,
+        "other_branch_name": _branch_name(db, doc_branch) if other_branch else None,
     }
 
 
@@ -377,7 +390,7 @@ def approved_clause():
 
 
 def _match_serials(
-    db: Session, cleaned: list[str], coupon_kind: str | None,
+    db: Session, cleaned: list[str], coupon_kind: str | None, branch_id: int | None = None,
 ) -> list[tuple[str, SalesInvoice | None, CouponIssue | None, str | None]]:
     if not cleaned:
         raise CouponReceiptError("لا توجد كوبونات في الاستلام.")
@@ -396,6 +409,7 @@ def _match_serials(
     unknown: list[str] = []
     seen_before: list[str] = []
     wrong_kind: list[str] = []
+    other_branch: list[str] = []
     kind_map = kinds_for_serials(db, cleaned) if coupon_kind else {}
     for serial in cleaned:
         invoice, kindless = invoice_match(db, serial, coupon_kind)
@@ -408,6 +422,10 @@ def _match_serials(
                 wrong_kind.append(f"{serial} (موجود تحت: {'، '.join(other)})")
             else:
                 unknown.append(serial)
+            continue
+        doc_branch = getattr(invoice if invoice is not None else issue, "branch_id", None)
+        if branch_id and doc_branch and doc_branch != branch_id:
+            other_branch.append(f"{serial} ({_branch_name(db, doc_branch)})")
             continue
         line_kind = None if kindless else coupon_kind
         taken = already_received(db, serial, line_kind)
@@ -422,6 +440,9 @@ def _match_serials(
             continue
         matched.append((serial, invoice, issue, line_kind))
 
+    if other_branch:
+        raise CouponReceiptError(
+            f"كوبونات مصروفة من فرع آخر: {', '.join(other_branch)}")
     if unknown:
         raise CouponReceiptError(
             f"كوبونات غير مصروفة من النظام: {', '.join(unknown)}")
@@ -484,9 +505,11 @@ def create_receipt(
     groups: dict[str, tuple[str | None, list[str]]] = {}
     for serial, kind in pairs:
         groups.setdefault(_norm_kind(kind), (kind, []))[1].append(serial)
+    receiving_branch = branch_for(db, actor_user_id=actor_user_id,
+                                  location_kind="rep", location_id=rep_user_id)
     matched: list = []
     for kind, group in groups.values():
-        matched.extend(_match_serials(db, group, kind))
+        matched.extend(_match_serials(db, group, kind, receiving_branch))
     named = {_norm_kind(k): k for _, k in pairs if k}
     if lines:
         declared_kind = next(iter(named.values())) if len(named) == 1 and all(
@@ -633,7 +656,7 @@ def update_receipt(
         groups.setdefault(_norm_kind(kind), (kind, []))[1].append(serial)
     matched: list = []
     for kind, group in groups.values():
-        matched.extend(_match_serials(db, group, kind))
+        matched.extend(_match_serials(db, group, kind, receipt.branch_id))
     _write_lines(db, receipt, matched)
     db.refresh(receipt)
 
