@@ -98,6 +98,7 @@ class PointLedgerRow(BaseModel):
 
 class PointLedgerOut(BaseModel):
     rows: list[PointLedgerRow] = []
+    customers: list[dict] = []
     count: int = 0
     opening: str = "0.000"
     earned: str = "0.000"

@@ -35,6 +35,7 @@ interface PointRow {
 
 interface LedgerData {
   rows: PointRow[];
+  customers: { customer_id: number; customer_name: string; earned: string; spent: string }[];
   count: number;
   earned: string;
   spent: string;
@@ -67,7 +68,7 @@ export default function PointsLedger() {
   const load = async () => {
     setLoading(true);
     try {
-      const params: Record<string, any> = { limit: 20000, offset: 0 };
+      const params: Record<string, any> = { limit: 1, offset: 0 };
       if (customerId) params.customer_id = customerId;
       if (repId) params.rep_id = repId;
       if (kinds.length) params.kind = kinds;
@@ -139,43 +140,51 @@ export default function PointsLedger() {
         ? <b style={{ color: '#cf1322' }}>{num(v)}</b> : <Text type="secondary">-</Text>) },
   ];
 
-  const { columns, control: columnSettings } = useTableColumns('points-ledger', rawColumns, {
-    export: { name: 'سجل النقاط', rows: data?.rows || [] },
-  });
+  const { columns, control: columnSettings } = useTableColumns('points-ledger', rawColumns);
 
-  const exportCsv = () => {
-    const cols: CsvColumn<PointRow>[] = [
-      { title: 'التاريخ', value: (r) => r.date || '' },
-      { title: 'العميل', value: (r) => r.customer_name || `#${r.customer_id}` },
-      { title: 'النوع', value: (r) => r.kind_label },
-      { title: 'المستند', value: (r) => r.doc_number || '' },
-      { title: 'وارد', value: (r) => (Number(r.earned) > 0 ? r.earned : '') },
-      { title: 'منصرف', value: (r) => (Number(r.spent) > 0 ? r.spent : '') },
+  const exportCustomers = () => {
+    const cols: CsvColumn<CustomerTotal>[] = [
+      { title: 'العميل', value: (r) => r.customer_name },
+      { title: 'الوارد', value: (r) => String(r.earned) },
+      { title: 'المنصرف', value: (r) => String(r.spent) },
+      { title: 'الصافي', value: (r) => String(r.earned - r.spent) },
     ];
-    writeCsv('points-ledger', cols, data?.rows || []);
+    writeCsv('points-ledger', cols, byCustomer);
   };
+
 
   const [detail, setDetail] = useState<{ customer: CustomerTotal; side: 'earned' | 'spent' } | null>(null);
 
-  const byCustomer = useMemo<CustomerTotal[]>(() => {
-    const m = new Map<number, CustomerTotal>();
-    (data?.rows || []).forEach((r) => {
-      const t = m.get(r.customer_id) ?? {
-        customer_id: r.customer_id,
-        customer_name: r.customer_name || `عميل #${r.customer_id}`,
-        earned: 0, spent: 0,
-      };
-      t.earned += Number(r.earned || 0);
-      t.spent += Number(r.spent || 0);
-      m.set(r.customer_id, t);
-    });
-    return [...m.values()].sort((a, b) => a.customer_name.localeCompare(b.customer_name, 'ar'));
-  }, [data?.rows]);
+  const byCustomer = useMemo<CustomerTotal[]>(() => (data?.customers || [])
+    .map((c) => ({
+      customer_id: c.customer_id,
+      customer_name: c.customer_name || `عميل #${c.customer_id}`,
+      earned: Number(c.earned || 0),
+      spent: Number(c.spent || 0),
+    }))
+    .sort((a, b) => a.customer_name.localeCompare(b.customer_name, 'ar')), [data?.customers]);
+
+  const [detailAll, setDetailAll] = useState<PointRow[]>([]);
+  const [detailLoading, setDetailLoading] = useState(false);
+  useEffect(() => {
+    if (!detail) { setDetailAll([]); return; }
+    const params: Record<string, any> = { customer_id: detail.customer.customer_id, limit: 20000, offset: 0 };
+    if (kinds.length) params.kind = kinds;
+    if (range) {
+      params.date_from = range[0].format('YYYY-MM-DD');
+      params.date_to = range[1].format('YYYY-MM-DD');
+    }
+    setDetailLoading(true);
+    api.get('/api/v1/points/ledger', { params })
+      .then((r) => setDetailAll(r.data?.rows || []))
+      .catch(() => setDetailAll([]))
+      .finally(() => setDetailLoading(false));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [detail?.customer.customer_id]);
 
   const detailRows = useMemo(() => (detail
-    ? (data?.rows || []).filter((r) => r.customer_id === detail.customer.customer_id
-      && Number(r[detail.side] || 0) > 0)
-    : []), [detail, data?.rows]);
+    ? detailAll.filter((r) => Number(r[detail.side] || 0) > 0)
+    : []), [detail, detailAll]);
 
   const openDetail = (customer: CustomerTotal, side: 'earned' | 'spent') => setDetail({ customer, side });
 
@@ -201,14 +210,14 @@ export default function PointsLedger() {
   ];
 
   const net = Number(data?.net || 0);
-  const shown = data?.rows.length || 0;
+  const shown = byCustomer.length;
   const total = data?.count || 0;
 
   const canSeeStats = useCanSeeStats();
   const footer = (
     <span className="sl-foot">
       <span>عدد الحركات: <b>{num(total)}</b></span>
-      {total > 0 && <span>المعروض: <b>{num(shown)}</b></span>}
+      <span>العملاء: <b>{num(shown)}</b></span>
       <span>وارد: <b className="is-pos">{num(data?.earned)}</b></span>
       <span>منصرف: <b className="is-neg">{num(data?.spent)}</b></span>
       <span>الصافي: <b className={net < 0 ? 'is-neg' : 'is-pos'}>{num(data?.net)}</b></span>
@@ -221,7 +230,7 @@ export default function PointsLedger() {
       title="سجل النقاط"
       actions={(<>
         {columnSettings}
-        <Button icon={<DownloadOutlined />} onClick={exportCsv} disabled={!shown}>
+        <Button icon={<DownloadOutlined />} onClick={exportCustomers} disabled={!shown}>
           تصدير الصفحة
         </Button>
         <Button icon={<ReloadOutlined />} onClick={load} loading={loading}>تحديث</Button>
@@ -264,6 +273,7 @@ export default function PointsLedger() {
         <Table<PointRow>
           className="sl-table" size="small" rowKey="id"
           dataSource={detailRows}
+          loading={detailLoading}
           columns={columns.filter((c: any) => c.key !== 'customer'
             && c.key !== (detail?.side === 'earned' ? 'spent' : 'earned'))}
           pagination={{ defaultPageSize: 50, showSizeChanger: true, size: 'small' }}
@@ -277,6 +287,17 @@ export default function PointsLedger() {
         dataSource={byCustomer}
         columns={groupedColumns}
         scroll={{ x: true }}
+        sticky
+        summary={() => (byCustomer.length ? (
+          <Table.Summary fixed="bottom">
+            <Table.Summary.Row style={{ background: '#fafafa', fontWeight: 700 }}>
+              <Table.Summary.Cell index={0}>الإجمالي ({num(byCustomer.length)} عميل)</Table.Summary.Cell>
+              <Table.Summary.Cell index={1} align="left"><b style={{ color: '#3f8600' }}>{num(data?.earned)}</b></Table.Summary.Cell>
+              <Table.Summary.Cell index={2} align="left"><b style={{ color: '#cf1322' }}>{num(data?.spent)}</b></Table.Summary.Cell>
+              <Table.Summary.Cell index={3} align="left"><b>{num(data?.net)}</b></Table.Summary.Cell>
+            </Table.Summary.Row>
+          </Table.Summary>
+        ) : null)}
         pagination={{
           current: page,
           defaultPageSize: PAGE_SIZE,

@@ -238,8 +238,33 @@ def ledger(
             running -= delta
         rows.append(row)
 
+    customers = []
+    if customer_id is None:
+        from src.models.customer import Customer
+
+        grouped = _filtered(
+            select(
+                PointRecord.customer_id,
+                func.coalesce(func.sum(positive), 0),
+                func.coalesce(func.sum(negative), 0),
+            ),
+            customer_id=None, kinds=kinds, date_from=date_from, date_to=date_to,
+            rep_id=rep_id, branch_id=branch_id,
+        ).group_by(PointRecord.customer_id).subquery()
+        for cid, name, e, s in db.execute(
+            select(grouped.c[0], Customer.name, grouped.c[1], grouped.c[2])
+            .join(Customer, Customer.id == grouped.c[0])
+        ).all():
+            customers.append({
+                "customer_id": cid,
+                "customer_name": name,
+                "earned": str(_points(e)),
+                "spent": str(_points(-s)),
+            })
+
     return {
         "rows": rows,
+        "customers": customers,
         "count": count,
         "opening": str(opening),
         "earned": str(earned),
