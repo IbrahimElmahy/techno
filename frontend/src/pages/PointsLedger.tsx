@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { searchFilter, searchRank, sortByName } from '../utils/arabicSort';
 import { useNavigate } from 'react-router-dom';
 import {
-  Table, Select, Button, Tag, Typography, message,
+  Table, Select, Button, Tag, Typography, message, Drawer,
 } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import { ReloadOutlined, DownloadOutlined, StarOutlined } from '@ant-design/icons';
@@ -43,6 +43,13 @@ interface LedgerData {
 }
 
 const PAGE_SIZE = 50;
+
+interface CustomerTotal {
+  customer_id: number;
+  customer_name: string;
+  earned: number;
+  spent: number;
+}
 
 export default function PointsLedger() {
   const navigate = useNavigate();
@@ -148,6 +155,51 @@ export default function PointsLedger() {
     writeCsv('points-ledger', cols, data?.rows || []);
   };
 
+  const [detail, setDetail] = useState<{ customer: CustomerTotal; side: 'earned' | 'spent' } | null>(null);
+
+  const byCustomer = useMemo<CustomerTotal[]>(() => {
+    const m = new Map<number, CustomerTotal>();
+    (data?.rows || []).forEach((r) => {
+      const t = m.get(r.customer_id) ?? {
+        customer_id: r.customer_id,
+        customer_name: r.customer_name || `عميل #${r.customer_id}`,
+        earned: 0, spent: 0,
+      };
+      t.earned += Number(r.earned || 0);
+      t.spent += Number(r.spent || 0);
+      m.set(r.customer_id, t);
+    });
+    return [...m.values()].sort((a, b) => a.customer_name.localeCompare(b.customer_name, 'ar'));
+  }, [data?.rows]);
+
+  const detailRows = useMemo(() => (detail
+    ? (data?.rows || []).filter((r) => r.customer_id === detail.customer.customer_id
+      && Number(r[detail.side] || 0) > 0)
+    : []), [detail, data?.rows]);
+
+  const openDetail = (customer: CustomerTotal, side: 'earned' | 'spent') => setDetail({ customer, side });
+
+  const groupedColumns: ColumnsType<CustomerTotal> = [
+    { title: 'العميل', dataIndex: 'customer_name', key: 'customer',
+      sorter: (a, b) => a.customer_name.localeCompare(b.customer_name, 'ar'),
+      render: (name: string, r) => (
+        <a onClick={(e) => { e.stopPropagation(); navigate(`/customers/${r.customer_id}`); }}>{name}</a>
+      ) },
+    { title: 'الوارد', dataIndex: 'earned', key: 'earned', width: 140, align: 'left',
+      sorter: (a, b) => a.earned - b.earned,
+      render: (v: number, r) => (v > 0
+        ? <a onClick={() => openDetail(r, 'earned')}><b style={{ color: '#3f8600' }}>{num(v)}</b></a>
+        : <Text type="secondary">-</Text>) },
+    { title: 'المنصرف', dataIndex: 'spent', key: 'spent', width: 140, align: 'left',
+      sorter: (a, b) => a.spent - b.spent,
+      render: (v: number, r) => (v > 0
+        ? <a onClick={() => openDetail(r, 'spent')}><b style={{ color: '#cf1322' }}>{num(v)}</b></a>
+        : <Text type="secondary">-</Text>) },
+    { title: 'الصافي', key: 'net', width: 140, align: 'left',
+      sorter: (a, b) => (a.earned - a.spent) - (b.earned - b.spent),
+      render: (_: unknown, r) => <b>{num(r.earned - r.spent)}</b> },
+  ];
+
   const net = Number(data?.net || 0);
   const shown = data?.rows.length || 0;
   const total = data?.count || 0;
@@ -206,13 +258,24 @@ export default function PointsLedger() {
         <DateRangeFilter className="sl-f-dates" value={range} onChange={setRange} />
       </>)}
     >
-      <Table<PointRow>
+      <Drawer
+        open={!!detail} onClose={() => setDetail(null)} width={760} placement="left"
+        title={detail ? `${detail.customer.customer_name} — ${detail.side === 'earned' ? 'الوارد' : 'المنصرف'}` : ''}>
+        <Table<PointRow>
+          className="sl-table" size="small" rowKey="id"
+          dataSource={detailRows}
+          columns={columns.filter((c: any) => c.key !== 'customer'
+            && c.key !== (detail?.side === 'earned' ? 'spent' : 'earned'))}
+          pagination={{ defaultPageSize: 50, showSizeChanger: true, size: 'small' }}
+        />
+      </Drawer>
+      <Table<CustomerTotal>
         className="sl-table"
         size="small"
-        rowKey="id"
+        rowKey="customer_id"
         loading={loading}
-        dataSource={data?.rows || []}
-        columns={columns}
+        dataSource={byCustomer}
+        columns={groupedColumns}
         scroll={{ x: true }}
         pagination={{
           current: page,
