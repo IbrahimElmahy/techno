@@ -286,8 +286,6 @@ export default function PointsLedger() {
         loading={loading}
         dataSource={byCustomer}
         columns={groupedColumns}
-        scroll={{ x: true }}
-        sticky
         summary={() => (byCustomer.length ? (
           <Table.Summary fixed="bottom">
             <Table.Summary.Row style={{ background: '#fafafa', fontWeight: 700 }}>

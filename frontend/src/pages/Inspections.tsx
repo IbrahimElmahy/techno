@@ -526,7 +526,21 @@ const Inspections: React.FC<{ fixedKind?: 'technician' | 'regular' }> = ({ fixed
     },
   ];
 
-  const tableCols = useTableColumns('inspections', columns);
+  const visitColumns: ColumnsType<InspectionRecord> = [
+    { title: 'تاريخ الزيارة', dataIndex: 'inspection_date', width: 120 },
+    { title: 'المندوب', dataIndex: 'rep_user_id', width: 160, render: repName },
+    {
+      title: 'التقرير',
+      dataIndex: 'visit_details',
+      render: (v: string | null) => (v
+        ? <span style={{ whiteSpace: 'pre-wrap' }}>{v}</span> : '—'),
+    },
+  ];
+
+  const tableCols = useTableColumns(
+    fixedKind === 'regular' ? 'regular-visits' : 'inspections',
+    fixedKind === 'regular' ? visitColumns : columns,
+  );
 
   const canSeeStats = useCanSeeStats();
   const loc = numeralsLocale();
@@ -567,6 +581,7 @@ const Inspections: React.FC<{ fixedKind?: 'technician' | 'regular' }> = ({ fixed
             value={range as any}
             onChange={(v) => setRange(v as any)}
           />
+          {!isVisits && (<>
           <InputNumber
             placeholder="رقم الشهادة"
             value={certNo}
@@ -591,6 +606,7 @@ const Inspections: React.FC<{ fixedKind?: 'technician' | 'regular' }> = ({ fixed
             onChange={(e) => setTraderF(e.target.value)}
             allowClear
           />
+          </>)}
           <Select
             placeholder="المندوب"
             allowClear
@@ -598,6 +614,7 @@ const Inspections: React.FC<{ fixedKind?: 'technician' | 'regular' }> = ({ fixed
             value={repId}
             onChange={setRepId}
             options={users.map((u) => ({ value: u.id, label: u.full_name || u.username }))} filterOption={searchFilter} filterSort={searchRank}/>
+          {!isVisits && (<>
           <Select
             placeholder="حالة الشهادة"
             allowClear
@@ -625,6 +642,7 @@ const Inspections: React.FC<{ fixedKind?: 'technician' | 'regular' }> = ({ fixed
             onChange={setVisitTypeF}
             options={visitTypeOptions.map((o) => ({ value: o.value, label: o.label }))}
           />
+          </>)}
           {!fixedKind && (
             <Select
               placeholder="نوع التسجيل"
