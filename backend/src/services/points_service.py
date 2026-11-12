@@ -112,9 +112,19 @@ def _doc_ref(record: PointRecord) -> tuple[str | None, int | None]:
     return None, None
 
 
-def _filtered(stmt, *, customer_id, kinds, date_from, date_to, rep_id=None):
+def _filtered(stmt, *, customer_id, kinds, date_from, date_to, rep_id=None, branch_id=None):
     if customer_id is not None:
         stmt = stmt.where(PointRecord.customer_id == customer_id)
+    if branch_id is not None:
+        from sqlalchemy import and_, or_
+
+        from src.models.customer import Customer
+        from src.models.org import Territory
+        stmt = stmt.where(PointRecord.customer_id.in_(select(Customer.id).where(or_(
+            Customer.branch_id == branch_id,
+            and_(Customer.branch_id.is_(None), Customer.territory_id.in_(
+                select(Territory.id).where(Territory.branch_id == branch_id))),
+        ))))
     if rep_id is not None:
         from src.models.customer import Customer
         stmt = stmt.where(PointRecord.customer_id.in_(
@@ -140,6 +150,7 @@ def ledger(
     limit: int = 500,
     offset: int = 0,
     rep_id: int | None = None,
+    branch_id: int | None = None,
 ) -> dict:
     asked = list(kinds or [])
     kinds = [k for k in asked if k in KIND_LABELS]
@@ -155,7 +166,7 @@ def ledger(
             func.coalesce(func.sum(positive), 0),
             func.coalesce(func.sum(negative), 0),
         ),
-        customer_id=customer_id, kinds=kinds, date_from=date_from, date_to=date_to, rep_id=rep_id,
+        customer_id=customer_id, kinds=kinds, date_from=date_from, date_to=date_to, rep_id=rep_id, branch_id=branch_id,
     )).one()
     count, earned, spent = int(totals_row[0]), _points(totals_row[1]), _points(totals_row[2])
 
@@ -168,7 +179,7 @@ def ledger(
             )
         ))
     stmt = _filtered(select(PointRecord), customer_id=customer_id, kinds=kinds,
-                     date_from=date_from, date_to=date_to, rep_id=rep_id)
+                     date_from=date_from, date_to=date_to, rep_id=rep_id, branch_id=branch_id)
     stmt = stmt.order_by(PointRecord.created_at.desc(), PointRecord.id.desc())
     records = list(db.scalars(stmt.limit(limit).offset(offset)).all())
 

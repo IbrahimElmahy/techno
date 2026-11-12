@@ -258,7 +258,8 @@ def get_coupon_receipts_summary(
     scope_rep = current.id if current.role == RoleName.sales_rep else rep_user_id
     summary = coupon_receipt_service.coupon_receipts_summary(
         db, customer_id=customer_id, rep_user_id=scope_rep, q=q,
-        status=_status_param(status_filter))
+        status=_status_param(status_filter),
+        branch_id=branch_scope.visible_branch_id(current))
     return CouponReceiptsSummaryOut(**summary)
 
 
@@ -277,7 +278,8 @@ def list_receipts(
     scope_rep = current.id if current.role == RoleName.sales_rep else rep_user_id
     rows, total = coupon_receipt_service.list_receipts(
         db, customer_id=customer_id, rep_user_id=scope_rep, q=q, limit=limit, offset=offset,
-        status=_status_param(status_filter))
+        status=_status_param(status_filter),
+        branch_id=branch_scope.visible_branch_id(current))
     visible_rows = branch_scope.visible(current, rows)
     names = _user_names(db, visible_rows)
     items_out = [_out(r, names) for r in visible_rows]

@@ -4,7 +4,7 @@ from datetime import date, datetime
 
 from decimal import Decimal
 
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session, selectinload
 
 from src.lib.doc_order import newest_first
@@ -793,9 +793,12 @@ def _status_where(stmt, status: str | None):
 
 def _build_receipts_stmt(
     *, customer_id: int | None = None, rep_user_id: int | None = None,
-    q: str | None = None, status: str | None = None,
+    q: str | None = None, status: str | None = None, branch_id: int | None = None,
 ):
     stmt = _status_where(select(CouponReceipt), status)
+    if branch_id is not None:
+        stmt = stmt.where(or_(CouponReceipt.branch_id == branch_id,
+                              CouponReceipt.branch_id.is_(None)))
     if customer_id:
         stmt = stmt.where(CouponReceipt.customer_id == customer_id)
     if rep_user_id:
@@ -803,7 +806,7 @@ def _build_receipts_stmt(
     if q:
         q_str = q.strip()
         from src.models.customer import Customer
-        from sqlalchemy import or_, exists
+        from sqlalchemy import exists
         line_match = select(1).where(
             CouponReceiptLine.receipt_id == CouponReceipt.id,
             CouponReceiptLine.serial.contains(q_str)
@@ -825,10 +828,10 @@ def _build_receipts_stmt(
 def list_receipts(
     db: Session, *, customer_id: int | None = None, rep_user_id: int | None = None,
     q: str | None = None, limit: int | None = None, offset: int = 0,
-    status: str | None = None,
+    status: str | None = None, branch_id: int | None = None,
 ) -> tuple[list[CouponReceipt], int]:
     base_stmt = _build_receipts_stmt(customer_id=customer_id, rep_user_id=rep_user_id, q=q,
-                                     status=status)
+                                     status=status, branch_id=branch_id)
     total_count = db.scalar(select(func.count()).select_from(base_stmt.order_by(None).subquery())) or 0
 
     query = base_stmt.options(selectinload(CouponReceipt.lines)).order_by(*newest_first(CouponReceipt, CouponReceipt.received_date))
@@ -839,10 +842,10 @@ def list_receipts(
 
 def coupon_receipts_summary(
     db: Session, *, customer_id: int | None = None, rep_user_id: int | None = None,
-    q: str | None = None, status: str | None = None,
+    q: str | None = None, status: str | None = None, branch_id: int | None = None,
 ) -> dict:
     base_stmt = _build_receipts_stmt(customer_id=customer_id, rep_user_id=rep_user_id, q=q,
-                                     status=status or APPROVED)
+                                     status=status or APPROVED, branch_id=branch_id)
     subq = base_stmt.order_by(None).subquery()
     summary_stmt = select(
         func.count(subq.c.id).label("total_receipts"),
@@ -868,7 +871,8 @@ def coupon_receipts_summary(
             kind_counts[k] = kind_counts.get(k, 0) + int(cnt)
 
     all_subq = _build_receipts_stmt(
-        customer_id=customer_id, rep_user_id=rep_user_id, q=q).order_by(None).subquery()
+        customer_id=customer_id, rep_user_id=rep_user_id, q=q,
+        branch_id=branch_id).order_by(None).subquery()
     status_counts = {PENDING: 0, APPROVED: 0, REJECTED: 0}
     for st, cnt in db.execute(select(all_subq.c.status, func.count())
                               .group_by(all_subq.c.status)).all():

@@ -135,11 +135,14 @@ def points_ledger(
     rep_id: int | None = Query(default=None),
     limit: int = Query(default=1000, ge=1, le=20000),
     offset: int = Query(default=0, ge=0),
-    _: CurrentUser = Depends(require_capability(CAP_LOYALTY_READ)),
+    current: CurrentUser = Depends(require_capability(CAP_LOYALTY_READ)),
     db: Session = Depends(get_db),
 ) -> PointLedgerOut:
+    from src.auth import branch_scope
+
     data = points_service.ledger(
         db, customer_id=customer_id, kinds=kind, date_from=date_from, date_to=date_to,
-        limit=limit, offset=offset, rep_id=rep_id)
+        limit=limit, offset=offset, rep_id=rep_id,
+        branch_id=branch_scope.visible_branch_id(current))
     return PointLedgerOut(**data, kinds=points_service.KIND_LABELS,
                           purses=points_service.PURSE_LABELS)
