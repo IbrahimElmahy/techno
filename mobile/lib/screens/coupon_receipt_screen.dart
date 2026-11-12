@@ -322,6 +322,10 @@ class _CouponReceiptScreenState extends State<CouponReceiptScreen> {
         appBar: AppBar(title: Text(_isEdit ? 'تعديل استلام' : 'استلام كوبونات')),
         body: Column(
           children: [
+            Expanded(
+              child: ListView(
+                padding: EdgeInsets.zero,
+                children: [
             Padding(
               padding: const EdgeInsets.all(16),
               child: Column(
@@ -489,40 +493,20 @@ class _CouponReceiptScreenState extends State<CouponReceiptScreen> {
                 child: Text('العميل: $_customerName',
                     style: const TextStyle(fontWeight: FontWeight.w700)),
               ),
-            Expanded(
-              child: _entries.isEmpty
-                  ? const Center(child: Text('لا توجد كوبونات مضافة'))
-                  : ListView.separated(
-                      itemCount: _entries.length,
-                      separatorBuilder: (_, __) => const Divider(height: 1),
-                      itemBuilder: (_, i) {
-                        final e = _entries[i];
-                        return ListTile(
-                          dense: true,
-                          leading: _statusIcon(e.status),
-                          title: Row(
-                            children: [
-                              Text(e.serial,
-                                  style: const TextStyle(
-                                      fontWeight: FontWeight.w700, fontSize: 15)),
-                              if (e.kind != null) ...[
-                                const SizedBox(width: 6),
-                                Text(_tiers[e.kind] ?? e.kind!,
-                                    style: const TextStyle(
-                                        fontSize: 12, color: Colors.black54)),
-                              ],
-                              const SizedBox(width: 10),
-                              Flexible(child: _statusChip(e)),
-                            ],
-                          ),
-                          trailing: IconButton(
-                            icon: const Icon(Icons.close),
-                            onPressed: () => setState(() => _entries.removeAt(i)),
-                          ),
-                        );
-                      },
-                    ),
-            ),
+            if (_entries.isEmpty)
+              const Padding(
+                padding: EdgeInsets.all(24),
+                child: Center(child: Text('لا توجد كوبونات مضافة')),
+              )
+            else ...[
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 6, 16, 2),
+                child: Text('السيريالات (${_entries.length})',
+                    style: const TextStyle(fontWeight: FontWeight.w700, color: Colors.black54)),
+              ),
+              for (var i = 0; i < _entries.length; i++) _entryRow(i),
+              const SizedBox(height: 8),
+            ],
             if (_entries.any((e) => e.isGood || e.status == 'pending'))
               Container(
                 width: double.infinity,
@@ -567,16 +551,25 @@ class _CouponReceiptScreenState extends State<CouponReceiptScreen> {
                   ],
                 ),
               ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+              child: TextField(
+                controller: _notesCtrl,
+                decoration: const InputDecoration(labelText: 'ملاحظات (اختياري)'),
+              ),
+            ),
+                ],
+              ),
+            ),
             SafeArea(
-              child: Padding(
-                padding: const EdgeInsets.all(16),
+              child: Container(
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 10),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  border: Border(top: BorderSide(color: Colors.blueGrey.shade100)),
+                ),
                 child: Column(
                   children: [
-                    TextField(
-                      controller: _notesCtrl,
-                      decoration: const InputDecoration(labelText: 'ملاحظات (اختياري)'),
-                    ),
-                    const SizedBox(height: 10),
                     Row(
                       children: [
                         Expanded(
@@ -605,6 +598,37 @@ class _CouponReceiptScreenState extends State<CouponReceiptScreen> {
           ],
         ),
         ),
+      ),
+    );
+  }
+
+  Widget _entryRow(int i) {
+    final e = _entries[i];
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
+      decoration: BoxDecoration(
+        border: Border(bottom: BorderSide(color: Colors.grey.shade200)),
+      ),
+      child: Row(
+        children: [
+          SizedBox(width: 26, child: _statusIcon(e.status)),
+          const SizedBox(width: 6),
+          Text(e.serial, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15)),
+          if (e.kind != null) ...[
+            const SizedBox(width: 6),
+            Text(_tiers[e.kind] ?? e.kind!,
+                style: const TextStyle(fontSize: 12, color: Colors.black54)),
+          ],
+          const SizedBox(width: 8),
+          Expanded(child: Align(alignment: AlignmentDirectional.centerStart, child: _statusChip(e))),
+          IconButton(
+            visualDensity: VisualDensity.compact,
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+            icon: const Icon(Icons.close, size: 20),
+            onPressed: () => setState(() => _entries.removeAt(i)),
+          ),
+        ],
       ),
     );
   }
