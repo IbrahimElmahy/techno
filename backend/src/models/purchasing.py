@@ -32,6 +32,8 @@ class PurchaseInvoice(Base):
     statement2: Mapped[str | None] = mapped_column(String(200), nullable=True)
     statement3: Mapped[str | None] = mapped_column(String(200), nullable=True)
     purchase_date: Mapped[date | None] = mapped_column(Date, nullable=True, index=True)
+    invoice_type: Mapped[str] = mapped_column(String(16), nullable=False, default="items",
+                                              server_default="items")
     gross: Mapped[object] = mapped_column(MONEY, nullable=False, default=0)
     fixed_discount_pct: Mapped[object] = mapped_column(PCT, nullable=False, default=0)
     variable_discount_pct: Mapped[object] = mapped_column(PCT, nullable=False, default=0)

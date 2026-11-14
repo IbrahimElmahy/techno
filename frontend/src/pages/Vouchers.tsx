@@ -527,8 +527,22 @@ const Vouchers: React.FC = () => {
       setTimeout(() => paymentForm.setFieldsValue(values), 0);
     } else if (v.kind === 'expense') {
       expenseForm.resetFields();
-      const values = { ...common, expense_account_id: v.party_account_id ?? undefined,
-        vehicle_id: v.vehicle_id ?? undefined };
+      const values: any = { ...common, expense_account_id: v.party_account_id ?? undefined,
+        vehicle_id: v.vehicle_id ?? undefined, mode: 'expense' };
+      try {
+        const assets = (await api.get('/api/v1/fixed-assets', {
+          params: { source_kind: 'voucher', source_id: v.id } })).data || [];
+        if (assets.length) {
+          const a = assets[0];
+          values.mode = 'asset';
+          values.expense_account_id = undefined;
+          values.fixed_asset = {
+            name: a.name, category_id: a.category_id ?? undefined, usage: a.usage, method: a.method,
+            annual_rate: a.annual_rate != null ? Number(a.annual_rate) : undefined,
+            useful_life_months: a.useful_life_months || undefined,
+          };
+        }
+      } catch { }
       expenseForm.setFieldsValue(values);
       setExpenseOpen(true);
       setTimeout(() => expenseForm.setFieldsValue(values), 0);

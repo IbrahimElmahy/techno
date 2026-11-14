@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { Form, Input, Select, Space } from 'antd';
+import { Form, Input, Radio, Select, Space } from 'antd';
+import { InputNumber } from '../../components/NumberInput';
 import { api } from '../../api/client';
 import { searchFilter } from '../../utils/arabicSort';
 import type { FormInstance } from 'antd';
@@ -8,6 +9,13 @@ import CostCenterSplit from '../../components/CostCenterSplit';
 import { ExpenseAccountField } from '../../components/VoucherFields';
 import { money } from './types';
 import VoucherShell, { VoucherSubmit } from './VoucherShell';
+
+const METHOD_OPTIONS = [
+  { value: 'straight_line', label: 'القسط الثابت' },
+  { value: 'declining_balance', label: 'القسط المتناقص' },
+  { value: 'sum_of_years', label: 'مجموع أرقام السنين' },
+  { value: 'none', label: 'بدون إهلاك' },
+];
 
 export default function ExpenseModal({
   open, onCancel, form, posting, submit, expenseAccounts, expenseGroups,
@@ -24,9 +32,32 @@ export default function ExpenseModal({
   treasuries: any[];
   editing?: boolean;
 }) {
+  const mode = Form.useWatch('mode', form) ?? 'expense';
+  const isAsset = mode === 'asset';
+  const assetName = Form.useWatch(['fixed_asset', 'name'], form);
+  const categoryId = Form.useWatch(['fixed_asset', 'category_id'], form);
+  const [categories, setCategories] = useState<any[]>([]);
+  useEffect(() => {
+    if (!open || categories.length) return;
+    api.get('/api/v1/fixed-assets/categories').then((r) => setCategories(r.data || [])).catch(() => {});
+  }, [open]);
+  const category = categories.find((c) => c.id === categoryId);
+  useEffect(() => {
+    if (!category) return;
+    const cur = form.getFieldValue('fixed_asset') || {};
+    form.setFieldsValue({ fixed_asset: {
+      ...cur,
+      usage: cur.usage ?? category.usage,
+      method: cur.method ?? category.method,
+      annual_rate: cur.annual_rate ?? (category.annual_rate != null ? Number(category.annual_rate) : undefined),
+      useful_life_months: cur.useful_life_months ?? category.useful_life_months ?? undefined,
+    } });
+  }, [categoryId]);
   const accountId = Form.useWatch('expense_account_id', form);
   const account = expenseAccounts.find((a) => a.id === accountId);
-  const name = account ? (account.name ?? null) : null;
+  const name = isAsset
+    ? (assetName ? `أصل ثابت — ${assetName}` : 'أصل ثابت')
+    : (account ? (account.name ?? null) : null);
   const perVehicle = /مخالف|ترخيص|تراخيص/.test(name || '');
   const [vehicles, setVehicles] = useState<any[]>([]);
   useEffect(() => {
@@ -37,8 +68,48 @@ export default function ExpenseModal({
     if (!perVehicle && form.getFieldValue('vehicle_id')) form.setFieldsValue({ vehicle_id: undefined });
   }, [perVehicle]);
 
+  const assetFields = (
+    <>
+      <Form.Item name={['fixed_asset', 'name']} label="اسم الأصل"
+        rules={[{ required: true, message: 'اكتب اسم الأصل' }]}>
+        <Input placeholder="مثال: ماكينة لحام" />
+      </Form.Item>
+      <Form.Item name={['fixed_asset', 'category_id']} label="فئة الأصل"
+        rules={[{ required: true, message: 'اختر الفئة' }]}>
+        <Select showSearch placeholder="اختر الفئة" filterOption={searchFilter}
+          onChange={() => form.setFieldsValue({ fixed_asset: {
+            ...(form.getFieldValue('fixed_asset') || {}),
+            usage: undefined, method: undefined, annual_rate: undefined, useful_life_months: undefined,
+          } })}
+          options={categories.filter((c) => c.active).map((c) => ({ value: c.id, label: c.name }))} />
+      </Form.Item>
+      <Space wrap align="start">
+        <Form.Item name={['fixed_asset', 'usage']} label="الاستخدام">
+          <Select style={{ width: 170 }} options={[
+            { value: 'production', label: 'إنتاجي (إهلاك صناعي)' },
+            { value: 'admin', label: 'إداري (إهلاك إداري)' }]} />
+        </Form.Item>
+        <Form.Item name={['fixed_asset', 'method']} label="طريقة الإهلاك">
+          <Select style={{ width: 170 }} options={METHOD_OPTIONS} />
+        </Form.Item>
+        <Form.Item name={['fixed_asset', 'annual_rate']} label="النسبة السنوية %">
+          <InputNumber style={{ width: 110 }} min={0} max={100} />
+        </Form.Item>
+        <Form.Item name={['fixed_asset', 'useful_life_months']} label="العمر (شهور)">
+          <InputNumber style={{ width: 110 }} min={1} />
+        </Form.Item>
+      </Space>
+    </>
+  );
+
   const party = (
     <>
+      <Form.Item name="mode" initialValue="expense" style={{ marginBottom: 8 }}>
+        <Radio.Group optionType="button" buttonStyle="solid" options={[
+          { value: 'expense', label: 'مصروف' },
+          { value: 'asset', label: 'شراء أصل ثابت' }]} />
+      </Form.Item>
+      {isAsset ? assetFields : (<>
       <ExpenseAccountField accounts={expenseAccounts} groups={expenseGroups}
         onCreated={loadExpenseAccounts} width="100%"
         extra={account ? (
@@ -53,6 +124,7 @@ export default function ExpenseModal({
             }))} />
         </Form.Item>
       )}
+      </>)}
     </>
   );
 
@@ -77,7 +149,11 @@ export default function ExpenseModal({
       kind="expense" open={open} onCancel={onCancel} editing={editing}
       posting={posting} form={form} submit={submit}
       url="/api/v1/vouchers/expenses" okMsg="تم تسجيل سند المصروف ✔"
-      buildPayload={(v) => v}
+      buildPayload={(v) => {
+        const { mode: m, fixed_asset: fa, ...rest } = v;
+        if (m !== 'asset') return { ...rest, fixed_asset: null };
+        return { ...rest, expense_account_id: null, vehicle_id: null, fixed_asset: fa };
+      }}
       party={party} counterpart={{ label: 'حساب المصروف', name }}
       treasuries={treasuries}
       details={details}

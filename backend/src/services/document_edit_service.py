@@ -299,6 +299,13 @@ def delete_purchase_return(db: Session, *, return_id: int, actor_user_id: int) -
 
 
 def purge_purchase(db: Session, invoice: PurchaseInvoice) -> None:
+    from src.services import fixed_asset_service
+    from src.services.fixed_asset_service import FixedAssetError
+
+    try:
+        fixed_asset_service.detach_source(db, "purchase", invoice.id, invoice.actor_user_id)
+    except FixedAssetError as exc:
+        raise DocumentEditError(str(exc)) from exc
     _restore_serials(db, document_type=StockDoc.PURCHASE, document_id=invoice.id)
     _restore_batches(db, document_type=StockDoc.PURCHASE, document_id=invoice.id)
     _drop_stock(db, source_doc_type=StockDoc.PURCHASE, source_doc_id=invoice.id)
@@ -311,6 +318,15 @@ def purge_purchase(db: Session, invoice: PurchaseInvoice) -> None:
 
 
 def assert_purchase_editable(db: Session, invoice: PurchaseInvoice) -> None:
+    from src.models.fixed_asset import AssetStatus, DepreciationRecord
+    from src.services import fixed_asset_service
+
+    for asset in fixed_asset_service.assets_of_source(db, "purchase", invoice.id):
+        if asset.status == AssetStatus.disposed or db.scalar(select(DepreciationRecord.id).where(
+                DepreciationRecord.asset_id == asset.id)) is not None:
+            raise DocumentEditError(
+                f"الأصل {asset.code} من هذه الفاتورة عليه إهلاك مرحّل أو مستبعد، "
+                "اعكس الإهلاك أولاً.")
     returns = db.scalars(select(PurchaseReturn).where(
         PurchaseReturn.purchase_invoice_id == invoice.id)).all()
     if returns:

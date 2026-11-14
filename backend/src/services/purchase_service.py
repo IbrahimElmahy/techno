@@ -129,6 +129,8 @@ def create_purchase(
     existing = db.get(PurchaseInvoice, replace_invoice_id) if replace_invoice_id else None
     if replace_invoice_id and existing is None:
         raise PurchaseError("فاتورة الشراء المراد تعديلها غير موجودة.")
+    if existing is not None:
+        existing.invoice_type = "items"
 
     invoice = existing or PurchaseInvoice(
         document_number=_doc_number(db, PurchaseInvoice, "PINV"),
@@ -224,6 +226,157 @@ def create_purchase(
                          actor_user_id=actor_user_id,
                          entity_type="purchase_invoice", entity_id=invoice.id,
                          after={"total": str(total), "doc": invoice.document_number})
+    return invoice
+
+
+@dataclass(frozen=True)
+class AssetLine:
+    name: str
+    amount: Decimal
+    category_id: int | None = None
+    usage: str | None = None
+    method: str | None = None
+    annual_rate: Decimal | None = None
+    useful_life_months: int | None = None
+    salvage_value: Decimal = ZERO
+    notes: str | None = None
+
+
+def create_asset_purchase(
+    db: Session,
+    *,
+    supplier_id: int,
+    location_kind: LocationKind,
+    location_id: int,
+    cash_amount: Decimal,
+    credit_amount: Decimal | None,
+    asset_lines: list[AssetLine],
+    actor_role: RoleName,
+    actor_user_id: int,
+    cash_account_id: int | None = None,
+    rep_id: int | None = None,
+    external_document_number: str | None = None,
+    notes: str | None = None,
+    statement1: str | None = None,
+    statement2: str | None = None,
+    statement3: str | None = None,
+    purchase_date=None,
+    replace_invoice_id: int | None = None,
+    cost_center_id: int | None = None,
+    cost_center_distribution: dict | None = None,
+) -> PurchaseInvoice:
+    from src.services import fixed_asset_service
+    from src.services.fixed_asset_service import FixedAssetError
+
+    if not asset_lines:
+        raise PurchaseError("يجب أن تتضمن فاتورة الأصول أصلاً واحداً على الأقل.")
+    supplier = db.get(Supplier, supplier_id)
+    if supplier is None:
+        raise PurchaseError("المورد غير موجود.")
+    supplier_acc = supplier_service.require_account(db, supplier_id)
+    for ln in asset_lines:
+        if not str(ln.name or "").strip():
+            raise PurchaseError("اسم الأصل مطلوب في كل سطر.")
+        if not ln.category_id:
+            raise PurchaseError(f"حدد فئة الأصل «{ln.name}».")
+        if to_money(ln.amount) <= ZERO:
+            raise PurchaseError(f"قيمة الأصل «{ln.name}» يجب أن تكون أكبر من صفر.")
+
+    gross = to_money(sum((to_money(ln.amount) for ln in asset_lines), ZERO))
+    net = gross
+    tax = tax_service.tax_on(net, tax_service.vat_rate(db))
+    total = to_money(net + tax)
+    cash_amount = to_money(cash_amount)
+    if credit_amount is None:
+        credit_amount = total - cash_amount
+    elif to_money(credit_amount) != total - cash_amount:
+        raise PurchaseError(
+            f"يجب أن يساوي النقدي + الآجل إجمالي فاتورة الشراء ({total})."
+        )
+
+    existing = db.get(PurchaseInvoice, replace_invoice_id) if replace_invoice_id else None
+    if replace_invoice_id and existing is None:
+        raise PurchaseError("فاتورة الشراء المراد تعديلها غير موجودة.")
+    header = dict(
+        supplier_id=supplier_id, location_kind=location_kind, location_id=location_id,
+        gross=gross, fixed_discount_pct=ZERO, variable_discount_pct=ZERO, combined_pct=ZERO,
+        net=net, tax_amount=tax, total=total, cash_amount=cash_amount,
+        credit_amount=to_money(credit_amount), ledger_entry_id=None, rep_id=rep_id,
+        expense_account_id=None, external_document_number=(external_document_number or None),
+        notes=notes, statement1=statement1, statement2=statement2, statement3=statement3,
+        cost_center_id=cost_center_id, invoice_type="assets",
+    )
+    if existing is not None:
+        invoice = existing
+        for k, v in header.items():
+            setattr(invoice, k, v)
+        if purchase_date is not None:
+            invoice.purchase_date = purchase_date
+        invoice.lines.clear()
+    else:
+        invoice = PurchaseInvoice(
+            document_number=_doc_number(db, PurchaseInvoice, "PINV"),
+            actor_user_id=actor_user_id,
+            branch_id=branch_for(db, actor_user_id=actor_user_id,
+                                 location_kind=location_kind, location_id=location_id),
+            purchase_date=purchase_date or date.today(), **header,
+        )
+        db.add(invoice)
+    db.flush()
+
+    costs: list[Decimal] = []
+    left = tax
+    for i, ln in enumerate(asset_lines):
+        share = left if i == len(asset_lines) - 1 else (
+            to_money(tax * to_money(ln.amount) / gross) if gross > ZERO else ZERO)
+        left = to_money(left - share)
+        costs.append(to_money(to_money(ln.amount) + share))
+
+    entry_lines: list[LineInput] = []
+    try:
+        for ln, cost in zip(asset_lines, costs, strict=True):
+            asset = fixed_asset_service.create_asset(
+                db, name=ln.name, acquisition_date=invoice.purchase_date, cost=cost,
+                actor_user_id=actor_user_id, useful_life_months=ln.useful_life_months,
+                salvage_value=ln.salvage_value or 0, method=ln.method,
+                category_id=ln.category_id, usage=ln.usage, annual_rate=ln.annual_rate,
+                notes=ln.notes, branch_id=invoice.branch_id, cost_center_id=cost_center_id,
+                source_kind="purchase", source_id=invoice.id,
+            )
+            entry_lines.append(LineInput(
+                asset.asset_account_id, Direction.debit, cost,
+                statement=f"شراء أصل {asset.code} — {asset.name}"))
+    except FixedAssetError as exc:
+        raise PurchaseError(str(exc)) from exc
+
+    cash_acc = (account_resolver.explicit_treasury(db, cash_account_id)
+                or account_resolver.resolve_cash_account(
+                    db, role=actor_role, user_id=actor_user_id, branch_id=invoice.branch_id))
+    if cash_amount > ZERO:
+        entry_lines.append(LineInput(cash_acc.id, Direction.credit, cash_amount))
+    if to_money(credit_amount) > ZERO:
+        entry_lines.append(LineInput(supplier_acc.account_id, Direction.credit,
+                                     to_money(credit_amount)))
+    elif to_money(credit_amount) < ZERO:
+        entry_lines.append(LineInput(supplier_acc.account_id, Direction.debit,
+                                     -to_money(credit_amount)))
+    entry = ledger_service.post_entry(
+        db, entry_type="purchase", actor_user_id=actor_user_id, lines=entry_lines,
+        rep_id=rep_id, branch_id=invoice.branch_id,
+        description=entry_text.purchase(invoice.document_number),
+        entry_date=invoice.purchase_date,
+        partner_kind=PartnerKind.supplier, partner_id=invoice.supplier_id,
+        cost_center_id=invoice.cost_center_id,
+        cost_center_distribution=cost_center_distribution,
+    )
+    invoice.ledger_entry_id = entry.id
+    db.flush()
+    audit_service.record(db,
+                         action="purchase.edit" if replace_invoice_id else "purchase.create",
+                         actor_user_id=actor_user_id,
+                         entity_type="purchase_invoice", entity_id=invoice.id,
+                         after={"total": str(total), "doc": invoice.document_number,
+                                "type": "assets"})
     return invoice
 
 

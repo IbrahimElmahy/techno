@@ -431,8 +431,23 @@ def create_payment(
     )
 
 
+def _asset_account(db: Session, fixed_asset: dict, actor_user_id: int,
+                   branch_id: int | None) -> Account:
+    from src.models.fixed_asset import FixedAssetCategory
+    from src.services import fixed_asset_service
+
+    if not str(fixed_asset.get("name") or "").strip():
+        raise VoucherError("اسم الأصل مطلوب.")
+    cat = db.get(FixedAssetCategory, fixed_asset.get("category_id") or 0)
+    if cat is None:
+        raise VoucherError("حدد فئة الأصل.")
+    bid = branch_id or branch_for(db, actor_user_id=actor_user_id)
+    asset_acc, _ = fixed_asset_service.category_accounts(db, cat, bid)
+    return asset_acc
+
+
 def create_expense(
-    db: Session, *, expense_account_id: int, amount, actor_user_id: int,
+    db: Session, *, expense_account_id: int | None, amount, actor_user_id: int,
     actor_role: RoleName, voucher_date: date | None = None, description: str | None = None,
     reference: str | None = None, payment_method: str | None = None,
     treasury_id: int | None = None,
@@ -441,17 +456,23 @@ def create_expense(
     external_document_number: str | None = None,
     replacing: dict | None = None,
     vehicle_id: int | None = None,
+    fixed_asset: dict | None = None,
 ) -> Voucher:
     value = _positive(amount)
-    account = db.get(Account, expense_account_id)
-    if account is None or not account.active:
-        raise VoucherError("حساب المصروف غير موجود.")
-    from src.services.financial_reports_service import effective_nature
+    if fixed_asset:
+        account = _asset_account(db, fixed_asset, actor_user_id,
+                                 replacing["branch_id"] if replacing else None)
+        description = description or f"شراء أصل — {str(fixed_asset.get('name')).strip()}"
+    else:
+        account = db.get(Account, expense_account_id) if expense_account_id else None
+        if account is None or not account.active:
+            raise VoucherError("حساب المصروف غير موجود.")
+        from src.services.financial_reports_service import effective_nature
 
-    if effective_nature(account) != AccountNature.expense:
-        raise VoucherError("يجب اختيار حساب من طبيعة «مصروفات».")
-    if not account.is_postable:
-        raise VoucherError("لا يمكن الترحيل على حساب تجميعي — اختر حسابًا فرعيًا.")
+        if effective_nature(account) != AccountNature.expense:
+            raise VoucherError("يجب اختيار حساب من طبيعة «مصروفات».")
+        if not account.is_postable:
+            raise VoucherError("لا يمكن الترحيل على حساب تجميعي — اختر حسابًا فرعيًا.")
     cash_account_id, safe_id = _cash_side(
         db, actor_role=actor_role, actor_user_id=actor_user_id, treasury_id=treasury_id)
     _assert_cash_available(db, cash_account_id, value)
@@ -461,7 +482,8 @@ def create_expense(
         credit_account_id=cash_account_id, actor_user_id=actor_user_id,
         voucher_date=voucher_date, description=description, reference=reference,
         payment_method=payment_method, entry_type="expense",
-        statement=f"مصروف — {account.name or account.code or ''}".strip(),
+        statement=(f"شراء أصل — {str(fixed_asset.get('name')).strip()}" if fixed_asset
+                   else f"مصروف — {account.name or account.code or ''}".strip()),
         treasury_id=safe_id,
         cost_center_id=cost_center_id,
         cost_center_distribution=cost_center_distribution, statement1=statement1,
@@ -469,10 +491,38 @@ def create_expense(
     )
     voucher.vehicle_id = vehicle_id
     db.flush()
+    if fixed_asset:
+        from src.services import fixed_asset_service
+        from src.services.fixed_asset_service import FixedAssetError
+
+        try:
+            fixed_asset_service.create_asset(
+                db, name=fixed_asset.get("name"), acquisition_date=voucher.voucher_date,
+                cost=value, actor_user_id=actor_user_id,
+                useful_life_months=fixed_asset.get("useful_life_months"),
+                salvage_value=fixed_asset.get("salvage_value") or 0,
+                method=fixed_asset.get("method"), category_id=fixed_asset.get("category_id"),
+                usage=fixed_asset.get("usage"), annual_rate=fixed_asset.get("annual_rate"),
+                notes=fixed_asset.get("notes"), branch_id=voucher.branch_id,
+                cost_center_id=cost_center_id, asset_account_id=account.id,
+                source_kind="voucher", source_id=voucher.id,
+            )
+        except FixedAssetError as exc:
+            raise VoucherError(str(exc)) from exc
     from src.services import fleet_service
 
     fleet_service.sync_expense_voucher(db, voucher)
     return voucher
+
+
+def _drop_voucher_assets(db: Session, voucher_id: int, actor_user_id: int) -> None:
+    from src.services import fixed_asset_service
+    from src.services.fixed_asset_service import FixedAssetError
+
+    try:
+        fixed_asset_service.detach_source(db, "voucher", voucher_id, actor_user_id)
+    except FixedAssetError as exc:
+        raise VoucherError(str(exc)) from exc
 
 
 def create_partner_movement(
@@ -668,6 +718,7 @@ def replace_voucher(
             and (fields.get("treasury_id") is not None or fields.get("custody_id") is not None)):
         actor_role = editor_role
 
+    _drop_voucher_assets(db, voucher_id, editor_user_id)
     entry_id = original.ledger_entry_id
     original.ledger_entry_id = None
     db.flush()
@@ -711,6 +762,7 @@ def reverse_voucher(db: Session, *, voucher_id: int, actor_user_id: int) -> Vouc
         raise VoucherError("لا يمكن عكس سند عكسي.")
     if db.scalar(select(Voucher).where(Voucher.reverses_id == voucher_id)) is not None:
         raise VoucherError("السند معكوس بالفعل.")
+    _drop_voucher_assets(db, voucher_id, actor_user_id)
     counter = ledger_service.reverse_entry(db, original_id=original.ledger_entry_id,
                                            actor_user_id=actor_user_id)
     mirror = Voucher(

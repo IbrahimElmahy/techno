@@ -49,13 +49,27 @@ class PurchaseLineIn(BaseModel):
     variable_discount_pct: Decimal | None = None
 
 
+class AssetLineIn(BaseModel):
+    name: str
+    amount: Decimal
+    category_id: int | None = None
+    usage: str | None = None
+    method: str | None = None
+    annual_rate: Decimal | None = None
+    useful_life_months: int | None = None
+    salvage_value: Decimal = Decimal("0")
+    notes: str | None = None
+
+
 class PurchaseCreate(BaseModel):
+    invoice_type: str = "items"
+    asset_lines: list[AssetLineIn] = []
     supplier_id: int
     variable_discount_pct: Decimal = Decimal("0")
     location: LocationIn
     cash_amount: Decimal
     credit_amount: Decimal | None = None
-    lines: list[PurchaseLineIn]
+    lines: list[PurchaseLineIn] = []
     cash_account_id: int | None = None
     rep_id: int | None = None
     expense_account_id: int | None = None
@@ -120,6 +134,7 @@ class PurchaseListOut(BaseModel):
     statement1: str | None = None
     statement2: str | None = None
     statement3: str | None = None
+    invoice_type: str = "items"
 
 
 class PurchaseLineOut(BaseModel):
@@ -141,10 +156,26 @@ class PurchaseReturnOut(BaseModel):
     created_at: str
 
 
+class AssetLineOut(BaseModel):
+    asset_id: int
+    code: str
+    name: str
+    amount: Decimal
+    cost: Decimal
+    category_id: int | None = None
+    usage: str | None = None
+    method: str | None = None
+    annual_rate: Decimal | None = None
+    useful_life_months: int | None = None
+    salvage_value: Decimal = Decimal("0")
+    notes: str | None = None
+
+
 class PurchaseDetailOut(PurchaseListOut):
     location_kind: str
     location_id: int
     lines: list[PurchaseLineOut]
+    asset_lines: list[AssetLineOut] = []
     returns: list[PurchaseReturnOut]
 
 
@@ -237,7 +268,7 @@ def list_purchases(
             expense_account_name=accounts.get(p.expense_account_id),
             discount_amount=to_money(gross - net),
             tax_pct=(to_money(to_money(p.tax_amount or 0) / net * 100) if net else Decimal("0")),
-            statement1=p.statement1, statement2=p.statement2, statement3=p.statement3,
+            statement1=p.statement1, statement2=p.statement2, statement3=p.statement3, invoice_type=getattr(p, "invoice_type", None) or "items",
         ))
 
     response.headers["X-Total-Count"] = str(total)
@@ -519,6 +550,48 @@ def get_purchase(
                                line_location_id=ln.line_location_id) for ln in p.lines],
         returns=[PurchaseReturnOut(id=r.id, document_number=r.document_number, value=r.value,
                                    created_at=str(r.created_at)) for r in returns],
+        invoice_type=p.invoice_type or "items",
+        asset_lines=_asset_lines_out(db, p),
+    )
+
+
+def _asset_lines_out(db: Session, p) -> list[AssetLineOut]:
+    if (p.invoice_type or "items") != "assets":
+        return []
+    from src.services import fixed_asset_service
+
+    assets = fixed_asset_service.assets_of_source(db, "purchase", p.id)
+    gross = Decimal(p.gross or 0)
+    total = Decimal(p.total or 0)
+    out = []
+    for a in assets:
+        amount = Decimal(a.cost)
+        if total > 0 and gross != total:
+            amount = (Decimal(a.cost) * gross / total).quantize(Decimal("0.01"))
+        out.append(AssetLineOut(
+            asset_id=a.id, code=a.code, name=a.name, amount=amount, cost=a.cost,
+            category_id=a.category_id, usage=a.usage, method=str(a.method),
+            annual_rate=a.annual_rate, useful_life_months=a.useful_life_months or None,
+            salvage_value=a.salvage_value or 0, notes=a.notes))
+    return out
+
+
+def _create_assets(db: Session, body, current, replace_invoice_id: int | None = None):
+    return purchase_service.create_asset_purchase(
+        db, supplier_id=body.supplier_id, location_kind=body.location.location_kind,
+        location_id=body.location.location_id, cash_amount=body.cash_amount,
+        credit_amount=body.credit_amount, cash_account_id=body.cash_account_id,
+        asset_lines=[purchase_service.AssetLine(
+            name=a.name, amount=a.amount, category_id=a.category_id, usage=a.usage,
+            method=a.method, annual_rate=a.annual_rate,
+            useful_life_months=a.useful_life_months, salvage_value=a.salvage_value,
+            notes=a.notes) for a in body.asset_lines],
+        actor_role=current.role, actor_user_id=current.id, rep_id=body.rep_id,
+        external_document_number=body.external_document_number, notes=body.notes,
+        cost_center_id=body.cost_center_id,
+        cost_center_distribution=body.cost_center_distribution,
+        statement1=body.statement1, statement2=body.statement2, statement3=body.statement3,
+        purchase_date=body.purchase_date, replace_invoice_id=replace_invoice_id,
     )
 
 
@@ -550,6 +623,10 @@ def update_purchase(
         raise HTTPException(status.HTTP_409_CONFLICT,
                             {"code": "edit_blocked", "message": str(exc)})
     try:
+        if body.invoice_type == "assets":
+            inv = _create_assets(db, body, current, replace_invoice_id=purchase_id)
+            db.commit()
+            return _doc_out(inv)
         inv = purchase_service.create_purchase(
             db, supplier_id=body.supplier_id, location_kind=body.location.location_kind,
             location_id=body.location.location_id, cash_amount=body.cash_amount,
@@ -597,6 +674,10 @@ def create_purchase(
     db: Session = Depends(get_db),
 ) -> DocOut:
     try:
+        if body.invoice_type == "assets":
+            inv = _create_assets(db, body, current)
+            db.commit()
+            return _doc_out(inv)
         inv = purchase_service.create_purchase(
             db, supplier_id=body.supplier_id, location_kind=body.location.location_kind,
             location_id=body.location.location_id, cash_amount=body.cash_amount,

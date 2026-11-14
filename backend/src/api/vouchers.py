@@ -88,8 +88,20 @@ class HandoverIn(BaseModel):
     external_document_number: str | None = Field(default=None, max_length=40)
 
 
+class VoucherAssetIn(BaseModel):
+    name: str
+    category_id: int
+    usage: str | None = None
+    method: str | None = None
+    annual_rate: Decimal | None = None
+    useful_life_months: int | None = None
+    salvage_value: Decimal = Decimal("0")
+    notes: str | None = None
+
+
 class ExpenseIn(BaseModel):
-    expense_account_id: int
+    expense_account_id: int | None = None
+    fixed_asset: VoucherAssetIn | None = None
     amount: Decimal
     treasury_id: int | None = None
     voucher_date: date | None = None
@@ -563,7 +575,8 @@ def create_expense(
             voucher_date=body.voucher_date, description=body.description,
             reference=body.reference, payment_method=body.payment_method,
             cost_center_id=body.cost_center_id, statement1=body.statement1, external_document_number=body.external_document_number,
-            cost_center_distribution=body.cost_center_distribution, vehicle_id=body.vehicle_id)
+            cost_center_distribution=body.cost_center_distribution, vehicle_id=body.vehicle_id,
+            fixed_asset=body.fixed_asset.model_dump() if body.fixed_asset else None)
     except (VoucherError, TreasuryError, LedgerError) as exc:
         raise _conflict(exc)
     db.commit()

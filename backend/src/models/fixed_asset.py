@@ -4,6 +4,8 @@ import enum
 from datetime import date, datetime
 
 from sqlalchemy import (
+    BigInteger,
+    Boolean,
     Date,
     DateTime,
     Enum,
@@ -16,17 +18,39 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column
 
 from src.core.db import Base, BigIntPK
-from src.core.money import MONEY
+from src.core.money import MONEY, PCT
 
 
 class DepreciationMethod(str, enum.Enum):
     straight_line = "straight_line"
     declining_balance = "declining_balance"
+    sum_of_years = "sum_of_years"
+    none = "none"
+
+
+class AssetUsage(str, enum.Enum):
+    production = "production"
+    admin = "admin"
 
 
 class AssetStatus(str, enum.Enum):
     active = "active"
     disposed = "disposed"
+
+
+class FixedAssetCategory(Base):
+    __tablename__ = "fixed_asset_category"
+
+    id: Mapped[int] = mapped_column(BigIntPK, primary_key=True, autoincrement=True)
+    name: Mapped[str] = mapped_column(String(80), unique=True, nullable=False)
+    method: Mapped[str] = mapped_column(String(24), nullable=False, default="straight_line")
+    annual_rate: Mapped[object | None] = mapped_column(PCT, nullable=True)
+    useful_life_months: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    usage: Mapped[str] = mapped_column(String(16), nullable=False, default="admin")
+    active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=func.now(), nullable=False
+    )
 
 
 class FixedAsset(Base):
@@ -36,13 +60,19 @@ class FixedAsset(Base):
     code: Mapped[str] = mapped_column(String(24), unique=True, nullable=False)
     name: Mapped[str] = mapped_column(String(160), nullable=False)
     category: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    category_id: Mapped[int | None] = mapped_column(
+        ForeignKey("fixed_asset_category.id"), nullable=True, index=True)
+    usage: Mapped[str] = mapped_column(String(16), nullable=False, default="admin")
+    annual_rate: Mapped[object | None] = mapped_column(PCT, nullable=True)
+    opening_accumulated: Mapped[object] = mapped_column(MONEY, nullable=False, default=0)
+    depreciation_start: Mapped[date | None] = mapped_column(Date, nullable=True)
+    source_kind: Mapped[str | None] = mapped_column(String(24), nullable=True)
+    source_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True, index=True)
     acquisition_date: Mapped[date] = mapped_column(Date, nullable=False)
     cost: Mapped[object] = mapped_column(MONEY, nullable=False)
     salvage_value: Mapped[object] = mapped_column(MONEY, nullable=False, default=0)
     useful_life_months: Mapped[int] = mapped_column(Integer, nullable=False)
-    method: Mapped[DepreciationMethod] = mapped_column(
-        Enum(DepreciationMethod), nullable=False, default=DepreciationMethod.straight_line
-    )
+    method: Mapped[str] = mapped_column(String(24), nullable=False, default="straight_line")
     status: Mapped[AssetStatus] = mapped_column(
         Enum(AssetStatus), nullable=False, default=AssetStatus.active, index=True
     )

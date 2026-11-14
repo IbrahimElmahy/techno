@@ -9,7 +9,7 @@ import { PAGE_SIZE, PAGE_SIZE_OPTIONS } from '../utils/pagination';
 import { searchFilter, searchRank, sortByName } from '../utils/arabicSort';
 import {
   Alert, Button, Card, Col, Descriptions, Empty, Form, Input, Modal, Result,
-  Row, Select, Space, Table, Tag, Tooltip, message, DatePicker, Spin } from 'antd';
+  Row, Select, Space, Table, Tag, Tooltip, message, DatePicker, Spin, Segmented } from 'antd';
 import { Popconfirm } from '../components/noConfirm';
 import { InputNumber } from '../components/NumberInput';
 import {
@@ -54,6 +54,9 @@ import { useScreenShortcuts, useTableKeyboard } from '../components/keyboard';
 import { useLookup, labelMap } from '../hooks/useLookup';
 import { TabModal } from '../components/TabModal';
 import WarehouseGate from '../components/WarehouseGate';
+import AssetLinesEditor, {
+  type AssetLineRow, assetLinesFromDetail, assetLinesPayload, assetLinesProblem, newAssetLine,
+} from '../components/AssetLinesEditor';
 import TreasuryGate, { useTreasuryGate } from '../components/TreasuryGate';
 import { money, numeralsLocale } from '../utils/money';
 import { convertUnitPrice, factorOf, unitSelectOptions } from '../utils/units';
@@ -152,6 +155,8 @@ interface PurchaseDetail extends PurchaseRecord {
   location_kind: string;
   location_id: number;
   lines: PurchaseDetailLine[];
+  invoice_type?: string;
+  asset_lines?: any[];
   returns: PurchaseDetailReturn[];
 }
 
@@ -182,6 +187,10 @@ export default function Purchases() {
   const [unitsCache, setUnitsCache] = useState<Record<number, ItemUnit[]>>({});
 
   const [variableDiscount, setVariableDiscount] = useState<number>(0);
+  const [invoiceType, setInvoiceType] = useState<'items' | 'assets'>('items');
+  const [assetLines, setAssetLines] = useState<AssetLineRow[]>([newAssetLine()]);
+  const isAssets = invoiceType === 'assets';
+  const resetAssets = () => { setInvoiceType('items'); setAssetLines([newAssetLine()]); };
   const [cashAmount, setCashAmount] = useState<number>(0);
   const [creditAmount, setCreditAmount] = useState<number>(0);
   const [supplierBal, setSupplierBal] = useState<number | null>(null);
@@ -395,6 +404,8 @@ export default function Purchases() {
         warehouse_id: l.line_location_id ?? det.location_id ?? null,
       }));
       setPurchaseItems(loadedItems);
+      setInvoiceType(det.invoice_type === 'assets' ? 'assets' : 'items');
+      setAssetLines(det.invoice_type === 'assets' ? assetLinesFromDetail(det.asset_lines) : [newAssetLine()]);
       setStickyWarehouseId(((det.lines || [])[0] as any)?.line_location_id ?? (det as any).location_id ?? null);
       [...new Set((det.lines || []).map((l: any) => l.item_id))].forEach((id) => fetchUnits(id as number));
       setCashAmount(Number(det.cash_amount) || 0);
@@ -614,8 +625,10 @@ export default function Purchases() {
     applyPct(Number(it.quantity || 0) * (it.unit_price || 0),
              it.fixed_discount_pct, it.discount_pct);
 
-  const grossTotal = purchaseItems.reduce((sum, it) => sum + lineTotal(it), 0);
-  const invoiceTotal = grossTotal * (1 - (variableDiscount || 0) / 100);
+  const grossTotal = isAssets
+    ? assetLines.reduce((sum, a) => sum + (Number(a.amount) || 0), 0)
+    : purchaseItems.reduce((sum, it) => sum + lineTotal(it), 0);
+  const invoiceTotal = isAssets ? grossTotal : grossTotal * (1 - (variableDiscount || 0) / 100);
 
   const handleSplitBalance = () => {
     const cash = parseFloat(cashAmount.toString()) || 0;
@@ -842,6 +855,10 @@ export default function Purchases() {
       warehouse_id: l.line_location_id ?? det.location_id ?? null,
     }));
     setPurchaseItems(loadedItems);
+    setInvoiceType(det.invoice_type === 'assets' ? 'assets' : 'items');
+    setAssetLines(det.invoice_type === 'assets'
+      ? assetLinesFromDetail(det.asset_lines).map((a) => ({ ...a, key: newAssetLine().key, code: undefined }))
+      : [newAssetLine()]);
     setStickyWarehouseId(
       ((det.lines || [])[0] as any)?.line_location_id ?? (det as any).location_id ?? null);
     [...new Set((det.lines || []).map((l: any) => l.item_id))]
@@ -871,6 +888,13 @@ export default function Purchases() {
 
   const handleSaveAndPost = async () => {
     await form.validateFields();
+    if (isAssets) {
+      setSubmitLoading(true);
+      try { await handleSubmit(form.getFieldsValue()); } catch (err: any) {
+        message.error(err?.response?.data?.detail?.message || 'تعذر ترحيل فاتورة الشراء');
+      } finally { setSubmitLoading(false); }
+      return;
+    }
     if (purchaseItems.filter((i) => i.item_id !== null).length === 0) {
       message.error('يرجى إضافة صنف واحد على الأقل!');
       return;
@@ -886,6 +910,59 @@ export default function Purchases() {
   };
 
   const handleSubmit = async (values: any) => {
+    if (isAssets) {
+      const problem = assetLinesProblem(assetLines);
+      if (problem) { message.error(problem); return; }
+      const locationId = stickyWarehouseId ?? warehouses[0]?.id;
+      if (!locationId) { message.error('اختر المخزن.'); return; }
+      askTreasury(
+        { amount: Number(cashAmount) || 0, direction: 'out', docLabel: 'فاتورة الشراء' },
+        async (cashAccountId) => {
+          setSubmitLoading(true);
+          try {
+            const payload = {
+              invoice_type: 'assets',
+              supplier_id: values.supplier_id,
+              location: { location_kind: 'warehouse', location_id: locationId },
+              cash_amount: cashAmount, credit_amount: null,
+              cash_account_id: cashAccountId ?? undefined,
+              external_document_number: values.external_document_number || null,
+              cost_center_id: values.cost_center_id ?? null,
+              cost_center_distribution: values.cost_center_distribution ?? null,
+              notes: values.notes || null,
+              statement1: values.statement1 || null,
+              statement2: values.statement2 || null,
+              statement3: values.statement3 || null,
+              lines: [],
+              asset_lines: assetLinesPayload(assetLines),
+              purchase_date: purchaseDate.format('YYYY-MM-DD'),
+            };
+            const res = editingId !== null
+              ? await api.put(`/api/v1/purchases/${editingId}`, payload)
+              : await api.post('/api/v1/purchases', payload);
+            message.success(`تم حفظ فاتورة الأصول ${res.data?.document_number ?? ''}`);
+            markClosed();
+            setCreateVisible(false);
+            setDetail(null);
+            setDocResult(null);
+            setNewStep(null);
+            setOpenedFingerprint(null);
+            setEditingId(null); setLoadedEffect(null);
+            form.resetFields();
+            resetAssets();
+            setCashAmount(0);
+            setCreditAmount(0);
+            discardDraft();
+            fetchPurchases();
+          } catch (err: any) {
+            message.error(err?.response?.data?.detail?.message || 'تعذر حفظ فاتورة الأصول');
+          } finally {
+            setSubmitLoading(false);
+          }
+        },
+      );
+      return;
+    }
     const validLines = purchaseItems.filter((i) => i.item_id !== null);
     if (validLines.length === 0) {
       message.error('يرجى إضافة صنف واحد صالح على الأقل!');
@@ -959,6 +1036,7 @@ export default function Purchases() {
           form.resetFields();
           setPurchaseItems([{ key: '1', item_id: null, quantity: null, unit_price: 0, unit: null,
             discount_pct: null, fixed_discount_pct: null, warehouse_id: null }]);
+          resetAssets();
           setCashAmount(0);
           setCreditAmount(0);
           setLoadedEffect(null);
@@ -1425,12 +1503,18 @@ export default function Purchases() {
           <div className="sale-card sale-lines">
           <div className="sale-items-bar">
             <div className="sale-items-info">
-              <span>
+              <Segmented size="middle" value={invoiceType}
+                disabled={viewOnly || editingId !== null}
+                onChange={(v) => setInvoiceType(v as 'items' | 'assets')}
+                options={[{ value: 'items', label: 'فاتورة أصناف' }, { value: 'assets', label: 'فاتورة أصول' }]} />
+              {!isAssets && (
+              <span style={{ marginInlineStart: 12 }}>
                 عدد البنود الحالية: <b style={{ color: '#0f172a' }}>
                   {purchaseItems.filter((l) => l.item_id !== null).length}</b> أصناف
               </span>
+              )}
             </div>
-            {!viewOnly && (
+            {!viewOnly && !isAssets && (
               <Button data-shortcut="F2"
                 type="primary" className="sale-green-btn" icon={<ShoppingCartOutlined />}
                 style={{ fontWeight: 700 }}
@@ -1441,7 +1525,9 @@ export default function Purchases() {
             )}
           </div>
 
-          {purchaseItems.length === 0 && viewOnly ? (
+          {isAssets ? (
+            <AssetLinesEditor rows={assetLines} onChange={setAssetLines} disabled={viewOnly} />
+          ) : purchaseItems.length === 0 && viewOnly ? (
             <Empty description="اختر الفئة ثم الأصناف لإضافتها للفاتورة"
               style={{ margin: '12px 0' }} />
           ) : (
@@ -1503,7 +1589,7 @@ export default function Purchases() {
           <Row gutter={[10, 10]}>
             <Col xs={24} lg={16}>
               <div className="sale-tiles">
-                <SummaryTile label="إجمالي الأصناف" value={money(grossTotal)} />
+                <SummaryTile label={isAssets ? 'إجمالي الأصول' : 'إجمالي الأصناف'} value={money(grossTotal)} />
                 {variableDiscount > 0.001 && (
                   <SummaryTile label={`خصم الفاتورة (${variableDiscount}%)`}
                     value={`− ${money(grossTotal - invoiceTotal)}`} color="#dc2626" />
@@ -1533,7 +1619,7 @@ export default function Purchases() {
             <Col xs={24} lg={8}>
               <div className="sale-card sale-pay">
                 <div className="sale-pay-inputs">
-                <Form.Item label="خصم على الفاتورة %">
+                <Form.Item label="خصم على الفاتورة %" hidden={isAssets}>
                   <InputNumber style={{ width: '100%' }} min={0} max={99.99} step={0.5}
                     disabled={viewOnly}
                     addonAfter="%" value={variableDiscount}
@@ -1841,6 +1927,7 @@ export default function Purchases() {
         <Button type="primary" icon={<PlusOutlined />} className="sl-create"
           onClick={() => {
             form.resetFields();
+            resetAssets();
             setPurchaseItems([{ key: '1', item_id: null, quantity: null, unit_price: 0,
               unit: null, discount_pct: null, fixed_discount_pct: null, warehouse_id: null }]);
             setPurchaseDate(dayjs());

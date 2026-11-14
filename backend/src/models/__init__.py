@@ -71,7 +71,7 @@ from src.models.coupon_custody import CouponCustody, CouponCustodySerial  # noqa
 from src.models.permission import RoleCapability  # noqa: E402
 from src.models.account_routing import AccountRouting  # noqa: E402
 from src.models.employee import Employee, JobTitle  # noqa: E402
-from src.models.fixed_asset import DepreciationRecord, FixedAsset  # noqa: E402
+from src.models.fixed_asset import DepreciationRecord, FixedAsset, FixedAssetCategory  # noqa: E402
 from src.models.wastage import WastageDocument  # noqa: E402
 from src.models.attachment import InspectionAttachment  # noqa: E402
 from src.models.document_attachment import DocumentAttachment  # noqa: E402
