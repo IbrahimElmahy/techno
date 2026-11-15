@@ -1325,7 +1325,7 @@ export default function Purchases() {
         (n, l) => n + Number(l.quantity || 0) * (l.unit_price || 0), 0)) },
     { key: 'disc_var', title: 'خصم متغير %', width: 70,
       cell: (line) => (
-        <InputNumber size="small" min={0} max={99.99} step={0.5} style={{ width: '100%' }}
+        <InputNumber controls={false} size="small" min={0} max={99.99} step={0.5} style={{ width: '100%' }}
           disabled={viewOnly}
           placeholder="متغير" value={line.discount_pct ?? undefined} data-disc-key={line.key}
           onChange={(val) => handleItemChange(line.key, 'discount_pct', val ?? null)}
@@ -1334,7 +1334,7 @@ export default function Purchases() {
       footer: () => null },
     { key: 'disc_fixed', title: 'خصم ثابت %', width: 70,
       cell: (line) => (
-        <InputNumber size="small" min={0} max={99.99} step={0.5} style={{ width: '100%' }}
+        <InputNumber controls={false} size="small" min={0} max={99.99} step={0.5} style={{ width: '100%' }}
           disabled={viewOnly}
           placeholder="ثابت" value={line.fixed_discount_pct ?? undefined}
           onChange={(val) => handleItemChange(line.key, 'fixed_discount_pct', val ?? null)}
@@ -1622,7 +1622,7 @@ export default function Purchases() {
               <div className="sale-card sale-pay">
                 <div className="sale-pay-inputs">
                 <Form.Item label="خصم على الفاتورة %" hidden={isAssets}>
-                  <InputNumber style={{ width: '100%' }} min={0} max={99.99} step={0.5}
+                  <InputNumber controls={false} style={{ width: '100%' }} min={0} max={99.99} step={0.5}
                     disabled={viewOnly}
                     addonAfter="%" value={variableDiscount}
                     onChange={(val) => setVariableDiscount(val || 0)} />

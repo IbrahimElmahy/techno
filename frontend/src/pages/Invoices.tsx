@@ -2386,7 +2386,7 @@ function couponsTotal(inv: any): number {
                   <div className="sale-card sale-pay">
                     <div className="sale-pay-inputs">
                     <Form.Item label="خصم على إجمالي الفاتورة">
-                      <InputNumber min={0} max={100} style={{ width: '100%' }} addonAfter="%"
+                      <InputNumber controls={false} min={0} max={100} style={{ width: '100%' }} addonAfter="%"
                         disabled={viewOnly}
                         value={isBonus ? 100 : discountPct} onChange={(val) => {
                           const v = Number(val || 0);
@@ -2568,7 +2568,8 @@ function couponsTotal(inv: any): number {
       <ListStat label="صافي المبيعات" value={money(summary.netSales)} tone="strong" hint={partialHint} />
       <ListStat label="البونص (قبل الخصم)" value={money(summary.totalBonusGross)} tone="warn" hint={partialHint} />
       {showCollections && (
-        <ListStat label="التحصيلات (سندات مستقلة)" value={money(registerReceipts.totals.total)} tone="info" />
+        <ListStat label="التحصيلات" value={money(registerReceipts.totals.all)} tone="info"
+          hint={`مع الفواتير ${money(registerReceipts.totals.onInvoice)} + سندات ${money(registerReceipts.totals.total)}`} />
       )}
     </>),
     sale: (<>

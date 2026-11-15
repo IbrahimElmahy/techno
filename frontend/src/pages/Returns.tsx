@@ -94,6 +94,7 @@ interface Warehouse { id: number; name: string; }
 interface HistRow {
   document_number: string; date: string | null; quantity: string; unit: string | null;
   unit_price: string; effective_price: string;
+  fixed_discount_pct?: string | null; variable_discount_pct?: string | null;
 }
 interface LastInfo { last_price: string | null; history: HistRow[]; }
 
@@ -499,13 +500,17 @@ export default function Returns({ embedded }: { embedded?: { onExit: () => void 
     const priceUnit: string | null = listed > 0 ? (lastSale?.unit ?? null) : null;
     const saleDisc = listed > 0 && paid > 0 && paid < listed
       ? Math.round((1 - paid / listed) * 10000) / 100 : 0;
+    const hasSplit = !!lastSale && (lastSale.fixed_discount_pct != null
+      || lastSale.variable_discount_pct != null);
+    const saleFixed = hasSplit ? Number(lastSale!.fixed_discount_pct || 0) : saleDisc;
+    const saleVar = hasSplit ? Number(lastSale!.variable_discount_pct || 0) : 0;
     if (!(price > 0)) price = 0;
     {
       const key = `${Date.now()}-${++lineSeq.current}`;
       setLines((prev) => [...prev, {
         key, category: prod?.category ?? null, item_id: itemId,
-        quantity: qty || null, unit_price: price, discount: 0,
-        fixed_discount: listed > 0 ? saleDisc
+        quantity: qty || null, unit_price: price, discount: listed > 0 ? saleVar : 0,
+        fixed_discount: listed > 0 ? saleFixed
           : (prod?.default_discount_pct ? parseFloat(prod.default_discount_pct) : 0),
         warehouse_id: warehouseId,
         is_serialized: !!prod?.is_serialized,
@@ -893,14 +898,14 @@ export default function Returns({ embedded }: { embedded?: { onExit: () => void 
       ) },
     { key: 'variable_discount', title: 'خصم متغير %', span: 2, xs: 8, width: 70,
       cell: (line) => (
-        <InputNumber size="small" min={0} max={99.99} step={0.5} style={{ width: '100%' }}
+        <InputNumber controls={false} size="small" min={0} max={99.99} step={0.5} style={{ width: '100%' }}
           disabled={viewOnly}
           placeholder="متغير" value={line.discount}
           onChange={(val) => handleLineChange(line.key, 'discount', val || 0)} />
       ) },
     { key: 'fixed_discount', title: 'خصم ثابت %', span: 2, xs: 8, width: 70,
       cell: (line) => (
-        <InputNumber size="small" min={0} max={99.99} step={0.5} style={{ width: '100%' }}
+        <InputNumber controls={false} size="small" min={0} max={99.99} step={0.5} style={{ width: '100%' }}
           disabled={viewOnly}
           placeholder="ثابت" value={line.fixed_discount}
           onChange={(val) => handleLineChange(line.key, 'fixed_discount', val || 0)} />
@@ -1497,7 +1502,7 @@ export default function Returns({ embedded }: { embedded?: { onExit: () => void 
                   <div className="sale-card sale-pay">
                     <div className="sale-pay-inputs">
                       <Form.Item label="خصم على إجمالي المرتجع">
-                        <InputNumber min={0} max={100} style={{ width: '100%' }} addonAfter="%"
+                        <InputNumber controls={false} min={0} max={100} style={{ width: '100%' }} addonAfter="%"
                           disabled={viewOnly}
                           value={discountPct} onChange={(val) => setDiscountPct(val || 0)} />
                       </Form.Item>

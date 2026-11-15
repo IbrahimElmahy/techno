@@ -161,7 +161,7 @@ export function buildLineColumns({
             {line.variable_discount ? `${line.variable_discount}%` : '0%'}
           </span>
         ) : (
-          <InputNumber size="small" min={0} max={99.99} step={0.5} style={{ width: '100%', maxWidth: 64 }}
+          <InputNumber controls={false} size="small" min={0} max={99.99} step={0.5} style={{ width: '100%', maxWidth: 64 }}
             className="pct-pill-input"
             placeholder="متغير" value={line.variable_discount ?? undefined}
             onChange={(v) => handleLineChange(line.key, 'variable_discount', (v as number) ?? null)}
@@ -175,7 +175,7 @@ export function buildLineColumns({
         viewOnly ? (
           <span>{line.fixed_discount ? `${line.fixed_discount}%` : '-'}</span>
         ) : (
-          <InputNumber size="small" min={0} max={99.99} step={0.5} style={{ width: '100%', maxWidth: 64 }}
+          <InputNumber controls={false} size="small" min={0} max={99.99} step={0.5} style={{ width: '100%', maxWidth: 64 }}
             placeholder="ثابت" value={line.fixed_discount ?? undefined}
             onChange={(v) => handleLineChange(line.key, 'fixed_discount', (v as number) ?? 0)}
             onPressEnter={(e) => { e.preventDefault(); advanceFrom(line.key); }} />

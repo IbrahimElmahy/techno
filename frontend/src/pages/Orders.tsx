@@ -241,7 +241,7 @@ export default function Orders() {
       cell: (line) => money(lineGross(line) - lineNet(line)) },
     { key: 'disc_pct', title: 'خصم %', width: 70,
       cell: (line) => (
-        <InputNumber size="small" min={0} max={99.99} step={0.5}
+        <InputNumber controls={false} size="small" min={0} max={99.99} step={0.5}
           style={{ width: '100%' }} keyboard={false} placeholder="٠"
           value={line.discount_pct}
           onChange={(v) => setLines((prev) => prev.map((l) => (l.key === line.key
@@ -824,7 +824,7 @@ export default function Orders() {
               <Col xs={24} lg={8}>
                 <div className="sale-card sale-pay">
                   <Form.Item label="خصم على إجمالي الورقة">
-                    <InputNumber min={0} max={99.99} style={{ width: '100%' }} addonAfter="%"
+                    <InputNumber controls={false} min={0} max={99.99} style={{ width: '100%' }} addonAfter="%"
                       value={discountPct} onChange={(v) => setDiscountPct(v || 0)} />
                   </Form.Item>
                   <div className="sale-pay-actions">

@@ -1060,6 +1060,8 @@ def last_sold_price(db: Session, *, customer_id: int, item_id: int) -> dict | No
             SalesInvoice.document_number, SalesInvoice.created_at,
             SalesInvoiceLine.quantity, SalesInvoiceLine.unit_price,
             SalesInvoiceLine.line_total, SalesInvoiceLine.unit,
+            SalesInvoiceLine.discount_pct, SalesInvoiceLine.fixed_discount_pct,
+            SalesInvoiceLine.variable_discount_pct,
         )
         .join(SalesInvoice, SalesInvoice.id == SalesInvoiceLine.invoice_id)
         .where(SalesInvoice.customer_id == customer_id, SalesInvoiceLine.item_id == item_id)
@@ -1068,11 +1070,18 @@ def last_sold_price(db: Session, *, customer_id: int, item_id: int) -> dict | No
     ).all()
     if not rows:
         return None
+    from src.lib import discounts
+    from src.models.catalog import Item
+
+    item_fixed = db.scalar(select(Item.default_discount_pct).where(Item.id == item_id))
     history = []
-    for doc, created_at, qty, unit_price, line_total, unit in rows:
+    for doc, created_at, qty, unit_price, line_total, unit, comb, fix, var in rows:
         q = Decimal(str(qty)) or Decimal("1")
         effective = to_money(Decimal(str(line_total)) / q) if q else to_money(unit_price)
+        f, v = discounts.split(comb, fix, var, item_fixed)
         history.append({
+            "fixed_discount_pct": str(f) if f is not None else None,
+            "variable_discount_pct": str(v) if v is not None else None,
             "document_number": doc,
             "date": created_at.isoformat() if created_at else None,
             "quantity": str(qty), "unit": unit,

@@ -11,6 +11,8 @@ from sqlalchemy.orm import Session
 
 from src.lib import doc_nav
 from src.lib.doc_order import newest_first
+from src.services.discount_split import item_fixed as _item_fixed
+from src.services.discount_split import split_of as _split_of
 from src.auth.dependencies import CurrentUser, require_capability
 from src.auth.rbac import CAP_PURCHASE_WRITE, CAP_RETURN_WRITE, CAP_STOCK_READ
 from src.services.ledger_service import LedgerError
@@ -490,6 +492,7 @@ def get_purchase_return(
             select(Item).where(Item.id.in_({ln.item_id for ln in r.lines}))
         ).all()
     } if r.lines else {}
+    item_fixed = _item_fixed(db, r.lines, Item.purchase_discount_pct)
     return PurchaseReturnDetailOut(
         id=r.id, document_number=r.document_number,
         purchase_invoice_id=r.purchase_invoice_id,
@@ -508,8 +511,7 @@ def get_purchase_return(
                 item_id=ln.item_id, item_name=names.get(ln.item_id), quantity=ln.quantity,
                 unit_price=ln.unit_price or 0, line_total=ln.line_total or 0,
                 discount_pct=ln.discount_pct, unit=ln.unit,
-                fixed_discount_pct=ln.fixed_discount_pct,
-                variable_discount_pct=ln.variable_discount_pct,
+                **_split_of(ln, item_fixed),
                 warehouse_id=ln.line_location_id)
             for ln in r.lines
         ],
@@ -531,6 +533,7 @@ def get_purchase(
     returns = db.scalars(
         select(PurchaseReturn).where(PurchaseReturn.purchase_invoice_id == purchase_id)
     ).all()
+    item_fixed = _item_fixed(db, p.lines, Item.purchase_discount_pct)
     return PurchaseDetailOut(
         id=p.id, document_number=p.document_number, supplier_id=p.supplier_id,
         supplier_name=supplier.name if supplier else None, total=p.total,
@@ -544,8 +547,7 @@ def get_purchase(
         statement1=p.statement1, statement2=p.statement2, statement3=p.statement3,
         lines=[PurchaseLineOut(item_id=ln.item_id, quantity=ln.quantity, unit_price=ln.unit_price,
                                discount_pct=ln.discount_pct,
-                               fixed_discount_pct=ln.fixed_discount_pct,
-                               variable_discount_pct=ln.variable_discount_pct,
+                               **_split_of(ln, item_fixed),
                                line_total=ln.line_total, unit=ln.unit,
                                line_location_id=ln.line_location_id) for ln in p.lines],
         returns=[PurchaseReturnOut(id=r.id, document_number=r.document_number, value=r.value,

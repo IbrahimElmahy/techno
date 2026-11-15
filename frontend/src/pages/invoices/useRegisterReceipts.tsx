@@ -18,7 +18,8 @@ export function useRegisterReceipts(opts: {
   const { enabled, filters: f } = opts;
   const skip = !enabled || !!f.payment;
   const [raw, setRaw] = useState<PaymentRow[]>([]);
-  const [totals, setTotals] = useState<{ count: number; total: number }>({ count: 0, total: 0 });
+  const [totals, setTotals] = useState<{ count: number; total: number; all: number; onInvoice: number }>(
+    { count: 0, total: 0, all: 0, onInvoice: 0 });
   const [view, setView] = useState<{ row: any; v: EditableVoucher & Record<string, any> } | null>(null);
   const { options: methodOptions } = useLookup('payment_method');
   const methodLabel = labelMap(methodOptions);
@@ -26,7 +27,7 @@ export function useRegisterReceipts(opts: {
 
   const load = async () => {
     const my = ++seq.current;
-    if (skip) { setRaw([]); setTotals({ count: 0, total: 0 }); return; }
+    if (skip) { setRaw([]); setTotals({ count: 0, total: 0, all: 0, onInvoice: 0 }); return; }
     try {
       const { data } = await api.get<{ rows: PaymentRow[]; [k: string]: any }>(
         '/api/v1/sales/receipts-log', {
@@ -43,10 +44,11 @@ export function useRegisterReceipts(opts: {
         });
       if (my === seq.current) {
         setRaw((data.rows ?? []).filter((r) => r.kind === 'voucher'));
-        setTotals({ count: Number(data.count_payments ?? 0), total: Number(data.total_payments ?? 0) });
+        setTotals({ count: Number(data.count_payments ?? 0), total: Number(data.total_payments ?? 0),
+          all: Number(data.total ?? 0), onInvoice: Number(data.total_on_invoice ?? 0) });
       }
     } catch {
-      if (my === seq.current) { setRaw([]); setTotals({ count: 0, total: 0 }); }
+      if (my === seq.current) { setRaw([]); setTotals({ count: 0, total: 0, all: 0, onInvoice: 0 }); }
     }
   };
 
@@ -144,5 +146,5 @@ export function useRegisterReceipts(opts: {
     </TabModal>
   );
 
-  return { rows, totals: skip ? { count: 0, total: 0 } : totals, view: openView, remove, modal };
+  return { rows, totals: skip ? { count: 0, total: 0, all: 0, onInvoice: 0 } : totals, view: openView, remove, modal };
 }

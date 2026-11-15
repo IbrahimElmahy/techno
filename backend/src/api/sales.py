@@ -11,6 +11,8 @@ from sqlalchemy import Date, case, cast, delete as sa_delete, func, or_, select
 from sqlalchemy.orm import Session, selectinload
 
 from src.lib.doc_order import newest_first
+from src.services.discount_split import item_fixed as _item_fixed
+from src.services.discount_split import split_of as _split_of
 from src.auth.dependencies import CurrentUser, get_current_user, require_capability
 from src.auth.rbac import (
     CAP_RETURN_WRITE,
@@ -1744,15 +1746,14 @@ def get_standalone_return(
     out = _standalone_return_out(r)
     out["origin_location_kind"] = r.origin_location_kind.value if r.origin_location_kind else None
     out["origin_location_id"] = r.origin_location_id
+    item_fixed = _item_fixed(db, r.lines)
     out["lines"] = [
         {
             "item_id": ln.item_id, "quantity": str(ln.quantity),
             "unit_price": str(ln.unit_price) if ln.unit_price is not None else None,
             "discount_pct": str(ln.discount_pct), "unit": ln.unit,
-            "fixed_discount_pct": (str(ln.fixed_discount_pct)
-                                   if ln.fixed_discount_pct is not None else None),
-            "variable_discount_pct": (str(ln.variable_discount_pct)
-                                      if ln.variable_discount_pct is not None else None),
+            **{k: (str(v) if v is not None else None)
+               for k, v in _split_of(ln, item_fixed).items()},
             "line_total": str(ln.line_total) if ln.line_total is not None else None,
             "warehouse_id": ln.location_id,
         }
@@ -1773,6 +1774,7 @@ def get_sale(
     if not branch_scope.may_see(current, inv):
         raise HTTPException(404, {"code": "not_found", "message": "الفاتورة غير موجودة"})
     priors = sales_service.prior_balances_as_of(db, inv)
+    item_fixed = _item_fixed(db, inv.lines)
     return SalesInvoiceDetail(
         coupons=_inv_out(inv, db).coupons,
         id=inv.id,
@@ -1817,8 +1819,7 @@ def get_sale(
                 quantity=line.quantity,
                 unit_price=line.unit_price,
                 discount_pct=line.discount_pct,
-                fixed_discount_pct=line.fixed_discount_pct,
-                variable_discount_pct=line.variable_discount_pct,
+                **_split_of(line, item_fixed),
                 line_total=line.line_total,
                 price_tier=line.price_tier,
                 unit=line.unit,

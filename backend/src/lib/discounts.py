@@ -41,3 +41,19 @@ def implied_pct(before, after) -> Decimal:
     pct = to_money(HUNDRED * (base - net) / base)
     return pct if pct <= MAX_PCT else MAX_PCT
 
+
+def split(combined, fixed, variable, item_fixed) -> tuple[Decimal | None, Decimal | None]:
+    if fixed is not None or variable is not None:
+        return fixed, variable
+    c = Decimal(str(combined or 0))
+    if c <= ZERO:
+        return None, None
+    f = Decimal(str(item_fixed or 0))
+    if f <= ZERO or f > c + Decimal("0.01"):
+        return ZERO, c
+    if abs(f - c) <= Decimal("0.01"):
+        return c, ZERO
+    v = (HUNDRED * (ONE - remaining(c) / remaining(f))).quantize(Decimal("0.01"))
+    if v <= ZERO or abs(combine(f, v) - c) > Decimal("0.005"):
+        return ZERO, c
+    return f, v
