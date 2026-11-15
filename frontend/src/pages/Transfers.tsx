@@ -1443,10 +1443,6 @@ export default function Transfers() {
           <div className="sale-items-bar">
             <div className="sale-items-info">
               {editing && <b style={{ color: '#0f172a', fontSize: 15 }}>أصناف الإذن</b>}
-              <span>
-                عدد البنود الحالية: <b style={{ color: '#0f172a' }}>
-                  {editing ? docLines(editing).length : lines.length}</b> أصناف
-              </span>
               {source && dest && route && !sameLocation && (
                 <span>
                   {locationName(parseLoc(source).kind, parseLoc(source).id)}
