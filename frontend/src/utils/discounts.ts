@@ -38,3 +38,13 @@ export function splitLineDiscount(l: {
 
 export const combineDiscounts = combinePct;
 export const applyDiscounts = applyPct;
+
+export function splitCombined(combined: number, fixed: number): { fixed: number; variable: number } {
+  const c = Number(combined || 0);
+  const f = Number(fixed || 0);
+  if (c <= 0) return { fixed: 0, variable: 0 };
+  if (f <= 0) return { fixed: 0, variable: c };
+  if (Math.abs(c - f) <= 0.01 || c < f) return { fixed: c, variable: 0 };
+  const v = Math.round((1 - (1 - c / 100) / (1 - f / 100)) * 10000) / 100;
+  return Math.abs(combinePct(f, v) - c) <= 0.005 ? { fixed: f, variable: v } : { fixed: 0, variable: c };
+}

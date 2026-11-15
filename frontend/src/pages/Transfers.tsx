@@ -4,7 +4,7 @@ import { PAGE_SIZE as TABLE_PAGE_SIZE, PAGE_SIZE_OPTIONS }
   from '../utils/pagination';
 import { searchFilter, searchRank, sortByName } from '../utils/arabicSort';
 import {
-  Alert, Button, Col, DatePicker, Descriptions, Empty, Form, Input, Modal, Row,
+  Alert, Button, Calendar, Col, DatePicker, Descriptions, Empty, Form, Input, Modal, Row,
   Select, Space, Tag, Tooltip, message,
 } from 'antd';
 import { FilterTable as Table } from '../components/FilterTable';
@@ -145,7 +145,7 @@ export default function Transfers() {
   const [loading, setLoading] = useState(false);
 
   const [createVisible, setCreateVisible] = useState(false);
-  const [newStep, setNewStep] = useState<null | 'source' | 'dest'>(null);
+  const [newStep, setNewStep] = useState<null | 'date' | 'source' | 'dest'>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [focusLineKey, setFocusLineKey] = useState<string | null>(null);
   const [transferDate, setTransferDate] = useState<Dayjs>(dayjs());
@@ -357,7 +357,7 @@ export default function Transfers() {
     setViewOnly(false); setEditing(null); setRevising(null);
     setStatement1(''); setExternalDocNumber(''); setDocNotes('');
     setTransferDate(dayjs());
-    setNewStep('source');
+    setNewStep('date');
   };
 
   const closeCreate = (opts?: { stay?: boolean }) => {
@@ -967,16 +967,32 @@ export default function Transfers() {
           addPickedSequentially(ids, qtys, addItem, setFocusLineKey);
         }} />
 
+      <TabModal
+        open={newStep === 'date' && !editing && !viewOnly}
+        title="تاريخ التحويل"
+        okText="التالي" cancelText="إلغاء" destroyOnHidden
+        onCancel={() => setNewStep(null)}
+        onOk={() => setNewStep('source')}
+      >
+        <Calendar
+          fullscreen={false} value={transferDate}
+          onSelect={(d, info) => {
+            setTransferDate(d);
+            if (!info || info.source === 'date') setNewStep('source');
+          }} />
+      </TabModal>
+
       <WarehouseGate
         open={newStep === 'source' && !editing && !viewOnly}
         title="التحويل من أين؟"
         subtitle=""
         placeholder="اختر المخزن المصدر"
         value={source}
-        onChange={(v) => { onSourceChange(v); }}
+        onChange={(v) => { onSourceChange(v); if (v != null) setNewStep('dest'); }}
         warehouses={locationOptions}
-        cancelText="إلغاء"
-        onCancel={() => setNewStep(null)}
+        cancelText="رجوع"
+        onCancel={() => setNewStep('date')}
+        openList
         onOk={() => { if (source) setNewStep('dest'); }}
         autoAdvanceIfSingle={false}
       />
@@ -993,10 +1009,15 @@ export default function Transfers() {
             return;
           }
           setDest(v);
+          if (v != null) {
+            setNewStep(null);
+            setCreateVisible(true);
+          }
         }}
         warehouses={destOptions}
         okText="ابدأ"
         cancelText="رجوع"
+        openList
         onCancel={() => setNewStep('source')}
         onOk={() => {
           if (!dest || dest === source) {

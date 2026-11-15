@@ -25,6 +25,7 @@ export interface WarehouseGateProps {
   cancelText?: string;
   placeholder?: string;
   autoAdvanceIfSingle?: boolean;
+  openList?: boolean;
 }
 
 export default function WarehouseGate({
@@ -40,6 +41,7 @@ export default function WarehouseGate({
   cancelText = 'رجوع',
   placeholder = 'اختر المخزن',
   autoAdvanceIfSingle = true,
+  openList = false,
 }: WarehouseGateProps) {
   const selectedRef = useRef<number | string | null>(value ?? null);
   selectedRef.current = value ?? null;
@@ -106,6 +108,7 @@ export default function WarehouseGate({
       >
         <Select
           autoFocus
+          defaultOpen={openList}
           style={{ width: '100%' }}
           size="large"
           showSearch

@@ -60,7 +60,7 @@ import { money, numeralsLocale } from '../utils/money';
 import { convertUnitPrice, dualQty, factorOf, unitSelectOptions } from '../utils/units';
 import { fingerprint, verdictOnLeave } from '../utils/unsavedWork';
 import { useFocusedIds, FocusedRowsBanner } from '../components/FocusedRows';
-import { applyPct, combinePct } from '../utils/discounts';
+import { applyPct, combinePct, splitCombined } from '../utils/discounts';
 import { QTY_DATA_ATTR } from '../utils/duplicateItem';
 import { addPickedSequentially, type PickResult } from '../utils/pickMany';
 
@@ -1311,8 +1311,9 @@ export default function Invoices() {
         l.item_id = ol.item_id;
         l.unit = ol.unit ?? null;
         l.unit_price = Number(ol.unit_price || 0);
-        l.fixed_discount = defaultFixedDiscount(ol.item_id, fresh);
-        l.variable_discount = Number(ol.discount_pct || 0) || null;
+        const split = splitCombined(Number(ol.discount_pct || 0), defaultFixedDiscount(ol.item_id, fresh));
+        l.fixed_discount = split.fixed;
+        l.variable_discount = split.variable || null;
         l.quantity = pickedQty(l.key, ol.item_id, l.unit, docWarehouseId, Number(ol.quantity || 0));
         built.push(l);
       }
