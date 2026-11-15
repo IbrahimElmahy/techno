@@ -1,6 +1,6 @@
 export type Dim = 'document' | 'day' | 'month' | 'year' | 'party' | 'party_type' | 'rep' | 'territory'
   | 'main_territory' | 'governorate' | 'markaz' | 'branch' | 'warehouse' | 'item' | 'category'
-  | 'main_category' | 'price_tier' | 'kind';
+  | 'main_category' | 'item_kind' | 'price_tier' | 'kind';
 export type Period = 'none' | 'day' | 'month' | 'year';
 export type Layout = 'table' | 'pivot';
 
@@ -13,7 +13,7 @@ export const SALES_PRESETS: Preset[] = [
   P('تقارير مبيعات', 'invoices', 'مبيعات فواتير', ['document']),
   P('تقارير مبيعات', 'invoices-grouped', 'مبيعات فواتير مجمع', ['party']),
   P('تقارير مبيعات', 'items', 'مبيعات اصناف', ['document', 'item']),
-  P('تقارير مبيعات', 'items-grouped', 'مبيعات اصناف مجمع', ['item']),
+  P('تقارير مبيعات', 'items-grouped', 'مبيعات اصناف مجمع', ['item_kind', 'item']),
   P('تقارير مبيعات', 'daily', 'مبيعات يوم بيوم', [], 'day'),
   P('تقارير مبيعات', 'monthly', 'مبيعات شهرية', [], 'month'),
   P('تقارير مبيعات', 'customer-item', 'مجمع عميل مجمع صنف', ['party', 'item']),

@@ -1641,3 +1641,4 @@ body.eg-resizing * {
 .fa-step:first-child { border-inline-start: 0; }
 .fa-step.is-on { background: #6AB42D; color: #fff; font-weight: 700; }
 .fa-smart { display: inline-flex; align-items: center; gap: 4px; padding: 4px 10px; border: 1px solid #e2e8f0; border-radius: 6px; }
+.ta-group-row > td { background: #f1f5f9 !important; font-weight: 700; }

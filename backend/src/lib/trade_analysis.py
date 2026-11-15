@@ -29,11 +29,13 @@ SIDES = ("sales", "purchases")
 DIMENSIONS = {
     "sales": ("document", "day", "month", "year", "party", "party_type", "rep", "territory",
               "main_territory", "governorate", "markaz", "branch", "warehouse", "item",
-              "category", "main_category", "price_tier", "kind"),
+              "category", "main_category", "item_kind", "price_tier", "kind"),
     "purchases": ("document", "day", "month", "year", "party", "party_type", "rep",
                   "governorate", "branch", "warehouse", "item", "category", "main_category",
-                  "kind"),
+                  "item_kind", "kind"),
 }
+
+PIPE_PATTERN = r"ماسور|مواسير|موسير|^متر|^م\s"
 
 TIER_LABELS = {
     "commercial": "تجاري", "semi_commercial": "نصف تجاري", "wholesale": "جملة",
@@ -208,6 +210,7 @@ def analyse(
     exprs["item"] = (ln.c.item_id, Item.name)
     exprs["category"] = (Item.category, None)
     exprs["main_category"] = (Item.category, None)
+    exprs["item_kind"] = (case((Item.name.op("~")(PIPE_PATTERN), "مواسير"), else_="قطع"), None)
     exprs["kind"] = (ln.c.kind, None)
 
     qty = func.sum(ln.c.qty)
@@ -322,7 +325,7 @@ def analyse(
             return warehouses.get(key, f"عهدة #{key}")
         if d == "kind":
             return KIND_LABELS.get(key, key)
-        if d == "markaz":
+        if d in ("markaz", "item_kind"):
             return str(key)
         lab = row.get(f"{d}__l")
         return lab if lab else f"#{key}"

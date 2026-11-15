@@ -31,15 +31,15 @@ const DIM_LABEL = (side: Side): Record<Dim, string> => ({
   party_type: side === 'sales' ? 'نوع العميل' : 'نوع المورد',
   rep: 'المندوب', territory: 'المنطقة', main_territory: 'المنطقة الرئيسية',
   governorate: 'المحافظة', markaz: 'المدينة', branch: 'الفرع', warehouse: 'المخزن',
-  item: 'الصنف', category: 'الفئة', main_category: 'الفئة الرئيسية',
+  item: 'الصنف', category: 'الفئة', main_category: 'الفئة الرئيسية', item_kind: 'نوع الصنف',
   price_tier: 'شريحة السعر', kind: 'نوع الحركة',
 });
 
 const SIDE_DIMS: Record<Side, Dim[]> = {
   sales: ['document', 'party', 'party_type', 'rep', 'territory', 'main_territory', 'governorate',
-    'markaz', 'branch', 'warehouse', 'item', 'category', 'main_category', 'price_tier', 'kind'],
+    'markaz', 'branch', 'warehouse', 'item', 'category', 'main_category', 'item_kind', 'price_tier', 'kind'],
   purchases: ['document', 'party', 'party_type', 'rep', 'governorate', 'branch', 'warehouse',
-    'item', 'category', 'main_category', 'kind'],
+    'item', 'category', 'main_category', 'item_kind', 'kind'],
 };
 
 interface Row { [k: string]: any }
@@ -184,6 +184,7 @@ export default function TradeAnalysis({ side: fixedSide }: { side?: Side }) {
   const measures = MEASURES(side, showProfit);
   const periodDim = effectiveDims.find((d) => PERIODS.includes(d as Period));
   const pivot = layout === 'pivot' && !!periodDim;
+  const grouped = !pivot && effectiveDims[0] === 'item_kind' && effectiveDims.length > 1;
 
   const dimColumns = (list: Dim[]): any[] => list.flatMap((d): any[] => {
     if (d === 'document') {
@@ -197,9 +198,37 @@ export default function TradeAnalysis({ side: fixedSide }: { side?: Side }) {
         ...(!list.includes('rep') ? [{ title: 'المندوب', dataIndex: 'document_rep', key: 'document_rep' }] : []),
       ];
     }
+    if (d === 'item_kind' && grouped) {
+      return [{ title: dimLabel[d], dataIndex: d, key: d, width: 150,
+        render: (v: string, r: Row) => (r.__group ? <b>{v} ({r.children.length})</b> : '') }];
+    }
     return [{ title: dimLabel[d], dataIndex: d, key: d,
       width: PERIODS.includes(d as Period) ? 110 : undefined }];
   });
+
+  const groupedRows = useMemo(() => {
+    if (!grouped) return rows;
+    const additive = measures.filter((m) => m.kind !== 'pct' && m.key !== 'avg_price').map((m) => m.key);
+    const map = new Map<string, Row>();
+    rows.forEach((r) => {
+      const k = String(r.item_kind ?? '');
+      let g = map.get(k);
+      if (!g) {
+        g = { __group: true, __key: `g:${k}`, item_kind: r.item_kind, children: [] as Row[] };
+        additive.forEach((a) => { g![a] = 0; });
+        map.set(k, g);
+      }
+      g.children.push(r);
+      additive.forEach((a) => { g![a] = Number(g![a] || 0) + Number(r[a] || 0); });
+    });
+    return [...map.values()].map((g): Row => ({
+      ...g,
+      discount_pct: Number(g.gross) ? Math.round((Number(g.discount) / Number(g.gross)) * 10000) / 100 : null,
+      returns_pct: Number(g.sales_value) ? Math.round((Number(g.returns_value) / Number(g.sales_value)) * 10000) / 100 : null,
+      avg_price: Number(g.qty) ? Number(g.net_value) / Number(g.qty) : null,
+      margin_pct: null,
+    })).sort((a, b) => String(a.item_kind).localeCompare(String(b.item_kind), 'ar'));
+  }, [grouped, rows, showProfit, side]);
 
   const measureColumns = measures.map((m) => ({
     title: m.title, dataIndex: m.key, key: m.key, align: 'left' as const,
@@ -416,9 +445,12 @@ export default function TradeAnalysis({ side: fixedSide }: { side?: Side }) {
           message={`${Number(totals.missing_cost).toLocaleString(numeralsLocale())} سطر بلا تكلفة مسجلة — مستبعدة من حساب الربح والهامش`} />
       )}
       <Table<Row>
+        key={grouped ? `g-${rows.length}-${loading}` : 'flat'}
         className="sl-table" size="small" loading={loading}
-        rowKey={(r: Row) => (pivot ? r.__key : effectiveDims.map((d) => String(r[`${d}_id`] ?? r[d] ?? '')).join('|') || 'all')}
-        dataSource={pivot ? pivotRows : rows} columns={cols.columns as any}
+        rowKey={(r: Row) => (pivot || r.__group ? r.__key : effectiveDims.map((d) => String(r[`${d}_id`] ?? r[d] ?? '')).join('|') || 'all')}
+        dataSource={pivot ? pivotRows : groupedRows} columns={cols.columns as any}
+        expandable={grouped ? { defaultExpandAllRows: true } : undefined}
+        rowClassName={(r: Row) => (r.__group ? 'ta-group-row' : '')}
         pagination={{ defaultPageSize: PAGE_SIZE, showSizeChanger: true }}
         scroll={{ x: 'max-content' }}
       />
