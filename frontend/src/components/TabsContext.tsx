@@ -35,6 +35,8 @@ const BASE_TITLES: Record<string, string> = {
   '/account-statement': 'كشف حساب',
   '/reconciliation': 'تسوية الحسابات',
   '/fixed-assets': 'الأصول الثابتة',
+  '/fixed-asset-categories': 'فئات الأصول',
+  '/depreciation-schedule': 'جدول الإهلاك',
   '/employees': 'الموظفون والوظائف',
   '/orders': 'طلبات البيع والشراء',
   '/coupon-receipts': 'استلام الكوبونات',

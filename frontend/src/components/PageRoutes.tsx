@@ -42,6 +42,8 @@ const Stocktake = lazy(() => import('../pages/Stocktake'));
 const AccountStatement = lazy(() => import('../pages/AccountStatement'));
 const Reconciliation = lazy(() => import('../pages/Reconciliation'));
 const FixedAssets = lazy(() => import('../pages/FixedAssets'));
+const FixedAssetCategories = lazy(() => import('../pages/FixedAssetCategories'));
+const DepreciationSchedule = lazy(() => import('../pages/DepreciationSchedule'));
 const Employees = lazy(() => import('../pages/Employees'));
 const Departments = lazy(() => import('../pages/Departments'));
 const Attendance = lazy(() => import('../pages/Attendance'));
@@ -163,6 +165,8 @@ export default function PageRoutes({ location }: { location?: string }) {
       <Route path="/account-statement" element={<AccountStatement />} />
       <Route path="/reconciliation" element={<Reconciliation />} />
       <Route path="/fixed-assets" element={<FixedAssets />} />
+      <Route path="/fixed-asset-categories" element={<FixedAssetCategories />} />
+      <Route path="/depreciation-schedule" element={<DepreciationSchedule />} />
       <Route path="/employees" element={<Employees />} />
       <Route path="/departments" element={<Departments />} />
       <Route path="/attendance" element={<Attendance />} />

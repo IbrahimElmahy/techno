@@ -25,7 +25,15 @@ class DepreciationMethod(str, enum.Enum):
     straight_line = "straight_line"
     declining_balance = "declining_balance"
     sum_of_years = "sum_of_years"
+    declining_then_linear = "declining_then_linear"
     none = "none"
+
+
+class AssetState(str, enum.Enum):
+    draft = "draft"
+    running = "running"
+    paused = "paused"
+    closed = "closed"
 
 
 class AssetUsage(str, enum.Enum):
@@ -47,6 +55,10 @@ class FixedAssetCategory(Base):
     annual_rate: Mapped[object | None] = mapped_column(PCT, nullable=True)
     useful_life_months: Mapped[int | None] = mapped_column(Integer, nullable=True)
     usage: Mapped[str] = mapped_column(String(16), nullable=False, default="admin")
+    prorata: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False,
+                                          server_default="false")
+    auto_confirm: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True,
+                                               server_default="true")
     active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime, server_default=func.now(), nullable=False
@@ -68,6 +80,12 @@ class FixedAsset(Base):
     depreciation_start: Mapped[date | None] = mapped_column(Date, nullable=True)
     source_kind: Mapped[str | None] = mapped_column(String(24), nullable=True)
     source_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True, index=True)
+    state: Mapped[str] = mapped_column(String(16), nullable=False, default="running",
+                                       server_default="running", index=True)
+    prorata: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False,
+                                          server_default="false")
+    base_value: Mapped[object | None] = mapped_column(MONEY, nullable=True)
+    base_months: Mapped[int | None] = mapped_column(Integer, nullable=True)
     acquisition_date: Mapped[date] = mapped_column(Date, nullable=False)
     cost: Mapped[object] = mapped_column(MONEY, nullable=False)
     salvage_value: Mapped[object] = mapped_column(MONEY, nullable=False, default=0)
@@ -110,6 +128,25 @@ class DepreciationRecord(Base):
     year: Mapped[int] = mapped_column(Integer, nullable=False)
     month: Mapped[int] = mapped_column(Integer, nullable=False)
     amount: Mapped[object] = mapped_column(MONEY, nullable=False)
+    ledger_entry_id: Mapped[int | None] = mapped_column(
+        ForeignKey("ledger_entry.id"), nullable=True
+    )
+    actor_user_id: Mapped[int] = mapped_column(ForeignKey("user.id"), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=func.now(), nullable=False
+    )
+
+
+class FixedAssetEvent(Base):
+    __tablename__ = "fixed_asset_event"
+
+    id: Mapped[int] = mapped_column(BigIntPK, primary_key=True, autoincrement=True)
+    asset_id: Mapped[int] = mapped_column(ForeignKey("fixed_asset.id", ondelete="CASCADE"),
+                                          nullable=False, index=True)
+    kind: Mapped[str] = mapped_column(String(24), nullable=False)
+    event_date: Mapped[date] = mapped_column(Date, nullable=False)
+    amount: Mapped[object | None] = mapped_column(MONEY, nullable=True)
+    details: Mapped[str | None] = mapped_column(String(1000), nullable=True)
     ledger_entry_id: Mapped[int | None] = mapped_column(
         ForeignKey("ledger_entry.id"), nullable=True
     )

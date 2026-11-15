@@ -1623,3 +1623,21 @@ body.eg-resizing * {
 
 .row-cancelled td { color: #94a3b8 !important; text-decoration: line-through; }
 .row-cancelled td:last-child { text-decoration: none; }
+
+/* fixed assets document */
+.fa-doc .ant-card-head-title { font-weight: 700; }
+.fa-top { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
+.fa-title .ant-input { font-size: 22px; font-weight: 800; padding: 4px 0; border-bottom: 1px dashed #cbd5e1; border-radius: 0; }
+.fa-title h2 { font-size: 22px; font-weight: 800; margin: 0 0 8px; }
+.fa-title { margin-bottom: 12px; }
+.fa-card .ant-card-head { min-height: 38px; background: #f8fafc; }
+.fa-field { display: flex; align-items: center; gap: 12px; padding: 5px 0; border-bottom: 1px solid #f1f5f9; }
+.fa-field:last-child { border-bottom: 0; }
+.fa-field-label { width: 170px; flex-shrink: 0; color: #64748b; font-weight: 600; }
+.fa-field-value { flex: 1; min-width: 0; }
+.fa-ro { font-weight: 600; color: #0f172a; }
+.fa-statusbar { display: inline-flex; border: 1px solid #e2e8f0; border-radius: 6px; overflow: hidden; }
+.fa-step { padding: 4px 14px; font-size: 13px; color: #64748b; background: #fff; border-inline-start: 1px solid #e2e8f0; }
+.fa-step:first-child { border-inline-start: 0; }
+.fa-step.is-on { background: #6AB42D; color: #fff; font-weight: 700; }
+.fa-smart { display: inline-flex; align-items: center; gap: 4px; padding: 4px 10px; border: 1px solid #e2e8f0; border-radius: 6px; }

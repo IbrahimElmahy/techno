@@ -73,7 +73,6 @@ export const NAVIGATION: (NavGroup | NavScreen)[] = [
       { key: '/treasuries', label: 'الخزينه و البنوك', roles: R(BOOKS), a5: '/payment-methods' },
       { key: '/main-accounts', label: 'الحسابات الرئيسيه', roles: R(BOOKS), a5: '/mainaccounts' },
       { key: '/sub-accounts', label: 'الحسابات الفرعيه', roles: R(BOOKS), a5: '/subaccounts' },
-      { key: '/fixed-assets', label: 'الاصول الثابتة', roles: R(BOOKS), a5: '/fixed-assets' },
       { key: '/cost-centers', label: 'مراكز التكلفة', roles: R(BOOKS), a5: '/cost_centers' },
       { key: '/loyalty', label: 'أنواع الكوبونات', roles: R(LOYALTY), a5: '/loyalty' },
     ],
@@ -177,6 +176,15 @@ export const NAVIGATION: (NavGroup | NavScreen)[] = [
           { key: '/vouchers?tab=treasury-movement', label: 'حركة الخزينة', roles: R(BOOKS) },
           { key: '/treasury', label: 'حركة خزينه', roles: R(BOOKS), a5: '/draweraction' },
           { key: '/vouchers?tab=statement', label: 'كشف حساب السندات', roles: R(BOOKS) },
+        ],
+      },
+      {
+        key: 'grp-fixed-assets',
+        label: 'الأصول الثابتة',
+        children: [
+          { key: '/fixed-assets', label: 'الأصول', roles: R(BOOKS), a5: '/fixed-assets' },
+          { key: '/fixed-asset-categories', label: 'فئات الأصول', roles: R(BOOKS) },
+          { key: '/depreciation-schedule', label: 'جدول الإهلاك', roles: R(BOOKS) },
         ],
       },
       {
