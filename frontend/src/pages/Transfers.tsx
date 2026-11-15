@@ -1513,11 +1513,6 @@ export default function Transfers() {
                     onOpenPicker={() => setPickerOpen(true)}
                     onPick={(id) => addPickedSequentially([id], undefined, addItem, setFocusLineKey)} />
                 </tbody>
-                <tfoot>{lineGrid.foot(lines, (
-                  <>الإجماليات: <span style={{ color: '#64748b', fontWeight: 600 }}>
-                    ({lines.length} بنود مختلفة)
-                  </span></>
-                ))}</tfoot>
               </table>
             </div>
           ) : !source ? (
