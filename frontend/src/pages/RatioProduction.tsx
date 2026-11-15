@@ -20,6 +20,7 @@ import { money, numeralsLocale, qty as fmtQty } from '../utils/money';
 import { PAGE_SIZE, PAGE_SIZE_OPTIONS } from '../utils/pagination';
 import { activeOptions } from '../utils/active';
 
+import { addNew } from '../components/QuickCreate';
 interface Item { id: number; name: string; unit_of_measure?: string | null; purchase_price?: string | null; active: boolean }
 interface Wh { id: number; name: string; branch_id?: number | null }
 interface MatLine { key: number; item_id: number; quantity: number | null; warehouse_id?: number }
@@ -310,6 +311,7 @@ export default function RatioProduction() {
               <Col xs={12} md={6}>
                 <Form.Item label="مخزن الإنتاج التام" required style={{ marginBottom: 0 }}>
                   <Select showSearch placeholder="اختر المخزن" value={outWh} onChange={setOutWh}
+                    dropdownRender={addNew('warehouse', (w) => { setWarehouses((l: any[]) => [...l, w]); setOutWh(w.id); })}
                     options={whOptions} filterOption={searchFilter} filterSort={searchRank} />
                 </Form.Item>
               </Col>

@@ -40,6 +40,7 @@ import Logo from './Logo';
 import BranchFilter, { BranchBadge } from './BranchFilter';
 import { useTabs } from './TabsContext';
 import TabWorkspace from './TabWorkspace';
+import { QuickCreateHost } from './QuickCreate';
 import { APP_SCROLL_CLASS } from './tableDefaults';
 
 const { Header, Sider, Content } = Layout;
@@ -377,6 +378,7 @@ export default function AppLayout() {
             }}
           >
             <TabWorkspace />
+            <QuickCreateHost />
             <div aria-hidden style={{ height: 64 }} />
           </div>
         </Content>

@@ -8,6 +8,7 @@ import { TabModal } from './TabModal';
 import DocumentAttachments, { PendingAttachments, uploadFiles } from './DocumentAttachments';
 import { useScreenShortcuts } from './keyboard';
 import { useAuth } from './AuthProvider';
+import { addNew } from './QuickCreate';
 
 export interface Employee {
   id: number; code: string; name: string;
@@ -138,6 +139,10 @@ export default function EmployeeFormModal({
           <Select showSearch allowClear style={{ width: '100%' }} placeholder="الوظيفة"
             value={form.job_title_id}
             onChange={(v) => setForm({ ...form, job_title_id: v })}
+            dropdownRender={addNew('job_title', (t) => {
+              setLookups((l) => ({ ...l, titles: [...l.titles, { ...t, active: true }] }));
+              setForm((f: any) => ({ ...f, job_title_id: t.id }));
+            })}
             options={titles.filter((t) => t.active)
               .map((t) => ({ value: t.id, label: t.name }))} filterOption={searchFilter} filterSort={searchRank} />
         </Col>
@@ -146,6 +151,10 @@ export default function EmployeeFormModal({
           <Select showSearch allowClear style={{ width: '100%' }} placeholder="القسم"
             value={form.department_id}
             onChange={(v) => setForm({ ...form, department_id: v })}
+            dropdownRender={addNew('department', (d) => {
+              setLookups((l) => ({ ...l, departments: [...l.departments, { ...d, active: true }] }));
+              setForm((f: any) => ({ ...f, department_id: d.id }));
+            }, form.branch_id ? { branch_id: form.branch_id } : undefined)}
             options={departments
               .filter((d) => d.active || d.id === employee?.department_id)
               .map((d) => ({ value: d.id, label: d.name }))} filterOption={searchFilter} filterSort={searchRank} />
@@ -184,6 +193,10 @@ export default function EmployeeFormModal({
         <Col xs={24} md={8}>
           <Select showSearch allowClear style={{ width: '100%' }} placeholder="المخزن"
             value={form.warehouse_id} onChange={(v) => setForm({ ...form, warehouse_id: v })}
+            dropdownRender={addNew('warehouse', (w) => {
+              setLookups((l) => ({ ...l, warehouses: [...l.warehouses, w] }));
+              setForm((f: any) => ({ ...f, warehouse_id: w.id }));
+            }, form.branch_id ? { branch_id: form.branch_id } : undefined)}
             options={sortByName(warehouses, (w) => w.name).map((w) => ({ value: w.id, label: w.name }))} filterOption={searchFilter} filterSort={searchRank} />
         </Col>
         <Col xs={24} md={8}>

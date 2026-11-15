@@ -396,6 +396,8 @@ def _build_line(db: Session, run: PayrollRun, emp: Employee, manual: dict) -> Pa
     ot_factor = (_d(cfg.overtime_normal_pct) / Decimal("100")) if cfg.overtime_normal_pct else Decimal(1)
 
     ot_hours = to_qty(_d(manual.get("overtime_hours")))
+    if ot_hours < 0:
+        ot_factor = (_d(cfg.shortage_pct) / Decimal("100")) if cfg.shortage_pct else Decimal(1)
     ot_amount = to_money(ot_hours * daily / hours * ot_factor) if ot_hours else ZERO
     if ot_amount > 0:
         details.append(dict(source=DetailSource.overtime, label="ساعات إضافي",

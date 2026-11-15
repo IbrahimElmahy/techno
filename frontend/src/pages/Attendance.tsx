@@ -22,6 +22,7 @@ import { exportCsv as writeCsv, type CsvColumn } from '../utils/exportCsv';
 import { printReport, type PrintColumn } from '../print/reportSheet';
 import ListPage from '../components/ListPage';
 import AttendanceDevices from './AttendanceDevices';
+import { addNew } from '../components/QuickCreate';
 
 interface Day {
   id: number;
@@ -453,6 +454,10 @@ export default function Attendance() {
                   ref={employeeRef} showSearch disabled={!!editingDay}
                   placeholder="اختر الموظف"
                   options={dayEmployees.map((e) => ({ value: e.id, label: e.name }))}
+                  dropdownRender={addNew('employee', (e) => {
+                    setEmployees((l) => [...l, e]);
+                    dayForm.setFieldsValue({ employee_id: e.id });
+                  })}
                   filterOption={searchFilter} filterSort={searchRank} />
               </Form.Item>
             </Col>

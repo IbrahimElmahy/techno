@@ -25,6 +25,7 @@ import { searchFilter, searchRank } from '../utils/arabicSort';
 import { money, numeralsLocale } from '../utils/money';
 import { PAGE_SIZE } from '../utils/pagination';
 import { useAdjustmentsTab, useLeavesTab } from './payroll/PayrollExtras';
+import { addNew } from '../components/QuickCreate';
 
 interface Rule { id?: number; basis: string; basis_label?: string; pct: string | number }
 
@@ -737,6 +738,7 @@ export default function Payroll() {
       >
         <Select showSearch style={{ width: '100%' }} placeholder="الموظف" value={newCardId}
           onChange={setNewCardId} filterOption={searchFilter} filterSort={searchRank}
+          dropdownRender={addNew('employee', (e) => { loadEmps(); setNewCardId(e.id); })}
           options={emps.filter((e) => e.active).sort((a, b) => Number(a.has_card) - Number(b.has_card))
             .map((e) => ({ value: e.employee_id, label: `${e.name}${e.has_card ? ' — له كارت' : ''}${branches.length > 1 ? ` — ${branchName(e.branch_id)}` : ''}` }))} />
       </TabModal>

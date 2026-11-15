@@ -129,6 +129,15 @@ def require_capability(capability: str):
     return _dep
 
 
+def require_any_capability(*capabilities: str):
+    def _dep(current: CurrentUser = Depends(get_current_user)) -> CurrentUser:
+        if not any(current.can(c) for c in capabilities):
+            raise _deny(f"Capability '{capabilities[0]}' not granted to role '{current.role.value}'.")
+        return current
+
+    return _dep
+
+
 def ensure_branch_access(current: CurrentUser, target_branch_id: int | None) -> None:
     if current.sees_all:
         return

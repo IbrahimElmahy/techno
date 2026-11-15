@@ -8,8 +8,8 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from src.auth.dependencies import CurrentUser, require_capability
-from src.auth.rbac import CAP_USER_READ, CAP_USER_WRITE
+from src.auth.dependencies import CurrentUser, require_any_capability
+from src.auth.rbac import CAP_HR_READ, CAP_HR_WRITE, CAP_USER_READ, CAP_USER_WRITE
 from src.core.db import get_db
 from src.models.employee import Employee, JobTitle
 from src.models.hr_org import Department
@@ -118,7 +118,7 @@ def _out(db: Session, e: Employee) -> EmployeeOut:
 
 @router.get("/job-titles", response_model=list[JobTitleOut])
 def list_job_titles(
-    _: CurrentUser = Depends(require_capability(CAP_USER_READ)),
+    _: CurrentUser = Depends(require_any_capability(CAP_USER_READ, CAP_HR_READ)),
     db: Session = Depends(get_db),
 ) -> list[JobTitleOut]:
     rows = db.scalars(select(JobTitle).order_by(JobTitle.name)).all()
@@ -129,7 +129,7 @@ def list_job_titles(
 @router.post("/job-titles", response_model=JobTitleOut, status_code=status.HTTP_201_CREATED)
 def create_job_title(
     body: JobTitleIn,
-    _: CurrentUser = Depends(require_capability(CAP_USER_WRITE)),
+    _: CurrentUser = Depends(require_any_capability(CAP_USER_WRITE, CAP_HR_WRITE)),
     db: Session = Depends(get_db),
 ) -> JobTitleOut:
     name = (body.name or "").strip()
@@ -147,7 +147,7 @@ def create_job_title(
 @router.delete("/job-titles/{title_id}", status_code=status.HTTP_204_NO_CONTENT)
 def deactivate_job_title(
     title_id: int,
-    _: CurrentUser = Depends(require_capability(CAP_USER_WRITE)),
+    _: CurrentUser = Depends(require_any_capability(CAP_USER_WRITE, CAP_HR_WRITE)),
     db: Session = Depends(get_db),
 ) -> None:
     title = db.get(JobTitle, title_id)
@@ -163,7 +163,7 @@ def list_employees(
     branch_id: int | None = Query(None),
     job_title_id: int | None = Query(None),
     department_id: int | None = Query(None),
-    current: CurrentUser = Depends(require_capability(CAP_USER_READ)),
+    current: CurrentUser = Depends(require_any_capability(CAP_USER_READ, CAP_HR_READ)),
     db: Session = Depends(get_db),
 ) -> list[EmployeeOut]:
     stmt = branch_scope.scope(select(Employee), Employee, current)
@@ -211,7 +211,7 @@ def _check_department(db: Session, department_id: int | None, current_id: int | 
 @router.post("/employees", response_model=EmployeeOut, status_code=status.HTTP_201_CREATED)
 def create_employee(
     body: EmployeeIn,
-    current: CurrentUser = Depends(require_capability(CAP_USER_WRITE)),
+    current: CurrentUser = Depends(require_any_capability(CAP_USER_WRITE, CAP_HR_WRITE)),
     db: Session = Depends(get_db),
 ) -> EmployeeOut:
     name = (body.name or "").strip()
@@ -272,7 +272,7 @@ def _seen_employee(db: Session, employee_id: int, current: CurrentUser) -> Emplo
 @router.get("/employees/{employee_id}", response_model=EmployeeOut)
 def get_employee(
     employee_id: int,
-    current: CurrentUser = Depends(require_capability(CAP_USER_READ)),
+    current: CurrentUser = Depends(require_any_capability(CAP_USER_READ, CAP_HR_READ)),
     db: Session = Depends(get_db),
 ) -> EmployeeOut:
     emp = _seen_employee(db, employee_id, current)
@@ -283,7 +283,7 @@ def get_employee(
 def update_employee(
     employee_id: int,
     body: EmployeePatch,
-    current: CurrentUser = Depends(require_capability(CAP_USER_WRITE)),
+    current: CurrentUser = Depends(require_any_capability(CAP_USER_WRITE, CAP_HR_WRITE)),
     db: Session = Depends(get_db),
 ) -> EmployeeOut:
     emp = _seen_employee(db, employee_id, current)
@@ -311,7 +311,7 @@ def update_employee(
 def deactivate_employee(
     employee_id: int,
     hard: bool = Query(False),
-    current: CurrentUser = Depends(require_capability(CAP_USER_WRITE)),
+    current: CurrentUser = Depends(require_any_capability(CAP_USER_WRITE, CAP_HR_WRITE)),
     db: Session = Depends(get_db),
 ) -> None:
     emp = _seen_employee(db, employee_id, current)

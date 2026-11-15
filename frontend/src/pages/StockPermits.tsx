@@ -48,6 +48,7 @@ import SummaryTile from '../components/saleDoc/SummaryTile';
 import './docs.extra.css';
 import { activeOptions } from '../utils/active';
 
+import { addNew } from '../components/QuickCreate';
 type Kind = 'receipt' | 'issue' | 'opening';
 type KindTab = Kind | 'all';
 
@@ -355,6 +356,7 @@ export default function StockPermits() {
         onCategoryChange={setActiveCategory}
         availableFor={(id: number) => (kind === 'issue' ? available[id] ?? null : null)}
         onCancel={() => setPickerOpen(false)}
+        onCreateItem={(it: any) => setItems((l: any[]) => [...l, it])}
         onPick={(id, q) => {
           setPickerOpen(false);
           addPickedSequentially([id], q ? { [id]: q } : undefined, addItem, setFocusLineKey);
@@ -410,6 +412,7 @@ export default function StockPermits() {
           <Form.Item label="المخزن">
             <Select showSearch
               style={{ width: '100%' }} placeholder="المخزن" value={warehouseId}
+              dropdownRender={addNew('warehouse', (w) => { setWarehouses((l: any[]) => [...l, w]); setWarehouseId(w.id); })}
               onChange={setWarehouseId}
               options={activeOptions(sortByName(warehouses, (w) => w.name), warehouseId)} filterOption={searchFilter} filterSort={searchRank} />
           </Form.Item>

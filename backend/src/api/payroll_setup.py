@@ -88,6 +88,8 @@ class SalaryIn(BaseModel):
 class SettingsIn(BaseModel):
     days_per_month: int | None = None
     hours_per_day: Decimal | None = None
+    overtime_normal_pct: Decimal | None = None
+    shortage_pct: Decimal | None = None
 
 
 @router.get("/components", response_model=list[ComponentOut])
@@ -242,6 +244,7 @@ def set_salary(
 def _settings_out(row) -> dict:
     return {
         "days_per_month": row.days_per_month, "hours_per_day": str(row.hours_per_day),
+        "overtime_normal_pct": str(row.overtime_normal_pct), "shortage_pct": str(row.shortage_pct),
     }
 
 

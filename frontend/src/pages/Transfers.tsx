@@ -53,6 +53,7 @@ import { qty, numeralsLocale } from '../utils/money';
 import { useLiveRefresh } from '../utils/live';
 import SummaryTile from '../components/saleDoc/SummaryTile';
 import './docs.extra.css';
+import { addNew } from '../components/QuickCreate';
 const PAGE_SIZE = 300;
 
 interface TransferRecord {
@@ -1373,6 +1374,7 @@ export default function Transfers() {
               <Form.Item label="من (المصدر)">
                 <Select showSearch style={{ width: '100%' }}
                   placeholder="اختر المخزن المصدر"
+                  dropdownRender={addNew('warehouse', (w) => { setWarehouses((l: any[]) => [...l, w]); onSourceChange(w.id); })}
                   disabled={!!editing || viewOnly}
                   value={source ?? undefined} onChange={onSourceChange}
                   options={locationOptions} filterOption={searchFilter} filterSort={searchRank}/>
@@ -1382,6 +1384,7 @@ export default function Transfers() {
               <Form.Item label="إلى (الوجهة)">
                 <Select showSearch style={{ width: '100%' }}
                   placeholder="اختر المخزن الوجهة"
+                  dropdownRender={addNew('warehouse', (w) => { setWarehouses((l: any[]) => [...l, w]); setDest(w.id); })}
                   disabled={!!editing || viewOnly}
                   value={dest ?? undefined} onChange={(v) => setDest(v)}
                   options={locationOptions} filterOption={searchFilter} filterSort={searchRank}/>

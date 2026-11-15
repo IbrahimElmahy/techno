@@ -66,6 +66,7 @@ import { QTY_DATA_ATTR } from '../utils/duplicateItem';
 
 import { useLiveRefresh } from '../utils/live';
 
+import { addNew } from '../components/QuickCreate';
 const PurchaseReturnsScreen = React.lazy(() => import('./PurchaseReturns'));
 const fmtMoney = money;
 
@@ -1457,6 +1458,7 @@ export default function Purchases() {
                 <Select showSearch
                   disabled={viewOnly}
                   placeholder="اختر المخزن الافتراضي"
+                  dropdownRender={addNew('warehouse', (w) => { setWarehouses((l: any[]) => [...l, w]); setStickyWarehouseId(w.id); })}
                   value={stickyWarehouseId ?? undefined}
                   onChange={(val) => {
                     setStickyWarehouseId(val ?? null);
@@ -2144,6 +2146,7 @@ export default function Purchases() {
           ? (availability[stickyWarehouseId][id] ?? 0) : null)}
         availabilityVersion={`${stickyWarehouseId ?? ''}|${Object.keys(availability).join(',')}`}
         onCancel={() => setPickerOpen(false)}
+        onCreateItem={(it: any) => setItems((l: any[]) => [...l, it])}
         onPick={(id, q) => {
           setPickerOpen(false);
           addProductById(id, q ?? null);

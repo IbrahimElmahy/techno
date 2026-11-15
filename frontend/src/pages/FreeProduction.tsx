@@ -27,6 +27,7 @@ import { useLookup, labelMap } from '../hooks/useLookup';
 import { money, numeralsLocale } from '../utils/money';
 import { activeOptions } from '../utils/active';
 
+import { addNew } from '../components/QuickCreate';
 interface Item {
   id: number; code: string; name: string;
   kind: 'raw_material' | 'product'; unit_of_measure: string;
@@ -324,6 +325,7 @@ export default function FreeProduction() {
               <Select
                 showSearch placeholder="اختر المخزن"
                 value={warehouseId} onChange={setWarehouseId}
+                dropdownRender={addNew('warehouse', (w) => { setWarehouses((l: any[]) => [...l, w]); setWarehouseId(w.id); })}
                 options={activeOptions(sortByName(warehouses, (w) => w.name), warehouseId)} filterOption={searchFilter} filterSort={searchRank}/>
             </Form.Item>
           </Col>

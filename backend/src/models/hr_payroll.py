@@ -123,6 +123,7 @@ class PayrollSetting(Base):
     hours_per_day: Mapped[object] = mapped_column(QTY, default=8, nullable=False)
     overtime_normal_pct: Mapped[object] = mapped_column(PCT, default=135, nullable=False)
     overtime_holiday_pct: Mapped[object] = mapped_column(PCT, default=200, nullable=False)
+    shortage_pct: Mapped[object] = mapped_column(PCT, default=100, nullable=False)
     absence_basis: Mapped[AbsenceBasis] = mapped_column(
         Enum(AbsenceBasis, native_enum=False, length=8), default=AbsenceBasis.gross, nullable=False
     )

@@ -12,6 +12,7 @@ import { dualQty, lengthUnits } from '../utils/units';
 import { useCategoryTree, withChildren } from '../hooks/useCategoryTree';
 import { activeChoices } from '../utils/active';
 import './ProductPickerModal.css';
+import { AddNewButton } from './QuickCreate';
 
 interface Props {
   open: boolean;
@@ -35,6 +36,7 @@ interface Props {
   priceTier?: string | null;
   priceTierLabel?: string | null;
   onRefresh?: () => Promise<void> | void;
+  onCreateItem?: (item: any) => void;
 }
 
 const LOW_STOCK = 5;
@@ -50,7 +52,7 @@ export default function ProductPickerModal({
   open, categories, categoryLabels, products: allProducts, activeCategory, onCategoryChange, hideCategories,
   onPick, onPickMany, onCancel, title = 'اختر الصنف', availableFor, priceFor,
   disableOutOfStock = false, availabilityVersion, hidePurchasePrice = false,
-  variant = 'cards', warehouseName, priceTier, priceTierLabel, onRefresh,
+  variant = 'cards', warehouseName, priceTier, priceTierLabel, onRefresh, onCreateItem,
 }: Props) {
   const [refreshing, setRefreshing] = useState(false);
   const refresh = async () => {
@@ -841,7 +843,10 @@ export default function ProductPickerModal({
 
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center',
         marginTop: 10, gap: 12, flexWrap: 'wrap' }}>
-        <span />
+        {onCreateItem ? (
+          <AddNewButton kind="item" defaults={activeCategory ? { category: activeCategory } : undefined}
+            onCreated={(item) => { onCreateItem(item); setTimeout(() => onPick(item.id), 0); }} />
+        ) : <span />}
         {onPickMany && (
           <Space>
             <Button size="small" onClick={() => { setBulk(!bulk); setPicked([]); }}>

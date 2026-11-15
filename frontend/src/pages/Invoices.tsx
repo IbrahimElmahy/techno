@@ -79,6 +79,7 @@ import ListPage, { ListStat } from '../components/ListPage';
 import { useQueryTab } from '../components/useQueryTab';
 import { repOptions } from '../utils/reps';
 import { activeOptions } from '../utils/active';
+import { addNew } from '../components/QuickCreate';
 const ReturnsScreen = React.lazy(() => import('./Returns'));
 
 const newUuid = (): string =>
@@ -2022,6 +2023,7 @@ function couponsTotal(inv: any): number {
                 <Select
                   showSearch
                   placeholder="اختر المخزن للبيع منه"
+                  dropdownRender={addNew('warehouse', (w) => { setWarehouses((l: any[]) => [...l, w]); onWarehouseChange(w.id); })}
                   disabled={viewOnly}
                   value={docWarehouseId ?? undefined}
                   onChange={(v) => onWarehouseChange(v as number)}
@@ -2201,6 +2203,7 @@ function couponsTotal(inv: any): number {
             <Select
               style={{ width: '100%' }} size="large" showSearch
               placeholder="اختر المخزن"
+              dropdownRender={addNew('warehouse', (w) => { setWarehouses((l: any[]) => [...l, w]); setPendingWarehouse(w.id); })}
               value={pendingWarehouse ?? undefined}
               onChange={(v) => setPendingWarehouse(v as number)}
               options={activeOptions(warehouses, pendingWarehouse)} filterOption={searchFilter} filterSort={searchRank}/>

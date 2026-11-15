@@ -63,6 +63,7 @@ import { useLiveRefresh } from '../utils/live';
 import { repOptions } from '../utils/reps';
 import { activeOptions } from '../utils/active';
 
+import { addNew } from '../components/QuickCreate';
 interface ReturnRecord {
   sales_invoice_id?: number | null;
   invoice_document_number?: string | null;
@@ -1171,6 +1172,7 @@ export default function Returns({ embedded }: { embedded?: { onExit: () => void 
                     showSearch
                     disabled={viewOnly}
                     placeholder="اختر المخزن المستلم"
+                    dropdownRender={addNew('warehouse', (w) => { setWarehouses((l: any[]) => [...l, w]); setDocWarehouseId(w.id); })}
                     value={docWarehouseId ?? undefined}
                     onChange={(v) => setDocWarehouseId(v as number)}
                     options={activeOptions(warehouses, docWarehouseId)} filterOption={searchFilter} filterSort={searchRank}/>

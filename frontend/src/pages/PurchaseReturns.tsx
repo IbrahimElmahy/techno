@@ -57,6 +57,7 @@ import { addPickedSequentially, type PickResult } from '../utils/pickMany';
 import { useLiveRefresh } from '../utils/live';
 import { activeChoices, activeOptions, withInactiveTag } from '../utils/active';
 
+import { addNew } from '../components/QuickCreate';
 interface ReturnRow {
   return_date?: string | null;
   notes?: string | null;
@@ -1072,6 +1073,7 @@ export default function PurchaseReturns({ embedded }: { embedded?: { onExit: () 
         <Select
           style={{ width: '100%' }} size="large" showSearch
           placeholder="اختر المخزن"
+          dropdownRender={addNew('warehouse', (w) => { setWarehouses((l: any[]) => [...l, w]); setPendingWarehouse(w.id); })}
           value={pendingWarehouse ?? undefined}
           onChange={(v) => setPendingWarehouse(v as number)}
           options={activeOptions(sortByName(warehouses, (w: any) => w.name), pendingWarehouse)} filterOption={searchFilter} filterSort={searchRank}/>

@@ -707,6 +707,7 @@ export default function Orders() {
         activeCategory={activeCategory}
         onCategoryChange={setActiveCategory}
         onCancel={() => setPickerOpen(false)}
+        onCreateItem={(it: any) => setItems((l: any[]) => [...l, it])}
         onPick={(id, q) => {
           setPickerOpen(false);
           addPickedSequentially([id], q ? { [id]: q } : undefined, addItem, setFocusLineKey);
