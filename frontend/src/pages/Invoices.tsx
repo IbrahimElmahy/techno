@@ -61,6 +61,7 @@ import { convertUnitPrice, dualQty, factorOf, unitSelectOptions } from '../utils
 import { fingerprint, verdictOnLeave } from '../utils/unsavedWork';
 import { useFocusedIds, FocusedRowsBanner } from '../components/FocusedRows';
 import { applyPct, combinePct, splitCombined } from '../utils/discounts';
+import { cascadeWarehouse } from '../utils/lineWarehouse';
 import { QTY_DATA_ATTR } from '../utils/duplicateItem';
 import { addPickedSequentially, type PickResult } from '../utils/pickMany';
 
@@ -1004,6 +1005,12 @@ export default function Invoices() {
 
   const lineWarehouse = (l: SaleLineItem): number | null => l.warehouse_id ?? docWarehouseId;
 
+  const changeLineWarehouse = async (key: string, id: number | null) => {
+    if (id != null) await loadWarehouseStock(id);
+    setLines((prev) => cascadeWarehouse(prev, key, id, docWarehouseId));
+    if (id != null) setDocWarehouseId(id);
+  };
+
   const availableFor = (itemId: number | null, unit: string | null,
                         warehouseId: number | null): number => {
     if (!itemId || !warehouseId) return 0;
@@ -1389,7 +1396,7 @@ export default function Invoices() {
     viewOnly, warehouses, totalPoints, pointValues, productName, saleUnitOptions,
     availabilityHint,
     saleLineNet, linePoints, checkedQuantity, handleLineChange, handleRemoveLine,
-    advanceFrom, setDocWarehouseId, setPanelItemId, hidePoints: isFactory, isBonus,
+    advanceFrom, setDocWarehouseId, changeLineWarehouse, setPanelItemId, hidePoints: isFactory, isBonus,
     productCode: (id) => products.find((p) => p.id === id)?.code,
     belowCost, canSellBelowCost,
   });

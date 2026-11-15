@@ -67,6 +67,7 @@ import { QTY_DATA_ATTR } from '../utils/duplicateItem';
 import { useLiveRefresh } from '../utils/live';
 
 import { addNew } from '../components/QuickCreate';
+import { cascadeWarehouse } from '../utils/lineWarehouse';
 const PurchaseReturnsScreen = React.lazy(() => import('./PurchaseReturns'));
 const fmtMoney = money;
 
@@ -1260,7 +1261,7 @@ export default function Purchases() {
           disabled={viewOnly}
           value={line.warehouse_id ?? undefined}
           onChange={(val) => {
-            handleItemChange(line.key, 'warehouse_id', val ?? null);
+            setPurchaseItems((prev) => cascadeWarehouse(prev, line.key, val ?? null, stickyWarehouseId));
             setStickyWarehouseId(val ?? null);
           }}
           options={sortByName(lineWarehouses, (w: any) => w.name).map((w: any) => ({

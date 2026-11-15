@@ -64,6 +64,7 @@ import { repOptions } from '../utils/reps';
 import { activeOptions } from '../utils/active';
 
 import { addNew } from '../components/QuickCreate';
+import { cascadeWarehouse } from '../utils/lineWarehouse';
 interface ReturnRecord {
   sales_invoice_id?: number | null;
   invoice_document_number?: string | null;
@@ -830,7 +831,7 @@ export default function Returns({ embedded }: { embedded?: { onExit: () => void 
           disabled={viewOnly}
           value={line.warehouse_id ?? docWarehouseId ?? undefined}
           onChange={(val) => {
-            handleLineChange(line.key, 'warehouse_id', val);
+            setLines((prev) => cascadeWarehouse(prev, line.key, (val as number) ?? null, docWarehouseId));
             if (val != null) setDocWarehouseId(val as number);
           }}
           options={activeOptions(warehouses, [line.warehouse_id, docWarehouseId])} />

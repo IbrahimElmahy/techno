@@ -27,6 +27,7 @@ export interface LineColumnsCtx {
   handleRemoveLine: (key: string) => void;
   advanceFrom: (key: string) => void;
   setDocWarehouseId: (id: number | null) => void;
+  changeLineWarehouse: (key: string, id: number | null) => void;
   setPanelItemId: (id: number | null) => void;
   hidePoints?: boolean;
   isBonus?: boolean;
@@ -40,7 +41,7 @@ const fmtQty = (n: number) => n.toLocaleString(numeralsLocale(), { maximumFracti
 export function buildLineColumns({
   viewOnly, warehouses, totalPoints, pointValues, productName, saleUnitOptions,
   availabilityHint, saleLineNet, linePoints, checkedQuantity, handleLineChange, handleRemoveLine,
-  advanceFrom, setDocWarehouseId, setPanelItemId, hidePoints = false, isBonus = false,
+  advanceFrom, setDocWarehouseId, changeLineWarehouse, setPanelItemId, hidePoints = false, isBonus = false,
   productCode, belowCost, canSellBelowCost = false,
 }: LineColumnsCtx): EntryColumn<SaleLineItem>[] {
   return [
@@ -55,10 +56,7 @@ export function buildLineColumns({
         ) : (
           <Select size="small" className="sale-wh-select" style={{ width: '100%' }} placeholder="المخزن"
             value={line.warehouse_id ?? undefined}
-            onChange={(v) => {
-              handleLineChange(line.key, 'warehouse_id', v ?? null);
-              if (v != null) setDocWarehouseId(v as number);
-            }}
+            onChange={(v) => changeLineWarehouse(line.key, (v as number) ?? null)}
             options={activeOptions(warehouses, line.warehouse_id)} />
         )
       ) },

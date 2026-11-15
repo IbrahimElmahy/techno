@@ -58,6 +58,7 @@ import { useLiveRefresh } from '../utils/live';
 import { activeChoices, activeOptions, withInactiveTag } from '../utils/active';
 
 import { addNew } from '../components/QuickCreate';
+import { cascadeWarehouse } from '../utils/lineWarehouse';
 interface ReturnRow {
   return_date?: string | null;
   notes?: string | null;
@@ -570,8 +571,7 @@ export default function PurchaseReturns({ embedded }: { embedded?: { onExit: () 
           disabled={viewOnly}
           value={line.warehouse_id ?? warehouseId ?? undefined}
           onChange={(v) => {
-            setReturnLines((prev) => prev.map((l) => (
-              l.key === line.key ? { ...l, warehouse_id: v ?? null } : l)));
+            setReturnLines((prev) => cascadeWarehouse(prev, line.key, (v as number) ?? null, warehouseId));
             if (v != null) setWarehouseId(v as number);
           }}
           options={sortByName(activeChoices(warehouses, [line.warehouse_id, warehouseId]),

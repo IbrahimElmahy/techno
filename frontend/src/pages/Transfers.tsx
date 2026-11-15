@@ -1373,10 +1373,10 @@ export default function Transfers() {
                     <b>{editing.reject_reason}</b></span> : undefined} />
           )}
 
-          <div className="sale-card sale-fields">
+          <div className="sale-card sale-fields tr-compact">
           <Form layout="vertical" size="small" className="doc-form" component={false}>
-          <Row gutter={12}>
-            <Col xs={12} md={4}>
+          <Row gutter={8}>
+            <Col xs={12} md={3}>
               <Form.Item label="رقم المستند">
                 <Input placeholder="رقم الإذن الورقي" disabled={textsLocked}
                   maxLength={40}
@@ -1384,15 +1384,15 @@ export default function Transfers() {
                   onBlur={() => saveEditingText('external_document_number', externalDocNumber)} />
               </Form.Item>
             </Col>
-            <Col xs={12} md={4}>
+            <Col xs={12} md={3}>
               <Form.Item label="التاريخ">
                 <DatePicker style={{ width: '100%' }}
                   disabled={!!editing || viewOnly}
                   value={transferDate} onChange={(v) => setTransferDate(v || dayjs())} format="YYYY-MM-DD" allowClear={false} />
               </Form.Item>
             </Col>
-            <Col xs={24} md={8} className="sale-party">
-              <Form.Item label="من (المصدر)">
+            <Col xs={12} md={4} className="sale-party">
+              <Form.Item label="من">
                 <Select showSearch style={{ width: '100%' }}
                   placeholder="اختر المخزن المصدر"
                   dropdownRender={addNew('warehouse', (w) => { setWarehouses((l: any[]) => [...l, w]); onSourceChange(w.id); })}
@@ -1401,8 +1401,8 @@ export default function Transfers() {
                   options={locationOptions} filterOption={searchFilter} filterSort={searchRank}/>
               </Form.Item>
             </Col>
-            <Col xs={24} md={8} className="sale-party">
-              <Form.Item label="إلى (الوجهة)">
+            <Col xs={12} md={4} className="sale-party">
+              <Form.Item label="إلى">
                 <Select showSearch style={{ width: '100%' }}
                   placeholder="اختر المخزن الوجهة"
                   dropdownRender={addNew('warehouse', (w) => { setWarehouses((l: any[]) => [...l, w]); setDest(w.id); })}
@@ -1411,14 +1411,14 @@ export default function Transfers() {
                   options={locationOptions} filterOption={searchFilter} filterSort={searchRank}/>
               </Form.Item>
             </Col>
-            <Col xs={24} md={12}>
+            <Col xs={12} md={5}>
               <Form.Item label="البيان">
                 <Input placeholder="اختياري" disabled={textsLocked} maxLength={200}
                   value={statement1} onChange={(e) => setStatement1(e.target.value)}
                   onBlur={() => saveEditingText('statement1', statement1)} />
               </Form.Item>
             </Col>
-            <Col xs={24} md={12}>
+            <Col xs={12} md={5}>
               <Form.Item label="ملاحظات">
                 <Input placeholder="اختياري" disabled={textsLocked} maxLength={500}
                   value={docNotes} onChange={(e) => setDocNotes(e.target.value)}
@@ -1436,10 +1436,6 @@ export default function Transfers() {
             <Alert style={{ marginTop: 4 }} type="warning" showIcon
               message="التحويل من عهدة مندوب إلى مخزن غير متاح من هذه الشاشة"
               description="استخدم شاشة تسليم عهدة المندوب لإرجاع البضاعة إلى المخزن." />
-          )}
-          {route && !sameLocation && (
-            <Alert style={{ marginTop: 4 }} type="success" showIcon
-              message={`نوع التحويل: ${ROUTE_LABELS[route]}`} />
           )}
           </div>
 

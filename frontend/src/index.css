@@ -1642,3 +1642,15 @@ body.eg-resizing * {
 .fa-step.is-on { background: #6AB42D; color: #fff; font-weight: 700; }
 .fa-smart { display: inline-flex; align-items: center; gap: 4px; padding: 4px 10px; border: 1px solid #e2e8f0; border-radius: 6px; }
 .ta-group-row > td { background: #f1f5f9 !important; font-weight: 700; }
+
+.tr-compact.sale-card { padding-top: 6px; padding-bottom: 6px; }
+.tr-compact .ant-form-item { margin-bottom: 0; }
+.tr-compact .ant-form-item-label { padding-bottom: 0 !important; line-height: 1.2; }
+.tr-compact .ant-form-item-label > label { font-size: 12px; color: #64748b; height: auto; }
+.tr-compact .ant-input,
+.tr-compact .ant-picker-input > input,
+.tr-compact .ant-select-selection-item,
+.tr-compact .ant-select-selection-search-input { font-size: 15px !important; font-weight: 600; }
+.tr-compact .ant-input,
+.tr-compact .ant-picker,
+.tr-compact .ant-select-selector { min-height: 32px; }
