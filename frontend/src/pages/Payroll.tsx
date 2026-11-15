@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Button, Checkbox, Col, DatePicker, Divider, Input, Row, Select, Space, Table, Tag, message,
+  Button, Checkbox, Col, DatePicker, Divider, Input, Row, Segmented, Select, Space, Table, Tag,
+  message,
 } from 'antd';
 import {
   CheckOutlined, ClearOutlined, DeleteOutlined, DollarOutlined, EditOutlined, PlusOutlined,
@@ -43,6 +44,31 @@ interface Line {
   advances: string; insurance: string; other_deductions: string; total_deductions: string;
   net: string; extra_earning: string | null; extra_deduction: string | null;
   notes: string | null; paid: boolean; details: Detail[];
+  department_id: number | null; department: string | null; job_title: string | null;
+  daily_rate: string | null; overtime_hours: string | null; overtime_amount: string;
+  extra_days: string | null; extra_days_amount: string | null; transport: string | null;
+  incentive: string | null; days_present: string; days_in_month: number;
+  __group?: boolean; children?: Line[];
+}
+
+const SUM_KEYS: (keyof Line)[] = ['basic', 'allowances', 'overtime_amount', 'commission',
+  'extra_days_amount', 'transport', 'incentive', 'bonuses', 'earnings', 'absence', 'advances',
+  'penalties', 'insurance', 'other_deductions', 'total_deductions', 'net'];
+
+function EditCell({ value, editable, signed, onSave, width = 80 }: {
+  value: string | number | null | undefined; editable: boolean; signed?: boolean;
+  onSave: (v: number | null) => Promise<void>; width?: number;
+}) {
+  const initial = value === null || value === undefined || value === '' ? null : Number(value);
+  const [v, setV] = useState<number | null>(initial);
+  useEffect(() => { setV(initial); }, [initial]);
+  if (!editable) return <>{initial ? initial.toLocaleString(numeralsLocale()) : ''}</>;
+  const commit = () => { if ((v ?? null) !== initial) void onSave(v ?? null); };
+  return (
+    <InputNumber size="small" style={{ width }} value={v ?? undefined} min={signed ? undefined : 0}
+      onChange={(x) => setV(x === undefined || x === null ? null : Number(x))}
+      onBlur={commit} onPressEnter={commit} />
+  );
 }
 
 interface MonthData {
@@ -225,44 +251,74 @@ export default function Payroll() {
   const lines = monthFilter.filtered;
   const sum = (k: keyof Line) => lines.reduce((t, l) => t + n(l[k]), 0);
 
+  const saveField = async (employeeId: number, field: string, value: any) => {
+    if (!run) return;
+    try {
+      const res = await api.patch(`/api/v1/hr/salary/month/${run.id}/employees/${employeeId}`,
+        { [field]: value });
+      setData(res.data);
+    } catch (err: any) { fail(err, 'تعذر الحفظ'); }
+  };
+  const cell = (field: string, key: keyof Line, opts: { signed?: boolean; width?: number } = {}) =>
+    (v: any, r: Line) => (r.__group ? (SUM_KEYS.includes(key) ? money(r[key] as any) : '') : (
+      <EditCell value={v} editable={!!draft} signed={opts.signed} width={opts.width}
+        onSave={(x) => saveField(r.employee_id, field, x)} />));
+  const plain = (v: any, r: Line) => (r.__group ? <b>{money(v)}</b> : money(v));
+
   const monthColumns: ColumnsType<Line> = [
     { title: 'الموظف', dataIndex: 'name', key: 'name', fixed: 'right', width: 190,
-      render: (v: string, r) => <a onClick={() => setLineOf(r.employee_id)}><b>{v}</b></a> },
-    { title: 'الأساسي', dataIndex: 'basic', key: 'basic', align: 'left', render: money },
-    { title: 'البدلات', dataIndex: 'allowances', key: 'allowances', align: 'left', render: money },
+      render: (v: string, r) => (r.__group
+        ? <b>{v}</b>
+        : <a onClick={() => setLineOf(r.employee_id)}><b>{v}</b></a>) },
+    { title: 'الوظيفة', dataIndex: 'job_title', key: 'job_title', width: 120, total: false,
+      render: (v: string | null) => v || '' } as any,
+    { title: 'الأساسي', dataIndex: 'basic', key: 'basic', align: 'left', render: plain },
+    { title: 'البدلات', dataIndex: 'allowances', key: 'allowances', align: 'left', render: plain },
+    { title: 'قيمة اليوم', dataIndex: 'daily_rate', key: 'daily_rate', align: 'left', total: false,
+      render: (v: string, r: Line) => (r.__group ? '' : money(v)) } as any,
+    { title: 'ساعات إضافي', dataIndex: 'overtime_hours', key: 'overtime_hours', align: 'left', total: false,
+      render: cell('overtime_hours', 'overtime_hours', { signed: true }) } as any,
+    { title: 'قيمة الإضافي', dataIndex: 'overtime_amount', key: 'overtime_amount', align: 'left',
+      render: (v: string, r: Line) => <span style={{ color: n(v) < 0 ? '#cf1322' : undefined }}>{plain(v, r)}</span> },
     { title: 'العمولة', dataIndex: 'commission', key: 'commission', align: 'left',
-      render: (v: string, r) => (
-        <Space size={2}>
-          {money(v)}
-          {r.commission_override !== null ? <Tag color="gold">يدوي</Tag> : null}
-        </Space>
-      ) },
-    { title: 'مكافآت وإضافات', dataIndex: 'bonuses', key: 'bonuses', align: 'left', render: money },
-    { title: 'المستحق', dataIndex: 'earnings', key: 'earnings', align: 'left',
+      render: (v: string, r: Line) => (r.__group ? money(v) : (
+        <EditCell value={r.commission_override ?? v} editable={!!draft} width={100}
+          onSave={(x) => saveField(r.employee_id, 'commission_override', x)} />)) },
+    { title: 'أيام إضافي', dataIndex: 'extra_days', key: 'extra_days', align: 'left', total: false,
+      render: cell('extra_days', 'extra_days') } as any,
+    { title: 'قيمة الأيام', dataIndex: 'extra_days_amount', key: 'extra_days_amount', align: 'left', render: plain },
+    { title: 'انتقالات', dataIndex: 'transport', key: 'transport', align: 'left',
+      render: cell('transport', 'transport', { width: 95 }) },
+    { title: 'حافز', dataIndex: 'incentive', key: 'incentive', align: 'left',
+      render: cell('extra_earning', 'incentive', { width: 95 }) },
+    { title: 'مكافآت', dataIndex: 'bonuses', key: 'bonuses', align: 'left', render: plain },
+    { title: 'إجمالي الراتب', dataIndex: 'earnings', key: 'earnings', align: 'left',
       render: (v: string) => <b>{money(v)}</b> },
-    { title: 'أيام الغياب', dataIndex: 'days_absent', key: 'days_absent', align: 'left', total: false,
-      render: (v: string, r: Line) => (
-        <Space size={2}>
-          {n(v) ? Number(v) : ''}
-          {r.absent_override !== null ? <Tag color="gold">يدوي</Tag> : null}
-        </Space>
-      ) } as any,
-    { title: 'الغياب', dataIndex: 'absence', key: 'absence', align: 'left', render: money },
-    { title: 'جزاءات', dataIndex: 'penalties', key: 'penalties', align: 'left', render: money },
-    { title: 'سلف', dataIndex: 'advances', key: 'advances', align: 'left', render: money },
-    { title: 'تأمينات', dataIndex: 'insurance', key: 'insurance', align: 'left', render: money },
-    { title: 'خصومات أخرى', dataIndex: 'other_deductions', key: 'other_deductions', align: 'left',
-      render: (v: string, r) => money(n(v) - n(r.absence)) },
-    { title: 'إجمالي الخصم', dataIndex: 'total_deductions', key: 'total_deductions', align: 'left',
-      render: money },
+    { title: 'أيام الحضور', dataIndex: 'days_present', key: 'days_present', align: 'left', total: false,
+      render: (v: string, r: Line) => (r.__group ? '' : Number(v)) } as any,
+    { title: 'غياب', dataIndex: 'days_absent', key: 'days_absent', align: 'left', total: false,
+      render: (v: string, r: Line) => (r.__group ? '' : (
+        <EditCell value={r.absent_override ?? v} editable={!!draft} width={70}
+          onSave={(x) => saveField(r.employee_id, 'absent_override', x)} />)) } as any,
+    { title: 'قيمة الغياب', dataIndex: 'absence', key: 'absence', align: 'left', render: plain },
+    { title: 'السلف', dataIndex: 'advances', key: 'advances', align: 'left', render: plain },
+    { title: 'جزاءات', dataIndex: 'penalties', key: 'penalties', align: 'left', render: plain },
+    { title: 'تأمينات', dataIndex: 'insurance', key: 'insurance', align: 'left', render: plain },
+    { title: 'خصومات أخرى', dataIndex: 'other_deductions', key: 'other_deductions', align: 'left', render: plain },
+    { title: 'إجمالي الخصم', dataIndex: 'total_deductions', key: 'total_deductions', align: 'left', render: plain },
     { title: 'الصافي', dataIndex: 'net', key: 'net', align: 'left',
       render: (v: string) => <b style={{ color: n(v) < 0 ? '#cf1322' : undefined }}>{money(v)}</b> },
+    { title: 'ملاحظات', dataIndex: 'notes', key: 'notes', width: 200, total: false,
+      render: (v: string | null, r: Line) => (r.__group ? '' : draft ? (
+        <Input size="small" defaultValue={v || ''} key={`${r.employee_id}-${v}`}
+          onBlur={(e) => { if ((e.target.value || null) !== (v || null)) void saveField(r.employee_id, 'notes', e.target.value || null); }} />
+      ) : (v || '')) } as any,
     { title: 'الصرف', dataIndex: 'paid', key: 'paid', width: 90, total: false,
-      render: (v: boolean) => (v ? <Tag color="green">مصروف</Tag> : '—') } as any,
+      render: (v: boolean, r: Line) => (r.__group ? '' : v ? <Tag color="green">مصروف</Tag> : '—') } as any,
     { title: '', key: 'x', width: 150, total: false,
-      render: (_: any, r: Line) => (
+      render: (_: any, r: Line) => (r.__group ? null : (
         <Space size={0}>
-          <Button type="text" icon={<EditOutlined />} title="تعديل" onClick={() => setLineOf(r.employee_id)} />
+          <Button type="text" icon={<EditOutlined />} title="تفاصيل" onClick={() => setLineOf(r.employee_id)} />
           <Button type="text" icon={<PrinterOutlined />} title="القسيمة" onClick={() => printSlip(r)} />
           {posted && !r.paid ? (
             <Button type="text" icon={<WalletOutlined />} title="صرف" onClick={() => setPayOpen({ ids: [r.employee_id] })} />
@@ -278,14 +334,36 @@ export default function Payroll() {
             </Popconfirm>
           ) : null}
         </Space>
-      ) } as any,
+      )) } as any,
   ];
+
+  const [byDept, setByDept] = useState(true);
+  const groupedLines = useMemo<Line[]>(() => {
+    if (!byDept) return lines;
+    const total = lines.reduce((t, l) => t + n(l.earnings), 0);
+    const map = new Map<string, Line>();
+    lines.forEach((l) => {
+      const k = String(l.department_id ?? 'none');
+      let g = map.get(k);
+      if (!g) {
+        g = { __group: true, employee_id: -(l.department_id ?? 0) - 1, name: l.department || 'بدون قسم',
+          children: [] } as any;
+        SUM_KEYS.forEach((key) => { (g as any)[key] = 0; });
+        map.set(k, g!);
+      }
+      g!.children!.push(l);
+      SUM_KEYS.forEach((key) => { (g as any)[key] = n((g as any)[key]) + n(l[key]); });
+    });
+    return [...map.values()].map((g) => ({
+      ...g,
+      name: `${g.name} (${g.children!.length})${total ? ` — ${Math.round((n(g.earnings) / total) * 1000) / 10}%` : ''}`,
+    }));
+  }, [byDept, lines]);
   const monthCols = useTableColumns('salary-month', monthColumns as any, {
     locked: ['name'],
     export: {
       name: `مرتبات ${year}-${String(month).padStart(2, '0')} ${branchName(branchId)}`,
-      rows: lines.map((l) => ({ ...l, other_deductions: n(l.other_deductions) - n(l.absence),
-                                paid: l.paid ? 'مصروف' : '' })),
+      rows: lines.map((l) => ({ ...l, paid: l.paid ? 'مصروف' : '' })),
     },
   });
   const monthKb = useTableKeyboard<Line>({
@@ -496,6 +574,8 @@ export default function Payroll() {
           <Select allowClear placeholder="الصرف" style={{ minWidth: 130 }} value={monthFilter.values.paid}
             onChange={(v) => monthFilter.setValue('paid', v)}
             options={[{ value: 'yes', label: 'مصروف' }, { value: 'no', label: 'غير مصروف' }]} />
+          <Segmented value={byDept ? 'dept' : 'flat'} onChange={(v) => setByDept(v === 'dept')}
+            options={[{ value: 'dept', label: 'بالأقسام' }, { value: 'flat', label: 'قائمة' }]} />
         </>) : tab === 'employees' ? (<>
           <Input className="sl-f-search" allowClear ref={searchRef} value={empFilter.query}
             placeholder="بحث بالاسم أو الرقم" prefix={<SearchOutlined />}
@@ -536,8 +616,11 @@ export default function Payroll() {
         {extra ? extra.body : tab === 'month' ? (
           <Table<Line>
             {...monthKb.tableProps}
+            key={byDept ? `dept-${groupedLines.length}-${lines.length}` : 'flat'}
             className="sl-table" rowKey="employee_id" size="small" loading={loading}
-            dataSource={lines}
+            dataSource={groupedLines}
+            expandable={byDept ? { defaultExpandAllRows: true } : undefined}
+            rowClassName={(r: Line) => (r.__group ? 'ta-group-row' : '')}
             locale={{ emptyText: run ? 'لا يوجد موظفون' : 'لم تُحسب مرتبات هذا الشهر' }}
             pagination={{ defaultPageSize: 100, showSizeChanger: true }}
             scroll={{ x: 'max-content' }}
@@ -706,6 +789,9 @@ function MonthLine({ line, run, editable, onClose, onChanged, onPrint, onPay, on
     commission_override: line?.commission_override !== null && line?.commission_override !== undefined ? Number(line.commission_override) : undefined as number | undefined,
     extra_earning: line?.extra_earning ? Number(line.extra_earning) : undefined as number | undefined,
     extra_deduction: line?.extra_deduction ? Number(line.extra_deduction) : undefined as number | undefined,
+    overtime_hours: line?.overtime_hours ? Number(line.overtime_hours) : undefined as number | undefined,
+    extra_days: line?.extra_days ? Number(line.extra_days) : undefined as number | undefined,
+    transport: line?.transport ? Number(line.transport) : undefined as number | undefined,
     notes: line?.notes || '',
   });
   const [saving, setSaving] = useState(false);
@@ -719,6 +805,9 @@ function MonthLine({ line, run, editable, onClose, onChanged, onPrint, onPay, on
         commission_override: form.commission_override ?? null,
         extra_earning: form.extra_earning ?? null,
         extra_deduction: form.extra_deduction ?? null,
+        overtime_hours: form.overtime_hours ?? null,
+        extra_days: form.extra_days ?? null,
+        transport: form.transport ?? null,
         notes: form.notes || null,
       });
       onChanged(res.data);
@@ -792,9 +881,24 @@ function MonthLine({ line, run, editable, onClose, onChanged, onPrint, onPay, on
               onChange={(v) => setForm({ ...form, commission_override: v ?? undefined })} />
           </Col>
           <Col xs={12} md={6}>
-            <div style={{ marginBottom: 4 }}>إضافة</div>
+            <div style={{ marginBottom: 4 }}>حافز</div>
             <InputNumber style={{ width: '100%' }} min={0} value={form.extra_earning}
               onChange={(v) => setForm({ ...form, extra_earning: v ?? undefined })} />
+          </Col>
+          <Col xs={12} md={6}>
+            <div style={{ marginBottom: 4 }}>ساعات الإضافي</div>
+            <InputNumber style={{ width: '100%' }} value={form.overtime_hours}
+              onChange={(v) => setForm({ ...form, overtime_hours: v ?? undefined })} />
+          </Col>
+          <Col xs={12} md={6}>
+            <div style={{ marginBottom: 4 }}>أيام إضافي</div>
+            <InputNumber style={{ width: '100%' }} min={0} value={form.extra_days}
+              onChange={(v) => setForm({ ...form, extra_days: v ?? undefined })} />
+          </Col>
+          <Col xs={12} md={6}>
+            <div style={{ marginBottom: 4 }}>انتقالات</div>
+            <InputNumber style={{ width: '100%' }} min={0} value={form.transport}
+              onChange={(v) => setForm({ ...form, transport: v ?? undefined })} />
           </Col>
           <Col xs={12} md={6}>
             <div style={{ marginBottom: 4 }}>خصم</div>

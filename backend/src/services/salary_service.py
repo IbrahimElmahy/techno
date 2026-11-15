@@ -350,7 +350,9 @@ def _absent_days(db: Session, employee_id: int, year: int, month: int) -> Decima
     return to_qty(Decimal(n))
 
 
-_MANUAL = ("commission_override", "absent_override", "extra_earning", "extra_deduction", "notes")
+_MANUAL = ("commission_override", "absent_override", "extra_earning", "extra_deduction", "notes",
+           "overtime_hours", "extra_days", "transport")
+_SIGNED = {"overtime_hours"}
 
 
 def _wipe_line(db: Session, line: PayrollLine) -> None:
@@ -391,6 +393,25 @@ def _build_line(db: Session, run: PayrollRun, emp: Employee, manual: dict) -> Pa
 
     daily_base = basic + (earn_items if cfg.absence_basis == AbsenceBasis.gross else ZERO)
     daily = daily_base / per_month if per_month else ZERO
+    ot_factor = (_d(cfg.overtime_normal_pct) / Decimal("100")) if cfg.overtime_normal_pct else Decimal(1)
+
+    ot_hours = to_qty(_d(manual.get("overtime_hours")))
+    ot_amount = to_money(ot_hours * daily / hours * ot_factor) if ot_hours else ZERO
+    if ot_amount > 0:
+        details.append(dict(source=DetailSource.overtime, label="ساعات إضافي",
+                            kind=DetailKind.earning, quantity=ot_hours, amount=ot_amount))
+    elif ot_amount < 0:
+        details.append(dict(source=DetailSource.overtime, label="عجز ساعات",
+                            kind=DetailKind.deduction, quantity=-ot_hours, amount=-ot_amount))
+    extra_days = to_qty(_d(manual.get("extra_days")))
+    extra_days_amount = to_money(extra_days * daily) if extra_days else ZERO
+    if extra_days_amount:
+        details.append(dict(source=DetailSource.overtime, label="أيام إضافي",
+                            kind=DetailKind.earning, quantity=extra_days, amount=extra_days_amount))
+    transport = to_money(_d(manual.get("transport")))
+    if transport:
+        details.append(dict(source=DetailSource.manual, label="انتقالات",
+                            kind=DetailKind.earning, amount=transport))
 
     att_days = _absent_days(db, emp.id, run.year, run.month)
     days = to_qty(_d(manual.get("absent_override"))) if manual.get("absent_override") is not None \
@@ -458,7 +479,7 @@ def _build_line(db: Session, run: PayrollRun, emp: Employee, manual: dict) -> Pa
     extra_earning = to_money(_d(manual.get("extra_earning")))
     extra_deduction = to_money(_d(manual.get("extra_deduction")))
     if extra_earning:
-        details.append(dict(source=DetailSource.manual, label="إضافة يدوية",
+        details.append(dict(source=DetailSource.manual, label="حافز",
                             kind=DetailKind.earning, amount=extra_earning))
     if extra_deduction:
         details.append(dict(source=DetailSource.manual, label="خصم يدوي",
@@ -476,8 +497,10 @@ def _build_line(db: Session, run: PayrollRun, emp: Employee, manual: dict) -> Pa
         details.append(dict(source=DetailSource.insurance, label="تأمينات",
                             kind=DetailKind.deduction, amount=insurance))
 
-    earnings = to_money(basic + earn_items + commission + bonuses + other_earn + extra_earning)
-    reduce = to_money(absence + card_deductions + other_ded + extra_deduction)
+    shortage = to_money(-ot_amount) if ot_amount < 0 else ZERO
+    earnings = to_money(basic + earn_items + commission + bonuses + other_earn + extra_earning
+                        + (ot_amount if ot_amount > 0 else ZERO) + extra_days_amount + transport)
+    reduce = to_money(absence + card_deductions + other_ded + extra_deduction + shortage)
     gross = to_money(earnings - reduce)
     net = to_money(gross - penalties - advances - insurance)
 
@@ -490,7 +513,10 @@ def _build_line(db: Session, run: PayrollRun, emp: Employee, manual: dict) -> Pa
         absence_deduction=absence, penalty_amount=penalties,
         bonus_amount=to_money(bonuses + other_earn),
         insurance_employee=insurance, advance_deduction=advances,
-        other_deductions=to_money(card_deductions + other_ded + extra_deduction),
+        other_deductions=to_money(card_deductions + other_ded + extra_deduction + shortage),
+        overtime_hours=ot_hours, overtime_amount=ot_amount, extra_days=extra_days or None,
+        extra_days_amount=extra_days_amount or None, transport=transport or None,
+        daily_rate=to_money(daily),
         total_deductions=to_money(reduce + penalties + advances + insurance),
         net=net, has_attendance=att_days > 0,
         commission=commission, commission_base=base,
@@ -618,7 +644,7 @@ def update_line(db: Session, *, run_id: int, employee_id: int, fields: dict,
                 manual[k] = None
             else:
                 num = _d(v)
-                if num < 0:
+                if num < 0 and k not in _SIGNED:
                     raise SalaryError("لا يمكن إدخال قيمة سالبة.")
                 manual[k] = num
     _wipe_line(db, line)
@@ -779,18 +805,32 @@ def delete_draft(db: Session, *, run_id: int, actor_user_id: int) -> None:
                          before={"document_number": number})
 
 
-def _line_out(line: PayrollLine, emp: Employee | None, details: list[PayrollLineDetail]) -> dict:
+def _line_out(line: PayrollLine, emp: Employee | None, details: list[PayrollLineDetail],
+              names: dict | None = None) -> dict:
     def s(v):
         return str(v) if v is not None else None
+    names = names or {}
+    ot_pos = _d(line.overtime_amount) if _d(line.overtime_amount) > 0 else ZERO
     return {
         "line_id": line.id, "employee_id": line.employee_id,
         "code": emp.code if emp else None, "name": emp.name if emp else None,
+        "department_id": line.department_id,
+        "department": names.get(("d", line.department_id)),
+        "job_title": names.get(("j", line.job_title_id)),
         "basic": s(line.basic),
         "allowances": s(to_money(_d(line.allowances) - _d(line.commission)
-                                 - _d(line.bonus_amount) - _d(line.extra_earning))),
+                                 - _d(line.bonus_amount) - _d(line.extra_earning)
+                                 - ot_pos - _d(line.extra_days_amount) - _d(line.transport))),
+        "daily_rate": s(line.daily_rate),
+        "overtime_hours": s(line.overtime_hours if _d(line.overtime_hours) else None),
+        "overtime_amount": s(line.overtime_amount),
+        "extra_days": s(line.extra_days), "extra_days_amount": s(line.extra_days_amount),
+        "transport": s(line.transport), "incentive": s(line.extra_earning),
+        "days_in_month": line.days_in_month,
+        "days_present": s(to_qty(Decimal(line.days_in_month or 30) - _d(line.days_absent))),
         "commission": s(line.commission or ZERO), "commission_base": s(line.commission_base),
         "commission_override": s(line.commission_override),
-        "bonuses": s(to_money(_d(line.bonus_amount) + _d(line.extra_earning))),
+        "bonuses": s(to_money(_d(line.bonus_amount))),
         "earnings": s(to_money(_d(line.basic) + _d(line.allowances))),
         "days_absent": s(line.days_absent), "absent_override": s(line.absent_override),
         "absence": s(line.absence_deduction), "penalties": s(line.penalty_amount),
@@ -822,7 +862,12 @@ def month_out(db: Session, *, branch_id: int, year: int, month: int) -> dict:
             PayrollLineDetail.line_id.in_([x.id for x in lines] or [-1]))
             .order_by(PayrollLineDetail.id)).all():
         details[d.line_id].append(d)
-    rows = sorted((_line_out(x, emps.get(x.employee_id), details[x.id]) for x in lines),
+    from src.models.employee import JobTitle
+    from src.models.hr_org import Department
+
+    names = {("d", i): n for i, n in db.execute(select(Department.id, Department.name)).all()}
+    names.update({("j", i): n for i, n in db.execute(select(JobTitle.id, JobTitle.name)).all()})
+    rows = sorted((_line_out(x, emps.get(x.employee_id), details[x.id], names) for x in lines),
                   key=lambda r: r["name"] or "")
     in_run = {x.employee_id for x in lines}
     outside = [e for e in db.scalars(select(Employee).where(

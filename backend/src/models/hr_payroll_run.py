@@ -124,6 +124,10 @@ class PayrollLine(Base):
     absent_override: Mapped[object | None] = mapped_column(QTY, nullable=True)
     extra_earning: Mapped[object | None] = mapped_column(MONEY, nullable=True)
     extra_deduction: Mapped[object | None] = mapped_column(MONEY, nullable=True)
+    extra_days: Mapped[object | None] = mapped_column(QTY, nullable=True)
+    extra_days_amount: Mapped[object | None] = mapped_column(MONEY, nullable=True)
+    transport: Mapped[object | None] = mapped_column(MONEY, nullable=True)
+    daily_rate: Mapped[object | None] = mapped_column(MONEY, nullable=True)
     notes: Mapped[str | None] = mapped_column(String(300), nullable=True)
 
 
