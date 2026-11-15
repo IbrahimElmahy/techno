@@ -529,6 +529,10 @@ const Inspections: React.FC<{ fixedKind?: 'technician' | 'regular' }> = ({ fixed
   const visitColumns: ColumnsType<InspectionRecord> = [
     { title: 'تاريخ الزيارة', dataIndex: 'inspection_date', width: 120 },
     { title: 'المندوب', dataIndex: 'rep_user_id', width: 160, render: repName },
+    { title: 'الفني', dataIndex: 'owner_name', width: 200,
+      render: (v: string, r: InspectionRecord) => (r.customer_id
+        ? <a onClick={(e) => { e.stopPropagation(); navigate(`/customers/${r.customer_id}`); }}>{v}</a>
+        : (v || '—')) },
     {
       title: 'التقرير',
       dataIndex: 'visit_details',

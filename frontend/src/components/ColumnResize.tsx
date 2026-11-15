@@ -53,6 +53,51 @@ function colsAt(table: HTMLElement, index: number): HTMLElement[] {
     .filter((c): c is HTMLElement => !!c);
 }
 
+function leafWidths(root: Element, count: number): number[] | null {
+  const measure = root.querySelector<HTMLElement>('.ant-table-body tr.ant-table-measure-row, .ant-table-tbody tr.ant-table-measure-row');
+  const candidates: (HTMLElement | null)[] = [
+    measure,
+    root.querySelector<HTMLElement>('.ant-table-tbody > tr.ant-table-row'),
+    root.querySelector<HTMLElement>('.ant-table-thead > tr:last-child'),
+  ];
+  for (const row of candidates) {
+    if (!row) continue;
+    const cells = [...row.children] as HTMLTableCellElement[];
+    if (cells.length < count || cells.some((c) => (c.colSpan || 1) > 1)) continue;
+    const w = cells.slice(0, count).map((c) => c.getBoundingClientRect().width);
+    if (w.every((x) => x > 0)) return w;
+  }
+  return null;
+}
+
+function freeze(root: Element): number | null {
+  const tables = [...root.querySelectorAll<HTMLElement>('table')];
+  const groups = tables.map((t) => t.querySelector(':scope > colgroup'));
+  const count = Math.min(...groups.map((g) => (g ? [...g.children]
+    .filter((c) => !(c as HTMLElement).classList.contains('ant-table-cell-scrollbar')).length : 0)));
+  if (!count || !Number.isFinite(count)) return null;
+  const widths = leafWidths(root, count);
+  if (!widths) return null;
+  const total = Math.round(widths.reduce((a, b) => a + b, 0));
+  groups.forEach((g) => {
+    if (!g) return;
+    widths.forEach((w, i) => {
+      const col = g.children[i] as HTMLElement | undefined;
+      if (col) col.style.width = `${Math.round(w)}px`;
+    });
+  });
+  tables.forEach((t) => {
+    t.style.tableLayout = 'fixed';
+    t.style.width = `${total}px`;
+    t.style.minWidth = '';
+  });
+  return total;
+}
+
+function setTableWidth(root: Element, width: number) {
+  root.querySelectorAll<HTMLElement>('table').forEach((t) => { t.style.width = `${width}px`; });
+}
+
 function onGrip(th: HTMLElement, clientX: number): boolean {
   const r = th.getBoundingClientRect();
   const rtl = getComputedStyle(th).direction === 'rtl';
@@ -112,7 +157,7 @@ export default function ColumnResizeProvider({ children }: { children: React.Rea
   useEffect(() => {
     let widths = shared;
     let drag: { th: HTMLElement; table: HTMLElement; index: number; startX: number;
-      startWidth: number; key: string } | null = null;
+      startWidth: number; key: string; root: Element | null; tableWidth: number | null } | null = null;
 
     const onMove = (e: PointerEvent) => {
       if (!drag) {
@@ -124,6 +169,7 @@ export default function ColumnResizeProvider({ children }: { children: React.Rea
       const delta = rtl ? drag.startX - e.clientX : e.clientX - drag.startX;
       const next = Math.max(MIN_WIDTH, Math.round(drag.startWidth + delta));
       colsAt(drag.table, drag.index).forEach((col) => { col.style.width = `${next}px`; });
+      if (drag.root && drag.tableWidth) setTableWidth(drag.root, drag.tableWidth + next - drag.startWidth);
       syncHeaders();
       widths[drag.key] = next;
       emit();
@@ -145,13 +191,18 @@ export default function ColumnResizeProvider({ children }: { children: React.Rea
       const index = indexOf(th);
       if (!table || index < 0) return;
 
-      table.closest('.ant-table')?.querySelectorAll('table').forEach((t) => {
-        (t as HTMLElement).style.tableLayout = 'fixed';
-      });
+      const root = table.closest('.ant-table');
+      const startWidth = th.getBoundingClientRect().width;
+      const tableWidth = root ? freeze(root) : null;
+      if (!tableWidth) {
+        root?.querySelectorAll('table').forEach((t) => {
+          (t as HTMLElement).style.tableLayout = 'fixed';
+        });
+      }
 
       drag = {
         th, table, index, startX: e.clientX,
-        startWidth: th.getBoundingClientRect().width, key: keyFor(th),
+        startWidth, key: keyFor(th), root, tableWidth,
       };
       document.body.style.userSelect = 'none';
       document.body.style.cursor = 'col-resize';
