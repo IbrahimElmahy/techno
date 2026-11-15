@@ -1443,13 +1443,6 @@ export default function Transfers() {
           <div className="sale-items-bar">
             <div className="sale-items-info">
               {editing && <b style={{ color: '#0f172a', fontSize: 15 }}>أصناف الإذن</b>}
-              {source && dest && route && !sameLocation && (
-                <span>
-                  {locationName(parseLoc(source).kind, parseLoc(source).id)}
-                  {' ← '}
-                  {locationName(parseLoc(dest).kind, parseLoc(dest).id)}
-                </span>
-              )}
             </div>
             {!editing && !viewOnly && (
               <Button type="primary" className="sale-green-btn" icon={<ShoppingCartOutlined />}
