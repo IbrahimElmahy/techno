@@ -71,7 +71,8 @@ def _sales_union(include_bonus: bool):
             sl.item_id.label("item_id"), cast(sl.price_tier, String(24)).label("tier"),
             (sl.quantity * func.coalesce(sl.unit_factor, one)).label("qty"),
             (sl.quantity * sl.unit_price).label("gross"),
-            (sl.line_total * _ratio(si.net, si.gross)).label("amount"),
+            (sl.line_total * _ratio(si.net, func.sum(sl.line_total).over(
+                partition_by=sl.invoice_id))).label("amount"),
             case((and_(sl.unit_price > 0, sl.unit_cost > sl.unit_price * 3), None),
                  else_=sl.unit_cost * sl.quantity).label("cost"),
             si.is_bonus.label("is_bonus"),
@@ -95,7 +96,8 @@ def _sales_union(include_bonus: bool):
             rl.item_id.label("item_id"), cast(literal(None), String(24)).label("tier"),
             (-rl.quantity * func.coalesce(rl.unit_factor, one)).label("qty"),
             (-rl.quantity * func.coalesce(rl.unit_price, 0)).label("gross"),
-            (-ret_amount * _ratio(sr.value, sr.gross)).label("amount"),
+            (-ret_amount * _ratio(sr.value, func.sum(ret_amount).over(
+                partition_by=rl.return_id))).label("amount"),
             case((and_(func.coalesce(rl.unit_price, 0) > 0, rl.unit_cost > rl.unit_price * 3), None),
                  else_=-rl.unit_cost * rl.quantity).label("cost"),
             cast(literal(None), Boolean).label("is_bonus"),
@@ -121,7 +123,8 @@ def _purchases_union():
             pl.item_id.label("item_id"), cast(literal(None), String(24)).label("tier"),
             (pl.quantity * func.coalesce(pl.unit_factor, one)).label("qty"),
             (pl.quantity * pl.unit_price).label("gross"),
-            (pl.line_total * _ratio(pi.net, pi.gross)).label("amount"),
+            (pl.line_total * _ratio(pi.net, func.sum(pl.line_total).over(
+                partition_by=pl.invoice_id))).label("amount"),
             cast(literal(None), Numeric(18, 2)).label("cost"),
             cast(literal(None), Boolean).label("is_bonus"),
         )
@@ -140,7 +143,8 @@ def _purchases_union():
             rl.item_id.label("item_id"), cast(literal(None), String(24)).label("tier"),
             (-rl.quantity * func.coalesce(rl.unit_factor, one)).label("qty"),
             (-rl.quantity * rl.unit_price).label("gross"),
-            (-rl.line_total * _ratio(pr.value, pr.gross)).label("amount"),
+            (-rl.line_total * _ratio(pr.value, func.sum(rl.line_total).over(
+                partition_by=rl.return_id))).label("amount"),
             cast(literal(None), Numeric(18, 2)).label("cost"),
             cast(literal(None), Boolean).label("is_bonus"),
         )
