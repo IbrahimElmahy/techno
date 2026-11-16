@@ -4,17 +4,18 @@ import json
 import re
 import sys
 from collections import defaultdict
-from datetime import datetime
+from datetime import date, datetime
+from decimal import Decimal
 
 import openpyxl
-from sqlalchemy import case, func, select
+from sqlalchemy import case, func, select, text
 
 from src.core.db import SessionLocal
 from src.models.a5_link import A5ItemLink
 from src.models.catalog import Item
 from src.models.lookup import LookupOption
-from src.models.stock import StockMovement, StockDirection
-from src.services import audit_service
+from src.models.stock import ItemCostReset, LocationKind, StockDirection, StockMovement
+from src.services import audit_service, costing_service
 
 SHEETS = {"S": ("أصناف المصنع", "FC-"), "A": ("أصناف العلياء", "AL-"), "O": ("أصناف أكتوبر", "")}
 BRANCH_NAMES = {"S": "السادات", "A": "العلياء", "O": "أكتوبر", "P": "مشترك"}
@@ -138,19 +139,77 @@ def price_sheet_flags(db, renames):
     return {cat: sum(v) * 2 > len(v) for cat, v in hidden_of_new.items()}, opts
 
 
-def apply(db, renames, retire, actor: int, backup_path: str, flags, opts, cat_order):
+def _item_refs(db):
+    refs = []
+    for tbl, col in db.execute(text(
+            "select c.conrelid::regclass::text, a.attname from pg_constraint c "
+            "join pg_attribute a on a.attrelid = c.conrelid and a.attnum = c.conkey[1] "
+            "where c.contype = 'f' and c.confrelid = 'item'::regclass order by 1, 2")).all():
+        keys = [list(k) for k in db.execute(text(
+            "select array(select a.attname from unnest(c.conkey) k "
+            "join pg_attribute a on a.attrelid = c.conrelid and a.attnum = k) "
+            "from pg_constraint c where c.conrelid = cast(:t as regclass) and c.contype = 'u'"),
+            {"t": tbl}).scalars().all()]
+        refs.append((tbl, col, [k for k in keys if col in k]))
+    return refs
+
+
+PLACEHOLDER = {"item_price": ("price", Decimal("1")), "product_point_value": ("point_value", Decimal("0"))}
+
+
+def merge_items(db, refs, loser: int, winner: int) -> dict:
+    moved, deleted, updated, conflicts = [], [], [], []
+    for tbl, col, keys in refs:
+        for key in keys:
+            others = [k for k in key if k != col]
+            cond = " and ".join(f'l."{k}" is not distinct from w."{k}"' for k in others) or "true"
+            dups = db.execute(text(
+                f'select l.id, row_to_json(l)::text from "{tbl}" l where l."{col}" = :lo and exists '
+                f'(select 1 from "{tbl}" w where w."{col}" = :wi and {cond})'),
+                {"lo": loser, "wi": winner}).all()
+            if dups and tbl == "item_serial":
+                raise SystemExit(f"سيريال مكرر بين الصنفين {loser} و{winner} — لم يُحفظ شيء.")
+            for row_id, js in dups:
+                if tbl in PLACEHOLDER:
+                    col_v, floor = PLACEHOLDER[tbl]
+                    mine = json.loads(js)
+                    where = " and ".join(f'"{k}" = :{k}' for k in others) or "true"
+                    w_id, w_val = db.execute(text(
+                        f'select id, "{col_v}" from "{tbl}" where "{col}" = :wi and {where}'),
+                        {"wi": winner, **{k: mine[k] for k in others}}).first()
+                    l_val = Decimal(str(mine[col_v] or 0))
+                    w_val = Decimal(str(w_val or 0))
+                    kept = w_val
+                    if l_val != w_val and w_val <= floor < l_val:
+                        db.execute(text(f'update "{tbl}" set "{col_v}" = :v where id = :i'),
+                                   {"v": l_val, "i": w_id})
+                        updated.append(dict(table=tbl, id=w_id, column=col_v, old=str(w_val)))
+                        kept = l_val
+                    if l_val != w_val:
+                        conflicts.append(dict(table=tbl, key={k: mine[k] for k in others},
+                                              loser=str(l_val), winner=str(w_val), kept=str(kept)))
+                deleted.append(dict(table=tbl, row=js))
+                db.execute(text(f'delete from "{tbl}" where id = :i'), {"i": row_id})
+        ids = list(db.execute(text(f'select id from "{tbl}" where "{col}" = :lo'),
+                              {"lo": loser}).scalars().all())
+        if ids:
+            db.execute(text(f'update "{tbl}" set "{col}" = :wi where id = any(:ids)'),
+                       {"wi": winner, "ids": ids})
+            moved.append(dict(table=tbl, column=col, ids=ids))
+    return dict(loser=loser, winner=winner, moved=moved, deleted=deleted, updated=updated,
+                conflicts=conflicts)
+
+
+def apply(db, renames, retire, held, actor: int, backup_path: str, flags, opts, cat_order):
     snapshot = [dict(id=p["item"].id, code=p["item"].code, name=p["item"].name,
                      category=p["item"].category, active=p["item"].active)
-                for p in [*renames, *retire]]
+                for p in [*renames, *retire, *held]]
     links_moved = []
     for p in retire:
         for ln in db.scalars(select(A5ItemLink).where(A5ItemLink.item_id == p["item"].id)).all():
             links_moved.append(dict(id=ln.id, item_id=ln.item_id))
-    with open(backup_path, "w", encoding="utf-8") as fh:
-        json.dump(dict(items=snapshot, a5_links=links_moved,
-                       lookups=[dict(id=o.id, value=o.value, active=o.active,
-                                     hidden=o.hidden_in_price_sheet) for o in opts.values()]),
-                  fh, ensure_ascii=False)
+    lookups = [dict(id=o.id, value=o.value, active=o.active, hidden=o.hidden_in_price_sheet,
+                    sort_order=o.sort_order) for o in opts.values()]
 
     for p in renames:
         p["item"].code = f"~U{p['item'].id}"
@@ -165,6 +224,41 @@ def apply(db, renames, retire, actor: int, backup_path: str, flags, opts, cat_or
         for ln in db.scalars(select(A5ItemLink).where(A5ItemLink.item_id == p["item"].id)).all():
             ln.item_id = p["into"]["item"].id
     db.flush()
+    refs = _item_refs(db)
+    groups = defaultdict(set)
+    for p in held:
+        groups[p["into"]["item"].id].add(p["item"].id)
+    signed = case((StockMovement.direction == StockDirection.in_, StockMovement.quantity),
+                  else_=-StockMovement.quantity)
+    targets = {}
+    for winner, losers in groups.items():
+        ids = [winner, *losers]
+        qty = {i: Decimal(str(q or 0)) for i, q in db.execute(
+            select(StockMovement.item_id, func.sum(signed))
+            .where(StockMovement.item_id.in_(ids),
+                   StockMovement.location_kind == LocationKind.warehouse)
+            .group_by(StockMovement.item_id)).all()}
+        costs = costing_service.known_costs(db, ids)
+        total_q = sum((qty.get(i, Decimal(0)) for i in ids), Decimal(0))
+        total_v = sum((qty.get(i, Decimal(0)) * costs.get(i, Decimal(0)) for i in ids), Decimal(0))
+        if total_q > 0:
+            targets[winner] = total_v / total_q
+    merges = []
+    for p in held:
+        merges.append(merge_items(db, refs, p["item"].id, p["into"]["item"].id))
+        p["item"].active = False
+    db.flush()
+    cost_resets = []
+    for winner, unit_cost in targets.items():
+        row = ItemCostReset(item_id=winner, effective_date=date.today(), unit_cost=unit_cost,
+                            note="توحيد الأصناف: متوسط التكلفة قبل الدمج", actor_user_id=actor)
+        db.add(row)
+        db.flush()
+        cost_resets.append(row.id)
+    with open(backup_path, "w", encoding="utf-8") as fh:
+        json.dump(dict(items=snapshot, a5_links=links_moved, lookups=lookups, merges=merges,
+                       cost_resets=cost_resets),
+                  fh, ensure_ascii=False)
 
     last = max((o.sort_order for o in opts.values()), default=0)
     for i, cat in enumerate(cat_order, start=1):
@@ -190,11 +284,12 @@ def apply(db, renames, retire, actor: int, backup_path: str, flags, opts, cat_or
     audit_service.record(db, action="items.unify_names", actor_user_id=actor,
                          entity_type="item", entity_id=None,
                          after={"renamed": len(renames), "retired": len(retire),
+                                "merged": len(held),
                                 "categories_closed": closed, "backup": backup_path})
-    return closed
+    return closed, merges
 
 
-def write_review(path, renames, retire, held, report, by_code, activity):
+def write_review(path, renames, retire, held, report, by_code, activity, merges=()):
     wb = openpyxl.Workbook()
     ws = wb.active
     ws.title = "اتطبق"
@@ -210,13 +305,23 @@ def write_review(path, renames, retire, held, report, by_code, activity):
     for p in retire:
         ws.append([BRANCH_NAMES[p["b"]], p["item"].code, p["item"].name,
                    p["into"]["target_code"], p["into"]["target_name"]])
-    ws = wb.create_sheet("دمج محتاج قرار")
-    ws.append(["الفرع", "الكود", "الاسم", "حركات", "رصيد", "المفروض يندمج في", "الاسم الموحد",
+    ws = wb.create_sheet("اتدمج")
+    ws.append(["الفرع", "الكود", "الاسم", "حركات", "رصيد", "اندمج في", "الاسم الموحد",
                "حركات الأساسي", "رصيد الأساسي"])
     for p in held:
         ws.append([BRANCH_NAMES[p["b"]], p["item"].code, p["item"].name, p["n"], p["bal"],
                    p["into"]["target_code"], p["into"]["target_name"],
                    p["into"]["n"], p["into"]["bal"]])
+    ws = wb.create_sheet("أسعار ونقاط مختلفة")
+    ws.append(["الصنف الموحد", "الصنف المندمج", "النوع", "الفئة السعرية", "قيمة المندمج",
+               "قيمة الموحد", "اللي اتساب"])
+    names = {p["item"].id: (p.get("target_code") or p["item"].code, p.get("target_name") or p["item"].name)
+             for p in [*renames, *held]}
+    for m in merges:
+        for c in m.get("conflicts", []):
+            ws.append([" ".join(names.get(m["winner"], ("", ""))), " ".join(names.get(m["loser"], ("", ""))),
+                       "سعر" if c["table"] == "item_price" else "نقاط", c["key"].get("tier", ""),
+                       c["loser"], c["winner"], c["kept"]])
     ws = wb.create_sheet("صنف واحد بكودين")
     ws.append(["الفرع", "الكود", "الاسم", "اتطبق عليه", "الكود التاني في الملف", "اسمه"])
     for r in report.get("صنف واحد بكودين جداد", []):
@@ -250,6 +355,20 @@ def restore(backup: str, actor: int) -> None:
     data = json.load(open(backup, encoding="utf-8"))
     db = SessionLocal()
     try:
+        for rid in data.get("cost_resets", []):
+            db.execute(text("delete from item_cost_reset where id = :i"), {"i": rid})
+        for m in reversed(data.get("merges", [])):
+            for u in m.get("updated", []):
+                db.execute(text(f'update "{u["table"]}" set "{u["column"]}" = :v where id = :i'),
+                           {"v": u["old"], "i": u["id"]})
+            for mv in m["moved"]:
+                db.execute(text(f'update "{mv["table"]}" set "{mv["column"]}" = :lo '
+                                f'where id = any(:ids)'), {"lo": m["loser"], "ids": mv["ids"]})
+            for d in m["deleted"]:
+                db.execute(text(f'insert into "{d["table"]}" select * from '
+                                f'json_populate_record(null::"{d["table"]}", cast(:js as json))'),
+                           {"js": d["row"]})
+        db.flush()
         rows = {r["id"]: r for r in data["items"]}
         items = db.scalars(select(Item).where(Item.id.in_(list(rows)))).all()
         for it in items:
@@ -267,6 +386,7 @@ def restore(backup: str, actor: int) -> None:
             row = db.get(LookupOption, o["id"])
             if row is not None:
                 row.active, row.hidden_in_price_sheet = o["active"], o["hidden"]
+                row.sort_order = o.get("sort_order", row.sort_order)
         for row in db.scalars(select(LookupOption).where(LookupOption.category == CATEGORY)).all():
             if row.id not in keep:
                 db.delete(row)
@@ -296,14 +416,15 @@ def run(path: str, *, execute: bool, actor: int, review: str, backup: str) -> No
         for cat in cat_order:
             print(f"  فئة {cat}: {'مخفية' if flags.get(cat) else 'ظاهرة'} في كشف الأسعار")
         if execute:
-            closed = apply(db, renames, retire, actor, backup, flags, opts, cat_order)
+            closed, merges = apply(db, renames, retire, held, actor, backup, flags, opts, cat_order)
             print("فئات اتقفلت لأن مافيش صنف عليها:", "، ".join(closed) or "—")
             db.commit()
             print("اتحفظ. نسخة الرجوع:", backup)
         else:
             db.rollback()
             print("تجربة فقط — أضف --yes للحفظ.")
-        write_review(review, renames, retire, held, report, by_code, activity)
+        write_review(review, renames, retire, held, report, by_code, activity,
+                     merges if execute else [])
         print("ملف المراجعة:", review)
     finally:
         db.close()
