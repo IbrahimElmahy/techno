@@ -438,12 +438,14 @@ def _build_line(db: Session, run: PayrollRun, emp: Employee, manual: dict) -> Pa
 
     daily_base = basic + (earn_items if cfg.absence_basis == AbsenceBasis.gross else ZERO)
     daily = daily_base / per_month if per_month else ZERO
+    month_hours = Decimal(cfg.hours_per_month or 0)
+    hourly = daily_base / month_hours if month_hours else daily / hours
     ot_factor = (_d(cfg.overtime_normal_pct) / Decimal("100")) if cfg.overtime_normal_pct else Decimal(1)
 
     ot_hours = to_qty(_d(manual.get("overtime_hours")))
     if ot_hours < 0:
         ot_factor = (_d(cfg.shortage_pct) / Decimal("100")) if cfg.shortage_pct else Decimal(1)
-    ot_amount = to_money(ot_hours * daily / hours * ot_factor) if ot_hours else ZERO
+    ot_amount = to_money(ot_hours * hourly * ot_factor) if ot_hours else ZERO
     if ot_amount > 0:
         details.append(dict(source=DetailSource.overtime, label="ساعات إضافي",
                             kind=DetailKind.earning, quantity=ot_hours, amount=ot_amount))
@@ -497,7 +499,7 @@ def _build_line(db: Session, run: PayrollRun, emp: Employee, manual: dict) -> Pa
         if adj.basis == AdjustmentBasis.days:
             amount = to_money(_d(adj.quantity) * daily)
         elif adj.basis == AdjustmentBasis.hours:
-            amount = to_money(_d(adj.quantity) * daily / hours)
+            amount = to_money(_d(adj.quantity) * hourly)
         else:
             amount = to_money(_d(adj.amount))
         if not amount:

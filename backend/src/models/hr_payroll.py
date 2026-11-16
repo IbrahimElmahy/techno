@@ -121,6 +121,7 @@ class PayrollSetting(Base):
     id: Mapped[int] = mapped_column(BigIntPK, primary_key=True, autoincrement=True)
     days_per_month: Mapped[int] = mapped_column(Integer, default=30, nullable=False)
     hours_per_day: Mapped[object] = mapped_column(QTY, default=8, nullable=False)
+    hours_per_month: Mapped[int] = mapped_column(Integer, default=192, nullable=False)
     overtime_normal_pct: Mapped[object] = mapped_column(PCT, default=135, nullable=False)
     overtime_holiday_pct: Mapped[object] = mapped_column(PCT, default=200, nullable=False)
     shortage_pct: Mapped[object] = mapped_column(PCT, default=100, nullable=False)
