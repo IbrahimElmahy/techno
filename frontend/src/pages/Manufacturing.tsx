@@ -31,12 +31,13 @@ import { useTableColumns } from '../components/ColumnSettings';
 import StatsRow from '../components/StatsRow';
 import { money, numeralsLocale, qty } from '../utils/money';
 import { activeOptions } from '../utils/active';
+import { useLookup } from '../hooks/useLookup';
 interface Warehouse { id: number; name: string; branch_id?: number | null; }
 interface BranchRef { id: number; name: string; is_factory?: boolean; }
 interface Item {
   id: number; code: string; name: string;
   kind: 'raw_material' | 'product'; unit_of_measure: string;
-  purchase_price: string | null; active: boolean;
+  purchase_price: string | null; active: boolean; category?: string | null;
 }
 type Stage = 'production' | 'quality';
 
@@ -267,9 +268,17 @@ function RecipesTab({
     search: (b) => [b.name, itemName(b.product_id)],
     filters: {
       product_id: (b, v) => b.product_id === v,
-      active: (b, v) => b.active === (v === 'active'),
+      category: (b, v) => (products.find((p) => p.id === b.product_id)?.category ?? '') === v,
     },
   });
+  const { options: categoryOptions } = useLookup('item_category');
+  const categoryChoices = useMemo(() => {
+    const label = Object.fromEntries(categoryOptions.map((o: any) => [o.value, o.label]));
+    const used = new Set(boms.map((b) => products.find((p) => p.id === b.product_id)?.category)
+      .filter(Boolean) as string[]);
+    return [...used].map((c) => ({ value: c, label: label[c] || c }))
+      .sort((a, b) => String(a.label).localeCompare(String(b.label), 'ar'));
+  }, [boms, products, categoryOptions]);
 
   const openCreate = () => {
     setEditing(null);
@@ -394,12 +403,9 @@ function RecipesTab({
           value={filter.values.product_id} onChange={(v) => filter.setValue('product_id', v)}
           options={products.map((p) => ({ value: p.id, label: p.name }))}
           filterOption={searchFilter} filterSort={searchRank} />
-        <Select allowClear mode="multiple" maxTagCount="responsive" placeholder="الحالة"
-          value={filter.values.active} onChange={(v) => filter.setValue('active', v)}
-          options={[
-            { value: 'active', label: 'نشطة' },
-            { value: 'inactive', label: 'غير نشطة' },
-          ]} />
+        <Select allowClear showSearch mode="multiple" maxTagCount="responsive" placeholder="فئة الصنف"
+          value={filter.values.category} onChange={(v) => filter.setValue('category', v)}
+          options={categoryChoices} filterOption={searchFilter} filterSort={searchRank} />
         <Button className="sl-f-clear" icon={<ClearOutlined />} onClick={filter.reset}>مسح</Button>
       </>)}
     >
