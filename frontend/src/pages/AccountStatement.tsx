@@ -31,7 +31,7 @@ import { printStatement } from '../print/statementSheet';
 import './AccountStatement.css';
 
 import { money, numeralsLocale } from '../utils/money';
-import { runningTotals } from '../utils/statementOrder';
+import { chronological, runningTotals } from '../utils/statementOrder';
 type Subject = 'account' | 'item';
 
 interface StatementLine {
@@ -502,7 +502,7 @@ export default function AccountStatement() {
     const q = normalizeAr(qRaw).toLowerCase();
     const dRaw = docNo.trim();
     const d = normalizeAr(dRaw).toLowerCase();
-    return lines.filter((l) => {
+    return chronological(lines.filter((l) => {
       if (repFilter && l.rep_name !== repFilter) return false;
       if (typeFilter.length && !typeFilter.includes(entryTypeLabel(l.entry_type))) return false;
       if (ccFilter.length && !ccFilter.includes(l.cost_center_name ?? '')) return false;
@@ -520,7 +520,7 @@ export default function AccountStatement() {
         const n = normalizeAr(v);
         return exactMatch ? n === q : n.includes(q);
       });
-    })
+    }))
       .map((l, i) => {
         const [bd, bc] = splitBalance(l.balance, stmtSide);
         return {
@@ -537,7 +537,7 @@ export default function AccountStatement() {
   const totalDue = Number(statement?.total_due || 0);
   const totalOverdue = Number(statement?.total_overdue || 0);
   const runningOf = useMemo(() => runningTotals(
-    shownLines, (l) => l._key ?? lineKey(l)), [shownLines]);
+    [...shownLines].reverse(), (l) => l._key ?? lineKey(l)), [shownLines]);
   const openDoc = useOpenDocument();
 
   const anchorRef = useRef<HTMLSpanElement>(null);
@@ -606,7 +606,7 @@ export default function AccountStatement() {
             balance_debit: bd, balance_credit: bc,
           };
         });
-        const run = runningTotals(own, rowKeyOf);
+        const run = runningTotals([...own].reverse(), rowKeyOf);
         const rows: StatementLine[] = own.map((l) => ({ ...l, _running: run.get(rowKeyOf(l)) ?? 0 }));
         if (wantsOpening(s.opening) || !rows.length) {
           rows.unshift(openingLine(s.opening, s.normal_side, `opening-${s.account_id}`,
@@ -673,7 +673,7 @@ export default function AccountStatement() {
       ...dateColumn<StatementLine>((l) => l.entry_date),
       sorter: (a: StatementLine, b: StatementLine) => String(a.entry_date || '').slice(0, 10)
         .localeCompare(String(b.entry_date || '').slice(0, 10))
-        || (Number(b._serial ?? 0) - Number(a._serial ?? 0)),
+        || (Number(a._serial ?? 0) - Number(b._serial ?? 0)),
       render: (d: string) => (d ? String(d).slice(0, 10) : '-') },
     { title: 'النوع', dataIndex: 'entry_type',
       ...textColumn(lines, (l: StatementLine) => entryTypeLabel(l.entry_type)),
