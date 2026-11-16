@@ -143,6 +143,21 @@ def save_card(
     return out
 
 
+@router.delete("/employees/{employee_id}")
+def delete_card(
+    employee_id: int,
+    current: CurrentUser = Depends(require_capability(CAP_PAYROLL_POST)),
+    db: Session = Depends(get_db),
+) -> dict:
+    emp = _employee(db, employee_id, current)
+    try:
+        svc.delete_card(db, employee=emp, actor_user_id=current.id)
+    except SalaryError as exc:
+        _raise(exc)
+    db.commit()
+    return {"ok": True}
+
+
 @router.get("/month")
 def month(
     year: int,

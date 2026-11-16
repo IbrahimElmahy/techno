@@ -7,6 +7,8 @@ import {
 } from '@ant-design/icons';
 import dayjs, { Dayjs } from 'dayjs';
 import { api } from '../api/client';
+import { useAuth } from '../components/AuthProvider';
+import { ownBranches } from '../utils/branchScope';
 import { useTableColumns } from '../components/ColumnSettings';
 import DateRangeFilter from '../components/DateRangeFilter';
 import { useQueryTab } from '../components/useQueryTab';
@@ -71,6 +73,7 @@ export const REPORT_VIEWS: Record<string, HrReportView> = {
 };
 
 export default function HrReports() {
+  const { user } = useAuth();
   const [viewKey] = useQueryTab('', 'view');
   const view: HrReportView | undefined = REPORT_VIEWS[viewKey];
 
@@ -99,7 +102,7 @@ export default function HrReports() {
       api.get('/api/v1/employees'), api.get('/api/v1/hr/departments'),
       api.get('/api/v1/branches'),
     ]).then(([e, d, b]) => {
-      setEmployees(e.data || []); setDepartments(d.data || []); setBranches(b.data || []);
+      setEmployees(e.data || []); setDepartments(d.data || []); setBranches(ownBranches(b.data || [], user));
     }).catch(console.error);
   }, []);
 
@@ -478,12 +481,14 @@ export default function HrReports() {
           onChange={(v) => { setDepartmentId(v); dropEmployeeUnlessFits(v, branchId); }}
           disabled={isBalances}
           options={sortByName(departments, (d: any) => d.name).map((d) => ({ value: d.id, label: d.name }))} filterOption={searchFilter} filterSort={searchRank}/>
-        <Select
-          allowClear placeholder="كل الفروع"
-          value={branchId} disabled={isBalances}
-          onChange={(v) => { setBranchId(v); dropEmployeeUnlessFits(departmentId, v); }}
-          options={branches.map((b) => ({ value: b.id, label: b.name }))}
-        />
+        {branches.length > 1 ? (
+          <Select
+            allowClear placeholder="كل الفروع"
+            value={branchId} disabled={isBalances}
+            onChange={(v) => { setBranchId(v); dropEmployeeUnlessFits(departmentId, v); }}
+            options={branches.map((b) => ({ value: b.id, label: b.name }))}
+          />
+        ) : null}
         {(subject === 'payroll' || subject === 'cost') && (
           <Select
             value={includeDrafts ? 'all' : 'posted'}

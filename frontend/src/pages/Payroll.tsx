@@ -11,7 +11,9 @@ import {
 import type { ColumnsType } from 'antd/es/table';
 import dayjs, { Dayjs } from 'dayjs';
 
-import { api } from '../api/client';
+import { api, getViewBranch } from '../api/client';
+import { useAuth } from '../components/AuthProvider';
+import { ownBranches } from '../utils/branchScope';
 import { useTableColumns } from '../components/ColumnSettings';
 import { useScreenShortcuts, useTableKeyboard } from '../components/keyboard';
 import ListPage, { ListStat } from '../components/ListPage';
@@ -106,6 +108,7 @@ const ruleText = (rules: Rule[]) => rules
   .join(' + ');
 
 export default function Payroll() {
+  const { user } = useAuth();
   const [tab, setTab] = useQueryTab('month');
   const [branches, setBranches] = useState<{ id: number; name: string }[]>([]);
   const [treasuries, setTreasuries] = useState<any[]>([]);
@@ -166,9 +169,10 @@ export default function Payroll() {
     loadEmps();
     loadRemits();
     api.get('/api/v1/branches').then((r) => {
-      const list = (r.data || []).filter((b: any) => b.active !== false);
+      const list = ownBranches<{ id: number; name: string }>((r.data || []).filter((b: any) => b.active !== false), user);
       setBranches(list);
-      const first = list[0]?.id as number | undefined;
+      const preferred = getViewBranch() ?? user?.branch_id;
+      const first = (list.find((b: any) => b.id === preferred) ?? list[0])?.id as number | undefined;
       setBranchId(first);
       loadMonth(first);
     }).catch(() => loadMonth());
@@ -185,6 +189,9 @@ export default function Payroll() {
     } catch (err: any) { fail(err, fallback); } finally { setBusy(false); }
   };
 
+  const deleteCard = (employeeId: number) => act(
+    () => api.delete(`/api/v1/hr/salary/employees/${employeeId}`),
+    'تم حذف كارت المرتب', 'تعذر حذف كارت المرتب');
   const calculate = () => act(
     () => api.post('/api/v1/hr/salary/month/calculate', { year, month, branch_id: branchId }),
     'تم حساب مرتبات الشهر', 'تعذر الحساب');
@@ -419,9 +426,17 @@ export default function Payroll() {
       render: (_: any, r: EmpRow) => (r.rules.length ? ruleText(r.rules) : '—') } as any,
     { title: 'ساري من', dataIndex: 'effective_from', key: 'effective_from', width: 110, total: false,
       render: (v: string | null) => v || '' } as any,
-    { title: '', key: 'x', width: 60, total: false,
+    { title: '', key: 'x', width: 90, total: false,
       render: (_: any, r: EmpRow) => (
-        <Button type="text" icon={<EditOutlined />} title="كارت المرتب" onClick={() => setCardOf(r.employee_id)} />
+        <Space size={0}>
+          <Button type="text" icon={<EditOutlined />} title="كارت المرتب" onClick={() => setCardOf(r.employee_id)} />
+          {r.has_card || r.insurance !== null || r.rules.length ? (
+            <Popconfirm title={`حذف كارت مرتب ${r.name}؟ الموظف نفسه لن يُحذف.`}
+              onConfirm={() => deleteCard(r.employee_id)}>
+              <Button type="text" danger icon={<DeleteOutlined />} title="حذف كارت المرتب" />
+            </Popconfirm>
+          ) : null}
+        </Space>
       ) } as any,
   ];
   const empCols = useTableColumns('salary-employees', empColumns as any, {

@@ -26,6 +26,7 @@ import { useQueryTab } from '../components/useQueryTab';
 import ReceiptModal from './vouchers/ReceiptModal';
 import EmployeeFormModal from '../components/EmployeeFormModal';
 import { useAuth } from '../components/AuthProvider';
+import { ownBranches } from '../utils/branchScope';
 import PaymentModal from './vouchers/PaymentModal';
 import { useQuickVoucher } from './vouchers/useQuickVoucher';
 import type { PartyKind } from './vouchers/PartyKind';
@@ -214,7 +215,7 @@ export default function EmployeeReceivables() {
   useEffect(() => { loadDues(); }, [loadDues]);
   useEffect(() => { if (!onDues) loadAdvances(); }, [onDues, loadAdvances]);
   useEffect(() => {
-    api.get('/api/v1/branches').then((r) => setBranches(r.data || [])).catch(() => {});
+    api.get('/api/v1/branches').then((r) => setBranches(ownBranches(r.data || [], user))).catch(() => {});
     api.get('/api/v1/employees').then((r) => setEmployees(r.data || [])).catch(() => {});
   }, []);
 
@@ -652,9 +653,11 @@ export default function EmployeeReceivables() {
       filters={onDues ? (<>
         <Input.Search className="sl-f-search" allowClear placeholder="بحث بالاسم أو الكود"
           onSearch={setQ} onChange={(e) => { if (!e.target.value) setQ(''); }} />
-        <Select className="sl-f-customer" allowClear placeholder="كل الفروع"
-          value={branchId} onChange={setBranchId}
-          options={branches.map((b) => ({ value: b.id, label: b.name }))} />
+        {branches.length > 1 ? (
+          <Select className="sl-f-customer" allowClear placeholder="كل الفروع"
+            value={branchId} onChange={setBranchId}
+            options={branches.map((b) => ({ value: b.id, label: b.name }))} />
+        ) : null}
       </>) : (<>
         <Select
           allowClear showSearch style={{ flex: '0 1 320px' }}

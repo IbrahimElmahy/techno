@@ -297,6 +297,51 @@ def save_card(
     return card(db, employee)
 
 
+def delete_card(db: Session, *, employee: Employee, actor_user_id: int) -> None:
+    from src.models.hr_payroll import EmployeeInsurance
+
+    posted = db.scalar(
+        select(func.count()).select_from(PayrollLine)
+        .join(PayrollRun, PayrollRun.id == PayrollLine.run_id)
+        .where(PayrollLine.employee_id == employee.id,
+               PayrollRun.status == PayrollRunStatus.posted)) or 0
+    if posted:
+        raise SalaryError("كارت المرتب عليه مرتبات مُرحّلة، فلا يمكن حذفه. "
+                          "ألغِ ترحيل تلك الشهور أولاً، أو أوقف الموظف بدلاً من الحذف.")
+    versions = db.scalars(select(EmployeeSalary).where(
+        EmployeeSalary.employee_id == employee.id)).all()
+    insurance = db.scalars(select(EmployeeInsurance).where(
+        EmployeeInsurance.employee_id == employee.id)).all()
+    rules = db.scalars(select(EmployeeCommissionRule).where(
+        EmployeeCommissionRule.employee_id == employee.id)).all()
+    if not (versions or insurance or rules):
+        raise SalaryError("لا يوجد كارت مرتب لهذا الموظف.")
+    touched = set()
+    for line in db.scalars(select(PayrollLine).join(PayrollRun, PayrollRun.id == PayrollLine.run_id)
+                           .where(PayrollLine.employee_id == employee.id,
+                                  PayrollRun.status == PayrollRunStatus.draft)).all():
+        touched.add(line.run_id)
+        _wipe_line(db, line)
+    for run_id in touched:
+        _refresh_totals(db, db.get(PayrollRun, run_id))
+    if versions:
+        for ln in db.scalars(select(EmployeeSalaryLine).where(
+                EmployeeSalaryLine.salary_id.in_([v.id for v in versions]))).all():
+            db.delete(ln)
+        db.flush()
+    for row in [*versions, *insurance, *rules]:
+        db.delete(row)
+    db.flush()
+    audit_service.record(
+        db, action="salary.card_delete", actor_user_id=actor_user_id,
+        entity_type="employee", entity_id=employee.id,
+        before={"name": employee.name, "versions": [
+            {"effective_from": str(v.effective_from), "basic": str(v.basic)} for v in versions],
+            "insurance": [str(i.amount) for i in insurance], "rules": len(rules),
+            "draft_runs": sorted(touched)},
+    )
+
+
 def save_rules(db: Session, *, employee: Employee, rules: list[dict], actor_user_id: int) -> None:
     wanted = []
     for r in rules or []:

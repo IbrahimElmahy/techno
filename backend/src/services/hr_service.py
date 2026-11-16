@@ -166,7 +166,9 @@ _REF_LABELS: dict[tuple[str, str], str] = {
     ("department", "parent_id"): "قسم فرعي",
     ("department", "manager_employee_id"): "قسم يديره",
     ("customer", "employee_id"): "عميل مرتبط به",
-    ("employee_salary", "employee_id"): "هيكل راتب",
+    ("employee_salary", "employee_id"): "كارت مرتب",
+    ("employee_insurance", "employee_id"): "تأمينات",
+    ("employee_commission_rule", "employee_id"): "نسب عمولة",
     ("employee_shift_assignment", "employee_id"): "وردية",
     ("employee_termination", "employee_id"): "نهاية خدمة",
     ("leave_entitlement", "employee_id"): "رصيد إجازات",
@@ -180,7 +182,8 @@ _REF_LABELS: dict[tuple[str, str], str] = {
 }
 
 
-def _blockers(db: Session, referred_table: str, row_id: int) -> list[str]:
+def _blockers(db: Session, referred_table: str, row_id: int,
+              skip: frozenset = frozenset()) -> list[str]:
     from sqlalchemy import inspect as sa_inspect
     from sqlalchemy import text
 
@@ -191,6 +194,8 @@ def _blockers(db: Session, referred_table: str, row_id: int) -> list[str]:
             if fk.get("referred_table") != referred_table:
                 continue
             col = fk["constrained_columns"][0]
+            if (table, col) in skip:
+                continue
             n = db.execute(text(f'SELECT count(*) FROM "{table}" WHERE "{col}" = :i'),
                            {"i": row_id}).scalar() or 0
             if n:
@@ -215,11 +220,31 @@ def delete_department(db: Session, *, department_id: int, actor_user_id: int) ->
     db.flush()
 
 
+def _unused_receivable_card(db: Session, employee: Employee):
+    from src.models.customer import Customer, CustomerAccount
+    from src.models.ledger import Account
+
+    card = db.scalar(select(Customer).where(Customer.employee_id == employee.id))
+    if card is None:
+        return None
+    if _blockers(db, "customer", card.id, frozenset({("customer_account", "customer_id")})):
+        return None
+    links = db.scalars(select(CustomerAccount).where(CustomerAccount.customer_id == card.id)).all()
+    accounts = [db.get(Account, ln.account_id) for ln in links]
+    for acc in accounts:
+        if acc is None or _blockers(db, "account", acc.id, frozenset({
+                ("customer_account", "account_id"), ("employee", "receivable_account_id")})):
+            return None
+    return card, links, [a for a in accounts if a is not None]
+
+
 def delete_employee(db: Session, *, employee: Employee, actor_user_id: int) -> None:
-    found = _blockers(db, "employee", employee.id)
+    auto = _unused_receivable_card(db, employee)
+    found = _blockers(db, "employee", employee.id,
+                      frozenset({("customer", "employee_id")}) if auto else frozenset())
     if employee.user_id is not None:
         found.insert(0, "حساب دخول (مستخدم أو مندوب)")
-    if employee.receivable_account_id is not None:
+    if employee.receivable_account_id is not None and auto is None:
         from sqlalchemy import func as _f
         from sqlalchemy import select as _sel
 
@@ -237,6 +262,17 @@ def delete_employee(db: Session, *, employee: Employee, actor_user_id: int) -> N
         before={"code": employee.code, "name": employee.name,
                 "department_id": employee.department_id, "branch_id": employee.branch_id},
     )
+    if auto:
+        card, links, accounts = auto
+        employee.receivable_account_id = None
+        for ln in links:
+            db.delete(ln)
+        db.flush()
+        db.delete(card)
+        db.flush()
+        for acc in accounts:
+            db.delete(acc)
+        db.flush()
     db.delete(employee)
     db.flush()
 
