@@ -12,7 +12,7 @@ from src.auth import branch_scope
 from src.auth.dependencies import CurrentUser, require_capability
 from src.auth.rbac import CAP_COUPON_RECEIVE, CAP_INSPECTION_READ
 from src.core.db import get_db
-from src.lib import coupon_lifecycle, inspection_points, points_yearly, technician_statement
+from src.lib import coupon_card, coupon_lifecycle, inspection_points, points_yearly, technician_statement
 from src.models.coupon_issue import CouponIssue, CouponIssueLine
 from src.models.coupon_receipt import CouponReceipt, CouponReceiptLine, receipt_counted
 from src.models.customer import Customer
@@ -278,6 +278,20 @@ def coupons_lifecycle(
             only_unlinked=only_unlinked, limit=limit, offset=offset)
     except coupon_lifecycle.CouponLifecycleError as exc:
         raise HTTPException(422, {"code": "report_invalid", "message": str(exc)}) from exc
+
+
+@router.get("/coupon-card")
+def coupon_card_report(
+    kind: str | None = Query(None, description="فئة الكوبون"),
+    date_from: date | None = None,
+    date_to: date | None = None,
+    party_id: int | None = Query(None, description="التاجر أو السباك"),
+    rep_id: int | None = Query(None, description="المندوب"),
+    current: CurrentUser = Depends(require_capability(CAP_COUPON_RECEIVE)),
+    db: Session = Depends(get_db),
+) -> dict:
+    return coupon_card.card(db, current, kind=kind, date_from=date_from, date_to=date_to,
+                            party_id=party_id, rep_id=rep_id)
 
 
 @router.get("/points-yearly")
