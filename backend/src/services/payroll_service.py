@@ -135,6 +135,18 @@ def post_run(db: Session, *, run_id: int, actor_user_id: int) -> dict:
         entry_lines.append(LineInput(advance_service.advances_account_id(db),
                                      Direction.credit, advances,
                                      statement="أقساط سلف"))
+    dues_by_account: dict[int, Decimal] = {}
+    for x in lines:
+        amount = to_money(Decimal(str(x.dues_deduction or 0)))
+        if amount:
+            emp = db.get(Employee, x.employee_id)
+            if emp is None or emp.receivable_account_id is None:
+                raise PayrollError("موظف عليه خصم من المستحقات وليس له حساب ذمة.")
+            dues_by_account[emp.receivable_account_id] = to_money(
+                dues_by_account.get(emp.receivable_account_id, ZERO) + amount)
+    for account_id, amount in dues_by_account.items():
+        entry_lines.append(LineInput(account_id, Direction.credit, amount,
+                                     statement="خصم من مستحقات الموظف"))
 
     entry = ledger_service.post_entry(
         db, entry_type="payroll_accrual", actor_user_id=actor_user_id,

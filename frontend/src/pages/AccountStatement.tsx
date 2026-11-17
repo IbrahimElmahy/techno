@@ -360,14 +360,21 @@ export default function AccountStatement() {
     });
     return map;
   }, [accounts]);
-  const mainOptions = useMemo(() => [...mainGroups.entries()]
-    .map(([name, g]) => ({
+  const mainOptions = useMemo(() => {
+    const base = [...mainGroups.entries()].map(([name, g]) => ({
       value: `nm:${name}`, label: name, search: '', code: '',
       title: g.roots.length > 1 ? `${name} — ${g.roots.length} فروع` : name,
-    })), [mainGroups]);
+    }));
+    if (!mainKey?.startsWith('ids:')) return base;
+    const ids = mainKey.slice(4).split(',').map(Number);
+    const names = [...new Set(accounts.filter((a: any) => ids.includes(a.id)).map((a: any) => a.name))];
+    const label = names.length ? `${names.join(' + ')} (عميل ومورد)` : 'حسابات الطرف';
+    return [{ value: mainKey, label, search: '', code: '', title: label }, ...base];
+  }, [mainGroups, mainKey, accounts]);
   const rootsOf = (key: string): { roots: number[]; group?: string } => {
     if (key.startsWith('nm:')) return mainGroups.get(key.slice(3)) ?? { roots: [] };
     if (key.startsWith('grp:')) return { roots: [], group: key.slice(4) };
+    if (key.startsWith('ids:')) return { roots: key.slice(4).split(',').map(Number).filter(Boolean) };
     return { roots: [Number(key.slice(4))] };
   };
 

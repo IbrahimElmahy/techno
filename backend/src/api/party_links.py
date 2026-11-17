@@ -14,7 +14,7 @@ from src.auth.rbac import CAP_CUSTOMER_READ, CAP_CUSTOMER_WRITE, CAP_VOUCHER_WRI
 from src.core.db import get_db
 from src.core.money import to_money
 from src.models.customer import Customer, CustomerAccount
-from src.models.ledger import Direction
+from src.models.ledger import Account, Direction
 from src.models.org import Branch
 from src.models.party_link import PartyGroup, PartyGroupMember
 from src.models.supplier import Supplier, SupplierAccount
@@ -36,6 +36,7 @@ class MemberOut(BaseModel):
     branch_name: str | None
     balance: Decimal
     lines: list[dict] = []
+    account_ids: list[int] = []
 
 
 class GroupOut(BaseModel):
@@ -58,11 +59,13 @@ def _member_out(db: Session, kind: str, ref_id: int, branches: dict) -> MemberOu
     if card is None:
         return None
     lines: list[dict] = []
+    ids: list[int] = []
     if kind == "customer":
         total = Decimal("0")
         for ca in db.scalars(select(CustomerAccount).where(CustomerAccount.customer_id == card.id)):
             b = ledger_service.balance_of(db, ca.account_id)
             total += b
+            ids.append(ca.account_id)
             lines.append({"family": ca.family, "account_id": ca.account_id, "balance": str(b)})
         ctype = str(getattr(card.customer_type, "value", card.customer_type) or "")
         role = TYPE_ROLE.get(ctype, "عميل")
@@ -70,9 +73,11 @@ def _member_out(db: Session, kind: str, ref_id: int, branches: dict) -> MemberOu
         total = Decimal("0")
         for sa in db.scalars(select(SupplierAccount).where(SupplierAccount.supplier_id == card.id)):
             total += ledger_service.balance_of(db, sa.account_id)
+            ids.append(sa.account_id)
         role = "مورد"
     return MemberOut(kind=kind, ref_id=card.id, name=card.name, role=role, code=card.code,
-                     branch_name=branches.get(card.branch_id), balance=to_money(total), lines=lines)
+                     branch_name=branches.get(card.branch_id), balance=to_money(total), lines=lines,
+                     account_ids=ids)
 
 
 def _group_out(db: Session, g: PartyGroup, branches: dict) -> GroupOut:
@@ -82,8 +87,19 @@ def _group_out(db: Session, g: PartyGroup, branches: dict) -> GroupOut:
         mo = _member_out(db, m.kind, m.ref_id, branches)
         if mo is not None:
             members.append(mo)
-    owes = sum((m.balance for m in members if m.kind == "customer"), Decimal("0"))
-    owe = sum((m.balance for m in members if m.kind == "supplier"), Decimal("0"))
+    sides: dict[int, set[str]] = {}
+    for m in members:
+        for aid in m.account_ids:
+            sides.setdefault(aid, set()).add(m.kind)
+    owes = owe = Decimal("0")
+    for aid, kinds in sides.items():
+        acc = db.get(Account, aid)
+        b = ledger_service.balance_of(db, aid)
+        debit_side = b if acc.normal_side == Direction.debit else -b
+        if kinds == {"customer"} or (len(kinds) > 1 and debit_side >= 0):
+            owes += debit_side
+        else:
+            owe -= debit_side
     return GroupOut(id=g.id, name=g.name, branch_name=branches.get(g.branch_id), members=members,
                     owes_us=to_money(owes), we_owe=to_money(owe), net=to_money(owes - owe))
 
@@ -254,6 +270,9 @@ def netting(
     sacc = db.scalar(select(SupplierAccount).where(SupplierAccount.supplier_id == body.supplier_id))
     if cacc is None or sacc is None:
         raise HTTPException(422, {"code": "validation", "message": "العميل أو المورد ليس له حساب."})
+    if cacc.account_id == sacc.account_id:
+        raise HTTPException(422, {"code": "validation", "message": (
+            "العميل والمورد على حساب واحد، فالرصيد صافٍ بالفعل ولا يحتاج إلى مقاصة.")})
     owes = ledger_service.balance_of(db, cacc.account_id)
     owe = ledger_service.balance_of(db, sacc.account_id)
     if value > owes or value > owe:

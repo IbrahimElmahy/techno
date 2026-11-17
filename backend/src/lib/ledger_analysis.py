@@ -28,7 +28,7 @@ TYPE_LABELS = {
 }
 NATURE_LABELS = {"asset": "أصول", "liability": "خصوم", "equity": "حقوق ملكية",
                  "income": "إيرادات", "expense": "مصروفات"}
-PARTY_KIND_LABELS = {"customer": "عملاء", "supplier": "موردين"}
+PARTY_KIND_LABELS = {"customer": "عملاء", "supplier": "موردين", "both": "عملاء وموردين"}
 
 MAX_ROWS = 20000
 
@@ -48,7 +48,10 @@ def _party_map():
                 cast(literal(None), String(40)).label("family"))
          .where(SupplierAccount.account_id.notin_(select(CustomerAccount.account_id))))
     u = union_all(c, s).subquery("pmu")
-    return (select(u.c.account_id, func.min(u.c.kind).label("kind"),
+    shared = select(SupplierAccount.account_id).where(
+        SupplierAccount.account_id.in_(select(CustomerAccount.account_id)))
+    kind = case((u.c.account_id.in_(shared), literal("both")), else_=func.min(u.c.kind))
+    return (select(u.c.account_id, kind.label("kind"),
                    func.min(u.c.party_id).label("party_id"), func.min(u.c.family).label("family"))
             .group_by(u.c.account_id).subquery("pm"))
 
@@ -106,7 +109,8 @@ def analyse(
         "cost_center": (ln.cost_center_id, func.max(CostCenter.name)),
         "entry_type": (en.entry_type, None),
         "party": (func.concat(pm.c.kind, ":", pm.c.party_id),
-                  func.max(func.coalesce(Customer.name, Supplier.name))),
+                  func.max(case((pm.c.kind == "both", func.concat(Customer.name, " — عميل ومورد")),
+                                else_=func.coalesce(Customer.name, Supplier.name)))),
         "party_kind": (pm.c.kind, None),
         "territory": (Customer.territory_id, func.max(Territory.name)),
         "rep": (Customer.rep_id, func.max(User.full_name)),
@@ -142,7 +146,7 @@ def analyse(
             .join(acc, acc.id == ln.account_id)
             .outerjoin(parent, parent.id == acc.parent_id)
             .outerjoin(pm, pm.c.account_id == acc.id)
-            .outerjoin(Customer, and_(pm.c.kind == "customer", Customer.id == pm.c.party_id))
+            .outerjoin(Customer, and_(pm.c.kind.in_(("customer", "both")), Customer.id == pm.c.party_id))
             .outerjoin(Supplier, and_(pm.c.kind == "supplier", Supplier.id == pm.c.party_id))
             .outerjoin(Territory, Territory.id == Customer.territory_id)
             .outerjoin(User, User.id == Customer.rep_id)
@@ -165,9 +169,29 @@ def analyse(
     if account_type:
         stmt = stmt.where(cast(acc.account_type, String).in_(account_type))
     if party_kind:
-        stmt = stmt.where(pm.c.kind.in_(party_kind))
+        kinds = set(party_kind)
+        wanted = [pm.c.kind.in_(kinds)]
+        if "both" not in kinds and ("customer" in kinds) != ("supplier" in kinds):
+            net_when = func.coalesce(LedgerEntry.entry_date, cast(LedgerEntry.created_at, Date))
+            net = (select(LedgerLine.account_id)
+                   .join(LedgerEntry, LedgerEntry.id == LedgerLine.entry_id)
+                   .where(LedgerLine.account_id.in_(select(SupplierAccount.account_id)),
+                          LedgerLine.account_id.in_(select(CustomerAccount.account_id)),
+                          ledger_service.in_books_sql(posted_only),
+                          *([net_when <= date_to] if date_to else []))
+                   .group_by(LedgerLine.account_id)
+                   .having(func.sum(case((LedgerLine.direction == Direction.debit, LedgerLine.amount),
+                                         else_=-LedgerLine.amount))
+                           > 0 if "customer" in kinds else
+                           func.sum(case((LedgerLine.direction == Direction.debit, LedgerLine.amount),
+                                         else_=-LedgerLine.amount)) < 0))
+            wanted.append(and_(pm.c.kind == "both", pm.c.account_id.in_(net)))
+        elif "customer" in kinds and "supplier" in kinds:
+            wanted.append(pm.c.kind == "both")
+        stmt = stmt.where(or_(*wanted))
         if "customer" in party_kind:
-            stmt = stmt.where(or_(Customer.id.is_(None), Customer.customer_type != "employee"))
+            stmt = stmt.where(or_(Customer.id.is_(None),
+                                  Customer.customer_type.notin_(("employee", "owner"))))
     if party_id:
         stmt = stmt.where(pm.c.party_id.in_(party_id))
     if territory_id:

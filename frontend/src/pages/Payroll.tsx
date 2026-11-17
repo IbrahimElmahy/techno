@@ -46,6 +46,7 @@ interface Line {
   days_absent: string; absent_override: string | null; absence: string; penalties: string;
   advances: string; insurance: string; other_deductions: string; total_deductions: string;
   net: string; extra_earning: string | null; extra_deduction: string | null;
+  dues_deduction?: string | null; dues_balance?: string | null;
   notes: string | null; paid: boolean; details: Detail[];
   department_id: number | null; department: string | null; job_title: string | null;
   daily_rate: string | null; overtime_hours: string | null; overtime_amount: string;
@@ -806,6 +807,7 @@ function MonthLine({ line, run, editable, onClose, onChanged, onPrint, onPay, on
     commission_override: line?.commission_override !== null && line?.commission_override !== undefined ? Number(line.commission_override) : undefined as number | undefined,
     extra_earning: line?.extra_earning ? Number(line.extra_earning) : undefined as number | undefined,
     extra_deduction: line?.extra_deduction ? Number(line.extra_deduction) : undefined as number | undefined,
+    dues_deduction: line?.dues_deduction ? Number(line.dues_deduction) : undefined as number | undefined,
     overtime_hours: line?.overtime_hours ? Number(line.overtime_hours) : undefined as number | undefined,
     extra_days: line?.extra_days ? Number(line.extra_days) : undefined as number | undefined,
     transport: line?.transport ? Number(line.transport) : undefined as number | undefined,
@@ -822,6 +824,7 @@ function MonthLine({ line, run, editable, onClose, onChanged, onPrint, onPay, on
         commission_override: form.commission_override ?? null,
         extra_earning: form.extra_earning ?? null,
         extra_deduction: form.extra_deduction ?? null,
+        dues_deduction: form.dues_deduction ?? null,
         overtime_hours: form.overtime_hours ?? null,
         extra_days: form.extra_days ?? null,
         transport: form.transport ?? null,
@@ -875,6 +878,11 @@ function MonthLine({ line, run, editable, onClose, onChanged, onPrint, onPay, on
       <div style={{ fontSize: 16, margin: '12px 0' }}>
         الصافي: <b>{money(line.net)}</b>
         {line.paid ? <Tag color="green" style={{ marginInlineStart: 8 }}>مصروف</Tag> : null}
+        {line.dues_balance !== null && line.dues_balance !== undefined && n(line.dues_balance) ? (
+          <span style={{ marginInlineStart: 16, color: n(line.dues_balance) > 0 ? '#cf1322' : '#389e0d' }}>
+            {n(line.dues_balance) > 0 ? 'مستحقات عليه' : 'رصيد له'}: <b>{money(Math.abs(n(line.dues_balance)))}</b>
+          </span>
+        ) : null}
         {line.commission_base !== null && n(line.commission_base) ? (
           <span style={{ marginInlineStart: 16, color: '#666' }}>
             أساس العمولة: {money(line.commission_base)}
@@ -921,6 +929,13 @@ function MonthLine({ line, run, editable, onClose, onChanged, onPrint, onPay, on
             <div style={{ marginBottom: 4 }}>خصم</div>
             <InputNumber style={{ width: '100%' }} min={0} value={form.extra_deduction}
               onChange={(v) => setForm({ ...form, extra_deduction: v ?? undefined })} />
+          </Col>
+          <Col xs={12} md={6}>
+            <div style={{ marginBottom: 4 }}>خصم من المستحقات</div>
+            <InputNumber style={{ width: '100%' }} min={0} value={form.dues_deduction}
+              max={n(line.dues_balance) > 0 ? n(line.dues_balance) : undefined}
+              placeholder={n(line.dues_balance) > 0 ? money(line.dues_balance) : undefined}
+              onChange={(v) => setForm({ ...form, dues_deduction: v ?? undefined })} />
           </Col>
           <Col span={24}>
             <div style={{ marginBottom: 4 }}>ملاحظات</div>

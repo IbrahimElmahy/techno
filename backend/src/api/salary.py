@@ -196,6 +196,7 @@ class LineIn(BaseModel):
     absent_override: float | str | None = None
     extra_earning: float | str | None = None
     extra_deduction: float | str | None = None
+    dues_deduction: float | str | None = None
     overtime_hours: float | str | None = None
     extra_days: float | str | None = None
     transport: float | str | None = None

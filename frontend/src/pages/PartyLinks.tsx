@@ -3,9 +3,10 @@ import {
   Button, DatePicker, Empty, Form, Input, InputNumber, Modal, Popconfirm, Segmented, Select, Space,
   Table, Tag, Tooltip, message,
 } from 'antd';
-import { LinkOutlined, DisconnectOutlined, ReloadOutlined, SwapOutlined, TeamOutlined } from '@ant-design/icons';
+import { FileTextOutlined, LinkOutlined, DisconnectOutlined, ReloadOutlined, SwapOutlined, TeamOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import { api } from '../api/client';
+import { useTabsOptional } from '../components/TabsContext';
 import ListPage, { ListStat } from '../components/ListPage';
 import { useQueryTab } from '../components/useQueryTab';
 import { searchFilter, searchRank } from '../utils/arabicSort';
@@ -14,6 +15,7 @@ interface Member {
   kind: 'customer' | 'supplier'; ref_id: number; name: string; role: string; code: string | null;
   branch_name: string | null; balance: string;
   lines: { family: string | null; account_id: number; balance: string }[];
+  account_ids?: number[];
 }
 interface Group {
   id: number; name: string; branch_name: string | null; members: Member[];
@@ -137,6 +139,11 @@ export default function PartyLinks() {
     } catch {}
   };
 
+  const tabs = useTabsOptional();
+  const openStatement = (ids: number[]) => {
+    const path = `/account-statement?main=ids:${ids.join(',')}`;
+    if (tabs) tabs.openTab(path); else window.location.hash = path;
+  };
   const openNetting = (g: Group) => {
     netForm.resetFields();
     const c = g.members.find((m) => m.kind === 'customer' && Number(m.balance) > 0)
@@ -204,11 +211,18 @@ export default function PartyLinks() {
       render: (v: string) => <span dir="ltr">{fmt(v)}</span> },
     { title: 'الصافي', dataIndex: 'net', key: 'net', width: 150, align: 'right' as const,
       render: (v: string) => <Net v={v} /> },
-    { title: '', key: 'act', width: 110,
+    { title: '', key: 'act', width: 200,
       render: (_: any, g: Group) => {
-        const can = g.members.some((m) => m.kind === 'customer') && g.members.some((m) => m.kind === 'supplier');
+        const ids = [...new Set(g.members.flatMap((m) => m.account_ids || []))];
+        const accOf = (k: string) => new Set(g.members.filter((m) => m.kind === k).flatMap((m) => m.account_ids || []));
+        const cust = accOf('customer');
+        const can = [...accOf('supplier')].some((a) => !cust.has(a)) && cust.size > 0;
         return (
-          <Button size="small" icon={<SwapOutlined />} disabled={!can} onClick={() => openNetting(g)}>مقاصة</Button>
+          <Space size={4}>
+            <Button size="small" icon={<FileTextOutlined />} disabled={!ids.length}
+              onClick={() => openStatement(ids)}>كشف حساب</Button>
+            <Button size="small" icon={<SwapOutlined />} disabled={!can} onClick={() => openNetting(g)}>مقاصة</Button>
+          </Space>
         );
       } },
   ];

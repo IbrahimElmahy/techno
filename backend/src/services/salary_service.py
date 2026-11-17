@@ -5,7 +5,7 @@ from collections import defaultdict
 from datetime import date, datetime
 from decimal import Decimal
 
-from sqlalchemy import Date, and_, cast, func, or_, select
+from sqlalchemy import Date, and_, case, cast, func, or_, select
 from sqlalchemy.orm import Session
 
 from src.core.money import ZERO, to_money, to_qty
@@ -396,7 +396,7 @@ def _absent_days(db: Session, employee_id: int, year: int, month: int) -> Decima
 
 
 _MANUAL = ("commission_override", "absent_override", "extra_earning", "extra_deduction", "notes",
-           "overtime_hours", "extra_days", "transport")
+           "overtime_hours", "extra_days", "transport", "dues_deduction")
 _SIGNED = {"overtime_hours"}
 
 
@@ -533,6 +533,12 @@ def _build_line(db: Session, run: PayrollRun, emp: Employee, manual: dict) -> Pa
     if extra_deduction:
         details.append(dict(source=DetailSource.manual, label="خصم يدوي",
                             kind=DetailKind.deduction, amount=extra_deduction))
+    dues = to_money(_d(manual.get("dues_deduction")))
+    if dues:
+        if emp.receivable_account_id is None:
+            raise SalaryError(f"«{emp.name}» ليس له حساب ذمة، فلا يمكن الخصم من مستحقاته.")
+        details.append(dict(source=DetailSource.manual, label="خصم من المستحقات",
+                            kind=DetailKind.deduction, amount=dues))
 
     advances = to_money(sum((_d(p.amount) for p in advance_service.due_in(
         db, employee_id=emp.id, year=run.year, month=run.month)), ZERO))
@@ -551,7 +557,7 @@ def _build_line(db: Session, run: PayrollRun, emp: Employee, manual: dict) -> Pa
                         + (ot_amount if ot_amount > 0 else ZERO) + extra_days_amount + transport)
     reduce = to_money(absence + card_deductions + other_ded + extra_deduction + shortage)
     gross = to_money(earnings - reduce)
-    net = to_money(gross - penalties - advances - insurance)
+    net = to_money(gross - penalties - advances - insurance - dues)
 
     line = PayrollLine(
         run_id=run.id, employee_id=emp.id,
@@ -566,12 +572,13 @@ def _build_line(db: Session, run: PayrollRun, emp: Employee, manual: dict) -> Pa
         overtime_hours=ot_hours, overtime_amount=ot_amount, extra_days=extra_days or None,
         extra_days_amount=extra_days_amount or None, transport=transport or None,
         daily_rate=to_money(daily),
-        total_deductions=to_money(reduce + penalties + advances + insurance),
+        total_deductions=to_money(reduce + penalties + advances + insurance + dues),
         net=net, has_attendance=att_days > 0,
         commission=commission, commission_base=base,
         commission_override=manual.get("commission_override"),
         absent_override=manual.get("absent_override"),
         extra_earning=extra_earning or None, extra_deduction=extra_deduction or None,
+        dues_deduction=dues or None,
         notes=manual.get("notes"),
     )
     db.add(line)
@@ -887,10 +894,27 @@ def _line_out(line: PayrollLine, emp: Employee | None, details: list[PayrollLine
         "other_deductions": s(line.other_deductions),
         "total_deductions": s(line.total_deductions), "net": s(line.net),
         "extra_earning": s(line.extra_earning), "extra_deduction": s(line.extra_deduction),
+        "dues_deduction": s(line.dues_deduction),
+        "dues_balance": s(names.get(("dues", line.employee_id))),
         "notes": line.notes, "paid": bool(line.paid), "paid_at": line.paid_at,
         "details": [{"source": d.source.value, "label": d.label, "kind": d.kind.value,
                      "quantity": s(d.quantity), "amount": s(d.amount)} for d in details],
     }
+
+
+def employee_dues(db: Session, employees) -> dict:
+    from src.models.ledger import LedgerEntry, LedgerLine
+
+    acc_of = {e.receivable_account_id: e.id for e in employees if e.receivable_account_id}
+    if not acc_of:
+        return {}
+    signed = case((LedgerLine.direction == Direction.debit, LedgerLine.amount),
+                  else_=-LedgerLine.amount)
+    rows = db.execute(select(LedgerLine.account_id, func.sum(signed))
+                      .join(LedgerEntry, LedgerEntry.id == LedgerLine.entry_id)
+                      .where(LedgerLine.account_id.in_(list(acc_of)), ledger_service.is_posted_sql())
+                      .group_by(LedgerLine.account_id)).all()
+    return {("dues", acc_of[a]): to_money(_d(b)) for a, b in rows}
 
 
 def month_out(db: Session, *, branch_id: int, year: int, month: int) -> dict:
@@ -916,6 +940,7 @@ def month_out(db: Session, *, branch_id: int, year: int, month: int) -> dict:
 
     names = {("d", i): n for i, n in db.execute(select(Department.id, Department.name)).all()}
     names.update({("j", i): n for i, n in db.execute(select(JobTitle.id, JobTitle.name)).all()})
+    names.update(employee_dues(db, emps.values()))
     rows = sorted((_line_out(x, emps.get(x.employee_id), details[x.id], names) for x in lines),
                   key=lambda r: r["name"] or "")
     in_run = {x.employee_id for x in lines}
