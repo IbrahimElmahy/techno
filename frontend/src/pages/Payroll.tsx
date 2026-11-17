@@ -27,6 +27,7 @@ import { searchFilter, searchRank } from '../utils/arabicSort';
 import { money, numeralsLocale } from '../utils/money';
 import { PAGE_SIZE } from '../utils/pagination';
 import { useAdjustmentsTab, useLeavesTab } from './payroll/PayrollExtras';
+import { useOvertimeTab } from './payroll/OvertimeTab';
 import { addNew } from '../components/QuickCreate';
 
 interface Rule { id?: number; basis: string; basis_label?: string; pct: string | number }
@@ -557,7 +558,10 @@ export default function Payroll() {
     mode: 'bonus', active: tab === 'bonuses', branchId, period, employees: pickable,
     onChanged: () => loadMonth(),
   });
-  const extra = tab === 'leaves' ? leavesTab : tab === 'penalties' ? penaltiesTab
+  const overtimeTab = useOvertimeTab({
+    active: tab === 'overtime', data, onData: setData, onRecalc: calculate, busy,
+  });
+  const extra = tab === 'overtime' ? overtimeTab : tab === 'leaves' ? leavesTab : tab === 'penalties' ? penaltiesTab
     : tab === 'bonuses' ? bonusesTab : null;
 
   const branchSelect = branches.length > 1 ? (
@@ -574,6 +578,7 @@ export default function Payroll() {
         title="المرتبات"
         tabs={[
           { key: 'month', label: 'مرتبات الشهر', count: data?.lines.length ?? null },
+          { key: 'overtime', label: 'الإضافي والغياب' },
           { key: 'leaves', label: 'الإجازات' },
           { key: 'penalties', label: 'الجزاءات' },
           { key: 'bonuses', label: 'المكافآت' },

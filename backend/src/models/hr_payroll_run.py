@@ -126,6 +126,7 @@ class PayrollLine(Base):
     extra_deduction: Mapped[object | None] = mapped_column(MONEY, nullable=True)
     dues_deduction: Mapped[object | None] = mapped_column(MONEY, nullable=True)
     extra_days: Mapped[object | None] = mapped_column(QTY, nullable=True)
+    absent_hours: Mapped[object | None] = mapped_column(QTY, nullable=True)
     extra_days_amount: Mapped[object | None] = mapped_column(MONEY, nullable=True)
     transport: Mapped[object | None] = mapped_column(MONEY, nullable=True)
     daily_rate: Mapped[object | None] = mapped_column(MONEY, nullable=True)

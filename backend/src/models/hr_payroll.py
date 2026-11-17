@@ -47,6 +47,7 @@ class SalaryComponent(Base):
     )
     taxable: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     insurable: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    in_daily_rate: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     account_id: Mapped[int | None] = mapped_column(ForeignKey("account.id"), nullable=True)
     sort_order: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)

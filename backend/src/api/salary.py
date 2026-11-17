@@ -199,8 +199,33 @@ class LineIn(BaseModel):
     dues_deduction: float | str | None = None
     overtime_hours: float | str | None = None
     extra_days: float | str | None = None
+    absent_hours: float | str | None = None
     transport: float | str | None = None
     notes: str | None = None
+
+
+class BulkLineIn(LineIn):
+    employee_id: int
+
+
+@router.patch("/month/{run_id}/lines")
+def update_lines(
+    run_id: int,
+    body: list[BulkLineIn],
+    current: CurrentUser = Depends(require_capability(CAP_PAYROLL_POST)),
+    db: Session = Depends(get_db),
+) -> dict:
+    run = _run(db, run_id, current)
+    try:
+        for row in body:
+            fields = row.model_dump(exclude_unset=True)
+            fields.pop("employee_id", None)
+            svc.update_line(db, run_id=run.id, employee_id=row.employee_id, fields=fields,
+                            actor_user_id=current.id)
+    except SalaryError as exc:
+        _raise(exc)
+    db.commit()
+    return svc.month_out(db, branch_id=run.branch_id, year=run.year, month=run.month)
 
 
 @router.patch("/month/{run_id}/employees/{employee_id}")

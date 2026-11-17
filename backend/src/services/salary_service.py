@@ -172,7 +172,7 @@ def _components(db: Session, salary: EmployeeSalary | None) -> list[dict]:
         amount = (to_money(basic * _d(line.pct) / Decimal("100")) if line.pct is not None
                   else to_money(_d(line.amount)))
         out.append({"component_id": comp.id, "name": comp.name, "kind": comp.kind.value,
-                    "amount": str(amount)})
+                    "amount": str(amount), "in_daily_rate": bool(comp.in_daily_rate)})
     return out
 
 
@@ -397,7 +397,7 @@ def _absent_days(db: Session, employee_id: int, year: int, month: int) -> Decima
 
 
 _MANUAL = ("commission_override", "absent_override", "extra_earning", "extra_deduction", "notes",
-           "overtime_hours", "extra_days", "transport", "dues_deduction")
+           "overtime_hours", "extra_days", "transport", "dues_deduction", "absent_hours")
 _SIGNED = {"overtime_hours"}
 
 
@@ -422,6 +422,7 @@ def _build_line(db: Session, run: PayrollRun, emp: Employee, manual: dict) -> Pa
     basic = to_money(_d(salary.basic))
     details: list[dict] = []
     earn_items = ZERO
+    day_items = ZERO
     card_deductions = ZERO
     for it in _components(db, salary):
         amount = _d(it["amount"])
@@ -429,6 +430,8 @@ def _build_line(db: Session, run: PayrollRun, emp: Employee, manual: dict) -> Pa
             continue
         if it["kind"] == "earning":
             earn_items += amount
+            if it.get("in_daily_rate"):
+                day_items += amount
             details.append(dict(source=DetailSource.component, component_id=it["component_id"],
                                 label=it["name"][:120], kind=DetailKind.earning, amount=amount))
         else:
@@ -437,10 +440,9 @@ def _build_line(db: Session, run: PayrollRun, emp: Employee, manual: dict) -> Pa
                                 label=it["name"][:120], kind=DetailKind.deduction, amount=amount))
     earn_items = to_money(earn_items)
 
-    daily_base = basic + (earn_items if cfg.absence_basis == AbsenceBasis.gross else ZERO)
+    daily_base = basic + (day_items if cfg.absence_basis == AbsenceBasis.gross else ZERO)
     daily = daily_base / per_month if per_month else ZERO
-    month_hours = Decimal(cfg.hours_per_month or 0)
-    hourly = daily_base / month_hours if month_hours else daily / hours
+    hourly = daily / hours
     ot_factor = (_d(cfg.overtime_normal_pct) / Decimal("100")) if cfg.overtime_normal_pct else Decimal(1)
 
     ot_hours = to_qty(_d(manual.get("overtime_hours")))
@@ -453,6 +455,13 @@ def _build_line(db: Session, run: PayrollRun, emp: Employee, manual: dict) -> Pa
     elif ot_amount < 0:
         details.append(dict(source=DetailSource.overtime, label="عجز ساعات",
                             kind=DetailKind.deduction, quantity=-ot_hours, amount=-ot_amount))
+    absent_hours = to_qty(_d(manual.get("absent_hours")))
+    shortage_factor = (_d(cfg.shortage_pct) / Decimal("100")) if cfg.shortage_pct else Decimal(1)
+    absent_hours_amount = to_money(absent_hours * hourly * shortage_factor) if absent_hours else ZERO
+    if absent_hours_amount:
+        details.append(dict(source=DetailSource.absence, label="ساعات غياب",
+                            kind=DetailKind.deduction, quantity=absent_hours,
+                            amount=absent_hours_amount))
     extra_days = to_qty(_d(manual.get("extra_days")))
     extra_days_amount = to_money(extra_days * daily) if extra_days else ZERO
     if extra_days_amount:
@@ -553,7 +562,7 @@ def _build_line(db: Session, run: PayrollRun, emp: Employee, manual: dict) -> Pa
         details.append(dict(source=DetailSource.insurance, label="تأمينات",
                             kind=DetailKind.deduction, amount=insurance))
 
-    shortage = to_money(-ot_amount) if ot_amount < 0 else ZERO
+    shortage = to_money((-ot_amount if ot_amount < 0 else ZERO) + absent_hours_amount)
     earnings = to_money(basic + earn_items + commission + bonuses + other_earn + extra_earning
                         + (ot_amount if ot_amount > 0 else ZERO) + extra_days_amount + transport)
     reduce = to_money(absence + card_deductions + other_ded + extra_deduction + shortage)
@@ -572,6 +581,7 @@ def _build_line(db: Session, run: PayrollRun, emp: Employee, manual: dict) -> Pa
         other_deductions=to_money(card_deductions + other_ded + extra_deduction + shortage),
         overtime_hours=ot_hours, overtime_amount=ot_amount, extra_days=extra_days or None,
         extra_days_amount=extra_days_amount or None, transport=transport or None,
+        absent_hours=absent_hours or None,
         daily_rate=to_money(daily),
         total_deductions=to_money(reduce + penalties + advances + insurance + dues),
         net=net, has_attendance=att_days > 0,
@@ -879,6 +889,8 @@ def _line_out(line: PayrollLine, emp: Employee | None, details: list[PayrollLine
                                  - _d(line.bonus_amount) - _d(line.extra_earning)
                                  - ot_pos - _d(line.extra_days_amount) - _d(line.transport))),
         "daily_rate": s(line.daily_rate),
+        "hourly_rate": s(to_money(_d(line.daily_rate) / Decimal(8))) if line.daily_rate is not None else None,
+        "absent_hours": s(line.absent_hours),
         "overtime_hours": s(line.overtime_hours if _d(line.overtime_hours) else None),
         "overtime_amount": s(line.overtime_amount),
         "extra_days": s(line.extra_days), "extra_days_amount": s(line.extra_days_amount),

@@ -24,7 +24,7 @@ from src.models.hr_payroll import (
     PayMethod,
     SalaryComponent,
 )
-from src.services import insurance_service
+from src.services import audit_service, insurance_service
 from src.services import payroll_setup_service as setup
 from src.services.payroll_setup_service import PayrollSetupError
 
@@ -65,6 +65,11 @@ class ComponentOut(BaseModel):
     calc: ComponentCalc
     account_id: int | None
     active: bool
+    in_daily_rate: bool = False
+
+
+class ComponentPatch(BaseModel):
+    in_daily_rate: bool | None = None
 
 
 class SalaryLineIn(BaseModel):
@@ -100,6 +105,26 @@ def list_components(
 ) -> list[ComponentOut]:
     return [ComponentOut.model_validate(c, from_attributes=True)
             for c in db.scalars(select(SalaryComponent).order_by(SalaryComponent.code)).all()]
+
+
+@router.patch("/components/{component_id}", response_model=ComponentOut)
+def patch_component(
+    component_id: int,
+    body: ComponentPatch,
+    current: CurrentUser = Depends(require_capability(CAP_PAYROLL_POST)),
+    db: Session = Depends(get_db),
+) -> ComponentOut:
+    row = db.get(SalaryComponent, component_id)
+    if row is None:
+        raise HTTPException(404, {"code": "not_found", "message": "البند غير موجود."})
+    if body.in_daily_rate is not None:
+        row.in_daily_rate = body.in_daily_rate
+    audit_service.record(db, action="salary_component.update", actor_user_id=current.id,
+                         entity_type="salary_component", entity_id=row.id,
+                         after={"in_daily_rate": row.in_daily_rate})
+    out = ComponentOut.model_validate(row, from_attributes=True)
+    db.commit()
+    return out
 
 
 @router.post("/components", response_model=ComponentOut, status_code=status.HTTP_201_CREATED)
