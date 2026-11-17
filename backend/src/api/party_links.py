@@ -96,7 +96,7 @@ def _group_out(db: Session, g: PartyGroup, branches: dict) -> GroupOut:
         acc = db.get(Account, aid)
         b = ledger_service.balance_of(db, aid)
         debit_side = b if acc.normal_side == Direction.debit else -b
-        if kinds == {"customer"} or (len(kinds) > 1 and debit_side >= 0):
+        if kinds == {"customer"} or (len(kinds) > 1 and acc.normal_side == Direction.debit):
             owes += debit_side
         else:
             owe -= debit_side

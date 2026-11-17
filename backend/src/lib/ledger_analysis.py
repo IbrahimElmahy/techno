@@ -172,20 +172,8 @@ def analyse(
         kinds = set(party_kind)
         wanted = [pm.c.kind.in_(kinds)]
         if "both" not in kinds and ("customer" in kinds) != ("supplier" in kinds):
-            net_when = func.coalesce(LedgerEntry.entry_date, cast(LedgerEntry.created_at, Date))
-            net = (select(LedgerLine.account_id)
-                   .join(LedgerEntry, LedgerEntry.id == LedgerLine.entry_id)
-                   .where(LedgerLine.account_id.in_(select(SupplierAccount.account_id)),
-                          LedgerLine.account_id.in_(select(CustomerAccount.account_id)),
-                          ledger_service.in_books_sql(posted_only),
-                          *([net_when <= date_to] if date_to else []))
-                   .group_by(LedgerLine.account_id)
-                   .having(func.sum(case((LedgerLine.direction == Direction.debit, LedgerLine.amount),
-                                         else_=-LedgerLine.amount))
-                           > 0 if "customer" in kinds else
-                           func.sum(case((LedgerLine.direction == Direction.debit, LedgerLine.amount),
-                                         else_=-LedgerLine.amount)) < 0))
-            wanted.append(and_(pm.c.kind == "both", pm.c.account_id.in_(net)))
+            side = Direction.debit if "customer" in kinds else Direction.credit
+            wanted.append(and_(pm.c.kind == "both", acc.normal_side == side))
         elif "customer" in kinds and "supplier" in kinds:
             wanted.append(pm.c.kind == "both")
         stmt = stmt.where(or_(*wanted))
