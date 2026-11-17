@@ -117,7 +117,7 @@ export function useOvertimeTab({ active, data, onData, onRecalc, busy }: {
 
   const preview = (l: any, e: Entry = current(l)) => {
     const daily = n(l.daily_rate);
-    const hourly = daily / 8;
+    const hourly = n(l.hourly_rate);
     const absentDays = e.absent_days ?? n(l.days_absent);
     return {
       plus: (e.extra_days || 0) * daily + (e.overtime_hours || 0) * hourly,
@@ -142,7 +142,7 @@ export function useOvertimeTab({ active, data, onData, onRecalc, busy }: {
       render: (_: any, l: any) => money(n(l.daily_rate) * 30) },
     { title: 'اليوم', dataIndex: 'daily_rate', key: 'daily', width: 90, align: 'left' as const, render: money },
     { title: 'الساعة', key: 'hour', width: 80, align: 'left' as const,
-      render: (_: any, l: any) => money(n(l.daily_rate) / 8) },
+      render: (_: any, l: any) => money(l.hourly_rate) },
     { title: 'الإضافي', key: 'plus_grp', children: [
       { title: 'أيام', key: 'extra_days', width: 100, render: (_: any, l: any) => cell(l, 'extra_days') },
       { title: 'ساعات', key: 'overtime_hours', width: 100, render: (_: any, l: any) => cell(l, 'overtime_hours') },

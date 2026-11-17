@@ -442,7 +442,8 @@ def _build_line(db: Session, run: PayrollRun, emp: Employee, manual: dict) -> Pa
 
     daily_base = basic + (day_items if cfg.absence_basis == AbsenceBasis.gross else ZERO)
     daily = daily_base / per_month if per_month else ZERO
-    hourly = daily / hours
+    month_hours = Decimal(cfg.hours_per_month or 0)
+    hourly = daily_base / month_hours if month_hours else daily / hours
     ot_factor = (_d(cfg.overtime_normal_pct) / Decimal("100")) if cfg.overtime_normal_pct else Decimal(1)
 
     ot_hours = to_qty(_d(manual.get("overtime_hours")))
@@ -889,7 +890,9 @@ def _line_out(line: PayrollLine, emp: Employee | None, details: list[PayrollLine
                                  - _d(line.bonus_amount) - _d(line.extra_earning)
                                  - ot_pos - _d(line.extra_days_amount) - _d(line.transport))),
         "daily_rate": s(line.daily_rate),
-        "hourly_rate": s(to_money(_d(line.daily_rate) / Decimal(8))) if line.daily_rate is not None else None,
+        "hourly_rate": s(to_money(_d(line.daily_rate) * Decimal(line.days_in_month or 30)
+                                  / Decimal(names.get(("cfg", "month_hours")) or 240)))
+        if line.daily_rate is not None else None,
         "absent_hours": s(line.absent_hours),
         "overtime_hours": s(line.overtime_hours if _d(line.overtime_hours) else None),
         "overtime_amount": s(line.overtime_amount),
@@ -954,6 +957,9 @@ def month_out(db: Session, *, branch_id: int, year: int, month: int) -> dict:
     names = {("d", i): n for i, n in db.execute(select(Department.id, Department.name)).all()}
     names.update({("j", i): n for i, n in db.execute(select(JobTitle.id, JobTitle.name)).all()})
     names.update(employee_dues(db, emps.values()))
+    cfg = setup.settings(db)
+    names[("cfg", "month_hours")] = (cfg.hours_per_month
+                                     or int(Decimal(cfg.days_per_month or 30) * (_d(cfg.hours_per_day) or 8)))
     rows = sorted((_line_out(x, emps.get(x.employee_id), details[x.id], names) for x in lines),
                   key=lambda r: r["name"] or "")
     in_run = {x.employee_id for x in lines}
