@@ -46,10 +46,14 @@ def load_file(path: str):
         if r[0] is not None and _s(r[1]):
             cat_names[int(r[0])] = _s(r[1])
     master = {}
-    for r in list(wb["مجمع"].iter_rows(values_only=True))[1:]:
+    sheet_rows = list(wb["مجمع"].iter_rows(values_only=True))
+    head = [_s(h) for h in sheet_rows[0]]
+    cat_col = head.index("كود الفئه") if "كود الفئه" in head else 11
+    for r in sheet_rows[1:]:
         code = _s(r[0])
-        if code:
-            master[code.upper()] = cat_names.get(int(r[11])) if r[11] is not None else None
+        if code and len(r) > cat_col:
+            v = r[cat_col]
+            master[code.upper()] = cat_names.get(int(v)) if v not in (None, "") else None
     rows = []
     for b, (sheet, _) in SHEETS.items():
         for r in list(wb[sheet].iter_rows(values_only=True))[1:]:
@@ -100,6 +104,10 @@ def build(db, rows, master):
         members.sort(key=lambda p: (-p["n"], -abs(p["bal"]), p["item"].id))
         main, rest = members[0], members[1:]
         renames.append(main)
+        odd = [p for p in rest if (p["new_name"] or "") != (main["new_name"] or "")]
+        for p in odd:
+            report["كود واحد لاسمين مختلفين"].append(dict(p, kept=main["new"]))
+        rest = [p for p in rest if p not in odd]
         if not rest:
             continue
         if all(p["n"] == 0 for p in rest):
@@ -118,7 +126,8 @@ def build(db, rows, master):
         p["target_code"] = f"{prefix}{p['new']}"
         p["target_name"] = p["new_name"] or p["item"].name
         p["target_cat"] = master.get(p["new"]) or p["sheet_cat"] or p["item"].category
-    taken = {code: it.id for code, it in by_code.items() if it.id not in changing}
+    leaving = changing | {p["item"].id for p in [*retire, *held]}
+    taken = {code: it.id for code, it in by_code.items() if it.id not in leaving}
     ok = []
     for p in renames:
         other = taken.get(p["target_code"])
@@ -211,6 +220,10 @@ def apply(db, renames, retire, held, actor: int, backup_path: str, flags, opts, 
     lookups = [dict(id=o.id, value=o.value, active=o.active, hidden=o.hidden_in_price_sheet,
                     sort_order=o.sort_order) for o in opts.values()]
 
+    targets = {p["target_code"] for p in renames}
+    for p in [*retire, *held]:
+        if p["item"].code in targets:
+            p["item"].code = f"{p['item'].code}-x{p['item'].id}"[:32]
     for p in renames:
         p["item"].code = f"~U{p['item'].id}"
     db.flush()
@@ -329,7 +342,8 @@ def write_review(path, renames, retire, held, report, by_code, activity, merges=
                    r["new_name"]])
     ws = wb.create_sheet("ملاحظات تانية")
     ws.append(["النوع", "الفرع", "كود نظامنا", "اسم a5", "الكود الجديد", "الاسم الجديد"])
-    for kind in ("كود نظامنا غير موجود", "بدون كود جديد", "الكود الجديد مستخدم لصنف تاني"):
+    for kind in ("كود نظامنا غير موجود", "بدون كود جديد", "الكود الجديد مستخدم لصنف تاني",
+                 "كود واحد لاسمين مختلفين"):
         for r in report.get(kind, []):
             ws.append([kind, BRANCH_NAMES[r["b"]], r.get("ours"), r.get("a5_name"), r.get("new"),
                        r.get("new_name")])
