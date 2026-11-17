@@ -182,7 +182,8 @@ def employee_dues(
         if with_advances:
             mine = open_by_emp.get(e.id, [])
             parts = [p for a in mine for p in pending.get(a.id, [])]
-            outstanding = to_money(sum((left_of.get(a.id, ZERO) for a in mine), ZERO))
+            outstanding = to_money(sum((left_of.get(a.id, ZERO) for a in mine if a.id not in skip),
+                                       ZERO))
             row.advances_outstanding = outstanding
             row.open_advances = len(mine)
             row.remaining_instalments = len(parts)

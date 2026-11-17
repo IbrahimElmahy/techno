@@ -3,10 +3,10 @@ import { useNavigate } from 'react-router-dom';
 import { PAGE_SIZE } from '../utils/pagination';
 import { searchFilter, searchRank } from '../utils/arabicSort';
 import {
-  Alert, Button, Col, DatePicker, Dropdown, Input, Row, Segmented, Select, Space, Table, Tag, Tooltip, message,
+  Alert, Button, Col, DatePicker, Input, Row, Segmented, Select, Space, Table, Tag, Tooltip, message,
 } from 'antd';
 import {
-  DownloadOutlined, DownOutlined, IdcardOutlined, PlusOutlined, PrinterOutlined, ReloadOutlined,
+  DownloadOutlined, IdcardOutlined, PlusOutlined, PrinterOutlined, ReloadOutlined,
 } from '@ant-design/icons';
 import dayjs, { Dayjs } from 'dayjs';
 import type { ColumnsType } from 'antd/es/table';
@@ -31,7 +31,6 @@ import PaymentModal from './vouchers/PaymentModal';
 import { useQuickVoucher } from './vouchers/useQuickVoucher';
 import type { PartyKind } from './vouchers/PartyKind';
 import type { Party } from './vouchers/types';
-import PlanEditor, { equalPlan, type PlanMode, type PlanRow } from './payroll/PlanEditor';
 import type { ListTab } from '../components/ListPage';
 
 interface DueRow {
@@ -155,8 +154,6 @@ const emptyAdvance = () => ({
   treasury_id: undefined as number | undefined,
   cost_center_id: undefined as number | undefined,
   reason: '',
-  planMode: 'equal' as PlanMode,
-  planRows: [] as PlanRow[],
 });
 
 export interface ReceivablesHost {
@@ -264,8 +261,6 @@ export default function EmployeeReceivables({ host }: { host?: ReceivablesHost }
         start: dayjs(`${edit.start_year}-${String(edit.start_month).padStart(2, '0')}-01`),
         instalments: edit.instalments, treasury_id: edit.treasury_id ?? undefined,
         cost_center_id: edit.cost_center_id ?? undefined, reason: edit.reason ?? '',
-        planMode: edit.schedule.length ? 'custom' : 'none',
-        planRows: edit.schedule.map((p) => ({ year: p.year, month: p.month, amount: Number(p.amount) })),
       });
     } else {
       setAdvForm({ ...emptyAdvance(), employee_id: employee });
@@ -278,22 +273,16 @@ export default function EmployeeReceivables({ host }: { host?: ReceivablesHost }
       message.warning('اختر الموظف واكتب المبلغ'); return;
     }
     setSaving(true);
-    const plan = advForm.planMode === 'equal'
-      ? equalPlan(Number(advForm.amount), advForm.instalments || 1, advForm.start)
-      : advForm.planMode === 'custom' ? advForm.planRows.filter((r) => Number(r.amount) > 0) : [];
-    if (plan.reduce((t, r) => t + Number(r.amount), 0) > Number(advForm.amount) + 0.001) {
-      message.warning('مجموع الأقساط أكبر من مبلغ السلفة'); return;
-    }
     const body = {
       amount: String(advForm.amount),
       advance_date: advForm.advance_date.format('YYYY-MM-DD'),
-      instalments: Math.max(plan.length, 1),
+      instalments: 1,
       start_year: advForm.start.year(),
       start_month: advForm.start.month() + 1,
       reason: advForm.reason || null,
       treasury_id: advForm.treasury_id ?? null,
       cost_center_id: advForm.cost_center_id ?? null,
-      plan: plan.map((r) => ({ year: r.year, month: r.month, amount: String(r.amount) })),
+      plan: [],
     };
     try {
       if (advForm.id) {
@@ -308,57 +297,6 @@ export default function EmployeeReceivables({ host }: { host?: ReceivablesHost }
     } catch {} finally { setSaving(false); }
   };
 
-  const [repayOf, setRepayOf] = useState<Advance | null>(null);
-  const [repayForm, setRepayForm] = useState<{ amount?: number; date: Dayjs; treasury_id?: number; notes: string }>(
-    { date: dayjs(), notes: '' });
-  const [planOf, setPlanOf] = useState<Advance | null>(null);
-  const [planRows, setPlanRows] = useState<PlanRow[]>([]);
-  const [planMode, setPlanMode] = useState<PlanMode>('custom');
-  const [planCount, setPlanCount] = useState(1);
-  const [planStart, setPlanStart] = useState<Dayjs>(dayjs());
-
-  const openRepay = async (a: Advance) => {
-    await ensureTreasuries();
-    setRepayForm({ amount: Number(a.outstanding), date: dayjs(), treasury_id: a.treasury_id ?? undefined, notes: '' });
-    setRepayOf(a);
-  };
-  const saveRepay = async () => {
-    if (!repayOf || !repayForm.amount) { message.warning('اكتب المبلغ'); return; }
-    setSaving(true);
-    try {
-      await api.post(`/api/v1/hr/advances/${repayOf.id}/repay`, {
-        amount: String(repayForm.amount), pay_date: repayForm.date.format('YYYY-MM-DD'),
-        treasury_id: repayForm.treasury_id ?? null, notes: repayForm.notes || null,
-      });
-      message.success('تم التحصيل وتسجيل سند القبض');
-      setRepayOf(null);
-      reloadAll();
-      if (repayOf.employee_id) loadEmployeeAdvances(repayOf.employee_id);
-    } catch {} finally { setSaving(false); }
-  };
-  const openPlan = (a: Advance) => {
-    const pending = a.schedule.filter((p) => !p.paid);
-    setPlanRows(pending.map((p) => ({ year: p.year, month: p.month, amount: Number(p.amount) })));
-    setPlanMode(pending.length ? 'custom' : 'none');
-    setPlanCount(Math.max(pending.length, 1));
-    setPlanStart(dayjs());
-    setPlanOf(a);
-  };
-  const savePlan = async () => {
-    if (!planOf) return;
-    const left = Number(planOf.outstanding);
-    const plan = planMode === 'equal' ? equalPlan(left, planCount, planStart)
-      : planMode === 'custom' ? planRows.filter((r) => Number(r.amount) > 0) : [];
-    setSaving(true);
-    try {
-      await api.put(`/api/v1/hr/advances/${planOf.id}/plan`,
-        plan.map((r) => ({ year: r.year, month: r.month, amount: String(r.amount) })));
-      message.success('تم حفظ خطة السداد');
-      setPlanOf(null);
-      reloadAll();
-      if (planOf.employee_id) loadEmployeeAdvances(planOf.employee_id);
-    } catch {} finally { setSaving(false); }
-  };
   const cancelRepay = async (a: Advance, p: ScheduleRow) => {
     try {
       await api.post(`/api/v1/hr/advances/${a.id}/repayments/${p.id}/cancel`);
@@ -429,42 +367,22 @@ export default function EmployeeReceivables({ host }: { host?: ReceivablesHost }
     () => Object.fromEntries(branches.map((b) => [b.id, b.name])), [branches]);
   const rows = dues?.rows ?? [];
 
-  const rowActions = (r: DueRow) => {
-    const items: any[] = [];
-    if (advancesVisible && r.employee_id) {
-      items.push({ key: 'advance', label: 'صرف سلفة على المرتب' });
-    }
-    if (r.account_id) {
-      items.push(
-        { key: 'receipt', label: 'تحصيل (سند قبض على الذمة)' },
-        { key: 'payment', label: 'صرف على الذمة (سند صرف)' },
-        { key: 'statement', label: 'كشف حساب الموظف' },
-      );
-    }
-    if (advancesVisible && r.employee_id && r.last_advance_date) {
-      items.push({ key: 'advances', label: 'كل سلفه' });
-    }
-    if (advancesVisible && r.employee_id) {
-    }
-    const onClick = ({ key }: { key: string }) => {
-      if (key === 'advance') openAdvance(r.employee_id!);
-      if (key === 'receipt') openVoucher('receipt', r);
-      if (key === 'payment') openVoucher('payment', r);
-      if (key === 'statement') navigate(`/account-statement?account=${r.account_id}`);
-      if (key === 'advances') { setEmployeeId(r.employee_id!); setAdvStatus(undefined); setTab('advances'); }
-      if (key === 'adjustment') {
-        setAdjForm({ ...adjForm, employee_id: r.employee_id, amount: undefined, quantity: undefined, reason: '' });
-        setAdjOpen(true);
-      }
-    };
-    return items.length ? (
-      <Dropdown menu={{ items, onClick }} trigger={['click']}>
-        <Button size="small" onClick={(e) => e.stopPropagation()}>
-          إجراءات <DownOutlined />
-        </Button>
-      </Dropdown>
-    ) : null;
-  };
+  const rowActions = (r: DueRow) => (
+    <span style={{ display: 'inline-flex', gap: 6 }} onClick={(e) => e.stopPropagation()}>
+      {advancesVisible && r.employee_id ? (
+        <Button size="small" type="primary" onClick={() => openAdvance(r.employee_id!)}>صرف سلفة</Button>
+      ) : null}
+      {r.account_id ? (<>
+        <Button size="small" onClick={() => openVoucher('receipt', r)}>تحصيل</Button>
+        <Button size="small" onClick={() => openVoucher('payment', r)}>صرف على الذمة</Button>
+        <Button size="small" onClick={() => navigate(`/account-statement?account=${r.account_id}`)}>كشف حساب</Button>
+      </>) : null}
+      {advancesVisible && r.employee_id && r.last_advance_date ? (
+        <Button size="small" type="link"
+          onClick={() => { setEmployeeId(r.employee_id!); setAdvStatus(undefined); setTab('advances'); }}>سلفه</Button>
+      ) : null}
+    </span>
+  );
 
   const dueColumns: ColumnsType<DueRow> = [
     {
@@ -489,34 +407,21 @@ export default function EmployeeReceivables({ host }: { host?: ReceivablesHost }
     { title: 'الفرع', dataIndex: 'branch_id', key: 'branch_id', width: 100,
       render: (v: number | null) => (v ? branchName[v] ?? `#${v}` : '—') },
     {
-      title: 'الذمة (الدفتر)', dataIndex: 'ledger_balance', key: 'ledger_balance', width: 130,
+      title: 'الذمة', dataIndex: 'ledger_balance', key: 'ledger_balance', width: 130,
       align: 'left', sorter: (a, b) => Number(a.ledger_balance) - Number(b.ledger_balance),
       render: (v: string, r) => (r.account_id ? money(v) : (
         <Tooltip title="ليس له حساب ذمة في الشجرة — تُحتسب سلفه فقط">—</Tooltip>
       )),
     },
-    ...(advancesVisible ? [
+    ...(advancesVisible && rows.some((x) => Number(x.advances_outstanding)) ? [
       {
-        title: 'السلف المتبقية', dataIndex: 'advances_outstanding', key: 'advances_outstanding',
+        title: 'سلف غير مقيدة', dataIndex: 'advances_outstanding', key: 'advances_outstanding',
         width: 130, align: 'left' as const,
-        sorter: (a: DueRow, b: DueRow) =>
-          Number(a.advances_outstanding ?? 0) - Number(b.advances_outstanding ?? 0),
         render: (v: string | null) => (Number(v) ? money(v) : '—'),
-      },
-      {
-        title: 'الأقساط', key: 'instalments', width: 190,
-        render: (_: any, r: DueRow) => (r.remaining_instalments ? (
-          <span>
-            متبقٍّ {r.remaining_instalments} {r.remaining_instalments === 1 ? 'قسط' : 'أقساط'}
-            <span style={{ color: '#888' }}>
-              {' · '}{period(r.next_instalment_year, r.next_instalment_month)}: {money(r.next_instalment_amount)}
-            </span>
-          </span>
-        ) : '—'),
       },
     ] : []),
     {
-      title: 'الإجمالي', dataIndex: 'total_due', key: 'total_due', width: 140, align: 'left',
+      title: 'الباقي عليه', dataIndex: 'total_due', key: 'total_due', width: 140, align: 'left',
       defaultSortOrder: 'descend',
       sorter: (a, b) => Math.abs(Number(a.total_due)) - Math.abs(Number(b.total_due)),
       render: (v: string) => <b style={{ color: Number(v) < 0 ? '#cf1322' : undefined }}>{money(v)}</b>,
@@ -527,7 +432,7 @@ export default function EmployeeReceivables({ host }: { host?: ReceivablesHost }
     { title: 'الحساب', dataIndex: 'account_name', key: 'account_name', width: 200, ellipsis: true,
       render: (v: string | null, r) => (v ? `${v} (${r.account_code})` : '—') },
     { title: 'حركات', dataIndex: 'ledger_lines', key: 'ledger_lines', width: 80, align: 'left' },
-    { title: '', key: 'actions', width: 120, fixed: 'left', render: (_: any, r) => rowActions(r) },
+    { title: '', key: 'actions', width: 380, fixed: 'left', render: (_: any, r) => rowActions(r) },
   ];
 
   const advanceColumns = (withEmployee: boolean): ColumnsType<Advance> => [
@@ -536,30 +441,22 @@ export default function EmployeeReceivables({ host }: { host?: ReceivablesHost }
     { title: 'التاريخ', dataIndex: 'advance_date', key: 'advance_date', width: 110 },
     { title: 'المبلغ', dataIndex: 'amount', key: 'amount', width: 110,
       render: (v: string) => money(v) },
-    { title: 'الخطة', key: 'instalments', width: 170,
-      render: (_: any, r: Advance) => {
-        const pending = r.schedule.filter((p) => !p.paid);
-        return pending.length ? `${pending.length} شهر · ${money(pending.reduce((t, p) => t + Number(p.amount), 0))}` : 'بدون خطة';
-      } },
-    { title: 'المسدد', dataIndex: 'taken', key: 'taken', width: 110,
-      render: (v: string) => money(v) },
-    { title: 'المتبقي', dataIndex: 'outstanding', key: 'outstanding', width: 120,
-      render: (_: string, r: Advance) => (r.status === 'cancelled' ? '—'
-        : <b style={{ color: remaining(r) ? '#cf1322' : '#6AB42D' }}>{money(r.outstanding)}</b>) },
+    { title: 'الخزنة', dataIndex: 'treasury_id', key: 'treasury_id', width: 140,
+      render: (v: number | null) => (v ? treasuries.find((t: any) => t.id === v)?.name ?? '' : '') },
     { title: 'الحالة', dataIndex: 'status', key: 'status', width: 110,
-      render: (v: string) => <Tag color={ADVANCE_STATUS[v]?.color}>{ADVANCE_STATUS[v]?.label ?? v}</Tag> },
+      render: (v: string, r: Advance) => (v === 'active' && !r.schedule.length
+        ? <Tag color="blue">مصروفة</Tag>
+        : <Tag color={ADVANCE_STATUS[v]?.color}>{ADVANCE_STATUS[v]?.label ?? v}</Tag>) },
     { title: 'السبب', dataIndex: 'reason', key: 'reason', ellipsis: true,
       render: (v: string | null) => v ?? '' },
     { title: '', key: 'actions', width: 300, render: (_: any, r: Advance) => (
       r.status === 'active' ? (
         <span style={{ display: 'inline-flex', gap: 6 }}>
-          <Button size="small" type="primary" onClick={() => openRepay(r)}>تحصيل</Button>
-          <Button size="small" onClick={() => openPlan(r)}>الخطة</Button>
           {editable(r) ? (<>
           <Button size="small" onClick={() => openAdvance(undefined, r)}>تعديل</Button>
           <Popconfirm
             title="هل تريد إلغاء السلفة؟"
-            description="سيُعكس قيد الصرف وتعود المبالغ إلى الخزنة."
+            description="سيُعكس سند الصرف ويعود المبلغ إلى الخزنة."
             okText="إلغاء السلفة" cancelText="رجوع" okButtonProps={{ danger: true }}
             onConfirm={() => cancel('advances', r.id)}
           >
@@ -807,7 +704,7 @@ export default function EmployeeReceivables({ host }: { host?: ReceivablesHost }
                 loading={!byEmployee[r.employee_id!]}
                 columns={advanceColumns(false)}
                 dataSource={byEmployee[r.employee_id!] ?? []}
-                expandable={{ expandedRowRender: scheduleTable }}
+                expandable={{ expandedRowRender: scheduleTable, rowExpandable: (a: Advance) => a.schedule.length > 0 }}
               />
             ),
           } : undefined}
@@ -831,7 +728,7 @@ export default function EmployeeReceivables({ host }: { host?: ReceivablesHost }
           }}
           scroll={{ x: 'max-content' }}
           locale={{ emptyText: 'لا توجد سلف' }}
-          expandable={{ expandedRowRender: scheduleTable }}
+          expandable={{ expandedRowRender: scheduleTable, rowExpandable: (a: Advance) => a.schedule.length > 0 }}
         />
       ) : (
         <Table
@@ -896,60 +793,7 @@ export default function EmployeeReceivables({ host }: { host?: ReceivablesHost }
             <Input value={advForm.reason}
               onChange={(e) => setAdvForm({ ...advForm, reason: e.target.value })} />
           </Col>
-          <Col span={24}>
-            <div style={{ marginBottom: 4 }}>خطة السداد</div>
-            <PlanEditor total={Number(advForm.amount) || 0}
-              mode={advForm.planMode} onMode={(m) => setAdvForm({
-                ...advForm, planMode: m,
-                planRows: m === 'custom' && !advForm.planRows.length
-                  ? equalPlan(Number(advForm.amount) || 0, advForm.instalments || 1, advForm.start) : advForm.planRows,
-              })}
-              rows={advForm.planRows} onRows={(r) => setAdvForm({ ...advForm, planRows: r })}
-              count={advForm.instalments} onCount={(n) => setAdvForm({ ...advForm, instalments: n })}
-              start={advForm.start} onStart={(d) => setAdvForm({ ...advForm, start: d })} />
-          </Col>
         </Row>
-      </TabModal>
-
-      <TabModal open={!!repayOf} title={`تحصيل من سلفة ${repayOf?.document_number || ''} — ${repayOf?.employee_name || ''}`}
-        onCancel={() => setRepayOf(null)} onOk={saveRepay} confirmLoading={saving}
-        okText="تحصيل" cancelText="إلغاء" destroyOnClose>
-        <Row gutter={[10, 10]}>
-          <Col span={24}>المتبقي من السلفة: <b>{money(repayOf?.outstanding)}</b></Col>
-          <Col span={12}>
-            <div style={{ marginBottom: 4 }}>المبلغ *</div>
-            <InputNumber style={{ width: '100%' }} min={0.01} max={Number(repayOf?.outstanding) || undefined}
-              value={repayForm.amount} onChange={(v) => setRepayForm({ ...repayForm, amount: v ?? undefined })} />
-          </Col>
-          <Col span={12}>
-            <div style={{ marginBottom: 4 }}>التاريخ</div>
-            <DatePicker style={{ width: '100%' }} format="YYYY/MM/DD" allowClear={false} value={repayForm.date}
-              onChange={(v) => setRepayForm({ ...repayForm, date: v || dayjs() })} />
-          </Col>
-          <Col span={12}>
-            <div style={{ marginBottom: 4 }}>الخزنة</div>
-            <Select allowClear style={{ width: '100%' }} placeholder="خزنة الفرع" value={repayForm.treasury_id}
-              onChange={(v) => setRepayForm({ ...repayForm, treasury_id: v })}
-              options={treasuries.filter((t: any) => t.active !== false)
-                .map((t: any) => ({ value: t.id, label: `${t.name} — ${money(t.balance)}` }))} />
-          </Col>
-          <Col span={12}>
-            <div style={{ marginBottom: 4 }}>ملاحظات</div>
-            <Input value={repayForm.notes} onChange={(e) => setRepayForm({ ...repayForm, notes: e.target.value })} />
-          </Col>
-        </Row>
-      </TabModal>
-
-      <TabModal open={!!planOf} title={`خطة سداد ${planOf?.document_number || ''} — ${planOf?.employee_name || ''}`}
-        onCancel={() => setPlanOf(null)} onOk={savePlan} confirmLoading={saving}
-        okText="حفظ الخطة" cancelText="إلغاء" destroyOnClose width={640}>
-        <div style={{ marginBottom: 8 }}>المتبقي من السلفة: <b>{money(planOf?.outstanding)}</b></div>
-        <PlanEditor total={Number(planOf?.outstanding) || 0} mode={planMode} onMode={(m) => {
-          setPlanMode(m);
-          if (m === 'custom' && !planRows.length) setPlanRows(equalPlan(Number(planOf?.outstanding) || 0, planCount, planStart));
-        }}
-          rows={planRows} onRows={setPlanRows} count={planCount} onCount={setPlanCount}
-          start={planStart} onStart={setPlanStart} />
       </TabModal>
 
       <TabModal
