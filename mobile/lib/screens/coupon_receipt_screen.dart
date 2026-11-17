@@ -81,9 +81,12 @@ class _CouponReceiptScreenState extends State<CouponReceiptScreen> {
     return {..._tiers, current: current};
   }
 
-  late final String _uuid;
+  late String _uuid;
 
-  bool get _isEdit => widget.existing != null;
+  late bool _editing = widget.existing != null;
+  int _formGen = 0;
+
+  bool get _isEdit => _editing;
 
   @override
   void initState() {
@@ -259,7 +262,30 @@ class _CouponReceiptScreenState extends State<CouponReceiptScreen> {
   bool get _hasRejects => _entries.any((e) =>
       e.status == 'unknown' || e.status == 'received' || e.status == 'wrong_kind');
 
-  Future<void> _save() async {
+  void _startNew() {
+    setState(() {
+      _editing = false;
+      _uuid = 'cr-${DateTime.now().microsecondsSinceEpoch}';
+      _entries.clear();
+      _customerId = null;
+      _customerName = null;
+      _notesCtrl.clear();
+      _serialCtrl.clear();
+      _fromCtrl.clear();
+      _toCtrl.clear();
+      _formGen++;
+    });
+  }
+
+  Future<void> _done() async {
+    if (_entries.isEmpty && !_isEdit) {
+      Navigator.pop(context, true);
+      return;
+    }
+    await _save();
+  }
+
+  Future<void> _save({bool andNew = false}) async {
     if (_entries.isEmpty) {
       _toast('لا توجد كوبونات');
       return;
@@ -303,7 +329,12 @@ class _CouponReceiptScreenState extends State<CouponReceiptScreen> {
       } catch (e) {
         _toast('تم التسجيل على الجهاز، وسيُرفع مع المزامنة (${e.toString()})');
       }
-      if (mounted) Navigator.pop(context, true);
+      if (!mounted) return;
+      if (andNew) {
+        _startNew();
+      } else {
+        Navigator.pop(context, true);
+      }
     } finally {
       if (mounted) setState(() => _saving = false);
     }
@@ -422,6 +453,7 @@ class _CouponReceiptScreenState extends State<CouponReceiptScreen> {
                       const SizedBox(width: 8),
                       Expanded(
                         child: Autocomplete<CustomerRef>(
+                          key: ValueKey(_formGen),
                           displayStringForOption: (c) => c.name,
                           optionsBuilder: (v) => _parties(v.text.trim()),
                           onSelected: (c) => setState(() {
@@ -587,12 +619,25 @@ class _CouponReceiptScreenState extends State<CouponReceiptScreen> {
                                 fontWeight: FontWeight.w700),
                           ),
                         ),
-                        FilledButton.icon(
-                          onPressed: _saving ? null : _save,
-                          icon: const Icon(Icons.save_outlined),
-                          label: Text(_saving
-                              ? 'جارِ الحفظ…'
-                              : (_isEdit ? 'حفظ التعديل' : 'تسجيل الاستلام')),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: OutlinedButton.icon(
+                            onPressed: _saving ? null : () => _save(andNew: true),
+                            icon: const Icon(Icons.add_circle_outline),
+                            label: const Text('حفظ وجديد'),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: FilledButton.icon(
+                            onPressed: _saving ? null : _done,
+                            icon: const Icon(Icons.check),
+                            label: Text(_saving ? 'جارِ الحفظ…' : 'تم'),
+                          ),
                         ),
                       ],
                     ),

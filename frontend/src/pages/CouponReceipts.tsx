@@ -429,9 +429,7 @@ export default function CouponReceipts() {
         customer_type: customerType,
       });
       message.success('تم تسجيل الاستلام ورفعه إلى الخادم');
-      setEntries([]); setNotes(''); setCustomerId(undefined); setKind('');
-      setValue(null); setCustomerType('plumber');
-      setReceivedDate(dayjs());
+      setEntries([]); setNotes(''); setCustomerId(undefined);
       clientUuid.current = crypto.randomUUID();
       loadReceipts();
     } catch (err: any) {
