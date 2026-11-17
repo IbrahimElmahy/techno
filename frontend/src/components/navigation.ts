@@ -246,7 +246,6 @@ export const NAVIGATION: (NavGroup | NavScreen)[] = [
       { key: '/attendance?tab=entry', label: 'إدخال حضور', roles: HR },
       { key: '/attendance?tab=import', label: 'استيراد بصمة', roles: HR },
       { key: '/payroll', label: 'المرتبات', roles: SALARY },
-      { key: '/employee-receivables', label: 'ذمم وسلف الموظفين', roles: BOOKS },
       {
         key: 'grp-hr-reports',
         label: 'تقارير الموارد البشرية',

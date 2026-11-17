@@ -60,6 +60,7 @@ class AdvanceIn(BaseModel):
     treasury_id: int | None = None
     branch_id: int | None = None
     cost_center_id: int | None = None
+    plan: list[dict] | None = None
 
 
 class AdvanceUpdateIn(BaseModel):
@@ -71,6 +72,7 @@ class AdvanceUpdateIn(BaseModel):
     reason: str | None = None
     treasury_id: int | None = None
     cost_center_id: int | None = None
+    plan: list[dict] | None = None
 
 
 class AdjustmentIn(BaseModel):
@@ -145,9 +147,13 @@ def _advance_out(db: Session, a: EmployeeAdvance) -> dict:
         "cost_center_id": a.cost_center_id,
         "taken": str(advance_service.taken_of(db, a.id)),
         "outstanding": str(advance_service.outstanding_of(db, a)),
+        "account_id": a.account_id, "voucher_id": a.voucher_id,
         "schedule": [
-            {"year": p.year, "month": p.month, "amount": str(p.amount),
-             "paid": p.payroll_line_id is not None}
+            {"id": p.id, "year": p.year, "month": p.month, "amount": str(p.amount),
+             "paid": p.payroll_line_id is not None or p.voucher_id is not None,
+             "method": "payroll" if p.payroll_line_id is not None
+             else "cash" if p.voucher_id is not None else None,
+             "voucher_id": p.voucher_id, "paid_on": p.paid_on}
             for p in parts
         ],
     }
@@ -196,7 +202,8 @@ def create_advance(
         _not_found("الفرع غير موجود.")
     _check_treasury(db, body.treasury_id, current)
     try:
-        row = advance_service.create_advance(db, actor_user_id=current.id, **data)
+        row = advance_service.create_advance(db, actor_user_id=current.id,
+                                             actor_role=current.role, **data)
     except (AdvanceError, LedgerError) as exc:
         _raise(exc)
     out = _advance_out(db, row)
@@ -232,9 +239,83 @@ def update_advance(
     _check_treasury(db, body.treasury_id, current)
     try:
         row = advance_service.update_advance(
-            db, advance_id=advance_id, actor_user_id=current.id, **body.model_dump())
+            db, advance_id=advance_id, actor_user_id=current.id, actor_role=current.role,
+            **body.model_dump())
     except (AdvanceError, LedgerError) as exc:
         _raise(exc)
+    out = _advance_out(db, row)
+    db.commit()
+    return out
+
+
+class PlanRowIn(BaseModel):
+    year: int
+    month: int
+    amount: float | str
+
+
+class RepayIn(BaseModel):
+    amount: float | str
+    pay_date: date
+    treasury_id: int | None = None
+    notes: str | None = None
+
+
+@router.put("/advances/{advance_id}/plan")
+def set_plan(
+    advance_id: int,
+    body: list[PlanRowIn],
+    current: CurrentUser = Depends(require_capability(CAP_PAYROLL_POST)),
+    db: Session = Depends(get_db),
+) -> dict:
+    _seen_advance(db, advance_id, current)
+    try:
+        row = advance_service.set_plan(db, advance_id=advance_id,
+                                       plan=[r.model_dump() for r in body],
+                                       actor_user_id=current.id)
+    except (AdvanceError, LedgerError) as exc:
+        _raise(exc)
+    out = _advance_out(db, row)
+    db.commit()
+    return out
+
+
+@router.post("/advances/{advance_id}/repay")
+def repay(
+    advance_id: int,
+    body: RepayIn,
+    current: CurrentUser = Depends(require_capability(CAP_PAYROLL_POST)),
+    db: Session = Depends(get_db),
+) -> dict:
+    _seen_advance(db, advance_id, current)
+    _check_treasury(db, body.treasury_id, current)
+    try:
+        row = advance_service.repay(db, advance_id=advance_id, amount=body.amount,
+                                    pay_date=body.pay_date, treasury_id=body.treasury_id,
+                                    actor_user_id=current.id, actor_role=current.role,
+                                    notes=body.notes)
+    except (AdvanceError, LedgerError) as exc:
+        _raise(exc)
+    out = _advance_out(db, row)
+    db.commit()
+    return out
+
+
+@router.post("/advances/{advance_id}/repayments/{instalment_id}/cancel")
+def cancel_repayment(
+    advance_id: int,
+    instalment_id: int,
+    current: CurrentUser = Depends(require_capability(CAP_PAYROLL_POST)),
+    db: Session = Depends(get_db),
+) -> dict:
+    _seen_advance(db, advance_id, current)
+    try:
+        row = advance_service.cancel_repayment(db, instalment_id=instalment_id,
+                                               actor_user_id=current.id)
+    except (AdvanceError, LedgerError) as exc:
+        _raise(exc)
+    if row.id != advance_id:
+        _not_found("التحصيل غير موجود.")
     out = _advance_out(db, row)
     db.commit()
     return out

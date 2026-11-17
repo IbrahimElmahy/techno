@@ -28,6 +28,7 @@ import { money, numeralsLocale } from '../utils/money';
 import { PAGE_SIZE } from '../utils/pagination';
 import { useAdjustmentsTab, useLeavesTab } from './payroll/PayrollExtras';
 import { useOvertimeTab } from './payroll/OvertimeTab';
+import EmployeeReceivables from './EmployeeReceivables';
 import { addNew } from '../components/QuickCreate';
 
 interface Rule { id?: number; basis: string; basis_label?: string; pct: string | number }
@@ -624,20 +625,32 @@ export default function Payroll() {
       filterOption={searchFilter} filterSort={searchRank} />
   ) : null;
 
+  const payrollTabs = [
+    { key: 'month', label: 'مرتبات الشهر', count: data?.lines.length ?? null },
+    { key: 'overtime', label: 'الإضافي والغياب' },
+    { key: 'advances', label: 'السلف والذمم' },
+    { key: 'leaves', label: 'الإجازات' },
+    { key: 'penalties', label: 'الجزاءات' },
+    { key: 'bonuses', label: 'المكافآت' },
+    { key: 'employees', label: 'كروت المرتبات', count: emps.length },
+    { key: 'remittances', label: 'سداد التأمينات', count: remits.length },
+  ];
+
+  if (tab === 'advances') {
+    return (
+      <EmployeeReceivables host={{
+        title: 'المرتبات', icon: <DollarOutlined />, tabs: payrollTabs, activeTab: tab,
+        onTabChange: (k: string) => setTab(k),
+      }} />
+    );
+  }
+
   return (
     <>
       <ListPage
         icon={<DollarOutlined />}
         title="المرتبات"
-        tabs={[
-          { key: 'month', label: 'مرتبات الشهر', count: data?.lines.length ?? null },
-          { key: 'overtime', label: 'الإضافي والغياب' },
-          { key: 'leaves', label: 'الإجازات' },
-          { key: 'penalties', label: 'الجزاءات' },
-          { key: 'bonuses', label: 'المكافآت' },
-          { key: 'employees', label: 'كروت المرتبات', count: emps.length },
-          { key: 'remittances', label: 'سداد التأمينات', count: remits.length },
-        ]}
+        tabs={payrollTabs}
         activeTab={tab as any}
         onTabChange={(k) => setTab(k)}
         actions={extra ? extra.actions : tab === 'month' ? (<>

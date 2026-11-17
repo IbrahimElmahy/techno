@@ -12,7 +12,7 @@ from src.models.customer import Customer, CustomerAccount
 from src.models.employee import Employee, JobTitle
 from src.models.hr_advance import AdvanceStatus, EmployeeAdvance, EmployeeAdvanceInstalment
 from src.models.ledger import Account, Direction, LedgerEntry, LedgerLine
-from src.services import ledger_service
+from src.services import advance_service, ledger_service
 
 RECEIVABLE_GROUPS = ("A5M-22", "AL-A5M-22", "FC-A5M-22")
 
@@ -147,12 +147,17 @@ def employee_dues(
         if open_ids:
             for p in db.scalars(select(EmployeeAdvanceInstalment).where(
                     EmployeeAdvanceInstalment.advance_id.in_(open_ids),
-                    EmployeeAdvanceInstalment.payroll_line_id.is_(None))
+                    EmployeeAdvanceInstalment.payroll_line_id.is_(None),
+                    EmployeeAdvanceInstalment.voucher_id.is_(None))
                     .order_by(EmployeeAdvanceInstalment.year,
                               EmployeeAdvanceInstalment.month)).all():
                 pending.setdefault(p.advance_id, []).append(p)
         skip = _in_receivable(db, [a for lst in open_by_emp.values() for a in lst],
                               receivable_of)
+        skip |= {a.id for lst in open_by_emp.values() for a in lst
+                 if a.account_id and a.account_id == receivable_of.get(a.employee_id)}
+        left_of = {a.id: advance_service.outstanding_of(db, a)
+                   for lst in open_by_emp.values() for a in lst}
 
     titles = {t.id: t.name for t in db.scalars(select(JobTitle)).all()}
 
@@ -177,7 +182,7 @@ def employee_dues(
         if with_advances:
             mine = open_by_emp.get(e.id, [])
             parts = [p for a in mine for p in pending.get(a.id, [])]
-            outstanding = to_money(sum((Decimal(str(p.amount)) for p in parts), ZERO))
+            outstanding = to_money(sum((left_of.get(a.id, ZERO) for a in mine), ZERO))
             row.advances_outstanding = outstanding
             row.open_advances = len(mine)
             row.remaining_instalments = len(parts)
@@ -188,8 +193,8 @@ def employee_dues(
                     (Decimal(str(p.amount)) for p in parts
                      if (p.year, p.month) == (nxt.year, nxt.month)), ZERO))
             row.last_advance_date = last_adv.get(e.id)
-            added = to_money(sum((Decimal(str(p.amount)) for a in mine if a.id not in skip
-                                  for p in pending.get(a.id, [])), ZERO))
+            added = to_money(sum((left_of.get(a.id, ZERO) for a in mine if a.id not in skip),
+                                 ZERO))
         row.total_due = to_money(row.ledger_balance + added)
         dates = [d for d in (row.last_ledger_date, row.last_advance_date) if d]
         row.last_movement = max(dates) if dates else None

@@ -132,9 +132,21 @@ def post_run(db: Session, *, run_id: int, actor_user_id: int) -> dict:
         entry_lines.append(LineInput(acc["penalties_fund"].id, Direction.credit, penalties,
                                      statement="حصيلة الجزاءات"))
     if advances:
-        entry_lines.append(LineInput(advance_service.advances_account_id(db),
-                                     Direction.credit, advances,
-                                     statement="أقساط سلف"))
+        by_account: dict[int, Decimal] = {}
+        for x in lines:
+            for part in advance_service.due_in(db, employee_id=x.employee_id,
+                                               year=run.year, month=run.month):
+                acc_id = advance_service.debit_account_of(db, db.get(EmployeeAdvance, part.advance_id))
+                by_account[acc_id] = to_money(by_account.get(acc_id, ZERO)
+                                              + Decimal(str(part.amount)))
+        gap = to_money(advances - sum(by_account.values(), ZERO))
+        if gap:
+            fallback = advance_service.advances_account_id(db)
+            by_account[fallback] = to_money(by_account.get(fallback, ZERO) + gap)
+        for acc_id, amount in by_account.items():
+            if amount:
+                entry_lines.append(LineInput(acc_id, Direction.credit, amount,
+                                             statement="أقساط سلف"))
     dues_by_account: dict[int, Decimal] = {}
     for x in lines:
         amount = to_money(Decimal(str(x.dues_deduction or 0)))

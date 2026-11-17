@@ -52,6 +52,8 @@ class EmployeeAdvance(Base):
     )
     treasury_id: Mapped[int | None] = mapped_column(ForeignKey("treasury.id"), nullable=True)
     branch_id: Mapped[int | None] = mapped_column(ForeignKey("branch.id"), nullable=True)
+    account_id: Mapped[int | None] = mapped_column(ForeignKey("account.id"), nullable=True)
+    voucher_id: Mapped[int | None] = mapped_column(ForeignKey("voucher.id"), nullable=True)
     cost_center_id: Mapped[int | None] = mapped_column(
         ForeignKey("cost_center.id"), nullable=True
     )
@@ -63,9 +65,6 @@ class EmployeeAdvance(Base):
 
 class EmployeeAdvanceInstalment(Base):
     __tablename__ = "employee_advance_instalment"
-    __table_args__ = (
-        UniqueConstraint("advance_id", "year", "month", name="uq_advance_instalment_period"),
-    )
 
     id: Mapped[int] = mapped_column(BigIntPK, primary_key=True, autoincrement=True)
     advance_id: Mapped[int] = mapped_column(
@@ -75,6 +74,8 @@ class EmployeeAdvanceInstalment(Base):
     month: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
     amount: Mapped[object] = mapped_column(MONEY, nullable=False)
     payroll_line_id: Mapped[int | None] = mapped_column(BigIntPK, nullable=True)
+    voucher_id: Mapped[int | None] = mapped_column(ForeignKey("voucher.id"), nullable=True)
+    paid_on: Mapped[date | None] = mapped_column(Date, nullable=True)
 
 
 class AdjustmentKind(str, enum.Enum):

@@ -175,7 +175,7 @@ export default function PageRoutes({ location }: { location?: string }) {
       <Route path="/employee-salaries" element={<Navigate to="/payroll?tab=employees" replace />} />
       <Route path="/commission-settings" element={<Navigate to="/payroll?tab=employees" replace />} />
       <Route path="/advances" element={<Advances />} />
-      <Route path="/employee-receivables" element={<EmployeeReceivables />} />
+      <Route path="/employee-receivables" element={<Navigate to="/payroll?tab=advances" replace />} />
       <Route path="/insurance" element={<Navigate to="/payroll?tab=employees" replace />} />
       <Route path="/payroll" element={<Payroll />} />
       <Route path="/payroll-sheet" element={<Navigate to="/payroll" replace />} />

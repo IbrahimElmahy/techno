@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { PAGE_SIZE } from '../utils/pagination';
 import { searchFilter, searchRank } from '../utils/arabicSort';
 import {
-  Alert, Button, Col, DatePicker, Dropdown, Input, Row, Select, Table, Tag, Tooltip, message,
+  Alert, Button, Col, DatePicker, Dropdown, Input, Row, Segmented, Select, Space, Table, Tag, Tooltip, message,
 } from 'antd';
 import {
   DownloadOutlined, DownOutlined, IdcardOutlined, PlusOutlined, PrinterOutlined, ReloadOutlined,
@@ -31,6 +31,8 @@ import PaymentModal from './vouchers/PaymentModal';
 import { useQuickVoucher } from './vouchers/useQuickVoucher';
 import type { PartyKind } from './vouchers/PartyKind';
 import type { Party } from './vouchers/types';
+import PlanEditor, { equalPlan, type PlanMode, type PlanRow } from './payroll/PlanEditor';
+import type { ListTab } from '../components/ListPage';
 
 interface DueRow {
   employee_id: number | null;
@@ -69,7 +71,10 @@ interface DuesPayload {
   advances_visible: boolean;
 }
 
-interface ScheduleRow { year: number; month: number; amount: string; paid: boolean }
+interface ScheduleRow {
+  id: number; year: number; month: number; amount: string; paid: boolean;
+  method: 'payroll' | 'cash' | null; voucher_id: number | null; paid_on: string | null;
+}
 
 interface Advance {
   id: number;
@@ -150,11 +155,18 @@ const emptyAdvance = () => ({
   treasury_id: undefined as number | undefined,
   cost_center_id: undefined as number | undefined,
   reason: '',
+  planMode: 'equal' as PlanMode,
+  planRows: [] as PlanRow[],
 });
 
-export default function EmployeeReceivables() {
+export interface ReceivablesHost {
+  title: React.ReactNode; icon: React.ReactNode;
+  tabs: ListTab<any>[]; activeTab: string; onTabChange: (k: any) => void;
+}
+
+export default function EmployeeReceivables({ host }: { host?: ReceivablesHost } = {}) {
   const navigate = useNavigate();
-  const [tabRaw, setTab] = useQueryTab('open');
+  const [tabRaw, setTab] = useQueryTab('open', host ? 'sub' : 'tab');
   const tab: TabKey = tabRaw === 'nonzero' ? 'open'
     : (TAB_KEYS.includes(tabRaw as TabKey) ? tabRaw as TabKey : 'open');
   const onDues = tab === 'open' || tab === 'all';
@@ -252,6 +264,8 @@ export default function EmployeeReceivables() {
         start: dayjs(`${edit.start_year}-${String(edit.start_month).padStart(2, '0')}-01`),
         instalments: edit.instalments, treasury_id: edit.treasury_id ?? undefined,
         cost_center_id: edit.cost_center_id ?? undefined, reason: edit.reason ?? '',
+        planMode: edit.schedule.length ? 'custom' : 'none',
+        planRows: edit.schedule.map((p) => ({ year: p.year, month: p.month, amount: Number(p.amount) })),
       });
     } else {
       setAdvForm({ ...emptyAdvance(), employee_id: employee });
@@ -264,15 +278,22 @@ export default function EmployeeReceivables() {
       message.warning('اختر الموظف واكتب المبلغ'); return;
     }
     setSaving(true);
+    const plan = advForm.planMode === 'equal'
+      ? equalPlan(Number(advForm.amount), advForm.instalments || 1, advForm.start)
+      : advForm.planMode === 'custom' ? advForm.planRows.filter((r) => Number(r.amount) > 0) : [];
+    if (plan.reduce((t, r) => t + Number(r.amount), 0) > Number(advForm.amount) + 0.001) {
+      message.warning('مجموع الأقساط أكبر من مبلغ السلفة'); return;
+    }
     const body = {
       amount: String(advForm.amount),
       advance_date: advForm.advance_date.format('YYYY-MM-DD'),
-      instalments: advForm.instalments || 1,
+      instalments: Math.max(plan.length, 1),
       start_year: advForm.start.year(),
       start_month: advForm.start.month() + 1,
       reason: advForm.reason || null,
       treasury_id: advForm.treasury_id ?? null,
       cost_center_id: advForm.cost_center_id ?? null,
+      plan: plan.map((r) => ({ year: r.year, month: r.month, amount: String(r.amount) })),
     };
     try {
       if (advForm.id) {
@@ -285,6 +306,66 @@ export default function EmployeeReceivables() {
       setAdvOpen(false);
       reloadAll();
     } catch {} finally { setSaving(false); }
+  };
+
+  const [repayOf, setRepayOf] = useState<Advance | null>(null);
+  const [repayForm, setRepayForm] = useState<{ amount?: number; date: Dayjs; treasury_id?: number; notes: string }>(
+    { date: dayjs(), notes: '' });
+  const [planOf, setPlanOf] = useState<Advance | null>(null);
+  const [planRows, setPlanRows] = useState<PlanRow[]>([]);
+  const [planMode, setPlanMode] = useState<PlanMode>('custom');
+  const [planCount, setPlanCount] = useState(1);
+  const [planStart, setPlanStart] = useState<Dayjs>(dayjs());
+
+  const openRepay = async (a: Advance) => {
+    await ensureTreasuries();
+    setRepayForm({ amount: Number(a.outstanding), date: dayjs(), treasury_id: a.treasury_id ?? undefined, notes: '' });
+    setRepayOf(a);
+  };
+  const saveRepay = async () => {
+    if (!repayOf || !repayForm.amount) { message.warning('اكتب المبلغ'); return; }
+    setSaving(true);
+    try {
+      await api.post(`/api/v1/hr/advances/${repayOf.id}/repay`, {
+        amount: String(repayForm.amount), pay_date: repayForm.date.format('YYYY-MM-DD'),
+        treasury_id: repayForm.treasury_id ?? null, notes: repayForm.notes || null,
+      });
+      message.success('تم التحصيل وتسجيل سند القبض');
+      setRepayOf(null);
+      reloadAll();
+      if (repayOf.employee_id) loadEmployeeAdvances(repayOf.employee_id);
+    } catch {} finally { setSaving(false); }
+  };
+  const openPlan = (a: Advance) => {
+    const pending = a.schedule.filter((p) => !p.paid);
+    setPlanRows(pending.map((p) => ({ year: p.year, month: p.month, amount: Number(p.amount) })));
+    setPlanMode(pending.length ? 'custom' : 'none');
+    setPlanCount(Math.max(pending.length, 1));
+    setPlanStart(dayjs());
+    setPlanOf(a);
+  };
+  const savePlan = async () => {
+    if (!planOf) return;
+    const left = Number(planOf.outstanding);
+    const plan = planMode === 'equal' ? equalPlan(left, planCount, planStart)
+      : planMode === 'custom' ? planRows.filter((r) => Number(r.amount) > 0) : [];
+    setSaving(true);
+    try {
+      await api.put(`/api/v1/hr/advances/${planOf.id}/plan`,
+        plan.map((r) => ({ year: r.year, month: r.month, amount: String(r.amount) })));
+      message.success('تم حفظ خطة السداد');
+      setPlanOf(null);
+      reloadAll();
+      if (planOf.employee_id) loadEmployeeAdvances(planOf.employee_id);
+    } catch {} finally { setSaving(false); }
+  };
+  const cancelRepay = async (a: Advance, p: ScheduleRow) => {
+    try {
+      await api.post(`/api/v1/hr/advances/${a.id}/repayments/${p.id}/cancel`);
+      message.success('تم إلغاء التحصيل وعكس سند القبض');
+      reloadAll();
+      loadEmployeeAdvances(a.employee_id);
+    } catch {}
   };
 
   const cancel = async (what: 'advances' | 'adjustments', id: number) => {
@@ -455,9 +536,12 @@ export default function EmployeeReceivables() {
     { title: 'التاريخ', dataIndex: 'advance_date', key: 'advance_date', width: 110 },
     { title: 'المبلغ', dataIndex: 'amount', key: 'amount', width: 110,
       render: (v: string) => money(v) },
-    { title: 'التقسيط', key: 'instalments', width: 170,
-      render: (_: any, r: Advance) => instalmentLabel(r.instalments, r.instalment_amount) },
-    { title: 'المخصوم', dataIndex: 'taken', key: 'taken', width: 110,
+    { title: 'الخطة', key: 'instalments', width: 170,
+      render: (_: any, r: Advance) => {
+        const pending = r.schedule.filter((p) => !p.paid);
+        return pending.length ? `${pending.length} شهر · ${money(pending.reduce((t, p) => t + Number(p.amount), 0))}` : 'بدون خطة';
+      } },
+    { title: 'المسدد', dataIndex: 'taken', key: 'taken', width: 110,
       render: (v: string) => money(v) },
     { title: 'المتبقي', dataIndex: 'outstanding', key: 'outstanding', width: 120,
       render: (_: string, r: Advance) => (r.status === 'cancelled' ? '—'
@@ -466,9 +550,12 @@ export default function EmployeeReceivables() {
       render: (v: string) => <Tag color={ADVANCE_STATUS[v]?.color}>{ADVANCE_STATUS[v]?.label ?? v}</Tag> },
     { title: 'السبب', dataIndex: 'reason', key: 'reason', ellipsis: true,
       render: (v: string | null) => v ?? '' },
-    { title: '', key: 'actions', width: 150, render: (_: any, r: Advance) => (
-      editable(r) ? (
+    { title: '', key: 'actions', width: 300, render: (_: any, r: Advance) => (
+      r.status === 'active' ? (
         <span style={{ display: 'inline-flex', gap: 6 }}>
+          <Button size="small" type="primary" onClick={() => openRepay(r)}>تحصيل</Button>
+          <Button size="small" onClick={() => openPlan(r)}>الخطة</Button>
+          {editable(r) ? (<>
           <Button size="small" onClick={() => openAdvance(undefined, r)}>تعديل</Button>
           <Popconfirm
             title="هل تريد إلغاء السلفة؟"
@@ -478,11 +565,8 @@ export default function EmployeeReceivables() {
           >
             <Button size="small" danger>إلغاء</Button>
           </Popconfirm>
+          </>) : null}
         </span>
-      ) : r.status === 'active' ? (
-        <Tooltip title="خُصم منها قسط في مسير مرحّل — اعكس المسير أولاً لتعديلها أو إلغائها">
-          <Tag>مغلقة للتعديل</Tag>
-        </Tooltip>
       ) : null
     ) },
   ];
@@ -497,7 +581,16 @@ export default function EmployeeReceivables() {
           render: (_: any, p: ScheduleRow) => period(p.year, p.month) },
         { title: 'القسط', dataIndex: 'amount', width: 140, render: (v: string) => money(v) },
         { title: '', dataIndex: 'paid',
-          render: (v: boolean) => (v ? <Tag color="green">خُصم</Tag> : <Tag color="orange">لم يُخصم بعد</Tag>) },
+          render: (_: boolean, p: ScheduleRow) => (p.method === 'cash' ? (
+            <Space size={4}>
+              <Tag color="green">تحصيل نقدي {p.paid_on || ''}</Tag>
+              <Popconfirm title="إلغاء التحصيل وعكس سند القبض؟" okText="إلغاء التحصيل" cancelText="رجوع"
+                onConfirm={() => cancelRepay(r, p)}>
+                <Button size="small" type="link" danger>إلغاء</Button>
+              </Popconfirm>
+            </Space>
+          ) : p.method === 'payroll' ? <Tag color="green">خُصم من المرتب</Tag>
+            : <Tag color="orange">مخطط على المرتب</Tag>) },
       ]}
     />
   );
@@ -618,21 +711,22 @@ export default function EmployeeReceivables() {
   }), [advances]);
 
   const employeeOptions = employees.map((e) => ({ value: e.id, label: e.name }));
+  const subTabs: ListTab<TabKey>[] = [
+    { key: 'open', label: 'من عليهم مستحقات' },
+    { key: 'all', label: 'كل الموظفين' },
+    ...(advancesVisible ? [
+      { key: 'advances' as TabKey, label: 'السلف', count: tab === 'advances' ? advances.length : null },
+    ] : []),
+  ];
   const totalDue = Number(dues?.total_due ?? 0);
 
   return (
     <>
-    <ListPage<TabKey>
-      icon={<IdcardOutlined />}
-      title="ذمم وسلف الموظفين"
-      tabs={[
-        { key: 'open', label: 'من عليهم مستحقات' },
-        { key: 'all', label: 'كل الموظفين' },
-        ...(advancesVisible ? [
-          { key: 'advances' as TabKey, label: 'السلف', count: tab === 'advances' ? advances.length : null },
-        ] : []),
-      ]}
-      activeTab={tab} onTabChange={setTab}
+    <ListPage<any>
+      icon={host ? host.icon : <IdcardOutlined />}
+      title={host ? host.title : 'ذمم وسلف الموظفين'}
+      tabs={host ? host.tabs : subTabs}
+      activeTab={host ? host.activeTab : tab} onTabChange={host ? host.onTabChange : setTab}
       actions={(<>
         {advancesVisible && tab !== 'adjustments' ? (
           <Button data-shortcut="F2" type="primary" className="sl-create" icon={<PlusOutlined />}
@@ -651,6 +745,8 @@ export default function EmployeeReceivables() {
         <Button icon={<ReloadOutlined />} onClick={reloadAll}>تحديث</Button>
       </>)}
       filters={onDues ? (<>
+        {host ? <Segmented value={tab} onChange={(v) => setTab(v as string)}
+          options={subTabs.map((t) => ({ value: t.key, label: t.label }))} /> : null}
         <Input.Search className="sl-f-search" allowClear placeholder="بحث بالاسم أو الكود"
           onSearch={setQ} onChange={(e) => { if (!e.target.value) setQ(''); }} />
         {branches.length > 1 ? (
@@ -659,6 +755,8 @@ export default function EmployeeReceivables() {
             options={branches.map((b) => ({ value: b.id, label: b.name }))} />
         ) : null}
       </>) : (<>
+        {host ? <Segmented value={tab} onChange={(v) => setTab(v as string)}
+          options={subTabs.map((t) => ({ value: t.key, label: t.label }))} /> : null}
         <Select
           allowClear showSearch style={{ flex: '0 1 320px' }}
           placeholder="كل الموظفين" value={employeeId} onChange={setEmployeeId}
@@ -781,23 +879,6 @@ export default function EmployeeReceivables() {
               onChange={(v) => setAdvForm({ ...advForm, amount: v ?? undefined })} />
           </Col>
           <Col span={12}>
-            <div style={{ marginBottom: 4 }}>عدد الأقساط</div>
-            <InputNumber style={{ width: '100%' }} min={1} max={60}
-              value={advForm.instalments}
-              onChange={(v) => setAdvForm({ ...advForm, instalments: Number(v) || 1 })} />
-            {advForm.amount && advForm.instalments > 1 ? (
-              <div style={{ color: '#888', fontSize: 14, marginTop: 4 }}>
-                ≈ {money(Number(advForm.amount) / advForm.instalments)} في الشهر
-              </div>
-            ) : null}
-          </Col>
-          <Col span={12}>
-            <div style={{ marginBottom: 4 }}>أول قسط في مسير شهر</div>
-            <DatePicker picker="month" style={{ width: '100%' }} format="YYYY/MM" allowClear={false}
-              value={advForm.start}
-              onChange={(v) => setAdvForm({ ...advForm, start: v || advForm.advance_date })} />
-          </Col>
-          <Col span={12}>
             <div style={{ marginBottom: 4 }}>الخزنة</div>
             <Select allowClear style={{ width: '100%' }} placeholder="خزنة فرع الموظف"
               value={advForm.treasury_id}
@@ -815,7 +896,60 @@ export default function EmployeeReceivables() {
             <Input value={advForm.reason}
               onChange={(e) => setAdvForm({ ...advForm, reason: e.target.value })} />
           </Col>
+          <Col span={24}>
+            <div style={{ marginBottom: 4 }}>خطة السداد</div>
+            <PlanEditor total={Number(advForm.amount) || 0}
+              mode={advForm.planMode} onMode={(m) => setAdvForm({
+                ...advForm, planMode: m,
+                planRows: m === 'custom' && !advForm.planRows.length
+                  ? equalPlan(Number(advForm.amount) || 0, advForm.instalments || 1, advForm.start) : advForm.planRows,
+              })}
+              rows={advForm.planRows} onRows={(r) => setAdvForm({ ...advForm, planRows: r })}
+              count={advForm.instalments} onCount={(n) => setAdvForm({ ...advForm, instalments: n })}
+              start={advForm.start} onStart={(d) => setAdvForm({ ...advForm, start: d })} />
+          </Col>
         </Row>
+      </TabModal>
+
+      <TabModal open={!!repayOf} title={`تحصيل من سلفة ${repayOf?.document_number || ''} — ${repayOf?.employee_name || ''}`}
+        onCancel={() => setRepayOf(null)} onOk={saveRepay} confirmLoading={saving}
+        okText="تحصيل" cancelText="إلغاء" destroyOnClose>
+        <Row gutter={[10, 10]}>
+          <Col span={24}>المتبقي من السلفة: <b>{money(repayOf?.outstanding)}</b></Col>
+          <Col span={12}>
+            <div style={{ marginBottom: 4 }}>المبلغ *</div>
+            <InputNumber style={{ width: '100%' }} min={0.01} max={Number(repayOf?.outstanding) || undefined}
+              value={repayForm.amount} onChange={(v) => setRepayForm({ ...repayForm, amount: v ?? undefined })} />
+          </Col>
+          <Col span={12}>
+            <div style={{ marginBottom: 4 }}>التاريخ</div>
+            <DatePicker style={{ width: '100%' }} format="YYYY/MM/DD" allowClear={false} value={repayForm.date}
+              onChange={(v) => setRepayForm({ ...repayForm, date: v || dayjs() })} />
+          </Col>
+          <Col span={12}>
+            <div style={{ marginBottom: 4 }}>الخزنة</div>
+            <Select allowClear style={{ width: '100%' }} placeholder="خزنة الفرع" value={repayForm.treasury_id}
+              onChange={(v) => setRepayForm({ ...repayForm, treasury_id: v })}
+              options={treasuries.filter((t: any) => t.active !== false)
+                .map((t: any) => ({ value: t.id, label: `${t.name} — ${money(t.balance)}` }))} />
+          </Col>
+          <Col span={12}>
+            <div style={{ marginBottom: 4 }}>ملاحظات</div>
+            <Input value={repayForm.notes} onChange={(e) => setRepayForm({ ...repayForm, notes: e.target.value })} />
+          </Col>
+        </Row>
+      </TabModal>
+
+      <TabModal open={!!planOf} title={`خطة سداد ${planOf?.document_number || ''} — ${planOf?.employee_name || ''}`}
+        onCancel={() => setPlanOf(null)} onOk={savePlan} confirmLoading={saving}
+        okText="حفظ الخطة" cancelText="إلغاء" destroyOnClose width={640}>
+        <div style={{ marginBottom: 8 }}>المتبقي من السلفة: <b>{money(planOf?.outstanding)}</b></div>
+        <PlanEditor total={Number(planOf?.outstanding) || 0} mode={planMode} onMode={(m) => {
+          setPlanMode(m);
+          if (m === 'custom' && !planRows.length) setPlanRows(equalPlan(Number(planOf?.outstanding) || 0, planCount, planStart));
+        }}
+          rows={planRows} onRows={setPlanRows} count={planCount} onCount={setPlanCount}
+          start={planStart} onStart={setPlanStart} />
       </TabModal>
 
       <TabModal
