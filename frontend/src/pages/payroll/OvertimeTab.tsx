@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Button, Checkbox, Empty, Input, Space, Table, Tag, message } from 'antd';
 import { CalculatorOutlined, SaveOutlined, SearchOutlined, SettingOutlined } from '@ant-design/icons';
 import { api } from '../../api/client';
@@ -47,6 +47,15 @@ export function useOvertimeTab({ active, data, onData, onRecalc, busy }: {
 
   useEffect(() => { if (active) setEdits({}); }, [active, run?.id]);
 
+  const tried = useRef('');
+  useEffect(() => {
+    if (!active || !data || run || busy) return;
+    const key = `${data.branch_id}-${data.year}-${data.month}`;
+    if (tried.current === key) return;
+    tried.current = key;
+    onRecalc();
+  }, [active, data, run, busy]);
+
   const current = (l: any): Entry => edits[l.employee_id] ?? entryOf(l);
   const changed = lines.filter((l) => edits[l.employee_id] && !same(edits[l.employee_id], entryOf(l)));
 
@@ -68,10 +77,10 @@ export function useOvertimeTab({ active, data, onData, onRecalc, busy }: {
           absent_hours: e.absent_hours ?? null,
         };
       });
+      const sent = Object.fromEntries(changed.map((l) => [l.employee_id, edits[l.employee_id]]));
       const res = await api.patch(`/api/v1/hr/salary/month/${run.id}/lines`, body);
       onData(res.data);
-      setEdits({});
-      message.success(`تم حفظ ${body.length} موظف`);
+      setEdits((e) => Object.fromEntries(Object.entries(e).filter(([id, v]) => v !== sent[Number(id)])));
     } catch (err: any) { fail(err, 'تعذر الحفظ'); } finally { setSaving(false); }
   };
 
@@ -100,8 +109,13 @@ export function useOvertimeTab({ active, data, onData, onRecalc, busy }: {
   const shown = useMemo(() => lines.filter((l) => !q || (l.name || '').includes(q) || (l.code || '').includes(q)),
     [lines, q]);
 
-  const preview = (l: any) => {
-    const e = current(l);
+  useEffect(() => {
+    if (!active || !draft || !changed.length || saving) return;
+    const t = window.setTimeout(() => { save(); }, 900);
+    return () => window.clearTimeout(t);
+  }, [edits, active, draft, saving]);
+
+  const preview = (l: any, e: Entry = current(l)) => {
     const daily = n(l.daily_rate);
     const hourly = daily / 8;
     const absentDays = e.absent_days ?? n(l.days_absent);
@@ -143,7 +157,11 @@ export function useOvertimeTab({ active, data, onData, onRecalc, busy }: {
         render: (_: any, l: any) => <b style={{ color: '#cf1322' }}>{money(preview(l).minus)}</b> },
     ] },
     { title: 'الصافي', dataIndex: 'net', key: 'net', width: 110, align: 'left' as const,
-      render: (v: string) => <b>{money(v)}</b> },
+      render: (v: string, l: any) => {
+        const now = preview(l);
+        const was = preview(l, entryOf(l));
+        return <b>{money(n(v) + (now.plus - was.plus) - (now.minus - was.minus))}</b>;
+      } },
   ];
 
   const totals = shown.reduce((t, l) => {
