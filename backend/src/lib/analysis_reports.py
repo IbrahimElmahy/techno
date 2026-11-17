@@ -119,7 +119,7 @@ def profitability(
 
 def account_breakdown(
     db: Session, *, dimension: str = "cost_center", key: int | None = None,
-    date_from=None, date_to=None,
+    date_from=None, date_to=None, branch_id: int | None = None,
 ) -> dict:
     if dimension not in DIMENSIONS:
         raise AnalysisReportError(f"بُعد غير معروف: {dimension}")

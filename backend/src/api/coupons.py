@@ -57,10 +57,17 @@ def _c_out(c: Coupon) -> CouponOut:
 def list_coupons(
     customer_id: int | None = None,
     status_filter: CouponStatus | None = None,
-    _: CurrentUser = Depends(require_capability(CAP_LOYALTY_READ)),
+    current: CurrentUser = Depends(require_capability(CAP_LOYALTY_READ)),
     db: Session = Depends(get_db),
 ) -> list[CouponOut]:
+    from src.auth import branch_scope
+    from src.models.customer import Customer
+
     stmt = select(Coupon)
+    branch_id = branch_scope.visible_branch_id(current)
+    if branch_id is not None:
+        stmt = stmt.where(Coupon.customer_id.in_(
+            select(Customer.id).where(Customer.branch_id == branch_id)))
     if customer_id is not None:
         stmt = stmt.where(Coupon.customer_id == customer_id)
     if status_filter is not None:

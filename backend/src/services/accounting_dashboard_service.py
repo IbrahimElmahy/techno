@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import date
 from decimal import Decimal
 
-from sqlalchemy import case, func, select
+from sqlalchemy import case, func, or_, select, true
 from sqlalchemy.orm import Session
 
 from src.core.money import ZERO, to_money
@@ -23,8 +23,10 @@ def _effective_date_col():
     return func.coalesce(LedgerEntry.entry_date, func.date(LedgerEntry.created_at))
 
 
-def journal_cards(db: Session, *, as_of: date | None = None) -> list[dict]:
+def journal_cards(db: Session, *, as_of: date | None = None,
+                  branch_id: int | None = None) -> list[dict]:
     first, day = _month_bounds(as_of)
+    mine = (LedgerEntry.branch_id == branch_id) if branch_id is not None else true()
     journals = db.scalars(
         select(Journal).where(Journal.active.is_(True))
         .order_by(Journal.sort_order, Journal.code)
@@ -34,7 +36,7 @@ def journal_cards(db: Session, *, as_of: date | None = None) -> list[dict]:
 
     drafts = dict(db.execute(
         select(LedgerEntry.journal_id, func.count(LedgerEntry.id))
-        .where(LedgerEntry.state == EntryState.draft.value)
+        .where(LedgerEntry.state == EntryState.draft.value, mine)
         .group_by(LedgerEntry.journal_id)
     ).all())
 
@@ -49,7 +51,7 @@ def journal_cards(db: Session, *, as_of: date | None = None) -> list[dict]:
                 ), 0),
             )
             .join(LedgerLine, LedgerLine.entry_id == LedgerEntry.id)
-            .where(ledger_service.is_posted_sql(),
+            .where(ledger_service.is_posted_sql(), mine,
                    _effective_date_col() >= first,
                    _effective_date_col() <= day)
             .group_by(LedgerEntry.journal_id)
@@ -60,7 +62,7 @@ def journal_cards(db: Session, *, as_of: date | None = None) -> list[dict]:
         select(LedgerEntry.journal_id, func.coalesce(func.sum(func.abs(
             LedgerLine.amount_residual)), 0))
         .join(LedgerLine, LedgerLine.entry_id == LedgerEntry.id)
-        .where(ledger_service.is_posted_sql(),
+        .where(ledger_service.is_posted_sql(), mine,
                LedgerLine.amount_residual.is_not(None),
                LedgerLine.amount_residual != 0)
         .group_by(LedgerEntry.journal_id)
@@ -70,11 +72,11 @@ def journal_cards(db: Session, *, as_of: date | None = None) -> list[dict]:
         jid: (number, when)
         for jid, number, when in db.execute(
             select(LedgerEntry.journal_id, LedgerEntry.number, _effective_date_col())
-            .where(ledger_service.is_posted_sql(), LedgerEntry.number.is_not(None))
+            .where(ledger_service.is_posted_sql(), mine, LedgerEntry.number.is_not(None))
             .order_by(LedgerEntry.journal_id, LedgerEntry.id.desc())
             .distinct(LedgerEntry.journal_id)
         ).all()
-    } if db.bind.dialect.name == "postgresql" else _last_per_journal_portable(db)
+    } if db.bind.dialect.name == "postgresql" else _last_per_journal_portable(db, mine)
 
     cards: list[dict] = []
     for j in journals:
@@ -97,21 +99,23 @@ def journal_cards(db: Session, *, as_of: date | None = None) -> list[dict]:
     return cards
 
 
-def _last_per_journal_portable(db: Session) -> dict:
+def _last_per_journal_portable(db: Session, mine=None) -> dict:
+    mine = true() if mine is None else mine
     out: dict = {}
     for jid, number, when in db.execute(
         select(LedgerEntry.journal_id, LedgerEntry.number, _effective_date_col())
-        .where(ledger_service.is_posted_sql(), LedgerEntry.number.is_not(None))
+        .where(ledger_service.is_posted_sql(), mine, LedgerEntry.number.is_not(None))
         .order_by(LedgerEntry.id)
     ).all():
         out[jid] = (number, when)
     return out
 
 
-def treasury_cards(db: Session) -> list[dict]:
-    rows = db.scalars(
-        select(Treasury).where(Treasury.active.is_(True)).order_by(Treasury.id)
-    ).all()
+def treasury_cards(db: Session, *, branch_id: int | None = None) -> list[dict]:
+    stmt = select(Treasury).where(Treasury.active.is_(True))
+    if branch_id is not None:
+        stmt = stmt.where(or_(Treasury.branch_id == branch_id, Treasury.branch_id.is_(None)))
+    rows = db.scalars(stmt.order_by(Treasury.id)).all()
     return [{
         "id": t.id,
         "name": t.name,
@@ -122,8 +126,8 @@ def treasury_cards(db: Session) -> list[dict]:
     } for t in rows]
 
 
-def dashboard(db: Session, *, as_of: date | None = None) -> dict:
+def dashboard(db: Session, *, as_of: date | None = None, branch_id: int | None = None) -> dict:
     return {
-        "journals": journal_cards(db, as_of=as_of),
-        "treasuries": treasury_cards(db),
+        "journals": journal_cards(db, as_of=as_of, branch_id=branch_id),
+        "treasuries": treasury_cards(db, branch_id=branch_id),
     }

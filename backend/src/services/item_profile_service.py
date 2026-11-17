@@ -26,7 +26,8 @@ def _qty(v) -> Decimal:
     return Decimal(str(v or 0)).quantize(Decimal("0.001"))
 
 
-def bulk_on_hand(db: Session, item_ids: list[int] | None = None) -> dict[int, Decimal]:
+def bulk_on_hand(db: Session, item_ids: list[int] | None = None, *,
+                 branch_id: int | None = None) -> dict[int, Decimal]:
     signed = case(
         (StockMovement.direction == StockDirection.in_, StockMovement.quantity),
         else_=-StockMovement.quantity,
@@ -35,6 +36,8 @@ def bulk_on_hand(db: Session, item_ids: list[int] | None = None) -> dict[int, De
         select(StockMovement.item_id, func.coalesce(func.sum(signed), 0))
         .group_by(StockMovement.item_id)
     )
+    if branch_id is not None:
+        stmt = stmt.where(StockMovement.branch_id == branch_id)
     if item_ids is not None:
         if not item_ids:
             return {}

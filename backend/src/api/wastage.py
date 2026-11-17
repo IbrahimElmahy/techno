@@ -48,10 +48,13 @@ def _out(d) -> WastageOut:
 
 @router.get("", response_model=list[WastageOut])
 def list_wastage(
-    _: CurrentUser = Depends(require_capability(CAP_MANUFACTURE_READ)),
+    current: CurrentUser = Depends(require_capability(CAP_MANUFACTURE_READ)),
     db: Session = Depends(get_db),
 ) -> list[WastageOut]:
-    return [_out(d) for d in wastage_service.list_wastage(db)]
+    from src.auth import branch_scope
+
+    return [_out(d) for d in wastage_service.list_wastage(
+        db, branch_id=branch_scope.visible_branch_id(current))]
 
 
 @router.post("", response_model=WastageOut, status_code=status.HTTP_201_CREATED)

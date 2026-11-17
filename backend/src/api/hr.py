@@ -379,6 +379,11 @@ def employee_receivables(
                 debit=Decimal(d), credit=Decimal(c),
                 balance=Decimal(d) - Decimal(c), lines=n))
 
+    from src.auth import branch_scope
+
+    mine = branch_scope.visible_branch_id(current)
+    if mine is not None:
+        branch_id = mine
     if branch_id is not None:
         want = _branch_prefix(db, branch_id)
         rows = [r for r in rows

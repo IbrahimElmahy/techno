@@ -225,12 +225,15 @@ def list_cheques(
     supplier_id: int | None = Query(default=None),
     due_from: date | None = Query(default=None),
     due_to: date | None = Query(default=None),
-    _: CurrentUser = Depends(require_capability(CAP_VOUCHER_READ)),
+    current: CurrentUser = Depends(require_capability(CAP_VOUCHER_READ)),
     db: Session = Depends(get_db),
 ) -> list[ChequeOut]:
+    from src.auth import branch_scope
+
     rows = cheque_service.list_cheques(
         db, direction=direction, status=status_filter, customer_id=customer_id,
-        supplier_id=supplier_id, due_from=due_from, due_to=due_to)
+        supplier_id=supplier_id, due_from=due_from, due_to=due_to,
+        branch_id=branch_scope.visible_branch_id(current))
     return [_out(c) for c in rows]
 
 

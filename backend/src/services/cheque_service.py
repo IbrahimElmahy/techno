@@ -233,9 +233,21 @@ def list_cheques(
     db: Session, *, direction: ChequeDirection | None = None,
     status: ChequeStatus | None = None, customer_id: int | None = None,
     supplier_id: int | None = None, due_from: date | None = None,
-    due_to: date | None = None,
+    due_to: date | None = None, branch_id: int | None = None,
 ) -> list[Cheque]:
     stmt = select(Cheque)
+    if branch_id is not None:
+        from sqlalchemy import or_
+
+        from src.models.customer import Customer
+        from src.models.supplier import Supplier
+        from src.models.treasury import Treasury
+
+        stmt = stmt.where(or_(
+            Cheque.treasury_id.in_(select(Treasury.id).where(Treasury.branch_id == branch_id)),
+            Cheque.customer_id.in_(select(Customer.id).where(Customer.branch_id == branch_id)),
+            Cheque.supplier_id.in_(select(Supplier.id).where(Supplier.branch_id == branch_id)),
+        ))
     if direction is not None:
         stmt = stmt.where(Cheque.direction == direction)
     if status is not None:

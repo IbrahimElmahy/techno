@@ -79,8 +79,14 @@ def reverse_wastage(db: Session, *, wastage_id: int, actor_user_id: int) -> Wast
     return rev
 
 
-def list_wastage(db: Session):
-    return db.scalars(select(WastageDocument).order_by(WastageDocument.id.desc())).all()
+def list_wastage(db: Session, *, branch_id: int | None = None):
+    stmt = select(WastageDocument)
+    if branch_id is not None:
+        from src.models.warehouse import Warehouse
+
+        stmt = stmt.where(WastageDocument.warehouse_id.in_(
+            select(Warehouse.id).where(Warehouse.branch_id == branch_id)))
+    return db.scalars(stmt.order_by(WastageDocument.id.desc())).all()
 
 
 def get_wastage(db: Session, wastage_id: int) -> WastageDocument | None:

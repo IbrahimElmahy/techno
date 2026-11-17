@@ -996,7 +996,10 @@ def check_integrity(
 
 @router.get("/accounting/dashboard", response_model=dict)
 def accounting_dashboard(
-    _: CurrentUser = Depends(require_capability(CAP_ACCOUNTING_CHART_READ)),
+    current: CurrentUser = Depends(require_capability(CAP_ACCOUNTING_CHART_READ)),
     db: Session = Depends(get_db),
 ) -> dict:
-    return accounting_dashboard_service.dashboard(db)
+    from src.auth import branch_scope
+
+    return accounting_dashboard_service.dashboard(
+        db, branch_id=branch_scope.visible_branch_id(current))

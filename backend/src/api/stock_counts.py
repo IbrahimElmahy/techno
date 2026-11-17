@@ -23,6 +23,29 @@ from src.services.stock_service import StockError
 router = APIRouter(tags=["stock-counts"], prefix="/stock-counts")
 
 
+def _branch_warehouses(db: Session, current: CurrentUser) -> set[int] | None:
+    from src.auth import branch_scope
+
+    branch_id = branch_scope.visible_branch_id(current)
+    if branch_id is None:
+        return None
+    return set(db.scalars(select(Warehouse.id).where(Warehouse.branch_id == branch_id)).all())
+
+
+def _sheet_visible(sheet, allowed: set[int] | None) -> bool:
+    if allowed is None:
+        return True
+    used = {sheet.warehouse_id} if sheet.warehouse_id else {ln.warehouse_id for ln in sheet.lines}
+    used.discard(None)
+    return not used or bool(used & allowed)
+
+
+def _ensure_visible(db: Session, current: CurrentUser, count_id: int) -> None:
+    sheet = stock_count_service.get(db, count_id)
+    if sheet is not None and not _sheet_visible(sheet, _branch_warehouses(db, current)):
+        raise HTTPException(404, {"code": "not_found", "message": "الجرد غير موجود"})
+
+
 class OpenIn(BaseModel):
     warehouse_id: int | None = None
     count_date: date | None = None
@@ -138,13 +161,15 @@ def _out(sheet: StockCount, items, warehouses, categories=None, costs=None,
 def list_counts(
     status_filter: str | None = None,
     source: str | None = None,
-    _: CurrentUser = Depends(require_capability(CAP_STOCK_READ)),
+    current: CurrentUser = Depends(require_capability(CAP_STOCK_READ)),
     db: Session = Depends(get_db),
 ) -> list[CountOut]:
     from src.models.user import User
 
     items, warehouses, categories, costs = _names(db)
-    sheets = stock_count_service.listing(db, status=status_filter, source=source)
+    allowed = _branch_warehouses(db, current)
+    sheets = [s for s in stock_count_service.listing(db, status=status_filter, source=source)
+              if _sheet_visible(s, allowed)]
     users = {u.id: (u.full_name or u.username) for u in db.scalars(select(User).where(
         User.id.in_({s.actor_user_id for s in sheets} or {0}))).all()}
     out = []
@@ -164,6 +189,8 @@ def save_sheet(
     current: CurrentUser = Depends(require_capability(CAP_PURCHASE_WRITE)),
     db: Session = Depends(get_db),
 ) -> CountOut:
+    if body.count_id:
+        _ensure_visible(db, current, body.count_id)
     try:
         sheet = stock_count_service.save_sheet(
             db, count_id=body.count_id, count_date=body.count_date,
@@ -183,6 +210,7 @@ def delete_sheet(
     current: CurrentUser = Depends(require_capability(CAP_PURCHASE_WRITE)),
     db: Session = Depends(get_db),
 ) -> None:
+    _ensure_visible(db, current, count_id)
     try:
         stock_count_service.delete_sheet(db, count_id=count_id, actor_user_id=current.id)
     except StockCountError as exc:
@@ -193,10 +221,12 @@ def delete_sheet(
 @router.get("/{count_id}", response_model=CountOut)
 def get_count(
     count_id: int,
-    _: CurrentUser = Depends(require_capability(CAP_STOCK_READ)),
+    current: CurrentUser = Depends(require_capability(CAP_STOCK_READ)),
     db: Session = Depends(get_db),
 ) -> CountOut:
     sheet = stock_count_service.get(db, count_id)
+    if sheet is not None and not _sheet_visible(sheet, _branch_warehouses(db, current)):
+        sheet = None
     if sheet is None:
         raise HTTPException(404, {"code": "not_found", "message": "الجرد غير موجود"})
     items, warehouses, categories, costs = _names(db)
@@ -229,6 +259,7 @@ def enter_counts(
     current: CurrentUser = Depends(require_capability(CAP_PURCHASE_WRITE)),
     db: Session = Depends(get_db),
 ) -> CountOut:
+    _ensure_visible(db, current, count_id)
     try:
         sheet = stock_count_service.enter_counts(
             db, count_id=count_id,
@@ -249,6 +280,7 @@ def post_count(
     current: CurrentUser = Depends(require_capability(CAP_PURCHASE_WRITE)),
     db: Session = Depends(get_db),
 ) -> CountOut:
+    _ensure_visible(db, current, count_id)
     try:
         sheet = stock_count_service.post(db, count_id=count_id, actor_user_id=current.id)
     except (StockCountError, StockError) as exc:
@@ -264,6 +296,7 @@ def cancel_count(
     current: CurrentUser = Depends(require_capability(CAP_PURCHASE_WRITE)),
     db: Session = Depends(get_db),
 ) -> CountOut:
+    _ensure_visible(db, current, count_id)
     try:
         sheet = stock_count_service.cancel(db, count_id=count_id, actor_user_id=current.id)
     except StockCountError as exc:

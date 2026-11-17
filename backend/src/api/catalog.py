@@ -162,7 +162,8 @@ def list_items(
     if limit is not None and not stock_filter:
         stmt = stmt.limit(limit).offset(offset)
     rows = list(db.scalars(stmt).all())
-    on_hand = item_profile_service.bulk_on_hand(db, [i.id for i in rows])
+    on_hand = item_profile_service.bulk_on_hand(
+        db, [i.id for i in rows], branch_id=branch_scope.visible_branch_id(current))
     moved = (item_profile_service.bulk_has_movement(db, [i.id for i in rows])
              if stock_filter == "moved" else None)
     rows = item_profile_service.filter_by_stock(rows, on_hand, stock_filter, moved)
@@ -779,14 +780,15 @@ def item_profile(
 @router.get("/{item_id}", response_model=ItemOut)
 def get_item(
     item_id: int,
-    _: CurrentUser = Depends(require_capability(CAP_CATALOG_READ)),
+    current: CurrentUser = Depends(require_capability(CAP_CATALOG_READ)),
     db: Session = Depends(get_db),
 ) -> ItemOut:
     item = db.get(Item, item_id)
     if item is None:
         raise HTTPException(404, {"code": "not_found", "message": "Item not found"})
     out = _out(item)
-    out.on_hand = item_profile_service.bulk_on_hand(db, [item_id]).get(item_id, Decimal("0.000"))
+    out.on_hand = item_profile_service.bulk_on_hand(
+        db, [item_id], branch_id=branch_scope.visible_branch_id(current)).get(item_id, Decimal("0.000"))
     out.meters_per_piece = _length_of(db, item)
     return out
 
