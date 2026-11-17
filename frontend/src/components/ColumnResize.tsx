@@ -4,6 +4,7 @@ import { PREFS_EVENT, pushPref } from '../utils/userPrefs';
 const STORAGE_KEY = 'techno.col-widths';
 const GRIP = 8;
 const MIN_WIDTH = 48;
+const DRAG_THRESHOLD = 4;
 
 type Widths = Record<string, number>;
 
@@ -158,8 +159,32 @@ export default function ColumnResizeProvider({ children }: { children: React.Rea
     let widths = shared;
     let drag: { th: HTMLElement; table: HTMLElement; index: number; startX: number;
       startWidth: number; key: string; root: Element | null; tableWidth: number | null } | null = null;
+    let pending: { th: HTMLElement; table: HTMLElement; index: number; startX: number } | null = null;
+    let swallowClick = false;
+
+    const begin = (p: NonNullable<typeof pending>) => {
+      const root = p.table.closest('.ant-table');
+      const startWidth = p.th.getBoundingClientRect().width;
+      const tableWidth = root ? freeze(root) : null;
+      if (!tableWidth) {
+        root?.querySelectorAll('table').forEach((t) => {
+          (t as HTMLElement).style.tableLayout = 'fixed';
+        });
+      }
+      drag = {
+        th: p.th, table: p.table, index: p.index, startX: p.startX,
+        startWidth, key: keyFor(p.th), root, tableWidth,
+      };
+      document.body.style.userSelect = 'none';
+      document.body.style.cursor = 'col-resize';
+    };
 
     const onMove = (e: PointerEvent) => {
+      if (!drag && pending) {
+        if (Math.abs(e.clientX - pending.startX) < DRAG_THRESHOLD) return;
+        begin(pending);
+        pending = null;
+      }
       if (!drag) {
         const th = (e.target as HTMLElement)?.closest?.('.ant-table-thead th') as HTMLElement | null;
         if (th) th.style.cursor = onGrip(th, e.clientX) ? 'col-resize' : '';
@@ -177,35 +202,31 @@ export default function ColumnResizeProvider({ children }: { children: React.Rea
     };
 
     const onUp = () => {
+      pending = null;
       if (!drag) return;
       document.body.style.userSelect = '';
       document.body.style.cursor = '';
       drag = null;
+      swallowClick = true;
+      setTimeout(() => { swallowClick = false; }, 0);
       save(widths);
     };
 
+    const onClick = (e: MouseEvent) => {
+      if (!swallowClick) return;
+      swallowClick = false;
+      e.preventDefault();
+      e.stopPropagation();
+    };
+
     const onDown = (e: PointerEvent) => {
+      if (e.button !== 0) return;
       const th = (e.target as HTMLElement)?.closest?.('.ant-table-thead th') as HTMLElement | null;
       if (!th || !onGrip(th, e.clientX)) return;
       const table = th.closest('table') as HTMLElement | null;
       const index = indexOf(th);
       if (!table || index < 0) return;
-
-      const root = table.closest('.ant-table');
-      const startWidth = th.getBoundingClientRect().width;
-      const tableWidth = root ? freeze(root) : null;
-      if (!tableWidth) {
-        root?.querySelectorAll('table').forEach((t) => {
-          (t as HTMLElement).style.tableLayout = 'fixed';
-        });
-      }
-
-      drag = {
-        th, table, index, startX: e.clientX,
-        startWidth, key: keyFor(th), root, tableWidth,
-      };
-      document.body.style.userSelect = 'none';
-      document.body.style.cursor = 'col-resize';
+      pending = { th, table, index, startX: e.clientX };
       e.preventDefault();
       e.stopPropagation();
     };
@@ -245,6 +266,7 @@ export default function ColumnResizeProvider({ children }: { children: React.Rea
     observer.observe(document.body, { childList: true, subtree: true });
 
     document.addEventListener('pointerdown', onDown, true);
+    document.addEventListener('click', onClick, true);
     document.addEventListener('dblclick', onDoubleClick, true);
     window.addEventListener('pointermove', onMove);
     window.addEventListener('pointerup', onUp);
@@ -261,6 +283,7 @@ export default function ColumnResizeProvider({ children }: { children: React.Rea
       window.removeEventListener(WIDTHS_EVENT, scheduleSync);
       observer.disconnect();
       document.removeEventListener('pointerdown', onDown, true);
+      document.removeEventListener('click', onClick, true);
       document.removeEventListener('dblclick', onDoubleClick, true);
       window.removeEventListener('pointermove', onMove);
       window.removeEventListener('pointerup', onUp);

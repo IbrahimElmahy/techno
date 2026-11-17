@@ -18,7 +18,9 @@ import {
   ArrowLeftOutlined,
   EnvironmentOutlined,
   SafetyCertificateOutlined,
+  EditOutlined,
 } from '@ant-design/icons';
+import InspectionEditModal from '../components/InspectionEditModal';
 import dayjs, { Dayjs } from 'dayjs';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../api/client';
@@ -109,6 +111,7 @@ const Inspections: React.FC<{ fixedKind?: 'technician' | 'regular' }> = ({ fixed
   const [users, setUsers] = useState<UserRecord[]>([]);
   const [loading, setLoading] = useState(false);
   const [detail, setDetail] = useState<InspectionRecord | null>(null);
+  const [editing, setEditing] = useState<InspectionRecord | null>(null);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(50);
   const [totalCount, setTotalCount] = useState(0);
@@ -405,6 +408,9 @@ const Inspections: React.FC<{ fixedKind?: 'technician' | 'regular' }> = ({ fixed
 
   const rowActions = (r: InspectionRecord) => (
     <Space size={2} onClick={(e) => e.stopPropagation()}>
+      <Tooltip title="تعديل">
+        <Button type="text" icon={<EditOutlined />} onClick={() => setEditing(r)} />
+      </Tooltip>
       <Tooltip title={r.status === 'rejected' ? 'المعاينة مرفوضة' : 'طباعة شهادة ضمان'}>
         <Button type="text" icon={<PrinterOutlined />} disabled={r.status === 'rejected'}
           onClick={() => printWarranty(r)} />
@@ -695,6 +701,7 @@ const Inspections: React.FC<{ fixedKind?: 'technician' | 'regular' }> = ({ fixed
         )}
         extra={
           <Space>
+            <Button icon={<EditOutlined />} onClick={() => setEditing(detail)}>تعديل</Button>
             {detail.status === 'rejected' ? (
               <Tag color="red">مرفوضة</Tag>
             ) : (
@@ -841,6 +848,15 @@ const Inspections: React.FC<{ fixedKind?: 'technician' | 'regular' }> = ({ fixed
         </div>
       </Card>
       )}
+      <InspectionEditModal
+        record={editing as any}
+        onClose={() => setEditing(null)}
+        onSaved={(updated) => {
+          setEditing(null);
+          patchDetail(updated as InspectionRecord);
+          loadSummary();
+        }}
+      />
     </>
   );
 };

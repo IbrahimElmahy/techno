@@ -633,6 +633,70 @@ def delete_inspection(db: Session, inspection: Inspection, *, actor_user_id: int
     db.delete(inspection)
 
 
+_EDITABLE_FIELDS = {
+    "visit_type", "inspection_date", "owner_name", "owner_phone", "national_id",
+    "owner_address", "floor_number", "description", "inspection_type",
+    "technician_name", "technician_phone", "technician_customer_id",
+    "merchant_customer_id", "purchase_shop", "purchase_shop_phone", "visit_details",
+}
+
+
+def update_inspection(db: Session, inspection: Inspection, *, fields: dict,
+                      lines: list[LineIn] | None, actor_user_id: int) -> Inspection:
+    from src.models.customer import Customer
+
+    before = {"merchant": inspection.merchant_customer_id,
+              "points": str(inspection.total_points)}
+    old_merchant = inspection.merchant_customer_id
+    old_total = _points(inspection.total_points or 0)
+
+    for key, value in fields.items():
+        if key not in _EDITABLE_FIELDS:
+            continue
+        if isinstance(value, str):
+            value = value.strip() or None
+        if key == "owner_name" and not value:
+            raise InspectionError("اسم المالك مطلوب.")
+        if key in ("technician_customer_id", "merchant_customer_id") and value is not None:
+            if db.get(Customer, value) is None:
+                raise InspectionError("العميل المختار غير موجود.")
+        setattr(inspection, key, value)
+
+    if lines is not None:
+        if any(ln.stock_movement_id is not None for ln in inspection.items):
+            raise InspectionError(
+                "بنود هذه المعاينة خُصمت من عهدة المندوب — لا يمكن تعديلها من هنا.")
+        inspection.items.clear()
+        db.flush()
+        total = Decimal("0")
+        for ln in lines:
+            qty = to_qty(ln.quantity)
+            if qty <= 0:
+                raise InspectionError("يجب أن تكون كمية السطر أكبر من صفر.")
+            unit_points = Decimal(str(ln.points))
+            line_total = _points(unit_points * qty)
+            inspection.items.append(InspectionItem(
+                item_id=None, item_name=ln.item_name.strip(),
+                quantity=qty, points=_points(unit_points), total=line_total))
+            total += line_total
+        inspection.total_points = _points(total)
+        db.flush()
+
+    new_total = _points(inspection.total_points or 0)
+    if inspection.merchant_customer_id != old_merchant or new_total != old_total:
+        _delete_inspection_points(db, inspection)
+        sync_inspection_points(db, inspection, actor_user_id=actor_user_id)
+
+    audit_service.record(db, action="inspection.update", actor_user_id=actor_user_id,
+                         entity_type="inspection", entity_id=inspection.id, before=before,
+                         after={"doc": inspection.document_number,
+                                "merchant": inspection.merchant_customer_id,
+                                "points": str(inspection.total_points),
+                                "fields": sorted(fields)})
+    db.flush()
+    return inspection
+
+
 def get_inspection(db: Session, inspection_id: int) -> Inspection | None:
     return db.scalar(
         select(Inspection).options(selectinload(Inspection.items))
