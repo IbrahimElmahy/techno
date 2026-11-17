@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Button, Checkbox, Col, DatePicker, Divider, Input, Row, Segmented, Select, Space, Table, Tag,
+  Button, Checkbox, Col, DatePicker, Divider, Input, Modal, Row, Segmented, Select, Space, Table, Tag,
   message,
 } from 'antd';
 import {
@@ -193,6 +193,30 @@ export default function Payroll() {
   const deleteCard = (employeeId: number) => act(
     () => api.delete(`/api/v1/hr/salary/employees/${employeeId}`),
     'تم حذف كارت المرتب', 'تعذر حذف كارت المرتب');
+  const deleteEmployee = async (r: EmpRow) => {
+    setBusy(true);
+    try {
+      await api.delete(`/api/v1/employees/${r.employee_id}`, { params: { hard: true } });
+      message.success(`تم حذف الموظف ${r.name}`);
+      loadEmps();
+    } catch (err: any) {
+      const detail = err?.response?.data?.detail;
+      if (err?.response?.status === 409) {
+        Modal.confirm({
+          title: `لا يمكن حذف ${r.name}`,
+          content: detail?.message,
+          okText: 'إيقاف الموظف', cancelText: 'رجوع',
+          onOk: async () => {
+            try {
+              await api.delete(`/api/v1/employees/${r.employee_id}`);
+              message.success(`تم إيقاف ${r.name}`);
+              loadEmps();
+            } catch (e: any) { fail(e, 'تعذر إيقاف الموظف'); }
+          },
+        });
+      } else fail(err, 'تعذر حذف الموظف');
+    } finally { setBusy(false); }
+  };
   const calculate = () => act(
     () => api.post('/api/v1/hr/salary/month/calculate', { year, month, branch_id: branchId }),
     'تم حساب مرتبات الشهر', 'تعذر الحساب');
@@ -436,7 +460,12 @@ export default function Payroll() {
               onConfirm={() => deleteCard(r.employee_id)}>
               <Button type="text" danger icon={<DeleteOutlined />} title="حذف كارت المرتب" />
             </Popconfirm>
-          ) : null}
+          ) : (
+            <Popconfirm title={`حذف الموظف ${r.name}؟ ليس له كارت مرتب.`}
+              onConfirm={() => deleteEmployee(r)}>
+              <Button type="text" danger icon={<DeleteOutlined />} title="حذف الموظف" />
+            </Popconfirm>
+          )}
         </Space>
       ) } as any,
   ];
