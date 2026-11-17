@@ -127,6 +127,16 @@ const KIND: Record<string, { label: string; color: string; sign: number }> = {
   other_earning: { label: 'استحقاق', color: 'cyan', sign: 1 },
 };
 
+function Balance({ v }: { v: string | number | null | undefined }) {
+  const x = Number(v || 0);
+  if (!x) return <>—</>;
+  return (
+    <span style={{ color: x < 0 ? '#389e0d' : '#cf1322' }}>
+      {money(Math.abs(x))} {x < 0 ? 'له' : 'عليه'}
+    </span>
+  );
+}
+
 const period = (y: number | null, m: number | null) =>
   (y && m ? `${y}/${String(m).padStart(2, '0')}` : '');
 
@@ -341,7 +351,7 @@ export default function EmployeeReceivables({ host }: { host?: ReceivablesHost }
   const [families, setFamilies] = useState<Record<number, any[]>>({});
   const [target, setTarget] = useState('');
 
-  const openVoucher = async (which: 'receipt' | 'payment', r: DueRow) => {
+  const openVoucher = async (which: 'receipt' | 'payment', r: DueRow, note?: string) => {
     let list = cards;
     if (!list.length) {
       list = (await api.get<Party[]>('/api/v1/customers', { params: { party_group: 'employees' } })
@@ -359,7 +369,7 @@ export default function EmployeeReceivables({ host }: { host?: ReceivablesHost }
     await v.show();
     const values: any = kind === 'employee'
       ? { customer_id: r.customer_id } : { account_id: r.account_id };
-    values.description = which === 'receipt' ? `تحصيل من ذمة ${name}` : `صرف على ذمة ${name}`;
+    values.description = note ?? (which === 'receipt' ? `تحصيل من ذمة ${name}` : `صرف على ذمة ${name}`);
     setTimeout(() => v.form.setFieldsValue(values), 0);
   };
 
@@ -374,6 +384,8 @@ export default function EmployeeReceivables({ host }: { host?: ReceivablesHost }
       ) : null}
       {r.account_id ? (<>
         <Button size="small" onClick={() => openVoucher('receipt', r)}>تحصيل</Button>
+        <Button size="small" onClick={() => openVoucher('receipt', r,
+          `سلفة من ${r.employee_name ?? r.account_name ?? ''} للشركة`)}>سلفة للشركة</Button>
         <Button size="small" onClick={() => openVoucher('payment', r)}>صرف على الذمة</Button>
         <Button size="small" onClick={() => navigate(`/account-statement?account=${r.account_id}`)}>كشف حساب</Button>
       </>) : null}
@@ -409,7 +421,7 @@ export default function EmployeeReceivables({ host }: { host?: ReceivablesHost }
     {
       title: 'الذمة', dataIndex: 'ledger_balance', key: 'ledger_balance', width: 130,
       align: 'left', sorter: (a, b) => Number(a.ledger_balance) - Number(b.ledger_balance),
-      render: (v: string, r) => (r.account_id ? money(v) : (
+      render: (v: string, r) => (r.account_id ? <Balance v={v} /> : (
         <Tooltip title="ليس له حساب ذمة في الشجرة — تُحتسب سلفه فقط">—</Tooltip>
       )),
     },
@@ -421,10 +433,10 @@ export default function EmployeeReceivables({ host }: { host?: ReceivablesHost }
       },
     ] : []),
     {
-      title: 'الباقي عليه', dataIndex: 'total_due', key: 'total_due', width: 140, align: 'left',
+      title: 'الرصيد', dataIndex: 'total_due', key: 'total_due', width: 150, align: 'left',
       defaultSortOrder: 'descend',
       sorter: (a, b) => Math.abs(Number(a.total_due)) - Math.abs(Number(b.total_due)),
-      render: (v: string) => <b style={{ color: Number(v) < 0 ? '#cf1322' : undefined }}>{money(v)}</b>,
+      render: (v: string) => <b><Balance v={v} /></b>,
     },
     { title: 'آخر حركة', dataIndex: 'last_movement', key: 'last_movement', width: 110,
       sorter: (a, b) => (a.last_movement ?? '').localeCompare(b.last_movement ?? ''),
@@ -615,7 +627,6 @@ export default function EmployeeReceivables({ host }: { host?: ReceivablesHost }
       { key: 'advances' as TabKey, label: 'السلف', count: tab === 'advances' ? advances.length : null },
     ] : []),
   ];
-  const totalDue = Number(dues?.total_due ?? 0);
 
   return (
     <>
@@ -686,10 +697,9 @@ export default function EmployeeReceivables({ host }: { host?: ReceivablesHost }
             showTotal: (t) => (
               <span className="sl-foot">
                 <span>العدد: <b>{t.toLocaleString(numeralsLocale())}</b></span>
-                <span>ذمم الدفتر: <b>{money(dues?.total_ledger)}</b></span>
-                {advancesVisible ? <span>السلف المتبقية: <b>{money(dues?.total_advances)}</b></span> : null}
-                <span>الإجمالي: <b className={totalDue < 0 ? 'is-neg' : 'is-pos'}>
-                  {money(dues?.total_due)}</b></span>
+                <span>عليهم: <b className="is-neg">{money(rows.reduce((x, r) => x + Math.max(Number(r.total_due), 0), 0))}</b></span>
+                <span>لهم: <b className="is-pos">{money(rows.reduce((x, r) => x + Math.max(-Number(r.total_due), 0), 0))}</b></span>
+                <span>الصافي: <b><Balance v={dues?.total_due} /></b></span>
               </span>
             ),
           }}
