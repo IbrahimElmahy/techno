@@ -61,7 +61,7 @@ def _gate(current: CurrentUser = Depends(get_current_user)) -> CurrentUser:
     if current.role == RoleName.rep_supervisor:
         if current.can(CAP_APP_SUPERVISOR):
             return current
-    elif current.is_admin or current.role in _MANAGER_ROLES:
+    elif current.is_admin or current.role in _MANAGER_ROLES or CAP_APP_SUPERVISOR in current.grants:
         if current.can(CAP_SALES_READ) or current.can(CAP_APP_SUPERVISOR):
             return current
     raise HTTPException(status.HTTP_403_FORBIDDEN, {
