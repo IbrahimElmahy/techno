@@ -954,15 +954,26 @@ def receipt_context(
     return out
 
 
+def _guard_branch(current: CurrentUser, row) -> None:
+    from src.auth import branch_scope
+
+    if row is not None and not branch_scope.may_see(current, row):
+        raise HTTPException(status.HTTP_404_NOT_FOUND,
+                            {"code": "not_found", "message": "غير موجود"})
+
+
 @router.get("/customers/{customer_id}/statement", response_model=StatementOut)
 def customer_statement(
     customer_id: int,
     date_from: date | None = Query(default=None),
     date_to: date | None = Query(default=None),
     family: str | None = Query(default=None, description="أبيض / بولي — اتركها فارغة لعرض الكل"),
-    _: CurrentUser = Depends(require_capability(CAP_VOUCHER_READ)),
+    current: CurrentUser = Depends(require_capability(CAP_VOUCHER_READ)),
     db: Session = Depends(get_db),
 ) -> StatementOut:
+    from src.models.customer import Customer as _Customer
+
+    _guard_branch(current, db.get(_Customer, customer_id))
     accounts = voucher_service._customer_accounts(db, customer_id)
     if not accounts:
         zero = Decimal("0")
@@ -1072,13 +1083,16 @@ def any_account_statement(
     date_to: date | None = Query(default=None),
     all_customer_accounts: bool = Query(
         default=False, description="حساب عميل؟ اعرض كل حساباته (أبيض/بولي) في كشف واحد"),
-    _: CurrentUser = Depends(require_capability(CAP_VOUCHER_READ)),
+    current: CurrentUser = Depends(require_capability(CAP_VOUCHER_READ)),
     db: Session = Depends(get_db),
 ) -> StatementOut:
     from src.models.customer import Customer, CustomerAccount
+    from src.models.ledger import Account as _Account
 
     link = db.scalars(
         select(CustomerAccount).where(CustomerAccount.account_id == account_id)).first()
+    _guard_branch(current, db.get(Customer, link.customer_id) if link is not None
+                  else db.get(_Account, account_id))
     siblings = (voucher_service._customer_accounts(db, link.customer_id)
                 if link is not None else [])
     also = ([a.account_id for a in siblings if a.account_id != account_id]
@@ -1111,9 +1125,12 @@ def supplier_statement(
     supplier_id: int,
     date_from: date | None = Query(default=None),
     date_to: date | None = Query(default=None),
-    _: CurrentUser = Depends(require_capability(CAP_VOUCHER_READ)),
+    current: CurrentUser = Depends(require_capability(CAP_VOUCHER_READ)),
     db: Session = Depends(get_db),
 ) -> StatementOut:
+    from src.models.supplier import Supplier as _Supplier
+
+    _guard_branch(current, db.get(_Supplier, supplier_id))
     try:
         account = voucher_service._supplier_account(db, supplier_id)
         s = statement_service.account_statement(

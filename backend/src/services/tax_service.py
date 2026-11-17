@@ -60,14 +60,18 @@ def input_tax_account(db: Session) -> Account:
 
 
 def vat_return(
-    db: Session, *, date_from: date | None = None, date_to: date | None = None
+    db: Session, *, date_from: date | None = None, date_to: date | None = None,
+    branch_id: int | None = None,
 ) -> dict:
     def _movement(account: Account) -> Decimal:
-        rows = db.scalars(
+        stmt = (
             select(LedgerLine).options(selectinload(LedgerLine.entry))
             .join(LedgerEntry, LedgerEntry.id == LedgerLine.entry_id)
             .where(LedgerLine.account_id == account.id, ledger_service.is_posted_sql())
-        ).all()
+        )
+        if branch_id is not None:
+            stmt = stmt.where(LedgerEntry.branch_id == branch_id)
+        rows = db.scalars(stmt).all()
         total = ZERO
         for line in rows:
             when = line.entry.entry_date or line.entry.created_at.date()

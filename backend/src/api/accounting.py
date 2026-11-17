@@ -497,10 +497,14 @@ def list_journal_entries(
 @router.get("/journal-entries/{entry_id}", response_model=JournalEntryOut)
 def get_journal_entry(
     entry_id: int,
-    _: CurrentUser = Depends(require_capability(CAP_ACCOUNTING_CHART_READ)),
+    current: CurrentUser = Depends(require_capability(CAP_ACCOUNTING_CHART_READ)),
     db: Session = Depends(get_db),
 ) -> JournalEntryOut:
+    from src.auth import branch_scope as _bs
+
     entry = db.get(LedgerEntry, entry_id)
+    if entry is not None and not _bs.may_see(current, entry):
+        entry = None
     if entry is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, {"code": "not_found", "message": "Entry not found"})
     out = _entry_out(entry, _partner_names(db, [entry]))
@@ -996,7 +1000,10 @@ def check_integrity(
 
 @router.get("/accounting/dashboard", response_model=dict)
 def accounting_dashboard(
-    _: CurrentUser = Depends(require_capability(CAP_ACCOUNTING_CHART_READ)),
+    current: CurrentUser = Depends(require_capability(CAP_ACCOUNTING_CHART_READ)),
     db: Session = Depends(get_db),
 ) -> dict:
-    return accounting_dashboard_service.dashboard(db)
+    from src.auth import branch_scope
+
+    return accounting_dashboard_service.dashboard(
+        db, branch_id=branch_scope.visible_branch_id(current))

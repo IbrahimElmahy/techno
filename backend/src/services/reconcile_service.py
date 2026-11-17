@@ -113,6 +113,7 @@ def open_lines(
     partner_kind: str | None = None,
     partner_id: int | None = None,
     account_id: int | None = None,
+    branch_id: int | None = None,
 ) -> list[OpenLine]:
     stmt = (
         select(LedgerLine)
@@ -130,6 +131,8 @@ def open_lines(
         stmt = stmt.where(LedgerLine.partner_id == partner_id)
     if account_id is not None:
         stmt = stmt.where(LedgerLine.account_id == account_id)
+    if branch_id is not None:
+        stmt = stmt.where(LedgerEntry.branch_id == branch_id)
     rows = [_open_line(ln) for ln in db.scalars(stmt).all()]
     rows.sort(key=lambda r: (r.date_maturity or r.entry_date or date.max, r.line_id))
     return rows

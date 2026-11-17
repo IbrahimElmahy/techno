@@ -92,12 +92,21 @@ def list_reservations(
     customer_id: int | None = None,
     item_id: int | None = None,
     only_holding: bool = Query(default=False, description="only the ones actually holding stock"),
-    _: CurrentUser = Depends(require_capability(CAP_SALES_READ)),
+    current: CurrentUser = Depends(require_capability(CAP_SALES_READ)),
     db: Session = Depends(get_db),
 ) -> list[ReservationOut]:
+    from src.api.serials import _branch_places
+    from src.models.stock import LocationKind as _LK
+
     customers, items, warehouses = _names(db)
     rows = reservation_service.listing(db, customer_id=customer_id, item_id=item_id,
                                        only_holding=only_holding)
+    places = _branch_places(db, current)
+    if places is not None:
+        whs, cus, _invs = places
+        rows = [r for r in rows
+                if (r.location_kind == _LK.warehouse and r.location_id in whs)
+                or (r.location_kind == _LK.custody and r.location_id in cus)]
     return [_out(r, customers, items, warehouses) for r in rows]
 
 

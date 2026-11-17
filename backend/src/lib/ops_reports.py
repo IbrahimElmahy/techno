@@ -384,6 +384,26 @@ def _totals(rows: list[dict]) -> dict:
     }
 
 
+def _only_branch(db: Session, rows: list[dict], branch_id: int) -> list[dict]:
+    cust = dict(db.execute(select(Customer.id, Customer.branch_id)).all())
+    supp = dict(db.execute(select(Supplier.id, Supplier.branch_id)).all())
+    users = dict(db.execute(select(User.id, User.branch_id)).all())
+
+    def owner(r: dict) -> int | None:
+        if r.get("branch_id") is not None:
+            return r["branch_id"]
+        pid = r.get("party_id")
+        if pid is not None:
+            outgoing = r.get("direction") in ("outgoing", "out", "payable")
+            b = supp.get(pid) if outgoing else cust.get(pid)
+            if b is not None:
+                return b
+        rid = r.get("rep_id")
+        return users.get(rid) if rid is not None else None
+
+    return [r for r in rows if owner(r) in (branch_id, None)]
+
+
 def ops(
     db: Session,
     *,
@@ -402,6 +422,7 @@ def ops(
     offset: int = 0,
     today: date | None = None,
     statement: str | None = None,
+    branch_id: int | None = None,
 ) -> dict:
     if subject not in SUBJECTS:
         raise OpsReportError(f"موضوع غير معروف: {subject}")
@@ -437,6 +458,8 @@ def ops(
     else:
         rows = _collect_reservations(db, look, filters, today=today)
 
+    if branch_id is not None:
+        rows = _only_branch(db, rows, branch_id)
     rows.sort(key=lambda r: r["date"] or "", reverse=True)
 
     if status:

@@ -330,6 +330,7 @@ export const EXTRA_SECTIONS: NavGroup[] = [
           { key: '/after-sales-reports?tab=technicians', label: 'زيارات الفنيين بالنقاط', roles: R([...SALES, 'after_sales_staff']) },
           { key: '/after-sales-reports?tab=reps', label: 'زيارات المناديب', roles: R([...SALES, 'after_sales_staff']) },
           { key: '/technician-statement', label: 'كشف حساب الفني', roles: LOYALTY },
+          { key: '/coupon-card', label: 'كارت الكوبونات', roles: LOYALTY },
         ],
       },
       {

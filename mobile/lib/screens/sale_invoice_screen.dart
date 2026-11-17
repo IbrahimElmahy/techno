@@ -262,6 +262,8 @@ class _SaleInvoiceScreenState extends State<SaleInvoiceScreen> {
   double get _bonusValue =>
       _lines.fold(0.0, (t, l) => t + netOf(l.gross, l.fixedDiscountPct));
 
+  double get _gross => _lines.fold(0.0, (t, l) => t + l.gross);
+
   double get _cashAmount =>
       _isBonus ? 0 : (double.tryParse(_cash.text.trim()) ?? 0);
   double get _credit => max(0, _total - _cashAmount);
@@ -1402,7 +1404,12 @@ class _SaleInvoiceScreenState extends State<SaleInvoiceScreen> {
                 ],
               ),
               const Divider(height: 18),
-              _totalRow('قيمة البضاعة قبل الخصم', _money(_bonusValue)),
+              _totalRow('إجمالي الفاتورة قبل الخصم', _money(_gross)),
+              if (_gross - _bonusValue > 0.005) ...[
+                const SizedBox(height: 6),
+                _totalRow('الخصم الثابت', '− ${_money(_gross - _bonusValue)}',
+                    color: AppColors.accent),
+              ],
               const SizedBox(height: 6),
               _totalRow('الخصم على الإجمالي ١٠٠٪', '− ${_money(_bonusValue)}',
                   color: AppColors.accent),
@@ -1441,7 +1448,10 @@ class _SaleInvoiceScreenState extends State<SaleInvoiceScreen> {
               ),
             ],
             const SizedBox(height: 10),
-            _totalRow('إجمالي الأصناف', _money(_total)),
+            _totalRow('إجمالي الفاتورة قبل الخصم', _money(_gross)),
+            const SizedBox(height: 6),
+            _totalRow('الخصم', '− ${_money(max(0.0, _gross - _total))}',
+                color: AppColors.accent),
             const SizedBox(height: 6),
             _totalRow('صافي الفاتورة', _money(_total), color: AppColors.primary),
             if (_customer != null) ...[

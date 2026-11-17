@@ -92,16 +92,23 @@ def _to_out(row, account_names: dict[int, str]) -> OpenLineOut:
     )
 
 
+def _branch(current: CurrentUser) -> int | None:
+    from src.auth import branch_scope
+
+    return branch_scope.visible_branch_id(current)
+
+
 @router.get("/reconciliation/open", response_model=OpenLinesOut)
 def open_items(
     partner_kind: str | None = Query(default=None),
     partner_id: int | None = None,
     account_id: int | None = None,
-    _: CurrentUser = Depends(require_capability(CAP_ACCOUNTING_CHART_READ)),
+    current: CurrentUser = Depends(require_capability(CAP_ACCOUNTING_CHART_READ)),
     db: Session = Depends(get_db),
 ) -> OpenLinesOut:
     rows = reconcile_service.open_lines(
-        db, partner_kind=partner_kind, partner_id=partner_id, account_id=account_id)
+        db, partner_kind=partner_kind, partner_id=partner_id, account_id=account_id,
+        branch_id=_branch(current))
     names = _account_names(db, [r.account_id for r in rows])
     lines = [_to_out(r, names) for r in reversed(rows)]
     debit = sum((r.residual for r in rows if r.residual > ZERO), ZERO)
@@ -115,10 +122,10 @@ def open_items(
 @router.get("/reconciliation/partners", response_model=list[dict])
 def partners_with_open_items(
     partner_kind: str = Query(default=PartnerKind.customer.value),
-    _: CurrentUser = Depends(require_capability(CAP_ACCOUNTING_CHART_READ)),
+    current: CurrentUser = Depends(require_capability(CAP_ACCOUNTING_CHART_READ)),
     db: Session = Depends(get_db),
 ) -> list[dict]:
-    rows = db.execute(
+    stmt = (
         select(LedgerLine.partner_id, LedgerLine.amount_residual)
         .join(LedgerEntry, LedgerEntry.id == LedgerLine.entry_id)
         .where(
@@ -127,7 +134,11 @@ def partners_with_open_items(
             LedgerLine.amount_residual.is_not(None),
             LedgerLine.amount_residual != 0,
         )
-    ).all()
+    )
+    branch_id = _branch(current)
+    if branch_id is not None:
+        stmt = stmt.where(LedgerEntry.branch_id == branch_id)
+    rows = db.execute(stmt).all()
     totals: dict[int, Decimal] = {}
     counts: dict[int, int] = {}
     for partner_id, residual in rows:
@@ -212,10 +223,17 @@ def matched_groups(
     partner_kind: str | None = Query(default=None),
     partner_id: int | None = None,
     limit: int = Query(default=50, le=200),
-    _: CurrentUser = Depends(require_capability(CAP_ACCOUNTING_CHART_READ)),
+    current: CurrentUser = Depends(require_capability(CAP_ACCOUNTING_CHART_READ)),
     db: Session = Depends(get_db),
 ) -> list[MatchedGroupOut]:
     stmt = select(FullReconcile).order_by(FullReconcile.id.desc()).limit(limit)
+    branch_id = _branch(current)
+    if branch_id is not None:
+        stmt = stmt.where(FullReconcile.id.in_(
+            select(LedgerLine.full_reconcile_id)
+            .join(LedgerEntry, LedgerEntry.id == LedgerLine.entry_id)
+            .where(LedgerLine.full_reconcile_id.is_not(None),
+                   LedgerEntry.branch_id == branch_id)))
     if partner_kind or partner_id:
         line_stmt = select(LedgerLine.full_reconcile_id).where(
             LedgerLine.full_reconcile_id.is_not(None))

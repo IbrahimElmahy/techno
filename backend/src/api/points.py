@@ -43,9 +43,15 @@ class CouponOut(BaseModel):
 @router.get("/{customer_id}/points", response_model=PointBalanceOut)
 def get_balance(
     customer_id: int,
-    _: CurrentUser = Depends(require_capability(CAP_LOYALTY_READ)),
+    current: CurrentUser = Depends(require_capability(CAP_LOYALTY_READ)),
     db: Session = Depends(get_db),
 ) -> PointBalanceOut:
+    from src.auth import branch_scope as _bs
+    from src.models.customer import Customer as _C
+
+    _row = db.get(_C, customer_id)
+    if _row is not None and not _bs.may_see(current, _row):
+        raise HTTPException(404, {"code": "not_found", "message": "غير موجود"})
     purses = points_service.purse_balances(db, customer_id)
     return PointBalanceOut(
         customer_id=customer_id,
@@ -117,9 +123,15 @@ def customer_ledger(
     kind: list[str] | None = Query(default=None),
     limit: int = Query(default=1000, ge=1, le=5000),
     offset: int = Query(default=0, ge=0),
-    _: CurrentUser = Depends(require_capability(CAP_LOYALTY_READ)),
+    current: CurrentUser = Depends(require_capability(CAP_LOYALTY_READ)),
     db: Session = Depends(get_db),
 ) -> PointLedgerOut:
+    from src.auth import branch_scope as _bs
+    from src.models.customer import Customer as _C
+
+    _row = db.get(_C, customer_id)
+    if _row is not None and not _bs.may_see(current, _row):
+        raise HTTPException(404, {"code": "not_found", "message": "غير موجود"})
     data = points_service.ledger(
         db, customer_id=customer_id, kinds=kind, date_from=date_from, date_to=date_to,
         limit=limit, offset=offset)

@@ -92,12 +92,24 @@ def _entry_out(entry: LedgerEntry) -> LedgerEntryOut:
 
 @router.get("/treasury/balance", response_model=BalanceOut)
 def treasury_balance(
-    _: CurrentUser = Depends(require_capability(CAP_TREASURY_READ)),
+    current: CurrentUser = Depends(require_capability(CAP_TREASURY_READ)),
     db: Session = Depends(get_db),
 ) -> BalanceOut:
+    from src.auth import branch_scope
+    from src.models.treasury import Treasury
+
     acc = get_or_create_treasury_account(db)
     db.commit()
-    return BalanceOut(account_id=acc.id, balance=ledger_service.balance_of(db, acc.id))
+    branch_id = branch_scope.visible_branch_id(current)
+    stmt = select(Treasury.account_id).where(
+        Treasury.active.is_(True), Treasury.account_id.is_not(None))
+    if branch_id is not None:
+        stmt = stmt.where(Treasury.branch_id == branch_id)
+    boxes = db.scalars(stmt).all()
+    if not boxes:
+        return BalanceOut(account_id=acc.id, balance=ledger_service.balance_of(db, acc.id))
+    total = sum((ledger_service.balance_of(db, a) or Decimal("0") for a in boxes), Decimal("0"))
+    return BalanceOut(account_id=acc.id, balance=total)
 
 
 @router.post("/ledger/entries", response_model=LedgerEntryOut, status_code=status.HTTP_201_CREATED)

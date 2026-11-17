@@ -235,13 +235,21 @@ def update_category(category_id: int, body: CategoryIn, _: CurrentUser = WRITE,
     return out
 
 
+def _own_branch(current: CurrentUser, asked: int | None) -> int | None:
+    from src.auth import branch_scope
+
+    mine = branch_scope.visible_branch_id(current)
+    return asked if mine is None else mine
+
+
 @router.get("/report", response_model=dict)
 def assets_report(
     as_of: date | None = Query(None), branch_id: int | None = Query(None),
     category_id: int | None = Query(None), usage: str | None = Query(None),
-    include_disposed: bool = Query(False), _: CurrentUser = READ,
+    include_disposed: bool = Query(False), current: CurrentUser = READ,
     db: Session = Depends(get_db),
 ) -> dict:
+    branch_id = _own_branch(current, branch_id)
     return svc.report(db, as_of=as_of, branch_id=branch_id, category_id=category_id,
                       usage=usage, include_disposed=include_disposed)
 
@@ -250,8 +258,9 @@ def assets_report(
 def schedule_report(
     date_from: date = Query(...), date_to: date = Query(...),
     branch_id: int | None = Query(None), category_id: int | None = Query(None),
-    _: CurrentUser = READ, db: Session = Depends(get_db),
+    current: CurrentUser = READ, db: Session = Depends(get_db),
 ) -> dict:
+    branch_id = _own_branch(current, branch_id)
     try:
         return svc.schedule_report(db, date_from=date_from, date_to=date_to,
                                    branch_id=branch_id, category_id=category_id)
@@ -297,7 +306,7 @@ def list_assets(
     category: str | None = Query(None),
     source_kind: str | None = Query(None),
     source_id: int | None = Query(None),
-    _: CurrentUser = READ, db: Session = Depends(get_db),
+    current: CurrentUser = READ, db: Session = Depends(get_db),
 ) -> list[AssetOut]:
     try:
         if source_kind and source_id:
@@ -306,6 +315,9 @@ def list_assets(
             rows = svc.list_assets(db, status=status_filter, category=category)
     except ValueError as exc:
         raise HTTPException(422, {"code": "validation", "message": str(exc)}) from exc
+    from src.auth import branch_scope
+
+    rows = [a for a in rows if branch_scope.may_see(current, a)]
     acc = svc.accumulated_map(db, [a.id for a in rows])
     return [_out(db, a, acc.get(a.id)) for a in rows]
 
@@ -327,9 +339,14 @@ def create_asset(body: AssetIn, current: CurrentUser = WRITE,
 
 
 @router.get("/{asset_id}", response_model=AssetOut)
-def get_asset(asset_id: int, _: CurrentUser = READ, db: Session = Depends(get_db)) -> AssetOut:
+def get_asset(asset_id: int, current: CurrentUser = READ, db: Session = Depends(get_db)) -> AssetOut:
+    from src.auth import branch_scope
+
     try:
-        return _out(db, svc.get_asset(db, asset_id), full=True)
+        asset = svc.get_asset(db, asset_id)
+        if not branch_scope.may_see(current, asset):
+            raise FixedAssetError("الأصل غير موجود")
+        return _out(db, asset, full=True)
     except FixedAssetError as exc:
         raise _fail(exc, 404) from exc
 

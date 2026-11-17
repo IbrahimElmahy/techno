@@ -45,6 +45,7 @@ const BASE_TITLES: Record<string, string> = {
   '/inspection-points': 'تحليل أصناف المعاينات بالنقاط',
   '/points-yearly': 'مجمع نقاط',
   '/technician-statement': 'كشف حساب الفني',
+  '/coupon-card': 'كارت الكوبونات',
   '/points-ledger': 'سجل النقاط',
   '/treasury': 'الحسابات والخزينة',
   '/vouchers': 'سندات القبض والصرف',

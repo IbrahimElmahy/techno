@@ -105,11 +105,20 @@ def expiring_batches(
     item_id: int | None = None,
     location_kind: LocationKind | None = None,
     location_id: int | None = None,
-    _: CurrentUser = Depends(require_capability(CAP_STOCK_READ)),
+    current: CurrentUser = Depends(require_capability(CAP_STOCK_READ)),
     db: Session = Depends(get_db),
 ) -> list[dict]:
-    return batch_service.expiring(db, before=before, item_id=item_id,
+    from src.api.serials import _branch_places
+
+    rows = batch_service.expiring(db, before=before, item_id=item_id,
                                   location_kind=location_kind, location_id=location_id)
+    places = _branch_places(db, current)
+    if places is None:
+        return rows
+    whs, cus, _invs = places
+    return [r for r in rows
+            if (r["location_kind"] == LocationKind.warehouse.value and r["location_id"] in whs)
+            or (r["location_kind"] == LocationKind.custody.value and r["location_id"] in cus)]
 
 
 @router.get("/batches/movements", response_model=list[dict])
@@ -119,10 +128,15 @@ def batch_movements(
     kind: str | None = None,
     location_kind: LocationKind | None = None,
     location_id: int | None = None,
-    _: CurrentUser = Depends(require_capability(CAP_STOCK_READ)),
+    current: CurrentUser = Depends(require_capability(CAP_STOCK_READ)),
     db: Session = Depends(get_db),
 ) -> list[dict]:
+    from src.api.serials import _branch_places, _in_branch
+
     stmt = select(StockBatchMovement)
+    places = _branch_places(db, current)
+    if places is not None:
+        stmt = stmt.where(_in_branch(StockBatchMovement, places))
     if item_id is not None:
         stmt = stmt.where(StockBatchMovement.item_id == item_id)
     if expiry_date is not None:

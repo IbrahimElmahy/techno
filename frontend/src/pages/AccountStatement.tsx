@@ -417,6 +417,10 @@ export default function AccountStatement() {
 
   const lines: StatementLine[] = statement?.lines ?? [];
   const customerFamilies = subject === 'account' && accountId ? (statement?.families ?? []) : [];
+  const familyByAccount = useMemo(() => new Map<number, string>(
+    (statement?.families ?? [])
+      .filter((f) => !!f.family)
+      .map((f) => [f.account_id, f.family as string])), [statement]);
   const multiAccount = new Set(lines.map((l) => l.account_id).filter(Boolean)).size > 1;
   const summaries: AccountSummary[] = statement?.account_summaries ?? [];
   const multiScope = subject === 'account' && (grouped || multiAccount || summaries.length > 1);
@@ -681,6 +685,12 @@ export default function AccountStatement() {
     ...(!isItem ? [{
       title: 'نوع الفاتورة', dataIndex: 'invoice_type', width: 110, align: 'center' as const,
       ...textColumn(shownLines as StatementLine[], (l: StatementLine) => l.invoice_type),
+      onFilter: (value: any, l: StatementLine) => {
+        if ((l.invoice_type ?? '') === value) return true;
+        const acct = l.account_id ?? statement?.account_id ?? null;
+        const fam = l.doc_family || (acct != null ? familyByAccount.get(acct) : undefined);
+        return !!fam && fam === value;
+      },
       render: (v: string | undefined) => (v ? (
         <Tag color={v === PAYMENT ? 'green' : v === 'بولي' ? 'purple'
           : v === 'مرتجع' ? 'orange' : v === 'أبيض' ? 'blue' : undefined}>{v}</Tag>

@@ -409,6 +409,22 @@ def list_inspections(
 
 class InspectionPatch(BaseModel):
     visit_type: str | None = Field(default=None, max_length=40)
+    inspection_date: date | None = None
+    owner_name: str | None = Field(default=None, max_length=160)
+    owner_phone: str | None = Field(default=None, max_length=32)
+    national_id: str | None = Field(default=None, max_length=20)
+    owner_address: str | None = Field(default=None, max_length=240)
+    floor_number: str | None = Field(default=None, max_length=120)
+    description: str | None = Field(default=None, max_length=80)
+    inspection_type: str | None = Field(default=None, max_length=80)
+    technician_name: str | None = Field(default=None, max_length=160)
+    technician_phone: str | None = Field(default=None, max_length=32)
+    technician_customer_id: int | None = None
+    merchant_customer_id: int | None = None
+    purchase_shop: str | None = Field(default=None, max_length=160)
+    purchase_shop_phone: str | None = Field(default=None, max_length=40)
+    visit_details: str | None = Field(default=None, max_length=1000)
+    items: list[InspectionLineIn] | None = None
 
 
 def _reviewer(current: CurrentUser) -> None:
@@ -435,10 +451,24 @@ def update_inspection(
 ) -> InspectionOut:
     _reviewer(current)
     insp = _get_or_404(db, inspection_id)
-    if body.visit_type:
-        insp.visit_type = body.visit_type
+    fields = {k: getattr(body, k) for k in body.model_fields_set if k != "items"}
+    if "visit_type" in fields and not fields["visit_type"]:
+        fields.pop("visit_type")
+    if "inspection_date" in fields and fields["inspection_date"] is None:
+        fields.pop("inspection_date")
+    lines = None
+    if body.items is not None:
+        lines = [LineIn(item_id=ln.item_id, item_name=ln.item_name,
+                        quantity=ln.quantity, points=ln.points) for ln in body.items]
+    try:
+        inspection_service.update_inspection(
+            db, insp, fields=fields, lines=lines, actor_user_id=current.id)
+    except InspectionError as exc:
+        db.rollback()
+        raise HTTPException(status.HTTP_400_BAD_REQUEST,
+                            {"code": "invalid", "message": str(exc)}) from exc
     db.commit()
-    return _out_single(db, insp)
+    return _out_single(db, _get_or_404(db, inspection_id))
 
 
 @router.post("/{inspection_id}/reject", response_model=InspectionOut)

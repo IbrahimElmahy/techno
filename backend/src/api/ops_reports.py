@@ -71,6 +71,7 @@ def ops_report(
             rep_id=rep_id, status=status, kind=kind,
             due_within_days=due_within_days, only_open=only_open,
             limit=limit, offset=offset, statement=statement,
+            branch_id=branch_scope.visible_branch_id(current),
         )
     except OpsReportError as exc:
         raise HTTPException(422, {"code": "report_invalid", "message": str(exc)}) from exc
@@ -117,12 +118,13 @@ def profitability_breakdown(
     key: int | None = Query(None),
     date_from: date | None = Query(None),
     date_to: date | None = Query(None),
-    _: CurrentUser = Depends(require_capability(CAP_PROFIT_VIEW)),
+    current: CurrentUser = Depends(require_capability(CAP_PROFIT_VIEW)),
     db: Session = Depends(get_db),
 ) -> dict:
     try:
         return analysis_reports.account_breakdown(
-            db, dimension=dimension, key=key, date_from=date_from, date_to=date_to)
+            db, dimension=dimension, key=key, date_from=date_from, date_to=date_to,
+            branch_id=branch_scope.visible_branch_id(current))
     except AnalysisReportError as exc:
         raise HTTPException(422, {"code": "report_invalid", "message": str(exc)}) from exc
 

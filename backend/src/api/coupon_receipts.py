@@ -187,9 +187,15 @@ def receiving_users(
 @router.get("/issued-to/{customer_id}", response_model=list[dict])
 def coupons_issued_to(
     customer_id: int,
-    _: CurrentUser = Depends(require_capability(CAP_COUPON_RECEIVE)),
+    current: CurrentUser = Depends(require_capability(CAP_COUPON_RECEIVE)),
     db: Session = Depends(get_db),
 ) -> list[dict]:
+    from src.auth import branch_scope as _bs
+    from src.models.customer import Customer as _C
+
+    _row = db.get(_C, customer_id)
+    if _row is not None and not _bs.may_see(current, _row):
+        raise HTTPException(404, {"code": "not_found", "message": "غير موجود"})
     return coupon_receipt_service.issued_to_customer(db, customer_id)
 
 
