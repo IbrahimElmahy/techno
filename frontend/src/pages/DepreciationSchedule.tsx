@@ -65,7 +65,7 @@ export default function DepreciationSchedule() {
   });
 
   const columns: ColumnsType<Row> = [
-    { title: 'الأصل', key: 'name', fixed: 'right', width: 260,
+    { title: 'الأصل', key: 'name', fixed: 'left', width: 260,
       render: (_: any, r) => (r.children ? <b>{r.name} ({r.children.length})</b>
         : <span>{r.code} — {r.name}</span>) },
     { title: 'تاريخ الشراء', dataIndex: 'acquisition_date', width: 105, render: (v) => v || '' },

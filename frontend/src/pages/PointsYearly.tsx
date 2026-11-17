@@ -67,7 +67,7 @@ export default function PointsYearly() {
   }, [shown]);
 
   const columns = [
-    { title: 'التاجر', dataIndex: 'party', key: 'party', width: 200, fixed: 'right' as const },
+    { title: 'التاجر', dataIndex: 'party', key: 'party', width: 200, fixed: 'left' as const },
     { title: 'المندوب', dataIndex: 'party_rep', key: 'party_rep', width: 150,
       render: (v: string | null) => v || '' },
     { title: 'الكود', dataIndex: 'party_code', key: 'party_code', width: 110 },

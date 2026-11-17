@@ -335,7 +335,7 @@ export default function Payroll() {
   };
 
   const monthColumns: ColumnsType<Line> = [
-    { title: 'الموظف', dataIndex: 'name', key: 'name', fixed: 'right', width: 190,
+    { title: 'الموظف', dataIndex: 'name', key: 'name', fixed: 'left', width: 190,
       render: (v: string, r) => (r.__group
         ? <b>{v}</b>
         : <a onClick={() => setLineOf(r.employee_id)}><b>{v}</b></a>) },

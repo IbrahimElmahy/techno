@@ -132,7 +132,7 @@ export function useOvertimeTab({ active, data, onData, onRecalc, busy }: {
   );
 
   const columns = [
-    { title: 'الموظف', dataIndex: 'name', key: 'name', fixed: 'right' as const, width: 180,
+    { title: 'الموظف', dataIndex: 'name', key: 'name', fixed: 'left' as const, width: 180,
       render: (v: string, l: any) => (
         <Space size={4}><b>{v}</b>
           {edits[l.employee_id] && !same(edits[l.employee_id], entryOf(l)) ? <Tag color="orange">لم يُحفظ</Tag> : null}

@@ -444,7 +444,7 @@ export default function EmployeeReceivables({ host }: { host?: ReceivablesHost }
     { title: 'الحساب', dataIndex: 'account_name', key: 'account_name', width: 200, ellipsis: true,
       render: (v: string | null, r) => (v ? `${v} (${r.account_code})` : '—') },
     { title: 'حركات', dataIndex: 'ledger_lines', key: 'ledger_lines', width: 80, align: 'left' },
-    { title: '', key: 'actions', width: 380, fixed: 'left', render: (_: any, r) => rowActions(r) },
+    { title: '', key: 'actions', width: 380, fixed: 'right', render: (_: any, r) => rowActions(r) },
   ];
 
   const advanceColumns = (withEmployee: boolean): ColumnsType<Advance> => [

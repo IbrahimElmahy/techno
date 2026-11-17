@@ -10,7 +10,7 @@ export default function AdvancesView({
   if (!adv) return null;
   const cols: any[] = [
     {
-      title: 'الموظف / الحساب', key: 'l', fixed: 'right' as const, width: 240,
+      title: 'الموظف / الحساب', key: 'l', fixed: 'left' as const, width: 240,
       render: (_: any, r: any) => <AccountLink id={r.account_id} name={r.label} open={openStatement} />,
     },
     ...adv.dates.map((d: string) => ({

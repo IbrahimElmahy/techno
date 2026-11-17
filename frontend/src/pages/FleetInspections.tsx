@@ -199,7 +199,7 @@ export default function FleetInspections() {
   };
 
   const gridCols = [
-    { title: 'السيارة', dataIndex: 'vehicle_code', width: 110, fixed: 'right' as const,
+    { title: 'السيارة', dataIndex: 'vehicle_code', width: 110, fixed: 'left' as const,
       render: (v: string, r: GridRow) => (
         <Space direction="vertical" size={0}>
           <b>{v}</b>

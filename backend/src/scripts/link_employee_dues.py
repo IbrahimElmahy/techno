@@ -10,7 +10,7 @@ from src.models.employee import Employee
 from src.models.ledger import Account, AccountNature
 from src.services import audit_service, customer_merge_service
 
-OWNERS = {"FC-A5X21": "FC-A5M-19"}
+OWNERS: dict[str, str] = {}
 
 
 def run(*, execute: bool, actor: int) -> None:
