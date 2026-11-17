@@ -35,6 +35,8 @@ interface EmpRow {
   employee_id: number; code: string; name: string; active: boolean; branch_id: number | null;
   has_card: boolean; effective_from: string | null; basic: string | null; earnings: string;
   deductions: string; insurance: string | null; rules: Rule[]; linked_user: boolean;
+  items?: { component_id: number; name: string; kind: string; amount: string }[];
+  [extra: string]: any;
 }
 
 interface Detail { source: string; label: string; kind: string; quantity: string | null; amount: string }
@@ -155,7 +157,11 @@ export default function Payroll() {
   const loadEmps = async (inactive = showInactive) => {
     try {
       const res = await api.get('/api/v1/hr/salary/employees', { params: { include_inactive: inactive } });
-      setEmps(res.data || []);
+      setEmps((res.data || []).map((e: EmpRow) => ({
+        ...e,
+        ...Object.fromEntries((e.items || []).filter((i) => i.kind === 'earning')
+          .map((i) => [`alw_${i.component_id}`, i.amount])),
+      })));
     } catch (err: any) { fail(err, 'تعذر تحميل الموظفين'); }
   };
 
@@ -431,6 +437,13 @@ export default function Payroll() {
     ]);
   };
 
+  const earnComps = useMemo(() => {
+    const seen = new Map<number, string>();
+    emps.forEach((e) => (e.items || []).forEach((i) => {
+      if (i.kind === 'earning' && !seen.has(i.component_id)) seen.set(i.component_id, i.name);
+    }));
+    return [...seen.entries()].map(([id, name]) => ({ id, name }));
+  }, [emps]);
   const empColumns: ColumnsType<EmpRow> = [
     { title: 'رقم', dataIndex: 'code', key: 'code', width: 110, render: (v: string) => <Tag>{v}</Tag> },
     { title: 'الموظف', dataIndex: 'name', key: 'name',
@@ -443,7 +456,15 @@ export default function Payroll() {
     { title: 'الفرع', dataIndex: 'branch_id', key: 'branch_id', render: (v: number | null) => branchName(v) },
     { title: 'الأساسي', dataIndex: 'basic', key: 'basic', align: 'left',
       render: (v: string | null) => (v !== null ? <b>{money(v)}</b> : <Tag color="orange">بدون كارت</Tag>) },
-    { title: 'البدلات', dataIndex: 'earnings', key: 'earnings', align: 'left', render: money },
+    earnComps.length > 1 ? {
+      title: 'البدلات', key: 'earnings_grp', filterable: false, children: [
+        ...earnComps.map((c) => ({ title: c.name, dataIndex: `alw_${c.id}`, key: `alw_${c.id}`,
+          filterable: false, align: 'left' as const,
+          render: (v: string | undefined) => (v ? money(v) : '—') })),
+        { title: 'إجمالي البدلات', dataIndex: 'earnings', key: 'earnings', align: 'left' as const,
+          filterable: false, render: (v: string) => <b>{money(v)}</b> },
+      ] } as any
+      : { title: earnComps[0]?.name || 'البدلات', dataIndex: 'earnings', key: 'earnings', align: 'left', render: money },
     { title: 'خصومات ثابتة', dataIndex: 'deductions', key: 'deductions', align: 'left', render: money },
     { title: 'التأمينات', dataIndex: 'insurance', key: 'insurance', align: 'left',
       render: (v: string | null) => (v !== null ? money(v) : '—') },

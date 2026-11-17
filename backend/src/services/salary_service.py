@@ -191,6 +191,7 @@ def _card_summary(db: Session, emp: Employee, day: date) -> dict:
         "insurance": str(ins.amount) if ins else None,
         "rules": [_rule_out(r) for r in rules_of(db, emp.id)],
         "linked_user": emp.user_id is not None,
+        "items": items,
     }
 
 
