@@ -1838,6 +1838,11 @@ def list_sale_returns(
     current: CurrentUser = Depends(require_capability(CAP_SALES_READ)),
     db: Session = Depends(get_db),
 ) -> list[dict]:
+    from src.auth import branch_scope as _bs
+
+    _inv = db.get(SalesInvoice, sale_id)
+    if _inv is not None and not _bs.may_see(current, _inv):
+        raise HTTPException(404, {"code": "not_found", "message": "غير موجود"})
     rows = db.scalars(
         select(SalesReturn).where(SalesReturn.sales_invoice_id == sale_id)
         .order_by(SalesReturn.id.desc())

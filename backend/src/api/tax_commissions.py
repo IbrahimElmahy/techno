@@ -52,10 +52,13 @@ class CommissionRowOut(BaseModel):
 def vat_return(
     date_from: date | None = Query(default=None),
     date_to: date | None = Query(default=None),
-    _: CurrentUser = Depends(require_capability(CAP_VOUCHER_READ)),
+    current: CurrentUser = Depends(require_capability(CAP_VOUCHER_READ)),
     db: Session = Depends(get_db),
 ) -> VatReturnOut:
-    r = tax_service.vat_return(db, date_from=date_from, date_to=date_to)
+    from src.auth import branch_scope
+
+    r = tax_service.vat_return(db, date_from=date_from, date_to=date_to,
+                               branch_id=branch_scope.visible_branch_id(current))
     return VatReturnOut(**r)
 
 
@@ -101,6 +104,14 @@ def commissions_report(
     scope = current.id if current.role == RoleName.sales_rep else rep_id
     rows = commission_service.compute(db, date_from=date_from, date_to=date_to,
                                       rep_user_id=scope)
+    from src.auth import branch_scope
+    from sqlalchemy import select
+    from src.models.user import User as _U
+
+    branch_id = branch_scope.visible_branch_id(current)
+    if branch_id is not None:
+        mine = set(db.scalars(select(_U.id).where(_U.branch_id == branch_id)).all())
+        rows = [r for r in rows if r.rep_user_id in mine]
     return [CommissionRowOut(
         rep_user_id=r.rep_user_id, rep_name=r.rep_name, basis=r.basis,
         rate_pct=r.rate_pct, base_amount=r.base_amount, commission=r.commission)

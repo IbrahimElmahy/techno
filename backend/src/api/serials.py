@@ -70,16 +70,50 @@ def _place(kind, loc_id, warehouses) -> str | None:
     return f"عهدة #{loc_id}"
 
 
+def _branch_places(db: Session, current: CurrentUser):
+    from sqlalchemy import or_
+
+    from src.auth import branch_scope
+    from src.models.user import User
+    from src.models.warehouse import Custody
+
+    branch_id = branch_scope.visible_branch_id(current)
+    if branch_id is None:
+        return None
+    whs = set(db.scalars(select(Warehouse.id).where(Warehouse.branch_id == branch_id)).all())
+    reps = select(User.id).where(User.branch_id == branch_id)
+    cus = set(db.scalars(select(Custody.id).where(or_(
+        Custody.warehouse_id.in_(whs or {0}), Custody.rep_id.in_(reps)))).all())
+    invs = select(SalesInvoice.id).where(SalesInvoice.branch_id == branch_id)
+    return whs, cus, invs
+
+
+def _in_branch(model, places, *, sold_col=None):
+    from sqlalchemy import and_, or_
+
+    whs, cus, invs = places
+    conds = [
+        and_(model.location_kind == LocationKind.warehouse, model.location_id.in_(whs or {0})),
+        and_(model.location_kind == LocationKind.custody, model.location_id.in_(cus or {0})),
+    ]
+    if sold_col is not None:
+        conds.append(and_(model.location_kind.is_(None), sold_col.in_(invs)))
+    return or_(*conds)
+
+
 @router.get("", response_model=list[SerialRow])
 def list_serials(
     item_id: int | None = None,
     status_filter: str | None = Query(default=None, alias="status"),
     warehouse_id: int | None = None,
     q: str | None = Query(default=None, description="serial, exact or partial"),
-    _: CurrentUser = Depends(require_capability(CAP_STOCK_READ)),
+    current: CurrentUser = Depends(require_capability(CAP_STOCK_READ)),
     db: Session = Depends(get_db),
 ) -> list[SerialRow]:
     stmt = select(ItemSerial)
+    places = _branch_places(db, current)
+    if places is not None:
+        stmt = stmt.where(_in_branch(ItemSerial, places, sold_col=ItemSerial.sold_invoice_id))
     if item_id is not None:
         stmt = stmt.where(ItemSerial.item_id == item_id)
     if status_filter:
@@ -112,10 +146,18 @@ def list_movements(
     serial: str | None = Query(default=None, description="one unit's whole history"),
     item_id: int | None = None,
     kind: str | None = None,
-    _: CurrentUser = Depends(require_capability(CAP_STOCK_READ)),
+    current: CurrentUser = Depends(require_capability(CAP_STOCK_READ)),
     db: Session = Depends(get_db),
 ) -> list[MovementRow]:
     stmt = select(ItemSerialMovement)
+    places = _branch_places(db, current)
+    if places is not None:
+        from sqlalchemy import and_, or_
+
+        stmt = stmt.where(or_(
+            _in_branch(ItemSerialMovement, places),
+            and_(ItemSerialMovement.document_type == "sales_invoice",
+                 ItemSerialMovement.document_id.in_(places[2]))))
     if serial:
         stmt = stmt.where(ItemSerialMovement.serial == serial)
     if item_id is not None:

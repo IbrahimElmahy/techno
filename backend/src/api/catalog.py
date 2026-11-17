@@ -647,10 +647,15 @@ def list_serials(
     status_filter: str | None = Query(default=None, alias="status"),
     location_kind: LocationKind | None = None,
     location_id: int | None = None,
-    _: CurrentUser = Depends(require_capability(CAP_STOCK_READ)),
+    current: CurrentUser = Depends(require_capability(CAP_STOCK_READ)),
     db: Session = Depends(get_db),
 ) -> list[SerialOut]:
+    from src.api.serials import _branch_places, _in_branch
+
     stmt = select(ItemSerial).where(ItemSerial.item_id == item_id)
+    places = _branch_places(db, current)
+    if places is not None:
+        stmt = stmt.where(_in_branch(ItemSerial, places, sold_col=ItemSerial.sold_invoice_id))
     if status_filter is not None:
         stmt = stmt.where(ItemSerial.status == SerialStatus(status_filter))
     if location_kind is not None:
