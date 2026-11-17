@@ -913,6 +913,22 @@ def _line_out(line: PayrollLine, emp: Employee | None, details: list[PayrollLine
         "dues_deduction": s(line.dues_deduction),
         "dues_balance": s(names.get(("dues", line.employee_id))),
         "notes": line.notes, "paid": bool(line.paid), "paid_at": line.paid_at,
+        "components": {str(d.component_id): s(d.amount) for d in details
+                       if d.source == DetailSource.component and d.kind == DetailKind.earning
+                       and d.component_id is not None},
+        "component_names": {str(d.component_id): d.label for d in details
+                            if d.source == DetailSource.component and d.kind == DetailKind.earning
+                            and d.component_id is not None},
+        "overtime_plus": s(ot_pos),
+        "shortage_hours": s(line.absent_hours if _d(line.absent_hours) else
+                            (-_d(line.overtime_hours) if _d(line.overtime_hours) < 0 else None)),
+        "shortage_amount": s(to_money(sum((_d(d.amount) for d in details if d.kind == DetailKind.deduction
+                                           and (d.source == DetailSource.overtime
+                                                or (d.source == DetailSource.absence
+                                                    and d.label == "ساعات غياب"))), ZERO))),
+        "card_deductions": s(to_money(sum((_d(d.amount) for d in details
+                                           if d.source == DetailSource.component
+                                           and d.kind == DetailKind.deduction), ZERO))),
         "details": [{"source": d.source.value, "label": d.label, "kind": d.kind.value,
                      "quantity": s(d.quantity), "amount": s(d.amount)} for d in details],
     }

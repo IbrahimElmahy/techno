@@ -55,12 +55,17 @@ interface Line {
   daily_rate: string | null; overtime_hours: string | null; overtime_amount: string;
   extra_days: string | null; extra_days_amount: string | null; transport: string | null;
   incentive: string | null; days_present: string; days_in_month: number;
+  components?: Record<string, string>; component_names?: Record<string, string>;
+  overtime_plus?: string; shortage_hours?: string | null; shortage_amount?: string;
+  card_deductions?: string; absent_hours?: string | null;
   __group?: boolean; children?: Line[];
+  [extra: string]: any;
 }
 
-const SUM_KEYS: (keyof Line)[] = ['basic', 'allowances', 'overtime_amount', 'commission',
+const SUM_KEYS: string[] = ['basic', 'allowances', 'overtime_amount', 'overtime_plus', 'commission',
   'extra_days_amount', 'transport', 'incentive', 'bonuses', 'earnings', 'absence', 'advances',
-  'penalties', 'insurance', 'other_deductions', 'total_deductions', 'net'];
+  'penalties', 'insurance', 'other_deductions', 'total_deductions', 'net', 'shortage_amount',
+  'card_deductions', 'dues_deduction', 'extra_deduction'];
 
 function EditCell({ value, editable, signed, onSave, width = 80 }: {
   value: string | number | null | undefined; editable: boolean; signed?: boolean;
@@ -274,7 +279,19 @@ export default function Payroll() {
     } catch (err: any) { fail(err, 'تعذر طباعة القسيمة'); }
   };
 
-  const monthFilter = useListFilter(data?.lines || [], {
+  const monthComps = useMemo(() => {
+    const seen = new Map<string, string>();
+    (data?.lines || []).forEach((l) => Object.entries(l.component_names || {}).forEach(([id, name]) => {
+      if (!seen.has(id)) seen.set(id, name);
+    }));
+    return [...seen.entries()].map(([id, name]) => ({ id, name }));
+  }, [data]);
+  const monthRows = useMemo(() => (data?.lines || []).map((l) => ({
+    ...l,
+    ...Object.fromEntries(Object.entries(l.components || {}).map(([id, v]) => [`cmp_${id}`, v])),
+  })), [data]);
+  const sumKeys = useMemo(() => [...SUM_KEYS, ...monthComps.map((c) => `cmp_${c.id}`)], [monthComps]);
+  const monthFilter = useListFilter(monthRows, {
     search: (r) => [r.code, r.name],
     filters: { paid: (r, v) => (v === 'yes' ? r.paid : !r.paid) },
   });
@@ -300,10 +317,21 @@ export default function Payroll() {
     } catch (err: any) { fail(err, 'تعذر الحفظ'); }
   };
   const cell = (field: string, key: keyof Line, opts: { signed?: boolean; width?: number } = {}) =>
-    (v: any, r: Line) => (r.__group ? (SUM_KEYS.includes(key) ? money(r[key] as any) : '') : (
+    (v: any, r: Line) => (r.__group ? (sumKeys.includes(key as string) ? money(r[key] as any) : '') : (
       <EditCell value={v} editable={!!draft} signed={opts.signed} width={opts.width}
         onSave={(x) => saveField(r.employee_id, field, x)} />));
   const plain = (v: any, r: Line) => (r.__group ? <b>{money(v)}</b> : money(v));
+  const dash = (v: any, r: Line) => (r.__group ? <b>{money(v)}</b> : n(v) ? money(v) : '—');
+  const group = (title: string, key: string, children: any[]) => ({
+    title, key, filterable: false, children: children.map((c) => ({ filterable: false, ...c })),
+  }) as any;
+  const saveFields = async (employeeId: number, fields: Record<string, any>) => {
+    if (!run) return;
+    try {
+      const res = await api.patch(`/api/v1/hr/salary/month/${run.id}/employees/${employeeId}`, fields);
+      setData(res.data);
+    } catch (err: any) { fail(err, 'تعذر الحفظ'); }
+  };
 
   const monthColumns: ColumnsType<Line> = [
     { title: 'الموظف', dataIndex: 'name', key: 'name', fixed: 'right', width: 190,
@@ -312,40 +340,63 @@ export default function Payroll() {
         : <a onClick={() => setLineOf(r.employee_id)}><b>{v}</b></a>) },
     { title: 'الوظيفة', dataIndex: 'job_title', key: 'job_title', width: 120, total: false,
       render: (v: string | null) => v || '' } as any,
-    { title: 'الأساسي', dataIndex: 'basic', key: 'basic', align: 'left', render: plain },
-    { title: 'البدلات', dataIndex: 'allowances', key: 'allowances', align: 'left', render: plain },
-    { title: 'قيمة اليوم', dataIndex: 'daily_rate', key: 'daily_rate', align: 'left', total: false,
-      render: (v: string, r: Line) => (r.__group ? '' : money(v)) } as any,
-    { title: 'ساعات إضافي', dataIndex: 'overtime_hours', key: 'overtime_hours', align: 'left', total: false,
-      render: cell('overtime_hours', 'overtime_hours', { signed: true }) } as any,
-    { title: 'قيمة الإضافي', dataIndex: 'overtime_amount', key: 'overtime_amount', align: 'left',
-      render: (v: string, r: Line) => <span style={{ color: n(v) < 0 ? '#cf1322' : undefined }}>{plain(v, r)}</span> },
-    { title: 'العمولة', dataIndex: 'commission', key: 'commission', align: 'left',
-      render: (v: string, r: Line) => (r.__group ? money(v) : (
-        <EditCell value={r.commission_override ?? v} editable={!!draft} width={100}
-          onSave={(x) => saveField(r.employee_id, 'commission_override', x)} />)) },
-    { title: 'أيام إضافي', dataIndex: 'extra_days', key: 'extra_days', align: 'left', total: false,
-      render: cell('extra_days', 'extra_days') } as any,
-    { title: 'قيمة الأيام', dataIndex: 'extra_days_amount', key: 'extra_days_amount', align: 'left', render: plain },
-    { title: 'انتقالات', dataIndex: 'transport', key: 'transport', align: 'left',
-      render: cell('transport', 'transport', { width: 95 }) },
-    { title: 'حافز', dataIndex: 'incentive', key: 'incentive', align: 'left',
-      render: cell('extra_earning', 'incentive', { width: 95 }) },
-    { title: 'مكافآت', dataIndex: 'bonuses', key: 'bonuses', align: 'left', render: plain },
-    { title: 'إجمالي الراتب', dataIndex: 'earnings', key: 'earnings', align: 'left',
-      render: (v: string) => <b>{money(v)}</b> },
-    { title: 'أيام الحضور', dataIndex: 'days_present', key: 'days_present', align: 'left', total: false,
-      render: (v: string, r: Line) => (r.__group ? '' : Number(v)) } as any,
-    { title: 'غياب', dataIndex: 'days_absent', key: 'days_absent', align: 'left', total: false,
-      render: (v: string, r: Line) => (r.__group ? '' : (
-        <EditCell value={r.absent_override ?? v} editable={!!draft} width={70}
-          onSave={(x) => saveField(r.employee_id, 'absent_override', x)} />)) } as any,
-    { title: 'قيمة الغياب', dataIndex: 'absence', key: 'absence', align: 'left', render: plain },
-    { title: 'السلف', dataIndex: 'advances', key: 'advances', align: 'left', render: plain },
-    { title: 'جزاءات', dataIndex: 'penalties', key: 'penalties', align: 'left', render: plain },
-    { title: 'تأمينات', dataIndex: 'insurance', key: 'insurance', align: 'left', render: plain },
-    { title: 'خصومات أخرى', dataIndex: 'other_deductions', key: 'other_deductions', align: 'left', render: plain },
-    { title: 'إجمالي الخصم', dataIndex: 'total_deductions', key: 'total_deductions', align: 'left', render: plain },
+    group('الراتب', 'g_salary', [
+      { title: 'الأساسي', dataIndex: 'basic', key: 'basic', align: 'left', render: plain },
+      ...(monthComps.length ? monthComps.map((c) => ({
+        title: c.name, dataIndex: `cmp_${c.id}`, key: `cmp_${c.id}`, align: 'left', render: dash,
+      })) : [{ title: 'البدلات', dataIndex: 'allowances', key: 'allowances', align: 'left', render: plain }]),
+      { title: 'قيمة اليوم', dataIndex: 'daily_rate', key: 'daily_rate', align: 'left', total: false,
+        render: (v: string, r: Line) => (r.__group ? '' : money(v)) },
+    ]),
+    group('الإضافي', 'g_ot', [
+      { title: 'ساعات', dataIndex: 'overtime_hours', key: 'overtime_hours', align: 'left', total: false,
+        render: (v: string, r: Line) => cell('overtime_hours', 'overtime_hours')(n(v) > 0 ? v : null, r) },
+      { title: 'قيمة الساعات', dataIndex: 'overtime_plus', key: 'overtime_plus', align: 'left', render: dash },
+      { title: 'أيام', dataIndex: 'extra_days', key: 'extra_days', align: 'left', total: false,
+        render: cell('extra_days', 'extra_days') },
+      { title: 'قيمة الأيام', dataIndex: 'extra_days_amount', key: 'extra_days_amount', align: 'left', render: dash },
+    ]),
+    group('إضافات', 'g_add', [
+      { title: 'العمولة', dataIndex: 'commission', key: 'commission', align: 'left',
+        render: (v: string, r: Line) => (r.__group ? money(v) : (
+          <EditCell value={r.commission_override ?? v} editable={!!draft} width={100}
+            onSave={(x) => saveField(r.employee_id, 'commission_override', x)} />)) },
+      { title: 'انتقالات', dataIndex: 'transport', key: 'transport', align: 'left',
+        render: cell('transport', 'transport', { width: 95 }) },
+      { title: 'حافز', dataIndex: 'incentive', key: 'incentive', align: 'left',
+        render: cell('extra_earning', 'incentive', { width: 95 }) },
+      { title: 'مكافآت', dataIndex: 'bonuses', key: 'bonuses', align: 'left', render: dash },
+    ]),
+    { title: 'إجمالي المستحق', dataIndex: 'earnings', key: 'earnings', align: 'left', filterable: false,
+      render: (v: string) => <b>{money(v)}</b> } as any,
+    group('الغياب', 'g_abs', [
+      { title: 'أيام الحضور', dataIndex: 'days_present', key: 'days_present', align: 'left', total: false,
+        render: (v: string, r: Line) => (r.__group ? '' : Number(v)) },
+      { title: 'أيام', dataIndex: 'days_absent', key: 'days_absent', align: 'left', total: false,
+        render: (v: string, r: Line) => (r.__group ? '' : (
+          <EditCell value={r.absent_override ?? v} editable={!!draft} width={70}
+            onSave={(x) => saveField(r.employee_id, 'absent_override', x)} />)) },
+      { title: 'قيمة الأيام', dataIndex: 'absence', key: 'absence', align: 'left', render: dash },
+      { title: 'ساعات', dataIndex: 'shortage_hours', key: 'shortage_hours', align: 'left', total: false,
+        render: (v: string | null, r: Line) => (r.__group ? '' : (
+          <EditCell value={v} editable={!!draft} width={70}
+            onSave={(x) => saveFields(r.employee_id, n(r.overtime_hours) < 0
+              ? { absent_hours: x, overtime_hours: null } : { absent_hours: x })} />)) },
+      { title: 'قيمة الساعات', dataIndex: 'shortage_amount', key: 'shortage_amount', align: 'left', render: dash },
+    ]),
+    group('الخصومات', 'g_ded', [
+      { title: 'السلف', dataIndex: 'advances', key: 'advances', align: 'left', render: dash },
+      { title: 'جزاءات', dataIndex: 'penalties', key: 'penalties', align: 'left', render: dash },
+      { title: 'تأمينات', dataIndex: 'insurance', key: 'insurance', align: 'left', render: dash },
+      { title: 'من المستحقات', dataIndex: 'dues_deduction', key: 'dues_deduction', align: 'left',
+        render: cell('dues_deduction', 'dues_deduction', { width: 95 }) },
+      { title: 'خصم', dataIndex: 'extra_deduction', key: 'extra_deduction', align: 'left',
+        render: cell('extra_deduction', 'extra_deduction', { width: 95 }) },
+      ...(lines.some((l) => n(l.card_deductions)) ? [{ title: 'خصومات الكارت', dataIndex: 'card_deductions',
+        key: 'card_deductions', align: 'left', render: dash }] : []),
+      { title: 'إجمالي الخصم', dataIndex: 'total_deductions', key: 'total_deductions', align: 'left',
+        render: (v: string) => <b>{money(v)}</b> },
+    ]),
     { title: 'الصافي', dataIndex: 'net', key: 'net', align: 'left',
       render: (v: string) => <b style={{ color: n(v) < 0 ? '#cf1322' : undefined }}>{money(v)}</b> },
     { title: 'ملاحظات', dataIndex: 'notes', key: 'notes', width: 200, total: false,
@@ -388,17 +439,17 @@ export default function Payroll() {
       if (!g) {
         g = { __group: true, employee_id: -(l.department_id ?? 0) - 1, name: l.department || 'بدون قسم',
           children: [] } as any;
-        SUM_KEYS.forEach((key) => { (g as any)[key] = 0; });
+        sumKeys.forEach((key) => { (g as any)[key] = 0; });
         map.set(k, g!);
       }
       g!.children!.push(l);
-      SUM_KEYS.forEach((key) => { (g as any)[key] = n((g as any)[key]) + n(l[key]); });
+      sumKeys.forEach((key) => { (g as any)[key] = n((g as any)[key]) + n(l[key]); });
     });
     return [...map.values()].map((g) => ({
       ...g,
       name: `${g.name} (${g.children!.length})${total ? ` — ${Math.round((n(g.earnings) / total) * 1000) / 10}%` : ''}`,
     }));
-  }, [byDept, lines]);
+  }, [byDept, lines, sumKeys]);
   const monthCols = useTableColumns('salary-month', monthColumns as any, {
     locked: ['name'],
     export: {
@@ -414,11 +465,13 @@ export default function Payroll() {
     const cols: PrintColumn<Line>[] = [
       { title: 'الموظف', value: (r) => r.name },
       { title: 'الأساسي', value: (r) => money(r.basic), numeric: true },
-      { title: 'البدلات', value: (r) => money(r.allowances), numeric: true },
+      ...monthComps.map((c) => ({ title: c.name, value: (r: Line) => money(r[`cmp_${c.id}`] || 0), numeric: true })),
+      { title: 'إضافي', value: (r) => money(n(r.overtime_plus) + n(r.extra_days_amount)), numeric: true },
       { title: 'العمولة', value: (r) => money(r.commission), numeric: true },
-      { title: 'إضافات', value: (r) => money(r.bonuses), numeric: true },
+      { title: 'انتقالات', value: (r) => money(r.transport || 0), numeric: true },
+      { title: 'حوافز ومكافآت', value: (r) => money(n(r.incentive) + n(r.bonuses)), numeric: true },
       { title: 'المستحق', value: (r) => money(r.earnings), numeric: true },
-      { title: 'الغياب', value: (r) => money(r.absence), numeric: true },
+      { title: 'الغياب', value: (r) => money(n(r.absence) + n(r.shortage_amount)), numeric: true },
       { title: 'جزاءات', value: (r) => money(r.penalties), numeric: true },
       { title: 'سلف', value: (r) => money(r.advances), numeric: true },
       { title: 'تأمينات', value: (r) => money(r.insurance), numeric: true },
