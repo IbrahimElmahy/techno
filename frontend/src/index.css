@@ -1654,3 +1654,18 @@ body.eg-resizing * {
 .tr-compact .ant-input,
 .tr-compact .ant-picker,
 .tr-compact .ant-select-selector { min-height: 32px; }
+
+.work-tabs .ant-tabs-nav::before { border-bottom: none !important; }
+.work-tabs .ant-tabs-tab {
+  background: rgba(0, 0, 0, 0.04) !important;
+  border-color: transparent !important;
+  border-radius: 8px 8px 0 0 !important;
+  padding: 4px 12px !important;
+  max-width: 220px;
+}
+.work-tabs .ant-tabs-tab .ant-tabs-tab-btn { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.work-tabs .ant-tabs-tab-active {
+  background: var(--ant-color-bg-container, #fff) !important;
+  font-weight: 600;
+}
+.work-tabs .ant-tabs-tab-active .ant-tabs-tab-btn { color: #4a8f1f !important; }

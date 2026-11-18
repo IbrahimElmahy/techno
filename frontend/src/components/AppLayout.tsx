@@ -81,7 +81,7 @@ export default function AppLayout() {
     return !v;
   });
   const { user, logout } = useAuth();
-  const { activeId, openTab } = useTabs();
+  const { tabs, activeId, openTab, activateTab, closeTab } = useTabs();
   const [fullscreen, toggleFullscreen] = useFullscreen();
   const [isOnline, setIsOnline] = useState(navigator.onLine);
 
@@ -361,8 +361,29 @@ export default function AppLayout() {
           </div>
         </Header>
 
+        <div className="work-tabs" style={{ flexShrink: 0, padding: '6px 16px 0', background: 'transparent' }}>
+          <Tabs
+            hideAdd
+            type="editable-card"
+            size="small"
+            activeKey={activeId || undefined}
+            onChange={activateTab}
+            onEdit={(key, action) => { if (action === 'remove') closeTab(key as string); }}
+            tabBarStyle={{ margin: 0 }}
+            items={tabs.map((t) => ({
+              key: t.id,
+              label: (
+                <span onAuxClick={(e) => { if (e.button === 1 && tabs.length > 1) { e.preventDefault(); closeTab(t.id); } }}>
+                  {t.title}
+                </span>
+              ),
+              closable: tabs.length > 1,
+            }))}
+          />
+        </div>
+
         <Content style={{
-          margin: '10px 16px 0', display: 'flex', flexDirection: 'column',
+          margin: '0 16px 0', display: 'flex', flexDirection: 'column',
           minHeight: 0, overflow: 'hidden',
         }}>
           <div
