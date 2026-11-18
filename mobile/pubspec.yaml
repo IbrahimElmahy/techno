@@ -1,7 +1,7 @@
 name: techno_inspections
 description: "A new Flutter project."
 publish_to: 'none'
-version: 0.3.39+50
+version: 0.3.40+51
 
 environment:
   sdk: ^3.5.4
@@ -45,6 +45,7 @@ dependencies:
   package_info_plus: ^10.2.1
   device_info_plus: ^13.2.0
   ota_update: ^7.1.0
+  print_bluetooth_thermal: ^1.2.5
 
 dev_dependencies:
   flutter_test:

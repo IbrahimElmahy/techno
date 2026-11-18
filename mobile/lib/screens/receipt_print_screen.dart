@@ -11,6 +11,7 @@ import '../db/local_db.dart';
 import '../theme.dart';
 import '../utils/arabic_number_words.dart';
 import '../utils/pdf_share.dart';
+import '../utils/thermal_print.dart';
 
 class ReceiptPrintScreen extends StatefulWidget {
   final Map<String, Object?> receipt;
@@ -101,6 +102,8 @@ class _ReceiptPrintScreenState extends State<ReceiptPrintScreen> {
                           style: TextStyle(fontSize: 12.5, height: 1.4),
                         ),
                       ),
+                    ThermalPrintButton(enabled: true, pdf: _buildPdf),
+                    const SizedBox(height: 8),
                     Row(
                       children: [
                         Expanded(
@@ -288,8 +291,8 @@ class _ReceiptPrintScreenState extends State<ReceiptPrintScreen> {
                   pw.Row(
                     mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
                     children: [
-                      pw.Text('المبلغ المحصّل',
-                          style: const pw.TextStyle(fontSize: 11)),
+                      pw.Expanded(child: pw.Text('المبلغ المحصّل',
+                          style: const pw.TextStyle(fontSize: 11))),
                       pw.Text(_money(amount),
                           style: const pw.TextStyle(
                               fontSize: 18,
@@ -327,8 +330,10 @@ class _ReceiptPrintScreenState extends State<ReceiptPrintScreen> {
             ],
             pw.SizedBox(height: 18),
             pw.Divider(color: PdfColors.grey400),
-            pw.Row(
-              mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+            pw.Wrap(
+              alignment: pw.WrapAlignment.spaceBetween,
+              runSpacing: 10,
+              spacing: 12,
               children: [
                 pw.Text('توقيع العميل: ____________', style: const pw.TextStyle(fontSize: 10)),
                 pw.Text('توقيع المندوب (المستلم): ____________',
@@ -379,7 +384,7 @@ pw.Widget _total(String label, String value, {bool big = false}) => pw.Padding(
       child: pw.Row(
         mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
         children: [
-          pw.Text(label, style: pw.TextStyle(fontSize: big ? 11.5 : 10.5)),
+          pw.Expanded(child: pw.Text(label, style: pw.TextStyle(fontSize: big ? 11.5 : 10.5))),
           pw.Text(value,
               style: pw.TextStyle(
                   fontSize: big ? 14 : 11,

@@ -14,6 +14,7 @@ import '../models/models.dart';
 import '../services/auto_sync.dart';
 import '../theme.dart';
 import '../utils/pdf_share.dart';
+import '../utils/thermal_print.dart';
 
 class InvoicePrintScreen extends StatefulWidget {
   final Map<String, Object?> invoice;
@@ -138,6 +139,8 @@ class _InvoicePrintScreenState extends State<InvoicePrintScreen> {
                           style: TextStyle(fontSize: 12.5, height: 1.4),
                         ),
                       ),
+                    ThermalPrintButton(enabled: synced, pdf: _buildPdf),
+                    const SizedBox(height: 8),
                     Row(
                       children: [
                         Expanded(
@@ -199,6 +202,7 @@ class _InvoicePrintScreenState extends State<InvoicePrintScreen> {
     final inv = widget.invoice;
     final synced = (inv['synced'] as int?) == 1;
     final doc = pw.Document();
+    final roll = isRoll(format);
 
     pw.Font arabic;
     try {
@@ -247,7 +251,7 @@ class _InvoicePrintScreenState extends State<InvoicePrintScreen> {
                   ],
                 ),
               ),
-        footer: (ctx) => pw.Container(
+        footer: roll ? null : (ctx) => pw.Container(
           alignment: pw.Alignment.center,
           margin: const pw.EdgeInsets.only(top: 6),
           child: pw.Text('صفحة ${ctx.pageNumber} من ${ctx.pagesCount}',
@@ -317,6 +321,13 @@ class _InvoicePrintScreenState extends State<InvoicePrintScreen> {
                 borderRadius: pw.BorderRadius.circular(4),
               ),
               child: pw.Column(children: [
+                if (roll) ...[
+                  _row('العميل', '${inv['customer_name']}'),
+                  _row('الهاتف', (_phone ?? '').trim().isEmpty ? '—' : _phone!),
+                  _row('التاريخ', '${inv['invoice_date']}'),
+                  _row('المندوب', _rep),
+                  _row('نوع الطلب', family ?? '—'),
+                ] else ...[
                 pw.Row(children: [
                   pw.Expanded(flex: 3, child: _row('العميل', '${inv['customer_name']}')),
                   pw.Expanded(flex: 2, child: _row('الهاتف',
@@ -328,6 +339,7 @@ class _InvoicePrintScreenState extends State<InvoicePrintScreen> {
                   pw.Expanded(flex: 2, child: _row('نوع الطلب', family ?? '—')),
                   pw.Expanded(flex: 2, child: pw.SizedBox()),
                 ]),
+                ],
                 if (isBonus)
                   pw.Padding(
                     padding: const pw.EdgeInsets.symmetric(vertical: 1.5),
@@ -443,16 +455,43 @@ class _InvoicePrintScreenState extends State<InvoicePrintScreen> {
                   .toList();
               final left = mine == null ? credit : mine + total - cash;
               final famTag = (family != null && prevByFamily.isNotEmpty) ? ' ($family)' : '';
-              pw.Widget box(List<pw.Widget> rows) => pw.Expanded(
-                    child: pw.Container(
-                      padding: const pw.EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                      decoration: pw.BoxDecoration(
-                        border: pw.Border.all(width: 0.6, color: PdfColors.grey500),
-                        borderRadius: pw.BorderRadius.circular(4),
-                      ),
-                      child: pw.Column(children: rows),
+              pw.Widget body(List<pw.Widget> rows) => pw.Container(
+                    padding: const pw.EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: pw.BoxDecoration(
+                      border: pw.Border.all(width: 0.6, color: PdfColors.grey500),
+                      borderRadius: pw.BorderRadius.circular(4),
                     ),
+                    child: pw.Column(children: rows),
                   );
+              pw.Widget box(List<pw.Widget> rows) => pw.Expanded(child: body(rows));
+              final a = [
+                _total('إجمالي الطلب', _money(total)),
+                if (mine != null) ...[
+                  _total('يضاف إليه الحساب السابق$famTag', _money(mine)),
+                  _total('الإجمالي', _money(mine + total), big: true),
+                ],
+              ];
+              final b = [
+                _total('المدفوع نقداً', _money(cash)),
+                _total('الباقي', _money(left), big: true),
+                for (final e in others)
+                  _total('مديونية ${e.key}', _money(e.value)),
+              ];
+              if (roll) {
+                return [
+                  pw.SizedBox(height: 8),
+                  if (isBonus)
+                    body([
+                      _total('قيمة البونص بسعر البيع', _money(bonusValue)),
+                      _total('المطلوب من العميل', _money(0), big: true),
+                    ])
+                  else ...[
+                    body(a),
+                    pw.SizedBox(height: 6),
+                    body(b),
+                  ],
+                ];
+              }
               if (isBonus) {
                 return [
                   pw.SizedBox(height: 8),
@@ -467,20 +506,9 @@ class _InvoicePrintScreenState extends State<InvoicePrintScreen> {
               return [
                 pw.SizedBox(height: 8),
                 pw.Row(crossAxisAlignment: pw.CrossAxisAlignment.start, children: [
-                  box([
-                    _total('إجمالي الطلب', _money(total)),
-                    if (mine != null) ...[
-                      _total('يضاف إليه الحساب السابق$famTag', _money(mine)),
-                      _total('الإجمالي', _money(mine + total), big: true),
-                    ],
-                  ]),
+                  box(a),
                   pw.SizedBox(width: 8),
-                  box([
-                    _total('المدفوع نقداً', _money(cash)),
-                    _total('الباقي', _money(left), big: true),
-                    for (final e in others)
-                      _total('مديونية ${e.key}', _money(e.value)),
-                  ]),
+                  box(b),
                 ]),
               ];
             })(),
@@ -490,8 +518,10 @@ class _InvoicePrintScreenState extends State<InvoicePrintScreen> {
             ],
             pw.SizedBox(height: 10),
             pw.Divider(color: PdfColors.grey400),
-            pw.Row(
-              mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+            pw.Wrap(
+              alignment: pw.WrapAlignment.spaceBetween,
+              runSpacing: 10,
+              spacing: 12,
               children: [
                 pw.Text('توقيع المستلم: ____________', style: const pw.TextStyle(fontSize: 10)),
                 pw.Text('توقيع المندوب: ____________', style: const pw.TextStyle(fontSize: 10)),
@@ -572,7 +602,7 @@ pw.Widget _total(String label, String value, {bool big = false}) => pw.Padding(
       child: pw.Row(
         mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
         children: [
-          pw.Text(label, style: pw.TextStyle(fontSize: big ? 12 : 11)),
+          pw.Expanded(child: pw.Text(label, style: pw.TextStyle(fontSize: big ? 12 : 11))),
           pw.Text('$value',
               style: pw.TextStyle(
                   fontSize: big ? 15 : 12,
