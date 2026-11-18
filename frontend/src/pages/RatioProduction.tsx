@@ -59,6 +59,13 @@ export default function RatioProduction() {
   const [saving, setSaving] = useState(false);
   const [entryOpen, setEntryOpen] = useState(false);
   const [viewId, setViewId] = useState<number | null>(null);
+  const [split, setSplit] = useState<{ material_id: number; product_line_id: number; quantity: string; line_cost: string }[]>([]);
+  useEffect(() => {
+    setSplit([]);
+    if (viewId == null) return;
+    api.get(`/api/v1/manufacturing/production-orders/${viewId}/material-split`)
+      .then((r) => setSplit(r.data || [])).catch(() => {});
+  }, [viewId]);
   const [editingId, setEditingId] = useState<number | null>(null);
 
   const [date, setDate] = useState<Dayjs>(dayjs());
@@ -457,7 +464,18 @@ export default function RatioProduction() {
 
           <div className="sale-card">
             <div style={{ fontWeight: 800, marginBottom: 8 }}>الخامات المصروفة</div>
-            <Table size="small" pagination={false} rowKey="id" dataSource={viewing.materials}
+            <Table size="small" pagination={false} rowKey={(m: any) => m._key ?? m.id}
+              dataSource={viewing.materials.flatMap((m) => {
+                const parts = split.filter((x) => x.material_id === m.id);
+                return parts.length ? parts.map((x, i) => ({
+                  ...m, _key: `${m.id}-${i}`, product_line_id: x.product_line_id,
+                  quantity: x.quantity, line_cost: x.line_cost,
+                })) : [m];
+              }).sort((a: any, b: any) => {
+                const ia = viewing.products.findIndex((p) => p.id === a.product_line_id);
+                const ib = viewing.products.findIndex((p) => p.id === b.product_line_id);
+                return (ia < 0 ? 1e9 : ia) - (ib < 0 ? 1e9 : ib);
+              })}
               locale={{ emptyText: 'لا توجد خامات' }}
               columns={[
                 { title: '#', width: 50, render: (_: unknown, __: unknown, i: number) => i + 1 },

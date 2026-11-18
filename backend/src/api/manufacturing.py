@@ -717,6 +717,16 @@ def list_production_orders(
             "total": len(orders), "limit": limit, "offset": offset}
 
 
+@router.get("/production-orders/{order_id}/material-split")
+def production_order_material_split(
+    order_id: int,
+    current: CurrentUser = Depends(require_capability(CAP_MANUFACTURE_READ)),
+    db: Session = Depends(get_db),
+) -> list[dict]:
+    order = _seen_po(db, order_id, current)
+    return production_order_service.material_split(db, order)
+
+
 @router.get("/production-orders/{order_id}", response_model=POOut)
 def get_production_order(
     order_id: int,

@@ -71,6 +71,35 @@ def recipe_plan(db: Session, *, product_id: int, quantity, bom_id: int | None = 
         c.quantity, scale, getattr(c, "unit_factor", 1) or 1)) for c in bom.components]
 
 
+def material_split(db: Session, order: ProductionOrder) -> list[dict]:
+    if all(m.product_line_id is not None for m in order.materials):
+        return []
+    need: dict[int, dict[int, Decimal]] = {}
+    for p in order.products:
+        try:
+            plan = recipe_plan(db, product_id=p.item_id, quantity=p.quantity, bom_id=p.bom_id)
+        except ProductionOrderError:
+            plan = recipe_plan(db, product_id=p.item_id, quantity=p.quantity)
+        per: dict[int, Decimal] = {}
+        for item_id, q in plan:
+            per[item_id] = per.get(item_id, ZERO) + Decimal(str(q or 0))
+        need[p.id] = per
+    out: list[dict] = []
+    for m in order.materials:
+        if m.product_line_id is not None:
+            continue
+        weights = {pid: w[m.item_id] for pid, w in need.items() if w.get(m.item_id, ZERO) > 0}
+        total = sum(weights.values(), ZERO)
+        if not total:
+            continue
+        qty, cost = Decimal(str(m.quantity or 0)), Decimal(str(m.line_cost or 0))
+        for pid, w in weights.items():
+            out.append({"material_id": m.id, "product_line_id": pid,
+                        "quantity": str(to_qty(qty * w / total)),
+                        "line_cost": str(to_money(cost * w / total))})
+    return out
+
+
 def _active_bom(db: Session, *, product_id: int, bom_id=None):
     if bom_id:
         return db.get(Bom, int(bom_id))
