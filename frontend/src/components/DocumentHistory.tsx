@@ -391,6 +391,7 @@ function SnapshotView({ version, names }: { version: VersionFull; names: Names }
       {lists.map(({ lk, cur, old, cols, rows, added, removed, changed }) => {
         const sums = cols.filter((c) => SUM_KEYS.has(c));
         const live = rows.filter((r) => r.status !== 'removed').map((r) => r.row);
+        const labelSpan = cols.length && !sums.includes(cols[0]) ? 2 : 1;
         return (
           <div key={lk}>
             <div style={{ fontWeight: 700, marginBottom: 6 }}>
@@ -401,7 +402,7 @@ function SnapshotView({ version, names }: { version: VersionFull; names: Names }
             </div>
             <Table<RowDiff>
               size="small" rowKey="key" dataSource={rows} pagination={false} bordered
-              scroll={{ x: 'max-content' }}
+              tableLayout="auto" scroll={{ x: 'max-content' }}
               onRow={(r) => ({
                 style: {
                   background: ROW_BG[r.status],
@@ -411,8 +412,9 @@ function SnapshotView({ version, names }: { version: VersionFull; names: Names }
               })}
               summary={() => (sums.length ? (
                 <Table.Summary.Row style={{ background: '#f8fafc', fontWeight: 700 }}>
-                  <Table.Summary.Cell index={0}>الإجمالي</Table.Summary.Cell>
+                  <Table.Summary.Cell index={0} colSpan={labelSpan}>الإجمالي</Table.Summary.Cell>
                   {cols.map((c, i) => {
+                    if (i < labelSpan - 1) return null;
                     if (!sums.includes(c)) return <Table.Summary.Cell key={c} index={i + 1} />;
                     const now = num(sumOf(live, c));
                     const before = old ? num(sumOf(old, c)) : now;
