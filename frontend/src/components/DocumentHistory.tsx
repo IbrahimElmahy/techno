@@ -1,9 +1,9 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Alert, Button, Descriptions, Empty, Spin, Table, Tag, Tooltip } from 'antd';
+import { Alert, Button, Empty, Spin, Table, Tag, Tooltip } from 'antd';
 import { HistoryOutlined } from '@ant-design/icons';
 import { api } from '../api/client';
 import { useAuth } from './AuthProvider';
-import { TabDrawer } from './TabModal';
+import { TabModal } from './TabModal';
 import { useLookup, labelMap } from '../hooks/useLookup';
 import { num } from '../utils/money';
 import { entryTypeLabel } from './labels';
@@ -266,19 +266,36 @@ interface VersionFull extends VersionRow {
   entity_type: string; entity_id: number; snapshot: any; previous: any;
 }
 
+const SUM_KEYS = new Set(['quantity', 'line_total', 'total', 'amount', 'debit', 'credit', 'line_cost',
+  'total_cost', 'counted_quantity', 'expected_quantity', 'difference', 'material_cost',
+  'product_quantity', 'planned_quantity', 'expense_amount']);
+
+const toNum = (v: unknown): number | null => {
+  const s = canon(v);
+  return s !== '' && /^-?\d+(\.\d+)?$/.test(s) ? Number(s) : null;
+};
+const isEmptyVal = (v: unknown) => {
+  const s = canon(v);
+  return s === '' || s === '0' || s === '[]' || s === '{}';
+};
+const sumOf = (rows: Record<string, any>[], k: string) =>
+  Math.round(rows.reduce((a, r) => a + (toNum(r?.[k]) ?? 0), 0) * 1000) / 1000;
+
 function OldNew({ now, old }: { now: string; old: string }) {
   return (
-    <span style={{ background: CHANGED_BG, padding: '0 4px', borderRadius: 4 }}>
+    <span style={{
+      display: 'inline-flex', flexDirection: 'column', lineHeight: 1.3,
+      background: CHANGED_BG, padding: '2px 6px', borderRadius: 6, whiteSpace: 'nowrap',
+    }}>
       <b>{now}</b>
-      <span style={{ textDecoration: 'line-through', color: '#94a3b8', marginInlineStart: 6 }}>
-        {old}
-      </span>
+      <span style={{ textDecoration: 'line-through', color: '#94a3b8', fontSize: '0.85em' }}>{old}</span>
     </span>
   );
 }
 
 function SnapshotView({ version, names }: { version: VersionFull; names: Names }) {
   const fmt = useFormatter(names);
+  const [showEmpty, setShowEmpty] = useState(false);
   const wrap = (s: any) => (s == null ? null : isObj(s) ? s : { lines: Array.isArray(s) ? s : [] });
   const snap: Record<string, any> = wrap(version.snapshot) || {};
   const prev: Record<string, any> | null = wrap(version.previous);
@@ -288,45 +305,94 @@ function SnapshotView({ version, names }: { version: VersionFull; names: Names }
     .filter((k) => isRowList(snap[k]) || isRowList(prev?.[k]));
 
   const changedHead = prev ? headKeys.filter((k) => canon(snap[k]) !== canon(prev[k])) : [];
+  const filled = headKeys.filter((k) => changedHead.includes(k) || !isEmptyVal(snap[k]));
+  const hiddenCount = headKeys.length - filled.length;
+  const shownKeys = showEmpty ? headKeys : filled;
+
+  const lists = listKeys.map((lk) => {
+    const cur: Record<string, any>[] = isRowList(snap[lk]) ? snap[lk] : [];
+    const old: Record<string, any>[] | null = prev ? (isRowList(prev[lk]) ? prev[lk] : []) : null;
+    const all = [...cur, ...(old || [])];
+    const cols = visibleKeys(all).filter((c) => kindOf(c, {}) === 'items'
+      || all.some((r) => !isEmptyVal(r?.[c])));
+    cols.sort((a, b) => Number(/item_(id|name)$/.test(b)) - Number(/item_(id|name)$/.test(a)));
+    const rows = diffRows(cur, old, cols);
+    return {
+      lk, cur, old, cols, rows,
+      added: rows.filter((r) => r.status === 'added').length,
+      removed: rows.filter((r) => r.status === 'removed').length,
+      changed: rows.filter((r) => r.status === 'changed').length,
+    };
+  });
+  const lineChanges = lists.filter((l) => l.added || l.removed || l.changed);
 
   return (
-    <div>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
       {version.action === 'delete' && (
-        <Alert type="error" showIcon style={{ marginBottom: 12 }}
-          message="تم حذف المستند — هذه آخر نسخة قبل الحذف" />
+        <Alert type="error" showIcon message="تم حذف المستند — هذه آخر نسخة قبل الحذف" />
       )}
       {version.action === 'baseline' && (
-        <Alert type="info" showIcon style={{ marginBottom: 12 }}
-          message="هذا هو المستند عند بدء التسجيل في السجل — لا توجد نسخ سابقة له." />
+        <Alert type="info" showIcon message="هذا هو المستند عند بدء التسجيل في السجل — لا توجد نسخ سابقة له." />
       )}
-      {prev && !changedHead.length && (
-        <div style={{ marginBottom: 8, color: '#64748b', fontSize: 13 }}>
-          الرأس مطابق للنسخة السابقة.
+
+      {prev && (
+        <div style={{ border: '1px solid #fcd9a8', background: '#fffaf2', borderRadius: 10, padding: '10px 14px' }}>
+          <div style={{ fontWeight: 700, marginBottom: 6 }}>ما تغيّر في هذه النسخة</div>
+          {!changedHead.length && !lineChanges.length ? (
+            <span style={{ color: '#64748b' }}>لا يوجد تغيير عن النسخة السابقة.</span>
+          ) : (
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px 20px' }}>
+              {changedHead.map((k) => (
+                <span key={k} style={{ whiteSpace: 'nowrap' }}>
+                  <span style={{ color: '#64748b' }}>{labelOf(k)}: </span>
+                  <span style={{ textDecoration: 'line-through', color: '#94a3b8' }}>{fmt(k, prev[k], prev)}</span>
+                  {' ← '}
+                  <b>{fmt(k, snap[k], snap)}</b>
+                </span>
+              ))}
+              {lineChanges.map((l) => (
+                <span key={l.lk} style={{ whiteSpace: 'nowrap' }}>
+                  <span style={{ color: '#64748b' }}>{labelOf(l.lk)}: </span>
+                  {l.added > 0 && <Tag color="green">أُضيف {l.added}</Tag>}
+                  {l.removed > 0 && <Tag color="red">حُذف {l.removed}</Tag>}
+                  {l.changed > 0 && <Tag color="orange">عُدِّل {l.changed}</Tag>}
+                </span>
+              ))}
+            </div>
+          )}
         </div>
       )}
-      <Descriptions bordered size="small" column={{ xs: 1, sm: 2, lg: 3 }}
-        styles={{ label: { whiteSpace: 'nowrap' } }}
-        items={headKeys.map((k) => {
+
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(190px, 1fr))', gap: 8 }}>
+        {shownKeys.map((k) => {
           const now = fmt(k, snap[k], snap);
           const changed = changedHead.includes(k);
-          return {
-            key: k,
-            label: labelOf(k),
-            children: changed ? <OldNew now={now} old={fmt(k, prev?.[k], prev || {})} /> : now,
-          };
-        })} />
+          return (
+            <div key={k} style={{
+              border: `1px solid ${changed ? '#fcd9a8' : '#e5e7eb'}`, borderRadius: 8, padding: '6px 10px',
+              background: changed ? '#fffaf2' : '#fafafa', minWidth: 0,
+            }}>
+              <div style={{ color: '#64748b', fontSize: '0.85em' }}>{labelOf(k)}</div>
+              <div style={{ fontWeight: 600, overflowWrap: 'anywhere' }}>
+                {changed ? <OldNew now={now} old={fmt(k, prev?.[k], prev || {})} /> : now}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+      {hiddenCount > 0 && (
+        <div>
+          <Button size="small" type="link" style={{ padding: 0 }} onClick={() => setShowEmpty((x) => !x)}>
+            {showEmpty ? 'إخفاء الحقول الفارغة' : `عرض الحقول الفارغة (${hiddenCount})`}
+          </Button>
+        </div>
+      )}
 
-      {listKeys.map((lk) => {
-        const cur: Record<string, any>[] = isRowList(snap[lk]) ? snap[lk] : [];
-        const old: Record<string, any>[] | null = prev ? (isRowList(prev[lk]) ? prev[lk] : []) : null;
-        const cols = visibleKeys([...cur, ...(old || [])]);
-        cols.sort((a, b) => Number(/item_(id|name)$/.test(b)) - Number(/item_(id|name)$/.test(a)));
-        const rows = diffRows(cur, old, cols);
-        const added = rows.filter((r) => r.status === 'added').length;
-        const removed = rows.filter((r) => r.status === 'removed').length;
-        const changed = rows.filter((r) => r.status === 'changed').length;
+      {lists.map(({ lk, cur, old, cols, rows, added, removed, changed }) => {
+        const sums = cols.filter((c) => SUM_KEYS.has(c));
+        const live = rows.filter((r) => r.status !== 'removed').map((r) => r.row);
         return (
-          <div key={lk} style={{ marginTop: 16 }}>
+          <div key={lk}>
             <div style={{ fontWeight: 700, marginBottom: 6 }}>
               {labelOf(lk)} <span style={{ color: '#64748b', fontWeight: 400 }}>({cur.length})</span>
               {added > 0 && <Tag color="green" style={{ marginInlineStart: 8 }}>أُضيف {added}</Tag>}
@@ -334,7 +400,7 @@ function SnapshotView({ version, names }: { version: VersionFull; names: Names }
               {changed > 0 && <Tag color="orange">عُدِّل {changed}</Tag>}
             </div>
             <Table<RowDiff>
-              size="small" rowKey="key" dataSource={rows} pagination={false}
+              size="small" rowKey="key" dataSource={rows} pagination={false} bordered
               scroll={{ x: 'max-content' }}
               onRow={(r) => ({
                 style: {
@@ -343,23 +409,44 @@ function SnapshotView({ version, names }: { version: VersionFull; names: Names }
                   color: r.status === 'removed' ? '#b91c1c' : undefined,
                 },
               })}
+              summary={() => (sums.length ? (
+                <Table.Summary.Row style={{ background: '#f8fafc', fontWeight: 700 }}>
+                  <Table.Summary.Cell index={0}>الإجمالي</Table.Summary.Cell>
+                  {cols.map((c, i) => {
+                    if (!sums.includes(c)) return <Table.Summary.Cell key={c} index={i + 1} />;
+                    const now = num(sumOf(live, c));
+                    const before = old ? num(sumOf(old, c)) : now;
+                    return (
+                      <Table.Summary.Cell key={c} index={i + 1}>
+                        {before !== now ? <OldNew now={now} old={before} /> : now}
+                      </Table.Summary.Cell>
+                    );
+                  })}
+                </Table.Summary.Row>
+              ) : null)}
               columns={[
-                { title: '#', key: '_n', width: 40,
+                {
+                  title: '#', key: '_n', width: 48,
                   render: (_: any, r: RowDiff, i: number) => (r.status === 'removed'
                     ? <Tag color="red" style={{ marginInlineEnd: 0 }}>محذوف</Tag>
                     : r.status === 'added'
                       ? <Tag color="green" style={{ marginInlineEnd: 0 }}>جديد</Tag>
-                      : i + 1) },
-                ...cols.map((c) => ({
-                  title: labelOf(c), key: c,
-                  render: (_: any, r: RowDiff) => {
-                    const now = fmt(c, r.row[c], r.row);
-                    if (r.status === 'changed' && r.old && canon(r.row[c]) !== canon(r.old[c])) {
-                      return <OldNew now={now} old={fmt(c, r.old[c], r.old)} />;
-                    }
-                    return now;
-                  },
-                })),
+                      : i + 1),
+                },
+                ...cols.map((c) => {
+                  const isName = kindOf(c, {}) === 'items' || /_name$/.test(c);
+                  return {
+                    title: labelOf(c), key: c,
+                    render: (_: any, r: RowDiff) => {
+                      const now = fmt(c, r.row[c], r.row);
+                      const body = r.status === 'changed' && r.old && canon(r.row[c]) !== canon(r.old[c])
+                        ? <OldNew now={now} old={fmt(c, r.old[c], r.old)} /> : now;
+                      return isName
+                        ? <div style={{ minWidth: 200, whiteSpace: 'normal' }}>{body}</div>
+                        : <span style={{ whiteSpace: 'nowrap' }}>{body}</span>;
+                    },
+                  };
+                }),
               ]}
             />
           </div>
@@ -448,8 +535,12 @@ function HistoryBody({ entityType, entityId }: { entityType: string; entityId: n
 
   const newestFirst = versions.slice().reverse();
   return (
-    <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'flex-start' }}>
-      <div style={{ flex: '0 0 250px', maxWidth: '100%', display: 'flex', flexDirection: 'column', gap: 6 }}>
+    <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', alignItems: 'flex-start' }}>
+      <div style={{
+        flex: '0 0 220px', maxWidth: '100%', display: 'flex', flexDirection: 'column', gap: 6,
+        position: 'sticky', top: 0, maxHeight: '72vh', overflowY: 'auto', paddingInlineEnd: 4,
+      }}>
+        <div style={{ color: '#64748b', fontSize: '0.85em', fontWeight: 600 }}>النسخ ({versions.length})</div>
         {newestFirst.map((v) => {
           const active = v.id === selected;
           return (
@@ -478,12 +569,15 @@ function HistoryBody({ entityType, entityId }: { entityType: string; entityId: n
         {versionLoading ? <div style={{ textAlign: 'center', padding: 40 }}><Spin /></div>
           : version ? (
             <>
-              <div style={{ marginBottom: 10, display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-                <Tag color={ACTION_COLOR[version.action] || 'geekblue'}>
+              <div style={{
+                marginBottom: 12, display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap',
+                paddingBottom: 10, borderBottom: '1px solid #e5e7eb',
+              }}>
+                <Tag color={ACTION_COLOR[version.action] || 'geekblue'} style={{ marginInlineEnd: 0 }}>
                   {ACTION_LABEL[version.action] || version.action}
                 </Tag>
-                <span>نسخة {version.version_no}</span>
-                <span style={{ color: '#64748b' }}>— {version.actor_name || 'غير معروف'}</span>
+                <b>نسخة {version.version_no}</b>
+                <span style={{ color: '#64748b' }}>{version.actor_name || 'غير معروف'}</span>
                 <span style={{ color: '#64748b' }} dir="ltr">
                   {String(version.created_at || '').slice(0, 16).replace('T', ' ')}
                 </span>
@@ -519,13 +613,14 @@ export function DocumentHistoryButton({ entityType, entityId, documentNumber, ic
           السجل
         </Button>
       )}
-      <TabDrawer
-        open={open} onClose={() => setOpen(false)} destroyOnHidden
-        width="min(1100px, 95vw)"
+      <TabModal
+        open={open} onCancel={() => setOpen(false)} destroyOnHidden footer={null} centered
+        width="min(1280px, 96vw)"
+        styles={{ body: { maxHeight: '78vh', overflowY: 'auto' } }}
         title={`السجل${documentNumber ? ` — ${documentNumber}` : ''}`}
       >
         {open && <HistoryBody entityType={entityType} entityId={entityId} />}
-      </TabDrawer>
+      </TabModal>
     </span>
   );
 }
