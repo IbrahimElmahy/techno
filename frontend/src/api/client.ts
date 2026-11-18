@@ -152,9 +152,28 @@ api.interceptors.request.use(
   }
 );
 
+const BRANCH_ITEM_CODE = /^(?:FC|AL|PR)-([A-Z]-\d{5})$/;
+
+function hideBranchPrefix(value: any): any {
+  if (typeof value === 'string') {
+    const m = BRANCH_ITEM_CODE.exec(value);
+    return m ? m[1] : value;
+  }
+  if (Array.isArray(value)) {
+    for (let i = 0; i < value.length; i += 1) value[i] = hideBranchPrefix(value[i]);
+    return value;
+  }
+  if (value && typeof value === 'object') {
+    for (const k of Object.keys(value)) value[k] = hideBranchPrefix(value[k]);
+  }
+  return value;
+}
+
 api.interceptors.response.use(
   (response) => {
     inflight = Math.max(0, inflight - 1);
+    const rt = response.config.responseType;
+    if (!rt || rt === 'json') response.data = hideBranchPrefix(response.data);
     const method = response.config.method?.toUpperCase();
     if (method && ['POST', 'PUT', 'DELETE', 'PATCH'].includes(method)
         && isDataMutation(response.config.url)) {

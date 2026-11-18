@@ -126,6 +126,18 @@ def _out(it: Item) -> ItemOut:
     )
 
 
+_BRANCH_PREFIXES = ("FC-", "AL-", "PR-")
+
+
+def _keep_branch_prefix(old: str, new: str) -> str:
+    if new.startswith(_BRANCH_PREFIXES):
+        return new
+    for p in _BRANCH_PREFIXES:
+        if (old or "").startswith(p):
+            return f"{p}{new}"
+    return new
+
+
 def _next_code(db: Session, kind: ItemKind) -> str:
     prefix = "RM" if kind == ItemKind.raw_material else "PR"
     n = db.scalar(select(func.count()).select_from(Item).where(Item.kind == kind)) or 0
@@ -828,6 +840,8 @@ def update_item(
             item_profile_service.record_price_change(
                 db, item_id=item.id, field_name=field, old_value=getattr(item, field),
                 new_value=val, actor_user_id=current.id)
+        if field == "code" and val:
+            val = _keep_branch_prefix(item.code, str(val).strip())
         setattr(item, field, val)
     db.flush()
 

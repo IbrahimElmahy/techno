@@ -211,7 +211,7 @@ def analyse(
         exprs["price_tier"] = (ln.c.tier, None)
     exprs["branch"] = (ln.c.branch_id, Branch.name)
     exprs["warehouse"] = (ln.c.loc_id, None)
-    exprs["item"] = (ln.c.item_id, Item.name)
+    exprs["item"] = (func.regexp_replace(Item.code, "^(FC-|AL-|PR-)", ""), Item.name)
     exprs["category"] = (Item.category, None)
     exprs["main_category"] = (Item.category, None)
     exprs["item_kind"] = (case((Item.name.op("~")(PIPE_PATTERN), "مواسير"), else_="قطع"), None)
@@ -283,7 +283,10 @@ def analyse(
     if governorate_id:
         stmt = stmt.where(party.governorate_id.in_(governorate_id))
     if item_id:
-        stmt = stmt.where(ln.c.item_id.in_(item_id))
+        unified = func.regexp_replace(Item.code, "^(FC-|AL-|PR-)", "")
+        same_code = select(Item.id).where(unified.in_(
+            select(unified).where(Item.id.in_(item_id)).scalar_subquery()))
+        stmt = stmt.where(ln.c.item_id.in_(same_code))
     cats = mf.categories(db, category)
     if cats:
         stmt = stmt.where(Item.category.in_(cats))

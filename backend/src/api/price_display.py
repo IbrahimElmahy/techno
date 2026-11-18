@@ -40,6 +40,9 @@ class PriceDisplayOut(BaseModel):
 def _resolve(db: Session, code: str) -> Item:
     item = db.scalar(select(Item).where(Item.code == code))
     if item is None:
+        item = db.scalar(select(Item).where(Item.code.in_([f"{p}{code}" for p in ("FC-", "AL-", "PR-")]))
+                         .order_by(Item.active.desc()))
+    if item is None:
         raise HTTPException(404, {"code": "not_found", "message": "هذا الكود غير معروف"})
     return item
 
