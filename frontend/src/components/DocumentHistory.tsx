@@ -402,7 +402,7 @@ function SnapshotView({ version, names }: { version: VersionFull; names: Names }
             </div>
             <Table<RowDiff>
               size="small" rowKey="key" dataSource={rows} pagination={false} bordered
-              tableLayout="auto" scroll={{ x: 'max-content' }}
+              tableLayout="auto" sticky={false} scroll={{ x: 'max-content' }}
               onRow={(r) => ({
                 style: {
                   background: ROW_BG[r.status],
