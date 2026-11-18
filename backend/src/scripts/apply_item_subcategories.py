@@ -75,9 +75,8 @@ def run(path: str, *, execute: bool, actor: int, backup: str) -> None:
                                  active=True, is_system=False)
                 db.add(o)
             o.active = True
-            o.parent_value = main
-            o.hidden_in_price_sheet = None
-            print(f"  فئة فرعية: {sub} تحت {main}")
+            o.parent_value = None
+            print(f"  فئة جديدة: {sub}")
         db.flush()
         audit_service.record(db, action="items.subcategories", actor_user_id=actor,
                              entity_type="item", entity_id=None,
