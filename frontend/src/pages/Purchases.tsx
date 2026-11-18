@@ -2137,6 +2137,7 @@ export default function Purchases() {
 
       <ProductPickerModal
         open={pickerOpen}
+        hideStockWarnings
         title="اختر الصنف المشترى"
         categories={itemCategories}
         categoryLabels={categoryLabels}

@@ -37,6 +37,7 @@ interface Props {
   priceTierLabel?: string | null;
   onRefresh?: () => Promise<void> | void;
   onCreateItem?: (item: any) => void;
+  hideStockWarnings?: boolean;
 }
 
 const LOW_STOCK = 5;
@@ -52,7 +53,7 @@ export default function ProductPickerModal({
   open, categories, categoryLabels, products: allProducts, activeCategory, onCategoryChange, hideCategories,
   onPick, onPickMany, onCancel, title = 'اختر الصنف', availableFor, priceFor,
   disableOutOfStock = false, availabilityVersion, hidePurchasePrice = false,
-  variant = 'cards', warehouseName, priceTier, priceTierLabel, onRefresh, onCreateItem,
+  variant = 'cards', warehouseName, priceTier, priceTierLabel, onRefresh, onCreateItem, hideStockWarnings,
 }: Props) {
   const [refreshing, setRefreshing] = useState(false);
   const refresh = async () => {
@@ -569,8 +570,8 @@ export default function ProductPickerModal({
                           {p.unit_of_measure && <span className="ppk-unit">{p.unit_of_measure}</span>}
                           {pack && <span className="ppk-unit">التعبئة: {pack}</span>}
                           {mpp > 0 && <span className="ppk-unit">القطعة = {qty(mpp)} متر</span>}
-                          {level === 'low' && <span className="ppk-tag low">رصيد محدود</span>}
-                          {level === 'zero' && <span className="ppk-tag zero">غير متاح في المخزن</span>}
+                          {!hideStockWarnings && level === 'low' && <span className="ppk-tag low">رصيد محدود</span>}
+                          {!hideStockWarnings && level === 'zero' && <span className="ppk-tag zero">غير متاح في المخزن</span>}
                           {p.is_serialized && <span className="ppk-tag info">بسيريال</span>}
                         </div>
                       </div>
