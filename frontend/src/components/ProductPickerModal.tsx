@@ -566,7 +566,7 @@ export default function ProductPickerModal({
                       )}
                       <div className="ppk-info">
                         <div className="ppk-name-row">
-                          <b className="ppk-name">{p.name}</b>
+                          <b className="ppk-name" title={p.name}>{p.name}</b>
                           {p.unit_of_measure && <span className="ppk-unit">{p.unit_of_measure}</span>}
                           {pack && <span className="ppk-unit">التعبئة: {pack}</span>}
                           {mpp > 0 && <span className="ppk-unit">القطعة = {qty(mpp)} متر</span>}

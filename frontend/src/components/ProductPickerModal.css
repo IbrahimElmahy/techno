@@ -155,8 +155,8 @@
 .ppk-cards .ppk-check { pointer-events: none; }
 
 .ppk-cards .ppk-info { flex: 1; min-width: 0; }
-.ppk-cards .ppk-name-row { display: flex; align-items: center; gap: 8px; flex-wrap: nowrap; min-width: 0; }
-.ppk-cards .ppk-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.ppk-cards .ppk-name-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; row-gap: 2px; min-width: 0; }
+.ppk-cards .ppk-name { white-space: normal; overflow-wrap: anywhere; min-width: 0; }
 .ppk-cards .ppk-unit { flex-shrink: 0; font-size: 16px; color: var(--ppk-muted); white-space: nowrap; }
 .ppk-cards .ppk-tag { flex-shrink: 0; white-space: nowrap; }
 .ppk-cards .ppk-name { font-size: 16px; color: var(--ppk-text); }
