@@ -11,6 +11,7 @@ import { matchesWords, searchFilter, searchRank, sortByName } from '../utils/ara
 import { numeralsLocale } from '../utils/money';
 import { PAGE_SIZE } from '../utils/pagination';
 import { printReport, type PrintColumn } from '../print/reportSheet';
+import PointsPartyModal from './PointsPartyModal';
 
 const MONTHS = Array.from({ length: 12 }, (_, i) => String(i + 1));
 const MONTH_KEYS = MONTHS.map((_, i) => `m${String(i + 1).padStart(2, '0')}`);
@@ -27,6 +28,7 @@ export default function PointsYearly() {
   const [loading, setLoading] = useState(false);
   const [reps, setReps] = useState<string[]>([]);
   const [query, setQuery] = useState('');
+  const [picked, setPicked] = useState<Row | null>(null);
 
   const load = async () => {
     setLoading(true);
@@ -148,6 +150,7 @@ export default function PointsYearly() {
       <Table<Row>
         className="sl-table" size="small" loading={loading} rowKey={(r: Row) => String(r.party_id)}
         autoFilters={false}
+        onRow={(r: Row) => ({ onClick: () => setPicked(r), style: { cursor: 'pointer' } })}
         dataSource={shown} columns={cols.columns as any}
         pagination={{ defaultPageSize: PAGE_SIZE, showSizeChanger: true }}
         summary={() => (
@@ -165,6 +168,7 @@ export default function PointsYearly() {
           </AntTable.Summary>
         )}
       />
+      <PointsPartyModal row={picked} year={year} monthKeys={MONTH_KEYS} onClose={() => setPicked(null)} />
     </ListPage>
   );
 }

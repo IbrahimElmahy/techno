@@ -1,7 +1,8 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Button, Select, Table, Tag, message } from 'antd';
 import { IdcardOutlined, ReloadOutlined } from '@ant-design/icons';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
+import { withReturn } from '../components/docReturn';
 import { Dayjs } from 'dayjs';
 import { api } from '../api/client';
 import ListPage, { ListStat } from '../components/ListPage';
@@ -49,6 +50,7 @@ const SOURCE_COLOR: Record<string, string> = { issue: 'gold', invoice: 'blue', r
 
 const CouponCard: React.FC = () => {
   const navigate = useNavigate();
+  const here = useLocation();
   const [data, setData] = useState<CardData | null>(null);
   const [loading, setLoading] = useState(false);
   const [kind, setKind] = useState<string | undefined>(undefined);
@@ -100,7 +102,7 @@ const CouponCard: React.FC = () => {
 
   useEffect(() => { load(); }, [load]);
 
-  const openDoc = (r: Row) => navigate(`/invoices?doc=${r.doc_id}`);
+  const openDoc = (r: Row) => navigate(withReturn(`/invoices?doc=${r.doc_id}`, here.pathname + here.search));
 
   const columns = [
     { title: 'التاريخ', dataIndex: 'date', key: 'date', width: 110 },
@@ -111,7 +113,7 @@ const CouponCard: React.FC = () => {
         ? <a onClick={() => openDoc(r)}>{v}</a> : v) },
     { title: 'الجهة', dataIndex: 'party', key: 'party', width: 200,
       render: (v: string | null, r: Row) => (r.party_id
-        ? <a onClick={() => navigate(`/customers/${r.party_id}`)}>{v}</a> : (v || '-')) },
+        ? <a onClick={() => navigate(withReturn(`/customers/${r.party_id}`, here.pathname + here.search))}>{v}</a> : (v || '-')) },
     { title: 'المندوب', dataIndex: 'rep', key: 'rep', width: 150, render: (v: string | null) => v || '-' },
     { title: 'الفئة', dataIndex: 'kind', key: 'kind', width: 90, render: (v: string | null) => v || '-' },
     { title: 'مصروف', dataIndex: 'issued', key: 'issued', width: 90, align: 'center' as const,
@@ -127,7 +129,7 @@ const CouponCard: React.FC = () => {
       render: (v: number) => <b>{num(v)}</b> },
   ];
   const cols = useTableColumns('coupon-card', columns as any);
-  const rows = data?.rows ?? [];
+  const rows = useMemo(() => (data?.rows ?? []).slice().reverse(), [data]);
 
   return (
     <ListPage
