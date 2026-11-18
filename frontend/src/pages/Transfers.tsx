@@ -1634,6 +1634,7 @@ export default function Transfers() {
           onClick={startNew}>
           طلب تحويل مخزني
         </Button>
+        <Button icon={<ReloadOutlined />} loading={loading} onClick={() => fetchTransfers()}>تحديث</Button>
         {tableCols.control}
       </>)}
       filters={(<>

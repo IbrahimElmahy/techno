@@ -420,7 +420,7 @@ function RecipesTab({
     </ListPage>
 
       <TabModal centered
-        title={editing ? 'تعديل نسب إنتاج' : 'نسب إنتاج جديدة'} width={560} open={open}
+        title={editing ? 'تعديل نسب إنتاج' : 'نسب إنتاج جديدة'} width="min(860px, 96vw)" open={open}
         onCancel={() => setOpen(false)} destroyOnHidden
         footer={<Button type="primary" onClick={() => form.submit()}>حفظ</Button>}
       >
@@ -443,10 +443,13 @@ function RecipesTab({
             {(fields, { add, remove }) => (
               <>
                 {fields.map(({ key, ...field }) => (
-                  <Space key={key} align="baseline" style={{ display: 'flex', marginBottom: 8 }}>
-                    <Form.Item {...field} name={[field.name, 'item_id']} style={{ flex: 1, marginBottom: 0 }}
+                  <div key={key} style={{
+                    display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 90px 110px 220px 32px',
+                    gap: 8, alignItems: 'start', marginBottom: 8,
+                  }}>
+                    <Form.Item {...field} name={[field.name, 'item_id']} style={{ marginBottom: 0, minWidth: 0 }}
                       rules={[{ required: true, message: 'اختر الخامة' }]}>
-                      <Select showSearch placeholder="الخامة" style={{ minWidth: 220 }}
+                      <Select showSearch placeholder="الخامة" style={{ width: '100%' }} popupMatchSelectWidth={false}
                         onChange={(v: number) => {
                           loadUnits(v);
                           const rows = form.getFieldValue('components') || [];
@@ -461,7 +464,7 @@ function RecipesTab({
                     </Form.Item>
                     <Form.Item {...field} name={[field.name, 'quantity']} style={{ marginBottom: 0 }}
                       rules={[{ required: true, message: 'الكمية' }]}>
-                      <InputNumber min={0.001} placeholder="الكمية"
+                      <InputNumber min={0.001} placeholder="الكمية" style={{ width: '100%' }}
                         data-grid-col="qty" keyboard={false} />
                     </Form.Item>
                     <Form.Item noStyle shouldUpdate>
@@ -472,7 +475,7 @@ function RecipesTab({
                         return (
                           <Form.Item {...field} name={[field.name, 'unit']}
                             style={{ marginBottom: 0 }}>
-                            <Select allowClear style={{ minWidth: 130 }} disabled={!iid}
+                            <Select allowClear style={{ width: '100%' }} disabled={!iid} popupMatchSelectWidth={false}
                               placeholder={raw?.unit_of_measure || 'الوحدة'}
                               options={alts.map((u) => ({
                                 value: u.name,
@@ -484,11 +487,12 @@ function RecipesTab({
                     </Form.Item>
                     <Form.Item {...field} name={[field.name, 'stage']}
                       style={{ marginBottom: 0 }} initialValue="production">
-                      <Select style={{ minWidth: 200 }}
+                      <Select style={{ width: '100%' }} popupMatchSelectWidth={false}
                         options={STAGES.map((x) => ({ value: x.value, label: x.label }))} />
                     </Form.Item>
-                    <DeleteOutlined onClick={() => remove(field.name)} style={{ color: '#ff4d4f' }} />
-                  </Space>
+                    <Button danger type="text" icon={<DeleteOutlined />} title="حذف الخامة"
+                      onClick={() => remove(field.name)} />
+                  </div>
                 ))}
                 <Button type="dashed" onClick={() => add({ stage: 'production' })} block
                   icon={<PlusOutlined />}>
@@ -522,7 +526,7 @@ function RecipesTab({
                       <InputNumber min={0} placeholder="سعر الوحدة" style={{ width: 110 }}
                         data-grid-col="rate" keyboard={false} />
                     </Form.Item>
-                    <DeleteOutlined onClick={() => remove(field.name)} style={{ color: '#ff4d4f' }} />
+                    <Button danger type="text" icon={<DeleteOutlined />} title="حذف" onClick={() => remove(field.name)} />
                   </Space>
                 ))}
                 <Button type="dashed" onClick={() => add()} block icon={<PlusOutlined />}>
