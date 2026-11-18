@@ -2,7 +2,7 @@ import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 're
 import { PAGE_SIZE } from '../utils/pagination';
 import { searchFilter, searchRank, compareArabic } from '../utils/arabicSort';
 import {
-  Alert, Button, Checkbox, Descriptions, Empty, Input, Select,
+  Alert, Button, Checkbox, Descriptions, Empty, Input, Segmented, Select,
   Space, Spin, Tag, message,
 } from 'antd';
 import { FilterTable as Table } from '../components/FilterTable';
@@ -706,9 +706,11 @@ export default function AccountStatement() {
     ...(grouped || multiAccount ? [{
       title: 'الحساب الفرعي', dataIndex: 'account_name', width: 180, ellipsis: true,
       ...textColumn(lines, (l: StatementLine) => l.account_name),
-      render: (v: string | null, l: StatementLine) => (l.account_id ? (
-        <a onClick={() => openAccount(l.account_id!)}>{v ?? `#${l.account_id}`}</a>
-      ) : (v ?? '-')),
+      render: (v: string | null, l: StatementLine) => {
+        const fam = l.account_id != null ? familyByAccount.get(l.account_id) : undefined;
+        const label = fam ? `حساب ${fam}` : (v ?? `#${l.account_id}`);
+        return l.account_id ? <a onClick={() => openAccount(l.account_id!)}>{label}</a> : (v ?? '-');
+      },
     }] : []),
     { title: 'البيان', dataIndex: 'description',
       ...textColumn(lines, (l: StatementLine) => stripSerial(l.description, l.doc_number)),
@@ -1288,15 +1290,24 @@ export default function AccountStatement() {
         <Checkbox checked={hideZero}
           onChange={(e) => setHideZero(e.target.checked)}>إخفاء الحركات الصفرية</Checkbox>
         {customerFamilies.length > 1 && (
-          <Checkbox checked={allCustomerAccounts}
-            onChange={(e) => setAllCustomerAccounts(e.target.checked)}>
-            كل حسابات العميل
-            {' '}
-            <span style={{ color: '#8c8c8c', fontSize: 14 }}>
-              ({customerFamilies.map((f) => `${f.family ?? 'بدون نوع'} ${money(f.balance)}`)
-                .join(' · ')})
-            </span>
-          </Checkbox>
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+            <Segmented
+              value={allCustomerAccounts ? 'all' : String(accountId ?? '')}
+              onChange={(v) => {
+                if (v === 'all') { setAllCustomerAccounts(true); return; }
+                setAllCustomerAccounts(false);
+                setAccountId(Number(v));
+              }}
+              options={[
+                { value: 'all', label: 'الكل' },
+                ...customerFamilies.map((f) => ({ value: String(f.account_id), label: f.family ?? 'بدون نوع' })),
+              ]} />
+            {customerFamilies.map((f) => (
+              <span key={f.account_id}>مديونية {f.family ?? 'بدون نوع'}: <b>{money(f.balance)}</b></span>
+            ))}
+            <span>الإجمالي: <b style={{ color: '#cf1322' }}>
+              {money(customerFamilies.reduce((t, f) => t + Number(f.balance || 0), 0))}</b></span>
+          </span>
         )}
         {statement && (<>
           <Checkbox checked={showStock} onChange={(e) => {
