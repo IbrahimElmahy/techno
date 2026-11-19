@@ -99,25 +99,49 @@ function setTableWidth(root: Element, width: number) {
   root.querySelectorAll<HTMLElement>('table').forEach((t) => { t.style.width = `${width}px`; });
 }
 
+function leafIndex(th: HTMLElement): number {
+  if ((th as HTMLTableCellElement).colSpan > 1) return -1;
+  const thead = th.closest('thead');
+  if (!thead) return -1;
+  const taken: boolean[][] = [];
+  const rows = [...thead.querySelectorAll(':scope > tr')] as HTMLTableRowElement[];
+  for (let r = 0; r < rows.length; r += 1) {
+    taken[r] = taken[r] || [];
+    let c = 0;
+    for (const cell of [...rows[r].children] as HTMLTableCellElement[]) {
+      while (taken[r][c]) c += 1;
+      if (cell === th) return c;
+      const span = cell.colSpan || 1;
+      for (let dr = 0; dr < (cell.rowSpan || 1); dr += 1) {
+        taken[r + dr] = taken[r + dr] || [];
+        for (let dc = 0; dc < span; dc += 1) taken[r + dr][c + dc] = true;
+      }
+      c += span;
+    }
+  }
+  return -1;
+}
+
 function onGrip(th: HTMLElement, clientX: number): boolean {
+  if ((th as HTMLTableCellElement).colSpan > 1) return false;
   const r = th.getBoundingClientRect();
   const rtl = getComputedStyle(th).direction === 'rtl';
   return rtl ? clientX - r.left <= GRIP : r.right - clientX <= GRIP;
 }
 
 function indexOf(th: HTMLElement): number {
-  const row = th.parentElement;
-  return row ? [...row.children].indexOf(th) : -1;
+  return leafIndex(th);
 }
 
 function applyStored(widths: Widths) {
   document.querySelectorAll<HTMLElement>('.ant-table-thead').forEach((thead) => {
-    const row = thead.querySelector('tr');
     const table = thead.closest('table') as HTMLElement | null;
-    if (!row || !table) return;
-    [...row.children].forEach((cell, i) => {
-      const w = widths[keyFor(cell as HTMLElement)];
+    if (!table) return;
+    thead.querySelectorAll<HTMLElement>(':scope > tr > th').forEach((cell) => {
+      const w = widths[keyFor(cell)];
       if (!w) return;
+      const i = leafIndex(cell);
+      if (i < 0) return;
       const root = table.closest('.ant-table');
       root?.querySelectorAll('table').forEach((t) => {
         (t as HTMLElement).style.tableLayout = 'fixed';
