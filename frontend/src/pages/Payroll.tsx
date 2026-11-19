@@ -201,7 +201,10 @@ export default function Payroll() {
         ...Object.fromEntries((x.items || []).filter((i) => i.kind === 'earning')
           .map((i) => [`alw_${i.component_id}`, i.amount])),
       })));
-      const list = ownBranches<{ id: number; name: string }>((r.data || []).filter((b: any) => b.active !== false), user);
+      const active = (r.data || []).filter((b: any) => b.active !== false);
+      const list: { id: number; name: string }[] = user?.branch_ids?.length
+        ? active.filter((b: any) => user.branch_ids!.includes(b.id))
+        : ownBranches<{ id: number; name: string }>(active, user);
       setBranches(list);
       const carded = new Set(rows.filter((x) => x.has_card).map((x) => x.branch_id));
       const preferred = getViewBranch() ?? user?.branch_id;
@@ -317,7 +320,10 @@ export default function Payroll() {
     search: (r) => [r.code, r.name],
     filters: { paid: (r, v) => (v === 'yes' ? r.paid : !r.paid) },
   });
-  const empFilter = useListFilter(emps, {
+  const multi = (user?.branch_ids?.length ?? 0) > 1;
+  const branchEmps = useMemo(() => (multi && branchId ? emps.filter((e) => e.branch_id === branchId) : emps),
+    [emps, multi, branchId]);
+  const empFilter = useListFilter(branchEmps, {
     search: (r) => [r.code, r.name],
     filters: {
       branch_id: (r, v) => r.branch_id === v,
@@ -517,11 +523,11 @@ export default function Payroll() {
 
   const earnComps = useMemo(() => {
     const seen = new Map<number, string>();
-    emps.forEach((e) => (e.items || []).forEach((i) => {
+    branchEmps.forEach((e) => (e.items || []).forEach((i) => {
       if (i.kind === 'earning' && !seen.has(i.component_id)) seen.set(i.component_id, i.name);
     }));
     return [...seen.entries()].map(([id, name]) => ({ id, name }));
-  }, [emps]);
+  }, [branchEmps]);
   const empColumns: ColumnsType<EmpRow> = [
     { title: 'رقم', dataIndex: 'code', key: 'code', width: 110, render: (v: string) => <Tag>{v}</Tag> },
     { title: 'الموظف', dataIndex: 'name', key: 'name',
@@ -660,7 +666,7 @@ export default function Payroll() {
     { key: 'leaves', label: 'الإجازات' },
     { key: 'penalties', label: 'الجزاءات' },
     { key: 'bonuses', label: 'المكافآت' },
-    { key: 'employees', label: 'كروت المرتبات', count: emps.length },
+    { key: 'employees', label: 'كروت المرتبات', count: branchEmps.length },
     { key: 'remittances', label: 'سداد التأمينات', count: remits.length },
   ];
 
@@ -904,7 +910,7 @@ export default function Payroll() {
         <Select showSearch style={{ width: '100%' }} placeholder="الموظف" value={newCardId}
           onChange={setNewCardId} filterOption={searchFilter} filterSort={searchRank}
           dropdownRender={addNew('employee', (e) => { loadEmps(); setNewCardId(e.id); })}
-          options={emps.filter((e) => e.active).sort((a, b) => Number(a.has_card) - Number(b.has_card))
+          options={branchEmps.filter((e) => e.active).sort((a, b) => Number(a.has_card) - Number(b.has_card))
             .map((e) => ({ value: e.employee_id, label: `${e.name}${e.has_card ? ' — له كارت' : ''}${branches.length > 1 ? ` — ${branchName(e.branch_id)}` : ''}` }))} />
       </TabModal>
 
