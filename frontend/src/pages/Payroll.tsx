@@ -370,13 +370,16 @@ export default function Payroll() {
       render: (v: string | null) => v || '' } as any,
     group('الراتب', 'g_salary', [
       { title: 'الأساسي', dataIndex: 'basic', key: 'basic', align: 'left', render: plain },
-      ...(monthComps.length ? monthComps.map((c) => ({
+      ...(monthComps.length ? monthComps.filter((c) => c.name !== 'إضافي').map((c) => ({
         title: c.name, dataIndex: `cmp_${c.id}`, key: `cmp_${c.id}`, align: 'left', render: dash,
       })) : [{ title: 'البدلات', dataIndex: 'allowances', key: 'allowances', align: 'left', render: plain }]),
       { title: 'قيمة اليوم', dataIndex: 'daily_rate', key: 'daily_rate', align: 'left', total: false,
         render: (v: string, r: Line) => (r.__group ? '' : money(v)) },
     ]),
     group('الإضافي', 'g_ot', [
+      ...monthComps.filter((c) => c.name === 'إضافي').map((c) => ({
+        title: 'ثابت', dataIndex: `cmp_${c.id}`, key: `cmp_${c.id}`, align: 'left', render: dash,
+      })),
       { title: 'ساعات', dataIndex: 'overtime_hours', key: 'overtime_hours', align: 'left', total: false,
         render: (v: string, r: Line) => cell('overtime_hours', 'overtime_hours')(n(v) > 0 ? v : null, r) },
       { title: 'قيمة الساعات', dataIndex: 'overtime_plus', key: 'overtime_plus', align: 'left', render: dash },
@@ -474,8 +477,9 @@ export default function Payroll() {
     const cols: PrintColumn<Line>[] = [
       { title: 'الموظف', value: (r) => r.name },
       { title: 'الأساسي', value: (r) => money(r.basic), numeric: true },
-      ...monthComps.map((c) => ({ title: c.name, value: (r: Line) => money(r[`cmp_${c.id}`] || 0), numeric: true })),
-      { title: 'إضافي', value: (r) => money(n(r.overtime_plus) + n(r.extra_days_amount) + n(r.additions)), numeric: true },
+      ...monthComps.filter((c) => c.name !== 'إضافي').map((c) => ({ title: c.name, value: (r: Line) => money(r[`cmp_${c.id}`] || 0), numeric: true })),
+      { title: 'إضافي', value: (r) => money(n(r.overtime_plus) + n(r.extra_days_amount) + n(r.additions)
+        + monthComps.filter((c) => c.name === 'إضافي').reduce((t, c) => t + n(r[`cmp_${c.id}`]), 0)), numeric: true },
       { title: 'العمولة', value: (r) => money(r.commission), numeric: true },
       { title: 'انتقالات', value: (r) => money(r.transport || 0), numeric: true },
       { title: 'حوافز ومكافآت', value: (r) => money(n(r.incentive) + n(r.bonuses)), numeric: true },
