@@ -181,7 +181,8 @@ export function useCouponLifecycle(range: [Dayjs, Dayjs] | null, active: boolean
     { title: 'الفني', dataIndex: 'plumber', key: 'plumber', width: 170, ellipsis: true,
       render: dash },
     { title: 'كود الاستلام', dataIndex: 'receipt_doc', key: 'receipt_doc', width: 120,
-      render: dash },
+      render: (v: string | null, r: LifecycleRow) => (r.receipt_id && v
+        ? <DocRef kind="coupon_receipt" id={r.receipt_id} label={v} /> : '-') },
     { title: 'تاريخ الاستلام', dataIndex: 'receipt_date', key: 'receipt_date', width: 110,
       render: dash },
     { title: 'مندوب الاستلام', dataIndex: 'receipt_rep', key: 'receipt_rep', width: 140,

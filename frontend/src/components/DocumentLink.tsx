@@ -6,7 +6,7 @@ import { withReturn } from './docReturn';
 
 export type DocKind = 'invoice' | 'return' | 'purchase' | 'purchase_return'
   | 'transfer' | 'stock_permit' | 'stock_count' | 'production_order' | 'voucher' | 'expense_bill'
-  | 'settlement_discount';
+  | 'settlement_discount' | 'coupon_receipt';
 
 const SCREEN: Record<DocKind, string> = {
   invoice: '/invoices',
@@ -20,10 +20,12 @@ const SCREEN: Record<DocKind, string> = {
   voucher: '/vouchers?tab=log',
   expense_bill: '/expense-bills',
   settlement_discount: '/settlement-discounts',
+  coupon_receipt: '/coupon-receipts',
 };
 
 const OPEN_PARAM: Partial<Record<DocKind, 'doc' | 'edit'>> = {
   production_order: 'edit',
+  coupon_receipt: 'edit',
 };
 
 export function docKindOf(sourceDocType: string | null | undefined): DocKind | null {
