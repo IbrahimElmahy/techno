@@ -82,7 +82,7 @@ function EditCell({ value, editable, signed, onSave, width = 80 }: {
   if (!editable) return <>{initial ? initial.toLocaleString(numeralsLocale()) : ''}</>;
   const commit = () => { if ((v ?? null) !== initial) void onSave(v ?? null); };
   return (
-    <InputNumber size="small" style={{ width }} value={v ?? undefined} min={signed ? undefined : 0}
+    <InputNumber size="small" style={{ width: '100%', minWidth: Math.min(width, 64) }} value={v ?? undefined} min={signed ? undefined : 0}
       onChange={(x) => setV(x === undefined || x === null ? null : Number(x))}
       onBlur={commit} onPressEnter={commit} />
   );
@@ -765,7 +765,7 @@ export default function Payroll() {
         {extra ? extra.body : tab === 'month' ? (
           <Table<Line>
             {...monthKb.tableProps}
-            className="sl-table" rowKey="employee_id" size="small" loading={loading}
+            className="sl-table payroll-month" rowKey="employee_id" size="small" loading={loading}
             dataSource={lines}
             rowClassName={(r: Line) => (r.__group ? 'ta-group-row' : '')}
             locale={{ emptyText: run ? 'لا يوجد موظفون' : 'لم تُحسب مرتبات هذا الشهر' }}
