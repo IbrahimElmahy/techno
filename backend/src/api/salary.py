@@ -5,7 +5,7 @@ from datetime import date
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from src.auth import branch_scope
@@ -45,6 +45,8 @@ def _branch(current: CurrentUser, requested: int | None) -> int:
             raise HTTPException(422, {"code": "validation", "message": "اختر الفرع."})
         return branch
     if requested is not None and requested != current.branch_id:
+        if requested in (current.branch_ids or ()):
+            return requested
         raise HTTPException(404, {"code": "not_found", "message": "الفرع غير موجود."})
     if current.branch_id is None:
         raise HTTPException(422, {"code": "validation", "message": "اختر الفرع."})
@@ -53,7 +55,8 @@ def _branch(current: CurrentUser, requested: int | None) -> int:
 
 def _employee(db: Session, employee_id: int, current: CurrentUser) -> Employee:
     emp = db.get(Employee, employee_id)
-    if emp is None or not branch_scope.may_touch_employee(db, current, employee_id):
+    if emp is None or not (branch_scope.may_touch_employee(db, current, employee_id)
+                           or emp.branch_id in (current.branch_ids or ())):
         raise HTTPException(404, {"code": "not_found", "message": "الموظف غير موجود."})
     return emp
 
@@ -61,7 +64,8 @@ def _employee(db: Session, employee_id: int, current: CurrentUser) -> Employee:
 def _run(db: Session, run_id: int, current: CurrentUser) -> PayrollRun:
     run = db.get(PayrollRun, run_id)
     if run is None or not (branch_scope.sees_all_branches(current)
-                           or run.branch_id == current.branch_id):
+                           or run.branch_id == current.branch_id
+                           or run.branch_id in (current.branch_ids or ())):
         raise HTTPException(404, {"code": "not_found", "message": "مرتبات الشهر غير موجودة."})
     return run
 
@@ -73,7 +77,11 @@ def employees(
     current: CurrentUser = Depends(require_capability(CAP_SALARY_VIEW)),
     db: Session = Depends(get_db),
 ) -> list[dict]:
-    stmt = branch_scope.scope(select(Employee), Employee, current)
+    if current.branch_ids and not current.sees_all:
+        stmt = select(Employee).where(or_(Employee.branch_id.in_(current.branch_ids),
+                                          Employee.branch_id.is_(None)))
+    else:
+        stmt = branch_scope.scope(select(Employee), Employee, current)
     if not include_inactive:
         stmt = stmt.where(Employee.active.is_(True))
     if branch_id:

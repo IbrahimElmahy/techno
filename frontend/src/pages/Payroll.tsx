@@ -190,16 +190,27 @@ export default function Payroll() {
   };
 
   useEffect(() => {
-    loadEmps();
     loadRemits();
-    api.get('/api/v1/branches').then((r) => {
+    Promise.all([
+      api.get('/api/v1/branches'),
+      api.get('/api/v1/hr/salary/employees', { params: { include_inactive: false } }).catch(() => ({ data: [] })),
+    ]).then(([r, e]) => {
+      const rows: EmpRow[] = e.data || [];
+      setEmps(rows.map((x) => ({
+        ...x,
+        ...Object.fromEntries((x.items || []).filter((i) => i.kind === 'earning')
+          .map((i) => [`alw_${i.component_id}`, i.amount])),
+      })));
       const list = ownBranches<{ id: number; name: string }>((r.data || []).filter((b: any) => b.active !== false), user);
       setBranches(list);
+      const carded = new Set(rows.filter((x) => x.has_card).map((x) => x.branch_id));
       const preferred = getViewBranch() ?? user?.branch_id;
-      const first = (list.find((b: any) => b.id === preferred) ?? list[0])?.id as number | undefined;
+      const pick = list.find((b) => b.id === preferred && (!carded.size || carded.has(b.id)))
+        ?? list.find((b) => carded.has(b.id)) ?? list[0];
+      const first = pick?.id as number | undefined;
       setBranchId(first);
       loadMonth(first);
-    }).catch(() => loadMonth());
+    }).catch(() => { loadEmps(); loadMonth(); });
     api.get('/api/v1/treasuries').then((r) => setTreasuries(r.data || [])).catch(() => {});
   }, []);
 
