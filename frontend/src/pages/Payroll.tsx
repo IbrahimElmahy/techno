@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Button, Checkbox, Col, DatePicker, Divider, Input, Modal, Row, Segmented, Select, Space, Table, Tag,
+  Button, Checkbox, Col, DatePicker, Divider, Input, Modal, Row, Select, Space, Table, Tag,
   message,
 } from 'antd';
 import {
@@ -459,28 +459,6 @@ export default function Payroll() {
       )) } as any,
   ];
 
-  const [byDept, setByDept] = useState(true);
-  const groupedLines = useMemo<Line[]>(() => {
-    if (!byDept) return lines;
-    const total = lines.reduce((t, l) => t + n(l.earnings), 0);
-    const map = new Map<string, Line>();
-    lines.forEach((l) => {
-      const k = String(l.department_id ?? 'none');
-      let g = map.get(k);
-      if (!g) {
-        g = { __group: true, employee_id: -(l.department_id ?? 0) - 1, name: l.department || 'بدون قسم',
-          children: [] } as any;
-        sumKeys.forEach((key) => { (g as any)[key] = 0; });
-        map.set(k, g!);
-      }
-      g!.children!.push(l);
-      sumKeys.forEach((key) => { (g as any)[key] = n((g as any)[key]) + n(l[key]); });
-    });
-    return [...map.values()].map((g) => ({
-      ...g,
-      name: `${g.name} (${g.children!.length})${total ? ` — ${Math.round((n(g.earnings) / total) * 1000) / 10}%` : ''}`,
-    }));
-  }, [byDept, lines, sumKeys]);
   const monthCols = useTableColumns('salary-month', monthColumns as any, {
     locked: ['name'],
     export: {
@@ -747,8 +725,6 @@ export default function Payroll() {
           <Select allowClear placeholder="الصرف" style={{ minWidth: 130 }} value={monthFilter.values.paid}
             onChange={(v) => monthFilter.setValue('paid', v)}
             options={[{ value: 'yes', label: 'مصروف' }, { value: 'no', label: 'غير مصروف' }]} />
-          <Segmented value={byDept ? 'dept' : 'flat'} onChange={(v) => setByDept(v === 'dept')}
-            options={[{ value: 'dept', label: 'بالأقسام' }, { value: 'flat', label: 'قائمة' }]} />
         </>) : tab === 'employees' ? (<>
           <Input className="sl-f-search" allowClear ref={searchRef} value={empFilter.query}
             placeholder="بحث بالاسم أو الرقم" prefix={<SearchOutlined />}
@@ -789,10 +765,8 @@ export default function Payroll() {
         {extra ? extra.body : tab === 'month' ? (
           <Table<Line>
             {...monthKb.tableProps}
-            key={byDept ? `dept-${groupedLines.length}-${lines.length}` : 'flat'}
             className="sl-table" rowKey="employee_id" size="small" loading={loading}
-            dataSource={groupedLines}
-            expandable={byDept ? { defaultExpandAllRows: true } : undefined}
+            dataSource={lines}
             rowClassName={(r: Line) => (r.__group ? 'ta-group-row' : '')}
             locale={{ emptyText: run ? 'لا يوجد موظفون' : 'لم تُحسب مرتبات هذا الشهر' }}
             pagination={{ defaultPageSize: 100, showSizeChanger: true }}
