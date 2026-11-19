@@ -765,7 +765,7 @@ export default function Payroll() {
         {extra ? extra.body : tab === 'month' ? (
           <Table<Line>
             {...monthKb.tableProps}
-            className="sl-table payroll-month" rowKey="employee_id" size="small" loading={loading}
+            className="sl-table" rowKey="employee_id" size="small" loading={loading}
             dataSource={lines}
             rowClassName={(r: Line) => (r.__group ? 'ta-group-row' : '')}
             locale={{ emptyText: run ? 'لا يوجد موظفون' : 'لم تُحسب مرتبات هذا الشهر' }}
