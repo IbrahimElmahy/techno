@@ -1571,6 +1571,49 @@ def pool_documents(db: Session, *, pool_id: int, branch_id: int, year: int, mont
     return rep_collection_docs(db, pool.rep_user_id, year, month)
 
 
+def care_rows(db: Session, *, branch_id: int, year: int, month: int) -> list[dict]:
+    out = []
+    for emp, rule in db.execute(
+        select(Employee, EmployeeCommissionRule)
+        .join(EmployeeCommissionRule, EmployeeCommissionRule.employee_id == Employee.id)
+        .where(Employee.branch_id == branch_id, Employee.active.is_(True),
+               EmployeeCommissionRule.active.is_(True),
+               EmployeeCommissionRule.basis == CommissionBasis.care)
+        .order_by(EmployeeCommissionRule.all_techs, Employee.name)
+    ).all():
+        part = next((p for p in commission_preview(db, emp, year, month)
+                     if p["id"] == rule.id), {})
+        out.append({"employee_id": emp.id, "name": emp.name,
+                    "inspection_rate": str(rule.inspection_rate or 0),
+                    "plumber_rate": str(rule.plumber_rate or 0),
+                    "all_techs": bool(rule.all_techs),
+                    "inspections": part.get("inspections", 0), "plumbers": part.get("plumbers", 0),
+                    "amount": part.get("amount", "0")})
+    return out
+
+
+def save_care_rates(db: Session, *, branch_id: int, year: int, month: int, rows: list[dict],
+                    actor_user_id: int) -> None:
+    _check_month(year, month)
+    run = current_run(db, branch_id=branch_id, year=year, month=month)
+    if run is not None and run.status == PayrollRunStatus.posted:
+        raise SalaryError("مرتبات هذا الشهر مُرحّلة — ألغِ الترحيل أولاً.")
+    for row in rows or []:
+        emp = db.get(Employee, int(row.get("employee_id") or 0))
+        if emp is None or emp.branch_id != branch_id:
+            raise SalaryError("الموظف غير موجود.")
+        rules = [_rule_out(r) for r in rules_of(db, emp.id)]
+        care = next((r for r in rules if r["basis"] == CommissionBasis.care.value), None)
+        if care is None:
+            raise SalaryError(f"«{emp.name}» ليس له عمولة خدمة عملاء.")
+        care["inspection_rate"] = row.get("inspection_rate")
+        care["plumber_rate"] = row.get("plumber_rate")
+        save_rules(db, employee=emp, rules=rules, actor_user_id=actor_user_id)
+    db.flush()
+    if run is not None:
+        calculate(db, branch_id=branch_id, year=year, month=month, actor_user_id=actor_user_id)
+
+
 def pool_reps(db: Session, branch_id: int) -> list[dict]:
     from src.models.user import User
 

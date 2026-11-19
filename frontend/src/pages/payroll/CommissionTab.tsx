@@ -30,6 +30,13 @@ const toRows = (list: any[]): Pool[] => list.map((p) => ({
   auto: p.auto ?? null,
 }));
 const BUCKET: Record<string, string> = { poly: 'بولي', white: 'أبيض', other: 'غير مصنّف' };
+type Care = {
+  employee_id: number; name: string; inspection_rate: number; plumber_rate: number;
+  all_techs: boolean; inspections: number; plumbers: number; amount: string;
+};
+const toCare = (list: any[]): Care[] => list.map((c) => ({
+  ...c, inspection_rate: n(c.inspection_rate), plumber_rate: n(c.plumber_rate),
+}));
 
 export function useCommissionTab({ active, branchId, period, data, onData, onCard }: {
   active: boolean; branchId?: number; period: Dayjs; data: any | null; onData: (d: any) => void;
@@ -42,6 +49,11 @@ export function useCommissionTab({ active, branchId, period, data, onData, onCar
   const [reps, setReps] = useState<{ value: number; label: string }[]>([]);
   const [docsOf, setDocsOf] = useState<Pool | null>(null);
   const [docs, setDocs] = useState<Doc[]>([]);
+  const [care, setCare] = useState<Care[]>([]);
+  const [careDirty, setCareDirty] = useState(false);
+  const [careSaving, setCareSaving] = useState(false);
+  const [allInsp, setAllInsp] = useState<number | null>(null);
+  const [allTech, setAllTech] = useState<number | null>(null);
   const year = period.year();
   const month = period.month() + 1;
   const locked = data?.run?.status === 'posted';
@@ -54,6 +66,9 @@ export function useCommissionTab({ active, branchId, period, data, onData, onCar
       setDirty(false);
       const r = await api.get('/api/v1/hr/salary/pools/reps', { params: { branch_id: branchId } });
       setReps((r.data || []).map((u: any) => ({ value: u.id, label: u.name })));
+      const c = await api.get('/api/v1/hr/salary/care', { params: { year, month, branch_id: branchId } });
+      setCare(toCare(c.data || []));
+      setCareDirty(false);
     } catch (err: any) { fail(err, 'تعذر تحميل التحصيل'); } finally { setLoading(false); }
   };
 
@@ -79,6 +94,37 @@ export function useCommissionTab({ active, branchId, period, data, onData, onCar
       onData(res.data.month);
       message.success(res.data.month?.run ? 'تم الحفظ وإعادة حساب العمولات' : 'تم الحفظ');
     } catch (err: any) { fail(err, 'تعذر الحفظ'); } finally { setSaving(false); }
+  };
+
+  const editCare = (id: number, patch: Partial<Care>) => {
+    setCare(care.map((c) => (c.employee_id === id ? { ...c, ...patch } : c)));
+    setCareDirty(true);
+  };
+
+  const applyAll = () => {
+    setCare(care.map((c) => (c.all_techs ? c : {
+      ...c,
+      inspection_rate: allInsp ?? c.inspection_rate,
+      plumber_rate: allTech ?? c.plumber_rate,
+    })));
+    setCareDirty(true);
+  };
+
+  const saveCare = async () => {
+    setCareSaving(true);
+    try {
+      const res = await api.put('/api/v1/hr/salary/care', {
+        year, month, branch_id: branchId,
+        rows: care.map((c) => ({
+          employee_id: c.employee_id, inspection_rate: String(c.inspection_rate || 0),
+          plumber_rate: String(c.plumber_rate || 0),
+        })),
+      });
+      setCare(toCare(res.data.rows || []));
+      setCareDirty(false);
+      onData(res.data.month);
+      message.success(res.data.month?.run ? 'تم الحفظ وإعادة حساب العمولات' : 'تم الحفظ');
+    } catch (err: any) { fail(err, 'تعذر الحفظ'); } finally { setCareSaving(false); }
   };
 
   const openDocs = async (r: Pool) => {
@@ -175,6 +221,39 @@ export function useCommissionTab({ active, branchId, period, data, onData, onCar
           </Table.Summary.Row>
         )}
       />
+
+      {care.length ? (<>
+        <Divider style={{ margin: '14px 0 6px' }}>خدمة العملاء</Divider>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 8 }}>
+          <InputNumber min={0} value={allInsp ?? undefined} placeholder="سعر المعاينة" addonAfter="للمعاينة"
+            disabled={locked} onChange={(v) => setAllInsp(v ?? null)} style={{ width: 200 }} />
+          <InputNumber min={0} value={allTech ?? undefined} placeholder="سعر الفني" addonAfter="للفني"
+            disabled={locked} onChange={(v) => setAllTech(v ?? null)} style={{ width: 200 }} />
+          <Button disabled={locked || (allInsp === null && allTech === null)} onClick={applyAll}>تطبيق على الكل</Button>
+          <Button type="primary" icon={<SaveOutlined />} loading={careSaving} disabled={locked || !careDirty}
+            onClick={saveCare}>حفظ</Button>
+        </div>
+        <Table<Care>
+          className="sl-table" rowKey="employee_id" size="small" pagination={false} dataSource={care}
+          columns={[
+            { title: 'الموظف', dataIndex: 'name', key: 'name', width: 200,
+              render: (v: string, c) => (c.all_techs ? <>{v} <Tag>كل الفنيين</Tag></> : v) },
+            { title: 'سعر المعاينة', dataIndex: 'inspection_rate', key: 'inspection_rate', width: 150,
+              render: (v: number, c) => (
+                <InputNumber min={0} value={v} disabled={locked} style={{ width: '100%' }}
+                  onChange={(x) => editCare(c.employee_id, { inspection_rate: x ?? 0 })} />) },
+            { title: 'سعر الفني', dataIndex: 'plumber_rate', key: 'plumber_rate', width: 150,
+              render: (v: number, c) => (
+                <InputNumber min={0} value={v} disabled={locked} style={{ width: '100%' }}
+                  onChange={(x) => editCare(c.employee_id, { plumber_rate: x ?? 0 })} />) },
+            { title: 'المعاينات', dataIndex: 'inspections', key: 'inspections', width: 100, align: 'left' },
+            { title: 'الفنيون', dataIndex: 'plumbers', key: 'plumbers', width: 100, align: 'left',
+              render: (v: number, c) => (c.all_techs ? '—' : v) },
+            { title: 'العمولة', dataIndex: 'amount', key: 'amount', width: 130, align: 'left',
+              render: (v: string) => <b>{money(v)}</b> },
+          ]}
+        />
+      </>) : null}
 
       <Divider style={{ margin: '14px 0 6px' }}>عمولات الموظفين</Divider>
       <Table

@@ -252,6 +252,47 @@ def save_pools(
             "month": svc.month_out(db, branch_id=branch, year=body.year, month=body.month)}
 
 
+@router.get("/care")
+def care_rows(
+    year: int,
+    month: int,
+    branch_id: int | None = Query(None),
+    current: CurrentUser = Depends(require_capability(CAP_SALARY_VIEW)),
+    db: Session = Depends(get_db),
+) -> list[dict]:
+    return svc.care_rows(db, branch_id=_branch(current, branch_id), year=year, month=month)
+
+
+class CareRateIn(BaseModel):
+    employee_id: int
+    inspection_rate: float | str | None = None
+    plumber_rate: float | str | None = None
+
+
+class CareRatesIn(BaseModel):
+    year: int
+    month: int
+    branch_id: int | None = None
+    rows: list[CareRateIn] = []
+
+
+@router.put("/care")
+def save_care_rates(
+    body: CareRatesIn,
+    current: CurrentUser = Depends(require_capability(CAP_PAYROLL_POST)),
+    db: Session = Depends(get_db),
+) -> dict:
+    branch = _branch(current, body.branch_id)
+    try:
+        svc.save_care_rates(db, branch_id=branch, year=body.year, month=body.month,
+                            rows=[r.model_dump() for r in body.rows], actor_user_id=current.id)
+    except SalaryError as exc:
+        _raise(exc)
+    db.commit()
+    return {"rows": svc.care_rows(db, branch_id=branch, year=body.year, month=body.month),
+            "month": svc.month_out(db, branch_id=branch, year=body.year, month=body.month)}
+
+
 class MonthIn(BaseModel):
     year: int
     month: int
