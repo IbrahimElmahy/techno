@@ -263,7 +263,12 @@ def _pool_label(r: EmployeeCommissionRule, names: dict) -> str:
     return f"عمولة {rate} من تحصيل {where}{tail}"
 
 
+def collection_month(year: int, month: int) -> tuple[int, int]:
+    return (year - 1, 12) if month == 1 else (year, month - 1)
+
+
 def commission_preview(db: Session, employee: Employee, year: int, month: int) -> list[dict]:
+    year, month = collection_month(year, month)
     d1, d2 = date(year, month, 1), _month_end(year, month)
     out = []
     rules = rules_of(db, employee.id)
@@ -1443,6 +1448,7 @@ def delete_leave(db: Session, *, leave_id: int, actor_user_id: int) -> None:
 
 
 def pools_of(db: Session, *, branch_id: int, year: int, month: int) -> list[dict]:
+    year, month = collection_month(year, month)
     pools = db.scalars(select(CommissionPool).where(
         CommissionPool.branch_id == branch_id, CommissionPool.active.is_(True))
         .order_by(CommissionPool.sort_order, CommissionPool.id)).all()
@@ -1460,6 +1466,7 @@ def pools_of(db: Session, *, branch_id: int, year: int, month: int) -> list[dict
 
 
 def pool_documents(db: Session, *, pool_id: int, branch_id: int, year: int, month: int) -> list:
+    year, month = collection_month(year, month)
     pool = db.get(CommissionPool, pool_id)
     if pool is None or pool.branch_id != branch_id:
         raise SalaryError("الجهة غير موجودة.")
@@ -1490,6 +1497,7 @@ def _pool_users(db: Session, pool_id: int) -> list[str]:
 def save_pools(db: Session, *, branch_id: int, year: int, month: int, rows: list[dict],
                actor_user_id: int) -> None:
     _check_month(year, month)
+    cy, cm = collection_month(year, month)
     run = current_run(db, branch_id=branch_id, year=year, month=month)
     if run is not None and run.status == PayrollRunStatus.posted:
         raise SalaryError("مرتبات هذا الشهر مُرحّلة — ألغِ الترحيل أولاً.")
@@ -1521,13 +1529,13 @@ def save_pools(db: Session, *, branch_id: int, year: int, month: int, rows: list
             pool.rep_user_id = rep
         keep.add(pool.id)
         manual = bool(row.get("manual")) if rep else False
-        amount = _stored(db, pool.id, year, month)
+        amount = _stored(db, pool.id, cy, cm)
         if rep and not manual:
             if amount is not None:
                 amount.manual = False
             continue
         if amount is None:
-            db.add(CommissionPoolAmount(pool_id=pool.id, year=year, month=month, poly=poly,
+            db.add(CommissionPoolAmount(pool_id=pool.id, year=cy, month=cm, poly=poly,
                                         white=white, manual=manual, actor_user_id=actor_user_id))
         else:
             amount.poly, amount.white, amount.actor_user_id = poly, white, actor_user_id
