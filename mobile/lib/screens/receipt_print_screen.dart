@@ -162,6 +162,7 @@ class _ReceiptPrintScreenState extends State<ReceiptPrintScreen> {
     final r = widget.receipt;
     final synced = _synced;
     final doc = pw.Document();
+    final roll = isRoll(format);
 
     pw.Font arabic;
     try {
@@ -192,10 +193,6 @@ class _ReceiptPrintScreenState extends State<ReceiptPrintScreen> {
         _total('حساب سابق ($family)', _money(mine)),
         _total('المدفوع', _money(amount)),
         _total('الباقي بعد الدفعة ($family)', _money(after), big: true),
-        for (final e in byFamily.entries)
-          if (e.key != family && e.value.abs() > 0.001)
-            _total('مديونية ${e.key}', _money(e.value)),
-        if (prev != null) _total('إجمالي حساب العميل بعد الدفعة', _money(prev - amount)),
       ]);
     } else if (prev != null) {
       after = prev - amount;
@@ -206,17 +203,23 @@ class _ReceiptPrintScreenState extends State<ReceiptPrintScreen> {
       ]);
     }
 
+    _tight = roll;
+    final gap = roll ? 4.0 : 10.0;
     doc.addPage(
       pw.Page(
         pageFormat: format,
         theme: theme,
         textDirection: pw.TextDirection.rtl,
-        margin: const pw.EdgeInsets.all(14),
+        margin: roll
+            ? const pw.EdgeInsets.symmetric(horizontal: 4, vertical: 2)
+            : const pw.EdgeInsets.all(14),
         build: (ctx) => pw.Column(
           crossAxisAlignment: pw.CrossAxisAlignment.stretch,
           children: [
             pw.Container(
-              padding: const pw.EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              padding: roll
+                  ? const pw.EdgeInsets.symmetric(horizontal: 8, vertical: 3)
+                  : const pw.EdgeInsets.symmetric(horizontal: 12, vertical: 6),
               decoration: pw.BoxDecoration(
                 color: _brand,
                 borderRadius: pw.BorderRadius.circular(6),
@@ -245,7 +248,7 @@ class _ReceiptPrintScreenState extends State<ReceiptPrintScreen> {
                 ],
               ),
             ),
-            pw.SizedBox(height: 8),
+            pw.SizedBox(height: roll ? 3 : 8),
             if (!synced)
               pw.Container(
                 margin: const pw.EdgeInsets.only(bottom: 8),
@@ -258,6 +261,10 @@ class _ReceiptPrintScreenState extends State<ReceiptPrintScreen> {
                     textAlign: pw.TextAlign.center,
                     style: const pw.TextStyle(fontSize: 10)),
               ),
+            if (roll)
+              pw.Text('العميل: ${r['customer_name'] ?? ''}',
+                  style: const pw.TextStyle(fontSize: 11, fontWeight: pw.FontWeight.bold))
+            else
             pw.Container(
               padding: const pw.EdgeInsets.symmetric(horizontal: 8, vertical: 4),
               decoration: pw.BoxDecoration(
@@ -277,9 +284,11 @@ class _ReceiptPrintScreenState extends State<ReceiptPrintScreen> {
                 ]),
               ]),
             ),
-            pw.SizedBox(height: 10),
+            pw.SizedBox(height: gap),
             pw.Container(
-              padding: const pw.EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+              padding: roll
+                  ? const pw.EdgeInsets.symmetric(horizontal: 6, vertical: 3)
+                  : const pw.EdgeInsets.symmetric(horizontal: 10, vertical: 8),
               decoration: pw.BoxDecoration(
                 color: PdfColors.grey100,
                 border: pw.Border.all(width: 0.8, color: _brand),
@@ -308,9 +317,11 @@ class _ReceiptPrintScreenState extends State<ReceiptPrintScreen> {
               ),
             ),
             if (balanceRows.isNotEmpty) ...[
-              pw.SizedBox(height: 10),
+              pw.SizedBox(height: roll ? 5 : 10),
               pw.Container(
-                padding: const pw.EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                padding: roll
+                    ? const pw.EdgeInsets.symmetric(horizontal: 6, vertical: 2)
+                    : const pw.EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                 decoration: pw.BoxDecoration(
                   border: pw.Border.all(width: 0.6, color: PdfColors.grey500),
                   borderRadius: pw.BorderRadius.circular(4),
@@ -325,19 +336,20 @@ class _ReceiptPrintScreenState extends State<ReceiptPrintScreen> {
                 ),
             ],
             if (notes.isNotEmpty) ...[
-              pw.SizedBox(height: 10),
+              pw.SizedBox(height: gap),
               pw.Text('البيان: $notes', style: const pw.TextStyle(fontSize: 10)),
             ],
-            pw.SizedBox(height: 18),
-            pw.Divider(color: PdfColors.grey400),
+            pw.SizedBox(height: roll ? 8 : 18),
+            if (!roll) pw.Divider(color: PdfColors.grey400),
             pw.Wrap(
               alignment: pw.WrapAlignment.spaceBetween,
               runSpacing: 10,
               spacing: 12,
               children: [
-                pw.Text('توقيع العميل: ____________', style: const pw.TextStyle(fontSize: 10)),
-                pw.Text('توقيع المندوب (المستلم): ____________',
-                    style: const pw.TextStyle(fontSize: 10)),
+                pw.Text(roll ? 'توقيع العميل: ________' : 'توقيع العميل: ____________',
+                    style: pw.TextStyle(fontSize: roll ? 9 : 10)),
+                pw.Text(roll ? 'توقيع المندوب: ________' : 'توقيع المندوب (المستلم): ____________',
+                    style: pw.TextStyle(fontSize: roll ? 9 : 10)),
               ],
             ),
             pw.SizedBox(height: 4),
@@ -366,6 +378,8 @@ Map<String, double> _familyBalances(String? raw) {
 
 const _brand = PdfColor.fromInt(0xFF0E4C6D);
 
+var _tight = false;
+
 pw.Widget _row(String label, String value) => pw.Padding(
       padding: const pw.EdgeInsets.symmetric(vertical: 1.5),
       child: pw.Row(children: [
@@ -380,14 +394,15 @@ pw.Widget _row(String label, String value) => pw.Padding(
     );
 
 pw.Widget _total(String label, String value, {bool big = false}) => pw.Padding(
-      padding: const pw.EdgeInsets.symmetric(vertical: 2),
+      padding: pw.EdgeInsets.symmetric(vertical: _tight ? 0.5 : 2),
       child: pw.Row(
         mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
         children: [
-          pw.Expanded(child: pw.Text(label, style: pw.TextStyle(fontSize: big ? 11.5 : 10.5))),
+          pw.Expanded(child: pw.Text(label,
+              style: pw.TextStyle(fontSize: _tight ? (big ? 11 : 10) : (big ? 11.5 : 10.5)))),
           pw.Text(value,
               style: pw.TextStyle(
-                  fontSize: big ? 14 : 11,
+                  fontSize: _tight ? (big ? 13 : 10.5) : (big ? 14 : 11),
                   color: big ? _brand : PdfColors.black,
                   fontWeight: big ? pw.FontWeight.bold : pw.FontWeight.normal)),
         ],

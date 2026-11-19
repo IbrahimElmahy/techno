@@ -324,11 +324,6 @@ class _InvoicePrintScreenState extends State<InvoicePrintScreen> {
               pw.Column(crossAxisAlignment: pw.CrossAxisAlignment.stretch, children: [
                 pw.Text('العميل: ${inv['customer_name']}',
                     style: const pw.TextStyle(fontSize: 11, fontWeight: pw.FontWeight.bold)),
-                pw.Row(mainAxisAlignment: pw.MainAxisAlignment.spaceBetween, children: [
-                  pw.Text('الهاتف: ${(_phone ?? '').trim().isEmpty ? '—' : _phone!.trim()}',
-                      style: const pw.TextStyle(fontSize: 9.5)),
-                  pw.Text('المندوب: $_rep', style: const pw.TextStyle(fontSize: 9.5)),
-                ]),
                 if (isBonus)
                   pw.Text('على طلب بيع رقم ${_bonusFor ?? '— (قيد الرفع)'}',
                       style: const pw.TextStyle(fontSize: 10, fontWeight: pw.FontWeight.bold)),
@@ -372,8 +367,8 @@ class _InvoicePrintScreenState extends State<InvoicePrintScreen> {
                   ? {
                       0: const pw.FlexColumnWidth(1.55),
                       1: const pw.FlexColumnWidth(1.3),
-                      2: const pw.FlexColumnWidth(0.8),
-                      3: const pw.FlexColumnWidth(4.4),
+                      2: const pw.FlexColumnWidth(1.05),
+                      3: const pw.FlexColumnWidth(4.15),
                       4: const pw.FlexColumnWidth(0.45),
                     }
                   : {
@@ -470,9 +465,6 @@ class _InvoicePrintScreenState extends State<InvoicePrintScreen> {
               final mine = (family != null && prevByFamily.containsKey(family))
                   ? prevByFamily[family]
                   : (prevByFamily.isEmpty ? prev : null);
-              final others = prevByFamily.entries
-                  .where((e) => e.key != family)
-                  .toList();
               final left = mine == null ? credit : mine + total - cash;
               final famTag = (family != null && prevByFamily.isNotEmpty) ? ' ($family)' : '';
               pw.Widget body(List<pw.Widget> rows) => pw.Container(
@@ -496,8 +488,6 @@ class _InvoicePrintScreenState extends State<InvoicePrintScreen> {
               final b = [
                 _total('المدفوع نقداً', _money(cash)),
                 _total('الباقي', _money(left), big: true),
-                for (final e in others)
-                  _total('مديونية ${e.key}', _money(e.value)),
               ];
               if (roll) {
                 return [
