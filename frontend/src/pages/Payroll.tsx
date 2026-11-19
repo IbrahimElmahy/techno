@@ -629,6 +629,7 @@ export default function Payroll() {
   });
   const commissionTab = useCommissionTab({
     active: tab === 'commissions', branchId, period, data, onData: setData,
+    onCard: (id) => setCardOf(id),
   });
   const extra = tab === 'overtime' ? overtimeTab : tab === 'commissions' ? commissionTab : tab === 'leaves' ? leavesTab : tab === 'penalties' ? penaltiesTab
     : tab === 'bonuses' ? bonusesTab : null;
@@ -822,7 +823,7 @@ export default function Payroll() {
 
       {cardOf !== null ? (
         <SalaryCard employeeId={cardOf} period={period}
-          onClose={() => setCardOf(null)} onSaved={() => { loadEmps(); }} />
+          onClose={() => setCardOf(null)} onSaved={() => { loadEmps(); if (draft) calculate(); }} />
       ) : null}
 
       {lineOf !== null && data ? (

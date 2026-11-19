@@ -192,10 +192,27 @@ def pool_reps(
     return svc.pool_reps(db, _branch(current, branch_id))
 
 
+@router.get("/pools/{pool_id}/documents")
+def pool_documents(
+    pool_id: int,
+    year: int,
+    month: int,
+    branch_id: int | None = Query(None),
+    current: CurrentUser = Depends(require_capability(CAP_SALARY_VIEW)),
+    db: Session = Depends(get_db),
+) -> list[dict]:
+    try:
+        return svc.pool_documents(db, pool_id=pool_id, branch_id=_branch(current, branch_id),
+                                  year=year, month=month)
+    except SalaryError as exc:
+        _raise(exc)
+
+
 class PoolIn(BaseModel):
     id: int | None = None
     name: str
     rep_user_id: int | None = None
+    manual: bool = False
     poly: float | str | None = None
     white: float | str | None = None
 

@@ -66,6 +66,7 @@ class CommissionPoolAmount(Base):
     month: Mapped[int] = mapped_column(Integer, nullable=False)
     poly: Mapped[object] = mapped_column(MONEY, default=0, nullable=False)
     white: Mapped[object] = mapped_column(MONEY, default=0, nullable=False)
+    manual: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     actor_user_id: Mapped[int | None] = mapped_column(ForeignKey("user.id"), nullable=True)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, server_default=func.now(), onupdate=func.now(), nullable=False

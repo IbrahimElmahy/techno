@@ -47,6 +47,7 @@ def upgrade() -> None:
             sa.Column("month", sa.Integer(), nullable=False),
             sa.Column("poly", sa.Numeric(18, 2), nullable=False, server_default="0"),
             sa.Column("white", sa.Numeric(18, 2), nullable=False, server_default="0"),
+            sa.Column("manual", sa.Boolean(), nullable=False, server_default=sa.false()),
             sa.Column("actor_user_id", sa.BigInteger(), sa.ForeignKey("user.id"), nullable=True),
             sa.Column("updated_at", sa.DateTime(), nullable=False, server_default=sa.func.now()),
             sa.UniqueConstraint("pool_id", "year", "month", name="uq_commission_pool_month"),

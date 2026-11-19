@@ -173,6 +173,13 @@ POLY, WHITE = "بولي", "أبيض"
 
 
 def rep_collections(db: Session, user_id: int, year: int, month: int) -> dict:
+    out = {"poly": ZERO, "white": ZERO, "other": ZERO}
+    for d in rep_collection_docs(db, user_id, year, month):
+        out[d["bucket"]] += _d(d["amount"])
+    return {k: to_money(v) for k, v in out.items()}
+
+
+def rep_collection_docs(db: Session, user_id: int, year: int, month: int) -> list[dict]:
     from src.models.customer import CustomerAccount
 
     d1, d2 = date(year, month, 1), _month_end(year, month)
@@ -181,15 +188,18 @@ def rep_collections(db: Session, user_id: int, year: int, month: int) -> dict:
               .where(CustomerAccount.family.is_not(None))
               .group_by(CustomerAccount.customer_id)
               .having(func.count(func.distinct(CustomerAccount.family)) == 1).subquery())
-    out = {"poly": ZERO, "white": ZERO, "other": ZERO}
+    docs: list[dict] = []
 
-    def add(fam, value):
-        key = "poly" if fam == POLY else "white" if fam == WHITE else "other"
-        out[key] += _d(value)
+    def add(kind, number, day_, customer, fam, value):
+        bucket = "poly" if fam == POLY else "white" if fam == WHITE else "other"
+        docs.append({"kind": kind, "number": number, "date": str(day_) if day_ else None,
+                     "customer": customer, "family": fam if bucket != "other" else None,
+                     "bucket": bucket, "amount": str(to_money(_d(value)))})
 
     day = func.coalesce(SalesInvoice.invoice_date, cast(SalesInvoice.created_at, Date))
-    for fam, own, cash in db.execute(
-        select(SalesInvoice.family, single.c.fam, SalesInvoice.cash_amount)
+    for number, inv_day, customer, fam, own, cash in db.execute(
+        select(SalesInvoice.document_number, day, Customer.name, SalesInvoice.family,
+               single.c.fam, SalesInvoice.cash_amount)
         .outerjoin(Customer, Customer.id == SalesInvoice.customer_id)
         .outerjoin(single, single.c.cid == SalesInvoice.customer_id)
         .where(SalesInvoice.cash_amount > 0,
@@ -198,13 +208,13 @@ def rep_collections(db: Session, user_id: int, year: int, month: int) -> dict:
                or_(SalesInvoice.rep_id == user_id,
                    and_(SalesInvoice.rep_id.is_(None), Customer.rep_id == user_id)))
     ).all():
-        add(fam or own, cash)
+        add("فاتورة", number, inv_day, customer, fam or own, cash)
 
     staff = select(Employee.receivable_account_id).where(
         Employee.receivable_account_id.is_not(None))
-    for fam, acc_fam, own, amount, reverses_id in db.execute(
-        select(Voucher.family, CustomerAccount.family, single.c.fam, Voucher.amount,
-               Voucher.reverses_id)
+    for number, v_day, customer, fam, acc_fam, own, amount, reverses_id in db.execute(
+        select(Voucher.document_number, Voucher.voucher_date, Customer.name, Voucher.family,
+               CustomerAccount.family, single.c.fam, Voucher.amount, Voucher.reverses_id)
         .join(Customer, Customer.id == Voucher.customer_id)
         .outerjoin(CustomerAccount, CustomerAccount.account_id == Voucher.party_account_id)
         .outerjoin(single, single.c.cid == Voucher.customer_id)
@@ -213,16 +223,22 @@ def rep_collections(db: Session, user_id: int, year: int, month: int) -> dict:
                or_(Voucher.rep_user_id == user_id,
                    and_(Voucher.rep_user_id.is_(None), Customer.rep_id == user_id)))
     ).all():
-        add(fam or acc_fam or own, -_d(amount) if reverses_id is not None else amount)
-    return {k: to_money(v) for k, v in out.items()}
+        add("سند قبض", number, v_day, customer, fam or acc_fam or own,
+            -_d(amount) if reverses_id is not None else amount)
+    docs.sort(key=lambda d: (d["date"] or "", d["number"] or ""))
+    return docs
+
+
+def _stored(db: Session, pool_id: int, year: int, month: int) -> CommissionPoolAmount | None:
+    return db.scalar(select(CommissionPoolAmount).where(
+        CommissionPoolAmount.pool_id == pool_id, CommissionPoolAmount.year == year,
+        CommissionPoolAmount.month == month))
 
 
 def _pool_values(db: Session, pool: CommissionPool, year: int, month: int) -> dict:
-    if pool.rep_user_id:
+    a = _stored(db, pool.id, year, month)
+    if pool.rep_user_id and not (a and a.manual):
         return rep_collections(db, pool.rep_user_id, year, month)
-    a = db.scalar(select(CommissionPoolAmount).where(
-        CommissionPoolAmount.pool_id == pool.id, CommissionPoolAmount.year == year,
-        CommissionPoolAmount.month == month))
     return {"poly": _d(a.poly) if a else ZERO, "white": _d(a.white) if a else ZERO,
             "other": ZERO}
 
@@ -1419,10 +1435,23 @@ def pools_of(db: Session, *, branch_id: int, year: int, month: int) -> list[dict
     out = []
     for p in pools:
         v = _pool_values(db, p, year, month)
-        out.append({"id": p.id, "name": p.name, "rep_user_id": p.rep_user_id,
+        a = _stored(db, p.id, year, month)
+        manual = bool(p.rep_user_id and a and a.manual)
+        auto = rep_collections(db, p.rep_user_id, year, month) if manual else None
+        out.append({"id": p.id, "name": p.name, "rep_user_id": p.rep_user_id, "manual": manual,
                     "poly": str(v["poly"]), "white": str(v["white"]), "other": str(v["other"]),
-                    "total": str(to_money(v["poly"] + v["white"] + v["other"]))})
+                    "total": str(to_money(v["poly"] + v["white"] + v["other"])),
+                    "auto": {k: str(x) for k, x in auto.items()} if auto else None})
     return out
+
+
+def pool_documents(db: Session, *, pool_id: int, branch_id: int, year: int, month: int) -> list:
+    pool = db.get(CommissionPool, pool_id)
+    if pool is None or pool.branch_id != branch_id:
+        raise SalaryError("الجهة غير موجودة.")
+    if not pool.rep_user_id:
+        return []
+    return rep_collection_docs(db, pool.rep_user_id, year, month)
 
 
 def pool_reps(db: Session, branch_id: int) -> list[dict]:
@@ -1477,16 +1506,18 @@ def save_pools(db: Session, *, branch_id: int, year: int, month: int, rows: list
             pool.sort_order = order
             pool.rep_user_id = rep
         keep.add(pool.id)
-        if rep:
+        manual = bool(row.get("manual")) if rep else False
+        amount = _stored(db, pool.id, year, month)
+        if rep and not manual:
+            if amount is not None:
+                amount.manual = False
             continue
-        amount = db.scalar(select(CommissionPoolAmount).where(
-            CommissionPoolAmount.pool_id == pool.id, CommissionPoolAmount.year == year,
-            CommissionPoolAmount.month == month))
         if amount is None:
             db.add(CommissionPoolAmount(pool_id=pool.id, year=year, month=month, poly=poly,
-                                        white=white, actor_user_id=actor_user_id))
+                                        white=white, manual=manual, actor_user_id=actor_user_id))
         else:
             amount.poly, amount.white, amount.actor_user_id = poly, white, actor_user_id
+            amount.manual = manual
     for pid, pool in existing.items():
         if pid in keep:
             continue
