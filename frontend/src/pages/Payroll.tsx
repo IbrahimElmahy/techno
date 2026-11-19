@@ -68,7 +68,7 @@ interface Line {
 }
 
 const SUM_KEYS: string[] = ['basic', 'allowances', 'overtime_amount', 'overtime_plus', 'commission',
-  'extra_days_amount', 'transport', 'incentive', 'bonuses', 'earnings', 'absence', 'advances',
+  'extra_days_amount', 'additions', 'transport', 'incentive', 'bonuses', 'earnings', 'absence', 'advances',
   'penalties', 'insurance', 'other_deductions', 'total_deductions', 'net', 'shortage_amount',
   'card_deductions', 'dues_deduction', 'extra_deduction'];
 
@@ -383,6 +383,7 @@ export default function Payroll() {
       { title: 'أيام', dataIndex: 'extra_days', key: 'extra_days', align: 'left', total: false,
         render: cell('extra_days', 'extra_days') },
       { title: 'قيمة الأيام', dataIndex: 'extra_days_amount', key: 'extra_days_amount', align: 'left', render: dash },
+      { title: 'مبلغ', dataIndex: 'additions', key: 'additions', align: 'left', render: dash },
     ]),
     group('إضافات', 'g_add', [
       { title: 'العمولة', dataIndex: 'commission', key: 'commission', align: 'left',
@@ -496,7 +497,7 @@ export default function Payroll() {
       { title: 'الموظف', value: (r) => r.name },
       { title: 'الأساسي', value: (r) => money(r.basic), numeric: true },
       ...monthComps.map((c) => ({ title: c.name, value: (r: Line) => money(r[`cmp_${c.id}`] || 0), numeric: true })),
-      { title: 'إضافي', value: (r) => money(n(r.overtime_plus) + n(r.extra_days_amount)), numeric: true },
+      { title: 'إضافي', value: (r) => money(n(r.overtime_plus) + n(r.extra_days_amount) + n(r.additions)), numeric: true },
       { title: 'العمولة', value: (r) => money(r.commission), numeric: true },
       { title: 'انتقالات', value: (r) => money(r.transport || 0), numeric: true },
       { title: 'حوافز ومكافآت', value: (r) => money(n(r.incentive) + n(r.bonuses)), numeric: true },

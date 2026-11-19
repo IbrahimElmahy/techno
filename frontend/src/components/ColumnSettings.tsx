@@ -8,6 +8,7 @@ export interface ColumnChoice {
   key: string;
   title: string;
   locked?: boolean;
+  children?: ColumnChoice[];
 }
 
 interface StoredPrefs {
@@ -78,7 +79,15 @@ export function useHiddenColumns(storageKey: string, defaultHidden: string[] = [
     const decorated = columns.map((c, idx) => ({ col: c, key: columnKeyOf(c, idx) }));
     const visible = decorated.filter(({ key }) => !hidden.includes(key));
     const rankedKeys = orderKeys(visible.map(({ key }) => key), prefs.order);
-    const byKey = new Map(visible.map(({ key, col }) => [key, col]));
+    const prune = (col: any): any => {
+      if (!Array.isArray(col.children) || !col.children.length) return col;
+      const kids = col.children
+        .map((ch: any, i: number) => ({ ch, k: columnKeyOf(ch, i) }))
+        .filter(({ k }: { k: string }) => !hidden.includes(k))
+        .map(({ ch }: { ch: any }) => prune(ch));
+      return kids.length ? { ...col, children: kids } : null;
+    };
+    const byKey = new Map(visible.map(({ key, col }) => [key, prune(col)]));
     const out: any = rankedKeys.map((k) => byKey.get(k)!).filter(Boolean);
     out.__managed = true;
     out.__tableKey = storageKey;
@@ -154,15 +163,27 @@ export default function ColumnSettings({
                   background: overKey === c.key && dragKey !== c.key ? '#eaf5e2' : undefined,
                   borderTop: overKey === c.key && dragKey !== c.key ? '2px solid #6AB42D' : '2px solid transparent',
                   opacity: dragKey === c.key ? 0.5 : 1 }}>
-                <Checkbox
-                  checked={!hidden.includes(c.key)}
-                  onChange={(e) => toggle(c.key, e.target.checked)}
-                >
-                  {c.title}
-                </Checkbox>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                  <Checkbox
+                    checked={!hidden.includes(c.key)}
+                    onChange={(e) => toggle(c.key, e.target.checked)}
+                  >
+                    {c.title}
+                  </Checkbox>
+                  {c.children?.length && !hidden.includes(c.key) ? (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 2, paddingInlineStart: 22 }}>
+                      {c.children.map((ch) => (
+                        <Checkbox key={ch.key} checked={!hidden.includes(ch.key)}
+                          onChange={(e) => toggle(ch.key, e.target.checked)}>
+                          {ch.title}
+                        </Checkbox>
+                      ))}
+                    </div>
+                  ) : null}
+                </div>
                 {onMove && (
                   <HolderOutlined title="اسحب لتغيير الترتيب"
-                    style={{ cursor: 'grab', color: '#555b65', fontSize: 15 }} />
+                    style={{ cursor: 'grab', color: '#555b65', fontSize: 15, alignSelf: 'flex-start', marginTop: 4 }} />
                 )}
               </div>
             ))}
@@ -213,6 +234,12 @@ export function useTableColumns<T extends { key?: React.Key; dataIndex?: any; ti
           key: keyOf(c, idx),
           title: typeof c.title === 'string' && c.title ? c.title : 'إجراءات',
           locked: locked.includes(keyOf(c, idx)),
+          children: Array.isArray((c as any).children) && (c as any).children.length > 1
+            ? (c as any).children.map((ch: any, i: number) => ({
+              key: columnKeyOf(ch, i),
+              title: typeof ch.title === 'string' && ch.title ? ch.title : '—',
+            }))
+            : undefined,
         }))}
         hidden={prefs.hidden}
         onChange={prefs.setHidden}

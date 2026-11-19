@@ -1029,12 +1029,24 @@ def delete_draft(db: Session, *, run_id: int, actor_user_id: int) -> None:
                          before={"document_number": number})
 
 
+def _other_earning_ids(db: Session, details) -> set[int]:
+    refs = {d.ref_id for d in details if d.source == DetailSource.bonus and d.ref_id}
+    if not refs:
+        return set()
+    return set(db.scalars(select(PayrollAdjustment.id).where(
+        PayrollAdjustment.id.in_(refs),
+        PayrollAdjustment.kind == AdjustmentKind.other_earning)).all())
+
+
 def _line_out(line: PayrollLine, emp: Employee | None, details: list[PayrollLineDetail],
               names: dict | None = None) -> dict:
     def s(v):
         return str(v) if v is not None else None
     names = names or {}
     ot_pos = _d(line.overtime_amount) if _d(line.overtime_amount) > 0 else ZERO
+    oe_ids = names.get(("oe",)) or set()
+    additions = to_money(sum((_d(d.amount) for d in details if d.source == DetailSource.bonus
+                              and d.ref_id in oe_ids), ZERO))
     return {
         "line_id": line.id, "employee_id": line.employee_id,
         "code": emp.code if emp else None, "name": emp.name if emp else None,
@@ -1058,7 +1070,8 @@ def _line_out(line: PayrollLine, emp: Employee | None, details: list[PayrollLine
         "days_present": s(to_qty(Decimal(line.days_in_month or 30) - _d(line.days_absent))),
         "commission": s(line.commission or ZERO), "commission_base": s(line.commission_base),
         "commission_override": s(line.commission_override),
-        "bonuses": s(to_money(_d(line.bonus_amount))),
+        "bonuses": s(to_money(_d(line.bonus_amount) - additions)),
+        "additions": s(additions),
         "earnings": s(to_money(_d(line.basic) + _d(line.allowances))),
         "days_absent": s(line.days_absent), "absent_override": s(line.absent_override),
         "absence": s(line.absence_deduction), "penalties": s(line.penalty_amount),
@@ -1132,6 +1145,7 @@ def month_out(db: Session, *, branch_id: int, year: int, month: int) -> dict:
     cfg = setup.settings(db)
     names[("cfg", "month_hours")] = (cfg.hours_per_month
                                      or int(Decimal(cfg.days_per_month or 30) * (_d(cfg.hours_per_day) or 8)))
+    names[("oe",)] = _other_earning_ids(db, [d for x in lines for d in details[x.id]])
     rows = sorted((_line_out(x, emps.get(x.employee_id), details[x.id], names) for x in lines),
                   key=lambda r: r["name"] or "")
     in_run = {x.employee_id for x in lines}
@@ -1164,7 +1178,7 @@ def payslip(db: Session, *, run_id: int, employee_id: int) -> dict:
     return {"run": {"document_number": run.document_number, "year": run.year,
                     "month": run.month, "status": run.status.value,
                     "status_label": STATUS_LABELS[run.status]},
-            "line": _line_out(line, emp, details)}
+            "line": _line_out(line, emp, details, {("oe",): _other_earning_ids(db, details)})}
 
 
 PAID_LEAVE = ("LV-PAID", "إجازة مدفوعة")
