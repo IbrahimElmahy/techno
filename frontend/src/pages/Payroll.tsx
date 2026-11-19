@@ -28,10 +28,14 @@ import { money, numeralsLocale } from '../utils/money';
 import { PAGE_SIZE } from '../utils/pagination';
 import { useAdjustmentsTab, useLeavesTab } from './payroll/PayrollExtras';
 import { useOvertimeTab } from './payroll/OvertimeTab';
+import { useCommissionTab } from './payroll/CommissionTab';
 import EmployeeReceivables from './EmployeeReceivables';
 import { addNew } from '../components/QuickCreate';
 
-interface Rule { id?: number; basis: string; basis_label?: string; pct: string | number }
+interface Rule {
+  id?: number; basis: string; basis_label?: string; pct: string | number;
+  white_pct?: string | number | null; pools?: number[]; pool_names?: string[]; split?: number;
+}
 
 interface EmpRow {
   employee_id: number; code: string; name: string; active: boolean; branch_id: number | null;
@@ -105,6 +109,7 @@ const n = (v: any) => Number(v || 0);
 const BASIS = [
   { value: 'sales', label: 'من المبيعات' },
   { value: 'collections', label: 'من التحصيلات' },
+  { value: 'pool', label: 'من تحصيل الجهات' },
 ];
 const STATUS_COLOR: Record<string, string> = { draft: 'default', posted: 'green', reversed: 'red' };
 
@@ -114,7 +119,12 @@ const fail = (err: any, fallback: string) => {
 };
 
 const ruleText = (rules: Rule[]) => rules
-  .map((r) => `${Number(r.pct)}٪ ${r.basis === 'collections' ? 'من التحصيلات' : 'من المبيعات'}`)
+  .map((r) => {
+    if (r.basis !== 'pool') return `${Number(r.pct)}٪ ${r.basis === 'collections' ? 'من التحصيلات' : 'من المبيعات'}`;
+    const w = r.white_pct !== null && r.white_pct !== undefined ? Number(r.white_pct) : Number(r.pct);
+    const rate = w === Number(r.pct) ? `${Number(r.pct)}٪` : `${Number(r.pct)}٪ بولي و${w}٪ أبيض`;
+    return `${rate} من ${(r.pool_names || []).join('، ')}${(r.split || 1) > 1 ? ` ÷ ${r.split}` : ''}`;
+  })
   .join(' + ');
 
 export default function Payroll() {
@@ -617,7 +627,10 @@ export default function Payroll() {
   const overtimeTab = useOvertimeTab({
     active: tab === 'overtime', data, onData: setData, onRecalc: calculate, busy,
   });
-  const extra = tab === 'overtime' ? overtimeTab : tab === 'leaves' ? leavesTab : tab === 'penalties' ? penaltiesTab
+  const commissionTab = useCommissionTab({
+    active: tab === 'commissions', branchId, period, data, onData: setData,
+  });
+  const extra = tab === 'overtime' ? overtimeTab : tab === 'commissions' ? commissionTab : tab === 'leaves' ? leavesTab : tab === 'penalties' ? penaltiesTab
     : tab === 'bonuses' ? bonusesTab : null;
 
   const branchSelect = branches.length > 1 ? (
@@ -630,6 +643,7 @@ export default function Payroll() {
   const payrollTabs = [
     { key: 'month', label: 'مرتبات الشهر', count: data?.lines.length ?? null },
     { key: 'overtime', label: 'الإضافي والغياب' },
+    { key: 'commissions', label: 'العمولات' },
     { key: 'advances', label: 'السلف والذمم' },
     { key: 'leaves', label: 'الإجازات' },
     { key: 'penalties', label: 'الجزاءات' },
@@ -1096,13 +1110,21 @@ function SalaryCard({ employeeId, period, onClose, onSaved }: {
   const [preview, setPreview] = useState<any[] | null>(null);
   const [saving, setSaving] = useState(false);
   const [names, setNames] = useState<{ name: string; kind: string }[]>([]);
+  const [pools, setPools] = useState<{ value: number; label: string }[]>([]);
 
   const fill = (c: any) => {
     setCard(c);
     setBasic(c.current.basic !== null ? Number(c.current.basic) : undefined);
     setItems((c.current.items || []).map((i: any) => ({ name: i.name, kind: i.kind, amount: Number(i.amount) })));
     setInsurance(Number(c.insurance || 0) || undefined);
-    setRules((c.rules || []).map((r: any) => ({ basis: r.basis, pct: Number(r.pct) })));
+    setRules((c.rules || []).map((r: any) => ({
+      basis: r.basis, pct: Number(r.pct),
+      white_pct: r.white_pct !== null && r.white_pct !== undefined ? Number(r.white_pct) : null,
+      pools: r.pools || [], split: r.split || 1,
+    })));
+    api.get('/api/v1/hr/salary/pools', {
+      params: { year: period.year(), month: period.month() + 1, branch_id: c.employee.branch_id },
+    }).then((r) => setPools((r.data || []).map((p: any) => ({ value: p.id, label: p.name })))).catch(() => {});
   };
 
   const load = async () => {
@@ -1131,7 +1153,11 @@ function SalaryCard({ employeeId, period, onClose, onSaved }: {
         effective_from: from.format('YYYY-MM-DD'), basic: String(basic),
         items: items.filter((i) => i.name.trim()).map((i) => ({ ...i, amount: String(i.amount ?? 0) })),
         insurance: String(insurance ?? 0),
-        rules: rules.filter((r) => Number(r.pct) > 0).map((r) => ({ basis: r.basis, pct: String(r.pct) })),
+        rules: rules.filter((r) => Number(r.pct) > 0 || Number(r.white_pct) > 0).map((r) => ({
+          basis: r.basis, pct: String(r.pct || 0),
+          white_pct: r.basis === 'pool' && r.white_pct !== null && r.white_pct !== undefined ? String(r.white_pct) : null,
+          pools: r.basis === 'pool' ? r.pools || [] : [], split: r.basis === 'pool' ? r.split || 1 : 1,
+        })),
       });
       fill(res.data);
       message.success('تم حفظ كارت المرتب');
@@ -1153,6 +1179,9 @@ function SalaryCard({ employeeId, period, onClose, onSaved }: {
   const earnTotal = items.filter((i) => i.kind === 'earning').reduce((t, i) => t + n(i.amount), 0);
   const dedTotal = items.filter((i) => i.kind === 'deduction').reduce((t, i) => t + n(i.amount), 0);
   const nameOptions = useMemo(() => names.map((x) => ({ value: x.name, label: x.name })), [names]);
+  const basisOptions = BASIS.map((b) => ({
+    ...b, disabled: b.value !== 'pool' && !card?.employee.linked_user,
+  }));
 
   return (
     <TabModal open width={860} footer={null} destroyOnClose
@@ -1207,33 +1236,62 @@ function SalaryCard({ employeeId, period, onClose, onSaved }: {
         </Space>
 
         <Divider style={{ margin: '12px 0 6px' }}>العمولة</Divider>
-        {!card.employee.linked_user ? (
-          <Tag color="orange">الموظف غير مربوط بحساب مستخدم أو مندوب</Tag>
-        ) : (<>
-          {rules.map((r, i) => (
+        <>
+          {rules.map((r, i) => (r.basis === 'pool' ? (
+            <Row gutter={8} key={i} style={{ marginBottom: 6 }} align="middle">
+              <Col xs={12} md={5}>
+                <Select style={{ width: '100%' }} value={r.basis} options={basisOptions}
+                  onChange={(v) => setRule(i, { basis: v })} />
+              </Col>
+              <Col xs={12} md={7}>
+                <Select mode="multiple" style={{ width: '100%' }} placeholder="جهات التحصيل"
+                  value={r.pools || []} options={pools} onChange={(v) => setRule(i, { pools: v })}
+                  notFoundContent="لا توجد جهات تحصيل" />
+              </Col>
+              <Col xs={8} md={4}>
+                <InputNumber style={{ width: '100%' }} min={0} max={100} value={Number(r.pct) || undefined}
+                  placeholder="البولي" addonAfter="٪" onChange={(v) => setRule(i, { pct: v ?? 0 })} />
+              </Col>
+              <Col xs={8} md={4}>
+                <InputNumber style={{ width: '100%' }} min={0} max={100}
+                  value={r.white_pct !== null && r.white_pct !== undefined ? Number(r.white_pct) : undefined}
+                  placeholder="الأبيض" addonAfter="٪" onChange={(v) => setRule(i, { white_pct: v ?? null })} />
+              </Col>
+              <Col xs={6} md={3}>
+                <InputNumber style={{ width: '100%' }} min={1} precision={0} value={r.split || 1}
+                  addonBefore="÷" onChange={(v) => setRule(i, { split: v ?? 1 })} />
+              </Col>
+              <Col xs={2} md={1}>
+                <Button type="text" danger icon={<DeleteOutlined />} onClick={() => setRules(rules.filter((_, k) => k !== i))} />
+              </Col>
+            </Row>
+          ) : (
             <Row gutter={8} key={i} style={{ marginBottom: 6 }}>
+              <Col xs={12} md={5}>
+                <Select style={{ width: '100%' }} value={r.basis} options={basisOptions}
+                  onChange={(v) => setRule(i, { basis: v })} />
+              </Col>
               <Col xs={8} md={5}>
                 <InputNumber style={{ width: '100%' }} min={0} max={100} value={Number(r.pct) || undefined}
                   addonAfter="٪" onChange={(v) => setRule(i, { pct: v ?? 0 })} />
-              </Col>
-              <Col xs={12} md={8}>
-                <Select style={{ width: '100%' }} value={r.basis} options={BASIS}
-                  onChange={(v) => setRule(i, { basis: v })} />
               </Col>
               <Col xs={4} md={2}>
                 <Button type="text" danger icon={<DeleteOutlined />} onClick={() => setRules(rules.filter((_, k) => k !== i))} />
               </Col>
             </Row>
-          ))}
+          )))}
           <Space wrap>
-            <Button icon={<PlusOutlined />} onClick={() => setRules([...rules, { basis: 'sales', pct: 1 }])}>نسبة عمولة</Button>
+            <Button icon={<PlusOutlined />}
+              onClick={() => setRules([...rules, card.employee.linked_user ? { basis: 'sales', pct: 1 } : { basis: 'pool', pct: 0, pools: [], split: 1 }])}>
+              نسبة عمولة
+            </Button>
             {preview && preview.length ? preview.map((p) => (
               <span key={p.id}>
-                {p.basis_label} {period.format('YYYY/MM')}: <b>{money(p.base)}</b> ← عمولة <b>{money(p.amount)}</b>
+                {p.basis === 'pool' ? `تحصيل ${(p.pool_names || []).join('، ')}` : p.basis_label} {period.format('YYYY/MM')}: <b>{money(p.base)}</b> ← عمولة <b>{money(p.amount)}</b>
               </span>
             )) : null}
           </Space>
-        </>)}
+        </>
 
         <div style={{ marginTop: 14 }}>
           <Button type="primary" icon={<SaveOutlined />} loading={saving} onClick={save}>حفظ</Button>

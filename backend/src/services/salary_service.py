@@ -34,7 +34,12 @@ from src.models.hr_payroll_run import (
     PayrollRun,
     PayrollRunStatus,
 )
-from src.models.hr_salary import CommissionBasis, EmployeeCommissionRule
+from src.models.hr_salary import (
+    CommissionBasis,
+    CommissionPool,
+    CommissionPoolAmount,
+    EmployeeCommissionRule,
+)
 from src.models.ledger import Direction
 from src.models.sales import SalesInvoice, SalesReturn
 from src.models.voucher import Voucher, VoucherKind
@@ -59,6 +64,7 @@ STATUS_LABELS = {
 BASIS_LABELS = {
     CommissionBasis.sales: "المبيعات",
     CommissionBasis.collections: "التحصيلات",
+    CommissionBasis.pool: "تحصيل الجهات",
 }
 
 
@@ -137,15 +143,66 @@ def rules_of(db: Session, employee_id: int) -> list[EmployeeCommissionRule]:
         EmployeeCommissionRule.active.is_(True)).order_by(EmployeeCommissionRule.id)).all()
 
 
-def _rule_out(r: EmployeeCommissionRule) -> dict:
+def _pool_ids(text: str | None) -> list[int]:
+    return [int(x) for x in (text or "").split(",") if x.strip().isdigit()]
+
+
+def _rule_out(r: EmployeeCommissionRule, pool_names: dict | None = None) -> dict:
+    ids = _pool_ids(r.pools)
     return {"id": r.id, "basis": r.basis.value, "basis_label": BASIS_LABELS[r.basis],
-            "pct": str(r.pct), "notes": r.notes}
+            "pct": str(r.pct), "white_pct": str(r.white_pct) if r.white_pct is not None else None,
+            "pools": ids, "pool_names": [(pool_names or {}).get(i, "") for i in ids],
+            "split": r.split or 1, "notes": r.notes}
+
+
+def _pool_names(db: Session, rules: list[EmployeeCommissionRule]) -> dict:
+    ids = {i for r in rules for i in _pool_ids(r.pools)}
+    if not ids:
+        return {}
+    return dict(db.execute(select(CommissionPool.id, CommissionPool.name)
+                           .where(CommissionPool.id.in_(ids))).all())
+
+
+def _rules_out(db: Session, employee_id: int) -> list[dict]:
+    rules = rules_of(db, employee_id)
+    names = _pool_names(db, rules)
+    return [_rule_out(r, names) for r in rules]
+
+
+def _pool_amounts(db: Session, ids: list[int], year: int, month: int) -> tuple[Decimal, Decimal]:
+    poly = white = ZERO
+    for p, w in db.execute(select(CommissionPoolAmount.poly, CommissionPoolAmount.white).where(
+            CommissionPoolAmount.pool_id.in_(ids or [-1]), CommissionPoolAmount.year == year,
+            CommissionPoolAmount.month == month)).all():
+        poly += _d(p)
+        white += _d(w)
+    return poly, white
+
+
+def _pool_label(r: EmployeeCommissionRule, names: dict) -> str:
+    white = _d(r.white_pct) if r.white_pct is not None else _d(r.pct)
+    rate = (f"{_d(r.pct).normalize()}٪" if white == _d(r.pct)
+            else f"{_d(r.pct).normalize()}٪ بولي و{white.normalize()}٪ أبيض")
+    where = "، ".join(names.get(i, "") for i in _pool_ids(r.pools))
+    tail = f" ÷ {r.split}" if (r.split or 1) > 1 else ""
+    return f"عمولة {rate} من تحصيل {where}{tail}"
 
 
 def commission_preview(db: Session, employee: Employee, year: int, month: int) -> list[dict]:
     d1, d2 = date(year, month, 1), _month_end(year, month)
     out = []
-    for r in rules_of(db, employee.id):
+    rules = rules_of(db, employee.id)
+    names = _pool_names(db, rules)
+    for r in rules:
+        if r.basis == CommissionBasis.pool:
+            poly, white = _pool_amounts(db, _pool_ids(r.pools), year, month)
+            wp = _d(r.white_pct) if r.white_pct is not None else _d(r.pct)
+            amount = to_money((poly * _d(r.pct) + white * wp) / Decimal("100")
+                              / Decimal(r.split or 1))
+            out.append({**_rule_out(r, names), "base": str(to_money(poly + white)),
+                        "poly": str(poly), "white": str(white), "amount": str(amount),
+                        "label": _pool_label(r, names)[:120]})
+            continue
         if employee.user_id is None:
             base = None
         elif r.basis == CommissionBasis.sales:
@@ -154,7 +211,8 @@ def commission_preview(db: Session, employee: Employee, year: int, month: int) -
             base = collections_of(db, employee.user_id, d1, d2)
         amount = to_money(base * _d(r.pct) / Decimal("100")) if base is not None else ZERO
         out.append({**_rule_out(r), "base": str(base) if base is not None else None,
-                    "amount": str(amount)})
+                    "amount": str(amount),
+                    "label": f"عمولة {r.pct}٪ من {BASIS_LABELS[r.basis]}"[:120]})
     return out
 
 
@@ -189,7 +247,7 @@ def _card_summary(db: Session, emp: Employee, day: date) -> dict:
         "deductions": str(to_money(sum((_d(i["amount"]) for i in items
                                          if i["kind"] == "deduction"), ZERO))),
         "insurance": str(ins.amount) if ins else None,
-        "rules": [_rule_out(r) for r in rules_of(db, emp.id)],
+        "rules": _rules_out(db, emp.id),
         "linked_user": emp.user_id is not None,
         "items": items,
     }
@@ -233,7 +291,7 @@ def card(db: Session, employee: Employee) -> dict:
         },
         "insurance": str(getattr(insurance_service.amount_on(db, employee.id, today),
                                  "amount", "0") or "0"),
-        "rules": [_rule_out(r) for r in rules_of(db, employee.id)],
+        "rules": _rules_out(db, employee.id),
         "versions": [{
             "id": v.id, "effective_from": str(v.effective_from), "basic": str(v.basic),
             "items": _components(db, v), "locked": setup.used_by_posted_run(db, v),
@@ -343,36 +401,60 @@ def delete_card(db: Session, *, employee: Employee, actor_user_id: int) -> None:
     )
 
 
+def _rule_key(basis, pct, white, pools, split, note) -> str:
+    return f"{basis.value}:{pct}:{white}:{pools}:{split}:{note or ''}"
+
+
 def save_rules(db: Session, *, employee: Employee, rules: list[dict], actor_user_id: int) -> None:
     wanted = []
     for r in rules or []:
         pct = _d(r.get("pct"))
-        if pct <= 0:
-            continue
-        if pct > 100:
-            raise SalaryError("نسبة العمولة لا تتجاوز 100٪.")
+        white = _d(r.get("white_pct")) if r.get("white_pct") not in (None, "") else None
         try:
             basis = CommissionBasis(r.get("basis") or "sales")
         except ValueError as exc:
             raise SalaryError("أساس العمولة غير صحيح.") from exc
-        wanted.append((basis, pct, (r.get("notes") or "").strip()[:200] or None))
-    if wanted and employee.user_id is None:
+        if pct <= 0 and not white:
+            continue
+        if pct > 100 or (white or ZERO) > 100 or pct < 0 or (white or ZERO) < 0:
+            raise SalaryError("نسبة العمولة لا تتجاوز 100٪.")
+        pools = None
+        split = 1
+        if basis == CommissionBasis.pool:
+            ids = sorted({int(x) for x in (r.get("pools") or []) if str(x).isdigit()})
+            if not ids:
+                raise SalaryError("اختر جهة التحصيل التي تُحسب منها العمولة.")
+            found = db.scalars(select(CommissionPool.id).where(
+                CommissionPool.id.in_(ids), CommissionPool.active.is_(True))).all()
+            if len(found) != len(ids):
+                raise SalaryError("جهة التحصيل غير موجودة.")
+            pools = ",".join(str(i) for i in ids)
+            split = int(r.get("split") or 1)
+            if split < 1:
+                raise SalaryError("عدد التقسيم لا يقل عن واحد.")
+        else:
+            white = None
+        wanted.append((basis, pct, white, pools, split,
+                       (r.get("notes") or "").strip()[:200] or None))
+    if any(w[0] != CommissionBasis.pool for w in wanted) and employee.user_id is None:
         raise SalaryError("الموظف غير مربوط بحساب مستخدم أو مندوب، فلا يمكن حساب عمولته من البيع.")
     old = rules_of(db, employee.id)
-    before = [(r.basis, _d(r.pct), r.notes) for r in old]
-    if before == wanted:
+    before = [_rule_key(r.basis, _d(r.pct), _d(r.white_pct) if r.white_pct is not None else None,
+                        r.pools, r.split or 1, r.notes) for r in old]
+    after = [_rule_key(*w) for w in wanted]
+    if before == after:
         return
     for r in old:
         r.active = False
-    for basis, pct, note in wanted:
+    for basis, pct, white, pools, split, note in wanted:
         db.add(EmployeeCommissionRule(employee_id=employee.id, basis=basis, pct=pct,
+                                      white_pct=white, pools=pools, split=split,
                                       notes=note, actor_user_id=actor_user_id))
     db.flush()
     audit_service.record(
         db, action="employee_commission.set", actor_user_id=actor_user_id,
         entity_type="employee", entity_id=employee.id,
-        before={"rules": [f"{b.value}:{p}" for b, p, _ in before]},
-        after={"rules": [f"{b.value}:{p}" for b, p, _ in wanted]},
+        before={"rules": before}, after={"rules": after},
     )
 
 
@@ -500,8 +582,7 @@ def _build_line(db: Session, run: PayrollRun, emp: Employee, manual: dict) -> Pa
         for p in preview:
             if _d(p["amount"]):
                 details.append(dict(
-                    source=DetailSource.commission,
-                    label=f"عمولة {p['pct']}٪ من {p['basis_label']}"[:120],
+                    source=DetailSource.commission, label=p["label"],
                     kind=DetailKind.earning, quantity=_d(p["base"]), amount=_d(p["amount"])))
 
     bonuses = penalties = other_earn = other_ded = ZERO
@@ -1270,3 +1351,85 @@ def delete_leave(db: Session, *, leave_id: int, actor_user_id: int) -> None:
     except leave_service.LeaveError as exc:
         raise SalaryError(str(exc)) from exc
     _refresh_employee(db, emp, months)
+
+
+def pools_of(db: Session, *, branch_id: int, year: int, month: int) -> list[dict]:
+    pools = db.scalars(select(CommissionPool).where(
+        CommissionPool.branch_id == branch_id, CommissionPool.active.is_(True))
+        .order_by(CommissionPool.sort_order, CommissionPool.id)).all()
+    amounts = {a.pool_id: a for a in db.scalars(select(CommissionPoolAmount).where(
+        CommissionPoolAmount.pool_id.in_([p.id for p in pools] or [-1]),
+        CommissionPoolAmount.year == year, CommissionPoolAmount.month == month)).all()}
+    out = []
+    for p in pools:
+        a = amounts.get(p.id)
+        poly, white = (_d(a.poly), _d(a.white)) if a else (ZERO, ZERO)
+        out.append({"id": p.id, "name": p.name, "poly": str(poly), "white": str(white),
+                    "total": str(to_money(poly + white))})
+    return out
+
+
+def _pool_users(db: Session, pool_id: int) -> list[str]:
+    names = []
+    for r, emp in db.execute(select(EmployeeCommissionRule, Employee)
+                             .join(Employee, Employee.id == EmployeeCommissionRule.employee_id)
+                             .where(EmployeeCommissionRule.active.is_(True),
+                                    EmployeeCommissionRule.basis == CommissionBasis.pool)).all():
+        if pool_id in _pool_ids(r.pools):
+            names.append(emp.name)
+    return names
+
+
+def save_pools(db: Session, *, branch_id: int, year: int, month: int, rows: list[dict],
+               actor_user_id: int) -> None:
+    _check_month(year, month)
+    run = current_run(db, branch_id=branch_id, year=year, month=month)
+    if run is not None and run.status == PayrollRunStatus.posted:
+        raise SalaryError("مرتبات هذا الشهر مُرحّلة — ألغِ الترحيل أولاً.")
+    existing = {p.id: p for p in db.scalars(select(CommissionPool).where(
+        CommissionPool.branch_id == branch_id, CommissionPool.active.is_(True))).all()}
+    keep: set[int] = set()
+    seen: set[str] = set()
+    for order, row in enumerate(rows or []):
+        name = (row.get("name") or "").strip()[:80]
+        if not name:
+            raise SalaryError("اكتب اسم الجهة.")
+        if name in seen:
+            raise SalaryError(f"الجهة «{name}» مكررة.")
+        seen.add(name)
+        poly, white = to_money(_d(row.get("poly"))), to_money(_d(row.get("white")))
+        if poly < 0 or white < 0:
+            raise SalaryError("لا يمكن إدخال قيمة سالبة.")
+        pid = row.get("id")
+        pool = existing.get(int(pid)) if pid else None
+        if pool is None:
+            pool = CommissionPool(branch_id=branch_id, name=name, sort_order=order)
+            db.add(pool)
+            db.flush()
+        else:
+            pool.name = name
+            pool.sort_order = order
+        keep.add(pool.id)
+        amount = db.scalar(select(CommissionPoolAmount).where(
+            CommissionPoolAmount.pool_id == pool.id, CommissionPoolAmount.year == year,
+            CommissionPoolAmount.month == month))
+        if amount is None:
+            db.add(CommissionPoolAmount(pool_id=pool.id, year=year, month=month, poly=poly,
+                                        white=white, actor_user_id=actor_user_id))
+        else:
+            amount.poly, amount.white, amount.actor_user_id = poly, white, actor_user_id
+    for pid, pool in existing.items():
+        if pid in keep:
+            continue
+        users = _pool_users(db, pid)
+        if users:
+            raise SalaryError(f"لا يمكن حذف «{pool.name}» — عليها عمولة {'، '.join(users)}.")
+        pool.active = False
+    db.flush()
+    audit_service.record(db, action="commission_pool.save", actor_user_id=actor_user_id,
+                         entity_type="branch", entity_id=branch_id,
+                         after={"period": f"{year}-{month:02d}",
+                                "rows": [{"name": r.get("name"), "poly": str(r.get("poly")),
+                                          "white": str(r.get("white"))} for r in rows or []]})
+    if run is not None:
+        calculate(db, branch_id=branch_id, year=year, month=month, actor_user_id=actor_user_id)

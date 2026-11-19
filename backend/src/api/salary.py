@@ -111,6 +111,9 @@ class ItemIn(BaseModel):
 class RuleIn(BaseModel):
     basis: str = "sales"
     pct: float | str | None = None
+    white_pct: float | str | None = None
+    pools: list[int] = []
+    split: int = 1
     notes: str | None = None
 
 
@@ -167,6 +170,48 @@ def month(
     db: Session = Depends(get_db),
 ) -> dict:
     return svc.month_out(db, branch_id=_branch(current, branch_id), year=year, month=month)
+
+
+@router.get("/pools")
+def pools(
+    year: int,
+    month: int,
+    branch_id: int | None = Query(None),
+    current: CurrentUser = Depends(require_capability(CAP_SALARY_VIEW)),
+    db: Session = Depends(get_db),
+) -> list[dict]:
+    return svc.pools_of(db, branch_id=_branch(current, branch_id), year=year, month=month)
+
+
+class PoolIn(BaseModel):
+    id: int | None = None
+    name: str
+    poly: float | str | None = None
+    white: float | str | None = None
+
+
+class PoolsIn(BaseModel):
+    year: int
+    month: int
+    branch_id: int | None = None
+    rows: list[PoolIn] = []
+
+
+@router.put("/pools")
+def save_pools(
+    body: PoolsIn,
+    current: CurrentUser = Depends(require_capability(CAP_PAYROLL_POST)),
+    db: Session = Depends(get_db),
+) -> dict:
+    branch = _branch(current, body.branch_id)
+    try:
+        svc.save_pools(db, branch_id=branch, year=body.year, month=body.month,
+                       rows=[r.model_dump() for r in body.rows], actor_user_id=current.id)
+    except SalaryError as exc:
+        _raise(exc)
+    db.commit()
+    return {"pools": svc.pools_of(db, branch_id=branch, year=body.year, month=body.month),
+            "month": svc.month_out(db, branch_id=branch, year=body.year, month=body.month)}
 
 
 class MonthIn(BaseModel):
