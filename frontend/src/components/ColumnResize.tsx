@@ -54,51 +54,6 @@ function colsAt(table: HTMLElement, index: number): HTMLElement[] {
     .filter((c): c is HTMLElement => !!c);
 }
 
-function leafWidths(root: Element, count: number): number[] | null {
-  const measure = root.querySelector<HTMLElement>('.ant-table-body tr.ant-table-measure-row, .ant-table-tbody tr.ant-table-measure-row');
-  const candidates: (HTMLElement | null)[] = [
-    measure,
-    root.querySelector<HTMLElement>('.ant-table-tbody > tr.ant-table-row'),
-    root.querySelector<HTMLElement>('.ant-table-thead > tr:last-child'),
-  ];
-  for (const row of candidates) {
-    if (!row) continue;
-    const cells = [...row.children] as HTMLTableCellElement[];
-    if (cells.length < count || cells.some((c) => (c.colSpan || 1) > 1)) continue;
-    const w = cells.slice(0, count).map((c) => c.getBoundingClientRect().width);
-    if (w.every((x) => x > 0)) return w;
-  }
-  return null;
-}
-
-function freeze(root: Element): number | null {
-  const tables = [...root.querySelectorAll<HTMLElement>('table')];
-  const groups = tables.map((t) => t.querySelector(':scope > colgroup'));
-  const count = Math.min(...groups.map((g) => (g ? [...g.children]
-    .filter((c) => !(c as HTMLElement).classList.contains('ant-table-cell-scrollbar')).length : 0)));
-  if (!count || !Number.isFinite(count)) return null;
-  const widths = leafWidths(root, count);
-  if (!widths) return null;
-  const total = Math.round(widths.reduce((a, b) => a + b, 0));
-  groups.forEach((g) => {
-    if (!g) return;
-    widths.forEach((w, i) => {
-      const col = g.children[i] as HTMLElement | undefined;
-      if (col) col.style.width = `${Math.round(w)}px`;
-    });
-  });
-  tables.forEach((t) => {
-    t.style.tableLayout = 'fixed';
-    t.style.width = `${total}px`;
-    t.style.minWidth = '';
-  });
-  return total;
-}
-
-function setTableWidth(root: Element, width: number) {
-  root.querySelectorAll<HTMLElement>('table').forEach((t) => { t.style.width = `${width}px`; });
-}
-
 function leafIndex(th: HTMLElement): number {
   if ((th as HTMLTableCellElement).colSpan > 1) return -1;
   const thead = th.closest('thead');
@@ -129,8 +84,33 @@ function onGrip(th: HTMLElement, clientX: number): boolean {
   return rtl ? clientX - r.left <= GRIP : r.right - clientX <= GRIP;
 }
 
+function gripTarget(e: { target: EventTarget | null; clientX: number; clientY: number }): HTMLElement | null {
+  const th = (e.target as HTMLElement)?.closest?.('.ant-table-thead th') as HTMLElement | null;
+  if (!th) return null;
+  if (onGrip(th, e.clientX)) return th;
+  const r = th.getBoundingClientRect();
+  const rtl = getComputedStyle(th).direction === 'rtl';
+  const near = rtl ? r.right - e.clientX <= GRIP : e.clientX - r.left <= GRIP;
+  if (!near) return null;
+  const probe = document.elementFromPoint(rtl ? r.right + 2 : r.left - 2, e.clientY);
+  const other = (probe as HTMLElement | null)?.closest?.('.ant-table-thead th') as HTMLElement | null;
+  if (!other || other === th || other.closest('thead') !== th.closest('thead')) return null;
+  return (other as HTMLTableCellElement).colSpan > 1 ? null : other;
+}
+
 function indexOf(th: HTMLElement): number {
   return leafIndex(th);
+}
+
+function setWidth(table: HTMLElement, index: number, w: number) {
+  colsAt(table, index).forEach((col) => {
+    if (col.style.width !== `${w}px`) col.style.width = `${w}px`;
+    if (col.style.minWidth !== `${w}px`) col.style.minWidth = `${w}px`;
+  });
+}
+
+function clearWidth(table: HTMLElement, index: number) {
+  colsAt(table, index).forEach((col) => { col.style.width = ''; col.style.minWidth = ''; });
 }
 
 function applyStored(widths: Widths) {
@@ -142,11 +122,7 @@ function applyStored(widths: Widths) {
       if (!w) return;
       const i = leafIndex(cell);
       if (i < 0) return;
-      const root = table.closest('.ant-table');
-      root?.querySelectorAll('table').forEach((t) => {
-        (t as HTMLElement).style.tableLayout = 'fixed';
-      });
-      colsAt(table, i).forEach((col) => { col.style.width = `${w}px`; });
+      setWidth(table, i, w);
     });
   });
 }
@@ -182,22 +158,15 @@ export default function ColumnResizeProvider({ children }: { children: React.Rea
   useEffect(() => {
     let widths = shared;
     let drag: { th: HTMLElement; table: HTMLElement; index: number; startX: number;
-      startWidth: number; key: string; root: Element | null; tableWidth: number | null } | null = null;
+      startWidth: number; key: string } | null = null;
     let pending: { th: HTMLElement; table: HTMLElement; index: number; startX: number } | null = null;
     let swallowClick = false;
 
     const begin = (p: NonNullable<typeof pending>) => {
-      const root = p.table.closest('.ant-table');
-      const startWidth = p.th.getBoundingClientRect().width;
-      const tableWidth = root ? freeze(root) : null;
-      if (!tableWidth) {
-        root?.querySelectorAll('table').forEach((t) => {
-          (t as HTMLElement).style.tableLayout = 'fixed';
-        });
-      }
+      const startWidth = Math.round(p.th.getBoundingClientRect().width);
       drag = {
         th: p.th, table: p.table, index: p.index, startX: p.startX,
-        startWidth, key: keyFor(p.th), root, tableWidth,
+        startWidth, key: keyFor(p.th),
       };
       document.body.style.userSelect = 'none';
       document.body.style.cursor = 'col-resize';
@@ -211,14 +180,13 @@ export default function ColumnResizeProvider({ children }: { children: React.Rea
       }
       if (!drag) {
         const th = (e.target as HTMLElement)?.closest?.('.ant-table-thead th') as HTMLElement | null;
-        if (th) th.style.cursor = onGrip(th, e.clientX) ? 'col-resize' : '';
+        if (th) th.style.cursor = gripTarget(e) ? 'col-resize' : '';
         return;
       }
       const rtl = getComputedStyle(drag.th).direction === 'rtl';
       const delta = rtl ? drag.startX - e.clientX : e.clientX - drag.startX;
       const next = Math.max(MIN_WIDTH, Math.round(drag.startWidth + delta));
-      colsAt(drag.table, drag.index).forEach((col) => { col.style.width = `${next}px`; });
-      if (drag.root && drag.tableWidth) setTableWidth(drag.root, drag.tableWidth + next - drag.startWidth);
+      setWidth(drag.table, drag.index, next);
       syncHeaders();
       widths[drag.key] = next;
       emit();
@@ -245,8 +213,8 @@ export default function ColumnResizeProvider({ children }: { children: React.Rea
 
     const onDown = (e: PointerEvent) => {
       if (e.button !== 0) return;
-      const th = (e.target as HTMLElement)?.closest?.('.ant-table-thead th') as HTMLElement | null;
-      if (!th || !onGrip(th, e.clientX)) return;
+      const th = gripTarget(e);
+      if (!th) return;
       const table = th.closest('table') as HTMLElement | null;
       const index = indexOf(th);
       if (!table || index < 0) return;
@@ -256,13 +224,13 @@ export default function ColumnResizeProvider({ children }: { children: React.Rea
     };
 
     const onDoubleClick = (e: MouseEvent) => {
-      const th = (e.target as HTMLElement)?.closest?.('.ant-table-thead th') as HTMLElement | null;
-      if (!th || !onGrip(th, e.clientX)) return;
+      const th = gripTarget(e);
+      if (!th) return;
       const table = th.closest('table') as HTMLElement | null;
       const index = indexOf(th);
       if (!table || index < 0) return;
       delete widths[keyFor(th)];
-      colsAt(table, index).forEach((col) => { col.style.width = ''; });
+      clearWidth(table, index);
       save(widths);
       emit();
       e.preventDefault();
