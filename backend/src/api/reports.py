@@ -115,10 +115,12 @@ def trade_analysis_report(
     governorate_id: str | None = Query(None), item_id: str | None = Query(None),
     category: str | None = Query(None), price_tier: str | None = Query(None),
     kind: str | None = Query(None, description="sale | return"),
-    include_bonus: bool = Query(True),
+    include_bonus: str = Query("true", description="true | false | only"),
+    family: str | None = Query(None),
     current: CurrentUser = Depends(require_capability(CAP_SALES_READ)),
     db: Session = Depends(get_db),
 ):
+    bonus = "only" if include_bonus == "only" else include_bonus.lower() not in ("false", "0", "no")
     scoped = branch_scope.visible_branch_id(current)
     try:
         return profit_guard.guard(current, trade_analysis.analyse(
@@ -128,7 +130,7 @@ def trade_analysis_report(
             warehouse_id=warehouse_id, party_id=party_id, party_type=party_type,
             rep_id=rep_id, territory_id=territory_id, governorate_id=governorate_id,
             item_id=item_id, category=category, price_tier=price_tier, kind=kind,
-            include_bonus=include_bonus))
+            include_bonus=bonus, family=family))
     except trade_analysis.TradeAnalysisError as exc:
         raise HTTPException(422, {"code": "report_invalid", "message": str(exc)}) from exc
 

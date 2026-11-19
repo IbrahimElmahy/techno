@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, Button, Checkbox, Segmented, Select, Table, TreeSelect, message } from 'antd';
+import { Alert, Button, Segmented, Select, Table, TreeSelect, message } from 'antd';
 import { BarChartOutlined, ClearOutlined, PrinterOutlined, ReloadOutlined } from '@ant-design/icons';
 import { useSearchParams } from 'react-router-dom';
 import dayjs, { Dayjs } from 'dayjs';
@@ -32,12 +32,12 @@ const DIM_LABEL = (side: Side): Record<Dim, string> => ({
   rep: 'المندوب', territory: 'المنطقة', main_territory: 'المنطقة الرئيسية',
   governorate: 'المحافظة', markaz: 'المدينة', branch: 'الفرع', warehouse: 'المخزن',
   item: 'الصنف', category: 'الفئة', main_category: 'الفئة الرئيسية', item_kind: 'نوع الصنف',
-  price_tier: 'شريحة السعر', kind: 'نوع الحركة',
+  price_tier: 'شريحة السعر', kind: 'نوع الحركة', family: 'نوع الفاتورة',
 });
 
 const SIDE_DIMS: Record<Side, Dim[]> = {
   sales: ['document', 'party', 'party_type', 'rep', 'territory', 'main_territory', 'governorate',
-    'markaz', 'branch', 'warehouse', 'item', 'category', 'main_category', 'item_kind', 'price_tier', 'kind'],
+    'markaz', 'branch', 'warehouse', 'item', 'category', 'main_category', 'item_kind', 'price_tier', 'kind', 'family'],
   purchases: ['document', 'party', 'party_type', 'rep', 'governorate', 'branch', 'warehouse',
     'item', 'category', 'main_category', 'item_kind', 'kind'],
 };
@@ -108,7 +108,7 @@ export default function TradeAnalysis({ side: fixedSide }: { side?: Side }) {
     [pr.period === 'month' || pr.period === 'year' ? dayjs().startOf('year') : dayjs().startOf('month'), dayjs()];
   const [range, setRange] = useState<[Dayjs, Dayjs] | null>(() => rangeFor(preset));
   const [f, setF] = useState<Record<string, any>>({});
-  const [includeBonus, setIncludeBonus] = useState(true);
+  const [includeBonus, setIncludeBonus] = useState<string>(preset.bonus || 'false');
 
   const [rows, setRows] = useState<Row[]>([]);
   const [totals, setTotals] = useState<Row | null>(null);
@@ -127,6 +127,7 @@ export default function TradeAnalysis({ side: fixedSide }: { side?: Side }) {
     setPeriod(preset.period || 'none');
     setLayout(preset.layout || 'table');
     setKind(preset.kind || 'net');
+    setIncludeBonus(preset.bonus || 'false');
     setRange(rangeFor(preset));
   }, [preset.key, side]);
 
@@ -161,7 +162,7 @@ export default function TradeAnalysis({ side: fixedSide }: { side?: Side }) {
     const my = ++seq.current;
     setLoading(true);
     try {
-      const p: Record<string, any> = { side, dims: effectiveDims.join(','), include_bonus: includeBonus };
+      const p: Record<string, any> = { side, dims: effectiveDims.join(','), include_bonus: side === 'sales' ? includeBonus : 'true' };
       if (range?.[0]) p.date_from = range[0].format('YYYY-MM-DD');
       if (range?.[1]) p.date_to = range[1].format('YYYY-MM-DD');
       if (kind !== 'net') p.kind = kind;
@@ -194,6 +195,8 @@ export default function TradeAnalysis({ side: fixedSide }: { side?: Side }) {
             <a onClick={() => openDoc(DOC_OF[side][r.document_kind] || (side === 'sales' ? 'invoice' : 'purchase'), r.document_id)}>{v}</a>) },
         { title: 'التاريخ', dataIndex: 'document_date', key: 'document_date', width: 110 },
         { title: 'النوع', dataIndex: 'document_kind', key: 'document_kind', width: 80 },
+        ...(side === 'sales' && !list.includes('family') ? [{ title: dimLabel.family, dataIndex: 'document_family', key: 'document_family', width: 100,
+          render: (v: string | null) => v || '—' }] : []),
         ...(!list.includes('party') ? [{ title: dimLabel.party, dataIndex: 'document_party', key: 'document_party' }] : []),
         ...(!list.includes('rep') ? [{ title: 'المندوب', dataIndex: 'document_rep', key: 'document_rep' }] : []),
       ];
@@ -419,11 +422,18 @@ export default function TradeAnalysis({ side: fixedSide }: { side?: Side }) {
               ['semi_wholesale', 'نصف جملة'], ['consumer', 'مستهلك']].map(([value, label]) => ({ value, label }))} />
         )}
         {side === 'sales' && (
-          <Checkbox checked={includeBonus} onChange={(e) => setIncludeBonus(e.target.checked)}>فواتير البونص</Checkbox>
+          <Select {...MULTI} placeholder="نوع الفاتورة" value={picked(f, 'family')} style={{ minWidth: 140 }}
+            onChange={(v) => setFilter('family', v)}
+            options={['بولي', 'أبيض'].map((v) => ({ value: v, label: v }))} />
+        )}
+        {side === 'sales' && (
+          <Select value={includeBonus} style={{ minWidth: 140 }} onChange={setIncludeBonus}
+            options={[{ value: 'false', label: 'بدون البونص' }, { value: 'true', label: 'مع البونص' },
+              { value: 'only', label: 'البونص فقط' }]} />
         )}
         <Button className="sl-f-clear" icon={<ClearOutlined />}
           onClick={() => { setF({}); setRange(rangeFor(preset)); setDims(preset.dims);
-            setPeriod(preset.period || 'none'); setKind(preset.kind || 'net'); }}>مسح</Button>
+            setPeriod(preset.period || 'none'); setKind(preset.kind || 'net'); setIncludeBonus(preset.bonus || 'false'); }}>مسح</Button>
       </>)}
       summary={totals && (<>
         <ListStat label={side === 'sales' ? 'المبيعات' : 'المشتريات'} value={money(totals.sales_value)} />

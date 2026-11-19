@@ -29,7 +29,7 @@ SIDES = ("sales", "purchases")
 DIMENSIONS = {
     "sales": ("document", "day", "month", "year", "party", "party_type", "rep", "territory",
               "main_territory", "governorate", "markaz", "branch", "warehouse", "item",
-              "category", "main_category", "item_kind", "price_tier", "kind"),
+              "category", "main_category", "item_kind", "price_tier", "kind", "family"),
     "purchases": ("document", "day", "month", "year", "party", "party_type", "rep",
                   "governorate", "branch", "warehouse", "item", "category", "main_category",
                   "item_kind", "kind"),
@@ -56,7 +56,7 @@ def _ratio(net, gross):
     return case((gross > 0, cast(net, Numeric(30, 10)) / gross), else_=literal(1))
 
 
-def _sales_union(include_bonus: bool):
+def _sales_union(include_bonus: bool | str):
     si, sl = SalesInvoice, SalesInvoiceLine
     sr, rl = SalesReturn, SalesReturnLine
     one = literal(1)
@@ -76,10 +76,13 @@ def _sales_union(include_bonus: bool):
             case((and_(sl.unit_price > 0, sl.unit_cost > sl.unit_price * 3), None),
                  else_=sl.unit_cost * sl.quantity).label("cost"),
             si.is_bonus.label("is_bonus"),
+            si.family.label("family"),
         )
         .join(si, si.id == sl.invoice_id)
     )
-    if not include_bonus:
+    if include_bonus == "only":
+        sale = sale.where(si.is_bonus.is_(True))
+    elif not include_bonus:
         sale = sale.where(or_(si.is_bonus.is_(None), si.is_bonus.is_(False)))
     ret_amount = func.coalesce(
         rl.line_total,
@@ -101,10 +104,13 @@ def _sales_union(include_bonus: bool):
             case((and_(func.coalesce(rl.unit_price, 0) > 0, rl.unit_cost > rl.unit_price * 3), None),
                  else_=-rl.unit_cost * rl.quantity).label("cost"),
             cast(literal(None), Boolean).label("is_bonus"),
+            sr.family.label("family"),
         )
         .join(sr, sr.id == rl.return_id)
         .where(sr.reversed_at.is_(None))
     )
+    if include_bonus == "only":
+        return sale.subquery("ln")
     return union_all(sale, ret).subquery("ln")
 
 
@@ -127,6 +133,7 @@ def _purchases_union():
                 partition_by=pl.invoice_id))).label("amount"),
             cast(literal(None), Numeric(18, 2)).label("cost"),
             cast(literal(None), Boolean).label("is_bonus"),
+            cast(literal(None), String(40)).label("family"),
         )
         .join(pi, pi.id == pl.invoice_id)
     )
@@ -147,6 +154,7 @@ def _purchases_union():
                 partition_by=rl.return_id))).label("amount"),
             cast(literal(None), Numeric(18, 2)).label("cost"),
             cast(literal(None), Boolean).label("is_bonus"),
+            cast(literal(None), String(40)).label("family"),
         )
         .join(pr, pr.id == rl.return_id)
         .outerjoin(orig, orig.id == pr.purchase_invoice_id)
@@ -173,11 +181,13 @@ def analyse(
     category=None,
     price_tier=None,
     kind: str | None = None,
-    include_bonus: bool = True,
+    include_bonus: bool | str = True,
+    family=None,
 ) -> dict:
     branch_id, warehouse_id, party_id = mf.ids(branch_id), mf.ids(warehouse_id), mf.ids(party_id)
     rep_id, territory_id, governorate_id = mf.ids(rep_id), mf.ids(territory_id), mf.ids(governorate_id)
     item_id, party_type, price_tier = mf.ids(item_id), mf.strs(party_type), mf.strs(price_tier)
+    family = mf.strs(family)
     if side not in SIDES:
         raise TradeAnalysisError("side")
     dims = [d for d in (dims or []) if d]
@@ -216,6 +226,7 @@ def analyse(
     exprs["main_category"] = (Item.category, None)
     exprs["item_kind"] = (case((Item.name.op("~")(PIPE_PATTERN), "مواسير"), else_="قطع"), None)
     exprs["kind"] = (ln.c.kind, None)
+    exprs["family"] = (ln.c.family, None)
 
     qty = func.sum(ln.c.qty)
     sold_qty = func.sum(case((ln.c.kind == "sale", ln.c.qty), else_=0))
@@ -246,6 +257,7 @@ def analyse(
         cols.append(func.max(ln.c.kind).label("document__kind"))
         cols.append(func.max(party.name).label("document__party"))
         cols.append(func.max(User.full_name).label("document__rep"))
+        cols.append(func.max(ln.c.family).label("document__family"))
     stmt = select(*cols, qty.label("qty"), sold_qty.label("sold_qty"),
                   returned_qty.label("returned_qty"), gross.label("gross"),
                   sales_value.label("sales_value"), returns_value.label("returns_value"),
@@ -294,6 +306,8 @@ def analyse(
         stmt = stmt.where(ln.c.tier.in_(price_tier))
     if kind in ("sale", "return"):
         stmt = stmt.where(ln.c.kind == kind)
+    if family and sales:
+        stmt = stmt.where(ln.c.family.in_(family))
 
     if group:
         stmt = stmt.group_by(*group)
@@ -314,7 +328,7 @@ def analyse(
                     "price_tier": "غير محدد", "rep": "بدون مندوب", "territory": "بدون منطقة",
                     "main_territory": "بدون منطقة", "governorate": "بدون محافظة",
                     "markaz": "بدون مدينة", "branch": "بدون فرع",
-                    "warehouse": "غير محدد"}.get(d, "—")
+                    "warehouse": "غير محدد", "family": "غير محدد"}.get(d, "—")
         if d in ("day",):
             return str(key)[:10]
         if d == "month":
@@ -332,7 +346,7 @@ def analyse(
             return warehouses.get(key, f"عهدة #{key}")
         if d == "kind":
             return KIND_LABELS.get(key, key)
-        if d in ("markaz", "item_kind"):
+        if d in ("markaz", "item_kind", "family"):
             return str(key)
         lab = row.get(f"{d}__l")
         return lab if lab else f"#{key}"
@@ -359,6 +373,7 @@ def analyse(
             out["document_kind"] = KIND_LABELS.get(r["document__kind"], r["document__kind"])
             out["document_party"] = r["document__party"]
             out["document_rep"] = r["document__rep"]
+            out["document_family"] = r["document__family"]
         tk = tuple(keys)
         cur = merged.get(tk)
         if cur is None:

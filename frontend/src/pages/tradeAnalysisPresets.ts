@@ -1,10 +1,11 @@
 export type Dim = 'document' | 'day' | 'month' | 'year' | 'party' | 'party_type' | 'rep' | 'territory'
   | 'main_territory' | 'governorate' | 'markaz' | 'branch' | 'warehouse' | 'item' | 'category'
-  | 'main_category' | 'item_kind' | 'price_tier' | 'kind';
+  | 'main_category' | 'item_kind' | 'price_tier' | 'kind' | 'family';
 export type Period = 'none' | 'day' | 'month' | 'year';
 export type Layout = 'table' | 'pivot';
 
-export interface Preset { key: string; label: string; dims: Dim[]; period?: Period; layout?: Layout; kind?: string; group: string }
+export type Bonus = 'true' | 'false' | 'only';
+export interface Preset { key: string; label: string; dims: Dim[]; period?: Period; layout?: Layout; kind?: string; bonus?: Bonus; group: string }
 
 const P = (group: string, key: string, label: string, dims: Dim[], period: Period = 'none',
   extra: Partial<Preset> = {}): Preset => ({ group, key, label, dims, period, ...extra });
@@ -20,6 +21,13 @@ export const SALES_PRESETS: Preset[] = [
   P('تقارير مبيعات', 'net-items', 'مجمع اصناف مبيعات بالصافى = ارباح', ['item']),
   P('تقارير مبيعات', 'returns', 'مردودات المبيعات', ['document'], 'none', { kind: 'return' }),
   P('تقارير مبيعات', 'returns-items', 'مردودات المبيعات اصناف', ['item'], 'none', { kind: 'return' }),
+
+  P('تقارير البونص', 'bonus-invoices', 'فواتير البونص', ['document'], 'none', { bonus: 'only' }),
+  P('تقارير البونص', 'bonus-items', 'أصناف البونص', ['item'], 'none', { bonus: 'only' }),
+  P('تقارير البونص', 'bonus-customers', 'بونص العملاء', ['party'], 'none', { bonus: 'only' }),
+  P('تقارير البونص', 'bonus-customer-item', 'بونص عميل = صنف', ['party', 'item'], 'none', { bonus: 'only' }),
+  P('تقارير البونص', 'bonus-reps', 'بونص المناديب', ['rep'], 'none', { bonus: 'only' }),
+  P('تقارير البونص', 'bonus-monthly', 'بونص شهري', [], 'month', { bonus: 'only' }),
 
   P('تقارير مبيعات مندوبين', 'reps', 'ملخص مندوبين', ['rep']),
   P('تقارير مبيعات مندوبين', 'rep-invoices', 'تحليلى فواتير مندوب', ['rep', 'document']),
