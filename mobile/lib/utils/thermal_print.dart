@@ -205,5 +205,5 @@ Future<List<int>> _render(Future<Uint8List> Function(PdfPageFormat format) build
     }
   }
   out.add(const [0x1B, 0x64, 0x04, 0x1D, 0x56, 0x42, 0x00]);
-  return out.takeBytes();
+  return List<int>.of(out.takeBytes(), growable: false);
 }
