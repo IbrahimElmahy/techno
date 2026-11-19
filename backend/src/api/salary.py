@@ -122,6 +122,9 @@ class RuleIn(BaseModel):
     white_pct: float | str | None = None
     pools: list[int] = []
     split: int = 1
+    inspection_rate: float | str | None = None
+    plumber_rate: float | str | None = None
+    all_techs: bool = False
     notes: str | None = None
 
 

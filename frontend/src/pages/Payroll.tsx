@@ -35,6 +35,7 @@ import { addNew } from '../components/QuickCreate';
 interface Rule {
   id?: number; basis: string; basis_label?: string; pct: string | number;
   white_pct?: string | number | null; pools?: number[]; pool_names?: string[]; split?: number;
+  inspection_rate?: string | number | null; plumber_rate?: string | number | null; all_techs?: boolean;
 }
 
 interface EmpRow {
@@ -110,6 +111,7 @@ const BASIS = [
   { value: 'sales', label: 'من المبيعات' },
   { value: 'collections', label: 'من التحصيلات' },
   { value: 'pool', label: 'من تحصيل الجهات' },
+  { value: 'care', label: 'خدمة العملاء' },
 ];
 const STATUS_COLOR: Record<string, string> = { draft: 'default', posted: 'green', reversed: 'red' };
 
@@ -120,6 +122,12 @@ const fail = (err: any, fallback: string) => {
 
 const ruleText = (rules: Rule[]) => rules
   .map((r) => {
+    if (r.basis === 'care') {
+      const parts = [];
+      if (Number(r.inspection_rate)) parts.push(`${Number(r.inspection_rate)} للمعاينة${r.all_techs ? ' (كل الفنيين)' : ''}`);
+      if (Number(r.plumber_rate)) parts.push(`${Number(r.plumber_rate)} للفني`);
+      return parts.join(' و');
+    }
     if (r.basis !== 'pool') return `${Number(r.pct)}٪ ${r.basis === 'collections' ? 'من التحصيلات' : 'من المبيعات'}`;
     const w = r.white_pct !== null && r.white_pct !== undefined ? Number(r.white_pct) : Number(r.pct);
     const rate = w === Number(r.pct) ? `${Number(r.pct)}٪` : `${Number(r.pct)}٪ بولي و${w}٪ أبيض`;
@@ -1118,6 +1126,9 @@ function SalaryCard({ employeeId, period, onClose, onSaved }: {
       basis: r.basis, pct: Number(r.pct),
       white_pct: r.white_pct !== null && r.white_pct !== undefined ? Number(r.white_pct) : null,
       pools: r.pools || [], split: r.split || 1,
+      inspection_rate: r.inspection_rate !== null && r.inspection_rate !== undefined ? Number(r.inspection_rate) : null,
+      plumber_rate: r.plumber_rate !== null && r.plumber_rate !== undefined ? Number(r.plumber_rate) : null,
+      all_techs: !!r.all_techs,
     })));
     api.get('/api/v1/hr/salary/pools', {
       params: { year: period.year(), month: period.month() + 1, branch_id: c.employee.branch_id },
@@ -1150,8 +1161,12 @@ function SalaryCard({ employeeId, period, onClose, onSaved }: {
         effective_from: from.format('YYYY-MM-DD'), basic: String(basic),
         items: items.filter((i) => i.name.trim()).map((i) => ({ ...i, amount: String(i.amount ?? 0) })),
         insurance: String(insurance ?? 0),
-        rules: rules.filter((r) => Number(r.pct) > 0 || Number(r.white_pct) > 0).map((r) => ({
+        rules: rules.filter((r) => Number(r.pct) > 0 || Number(r.white_pct) > 0
+          || (r.basis === 'care' && (Number(r.inspection_rate) > 0 || Number(r.plumber_rate) > 0))).map((r) => ({
           basis: r.basis, pct: String(r.pct || 0),
+          inspection_rate: r.basis === 'care' ? String(r.inspection_rate || 0) : null,
+          plumber_rate: r.basis === 'care' ? String(r.plumber_rate || 0) : null,
+          all_techs: r.basis === 'care' ? !!r.all_techs : false,
           white_pct: r.basis === 'pool' && r.white_pct !== null && r.white_pct !== undefined ? String(r.white_pct) : null,
           pools: r.basis === 'pool' ? r.pools || [] : [], split: r.basis === 'pool' ? r.split || 1 : 1,
         })),
@@ -1177,7 +1192,7 @@ function SalaryCard({ employeeId, period, onClose, onSaved }: {
   const dedTotal = items.filter((i) => i.kind === 'deduction').reduce((t, i) => t + n(i.amount), 0);
   const nameOptions = useMemo(() => names.map((x) => ({ value: x.name, label: x.name })), [names]);
   const basisOptions = BASIS.map((b) => ({
-    ...b, disabled: b.value !== 'pool' && !card?.employee.linked_user,
+    ...b, disabled: b.value !== 'pool' && b.value !== 'care' && !card?.employee.linked_user,
   }));
 
   return (
@@ -1234,7 +1249,32 @@ function SalaryCard({ employeeId, period, onClose, onSaved }: {
 
         <Divider style={{ margin: '12px 0 6px' }}>العمولة</Divider>
         <>
-          {rules.map((r, i) => (r.basis === 'pool' ? (
+          {rules.map((r, i) => (r.basis === 'care' ? (
+            <Row gutter={8} key={i} style={{ marginBottom: 6 }} align="middle">
+              <Col xs={12} md={5}>
+                <Select style={{ width: '100%' }} value={r.basis} options={basisOptions}
+                  onChange={(v) => setRule(i, { basis: v })} />
+              </Col>
+              <Col xs={12} md={5}>
+                <InputNumber style={{ width: '100%' }} min={0}
+                  value={r.inspection_rate !== null && r.inspection_rate !== undefined ? Number(r.inspection_rate) : undefined}
+                  placeholder="المعاينة" addonAfter="للمعاينة" onChange={(v) => setRule(i, { inspection_rate: v ?? null })} />
+              </Col>
+              <Col xs={12} md={5}>
+                <InputNumber style={{ width: '100%' }} min={0}
+                  value={r.plumber_rate !== null && r.plumber_rate !== undefined ? Number(r.plumber_rate) : undefined}
+                  placeholder="الفني" addonAfter="للفني" onChange={(v) => setRule(i, { plumber_rate: v ?? null })} />
+              </Col>
+              <Col xs={10} md={5}>
+                <Checkbox checked={!!r.all_techs} onChange={(e) => setRule(i, { all_techs: e.target.checked })}>
+                  معاينات كل الفنيين
+                </Checkbox>
+              </Col>
+              <Col xs={2} md={1}>
+                <Button type="text" danger icon={<DeleteOutlined />} onClick={() => setRules(rules.filter((_, k) => k !== i))} />
+              </Col>
+            </Row>
+          ) : r.basis === 'pool' ? (
             <Row gutter={8} key={i} style={{ marginBottom: 6 }} align="middle">
               <Col xs={12} md={5}>
                 <Select style={{ width: '100%' }} value={r.basis} options={basisOptions}
@@ -1284,7 +1324,7 @@ function SalaryCard({ employeeId, period, onClose, onSaved }: {
             </Button>
             {preview && preview.length ? preview.map((p) => (
               <span key={p.id}>
-                {p.basis === 'pool' ? `تحصيل ${(p.pool_names || []).join('، ')}` : p.basis_label} {period.format('YYYY/MM')}: <b>{money(p.base)}</b> ← عمولة <b>{money(p.amount)}</b>
+                {p.basis === 'care' ? p.label : <>{p.basis === 'pool' ? `تحصيل ${(p.pool_names || []).join('، ')}` : p.basis_label} {period.format('YYYY/MM')}: <b>{money(p.base)}</b></>} ← عمولة <b>{money(p.amount)}</b>
               </span>
             )) : null}
           </Space>

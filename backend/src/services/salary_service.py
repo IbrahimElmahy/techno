@@ -65,6 +65,7 @@ BASIS_LABELS = {
     CommissionBasis.sales: "المبيعات",
     CommissionBasis.collections: "التحصيلات",
     CommissionBasis.pool: "تحصيل الجهات",
+    CommissionBasis.care: "خدمة العملاء",
 }
 
 
@@ -152,7 +153,10 @@ def _rule_out(r: EmployeeCommissionRule, pool_names: dict | None = None) -> dict
     return {"id": r.id, "basis": r.basis.value, "basis_label": BASIS_LABELS[r.basis],
             "pct": str(r.pct), "white_pct": str(r.white_pct) if r.white_pct is not None else None,
             "pools": ids, "pool_names": [(pool_names or {}).get(i, "") for i in ids],
-            "split": r.split or 1, "notes": r.notes}
+            "split": r.split or 1, "notes": r.notes,
+            "inspection_rate": str(r.inspection_rate) if r.inspection_rate is not None else None,
+            "plumber_rate": str(r.plumber_rate) if r.plumber_rate is not None else None,
+            "all_techs": bool(r.all_techs)}
 
 
 def _pool_names(db: Session, rules: list[EmployeeCommissionRule]) -> dict:
@@ -263,6 +267,69 @@ def _pool_label(r: EmployeeCommissionRule, names: dict) -> str:
     return f"عمولة {rate} من تحصيل {where}{tail}"
 
 
+def _plumber_key(phone, name) -> str | None:
+    p = "".join(ch for ch in (phone or "") if ch.isdigit())[-10:]
+    if p:
+        return f"p:{p}"
+    n = " ".join((name or "").split())
+    return f"n:{n}" if n else None
+
+
+def care_stats(db: Session, user_ids, d1: date, d2: date) -> dict[int, dict]:
+    from src.models.coupon_receipt import CouponReceipt, receipt_counted
+    from src.models.inspection import Inspection, InspectionStatus, VisitKind
+
+    users = {u for u in user_ids if u}
+    out: dict[int, dict] = {u: {"inspections": 0, "plumbers": set()} for u in users}
+    if not users:
+        return out
+    cday = func.coalesce(CouponReceipt.received_date, cast(CouponReceipt.created_at, Date))
+    for uid, notes, cust_id, name, phone, ctype in db.execute(
+        select(CouponReceipt.rep_user_id, CouponReceipt.notes, Customer.id, Customer.name,
+               Customer.phone, Customer.customer_type)
+        .outerjoin(Customer, Customer.id == CouponReceipt.customer_id)
+        .where(CouponReceipt.rep_user_id.in_(users), receipt_counted(),
+               cday >= d1, cday <= d2)
+    ).all():
+        key = None
+        if cust_id is not None and (ctype or "") == "plumber":
+            key = _plumber_key(phone, name)
+        elif cust_id is None and notes and "الفني:" in notes:
+            key = _plumber_key(None, notes.split("الفني:", 1)[1].split("\n")[0])
+        if key:
+            out[uid]["plumbers"].add(key)
+    for uid, name, phone in db.execute(
+        select(Inspection.rep_user_id, Inspection.technician_name, Inspection.technician_phone)
+        .where(Inspection.rep_user_id.in_(users),
+               Inspection.visit_kind == VisitKind.technician,
+               Inspection.status == InspectionStatus.accepted,
+               Inspection.inspection_date >= d1, Inspection.inspection_date <= d2)
+    ).all():
+        out[uid]["inspections"] += 1
+        key = _plumber_key(phone, name)
+        if key:
+            out[uid]["plumbers"].add(key)
+    return out
+
+
+def care_counts(db: Session, employee: Employee, rule: EmployeeCommissionRule,
+                d1: date, d2: date) -> tuple[int, int]:
+    if not rule.all_techs:
+        if employee.user_id is None:
+            return 0, 0
+        st = care_stats(db, [employee.user_id], d1, d2)[employee.user_id]
+        return st["inspections"], len(st["plumbers"])
+    team = db.scalars(select(Employee.user_id).join(
+        EmployeeCommissionRule, EmployeeCommissionRule.employee_id == Employee.id).where(
+        Employee.branch_id == employee.branch_id, Employee.active.is_(True),
+        Employee.user_id.is_not(None), EmployeeCommissionRule.active.is_(True),
+        EmployeeCommissionRule.basis == CommissionBasis.care,
+        EmployeeCommissionRule.all_techs.is_(False))).all()
+    users = set(team) | ({employee.user_id} if employee.user_id else set())
+    stats = care_stats(db, users, d1, d2)
+    return sum(s["inspections"] for s in stats.values()), 0
+
+
 def collection_month(year: int, month: int) -> tuple[int, int]:
     return (year - 1, 12) if month == 1 else (year, month - 1)
 
@@ -282,6 +349,17 @@ def commission_preview(db: Session, employee: Employee, year: int, month: int) -
             out.append({**_rule_out(r, names), "base": str(to_money(poly + white + other)),
                         "poly": str(poly), "white": str(white), "other": str(other),
                         "amount": str(amount), "label": _pool_label(r, names)[:120]})
+            continue
+        if r.basis == CommissionBasis.care:
+            insp, plumbers = care_counts(db, employee, r, d1, d2)
+            irate, prate = _d(r.inspection_rate), _d(r.plumber_rate)
+            amount = to_money(Decimal(insp) * irate + Decimal(plumbers) * prate)
+            parts = [f"معاينات {insp} × {to_money(irate)}"] if irate else []
+            if prate:
+                parts.append(f"فنيون {plumbers} × {to_money(prate)}")
+            out.append({**_rule_out(r), "base": str(insp), "inspections": insp,
+                        "plumbers": plumbers, "amount": str(amount),
+                        "label": ("خدمة العملاء: " + " + ".join(parts))[:120]})
             continue
         if employee.user_id is None:
             base = None
@@ -481,8 +559,9 @@ def delete_card(db: Session, *, employee: Employee, actor_user_id: int) -> None:
     )
 
 
-def _rule_key(basis, pct, white, pools, split, note) -> str:
-    return f"{basis.value}:{pct}:{white}:{pools}:{split}:{note or ''}"
+def _rule_key(basis, pct, white, pools, split, note, care=None) -> str:
+    extra = f":{care[0]}:{care[1]}:{int(care[2])}" if care else ""
+    return f"{basis.value}:{pct}:{white}:{pools}:{split}:{note or ''}{extra}"
 
 
 def save_rules(db: Session, *, employee: Employee, rules: list[dict], actor_user_id: int) -> None:
@@ -494,6 +573,17 @@ def save_rules(db: Session, *, employee: Employee, rules: list[dict], actor_user
             basis = CommissionBasis(r.get("basis") or "sales")
         except ValueError as exc:
             raise SalaryError("أساس العمولة غير صحيح.") from exc
+        if basis == CommissionBasis.care:
+            irate = to_money(_d(r.get("inspection_rate")))
+            prate = to_money(_d(r.get("plumber_rate")))
+            if irate < 0 or prate < 0:
+                raise SalaryError("لا يمكن إدخال قيمة سالبة.")
+            if irate <= 0 and prate <= 0:
+                continue
+            wanted.append((basis, ZERO, None, None, 1,
+                           (r.get("notes") or "").strip()[:200] or None,
+                           (irate, prate, bool(r.get("all_techs")))))
+            continue
         if pct <= 0 and not white:
             continue
         if pct > 100 or (white or ZERO) > 100 or pct < 0 or (white or ZERO) < 0:
@@ -515,20 +605,26 @@ def save_rules(db: Session, *, employee: Employee, rules: list[dict], actor_user
         else:
             white = None
         wanted.append((basis, pct, white, pools, split,
-                       (r.get("notes") or "").strip()[:200] or None))
+                       (r.get("notes") or "").strip()[:200] or None, None))
     if any(w[0] != CommissionBasis.pool for w in wanted) and employee.user_id is None:
         raise SalaryError("الموظف غير مربوط بحساب مستخدم أو مندوب، فلا يمكن حساب عمولته من البيع.")
     old = rules_of(db, employee.id)
     before = [_rule_key(r.basis, _d(r.pct), _d(r.white_pct) if r.white_pct is not None else None,
-                        r.pools, r.split or 1, r.notes) for r in old]
+                        r.pools, r.split or 1, r.notes,
+                        (to_money(_d(r.inspection_rate)), to_money(_d(r.plumber_rate)),
+                         bool(r.all_techs)) if r.basis == CommissionBasis.care else None)
+              for r in old]
     after = [_rule_key(*w) for w in wanted]
     if before == after:
         return
     for r in old:
         r.active = False
-    for basis, pct, white, pools, split, note in wanted:
+    for basis, pct, white, pools, split, note, care in wanted:
         db.add(EmployeeCommissionRule(employee_id=employee.id, basis=basis, pct=pct,
                                       white_pct=white, pools=pools, split=split,
+                                      inspection_rate=care[0] if care else None,
+                                      plumber_rate=care[1] if care else None,
+                                      all_techs=care[2] if care else False,
                                       notes=note, actor_user_id=actor_user_id))
     db.flush()
     audit_service.record(

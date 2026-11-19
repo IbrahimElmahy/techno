@@ -14,6 +14,7 @@ class CommissionBasis(str, enum.Enum):
     sales = "sales"
     collections = "collections"
     pool = "pool"
+    care = "care"
 
 
 class EmployeeCommissionRule(Base):
@@ -30,6 +31,9 @@ class EmployeeCommissionRule(Base):
     white_pct: Mapped[object | None] = mapped_column(PCT, nullable=True)
     pools: Mapped[str | None] = mapped_column(String(200), nullable=True)
     split: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    inspection_rate: Mapped[object | None] = mapped_column(MONEY, nullable=True)
+    plumber_rate: Mapped[object | None] = mapped_column(MONEY, nullable=True)
+    all_techs: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     notes: Mapped[str | None] = mapped_column(String(200), nullable=True)
     actor_user_id: Mapped[int | None] = mapped_column(ForeignKey("user.id"), nullable=True)
