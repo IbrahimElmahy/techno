@@ -40,7 +40,7 @@ export default function PointsPartyModal({ row, year, monthKeys, onClose }: {
     api.get('/api/v1/after-sales-reports/coupon-card', {
       params: { party_id: row.party_id, date_from: `${year}-01-01`, date_to: `${year}-12-31` },
     })
-      .then((r) => setMoves(((r.data?.rows || []) as Row[]).slice().reverse()))
+      .then((r) => setMoves(((r.data?.rows || []) as Row[]).filter((m) => m.source !== 'receipt').reverse()))
       .catch((e) => {
         setMoves([]);
         setError(e?.response?.status === 403 ? 'ليست لديك صلاحية عرض سجل الكوبونات.'
@@ -113,12 +113,8 @@ export default function PointsPartyModal({ row, year, monthKeys, onClose }: {
                         { title: 'الفئة', dataIndex: 'kind', key: 'kind', render: (v: string | null) => v || '—' },
                         { title: 'مصروف', dataIndex: 'issued', key: 'issued', align: 'center' as const,
                           render: (v: number) => (v ? <b>{int(v)}</b> : '—') },
-                        { title: 'مستلم', dataIndex: 'received', key: 'received', align: 'center' as const,
-                          render: (v: number) => (v ? <b style={{ color: '#2f7d32' }}>{int(v)}</b> : '—') },
                         { title: 'الأرقام', dataIndex: 'ranges', key: 'ranges',
                           render: (v: string) => <span dir="ltr" style={{ overflowWrap: 'anywhere' }}>{v || '—'}</span> },
-                        { title: 'الرصيد', dataIndex: 'balance', key: 'balance', align: 'center' as const,
-                          render: (v: number) => <b>{int(v)}</b> },
                       ]}
                     />
                   )}

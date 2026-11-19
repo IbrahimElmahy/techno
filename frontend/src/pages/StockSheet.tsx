@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { PAGE_SIZE, PAGE_SIZE_OPTIONS } from '../utils/pagination';
-import { Badge, Button, Drawer, Input, Space, Tag, message } from 'antd';
+import { Badge, Button, Drawer, Input, Popconfirm as ConfirmPop, Space, Tag, message } from 'antd';
 import { FilterTable as Table } from '../components/FilterTable';
 import dayjs, { Dayjs } from 'dayjs';
 import { InputNumber } from '../components/NumberInput';
@@ -8,7 +8,6 @@ import {
   ClearOutlined, ContainerOutlined, DeleteOutlined, DownloadOutlined, EditOutlined, HistoryOutlined, PlusOutlined,
   PrinterOutlined, ReloadOutlined, SaveOutlined, SearchOutlined,
 } from '@ant-design/icons';
-import { Popconfirm } from '../components/noConfirm';
 import ListPage from '../components/ListPage';
 import DateRangeFilter from '../components/DateRangeFilter';
 import { useSearchParams } from 'react-router-dom';
@@ -489,9 +488,11 @@ export default function StockSheet() {
                   <Space size={4}>
                     <Button size="small" icon={<EditOutlined />} onClick={() => openCount(c)}>فتح</Button>
                     {c.status === 'draft' && (
-                      <Popconfirm onConfirm={() => deleteCount(c)}>
+                      <ConfirmPop title={`حذف الجرد ${c.document_number}؟`} description="لا يمكن التراجع عن الحذف."
+                        okText="حذف" cancelText="إلغاء" okButtonProps={{ danger: true }}
+                        onConfirm={() => deleteCount(c)}>
                         <Button size="small" danger icon={<DeleteOutlined />}>حذف</Button>
-                      </Popconfirm>
+                      </ConfirmPop>
                     )}
                   </Space>
                 ) },
