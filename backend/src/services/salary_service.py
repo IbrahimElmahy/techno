@@ -169,14 +169,73 @@ def _rules_out(db: Session, employee_id: int) -> list[dict]:
     return [_rule_out(r, names) for r in rules]
 
 
-def _pool_amounts(db: Session, ids: list[int], year: int, month: int) -> tuple[Decimal, Decimal]:
-    poly = white = ZERO
-    for p, w in db.execute(select(CommissionPoolAmount.poly, CommissionPoolAmount.white).where(
-            CommissionPoolAmount.pool_id.in_(ids or [-1]), CommissionPoolAmount.year == year,
-            CommissionPoolAmount.month == month)).all():
-        poly += _d(p)
-        white += _d(w)
-    return poly, white
+POLY, WHITE = "بولي", "أبيض"
+
+
+def rep_collections(db: Session, user_id: int, year: int, month: int) -> dict:
+    from src.models.customer import CustomerAccount
+
+    d1, d2 = date(year, month, 1), _month_end(year, month)
+    single = (select(CustomerAccount.customer_id.label("cid"),
+                     func.min(CustomerAccount.family).label("fam"))
+              .where(CustomerAccount.family.is_not(None))
+              .group_by(CustomerAccount.customer_id)
+              .having(func.count(func.distinct(CustomerAccount.family)) == 1).subquery())
+    out = {"poly": ZERO, "white": ZERO, "other": ZERO}
+
+    def add(fam, value):
+        key = "poly" if fam == POLY else "white" if fam == WHITE else "other"
+        out[key] += _d(value)
+
+    day = func.coalesce(SalesInvoice.invoice_date, cast(SalesInvoice.created_at, Date))
+    for fam, own, cash in db.execute(
+        select(SalesInvoice.family, single.c.fam, SalesInvoice.cash_amount)
+        .outerjoin(Customer, Customer.id == SalesInvoice.customer_id)
+        .outerjoin(single, single.c.cid == SalesInvoice.customer_id)
+        .where(SalesInvoice.cash_amount > 0,
+               or_(SalesInvoice.is_bonus.is_(None), SalesInvoice.is_bonus.is_(False)),
+               day >= d1, day <= d2,
+               or_(SalesInvoice.rep_id == user_id,
+                   and_(SalesInvoice.rep_id.is_(None), Customer.rep_id == user_id)))
+    ).all():
+        add(fam or own, cash)
+
+    staff = select(Employee.receivable_account_id).where(
+        Employee.receivable_account_id.is_not(None))
+    for fam, acc_fam, own, amount, reverses_id in db.execute(
+        select(Voucher.family, CustomerAccount.family, single.c.fam, Voucher.amount,
+               Voucher.reverses_id)
+        .join(Customer, Customer.id == Voucher.customer_id)
+        .outerjoin(CustomerAccount, CustomerAccount.account_id == Voucher.party_account_id)
+        .outerjoin(single, single.c.cid == Voucher.customer_id)
+        .where(Voucher.kind == VoucherKind.receipt, Voucher.voucher_date >= d1,
+               Voucher.voucher_date <= d2, Voucher.party_account_id.not_in(staff),
+               or_(Voucher.rep_user_id == user_id,
+                   and_(Voucher.rep_user_id.is_(None), Customer.rep_id == user_id)))
+    ).all():
+        add(fam or acc_fam or own, -_d(amount) if reverses_id is not None else amount)
+    return {k: to_money(v) for k, v in out.items()}
+
+
+def _pool_values(db: Session, pool: CommissionPool, year: int, month: int) -> dict:
+    if pool.rep_user_id:
+        return rep_collections(db, pool.rep_user_id, year, month)
+    a = db.scalar(select(CommissionPoolAmount).where(
+        CommissionPoolAmount.pool_id == pool.id, CommissionPoolAmount.year == year,
+        CommissionPoolAmount.month == month))
+    return {"poly": _d(a.poly) if a else ZERO, "white": _d(a.white) if a else ZERO,
+            "other": ZERO}
+
+
+def _pool_amounts(db: Session, ids: list[int], year: int, month: int
+                  ) -> tuple[Decimal, Decimal, Decimal]:
+    poly = white = other = ZERO
+    for pool in db.scalars(select(CommissionPool).where(CommissionPool.id.in_(ids or [-1]))).all():
+        v = _pool_values(db, pool, year, month)
+        poly += v["poly"]
+        white += v["white"]
+        other += v["other"]
+    return poly, white, other
 
 
 def _pool_label(r: EmployeeCommissionRule, names: dict) -> str:
@@ -195,13 +254,13 @@ def commission_preview(db: Session, employee: Employee, year: int, month: int) -
     names = _pool_names(db, rules)
     for r in rules:
         if r.basis == CommissionBasis.pool:
-            poly, white = _pool_amounts(db, _pool_ids(r.pools), year, month)
+            poly, white, other = _pool_amounts(db, _pool_ids(r.pools), year, month)
             wp = _d(r.white_pct) if r.white_pct is not None else _d(r.pct)
-            amount = to_money((poly * _d(r.pct) + white * wp) / Decimal("100")
+            amount = to_money((poly * _d(r.pct) + (white + other) * wp) / Decimal("100")
                               / Decimal(r.split or 1))
-            out.append({**_rule_out(r, names), "base": str(to_money(poly + white)),
-                        "poly": str(poly), "white": str(white), "amount": str(amount),
-                        "label": _pool_label(r, names)[:120]})
+            out.append({**_rule_out(r, names), "base": str(to_money(poly + white + other)),
+                        "poly": str(poly), "white": str(white), "other": str(other),
+                        "amount": str(amount), "label": _pool_label(r, names)[:120]})
             continue
         if employee.user_id is None:
             base = None
@@ -1357,16 +1416,21 @@ def pools_of(db: Session, *, branch_id: int, year: int, month: int) -> list[dict
     pools = db.scalars(select(CommissionPool).where(
         CommissionPool.branch_id == branch_id, CommissionPool.active.is_(True))
         .order_by(CommissionPool.sort_order, CommissionPool.id)).all()
-    amounts = {a.pool_id: a for a in db.scalars(select(CommissionPoolAmount).where(
-        CommissionPoolAmount.pool_id.in_([p.id for p in pools] or [-1]),
-        CommissionPoolAmount.year == year, CommissionPoolAmount.month == month)).all()}
     out = []
     for p in pools:
-        a = amounts.get(p.id)
-        poly, white = (_d(a.poly), _d(a.white)) if a else (ZERO, ZERO)
-        out.append({"id": p.id, "name": p.name, "poly": str(poly), "white": str(white),
-                    "total": str(to_money(poly + white))})
+        v = _pool_values(db, p, year, month)
+        out.append({"id": p.id, "name": p.name, "rep_user_id": p.rep_user_id,
+                    "poly": str(v["poly"]), "white": str(v["white"]), "other": str(v["other"]),
+                    "total": str(to_money(v["poly"] + v["white"] + v["other"]))})
     return out
+
+
+def pool_reps(db: Session, branch_id: int) -> list[dict]:
+    from src.models.user import User
+
+    users = db.scalars(select(User).where(User.active.is_(True)).order_by(User.full_name)).all()
+    return [{"id": u.id, "name": u.full_name or u.username} for u in users
+            if u.branch_id == branch_id or str(branch_id) in (u.branch_ids or "").split(",")]
 
 
 def _pool_users(db: Session, pool_id: int) -> list[str]:
@@ -1401,15 +1465,20 @@ def save_pools(db: Session, *, branch_id: int, year: int, month: int, rows: list
         if poly < 0 or white < 0:
             raise SalaryError("لا يمكن إدخال قيمة سالبة.")
         pid = row.get("id")
+        rep = int(row["rep_user_id"]) if row.get("rep_user_id") else None
         pool = existing.get(int(pid)) if pid else None
         if pool is None:
-            pool = CommissionPool(branch_id=branch_id, name=name, sort_order=order)
+            pool = CommissionPool(branch_id=branch_id, name=name, sort_order=order,
+                                  rep_user_id=rep)
             db.add(pool)
             db.flush()
         else:
             pool.name = name
             pool.sort_order = order
+            pool.rep_user_id = rep
         keep.add(pool.id)
+        if rep:
+            continue
         amount = db.scalar(select(CommissionPoolAmount).where(
             CommissionPoolAmount.pool_id == pool.id, CommissionPoolAmount.year == year,
             CommissionPoolAmount.month == month))

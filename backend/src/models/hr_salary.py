@@ -44,6 +44,7 @@ class CommissionPool(Base):
     id: Mapped[int] = mapped_column(BigIntPK, primary_key=True, autoincrement=True)
     branch_id: Mapped[int] = mapped_column(ForeignKey("branch.id"), nullable=False, index=True)
     name: Mapped[str] = mapped_column(String(80), nullable=False)
+    rep_user_id: Mapped[int | None] = mapped_column(ForeignKey("user.id"), nullable=True)
     sort_order: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     created_at: Mapped[datetime] = mapped_column(

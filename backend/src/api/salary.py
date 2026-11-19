@@ -183,9 +183,19 @@ def pools(
     return svc.pools_of(db, branch_id=_branch(current, branch_id), year=year, month=month)
 
 
+@router.get("/pools/reps")
+def pool_reps(
+    branch_id: int | None = Query(None),
+    current: CurrentUser = Depends(require_capability(CAP_SALARY_VIEW)),
+    db: Session = Depends(get_db),
+) -> list[dict]:
+    return svc.pool_reps(db, _branch(current, branch_id))
+
+
 class PoolIn(BaseModel):
     id: int | None = None
     name: str
+    rep_user_id: int | None = None
     poly: float | str | None = None
     white: float | str | None = None
 

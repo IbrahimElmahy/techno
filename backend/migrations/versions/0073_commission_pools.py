@@ -30,10 +30,14 @@ def upgrade() -> None:
             sa.Column("id", sa.BigInteger(), primary_key=True, autoincrement=True),
             sa.Column("branch_id", sa.BigInteger(), sa.ForeignKey("branch.id"), nullable=False, index=True),
             sa.Column("name", sa.String(80), nullable=False),
+            sa.Column("rep_user_id", sa.BigInteger(), sa.ForeignKey("user.id"), nullable=True),
             sa.Column("sort_order", sa.Integer(), nullable=False, server_default="0"),
             sa.Column("active", sa.Boolean(), nullable=False, server_default=sa.true()),
             sa.Column("created_at", sa.DateTime(), nullable=False, server_default=sa.func.now()),
         )
+    elif "rep_user_id" not in {c["name"] for c in insp.get_columns("commission_pool")}:
+        op.add_column("commission_pool", sa.Column("rep_user_id", sa.BigInteger(),
+                                                   sa.ForeignKey("user.id"), nullable=True))
     if "commission_pool_amount" not in tables:
         op.create_table(
             "commission_pool_amount",
