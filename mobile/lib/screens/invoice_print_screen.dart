@@ -224,12 +224,16 @@ class _InvoicePrintScreenState extends State<InvoicePrintScreen> {
     final now = DateTime.now().toIso8601String();
     final printedAt = '${now.substring(0, 10)} ${now.substring(11, 16)}';
 
+    final gap = roll ? 4.0 : 10.0;
+    _tight = roll;
     doc.addPage(
       pw.MultiPage(
         pageFormat: format,
         theme: theme,
         textDirection: pw.TextDirection.rtl,
-        margin: const pw.EdgeInsets.all(14),
+        margin: roll
+            ? const pw.EdgeInsets.symmetric(horizontal: 4, vertical: 2)
+            : const pw.EdgeInsets.all(14),
         header: (ctx) => ctx.pageNumber == 1
             ? pw.SizedBox()
             : pw.Container(
@@ -259,7 +263,9 @@ class _InvoicePrintScreenState extends State<InvoicePrintScreen> {
         ),
         build: (ctx) => [
             pw.Container(
-              padding: const pw.EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              padding: roll
+                  ? const pw.EdgeInsets.symmetric(horizontal: 8, vertical: 3)
+                  : const pw.EdgeInsets.symmetric(horizontal: 12, vertical: 6),
               decoration: pw.BoxDecoration(
                 color: _brand,
                 borderRadius: pw.BorderRadius.circular(6),
@@ -301,7 +307,7 @@ class _InvoicePrintScreenState extends State<InvoicePrintScreen> {
                 ],
               ),
             ),
-            pw.SizedBox(height: 8),
+            pw.SizedBox(height: roll ? 3 : 8),
             if (!synced)
               pw.Container(
                 margin: const pw.EdgeInsets.only(bottom: 8),
@@ -314,6 +320,20 @@ class _InvoicePrintScreenState extends State<InvoicePrintScreen> {
                     textAlign: pw.TextAlign.center,
                     style: const pw.TextStyle(fontSize: 11)),
               ),
+            if (roll)
+              pw.Column(crossAxisAlignment: pw.CrossAxisAlignment.stretch, children: [
+                pw.Text('العميل: ${inv['customer_name']}',
+                    style: const pw.TextStyle(fontSize: 11, fontWeight: pw.FontWeight.bold)),
+                pw.Row(mainAxisAlignment: pw.MainAxisAlignment.spaceBetween, children: [
+                  pw.Text('الهاتف: ${(_phone ?? '').trim().isEmpty ? '—' : _phone!.trim()}',
+                      style: const pw.TextStyle(fontSize: 9.5)),
+                  pw.Text('المندوب: $_rep', style: const pw.TextStyle(fontSize: 9.5)),
+                ]),
+                if (isBonus)
+                  pw.Text('على طلب بيع رقم ${_bonusFor ?? '— (قيد الرفع)'}',
+                      style: const pw.TextStyle(fontSize: 10, fontWeight: pw.FontWeight.bold)),
+              ])
+            else
             pw.Container(
               padding: const pw.EdgeInsets.symmetric(horizontal: 8, vertical: 4),
               decoration: pw.BoxDecoration(
@@ -321,13 +341,6 @@ class _InvoicePrintScreenState extends State<InvoicePrintScreen> {
                 borderRadius: pw.BorderRadius.circular(4),
               ),
               child: pw.Column(children: [
-                if (roll) ...[
-                  _row('العميل', '${inv['customer_name']}'),
-                  _row('الهاتف', (_phone ?? '').trim().isEmpty ? '—' : _phone!),
-                  _row('التاريخ', '${inv['invoice_date']}'),
-                  _row('المندوب', _rep),
-                  _row('نوع الطلب', family ?? '—'),
-                ] else ...[
                 pw.Row(children: [
                   pw.Expanded(flex: 3, child: _row('العميل', '${inv['customer_name']}')),
                   pw.Expanded(flex: 2, child: _row('الهاتف',
@@ -339,7 +352,6 @@ class _InvoicePrintScreenState extends State<InvoicePrintScreen> {
                   pw.Expanded(flex: 2, child: _row('نوع الطلب', family ?? '—')),
                   pw.Expanded(flex: 2, child: pw.SizedBox()),
                 ]),
-                ],
                 if (isBonus)
                   pw.Padding(
                     padding: const pw.EdgeInsets.symmetric(vertical: 1.5),
@@ -350,26 +362,34 @@ class _InvoicePrintScreenState extends State<InvoicePrintScreen> {
                   ),
               ]),
             ),
-            pw.SizedBox(height: 10),
+            pw.SizedBox(height: gap),
             if (_lines.isNotEmpty) pw.Table(
               border: const pw.TableBorder(
                 horizontalInside: pw.BorderSide(width: 0.4, color: PdfColors.grey400),
                 bottom: pw.BorderSide(width: 0.6, color: PdfColors.grey500),
               ),
-              columnWidths: {
-                0: const pw.FlexColumnWidth(1.7),
-                1: const pw.FlexColumnWidth(2.0),
-                2: const pw.FlexColumnWidth(1.1),
-                3: const pw.FlexColumnWidth(3.4),
-                4: const pw.FlexColumnWidth(0.6),
-              },
+              columnWidths: roll
+                  ? {
+                      0: const pw.FlexColumnWidth(1.55),
+                      1: const pw.FlexColumnWidth(1.3),
+                      2: const pw.FlexColumnWidth(0.8),
+                      3: const pw.FlexColumnWidth(4.4),
+                      4: const pw.FlexColumnWidth(0.45),
+                    }
+                  : {
+                      0: const pw.FlexColumnWidth(1.7),
+                      1: const pw.FlexColumnWidth(2.0),
+                      2: const pw.FlexColumnWidth(1.1),
+                      3: const pw.FlexColumnWidth(3.4),
+                      4: const pw.FlexColumnWidth(0.6),
+                    },
               children: [
                 pw.TableRow(
                   decoration: const pw.BoxDecoration(color: _brand),
                   children: [
                     _cell(isBonus ? 'القيمة بسعر البيع' : 'الإجمالي',
                         bold: true, white: true, center: true),
-                    _cell(isBonus ? 'سعر البيع' : 'السعر بعد الخصم',
+                    _cell(isBonus ? 'سعر البيع' : (roll ? 'السعر' : 'السعر بعد الخصم'),
                         bold: true, white: true, center: true),
                     _cell('الكمية', bold: true, white: true, center: true),
                     _cell('الصنف', bold: true, white: true),
@@ -394,11 +414,11 @@ class _InvoicePrintScreenState extends State<InvoicePrintScreen> {
               ],
             ),
             if (coupons.isNotEmpty) ...[
-              if (_lines.isNotEmpty) pw.SizedBox(height: 12),
+              if (_lines.isNotEmpty) pw.SizedBox(height: roll ? 5 : 12),
               pw.Text('الكوبونات المسلّمة',
-                  style: const pw.TextStyle(
-                      fontSize: 12, fontWeight: pw.FontWeight.bold)),
-              pw.SizedBox(height: 4),
+                  style: pw.TextStyle(
+                      fontSize: roll ? 10.5 : 12, fontWeight: pw.FontWeight.bold)),
+              pw.SizedBox(height: roll ? 2 : 4),
               pw.Table(
                 border: const pw.TableBorder(
                   horizontalInside:
@@ -438,14 +458,14 @@ class _InvoicePrintScreenState extends State<InvoicePrintScreen> {
                     ),
                 ],
               ),
-              pw.SizedBox(height: 4),
-              pw.Text(
+              if (!roll) pw.SizedBox(height: 4),
+              if (!roll) pw.Text(
                   'إجمالي الكوبونات: '
                   '${coupons.fold<int>(0, (t, c) => t + ((c['count'] as int?) ?? 0))}',
                   style: const pw.TextStyle(
                       fontSize: 11, fontWeight: pw.FontWeight.bold)),
             ],
-            pw.SizedBox(height: 12),
+            pw.SizedBox(height: roll ? 0 : 12),
             ...(() {
               final mine = (family != null && prevByFamily.containsKey(family))
                   ? prevByFamily[family]
@@ -456,7 +476,9 @@ class _InvoicePrintScreenState extends State<InvoicePrintScreen> {
               final left = mine == null ? credit : mine + total - cash;
               final famTag = (family != null && prevByFamily.isNotEmpty) ? ' ($family)' : '';
               pw.Widget body(List<pw.Widget> rows) => pw.Container(
-                    padding: const pw.EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    padding: roll
+                        ? const pw.EdgeInsets.symmetric(horizontal: 6, vertical: 2)
+                        : const pw.EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                     decoration: pw.BoxDecoration(
                       border: pw.Border.all(width: 0.6, color: PdfColors.grey500),
                       borderRadius: pw.BorderRadius.circular(4),
@@ -479,17 +501,18 @@ class _InvoicePrintScreenState extends State<InvoicePrintScreen> {
               ];
               if (roll) {
                 return [
-                  pw.SizedBox(height: 8),
+                  pw.SizedBox(height: 5),
                   if (isBonus)
                     body([
                       _total('قيمة البونص بسعر البيع', _money(bonusValue)),
                       _total('المطلوب من العميل', _money(0), big: true),
                     ])
-                  else ...[
-                    body(a),
-                    pw.SizedBox(height: 6),
-                    body(b),
-                  ],
+                  else
+                    body([
+                      ...a,
+                      pw.Divider(height: 4, thickness: 0.5, color: PdfColors.grey500),
+                      ...b,
+                    ]),
                 ];
               }
               if (isBonus) {
@@ -513,18 +536,20 @@ class _InvoicePrintScreenState extends State<InvoicePrintScreen> {
               ];
             })(),
             if ((inv['notes'] as String?)?.isNotEmpty == true) ...[
-              pw.SizedBox(height: 10),
+              pw.SizedBox(height: gap),
               pw.Text('ملاحظات: ${inv['notes']}', style: const pw.TextStyle(fontSize: 10)),
             ],
-            pw.SizedBox(height: 10),
-            pw.Divider(color: PdfColors.grey400),
+            pw.SizedBox(height: roll ? 8 : 10),
+            if (!roll) pw.Divider(color: PdfColors.grey400),
             pw.Wrap(
               alignment: pw.WrapAlignment.spaceBetween,
               runSpacing: 10,
               spacing: 12,
               children: [
-                pw.Text('توقيع المستلم: ____________', style: const pw.TextStyle(fontSize: 10)),
-                pw.Text('توقيع المندوب: ____________', style: const pw.TextStyle(fontSize: 10)),
+                pw.Text(roll ? 'توقيع المستلم: ________' : 'توقيع المستلم: ____________',
+                    style: pw.TextStyle(fontSize: roll ? 9 : 10)),
+                pw.Text(roll ? 'توقيع المندوب: ________' : 'توقيع المندوب: ____________',
+                    style: pw.TextStyle(fontSize: roll ? 9 : 10)),
               ],
             ),
             pw.SizedBox(height: 4),
@@ -586,9 +611,11 @@ Map<String, double> _familyBalances(String? raw) {
 
 const _brand = PdfColor.fromInt(0xFF0E4C6D);
 
+var _tight = false;
+
 pw.Widget _cell(String text, {bool bold = false, bool white = false, bool center = false}) =>
     pw.Padding(
-      padding: const pw.EdgeInsets.symmetric(horizontal: 4, vertical: 3),
+      padding: pw.EdgeInsets.symmetric(horizontal: _tight ? 2 : 4, vertical: _tight ? 1.5 : 3),
       child: pw.Text(text,
           textAlign: center ? pw.TextAlign.center : pw.TextAlign.right,
           style: pw.TextStyle(
@@ -598,14 +625,15 @@ pw.Widget _cell(String text, {bool bold = false, bool white = false, bool center
     );
 
 pw.Widget _total(String label, String value, {bool big = false}) => pw.Padding(
-      padding: const pw.EdgeInsets.symmetric(vertical: 2),
+      padding: pw.EdgeInsets.symmetric(vertical: _tight ? 0.5 : 2),
       child: pw.Row(
         mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
         children: [
-          pw.Expanded(child: pw.Text(label, style: pw.TextStyle(fontSize: big ? 12 : 11))),
-          pw.Text('$value',
+          pw.Expanded(child: pw.Text(label,
+              style: pw.TextStyle(fontSize: _tight ? (big ? 11 : 10) : (big ? 12 : 11)))),
+          pw.Text(value,
               style: pw.TextStyle(
-                  fontSize: big ? 15 : 12,
+                  fontSize: _tight ? (big ? 13 : 10.5) : (big ? 15 : 12),
                   color: big ? _brand : PdfColors.black,
                   fontWeight: big ? pw.FontWeight.bold : pw.FontWeight.normal)),
         ],

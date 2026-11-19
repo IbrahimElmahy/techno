@@ -175,7 +175,7 @@ Future<List<int>> _render(Future<Uint8List> Function(PdfPageFormat format) build
     final w = page.width < _dots ? page.width : _dots;
     final px = page.pixels;
     final pageRows = <Uint8List>[];
-    var last = -1;
+    var first = -1, last = -1;
     for (var y = 0; y < page.height; y++) {
       final row = Uint8List(rowBytes);
       var any = false;
@@ -188,10 +188,10 @@ Future<List<int>> _render(Future<Uint8List> Function(PdfPageFormat format) build
           any = true;
         }
       }
-      if (any) last = y;
+      if (any) { if (first < 0) first = y; last = y; }
       pageRows.add(row);
     }
-    if (last >= 0) rows.addAll(pageRows.take(last + 1));
+    if (last >= 0) rows.addAll(pageRows.sublist(rows.isEmpty ? first : 0, last + 1));
   }
 
   final out = BytesBuilder();
@@ -204,6 +204,6 @@ Future<List<int>> _render(Future<Uint8List> Function(PdfPageFormat format) build
       out.add(rows[start + k]);
     }
   }
-  out.add(const [0x1B, 0x64, 0x04, 0x1D, 0x56, 0x42, 0x00]);
+  out.add(const [0x1B, 0x64, 0x06, 0x1D, 0x56, 0x42, 0x00]);
   return List<int>.of(out.takeBytes(), growable: false);
 }
