@@ -804,13 +804,12 @@ export default function StockPermits() {
       tabs={kindTabs} activeTab={activeKindTab}
       onTabChange={(k) => filter.setValue('kind', k === 'all' ? undefined : k)}
       actions={(<>
-        {(kind === 'issue' ? ['issue', 'receipt'] as Kind[] : ['receipt', 'issue'] as Kind[]).map((k, i) => (
+        {(menuKind ? [menuKind as Kind] : ['receipt', 'issue', 'opening'] as Kind[]).map((k, i) => (
           <Button key={k} icon={<PlusOutlined />}
             {...(i === 0 ? { 'data-shortcut': 'F2', type: 'primary' as const, className: 'sl-create' } : {})}
-            onClick={() => { setKind(k); startNew(); }}>{k === 'issue' ? 'إذن صرف' : 'إذن إضافة'}</Button>
+            onClick={() => { setKind(k); if (k === 'opening') setCreating(true); else startNew(); }}>
+            {k === 'issue' ? 'إذن صرف' : k === 'opening' ? 'بضاعة أول المدة' : 'إذن إضافة'}</Button>
         ))}
-        <Button icon={<PlusOutlined />}
-          onClick={() => { setKind('opening'); setCreating(true); }}>بضاعة أول المدة</Button>
         <Button icon={<ReloadOutlined />} onClick={() => load()}>تحديث</Button>
         {tableCols.control}
       </>)}
