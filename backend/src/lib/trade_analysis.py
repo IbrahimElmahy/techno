@@ -71,8 +71,9 @@ def _sales_union(include_bonus: bool | str):
             sl.item_id.label("item_id"), cast(sl.price_tier, String(24)).label("tier"),
             (sl.quantity * func.coalesce(sl.unit_factor, one)).label("qty"),
             (sl.quantity * sl.unit_price).label("gross"),
-            (sl.line_total * _ratio(si.net, func.sum(sl.line_total).over(
-                partition_by=sl.invoice_id))).label("amount"),
+            ((sl.quantity * sl.unit_price) if include_bonus == "only"
+             else (sl.line_total * _ratio(si.net, func.sum(sl.line_total).over(
+                 partition_by=sl.invoice_id)))).label("amount"),
             case((and_(sl.unit_price > 0, sl.unit_cost > sl.unit_price * 3), None),
                  else_=sl.unit_cost * sl.quantity).label("cost"),
             si.is_bonus.label("is_bonus"),

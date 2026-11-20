@@ -138,7 +138,7 @@ export default function StockPermits() {
   }, [kind, warehouseId]);
 
   const filter = useListFilter(permits, {
-    initialValues: kind === 'opening' ? { kind: 'opening' } : {},
+    initialValues: searchParams.get('kind') ? { kind } : {},
     search: (p) => [p.document_number, p.reason, p.warehouse_name, p.statement1,
       p.external_document_number, p.notes],
     filters: {
@@ -147,6 +147,10 @@ export default function StockPermits() {
     },
     dateOf: (p) => p.permit_date || p.created_at,
   });
+  const menuKind = searchParams.get('kind');
+  useEffect(() => {
+    if (menuKind && !creating && !detail) filter.setValue('kind', menuKind);
+  }, [menuKind]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const draftPayload = useMemo(() => ({
     kind, warehouseId, lines, reason, notes,
@@ -800,10 +804,11 @@ export default function StockPermits() {
       tabs={kindTabs} activeTab={activeKindTab}
       onTabChange={(k) => filter.setValue('kind', k === 'all' ? undefined : k)}
       actions={(<>
-        <Button data-shortcut="F2" type="primary" icon={<PlusOutlined />} className="sl-create"
-          onClick={() => { setKind('receipt'); startNew(); }}>إذن إضافة</Button>
-        <Button icon={<PlusOutlined />}
-          onClick={() => { setKind('issue'); startNew(); }}>إذن صرف</Button>
+        {(kind === 'issue' ? ['issue', 'receipt'] as Kind[] : ['receipt', 'issue'] as Kind[]).map((k, i) => (
+          <Button key={k} icon={<PlusOutlined />}
+            {...(i === 0 ? { 'data-shortcut': 'F2', type: 'primary' as const, className: 'sl-create' } : {})}
+            onClick={() => { setKind(k); startNew(); }}>{k === 'issue' ? 'إذن صرف' : 'إذن إضافة'}</Button>
+        ))}
         <Button icon={<PlusOutlined />}
           onClick={() => { setKind('opening'); setCreating(true); }}>بضاعة أول المدة</Button>
         <Button icon={<ReloadOutlined />} onClick={() => load()}>تحديث</Button>
