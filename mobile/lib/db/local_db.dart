@@ -18,7 +18,7 @@ class LocalDb {
     _db = await openDatabase(path, version: 35, onUpgrade: (d, from, to) async {
       if (from < 35) {
         for (final t in ['sale_item', 'branch_catalog_item']) {
-          for (final col in ['extra_max REAL', 'extra_on INTEGER NOT NULL DEFAULT 1']) {
+          for (final col in ['extra_max REAL', 'extra_on INTEGER NOT NULL DEFAULT 0']) {
             try { await d.execute('ALTER TABLE $t ADD COLUMN $col'); } catch (_) {}
           }
         }
@@ -1664,7 +1664,7 @@ CREATE TABLE sale_item(
   tier_prices TEXT,
   min_price REAL,
   extra_max REAL,
-  extra_on INTEGER NOT NULL DEFAULT 1
+  extra_on INTEGER NOT NULL DEFAULT 0
 )''';
 
 const _branchCatalogTable = '''
@@ -1677,7 +1677,7 @@ CREATE TABLE branch_catalog_item(
   default_discount_pct REAL NOT NULL DEFAULT 0,
   tier_prices TEXT,
   extra_max REAL,
-  extra_on INTEGER NOT NULL DEFAULT 1
+  extra_on INTEGER NOT NULL DEFAULT 0
 )''';
 
 const _saleInvoiceTable = '''

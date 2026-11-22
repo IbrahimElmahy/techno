@@ -553,16 +553,15 @@ def rep_bundle(
 
 def _extra_rules(db: Session) -> dict[int, tuple[bool, Decimal | None]]:
     return {
-        i: (enabled is not False, cap)
-        for i, enabled, cap in db.execute(
-            select(Item.id, Item.extra_discount_enabled, Item.extra_discount_max_pct)
-            .where(or_(Item.extra_discount_enabled.is_(False),
-                       Item.extra_discount_max_pct.is_not(None)))).all()
+        i: (True, cap)
+        for i, cap in db.execute(
+            select(Item.id, Item.extra_discount_max_pct)
+            .where(Item.extra_discount_enabled.is_(True))).all()
     }
 
 
 def _extra_of(rules: dict, item_id: int) -> dict:
-    enabled, cap = rules.get(item_id, (True, None))
+    enabled, cap = rules.get(item_id, (False, None))
     return {"extra_discount_enabled": enabled,
             "extra_discount_max_pct": str(cap) if cap is not None else None}
 

@@ -399,7 +399,7 @@ class ApiClient {
           basePrice: double.tryParse('${i['base_price']}'),
           defaultDiscountPct: double.tryParse('${i['default_discount_pct']}') ?? 0,
           extraMaxPct: _extraMax(i),
-          extraOn: i['extra_discount_enabled'] != false,
+          extraOn: i['extra_discount_enabled'] == true,
           tierPrices: {
             for (final e in ((i['tier_prices'] as Map?) ?? {}).entries)
               e.key.toString(): double.tryParse('${e.value}') ?? 0
@@ -462,7 +462,7 @@ class ApiClient {
           basePrice: double.tryParse('${i['base_price']}'),
           defaultDiscountPct: double.tryParse('${i['default_discount_pct']}') ?? 0,
           extraMaxPct: _extraMax(i),
-          extraOn: i['extra_discount_enabled'] != false,
+          extraOn: i['extra_discount_enabled'] == true,
           tierPrices: {
             for (final e in ((i['tier_prices'] as Map?) ?? {}).entries)
               e.key.toString(): double.tryParse('${e.value}') ?? 0
@@ -483,7 +483,7 @@ class ApiClient {
             defaultDiscountPct:
                 double.tryParse('${i['default_discount_pct']}') ?? 0,
             extraMaxPct: _extraMax(i),
-            extraOn: i['extra_discount_enabled'] != false,
+            extraOn: i['extra_discount_enabled'] == true,
             tierPrices: {
               for (final e in ((i['tier_prices'] as Map?) ?? {}).entries)
                 e.key.toString(): double.tryParse('${e.value}') ?? 0

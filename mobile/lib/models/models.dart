@@ -282,7 +282,7 @@ class SaleItem {
     this.tierPrices = const {},
     this.minPrice,
     this.extraMaxPct,
-    this.extraOn = true,
+    this.extraOn = false,
   });
 
   double priceFor(String? tier) =>
@@ -321,7 +321,7 @@ class SaleItem {
         },
         minPrice: (r['min_price'] as num?)?.toDouble(),
         extraMaxPct: (r['extra_max'] as num?)?.toDouble(),
-        extraOn: (r['extra_on'] as num?) != 0,
+        extraOn: (r['extra_on'] as num?) == 1,
       );
 }
 

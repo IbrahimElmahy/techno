@@ -532,6 +532,8 @@ export default function Catalog() {
         default_discount_pct: values.default_discount_pct ?? 0,
         purchase_price: values.purchase_price ?? null,
         purchase_discount_pct: values.purchase_discount_pct ?? null,
+        extra_discount_enabled: !!values.extra_discount_enabled,
+        extra_discount_max_pct: values.extra_discount_max_pct ? Number(values.extra_discount_max_pct).toFixed(2) : null,
         sale_price: values.prices?.consumer?.price ?? null,
       };
 
@@ -656,6 +658,9 @@ export default function Catalog() {
       purchase_price: record.purchase_price ? Number(record.purchase_price) : undefined,
       purchase_discount_pct: record.purchase_discount_pct != null
         ? Number(record.purchase_discount_pct) : undefined,
+      extra_discount_enabled: record.extra_discount_enabled === true,
+      extra_discount_max_pct: record.extra_discount_max_pct != null
+        ? Number(record.extra_discount_max_pct) : undefined,
       default_discount_pct: record.default_discount_pct !== null
         && record.default_discount_pct !== undefined
         ? Number(record.default_discount_pct) : undefined,
@@ -796,18 +801,13 @@ export default function Catalog() {
       width: 130,
       align: 'left' as const,
       render: (_: any, r: ItemRecord) => {
-        const on = r.extra_discount_enabled !== false;
+        const on = r.extra_discount_enabled === true;
         const cap = r.extra_discount_max_pct != null ? Number(r.extra_discount_max_pct) : null;
         return (
           <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
             <Switch size="small" checked={on} disabled={!canEditPrices}
               onChange={(v) => saveExtra(r, { extra_discount_enabled: v })} />
-            {priceEdit && on ? (
-              <InlineNumberCell
-                gridCol="extra_discount_max_pct" min={0} max={99.99}
-                value={cap}
-                onCommit={async (v) => saveExtra(r, { extra_discount_max_pct: v > 0 ? v.toFixed(2) : null })} />
-            ) : !on ? (
+            {!on ? (
               <span style={{ color: '#bfbfbf' }}>مغلق</span>
             ) : cap ? (
               <Tag color="blue" style={{ marginInlineEnd: 0, fontWeight: 700 }}>
@@ -1198,6 +1198,23 @@ export default function Catalog() {
             <Col span={8}>
               <Form.Item name="purchase_discount_pct" label="خصم الشراء الثابت %">
                 <InputNumber min={0} max={99.99} step={0.5} style={{ width: '100%' }} placeholder="اختياري" />
+              </Form.Item>
+            </Col>
+            <Col span={8}>
+              <Form.Item label="الخصم الإضافي %">
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <Form.Item name="extra_discount_enabled" valuePropName="checked" noStyle>
+                    <Switch />
+                  </Form.Item>
+                  <Form.Item noStyle shouldUpdate={(a, b) => a.extra_discount_enabled !== b.extra_discount_enabled}>
+                    {({ getFieldValue }) => (
+                      <Form.Item name="extra_discount_max_pct" noStyle>
+                        <InputNumber min={0} max={99.99} step={0.5} style={{ width: '100%' }}
+                          placeholder="الحد الأقصى" disabled={!getFieldValue('extra_discount_enabled')} />
+                      </Form.Item>
+                    )}
+                  </Form.Item>
+                </div>
               </Form.Item>
             </Col>
             <Form.Item noStyle shouldUpdate={(a, b) => a.kind !== b.kind}>

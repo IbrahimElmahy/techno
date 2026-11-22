@@ -1402,7 +1402,7 @@ export default function Invoices() {
     extraLimit: (id) => {
       const p = id ? products.find((x) => x.id === id) : undefined;
       if (!p) return null;
-      if (p.extra_discount_enabled === false) return 0;
+      if (p.extra_discount_enabled !== true) return 0;
       return p.extra_discount_max_pct != null ? Number(p.extra_discount_max_pct) : null;
     },
   });

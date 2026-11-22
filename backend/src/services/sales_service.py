@@ -330,7 +330,7 @@ def create_sale(
                         f"يجب أن يكون الخصم {label} من صفر إلى أقل من ١٠٠٪ — القيمة المُدخلة {half}.")
             extra = Decimal(ln.variable_discount_pct or ZERO)
             if extra > ZERO:
-                if item.extra_discount_enabled is False:
+                if item.extra_discount_enabled is not True:
                     raise SalesError(f"الخصم الإضافي مغلق للصنف «{item.name}».")
                 cap = item.extra_discount_max_pct
                 if cap is not None and extra > Decimal(cap):

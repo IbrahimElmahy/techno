@@ -76,6 +76,9 @@ export default function ItemEditModal({
           purchase_price: it.purchase_price != null ? Number(it.purchase_price) : undefined,
           purchase_discount_pct: it.purchase_discount_pct != null
             ? Number(it.purchase_discount_pct) : undefined,
+          extra_discount_enabled: it.extra_discount_enabled === true,
+          extra_discount_max_pct: it.extra_discount_max_pct != null
+            ? Number(it.extra_discount_max_pct) : undefined,
           default_discount_pct: it.default_discount_pct != null
             ? Number(it.default_discount_pct) : 0,
           default_warehouse_id: it.default_warehouse_id ?? undefined,
@@ -106,6 +109,8 @@ export default function ItemEditModal({
         sale_price: item.kind === 'product' ? v.sale_price ?? null : null,
         purchase_price: v.purchase_price ?? null,
         purchase_discount_pct: v.purchase_discount_pct ?? null,
+        extra_discount_enabled: !!v.extra_discount_enabled,
+        extra_discount_max_pct: v.extra_discount_max_pct ? Number(v.extra_discount_max_pct).toFixed(2) : null,
         default_discount_pct: v.default_discount_pct ?? 0,
         default_warehouse_id: v.default_warehouse_id ?? null,
         is_serialized: v.is_serialized,
@@ -190,6 +195,23 @@ export default function ItemEditModal({
             <Col xs={24} md={12}>
               <Form.Item name="purchase_discount_pct" label="خصم الشراء الثابت %">
                 <InputNumber min={0} max={99.99} step={0.5} style={{ width: '100%' }} placeholder="اختياري" />
+              </Form.Item>
+            </Col>
+            <Col xs={24} md={12}>
+              <Form.Item label="الخصم الإضافي %">
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <Form.Item name="extra_discount_enabled" valuePropName="checked" noStyle>
+                    <Switch />
+                  </Form.Item>
+                  <Form.Item noStyle shouldUpdate={(a, b) => a.extra_discount_enabled !== b.extra_discount_enabled}>
+                    {({ getFieldValue }) => (
+                      <Form.Item name="extra_discount_max_pct" noStyle>
+                        <InputNumber min={0} max={99.99} step={0.5} style={{ width: '100%' }}
+                          placeholder="الحد الأقصى" disabled={!getFieldValue('extra_discount_enabled')} />
+                      </Form.Item>
+                    )}
+                  </Form.Item>
+                </div>
               </Form.Item>
             </Col>
             {isProduct && (
