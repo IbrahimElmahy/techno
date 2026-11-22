@@ -184,6 +184,7 @@ def analyse(
     kind: str | None = None,
     include_bonus: bool | str = True,
     family=None,
+    order: str = "asc",
 ) -> dict:
     branch_id, warehouse_id, party_id = mf.ids(branch_id), mf.ids(warehouse_id), mf.ids(party_id)
     rep_id, territory_id, governorate_id = mf.ids(rep_id), mf.ids(territory_id), mf.ids(governorate_id)
@@ -387,10 +388,11 @@ def analyse(
 
     rows = [_finish(v, sales) for v in merged.values()]
     doc = "document" in dims
+    rows.sort(key=lambda x: -Decimal(x["net_value"]))
     rows.sort(key=lambda x: tuple(
         (x.get(f"{d}_id") or "") if d in ("day", "month", "year") else "" for d in dims)
-        + ((x.get("document_date") or "", x.get("document") or "") if doc else ())
-        + (-Decimal(x["net_value"]),))
+        + ((x.get("document_date") or "", x.get("document") or "") if doc else ()),
+        reverse=order == "desc")
     totals = _finish({m: sum((Decimal(str(v[m] or 0)) for v in merged.values()), Decimal(0))
                       for m in measures}, sales)
     return {"side": side, "dims": dims, "rows": rows, "totals": totals,

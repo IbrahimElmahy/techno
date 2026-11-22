@@ -117,6 +117,7 @@ def trade_analysis_report(
     kind: str | None = Query(None, description="sale | return"),
     include_bonus: str = Query("true", description="true | false | only"),
     family: str | None = Query(None),
+    order: str = Query("asc", description="asc | desc"),
     current: CurrentUser = Depends(require_capability(CAP_SALES_READ)),
     db: Session = Depends(get_db),
 ):
@@ -130,7 +131,7 @@ def trade_analysis_report(
             warehouse_id=warehouse_id, party_id=party_id, party_type=party_type,
             rep_id=rep_id, territory_id=territory_id, governorate_id=governorate_id,
             item_id=item_id, category=category, price_tier=price_tier, kind=kind,
-            include_bonus=bonus, family=family))
+            include_bonus=bonus, family=family, order=order))
     except trade_analysis.TradeAnalysisError as exc:
         raise HTTPException(422, {"code": "report_invalid", "message": str(exc)}) from exc
 

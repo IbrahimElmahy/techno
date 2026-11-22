@@ -109,6 +109,7 @@ export default function TradeAnalysis({ side: fixedSide }: { side?: Side }) {
   const [range, setRange] = useState<[Dayjs, Dayjs] | null>(() => rangeFor(preset));
   const [f, setF] = useState<Record<string, any>>({});
   const [includeBonus, setIncludeBonus] = useState<string>(preset.bonus || 'false');
+  const [order, setOrder] = useState<'asc' | 'desc'>('asc');
 
   const [rows, setRows] = useState<Row[]>([]);
   const [totals, setTotals] = useState<Row | null>(null);
@@ -162,7 +163,7 @@ export default function TradeAnalysis({ side: fixedSide }: { side?: Side }) {
     const my = ++seq.current;
     setLoading(true);
     try {
-      const p: Record<string, any> = { side, dims: effectiveDims.join(','), include_bonus: side === 'sales' ? includeBonus : 'true' };
+      const p: Record<string, any> = { side, dims: effectiveDims.join(','), include_bonus: side === 'sales' ? includeBonus : 'true', order };
       if (range?.[0]) p.date_from = range[0].format('YYYY-MM-DD');
       if (range?.[1]) p.date_to = range[1].format('YYYY-MM-DD');
       if (kind !== 'net') p.kind = kind;
@@ -179,7 +180,7 @@ export default function TradeAnalysis({ side: fixedSide }: { side?: Side }) {
     }
   };
 
-  useEffect(() => { load(); }, [side, effectiveDims.join(','), kind, includeBonus,
+  useEffect(() => { load(); }, [side, effectiveDims.join(','), kind, includeBonus, order,
     range?.[0]?.valueOf(), range?.[1]?.valueOf(), JSON.stringify(f)]);
 
   const measures = MEASURES(side, showProfit);
@@ -431,9 +432,11 @@ export default function TradeAnalysis({ side: fixedSide }: { side?: Side }) {
             options={[{ value: 'false', label: 'بدون البونص' }, { value: 'true', label: 'مع البونص' },
               { value: 'only', label: 'البونص فقط' }]} />
         )}
+        <Select value={order} style={{ minWidth: 150 }} onChange={setOrder}
+          options={[{ value: 'asc', label: 'من الأقدم للأحدث' }, { value: 'desc', label: 'من الأحدث للأقدم' }]} />
         <Button className="sl-f-clear" icon={<ClearOutlined />}
           onClick={() => { setF({}); setRange(rangeFor(preset)); setDims(preset.dims);
-            setPeriod(preset.period || 'none'); setKind(preset.kind || 'net'); setIncludeBonus(preset.bonus || 'false'); }}>مسح</Button>
+            setPeriod(preset.period || 'none'); setKind(preset.kind || 'net'); setIncludeBonus(preset.bonus || 'false'); setOrder('asc'); }}>مسح</Button>
       </>)}
       summary={totals && (<>
         <ListStat label={side === 'sales' ? 'المبيعات' : 'المشتريات'} value={money(totals.sales_value)} />
