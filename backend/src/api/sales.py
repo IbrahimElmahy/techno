@@ -418,6 +418,7 @@ def rep_bundle(
         .order_by(arabic.sort_key(Item.name), Item.name)
     ).all()
     on_hand = {r[0]: Decimal(str(r[5] or 0)) for r in held}
+    extra_rules = _extra_rules(db)
 
     pending_out: dict[int, Decimal] = {}
     _pending_q = (
@@ -523,6 +524,7 @@ def rep_bundle(
             {
                 "item_id": r[0], "name": r[1], "unit": r[2],
                 "default_discount_pct": str(r[3]) if r[3] is not None else None,
+                **_extra_of(extra_rules, r[0]),
                 "base_price": str(r[4]) if r[4] is not None else None,
                 "on_hand": str(on_hand[r[0]]),
                 "pending_out": str(pending_out.get(r[0], Decimal("0"))),
@@ -539,6 +541,7 @@ def rep_bundle(
                 "category": cat_label.get(c[3], c[3]),
                 "base_price": str(c[4]) if c[4] is not None else None,
                 "default_discount_pct": str(c[5]) if c[5] is not None else None,
+                **_extra_of(extra_rules, c[0]),
                 "tier_prices": tiers.get(c[0], {}),
             }
             for c in catalog
@@ -546,6 +549,22 @@ def rep_bundle(
         "price_sheet_hidden_categories": price_sheet_hidden,
     }
 
+
+
+def _extra_rules(db: Session) -> dict[int, tuple[bool, Decimal | None]]:
+    return {
+        i: (enabled is not False, cap)
+        for i, enabled, cap in db.execute(
+            select(Item.id, Item.extra_discount_enabled, Item.extra_discount_max_pct)
+            .where(or_(Item.extra_discount_enabled.is_(False),
+                       Item.extra_discount_max_pct.is_not(None)))).all()
+    }
+
+
+def _extra_of(rules: dict, item_id: int) -> dict:
+    enabled, cap = rules.get(item_id, (True, None))
+    return {"extra_discount_enabled": enabled,
+            "extra_discount_max_pct": str(cap) if cap is not None else None}
 
 
 def _branch_catalog(db: Session, current: CurrentUser) -> list:

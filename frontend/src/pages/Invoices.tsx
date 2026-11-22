@@ -1399,6 +1399,12 @@ export default function Invoices() {
     advanceFrom, setDocWarehouseId, changeLineWarehouse, setPanelItemId, hidePoints: isFactory, isBonus,
     productCode: (id) => products.find((p) => p.id === id)?.code,
     belowCost, canSellBelowCost,
+    extraLimit: (id) => {
+      const p = id ? products.find((x) => x.id === id) : undefined;
+      if (!p) return null;
+      if (p.extra_discount_enabled === false) return 0;
+      return p.extra_discount_max_pct != null ? Number(p.extra_discount_max_pct) : null;
+    },
   });
   const lineGrid = useEntryGrid('invoice-lines-grid', lineColumns);
 

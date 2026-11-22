@@ -547,6 +547,8 @@ _ADDED_COLUMNS: list[tuple[str, str, str]] = [
     ("customer", "markaz", "VARCHAR(120)"),
     ("customer", "address", "VARCHAR(240)"),
     ("item", "default_discount_pct", "NUMERIC(5,2) NOT NULL DEFAULT 0"),
+    ("item", "extra_discount_max_pct", "NUMERIC(5,2)"),
+    ("item", "extra_discount_enabled", "BOOLEAN NOT NULL DEFAULT TRUE"),
     ("account", "branch_id", "BIGINT"),
     ("inspection_item", "stock_movement_id", "BIGINT"),
     ("inspection", "customer_id", "BIGINT"),

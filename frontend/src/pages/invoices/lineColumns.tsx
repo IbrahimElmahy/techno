@@ -34,6 +34,7 @@ export interface LineColumnsCtx {
   productCode?: (id: number) => string | null | undefined;
   belowCost?: (l: SaleLineItem) => boolean;
   canSellBelowCost?: boolean;
+  extraLimit?: (itemId: number | null) => number | null;
 }
 
 const fmtQty = (n: number) => n.toLocaleString(numeralsLocale(), { maximumFractionDigits: 3 });
@@ -42,7 +43,7 @@ export function buildLineColumns({
   viewOnly, warehouses, totalPoints, pointValues, productName, saleUnitOptions,
   availabilityHint, saleLineNet, linePoints, checkedQuantity, handleLineChange, handleRemoveLine,
   advanceFrom, setDocWarehouseId, changeLineWarehouse, setPanelItemId, hidePoints = false, isBonus = false,
-  productCode, belowCost, canSellBelowCost = false,
+  productCode, belowCost, canSellBelowCost = false, extraLimit,
 }: LineColumnsCtx): EntryColumn<SaleLineItem>[] {
   return [
     { key: 'idx', title: '#', width: 40, locked: true,
@@ -154,12 +155,14 @@ export function buildLineColumns({
     { key: 'variable_discount', title: 'خصم متغير %', width: 70,
       cellStyle: { textAlign: 'center' },
       cell: (line) => (
-        isBonus ? <span style={{ color: '#555b65' }}>-</span> : viewOnly ? (
+        isBonus ? <span style={{ color: '#555b65' }}>-</span>
+          : !viewOnly && extraLimit?.(line.item_id) === 0 ? <span className="pct-pill pct-pill-zero">مغلق</span>
+          : viewOnly ? (
           <span className={line.variable_discount ? 'pct-pill' : 'pct-pill pct-pill-zero'}>
             {line.variable_discount ? `${line.variable_discount}%` : '0%'}
           </span>
         ) : (
-          <InputNumber controls={false} size="small" min={0} max={99.99} step={0.5} style={{ width: '100%', maxWidth: 64 }}
+          <InputNumber controls={false} size="small" min={0} max={extraLimit?.(line.item_id) ?? 99.99} step={0.5} style={{ width: '100%', maxWidth: 64 }}
             className="pct-pill-input"
             placeholder="متغير" value={line.variable_discount ?? undefined}
             onChange={(v) => handleLineChange(line.key, 'variable_discount', (v as number) ?? null)}

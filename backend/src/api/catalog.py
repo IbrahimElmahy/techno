@@ -53,6 +53,8 @@ class ItemCreate(BaseModel):
     category: str | None = None
     default_discount_pct: Decimal | None = None
     purchase_discount_pct: Decimal | None = None
+    extra_discount_max_pct: Decimal | None = None
+    extra_discount_enabled: bool | None = None
     min_stock: Decimal | None = None
     max_stock: Decimal | None = None
     is_perishable: bool = False
@@ -76,6 +78,8 @@ class ItemUpdate(BaseModel):
     category: str | None = None
     default_discount_pct: Decimal | None = None
     purchase_discount_pct: Decimal | None = None
+    extra_discount_max_pct: Decimal | None = None
+    extra_discount_enabled: bool | None = None
     min_stock: Decimal | None = None
     max_stock: Decimal | None = None
     is_perishable: bool | None = None
@@ -100,6 +104,8 @@ class ItemOut(BaseModel):
     category: str | None = None
     default_discount_pct: Decimal | None = None
     purchase_discount_pct: Decimal | None = None
+    extra_discount_max_pct: Decimal | None = None
+    extra_discount_enabled: bool | None = None
     min_stock: Decimal | None = None
     max_stock: Decimal | None = None
     is_perishable: bool = False
@@ -120,6 +126,8 @@ def _out(it: Item) -> ItemOut:
         default_warehouse_id=it.default_warehouse_id, category=it.category,
         default_discount_pct=it.default_discount_pct,
         purchase_discount_pct=it.purchase_discount_pct,
+        extra_discount_max_pct=it.extra_discount_max_pct,
+        extra_discount_enabled=it.extra_discount_enabled is not False,
         min_stock=it.min_stock, max_stock=it.max_stock, is_perishable=it.is_perishable,
         piece_name=it.piece_name, pieces_per_unit=it.pieces_per_unit,
         description=it.description,
@@ -455,6 +463,8 @@ def create_item(
         default_warehouse_id=body.default_warehouse_id, category=body.category,
         default_discount_pct=body.default_discount_pct or 0,
         purchase_discount_pct=body.purchase_discount_pct,
+        extra_discount_max_pct=body.extra_discount_max_pct,
+        extra_discount_enabled=body.extra_discount_enabled is not False,
         min_stock=body.min_stock, max_stock=body.max_stock,
         is_perishable=body.is_perishable,
         piece_name=body.piece_name, pieces_per_unit=body.pieces_per_unit,
@@ -822,13 +832,14 @@ def update_item(
         raise HTTPException(404, {"code": "not_found", "message": "Item not found"})
     PRICE_FIELDS = {"purchase_price", "sale_price", "default_discount_pct"}
     CLEARABLE = {"purchase_price", "sale_price", "default_warehouse_id", "category",
-                 "purchase_discount_pct",
+                 "purchase_discount_pct", "extra_discount_max_pct",
                  "min_stock", "max_stock",
                  "piece_name", "pieces_per_unit", "description"}
     sent = body.model_fields_set
     for field in ("code", "name", "purchase_price", "sale_price", "is_serialized", "active",
                   "default_warehouse_id", "category",
                   "default_discount_pct", "purchase_discount_pct",
+                  "extra_discount_max_pct", "extra_discount_enabled",
                   "min_stock", "max_stock", "is_perishable",
                   "piece_name", "pieces_per_unit", "description"):
         if field not in sent:

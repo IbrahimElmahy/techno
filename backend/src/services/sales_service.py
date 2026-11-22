@@ -179,6 +179,11 @@ def compute_net(gross: Decimal, combined_pct: Decimal) -> Decimal:
     return discounts.net_of(gross, combined_pct)
 
 
+def _pct_text(v) -> str:
+    d = Decimal(str(v))
+    return str(int(d)) if d == d.to_integral_value() else format(d.normalize(), "f")
+
+
 def _assert_bonus_target(db: Session, target_id: int | None, customer_id: int,
                          self_id: int | None) -> None:
     if self_id and target_id == self_id:
@@ -323,6 +328,14 @@ def create_sale(
                 if Decimal(half) < ZERO or Decimal(half) >= Decimal("100"):
                     raise SalesError(
                         f"يجب أن يكون الخصم {label} من صفر إلى أقل من ١٠٠٪ — القيمة المُدخلة {half}.")
+            extra = Decimal(ln.variable_discount_pct or ZERO)
+            if extra > ZERO:
+                if item.extra_discount_enabled is False:
+                    raise SalesError(f"الخصم الإضافي مغلق للصنف «{item.name}».")
+                cap = item.extra_discount_max_pct
+                if cap is not None and extra > Decimal(cap):
+                    raise SalesError(
+                        f"أقصى خصم إضافي للصنف «{item.name}» هو {_pct_text(cap)}٪.")
             line_disc = discounts.combine(ln.fixed_discount_pct or ZERO,
                                           ln.variable_discount_pct or ZERO)
         else:

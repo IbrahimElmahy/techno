@@ -15,7 +15,14 @@ class LocalDb {
   Future<Database> get db async {
     if (_db != null) return _db!;
     final path = p.join(await getDatabasesPath(), 'techno_inspections.db');
-    _db = await openDatabase(path, version: 34, onUpgrade: (d, from, to) async {
+    _db = await openDatabase(path, version: 35, onUpgrade: (d, from, to) async {
+      if (from < 35) {
+        for (final t in ['sale_item', 'branch_catalog_item']) {
+          for (final col in ['extra_max REAL', 'extra_on INTEGER NOT NULL DEFAULT 1']) {
+            try { await d.execute('ALTER TABLE $t ADD COLUMN $col'); } catch (_) {}
+          }
+        }
+      }
       try {
         await d.execute('ALTER TABLE inspection ADD COLUMN technician_customer_id INTEGER');
       } catch (_) {}
@@ -731,6 +738,8 @@ class LocalDb {
           'default_discount_pct': it.defaultDiscountPct,
           'tier_prices':
               it.tierPrices.entries.map((e) => '${e.key}=${e.value}').join(','),
+          'extra_max': it.extraMaxPct,
+          'extra_on': it.extraOn ? 1 : 0,
         });
       }
       await batch.commit(noResult: true);
@@ -1653,7 +1662,9 @@ CREATE TABLE sale_item(
   base_price REAL,
   default_discount_pct REAL NOT NULL DEFAULT 0,
   tier_prices TEXT,
-  min_price REAL
+  min_price REAL,
+  extra_max REAL,
+  extra_on INTEGER NOT NULL DEFAULT 1
 )''';
 
 const _branchCatalogTable = '''
@@ -1664,7 +1675,9 @@ CREATE TABLE branch_catalog_item(
   category TEXT,
   base_price REAL,
   default_discount_pct REAL NOT NULL DEFAULT 0,
-  tier_prices TEXT
+  tier_prices TEXT,
+  extra_max REAL,
+  extra_on INTEGER NOT NULL DEFAULT 1
 )''';
 
 const _saleInvoiceTable = '''

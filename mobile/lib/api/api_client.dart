@@ -53,6 +53,11 @@ class ApiClient {
     return s.isEmpty ? null : s;
   }
 
+  static double? _extraMax(Map i) {
+    final v = i['extra_discount_max_pct'];
+    return v == null ? null : double.tryParse('$v');
+  }
+
   Future<void> login(String username, String password) async {
     final r = await http
         .post(await _uri('/auth/login'),
@@ -393,6 +398,8 @@ class ApiClient {
           category: _text(i['category']),
           basePrice: double.tryParse('${i['base_price']}'),
           defaultDiscountPct: double.tryParse('${i['default_discount_pct']}') ?? 0,
+          extraMaxPct: _extraMax(i),
+          extraOn: i['extra_discount_enabled'] != false,
           tierPrices: {
             for (final e in ((i['tier_prices'] as Map?) ?? {}).entries)
               e.key.toString(): double.tryParse('${e.value}') ?? 0
@@ -454,6 +461,8 @@ class ApiClient {
           pendingOut: double.tryParse('${i['pending_out'] ?? 0}') ?? 0,
           basePrice: double.tryParse('${i['base_price']}'),
           defaultDiscountPct: double.tryParse('${i['default_discount_pct']}') ?? 0,
+          extraMaxPct: _extraMax(i),
+          extraOn: i['extra_discount_enabled'] != false,
           tierPrices: {
             for (final e in ((i['tier_prices'] as Map?) ?? {}).entries)
               e.key.toString(): double.tryParse('${e.value}') ?? 0
@@ -473,6 +482,8 @@ class ApiClient {
             basePrice: double.tryParse('${i['base_price']}'),
             defaultDiscountPct:
                 double.tryParse('${i['default_discount_pct']}') ?? 0,
+            extraMaxPct: _extraMax(i),
+            extraOn: i['extra_discount_enabled'] != false,
             tierPrices: {
               for (final e in ((i['tier_prices'] as Map?) ?? {}).entries)
                 e.key.toString(): double.tryParse('${e.value}') ?? 0

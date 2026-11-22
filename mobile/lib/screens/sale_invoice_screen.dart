@@ -562,6 +562,17 @@ class _SaleInvoiceScreenState extends State<SaleInvoiceScreen> {
       }
     }
     if (!_isBonus) {
+      final rules = {for (final it in await LocalDb.instance.saleItems()) it.itemId: it};
+      for (final l in _lines) {
+        final it = rules[l.itemId];
+        if (it == null || l.variableDiscountPct <= 0) continue;
+        if (!it.extraOn) {
+          return _say('الخصم الإضافي مغلق للصنف «${l.itemName}»');
+        }
+        if (it.extraMaxPct != null && l.variableDiscountPct > it.extraMaxPct! + 0.0001) {
+          return _say('أقصى خصم إضافي للصنف «${l.itemName}» هو ${_qty(it.extraMaxPct!)}٪');
+        }
+      }
       for (final l in _lines) {
         if (l.isFull) {
           return _say('«${l.itemName}» بخصم ١٠٠٪ — هذا بونص، وللبونص شاشة مستقلة. '

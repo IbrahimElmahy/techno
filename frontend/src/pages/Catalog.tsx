@@ -3,7 +3,7 @@ import { PAGE_SIZE, PAGE_SIZE_OPTIONS } from '../utils/pagination';
 import { searchFilter, searchRank, sortByName } from '../utils/arabicSort';
 import { useNavigate } from 'react-router-dom';
 import {
-  Button, Checkbox, Col, Collapse, Divider, Empty, Form, Input, Modal, Radio, Row, Select, Space, Table, Tag, Tooltip, message,
+  Button, Checkbox, Col, Collapse, Divider, Empty, Form, Input, Modal, Radio, Row, Select, Space, Switch, Table, Tag, Tooltip, message,
 } from 'antd';
 import { InputNumber } from '../components/NumberInput';
 import {
@@ -101,6 +101,8 @@ interface ItemRecord {
   piece_name: string | null;
   pieces_per_unit: string | null;
   default_discount_pct: string | null;
+  extra_discount_max_pct?: string | null;
+  extra_discount_enabled?: boolean;
   min_stock: string | null;
   max_stock: string | null;
   is_perishable: boolean;
@@ -452,6 +454,15 @@ export default function Catalog() {
     patchRow(r.id, () => ({ default_discount_pct: s }));
   };
 
+  const saveExtra = async (r: ItemRecord, patch: { extra_discount_max_pct?: string | null; extra_discount_enabled?: boolean }) => {
+    try {
+      await api.patch(`/api/v1/items/${r.id}`, patch);
+      patchRow(r.id, () => patch);
+    } catch (err: any) {
+      message.error(err?.response?.data?.detail?.message || 'تعذر الحفظ');
+    }
+  };
+
   const fetchItems = async (override?: Record<string, any>) => {
     const active = override ?? filters;
     setLoading(true);
@@ -775,6 +786,34 @@ export default function Catalog() {
                 صافي {money(netOf(price, pct))}
               </div>
             )}
+          </div>
+        );
+      },
+    },
+    {
+      title: 'خصم إضافي',
+      key: 'extra_discount',
+      width: 130,
+      align: 'left' as const,
+      render: (_: any, r: ItemRecord) => {
+        const on = r.extra_discount_enabled !== false;
+        const cap = r.extra_discount_max_pct != null ? Number(r.extra_discount_max_pct) : null;
+        return (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <Switch size="small" checked={on} disabled={!canEditPrices}
+              onChange={(v) => saveExtra(r, { extra_discount_enabled: v })} />
+            {priceEdit && on ? (
+              <InlineNumberCell
+                gridCol="extra_discount_max_pct" min={0} max={99.99}
+                value={cap}
+                onCommit={async (v) => saveExtra(r, { extra_discount_max_pct: v > 0 ? v.toFixed(2) : null })} />
+            ) : !on ? (
+              <span style={{ color: '#bfbfbf' }}>مغلق</span>
+            ) : cap ? (
+              <Tag color="blue" style={{ marginInlineEnd: 0, fontWeight: 700 }}>
+                حتى {cap.toFixed(cap % 1 === 0 ? 0 : 2)}%
+              </Tag>
+            ) : <span style={{ color: '#bfbfbf' }}>بلا حد</span>}
           </div>
         );
       },

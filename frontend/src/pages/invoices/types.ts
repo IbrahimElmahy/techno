@@ -62,6 +62,8 @@ export interface Product {
   is_serialized: boolean;
   category: string | null;
   default_discount_pct: string | null;
+  extra_discount_max_pct?: string | null;
+  extra_discount_enabled?: boolean;
   unit_of_measure?: string;
   meters_per_piece?: string | null;
 }

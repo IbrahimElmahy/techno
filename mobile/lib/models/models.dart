@@ -267,6 +267,8 @@ class SaleItem {
   final Map<String, double> tierPrices;
 
   final double? minPrice;
+  final double? extraMaxPct;
+  final bool extraOn;
 
   const SaleItem({
     required this.itemId,
@@ -279,6 +281,8 @@ class SaleItem {
     this.defaultDiscountPct = 0,
     this.tierPrices = const {},
     this.minPrice,
+    this.extraMaxPct,
+    this.extraOn = true,
   });
 
   double priceFor(String? tier) =>
@@ -298,6 +302,8 @@ class SaleItem {
         'default_discount_pct': defaultDiscountPct,
         'tier_prices': tierPrices.entries.map((e) => '${e.key}=${e.value}').join(','),
         'min_price': minPrice,
+        'extra_max': extraMaxPct,
+        'extra_on': extraOn ? 1 : 0,
       };
 
   static SaleItem fromRow(Map<String, Object?> r) => SaleItem(
@@ -314,6 +320,8 @@ class SaleItem {
             if (part.contains('=')) part.split('=')[0]: double.tryParse(part.split('=')[1]) ?? 0
         },
         minPrice: (r['min_price'] as num?)?.toDouble(),
+        extraMaxPct: (r['extra_max'] as num?)?.toDouble(),
+        extraOn: (r['extra_on'] as num?) != 0,
       );
 }
 
