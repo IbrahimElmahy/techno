@@ -386,8 +386,10 @@ def analyse(
                 cur[m] = (cur[m] or 0) + (r[m] or 0)
 
     rows = [_finish(v, sales) for v in merged.values()]
+    doc = "document" in dims
     rows.sort(key=lambda x: tuple(
         (x.get(f"{d}_id") or "") if d in ("day", "month", "year") else "" for d in dims)
+        + ((x.get("document_date") or "", x.get("document") or "") if doc else ())
         + (-Decimal(x["net_value"]),))
     totals = _finish({m: sum((Decimal(str(v[m] or 0)) for v in merged.values()), Decimal(0))
                       for m in measures}, sales)
