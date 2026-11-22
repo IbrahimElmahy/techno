@@ -1268,7 +1268,7 @@ class _SaleInvoiceScreenState extends State<SaleInvoiceScreen> {
                     onChanged: (v) => setState(() => l.unitPrice = v),
                     readOnly: _isBonus || l.fixedDiscountPct > 0,
                     netPrice: !_isBonus && l.fixedDiscountPct > 0
-                        ? netOf(l.unitPrice, l.discountPct)
+                        ? netOf(l.unitPrice, l.fixedDiscountPct)
                         : null,
                   ),
                 ),
@@ -1276,7 +1276,7 @@ class _SaleInvoiceScreenState extends State<SaleInvoiceScreen> {
                 const SizedBox(width: 6),
                 Expanded(
                   child: _inlineField(
-                    label: 'خصم %',
+                    label: 'خصم إضافي %',
                     controller: _discCtl.putIfAbsent(
                         l.itemId,
                         () => TextEditingController(
@@ -1313,7 +1313,7 @@ class _SaleInvoiceScreenState extends State<SaleInvoiceScreen> {
     if (netPrice != null) {
       return InputDecorator(
         decoration: InputDecoration(
-          labelText: 'السعر بعد الخصم',
+          labelText: 'السعر',
           isDense: true,
           contentPadding:
               const EdgeInsets.symmetric(horizontal: 6, vertical: 8),
@@ -1448,12 +1448,14 @@ class _SaleInvoiceScreenState extends State<SaleInvoiceScreen> {
               ),
             ],
             const SizedBox(height: 10),
-            _totalRow('إجمالي الفاتورة قبل الخصم', _money(_gross)),
-            const SizedBox(height: 6),
-            _totalRow('الخصم', '− ${_money(max(0.0, _gross - _total))}',
-                color: AppColors.accent),
-            const SizedBox(height: 6),
-            _totalRow('صافي الفاتورة', _money(_total), color: AppColors.primary),
+            if (_bonusValue - _total > 0.005) ...[
+              _totalRow('الإجمالي', _money(_bonusValue)),
+              const SizedBox(height: 6),
+              _totalRow('الخصم الإضافي', '− ${_money(_bonusValue - _total)}',
+                  color: AppColors.accent),
+              const SizedBox(height: 6),
+            ],
+            _totalRow('إجمالي الفاتورة', _money(_total), color: AppColors.primary),
             if (_customer != null) ...[
               const Divider(height: 18),
               if (_customer!.familyBalances.isNotEmpty)
