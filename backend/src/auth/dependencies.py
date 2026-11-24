@@ -25,6 +25,7 @@ class CurrentUser:
     grants: frozenset = field(default_factory=frozenset)
     denies: frozenset = field(default_factory=frozenset)
     branch_ids: tuple = ()
+    supervises: bool = False
 
     def can(self, capability: str) -> bool:
         if self.role == RoleName.system_admin:
@@ -94,15 +95,21 @@ def get_current_user(
 
         view = branch_scope.requested_view_branch()
         branch_id = view if view in branch_ids else branch_ids[0]
+    supervises = role.name == RoleName.rep_supervisor
+    if supervises:
+        from src.auth.rbac import CAP_APP_SUPERVISOR
+
+        grants = grants | {CAP_APP_SUPERVISOR}
     return CurrentUser(
         id=user.id,
         username=user.username,
-        role=role.name,
+        role=RoleName.sales_rep if supervises else role.name,
         branch_id=branch_id,
         territory_id=user.territory_id,
         grants=grants,
         denies=denies,
         branch_ids=branch_ids,
+        supervises=supervises,
     )
 
 

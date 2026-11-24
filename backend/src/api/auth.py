@@ -96,7 +96,7 @@ def login(body: LoginRequest, request: Request,
             "sid": sid,
             "role": role.name.value,
             "branch_id": user.branch_id,
-            "rep_id": user.id if role.name.value == "sales_rep" else None,
+            "rep_id": user.id if role.name.value in ("sales_rep", "rep_supervisor") else None,
         },
         ttl_seconds=ttl,
     )
@@ -148,7 +148,7 @@ def refresh(
             "sid": user.session_id,
             "role": role.name.value,
             "branch_id": user.branch_id,
-            "rep_id": user.id if role.name.value == "sales_rep" else None,
+            "rep_id": user.id if role.name.value in ("sales_rep", "rep_supervisor") else None,
         },
         ttl_seconds=ttl,
     )

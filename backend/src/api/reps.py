@@ -50,9 +50,9 @@ class RepUpdate(BaseModel):
     warehouse_id: int | None = None
 
 
-def _rep_role_id(db: Session) -> int | None:
-    r = db.scalars(select(Role).where(Role.name == RoleName.sales_rep)).first()
-    return r.id if r else None
+def _rep_role_ids(db: Session) -> list[int]:
+    return list(db.scalars(select(Role.id).where(
+        Role.name.in_((RoleName.sales_rep, RoleName.rep_supervisor)))).all())
 
 
 def _build(db: Session, users: list[User]) -> list[RepOut]:
@@ -133,10 +133,10 @@ def list_reps(
     current: CurrentUser = Depends(require_capability(CAP_USER_READ)),
     db: Session = Depends(get_db),
 ) -> list[RepOut]:
-    role_id = _rep_role_id(db)
-    if role_id is None:
+    role_ids = _rep_role_ids(db)
+    if not role_ids:
         return []
-    stmt = select(User).where(User.role_id == role_id)
+    stmt = select(User).where(User.role_id.in_(role_ids))
     if not include_inactive:
         stmt = stmt.where(User.active.is_(True))
     stmt = branch_scope.scope(stmt, User, current)
@@ -151,7 +151,7 @@ def update_rep(
     db: Session = Depends(get_db),
 ) -> RepOut:
     u = db.get(User, user_id)
-    if u is None or u.role_id != _rep_role_id(db):
+    if u is None or u.role_id not in _rep_role_ids(db):
         raise HTTPException(404, {"code": "not_found", "message": "المندوب غير موجود."})
     if not branch_scope.may_see(current, u):
         raise HTTPException(404, {"code": "not_found", "message": "المندوب غير موجود."})
@@ -214,7 +214,7 @@ def reassign_customers(
     db: Session = Depends(get_db),
 ) -> dict:
     target = db.get(User, body.to_rep_id)
-    if target is None or target.role_id != _rep_role_id(db):
+    if target is None or target.role_id not in _rep_role_ids(db):
         raise HTTPException(404, {"code": "not_found", "message": "المندوب المنقول له غير موجود."})
     moved = 0
     for c in db.scalars(select(Customer).where(Customer.id.in_(body.customer_ids))).all():

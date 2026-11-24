@@ -58,7 +58,7 @@ def _not_found(message: str = "المندوب غير موجود.") -> HTTPExcept
 
 
 def _gate(current: CurrentUser = Depends(get_current_user)) -> CurrentUser:
-    if current.role == RoleName.rep_supervisor:
+    if current.supervises:
         if current.can(CAP_APP_SUPERVISOR):
             return current
     elif current.is_admin or current.role in _MANAGER_ROLES or CAP_APP_SUPERVISOR in current.grants:
@@ -79,7 +79,7 @@ def _reps_stmt(db: Session, current: CurrentUser, *, include_inactive: bool = Fa
     stmt = select(User).where(User.role_id == role_id)
     if not include_inactive:
         stmt = stmt.where(User.active.is_(True))
-    if current.role == RoleName.rep_supervisor:
+    if current.supervises:
         return stmt.where(User.supervisor_id == current.id,
                           User.branch_id == current.branch_id)
     return branch_scope.scope(stmt, User, current)

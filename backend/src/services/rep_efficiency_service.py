@@ -109,7 +109,8 @@ def report(db: Session, *, year: int, month: int, branch_id: int | None,
         reps &= {rep_id}
     names = {u.id: (u.full_name or u.username) for u in db.scalars(
         select(User).join(Role, Role.id == User.role_id)
-        .where(User.id.in_(reps or {0}), Role.name == RoleName.sales_rep)).all()}
+        .where(User.id.in_(reps or {0}),
+               Role.name.in_((RoleName.sales_rep, RoleName.rep_supervisor)))).all()}
     reps &= set(names)
 
     rows = []

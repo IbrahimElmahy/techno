@@ -52,7 +52,8 @@ class RepItemRow(BaseModel):
 
 def _reps(db: Session) -> dict[int, str]:
     rows = db.scalars(
-        select(User).join(Role, User.role_id == Role.id).where(Role.name == RoleName.sales_rep)
+        select(User).join(Role, User.role_id == Role.id)
+        .where(Role.name.in_((RoleName.sales_rep, RoleName.rep_supervisor)))
     ).all()
     return {r.id: (r.full_name or r.username) for r in rows}
 

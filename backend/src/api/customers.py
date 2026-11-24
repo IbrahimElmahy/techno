@@ -809,7 +809,7 @@ def assign_customers_to_rep(
     if rep is None:
         raise HTTPException(404, {"code": "not_found", "message": "Rep not found"})
     role = db.get(Role, rep.role_id)
-    if role is None or role.name != RoleName.sales_rep:
+    if role is None or role.name not in (RoleName.sales_rep, RoleName.rep_supervisor):
         raise HTTPException(422, {"code": "validation", "message": "User is not a sales rep"})
 
     customers = list(db.scalars(select(Customer).where(Customer.id.in_(body.customer_ids))).all())
