@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, status, UploadFile
@@ -144,6 +145,25 @@ def _keep_branch_prefix(old: str, new: str) -> str:
         if (old or "").startswith(p):
             return f"{p}{new}"
     return new
+
+
+def _base_code(code: str) -> str:
+    for p in _BRANCH_PREFIXES:
+        if (code or "").startswith(p):
+            return code[len(p):]
+    return code or ""
+
+
+def _twins(db: Session, item: Item) -> list[Item]:
+    base = _base_code(item.code)
+    if not re.fullmatch(r"[A-Z]+-\d+", base):
+        return []
+    return db.scalars(select(Item).where(
+        Item.id != item.id, Item.active.is_(True),
+        Item.code.in_([base, *(f"{p}{base}" for p in _BRANCH_PREFIXES)]))).all()
+
+
+_SHARED_FIELDS = ("code", "name", "category", "description")
 
 
 def _next_code(db: Session, kind: ItemKind) -> str:
@@ -836,6 +856,7 @@ def update_item(
                  "min_stock", "max_stock",
                  "piece_name", "pieces_per_unit", "description"}
     sent = body.model_fields_set
+    twins = _twins(db, item) if any(f in sent for f in _SHARED_FIELDS) else []
     for field in ("code", "name", "purchase_price", "sale_price", "is_serialized", "active",
                   "default_warehouse_id", "category",
                   "default_discount_pct", "purchase_discount_pct",
@@ -854,6 +875,24 @@ def update_item(
         if field == "code" and val:
             val = _keep_branch_prefix(item.code, str(val).strip())
         setattr(item, field, val)
+    if twins and "code" in sent:
+        base = _base_code(item.code)
+        group = {item.id, *(t.id for t in twins)}
+        wanted = [_keep_branch_prefix(t.code, base) for t in twins]
+        taken = db.scalar(select(Item.code).where(
+            Item.code.in_([item.code, *wanted]), Item.id.not_in(group)))
+        if taken:
+            raise HTTPException(409, {"code": "duplicate",
+                                      "message": f"الكود «{_base_code(taken)}» مستخدم لصنف آخر."})
+        for t in twins:
+            t.code = f"~T{t.id}"
+        db.flush()
+        for t, code in zip(twins, wanted, strict=True):
+            t.code = code
+    for t in twins:
+        for field in ("name", "category", "description"):
+            if field in sent:
+                setattr(t, field, getattr(item, field))
     db.flush()
 
     old_length = _length_of(db, item)
