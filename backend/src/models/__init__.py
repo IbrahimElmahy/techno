@@ -6,6 +6,7 @@ from src.models.catalog import Item, ItemPrice, ItemSerial, ItemUnit
 from src.models.contact import ContactPhone  # noqa: E402
 
 from src.models.cost_center import CostCenter  # noqa: E402
+from src.models.rep_efficiency import CustomerMonthlyCredit, EfficiencySetting, RepCreditAllowance  # noqa: E402
 from src.models.customer import Customer, CustomerAccount, CustomerExternalRef
 
 from src.models.inspection import Inspection, InspectionItem  # noqa: E402

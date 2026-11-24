@@ -104,6 +104,7 @@ export const NAVIGATION: (NavGroup | NavScreen)[] = [
         children: [
           { key: '/rep-reports?view=collections', label: 'تحصيلات المندوبين', roles: R(SALES), a5: '/salesagentscollections' },
           { key: '/rep-reports?view=collections-by-customer', label: 'تحصيلات المندوبين عملاء', roles: R(SALES), a5: '/salesagentsclients' },
+          { key: '/rep-efficiency', label: 'تقرير الكفاءات', roles: R(SALES) },
         ],
       },
     ],

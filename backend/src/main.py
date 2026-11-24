@@ -53,6 +53,7 @@ from src.api import (
     purchases,
     reconciliation,
     rep_reports,
+    rep_efficiency,
     reports,
     reps,
     reservations,
@@ -173,6 +174,7 @@ def create_app() -> FastAPI:
     app.include_router(catalog.router, prefix=prefix)
     app.include_router(serials.router, prefix=prefix)
     app.include_router(rep_reports.router, prefix=prefix)
+    app.include_router(rep_efficiency.router, prefix=prefix)
     app.include_router(reservations.router, prefix=prefix)
     app.include_router(stock_counts.router, prefix=prefix)
     app.include_router(price_display.router, prefix=prefix)
