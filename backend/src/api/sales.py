@@ -25,7 +25,6 @@ from src.auth.rbac import (
     CAP_SELL_BELOW_COST,
     role_has_capability,
 )
-from src.core import clock
 from src.core.db import get_db
 from src.core.money import to_money
 from src.models.catalog import Item, ItemPrice, PriceTier
@@ -1480,10 +1479,11 @@ def sales_summary(
         ret = ret.where(SalesReturn.document_number.like(f"%{q.strip()}%"))
     if customer_id is not None:
         ret = ret.where(SalesReturn.customer_id == customer_id)
+    ret_day = func.coalesce(SalesReturn.return_date, cast(SalesReturn.created_at, Date))
     if date_from is not None:
-        ret = ret.where(SalesReturn.created_at >= clock.day_start_utc(date_from))
+        ret = ret.where(ret_day >= date_from)
     if date_to is not None:
-        ret = ret.where(SalesReturn.created_at < clock.day_end_utc(date_to))
+        ret = ret.where(ret_day <= date_to)
     if ids:
         ret = ret.where(SalesReturn.id.in_([-1]))
 
@@ -1613,10 +1613,11 @@ def list_standalone_returns(
         stmt = stmt.where(SalesReturn.document_number.like(f"%{q.strip()}%"))
     if customer_id is not None:
         stmt = stmt.where(SalesReturn.customer_id == customer_id)
+    ret_day = func.coalesce(SalesReturn.return_date, cast(SalesReturn.created_at, Date))
     if date_from is not None:
-        stmt = stmt.where(SalesReturn.created_at >= clock.day_start_utc(date_from))
+        stmt = stmt.where(ret_day >= date_from)
     if date_to is not None:
-        stmt = stmt.where(SalesReturn.created_at < clock.day_end_utc(date_to))
+        stmt = stmt.where(ret_day <= date_to)
     stmt = stmt.order_by(*newest_first(SalesReturn, SalesReturn.return_date))
     if limit is not None:
         stmt = stmt.limit(limit).offset(offset)
