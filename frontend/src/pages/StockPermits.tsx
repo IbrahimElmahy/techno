@@ -14,7 +14,7 @@ import { InputNumber } from '../components/NumberInput';
 import { advanceFrom } from '../components/lineKeyboard';
 import { Popconfirm } from '../components/noConfirm';
 import {
-  DeleteOutlined, PlusOutlined, ReloadOutlined, RollbackOutlined, ArrowRightOutlined,
+  DeleteOutlined, PlusOutlined, ReloadOutlined, SyncOutlined, RollbackOutlined, ArrowRightOutlined,
   EditOutlined, PrinterOutlined, CheckOutlined, FileTextOutlined, SearchOutlined, ClearOutlined,
   ArrowLeftOutlined, EyeOutlined, FileAddOutlined, SaveOutlined, UndoOutlined,
 } from '@ant-design/icons';
@@ -126,17 +126,19 @@ export default function StockPermits() {
       .catch(console.error);
   }, []);
 
-  useEffect(() => {
+  const loadAvailable = async (notify = false) => {
     if (kind !== 'issue' || !warehouseId) { setAvailable({}); return; }
-    api.get('/api/v1/stock/by-location', { params: {
-      location_kind: 'warehouse', location_id: warehouseId, only_available: true } })
-      .then((r) => {
-        const map: Record<number, number> = {};
-        (r.data || []).forEach((row: any) => { map[row.item_id] = Number(row.on_hand); });
-        setAvailable(map);
-      })
-      .catch(console.error);
-  }, [kind, warehouseId]);
+    try {
+      const r = await api.get('/api/v1/stock/by-location', { params: {
+        location_kind: 'warehouse', location_id: warehouseId, only_available: true } });
+      const map: Record<number, number> = {};
+      (r.data || []).forEach((row: any) => { map[row.item_id] = Number(row.on_hand); });
+      setAvailable(map);
+      if (notify) message.success('تم تحديث الرصيد');
+    } catch (err) { console.error(err); }
+  };
+
+  useEffect(() => { void loadAvailable(); }, [kind, warehouseId]);
 
   const filter = useListFilter(permits, {
     initialValues: searchParams.get('kind') ? { kind } : {},
@@ -699,6 +701,8 @@ export default function StockPermits() {
       disabled: !detail, onClick: () => detail && printPermit(detail) },
     { key: 'reload', label: 'تحميل', icon: <ReloadOutlined />,
       onClick: () => setLoadRangeOpen(true) },
+    ...(kind === 'issue' && !detail ? [{ key: 'stock', label: 'تحديث الرصيد', icon: <SyncOutlined />,
+      disabled: !warehouseId, onClick: () => { void loadAvailable(true); } }] : []),
   ];
 
   const columns: ColumnsType<Permit> = [

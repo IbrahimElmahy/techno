@@ -14,7 +14,7 @@ import { Popconfirm } from '../components/noConfirm';
 import {
   PlusOutlined, DeleteOutlined, SearchOutlined, ClearOutlined, HistoryOutlined,
   FileAddOutlined, EditOutlined, EyeOutlined, UndoOutlined, SaveOutlined, PrinterOutlined,
-  ArrowLeftOutlined, ArrowRightOutlined, BankOutlined, ReloadOutlined,
+  ArrowLeftOutlined, ArrowRightOutlined, BankOutlined, ReloadOutlined, SyncOutlined,
   ExclamationCircleOutlined, CheckOutlined, ShoppingCartOutlined, PhoneOutlined,
   RollbackOutlined,
   FileExcelOutlined,
@@ -727,6 +727,19 @@ export default function Returns({ embedded }: { embedded?: { onExit: () => void 
         label: 'تحميل',
         icon: <ReloadOutlined />,
         onClick: nav.openLoad,
+      },
+      {
+        key: 'stock',
+        label: 'تحديث الرصيد',
+        icon: <SyncOutlined />,
+        disabled: !docWarehouseId && !lines.some((l) => l.warehouse_id),
+        onClick: () => {
+          const ids = new Set<number>();
+          if (docWarehouseId) ids.add(docWarehouseId);
+          lines.forEach((l) => { if (l.warehouse_id) ids.add(l.warehouse_id); });
+          void Promise.all([...ids].map((w) => loadWarehouseStock(w)))
+            .then(() => message.success('تم تحديث الرصيد'));
+        },
       },
     ];
   };

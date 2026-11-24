@@ -15,7 +15,7 @@ import {
   PlusOutlined, CheckCircleOutlined, RollbackOutlined, DeleteOutlined,
   ClearOutlined, ArrowLeftOutlined, ArrowRightOutlined, CloseCircleOutlined,
   EditOutlined, EyeOutlined, PrinterOutlined, ExclamationCircleOutlined,
-  CheckOutlined, SwapOutlined, SearchOutlined, ShoppingCartOutlined, MinusOutlined, ReloadOutlined,
+  CheckOutlined, SwapOutlined, SearchOutlined, ShoppingCartOutlined, MinusOutlined, ReloadOutlined, SyncOutlined,
 } from '@ant-design/icons';
 import LoadPeriodModal from '../components/LoadPeriodModal';
 import QuickAddRow from '../components/QuickAddRow';
@@ -1116,6 +1116,8 @@ export default function Transfers() {
       } as ToolbarAction]),
       { key: 'reload', label: 'تحميل', icon: <ReloadOutlined />,
         onClick: () => setLoadRangeOpen(true) },
+      { key: 'stock', label: 'تحديث الرصيد', icon: <SyncOutlined />, disabled: !source,
+        onClick: () => { void freshAvailability().then((m) => m && message.success('تم تحديث الرصيد')); } },
       { key: 'close', label: 'إغلاق', shortcut: 'Esc', icon: <ArrowRightOutlined />,
         onClick: () => closeCreate() },
     ];
