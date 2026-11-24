@@ -187,7 +187,7 @@ def profile(db: Session, customer_id: int, *, limit: int = 200) -> Profile:
         DocRow(
             id=i.id,
             document_number=i.document_number,
-            doc_date=_as_date(i.created_at),
+            doc_date=i.invoice_date or _as_date(i.created_at),
             amount=to_money(i.net) + to_money(i.tax_amount or 0),
             detail=f"نقدي {to_money(i.cash_amount)} / آجل {to_money(i.credit_amount)}",
         )
@@ -214,7 +214,8 @@ def profile(db: Session, customer_id: int, *, limit: int = 200) -> Profile:
         .limit(limit)
     ).all()
     return_rows = [
-        DocRow(id=r.id, document_number=r.document_number, doc_date=_as_date(r.created_at),
+        DocRow(id=r.id, document_number=r.document_number,
+               doc_date=r.return_date or _as_date(r.created_at),
                amount=to_money(r.value),
                detail=f"نقدي {to_money(r.cash_refund)} / خصم آجل {to_money(r.credit_reduction)}")
         for r in returns
@@ -307,7 +308,7 @@ def _invoice_detail(db: Session, customer_id: int, record_id: int) -> dict:
         "doc": {
             "kind": "sale",
             "document_number": inv.document_number,
-            "date": str(_as_date(inv.created_at) or ""),
+            "date": str(inv.invoice_date or _as_date(inv.created_at) or ""),
             "partyLabel": "العميل",
             "partyName": customer.name if customer else f"#{customer_id}",
             "partyPhone": customer.phone if customer else None,
@@ -333,7 +334,7 @@ def _invoice_detail(db: Session, customer_id: int, record_id: int) -> dict:
         },
         "fields": [
             {"label": "رقم الفاتورة", "value": inv.document_number},
-            {"label": "التاريخ", "value": str(_as_date(inv.created_at) or "")},
+            {"label": "التاريخ", "value": str(inv.invoice_date or _as_date(inv.created_at) or "")},
             {"label": "الإجمالي قبل الخصم", "value": _money(inv.gross)},
             {"label": "نسبة الخصم", "value": f"{inv.combined_pct}%"},
             {"label": "الصافي", "value": _money(inv.net)},
@@ -364,7 +365,7 @@ def _return_detail(db: Session, customer_id: int, record_id: int) -> dict:
         "fields": [
             {"label": "رقم المرتجع", "value": ret.document_number},
             {"label": "الفاتورة الأصلية", "value": inv.document_number},
-            {"label": "التاريخ", "value": str(_as_date(ret.created_at) or "")},
+            {"label": "التاريخ", "value": str(ret.return_date or _as_date(ret.created_at) or "")},
             {"label": "قيمة المرتجع", "value": _money(ret.value)},
             {"label": "المرتد نقداً", "value": _money(ret.cash_refund)},
             {"label": "خصم من الآجل", "value": _money(ret.credit_reduction)},

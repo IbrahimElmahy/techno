@@ -452,7 +452,7 @@ export default function Purchases() {
     return {
       kind: 'purchase',
       document_number: p.document_number,
-      date: p.created_at,
+      date: p.purchase_date || p.created_at,
       partyLabel: 'المورد',
       partyName: p.supplier_name || supplier?.name || `#${p.supplier_id}`,
       partyPhone: (supplier as any)?.phone ?? null,

@@ -119,7 +119,8 @@ def profile(db: Session, supplier_id: int, *, limit: int = 200) -> Profile:
         .order_by(PurchaseInvoice.id.desc()).limit(limit)
     ).all()
     purchase_rows = [
-        DocRow(id=p.id, document_number=p.document_number, doc_date=_as_date(p.created_at),
+        DocRow(id=p.id, document_number=p.document_number,
+               doc_date=p.purchase_date or _as_date(p.created_at),
                amount=to_money(p.total),
                detail=f"نقدي {to_money(p.cash_amount)} / آجل {to_money(p.credit_amount)}")
         for p in invoices
@@ -138,7 +139,8 @@ def profile(db: Session, supplier_id: int, *, limit: int = 200) -> Profile:
         .order_by(PurchaseReturn.id.desc()).limit(limit)
     ).all()
     return_rows = [
-        DocRow(id=r.id, document_number=r.document_number, doc_date=_as_date(r.created_at),
+        DocRow(id=r.id, document_number=r.document_number,
+               doc_date=r.return_date or _as_date(r.created_at),
                amount=to_money(r.value), detail="")
         for r in returns
     ]
@@ -233,7 +235,7 @@ def _purchase_detail(db: Session, supplier_id: int, record_id: int) -> dict:
         "doc": {
             "kind": "purchase",
             "document_number": p.document_number,
-            "date": str(_as_date(p.created_at) or ""),
+            "date": str(p.purchase_date or _as_date(p.created_at) or ""),
             "partyLabel": "المورد",
             "partyName": supplier.name if supplier else f"#{supplier_id}",
             "partyPhone": supplier.phone if supplier else None,
@@ -256,7 +258,7 @@ def _purchase_detail(db: Session, supplier_id: int, record_id: int) -> dict:
         },
         "fields": [
             {"label": "رقم الفاتورة", "value": p.document_number},
-            {"label": "التاريخ", "value": str(_as_date(p.created_at) or "")},
+            {"label": "التاريخ", "value": str(p.purchase_date or _as_date(p.created_at) or "")},
             {"label": "الإجمالي", "value": _money(p.total)},
             {"label": "المسدد نقداً", "value": _money(p.cash_amount)},
             {"label": "آجل", "value": _money(p.credit_amount)},
@@ -278,7 +280,7 @@ def _return_detail(db: Session, supplier_id: int, record_id: int) -> dict:
         "fields": [
             {"label": "رقم المرتجع", "value": ret.document_number},
             {"label": "الفاتورة الأصلية", "value": inv.document_number},
-            {"label": "التاريخ", "value": str(_as_date(ret.created_at) or "")},
+            {"label": "التاريخ", "value": str(ret.return_date or _as_date(ret.created_at) or "")},
             {"label": "قيمة المرتجع", "value": _money(ret.value)},
             {"label": "رقم القيد", "value": str(ret.ledger_entry_id or "-")},
         ],
