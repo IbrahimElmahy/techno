@@ -57,11 +57,11 @@ export default function RepEfficiency() {
   const [customers, setCustomers] = useState<CustomerCredit[]>([]);
   const [creditLoading, setCreditLoading] = useState(false);
   const [view, setView] = useState<'table' | 'cards'>(() => {
-    try { return localStorage.getItem('rep-efficiency:view') === 'cards' ? 'cards' : 'table'; } catch { return 'table'; }
+    try { return localStorage.getItem('rep-efficiency:layout') === 'table' ? 'table' : 'cards'; } catch { return 'cards'; }
   });
   const changeView = (v: 'table' | 'cards') => {
     setView(v);
-    try { localStorage.setItem('rep-efficiency:view', v); } catch { return; }
+    try { localStorage.setItem('rep-efficiency:layout', v); } catch { return; }
   };
 
   const load = useCallback(async () => {
