@@ -10,14 +10,12 @@ from sqlalchemy.orm import Session
 from src.auth.rbac import RoleName
 from src.core.money import ZERO, to_money
 from src.models.customer import Customer, CustomerAccount
-from src.models.ledger import Account, Direction, LedgerEntry, LedgerLine
+from src.models.ledger import Account, LedgerEntry, LedgerLine
 from src.models.rep_efficiency import CustomerMonthlyCredit, EfficiencySetting, RepCreditAllowance
 from src.models.sales import SalesInvoice, SalesReturn
+from src.models.voucher import Voucher, VoucherKind
 from src.models.user import Role, User
 from src.services.ledger_service import is_posted_sql
-
-COLLECTION_TYPES = ("receipt", "sale", "sales_invoice", "journal")
-
 
 def settings(db: Session) -> EfficiencySetting:
     row = db.scalar(select(EfficiencySetting).order_by(EfficiencySetting.id))
@@ -63,33 +61,38 @@ def report(db: Session, *, year: int, month: int, branch_id: int | None,
     pct = Decimal(str(cfg.allowed_debt_pct))
     rate = Decimal(str(cfg.penalty_per_thousand))
 
+    def _doc_branch(stmt, model):
+        if branch_id is None:
+            return stmt
+        return stmt.where(or_(model.branch_id == branch_id, model.branch_id.is_(None)))
+
+    not_bonus = or_(SalesInvoice.is_bonus.is_(None), SalesInvoice.is_bonus.is_(False))
     inv_date = func.coalesce(SalesInvoice.invoice_date, cast(SalesInvoice.created_at, Date))
-    sales = _by_rep(db, _customer_filter(
-        select(Customer.rep_id, func.sum(SalesInvoice.net))
-        .join(Customer, Customer.id == SalesInvoice.customer_id)
-        .where(or_(SalesInvoice.is_bonus.is_(None), SalesInvoice.is_bonus.is_(False)),
-               inv_date.between(d1, d2))
-        .group_by(Customer.rep_id), branch_id))
+    sales = _by_rep(db, _doc_branch(
+        select(SalesInvoice.rep_id, func.sum(SalesInvoice.net))
+        .where(not_bonus, inv_date.between(d1, d2))
+        .group_by(SalesInvoice.rep_id), SalesInvoice))
 
     ret_date = func.coalesce(SalesReturn.return_date, cast(SalesReturn.created_at, Date))
-    src_inv = select(SalesInvoice.customer_id).where(
-        SalesInvoice.id == SalesReturn.sales_invoice_id).scalar_subquery()
-    returns = _by_rep(db, _customer_filter(
-        select(Customer.rep_id, func.sum(SalesReturn.value))
-        .join(Customer, Customer.id == func.coalesce(SalesReturn.customer_id, src_inv))
-        .where(SalesReturn.reversed_at.is_(None), ret_date.between(d1, d2))
-        .group_by(Customer.rep_id), branch_id))
+    returns = _by_rep(db, _doc_branch(
+        select(SalesReturn.rep_id, func.sum(SalesReturn.value))
+        .where(SalesReturn.customer_id.is_not(None), SalesReturn.reversed_at.is_(None),
+               ret_date.between(d1, d2))
+        .group_by(SalesReturn.rep_id), SalesReturn))
 
-    effective = func.coalesce(LedgerEntry.entry_date, cast(LedgerEntry.created_at, Date))
-    collected = _by_rep(db, _customer_filter(
-        select(Customer.rep_id, func.sum(LedgerLine.amount))
-        .select_from(CustomerAccount)
-        .join(Customer, Customer.id == CustomerAccount.customer_id)
-        .join(LedgerLine, LedgerLine.account_id == CustomerAccount.account_id)
-        .join(LedgerEntry, LedgerEntry.id == LedgerLine.entry_id)
-        .where(is_posted_sql(), LedgerLine.direction == Direction.credit,
-               LedgerEntry.entry_type.in_(COLLECTION_TYPES), effective.between(d1, d2))
-        .group_by(Customer.rep_id), branch_id))
+    on_invoice = _by_rep(db, _doc_branch(
+        select(SalesInvoice.rep_id, func.sum(SalesInvoice.cash_amount))
+        .where(not_bonus, SalesInvoice.cash_amount > 0, inv_date.between(d1, d2))
+        .group_by(SalesInvoice.rep_id), SalesInvoice))
+    voucher_rep = func.coalesce(
+        Voucher.rep_user_id, case((Voucher.client_uuid.is_not(None), Voucher.actor_user_id)))
+    by_voucher = _by_rep(db, _doc_branch(
+        select(voucher_rep, func.sum(Voucher.amount))
+        .where(Voucher.kind == VoucherKind.receipt, Voucher.customer_id.is_not(None),
+               Voucher.voucher_date.between(d1, d2))
+        .group_by(voucher_rep), Voucher))
+    collected = {r: to_money(on_invoice.get(r, ZERO) + by_voucher.get(r, ZERO))
+                 for r in set(on_invoice) | set(by_voucher)}
 
     opening = _debt_at(db, d1 - timedelta(days=1), branch_id)
     closing = _debt_at(db, d2, branch_id)

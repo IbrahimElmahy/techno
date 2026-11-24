@@ -129,8 +129,7 @@ def _sales_stmt(view: CurrentUser, d1: date, d2: date, *, kind: str | None):
 
 def _returns_stmt(view: CurrentUser, d1: date, d2: date, *, all_states: bool = False):
     stmt = branch_scope.scope(select(SalesReturn), SalesReturn, view).where(
-        SalesReturn.created_at >= clock.day_start_utc(d1),
-        SalesReturn.created_at < clock.day_end_utc(d2))
+        func.coalesce(SalesReturn.return_date, cast(SalesReturn.created_at, Date)).between(d1, d2))
     if not all_states:
         stmt = stmt.where(SalesReturn.customer_id.isnot(None), SalesReturn.reversed_at.is_(None))
     return stmt
