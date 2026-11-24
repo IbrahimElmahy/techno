@@ -1,11 +1,12 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  Button, Card, DatePicker, Form, InputNumber, Modal, Space, Table, Tag, Tooltip, message,
+  Button, Card, Col, DatePicker, Empty, Form, InputNumber, Modal, Row as GridRow, Segmented, Space, Spin, Table, Tag,
+  Tooltip, message,
 } from 'antd';
-import { PrinterOutlined, ReloadOutlined, SettingOutlined, WalletOutlined } from '@ant-design/icons';
+import { AppstoreOutlined, PrinterOutlined, TableOutlined, ReloadOutlined, SettingOutlined, WalletOutlined } from '@ant-design/icons';
 import dayjs, { Dayjs } from 'dayjs';
 import { api } from '../api/client';
-import ExportExcelButton from '../components/ExportExcelButton';
+import { useTableColumns } from '../components/ColumnSettings';
 import ShareButton from '../components/ShareButton';
 import { money } from '../utils/money';
 import { printReport, printMoney } from '../print/reportSheet';
@@ -55,6 +56,13 @@ export default function RepEfficiency() {
   const [repAllowance, setRepAllowance] = useState<number | null>(null);
   const [customers, setCustomers] = useState<CustomerCredit[]>([]);
   const [creditLoading, setCreditLoading] = useState(false);
+  const [view, setView] = useState<'table' | 'cards'>(() => {
+    try { return localStorage.getItem('rep-efficiency:view') === 'cards' ? 'cards' : 'table'; } catch { return 'table'; }
+  });
+  const changeView = (v: 'table' | 'cards') => {
+    setView(v);
+    try { localStorage.setItem('rep-efficiency:view', v); } catch { return; }
+  };
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -171,6 +179,20 @@ export default function RepEfficiency() {
     },
     { title: 'أيام التحصيل', dataIndex: 'dso', render: (v: string | null) => (v == null ? '-' : num(v).toFixed(0)) },
   ];
+  const table = useTableColumns('rep-efficiency', columns, {
+    locked: ['rep_name'],
+    export: { name: `تقرير الكفاءات ${month.format('YYYY-MM')}`, rows },
+  });
+  const shown = new Set((table.columns as any[]).map((c) => c.dataIndex as string));
+  const totalCell = (k: string): React.ReactNode => {
+    if (k === 'rep_name') return 'الإجمالي';
+    if (k === 'collection_rate') {
+      const base = totals.opening_debt + totals.net_sales;
+      return pctText(base > 0 ? String((totals.collected / base) * 100) : null);
+    }
+    if (k === 'dso') return null;
+    return m((totals as Record<string, number>)[k]);
+  };
 
   const printIt = () => printReport<Row>(
     {
@@ -182,18 +204,18 @@ export default function RepEfficiency() {
       ],
       compact: true,
     },
-    [
-      { title: 'المندوب', value: 'rep_name' },
-      { title: 'صافي المبيعات', value: (r) => printMoney(r.net_sales), numeric: true },
-      { title: 'التحصيل', value: (r) => printMoney(r.collected), numeric: true },
-      { title: 'نسبة التحصيل', value: (r) => pctText(r.collection_rate), center: true },
-      { title: 'المديونية', value: (r) => printMoney(r.debt), numeric: true },
-      { title: 'الإئتمان', value: (r) => printMoney(r.credit), numeric: true },
-      { title: 'بعد الإئتمان', value: (r) => printMoney(r.debt_after_credit), numeric: true },
-      { title: 'المسموح', value: (r) => printMoney(r.allowed_debt), numeric: true },
-      { title: 'الزيادة', value: (r) => printMoney(r.excess), numeric: true },
-      { title: 'الجزاء', value: (r) => printMoney(r.penalty), numeric: true },
-    ],
+    ([
+      { title: 'المندوب', value: 'rep_name', key: 'rep_name' },
+      { key: 'net_sales', title: 'صافي المبيعات', value: (r) => printMoney(r.net_sales), numeric: true },
+      { key: 'collected', title: 'التحصيل', value: (r) => printMoney(r.collected), numeric: true },
+      { key: 'collection_rate', title: 'نسبة التحصيل', value: (r) => pctText(r.collection_rate), center: true },
+      { key: 'debt', title: 'المديونية', value: (r) => printMoney(r.debt), numeric: true },
+      { key: 'credit', title: 'الإئتمان', value: (r) => printMoney(r.credit), numeric: true },
+      { key: 'debt_after_credit', title: 'بعد الإئتمان', value: (r) => printMoney(r.debt_after_credit), numeric: true },
+      { key: 'allowed_debt', title: 'المسموح', value: (r) => printMoney(r.allowed_debt), numeric: true },
+      { key: 'excess', title: 'الزيادة', value: (r) => printMoney(r.excess), numeric: true },
+      { key: 'penalty', title: 'الجزاء', value: (r) => printMoney(r.penalty), numeric: true },
+    ] as any[]).filter((c) => shown.has(c.key)).map(({ key: _k, ...c }) => c),
     rows,
     [
       { label: 'إجمالي صافي المبيعات', value: printMoney(totals.net_sales) },
@@ -209,49 +231,64 @@ export default function RepEfficiency() {
       title="تقرير الكفاءات"
       extra={(
         <Space wrap>
+          <Segmented value={view} onChange={(v) => changeView(v as 'table' | 'cards')}
+            options={[
+              { value: 'table', icon: <TableOutlined />, label: 'جدول' },
+              { value: 'cards', icon: <AppstoreOutlined />, label: 'كروت' },
+            ]} />
           <DatePicker picker="month" value={month} allowClear={false} format="YYYY/MM"
             onChange={(d) => d && setMonth(d.startOf('month'))} />
           <Button icon={<ReloadOutlined />} onClick={() => void load()} loading={loading}>تحديث</Button>
           <Button icon={<SettingOutlined />} onClick={openSettings}>الإعدادات</Button>
           <Button icon={<PrinterOutlined />} onClick={printIt} disabled={!rows.length}>طباعة</Button>
           <ShareButton run={printIt} disabled={!rows.length} />
-          <ExportExcelButton name={`تقرير الكفاءات ${month.format('YYYY-MM')}`} rows={rows}
-            tableColumns={columns as any} />
+          {table.control}
         </Space>
       )}
     >
+      {view === 'cards' ? (
+        <Spin spinning={loading}>
+          {rows.length ? (
+            <GridRow gutter={[12, 12]}>
+              {rows.map((r) => (
+                <Col key={r.rep_user_id} xs={24} sm={12} lg={8} xl={6}>
+                  <Card size="small" title={r.rep_name}
+                    styles={{ header: { background: num(r.penalty) > 0 ? '#fff1f0' : '#f6faf3' } }}>
+                    {(table.columns as any[]).filter((c) => c.dataIndex !== 'rep_name').map((c) => (
+                      <div key={c.dataIndex} style={{
+                        display: 'flex', justifyContent: 'space-between', gap: 8,
+                        padding: '4px 0', borderBottom: '1px dashed #f0f0f0',
+                      }}>
+                        <span style={{ color: '#6b6b6b' }}>{c.title}</span>
+                        <span>{c.render ? c.render((r as any)[c.dataIndex], r) : (r as any)[c.dataIndex]}</span>
+                      </div>
+                    ))}
+                  </Card>
+                </Col>
+              ))}
+            </GridRow>
+          ) : <Empty />}
+        </Spin>
+      ) : (
       <Table<Row>
         rowKey="rep_user_id"
         size="small"
         loading={loading}
         dataSource={rows}
-        columns={columns as any}
+        columns={table.columns as any}
         pagination={false}
         scroll={{ x: 1900 }}
         summary={() => (rows.length ? (
           <Table.Summary fixed>
             <Table.Summary.Row style={{ fontWeight: 700, background: '#f6faf3' }}>
-              <Table.Summary.Cell index={0}>الإجمالي</Table.Summary.Cell>
-              <Table.Summary.Cell index={1}>{m(totals.sales)}</Table.Summary.Cell>
-              <Table.Summary.Cell index={2}>{m(totals.returns)}</Table.Summary.Cell>
-              <Table.Summary.Cell index={3}>{m(totals.net_sales)}</Table.Summary.Cell>
-              <Table.Summary.Cell index={4}>{m(totals.collected)}</Table.Summary.Cell>
-              <Table.Summary.Cell index={5}>
-                {pctText(totals.opening_debt + totals.net_sales > 0
-                  ? String((totals.collected / (totals.opening_debt + totals.net_sales)) * 100) : null)}
-              </Table.Summary.Cell>
-              <Table.Summary.Cell index={6}>{m(totals.opening_debt)}</Table.Summary.Cell>
-              <Table.Summary.Cell index={7}>{m(totals.debt)}</Table.Summary.Cell>
-              <Table.Summary.Cell index={8}>{m(totals.credit)}</Table.Summary.Cell>
-              <Table.Summary.Cell index={9}>{m(totals.debt_after_credit)}</Table.Summary.Cell>
-              <Table.Summary.Cell index={10}>{m(totals.allowed_debt)}</Table.Summary.Cell>
-              <Table.Summary.Cell index={11}>{m(totals.excess)}</Table.Summary.Cell>
-              <Table.Summary.Cell index={12}>{m(totals.penalty)}</Table.Summary.Cell>
-              <Table.Summary.Cell index={13} />
+              {(table.columns as any[]).map((c, i) => (
+                <Table.Summary.Cell key={c.dataIndex} index={i}>{totalCell(c.dataIndex)}</Table.Summary.Cell>
+              ))}
             </Table.Summary.Row>
           </Table.Summary>
         ) : null)}
       />
+      )}
 
       <Modal title="إعدادات تقرير الكفاءات" open={settingsOpen} okText="حفظ" cancelText="إلغاء"
         onOk={() => void saveSettings()} onCancel={() => setSettingsOpen(false)} destroyOnClose>
