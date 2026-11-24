@@ -16,7 +16,7 @@ import {
   PlusOutlined, PrinterOutlined, DeleteOutlined,
   EditOutlined, RollbackOutlined, EyeOutlined, ExclamationCircleOutlined,
   ArrowRightOutlined, ArrowLeftOutlined, SearchOutlined, ClearOutlined,
-  FileAddOutlined, UndoOutlined, SaveOutlined, BankOutlined, ReloadOutlined,
+  FileAddOutlined, UndoOutlined, SaveOutlined, BankOutlined, ReloadOutlined, SyncOutlined,
   PhoneOutlined, CheckOutlined, ShoppingCartOutlined, GiftOutlined,
   FileExcelOutlined,
 } from '@ant-design/icons';
@@ -1872,6 +1872,13 @@ function couponsTotal(inv: any): number {
         label: 'تحميل',
         icon: <ReloadOutlined />,
         onClick: nav.openLoad,
+      },
+      {
+        key: 'stock',
+        label: 'تحديث الرصيد',
+        icon: <SyncOutlined />,
+        disabled: !docWarehouseId && !lines.some((l) => l.warehouse_id),
+        onClick: () => { void refreshStock().then(() => message.success('تم تحديث الرصيد')); },
       },
     ];
   };
