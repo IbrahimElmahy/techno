@@ -1,7 +1,22 @@
 import { Checkbox, Segmented, Space, Tooltip } from 'antd';
 import {
-  NUMERALS_LABELS, type Numerals, setGrouping, setNumerals, useGrouping, useNumerals,
+  NUMERALS_LABELS, type Numerals, ROUNDING_LABELS, ROUNDING_ORDER, type Rounding, setGrouping, setNumerals,
+  setRounding, useGrouping, useNumerals, useRounding,
 } from '../utils/numerals';
+
+export function RoundingControl() {
+  const rounding = useRounding();
+  return (
+    <Segmented
+      size="small"
+      value={rounding}
+      onChange={(v) => setRounding(v as Rounding)}
+      options={ROUNDING_ORDER.map((k) => ({
+        value: k, label: ROUNDING_LABELS[k] }))}
+      {...{ 'aria-label': 'تقريب المبالغ' }}
+    />
+  );
+}
 
 export default function NumeralsControl() {
   const numerals = useNumerals();

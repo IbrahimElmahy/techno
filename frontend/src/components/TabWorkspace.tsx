@@ -6,6 +6,7 @@ import PageRoutes from './PageRoutes';
 import { TabActiveContext } from './keyboard';
 import { onLiveEvent } from '../utils/live';
 import { PanelBusyContext, type Busy } from './panelBusy';
+import { useGrouping, useNumerals, useRounding } from '../utils/numerals';
 
 const KEEP = 12;
 
@@ -39,6 +40,9 @@ function isHidden(path: string, hidden?: string[]): boolean {
 
 const EDITING = /[?&](new|edit|doc|draft)=/;
 
+const SCREEN_EDITING = (path: string, busy: Busy | undefined, node: HTMLDivElement | null | undefined) =>
+  EDITING.test(path) || (busy?.count ?? 0) > 0 || !!node?.querySelector('.sale-doc');
+
 export default function TabWorkspace() {
   const { tabs, activeId } = useTabs();
   const { user } = useAuth();
@@ -54,6 +58,22 @@ export default function TabWorkspace() {
   const tabsRef = useRef(tabs);
   tabsRef.current = tabs;
 
+  const display = `${useNumerals()}|${useGrouping()}|${useRounding()}`;
+  const shownDisplay = useRef(display);
+  useEffect(() => {
+    if (display === shownDisplay.current) return;
+    shownDisplay.current = display;
+    setVersions((v) => {
+      const next = { ...v };
+      tabsRef.current.forEach((t) => {
+        if (!SCREEN_EDITING(t.path, busy.current[t.id], nodes.current[t.id])) {
+          next[t.id] = (v[t.id] ?? 0) + 1;
+        }
+      });
+      return next;
+    });
+  }, [display]);
+
   useEffect(() => onLiveEvent(() => {
     tabsRef.current.forEach((t) => { if (t.id !== activeRef.current) stale.current.add(t.id); });
   }), []);
@@ -67,10 +87,7 @@ export default function TabWorkspace() {
     stale.current.delete(activeId);
     const tab = tabsRef.current.find((t) => t.id === activeId);
     const node = nodes.current[activeId];
-    const editing = (tab && EDITING.test(tab.path))
-      || (busy.current[activeId]?.count ?? 0) > 0
-      || !!node?.querySelector('.sale-doc');
-    if (editing) return;
+    if (!tab || SCREEN_EDITING(tab.path, busy.current[activeId], node)) return;
     setVersions((v) => ({ ...v, [activeId]: (v[activeId] ?? 0) + 1 }));
   }, [activeId]);
 

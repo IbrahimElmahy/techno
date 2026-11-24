@@ -32,7 +32,7 @@ import ShortcutsDock from './ShortcutsDock';
 import HScrollDock from './HScrollDock';
 import { useAuth, RoleName, roleForAccess } from './AuthProvider';
 import RowDensityControl from './RowDensity';
-import NumeralsControl from './Numerals';
+import NumeralsControl, { RoundingControl } from './Numerals';
 import ContrastToggle, { ContrastHeaderButton } from './ContrastTheme';
 import { bindNumeralsUser } from '../utils/numerals';
 import { useFullscreen } from './FullscreenToggle';
@@ -196,6 +196,15 @@ export default function AppLayout() {
         <div onClick={(e) => e.stopPropagation()} style={{ padding: '2px 0' }}>
           <div style={{ fontSize: 14, color: '#888', marginBottom: 6 }}>شكل الأرقام</div>
           <NumeralsControl />
+        </div>
+      ),
+    },
+    {
+      key: 'rounding',
+      label: (
+        <div onClick={(e) => e.stopPropagation()} style={{ padding: '2px 0' }}>
+          <div style={{ fontSize: 14, color: '#888', marginBottom: 6 }}>تقريب المبالغ</div>
+          <RoundingControl />
         </div>
       ),
     },

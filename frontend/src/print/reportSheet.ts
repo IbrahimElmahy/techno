@@ -1,3 +1,4 @@
+import { roundAmount } from '../utils/numerals';
 import { type DocMeta, latinDigits, printDocument } from './brand';
 
 export interface PrintColumn<T = any> {
@@ -14,9 +15,10 @@ export interface PrintTotal {
 
 export { latinDigits } from './brand';
 
-export const printMoney = (v: unknown): string => Number(v || 0).toLocaleString('en-US', {
-  minimumFractionDigits: 2, maximumFractionDigits: 2,
-});
+export const printMoney = (v: unknown): string => {
+  const { value, digits } = roundAmount(v);
+  return value.toLocaleString('en-US', { minimumFractionDigits: digits, maximumFractionDigits: digits });
+};
 
 export const printQty = (v: unknown): string => Number(v || 0).toLocaleString('en-US', {
   maximumFractionDigits: 3,
