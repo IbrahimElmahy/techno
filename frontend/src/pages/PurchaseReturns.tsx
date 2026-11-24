@@ -11,7 +11,7 @@ import { InputNumber } from '../components/NumberInput';
 import { advanceFrom, useQtyFocus } from '../components/lineKeyboard';
 import {
   ArrowLeftOutlined, ArrowRightOutlined, BankOutlined, CheckOutlined, DeleteOutlined, EditOutlined,
-  EyeOutlined, FileAddOutlined, PhoneOutlined, PlusOutlined, PrinterOutlined, ReloadOutlined,
+  EyeOutlined, FileAddOutlined, PhoneOutlined, PlusOutlined, PrinterOutlined, ReloadOutlined, SyncOutlined,
   SaveOutlined, SearchOutlined, UndoOutlined, ExclamationCircleOutlined,
   RollbackOutlined, ClearOutlined, DownOutlined, UpOutlined,
   FileExcelOutlined,
@@ -448,6 +448,19 @@ export default function PurchaseReturns({ embedded }: { embedded?: { onExit: () 
         label: 'تحميل',
         icon: <ReloadOutlined />,
         onClick: nav.openLoad,
+      },
+      {
+        key: 'stock',
+        label: 'تحديث الرصيد',
+        icon: <SyncOutlined />,
+        disabled: !warehouseId && !returnLines.some((l) => l.warehouse_id),
+        onClick: () => {
+          const ids = new Set<number>();
+          if (warehouseId) ids.add(warehouseId);
+          returnLines.forEach((l) => { if (l.warehouse_id) ids.add(l.warehouse_id); });
+          void Promise.all([...ids].map((w) => loadWarehouseStock(w)))
+            .then(() => message.success('تم تحديث الرصيد'));
+        },
       },
     ];
   };
