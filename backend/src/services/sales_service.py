@@ -166,8 +166,8 @@ def prior_out_of(invoice: SalesInvoice) -> dict[tuple[int, LocationKind, int], D
     ])
 
 
-def _doc_number(db: Session, model, prefix: str) -> str:
-    return numbering.next_document_number(db, model, prefix)
+def _doc_number(db: Session, model, prefix: str, branch_id: int | None) -> str:
+    return numbering.next_branch_number(db, model, prefix, branch_id)
 
 
 def fixed_discount_pct(db: Session) -> Decimal:
@@ -403,7 +403,6 @@ def create_sale(
     invoice = existing or SalesInvoice(
         prior_balance=prior_balance,
         other_family_balance=other_family_balance, other_family=other_family,
-        document_number=_doc_number(db, SalesInvoice, "BNS" if is_bonus else "SINV"),
         is_bonus=bool(is_bonus) or None,
         bonus_for_invoice_id=bonus_for_invoice_id if is_bonus else None,
         customer_id=customer_id, origin_location_kind=origin_location_kind,
@@ -412,9 +411,10 @@ def create_sale(
         variable_discount_pct=variable, combined_pct=combined, net=net, tax_amount=tax,
         cash_amount=to_money(cash_amount), credit_amount=to_money(credit_amount),
         cash_account_id=cash_acc.id, ledger_entry_id=None, actor_user_id=actor_user_id,
-        branch_id=branch_for(db, actor_user_id=actor_user_id,
+        branch_id=(bid := branch_for(db, actor_user_id=actor_user_id,
                              location_kind=origin_location_kind,
-                             location_id=origin_location_id),
+                             location_id=origin_location_id)),
+        document_number=_doc_number(db, SalesInvoice, "BNS" if is_bonus else "SINV", bid),
         rep_id=rep_id if rep_id is not None else (
             actor_user_id if actor_role == RoleName.sales_rep else None),
         revenue_account_id=revenue_account_id,
@@ -763,11 +763,11 @@ def return_sale(
     credit_reduction = to_money(refund_total - cash_refund)
 
     ret = SalesReturn(
-        document_number=_doc_number(db, SalesReturn, "SRET"),
         sales_invoice_id=sales_invoice_id, value=value, cash_refund=cash_refund,
         family=getattr(inv, "family", None),
         credit_reduction=credit_reduction, ledger_entry_id=None, actor_user_id=actor_user_id,
-        branch_id=getattr(inv, "branch_id", None) or branch_for(db, actor_user_id=actor_user_id),
+        branch_id=(bid := getattr(inv, "branch_id", None) or branch_for(db, actor_user_id=actor_user_id)),
+        document_number=_doc_number(db, SalesReturn, "SRET", bid),
         cost_center_id=getattr(inv, "cost_center_id", None),
     )
     db.add(ret)
@@ -958,12 +958,12 @@ def create_standalone_return(
         raise SalesError("المرتجع المراد تعديله غير موجود.")
 
     ret = existing or SalesReturn(
-        document_number=_doc_number(db, SalesReturn, "SRET"),
         sales_invoice_id=None, customer_id=customer_id, family=family,
         origin_location_kind=origin_location_kind, origin_location_id=origin_location_id,
-        branch_id=branch_for(db, actor_user_id=actor_user_id,
+        branch_id=(bid := branch_for(db, actor_user_id=actor_user_id,
                              location_kind=origin_location_kind,
-                             location_id=origin_location_id),
+                             location_id=origin_location_id)),
+        document_number=_doc_number(db, SalesReturn, "SRET", bid),
         gross=gross, combined_pct=discounts.combine(fixed, variable), value=net, tax_amount=tax,
         cash_refund=to_money(cash_refund), credit_reduction=to_money(credit_reduction),
         cash_account_id=cash_acc.id if cash_acc else None,

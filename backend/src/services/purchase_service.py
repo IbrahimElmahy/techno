@@ -55,8 +55,8 @@ class PurchaseLine:
     variable_discount_pct: Decimal | None = None
 
 
-def _doc_number(db: Session, model, prefix: str) -> str:
-    return numbering.next_document_number(db, model, prefix)
+def _doc_number(db: Session, model, prefix: str, branch_id: int | None) -> str:
+    return numbering.next_branch_number(db, model, prefix, branch_id)
 
 
 def create_purchase(
@@ -133,14 +133,14 @@ def create_purchase(
         existing.invoice_type = "items"
 
     invoice = existing or PurchaseInvoice(
-        document_number=_doc_number(db, PurchaseInvoice, "PINV"),
         supplier_id=supplier_id, location_kind=location_kind, location_id=location_id,
         gross=gross, fixed_discount_pct=fixed, variable_discount_pct=variable,
         combined_pct=combined, net=net, tax_amount=tax,
         total=total, cash_amount=to_money(cash_amount), credit_amount=to_money(credit_amount),
         ledger_entry_id=None, actor_user_id=actor_user_id,
-        branch_id=branch_for(db, actor_user_id=actor_user_id,
-                             location_kind=location_kind, location_id=location_id),
+        branch_id=(bid := branch_for(db, actor_user_id=actor_user_id,
+                             location_kind=location_kind, location_id=location_id)),
+        document_number=_doc_number(db, PurchaseInvoice, "PINV", bid),
         rep_id=rep_id, expense_account_id=expense_account_id,
         external_document_number=(external_document_number or None),
         notes=notes, statement1=statement1, statement2=statement2, statement3=statement3,
@@ -315,10 +315,10 @@ def create_asset_purchase(
         invoice.lines.clear()
     else:
         invoice = PurchaseInvoice(
-            document_number=_doc_number(db, PurchaseInvoice, "PINV"),
             actor_user_id=actor_user_id,
-            branch_id=branch_for(db, actor_user_id=actor_user_id,
-                                 location_kind=location_kind, location_id=location_id),
+            branch_id=(bid := branch_for(db, actor_user_id=actor_user_id,
+                                 location_kind=location_kind, location_id=location_id)),
+            document_number=_doc_number(db, PurchaseInvoice, "PINV", bid),
             purchase_date=purchase_date or date.today(), **header,
         )
         db.add(invoice)
@@ -433,10 +433,10 @@ def return_purchase(
     credit_reduction = to_money(value - cash_refund)
 
     ret = PurchaseReturn(
-        document_number=_doc_number(db, PurchaseReturn, "PRET"),
         purchase_invoice_id=purchase_invoice_id, value=value, ledger_entry_id=None,
         actor_user_id=actor_user_id,
-        branch_id=getattr(inv, "branch_id", None) or branch_for(db, actor_user_id=actor_user_id),
+        branch_id=(bid := getattr(inv, "branch_id", None) or branch_for(db, actor_user_id=actor_user_id)),
+        document_number=_doc_number(db, PurchaseReturn, "PRET", bid),
         return_date=return_date or date.today(), notes=notes,
         cost_center_id=getattr(inv, "cost_center_id", None),
     )
@@ -596,14 +596,14 @@ def create_standalone_purchase_return(
         raise PurchaseError("المردود المراد تعديله غير موجود.")
 
     ret = existing or PurchaseReturn(
-        document_number=_doc_number(db, PurchaseReturn, "PRET"),
         purchase_invoice_id=None,
         supplier_id=supplier_id,
         origin_location_kind=origin_location_kind,
         origin_location_id=origin_location_id,
-        branch_id=branch_for(db, actor_user_id=actor_user_id,
+        branch_id=(bid := branch_for(db, actor_user_id=actor_user_id,
                              location_kind=origin_location_kind,
-                             location_id=origin_location_id),
+                             location_id=origin_location_id)),
+        document_number=_doc_number(db, PurchaseReturn, "PRET", bid),
         gross=gross, variable_discount_pct=variable,
         combined_pct=discounts.combine(fixed, variable), value=value,
         ledger_entry_id=None, actor_user_id=actor_user_id,

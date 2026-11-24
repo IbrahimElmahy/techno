@@ -314,7 +314,7 @@ class _CustomerProfileScreenState extends State<CustomerProfileScreen> {
           ListTile(
             dense: true,
             title: Text('${r['document_number'] ?? ''}'
-                '${'${r['document_number'] ?? ''}'.startsWith('BNS-') ? ' · بونص' : ''}'),
+                '${'${r['document_number'] ?? ''}'.contains('BNS-') ? ' · بونص' : ''}'),
             subtitle: Text('${r['date'] ?? r['created_at'] ?? ''}'.split('T').first),
             trailing: Text('${_num(r['amount'] ?? r['net'] ?? r['value'])}',
                 style: const TextStyle(fontWeight: FontWeight.w700)),
