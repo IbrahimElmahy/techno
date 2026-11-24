@@ -163,7 +163,7 @@ def _twins(db: Session, item: Item) -> list[Item]:
         Item.code.in_([base, *(f"{p}{base}" for p in _BRANCH_PREFIXES)]))).all()
 
 
-_SHARED_FIELDS = ("code", "name", "category", "description")
+_SHARED_FIELDS = ("code", "name", "category", "description", "sale_price")
 
 
 def _next_code(db: Session, kind: ItemKind) -> str:
@@ -266,6 +266,21 @@ def _apply_tiers(db: Session, item: Item, tiers: list["TierPrice"], *, actor_use
                              discount_pct=tp.discount_pct or 0, vat_pct=tp.vat_pct or 0))
         else:
             row.price = to_money(tp.price)
+    for twin in _twins(db, item):
+        if twin.kind != ItemKind.product:
+            continue
+        for tp in tiers:
+            row = db.scalar(
+                select(ItemPrice).where(ItemPrice.item_id == twin.id, ItemPrice.tier == tp.tier))
+            item_profile_service.record_price_change(
+                db, item_id=twin.id, field_name=tp.tier.value,
+                old_value=row.price if row is not None else None,
+                new_value=to_money(tp.price), actor_user_id=actor_user_id)
+            if row is None:
+                db.add(ItemPrice(item_id=twin.id, tier=tp.tier, price=to_money(tp.price),
+                                 discount_pct=0, vat_pct=0))
+            else:
+                row.price = to_money(tp.price)
     db.flush()
 
 
@@ -890,9 +905,14 @@ def update_item(
         for t, code in zip(twins, wanted, strict=True):
             t.code = code
     for t in twins:
-        for field in ("name", "category", "description"):
-            if field in sent:
-                setattr(t, field, getattr(item, field))
+        for field in ("name", "category", "description", "sale_price"):
+            if field not in sent:
+                continue
+            if field == "sale_price":
+                item_profile_service.record_price_change(
+                    db, item_id=t.id, field_name=field, old_value=t.sale_price,
+                    new_value=item.sale_price, actor_user_id=current.id)
+            setattr(t, field, getattr(item, field))
     db.flush()
 
     old_length = _length_of(db, item)
