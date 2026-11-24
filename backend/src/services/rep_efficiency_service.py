@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 from src.auth.rbac import RoleName
 from src.core.money import ZERO, to_money
 from src.models.customer import Customer, CustomerAccount
-from src.models.ledger import Account, LedgerEntry, LedgerLine
+from src.models.ledger import Account, Direction, LedgerEntry, LedgerLine
 from src.models.rep_efficiency import CustomerMonthlyCredit, EfficiencySetting, RepCreditAllowance
 from src.models.sales import SalesInvoice, SalesReturn
 from src.models.voucher import Voucher, VoucherKind
@@ -39,7 +39,7 @@ def _customer_filter(stmt, branch_id: int | None):
 
 def _debt_at(db: Session, when: date, branch_id: int | None) -> dict[int, Decimal]:
     effective = func.coalesce(LedgerEntry.entry_date, cast(LedgerEntry.created_at, Date))
-    signed = case((LedgerLine.direction == Account.normal_side, LedgerLine.amount),
+    signed = case((LedgerLine.direction == Direction.debit, LedgerLine.amount),
                   else_=-LedgerLine.amount)
     stmt = (select(Customer.rep_id, func.sum(signed))
             .select_from(CustomerAccount)

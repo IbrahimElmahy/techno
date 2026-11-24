@@ -15,7 +15,7 @@ from src.auth.dependencies import CurrentUser, require_capability
 from src.auth.rbac import CAP_VOUCHER_READ, CAP_VOUCHER_WRITE
 from src.core.db import get_db
 from src.core.fast_json import model_json
-from src.models.ledger import Account
+from src.models.ledger import Account, Direction
 from src.models.role import RoleName
 from src.models.treasury import TreasuryKind
 from src.models.voucher import Voucher, VoucherKind
@@ -994,7 +994,7 @@ def customer_statement(
         s = statement_service.account_statement(
             db, account_id=chosen[0].account_id,
             also_accounts=[a.account_id for a in chosen[1:]],
-            date_from=date_from, date_to=date_to)
+            date_from=date_from, date_to=date_to, side=Direction.debit)
     except StatementError as exc:
         raise HTTPException(status.HTTP_404_NOT_FOUND,
                             {"code": "not_found", "message": str(exc)}) from exc
@@ -1134,7 +1134,8 @@ def supplier_statement(
     try:
         account = voucher_service._supplier_account(db, supplier_id)
         s = statement_service.account_statement(
-            db, account_id=account.account_id, date_from=date_from, date_to=date_to)
+            db, account_id=account.account_id, date_from=date_from, date_to=date_to,
+            side=Direction.credit)
     except (VoucherError, StatementError) as exc:
         raise HTTPException(status.HTTP_404_NOT_FOUND,
                             {"code": "not_found", "message": str(exc)})

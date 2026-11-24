@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 
 from src.lib import entry_text
 from src.core.money import ZERO, to_money
-from src.models.ledger import Account, LedgerLine
+from src.models.ledger import Account, Direction, LedgerLine
 from src.services import ledger_service
 from src.models.purchasing import PurchaseInvoice, PurchaseReturn
 from src.models.supplier import Supplier, SupplierAccount
@@ -22,7 +22,7 @@ class SupplierProfileError(Exception):
 
 def bulk_balances(db: Session, supplier_ids: list[int] | None = None) -> dict[int, Decimal]:
     signed = case(
-        (LedgerLine.direction == Account.normal_side, LedgerLine.amount),
+        (LedgerLine.direction == Direction.credit, LedgerLine.amount),
         else_=-LedgerLine.amount,
     )
     stmt = (

@@ -17,7 +17,7 @@ from src.models.catalog import Item
 from src.models.coupon_receipt import CouponReceipt, CouponReceiptLine
 from src.models.customer import Customer, CustomerAccount
 from src.models.inspection import Inspection, InspectionItem, InspectionStatus, VisitKind
-from src.models.ledger import Account, LedgerEntry, LedgerLine
+from src.models.ledger import Account, Direction, LedgerEntry, LedgerLine
 from src.models.loyalty import CouponType
 from src.models.role import Role, RoleName
 from src.models.sales import (
@@ -647,7 +647,7 @@ def _balance_before(db: Session, account_ids: list[int], entry_id: int) -> Decim
     if not account_ids:
         return Decimal("0")
     signed = case(
-        (LedgerLine.direction == Account.normal_side, LedgerLine.amount),
+        (LedgerLine.direction == Direction.debit, LedgerLine.amount),
         else_=-LedgerLine.amount,
     )
     total = db.scalar(

@@ -383,6 +383,7 @@ def _with_descendants(db: Session, ids: list[int]) -> list[int]:
 def account_statement(
     db: Session, *, account_id: int, date_from: date | None = None,
     date_to: date | None = None, also_accounts: Sequence[int] = (),
+    side: Direction | None = None,
 ) -> Statement:
     ids = _with_descendants(db, [account_id, *[a for a in also_accounts if a != account_id]])
     accounts = {a.id: a for a in db.scalars(select(Account).where(Account.id.in_(ids))).all()}
@@ -410,8 +411,8 @@ def account_statement(
 
     def signed(line: LedgerLine) -> Decimal:
         amount = to_money(line.amount)
-        side = accounts[line.account_id].normal_side
-        return amount if line.direction == side else -amount
+        own = side or accounts[line.account_id].normal_side
+        return amount if line.direction == own else -amount
 
     dated = sorted(
         ((_effective_date(line.entry), line) for line in rows),
@@ -451,8 +452,8 @@ def account_statement(
         total_debit += debit
         total_credit += credit
         before = balance
-        side = accounts[account_id].normal_side
-        moved = (debit - credit) if side == Direction.debit else (credit - debit)
+        own = side or accounts[account_id].normal_side
+        moved = (debit - credit) if own == Direction.debit else (credit - debit)
         balance = to_money(balance + moved)
         acct_before = acct_balance.get(account_id, ZERO)
         acct_after = to_money(acct_before + moved)

@@ -634,7 +634,7 @@ def _rep_recent_receipts(db: Session, rep_id: int) -> list[dict]:
 def _prior_by_family(db: Session, rows) -> dict[int, dict[str, Decimal]]:
     from sqlalchemy.orm import aliased
 
-    from src.models.ledger import Account
+    from src.models.ledger import Account, Direction
     from src.services import ledger_service
 
     ids = [inv.id for inv in rows if inv.ledger_entry_id and inv.customer_id]
@@ -645,7 +645,7 @@ def _prior_by_family(db: Session, rows) -> dict[int, dict[str, Decimal]]:
     def day(e):
         return func.coalesce(e.entry_date, cast(e.created_at, Date))
 
-    signed = case((LedgerLine.direction == Account.normal_side, LedgerLine.amount),
+    signed = case((LedgerLine.direction == Direction.debit, LedgerLine.amount),
                   else_=-LedgerLine.amount)
     typed: dict[int, set[str]] = {}
     for cid, fam in db.execute(select(CustomerAccount.customer_id, CustomerAccount.family).where(

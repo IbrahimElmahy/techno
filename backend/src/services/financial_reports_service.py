@@ -152,7 +152,7 @@ def balance_sheet(db: Session, *, as_of: date | None = None,
 
 def _aging_for_accounts(
     db: Session, *, party_by_account: dict[int, int], names: dict[int, str], as_of: date,
-    branch_id: int | None = None,
+    branch_id: int | None = None, side: Direction = Direction.debit,
 ) -> list[AgingRow]:
     wanted = dict(party_by_account)
     if not wanted:
@@ -177,11 +177,11 @@ def _aging_for_accounts(
             residual = to_money(amount_residual)
             if residual == ZERO:
                 continue
-            signed = residual if normal_side == Direction.debit else -residual
+            signed = residual if side == Direction.debit else -residual
             due = date_maturity or when
             tracked.setdefault(party_id, []).append((due, signed))
             continue
-        is_charge = direction == normal_side
+        is_charge = direction == side
         per_party.setdefault(party_id, []).append(
             (when, to_money(amount), is_charge))
 
@@ -283,7 +283,7 @@ def payables_aging(db: Session, *, as_of: date | None = None,
         }
         names = {s.id: s.name for s in db.scalars(select(Supplier)).all()}
         return _aging_for_accounts(db, party_by_account=party_by_account, names=names,
-                                   as_of=when, branch_id=branch_id)
+                                   as_of=when, branch_id=branch_id, side=Direction.credit)
 
     return _cached_aging(("payables", when, branch_id), build)
 

@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 from src.core.money import ZERO, to_money
 from src.lib import entry_text
 from src.models.customer import MERGED_MARK, Customer, CustomerAccount
-from src.models.ledger import Account, LedgerLine
+from src.models.ledger import Account, Direction, LedgerLine
 from src.services import ledger_service
 from src.models.sales import SalesInvoice, SalesReturn
 from src.models.voucher import Voucher, VoucherKind
@@ -22,7 +22,7 @@ class CustomerProfileError(Exception):
 
 def bulk_balances(db: Session, customer_ids: list[int] | None = None) -> dict[int, Decimal]:
     signed = case(
-        (LedgerLine.direction == Account.normal_side, LedgerLine.amount),
+        (LedgerLine.direction == Direction.debit, LedgerLine.amount),
         else_=-LedgerLine.amount,
     )
     stmt = (
@@ -47,7 +47,7 @@ def family_balances_subquery(as_of: date | None = None):
     from src.services.customer_merge_service import FAMILY_POLY, FAMILY_WHITE
 
     signed = case(
-        (LedgerLine.direction == Account.normal_side, LedgerLine.amount),
+        (LedgerLine.direction == Direction.debit, LedgerLine.amount),
         else_=-LedgerLine.amount,
     )
     zero = Decimal("0")

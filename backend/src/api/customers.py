@@ -233,7 +233,7 @@ def customers_summary(
     db: Session = Depends(get_db),
 ) -> CustomersSummaryOut:
     from sqlalchemy import case, func
-    from src.models.ledger import Account, LedgerLine
+    from src.models.ledger import Account, Direction, LedgerLine
     from src.services import ledger_service
 
     base_stmt = customer_profile_service.apply_filters(
@@ -247,7 +247,7 @@ def customers_summary(
         base_stmt = base_stmt.where(Customer.customer_type != "employee")
     base_stmt = _party_group_filter(base_stmt, party_group)
     signed = case(
-        (LedgerLine.direction == Account.normal_side, LedgerLine.amount),
+        (LedgerLine.direction == Direction.debit, LedgerLine.amount),
         else_=-LedgerLine.amount,
     )
     bal_subq = (
