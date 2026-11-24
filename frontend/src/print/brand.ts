@@ -1,4 +1,5 @@
 import { BRAND, LOGO_DATA_URI, logoSvg } from '../components/Logo';
+import { isSharing, sharePdf } from './share';
 
 export interface DocMeta {
   title: string;
@@ -229,8 +230,14 @@ export function printDocument(meta: DocMeta, bodyHtml: string): void {
 <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800&display=swap" rel="stylesheet">
 <style>${printStyles}</style>${page}</head>
 <body class="${compact ? 'compact' : ''}"><div class="sheet">${head}${bodyHtml}${footer(meta.note, Boolean(meta.hide?.companyFooter))}</div>
-<script>window.onload = function () { window.print(); };</script>
+${isSharing() ? '' : '<script>window.onload = function () { window.print(); };</script>'}
 </body></html>`;
+  if (isSharing()) {
+    const label = `${meta.title}${meta.number ? ` ${meta.number}` : ''}`;
+    const phone = (meta.meta || []).find(([k]) => k === 'الهاتف')?.[1];
+    void sharePdf(latinDigits(html), meta.number || meta.fileName || meta.title, label, phone);
+    return;
+  }
   const win = window.open('', '_blank', 'width=1000,height=1000');
   if (!win) return;
   win.document.write(latinDigits(html));

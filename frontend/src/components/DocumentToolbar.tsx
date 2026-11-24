@@ -1,5 +1,7 @@
 import React, { useMemo } from 'react';
 import { Button, Tooltip } from 'antd';
+import { WhatsAppOutlined } from '@ant-design/icons';
+import { shareVia } from '../print/share';
 import { KEY_MAP, ShortcutAction, ScreenShortcuts, useScreenShortcuts } from './keyboard';
 
 export interface ToolbarAction {
@@ -16,11 +18,23 @@ export interface ToolbarAction {
 const BY_KEYS: Record<string, ShortcutAction> = Object.fromEntries(
   KEY_MAP.map((k) => [k.keys.toLowerCase(), k.action]));
 
-export default function DocumentToolbar({ actions, inline = false, variant = 'plain' }: {
+function withShare(actions: ToolbarAction[]): ToolbarAction[] {
+  const i = actions.findIndex((a) => a.key === 'print');
+  if (i < 0 || actions.some((a) => a.key === 'share')) return actions;
+  const print = actions[i];
+  const share: ToolbarAction = {
+    key: 'share', label: 'واتساب', icon: <WhatsAppOutlined />,
+    disabled: print.disabled || !print.onClick, onClick: () => { void shareVia(print.onClick); },
+  };
+  return [...actions.slice(0, i + 1), share, ...actions.slice(i + 1)];
+}
+
+export default function DocumentToolbar({ actions: given, inline = false, variant = 'plain' }: {
   actions: ToolbarAction[];
   inline?: boolean;
   variant?: 'plain' | 'buttons';
 }) {
+  const actions = useMemo(() => withShare(given), [given]);
   const handlers = useMemo(() => {
     const out: ScreenShortcuts = {};
     actions.forEach((a) => {

@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useBackTo } from '../components/useBackTo';
+import ShareButton from '../components/ShareButton';
 import { PAGE_SIZE, PAGE_SIZE_OPTIONS } from '../utils/pagination';
 import { searchFilter, searchRank, compareArabic } from '../utils/arabicSort';
 import { useNavigate, useParams } from 'react-router-dom';
@@ -884,6 +885,7 @@ export default function CustomerProfile() {
                             disabled={!statement?.lines?.length}>تصدير CSV</Button>
                           <Button icon={<PrinterOutlined />} onClick={printIt}
                             disabled={!statement?.lines?.length}>طباعة</Button>
+                          <ShareButton run={printIt} disabled={!statement?.lines?.length} />
                           <Button icon={<ReloadOutlined />} onClick={() => loadStatement()}>تحديث</Button>
                         </Space>
                       )}

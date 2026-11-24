@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Button, Space } from 'antd';
+import ShareButton from './ShareButton';
 import { PrinterOutlined } from '@ant-design/icons';
 import Logo, { BRAND } from './Logo';
 import { printDocument } from '../print/brand';
@@ -298,6 +299,7 @@ export function voucherFooter(doc: VoucherDoc | null, onClose: () => void) {
         onClick={() => doc && printVoucher(doc)}>
         طباعة
       </Button>
+      <ShareButton disabled={!doc} run={() => doc && printVoucher(doc)} />
       <Button onClick={onClose}>إغلاق</Button>
     </Space>
   );

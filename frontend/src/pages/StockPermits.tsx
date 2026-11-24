@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { searchFilter, searchRank, sortByName } from '../utils/arabicSort';
+import ShareButton from '../components/ShareButton';
 import { money, qty, numeralsLocale } from '../utils/money';
 import DocumentBar from '../components/DocumentBar';
 import DraftTag from '../components/DraftTag';
@@ -664,6 +665,7 @@ export default function StockPermits() {
                 <Button danger icon={<DeleteOutlined />} onClick={() => deletePermit(detail)}>حذف</Button>
                 <Button icon={<PrinterOutlined />}
                   onClick={() => printPermit(detail)}>طباعة</Button>
+                <ShareButton run={() => printPermit(detail)} />
                 <Button onClick={closeDoc}>إغلاق</Button>
               </div>
             </div>

@@ -1,5 +1,6 @@
 import { allRows } from '../components/tableDefaults';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
+import ShareButton from '../components/ShareButton';
 import { PAGE_SIZE, PAGE_SIZE_OPTIONS } from '../utils/pagination';
 import { searchFilter, searchRank, sortByName } from '../utils/arabicSort';
 import {
@@ -880,9 +881,10 @@ const Vouchers: React.FC = () => {
         <ExportExcelButton name="الشيكات" rows={chequeFilter.filtered}
           tableColumns={chequeColumns as any} style={{ marginInlineStart: 0 }} />
       </>)}
-      {tab === 'statement' && statement && (
+      {tab === 'statement' && statement && (<>
         <Button icon={<PrinterOutlined />} onClick={printStatement}>طباعة</Button>
-      )}
+        <ShareButton run={printStatement} />
+      </>)}
       {tab === 'log' && (<>
         <ExportExcelButton name="سجل السندات" rows={shownVouchers}
           tableColumns={voucherCols.columns} style={{ marginInlineStart: 0 }} />

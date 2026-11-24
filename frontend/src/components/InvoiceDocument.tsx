@@ -1,5 +1,6 @@
 import React from 'react';
 import { Button, Space } from 'antd';
+import ShareButton from './ShareButton';
 import { PrinterOutlined } from '@ant-design/icons';
 import Logo, { BRAND } from './Logo';
 import { printDocument } from '../print/brand';
@@ -380,6 +381,7 @@ export function invoiceFooter(doc: InvoiceDoc | null, onClose: () => void) {
         onClick={() => doc && printInvoice(doc)}>
         طباعة
       </Button>
+      <ShareButton disabled={!doc} run={() => doc && printInvoice(doc)} />
       <Button onClick={onClose}>إغلاق</Button>
     </Space>
   );

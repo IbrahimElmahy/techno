@@ -1,5 +1,6 @@
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { PAGE_SIZE } from '../utils/pagination';
+import ShareButton from '../components/ShareButton';
 import { searchFilter, searchRank, compareArabic } from '../utils/arabicSort';
 import {
   Alert, Button, Checkbox, Descriptions, Empty, Input, Segmented, Select,
@@ -1207,6 +1208,7 @@ export default function AccountStatement() {
       actions={(<>
         <Button icon={<PrinterOutlined />} onClick={printIt}
           disabled={!statement?.lines?.length}>طباعة</Button>
+        <ShareButton run={printIt} disabled={!statement?.lines?.length} />
         <Button icon={<DownloadOutlined />} onClick={exportCsv}
           disabled={!statement?.lines?.length}>تصدير CSV</Button>
         {tableCols.control}
