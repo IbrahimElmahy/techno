@@ -87,7 +87,7 @@ class AccountOut(BaseModel):
 
 
 class AccountCreate(BaseModel):
-    code: str
+    code: str = ""
     name: str
     parent_id: int | None = None
     nature: AccountNature

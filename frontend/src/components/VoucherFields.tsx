@@ -206,7 +206,7 @@ export function ExpenseAccountField({
     setSaving(true);
     try {
       await api.post('/api/v1/accounts', {
-        code: v.code, name: v.name, nature: 'expense', is_postable: true,
+        name: v.name, nature: 'expense', is_postable: true,
         parent_id: v.parent_id ?? null,
       });
       message.success('تمت إضافة حساب المصروف');
@@ -271,10 +271,6 @@ export function ExpenseAccountField({
                 label: `${g.name ?? g.code ?? ''}${tree && tree.length > 1 ? ` — ${branchOfCode(g.code)}` : ''}`,
                 search: g.code ?? '',
               }))} filterOption={searchFilter} filterSort={searchRank}/>
-          </Form.Item>
-          <Form.Item name="code" label="الكود"
-            rules={[{ required: true, message: 'اكتب كود الحساب' }]}>
-            <Input placeholder="مثال: 5.010" />
           </Form.Item>
           <Form.Item name="name" label="الاسم"
             rules={[{ required: true, message: 'اكتب اسم الحساب' }]}>

@@ -115,6 +115,19 @@ def effective_parent_id(db: Session, account: Account) -> int | None:
     return grp.id if grp else None
 
 
+def next_child_code(db: Session, parent_id: int) -> str:
+    parent = db.get(Account, parent_id)
+    if parent is None:
+        raise ChartError("الحساب الرئيسي غير موجود.")
+    prefix = parent.code + "."
+    taken = db.scalars(select(Account.code).where(Account.code.startswith(prefix, autoescape=True))).all()
+    nums = [int(c[len(prefix):]) for c in taken if c[len(prefix):].isdigit()]
+    n = max(nums, default=0) + 1
+    while db.scalar(select(Account.id).where(Account.code == f"{prefix}{n}")) is not None:
+        n += 1
+    return f"{prefix}{n}"
+
+
 def create_account(
     db: Session,
     *,
@@ -126,7 +139,9 @@ def create_account(
     appears_in: str | None = None,
     main_level: str | None = None,
 ) -> Account:
-    code = code.strip()
+    code = (code or "").strip()
+    if not code and parent_id is not None:
+        code = next_child_code(db, parent_id)
     if not code:
         raise ChartError("كود الحساب مطلوب.")
     if db.scalar(select(Account).where(Account.code == code)) is not None:
