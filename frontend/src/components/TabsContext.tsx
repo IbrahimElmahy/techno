@@ -103,6 +103,21 @@ export function titleForPath(path: string): string {
   return BASE_TITLES[base] || base;
 }
 
+const TABS_KEY = 'techno.tabs';
+
+function loadTabs(): WorkTab[] {
+  try {
+    const raw = JSON.parse(sessionStorage.getItem(TABS_KEY) || '[]');
+    if (!Array.isArray(raw)) return [];
+    const seen = new Set<string>();
+    return raw.filter((t: any) => typeof t?.path === 'string' && t.path.startsWith('/'))
+      .map((t: any) => ({ id: baseOf(t.path), path: t.path, title: titleForPath(t.path) }))
+      .filter((t) => (seen.has(t.id) ? false : (seen.add(t.id), true)));
+  } catch {
+    return [];
+  }
+}
+
 interface TabsContextType {
   tabs: WorkTab[];
   activeId: string | null;
@@ -119,10 +134,16 @@ export function TabsProvider({ children }: { children: React.ReactNode }) {
   const location = useLocation();
   const start = location.pathname === '/' ? '/dashboard' : location.pathname;
 
-  const [tabs, setTabs] = useState<WorkTab[]>([
-    { id: baseOf(start), path: start, title: titleForPath(start) },
-  ]);
+  const [tabs, setTabs] = useState<WorkTab[]>(() => {
+    const saved = loadTabs();
+    return saved.some((t) => t.id === baseOf(start))
+      ? saved
+      : [...saved, { id: baseOf(start), path: start, title: titleForPath(start) }];
+  });
   const [activeId, setActiveId] = useState<string | null>(baseOf(start));
+  useEffect(() => {
+    try { sessionStorage.setItem(TABS_KEY, JSON.stringify(tabs)); } catch {}
+  }, [tabs]);
   const activeIdRef = useRef(activeId);
   activeIdRef.current = activeId;
   const tabsRef = useRef(tabs);

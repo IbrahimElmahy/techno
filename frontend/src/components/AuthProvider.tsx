@@ -121,6 +121,9 @@ export function AuthProvider({ children, apiUrl }: { children: React.ReactNode; 
 
   const logout = (releaseDevice = true) => {
     const t = localStorage.getItem('token');
+    if (releaseDevice) {
+      try { sessionStorage.removeItem('techno.tabs'); } catch {}
+    }
     if (releaseDevice && t) {
       fetch(`${getApiBaseURL()}/api/v1/auth/logout`, {
         method: 'POST',
