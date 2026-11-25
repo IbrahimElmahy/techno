@@ -59,19 +59,68 @@ def _cash(db: Session, branch_id: int | None, as_of: date, names: dict) -> dict:
     return _section("cash", "النقدية بالخزائن والبنوك", rows)
 
 
-def _inventory(db: Session, branch_id: int | None, as_of: date, names: dict) -> dict:
-    from src.models.warehouse import Warehouse
+BASES = {
+    "average": "متوسط التكلفة",
+    "avg_purchase": "متوسط سعر الشراء خلال الفترة",
+    "last_purchase": "آخر سعر شراء",
+    "avg_list": "متوسط سعر القائمة خلال الفترة",
+    "list": "سعر القائمة في التاريخ",
+}
 
-    val = inventory_valuation_service.value_at(db, branch_id=branch_id, as_of=as_of)
+
+def _inventory(db: Session, branch_id: int | None, as_of: date, names: dict, *,
+               basis: str, price_field: str, period_from: date) -> dict:
+    from src.models.catalog import Item
+    from src.models.warehouse import Warehouse
+    from src.services import costing_service, price_list_service
+
+    qtys = inventory_valuation_service.quantities_at(db, branch_id=branch_id, as_of=as_of)
+    ids = {iid for iid, _ in qtys}
+    book = costing_service.cost_book(db, branch_id=branch_id, until=as_of)
+    avco = {iid: c for iid in ids if (c := book.at(iid, as_of)) is not None}
+    chosen: dict[int, Decimal] = {}
+    if basis == "avg_purchase":
+        chosen = price_list_service.purchase_prices(db, item_ids=ids, start=period_from, end=as_of)
+    elif basis == "last_purchase":
+        chosen = price_list_service.last_purchase_prices(db, item_ids=ids, end=as_of)
+    elif basis in ("avg_list", "list"):
+        tls = price_list_service.timelines(db, fields=[price_field], item_ids=ids)
+        for iid in ids:
+            tl = tls.get((iid, price_field))
+            if tl is None:
+                continue
+            v = tl.average(period_from, as_of) if basis == "avg_list" else tl.at(as_of)
+            if v is not None and v > 0:
+                chosen[iid] = v
+    items = {i.id: i for i in db.scalars(select(Item).where(Item.id.in_(ids or [-1]))).all()}
     wh = {w.id: w for w in db.scalars(select(Warehouse)).all()}
-    per: dict[int, Decimal] = {}
-    for r in val.rows:
-        per[r["warehouse_id"]] = per.get(r["warehouse_id"], ZERO) + Decimal(r["value"])
+    per_wh: dict[int, Decimal] = {}
+    per_cat: dict[str, Decimal] = {}
+    fallback, missing = set(), set()
+    for (iid, wid), qty in qtys.items():
+        unit = chosen.get(iid)
+        if unit is None and basis != "average":
+            unit = avco.get(iid)
+            if unit is not None:
+                fallback.add(iid)
+        if unit is None:
+            unit = avco.get(iid) if basis == "average" else None
+        if unit is None:
+            missing.add(iid)
+            continue
+        v = to_money(qty * unit)
+        per_wh[wid] = per_wh.get(wid, ZERO) + v
+        cat = (items[iid].category if iid in items else None) or "بدون فئة"
+        per_cat[cat] = per_cat.get(cat, ZERO) + v
     rows = [{"name": wh[w].name if w in wh else f"#{w}",
              "branch": names.get(wh[w].branch_id) if w in wh else None,
-             "value": to_money(v)} for w, v in per.items()]
-    out = _section("inventory", "المخزون بمتوسط التكلفة", rows)
-    out["missing_cost"] = val.missing_cost
+             "value": to_money(v)} for w, v in per_wh.items()]
+    out = _section("inventory", "المخزون", rows)
+    out["missing_cost"] = len(missing)
+    out["fallback"] = len(fallback)
+    out["by_category"] = sorted(
+        ({"name": k, "value": str(to_money(v))} for k, v in per_cat.items() if v != ZERO),
+        key=lambda r: -abs(Decimal(r["value"])))
     return out
 
 
@@ -147,12 +196,22 @@ def _parties(db: Session, branch_id: int | None, as_of: date, names: dict) -> tu
             _section("payables", "مستحقات علينا", owed, liability=True))
 
 
-def build(db: Session, *, branch_id: int | None, as_of: date) -> dict:
+def build(db: Session, *, branch_id: int | None, as_of: date, basis: str = "average",
+          price_field: str = "purchase_price", period_from: date | None = None) -> dict:
+    from src.services.price_list_service import FIELDS
+
+    if basis not in BASES:
+        basis = "average"
+    if price_field not in FIELDS:
+        price_field = "purchase_price"
+    if period_from is None or period_from > as_of:
+        period_from = as_of.replace(year=as_of.year - 1)
     names = dict(db.execute(select(Branch.id, Branch.name)).all())
     receivables, payables = _parties(db, branch_id, as_of, names)
     sections = [
         _cash(db, branch_id, as_of, names),
-        _inventory(db, branch_id, as_of, names),
+        _inventory(db, branch_id, as_of, names, basis=basis, price_field=price_field,
+                   period_from=period_from),
         _fixed_assets(db, branch_id, as_of, names),
         receivables,
         payables,
@@ -161,6 +220,9 @@ def build(db: Session, *, branch_id: int | None, as_of: date) -> dict:
     liabilities = to_money(sum((s["total"] for s in sections if s["liability"]), ZERO))
     return {
         "as_of": as_of.isoformat(), "branch_id": branch_id,
+        "basis": basis, "price_field": price_field, "period_from": period_from.isoformat(),
+        "bases": [{"key": k, "label": v} for k, v in BASES.items()],
+        "price_fields": [{"key": k, "label": v} for k, v in FIELDS.items()],
         "sections": [{**s, "total": str(s["total"]),
                       "rows": [{**r, "value": str(r["value"])} for r in s["rows"]]}
                      for s in sections],

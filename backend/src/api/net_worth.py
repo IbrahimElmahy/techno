@@ -24,7 +24,11 @@ def _gate(current: CurrentUser = Depends(get_current_user)) -> CurrentUser:
 def net_worth(
     as_of: date | None = Query(None),
     branch_id: int | None = Query(None),
+    basis: str = Query("average"),
+    price_field: str = Query("purchase_price"),
+    period_from: date | None = Query(None),
     _: CurrentUser = Depends(_gate),
     db: Session = Depends(get_db),
 ) -> dict:
-    return net_worth_service.build(db, branch_id=branch_id, as_of=as_of or clock.today())
+    return net_worth_service.build(db, branch_id=branch_id, as_of=as_of or clock.today(),
+                                   basis=basis, price_field=price_field, period_from=period_from)

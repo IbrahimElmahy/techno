@@ -63,6 +63,7 @@ export const NAVIGATION: (NavGroup | NavScreen)[] = [
     children: [
       { key: '/categories', label: 'فئات الاصناف', roles: R(STOCK), a5: '/categories' },
       { key: '/catalog', label: 'الأصناف', roles: R(STOCK), a5: '/items' },
+      { key: '/price-list', label: 'قائمة الأسعار', roles: R([...STOCK, 'accountant']) },
       { key: '/customers', label: 'العملاء', roles: R([...SALES, 'after_sales_staff']), a5: '/clients' },
       { key: '/suppliers', label: 'الموردين', roles: R(BUYING), a5: '/suppliers' },
       { key: '/party-links', label: 'الأطراف المرتبطة', roles: R([...SALES, ...BUYING]) },

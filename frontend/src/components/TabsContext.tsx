@@ -26,6 +26,7 @@ const BASE_TITLES: Record<string, string> = {
   '/stock-alerts': 'تنبيهات المخزون',
   '/stock-value': 'قيمة المخزون',
   '/net-worth': 'تقييم الممتلكات',
+  '/price-list': 'قائمة الأسعار',
   '/sales-reports': 'تقارير المبيعات',
   '/purchase-reports': 'تقارير المشتريات',
   '/stock-reports': 'تقارير المخازن',

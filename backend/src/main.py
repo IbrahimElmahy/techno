@@ -9,6 +9,7 @@ import src.services.loyalty_hooks  # noqa: F401
 from src.api import (
     accounting,
     net_worth,
+    price_lists,
     admin,
     drafts,
     advances,
@@ -158,6 +159,7 @@ def create_app() -> FastAPI:
     prefix = "/api/v1"
     app.include_router(auth.router, prefix=prefix)
     app.include_router(net_worth.router, prefix=prefix)
+    app.include_router(price_lists.router, prefix=prefix)
     app.include_router(users.router, prefix=prefix)
     app.include_router(org.router, prefix=prefix)
     app.include_router(warehouses.router, prefix=prefix)
