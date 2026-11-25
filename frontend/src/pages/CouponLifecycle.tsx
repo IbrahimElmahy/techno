@@ -21,7 +21,7 @@ export interface LifecycleRow {
   key: string;
   serial: string;
   kind: string | null;
-  status: 'with_rep' | 'given' | 'received' | 'returned';
+  status: 'with_rep' | 'given' | 'pending_receipt' | 'received' | 'returned';
   status_label: string;
   custody_rep: string | null;
   custody_doc: string | null;
@@ -46,15 +46,17 @@ export interface LifecycleRow {
 
 interface Summary {
   total: number; with_rep: number; given: number; received: number; returned: number;
+  pending_receipt?: number;
   unlinked: number; shown: number; value_total: string | number;
 }
 
 const STATUS_COLORS: Record<string, string> = {
-  with_rep: 'blue', given: 'orange', received: 'green', returned: 'default',
+  with_rep: 'blue', given: 'orange', pending_receipt: 'gold', received: 'green', returned: 'default',
 };
 const STATUS_OPTIONS = [
   { value: 'with_rep', label: 'في العهدة' },
   { value: 'given', label: 'سُلِّم لتاجر' },
+  { value: 'pending_receipt', label: 'بانتظار الاعتماد' },
   { value: 'received', label: 'استُلم من سباك' },
   { value: 'returned', label: 'أُعيد للمكتب' },
 ];
@@ -73,6 +75,8 @@ export function useCouponLifecycle(range: [Dayjs, Dayjs] | null, active: boolean
 
   const [dateField, setDateField] = useState<'custody' | 'handout' | 'receipt'>('handout');
   const [repId, setRepId] = useState<number[]>([]);
+  const [receiptRepId, setReceiptRepId] = useState<number[]>([]);
+  const [receivers, setReceivers] = useState<any[]>([]);
   const [partyId, setPartyId] = useState<number[]>([]);
   const [plumberId, setPlumberId] = useState<number[]>([]);
   const [kind, setKind] = useState<string[]>([]);
@@ -101,11 +105,16 @@ export function useCouponLifecycle(range: [Dayjs, Dayjs] | null, active: boolean
       setReps((u.data || []).filter((x: any) => x.role === 'sales_rep'));
       setCustomers(c.data || []);
     }).catch(console.error);
+    api.get('/api/v1/coupon-receipts/receivers')
+      .then((r) => setReceivers(r.data || []))
+      .catch(() => setReceivers([]));
   }, [active]);
 
   const repOptions = useMemo(
     () => repPickerOptions(sortByName(reps, (r: any) => r.full_name || r.username || '')),
     [reps, repId]);
+  const receiverOptions = useMemo(() => sortByName(receivers, (u: any) => u.name || '')
+    .map((u: any) => ({ value: u.id, label: String(u.name ?? '') })), [receivers]);
   const partyOptions = useMemo(() => sortByName(
     customers.filter((c: any) => c.customer_type !== 'plumber'), (c: any) => c.name || '')
     .map((c: any) => ({ value: c.id, label: String(c.name ?? '') })), [customers]);
@@ -120,6 +129,7 @@ export function useCouponLifecycle(range: [Dayjs, Dayjs] | null, active: boolean
       p.date_to = range[1].format('YYYY-MM-DD');
     }
     if (repId.length) p.rep_id = repId.join(',');
+    if (receiptRepId.length) p.receipt_rep_id = receiptRepId.join(',');
     if (partyId.length) p.party_id = partyId.join(',');
     if (plumberId.length) p.plumber_id = plumberId.join(',');
     if (kind.length) p.kind = kind.join(',');
@@ -129,7 +139,7 @@ export function useCouponLifecycle(range: [Dayjs, Dayjs] | null, active: boolean
     const to = serialQuery.to.trim();
     if (from && to) { p.serial_from = from; p.serial_to = to; } else if (from) p.serial = from;
     return p;
-  }, [dateField, range, repId, partyId, plumberId, kind, status, onlyUnlinked, serialQuery]);
+  }, [dateField, range, repId, receiptRepId, partyId, plumberId, kind, status, onlyUnlinked, serialQuery]);
 
   const load = useCallback(async (pg = page, ps = pageSize) => {
     setLoading(true);
@@ -155,7 +165,7 @@ export function useCouponLifecycle(range: [Dayjs, Dayjs] | null, active: boolean
   }, [active, params]);
 
   const reset = () => {
-    setRepId([]); setPartyId([]); setPlumberId([]); setKind([]);
+    setRepId([]); setReceiptRepId([]); setPartyId([]); setPlumberId([]); setKind([]);
     setStatus([]); setOnlyUnlinked(false); setSerialText(''); setSerialToText('');
     setSerialQuery({ from: '', to: '' });
   };
@@ -249,6 +259,7 @@ export function useCouponLifecycle(range: [Dayjs, Dayjs] | null, active: boolean
     const names = (opts: { value: any; label: any }[], vals: any[]) =>
       vals.map((v) => String(opts.find((o) => o.value === v)?.label ?? v)).join('، ');
     if (repId.length) meta.push(['المندوب', names(repOptions, repId)]);
+    if (receiptRepId.length) meta.push(['مندوب الاستلام', names(receiverOptions, receiptRepId)]);
     if (partyId.length) meta.push(['سُلِّم إلى', names(partyOptions, partyId)]);
     if (plumberId.length) meta.push(['السباك', names(plumberOptions, plumberId)]);
     if (kind.length) meta.push(['الفئة', kind.join('، ')]);
@@ -262,6 +273,7 @@ export function useCouponLifecycle(range: [Dayjs, Dayjs] | null, active: boolean
   const summaryLines = () => (summary ? [
     { label: 'في العهدة', value: num(summary.with_rep) },
     { label: 'سُلِّم لتاجر', value: num(summary.given) },
+    { label: 'بانتظار الاعتماد', value: num(summary.pending_receipt) },
     { label: 'استُلم من سباك', value: num(summary.received) },
     { label: 'أُعيد للمكتب', value: num(summary.returned) },
     { label: 'أُعيد دون تسليم معروف', value: num(summary.unlinked) },
@@ -301,6 +313,10 @@ export function useCouponLifecycle(range: [Dayjs, Dayjs] | null, active: boolean
       <Select mode="multiple" maxTagCount="responsive" allowClear showSearch placeholder="كل المناديب" value={repId} onChange={setRepId}
         options={repOptions} filterOption={searchFilter} filterSort={searchRank}
         style={{ width: 240 }} popupMatchSelectWidth={false} />
+      <Select mode="multiple" maxTagCount="responsive" allowClear showSearch placeholder="مندوب الاستلام"
+        value={receiptRepId} onChange={setReceiptRepId} options={receiverOptions}
+        filterOption={searchFilter} filterSort={searchRank}
+        style={{ width: 200 }} popupMatchSelectWidth={false} />
       <Select mode="multiple" maxTagCount="responsive" allowClear showSearch placeholder="الموزع" value={partyId}
         onChange={setPartyId} options={partyOptions} filterOption={searchFilter}
         filterSort={searchRank} style={{ width: 200 }} popupMatchSelectWidth={false} />
@@ -328,6 +344,9 @@ export function useCouponLifecycle(range: [Dayjs, Dayjs] | null, active: boolean
       <span>العدد: <b>{num(total)}</b></span>
       <span>في العهدة: <b>{num(summary.with_rep)}</b></span>
       <span>سُلِّم لتاجر: <b>{num(summary.given)}</b></span>
+      {!!summary.pending_receipt && (
+        <span>بانتظار الاعتماد: <b>{num(summary.pending_receipt)}</b></span>
+      )}
       <span>استُلم من سباك: <b>{num(summary.received)}</b></span>
       <span>أُعيد للمكتب: <b>{num(summary.returned)}</b></span>
       {!!summary.unlinked && (

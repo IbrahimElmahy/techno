@@ -100,17 +100,21 @@ def card(db: Session, current: CurrentUser, *, kind: str | None = None,
                        CouponReceipt.received_date, CouponReceipt.customer_id,
                        CouponReceipt.rep_user_id, CouponReceipt.actor_user_id,
                        CouponReceipt.declared_kind, CouponReceipt.declared_value,
-                       CouponReceiptLine.coupon_kind, CouponReceiptLine.serial)
+                       CouponReceiptLine.coupon_kind, CouponReceiptLine.serial,
+                       CouponReceiptLine.value.label("line_value"))
                 .join(CouponReceiptLine, CouponReceiptLine.receipt_id == CouponReceipt.id))
     counted = _receipt_counted_clause()
     if counted is not None:
         rec_stmt = rec_stmt.where(counted)
     rec_heads: dict[int, object] = {}
     rec_serials: dict[tuple[int, str], list[str]] = defaultdict(list)
+    rec_values: dict[tuple[int, str], set] = defaultdict(set)
     for row in db.execute(branch_scope.scope(rec_stmt, CouponReceipt, current)).all():
         rec_heads[row.id] = row
         _k, number, shown = split_serial(row.coupon_kind or row.declared_kind, row.serial)
         rec_serials[(row.id, shown or row.declared_kind or "")].append(number)
+        rec_values[(row.id, shown or row.declared_kind or "")].add(
+            row.line_value if row.line_value is not None else row.declared_value)
     for (rid, k), serials in rec_serials.items():
         head = rec_heads[rid]
         if not keep(k):
@@ -119,7 +123,9 @@ def card(db: Session, current: CurrentUser, *, kind: str | None = None,
                       "doc": head.document_number, "date": head.received_date,
                       "party_id": head.customer_id,
                       "rep_id": head.rep_user_id or head.actor_user_id, "kind": k,
-                      "value": head.declared_value, "issued": 0, "received": len(serials),
+                      "value": (next(iter(rec_values[(rid, k)]))
+                                if len(rec_values[(rid, k)]) == 1 else None),
+                      "issued": 0, "received": len(serials),
                       "ranges": _ranges(serials)})
 
     if party_id is not None:

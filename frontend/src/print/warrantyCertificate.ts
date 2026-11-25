@@ -1,6 +1,7 @@
 import backgroundAsset from '../assets/warranty-certificate.jpg';
 import paperAsset from '../assets/warranty-paper.jpg';
 import { latinDigits } from './brand';
+import { api } from '../api/client';
 
 export interface WarrantyCertificateData {
   certificateNumber: string;
@@ -84,16 +85,45 @@ const PAPER_FIELD_BOXES: FieldBox[] = PAPER_FIELDS.map((f) => ({
 }));
 
 const CALIBRATION_KEY = 'warrantyCertificate.calibration.v2';
+const CALIBRATION_PREF = 'warranty.calibration';
 
-interface Calibration { x: number; y: number; scale: number }
+export interface Calibration { x: number; y: number; scale: number }
 
-function loadCalibration(): Calibration {
-  const base = { x: 0, y: 0, scale: 100 };
+const BASE_CALIBRATION: Calibration = { x: 0, y: 0, scale: 100 };
+
+function localCalibration(): Calibration {
   try {
-    return { ...base, ...JSON.parse(localStorage.getItem(CALIBRATION_KEY) || '{}') };
+    return { ...BASE_CALIBRATION, ...JSON.parse(localStorage.getItem(CALIBRATION_KEY) || '{}') };
   } catch {
-    return base;
+    return BASE_CALIBRATION;
   }
+}
+
+export async function loadCalibration(): Promise<Calibration> {
+  try {
+    const raw = (await api.get('/api/v1/auth/prefs')).data?.[CALIBRATION_PREF];
+    if (raw) {
+      const c = { ...BASE_CALIBRATION, ...JSON.parse(raw) };
+      try { localStorage.setItem(CALIBRATION_KEY, JSON.stringify(c)); } catch {}
+      return c;
+    }
+  } catch {}
+  return localCalibration();
+}
+
+let saveTimer: number | undefined;
+
+export function saveCalibration(c: Calibration, immediate = false): Promise<void> {
+  const clean = {
+    x: Number(c.x) || 0, y: Number(c.y) || 0, scale: Number(c.scale) || 100,
+  };
+  try { localStorage.setItem(CALIBRATION_KEY, JSON.stringify(clean)); } catch {}
+  const send = () => api.put('/api/v1/auth/prefs', { key: CALIBRATION_PREF, value: JSON.stringify(clean) })
+    .then(() => undefined).catch(() => undefined);
+  if (saveTimer) window.clearTimeout(saveTimer);
+  if (immediate) return send();
+  saveTimer = window.setTimeout(send, 800);
+  return Promise.resolve();
 }
 
 let measureCtx: CanvasRenderingContext2D | null = null;
@@ -208,20 +238,32 @@ async function renderCanvas(
   return canvas;
 }
 
-export async function printWarrantyCertificate(d: WarrantyCertificateData, title: string): Promise<void> {
+export async function printWarrantyCertificates(
+  list: WarrantyCertificateData[], title: string,
+): Promise<boolean> {
+  if (!list.length) return false;
   const win = window.open('', '_blank', 'width=900,height=1000');
-  if (!win) return;
+  if (!win) return false;
   const paperUrl = await paperBackground();
-  const layer = (await renderCanvas(d, PRINT_SCALE, false, PAPER_FIELD_BOXES, A4_H_MM * MM))
-    .toDataURL('image/png');
-  const cal = loadCalibration();
+  const layers: string[] = [];
+  for (const d of list) {
+    layers.push((await renderCanvas(d, PRINT_SCALE, false, PAPER_FIELD_BOXES, A4_H_MM * MM))
+      .toDataURL('image/png'));
+  }
+  const cal = await loadCalibration();
+  (window as any).__warrantyCalibration = (c: Calibration) => { saveCalibration(c); };
+  const sheets = layers.map((layer) => `<div class="sheet">
+  <img class="bg" src="${paperUrl}" alt="">
+  <img class="data" src="${layer}" alt="">
+</div>`).join('\n');
   const html = `<!DOCTYPE html><html dir="rtl" lang="ar"><head><meta charset="utf-8">
 <title>${esc(title)}</title>
 <style>
   @page { size: A4; margin: 0; }
   * { box-sizing: border-box; }
   html, body { margin: 0; padding: 0; background: #888; font-family: Tahoma, sans-serif; }
-  .sheet { position: relative; width: ${PAGE_W_MM}mm; height: ${A4_H_MM}mm; margin: 0 auto; background: #fff; overflow: hidden; }
+  .sheet { position: relative; width: ${PAGE_W_MM}mm; height: ${A4_H_MM}mm; margin: 0 auto 8px; background: #fff; overflow: hidden; page-break-after: always; break-after: page; }
+  .sheet:last-child { page-break-after: auto; break-after: auto; }
   .sheet img { position: absolute; inset: 0; width: 100%; height: 100%; }
   .data { transform-origin: top right; }
   .bar { position: sticky; top: 0; z-index: 2; background: #fff; border-bottom: 1px solid #ccc; padding: 6px 10px; display: flex; flex-wrap: wrap; gap: 10px; align-items: center; font-size: 13px; }
@@ -240,30 +282,32 @@ export async function printWarrantyCertificate(d: WarrantyCertificateData, title
   <label>أفقي <input id="x" type="number" step="0.5" value="${cal.x}"></label>
   <label>رأسي <input id="y" type="number" step="0.5" value="${cal.y}"></label>
   <label>الحجم % <input id="scale" type="number" step="0.5" value="${cal.scale}"></label>
+  <span>${layers.length} شهادة</span>
   <button id="go">طباعة</button>
 </div>
-<div class="sheet">
-  <img class="bg" src="${paperUrl}" alt="">
-  <img class="data" id="data" src="${layer}" alt="">
-</div>
+${sheets}
 <script>
-  var KEY = ${JSON.stringify(CALIBRATION_KEY)};
   function num(id) { var v = parseFloat(document.getElementById(id).value); return isNaN(v) ? 0 : v; }
-  function apply() {
+  function apply(save) {
     var c = { x: num('x'), y: num('y'), scale: num('scale') || 100 };
-    document.getElementById('data').style.transform =
-      'translate(' + (-c.x) + 'mm,' + c.y + 'mm) scale(' + (c.scale / 100) + ')';
-    try { window.opener && window.opener.localStorage.setItem(KEY, JSON.stringify(c)); } catch (e) {}
+    var t = 'translate(' + (-c.x) + 'mm,' + c.y + 'mm) scale(' + (c.scale / 100) + ')';
+    Array.prototype.forEach.call(document.querySelectorAll('.data'), function (el) { el.style.transform = t; });
+    if (save) { try { window.opener && window.opener.__warrantyCalibration && window.opener.__warrantyCalibration(c); } catch (e) {} }
   }
   ['x', 'y', 'scale'].forEach(function (id) {
-    document.getElementById(id).addEventListener('input', apply);
+    document.getElementById(id).addEventListener('input', function () { apply(true); });
   });
   document.getElementById('go').addEventListener('click', function () { window.print(); });
-  apply();
+  apply(false);
 </script>
 </body></html>`;
   win.document.write(html);
   win.document.close();
+  return true;
+}
+
+export async function printWarrantyCertificate(d: WarrantyCertificateData, title: string): Promise<boolean> {
+  return printWarrantyCertificates([d], title);
 }
 
 function dataUrlBytes(url: string): Uint8Array {

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import date, datetime
 
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session, selectinload
@@ -456,13 +456,53 @@ def _match_serials(
 
 
 def _write_lines(db: Session, receipt: CouponReceipt, matched) -> None:
-    for serial, invoice, issue, line_kind in matched:
+    for serial, invoice, issue, line_kind, *rest in matched:
         db.add(CouponReceiptLine(
             receipt_id=receipt.id, serial=serial,
             sales_invoice_id=invoice.id if invoice else None,
             coupon_issue_id=issue.id if issue else None,
-            coupon_kind=line_kind))
+            coupon_kind=line_kind, value=rest[0] if rest else None))
     db.flush()
+
+
+def _line_value(raw) -> Decimal | None:
+    if raw in (None, ""):
+        return None
+    try:
+        v = Decimal(str(raw))
+    except (InvalidOperation, ValueError):
+        raise CouponReceiptError("قيمة الكوبون غير صحيحة.") from None
+    if v < 0:
+        raise CouponReceiptError("قيمة الكوبون غير صحيحة.")
+    return v
+
+
+def _match_valued(db: Session, pairs, branch_id) -> tuple[list, set]:
+    groups: dict[str, tuple[str | None, list[tuple[str, Decimal | None]]]] = {}
+    for serial, kind, value in pairs:
+        groups.setdefault(_norm_kind(kind), (kind, []))[1].append((serial, value))
+    matched: list = []
+    values: set = set()
+    for kind, group in groups.values():
+        by_serial = dict(group)
+        for serial, invoice, issue, line_kind in _match_serials(
+                db, [s for s, _ in group], kind, branch_id):
+            v = by_serial.get(serial)
+            values.add(v)
+            matched.append((serial, invoice, issue, line_kind, v))
+    return matched, values
+
+
+def _settle_values(receipt: CouponReceipt, values: set) -> None:
+    given = {v for v in values if v is not None}
+    if not given:
+        return
+    if len(given) == 1 and None not in values:
+        receipt.declared_value = next(iter(given))
+        for line in receipt.lines:
+            line.value = None
+    else:
+        receipt.declared_value = None
 
 
 def create_receipt(
@@ -494,26 +534,22 @@ def create_receipt(
     _require_party(db, customer_id)
     customer_type = receiver_kind(db, customer_id, customer_type)
     fallback_kind = (coupon_kind or "").strip() or (declared_kind or "").strip() or None
-    pairs: list[tuple[str, str | None]] = []
+    pairs: list[tuple[str, str | None, Decimal | None]] = []
     for item in lines or []:
         serial = str(item.get("serial") or "").strip()
         if serial:
-            pairs.append((serial, (str(item.get("coupon_kind") or "").strip()) or fallback_kind))
-    pairs.extend((str(s).strip(), coupon_kind) for s in serials if str(s).strip())
+            pairs.append((serial, (str(item.get("coupon_kind") or "").strip()) or fallback_kind,
+                          _line_value(item.get("value"))))
+    pairs.extend((str(s).strip(), coupon_kind, None) for s in serials if str(s).strip())
     if not pairs:
         raise CouponReceiptError("لا توجد كوبونات في الاستلام.")
-    groups: dict[str, tuple[str | None, list[str]]] = {}
-    for serial, kind in pairs:
-        groups.setdefault(_norm_kind(kind), (kind, []))[1].append(serial)
     receiving_branch = branch_for(db, actor_user_id=actor_user_id,
                                   location_kind="rep", location_id=rep_user_id)
-    matched: list = []
-    for kind, group in groups.values():
-        matched.extend(_match_serials(db, group, kind, receiving_branch))
-    named = {_norm_kind(k): k for _, k in pairs if k}
+    matched, line_values = _match_valued(db, pairs, receiving_branch)
+    named = {_norm_kind(k): k for _, k, _v in pairs if k}
     if lines:
         declared_kind = next(iter(named.values())) if len(named) == 1 and all(
-            k for _, k in pairs) else None
+            k for _, k, _v in pairs) else None
 
     receipt = CouponReceipt(
         document_number=_doc_number(db), customer_id=customer_id, rep_user_id=rep_user_id,
@@ -532,6 +568,9 @@ def create_receipt(
     db.add(receipt)
     db.flush()
     _write_lines(db, receipt, matched)
+    db.refresh(receipt)
+    _settle_values(receipt, line_values)
+    db.flush()
 
     audit_service.record(
         db, action="coupon_receipt.create", actor_user_id=actor_user_id,
@@ -626,21 +665,26 @@ def update_receipt(
 
     existing = {line.id: line for line in receipt.lines}
     keep: set[int] = set()
-    fresh: list[tuple[str, str | None]] = []
+    kept_values: dict[int, Decimal | None] = {}
+    fresh: list[tuple[str, str | None, Decimal | None]] = []
     seen_kinds: list[str | None] = []
     for item in lines:
         serial = str(item.get("serial") or "").strip()
         if not serial:
             continue
         kind = (str(item.get("coupon_kind") or "").strip()) or None
+        has_value = item.get("value") not in (None, "")
+        value = _line_value(item.get("value")) if has_value else None
         line = existing.get(item.get("id")) if item.get("id") else None
         if (line is not None and line.id not in keep and line.serial == serial
                 and (line.coupon_kind is None or kind is None
                      or _same_kind(line.coupon_kind, kind))):
             keep.add(line.id)
+            if has_value:
+                kept_values[line.id] = value
             seen_kinds.append(line.coupon_kind or kind or receipt.declared_kind)
             continue
-        fresh.append((serial, kind or fallback_kind))
+        fresh.append((serial, kind or fallback_kind, value))
         seen_kinds.append(kind or fallback_kind)
 
     if not keep and not fresh:
@@ -651,12 +695,10 @@ def update_receipt(
             receipt.lines.remove(line)
     db.flush()
 
-    groups: dict[str, tuple[str | None, list[str]]] = {}
-    for serial, kind in fresh:
-        groups.setdefault(_norm_kind(kind), (kind, []))[1].append(serial)
-    matched: list = []
-    for kind, group in groups.values():
-        matched.extend(_match_serials(db, group, kind, receipt.branch_id))
+    for line in receipt.lines:
+        if line.id in kept_values:
+            line.value = kept_values[line.id]
+    matched, _ = _match_valued(db, fresh, receipt.branch_id) if fresh else ([], set())
     _write_lines(db, receipt, matched)
     db.refresh(receipt)
 
@@ -675,6 +717,14 @@ def update_receipt(
     receipt.notes = notes
     if declared_value is not None:
         receipt.declared_value = declared_value
+    line_values = {line.value for line in receipt.lines}
+    if any(v is not None for v in line_values):
+        if receipt.declared_value is not None:
+            line_values = {receipt.declared_value if v is None else v for v in line_values}
+            for line in receipt.lines:
+                if line.value is None:
+                    line.value = receipt.declared_value
+        _settle_values(receipt, line_values)
     receipt.customer_type = receiver_kind(
         db, receipt.customer_id,
         customer_type if customer_type is not None else receipt.customer_type)
@@ -771,7 +821,7 @@ def describe_lines(db: Session, receipt: CouponReceipt) -> list[dict]:
                 kind = kind or hit.coupon_kind
         doc = issue or invoice
         party = doc.customer_id if doc is not None else None
-        value = _money_or_none(receipt.declared_value)
+        value = _money_or_none(ln.value if ln.value is not None else receipt.declared_value)
         if value is None and issue is not None:
             value = _money_or_none(issue.unit_value)
         out.append({
@@ -817,6 +867,7 @@ def _status_where(stmt, status: str | None):
 def _build_receipts_stmt(
     *, customer_id: int | None = None, rep_user_id: int | None = None,
     q: str | None = None, status: str | None = None, branch_id: int | None = None,
+    date_from: date | None = None, date_to: date | None = None,
 ):
     stmt = _status_where(select(CouponReceipt), status)
     if branch_id is not None:
@@ -826,6 +877,10 @@ def _build_receipts_stmt(
         stmt = stmt.where(CouponReceipt.customer_id == customer_id)
     if rep_user_id:
         stmt = stmt.where(CouponReceipt.rep_user_id == rep_user_id)
+    if date_from:
+        stmt = stmt.where(CouponReceipt.received_date >= date_from)
+    if date_to:
+        stmt = stmt.where(CouponReceipt.received_date <= date_to)
     if q:
         q_str = q.strip()
         from src.models.customer import Customer
@@ -852,9 +907,11 @@ def list_receipts(
     db: Session, *, customer_id: int | None = None, rep_user_id: int | None = None,
     q: str | None = None, limit: int | None = None, offset: int = 0,
     status: str | None = None, branch_id: int | None = None,
+    date_from: date | None = None, date_to: date | None = None,
 ) -> tuple[list[CouponReceipt], int]:
     base_stmt = _build_receipts_stmt(customer_id=customer_id, rep_user_id=rep_user_id, q=q,
-                                     status=status, branch_id=branch_id)
+                                     status=status, branch_id=branch_id,
+                                     date_from=date_from, date_to=date_to)
     total_count = db.scalar(select(func.count()).select_from(base_stmt.order_by(None).subquery())) or 0
 
     query = base_stmt.options(selectinload(CouponReceipt.lines)).order_by(*newest_first(CouponReceipt, CouponReceipt.received_date))
@@ -866,16 +923,26 @@ def list_receipts(
 def coupon_receipts_summary(
     db: Session, *, customer_id: int | None = None, rep_user_id: int | None = None,
     q: str | None = None, status: str | None = None, branch_id: int | None = None,
+    date_from: date | None = None, date_to: date | None = None,
 ) -> dict:
     base_stmt = _build_receipts_stmt(customer_id=customer_id, rep_user_id=rep_user_id, q=q,
-                                     status=status or APPROVED, branch_id=branch_id)
+                                     status=status or APPROVED, branch_id=branch_id,
+                                     date_from=date_from, date_to=date_to)
     subq = base_stmt.order_by(None).subquery()
     summary_stmt = select(
         func.count(subq.c.id).label("total_receipts"),
         func.coalesce(func.sum(subq.c.coupon_count), 0).label("total_coupons"),
-        func.coalesce(func.sum(subq.c.declared_value * subq.c.coupon_count), Decimal("0.00")).label("total_value"),
     )
     row = db.execute(summary_stmt).one()
+    has_any = select(CouponReceiptLine.id).where(CouponReceiptLine.receipt_id == subq.c.id)
+    lined_value = db.scalar(
+        select(func.coalesce(func.sum(func.coalesce(CouponReceiptLine.value,
+                                                    subq.c.declared_value)), 0))
+        .select_from(CouponReceiptLine).join(subq, subq.c.id == CouponReceiptLine.receipt_id))
+    bare_value = db.scalar(
+        select(func.coalesce(func.sum(subq.c.declared_value * subq.c.coupon_count), 0))
+        .where(~has_any.exists()))
+    total_value = Decimal(str(lined_value or 0)) + Decimal(str(bare_value or 0))
     line_kind = func.coalesce(CouponReceiptLine.coupon_kind, subq.c.declared_kind)
     kind_stmt = (select(line_kind, func.count(CouponReceiptLine.id))
                  .select_from(CouponReceiptLine)
@@ -895,7 +962,7 @@ def coupon_receipts_summary(
 
     all_subq = _build_receipts_stmt(
         customer_id=customer_id, rep_user_id=rep_user_id, q=q,
-        branch_id=branch_id).order_by(None).subquery()
+        branch_id=branch_id, date_from=date_from, date_to=date_to).order_by(None).subquery()
     status_counts = {PENDING: 0, APPROVED: 0, REJECTED: 0}
     for st, cnt in db.execute(select(all_subq.c.status, func.count())
                               .group_by(all_subq.c.status)).all():
@@ -906,9 +973,54 @@ def coupon_receipts_summary(
         "status_counts": status_counts,
         "total_receipts": int(row.total_receipts or 0),
         "total_coupons": int(row.total_coupons or 0),
-        "total_value": Decimal(str(row.total_value or 0)),
+        "total_value": total_value,
         "kind_counts": kind_counts,
     }
+
+
+def merchant_names(db: Session, receipts) -> dict[int, list[str]]:
+    from src.models.customer import Customer
+
+    lines = [ln for r in receipts for ln in r.lines]
+    issue_ids = {ln.coupon_issue_id for ln in lines if ln.coupon_issue_id}
+    invoice_ids = {ln.sales_invoice_id for ln in lines if ln.sales_invoice_id}
+    loose = {ln.serial for ln in lines if not ln.coupon_issue_id and not ln.sales_invoice_id}
+    by_serial: dict[str, list[tuple[str | None, int]]] = {}
+    if loose:
+        for serial, kind, issue_id in db.execute(
+                select(CouponIssueLine.serial, CouponIssueLine.coupon_kind,
+                       CouponIssueLine.issue_id).where(CouponIssueLine.serial.in_(loose))).all():
+            by_serial.setdefault(serial, []).append((kind, issue_id))
+            issue_ids.add(issue_id)
+    issue_party = dict(db.execute(
+        select(CouponIssue.id, CouponIssue.customer_id)
+        .where(CouponIssue.id.in_(issue_ids))).all()) if issue_ids else {}
+    invoice_party = dict(db.execute(
+        select(SalesInvoice.id, SalesInvoice.customer_id)
+        .where(SalesInvoice.id.in_(invoice_ids))).all()) if invoice_ids else {}
+    party_ids = {p for p in list(issue_party.values()) + list(invoice_party.values()) if p}
+    names = dict(db.execute(select(Customer.id, Customer.name)
+                            .where(Customer.id.in_(party_ids))).all()) if party_ids else {}
+    out: dict[int, list[str]] = {}
+    for r in receipts:
+        seen: list[str] = []
+        for ln in r.lines:
+            party = None
+            if ln.coupon_issue_id:
+                party = issue_party.get(ln.coupon_issue_id)
+            elif ln.sales_invoice_id:
+                party = invoice_party.get(ln.sales_invoice_id)
+            else:
+                kind = ln.coupon_kind or r.declared_kind
+                hits = by_serial.get(ln.serial) or []
+                same = [i for k, i in hits if not kind or _same_kind(k, kind)]
+                if len(same) == 1:
+                    party = issue_party.get(same[0])
+            name = names.get(party) if party else None
+            if name and name not in seen:
+                seen.append(name)
+        out[r.id] = seen
+    return out
 
 
 def get_receipt(db: Session, receipt_id: int) -> CouponReceipt:

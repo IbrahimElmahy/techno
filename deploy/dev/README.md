@@ -87,3 +87,5 @@ Remove-Item D:\techno-dev\pgdata\postmaster.pid -Force
 مندوب تجريبي محلي (قاعدة الديف بس): `car.b` / `rep-30bb9982`.
 
 محاسب تجريبي محلي لفرع العلياء (قاعدة الديف بس — شاشة «إعدادات العمولات»): `acc.test` / `acc-4b43f19b`.
+
+أدمن تجربة تاني محلي (قاعدة الديف بس): `admin.fork` / `frk-f60e8ab0`.

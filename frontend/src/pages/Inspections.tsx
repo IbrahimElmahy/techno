@@ -3,7 +3,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { PAGE_SIZE_OPTIONS } from '../utils/pagination';
 import { searchFilter, searchRank, sortByName } from '../utils/arabicSort';
 import {
-  Button, Card, Descriptions, Input, Radio, Select, Space, Table, Tag, Tooltip, message,
+  Button, Card, Descriptions, Input, Modal, Radio, Select, Space, Table, Tag, Tooltip, message,
 } from 'antd';
 import { InputNumber } from '../components/NumberInput';
 import { Popconfirm } from '../components/noConfirm';
@@ -353,6 +353,39 @@ const Inspections: React.FC<{ fixedKind?: 'technician' | 'regular' }> = ({ fixed
     await markPrinted(d);
   };
 
+  const [selectedIds, setSelectedIds] = useState<React.Key[]>([]);
+  const [printingMany, setPrintingMany] = useState(false);
+  const printSelected = async () => {
+    const picked = rows.filter((r) => selectedIds.includes(r.id) && r.status !== 'rejected');
+    if (!picked.length) { message.warning('اختر شهادة واحدة على الأقل'); return; }
+    setPrintingMany(true);
+    try {
+      const { printWarrantyCertificates } = await import('../print/warrantyCertificate');
+      if (!(await printWarrantyCertificates(picked.map(certificateData), 'شهادات-ضمان'))) {
+        message.error('تعذر فتح نافذة الطباعة');
+        return;
+      }
+      for (const r of picked) await markPrinted(r);
+      setSelectedIds([]);
+    } finally {
+      setPrintingMany(false);
+    }
+  };
+
+  const [calOpen, setCalOpen] = useState(false);
+  const [cal, setCal] = useState<{ x: number; y: number; scale: number }>({ x: 0, y: 0, scale: 100 });
+  const openCalibration = async () => {
+    const { loadCalibration } = await import('../print/warrantyCertificate');
+    setCal(await loadCalibration());
+    setCalOpen(true);
+  };
+  const saveCal = async () => {
+    const { saveCalibration } = await import('../print/warrantyCertificate');
+    await saveCalibration(cal, true);
+    message.success('تم حفظ ضبط الطباعة');
+    setCalOpen(false);
+  };
+
   const exportWarranty = async (d: InspectionRecord) => {
     if (d.status === 'rejected') return;
     try {
@@ -574,6 +607,17 @@ const Inspections: React.FC<{ fixedKind?: 'technician' | 'regular' }> = ({ fixed
         title={isVisits ? 'الزيارات العادية' : 'المعاينات'}
 
         actions={(<>
+          {!isVisits && (
+            <Button icon={<PrinterOutlined />} loading={printingMany}
+              disabled={!selectedIds.length} onClick={printSelected}>
+              {selectedIds.length
+                ? `طباعة الشهادات المحددة (${selectedIds.length.toLocaleString(numeralsLocale())})`
+                : 'طباعة الشهادات المحددة'}
+            </Button>
+          )}
+          {!isVisits && (
+            <Button onClick={openCalibration}>ضبط الطباعة</Button>
+          )}
           {tableCols.control}
           <ExportExcelButton
             name={isVisits ? 'الزيارات العادية' : 'المعاينات'}
@@ -674,6 +718,12 @@ const Inspections: React.FC<{ fixedKind?: 'technician' | 'regular' }> = ({ fixed
           loading={loading}
           dataSource={rows}
           {...allRows(fetchAllRows)}
+          rowSelection={isVisits ? undefined : {
+            selectedRowKeys: selectedIds,
+            onChange: (keys) => setSelectedIds(keys),
+            getCheckboxProps: (r: InspectionRecord) => ({ disabled: r.status === 'rejected' }),
+            preserveSelectedRowKeys: true,
+          }}
           onRow={(record) => ({ onClick: () => openDetail(record), style: { cursor: 'pointer' } })}
           pagination={{
             current: page,
@@ -689,6 +739,25 @@ const Inspections: React.FC<{ fixedKind?: 'technician' | 'regular' }> = ({ fixed
         />
       </ListPage>
       )}
+
+      <Modal open={calOpen} title="ضبط طباعة شهادة الضمان" okText="حفظ" cancelText="إلغاء"
+        onOk={saveCal} onCancel={() => setCalOpen(false)} width={420}>
+        <Space direction="vertical" style={{ width: '100%' }}>
+          <Space style={{ width: '100%', justifyContent: 'space-between' }}>
+            <span>إزاحة أفقية (مم)</span>
+            <InputNumber value={cal.x} step={0.5} onChange={(v) => setCal((c) => ({ ...c, x: Number(v) || 0 }))} />
+          </Space>
+          <Space style={{ width: '100%', justifyContent: 'space-between' }}>
+            <span>إزاحة رأسية (مم)</span>
+            <InputNumber value={cal.y} step={0.5} onChange={(v) => setCal((c) => ({ ...c, y: Number(v) || 0 }))} />
+          </Space>
+          <Space style={{ width: '100%', justifyContent: 'space-between' }}>
+            <span>الحجم (٪)</span>
+            <InputNumber value={cal.scale} step={0.5} min={50} max={150}
+              onChange={(v) => setCal((c) => ({ ...c, scale: Number(v) || 100 }))} />
+          </Space>
+        </Space>
+      </Modal>
 
       {detail && (
       <Card

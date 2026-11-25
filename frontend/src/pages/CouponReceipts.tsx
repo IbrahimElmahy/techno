@@ -26,6 +26,7 @@ import { useScreenShortcuts } from '../components/keyboard';
 import { money, numeralsLocale } from '../utils/money';
 import { useLookup } from '../hooks/useLookup';
 import CouponStatsOverview from '../components/CouponStatsOverview';
+import DateRangeFilter from '../components/DateRangeFilter';
 import { useLiveRefresh } from '../utils/live';
 import { useDocRoute } from '../components/useDocRoute';
 import CouponReceiptEdit, {
@@ -93,6 +94,7 @@ interface Receipt {
   rep_user_id?: number | null;
   rep_name?: string | null;
   actor_name?: string | null;
+  merchant_names?: string[];
   total_value?: string | number | null;
   kind_totals?: KindTotal[];
   lines: ReceiptLineOut[];
@@ -132,7 +134,11 @@ export default function CouponReceipts() {
 
   const [receivedDate, setReceivedDate] = useState<Dayjs>(dayjs());
   const [kind, setKind] = useState<string>('');
-  const [value, setValue] = useState<number | null>(null);
+  const [kindValues, setKindValues] = useState<Record<string, number | null>>({});
+  const value = kind ? (kindValues[kind] ?? null) : null;
+  const setValue = (v: number | null) => {
+    if (kind) setKindValues((prev) => ({ ...prev, [kind]: v }));
+  };
   const [customerType, setCustomerType] = useState<string>('plumber');
 
   const { options: kindLookup } = useLookup('coupon_kind');
@@ -147,8 +153,8 @@ export default function CouponReceipts() {
   const handleKindChange = (newKind: string) => {
     setKind(newKind);
     const opt = kindOptions.find((o) => o.value === newKind);
-    if (opt && opt.defaultValue) {
-      setValue(opt.defaultValue);
+    if (opt && opt.defaultValue && kindValues[newKind] == null) {
+      setKindValues((prev) => ({ ...prev, [newKind]: opt.defaultValue }));
     }
   };
 
@@ -198,7 +204,20 @@ export default function CouponReceipts() {
   const [statusFilter, setStatusFilter] = useState<'all' | ReceiptStatus>('all');
   const statusRef = useRef(statusFilter);
   statusRef.current = statusFilter;
-  const statusParam = () => (statusRef.current === 'all' ? {} : { status: statusRef.current });
+  const [histRep, setHistRep] = useState<number | undefined>();
+  const [histRange, setHistRange] = useState<[Dayjs, Dayjs] | null>(null);
+  const histRef = useRef<{ rep?: number; range: [Dayjs, Dayjs] | null }>({ range: null });
+  histRef.current = { rep: histRep, range: histRange };
+  const statusParam = () => {
+    const out: Record<string, any> = statusRef.current === 'all' ? {} : { status: statusRef.current };
+    const h = histRef.current;
+    if (h.rep) out.rep_user_id = h.rep;
+    if (h.range) {
+      out.date_from = h.range[0].format('YYYY-MM-DD');
+      out.date_to = h.range[1].format('YYYY-MM-DD');
+    }
+    return out;
+  };
 
   const [receipts, setReceipts] = useState<Receipt[]>([]);
   const [loading, setLoading] = useState(false);
@@ -279,7 +298,7 @@ export default function CouponReceipts() {
       loadSummary(searchQuery);
     }, 300);
     return () => clearTimeout(timer);
-  }, [searchQuery, statusFilter]);
+  }, [searchQuery, statusFilter, histRep, histRange]);
 
   useEffect(() => {
     api.get('/api/v1/customers/options', { params: { limit: 20000 } }).then((r) => setCustomers(r.data || [])).catch(console.error);
@@ -396,7 +415,8 @@ export default function CouponReceipts() {
   const issuedToText = issuedToNames.length === 0 ? ''
     : issuedToNames.length <= 2 ? issuedToNames.join(' + ')
       : `أكثر من تاجر (${issuedToNames.length})`;
-  const totalValue = (value ?? 0) * counted.length;
+  const valueOf = (k?: string | null) => (k ? (kindValues[k] ?? null) : null);
+  const totalValue = counted.reduce((t, e) => t + (valueOf(e.couponKind) ?? 0), 0);
 
   const customerTypeLabel = useCallback((t: unknown) => {
     const key = String(t ?? '');
@@ -414,10 +434,14 @@ export default function CouponReceipts() {
     if (!customerId) { message.warning('حدد جهة الاستلام'); return; }
     const usedKinds = Array.from(new Set(counted.map((e) => e.couponKind as string)));
     const singleKind = usedKinds.length === 1 ? usedKinds[0] : null;
+    const usedValues = Array.from(new Set(usedKinds.map((k) => valueOf(k))));
+    const singleValue = usedValues.length === 1 ? usedValues[0] : null;
     setSaving(true);
     try {
       await api.post('/api/v1/coupon-receipts', {
-        lines: counted.map((e) => ({ serial: e.serial, coupon_kind: e.couponKind })),
+        lines: counted.map((e) => ({
+          serial: e.serial, coupon_kind: e.couponKind, value: valueOf(e.couponKind),
+        })),
         customer_id: customerId ?? null,
         rep_user_id: repId ?? null,
         notes: notes.trim() || null,
@@ -425,7 +449,7 @@ export default function CouponReceipts() {
         received_date: receivedDate.format('YYYY-MM-DD'),
         declared_kind: singleKind,
         coupon_kind: singleKind,
-        declared_value: value,
+        declared_value: singleValue,
         customer_type: customerType,
       });
       message.success('تم تسجيل الاستلام ورفعه إلى الخادم');
@@ -593,6 +617,8 @@ export default function CouponReceipts() {
       render: (_: number | null, r: Receipt) => receiverOf(r) },
     { title: 'الفئة', dataIndex: 'declared_kind',
       render: (_: string | null, r: Receipt) => kindTags(r) },
+    { title: 'التاجر', dataIndex: 'merchant_names', key: 'merchant_names',
+      render: (v: string[] | undefined) => (v && v.length ? v.join(' + ') : '-') },
     { title: 'مندوب الاستلام', dataIndex: 'rep_name', key: 'rep_name',
       render: (v: string | null, r: Receipt) => v || r.actor_name || '-' },
     { title: 'التاريخ', dataIndex: 'received_date',
@@ -626,7 +652,7 @@ export default function CouponReceipts() {
         icon={<ReloadOutlined />}
         onClick={() => {
           setEntries([]); setNotes(''); setCustomerId(undefined); setKind('');
-          setValue(null);
+          setKindValues({});
         }}
       >
         تفريغ
@@ -745,6 +771,15 @@ export default function CouponReceipts() {
             render: (v: string | null) => (v ? <Tag color="gold">{kindLabel(v)}</Tag> : '-'),
           },
           {
+            title: 'القيمة',
+            key: 'value',
+            width: 100,
+            render: (_: any, r: Entry) => {
+              const v = valueOf(r.couponKind);
+              return v != null ? money(v) : '-';
+            },
+          },
+          {
             title: 'التاجر الذي صُرف له',
             key: 'issued_to',
             render: (_: any, r: Entry) => {
@@ -841,7 +876,11 @@ export default function CouponReceipts() {
           {detail.rep_name || detail.actor_name || '-'}
         </Descriptions.Item>
         <Descriptions.Item label="قيمة الكوبون">
-          {detail.declared_value != null ? money(detail.declared_value) : '-'}
+          {detail.declared_value != null ? money(detail.declared_value)
+            : (detail.kind_totals?.length ?? 0) > 1 ? 'حسب الفئة' : '-'}
+        </Descriptions.Item>
+        <Descriptions.Item label="التاجر">
+          {detail.merchant_names && detail.merchant_names.length ? detail.merchant_names.join(' + ') : '-'}
         </Descriptions.Item>
         <Descriptions.Item label="إجمالي القيمة">
           {detail.total_value != null ? <b>{money(detail.total_value)}</b> : '-'}
@@ -1027,7 +1066,18 @@ export default function CouponReceipts() {
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
         />
-        <Button className="sl-f-clear" icon={<ClearOutlined />} onClick={() => setSearchQuery('')}>
+        <Select
+          allowClear showSearch style={{ minWidth: 180 }}
+          placeholder="مندوب الاستلام"
+          value={histRep} onChange={(v) => { setHistRep(v); setPage(1); }}
+          options={receivers.map((u) => ({ value: u.id, label: u.name }))}
+          filterOption={searchFilter} filterSort={searchRank} />
+        <DateRangeFilter
+          value={histRange as any}
+          onChange={(v: any) => { setHistRange(v && v[0] && v[1] ? [v[0], v[1]] : null); setPage(1); }} />
+        <Button className="sl-f-clear" icon={<ClearOutlined />} onClick={() => {
+          setSearchQuery(''); setHistRep(undefined); setHistRange(null);
+        }}>
           مسح
         </Button>
       </>) : undefined}

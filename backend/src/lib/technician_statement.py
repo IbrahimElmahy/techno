@@ -12,7 +12,7 @@ from src.core.money import to_money, to_qty
 from src.lib import arabic
 from src.lib.coupon_lifecycle import _plumber_from_notes
 from src.lib.inspection_points import VISIT_KIND_LABELS, counted_visit, user_name
-from src.models.coupon_receipt import CouponReceipt, receipt_counted
+from src.models.coupon_receipt import CouponReceipt, CouponReceiptLine, receipt_counted
 from src.models.customer import Customer
 from src.models.inspection import Inspection, InspectionItem
 from src.models.org import Governorate
@@ -26,6 +26,12 @@ NOTE_MARK = "%الفني%"
 class TechnicianStatementError(Exception):
     pass
 
+
+
+def _receipt_value(r):
+    lines = (select(func.sum(func.coalesce(CouponReceiptLine.value, r.declared_value)))
+             .where(CouponReceiptLine.receipt_id == r.id).scalar_subquery())
+    return func.coalesce(lines, r.coupon_count * func.coalesce(r.declared_value, 0))
 
 def _bounds(year: int, date_from: date | None, date_to: date | None):
     if year < 2000 or year > 2100:
@@ -73,7 +79,7 @@ def _receipt_groups(db, current, *, y0, y1, p0, p1, d0, d1):
                func.coalesce(func.sum(case((in_prev, r.coupon_count), else_=0)), 0),
                func.coalesce(func.sum(case((in_period, r.coupon_count), else_=0)), 0),
                func.coalesce(func.sum(case(
-                   (in_period, r.coupon_count * func.coalesce(r.declared_value, 0)),
+                   (in_period, _receipt_value(r)),
                    else_=0)), 0),
                func.count(case((in_period, r.id))),
                func.max(case((r.received_date <= d1, r.received_date)))),
@@ -285,7 +291,7 @@ def details(
     rep = aliased(User)
     receipts_stmt = branch_scope.scope(
         select(r.id, r.document_number, r.received_date, r.coupon_count, r.declared_kind,
-               r.declared_value, r.customer_id, r.notes, user_name(rep))
+               _receipt_value(r), r.customer_id, r.notes, user_name(rep))
         .outerjoin(rep, rep.id == r.rep_user_id),
         CouponReceipt, current,
     ).where(receipt_counted(), r.received_date >= d0, r.received_date <= d1)
@@ -301,8 +307,9 @@ def details(
         receipts.append({
             "id": rid, "document_number": doc, "received_date": str(when) if when else None,
             "coupon_count": int(count or 0), "coupon_kind": kind,
-            "unit_value": str(to_money(Decimal(str(value or 0)))),
-            "value": str(to_money(Decimal(str(value or 0)) * int(count or 0))),
+            "unit_value": str(to_money(Decimal(str(value or 0)) / int(count))
+                              if count else to_money(0)),
+            "value": str(to_money(Decimal(str(value or 0)))),
             "rep": rep_name,
         })
 

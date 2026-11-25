@@ -3,13 +3,13 @@ from __future__ import annotations
 from datetime import date, datetime, timedelta
 from decimal import Decimal
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from src.core.money import ZERO, ZERO_QTY, to_money, to_qty
 from src.lib import report_statement
 from src.models.cheque import Cheque, ChequeDirection, ChequeStatus
-from src.models.coupon_receipt import CouponReceipt, receipt_counted
+from src.models.coupon_receipt import CouponReceipt, CouponReceiptLine, receipt_counted
 from src.models.customer import Customer
 from src.models.inspection import Inspection, VisitKind
 from src.models.loyalty import Coupon, CouponType, PointRecord
@@ -169,6 +169,11 @@ def _collect_coupons(db, look, filters) -> list[dict]:
 def _collect_coupon_receipts(db, look, filters) -> list[dict]:
     date_from, date_to = filters["date_from"], filters["date_to"]
     rows = []
+    line_sums = dict(db.execute(
+        select(CouponReceiptLine.receipt_id,
+               func.sum(func.coalesce(CouponReceiptLine.value, CouponReceipt.declared_value, 0)))
+        .join(CouponReceipt, CouponReceipt.id == CouponReceiptLine.receipt_id)
+        .group_by(CouponReceiptLine.receipt_id)).all())
     for receipt in db.scalars(select(CouponReceipt).where(receipt_counted())
                               .order_by(CouponReceipt.id.desc())).all():
         when = receipt.received_date or (
@@ -187,7 +192,8 @@ def _collect_coupon_receipts(db, look, filters) -> list[dict]:
             label=receipt.declared_kind or "عادي",
             status=receipt.customer_type or "",
             quantity=receipt.coupon_count,
-            amount=(Decimal(str(receipt.declared_value or 0))
+            amount=(Decimal(str(line_sums[receipt.id])) if receipt.id in line_sums
+                    else Decimal(str(receipt.declared_value or 0))
                     * Decimal(str(receipt.coupon_count or 0))),
             statement=_statement_of("coupon_receipts", receipt),
             extra={"declared_value": str(receipt.declared_value or 0),

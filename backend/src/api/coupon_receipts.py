@@ -29,6 +29,7 @@ router = APIRouter(tags=["coupon-receipts"], prefix="/coupon-receipts")
 class ReceiptLineIn(BaseModel):
     serial: str
     coupon_kind: str | None = None
+    value: Decimal | None = None
 
 
 class ReceiptIn(BaseModel):
@@ -89,6 +90,7 @@ class ReceiptOut(BaseModel):
     actor_name: str | None = None
     total_value: Decimal | None = None
     kind_totals: list[KindTotalOut] = []
+    merchant_names: list[str] = []
     lines: list[ReceiptLineOut] = []
 
 
@@ -123,7 +125,9 @@ def _out(r, names: dict[int, str] | None = None) -> ReceiptOut:
         lines=[ReceiptLineOut(id=ln.id, serial=ln.serial,
                               coupon_kind=ln.coupon_kind,
                               sales_invoice_id=ln.sales_invoice_id,
-                              coupon_issue_id=ln.coupon_issue_id) for ln in r.lines],
+                              coupon_issue_id=ln.coupon_issue_id,
+                              value=ln.value if ln.value is not None else r.declared_value)
+               for ln in r.lines],
     )
 
 
@@ -137,6 +141,8 @@ def _detail_out(db: Session, r) -> ReceiptOut:
         issued_to_name=row["issued_to_name"]) for row in rows]
     totals = coupon_receipt_service.kind_totals(rows)
     out.kind_totals = [KindTotalOut(**t) for t in totals]
+    out.merchant_names = list(dict.fromkeys(
+        row["issued_to_name"] for row in rows if row.get("issued_to_name")))
     values = [row["value"] for row in rows if row["value"] is not None]
     out.total_value = sum(values, Decimal("0")) if values else None
     return out
@@ -259,6 +265,8 @@ def get_coupon_receipts_summary(
     rep_user_id: int | None = Query(None),
     q: str | None = Query(None),
     status_filter: str | None = Query(None, alias="status"),
+    date_from: date | None = Query(None),
+    date_to: date | None = Query(None),
     current: CurrentUser = Depends(require_capability(CAP_COUPON_RECEIVE)),
     db: Session = Depends(get_db),
 ) -> CouponReceiptsSummaryOut:
@@ -266,7 +274,8 @@ def get_coupon_receipts_summary(
     summary = coupon_receipt_service.coupon_receipts_summary(
         db, customer_id=customer_id, rep_user_id=scope_rep, q=q,
         status=_status_param(status_filter),
-        branch_id=branch_scope.visible_branch_id(current))
+        branch_id=branch_scope.visible_branch_id(current),
+        date_from=date_from, date_to=date_to)
     return CouponReceiptsSummaryOut(**summary)
 
 
@@ -279,6 +288,8 @@ def list_receipts(
     limit: int | None = Query(None),
     offset: int = Query(0),
     status_filter: str | None = Query(None, alias="status"),
+    date_from: date | None = Query(None),
+    date_to: date | None = Query(None),
     current: CurrentUser = Depends(require_capability(CAP_COUPON_RECEIVE)),
     db: Session = Depends(get_db),
 ):
@@ -286,10 +297,14 @@ def list_receipts(
     rows, total = coupon_receipt_service.list_receipts(
         db, customer_id=customer_id, rep_user_id=scope_rep, q=q, limit=limit, offset=offset,
         status=_status_param(status_filter),
-        branch_id=branch_scope.visible_branch_id(current))
+        branch_id=branch_scope.visible_branch_id(current),
+        date_from=date_from, date_to=date_to)
     visible_rows = branch_scope.visible(current, rows)
     names = _user_names(db, visible_rows)
+    merchants = coupon_receipt_service.merchant_names(db, visible_rows)
     items_out = [_out(r, names) for r in visible_rows]
+    for item in items_out:
+        item.merchant_names = merchants.get(item.id, [])
     response.headers["X-Total-Count"] = str(total)
 
     if limit is not None:
@@ -407,6 +422,7 @@ class ReceiptEditLineIn(BaseModel):
     id: int | None = None
     serial: str
     coupon_kind: str | None = None
+    value: Decimal | None = None
 
 
 class ReceiptEditIn(BaseModel):

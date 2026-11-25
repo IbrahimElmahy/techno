@@ -17,10 +17,11 @@ from src.models.customer import Customer
 from src.models.sales import SalesInvoice, SalesInvoiceCoupon
 from src.models.user import User
 
-STATUSES = ("with_rep", "given", "received", "returned")
+STATUSES = ("with_rep", "given", "pending_receipt", "received", "returned")
 STATUS_LABELS = {
     "with_rep": "في العهدة",
     "given": "سُلِّم لتاجر",
+    "pending_receipt": "بانتظار الاعتماد",
     "received": "استُلم من سباك",
     "returned": "أُعيد للمكتب",
 }
@@ -106,7 +107,7 @@ def _receipt_counted_clause():
     return status.is_(None) | (status == "approved")
 
 
-def collect(db: Session, current: CurrentUser) -> list[dict]:
+def collect(db: Session, current: CurrentUser, include_pending: bool = False) -> list[dict]:
     entries: dict[tuple[str, str], dict] = {}
 
     def entry(kind, serial) -> dict:
@@ -191,24 +192,34 @@ def collect(db: Session, current: CurrentUser) -> list[dict]:
 
     stmt = (select(CouponReceiptLine.coupon_kind, CouponReceiptLine.serial,
                    CouponReceiptLine.sales_invoice_id, CouponReceiptLine.coupon_issue_id,
+                   CouponReceiptLine.value.label("line_value"),
                    CouponReceipt.id, CouponReceipt.document_number, CouponReceipt.received_date,
                    CouponReceipt.customer_id, CouponReceipt.rep_user_id,
                    CouponReceipt.declared_value, CouponReceipt.declared_kind,
-                   CouponReceipt.notes, CouponReceipt.actor_user_id)
+                   CouponReceipt.notes, CouponReceipt.actor_user_id,
+                   CouponReceipt.status.label("receipt_status"))
             .join(CouponReceipt, CouponReceipt.id == CouponReceiptLine.receipt_id))
-    counted = _receipt_counted_clause()
-    if counted is not None:
-        stmt = stmt.where(counted)
+    if include_pending:
+        stmt = stmt.where(CouponReceipt.status.is_(None) | (CouponReceipt.status != "rejected"))
+    else:
+        counted = _receipt_counted_clause()
+        if counted is not None:
+            stmt = stmt.where(counted)
     explicit: list[tuple[dict, int | None, int | None]] = []
     for row in db.execute(branch_scope.scope(stmt, CouponReceipt, current)).all():
         e = entry(row.coupon_kind, row.serial)
         receipt = {"doc_id": row.id, "doc": row.document_number, "date": row.received_date,
                    "party_id": row.customer_id,
                    "rep_id": row.rep_user_id or row.actor_user_id,
-                   "value": _money(row.declared_value), "declared_kind": row.declared_kind,
+                   "value": _money(row.line_value if row.line_value is not None
+                                   else row.declared_value),
+                   "declared_kind": row.declared_kind,
+                   "pending": row.receipt_status == "pending",
                    "party_note": _plumber_from_notes(row.notes) if not row.customer_id else None}
         old = e["receipt"]
-        if old is None or (receipt["date"] or date.min) >= (old["date"] or date.min):
+        if (old is None or (old["pending"] and not receipt["pending"])
+                or (old["pending"] == receipt["pending"]
+                    and (receipt["date"] or date.min) >= (old["date"] or date.min))):
             e["receipt"] = receipt
         if row.coupon_issue_id or row.sales_invoice_id:
             explicit.append((e, row.sales_invoice_id, row.coupon_issue_id))
@@ -244,7 +255,7 @@ def collect(db: Session, current: CurrentUser) -> list[dict]:
 
 def _status_of(e: dict) -> str:
     if e["receipt"] is not None:
-        return "received"
+        return "pending_receipt" if e["receipt"].get("pending") else "received"
     if e["handout"] is not None:
         return "given"
     custody = e["custody"] or {}
@@ -291,7 +302,7 @@ def _flatten(e: dict, users: dict[int, str], parties: dict[int, tuple[str, str |
         "receipt_rep_id": receipt.get("rep_id"),
         "receipt_rep": users.get(receipt.get("rep_id")),
         "value": value,
-        "unlinked": status == "received" and not handout,
+        "unlinked": status in ("received", "pending_receipt") and not handout,
     }
 
 
@@ -307,6 +318,7 @@ def lifecycle(
     date_from: date | None = None,
     date_to: date | None = None,
     rep_id=None,
+    receipt_rep_id=None,
     party_id=None,
     plumber_id=None,
     kind=None,
@@ -317,10 +329,12 @@ def lifecycle(
     only_unlinked: bool = False,
     limit: int | None = None,
     offset: int = 0,
+    include_pending: bool = False,
 ) -> dict:
     if date_field not in DATE_FIELDS:
         raise CouponLifecycleError(f"تاريخ غير معروف: {date_field}")
     rep_ids = set(mf.ids(rep_id) or [])
+    receipt_rep_ids = set(mf.ids(receipt_rep_id) or [])
     party_ids_f = set(mf.ids(party_id) or [])
     plumber_ids = set(mf.ids(plumber_id) or [])
     kinds = {norm_kind(k) for k in (mf.strs(kind) or [])}
@@ -333,7 +347,7 @@ def lifecycle(
     if (serial_from and lo is None) or (serial_to and hi is None):
         raise CouponLifecycleError("يجب أن يكون نطاق الأرقام أرقاماً.")
 
-    entries = collect(db, current)
+    entries = collect(db, current, include_pending=include_pending)
 
     users = {u.id: (u.full_name or u.username)
              for u in db.execute(select(User.id, User.full_name, User.username)).all()}
@@ -356,6 +370,8 @@ def lifecycle(
     if rep_ids:
         rows = [r for r in rows if rep_ids & {
             r["custody_rep_id"], r["handout_rep_id"], r["receipt_rep_id"]}]
+    if receipt_rep_ids:
+        rows = [r for r in rows if r["receipt_rep_id"] in receipt_rep_ids]
     if party_ids_f:
         rows = [r for r in rows if r["party_id"] in party_ids_f]
     if plumber_ids:

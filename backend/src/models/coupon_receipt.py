@@ -77,5 +77,6 @@ class CouponReceiptLine(Base):
     coupon_issue_id: Mapped[int | None] = mapped_column(
         ForeignKey("coupon_issue.id"), nullable=True, index=True
     )
+    value: Mapped[object | None] = mapped_column(MONEY, nullable=True)
 
     receipt: Mapped[CouponReceipt] = relationship(back_populates="lines")

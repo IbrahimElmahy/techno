@@ -257,6 +257,7 @@ def coupons_lifecycle(
     date_from: date | None = None,
     date_to: date | None = None,
     rep_id: str | None = Query(None, description="مندوب العهدة أو التسليم أو الاستلام"),
+    receipt_rep_id: str | None = Query(None),
     party_id: str | None = Query(None, description="التاجر/الموزع الذي سُلّمت إليه"),
     plumber_id: str | None = Query(None, description="السباك الذي أعادها"),
     kind: str | None = None,
@@ -273,9 +274,10 @@ def coupons_lifecycle(
     try:
         return coupon_lifecycle.lifecycle(
             db, current, date_field=date_field, date_from=date_from, date_to=date_to,
-            rep_id=rep_id, party_id=party_id, plumber_id=plumber_id, kind=kind,
+            rep_id=rep_id, receipt_rep_id=receipt_rep_id, party_id=party_id,
+            plumber_id=plumber_id, kind=kind,
             status=status, serial=serial, serial_from=serial_from, serial_to=serial_to,
-            only_unlinked=only_unlinked, limit=limit, offset=offset)
+            only_unlinked=only_unlinked, limit=limit, offset=offset, include_pending=True)
     except coupon_lifecycle.CouponLifecycleError as exc:
         raise HTTPException(422, {"code": "report_invalid", "message": str(exc)}) from exc
 

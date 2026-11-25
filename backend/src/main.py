@@ -480,6 +480,7 @@ _ADDED_COLUMNS: list[tuple[str, str, str]] = [
     ("coupon_receipt", "declared_kind", "VARCHAR(24)"),
     ("coupon_receipt", "declared_value", "DECIMAL(18,2)"),
     ("coupon_receipt", "customer_type", "VARCHAR(16)"),
+    ("coupon_receipt_line", "value", "DECIMAL(18,2)"),
     ("voucher_key", "debit_group", "VARCHAR(40)"),
     ("voucher_key", "credit_group", "VARCHAR(40)"),
     ("sales_return", "return_date", "DATE"),
