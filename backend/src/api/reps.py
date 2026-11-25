@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 
 from src.auth import branch_scope
 from src.auth.dependencies import CurrentUser, require_capability
-from src.auth.rbac import CAP_USER_READ, CAP_USER_WRITE
+from src.auth.rbac import CAP_CUSTOMER_REASSIGN, CAP_USER_READ, CAP_USER_WRITE
 from src.core.db import get_db
 from src.models.customer import Customer
 from src.models.employee import Employee
@@ -210,7 +210,7 @@ class ReassignIn(BaseModel):
 def reassign_customers(
     user_id: int,
     body: ReassignIn,
-    current: CurrentUser = Depends(require_capability(CAP_USER_WRITE)),
+    current: CurrentUser = Depends(require_capability(CAP_CUSTOMER_REASSIGN)),
     db: Session = Depends(get_db),
 ) -> dict:
     target = db.get(User, body.to_rep_id)

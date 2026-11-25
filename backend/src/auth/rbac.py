@@ -326,13 +326,18 @@ def refresh_overrides(db) -> None:
     _OVERRIDES.update(fresh)
 
 
+GRANT_ONLY = frozenset({CAP_PROFIT_VIEW, CAP_USER_WRITE, CAP_USER_DEACTIVATE})
+
+
 def effective_capabilities(role: RoleName) -> set[str]:
     if role in _OVERRIDES:
-        return _OVERRIDES[role]
-    return ROLE_CAPABILITIES.get(role, set())
+        return _OVERRIDES[role] - GRANT_ONLY
+    return ROLE_CAPABILITIES.get(role, set()) - GRANT_ONLY
 
 
 def role_has_capability(role: RoleName, capability: str) -> bool:
+    if capability in GRANT_ONLY:
+        return False
     if role == RoleName.system_admin:
         return capability in ALL_CAPABILITIES
     return capability in effective_capabilities(role)

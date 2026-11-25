@@ -1252,12 +1252,14 @@ def bonus_report(
         "name": (names.get(r[0]) or ("بدون مندوب" if group == "rep" else "-")) if group != "month" else r[0],
         "invoices": r[1], "value": str(to_money(r[2])), "cost": str(to_money(r[3])),
     } for r in rows]
-    return {
+    from src.lib import profit_guard
+
+    return profit_guard.guard(current, {
         "group": group, "rows": out,
         "total_invoices": sum(r[1] for r in rows),
         "total_value": str(to_money(sum((Decimal(r[2]) for r in rows), Decimal(0)))),
         "total_cost": str(to_money(sum((Decimal(r[3]) for r in rows), Decimal(0)))),
-    }
+    })
 
 
 @router.get("/receipts-log", response_model=dict)

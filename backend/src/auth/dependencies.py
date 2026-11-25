@@ -6,7 +6,7 @@ from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.orm import Session
 
-from src.auth.rbac import role_has_capability
+from src.auth.rbac import GRANT_ONLY, role_has_capability
 from src.core.db import get_db
 from src.core.security import decode_access_token
 from src.models.role import Role, RoleName
@@ -28,6 +28,8 @@ class CurrentUser:
     supervises: bool = False
 
     def can(self, capability: str) -> bool:
+        if capability in GRANT_ONLY:
+            return capability in self.grants and capability not in self.denies
         if self.role == RoleName.system_admin:
             return role_has_capability(self.role, capability)
         if capability in self.denies:

@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 
 from src.auth import branch_scope
 from src.auth.dependencies import CurrentUser, require_capability
-from src.auth.rbac import CAP_VOUCHER_READ, CAP_VOUCHER_WRITE
+from src.auth.rbac import CAP_PROFIT_VIEW, CAP_VOUCHER_READ, CAP_VOUCHER_WRITE
 from src.core.db import get_db
 from src.models.cheque import ChequeDirection, ChequeStatus
 from src.models.role import RoleName
@@ -243,7 +243,7 @@ def income_statement(
     date_to: date | None = Query(default=None),
     posted_only: bool = Query(default=True),
     comparison: str = Query(default="none", pattern="^(none|previous|last_year)$"),
-    current: CurrentUser = Depends(require_capability(CAP_VOUCHER_READ)),
+    current: CurrentUser = Depends(require_capability(CAP_PROFIT_VIEW)),
     db: Session = Depends(get_db),
 ) -> IncomeStatementOut:
     options = ReportOptions(date_from=date_from, date_to=date_to,

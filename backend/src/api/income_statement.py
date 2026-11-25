@@ -9,14 +9,15 @@ from sqlalchemy.orm import Session
 
 from src.auth import branch_scope
 from src.auth.dependencies import CurrentUser, require_capability
-from src.auth.rbac import CAP_ACCOUNTING_CHART_WRITE, CAP_VOUCHER_READ
+from src.auth.rbac import CAP_ACCOUNTING_CHART_WRITE, CAP_PROFIT_VIEW, CAP_VOUCHER_READ
 from src.core.db import get_db
 from src.models.catalog import Item
 from src.models.customer import Customer
 from src.models.org import Branch
 from src.services import income_statement_service as svc
 
-router = APIRouter(prefix="/reports/income-sheet", tags=["income-statement"])
+router = APIRouter(prefix="/reports/income-sheet", tags=["income-statement"],
+                   dependencies=[Depends(require_capability(CAP_PROFIT_VIEW))])
 
 
 def _bad(message: str) -> HTTPException:

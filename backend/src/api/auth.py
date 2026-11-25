@@ -167,10 +167,9 @@ def me(current: CurrentUser = Depends(get_current_user), db: Session = Depends(g
         territory_id=user.territory_id,
         active=user.active,
         supervisor_id=user.supervisor_id,
-        capabilities=sorted((ALL_CAPABILITIES if current.role == RoleName.system_admin
-                             else (set(effective_capabilities(current.role)) | {
-                                 c for c in current.grants if not c.startswith("page:")})
-                             - set(current.denies))
+        capabilities=sorted({c for c in ALL_CAPABILITIES | effective_capabilities(current.role)
+                             | set(current.grants)
+                             if not c.startswith("page:") and current.can(c)}
                             | ({net_worth_service.CAP_NET_WORTH}
                                if net_worth_service.can_view(current) else set())),
         pages_shown=sorted(c[5:] for c in current.grants if c.startswith("page:")),
