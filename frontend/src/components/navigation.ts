@@ -159,7 +159,7 @@ export const NAVIGATION: (NavGroup | NavScreen)[] = [
     label: 'اداره الحسابات',
     children: [
       { key: '/accounting', label: 'لوحة المحاسبة', roles: R(BOOKS) },
-      { key: '/income-sheet', label: 'قائمة الدخل', roles: R(BOOKS) },
+      { key: '/income-sheet', label: 'قائمة الدخل', roles: R(BOOKS), cap: 'reports.profit' },
       { key: '/finance-reports?tab=sheet', label: 'الميزانية', roles: R(BOOKS), a5: '/finalbalancesheet' },
       { key: '/account-statement', label: 'كشف حساب', roles: R(BOOKS), a5: '/entriesreport' },
       {
@@ -201,8 +201,8 @@ export const NAVIGATION: (NavGroup | NavScreen)[] = [
           { key: '/customer-debts?tab=stagnant', label: 'رواكد مديونية العملاء', roles: R(BOOKS) },
           { key: '/stock-value?tab=sale', label: 'قيمة المخزون بسعر البيع', roles: R(BOOKS) },
           { key: '/stock-value?tab=purchase', label: 'قيمة المخزون بسعر الشراء', roles: R(BOOKS) },
-          { key: '/profitability?view=cost-centers', label: 'أرباح مراكز التكلفة', roles: BOOKS },
-          { key: '/profitability?view=branches', label: 'مقارنة الفروع', roles: BOOKS },
+          { key: '/profitability?view=cost-centers', label: 'أرباح مراكز التكلفة', roles: BOOKS, cap: 'reports.profit' },
+          { key: '/profitability?view=branches', label: 'مقارنة الفروع', roles: BOOKS, cap: 'reports.profit' },
         ],
       },
       ...[...new Set(LEDGER_PRESETS.map((p) => p.group))].map((g) => ({
@@ -280,10 +280,10 @@ export const NAVIGATION: (NavGroup | NavScreen)[] = [
     key: 'grp-settings',
     label: 'الاعدادات',
     children: [
-      { key: '/users', label: 'المستخدمين', roles: OFFICE, a5: '/userscontroller' },
+      { key: '/users', label: 'المستخدمين', roles: OFFICE, a5: '/userscontroller', cap: 'user.write' },
       { key: '/stock-permits?kind=opening', label: 'أول المدة', roles: OFFICE, a5: '/beginning' },
       { key: '/settings', label: 'اعدادات القاعدة', roles: OFFICE, a5: '/database/settings' },
-      { key: '/user-permissions', label: 'الصلاحيات', roles: OFFICE },
+      { key: '/user-permissions', label: 'الصلاحيات', roles: OFFICE, cap: 'user.write' },
       { key: '/branch-overview', label: 'نظرة على الفروع', roles: ADMIN },
       { key: '/audit', label: 'سجل العمليات', roles: OFFICE },
     ],

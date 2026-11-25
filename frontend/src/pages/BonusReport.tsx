@@ -1,3 +1,4 @@
+import { useAuth } from '../components/AuthProvider';
 import React, { useEffect, useState } from 'react';
 import { Button } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
@@ -23,6 +24,7 @@ export default function BonusReport() {
   const [range, setRange] = useState<[Dayjs, Dayjs] | null>(null);
   const [rows, setRows] = useState<Row[]>([]);
   const [totals, setTotals] = useState({ invoices: 0, value: '0', cost: '0' });
+  const canCost = useAuth().can('reports.profit');
   const [loading, setLoading] = useState(false);
 
   const load = () => {
@@ -57,13 +59,13 @@ export default function BonusReport() {
       { title: GROUP_LABEL[group], value: 'name' },
       { title: 'فواتير', value: 'invoices', numeric: true },
       { title: 'القيمة بسعر البيع', value: (r) => money(r.value), numeric: true },
-      { title: 'التكلفة', value: (r) => money(r.cost), numeric: true },
+      ...(canCost ? [{ title: 'التكلفة', value: (r: Row) => money(r.cost), numeric: true }] : []),
     ],
     rows,
     [
       { label: 'عدد فواتير البونص', value: totals.invoices },
       { label: 'القيمة بسعر البيع', value: `${money(totals.value)}` },
-      { label: 'التكلفة', value: `${money(totals.cost)}` },
+      ...(canCost ? [{ label: 'التكلفة', value: `${money(totals.cost)}` }] : []),
     ],
   );
 
@@ -73,16 +75,16 @@ export default function BonusReport() {
       sorter: (a, b) => a.invoices - b.invoices },
     { title: 'القيمة بسعر البيع', dataIndex: 'value', width: 160,
       render: (v) => `${money(v)}`, sorter: (a, b) => Number(a.value) - Number(b.value) },
-    { title: 'التكلفة', dataIndex: 'cost', width: 160,
-      render: (v) => `${money(v)}`, sorter: (a, b) => Number(a.cost) - Number(b.cost),
-      defaultSortOrder: 'descend' },
+    ...(canCost ? [{ title: 'التكلفة', dataIndex: 'cost', width: 160,
+      render: (v: string) => `${money(v)}`, sorter: (a: Row, b: Row) => Number(a.cost) - Number(b.cost),
+      defaultSortOrder: 'descend' as const }] : []),
   ];
 
   const footer = (
     <span className="sl-foot">
       <span>فواتير البونص: <b>{Number(totals.invoices || 0).toLocaleString(numeralsLocale())}</b></span>
       <span>القيمة بسعر البيع: <b>{money(totals.value)}</b></span>
-      <span>التكلفة: <b className="is-neg">{money(totals.cost)}</b></span>
+      {canCost && <span>التكلفة: <b className="is-neg">{money(totals.cost)}</b></span>}
     </span>
   );
 

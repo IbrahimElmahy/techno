@@ -10,6 +10,7 @@ import {
 import { useNavigate } from 'react-router-dom';
 import { Popconfirm } from '../components/noConfirm';
 import { api } from '../api/client';
+import { useAuth } from '../components/AuthProvider';
 import { useTableColumns } from '../components/ColumnSettings';
 import ListPage from '../components/ListPage';
 import { useQueryTab } from '../components/useQueryTab';
@@ -47,6 +48,7 @@ export default function Reps() {
   const [form] = Form.useForm<RepForm>();
   const formBranch = Form.useWatch('branch_id', form);
   const navigate = useNavigate();
+  const canUsers = useAuth().can('user.write');
 
   const load = async (inactive = showInactive) => {
     setLoading(true);
@@ -225,7 +227,7 @@ export default function Reps() {
     {
       title: 'نشط', dataIndex: 'active', key: 'active', width: 80, align: 'center' as const,
       render: (v: boolean, r: Rep) => (
-        <Switch size="small" checked={v}
+        <Switch size="small" checked={v} disabled={!canUsers}
           onChange={(x) => patch(r, { active: x }, x ? 'التفعيل' : 'الإيقاف')} />
       ),
     },
@@ -233,14 +235,16 @@ export default function Reps() {
       title: 'الإجراءات', key: 'actions', width: 170,
       render: (_: any, r: Rep) => (
         <Space size={2}>
-          <Tooltip title="تعديل المندوب">
-            <Button type="text" size="small" icon={<EditOutlined />} onClick={() => openEdit(r)} />
-          </Tooltip>
+          {canUsers && (
+            <Tooltip title="تعديل المندوب">
+              <Button type="text" size="small" icon={<EditOutlined />} onClick={() => openEdit(r)} />
+            </Tooltip>
+          )}
           <Tooltip title="عمليات المندوب (تقارير)">
             <Button type="text" size="small" icon={<TeamOutlined />}
               onClick={() => navigate(`/rep-reports?rep=${r.user_id}`)} />
           </Tooltip>
-          {!r.invoice_count && !r.customer_count && (
+          {canUsers && !r.invoice_count && !r.customer_count && (
             <Popconfirm
               title="حذف المندوب؟"
               description="ليس له فواتير ولا عملاء — سيتم حذف الحساب نهائياً."
@@ -252,7 +256,7 @@ export default function Reps() {
               </Tooltip>
             </Popconfirm>
           )}
-          {r.active && (
+          {canUsers && r.active && (
             <Popconfirm
               title="إيقاف المندوب؟"
               description={
@@ -297,7 +301,7 @@ export default function Reps() {
       activeTab={repTab}
       onTabChange={(k) => { setListTab(k); load(k === 'all'); }}
       actions={(<>
-        <Button type="primary" icon={<PlusOutlined />} onClick={openNew}>مندوب جديد</Button>
+        {canUsers && <Button type="primary" icon={<PlusOutlined />} onClick={openNew}>مندوب جديد</Button>}
         <Button icon={<ReloadOutlined />} onClick={() => load()}>تحديث</Button>
         {cols.control}
       </>)}
