@@ -93,7 +93,10 @@ export default function Invoices() {
   const isFactory = useIsFactoryBranch();
   const categoryLabels = labelMap(categoryOptions);
   const navigate = useNavigate();
-  const [filters, setFilters] = useState<InvoiceFilters>({});
+  const [filters, setFilters] = useState<InvoiceFilters>(() => {
+    const today = dayjs().format('YYYY-MM-DD');
+    return { date_from: today, date_to: today };
+  });
   const [search, setSearch] = useState('');
   const [stmtText, setStmtText] = useState('');
   const listSearchRef = useRef<any>(null);

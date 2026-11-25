@@ -113,6 +113,38 @@ function clearWidth(table: HTMLElement, index: number) {
   colsAt(table, index).forEach((col) => { col.style.width = ''; col.style.minWidth = ''; });
 }
 
+function leafCells(thead: Element): HTMLElement[] {
+  return ([...thead.querySelectorAll(':scope > tr > th')] as HTMLElement[])
+    .filter((c) => leafIndex(c) >= 0)
+    .sort((a, b) => leafIndex(a) - leafIndex(b));
+}
+
+function fitTable(table: HTMLElement, widths: Widths) {
+  const thead = table.querySelector(':scope > thead');
+  const root = table.closest('.ant-table') || table;
+  const tables = [...root.querySelectorAll('table')] as HTMLElement[];
+  const cells = thead ? leafCells(thead) : [];
+  const cg = table.querySelector(':scope > colgroup');
+  const cols = cg ? cg.children.length : 0;
+  const ws = cells.map((c) => (headingOf(c) ? widths[keyFor(c)] : undefined));
+  const full = cells.length > 0 && ws.every(Boolean) && (cells.length === cols || cells.length === cols - 1);
+  if (full) {
+    const sum = ws.reduce<number>((t, w) => t + (w ?? 0), 0);
+    tables.forEach((t) => {
+      t.dataset.fitted = '1';
+      if (t.style.width !== `${sum}px`) t.style.width = `${sum}px`;
+      t.style.minWidth = '0';
+    });
+  } else {
+    tables.forEach((t) => {
+      if (!t.dataset.fitted) return;
+      delete t.dataset.fitted;
+      t.style.width = '';
+      t.style.minWidth = '';
+    });
+  }
+}
+
 function applyStored(widths: Widths) {
   document.querySelectorAll<HTMLElement>('.ant-table-thead').forEach((thead) => {
     const table = thead.closest('table') as HTMLElement | null;
@@ -124,6 +156,7 @@ function applyStored(widths: Widths) {
       if (i < 0) return;
       setWidth(table, i, w);
     });
+    fitTable(table, widths);
   });
 }
 
@@ -164,6 +197,17 @@ export default function ColumnResizeProvider({ children }: { children: React.Rea
 
     const begin = (p: NonNullable<typeof pending>) => {
       const startWidth = Math.round(p.th.getBoundingClientRect().width);
+      const thead = p.th.closest('thead');
+      if (thead) {
+        leafCells(thead).forEach((c) => {
+          if (!headingOf(c)) return;
+          const k = keyFor(c);
+          if (!widths[k]) {
+            widths[k] = Math.round(c.getBoundingClientRect().width);
+            setWidth(p.table, leafIndex(c), widths[k]);
+          }
+        });
+      }
       drag = {
         th: p.th, table: p.table, index: p.index, startX: p.startX,
         startWidth, key: keyFor(p.th),
@@ -187,8 +231,9 @@ export default function ColumnResizeProvider({ children }: { children: React.Rea
       const delta = rtl ? drag.startX - e.clientX : e.clientX - drag.startX;
       const next = Math.max(MIN_WIDTH, Math.round(drag.startWidth + delta));
       setWidth(drag.table, drag.index, next);
-      syncHeaders();
       widths[drag.key] = next;
+      fitTable(drag.table, widths);
+      syncHeaders();
       emit();
       e.preventDefault();
     };
@@ -231,6 +276,7 @@ export default function ColumnResizeProvider({ children }: { children: React.Rea
       if (!table || index < 0) return;
       delete widths[keyFor(th)];
       clearWidth(table, index);
+      fitTable(table, widths);
       save(widths);
       emit();
       e.preventDefault();

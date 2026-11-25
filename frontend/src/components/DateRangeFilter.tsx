@@ -36,6 +36,7 @@ export default function DateRangeFilter({
   openEnded = false,
 }: DateRangeFilterProps) {
   const [half, setHalf] = useState<[Dayjs | null, Dayjs | null] | null>(null);
+  const [endOpen, setEndOpen] = useState(false);
 
   const startVal = half ? half[0] : (value && value[0] ? value[0] : null);
   const endVal = half ? half[1] : (value && value[1] ? value[1] : null);
@@ -55,7 +56,10 @@ export default function DateRangeFilter({
     if (value && value[0] && value[1]) onChange?.(null);
   };
 
-  const handleStartChange = (date: Dayjs | null) => settle(date, endVal);
+  const handleStartChange = (date: Dayjs | null) => {
+    settle(date, endVal);
+    if (date) setEndOpen(true);
+  };
   const handleEndChange = (date: Dayjs | null) => settle(startVal, date);
 
   return (
@@ -104,6 +108,8 @@ export default function DateRangeFilter({
           placeholder={placeholder[1]}
           suffixIcon={<CalendarOutlined style={{ color: '#6AB42D', fontSize: 15 }} />}
           value={endVal}
+          open={endOpen}
+          onOpenChange={setEndOpen}
           onChange={handleEndChange}
           format="YYYY-MM-DD"
         />

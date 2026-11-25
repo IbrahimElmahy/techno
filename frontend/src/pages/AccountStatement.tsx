@@ -206,7 +206,7 @@ export default function AccountStatement() {
   const [warehouses, setWarehouses] = useState<any[]>([]);
   const [warehouseId, setWarehouseId] = useState<number | undefined>(u0.wh);
   const [range, setRange] = useState<[Dayjs | null, Dayjs | null] | null>(
-    u0.from && u0.to ? [dayjs(u0.from), dayjs(u0.to)] : null,
+    u0.from && u0.to ? [dayjs(u0.from), dayjs(u0.to)] : [dayjs().startOf('day'), dayjs().startOf('day')],
   );
   const [expandedKeys, setExpandedKeys] = useState<readonly React.Key[]>([]);
   const [showStock, setShowStock] = useState(false);
