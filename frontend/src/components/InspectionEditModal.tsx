@@ -28,7 +28,7 @@ export interface EditableInspection {
   items: { id: number; item_name: string; quantity: string; points: string; item_id?: number | null }[];
 }
 
-interface Option { value: number; label: string; phone?: string | null }
+interface Option { value: number; label: string; name?: string; phone?: string | null }
 interface Line { key: number; item_name: string; quantity: number | null; points: number | null }
 
 const MERCHANT_TYPES = ['trader', 'showroom', 'company', 'establishment'];
@@ -50,7 +50,7 @@ function usePartySearch(types: string[]) {
           for (const c of (r.data || []) as any[]) {
             if (seen.has(c.id)) continue;
             seen.add(c.id);
-            next.push({ value: c.id, label: c.name, phone: c.phone });
+            next.push({ value: c.id, label: c.place ? `${c.name} — ${c.place}` : c.name, name: c.name, phone: c.phone });
           }
         }
         setOptions(next);
@@ -205,7 +205,7 @@ const InspectionEditModal: React.FC<{
                   options={tech.options} onSearch={tech.search}
                   onChange={(id, opt: any) => {
                     form.setFieldsValue({
-                      technician_name: id ? opt?.label ?? null : null,
+                      technician_name: id ? opt?.name ?? opt?.label ?? null : null,
                       ...(id && opt?.phone ? { technician_phone: opt.phone } : {}),
                     });
                   }}
@@ -224,7 +224,7 @@ const InspectionEditModal: React.FC<{
                   showSearch allowClear filterOption={false} placeholder="ابحث باسم التاجر"
                   options={merchant.options} onSearch={merchant.search}
                   onChange={(id, opt: any) => {
-                    if (id) form.setFieldsValue({ purchase_shop: opt?.label ?? null });
+                    if (id) form.setFieldsValue({ purchase_shop: opt?.name ?? opt?.label ?? null });
                   }}
                 />
               </Form.Item>

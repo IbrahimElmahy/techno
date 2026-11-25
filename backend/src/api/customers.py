@@ -75,6 +75,7 @@ class CustomerOut(BaseModel):
     id: int
     code: str
     name: str
+    place: str | None = None
     customer_type: str
     phone: str | None
     rep_id: int | None
@@ -290,10 +291,29 @@ def customers_summary(
     )
 
 
+def place_of(territory: str | None, markaz: str | None, address: str | None) -> str | None:
+    parts: list[str] = []
+    for p in (territory, markaz, address):
+        p = (p or "").strip()
+        if not p or p == "0":
+            continue
+        if any(arabic.bare(p) == arabic.bare(x) for x in parts):
+            continue
+        parts.append(p)
+    return "، ".join(parts) or None
+
+
+def _territory_names(db: Session) -> dict[int, str]:
+    from src.models.org import Territory
+
+    return dict(db.execute(select(Territory.id, Territory.name)).all())
+
+
 class CustomerOptionOut(BaseModel):
     id: int
     code: str
     name: str
+    place: str | None = None
     phone: str | None = None
     customer_type: str | None = None
     rep_id: int | None = None
@@ -315,7 +335,8 @@ def customer_options(
         select(Customer.id, Customer.code, Customer.name, Customer.phone,
                Customer.customer_type, Customer.rep_id,
                Customer.default_price_tier, Customer.discount_pct,
-               Customer.territory_id, Customer.governorate_id),
+               Customer.territory_id, Customer.governorate_id,
+               Customer.markaz, Customer.address),
         current).where(Customer.active.is_(True),
                        Customer.customer_type != "owner")
     if customer_type:
@@ -329,9 +350,11 @@ def customer_options(
         stmt.order_by(*arabic.match_order(q, Customer.name, Customer.code),
                       arabic.sort_key(Customer.name), Customer.name)
         .limit(limit)).all()
+    terr = _territory_names(db)
     return [
         CustomerOptionOut(
             id=r.id, code=r.code, name=r.name,
+            place=place_of(terr.get(r.territory_id), r.markaz, r.address),
             phone=phone_fmt.display(r.phone) or None,
             customer_type=getattr(r.customer_type, "value", r.customer_type),
             rep_id=r.rep_id,
@@ -633,10 +656,12 @@ def list_customers(
 
     phones = contact_service.bulk_phone_values(
         db, PhoneOwner.customer, [c.id for c in rows])
+    terr = _territory_names(db)
     out = []
     for c in rows:
         item = _out(c, db, phones)
         item.balance = balances.get(c.id, Decimal("0.00"))
+        item.place = place_of(terr.get(c.territory_id), c.markaz, c.address)
         out.append(item)
 
     response.headers["X-Total-Count"] = str(total)

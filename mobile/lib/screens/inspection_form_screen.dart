@@ -774,7 +774,13 @@ class _InspectionFormScreenState extends State<InspectionFormScreen>
                     dense: true,
                     leading: Icon(leading, color: AppColors.primary),
                     title: Text(o.name),
-                    subtitle: (o.phone ?? '').isEmpty ? null : Text(o.phone!),
+                    subtitle: [o.address, o.phone]
+                            .where((x) => (x ?? '').isNotEmpty)
+                            .isEmpty
+                        ? null
+                        : Text([o.address, o.phone]
+                            .where((x) => (x ?? '').isNotEmpty)
+                            .join(' — ')),
                     onTap: () => onSelected(o),
                   ),
               ],

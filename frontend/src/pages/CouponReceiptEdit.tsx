@@ -102,9 +102,10 @@ export function receiverOptionsOf(
     })
     .map((c) => {
       const label = typeLabel(c.customer_type);
+      const place = c.place ? ` — ${String(c.place)}` : '';
       return {
         value: c.id as number,
-        label: label ? `${String(c.name)} — ${label}` : String(c.name),
+        label: `${String(c.name)}${place}${label ? ` · ${label}` : ''}`,
       };
     });
 }

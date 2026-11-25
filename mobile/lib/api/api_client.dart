@@ -240,7 +240,7 @@ class ApiClient {
             id: c['id'] as int,
             name: c['name'] as String,
             phone: c['phone'] as String?,
-            address: c['address'] as String?,
+            address: (c['place'] ?? c['address']) as String?,
             customerType: c['customer_type'] as String?,
           )
       ]);
@@ -437,7 +437,7 @@ class ApiClient {
           id: c['id'] as int,
           name: c['name'] as String,
           phone: c['phone'] as String?,
-          address: c['address'] as String?,
+          address: (c['place'] ?? c['address']) as String?,
           priceTier: c['price_tier'] as String?,
           customerType: c['customer_type'] as String?,
           families: [

@@ -456,6 +456,32 @@ class _CouponReceiptScreenState extends State<CouponReceiptScreen> {
                           key: ValueKey(_formGen),
                           displayStringForOption: (c) => c.name,
                           optionsBuilder: (v) => _parties(v.text.trim()),
+                          optionsViewBuilder: (ctx, onSelected, options) => Align(
+                            alignment: AlignmentDirectional.topStart,
+                            child: Material(
+                              elevation: 4,
+                              child: ConstrainedBox(
+                                constraints: BoxConstraints(
+                                    maxHeight: 280,
+                                    maxWidth: MediaQuery.of(ctx).size.width - 120),
+                                child: ListView(
+                                  padding: EdgeInsets.zero,
+                                  shrinkWrap: true,
+                                  children: [
+                                    for (final o in options)
+                                      ListTile(
+                                        dense: true,
+                                        title: Text(o.name),
+                                        subtitle: (o.address ?? '').isEmpty
+                                            ? null
+                                            : Text(o.address!),
+                                        onTap: () => onSelected(o),
+                                      ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
                           onSelected: (c) => setState(() {
                             _customerId = c.id;
                             _customerName = c.name;

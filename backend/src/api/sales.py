@@ -375,6 +375,9 @@ def rep_bundle(
         select(Customer).where(Customer.rep_id == current.rep_id, Customer.active.is_(True))
         .order_by(Customer.name)
     ).all()
+    from src.api.customers import _territory_names, place_of
+
+    terr_names = _territory_names(db)
 
     from src.services import chart_service
 
@@ -505,6 +508,7 @@ def rep_bundle(
         "customers": [
             {
                 "id": c.id, "name": c.name, "phone": c.phone, "address": c.address,
+                "place": place_of(terr_names.get(c.territory_id), c.markaz, c.address),
                 "price_tier": c.default_price_tier.value if c.default_price_tier else None,
                 "customer_type": c.customer_type,
                 "families": sorted(
