@@ -228,3 +228,41 @@ def last_purchase_prices(db: Session, *, item_ids: set[int], end: date) -> dict[
               .where(base_qty > 0, day <= end, line.item_id.in_(item_ids or [-1]))).subquery()
     return {iid: to_money(Decimal(str(u))) for iid, u in
             db.execute(select(ranked.c.iid, ranked.c.unit).where(ranked.c.rn == 1)).all()}
+
+
+def _sale_unit_expr():
+    from src.models.sales import SalesInvoice, SalesInvoiceLine
+
+    base_qty = SalesInvoiceLine.quantity * SalesInvoiceLine.unit_factor
+    ratio = case((SalesInvoice.gross > 0, SalesInvoice.net / SalesInvoice.gross), else_=1)
+    day = func.coalesce(SalesInvoice.invoice_date, cast(SalesInvoice.created_at, Date))
+    real = (SalesInvoice.is_bonus.is_(None) | SalesInvoice.is_bonus.is_(False))
+    return SalesInvoice, SalesInvoiceLine, base_qty, SalesInvoiceLine.line_total * ratio, day, real
+
+
+def sale_prices(db: Session, *, item_ids: set[int], start: date | None,
+                end: date | None) -> dict[int, Decimal]:
+    inv, line, base_qty, value, day, real = _sale_unit_expr()
+    stmt = (select(line.item_id, func.sum(value), func.sum(base_qty))
+            .join(inv, inv.id == line.invoice_id)
+            .where(base_qty > 0, line.line_total > 0, real, line.item_id.in_(item_ids or [-1]))
+            .group_by(line.item_id))
+    if start is not None:
+        stmt = stmt.where(day >= start)
+    if end is not None:
+        stmt = stmt.where(day <= end)
+    return {iid: to_money(Decimal(str(v)) / Decimal(str(q)))
+            for iid, v, q in db.execute(stmt).all() if q}
+
+
+def last_sale_prices(db: Session, *, item_ids: set[int], end: date) -> dict[int, Decimal]:
+    inv, line, base_qty, value, day, real = _sale_unit_expr()
+    ranked = (select(line.item_id.label("iid"), (value / base_qty).label("unit"),
+                     func.row_number().over(partition_by=line.item_id,
+                                            order_by=(day.desc(), inv.id.desc(), line.id.desc()))
+                     .label("rn"))
+              .join(inv, inv.id == line.invoice_id)
+              .where(base_qty > 0, line.line_total > 0, real, day <= end,
+                     line.item_id.in_(item_ids or [-1]))).subquery()
+    return {iid: to_money(Decimal(str(u))) for iid, u in
+            db.execute(select(ranked.c.iid, ranked.c.unit).where(ranked.c.rn == 1)).all()}

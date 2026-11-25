@@ -200,8 +200,6 @@ export const NAVIGATION: (NavGroup | NavScreen)[] = [
           { key: '/finance-reports?tab=aging&side=customers', label: 'أعمار ديون العملاء', roles: R(BOOKS), a5: '/client-receivables' },
           { key: '/finance-reports?tab=aging&side=suppliers', label: 'أعمار ديون الموردين', roles: R(BOOKS), a5: '/supplier-payables' },
           { key: '/customer-debts?tab=stagnant', label: 'رواكد مديونية العملاء', roles: R(BOOKS) },
-          { key: '/stock-value?tab=sale', label: 'قيمة المخزون بسعر البيع', roles: R(BOOKS) },
-          { key: '/stock-value?tab=purchase', label: 'قيمة المخزون بسعر الشراء', roles: R(BOOKS) },
           { key: '/profitability?view=cost-centers', label: 'أرباح مراكز التكلفة', roles: BOOKS, cap: 'reports.profit' },
           { key: '/profitability?view=branches', label: 'مقارنة الفروع', roles: BOOKS, cap: 'reports.profit' },
         ],

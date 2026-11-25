@@ -1,13 +1,14 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
-  Button, Card, Col, Collapse, DatePicker, Empty, Row, Segmented, Select, Space, Spin, Table, Tag,
+  Button, Card, Col, Collapse, DatePicker, Empty, InputNumber, Modal, Row, Select, Space, Spin, Table, Tag,
 } from 'antd';
 import { ReloadOutlined } from '@ant-design/icons';
 import dayjs, { Dayjs } from 'dayjs';
 import { api } from '../api/client';
+import DateRangeFilter from '../components/DateRangeFilter';
 import { money, numeralsLocale } from '../utils/money';
 
-interface Line { name: string; branch?: string | null; kind?: string; count?: number; value: string }
+interface Line { name: string; branch?: string | null; kind?: string; count?: number; value: string; warehouse_id?: number }
 interface Section {
   key: string; label: string; liability: boolean; total: string; rows: Line[];
   missing_cost?: number; fallback?: number; by_category?: { name: string; value: string }[];
@@ -22,7 +23,7 @@ const COLORS: Record<string, string> = {
   cash: '#1677ff', inventory: '#52c41a', fixed_assets: '#faad14', receivables: '#13c2c2',
   payables: '#f5222d',
 };
-const PREF = 'net-worth:valuation';
+const PREF = 'net-worth:valuation.v2';
 const n = (v: any) => Number(v || 0);
 const pct = (part: number, whole: number) => (whole ? (part / whole) * 100 : 0);
 const fmtPct = (v: number) => `${v.toLocaleString(numeralsLocale(), { maximumFractionDigits: 1 })}٪`;
@@ -35,25 +36,77 @@ function loadPref() {
   }
 }
 
+interface DrillItem { item_id: number; code: string | null; name: string; qty: string; unit: string | null; value: string; source: string }
+interface DrillCat { name: string; value: string; count: number; items: DrillItem[] }
+
+function InventoryDrill({ params, warehouseId, category }: {
+  params: Record<string, any>; warehouseId?: number; category?: string;
+}) {
+  const [cats, setCats] = useState<DrillCat[] | null>(null);
+  useEffect(() => {
+    api.get('/api/v1/reports/net-worth/inventory', {
+      params: { ...params, warehouse_id: warehouseId, category },
+    }).then((r) => setCats(r.data.categories || [])).catch(() => setCats([]));
+  }, [warehouseId, category]);
+  if (!cats) return <Spin size="small" />;
+  const itemsTable = (c: DrillCat) => (
+    <Table size="small" tableLayout="fixed" pagination={c.items.length > 50 ? { pageSize: 50 } : false}
+      summary={() => null} rowKey="item_id" dataSource={c.items}
+      columns={[
+        { title: 'الكود', dataIndex: 'code', key: 'code', width: 120 },
+        { title: 'الصنف', dataIndex: 'name', key: 'name', ellipsis: true },
+        { title: 'الكمية', dataIndex: 'qty', key: 'qty', width: 100, align: 'center' as const,
+          render: (v: string) => n(v).toLocaleString(numeralsLocale(), { maximumFractionDigits: 3 }) },
+        { title: 'سعر الوحدة', dataIndex: 'unit', key: 'unit', width: 120, align: 'left' as const,
+          render: (v: string | null, r: DrillItem) => (v == null ? '—' : (
+            <span style={{ color: r.source === 'average' ? '#d48806' : undefined }}>{money(v)}</span>)) },
+        { title: 'القيمة', dataIndex: 'value', key: 'value', width: 150, align: 'left' as const,
+          render: (v: string) => <b>{money(v)}</b> },
+      ]} />
+  );
+  if (category != null) return cats[0] ? itemsTable(cats[0]) : <Empty />;
+  const total = cats.reduce((t, c) => t + n(c.value), 0);
+  return (
+    <Table size="small" tableLayout="fixed" pagination={false} summary={() => null}
+      rowKey="name" dataSource={cats}
+      expandable={{ expandedRowRender: (c: DrillCat) => itemsTable(c), expandRowByClick: true }}
+      columns={[
+        { title: 'الفئة', dataIndex: 'name', key: 'name', ellipsis: true },
+        { title: 'عدد الأصناف', dataIndex: 'count', key: 'count', width: 110, align: 'center' as const },
+        { title: 'القيمة', dataIndex: 'value', key: 'value', width: 150, align: 'left' as const,
+          render: (v: string) => <b>{money(v)}</b> },
+        { title: 'النسبة', key: 'share', width: 80, align: 'center' as const,
+          render: (_: any, c: DrillCat) => fmtPct(pct(n(c.value), total)) },
+      ]} />
+  );
+}
+
 export default function NetWorth() {
   const saved = loadPref();
   const [asOf, setAsOf] = useState<Dayjs>(dayjs());
   const [branch, setBranch] = useState<number | null>(null);
-  const [basis, setBasis] = useState<string>(saved.basis || 'avg_purchase');
+  const [basis, setBasis] = useState<string>(saved.basis || 'last_purchase');
   const [field, setField] = useState<string>(saved.field || 'sale_price');
-  const [from, setFrom] = useState<Dayjs>(dayjs().subtract(1, 'year'));
+  const [period, setPeriod] = useState<[Dayjs, Dayjs]>([dayjs().subtract(1, 'year'), dayjs()]);
+  const [discounts, setDiscounts] = useState<Record<string, number>>(saved.discounts || {});
+  const [discOpen, setDiscOpen] = useState(false);
+  const [discDraft, setDiscDraft] = useState<Record<string, number>>({});
   const [branches, setBranches] = useState<{ id: number; name: string }[]>([]);
   const [data, setData] = useState<Report | null>(null);
   const [loading, setLoading] = useState(false);
 
-  const load = async (o: Partial<{ asOf: Dayjs; branch: number | null; basis: string; field: string; from: Dayjs }> = {}) => {
-    const p = { asOf, branch, basis, field, from, ...o };
+  type Opts = { asOf: Dayjs; branch: number | null; basis: string; field: string;
+    period: [Dayjs, Dayjs]; discounts: Record<string, number> };
+  const load = async (o: Partial<Opts> = {}) => {
+    const p = { asOf, branch, basis, field, period, discounts, ...o };
     setLoading(true);
     try {
       const res = await api.get('/api/v1/reports/net-worth', {
         params: {
           as_of: p.asOf.format('YYYY-MM-DD'), branch_id: p.branch ?? undefined,
-          basis: p.basis, price_field: p.field, period_from: p.from.format('YYYY-MM-DD'),
+          basis: p.basis, price_field: p.field,
+          period_from: p.period[0].format('YYYY-MM-DD'), period_to: p.period[1].format('YYYY-MM-DD'),
+          discounts: Object.keys(p.discounts).length ? JSON.stringify(p.discounts) : undefined,
         },
       });
       setData(res.data);
@@ -69,15 +122,18 @@ export default function NetWorth() {
     load();
   }, []);
 
-  const change = (o: Partial<{ asOf: Dayjs; branch: number | null; basis: string; field: string; from: Dayjs }>) => {
+  const change = (o: Partial<Opts>) => {
     if (o.asOf) setAsOf(o.asOf);
     if (o.branch !== undefined) setBranch(o.branch);
     if (o.basis) setBasis(o.basis);
     if (o.field) setField(o.field);
-    if (o.from) setFrom(o.from);
-    if (o.basis || o.field) {
+    if (o.period) setPeriod(o.period);
+    if (o.discounts) setDiscounts(o.discounts);
+    if (o.basis || o.field || o.discounts) {
       try {
-        localStorage.setItem(PREF, JSON.stringify({ basis: o.basis || basis, field: o.field || field }));
+        localStorage.setItem(PREF, JSON.stringify({
+          basis: o.basis || basis, field: o.field || field, discounts: o.discounts || discounts,
+        }));
       } catch {}
     }
     load(o);
@@ -106,7 +162,11 @@ export default function NetWorth() {
   }, [data, branch, branches]);
 
   const needsField = basis === 'avg_list' || basis === 'list';
-  const needsFrom = basis === 'avg_list' || basis === 'avg_purchase';
+  const needsRange = basis === 'avg_list' || basis === 'avg_purchase' || basis === 'avg_sale';
+  const invSection = data?.sections.find((x) => x.key === 'inventory');
+  const discCats = Array.from(new Set([
+    ...(invSection?.by_category || []).map((c) => c.name), ...Object.keys(discounts)]));
+  const discCount = Object.values(discounts).filter((v) => v > 0).length;
 
   const detailColumns = (s: Section) => [
     { title: 'البند', dataIndex: 'name', key: 'name', ellipsis: true },
@@ -122,15 +182,25 @@ export default function NetWorth() {
       render: (_: any, r: Line) => fmtPct(pct(n(r.value), n(s.total))) },
   ];
 
+  const drillParams = {
+    as_of: asOf.format('YYYY-MM-DD'), branch_id: branch ?? undefined,
+    basis, price_field: field,
+    period_from: period[0].format('YYYY-MM-DD'), period_to: period[1].format('YYYY-MM-DD'),
+    discounts: Object.keys(discounts).length ? JSON.stringify(discounts) : undefined,
+  };
   const sectionBody = (s: Section) => {
-    const table = (rows: Line[], cols = detailColumns(s)) => (
+    const table = (rows: Line[], cols = detailColumns(s), expand?: (r: any) => React.ReactNode) => (
       <Table size="small" tableLayout="fixed" pagination={false} dataSource={rows} columns={cols}
-        rowKey={(r: Line) => `${r.name}|${r.branch ?? ''}|${r.kind ?? ''}`} locale={{ emptyText: 'لا يوجد' }} />
+        rowKey={(r: Line) => `${r.name}|${r.branch ?? ''}|${r.kind ?? ''}`} locale={{ emptyText: 'لا يوجد' }}
+        expandable={expand ? { expandedRowRender: expand, expandRowByClick: true } : undefined} />
     );
     if (s.key !== 'inventory') return table(s.rows);
     return (
       <Row gutter={[16, 12]}>
-        <Col xs={24} xl={14}>{table(s.rows)}</Col>
+        <Col xs={24} xl={14}>
+          {table(s.rows, detailColumns(s), (r: any) => (
+            <InventoryDrill params={drillParams} warehouseId={r.warehouse_id} />))}
+        </Col>
         <Col xs={24} xl={10}>
           {table((s.by_category || []).map((c) => ({ name: c.name, value: c.value })), [
             { title: 'الفئة', dataIndex: 'name', key: 'name', ellipsis: true },
@@ -138,7 +208,7 @@ export default function NetWorth() {
               render: (v: string) => money(v) },
             { title: 'النسبة', key: 'share', width: 80, align: 'center' as const,
               render: (_: any, r: Line) => fmtPct(pct(n(r.value), n(s.total))) },
-          ])}
+          ], (r: any) => <InventoryDrill params={drillParams} category={r.name} />)}
         </Col>
       </Row>
     );
@@ -160,21 +230,26 @@ export default function NetWorth() {
     >
       <Space wrap style={{ marginBottom: 16 }}>
         <span style={{ fontWeight: 600 }}>تقييم المخزون:</span>
-        <Segmented
+        <Select
+          style={{ minWidth: 200 }}
           value={basis}
           onChange={(v) => change({ basis: String(v) })}
-          options={(data?.bases || [{ key: 'average', label: 'متوسط التكلفة' }]).map((b) => ({ value: b.key, label: b.label }))}
+          options={(data?.bases || [{ key: 'last_purchase', label: 'آخر سعر شراء' }]).map((b) => ({ value: b.key, label: b.label }))}
         />
         {needsField && (
           <Select style={{ minWidth: 140 }} value={field} onChange={(v) => change({ field: v })}
             options={(data?.price_fields || []).map((f) => ({ value: f.key, label: f.label }))} />
         )}
-        {needsFrom && (
-          <Space size={4}>
-            <span>من</span>
-            <DatePicker value={from} allowClear={false} format="YYYY-MM-DD"
-              onChange={(d) => d && change({ from: d })} />
-          </Space>
+        {needsField && (
+          <Button onClick={() => { setDiscDraft({ ...discounts }); setDiscOpen(true); }}>
+            {discCount ? `خصومات الفئات (${discCount})` : 'خصومات الفئات'}
+          </Button>
+        )}
+        {needsRange && (
+          <div style={{ width: 320 }}>
+            <DateRangeFilter value={period} allowClear={false}
+              onChange={(v) => { if (v && v[0] && v[1]) change({ period: [v[0], v[1]] }); }} />
+          </div>
         )}
       </Space>
 
@@ -266,6 +341,26 @@ export default function NetWorth() {
           </>
         )}
       </Spin>
+
+      <Modal open={discOpen} title="خصومات الفئات على سعر الليستة" okText="تطبيق" cancelText="إلغاء"
+        onCancel={() => setDiscOpen(false)}
+        onOk={() => {
+          const clean = Object.fromEntries(Object.entries(discDraft).filter(([, v]) => v > 0 && v < 100));
+          setDiscOpen(false);
+          change({ discounts: clean });
+        }}>
+        <Table size="small" pagination={false} tableLayout="fixed" summary={() => null}
+          rowKey={(r: string) => r} dataSource={discCats} scroll={{ y: 420 }}
+          columns={[
+            { title: 'الفئة', key: 'name', render: (_: any, r: string) => r, ellipsis: true },
+            { title: 'الخصم ٪', key: 'pct', width: 140,
+              render: (_: any, r: string) => (
+                <InputNumber min={0} max={99} step={0.5} style={{ width: '100%' }}
+                  value={discDraft[r] ?? null}
+                  onChange={(v) => setDiscDraft((d) => ({ ...d, [r]: Number(v || 0) }))} />
+              ) },
+          ]} />
+      </Modal>
     </Card>
   );
 }
