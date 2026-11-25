@@ -2,7 +2,7 @@ import React from 'react';
 import { Table } from 'antd';
 import { buildSummary, filteredRows, leavesOf } from './tableTotals';
 import { WIDTHS_EVENT, storedWidth } from './ColumnResize';
-import ColumnSettings from './ColumnSettings';
+import ColumnSettings, { orderKeys } from './ColumnSettings';
 
 export const APP_SCROLL_CLASS = 'app-scroll';
 export const STICKY_BAR = 12;
@@ -28,7 +28,7 @@ const InsideTable = React.createContext(false);
 type Filters = Record<string, any[] | null> | null;
 
 type Sorter = { key: string; order: 'ascend' | 'descend' } | null;
-type TableState = { filters?: Filters; sorter?: Sorter; hidden?: string[]; pageSize?: number };
+type TableState = { filters?: Filters; sorter?: Sorter; hidden?: string[]; order?: string[]; pageSize?: number };
 
 const GEAR_KEY = '__col_settings__';
 
@@ -423,20 +423,37 @@ if (typeof T.render === 'function') {
         });
       },
       decorate: (cols) => {
-        if (managed || rawProps.pagination === false || !Array.isArray(cols)) return cols;
+        if (managed || !Array.isArray(cols)) return cols;
         const top = cols.filter((c: any) => c && typeof c === 'object');
         if (top.length < 3) return cols;
         const hidden = stored.hidden ?? [];
+        const keys = cols.map((c: any, i: number) => colKeyOf(c, i));
         const choices = top.map((c: any, i: number) => ({
           key: colKeyOf(c, i),
           title: textOfTitle(c.title) || 'إجراءات',
         }));
-        const visible = cols.filter((c: any, i: number) => !hidden.includes(colKeyOf(c, i)));
+        const shown = cols.map((c: any, i: number) => ({ c, k: keys[i] }))
+          .filter(({ k }: { k: string }) => !hidden.includes(k));
+        const movable = shown.filter(({ c }: { c: any }) => !c?.fixed);
+        const byKey = new Map(movable.map(({ c, k }: { c: any; k: string }) => [k, c]));
+        const ranked = orderKeys(movable.map(({ k }: { k: string }) => k), stored.order);
+        let slot = 0;
+        const visible = shown.map(({ c }: { c: any }) => (c?.fixed ? c : byKey.get(ranked[slot++])));
+        const move = (key: string, dir: -1 | 1) => {
+          const current = orderKeys(keys, stored.order);
+          const i = current.indexOf(key);
+          const j = i + dir;
+          if (i < 0 || j < 0 || j >= current.length) return;
+          [current[i], current[j]] = [current[j], current[i]];
+          update({ order: current });
+        };
         const gear = {
           key: GEAR_KEY, width: 36, align: 'center' as const,
           title: (
             <ColumnSettings compact choices={choices} hidden={hidden}
-              onChange={(h) => update({ hidden: h })} />
+              onChange={(h) => update({ hidden: h })}
+              order={stored.order} onMove={move}
+              onResetOrder={() => update({ hidden: [], order: undefined })} />
           ),
           render: () => null,
         };
