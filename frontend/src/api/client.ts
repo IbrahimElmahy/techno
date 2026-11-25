@@ -26,6 +26,22 @@ export function getViewBranch(): number | null {
   } catch { return null; }
 }
 
+const VIEW_AS_KEY = 'techno.viewAs';
+
+export function getViewAs(): number | null {
+  try {
+    const v = Number(sessionStorage.getItem(VIEW_AS_KEY));
+    return Number.isInteger(v) && v > 0 ? v : null;
+  } catch { return null; }
+}
+
+export function setViewAs(id: number | null) {
+  try {
+    if (id) sessionStorage.setItem(VIEW_AS_KEY, String(id));
+    else sessionStorage.removeItem(VIEW_AS_KEY);
+  } catch {}
+}
+
 export function setViewBranch(id: number | null) {
   try {
     if (id) localStorage.setItem(VIEW_BRANCH_KEY, String(id));
@@ -145,6 +161,14 @@ api.interceptors.request.use(
     }
     const viewBranch = getViewBranch();
     if (viewBranch) config.headers['X-View-Branch'] = String(viewBranch);
+    const viewAs = getViewAs();
+    if (viewAs && config.headers['X-View-As'] === undefined) {
+      const m = (config.method || 'get').toLowerCase();
+      if (m !== 'get' && m !== 'head' && !String(config.url || '').endsWith('/auth/refresh')) {
+        return Promise.reject(Object.assign(new Error('وضع المعاينة للعرض فقط.'), { viewOnly: true }));
+      }
+      config.headers['X-View-As'] = String(viewAs);
+    }
     return config;
   },
   (error) => {
@@ -183,6 +207,7 @@ api.interceptors.response.use(
   },
   (error) => {
     inflight = Math.max(0, inflight - 1);
+    if (error?.viewOnly) return Promise.reject(error);
     const { response } = error;
 
     if (response) {

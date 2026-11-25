@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { Spin } from 'antd';
-import { api, clearApiCache, getApiBaseURL } from '../api/client';
+import { api, clearApiCache, getApiBaseURL, getViewAs, setViewAs } from '../api/client';
 import { startLive, stopLive } from '../utils/live';
 import { syncPrefs } from '../utils/userPrefs';
 
@@ -31,6 +31,8 @@ interface AuthContextType {
   login: (token: string, user: User) => void;
   logout: () => void;
   can: (capability: string) => boolean;
+  realUser: User | null;
+  viewingAs: boolean;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -39,7 +41,9 @@ export function AuthProvider({ children, apiUrl }: { children: React.ReactNode; 
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isAuthenticating, setIsAuthenticating] = useState(true);
   const [user, setUser] = useState<User | null>(null);
+  const [realUser, setRealUser] = useState<User | null>(null);
   const [token, setToken] = useState<string | null>(null);
+  const viewingAs = !!getViewAs() && !!realUser && user !== realUser;
 
   useEffect(() => {
     const storedToken = localStorage.getItem('token');
@@ -48,7 +52,9 @@ export function AuthProvider({ children, apiUrl }: { children: React.ReactNode; 
     if (storedToken && storedUser) {
       try {
         setToken(storedToken);
-        setUser(JSON.parse(storedUser));
+        const stored = JSON.parse(storedUser);
+        setRealUser(stored);
+        setUser(stored);
         setIsAuthenticated(true);
       } catch (err) {
         console.error('Failed to parse stored user session:', err);
@@ -73,6 +79,18 @@ export function AuthProvider({ children, apiUrl }: { children: React.ReactNode; 
           setToken(res.data.access_token);
         }
         const me = await api.get('/api/v1/auth/me');
+        const stored = JSON.parse(localStorage.getItem('user') || 'null');
+        if (getViewAs() && me.data && stored && me.data.username !== stored.username) {
+          setUser({
+            ...stored, username: me.data.username, role: me.data.role,
+            name: me.data.full_name || me.data.username, branch_id: me.data.branch_id,
+            capabilities: me.data.capabilities ?? [], pages_shown: me.data.pages_shown ?? [],
+            pages_hidden: me.data.pages_hidden ?? [], branch_ids: me.data.branch_ids ?? [],
+            id: me.data.id,
+          } as any);
+          return;
+        }
+        if (getViewAs()) setViewAs(null);
         if (me.data?.capabilities) {
           setUser((prev) => {
             if (!prev) return prev;
@@ -82,6 +100,7 @@ export function AuthProvider({ children, apiUrl }: { children: React.ReactNode; 
               branch_ids: me.data.branch_ids ?? [],
             };
             localStorage.setItem('user', JSON.stringify(next));
+            setRealUser(next);
             return next;
           });
         }
@@ -104,7 +123,7 @@ export function AuthProvider({ children, apiUrl }: { children: React.ReactNode; 
   const prefsFor = React.useRef<string | null>(null);
   useEffect(() => {
     const who = token ? (user as any)?.username ?? 'me' : null;
-    if (!who || prefsFor.current === who) return;
+    if (!who || prefsFor.current === who || getViewAs()) return;
     prefsFor.current = who;
     syncPrefs();
   }, [token, (user as any)?.username]);
@@ -114,13 +133,16 @@ export function AuthProvider({ children, apiUrl }: { children: React.ReactNode; 
     clearApiCache();
     localStorage.setItem('token', newToken);
     localStorage.setItem('user', JSON.stringify(newUser));
+    setViewAs(null);
     setToken(newToken);
+    setRealUser(newUser);
     setUser(newUser);
     setIsAuthenticated(true);
   };
 
   const logout = (releaseDevice = true) => {
     const t = localStorage.getItem('token');
+    setViewAs(null);
     if (releaseDevice) {
       try { sessionStorage.removeItem('techno.tabs'); } catch {}
     }
@@ -148,6 +170,7 @@ export function AuthProvider({ children, apiUrl }: { children: React.ReactNode; 
     <AuthContext.Provider value={{
       isAuthenticated, isAuthenticating, user, token, login, logout,
       can: (capability: string) => !!user?.capabilities?.includes(capability),
+      realUser, viewingAs,
     }}>
       {children}
     </AuthContext.Provider>

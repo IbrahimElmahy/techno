@@ -140,6 +140,26 @@ def create_app() -> FastAPI:
         finally:
             _branch_scope.reset_view_branch(token)
 
+    from fastapi.responses import JSONResponse as _JSONResponse
+
+    from src.auth import dependencies as _deps
+
+    @app.middleware("http")
+    async def _view_as(request, call_next):
+        raw = request.headers.get("x-view-as")
+        if not raw or not raw.isdigit():
+            return await call_next(request)
+        if request.method not in ("GET", "HEAD", "OPTIONS"):
+            if request.url.path.endswith("/auth/refresh"):
+                return await call_next(request)
+            return _JSONResponse(status_code=403, content={"detail": {
+                "code": "view_only", "message": "وضع المعاينة للعرض فقط."}})
+        token = _deps.set_view_as(int(raw))
+        try:
+            return await call_next(request)
+        finally:
+            _deps.reset_view_as(token)
+
     import logging as _logging
     import time as _time
 

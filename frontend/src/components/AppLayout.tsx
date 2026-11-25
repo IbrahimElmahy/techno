@@ -38,6 +38,7 @@ import { bindNumeralsUser } from '../utils/numerals';
 import { useFullscreen } from './FullscreenToggle';
 import Logo from './Logo';
 import BranchFilter, { BranchBadge } from './BranchFilter';
+import ViewAsSelect, { ViewAsBanner } from './ViewAsSelect';
 import { useTabs } from './TabsContext';
 import TabWorkspace from './TabWorkspace';
 import { QuickCreateHost } from './QuickCreate';
@@ -361,6 +362,7 @@ export default function AppLayout() {
           }}>
             {(user?.role === 'owner' || user?.role === 'system_admin' || (user?.branch_ids?.length ?? 0) > 1)
               ? <BranchFilter allowed={user?.branch_ids} /> : <BranchBadge branchId={user?.branch_id} />}
+            <ViewAsSelect />
             <ShortcutsDock userId={(user as any)?.id} tree={buildItems([...NAVIGATION, ...EXTRA_SECTIONS])}
               openTab={openTab} />
             <ContrastHeaderButton />
@@ -372,6 +374,7 @@ export default function AppLayout() {
             </Dropdown>
           </div>
         </Header>
+        <ViewAsBanner />
 
         <div className="work-tabs" style={{ flexShrink: 0, padding: '6px 16px 0', background: 'transparent' }}>
           <Tabs
@@ -410,7 +413,7 @@ export default function AppLayout() {
               marginBottom: 10,
             }}
           >
-            <TabWorkspace />
+            <TabWorkspace key={(user as any)?.username || 'me'} />
             <QuickCreateHost />
             <div aria-hidden style={{ height: 64 }} />
           </div>

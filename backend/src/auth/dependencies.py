@@ -1,12 +1,14 @@
 from __future__ import annotations
 
+import dataclasses
+from contextvars import ContextVar
 from dataclasses import dataclass, field
 
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.orm import Session
 
-from src.auth.rbac import GRANT_ONLY, role_has_capability
+from src.auth.rbac import CAP_USER_WRITE, GRANT_ONLY, role_has_capability
 from src.core.db import get_db
 from src.core.security import decode_access_token
 from src.models.role import Role, RoleName
@@ -26,6 +28,7 @@ class CurrentUser:
     denies: frozenset = field(default_factory=frozenset)
     branch_ids: tuple = ()
     supervises: bool = False
+    viewer_id: int | None = None
 
     def can(self, capability: str) -> bool:
         if capability in GRANT_ONLY:
@@ -59,6 +62,17 @@ def _deny(detail: str, code: int = status.HTTP_403_FORBIDDEN) -> HTTPException:
     return HTTPException(status_code=code, detail={"code": "forbidden", "message": detail})
 
 
+_view_as: ContextVar[int | None] = ContextVar("view_as", default=None)
+
+
+def set_view_as(user_id: int | None):
+    return _view_as.set(user_id)
+
+
+def reset_view_as(token) -> None:
+    _view_as.reset(token)
+
+
 def get_current_user(
     creds: HTTPAuthorizationCredentials | None = Depends(_bearer),
     db: Session = Depends(get_db),
@@ -88,6 +102,16 @@ def get_current_user(
                 "message": "تم تسجيل الدخول بهذا الحساب من جهاز آخر — الحساب لجهاز واحد فقط.",
             },
         )
+    current = _build_current(db, user)
+    target_id = _view_as.get()
+    if target_id and target_id != user.id and current.can(CAP_USER_WRITE):
+        target = db.get(User, target_id)
+        if target is not None and target.active:
+            return dataclasses.replace(_build_current(db, target), viewer_id=user.id)
+    return current
+
+
+def _build_current(db: Session, user: User) -> CurrentUser:
     role = db.get(Role, user.role_id)
     grants, denies = user_overrides(db, user.id)
     branch_ids = parse_branch_ids(user.branch_ids)
