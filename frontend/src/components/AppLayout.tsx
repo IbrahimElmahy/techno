@@ -129,6 +129,9 @@ export default function AppLayout() {
       .map((node) => {
         if (!isGroup(node)) {
           if (user?.pages_hidden?.includes(node.key)) return null;
+          if (node.cap) {
+            return user?.capabilities?.includes(node.cap) ? { key: node.key, label: node.label } : null;
+          }
           return node.roles.includes(userRole) || user?.pages_shown?.includes(node.key)
             ? { key: node.key, label: node.label } : null;
         }

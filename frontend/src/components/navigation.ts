@@ -8,6 +8,7 @@ export interface NavScreen {
   label: string;
   roles: string[];
   a5?: string;
+  cap?: string;
 }
 
 export interface NavGroup {
@@ -192,6 +193,7 @@ export const NAVIGATION: (NavGroup | NavScreen)[] = [
         key: 'grp-acct-reports',
         label: 'التقارير المالية',
         children: [
+          { key: '/net-worth', label: 'تقييم الممتلكات', roles: [], cap: 'report.net_worth' },
           { key: '/general-ledger?tab=trial', label: 'ميزان المراجعة', roles: R(BOOKS), a5: '/ledger' },
           { key: '/finance-reports?tab=partner', label: 'دفتر الشريك', roles: R(BOOKS) },
           { key: '/finance-reports?tab=aging&side=customers', label: 'أعمار ديون العملاء', roles: R(BOOKS), a5: '/client-receivables' },

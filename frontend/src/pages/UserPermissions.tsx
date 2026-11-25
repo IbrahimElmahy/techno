@@ -139,7 +139,7 @@ export default function UserPermissions() {
   };
 
   const pageGroup = (g: NavGroup | NavScreen, depth = 0): JSX.Element | null => {
-    if (!isGroup(g)) return pageRow(g);
+    if (!isGroup(g)) return g.cap ? null : pageRow(g);
     const kids = g.children.map((c) => pageGroup(c, depth + 1)).filter(Boolean);
     if (!kids.length) return null;
     return (
