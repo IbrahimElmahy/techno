@@ -13,10 +13,24 @@ GROUP_NAME = "ذمم الموظفين"
 
 def open_card(db: Session, emp: Employee) -> Customer | None:
     card = db.scalar(select(Customer).where(Customer.employee_id == emp.id))
-    if card is not None or emp.receivable_account_id:
+    if card is not None:
         return card
     territory = db.scalar(select(Territory.id).where(Territory.branch_id == emp.branch_id)
                           .order_by(Territory.id))
+    if emp.receivable_account_id:
+        if territory is None:
+            return None
+        code = emp.code
+        if db.scalar(select(Customer.id).where(Customer.code == code)) is not None:
+            code = f"{emp.code}-{emp.id}"
+        card = Customer(code=code[:24], name=emp.name, customer_type="employee",
+                        employee_id=emp.id, territory_id=territory, branch_id=emp.branch_id,
+                        phone=emp.phone, active=True)
+        db.add(card)
+        db.flush()
+        db.add(CustomerAccount(customer_id=card.id, account_id=emp.receivable_account_id))
+        db.flush()
+        return card
     group = db.scalar(select(Account).where(Account.branch_id == emp.branch_id,
                                             Account.name == GROUP_NAME,
                                             Account.is_postable.is_(False)))
