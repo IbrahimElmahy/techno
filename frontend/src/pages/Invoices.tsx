@@ -6,7 +6,7 @@ import { PAGE_SIZE as TABLE_PAGE_SIZE, PAGE_SIZE_OPTIONS }
 import { searchFilter, searchRank, sortByName } from '../utils/arabicSort';
 import { customersOfRep, customerFitsRep } from '../utils/repScope';
 import {
-  Alert, Button, Card, Col, DatePicker, Descriptions, Divider, Empty, Form, Input, Modal, Result, Row, Segmented, Select, Space, Spin, Tag,
+  Alert, Badge, Button, Card, Col, DatePicker, Descriptions, Divider, Empty, Form, Input, Modal, Result, Row, Segmented, Select, Space, Spin, Tag,
   Tooltip, Typography, message,
 } from 'antd';
 import { FilterTable as Table } from '../components/FilterTable';
@@ -18,7 +18,7 @@ import {
   ArrowRightOutlined, ArrowLeftOutlined, SearchOutlined, ClearOutlined,
   FileAddOutlined, UndoOutlined, SaveOutlined, BankOutlined, ReloadOutlined, SyncOutlined,
   PhoneOutlined, CheckOutlined, ShoppingCartOutlined, GiftOutlined,
-  FileExcelOutlined,
+  FileExcelOutlined, DownOutlined, UpOutlined,
 } from '@ant-design/icons';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useDocReturn } from '../components/docReturn';
@@ -120,6 +120,7 @@ export default function Invoices() {
   const [viewInvoice, setViewInvoice] = useState<any>(null);
   const [viewReturns, setViewReturns] = useState<any[]>([]);
   const [editingInvoice, setEditingInvoice] = useState<{ id: number; voided: boolean } | null>(null);
+  const [moreOpen, setMoreOpen] = useState(true);
   const [openedFingerprint, setOpenedFingerprint] = useState<string | null>(null);
   const [docCashAccountId, setDocCashAccountId] = useState<number | null>(null);
 
@@ -1406,7 +1407,16 @@ export default function Invoices() {
       return p.extra_discount_max_pct != null ? Number(p.extra_discount_max_pct) : null;
     },
   });
-  const lineGrid = useEntryGrid('invoice-lines-grid', lineColumns);
+  useEffect(() => {
+    setMoreOpen(!(viewInvoice || editingInvoice));
+  }, [viewInvoice?.id, editingInvoice?.id, createVisible]);
+  const lineWarehouses = new Set(lines.filter((l) => l.item_id !== null && l.warehouse_id != null)
+    .map((l) => l.warehouse_id)).size;
+  const lineGrid = useEntryGrid('invoice-lines-grid', lineColumns, {
+    hiddenKey: 'invoice-lines-grid@2',
+    defaultHidden: ['warehouse', 'gross', 'after_fixed'],
+    forceShow: lineWarehouses > 1 ? ['warehouse'] : [],
+  });
 
   useEffect(() => {
     if (!focusLineKey) return undefined;
@@ -1909,6 +1919,9 @@ function couponsTotal(inv: any): number {
   if (createVisible) {
     const showCouponBlock = !isFactory
       && !(viewOnly && !couponRows.some((r) => r.serial_from || r.coupon_kind));
+    const extraFilled = !!(createForm.getFieldValue('statement1') || createForm.getFieldValue('notes')
+      || createForm.getFieldValue('cost_center_id')
+      || couponRows.some((r) => r.serial_from || r.coupon_kind));
     return (
       <div className="sale-doc">
       {partyPicker}
@@ -1967,11 +1980,18 @@ function couponsTotal(inv: any): number {
             />
           </span>
           <div className="sale-toolbar-row">
-            <DocumentToolbar actions={docToolbar()} variant="buttons" />
+            <DocumentToolbar actions={docToolbar()} variant="buttons"
+              more={['excel', 'share', 'accounts', 'reload', 'stock']} />
             <DocumentHistoryButton entityType="sales_invoice"
               entityId={viewInvoice?.id ?? editingInvoice?.id}
               documentNumber={viewInvoice?.document_number} />
             {lineGrid.control}
+            <Badge dot={!moreOpen && extraFilled}>
+              <Button icon={moreOpen ? <UpOutlined /> : <DownOutlined />}
+                onClick={() => setMoreOpen((v) => !v)}>
+                تفاصيل إضافية
+              </Button>
+            </Badge>
           </div>
         </div>
       </div>
@@ -2078,6 +2098,7 @@ function couponsTotal(inv: any): number {
             )}
           </Row>
 
+          {moreOpen && (
           <Row gutter={12}>
             <Col xs={24} md={5}>
               <Form.Item label="مركز التكلفة">
@@ -2160,6 +2181,7 @@ function couponsTotal(inv: any): number {
             </Col>
             )}
           </Row>
+          )}
           </div>
 
           <div className="sale-card sale-lines">

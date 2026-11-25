@@ -1,6 +1,6 @@
 import React, { useMemo } from 'react';
-import { Button, Tooltip } from 'antd';
-import { WhatsAppOutlined } from '@ant-design/icons';
+import { Button, Dropdown, Tooltip } from 'antd';
+import { EllipsisOutlined, WhatsAppOutlined } from '@ant-design/icons';
 import { shareVia } from '../print/share';
 import { KEY_MAP, ShortcutAction, ScreenShortcuts, useScreenShortcuts } from './keyboard';
 
@@ -29,10 +29,11 @@ function withShare(actions: ToolbarAction[]): ToolbarAction[] {
   return [...actions.slice(0, i + 1), share, ...actions.slice(i + 1)];
 }
 
-export default function DocumentToolbar({ actions: given, inline = false, variant = 'plain' }: {
+export default function DocumentToolbar({ actions: given, inline = false, variant = 'plain', more = [] }: {
   actions: ToolbarAction[];
   inline?: boolean;
   variant?: 'plain' | 'buttons';
+  more?: string[];
 }) {
   const actions = useMemo(() => withShare(given), [given]);
   const handlers = useMemo(() => {
@@ -52,7 +53,7 @@ export default function DocumentToolbar({ actions: given, inline = false, varian
     return (
       <div className="doc-toolbar-buttons"
         style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center' }}>
-        {actions.map((a) => (
+        {actions.filter((a) => !more.includes(a.key)).map((a) => (
           <Tooltip key={a.key} title={a.shortcut ? `${a.label} — ${a.shortcut}` : undefined}>
             <Button size="small" icon={a.icon} disabled={a.disabled} onClick={a.onClick}
               type={a.primary ? 'primary' : 'default'} danger={a.danger}
@@ -62,6 +63,19 @@ export default function DocumentToolbar({ actions: given, inline = false, varian
             </Button>
           </Tooltip>
         ))}
+        {actions.some((a) => more.includes(a.key)) && (
+          <Dropdown trigger={['click']} menu={{
+            items: actions.filter((a) => more.includes(a.key)).map((a) => ({
+              key: a.key, label: a.label, icon: a.icon, disabled: a.disabled || !a.onClick,
+              danger: a.danger,
+            })),
+            onClick: ({ key }) => actions.find((a) => a.key === key)?.onClick?.(),
+          }}>
+            <Button size="small" icon={<EllipsisOutlined />} style={{ fontWeight: 600, fontSize: 14 }}>
+              المزيد
+            </Button>
+          </Dropdown>
+        )}
       </div>
     );
   }

@@ -37,9 +37,17 @@ function saveWidths(key: string, w: Record<string, number>) {
   } catch {}
 }
 
-export function useEntryGrid<T>(storageKey: string, columns: EntryColumn<T>[]) {
+export interface EntryGridOptions {
+  hiddenKey?: string;
+  defaultHidden?: string[];
+  forceShow?: string[];
+}
+
+export function useEntryGrid<T>(storageKey: string, columns: EntryColumn<T>[],
+  opts: EntryGridOptions = {}) {
   const allKeys = columns.map((c) => c.key);
-  const prefs = useHiddenColumns(storageKey, [], allKeys);
+  const prefs = useHiddenColumns(opts.hiddenKey ?? storageKey, opts.defaultHidden ?? [], allKeys);
+  const forced = opts.forceShow ?? [];
 
   const widthsKey = `cols:${storageKey}:widths`;
   const [widths, setWidths] = React.useState<Record<string, number>>(() => loadWidths(widthsKey));
@@ -75,7 +83,8 @@ export function useEntryGrid<T>(storageKey: string, columns: EntryColumn<T>[]) {
   }, [columns, prefs.order]);
 
   const shown = [
-    ...ordered.filter((c) => c.key !== 'actions' && (c.locked || !prefs.hidden.includes(c.key))),
+    ...ordered.filter((c) => c.key !== 'actions'
+      && (c.locked || forced.includes(c.key) || !prefs.hidden.includes(c.key))),
     ...ordered.filter((c) => c.key === 'actions'),
   ];
 

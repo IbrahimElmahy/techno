@@ -716,6 +716,13 @@ html[data-density='comfortable'] .ant-table-thead > tr > th {
   border-radius: 10px;
   padding: 10px 12px;
 }
+.sale-doc .sale-card.sale-head {
+  position: sticky;
+  top: 0;
+  z-index: 25;
+  padding: 6px 12px;
+  box-shadow: 0 -12px 0 #f3f4f6, 0 2px 6px rgba(15, 23, 42, 0.08);
+}
 
 .sale-doc .sale-head-row {
   display: flex;
@@ -743,12 +750,12 @@ html[data-density='comfortable'] .ant-table-thead > tr > th {
   border-radius: 6px;
 }
 .sale-doc .sale-head .sale-toolbar-row .ant-btn {
-  height: 32px;
-  padding: 0 12px;
-  font-size: 16px;
+  height: 28px;
+  padding: 0 9px;
+  font-size: 14px;
 }
 .sale-doc .sale-head .sale-toolbar-row .ant-btn .anticon {
-  font-size: 16px;
+  font-size: 14px;
 }
 
 .sale-doc .sale-bottom {
