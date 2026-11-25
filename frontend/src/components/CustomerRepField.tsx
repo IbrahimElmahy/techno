@@ -40,11 +40,15 @@ export default function CustomerRepField({
       </Form.Item>
     );
   }
+  const branchReps = branch == null ? reps
+    : reps.filter((r: any) => r.branch_id == null || r.branch_id === branch || r.id === repId);
+  const options = repOptions(branchReps, repId);
+  if (!options.length) return null;
   return (
     <Form.Item key="rep_id" name="rep_id" label={repLabel} style={style}
       rules={[{ required: true, message: 'يرجى تحديد المندوب!' }]}>
       <Select showSearch placeholder="اختر المندوب"
-        options={repOptions(reps, repId)}
+        options={options}
         filterOption={searchFilter} filterSort={searchRank} />
     </Form.Item>
   );

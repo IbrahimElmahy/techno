@@ -120,7 +120,7 @@ export default function PartyPickerModal({
       setParties(activeChoices(pRes.data || []));
       const byName = (r: any) => r.full_name || r.username || r.name;
       setBranches(sortByName(bRes.data || [], byName));
-      setReps(sortByName((uRes.data || []).filter((u: any) => u.role === 'sales_rep'), byName));
+      setReps(sortByName((uRes.data || []).filter((u: any) => u.role === 'sales_rep' || u.role === 'rep_supervisor'), byName));
       setServiceReps(sortByName(
         (uRes.data || []).filter((u: any) => u.role === 'after_sales_staff'), byName));
       setTerritories(sortByName(tRes.data || [], byName));

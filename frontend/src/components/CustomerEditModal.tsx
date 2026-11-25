@@ -84,7 +84,7 @@ export default function CustomerEditModal({
         const rec = c.data;
         setRecord(rec);
         const byName = (r: any) => r.full_name || r.username || r.name;
-        setReps(sortByName(users.data.filter((u: any) => u.role === 'sales_rep'), byName));
+        setReps(sortByName(users.data.filter((u: any) => u.role === 'sales_rep' || u.role === 'rep_supervisor'), byName));
         setServiceReps(sortByName(
           users.data.filter((u: any) => u.role === 'after_sales_staff'), byName));
         setTerritories(sortByName(terr.data || [], byName));

@@ -436,7 +436,7 @@ export default function Customers() {
         api.get('/api/v1/branches'),
       ]);
       const byName = (r: any) => r.full_name || r.name;
-      setReps(sortByName(usersRes.data.filter((u: any) => u.role === 'sales_rep'), byName));
+      setReps(sortByName(usersRes.data.filter((u: any) => u.role === 'sales_rep' || u.role === 'rep_supervisor'), byName));
       setServiceReps(sortByName(
         usersRes.data.filter((u: any) => u.role === 'after_sales_staff'), byName));
       setTerritories(sortByName(territoriesRes.data || [], byName));

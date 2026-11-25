@@ -136,6 +136,18 @@ def assert_rep_matches_type(db: Session, *, customer_type: str, rep_id: int | No
     )
 
 
+def branch_has_reps(db: Session, branch_id: int | None) -> bool:
+    from src.models.role import Role, RoleName
+    from src.models.user import User
+
+    stmt = (select(User.id).join(Role, Role.id == User.role_id)
+            .where(Role.name.in_((RoleName.sales_rep, RoleName.rep_supervisor)),
+                   User.active.is_(True)))
+    if branch_id is not None:
+        stmt = stmt.where(User.branch_id == branch_id)
+    return db.scalar(stmt.limit(1)) is not None
+
+
 def customer_branch_id(db: Session, *, branch_id: int | None,
                        territory_id: int | None) -> int | None:
     if branch_id is not None:
@@ -178,7 +190,8 @@ def create_customer(
     if is_after_sales_type(customer_type):
         if service_rep_id is None:
             raise CustomerError("يرجى تحديد مندوب خدمة ما بعد البيع للعميل من نوع «سباك».")
-    elif rep_id is None:
+    elif rep_id is None and branch_has_reps(
+            db, customer_branch_id(db, branch_id=branch_id, territory_id=territory_id)):
         raise CustomerError("يرجى تحديد مندوب البيع.")
     if service_rep_id is not None:
         assert_service_rep(db, service_rep_id=service_rep_id,
