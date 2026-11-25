@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import dataclasses
 from datetime import date, datetime, timedelta
 from decimal import Decimal
 
@@ -69,6 +70,8 @@ def _gate(current: CurrentUser = Depends(get_current_user)) -> CurrentUser:
 
 
 def _doc_view(current: CurrentUser) -> CurrentUser:
+    if current.supervises:
+        return dataclasses.replace(current, role=RoleName.rep_supervisor)
     return current
 
 
