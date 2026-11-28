@@ -168,8 +168,10 @@ _SHARED_FIELDS = ("code", "name", "category", "description", "sale_price")
 
 def _next_code(db: Session, kind: ItemKind) -> str:
     prefix = "RM" if kind == ItemKind.raw_material else "PR"
-    n = db.scalar(select(func.count()).select_from(Item).where(Item.kind == kind)) or 0
-    return f"{prefix}-{n + 1:06d}"
+    codes = db.scalars(select(Item.code).where(Item.code.op("~")(f"^{prefix}-[0-9]+$"))).all()
+    n = max((int(c.split("-", 1)[1]) for c in codes), default=0)
+    count = db.scalar(select(func.count()).select_from(Item).where(Item.kind == kind)) or 0
+    return f"{prefix}-{max(n, count) + 1:06d}"
 
 
 @router.get("", response_model=list[ItemOut])
