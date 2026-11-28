@@ -31,7 +31,7 @@ def user_branch(user) -> int | None:
     if ids:
         view = _view_branch.get()
         return view if view in ids else ids[0]
-    return user.branch_id
+    return user.branch_id or _view_branch.get()
 
 
 def visible_branch_id(current: CurrentUser) -> int | None:

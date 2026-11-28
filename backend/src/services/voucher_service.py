@@ -96,6 +96,21 @@ def _supplier_account(db: Session, supplier_id: int) -> SupplierAccount:
     return acc
 
 
+def _branch_of_money(db: Session, treasury_id: int | None,
+                     *account_ids: int | None) -> int | None:
+    if treasury_id:
+        from src.models.treasury import Treasury
+
+        t = db.get(Treasury, treasury_id)
+        if t is not None and t.branch_id:
+            return t.branch_id
+    for acc_id in account_ids:
+        acc = db.get(Account, acc_id) if acc_id else None
+        if acc is not None and acc.branch_id:
+            return acc.branch_id
+    return None
+
+
 def _create(
     db: Session, *, kind: VoucherKind, amount: Decimal, cash_account_id: int,
     party_account_id: int, debit_account_id: int, credit_account_id: int,
@@ -125,7 +140,8 @@ def _create(
         reverses_id=reverses_id, actor_user_id=actor_user_id, family=family,
         statement1=statement1,
         external_document_number=external_document_number,
-        branch_id=branch_for(db, actor_user_id=actor_user_id),
+        branch_id=branch_for(db, actor_user_id=actor_user_id)
+        or _branch_of_money(db, treasury_id, cash_account_id, party_account_id),
         client_uuid=client_uuid,
     )
     if replacing is not None:
